@@ -113,17 +113,24 @@ export function spawnDockerStream(
   });
 }
 
-export async function getContainerStatus(containerName: string): Promise<{
+export async function getContainerStatus(
+  containerName: string,
+  esegui: (args: string[]) => Promise<ExecResult> = execDockerCommand,
+): Promise<{
   running: boolean;
   image: string;
   uptime: string;
   health: string;
 } | null> {
   try {
-    const { stdout } = await execDockerCommand([
+    // La salute solo se il contenitore ha un controllo di salute: senza, per il
+    // template Go `.State.Health` non esiste, `{{.State.Health.Status}}` fa uscire
+    // inspect con 1 e il contenitore acceso risultava «assente» (appliance-librenms,
+    // pilota PX-NAS 2026-10-15).
+    const { stdout } = await esegui([
       "inspect",
       "--format",
-      "{{.State.Running}}|{{.Config.Image}}|{{.State.StartedAt}}|{{.State.Health.Status}}",
+      "{{.State.Running}}|{{.Config.Image}}|{{.State.StartedAt}}|{{if .State.Health}}{{.State.Health.Status}}{{end}}",
       containerName,
     ]);
     const parts = stdout.trim().split("|");

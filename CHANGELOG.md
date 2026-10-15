@@ -16,6 +16,12 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   LibreNMS che c'era, e «Installa» ha avviato un secondo LibreNMS (`da-librenms`, porta 8090,
   vuoto) che a fine lavoro avrebbe preso il posto di quello dell'installatore. Prova:
   `src/lib/integrations/__tests__/librenms-appliance.test.ts`.
+- **Lo stato di un contenitore senza controllo di salute non risulta più «assente».** La
+  lettura (`getContainerStatus`) chiedeva sempre `{{.State.Health.Status}}`: su un contenitore
+  senza healthcheck, come `appliance-librenms` o il `da-librenms` installato da qui, `docker
+  inspect` esce con errore e la scheda lo dava per inesistente o fermo anche acceso. Ora la
+  salute si chiede solo se c'è. Trovato verificando la v0.3.290 sulla VM del pilota, dove la
+  scheda continuava a dire «Istanza esterna».
 
 ## [Non rilasciato] — 2026-10-15 · topologia: elenco aggiornato tornando sulla pagina
 

@@ -16,6 +16,33 @@ import {
   rifiutoInstallazione,
 } from "@/lib/integrations/librenms-appliance";
 import { vistaScheda, type StatoScheda } from "@/lib/integrations/scheda-integrazione";
+import { getContainerStatus } from "@/lib/integrations/docker";
+
+/**
+ * Doppio di `docker inspect --format` su un contenitore SENZA controllo di
+ * salute, come `appliance-librenms`: per il template Go `.State.Health` non
+ * esiste, e chiedere `{{.State.Health.Status}}` fa uscire inspect con 1
+ * («map has no entry for key "Health"»). Solo la forma con la guardia `if` passa.
+ * Visto sulla VM del pilota il 2026-10-15: la scheda diceva «contenitore assente».
+ */
+async function inspectSenzaSalute(args: string[]) {
+  const formato = args[args.indexOf("--format") + 1] ?? "";
+  const senzaGuardia = formato.replace(/\{\{if \.State\.Health\}\}\{\{\.State\.Health\.Status\}\}\{\{end\}\}/g, "");
+  if (senzaGuardia.includes(".State.Health")) {
+    throw new Error('template parsing error: map has no entry for key "Health"');
+  }
+  return { stdout: "true|librenms/librenms:25.5.0|2026-10-15T10:43:23Z|\n", stderr: "" };
+}
+
+test("stato di un contenitore senza controllo di salute → acceso, salute vuota (non «assente»)", async () => {
+  const s = await getContainerStatus("appliance-librenms", inspectSenzaSalute);
+  assert.deepEqual(s, { running: true, image: "librenms/librenms:25.5.0", uptime: "2026-10-15T10:43:23Z", health: "" });
+});
+
+test("LibreNMS dell'appliance riconosciuto con lo stato vero del contenitore", async () => {
+  const stato = (nome: string) => getContainerStatus(nome, inspectSenzaSalute);
+  assert.equal(await librenmsDellAppliance(stato), true);
+});
 
 const acceso = { running: true, image: "librenms/librenms:25.5.0", uptime: "", health: "" };
 

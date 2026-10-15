@@ -4,7 +4,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { computeMapView } from "@/lib/topology/map-compute";
 import { buildPrintView } from "@/lib/topology/print-view";
-import { BOX_H, DNS_H, headHeight, layoutTree, nodeWidth } from "@/lib/topology/tree-layout";
+import { drawingBoxes } from "@/lib/topology/print-draw";
+import { BOX_H, DNS_H, headHeight, layoutTree, nodeWidth, type LayoutResult } from "@/lib/topology/tree-layout";
 import { LINK_ATTRS_DEFAULT, type MapLink, type MapNode, type MapVm, type TopologyModel } from "@/lib/topology/model-types";
 import type { TreeResult } from "@/lib/topology/tree";
 
@@ -43,6 +44,30 @@ test("schermo e stampa: stesso calcolo, stessa disposizione (mappa automatica e 
     const passo = computeMapView(M, { auto: false, members: ["dev:1", "dev:2", "dev:3"], roots: ["dev:1"], head: null, tweaks: [], expanded: new Set(), orientation });
     const carta = buildPrintView(M, 4, { map: { name: "x", kind: "passo", roots: ["dev:1"], head_node: null }, nodes: ["dev:1", "dev:2", "dev:3"], tweaks: [], orientation }, false);
     assert.ok(carta.ok && ser(carta) === ser(passo));
+  }
+});
+
+// Verifica a schermo di T1 (15/10, copia del cliente A): nella mappa passo passo della sede 1 il router di testa,
+// trascinato in alto, porta con sé il suo ramo e tre riquadri finiscono sopra l'origine. Lo schermo li mostra; la
+// stampa A3, «foglio unico», partiva da 0 e li perdeva. In stampa la disposizione si sposta tutta insieme.
+test("stampa: un ritocco che porta un ramo sopra o a sinistra dell'origine sta tutto nel foglio, con le distanze dello schermo", () => {
+  for (const orientation of ["lr", "tb"] as const) {
+    const t = { nodeId: "dev:1", x: -400, y: -300, sig: "|", orientation };
+    const nodes = ["dev:1", "dev:2", "dev:3"];
+    const screen = computeMapView(M, { auto: false, members: nodes, roots: ["dev:1"], head: null, tweaks: [t], expanded: new Set(), orientation });
+    const carta = buildPrintView(M, 4, { map: { name: "x", kind: "passo", roots: ["dev:1"], head_node: null }, nodes, tweaks: [t], orientation }, false);
+    assert.ok(carta.ok);
+    if (!carta.ok) return;
+    const foglio: LayoutResult = carta.layout;
+    assert.ok([...screen.layout.nodes.values()].some((n) => n.x < 0 && n.y < 0), "a schermo il ramo sta in negativo");
+    for (const b of drawingBoxes(foglio)) {
+      assert.ok(b.x >= 0 && b.y >= 0 && b.x + b.w <= foglio.width && b.y + b.h <= foglio.height, JSON.stringify(b));
+    }
+    const s1 = screen.layout.nodes.get("dev:1")!, c1 = foglio.nodes.get("dev:1")!;
+    for (const [id, n] of screen.layout.nodes) {
+      const c = foglio.nodes.get(id)!;
+      assert.deepEqual([c.x - c1.x, c.y - c1.y, c.w, c.h], [n.x - s1.x, n.y - s1.y, n.w, n.h], id);
+    }
   }
 });
 

@@ -138,11 +138,18 @@ export function labelBoxes(
   return out;
 }
 
+/** Quanto la parola si può scostare dalla linea quando sulla linea non c'è posto (fra il bordo della parola e la linea). */
+export const ACCANTO_MAX = 48;
+
 /**
- * Il centro della parola di una ridondanza («1G · ridondanza», Task 5). A metà percorso se lì
- * non tocca niente; altrimenti il punto della linea più vicino alla metà in cui la scritta non
- * tocca nessun riquadro. Se la linea è tutta coperta resta a metà: meglio sopra un riquadro
- * che sparita. Si prova un punto ogni 8 px.
+ * Il centro della parola di una ridondanza («1G · ridondanza», Task 5) o della linea di un figlio
+ * spostato a mano. A metà percorso se lì non tocca niente; altrimenti il punto della linea più
+ * vicino alla metà in cui la scritta non tocca nessun riquadro. Se la linea è tutta coperta, la
+ * parola si accosta alla linea: sopra o sotto un tratto orizzontale, a destra o a sinistra di uno
+ * verticale, a non più di ACCANTO_MAX px (verifica a schermo di T1, 15/10: un figlio spostato a
+ * mano a 45 px dal genitore aveva la parola a metà della linea corta, dietro i due riquadri, e
+ * «1G · ⚡ 6,9 W» si leggeva a pezzi). Se anche lì tocca un riquadro resta a metà: meglio sopra un
+ * riquadro che sparita. Si prova un punto ogni 8 px.
  */
 export function redundantLabelAt(points: readonly Pt[], size: { w: number; h: number }, avoid: readonly Rect[]): Pt {
   const segs: Array<{ a: Pt; b: Pt; len: number; from: number }> = [];
@@ -154,25 +161,46 @@ export function redundantLabelAt(points: readonly Pt[], size: { w: number; h: nu
     segs.push({ a, b, len, from: total });
     total += len;
   }
-  const at = (s: number): Pt => {
+  /** Il punto a `s` px dall'inizio del percorso, e se il tratto lì è orizzontale. */
+  const at = (s: number): { p: Pt; orizzontale: boolean } => {
     const seg = segs.find((g) => s <= g.from + g.len) ?? segs[segs.length - 1];
-    const t = seg ? Math.min(1, Math.max(0, (s - seg.from) / seg.len)) : 0;
-    return seg ? { x: seg.a.x + (seg.b.x - seg.a.x) * t, y: seg.a.y + (seg.b.y - seg.a.y) * t } : (points[0] ?? { x: 0, y: 0 });
+    if (!seg) return { p: points[0] ?? { x: 0, y: 0 }, orizzontale: true };
+    const t = Math.min(1, Math.max(0, (s - seg.from) / seg.len));
+    return {
+      p: { x: seg.a.x + (seg.b.x - seg.a.x) * t, y: seg.a.y + (seg.b.y - seg.a.y) * t },
+      orizzontale: Math.abs(seg.b.x - seg.a.x) >= Math.abs(seg.b.y - seg.a.y),
+    };
   };
   const free = (p: Pt) => {
     const r = { x: p.x - size.w / 2 - 2, y: p.y - size.h / 2 - 2, w: size.w + 4, h: size.h + 4 };
     return !avoid.some((b) => r.x < b.x + b.w && b.x < r.x + r.w && r.y < b.y + b.h && b.y < r.y + r.h);
   };
+  const tondo = (p: Pt): Pt => ({ x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10 });
   const mid = total / 2;
   const STEP = 8;
-  for (let d = 0; d <= mid; d += STEP) {
-    for (const s of d === 0 ? [mid] : [mid - d, mid + d]) {
-      const p = at(s);
-      if (free(p)) return { x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10 };
+  /** Dalla metà verso i due capi: il primo punto del percorso per cui `prova` trova un posto. */
+  const dallaMeta = (prova: (s: number) => Pt | undefined): Pt | undefined => {
+    for (let d = 0; d <= mid; d += STEP) {
+      for (const s of d === 0 ? [mid] : [mid - d, mid + d]) {
+        const p = prova(s);
+        if (p) return p;
+      }
     }
+    return undefined;
+  };
+  const sullaLinea = dallaMeta((s) => { const { p } = at(s); return free(p) ? p : undefined; });
+  if (sullaLinea) return tondo(sullaLinea);
+  // Accanto alla linea, a distanza crescente: prima sopra (o a destra), poi sotto (o a sinistra).
+  for (let g = 0; g <= ACCANTO_MAX; g += STEP) {
+    const accanto = dallaMeta((s) => {
+      const { p, orizzontale } = at(s);
+      const o = (orizzontale ? size.h : size.w) / 2 + 2 + g;
+      const posti = orizzontale ? [{ x: p.x, y: p.y - o }, { x: p.x, y: p.y + o }] : [{ x: p.x + o, y: p.y }, { x: p.x - o, y: p.y }];
+      return posti.find(free);
+    });
+    if (accanto) return tondo(accanto);
   }
-  const m = at(mid);
-  return { x: Math.round(m.x * 10) / 10, y: Math.round(m.y * 10) / 10 };
+  return tondo(at(mid).p);
 }
 
 // ─── Lato più vicino (spec §13.10.1, vincolo 5) ───────────────────────────────

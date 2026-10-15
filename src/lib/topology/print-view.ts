@@ -2,7 +2,8 @@
  * La mappa da stampare (spec topologia §12.3): stesso modello, stesso albero e stessa disposizione
  * della pagina della mappa — VM non censite come nodi, id salvati passati dall'id canonico, testa
  * della mappa automatica, partenze della mappa passo passo, ritocchi nel loro orientamento — così la
- * carta ha le coordinate dello schermo. Le VM restano chiuse, a meno di «con le VM».
+ * carta ha le coordinate dello schermo (spostate tutte insieme solo se un ritocco porta un ramo sopra
+ * o a sinistra dell'origine: `dentroIlFoglio`). Le VM restano chiuse, a meno di «con le VM».
  * Il calcolo è quello della pagina (`computeMapView`, map-compute.ts), una funzione sola per schermo e carta.
  * Logica pura: una vista senza oggetti torna come messaggio in parole, mai come mappa vuota.
  */
@@ -11,6 +12,7 @@ import type { Paper, PrintScale } from "@/lib/topology/print-tiles";
 import type { MapOrientation, TopologyModel } from "@/lib/topology/model-types";
 import type { TreeResult } from "@/lib/topology/tree";
 import type { LayoutResult, SavedTweak } from "@/lib/topology/tree-layout";
+import { MARGIN } from "@/lib/topology/tree-layout-consts";
 
 /** Quel che serve della risposta di GET /api/topology/maps/[id]. */
 export interface PrintViewInput {
@@ -68,5 +70,34 @@ export function buildPrintView<M extends TopologyModel>(base: M, key: "auto" | n
     };
   }
   const title = auto ? "Tutto automatico" : (view.map?.name ?? "Mappa");
-  return { ok: true, title, orientation, model: c.model, tree: c.tree, layout: c.layout, missing: c.missing.length };
+  return { ok: true, title, orientation, model: c.model, tree: c.tree, layout: dentroIlFoglio(c.layout), missing: c.missing.length };
+}
+
+/** Alta quanto la riga delle porte sopra un riquadro con un genitore (come `drawingBoxes` di print-draw.ts). */
+const RIGA_PORTE = 18;
+
+/**
+ * I fogli partono da 0, lo schermo no: un ritocco che porta un ramo sopra o a sinistra dell'origine (il genitore
+ * trascinato in alto porta con sé i figli, e quelli sopra di lui vanno in negativo) restava fuori dalla carta.
+ * Verifica a schermo di T1, 15/10: la stampa A3 di una mappa passo passo del cliente A, «foglio unico», senza i tre
+ * riquadri più in alto. Allora tutta la disposizione si sposta, così il bordo torna a MARGIN come in una mappa senza
+ * ritocchi; le distanze fra i riquadri restano quelle dello schermo. Senza niente in negativo resta identica.
+ */
+export function dentroIlFoglio(layout: LayoutResult): LayoutResult {
+  let minX = Infinity, minY = Infinity;
+  for (const n of layout.nodes.values()) {
+    minX = Math.min(minX, n.x);
+    minY = Math.min(minY, n.role === "box" && n.parent ? n.y - RIGA_PORTE : n.y);
+  }
+  for (const r of [...layout.apGroups, ...layout.vmChips]) { minX = Math.min(minX, r.x); minY = Math.min(minY, r.y); }
+  const dx = minX < 0 ? MARGIN - minX : 0, dy = minY < 0 ? MARGIN - minY : 0;
+  if (dx === 0 && dy === 0) return layout;
+  return {
+    ...layout,
+    nodes: new Map([...layout.nodes].map(([id, n]) => [id, { ...n, x: n.x + dx, y: n.y + dy }])),
+    apGroups: layout.apGroups.map((g) => ({ ...g, x: g.x + dx, y: g.y + dy })),
+    vmChips: layout.vmChips.map((c) => ({ ...c, x: c.x + dx, y: c.y + dy })),
+    width: layout.width + dx,
+    height: layout.height + dy,
+  };
 }

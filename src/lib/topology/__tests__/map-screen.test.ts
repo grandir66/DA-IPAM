@@ -155,8 +155,34 @@ test("parola della ridondanza: si sposta lungo la linea fuori dai riquadri, mai 
 });
 
 test("parola della ridondanza: se tutto il percorso è coperto resta a metà (non sparisce)", () => {
+  // Il riquadro copre anche i due lati della linea fino a ACCANTO_MAX: nessun posto vicino, la parola resta a metà.
   const pts = [{ x: 0, y: 0 }, { x: 200, y: 0 }];
   assert.deepEqual(redundantLabelAt(pts, { w: 60, h: 16 }, [{ x: -50, y: -50, w: 300, h: 100 }]), { x: 100, y: 0 });
+});
+
+// Verifica a schermo di T1 (15/10, copia del cliente A): un figlio spostato a mano a 45 px dal genitore, con gli
+// attaccati sotto il genitore. La linea corta fra i due riquadri era tutta coperta, la parola restava a metà, dietro
+// i due riquadri, e «1G · ⚡ 6,9 W» si leggeva a pezzi. Sulla linea non c'è posto: la parola le si accosta.
+test("parola della linea: se la linea è tutta coperta si accosta alla linea, fuori dai riquadri e dalla riga delle porte", () => {
+  const figlio = { x: 0, y: 100, w: 170, h: 44 }, genitore = { x: 215, y: 100, w: 170, h: 44 };
+  const attaccati = { x: 227, y: 148, w: 160, h: 38 };
+  const avoid = labelBoxes([{ ...figlio, role: "box" as const }, { ...genitore, role: "box" as const }, { ...attaccati, role: "attached" as const }], []);
+  const pts = percorso(genitore, "sx", figlio, "dx");
+  const size = { w: 92, h: 16 }; // «1G · ⚡ 6,9 W»: 12 caratteri a 7 px, più 8
+  const at = redundantLabelAt(pts, size, avoid);
+  const parola = { x: at.x - size.w / 2, y: at.y - size.h / 2, ...size };
+  assert.deepEqual(avoid.filter((b) => overlaps(parola, b)), [], JSON.stringify(at));
+  // Vicino alla linea (y = 122): il bordo della parola a non più di ACCANTO_MAX px.
+  assert.ok(Math.abs(at.y - 122) <= size.h / 2 + 2 + 48, JSON.stringify(at));
+  // All'altezza del varco fra i due riquadri.
+  assert.ok(at.x >= 170 && at.x <= 215, JSON.stringify(at));
+});
+
+test("parola della linea: su un tratto verticale tutto coperto si accosta, prima a destra, alla prima distanza libera", () => {
+  const pts = [{ x: 100, y: 0 }, { x: 100, y: 200 }];
+  const coperta = { x: 60, y: 0, w: 80, h: 200 };
+  // Bordo sinistro della parola (larga 60, margine 2) a 140: 40 px dalla linea, alla metà del percorso.
+  assert.deepEqual(redundantLabelAt(pts, { w: 60, h: 16 }, [coperta]), { x: 172, y: 100 });
 });
 
 test("riquadri da evitare: riquadri con la riga delle porte sopra, gruppi degli AP, attaccati", () => {

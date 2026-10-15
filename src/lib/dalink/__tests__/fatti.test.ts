@@ -127,3 +127,34 @@ test("saluteFirewall: le quattro voci", () => {
   assert.equal(saluteFirewall({ fonte: "ascolto", porte: [], sorgentiRistrette: false, wt0Presente: true }), "assente");
   assert.equal(saluteFirewall({ fonte: "non_so", porte: [], sorgentiRistrette: false, wt0Presente: false }), "non_so");
 });
+
+// Il proxy Zabbix non è un modulo del registro: vive sulla macchina (procedura guidata di
+// DA-Zabbix). Senza questa voce la colonna «Zabbix» del CRM (tappa F) non avrebbe mai un
+// dato vero (15/10). Chiave `zbx`, come il modulo dichiarato in DA-Link.
+const PORTE_OK = async () => ({ fonte: "firewall" as const, porte: [22, 443], sorgentiRistrette: true, wt0Presente: true });
+
+test("proxy Zabbix installato e in esecuzione → salute.zbx = ok", async () => {
+  const r = await fattiIstanza("99999", null, { clienteEsiste: () => false, porte: PORTE_OK, proxyZabbix: () => "ok" });
+  assert.equal(r.fatti.salute.zbx, "ok");
+});
+
+test("proxy Zabbix installato ma fermo → salute.zbx = fail", async () => {
+  const r = await fattiIstanza("99999", null, { clienteEsiste: () => false, porte: PORTE_OK, proxyZabbix: () => "fail" });
+  assert.equal(r.fatti.salute.zbx, "fail");
+});
+
+test("proxy Zabbix assente → nessuna voce zbx", async () => {
+  const r = await fattiIstanza("99999", null, { clienteEsiste: () => false, porte: PORTE_OK, proxyZabbix: () => null });
+  assert.ok(!("zbx" in r.fatti.salute));
+});
+
+test("proxy Zabbix non leggibile → salute.zbx = non_so", async () => {
+  const r = await fattiIstanza("99999", null, {
+    clienteEsiste: () => false,
+    porte: PORTE_OK,
+    proxyZabbix: () => {
+      throw new Error("x");
+    },
+  });
+  assert.equal(r.fatti.salute.zbx, "non_so");
+});

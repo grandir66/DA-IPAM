@@ -16,7 +16,8 @@
 import fs from "node:fs";
 import { getActiveTenants } from "@/lib/db-hub";
 import { leggiConfigDalink, type ConfigDalink } from "./config";
-import { fattiIstanza, inventarioCliente } from "./fatti";
+import { FILE_PROXY_ZABBIX, fattiIstanza, inventarioCliente } from "./fatti";
+export { FILE_PROXY_ZABBIX };
 import { costruisciSegnale, type CorpoSegnale, type FattiIstanza, type Inventario } from "./segnale";
 import { OGNI_MS } from "./segnale-job";
 import {
@@ -29,7 +30,6 @@ import {
   type StatoSegnale,
 } from "./stato";
 
-export const FILE_PROXY_ZABBIX = "/etc/zabbix/zabbix_proxy.conf";
 
 export interface DipendenzeQuadro {
   config: () => ConfigDalink;

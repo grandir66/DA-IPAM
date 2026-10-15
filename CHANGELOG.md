@@ -19,6 +19,9 @@ l'istanza non chiama nessuno.
   dell'inventario (dispositivi, reti, ultima scansione) escono solo se l'istanza lo
   consente, e a «solo stato» non si leggono nemmeno. Perché: Domarc deve sapere se
   l'istanza è viva senza vedere i dati del cliente, e la scelta vale all'origine.
+  Il segnale dice anche se il **proxy Zabbix** della macchina gira (`zbx`: ok / fermo /
+  non letto; niente voce se non è installato). Perché: il proxy non è un modulo del
+  registro, e senza questa voce la colonna «Zabbix» del CRM non avrebbe mai un dato vero.
 - **Pagina «Cosa esce da questa istanza»** (voce «Cosa esce» del menu Sistema, solo
   amministratori). Dice tutto ciò che esce verso Domarc, fa scegliere il livello (ogni
   cambio resta nel registro con chi e quando), mostra il prossimo segnale così com'è e,

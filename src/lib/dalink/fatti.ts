@@ -5,7 +5,9 @@
  * - moduli accesi: dal registro dei moduli (`enabled`);
  * - salute: dei soli moduli accesi più il sistema, e SOLO i verdetti (`ok` | `degraded` | `fail`) delle sonde dei moduli, mai il
  *   testo di dettaglio, che può contenere indirizzi e nomi della rete del cliente. In
- *   più tre voci dell'istanza: `cliente`, `firewall_wt0`, `interfaccia_wt0`;
+ *   più tre voci dell'istanza: `cliente`, `firewall_wt0`, `interfaccia_wt0`, e `zbx` per il
+ *   proxy Zabbix della macchina, che non è un modulo del registro (`ok` se gira, `fail` se è
+ *   installato e fermo, nessuna voce se non c'è, `non_so` se non si legge);
  * - porte su `wt0`: dal sistema vivo (`porte-wt0.ts`);
  * - numeri dell'inventario (solo se il livello lo consente: li chiede il costruttore):
  *   righe di `hosts` e `networks`, ultima riga di `scan_history`.
@@ -26,6 +28,23 @@ import { getModulesHealth } from "@/lib/modules/health";
 import { leggiPorteWt0, type PorteWt0 } from "./porte-wt0";
 import type { FattiIstanza, Inventario } from "./segnale";
 
+/** Il proxy Zabbix lo installa la procedura guidata di DA-Zabbix, sulla macchina. */
+export const FILE_PROXY_ZABBIX = "/etc/zabbix/zabbix_proxy.conf";
+
+/** `ok` se un processo `zabbix_proxy` gira, `fail` se è installato e fermo, null se non c'è. */
+export function saluteProxyZabbix(): "ok" | "fail" | null {
+  if (!fs.existsSync(FILE_PROXY_ZABBIX)) return null;
+  for (const pid of fs.readdirSync("/proc")) {
+    if (!/^\d+$/.test(pid)) continue;
+    try {
+      if (fs.readFileSync(`/proc/${pid}/comm`, "utf8").trim().startsWith("zabbix_proxy")) return "ok";
+    } catch {
+      // processo finito nel frattempo
+    }
+  }
+  return "fail";
+}
+
 /** La sonda della macchina (disco, Docker): conta anche se non è un «modulo acceso». */
 export const MODULO_SISTEMA = "appliance";
 
@@ -34,6 +53,7 @@ export interface DipendenzeFatti {
   porte: () => Promise<PorteWt0>;
   moduli: (codcli: string) => Promise<Record<string, boolean>>;
   salute: (codcli: string) => Promise<Record<string, string>>;
+  proxyZabbix: () => "ok" | "fail" | null;
 }
 
 let versioneLetta: string | null = null;
@@ -66,6 +86,7 @@ export const dipendenzeFattiReali: DipendenzeFatti = {
     const sonde = await withTenant(codcli, () => getModulesHealth(codcli));
     return Object.fromEntries(sonde.map((h) => [h.key, h.verdict]));
   },
+  proxyZabbix: saluteProxyZabbix,
 };
 
 export async function fattiIstanza(
@@ -101,6 +122,12 @@ export async function fattiIstanza(
     } catch {
       salute.moduli = "non_so";
     }
+  }
+  try {
+    const zbx = d.proxyZabbix();
+    if (zbx) salute.zbx = zbx;
+  } catch {
+    salute.zbx = "non_so";
   }
   salute.cliente = clienteTrovato ? "trovato" : "non_trovato";
   salute.firewall_wt0 = saluteFirewall(porte);

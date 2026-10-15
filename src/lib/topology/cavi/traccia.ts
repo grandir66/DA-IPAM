@@ -23,7 +23,10 @@ export interface Traccia {
   perGenere: Record<Genere, number>;
   nuovi: { bloccati: number; instradati: number; fasci: number; tunnel: number; radio: number };
   segmenti: number;
+  /** Il totale delle anomalie «core che esce da uno switch di accesso» (§13.7.5 punto 8). */
   anomalie: number;
+  /** Le prime anomalie (revisione finale di T2, M1): l'apparato, il suo padre, quanti altri switch allo stesso livello del padre. */
+  elencoAnomalie: Array<{ nodo: string; padre: string; altri: number }>;
   righe: RigaTraccia[];
   altri: number;
   avvisi: Array<{ nodo: string; testo: string }>;
@@ -66,6 +69,9 @@ function perche(d: Differenza, m: ModelloCavi): string {
   return parti.join("; ");
 }
 
+/** Quante anomalie si elencano per nome: le altre si contano («+ altri N»). */
+export const LIMITE_ANOMALIE = 20;
+
 export function calcolaTraccia(oggi: Readonly<Record<string, string | null>>, m: ModelloCavi, limite = 50): Traccia {
   const diff = confrontaAlberi(oggi, m.albero.padri);
   const perGenere: Record<Genere, number> = { cavo: 0, fascio: 0, tunnel: 0, radio: 0, senza_fili: 0, segmento: 0 };
@@ -83,6 +89,7 @@ export function calcolaTraccia(oggi: Readonly<Record<string, string | null>>, m:
     },
     segmenti: m.segmenti.length,
     anomalie: m.albero.anomalie.length,
+    elencoAnomalie: m.albero.anomalie.slice(0, LIMITE_ANOMALIE).map((a) => ({ nodo: a.nodo, padre: a.padre, altri: a.altri.length })),
     righe: diff.slice(0, limite).map((d) => ({ ...d, perche: perche(d, m) })),
     altri: Math.max(0, diff.length - limite),
     avvisi: m.albero.avvisi,
@@ -91,7 +98,7 @@ export function calcolaTraccia(oggi: Readonly<Record<string, string | null>>, m:
 }
 
 /**
- * I nomi degli oggetti nominati dalla traccia (righe, padri, chi entra o esce, avvisi). Un segmento: «segmento su ‹membro›
+ * I nomi degli oggetti nominati dalla traccia (righe, padri, chi entra o esce, avvisi, anomalie). Un segmento: «segmento su ‹membro›
  * ‹porta›». Due oggetti con lo stesso nome portano accanto l'indirizzo (o l'id, se manca): a schermo erano due righe
  * identiche (verifica di T2, Task 15).
  */
@@ -103,7 +110,7 @@ export function nomiTraccia(t1: Pick<TopologyModel, "nodes">, m: ModelloCavi, tr
     const primo = s.membri.find((p) => p.nodo.startsWith("dev:")) ?? s.membri[0];
     return [s.id, `segmento su ${nodi.get(primo?.nodo ?? "") ?? primo?.nodo ?? "?"} ${primo?.nome ?? ""}`.trim()];
   }));
-  const ids = new Set<string>([...tr.entrano, ...tr.escono, ...tr.avvisi.map((a) => a.nodo)]);
+  const ids = new Set<string>([...tr.entrano, ...tr.escono, ...tr.avvisi.map((a) => a.nodo), ...tr.elencoAnomalie.flatMap((a) => [a.nodo, a.padre])]);
   for (const r of tr.righe) for (const x of [r.id, r.prima, r.dopo]) if (typeof x === "string") ids.add(x);
   return Object.fromEntries([...ids].sort(cmp).map((id) => [id, seg.get(id) ?? nodi.get(id) ?? id]));
 }

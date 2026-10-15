@@ -62,6 +62,19 @@ export function TracciaCard() {
                 {t.altri > 0 && <li>+ altri {t.altri}</li>}
               </ul>
             )}
+            {t.elencoAnomalie.length > 0 && (
+              <div className="text-sm space-y-1">
+                <p className="font-medium">Anomalie «core che esce da uno switch di accesso»: da guardare a mano</p>
+                <ul className="list-disc pl-5">
+                  {t.elencoAnomalie.map((a) => (
+                    <li key={a.nodo}>
+                      {n(a.nodo)}, appeso a {n(a.padre)}, ha cavi anche verso {a.altri === 1 ? "un altro switch" : `altri ${a.altri} switch`} allo stesso livello di {n(a.padre)}
+                    </li>
+                  ))}
+                  {t.anomalie > t.elencoAnomalie.length && <li>+ altre {t.anomalie - t.elencoAnomalie.length}</li>}
+                </ul>
+              </div>
+            )}
             {t.avvisi.length > 0 && (
               <ul className="text-sm list-disc pl-5">
                 {t.avvisi.slice(0, 20).map((a) => <li key={`${a.nodo}-${a.testo}`}>{n(a.nodo)}: {a.testo}</li>)}

@@ -9974,8 +9974,10 @@ export function updateLinkOverride(
  * collegamento automatico comparso dopo fra quei due diventava «★ scelto a mano» senza che nessuno
  * l'avesse scelto. Ripristinare un «ignora» non tocca i principali.
  * `perCavo` (mappa nuova accesa, T3): toglie solo la ★ con le stesse porte della correzione tolta, nei due versi
- * (ADR 0010 N-2 superato, §13.9); una ★ della coppia su altre porte o senza porte resta e vale per il migliore della
- * coppia. Porte confrontate come sono scritte: una ★ che non coincide resta, mai tolta per somiglianza.
+ * (ADR 0010 N-2 superato, §13.9); una ★ della coppia su altre porte resta e vale per il migliore della coppia. Le porte
+ * non sono mai NULL (`NOT NULL DEFAULT ''`): una correzione senza porte toglie la ★ senza porte della coppia, che è
+ * quella messa sul suo cavo (la linea senza porte scrive '' e ''); tenerla rifarebbe M-3. Porte confrontate come sono
+ * scritte: una ★ che non coincide resta, mai tolta per somiglianza.
  * Senza, come oggi: ogni ★ della coppia.
  */
 export function deleteLinkOverride(id: number, opz?: { perCavo?: boolean }): boolean {

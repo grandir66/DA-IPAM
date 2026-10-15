@@ -52,7 +52,8 @@ test("tipo «tunnel» di un collegamento a mano: si scrive e si modifica (nessun
 
 // ADR 0010 N-2 superato (§13.9, «Scelte» 10): con la mappa nuova la ★ è per collegamento. Togliere il collegamento a mano
 // A:ether2 ↔ B:Port 2 toglie la ★ di quel cavo, in tutti e due i versi; una ★ della stessa coppia su altre porte, o senza
-// porte, resta (vale per il migliore della coppia e i dettagli lo dicono, caso 2 del piano).
+// porte, resta (vale per il migliore della coppia e i dettagli lo dicono, caso 2 del piano). Le porte non sono mai NULL:
+// una correzione SENZA porte toglie la ★ senza porte della coppia, che è quella del suo cavo (revisione del Task 8).
 test("perCavo: cade solo la ★ con le stesse porte, in tutti e due i versi; le altre della coppia restano", () => {
   const id = aggiungi();
   stella("dev:1", "dev:2", "ether3", "Port 3");
@@ -76,6 +77,14 @@ test("perCavo: una ★ della coppia senza porte resta; ripristinare un «ignora�
   assert.equal(w(() => deleteLinkOverride(ign, { perCavo: true })), true);
   assert.deepEqual(stelle(), ["dev:1>dev:2 /"]);
   assert.equal(w(() => deleteLinkOverride(ign, { perCavo: true })), false, "una correzione che non c'è più");
+});
+
+test("perCavo: una correzione senza porte toglie la ★ senza porte della coppia (è quella del suo cavo: M-3)", () => {
+  const id = w(() => addLinkOverride({ action: "add", a_node: "dev:1", a_port: "", b_node: "dev:2", b_port: "", medium: null, note: null }, "prova"));
+  stella("dev:2", "dev:1", "", "");
+  stella("dev:1", "dev:2", "ether3", "Port 3");
+  assert.equal(w(() => deleteLinkOverride(id, { perCavo: true })), true);
+  assert.deepEqual(stelle(), ["dev:1>dev:2 ether3/Port 3"], "cade la ★ senza porte (anche scritta dall'altro capo), resta quella su altre porte");
 });
 
 test("senza opzioni, come oggi (M-3): ogni ★ della coppia cade, qualunque porta abbia", () => {

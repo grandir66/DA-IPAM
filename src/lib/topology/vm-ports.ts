@@ -6,7 +6,8 @@
  * soglia «non visto», passano MAC di VM **accese** e **tutte** dello stesso hypervisor H (almeno una) propone il
  * collegamento porta ↔ H. VM di due hypervisor sulla stessa porta (o di un hypervisor che non si sa) = porta di
  * passaggio: niente. Le VM spente e le letture vecchie non contano né per il conto né per guastare la porta.
- * Se la coppia switch–H è già collegata da un'altra fonte, si fonde (`sources`) come fanno le altre fonti.
+ * Se la coppia switch–H è già collegata da un'altra fonte, si fonde (`sources`) sulla stessa porta della linea, o se la
+ * linea non la dice (senza riempirla); su un'altra porta è un altro cavo visto (spec §13.7.1 passo 5).
  *
  * Revisione finale del ramo: ogni MAC di VM sta su UNA porta, come i client in attach.ts. (I-1) Una porta di
  * passaggio — il centrale verso un accesso il cui collegamento non dice la porta del centrale — vede le stesse VM
@@ -16,11 +17,13 @@
  * recente, poi nodo e porta. (I-2) Contano solo le letture dell'ultimo giro del MAC (entro
  * GIRO_MS dalla sua lettura più recente): dopo una migrazione la riga della porta vecchia resta fresca fino a
  * 2 giorni, e creava un collegamento falso verso l'hypervisor nuovo o toglieva il cavo al vecchio.
- * Le coppie ignorate a mano («Ignora il collegamento…») non si propongono (I-3).
+ * La porta di un cavo ignorato a mano («Ignora questo cavo…») resta occupata verso quell'oggetto (spec §13.9, I-3 e I9).
  * Logica pura.
  */
 import { parseDbDate } from "@/lib/db-date";
 import { LINK_ATTRS_DEFAULT, LINK_SOURCE_RANK, type MapLink, type TopologyModelInput } from "@/lib/topology/model-types";
+import { nessunIgnorato, portaOccupata, type Ignorati } from "@/lib/topology/ignorati";
+import { portaLocale } from "@/lib/topology/links";
 import type { NodeIndex } from "@/lib/topology/node-index";
 import { normalizeMacForStorage, normalizePortNameForMatch } from "@/lib/utils";
 
@@ -41,17 +44,19 @@ interface PortSeen { node: string; port: string; hypers: Set<string | null>; vms
 const pairKey = (a: string, b: string): string => (a < b ? `${a}|${b}` : `${b}|${a}`);
 
 /**
- * I collegamenti nuovi «dalle VM». Quelli fra una coppia già collegata in `known` non sono nuovi: si fondono
- * lì (sul posto, come `enrichLinks`), con `vmCount` se la porta è la stessa (o non era nota).
+ * I collegamenti nuovi «dalle VM». Quelli fra una coppia già collegata in `known` non sono nuovi: sulla stessa porta si
+ * fondono lì (sul posto, come `enrichLinks`), con `vmCount`; con la porta della linea vuota si fondono senza riempirla e
+ * senza `vmCount`; su un'altra porta sono un altro cavo visto (`altriCavi`).
  */
 export function vmPortLinks(
   input: TopologyModelInput,
   idx: NodeIndex,
   known: MapLink[],
   running: RunningVmMacs,
-  ignored: ReadonlySet<string> = new Set(),
+  ignorati: Ignorati = nessunIgnorato(),
 ): MapLink[] {
   if (running.size === 0) return [];
+  const portaDi = portaLocale(input);
   const key = (node: string, port: string) => `${node}|${normalizePortNameForMatch(port)}`;
   // Chi sta già su ogni porta: l'altro capo dei collegamenti noti; l'uplink UniFi di un apparato conta come «altro».
   const owners = new Map<string, Set<string>>();
@@ -108,7 +113,7 @@ export function vmPortLinks(
     const h = [...s.hypers][0];
     if (h === null || h === s.node || !idx.nodes.has(h)) continue;
     const pk = pairKey(s.node, h);
-    if (ignored.has(pk)) continue; // «Ignora il collegamento…» (I-3)
+    if (portaOccupata(ignorati, s.node, portaDi(s.node, s.port), h)) continue; // «Ignora» per cavo (§13.9, I9)
     const cur = best.get(pk);
     if (!cur || s.vms.size > cur.s.vms.size || (s.vms.size === cur.s.vms.size && s.port.localeCompare(cur.s.port, "it", { numeric: true }) < 0)) {
       best.set(pk, { s, h, k });
@@ -127,13 +132,19 @@ export function vmPortLinks(
       });
       continue;
     }
+    const side = l.a === s.node ? "aPort" : "bPort";
+    const portaLinea = l[side];
+    if (portaLinea && key(s.node, portaLinea) !== k) {
+      // Un'altra porta dello stesso switch: un altro cavo visto (spec §13.7.1 passo 5). Non riempie e non rinfresca.
+      l.altriCavi = [...(l.altriCavi ?? []), { aPort: side === "aPort" ? s.port : "", bPort: side === "bPort" ? s.port : "", sources: ["vm_mac"], lastSeen: s.ts }];
+      continue;
+    }
     if (!l.sources.includes("vm_mac")) {
       l.sources.push("vm_mac");
       l.sources.sort((x, y) => LINK_SOURCE_RANK[x] - LINK_SOURCE_RANK[y] || (x < y ? -1 : x > y ? 1 : 0));
     }
-    const side = l.a === s.node ? "aPort" : "bPort";
-    if (!l[side]) l[side] = s.port;
-    if (key(s.node, l[side]) === k) l.vmCount = s.vms.size;
+    // La porta vuota non si riempie: le porte di una linea vengono da una prova sola (prima la riempiva, C4).
+    if (portaLinea) l.vmCount = s.vms.size;
     if (l.uplinkFrom === null) l.uplinkFrom = h;
     const t = l.lastSeen ? parseDbDate(l.lastSeen).getTime() : NaN;
     if (!l.sources.includes("manual") && (Number.isNaN(t) || s.ms > t)) {

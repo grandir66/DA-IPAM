@@ -62,10 +62,13 @@ test("uplink verso un MAC che il DB non conosce: nessun collegamento, nessun err
   assert.equal(run(input({ devices: [dev(2, { uplink_mac: "de:ad:00:00:00:01", uplink_seen_at: "2026-10-13 03:00:00" })] })).links.length, 0);
 });
 
-test("la correzione manuale vince su LLDP: «ignora» toglie, «aggiungi» non invecchia mai", () => {
+// Spec §13.9 (D3). Incidente del 14/10: «Ignora» toglieva la COPPIA, e con la linea cucita «porta 10 ↔ ether8» è
+// sparito anche il cavo vero a 10G. Ora toglie il cavo con quelle due porte (la pagina le scrive sempre, quelle della linea).
+test("la correzione manuale vince su LLDP: «ignora» toglie il cavo con le sue porte, «aggiungi» non invecchia mai", () => {
   const base = { devices: [dev(1), dev(2), dev(3)], neighbors: [nb(1, { remote_ip: "10.0.0.2", timestamp: "2026-09-01 03:00:00" })] };
-  const ignorato = run(input({ ...base, overrides: [{ id: 1, action: "ignore", a_node: "dev:2", a_port: "", b_node: "dev:1", b_port: "", medium: null }] }));
+  const ignorato = run(input({ ...base, overrides: [{ id: 1, action: "ignore", a_node: "dev:2", a_port: "", b_node: "dev:1", b_port: "Port 1", medium: null }] }));
   assert.equal(ignorato.links.length, 0);
+  assert.deepEqual([...ignorato.ignorati.usate], [1]);
   const aggiunto = run(input({ ...base, overrides: [{ id: 2, action: "add", a_node: "dev:1", a_port: "Port 9", b_node: "dev:3", b_port: "Port 1", medium: null }] }));
   const man = aggiunto.links.find((l) => l.source === "manual")!;
   assert.deepEqual([man.a, man.aPort, man.b, man.bPort, man.stale, man.daysUnseen], ["dev:1", "Port 9", "dev:3", "Port 1", false, null]);
@@ -540,4 +543,43 @@ test("I61 — la stessa VLAN su sei porte d'accesso del router: sei cavi, nessun
   const { links, segmenti } = run(i);
   assert.equal(segmenti.size, 0);
   assert.deepEqual(links.map((l) => [l.aPort, l.bPort]), k6.map((k) => [`sfp-sfpplus${k}`, "eth0"]));
+});
+
+const ignora = (id: number, a: string, aPort: string, b: string, bPort: string) => ({ id, action: "ignore" as const, a_node: a, a_port: aPort, b_node: b, b_port: bPort, medium: null });
+
+test("I8 — «Ignora» per cavo: (porta 10, ether8) non tocca il cavo a 10G ed è orfana; (porta 10, sfp-sfpplus1) toglie solo lui", () => {
+  const del14 = run({ ...sede1(), overrides: [ignora(1, "dev:114", "Uplink verso il router", "dev:1", "ether8")] });
+  assert.equal(del14.links.some((l) => l.id === "link:dev:1|dev:114"), true, "il cavo sfp-sfpplus1 ↔ porta 10 resta");
+  assert.deepEqual([...del14.ignorati.usate], [], "non corrisponde a nessun cavo visto: orfana");
+  const giusto = run({ ...sede1(), overrides: [ignora(2, "dev:114", "Uplink verso il router", "dev:1", "sfp-sfpplus1")] });
+  assert.equal(giusto.links.some((l) => l.id === "link:dev:1|dev:114"), false);
+  assert.deepEqual([...giusto.ignorati.usate], [2]);
+  assert.equal(giusto.links.some((l) => l.id === "link:dev:1|dev:112"), true, "gli altri cavi del router restano");
+});
+
+test("I8 — una porta vuota vale per ogni porta su quel lato; due porte vuote: orfana, non toglie niente", () => {
+  const una = run({ ...sede1(), overrides: [ignora(3, "dev:1", "sfp-sfpplus1", "dev:114", "")] });
+  assert.equal(una.links.some((l) => l.id === "link:dev:1|dev:114"), false);
+  const nessuna = run({ ...sede1(), overrides: [ignora(4, "dev:1", "", "dev:114", "")] });
+  assert.equal(nessuna.links.some((l) => l.id === "link:dev:1|dev:114"), true);
+  assert.deepEqual([...nessuna.ignorati.usate], []);
+});
+
+// Review Focus 5: le correzioni salvate prima di T1 hanno le porte come le scriveva la linea di allora (grezze) e possono
+// citare un host poi promosso ad apparato.
+test("Review Focus 5 — un «Ignora» di prima: porte nella forma grezza («ether3,bridge», «SFP_ 9») e un host poi promosso", () => {
+  const i = input({
+    devices: [rtr(1), dev(2, { name: "SW-2", host: "10.0.1.40", host_id: 40, controller_mac: "02:00:00:00:00:02", via: "api" })],
+    hosts: [host(40, { ip: "10.0.1.40" })],
+    ports: [porta(2, 9, "SFP+ 9", "10000 Mbps"), porta(1, 3, "ether3", "1000 Mbps")],
+    neighbors: [
+      nb(2, { local_port: "SFP_ 9", remote_device_name: "RTR-1", remote_port: "ether3", remote_ip: "10.0.0.1", source: "unifi" }),
+      // Il router sente lo switch sulla porta che lo switch annuncia («Port 9»: l'identificativo assegnato localmente).
+      nb(1, { local_port: "ether3,bridge", remote_device_name: "SW-2", remote_port: "Port 9", remote_ip: "10.0.1.40", protocol: "lldp" }),
+    ],
+    overrides: [ignora(5, "host:40", "SFP_ 9", "dev:1", "ether3,bridge")],
+  });
+  const r = run(i);
+  assert.deepEqual(r.links, []);
+  assert.deepEqual([...r.ignorati.usate], [5]);
 });

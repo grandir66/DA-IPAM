@@ -12,6 +12,7 @@ import { autoVisible, buildTree, proposeHead } from "@/lib/topology/tree";
 import { computeMapView } from "@/lib/topology/map-compute";
 import { CHAR_W, fitLabel, layoutTree } from "@/lib/topology/tree-layout";
 import { nodeClass } from "@/lib/topology/identity";
+import { lineeCucite } from "@/lib/topology/misura";
 import type { TopologyModelInput } from "@/lib/topology/model-types";
 
 function carica(nome: string): TopologyModelInput {
@@ -77,9 +78,12 @@ test("Domarc: i doppi apparato/host si fondono (spec §2: almeno i 5 Proxmox)", 
 // cliente-a: deviceLinks 82->84, fusedHosts 93->92, promoteProposals 3->5 perché dati nuovi delle copie del 15/10;
 // attachedLinks 50->49 (50->51, poi -2) perché porta di segmento (la porta 15 di core 1 sente router 1 e il router di
 // riserva: cade la linea verso il router di riserva) e una riga da una VRRP che non si abbina più per IP (I15).
+// Task 9 di T1: l'«Ignora» del 14/10 non toglie più la coppia (I36). cliente-a: deviceLinks 84->85, perché la correzione
+// (porta 10 di core 1 ↔ ether8 di router 1) non corrisponde a nessun cavo visto e torna la linea core 1 ↔ router 1 sul
+// cavo sfp-sfpplus1 a 10G; la correzione resta, orfana (C5). Gli altri conteggi non cambiano; domarc non ha correzioni.
 const MISURATI: Record<string, Partial<Record<string, number>>> = {
   "topologia-domarc.json": { deviceLinks: 29, attachedLinks: 33, unmatchedNeighbors: 7, isolatedDevices: 17, fusedHosts: 59, promoteProposals: 10, suspiciousTypes: 13 },
-  "topologia-cliente-a.json": { deviceLinks: 84, attachedLinks: 49, unmatchedNeighbors: 13, isolatedDevices: 5, fusedHosts: 92, promoteProposals: 5, suspiciousTypes: 2 },
+  "topologia-cliente-a.json": { deviceLinks: 85, attachedLinks: 49, unmatchedNeighbors: 13, isolatedDevices: 5, fusedHosts: 92, promoteProposals: 5, suspiciousTypes: 2 },
 };
 for (const [nome, attesi] of Object.entries(MISURATI)) {
   test(`${nome}: conteggi misurati`, () => {
@@ -175,9 +179,11 @@ test("cliente A: uplink salvati e collegamenti unifi_uplink presenti", () => {
 // nodo dell'host dell'IP virtuale, e perché la porta del router sul cavo fra due router porta il nome tradotto ed è
 // occupata per la tabella MAC (spec §13.7.1, terza trappola): un host che la tabella vede solo su quella porta non è più
 // un nodo (era fra gli isolati, «Da sistemare»).
+// Task 9 di T1: l'«Ignora» del 14/10 non toglie più la coppia (I36). cliente-a: links 134->135, la linea core 1 ↔ router 1
+// sul cavo a 10G; la correzione è orfana (C5). Nodi, isolati e client non cambiano.
 const MISURATI_DATO_VERO: Record<string, { nodes: number; links: number; isolatedDevices: number; clients: number }> = {
   "topologia-domarc.json": { nodes: 226, links: 62, isolatedDevices: 17, clients: 102 },
-  "topologia-cliente-a.json": { nodes: 551, links: 134, isolatedDevices: 5, clients: 430 },
+  "topologia-cliente-a.json": { nodes: 551, links: 135, isolatedDevices: 5, clients: 430 },
 };
 for (const [nome, atteso] of Object.entries(MISURATI_DATO_VERO)) {
   test(`${nome}: conteggi principali uguali a quelli del dato vero senza le VM (copie del 15/10)`, () => {
@@ -225,4 +231,20 @@ test("hub: il client dell'access point sulla sua interfaccia senza fili resta co
   const l = buildTopologyModel(carica("topologia-domarc.json")).links.find((x) => (x.a === "dev:191" && x.aPort === "wifi2ap9") || (x.b === "dev:191" && x.bPort === "wifi2ap9"));
   assert.ok(l);
   assert.equal(l.medium, "wireless");
+});
+
+// I36 (D3): la correzione del 14/10 (porta 10 di core 1 ↔ ether8 di router 1) non si converte da sola: resta, orfana, e
+// non nasconde più il cavo a 10G. Riccardo la toglie a mano dopo il rilascio («Togli la correzione»).
+test("cliente A col dato vero (S0): la correzione del 14/10 è orfana e core 1 sta sotto router 1 (C1, C5)", () => {
+  const m = buildTopologyModel(carica("topologia-cliente-a.json"));
+  const ignora = carica("topologia-cliente-a.json").overrides.filter((o) => o.action === "ignore").map((o) => o.id);
+  assert.deepEqual(m.correzioniOrfane, ignora);
+  assert.equal(padreDi(alberoDa(m, "dev:1"), "dev:114"), "dev:1");
+});
+
+test("cliente A e hub: nessuna linea cucita (C4)", () => {
+  for (const nome of ["topologia-cliente-a.json", "topologia-domarc.json"]) {
+    const i = carica(nome);
+    assert.deepEqual(lineeCucite(i, buildTopologyModel(i)).map((l) => l.id), [], nome);
+  }
 });

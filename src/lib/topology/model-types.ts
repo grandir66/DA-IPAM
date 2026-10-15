@@ -380,6 +380,11 @@ export interface TopologyModel {
   /** VM degli hypervisor, ognuna col suo host (spec §11.5). */
   vms: MapVm[];
   /**
+   * Le correzioni «ignora» che non corrispondono a nessun cavo visto (spec §13.9, C5): non tolgono niente, «Dati della
+   * mappa» le mostra con «Togli la correzione». Assente nei modelli costruiti a mano dalle prove.
+   */
+  correzioniOrfane?: number[];
+  /**
    * Le porte di segmento (spec §13.7.1 passo 2): «nodo|porta normalizzata» → gli oggetti che la porta sente via LLDP o CDP.
    * In T1 non si disegnano; le legge la misura (H5, H6, C8). Assente nei modelli costruiti a mano dalle prove.
    */

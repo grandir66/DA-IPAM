@@ -349,3 +349,21 @@ test("I-2: le letture dello stesso giro (switch letti a ore diverse, entro la fi
   }));
   assert.deepEqual(vmLinks(m.links).map((x) => [x.a, x.aPort, x.b]), [["dev:3", "Port 1", "dev:5"]]);
 });
+
+// Spec §13.7.1 passo 5: le porte di una linea vengono da una prova sola. Prima una prova dalle VM su una porta diversa
+// da quella della linea rinfrescava fonti e «visto», e una linea con la porta vuota la riempiva (una linea «cucita», C4).
+test("VM per cavo: su un'altra porta dello stesso switch è un altro cavo visto; non riempie e non rinfresca", () => {
+  const vms = vmsOf(5, "px-h", 1, 2);
+  const m = buildTopologyModel(rete({ vms, macPorts: [mp(4, H_MAC, "Port 5", VECCHIO), ...vms.map((v) => mp(4, v.macs[0], "Port 6"))] }));
+  const [l] = pair(m.links, "dev:4", "dev:5");
+  assert.deepEqual([l.aPort, l.sources, l.lastSeen, l.vmCount], ["Port 5", ["mac_table"], VECCHIO, undefined]);
+  assert.deepEqual(l.altriCavi, [{ aPort: "Port 6", bPort: "", sources: ["vm_mac"], lastSeen: RECENTE }]);
+});
+
+test("VM per cavo: una linea a mano senza porte non prende la porta dalle VM", () => {
+  const vms = vmsOf(5, "px-h", 1, 1);
+  const m = buildTopologyModel(rete({ vms, macPorts: vms.map((v) => mp(2, v.macs[0], "Port 1")),
+    overrides: [{ id: 1, action: "add", a_node: "dev:2", a_port: "", b_node: "dev:5", b_port: "", medium: null }] }));
+  const [l] = pair(m.links, "dev:2", "dev:5");
+  assert.deepEqual([l.aPort, l.bPort, l.sources], ["", "", ["manual", "vm_mac"]]);
+});

@@ -4,6 +4,7 @@
  * Si calcola a ogni richiesta, non si salva. Logica pura.
  */
 import { attachMacs } from "@/lib/topology/attach";
+import { correzioniOrfane } from "@/lib/topology/ignorati";
 import { buildLinks } from "@/lib/topology/links";
 import { enrichLinks } from "@/lib/topology/link-attrs";
 import {
@@ -30,8 +31,8 @@ export function buildTopologyModel(input: TopologyModelInput, regole: Regole = R
   // Spec §11.5: le schede vive di un hypervisor (MAC veri) lo identificano sulla tabella MAC degli switch.
   for (const { row, nodeId } of resolveScanHosts(input.scanHosts, idx)) if (nodeId) addNodeMacs(idx, nodeId, row.macs);
   const { vms, vmNodeIds, vmMacs, runningVmMacs } = placeVms(input, idx);
-  const { links: baseLinks, unmatched, ignored, segmenti } = buildLinks(input, idx, runningVmMacs, regole);
-  const { portClients, clientCount, attachLinks } = attachMacs(input, idx, baseLinks, { vmMacs, runningVmMacs, ignored, segmenti });
+  const { links: baseLinks, unmatched, ignorati, segmenti } = buildLinks(input, idx, runningVmMacs, regole);
+  const { portClients, clientCount, attachLinks } = attachMacs(input, idx, baseLinks, { vmMacs, runningVmMacs, ignorati, segmenti });
   const links = [...baseLinks, ...attachLinks].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   enrichLinks(links, input, idx, regole);
   const sites = assignSites(input, idx, links);
@@ -103,6 +104,8 @@ export function buildTopologyModel(input: TopologyModelInput, regole: Regole = R
   const canonical = Object.fromEntries([...idx.alias.entries()].sort(([x], [y]) => (x < y ? -1 : x > y ? 1 : 0)));
   return {
     nodes, links, sites, promote, unmatched, isolated, suspicious, withoutSite, counts, portClients, clientCount, canonical, vms,
+    // Dopo attachMacs: tabella MAC, ripiego del router e VM segnano anche loro le regole che tolgono qualcosa (§13.9, C5).
+    correzioniOrfane: correzioniOrfane(ignorati, input.overrides),
     segmenti: Object.fromEntries([...segmenti].map(([k, membri]) => [k, [...membri].sort()])),
     ...(gatewayDi ? { gatewayDi } : {}),
   };

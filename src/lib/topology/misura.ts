@@ -289,6 +289,7 @@ export function conteggi(input: TopologyModelInput, model: TopologyModel, c: Pic
     non_visti: model.counts.staleLinks,
     una_porta_vuota: model.links.filter((l) => (l.aPort.trim() === "") !== (l.bPort.trim() === "")).length,
     cucite: lineeCucite(input, model).length,
+    correzioni_orfane: model.correzioniOrfane?.length ?? 0,
     porte_di_segmento: Object.keys(model.segmenti ?? {}).length,
     linee_da_nome_scelto: lineeDaNomeScelto(input, model).length,
     sotto_una_sua_vm: sottoUnaSuaVm(model, padriDi(c.tree)).length,

@@ -12,8 +12,9 @@
  * I MAC delle VM (vmMacs) non sono client e non creano collegamenti «mac_table»; quelli delle VM accese
  * (runningVmMacs) propongono i collegamenti «dalle VM» verso il loro hypervisor (vm-ports.ts, spec §12.5),
  * calcolati prima del ripiego del router, che così li conosce come padri.
- * «Ignora il collegamento…» vale anche qui: le coppie ignorate (da `buildLinks`) non tornano come «tabella MAC»,
- * ripiego del router o «dalle VM» (revisione finale I-3: prima la correzione si salvava e la linea restava).
+ * «Ignora» vale anche qui, per cavo (spec §13.9, I9): la porta di un cavo ignorato (le regole da `buildLinks`) resta
+ * occupata verso quell'oggetto, e da lì non tornano «tabella MAC», ripiego del router o «dalle VM»; su un'altra porta il
+ * cavo compare (revisione finale I-3, prima per coppia: la correzione si salvava e la linea restava).
  *
  * Router (Task 1b): una riga del router su una porta fisica (bridge host: ether, sfp, bond) propone
  * un collegamento solo come RIPIEGO, per un apparato che nessuno switch o AP vede su una porta di
@@ -28,7 +29,9 @@
 import { LINK_ATTRS_DEFAULT, type MapLink, type MapNode, type PortClients, type TopologyModelInput } from "@/lib/topology/model-types";
 import { type NodeIndex, resolveNode } from "@/lib/topology/node-index";
 import { nodeClass } from "@/lib/topology/identity";
+import { nessunIgnorato, portaOccupata, type Ignorati } from "@/lib/topology/ignorati";
 import { haTraduttore, traduciPorta, type ComeLetto } from "@/lib/topology/lettori/traduci";
+import { portaLocale } from "@/lib/topology/links";
 import { normalizeMacForStorage, normalizePortNameForMatch } from "@/lib/utils";
 import { parseDbDate } from "@/lib/db-date";
 import { vmPortLinks, type RunningVmMacs } from "@/lib/topology/vm-ports";
@@ -41,8 +44,8 @@ interface Cand { node: string; port: string; ts: string; ms: number; counting: b
 export interface OpzioniAttacco {
   vmMacs?: ReadonlySet<string>;
   runningVmMacs?: RunningVmMacs;
-  /** Le coppie ignorate a mano (`buildLinks`): non tornano da tabella MAC, ripiego del router, VM (I-3). */
-  ignored?: ReadonlySet<string>;
+  /** Le correzioni «ignora» per cavo (`buildLinks`): la porta del cavo non torna da tabella MAC, ripiego del router, VM (I-3, I9). */
+  ignorati?: Ignorati;
   /** Le porte di segmento (`buildLinks`, §13.7.1 passo 2): da lì niente linee verso chi la porta sente via LLDP o CDP. */
   segmenti?: ReadonlyMap<string, ReadonlySet<string>>;
 }
@@ -61,7 +64,8 @@ function fisicaDelRouter(n: MapNode, porta: string): boolean {
 
 export function attachMacs(input: TopologyModelInput, idx: NodeIndex, links: MapLink[], opzioni: OpzioniAttacco = {}):
   { portClients: PortClients[]; clientCount: Record<string, number>; attachLinks: MapLink[] } {
-  const { vmMacs = new Set<string>(), runningVmMacs = new Map(), ignored = new Set<string>(), segmenti = new Map() } = opzioni;
+  const { vmMacs = new Set<string>(), runningVmMacs = new Map(), ignorati = nessunIgnorato(), segmenti = new Map() } = opzioni;
+  const portaDi = portaLocale(input);
   const portKey = (node: string, port: string) => `${node}|${normalizePortNameForMatch(port)}`;
   const linkPorts = new Set<string>();
   for (const l of links) {
@@ -69,8 +73,8 @@ export function attachMacs(input: TopologyModelInput, idx: NodeIndex, links: Map
     if (l.bPort) linkPorts.add(portKey(l.b, l.bPort));
   }
   for (const u of input.uplinkPorts) linkPorts.add(portKey(`dev:${u.device_id}`, u.port_name));
-  // Una coppia ignorata conta come già collegata: nessuna fonte di qui la ripropone (revisione finale I-3).
-  const linked = new Set([...links.map((l) => [l.a, l.b].sort().join("|")), ...ignored]);
+  // Una coppia ignorata non è più «già collegata»: lo è solo la porta del cavo ignorato (spec §13.9, `portaOccupata` sotto).
+  const linked = new Set(links.map((l) => [l.a, l.b].sort().join("|")));
 
   const soglia = input.staleDays * DAY;
   const perPort = new Map<string, Set<string>>(); // porta → MAC distinti visti entro la soglia
@@ -126,6 +130,9 @@ export function attachMacs(input: TopologyModelInput, idx: NodeIndex, links: Map
         if (fisiche.length > 0) ripiego.push({ node: other.id, c: fisiche[0] });
         continue;
       }
+      // §13.9: la porta di un cavo ignorato resta occupata verso quell'oggetto (I9), anche se la regola ha le due porte di
+      // una linea LLDP; su un'altra porta il cavo compare.
+      if (portaOccupata(ignorati, best.node, portaDi(best.node, best.port), other.id)) continue;
       // Spec §13.7.1 passo 2 e §13.3.1 riga 3: una porta che sente due o più apparati non dà linee verso di loro, nemmeno
       // dalla tabella MAC. Il ripiego del router ha le sue regole (§11.1 bis) e non passa da qui.
       if (segmenti.get(portKey(best.node, best.port))?.has(other.id)) continue;
@@ -146,11 +153,12 @@ export function attachMacs(input: TopologyModelInput, idx: NodeIndex, links: Map
     byPort.set(pk, pc);
     if (!stale) clientCount[best.node] = (clientCount[best.node] ?? 0) + 1;
   }
-  for (const l of vmPortLinks(input, idx, [...links, ...attachLinks], runningVmMacs, ignored)) {
+  for (const l of vmPortLinks(input, idx, [...links, ...attachLinks], runningVmMacs, ignorati)) {
     linked.add([l.a, l.b].sort().join("|"));
     attachLinks.push(l);
   }
-  attachLinks.push(...ripiegoRouter(idx, [...links, ...attachLinks], ripiego, sullaPortaDelRouter, linked, portKey, input.nowMs, soglia));
+  attachLinks.push(...ripiegoRouter(idx, [...links, ...attachLinks], ripiego, sullaPortaDelRouter, linked, portKey, input.nowMs, soglia,
+    (router, porta, nodo) => portaOccupata(ignorati, router, portaDi(router, porta), nodo)));
   const portClients = [...byPort.values()].sort((a, b) =>
     (a.nodeId < b.nodeId ? -1 : a.nodeId > b.nodeId ? 1 : 0) || a.port.localeCompare(b.port, "it", { numeric: true }));
   attachLinks.sort((a, b) => (a.id < b.id ? -1 : 1));
@@ -168,7 +176,8 @@ function diRete(idx: NodeIndex, id: string): boolean {
 /**
  * Il ripiego del router (Task 1b): vedi il commento in testa. `noti` sono i collegamenti da fonti
  * più forti (correzioni, uplink UniFi, LLDP/CDP/MNDP, tabella MAC degli switch). Un collegamento con
- * `uplinkFrom` ha un verso (figlio → padre); gli altri no.
+ * `uplinkFrom` ha un verso (figlio → padre); gli altri no. `bloccato`: la porta del router è quella di un cavo
+ * ignorato a mano verso quel nodo (spec §13.9, I9).
  */
 function ripiegoRouter(
   idx: NodeIndex,
@@ -179,6 +188,7 @@ function ripiegoRouter(
   portKey: (node: string, port: string) => string,
   nowMs: number,
   soglia: number,
+  bloccato: (router: string, porta: string, nodo: string) => boolean,
 ): MapLink[] {
   const padri = new Map<string, Set<string>>();
   const figli = new Map<string, Set<string>>();
@@ -219,6 +229,7 @@ function ripiegoRouter(
   for (const r of [...ripiego].sort((x, y) => (x.node < y.node ? -1 : x.node > y.node ? 1 : 0))) {
     const router = r.c.node;
     if (linked.has([router, r.node].sort().join("|"))) continue;
+    if (bloccato(router, r.c.port, r.node)) continue;
     const k = portKey(router, r.c.port);
     const qui = sullaPorta.get(k) ?? new Set<string>();
     // (1) un padre da una fonte più forte: un verso noto (uplink UniFi, uno switch che lo vede), o un

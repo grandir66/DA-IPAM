@@ -5,14 +5,16 @@
  * linea ha tolto anche il cavo vero a 10G (D1, D3). Passi (§13.7.1): 0. solo l'ultimo giro di ogni vicino (R-superata);
  * 1. la porta locale per chiave, sul nome tradotto: da un'interfaccia logica nessun cavo; 2. una porta che sente due o
  * più apparati via LLDP o CDP è di segmento: non dà cavi, non presta porte, non conferma; 3. i candidati, con l'uplink
- * completato dalla riga del figlio, le righe raggruppate per apparato e la conferma per porta dei router; 5. una linea
- * per coppia con le porte di un candidato solo, gli altri cavi nei dettagli («Altri cavi visti fra questi due oggetti»).
+ * completato dalla riga del figlio, le righe raggruppate per apparato e la conferma per porta dei router; 4. «Ignora» per
+ * cavo (ignorati.ts); 5. una linea per coppia con le porte di un candidato solo, gli altri cavi nei dettagli («Altri cavi
+ * visti fra questi due oggetti»).
  * I nomi dei prodotti stanno nei traduttori (lettori/): qui solo fatti neutri. Un collegamento che sparisce non si
  * cancella: dopo `staleDays` è «non visto». Logica pura.
  */
 import { parseDbDate } from "@/lib/db-date";
 import { chiavePorta, elenchiPorte, normale, type Porta } from "@/lib/topology/cavi/porte";
 import { identifiesByName, isVirtualMac, realOui } from "@/lib/topology/identity";
+import { ignorato, regoleIgnora, type Ignorati } from "@/lib/topology/ignorati";
 import { haTraduttore, haTraduttoreRemoto, macDelTelaio, traduciPorta, type ComeLetto } from "@/lib/topology/lettori/traduci";
 import {
   LINK_ATTRS_DEFAULT, LINK_SOURCE_RANK,
@@ -148,8 +150,8 @@ interface Candidato {
 export interface RisultatoCollegamenti {
   links: MapLink[];
   unmatched: UnmatchedNeighbor[];
-  /** Le coppie ignorate a mano: per coppia fino al Task 9 del piano di T1, che le porta al cavo. */
-  ignored: ReadonlySet<string>;
+  /** Le correzioni «ignora» come regole per cavo; `usate` dice quali hanno tolto qualcosa (attach.ts e vm-ports.ts aggiungono le loro). */
+  ignorati: Ignorati;
   /** Le porte di segmento (passo 2): «nodo|porta normalizzata» → gli oggetti abbinati che la porta sente via LLDP o CDP. */
   segmenti: ReadonlyMap<string, ReadonlySet<string>>;
 }
@@ -195,17 +197,15 @@ export function buildLinks(input: TopologyModelInput, idx: NodeIndex, vmAccese: 
   const locale = portaLocale(input);
   const unmatched: UnmatchedNeighbor[] = [];
   const candidati: Candidato[] = [];
-  const ignored = new Set<string>();
 
-  // Correzioni: «aggiungi» è un candidato a mano e vince sempre; «ignora» toglie la coppia (per cavo dal Task 9).
+  // Passo 4 (§13.9): le correzioni «ignora» sono regole per cavo, confrontate sulle porte dei candidati.
+  const ignorati = regoleIgnora(input.overrides, idx, locale);
+  // Correzioni: «aggiungi» è un candidato a mano e vince sempre; «ignora» sta nelle regole qui sopra (passo 4).
   for (const o of [...input.overrides].sort((x, y) => x.id - y.id)) {
+    if (o.action !== "add") continue;
     const a = nodeFor(idx, canonical(idx, o.a_node));
     const b = nodeFor(idx, canonical(idx, o.b_node));
     if (!a || !b || a === b) continue;
-    if (o.action === "ignore") {
-      ignored.add(pairKey(a, b));
-      continue;
-    }
     // Senza fili dalle porte tradotte, come per le righe dei vicini: con `false` fisso la porta «wifi» di un collegamento a
     // mano non era più sulla linea e il tipo «wireless» si perdeva (prova di oggi in link-attrs.test.ts, verifica del 15/10).
     const aPorta = locale(a, o.a_port), bPorta = locale(b, o.b_port);
@@ -411,11 +411,11 @@ export function buildLinks(input: TopologyModelInput, idx: NodeIndex, vmAccese: 
     });
   }
 
-  // Passo 5: una linea per coppia, con le porte di un candidato solo (sostituisce ADR 0008 punto 11).
+  // Passo 5: una linea per coppia, con le porte di un candidato solo (sostituisce ADR 0008 punto 11). Un candidato col cavo
+  // ignorato a mano (passo 4) non entra: gli altri cavi della coppia restano.
   const perCoppia = new Map<string, Candidato[]>();
   for (const c of candidati) {
-    const k = pairKey(c.a, c.b);
-    if (!ignored.has(k)) aggiungiA(perCoppia, k, c);
+    if (!ignorato(ignorati, c.a, c.aPorta, c.b, c.bPorta)) aggiungiA(perCoppia, pairKey(c.a, c.b), c);
   }
   const links = [...perCoppia].map(([k, cs]) => lineaDellaCoppia(k, cs)).sort((x, y) => cmp(x.id, y.id));
   for (const l of links) {
@@ -429,7 +429,7 @@ export function buildLinks(input: TopologyModelInput, idx: NodeIndex, vmAccese: 
     l.daysUnseen = Math.floor(age / DAY_MS);
     l.stale = age > input.staleDays * DAY_MS;
   }
-  return { links, unmatched, ignored, segmenti };
+  return { links, unmatched, ignorati, segmenti };
 }
 
 const chiaveDi = (p: Porta | null): string | null => p?.chiave ?? null;

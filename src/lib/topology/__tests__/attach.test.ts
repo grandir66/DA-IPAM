@@ -33,8 +33,8 @@ function input(over: Partial<TopologyModelInput> = {}): TopologyModelInput {
 }
 function run(i: TopologyModelInput) {
   const idx = buildNodeIndex(i.devices, i.hosts, i.knownMacs, i.neighbors);
-  const { links, ignored, segmenti } = buildLinks(i, idx);
-  return { links, ...attachMacs(i, idx, links, { ignored, segmenti }) };
+  const { links, ignorati, segmenti } = buildLinks(i, idx);
+  return { links, ...attachMacs(i, idx, links, { ignorati, segmenti }) };
 }
 
 test("porta di bordo: mai l'uplink né la porta di un collegamento fra apparati", () => {
@@ -312,13 +312,14 @@ test("router: due switch su ether2 legati da un LLDP, nessuno col verso noto: no
   assert.deepEqual(run(i).attachLinks.filter((l) => l.a === "dev:1"), []);
 });
 
-// Revisione finale del ramo (I-3): «Ignora il collegamento…» il menu della linea lo offre su ogni collegamento
-// non a mano. Prima valeva solo per LLDP/CDP/MNDP/uplink: la correzione si salvava, compariva fra gli ignorati
-// e la linea restava sulla mappa e sulla carta. Ora vale anche per tabella MAC, ripiego del router e «dalle VM».
-const ignora = (a: string, b: string) => [{ id: 1, action: "ignore" as const, a_node: a, a_port: "", b_node: b, b_port: "", medium: null }];
-const fra = (links: Array<{ a: string; b: string }>, x: string, y: string) => links.filter((l) => [l.a, l.b].sort().join("|") === [x, y].sort().join("|"));
+// Revisione finale del ramo (I-3), ora per cavo (spec §13.9, I9): «Ignora» vale anche per tabella MAC, ripiego del router
+// e «dalle VM», sulla porta del cavo ignorato verso quell'oggetto. La pagina scrive le porte della linea: per una linea
+// della tabella MAC, la porta dello switch e niente dall'altra parte (vale per ogni porta).
+const ignora = (a: string, aPort: string, b: string, bPort = "") => [{ id: 1, action: "ignore" as const, a_node: a, a_port: aPort, b_node: b, b_port: bPort, medium: null }];
+// Generico sul tipo della linea: le prove leggono anche le porte (`aPort`, `bPort`), che un tipo `{ a; b }` non ha (TS2339).
+const fra = <T extends { a: string; b: string }>(links: T[], x: string, y: string) => links.filter((l) => [l.a, l.b].sort().join("|") === [x, y].sort().join("|"));
 
-test("I-3: un collegamento «tabella MAC» ignorato non torna, e il MAC non diventa un client", () => {
+test("I-3/I9: un collegamento «tabella MAC» ignorato non torna, e il MAC non diventa un client", () => {
   const SRV = "02:00:00:00:05:01";
   const i = baseInput({
     devices: [dev(2, { name: "CENTRALE-2", host: "192.0.2.2" }), dev(5, { name: "SRV-5", device_type: "server", host: "192.0.2.15", port_count: 0 })],
@@ -326,22 +327,70 @@ test("I-3: un collegamento «tabella MAC» ignorato non torna, e il MAC non dive
     macPorts: [mp(2, SRV, "Port 7")],
   });
   assert.equal(fra(buildTopologyModel(i).links, "dev:2", "dev:5").length, 1, "senza «Ignora» il collegamento c'è");
-  const m = buildTopologyModel({ ...i, overrides: ignora("dev:2", "dev:5") });
+  const m = buildTopologyModel({ ...i, overrides: ignora("dev:2", "Port 7", "dev:5") });
   assert.deepEqual(fra(m.links, "dev:2", "dev:5"), []);
   assert.deepEqual(m.portClients, []);
+  assert.deepEqual(m.correzioniOrfane, []);
 });
 
-test("I-3: il ripiego del router ignorato non torna", () => {
+test("I9: la porta del cavo ignorato resta occupata verso quell'oggetto; lo stesso oggetto su un'altra porta compare", () => {
+  const SRV = "02:00:00:00:05:01";
+  const i = baseInput({
+    devices: [dev(2, { name: "CENTRALE-2", host: "192.0.2.2" }), dev(5, { name: "SRV-5", device_type: "server", host: "192.0.2.15", port_count: 0 })],
+    knownMacs: [{ device_id: 5, mac: SRV }],
+    macPorts: [mp(2, SRV, "Port 8")],
+    overrides: ignora("dev:2", "Port 7", "dev:5"),
+  });
+  const m = buildTopologyModel(i);
+  assert.deepEqual(fra(m.links, "dev:2", "dev:5").map((l) => (l.a === "dev:2" ? l.aPort : l.bPort)), ["Port 8"]);
+  assert.deepEqual(m.correzioniOrfane, [1], "la correzione su Port 7 non toglie niente: orfana");
+});
+
+// Revisione del piano (15/10): su una linea LLDP o uplink la pagina scrive TUTTE E DUE le porte. Tabella MAC, ripiego e VM
+// sanno una porta sola: con `ignorato(…, null)` la porta dell'altro capo non tornava mai, la porta restava libera e il MAC
+// di accesso A sulla porta 9 di core 1 rifaceva subito la linea. `portaOccupata` guarda solo la porta di chi vede il MAC.
+test("I9: un cavo LLDP ignorato con le sue due porte non torna dalla tabella MAC sulla stessa porta", () => {
+  const ACC = "02:00:00:00:01:12";
+  const i = baseInput({
+    devices: [dev(114, { name: "CORE-1", host: "192.0.2.114" }), dev(112, { name: "ACC-A", host: "192.0.2.112" })],
+    knownMacs: [{ device_id: 112, mac: ACC }],
+    neighbors: [{ device_id: 114, local_port: "Port 9", remote_device_name: "ACC-A", remote_port: "SFP+ 2", protocol: "lldp", remote_ip: "192.0.2.112", remote_mac: null, timestamp: RECENTE, source: "device" }],
+    macPorts: [mp(114, ACC, "Port 9")],
+  });
+  assert.equal(fra(buildTopologyModel(i).links, "dev:114", "dev:112").length, 1, "senza «Ignora» il cavo c'è");
+  const m = buildTopologyModel({ ...i, overrides: ignora("dev:114", "Port 9", "dev:112", "SFP+ 2") });
+  assert.deepEqual(fra(m.links, "dev:114", "dev:112"), [], "né il cavo LLDP né una linea «tabella MAC» sulla porta 9");
+  assert.deepEqual(m.correzioniOrfane, []);
+});
+
+test("I9: un cavo LLDP ignorato verso un hypervisor non torna «dalle VM» sulla stessa porta", () => {
+  const vm = (vmid: number, mac: string) => ({
+    scannedDeviceId: 5, vmid, name: `vm-${vmid}`, node: "px-h", status: "running", type: "qemu", macs: [mac], ips: [], scannedAt: "2026-10-13T06:00:00.000Z",
+  });
+  const vms = [vm(501, "02:00:00:aa:00:01"), vm(502, "02:00:00:aa:00:02")];
+  const i = baseInput({
+    devices: [dev(2, { name: "CENTRALE-2", host: "192.0.2.2" }), dev(5, { name: "px-h", device_type: "server", vendor: "proxmox", host: "192.0.2.15", port_count: 0 })],
+    scanHosts: [{ scannedDeviceId: 5, hostname: "px-h", ips: ["192.0.2.15"], macs: [] }],
+    neighbors: [{ device_id: 2, local_port: "Port 1", remote_device_name: "px-h", remote_port: "eno1", protocol: "lldp", remote_ip: "192.0.2.15", remote_mac: null, timestamp: RECENTE, source: "device" }],
+    vms, macPorts: vms.map((v) => mp(2, v.macs[0], "Port 1")),
+  });
+  assert.equal(fra(buildTopologyModel(i).links, "dev:2", "dev:5").length, 1, "senza «Ignora» il cavo c'è");
+  const m = buildTopologyModel({ ...i, overrides: ignora("dev:2", "Port 1", "dev:5", "eno1") });
+  assert.deepEqual(fra(m.links, "dev:2", "dev:5"), [], "né il cavo LLDP né una linea «dalle VM» sulla porta 1");
+  assert.deepEqual(m.correzioniOrfane, []);
+});
+
+test("I-3/I9: il ripiego del router ignorato non torna", () => {
   const i = input({
     devices: [RTR, dev(2), dev(3), dev(7, { name: "SRV-7", device_type: "server", host: "10.0.1.7" })],
     knownMacs: [{ device_id: 7, mac: SRV_MAC }],
     macPorts: [mp(1, SRV_MAC, "ether7")],
   });
   assert.equal(fra(buildTopologyModel(i).links, "dev:1", "dev:7").length, 1, "senza «Ignora» il collegamento c'è");
-  assert.deepEqual(fra(buildTopologyModel({ ...i, overrides: ignora("dev:7", "dev:1") }).links, "dev:1", "dev:7"), []);
+  assert.deepEqual(fra(buildTopologyModel({ ...i, overrides: ignora("dev:1", "ether7", "dev:7") }).links, "dev:1", "dev:7"), []);
 });
 
-test("I-3: un collegamento «dalle VM» ignorato non torna", () => {
+test("I-3/I9: un collegamento «dalle VM» ignorato non torna", () => {
   const vm = (vmid: number, mac: string) => ({
     scannedDeviceId: 5, vmid, name: `vm-${vmid}`, node: "px-h", status: "running", type: "qemu", macs: [mac], ips: [], scannedAt: "2026-10-13T06:00:00.000Z",
   });
@@ -352,7 +401,20 @@ test("I-3: un collegamento «dalle VM» ignorato non torna", () => {
     vms, macPorts: vms.map((v) => mp(2, v.macs[0], "Port 1")),
   });
   assert.equal(fra(buildTopologyModel(i).links, "dev:2", "dev:5").length, 1, "senza «Ignora» il collegamento c'è");
-  assert.deepEqual(fra(buildTopologyModel({ ...i, overrides: ignora("dev:2", "dev:5") }).links, "dev:2", "dev:5"), []);
+  assert.deepEqual(fra(buildTopologyModel({ ...i, overrides: ignora("dev:2", "Port 1", "dev:5") }).links, "dev:2", "dev:5"), []);
+});
+
+test("C5 — un «Ignora» senza porte non toglie niente: è orfano", () => {
+  const SRV = "02:00:00:00:05:01";
+  const i = baseInput({
+    devices: [dev(2, { name: "CENTRALE-2", host: "192.0.2.2" }), dev(5, { name: "SRV-5", device_type: "server", host: "192.0.2.15", port_count: 0 })],
+    knownMacs: [{ device_id: 5, mac: SRV }],
+    macPorts: [mp(2, SRV, "Port 7")],
+    overrides: ignora("dev:2", "", "dev:5"),
+  });
+  const m = buildTopologyModel(i);
+  assert.equal(fra(m.links, "dev:2", "dev:5").length, 1);
+  assert.deepEqual(m.correzioniOrfane, [1]);
 });
 
 // Spec §13.7.1 passo 2 e §13.3.1 riga 3: una porta che sente due o più apparati non dà linee verso di loro, nemmeno dalla

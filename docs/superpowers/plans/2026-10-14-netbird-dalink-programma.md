@@ -189,3 +189,9 @@ ADR [0011](../../adr/0011-netbird-rete-a-stella.md) e [0013](../../adr/0013-lice
   versione di Ubuntu e `PidFile`. Proposta da approvare: DA-Link prepara l'intero kit d'installazione
   quando si crea un cliente. Prossimo: «cambia moduli» in DA-Link, poi il proxy di DTS dentro
   `71734-ipam`.
+- 2026-10-15 notte, PX-NAS: **appliance reinstallata da capo dal Proxmox** (VM 150 + 151, base + servizi
+  di rete, IPAM dev 0.3.293, NetBird `70175-ipam` con sonda e proxy Zabbix, sonda hub id 7). Collaudo
+  superato (tre giri, nessun [ERR], interfacce aperte con l'admin, segnale tutto «ok», R1–R5 verde).
+  Corretti in Deploy-Appliance: sorgente IPAM dal ramo e non dalla copia del PVE (`e895eae`), chiave
+  `network_services` (`f869c9e`), dipendenze WinRM (`486bef5`), doppioni della pagina dei servizi
+  (`ac5b955`). Spec e piano di «cambia moduli» e kit d'installazione in DA-Link, da approvare.

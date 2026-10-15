@@ -9,6 +9,7 @@
  *         [--ripristino <ora UTC>]   dopo le righe nuove del router, lo stesso testo SQL di «Tornare indietro» (Task 10b)
  *         [--fatti-prova <id>]   T2: fatti dei MikroTik (fixture anonime del repo) e vicini con le fonti nuove (ssh, snmp) sull'apparato <id>, nella copia della copia
  *         [--traccia]   T2: «Cosa cambierebbe con la mappa nuova» (numeri; con --nomi le righe a terminale)
+ *         [--cavi]   T3, Task 0: i collegamenti del modello per cavo (numeri; con --nomi riga per riga a terminale)
  *         [--salva <istantanea.json>] [--confronta <istantanea.json>]
  *         [--esporta-input <file.json>] [--input-json <file.json>] [--nomi] [--json]
  *         [--senza-regola <regola>]...   spegne una regola del passaggio universale (src/lib/topology/regole.ts): la misura C19 confronta «tutte le regole» con «tutte meno una»
@@ -26,7 +27,7 @@ const CON_VALORE = ["--cartella", "--scenario", "--soglia", "--uscita-router", "
 
 function uso(msg?: string): number {
   if (msg) process.stderr.write(`${msg}\n`);
-  process.stderr.write("Uso: npx tsx scripts/misura-cavi.ts <copia.db> --cartella <scratchpad> [--scenario …] [--uscita-router <id>=<file>] [--ripristino <ora UTC>] [--fatti-prova <id>] [--traccia] [--senza-regola <regola>] [--adesso <ora UTC>] [--salva|--confronta <file>] [--esporta-input|--input-json <file>] [--nomi] [--json]\n");
+  process.stderr.write("Uso: npx tsx scripts/misura-cavi.ts <copia.db> --cartella <scratchpad> [--scenario …] [--uscita-router <id>=<file>] [--ripristino <ora UTC>] [--fatti-prova <id>] [--traccia] [--cavi] [--senza-regola <regola>] [--adesso <ora UTC>] [--salva|--confronta <file>] [--esporta-input|--input-json <file>] [--nomi] [--json]\n");
   return 2;
 }
 
@@ -238,19 +239,55 @@ async function main(): Promise<number> {
   }
   let traccia: import("../src/lib/topology/cavi/traccia").Traccia | null = null;
   let nomiT: Record<string, string> = {};
-  if (a.includes("--traccia")) {
+  let caviDaStampare: { dalleVm: Array<{ id: string; ipervisore: string; switch: string; porta: string; vm: number; principale: boolean; uplink: string }> } | null = null;
+  // T3, Task 0: il modello in ombra si calcola una volta sola, per --traccia e per --cavi.
+  let ombra: ReturnType<typeof import("../src/lib/topology/cavi/modello").costruisciModelloCavi> | null = null;
+  if (a.includes("--traccia") || a.includes("--cavi")) {
     const { costruisciModelloCavi } = await import("../src/lib/topology/cavi/modello");
-    const { calcolaTraccia, nomiTraccia } = await import("../src/lib/topology/cavi/traccia");
     const ing = tenantDb.withTenant(tenant, () => tenantDb.getIngressoCavi(soglia, base.nowMs));
     const t0 = performance.now();
-    const ombra = costruisciModelloCavi({ ...ing, t1: input }, model, { testaScelta: auto.headChosen ? auto.head : null });
+    ombra = costruisciModelloCavi({ ...ing, t1: input }, model, { testaScelta: auto.headChosen ? auto.head : null });
     out.cavi_ms = Math.round((performance.now() - t0) * 10) / 10;
+  }
+  if (ombra && a.includes("--traccia")) {
+    const { calcolaTraccia, nomiTraccia } = await import("../src/lib/topology/cavi/traccia");
     traccia = calcolaTraccia(padri, ombra);
     nomiT = nomiTraccia(model, ombra, traccia);
     out.traccia = {
       schema: traccia.schema, padri_diversi: traccia.padriDiversi, entrano: traccia.entrano.length, escono: traccia.escono.length,
       per_genere: traccia.perGenere, nuovi: traccia.nuovi, segmenti: traccia.segmenti, anomalie: traccia.anomalie, avvisi: traccia.avvisi.length,
     };
+  }
+  // T3, Task 0: i collegamenti del modello per cavo in numeri (sempre) e, con --nomi, riga per riga a terminale.
+  if (ombra && a.includes("--cavi")) {
+    const conta = (xs: readonly string[]) => xs.reduce<Record<string, number>>((o, k) => ({ ...o, [k]: (o[k] ?? 0) + 1 }), {});
+    const ipv = new Set(model.vms.flatMap((v) => (v.hypervisorNodeId ? [v.hypervisorNodeId] : [])));
+    // §13.14, §13.15 punto 4: i collegamenti che hanno SOLO la prova «dalle VM».
+    const dalleVm = ombra.collegamenti.flatMap((c) => {
+      if (c.prove.length === 0 || !c.prove.every((p) => p.classe === "vm")) return [];
+      const h = ipv.has(c.a.nodo) ? c.a : ipv.has(c.b.nodo) ? c.b : null;
+      if (!h) return [];
+      const sw = h === c.a ? c.b : c.a;
+      const sc = ombra.albero.scelto.get(sw.nodo);
+      const uplink = sc === undefined ? "non noto"
+        : ombra.collegamenti.some((x) => x.id === sc && ((x.a.nodo === sw.nodo && x.a.chiave === sw.chiave) || (x.b.nodo === sw.nodo && x.b.chiave === sw.chiave)))
+          ? "noto, è questa porta" : "noto, è un'altra porta";
+      return [{ id: c.id, ipervisore: h.nodo, switch: sw.nodo, porta: sw.nome, vm: c.vm ?? 0, principale: ombra.albero.via.get(h.nodo)?.id === c.id, uplink }];
+    });
+    out.cavi = {
+      per_genere: conta(ombra.collegamenti.map((c) => c.genere)),
+      per_stato: conta(ombra.collegamenti.map((c) => c.stato ?? "nessuno")),
+      per_fiducia: conta(ombra.collegamenti.map((c) => c.fiducia)),
+      non_visti: ombra.collegamenti.filter((c) => c.nonVisto).length,
+      porte_da_verificare: ombra.collegamenti.filter((c) => c.porteDaVerificare).length,
+      segmenti: ombra.segmenti.length,
+      radici: ombra.albero.radici.length,
+      anomalie: ombra.albero.anomalie.length,
+      avvisi: ombra.albero.avvisi.length,
+      dalle_vm: { totale: dalleVm.length, non_principali: dalleVm.filter((x) => !x.principale).length,
+        uplink: conta(dalleVm.filter((x) => !x.principale).map((x) => x.uplink)) },
+    };
+    caviDaStampare = { dalleVm };
   }
   out.quick_check_dopo = quick();
   process.stdout.write(a.includes("--json") ? `${JSON.stringify(out, null, 1)}\n` : `${Object.entries(out).map(([k, v]) => `${k}: ${typeof v === "object" ? JSON.stringify(v) : v}`).join("\n")}\n`);
@@ -300,6 +337,24 @@ async function main(): Promise<number> {
       const nt = (id: string | null | undefined) => (id === undefined ? "fuori" : id === null ? "nessuno" : (nomiT[id] ?? nome(id)));
       for (const r of traccia.righe) w(`${nt(r.id)} · padre oggi ${nt(r.prima)} · con la mappa nuova ${nt(r.dopo)} · ${r.perche}`);
       if (traccia.altri > 0) w(`+ altri ${traccia.altri}`);
+    }
+    if (ombra && caviDaStampare) {
+      const nc = (id: string) => (id.startsWith("seg:") ? `segmento ${id}` : nome(id));
+      w("\n— collegamenti del modello per cavo (T3, Task 0) —");
+      for (const c of ombra.collegamenti) {
+        w(`${c.genere} · ${nc(c.a.nodo)} ${c.a.nome || "?"} ↔ ${nc(c.b.nodo)} ${c.b.nome || "?"} · ${c.stato ?? "—"} · ${c.fiducia}`
+          + `${c.velocitaMbps ? ` · ${c.velocitaMbps} Mbps` : ""}${c.nonVisto ? " · non visto" : ""}${c.porteDaVerificare ? " · porte da verificare" : ""}`
+          + `${c.wan ? " · WAN" : ""}${c.attraverso ? " · attraverso apparati non letti" : ""}${c.fascioDedotto ? " · fascio dedotto" : ""}`);
+      }
+      w("\n— segmenti —");
+      for (const s of ombra.segmenti) w(`${s.id}: ${s.membri.map((p) => `${nome(p.nodo)} ${p.nome}`).join(", ")}${s.altriApparati ? ` · +${s.altriApparati} non gestiti` : ""}`);
+      w("\n— padri del modello per cavo (mappa automatica) —");
+      for (const [id, p] of Object.entries(ombra.albero.padri)) w(`${nc(id)} ← ${p === null ? "partenza" : nc(p)}${ombra.albero.scelto.has(id) ? " (porta radice o uplink)" : ""}`);
+      w("\n— anomalie e avvisi —");
+      for (const x of ombra.albero.anomalie) w(`${nome(x.nodo)} sotto ${nome(x.padre)}; allo stesso livello: ${x.altri.map(nome).join(", ")}`);
+      for (const x of ombra.albero.avvisi) w(`${nc(x.nodo)}: ${x.testo}`);
+      w("\n— collegamenti «dalle VM» (§13.14) —");
+      for (const x of caviDaStampare.dalleVm) w(`${nome(x.ipervisore)} · ${nome(x.switch)} ${x.porta} · ${x.vm} VM · ${x.principale ? "principale" : "NON principale"} · uplink dello switch: ${x.uplink}`);
     }
   }
   return righeQuick().every((r) => r === "ok" || /^Page \d+: never used$/.test(r)) ? 0 : 1;

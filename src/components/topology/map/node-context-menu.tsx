@@ -17,18 +17,21 @@ import {
   ContextMenuSubContent,
   ContextMenuSubTrigger,
 } from "@/components/ui/context-menu";
-import type { AddableLinked, MenuItem, NodeMenuKey, VmMenuKey } from "@/lib/topology/map-menus";
+import { ruoloVoci, type AddableLinked, type MenuItem, type NodeMenuKey, type RuoloMappa, type VmMenuKey } from "@/lib/topology/map-menus";
 import { typeLabel } from "./topology-icons";
 
 interface Props {
   title: string;
   items: Array<MenuItem<NodeMenuKey>>;
   addable: AddableLinked[];
-  onAction: (key: Exclude<NodeMenuKey, "addLinked">) => void;
+  onAction: (key: Exclude<NodeMenuKey, "addLinked" | "role">) => void;
   onAddLinked: (ids: string[]) => void;
+  /** Il ruolo nella mappa di un apparato; null per un host o una VM (T1b). */
+  ruolo: RuoloMappa | null;
+  onRole: (r: RuoloMappa) => void;
 }
 
-export function NodeMenuContent({ title, items, addable, onAction, onAddLinked }: Props) {
+export function NodeMenuContent({ title, items, addable, onAction, onAddLinked, ruolo, onRole }: Props) {
   return (
     <>
       <ContextMenuLabel className="max-w-72 truncate" title={title}>{title}</ContextMenuLabel>
@@ -36,18 +39,34 @@ export function NodeMenuContent({ title, items, addable, onAction, onAddLinked }
       {items.map((it) =>
         it.key === "addLinked" ? (
           <AddLinkedSub key={it.key} label={it.label} addable={addable} onAdd={onAddLinked} />
+        ) : it.key === "role" && !it.disabled ? (
+          <RoleSub key={it.key} label={it.label} attuale={ruolo ?? ""} onRole={onRole} />
         ) : (
           <ContextMenuItem
             key={it.key}
             disabled={it.disabled}
             variant={it.key === "hide" || it.key === "remove" ? "destructive" : "default"}
-            onClick={() => onAction(it.key as Exclude<NodeMenuKey, "addLinked">)}
+            onClick={() => onAction(it.key as Exclude<NodeMenuKey, "addLinked" | "role">)}
           >
             {it.label}
           </ContextMenuItem>
         ),
       )}
     </>
+  );
+}
+
+/** «Ruolo nella mappa ▸»: tre voci; quella di adesso è segnata e spenta (sceglierla non cambierebbe niente). */
+function RoleSub({ label, attuale, onRole }: { label: string; attuale: RuoloMappa; onRole: (r: RuoloMappa) => void }) {
+  return (
+    <ContextMenuSub>
+      <ContextMenuSubTrigger>{label}</ContextMenuSubTrigger>
+      <ContextMenuSubContent>
+        {ruoloVoci(attuale).map((v) => (
+          <ContextMenuItem key={v.value || "sistema"} disabled={v.value === attuale} onClick={() => onRole(v.value)}>{v.label}</ContextMenuItem>
+        ))}
+      </ContextMenuSubContent>
+    </ContextMenuSub>
   );
 }
 

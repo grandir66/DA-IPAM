@@ -8,6 +8,7 @@ import {
   nodeMenuItems,
   primaryTarget,
   refreshVmDeviceIds,
+  ruoloVoci,
   vmMenuItems,
   type NodeMenuCtx,
 } from "@/lib/topology/map-menus";
@@ -35,22 +36,23 @@ function model(nodes: MapNode[], links: MapLink[], over: Partial<TopologyModel> 
 }
 const ctx = (over: Partial<NodeMenuCtx> = {}): NodeMenuCtx => ({
   mode: "passo", isAdmin: true, canEditMap: true, inMap: true, isHead: false, isStart: false, isDevice: true, hidden: false,
-  isHypervisor: false, vmCount: 0, expanded: false, canRefreshVms: false, infraHost: false, addableCount: 0, isUncensusedVm: false, ...over,
+  isHypervisor: false, vmCount: 0, expanded: false, canRefreshVms: false, infraHost: false, addableCount: 0, isUncensusedVm: false, ruolo: "", ...over,
 });
 const keys = (xs: Array<{ key: string }>) => xs.map((x) => x.key);
 
+// T1b (spec §13.8.2): «Ruolo nella mappa ▸» per gli apparati, prima di «Nascondi»; per un host è un avviso, prima di «Promuovi».
 test("menu dell'oggetto, passo passo, admin: le voci della spec §11.2 nell'ordine, solo quelle che hanno senso", () => {
-  assert.deepEqual(keys(nodeMenuItems(ctx())), ["details", "connect", "start", "remove", "hide"]);
+  assert.deepEqual(keys(nodeMenuItems(ctx())), ["details", "connect", "start", "remove", "role", "hide"]);
   assert.deepEqual(
     keys(nodeMenuItems(ctx({ isHypervisor: true, vmCount: 4, canRefreshVms: true, addableCount: 2 }))),
-    ["details", "toggleVms", "refreshVms", "connect", "addLinked", "start", "remove", "hide"],
+    ["details", "toggleVms", "refreshVms", "connect", "addLinked", "start", "remove", "role", "hide"],
   );
-  // Un host che è infrastruttura: niente «Nascondi» (solo apparati), sì «Promuovi».
-  assert.deepEqual(keys(nodeMenuItems(ctx({ isDevice: false, infraHost: true }))), ["details", "connect", "start", "remove", "promote"]);
+  // Un host che è infrastruttura: niente «Nascondi» (solo apparati), sì «Promuovi»; il ruolo solo dopo.
+  assert.deepEqual(keys(nodeMenuItems(ctx({ isDevice: false, infraHost: true, ruolo: null }))), ["details", "connect", "start", "remove", "role", "promote"]);
 });
 
 test("menu dell'oggetto, tutto automatico: testa invece di partenza, niente voci della mappa passo passo", () => {
-  assert.deepEqual(keys(nodeMenuItems(ctx({ mode: "auto", canEditMap: false, addableCount: 3 }))), ["details", "connect", "head", "hide"]);
+  assert.deepEqual(keys(nodeMenuItems(ctx({ mode: "auto", canEditMap: false, addableCount: 3 }))), ["details", "connect", "head", "role", "hide"]);
   const head = nodeMenuItems(ctx({ mode: "auto", canEditMap: false, isHead: true })).find((x) => x.key === "head")!;
   assert.equal(head.label, "● è la testa");
   assert.equal(head.disabled, true);
@@ -73,7 +75,7 @@ test("le etichette dicono lo stato: VM mostrate, partenza già scelta, oggetto n
   assert.equal(start.disabled, true);
   assert.equal(items.find((x) => x.key === "hide")!.label, "Rimostra in tutte le mappe");
   // Un oggetto non ancora nella mappa (dall'elenco) non ha «Togli» né «Usa come partenza».
-  assert.deepEqual(keys(nodeMenuItems(ctx({ inMap: false }))), ["details", "connect", "hide"]);
+  assert.deepEqual(keys(nodeMenuItems(ctx({ inMap: false }))), ["details", "connect", "role", "hide"]);
 });
 
 test("menu della linea: a mano → Modifica porte e Rimuovi; automatica → Ignora; principale scelto → Togli la scelta", () => {
@@ -149,7 +151,7 @@ test("menu della VM: Aggiungi alla mappa solo passo passo con la mappa modificab
 // Revisione finale I-1: una VM non censita (vm:N:M) è un nodo della pagina, non del modello: un collegamento a
 // mano o un principale verso di lei si salverebbe senza mai comparire. Il menu non li propone.
 test("I-1: su una VM non censita niente «Collega a…»; una linea con una VM non propone il principale", () => {
-  const vm = nodeMenuItems(ctx({ isDevice: false, isUncensusedVm: true }));
+  const vm = nodeMenuItems(ctx({ isDevice: false, isUncensusedVm: true, ruolo: null }));
   assert.ok(!keys(vm).includes("connect"), "niente «Collega a…» su una VM non censita");
   assert.deepEqual(keys(vm), ["details", "start", "remove"]);
   assert.deepEqual(keys(edgeMenuItems(link("dev:1", "vm:3:100"), true)), ["ignore"]);
@@ -162,4 +164,15 @@ test("I-1: su una VM non censita niente «Collega a…»; una linea con una VM n
 
 test("§13.9: la voce della linea dice che si ignora un cavo, non la coppia", () => {
   assert.equal(edgeMenuItems(link("dev:1", "dev:2"), true).find((x) => x.key === "ignore")!.label, "Ignora questo cavo…");
+});
+
+test("T1b — «Ruolo nella mappa ▸»: tre voci, quella di adesso segnata col testo; per un host un avviso; chi non è admin niente", () => {
+  assert.deepEqual(ruoloVoci("rete"), [
+    { value: "rete", label: "✓ Apparato di rete" }, { value: "attaccato", label: "Attaccato (server, PC)" }, { value: "", label: "Decide il sistema" },
+  ]);
+  assert.equal(ruoloVoci("").at(-1)!.label, "✓ Decide il sistema");
+  const host = nodeMenuItems(ctx({ isDevice: false, infraHost: true, ruolo: null })).find((x) => x.key === "role")!;
+  assert.deepEqual([host.label, host.disabled], ["Ruolo nella mappa: prima Promuovi ad apparato", true]);
+  assert.equal(nodeMenuItems(ctx({ isAdmin: false, canEditMap: false })).some((x) => x.key === "role"), false);
+  assert.equal(nodeMenuItems(ctx({ isDevice: false, isUncensusedVm: true, ruolo: null })).some((x) => x.key === "role"), false);
 });

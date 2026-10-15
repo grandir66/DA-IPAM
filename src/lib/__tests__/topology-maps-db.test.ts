@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { closeHubDb } from "@/lib/db-hub";
 import {
   clearTopologyTweaks, createTopologyMap, deleteTenantDatabase, deleteTopologyMap, getAutoMap, getTenantDb, getTopologyMap,
-  getMapOrientation, getTopologyMapView, listTopologyMaps, renameTopologyNodes, saveTopologyTweaks, setAutoHead, setMapOrientation, setNodeHidden,
+  getMapOrientation, getTopologyMapView, listTopologyMaps, renameTopologyNodes, saveTopologyTweaks, setAutoHead, setMapOrientation, setNodeHidden, setTopologyRole,
   setTopologyMapNodes, updateTopologyMap, withTenant,
 } from "@/lib/db-tenant";
 
@@ -119,6 +119,15 @@ test("nascondi: l'apparato c'è o no", () => {
   assert.equal((db().prepare("SELECT topology_hidden AS h FROM network_devices WHERE id = 1").get() as { h: number }).h, 1);
   assert.deepEqual(w(() => setNodeHidden(1, false)), { ok: true });
   assert.equal(w(() => setNodeHidden(99, true)).ok, false);
+});
+
+test("ruolo nella mappa (T1b, spec §13.8.2): si scrive '', 'rete' o 'attaccato'; un apparato che non c'è si rifiuta", () => {
+  const ruolo = () => db().prepare("SELECT topology_role FROM network_devices WHERE id = 1").pluck().get();
+  assert.deepEqual(w(() => setTopologyRole(1, "rete")), { ok: true });
+  assert.equal(ruolo(), "rete");
+  assert.deepEqual(w(() => setTopologyRole(1, "")), { ok: true });
+  assert.equal(ruolo(), "", "«Decide il sistema» torna alla stringa vuota, come le righe di oggi");
+  assert.equal(w(() => setTopologyRole(99, "attaccato")).ok, false);
 });
 
 test("rinomina degli id (I5): membri, partenze e ritocchi passano all'id canonico; un doppio si toglie", () => {

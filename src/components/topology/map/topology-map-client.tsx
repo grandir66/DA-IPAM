@@ -415,6 +415,7 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
       isDevice: n.kind === "device", hidden: n.hidden, isHypervisor: isHyper, vmCount: d.vmsOf.get(n.id)?.length ?? 0,
       expanded: expanded.has(n.id), canRefreshVms: isHyper && refreshVmDeviceIds(d.model.vms, n.id).length > 0,
       infraHost: n.kind === "host" && nodeClass(n) !== "client", addableCount: addable.length, isUncensusedVm: isUncensusedVmId(n.id),
+      ruolo: n.kind === "device" ? (n.ruolo ?? "") : null,
     });
     return (
       <NodeMenuContent
@@ -423,6 +424,8 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
         addable={addable}
         onAction={(k) => { close(); onNodeAction(n.id, k); }}
         onAddLinked={(ids) => { close(); void addNodes(ids); }}
+        ruolo={n.kind === "device" ? (n.ruolo ?? "") : null}
+        onRole={(r) => { close(); void send("/api/topology/nodes/role", "PATCH", { node_id: n.id, role: r }); }}
       />
     );
   }

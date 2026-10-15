@@ -1,13 +1,13 @@
 # Matrice auth API — DA-IPAM
 
-> Generato da `scripts/audit-api-auth.ts` · 2026-10-14 · rilevatore e censimento di `src/lib/permessi/` (gli stessi della prova `rotte-censite.test.ts`).
+> Generato da `scripts/audit-api-auth.ts` · 2026-10-15 · rilevatore e censimento di `src/lib/permessi/` (gli stessi della prova `rotte-censite.test.ts`).
 
 ## Riepilogo
 
-- File `route.ts`: **311** · gestori (metodo × rotta): **481**
-- Forme di export: funzione 465 · destrutturata 2 · rinomina 14
-- Guardie viste: `nessuna`=9 · `esterna`=2 · `token`=1 · `sessione`=52 · `auth-diretto`=3 · `auth`=129 · `admin-o-onboarding`=7 · `admin`=275 · `superadmin`=3
-- Esiti: ok **448** · eccezioni **33** · debiti **0** · scoperti **0**
+- File `route.ts`: **315** · gestori (metodo × rotta): **485**
+- Forme di export: funzione 469 · destrutturata 2 · rinomina 14
+- Guardie viste: `nessuna`=9 · `esterna`=2 · `token`=1 · `sessione`=52 · `auth-diretto`=3 · `auth`=129 · `admin-o-onboarding`=7 · `admin`=279 · `superadmin`=3
+- Esiti: ok **452** · eccezioni **33** · debiti **0** · scoperti **0**
 
 Livello atteso: GET/HEAD/OPTIONS → `auth`; scritture → `admin`; letture col nome sensibile → `admin`; i livelli dichiarati stanno in `ATTESI` di `src/lib/permessi/rotte.ts`. `withTenantFromSession` (`sessione`) chiede l'accesso ma non il ruolo: per una lettura vale quanto `auth`.
 
@@ -134,6 +134,9 @@ Livello atteso: GET/HEAD/OPTIONS → `auth`; scritture → `admin`; letture col 
 | `/api/credentials/[id]/test-snmp` | GET | `admin` | `admin` |  |
 | `/api/custom-oui` | GET | `auth` | `auth` |  |
 | `/api/custom-oui` | PUT | `admin` | `admin` |  |
+| `/api/dalink/cosa-esce` | GET | `admin` | `auth` |  |
+| `/api/dalink/livello` | PUT | `admin` | `admin` |  |
+| `/api/dalink/segnale` | POST | `admin` | `admin` |  |
 | `/api/device-vendor-options` | GET | `sessione` | `auth` |  |
 | `/api/devices` | GET | `sessione` | `auth` |  |
 | `/api/devices` | POST | `admin-o-onboarding` | `admin-o-onboarding` |  |
@@ -526,6 +529,7 @@ Livello atteso: GET/HEAD/OPTIONS → `auth`; scritture → `admin`; letture col 
 | `/api/topology/maps/[id]/nodes` | PUT | `admin` | `admin` |  |
 | `/api/topology/model` | GET | `auth` | `auth` |  |
 | `/api/topology/nodes/hidden` | PUT | `admin` | `admin` |  |
+| `/api/topology/nodes/role` | PATCH | `admin` | `admin` |  |
 | `/api/topology/ports` | GET | `auth` | `auth` |  |
 | `/api/topology/positions` | PUT | `admin` | `admin` |  |
 | `/api/topology/primary` | DELETE | `admin` | `admin` |  |

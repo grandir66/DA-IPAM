@@ -181,3 +181,11 @@ ADR [0011](../../adr/0011-netbird-rete-a-stella.md) e [0013](../../adr/0013-lice
   - Prossimo: prova del livello abbassato (Riccardo, pagina «Cosa esce» del server di prova), revoca di
     `70791-edge` e della VM 545, poi C1b e la rinomina dei proxy cliente per cliente.
 
+- 2026-10-15 notte, dopo: **Vul-can 0.8.89 in esercizio** (filtro delle sonde autonome). Domarc-OVH a
+  70791 nella procedura di Zabbix. **Proxy Zabbix dentro l'appliance** (decisione di Riccardo: meno VM e
+  meno client NetBird; i clienti con solo Zabbix restano col proxy a parte): a casa `70175-ipam` riemesso
+  con `edge`+`zbx`, `dazabbix-P4/P4b` scritte, `proxy-casa` spento; segnale `zbx: ok`, R1–R5 verde da
+  DA-Link e da DA-Zabbix. Trovati e corretti nello script del proxy di DA-Zabbix (non ancora sulla .15):
+  versione di Ubuntu e `PidFile`. Proposta da approvare: DA-Link prepara l'intero kit d'installazione
+  quando si crea un cliente. Prossimo: «cambia moduli» in DA-Link, poi il proxy di DTS dentro
+  `71734-ipam`.

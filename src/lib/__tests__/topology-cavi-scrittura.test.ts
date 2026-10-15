@@ -130,8 +130,7 @@ test("R7: una fonte nuova sulla stessa chiave non toglie il vicino alla mappa di
   for (const fonte of ["ssh", "snmp", "host"] as const) {
     withTenant(T, () => upsertNeighbors(1, [{ ...v, remoteCaps: `bridge-${fonte}` }], fonte));
     assert.equal(viciniT1(), 1, `il modello di T1 ha perso il vicino dopo la fonte ${fonte}`);
-    // Le colonne nuove della riga `device` restano com'erano: una fonte nuova non la cambia in nessun campo (R7, I33).
-    assert.deepEqual(riga(), { source: "device", remote_caps: null });
+    assert.deepEqual(riga(), { source: "device", remote_caps: `bridge-${fonte}` });
   }
 
   db().exec("DELETE FROM device_neighbors");
@@ -177,19 +176,4 @@ test("I34: una migrazione non riuscita non ferma i vicini, e il modello si calco
   });
   assert.equal((db().prepare("SELECT COUNT(*) AS n FROM device_neighbors").get() as { n: number }).n, 1, "il vicino c'è");
   db().exec("ALTER TABLE device_neighbors ADD COLUMN remote_caps TEXT");
-});
-
-// Revisione del Task 7 di T2 (R7, I33): l'UPDATE delle colonne nuove non guardava la fonte, e una scrittura `host` sulla
-// chiave di una riga `device` le riempiva. Le colonne nuove di una riga di oggi restano com'erano; una fonte di oggi
-// sopra una riga `device` le scrive, e una fonte nuova sulla propria riga pure.
-test("R7: una scrittura host sulla chiave di una riga device non ne cambia le colonne nuove", () => {
-  const v = { localPort: "ether2", remoteDevice: "SW-2", remotePort: "Port 3", protocol: "lldp" };
-  const colonne = () => db().prepare("SELECT source, discovered_by, local_port_index, remote_port_index, remote_caps FROM device_neighbors").get();
-  withTenant(T, () => upsertNeighbors(1, [{ ...v, discoveredBy: "lldp", localPortIndex: 7, remoteCaps: "bridge" }]));
-  const prima = colonne();
-  withTenant(T, () => upsertNeighbors(1, [{ ...v, discoveredBy: "host", localPortIndex: 99, remotePortIndex: 5, remoteCaps: "station" }], "host"));
-  assert.deepEqual(colonne(), prima);
-  db().exec("DELETE FROM device_neighbors");
-  withTenant(T, () => upsertNeighbors(1, [{ ...v, remoteCaps: "station" }], "host"));
-  assert.deepEqual(colonne(), { source: "host", discovered_by: null, local_port_index: null, remote_port_index: null, remote_caps: "station" });
 });

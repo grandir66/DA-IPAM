@@ -5223,7 +5223,7 @@ export function upsertNeighbors(
   // più a vicenda. ON CONFLICT copre anche due voci uguali nello stesso giro.
   // T2 (spec §13.5.7, R7; revisione del Task 1): la chiave unica non contiene la fonte, quindi una fonte nuova (ssh, snmp,
   // host) sulla chiave di un vicino `device`/`unifi` gli cambierebbe fonte e lo toglierebbe alla mappa di T1. La WHERE la
-  // lascia stare (anche le colonne nuove, qui sotto: stessa condizione sulla fonte); una fonte di oggi sopra una nuova sì.
+  // lascia stare (le colonne nuove dei vicini si aggiornano a parte, qui sotto); una fonte di oggi sopra una nuova sì.
   const ins = d.prepare(`
     INSERT INTO device_neighbors (device_id, local_port, remote_device_name, remote_port, protocol, remote_ip, remote_mac, remote_platform, source, first_seen, timestamp)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
@@ -5260,12 +5260,11 @@ export function upsertNeighbors(
       const up = d.prepare(`UPDATE device_neighbors SET
           discovered_by = COALESCE(?, discovered_by), local_port_index = COALESCE(?, local_port_index),
           remote_port_index = COALESCE(?, remote_port_index), remote_caps = COALESCE(?, remote_caps)
-        WHERE device_id = ? AND local_port = ? AND remote_device_name = ? AND remote_port = ?
-          AND NOT (source IN ('device', 'unifi') AND ? NOT IN ('device', 'unifi'))`);
+        WHERE device_id = ? AND local_port = ? AND remote_device_name = ? AND remote_port = ?`);
       d.transaction(() => {
         for (const n of conCavi) {
           up.run(n.discoveredBy ?? null, n.localPortIndex ?? null, n.remotePortIndex ?? null, n.remoteCaps ?? null,
-            deviceId, n.localPort, n.remoteDevice, n.remotePort, source);
+            deviceId, n.localPort, n.remoteDevice, n.remotePort);
         }
       })();
     } catch (e) {

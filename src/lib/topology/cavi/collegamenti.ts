@@ -8,14 +8,13 @@
 import { parseDbDate } from "@/lib/db-date";
 import { correzioniOrfane, ignorato, regoleIgnora } from "@/lib/topology/ignorati";
 import { eRadioDalleCapacita, indiceDelFascio } from "@/lib/topology/lettori/fonti";
-import type { LinkOverrideRow } from "@/lib/topology/model-types";
+import type { Fiducia, Genere, LinkOverrideRow, StatoCollegamento } from "@/lib/topology/model-types";
 import type { NodeIndex } from "@/lib/topology/node-index";
 import { normale, type ElencoPorte, type Porta } from "./porte";
 import { portaVuota, type IndiceFatti, type Prova } from "./prove";
 
-export type Genere = "cavo" | "fascio" | "tunnel" | "radio" | "senza_fili" | "segmento";
-export type StatoCollegamento = "inoltra" | "bloccato" | "bloccato_comune" | "instradato" | "riserva_bond" | "giu" | null;
-export type Fiducia = "certo" | "probabile" | "dedotto" | "a_mano_confermato" | "a_mano";
+// I tipi stanno in model-types.ts (li legge la pagina, che non importa la logica del modello): qui si riesportano.
+export type { Genere, StatoCollegamento, Fiducia } from "@/lib/topology/model-types";
 
 export interface Collegamento {
   /** Il genere più i due capi ordinati con la chiave della porta. */

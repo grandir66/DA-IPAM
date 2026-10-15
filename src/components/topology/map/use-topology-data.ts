@@ -18,7 +18,8 @@ import type { MapOrientation, TopologyModel } from "@/lib/topology/model-types";
 import type { TopologyStatus } from "@/lib/topology/types";
 import type { SavedTweak } from "@/lib/topology/tree-layout";
 
-export type ModelData = TopologyModel & { staleDays: number; status: Record<string, TopologyStatus> };
+/** `mappa`: quale modello ha calcolato la rotta (T3, «cavi» con la mappa nuova accesa); `mappaErrore`: la nuova non si è potuta calcolare. */
+export type ModelData = TopologyModel & { staleDays: number; status: Record<string, TopologyStatus>; mappa?: "oggi" | "cavi"; mappaErrore?: string };
 
 /** Una riga di topology_maps come la restituisce /api/topology/maps. */
 export interface MapRow {

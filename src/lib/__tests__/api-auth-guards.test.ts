@@ -63,6 +63,13 @@ const CONTRACT: Contract[] = [
   { route: "users/[id]/reset-password", method: "POST", guard: "requireAdmin" },
   { route: "tenants", method: "POST", guard: "requireSuperAdmin" },
   { route: "tenants/[id]", method: "DELETE", guard: "requireSuperAdmin" },
+  // Topologia (M6 della revisione finale di T2, piano di T3 «Scelte» 13): gli interruttori delle letture in più e della
+  // mappa nuova li cambia solo un admin; «Cosa cambierebbe con la mappa nuova» è un calcolo per chi decide quando
+  // accenderla. Il 403 a chi non è admin si prova qui sul sorgente: `mock.module` non gira sotto Node 22 con tsx e
+  // `requireAdmin` legge la sessione. Il corpo (400, 409, strict) lo prova src/lib/topology/letture/__tests__/corpo.test.ts.
+  { route: "topology/settings/letture", method: "PUT", guard: "requireAdmin" },
+  { route: "topology/settings/mappa", method: "PUT", guard: "requireAdmin" },
+  { route: "topology/traccia", method: "GET", guard: "requireAdmin" },
 ];
 
 /** Estrae il corpo di un metodo HTTP esportato (slice fino al prossimo export). */

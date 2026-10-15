@@ -45,9 +45,14 @@ function leggiJson(chiave: string): unknown {
 const oggetto = (v: unknown): Record<string, unknown> | null =>
   v !== null && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
 
-export function leggiInterruttore(l: Lettura): StatoInterruttore {
-  const o = oggetto(leggiJson(chiaveLettura(l)));
+/** Lo stato di un interruttore qualsiasi della topologia (letture di T2, mappa nuova di T3: stessa forma, §13.5.6). */
+export function leggiStatoChiave(chiave: string): StatoInterruttore {
+  const o = oggetto(leggiJson(chiave));
   return { acceso: o?.acceso === true, da: typeof o?.da === "string" ? o.da : null, il: typeof o?.il === "string" ? o.il : null };
+}
+
+export function leggiInterruttore(l: Lettura): StatoInterruttore {
+  return leggiStatoChiave(chiaveLettura(l));
 }
 
 export function letturaAccesa(l: Lettura): boolean {
@@ -56,8 +61,13 @@ export function letturaAccesa(l: Lettura): boolean {
 
 /** Accende o spegne (solo un admin, dalla rotta PUT). Spento si scrive comunque, con chi e quando: resta la storia. */
 export function scriviInterruttore(l: Lettura, acceso: boolean, da: string, adesso: Date = new Date()): StatoInterruttore {
+  return scriviStatoChiave(chiaveLettura(l), acceso, da, adesso);
+}
+
+/** La scrittura comune agli interruttori (letture di T2, mappa nuova di T3): chi e quando, anche quando si spegne. */
+export function scriviStatoChiave(chiave: string, acceso: boolean, da: string, adesso: Date = new Date()): StatoInterruttore {
   const s: StatoInterruttore = { acceso, da, il: oraUtc(adesso) };
-  setTenantSetting(chiaveLettura(l), JSON.stringify(s));
+  setTenantSetting(chiave, JSON.stringify(s));
   return s;
 }
 

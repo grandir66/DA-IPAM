@@ -9541,8 +9541,9 @@ type IngressoCavi = import("@/lib/topology/cavi/prove").IngressoCavi;
 /**
  * L'ingresso del modello per cavo (spec §13.5.7, «Chi legge che cosa»): quello del modello di oggi più le righe dei vicini di
  * TUTTE le fonti con le colonne nuove, i fatti dell'ultimo giro di ogni apparato e lettore (`seen_at` almeno pari al più
- * recente meno 5 minuti, come NEIGHBORS_LATEST_ROUND_SQL), i MAC dei lettori e le schede dell'inventario (solo identità, mai
- * `getNetworkDeviceKnownMacs`), gli uplink per indice. Senza schema, elenchi vuoti e `schema: false`: la traccia lo dice.
+ * recente meno 5 minuti, come NEIGHBORS_LATEST_ROUND_SQL) e non più vecchi della soglia «non visto» (M5), i MAC dei lettori e
+ * le schede dell'inventario (solo identità, mai `getNetworkDeviceKnownMacs`), gli uplink per indice. Senza schema, elenchi
+ * vuoti e `schema: false`: la traccia lo dice.
  */
 export function getIngressoCavi(staleDays: number, nowMs: number = Date.now()): IngressoCavi {
   const d = db();
@@ -9557,14 +9558,19 @@ export function getIngressoCavi(staleDays: number, nowMs: number = Date.now()): 
   const giro = `SELECT MAX(seen_at) FROM (
       SELECT seen_at FROM topology_port_facts g WHERE g.device_id = f.device_id AND g.source = f.source
       UNION ALL SELECT seen_at FROM topology_bridge_facts g WHERE g.device_id = f.device_id AND g.source = f.source)`;
+  // M5 (revisione finale di T2): l'«ultimo giro» di una fonte che non si legge più resta nel DB fino alla potatura (90
+  // giorni), e un `running = 0` di allora faceva «giù» un cavo che l'LLDP vede oggi. Un fatto più vecchio della soglia «non
+  // visto» non entra: per il modello per cavo quella porta non è letta. Stessa soglia dei collegamenti (staleDays), calcolata
+  // dall'orologio passato (`nowMs`), non da datetime('now'): la misura con `--adesso` resta coerente.
+  const soglia = new Date(nowMs - staleDays * 86_400_000).toISOString().slice(0, 19).replace("T", " ");
   const ultimoGiro = (t: string) =>
-    `SELECT f.* FROM ${t} f WHERE f.seen_at >= (SELECT datetime((${giro}), '-5 minutes')) ORDER BY f.device_id, f.source`;
+    `SELECT f.* FROM ${t} f WHERE f.seen_at >= ? AND f.seen_at >= (SELECT datetime((${giro}), '-5 minutes')) ORDER BY f.device_id, f.source`;
   return {
     t1,
     vicini: d.prepare(`SELECT device_id, local_port, remote_device_name, remote_port, protocol, remote_ip, remote_mac, remote_platform, timestamp,
         source, discovered_by, local_port_index, remote_port_index, remote_caps FROM device_neighbors`).all() as IngressoCavi["vicini"],
-    fattiPorta: d.prepare(`${ultimoGiro("topology_port_facts")}, f.port_key`).all() as IngressoCavi["fattiPorta"],
-    fattiBridge: d.prepare(`${ultimoGiro("topology_bridge_facts")}, f.bridge_name, f.instance`).all() as IngressoCavi["fattiBridge"],
+    fattiPorta: d.prepare(`${ultimoGiro("topology_port_facts")}, f.port_key`).all(soglia) as IngressoCavi["fattiPorta"],
+    fattiBridge: d.prepare(`${ultimoGiro("topology_bridge_facts")}, f.bridge_name, f.instance`).all(soglia) as IngressoCavi["fattiBridge"],
     macApparati: d.prepare(`SELECT device_id, mac, source FROM topology_device_macs
       UNION SELECT nd.id, di.mac, 'inventario' FROM network_devices nd JOIN device_interfaces di ON di.physical_device_id = nd.physical_device_id
        WHERE di.mac IS NOT NULL AND di.mac <> '' AND di.is_virtual_mac = 0 ORDER BY 1, 2`).all() as IngressoCavi["macApparati"],

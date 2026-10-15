@@ -12,7 +12,10 @@ import { autoVisible, buildTree, proposeHead } from "@/lib/topology/tree";
 import { computeMapView } from "@/lib/topology/map-compute";
 import { CHAR_W, fitLabel, layoutTree } from "@/lib/topology/tree-layout";
 import { nodeClass } from "@/lib/topology/identity";
-import { lineeCucite } from "@/lib/topology/misura";
+import { lineeCucite, lineeDaNomeScelto } from "@/lib/topology/misura";
+import { comeDi } from "@/lib/topology/links";
+import { traduciPorta } from "@/lib/topology/lettori/traduci";
+import { REGOLE_T1 } from "@/lib/topology/regole";
 import type { TopologyModelInput } from "@/lib/topology/model-types";
 
 function carica(nome: string): TopologyModelInput {
@@ -250,4 +253,76 @@ test("cliente A e hub: nessuna linea cucita (C4)", () => {
     const i = carica(nome);
     assert.deepEqual(lineeCucite(i, buildTopologyModel(i)).map((l) => l.id), [], nome);
   }
+});
+
+// ─── Passaggio universale (spec §13.16) sulle due reti vere: le misure C e H ───
+// Fino alla verifica del 15/10 erano la «famiglia 4» delle reti-campione; sono misure su due reti vere, non criteri generali
+// (vincolo 9: le famiglie sono reti inventate). Come `MISURATI`, se cambiano con la riestrazione delle fixture la causa si
+// legge con `misura-cavi --nomi` sulla copia, e non si abbassa la prova. Id (interi del DB, non identificano nessuno): sull'hub
+// router = dev:1, aggregazione = dev:11, hypervisor sul nome doppio = dev:4, firewall virtuale = dev:15.
+const FIXTURE_VERE = ["topologia-cliente-a.json", "topologia-domarc.json"] as const;
+const automatico = (m: ReturnType<typeof buildTopologyModel>) =>
+  computeMapView(m, { auto: true, members: [], roots: [], head: null, tweaks: [], expanded: new Set(), orientation: "lr" });
+
+/**
+ * La rete dell'hub con la VM che le fixture non hanno (spec §13.7.8, H15): il firewall virtuale (dev:15, registrato come switch)
+ * è una VM dell'hypervisor dev:4, accesa, col MAC della sua scheda che compare nella sua stessa tabella. Il MAC e il nome
+ * dell'hypervisor si leggono dalla fixture, perché la riestrazione li rinomina.
+ */
+function hubConFirewallVirtuale(): TopologyModelInput {
+  const i = carica("topologia-domarc.json");
+  const propri = new Set(i.knownMacs.filter((k) => k.device_id === 15).map((k) => k.mac.toLowerCase()));
+  const scheda = i.macPorts.find((r) => r.device_id === 15 && propri.has(r.mac.toLowerCase()));
+  const hv = i.devices.find((d) => d.id === 4);
+  if (!scheda || !hv) throw new Error("fixture dell'hub senza il firewall virtuale (dev:15) o senza l'hypervisor (dev:4): riestratta male?");
+  return {
+    ...i,
+    scanHosts: [{ scannedDeviceId: 4, hostname: hv.name, ips: [hv.host], macs: [] }],
+    vms: [{ scannedDeviceId: 4, vmid: 120, name: "fw-virtuale", node: hv.name, status: "running", type: "qemu", macs: [scheda.mac], ips: [], scannedAt: "2026-10-13T06:00:00.000Z" }],
+  };
+}
+
+test("H7 (hub) e C19 (cliente A): nessuna linea di un router col traduttore del suo prodotto da un nome scelto", () => {
+  for (const nome of FIXTURE_VERE) { const i = carica(nome); assert.deepEqual(lineeDaNomeScelto(i, buildTopologyModel(i)).map((l) => l.id), [], nome); }
+});
+
+test("H5: sull'hub un segmento solo, coi soli switch di laboratorio (host), tutti in «Da sistemare»", () => {
+  const m = buildTopologyModel(carica("topologia-domarc.json"));
+  const membri = Object.values(m.segmenti ?? {}).flat();
+  assert.equal(Object.keys(m.segmenti ?? {}).length, 1);
+  assert.equal(membri.every((id) => id.startsWith("host:")), true);
+  for (const id of membri) assert.equal(m.isolated.includes(id), true, id);
+});
+
+test("H6: sulle due reti un segmento nasce solo da una porta fisica certa (niente «eth0»)", () => {
+  for (const nome of FIXTURE_VERE) {
+    const i = carica(nome);
+    const come = comeDi(i);
+    for (const k of Object.keys(buildTopologyModel(i).segmenti ?? {})) {
+      const [nodo, porta] = [k.slice(0, k.indexOf("|")), k.slice(k.indexOf("|") + 1)];
+      const n = i.neighbors.find((r) => `dev:${r.device_id}` === nodo && traduciPorta(r.local_port, "locale", come(nodo, r.source, null)).nome.replace(/\s+/g, "").toLowerCase() === porta);
+      assert.ok(n, `${nome} ${k}`);
+      assert.equal(traduciPorta(n.local_port, "locale", come(nodo, n.source, null)).fisica, true, `${nome} ${k}`);
+    }
+  }
+});
+
+test("H13: sull'hub l'hypervisor sul nome doppio dell'aggregazione sta sotto l'aggregazione, a 10G", () => {
+  const m = buildTopologyModel(carica("topologia-domarc.json"));
+  assert.equal(padreDi(automatico(m).tree, "dev:4"), "dev:11");
+  assert.equal(m.links.find((l) => [l.a, l.b].sort().join("|") === "dev:11|dev:4")?.speedMbps, 10000);
+});
+
+test("H17 e C19: la testa proposta è il router sulle due reti", () => {
+  for (const nome of FIXTURE_VERE) assert.equal(automatico(buildTopologyModel(carica(nome))).head, "dev:1", nome);
+});
+
+test("H15: sull'hub con la VM del firewall virtuale nessun collegamento fra la VM e il suo hypervisor; spenta la regola, torna", () => {
+  const i = hubConFirewallVirtuale();
+  const m = buildTopologyModel(i);
+  const tra = (mm: ReturnType<typeof buildTopologyModel>) => mm.links.some((l) => [l.a, l.b].sort().join("|") === "dev:15|dev:4");
+  assert.equal(m.vms.find((v) => v.nodeId === "dev:15")?.hypervisorNodeId, "dev:4");
+  assert.equal(tra(m), false);
+  assert.notEqual(padreDi(automatico(m).tree, "dev:4"), "dev:15");
+  assert.equal(tra(buildTopologyModel(i, new Set([...REGOLE_T1].filter((r) => r !== "vm-e-mac-propri")))), true, "regola spenta: il collegamento falso");
 });

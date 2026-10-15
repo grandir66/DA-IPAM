@@ -20,7 +20,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import Database from "better-sqlite3";
 
-import { controllaCopia } from "@/lib/credentials/guardia-copia";
+import { cartelleServizio, controllaCopia } from "@/lib/credentials/guardia-copia";
 
 const REPO = process.cwd();
 
@@ -51,11 +51,21 @@ describe("controllaCopia", () => {
     dati: copia,
     hubDb: path.join(copia, "hub.db"),
     cartellaTenant: path.join(copia, "tenants"),
-    datiServizio: servizio,
+    datiServizio: [servizio],
   });
 
   it("tutto dentro --dati e il servizio altrove → si parte", () => {
     assert.deepEqual(controllaCopia(giusti()), []);
+  });
+
+  it("nessuna cartella del servizio da escludere → errore, mai «si parte»", () => {
+    const e = controllaCopia({ ...giusti(), datiServizio: [] });
+    assert.ok(e.some((x) => /--dati-servizio/.test(x)), e.join("\n"));
+  });
+
+  it("con più cartelle del servizio le controlla tutte", () => {
+    const e = controllaCopia({ ...giusti(), datiServizio: [servizio, copia] });
+    assert.ok(e.some((x) => /cartella dati del servizio/.test(x)), e.join("\n"));
   });
 
   it("hub.db fuori da --dati → errore", () => {
@@ -71,27 +81,115 @@ describe("controllaCopia", () => {
   });
 
   it("--dati uguale alla cartella del servizio, anche passando da un collegamento → errore", () => {
-    assert.ok(controllaCopia({ dati: servizio, hubDb: path.join(servizio, "hub.db"), cartellaTenant: path.join(servizio, "tenants"), datiServizio: servizio })
+    assert.ok(controllaCopia({ dati: servizio, hubDb: path.join(servizio, "hub.db"), cartellaTenant: path.join(servizio, "tenants"), datiServizio: [servizio] })
       .some((x) => /servizio/.test(x)));
     const link = path.join(radice, "collegamento");
     fs.symlinkSync(servizio, link);
-    assert.ok(controllaCopia({ dati: link, hubDb: path.join(link, "hub.db"), cartellaTenant: path.join(link, "tenants"), datiServizio: servizio })
+    assert.ok(controllaCopia({ dati: link, hubDb: path.join(link, "hub.db"), cartellaTenant: path.join(link, "tenants"), datiServizio: [servizio] })
       .some((x) => /servizio/.test(x)));
   });
 
   it("--dati che contiene la cartella del servizio → errore", () => {
-    const e = controllaCopia({ dati: radice, hubDb: path.join(copia, "hub.db"), cartellaTenant: path.join(copia, "tenants"), datiServizio: servizio });
+    const e = controllaCopia({ dati: radice, hubDb: path.join(copia, "hub.db"), cartellaTenant: path.join(copia, "tenants"), datiServizio: [servizio] });
     assert.ok(e.some((x) => /contiene/.test(x)), e.join("\n"));
   });
 
   it("--dati senza hub.db o inesistente → errore: non è una copia dei dati", () => {
     const vuota = path.join(radice, "vuota");
     fs.mkdirSync(path.join(vuota, "tenants"), { recursive: true });
-    assert.ok(controllaCopia({ dati: vuota, hubDb: path.join(vuota, "hub.db"), cartellaTenant: path.join(vuota, "tenants"), datiServizio: servizio })
+    assert.ok(controllaCopia({ dati: vuota, hubDb: path.join(vuota, "hub.db"), cartellaTenant: path.join(vuota, "tenants"), datiServizio: [servizio] })
       .some((x) => /hub\.db/.test(x)));
     const assente = path.join(radice, "assente");
-    assert.ok(controllaCopia({ dati: assente, hubDb: path.join(assente, "hub.db"), cartellaTenant: path.join(assente, "tenants"), datiServizio: servizio })
+    assert.ok(controllaCopia({ dati: assente, hubDb: path.join(assente, "hub.db"), cartellaTenant: path.join(assente, "tenants"), datiServizio: [servizio] })
       .some((x) => /non esiste/.test(x)));
+  });
+
+  // Revisione della 2a: la guardia guardava dove stanno hub.db e la cartella dei
+  // tenant, non i file dentro. Una copia fatta a mano (cp -s, ln -s, ln) con un
+  // tenants/<codice>.db collegato al DB vero passava, e getTenantDb apriva — e
+  // migrava — il DB del cliente.
+  describe("file collegati ai dati veri", () => {
+    let copiaLink = "";
+    const percorsi = () => ({
+      dati: copiaLink,
+      hubDb: path.join(copiaLink, "hub.db"),
+      cartellaTenant: path.join(copiaLink, "tenants"),
+      datiServizio: [servizio],
+    });
+
+    before(() => {
+      fs.writeFileSync(path.join(servizio, "tenants", "A.db"), "vivo");
+      fs.writeFileSync(path.join(servizio, "tenants", "B.db"), "vivo");
+      copiaLink = path.join(radice, "copia-a-mano");
+      cartellaDati(copiaLink);
+    });
+
+    it("un tenants/<codice>.db che è un collegamento simbolico al DB vero → errore", () => {
+      const f = path.join(copiaLink, "tenants", "A.db");
+      fs.symlinkSync(path.join(servizio, "tenants", "A.db"), f);
+      try {
+        const e = controllaCopia(percorsi());
+        assert.ok(e.some((x) => /A\.db/.test(x) && /collegamento simbolico/.test(x)), e.join("\n") || "nessun errore: si partirebbe sul DB vero");
+      } finally {
+        fs.unlinkSync(f);
+      }
+    });
+
+    it("un tenants/<codice>.db con un collegamento fisico (stesso file del DB vero) → errore", () => {
+      const f = path.join(copiaLink, "tenants", "B.db");
+      fs.linkSync(path.join(servizio, "tenants", "B.db"), f);
+      try {
+        const e = controllaCopia(percorsi());
+        assert.ok(e.some((x) => /B\.db/.test(x) && /collegamenti fisici/.test(x)), e.join("\n") || "nessun errore: si partirebbe sul DB vero");
+      } finally {
+        fs.unlinkSync(f);
+      }
+    });
+
+    it("hub.db collegato (anche con un collegamento dentro --dati) → errore", () => {
+      const hub = path.join(copiaLink, "hub.db");
+      const vero = path.join(copiaLink, "hub-vero.db");
+      fs.renameSync(hub, vero);
+      fs.symlinkSync(vero, hub);
+      try {
+        const e = controllaCopia(percorsi());
+        assert.ok(e.some((x) => /hub\.db/.test(x) && /collegamento simbolico/.test(x)), e.join("\n") || "nessun errore");
+      } finally {
+        fs.unlinkSync(hub);
+        fs.renameSync(vero, hub);
+      }
+    });
+
+    it("una copia fatta di file veri resta buona", () => {
+      fs.writeFileSync(path.join(copiaLink, "tenants", "C.db"), "copia");
+      try {
+        assert.deepEqual(controllaCopia(percorsi()), []);
+      } finally {
+        fs.unlinkSync(path.join(copiaLink, "tenants", "C.db"));
+      }
+    });
+  });
+});
+
+describe("cartelleServizio", () => {
+  it("DA_INVENT_DATA_DIR dell'ambiente, più <cwd>/data", () => {
+    const r = cartelleServizio({ DA_INVENT_DATA_DIR: ` ${servizio} ` }, undefined, "/app");
+    assert.deepEqual(r, { ok: true, cartelle: [servizio, path.join("/app", "data")] });
+  });
+
+  it("senza la variabile e senza --dati-servizio non si parte: <cwd>/data da sola non basta (sull'hub lo script gira altrove)", () => {
+    const r = cartelleServizio({}, undefined, "/app");
+    assert.equal(r.ok, false);
+    if (!r.ok) assert.match(r.motivo, /--dati-servizio/);
+    assert.equal(cartelleServizio({ DA_INVENT_DATA_DIR: "  " }, undefined, "/app").ok, false);
+  });
+
+  it("--dati-servizio deve essere una cartella che esiste", () => {
+    assert.deepEqual(cartelleServizio({}, servizio, "/app"), { ok: true, cartelle: [servizio, path.join("/app", "data")] });
+    for (const sbagliato of [path.join(radice, "non-esiste"), path.join(copia, "hub.db"), "", "--out"]) {
+      const r = cartelleServizio({ DA_INVENT_DATA_DIR: servizio }, sbagliato, "/app");
+      assert.equal(r.ok, false, `accettato: «${sbagliato}»`);
+    }
   });
 });
 

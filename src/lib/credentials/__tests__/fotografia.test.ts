@@ -178,8 +178,11 @@ function statoCartella(dir: string): Record<string, string> {
   return out;
 }
 
-function lancia(args: string[], datiServizio: string, script = SCRIPT) {
-  const env: NodeJS.ProcessEnv = { ...process.env, DA_INVENT_DATA_DIR: datiServizio, ENCRYPTION_KEY: K };
+/** `datiServizio` null: l'ambiente senza DA_INVENT_DATA_DIR, come sull'hub. */
+function lancia(args: string[], datiServizio: string | null, script = SCRIPT) {
+  const env: NodeJS.ProcessEnv = { ...process.env, ENCRYPTION_KEY: K };
+  if (datiServizio == null) delete env.DA_INVENT_DATA_DIR;
+  else env.DA_INVENT_DATA_DIR = datiServizio;
   delete env.DA_IPAM_HUB_DB_PATH;
   return spawnSync(process.execPath, ["--import", "tsx", script, ...args], {
     cwd: REPO,
@@ -364,6 +367,36 @@ describe("fotografia-scelte.ts sulla copia", () => {
     assert.match(r.stderr, /servizio/);
     assert.deepEqual(statoCartella(servizio), statoPrima);
     assert.equal(fs.existsSync(out), false);
+  });
+
+  // Revisione della 2a: senza DA_INVENT_DATA_DIR la cartella del servizio si
+  // ricavava da process.cwd()/data, ma gli script girano da $L/codice-*, non
+  // dalla cartella dell'app. Sull'hub l'unità non ha la variabile (i dati sono
+  // in /opt/da-invent/data): la guardia confrontava --dati con la cartella
+  // sbagliata e lasciava passare anche i dati veri.
+  it("senza DA_INVENT_DATA_DIR e senza --dati-servizio: esce con 2 senza aprire niente", () => {
+    const statoPrima = statoCartella(servizio);
+    const out = path.join(radice, "fotografie-3", "x.jsonl");
+    // --dati è proprio la cartella «del servizio»: con la guardia aperta passerebbe.
+    const r = lancia(["--dati", servizio, "--out", out], null);
+    assert.equal(r.status, 2, `${r.stdout}\n${r.stderr}`);
+    assert.match(r.stderr, /--dati-servizio/);
+    assert.deepEqual(statoCartella(servizio), statoPrima);
+    assert.equal(fs.existsSync(out), false);
+    const m = lancia(["--dati", servizio], null, SCRIPT_MISURE);
+    assert.equal(m.status, 2, `${m.stdout}\n${m.stderr}`);
+    assert.match(m.stderr, /--dati-servizio/);
+    assert.deepEqual(statoCartella(servizio), statoPrima);
+  });
+
+  it("senza DA_INVENT_DATA_DIR, con --dati-servizio: la guardia confronta con quella", () => {
+    const statoPrima = statoCartella(servizio);
+    const sbagliata = lancia(["--dati", servizio, "--dati-servizio", servizio], null, SCRIPT_MISURE);
+    assert.equal(sbagliata.status, 2, `${sbagliata.stdout}\n${sbagliata.stderr}`);
+    assert.match(sbagliata.stderr, /servizio/);
+    const giusta = lancia(["--dati", TEST_DATA_DIR, "--dati-servizio", servizio], null, SCRIPT_MISURE);
+    assert.equal(giusta.status, 0, `${giusta.stdout}\n${giusta.stderr}`);
+    assert.deepEqual(statoCartella(servizio), statoPrima);
   });
 
   it("si rifiuta di scrivere in una cartella con permessi più larghi di 0700", () => {

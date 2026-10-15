@@ -10,30 +10,35 @@
  * d'appoggio che importa db-tenant, e guardia ripetuta sui percorsi dei moduli
  * prima di aprire un DB. Ogni errore: uscita 2, niente aperto.
  *
- * Uso:  npx tsx scripts/credenziali/misure-2a.ts --dati <copia dei dati>
+ * Uso:  npx tsx scripts/credenziali/misure-2a.ts --dati <copia dei dati> [--dati-servizio <cartella>]
  *   Serve ENCRYPTION_KEY (ambiente del servizio, caricato senza stamparlo).
+ *   Senza DA_INVENT_DATA_DIR nell'ambiente (l'hub non ce l'ha) serve
+ *   --dati-servizio con la cartella dati del servizio.
  *   Uscita: 0 fatto, 2 non partito.
  */
 import path from "node:path";
-import { controllaCopia } from "../../src/lib/credentials/guardia-copia";
+import { cartelleServizio, controllaCopia } from "../../src/lib/credentials/guardia-copia";
 
 function uso(msg?: string): number {
   if (msg) process.stderr.write(`${msg}\n`);
-  process.stderr.write("Uso: npx tsx scripts/credenziali/misure-2a.ts --dati <copia dei dati>\n");
+  process.stderr.write("Uso: npx tsx scripts/credenziali/misure-2a.ts --dati <copia dei dati> [--dati-servizio <cartella>]\n");
   return 2;
 }
 
 async function main(): Promise<number> {
   const a = process.argv.slice(2);
-  const i = a.indexOf("--dati");
-  const datiArg = i >= 0 ? a[i + 1] : undefined;
+  // Un'opzione scritta senza valore vale "" (errore), non «assente».
+  const val = (k: string) => (a.indexOf(k) >= 0 ? (a[a.indexOf(k) + 1] ?? "") : undefined);
+  const datiArg = val("--dati");
   if (!datiArg) return uso();
   if (!process.env.ENCRYPTION_KEY?.trim()) return uso("ENCRYPTION_KEY assente: carica l'ambiente del servizio prima di lanciare le misure.");
 
-  // Cartella dati del servizio, letta PRIMA di sovrascrivere l'ambiente (regola di resolveDataDir).
-  const datiServizio = process.env.DA_INVENT_DATA_DIR?.trim() || path.join(process.cwd(), "data");
+  // Le cartelle dati del servizio, lette PRIMA di sovrascrivere l'ambiente.
+  // Senza DA_INVENT_DATA_DIR serve --dati-servizio: non si ricava da cwd.
+  const servizio = cartelleServizio(process.env, val("--dati-servizio"), process.cwd());
+  if (!servizio.ok) return uso(`Non parto: ${servizio.motivo}`);
   const dati = path.resolve(datiArg);
-  const attesi = { dati, hubDb: path.join(dati, "hub.db"), cartellaTenant: path.join(dati, "tenants"), datiServizio };
+  const attesi = { dati, hubDb: path.join(dati, "hub.db"), cartellaTenant: path.join(dati, "tenants"), datiServizio: servizio.cartelle };
   const erroriPrima = controllaCopia(attesi);
   if (erroriPrima.length > 0) return uso(`Non parto:\n${erroriPrima.map((e) => `  - ${e}`).join("\n")}`);
 

@@ -19,16 +19,18 @@
  *   4. prima di aprire un DB, la guardia ricontrolla i percorsi che i moduli
  *      useranno davvero. Ogni errore: uscita 2, niente aperto.
  *
- * Uso:  npx tsx scripts/credenziali/fotografia-scelte.ts --dati <copia> --out <file.jsonl>
+ * Uso:  npx tsx scripts/credenziali/fotografia-scelte.ts --dati <copia> --out <file.jsonl> [--dati-servizio <cartella>]
  *       npx tsx scripts/credenziali/fotografia-scelte.ts --confronta <prima.jsonl> <dopo.jsonl> [--con-fonte]
  *   Serve ENCRYPTION_KEY (ambiente del servizio, caricato senza stamparlo).
+ *   Senza DA_INVENT_DATA_DIR nell'ambiente (l'hub non ce l'ha) serve
+ *   --dati-servizio con la cartella dati del servizio: la guardia non la indovina.
  *   La cartella di --out si crea 0700 (si rifiuta una cartella più larga), il
  *   file nasce 0600 e non si sovrascrive. Uscita: 0 fatto / nessuna
  *   differenza, 1 differenze, 2 non partito.
  */
 import fs from "node:fs";
 import path from "node:path";
-import { controllaCopia } from "../../src/lib/credentials/guardia-copia";
+import { cartelleServizio, controllaCopia } from "../../src/lib/credentials/guardia-copia";
 import {
   confrontaFotografie,
   contaPerOggetto,
@@ -40,7 +42,7 @@ import {
 function uso(msg?: string): number {
   if (msg) process.stderr.write(`${msg}\n`);
   process.stderr.write(
-    "Uso: npx tsx scripts/credenziali/fotografia-scelte.ts --dati <copia dei dati> --out <file.jsonl>\n" +
+    "Uso: npx tsx scripts/credenziali/fotografia-scelte.ts --dati <copia dei dati> --out <file.jsonl> [--dati-servizio <cartella>]\n" +
       "     npx tsx scripts/credenziali/fotografia-scelte.ts --confronta <prima.jsonl> <dopo.jsonl> [--con-fonte]\n"
   );
   return 2;
@@ -62,18 +64,20 @@ function confronta(a: string[]): number {
 async function main(): Promise<number> {
   const a = process.argv.slice(2);
   if (a.includes("--confronta")) return confronta(a);
-  const val = (k: string) => (a.indexOf(k) >= 0 ? a[a.indexOf(k) + 1] : undefined);
+  // Un'opzione scritta senza valore vale "" (errore), non «assente».
+  const val = (k: string) => (a.indexOf(k) >= 0 ? (a[a.indexOf(k) + 1] ?? "") : undefined);
   const datiArg = val("--dati");
   const outArg = val("--out");
   if (!datiArg || !outArg) return uso();
   const chiave = process.env.ENCRYPTION_KEY?.trim();
   if (!chiave) return uso("ENCRYPTION_KEY assente: carica l'ambiente del servizio prima di lanciare la fotografia.");
 
-  // La cartella dati del servizio, letta PRIMA di sovrascrivere l'ambiente
-  // (stessa regola di resolveDataDir in src/lib/data-dir.ts).
-  const datiServizio = process.env.DA_INVENT_DATA_DIR?.trim() || path.join(process.cwd(), "data");
+  // Le cartelle dati del servizio, lette PRIMA di sovrascrivere l'ambiente.
+  // Senza DA_INVENT_DATA_DIR serve --dati-servizio: non si ricava da cwd.
+  const servizio = cartelleServizio(process.env, val("--dati-servizio"), process.cwd());
+  if (!servizio.ok) return uso(`Non parto: ${servizio.motivo}`);
   const dati = path.resolve(datiArg);
-  const attesi = { dati, hubDb: path.join(dati, "hub.db"), cartellaTenant: path.join(dati, "tenants"), datiServizio };
+  const attesi = { dati, hubDb: path.join(dati, "hub.db"), cartellaTenant: path.join(dati, "tenants"), datiServizio: servizio.cartelle };
   const erroriPrima = controllaCopia(attesi);
   if (erroriPrima.length > 0) return uso(`Non parto:\n${erroriPrima.map((e) => `  - ${e}`).join("\n")}`);
 

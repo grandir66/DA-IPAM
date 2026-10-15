@@ -58,6 +58,12 @@ import {
   CREDENTIAL_SNMP_SECONDARY_SELECT_LABEL,
   getPrimaryCredentialLabels,
 } from "@/components/shared/credential-assignment-fields";
+import {
+  corpoHaModifiche,
+  corpoModificaApparato,
+  corpoModificaInBlocco,
+  tendineDaApparato,
+} from "./modifica-in-blocco";
 import { DeviceCredentialsTable } from "@/components/shared/device-credentials-table";
 import {
   inferProductProfileFromLegacy,
@@ -274,21 +280,25 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
       if (key.startsWith("device-")) deviceIds.push(Number(key.replace("device-", "")));
       else if (key.startsWith("host-")) hostIds.push(Number(key.replace("host-", "")));
     }
-    const body: Record<string, unknown> = {};
-    if (deviceIds.length) body.device_ids = deviceIds;
-    if (hostIds.length) body.host_ids = hostIds;
-    if (bulkClassification) body.classification = bulkClassification;
-    if (bulkProtocol) body.protocol = bulkProtocol;
-    if (bulkVendor) body.vendor = bulkVendor;
-    if (deviceIds.length) {
-      if (bulkCredentialId === "none" || bulkCredentialId === null) body.credential_id = null;
-      else if (bulkCredentialId) body.credential_id = Number(bulkCredentialId);
-      if (bulkSnmpCredentialId === "none" || bulkSnmpCredentialId === null) body.snmp_credential_id = null;
-      else if (bulkSnmpCredentialId) body.snmp_credential_id = Number(bulkSnmpCredentialId);
+    // «Non modificare» = campo assente: prima le tendine vuote partivano come
+    // null e il PATCH azzerava le credenziali di ogni apparato selezionato.
+    let body: Record<string, unknown>;
+    try {
+      body = corpoModificaInBlocco({
+        deviceIds,
+        hostIds,
+        classification: bulkClassification,
+        protocol: bulkProtocol,
+        vendor: bulkVendor,
+        credentialId: bulkCredentialId,
+        snmpCredentialId: bulkSnmpCredentialId,
+      });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Credenziale non valida");
+      return;
     }
 
-    const hasUpdate = bulkClassification || bulkProtocol || bulkVendor || bulkCredentialId || bulkSnmpCredentialId;
-    if (!hasUpdate) {
+    if (!corpoHaModifiche(body)) {
       toast.error("Seleziona almeno un campo da aggiornare");
       return;
     }
@@ -716,14 +726,24 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
     if (!editingDevice) return;
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
-    const body: Record<string, unknown> = {
+    const campi: Record<string, unknown> = {
       vendor: editVendor,
       protocol: editProtocol,
-      credential_id: editCredentialId && editCredentialId !== "none" ? Number(editCredentialId) : null,
-      snmp_credential_id: editSnmpCredentialId && editSnmpCredentialId !== "none" ? Number(editSnmpCredentialId) : null,
       vendor_subtype: editVendor === "hp" && editVendorSubtype ? editVendorSubtype : null,
       scan_target: editScanTarget || null,
     };
+    // Le credenziali partono solo se cambiate rispetto all'apparato (dalla 2e un null toglie i binding).
+    let body: Record<string, unknown>;
+    try {
+      body = corpoModificaApparato(tendineDaApparato(editingDevice as NetworkDevice), {
+        campi,
+        credentialId: editCredentialId,
+        snmpCredentialId: editSnmpCredentialId,
+      });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Credenziale non valida");
+      return;
+    }
     if (editProductProfile) body.product_profile = editProductProfile;
     if (editClassification) body.classification = editClassification;
     body.use_for_arp_poll = editUseForArpPoll ? 1 : 0;

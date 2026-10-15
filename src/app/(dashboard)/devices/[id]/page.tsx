@@ -57,6 +57,7 @@ import {
 } from "@/lib/device-product-profiles";
 import type { NetworkDevice, ArpEntry, MacPortEntry, SwitchPort } from "@/types";
 import { networkDeviceUsesArpPoll } from "@/lib/network-device-arp";
+import { corpoModificaApparato, tendineDaApparato } from "../modifica-in-blocco";
 
 interface Credential {
   id: number;
@@ -839,14 +840,24 @@ function DeviceDetailPage() {
     setEditSaving(true);
     const form = e.currentTarget;
     const formData = new FormData(form);
-    const body: Record<string, unknown> = {
-      vendor: editVendor,
-      protocol: editProtocol,
-      vendor_subtype: editVendorSubtype || null,
-      credential_id: editCredentialId && editCredentialId !== "none" ? Number(editCredentialId) : null,
-      snmp_credential_id: editSnmpCredentialId && editSnmpCredentialId !== "none" ? Number(editSnmpCredentialId) : null,
-      scan_target: editScanTarget || null,
-    };
+    // Le credenziali partono solo se cambiate rispetto all'apparato (dalla 2e un null toglie i binding).
+    let body: Record<string, unknown>;
+    try {
+      body = corpoModificaApparato(tendineDaApparato(device), {
+        campi: {
+          vendor: editVendor,
+          protocol: editProtocol,
+          vendor_subtype: editVendorSubtype || null,
+          scan_target: editScanTarget || null,
+        },
+        credentialId: editCredentialId,
+        snmpCredentialId: editSnmpCredentialId,
+      });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Credenziale non valida");
+      setEditSaving(false);
+      return;
+    }
     if (editProductProfile) body.product_profile = editProductProfile;
     if (editClassification) body.classification = editClassification;
     body.use_for_arp_poll = editUseForArpPoll ? 1 : 0;

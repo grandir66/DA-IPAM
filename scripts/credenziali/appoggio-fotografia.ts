@@ -20,8 +20,10 @@
  *   righe host fuori fermo, poi l'account WinRM dell'AD), con `registra:
  *   false`; la riga dice la fonte del motore (`host_validated`, `ad_fallback`…);
  * - host: resolveCredentialsForDb e buildSnmpCommunitiesForHost; reti: le
- *   catene 2-4; anteprima edge: collectEdgeCredentialsForNetwork. Cambiano nel
- *   T26, con lo stesso formato di riga.
+ *   catene 2-4; anteprima edge: collectEdgeCredentialsForNetwork. Dalla 2b sono
+ *   involucri del motore che registrano i ripieghi: qui si chiamano con
+ *   `registra: false` (SENZA_REGISTRO). Cambiano nel T26, con lo stesso formato
+ *   di riga.
  *
  * Un apparato snmp_v3 senza una v3 leggibile ha la riga snmp senza scelta: le
  * sessioni v3 non ripiegano sulla community (T4).
@@ -77,6 +79,9 @@ import type { NetworkDevice } from "../../src/types";
 import type { SnmpV3CredentialRecord } from "../../src/lib/protocols/snmpv3";
 
 export { cartellaTenant, getHubDbPath };
+
+/** La fotografia è una verifica: i lettori di host, reti ed edge non scrivono ripieghi. */
+const SENZA_REGISTRO = { registra: false } as const;
 
 const CODICE_TENANT = /^([A-Za-z0-9_-]{1,64})\.db$/;
 
@@ -377,7 +382,7 @@ function fotografaDentro(code: string, encryptionKey: string): EsitoTenant {
       }
       righe.push({ tenant: code, oggetto: "host", chiave: `${h.id}:${proto}`, nome, scelta: s });
     }
-    const vera = buildSnmpCommunitiesForHost(h.network_id, h.id);
+    const vera = buildSnmpCommunitiesForHost(h.network_id, h.id, null, SENZA_REGISTRO);
     const prima = catenaSnmp(ctx, vera, provenienzaCatenaSnmp(dbh, { hostId: h.id, networkId: h.network_id }))[0];
     righe.push({
       tenant: code,
@@ -394,7 +399,7 @@ function fotografaDentro(code: string, encryptionKey: string): EsitoTenant {
     const nelMotore = (proto: "winrm" | "ssh") =>
       new Set(resolveCredentialsForDb(dbh, { networkId: n.id }, proto).map((r) => r.credential_id));
     const motoreWin = nelMotore("winrm");
-    getOrderedDetectCredentialIds(n.id, "windows").forEach((id, i) => {
+    getOrderedDetectCredentialIds(n.id, "windows", SENZA_REGISTRO).forEach((id, i) => {
       righe.push({
         tenant: code,
         oggetto: "rete",
@@ -404,7 +409,7 @@ function fotografaDentro(code: string, encryptionKey: string): EsitoTenant {
       });
     });
     const motoreSsh = nelMotore("ssh");
-    getOrderedSshLinuxCredentialIds(n.id).forEach((id, i) => {
+    getOrderedSshLinuxCredentialIds(n.id, SENZA_REGISTRO).forEach((id, i) => {
       const p = getSshLinuxCredentialPair(id);
       righe.push({
         tenant: code,
@@ -419,12 +424,12 @@ function fotografaDentro(code: string, encryptionKey: string): EsitoTenant {
         },
       });
     });
-    catenaSnmp(ctx, buildSnmpCommunitiesForNetwork(n.id), provenienzaCatenaSnmp(dbh, { networkId: n.id })).forEach((v, i) => {
+    catenaSnmp(ctx, buildSnmpCommunitiesForNetwork(n.id, null, SENZA_REGISTRO), provenienzaCatenaSnmp(dbh, { networkId: n.id })).forEach((v, i) => {
       righe.push({ tenant: code, oggetto: "rete", chiave: `${n.id}:snmp:${i}`, nome: n.name, scelta: v.scelta });
     });
 
     const posizione: Record<string, number> = {};
-    for (const t of collectEdgeCredentialsForNetwork(n.id).transfer) {
+    for (const t of collectEdgeCredentialsForNetwork(n.id, SENZA_REGISTRO).transfer) {
       const i = posizione[t.slot] ?? 0;
       posizione[t.slot] = i + 1;
       const parti = t.cred_type === "snmp" ? [t.community ?? ""] : [t.login ?? "", t.password ?? "", t.domain ?? ""];

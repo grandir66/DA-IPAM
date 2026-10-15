@@ -13,6 +13,7 @@ import { removeTestHubDb } from "@/lib/integrations/__tests__/support/hub-isolat
 import { test, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { closeHubDb } from "@/lib/db-hub";
+import { encrypt } from "@/lib/crypto";
 import { deleteTenantDatabase, getTenantDb, rileggiSchemaCavi, withTenant } from "@/lib/db-tenant";
 import { runArpPoll } from "@/lib/cron/jobs";
 import { creaWalkSnmp, type SwitchClient } from "@/lib/devices/switch-client";
@@ -167,9 +168,15 @@ test("agente finto su UDP locale (non un apparato): sessione vera con la version
   const a = await avviaAgenteFinto({ versioni: ["1", "2c"], valori: {} });
   const muto = await avviaAgenteFinto({ versioni: [], valori: {} });
   try {
+    // La porta dell'agente sta nel binding SNMP: dalla 2b delle credenziali (D11) la sessione SNMP usa la porta del
+    // binding o della voce, altrimenti la 161; `device.port` non vale per SNMP.
     const apparato = (porta: number, versione: "1" | "2c" | null): NetworkDevice => withTenant(T, () => {
-      const id = Number(db().prepare("INSERT INTO network_devices (name, host, device_type, vendor, protocol, port, enabled, community_string, snmp_version) "
-        + "VALUES ('SW-AGENTE', '127.0.0.1', 'switch', 'hp', 'snmp_v2', ?, 0, 'public', ?)").run(porta, versione).lastInsertRowid);
+      const id = Number(db().prepare("INSERT INTO network_devices (name, host, device_type, vendor, protocol, port, enabled, snmp_version) "
+        + "VALUES ('SW-AGENTE', '127.0.0.1', 'switch', 'hp', 'snmp_v2', 161, 0, ?)").run(versione).lastInsertRowid);
+      const voce = Number(db().prepare("INSERT INTO credentials (name, credential_type, encrypted_password) VALUES ('Community agente', 'snmp', ?)")
+        .run(encrypt("public")).lastInsertRowid);
+      db().prepare("INSERT INTO device_credential_bindings (device_id, credential_id, protocol_type, port, sort_order) VALUES (?, ?, 'snmp', ?, 0)")
+        .run(id, voce, porta);
       return db().prepare("SELECT * FROM network_devices WHERE id = ?").get(id) as NetworkDevice;
     });
     for (const [versione, attesa, tipo] of [["2c", "2c", "getbulk"], [null, "1", "getnext"]] as const) {

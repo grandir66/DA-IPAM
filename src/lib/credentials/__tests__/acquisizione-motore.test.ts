@@ -129,13 +129,20 @@ describe("acquisizione degli apparati sul motore", () => {
       bind.run(id.proxmox, apiProxmox, "api", 8006, 0, "success");
       bind.run(id.proxmox, sshProxmox, "ssh", portaSsh, 1, "untested");
 
-      // Apparati SNMP con la community in colonna: la porta dell'apparato vale (1161), la 22 no (F3).
+      // Apparati SNMP con la community in colonna, senza una porta loro: SNMP sulla 161 (D11 = (a)), qualunque sia
+      // device.port (1161, o la 22 rimasta di F3).
       id.snmp1161 = crea("Switch SNMP sulla 1161", "10.77.0.6", "switch", "hp", "snmp_v2", 1161, null, encrypt("comm-1161"));
       id.snmp22 = crea("Switch SNMP con la porta SSH", "10.77.0.7", "switch", "hp", "snmp_v2", 22, null, encrypt("comm-22"));
 
       // v3 in un binding, su una porta sua.
       id.v3 = crea("Switch v3 col binding", "10.77.0.5", "switch", "hp", "snmp_v3", 161);
       bind.run(id.v3, v3, "snmp", 1161, 0, "untested");
+
+      // NAS salvato come SNMP ma con scan_target linux (prova SSH), senza credenziali sue; l'host con lo stesso
+      // indirizzo ha una riga SSH validata. Prima del T8 il ripiego sull'host cercava righe 'snmp': niente login.
+      id.nasSnmp = crea("NAS salvato come SNMP", "127.0.0.1", "nas", "synology", "snmp_v2", portaSsh, null, null, "linux");
+      const hostNas = Number(d.prepare("INSERT INTO hosts (network_id, ip) VALUES (?, '127.0.0.1')").run(rete).lastInsertRowid);
+      d.prepare("INSERT INTO host_credentials (host_id, credential_id, protocol_type, port, validated) VALUES (?, ?, 'ssh', ?, 1)").run(hostNas, sshBuona, portaSsh);
     });
   });
 
@@ -180,11 +187,11 @@ describe("acquisizione degli apparati sul motore", () => {
       });
     });
 
-    it(`${nome}: apparato SNMP con la community in colonna → porta dell'apparato, ma mai la 22 (F3)`, () => {
+    it(`${nome}: apparato SNMP con la community in colonna e senza una porta sua → 161, non device.port (D11 = (a), F3)`, () => {
       withTenant(T, () => {
         const a = l.credenzialeSnmpApparato(apparato(l, "snmp1161"));
         const b = l.credenzialeSnmpApparato(apparato(l, "snmp22"));
-        assert.deepEqual(a.ok && [a.port, a.fonte, a.cred], [1161, "device_column_inline", { forma: "community", community: "comm-1161" }]);
+        assert.deepEqual(a.ok && [a.port, a.fonte, a.cred], [161, "device_column_inline", { forma: "community", community: "comm-1161" }]);
         assert.deepEqual(b.ok && [b.port, b.fonte], [161, "device_column_inline"]);
       });
     });
@@ -242,5 +249,13 @@ describe("acquisizione degli apparati sul motore", () => {
     assert.ok(d);
     await withTenant(T, () => runDeviceConnectionTest(d, 10_000));
     assert.deepEqual(connessioniSsh, [portaSsh], "l'SSH della prova non è arrivato alla porta del binding");
+  });
+
+  it("prova di connessione di un apparato SNMP senza credenziali sue: nessun ripiego sulla riga SSH dell'host (come prima del T8)", async () => {
+    connessioniSsh.length = 0;
+    const d = withTenant(T, () => (tenant as unknown as Lettori).getNetworkDeviceById(id.nasSnmp));
+    assert.ok(d);
+    await assert.rejects(withTenant(T, () => runDeviceConnectionTest(d, 10_000)), /Credenziali mancanti/);
+    assert.deepEqual(connessioniSsh, [], "la prova ha tentato un login SSH con la credenziale dell'host");
   });
 });

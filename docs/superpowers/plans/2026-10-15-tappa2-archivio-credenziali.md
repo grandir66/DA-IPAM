@@ -1056,7 +1056,14 @@ sulle fonti dell'apparato; le patch restano su righe host e ripiego AD):
   (`patch/credentials.ts:54-68`). Il 15/10 erano 0 su hub e A (misura #88); si elencano
   per nome;
 - in ogni tenant, `fonte` passa da `lettore_vecchio` ai nomi del motore: per questo il
-  confronto 2a → 2b si fa **senza** `--con-fonte`.
+  confronto 2a → 2b si fa **senza** `--con-fonte`;
+- fuori dalla fotografia (revisione 2b, 16/10): le letture SNMP della topologia degli
+  switch (`switch-client.ts`, `apriSessioneSnmpApparato`) erano le sole a usare
+  `device.port` (salvo la 22) invece della 161. Con D11 = (a) passano alla porta del
+  binding o della voce, altrimenti 161, come gli altri sette lettori. Cambia solo per
+  gli apparati `snmp_v2`/`snmp_v3` con `port` diversa da 161 e da 22 e senza un binding
+  SNMP o una voce SNMP con una porta propria: si elencano per nome dalle copie prima
+  del rilascio (query nel resoconto della revisione).
 
 Se la risposta a D1b è (b), si aggiungono i conteggi per livello misurati nel T1, con
 l'elenco per nome. Ogni altra differenza fa scattare l'arresto.

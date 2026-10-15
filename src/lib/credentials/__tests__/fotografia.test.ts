@@ -341,6 +341,22 @@ describe("fotografia-scelte.ts sulla copia", () => {
     assert.equal(fs.statSync(out).mode & 0o777, 0o600);
   });
 
+  it("la fotografia non registra ripieghi, nemmeno coi lettori di host, reti ed edge (vincolo «Le verifiche non registrano»)", () => {
+    // La chiave dell'hub e «public» di questi dati sono ripieghi del motore (casi cred_*): un lettore che registra
+    // li scrive nel registro sotto --dati e stampa «[db] ripiego cred_…» a terminale. Il tenant di prova non è
+    // nell'hub, quindi «tenant_non_registrato» c'è comunque: non è una scelta di credenziale e qui non si conta.
+    const registro = path.join(TEST_DATA_DIR, "logs", "ripieghi");
+    const righeCred = () =>
+      fs.existsSync(registro)
+        ? fs.readdirSync(registro).flatMap((f) => fs.readFileSync(path.join(registro, f), "utf8").split("\n")).filter((x) => x.includes('"caso":"cred_')).length
+        : 0;
+    const prima = righeCred();
+    const r = lancia(["--dati", TEST_DATA_DIR, "--out", path.join(radice, "fotografie", "senza-registro.jsonl")], servizio);
+    assert.equal(r.status, 0, `uscita ${r.status}\n${r.stdout}\n${r.stderr}`);
+    assert.doesNotMatch(`${r.stdout}\n${r.stderr}`, /\[db\] ripiego cred_/);
+    assert.equal(righeCred(), prima, "la fotografia ha scritto ripieghi del motore nel registro");
+  });
+
   it("misure-2a.ts: solo conteggi, servizio intatto, nessun segreto", () => {
     const statoPrima = statoCartella(servizio);
     const r = lancia(["--dati", TEST_DATA_DIR], servizio, SCRIPT_MISURE);

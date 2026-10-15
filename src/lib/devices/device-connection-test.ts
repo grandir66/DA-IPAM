@@ -130,10 +130,14 @@ function buildDeviceFromProvisional(p: ProvisionalDevice): NetworkDevice {
  * scelta nella finestra. Poi le righe validate dell'host con lo stesso
  * indirizzo, per il protocollo di login dell'apparato (winrm, api, altrimenti
  * ssh). Prima il ripiego sull'host leggeva le voci senza guardarne il tipo.
+ * Un apparato SNMP non ripiega sull'host: prima del T8 cercava righe 'snmp',
+ * che non hanno utente e password, e un ripiego su 'ssh' gli farebbe tentare
+ * un login SSH vero con la credenziale dell'host (revisione 2b).
  */
 function resolveCredentials(device: NetworkDevice): { username: string; password: string } | null {
   const creds = getDeviceCredentials(device);
   if (creds?.username && creds?.password) return creds;
+  if (device.protocol === "snmp_v2" || device.protocol === "snmp_v3") return null;
 
   const host = getHostByIp(device.host);
   if (!host?.id) return null;

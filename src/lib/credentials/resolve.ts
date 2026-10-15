@@ -620,14 +620,9 @@ function candidatiApparato(
   // per SNMP e per gli altri protocolli (l'SSH di Proxmox) quella del candidato.
   const portaApparato = !portaPropria && protocol !== "snmp" && protocol === protocolloPrincipale(app.protocol) ? app.port : null;
   const porta = (propria: number): number => portaApparato ?? propria;
-  // SNMP su un apparato SNMP: le fonti senza una porta propria (colonne, «public») usano la porta dell'apparato,
-  // come le letture degli switch e della topologia prima del T8, salvo la 22 (F3: porta SSH rimasta) o una porta
-  // non valida. Binding e voci con una porta loro tengono la loro.
-  const portaSnmpApparato =
-    protocol === "snmp" && protocolloPrincipale(app.protocol) === "snmp" && app.port != null && Number.isInteger(app.port) && app.port > 0 && app.port <= 65535 && app.port !== 22
-      ? app.port
-      : null;
-  const predefinita = portaSnmpApparato ?? DEFAULT_PORTS[protocol];
+  // SNMP (D11 = (a)): la porta del binding o della voce, altrimenti 161, anche su un apparato SNMP. `device.port`
+  // non vale per SNMP: può essere la porta SSH rimasta (F3), e prima del T8 sette lettori su otto usavano la 161.
+  const predefinita = DEFAULT_PORTS[protocol];
 
   const binding = bindingNonFalliti(dbh, app.id, protocol);
   const conVoce = binding.filter((b) => b.credential_id != null && ammesso(tipi, b.credential_type));

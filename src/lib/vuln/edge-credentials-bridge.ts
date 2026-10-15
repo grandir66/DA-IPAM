@@ -119,8 +119,8 @@ function buildTransferFromCredential(
   return null;
 }
 
-/** Elenco credenziali subnet (preview UI + payload sync edge). */
-export function collectEdgeCredentialsForNetwork(networkId: number): {
+/** Elenco credenziali subnet (preview UI + payload sync edge). `registra: false` per le verifiche (fotografia). */
+export function collectEdgeCredentialsForNetwork(networkId: number, opts: { registra?: boolean } = {}): {
   preview: EdgeCredentialPreview[];
   transfer: EdgeCredentialTransfer[];
 } {
@@ -156,10 +156,10 @@ export function collectEdgeCredentialsForNetwork(networkId: number): {
   }
 
   // Legacy per ruolo (ordine tentativi scan IPAM)
-  for (const credId of getOrderedSshLinuxCredentialIds(networkId)) {
+  for (const credId of getOrderedSshLinuxCredentialIds(networkId, opts)) {
     pushCred(credId, "ssh");
   }
-  for (const credId of getOrderedDetectCredentialIds(networkId, "windows")) {
+  for (const credId of getOrderedDetectCredentialIds(networkId, "windows", opts)) {
     pushCred(credId, "smb");
   }
   // Slot AD per assessment cred-bind (stesse cred Windows, payload dedicato edge).
@@ -187,7 +187,7 @@ export function collectEdgeCredentialsForNetwork(networkId: number): {
   // Community SNMP di default subnet (se nessuna cred SNMP valida)
   const hasSnmpTransfer = transfer.some((t) => t.slot === "snmp");
   if (!hasSnmpTransfer) {
-    const communities = buildSnmpCommunitiesForNetwork(networkId);
+    const communities = buildSnmpCommunitiesForNetwork(networkId, null, opts);
     const community = communities.find((c) => c && c !== "public" && c !== "private") ?? communities[0];
     if (community?.trim()) {
       const net = getNetworkById(networkId);

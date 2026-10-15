@@ -3973,20 +3973,24 @@ export function getHostDetectCredentialsEnriched(hostId: number): Array<{
   });
 }
 
+/** Le verifiche (fotografia, prova a vuoto) passano `registra: false`: i ripieghi non si scrivono. */
+type OpzioniRegistro = { registra?: boolean };
+
 /**
  * Catena di rilevamento (Windows o Linux) di una rete: involucro del motore
  * (`catenaReteDb`, tappa 2 credenziali, T7). Voci della rete, catene vecchie
  * e chiave globale dell'hub, tutte col filtro di tipo: prima la chiave
  * dell'hub si accodava senza controllo, anche se puntava a una voce che nel
  * tenant non c'è o è di un altro tipo. `role="linux"` è il protocollo SSH.
+ * `registra: false` (fotografia, prova a vuoto) non scrive i ripieghi.
  */
-export function getOrderedDetectCredentialIds(networkId: number, role: "windows" | "linux"): number[] {
-  return catenaReteDb(getDb(), networkId, role === "windows" ? "winrm" : "ssh", { globaliHub: chiaviGlobaliHub(getSetting) });
+export function getOrderedDetectCredentialIds(networkId: number, role: "windows" | "linux", opts: OpzioniRegistro = {}): number[] {
+  return catenaReteDb(getDb(), networkId, role === "windows" ? "winrm" : "ssh", { globaliHub: chiaviGlobaliHub(getSetting), registra: opts.registra });
 }
 
 /** Catena SSH di una rete per la scansione: involucro del motore (vedi sopra). */
-export function getOrderedSshLinuxCredentialIds(networkId: number): number[] {
-  return catenaReteDb(getDb(), networkId, "ssh", { globaliHub: chiaviGlobaliHub(getSetting) });
+export function getOrderedSshLinuxCredentialIds(networkId: number, opts: OpzioniRegistro = {}): number[] {
+  return catenaReteDb(getDb(), networkId, "ssh", { globaliHub: chiaviGlobaliHub(getSetting), registra: opts.registra });
 }
 
 /**
@@ -3994,8 +3998,8 @@ export function getOrderedSshLinuxCredentialIds(networkId: number): number[] {
  * della rete e catene vecchie, poi override, community della rete e
  * public/private in fondo, dichiarati come ripiego (D5).
  */
-export function buildSnmpCommunitiesForNetwork(networkId: number, profileOrOverride?: string | null): string[] {
-  return communitySnmpDb(getDb(), { networkId }, profileOrOverride ?? null).map((c) => c.community);
+export function buildSnmpCommunitiesForNetwork(networkId: number, profileOrOverride?: string | null, opts: OpzioniRegistro = {}): string[] {
+  return communitySnmpDb(getDb(), { networkId }, profileOrOverride ?? null, opts).map((c) => c.community);
 }
 
 /**
@@ -4005,9 +4009,10 @@ export function buildSnmpCommunitiesForNetwork(networkId: number, profileOrOverr
 export function buildSnmpCommunitiesForHost(
   networkId: number,
   hostId: number | null,
-  profileOrOverride?: string | null
+  profileOrOverride?: string | null,
+  opts: OpzioniRegistro = {}
 ): string[] {
-  return communitySnmpDb(getDb(), { hostId: hostId ?? undefined, networkId }, profileOrOverride ?? null).map((c) => c.community);
+  return communitySnmpDb(getDb(), { hostId: hostId ?? undefined, networkId }, profileOrOverride ?? null, opts).map((c) => c.community);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

@@ -454,3 +454,58 @@ export async function sshTryConnect(opts: SshOptions, probeCommand = "echo da-ip
     };
   }
 }
+
+/** Codice dell'errore di un comando che non ha risposto entro il suo tempo massimo (spec topologia §13.5.1, I53). */
+export const CODICE_TEMPO_SCADUTO = "TEMPO_SCADUTO";
+
+export class ComandoScaduto extends Error {
+  readonly code = CODICE_TEMPO_SCADUTO;
+  constructor(tempoMs: number) {
+    super(`Il comando non ha risposto entro ${tempoMs} ms`);
+    this.name = "ComandoScaduto";
+  }
+}
+
+/**
+ * Un `exec` su una connessione già aperta (`withSshClient`), con un tempo massimo: allo scadere chiude il canale e dà
+ * `ComandoScaduto` (codice `TEMPO_SCADUTO`). Lo usano solo i comandi nuovi delle letture in più (spec §13.5.1): quelli di
+ * oggi restano senza finché non si misura la durata vera dei loro giri. Il codice d'uscita torna com'è: su RouterOS un
+ * comando sbagliato esce con 0 e scrive l'errore su stdout, e chi chiama lo riconosce dal testo.
+ */
+export function execConTempo(conn: Pick<SshClient, "exec">, command: string, tempoMs: number): Promise<SshResult> {
+  return new Promise((resolve, reject) => {
+    let finito = false;
+    let canale: { close?: () => void } | null = null;
+    const timer = setTimeout(() => {
+      if (finito) return;
+      finito = true;
+      try { canale?.close?.(); } catch { /* il canale può essere già chiuso */ }
+      reject(new ComandoScaduto(tempoMs));
+    }, tempoMs);
+    conn.exec(command, (err, stream) => {
+      if (err) {
+        if (finito) return;
+        finito = true;
+        clearTimeout(timer);
+        reject(err);
+        return;
+      }
+      if (finito) {
+        // Il tempo è scaduto prima che il canale si aprisse: nessuno aspetta più, il canale non resta aperto.
+        try { stream.close(); } catch { /* il canale può essere già chiuso */ }
+        return;
+      }
+      canale = stream;
+      let stdout = "";
+      let stderr = "";
+      stream.on("data", (d: Buffer) => { stdout += d.toString(); });
+      stream.stderr.on("data", (d: Buffer) => { stderr += d.toString(); });
+      stream.on("close", (code: number) => {
+        if (finito) return;
+        finito = true;
+        clearTimeout(timer);
+        resolve({ stdout, stderr, code });
+      });
+    });
+  });
+}

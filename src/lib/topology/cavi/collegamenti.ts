@@ -7,7 +7,7 @@
  */
 import { parseDbDate } from "@/lib/db-date";
 import { correzioniOrfane, ignorato, regoleIgnora } from "@/lib/topology/ignorati";
-import { eRadioDalleCapacita } from "@/lib/topology/lettori/fonti";
+import { eRadioDalleCapacita, indiceDelFascio } from "@/lib/topology/lettori/fonti";
 import type { LinkOverrideRow } from "@/lib/topology/model-types";
 import type { NodeIndex } from "@/lib/topology/node-index";
 import { normale, type ElencoPorte, type Porta } from "./porte";
@@ -163,9 +163,9 @@ export function costruisciCollegamenti(prove: readonly Prova[], correzioni: read
   const diSegmento = new Set([...sentiti].filter(([k, m]) => m.size >= 2 && !ponti.has(k)).map(([k]) => k));
 
   const bozze: Bozza[] = [];
-  const aggiungi = (genere: Genere, pa: Porta, pb: Porta, p: Prova, osservatore: string | null): Bozza => {
+  const aggiungi = (genere: Genere, pa: Porta, pb: Porta, p: Prova, osservatore: string | null, distinto = false): Bozza => {
     for (const z of bozze) {
-      if (z.genere !== genere) continue;
+      if (distinto || z.genere !== genere) continue;
       const diritto = z.a.nodo === pa.nodo && z.b.nodo === pb.nodo && compatibili(z.a, pa) && compatibili(z.b, pb);
       const rovescio = !diritto && z.a.nodo === pb.nodo && z.b.nodo === pa.nodo && compatibili(z.a, pb) && compatibili(z.b, pa);
       if (!diritto && !rovescio) continue;
@@ -231,6 +231,16 @@ export function costruisciCollegamenti(prove: readonly Prova[], correzioni: read
     if (p.classe !== "uplink" || !p.altro) continue;
     const figlio = p.da.nodo, padre = p.altro.nodo;
     if (diSegmento.has(chiaveDi(p.da))) { uplinkSuSegmento.set(chiaveDi(p.da), figlio); continue; }
+    if (p.gateway) {
+      // L'uplink di un gateway è la sua WAN (§13.8.3 punto 1): la porta locale dell'uplink è la WAN, quella remota è la porta del
+      // cavo della LAN, e le due non sono i due capi di un cavo (§13.5.3, misurato sul controller dell'hub). La WAN è un
+      // collegamento a parte, dalla porta dell'uplink all'apparato dell'uplink, instradato e senza verso; il cavo della LAN resta
+      // quello dell'LLDP per indice. Si unisce a un cavo già letto solo se quel cavo parte dalla porta della WAN; se la porta
+      // non si sa, non si unisce a nessuno (potrebbe essere il cavo della LAN).
+      const wan = aggiungi("cavo", p.da, portaVuota(padre), p, figlio, p.da.chiave === null);
+      wan.wan = true;
+      continue;
+    }
     const va = velocitaDi(p.da), vb = velocitaDi(p.altro);
     if (va !== null && vb !== null && va !== vb) {
       const fraLoro = bozze.filter((z) => (z.genere === "cavo" || z.genere === "senza_fili") && ((z.a.nodo === figlio && z.b.nodo === padre) || (z.a.nodo === padre && z.b.nodo === figlio)));
@@ -238,13 +248,11 @@ export function costruisciCollegamenti(prove: readonly Prova[], correzioni: read
       const scelta = z ?? aggiungi("cavo", portaVuota(figlio), portaVuota(padre), p, null);
       if (z) z.prove.push(p);
       scelta.porteDaVerificare = true;
-      if (p.gateway) scelta.wan = true;
-      else scelta.verso ??= figlio;
+      scelta.verso ??= figlio;
       continue;
     }
     const z = aggiungi(p.tipo === "senza_fili" ? "senza_fili" : "cavo", p.da, p.altro, p, figlio);
-    if (p.gateway) z.wan = true;
-    else z.verso = figlio;
+    z.verso = figlio;
   }
 
   // Partner dei fasci, bordo (tabella MAC, VM, ripiego del router: le regole di oggi), correzioni «aggiungi», tunnel.
@@ -259,6 +267,11 @@ export function costruisciCollegamenti(prove: readonly Prova[], correzioni: read
   // Lo stato di un capo (passo 8): giù su una porta giù o spenta, qualunque stato dica lo spanning tree (I25, I67);
   // bloccato se discarding, alternate o backup su una porta accesa («disabled» su una porta accesa inoltra); fuori dal
   // bridge = instradato; il membro di riserva di un bond.
+  // Il fascio ha un nome solo, comunque lo dica il lettore: «bond1», o «if:<indice>» tradotto col nome di quell'interfaccia.
+  const nomeFascio = (nodo: string, gruppo: string | null): string | null => {
+    const i = indiceDelFascio(gruppo);
+    return i === null ? gruppo : (ctx.porte.get(nodo)?.perIndice.get(i) ?? gruppo);
+  };
   const statoCapo = (p: Porta) => {
     const f = p.nodo.startsWith("seg:") ? [] : ctx.fatti.porta(p.nodo, p);
     const sp = p.chiave ? ctx.statoPorte.get(`${p.nodo}|${p.chiave}`) : undefined;
@@ -268,7 +281,7 @@ export function costruisciCollegamenti(prove: readonly Prova[], correzioni: read
       bloccato: !giu && f.some((x) => x.stp_state === "discarding" || x.stp_role === "alternate" || x.stp_role === "backup"),
       instradato: f.some((x) => x.in_bridge === 0) || p.nelBridge === false,
       riserva: f.some((x) => x.lag_state === "riserva"),
-      lag: f.find((x) => x.lag_group !== null)?.lag_group ?? null,
+      lag: nomeFascio(p.nodo, f.find((x) => x.lag_group !== null)?.lag_group ?? null),
       stpAttivo: f.some((x) => (x.edge === 0 && (x.bpdu_rx ?? 0) > 0) || (x.stp_state !== null && x.stp_state !== "disabled")),
     };
   };

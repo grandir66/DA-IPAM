@@ -49,3 +49,13 @@ export function eRadioDalleCapacita(capacita: string | null): boolean {
   const c = new Set((capacita ?? "").split(",").map((x) => x.trim().toLowerCase()).filter((x) => x !== ""));
   return c.has("wlan-ap") || c.has("wlan") || c.has("station") || (c.has("bridge") && !c.has("router"));
 }
+
+/**
+ * Il gruppo di un fascio come sta in `lag_group`: il nome dell'interfaccia del fascio (scritto dal lettore che la legge dal
+ * nome), oppure «if:<indice>» quando il lettore lo dice per indice dell'interfaccia (SNMP). Restituisce l'indice, o null se
+ * il gruppo è un nome. Chi lo usa lo traduce col nome dell'interfaccia, così i due modi dicono la stessa cosa (§13.8.3, punto 1).
+ */
+export function indiceDelFascio(gruppo: string | null): number | null {
+  const m = gruppo === null ? null : /^if:(\d+)$/.exec(gruppo);
+  return m ? Number(m[1]) : null;
+}

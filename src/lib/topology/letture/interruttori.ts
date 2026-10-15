@@ -61,8 +61,13 @@ export function letturaAccesa(l: Lettura): boolean {
 
 /** Accende o spegne (solo un admin, dalla rotta PUT). Spento si scrive comunque, con chi e quando: resta la storia. */
 export function scriviInterruttore(l: Lettura, acceso: boolean, da: string, adesso: Date = new Date()): StatoInterruttore {
+  return scriviStatoChiave(chiaveLettura(l), acceso, da, adesso);
+}
+
+/** La scrittura comune agli interruttori (letture di T2, mappa nuova di T3): chi e quando, anche quando si spegne. */
+export function scriviStatoChiave(chiave: string, acceso: boolean, da: string, adesso: Date = new Date()): StatoInterruttore {
   const s: StatoInterruttore = { acceso, da, il: oraUtc(adesso) };
-  setTenantSetting(chiaveLettura(l), JSON.stringify(s));
+  setTenantSetting(chiave, JSON.stringify(s));
   return s;
 }
 

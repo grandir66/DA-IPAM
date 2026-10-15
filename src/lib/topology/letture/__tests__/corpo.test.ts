@@ -5,7 +5,7 @@
 // `mock.module` non gira sotto Node 22 con tsx e `requireAdmin` legge la sessione (piano di T3, «Scelte» 13).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { LETTURE, LETTURE_DISPONIBILI, type Lettura } from "@/lib/topology/letture/interruttori";
+import { type Lettura } from "@/lib/topology/letture/interruttori";
 import { decidiCorpoLetture, decidiCorpoMappa } from "@/lib/topology/letture/corpo";
 
 const conSchema = { schemaPresente: () => true };
@@ -30,18 +30,7 @@ test("letture: `host` si accende (Task 7 di T2 rilasciato, v0.3.299)", () => {
   assert.deepEqual(decidiCorpoLetture({ lettura: "host", acceso: true }, conSchema), { ok: true, dati: { lettura: "host", acceso: true } });
 });
 
-test("letture: una lettura che questa versione non sa fare non si accende (400) ma si spegne", (t) => {
-  const assente = LETTURE.find((l) => !LETTURE_DISPONIBILI.has(l));
-  if (assente === undefined) {
-    t.skip("tutte le letture sono disponibili: il Task 7 di T2 è rilasciato");
-    return;
-  }
-  assert.deepEqual(decidiCorpoLetture({ lettura: assente, acceso: true }, conSchema), {
-    ok: false, status: 400, error: "Questa lettura non è disponibile in questa versione",
-  });
-});
-
-// Con tutte e quattro le letture disponibili la prova sopra si salta: il ramo «non disponibile» resta provato con un
+// Tutte e quattro le letture sono disponibili (v0.3.299): il ramo «non disponibile» si prova con un
 // elenco ristretto passato da fuori (lo stesso controllo, nello stesso ordine: prima la disponibilità, poi lo schema).
 test("letture: il ramo «non disponibile» con un elenco ristretto; viene prima dello schema", () => {
   const soloMikrotik = new Set<Lettura>(["mikrotik"]);
@@ -53,9 +42,8 @@ test("letture: il ramo «non disponibile» con un elenco ristretto; viene prima 
 });
 
 test("letture: un campo in più → 400 (corpo strict)", () => {
-  const d = decidiCorpoLetture({ lettura: "mikrotik", acceso: true, x: 1 }, conSchema);
-  assert.equal(d.ok, false);
-  assert.equal(!d.ok && d.status, 400);
+  assert.deepEqual(decidiCorpoLetture({ lettura: "mikrotik", acceso: true, x: 1 }, conSchema),
+    { ok: false, status: 400, error: "Richiesta non valida" });
 });
 
 test("letture: lettura sconosciuta, acceso non booleano, corpo che non è un oggetto → 400 coi messaggi in italiano", () => {
@@ -83,8 +71,8 @@ test("mappa: accendere con lo schema → ok; senza → 409; spegnere senza schem
 });
 
 test("mappa: strict, non booleano, corpo che non è un oggetto → 400", () => {
-  const extra = decidiCorpoMappa({ acceso: true, da: "qualcuno" }, conSchema);
-  assert.equal(!extra.ok && extra.status, 400, "chi e quando li scrive la rotta, non il corpo");
+  assert.deepEqual(decidiCorpoMappa({ acceso: true, da: "qualcuno" }, conSchema),
+    { ok: false, status: 400, error: "Richiesta non valida" }, "chi e quando li scrive la rotta, non il corpo");
   assert.deepEqual(decidiCorpoMappa({ acceso: "true" }, conSchema), { ok: false, status: 400, error: NON_BOOLEANO });
   assert.deepEqual(decidiCorpoMappa({}, conSchema), { ok: false, status: 400, error: NON_BOOLEANO });
   for (const raw of [null, "x", []]) {

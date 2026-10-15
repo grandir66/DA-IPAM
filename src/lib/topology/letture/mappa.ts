@@ -4,8 +4,7 @@
  * rovinato o `acceso` diverso da `true` = la mappa di T1. Lo scrive solo `PUT /api/topology/settings/mappa` (un admin);
  * nessun codice lo accende da solo.
  */
-import { setTenantSetting } from "@/lib/db-tenant";
-import { leggiStatoChiave, oraUtc, type StatoInterruttore } from "./interruttori";
+import { leggiStatoChiave, scriviStatoChiave, type StatoInterruttore } from "./interruttori";
 
 export const CHIAVE_MAPPA_CAVI = "topologia.mappa.cavi";
 
@@ -19,7 +18,5 @@ export function mappaCaviAccesa(): boolean {
 
 /** Accende o spegne (solo un admin, dalla rotta PUT). Spento si scrive comunque, con chi e quando: resta la storia. */
 export function scriviMappaCavi(acceso: boolean, da: string, adesso: Date = new Date()): StatoInterruttore {
-  const s: StatoInterruttore = { acceso, da, il: oraUtc(adesso) };
-  setTenantSetting(CHIAVE_MAPPA_CAVI, JSON.stringify(s));
-  return s;
+  return scriviStatoChiave(CHIAVE_MAPPA_CAVI, acceso, da, adesso);
 }

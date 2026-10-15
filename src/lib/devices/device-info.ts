@@ -13,6 +13,7 @@ import {
   getEffectiveSnmpPort,
 } from "@/lib/db";
 import { sshExec, sshExecViaShell } from "./ssh-helper";
+import { snmpGetTollerante, type SnmpGetSession } from "./snmp-get-tollerante";
 
 export interface DeviceInfo {
   sysname: string | null;
@@ -226,7 +227,7 @@ export async function getDeviceInfoFromSnmp(device: NetworkDevice): Promise<Devi
 
   try {
     const snmp = await import("net-snmp");
-    type SnmpSession = { get: (oids: string[], cb: (err: Error | null, varbinds: Array<{ oid: string; value: Buffer | string | number }>) => void) => void; close: () => void };
+    type SnmpSession = SnmpGetSession & { close: () => void };
     let session: SnmpSession;
     if (device.protocol === "snmp_v3") {
       const v3 = getDeviceSnmpV3Credentials(device);
@@ -291,14 +292,9 @@ export async function getDeviceInfoFromSnmp(device: NetworkDevice): Promise<Devi
         finish(emptySnmp);
       }, 8000);
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (session as any).get(oids, (error: Error | null, varbinds: Array<{ oid: string; value: Buffer | string | number }>) => {
+      // Tollerante: un agente v1 rifiuta tutto il gruppo se manca un solo OID (es. ENTITY-MIB).
+      snmpGetTollerante(session, oids).then((varbinds) => {
         if (settled) return;
-        clearTimeout(t);
-        if (error) {
-          finish(emptySnmp);
-          return;
-        }
         let sysdescr: string | null = null;
         let sysname: string | null = null;
         let serial_number: string | null = null;
@@ -321,7 +317,7 @@ export async function getDeviceInfoFromSnmp(device: NetworkDevice): Promise<Devi
           if (oid.includes(".47.1.1.1.1.13.")) part_number = part_number || val;
         }
         finish({ sysname, sysdescr, model, firmware: null, serial_number, part_number });
-      });
+      }, () => finish(emptySnmp));
     });
   } catch {
     return { sysname: null, sysdescr: null, model: null, firmware: null, serial_number: null, part_number: null };

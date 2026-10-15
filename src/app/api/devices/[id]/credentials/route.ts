@@ -245,11 +245,19 @@ async function testBinding(
       const snmp = await import("net-snmp");
       const session = snmp.createSession(host, community, { port: binding.port, timeout: 5000 });
       return new Promise((resolve) => {
-        const timer = setTimeout(() => { session.close(); resolve({ success: false, message: "Timeout SNMP" }); }, 8000);
-        session.get(["1.3.6.1.2.1.1.1.0"], (error: Error | null) => {
+        // Il timer e la risposta possono arrivare entrambi: una seconda close() lancia
+        // ERR_SOCKET_DGRAM_NOT_RUNNING fuori dalla richiesta (DTS, 2026-10-15).
+        let settled = false;
+        const finish = (r: { success: boolean; message: string }): void => {
+          if (settled) return;
+          settled = true;
           clearTimeout(timer);
-          session.close();
-          resolve(error
+          try { session.close(); } catch { /* socket già chiuso */ }
+          resolve(r);
+        };
+        const timer = setTimeout(() => finish({ success: false, message: "Timeout SNMP" }), 8000);
+        session.get(["1.3.6.1.2.1.1.1.0"], (error: Error | null) => {
+          finish(error
             ? { success: false, message: `SNMP: ${error.message}` }
             : { success: true, message: "SNMP raggiungibile" }
           );

@@ -43,7 +43,20 @@ di `netbird-c1`. Mai `dev` né `main`: `dev` arriva a un cliente ogni 15 minuti.
 - **Nessuna risposta porta istruzioni**: l'istanza legge dalla risposta solo le due date, e
   solo per mostrarle.
 
-## Scelte prese qui (prudenti), da confermare
+## Scelte prese qui (prudenti) — confermate da Riccardo il 2026-10-15
+
+> **Decisioni di Riccardo (15/10, «C1 come consigli»).** Le scelte 1-16 valgono come scritte.
+> In particolare:
+> - **punto 4**: il livello lo cambiano gli amministratori dell'istanza **compreso l'utente
+>   tecnico `domarc`** (Domarc lo imposta all'installazione o in assistenza), sempre col nome
+>   nel registro, che non si cancella;
+> - **la pagina «Cosa esce»** è approvata com'è disegnata qui sotto;
+> - **punto 15**: la tappa **C1b** (rimozione dell'agente Python, decisione 26) si fa **dopo il
+>   pilota e prima di estendere ad altri clienti**;
+> - **pilota in tre gradini**: VM nuova sul laboratorio DA-PX-05 (`192.168.40.5`) → VM nuova
+>   sul Proxmox di casa PX-NAS (`192.168.99.1`) → DTS. Solo dopo, gli altri clienti
+>   («prima di fare casini altrove»).
+
 
 1. **La configurazione è il file `/etc/dalink/oggetto.env`**, non una variabile in
    `.env.local`. File assente = funzione assente: nessun timer chiama, nessuna rete. Il

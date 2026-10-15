@@ -45,8 +45,10 @@ Documento di **passaggio di consegne**: leggilo per primo, poi [CLAUDE.md](CLAUD
     `/api/networks`.
 - **Tappa C1 NetBird (15/10, ramo `netbird-c1`, non su `dev`)**: segnale di vita verso
   DA-Link (`src/lib/dalink/`, timer in `server.ts`), pagina `/settings/cosa-esce`, livello al
-  `/setup`, `scripts/dalink/{firewall-wt0,prepara-netbird}.sh`. Piano e scelte da
-  confermare in `docs/superpowers/plans/2026-10-15-tappa-c1-netbird.md`. **Trappole**: la
+  `/setup`, `scripts/dalink/{firewall-wt0,prepara-netbird}.sh`. Piano e scelte
+  (**confermate da Riccardo il 15/10**) in `docs/superpowers/plans/2026-10-15-tappa-c1-netbird.md`:
+  il livello lo può cambiare anche l'utente tecnico `domarc`, col nome nel registro; C1b dopo il
+  pilota; pilota in tre gradini: VM sul laboratorio `192.168.40.5` → VM su PX-NAS `192.168.99.1` → DTS. **Trappole**: la
   configurazione è `/etc/dalink/oggetto.env` di DA-Link (assente = niente rete; permessi
   diversi da 600 = rifiutata); il livello sta in `dalink_livello_registro` (hub), **non** in
   `settings`; la salute nel segnale riguarda solo i moduli accesi (le sonde dei moduli spenti

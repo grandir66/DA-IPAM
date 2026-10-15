@@ -51,6 +51,15 @@ describe("creaApparato", () => {
     }
   });
 
+  it("un Mac (apple + scansione macOS) si salva (tappa 1b)", () => {
+    const esito = withTenant(T, () =>
+      creaApparato({ name: "mac", host: "10.40.0.30", device_type: "server", classification: "notebook", vendor: "apple", protocol: "ssh", scan_target: "macos" })
+    );
+    assert.ok(esito.ok, esito.ok ? "" : esito.error);
+    assert.equal(esito.device.vendor, "apple");
+    assert.equal(esito.device.scan_target, "macos");
+  });
+
   it("binding SNMP da una credenziale con porta 1161 → binding sulla 1161", () => {
     const esito = withTenant(T, () =>
       creaApparato({ name: "sw", host: "10.40.0.20", device_type: "switch", classification: "switch", vendor: "mikrotik", protocol: "ssh", snmp_credential_id: 7 })

@@ -24,6 +24,7 @@ import { VENDOR_PLACEHOLDER_RE } from "./attribution/emitters";
 import { ipSortKey, sqlOrderByDhcpLeases, sqlOrderByNetworks, type SortDirection } from "./table-sort";
 import { decrypt, safeDecrypt } from "./crypto";
 import { convertiCommunityInlineSnmp } from "./credentials/converti-community-inline";
+import { migraAppleMacos } from "./devices/migra-apple-macos";
 import { randomUUID } from "crypto";
 import { inferIpAssignment, resolveAdDhcpLeaseForHost, resolveDhcpLeaseForHost } from "./ip-assignment";
 import { getActiveTenants, getHubDbPath, getSetting, getTenantByCode } from "./db-hub";
@@ -1747,6 +1748,19 @@ export function getTenantDb(tenantCode: string): Database.Database {
     }
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: migrazione versione SNMP fallita:`, e);
+  }
+
+  // Apple e macOS nella tabella degli apparati (tappa 1b, 15/10). In fondo, dopo
+  // ogni migrazione che aggiunge colonne a network_devices: la ricostruzione parte
+  // dalla definizione attuale e non perde colonne. Se fallisce si annulla (ROLLBACK)
+  // e il tenant si apre lo stesso: un Mac resta rifiutato come prima.
+  try {
+    const esito = migraAppleMacos(newDb);
+    if (esito.eseguita) {
+      console.info(`[db-tenant] ${tenantCode}: network_devices accetta apple/macos (${esito.righe} righe ricopiate)`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione apple/macos fallita:`, e);
   }
 
   // Binding SNMP inline con la community nel campo username (tappa 1 credenziali,

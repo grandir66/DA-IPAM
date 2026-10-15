@@ -3788,7 +3788,10 @@ export function syncNetworkDeviceFromHostScan(ip: string, hostOpenPorts: Array<{
   const protocol = device.protocol ?? "ssh";
   const vendor = (device.vendor ?? "generic").toLowerCase();
 
-  if (!tcpPorts.has(currentPort)) {
+  // SNMP è UDP: la 161 non compare mai fra le porte TCP aperte, e prima la
+  // scansione spostava un MikroTik in SNMP sulla 8291 (tappa 1, 15/10).
+  const protocolloSnmp = protocol === "snmp_v2" || protocol === "snmp_v3";
+  if (!protocolloSnmp && !tcpPorts.has(currentPort)) {
     const vendorCandidates = candidatesVendor[vendor] ?? [];
     const protoCandidates = candidatesMap[protocol] ?? [];
     const orderedCandidates = [...new Set([...vendorCandidates, ...protoCandidates])];

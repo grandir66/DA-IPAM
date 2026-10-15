@@ -4,10 +4,10 @@
 
 ## Riepilogo
 
-- File `route.ts`: **317** · gestori (metodo × rotta): **489**
-- Forme di export: funzione 473 · destrutturata 2 · rinomina 14
-- Guardie viste: `nessuna`=9 · `esterna`=2 · `token`=1 · `sessione`=51 · `auth-diretto`=3 · `auth`=131 · `admin-o-onboarding`=9 · `admin`=280 · `superadmin`=3
-- Esiti: ok **456** · eccezioni **33** · debiti **0** · scoperti **0**
+- File `route.ts`: **318** · gestori (metodo × rotta): **490**
+- Forme di export: funzione 474 · destrutturata 2 · rinomina 14
+- Guardie viste: `nessuna`=9 · `esterna`=2 · `token`=1 · `sessione`=51 · `auth-diretto`=3 · `auth`=131 · `admin-o-onboarding`=10 · `admin`=280 · `superadmin`=3
+- Esiti: ok **457** · eccezioni **33** · debiti **0** · scoperti **0**
 
 Livello atteso: GET/HEAD/OPTIONS → `auth`; scritture → `admin`; letture col nome sensibile → `admin`; i livelli dichiarati stanno in `ATTESI` di `src/lib/permessi/rotte.ts`. `withTenantFromSession` (`sessione`) chiede l'accesso ma non il ruolo: per una lettura vale quanto `auth`.
 
@@ -407,6 +407,7 @@ Livello atteso: GET/HEAD/OPTIONS → `auth`; scritture → `admin`; letture col 
 | `/api/onboarding/progresso` | GET | `admin-o-onboarding` | `admin-o-onboarding` |  |
 | `/api/onboarding/progresso` | PUT | `admin-o-onboarding` | `admin-o-onboarding` |  |
 | `/api/onboarding/reset` | POST | `admin` | `admin` |  |
+| `/api/onboarding/router` | PUT | `admin-o-onboarding` | `admin-o-onboarding` |  |
 | `/api/onboarding/status` | GET | `auth-diretto` | `auth` |  |
 | `/api/patch/bootstrap` | POST | `admin` | `admin` |  |
 | `/api/patch/cve` | GET | `sessione` | `auth` |  |

@@ -23,6 +23,7 @@ import {
 } from "@/lib/device-product-profiles";
 import { linkInvAgentEndpointToHost } from "@/lib/inventory-agent/db";
 import { portaCredenziale } from "@/lib/credentials/porte";
+import { tipoBindingPerProtocollo } from "./binding-apparato";
 import type { NetworkDevice } from "@/types";
 
 export type EsitoCreaApparato =
@@ -85,8 +86,8 @@ export function creaApparato(body: unknown): EsitoCreaApparato {
     use_for_arp_poll: useForArpPoll,
   });
 
-  // Crea bindings credenziali nella nuova tabella
-  const protoType = data.protocol === "winrm" ? "winrm" : data.protocol === "snmp_v2" || data.protocol === "snmp_v3" ? "snmp" : data.protocol === "api" ? "api" : "ssh";
+  // Crea bindings credenziali nella nuova tabella (regola condivisa con la modifica del router del wizard).
+  const protoType = tipoBindingPerProtocollo(data.protocol);
   if (data.credential_id) {
     addDeviceCredentialBinding({ device_id: device.id, credential_id: data.credential_id, protocol_type: protoType, port: devicePort });
   } else if (data.username) {

@@ -61,6 +61,10 @@ export const TENANT_TABLES: TableSpec[] = [
   { table: "switch_ports", scope: "tenant", tier: "history" },
   { table: "routing_table", scope: "tenant", tier: "history" },
   { table: "device_neighbors", scope: "tenant", tier: "history" },
+  // Fatti delle letture in più della topologia (T2, spec §13.5.7): storico per lettore, potato a 90 giorni come i vicini.
+  { table: "topology_port_facts", scope: "tenant", tier: "history" },
+  { table: "topology_bridge_facts", scope: "tenant", tier: "history" },
+  { table: "topology_device_macs", scope: "tenant", tier: "history" },
   { table: "mobile_inventory_history", scope: "tenant", tier: "history" },
   { table: "mc_remote_session", scope: "tenant", tier: "history" }, // sessioni remote effimere
   { table: "mc_command_log", scope: "tenant", tier: "history" },    // audit comandi RMM

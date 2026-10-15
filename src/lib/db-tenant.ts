@@ -15,7 +15,7 @@ import { resolveDataDir } from "./data-dir";
 import { buildPatchFromHost, buildPatchFromDevice, buildSyncMerge, buildSourceLabel } from "./inventory/discovery-sync";
 import fs from "fs";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL } from "./db-tenant-schema";
+import { DDL_TOPOLOGY_CAVI, TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL } from "./db-tenant-schema";
 import { HYPERVISOR_SYNC_MINUTES, SCHEDULED_JOB_TYPES_CHECK_SQL } from "./scheduled-job-types";
 import { isProxmoxVeDevice } from "./devices/device-acquisition-resolve";
 import { macToHex, normalizeMac, normalizeMacForStorage } from "./utils";
@@ -445,6 +445,60 @@ export function migrateSnmpVersione(db: Database.Database): string[] {
     add("network_devices", "snmp_version_fissata", "INTEGER NOT NULL DEFAULT 0");
   })();
   return added;
+}
+
+/**
+ * Migrazione «topologia cavi» (spec 2026-10-14 §13.5.7, tappa T2): le colonne nuove dei vicini e degli apparati e le tre
+ * tabelle dei fatti delle letture in più, con l'indice sui MAC. Additiva, idempotente, in UNA transazione (o tutto o
+ * niente); restituisce ciò che aggiunge. Le tabelle nascono anche dallo schema (stesse CREATE, `DDL_TOPOLOGY_CAVI`): qui
+ * servono ai DB aperti senza lo schema di oggi e alle prove. Chiamata in fondo a `getTenantDb`, dopo le ricostruzioni di
+ * network_devices (ADR 0008 punto 6). Esportata per le prove (`topology-cavi-migration.test.ts`).
+ */
+export function migrateTopologyCavi(db: Database.Database): string[] {
+  const added: string[] = [];
+  const has = (table: string, col: string): boolean =>
+    (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).some((c) => c.name === col);
+  const exists = (type: "table" | "index", name: string): boolean =>
+    !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = ? AND name = ?").get(type, name);
+  const add = (table: string, col: string, ddl: string): void => {
+    if (has(table, col)) return;
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${ddl}`);
+    added.push(`${table}.${col}`);
+  };
+  db.transaction(() => {
+    add("device_neighbors", "discovered_by", "TEXT");
+    add("device_neighbors", "local_port_index", "INTEGER");
+    add("device_neighbors", "remote_port_index", "INTEGER");
+    add("device_neighbors", "remote_caps", "TEXT");
+    add("network_devices", "uplink_local_port_idx", "INTEGER");
+    add("network_devices", "uplink_source", "TEXT");
+    for (const [name, ddl] of DDL_TOPOLOGY_CAVI) {
+      if (exists("table", name)) continue;
+      db.exec(ddl);
+      added.push(name);
+    }
+    add("topology_port_facts", "lag_state", "TEXT");
+    if (!exists("index", "idx_topology_device_macs_mac")) {
+      db.exec("CREATE INDEX idx_topology_device_macs_mac ON topology_device_macs(mac)");
+      added.push("idx_topology_device_macs_mac");
+    }
+  })();
+  return added;
+}
+
+/** Le colonne che le letture in più scrivono: tutte, o le letture non scrivono (§13.5.7, «Se la migrazione non riesce»). */
+const COLONNE_CAVI: ReadonlyArray<readonly [string, string]> = [
+  ["device_neighbors", "discovered_by"], ["device_neighbors", "local_port_index"], ["device_neighbors", "remote_port_index"],
+  ["device_neighbors", "remote_caps"], ["network_devices", "uplink_local_port_idx"], ["network_devices", "uplink_source"],
+  ["topology_port_facts", "lag_state"],
+];
+/** «Lo schema nuovo c'è», annotato all'apertura del DB del tenant: chi scrive i fatti lo chiede, non lo indovina. */
+const SCHEMA_CAVI = new WeakMap<Database.Database, boolean>();
+
+function verificaSchemaCavi(d: Database.Database): boolean {
+  const tabelle = new Set((d.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>).map((r) => r.name));
+  if (!DDL_TOPOLOGY_CAVI.every(([n]) => tabelle.has(n))) return false;
+  return COLONNE_CAVI.every(([t, c]) => (d.prepare(`PRAGMA table_info(${t})`).all() as Array<{ name: string }>).some((x) => x.name === c));
 }
 
 /**
@@ -1774,6 +1828,21 @@ export function getTenantDb(tenantCode: string): Database.Database {
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: conversione community SNMP inline fallita:`, e);
   }
+
+  // Topologia T2 (spec §13.5.7): fatti delle letture in più. Per ultima, dopo le ricostruzioni di network_devices
+  // (ADR 0008 punto 6; anche dopo migraAppleMacos, che riparte dalla definizione attuale e non perderebbe colonne,
+  // ma così l'ordine non conta). Se fallisce il tenant si apre lo stesso: l'annotazione dice «schema assente», le
+  // letture in più non scrivono, il modello per cavo riceve elenchi vuoti e «Dati della mappa» lo dice. La riga
+  // «topologia cavi (T2), aggiunto …» nel journal è la prova del rilascio (piano di T2, Task 16).
+  try {
+    const added = migrateTopologyCavi(newDb);
+    if (added.length > 0) {
+      console.info(`[db-tenant] ${tenantCode}: topologia cavi (T2), aggiunto ${added.join(", ")}`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione topologia cavi (T2) fallita, le letture in più non scrivono:`, e);
+  }
+  SCHEMA_CAVI.set(newDb, verificaSchemaCavi(newDb));
 
   tenantDbs.set(tenantCode, { db: newDb, lastUsed: Date.now() });
   return newDb;
@@ -5078,7 +5147,24 @@ export interface DbNeighborEntry {
   timestamp: string;
 }
 
-export type NeighborSource = "device" | "unifi";
+/**
+ * Chi ha scritto una riga dei vicini. `device` e `unifi` sono quelle che leggono il modello di oggi e l'attribuzione
+ * (NEIGHBORS_MODEL_SOURCES_SQL); `ssh` (switch MikroTik nel giro), `snmp` (switch non del controller) e `host` (`lldpcli`
+ * sugli hypervisor) sono le fonti nuove di T2 (spec §13.5.7): le legge solo il modello per cavo. La colonna non ha
+ * vincoli (db-tenant-schema.ts): non serve schema.
+ */
+export type NeighborSource = "device" | "unifi" | "ssh" | "snmp" | "host";
+
+/**
+ * Le colonne nuove dei vicini (spec §13.5.7): l'elenco letto di `discovered-by`, gli indici delle due porte quando il
+ * lettore li sa, le capacità annunciate attive. Si scrivono con un'istruzione a parte, solo se lo schema le ha.
+ */
+export interface CampiViciniCavi {
+  discoveredBy?: string | null;
+  localPortIndex?: number | null;
+  remotePortIndex?: number | null;
+  remoteCaps?: string | null;
+}
 
 /**
  * Condizione SQL «solo l'ultimo giro di questo apparato per questa fonte», da
@@ -5122,7 +5208,7 @@ export function upsertNeighbors(
     remoteIp?: string;
     remoteMac?: string;
     remotePlatform?: string;
-  }>,
+  } & CampiViciniCavi>,
   source: NeighborSource = "device",
 ): void {
   const d = db();
@@ -5149,6 +5235,27 @@ export function upsertNeighbors(
     prune.run(deviceId, `-${NEIGHBOR_RETENTION_DAYS} days`);
   })();
 
+  // T2 (spec §13.5.7): le colonne nuove con un'istruzione a parte, dopo quella di oggi e solo se lo schema le ha. Un
+  // errore qui non tocca i vicini già scritti (I34): si scrive nel log col solo messaggio di SQLite, senza dati.
+  const conCavi = neighbors.filter((n) => n.discoveredBy !== undefined || n.localPortIndex !== undefined
+    || n.remotePortIndex !== undefined || n.remoteCaps !== undefined);
+  if (conCavi.length > 0 && schemaCaviPresente()) {
+    try {
+      const up = d.prepare(`UPDATE device_neighbors SET
+          discovered_by = COALESCE(?, discovered_by), local_port_index = COALESCE(?, local_port_index),
+          remote_port_index = COALESCE(?, remote_port_index), remote_caps = COALESCE(?, remote_caps)
+        WHERE device_id = ? AND local_port = ? AND remote_device_name = ? AND remote_port = ?`);
+      d.transaction(() => {
+        for (const n of conCavi) {
+          up.run(n.discoveredBy ?? null, n.localPortIndex ?? null, n.remotePortIndex ?? null, n.remoteCaps ?? null,
+            deviceId, n.localPort, n.remoteDevice, n.remotePort);
+        }
+      })();
+    } catch (e) {
+      console.error(`[db-tenant] apparato #${deviceId}: colonne nuove dei vicini non scritte (${e instanceof Error ? e.message : "errore"})`);
+    }
+  }
+
   // Attribution v2: i vicini LLDP/CDP appena scritti sono evidenza per gli host remoti
   try {
     const { recomputeAttributionSafe } = require("@/lib/attribution/recompute") as typeof import("@/lib/attribution/recompute");
@@ -5171,6 +5278,154 @@ export function getNeighborsByDevice(deviceId: number): DbNeighborEntry[] {
       WHERE dn.device_id = ? AND ${NEIGHBORS_LATEST_ROUND_SQL}
       ORDER BY dn.local_port, dn.protocol`
   ).all(deviceId) as DbNeighborEntry[];
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TOPOLOGIA T2 — fatti delle letture in più (spec 2026-10-14 §13.5.7)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Lo schema delle letture in più c'è in questo tenant (annotato all'apertura, `getTenantDb`). */
+export function schemaCaviPresente(): boolean {
+  const d = db();
+  const v = SCHEMA_CAVI.get(d);
+  if (v !== undefined) return v;
+  const ok = verificaSchemaCavi(d);
+  SCHEMA_CAVI.set(d, ok);
+  return ok;
+}
+
+/** Riguarda lo schema e aggiorna l'annotazione (per le prove, e per chi ha appena riparato un tenant a mano). */
+export function rileggiSchemaCavi(): boolean {
+  const d = db();
+  const ok = verificaSchemaCavi(d);
+  SCHEMA_CAVI.set(d, ok);
+  return ok;
+}
+
+/** Chi ha letto i fatti (spec §13.5.7): il lettore, mai la marca. */
+export type FonteFatti = "device" | "controller" | "snmp" | "host";
+
+/**
+ * Un fatto di porta come lo scrive un lettore. `port_key`: «i:<indice>» se l'indice è noto, altrimenti «n:<nome
+ * normalizzato>» (minuscole, senza spazi). Un campo ASSENTE (undefined) da tutte le righe di una scrittura = «questo
+ * lettore non lo sa»: resta com'era. Un campo `null` = letto e vuoto: si scrive null.
+ */
+export interface FattoPortaIn {
+  port_key: string;
+  port_name: string;
+  port_index?: number | null;
+  /** 'physical' | 'lag' | 'vlan' | 'vrrp' | 'bridge' | 'tunnel' | 'wireless' | 'other' */
+  if_kind?: string | null;
+  running?: number | null;
+  in_bridge?: number | null;
+  bridge?: string | null;
+  lag_group?: string | null;
+  lag_partner?: string | null;
+  /** 'attivo' | 'riserva' (membro di un bond letto dall'host). */
+  lag_state?: string | null;
+  /** 'root' | 'designated' | 'alternate' | 'backup' | 'disabled' */
+  stp_role?: string | null;
+  /** 'forwarding' | 'discarding' | 'learning' | 'disabled' */
+  stp_state?: string | null;
+  designated_bridge?: string | null;
+  designated_port?: string | null;
+  path_cost?: number | null;
+  edge?: number | null;
+  point_to_point?: number | null;
+  sending_rstp?: number | null;
+  bpdu_rx?: number | null;
+}
+
+/** Un bridge per istanza (0 = albero comune). `root_port` null con `root_id` uguale a `bridge_id` = la radice. */
+export interface FattoBridgeIn {
+  bridge_name: string;
+  instance: number;
+  protocol?: string | null;
+  priority?: number | null;
+  bridge_id?: string | null;
+  root_id?: string | null;
+  regional_root_id?: string | null;
+  region_name?: string | null;
+  region_revision?: number | null;
+  config_digest?: string | null;
+  vlans?: string | null;
+  root_port?: string | null;
+  root_path_cost?: number | null;
+}
+
+export interface MacApparatoIn { mac: string; port_key: string | null }
+
+export interface FattiLettura {
+  porte: readonly FattoPortaIn[];
+  bridge: readonly FattoBridgeIn[];
+  macs: readonly MacApparatoIn[];
+}
+
+const COLONNE_PORTA = ["port_index", "if_kind", "running", "in_bridge", "bridge", "lag_group", "lag_partner", "lag_state", "stp_role",
+  "stp_state", "designated_bridge", "designated_port", "path_cost", "edge", "point_to_point", "sending_rstp", "bpdu_rx"] as const;
+const COLONNE_BRIDGE = ["protocol", "priority", "bridge_id", "root_id", "regional_root_id", "region_name", "region_revision",
+  "config_digest", "vlans", "root_port", "root_path_cost"] as const;
+/** I fatti non visti da tanti giorni si tolgono alla scrittura successiva dello stesso apparato (come i vicini). */
+const FATTI_RETENTION_DAYS = 90;
+
+/** Le colonne che un lettore conosce: presenti (anche null) in almeno una riga della scrittura. Elenco chiuso: niente SQL dal dato. */
+function colonneNote<C extends string>(righe: readonly object[], tutte: readonly C[]): C[] {
+  return tutte.filter((c) => righe.some((r) => (r as Record<string, unknown>)[c] !== undefined));
+}
+
+/**
+ * Scrive i fatti di un giro di un lettore su un apparato (spec §13.5.7): una transazione, INSERT … ON CONFLICT DO UPDATE,
+ * niente DELETE del giro, e la potatura delle righe dell'apparato non viste da 90 giorni. `adesso` è l'ora del giro, una
+ * per tutte le righe (così «ultimo giro» = `seen_at` più recente meno 5 minuti). null = schema assente: non si scrive.
+ */
+export function scriviFattiTopologia(deviceId: number, fonte: FonteFatti, fatti: FattiLettura, adesso: Date = new Date()):
+  { porte: number; bridge: number; macs: number } | null {
+  if (!schemaCaviPresente()) return null;
+  const d = db();
+  const ora = adesso.toISOString().slice(0, 19).replace("T", " ");
+  const cp = colonneNote(fatti.porte, COLONNE_PORTA);
+  const cb = colonneNote(fatti.bridge, COLONNE_BRIDGE);
+  const insP = d.prepare(`INSERT INTO topology_port_facts (device_id, source, port_key, port_name, ${cp.map((c) => `${c}, `).join("")}first_seen, seen_at)
+    VALUES (?, ?, ?, ?, ${cp.map(() => "?, ").join("")}?, ?)
+    ON CONFLICT(device_id, source, port_key) DO UPDATE SET port_name = excluded.port_name, ${cp.map((c) => `${c} = excluded.${c}, `).join("")}seen_at = excluded.seen_at`);
+  const insB = d.prepare(`INSERT INTO topology_bridge_facts (device_id, source, bridge_name, instance, ${cb.map((c) => `${c}, `).join("")}first_seen, seen_at)
+    VALUES (?, ?, ?, ?, ${cb.map(() => "?, ").join("")}?, ?)
+    ON CONFLICT(device_id, source, bridge_name, instance) DO UPDATE SET ${cb.map((c) => `${c} = excluded.${c}, `).join("")}seen_at = excluded.seen_at`);
+  const insM = d.prepare(`INSERT INTO topology_device_macs (device_id, mac, source, port_key, seen_at) VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(device_id, mac) DO UPDATE SET source = excluded.source, port_key = COALESCE(excluded.port_key, port_key), seen_at = excluded.seen_at`);
+  const limite = `datetime(?, '-${FATTI_RETENTION_DAYS} days')`;
+  const out = { porte: 0, bridge: 0, macs: 0 };
+  d.transaction(() => {
+    for (const p of fatti.porte) {
+      const r = p as unknown as Record<string, unknown>;
+      insP.run(deviceId, fonte, p.port_key, p.port_name, ...cp.map((c) => r[c] ?? null), ora, ora);
+      out.porte++;
+    }
+    for (const b of fatti.bridge) {
+      const r = b as unknown as Record<string, unknown>;
+      insB.run(deviceId, fonte, b.bridge_name, b.instance, ...cb.map((c) => r[c] ?? null), ora, ora);
+      out.bridge++;
+    }
+    const visti = new Set<string>();
+    for (const m of fatti.macs) {
+      const mac = normalizeMacForStorage(m.mac);
+      if (!mac || visti.has(mac)) continue;
+      visti.add(mac);
+      insM.run(deviceId, mac, fonte, m.port_key, ora);
+      out.macs++;
+    }
+    d.prepare(`DELETE FROM topology_port_facts WHERE device_id = ? AND seen_at < ${limite}`).run(deviceId, ora);
+    d.prepare(`DELETE FROM topology_bridge_facts WHERE device_id = ? AND seen_at < ${limite}`).run(deviceId, ora);
+    d.prepare(`DELETE FROM topology_device_macs WHERE device_id = ? AND seen_at < ${limite}`).run(deviceId, ora);
+  })();
+  return out;
+}
+
+/** Porta di uscita secondo il controller, per indice, e da dove la ricava (`uplink.port_idx`, `uplink_source`). */
+export function setUplinkCavi(deviceId: number, porta: number | null, origine: string | null): boolean {
+  if (!schemaCaviPresente()) return false;
+  db().prepare("UPDATE network_devices SET uplink_local_port_idx = ?, uplink_source = ? WHERE id = ?").run(porta, origine, deviceId);
+  return true;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

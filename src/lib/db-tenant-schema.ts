@@ -8,6 +8,70 @@
 
 import { SCHEDULED_JOB_TYPES_CHECK_SQL } from "./scheduled-job-types";
 
+/**
+ * Topologia T2 (spec 2026-10-14 §13.5.7): i fatti delle letture in più, uno per lettore (la fonte sta nella chiave:
+ * due lettori dello stesso apparato non si sovrascrivono, ADR 0009 punto 4). Le stesse CREATE stanno qui e nella
+ * migrazione (`migrateTopologyCavi`, db-tenant.ts); gli indici solo nella migrazione. Nessun CHECK: i valori li valida
+ * TypeScript (un valore nuovo non deve chiedere una ricostruzione, vietata con le chiavi esterne). `lag_state`
+ * ('attivo' | 'riserva') è lo stato del membro di un bond letto dall'host (§13.5.5), che il DDL della spec non aveva.
+ */
+export const DDL_TOPOLOGY_CAVI: ReadonlyArray<readonly [string, string]> = [
+  ["topology_port_facts", `CREATE TABLE IF NOT EXISTS topology_port_facts (
+  device_id INTEGER NOT NULL REFERENCES network_devices(id) ON DELETE CASCADE,
+  source TEXT NOT NULL,
+  port_key TEXT NOT NULL,
+  port_name TEXT NOT NULL,
+  port_index INTEGER,
+  if_kind TEXT,
+  running INTEGER,
+  in_bridge INTEGER,
+  bridge TEXT,
+  lag_group TEXT,
+  lag_partner TEXT,
+  lag_state TEXT,
+  stp_role TEXT,
+  stp_state TEXT,
+  designated_bridge TEXT,
+  designated_port TEXT,
+  path_cost INTEGER,
+  edge INTEGER,
+  point_to_point INTEGER,
+  sending_rstp INTEGER,
+  bpdu_rx INTEGER,
+  first_seen TEXT NOT NULL DEFAULT (datetime('now')),
+  seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (device_id, source, port_key)
+)`],
+  ["topology_bridge_facts", `CREATE TABLE IF NOT EXISTS topology_bridge_facts (
+  device_id INTEGER NOT NULL REFERENCES network_devices(id) ON DELETE CASCADE,
+  source TEXT NOT NULL,
+  bridge_name TEXT NOT NULL DEFAULT '',
+  instance INTEGER NOT NULL DEFAULT 0,
+  protocol TEXT,
+  priority INTEGER,
+  bridge_id TEXT,
+  root_id TEXT,
+  regional_root_id TEXT,
+  region_name TEXT,
+  region_revision INTEGER,
+  config_digest TEXT,
+  vlans TEXT,
+  root_port TEXT,
+  root_path_cost INTEGER,
+  first_seen TEXT NOT NULL DEFAULT (datetime('now')),
+  seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (device_id, source, bridge_name, instance)
+)`],
+  ["topology_device_macs", `CREATE TABLE IF NOT EXISTS topology_device_macs (
+  device_id INTEGER NOT NULL REFERENCES network_devices(id) ON DELETE CASCADE,
+  mac TEXT NOT NULL,
+  source TEXT NOT NULL,
+  port_key TEXT,
+  seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (device_id, mac)
+)`],
+];
+
 export const TENANT_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS networks (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -798,6 +862,7 @@ CREATE TABLE IF NOT EXISTS device_neighbors (
   timestamp TEXT DEFAULT (datetime('now')),
   UNIQUE(device_id, local_port, remote_device_name, remote_port)
 );
+${DDL_TOPOLOGY_CAVI.map(([, ddl]) => `${ddl};`).join("\n\n")}
 
 -- Routing table
 CREATE TABLE IF NOT EXISTS routing_table (

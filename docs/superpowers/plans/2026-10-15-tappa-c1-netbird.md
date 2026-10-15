@@ -107,7 +107,7 @@ di `netbird-c1`. Mai `dev` né `main`: `dev` arriva a un cliente ogni 15 minuti.
 
 ## Interfaccia proposta (pagina «Cosa esce da questa istanza»)
 
-Da scrivania, riferimento 1920 px. In **Impostazioni → Cosa esce** (voce nel menu «Sistema»,
+Da scrivania, riferimento 1920 px. Voce **«Cosa esce»** nel menu «Sistema» (
 solo per gli amministratori), indirizzo `/settings/cosa-esce`.
 
 ```
@@ -168,15 +168,15 @@ export function leggiConfigDalink(percorso?: string): ConfigDalink;
 export function normalizzaImpronta(v: string): string | null; // sha256//x e sha256/x → sha256/x
 ```
 
-- [ ] Prove (file temporanei in `os.tmpdir()`): `file assente → assente`; `file valido 600 →
+- [x] Prove (file temporanei in `os.tmpdir()`): `file assente → assente`; `file valido 600 →
   pronta, impronta normalizzata a sha256/`; `permessi 644 → non_valida, motivo «permessi»`;
   `token senza dlk_ → non_valida, il motivo non contiene il token`; `URL http:// →
   non_valida`; `codcli con spazio davanti → pronta con codcli senza spazio`; `codcli non
   numerico → non_valida`; `nodo diverso da <codcli>-ipam → non_valida`; `righe di commento e
   vuote ignorate, virgolette tolte`; `chiave sconosciuta ignorata`.
-- [ ] `node --import tsx --test src/lib/dalink/__tests__/config.test.ts` → FALLISCE (modulo
+- [x] `node --import tsx --test src/lib/dalink/__tests__/config.test.ts` → FALLISCE (modulo
   assente).
-- [ ] Codice. Stessa prova → verde.
+- [x] Codice. Stessa prova → verde.
 
 ## Task 2 — Livello e stato del segnale nell'hub
 
@@ -208,13 +208,13 @@ export function salvaEsitoSegnale(e: EsitoSalvato): void;
 export function statoConferma(): { stato: "nessuna_richiesta" } | { stato: "in_attesa"; dal: string } | { stato: "confermata"; cancellato_il: string; risposta_il: string };
 ```
 
-- [ ] Prove: `senza righe livelloAttuale è null`; `impostaLivello aggiunge una riga e non
+- [x] Prove: `senza righe livelloAttuale è null`; `impostaLivello aggiunge una riga e non
   sovrascrive`; `livello non ammesso → errore e nessuna riga`; `il registro è dal più
   recente`; `abbassato dopo l'ultimo ok → in_attesa`; `ok a solo_stato tentato dopo
   l'abbassamento con inventario_cancellato_il → confermata`; `ok a solo_stato tentato PRIMA
   dell'abbassamento → resta in_attesa`; `mai stato a stato_inventario → nessuna_richiesta`.
   La prova del registro tabelle (`transfer/__tests__/registry.test.ts`) deve restare verde.
-- [ ] Viste fallire → codice → verdi (anche `registry.test.ts`).
+- [x] Viste fallire → codice → verdi (anche `registry.test.ts`).
 
 ## Task 3 — Il costruttore del segnale
 
@@ -231,13 +231,13 @@ export function costruisciSegnale(cfg: { codcli: string; nodo: string }, livello
   fatti: FattiIstanza, leggiInventario: () => Inventario | null): CorpoSegnale;
 ```
 
-- [ ] Prove: **`solo_stato`: `leggiInventario` non viene mai chiamata e `inventario` è
+- [x] Prove: **`solo_stato`: `leggiInventario` non viene mai chiamata e `inventario` è
   null** (spec §14); **livello non dichiarato: come solo stato** (`livello: null`, niente
   inventario); `stato_inventario`: chiamata una volta, numeri nel corpo; le chiavi del corpo
   sono **esattamente** quelle del contratto (nessuna `token`); `codcli` è testo; porte
   senza doppioni, ordinate, fra 1 e 65535, al massimo 64; `ultimo_errore` tagliato a 500;
   `ultima_scansione` a 32 ed `esito_scansione` a 64 caratteri.
-- [ ] Viste fallire → codice → verdi.
+- [x] Viste fallire → codice → verdi.
 
 ## Task 4 — Il firewall su `wt0`
 
@@ -250,14 +250,14 @@ carica con `nft -f` (atomico: crea, cancella, ricrea la tabella) e rilegge la ta
 dire che c'è; `--togli` toglie la tabella. Configurazione `/etc/dalink/firewall.env`:
 `DALINK_FW_EDGE=si|no` (obbligatoria: senza, esce ≠0), `DALINK_FW_SORGENTI` facoltativa.
 
-- [ ] Prove: `edge no → porte 22 e 443, niente 6443`; `edge si → anche 6443`; **nessuna
+- [x] Prove: `edge no → porte 22 e 443, niente 6443`; `edge si → anche 6443`; **nessuna
   porta Wazuh (1514, 1515, 55000, 9200, 5601, 443 a parte) in nessun caso, anche con
   variabili d'ambiente che provano ad aggiungerle**; `sorgenti valide → ip saddr {…} su ogni
   accept di porta`; `sorgente fuori da 100.64.0.0/10 → esce ≠0 e non stampa ruleset`;
   `DALINK_FW_EDGE assente → esce ≠0`; `la catena termina con drop su wt0 e lascia passare il
   resto (iifname != "wt0" accept)`.
-- [ ] Viste fallire → script → verdi.
-- [ ] **Prova vera, una volta, su Linux** (VM `presidio`, solo in spazi di rete usa e getta
+- [x] Viste fallire → script → verdi.
+- [x] **Prova vera, una volta, su Linux** (VM `presidio`, solo in spazi di rete usa e getta
   `ip netns`, cancellati alla fine; niente sulla rete della macchina):
   `scripts/dalink/prova-firewall-netns.sh` crea due spazi collegati da una coppia veth (lato
   istanza chiamato `wt0`), carica il ruleset con sorgenti = un indirizzo, e prova: da
@@ -277,11 +277,11 @@ export function porteInAscolto(tcp4: string, tcp6: string, indirizziWt0: string[
 export async function leggiPorteWt0(dip?: DipendenzePorte): Promise<{ fonte: FontePorte; porte: number[]; sorgentiRistrette: boolean }>;
 ```
 
-- [ ] Prove: `json vero → [22, 443] (o [22, 443, 6443])`; `json di una tabella senza regole
+- [x] Prove: `json vero → [22, 443] (o [22, 443, 6443])`; `json di una tabella senza regole
   wt0 → null`; `json malformato → null`, mai eccezione; `ascolto: 0.0.0.0 e :: contano,
   127.0.0.1 no, l'indirizzo di wt0 sì, un altro indirizzo LAN no, solo stato 0A (LISTEN)`;
   `nft che fallisce → fonte ascolto`; `/proc assente → non_so con lista vuota`.
-- [ ] Viste fallire → codice → verdi.
+- [x] Viste fallire → codice → verdi.
 
 ## Task 6 — Il trasporto con l'impronta
 
@@ -300,10 +300,10 @@ Un solo socket: TLS senza CA, impronta SPKI verificata **prima** di scrivere un 
 richiesta HTTP sullo stesso socket (`createConnection`). Niente connessione separata come in
 `scanner-edge-client.ts`: lì il token passa su un secondo socket non verificato.
 
-- [ ] Prove: `impronta giusta → 200 e il server ha visto Bearer e corpo`; **`impronta
+- [x] Prove: `impronta giusta → 200 e il server ha visto Bearer e corpo`; **`impronta
   sbagliata → errore cert e il server non ha ricevuto nessuna richiesta`**; `porta chiusa →
   rete`; `risposta oltre 64 KB → risposta (interrotta)`; `server muto → tempo`.
-- [ ] Viste fallire → codice → verdi.
+- [x] Viste fallire → codice → verdi.
 
 ## Task 7 — Un giro d'invio
 
@@ -318,7 +318,7 @@ export function leggiRisposta(body: string): { ricevuto_il: string | null; inven
 export function inventarioDaDb(db: Database): Inventario;  // in fatti.ts
 ```
 
-- [ ] Prove: **`config assente → il trasporto non viene chiamato e niente si scrive`**;
+- [x] Prove: **`config assente → il trasporto non viene chiamato e niente si scrive`**;
   `config non valida → non chiamato, esito salvato col motivo`; `ok → stato salvato con
   ricevuto_il`; **`risposta con chiavi in più (livello, url, token, comandi) → il livello e il
   file di configurazione restano identici`** (spec §14: «nessuna risposta di DA-Link cambia il
@@ -328,7 +328,7 @@ export function inventarioDaDb(db: Database): Inventario;  // in fatti.ts
   ultimo_errore`; `codcli senza cliente in questa istanza → moduli vuoti, salute.cliente =
   non_trovato, inventario null anche a stato_inventario`; `inventarioDaDb su schema tenant
   vero in memoria → conteggi giusti e ultima scansione`.
-- [ ] Viste fallire → codice → verdi.
+- [x] Viste fallire → codice → verdi.
 
 ## Task 8 — Il timer
 
@@ -341,9 +341,9 @@ export function avviaSegnaleDalink(opz?: { primoMs?: number; ogniMs?: number; gi
 export async function inviaAdesso(): Promise<EsitoGiro>; // un giro alla volta: se ce n'è uno in corso lo aspetta
 ```
 
-- [ ] Prove: `due chiamate insieme → un solo giro`; `lo stop ferma i timer`; il giro senza
+- [x] Prove: `due chiamate insieme → un solo giro`; `lo stop ferma i timer`; il giro senza
   configurazione non chiama la rete (già nel Task 7).
-- [ ] Viste fallire → codice → verdi.
+- [x] Viste fallire → codice → verdi.
 
 ## Task 9 — Le rotte
 
@@ -357,11 +357,11 @@ export async function inviaAdesso(): Promise<EsitoGiro>; // un giro alla volta: 
 - `quadroCosaEsce()`: configurazione (senza token), livello, registro, stato del segnale,
   conferma, **anteprima** del prossimo corpo costruita con lo stesso `costruisciSegnale`, altri
   flussi (edge acceso dal registro moduli, proxy Zabbix dal file).
-- [ ] Prove: `il quadro serializzato non contiene il token`; `senza configurazione il quadro
+- [x] Prove: `il quadro serializzato non contiene il token`; `senza configurazione il quadro
   dice non configurato e l'anteprima c'è lo stesso`; `l'anteprima a solo stato non ha
   inventario`. La prova delle guardie (`permessi/__tests__/rotte-censite.test.ts`) resta
   verde senza nuove eccezioni.
-- [ ] Viste fallire → codice → verdi.
+- [x] Viste fallire → codice → verdi.
 
 ## Task 10 — La pagina «Cosa esce»
 
@@ -369,9 +369,9 @@ export async function inviaAdesso(): Promise<EsitoGiro>; // un giro alla volta: 
 `src/components/settings/cosa-esce.tsx`; modifica `src/components/shared/sidebar.tsx` (voce
 «Cosa esce» sotto «Sistema», solo admin e superadmin).
 
-- [ ] Componente client con `fetchJson` + `LoadError`; date con `parseDbDate` e ora italiana;
+- [x] Componente client con `fetchJson` + `LoadError`; date con `parseDbDate` e ora italiana;
   badge con doppio segnale; testo ≥13 px (`text-sm` o più, niente `text-xs` per i contenuti).
-- [ ] Verifica resa **una volta** a 1920 px in locale con dati finti: `DALINK_OGGETTO_ENV` su
+- [x] Verifica resa **una volta** a 1920 px in locale con dati finti: `DALINK_OGGETTO_ENV` su
   un file nello scratchpad, un DA-Link finto (server TLS locale col contratto vero) e hub
   di prova in `DA_INVENT_DATA_DIR` temporanea. Si guardano: configurato e ricevuto; livello
   abbassato «in attesa» e poi «confermato»; senza configurazione.
@@ -383,7 +383,7 @@ export async function inviaAdesso(): Promise<EsitoGiro>; // un giro alla volta: 
 `src/app/setup/page.tsx` (due scelte, nessuna preselezionata); prova in
 `src/app/api/setup/__tests__/setup-livello.test.ts`.
 
-- [ ] Prove: `senza livello lo schema passa e non c'è livello`; `livello non ammesso → 400`;
+- [x] Prove: `senza livello lo schema passa e non c'è livello`; `livello non ammesso → 400`;
   `la pagina non preseleziona (nessun checked/defaultValue sul livello)`.
 
 ## Task 12 — L'installatore
@@ -404,19 +404,19 @@ export async function inviaAdesso(): Promise<EsitoGiro>; // un giro alla volta: 
    <DALINK_NODO da oggetto.env>`, `shred -u`; senza `oggetto.env` si ferma prima;
 6. verifica finale: `wt0` presente, tabella caricata, `oggetto.env` 600.
 
-- [ ] Prove: **`la chiave non compare in nessun argomento dei comandi né nell'uscita`**; `il
+- [x] Prove: **`la chiave non compare in nessun argomento dei comandi né nell'uscita`**; `il
   file della chiave non esiste più alla fine`; `prova a vuoto → nessun comando che scrive`;
   `senza --edge → esce ≠0`; `tailscale presente → netfilter-mode=off prima di netbird up`;
   `senza oggetto.env e con la chiave → si ferma e non chiama netbird up`.
-- [ ] Viste fallire → script → verdi.
+- [x] Viste fallire → script → verdi.
 
 ## Task 13 — Chiusura
 
-- [ ] Cancello completo + `npm run build`; rilettura del diff (`git diff origin/dev`), niente
+- [x] Cancello completo + `npm run build`; rilettura del diff (`git diff origin/dev`), niente
   `console.log`, nessun segreto, niente nomi di clienti o IP veri (repo pubblico).
-- [ ] `CHANGELOG.md` (Non rilasciato) e `CONTEXT.md` §6 nel ramo. Il programma delle tappe non
+- [x] `CHANGELOG.md` (Non rilasciato) e `CONTEXT.md` §6 nel ramo. Il programma delle tappe non
   si tocca (lo aggiorna Riccardo).
-- [ ] Push di `netbird-c1`.
+- [x] Push di `netbird-c1`.
 
 ## Per portarlo su `dev` e al pilota (dopo la tappa)
 
@@ -428,3 +428,23 @@ export async function inviaAdesso(): Promise<EsitoGiro>; // un giro alla volta: 
 4. Pilota (fase 2, con conferma a ogni passo): `prepara-netbird.sh --applica` sull'istanza
    DTS, poi il comando emesso da DA-Link, poi la verifica dal di fuori (segnale arrivato in
    DA-Link, porte Wazuh chiuse da `wt0`).
+
+## Esito dell'esecuzione (15/10)
+
+- Task 1-12 eseguiti, ogni prova vista fallire prima (le prove chiave anche per mutazione:
+  token su socket non verificato, risposta di DA-Link che alza il livello, chiave
+  d'ingresso come argomento, inventario letto a «solo stato»).
+- Firewall provato sul vero una volta su Linux (VM `presidio`, nftables 1.0.9, spazi di
+  rete usa e getta poi cancellati): 9 casi su 9. I dati di prova di `nft -j` vengono da lì.
+- Pagina resa a 1920 px con un DA-Link finto (TLS vero, contratto vero): configurato e
+  ricevuto, abbassato con DA-Link giù («in attesa di conferma»), poi confermato, poi senza
+  configurazione. Difetto trovato a schermo e corretto con una prova: la salute mandava
+  «in errore» per moduli spenti.
+- Prova estranea instabile vista una volta: `db-parity/parita-gruppo0.test.ts`
+  («getRecentStatusChanges: stesse transizioni»), orari a cavallo di un secondo; da sola
+  passa tre volte su tre. Preesistente, non toccata.
+- Contraddizioni spec ↔ contratto vero: nessuna sul segnale. Una di forma: DA-Link scrive
+  l'impronta come curl (`sha256//…`), DA-IPAM la calcola con una barra: si accettano le due.
+  Una da segnalare a DA-Link: il segnale porta `porte_netbird` vuoto quando l'istanza non sa
+  leggerle (`salute.firewall_wt0 = non_so`); la verifica R5 di DA-Link dovrebbe leggere
+  quella voce prima di dire «nessuna porta Wazuh».

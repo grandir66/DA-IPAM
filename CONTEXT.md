@@ -43,6 +43,15 @@ Documento di **passaggio di consegne**: leggilo per primo, poi [CLAUDE.md](CLAUD
     usa `rg --no-ignore`.
   - Le policy NetBird verso le risorse hanno destinazione vuota: si leggono con
     `/api/networks`.
+- **Tappa C1 NetBird (15/10, ramo `netbird-c1`, non su `dev`)**: segnale di vita verso
+  DA-Link (`src/lib/dalink/`, timer in `server.ts`), pagina `/settings/cosa-esce`, livello al
+  `/setup`, `scripts/dalink/{firewall-wt0,prepara-netbird}.sh`. Piano e scelte da
+  confermare in `docs/superpowers/plans/2026-10-15-tappa-c1-netbird.md`. **Trappole**: la
+  configurazione è `/etc/dalink/oggetto.env` di DA-Link (assente = niente rete; permessi
+  diversi da 600 = rifiutata); il livello sta in `dalink_livello_registro` (hub), **non** in
+  `settings`; la salute nel segnale riguarda solo i moduli accesi (le sonde dei moduli spenti
+  dicono `fail`); la tabella nft `inet dalink` restringe soltanto: con UFW acceso serve anche
+  `ufw allow in on wt0` (tappa G1). L'agente Python (decisione 26) non è ancora tolto.
 - **Piano di miglioramento (12/10)**: nove tappe in `docs/superpowers/specs/2026-10-12-piano-miglioramento-design.md`; decisioni in ADR 0004. Bacheca: `lavori piano-miglioramento-da-ipam`.
 - **Controller di rete (ADR 0005, 0007)**: UniFi (Omada dopo) = righe di `network_controllers` nel DB del cliente, pagina `/controllers`, job `unifi_sync` spento di default; UniFi OS con chiave API (`X-API-KEY`). Il controller della rete Domarc è un UDM sull'hub; Omada dei clienti non si legge dall'hub. LLDP sta sull'apparato, mai nelle porte.
 - **Mappa topologia, fasi 1-2 (ADR 0008, 0009)**: modello in `src/lib/topology/` (`model.ts`, `identity.ts`, `attach.ts`, `tree.ts`, `tree-layout.ts`), pagina `src/components/topology/map/`, rotte `/api/topology/maps*`, misure `scripts/misura-topologia.ts`, `misura-mac-porta.ts`. **Trappole**: i vicini non si cancellano (invecchiano, pota a 90 giorni); `switch_ports.is_uplink = 0` non vuol dire «non uplink»; MAC virtuali (VRRP/HSRP) e seriale degli host non identificano nessuno; nomi di fabbrica o corti non fondono; il job dei client UniFi è spento di default e legge solo 7:00-19:59; l'abbinamento richiede apparati già letti con `controller_mac`; la mappa automatica di una rete grande è larghissima in orizzontale: si usa il verticale (ADR 0012) o «passo passo». La migrazione sta in fondo a `getTenantDb`.

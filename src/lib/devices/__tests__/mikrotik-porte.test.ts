@@ -16,7 +16,7 @@ const INTERFACCE = [
   " 3  RS name=sfp-sfpplus1 default-name=sfp-sfpplus1 type=ether mtu=1500 actual-mtu=1500 l2mtu=1514 mac-address=02:00:00:00:10:0a",
   " 4  R  name=bridge type=bridge mtu=auto actual-mtu=1500 l2mtu=1514 mac-address=02:00:00:00:10:01",
   " 5  R  name=vlan10 type=vlan mtu=1500 actual-mtu=1500 l2mtu=1510 mac-address=02:00:00:00:10:01",
-  " 6  R  name=vrrp_vlan10 type=vrrp mtu=1500 actual-mtu=1500 mac-address=00:00:5E:00:01:0A",
+  " 6  R  name=vrrp_rete10 type=vrrp mtu=1500 actual-mtu=1500 mac-address=00:00:5E:00:01:0A",
   " 7  RS name=eoip-tunnel1 type=eoip-tunnel mtu=auto actual-mtu=1458 l2mtu=65535 mac-address=02:00:00:00:10:20",
   ' 8  RS name="bond lan" type=bond mtu=1500 actual-mtu=1500 l2mtu=1514 mac-address=02:00:00:00:10:30',
 ].join("\n");

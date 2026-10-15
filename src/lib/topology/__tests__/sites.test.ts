@@ -71,7 +71,7 @@ test("vicini in due sedi diverse: resta senza sede", () => {
 
 test("testa proposta: il router gateway di più subnet; a pari merito nessuna; la manuale vince", () => {
   const devices = [
-    dev(1, { name: "MK-RTR-CORE", host: "10.0.0.1", device_type: "router" }),
+    dev(1, { name: "RTR-CORE", host: "10.0.0.1", device_type: "router" }),
     dev(2, { name: "UDM", host: "10.0.0.254", device_type: "router" }),
   ];
   const hosts = [host(10, { ip: "10.0.1.1", mac: "aa:bb:cc:00:00:01", network_id: 2 }), host(11, { ip: "10.0.0.1", mac: "aa:bb:cc:00:00:01" })];

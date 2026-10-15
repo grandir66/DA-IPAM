@@ -180,7 +180,7 @@ export interface SelfIdentity {
   accounts: string[];
 }
 
-/** "::ffff:172.16.1.154" → "172.16.1.154". Windows logga la forma mappata. */
+/** "::ffff:10.0.1.154" → "10.0.1.154". Windows logga la forma mappata. */
 export function normalizeIp(ip: string | null | undefined): string | null {
   if (ip == null) return null;
   const t = ip.trim();
@@ -188,7 +188,7 @@ export function normalizeIp(ip: string | null | undefined): string | null {
   return t.replace(/^::ffff:/i, "");
 }
 
-/** "DTS\\domarc" e "domarc@dts.local" sono lo stesso account. */
+/** "CLIENTE-A\\domarc" e "domarc@cliente-a.local" sono lo stesso account. */
 export function normalizeAccount(user: string | null | undefined): string | null {
   if (user == null) return null;
   let t = user.trim();

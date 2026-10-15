@@ -113,11 +113,11 @@ test("tipo: usw→switch, uap→access_point, ugw/udm/uxg→router, ignoto→nul
 });
 
 test("device: campi base + vendor ubiquiti", () => {
-  const d = mapUnifiDevice({ mac: "aa:bb:cc:dd:ee:ff", model: "US8P60", name: "SW1", type: "usw", ip: "172.17.0.5", state: 1 });
+  const d = mapUnifiDevice({ mac: "aa:bb:cc:dd:ee:ff", model: "US8P60", name: "SW1", type: "usw", ip: "10.1.0.5", state: 1 });
   assert.equal(d.device_type, "switch");
   assert.equal(d.vendor, "ubiquiti");
   assert.equal(d.model, "US8P60");
-  assert.equal(d.host, "172.17.0.5");
+  assert.equal(d.host, "10.1.0.5");
   assert.equal(d.mac, "aa:bb:cc:dd:ee:ff");
 });
 
@@ -135,14 +135,14 @@ test("porte: da port_table; senza lldp nessun trunk_neighbor", () => {
 
 test("lldp: adiacenze dal lldp_table di porta", () => {
   const n = mapUnifiLldp({ mac: "x", type: "usw", port_table: [
-    { port_idx: 2, name: "Uplink", lldp_table: [{ lldp_chassis_id: "SW2", lldp_port_id: "2", lldp_mgmt_addr: "172.17.0.6" }] },
+    { port_idx: 2, name: "Uplink", lldp_table: [{ lldp_chassis_id: "SW2", lldp_port_id: "2", lldp_mgmt_addr: "10.1.0.6" }] },
   ] } as any);
   assert.equal(n.length, 1);
   assert.equal(n[0].localPort, "2");
   assert.equal(n[0].remoteDevice, "SW2");
   assert.equal(n[0].remotePort, "2");
   assert.equal(n[0].protocol, "lldp");
-  assert.equal(n[0].remoteIp, "172.17.0.6");
+  assert.equal(n[0].remoteIp, "10.1.0.6");
 });
 
 test("device senza MAC/port_table non crasha", () => {
@@ -208,7 +208,7 @@ test("device senza MAC/port_table non crasha", () => {
 - [x] **Step 1:** Leggere `src/lib/integrations/wazuh-sync.ts` (`syncWazuhForTenant`) come template direzionale (pull→upsert, match per IP/MAC) e `librenms-sync.ts` per struttura errori/probe.
 - [x] **Step 2:** Implementare: `cfg = getIntegrationConfig("unifi")`; se `mode!=="external"` return skip. `client = createUnifiClient(cfg)`; `const p = await client.probe(); if(!p.ok) return {…errors:[p.message]}`. `devices = await client.listDevices()`. Per ogni device (dentro la transazione per-device o batch): `mapUnifiDeviceType` (skip se null); trovare il `network_device` esistente (`resolveMacToNetworkDevice(mac)` → `getNetworkDeviceByHost(ip)`) → `updateNetworkDevice` o `createNetworkDevice(mapUnifiDevice(d))`; `resolvePhysicalDevice` + `setNetworkDevicePhysicalDevice`; `upsertSwitchPorts(id, mapUnifiPorts(d))`; `upsertNeighbors(id, mapUnifiLldp(d))`. Accumulare conteggi/errori, **non lanciare**.
 - [x] **Step 3:** `npx tsc --noEmit && npm run lint && npm test` (incl. `no-dynamic-db-tenant-import.test.ts` verde). *(tsc completo, eslint sui file toccati, prove mirate UniFi + `no-dynamic-db-tenant-import` + `host-status-by-ip`; `npm test` completo non lanciato per la memoria della macchina, 12/10)*
-- [ ] **Step 4: verifica reale su DTS** (tenant 71734) — *da fare, correzione 7: prima su una copia locale del DB del tenant, poi sull'appliance con backup e conferma di Riccardo*: configurare `integration_unifi_*` (kind self_hosted, url `https://172.16.1.222:8443`, site `3oumjv0i`, user `map` dal vault), lanciare la sync e **contare** `network_devices`/`device_neighbors`/`switch_ports` prima/dopo (attesi ~74 device, molte adiacenze). Poi aprire `/topology` → mappa piena.
+- [ ] **Step 4: verifica reale su DTS** (tenant 71734) — *da fare, correzione 7: prima su una copia locale del DB del tenant, poi sull'appliance con backup e conferma di Riccardo*: configurare `integration_unifi_*` (kind self_hosted, url `https://10.0.1.222:8443`, site `3oumjv0i`, user `map` dal vault), lanciare la sync e **contare** `network_devices`/`device_neighbors`/`switch_ports` prima/dopo (attesi ~74 device, molte adiacenze). Poi aprire `/topology` → mappa piena.
 - [x] **Step 5:** `git commit -m "feat(unifi): sync engine pull→upsert (device/porte/adiacenze)"`.
 
 > **Esito del passo 3 (12/10), dove differisce da sopra.** `syncUnifiForTenant(opts?)` in

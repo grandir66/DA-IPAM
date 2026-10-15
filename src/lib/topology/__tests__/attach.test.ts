@@ -213,7 +213,7 @@ test("router: le righe vecchie dell'ARP (bridge, VLAN, VRRP) restano ignorate", 
   const i = input({
     devices: [RTR, dev(2), dev(3), dev(7, { name: "SRV-7", device_type: "server", host: "10.0.1.7" })],
     knownMacs: [{ device_id: 7, mac: SRV_MAC }],
-    macPorts: [mp(1, SRV_MAC, "bridge"), mp(1, SRV_MAC, "vlan10"), mp(1, SRV_MAC, "vrrp_vlan10")],
+    macPorts: [mp(1, SRV_MAC, "bridge"), mp(1, SRV_MAC, "vlan10"), mp(1, SRV_MAC, "vrrp_rete10")],
   });
   assert.deepEqual(run(i).attachLinks, []);
 });

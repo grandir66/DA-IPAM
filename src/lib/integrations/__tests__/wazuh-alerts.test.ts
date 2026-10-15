@@ -166,15 +166,15 @@ test("a graver category keeps its own higher threshold", () => {
 // ── Soppressione del rumore generato da noi stessi ──────────────────────────
 
 test("normalizeIp unwraps the IPv4-mapped IPv6 form Windows logs", () => {
-  // Sul campo il DC scrive "::ffff:172.16.1.154": senza normalizzare, il
+  // Sul campo il DC scrive "::ffff:10.0.1.154": senza normalizzare, il
   // confronto con gli IP dell'appliance non aggancerebbe mai.
-  assert.equal(normalizeIp("::ffff:172.16.1.154"), "172.16.1.154");
-  assert.equal(normalizeIp("172.16.0.2"), "172.16.0.2");
+  assert.equal(normalizeIp("::ffff:10.0.1.154"), "10.0.1.154");
+  assert.equal(normalizeIp("10.0.0.2"), "10.0.0.2");
   assert.equal(normalizeIp("  ::FFFF:10.0.0.1 "), "10.0.0.1");
   assert.equal(normalizeIp(null), null);
 });
 
-const SELF = { ips: ["172.16.0.2", "172.16.1.21"], accounts: ["domarc"] };
+const SELF = { ips: ["10.0.0.2", "10.0.1.21"], accounts: ["domarc"] };
 
 test("an alert coming from the appliance is recognised as our own probe", () => {
   const a = normalizeAlert(
@@ -182,7 +182,7 @@ test("an alert coming from the appliance is recognised as our own probe", () => 
       "@timestamp": "2026-07-27T10:00:00.000Z",
       agent: { id: "003", name: "SRV-DC" },
       rule: { id: "60122", level: 5, description: "Logon Failure", groups: ["authentication_failed"] },
-      data: { win: { system: { eventID: "4625" }, eventdata: { ipAddress: "::ffff:172.16.0.2" } } },
+      data: { win: { system: { eventID: "4625" }, eventdata: { ipAddress: "::ffff:10.0.0.2" } } },
     },
     "h1",
     SELF,
@@ -203,8 +203,8 @@ test("our service account is recognised however the domain is written", () => {
     ).category;
   assert.equal(mk("domarc"), "self_probe");
   assert.equal(mk("DOMARC"), "self_probe");
-  assert.equal(mk("domarc@dts.local"), "self_probe");
-  assert.equal(mk("DTS\\domarc"), "self_probe");
+  assert.equal(mk("domarc@cliente-a.local"), "self_probe");
+  assert.equal(mk("CLIENTE-A\\domarc"), "self_probe");
 });
 
 test("a real user from a customer server stays a security alert", () => {
@@ -212,7 +212,7 @@ test("a real user from a customer server stays a security alert", () => {
     {
       "@timestamp": "2026-07-27T10:00:00.000Z",
       rule: { id: "60122", level: 5, description: "x", groups: ["authentication_failed"] },
-      data: { win: { eventdata: { targetUserName: "gs.sicurezza", ipAddress: "::ffff:172.16.1.154" } } },
+      data: { win: { eventdata: { targetUserName: "gs.sicurezza", ipAddress: "::ffff:10.0.1.154" } } },
     },
     "h",
     SELF,
@@ -225,7 +225,7 @@ test("without a self-identity list nothing is suppressed", () => {
     {
       "@timestamp": "2026-07-27T10:00:00.000Z",
       rule: { id: "60122", level: 5, description: "x", groups: ["authentication_failed"] },
-      data: { win: { eventdata: { ipAddress: "172.16.0.2" } } },
+      data: { win: { eventdata: { ipAddress: "10.0.0.2" } } },
     },
     "h",
   );

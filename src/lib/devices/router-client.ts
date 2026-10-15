@@ -1252,7 +1252,7 @@ function parseCiscoRoutes(output: string): RouteEntry[] {
   for (const line of output.split("\n")) {
     // Formato: "C    192.168.1.0/24 is directly connected, GigabitEthernet0/0"
     //          "S    10.0.0.0/8 [1/0] via 192.168.1.1"
-    //          "O    172.16.0.0/16 [110/20] via 10.1.1.1, 00:05:00, Ethernet0"
+    //          "O    10.2.0.0/16 [110/20] via 10.1.1.1, 00:05:00, Ethernet0"
     const match = line.match(/^([CSOBDR*>i\s]+)\s+(\d+\.\d+\.\d+\.\d+(?:\/\d+)?)\s/);
     if (!match) continue;
     const flags = match[1].trim();

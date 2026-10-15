@@ -15,7 +15,7 @@ Il programma di replica (`wazuh-immutable-store`) non è osservabile dall'estern
 
 | Installazione | Wazuh | DA-IPAM | Accesso all'host Wazuh |
 |---|---|---|---|
-| **Duerre** | `172.16.1.10` (`srv-wazuh`) | `172.16.0.2` | utente `dts`, **non root**, sudo non passwordless |
+| **Duerre** | `10.0.1.10` (`srv-wazuh`) | `10.0.0.2` | utente `dts`, **non root**, sudo non passwordless |
 | **Domarc** | `192.168.4.19` (`da-wazuh`) | `192.168.4.8` (VM 533) | root via jump `192.168.40.4` |
 
 Entrambe eseguono la **v1** del programma (nessuna `storage_backends/`), con timer attivi: archiviazione oraria, retention giornaliera, verifica settimanale.

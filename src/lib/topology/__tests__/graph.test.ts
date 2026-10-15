@@ -4,10 +4,10 @@ import { buildTopologyGraph } from "@/lib/topology/graph";
 import type { DeviceRow, HostRow, NeighborRow, TopologyStatus } from "@/lib/topology/types";
 
 const dev = (o: Partial<DeviceRow>): DeviceRow => ({
-  id: 1, name: "SW1", device_type: "switch", model: "US8P60", host: "172.16.3.1", enabled: 1, ...o,
+  id: 1, name: "SW1", device_type: "switch", model: "US8P60", host: "10.0.3.1", enabled: 1, ...o,
 });
 const host = (o: Partial<HostRow>): HostRow => ({
-  id: 1, ip: "172.17.16.5", hostname: "px-up", custom_name: null, classification: "hypervisor",
+  id: 1, ip: "10.1.16.5", hostname: "px-up", custom_name: null, classification: "hypervisor",
   status: "online", last_response_time_ms: 5, last_seen: null, model: null, network_id: 1, ...o,
 });
 const nb = (o: Partial<NeighborRow>): NeighborRow => ({

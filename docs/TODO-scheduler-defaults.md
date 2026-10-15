@@ -8,7 +8,7 @@
 
 ## 1. Contesto incident
 
-Su LXC dts-invent (172.16.1.133 → CT 10001) il framework auto-creava 2 job
+Su LXC dts-invent (10.0.1.133 → CT 10001) il framework auto-creava 2 job
 `fast_scan` (= full subnet ICMP sweep) ogni 15 min per ciascun network del
 tenant DTS, di cui uno su una `/17` (32 768 IP). Risultato: container saturato
 ~100% CPU per ore, load 7+.

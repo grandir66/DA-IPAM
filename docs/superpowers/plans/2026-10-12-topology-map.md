@@ -131,17 +131,17 @@ import assert from "node:assert/strict";
 import { normalizeName, resolveRemote } from "@/lib/topology/match";
 
 test("normalizeName abbassa e toglie dominio/spazi", () => {
-  assert.equal(normalizeName("MK-D1-RTR.dts.local "), "mk-d1-rtr");
+  assert.equal(normalizeName("RTR-1.cliente-a.local "), "rtr-1");
 });
 
 test("resolveRemote preferisce il match per IP", () => {
-  const index = { byName: new Map([["sw1", "dev:1"]]), byIp: new Map([["172.17.0.5", "host:9"]]) };
-  assert.equal(resolveRemote({ name: "sw1", ip: "172.17.0.5" }, index), "host:9");
+  const index = { byName: new Map([["sw1", "dev:1"]]), byIp: new Map([["10.1.0.5", "host:9"]]) };
+  assert.equal(resolveRemote({ name: "sw1", ip: "10.1.0.5" }, index), "host:9");
 });
 
 test("resolveRemote ripiega sul nome normalizzato", () => {
   const index = { byName: new Map([["sw1", "dev:1"]]), byIp: new Map() };
-  assert.equal(resolveRemote({ name: "SW1.dts.local", ip: null }, index), "dev:1");
+  assert.equal(resolveRemote({ name: "SW1.cliente-a.local", ip: null }, index), "dev:1");
 });
 
 test("resolveRemote ritorna null se non risolvibile", () => {
@@ -328,8 +328,8 @@ import assert from "node:assert/strict";
 import { buildTopologyGraph } from "@/lib/topology/graph";
 import type { DeviceRow, HostRow, NeighborRow } from "@/lib/topology/types";
 
-const dev = (o: Partial<DeviceRow>): DeviceRow => ({ id: 1, name: "SW1", device_type: "switch", model: "US8P60", host: "172.16.3.1", enabled: 1, ...o });
-const host = (o: Partial<HostRow>): HostRow => ({ id: 1, ip: "172.17.16.5", hostname: "px-up", custom_name: null, classification: "hypervisor", status: "online", last_response_time_ms: 5, last_seen: null, model: null, network_id: 1, ...o });
+const dev = (o: Partial<DeviceRow>): DeviceRow => ({ id: 1, name: "SW1", device_type: "switch", model: "US8P60", host: "10.0.3.1", enabled: 1, ...o });
+const host = (o: Partial<HostRow>): HostRow => ({ id: 1, ip: "10.1.16.5", hostname: "px-up", custom_name: null, classification: "hypervisor", status: "online", last_response_time_ms: 5, last_seen: null, model: null, network_id: 1, ...o });
 const nb = (o: Partial<NeighborRow>): NeighborRow => ({ device_id: 1, local_port: "1", remote_device_name: "SW2", remote_port: "2", protocol: "lldp", remote_ip: null, ...o });
 
 test("device + host (hypervisor) diventano nodi; PC esclusi", () => {

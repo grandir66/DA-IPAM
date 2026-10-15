@@ -8,24 +8,24 @@ import { dev, host } from "./support/righe";
 
 const VERO: TopologyModelInput = {
   devices: [
-    dev(1, { name: "MK-RTR-CORE", host: "192.168.15.1", device_type: "router", controller_mac: "f4:1e:57:aa:bb:01" }),
-    dev(2, { name: "USW-Piano1", host: "192.168.15.20", uplink_mac: "f4:1e:57:aa:bb:01", uplink_seen_at: "2026-10-13 03:00:00" }),
+    dev(1, { name: "RTR-CORE", host: "192.168.101.1", device_type: "router", controller_mac: "de:ad:be:aa:bb:01" }),
+    dev(2, { name: "USW-Piano1", host: "192.168.101.20", uplink_mac: "de:ad:be:aa:bb:01", uplink_seen_at: "2026-10-13 03:00:00" }),
   ],
-  hosts: [host(7, { ip: "192.168.20.5", mac: "F4-1E-57-AA-BB-01", hostname: "mk-rtr-core.domarc.local", network_id: 2 })],
-  neighbors: [{ device_id: 2, local_port: "Port 1", remote_device_name: "MK-RTR-CORE", remote_port: "ether3", protocol: "lldp", remote_ip: null, remote_mac: null, timestamp: "2026-10-13 03:00:00", source: "unifi" }],
+  hosts: [host(7, { ip: "192.168.102.5", mac: "DE-AD-BE-AA-BB-01", hostname: "rtr-core.domarc.local", network_id: 2 })],
+  neighbors: [{ device_id: 2, local_port: "Port 1", remote_device_name: "RTR-CORE", remote_port: "ether3", protocol: "lldp", remote_ip: null, remote_mac: null, timestamp: "2026-10-13 03:00:00", source: "unifi" }],
   uplinkPorts: [],
   locations: [{ id: 1, name: "Domarc Bergamo", parent_id: null, head_device_id: null }],
   networks: [
-    { id: 1, cidr: "192.168.15.0/24", name: "LAN uffici", gateway: "192.168.15.1", location_id: 1 },
-    { id: 2, cidr: "192.168.20.0/24", name: "Server", gateway: "192.168.20.1", location_id: 1 },
+    { id: 1, cidr: "192.168.101.0/24", name: "LAN uffici", gateway: "192.168.101.1", location_id: 1 },
+    { id: 2, cidr: "192.168.102.0/24", name: "Server", gateway: "192.168.102.1", location_id: 1 },
   ],
-  knownMacs: [{ device_id: 1, mac: "f4:1e:57:aa:bb:01" }],
+  knownMacs: [{ device_id: 1, mac: "de:ad:be:aa:bb:01" }],
   overrides: [], macPorts: [], primaries: [], portInfo: [], vms: [], scanHosts: [], nowMs: Date.parse("2026-10-13T12:00:00Z"), staleDays: 2,
 };
 
 test("nessun nome, IP o MAC vero esce", () => {
   const testo = JSON.stringify(anonimizzaInput(VERO));
-  for (const vero of ["MK-RTR-CORE", "USW-Piano1", "domarc", "Bergamo", "192.168.", "f4:1e:57", "F4-1E-57", "LAN uffici"]) {
+  for (const vero of ["RTR-CORE", "USW-Piano1", "domarc", "Bergamo", "192.168.", "de:ad:be", "DE-AD-BE", "LAN uffici"]) {
     assert.equal(testo.toLowerCase().includes(vero.toLowerCase()), false, `«${vero}» è nella fixture`);
   }
 });
@@ -65,8 +65,8 @@ test("una porta col nome dato dall'amministratore non esce; quelle di serie rest
 test("un nome vuoto: l'host resta senza nome, l'apparato prende una sigla", () => {
   const vuoti: TopologyModelInput = {
     ...VERO,
-    devices: [...VERO.devices, dev(3, { name: " ", host: "192.168.15.30" })],
-    hosts: [...VERO.hosts, host(8, { ip: "192.168.20.6", hostname: "", custom_name: "  " })],
+    devices: [...VERO.devices, dev(3, { name: " ", host: "192.168.101.30" })],
+    hosts: [...VERO.hosts, host(8, { ip: "192.168.102.6", hostname: "", custom_name: "  " })],
   };
   const out = anonimizzaInput(vuoti);
   assert.equal(out.hosts[1].hostname, null);
@@ -79,8 +79,8 @@ test("una porta a forma di IP o di MAC passa per l'IP o il MAC finto", () => {
   const conPorte: TopologyModelInput = {
     ...VERO,
     neighbors: [
-      { ...VERO.neighbors[0], local_port: "192.168.15.1", remote_port: "f4:1e:57:aa:bb:01" },
-      { ...VERO.neighbors[0], local_port: "f41e.57aa.bb01", remote_port: "F41E57AABB01" },
+      { ...VERO.neighbors[0], local_port: "192.168.101.1", remote_port: "de:ad:be:aa:bb:01" },
+      { ...VERO.neighbors[0], local_port: "dead.beaa.bb01", remote_port: "DEADBEAABB01" },
     ],
   };
   const out = anonimizzaInput(conPorte);
@@ -94,8 +94,8 @@ test("una porta a forma di IP o di MAC passa per l'IP o il MAC finto", () => {
 test("il conto dei valori veri: zero sull'anonimo, li trova se ci sono", () => {
   assert.deepEqual(contaValoriVeri(VERO, anonimizzaInput(VERO)), { ip: 0, mac: 0, nomi: 0 });
   const fuga = anonimizzaInput(VERO);
-  fuga.neighbors[0].local_port = "uplink 192.168.20.5";
-  fuga.neighbors[0].remote_port = "F41E.57AA.BB01";
+  fuga.neighbors[0].local_port = "uplink 192.168.102.5";
+  fuga.neighbors[0].remote_port = "DEAD.BEAA.BB01";
   fuga.hosts[0].hostname = "USW-Piano1";
   fuga.uplinkPorts = [{ device_id: 1, port_index: 1, port_name: "verso bergamo" }];
   const c = contaValoriVeri(VERO, fuga);
@@ -109,7 +109,7 @@ test("macPorts: stesso MAC vero, stesso MAC finto di host e vicini; porte dal vo
   const i = {
     ...VERO,
     macPorts: [
-      { device_id: 2, mac: "F4-1E-57-AA-BB-01", port_name: "Port 1", timestamp: "2026-10-13 10:00:00", source: "device" },
+      { device_id: 2, mac: "DE-AD-BE-AA-BB-01", port_name: "Port 1", timestamp: "2026-10-13 10:00:00", source: "device" },
       { device_id: 2, mac: "aa:bb:cc:dd:ee:ff", port_name: "Sala riunioni", timestamp: "2026-10-13 10:00:00", source: "unifi" },
     ],
   };
@@ -126,8 +126,8 @@ test("macPorts: stesso MAC vero, stesso MAC finto di host e vicini; porte dal vo
 test("le VM e gli host dei cluster non entrano nelle fixture: nomi, IP e MAC dei clienti restano fuori", () => {
   const conVm: TopologyModelInput = {
     ...VERO,
-    vms: [{ scannedDeviceId: 1, vmid: 100, name: "SRV-CLIENTE-X", node: "px-cliente", status: "running", type: "qemu", macs: ["BC:24:11:AA:BB:CC"], ips: ["192.168.15.77"], scannedAt: null }],
-    scanHosts: [{ scannedDeviceId: 1, hostname: "px-cliente", ips: ["192.168.15.5"], macs: ["BC:24:11:AA:BB:01"] }],
+    vms: [{ scannedDeviceId: 1, vmid: 100, name: "SRV-CLIENTE-X", node: "px-cliente", status: "running", type: "qemu", macs: ["BC:24:11:AA:BB:CC"], ips: ["192.168.101.77"], scannedAt: null }],
+    scanHosts: [{ scannedDeviceId: 1, hostname: "px-cliente", ips: ["192.168.101.5"], macs: ["BC:24:11:AA:BB:01"] }],
   };
   const anonimo = anonimizzaInput(conVm);
   assert.deepEqual([anonimo.vms, anonimo.scanHosts], [[], []]);

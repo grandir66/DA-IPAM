@@ -836,7 +836,7 @@ Esce quando:
   dell'emergenza;
 - chiave e VM si tolgono subito dopo.
 
-**Fase 2 — Pilota DTS**: istanza IPAM `172.16.0.2`, edge `172.16.1.141`, `proxy-dts`.
+**Fase 2 — Pilota DTS**: istanza IPAM `10.0.0.2`, edge `10.0.1.141`, `proxy-dts`.
 
 1. NetBird accanto a Tailscale sulle macchine di DTS, con chiavi emesse da DA-Link. Il proxy,
    se vive da solo, passa dalla procedura guidata di DA-Zabbix.
@@ -1140,7 +1140,7 @@ La tailnet ha 10 nodi, offline compresi.
 |---|---|---|---|---|
 | `da-vulcan` | centrale (hub VA) | — | sì | — |
 | `da-invent` | istanza DA-IPAM di Domarc (VM 533), con l'edge «DOMARC» (id 1) | 70791 | sì | — |
-| `dts-appliance` | istanza IPAM di DTS (`172.16.0.2`), con l'edge «DTS» (id 2) | 71734 | sì | — |
+| `dts-appliance` | istanza IPAM di DTS (`10.0.0.2`), con l'edge «DTS» (id 2) | 71734 | sì | — |
 | `bridge-domarc-ovh` (`tag:domarc-bridge`) | edge DA-VA-OVH (id 5) | 70791 | sì | — |
 | `appliance-pxnas-domarc` | istanza IPAM di laboratorio sul PX-NAS di casa, con l'edge «PX-NAS» (id 3) | 70791 | sì | — |
 | `appliance-px-lab-domarc-local` | istanza IPAM di laboratorio | 70791 | no | 05/10 |

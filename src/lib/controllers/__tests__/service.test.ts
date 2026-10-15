@@ -524,7 +524,7 @@ test("storico: una lettura dei client non tocca il riepilogo degli apparati e si
 function configurazioneVecchia(): string {
   const cifrata = encrypt("password-del-controller");
   setSetting("integration_unifi_mode", "external");
-  setSetting("integration_unifi_url", "https://172.16.1.222:8443");
+  setSetting("integration_unifi_url", "https://10.0.1.222:8443");
   setSetting("integration_unifi_kind", "self_hosted");
   setSetting("integration_unifi_site", "default");
   setSetting("integration_unifi_username", "map");
@@ -543,7 +543,7 @@ test("configurazione vecchia: diventa la prima riga, segreto copiato cifrato com
   if (m.state === "done") assert.equal(m.jobsAttached, 1);
   const row = getTenantDb(T).prepare("SELECT * FROM network_controllers").get() as Record<string, unknown>;
   assert.equal(row.kind, "self_hosted");
-  assert.equal(row.url, "https://172.16.1.222:8443");
+  assert.equal(row.url, "https://10.0.1.222:8443");
   assert.equal(row.username, "map");
   assert.equal(row.password_enc, cifrata, "il segreto si copia senza decifrarlo");
   assert.equal(row.cert_pin, PIN_A);

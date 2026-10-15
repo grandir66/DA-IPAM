@@ -129,7 +129,7 @@ rm /Users/riccardo/Progetti/Domarc/DA-IPAM/docs/superpowers/plans/2026-10-13-top
 
 - [ ] **Step 4: copie dei DB (sola lettura sui server)**
 
-Vie d'accesso in `ACCESSI.md` (hub: VM 533 `192.168.4.8`, `/opt/da-invent`, tenant `70791`; DTS: `172.16.0.2`, `/opt/da-ipam`, tenant `71734`). Un solo ssh per server: spazio, copia coerente con l'API di backup di SQLite, impronta.
+Vie d'accesso in `ACCESSI.md` (hub: VM 533 `192.168.4.8`, `/opt/da-invent`, tenant `70791`; DTS: `10.0.0.2`, `/opt/da-ipam`, tenant `71734`). Un solo ssh per server: spazio, copia coerente con l'API di backup di SQLite, impronta.
 
 ```bash
 S=/private/tmp/claude-501/-Users-riccardo-Progetti/<sessione>/scratchpad/topologia-f1   # scratchpad della sessione che esegue
@@ -1596,7 +1596,7 @@ test("vicini in due sedi diverse: resta senza sede", () => {
 
 test("testa proposta: il router gateway di più subnet; a pari merito nessuna; la manuale vince", () => {
   const devices = [
-    dev(1, { name: "MK-RTR-CORE", host: "10.0.0.1", device_type: "router" }),
+    dev(1, { name: "RTR-CORE", host: "10.0.0.1", device_type: "router" }),
     dev(2, { name: "UDM", host: "10.0.0.254", device_type: "router" }),
   ];
   const hosts = [host(10, { ip: "10.0.1.1", mac: "aa:bb:cc:00:00:01", network_id: 2 }), host(11, { ip: "10.0.0.1", mac: "aa:bb:cc:00:00:01" })];
@@ -2288,24 +2288,24 @@ import { dev, host } from "./node-index.test";
 
 const VERO: TopologyModelInput = {
   devices: [
-    dev(1, { name: "MK-RTR-CORE", host: "192.168.15.1", device_type: "router", controller_mac: "f4:1e:57:aa:bb:01" }),
-    dev(2, { name: "USW-Piano1", host: "192.168.15.20", uplink_mac: "f4:1e:57:aa:bb:01", uplink_seen_at: "2026-10-13 03:00:00" }),
+    dev(1, { name: "RTR-CORE", host: "192.168.101.1", device_type: "router", controller_mac: "de:ad:be:aa:bb:01" }),
+    dev(2, { name: "USW-Piano1", host: "192.168.101.20", uplink_mac: "de:ad:be:aa:bb:01", uplink_seen_at: "2026-10-13 03:00:00" }),
   ],
-  hosts: [host(7, { ip: "192.168.20.5", mac: "F4-1E-57-AA-BB-01", hostname: "mk-rtr-core.domarc.local", network_id: 2 })],
-  neighbors: [{ device_id: 2, local_port: "Port 1", remote_device_name: "MK-RTR-CORE", remote_port: "ether3", protocol: "lldp", remote_ip: null, remote_mac: null, timestamp: "2026-10-13 03:00:00", source: "unifi" }],
+  hosts: [host(7, { ip: "192.168.102.5", mac: "DE-AD-BE-AA-BB-01", hostname: "rtr-core.domarc.local", network_id: 2 })],
+  neighbors: [{ device_id: 2, local_port: "Port 1", remote_device_name: "RTR-CORE", remote_port: "ether3", protocol: "lldp", remote_ip: null, remote_mac: null, timestamp: "2026-10-13 03:00:00", source: "unifi" }],
   uplinkPorts: [],
   locations: [{ id: 1, name: "Domarc Bergamo", parent_id: null, head_device_id: null }],
   networks: [
-    { id: 1, cidr: "192.168.15.0/24", name: "LAN uffici", gateway: "192.168.15.1", location_id: 1 },
-    { id: 2, cidr: "192.168.20.0/24", name: "Server", gateway: "192.168.20.1", location_id: 1 },
+    { id: 1, cidr: "192.168.101.0/24", name: "LAN uffici", gateway: "192.168.101.1", location_id: 1 },
+    { id: 2, cidr: "192.168.102.0/24", name: "Server", gateway: "192.168.102.1", location_id: 1 },
   ],
-  knownMacs: [{ device_id: 1, mac: "f4:1e:57:aa:bb:01" }],
+  knownMacs: [{ device_id: 1, mac: "de:ad:be:aa:bb:01" }],
   overrides: [], nowMs: Date.parse("2026-10-13T12:00:00Z"), staleDays: 2,
 };
 
 test("nessun nome, IP o MAC vero esce", () => {
   const testo = JSON.stringify(anonimizzaInput(VERO));
-  for (const vero of ["MK-RTR-CORE", "USW-Piano1", "domarc", "Bergamo", "192.168.", "f4:1e:57", "F4-1E-57", "LAN uffici"]) {
+  for (const vero of ["RTR-CORE", "USW-Piano1", "domarc", "Bergamo", "192.168.", "de:ad:be", "DE-AD-BE", "LAN uffici"]) {
     assert.equal(testo.toLowerCase().includes(vero.toLowerCase()), false, `«${vero}» è nella fixture`);
   }
 });
@@ -3577,7 +3577,7 @@ Hub (Domarc, controller #1 = UDM Beast, chiave API nel vault `da-IPAM-accessi.md
 ```
 Prima di usarlo, il filtro si prova **sul vault** con l'output rediretto in `wc -c` (lunghezza, non il valore). Se il formato del vault non si capisce senza stamparlo, ci si ferma e si chiede a Riccardo come leggerlo (memoria «segreti-verso-ssh-prova-finta»: tre chiavi bruciate così).
 
-DTS (tenant 71734, controller self-hosted 172.16.1.222:8443, utente e password nel vault (`dts-appliance-credentials.md`, sezione UNIFI)): stessa cosa, **se il controller risponde dal Mac** (il 12/10 sì). Se non risponde: misura senza `--unifi` e lo si scrive nella richiesta di conferma («i numeri dell'uplink di DTS si vedranno solo dopo la prima lettura su DTS»).
+DTS (tenant 71734, controller self-hosted 10.0.1.222:8443, utente e password nel vault (`dts-appliance-credentials.md`, sezione UNIFI)): stessa cosa, **se il controller risponde dal Mac** (il 12/10 sì). Se non risponde: misura senza `--unifi` e lo si scrive nella richiesta di conferma («i numeri dell'uplink di DTS si vedranno solo dopo la prima lettura su DTS»).
 
 Atteso, per entrambi: `exit=0`, `integrita_*: ok`, `migrazione_ms`, `prima` e `dopo` (e `dopo_lettura`). Questi numeri vanno nella richiesta di conferma (Task 16).
 

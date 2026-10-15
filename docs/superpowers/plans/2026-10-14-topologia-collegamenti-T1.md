@@ -2545,7 +2545,7 @@ test("T1, G17: lo pseudonimo di un nome scelto dà al traduttore gli stessi fatt
   assert.equal(JSON.stringify(out).includes("ZETA"), false);
 });
 
-// Spec §13.12.2. Verifica del 15/10: un'alternativa allargata di PORTA_GENERICA («vrrp_vlan_N», il disegno dei nomi che un cliente
+// Spec §13.12.2. Verifica del 15/10: un'alternativa allargata di PORTA_GENERICA («vrrp_rete_N», il disegno dei nomi che un cliente
 // dà alle sue VRRP) avrebbe pubblicato i nomi veri come «di serie»; il controllo dei nomi degli oggetti non guarda le porte.
 // Il secondo controllo usa un elenco chiuso di nomi di fabbrica e si ferma su ogni altro pezzo rimasto uguale al vero.
 test("porteInChiaro: un nome scelto rimasto uguale al vero ferma l'estrazione; i nomi di fabbrica no", () => {
@@ -2814,7 +2814,7 @@ git commit -m "feat(topologia): ingresso del modello con l'elenco delle porte, l
   - `src/lib/topology/__tests__/match.test.ts`, `anonimizza.test.ts`, `sites.test.ts`;
   - `src/lib/integrations/__tests__/self-identity.test.ts`, `wazuh-alerts.test.ts`, e il commento di `src/lib/integrations/wazuh-alerts.ts:191`;
   - `docs/superpowers/plans/2026-10-12-topology-map.md`, `docs/superpowers/plans/2026-10-13-topologia-fase1-dati.md`, `docs/MANUALE-ACTIVE-DIRECTORY.md`, e ogni altro file che la ricerca trova;
-  - il disegno dei nomi VRRP del cliente A nelle prove di oggi («vrrp_vlan10» in `links.test.ts`, `attach.test.ts:216`, `mikrotik-porte.test.ts:19`; revisione finale del 15/10): diventa «vrrp_rete10», logico come prima. `ether1-2.5` resta: è l'eccezione scritta nelle Global Constraints.
+  - il disegno dei nomi VRRP del cliente A nelle prove di oggi («vrrp_rete10» in `links.test.ts`, `attach.test.ts:216`, `mikrotik-porte.test.ts:19`; revisione finale del 15/10): diventa «vrrp_rete10», logico come prima. `ether1-2.5` resta: è l'eccezione scritta nelle Global Constraints.
 
   L'espressione di ricerca contiene i valori veri: la sessione principale la scrive **solo nel prompt** dell'agente (l'elenco completo sta nella verifica V3 della revisione, fuori dal repo), mai in un file del repo né in un messaggio di commit. Si cerca senza distinguere maiuscole e minuscole, perché `match.test.ts` ha anche la forma normalizzata:
 

@@ -171,7 +171,7 @@ test("parseStatsResponse ranks the targeted accounts with their origin", () => {
             {
               key: "gs.sicurezza",
               doc_count: 1438,
-              top_source: { buckets: [{ key: "::ffff:172.16.1.154" }] },
+              top_source: { buckets: [{ key: "::ffff:10.0.1.154" }] },
               top_workstation: { buckets: [{ key: "SRV-WIN2025" }] },
               last_seen: { value_as_string: "2026-07-27T10:00:00.000Z" },
             },
@@ -186,7 +186,7 @@ test("parseStatsResponse ranks the targeted accounts with their origin", () => {
   assert.equal(first.account, "gs.sicurezza");
   assert.equal(first.count, 1438);
   // l'IP viene normalizzato: Windows lo scrive in forma mappata
-  assert.equal(first.sourceIp, "172.16.1.154");
+  assert.equal(first.sourceIp, "10.0.1.154");
   assert.equal(first.workstation, "SRV-WIN2025");
   assert.equal(s.topAccounts[1]!.sourceIp, null);
 });

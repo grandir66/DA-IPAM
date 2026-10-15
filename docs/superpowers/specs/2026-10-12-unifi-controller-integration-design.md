@@ -4,7 +4,7 @@
 > Feature DA-IPAM: una integrazione **controller UniFi** di prima classe che
 > **arricchisce il DB** (device, porte, adiacenze LLDP) coi dati del controller.
 > A valle, la mappa `/topology` si popola da sola e ne beneficia tutto DA-IPAM.
-> Driver: DTS (controller self-hosted `172.16.1.222`, 74 device, 72 con LLDP, oggi
+> Driver: DTS (controller self-hosted `10.0.1.222`, 74 device, 72 con LLDP, oggi
 > fuori da `network_devices`). Decisione di prodotto → ADR `0004` (DA-IPAM è
 > l'appliance; i controller creano oggetti); scelte tecniche di questa integrazione →
 > ADR `0005`. È la **tappa 2** del piano di miglioramento
@@ -36,7 +36,7 @@ cliente, quindi un controller per install. Campi:
 
 - `integration_unifi_mode`: `external` | `disabled`
 - `integration_unifi_kind`: `self_hosted` | `udm` | `cloud`  *(nuovo campo, vedi §6)*
-- `integration_unifi_url`: es. `https://172.16.1.222:8443` (self/udm) o vuoto (cloud)
+- `integration_unifi_url`: es. `https://10.0.1.222:8443` (self/udm) o vuoto (cloud)
 - `integration_unifi_site`: site name (default per self-hosted; es. `3oumjv0i` per DTS)
 - `integration_unifi_username` + `integration_unifi_password` (cifrato) — self-hosted
 - `integration_unifi_api_token` (cifrato) — udm/cloud (`X-API-KEY`)

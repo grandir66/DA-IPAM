@@ -34,7 +34,8 @@ import { haTraduttore, traduciPorta, type ComeLetto } from "@/lib/topology/letto
 import { portaLocale } from "@/lib/topology/links";
 import { normalizeMacForStorage, normalizePortNameForMatch } from "@/lib/utils";
 import { parseDbDate } from "@/lib/db-date";
-import { vmPortLinks, type RunningVmMacs } from "@/lib/topology/vm-ports";
+import { REGOLE_T1, type Regole } from "@/lib/topology/regole";
+import { macProprio, vmEIpervisore, vmPortLinks, type IpervisoriDi, type RunningVmMacs } from "@/lib/topology/vm-ports";
 
 const CLIENT_COUNTING = ["switch", "access_point"];
 const DAY = 86_400_000;
@@ -48,6 +49,10 @@ export interface OpzioniAttacco {
   ignorati?: Ignorati;
   /** Le porte di segmento (`buildLinks`, §13.7.1 passo 2): da lì niente linee verso chi la porta sente via LLDP o CDP. */
   segmenti?: ReadonlyMap<string, ReadonlySet<string>>;
+  /** Spec §13.7.8: per ogni nodo che è una VM, il suo hypervisor; fra i due nessun collegamento (`ipervisoriDelleVm`). */
+  ipervisori?: IpervisoriDi;
+  /** Le regole del passaggio universale accese (spec §13.16; le spegne solo la misura C19). */
+  regole?: Regole;
 }
 
 /**
@@ -64,7 +69,8 @@ function fisicaDelRouter(n: MapNode, porta: string): boolean {
 
 export function attachMacs(input: TopologyModelInput, idx: NodeIndex, links: MapLink[], opzioni: OpzioniAttacco = {}):
   { portClients: PortClients[]; clientCount: Record<string, number>; attachLinks: MapLink[] } {
-  const { vmMacs = new Set<string>(), runningVmMacs = new Map(), ignorati = nessunIgnorato(), segmenti = new Map() } = opzioni;
+  const { vmMacs = new Set<string>(), runningVmMacs = new Map(), ignorati = nessunIgnorato(), segmenti = new Map(), ipervisori = new Map(), regole = REGOLE_T1 } = opzioni;
+  const vmEMacPropri = regole.has("vm-e-mac-propri");
   const portaDi = portaLocale(input);
   const portKey = (node: string, port: string) => `${node}|${normalizePortNameForMatch(port)}`;
   const linkPorts = new Set<string>();
@@ -89,6 +95,9 @@ export function attachMacs(input: TopologyModelInput, idx: NodeIndex, links: Map
     const k = portKey(node, r.port_name);
     const ms = parseDbDate(r.timestamp).getTime();
     if (input.nowMs - ms <= soglia) perPort.set(k, (perPort.get(k) ?? new Set()).add(mac));
+    // Spec §13.7.8 (G9): i MAC propri dell'apparato che osserva non sono suoi client né suoi vicini; su un altro apparato
+    // restano la prova del cavo. Uno switch vede il suo MAC sulla porta della CPU: prima era un suo client.
+    if (vmEMacPropri && macProprio(idx, mac, node)) continue;
     const fisica = (n.type === "router" || n.type === "firewall") && fisicaDelRouter(n, r.port_name);
     cand.set(mac, [...(cand.get(mac) ?? []), { node, port: r.port_name, ts: r.timestamp, ms, counting: CLIENT_COUNTING.includes(n.type), fisica }]);
   }
@@ -136,6 +145,8 @@ export function attachMacs(input: TopologyModelInput, idx: NodeIndex, links: Map
       // Spec §13.7.1 passo 2 e §13.3.1 riga 3: una porta che sente due o più apparati non dà linee verso di loro, nemmeno
       // dalla tabella MAC. Il ripiego del router ha le sue regole (§11.1 bis) e non passa da qui.
       if (segmenti.get(portKey(best.node, best.port))?.has(other.id)) continue;
+      // Spec §13.7.8: fra una VM e il suo hypervisor nessun collegamento, nemmeno dalla tabella MAC.
+      if (vmEMacPropri && vmEIpervisore(ipervisori, best.node, other.id)) continue;
       const key = [best.node, other.id].sort().join("|");
       if (!linked.has(key)) {
         linked.add(key);
@@ -153,12 +164,12 @@ export function attachMacs(input: TopologyModelInput, idx: NodeIndex, links: Map
     byPort.set(pk, pc);
     if (!stale) clientCount[best.node] = (clientCount[best.node] ?? 0) + 1;
   }
-  for (const l of vmPortLinks(input, idx, [...links, ...attachLinks], runningVmMacs, ignorati)) {
+  for (const l of vmPortLinks(input, idx, [...links, ...attachLinks], runningVmMacs, ignorati, { ipervisori, regole })) {
     linked.add([l.a, l.b].sort().join("|"));
     attachLinks.push(l);
   }
   attachLinks.push(...ripiegoRouter(idx, [...links, ...attachLinks], ripiego, sullaPortaDelRouter, linked, portKey, input.nowMs, soglia,
-    (router, porta, nodo) => portaOccupata(ignorati, router, portaDi(router, porta), nodo)));
+    (router, porta, nodo) => portaOccupata(ignorati, router, portaDi(router, porta), nodo) || (vmEMacPropri && vmEIpervisore(ipervisori, router, nodo))));
   const portClients = [...byPort.values()].sort((a, b) =>
     (a.nodeId < b.nodeId ? -1 : a.nodeId > b.nodeId ? 1 : 0) || a.port.localeCompare(b.port, "it", { numeric: true }));
   attachLinks.sort((a, b) => (a.id < b.id ? -1 : 1));
@@ -177,7 +188,7 @@ function diRete(idx: NodeIndex, id: string): boolean {
  * Il ripiego del router (Task 1b): vedi il commento in testa. `noti` sono i collegamenti da fonti
  * più forti (correzioni, uplink UniFi, LLDP/CDP/MNDP, tabella MAC degli switch). Un collegamento con
  * `uplinkFrom` ha un verso (figlio → padre); gli altri no. `bloccato`: la porta del router è quella di un cavo
- * ignorato a mano verso quel nodo (spec §13.9, I9).
+ * ignorato a mano verso quel nodo (spec §13.9, I9), o il router è una VM di quel nodo o il suo hypervisor (§13.7.8).
  */
 function ripiegoRouter(
   idx: NodeIndex,

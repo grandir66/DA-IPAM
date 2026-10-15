@@ -19,6 +19,7 @@ import { nodeClass } from "@/lib/topology/identity";
 import { REGOLE_T1, type Regole } from "@/lib/topology/regole";
 import { assignSites, retiDiCuiGateway } from "@/lib/topology/sites";
 import { placeVms, resolveScanHosts } from "@/lib/topology/vms";
+import { ipervisoriDelleVm, vmEIpervisore } from "@/lib/topology/vm-ports";
 import { normalizeName } from "@/lib/topology/match";
 import { parseDbDate } from "@/lib/db-date";
 
@@ -31,9 +32,14 @@ export function buildTopologyModel(input: TopologyModelInput, regole: Regole = R
   // Spec §11.5: le schede vive di un hypervisor (MAC veri) lo identificano sulla tabella MAC degli switch.
   for (const { row, nodeId } of resolveScanHosts(input.scanHosts, idx)) if (nodeId) addNodeMacs(idx, nodeId, row.macs);
   const { vms, vmNodeIds, vmMacs, runningVmMacs } = placeVms(input, idx);
+  // Spec §13.7.8: per ogni nodo che è una VM, il suo hypervisor: fra i due nessun collegamento dai dati (G9).
+  const ipervisori = ipervisoriDelleVm(vms);
   const { links: baseLinks, unmatched, ignorati, segmenti } = buildLinks(input, idx, runningVmMacs, regole);
-  const { portClients, clientCount, attachLinks } = attachMacs(input, idx, baseLinks, { vmMacs, runningVmMacs, ignorati, segmenti });
-  const links = [...baseLinks, ...attachLinks].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const { portClients, clientCount, attachLinks } = attachMacs(input, idx, baseLinks, { vmMacs, runningVmMacs, ignorati, segmenti, ipervisori, regole });
+  // Nemmeno da un annuncio (una VM che sente il bridge del suo hypervisor): la VM sta dentro; un collegamento a mano resta.
+  const links = [...baseLinks, ...attachLinks]
+    .filter((l) => !regole.has("vm-e-mac-propri") || l.sources.includes("manual") || !vmEIpervisore(ipervisori, l.a, l.b))
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   enrichLinks(links, input, idx, regole);
   const sites = assignSites(input, idx, links);
   // Spec §13.8.1 (I63, H17): le reti di cui ogni apparato è gateway, per la testa proposta della mappa automatica.

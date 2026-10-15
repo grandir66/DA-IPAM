@@ -478,3 +478,16 @@ test("ripiego del router: da un'interfaccia che il traduttore del prodotto non r
   assert.deepEqual(run(i(mk, "ether7")).attachLinks.map((l) => [l.a, l.aPort, l.b]), [["dev:1", "ether7", "dev:7"]]);
   assert.deepEqual(run(i(RTR, "VL_2_UFFICI")).attachLinks.map((l) => [l.a, l.aPort, l.b]), [["dev:1", "VL_2_UFFICI", "dev:7"]]);
 });
+
+// Spec §13.7.8 (G9): un apparato non è client di sé stesso. Uno switch vede il suo MAC sulla porta della CPU: prima contava fra i
+// client di quella porta (`attach.ts:124-129`) e toglieva la prova del cavo all'altro switch che lo vede.
+test("G9 — il MAC proprio di uno switch sulla sua porta non è un suo client; sulla porta di un altro switch prova il cavo", () => {
+  const SW = "02:00:00:00:00:02";
+  const i = baseInput({
+    devices: [dev(2, { name: "SW-2", controller_mac: SW }), dev(3, { name: "SW-3" })],
+    macPorts: [mp(2, SW, "Port 0"), mp(3, SW, "Port 7")],
+  });
+  const m = buildTopologyModel(i);
+  assert.deepEqual(m.portClients.filter((p) => p.nodeId === "dev:2"), []);
+  assert.deepEqual(m.links.map((l) => [l.a, l.aPort, l.b, l.source]), [["dev:3", "Port 7", "dev:2", "mac_table"]]);
+});

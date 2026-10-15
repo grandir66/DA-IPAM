@@ -7,6 +7,8 @@ import { buildTree } from "@/lib/topology/tree";
 import { SOURCE_WORDS, vmPortWords } from "@/lib/topology/edge-look";
 import type { MapLink, ModelMacPortRow, ModelVmRow, TopologyModelInput } from "@/lib/topology/model-types";
 import { baseInput, dev } from "./support/righe";
+import { applicaScenario } from "@/lib/topology/misura";
+import { REGOLE_T1 } from "@/lib/topology/regole";
 
 const RECENTE = "2026-10-13 11:00:00";
 const VECCHIO = "2026-10-01 11:00:00";
@@ -366,4 +368,40 @@ test("VM per cavo: una linea a mano senza porte non prende la porta dalle VM", (
     overrides: [{ id: 1, action: "add", a_node: "dev:2", a_port: "", b_node: "dev:5", b_port: "", medium: null }] }));
   const [l] = pair(m.links, "dev:2", "dev:5");
   assert.deepEqual([l.aPort, l.bPort, l.sources], ["", "", ["manual", "vm_mac"]]);
+});
+
+// ─── Spec §13.7.8 (G9, I62, H15): router e firewall in una VM ───
+// Rete B (l'hub), 14/10: il firewall virtuale, VM dell'hypervisor, è registrato come switch; nella sua «tabella MAC» (la sua
+// tabella ARP per interfaccia) c'è il MAC della sua stessa scheda, che è anche il MAC della VM: la mappa appendeva l'hypervisor
+// al suo firewall con un collegamento «dalle VM». Prima si escludeva solo l'hypervisor che è l'apparato stesso (`vm-ports.ts:109`).
+const FW_MAC = vmMac(5, 66);
+function conFirewallVirtuale(): TopologyModelInput {
+  const base = rete();
+  const vmDiPxh = vmsOf(5, "px-h", 1, 2);
+  return {
+    ...base,
+    devices: [...base.devices, dev(15, { name: "FW-VIRT", device_type: "switch", vendor: "altro", host: "192.0.2.66", port_count: 4 })],
+    knownMacs: [...base.knownMacs, { device_id: 15, mac: FW_MAC }],
+    vms: [vm(566, "px-h", FW_MAC), ...vmDiPxh],
+    macPorts: [mp(15, FW_MAC, "vtnet0"), mp(4, H_MAC, "Port 5"), ...vmDiPxh.map((v) => mp(2, v.macs[0], "Port 1"))],
+  };
+}
+
+test("I62, H15 — fra una VM e il suo hypervisor nessun collegamento: px-h non sta sotto il suo firewall virtuale", () => {
+  const m = buildTopologyModel(conFirewallVirtuale());
+  assert.equal(m.vms.find((v) => v.nodeId === "dev:15")?.hypervisorNodeId, "dev:5", "il firewall è la VM 566 di px-h");
+  assert.deepEqual(pair(m.links, "dev:15", "dev:5"), []);
+  // px-h resta sui suoi cavi: la gestione sull'accesso e i 10G «dalle VM» sul centrale
+  assert.deepEqual(m.links.filter((l) => l.a === "dev:5" || l.b === "dev:5").map((l) => [l.a === "dev:5" ? l.b : l.a, l.source]).sort(),
+    [["dev:2", "vm_mac"], ["dev:4", "mac_table"]]);
+  const prima = buildTopologyModel(conFirewallVirtuale(), new Set([...REGOLE_T1].filter((r) => r !== "vm-e-mac-propri")));
+  assert.equal(pair(prima.links, "dev:15", "dev:5").length, 1, "regola spenta (misura C19): il collegamento falso di prima");
+});
+
+// R1 e S12 (spec §13.3.4, §13.12.1): dal 15/10 l'hub rilegge le VM ogni notte. Con la VM del firewall spenta e un'altra accesa
+// al suo posto, con gli stessi MAC, l'hypervisor resta lo stesso fuori dal suo firewall.
+test("S12, H15 — lettura delle VM rinnovata: nessun oggetto sotto una sua VM, né prima né dopo", () => {
+  const nuova = applicaScenario(conFirewallVirtuale(), { nome: "S12", apparato: 5, vmid: 566 });
+  assert.deepEqual(nuova.vms.filter((v) => v.macs.includes(FW_MAC)).map((v) => [v.vmid, v.status]), [[566, "stopped"], [100566, "running"]]);
+  assert.deepEqual(pair(buildTopologyModel(nuova).links, "dev:15", "dev:5"), []);
 });

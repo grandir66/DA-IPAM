@@ -18,13 +18,16 @@
  * GIRO_MS dalla sua lettura più recente): dopo una migrazione la riga della porta vecchia resta fresca fino a
  * 2 giorni, e creava un collegamento falso verso l'hypervisor nuovo o toglieva il cavo al vecchio.
  * La porta di un cavo ignorato a mano («Ignora questo cavo…») resta occupata verso quell'oggetto (spec §13.9, I-3 e I9).
+ * Fra una VM e il suo hypervisor nessun collegamento, e i MAC propri dell'apparato che osserva non sono VM sulla sua
+ * porta (spec §13.7.8, regola «vm-e-mac-propri»).
  * Logica pura.
  */
 import { parseDbDate } from "@/lib/db-date";
-import { LINK_ATTRS_DEFAULT, LINK_SOURCE_RANK, type MapLink, type TopologyModelInput } from "@/lib/topology/model-types";
+import { LINK_ATTRS_DEFAULT, LINK_SOURCE_RANK, type MapLink, type MapVm, type TopologyModelInput } from "@/lib/topology/model-types";
 import { nessunIgnorato, portaOccupata, type Ignorati } from "@/lib/topology/ignorati";
 import { portaLocale } from "@/lib/topology/links";
-import type { NodeIndex } from "@/lib/topology/node-index";
+import { canonical, type NodeIndex } from "@/lib/topology/node-index";
+import { REGOLE_T1, type Regole } from "@/lib/topology/regole";
 import { normalizeMacForStorage, normalizePortNameForMatch } from "@/lib/utils";
 
 const DAY = 86_400_000;
@@ -38,6 +41,37 @@ export const GIRO_MS = 6 * 3_600_000;
 const EDGE_TYPES = ["switch", "access_point"];
 
 export type RunningVmMacs = ReadonlyMap<string, { vm: string; hypervisor: string | null }>;
+
+/** Per ogni nodo che è una VM, il suo hypervisor (spec §13.7.8): fra i due nessun collegamento. */
+export type IpervisoriDi = ReadonlyMap<string, ReadonlySet<string>>;
+
+export function ipervisoriDelleVm(vms: readonly MapVm[]): Map<string, Set<string>> {
+  const out = new Map<string, Set<string>>();
+  for (const v of vms) {
+    if (!v.nodeId || !v.hypervisorNodeId) continue;
+    const s = out.get(v.nodeId);
+    if (s) s.add(v.hypervisorNodeId);
+    else out.set(v.nodeId, new Set([v.hypervisorNodeId]));
+  }
+  return out;
+}
+
+/**
+ * Spec §13.7.8 (G9, I62): fra una VM e il suo hypervisor non c'è un collegamento — la VM sta dentro. Nessuna prova lo crea:
+ * né dalle VM, né dalla tabella MAC, né dal ripiego. Rete B: l'hypervisor appeso alla scheda del suo firewall virtuale.
+ */
+export function vmEIpervisore(ip: IpervisoriDi, x: string, y: string): boolean {
+  return ip.get(x)?.has(y) === true || ip.get(y)?.has(x) === true;
+}
+
+/**
+ * Spec §13.7.8 (G9): il MAC è dell'apparato che lo osserva — uno dei MAC noti che si abbinano a lui (controller, MAC noti,
+ * host fusi). Un apparato non è vicino, client né VM di sé stesso. Senza creare nodi (`idx.byMac`, non `resolveNode`).
+ */
+export function macProprio(idx: NodeIndex, mac: string, nodo: string): boolean {
+  const id = idx.byMac.get(mac);
+  return typeof id === "string" && canonical(idx, id) === nodo;
+}
 
 interface PortSeen { node: string; port: string; hypers: Set<string | null>; vms: Set<string>; ms: number; ts: string }
 
@@ -54,7 +88,11 @@ export function vmPortLinks(
   known: MapLink[],
   running: RunningVmMacs,
   ignorati: Ignorati = nessunIgnorato(),
+  /** Spec §13.7.8: le VM e i loro hypervisor; `regole` dice se la regola «vm-e-mac-propri» è accesa (misura C19). */
+  vm: { ipervisori?: IpervisoriDi; regole?: Regole } = {},
 ): MapLink[] {
+  const { ipervisori = new Map(), regole = REGOLE_T1 } = vm;
+  const vmEMacPropri = regole.has("vm-e-mac-propri");
   if (running.size === 0) return [];
   const portaDi = portaLocale(input);
   const key = (node: string, port: string) => `${node}|${normalizePortNameForMatch(port)}`;
@@ -82,6 +120,9 @@ export function vmPortLinks(
     if (!fresh(ms)) continue;
     const k = key(node, r.port_name);
     perPort.set(k, (perPort.get(k) ?? new Set()).add(mac));
+    // Spec §13.7.8 (G9): i MAC propri dell'apparato che osserva non sono VM sulla sua porta. Rete B: il firewall virtuale vede
+    // nella sua tabella il MAC della sua scheda, che è il MAC della VM, e da lì l'hypervisor gli finiva sotto.
+    if (vmEMacPropri && macProprio(idx, mac, node)) continue;
     const vm = running.get(mac);
     if (!vm) continue; // non è una VM accesa
     ultima.set(mac, Math.max(ultima.get(mac) ?? ms, ms)); // anche su una porta occupata: il MAC è stato visto
@@ -112,6 +153,7 @@ export function vmPortLinks(
     if (s.hypers.size !== 1) continue;
     const h = [...s.hypers][0];
     if (h === null || h === s.node || !idx.nodes.has(h)) continue;
+    if (vmEMacPropri && vmEIpervisore(ipervisori, s.node, h)) continue; // una VM non fa da padre al suo hypervisor (§13.7.8)
     const pk = pairKey(s.node, h);
     if (portaOccupata(ignorati, s.node, portaDi(s.node, s.port), h)) continue; // «Ignora» per cavo (§13.9, I9)
     const cur = best.get(pk);

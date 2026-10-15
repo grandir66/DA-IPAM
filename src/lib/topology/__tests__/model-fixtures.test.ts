@@ -181,8 +181,11 @@ test("cliente A: uplink salvati e collegamenti unifi_uplink presenti", () => {
 // un nodo (era fra gli isolati, «Da sistemare»).
 // Task 9 di T1: l'«Ignora» del 14/10 non toglie più la coppia (I36). cliente-a: links 134->135, la linea core 1 ↔ router 1
 // sul cavo a 10G; la correzione è orfana (C5). Nodi, isolati e client non cambiano.
+// Task 9 di T1, §13.7.8 (G9): domarc clients 102->99 perché i MAC propri di un apparato non sono suoi client: il firewall
+// virtuale (registrato come switch) vedeva sulle sue porte i tre MAC delle sue schede e li contava come suoi client. Le
+// fixture non hanno VM: collegamenti, nodi, padri e teste non cambiano con la regola «vm-e-mac-propri» accesa o spenta.
 const MISURATI_DATO_VERO: Record<string, { nodes: number; links: number; isolatedDevices: number; clients: number }> = {
-  "topologia-domarc.json": { nodes: 226, links: 62, isolatedDevices: 17, clients: 102 },
+  "topologia-domarc.json": { nodes: 226, links: 62, isolatedDevices: 17, clients: 99 },
   "topologia-cliente-a.json": { nodes: 551, links: 135, isolatedDevices: 5, clients: 430 },
 };
 for (const [nome, atteso] of Object.entries(MISURATI_DATO_VERO)) {

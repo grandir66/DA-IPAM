@@ -246,6 +246,8 @@ export interface VoceCatenaSnmp {
 export function provenienzaCatenaSnmp(dbh: Database.Database, target: ResolveTarget): VoceCatenaSnmp[] {
   const voci: VoceCatenaSnmp[] = [];
   for (const r of resolveCredentialsForDb(dbh, target, "snmp")) {
+    // Il motore per host dà sempre una voce; il tipo ammette null per gli apparati (T7).
+    if (r.credential_id == null) continue;
     const com = getCredentialCommunityString(r.credential_id);
     if (com?.trim()) voci.push({ community: com.trim(), credential_id: r.credential_id, port: r.port, livello: r.source });
   }
@@ -434,6 +436,7 @@ function fotografaDentro(code: string, encryptionKey: string): EsitoTenant {
     for (const proto of ["ssh", "winrm"] as const) {
       let s: SceltaFotografia | null = null;
       for (const c of resolveCredentialsForDb(dbh, bersaglio, proto)) {
+        if (c.credential_id == null) continue;
         const parti = proto === "ssh" ? coppiaSsh(c.credential_id) : coppiaWindows(c.credential_id);
         if (!parti) continue;
         s = { credential_id: c.credential_id, port: c.port, fonte: fonte(c.source), impronta: improntaVoce(ctx, parti) };

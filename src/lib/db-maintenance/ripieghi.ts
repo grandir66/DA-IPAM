@@ -9,6 +9,19 @@
  * In fase A l'esito non cambia: si conta chi lo fa, per sapere chi va corretto
  * prima di trasformare il ripiego in errore (fase B).
  *
+ * Tappa 2 credenziali (T7, 16/10): anche il motore delle credenziali registra
+ * quando sceglie da una fonte vecchia, così la pulizia della 2g si decide su
+ * una misura e non a occhio:
+ *   - `cred_binding_inline`: segreto scritto dentro un binding, senza voce;
+ *   - `cred_colonna_apparato`: colonne di `network_devices` (voce o segreto);
+ *   - `cred_catena_vecchia`: `host_detect_credential` / `network_host_credentials`;
+ *   - `cred_chiave_hub`: `host_windows_credential_id` / `host_linux_credential_id`;
+ *   - `cred_riga_integrazione`: colonne di controller e AD (2f);
+ *   - `cred_public`: community della rete, dell'override, public/private (D5);
+ *   - `cred_v3_vecchia`: SNMPv3 nel formato vecchio (utente + password).
+ * La firma resta quella di chi chiama il motore (`credentials/resolve.ts` è
+ * fra i file interni), cioè il lettore che va spostato.
+ *
  * PERCHÉ un registro su file e non solo un contatore: il contatore in memoria
  * riparte a ogni aggiornamento (su `dev` arrivano più volte al giorno), e la
  * verifica di NUC-1 è «chi ripiega in una settimana». Il file sì sopravvive.
@@ -31,7 +44,17 @@ import fs from "node:fs";
 import path from "node:path";
 import { resolveDataDir } from "../data-dir";
 
-export type CasoRipiego = "default" | "legacy" | "tenant_non_registrato";
+export type CasoRipiego =
+  | "default"
+  | "legacy"
+  | "tenant_non_registrato"
+  | "cred_colonna_apparato"
+  | "cred_binding_inline"
+  | "cred_catena_vecchia"
+  | "cred_chiave_hub"
+  | "cred_riga_integrazione"
+  | "cred_public"
+  | "cred_v3_vecchia";
 
 export const GIORNI_CONSERVATI = 30;
 export const MAX_RIGHE_ORA = 200;
@@ -88,7 +111,7 @@ export function DIR_REGISTRO_RIPIEGHI(): string {
 // Frame del facade e del registro, riconoscibili solo quando si gira dai
 // sorgenti (tsx: scheduler, script). Nel build di Next i file si chiamano
 // `.next/server/chunks/<hash>._.js` e i nomi delle funzioni sono minificati.
-const FILE_INTERNI = /[\\/](db|db-tenant|ripieghi)\.[cm]?[jt]s\b/;
+const FILE_INTERNI = /[\\/](db|db-tenant|ripieghi)\.[cm]?[jt]s\b|[\\/]credentials[\\/]resolve\.[cm]?[jt]s\b/;
 const FRAME_ESTRANEI = /node:internal|[\\/]node_modules[\\/]/;
 /** Frame del build messi in catena nella firma: getDb, la funzione dati, la rotta, il suo chiamante. */
 const FRAME_CATENA = 6;

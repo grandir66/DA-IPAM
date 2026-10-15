@@ -88,6 +88,25 @@ export function portaLocale(input: TopologyModelInput): (nodo: string, nome: str
     : chiavePorta(nodo, traduciPorta(nome, "locale", come(nodo, delController.has(nodo) ? "unifi" : "device", null)), "locale", elenchi.get(nodo)));
 }
 
+/**
+ * La porta di una correzione «ignora» salvata (Review Focus 5, revisione finale di T1). Prima di T1 la linea scriveva la
+ * porta remota com'era nella riga dei vicini o nel modello — il percorso del bridge annunciato da un router, «Port 10» di
+ * un uplink del controller — e un «Ignora» di allora l'ha salvata così. Si legge come la scrive l'apparato (`portaLocale`);
+ * se così non è una porta che un cavo può avere (senza chiave, o un'interfaccia logica), come la annuncia a chi lo vede
+ * (il traduttore del lato remoto); se nemmeno così ha una chiave, resta la lettura locale e il confronto per nome.
+ */
+export function portaSalvata(input: TopologyModelInput): (nodo: string, nome: string) => Porta | null {
+  const locale = portaLocale(input);
+  const come = comeDi(input);
+  const elenchi = elenchiPorte(input.ports ?? []);
+  return (nodo, nome) => {
+    const p = locale(nodo, nome);
+    if (p === null || (p.chiave !== null && !(p.fisica === false && p.senzaFili !== true))) return p;
+    const r = chiavePorta(nodo, traduciPorta(nome, "remoto", come(nodo, "device", null)), "remoto", elenchi.get(nodo));
+    return r.chiave !== null ? r : p;
+  };
+}
+
 /** L'apparato remoto di una riga: il telaio (un MAC vero; un MAC VRRP non identifica nessuno), altrimenti il nome. */
 function telaio(n: ModelNeighborRow): string {
   const mac = normalizeMacForStorage(n.remote_mac);
@@ -198,8 +217,9 @@ export function buildLinks(input: TopologyModelInput, idx: NodeIndex, vmAccese: 
   const unmatched: UnmatchedNeighbor[] = [];
   const candidati: Candidato[] = [];
 
-  // Passo 4 (§13.9): le correzioni «ignora» sono regole per cavo, confrontate sulle porte dei candidati.
-  const ignorati = regoleIgnora(input.overrides, idx, locale);
+  // Passo 4 (§13.9): le correzioni «ignora» sono regole per cavo, confrontate sulle porte dei candidati; le porte salvate
+  // si leggono anche nella forma di prima di T1 (`portaSalvata`).
+  const ignorati = regoleIgnora(input.overrides, idx, portaSalvata(input));
   // Correzioni: «aggiungi» è un candidato a mano e vince sempre; «ignora» sta nelle regole qui sopra (passo 4).
   for (const o of [...input.overrides].sort((x, y) => x.id - y.id)) {
     if (o.action !== "add") continue;
@@ -363,7 +383,10 @@ export function buildLinks(input: TopologyModelInput, idx: NodeIndex, vmAccese: 
         elenchi.get(b), nomeInElenco !== undefined ? d.uplink_remote_port : null);
     } else if (aPorta?.chiave) {
       const k = aPorta.chiave;
-      bPorta = (gruppiDi.get(a) ?? []).find((g) => g.b === b && g.collegamento && g.locale.chiave === k && !sulSegmento(g))?.remota ?? null;
+      // La riga più recente (revisione finale di T1): dopo uno spostamento del cavo sul padre la riga di ieri resta 90 giorni
+      // con un altro telaio (il MAC è dell'interfaccia), e la prima in ordine dava la porta vecchia a una linea vista oggi.
+      const sullUplink = (gruppiDi.get(a) ?? []).filter((g) => g.b === b && g.collegamento && g.locale.chiave === k && !sulSegmento(g));
+      bPorta = sullUplink.sort((x, y) => (timeOf(y.lastSeen) ?? 0) - (timeOf(x.lastSeen) ?? 0))[0]?.remota ?? null;
     }
     candidati.push({ a, aPorta, b, bPorta, source: "unifi_uplink", lastSeen: d.uplink_seen_at, uplinkFrom: a, senzaFili: false });
   }
@@ -417,7 +440,8 @@ export function buildLinks(input: TopologyModelInput, idx: NodeIndex, vmAccese: 
   for (const c of candidati) {
     if (!ignorato(ignorati, c.a, c.aPorta, c.b, c.bPorta)) aggiungiA(perCoppia, pairKey(c.a, c.b), c);
   }
-  const links = [...perCoppia].map(([k, cs]) => lineaDellaCoppia(k, cs)).sort((x, y) => cmp(x.id, y.id));
+  const scaduto = (t: number): boolean => input.nowMs - t > input.staleDays * DAY_MS;
+  const links = [...perCoppia].map(([k, cs]) => lineaDellaCoppia(k, cs, scaduto)).sort((x, y) => cmp(x.id, y.id));
   for (const l of links) {
     const t = timeOf(l.lastSeen);
     if (l.sources.includes("manual") || t === null) {
@@ -442,11 +466,16 @@ const piena = (p: Porta | null): boolean => !!p && p.nome.trim() !== "";
 /**
  * La linea di una coppia (§13.7.1, passo 5): le due porte vengono da UN candidato — il migliore per rango fra quelli che
  * le hanno tutte e due; se nessuno, il migliore con una; a pari rango il cavo visto da più prove, poi il più recente.
+ * Prima di tutto un cavo che lascia la linea «vista», se c'è (revisione finale di T1, come «non visto» nella chiave
+ * dell'albero): un cavo non più visto, anche con più prove, batteva il cavo visto oggi e la linea diventava «non vista»
+ * con le porte di ieri; prima di T1 la fusione prendeva il «visto» più recente fra tutte le prove (ADR 0008). «Non visto»
+ * vale per il cavo, cioè per le prove compatibili, come lo direbbe la linea: lo stesso cavo visto oggi da un lato solo
+ * tiene le due porte della prova di ieri. `scaduto`: oltre la soglia «non visto».
  * Fonti e «visto» raccolgono solo i candidati dello stesso cavo (stesse porte, o porta vuota compatibile); gli altri sono
  * «Altri cavi visti fra questi due oggetti». Il verso (uplinkFrom) è della coppia. Il capo «a» è quello del primo
  * candidato, come prima.
  */
-function lineaDellaCoppia(key: string, cs: readonly Candidato[]): MapLink {
+function lineaDellaCoppia(key: string, cs: readonly Candidato[], scaduto: (t: number) => boolean): MapLink {
   const a = cs[0].a, b = cs[0].b;
   const lati = (c: Candidato): { pa: Porta | null; pb: Porta | null } => (c.a === a ? { pa: c.aPorta, pb: c.bPorta } : { pa: c.bPorta, pb: c.aPorta });
   const stesso = (x: Candidato, y: Candidato): boolean => {
@@ -459,8 +488,15 @@ function lineaDellaCoppia(key: string, cs: readonly Candidato[]): MapLink {
     return `${X.pa?.chiave ?? X.pa?.nome ?? ""}|${X.pb?.chiave ?? X.pb?.nome ?? ""}|${c.source}`;
   };
   const prove = (c: Candidato): number => cs.filter((d) => stesso(c, d)).length;
+  // Come il «non visto» della linea qui sotto (buildLinks): una prova a mano non invecchia, una senza data conta come attuale.
+  const nonVisto = new Map(cs.map((c) => {
+    const st = cs.filter((d) => stesso(c, d));
+    const t = timeOf(piuRecente(st.map((d) => d.lastSeen)));
+    return [c, !st.some((d) => d.source === "manual") && t !== null && scaduto(t) ? 1 : 0];
+  }));
   const scelto = [...cs].sort((x, y) =>
-    livello(x) - livello(y) || LINK_SOURCE_RANK[x.source] - LINK_SOURCE_RANK[y.source] || prove(y) - prove(x)
+    (nonVisto.get(x) ?? 0) - (nonVisto.get(y) ?? 0)
+    || livello(x) - livello(y) || LINK_SOURCE_RANK[x.source] - LINK_SOURCE_RANK[y.source] || prove(y) - prove(x)
     || (timeOf(y.lastSeen) ?? 0) - (timeOf(x.lastSeen) ?? 0) || cmp(firma(x), firma(y)))[0];
   const stessi = cs.filter((c) => stesso(scelto, c));
   const sources = [...new Set(stessi.map((c) => c.source))].sort(perRango);

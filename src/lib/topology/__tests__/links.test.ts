@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { caviFra } from "@/lib/topology/ignored-links";
 import { buildLinks, righeUltimoGiro } from "@/lib/topology/links";
 import { buildNodeIndex } from "@/lib/topology/node-index";
 import type { ModelNeighborRow, TopologyModelInput } from "@/lib/topology/model-types";
@@ -557,12 +558,44 @@ test("I8 — «Ignora» per cavo: (porta 10, ether8) non tocca il cavo a 10G ed 
   assert.equal(giusto.links.some((l) => l.id === "link:dev:1|dev:112"), true, "gli altri cavi del router restano");
 });
 
-test("I8 — una porta vuota vale per ogni porta su quel lato; due porte vuote: orfana, non toglie niente", () => {
+test("I8 — una porta vuota vale per ogni porta su quel lato; due porte vuote non tolgono un cavo con le porte: orfana", () => {
   const una = run({ ...sede1(), overrides: [ignora(3, "dev:1", "sfp-sfpplus1", "dev:114", "")] });
   assert.equal(una.links.some((l) => l.id === "link:dev:1|dev:114"), false);
   const nessuna = run({ ...sede1(), overrides: [ignora(4, "dev:1", "", "dev:114", "")] });
   assert.equal(nessuna.links.some((l) => l.id === "link:dev:1|dev:114"), true);
   assert.deepEqual([...nessuna.ignorati.usate], []);
+});
+
+// Revisione finale di T1 (spec §13.9): una linea senza porte — l'uplink senza fili di un access point in mesh, famiglia 2
+// delle reti-campione — si deve poter ignorare. Prima la correzione scritta dalla pagina (porte della linea, qui vuote) era
+// orfana subito, e «Scegli il cavo da ignorare…» riproponeva lo stesso cavo vuoto: si girava in tondo. Una regola senza
+// porte toglie solo un cavo senza porte di quella coppia, mai un cavo con le porte.
+const meshAp = () => input({
+  devices: [
+    dev(5, { name: "AP-5", device_type: "access_point", controller_mac: "02:00:00:00:00:05", via: "api" }),
+    dev(6, { name: "AP-6", device_type: "access_point", controller_mac: "02:00:00:00:00:06", uplink_mac: "02:00:00:00:00:05", uplink_type: "wireless", uplink_seen_at: ORA, via: "api" }),
+  ],
+});
+
+test("I8 — «Ignora questo cavo…» su una linea senza porte (l'uplink senza fili di un access point in mesh) la toglie", () => {
+  const prima = run(meshAp());
+  assert.deepEqual(prima.links.map((l) => [l.a, l.aPort, l.b, l.bPort, l.source]), [["dev:6", "", "dev:5", "", "unifi_uplink"]]);
+  const l = prima.links[0];
+  // La pagina scrive le porte della linea (topology-map-client.tsx, «Ignora questo cavo…»): qui tutte e due vuote.
+  const dopo = run({ ...meshAp(), overrides: [ignora(9, l.a, l.aPort, l.b, l.bPort)] });
+  assert.deepEqual(dopo.links, []);
+  assert.deepEqual([...dopo.ignorati.usate], [9]);
+  assert.deepEqual(caviFra({ links: dopo.links, canonical: {} }, l.a, l.b), [], "nessun cavo da riproporre: non si gira in tondo");
+});
+
+test("I8 — una regola senza porte toglie il cavo senza porte della coppia e lascia quello con le porte", () => {
+  const i = meshAp();
+  i.neighbors = [nb(5, { local_port: "Port 2", remote_device_name: "AP-6", remote_port: "eth0", remote_mac: "02:00:00:00:00:06", source: "unifi", timestamp: ORA })];
+  const prima = run(i).links;
+  assert.deepEqual(prima.map((l) => [l.aPort, l.bPort, l.sources]), [["eth0", "Port 2", ["unifi_uplink", "lldp"]]]);
+  const dopo = run({ ...i, overrides: [ignora(9, "dev:6", "", "dev:5", "")] });
+  assert.deepEqual(dopo.links.map((l) => [l.aPort, l.bPort, l.sources]), [["Port 2", "eth0", ["lldp"]]]);
+  assert.deepEqual([...dopo.ignorati.usate], [9]);
 });
 
 // Review Focus 5: le correzioni salvate prima di T1 hanno le porte come le scriveva la linea di allora (grezze) e possono
@@ -582,4 +615,97 @@ test("Review Focus 5 — un «Ignora» di prima: porte nella forma grezza («eth
   const r = run(i);
   assert.deepEqual(r.links, []);
   assert.deepEqual([...r.ignorati.usate], [5]);
+});
+
+// Review Focus 5, revisione finale di T1: prima di T1 la porta remota della linea era la riga grezza, e un «Ignora» di
+// allora l'ha salvata così. Letta solo col traduttore del lato locale, una forma che c'era solo dal lato remoto non trovava
+// più il cavo: la correzione diventava orfana e il cavo tornava sulla mappa.
+test("Review Focus 5 — un «Ignora» di prima con la porta remota di un MikroTik nel bridge («bridge/ether3»): toglie ancora il cavo", () => {
+  const i = input({
+    devices: [rtr(1), dev(5, { name: "SW-5", controller_mac: "02:00:00:00:00:05", via: "api" })],
+    ports: [porta(5, 3, "Port 3"), porta(1, 3, "ether3")],
+    neighbors: [nb(5, { local_port: "Port 3", remote_device_name: "RTR-1", remote_port: "bridge/ether3", remote_ip: "10.0.0.1", remote_platform: "MikroTik", source: "unifi" })],
+  });
+  assert.deepEqual(run(i).links.map((l) => [l.a, l.aPort, l.b, l.bPort]), [["dev:5", "Port 3", "dev:1", "ether3"]], "senza «Ignora» il cavo c'è");
+  const r = run({ ...i, overrides: [ignora(7, "dev:5", "Port 3", "dev:1", "bridge/ether3")] });
+  assert.deepEqual(r.links, []);
+  assert.deepEqual([...r.ignorati.usate], [7]);
+  // Lo stesso senza l'elenco delle porte del router: letta dal lato locale «bridge/ether3» è un'interfaccia logica, che un
+  // cavo non ha mai; vale la lettura del lato remoto.
+  const senzaElenco = { ...i, ports: [porta(5, 3, "Port 3")] };
+  assert.deepEqual(run(senzaElenco).links.map((l) => l.bPort), ["ether3"], "senza «Ignora» il cavo c'è");
+  assert.deepEqual(run({ ...senzaElenco, overrides: [ignora(7, "dev:5", "Port 3", "dev:1", "bridge/ether3")] }).links, []);
+});
+
+test("Review Focus 5 — un «Ignora» di prima su un uplink del controller: «Port 10» del padre, che oggi ha un nome scelto", () => {
+  const i = input({
+    devices: [
+      dev(1, { name: "SW-1", controller_mac: "02:00:00:00:00:01", via: "api" }),
+      dev(2, { name: "SW-2", controller_mac: "02:00:00:00:00:02", uplink_mac: "02:00:00:00:00:01", uplink_remote_port: 10, uplink_seen_at: ORA, via: "api" }),
+    ],
+    uplinkPorts: [{ device_id: 2, port_index: 25, port_name: "SFP+ 1" }],
+    ports: [porta(1, 10, "Server rack"), porta(2, 25, "SFP+ 1")],
+  });
+  assert.deepEqual(run(i).links.map((l) => [l.a, l.aPort, l.b, l.bPort]), [["dev:2", "SFP+ 1", "dev:1", "Server rack"]], "senza «Ignora» il cavo c'è");
+  const r = run({ ...i, overrides: [ignora(8, "dev:2", "SFP+ 1", "dev:1", "Port 10")] });
+  assert.deepEqual(r.links, []);
+  assert.deepEqual([...r.ignorati.usate], [8]);
+});
+
+// Passo 3a, revisione finale di T1: dopo uno spostamento del cavo sul router (ether3 → ether5) la riga vecchia del figlio
+// resta 90 giorni (il MAC è dell'interfaccia: telaio diverso, R-superata non la toglie). La porta del padre si prende dalla
+// riga più recente, non dalla prima in ordine: altrimenti la linea diceva «ether3», vista oggi, e il cavo vero stava fra
+// gli «Altri cavi visti».
+test("I6 — uplink verso un padre di cui il controller non sa la porta: la porta del padre dalla riga più recente del figlio", () => {
+  const VECCHIA = "2026-10-03 11:00:00";
+  const i = input({
+    devices: [rtr(1), dev(2, { name: "SW-2", controller_mac: "02:00:00:00:00:02", uplink_mac: "02:00:00:00:00:01", uplink_seen_at: ORA, via: "api" })],
+    knownMacs: [{ device_id: 1, mac: "02:00:00:00:00:01" }],
+    uplinkPorts: [{ device_id: 2, port_index: 25, port_name: "SFP+ 1" }],
+    ports: [porta(2, 25, "SFP+ 1"), porta(1, 3, "ether3"), porta(1, 5, "ether5")],
+    neighbors: [
+      nb(2, { local_port: "SFP_ 1", remote_device_name: "RTR-1", remote_port: "ether3", remote_mac: "02:00:00:00:a0:03", remote_platform: "MikroTik", source: "unifi", timestamp: VECCHIA }),
+      nb(2, { local_port: "SFP_ 1", remote_device_name: "RTR-1", remote_port: "ether5", remote_mac: "02:00:00:00:a0:05", remote_platform: "MikroTik", source: "unifi", timestamp: ORA }),
+    ],
+  });
+  const [l] = run(i).links;
+  assert.deepEqual([l.a, l.aPort, l.b, l.bPort, l.stale], ["dev:2", "SFP+ 1", "dev:1", "ether5", false]);
+  assert.deepEqual(l.altriCavi?.map((c) => [c.aPort, c.bPort]), [["SFP+ 1", "ether3"]]);
+});
+
+// Passo 5, revisione finale di T1: la linea di una coppia prende il cavo che la lascia «vista», se ce n'è uno; poi livello,
+// rango e prove. Prima un cavo non più visto da due lati batteva il cavo visto oggi da uno: la linea diventava «non vista»
+// con le porte di ieri, e l'albero la penalizzava (chiaveScelta). Prima di T1 la fusione prendeva il «visto» più recente
+// fra tutte le prove (ADR 0008).
+test("Passo 5 — un cavo non più visto, anche con più prove, non regge la linea di una coppia vista oggi su un altro cavo", () => {
+  const VECCHIA = "2026-10-03 11:00:00";
+  const i = input({
+    devices: [dev(1, { via: "snmp_v2", vendor: "hp" }), dev(2, { via: "snmp_v2", vendor: "hp" })],
+    ports: [porta(1, 1, "1"), porta(1, 2, "2"), porta(2, 1, "1"), porta(2, 2, "2")],
+    neighbors: [
+      nb(1, { local_port: "1", remote_device_name: "SW-2", remote_port: "1", remote_ip: "10.0.0.2", timestamp: VECCHIA }),
+      nb(2, { local_port: "1", remote_device_name: "SW-1", remote_port: "1", remote_ip: "10.0.0.1", timestamp: VECCHIA }),
+      // il cavo di oggi: dev:2 non si legge più da dieci giorni, lo vede solo dev:1
+      nb(1, { local_port: "2", remote_device_name: "SW-2", remote_port: "2", remote_ip: "10.0.0.2", timestamp: ORA }),
+    ],
+  });
+  const [l] = run(i).links;
+  assert.deepEqual([l.aPort, l.bPort, l.stale, l.daysUnseen], ["2", "2", false, 0]);
+  assert.deepEqual(l.altriCavi?.map((c) => [c.aPort, c.bPort]), [["1", "1"]]);
+});
+
+// …ma lo stesso cavo, visto oggi da un lato senza la porta remota e fino a dieci giorni fa dall'altro con tutte e due, resta
+// una linea vista con le due porte: «non visto» vale per il cavo (le prove compatibili), non per la riga.
+test("Passo 5 — lo stesso cavo visto oggi da un lato solo: le due porte della prova di ieri restano e la linea è vista", () => {
+  const VECCHIA = "2026-10-03 11:00:00";
+  const i = input({
+    devices: [dev(1, { via: "snmp_v2", vendor: "hp" }), dev(2, { via: "snmp_v2", vendor: "hp" })],
+    ports: [porta(1, 1, "1"), porta(2, 1, "1")],
+    neighbors: [
+      nb(1, { local_port: "1", remote_device_name: "SW-2", remote_port: "", remote_ip: "10.0.0.2", timestamp: ORA }),
+      nb(2, { local_port: "1", remote_device_name: "SW-1", remote_port: "1", remote_ip: "10.0.0.1", timestamp: VECCHIA }),
+    ],
+  });
+  const [l] = run(i).links;
+  assert.deepEqual([l.a, l.aPort, l.b, l.bPort, l.stale, l.altriCavi], ["dev:1", "1", "dev:2", "1", false, undefined]);
 });

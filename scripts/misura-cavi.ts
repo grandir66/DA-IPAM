@@ -6,6 +6,7 @@
  * Uso:  npx tsx scripts/misura-cavi.ts <copia.db> --cartella <scratchpad>
  *         [--scenario S0|S1|S3:<id>|S4|S9:<id>:<porta>:<fonte>|S12:<id>:<vmid>] [--soglia <giorni>]
  *         [--uscita-router <id>=<file>]...   righe nuove del router dall'uscita incollata (lettore di T1), insieme alle vecchie
+ *         [--ripristino <ora UTC>]   dopo le righe nuove del router, lo stesso testo SQL di «Tornare indietro» (Task 10b)
  *         [--salva <istantanea.json>] [--confronta <istantanea.json>]
  *         [--esporta-input <file.json>] [--input-json <file.json>] [--nomi] [--json]
  *         [--senza-regola <regola>]...   spegne una regola del passaggio universale (src/lib/topology/regole.ts): la misura C19 confronta «tutte le regole» con «tutte meno una»
@@ -17,11 +18,11 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { controllaPercorsi, percorsoReale } from "../src/lib/scanner/__tests__/support/percorsi-prova";
 
-const CON_VALORE = ["--cartella", "--scenario", "--soglia", "--uscita-router", "--salva", "--confronta", "--esporta-input", "--input-json", "--senza-regola"];
+const CON_VALORE = ["--cartella", "--scenario", "--soglia", "--uscita-router", "--ripristino", "--salva", "--confronta", "--esporta-input", "--input-json", "--senza-regola"];
 
 function uso(msg?: string): number {
   if (msg) process.stderr.write(`${msg}\n`);
-  process.stderr.write("Uso: npx tsx scripts/misura-cavi.ts <copia.db> --cartella <scratchpad> [--scenario …] [--uscita-router <id>=<file>] [--senza-regola <regola>] [--salva|--confronta <file>] [--esporta-input|--input-json <file>] [--nomi] [--json]\n");
+  process.stderr.write("Uso: npx tsx scripts/misura-cavi.ts <copia.db> --cartella <scratchpad> [--scenario …] [--uscita-router <id>=<file>] [--ripristino <ora UTC>] [--senza-regola <regola>] [--salva|--confronta <file>] [--esporta-input|--input-json <file>] [--nomi] [--json]\n");
   return 2;
 }
 
@@ -105,6 +106,15 @@ async function main(): Promise<number> {
     const dopo = classi();
     cambiati = [...dopo].filter(([id, c]) => prima.get(id) !== c).map(([id]) => id);
     out.host_cambiati_di_categoria = cambiati.length;
+  }
+
+  // «Tornare indietro» (Task 10b, R6): sulla copia della copia, dopo le righe nuove del router, lo stesso testo SQL che si
+  // manderebbe all'impianto. Solo conteggi.
+  const ripristino = val("--ripristino");
+  if (ripristino) {
+    const { sqlApplica, sqlConta } = await import("../src/lib/topology/ripristino-vicini");
+    out.righe_riportate_a_mndp = (db.prepare(sqlConta(ripristino)).all() as Array<{ righe: number }>).reduce((s, r) => s + r.righe, 0);
+    db.exec(sqlApplica(ripristino));
   }
 
   const fileInput = val("--input-json");

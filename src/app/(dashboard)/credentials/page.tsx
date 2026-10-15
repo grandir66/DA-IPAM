@@ -113,8 +113,9 @@ export default function CredentialsPage() {
       toast.error("Nome richiesto");
       return;
     }
-    if ((form.credential_type === "ssh" || form.credential_type === "api" || form.credential_type === "windows" || form.credential_type === "linux") && (!form.username || !form.password)) {
-      toast.error("Username e password richiesti");
+    // In modifica la password vuota vuol dire «non modificare» (tappa 1).
+    if ((form.credential_type === "ssh" || form.credential_type === "api" || form.credential_type === "windows" || form.credential_type === "linux") && (!form.username || (!editingId && !form.password))) {
+      toast.error(editingId ? "Username richiesto" : "Username e password richiesti");
       return;
     }
     if (form.credential_type === "snmp" && !editingId && !form.security_level && !form.password?.trim()) {
@@ -193,7 +194,8 @@ export default function CredentialsPage() {
   const openEdit = async (c: Credential) => {
     setEditingId(c.id);
     let username = "";
-    if (c.credential_type === "ssh" || c.credential_type === "api" || c.credential_type === "windows" || c.credential_type === "linux") {
+    // Anche lo username SNMPv3 si precompila (con la sicurezza v3 impostata).
+    if (c.credential_type === "ssh" || c.credential_type === "api" || c.credential_type === "windows" || c.credential_type === "linux" || (c.credential_type === "snmp" && c.security_level)) {
       try {
         const res = await fetch(`/api/credentials/${c.id}?for_edit=1`);
         if (res.ok) {
@@ -403,10 +405,20 @@ export default function CredentialsPage() {
                         </SelectContent>
                       </Select>
                       <p className="text-[11px] text-muted-foreground mt-1">
-                        Lo Username SNMPv3 è il campo Username qui sopra. Per apparati enterprise dove
-                        v2c è disabilitato per policy.
+                        Per apparati enterprise dove v2c è disabilitato per policy.
                       </p>
                     </div>
+                    {form.security_level && (
+                      <div>
+                        <Label htmlFor="cred-snmpv3-user">Username SNMPv3</Label>
+                        <Input
+                          id="cred-snmpv3-user"
+                          value={form.username}
+                          onChange={(e) => setForm((f) => ({ ...f, username: e.target.value }))}
+                          placeholder="es. monitor"
+                        />
+                      </div>
+                    )}
                     {(form.security_level === "authNoPriv" || form.security_level === "authPriv") && (
                       <>
                         <div>

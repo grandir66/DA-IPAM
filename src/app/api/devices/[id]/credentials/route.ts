@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireAdmin, isAuthError } from "@/lib/api-auth";
+import { requireAdmin, requireAuth, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
-import { apriSessioneCommunity, etichettaVersioneSnmp, versioneApparato, type VersioneSnmp } from "@/lib/protocols/snmp-sessione";
+import { versioneApparato } from "@/lib/protocols/snmp-sessione";
+import { provaBinding } from "@/lib/devices/prova-binding";
 import {
   getNetworkDeviceById,
   getDeviceCredentialBindings,
@@ -12,7 +13,21 @@ import {
   reorderDeviceCredentialBindings,
   updateBindingTestStatus,
 } from "@/lib/db";
-import { encrypt, safeDecrypt } from "@/lib/crypto";
+import { encrypt } from "@/lib/crypto";
+
+/**
+ * SNMP inline: la community va nel campo cifrato e lo username resta vuoto
+ * (tappa 1). Prima la tabella la mandava come `inline_username`, in chiaro, e
+ * chi legge la community guarda solo il campo cifrato.
+ */
+function normalizzaInlineSnmp(
+  protocolType: string | undefined,
+  inlineUsername: string | null | undefined,
+  inlinePassword: string | null | undefined
+): { inline_username: string | null | undefined; inline_password: string | null | undefined } {
+  if (protocolType !== "snmp") return { inline_username: inlineUsername, inline_password: inlinePassword };
+  return { inline_username: null, inline_password: inlinePassword || inlineUsername || null };
+}
 
 /**
  * GET /api/devices/:id/credentials — lista bindings credenziali per device
@@ -20,21 +35,30 @@ import { encrypt, safeDecrypt } from "@/lib/crypto";
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   return withTenantFromSession(async () => {
     try {
+      const session = await requireAuth();
+      if (isAuthError(session)) return session;
+      // Lo username inline lo vede solo chi può modificarlo (tappa 1).
+      const role = (session.user as { role?: string }).role;
+      const vedeUsername = role === "admin" || role === "superadmin";
       const { id } = await params;
     const device = getNetworkDeviceById(Number(id));
     if (!device) return NextResponse.json({ error: "Dispositivo non trovato" }, { status: 404 });
 
     const bindings = getDeviceCredentialBindings(Number(id));
     // Maschera password inline
-    const safe = bindings.map((b) => ({
-      ...b,
-      inline_encrypted_password: b.inline_encrypted_password ? "●●●●●●●●" : null,
-      inline_username_display: b.inline_username ?? null,
-      source: b.credential_id ? "archive" as const : "inline" as const,
-      display_name: b.credential_id
-        ? (b.credential_name || `Credenziale #${b.credential_id}`)
-        : (b.inline_username ? `${b.inline_username} (inline)` : "Inline"),
-    }));
+    const safe = bindings.map((b) => {
+      const username = vedeUsername ? (b.inline_username ?? null) : null;
+      return {
+        ...b,
+        inline_username: username,
+        inline_encrypted_password: b.inline_encrypted_password ? "●●●●●●●●" : null,
+        inline_username_display: username,
+        source: b.credential_id ? "archive" as const : "inline" as const,
+        display_name: b.credential_id
+          ? (b.credential_name || `Credenziale #${b.credential_id}`)
+          : (username ? `${username} (inline)` : "Inline"),
+      };
+    });
     return NextResponse.json(safe);
     } catch {
       return NextResponse.json({ error: "Errore" }, { status: 500 });
@@ -68,7 +92,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       return NextResponse.json({ error: parsed.error.issues.map((i) => i.message).join(", ") }, { status: 400 });
     }
 
-    const { credential_id, protocol_type, port, inline_username, inline_password } = parsed.data;
+    const { credential_id, protocol_type, port } = parsed.data;
+    const { inline_username, inline_password } = normalizzaInlineSnmp(protocol_type, parsed.data.inline_username, parsed.data.inline_password);
 
     const binding = addDeviceCredentialBinding({
       device_id: Number(id),
@@ -137,9 +162,16 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       if (data.credential_id !== undefined) updates.credential_id = data.credential_id;
       if (data.protocol_type !== undefined) updates.protocol_type = data.protocol_type;
       if (data.port !== undefined) updates.port = data.port;
-      if (data.inline_username !== undefined) updates.inline_username = data.inline_username;
-      if (data.inline_password !== undefined) {
-        updates.inline_encrypted_password = data.inline_password ? encrypt(data.inline_password) : null;
+      const inline = normalizzaInlineSnmp(data.protocol_type, data.inline_username, data.inline_password);
+      if (data.protocol_type === "snmp") {
+        updates.inline_username = null;
+        // Community vuota = non modificare (come le password).
+        if (inline.inline_password) updates.inline_encrypted_password = encrypt(inline.inline_password);
+      } else {
+        if (data.inline_username !== undefined) updates.inline_username = data.inline_username;
+        if (data.inline_password !== undefined) {
+          updates.inline_encrypted_password = data.inline_password ? encrypt(data.inline_password) : null;
+        }
       }
       updateDeviceCredentialBinding(data.binding_id, updates);
       return NextResponse.json({ success: true });
@@ -152,7 +184,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       const binding = bindings.find((b) => b.id === data.binding_id);
       if (!binding) return NextResponse.json({ error: "Binding non trovato" }, { status: 404 });
 
-      const testResult = await testBinding(device.host, binding, versioneApparato(device, "1"));
+      const testResult = await provaBinding(device.host, binding, versioneApparato(device, "1"));
+      // Per API/Redfish/ONVIF una prova non c'è: il binding non si marca fallito
+      // (il motore delle credenziali scarterebbe un binding buono).
+      if (testResult.nonDisponibile) return NextResponse.json(testResult);
       updateBindingTestStatus(data.binding_id, testResult.success ? "success" : "failed", testResult.message);
       // Promuovi il binding validato anche su host_credentials dell'host con stesso IP,
       // così la credenziale resta associata anche se il device viene rimosso/ricreato.
@@ -183,127 +218,3 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   });
 }
 
-/** Testa una singola credenziale binding su un host */
-/** Esito test binding: i campi extra (`kind`, `hint`, `methodsOffered`, `methodsTried`)
- *  sono presenti solo per failure SSH e servono al pannello "Diagnostica" in UI. */
-async function testBinding(
-  host: string,
-  binding: { protocol_type: string; port: number; credential_id: number | null; inline_username: string | null; inline_encrypted_password: string | null; credential_type?: string | null },
-  versioneSnmp: VersioneSnmp
-): Promise<{
-  success: boolean;
-  message: string;
-  kind?: string;
-  hint?: string;
-  methodsOffered?: string[];
-  methodsTried?: string[];
-}> {
-  try {
-    if (binding.protocol_type === "ssh") {
-      let username: string | undefined;
-      let password: string | undefined;
-      if (binding.credential_id) {
-        const { getSshLinuxCredentialPair } = await import("@/lib/db");
-        const pair = getSshLinuxCredentialPair(binding.credential_id);
-        username = pair?.username;
-        password = pair?.password;
-      } else {
-        username = binding.inline_username ?? undefined;
-        password = binding.inline_encrypted_password ? (safeDecrypt(binding.inline_encrypted_password) ?? undefined) : undefined;
-      }
-      if (!username) return { success: false, message: "Username mancante" };
-      if (!password) return { success: false, message: "Password mancante" };
-
-      const { sshTryConnect } = await import("@/lib/devices/ssh-transport");
-      const result = await sshTryConnect({
-        host,
-        port: binding.port,
-        username,
-        password,
-        timeout: 10000,
-        credentialName: binding.credential_id ? `cred#${binding.credential_id}` : "inline",
-      });
-      if (result.ok) return { success: true, message: "Connessione SSH riuscita" };
-      const err = result.error;
-      const detail = err.hint ? `${err.message} ${err.hint}` : err.message;
-      return {
-        success: false,
-        message: `[${err.kind}] ${detail}`,
-        kind: err.kind,
-        hint: err.hint,
-        methodsOffered: err.methodsOffered,
-        methodsTried: err.methodsTried,
-      };
-    }
-
-    if (binding.protocol_type === "snmp") {
-      let community: string;
-      if (binding.credential_id) {
-        const { getCredentialCommunityString } = await import("@/lib/db");
-        community = getCredentialCommunityString(binding.credential_id) ?? "public";
-      } else {
-        community = binding.inline_encrypted_password ? (safeDecrypt(binding.inline_encrypted_password) ?? "public") : "public";
-      }
-      const snmp = await import("net-snmp");
-      // Versione dell'apparato; NULL = v1, come prima (createSession senza version).
-      const session = apriSessioneCommunity(snmp, host, community, { port: binding.port, timeout: 5000, versione: versioneSnmp });
-      return new Promise((resolve) => {
-        // Il timer e la risposta possono arrivare entrambi: una seconda close() lancia
-        // ERR_SOCKET_DGRAM_NOT_RUNNING fuori dalla richiesta (DTS, 2026-10-15).
-        let settled = false;
-        const finish = (r: { success: boolean; message: string }): void => {
-          if (settled) return;
-          settled = true;
-          clearTimeout(timer);
-          try { session.close(); } catch { /* socket già chiuso */ }
-          resolve(r);
-        };
-        const timer = setTimeout(() => finish({ success: false, message: "Timeout SNMP" }), 8000);
-        session.get(["1.3.6.1.2.1.1.1.0"], (error: Error | null) => {
-          finish(error
-            ? { success: false, message: `SNMP: ${error.message}` }
-            : { success: true, message: `SNMP raggiungibile (${etichettaVersioneSnmp(versioneSnmp)})` }
-          );
-        });
-      });
-    }
-
-    if (binding.protocol_type === "winrm") {
-      let username: string | undefined;
-      let password: string | undefined;
-      if (binding.credential_id) {
-        const { getCredentialLoginPair } = await import("@/lib/db");
-        const pair = getCredentialLoginPair(binding.credential_id, "windows");
-        username = pair?.username;
-        password = pair?.password;
-      } else {
-        username = binding.inline_username ?? undefined;
-        password = binding.inline_encrypted_password ? (safeDecrypt(binding.inline_encrypted_password) ?? undefined) : undefined;
-      }
-      if (!username) return { success: false, message: "Username mancante" };
-      try {
-        const { runWinrmCommand } = await import("@/lib/devices/winrm-run");
-        const { getAdRealm } = await import("@/lib/db");
-        const realm = getAdRealm()?.realm ?? "";
-        const out = await runWinrmCommand(
-          host,
-          binding.port ?? 5985,
-          username,
-          password ?? "",
-          "echo DA-IPAM-TEST",
-          false,
-          realm
-        );
-        return String(out).includes("DA-IPAM-TEST")
-          ? { success: true, message: "WinRM funzionante" }
-          : { success: false, message: "WinRM: risposta inattesa" };
-      } catch (err: unknown) {
-        return { success: false, message: `WinRM: ${err instanceof Error ? err.message : "errore"}` };
-      }
-    }
-
-    return { success: false, message: `Test per protocollo ${binding.protocol_type} non implementato` };
-  } catch (err: unknown) {
-    return { success: false, message: err instanceof Error ? err.message : "Errore test" };
-  }
-}

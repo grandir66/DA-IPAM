@@ -139,6 +139,10 @@ export function DeviceCredentialsTable({ deviceId }: { deviceId: number }) {
     };
     if (addMode === "archive" && addCredentialId) {
       body.credential_id = Number(addCredentialId);
+    } else if (addProtocol === "snmp") {
+      // La community va nel campo cifrato (tappa 1): prima finiva nello username, in chiaro.
+      body.inline_username = null;
+      body.inline_password = addUsername || null;
     } else {
       body.inline_username = addUsername || null;
       body.inline_password = addPassword || null;
@@ -228,7 +232,8 @@ export function DeviceCredentialsTable({ deviceId }: { deviceId: number }) {
     setEditPort(b.port);
     setEditSource(b.source);
     setEditCredentialId(b.credential_id ? String(b.credential_id) : "");
-    setEditUsername(b.inline_username_display ?? b.inline_username ?? "");
+    // SNMP: la community è cifrata e non torna indietro; il campo parte vuoto.
+    setEditUsername(b.protocol_type === "snmp" ? "" : (b.inline_username_display ?? b.inline_username ?? ""));
     setEditPassword("");
   };
 
@@ -244,8 +249,14 @@ export function DeviceCredentialsTable({ deviceId }: { deviceId: number }) {
       body.credential_id = Number(editCredentialId);
     } else {
       body.credential_id = null;
-      body.inline_username = editUsername || null;
-      if (editPassword) body.inline_password = editPassword;
+      if (editProtocol === "snmp") {
+        // Community vuota = non modificare.
+        body.inline_username = null;
+        if (editUsername) body.inline_password = editUsername;
+      } else {
+        body.inline_username = editUsername || null;
+        if (editPassword) body.inline_password = editPassword;
+      }
     }
     const res = await fetch(`/api/devices/${deviceId}/credentials`, {
       method: "PUT",
@@ -375,13 +386,16 @@ export function DeviceCredentialsTable({ deviceId }: { deviceId: number }) {
                       <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => openEdit(b)}>
                         <Edit3 className="h-3.5 w-3.5" />
                       </Button>
-                      <Button
-                        size="icon" variant="ghost" className="h-7 w-7"
-                        disabled={testing === b.id}
-                        onClick={() => handleTest(b.id)}
-                      >
-                        <RefreshCw className={`h-3.5 w-3.5 ${testing === b.id ? "animate-spin" : ""}`} />
-                      </Button>
+                      {/* Per API, Redfish e ONVIF una prova non c'è (tappa 1). */}
+                      {!["api", "redfish", "onvif"].includes(b.protocol_type) && (
+                        <Button
+                          size="icon" variant="ghost" className="h-7 w-7"
+                          disabled={testing === b.id}
+                          onClick={() => handleTest(b.id)}
+                        >
+                          <RefreshCw className={`h-3.5 w-3.5 ${testing === b.id ? "animate-spin" : ""}`} />
+                        </Button>
+                      )}
                       <Button size="icon" variant="ghost" className="h-7 w-7 text-red-500 hover:text-red-700" onClick={() => handleDelete(b.id)}>
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
@@ -446,6 +460,7 @@ export function DeviceCredentialsTable({ deviceId }: { deviceId: number }) {
                 <div className="space-y-1.5">
                   <Label className="text-xs">{addProtocol === "snmp" ? "Community String" : "Username"}</Label>
                   <Input
+                    type={addProtocol === "snmp" ? "password" : "text"}
                     value={addUsername}
                     onChange={(e) => setAddUsername(e.target.value)}
                     placeholder={addProtocol === "snmp" ? "public" : "admin"}
@@ -522,8 +537,13 @@ export function DeviceCredentialsTable({ deviceId }: { deviceId: number }) {
             ) : (
               <>
                 <div className="space-y-1.5">
-                  <Label className="text-xs">{editProtocol === "snmp" ? "Community String" : "Username"}</Label>
-                  <Input value={editUsername} onChange={(e) => setEditUsername(e.target.value)} />
+                  <Label className="text-xs">{editProtocol === "snmp" ? "Community String (lascia vuoto per non cambiare)" : "Username"}</Label>
+                  <Input
+                    type={editProtocol === "snmp" ? "password" : "text"}
+                    value={editUsername}
+                    onChange={(e) => setEditUsername(e.target.value)}
+                    placeholder={editProtocol === "snmp" ? "••••••••" : undefined}
+                  />
                 </div>
                 {editProtocol !== "snmp" && (
                   <div className="space-y-1.5">

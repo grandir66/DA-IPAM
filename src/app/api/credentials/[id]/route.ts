@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { getCredentialById, updateCredential, deleteCredential } from "@/lib/db";
 import { CredentialSchema } from "@/lib/validators";
-import { encrypt, safeDecrypt } from "@/lib/crypto";
+import { safeDecrypt } from "@/lib/crypto";
+import { aggiornamentiCredenziale } from "@/lib/credentials/aggiornamenti";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 
@@ -54,23 +55,9 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
         return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
       }
 
-      const data = parsed.data;
-      const updates: Record<string, unknown> = {};
-      if (data.name !== undefined) updates.name = data.name;
-      if (data.credential_type !== undefined) updates.credential_type = data.credential_type;
-      if (data.username !== undefined) updates.encrypted_username = data.username ? encrypt(data.username) : null;
-      if (data.password !== undefined) updates.encrypted_password = data.password ? encrypt(data.password) : null;
-      // SNMPv3 (Fase 4b Task 2): "lascia vuoto per non modificare" — stessa
-      // convenzione di password. auth_protocol/priv_protocol/security_level
-      // non sono segreti: si aggiornano appena presenti nel body (anche
-      // stringa vuota → null, per permettere di tornare a v2c/noAuthNoPriv).
-      if (data.auth_key !== undefined) updates.encrypted_auth_key = data.auth_key ? encrypt(data.auth_key) : null;
-      if (data.priv_key !== undefined) updates.encrypted_priv_key = data.priv_key ? encrypt(data.priv_key) : null;
-      if (data.auth_protocol !== undefined) updates.auth_protocol = data.auth_protocol || null;
-      if (data.priv_protocol !== undefined) updates.priv_protocol = data.priv_protocol || null;
-      if (data.security_level !== undefined) updates.security_level = data.security_level || null;
-      // Porta propria: presente nel body → si aggiorna; vuota o null → porta standard.
-      if (body && typeof body === "object" && "port" in body) updates.port = data.port ?? null;
+      // Segreti vuoti o assenti = non modificare (tappa 1): prima `password: ""`
+      // cancellava il segreto. Dettaglio in src/lib/credentials/aggiornamenti.ts.
+      const updates = aggiornamentiCredenziale(parsed.data, body);
 
       const credential = updateCredential(Number(id), updates);
       if (!credential) {

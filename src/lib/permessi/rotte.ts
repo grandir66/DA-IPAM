@@ -151,7 +151,8 @@ export const ECCEZIONI: Eccezione[] = [
   // La lettura in chiaro (for_edit) chiede admin dentro il gestore: la prova
   // puntuale sta in src/lib/__tests__/api-auth-guards.test.ts.
   { rotta: "/api/credentials/[id]", metodi: ["GET"], tipo: "mascherata", guardia: "sessione", motivo: "campi cifrati sostituiti dalla maschera", prova: PROVA_MASCHERATE },
-  { rotta: "/api/devices/[id]/credentials", metodi: ["GET"], tipo: "mascherata", guardia: "sessione", motivo: "password in linea sostituita dalla maschera", prova: PROVA_MASCHERATE },
+  // requireAuth dal 15/10 (tappa 1 credenziali): serve il ruolo, lo username in linea lo vede solo l'admin.
+  { rotta: "/api/devices/[id]/credentials", metodi: ["GET"], tipo: "mascherata", guardia: "auth", motivo: "password in linea sostituita dalla maschera, username in linea solo all'admin", prova: PROVA_MASCHERATE },
   { rotta: "/api/hosts/[id]/credentials", metodi: ["GET"], tipo: "mascherata", guardia: "sessione", motivo: "solo le associazioni host-credenziale, nessun campo cifrato", prova: PROVA_MASCHERATE },
   { rotta: "/api/networks/[id]/credentials", metodi: ["GET"], tipo: "mascherata", guardia: "sessione", motivo: "solo le associazioni rete-credenziale, nessun campo cifrato", prova: PROVA_MASCHERATE },
   {

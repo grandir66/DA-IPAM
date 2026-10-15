@@ -23,6 +23,7 @@ import { lookupVendorSync } from "./scanner/mac-vendor";
 import { VENDOR_PLACEHOLDER_RE } from "./attribution/emitters";
 import { ipSortKey, sqlOrderByDhcpLeases, sqlOrderByNetworks, type SortDirection } from "./table-sort";
 import { decrypt, safeDecrypt } from "./crypto";
+import { convertiCommunityInlineSnmp } from "./credentials/converti-community-inline";
 import { randomUUID } from "crypto";
 import { inferIpAssignment, resolveAdDhcpLeaseForHost, resolveDhcpLeaseForHost } from "./ip-assignment";
 import { getActiveTenants, getHubDbPath, getSetting, getTenantByCode } from "./db-hub";
@@ -1746,6 +1747,18 @@ export function getTenantDb(tenantCode: string): Database.Database {
     }
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: migrazione versione SNMP fallita:`, e);
+  }
+
+  // Binding SNMP inline con la community nel campo username (tappa 1 credenziali,
+  // 15/10): community spostata nel campo cifrato. Idempotente; il 15/10 le righe
+  // erano 0 sull'hub e sul cliente A. Se fallisce il tenant si apre lo stesso.
+  try {
+    const convertiti = convertiCommunityInlineSnmp(newDb);
+    if (convertiti > 0) {
+      console.info(`[db-tenant] ${tenantCode}: ${convertiti} binding SNMP inline con la community spostata nel campo cifrato`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: conversione community SNMP inline fallita:`, e);
   }
 
   tenantDbs.set(tenantCode, { db: newDb, lastUsed: Date.now() });

@@ -84,9 +84,16 @@ test("Domarc: i doppi apparato/host si fondono (spec §2: almeno i 5 Proxmox)", 
 // Task 9 di T1: l'«Ignora» del 14/10 non toglie più la coppia (I36). cliente-a: deviceLinks 84->85, perché la correzione
 // (porta 10 di core 1 ↔ ether8 di router 1) non corrisponde a nessun cavo visto e torna la linea core 1 ↔ router 1 sul
 // cavo sfp-sfpplus1 a 10G; la correzione resta, orfana (C5). Gli altri conteggi non cambiano; domarc non ha correzioni.
+// T1b (spec §13.8.2): 27 oggetti senza prove di ruolo su domarc e 9 sul cliente A; da riconfermare sulle copie nel Task 16
+// (le righe del router delle fixture sono tutte `mndp`: numeri indicativi). Chi è «da sistemare» conta come un client:
+// cadono le linee «tabella MAC» verso di lui, tutte e sole quelle. domarc: deviceLinks 29->25 (quattro switch dichiarati,
+// senza prove, sotto lo switch 10), attachedLinks 33->30 (tre host classificati router o access point), isolatedDevices
+// 17->21 e suspiciousTypes 13->17 (i quattro switch restano senza collegamenti), promoteProposals 10->7 (i tre host).
+// cliente-a: deviceLinks 85->80 (cinque switch dichiarati senza prove), attachedLinks 49->47 (i due host classificati
+// router), isolatedDevices 5->10 e suspiciousTypes 2->7 (i cinque switch), promoteProposals 5->3 (i due host).
 const MISURATI: Record<string, Partial<Record<string, number>>> = {
-  "topologia-domarc.json": { deviceLinks: 29, attachedLinks: 33, unmatchedNeighbors: 7, isolatedDevices: 17, fusedHosts: 59, promoteProposals: 10, suspiciousTypes: 13 },
-  "topologia-cliente-a.json": { deviceLinks: 85, attachedLinks: 49, unmatchedNeighbors: 13, isolatedDevices: 5, fusedHosts: 92, promoteProposals: 5, suspiciousTypes: 2 },
+  "topologia-domarc.json": { deviceLinks: 25, attachedLinks: 30, unmatchedNeighbors: 7, isolatedDevices: 21, fusedHosts: 59, promoteProposals: 7, suspiciousTypes: 17, senzaProve: 27 },
+  "topologia-cliente-a.json": { deviceLinks: 80, attachedLinks: 47, unmatchedNeighbors: 13, isolatedDevices: 10, fusedHosts: 92, promoteProposals: 3, suspiciousTypes: 7, senzaProve: 9 },
 };
 for (const [nome, attesi] of Object.entries(MISURATI)) {
   test(`${nome}: conteggi misurati`, () => {
@@ -158,7 +165,9 @@ for (const nome of ["topologia-domarc.json", "topologia-cliente-a.json"]) {
     // laboratorio della porta 5 dello switch 48 PoE escono dall'albero e vanno in «Da sistemare», H5), niente ripiego del
     // router da un'interfaccia che il suo traduttore non riconosce (un hypervisor esce da sotto il router) e la velocità per
     // chiave, anche di un nome doppio (tre hypervisor passano sotto l'aggregazione a 10G, H9 e H13).
-    const attesi = nome === "topologia-domarc.json" ? [1588, 2420] : [2514, 3222];
+    // T1b (spec §13.8.2): domarc 1588x2420->1442x1754, cliente-a 2514x3222->2514x3104, perché gli oggetti senza prove di
+    // ruolo (27 e 9) escono dalla mappa automatica; da riconfermare sulle copie nel Task 16.
+    const attesi = nome === "topologia-domarc.json" ? [1442, 1754] : [2514, 3104];
     assert.deepEqual([Math.round(r.width), Math.round(r.height)], attesi);
   });
 }
@@ -187,9 +196,12 @@ test("cliente A: uplink salvati e collegamenti unifi_uplink presenti", () => {
 // Task 9 di T1, §13.7.8 (G9): domarc clients 102->99 perché i MAC propri di un apparato non sono suoi client: il firewall
 // virtuale (registrato come switch) vedeva sulle sue porte i tre MAC delle sue schede e li contava come suoi client. Le
 // fixture non hanno VM: collegamenti, nodi, padri e teste non cambiano con la regola «vm-e-mac-propri» accesa o spenta.
+// T1b (spec §13.8.2): 27 oggetti senza prove di ruolo su domarc e 9 sul cliente A; da riconfermare sulle copie nel Task 16.
+// Chi è «da sistemare» conta come un client: domarc links 62->55, isolatedDevices 17->21, clients 99->107; cliente-a links
+// 135->128, isolatedDevices 5->10, clients 430->437 (le linee «tabella MAC» verso di loro diventano client della porta).
 const MISURATI_DATO_VERO: Record<string, { nodes: number; links: number; isolatedDevices: number; clients: number }> = {
-  "topologia-domarc.json": { nodes: 226, links: 62, isolatedDevices: 17, clients: 99 },
-  "topologia-cliente-a.json": { nodes: 551, links: 135, isolatedDevices: 5, clients: 430 },
+  "topologia-domarc.json": { nodes: 226, links: 55, isolatedDevices: 21, clients: 107 },
+  "topologia-cliente-a.json": { nodes: 551, links: 128, isolatedDevices: 10, clients: 437 },
 };
 for (const [nome, atteso] of Object.entries(MISURATI_DATO_VERO)) {
   test(`${nome}: conteggi principali uguali a quelli del dato vero senza le VM (copie del 15/10)`, () => {

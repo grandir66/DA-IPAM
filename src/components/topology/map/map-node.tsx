@@ -51,6 +51,8 @@ export type BoxData = {
   redundant: number;
   /** Le sue ridondanze sono disegnate (riquadro scelto o «Mostra ridondanze»). */
   redundantShown: boolean;
+  /** T1b (spec §13.8.2): senza prove di ruolo, «da sistemare» (resta in una mappa passo passo, come foglia). */
+  daSistemare?: boolean;
 };
 export type VmData = { vm: MapVm; text: string; w: number; h: number; selected: boolean };
 export type AttachedData = { node: MapNode; port: string | null; selected: boolean };
@@ -90,6 +92,8 @@ function BoxNode({ data }: NodeProps<Node<BoxData, "box">>) {
   const giu = status === "fail";
   const second = data.promote
     ? "host · da promuovere"
+    : data.daSistemare
+    ? "da sistemare"
     : [n.mgmtIp ?? typeLabel(n.type), data.clients ? `${data.clients} client` : null].filter(Boolean).join(" · ");
   const stato = STATO[status];
   const title = [n.name, dnsLine(n), n.mgmtIp, typeLabel(n.type), `stato: ${STATO_PAROLE[status]}`].filter(Boolean).join(" · ");

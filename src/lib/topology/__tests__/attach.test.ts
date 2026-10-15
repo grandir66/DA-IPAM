@@ -322,7 +322,7 @@ const fra = <T extends { a: string; b: string }>(links: T[], x: string, y: strin
 test("I-3/I9: un collegamento «tabella MAC» ignorato non torna, e il MAC non diventa un client", () => {
   const SRV = "02:00:00:00:05:01";
   const i = baseInput({
-    devices: [dev(2, { name: "CENTRALE-2", host: "192.0.2.2" }), dev(5, { name: "SRV-5", device_type: "server", host: "192.0.2.15", port_count: 0 })],
+    devices: [dev(2, { name: "CENTRALE-2", host: "192.0.2.2", controller_mac: "02:00:00:00:02:02" }), dev(5, { name: "SRV-5", device_type: "server", host: "192.0.2.15", port_count: 0 })], // T1b (spec §13.8.2): la prova di ruolo che il dato vero ha
     knownMacs: [{ device_id: 5, mac: SRV }],
     macPorts: [mp(2, SRV, "Port 7")],
   });
@@ -336,7 +336,7 @@ test("I-3/I9: un collegamento «tabella MAC» ignorato non torna, e il MAC non d
 test("I9: la porta del cavo ignorato resta occupata verso quell'oggetto; lo stesso oggetto su un'altra porta compare", () => {
   const SRV = "02:00:00:00:05:01";
   const i = baseInput({
-    devices: [dev(2, { name: "CENTRALE-2", host: "192.0.2.2" }), dev(5, { name: "SRV-5", device_type: "server", host: "192.0.2.15", port_count: 0 })],
+    devices: [dev(2, { name: "CENTRALE-2", host: "192.0.2.2", controller_mac: "02:00:00:00:02:02" }), dev(5, { name: "SRV-5", device_type: "server", host: "192.0.2.15", port_count: 0 })], // T1b (spec §13.8.2): la prova di ruolo che il dato vero ha
     knownMacs: [{ device_id: 5, mac: SRV }],
     macPorts: [mp(2, SRV, "Port 8")],
     overrides: ignora("dev:2", "Port 7", "dev:5"),
@@ -385,6 +385,8 @@ test("I-3/I9: il ripiego del router ignorato non torna", () => {
     devices: [RTR, dev(2), dev(3), dev(7, { name: "SRV-7", device_type: "server", host: "10.0.1.7" })],
     knownMacs: [{ device_id: 7, mac: SRV_MAC }],
     macPorts: [mp(1, SRV_MAC, "ether7")],
+    // T1b (spec §13.8.2): la prova di ruolo che il dato vero ha
+    neighbors: [...input().neighbors, { device_id: 1, local_port: "ether2", remote_device_name: "SW-2", remote_port: "Port 2", protocol: "lldp", remote_ip: "10.0.0.2", remote_mac: null, timestamp: RECENTE, source: "device" }],
   });
   assert.equal(fra(buildTopologyModel(i).links, "dev:1", "dev:7").length, 1, "senza «Ignora» il collegamento c'è");
   assert.deepEqual(fra(buildTopologyModel({ ...i, overrides: ignora("dev:1", "ether7", "dev:7") }).links, "dev:1", "dev:7"), []);
@@ -424,7 +426,7 @@ test("C5 — con la coppia già collegata da un altro cavo, la correzione sulla 
 test("C5 — un «Ignora» senza porte non toglie un collegamento che ha una porta (la tabella MAC): è orfano", () => {
   const SRV = "02:00:00:00:05:01";
   const i = baseInput({
-    devices: [dev(2, { name: "CENTRALE-2", host: "192.0.2.2" }), dev(5, { name: "SRV-5", device_type: "server", host: "192.0.2.15", port_count: 0 })],
+    devices: [dev(2, { name: "CENTRALE-2", host: "192.0.2.2", controller_mac: "02:00:00:00:02:02" }), dev(5, { name: "SRV-5", device_type: "server", host: "192.0.2.15", port_count: 0 })], // T1b (spec §13.8.2): la prova di ruolo che il dato vero ha
     knownMacs: [{ device_id: 5, mac: SRV }],
     macPorts: [mp(2, SRV, "Port 7")],
     overrides: ignora("dev:2", "", "dev:5"),

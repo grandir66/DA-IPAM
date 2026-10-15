@@ -30,6 +30,12 @@ const H_MAC = "02:00:00:00:05:01";
  * I tre switch salgono al router con LLDP sulla «Port 24». La scheda di gestione di px-h (1G) sta sulla Port 5
  * dell'accesso; le schede 10G non si vedono (il programma non ne conosce il MAC).
  */
+/** Il router letto via SSH ha le sue righe: gli stessi cavi verso i tre switch, visti dal suo lato (T1b, spec §13.8.2). */
+const routerVede = (id: number, nome: string) => ({
+  device_id: 1, local_port: `ether${id}`, remote_device_name: nome, remote_port: "Port 24", protocol: "lldp",
+  remote_ip: `192.0.2.${id}`, remote_mac: null, timestamp: RECENTE, source: "device",
+});
+
 function rete(over: Partial<TopologyModelInput> = {}): TopologyModelInput {
   const lldp = (id: number) => ({
     device_id: id, local_port: "Port 24", remote_device_name: "RTR-1", remote_port: `ether${id}`, protocol: "lldp",
@@ -44,7 +50,7 @@ function rete(over: Partial<TopologyModelInput> = {}): TopologyModelInput {
       dev(5, { name: "px-h", device_type: "server", vendor: "proxmox", host: "192.0.2.15", port_count: 0 }),
       dev(6, { name: "px-k", device_type: "server", vendor: "proxmox", host: "192.0.2.16", port_count: 0 }),
     ],
-    neighbors: [lldp(2), lldp(3), lldp(4)],
+    neighbors: [lldp(2), lldp(3), lldp(4), routerVede(2, "CENTRALE-2"), routerVede(3, "CENTRALE-3"), routerVede(4, "ACCESSO-4")], // T1b (spec §13.8.2): la prova di ruolo che il dato vero ha
     knownMacs: [{ device_id: 5, mac: H_MAC }],
     scanHosts: [
       { scannedDeviceId: 5, hostname: "px-h", ips: ["192.0.2.15"], macs: [] },

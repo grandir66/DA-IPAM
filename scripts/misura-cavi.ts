@@ -50,7 +50,7 @@ async function main(): Promise<number> {
     if (f && !dentro(f, cartella)) return uso(`${k} deve stare dentro --cartella: i dati del cliente non escono dallo scratchpad.`);
   }
   const {
-    applicaScenario, conteggi, leggiAdesso, leggiScenario, lettureVm, lineeCucite, lineeDaNomeScelto, padriCambiati, padriDi, sottoUnaSuaVm, teste, testeCambiate,
+    applicaScenario, conteggi, leggiAdesso, leggiScenario, lettureVm, lineeCucite, lineeDaNomeScelto, padriCambiati, padriDi, soloProveAggiunte, sottoUnaSuaVm, teste, testeCambiate,
   } = await import("../src/lib/topology/misura");
   const scenario = leggiScenario(val("--scenario") ?? "S0");
   if (!scenario) return uso("Scenario non valido: S0, S1, S3:<id>, S4, S9:<id>:<porta>:<fonte>, S12:<id>:<vmid>.");
@@ -237,6 +237,10 @@ async function main(): Promise<number> {
     for (const l of lineeCucite(input, model)) w(`${nome(l.a)} ${l.aPort} ↔ ${nome(l.b)} ${l.bPort}`);
     w("\n— ritocchi scaduti, per mappa e orientamento (R2) —");
     for (const x of mappe) for (const id of x.scaduti) w(`${x.vista} ${x.orientamento}: ${nome(id)}`);
+    w("\n— «Da sistemare»: senza prove di ruolo —");
+    for (const d of model.daSistemare ?? []) w(`${nome(d.id)} · ${d.motivo}`);
+    w("\n— nell'albero solo per una prova aggiunta —");
+    for (const id of soloProveAggiunte(input, model)) w(nome(id));
     w("\n— «Da sistemare»: senza collegamenti —");
     for (const id of model.isolated) w(nome(id));
     if (cambiati.length > 0) {

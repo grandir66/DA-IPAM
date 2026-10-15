@@ -18,7 +18,7 @@ function cluster(over: Partial<TopologyModelInput> = {}): TopologyModelInput {
   return baseInput({
     devices: [
       dev(1, { name: "RTR-1", device_type: "router", host: "192.0.2.1" }),
-      dev(2, { name: "SW-1", host: "192.0.2.2" }),
+      dev(2, { name: "SW-1", host: "192.0.2.2", controller_mac: "02:00:00:00:02:02" }), // T1b (spec §13.8.2): la prova di ruolo che il dato vero ha
       dev(3, { name: "pve-a", device_type: "server", vendor: "proxmox", host: "192.0.2.11", port_count: 0 }),
       dev(4, { name: "altro-server", device_type: "server", vendor: "dell", host: "192.0.2.51", port_count: 0 }),
     ],

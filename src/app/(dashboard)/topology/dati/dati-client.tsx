@@ -66,6 +66,7 @@ export function DatiClient({ isAdmin }: { isAdmin: boolean }) {
     ["Apparati isolati", c.isolatedDevices], ["Host fusi negli apparati", c.fusedHosts], ["Host fusi fra loro", c.mergedHosts],
     ["Apparati senza sede", c.devicesWithoutSite], ["Sedi con testa", c.sitesWithHead],
     ["Proposte «promuovi ad apparato»", c.promoteProposals], ["Tipi sospetti", c.suspiciousTypes],
+    ["«Da sistemare»: senza prove di ruolo", c.senzaProve],
   ];
   const stale: MapLink[] = m.links.filter((l) => l.stale);
   const apparati = (ids: string[]): MapNode[] =>

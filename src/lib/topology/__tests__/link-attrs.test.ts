@@ -25,6 +25,9 @@ function rete(over: Partial<TopologyModelInput> = {}): TopologyModelInput {
     neighbors: [
       { device_id: 2, local_port: "Port 1", remote_device_name: "", remote_port: "ether2", protocol: "lldp", remote_ip: "192.0.2.1", remote_mac: null, timestamp: RECENTE, source: "device" },
       { device_id: 3, local_port: "Port 1", remote_device_name: "", remote_port: "ether3", protocol: "lldp", remote_ip: "192.0.2.1", remote_mac: null, timestamp: RECENTE, source: "device" },
+      // T1b (spec §13.8.2): la prova di ruolo che il dato vero ha: le righe del router, gli stessi due cavi visti dal suo lato
+      { device_id: 1, local_port: "ether2", remote_device_name: "SW-A", remote_port: "Port 1", protocol: "lldp", remote_ip: "192.0.2.2", remote_mac: null, timestamp: RECENTE, source: "device" },
+      { device_id: 1, local_port: "ether3", remote_device_name: "SW-B", remote_port: "Port 1", protocol: "lldp", remote_ip: "192.0.2.3", remote_mac: null, timestamp: RECENTE, source: "device" },
     ],
     knownMacs: [{ device_id: 4, mac: MAC_H }],
     macPorts: [{ device_id: 3, mac: MAC_H, port_name: "Port 5", timestamp: RECENTE, source: "device" }],

@@ -11,6 +11,8 @@ import {
   type Lato, type Pt, type Rect,
 } from "@/lib/topology/map-screen";
 import { parseDbDate } from "@/lib/db-date";
+import { PROVE_AGGIUNTE, proveDiRuolo } from "@/lib/topology/cavi/ruolo";
+import { nodeClass } from "@/lib/topology/identity";
 import { haTraduttore, traduciPorta, type ComeLetto } from "@/lib/topology/lettori/traduci";
 import type { MapLink, MapOrientation, MapVm, ModelDeviceRow, TopologyModel, TopologyModelInput } from "@/lib/topology/model-types";
 import { addNodeMacs, buildNodeIndex, resolveNode } from "@/lib/topology/node-index";
@@ -283,6 +285,16 @@ export function lineeDaNomeScelto(
   return model.links.filter((l) => !l.sources.includes("manual") && (scelto(l.a, l.aPort) || scelto(l.b, l.bPort)));
 }
 
+/** Gli oggetti di rete nell'albero tenuti SOLO da una prova aggiunta il 14/10 sera (da guardare a parte con Riccardo, §13.8.2). */
+export function soloProveAggiunte(input: TopologyModelInput, model: TopologyModel): string[] {
+  const idx = buildNodeIndex(input.devices, input.hosts, input.knownMacs, input.neighbors);
+  const prove = proveDiRuolo(input, idx, { vms: model.vms });
+  return model.nodes
+    .filter((n) => ["infra", "ap"].includes(model.classiMappa?.[n.id] ?? nodeClass(n)))
+    .filter((n) => { const p = prove.get(n.id) ?? []; return p.length > 0 && p.every((x) => PROVE_AGGIUNTE.has(x)); })
+    .map((n) => n.id).sort();
+}
+
 /** I numeri della tappa (spec §13.12.1, §13.3.2): niente nomi. */
 export function conteggi(input: TopologyModelInput, model: TopologyModel, c: Pick<MapComputed<TopologyModel>, "tree" | "layout">,
   percorsoOggi: (s: Rect, la: Lato, t: Rect, lb: Lato) => Pt[]): Record<string, number> {
@@ -309,6 +321,7 @@ export function conteggi(input: TopologyModelInput, model: TopologyModel, c: Pic
     ridondanze: c.tree.links.filter((l) => l.redundant).length,
     da_sistemare_isolati: model.isolated.length,
     da_sistemare_tipi_sospetti: model.suspicious.length,
+    senza_prove: model.daSistemare?.length ?? 0,
     host_da_promuovere: model.promote.length,
     giri_oggi: oggi.giri, attraversamenti_oggi: oggi.attraversamenti,
     giri_regola_nuova: nuova.giri, attraversamenti_regola_nuova: nuova.attraversamenti,

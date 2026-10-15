@@ -7,9 +7,13 @@ import { attachMacs } from "@/lib/topology/attach";
 import { correzioniOrfane } from "@/lib/topology/ignorati";
 import { buildLinks } from "@/lib/topology/links";
 import { enrichLinks } from "@/lib/topology/link-attrs";
+import { classeInMappa, proveDiRuolo, ruoloLetto } from "@/lib/topology/cavi/ruolo";
+import { motivoDaSistemare } from "@/lib/topology/da-sistemare";
 import {
   LINK_SOURCE_RANK,
+  type ClasseMappa,
   type LinkSource,
+  type MapNode,
   type ModelCounts,
   type TopologyModel,
   type TopologyModelInput,
@@ -34,8 +38,14 @@ export function buildTopologyModel(input: TopologyModelInput, regole: Regole = R
   const { vms, vmNodeIds, vmMacs, runningVmMacs } = placeVms(input, idx);
   // Spec §13.7.8: per ogni nodo che è una VM, il suo hypervisor: fra i due nessun collegamento dai dati (G9).
   const ipervisori = ipervisoriDelleVm(vms);
+  // T1b (spec §13.8.2): le prove di ruolo, prima di attaccare i MAC — chi è «da sistemare» conta come un client.
+  const prove = proveDiRuolo(input, idx, { vms });
+  const ruoloAMano = new Map<string, "rete" | "attaccato" | null>(
+    input.devices.map((d) => [`dev:${d.id}`, ruoloLetto(d.topology_role)]),
+  );
+  const classe = (n: MapNode): ClasseMappa => classeInMappa(n, prove.get(n.id), ruoloAMano.get(n.id) ?? null);
   const { links: baseLinks, unmatched, ignorati, segmenti } = buildLinks(input, idx, runningVmMacs, regole);
-  const { portClients, clientCount, attachLinks } = attachMacs(input, idx, baseLinks, { vmMacs, runningVmMacs, ignorati, segmenti, ipervisori, regole });
+  const { portClients, clientCount, attachLinks } = attachMacs(input, idx, baseLinks, { vmMacs, runningVmMacs, ignorati, segmenti, ipervisori, regole, classe });
   // Nemmeno da un annuncio (una VM che sente il bridge del suo hypervisor): la VM sta dentro; un collegamento a mano resta.
   const links = [...baseLinks, ...attachLinks]
     .filter((l) => !regole.has("vm-e-mac-propri") || l.sources.includes("manual") || !vmEIpervisore(ipervisori, l.a, l.b))
@@ -57,6 +67,15 @@ export function buildTopologyModel(input: TopologyModelInput, regole: Regole = R
       const pn = proxmoxName.get(n.id);
       return pn === undefined ? n : { ...n, name: pn, ...(nameKey(n.name) ? { dnsName: n.name } : {}) };
     });
+  const classiMappa: Record<string, ClasseMappa> = {};
+  for (const n of nodes) {
+    if (vmNodeIds.has(n.id)) continue;
+    const k = classe(n);
+    if (k !== nodeClass(n)) classiMappa[n.id] = k;
+  }
+  const daSistemare = nodes
+    .filter((n) => !n.hidden && classiMappa[n.id] === "da_sistemare")
+    .map((n) => ({ id: n.id, motivo: motivoDaSistemare(n) }));
   const portCount = new Map(input.devices.map((d) => [d.id, d.port_count]));
   const devices = nodes.filter((n) => n.kind === "device");
 
@@ -106,6 +125,7 @@ export function buildTopologyModel(input: TopologyModelInput, regole: Regole = R
     vms: vms.length,
     hypervisors: nodes.filter((n) => nodeClass(n) === "hyper").length,
     vmsOnNodes: vms.filter((v) => v.nodeId !== null).length,
+    senzaProve: daSistemare.length,
   };
   const canonical = Object.fromEntries([...idx.alias.entries()].sort(([x], [y]) => (x < y ? -1 : x > y ? 1 : 0)));
   return {
@@ -113,6 +133,7 @@ export function buildTopologyModel(input: TopologyModelInput, regole: Regole = R
     // Dopo attachMacs: tabella MAC, ripiego del router e VM segnano anche loro le regole che tolgono qualcosa (§13.9, C5).
     correzioniOrfane: correzioniOrfane(ignorati, input.overrides),
     segmenti: Object.fromEntries([...segmenti].map(([k, membri]) => [k, [...membri].sort()])),
+    classiMappa, daSistemare,
     ...(gatewayDi ? { gatewayDi } : {}),
   };
 }

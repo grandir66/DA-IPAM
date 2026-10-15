@@ -54,8 +54,10 @@ export function ObjectList({ model, visible, selected, drag, onSelect }: Props) 
     const isolated = new Set(model.isolated);
     const suspicious = new Set(model.suspicious);
     const promote = new Set(model.promote.map((p) => `host:${p.hostId}`));
+    // T1b (spec §13.8.2): gli oggetti senza prove di ruolo, col motivo intero nel title.
+    const fuori = new Map((model.daSistemare ?? []).map((d) => [d.id, d.motivo]));
     const why = (n: MapNode): string | null =>
-      promote.has(n.id) ? "host da promuovere" : suspicious.has(n.id) ? "tipo sospetto" : isolated.has(n.id) ? "nessun collegamento" : null;
+      promote.has(n.id) ? "host da promuovere" : fuori.has(n.id) ? "senza prove di ruolo" : suspicious.has(n.id) ? "tipo sospetto" : isolated.has(n.id) ? "nessun collegamento" : null;
     const defs: Array<[string, (n: MapNode) => boolean]> = [
       ["Router e firewall", (n) => nodeClass(n) === "infra" && n.type !== "switch"],
       ["Switch", (n) => n.type === "switch"],
@@ -66,7 +68,7 @@ export function ObjectList({ model, visible, selected, drag, onSelect }: Props) 
     const sorted = [...model.nodes].sort((a, b) => a.name.localeCompare(b.name, "it") || (a.id < b.id ? -1 : 1));
     const out = defs.map(([name, f]) => ({ name, items: sorted.filter((n) => !why(n) && f(n)) }));
     out.push({ name: "Da sistemare", items: sorted.filter((n) => why(n) !== null) });
-    return { list: out, why };
+    return { list: out, why, motivo: (n: MapNode) => fuori.get(n.id) ?? null };
   }, [model]);
 
   const query = q.trim().toLowerCase();
@@ -115,7 +117,7 @@ export function ObjectList({ model, visible, selected, drag, onSelect }: Props) 
                       } : undefined}
                       onClick={() => onSelect(n.id)}
                       onKeyDown={(e) => { if (e.key === "Enter") onSelect(n.id); }}
-                      title={[n.name, n.mgmtIp, typeLabel(n.type), why, inMap ? null : DRAG_HINT[drag]].filter(Boolean).join(" · ")}
+                      title={[n.name, n.mgmtIp, typeLabel(n.type), why, groups.motivo(n), inMap ? null : DRAG_HINT[drag]].filter(Boolean).join(" · ")}
                       className={cn(
                         "flex items-center gap-1.5 px-2.5 py-1 text-[13px] hover:bg-muted",
                         canDrag ? "cursor-grab active:cursor-grabbing" : "cursor-pointer",

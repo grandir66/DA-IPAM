@@ -139,6 +139,7 @@ export function MapCanvas(p: Props) {
           orientation: o,
           redundant: redCount.get(ln.id) ?? 0,
           redundantShown: p.showExtra || p.selected === ln.id,
+          daSistemare: model.classiMappa?.[ln.id] === "da_sistemare",
         },
       });
     }

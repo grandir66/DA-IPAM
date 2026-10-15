@@ -355,7 +355,12 @@ export interface ModelCounts {
   hypervisors: number;
   /** VM che coincidono con un nodo già censito. */
   vmsOnNodes: number;
+  /** Oggetti dichiarati apparati di rete senza una prova (spec §13.8.2). */
+  senzaProve: number;
 }
+
+/** La classe di un nodo nella mappa (spec §13.8.2): quella di nodeClass, più «da sistemare» per chi non ha prove di ruolo. */
+export type ClasseMappa = "infra" | "ap" | "hyper" | "att" | "client" | "da_sistemare";
 
 export interface TopologyModel {
   nodes: MapNode[];
@@ -384,6 +389,10 @@ export interface TopologyModel {
    * mappa» le mostra con «Togli la correzione». Assente nei modelli costruiti a mano dalle prove.
    */
   correzioniOrfane?: number[];
+  /** La classe nella mappa dove è diversa da nodeClass (spec §13.8.2): «da sistemare» o il ruolo a mano. Assente nelle prove di prima. */
+  classiMappa?: Record<string, ClasseMappa>;
+  /** Gli oggetti senza prove di ruolo, col motivo in parole: l'elenco «Da sistemare» (spec §8, D6). */
+  daSistemare?: Array<{ id: string; motivo: string }>;
   /**
    * Le porte di segmento (spec §13.7.1 passo 2): «nodo|porta normalizzata» → gli oggetti che la porta sente via LLDP o CDP.
    * In T1 non si disegnano; le legge la misura (H5, H6, C8). Assente nei modelli costruiti a mano dalle prove.

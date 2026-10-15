@@ -26,7 +26,7 @@
  * UniFi non registrano i MAC degli altri apparati; trattare ogni MAC su una porta fisica come un cavo
  * dava ~230 collegamenti falsi sul cliente A. Il router non conta client. Logica pura.
  */
-import { LINK_ATTRS_DEFAULT, type MapLink, type MapNode, type PortClients, type TopologyModelInput } from "@/lib/topology/model-types";
+import { LINK_ATTRS_DEFAULT, type ClasseMappa, type MapLink, type MapNode, type PortClients, type TopologyModelInput } from "@/lib/topology/model-types";
 import { type NodeIndex, resolveNode } from "@/lib/topology/node-index";
 import { nodeClass } from "@/lib/topology/identity";
 import { nessunIgnorato, portaOccupata, type Ignorati } from "@/lib/topology/ignorati";
@@ -53,6 +53,8 @@ export interface OpzioniAttacco {
   ipervisori?: IpervisoriDi;
   /** Le regole del passaggio universale accese (spec §13.16; le spegne solo la misura C19). */
   regole?: Regole;
+  /** La classe nella mappa (T1b, §13.8.2): chi è «da sistemare» conta come un client e i MAC dietro di lui non lo rendono di passaggio. */
+  classe?: (n: MapNode) => ClasseMappa;
 }
 
 /**
@@ -69,7 +71,7 @@ function fisicaDelRouter(n: MapNode, porta: string): boolean {
 
 export function attachMacs(input: TopologyModelInput, idx: NodeIndex, links: MapLink[], opzioni: OpzioniAttacco = {}):
   { portClients: PortClients[]; clientCount: Record<string, number>; attachLinks: MapLink[] } {
-  const { vmMacs = new Set<string>(), runningVmMacs = new Map(), ignorati = nessunIgnorato(), segmenti = new Map(), ipervisori = new Map(), regole = REGOLE_T1 } = opzioni;
+  const { vmMacs = new Set<string>(), runningVmMacs = new Map(), ignorati = nessunIgnorato(), segmenti = new Map(), ipervisori = new Map(), regole = REGOLE_T1, classe = nodeClass } = opzioni;
   const vmEMacPropri = regole.has("vm-e-mac-propri");
   const portaDi = portaLocale(input);
   const portKey = (node: string, port: string) => `${node}|${normalizePortNameForMatch(port)}`;
@@ -98,8 +100,11 @@ export function attachMacs(input: TopologyModelInput, idx: NodeIndex, links: Map
     // Spec §13.7.8 (G9): i MAC propri dell'apparato che osserva non sono suoi client né suoi vicini; su un altro apparato
     // restano la prova del cavo. Uno switch vede il suo MAC sulla porta della CPU: prima era un suo client.
     if (vmEMacPropri && macProprio(idx, mac, node)) continue;
-    const fisica = (n.type === "router" || n.type === "firewall") && fisicaDelRouter(n, r.port_name);
-    cand.set(mac, [...(cand.get(mac) ?? []), { node, port: r.port_name, ts: r.timestamp, ms, counting: CLIENT_COUNTING.includes(n.type), fisica }]);
+    // T1b (§13.8.2): la tabella MAC di chi è «da sistemare» non conta client e non lo rende di passaggio, nemmeno come
+    // ripiego del router.
+    const fuori = classe(n) === "da_sistemare";
+    const fisica = (n.type === "router" || n.type === "firewall") && !fuori && fisicaDelRouter(n, r.port_name);
+    cand.set(mac, [...(cand.get(mac) ?? []), { node, port: r.port_name, ts: r.timestamp, ms, counting: CLIENT_COUNTING.includes(n.type) && !fuori, fisica }]);
   }
   const macsOn = (c: Cand): number => perPort.get(portKey(c.node, c.port))?.size ?? 0;
   const ordine = (x: Cand, y: Cand) =>
@@ -123,7 +128,9 @@ export function attachMacs(input: TopologyModelInput, idx: NodeIndex, links: Map
     const stale = input.nowMs - best.ms > soglia;
     const otherId = resolveNode(idx, { mac });
     const other = otherId ? idx.nodes.get(otherId) : undefined;
-    const apparato = other && nodeClass(other) !== "client" ? other : undefined;
+    // «Da sistemare» (T1b) come un client: finisce fra i client della porta, nessuna linea «tabella MAC».
+    const nonClient = !!other && !["client", "da_sistemare"].includes(classe(other));
+    const apparato = other && nonClient ? other : undefined;
     if (apparato) {
       for (const c of recent) {
         if (!c.fisica || c.node === apparato.id) continue;
@@ -131,7 +138,7 @@ export function attachMacs(input: TopologyModelInput, idx: NodeIndex, links: Map
         sullaPortaDelRouter.set(k, (sullaPortaDelRouter.get(k) ?? new Set()).add(apparato.id));
       }
     }
-    if (other && other.id !== best.node && nodeClass(other) !== "client") {
+    if (other && other.id !== best.node && nonClient) {
       // Spec §11.1: ciò che un router vede sul bridge o su una VLAN non prova nessun cavo. Una porta
       // fisica del router sì, ma solo come ripiego: si decide sotto, quando tutti i padri noti ci sono.
       if (!best.counting) {
@@ -171,18 +178,19 @@ export function attachMacs(input: TopologyModelInput, idx: NodeIndex, links: Map
     attachLinks.push(l);
   }
   attachLinks.push(...ripiegoRouter(idx, [...links, ...attachLinks], ripiego, sullaPortaDelRouter, linked, portKey, input.nowMs, soglia,
-    (router, porta, nodo) => portaOccupata(ignorati, router, portaDi(router, porta), nodo) || (vmEMacPropri && vmEIpervisore(ipervisori, router, nodo))));
+    (router, porta, nodo) => portaOccupata(ignorati, router, portaDi(router, porta), nodo) || (vmEMacPropri && vmEIpervisore(ipervisori, router, nodo)),
+    classe));
   const portClients = [...byPort.values()].sort((a, b) =>
     (a.nodeId < b.nodeId ? -1 : a.nodeId > b.nodeId ? 1 : 0) || a.port.localeCompare(b.port, "it", { numeric: true }));
   attachLinks.sort((a, b) => (a.id < b.id ? -1 : 1));
   return { portClients, clientCount, attachLinks };
 }
 
-/** Apparati di rete: possono stare sopra un altro apparato (lo switch, l'AP, un altro router). */
-function diRete(idx: NodeIndex, id: string): boolean {
+/** Apparati di rete: possono stare sopra un altro apparato (lo switch, l'AP, un altro router). «Da sistemare» no (T1b). */
+function diRete(idx: NodeIndex, id: string, classe: (n: MapNode) => ClasseMappa): boolean {
   const n = idx.nodes.get(id);
   if (!n) return false;
-  const k = nodeClass(n);
+  const k = classe(n);
   return k === "infra" || k === "ap";
 }
 
@@ -202,6 +210,7 @@ function ripiegoRouter(
   nowMs: number,
   soglia: number,
   bloccato: (router: string, porta: string, nodo: string) => boolean,
+  classe: (n: MapNode) => ClasseMappa,
 ): MapLink[] {
   const padri = new Map<string, Set<string>>();
   const figli = new Map<string, Set<string>>();
@@ -251,18 +260,18 @@ function ripiegoRouter(
     if ((padri.get(r.node)?.size ?? 0) > 0) continue;
     const t = idx.nodes.get(r.node)?.type;
     if (t !== "router" && t !== "firewall"
-      && [...(cavoProvato.get(r.node) ?? [])].some((z) => z !== router && !qui.has(z) && diRete(idx, z))) continue;
+      && [...(cavoProvato.get(r.node) ?? [])].some((z) => z !== router && !qui.has(z) && diRete(idx, z, classe))) continue;
     // (2) ogni altro apparato di rete su questa porta gli sta sotto.
     const giu = sotto(r.node, router);
-    if ([...qui].some((y) => y !== r.node && diRete(idx, y) && !giu.has(y))) continue;
+    if ([...qui].some((y) => y !== r.node && diRete(idx, y, classe) && !giu.has(y))) continue;
     buoni.set(k, [...(buoni.get(k) ?? []), r]);
   }
 
   const out: MapLink[] = [];
   for (const gruppo of buoni.values()) {
     // Due apparati di rete che passano la prova sulla stessa porta: non si sa chi sta sopra.
-    const rete = gruppo.filter((r) => diRete(idx, r.node));
-    const validi = rete.length > 1 ? gruppo.filter((r) => !diRete(idx, r.node)) : gruppo;
+    const rete = gruppo.filter((r) => diRete(idx, r.node, classe));
+    const validi = rete.length > 1 ? gruppo.filter((r) => !diRete(idx, r.node, classe)) : gruppo;
     for (const { node, c } of validi) {
       const key = [c.node, node].sort().join("|");
       if (linked.has(key)) continue;

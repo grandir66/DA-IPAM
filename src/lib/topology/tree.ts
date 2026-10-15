@@ -5,7 +5,7 @@
  */
 import { nodeClass } from "@/lib/topology/identity";
 import { linkCost } from "@/lib/topology/link-attrs";
-import { LINK_SOURCE_RANK, type MapLink, type MapNode, type TopologyModel } from "@/lib/topology/model-types";
+import { LINK_SOURCE_RANK, type ClasseMappa, type MapLink, type MapNode, type TopologyModel } from "@/lib/topology/model-types";
 
 export interface TreeResult {
   roots: string[];
@@ -40,8 +40,14 @@ function confronta(x: readonly number[], y: readonly number[]): number {
   return 0;
 }
 
+/** La classe nella mappa (spec §13.8.2, T1b): quella del modello dove è diversa da nodeClass, altrimenti nodeClass. */
+function classeDi(model: Pick<TopologyModel, "classiMappa">, n: MapNode): ClasseMappa {
+  return model.classiMappa?.[n.id] ?? nodeClass(n);
+}
+
 export function buildTree(model: TopologyModel, visible: ReadonlySet<string>, roots: readonly string[]): TreeResult {
   const nodes = new Map(model.nodes.map((n) => [n.id, n]));
+  const classe = (n: MapNode): ClasseMappa => classeDi(model, n);
   const adj = new Map<string, MapLink[]>();
   for (const l of model.links) {
     if (!visible.has(l.a) || !visible.has(l.b)) continue;
@@ -50,7 +56,7 @@ export function buildTree(model: TopologyModel, visible: ReadonlySet<string>, ro
   }
   // Un nodo con un principale scelto a mano si appende solo a quel collegamento (a meno che non sia irraggiungibile).
   // Un hypervisor senza scelta a mano si appende al suo collegamento preferito (spec §12.5), con la stessa regola.
-  const chosen = hypervisorPreferred(model, nodes, adj);
+  const chosen = hypervisorPreferred(model, nodes, adj, classe);
   for (const l of model.links) {
     if (l.primary === "user" && l.primaryFor && visible.has(l.a) && visible.has(l.b)) chosen.set(l.primaryFor, l);
   }
@@ -65,8 +71,9 @@ export function buildTree(model: TopologyModel, visible: ReadonlySet<string>, ro
     const pick = (strict: boolean) => {
       let best: { k: readonly number[]; from: string; to: string; l: MapLink } | null = null;
       for (const x of [...taken].sort()) {
-        const cls = nodeClass(nodes.get(x)!);
-        if (cls === "att" || cls === "client" || cls === "hyper") continue; // foglie: non fanno da ponte
+        const cls = classe(nodes.get(x)!);
+        // foglie: non fanno da ponte («da sistemare» compreso, T1b: in una mappa passo passo resta, come foglia — R2)
+        if (cls === "att" || cls === "client" || cls === "hyper" || cls === "da_sistemare") continue;
         for (const l of adj.get(x) ?? []) {
           const to = l.a === x ? l.b : l.a;
           if (taken.has(to)) continue;
@@ -92,7 +99,7 @@ export function buildTree(model: TopologyModel, visible: ReadonlySet<string>, ro
     .filter((x) => !taken.has(x) && nodes.has(x))
     .sort(
       (a, b) =>
-        Number(nodeClass(nodes.get(a)!) !== "infra") - Number(nodeClass(nodes.get(b)!) !== "infra") ||
+        Number(classe(nodes.get(a)!) !== "infra") - Number(classe(nodes.get(b)!) !== "infra") ||
         (adj.get(b)?.length ?? 0) - (adj.get(a)?.length ?? 0) ||
         (a < b ? -1 : 1),
     );
@@ -116,14 +123,15 @@ export function buildTree(model: TopologyModel, visible: ReadonlySet<string>, ro
  */
 function hypervisorPreferred(
   model: TopologyModel, nodes: ReadonlyMap<string, MapNode>, adj: ReadonlyMap<string, MapLink[]>,
+  classe: (n: MapNode) => ClasseMappa,
 ): Map<string, MapLink> {
   const hypers = new Set(model.vms.flatMap((v) => (v.hypervisorNodeId ? [v.hypervisorNodeId] : [])));
   const out = new Map<string, MapLink>();
   for (const [id, links] of adj) {
     const n = nodes.get(id);
     if (!n || (nodeClass(n) !== "hyper" && !hypers.has(id))) continue;
-    // Solo verso chi può fargli da padre: attaccati, client e hypervisor sono foglie nell'albero.
-    const padre = (l: MapLink) => { const o = nodes.get(l.a === id ? l.b : l.a); return !!o && !["att", "client", "hyper"].includes(nodeClass(o)); };
+    // Solo verso chi può fargli da padre: attaccati, client, hypervisor e «da sistemare» sono foglie nell'albero.
+    const padre = (l: MapLink) => { const o = nodes.get(l.a === id ? l.b : l.a); return !!o && !["att", "client", "hyper", "da_sistemare"].includes(classe(o)); };
     const dati = links.filter((l) => l.sources.some((s) => s !== "manual") && padre(l));
     if (dati.length < 2) continue;
     const best = [...dati].sort((x, y) =>
@@ -145,7 +153,8 @@ export function autoVisible(model: TopologyModel): Set<string> {
   const isolated = new Set(model.isolated);
   const linked = new Set(model.links.flatMap((l) => [l.a, l.b]));
   const inside = new Set(model.vms.flatMap((v) => (v.nodeId !== null && !linked.has(v.nodeId) ? [v.nodeId] : [])));
-  return new Set(model.nodes.filter((n) => nodeClass(n) !== "client" && !n.hidden && !isolated.has(n.id) && !inside.has(n.id)).map((n) => n.id));
+  // T1b (spec §13.8.2): «da sistemare» (senza prove di ruolo) resta fuori come un client.
+  return new Set(model.nodes.filter((n) => !["client", "da_sistemare"].includes(classeDi(model, n)) && !n.hidden && !isolated.has(n.id) && !inside.has(n.id)).map((n) => n.id));
 }
 
 /**
@@ -165,7 +174,8 @@ export function proposeHead(model: TopologyModel): string | null {
   let best: string | null = null;
   let size = -1;
   const reti = (id: string | null): number => (id ? (model.gatewayDi?.[id] ?? 0) : 0);
-  for (const n of model.nodes.filter((x) => x.kind === "device" && x.type === "router").sort((a, b) => a.refId - b.refId)) {
+  // Fra i router solo quelli che non sono «da sistemare» (T1b, spec §13.8.2).
+  for (const n of model.nodes.filter((x) => x.kind === "device" && x.type === "router" && model.classiMappa?.[x.id] !== "da_sistemare").sort((a, b) => a.refId - b.refId)) {
     const seen = new Set([n.id]);
     const q = [n.id];
     while (q.length) for (const y of fresh.get(q.shift()!) ?? []) if (!seen.has(y)) { seen.add(y); q.push(y); }
@@ -180,6 +190,6 @@ export function missingNeighbors(model: TopologyModel, nodeId: string, visible: 
   return model.links.filter((l) => {
     if (l.a !== nodeId && l.b !== nodeId) return false;
     const other = byId.get(l.a === nodeId ? l.b : l.a);
-    return !!other && !visible.has(other.id) && nodeClass(other) !== "client";
+    return !!other && !visible.has(other.id) && !["client", "da_sistemare"].includes(classeDi(model, other));
   });
 }

@@ -77,6 +77,8 @@ export const ATTESI: Atteso[] = [
   { rotta: "/api/credentials", metodi: ["POST"], livello: "admin-o-onboarding", motivo: MOTIVO_ONBOARDING },
   { rotta: "/api/devices", metodi: ["POST"], livello: "admin-o-onboarding", motivo: MOTIVO_ONBOARDING },
   { rotta: "/api/networks", metodi: ["POST"], livello: "admin-o-onboarding", motivo: MOTIVO_ONBOARDING },
+  // Tappa 4 credenziali (15/10): il punto raggiunto, letto all'apertura e salvato a ogni passo.
+  { rotta: "/api/onboarding/progresso", metodi: ["GET", "PUT"], livello: "admin-o-onboarding", motivo: MOTIVO_ONBOARDING },
   { rotta: "/api/settings", metodi: ["PUT"], livello: "admin-o-onboarding", motivo: MOTIVO_ONBOARDING },
   { rotta: "/api/tls", metodi: ["POST"], livello: "admin-o-onboarding", motivo: MOTIVO_ONBOARDING },
   {

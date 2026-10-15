@@ -1,8 +1,14 @@
 /**
  * Prova di un binding credenziale di un apparato (tappa 1 credenziali, 15/10):
  * spostata da /api/devices/[id]/credentials per poterla provare.
+ *
+ * SNMP (tappa 2, T4): il ramo v3 si decide dalla forma del segreto
+ * (`leggiSegretoDb(…, "snmp")` dà `v3` oppure `community`), mai dal tipo
+ * della voce. Prima una voce v3 rispondeva «Community mancante».
  */
 import { apriSessioneCommunity, etichettaVersioneSnmp, type VersioneSnmp } from "@/lib/protocols/snmp-sessione";
+import { leggiSegretoDb } from "@/lib/credentials/segreti";
+import { provaV3 } from "@/lib/protocols/snmpv3";
 import { safeDecrypt } from "@/lib/crypto";
 
 /** Esito della prova: i campi extra (`kind`, `hint`, `methodsOffered`, `methodsTried`)
@@ -68,8 +74,17 @@ export async function provaBinding(
       // da vedere, non una prova riuscita su un apparato che risponde a public.
       let community: string | null;
       if (binding.credential_id) {
-        const { getCredentialCommunityString } = await import("@/lib/db");
-        community = getCredentialCommunityString(binding.credential_id);
+        const { getDb } = await import("@/lib/db");
+        const esito = leggiSegretoDb(getDb(), binding.credential_id, "snmp");
+        if (!esito.ok) return { success: false, message: esito.motivo };
+        if (esito.segreto.forma === "v3") {
+          // Timer di 8 s come la community; la sessione aspetta il 60% (4,8 s).
+          const v3 = await provaV3(host, esito.segreto.record, { port: binding.port, timeoutMs: 8000 });
+          return v3.ok
+            ? { success: true, message: "SNMP raggiungibile (v3)" }
+            : { success: false, message: `SNMPv3: ${v3.error ?? "autenticazione non riuscita"}` };
+        }
+        community = esito.segreto.forma === "community" ? esito.segreto.community : null;
       } else {
         community = binding.inline_encrypted_password ? safeDecrypt(binding.inline_encrypted_password) : null;
       }

@@ -1,5 +1,5 @@
 import type { NetworkDevice } from "@/types";
-import { apriSessioneCommunity, versioneApparato } from "@/lib/protocols/snmp-sessione";
+import { apriSessioneSnmp, V3_ASSENTE, versioneApparato, type CredenzialeSnmp } from "@/lib/protocols/snmp-sessione";
 import {
   getDeviceCredentials,
   getDeviceCommunityString,
@@ -240,8 +240,12 @@ async function createSshSwitchClient(
 }
 
 /**
- * La sessione SNMP di un apparato come la apre la lettura degli switch: v3 se configurato; a community con la versione
- * dell'apparato (NULL = v1, come prima: createSession senza version).
+ * La sessione SNMP di un apparato come la apre la lettura degli switch, e con lei le letture della topologia
+ * (creaWalkSnmp). La v3 prende livello, protocolli e chiavi dal record; a community con la versione dell'apparato
+ * (NULL = v1, come prima: createSession senza version). Un apparato snmp_v3 senza una v3 leggibile lancia
+ * «Credenziale SNMPv3 assente o illeggibile» invece di ripiegare sulla community e su «public» (tappa 2
+ * credenziali, T4). La si chiama dentro l'executor di una Promise (snmpWalk qui sotto, walkConSessioneSua e
+ * getConSessioneSua di snmp-walk.ts): l'errore diventa il rifiuto della lettura.
  */
 export function apriSessioneSnmpApparato(snmp: typeof import("net-snmp"), device: NetworkDevice) {
   const isSnmpProtocol = device.protocol === "snmp_v2" || device.protocol === "snmp_v3";
@@ -250,19 +254,17 @@ export function apriSessioneSnmpApparato(snmp: typeof import("net-snmp"), device
   const rawPort = device.port || 0;
   const snmpPort = isSnmpProtocol && rawPort > 0 && rawPort !== 22 ? rawPort : 161;
   const opts = { port: snmpPort, timeout: 10000 };
+  let cred: CredenzialeSnmp;
   if (device.protocol === "snmp_v3") {
     const v3 = getDeviceSnmpV3Credentials(device);
-    if (v3) {
-      const user = {
-        name: v3.username,
-        level: snmp.SecurityLevel.authNoPriv,
-        authProtocol: snmp.AuthProtocols.md5,
-        authKey: v3.authKey ?? undefined,
-      };
-      return snmp.createV3Session(device.host, user, opts);
-    }
+    if (!v3) throw new Error(V3_ASSENTE);
+    cred = { forma: "v3", record: v3 };
+  } else {
+    cred = { forma: "community", community: getDeviceCommunityString(device) };
   }
-  return apriSessioneCommunity(snmp, device.host, getDeviceCommunityString(device), { ...opts, versione: versioneApparato(device, "1") });
+  const aperta = apriSessioneSnmp(snmp, device.host, cred, { ...opts, versione: versioneApparato(device, "1") });
+  if (!aperta.ok) throw new Error(aperta.motivo);
+  return aperta.session;
 }
 
 /**

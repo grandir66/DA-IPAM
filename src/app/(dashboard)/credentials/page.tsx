@@ -29,6 +29,7 @@ import {
 import { Plus, Trash2, Pencil, BookOpen } from "lucide-react";
 import { toast } from "sonner";
 import { WinRMSetupGuideDialog } from "@/components/shared/winrm-setup-guide-dialog";
+import { etichettaPrivacyV3, SNMP_V3_AUTH_PROTOCOLS, SNMP_V3_PRIV_PROTOCOLS } from "@/lib/protocols/snmp-sessione";
 
 interface Credential {
   id: number;
@@ -50,9 +51,6 @@ interface Credential {
 
 /** Porta standard per tipo di credenziale (la stessa di DEFAULT_PORTS in credentials/resolve.ts). */
 const PORTA_STANDARD: Record<string, number> = { ssh: 22, linux: 22, snmp: 161, windows: 5985, api: 443 };
-
-const SNMP_V3_AUTH_PROTOCOLS = ["MD5", "SHA", "SHA224", "SHA256", "SHA384", "SHA512"] as const;
-const SNMP_V3_PRIV_PROTOCOLS = ["DES", "AES", "AES192", "AES256"] as const;
 
 const emptyForm = {
   name: "",
@@ -461,7 +459,7 @@ export default function CredentialsPage() {
                             </SelectTrigger>
                             <SelectContent>
                               {SNMP_V3_PRIV_PROTOCOLS.map((p) => (
-                                <SelectItem key={p} value={p}>{p}</SelectItem>
+                                <SelectItem key={p} value={p}>{etichettaPrivacyV3(p)}</SelectItem>
                               ))}
                             </SelectContent>
                           </Select>

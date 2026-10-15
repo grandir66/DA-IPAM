@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
-import { getCredentialById, getCredentialCommunityString, getHostByIp, setHostCredentialValidatedByKey } from "@/lib/db";
+import { getCredentialById, getDb, getHostByIp, setHostCredentialValidatedByKey } from "@/lib/db";
 import { safeDecrypt } from "@/lib/crypto";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
-import { etichettaVersioneSnmp, provaVersioniSnmp } from "@/lib/protocols/snmp-sessione";
+import { portaCredenziale, type CredProtocol } from "@/lib/credentials/porte";
+import { provaCredenzialeSnmpDb } from "@/lib/credentials/prova-snmp";
 
 const TEST_TIMEOUT_MS = 25000;
 
@@ -22,6 +23,11 @@ function persistValidatedBinding(
   } catch (e) {
     console.warn("[credentials/test] persistValidatedBinding failed:", e);
   }
+}
+
+/** Porta della prova: quella chiesta nel corpo, poi quella propria della voce, poi lo standard. */
+function portaDiProva(body: { port?: unknown }, cred: { port?: number | null }, protocollo: CredProtocol): number {
+  return typeof body.port === "number" ? body.port : portaCredenziale({ port: cred.port ?? null }, protocollo);
 }
 
 async function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
@@ -55,24 +61,19 @@ export async function POST(
       const type = String(cred.credential_type || "").toLowerCase();
 
       if (type === "snmp") {
-        const community = getCredentialCommunityString(Number(id));
-        if (!community) {
-          return NextResponse.json({ success: false, error: "Community string mancante" });
-        }
+        // Ramo v3 o community dalla forma del segreto (tappa 2 credenziali, T4):
+        // prima una voce v3 rispondeva «Community string mancante».
         try {
-          const snmp = await import("net-snmp");
-          const port = typeof body.port === "number" ? body.port : 161;
-          // Senza apparato non si sa la versione: v2c, poi v1, e si dice quale ha risposto.
           const esito = await withTimeout(
-            provaVersioniSnmp(snmp, host, community, { port, timeoutMs: 8000, oids: ["1.3.6.1.2.1.1.1.0"] }),
+            provaCredenzialeSnmpDb(getDb(), Number(id), host, typeof body.port === "number" ? body.port : null),
             TEST_TIMEOUT_MS
           );
-          if (!esito.ok) throw new Error(`Connessione SNMP fallita (${esito.errore})`);
-          persistValidatedBinding(host, Number(id), "snmp", port);
+          if (!esito.success) return NextResponse.json({ success: false, error: esito.error });
+          persistValidatedBinding(host, Number(id), "snmp", esito.port);
           return NextResponse.json({
             success: true,
-            message: `Connessione SNMP riuscita (${etichettaVersioneSnmp(esito.versione)})`,
-            snmp_version: esito.versione,
+            message: esito.message,
+            ...(esito.snmp_version ? { snmp_version: esito.snmp_version } : {}),
           });
         } catch (e) {
           return NextResponse.json({
@@ -92,7 +93,7 @@ export async function POST(
           return NextResponse.json({ success: false, error: "Username e password richiesti" });
         }
         const { sshTryConnect } = await import("@/lib/devices/ssh-transport");
-        const port = typeof body.port === "number" ? body.port : 22;
+        const port = portaDiProva(body, cred, "ssh");
         const result = await withTimeout(
           sshTryConnect({ host, port, username, password, timeout: 15000, credentialName: cred.name }),
           TEST_TIMEOUT_MS
@@ -124,7 +125,7 @@ export async function POST(
         try {
           const { runWinrmCommand } = await import("@/lib/devices/winrm-run");
           const { getAdRealm } = await import("@/lib/db");
-          const port = typeof body.port === "number" ? body.port : 5985;
+          const port = portaDiProva(body, cred, "winrm");
           const adInfo = getAdRealm();
           await withTimeout(
             runWinrmCommand(host, port, username, password, "echo test", false, adInfo?.realm || ""),

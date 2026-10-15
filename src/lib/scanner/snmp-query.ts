@@ -9,7 +9,8 @@
 import { execFile } from "child_process";
 import { promisify } from "util";
 import type { NetworkDevice } from "@/types";
-import { apriSessioneCommunity, versioneApparato, type VersioneSnmp } from "@/lib/protocols/snmp-sessione";
+import { apriSessioneCommunity, apriSessioneSnmp, V3_ASSENTE, versioneApparato, type VersioneSnmp } from "@/lib/protocols/snmp-sessione";
+import type { SnmpV3CredentialRecord } from "@/lib/protocols/snmpv3";
 
 const execFileAsync = promisify(execFile);
 const OID_SYSDESCR = "1.3.6.1.2.1.1.1.0";
@@ -333,6 +334,8 @@ export async function snmpSubwalkLimited(
 /**
  * Walk SNMP subtree con sessione adeguata al device (v2c o v3).
  * SNMPv3: protocol snmp_v3 oppure credenziale SNMP dedicata (snmp_credential_id) con user+authKey.
+ * Un apparato snmp_v3 senza una v3 leggibile è un errore (tappa 2 credenziali,
+ * T4): niente ripiego sulla community e su «public».
  * NAS solo SSH: di solito v2c sulla porta 161 con community da device o default public.
  */
 export async function snmpSubwalkLimitedForDevice(
@@ -344,8 +347,9 @@ export async function snmpSubwalkLimitedForDevice(
 ): Promise<Array<{ oid: string; value: unknown }>> {
   const { getDeviceCommunityString, getDeviceSnmpV3Credentials, getEffectiveSnmpPort } = await import("@/lib/db");
   const v3 = getDeviceSnmpV3Credentials(device);
+  if (device.protocol === "snmp_v3" && !v3) throw new Error(V3_ASSENTE);
   if (v3 && (device.protocol === "snmp_v3" || device.snmp_credential_id != null)) {
-    return snmpSubwalkLimitedV3(device, baseOid, maxVarbinds, timeoutMs, maxRepetitions);
+    return snmpSubwalkLimitedV3(device, v3, baseOid, maxVarbinds, timeoutMs, maxRepetitions);
   }
   const community = getDeviceCommunityString(device);
   const port = device.protocol === "snmp_v2" || device.protocol === "snmp_v3" ? getEffectiveSnmpPort(device) : 161;
@@ -355,24 +359,20 @@ export async function snmpSubwalkLimitedForDevice(
 
 async function snmpSubwalkLimitedV3(
   device: NetworkDevice,
+  v3: SnmpV3CredentialRecord,
   baseOid: string,
   maxVarbinds: number,
   timeoutMs: number,
   maxRepetitions = 25
 ): Promise<Array<{ oid: string; value: unknown }>> {
-  const { getDeviceSnmpV3Credentials, getEffectiveSnmpPort } = await import("@/lib/db");
+  const { getEffectiveSnmpPort } = await import("@/lib/db");
   const snmp = await import("net-snmp");
-  const v3 = getDeviceSnmpV3Credentials(device);
-  if (!v3) return [];
   const port =
     device.protocol === "snmp_v2" || device.protocol === "snmp_v3" ? getEffectiveSnmpPort(device) : 161;
-  const user = {
-    name: v3.username,
-    level: snmp.SecurityLevel.authNoPriv,
-    authProtocol: snmp.AuthProtocols.md5,
-    authKey: v3.authKey ?? undefined,
-  };
-  const session = snmp.createV3Session(device.host, user, { port, timeout: Math.floor(timeoutMs * 0.5) });
+  // Livello, protocolli e chiavi dal record (prima authNoPriv/MD5 fissi).
+  const aperta = apriSessioneSnmp(snmp, device.host, { forma: "v3", record: v3 }, { port, timeout: Math.floor(timeoutMs * 0.5), versione: null });
+  if (!aperta.ok) throw new Error(aperta.motivo);
+  const session = aperta.session;
   const rows: Array<{ oid: string; value: unknown }> = [];
 
   return new Promise((resolve) => {

@@ -74,6 +74,58 @@ declare module "net-snmp" {
   function createSession(host: string, community: string, options?: SessionOptions): Session;
   function createV3Session(host: string, user: V3User, options?: SessionOptions): Session;
   function isVarbindError(varbind: Varbind): boolean;
+
+  // Agente (tappa 2 credenziali, T4): solo quello che serve all'agente SNMPv3
+  // delle prove (src/lib/protocols/__tests__/support/agente-snmp-v3.ts).
+  // Valori verificati su node_modules/net-snmp/index.js 3.26.1.
+  enum MibProviderType {
+    Scalar = 1,
+    Table = 2,
+  }
+
+  enum ObjectType {
+    OctetString = 4,
+    OID = 6,
+  }
+
+  enum MaxAccess {
+    "read-only" = 2,
+  }
+
+  interface MibScalarProvider {
+    name: string;
+    type: MibProviderType;
+    /** OID del nodo sopra l'istanza (senza ".0"). */
+    oid: string;
+    scalarType: ObjectType;
+    maxAccess: MaxAccess;
+  }
+
+  interface Mib {
+    registerProvider(provider: MibScalarProvider): void;
+    setScalarValue(name: string, value: string | number): void;
+  }
+
+  interface Authorizer {
+    addUser(user: V3User): void;
+  }
+
+  interface Agent {
+    getAuthorizer(): Authorizer;
+    getMib(): Mib;
+    close(callback?: () => void): void;
+  }
+
+  interface AgentOptions {
+    /** Porta 0 o assente = 161: la libreria non sceglie una porta libera. */
+    port?: number;
+    address?: string | null;
+    transport?: "udp4" | "udp6";
+    /** Fabbrica del socket: le prove la usano per sapere quando l'agente è in ascolto. */
+    dgramModule?: { createSocket(type: "udp4" | "udp6"): import("node:dgram").Socket };
+  }
+
+  function createAgent(options: AgentOptions, callback: (error: Error | null, data: unknown) => void): Agent;
 }
 
 declare module "oui" {

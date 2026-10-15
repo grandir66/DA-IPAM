@@ -266,3 +266,22 @@ test("I-2: le VM spente si leggono: restano nel modello col loro stato e i loro 
   const porta = m.portClients.find((p) => p.nodeId === `dev:${sw}` && p.port === "Port 7");
   assert.equal(porta?.clients.length ?? 0, 0, "il MAC della VM spenta non è un client della porta");
 });
+
+// Le schede vive non si leggevano mai: l'SSH usava `network_devices.port`, che per un Proxmox è la porta dell'API.
+test("SSH e schede vive sulla porta SSH (credenziale legata o 22), mai sulla porta dell'API dell'apparato", async () => {
+  const id = hypervisor();
+  getTenantDb(T).prepare("UPDATE network_devices SET port = 8006 WHERE id = ?").run(id);
+  const porte: Array<number | undefined> = [];
+  const conPorte = () => finti({
+    readSsh: async (c) => { porte.push(c.port); return { hosts: [], vms: structuredClone(CLUSTER.vms) }; },
+    readLive: async (c) => { porte.push(c.port); return structuredClone(LIVE); },
+  }).deps;
+  await withTenant(T, () => runProxmoxDeviceScan(id, conPorte()));
+  assert.deepEqual(porte, [22, 22]);
+  porte.length = 0;
+  getTenantDb(T)
+    .prepare("INSERT INTO device_credential_bindings (device_id, protocol_type, port, sort_order) VALUES (?, 'api', 8006, 0), (?, 'ssh', 2222, 1)")
+    .run(id, id);
+  await withTenant(T, () => runProxmoxDeviceScan(id, conPorte()));
+  assert.deepEqual(porte, [2222, 2222]);
+});

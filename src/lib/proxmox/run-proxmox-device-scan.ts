@@ -1,4 +1,4 @@
-import { getNetworkDeviceById, updateNetworkDevice, getDeviceCredentials, syncInventoryFromDevice } from "@/lib/db";
+import { getNetworkDeviceById, updateNetworkDevice, getDeviceCredentials, getDeviceCredentialBindings, syncInventoryFromDevice } from "@/lib/db";
 import { ProxmoxClient, resolveProxmoxApiPortOverride, type ProxmoxHostInfo, type ProxmoxVM } from "@/lib/proxmox/proxmox-client";
 import { extractProxmoxViaSsh, readLiveInterfaces, type ProxmoxSshConfig } from "@/lib/proxmox/proxmox-ssh";
 import { mergeProxmoxExtractResults } from "@/lib/proxmox/proxmox-merge-results";
@@ -11,6 +11,7 @@ import {
 import {
   buildProxmoxApiUrlForIp,
   MAX_PROXMOX_SCAN_TARGETS,
+  proxmoxSshPort,
   proxmoxSshUsername,
   resolveProxmoxTargetIps,
 } from "@/lib/proxmox/proxmox-targets";
@@ -137,6 +138,8 @@ export async function runProxmoxDeviceScan(
 
   const apiUsername = username.includes("@") ? username : `${username}@pam`;
   const sshUsername = proxmoxSshUsername(username);
+  // `device.port` è la porta dell'API (443/8006): l'SSH va sulla porta della credenziale SSH, o 22.
+  const sshPort = proxmoxSshPort(getDeviceCredentialBindings(device.id));
 
   const chunks: ProxmoxExtract[] = [];
   const partialErrors: string[] = [];
@@ -152,7 +155,7 @@ export async function runProxmoxDeviceScan(
       partialErrors.push(`API ${ip}: ${e instanceof Error ? e.message : String(e)}`);
     }
 
-    const ssh: ProxmoxSshConfig = { host: ip, port: device.port ?? 22, username: sshUsername, password };
+    const ssh: ProxmoxSshConfig = { host: ip, port: sshPort, username: sshUsername, password };
     try {
       chunks.push(await io.readSsh(ssh));
     } catch (e) {

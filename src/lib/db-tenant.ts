@@ -9560,6 +9560,12 @@ export function setNodeHidden(deviceId: number, hidden: boolean): Esito {
   return r.changes > 0 ? { ok: true } : { ok: false, error: "Apparato non trovato" };
 }
 
+/** «Ruolo nella mappa» (T1b, spec §13.8.2): '' decide il sistema, 'rete' apparato di rete, 'attaccato' foglia (server, PC). */
+export function setTopologyRole(deviceId: number, role: "" | "rete" | "attaccato"): Esito {
+  const r = db().prepare("UPDATE network_devices SET topology_role = ? WHERE id = ?").run(role, deviceId);
+  return r.changes > 0 ? { ok: true } : { ok: false, error: "Apparato non trovato" };
+}
+
 // `extends` non accetta un `import(...)` diretto: passa da un alias di tipo.
 type LinkOverrideRowT = import("@/lib/topology/model-types").LinkOverrideRow;
 

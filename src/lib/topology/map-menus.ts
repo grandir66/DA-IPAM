@@ -34,6 +34,8 @@ export interface NodeMenuCtx {
   addableCount: number;
   /** VM non censita (`vm:N:M`): non si collega a mano (revisione finale I-1). */
   isUncensusedVm: boolean;
+  /** Il ruolo nella mappa di un apparato ('' = decide il sistema); null per un host o una VM (T1b, spec §13.8.2). */
+  ruolo: RuoloMappa | null;
 }
 
 /** Una VM non censita: un nodo della pagina, non un capo di collegamento del modello. */
@@ -48,7 +50,7 @@ export function connectRefusal(a: string, b: string): string | null {
 }
 
 export type NodeMenuKey =
-  | "details" | "toggleVms" | "refreshVms" | "connect" | "addLinked" | "start" | "head" | "remove" | "hide" | "promote";
+  | "details" | "toggleVms" | "refreshVms" | "connect" | "addLinked" | "start" | "head" | "remove" | "role" | "hide" | "promote";
 
 export interface MenuItem<K extends string> {
   key: K;
@@ -68,9 +70,19 @@ export function nodeMenuItems(c: NodeMenuCtx): Array<MenuItem<NodeMenuKey>> {
   if (passo && c.inMap) out.push(c.isStart ? { key: "start", label: "▶ è una partenza", disabled: true } : { key: "start", label: "Usa come partenza" });
   if (c.mode === "auto" && c.isAdmin) out.push(c.isHead ? { key: "head", label: "● è la testa", disabled: true } : { key: "head", label: "Usa come testa" });
   if (passo && c.inMap) out.push({ key: "remove", label: "Togli dalla mappa" });
+  if (c.isAdmin && c.isDevice && c.ruolo !== null) out.push({ key: "role", label: "Ruolo nella mappa" });
+  else if (c.isAdmin && c.infraHost) out.push({ key: "role", label: "Ruolo nella mappa: prima Promuovi ad apparato", disabled: true });
   if (c.isAdmin && c.isDevice) out.push({ key: "hide", label: c.hidden ? "Rimostra in tutte le mappe" : "Nascondi da tutte le mappe" });
   if (c.isAdmin && c.infraHost) out.push({ key: "promote", label: "Promuovi ad apparato" });
   return out;
+}
+
+export type RuoloMappa = "" | "rete" | "attaccato";
+
+/** Le voci di «Ruolo nella mappa ▸» nell'ordine della spec §13.8.2; quella di adesso porta «✓» (il segno è testo, non colore). */
+export function ruoloVoci(attuale: RuoloMappa): Array<{ value: RuoloMappa; label: string }> {
+  const voci: Array<[RuoloMappa, string]> = [["rete", "Apparato di rete"], ["attaccato", "Attaccato (server, PC)"], ["", "Decide il sistema"]];
+  return voci.map(([value, label]) => ({ value, label: value === attuale ? `✓ ${label}` : label }));
 }
 
 export type EdgeMenuKey = "editPorts" | "primary" | "unprimary" | "remove" | "ignore";

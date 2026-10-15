@@ -124,3 +124,8 @@ test("un MAC virtuale non identifica nessuno: né dall'host assorbito, né dall'
   assert.equal(resolveNode(idx, { mac: "00:00:0c:07:ac:02" }), null);
   assert.equal(idx.byMac.size, 0);
 });
+
+test("T1b — il ruolo scelto a mano arriva sul nodo dell'apparato; vuoto o assente, niente", () => {
+  const idx = buildNodeIndex([dev(1, { topology_role: "rete" }), dev(2, { topology_role: "" }), dev(3)], [], []);
+  assert.deepEqual([1, 2, 3].map((i) => idx.nodes.get(`dev:${i}`)!.ruolo), ["rete", undefined, undefined]);
+});

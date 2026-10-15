@@ -213,3 +213,13 @@ test("ritocchi con l'orientamento: obbligatorio per salvarli, facoltativo per «
     ok: true, data: { view: "mappa:2", clear: true, tweaks: [], rename: [], orientation: "tb" },
   });
 });
+
+test("ruolo nella mappa (T1b): solo gli apparati, solo i tre valori di oggi", async () => {
+  const m = await import("@/lib/topology/api-input");
+  assert.deepEqual(m.parseNodeRoleBody({ node_id: "dev:7", role: "rete" }), { ok: true, data: { deviceId: 7, role: "rete" } });
+  assert.deepEqual(m.parseNodeRoleBody({ node_id: "dev:7", role: "" }), { ok: true, data: { deviceId: 7, role: "" } });
+  assert.deepEqual(m.parseNodeRoleBody({ node_id: "host:7", role: "rete" }),
+    { ok: false, error: "Il ruolo nella mappa si sceglie solo per un apparato: un host prima si promuove ad apparato" });
+  assert.equal(m.parseNodeRoleBody({ node_id: "dev:7", role: "core" }).ok, false, "«core» e «accesso» arrivano in T3 (§13.9)");
+  assert.equal(m.parseNodeRoleBody({ node_id: "dev:7" }).ok, false);
+});

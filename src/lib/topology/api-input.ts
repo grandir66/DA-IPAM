@@ -311,3 +311,18 @@ export function parseHiddenBody(raw: unknown): Parsed<{ deviceId: number; hidden
   const r = hiddenSchema.safeParse(raw);
   return r.success ? { ok: true, data: { deviceId: Number(r.data.node_id.slice(4)), hidden: r.data.hidden } } : { ok: false, error: first(r.error) };
 }
+
+const roleSchema = z.object(
+  {
+    node_id: z.string({ error: "Apparato non valido" })
+      .regex(/^dev:\d+$/, "Il ruolo nella mappa si sceglie solo per un apparato: un host prima si promuove ad apparato"),
+    // Da T3 anche «core» e «accesso» (spec §13.9): oggi la rotta non li accetta.
+    role: z.enum(["", "rete", "attaccato"], { error: "Ruolo non valido: «» (decide il sistema), «rete» o «attaccato»" }),
+  },
+  BODY,
+);
+
+export function parseNodeRoleBody(raw: unknown): Parsed<{ deviceId: number; role: "" | "rete" | "attaccato" }> {
+  const r = roleSchema.safeParse(raw);
+  return r.success ? { ok: true, data: { deviceId: Number(r.data.node_id.slice(4)), role: r.data.role } } : { ok: false, error: first(r.error) };
+}

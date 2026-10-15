@@ -31,6 +31,7 @@ import { isNaabuAvailable, runNaabuTcpPorts } from "./naabu";
 import { readArpCache as _localReadArpCache } from "./arp-cache";
 import { lookupVendor } from "./mac-vendor";
 import { querySnmpInfoMultiCommunity, querySnmpSysGroupMultiCommunity, normalizeOidString } from "./snmp-query";
+import { etichettaVersioneSnmp, type VersioneSnmp } from "@/lib/protocols/snmp-sessione";
 import { classifyDeviceDetailed } from "@/lib/device-classifier";
 import {
   getClassificationFromFingerprintSnapshot,
@@ -56,6 +57,7 @@ import {
   getEnabledDeviceFingerprintRules,
   getNetworkDeviceByHost,
   getNetworkDeviceByHostId,
+  registraVersioneSnmpRilevata,
   findExistingBinding,
   addDeviceCredentialBinding,
   updateBindingTestStatus,
@@ -172,6 +174,42 @@ function autoBindCredentialToDevice(
     });
     updateBindingTestStatus(binding.id, "success", "Auto-detect riuscito");
   } catch { /* ignore: device non trovato o duplicato */ }
+}
+
+/**
+ * Salva sull'apparato collegato all'host la versione SNMP che ha risposto alla
+ * discovery (v2c, poi v1) e lo scrive nel registro del giro. Non tocca una
+ * versione fissata a mano: se differisce lo dice. Un errore si scrive nel
+ * registro, non si inghiotte. Incidente: DTS 2026-10-15, AP solo v1.
+ */
+function registraVersioneSnmpApparato(
+  hostIp: string,
+  versione: VersioneSnmp | null | undefined,
+  log: (msg: string) => void,
+  hostId?: number | null
+): void {
+  if (!versione) return;
+  const v = etichettaVersioneSnmp(versione);
+  try {
+    const device = (hostId != null ? getNetworkDeviceByHostId(hostId) : undefined) ?? getNetworkDeviceByHost(hostIp);
+    if (!device) {
+      if (versione === "1") log(`SNMP ${hostIp}: risponde solo in v1 (nessun apparato collegato su cui salvarlo)`);
+      return;
+    }
+    if (device.snmp_version_fissata === 1) {
+      if (device.snmp_version && device.snmp_version !== versione) {
+        log(`SNMP ${hostIp}: risponde in ${v}, ma su «${device.name}» è fissata a mano la ${etichettaVersioneSnmp(device.snmp_version)}: non la cambio`);
+      }
+      return;
+    }
+    const scritto = registraVersioneSnmpRilevata(device.id, versione);
+    if (scritto) {
+      const prima = scritto.prima ? etichettaVersioneSnmp(scritto.prima) : "non rilevata";
+      log(`SNMP ${hostIp}: risponde in ${v}${versione === "1" ? " (v2c muta)" : ""} → salvata su «${device.name}» (prima: ${prima})`);
+    }
+  } catch (e) {
+    log(`SNMP ${hostIp}: versione ${v} non salvata sull'apparato: ${e instanceof Error ? e.message : String(e)}`);
+  }
 }
 
 /**
@@ -931,6 +969,7 @@ async function runDiscovery(
         );
         for (const r of batchResults) {
           if (!r) continue;
+          registraVersioneSnmpApparato(r.ip, r.snmpVersion, log);
           if (!onlineIps.includes(r.ip)) onlineIps.push(r.ip);
           const parsedSnmp = parseModelFromSysDescr(r.sysDescr ?? null);
           nmapResults.set(r.ip, {
@@ -1261,7 +1300,7 @@ async function runDiscovery(
               try {
                 const r = await querySnmpSysGroupMultiCommunity(ip, communities, 161);
                 if (r.sysObjectID) {
-                  return { ip, sysObjectID: r.sysObjectID, sysName: r.sysName ?? null, sysDescr: r.sysDescr ?? null };
+                  return { ip, sysObjectID: r.sysObjectID, sysName: r.sysName ?? null, sysDescr: r.sysDescr ?? null, snmpVersion: r.snmpVersion };
                 }
               } catch { /* ignore */ }
               return null;
@@ -1269,6 +1308,7 @@ async function runDiscovery(
           );
           for (const r of batchResults) {
             if (!r) continue;
+            registraVersioneSnmpApparato(r.ip, r.snmpVersion, log);
             const match = lookupSysObjectId(r.sysObjectID);
             const prev = nmapResults.get(r.ip);
             const ports = prev?.ports ? [...prev.ports] : [];
@@ -1732,6 +1772,7 @@ async function runDiscovery(
       );
       for (const r of results) {
         if (r) {
+          registraVersioneSnmpApparato(r.ip, r.snmpVersion, log, ipToHostId.get(r.ip) ?? null);
           const existing = nmapResults.get(r.ip);
           const parsedSnmp = parseModelFromSysDescr(r.sysDescr ?? null);
           const snmpManufacturerOnly = inferManufacturerFromSnmp(r.sysDescr ?? null, r.sysObjectID ?? null, r.fingerprintOidMatches ?? null);
@@ -1995,6 +2036,7 @@ async function runDiscovery(
             log(
               `✓ ${ip} → ${r.sysName || "—"} (${r.sysDescr?.slice(0, 50) || "—"})${extra ? ` [${extra}]` : ""}${walkHint ? ` {${walkHint}}` : ""}${fpOidHint ? ` [FP: ${fpOidHint}]` : ""}`
             );
+            registraVersioneSnmpApparato(ip, r.snmpVersion, log, hid);
             return { ip, ...r };
           }
           log(`✗ ${ip} — nessuna risposta SNMP`);
@@ -2214,6 +2256,7 @@ async function runDiscovery(
         const ip = batch[bi];
         const r = snmpRows[bi];
         if (!r.sysName && !r.sysDescr && !r.sysObjectID) continue;
+        registraVersioneSnmpApparato(ip, r.snmpVersion, log, ipToHostIdSnmp.get(ip) ?? null);
         const prev = nmapResults.get(ip) ?? { ports: [], os: null, mac: null };
         const parsed = parseModelFromSysDescr(r.sysDescr ?? null);
         const mergedPorts = [...prev.ports];
@@ -2492,6 +2535,7 @@ async function runDiscovery(
             if (r.sysName || r.sysDescr || r.sysObjectID) {
               recordCredentialSuccess(host.id, credId, "snmp", 161);
               autoBindCredentialToDevice(ip, credId, "snmp", 161, host.id);
+              registraVersioneSnmpApparato(ip, r.snmpVersion, log, host.id);
               runBudget.recordSuccess(credId);
               log(`✓ ${ip}:161 SNMP cred#${credId} (${nc.credential_name})`);
               validated++;

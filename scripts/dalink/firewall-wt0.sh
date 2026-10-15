@@ -14,7 +14,9 @@
 #                               spazi o virgole. Senza, la barriera è la policy NetBird.
 #
 # Cosa fa (spec NetBird §12 «DA-IPAM», §4.3 R5, rischio 10, decisione 22):
-# - una tabella propria `inet dalink`, catena sull'input: lascia passare tutto ciò che
+# - una tabella propria `inet dalink`, catena sul PREROUTING (non sull'input: NetBird,
+#   collegandosi, mette `iifname "wt0" accept` in cima alle catene sull'input che trova,
+#   e il filtro non conterebbe più — visto sul pilota il 15/10): lascia passare tutto ciò che
 #   non arriva da wt0; su wt0 accetta le connessioni già aperte e le porte 22 e 443,
 #   più 6443 con l'edge; poi scarta.
 # - Restringe soltanto: in nftables l'accept di una catena non scavalca le altre, quindi
@@ -124,7 +126,7 @@ table $TABELLA
 delete table $TABELLA
 table $TABELLA {
 	chain ingresso_wt0 {
-		type filter hook input priority filter - 10; policy accept;
+		type filter hook prerouting priority mangle + 10; policy accept;
 		iifname != "$IFACE" accept
 		ct state established,related accept
 		ct state invalid drop

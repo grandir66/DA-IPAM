@@ -15,6 +15,7 @@ import { resolveDeviceAcquisition } from "@/lib/devices/device-acquisition-resol
 import { runProxmoxDeviceScan } from "@/lib/proxmox/run-proxmox-device-scan";
 import { getScanProgress } from "@/lib/scanner/discovery";
 import type { ScanProgress } from "@/types";
+import { apriSessioneCommunity, versioneApparato } from "@/lib/protocols/snmp-sessione";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Progress tracking (stessa map globale usata da discovery.ts)
@@ -283,7 +284,8 @@ async function runRouterQuery(deviceId: number, device: Parameters<typeof create
     const { getSnmpStpInfo } = await import("@/lib/devices/snmp-stp-info");
     const snmpMod = await import("net-snmp");
     const community = getDeviceCommunityString(device);
-    const session = snmpMod.createSession(device.host, community, { port: 161, timeout: 5000 });
+    // NULL = v1, come prima (createSession senza version).
+    const session = apriSessioneCommunity(snmpMod, device.host, community, { port: 161, timeout: 5000, versione: versioneApparato(device, "1") });
     let sessionClosed = false;
     const safeClose = () => { if (!sessionClosed) { sessionClosed = true; try { session.close(); } catch { /* */ } } };
     const snmpWalk = (oid: string) => new Promise<{ oid: string; value: Buffer | string | number }[]>((resolve) => {

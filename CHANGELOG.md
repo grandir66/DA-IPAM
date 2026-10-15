@@ -6,8 +6,6 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ## [Non rilasciato] — 2026-10-15 · topologia: elenco aggiornato tornando sulla pagina
 
-Ramo `fix/topologia-elenco-aggiornato`, non ancora su `dev`.
-
 ### Correzioni
 
 - **Tornando sulla Topologia da un'altra scheda o finestra, elenco e mappa si rileggono subito.**
@@ -19,6 +17,55 @@ Ramo `fix/topologia-elenco-aggiornato`, non ancora su `dev`.
   rilegge appena torna visibile o la finestra torna a fuoco, con una lettura sola anche quando i
   due segnali arrivano insieme. Le modifiche fatte dalla mappa stessa e il ritorno con i link del
   menu già si vedevano subito: verificato una per una.
+
+## [Non rilasciato] — 2026-10-15 · firewall NetBird sul prerouting
+
+### Correzioni
+
+- **Il segnale verso DA-Link legge l'appliance a cliente singolo.** Deploy-Appliance crea
+  sempre il cliente «DEFAULT», e il codice di DA-Link (es. 70175) lì non c'è: sul pilota il
+  segnale partiva senza moduli, salute né numeri (`cliente: non_trovato`). Ora, se il codice
+  non c'è e l'istanza ha un solo cliente «DEFAULT», si legge da lui e il segnale lo dichiara
+  (`cliente: appliance`). Con più clienti vale ancora solo il codice esatto (rischio 8).
+- **Il firewall dell'interfaccia NetBird ora filtra davvero.** Sul pilota (PX-NAS, 15/10)
+  NetBird, collegandosi, ha messo «accetta tutto da wt0» in cima alla nostra catena
+  sull'input, e il filtro per porta (22, 443, 6443) non contava più: restava solo la
+  policy NetBird. La catena ora sta sul prerouting, dove NetBird non inserisce niente e
+  uno scarto è definitivo (provato riavviando NetBird e bussando dal Mac: 22/443/6443
+  aperte, 7443/8443/3000/5432 chiuse dal nostro filtro). Il segnale dichiara le porte
+  del filtro solo se la catena sta lì; altrimenti ripiega sulle porte in ascolto, per
+  non dare a DA-Link (R5) un dato falso.
+
+## [0.3.286] — 2026-10-15 · versione SNMP per apparato
+
+Versione SNMP per apparato e firmware degli airFiber Ubiquiti (ADR 0016), approvati da Riccardo il 15/10.
+
+### Aggiunte
+
+- **Ogni apparato ricorda in che versione SNMP risponde (v1 o v2c).** La discovery prova prima la
+  v2c, come prima, e sugli host accesi che tacciono riprova in v1; la versione che risponde finisce
+  sull'apparato collegato e nel registro del giro («risponde in v1 (v2c muta) → salvata su …»).
+  Perché: gli AP Ubiquiti di DTS (172.16.3.4-7) rispondono **solo** in v1 e in v2c vanno in timeout,
+  quindi la discovery non li vedeva. La passata sugli IP che non rispondono al ping resta solo v2c:
+  la v1 lì raddoppierebbe il tempo su centinaia di indirizzi vuoti.
+- **Scelta a mano nel modulo dell'apparato**: «Automatica (rilevata: v1)», «v1, fissata a mano»,
+  «v2c, fissata a mano». Una versione fissata la discovery non la tocca (e lo dice nel registro se
+  vede altro); la scheda mostra la versione accanto all'accesso SNMP. Perché: se la discovery
+  sbaglia, ci dev'essere un modo di correggerla.
+- **Il test di una credenziale SNMP prova v2c e poi v1 e dice quale ha risposto** (anche
+  `/api/test-snmp`). Perché: prima provava solo la v1, per caso, e non diceva niente.
+- **Firmware degli airFiber Ubiquiti nella lettura dati** (`1.3.6.1.4.1.41112.1.3.2.1.40.1`, es.
+  «v4.1.0»), con «airFiber» come modello quando nient'altro lo dice: il MIB airFiber non espone il
+  nome del prodotto (letto tutto il ramo 41112 su un AP di DTS, sola lettura).
+
+### Modifiche
+
+- **Un solo punto apre le sessioni SNMP a community** (`src/lib/protocols/snmp-sessione.ts`), sempre
+  con la versione esplicita. In net-snmp `createSession` senza `version` parla **v1** e `version: 1`
+  vuol dire **v2c**: la discovery forzava v2c, mentre lettura dati, client switch/router, sonda
+  interfacce e test credenziali parlavano v1 per caso. **Un apparato non ancora rilevato si comporta
+  esattamente come prima**: ogni punto dichiara la versione che usava. Una prova fallisce se nasce un
+  `createSession(` fuori dal modulo.
 
 ## [Non rilasciato] — 2026-10-15 · mappa: ritocchi e VM, SSH degli hypervisor
 

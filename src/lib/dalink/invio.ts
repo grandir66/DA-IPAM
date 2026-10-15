@@ -27,7 +27,7 @@ export interface DipendenzeGiro {
   config: () => ConfigDalink;
   livello: () => Livello | null;
   statoPrecedente: () => StatoSegnale | null;
-  fatti: (codcli: string, ultimoErrore: string | null) => Promise<{ fatti: FattiIstanza; clienteTrovato: boolean }>;
+  fatti: (codcli: string, ultimoErrore: string | null) => Promise<{ fatti: FattiIstanza; clienteTrovato: boolean; tenant?: string | null }>;
   inventario: (codcli: string) => Inventario | null;
   trasporto: (url: URL, impronta: string, token: string, corpo: string) => Promise<RispostaDalink>;
   ora: () => Date;
@@ -101,8 +101,8 @@ export async function giroSegnale(dip: Partial<DipendenzeGiro> = {}): Promise<Es
 
   let corpo: string;
   try {
-    const { fatti, clienteTrovato } = await d.fatti(cfg.codcli, ultimoErrore);
-    const segnale = costruisciSegnale(cfg, livello, fatti, () => (clienteTrovato ? d.inventario(cfg.codcli) : null));
+    const { fatti, clienteTrovato, tenant } = await d.fatti(cfg.codcli, ultimoErrore);
+    const segnale = costruisciSegnale(cfg, livello, fatti, () => (clienteTrovato ? d.inventario(tenant ?? cfg.codcli) : null));
     corpo = JSON.stringify(segnale);
   } catch {
     return chiudi({ esito: "errore", dettaglio: "errore nella raccolta dei dati dell'istanza: segnale non inviato" });

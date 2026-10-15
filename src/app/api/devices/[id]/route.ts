@@ -159,6 +159,22 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     if (body.port !== undefined) updates.port = body.port;
     if (body.enabled !== undefined) updates.enabled = body.enabled;
     if (body.scan_target !== undefined) updates.scan_target = body.scan_target;
+    // Versione SNMP: «1»/«2c» la fissa a mano; «auto» la restituisce alla discovery
+    // (che la riscrive al prossimo giro). Un valore sconosciuto è un errore, non un default.
+    if (body.snmp_version_scelta !== undefined) {
+      const scelta = body.snmp_version_scelta;
+      if (scelta === "1" || scelta === "2c") {
+        updates.snmp_version = scelta;
+        updates.snmp_version_fissata = 1;
+      } else if (scelta === "auto") {
+        if (existing.snmp_version_fissata === 1) {
+          updates.snmp_version = null;
+          updates.snmp_version_fissata = 0;
+        }
+      } else {
+        return NextResponse.json({ error: "Versione SNMP non valida: auto, 1 o 2c" }, { status: 400 });
+      }
+    }
     if (body.use_for_arp_poll !== undefined) {
       updates.use_for_arp_poll = body.use_for_arp_poll === 1 || body.use_for_arp_poll === true ? 1 : 0;
     }

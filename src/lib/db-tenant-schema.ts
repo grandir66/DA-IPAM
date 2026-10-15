@@ -187,6 +187,10 @@ CREATE TABLE IF NOT EXISTS network_devices (
   uplink_mac TEXT,
   uplink_remote_port INTEGER,
   uplink_seen_at TEXT,
+  -- Versione SNMP a community ('1' | '2c'). NULL = non rilevata: ogni punto parla come prima
+  -- (src/lib/protocols/snmp-sessione.ts). snmp_version_fissata = 1: scelta a mano, la discovery non la tocca.
+  snmp_version TEXT CHECK(snmp_version IN ('1', '2c')),
+  snmp_version_fissata INTEGER NOT NULL DEFAULT 0,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );

@@ -27,6 +27,8 @@ import { CardDescription } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { etichettaVersioneSnmp } from "@/lib/protocols/snmp-sessione";
 import { DeviceFormFields } from "@/components/shared/device-form-fields";
 import { DeviceCredentialsTable } from "@/components/shared/device-credentials-table";
 import { getClassificationLabel } from "@/lib/device-classifications";
@@ -36,6 +38,13 @@ import { networkDeviceUsesArpPoll } from "@/lib/network-device-arp";
 import { DeviceLocationField } from "@/components/topology/device-location-field";
 import { toast } from "sonner";
 import type { NetworkDevice } from "@/types";
+
+/** «auto» = la sceglie la discovery (v2c, poi v1); «1»/«2c» = fissata a mano. */
+type SceltaVersioneSnmp = "auto" | "1" | "2c";
+
+function sceltaVersioneSnmp(device: NetworkDevice): SceltaVersioneSnmp {
+  return device.snmp_version_fissata === 1 && device.snmp_version ? device.snmp_version : "auto";
+}
 
 interface EditDeviceDialogProps {
   device: NetworkDevice;
@@ -54,6 +63,7 @@ export function EditDeviceDialog({ device, open, onOpenChange, onSaved }: EditDe
   const [editProductProfile, setEditProductProfile] = useState<string | null>((device as { product_profile?: string | null }).product_profile ?? null);
   const [editClassification, setEditClassification] = useState<string>((device as { classification?: string | null }).classification ?? "");
   const [editUseForArpPoll, setEditUseForArpPoll] = useState<boolean>(() => networkDeviceUsesArpPoll(device));
+  const [editSnmpVersione, setEditSnmpVersione] = useState<SceltaVersioneSnmp>(() => sceltaVersioneSnmp(device));
   const [editSaving, setEditSaving] = useState(false);
   const saveLocation = useRef<() => Promise<string | null>>(async () => null);
   const registerLocationSave = useCallback((f: () => Promise<string | null>) => {
@@ -72,6 +82,7 @@ export function EditDeviceDialog({ device, open, onOpenChange, onSaved }: EditDe
     setEditProductProfile((device as { product_profile?: string | null }).product_profile ?? null);
     setEditClassification((device as { classification?: string | null }).classification ?? "");
     setEditUseForArpPoll(networkDeviceUsesArpPoll(device));
+    setEditSnmpVersione(sceltaVersioneSnmp(device));
   }, [device]);
 
   // Carica credenziali quando il modale si apre
@@ -101,6 +112,7 @@ export function EditDeviceDialog({ device, open, onOpenChange, onSaved }: EditDe
     if (editProductProfile) body.product_profile = editProductProfile;
     if (editClassification) body.classification = editClassification;
     body.use_for_arp_poll = editUseForArpPoll ? 1 : 0;
+    if (editSnmpVersione !== sceltaVersioneSnmp(device)) body.snmp_version_scelta = editSnmpVersione;
     formData.forEach((val, key) => {
       if (key === "password" || key === "community_string") {
         if (val && String(val).trim()) body[key] = val;
@@ -236,6 +248,26 @@ export function EditDeviceDialog({ device, open, onOpenChange, onSaved }: EditDe
               onUseForArpPollChange={setEditUseForArpPoll}
               defaultUseForArpPoll={editClassification === "router" || editClassification === "firewall"}
             />
+
+            {editProtocol !== "snmp_v3" && (
+              <div className="space-y-1">
+                <Label className="text-xs">Versione SNMP</Label>
+                <Select value={editSnmpVersione} onValueChange={(v) => setEditSnmpVersione((v ?? "auto") as SceltaVersioneSnmp)}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="auto">
+                      {device.snmp_version && device.snmp_version_fissata !== 1
+                        ? `Automatica (rilevata: ${etichettaVersioneSnmp(device.snmp_version)})`
+                        : "Automatica (non ancora rilevata)"}
+                    </SelectItem>
+                    <SelectItem value="1">v1, fissata a mano</SelectItem>
+                    <SelectItem value="2c">v2c, fissata a mano</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             <DeviceLocationField deviceId={device.id} onReady={registerLocationSave} />
 

@@ -2,7 +2,13 @@ declare module "net-snmp" {
   interface SessionOptions {
     port?: number;
     timeout?: number;
+    retries?: number;
+    /** Version1 (0) o Version2c (1). Assente = v1: si passa sempre da src/lib/protocols/snmp-sessione.ts. */
+    version?: number;
   }
+
+  const Version1: number;
+  const Version2c: number;
 
   interface Varbind {
     oid: string;

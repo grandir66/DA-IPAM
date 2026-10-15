@@ -220,3 +220,18 @@ test("un'eccezione inattesa nella raccolta dei fatti non fa partire niente e si 
   assert.equal(s.chiamate(), 0);
   assert.match(statoSegnale()?.dettaglio ?? "", /raccolta/);
 });
+
+test("appliance a cliente singolo: l'inventario si legge dal cliente risolto (DEFAULT), non dal codice di DA-Link", async () => {
+  const letti: string[] = [];
+  impostaLivello("stato_inventario", "u", new Date(Date.UTC(2026, 9, 15, 8, 0)));
+  const s = spia(async () => ({ status: 200, body: "{}" }), {
+    fatti: async () => ({ fatti: FATTI, clienteTrovato: true, tenant: "DEFAULT" }),
+    inventario: (c: string) => {
+      letti.push(c);
+      return INV;
+    },
+  });
+  await giroSegnale(s.dip);
+  assert.deepEqual(letti, ["DEFAULT"]);
+  assert.deepEqual((JSON.parse(s.corpi[0]) as { inventario: unknown }).inventario, INV);
+});

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
+import { apriSessioneCommunity, etichettaVersioneSnmp, versioneApparato, type VersioneSnmp } from "@/lib/protocols/snmp-sessione";
 import {
   getNetworkDeviceById,
   getDeviceCredentialBindings,
@@ -151,7 +152,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       const binding = bindings.find((b) => b.id === data.binding_id);
       if (!binding) return NextResponse.json({ error: "Binding non trovato" }, { status: 404 });
 
-      const testResult = await testBinding(device.host, binding);
+      const testResult = await testBinding(device.host, binding, versioneApparato(device, "1"));
       updateBindingTestStatus(data.binding_id, testResult.success ? "success" : "failed", testResult.message);
       // Promuovi il binding validato anche su host_credentials dell'host con stesso IP,
       // così la credenziale resta associata anche se il device viene rimosso/ricreato.
@@ -187,7 +188,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
  *  sono presenti solo per failure SSH e servono al pannello "Diagnostica" in UI. */
 async function testBinding(
   host: string,
-  binding: { protocol_type: string; port: number; credential_id: number | null; inline_username: string | null; inline_encrypted_password: string | null; credential_type?: string | null }
+  binding: { protocol_type: string; port: number; credential_id: number | null; inline_username: string | null; inline_encrypted_password: string | null; credential_type?: string | null },
+  versioneSnmp: VersioneSnmp
 ): Promise<{
   success: boolean;
   message: string;
@@ -243,7 +245,8 @@ async function testBinding(
         community = binding.inline_encrypted_password ? (safeDecrypt(binding.inline_encrypted_password) ?? "public") : "public";
       }
       const snmp = await import("net-snmp");
-      const session = snmp.createSession(host, community, { port: binding.port, timeout: 5000 });
+      // Versione dell'apparato; NULL = v1, come prima (createSession senza version).
+      const session = apriSessioneCommunity(snmp, host, community, { port: binding.port, timeout: 5000, versione: versioneSnmp });
       return new Promise((resolve) => {
         // Il timer e la risposta possono arrivare entrambi: una seconda close() lancia
         // ERR_SOCKET_DGRAM_NOT_RUNNING fuori dalla richiesta (DTS, 2026-10-15).
@@ -259,7 +262,7 @@ async function testBinding(
         session.get(["1.3.6.1.2.1.1.1.0"], (error: Error | null) => {
           finish(error
             ? { success: false, message: `SNMP: ${error.message}` }
-            : { success: true, message: "SNMP raggiungibile" }
+            : { success: true, message: `SNMP raggiungibile (${etichettaVersioneSnmp(versioneSnmp)})` }
           );
         });
       });

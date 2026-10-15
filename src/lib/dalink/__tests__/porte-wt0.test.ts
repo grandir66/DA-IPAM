@@ -21,6 +21,10 @@ import { leggiPorteWt0, porteDaNftJson, porteInAscolto } from "../porte-wt0";
 const DATI = path.join(__dirname, "dati");
 const NFT_SORGENTI = fs.readFileSync(path.join(DATI, "nft-dalink-sorgenti.json"), "utf8");
 const NFT_EDGE = fs.readFileSync(path.join(DATI, "nft-dalink-edge.json"), "utf8");
+// La tabella com'era fino al 15/10: catena sull'input. NetBird, quando si collega, mette
+// `iifname "wt0" accept` in cima alle catene d'ingresso che trova (provato sul pilota,
+// PX-NAS 192.168.99.51): quella catena non filtra più niente.
+const NFT_INPUT_VECCHIA = fs.readFileSync(path.join(DATI, "nft-dalink-edge-input-vecchia.json"), "utf8");
 
 const INTESTAZIONE4 =
   "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode";
@@ -50,6 +54,10 @@ test("nft vero, con sorgente: 22 e 443, sorgenti ristrette", () => {
 
 test("nft vero, con l'edge e senza sorgenti: 22, 443 e 6443", () => {
   assert.deepEqual(porteDaNftJson(NFT_EDGE), { porte: [22, 443, 6443], sorgentiRistrette: false });
+});
+
+test("catena sull'input (NetBird la scavalca) → null: si ripiega sulle porte in ascolto", () => {
+  assert.equal(porteDaNftJson(NFT_INPUT_VECCHIA), null);
 });
 
 test("una tabella senza lo scarto finale non vale come firewall", () => {

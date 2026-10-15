@@ -158,3 +158,65 @@ test("proxy Zabbix non leggibile → salute.zbx = non_so", async () => {
   });
   assert.equal(r.fatti.salute.zbx, "non_so");
 });
+
+// Appliance a cliente singolo (pilota PX-NAS, 15/10): Deploy-Appliance crea sempre il
+// cliente «DEFAULT», e IPAM lo dà per scontato in una decina di punti. Il codice di DA-Link
+// (70175) non c'era, e il segnale partiva vuoto (`cliente: non_trovato`). Decisione di
+// Riccardo (15/10, «B»): se il codice non c'è e l'istanza ha UN SOLO cliente, «DEFAULT»,
+// quello è il cliente di DA-Link, e il segnale lo dichiara (`cliente: appliance`).
+test("appliance a cliente singolo: si leggono moduli e salute di DEFAULT, cliente = appliance", async () => {
+  const chiesti: string[] = [];
+  const r = await fattiIstanza("70175", null, {
+    clienteEsiste: () => false,
+    unicoClienteAppliance: () => true,
+    porte: PORTE_OK,
+    proxyZabbix: () => null,
+    moduli: async (c) => {
+      chiesti.push(c);
+      return { edge: true };
+    },
+    salute: async (c) => {
+      chiesti.push(c);
+      return { edge: "ok" };
+    },
+  });
+  assert.deepEqual(chiesti, ["DEFAULT", "DEFAULT"]);
+  assert.equal(r.tenant, "DEFAULT");
+  assert.equal(r.clienteTrovato, true);
+  assert.equal(r.fatti.salute.cliente, "appliance");
+  assert.equal(r.fatti.salute.edge, "ok");
+});
+
+test("più clienti o cliente diverso da DEFAULT: niente ripiego, cliente = non_trovato", async () => {
+  let chiesto = false;
+  const r = await fattiIstanza("70175", null, {
+    clienteEsiste: () => false,
+    unicoClienteAppliance: () => false,
+    porte: PORTE_OK,
+    proxyZabbix: () => null,
+    moduli: async () => {
+      chiesto = true;
+      return {};
+    },
+    salute: async () => {
+      chiesto = true;
+      return {};
+    },
+  });
+  assert.equal(chiesto, false);
+  assert.equal(r.tenant, null);
+  assert.equal(r.fatti.salute.cliente, "non_trovato");
+});
+
+test("il codice di DA-Link presente vince sul ripiego dell'appliance", async () => {
+  const r = await fattiIstanza("71734", null, {
+    clienteEsiste: () => true,
+    unicoClienteAppliance: () => true,
+    porte: PORTE_OK,
+    proxyZabbix: () => null,
+    moduli: async () => ({}),
+    salute: async () => ({}),
+  });
+  assert.equal(r.tenant, "71734");
+  assert.equal(r.fatti.salute.cliente, "trovato");
+});

@@ -20,6 +20,15 @@ Ramo `fix/topologia-elenco-aggiornato`, non ancora su `dev`.
   due segnali arrivano insieme. Le modifiche fatte dalla mappa stessa e il ritorno con i link del
   menu già si vedevano subito: verificato una per una.
 
+### Modifiche
+
+- **L'elenco degli oggetti a sinistra non mostra più gli apparati di rete disabilitati.** Decisione
+  di Riccardo (15/10): un apparato con l'interrogazione spenta nell'inventario (`enabled = 0`) non
+  serve a chi cerca un oggetto da mettere sulla mappa, e allungava l'elenco di voci morte. Sulla
+  mappa restano come prima, coi loro cavi; cambia solo l'elenco, e il numero accanto a ogni gruppo
+  («SWITCH (n)») conta solo le voci mostrate. Il modello porta ora un segno `disabled` sul nodo
+  (solo quando vale; il DB non cambia).
+
 ## [Non rilasciato] — 2026-10-15 · mappa: ritocchi e VM, SSH degli hypervisor
 
 Ramo `fix/mappa-ritocchi-vm`, non ancora su `dev`.

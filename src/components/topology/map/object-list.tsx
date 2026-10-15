@@ -5,12 +5,14 @@
  * gruppi apribili, «✓ nella mappa». Un oggetto si aggiunge alla mappa passo
  * passo trascinandolo sulla mappa (spec §11.2: «Inserisci» non c'è più); in
  * «Tutto automatico» il trascinamento non c'è e il suggerimento lo dice. Oltre
- * 200 voci per gruppo si mostra «+ altri N» (altre 200 a ogni clic).
+ * 200 voci per gruppo si mostra «+ altri N» (altre 200 a ogni clic). Gli apparati disabilitati
+ * non si elencano (listedNodes): restano sulla mappa.
  */
 import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { nodeClass } from "@/lib/topology/identity";
+import { listedNodes } from "@/lib/topology/object-list";
 import type { MapNode, TopologyModel } from "@/lib/topology/model-types";
 import { TopoIcon, typeLabel } from "./topology-icons";
 
@@ -63,7 +65,7 @@ export function ObjectList({ model, visible, selected, drag, onSelect }: Props) 
       ["Server e attaccati", (n) => nodeClass(n) === "att" || nodeClass(n) === "hyper"],
       [CLIENT, (n) => nodeClass(n) === "client"],
     ];
-    const sorted = [...model.nodes].sort((a, b) => a.name.localeCompare(b.name, "it") || (a.id < b.id ? -1 : 1));
+    const sorted = listedNodes(model.nodes).sort((a, b) => a.name.localeCompare(b.name, "it") || (a.id < b.id ? -1 : 1));
     const out = defs.map(([name, f]) => ({ name, items: sorted.filter((n) => !why(n) && f(n)) }));
     out.push({ name: "Da sistemare", items: sorted.filter((n) => why(n) !== null) });
     return { list: out, why };

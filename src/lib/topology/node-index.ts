@@ -103,6 +103,7 @@ export function buildNodeIndex(devices: ModelDeviceRow[], hosts: ModelHostRow[],
       id, kind: "device", refId: d.id, name: d.name, type: d.device_type, mgmtIp: d.host || null,
       fusedHostIds: fused.sort((a, b) => a - b), addresses: [], aliases: [], siteId: null, rackId: null, siteProposed: false,
       hidden: d.topology_hidden === 1, vendor: d.vendor || null, ...(d.proxmox_scan === 1 ? { proxmoxScan: true } : {}),
+      ...(d.enabled === 0 ? { disabled: true as const } : {}),
       ...(d.via ? { via: d.via } : {}),
     });
     put(idx.byIp, d.host || null, id, false);

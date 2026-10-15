@@ -2768,6 +2768,7 @@ export function getAttributionSignalsForHost(hostId: number): AttributionSignals
        AND ((dn.remote_mac IS NOT NULL AND dn.remote_mac = h.mac)
          OR (dn.remote_ip IS NOT NULL AND dn.remote_ip = h.ip))
        AND ${NEIGHBORS_LATEST_ROUND_SQL}
+       AND ${NEIGHBORS_MODEL_SOURCES_SQL}
      ORDER BY dn.timestamp DESC LIMIT 5`
   ).all(hostId) as AttributionSignals["neighborSightings"];
   return { host, adComputer, wazuh, neighborSightings };
@@ -5011,6 +5012,15 @@ export type NeighborSource = "device" | "unifi";
  */
 export const NEIGHBORS_LATEST_ROUND_SQL =
   "dn.timestamp >= (SELECT datetime(MAX(d2.timestamp), '-5 minutes') FROM device_neighbors d2 WHERE d2.device_id = dn.device_id AND d2.source = dn.source)";
+
+/**
+ * Le fonti dei vicini che leggono il modello della mappa di oggi e l'attribuzione degli host (spec topologia §13.5.7,
+ * «Chi legge che cosa»; R7). Oggi le fonti sono solo queste due e il filtro non cambia niente; da T2 le letture in più
+ * scrivono fonti nuove (snmp, host, ssh), che legge solo il modello per cavo: accenderle non cambia la mappa né le
+ * classificazioni degli host, che sono dati di produzione. Una copia identica sta in attribution/recompute.ts
+ * (ciclo db-tenant ↔ attribution), presidiata da neighbors-old-readers.test.ts.
+ */
+export const NEIGHBORS_MODEL_SOURCES_SQL = "dn.source IN ('device', 'unifi')";
 
 /** Un vicino non visto da più di tanti giorni si toglie alla scrittura successiva del suo apparato. */
 const NEIGHBOR_RETENTION_DAYS = 90;
@@ -9131,6 +9141,7 @@ export function getTopologyModelInput(staleDays: number, nowMs: number = Date.no
     devices: d.prepare(`
       SELECT nd.id, nd.name, nd.host, nd.device_type, nd.vendor, nd.model, nd.enabled, nd.host_id, nd.physical_device_id,
              nd.location_id, nd.controller_mac, nd.uplink_mac, nd.uplink_remote_port, nd.uplink_type, nd.uplink_seen_at, nd.topology_hidden,
+             nd.protocol AS via, nd.topology_role,
              COALESCE(sp.n, 0) AS port_count,
              CASE WHEN nd.scan_target = 'proxmox' OR COALESCE(nd.last_proxmox_scan_result, '') <> '' THEN 1 ELSE 0 END AS proxmox_scan
         FROM network_devices nd
@@ -9140,15 +9151,17 @@ export function getTopologyModelInput(staleDays: number, nowMs: number = Date.no
       SELECT id, network_id, ip, mac, hostname, custom_name, classification, status, physical_device_id
         FROM hosts ORDER BY id`).all() as ModelInput["hosts"],
     neighbors: d.prepare(`
-      SELECT device_id, local_port, remote_device_name, remote_port, protocol, remote_ip, remote_mac, timestamp, source
-        FROM device_neighbors`).all() as ModelInput["neighbors"],
+      SELECT dn.device_id, dn.local_port, dn.remote_device_name, dn.remote_port, dn.protocol, dn.remote_ip, dn.remote_mac,
+             dn.remote_platform, dn.timestamp, dn.source
+        FROM device_neighbors dn
+       WHERE ${NEIGHBORS_MODEL_SOURCES_SQL}`).all() as ModelInput["neighbors"],
     uplinkPorts: d.prepare(`
       SELECT device_id, port_index, port_name FROM switch_ports WHERE is_uplink = 1 ORDER BY device_id, port_index`).all() as ModelInput["uplinkPorts"],
     locations: d.prepare("SELECT id, name, parent_id, head_device_id FROM locations ORDER BY id").all() as ModelInput["locations"],
     networks: d.prepare("SELECT id, cidr, name, gateway, location_id FROM networks ORDER BY id").all() as ModelInput["networks"],
     knownMacs: getNetworkDeviceKnownMacs(),
     overrides: d
-      .prepare("SELECT id, action, a_node, a_port, b_node, b_port, medium FROM topology_link_overrides ORDER BY id")
+      .prepare("SELECT id, action, a_node, a_port, b_node, b_port, medium, created_by, created_at FROM topology_link_overrides ORDER BY id")
       .all() as ModelInput["overrides"],
     macPorts: d.prepare(`
       SELECT device_id, mac, port_name, timestamp, source FROM mac_port_entries
@@ -9157,6 +9170,9 @@ export function getTopologyModelInput(staleDays: number, nowMs: number = Date.no
     portInfo: d.prepare(`
       SELECT device_id, port_name, speed, poe_status, poe_power_mw FROM switch_ports
        WHERE COALESCE(speed, '') <> '' OR COALESCE(poe_power_mw, 0) > 0 ORDER BY device_id, port_index`).all() as ModelInput["portInfo"],
+    // Spec §13.6.1: l'elenco intero delle porte, con l'indice e lo stato (anche quelle giù), per la chiave della porta.
+    ports: d.prepare(`
+      SELECT device_id, port_index, port_name, speed, status, stp_state FROM switch_ports ORDER BY device_id, port_index`).all() as ModelInput["ports"],
     vms,
     scanHosts,
     nowMs,

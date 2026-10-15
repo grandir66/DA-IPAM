@@ -45,6 +45,10 @@ export interface ModelDeviceRow {
    * Facoltativo: le fixture anonime precedenti non ce l'hanno (vale 0).
    */
   proxmox_scan?: number;
+  /** network_devices.protocol, la via di lettura (ssh, snmp_v2, api…): la usano i traduttori (spec §13.6.1). Assente nelle fixture di prima. */
+  via?: string | null;
+  /** network_devices.topology_role, «Ruolo nella mappa» a mano (T1b): '' o null = decide il sistema. Assente nelle fixture di prima. */
+  topology_role?: string | null;
 }
 
 export interface ModelHostRow {
@@ -67,6 +71,8 @@ export interface ModelNeighborRow {
   protocol: string;
   remote_ip: string | null;
   remote_mac: string | null;
+  /** La piattaforma annunciata dal vicino: il traduttore del lato remoto (spec §13.6.1). Assente nelle fixture di prima. */
+  remote_platform?: string | null;
   timestamp: string | null;
   source: string;
 }
@@ -114,6 +120,9 @@ export interface LinkOverrideRow {
   b_port: string;
   /** 'cavo' | 'fibra' | 'wireless' o null (tipo non indicato); le rotte non scrivono altro. */
   medium: string | null;
+  /** Chi e quando, per le frasi di T1b («Collegato a mano da ‹utente› il ‹data›»). Assenti nelle fixture di prima. */
+  created_by?: string | null;
+  created_at?: string | null;
 }
 
 /** Il collegamento principale scelto a mano: «per node_id il principale è quello verso other_node». */
@@ -130,6 +139,16 @@ export interface ModelPortInfoRow {
   speed: string | null;
   poe_status: string | null;
   poe_power_mw: number | null;
+}
+
+export interface ModelPortRow {
+  device_id: number;
+  port_index: number;
+  port_name: string;
+  speed: string | null;
+  status: string | null;
+  /** Stato dello spanning tree come lo scrive la lettura di oggi: lo legge la prova di ruolo di T1b. */
+  stp_state: string | null;
 }
 
 /** Una VM letta dalla scansione Proxmox di un apparato (spec §11.5). */
@@ -171,6 +190,8 @@ export interface TopologyModelInput {
   primaries: ModelPrimaryRow[];
   /** Velocità e PoE delle porte degli switch. */
   portInfo: ModelPortInfoRow[];
+  /** Tutte le porte di ogni apparato, con l'indice (spec §13.6.1): la chiave della porta e la velocità per chiave. */
+  ports?: ModelPortRow[];
   /** VM delle scansioni Proxmox e host dei cluster. */
   vms: ModelVmRow[];
   scanHosts: ModelScanHostRow[];

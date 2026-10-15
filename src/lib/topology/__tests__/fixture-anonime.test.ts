@@ -7,7 +7,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { PORTA_GENERICA, VOCABOLARIO } from "@/lib/topology/anonimizza";
+import { portaAnonima, VOCABOLARIO } from "@/lib/topology/anonimizza";
 
 const DIR = path.join(__dirname, "fixtures");
 const FILES = fs.readdirSync(DIR).filter((f) => f.startsWith("topologia-") && f.endsWith(".json"));
@@ -34,7 +34,7 @@ const num: Regola = (v) => typeof v === "number" && Number.isFinite(v);
 const numN = o(num, nul);
 const tra = (vs: readonly string[]): Regola => (v) => typeof v === "string" && vs.includes(v);
 const indirizzo = o(s(IP_FINTO), s(IPV6_FINTO), s(NOME));
-const porta: Regola = o((v) => v === "", s(PORTA_GENERICA), s(/^porta-\d+$/), s(IP_FINTO), s(MAC_FINTO));
+const porta: Regola = o((v) => typeof v === "string" && portaAnonima(v), s(IP_FINTO), s(MAC_FINTO));
 const nomeHost = o(nul, s(NOME), s(IP_FINTO), s(MAC_FINTO));
 
 const FORMA: Record<string, Record<string, Regola>> = {
@@ -65,17 +65,22 @@ const FORMA: Record<string, Record<string, Regola>> = {
   },
 };
 
-// Fase 2b: campi e sezioni che le fixture estratte prima della fase 2b non hanno. Se ci sono hanno questa
+// Fase 2b e T1: campi e sezioni che le fixture estratte prima non hanno. Se ci sono hanno questa
 // forma; le fixture si rigenerano dai dati veri anonimizzati (lo fa il controllore), finché non succede mancano.
 const FASE_2B_CAMPI: Record<string, Record<string, Regola>> = {
-  devices: { uplink_type: o(nul, tra(["wire", "wireless"])) },
-  overrides: { medium: o(nul, tra(["cavo", "fibra", "wireless"])) },
+  devices: { uplink_type: o(nul, tra(["wire", "wireless"])), via: o(nul, tra(VOCABOLARIO.via)), topology_role: o(nul, tra(["", "rete", "attaccato"])), proxmox_scan: num },
+  neighbors: { remote_platform: o(nul, tra(VOCABOLARIO.piattaforma)) },
+  overrides: { medium: o(nul, tra(["cavo", "fibra", "wireless"])), created_by: nul, created_at: o(nul, s(DATA)) },
 };
 const FASE_2B_SEZIONI: Record<string, Record<string, Regola> | null> = {
   primaries: { node_id: s(NODO), other_node: s(NODO), node_port: porta, other_port: porta },
   portInfo: {
     device_id: num, port_name: porta, speed: o(nul, s(/^\d+(\.\d+)?\s?(Mbps|Gbps|M|G)?$/)),
     poe_status: o(nul, tra(["delivering", "searching", "disabled", "fault", "off", "on", "auto", "enabled"])), poe_power_mw: numN,
+  },
+  ports: {
+    device_id: num, port_index: num, port_name: porta, speed: o(nul, s(/^\d+(\.\d+)?\s?(Mbps|Gbps|M|G)?$/)),
+    status: o(nul, tra(VOCABOLARIO.stato_porta)), stp_state: o(nul, tra(VOCABOLARIO.stp)),
   },
   vms: null, // nessuna riga ammessa: VM e host dei cluster portano nomi, IP e MAC veri
   scanHosts: null,
@@ -145,4 +150,19 @@ test("forma della fase 2b: i campi nuovi, se ci sono, si controllano; VM e host 
   assert.deepEqual(scartiDiForma({ ...nuova, overrides: [{ ...nuova.overrides[0], medium: "rame" }] }), ["overrides[0].medium: valore fuori forma"]);
   assert.deepEqual(scartiDiForma({ ...nuova, primaries: [{ ...nuova.primaries[0], node_port: "Gi0/1 di 192.0.2.1" }] }), ["primaries[0].node_port: valore fuori forma"]);
   assert.deepEqual(scartiDiForma({ ...nuova, altro: [] }), ["chiave di primo livello in più: altro"]);
+});
+
+test("forma di T1 (spec §13.6.1): porte con l'indice, via di lettura, piattaforma remota, ruolo a mano, autore delle correzioni", () => {
+  const j = JSON.parse(fs.readFileSync(path.join(DIR, FILES[0]), "utf8")) as Record<string, Array<Record<string, unknown>>>;
+  const nuova = {
+    ...j,
+    devices: j.devices.map((d, i) => ({ ...d, via: i === 0 ? "ssh" : "api", topology_role: null, proxmox_scan: 0 })),
+    neighbors: j.neighbors.map((n, i) => ({ ...n, remote_platform: i === 0 ? "MikroTik" : null, local_port: i === 0 ? "sfp28-1,bond1,porta-3" : n.local_port, remote_port: i === 0 ? "porta-3/sfp-sfpplus2" : n.remote_port })),
+    overrides: [{ id: 1, action: "ignore", a_node: "dev:114", a_port: "porta-9", b_node: "dev:1", b_port: "ether8", medium: null, created_by: null, created_at: "2026-10-14 10:07:00" }],
+    ports: [{ device_id: 1, port_index: 9, port_name: "SFP+ 17 - porta-4", speed: "10000 Mbps", status: "up", stp_state: "forwarding" }],
+  };
+  assert.deepEqual(scartiDiForma(nuova), []);
+  assert.deepEqual(scartiDiForma({ ...nuova, neighbors: [{ ...nuova.neighbors[0], remote_platform: "Router di Mario" }] }), ["neighbors[0].remote_platform: valore fuori forma"]);
+  assert.deepEqual(scartiDiForma({ ...nuova, overrides: [{ ...nuova.overrides[0], created_by: "mario.rossi" }] }), ["overrides[0].created_by: valore fuori forma"]);
+  assert.deepEqual(scartiDiForma({ ...nuova, ports: [{ ...nuova.ports[0], port_name: "SFP+ 17 - nodo Mario" }] }), ["ports[0].port_name: valore fuori forma"]);
 });

@@ -16,6 +16,7 @@ import {
   getTopologyData,
   getTopologyModelInput,
   NEIGHBORS_LATEST_ROUND_SQL,
+  NEIGHBORS_MODEL_SOURCES_SQL,
   upsertNeighbors,
   withTenant,
 } from "@/lib/db-tenant";
@@ -23,7 +24,10 @@ import {
   getAttributionSignalsForHost as facadeAttributionSignals,
   getNeighborsByDevice as facadeNeighborsByDevice,
 } from "@/lib/db";
-import { NEIGHBORS_LATEST_ROUND_SQL as RECOMPUTE_LATEST_ROUND_SQL } from "@/lib/attribution/recompute";
+import {
+  NEIGHBORS_LATEST_ROUND_SQL as RECOMPUTE_LATEST_ROUND_SQL,
+  NEIGHBORS_MODEL_SOURCES_SQL as RECOMPUTE_SOURCES_SQL,
+} from "@/lib/attribution/recompute";
 
 const T = "TESTNEIGHOLD";
 const db = () => getTenantDb(T);
@@ -103,4 +107,34 @@ test("la copia del frammento in recompute.ts è identica all'originale di db-ten
   // recompute.ts non può importare db-tenant staticamente (ciclo db-tenant ↔
   // attribution) né dinamicamente (ADR 0002): tiene una copia, che deve restare uguale.
   assert.equal(RECOMPUTE_LATEST_ROUND_SQL, NEIGHBORS_LATEST_ROUND_SQL);
+});
+
+// Spec topologia §13.5.7, «Chi legge che cosa» (R7): il modello di T1 e l'attribuzione degli host leggono solo le fonti
+// di oggi. Da T2 le letture in più scrivono fonti nuove (snmp, host, ssh): accenderle non deve cambiare né la mappa né
+// le classificazioni, che sono dati di produzione. Oggi le fonti sono solo device e unifi: il filtro non cambia niente.
+test("fonti nuove: non entrano nel modello di T1 né nell'attribuzione (db-tenant e facciata)", () => {
+  withTenant(T, () => upsertNeighbors(1, [v("PC-50", "Port 8", HOST_MAC)]));
+  db().prepare(`INSERT INTO device_neighbors (device_id, local_port, remote_device_name, remote_port, protocol, remote_mac, source, first_seen, timestamp)
+    VALUES (1, 'Port 9', 'SNMP-X', 'Port 1', 'lldp', ?, 'snmp', datetime('now'), datetime('now'))`).run(HOST_MAC);
+  assert.deepEqual(nomi(withTenant(T, () => getTopologyModelInput(7)).neighbors), ["PC-50"]);
+  assert.equal(withTenant(T, () => getAttributionSignalsForHost(1))?.neighborSightings.length, 1);
+  assert.equal(withTenant(T, () => facadeAttributionSignals(1))?.neighborSightings.length, 1);
+});
+
+test("la copia del filtro sulle fonti in recompute.ts è identica all'originale di db-tenant.ts", () => {
+  assert.equal(RECOMPUTE_SOURCES_SQL, NEIGHBORS_MODEL_SOURCES_SQL);
+});
+
+test("ingresso del modello (spec §13.6.1): tutte le porte con l'indice, anche giù; la via di lettura; la piattaforma remota", () => {
+  db().exec("DELETE FROM switch_ports");
+  db().prepare(`INSERT INTO switch_ports (device_id, port_index, port_name, status, speed, stp_state)
+    VALUES (1, 49, 'SFP+ 1', 'up', '10000 Mbps', 'forwarding'), (1, 5, 'Port 5', 'down', NULL, NULL)`).run();
+  withTenant(T, () => upsertNeighbors(1, [{ ...v("RTR-1", "Port 1"), remotePlatform: "MikroTik" }]));
+  const i = withTenant(T, () => getTopologyModelInput(2));
+  assert.deepEqual(i.ports, [
+    { device_id: 1, port_index: 5, port_name: "Port 5", speed: null, status: "down", stp_state: null },
+    { device_id: 1, port_index: 49, port_name: "SFP+ 1", speed: "10000 Mbps", status: "up", stp_state: "forwarding" },
+  ]);
+  assert.deepEqual(i.devices.map((d) => [d.id, d.via, d.topology_role]), [[1, "api", null], [2, "snmp_v2", null]]);
+  assert.equal(i.neighbors[0].remote_platform, "MikroTik");
 });

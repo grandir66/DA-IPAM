@@ -57,7 +57,7 @@ import type {
 } from "@/types";
 import type { FingerprintUserRule } from "./device-fingerprint-classification";
 import { registraRipiego } from "./db-maintenance/ripieghi";
-import { cleanOrphanedForeignKeys as cleanOrphanedForeignKeysSu, NEIGHBORS_LATEST_ROUND_SQL } from "./db-tenant";
+import { cleanOrphanedForeignKeys as cleanOrphanedForeignKeysSu, NEIGHBORS_LATEST_ROUND_SQL, NEIGHBORS_MODEL_SOURCES_SQL } from "./db-tenant";
 
 const DATA_DIR = resolveDataDir();
 /** Path effettivo del DB. `DA_IPAM_DB_PATH` serve solo a `scripts/generate-empty-db.ts` (template versionato). */
@@ -3156,6 +3156,7 @@ export function getAttributionSignalsForHost(hostId: number): AttributionSignals
        AND ((dn.remote_mac IS NOT NULL AND dn.remote_mac = h.mac)
          OR (dn.remote_ip IS NOT NULL AND dn.remote_ip = h.ip))
        AND ${NEIGHBORS_LATEST_ROUND_SQL}
+       AND ${NEIGHBORS_MODEL_SOURCES_SQL}
      ORDER BY dn.timestamp DESC LIMIT 5`
   ).all(hostId) as AttributionSignals["neighborSightings"];
   return { host, adComputer, wazuh, neighborSightings };

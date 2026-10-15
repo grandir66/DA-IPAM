@@ -36,10 +36,63 @@ export const PORTA_GENERICA = new RegExp(
         "[\\s-]?\\d+([/:.]\\d+)*",
       "en[ospx]\\d+(s\\d+)?(f\\d+)?(np\\d+)?",
       "\\d+([/:.]\\d+)*",
+      // T1 (spec §13.12.2): i nomi di serie che mancavano. Non dicono chi è il cliente.
+      "sfp(\\+|_|28)?\\s?\\d+",                                                                   // «SFP+ 9», «SFP_ 9», «SFP 1», «SFP28 29»
+      // Una porta di fabbrica con la velocità in coda come la legge il traduttore (MIKROTIK_FISICA: «-10g», «-2.5»), la corsia
+      // di una QSFP, la radio coi suoi numeri («wlan60-1»), nel bridge o in un fascio: un intero o un numero col punto dopo il
+      // trattino è un nome scelto e diventa uno pseudonimo (verifica del 15/10).
+      "(bridge\\d*/)?(bond\\d+/)?((ether|sfp-sfpplus|sfp28-|sfp|combo|bond)\\d+(-(\\d+(\\.\\d+)?g|2\\.5))?|qsfp\\d*-?\\d+(-[1-8])?|(wlan|wifi)\\d+(-\\d+)?)(,(bridge\\d*|bond\\d+))*",
+      "(wifi|ath|wlan)\\d+[a-z]+\\d*",                                                            // «wifi2ap9»
     ].join("|") +
     ")$",
   "i",
 );
+
+/**
+ * I nomi di porta di fabbrica, per prodotto: l'elenco chiuso del secondo controllo delle fixture (`porteInChiaro`). Non
+ * segue PORTA_GENERICA e non ha forme viste solo su un cliente: allargarlo vuol dire scrivere qui il prodotto che dà quel
+ * nome da sé. La sola forma scelta da un cliente che resta è la porta di fabbrica con la velocità in coda («ether1-2.5»): il
+ * traduttore la legge fisica (MIKROTIK_FISICA) e non dice chi è il cliente, perché è un numero di una norma Ethernet.
+ */
+const NOMI_DI_FABBRICA = new RegExp(
+  "^(" +
+    [
+      "(port|porta)\\s*\\d+", "sfp(\\+|_|28)?\\s?\\d+",
+      "(ether|sfp-sfpplus|sfp28-|sfp|combo|bond)\\d+(-(\\d+(\\.\\d+)?g|2\\.5))?", "qsfp\\w*?-?\\d+(-[1-8])?",
+      "(wlan|wifi)\\d+(-\\d+)?", "(wifi|ath|wlan|ra)\\d+[a-z]+\\d*", "bridge\\d*", "vrrp\\d+", "vlan[\\s-]?\\d+",
+      "(eth|sfpplus|qsfpplus|vmbr|lan|wan|mgmt|ge|xe|et|gi|te|fa|tw|hu|fo|po|gigabitethernet|tengigabitethernet|twentyfivegige|" +
+        "fortygigabitethernet|hundredgige|fastethernet|ethernet|port-channel|interface|ath|\\d+gigabitethernet)[\\s-]?\\d+([/:.]\\d+)*",
+      "en[ospx]\\d+(s\\d+)?(f\\d+)?(np\\d+)?", "\\d+([/:.]\\d+)*",
+    ].join("|") +
+    ")$",
+  "i",
+);
+
+/**
+ * Il secondo controllo dei nomi di porta (spec §13.12.2). Verifica del 15/10: un'alternativa di PORTA_GENERICA allargata ai
+ * nomi VRRP che il cliente A dà alle sue interfacce li avrebbe pubblicati nella fixture come «di serie», e nessun controllo se
+ * ne accorgeva (`contaValoriVeri` guarda IP, MAC e nomi degli oggetti). Conta i pezzi dei nomi di porta della fixture uguali a
+ * un pezzo di un nome di porta vero che non sono nomi di fabbrica: lo script d'estrazione non scrive la fixture se non è 0.
+ */
+export function porteInChiaro(vero: TopologyModelInput, anonimo: TopologyModelInput): number {
+  const pezzi = (v: string): string[] => v.split(/[,/]| - /).map((p) => p.trim()).filter((p) => p !== "");
+  const veri = new Set(portsOf(vero).flatMap(pezzi));
+  return new Set(portsOf(anonimo).flatMap(pezzi).filter((p) => veri.has(p) && !NOMI_DI_FABBRICA.test(p))).size;
+}
+
+const PEZZO_ANONIMO = /^((bridge|vlan|vrrp|eoip|gre|ipip|vxlan|wireguard|wg|ovpn|pppoe|pptp|l2tp|sstp|lte|loopback|veth)-)?porta-\d+$/;
+
+/** Una porta come la scrive l'anonimizzatore: di serie, uno pseudonimo, o composta di questi pezzi (prova della forma delle fixture). */
+export function portaAnonima(v: string): boolean {
+  const t = v.trim();
+  const ok = (p: string): boolean => PORTA_GENERICA.test(p.trim()) || PEZZO_ANONIMO.test(p.trim());
+  if (t === "" || ok(t)) return true;
+  const conDescrizione = /^(.+?) - (.+)$/.exec(t);
+  if (conDescrizione) return PORTA_GENERICA.test(conDescrizione[1]) && ok(conDescrizione[2]);
+  if (t.includes(",")) return t.split(",").every(ok);
+  if (t.includes("/")) return t.split("/").every(ok);
+  return false;
+}
 
 const toInt = (ip: string): number => ip.split(".").reduce((a, o) => a * 256 + Number(o), 0);
 const toIp = (n: number): string => [24, 16, 8, 0].map((s) => Math.floor(n / 2 ** s) % 256).join(".");
@@ -72,6 +125,13 @@ export const VOCABOLARIO = {
   status: ["online", "offline", "unknown"],
   protocol: ["lldp", "cdp", "mndp", "unknown"],
   source: ["device", "unifi"],
+  via: ["ssh", "snmp_v2", "snmp_v3", "api", "winrm"],
+  piattaforma: ["MikroTik", "altro"],
+  // T1 (spec §13.6.1): gli stati delle porte e dello spanning tree come li scrive la lettura. Stanno qui perché
+  // PAROLE_DELL_APP li prende dal vocabolario: sull'hub «down» (137 porte) è anche una parola di un nome vero, e senza
+  // questa riga l'estrazione della fixture si fermava con «nomi 137» (verifica del piano, 15/10).
+  stato_porta: ["up", "down", "disabled"],
+  stp: ["forwarding", "blocking", "discarding", "disabled", "learning", "listening", "broken"],
 } as const;
 
 function portsOf(input: TopologyModelInput): string[] {
@@ -79,6 +139,7 @@ function portsOf(input: TopologyModelInput): string[] {
     ...input.neighbors.flatMap((n) => [n.local_port, n.remote_port]), ...input.uplinkPorts.map((p) => p.port_name),
     ...input.overrides.flatMap((o) => [o.a_port, o.b_port]), ...input.macPorts.map((m) => m.port_name),
     ...input.primaries.flatMap((p) => [p.node_port, p.other_port]), ...input.portInfo.map((p) => p.port_name),
+    ...(input.ports ?? []).map((p) => p.port_name),
   ].filter((p): p is string => typeof p === "string" && p.trim() !== "");
 }
 
@@ -261,20 +322,41 @@ export function anonimizzaInput(input: TopologyModelInput): TopologyModelInput {
 
   const portMap = new Map<string, string>();
   let portSeq = 0;
-  const porta = (v: string): string => {
-    if (!v || v.trim() === "") return v;
-    // Prima IP e MAC: «192.168.1.1» e «00:11:22:33:44:55» passerebbero per numeri di porta di serie.
-    if (IPV4.test(v.trim())) return ip(v.trim()) as string;
-    if (MAC_ANY.test(v.trim())) return mac(v.trim()) as string;
-    if (PORTA_GENERICA.test(v.trim())) return v;
-    let out = portMap.get(v);
+  /** Interfacce logiche: un nome scelto dal cliente che comincia così tiene il prefisso («vlan-porta-N»), il traduttore lo legge ancora logico. */
+  const PREFISSO_LOGICO = /^(bridge|vlan|vrrp|eoip|gre|ipip|vxlan|wireguard|wg|ovpn|pppoe|pptp|l2tp|sstp|lte|loopback|veth)/i;
+  const pezzo = (v: string): string => {
+    const t = v.trim();
+    if (t === "" || PORTA_GENERICA.test(t)) return v;
+    if (IPV4.test(t)) return ip(t) as string;
+    if (MAC_ANY.test(t)) return mac(t) as string;
+    let out = portMap.get(t);
     if (!out) {
-      do out = `porta-${++portSeq}`;
+      const pre = PREFISSO_LOGICO.exec(t)?.[1]?.toLowerCase();
+      do out = `${pre ? `${pre}-` : ""}porta-${++portSeq}`;
       while (realPorts.has(out));
-      portMap.set(v, out);
+      portMap.set(t, out);
     }
     return out;
   };
+  /**
+   * Un nome di porta: di serie resta; composto («‹porta›,‹fascio›,‹bridge›», «‹bridge›/‹porta›», «‹porta di serie› -
+   * ‹descrizione›») si anonimizza pezzo per pezzo: la parte di serie resta e il traduttore la legge come sul dato vero;
+   * lo stesso pezzo ha sempre lo stesso pseudonimo (il bridge, la descrizione di una porta nell'elenco e nell'LLDP).
+   */
+  const porta = (v: string): string => {
+    if (!v || v.trim() === "") return v;
+    const t = v.trim();
+    // Prima IP e MAC: «192.0.2.1» e «00:11:22:33:44:55» passerebbero per numeri di porta di serie.
+    if (IPV4.test(t)) return ip(t) as string;
+    if (MAC_ANY.test(t)) return mac(t) as string;
+    if (PORTA_GENERICA.test(t)) return v;
+    const conDescrizione = /^(.+?) - (.+)$/.exec(t);
+    if (conDescrizione && PORTA_GENERICA.test(conDescrizione[1])) return `${conDescrizione[1]} - ${pezzo(conDescrizione[2])}`;
+    if (t.includes(",")) return t.split(",").map(pezzo).join(",");
+    if (t.includes("/") && !/\d\/\d/.test(t)) return t.split("/").map(pezzo).join("/");
+    return pezzo(t);
+  };
+  const piattaforma = (v: string | null | undefined): string | null => (!v || v.trim() === "" ? null : /mikrotik/i.test(v) ? "MikroTik" : "altro");
 
   // Un nome d'host vuoto vale come assente (il modello e la mappa vecchia li trattano uguali).
   const blankToNull = (v: string | null): string | null => (v === null || v.trim() === "" ? null : v);
@@ -291,6 +373,7 @@ export function anonimizzaInput(input: TopologyModelInput): TopologyModelInput {
   const neighbors = input.neighbors.map((n) => ({
     ...n, remote_device_name: pseudo(n.remote_device_name, "ext") ?? "", remote_ip: ip(n.remote_ip), remote_mac: mac(n.remote_mac),
     local_port: porta(n.local_port), remote_port: porta(n.remote_port),
+    ...(n.remote_platform !== undefined ? { remote_platform: piattaforma(n.remote_platform) } : {}),
   }));
   const locations = [...input.locations].sort((a, b) => a.id - b.id).map((l) => ({
     ...l, name: fresh(l.parent_id == null ? "Sede" : "Ubicazione"),
@@ -304,12 +387,16 @@ export function anonimizzaInput(input: TopologyModelInput): TopologyModelInput {
     uplinkPorts: input.uplinkPorts.map((p) => ({ ...p, port_name: porta(p.port_name) })),
     // Stesso MAC vero → stesso MAC finto degli host e dei vicini; la porta passa dal vocabolario delle porte; il timestamp resta (come nei vicini).
     macPorts: input.macPorts.map((m) => ({ ...m, mac: mac(m.mac) as string, port_name: porta(m.port_name) })),
-    overrides: input.overrides.map((o) => ({ ...o, a_port: porta(o.a_port), b_port: porta(o.b_port) })),
+    // Chi ha fatto una correzione è una persona: non entra (quando sì).
+    overrides: input.overrides.map((o) => ({
+      ...o, a_port: porta(o.a_port), b_port: porta(o.b_port), ...(o.created_by !== undefined ? { created_by: null } : {}),
+    })),
     primaries: input.primaries.map((p) => ({ ...p, node_port: porta(p.node_port), other_port: porta(p.other_port) })),
     portInfo: input.portInfo.map((p) => ({ ...p, port_name: porta(p.port_name) })),
     // Le VM e gli host dei cluster portano nomi, IP e MAC veri dei clienti: nelle fixture non entrano.
     vms: [],
     scanHosts: [],
+    ...(input.ports ? { ports: input.ports.map((p) => ({ ...p, port_name: porta(p.port_name) })) } : {}),
   };
 }
 
@@ -320,6 +407,7 @@ const PAROLE_DELL_APP = new Set<string>([
   "ether", "eth", "sfp", "sfpplus", "sfp28", "qsfp", "qsfpplus", "combo", "wlan", "bridge", "bond", "vmbr", "vlan", "lan", "wan",
   "mgmt", "gigabitethernet", "tengigabitethernet", "twentyfivegige", "fortygigabitethernet", "hundredgige", "fastethernet",
   "ethernet", "channel", "interface", "wifi",
+  "vrrp", "eoip", "vxlan", "wireguard", "ovpn", "pppoe", "pptp", "l2tp", "sstp", "loopback", "veth", "sfp28",
 ]);
 
 const tokens = (s: string): string[] => s.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);

@@ -55,6 +55,13 @@ export const NEIGHBORS_LATEST_ROUND_SQL =
   "dn.timestamp >= (SELECT datetime(MAX(d2.timestamp), '-5 minutes') FROM device_neighbors d2 WHERE d2.device_id = dn.device_id AND d2.source = dn.source)";
 
 /**
+ * Copia IDENTICA di db-tenant.ts::NEIGHBORS_MODEL_SOURCES_SQL (spec topologia §13.5.7): l'attribuzione legge solo le
+ * fonti di oggi, così una lettura in più accesa non cambia la classificazione degli host. Copia e non import per lo
+ * stesso motivo della costante qui sopra; presidiata da src/lib/__tests__/neighbors-old-readers.test.ts.
+ */
+export const NEIGHBORS_MODEL_SOURCES_SQL = "dn.source IN ('device', 'unifi')";
+
+/**
  * Snapshot dei segnali di un host per un handle DB esplicito (fix I2, review
  * fase 4): stessa query di db-tenant.ts::getAttributionSignalsForHost /
  * db.ts::getAttributionSignalsForHost, ma parametrizzata sull'handle passato
@@ -89,6 +96,7 @@ function getAttributionSignalsFromHandle(
        AND ((dn.remote_mac IS NOT NULL AND dn.remote_mac = h.mac)
          OR (dn.remote_ip IS NOT NULL AND dn.remote_ip = h.ip))
        AND ${NEIGHBORS_LATEST_ROUND_SQL}
+       AND ${NEIGHBORS_MODEL_SOURCES_SQL}
      ORDER BY dn.timestamp DESC LIMIT 5`
   ).all(hostId) as AttributionSignals["neighborSightings"];
   return { host, adComputer, wazuh, neighborSightings };

@@ -203,7 +203,8 @@ export interface TopologyModelInput {
 
 export interface MapNode {
   id: string;
-  kind: "device" | "host";
+  /** «segmento» (T3, spec §13.7.2): il nodo di un segmento condiviso, solo con la mappa nuova accesa. */
+  kind: "device" | "host" | "segmento";
   refId: number;
   name: string;
   /** device_type dell'apparato, o classificazione dell'host. */
@@ -236,7 +237,78 @@ export interface MapNode {
   dnsName?: string;
 }
 
-export type LinkMedium = "cavo" | "fibra" | "wireless";
+// LinkMedium riceve «tunnel» (T3, spec §13.9): una correzione a mano può dichiarare un tunnel.
+export type LinkMedium = "cavo" | "fibra" | "wireless" | "tunnel";
+
+// T3 (spec §13.7.2, §13.10.3): i tipi del modello per cavo che la pagina legge. Stanno qui (nessuna logica), e
+// cavi/collegamenti.ts li riesporta: i componenti della pagina non importano la logica del modello.
+export type Genere = "cavo" | "fascio" | "tunnel" | "radio" | "senza_fili" | "segmento";
+export type StatoCollegamento = "inoltra" | "bloccato" | "bloccato_comune" | "instradato" | "riserva_bond" | "giu" | null;
+export type Fiducia = "certo" | "probabile" | "dedotto" | "a_mano_confermato" | "a_mano";
+/** Il genere di una linea della pagina: quello del collegamento, più la contrazione di una mappa passo passo (§13.7.7). */
+export type GenereLinea = Genere | "contrazione";
+
+/** Il collegamento per cavo dietro una linea (presente solo con la mappa nuova accesa). */
+export interface CavoLinea {
+  genere: GenereLinea;
+  stato: StatoCollegamento;
+  fiducia: Fiducia;
+  /** Bloccato nell'albero comune, attivo per le VLAN di un'istanza (§13.7.2 passo 8). */
+  attivoPerVlan?: number[];
+  /** Bloccato fra due bridge della stessa regione MSTP di cui le istanze non sono lette: «… può portare altre VLAN». */
+  istanzeNonLette?: boolean;
+  /** L'uplink di un gateway del controller: «instradato: la WAN del gateway» (§13.8.3 punto 1). */
+  wan?: boolean;
+  /** Fra router, un annuncio di segmento come unico vicino: «probabile, attraverso apparati non letti». */
+  attraverso?: boolean;
+  /** «dedotto: oltre ‹radio›, salto non letto» (§13.7.6 punto 5): l'id della radio vicina. */
+  oltre?: string;
+  /** Un fascio (§13.6.3): i membri porta per porta, e se è dedotto. */
+  fascio?: { membri: Array<{ aPort: string; bPort: string; stato: StatoCollegamento; velocitaMbps: number | null }>; dedotto: boolean };
+  /** La prova accoppia porte con velocità diverse (§13.6.1, I45). */
+  porteDaVerificare: boolean;
+  /** Una linea a mano su porte diverse da quelle viste fra gli stessi oggetti (§13.9). */
+  aManoDiverse?: boolean;
+  /** Un tunnel sentito da un capo solo (§13.4.6). */
+  unVerso?: boolean;
+  /** Il capo giù di un collegamento «giu»: «cavo giù: la porta ‹p› di ‹A› è giù» (§13.10.3). */
+  giuSu?: { nodo: string; porta: string };
+  /** Le prove in parole, senza doppi, nell'ordine in cui le dà il modello («LLDP», «uplink del controller», «partner LACP»…). */
+  detti: string[];
+  /** «Perché questo ‹genere›» (§13.4.6): le frasi già scritte dal modello, con la conclusione in fondo. */
+  frasi: string[];
+  /** Solo per una contrazione: che cosa è stato contratto. */
+  via?: "segmento" | "radio";
+}
+
+/** Ciò che la pagina sa del modello per cavo oltre le linee (presente solo con la mappa nuova accesa). */
+export interface InfoCavi {
+  /** nodo → id della linea scelta dalla porta radice o dall'uplink del controller (§13.8.3 punto 1). */
+  scelto: Record<string, string>;
+  /** La testa del modello per cavo (§13.8.3 punto 7), con la scelta dell'admin della mappa automatica già applicata. */
+  testa: string | null;
+  /** «core che esce da uno switch di accesso» (§13.8.3 punto 8), sulla mappa automatica. */
+  anomalie: Array<{ nodo: string; padre: string; porta: string; altri: string[] }>;
+  /** In parole, senza dati («uplink del controller su una porta ferma»…). */
+  avvisi: Array<{ nodo: string; testo: string }>;
+  segmenti: Array<{ id: string; membri: Array<{ nodo: string; porta: string }>; altriApparati: number; frase: string }>;
+  /** I capi dei ponti radio: fanno da ponte nell'albero anche se sono server o host (§13.7.6 punto 4). */
+  ponti: string[];
+  /** ★ scelte prima di T3, senza porte o con porte che non indicano più un collegamento (§13.9). */
+  stelleDiPrima: Array<{ nodo: string; altro: string; linea: string }>;
+  /** hypervisor → i collegamenti «dalle VM» che non si disegnano (§13.7.2 passo 10). */
+  dalleVm: Record<string, Array<{ altro: string; porta: string; vm: number }>>;
+  /** Le parti che la mappa nuova non calcola ancora, una riga ciascuna. */
+  nonCalcolato: readonly string[];
+}
+
+/** Una riga di «Candidati per porta» (§13.4.6): le prove di una porta, il collegamento scelto, gli scartati col motivo. */
+export interface CandidatoPorta {
+  porta: string;
+  prove: Array<{ chi: string; detto: string; quando: string | null }>;
+  scelto: { linea: string; verso: string; genere: Genere } | null;
+  scartati: Array<{ chi: string; motivo: string }>;
+}
 
 /** Orientamento della mappa (spec §12.2): `lr` «Verticale», da sinistra a destra con i fratelli impilati (predefinito); `tb` «Orizzontale», dall'alto. */
 export type MapOrientation = "lr" | "tb";
@@ -293,6 +365,8 @@ export interface MapLink {
   altriCavi?: AltroCavo[];
   /** «Perché questo collegamento» (T1b): le prove del cavo della linea, poi le righe scartate sulla coppia. Assente nelle linee fatte a mano dalle prove. */
   perche?: PassoPerche[];
+  /** Il collegamento per cavo dietro la linea (T3): presente solo con la mappa nuova accesa. */
+  cavo?: CavoLinea;
 }
 
 /** Attributi del collegamento che nascono neutri; li riempiono link-attrs.ts (dati) e l'albero (principale, ridondanza). */
@@ -422,4 +496,6 @@ export interface TopologyModel {
    * gateway di più reti. Assente con la regola «testa-per-reti» spenta e nei modelli costruiti a mano dalle prove.
    */
   gatewayDi?: Record<string, number>;
+  /** Ciò che la pagina sa del modello per cavo oltre le linee (T3): presente solo con la mappa nuova accesa. */
+  cavi?: InfoCavi;
 }

@@ -45,9 +45,14 @@ function leggiJson(chiave: string): unknown {
 const oggetto = (v: unknown): Record<string, unknown> | null =>
   v !== null && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
 
-export function leggiInterruttore(l: Lettura): StatoInterruttore {
-  const o = oggetto(leggiJson(chiaveLettura(l)));
+/** Lo stato di un interruttore qualsiasi della topologia (letture di T2, mappa nuova di T3: stessa forma, §13.5.6). */
+export function leggiStatoChiave(chiave: string): StatoInterruttore {
+  const o = oggetto(leggiJson(chiave));
   return { acceso: o?.acceso === true, da: typeof o?.da === "string" ? o.da : null, il: typeof o?.il === "string" ? o.il : null };
+}
+
+export function leggiInterruttore(l: Lettura): StatoInterruttore {
+  return leggiStatoChiave(chiaveLettura(l));
 }
 
 export function letturaAccesa(l: Lettura): boolean {

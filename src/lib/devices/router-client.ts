@@ -1,5 +1,5 @@
 import type { NetworkDevice } from "@/types";
-import { apriSessioneCommunity, versioneApparato } from "@/lib/protocols/snmp-sessione";
+import { apriSessioneSnmp, V3_ASSENTE, versioneApparato, type CredenzialeSnmp } from "@/lib/protocols/snmp-sessione";
 import { getDeviceCredentials, getDeviceCommunityString, getDeviceSnmpV3Credentials, getCredentialCommunityString, getDb } from "@/lib/db";
 import { safeDecrypt } from "@/lib/crypto";
 import type { MacTableEntry, PortInfo } from "./switch-client";
@@ -304,22 +304,21 @@ async function createSnmpArpClient(
   // SNMP usa sempre porta 161 (standard)
   const opts = { port: 161, timeout: 10000 };
 
+  // Lanciata dentro l'executor della Promise del walk: un errore diventa il rifiuto del walk.
   function createSession() {
+    let cred: CredenzialeSnmp;
     if (device.protocol === "snmp_v3") {
+      // Livello, protocolli e chiavi dal record; senza v3 nessun ripiego sulla community (tappa 2, T4).
       const v3 = getDeviceSnmpV3Credentials(device);
-      if (v3) {
-        const user = {
-          name: v3.username,
-          level: snmp.SecurityLevel.authNoPriv,
-          authProtocol: snmp.AuthProtocols.md5,
-          authKey: v3.authKey,
-        };
-        return snmp.createV3Session(device.host, user, opts);
-      }
+      if (!v3) throw new Error(V3_ASSENTE);
+      cred = { forma: "v3", record: v3 };
+    } else {
+      cred = { forma: "community", community: getDeviceCommunityString(device) };
     }
-    const community = getDeviceCommunityString(device);
     // NULL = v1, come prima (createSession senza version).
-    return apriSessioneCommunity(snmp, device.host, community, { ...opts, versione: versioneApparato(device, "1") });
+    const aperta = apriSessioneSnmp(snmp, device.host, cred, { ...opts, versione: versioneApparato(device, "1") });
+    if (!aperta.ok) throw new Error(aperta.motivo);
+    return aperta.session;
   }
 
   function snmpWalk(oid: string): Promise<{ oid: string; value: Buffer | string | number }[]> {

@@ -14,7 +14,7 @@ import {
 } from "@/lib/db";
 import { sshExec, sshExecViaShell } from "./ssh-helper";
 import { snmpGetTollerante, type SnmpGetSession } from "./snmp-get-tollerante";
-import { apriSessioneCommunity, versioneApparato, type VersioneSnmp } from "@/lib/protocols/snmp-sessione";
+import { apriSessioneSnmp, V3_ASSENTE, versioneApparato, type CredenzialeSnmp, type VersioneSnmp } from "@/lib/protocols/snmp-sessione";
 
 export interface DeviceInfo {
   sysname: string | null;
@@ -285,6 +285,12 @@ export function infoDaVarbindSnmp(varbinds: Array<{ oid: string; value: unknown 
 /**
  * Recupera sysName e sysDescr via SNMP (MIB-2).
  * Usato per dispositivi con community_string o protocollo SNMP.
+ *
+ * Su un apparato snmp_v3 la sessione v3 prende livello, protocolli e chiavi
+ * dal record (tappa 2 credenziali, T4: prima authNoPriv/MD5 fissi). Una v3
+ * assente, illeggibile o con opzioni che non si possono usare (DES, AES192)
+ * è un errore che si vede: la funzione lancia invece di ripiegare in
+ * silenzio sulla community e su «public».
  */
 export async function getDeviceInfoFromSnmp(device: NetworkDevice, portaProva?: number): Promise<DeviceInfo> {
   const isSnmpProtocol = device.protocol === "snmp_v2" || device.protocol === "snmp_v3";
@@ -292,29 +298,26 @@ export async function getDeviceInfoFromSnmp(device: NetworkDevice, portaProva?: 
   const snmpPort = portaProva ?? (isSnmpProtocol ? getEffectiveSnmpPort(device) : 161);
   const opts = { port: snmpPort, timeout: 5000 };
 
+  let cred: CredenzialeSnmp;
+  if (device.protocol === "snmp_v3") {
+    const v3 = getDeviceSnmpV3Credentials(device);
+    if (!v3) throw new Error(V3_ASSENTE);
+    cred = { forma: "v3", record: v3 };
+  } else {
+    cred = { forma: "community", community: getDeviceCommunityString(device) };
+  }
+
   try {
     const snmp = await import("net-snmp");
     type SnmpSession = SnmpGetSession & { close: () => void };
-    let session: SnmpSession;
-    if (device.protocol === "snmp_v3") {
-      const v3 = getDeviceSnmpV3Credentials(device);
-      if (v3) {
-        const user = {
-          name: v3.username,
-          level: snmp.SecurityLevel.authNoPriv,
-          authProtocol: snmp.AuthProtocols.md5,
-          authKey: v3.authKey,
-        };
-        session = snmp.createV3Session(device.host, user, opts);
-      } else {
-        const community = getDeviceCommunityString(device);
-        session = apriSessioneCommunity(snmp, device.host, community, { ...opts, versione: versioneApparato(device, "1") });
-      }
-    } else {
-      // NULL = v1, come prima (createSession senza version).
-      const community = getDeviceCommunityString(device);
-      session = apriSessioneCommunity(snmp, device.host, community, { ...opts, versione: versioneApparato(device, "1") });
+    // NULL = v1, come prima (createSession senza version).
+    const aperta = apriSessioneSnmp(snmp, device.host, cred, { ...opts, versione: versioneApparato(device, "1") });
+    if (!aperta.ok) {
+      // Una v3 che non si apre si vede; una community che non si apre resta com'era (dati vuoti).
+      if (cred.forma === "v3") throw new Error(aperta.motivo);
+      return { sysname: null, sysdescr: null, model: null, firmware: null, serial_number: null, part_number: null };
     }
+    const session: SnmpSession = aperta.session;
     const oids = oidLetturaDatiSnmp(device);
 
     const emptySnmp: DeviceInfo = {
@@ -353,7 +356,8 @@ export async function getDeviceInfoFromSnmp(device: NetworkDevice, portaProva?: 
         finish(infoDaVarbindSnmp(varbinds));
       }, () => finish(emptySnmp));
     });
-  } catch {
+  } catch (e) {
+    if (cred.forma === "v3") throw e;
     return { sysname: null, sysdescr: null, model: null, firmware: null, serial_number: null, part_number: null };
   }
 }

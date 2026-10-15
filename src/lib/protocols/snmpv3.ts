@@ -1,19 +1,20 @@
 /**
  * SNMP v3 completo (authPriv) — Attribution v2 Fase 4b Task 2 (spec §7.4/§7.1).
  *
- * Oggi `snmp-query.ts` ha solo un percorso v3 parziale (`snmpSubwalkLimitedForDevice`
- * → `snmpSubwalkLimitedV3`): SEMPRE `authNoPriv` + MD5 hardcoded, mai `privKey`.
- * Questo modulo aggiunge il percorso v3 completo: authProtocol/privProtocol
- * configurabili per credenziale, authPriv con chiave di privacy, e una funzione
- * di validazione dedicata (`snmpValidateV3`) per il ramo `credential_validate`
- * di `discovery.ts` (apparati enterprise dove v2c è disabilitato per policy).
+ * Fino alla tappa 2 credenziali (T4, 15/10) cinque sessioni v3 degli apparati
+ * avevano `authNoPriv` + MD5 fissi, mai `privKey`. Ora ogni sessione v3 si apre
+ * con `apriSessioneSnmp` (snmp-sessione.ts), con authProtocol/privProtocol e
+ * chiavi della credenziale. Qui restano il record, la validazione dedicata
+ * (`snmpValidateV3`) per il ramo `credential_validate` di `discovery.ts`
+ * (apparati enterprise dove v2c è disabilitato per policy) e `provaV3`, il GET
+ * di prova usato anche dalla prova di binding e credenziale.
  *
  * `buildV3Options` è PURA e testabile senza rete: costruisce (o rifiuta) i
  * parametri di sessione net-snmp da un record credenziale già decifrato,
- * PRIMA che `snmpValidateV3` aggiorni una sola socket (Global Constraints:
- * "nessuno sweep", gate anti-lockout lato chiamante). Le combinazioni
- * incoerenti (es. authPriv senza privKey) sono rifiutate con un errore
- * parlante in italiano — mai un tentativo di rete su parametri incompleti.
+ * PRIMA che si apra una sola socket (Global Constraints: "nessuno sweep",
+ * gate anti-lockout lato chiamante). Le combinazioni incoerenti (es. authPriv
+ * senza privKey) sono rifiutate con un errore parlante in italiano — mai un
+ * tentativo di rete su parametri incompleti.
  *
  * Sicurezza: gli errori restituiti non includono MAI la chiave di
  * autenticazione/privacy, solo nomi di protocollo/livello (Global Constraints
@@ -21,26 +22,22 @@
  */
 import { AuthProtocols, PrivProtocols, SecurityLevel } from "net-snmp";
 import { stringifySnmpValue } from "../scanner/snmp-query";
+import { leggiSegretoDb } from "../credentials/segreti";
+import { apriSessioneSnmp, opzioniSessioneV3 } from "./snmp-sessione";
+
+// Tappa 2 credenziali, T4: costanti e opzioni stanno in snmp-sessione.ts, che
+// apre ogni sessione v3 ed è importabile dal client. Qui restano riesportate
+// per chi le prende da questo modulo (validators.ts, credentials/tipi.ts).
+export {
+  SNMP_V3_AUTH_PROTOCOLS,
+  SNMP_V3_PRIV_PROTOCOLS,
+  SNMP_V3_SECURITY_LEVELS,
+  type SnmpV3AuthProtocol,
+  type SnmpV3PrivProtocol,
+  type SnmpV3SecurityLevel,
+} from "./snmp-sessione";
 
 const OID_SYSDESCR = "1.3.6.1.2.1.1.1.0";
-
-export const SNMP_V3_AUTH_PROTOCOLS = ["MD5", "SHA", "SHA224", "SHA256", "SHA384", "SHA512"] as const;
-export type SnmpV3AuthProtocol = (typeof SNMP_V3_AUTH_PROTOCOLS)[number];
-
-/**
- * Valori ammessi a livello DB/UI (spec §7.1). `AES192` è un valore legittimo
- * nel dominio SNMPv3 (RFC non standard ma diffuso in alcuni stack vendor) ma
- * NON è implementato dalla libreria `net-snmp` in uso (nessun algoritmo
- * AES-192 fra i suoi `PrivProtocols`): resta nell'enum DB/UI per non
- * bloccare la selezione, ma `buildV3Options` lo rifiuta esplicitamente con un
- * errore che lo dice chiaramente, invece di un tentativo di sessione che
- * fallirebbe in modo oscuro.
- */
-export const SNMP_V3_PRIV_PROTOCOLS = ["DES", "AES", "AES192", "AES256"] as const;
-export type SnmpV3PrivProtocol = (typeof SNMP_V3_PRIV_PROTOCOLS)[number];
-
-export const SNMP_V3_SECURITY_LEVELS = ["noAuthNoPriv", "authNoPriv", "authPriv"] as const;
-export type SnmpV3SecurityLevel = (typeof SNMP_V3_SECURITY_LEVELS)[number];
 
 /** Record credenziale SNMPv3 già DECIFRATO (mai passare ciphertext qui). */
 export interface SnmpV3CredentialRecord {
@@ -67,104 +64,21 @@ export type BuildV3OptionsResult =
   | { ok: true; options: SnmpV3SessionOptions }
   | { ok: false; error: string };
 
-const AUTH_PROTOCOL_MAP: Partial<Record<string, AuthProtocols>> = {
-  MD5: AuthProtocols.md5,
-  SHA: AuthProtocols.sha,
-  SHA224: AuthProtocols.sha224,
-  SHA256: AuthProtocols.sha256,
-  SHA384: AuthProtocols.sha384,
-  SHA512: AuthProtocols.sha512,
-};
-
-/**
- * AES192 volutamente ASSENTE: `net-snmp` non implementa un algoritmo
- * AES a 192 bit (i suoi `PrivProtocols` coprono solo des/aes(128)/aes256b/
- * aes256r) — vedi commento su `SNMP_V3_PRIV_PROTOCOLS`. AES256 è mappato su
- * `aes256b` (Blumenthal), la variante più diffusa fra gli stack vendor.
- */
-const PRIV_PROTOCOL_MAP: Partial<Record<string, PrivProtocols>> = {
-  DES: PrivProtocols.des,
-  AES: PrivProtocols.aes,
-  AES256: PrivProtocols.aes256b,
-};
-
 /**
  * Costruisce i parametri di sessione SNMPv3 da un record credenziale
- * decifrato — PURA, nessuna rete. Rifiuta PRIMA di toccare la rete:
- *   - username mancante → errore
- *   - security_level non riconosciuto → errore
- *   - authNoPriv/authPriv senza authProtocol riconosciuto o authKey → errore
- *   - authPriv senza privProtocol riconosciuto o privKey → errore
+ * decifrato — PURA, nessuna rete. È `opzioniSessioneV3` (snmp-sessione.ts) con
+ * gli enum di net-snmp: rifiuta PRIMA di toccare la rete utente mancante,
+ * livello sconosciuto, protocollo o chiave mancanti, AES192 (assente nella
+ * libreria) e DES (Node 22 non lo sa fare). AES256 = Blumenthal, AES256C =
+ * Reeder («AES-256 (Cisco)»).
  *
  * Non lancia MAI eccezioni: qualunque input malformato produce `{ok:false}`
  * con un messaggio in italiano, senza includere authKey/privKey (Global
  * Constraints "nessun segreto nei log").
  */
 export function buildV3Options(cred: SnmpV3CredentialRecord): BuildV3OptionsResult {
-  const username = (cred.username ?? "").trim();
-  if (!username) {
-    return { ok: false, error: "Username SNMPv3 mancante" };
-  }
-
-  const level = cred.securityLevel;
-  if (level !== "noAuthNoPriv" && level !== "authNoPriv" && level !== "authPriv") {
-    return { ok: false, error: `security_level SNMPv3 non riconosciuto: "${String(level)}" (livelli ammessi: ${SNMP_V3_SECURITY_LEVELS.join(", ")})` };
-  }
-
-  if (level === "noAuthNoPriv") {
-    return { ok: true, options: { name: username, level: SecurityLevel.noAuthNoPriv } };
-  }
-
-  // authNoPriv e authPriv richiedono entrambi un protocollo di autenticazione
-  // riconosciuto e una authKey non vuota.
-  const authProtocolKey = (cred.authProtocol ?? "").trim().toUpperCase();
-  const authProtocol = AUTH_PROTOCOL_MAP[authProtocolKey];
-  if (!authProtocol) {
-    return {
-      ok: false,
-      error: `Protocollo di autenticazione SNMPv3 non riconosciuto: "${cred.authProtocol ?? ""}" (ammessi: ${SNMP_V3_AUTH_PROTOCOLS.join(", ")})`,
-    };
-  }
-  if (!(cred.authKey ?? "").trim()) {
-    return { ok: false, error: "Chiave di autenticazione SNMPv3 mancante (richiesta per authNoPriv/authPriv)" };
-  }
-
-  if (level === "authNoPriv") {
-    return {
-      ok: true,
-      options: { name: username, level: SecurityLevel.authNoPriv, authProtocol, authKey: (cred.authKey as string).trim() },
-    };
-  }
-
-  // authPriv: in aggiunta ad auth, richiede protocollo di privacy riconosciuto
-  // (e supportato dalla libreria, vedi PRIV_PROTOCOL_MAP) e una privKey non vuota.
-  const privProtocolKey = (cred.privProtocol ?? "").trim().toUpperCase();
-  if (!privProtocolKey) {
-    return { ok: false, error: "Protocollo di privacy SNMPv3 mancante (richiesto per authPriv)" };
-  }
-  const isKnownPrivProtocol = (SNMP_V3_PRIV_PROTOCOLS as readonly string[]).includes(privProtocolKey);
-  const privProtocol = PRIV_PROTOCOL_MAP[privProtocolKey];
-  if (!privProtocol) {
-    const error = isKnownPrivProtocol
-      ? `Protocollo di privacy SNMPv3 "${privProtocolKey}" non supportato dalla libreria SNMP disponibile (usa AES o AES256)`
-      : `Protocollo di privacy SNMPv3 non riconosciuto: "${cred.privProtocol ?? ""}" (ammessi: ${SNMP_V3_PRIV_PROTOCOLS.join(", ")})`;
-    return { ok: false, error };
-  }
-  if (!(cred.privKey ?? "").trim()) {
-    return { ok: false, error: "Chiave di privacy SNMPv3 mancante (richiesta per authPriv)" };
-  }
-
-  return {
-    ok: true,
-    options: {
-      name: username,
-      level: SecurityLevel.authPriv,
-      authProtocol,
-      authKey: (cred.authKey as string).trim(),
-      privProtocol,
-      privKey: (cred.privKey as string).trim(),
-    },
-  };
+  const r = opzioniSessioneV3({ AuthProtocols, PrivProtocols, SecurityLevel }, cred);
+  return r.ok ? { ok: true, options: r.user } : { ok: false, error: r.motivo };
 }
 
 export interface SnmpV3ValidateResult {
@@ -175,11 +89,10 @@ export interface SnmpV3ValidateResult {
 
 /**
  * Valida una credenziale SNMPv3 su `ip:port` interrogando `sysDescr.0`.
- * Decifra con `safeDecrypt` (mai `decrypt()` nudo — regola anti-regressione
- * #3), costruisce le opzioni con `buildV3Options` (rifiuto PRIMA della rete
- * su combinazioni incoerenti) e apre una `createV3Session` con timeout
- * esplicito. Non lancia mai: qualunque errore (credenziale assente, chiave
- * incoerente, timeout, autenticazione rifiutata) risolve a `{ok:false,error}`.
+ * Legge la voce con `leggiSegretoDb` (tappa 2 credenziali, T3: accetta
+ * `snmp_v3`, oppure `snmp` con `security_level`) e la prova con `provaV3`.
+ * Non lancia mai: qualunque errore (credenziale assente, chiave incoerente,
+ * timeout, autenticazione rifiutata) risolve a `{ok:false,error}`.
  * Il gate anti-lockout (`CredentialRunBudget`/`recordCredentialSuccess`/
  * `recordCredentialFailure`) resta responsabilità del chiamante
  * (`scanner/discovery.ts`), esattamente come per Redfish/SSH/WinRM.
@@ -189,46 +102,46 @@ export async function snmpValidateV3(
   credentialId: number,
   opts?: { port?: number; timeoutMs?: number }
 ): Promise<SnmpV3ValidateResult> {
-  const { getCredentialById } = await import("@/lib/db");
-  const { safeDecrypt } = await import("@/lib/crypto");
+  const { getDb } = await import("@/lib/db");
 
-  const cred = getCredentialById(credentialId);
-  if (!cred) return { ok: false, error: "Credenziale non trovata" };
-  if (String(cred.credential_type ?? "").toLowerCase() !== "snmp") {
-    return { ok: false, error: "La credenziale non è di tipo SNMP" };
+  // Un lettore solo (credentials/segreti.ts): vale una voce snmp_v3, o snmp con
+  // security_level. Una community non si prova come v3.
+  const esito = leggiSegretoDb(getDb(), credentialId, "snmp");
+  if (!esito.ok) return { ok: false, error: esito.motivo };
+  if (esito.segreto.forma !== "v3") {
+    return { ok: false, error: `La credenziale «${esito.nome}» è una community SNMP v1/v2c, non una SNMPv3` };
   }
+  return provaV3(ip, esito.segreto.record, opts);
+}
 
-  const username = cred.encrypted_username ? safeDecrypt(cred.encrypted_username) : null;
-  if (!username || !username.trim()) {
-    return { ok: false, error: "Username SNMPv3 mancante o non decifrabile" };
-  }
-  const authKey = cred.encrypted_auth_key ? safeDecrypt(cred.encrypted_auth_key) : null;
-  const privKey = cred.encrypted_priv_key ? safeDecrypt(cred.encrypted_priv_key) : null;
-
-  const built = buildV3Options({
-    username,
-    securityLevel: cred.security_level ?? "",
-    authProtocol: cred.auth_protocol,
-    authKey,
-    privProtocol: cred.priv_protocol,
-    privKey,
-  });
-  if (!built.ok) return { ok: false, error: built.error };
-
+/**
+ * Un GET di `sysDescr.0` in v3 con un record già decifrato: la sessione si
+ * apre con `apriSessioneSnmp` (rifiuto PRIMA della rete su opzioni
+ * incoerenti) e si chiude una volta sola. Non lancia mai. La usano la
+ * validazione della discovery, la prova di un binding e la prova di una
+ * credenziale (tappa 2 credenziali, T4).
+ */
+export async function provaV3(
+  ip: string,
+  record: SnmpV3CredentialRecord,
+  opts?: { port?: number; timeoutMs?: number }
+): Promise<SnmpV3ValidateResult> {
   const port = opts?.port ?? 161;
   const timeoutMs = opts?.timeoutMs ?? 5000;
 
   const snmp = await import("net-snmp");
+  const aperta = apriSessioneSnmp(snmp, ip, { forma: "v3", record }, { port, timeout: Math.floor(timeoutMs * 0.6), versione: null });
+  if (!aperta.ok) return { ok: false, error: aperta.motivo };
+  const session = aperta.session;
 
   return new Promise((resolve) => {
     let done = false;
-    let session: ReturnType<typeof snmp.createV3Session> | null = null;
-
     const finish = (result: SnmpV3ValidateResult) => {
       if (done) return;
       done = true;
+      clearTimeout(timer);
       try {
-        session?.close();
+        session.close();
       } catch {
         /* socket già chiuso */
       }
@@ -238,9 +151,7 @@ export async function snmpValidateV3(
     const timer = setTimeout(() => finish({ ok: false, error: "Timeout SNMPv3 (nessuna risposta)" }), timeoutMs);
 
     try {
-      session = snmp.createV3Session(ip, built.options, { port, timeout: Math.floor(timeoutMs * 0.6) });
       session.get([OID_SYSDESCR], (err, varbinds) => {
-        clearTimeout(timer);
         if (err) {
           finish({ ok: false, error: (err.message ?? "Errore SNMPv3").slice(0, 300) });
           return;
@@ -253,7 +164,6 @@ export async function snmpValidateV3(
         finish({ ok: true, sysDescr: stringifySnmpValue(vb.value) });
       });
     } catch (e) {
-      clearTimeout(timer);
       finish({ ok: false, error: ((e as Error).message ?? "Errore SNMPv3").slice(0, 300) });
     }
   });

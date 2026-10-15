@@ -31,6 +31,8 @@ import { getActiveTenants, getHubDbPath, getSetting, getTenantByCode } from "./d
 import { buildStatusSeries, statusWindowStartMs, type StatusObservation, type StatusPoint } from "./status-over-time";
 import { registraRipiego } from "./db-maintenance/ripieghi";
 import { resolveCredentialsForDb, type CredProtocol } from "./credentials/resolve";
+import { communityDb, coppiaLoginDb, coppiaSshDb, v3ApparatoDb } from "./credentials/segreti";
+import type { SnmpV3CredentialRecord } from "./protocols/snmpv3";
 import type { ControllerRunKind, ControllerRunStoredTrigger, NetworkControllerRow } from "./controllers/types";
 import { libreStatusFrom } from "./topology/status-map";
 import { parseProxmoxScan } from "./topology/vms";
@@ -103,6 +105,16 @@ export function getCurrentTenantCode(): string | null {
 
 const TENANTS_DIR = path.join(resolveDataDir(), "tenants");
 const MAX_OPEN_DBS = 20;
+
+/**
+ * Cartella dei DB tenant, fissata quando il modulo si carica. Sola lettura: la
+ * usano gli script sulle copie (tappa 2 credenziali, `guardia-copia.ts`) per
+ * verificare, prima di aprire un DB, di stare sulla copia e non sui dati veri.
+ */
+export function cartellaTenant(): string {
+  return TENANTS_DIR;
+}
+
 const tenantDbs = new Map<string, { db: Database.Database; lastUsed: number }>();
 
 /** Colonne di `scheduled_jobs`, nell'ordine dello schema (copia per nome nella v8). */
@@ -4034,25 +4046,11 @@ export function getCredentialLoginPair(
   credentialId: number,
   expectedType: "windows" | "linux" | "api"
 ): { username: string; password: string } | null {
-  const cred = getCredentialById(credentialId);
-  if (!cred) return null;
-  const type = String(cred.credential_type || "").toLowerCase();
-  if (type !== expectedType) return null;
-  const username = cred.encrypted_username ? safeDecrypt(cred.encrypted_username) : "";
-  const password = cred.encrypted_password ? safeDecrypt(cred.encrypted_password) : "";
-  if (username?.trim() && password?.trim()) return { username: username.trim(), password: password.trim() };
-  return null;
+  return coppiaLoginDb(db(), credentialId, expectedType);
 }
 
 export function getSshLinuxCredentialPair(credentialId: number): { username: string; password: string; port: number | null } | null {
-  const cred = getCredentialById(credentialId);
-  if (!cred) return null;
-  const type = String(cred.credential_type || "").toLowerCase();
-  if (type !== "ssh" && type !== "linux") return null;
-  const username = cred.encrypted_username ? safeDecrypt(cred.encrypted_username) : "";
-  const password = cred.encrypted_password ? safeDecrypt(cred.encrypted_password) : "";
-  if (username?.trim() && password?.trim()) return { username: username.trim(), password: password.trim(), port: cred.port ?? null };
-  return null;
+  return coppiaSshDb(db(), credentialId);
 }
 
 export type NetworkCredentialRole = "windows" | "linux" | "ssh" | "snmp";
@@ -4689,32 +4687,11 @@ export function recordCredentialSuccess(
 }
 
 export function getCredentialCommunityString(credentialId: number): string | null {
-  const cred = getCredentialById(credentialId);
-  if (!cred) return null;
-  const type = String(cred.credential_type || "").toLowerCase();
-  if (type !== "snmp") return null;
-  // Una credenziale SNMPv3 ha lo username v3, non una community: niente ripiego
-  // sullo username (tappa 1, 15/10), che finirebbe in chiaro come community v2c.
-  const enc = cred.encrypted_password || (cred.security_level ? null : cred.encrypted_username);
-  if (!enc) return null;
-  const s = safeDecrypt(enc);
-  return s && s.trim() ? s : null;
+  return communityDb(db(), credentialId);
 }
 
-export function getDeviceSnmpV3Credentials(device: NetworkDevice): { username: string; authKey: string } | null {
-  const isSnmpPrimary = device.protocol === "snmp_v2" || device.protocol === "snmp_v3";
-  const credIds = isSnmpPrimary
-    ? [device.credential_id, device.snmp_credential_id]
-    : [device.snmp_credential_id, device.credential_id];
-  for (const credId of credIds) {
-    if (!credId) continue;
-    const cred = getCredentialById(credId);
-    if (!cred || String(cred.credential_type || "").toLowerCase() !== "snmp") continue;
-    const username = cred.encrypted_username ? safeDecrypt(cred.encrypted_username) : "";
-    const authKey = cred.encrypted_password ? safeDecrypt(cred.encrypted_password) : "";
-    if (username?.trim() && authKey?.trim()) return { username: username.trim(), authKey: authKey.trim() };
-  }
-  return null;
+export function getDeviceSnmpV3Credentials(device: NetworkDevice): SnmpV3CredentialRecord | null {
+  return v3ApparatoDb(db(), device);
 }
 
 export function getEffectiveSnmpPort(_device: NetworkDevice): number {

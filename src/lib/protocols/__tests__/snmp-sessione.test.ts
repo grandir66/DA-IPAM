@@ -8,6 +8,10 @@
  * «sistemato» un createSession mettendo v2c li avrebbe spenti senza saperlo.
  * Da qui un solo punto che apre le sessioni a community, con la versione
  * dichiarata da chi chiama, e questa prova che non ne nascano altri.
+ *
+ * INCIDENTE (tappa 2 credenziali, T4, 15/10): cinque punti aprivano da soli la
+ * sessione v3, tutti con authNoPriv e MD5 fissi. Anche `createV3Session(` sta
+ * solo qui, dentro `apriSessioneSnmp`, con le opzioni prese dal record.
  */
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
@@ -94,8 +98,8 @@ test("provaVersioniSnmp su un agente muto: errore con tutte e due le versioni, m
   assert.match(!esito.ok ? esito.errore : "", /v2c: .*; v1: /);
 });
 
-/** File che contengono `.createSession(` fuori da snmp-sessione.ts. */
-function createSessionFuoriDalHelper(radice: string): string[] {
+/** File che contengono la chiamata `cerca` fuori da snmp-sessione.ts. */
+function chiamateFuoriDalHelper(radice: string, cerca: RegExp): string[] {
   const trovati: string[] = [];
   const visita = (dir: string): void => {
     for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -106,7 +110,7 @@ function createSessionFuoriDalHelper(radice: string): string[] {
       } else if (/\.(ts|tsx)$/.test(e.name) && !e.name.endsWith(".d.ts") && e.name !== "snmp-sessione.ts") {
         const righe = fs.readFileSync(p, "utf8").split("\n");
         righe.forEach((r, i) => {
-          if (/\.createSession\s*\(/.test(r)) trovati.push(`${path.relative(radice, p)}:${i + 1}`);
+          if (cerca.test(r)) trovati.push(`${path.relative(radice, p)}:${i + 1}`);
         });
       }
     }
@@ -119,8 +123,18 @@ test("INVARIANTE: nessun createSession( a community fuori da snmp-sessione.ts", 
   const src = path.resolve(__dirname, "../../..");
   assert.ok(fs.existsSync(path.join(src, "lib/protocols/snmp-sessione.ts")), `radice sbagliata: ${src}`);
   assert.deepEqual(
-    createSessionFuoriDalHelper(src),
+    chiamateFuoriDalHelper(src, /\.createSession\s*\(/),
     [],
     "aprire la sessione con apriSessioneCommunity(snmp, host, community, { …, versione }) e scegliere la versione con versioneApparato(device, <quella di prima>)"
+  );
+});
+
+test("INVARIANTE: nessun createV3Session( fuori da snmp-sessione.ts", () => {
+  const src = path.resolve(__dirname, "../../..");
+  assert.ok(fs.existsSync(path.join(src, "lib/protocols/snmp-sessione.ts")), `radice sbagliata: ${src}`);
+  assert.deepEqual(
+    chiamateFuoriDalHelper(src, /createV3Session\s*\(/),
+    [],
+    "aprire la sessione v3 con apriSessioneSnmp(snmp, host, { forma: \"v3\", record }, { port, timeout, versione: null }): livello, protocolli e chiavi vengono dal record"
   );
 });

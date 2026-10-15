@@ -4,10 +4,10 @@
 
 ## Riepilogo
 
-- File `route.ts`: **317** · gestori (metodo × rotta): **488**
-- Forme di export: funzione 472 · destrutturata 2 · rinomina 14
-- Guardie viste: `nessuna`=9 · `esterna`=2 · `token`=1 · `sessione`=51 · `auth-diretto`=3 · `auth`=131 · `admin-o-onboarding`=7 · `admin`=281 · `superadmin`=3
-- Esiti: ok **455** · eccezioni **33** · debiti **0** · scoperti **0**
+- File `route.ts`: **316** · gestori (metodo × rotta): **487**
+- Forme di export: funzione 471 · destrutturata 2 · rinomina 14
+- Guardie viste: `nessuna`=9 · `esterna`=2 · `token`=1 · `sessione`=51 · `auth-diretto`=3 · `auth`=131 · `admin-o-onboarding`=7 · `admin`=280 · `superadmin`=3
+- Esiti: ok **454** · eccezioni **33** · debiti **0** · scoperti **0**
 
 Livello atteso: GET/HEAD/OPTIONS → `auth`; scritture → `admin`; letture col nome sensibile → `admin`; i livelli dichiarati stanno in `ATTESI` di `src/lib/permessi/rotte.ts`. `withTenantFromSession` (`sessione`) chiede l'accesso ma non il ruolo: per una lettura vale quanto `auth`.
 
@@ -131,7 +131,6 @@ Livello atteso: GET/HEAD/OPTIONS → `auth`; scritture → `admin`; letture col 
 | `/api/credentials/[id]` | GET | `sessione` | `admin` | mascherata: campi cifrati sostituiti dalla maschera |
 | `/api/credentials/[id]` | PUT | `admin` | `admin` |  |
 | `/api/credentials/[id]/test` | POST | `admin` | `admin` |  |
-| `/api/credentials/[id]/test-snmp` | GET | `admin` | `admin` |  |
 | `/api/custom-oui` | GET | `auth` | `auth` |  |
 | `/api/custom-oui` | PUT | `admin` | `admin` |  |
 | `/api/dalink/cosa-esce` | GET | `admin` | `auth` |  |

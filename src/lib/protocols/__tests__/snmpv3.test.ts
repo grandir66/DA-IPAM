@@ -47,17 +47,25 @@ describe("buildV3Options", () => {
     }
   });
 
-  it("authPriv con protocolli priv supportati mappati correttamente (DES/AES/AES256)", () => {
+  it("authPriv con protocolli priv supportati mappati correttamente (AES/AES256/AES256C)", () => {
+    // AES256 = Blumenthal (aes256b), AES256C = Reeder (aes256r, «AES-256 (Cisco)»): tappa 2, T4.
     const cases: Array<[string, number]> = [
-      ["DES", PrivProtocols.des],
       ["AES", PrivProtocols.aes],
       ["AES256", PrivProtocols.aes256b],
+      ["AES256C", PrivProtocols.aes256r],
     ];
     for (const [proto, expected] of cases) {
       const r = buildV3Options(cred({ securityLevel: "authPriv", privProtocol: proto }));
       assert.equal(r.ok, true, `atteso ok per ${proto}`);
       if (r.ok) assert.equal(r.options.privProtocol, expected, `mapping errato per ${proto}`);
     }
+  });
+
+  it("DES → errore che dice di usare AES (Node 22 non ha des-cbc: prima la sessione partiva e falliva in modo oscuro)", () => {
+    const r = buildV3Options(cred({ securityLevel: "authPriv", privProtocol: "DES" }));
+    assert.equal(r.ok, false);
+    if (r.ok) return;
+    assert.equal(r.error, "DES non è supportato da Node 22: usa AES");
   });
 
   it("authPriv senza privKey → errore, nessuna sessione costruita", () => {

@@ -38,6 +38,7 @@ import { networkDeviceUsesArpPoll } from "@/lib/network-device-arp";
 import { DeviceLocationField } from "@/components/topology/device-location-field";
 import { toast } from "sonner";
 import type { NetworkDevice } from "@/types";
+import { corpoModificaApparato, tendineDaApparato } from "@/app/(dashboard)/devices/modifica-in-blocco";
 
 /** «auto» = la sceglie la discovery (v2c, poi v1); «1»/«2c» = fissata a mano. */
 type SceltaVersioneSnmp = "auto" | "1" | "2c";
@@ -101,14 +102,24 @@ export function EditDeviceDialog({ device, open, onOpenChange, onSaved }: EditDe
     setEditSaving(true);
     const form = e.currentTarget;
     const formData = new FormData(form);
-    const body: Record<string, unknown> = {
-      vendor: editVendor,
-      protocol: editProtocol,
-      vendor_subtype: editVendorSubtype || null,
-      credential_id: editCredentialId && editCredentialId !== "none" ? Number(editCredentialId) : null,
-      snmp_credential_id: editSnmpCredentialId && editSnmpCredentialId !== "none" ? Number(editSnmpCredentialId) : null,
-      scan_target: editScanTarget || null,
-    };
+    // Le credenziali partono solo se cambiate rispetto all'apparato (dalla 2e un null toglie i binding).
+    let body: Record<string, unknown>;
+    try {
+      body = corpoModificaApparato(tendineDaApparato(device), {
+        campi: {
+          vendor: editVendor,
+          protocol: editProtocol,
+          vendor_subtype: editVendorSubtype || null,
+          scan_target: editScanTarget || null,
+        },
+        credentialId: editCredentialId,
+        snmpCredentialId: editSnmpCredentialId,
+      });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Credenziale non valida");
+      setEditSaving(false);
+      return;
+    }
     if (editProductProfile) body.product_profile = editProductProfile;
     if (editClassification) body.classification = editClassification;
     body.use_for_arp_poll = editUseForArpPoll ? 1 : 0;

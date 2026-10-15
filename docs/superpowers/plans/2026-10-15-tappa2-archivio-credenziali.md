@@ -143,6 +143,9 @@ ferma e si chiede solo se qualcosa non torna. La 2g resta con la conferma di Ric
      né contenga la cartella dati del servizio (letta dall'ambiente prima di
      sovrascriverlo). Altrimenti esce con un errore in italiano, codice 2, senza aprire
      niente.
+  5. *(revisione della 2a)* senza `DA_INVENT_DATA_DIR` nell'ambiente (l'hub non ce
+     l'ha: dati in `/opt/da-invent/data`) serve `--dati-servizio <cartella>`, e la
+     guardia rifiuta i file della copia collegati (simbolici o fisici).
 - **Una prova sola:** `DA_INVENT_DATA_DIR="$(mktemp -d "${TMPDIR:-/tmp}/ipam.XXXXXX")" node --import tsx --test <file>`.
   - Si prova sul DB con lo schema vero: `TENANT_SCHEMA_SQL` per i DB nuovi, la
     definizione **vecchia completa**, copiata nella prova, per le migrazioni.
@@ -717,7 +720,12 @@ introduce affatto, e T24 non lo scrive.
 - SNMPv3 letto bene. Oggi la chiave si prende da `encrypted_password` (`db.ts:4462`) e
   cinque sessioni hanno MD5/authNoPriv fissi.
 
-Le voci v3 sono 0 ovunque, quindi nessun apparato cambia credenziale. Nella 2a va anche
+Le voci v3 sono 0 ovunque, quindi nessun apparato cambia credenziale. *(Revisione della
+2a: questo conta le voci, non gli apparati col protocollo `snmp_v3`. Quelli senza una v3
+oggi leggono la community; dal T4 danno «Credenziale SNMPv3 assente o illeggibile». La
+misura `[snmp_v3]` di `misure-2a.ts` li conta per tenant, e la fotografia della 2a li
+scrive senza scelta: se in A o H1 sono più di 0, ci si ferma e il numero va a Riccardo
+prima della procedura R.)* Nella 2a va anche
 il bug del PATCH in blocco, che azzera le credenziali (spec §2: prima i bug confermati).
 **Migrazione:** nessuna. **Rilascio:** procedura R senza i passi 3-4. **Arresto:**
 fotografia con anche una sola differenza.
@@ -934,6 +942,14 @@ fotografia con anche una sola differenza.
     - `:64`, `:95`, `:127`: la porta è `body.port ?? credentials.port ?? standard`;
   - modifica `src/lib/scanner/discovery.ts:2510-2537`: la v3 riuscita registra
     sysDescr/sysObjectID come il ramo community;
+    *Nota di esecuzione (revisione della 2a): rinviato, il file non cambia.* In
+    quel blocco (`credential_validate`) il ramo community non registra
+    sysDescr/sysObjectID: registra solo la versione SNMP sull'apparato, e il blocco
+    esce prima del salvataggio degli host. I due valori arrivano dalle fasi SNMP
+    della discovery, che sono solo a community (`querySnmpInfoMultiCommunity`). Per
+    un host che risponde solo in v3 servirebbe una scrittura nuova sull'host (o la
+    v3 in quelle fasi), che cambia fingerprint e classificazione: va proposta a
+    parte, non dentro la 2a;
   - **il ramo v3 si decide dalla forma del segreto**, cioè da `leggiSegretoDb(…, "snmp")`
     che dà `forma: "v3"` oppure `"community"`, mai dal confronto `credential_type ===
     "snmp"`. Nella 2a il tipo `snmp_v3` non esiste ancora; dalla 2c sì, e i confronti col
@@ -1004,7 +1020,12 @@ fotografia con anche una sola differenza.
 - [ ] Verifica dopo il rilascio: il «Test» di un binding SNMP sull'hub risponde come prima;
   nel journal non c'è nessun errore SNMP nuovo nell'ora dopo il riavvio.
 - [ ] CHANGELOG: SNMPv3 letto per intero e il perché; la modifica in blocco che azzerava le
-  credenziali; la rotta `test-snmp` tolta.
+  credenziali; la rotta `test-snmp` tolta. *(Revisione della 2a)* La regola «niente
+  community al posto di una v3» vale per le cinque sessioni v3 (più quella degli switch
+  e della topologia, `apriSessioneSnmpApparato`); il profilo vendor di `getDeviceInfo`
+  apre ancora una v2c con la community (anche «public») prima della v3, e passa al
+  motore nel T8. La validazione v3 della discovery non salva sysDescr/sysObjectID
+  (rinviata, nota nel T4).
 
 ---
 

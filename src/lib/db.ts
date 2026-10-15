@@ -27,6 +27,8 @@ import { decrypt, safeDecrypt } from "./crypto";
 import { randomUUID } from "crypto";
 import { inferIpAssignment, resolveAdDhcpLeaseForHost, resolveDhcpLeaseForHost } from "./ip-assignment";
 import { resolveCredentialsForDb, type CredProtocol } from "./credentials/resolve";
+import { communityDb, coppiaLoginDb, coppiaSshDb, v3ApparatoDb } from "./credentials/segreti";
+import type { SnmpV3CredentialRecord } from "./protocols/snmpv3";
 import { lookupVendorSync } from "./scanner/mac-vendor";
 import { VENDOR_PLACEHOLDER_RE } from "./attribution/emitters";
 
@@ -3847,14 +3849,7 @@ export function getCredentialLoginPair(
   credentialId: number,
   expectedType: "windows" | "linux" | "api"
 ): { username: string; password: string } | null {
-  const cred = getCredentialById(credentialId);
-  if (!cred) return null;
-  const type = String(cred.credential_type || "").toLowerCase();
-  if (type !== expectedType) return null;
-  const username = cred.encrypted_username ? safeDecrypt(cred.encrypted_username) : "";
-  const password = cred.encrypted_password ? safeDecrypt(cred.encrypted_password) : "";
-  if (username?.trim() && password?.trim()) return { username: username.trim(), password: password.trim() };
-  return null;
+  return coppiaLoginDb(getDb(), credentialId, expectedType);
 }
 
 /** Ruoli catena credenziali per subnet (detect / SNMP). */
@@ -3874,14 +3869,7 @@ function credentialMatchesNetworkRole(
 
 /** Username/password per credenziali SSH o Linux (scan SSH unificato). */
 export function getSshLinuxCredentialPair(credentialId: number): { username: string; password: string; port: number | null } | null {
-  const cred = getCredentialById(credentialId);
-  if (!cred) return null;
-  const type = String(cred.credential_type || "").toLowerCase();
-  if (type !== "ssh" && type !== "linux") return null;
-  const username = cred.encrypted_username ? safeDecrypt(cred.encrypted_username) : "";
-  const password = cred.encrypted_password ? safeDecrypt(cred.encrypted_password) : "";
-  if (username?.trim() && password?.trim()) return { username: username.trim(), password: password.trim(), port: cred.port ?? null };
-  return null;
+  return coppiaSshDb(getDb(), credentialId);
 }
 
 /** Credenziali Windows/Linux/SSH/SNMP assegnate alla subnet (ordine = priorità tentativi). */
@@ -4436,33 +4424,16 @@ export function recordCredentialSuccess(
 
 /** Restituisce la community string decifrata per una credenziale SNMP. */
 export function getCredentialCommunityString(credentialId: number): string | null {
-  const cred = getCredentialById(credentialId);
-  if (!cred) return null;
-  const type = String(cred.credential_type || "").toLowerCase();
-  if (type !== "snmp") return null;
-  // Una credenziale SNMPv3 ha lo username v3, non una community: niente ripiego
-  // sullo username (tappa 1, 15/10), che finirebbe in chiaro come community v2c.
-  const enc = cred.encrypted_password || (cred.security_level ? null : cred.encrypted_username);
-  if (!enc) return null;
-  const s = safeDecrypt(enc);
-  return s && s.trim() ? s : null;
+  return communityDb(getDb(), credentialId);
 }
 
-/** Restituisce le credenziali SNMP v3 per un device (user name + auth key). Per v3 serve credential con username e password. */
-export function getDeviceSnmpV3Credentials(device: NetworkDevice): { username: string; authKey: string } | null {
-  const isSnmpPrimary = device.protocol === "snmp_v2" || device.protocol === "snmp_v3";
-  const credIds = isSnmpPrimary
-    ? [device.credential_id, device.snmp_credential_id]
-    : [device.snmp_credential_id, device.credential_id];
-  for (const credId of credIds) {
-    if (!credId) continue;
-    const cred = getCredentialById(credId);
-    if (!cred || String(cred.credential_type || "").toLowerCase() !== "snmp") continue;
-    const username = cred.encrypted_username ? safeDecrypt(cred.encrypted_username) : "";
-    const authKey = cred.encrypted_password ? safeDecrypt(cred.encrypted_password) : "";
-    if (username?.trim() && authKey?.trim()) return { username: username.trim(), authKey: authKey.trim() };
-  }
-  return null;
+/**
+ * Credenziale SNMPv3 di un apparato, col record completo (livello, protocolli, chiavi):
+ * la lettura sta in credentials/segreti.ts. Il formato v3 «vecchio» (voce snmp senza
+ * livello, con utente e password) resta authNoPriv/MD5 come prima.
+ */
+export function getDeviceSnmpV3Credentials(device: NetworkDevice): SnmpV3CredentialRecord | null {
+  return v3ApparatoDb(getDb(), device);
 }
 
 /**

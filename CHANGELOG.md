@@ -4,6 +4,22 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-15 · topologia: elenco aggiornato tornando sulla pagina
+
+Ramo `fix/topologia-elenco-aggiornato`, non ancora su `dev`.
+
+### Correzioni
+
+- **Tornando sulla Topologia da un'altra scheda o finestra, elenco e mappa si rileggono subito.**
+  La pagina rileggeva i dati all'apertura, dopo le proprie modifiche e ogni 30 secondi: se si
+  cambiava l'inventario in un'altra scheda (cancellare un doppione, rinominare un apparato) e poi
+  si tornava sulla scheda della mappa rimasta aperta, l'elenco a sinistra e la mappa restavano
+  quelli di prima fino al giro successivo (misurato: 26 secondi; con la scheda in secondo piano
+  Chrome rallenta anche quel giro), e veniva da ricaricare la pagina a mano. Ora la pagina si
+  rilegge appena torna visibile o la finestra torna a fuoco, con una lettura sola anche quando i
+  due segnali arrivano insieme. Le modifiche fatte dalla mappa stessa e il ritorno con i link del
+  menu già si vedevano subito: verificato una per una.
+
 ## [Non rilasciato] — 2026-10-15 · mappa: ritocchi e VM, SSH degli hypervisor
 
 Ramo `fix/mappa-ritocchi-vm`, non ancora su `dev`.

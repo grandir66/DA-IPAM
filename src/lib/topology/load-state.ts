@@ -22,3 +22,16 @@ const FMT = new Intl.DateTimeFormat("it-IT", { timeZone: FUSO_UTENTI, hour: "2-d
 export function oraItaliana(ms: number): string {
   return FMT.format(new Date(ms));
 }
+
+/**
+ * Tornando sulla pagina — scheda di nuovo visibile o finestra di nuovo a fuoco — si rileggono i dati
+ * (difetto 2026-10-15: dopo una modifica fatta in un'altra scheda o finestra, elenco e mappa restavano
+ * quelli di prima fino al giro dei 30 s). I due eventi arrivano insieme cambiando scheda: entro
+ * `RETURN_DEDUPE_MS` dall'ultima rilettura per ritorno se ne fa una sola. Il giro dei 30 s non conta:
+ * può aver letto prima della modifica.
+ */
+export const RETURN_DEDUPE_MS = 1_000;
+
+export function reloadOnReturn(visible: boolean, lastReturnMs: number | null, nowMs: number): boolean {
+  return visible && (lastReturnMs === null || nowMs - lastReturnMs >= RETURN_DEDUPE_MS);
+}

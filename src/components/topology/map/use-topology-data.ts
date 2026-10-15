@@ -3,15 +3,17 @@
 /**
  * I dati della pagina Topologia: il modello (con lo stato dei nodi), le mappe
  * salvate e la vista scelta (nodi e ritocchi). Un errore è un errore, mai una
- * «mappa vuota» (fetchJson + LoadError); si ricarica da solo ogni 30 secondi e
- * dopo ogni scrittura. Un aggiornamento fallito con la mappa già a schermo la
- * tiene e lo dice (`refreshError`, ora italiana): solo il primo caricamento
- * fallito diventa l'errore pieno (load-state.ts).
+ * «mappa vuota» (fetchJson + LoadError); si ricarica da solo ogni 30 secondi,
+ * dopo ogni scrittura e tornando sulla pagina (scheda visibile o finestra a
+ * fuoco: le modifiche fatte altrove si vedono subito, difetto 2026-10-15).
+ * Un aggiornamento fallito con la mappa già a schermo la tiene e lo dice
+ * (`refreshError`, ora italiana): solo il primo caricamento fallito diventa
+ * l'errore pieno (load-state.ts).
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { fetchJson, type FetchJsonResult } from "@/lib/fetch-json";
-import { afterLoadFailure } from "@/lib/topology/load-state";
+import { afterLoadFailure, reloadOnReturn } from "@/lib/topology/load-state";
 import type { MapOrientation, TopologyModel } from "@/lib/topology/model-types";
 import type { TopologyStatus } from "@/lib/topology/types";
 import type { SavedTweak } from "@/lib/topology/tree-layout";
@@ -113,6 +115,24 @@ export function useTopologyData(viewKey: string | null) {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
       abortRef.current?.abort();
+    };
+  }, [reload]);
+
+  // Tornando sulla pagina (un'altra scheda o finestra, dove magari si è cambiato l'inventario) si rilegge
+  // subito, senza aspettare il giro dei 30 s: elenco e mappa vengono dallo stesso caricamento.
+  useEffect(() => {
+    let lastReturn: number | null = null;
+    const onReturn = () => {
+      const now = Date.now();
+      if (!reloadOnReturn(document.visibilityState === "visible", lastReturn, now)) return;
+      lastReturn = now;
+      void reload();
+    };
+    document.addEventListener("visibilitychange", onReturn);
+    window.addEventListener("focus", onReturn);
+    return () => {
+      document.removeEventListener("visibilitychange", onReturn);
+      window.removeEventListener("focus", onReturn);
     };
   }, [reload]);
 

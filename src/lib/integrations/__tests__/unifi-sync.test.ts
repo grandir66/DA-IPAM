@@ -12,7 +12,7 @@ import fs from "node:fs";
 import { test, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { closeHubDb } from "@/lib/db-hub";
-import { deleteTenantDatabase, getTenantDb, withTenant } from "@/lib/db-tenant";
+import { deleteTenantDatabase, getPortAndNeighborCountsByDevice, getTenantDb, withTenant } from "@/lib/db-tenant";
 import { UnifiApiError } from "../unifi-api";
 import { parseStatDeviceResponse, parseUnifiDevice, type UnifiDevice } from "../unifi-device";
 import { mapUnifiUplink } from "../unifi-map";
@@ -243,6 +243,26 @@ test("zero sospetto: port_table e lldp_table vuote per SW-1 non cancellano porte
   assert.match(testo, /SW-1.*vicini/);
   // Gli altri apparati si aggiornano lo stesso.
   assert.equal(conta(T, "switch_ports", "device_id = ?", apparato("SW-11").id), 26);
+});
+
+// M3 (revisione finale di T2): la guardia «zero sospetto» contava tutte le righe dei vicini, anche quelle delle fonti nuove
+// (ssh, snmp, controller, host). Con le letture accese, uno switch del controller che ha anche righe SSH avrebbe detto «nel DB
+// ce ne sono N» per righe che il controller non ha mai scritto. Contano solo le righe del modello di oggi (device, unifi).
+test("M3: la guardia «zero sospetto» conta solo i vicini delle fonti di oggi (device, unifi), non quelli delle letture in più", async () => {
+  await sync();
+  const id = apparato("SW-1").id;
+  const db = getTenantDb(T);
+  db.prepare("DELETE FROM device_neighbors WHERE device_id = ?").run(id);
+  const ins = db.prepare("INSERT INTO device_neighbors (device_id, local_port, remote_device_name, remote_port, protocol, source, timestamp) VALUES (?, ?, 'VICINO-X', 'eth0', 'lldp', ?, datetime('now'))");
+  ins.run(id, "Port 1", "ssh");
+  ins.run(id, "Port 2", "snmp");
+  assert.equal(withTenant(T, () => getPortAndNeighborCountsByDevice()).get(id)?.neighbors ?? 0, 0, "solo righe delle fonti nuove: zero");
+  ins.run(id, "Port 3", "unifi");
+  ins.run(id, "Port 4", "device");
+  assert.equal(withTenant(T, () => getPortAndNeighborCountsByDevice()).get(id)?.neighbors, 2);
+  db.prepare("DELETE FROM device_neighbors WHERE device_id = ? AND source IN ('unifi', 'device')").run(id);
+  const r = await sync(risposta({ nome: "SW-1", con: { lldp_table: [] } }));
+  assert.doesNotMatch(r.errors.join("\n"), /SW-1.*vicini/, "nessun avviso per righe che il controller non ha scritto");
 });
 
 test("apparato offline: porte e vicini dell'ultima sync restano com'erano, ed è fra gli offline", async () => {

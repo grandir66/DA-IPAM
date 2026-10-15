@@ -5500,7 +5500,9 @@ export function getPortAndNeighborCountsByDevice(): Map<number, { ports: number;
   for (const r of d.prepare("SELECT device_id, COUNT(*) AS n FROM switch_ports GROUP BY device_id").all() as Array<{ device_id: number; n: number }>) {
     entry(r.device_id).ports = r.n;
   }
-  for (const r of d.prepare("SELECT device_id, COUNT(*) AS n FROM device_neighbors GROUP BY device_id").all() as Array<{ device_id: number; n: number }>) {
+  // Solo le fonti del modello di oggi (revisione finale di T2, M3): le righe delle letture in più (ssh, snmp, controller, host)
+  // non le scrive il controller, e contarle farebbe dire «nel DB ce ne sono N» per righe che non sono sue (R7).
+  for (const r of d.prepare("SELECT device_id, COUNT(*) AS n FROM device_neighbors WHERE source IN ('device', 'unifi') GROUP BY device_id").all() as Array<{ device_id: number; n: number }>) {
     entry(r.device_id).neighbors = r.n;
   }
   return out;

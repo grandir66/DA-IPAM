@@ -100,6 +100,12 @@ export const ATTESI: Atteso[] = [
     codice: "SEC-13",
     motivo: "avanzamento di un'installazione lanciata da un admin",
   },
+  {
+    rotta: "/api/topology/traccia",
+    metodi: ["GET"],
+    livello: "admin",
+    motivo: "«Cosa cambierebbe con la mappa nuova»: un calcolo per chi decide quando accendere la mappa nuova (spec topologia §13.11.3)",
+  },
 ];
 
 const PROVA_MASCHERATE = "src/lib/permessi/__tests__/letture-mascherate.test.ts";

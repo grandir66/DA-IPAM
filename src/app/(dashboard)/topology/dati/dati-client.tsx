@@ -13,6 +13,7 @@ import type { MapLink, MapNode, TopologyModel } from "@/lib/topology/model-types
 import { HypervisorSyncCard } from "./hypervisor-sync-card";
 import { IgnoredLinksCard } from "./ignored-links-card";
 import { LettureCard } from "./letture-card";
+import { TracciaCard } from "./traccia-card";
 
 type Model = TopologyModel & { staleDays: number };
 const MAX = 200;
@@ -116,6 +117,8 @@ export function DatiClient({ isAdmin }: { isAdmin: boolean }) {
       <HypervisorSyncCard isAdmin={isAdmin} />
 
       <LettureCard isAdmin={isAdmin} />
+
+      {isAdmin && <TracciaCard />}
 
       <Card className="xl:col-span-2">
         <CardHeader><CardTitle>Proposte «promuovi ad apparato»</CardTitle></CardHeader>

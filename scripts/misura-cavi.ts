@@ -7,6 +7,8 @@
  *         [--scenario S0|S1|S3:<id>|S4|S9:<id>:<porta>:<fonte>|S12:<id>:<vmid>] [--soglia <giorni>]
  *         [--uscita-router <id>=<file>]...   righe nuove del router dall'uscita incollata (lettore di T1), insieme alle vecchie
  *         [--ripristino <ora UTC>]   dopo le righe nuove del router, lo stesso testo SQL di «Tornare indietro» (Task 10b)
+ *         [--fatti-prova <id>]   T2: fatti dei MikroTik (fixture anonime del repo) e vicini con le fonti nuove (ssh, snmp) sull'apparato <id>, nella copia della copia
+ *         [--traccia]   T2: «Cosa cambierebbe con la mappa nuova» (numeri; con --nomi le righe a terminale)
  *         [--salva <istantanea.json>] [--confronta <istantanea.json>]
  *         [--esporta-input <file.json>] [--input-json <file.json>] [--nomi] [--json]
  *         [--senza-regola <regola>]...   spegne una regola del passaggio universale (src/lib/topology/regole.ts): la misura C19 confronta «tutte le regole» con «tutte meno una»
@@ -20,11 +22,11 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { controllaPercorsi, percorsoReale } from "../src/lib/scanner/__tests__/support/percorsi-prova";
 
-const CON_VALORE = ["--cartella", "--scenario", "--soglia", "--uscita-router", "--ripristino", "--salva", "--confronta", "--esporta-input", "--input-json", "--senza-regola", "--adesso"];
+const CON_VALORE = ["--cartella", "--scenario", "--soglia", "--uscita-router", "--ripristino", "--fatti-prova", "--salva", "--confronta", "--esporta-input", "--input-json", "--senza-regola", "--adesso"];
 
 function uso(msg?: string): number {
   if (msg) process.stderr.write(`${msg}\n`);
-  process.stderr.write("Uso: npx tsx scripts/misura-cavi.ts <copia.db> --cartella <scratchpad> [--scenario …] [--uscita-router <id>=<file>] [--ripristino <ora UTC>] [--senza-regola <regola>] [--adesso <ora UTC>] [--salva|--confronta <file>] [--esporta-input|--input-json <file>] [--nomi] [--json]\n");
+  process.stderr.write("Uso: npx tsx scripts/misura-cavi.ts <copia.db> --cartella <scratchpad> [--scenario …] [--uscita-router <id>=<file>] [--ripristino <ora UTC>] [--fatti-prova <id>] [--traccia] [--senza-regola <regola>] [--adesso <ora UTC>] [--salva|--confronta <file>] [--esporta-input|--input-json <file>] [--nomi] [--json]\n");
   return 2;
 }
 
@@ -122,6 +124,32 @@ async function main(): Promise<number> {
     db.exec(sqlApplica(ripristino));
   }
 
+  // T2 (piano di T2, Task 12): «letture accese» con le fixture vere rese anonime, sulla copia della copia: i fatti dei
+  // MikroTik sull'apparato dato e righe dei vicini con le fonti nuove. Il modello di oggi non le legge: `impronta_modello`
+  // deve restare quella di «letture spente» (R7, I33). Nomi inventati: non toccano le righe vere (la chiave dei vicini non ha
+  // la fonte, SN6).
+  const fattiProva = val("--fatti-prova");
+  if (fattiProva) {
+    if (!/^\d+$/.test(fattiProva)) return uso("--fatti-prova vuole l'id di un apparato.");
+    const stp = await import("../src/lib/devices/mikrotik-stp");
+    const { parseMikrotikNeighbors } = await import("../src/lib/devices/mikrotik-vicini");
+    const FX = path.join(process.cwd(), "src/lib/devices/__tests__/fixtures");
+    const F = (n: string) => fs.readFileSync(path.join(FX, n), "utf8");
+    const id = Number(fattiProva);
+    const scritti = tenantDb.withTenant(tenant, () => {
+      const r = tenantDb.scriviFattiTopologia(id, "device", stp.fattiMikrotik({
+        interfacce: stp.parseInterfacce(F("mikrotik-mk2-testa.txt")), bridge: stp.parseBridge(F("mikrotik-mk3-testa.txt")),
+        porteBridge: stp.parsePorteBridge(F("mikrotik-mk4-testa.txt")), monitorBridge: stp.parseMonitorBridge(F("mikrotik-mk5-testa.txt")),
+        monitorPorte: stp.parseMonitorPorte(F("mikrotik-mk6-testa.txt")), fasci: stp.parseFasci(F("mikrotik-mk8a-testa.txt")),
+        monitorFasci: stp.parseMonitorFasci(F("mikrotik-mk8b-testa.txt")),
+      }));
+      tenantDb.upsertNeighbors(id, parseMikrotikNeighbors(F("mikrotik-ip-neighbor-terse-ssh.txt")), "ssh");
+      tenantDb.upsertNeighbors(id, parseMikrotikNeighbors(F("mikrotik-ip-neighbor-terse.txt")).map((n) => ({ ...n, localPortIndex: 1, remoteCaps: "bridge" })), "snmp");
+      return r;
+    });
+    out.fatti_prova = scritti ?? "schema assente";
+  }
+
   const fileInput = val("--input-json");
   let letto: unknown = null;
   if (fileInput) {
@@ -151,6 +179,8 @@ async function main(): Promise<number> {
     tempi.push(performance.now() - t0);
   }
   out.modello_ms = Math.round(mediana(tempi) * 10) / 10;
+  // T2 (I33): l'impronta del modello di oggi. Con le letture spente e con quelle accese (--fatti-prova) deve essere la stessa.
+  out.impronta_modello = crypto.createHash("sha256").update(JSON.stringify(model)).digest("hex").slice(0, 16);
 
   const viste = tenantDb.withTenant(tenant, () => ({
     auto: tenantDb.getAutoMap(), autoVista: tenantDb.getTopologyMapView("auto"),
@@ -206,6 +236,22 @@ async function main(): Promise<number> {
     out.conteggi_cambiati = Object.fromEntries(Object.keys({ ...prima.conteggi, ...numeri })
       .filter((k) => prima.conteggi[k] !== numeri[k]).map((k) => [k, `${prima.conteggi[k] ?? "—"} → ${numeri[k] ?? "—"}`]));
   }
+  let traccia: import("../src/lib/topology/cavi/traccia").Traccia | null = null;
+  let nomiT: Record<string, string> = {};
+  if (a.includes("--traccia")) {
+    const { costruisciModelloCavi } = await import("../src/lib/topology/cavi/modello");
+    const { calcolaTraccia, nomiTraccia } = await import("../src/lib/topology/cavi/traccia");
+    const ing = tenantDb.withTenant(tenant, () => tenantDb.getIngressoCavi(soglia, base.nowMs));
+    const t0 = performance.now();
+    const ombra = costruisciModelloCavi({ ...ing, t1: input }, model, { testaScelta: auto.headChosen ? auto.head : null });
+    out.cavi_ms = Math.round((performance.now() - t0) * 10) / 10;
+    traccia = calcolaTraccia(padri, ombra);
+    nomiT = nomiTraccia(model, ombra, traccia);
+    out.traccia = {
+      schema: traccia.schema, padri_diversi: traccia.padriDiversi, entrano: traccia.entrano.length, escono: traccia.escono.length,
+      per_genere: traccia.perGenere, nuovi: traccia.nuovi, segmenti: traccia.segmenti, anomalie: traccia.anomalie, avvisi: traccia.avvisi.length,
+    };
+  }
   out.quick_check_dopo = quick();
   process.stdout.write(a.includes("--json") ? `${JSON.stringify(out, null, 1)}\n` : `${Object.entries(out).map(([k, v]) => `${k}: ${typeof v === "object" ? JSON.stringify(v) : v}`).join("\n")}\n`);
 
@@ -248,6 +294,12 @@ async function main(): Promise<number> {
     if (cambiati.length > 0) {
       w("\n— host che cambiano categoria (C18) —");
       for (const id of cambiati) w(nome(`host:${id}`));
+    }
+    if (traccia) {
+      w("\n— cosa cambierebbe con la mappa nuova (in ombra) —");
+      const nt = (id: string | null | undefined) => (id === undefined ? "fuori" : id === null ? "nessuno" : (nomiT[id] ?? nome(id)));
+      for (const r of traccia.righe) w(`${nt(r.id)} · padre oggi ${nt(r.prima)} · con la mappa nuova ${nt(r.dopo)} · ${r.perche}`);
+      if (traccia.altri > 0) w(`+ altri ${traccia.altri}`);
     }
   }
   return righeQuick().every((r) => r === "ok" || /^Page \d+: never used$/.test(r)) ? 0 : 1;

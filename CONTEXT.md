@@ -56,11 +56,13 @@ Documento di **passaggio di consegne**: leggilo per primo, poi [CLAUDE.md](CLAUD
   `ufw allow in on wt0` (tappa G1). L'agente Python (decisione 26) non è ancora tolto.
 - **Credenziali, promozione IP → apparato, wizard (15/10)**: spec
   `docs/superpowers/specs/2026-10-15-credenziali-promozione-wizard-design.md`, piano tappa 1
-  `docs/superpowers/plans/2026-10-15-tappa1-credenziali-promozione.md`. **Tappa 1 rilasciata il 15/10**:
+  `docs/superpowers/plans/2026-10-15-tappa1-credenziali-promozione.md`. **Tappa 1 rilasciata il 15/10** (v0.3.294, hub e cliente A):
   porta sulle credenziali, regola unica tipo ↔ protocollo (`credential-protocol-map.ts`), una proposta
   d'apparato per le quattro finestre (`src/lib/devices/proposta-apparato.ts`), correzioni su credenziali,
-  binding, porta SNMP e wizard. **Tappa 1b** (Apple/macOS, `src/lib/devices/migra-apple-macos.ts`): ramo
-  `credenziali/tappa1b`, rilascio a parte. Tappe 2-5 da fare (le 3 e 4 con l'interfaccia proposta prima).
+  binding, porta SNMP e wizard. **Tappa 1b** (Apple/macOS, `src/lib/devices/migra-apple-macos.ts`)
+  **rilasciata il 15/10** (v0.3.295): tabella ricostruita su hub (70791: 43 apparati; 70791a: 1) e cliente A
+  (94), stesse colonne e binding, backup `.bak-20261015-1540*` accanto ai DB; DEFAULT dell'hub si migra alla
+  prima apertura. Tappe 2-5 da fare (le 3 e 4 con l'interfaccia proposta prima).
   **Trappole**:
   - una ricostruzione di `network_devices` parte da `sqlite_master` (come `migra-apple-macos.ts`) e sta in
     fondo a `getTenantDb`: quelle vecchie riscrivono un elenco fisso di colonne e perdono le altre;

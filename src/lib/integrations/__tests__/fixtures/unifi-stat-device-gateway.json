@@ -1,0 +1,260 @@
+{
+ "meta": {
+  "rc": "ok"
+ },
+ "data": [
+  {
+   "type": "udm",
+   "model": "UDMEA4C",
+   "mac": "02:00:00:00:00:40",
+   "name": "name-40",
+   "ip": "10.0.0.100",
+   "state": 1,
+   "adopted": true,
+   "stp_version": null,
+   "stp_priority": null,
+   "root_switch": null,
+   "ethernet_table": [
+    {
+     "mac": "02:00:00:00:00:40",
+     "name": "name-0",
+     "num_port": 1
+    },
+    {
+     "mac": "02:00:00:00:00:41",
+     "name": "name-1",
+     "num_port": 1
+    },
+    {
+     "mac": "02:00:00:00:00:42",
+     "name": "name-2",
+     "num_port": 1
+    },
+    {
+     "mac": "02:00:00:00:00:43",
+     "name": "name-3",
+     "num_port": 1
+    },
+    {
+     "mac": "02:00:00:00:00:44",
+     "name": "name-4",
+     "num_port": 1
+    },
+    {
+     "mac": "02:00:00:00:00:45",
+     "name": "name-5",
+     "num_port": 1
+    },
+    {
+     "mac": "02:00:00:00:00:46",
+     "name": "name-6",
+     "num_port": 1
+    },
+    {
+     "mac": "02:00:00:00:00:47",
+     "name": "name-7",
+     "num_port": 1
+    },
+    {
+     "mac": "02:00:00:00:00:48",
+     "name": "name-8",
+     "num_port": 1
+    },
+    {
+     "mac": "02:00:00:00:00:49",
+     "name": "name-9",
+     "num_port": 1
+    },
+    {
+     "mac": "02:00:00:00:00:4a",
+     "name": "name-10",
+     "num_port": 1
+    },
+    {
+     "mac": "02:00:00:00:00:4b",
+     "name": "name-11",
+     "num_port": 1
+    },
+    {
+     "mac": "02:00:00:00:00:4c",
+     "name": "name-12",
+     "num_port": 1
+    },
+    {
+     "mac": "02:00:00:00:00:4d",
+     "name": "name-13",
+     "num_port": 1
+    }
+   ],
+   "port_table": [
+    {
+     "port_idx": 1,
+     "name": "Port 1",
+     "up": false,
+     "enable": true,
+     "speed": 10,
+     "is_uplink": false,
+     "aggregated_by": false,
+     "media": "GE"
+    },
+    {
+     "port_idx": 10,
+     "name": "Port 10",
+     "up": false,
+     "enable": true,
+     "speed": 10,
+     "is_uplink": false,
+     "aggregated_by": false,
+     "media": "10GE"
+    },
+    {
+     "port_idx": 11,
+     "name": "SFP+ 1",
+     "up": false,
+     "enable": true,
+     "speed": 10,
+     "is_uplink": false,
+     "aggregated_by": false,
+     "media": "SFP+"
+    },
+    {
+     "port_idx": 12,
+     "name": "SFP+ 2",
+     "up": true,
+     "enable": true,
+     "speed": 10000,
+     "is_uplink": true,
+     "aggregated_by": false,
+     "media": "SFP+"
+    },
+    {
+     "port_idx": 13,
+     "name": "SFP28 1",
+     "up": false,
+     "enable": true,
+     "speed": 10,
+     "is_uplink": false,
+     "aggregated_by": false,
+     "media": "SFP28"
+    },
+    {
+     "port_idx": 14,
+     "name": "SFP28 2",
+     "up": true,
+     "enable": true,
+     "speed": 25000,
+     "is_uplink": false,
+     "aggregated_by": false,
+     "media": "SFP28"
+    },
+    {
+     "port_idx": 2,
+     "name": "Port 2",
+     "up": false,
+     "enable": true,
+     "speed": 10,
+     "is_uplink": false,
+     "aggregated_by": false,
+     "media": "GE"
+    },
+    {
+     "port_idx": 3,
+     "name": "Port 3",
+     "up": false,
+     "enable": true,
+     "speed": 10,
+     "is_uplink": false,
+     "aggregated_by": false,
+     "media": "10GE"
+    },
+    {
+     "port_idx": 4,
+     "name": "Port 4",
+     "up": true,
+     "enable": true,
+     "speed": 2500,
+     "is_uplink": false,
+     "aggregated_by": false,
+     "media": "10GE"
+    },
+    {
+     "port_idx": 5,
+     "name": "Port 5",
+     "up": false,
+     "enable": true,
+     "speed": 10,
+     "is_uplink": false,
+     "aggregated_by": false,
+     "media": "10GE"
+    },
+    {
+     "port_idx": 6,
+     "name": "Port 6",
+     "up": false,
+     "enable": true,
+     "speed": 10,
+     "is_uplink": false,
+     "aggregated_by": false,
+     "media": "10GE"
+    },
+    {
+     "port_idx": 7,
+     "name": "Port 7",
+     "up": false,
+     "enable": true,
+     "speed": 10,
+     "is_uplink": false,
+     "aggregated_by": false,
+     "media": "10GE"
+    },
+    {
+     "port_idx": 8,
+     "name": "Port 8",
+     "up": false,
+     "enable": true,
+     "speed": 10,
+     "is_uplink": false,
+     "aggregated_by": false,
+     "media": "10GE"
+    },
+    {
+     "port_idx": 9,
+     "name": "Port 9",
+     "up": false,
+     "enable": true,
+     "speed": 10,
+     "is_uplink": false,
+     "aggregated_by": false,
+     "media": "10GE"
+    }
+   ],
+   "lldp_table": [
+    {
+     "chassis_id": "02:00:00:00:00:4e",
+     "chassis_id_subtype": "mac",
+     "port_id": "local Port 25",
+     "local_port_idx": 12,
+     "local_port_name": "eth11",
+     "is_wired": true
+    },
+    {
+     "chassis_id": "02:00:00:00:00:4e",
+     "chassis_id_subtype": "mac",
+     "port_id": "local Port 29",
+     "local_port_idx": 14,
+     "local_port_name": "eth13",
+     "is_wired": true
+    }
+   ],
+   "uplink": {
+    "up": true,
+    "port_idx": 12,
+    "speed": 10000,
+    "type": "wire",
+    "uplink_source": "lldp_downlink",
+    "uplink_mac": "02:00:00:00:00:4e",
+    "uplink_remote_port": 29
+   }
+  }
+ ]
+}

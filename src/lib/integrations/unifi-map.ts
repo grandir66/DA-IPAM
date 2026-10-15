@@ -21,6 +21,7 @@
  * `upsertNeighbors` confronta `remote_mac = hosts.mac` senza normalizzare.
  */
 
+import type { FattiLettura, FattoBridgeIn, FattoPortaIn, MacApparatoIn } from "@/lib/db-tenant";
 import { normalizeMacForStorage, normalizePortNameForMatch } from "@/lib/utils";
 import type { SwitchPort } from "@/types";
 import type { UnifiDevice, UnifiLldpEntry, UnifiPort, UnifiUplinkType } from "./unifi-device";
@@ -119,6 +120,9 @@ export interface UnifiNeighbor {
   remoteIp?: string;
   remoteMac?: string;
   remotePlatform?: string;
+  /** T2 (spec §13.5.3): indici delle due porte, solo con la lettura `controller` accesa (`mapUnifiLldpConIndici`). */
+  localPortIndex?: number | null;
+  remotePortIndex?: number | null;
 }
 
 /** Riga di `switch_ports` senza le colonne che mette il DB. */
@@ -181,6 +185,7 @@ function portSeenByRemote(remote: UnifiDevice, selfMac: string | null, selfPort:
 interface LldpLink {
   localPortIdx: number | null;
   neighbor: UnifiNeighbor;
+  remotePortIdx: number | null;
 }
 
 function lldpLinks(d: UnifiDevice, index: UnifiMacIndex): LldpLink[] {
@@ -205,7 +210,10 @@ function lldpLinks(d: UnifiDevice, index: UnifiMacIndex): LldpLink[] {
     const ip = remote?.ip ?? mgmtIp;
     if (ip) neighbor.remoteIp = ip;
     if (remote?.model) neighbor.remotePlatform = remote.model;
-    links.push({ localPortIdx: e.local_port_idx, neighbor });
+    // T2 (spec §13.5.3): «Port N» quando il vicino è un apparato della stessa risposta che ha la porta d'indice N.
+    const n = /^Port (\d+)$/i.exec(remotePort);
+    const remotePortIdx = remote && n && remote.port_table.some((p) => p.port_idx === Number(n[1])) ? Number(n[1]) : null;
+    links.push({ localPortIdx: e.local_port_idx, neighbor, remotePortIdx });
   }
   return links;
 }
@@ -216,6 +224,55 @@ function lldpLinks(d: UnifiDevice, index: UnifiMacIndex): LldpLink[] {
  */
 export function mapUnifiLldp(d: UnifiDevice, index: UnifiMacIndex): UnifiNeighbor[] {
   return lldpLinks(d, index).map((l) => l.neighbor);
+}
+
+/** I vicini con gli indici delle due porte (T2, spec §13.5.3): li usa la sincronizzazione solo con la lettura accesa. */
+export function mapUnifiLldpConIndici(d: UnifiDevice, index: UnifiMacIndex): UnifiNeighbor[] {
+  return lldpLinks(d, index).map((l) => ({
+    ...l.neighbor,
+    ...(l.localPortIdx !== null ? { localPortIndex: l.localPortIdx } : {}),
+    ...(l.remotePortIdx !== null ? { remotePortIndex: l.remotePortIdx } : {}),
+  }));
+}
+
+/** Lo stato dello spanning tree come lo scrive il controller, nelle parole dello standard; un valore che non si conosce: null. */
+const STATI_STP: Readonly<Record<string, string>> = {
+  forwarding: "forwarding", blocking: "discarding", discarding: "discarding", learning: "learning", listening: "learning",
+  disabled: "disabled", broken: "discarding",
+};
+
+/**
+ * I fatti di un apparato del controller (spec §13.5.3), fonte `controller`: ogni porta del `port_table` per indice
+ * («i:N»), fisica; accesa o spenta; fascio (`lag_idx`, oppure il gruppo della porta che aggrega, `aggregated_by`); stato e
+ * costo nello spanning tree (gli switch del controller parlano RSTP; `disabled` su una porta accesa = spanning tree
+ * spento, e la porta inoltra: lo decide il modello per cavo). Il bridge: modo, priorità, radice vista (un MAC: il
+ * controller non dà la sua priorità); la porta radice no, il controller non la dice. I MAC: quello dell'apparato e
+ * `ethernet_table`.
+ *
+ * Contratto dei lettori (piano di T2, «Scelte» punto 8): ogni riga porta le stesse colonne, `null` dove il controller
+ * non dà il valore per quell'apparato (il gateway e il Flex Mini non danno lo spanning tree); le colonne che il
+ * controller non legge mai (`root_port`, `lag_partner`, ruolo, BPDU…) mancano da tutte le righe e restano com'erano.
+ */
+export function mapUnifiFattiCavi(d: UnifiDevice): FattiLettura {
+  const aggregatori = new Set(d.port_table.flatMap((p) => (p.aggregated_by != null ? [p.aggregated_by] : [])));
+  const gruppo = (p: UnifiPort): string | null =>
+    p.lag_idx != null ? `lag:${p.lag_idx}` : p.aggregated_by != null ? `porta:${p.aggregated_by}` : aggregatori.has(p.port_idx) ? `porta:${p.port_idx}` : null;
+  const porte: FattoPortaIn[] = d.port_table.map((p) => ({
+    port_key: `i:${p.port_idx}`, port_name: p.name ?? `Port ${p.port_idx}`, port_index: p.port_idx, if_kind: "physical",
+    running: p.up === null ? null : p.up ? 1 : 0, lag_group: gruppo(p),
+    stp_state: p.stp_state ? (STATI_STP[p.stp_state.toLowerCase()] ?? null) : null, path_cost: p.stp_pathcost ?? null,
+  }));
+  const modo = (d.stp_version ?? "").toLowerCase();
+  const bridge: FattoBridgeIn[] = d.stp_version || d.stp_priority != null || d.root_switch
+    ? [{
+        bridge_name: "", instance: 0, protocol: ["stp", "rstp", "mstp"].includes(modo) ? modo : null, priority: d.stp_priority ?? null,
+        bridge_id: d.mac && d.stp_priority != null ? `${d.stp_priority}.${d.mac.toLowerCase()}` : null,
+        root_id: d.root_switch ? d.root_switch.toLowerCase() : null,
+      }]
+    : [];
+  const macs: MacApparatoIn[] = [d.mac, ...(d.ethernet_table ?? []).map((e) => e.mac)]
+    .filter((m): m is string => !!m).map((mac) => ({ mac, port_key: null }));
+  return { porte, bridge, macs };
 }
 
 /** Ciò che il controller sa di un apparato oltre a porte e vicini: il suo MAC e verso chi esce. */

@@ -62,18 +62,25 @@ import {
   getPortAndNeighborCountsByDevice,
   linkNetworkDeviceToPhysicalDevice,
   runInTenantTransaction,
+  schemaCaviPresente,
+  scriviFattiTopologia,
   setNetworkDeviceControllerFacts,
+  setUplinkCavi,
   updateNetworkDevice,
   upsertNeighbors,
   upsertSwitchPorts,
 } from "@/lib/db-tenant";
+import { codiceErrore } from "@/lib/devices/mikrotik-porte";
+import { letturaAccesa, oraUtc, scriviEsito } from "@/lib/topology/letture/interruttori";
 import { normalizeMacForStorage } from "@/lib/utils";
 import type { NetworkDevice } from "@/types";
 import type { UnifiDevice } from "./unifi-device";
 import {
   buildUnifiMacIndex,
   mapUnifiDevice,
+  mapUnifiFattiCavi,
   mapUnifiLldp,
+  mapUnifiLldpConIndici,
   mapUnifiPorts,
   mapUnifiUplink,
   type UnifiMacIndex,
@@ -275,6 +282,8 @@ function writeDevice(
     existing: ExistingIndex;
     physical: PhysicalIndex;
     counts: Map<number, { ports: number; neighbors: number }>;
+    /** T2: `topologia.lettura.controller` accesa e schema nuovo presente, letti una volta per giro. */
+    cavi: boolean;
   },
 ): WriteOutcome {
   const warnings: string[] = [];
@@ -347,7 +356,7 @@ function writeDevice(
     warnings.push(`${m.name}: il controller non riporta porte, nel DB ce ne sono ${before.ports}: non le cancello`);
   }
 
-  const neighbors = uniqueNeighbors(mapUnifiLldp(d, ctx.index));
+  const neighbors = uniqueNeighbors(ctx.cavi ? mapUnifiLldpConIndici(d, ctx.index) : mapUnifiLldp(d, ctx.index));
   let neighborsWritten = 0;
   if (!connected && before.neighbors > 0) {
     // vicini dell'ultima sync: l'apparato è in `offline[]`
@@ -367,15 +376,50 @@ function writeDevice(
   );
   const uplink = connected && facts.uplinkMac !== null;
 
+  // T2 (spec §13.5.3): i campi per la mappa per cavo, solo con la lettura accesa e solo per un apparato connesso (offline il
+  // controller manda l'ultima lettura buona, che non è di adesso). Nessuna chiamata nuova: l'esito dice «letto dal controller».
+  if (ctx.cavi && connected) warnings.push(...scriviCampiCavi(nd.id, d));
+
   return { device: nd, created, movedFrom, ports: portsWritten, neighbors: neighborsWritten, uplink, warnings };
 }
 
+/**
+ * T2: fatti (fonte `controller`) e uplink per indice di un apparato, in una transazione annidata: tutto o niente, e un
+ * guasto qui annulla solo loro, non la scrittura di oggi dell'apparato (spenta o accesa, porte e vicini sono gli stessi:
+ * R7). L'esito per apparato porta il codice; l'avviso nel resoconto solo l'id e il codice, mai nomi, MAC o IP.
+ */
+function scriviCampiCavi(deviceId: number, d: UnifiDevice): string[] {
+  const avvisi: string[] = [];
+  let codice: string | null = null;
+  try {
+    runInTenantTransaction(() => {
+      scriviFattiTopologia(deviceId, "controller", mapUnifiFattiCavi(d));
+      setUplinkCavi(deviceId, d.uplink?.port_idx ?? null, d.uplink?.uplink_source ?? null);
+    });
+  } catch (e) {
+    codice = codiceErrore(e);
+    avvisi.push(`apparato #${deviceId}: campi per la mappa per cavo non scritti (${codice})`);
+  }
+  try {
+    scriviEsito("controller", deviceId, { il: oraUtc(new Date()), comandi: 1, riusciti: codice === null ? 1 : 0, codice });
+  } catch (e) {
+    avvisi.push(`apparato #${deviceId}: esito della lettura per la mappa per cavo non scritto (${codiceErrore(e)})`);
+  }
+  return avvisi;
+}
+
 function writeDevices(devices: UnifiDevice[], result: UnifiSyncResult): void {
+  // T2: l'interruttore e lo schema si leggono una volta per giro, lo stesso valore per tutti gli apparati. Accesa senza
+  // lo schema nuovo non si scrive niente di nuovo, e il resoconto lo dice (spec §13.5.7, «Se la migrazione non riesce»).
+  const accesa = letturaAccesa("controller");
+  const cavi = accesa && schemaCaviPresente();
+  if (accesa && !cavi) result.errors.push("Letture in più del controller non disponibili: lo schema di questo cliente non è aggiornato");
   const ctx = {
     index: buildUnifiMacIndex(devices),
     existing: buildExistingIndex(),
     physical: buildPhysicalIndex(),
     counts: getPortAndNeighborCountsByDevice(),
+    cavi,
   };
   const claimed = new Set<number>();
 

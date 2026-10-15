@@ -10,6 +10,8 @@
  *         [--salva <istantanea.json>] [--confronta <istantanea.json>]
  *         [--esporta-input <file.json>] [--input-json <file.json>] [--nomi] [--json]
  *         [--senza-regola <regola>]...   spegne una regola del passaggio universale (src/lib/topology/regole.ts): la misura C19 confronta «tutte le regole» con «tutte meno una»
+ *         [--adesso "AAAA-MM-GG HH:MM:SS"]   l'ora (UTC) a cui il modello giudica «non visto»: quella del «prima», per misurare il
+ *                                            «dopo» sulla stessa copia con lo stesso orologio (di base l'ora vera; vale anche con --input-json)
  *   I file di --salva, --confronta, --esporta-input e --input-json stanno dentro --cartella (dati del cliente).
  *   Uscita: 0 fatto, 1 integrità rovinata, 2 non partito.
  */
@@ -18,11 +20,11 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { controllaPercorsi, percorsoReale } from "../src/lib/scanner/__tests__/support/percorsi-prova";
 
-const CON_VALORE = ["--cartella", "--scenario", "--soglia", "--uscita-router", "--ripristino", "--salva", "--confronta", "--esporta-input", "--input-json", "--senza-regola"];
+const CON_VALORE = ["--cartella", "--scenario", "--soglia", "--uscita-router", "--ripristino", "--salva", "--confronta", "--esporta-input", "--input-json", "--senza-regola", "--adesso"];
 
 function uso(msg?: string): number {
   if (msg) process.stderr.write(`${msg}\n`);
-  process.stderr.write("Uso: npx tsx scripts/misura-cavi.ts <copia.db> --cartella <scratchpad> [--scenario …] [--uscita-router <id>=<file>] [--ripristino <ora UTC>] [--senza-regola <regola>] [--salva|--confronta <file>] [--esporta-input|--input-json <file>] [--nomi] [--json]\n");
+  process.stderr.write("Uso: npx tsx scripts/misura-cavi.ts <copia.db> --cartella <scratchpad> [--scenario …] [--uscita-router <id>=<file>] [--ripristino <ora UTC>] [--senza-regola <regola>] [--adesso <ora UTC>] [--salva|--confronta <file>] [--esporta-input|--input-json <file>] [--nomi] [--json]\n");
   return 2;
 }
 
@@ -48,7 +50,7 @@ async function main(): Promise<number> {
     if (f && !dentro(f, cartella)) return uso(`${k} deve stare dentro --cartella: i dati del cliente non escono dallo scratchpad.`);
   }
   const {
-    applicaScenario, conteggi, leggiScenario, lettureVm, lineeCucite, lineeDaNomeScelto, padriCambiati, padriDi, sottoUnaSuaVm, teste, testeCambiate,
+    applicaScenario, conteggi, leggiAdesso, leggiScenario, lettureVm, lineeCucite, lineeDaNomeScelto, padriCambiati, padriDi, sottoUnaSuaVm, teste, testeCambiate,
   } = await import("../src/lib/topology/misura");
   const scenario = leggiScenario(val("--scenario") ?? "S0");
   if (!scenario) return uso("Scenario non valido: S0, S1, S3:<id>, S4, S9:<id>:<porta>:<fonte>, S12:<id>:<vmid>.");
@@ -58,6 +60,9 @@ async function main(): Promise<number> {
   const senza = valori("--senza-regola");
   if (senza.some((r) => leggiRegola(r) === null)) return uso(`--senza-regola vuole una di: ${NOMI_REGOLE.join(", ")}.`);
   const regole = new Set([...REGOLE_T1].filter((r) => !senza.includes(r)));
+  const adessoTesto = val("--adesso");
+  const adesso = adessoTesto === undefined ? null : leggiAdesso(adessoTesto);
+  if (adessoTesto !== undefined && adesso === null) return uso("--adesso vuole l'ora in UTC come la scrive il DB: «AAAA-MM-GG HH:MM:SS».");
   const uscite = valori("--uscita-router").map((v) => /^(\d+)=(.+)$/.exec(v));
   if (uscite.some((m) => m === null)) return uso("--uscita-router vuole <id dell'apparato>=<file>.");
 
@@ -128,7 +133,10 @@ async function main(): Promise<number> {
   const { pathPoints } = await import("../src/lib/topology/edge-look");
   const { getSmoothStepPath, Position } = await import("@xyflow/react");
   type Input = ReturnType<typeof tenantDb.getTopologyModelInput>;
-  const base: Input = (letto as Input | null) ?? tenantDb.withTenant(tenant, () => tenantDb.getTopologyModelInput(soglia));
+  const letta: Input = (letto as Input | null) ?? tenantDb.withTenant(tenant, () => tenantDb.getTopologyModelInput(soglia, adesso ?? Date.now()));
+  // L'orologio della misura (revisione finale di T1): con --adesso quello del «prima», anche su un ingresso esportato.
+  const base: Input = adesso === null ? letta : { ...letta, nowMs: adesso };
+  out.adesso = new Date(base.nowMs).toISOString();
   const input = applicaScenario(base, scenario);
   const esporta = val("--esporta-input");
   if (esporta) fs.writeFileSync(esporta, JSON.stringify(input));
@@ -182,17 +190,19 @@ async function main(): Promise<number> {
 
   const padri = padriDi(auto.tree);
   const salva = val("--salva");
-  if (salva) fs.writeFileSync(salva, JSON.stringify({ padri, radici: auto.tree.roots, conteggi: numeri, teste: leTeste, letture_vm: out.letture_vm }, null, 1));
+  if (salva) fs.writeFileSync(salva, JSON.stringify({ padri, radici: auto.tree.roots, conteggi: numeri, teste: leTeste, letture_vm: out.letture_vm, adesso: base.nowMs }, null, 1));
   const confronta = val("--confronta");
   let cambi: ReturnType<typeof padriCambiati> = [];
   if (confronta) {
-    let prima: { padri: Record<string, string | null>; conteggi: Record<string, number>; teste?: ReturnType<typeof teste>; letture_vm?: Record<string, string | null> };
+    let prima: { padri: Record<string, string | null>; conteggi: Record<string, number>; teste?: ReturnType<typeof teste>; letture_vm?: Record<string, string | null>; adesso?: number };
     try { prima = JSON.parse(fs.readFileSync(confronta, "utf8")) as typeof prima; } catch { return uso("--confronta: istantanea non leggibile."); }
     cambi = padriCambiati(prima.padri, padri);
     out.padri_cambiati = cambi.length;
     out.teste_cambiate = prima.teste ? testeCambiate(prima.teste, leTeste) : "istantanea senza teste";
     // R1: «prima» e «dopo» sulla stessa lettura delle VM, o la differenza si dice.
     out.stessa_lettura_vm = JSON.stringify(prima.letture_vm ?? null) === JSON.stringify(out.letture_vm);
+    // «Prima» e «dopo» con lo stesso orologio, o la differenza si dice (le istantanee di prima di --adesso non l'hanno).
+    out.stesso_orologio = prima.adesso === undefined ? "istantanea senza orologio" : prima.adesso === base.nowMs;
     out.conteggi_cambiati = Object.fromEntries(Object.keys({ ...prima.conteggi, ...numeri })
       .filter((k) => prima.conteggi[k] !== numeri[k]).map((k) => [k, `${prima.conteggi[k] ?? "—"} → ${numeri[k] ?? "—"}`]));
   }

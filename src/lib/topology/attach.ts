@@ -139,9 +139,6 @@ export function attachMacs(input: TopologyModelInput, idx: NodeIndex, links: Map
         if (fisiche.length > 0) ripiego.push({ node: other.id, c: fisiche[0] });
         continue;
       }
-      // §13.9: la porta di un cavo ignorato resta occupata verso quell'oggetto (I9), anche se la regola ha le due porte di
-      // una linea LLDP; su un'altra porta il cavo compare.
-      if (portaOccupata(ignorati, best.node, portaDi(best.node, best.port), other.id)) continue;
       // Spec §13.7.1 passo 2 e §13.3.1 riga 3: una porta che sente due o più apparati non dà linee verso di loro, nemmeno
       // dalla tabella MAC. Il ripiego del router ha le sue regole (§11.1 bis) e non passa da qui.
       if (segmenti.get(portKey(best.node, best.port))?.has(other.id)) continue;
@@ -149,6 +146,11 @@ export function attachMacs(input: TopologyModelInput, idx: NodeIndex, links: Map
       if (vmEMacPropri && vmEIpervisore(ipervisori, best.node, other.id)) continue;
       const key = [best.node, other.id].sort().join("|");
       if (!linked.has(key)) {
+        // §13.9: la porta di un cavo ignorato resta occupata verso quell'oggetto (I9), anche se la regola ha le due porte di
+        // una linea LLDP; su un'altra porta il cavo compare. Si guarda solo quando la linea nascerebbe davvero (come nel
+        // ripiego del router): con la coppia già collegata la correzione non nasconde niente, e resta orfana (revisione
+        // finale di T1).
+        if (portaOccupata(ignorati, best.node, portaDi(best.node, best.port), other.id)) continue;
         linked.add(key);
         attachLinks.push({
           id: `mac:${key}`, a: best.node, aPort: best.port, b: other.id, bPort: "", source: "mac_table", sources: ["mac_table"],

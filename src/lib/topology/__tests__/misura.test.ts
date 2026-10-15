@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  applicaScenario, chiaveMisura, giriEAttraversamenti, leggiScenario, lettureVm, lineeCucite, lineeDaNomeScelto, padriCambiati, padriDi,
+  applicaScenario, chiaveMisura, giriEAttraversamenti, leggiAdesso, leggiScenario, lettureVm, lineeCucite, lineeDaNomeScelto, padriCambiati, padriDi,
   ramiControVerso, sottoUnaSuaVm, teste, testeCambiate, type LineaMisurata,
 } from "@/lib/topology/misura";
 import { buildTopologyModel } from "@/lib/topology/model";
@@ -102,6 +102,14 @@ test("scenari: S1 senza correzioni; S3 senza l'uplink di un apparato; S4 lldp su
   assert.deepEqual(leggiScenario("S9:114:Port 10:unifi"), { nome: "S9", apparato: 114, porta: "Port 10", fonte: "unifi" });
   assert.deepEqual(leggiScenario("S3:114"), { nome: "S3", apparato: 114 });
   assert.equal(leggiScenario("S7"), null);
+});
+
+// Revisione finale di T1: il «prima» e il «dopo» sulla stessa copia si confrontano con lo stesso orologio. Con l'ora vera
+// una riga che scade fra i due giri (sul cliente A 23 righe del 13/10, «non viste» dalle 13:51 del 15/10) cambia i numeri
+// da sola, non per il codice. `--adesso` dà al modello l'ora del «prima», in UTC come la scrive il DB.
+test("--adesso: l'ora in UTC come la scrive il DB, in millisecondi; scritta in un altro modo, null", () => {
+  assert.equal(leggiAdesso("2026-10-15 04:44:35"), Date.parse("2026-10-15T04:44:35Z"));
+  for (const x of ["2026-10-15", "2026-10-15T04:44:35Z", "15/10/2026 04:44:35", "2026-13-40 99:99:99", ""]) assert.equal(leggiAdesso(x), null, x);
 });
 
 // ─── Passaggio universale (spec §13.16): le misure che i criteri nuovi chiedono, sui due casi reali e su ogni rete ───

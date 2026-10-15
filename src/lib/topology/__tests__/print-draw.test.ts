@@ -2,9 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { edgeLook } from "@/lib/topology/edge-look";
 import { LINK_ATTRS_DEFAULT, type MapLink, type MapNode, type TopologyModel } from "@/lib/topology/model-types";
-import { GREY, INK, PAPER, edgeLabelAt, printStrokes, puntiLineaAlbero, redundantCables, stepPoints, wrapLabel } from "@/lib/topology/print-draw";
+import { GREY, INK, PAPER, edgeLabelAt, parolaLineaSpostata, printStrokes, puntiLineaAlbero, redundantCables, stepPoints, wrapLabel } from "@/lib/topology/print-draw";
 import { buildPrintView } from "@/lib/topology/print-view";
-import { drawableLinks, latiVicini, percorso, redundancyCounts } from "@/lib/topology/map-screen";
+import { drawableLinks, labelBoxes, latiVicini, percorso, redundancyCounts } from "@/lib/topology/map-screen";
+import { CHAR_W } from "@/lib/topology/tree-layout-consts";
 import type { LayoutNode } from "@/lib/topology/tree-layout";
 import type { TreeResult } from "@/lib/topology/tree";
 
@@ -152,4 +153,23 @@ test("I31 — un figlio spostato a mano dall'altra parte: in stampa sul lato pi�
   const l = latiVicini(padre, spostato, "lr", []);
   assert.deepEqual(puntiLineaAlbero("lr", padre, spostato, []), percorso(padre, l.da, spostato, l.a));
   assert.deepEqual(puntiLineaAlbero("lr", padre, alSuoPosto, []), stepPoints("lr", padre, alSuoPosto));
+});
+
+// Revisione finale di T1 (dubbio del Task 8): in stampa la parola della linea di un figlio spostato a mano dall'altra parte
+// la metteva `edgeLabelAt`, fatta per il tronco: in fondo alla linea, dentro il riquadro del figlio, sopra la sua seconda
+// riga. A schermo sta vicino alla metà del percorso, fuori dai riquadri (`redundantLabelAt`): in stampa lo stesso.
+test("I31 — la parola della linea di un figlio spostato a mano: in stampa fuori dai riquadri, come a schermo", () => {
+  const padre = { x: 0, y: 300, w: 200, h: 44 }, spostato = { x: 0, y: 0, w: 180, h: 44 };
+  const pts = puntiLineaAlbero("lr", padre, spostato, []);
+  const riquadri = labelBoxes([{ ...padre, role: "box" as const }, { ...spostato, role: "box" as const }], []);
+  const testo = "1G · lldp";
+  const at = parolaLineaSpostata(pts, testo, riquadri);
+  assert.equal(at.anchor, "middle");
+  // Il testo di corpo 13 sta fra 12 px sopra la linea di base e 4 sotto.
+  const w = testo.length * CHAR_W + 8;
+  const parola = { x: at.x - w / 2, y: at.y - 12, w, h: 16 };
+  const tocca = (r: { x: number; y: number; w: number; h: number }) =>
+    parola.x < r.x + r.w && r.x < parola.x + parola.w && parola.y < r.y + r.h && r.y < parola.y + parola.h;
+  assert.deepEqual(riquadri.filter(tocca), []);
+  assert.equal(at.y > spostato.y + spostato.h && at.y < padre.y, true, "fra i due riquadri, sulla linea");
 });

@@ -7,7 +7,7 @@
  */
 import type { EdgeLook, Pt } from "@/lib/topology/edge-look";
 import { speedLabel } from "@/lib/topology/edge-look";
-import { LR_TRUNK, drawableLinks, lineaAlbero, percorso } from "@/lib/topology/map-screen";
+import { LR_TRUNK, drawableLinks, lineaAlbero, percorso, redundantLabelAt } from "@/lib/topology/map-screen";
 import { CHAR_W } from "@/lib/topology/tree-layout-consts";
 import type { MapLink, MapOrientation } from "@/lib/topology/model-types";
 import type { TreeResult } from "@/lib/topology/tree";
@@ -77,6 +77,18 @@ export function edgeLabelAt(orientation: MapOrientation, points: readonly Pt[]):
   // dritta non ha gradino: a metà, altrimenti la scritta finiva sul riquadro del genitore.
   if (points.length < 3) return { x: end.x - 4, y: (points[0].y + end.y) / 2 + 4, anchor: "end" };
   return { x: end.x - 4, y: points[points.length - 2].y - 3, anchor: "end" };
+}
+
+/**
+ * La parola della linea di un figlio spostato a mano dall'altra parte del genitore (spec §13.10.1), in stampa come a
+ * schermo (`redundantAt` di map-edge.tsx): vicino alla metà del percorso, fuori dai riquadri e dalla riga delle porte
+ * (`avoid`: `labelBoxes`). Con `edgeLabelAt`, fatta per il tronco, cadeva in fondo alla linea: dentro il riquadro del
+ * figlio, sopra la sua seconda riga (dubbio del Task 8, revisione finale di T1). `y` è la linea di base del testo: il
+ * centro più 4 px, per il corpo di 13.
+ */
+export function parolaLineaSpostata(points: readonly Pt[], testo: string, avoid: readonly Rect[]): { x: number; y: number; anchor: "middle" } {
+  const c = redundantLabelAt(points, { w: testo.length * CHAR_W + 8, h: 16 }, avoid);
+  return { x: c.x, y: c.y + 4, anchor: "middle" };
 }
 
 export interface RedundantCable {

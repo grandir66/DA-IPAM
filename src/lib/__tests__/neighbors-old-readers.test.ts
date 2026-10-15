@@ -27,7 +27,9 @@ import {
 import {
   NEIGHBORS_LATEST_ROUND_SQL as RECOMPUTE_LATEST_ROUND_SQL,
   NEIGHBORS_MODEL_SOURCES_SQL as RECOMPUTE_SOURCES_SQL,
+  recomputeAttributionForDb,
 } from "@/lib/attribution/recompute";
+import { getActiveEvidence } from "@/lib/attribution/evidence";
 
 const T = "TESTNEIGHOLD";
 const db = () => getTenantDb(T);
@@ -119,6 +121,19 @@ test("fonti nuove: non entrano nel modello di T1 né nell'attribuzione (db-tenan
   assert.deepEqual(nomi(withTenant(T, () => getTopologyModelInput(7)).neighbors), ["PC-50"]);
   assert.equal(withTenant(T, () => getAttributionSignalsForHost(1))?.neighborSightings.length, 1);
   assert.equal(withTenant(T, () => facadeAttributionSignals(1))?.neighborSightings.length, 1);
+});
+
+// Revisione finale di T1: la terza copia della query, quella del ricalcolo da handle (recompute.ts), non aveva una prova sua:
+// togliendo il filtro sulle fonti passavano tutte. Da T2, con le fonti snmp, host e ssh, il ricalcolo dell'attribuzione
+// leggerebbe righe nuove e cambierebbe la categoria di host di produzione. La riga della fonte nuova ha la piattaforma che
+// darebbe una categoria; quella della fonte di oggi no: con il filtro nessuna evidenza dai vicini.
+test("fonti nuove: non entrano nemmeno nel ricalcolo dell'attribuzione da handle (recompute.ts)", () => {
+  withTenant(T, () => upsertNeighbors(1, [v("PC-50", "Port 8", HOST_MAC)]));
+  db().prepare(`INSERT INTO device_neighbors (device_id, local_port, remote_device_name, remote_port, protocol, remote_mac, remote_platform, source, first_seen, timestamp)
+    VALUES (1, 'Port 9', 'SNMP-X', 'Port 1', 'lldp', ?, 'MikroTik RouterOS 7.16', 'snmp', datetime('now'), datetime('now'))`).run(HOST_MAC);
+  assert.notEqual(recomputeAttributionForDb(db(), 1, "manual"), null);
+  const daiVicini = getActiveEvidence(db(), 1).filter((e) => e.source === "lldp" || e.source === "cdp");
+  assert.deepEqual(daiVicini.map((e) => e.claim), []);
 });
 
 test("la copia del filtro sulle fonti in recompute.ts è identica all'originale di db-tenant.ts", () => {

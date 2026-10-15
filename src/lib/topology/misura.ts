@@ -162,6 +162,17 @@ export function leggiScenario(testo: string): Scenario | null {
   return null;
 }
 
+/**
+ * `--adesso` di misura-cavi (revisione finale di T1): l'ora a cui il modello giudica «non visto», in UTC come la scrive il DB
+ * («AAAA-MM-GG HH:MM:SS»), in millisecondi; null se è scritta in un altro modo. Il «prima» e il «dopo» sulla stessa copia
+ * vanno misurati con lo stesso orologio: con l'ora vera una riga che scade fra i due giri cambia i numeri da sola.
+ */
+export function leggiAdesso(testo: string): number | null {
+  if (!/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(testo)) return null;
+  const t = Date.parse(`${testo.replace(" ", "T")}Z`);
+  return Number.isNaN(t) ? null : t;
+}
+
 export function applicaScenario(input: TopologyModelInput, s: Scenario): TopologyModelInput {
   switch (s.nome) {
     case "S0":

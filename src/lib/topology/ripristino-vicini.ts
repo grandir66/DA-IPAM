@@ -11,11 +11,16 @@
  */
 const ORA_UTC = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
 
-/** Le righe da riportare a `mndp`. `dalle` è l'ora del rilascio in UTC, come la scrive il DB («AAAA-MM-GG HH:MM:SS»). */
+/**
+ * Le righe da riportare a `mndp`. `dalle` è l'ora del rilascio in UTC, come la scrive il DB («AAAA-MM-GG HH:MM:SS»). Solo
+ * `lldp`: il lettore di T1 scrive `lldp` o `mndp` e nient'altro (`mikrotikProtocol`). Una riga `cdp` o `unknown` sullo
+ * stesso MikroTik viene dal ripiego SNMP dei vicini (router-client.ts), che c'era anche prima: non si tocca (revisione
+ * finale di T1). Le righe `lldp` del ripiego invece non si distinguono da quelle del lettore.
+ */
 function righeDelLettoreT1(dalle: string): string {
   if (!ORA_UTC.test(dalle)) throw new Error("L'ora del rilascio va scritta «AAAA-MM-GG HH:MM:SS», in UTC.");
   return `FROM device_neighbors
- WHERE source = 'device' AND protocol <> 'mndp' AND timestamp >= '${dalle}'
+ WHERE source = 'device' AND protocol = 'lldp' AND timestamp >= '${dalle}'
    AND device_id IN (SELECT id FROM network_devices WHERE LOWER(TRIM(COALESCE(vendor, ''))) = 'mikrotik' AND protocol = 'ssh')`;
 }
 

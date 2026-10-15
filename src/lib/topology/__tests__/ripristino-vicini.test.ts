@@ -76,3 +76,20 @@ test("ogni condizione tiene fuori da sola la sua riga: altro produttore via SSH,
     { id: 7, protocol: "cdp" }, { id: 8, protocol: "lldp" }, { id: 9, protocol: "mndp" }, { id: 10, protocol: "lldp" },
   ]);
 });
+
+// Revisione finale di T1: il lettore di T1 scrive solo `lldp` o `mndp` (`mikrotikProtocol`: il CDP diventa `mndp`). Se un
+// giro di `/ip neighbor` fallisce, il ripiego SNMP dei vicini (router-client.ts) scrive righe `lldp` o `cdp` con fonte
+// `device` sullo stesso MikroTik, come faceva il codice di prima: una riga `cdp` (o `unknown`) non viene dal lettore di T1 e
+// non si tocca. Le righe `lldp` del ripiego non si distinguono da quelle del lettore: lo si dice a Riccardo prima di applicare.
+test("una riga `cdp` o `unknown` del ripiego SNMP non è del lettore di T1: né contata, né copiata, né scritta", () => {
+  const d = dbFinto();
+  d.exec(`
+    INSERT INTO device_neighbors (device_id, local_port, remote_device_name, remote_port, protocol, source, timestamp) VALUES
+      (1, 'ether9', 'SW-9', 'Gi0/9', 'cdp', 'device', '2026-10-15 09:00:00'),
+      (1, 'ether10', 'SW-10', 'Port 10', 'unknown', 'device', '2026-10-15 09:00:00');
+  `);
+  assert.deepEqual(d.prepare(sqlConta(RILASCIO)).all(), [{ device_id: 1, protocol: "lldp", righe: 2 }]);
+  assert.deepEqual(d.prepare(sqlCopia(RILASCIO)).all().map((r) => (r as { id: number }).id), [1, 2]);
+  d.exec(sqlApplica(RILASCIO));
+  assert.deepEqual(protocolli(d).slice(6), [{ id: 7, protocol: "cdp" }, { id: 8, protocol: "unknown" }]);
+});

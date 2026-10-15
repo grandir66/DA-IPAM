@@ -404,7 +404,24 @@ test("I-3/I9: un collegamento «dalle VM» ignorato non torna", () => {
   assert.deepEqual(fra(buildTopologyModel({ ...i, overrides: ignora("dev:2", "Port 1", "dev:5") }).links, "dev:2", "dev:5"), []);
 });
 
-test("C5 — un «Ignora» senza porte non toglie niente: è orfano", () => {
+// Revisione finale di T1: la porta di un cavo ignorato conta come «occupata» (e la correzione come usata) solo se la linea
+// della tabella MAC nascerebbe davvero. Con la coppia già collegata da un altro cavo non nascerebbe comunque (una linea per
+// coppia): la correzione non nasconde niente, è orfana, e «Togli la correzione» va proposto.
+test("C5 — con la coppia già collegata da un altro cavo, la correzione sulla porta della tabella MAC è orfana", () => {
+  const SRV = "02:00:00:00:05:01";
+  const i = baseInput({
+    devices: [dev(2, { name: "CENTRALE-2", host: "192.0.2.2" }), dev(5, { name: "SRV-5", device_type: "server", host: "192.0.2.15", port_count: 0 })],
+    knownMacs: [{ device_id: 5, mac: SRV }],
+    neighbors: [{ device_id: 2, local_port: "Port 1", remote_device_name: "SRV-5", remote_port: "eno1", protocol: "lldp", remote_ip: "192.0.2.15", remote_mac: null, timestamp: RECENTE, source: "device" }],
+    macPorts: [mp(2, SRV, "Port 7")],
+    overrides: ignora("dev:2", "Port 7", "dev:5"),
+  });
+  const m = buildTopologyModel(i);
+  assert.deepEqual(fra(m.links, "dev:2", "dev:5").map((l) => (l.a === "dev:2" ? l.aPort : l.bPort)), ["Port 1"]);
+  assert.deepEqual(m.correzioniOrfane, [1]);
+});
+
+test("C5 — un «Ignora» senza porte non toglie un collegamento che ha una porta (la tabella MAC): è orfano", () => {
   const SRV = "02:00:00:00:05:01";
   const i = baseInput({
     devices: [dev(2, { name: "CENTRALE-2", host: "192.0.2.2" }), dev(5, { name: "SRV-5", device_type: "server", host: "192.0.2.15", port_count: 0 })],

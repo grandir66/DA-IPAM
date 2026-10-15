@@ -10,8 +10,8 @@ import type { ReactNode } from "react";
 import { edgeLook, pathPoints, wavyPath, type Pt } from "@/lib/topology/edge-look";
 import { isUncensusedVmId } from "@/lib/topology/map-menus";
 import type { MapOrientation, TopologyModel } from "@/lib/topology/model-types";
-import { DARK, GREY, INK, LIGHT, MID, PAPER, edgeLabelAt, pointsPath, printStrokes, puntiLineaAlbero, stepPoints, wrapLabel } from "@/lib/topology/print-draw";
-import { lrLabelMaxWidth, ostacoli, rettangoli } from "@/lib/topology/map-screen";
+import { DARK, GREY, INK, LIGHT, MID, PAPER, edgeLabelAt, parolaLineaSpostata, pointsPath, printStrokes, puntiLineaAlbero, stepPoints, wrapLabel } from "@/lib/topology/print-draw";
+import { labelBoxes, lrLabelMaxWidth, ostacoli, rettangoli, troncoPossibile, type Rect } from "@/lib/topology/map-screen";
 import type { TreeResult } from "@/lib/topology/tree";
 import { ATT_INDENT, ATT_MAX, ATT_ROW, CHAR_W, DNS_H, dnsLine, fitLabel, type LayoutResult } from "@/lib/topology/tree-layout";
 import type { TopologyStatus } from "@/lib/topology/types";
@@ -62,6 +62,7 @@ export function PrintMapContent({ model, tree, layout, orientation }: PrintMapPr
   // Linee dell'albero: solo i principali (spec §12.5). Le ridondanze stanno nell'elenco del primo foglio.
   // Un figlio spostato a mano dall'altra parte ha la linea sul lato più vicino, come a schermo (spec §13.10.1, prova I31).
   const riquadri = rettangoli(layout);
+  let parole: Rect[] | null = null; // dove la parola di un figlio spostato non deve finire: si calcola solo se serve
   for (const [child, link] of tree.via) {
     const ln = layout.nodes.get(child);
     if (!ln || !ln.parent || ln.role === "attached") continue;
@@ -80,7 +81,13 @@ export function PrintMapContent({ model, tree, layout, orientation }: PrintMapPr
     printStrokes(look).forEach((s, i) => lines.push(
       <path key={`e:${child}:${i}`} d={d} stroke={s.color} strokeWidth={s.width} strokeDasharray={s.dash ?? undefined} strokeLinecap={s.cap} fill="none" />,
     ));
-    if (look.tokens.length) {
+    if (look.tokens.length && !troncoPossibile(orientation, parent, ln)) {
+      // Un figlio spostato a mano dall'altra parte: la parola come a schermo, vicino alla metà del percorso e fuori dai
+      // riquadri (revisione finale di T1: in fondo alla linea cadeva dentro il riquadro del figlio).
+      const testo = look.tokens.join(" · ");
+      const at = parolaLineaSpostata(pts, testo, (parole ??= labelBoxes(layout.nodes.values(), layout.apGroups)));
+      labels.push(<Label key={`t:${child}:0`} x={at.x} y={at.y} anchor={at.anchor}>{testo}</Label>);
+    } else if (look.tokens.length) {
       const at = edgeLabelAt(orientation, pts);
       // In verticale va a capo come a schermo: righe impilate verso l'alto, l'ultima appena sopra il braccio.
       const rows = orientation === "lr" ? wrapLabel(look.tokens, lrLabelMaxWidth(pts[0].x, pts[pts.length - 1].x)) : [look.tokens.join(" · ")];

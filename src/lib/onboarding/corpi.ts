@@ -6,8 +6,9 @@
  * come binding sull'apparato, fuori dall'archivio, e la stessa voce si
  * chiedeva di nuovo al passo delle credenziali. Ora il router sceglie le voci
  * dell'archivio per id (regola tipo ↔ protocollo di `credentials/tipi.ts`), e
- * tornando indietro si modifica col PUT dell'apparato mandando solo i campi
- * toccati. Modulo puro.
+ * tornando indietro si modifica mandando solo i campi toccati a
+ * `/api/onboarding/router`, che allinea anche porta e binding (il PUT
+ * dell'apparato scriveva solo le colonne: revisione del 15/10). Modulo puro.
  */
 import { credTypeForProtocol } from "@/lib/credential-protocol-map";
 import type { RouterDelWizard } from "./progresso-store";
@@ -63,6 +64,26 @@ export function tipoPerNuovaVoce(protocollo: string): string {
 }
 
 /**
+ * Livello SNMPv3 con cui si apre il modulo dal «+ nuova nell'archivio» con
+ * accesso SNMP v3: senza, il modulo partiva su v2c (community) e la voce
+ * creata non valeva per quell'accesso (revisione del 15/10). "" = nessuno.
+ */
+export function livelloV3PerNuovaVoce(protocollo: string): "" | "authPriv" {
+  return protocollo === "snmp_v3" ? "authPriv" : "";
+}
+
+/**
+ * Un apparato già registrato con lo stesso indirizzo del router che si sta per
+ * creare. Il wizard sa del router solo dal punto salvato: se manca (vecchio
+ * wizard, punto non salvato) un nuovo «Avanti» ne creava un secondo uguale.
+ */
+export function apparatoConStessoHost<T extends { host: string }>(apparati: readonly T[], host: string): T | undefined {
+  const h = host.trim().toLowerCase();
+  if (!h) return undefined;
+  return apparati.find((a) => a.host.trim().toLowerCase() === h);
+}
+
+/**
  * Il primo errore del passo router, o null. IP vuoto con il router non ancora
  * creato = passo saltato; con il router già creato non si può togliere da qui.
  */
@@ -104,9 +125,10 @@ export function corpoCreaRouter(form: ModuloRouter): Record<string, unknown> {
 }
 
 /**
- * Corpo del PUT dell'apparato già creato: solo i campi cambiati rispetto a
- * quanto salvato. Con accesso SNMP la voce SNMP separata non si tocca (la
- * tendina non è a schermo).
+ * Corpo della modifica del router già creato (`/api/onboarding/router`, con
+ * `device_id` aggiunto dal wizard): solo i campi cambiati rispetto a quanto
+ * salvato. Con accesso SNMP la voce SNMP separata non si manda (la tendina non
+ * è a schermo): la toglie il server, insieme al suo binding.
  */
 export function corpoModificaRouter(salvato: ModuloRouter, form: ModuloRouter): Record<string, unknown> {
   const corpo: Record<string, unknown> = {};

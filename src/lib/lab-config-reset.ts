@@ -6,6 +6,7 @@
 import { setSetting, setTenantOnboardingCompleted } from "./db-hub";
 import { getTenantDb, resetConfiguration, withTenant } from "./db-tenant";
 import { invalidateModulesHealth } from "./modules/health";
+import { chiaveProgresso } from "./onboarding/progresso";
 import type Database from "better-sqlite3";
 
 /** Tabelle tenant aggiuntive oltre a resetConfiguration() — DELETE IF EXISTS. */
@@ -71,6 +72,10 @@ export function resetLabNetworkConfig(tenantCode: string): LabConfigResetResult 
 
   setTenantOnboardingCompleted(tenantCode, false);
   setSetting("onboarding_completed", "0");
+  // Il punto raggiunto nel wizard: router, rete e credenziali non ci sono più,
+  // e riaprendo si ripartiva dall'ultimo passo con niente dietro (revisione
+  // della tappa 4 credenziali, 15/10).
+  setSetting(chiaveProgresso(tenantCode), "");
   invalidateModulesHealth(tenantCode);
 
   return {

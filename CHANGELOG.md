@@ -19,7 +19,7 @@ solo fra quei quattro. «Indietro» ignorava quanto già creato ed «Esci» dime
   `credentials/tipi.ts` («Linux» come SSH): i tipi nuovi delle sotto-tappe 2c/2f compaiono da soli.
 - **Router dall'archivio**: «Credenziale» e «SNMP per porte/LLDP» sono tendine delle voci adatte all'accesso
   (regola unica tipo ↔ protocollo), con «nuova nell'archivio» che crea e seleziona, e «Prova connessione».
-  Tornando indietro il router già creato si modifica, mandando solo i campi toccati.
+  Tornando indietro il router già creato si modifica, mandando solo i campi toccati (`/api/onboarding/router`).
 - **Active Directory**: la credenziale WinRM si sceglie fra le voci Windows dell'archivio.
 - **Prima subnet**: tutte le voci dell'archivio, con casella e frecce per l'ordine (prima SNMP, poi SSH, Windows, le
   altre), nella lista nuova delle credenziali della rete.
@@ -27,10 +27,35 @@ solo fra quei quattro. «Indietro» ignorava quanto già creato ed «Esci» dime
   segna il wizard completato come prima, ma riaprendolo da Impostazioni si riparte da lì; router, rete e integrazione
   AD già creati non si ricreano. Il wizard non scrive più `host_windows_credential_id` / `host_linux_credential_id`.
 
+### Correzioni della revisione
+
+- **Le credenziali cambiate nel router già creato si usano davvero**: tornando «Indietro» il wizard mandava il PUT
+  dell'apparato, che scrive solo le colonne; i binding creati alla registrazione e la porta restavano quelli di prima,
+  e il polling continuava con la voce vecchia mentre il wizard diceva «Router aggiornato». Ora la modifica passa da
+  `/api/onboarding/router`, che in una transazione aggiorna colonne, porta della voce (2222, o 22/161 cambiando
+  accesso) e i due binding che le rispecchiano; gli altri binding dell'apparato restano. Un router con lo stesso
+  indirizzo già registrato (dal vecchio wizard, o con il punto non salvato) non si crea una seconda volta: si propone
+  di usarlo, e le sue credenziali in linea passano alle voci scelte.
+- **Router registrato dopo la rete**: «Completa e apri la rete» lo collega alla rete già creata (prima il collegamento
+  si faceva solo alla creazione).
+- **«Reset lab» azzera anche il punto raggiunto**, e un punto con oggetti spariti riparte dal passo che li crea (dalle
+  credenziali se sono spariti tutti) invece che dall'ultimo passo con niente dietro.
+- **Archivio non caricato = niente creazioni alla cieca**: router, Active Directory e rete non si creano senza
+  credenziali come se l'archivio fosse vuoto; le tendine dicono «Caricamento…» o «Archivio non caricato» invece di
+  «nessuna voce, creane una».
+- **DNS svuotato = DNS cancellato** (prima il campo vuoto si ignorava); «Indietro» aspetta il salvataggio del punto.
+- **SNMP v3 riconoscibile**: il tipo si chiama «SNMP (v1/v2c o v3)» finché l'archivio non ha un tipo v3 suo, una voce
+  col livello di sicurezza si mostra «SNMP v3», e «nuova nell'archivio» con accesso SNMP v3 apre il modulo già in
+  authPriv.
+- **Active Directory già creata**: la credenziale WinRM si cambia anche dal wizard (l'account resta della sua pagina).
+- **Telefono**: il modulo della voce scorre quando è più alto dello schermo (SNMPv3 authPriv), e nella lista della
+  prima subnet il nome della voce sta sopra il tipo; i pulsanti piccoli a 13 px.
+
 ### Da sapere
 
-- Cambiare la credenziale di un router già creato aggiorna l'apparato ma non ancora i suoi binding: la modifica del
-  singolo apparato funziona così anche fuori dal wizard, si sistema con la sotto-tappa 2e.
+- La modifica del singolo apparato **fuori dal wizard** aggiorna ancora solo le colonne, non i binding: si sistema con
+  la sotto-tappa 2e (che lì aggiunge la voce in testa invece di sostituirla).
+
 ## [Non rilasciato] — 2026-10-15 · topologia T2.5: la lettura degli hypervisor (lldpd e bond), spenta
 
 Spec §13.5.5, piano di T2 Task 7. Perché: dove sugli host Proxmox gira `lldpd`, l'host dice da sé a quale porta di

@@ -6,10 +6,13 @@
  * La lettura va chiamata nel contesto del cliente (`withTenant`): controlla
  * che router, rete e integrazione AD salvati ci siano ancora e ne restituisce
  * i dati per riaprire il wizard dov'era. Un oggetto sparito si toglie dal
- * progresso e lo si dice, così il wizard non prova a modificarlo.
+ * progresso e lo si dice, così il wizard non prova a modificarlo; il passo
+ * torna a quello che lo crea (al primo, se sono spariti tutti), invece di
+ * riaprire sull'ultimo passo con niente dietro (revisione del 15/10).
  */
 import { getSetting, setSetting } from "@/lib/db-hub";
-import { getAdIntegrationById, getNetworkById, getNetworkDeviceById } from "@/lib/db";
+import { getAdIntegrationById, getNetworkById, getNetworkDeviceById, getNetworkRouterId } from "@/lib/db";
+import { PASSO } from "./passi";
 import { chiaveProgresso, leggiProgresso, scriviProgresso, type ProgressoWizard } from "./progresso";
 
 export interface RouterDelWizard {
@@ -28,6 +31,14 @@ export interface ReteDelWizard {
   cidr: string;
   gateway: string | null;
   dns_server: string | null;
+  /** Router collegato alla rete: uno creato dopo la rete si collega al completamento. */
+  router_id: number | null;
+}
+
+export interface AdDelWizard {
+  id: number;
+  name: string;
+  winrm_credential_id: number | null;
 }
 
 export interface RiepilogoWizard {
@@ -37,7 +48,7 @@ export interface RiepilogoWizard {
   avviso: string | null;
   router: RouterDelWizard | null;
   rete: ReteDelWizard | null;
-  ad: { id: number; name: string } | null;
+  ad: AdDelWizard | null;
   /** Il DNS del passo 3, se già salvato (impostazione dell'hub). */
   dns_predefinito: string | null;
 }
@@ -61,6 +72,9 @@ export function leggiRiepilogoWizard(tenantCode: string): RiepilogoWizard {
 
   const progresso = { ...lettura.progresso };
   const spariti: string[] = [];
+  /** Passi che creano gli oggetti spariti: si riparte dal primo di questi. */
+  const passiDaRifare: number[] = [];
+  const salvati = [progresso.router_device_id, progresso.network_id, progresso.ad_integration_id].filter((x) => x != null).length;
   if (progresso.router_device_id != null) {
     const d = getNetworkDeviceById(progresso.router_device_id);
     if (d) {
@@ -75,29 +89,43 @@ export function leggiRiepilogoWizard(tenantCode: string): RiepilogoWizard {
       };
     } else {
       spariti.push(`il router (id ${progresso.router_device_id})`);
+      passiDaRifare.push(PASSO.router);
       progresso.router_device_id = null;
     }
   }
   if (progresso.network_id != null) {
     const n = getNetworkById(progresso.network_id);
     if (n) {
-      riepilogo.rete = { id: n.id, name: n.name, cidr: n.cidr, gateway: n.gateway ?? null, dns_server: n.dns_server ?? null };
+      riepilogo.rete = {
+        id: n.id,
+        name: n.name,
+        cidr: n.cidr,
+        gateway: n.gateway ?? null,
+        dns_server: n.dns_server ?? null,
+        router_id: getNetworkRouterId(n.id),
+      };
     } else {
       spariti.push(`la rete (id ${progresso.network_id})`);
+      passiDaRifare.push(PASSO.subnet);
       progresso.network_id = null;
     }
   }
   if (progresso.ad_integration_id != null) {
     const a = getAdIntegrationById(progresso.ad_integration_id);
     if (a) {
-      riepilogo.ad = { id: a.id, name: a.name };
+      riepilogo.ad = { id: a.id, name: a.name, winrm_credential_id: a.winrm_credential_id ?? null };
     } else {
       spariti.push(`l'integrazione Active Directory (id ${progresso.ad_integration_id})`);
+      passiDaRifare.push(PASSO.ad);
       progresso.ad_integration_id = null;
     }
   }
   if (spariti.length) {
-    riepilogo.avviso = `Creati dal wizard ma non più presenti: ${spariti.join(", ")}. Si possono creare di nuovo.`;
+    // Spariti tutti (per esempio dopo una pulizia della configurazione): da capo,
+    // perché anche l'archivio delle credenziali va riguardato.
+    const daCapo = spariti.length === salvati;
+    progresso.passo = daCapo ? PASSO.credenziali : Math.min(progresso.passo, ...passiDaRifare);
+    riepilogo.avviso = `Creati dal wizard ma non più presenti: ${spariti.join(", ")}. Si possono creare di nuovo: si riparte da «${daCapo ? "Credenziali" : "il passo che li crea"}».`;
   }
   riepilogo.progresso = progresso;
   return riepilogo;

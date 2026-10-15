@@ -69,7 +69,9 @@ export function CredentialFormDialog({ open, onOpenChange, stato, opzioniTipo, o
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent>
+        {/* Su un telefono il modulo SNMPv3 authPriv è più alto dello schermo e la
+            finestra è fissa: senza scorrimento titolo e «Salva» restavano fuori. */}
+        <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{stato.editingId ? "Modifica credenziale" : "Nuova credenziale"}</DialogTitle>
           </DialogHeader>

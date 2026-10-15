@@ -23,6 +23,8 @@ import {
   usaSnmpSeparato,
   credenzialeValidaPer,
   tipoPerNuovaVoce,
+  livelloV3PerNuovaVoce,
+  apparatoConStessoHost,
   corpoCreaRete,
   erroreRete,
   type ModuloRouter,
@@ -76,6 +78,23 @@ describe("router: controlli", () => {
     assert.equal(tipoPerNuovaVoce("ssh"), "ssh");
     assert.equal(tipoPerNuovaVoce("snmp_v2"), "snmp");
     assert.equal(tipoPerNuovaVoce("snmp_v3"), "snmp");
+  });
+
+  it("con accesso SNMP v3 la voce nuova parte già v3 (authPriv), non con la community", () => {
+    assert.equal(livelloV3PerNuovaVoce("snmp_v3"), "authPriv");
+    assert.equal(livelloV3PerNuovaVoce("snmp_v2"), "");
+    assert.equal(livelloV3PerNuovaVoce("ssh"), "");
+  });
+
+  it("un apparato con lo stesso indirizzo si trova prima di crearne un doppione", () => {
+    const apparati = [
+      { id: 4, host: "192.168.1.1" },
+      { id: 5, host: "Gw.Lan" },
+    ];
+    assert.equal(apparatoConStessoHost(apparati, " 192.168.1.1 ")?.id, 4);
+    assert.equal(apparatoConStessoHost(apparati, "gw.lan")?.id, 5);
+    assert.equal(apparatoConStessoHost(apparati, "192.168.1.10"), undefined);
+    assert.equal(apparatoConStessoHost(apparati, " "), undefined);
   });
 });
 

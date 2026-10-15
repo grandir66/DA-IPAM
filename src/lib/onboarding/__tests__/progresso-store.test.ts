@@ -19,6 +19,8 @@ import { withTenant, getTenantDb, deleteTenantDatabase } from "@/lib/db-tenant";
 import { getSetting, setSetting } from "@/lib/db-hub";
 import { leggiRiepilogoWizard, salvaProgresso } from "../progresso-store";
 import { chiaveProgresso } from "../progresso";
+import { PASSO } from "../passi";
+import { resetLabNetworkConfig } from "@/lib/lab-config-reset";
 
 const T = "TESTPROGRESSOWIZARD";
 
@@ -59,16 +61,40 @@ describe("riepilogo del wizard", () => {
       credential_id: null,
       snmp_credential_id: null,
     });
-    assert.deepEqual(r.rete, { id: 9, name: "LAN", cidr: "10.9.0.0/24", gateway: "10.9.0.1", dns_server: "10.9.0.2" });
+    assert.deepEqual(r.rete, { id: 9, name: "LAN", cidr: "10.9.0.0/24", gateway: "10.9.0.1", dns_server: "10.9.0.2", router_id: null });
+  });
+
+  it("la rete riporta il router collegato: un router creato dopo la rete si collega al completamento", () => {
+    getTenantDb(T).prepare(`INSERT OR REPLACE INTO network_router (network_id, router_id) VALUES (9, 3)`).run();
+    salvaProgresso(T, { passo: 4, router_device_id: 3, network_id: 9, ad_integration_id: null });
+    const r = withTenant(T, () => leggiRiepilogoWizard(T));
+    assert.equal(r.rete?.router_id, 3);
+    getTenantDb(T).prepare(`DELETE FROM network_router WHERE network_id = 9`).run();
   });
 
   it("un oggetto che non c'è più si toglie dal progresso e lo si dice", () => {
     salvaProgresso(T, { passo: 2, router_device_id: 77, network_id: null, ad_integration_id: 5 });
     const r = withTenant(T, () => leggiRiepilogoWizard(T));
-    assert.deepEqual(r.progresso, { passo: 2, router_device_id: null, network_id: null, ad_integration_id: null });
+    // Tutti gli oggetti salvati sono spariti: si riparte dal primo passo.
+    assert.deepEqual(r.progresso, { passo: 0, router_device_id: null, network_id: null, ad_integration_id: null });
     assert.equal(r.router, null);
     assert.match(r.avviso ?? "", /router/i);
     assert.match(r.avviso ?? "", /Active Directory/);
+  });
+
+  it("sparito solo il router: si riparte dal passo che lo crea, non dall'ultimo raggiunto", () => {
+    salvaProgresso(T, { passo: PASSO.subnet, router_device_id: 77, network_id: 9, ad_integration_id: null });
+    const r = withTenant(T, () => leggiRiepilogoWizard(T));
+    assert.equal(r.progresso?.passo, PASSO.router);
+    assert.equal(r.progresso?.network_id, 9);
+  });
+
+  it("«Reset lab» cancella anche il punto raggiunto: il wizard riparte dalle credenziali", () => {
+    salvaProgresso(T, { passo: PASSO.subnet, router_device_id: 3, network_id: 9, ad_integration_id: null });
+    resetLabNetworkConfig(T);
+    const r = withTenant(T, () => leggiRiepilogoWizard(T));
+    assert.equal(r.progresso, null);
+    assert.equal(r.avviso, null);
   });
 
   it("un valore guasto non riparte in silenzio: nessun progresso, ma l'avviso col motivo", () => {

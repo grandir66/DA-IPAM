@@ -24,15 +24,18 @@ import {
   spostaScelta,
   idsDaProvare,
   etichettaPorta,
+  etichettaVoce,
 } from "../credenziali-wizard";
 
 const v = (id: number, credential_type: string, name = `voce ${id}`) => ({ id, name, credential_type });
 
 describe("tipi offerti nel modulo del wizard", () => {
   it("i tipi che l'archivio accetta oggi, con le etichette di tipi.ts e senza «linux» (è SSH)", () => {
+    // Fino alla 2c il tipo «snmp» copre anche la v3 (sezione «Sicurezza SNMPv3»
+    // del modulo): «SNMP v1/v2c» faceva credere che la v3 mancasse (revisione).
     assert.deepEqual(tipiDelModulo(CRED_TYPE_OPTIONS.map((o) => o.value)), [
       { value: "ssh", label: "SSH (password o chiave)" },
-      { value: "snmp", label: "SNMP v1/v2c" },
+      { value: "snmp", label: "SNMP (v1/v2c o v3)" },
       { value: "windows", label: "Windows (WinRM e WMI)" },
       { value: "api", label: "API (token o utente)" },
     ]);
@@ -41,6 +44,24 @@ describe("tipi offerti nel modulo del wizard", () => {
   it("un tipo nuovo accettato dall'archivio compare da solo, nell'ordine di tipi.ts", () => {
     const tipi = tipiDelModulo(["ssh", "snmp", "windows", "api", "linux", "unifi", "snmp_v3"]).map((o) => o.value);
     assert.deepEqual(tipi, ["ssh", "snmp", "snmp_v3", "windows", "api", "unifi"]);
+  });
+
+  it("quando l'archivio accetta «snmp_v3» il tipo «snmp» torna «SNMP v1/v2c»", () => {
+    const tipi = tipiDelModulo(["ssh", "snmp", "snmp_v3"]);
+    assert.deepEqual(tipi.map((o) => o.label), ["SSH (password o chiave)", "SNMP v1/v2c", "SNMP v3"]);
+  });
+});
+
+describe("etichetta di una voce", () => {
+  it("una voce «snmp» con il livello di sicurezza è una v3, senza è v1/v2c", () => {
+    assert.equal(etichettaVoce({ credential_type: "snmp", security_level: "authPriv" }), "SNMP v3");
+    assert.equal(etichettaVoce({ credential_type: "snmp", security_level: null }), "SNMP v1/v2c");
+    assert.equal(etichettaVoce({ credential_type: "snmp" }), "SNMP v1/v2c");
+  });
+
+  it("gli altri tipi con l'etichetta di tipi.ts («linux» come SSH)", () => {
+    assert.equal(etichettaVoce({ credential_type: "linux" }), "SSH (password o chiave)");
+    assert.equal(etichettaVoce({ credential_type: "windows", security_level: null }), "Windows (WinRM e WMI)");
   });
 });
 

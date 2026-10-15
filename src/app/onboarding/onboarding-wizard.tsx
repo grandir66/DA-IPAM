@@ -11,7 +11,8 @@
  * 1. l'archivio delle credenziali per primo, con lo stesso modulo della pagina
  *    Credenziali (più voci per tipo, modifica ed eliminazione);
  * 2. il router sceglie le voci dell'archivio (regola tipo ↔ protocollo di
- *    `credentials/tipi.ts`); già creato, si modifica col PUT dei soli campi toccati;
+ *    `credentials/tipi.ts`); già creato, si modifica coi soli campi toccati
+ *    (`/api/onboarding/router`, che allinea anche porta e binding);
  * 3. DNS, 4. Active Directory (la WinRM dall'archivio), 5. la prima subnet con
  *    le voci da provare in ordine.
  * Il punto raggiunto e gli oggetti creati si salvano a ogni passo
@@ -44,13 +45,13 @@ import { LoadError } from "@/components/shared/load-error";
 import { CredentialFormDialog, caricaStatoModifica } from "@/components/credentials/credential-form-dialog";
 import { fetchJson } from "@/lib/fetch-json";
 import { CRED_TYPE_OPTIONS } from "@/lib/credential-protocol-map";
-import { etichettaTipo } from "@/lib/credentials/tipi";
 import { statoNuovo, type StatoModulo, type VoceArchivio } from "@/lib/credentials/modulo";
 import { PASSI_WIZARD, PASSO } from "@/lib/onboarding/passi";
 import type { ProgressoWizard } from "@/lib/onboarding/progresso";
-import type { ReteDelWizard, RiepilogoWizard } from "@/lib/onboarding/progresso-store";
+import type { ReteDelWizard, RiepilogoWizard, RouterDelWizard } from "@/lib/onboarding/progresso-store";
 import {
   etichettaPorta,
+  etichettaVoce,
   idsDaProvare,
   riconciliaSceltaRete,
   spostaScelta,
@@ -65,6 +66,7 @@ import {
   ACCESSI_ROUTER,
   MARCHE_ROUTER,
   ROUTER_VUOTO,
+  apparatoConStessoHost,
   corpoCreaRete,
   corpoCreaRouter,
   corpoModificaRouter,
@@ -72,6 +74,7 @@ import {
   credenzialeValidaPer,
   erroreRete,
   erroreRouter,
+  livelloV3PerNuovaVoce,
   moduloDaRouter,
   tipoPerNuovaVoce,
   usaSnmpSeparato,
@@ -84,6 +87,13 @@ const OPZIONI_TIPO = tipiDelModulo(CRED_TYPE_OPTIONS.map((o) => o.value));
 const JSON_HEADERS = { "Content-Type": "application/json" };
 
 type Caricamento = { fase: "caricamento" } | { fase: "pronto" } | { fase: "errore"; messaggio: string };
+
+/**
+ * Con l'archivio non caricato le tendine sono vuote: andare avanti creerebbe
+ * router, AD o rete senza credenziali come se l'archivio fosse vuoto
+ * (revisione del 15/10). Si ferma e lo si dice.
+ */
+const ARCHIVIO_NON_PRONTO = "L'archivio delle credenziali non è caricato: premi «Riprova» nel riquadro rosso e poi continua.";
 
 /** Dove va la voce creata dal modulo: solo nell'archivio, o anche scelta in una tendina. */
 type Destinazione = "archivio" | "router" | "router_snmp" | "ad";
@@ -132,12 +142,16 @@ export function OnboardingWizard() {
   const [provando, setProvando] = useState(false);
 
   const [defaultDns, setDefaultDns] = useState("");
+  /** Il DNS già salvato nell'hub: svuotare il campo lo cancella, invece di essere ignorato. */
+  const [dnsSalvato, setDnsSalvato] = useState("");
 
   const [adEnabled, setAdEnabled] = useState(false);
   const [adCreata, setAdCreata] = useState<{ id: number; name: string } | null>(null);
   const [adForm, setAdForm] = useState(AD_VUOTO);
   /** undefined = non toccata: vale la proposta (la voce Windows, se è una sola). */
   const [adWinrm, setAdWinrm] = useState<number | null | undefined>(undefined);
+  /** La WinRM salvata sull'integrazione già creata: cambiandola si aggiorna con «Avanti». */
+  const [adWinrmSalvata, setAdWinrmSalvata] = useState<number | null>(null);
 
   const [netName, setNetName] = useState("LAN principale");
   // Vuoto: «192.168.1.0/24» resta solo come suggerimento grigio (tappa 1). Un
@@ -187,10 +201,15 @@ export function OnboardingWizard() {
       setNetDns(r.rete.dns_server ?? "");
     }
     if (r.ad) {
-      setAdCreata(r.ad);
+      setAdCreata({ id: r.ad.id, name: r.ad.name });
       setAdEnabled(true);
+      setAdWinrm(r.ad.winrm_credential_id);
+      setAdWinrmSalvata(r.ad.winrm_credential_id);
     }
-    if (r.dns_predefinito) setDefaultDns(r.dns_predefinito);
+    if (r.dns_predefinito) {
+      setDefaultDns(r.dns_predefinito);
+      setDnsSalvato(r.dns_predefinito);
+    }
     if (r.progresso) setStep(r.progresso.passo);
     setAvvio({ fase: "pronto" });
   }, []);
@@ -223,8 +242,10 @@ export function OnboardingWizard() {
 
   // ---------- archivio ----------
 
-  const apriNuova = (destinazione: Destinazione, tipo?: string) => {
-    setFinestra({ aperta: true, stato: statoNuovo(tipo), destinazione });
+  const apriNuova = (destinazione: Destinazione, tipo?: string, livelloV3: "" | "authPriv" = "") => {
+    const stato = statoNuovo(tipo);
+    stato.form.security_level = livelloV3;
+    setFinestra({ aperta: true, stato, destinazione });
   };
 
   const apriModifica = async (v: VoceArchivio) => {
@@ -235,8 +256,11 @@ export function OnboardingWizard() {
   const aggiornaRouter = (campi: Partial<ModuloRouter>) => {
     setRouter((r) => {
       const n = { ...r, ...campi };
-      // Cambiando accesso, una voce che non vale più si toglie invece di restare nascosta.
-      if (campi.protocol !== undefined && !credenzialeValidaPer(n.credentialId, voci, n.protocol)) n.credentialId = null;
+      // Cambiando accesso, una voce che non vale più si toglie invece di restare nascosta
+      // (solo ad archivio caricato: prima di allora ogni voce sembrerebbe non valere).
+      if (campi.protocol !== undefined && statoVoci.fase === "pronto" && !credenzialeValidaPer(n.credentialId, voci, n.protocol)) {
+        n.credentialId = null;
+      }
       return n;
     });
     setProva(null);
@@ -273,11 +297,50 @@ export function OnboardingWizard() {
 
   // ---------- router ----------
 
+  /**
+   * Router già registrato: colonne, porta e binding insieme. Il PUT
+   * dell'apparato scriveva solo le colonne, e il sistema continuava con la
+   * voce e la porta di prima mentre qui si leggeva «aggiornato» (revisione).
+   */
+  const modificaRouter = async (id: number, salvato: ModuloRouter, messaggio: string, avvisaSempre = false): Promise<number> => {
+    const corpo = corpoModificaRouter(salvato, router);
+    const daSalvare = Object.keys(corpo).length > 0;
+    if (daSalvare) {
+      const esito = await fetchJson<RouterDelWizard>("/api/onboarding/router", {
+        method: "PUT",
+        headers: JSON_HEADERS,
+        body: JSON.stringify({ device_id: id, ...corpo }),
+      });
+      if (!esito.ok) throw new Error(`Router non aggiornato: ${esito.message}`);
+      salvato = moduloDaRouter(esito.data);
+    }
+    if (daSalvare || avvisaSempre) toast.success(messaggio);
+    setRouterDeviceId(id);
+    setRouterSalvato(salvato);
+    return id;
+  };
+
   const salvaRouter = async (): Promise<number | null> => {
+    if (router.host.trim() && statoVoci.fase !== "pronto") throw new Error(ARCHIVIO_NON_PRONTO);
     const errore = erroreRouter(router, routerDeviceId != null, voci);
     if (errore) throw new Error(errore);
     if (!router.host.trim()) return null; // passo saltato
     if (routerDeviceId == null) {
+      // Il wizard sa del router solo dal punto salvato: se manca (vecchio wizard,
+      // punto non salvato) un apparato con lo stesso indirizzo c'è già e non se
+      // ne crea un secondo.
+      const elenco = await fetchJson<RouterDelWizard[]>("/api/devices", { cache: "no-store" });
+      if (!elenco.ok) throw new Error(`Impossibile controllare se il router è già registrato: ${elenco.message}`);
+      const esistente = apparatoConStessoHost(elenco.data, router.host);
+      if (esistente) {
+        const usa = confirm(
+          `L'indirizzo ${esistente.host} è già registrato come «${esistente.name}». Usarlo come router del wizard, con le credenziali scelte qui, invece di crearne un secondo?`,
+        );
+        if (!usa) {
+          throw new Error(`Router non registrato: ${esistente.host} è già «${esistente.name}». Cambia l'indirizzo, oppure scegli di usare quello.`);
+        }
+        return modificaRouter(esistente.id, moduloDaRouter(esistente), `«${esistente.name}» è ora il router del wizard.`, true);
+      }
       const esito = await fetchJson<{ id: number }>("/api/devices", {
         method: "POST",
         headers: JSON_HEADERS,
@@ -289,17 +352,7 @@ export function OnboardingWizard() {
       toast.success("Router registrato.");
       return esito.data.id;
     }
-    const corpo = corpoModificaRouter(routerSalvato ?? router, router);
-    if (Object.keys(corpo).length === 0) return routerDeviceId;
-    const esito = await fetchJson<unknown>(`/api/devices/${routerDeviceId}`, {
-      method: "PUT",
-      headers: JSON_HEADERS,
-      body: JSON.stringify(corpo),
-    });
-    if (!esito.ok) throw new Error(`Router non aggiornato: ${esito.message}`);
-    setRouterSalvato(router);
-    toast.success("Router aggiornato.");
-    return routerDeviceId;
+    return modificaRouter(routerDeviceId, routerSalvato ?? router, "Router aggiornato: credenziali e porta comprese.");
   };
 
   const provaConnessione = async () => {
@@ -329,8 +382,25 @@ export function OnboardingWizard() {
   const winrmValida = winrmScelta != null && vociWindows(voci).some((v) => v.id === winrmScelta) ? winrmScelta : null;
 
   const salvaAd = async (): Promise<number | null> => {
-    if (adCreata) return adCreata.id; // già creata: si modifica dalla pagina Active Directory
+    if (adCreata) {
+      // L'account resta della pagina Active Directory (fino alla 2f); la WinRM
+      // collegata viene dall'archivio e si cambia anche da qui.
+      if (adWinrm !== undefined && adWinrm !== adWinrmSalvata) {
+        if (statoVoci.fase !== "pronto") throw new Error(ARCHIVIO_NON_PRONTO);
+        const esito = await fetchJson<unknown>(`/api/ad/${adCreata.id}`, {
+          method: "PUT",
+          headers: JSON_HEADERS,
+          body: JSON.stringify({ winrm_credential_id: winrmValida }),
+        });
+        if (!esito.ok) throw new Error(`Credenziale WinRM non aggiornata: ${esito.message}`);
+        setAdWinrm(winrmValida);
+        setAdWinrmSalvata(winrmValida);
+        toast.success("Credenziale WinRM dell'integrazione aggiornata.");
+      }
+      return adCreata.id;
+    }
     if (!adEnabled) return null;
+    if (statoVoci.fase !== "pronto") throw new Error(ARCHIVIO_NON_PRONTO);
     if (!adForm.dc_host.trim() || !adForm.domain.trim() || !adForm.base_dn.trim() || !adForm.username.trim() || !adForm.password) {
       throw new Error("Compila tutti i campi obbligatori per Active Directory.");
     }
@@ -364,7 +434,7 @@ export function OnboardingWizard() {
       let idRouter = routerDeviceId;
       let idAd = adCreata?.id ?? null;
       if (step === PASSO.router) idRouter = await salvaRouter();
-      if (step === PASSO.dns && defaultDns.trim()) await putSetting("default_network_dns", defaultDns.trim());
+      if (step === PASSO.dns) await salvaDns();
       if (step === PASSO.ad) idAd = await salvaAd();
       const prossimo = Math.min(step + 1, PASSI_WIZARD.length - 1);
       await salvaPunto(punto(prossimo, { router_device_id: idRouter, ad_integration_id: idAd }));
@@ -376,10 +446,27 @@ export function OnboardingWizard() {
     }
   };
 
-  const goBack = () => {
+  /**
+   * Svuotare un DNS già salvato lo cancella: prima il campo vuoto si saltava e
+   * il valore vecchio ricompariva alla riapertura (revisione del 15/10).
+   */
+  const salvaDns = async () => {
+    const dns = defaultDns.trim();
+    if (dns === dnsSalvato) return;
+    await putSetting("default_network_dns", dns);
+    setDnsSalvato(dns);
+  };
+
+  /** Si attende il salvataggio del punto: un «Avanti» subito dopo non deve superarlo. */
+  const goBack = async () => {
     const prima = Math.max(0, step - 1);
-    setStep(prima);
-    void salvaPunto(punto(prima));
+    setBusy(true);
+    try {
+      await salvaPunto(punto(prima));
+      setStep(prima);
+    } finally {
+      setBusy(false);
+    }
   };
 
   /** «Esci» e «Salta creazione rete»: il wizard risulta completato, ma il punto resta per la riapertura. */
@@ -410,6 +497,7 @@ export function OnboardingWizard() {
       let rete = reteCreata;
       let appenaCreata = false;
       if (!rete) {
+        if (statoVoci.fase !== "pronto") throw new Error(ARCHIVIO_NON_PRONTO);
         const errore = erroreRete({ name: netName, cidr: netCidr });
         if (errore) throw new Error(errore);
         const esito = await fetchJson<ReteDelWizard>("/api/networks", {
@@ -434,11 +522,24 @@ export function OnboardingWizard() {
           cidr: esito.data.cidr,
           gateway: esito.data.gateway ?? null,
           dns_server: esito.data.dns_server ?? null,
+          router_id: routerDeviceId,
         };
         setReteCreata(rete);
         appenaCreata = true;
         toast.success("Rete creata.");
         await salvaPunto(punto(PASSO.subnet, { network_id: rete.id }));
+      } else if (routerDeviceId != null && rete.router_id == null) {
+        // Rete creata a un giro precedente, router registrato dopo: il
+        // collegamento si faceva solo alla creazione della rete (revisione).
+        const collega = await fetchJson<unknown>(`/api/networks/${rete.id}`, {
+          method: "PUT",
+          headers: JSON_HEADERS,
+          body: JSON.stringify({ router_id: routerDeviceId }),
+        });
+        if (!collega.ok) throw new Error(`Router non collegato alla rete: ${collega.message}`);
+        rete = { ...rete, router_id: routerDeviceId };
+        setReteCreata(rete);
+        toast.success("Router collegato alla rete.");
       }
       const fine = await fetchJson<unknown>("/api/onboarding/complete", { method: "POST" });
       if (!fine.ok) {
@@ -458,6 +559,37 @@ export function OnboardingWizard() {
 
   const ultimo = step === PASSI_WIZARD.length - 1;
   const passo = PASSI_WIZARD[step];
+
+  /** Rete già creata: cosa farà «Completa», compreso il router da collegare (revisione del 15/10). */
+  const notaReteCreata = (rete: ReteDelWizard): string => {
+    const base = `Rete già creata: «${rete.name}» (${rete.cidr}).`;
+    if (routerDeviceId != null && rete.router_id == null) {
+      return `${base} «Completa e apri la rete» collega alla rete il router «${router.name.trim() || "Router"}» (${router.host.trim()}) e chiude la configurazione; le credenziali della rete si cambiano dalla sua pagina.`;
+    }
+    if (rete.router_id != null && rete.router_id !== routerDeviceId) {
+      return `${base} Ha già un altro router collegato: router e credenziali della rete si cambiano dalla sua pagina. «Completa e apri la rete» chiude la configurazione.`;
+    }
+    return `${base} «Completa e apri la rete» chiude la configurazione; le credenziali della rete si cambiano dalla sua pagina.`;
+  };
+
+  /** La WinRM dell'integrazione AD, scelta fra le voci Windows: per l'integrazione nuova e per quella già creata. */
+  const tendinaWinrm = (
+    <>
+      <TendinaVoci
+        id="adwinrm"
+        label="Credenziale WinRM collegata"
+        stato={statoVoci}
+        voci={vociWindows(voci)}
+        valore={winrmValida}
+        nessuna="Nessuna"
+        nota="Una voce Windows dell'archivio, per i comandi WinRM verso i controller di dominio."
+        onCambia={(id) => setAdWinrm(id)}
+        onNuova={() => apriNuova("ad", "windows")}
+        disabled={busy}
+      />
+      <ErroreArchivio stato={statoVoci} onRiprova={() => void caricaVoci(true)} />
+    </>
+  );
 
   return (
     <Card className="w-full max-w-2xl border-border/80 shadow-lg">
@@ -521,7 +653,9 @@ export function OnboardingWizard() {
                   Il router serve per la cache ARP e, se la marca è supportata, per importare i lease DHCP. Sarà collegato alla
                   subnet all&apos;ultimo passo. Lascia vuoto l&apos;IP per saltare.
                 </p>
-                {routerDeviceId != null && <Nota>Router già registrato: le modifiche si salvano con «Avanti».</Nota>}
+                {routerDeviceId != null && (
+                  <Nota>Router già registrato: le modifiche, credenziali e porta comprese, si salvano con «Avanti».</Nota>
+                )}
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label htmlFor="rname">Nome</Label>
@@ -574,18 +708,20 @@ export function OnboardingWizard() {
                     <TendinaVoci
                       id="rcred"
                       label="Credenziale"
+                      stato={statoVoci}
                       voci={vociPerProtocollo(voci, router.protocol)}
                       valore={credenzialeValidaPer(router.credentialId, voci, router.protocol) ? router.credentialId : null}
                       segnaposto="Scegli una voce dell'archivio"
                       vuota="Nessuna voce adatta a questo accesso nell'archivio: creane una."
                       onCambia={(id) => aggiornaRouter({ credentialId: id })}
-                      onNuova={() => apriNuova("router", tipoPerNuovaVoce(router.protocol))}
+                      onNuova={() => apriNuova("router", tipoPerNuovaVoce(router.protocol), livelloV3PerNuovaVoce(router.protocol))}
                       disabled={busy}
                     />
                     {usaSnmpSeparato(router.protocol) && (
                       <TendinaVoci
                         id="rsnmp"
                         label="SNMP per porte/LLDP"
+                        stato={statoVoci}
                         voci={vociSnmp(voci)}
                         valore={router.snmpCredentialId != null && vociSnmp(voci).some((v) => v.id === router.snmpCredentialId) ? router.snmpCredentialId : null}
                         nessuna="Nessuna"
@@ -630,9 +766,13 @@ export function OnboardingWizard() {
             {step === PASSO.ad && (
               <div className="space-y-3 text-sm">
                 {adCreata ? (
-                  <Nota>
-                    Dominio già collegato: «{adCreata.name}». Le modifiche si fanno dalla pagina Active Directory.
-                  </Nota>
+                  <>
+                    <Nota>
+                      Dominio già collegato: «{adCreata.name}». L&apos;account si cambia dalla pagina Active Directory; la
+                      credenziale WinRM qui sotto si salva con «Avanti».
+                    </Nota>
+                    {tendinaWinrm}
+                  </>
                 ) : (
                   <>
                     <div className="flex items-center gap-2">
@@ -656,18 +796,7 @@ export function OnboardingWizard() {
                           <Checkbox id="adssl" checked={adForm.use_ssl} onCheckedChange={(c) => setAdForm((f) => ({ ...f, use_ssl: !!c, port: c ? 636 : 389 }))} />
                           <Label htmlFor="adssl">LDAPS (consigliato)</Label>
                         </div>
-                        <TendinaVoci
-                          id="adwinrm"
-                          label="Credenziale WinRM collegata"
-                          voci={vociWindows(voci)}
-                          valore={winrmValida}
-                          nessuna="Nessuna"
-                          nota="Una voce Windows dell'archivio, per i comandi WinRM verso i controller di dominio."
-                          onCambia={(id) => setAdWinrm(id)}
-                          onNuova={() => apriNuova("ad", "windows")}
-                          disabled={busy}
-                        />
-                        <ErroreArchivio stato={statoVoci} onRiprova={() => void caricaVoci(true)} />
+                        {tendinaWinrm}
                         <p className="text-[13px] text-muted-foreground">
                           Dopo la configurazione, dalla pagina Active Directory potrai sincronizzare computer, utenti e — se usi DHCP
                           Microsoft — anche i lease.
@@ -684,10 +813,7 @@ export function OnboardingWizard() {
             {step === PASSO.subnet && (
               <div className="space-y-3 text-sm">
                 {reteCreata ? (
-                  <Nota>
-                    Rete già creata: «{reteCreata.name}» ({reteCreata.cidr}). «Completa e apri la rete» chiude la configurazione; le
-                    credenziali della rete si cambiano dalla sua pagina.
-                  </Nota>
+                  <Nota>{notaReteCreata(reteCreata)}</Nota>
                 ) : (
                   <>
                     <p className="text-muted-foreground">
@@ -737,7 +863,7 @@ export function OnboardingWizard() {
             <div className="flex flex-col gap-2 pt-2">
               {!ultimo ? (
                 <div className="flex gap-2 justify-between">
-                  <Button type="button" variant="outline" size="sm" onClick={goBack} disabled={step === 0 || busy}>
+                  <Button type="button" variant="outline" size="sm" onClick={() => void goBack()} disabled={step === 0 || busy}>
                     <ChevronLeft className="h-4 w-4 mr-1" />
                     Indietro
                   </Button>
@@ -749,12 +875,17 @@ export function OnboardingWizard() {
                 </div>
               ) : (
                 <div className="flex flex-col gap-2">
-                  <Button type="button" onClick={() => void onSubmitLast()} disabled={busy} className="w-full">
+                  <Button
+                    type="button"
+                    onClick={() => void onSubmitLast()}
+                    disabled={busy || (!reteCreata && statoVoci.fase !== "pronto")}
+                    className="w-full"
+                  >
                     {busy ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
                     {reteCreata ? "Completa e apri la rete" : "Crea rete e apri analisi"}
                   </Button>
                   <div className="flex flex-col-reverse gap-2 sm:flex-row">
-                    <Button type="button" variant="outline" onClick={goBack} disabled={busy}>
+                    <Button type="button" variant="outline" onClick={() => void goBack()} disabled={busy}>
                       <ChevronLeft className="h-4 w-4 mr-1" />
                       Indietro
                     </Button>
@@ -819,7 +950,7 @@ function ErroreArchivio({ stato, onRiprova }: { stato: Caricamento; onRiprova: (
     <p className="flex flex-wrap items-center gap-2 rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-[13px]">
       <CircleX className="h-4 w-4 shrink-0" aria-hidden />
       <span className="flex-1">Archivio delle credenziali non caricato: {stato.messaggio}</span>
-      <Button type="button" variant="outline" size="xs" onClick={onRiprova}>
+      <Button type="button" variant="outline" size="xs" className="text-[13px]" onClick={onRiprova}>
         Riprova
       </Button>
     </p>
@@ -829,6 +960,7 @@ function ErroreArchivio({ stato, onRiprova }: { stato: Caricamento; onRiprova: (
 function TendinaVoci({
   id,
   label,
+  stato,
   voci,
   valore,
   onCambia,
@@ -841,6 +973,8 @@ function TendinaVoci({
 }: {
   id: string;
   label: string;
+  /** Stato dell'archivio: finché non è caricato non si dice «nessuna voce» (sarebbe una lista vuota al posto dell'errore). */
+  stato: Caricamento;
   voci: readonly VoceArchivio[];
   valore: number | null;
   onCambia: (id: number | null) => void;
@@ -853,12 +987,16 @@ function TendinaVoci({
   nota?: string;
   disabled?: boolean;
 }) {
-  const valoreSelect = valore != null ? String(valore) : nessuna ? "none" : null;
+  const pronto = stato.fase === "pronto";
+  // Finché l'archivio non c'è, la voce già scelta non si mostra «deselezionata» né «Nessuna».
+  const valoreSelect = !pronto ? null : valore != null ? String(valore) : nessuna ? "none" : null;
+  const segnapostoAttuale =
+    stato.fase === "caricamento" ? "Caricamento dell'archivio…" : stato.fase === "errore" ? "Archivio non caricato" : (segnaposto ?? "Scegli");
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-2">
         <Label htmlFor={id}>{label}</Label>
-        <Button type="button" variant="outline" size="xs" onClick={onNuova} disabled={disabled}>
+        <Button type="button" variant="outline" size="xs" className="text-[13px]" onClick={onNuova} disabled={disabled}>
           <Plus className="h-3 w-3" />
           nuova nell&apos;archivio
         </Button>
@@ -866,21 +1004,21 @@ function TendinaVoci({
       <Select
         value={valoreSelect}
         onValueChange={(v) => onCambia(v == null || v === "none" ? null : Number(v))}
-        disabled={disabled || (voci.length === 0 && !nessuna)}
+        disabled={disabled || !pronto || (voci.length === 0 && !nessuna)}
       >
         <SelectTrigger id={id} className="w-full">
-          <SelectValue placeholder={segnaposto ?? "Scegli"} />
+          <SelectValue placeholder={segnapostoAttuale} />
         </SelectTrigger>
         <SelectContent>
           {nessuna ? <SelectItem value="none">{nessuna}</SelectItem> : null}
           {voci.map((v) => (
             <SelectItem key={v.id} value={String(v.id)}>
-              {v.name} · {etichettaTipo(v.credential_type)}
+              {v.name} · {etichettaVoce(v)}
             </SelectItem>
           ))}
         </SelectContent>
       </Select>
-      {voci.length === 0 && vuota ? <p className="text-[13px] text-muted-foreground">{vuota}</p> : null}
+      {pronto && voci.length === 0 && vuota ? <p className="text-[13px] text-muted-foreground">{vuota}</p> : null}
       {nota ? <p className="text-[13px] text-muted-foreground">{nota}</p> : null}
     </div>
   );
@@ -942,7 +1080,7 @@ function ArchivioVoci({
                 <TableCell className="max-w-[200px] truncate font-medium" title={v.name}>
                   {v.name}
                 </TableCell>
-                <TableCell>{etichettaTipo(v.credential_type)}</TableCell>
+                <TableCell>{etichettaVoce(v)}</TableCell>
                 <TableCell className="text-muted-foreground">{v.encrypted_username ?? "—"}</TableCell>
                 <TableCell className={v.port != null ? "font-mono" : "text-muted-foreground"}>{etichettaPorta(v.port)}</TableCell>
                 <TableCell className="text-right">
@@ -959,7 +1097,7 @@ function ArchivioVoci({
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
                 <p className="break-words font-medium">{v.name}</p>
-                <p className="text-muted-foreground">{etichettaTipo(v.credential_type)}</p>
+                <p className="text-muted-foreground">{etichettaVoce(v)}</p>
               </div>
               <AzioniVoce voce={v} onModifica={() => onModifica(v)} onElimina={() => onElimina(v)} />
             </div>
@@ -1014,9 +1152,13 @@ function VociDellaRete({
                   onCheckedChange={(c) => onCambia(lista.map((x) => (x.id === s.id ? { ...x, attiva: !!c } : x)))}
                 />
                 <span className="w-5 shrink-0 text-right text-[13px] tabular-nums text-muted-foreground">{i + 1}.</span>
-                <Label htmlFor={idCasella} className="min-w-0 flex-1 font-normal">
-                  <span className="truncate">{v.name}</span>
-                  <span className="shrink-0 text-[13px] text-muted-foreground">{etichettaTipo(v.credential_type)}</span>
+                {/* Nome sopra e tipo sotto: a 390 px, accanto, il tipo si mangiava il nome
+                    e tre voci SSH diventavano «A… SSH» tre volte (revisione del 15/10). */}
+                <Label htmlFor={idCasella} className="min-w-0 flex-1 flex-col items-start gap-0.5 font-normal">
+                  <span className="w-full truncate leading-snug" title={v.name}>
+                    {v.name}
+                  </span>
+                  <span className="text-[13px] leading-snug text-muted-foreground">{etichettaVoce(v)}</span>
                 </Label>
                 <Button
                   type="button"

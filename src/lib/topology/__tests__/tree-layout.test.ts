@@ -276,3 +276,19 @@ test("orizzontale: il discendente ritoccato resta dove lo si lascia anche se l'a
   assert.deepEqual([r.nodes.get("dev:78")!.x, r.nodes.get("dev:78")!.y], [t78.x, t78.y]);
   assert.equal(ser(layoutTree(m, t, [t120, t78])), ser(r));
 });
+
+// Visto a schermo (T1b, Task 16): «Ruolo nella mappa ▸ Attaccato (server, PC)» su uno switch salvava il ruolo, ma il
+// riquadro restava un riquadro. Il disegno leggeva la classe dal tipo dichiarato (`nodeClass`) e non quella della mappa
+// (`classiMappa`, spec §13.8.2). Un «da sistemare» in una mappa passo passo resta invece un riquadro con la parola (R2).
+test("la classe della mappa decide il disegno: «Attaccato» a mano va nella fascia, «da sistemare» resta un riquadro", () => {
+  const nodes = [node("dev:1", "router", "R"), node("dev:2", "switch", "S"), node("dev:3", "switch", "T"), node("dev:4", "switch", "U")];
+  const t = tree(["dev:1"], { "dev:1": ["dev:2", "dev:3", "dev:4"] });
+  const m: TopologyModel = { ...model(nodes), classiMappa: { "dev:2": "att", "dev:4": "da_sistemare" } };
+  for (const o of ["tb", "lr"] as const) {
+    const r = layoutTreeCon(m, t, [], new Set(), o);
+    assert.equal(r.nodes.get("dev:2")?.role, "attached", `${o}: l'attaccato a mano sta nella fascia`);
+    assert.equal(r.nodes.get("dev:2")?.parent, "dev:1");
+    assert.equal(r.nodes.get("dev:3")?.role, "box", `${o}: lo switch con le sue prove resta un riquadro`);
+    assert.equal(r.nodes.get("dev:4")?.role, "box", `${o}: il «da sistemare» resta un riquadro (R2)`);
+  }
+});

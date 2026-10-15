@@ -171,7 +171,10 @@ for (const nome of ["topologia-domarc.json", "topologia-cliente-a.json"]) {
     // classificati router, con una prova di ruolo e nessun collegamento, non sono più radici della mappa automatica e
     // vanno in «Da sistemare» (da 3 radici a 1, H14). I due «hypervisor» senza VM né scansione che diventano attaccati
     // (I65) non cambiano la disposizione. cliente-a non cambia.
-    const attesi = nome === "topologia-domarc.json" ? [1442, 1524] : [2514, 3104];
+    // Visto a schermo (Task 16): il disegno legge la classe della mappa, non più il solo tipo dichiarato. Domarc
+    // 1442x1524->1182x1548 perché l'unico «hypervisor» dell'albero senza VM né scansione (I65), attaccato, passa dal
+    // riquadro alla fascia degli attaccati del suo padre (stesso padre). cliente-a non cambia.
+    const attesi = nome === "topologia-domarc.json" ? [1182, 1548] : [2514, 3104];
     assert.deepEqual([Math.round(r.width), Math.round(r.height)], attesi);
   });
 }

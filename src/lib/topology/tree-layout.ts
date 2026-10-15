@@ -15,7 +15,7 @@ import {
   VM_COLS, VM_COLS_LR, VM_H, VM_ROW, VM_W, dnsLine, fitLabel, headHeight, nodeWidth,
 } from "@/lib/topology/tree-layout-consts";
 import { layoutLr, type LrContext } from "@/lib/topology/tree-layout-lr";
-import { nodeClass } from "@/lib/topology/identity";
+import { nodeClass, type NodeClass } from "@/lib/topology/identity";
 import type { TreeResult } from "@/lib/topology/tree";
 
 export * from "@/lib/topology/tree-layout-consts";
@@ -62,7 +62,15 @@ export function layoutTree(
 ): LayoutResult {
   const byId = new Map(model.nodes.map((n) => [n.id, n]));
   const name = (id: string) => byId.get(id)?.name ?? id;
-  const cls = (id: string) => { const n = byId.get(id); return n ? nodeClass(n) : "client"; };
+  // La classe nella mappa (spec §13.8.2, T1b): un apparato «Attaccato» a mano, o un «hypervisor» senza prove, va nella
+  // fascia degli attaccati; un «da sistemare» (solo nelle mappe passo passo) resta un riquadro con la parola (R2).
+  // Visto a schermo (Task 16): col solo `nodeClass` il ruolo a mano si salvava ma il riquadro non si spostava.
+  const cls = (id: string): NodeClass => {
+    const n = byId.get(id);
+    if (!n) return "client";
+    const k = model.classiMappa?.[id];
+    return k === undefined || k === "da_sistemare" ? nodeClass(n) : k;
+  };
   const vmsOf = new Map<string, TopologyModel["vms"]>();
   for (const v of model.vms) if (v.hypervisorNodeId) vmsOf.set(v.hypervisorNodeId, [...(vmsOf.get(v.hypervisorNodeId) ?? []), v]);
   for (const [k, list] of vmsOf) vmsOf.set(k, [...list].sort((a, b) => a.name.localeCompare(b.name, "it") || (a.id < b.id ? -1 : 1)));

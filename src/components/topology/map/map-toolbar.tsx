@@ -6,14 +6,15 @@
  * la testa, e a destra «Verticale | Orizzontale» (spec §12.2: lo cambia un admin, vale per tutti),
  * «Mostra ridondanze» (spec §12.5: per chi guarda), zoom, «Adatta» (in verticale adatta la
  * larghezza e porta in cima), «Riordina», «Stampa» (scheda nuova, spec §12.3) e
- * «◂ Dettagli» / «Dettagli ▸» (apre e chiude la barra di destra).
+ * «◂ Dettagli» / «Dettagli ▸» (apre e chiude la barra di destra); a sinistra, per primo,
+ * «◂ Elenco» / «Elenco ▸» (apre e chiude l'elenco degli oggetti, spec §13.10.2).
  * Le scritture (mappe, testa, orientamento, riordina) si vedono solo agli admin.
  */
 import { useState } from "react";
 import { useReactFlow, useStoreApi } from "@xyflow/react";
 import { cn } from "@/lib/utils";
 import { oraItaliana } from "@/lib/topology/load-state";
-import { fitWidthViewport } from "@/lib/topology/map-screen";
+import { fitWidthViewport, pulsanteElenco } from "@/lib/topology/map-screen";
 import type { MapOrientation } from "@/lib/topology/model-types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -54,6 +55,9 @@ interface Props {
   refreshFailedAt: number | null;
   refreshMessage: string | null;
   onRetry: () => void;
+  /** L'elenco degli oggetti a sinistra è aperto (spec §13.10.2, scelta ricordata). */
+  listOpen: boolean;
+  onToggleList: () => void;
   /** La barra dei dettagli è aperta (scelta ricordata). */
   detailsOpen: boolean;
   /** C'è qualcosa da mostrare (un oggetto scelto, oggetti spariti): solo allora il pulsante c'è. */
@@ -76,9 +80,14 @@ export function MapToolbar(p: Props) {
   const lockedWhy = p.onOrientation ? undefined : "Lo sceglie un amministratore: vale per tutti quelli che guardano questa mappa";
   const [asked, setAsked] = useState<Asked>(null);
   const current = p.maps.find((m) => m.id === p.mapId) ?? null;
+  const elenco = pulsanteElenco(p.listOpen, p.mode === "passo");
 
   return (
     <div className="flex flex-wrap items-center gap-2 border-b border-border bg-card px-2.5 py-1.5 text-[13px]">
+      {/* L'elenco sta a sinistra e il suo pulsante anche: primo della barra, stesso stile di «Dettagli» (spec §13.10.2). */}
+      <Button size="sm" className="text-[13px]" variant="outline" aria-pressed={p.listOpen} onClick={p.onToggleList} title={elenco.titolo}>
+        {elenco.etichetta}
+      </Button>
       <div className="inline-flex overflow-hidden rounded-md border border-foreground" role="group" aria-label="Tipo di mappa">
         {(["auto", "passo"] as const).map((m) => (
           <button

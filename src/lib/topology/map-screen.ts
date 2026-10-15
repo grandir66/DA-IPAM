@@ -328,3 +328,29 @@ export function lineaAlbero(o: MapOrientation, padre: Rect, figlio: Rect, ostaco
   { tronco: true } | { tronco: false; lati: { da: Lato; a: Lato } } {
   return troncoPossibile(o, padre, figlio) ? { tronco: true } : { tronco: false, lati: latiVicini(padre, figlio, o, ostacoli) };
 }
+
+// ─── Elenco a sinistra comprimibile (spec §13.10.2, vincolo 6) ────────────────
+/** Elenco aperto o chiuso: si ricorda per chi guarda, in questo browser, come la barra dei dettagli. */
+export const ELENCO_KEY = "da-ipam.topologia.elenco";
+
+export function elencoAperto(leggi: () => string | null): boolean {
+  try {
+    return leggi() !== "chiuso";
+  } catch {
+    return true; // memoria non disponibile (navigazione privata, bloccata): aperto, come di base
+  }
+}
+
+export function salvaElenco(scrivi: (v: string) => void, aperto: boolean): void {
+  try {
+    scrivi(aperto ? "aperto" : "chiuso");
+  } catch {
+    // memoria non disponibile: la scelta vale solo per questa visita
+  }
+}
+
+/** La freccia dice dove va l'elenco: «◂ Elenco» quando è aperto (il clic lo chiude), «Elenco ▸» quando è chiuso. */
+export function pulsanteElenco(aperto: boolean, passo: boolean): { etichetta: string; titolo: string } {
+  if (aperto) return { etichetta: "◂ Elenco", titolo: "Chiude l'elenco degli oggetti: la mappa prende tutta la larghezza" };
+  return { etichetta: "Elenco ▸", titolo: passo ? "Apre l'elenco per trascinare gli oggetti sulla mappa" : "Apre l'elenco degli oggetti a sinistra" };
+}

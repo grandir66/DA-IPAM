@@ -2,9 +2,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { edgeLook } from "@/lib/topology/edge-look";
 import { LINK_ATTRS_DEFAULT, type MapLink, type MapNode, type TopologyModel } from "@/lib/topology/model-types";
-import { GREY, INK, PAPER, edgeLabelAt, printStrokes, redundantCables, stepPoints, wrapLabel } from "@/lib/topology/print-draw";
+import { GREY, INK, PAPER, edgeLabelAt, printStrokes, puntiLineaAlbero, redundantCables, stepPoints, wrapLabel } from "@/lib/topology/print-draw";
 import { buildPrintView } from "@/lib/topology/print-view";
-import { drawableLinks, redundancyCounts } from "@/lib/topology/map-screen";
+import { drawableLinks, latiVicini, percorso, redundancyCounts } from "@/lib/topology/map-screen";
 import type { LayoutNode } from "@/lib/topology/tree-layout";
 import type { TreeResult } from "@/lib/topology/tree";
 
@@ -144,4 +144,12 @@ test("M-4: «⇄ N» a schermo e l'elenco «Cavi di ridondanza» contano la stes
   assert.deepEqual(cables.map((c) => c.id), ["r1"]);
   assert.deepEqual([counts.get("dev:2"), counts.get("dev:3"), counts.get("dev:5")], [1, 1, undefined]);
   for (const [id, n] of counts) assert.equal(n, cables.filter((c) => c.from === id || c.to === id).length, id);
+});
+
+// Prova I31 (ADR 0012 punto 1): schermo e stampa con la stessa geometria, `latiVicini` unica fonte dei lati.
+test("I31 — un figlio spostato a mano dall'altra parte: in stampa sul lato più vicino, come a schermo; un figlio al suo posto: i gradini di oggi", () => {
+  const padre = { x: 0, y: 0, w: 200, h: 44 }, spostato = { x: 0, y: 200, w: 180, h: 44 }, alSuoPosto = { x: 304, y: 100, w: 180, h: 44 };
+  const l = latiVicini(padre, spostato, "lr", []);
+  assert.deepEqual(puntiLineaAlbero("lr", padre, spostato, []), percorso(padre, l.da, spostato, l.a));
+  assert.deepEqual(puntiLineaAlbero("lr", padre, alSuoPosto, []), stepPoints("lr", padre, alSuoPosto));
 });

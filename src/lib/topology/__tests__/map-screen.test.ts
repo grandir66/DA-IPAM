@@ -7,9 +7,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  FIT_MAX, FIT_MIN, HANDLE_ATT, HANDLE_IN, HANDLE_IN_DX, HANDLE_IN_GIU, HANDLE_IN_LR, HANDLE_OUT, HANDLE_OUT_LR, HANDLE_OUT_SU, HANDLE_OUT_SX, LR_TRUNK,
-  attraversa, candidatiLati, centerViewport, fitWidthViewport, labelBoxes, latiVicini, lineHandles, lineaAlbero, lrLabelMaxWidth, maniglieLati,
-  moreAttachedAt, ostacoli, percorso, printHref, redundancyCounts, redundantEnds, redundantLabelAt, rettangoli, siGuardano, troncoPossibile, visibleEdges,
+  ELENCO_KEY, FIT_MAX, FIT_MIN, HANDLE_ATT, HANDLE_IN, HANDLE_IN_DX, HANDLE_IN_GIU, HANDLE_IN_LR, HANDLE_OUT, HANDLE_OUT_LR, HANDLE_OUT_SU, HANDLE_OUT_SX, LR_TRUNK,
+  attraversa, candidatiLati, centerViewport, elencoAperto, fitWidthViewport, labelBoxes, latiVicini, lineHandles, lineaAlbero, lrLabelMaxWidth, maniglieLati,
+  moreAttachedAt, ostacoli, percorso, printHref, pulsanteElenco, redundancyCounts, redundantEnds, redundantLabelAt, rettangoli, salvaElenco, siGuardano,
+  troncoPossibile, visibleEdges,
 } from "@/lib/topology/map-screen";
 import type { LayoutResult } from "@/lib/topology/tree-layout";
 import { ATT_INDENT, ATT_MAX, ATT_ROW } from "@/lib/topology/tree-layout-consts";
@@ -256,4 +257,26 @@ test("linee dell'albero: restano a tronco; un figlio spostato a mano dall'altra 
   const p2 = R(100, 100, 200, 44);
   assert.deepEqual(lineaAlbero("tb", p2, R(100, 300, 200, 44), []), { tronco: true });
   assert.deepEqual(lineaAlbero("tb", p2, R(100, 0, 200, 44), []), { tronco: false, lati: { da: "su", a: "giu" } });
+});
+
+// Spec §13.10.2 (vincolo 6 di Riccardo): l'elenco a sinistra si chiude per lasciare spazio alla mappa; la scelta si ricorda
+// per chi guarda, come la barra dei dettagli, e una memoria che non si legge (navigazione privata) non rompe la pagina.
+test("elenco: si ricorda per chi guarda; senza memoria leggibile resta aperto; una scrittura che fallisce non rompe niente", () => {
+  assert.equal(ELENCO_KEY, "da-ipam.topologia.elenco");
+  assert.equal(elencoAperto(() => null), true);
+  assert.equal(elencoAperto(() => "chiuso"), false);
+  assert.equal(elencoAperto(() => "aperto"), true);
+  assert.equal(elencoAperto(() => { throw new Error("SecurityError"); }), true);
+  const scritti: string[] = [];
+  salvaElenco((v) => scritti.push(v), false);
+  salvaElenco((v) => scritti.push(v), true);
+  assert.deepEqual(scritti, ["chiuso", "aperto"]);
+  assert.doesNotThrow(() => salvaElenco(() => { throw new Error("QuotaExceeded"); }, true));
+});
+
+test("pulsante dell'elenco: «◂ Elenco» aperto, «Elenco ▸» chiuso; in passo passo dice a che serve aprirlo", () => {
+  assert.equal(pulsanteElenco(true, false).etichetta, "◂ Elenco");
+  assert.equal(pulsanteElenco(false, false).etichetta, "Elenco ▸");
+  assert.equal(pulsanteElenco(false, true).titolo, "Apre l'elenco per trascinare gli oggetti sulla mappa");
+  assert.match(pulsanteElenco(true, true).titolo, /Chiude l'elenco/);
 });

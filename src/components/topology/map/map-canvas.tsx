@@ -11,7 +11,9 @@
  * ritocco (lo calcola il chiamante con la firma), e trascinare il pallino sul
  * bordo di un riquadro fino a un altro apre «Collega a…».
  * Le linee si disegnano da `tree.links` (copie della vista con principale e
- * ridondanza), non da `model.links`. Il tasto destro su un oggetto, su una VM o
+ * ridondanza), non da `model.links`. Le ridondanze e i figli spostati a mano
+ * dall'altra parte escono dal lato più vicino (`latiVicini`, spec §13.10.1); le
+ * linee dell'albero restano a tronco. Il tasto destro su un oggetto, su una VM o
  * su una linea apre il menu (spec §11.2): il contenuto lo dà il chiamante.
  */
 import "@xyflow/react/dist/style.css";
@@ -19,7 +21,10 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ConnectionMode, ReactFlow, useReactFlow, type Edge, type Node, type NodeChange, type OnConnectEnd } from "@xyflow/react";
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { isUncensusedVmId } from "@/lib/topology/map-menus";
-import { centerViewport, drawableLinks, labelBoxes, lineHandles, moreAttachedAt, redundancyCounts, redundantEnds, visibleEdges, type Rect } from "@/lib/topology/map-screen";
+import {
+  centerViewport, drawableLinks, labelBoxes, latiVicini, lineHandles, lineaAlbero, maniglieLati, moreAttachedAt, ostacoli, redundancyCounts, redundantEnds,
+  rettangoli, visibleEdges, type Rect,
+} from "@/lib/topology/map-screen";
 import type { LayoutResult } from "@/lib/topology/tree-layout";
 import type { MapLink } from "@/lib/topology/model-types";
 import type { TreeResult } from "@/lib/topology/tree";
@@ -162,10 +167,15 @@ export function MapCanvas(p: Props) {
     [baseNodes, drag],
   );
 
+  // I riquadri della disposizione (anche i gruppi degli AP): gli ostacoli di ogni linea sul lato più vicino (spec §13.10.1).
+  const riquadri = useMemo(() => rettangoli(layout), [layout]);
+
   const edges = useMemo((): Edge[] => {
     const out: Edge[] = [];
     const h = lineHandles(o);
     const apEdge = new Set<string>();
+    // I riquadri su cui la parola di una linea non deve finire (Task 5): si calcolano alla prima linea che li chiede.
+    let avoid: Rect[] | null = null;
     for (const [child, link] of tree.via) {
       const ln = layout.nodes.get(child);
       if (!ln || !ln.parent || ln.role === "attached") continue;
@@ -180,12 +190,25 @@ export function MapCanvas(p: Props) {
         });
         continue;
       }
-      // L'etichetta della linea va dalla parte opposta alle porte scritte sopra il riquadro (a sinistra col «+N»).
-      const data: MapEdgeData = { link, inTree: true, labelSide: p.plus.has(child) ? "right" : "left", orientation: o };
-      out.push({
-        id: `t:${child}`, source: ln.parent, target: child, sourceHandle: h.source, targetHandle: h.target, type: "map",
-        selectable: false, focusable: false, data,
-      });
+      const padre = layout.nodes.get(ln.parent);
+      const la = padre ? lineaAlbero(o, padre, ln, ostacoli(riquadri, [ln.parent, child])) : { tronco: true as const };
+      if (la.tronco) {
+        // L'etichetta della linea va dalla parte opposta alle porte scritte sopra il riquadro (a sinistra col «+N»).
+        const data: MapEdgeData = { link, inTree: true, labelSide: p.plus.has(child) ? "right" : "left", orientation: o };
+        out.push({
+          id: `t:${child}`, source: ln.parent, target: child, sourceHandle: h.source, targetHandle: h.target, type: "map",
+          selectable: false, focusable: false, data,
+        });
+      } else {
+        // Un figlio spostato a mano dall'altra parte (spec §13.10.1): sul lato più vicino, senza giri.
+        const m = maniglieLati(la.lati);
+        avoid ??= labelBoxes(layout.nodes.values(), layout.apGroups);
+        const data: MapEdgeData = { link, inTree: true, labelSide: "left", orientation: o, avoid, lati: la.lati };
+        out.push({
+          id: `t:${child}`, source: ln.parent, target: child, sourceHandle: m.source, targetHandle: m.target, type: "map",
+          selectable: false, focusable: false, data,
+        });
+      }
     }
     // Verticale: gli attaccati sono un elenco sotto il riquadro, legato dal fondo (in orizzontale c'è il trattino nel riquadro).
     if (o === "lr") {
@@ -196,18 +219,20 @@ export function MapCanvas(p: Props) {
     }
     // Ridondanze a richiesta (spec §12.5): tutte con «Mostra ridondanze», altrimenti solo quelle del riquadro scelto.
     // La parola «ridondanza» si scrive dove non copre un riquadro (Task 5): servono i riquadri da evitare.
-    let avoid: Rect[] | null = null;
     for (const l of visibleEdges(drawable, { showAll: p.showExtra, selected: p.selected })) {
       if (!l.redundant) continue;
       avoid ??= labelBoxes(layout.nodes.values(), layout.apGroups);
-      const a = layout.nodes.get(l.a)!, b = layout.nodes.get(l.b)!;
-      // Orizzontale: scende dal riquadro più in alto; verticale: dal più a sinistra al più a destra.
-      const [s, t] = redundantEnds(o, a, b);
-      const data: MapEdgeData = { link: l, inTree: false, labelSide: "left", orientation: o, avoid };
-      out.push({ id: `x:${l.id}`, source: s, target: t, sourceHandle: h.source, targetHandle: h.target, type: "map", selectable: false, focusable: false, data });
+      // Il verso (chi è l'origine) resta quello di sempre: orizzontale dal riquadro più in alto, verticale dal più a sinistra.
+      const [s, t] = redundantEnds(o, layout.nodes.get(l.a)!, layout.nodes.get(l.b)!);
+      // Spec §13.10.1: dal lato più vicino, mai dal lato opposto (prima dal destro del riquadro più a sinistra al sinistro
+      // dell'altro: fra due riquadri della stessa colonna la linea faceva il giro).
+      const lati = latiVicini(layout.nodes.get(s)!, layout.nodes.get(t)!, o, ostacoli(riquadri, [s, t]));
+      const m = maniglieLati(lati);
+      const data: MapEdgeData = { link: l, inTree: false, labelSide: "left", orientation: o, avoid, lati };
+      out.push({ id: `x:${l.id}`, source: s, target: t, sourceHandle: m.source, targetHandle: m.target, type: "map", selectable: false, focusable: false, data });
     }
     return out;
-  }, [tree, layout, o, drawable, p.showExtra, p.selected, p.plus]);
+  }, [tree, layout, o, drawable, riquadri, p.showExtra, p.selected, p.plus]);
 
   // Centra (zoom 100 %) sulla testa o sulla prima partenza quando cambia modo o mappa.
   const { centerOn, centerKey } = p;

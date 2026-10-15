@@ -16,11 +16,15 @@
  * larga al massimo lo spazio fra tronco e figlio (oltre va a capo fra una parola
  * e l'altra): non copre né il tronco né i riquadri. `AttEdge` è il tratto dal
  * fondo del riquadro verso gli attaccati elencati sotto.
+ * Sul lato più vicino (`data.lati`, spec §13.10.1: ridondanze e figli spostati a
+ * mano dall'altra parte) il tracciato è quello di `percorsoDaPunti`, lo stesso
+ * della stampa, e la parola sta vicino alla metà del percorso vero.
  */
 import { Fragment } from "react";
 import { BaseEdge, EdgeLabelRenderer, getSmoothStepPath, type Edge, type EdgeProps } from "@xyflow/react";
 import { edgeLook, pathPoints, wavyPath } from "@/lib/topology/edge-look";
-import { LR_TRUNK, lrLabelMaxWidth, redundantLabelAt, type Rect } from "@/lib/topology/map-screen";
+import { LR_TRUNK, lrLabelMaxWidth, percorsoDaPunti, redundantLabelAt, type Lato, type Pt, type Rect } from "@/lib/topology/map-screen";
+import { pointsPath } from "@/lib/topology/print-draw";
 import { CHAR_W } from "@/lib/topology/tree-layout-consts";
 import type { MapLink, MapOrientation } from "@/lib/topology/model-types";
 
@@ -37,29 +41,34 @@ export type MapEdgeData = {
   orientation: MapOrientation;
   /** Ridondanza: i riquadri su cui la sua parola non deve finire (Task 5). */
   avoid?: readonly Rect[] | null;
+  /** Il lato più vicino (spec §13.10.1): la linea esce dal lato `da` ed entra da `a`. Assente: le linee di oggi. */
+  lati?: { da: Lato; a: Lato };
 };
 
 const DOUBLE_GAP = 2.6;
 
 export function MapEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data }: EdgeProps<Edge<MapEdgeData, "map">>) {
-  const trunk = data?.orientation === "lr" && data.inTree;
-  const [path, labelX, labelY] = getSmoothStepPath({
+  const trunk = data?.orientation === "lr" && data.inTree && !data.lati;
+  const [smooth, labelX, labelY] = getSmoothStepPath({
     sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, borderRadius: 0,
     ...(trunk ? { centerX: sourceX + LR_TRUNK, offset: LR_TRUNK } : {}),
   });
+  // Sul lato scelto il percorso è quello di `percorsoDaPunti`, lo stesso della stampa e della misura (I31).
+  const punti = data?.lati ? percorsoDaPunti({ x: sourceX, y: sourceY }, data.lati.da, { x: targetX, y: targetY }, data.lati.a) : null;
+  const path = punti ? pointsPath(punti) : smooth;
   if (!data) return <BaseEdge id={id} path={path} />;
   if (!data.link) return <BaseEdge id={id} path={path} style={TREE_EDGE} />;
   const look = edgeLook(data.link, { inTree: data.inTree });
-  const d = look.wavy ? wavyPath(pathPoints(path)) : path;
+  const d = look.wavy ? wavyPath(punti ?? pathPoints(path)) : path;
   const outer = look.double ? Math.max(look.width + DOUBLE_GAP, 4.2) : look.width;
   const stroke = look.grey ? "var(--muted-foreground)" : "var(--foreground)";
   const dash = look.dash ?? undefined;
   const cap = look.dash === "1.5 4" ? "round" : "butt";
   const at = trunk
     ? `translate(${targetX - 4}px, ${targetY - 1}px) translate(-100%, -100%)`
-    : data.inTree
+    : data.inTree && !data.lati
       ? `translate(${targetX}px, ${labelY}px) translate(${data.labelSide === "left" ? "calc(-100% - 4px)" : "4px"}, calc(-100% - 1px))`
-      : redundantAt(path, look.tokens, data.avoid, labelX, labelY);
+      : redundantAt(path, look.tokens, data.avoid, labelX, labelY, punti);
   return (
     <>
       <BaseEdge id={id} path={d} interactionWidth={18} style={{ stroke, strokeWidth: outer, strokeDasharray: dash, strokeLinecap: cap, fill: "none" }} />
@@ -97,11 +106,14 @@ export function MapEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition
   );
 }
 
-/** La parola di una ridondanza: vicino alla metà, ma fuori dai riquadri (si leggeva «…nza» sotto il gruppo degli AP). */
-function redundantAt(path: string, tokens: readonly string[], avoid: readonly Rect[] | null | undefined, midX: number, midY: number): string {
-  const p = avoid?.length
-    ? redundantLabelAt(pathPoints(path), { w: tokens.join(" · ").length * CHAR_W + 8, h: 16 }, avoid)
-    : { x: midX, y: midY };
+/**
+ * La parola di una ridondanza (o di un figlio spostato a mano dall'altra parte): vicino alla metà, ma fuori dai riquadri
+ * (si leggeva «…nza» sotto il gruppo degli AP). Sul lato scelto (spec §13.10.1) i punti sono quelli del percorso vero.
+ */
+function redundantAt(path: string, tokens: readonly string[], avoid: readonly Rect[] | null | undefined, midX: number, midY: number, punti: Pt[] | null): string {
+  const size = { w: tokens.join(" · ").length * CHAR_W + 8, h: 16 };
+  // Sul lato scelto la parola sta vicino alla metà del percorso vero, fuori dai riquadri (anche dalla riga delle porte).
+  const p = punti ? redundantLabelAt(punti, size, avoid ?? []) : avoid?.length ? redundantLabelAt(pathPoints(path), size, avoid) : { x: midX, y: midY };
   return `translate(${p.x}px, ${p.y}px) translate(-50%, -50%)`;
 }
 

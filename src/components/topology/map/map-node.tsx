@@ -16,7 +16,7 @@
  */
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import { cn } from "@/lib/utils";
-import { HANDLE_ATT, HANDLE_IN, HANDLE_IN_LR, HANDLE_OUT, HANDLE_OUT_LR } from "@/lib/topology/map-screen";
+import { HANDLE_ATT, HANDLE_IN, HANDLE_IN_DX, HANDLE_IN_GIU, HANDLE_IN_LR, HANDLE_OUT, HANDLE_OUT_LR, HANDLE_OUT_SU, HANDLE_OUT_SX } from "@/lib/topology/map-screen";
 import { ATT_INDENT, dnsLine, fitLabel, headHeight } from "@/lib/topology/tree-layout";
 import { isRunning } from "@/lib/topology/vm-nodes";
 import type { MapNode, MapOrientation, MapVm } from "@/lib/topology/model-types";
@@ -70,6 +70,11 @@ function Handles({ att = false }: { att?: boolean }) {
       <Handle id={HANDLE_OUT} type="source" position={Position.Bottom} isConnectable={false} className={HIDDEN_HANDLE} />
       <Handle id={HANDLE_IN_LR} type="target" position={Position.Left} isConnectable={false} className={HIDDEN_HANDLE} />
       <Handle id={HANDLE_OUT_LR} type="source" position={Position.Right} isConnectable={false} className={HIDDEN_HANDLE} />
+      {/* Lato più vicino (spec §13.10.1): uscita in alto e a sinistra, entrata in basso e a destra. */}
+      <Handle id={HANDLE_OUT_SU} type="source" position={Position.Top} isConnectable={false} className={HIDDEN_HANDLE} />
+      <Handle id={HANDLE_OUT_SX} type="source" position={Position.Left} isConnectable={false} className={HIDDEN_HANDLE} />
+      <Handle id={HANDLE_IN_GIU} type="target" position={Position.Bottom} isConnectable={false} className={HIDDEN_HANDLE} />
+      <Handle id={HANDLE_IN_DX} type="target" position={Position.Right} isConnectable={false} className={HIDDEN_HANDLE} />
       {/* Verso gli attaccati (verticale): dal fondo, a metà del rientro con cui sono elencati. */}
       {att && <Handle id={HANDLE_ATT} type="source" position={Position.Bottom} isConnectable={false} className={HIDDEN_HANDLE} style={{ left: ATT_INDENT / 2 }} />}
     </>

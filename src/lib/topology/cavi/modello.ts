@@ -76,7 +76,11 @@ export function costruisciModelloCavi(ing: IngressoCavi, t1: TopologyModel, opz:
   const p = preparaCavi(ing, t1);
   const { collegamenti, segmenti, correzioniOrfane } = costruisciCollegamenti(p.prove, ing.t1.overrides, p.ctx);
   const nodi = new Map<string, NodoCavi>();
-  for (const n of p.idx.nodes.values()) {
+  // Anche i nodi del modello di oggi che l'indice qui non ha: il modello di oggi crea il nodo di un host al bisogno (nodeFor),
+  // e la prova di bordo lo nomina con quell'id. Senza, un server attaccato dalla tabella MAC «usciva» dall'albero in ombra pur
+  // avendo il cavo verso il suo switch (misura del Task 14 di T2 sulle copie, 15/10: 13 host sul cliente A, 9 sulla rete B).
+  for (const n of [...p.idx.nodes.values(), ...t1.nodes]) {
+    if (nodi.has(n.id)) continue;
     nodi.set(n.id, { id: n.id, classe: t1.classiMappa?.[n.id] ?? nodeClass(n), tipo: n.type, numero: n.refId, hidden: n.hidden });
   }
   for (const s of segmenti) nodi.set(s.id, { id: s.id, classe: "segmento", tipo: "segmento", numero: Number.MAX_SAFE_INTEGER, hidden: false });

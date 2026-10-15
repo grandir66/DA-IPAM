@@ -7,7 +7,7 @@ import { computeMapView } from "@/lib/topology/map-compute";
 import { padriDi } from "@/lib/topology/misura";
 import { costruisciModelloCavi } from "@/lib/topology/cavi/modello";
 import { calcolaTraccia, confrontaAlberi, nomiTraccia } from "@/lib/topology/cavi/traccia";
-import { baseInput, dev } from "./support/righe";
+import { baseInput, dev, host } from "./support/righe";
 import type { Porta } from "@/lib/topology/cavi/porte";
 import { fb, fp, ingresso, vic } from "./support/cavi";
 
@@ -124,4 +124,25 @@ test("senza lo schema delle letture in più la traccia lo dice; e dice sempre ci
   const tr = calcolaTraccia(oggi, costruisciModelloCavi(ingresso(t1, { schema: false }), modello, { testaScelta: "dev:1" }));
   assert.equal(tr.schema, false);
   assert.ok(tr.nonCalcolato.length > 0 && tr.nonCalcolato.every((x) => x.trim() !== ""), "l'elenco di ciò che non si calcola non è mai vuoto");
+});
+
+test("un server attaccato dalla tabella MAC resta nell'albero per cavo: a letture spente non «esce»", () => {
+  // Misura del Task 14 di T2 sulle copie (15/10): 13 host sul cliente A e 9 sulla rete B «uscivano» dalla mappa nuova con «non ha
+  // un collegamento verso l'albero», pur avendo il cavo dedotto verso il loro switch. Il modello di oggi crea il nodo di un host
+  // al bisogno (nodeFor) e la prova di bordo lo nomina con quell'id; l'indice del modello per cavo non l'aveva, e l'host restava
+  // fuori dagli oggetti visibili.
+  const t1 = baseInput({
+    devices: [dev(1, { name: "RTR-1", device_type: "router", ...mk }), dev(2, { name: "SW-2", ...mk })],
+    hosts: [host(9, { mac: "02:00:00:00:00:09", hostname: "srv-9", classification: "server" })],
+    neighbors: [...cavo(1, "ether1", 2, "ether1", "SW-2", "RTR-1")],
+    macPorts: [{ device_id: 2, mac: "02:00:00:00:00:09", port_name: "ether5", timestamp: "2026-10-13 11:00:00", source: "device" }],
+    networks: [{ id: 1, cidr: "10.0.1.0/24", name: "lan", gateway: "10.0.1.1", location_id: null }],
+  });
+  const modello = buildTopologyModel(t1);
+  const oggi = padriDi(computeMapView(modello, { auto: true, members: [], roots: [], head: "dev:1", tweaks: [], expanded: new Set(), orientation: "lr" }).tree);
+  assert.equal(oggi["host:9"], "dev:2", "premessa: nella mappa di oggi il server sta sotto il suo switch");
+  const m = costruisciModelloCavi(ingresso(t1), modello, { testaScelta: "dev:1" });
+  assert.equal(m.albero.padri["host:9"], "dev:2");
+  const tr = calcolaTraccia(oggi, m);
+  assert.deepEqual([tr.escono, tr.entrano, tr.righe], [[], [], []]);
 });

@@ -73,11 +73,12 @@ import {
 import { HYPERVISOR_SYNC_MINUTES, unifiJobKind } from "@/lib/scheduled-job-types";
 // Statico: run-proxmox-device-scan importa il facade db, che risolve db-tenant (ADR 0002).
 import { runProxmoxDeviceScan } from "@/lib/proxmox/run-proxmox-device-scan";
-import { leggiMacPorteRouter } from "@/lib/devices/mikrotik-porte";
+import { codiceErrore, leggiMacPorteRouter } from "@/lib/devices/mikrotik-porte";
 import { apriEsecutoreSsh, codiceTrasporto, leggiMikrotikTopologia, type ApriEsecutore } from "@/lib/devices/mikrotik-letture";
 import { fattiMikrotik } from "@/lib/devices/mikrotik-stp";
 import { conCadenza, riassuntoLetture, type EsitoGiro } from "@/lib/topology/letture/cadenza";
-import { letturaAccesa, senzaCampiCavi } from "@/lib/topology/letture/interruttori";
+import { letturaAccesa, oraUtc, senzaCampiCavi } from "@/lib/topology/letture/interruttori";
+import { leggiHost } from "@/lib/proxmox/lldp-host";
 import type { NetworkDevice } from "@/types";
 import { syncNetworkToLibreNMS, syncAllNetworksToLibreNMS } from "@/lib/integrations/librenms-sync";
 // Import statico (come LibreNMS, non dinamico come Wazuh): unifi-sync importa
@@ -208,6 +209,15 @@ export interface EsitoHypervisorSync {
   letti: number;
   falliti: number;
   errori: string[];
+  /** Le letture in più dell'host (T2.5): una riga di soli numeri e codici; null = spente o niente da dire. */
+  letture: string | null;
+}
+
+/** Il motivo nel resoconto del job: gli hypervisor non letti e, in coda, le letture in più (T2.5). null = niente da dire. */
+export function motivoHypervisorSync(r: EsitoHypervisorSync): string | null {
+  const parti = [r.falliti > 0 ? `${r.falliti} hypervisor su ${r.hypervisors} non letti: resta la lettura di prima` : null, r.letture];
+  const s = parti.filter((x): x is string => !!x).join("; ");
+  return s === "" ? null : s;
 }
 
 /**
@@ -216,23 +226,42 @@ export interface EsitoHypervisorSync {
  * con scansione Proxmox configurato e acceso, uno alla volta. Un apparato che
  * non si legge non ferma gli altri e non scrive niente (la scansione tiene
  * quella di prima, Review Focus 4). Nel log solo numeri e id: niente nomi,
- * indirizzi o MAC. `scan` si passa nelle prove.
+ * indirizzi o MAC. `scan` e `host` si passano nelle prove.
+ *
+ * T2 (spec topologia §13.5.5, T2.5): dopo una scansione riuscita, la lettura dal lato dell'host (`leggiHost`: lldpcli e
+ * membri dei bond, in comandi a parte, I54), dietro `topologia.lettura.host`, spenta di default. Un suo errore va nel
+ * resoconto (`letture`, solo numeri e codici) e non tocca la scansione né il conto degli apparati letti.
  */
 export async function runHypervisorSync(
   scan: (deviceId: number) => Promise<unknown> = (id) => runProxmoxDeviceScan(id),
+  host: (deviceId: number) => Promise<Array<EsitoGiro<unknown>>> = (id) => leggiHost(id),
 ): Promise<EsitoHypervisorSync> {
   const devices = listHypervisorScanDevices();
-  const esito: EsitoHypervisorSync = { hypervisors: devices.length, letti: 0, falliti: 0, errori: [] };
+  const esito: EsitoHypervisorSync = { hypervisors: devices.length, letti: 0, falliti: 0, errori: [], letture: null };
+  const conHost = letturaAccesa("host");
+  const esitiHost: Array<EsitoGiro<unknown>> = [];
   for (const d of devices) {
+    let letto = false;
     try {
       await scan(d.id);
       esito.letti++;
+      letto = true;
     } catch (e) {
       esito.falliti++;
       esito.errori.push(`Apparato #${d.id}: ${e instanceof Error ? e.message : String(e)}`);
       console.warn(`[Scheduler] hypervisor_sync: apparato #${d.id} non letto, resta la lettura di prima`);
     }
+    if (!letto || !conHost) continue;
+    try {
+      esitiHost.push(...await host(d.id));
+    } catch (e) {
+      // Un errore fuori dalla cadenza (che gli errori della lettura li tiene già): il solo codice, mai il messaggio.
+      const codice = codiceErrore(e);
+      esitiHost.push({ stato: "errore", esito: { il: oraUtc(new Date()), comandi: 0, riusciti: 0, codice } });
+      console.warn(`[Scheduler] hypervisor_sync: apparato #${d.id}, lettura dell'host non riuscita (${codice})`);
+    }
   }
+  esito.letture = riassuntoLetture(esitiHost);
   return esito;
 }
 
@@ -364,10 +393,9 @@ export async function runJob(jobId: number, opzioni?: OpzioniRunJob): Promise<Es
       if (r.letti === 0) {
         throw new Error(`Lettura degli hypervisor non riuscita: 0 letti su ${r.hypervisors}`);
       }
-      console.info(`[Scheduler] hypervisor_sync: ${r.letti} hypervisor letti su ${r.hypervisors}`);
-      if (r.falliti > 0) {
-        return { esito: "eseguito", motivo: `${r.falliti} hypervisor su ${r.hypervisors} non letti: resta la lettura di prima` };
-      }
+      console.info(`[Scheduler] hypervisor_sync: ${r.letti} hypervisor letti su ${r.hypervisors}${r.letture ? `; ${r.letture}` : ""}`);
+      const motivo = motivoHypervisorSync(r);
+      if (motivo) return { esito: "eseguito", motivo };
       break;
     }
   }

@@ -5,7 +5,11 @@ import { test, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { closeHubDb } from "@/lib/db-hub";
 import { deleteTenantDatabase, getTenantDb, setTenantSetting, withTenant } from "@/lib/db-tenant";
-import { chiaveEsito, chiaveLettura, leggiEsiti, leggiInterruttore, letturaAccesa, scriviEsito, scriviInterruttore, senzaCampiCavi } from "@/lib/topology/letture/interruttori";
+import {
+  LETTURE, LETTURE_DISPONIBILI, chiaveEsito, chiaveLettura, leggiEsiti, leggiInterruttore, letturaAccesa, scriviEsito, scriviInterruttore, senzaCampiCavi,
+} from "@/lib/topology/letture/interruttori";
+import { COMANDI_HOST } from "@/lib/proxmox/lldp-host";
+import { DESCRIZIONE_LETTURE } from "@/lib/topology/letture/testi";
 
 const T = "TESTLETTUREINT";
 beforeEach(() => { getTenantDb(T).exec("DELETE FROM tenant_settings WHERE key LIKE 'topologia.lettura.%'"); });
@@ -48,4 +52,11 @@ test("esiti per apparato: si uniscono; uno rovinato o con un id non numerico non
 test("senzaCampiCavi toglie solo le colonne nuove dei vicini", () => {
   const n = { localPort: "ether2", remoteDevice: "SW", remotePort: "Port 3", protocol: "lldp", discoveredBy: "lldp", remoteCaps: "bridge", localPortIndex: 2, remotePortIndex: 3 };
   assert.deepEqual(senzaCampiCavi(n), { localPort: "ether2", remoteDevice: "SW", remotePort: "Port 3", protocol: "lldp" });
+});
+
+test("tutte e quattro le letture sono disponibili (`host` col Task 7 di T2): la pagina non dice più «non disponibile» e la PUT le accetta; spente finché un admin non le accende", () => {
+  assert.deepEqual([...LETTURE].filter((l) => !LETTURE_DISPONIBILI.has(l)), []);
+  withTenant(T, () => assert.equal(letturaAccesa("host"), false));
+  // La riga della pagina elenca i comandi che la lettura manda davvero, uno per uno.
+  assert.equal(DESCRIZIONE_LETTURE.host.comandi.startsWith(Object.values(COMANDI_HOST).join(" · ")), true);
 });

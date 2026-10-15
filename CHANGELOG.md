@@ -4,6 +4,23 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-15 · topologia T2.5: la lettura degli hypervisor (lldpd e bond), spenta
+
+Spec §13.5.5, piano di T2 Task 7. Perché: dove sugli host Proxmox gira `lldpd`, l'host dice da sé a quale porta di
+quale switch è attaccata ogni scheda, compresi i cavi di riserva dei bond che non portano VM e che oggi la mappa
+non vede; e il MAC permanente dei membri dei bond è quello con cui le schede si annunciano agli switch.
+
+### Aggiunte
+
+- **«LLDP e bond degli hypervisor» si può accendere** in «Dati della mappa → Letture in più per la mappa» (prima
+  diceva «non disponibile in questa versione»). Nasce spenta. Accesa, la lettura notturna degli hypervisor, dopo
+  la scansione e al più una volta l'ora per apparato, manda su ogni nodo tre comandi in sola lettura, ognuno a
+  parte: `command -v lldpcli`, `lldpcli -f json0 show neighbors details` (solo se c'è), `ip -d -j link show`.
+  Scrive i vicini LLDP dell'host, il tipo e lo stato delle schede, il membro attivo o «di riserva» di ogni bond e
+  i MAC permanenti: solo per il modello per cavo, **la mappa di oggi non cambia**. Un host senza `lldpd` non è un
+  errore; un comando che non risponde o dà un'uscita che non si capisce non scrive niente al posto suo, e
+  l'esito per apparato lo dice col codice. Il lettore è scritto sull'uscita vera di un nodo dell'hub con `lldpd`.
+
 ## [Non rilasciato] — 2026-10-15 · mappa topologia T2: letture in più spente e «Cosa cambierebbe»
 
 Spec `docs/superpowers/specs/2026-10-14-topologia-collegamenti-reali-design.md` §13.11.3, piano

@@ -9,8 +9,8 @@ import { getTenantSetting, runInTenantTransaction, setTenantSetting, type CampiV
 export const LETTURE = ["mikrotik", "controller", "snmp", "host"] as const;
 export type Lettura = (typeof LETTURE)[number];
 
-/** Le letture che questa versione sa fare. `host` arriva col Task 7 del piano di T2, dopo l'uscita vera T2-b. */
-export const LETTURE_DISPONIBILI: ReadonlySet<Lettura> = new Set<Lettura>(["mikrotik", "controller", "snmp"]);
+/** Le letture che questa versione sa fare. `host` è arrivata col Task 7 del piano di T2, scritta sull'uscita vera T2-b. */
+export const LETTURE_DISPONIBILI: ReadonlySet<Lettura> = new Set<Lettura>(["mikrotik", "controller", "snmp", "host"]);
 
 export function eLettura(x: unknown): x is Lettura {
   return typeof x === "string" && (LETTURE as readonly string[]).includes(x);

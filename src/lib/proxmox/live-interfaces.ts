@@ -204,3 +204,29 @@ export function hostIndexForTarget(hosts: ProxmoxHostInfo[], ip: string, previou
   const prev = previous.find((h) => ipsOf(h).includes(ip));
   return prev ? hosts.findIndex((h) => h.hostname === prev.hostname) : -1;
 }
+
+/** Un membro di un bond (spec topologia §13.5.5, «Riserva del bond»): stato letto e MAC permanente, con cui il firmware si annuncia agli switch. */
+export interface MembroBond { nome: string; bond: string; stato: "attivo" | "riserva" | null; macPermanente: string | null }
+
+/**
+ * I membri dei bond da `ip -d -j link show` (T2.5): `master` è il bond, `linkinfo.info_slave_kind` è `bond`,
+ * `linkinfo.info_slave_data.state` vale `ACTIVE` o `BACKUP` (altro = null, non letto). Il MAC permanente sta in
+ * `info_slave_data.perm_hwaddr`; `permaddr` in cima alla scheda vale solo se quello manca. Misurato sull'uscita vera T2-b
+ * (nodo Proxmox VE 9 dell'hub): `perm_hwaddr` c'è su ogni membro, `permaddr` solo sui membri il cui MAC di adesso
+ * è diverso dal permanente. Il MAC di adesso (`address`) di un membro è quello del bond: qui non si usa mai.
+ */
+export function membriDeiBond(ipLinkJson: unknown): MembroBond[] {
+  if (!Array.isArray(ipLinkJson)) return [];
+  const out: MembroBond[] = [];
+  for (const item of ipLinkJson) {
+    const o = asRecord(item);
+    const info = asRecord(o?.linkinfo);
+    const nome = typeof o?.ifname === "string" ? o.ifname.trim() : "";
+    if (!o || !info || nome === "" || typeof o.master !== "string" || o.master === "" || info.info_slave_kind !== "bond") continue;
+    const dati = asRecord(info.info_slave_data);
+    const stato = dati?.state === "ACTIVE" ? "attivo" : dati?.state === "BACKUP" ? "riserva" : null;
+    const perm = typeof dati?.perm_hwaddr === "string" ? dati.perm_hwaddr : typeof o.permaddr === "string" ? o.permaddr : null;
+    out.push({ nome, bond: o.master, stato, macPermanente: normalizeMacForStorage(perm) });
+  }
+  return out;
+}

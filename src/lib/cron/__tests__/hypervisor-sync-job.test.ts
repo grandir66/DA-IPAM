@@ -20,7 +20,9 @@ import {
   withTenant,
 } from "@/lib/db-tenant";
 import { encrypt } from "@/lib/crypto";
-import { HYPERVISOR_SYNC_MINUTES, runHypervisorSync, runJob } from "@/lib/cron/jobs";
+import { HYPERVISOR_SYNC_MINUTES, motivoHypervisorSync, runHypervisorSync, runJob } from "@/lib/cron/jobs";
+import { scriviInterruttore } from "@/lib/topology/letture/interruttori";
+import type { EsitoGiro } from "@/lib/topology/letture/cadenza";
 
 const T = "TESTHYPERVISORJOB";
 
@@ -109,7 +111,7 @@ test("tenant senza hypervisor: nessuna chiamata, e il resoconto lo dice", async 
     chiamate.push(id);
   }));
   assert.deepEqual(chiamate, []);
-  assert.deepEqual(r, { hypervisors: 0, letti: 0, falliti: 0, errori: [] });
+  assert.deepEqual(r, { hypervisors: 0, letti: 0, falliti: 0, errori: [], letture: null });
 });
 
 test("legge solo gli hypervisor Proxmox accesi; uno che fallisce non ferma gli altri; nel log solo numeri", async () => {
@@ -128,7 +130,7 @@ test("legge solo gli hypervisor Proxmox accesi; uno che fallisce non ferma gli a
   );
   assert.ok(!(esito instanceof Error));
   assert.deepEqual(chiamate.sort(), [a, b].sort());
-  assert.deepEqual(esito, { hypervisors: 2, letti: 1, falliti: 1, errori: [`Apparato #${a}: connect ETIMEDOUT 192.0.2.11:22`] });
+  assert.deepEqual(esito, { hypervisors: 2, letti: 1, falliti: 1, errori: [`Apparato #${a}: connect ETIMEDOUT 192.0.2.11:22`], letture: null });
   for (const r of righe) assert.doesNotMatch(r, NIENTE_DATI, `nel log: ${r}`);
 });
 
@@ -151,4 +153,52 @@ test("runJob: nessun hypervisor letto → il job fallisce (lo scheduler lo conta
   assert.match(esito.message, /Lettura degli hypervisor non riuscita: 0 letti su 1/);
   assert.doesNotMatch(esito.message, NIENTE_DATI);
   for (const r of righe) assert.doesNotMatch(r, NIENTE_DATI, `nel log: ${r}`);
+});
+
+// ── T2.5 (spec topologia §13.5.5): la lettura dal lato dell'host dentro hypervisor_sync, dietro `topologia.lettura.host` ──
+
+const LETTO: EsitoGiro<unknown> = { stato: "letto", valore: null, esito: { il: "2026-10-15 22:00:00", comandi: 3, riusciti: 3, codice: null } };
+
+test("lettura dell'host spenta (chiave assente): non si chiama, e il resoconto non ne parla", async () => {
+  apparato({ name: "HV-1", host: "192.0.2.11", device_type: "hypervisor", vendor: "proxmox", scan_target: "proxmox" });
+  const host: number[] = [];
+  const r = await withTenant(T, () => runHypervisorSync(async () => undefined, async (id) => { host.push(id); return [LETTO]; }));
+  assert.deepEqual(host, []);
+  assert.equal(r.letture, null);
+});
+
+test("accesa: dopo la scansione riuscita, una lettura per apparato; dopo una fallita no; i numeri in `letture`", async () => {
+  const a = apparato({ name: "HV-1", host: "192.0.2.11", device_type: "hypervisor", vendor: "proxmox", scan_target: "proxmox" });
+  const b = apparato({ name: "HV-2", host: "192.0.2.12", device_type: "hypervisor", vendor: "proxmox", scan_target: "proxmox" });
+  withTenant(T, () => scriviInterruttore("host", true, "prova"));
+  const ordine: string[] = [];
+  const { esito, righe } = await catturaLog(() => withTenant(T, () => runHypervisorSync(
+    async (id) => { ordine.push(`scansione ${id}`); if (id === a) throw new Error("connect ETIMEDOUT 192.0.2.11:22"); },
+    async (id) => { ordine.push(`host ${id}`); return [LETTO]; },
+  )));
+  assert.ok(!(esito instanceof Error));
+  assert.deepEqual(ordine, [`scansione ${a}`, `scansione ${b}`, `host ${b}`]);
+  assert.deepEqual({ ...esito, errori: esito.errori.length }, { hypervisors: 2, letti: 1, falliti: 1, errori: 1, letture: "letture in più: 1 lette" });
+  for (const r of righe) assert.doesNotMatch(r, NIENTE_DATI, `nel log: ${r}`);
+});
+
+test("un errore della lettura dell'host non tocca la scansione: l'apparato resta letto, il resoconto ha il solo codice", async () => {
+  apparato({ name: "HV-1", host: "192.0.2.11", device_type: "hypervisor", vendor: "proxmox", scan_target: "proxmox" });
+  withTenant(T, () => scriviInterruttore("host", true, "prova"));
+  const { esito, righe } = await catturaLog(() => withTenant(T, () => runHypervisorSync(
+    async () => undefined,
+    async () => { throw Object.assign(new Error("lldpcli su HV-1 192.0.2.11"), { code: "X_PROVA" }); },
+  )));
+  assert.ok(!(esito instanceof Error));
+  assert.deepEqual(esito, { hypervisors: 1, letti: 1, falliti: 0, errori: [], letture: "letture in più: 0 lette, 1 non riuscita; codici: X_PROVA" });
+  for (const r of righe) assert.doesNotMatch(r, NIENTE_DATI, `nel log: ${r}`);
+});
+
+test("motivo del job: gli apparati non letti e, in coda, le letture in più; niente da dire = null", () => {
+  const base = { hypervisors: 2, letti: 2, falliti: 0, errori: [] as string[], letture: null as string | null };
+  assert.equal(motivoHypervisorSync(base), null);
+  assert.equal(motivoHypervisorSync({ ...base, letture: "letture in più: 2 lette" }), "letture in più: 2 lette");
+  assert.equal(motivoHypervisorSync({ ...base, letti: 1, falliti: 1 }), "1 hypervisor su 2 non letti: resta la lettura di prima");
+  assert.equal(motivoHypervisorSync({ ...base, letti: 1, falliti: 1, letture: "letture in più: 1 lette" }),
+    "1 hypervisor su 2 non letti: resta la lettura di prima; letture in più: 1 lette");
 });

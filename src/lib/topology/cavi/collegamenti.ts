@@ -63,6 +63,8 @@ export interface ContestoCavi {
   statoPorte: ReadonlyMap<string, "su" | "giu" | "spenta">;
   /** «nodo|chiave» → velocità in Mbps. */
   velocita: ReadonlyMap<string, number>;
+  /** La velocità di una porta senza chiave dal nome: unica fra le porte con quel nome (I70), altrimenti null. */
+  velocitaPerNome?: (nodo: string, nome: string) => number | null;
   /** nodo → MAC dell'apparato (MAIUSCOLO), dai lettori e dall'inventario. */
   macApparati: ReadonlyMap<string, ReadonlySet<string>>;
   idx: NodeIndex;
@@ -119,7 +121,8 @@ function vlanDa(testo: string | null): number[] {
 
 export function costruisciCollegamenti(prove: readonly Prova[], correzioni: readonly LinkOverrideRow[], ctx: ContestoCavi): RisultatoCavi {
   const finestra = ctx.staleDays * DAY_MS;
-  const velocitaDi = (p: Porta): number | null => (p.chiave ? (ctx.velocita.get(`${p.nodo}|${p.chiave}`) ?? null) : null);
+  const velocitaDi = (p: Porta): number | null => (p.chiave ? (ctx.velocita.get(`${p.nodo}|${p.chiave}`) ?? null)
+    : p.nome !== "" ? (ctx.velocitaPerNome?.(p.nodo, p.nome) ?? null) : null);
   const contabile = (p: Porta): boolean => p.certa && p.chiave !== null && (p.fisica === true || p.senzaFili === true);
 
   // Passo 2: la freschezza di una prova rispetto alla lettura più recente dello stesso apparato e lettore (I43).

@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildTopologyModel } from "@/lib/topology/model";
-import { costruisciCollegamenti, type Collegamento } from "@/lib/topology/cavi/collegamenti";
+import { capo as capoDi, costruisciCollegamenti, type Collegamento } from "@/lib/topology/cavi/collegamenti";
 import { preparaCavi } from "@/lib/topology/cavi/modello";
 import type { IngressoCavi } from "@/lib/topology/cavi/prove";
 import type { LinkOverrideRow } from "@/lib/topology/model-types";
@@ -218,4 +218,26 @@ test("I39: stessi dati, stessi collegamenti (id compresi)", () => {
   const ing = () => ingresso(due(), { vicini: [vic({ device_id: 2, local_port: "Port 1", remote_device_name: "SW-3", remote_port: "Port 2" }), vic({ device_id: 3, local_port: "Port 2", remote_device_name: "SW-2", remote_port: "Port 1" })] });
   assert.deepEqual(collega(ing()).collegamenti.map((c) => c.id), collega(ing()).collegamenti.map((c) => c.id));
   assert.ok(collega(ing()).collegamenti.every((c) => c.id.startsWith(`${c.genere}:`)));
+});
+
+// I70 nel modello per cavo (revisione finale di T2, I1): la velocità si cercava solo per chiave «i:N», e una porta col nome
+// doppio (nessuna chiave, I14) restava senza velocità. Il modello di oggi la dà se tutte le porte con quel nome vanno alla
+// stessa velocità (H13): senza, sull'hub un hypervisor cambiava padre nella traccia solo per questo.
+test("I70 — un nome doppio con una velocità sola dà la velocità del cavo; con due velocità no", () => {
+  const conPorte = (v2: string) => baseInput({
+    devices: [dev(11, { name: "AGG-11", via: "api" }), dev(4, { name: "HV-4", device_type: "server", vendor: "proxmox" })],
+    ports: [
+      { device_id: 11, port_index: 15, port_name: "SFP+ 15", speed: "10000 Mbps", status: "up", stp_state: null },
+      { device_id: 11, port_index: 16, port_name: "SFP+ 15", speed: v2, status: "up", stp_state: null },
+    ],
+    neighbors: [{ device_id: 11, local_port: "SFP+ 15", remote_device_name: "HV-4", remote_port: "enp1s0", protocol: "lldp", remote_ip: "10.0.0.4", remote_mac: null, timestamp: "2026-10-13 03:00:00", source: "unifi" }],
+  });
+  const cavo = (v2: string) => {
+    const c = fra(collega(ingresso(conPorte(v2))).collegamenti, "dev:11", "dev:4");
+    assert.equal(c.length, 1);
+    assert.equal(capoDi(c[0], "dev:11").chiave, null, "il nome doppio non dice la porta (I14)");
+    return c[0].velocitaMbps;
+  };
+  assert.equal(cavo("10000 Mbps"), 10000);
+  assert.equal(cavo("1000 Mbps"), null);
 });

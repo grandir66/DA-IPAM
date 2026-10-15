@@ -12,7 +12,7 @@ import { addNodeMacs, buildNodeIndex, type NodeIndex } from "@/lib/topology/node
 import { resolveScanHosts } from "@/lib/topology/vms";
 import { alberoCavi, type AlberoCavi, type NodoCavi } from "./albero";
 import { costruisciCollegamenti, type Collegamento, type ContestoCavi, type Segmento } from "./collegamenti";
-import { chiavePorta, type ElencoPorte } from "./porte";
+import { chiavePorta, elenchiPorte, indiciInElenco, type ElencoPorte } from "./porte";
 import { elenchiCavi, indiceFatti, proveDaInput, type IndiceFatti, type IngressoCavi, type Prova } from "./prove";
 
 export interface PreparatoCavi { idx: NodeIndex; prove: Prova[]; ctx: ContestoCavi; elenchi: Map<string, ElencoPorte>; fatti: IndiceFatti }
@@ -40,11 +40,21 @@ export function preparaCavi(ing: IngressoCavi, t1: TopologyModel): PreparatoCavi
     const s = p.status === "up" ? "su" : p.status === "down" ? "giu" : p.status === "disabled" ? "spenta" : null;
     if (s) statoPorte.set(k, s);
   }
+  // Un nome doppio (spec §13.6.1, I70; come `enrichLinks` del modello di oggi): la porta non si sa, ma se tutte le porte con
+  // quel nome vanno alla stessa velocità la velocità sì. Senza, sull'hub un hypervisor cambiava padre nella traccia (revisione
+  // finale di T2, I1). L'elenco è quello di switch_ports, come per la chiave «i:N».
+  const elenchiT1 = elenchiPorte(ing.t1.ports ?? []);
+  const velocitaPerNome = (nodo: string, nome: string): number | null => {
+    const el = elenchiT1.get(nodo);
+    if (!el) return null;
+    const v = [...new Set(indiciInElenco(el, nome).map((i) => velocita.get(`${nodo}|i:${i}`) ?? null))];
+    return v.length === 1 ? v[0] : null;
+  };
   const router = new Set([...idx.nodes.values()].filter((n) => n.type === "router" || n.type === "firewall").map((n) => n.id));
   const vmIpervisore = new Map(t1.vms.flatMap((v) => (v.nodeId && v.hypervisorNodeId ? [[v.nodeId, v.hypervisorNodeId] as const] : [])));
   const ctx: ContestoCavi = {
-    nowMs: ing.t1.nowMs, staleDays: ing.t1.staleDays, porte: elenchi, fatti, statoPorte, velocita, macApparati, idx, router, vmIpervisore,
-    portaSalvata: portaSalvata(ing.t1),
+    nowMs: ing.t1.nowMs, staleDays: ing.t1.staleDays, porte: elenchi, fatti, statoPorte, velocita, velocitaPerNome, macApparati, idx, router,
+    vmIpervisore, portaSalvata: portaSalvata(ing.t1),
   };
   return { idx, prove, ctx, elenchi, fatti };
 }

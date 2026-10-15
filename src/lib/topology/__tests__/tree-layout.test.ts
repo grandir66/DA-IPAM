@@ -261,3 +261,18 @@ test("una partenza ritoccata resta dov'è quando si aggiunge un'altra partenza; 
   const t3 = tree(["dev:2"], { "dev:2": ["dev:1"] });
   assert.deepEqual(layoutTree(m, t3, [tw]).expired, ["dev:1"]);
 });
+
+// Stesso difetto dell'orizzontale e del verticale (`finish` è uno solo): i ritocchi si applicavano in ordine di id
+// stringa («dev:120» < «dev:78»), e lo scarto dell'antenato ritoccato si sommava una seconda volta al discendente.
+test("orizzontale: il discendente ritoccato resta dove lo si lascia anche se l'antenato ritoccato ha l'id «dopo»", () => {
+  const m = model([node("dev:1", "router", "R"), node("dev:78", "switch", "S1"), node("dev:120", "switch", "S2")]);
+  const t = tree(["dev:1"], { "dev:1": ["dev:78"], "dev:78": ["dev:120"] });
+  const b78 = layoutTree(m, t, []).nodes.get("dev:78")!;
+  const t78: SavedTweak = { nodeId: "dev:78", x: b78.x + 250, y: b78.y + 40, sig: structureSig(t, "dev:78"), orientation: "tb" };
+  const v120 = layoutTree(m, t, [t78]).nodes.get("dev:120")!;
+  const t120: SavedTweak = { nodeId: "dev:120", x: v120.x - 180, y: v120.y + 60, sig: structureSig(t, "dev:120"), orientation: "tb" };
+  const r = layoutTree(m, t, [t78, t120]);
+  assert.deepEqual([r.nodes.get("dev:120")!.x, r.nodes.get("dev:120")!.y], [t120.x, t120.y]);
+  assert.deepEqual([r.nodes.get("dev:78")!.x, r.nodes.get("dev:78")!.y], [t78.x, t78.y]);
+  assert.equal(ser(layoutTree(m, t, [t120, t78])), ser(r));
+});

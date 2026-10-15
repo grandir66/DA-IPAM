@@ -208,3 +208,30 @@ test("width e height coprono tutto, margini compresi", () => {
   assert.equal(r.width, maxX + MARGIN);
   assert.equal(r.height, maxY + MARGIN);
 });
+
+// Copia del cliente A, 15/10 (v0.3.284): «i device quando li posiziono si spostano a caso». Il ritocco salva il
+// punto ASSOLUTO del rilascio, visto con i ritocchi degli antenati già applicati; `finish` li applicava in ordine di
+// id come stringa («dev:120» < «dev:78»), così il ritocco del discendente veniva spostato una seconda volta dallo
+// scarto dell'antenato applicato dopo: il riquadro saltava altrove appena tornava il salvataggio.
+test("ritocchi di un ramo: il riquadro resta dove lo si lascia anche se un antenato ritoccato ha l'id «dopo»", () => {
+  const nodes = [node("dev:1", "router", "R"), node("dev:78", "switch", "S1"), node("dev:120", "switch", "S2"), node("dev:159", "switch", "S3")];
+  const m = model(nodes);
+  const t = tree(["dev:1"], { "dev:1": ["dev:78"], "dev:78": ["dev:120"], "dev:120": ["dev:159"] });
+  const base = lr(m, t);
+  // 1. si trascina dev:78 (il genitore) di 300 px in basso: il salvataggio è la sua posizione a schermo
+  const b78 = base.nodes.get("dev:78")!;
+  const t78: SavedTweak = { nodeId: "dev:78", x: b78.x + 40, y: b78.y + 300, sig: "dev:1|dev:78", orientation: "lr" };
+  const dopo1 = lr(m, t, [t78]);
+  assert.deepEqual({ x: dopo1.nodes.get("dev:78")!.x, y: dopo1.nodes.get("dev:78")!.y }, { x: t78.x, y: t78.y });
+  // 2. si trascina dev:120 (il figlio, già spostato col ramo) di 200 px in alto, dal punto in cui lo si vede
+  const v120 = dopo1.nodes.get("dev:120")!;
+  const t120: SavedTweak = { nodeId: "dev:120", x: v120.x, y: v120.y - 200, sig: "dev:78|dev:120", orientation: "lr" };
+  const dopo2 = lr(m, t, [t78, t120]);
+  const n120 = dopo2.nodes.get("dev:120")!;
+  assert.deepEqual({ x: n120.x, y: n120.y }, { x: t120.x, y: t120.y }, "dev:120 non è dove è stato lasciato");
+  // dev:78 non si muove, e il figlio di dev:120 segue il suo genitore
+  assert.deepEqual({ x: dopo2.nodes.get("dev:78")!.x, y: dopo2.nodes.get("dev:78")!.y }, { x: t78.x, y: t78.y });
+  assert.equal(dopo2.nodes.get("dev:159")!.y - dopo1.nodes.get("dev:159")!.y, -200);
+  // l'ordine in cui arrivano i ritocchi non conta
+  assert.equal(ser(lr(m, t, [t120, t78])), ser(dopo2));
+});

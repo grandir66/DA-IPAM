@@ -174,7 +174,14 @@ function finish(
 
   // Ritocchi dell'orientamento in uso (gli altri restano da parte, non scadono): lo scarto vale per il nodo e tutto il suo ramo (attaccati e gruppo AP compresi).
   const expired: string[] = [];
-  for (const t of [...tweaks].filter((w) => w.orientation === orientation).sort((a, b) => (a.nodeId < b.nodeId ? -1 : 1))) {
+  // Prima gli antenati, poi i discendenti: il ritocco è il punto assoluto del rilascio, visto con quelli degli antenati
+  // già applicati. In ordine di id («dev:120» < «dev:78») lo scarto dell'antenato si sommava una seconda volta e il
+  // riquadro saltava altrove al rilascio (cliente A, 15/10).
+  const parentOf = new Map<string, string>();
+  for (const [p, kids] of tree.children) for (const k of kids) parentOf.set(k, p);
+  const depth = (id: string) => { let d = 0; for (let p = parentOf.get(id); p !== undefined && d <= parentOf.size; p = parentOf.get(p)) d++; return d; };
+  const mine = tweaks.filter((w) => w.orientation === orientation).map((t) => ({ t, d: depth(t.nodeId) }));
+  for (const { t } of mine.sort((a, b) => a.d - b.d || (a.t.nodeId < b.t.nodeId ? -1 : 1))) {
     const n = nodes.get(t.nodeId);
     if (!n || n.role !== "box") continue;
     if (!tweakHolds(t.sig, structureSig(tree, t.nodeId))) { expired.push(t.nodeId); continue; }

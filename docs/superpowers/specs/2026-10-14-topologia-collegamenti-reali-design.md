@@ -554,7 +554,7 @@ risponde a una delle tre domande.
 
 | Fonte | Prova | Non prova | Trappole viste nei dati |
 | --- | --- | --- | --- |
-| LLDP | un cavo, se sulla porta si sente **un solo apparato** (raggruppate le righe dello stesso apparato, contati solo quelli visti di recente) | il verso; se il cavo porta traffico | un modem, uno switch muto o un ponte radio lo ripetono (porta 15 di core 1); il MikroTik annuncia anche da VLAN e VRRP; il telaio può non essere il MAC che conosciamo (controller: forse MAC + 1, da verificare); nelle righe lette da RouterOS il MAC è quello dell'interfaccia che ha mandato l'annuncio, non il telaio: lo stesso router compare con più MAC (sull'hub il router di frontiera con quattro); una porta ha tre nomi; una riga vecchia accanto a una nuova sembra un secondo apparato; se l'LLDP manca il cavo può esserci |
+| LLDP | un cavo, se sulla porta si sente **un solo apparato** (raggruppate le righe dello stesso apparato, contati solo quelli visti di recente) | il verso; se il cavo porta traffico | un modem, uno switch muto o un ponte radio lo ripetono (porta 15 di core 1); il MikroTik annuncia anche da VLAN e VRRP; il telaio può non essere il MAC che conosciamo (controller: il «MAC + 1», che `ethernet_table` contiene su 7 switch su 12 dell'hub, 13.5.3); nelle righe lette da RouterOS il MAC è quello dell'interfaccia che ha mandato l'annuncio, non il telaio: lo stesso router compare con più MAC (sull'hub il router di frontiera con quattro); una porta ha tre nomi; una riga vecchia accanto a una nuova sembra un secondo apparato; se l'LLDP manca il cavo può esserci |
 | CDP | un cavo fra due apparati che lo consumano (Cisco con Cisco: elenco chiuso nel lettore, 13.5.4) | un cavo, se uno switch in mezzo lo inoltra | RouterOS lo manda di base e gli switch non Cisco lo inoltrano: sull'hub, su un membro del fascio fra router e aggregazione, il router sente così tre apparati che stanno dietro l'aggregazione |
 | MNDP | stessa rete e identità (nome, versione, scheda) | il cavo | attraversa switch, ponti radio e tunnel, anche di livello 3 (sull'hub un tunnel WireGuard, in un verso solo); vale come collegamento solo «unico vicino su una porta fisica» di un router, contando tutte le righe della porta (§11.1), «probabile» |
 | Spanning tree, stato per porta | inoltra o bloccata; una porta bloccata ha comunque il cavo. BPDU ricevuti sulla porta: il vicino parla spanning tree (prova di ruolo, 13.8.2) | chi c'è dall'altra parte | «blocking», e anche «forwarding», su porte giù o spente (tre porte giù dell'hub dicono «forwarding»): ogni stato su una porta giù vale «giù»; `disabled` su una porta accesa vuol dire spanning tree spento (gli switch Flex Mini dell'hub), e la porta inoltra; dal router via SNMP stati su interfacce che non sono porte del bridge |
@@ -873,17 +873,32 @@ apparati del controller (03:00 UTC nel DB: le 5:00 italiane fino al 25/10, poi l
 | `uplink.port_idx`, `uplink.uplink_source` | la porta di uscita senza dipendere da `is_uplink`, che un poll SNMP riscrive a 0; da dove il controller ricava l'uplink. Per un gateway del controller (un apparato che fa da router) è la porta della WAN, non quella verso il padre (13.8.3, punto 1) | `network_devices.uplink_local_port_idx`, `.uplink_source` |
 | `port_table[].stp_state`, `stp_pathcost`, `lag_idx`, `aggregated_by` | stato nell'albero comune (gli switch del controller parlano RSTP); fasci. `disabled` su una porta accesa vuol dire spanning tree spento, e la porta inoltra (gli switch Flex Mini dell'hub: porta di uplink accesa, `disabled`, più di cento MAC dietro); su una porta giù lo stato non conta | `topology_port_facts` (fonte `controller`). `switch_ports.stp_state` resta com'è |
 | `stp_version`, `stp_priority`, `root_switch` | modo e priorità dello spanning tree, radice vista dallo switch | `topology_bridge_facts` (fonte `controller`) |
-| `ethernet_table[].mac` | tutti i MAC dell'apparato. Che ci sia anche il «MAC del controller + 1» con cui lo switch si annuncia in LLDP **non è verificato** (la fixture è anonima e non lo può dire): lo scenario S8 è un'ipotesi da verificare su un controller vero | `topology_device_macs` |
+| `ethernet_table[].mac` | tutti i MAC dell'apparato. **Misurato sul controller dell'hub (15/10):** `ethernet_table` c'è su 17 apparati su 17, e su 7 switch su 12 contiene il «MAC del controller + 1» con cui lo switch si annuncia in LLDP (S8). Per quei 7 il «+ 1» arriva come MAC letto; per gli altri 5 no, e nessuna regola lo indovina | `topology_device_macs` |
 
 `downlink_table` (i figli visti dal padre) non si salva: l'uplink dà già i due capi con le porte.
 
-**Da verificare su un controller vero, in T2.3.** La fixture del repo ha tre switch e un access point, nessun gateway
-(`unifi-stat-device.json`), e il suo Flex Mini non ha `stp_state`. Prima del parser si guardano su un controller con un
-gateway: se `lldp_table[].local_port_idx` c'è anche per le righe del gateway (il gateway dell'hub scrive le sue porte
-come «ethN», un nome che il suo elenco non ha: senza l'indice il suo cavo della WAN non si abbina, H11); se il
-controller dà il partner LACP di un fascio, come fa RouterOS. La fixture si estende con un gateway e con un Flex Mini
-nella forma vista sull'hub, resi anonimi. La corrispondenza «`ethN` = indice − 1», che sull'hub torna con le
-velocità, resta una deduzione e non diventa una regola (13.13.1).
+**Verificato su un controller con un gateway (rete B, 15/10, T2.3).** La fixture del repo ha tre switch e un access
+point, nessun gateway (`unifi-stat-device.json`), e il suo Flex Mini non ha `stp_state`. Sulla risposta vera di
+`stat/device` del controller dell'hub (un UDM, che è anche gateway), resa anonima nella fixture nuova
+`unifi-stat-device-gateway.json`:
+
+- le righe `lldp_table` del gateway hanno `local_port_idx` (**2 su 2**). Il gateway scrive le sue porte come «ethN», un
+  nome che il suo elenco non ha: il cavo si abbina per indice (H11);
+- nel `port_table` ci sono i campi del partner LACP, `partner_system_id` e `lacp_state`. Il gateway non ha fasci, quindi
+  la loro forma su un fascio vero non è vista: T2.3 **non li legge** (`lag_partner` manca dalle righe del controller,
+  piano di T2, «Scelte» punto 8). Leggerli è un passo a parte, da fare su un controller con un fascio;
+- `ethernet_table` e il «MAC + 1»: vedi la tabella sopra;
+- le porte del gateway non hanno `stp_state`, `stp_pathcost` né `lag_idx`, e l'apparato ha `stp_version`,
+  `stp_priority` e `root_switch` nulli: per il gateway il controller non scrive nessun bridge;
+- l'uplink del gateway (`uplink_source` = `lldp_downlink`) mette insieme due cavi: `uplink.port_idx` è la porta della
+  WAN (10G, `is_uplink`), `uplink_remote_port` è la porta remota del cavo della LAN (25G), che l'LLDP vede su un'altra
+  porta locale. Sul cliente A (`lldp_uplink`) uplink e LLDP coincidono su tutti gli apparati. Per un gateway, quindi,
+  `uplink_local_port_idx` e `uplink_remote_port` non sono i due capi di un cavo: il cavo si prende dall'LLDP per indice;
+- il Flex Mini dell'hub ha `model` **`USF5P`**, non `USMINI` come nella fixture del cliente A. Lo script di P5 cercava
+  `USMINI`, e la fixture nuova ha il solo gateway: il Flex Mini nella forma dell'hub manca ancora.
+
+La corrispondenza «`ethN` = indice − 1», che sull'hub torna con le velocità, resta una deduzione e non diventa una regola
+(13.13.1).
 
 ### 13.5.4 SNMP per le altre marche (Cisco, HP/Aruba, Linux e le altre)
 
@@ -1301,7 +1316,7 @@ una porta a 25G dell'aggregazione (H11).
   (MikroTik MK2, controller `ethernet_table`, SNMP `ifPhysAddress`, MAC permanenti dei membri dei bond) e le schede
   di `device_interfaces`, lette con una query a parte nel suo ingresso: `getNetworkDeviceKnownMacs` non cambia
   (13.5.7). Coi MAC noti si abbina anche il partner LACP di un fascio. Così si riconoscono le porte del
-  router con un MAC loro e, se `ethernet_table` lo contiene (da verificare), gli switch del controller che si
+  router con un MAC loro e, dove `ethernet_table` lo contiene (sull'hub 7 switch su 12, 13.5.3), gli switch del controller che si
   annunciano col «MAC del controller + 1». Nessuna regola «MAC + 1» indovinata: un MAC vicino può essere di un altro
   apparato.
 - **Nome LLDP diverso da quello in inventario** (accesso A si annuncia senza spazi): si abbina per MAC del telaio.
@@ -2363,7 +2378,7 @@ Scenari costruiti in memoria sull'ingresso del modello:
 | S5 stati di oggi del controller | T3 | i cavi 1-11 e il segmento; 8 e 9 bloccati; anomalia su core 2 |
 | S6 spanning tree del router simulato: radice router 1, poi radice core 1 | T3 | lo stesso albero nei due casi (nel secondo il cavo 1 è «contro verso», ma è l'unico percorso attivo) |
 | S7 «Ignora» sul cavo 1 | T3 | sparisce solo il cavo 1; segmento e cavo 2 restano |
-| S8 MAC degli apparati simulati (ipotesi: `ethernet_table` con il «MAC + 1», da verificare su un controller vero) | T3 | il cavo 2 diventa «certo» |
+| S8 MAC degli apparati simulati (`ethernet_table` con il «MAC + 1»: sull'hub su 7 switch su 12, 13.5.3) | T3 | il cavo 2 diventa «certo» |
 | S10 segmento della WAN (13.15, punto 1) | T3 | sotto router 1 `ether8`; la porta 15 di core 1 e `ether8` del router di riserva membri, come ridondanze; nessun altro padre cambia |
 | S11 collegamenti «dalle VM» che non sono principali e che nessun'altra lettura vede (i tre verso l'hypervisor 2) | T3 | non disegnati, nemmeno a richiesta; nei dettagli dell'hypervisor «visto dalle VM anche su ‹porta›»; i principali uguali |
 | S12 lettura delle VM rinnovata (simulata: la VM del firewall virtuale spenta, un'altra accesa al suo posto) | T1 | nessun oggetto sotto una sua VM, né con la lettura vecchia né con quella nuova (H15); la misura dice quale lettura ha usato (R1) |
@@ -2626,7 +2641,7 @@ cresce (ADR 0010, punto 8).
 | Il carico: sull'hub il router si legge ogni 15 minuti da sei scansioni veloci in parallelo | cadenza propria (al più una volta l'ora per apparato) e lucchetto; misura sul percorso vero (scansioni veloci, connessioni SSH); prima l'hub; interruttore per cliente |
 | Un comando SSH che non risponde ferma il giro di tutti gli apparati dopo | tempo massimo per comando nel trasporto (13.5.1) |
 | Le uscite di RouterOS per MSTP non rispondono o hanno un'altra forma | si salvano se rispondono; «stato per istanza non letto», mai «inoltra» |
-| Campi del controller non documentati (`root_switch`, `uplink_source`) o non verificati (il «MAC + 1» in `ethernet_table`) | indizi, detti in parole; S8 resta un'ipotesi finché non si vede su un controller vero |
+| Campi del controller non documentati (`root_switch`, `uplink_source`) o veri solo in parte (il «MAC + 1» in `ethernet_table`: sull'hub 7 switch su 12, 13.5.3) | indizi, detti in parole; il «+ 1» vale dove è scritto, mai dedotto per gli altri |
 | Le fixture Cisco e HP/Aruba sono dedotte dalle MIB | l'indipendenza dal prodotto si scrive in un ADR solo dopo una lettura SNMP vera |
 | Dati vecchi: router 3 fermo da maggio, il controller letto una volta per notte (03:00 UTC, le 5:00 italiane fino al 25/10) | «non visto» resta; in T3 un cambio di topologia si vede il giorno dopo, e la traccia lo dice |
 | Due modelli vivi insieme (T1 e T3) | interruttore con una scadenza (13.11.4) |

@@ -21,6 +21,14 @@
  * - `uplink` dice verso chi esce l'apparato (`uplink_mac`,
  *   `uplink_remote_port`, `uplink_device_name`, `uplink_source`);
  * - un apparato offline (`state: 0`) può non avere `up`/`speed` sulle porte.
+ *
+ * Sul controller dell'hub, con un gateway (15/10, `unifi-stat-device-gateway.json`):
+ * - le righe `lldp_table` del gateway hanno `local_port_idx` (2 su 2), e un
+ *   `local_port_name` («ethN») che il suo `port_table` non ha: l'indice abbina;
+ * - il `port_table` ha anche i campi del partner LACP (`partner_system_id`,
+ *   `lacp_state`), qui non letti: il gateway non ha fasci e la loro forma su un
+ *   fascio vero non è misurata;
+ * - `ethernet_table` c'è su ogni apparato.
  */
 
 export interface UnifiLldpEntry {
@@ -58,6 +66,19 @@ export interface UnifiPort {
   stp_state: string | null;
   /** Indice della porta di aggregazione (LAG) di cui fa parte, se c'è. */
   aggregated_by: number | null;
+  /** T2 (spec §13.5.3): fascio (LAG) di cui la porta fa parte, e il costo della porta nello spanning tree. Assenti nelle risposte costruite a mano dalle prove. */
+  lag_idx?: number | null;
+  stp_pathcost?: number | null;
+}
+
+/**
+ * Una voce di `ethernet_table`: i MAC dell'apparato (spec §13.5.3). Misurato sul controller dell'hub il 15/10: c'è su
+ * tutti gli apparati, e su 7 switch su 12 contiene il «MAC del controller + 1» con cui lo switch si annuncia (S8). Gli
+ * altri 5 no: il «+ 1» resta un fatto da leggere, mai una regola.
+ */
+export interface UnifiEthernet {
+  mac: string | null;
+  name: string | null;
 }
 
 export interface UnifiUplink {
@@ -94,6 +115,11 @@ export interface UnifiDevice {
   port_table: UnifiPort[];
   lldp_table: UnifiLldpEntry[];
   uplink: UnifiUplink | null;
+  /** T2 (spec §13.5.3): modo e priorità dello spanning tree, radice vista dallo switch (un MAC), tutti i MAC dell'apparato. */
+  stp_version?: string | null;
+  stp_priority?: number | null;
+  root_switch?: string | null;
+  ethernet_table?: UnifiEthernet[];
 }
 
 /** Errore di forma della risposta (non JSON atteso, `meta.rc` diverso da ok). */
@@ -176,7 +202,14 @@ function parsePort(raw: unknown): UnifiPort | null {
     stp_state: str(r.stp_state),
     // il controller manda `false` quando la porta non è in un LAG
     aggregated_by: int(r.aggregated_by),
+    lag_idx: int(r.lag_idx),
+    stp_pathcost: int(r.stp_pathcost),
   };
+}
+
+function parseEthernet(raw: unknown): UnifiEthernet | null {
+  const r = asRecord(raw);
+  return r ? { mac: str(r.mac), name: str(r.name) } : null;
 }
 
 function parseUplink(raw: unknown): UnifiUplink | null {
@@ -219,6 +252,10 @@ export function parseUnifiDevice(raw: unknown): UnifiDevice | null {
     port_table: compact(r.port_table, parsePort),
     lldp_table: compact(r.lldp_table, parseLldpEntry),
     uplink: parseUplink(r.uplink),
+    stp_version: str(r.stp_version),
+    stp_priority: int(r.stp_priority),
+    root_switch: str(r.root_switch),
+    ethernet_table: compact(r.ethernet_table, parseEthernet),
   };
 }
 

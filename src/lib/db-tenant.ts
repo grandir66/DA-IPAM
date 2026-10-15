@@ -9462,6 +9462,19 @@ export function setHypervisorSyncSchedule(on: boolean): void {
   });
 }
 
+/**
+ * Ogni quanto si leggono router e switch (spec §13.5.6, il dialogo delle letture in più): il router lo leggono il giro
+ * ARP e le scansioni delle reti (il più frequente fra i job accesi); gli switch solo il giro ARP. null = nessun job acceso.
+ */
+export function cadenzaLetture(): { router: { minuti: number | null; daScansioni: boolean }; switch: number | null } {
+  const righe = db().prepare(`SELECT job_type, MIN(interval_minutes) AS m FROM scheduled_jobs
+     WHERE enabled = 1 AND job_type IN ('arp_poll', 'fast_scan', 'ping_sweep', 'snmp_scan', 'nmap_scan') GROUP BY job_type`).all() as Array<{ job_type: string; m: number }>;
+  const arp = righe.find((r) => r.job_type === "arp_poll")?.m ?? null;
+  if (righe.length === 0) return { router: { minuti: null, daScansioni: false }, switch: null };
+  const min = Math.min(...righe.map((r) => r.m));
+  return { router: { minuti: min, daScansioni: righe.some((r) => r.m === min && r.job_type !== "arp_poll") }, switch: arp };
+}
+
 /** Lega al controller i job unifi_sync nati prima dei controller multipli (config senza controller_id). */
 export function attachOrphanUnifiJobs(controllerId: number): number {
   return db()

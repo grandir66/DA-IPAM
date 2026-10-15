@@ -139,6 +139,48 @@ test("I68 (in ombra): l'uplink di un gateway del controller è la sua WAN: instr
   assert.deepEqual([c.wan, c.stato, c.verso], [true, "instradato", null]);
 });
 
+// Revisione del Task 11 di T2 (D1, spec §13.7.2 passo 3): il controller calcola l'uplink da quell'LLDP, quindi l'uplink del
+// figlio non è un secondo testimone. Il figlio entrava fra gli osservatori per la sola prova di uplink, e un cavo visto da
+// un capo diventava «certo: lo vedono tutti e due gli apparati».
+test("§13.7.2 passo 3: un capo LLDP più l'uplink del controller del figlio resta probabile, non certo", () => {
+  const t1 = baseInput({
+    devices: [dev(1, { name: "SW-1", controller_mac: "02:00:d0:00:01:00", uplink_mac: "02:00:d0:00:02:00", uplink_remote_port: 25, uplink_seen_at: "2026-10-13 03:00:00" }), dev(2, { name: "AGG", controller_mac: "02:00:d0:00:02:00" })],
+    uplinkPorts: [{ device_id: 1, port_index: 10, port_name: "SFP+ 1" }],
+    ports: [...porte(1, [[10, "SFP+ 1", "10000 Mbps"]]), ...porte(2, [[25, "SFP28 25", "10000 Mbps"]])],
+  });
+  const daAgg = vic({ device_id: 2, local_port: "SFP28 25", remote_device_name: "SW-1", remote_port: "SFP+ 1" });
+  const c = fra(collega(ingresso(t1, { vicini: [daAgg] })).collegamenti, "dev:1", "dev:2");
+  assert.deepEqual([c.length, c[0].fiducia, c[0].verso], [1, "probabile", "dev:1"]);
+  const daSw = vic({ device_id: 1, local_port: "SFP+ 1", remote_device_name: "AGG", remote_port: "SFP28 25" });
+  assert.equal(fra(collega(ingresso(t1, { vicini: [daAgg, daSw] })).collegamenti, "dev:1", "dev:2")[0].fiducia, "certo", "dai due capi LLDP sì");
+});
+
+// Revisione del Task 11 di T2 (D2, §13.8.3 punto 1): la WAN di un gateway è instradata e senza verso; se la sua porta dà su
+// un segmento (modem e altri apparati sulla stessa porta), l'uplink dava il verso al segmento come per uno switch.
+test("§13.8.3 punto 1: la WAN di un gateway su un segmento non dà il verso al segmento", () => {
+  const t1 = baseInput({
+    devices: [dev(1, { name: "GW", device_type: "router", controller_mac: "02:00:d0:00:01:00", uplink_mac: "02:00:d0:00:02:00", uplink_remote_port: 25, uplink_seen_at: "2026-10-13 03:00:00" }),
+      dev(2, { name: "AGG", controller_mac: "02:00:d0:00:02:00" }), dev(3, { name: "SW-3" })],
+    uplinkPorts: [{ device_id: 1, port_index: 10, port_name: "SFP+ 1" }],
+    ports: [...porte(1, [[10, "SFP+ 1", "10000 Mbps"]]), ...porte(2, [[25, "SFP28 25", "10000 Mbps"]]), ...porte(3, [[2, "Port 2", "1000 Mbps"]])],
+  });
+  const r = collega(ingresso(t1, { vicini: [
+    vic({ device_id: 1, local_port: "SFP+ 1", remote_device_name: "AGG", remote_port: "SFP28 25" }),
+    vic({ device_id: 1, local_port: "SFP+ 1", remote_device_name: "SW-3", remote_port: "Port 2" }),
+  ] }));
+  assert.equal(r.segmenti.length, 1);
+  const seg = r.collegamenti.filter((c) => c.genere === "segmento");
+  assert.ok(seg.length >= 2);
+  assert.deepEqual(seg.map((c) => c.verso), seg.map(() => null), "nessun verso dalla WAN del gateway");
+  // Uno switch con l'uplink su un segmento invece il verso lo dà (passo 4, come prima).
+  const sw = baseInput({ ...t1, devices: t1.devices.map((d) => (d.id === 1 ? { ...d, device_type: "switch" } : d)) });
+  const r2 = collega(ingresso(sw, { vicini: [
+    vic({ device_id: 1, local_port: "SFP+ 1", remote_device_name: "AGG", remote_port: "SFP28 25" }),
+    vic({ device_id: 1, local_port: "SFP+ 1", remote_device_name: "SW-3", remote_port: "Port 2" }),
+  ] }));
+  assert.ok(r2.collegamenti.some((c) => c.genere === "segmento" && c.verso === "dev:1"));
+});
+
 test("I69 e I48: un tunnel acceso è un collegamento «tunnel», mai un cavo; spento, o mai letto, nessuna linea", () => {
   const mk = { vendor: "mikrotik", via: "ssh" } as const;
   const t1 = baseInput({ devices: [dev(1, { name: "RTR-1", device_type: "router", ...mk }), dev(2, { name: "RTR-2", device_type: "router", ...mk })] });

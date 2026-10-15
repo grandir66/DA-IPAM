@@ -226,18 +226,24 @@ export function costruisciCollegamenti(prove: readonly Prova[], correzioni: read
   }
 
   // Passo 4: l'uplink del controller. Velocità diverse ai due capi: solo il verso (I45). Un gateway: la WAN (I68).
+  // L'uplink dà il verso, mai un testimone (§13.7.2 passo 3; revisione del Task 11): il controller lo calcola dall'LLDP
+  // dello stesso apparato, quindi il figlio non entra fra gli osservatori e un cavo visto da un capo resta probabile.
   const uplinkSuSegmento = new Map<string, string>();
   for (const p of prove) {
     if (p.classe !== "uplink" || !p.altro) continue;
     const figlio = p.da.nodo, padre = p.altro.nodo;
-    if (diSegmento.has(chiaveDi(p.da))) { uplinkSuSegmento.set(chiaveDi(p.da), figlio); continue; }
+    if (diSegmento.has(chiaveDi(p.da))) {
+      // La WAN di un gateway che dà su un segmento: instradata, senza verso (§13.8.3 punto 1; revisione del Task 11).
+      if (!p.gateway) uplinkSuSegmento.set(chiaveDi(p.da), figlio);
+      continue;
+    }
     if (p.gateway) {
       // L'uplink di un gateway è la sua WAN (§13.8.3 punto 1): la porta locale dell'uplink è la WAN, quella remota è la porta del
       // cavo della LAN, e le due non sono i due capi di un cavo (§13.5.3, misurato sul controller dell'hub). La WAN è un
       // collegamento a parte, dalla porta dell'uplink all'apparato dell'uplink, instradato e senza verso; il cavo della LAN resta
       // quello dell'LLDP per indice. Si unisce a un cavo già letto solo se quel cavo parte dalla porta della WAN; se la porta
       // non si sa, non si unisce a nessuno (potrebbe essere il cavo della LAN).
-      const wan = aggiungi("cavo", p.da, portaVuota(padre), p, figlio, p.da.chiave === null);
+      const wan = aggiungi("cavo", p.da, portaVuota(padre), p, null, p.da.chiave === null);
       wan.wan = true;
       continue;
     }
@@ -251,7 +257,7 @@ export function costruisciCollegamenti(prove: readonly Prova[], correzioni: read
       scelta.verso ??= figlio;
       continue;
     }
-    const z = aggiungi(p.tipo === "senza_fili" ? "senza_fili" : "cavo", p.da, p.altro, p, figlio);
+    const z = aggiungi(p.tipo === "senza_fili" ? "senza_fili" : "cavo", p.da, p.altro, p, null);
     z.verso = figlio;
   }
 

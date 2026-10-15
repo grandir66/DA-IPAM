@@ -5,12 +5,13 @@
  * niente. Stampa solo conteggi e nomi di colonne: niente dati del cliente. La copia della copia si toglie a fine giro.
  *
  * Uso:  npx tsx scripts/misura-migrazione-cavi.ts <copia.db> --cartella <scratchpad>
- *   Uscita: 0 fatto e integro; 1 integrità rovinata o seconda apertura che aggiunge; 2 non partito.
+ *   Uscita: 0 fatto e integro (integrità dopo identica a prima); 1 integrità cambiata o rovinata già prima, o seconda
+ *   apertura che aggiunge; 2 non partito.
  */
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import { controllaPercorsi } from "../src/lib/scanner/__tests__/support/percorsi-prova";
+import { controllaPercorsi, integritaInvariata } from "../src/lib/scanner/__tests__/support/percorsi-prova";
 
 const copie: string[] = [];
 
@@ -76,14 +77,15 @@ async function main(): Promise<number> {
   const secondaUguale = struttura(dest) === strutturaDopo;
   const aggiunto = (JSON.parse(strutturaDopo) as { oggetti: Array<{ name: string }> }).oggetti.map((o) => o.name)
     .filter((n) => !strutturaPrima.includes(`"name":"${n}"`));
-  const ok = (r: string[]) => r.every((x) => x === "ok" || /^Page \d+: never used$/.test(x));
+  const integritaOk = integritaInvariata(integraPrima, integraDopo);
   const out = {
     tenant, durata_apertura_ms: durata, integrity_prima: integraPrima.join("; "), integrity_dopo: integraDopo.join("; "),
+    integrita_invariata: integritaOk,
     schema_cavi_presente: schema, oggetti_aggiunti: aggiunto, seconda_apertura_uguale: secondaUguale,
     righe_migrazione: fs.existsSync(registro) ? fs.readFileSync(registro, "utf8").split("\n").filter((r) => r.includes("topologia cavi (T2)")).length : 0,
   };
   process.stdout.write(`${JSON.stringify(out, null, 1)}\n`);
-  return ok(integraPrima) && ok(integraDopo) && secondaUguale && schema ? 0 : 1;
+  return integritaOk && secondaUguale && schema ? 0 : 1;
 }
 
 main()

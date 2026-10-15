@@ -52,11 +52,26 @@ test("due lettori dello stesso apparato non si sovrascrivono (la fonte è nella 
 });
 
 test("potatura: le righe dell'apparato non viste da 90 giorni se ne vanno alla scrittura dopo; quelle di 30 restano", () => {
-  db().prepare("INSERT INTO topology_port_facts (device_id, source, port_key, port_name, seen_at) VALUES (1, 'device', 'n:vecchia', 'vecchia', '2026-07-01 10:00:00'), (1, 'device', 'n:recente', 'recente', '2026-09-20 10:00:00')").run();
+  // 2026-07-01 = 106 giorni prima del giro (ORA, 15/10); 2026-09-15 = 30 giorni prima.
+  db().prepare("INSERT INTO topology_port_facts (device_id, source, port_key, port_name, seen_at) VALUES (1, 'device', 'n:vecchia', 'vecchia', '2026-07-01 10:00:00'), (1, 'device', 'n:recente', 'recente', '2026-09-15 10:00:00')").run();
   db().prepare("INSERT INTO topology_device_macs (device_id, mac, source, seen_at) VALUES (1, '02:00:00:00:00:99', 'device', '2026-07-01 10:00:00')").run();
   withTenant(T, () => scriviFattiTopologia(1, "device", { porte: [porta()], bridge: [], macs: [{ mac: "02:00:00:00:00:01", port_key: "n:ether2" }] }, ORA));
   assert.deepEqual((db().prepare("SELECT port_key FROM topology_port_facts ORDER BY port_key").all() as Array<{ port_key: string }>).map((r) => r.port_key), ["n:ether2", "n:recente"]);
   assert.deepEqual((db().prepare("SELECT mac FROM topology_device_macs").all() as Array<{ mac: string }>).map((r) => r.mac), ["02:00:00:00:00:01"]);
+});
+
+// Regola per riga (scelta del piano dopo la revisione del Task 1, «Scelte» punto 8): una colonna che il lettore conosce
+// (presente in almeno una riga) si scrive col valore della riga, null compreso; resta com'era solo una colonna assente da
+// TUTTE le righe. Un COALESCE per riga terrebbe valori vecchi su righe dell'ultimo giro: un bridge diventato radice
+// (root_port null = è la radice) resterebbe con la porta radice di prima, una porta uscita dal fascio col fascio di prima.
+test("un null letto cancella il valore di prima: bridge diventato radice, porta uscita dal fascio", () => {
+  const br = (root_port: string | null) => ({ bridge_name: "bridge", instance: 0, protocol: "rstp", root_port });
+  withTenant(T, () => {
+    scriviFattiTopologia(1, "device", { porte: [porta({ lag_group: "bond1" })], bridge: [br("ether1")], macs: [] }, ORA);
+    scriviFattiTopologia(1, "device", { porte: [porta({ lag_group: null })], bridge: [br(null)], macs: [] }, new Date("2026-10-15T11:00:00Z"));
+  });
+  assert.deepEqual(db().prepare("SELECT root_port FROM topology_bridge_facts").get(), { root_port: null });
+  assert.deepEqual(db().prepare("SELECT lag_group FROM topology_port_facts").get(), { lag_group: null });
 });
 
 test("bridge per istanza e MAC normalizzati; un MAC tutto zeri non si scrive", () => {
@@ -99,6 +114,31 @@ test("le fonti nuove (ssh, snmp, host) non entrano nell'ingresso del modello di 
     upsertNeighbors(1, [{ localPort: "ether2", remoteDevice: "SW-2", remotePort: "Port 3", protocol: "lldp" }], "ssh");
   });
   assert.equal(withTenant(T, () => getTopologyModelInput(2)).neighbors.length, 0);
+});
+
+// Revisione del Task 1 di T2 (R7, I33): la chiave unica dei vicini non contiene la fonte, e `source = excluded.source`
+// faceva sì che una lettura in più (ssh, snmp, host) sulla stessa chiave di un vicino `device`/`unifi` gli cambiasse
+// fonte: il vicino usciva dalla mappa di T1 (lo stesso con uno switch MikroTik letto prima come router, Task 4). Una
+// fonte nuova non tocca più la riga di una fonte di oggi; le colonne nuove dei vicini si aggiornano lo stesso, a parte.
+// Al contrario una fonte di oggi sopra una nuova la riporta a `device`, e il vicino torna nella mappa di T1.
+test("R7: una fonte nuova sulla stessa chiave non toglie il vicino alla mappa di T1; una di oggi sopra una nuova lo riporta", () => {
+  const v = { localPort: "ether2", remoteDevice: "SW-2", remotePort: "Port 3", protocol: "lldp" };
+  const riga = () => db().prepare("SELECT source, remote_caps FROM device_neighbors").get() as { source: string; remote_caps: string | null };
+  const viciniT1 = () => withTenant(T, () => getTopologyModelInput(2)).neighbors.length;
+  withTenant(T, () => upsertNeighbors(1, [v]));
+  assert.equal(viciniT1(), 1);
+  for (const fonte of ["ssh", "snmp", "host"] as const) {
+    withTenant(T, () => upsertNeighbors(1, [{ ...v, remoteCaps: `bridge-${fonte}` }], fonte));
+    assert.equal(viciniT1(), 1, `il modello di T1 ha perso il vicino dopo la fonte ${fonte}`);
+    assert.deepEqual(riga(), { source: "device", remote_caps: `bridge-${fonte}` });
+  }
+
+  db().exec("DELETE FROM device_neighbors");
+  withTenant(T, () => upsertNeighbors(1, [v], "ssh"));
+  assert.equal(viciniT1(), 0);
+  withTenant(T, () => upsertNeighbors(1, [v]));
+  assert.equal(riga().source, "device");
+  assert.equal(viciniT1(), 1);
 });
 
 test("I34: una migrazione non riuscita non ferma i vicini, e il modello si calcola", () => {

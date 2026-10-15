@@ -93,3 +93,15 @@ export function controllaPercorsi(p: PercorsiProva): string[] {
   }
   return errori;
 }
+
+/**
+ * Esito dell'integrità di una copia prima e dopo una misura (`PRAGMA integrity_check`, righe già pulite di vuoti e
+ * dell'intestazione «*** in database main ***»). Lo usa `scripts/misura-migrazione-cavi.ts`. Prima: solo «ok» o pagine
+ * mai usate (spazio non referenziato della copia: l'hub ne ha 4), altrimenti la copia è già rovinata e non si misura.
+ * Dopo: IDENTICA a prima, riga per riga. Una «Page N: never used» nata con l'apertura è del codice nuovo, non della copia
+ * (revisione del Task 1 di T2: prima si accettava qualunque «never used», anche nuova).
+ */
+export function integritaInvariata(prima: readonly string[], dopo: readonly string[]): boolean {
+  const accettabile = (x: string) => x === "ok" || /^Page \d+: never used$/.test(x);
+  return prima.every(accettabile) && dopo.length === prima.length && dopo.every((x, i) => x === prima[i]);
+}

@@ -7202,6 +7202,18 @@ si apre «Dati della mappa», si guarda e basta. «Accendi» si prova solo nel d
 6. Le righe dell'host di un cluster sull'apparato del nodo; un nodo non censito non si scrive.
 7. Il modello per cavo usa la classe degli oggetti della mappa di oggi; le prove di ruolo coi fatti nuovi (BPDU, capacità)
    arrivano in T3.
+8. **Fatti delle porte e dei bridge: `COALESCE` per colonna, non per riga** (revisione del Task 1). La spec (§13.5.7, «Come
+   si scrive») tiene con `COALESCE(excluded.x, x)` le colonne che un lettore non conosce. `scriviFattiTopologia` lo fa per
+   colonna: una colonna assente da TUTTE le righe della scrittura non entra nel `SET` e resta com'era; una colonna che il
+   lettore conosce si scrive col valore della riga, `null` compreso (e un campo assente solo da alcune righe vale `null`
+   lì). Il `COALESCE` per riga è stato provato come mutante: non rompe le prove dei Task 3 e 4, ma rompe quella del Task 1
+   («letto e vuoto: si scrive null») e lascerebbe valori di un giro vecchio in righe dell'ultimo giro, quelle che il
+   modello per cavo legge: un bridge diventato radice (`root_port` null = è la radice) resterebbe con la porta radice di
+   prima, una porta uscita da un fascio o dal bridge col fascio o il ruolo di prima. **Contratto dei lettori**: ogni riga
+   porta tutte le colonne che il lettore conosce (`fattiMikrotik` lo fa già), `null` dove il valore è vuoto o non noto; una
+   colonna che il lettore non legge in quel giro (cadenza diversa, comando non mandato) manca da tutte le righe. **Contratto
+   di chi legge** (modello per cavo, Task 9): un `null` in una riga dell'ultimo giro vuol dire «vuoto o non noto adesso»,
+   mai «il valore di prima». La prova: «un null letto cancella il valore di prima» in `topology-cavi-scrittura.test.ts`.
 
 **Lasciate spente o nel modo raccomandato (spec §13.16, «Scelte che restano a Riccardo»), finché non risponde:**
 1. Censire il router di frontiera e il router virtuale dell'hub (H21): nessun codice; la traccia lo mostra solo se censiti.

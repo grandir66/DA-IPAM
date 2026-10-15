@@ -9,10 +9,13 @@ import assert from "node:assert/strict";
 import Database from "better-sqlite3";
 import { closeHubDb } from "@/lib/db-hub";
 import { deleteTenantDatabase, getTenantDb, migrateTopologyCavi, schemaCaviPresente, withTenant } from "@/lib/db-tenant";
+import { integritaInvariata } from "@/lib/scanner/__tests__/support/percorsi-prova";
 
 const T = "TESTTOPOCAVIMIG";
+const T_VERIFICA = "TESTTOPOCAVIVERIFICA";
 after(() => {
   deleteTenantDatabase(T);
+  deleteTenantDatabase(T_VERIFICA);
   closeHubDb();
   removeTestHubDb();
 });
@@ -107,4 +110,36 @@ test("all'apertura del tenant: schema presente, e le tabelle nuove puntano ancor
     const fk = getTenantDb(T).prepare(`PRAGMA foreign_key_list(${t})`).all() as Array<{ table: string; on_delete: string }>;
     assert.deepEqual(fk.map((f) => [f.table, f.on_delete]), [["network_devices", "CASCADE"]], t);
   }
+});
+
+// Revisione del Task 1 di T2: la verifica dello schema all'apertura stava fuori dal try della migrazione, e un suo errore
+// faceva fallire getTenantDb (il tenant non si apriva più, contro ADR 0008 punti 10 e 12). Ora il tenant si apre lo
+// stesso, senza annotazione: schemaCaviPresente() rifà la verifica alla prima domanda. La verifica è fatta fallire per
+// finta intercettando la sua sola query (unica nel codice: «SELECT name FROM sqlite_master WHERE type = 'table'»).
+test("all'apertura: se la verifica dello schema fallisce il tenant si apre lo stesso, e la verifica si rifà dopo", () => {
+  const proto = Database.prototype as unknown as { prepare: (this: Database.Database, sql: string) => unknown };
+  const originale = proto.prepare;
+  proto.prepare = function (this: Database.Database, sql: string) {
+    if (sql === "SELECT name FROM sqlite_master WHERE type = 'table'") throw new Error("verifica dello schema fallita per finta");
+    return originale.call(this, sql);
+  };
+  try {
+    assert.doesNotThrow(() => getTenantDb(T_VERIFICA));
+  } finally {
+    proto.prepare = originale;
+  }
+  assert.equal(withTenant(T_VERIFICA, () => schemaCaviPresente()), true, "senza annotazione la verifica si rifà");
+});
+
+// Revisione del Task 1 di T2: la misura sulla copia (scripts/misura-migrazione-cavi.ts) accettava «Page N: never used»
+// dopo l'apertura anche se prima non c'era. Le pagine mai usate si accettano solo se c'erano già, uguali (spazio non
+// referenziato della copia: l'hub ne ha 4); una nuova dopo l'apertura è del codice nuovo, non della copia.
+test("misura della migrazione: integrità dopo identica a prima; «never used» solo se c'era già", () => {
+  const vecchie = ["Page 5152: never used", "Page 5293: never used"];
+  assert.equal(integritaInvariata(["ok"], ["ok"]), true);
+  assert.equal(integritaInvariata(vecchie, vecchie), true, "pagine mai usate della copia, uguali prima e dopo");
+  assert.equal(integritaInvariata(["ok"], ["Page 77: never used"]), false, "una pagina mai usata nata con l'apertura");
+  assert.equal(integritaInvariata(vecchie, [...vecchie, "Page 9: never used"]), false, "una pagina in più");
+  assert.equal(integritaInvariata(vecchie, ["Page 5152: never used"]), false, "righe diverse da prima");
+  assert.equal(integritaInvariata(["row 3 missing from index x"], ["row 3 missing from index x"]), false, "una copia già rovinata non si misura");
 });

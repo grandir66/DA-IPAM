@@ -136,6 +136,22 @@ test("fonti nuove: non entrano nemmeno nel ricalcolo dell'attribuzione da handle
   assert.deepEqual(daiVicini.map((e) => e.claim), []);
 });
 
+// Revisione del Task 1 di T2: upsertNeighbors faceva ripartire il ricalcolo dell'attribuzione degli host toccati anche
+// per le fonti nuove. Il ricalcolo non le legge (filtro qui sopra), ma scriveva lo stesso sulle evidenze (observed_at,
+// expires_at): scritture in più nei dati di produzione a ogni lettura accesa. Ora parte solo per `device` e `unifi`.
+// L'host ha un segnale che produce un'evidenza (nmap), così un ricalcolo partito si vede; la controprova è la fonte di oggi.
+test("fonti nuove: la scrittura dei vicini non fa ripartire il ricalcolo dell'attribuzione; la fonte di oggi sì", () => {
+  db().prepare("UPDATE hosts SET os_info = 'Linux 5.4' WHERE id = 1").run();
+  db().exec("DELETE FROM attribution_evidence");
+  const evidenze = () => (db().prepare("SELECT COUNT(*) AS n FROM attribution_evidence WHERE host_id = 1").get() as { n: number }).n;
+  for (const fonte of ["ssh", "snmp", "host"] as const) {
+    withTenant(T, () => upsertNeighbors(1, [v("PC-50", "Port 8", HOST_MAC)], fonte));
+  }
+  assert.equal(evidenze(), 0, "il ricalcolo è partito per una fonte nuova");
+  withTenant(T, () => upsertNeighbors(1, [v("PC-50", "Port 8", HOST_MAC)]));
+  assert.ok(evidenze() > 0, "controprova: con la fonte di oggi il ricalcolo parte");
+});
+
 test("la copia del filtro sulle fonti in recompute.ts è identica all'originale di db-tenant.ts", () => {
   assert.equal(RECOMPUTE_SOURCES_SQL, NEIGHBORS_MODEL_SOURCES_SQL);
 });

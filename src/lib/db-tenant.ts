@@ -1842,7 +1842,12 @@ export function getTenantDb(tenantCode: string): Database.Database {
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: migrazione topologia cavi (T2) fallita, le letture in più non scrivono:`, e);
   }
-  SCHEMA_CAVI.set(newDb, verificaSchemaCavi(newDb));
+  // Anche la verifica non deve impedire l'apertura: se fallisce non si annota niente, e schemaCaviPresente() la rifà.
+  try {
+    SCHEMA_CAVI.set(newDb, verificaSchemaCavi(newDb));
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: verifica dello schema della topologia cavi (T2) fallita, si rifà alla prima scrittura:`, e);
+  }
 
   tenantDbs.set(tenantCode, { db: newDb, lastUsed: Date.now() });
   return newDb;
@@ -5216,6 +5221,9 @@ export function upsertNeighbors(
   // adesso, first_seen resta), chi non c'è invecchia e diventa «non visto».
   // Due fonti sullo stesso apparato (poll SNMP/SSH e UniFi) non si cancellano
   // più a vicenda. ON CONFLICT copre anche due voci uguali nello stesso giro.
+  // T2 (spec §13.5.7, R7; revisione del Task 1): la chiave unica non contiene la fonte, quindi una fonte nuova (ssh, snmp,
+  // host) sulla chiave di un vicino `device`/`unifi` gli cambierebbe fonte e lo toglierebbe alla mappa di T1. La WHERE la
+  // lascia stare (le colonne nuove dei vicini si aggiornano a parte, qui sotto); una fonte di oggi sopra una nuova sì.
   const ins = d.prepare(`
     INSERT INTO device_neighbors (device_id, local_port, remote_device_name, remote_port, protocol, remote_ip, remote_mac, remote_platform, source, first_seen, timestamp)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
@@ -5226,6 +5234,7 @@ export function upsertNeighbors(
       remote_platform = excluded.remote_platform,
       source = excluded.source,
       timestamp = excluded.timestamp
+    WHERE NOT (device_neighbors.source IN ('device', 'unifi') AND excluded.source NOT IN ('device', 'unifi'))
   `);
   const prune = d.prepare("DELETE FROM device_neighbors WHERE device_id = ? AND timestamp < datetime('now', ?)");
   d.transaction(() => {
@@ -5256,7 +5265,10 @@ export function upsertNeighbors(
     }
   }
 
-  // Attribution v2: i vicini LLDP/CDP appena scritti sono evidenza per gli host remoti
+  // Attribution v2: i vicini LLDP/CDP appena scritti sono evidenza per gli host remoti. Solo per le fonti di oggi: le
+  // nuove non entrano nell'attribuzione (NEIGHBORS_MODEL_SOURCES_SQL), e il ricalcolo scriverebbe lo stesso sulle evidenze
+  // (observed_at, expires_at) a ogni lettura accesa (spec §13.5.7, «Come si scrive»; revisione del Task 1 di T2).
+  if (source !== "device" && source !== "unifi") return;
   try {
     const { recomputeAttributionSafe } = require("@/lib/attribution/recompute") as typeof import("@/lib/attribution/recompute");
     const touched = d.prepare(
@@ -5308,7 +5320,10 @@ export type FonteFatti = "device" | "controller" | "snmp" | "host";
 /**
  * Un fatto di porta come lo scrive un lettore. `port_key`: «i:<indice>» se l'indice è noto, altrimenti «n:<nome
  * normalizzato>» (minuscole, senza spazi). Un campo ASSENTE (undefined) da tutte le righe di una scrittura = «questo
- * lettore non lo sa»: resta com'era. Un campo `null` = letto e vuoto: si scrive null.
+ * lettore non lo sa»: resta com'era. Un campo `null` = letto e vuoto: si scrive null. Contratto dei lettori (piano di T2,
+ * «Scelte» punto 8): ogni riga porta tutte le colonne che il lettore conosce, null dove il valore è vuoto o non noto per
+ * quella riga; un campo assente solo da ALCUNE righe vale null in quelle righe, non «resta». Così una riga dell'ultimo
+ * giro non tiene mai un valore di un giro vecchio (vale anche per `FattoBridgeIn`: `root_port` null = è la radice).
  */
 export interface FattoPortaIn {
   port_key: string;

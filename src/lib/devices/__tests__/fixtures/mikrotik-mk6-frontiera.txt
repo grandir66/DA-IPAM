@@ -1,0 +1,24 @@
+               interface: sfp-sfpplus12            bonding1 sfp-sfpplus8
+                  status: in-bridge                inactive inactive    
+                 port-id: 0x80.1                                        
+                    role: root-port                                     
+               edge-port: no                                            
+     edge-port-discovery: yes                                           
+     point-to-point-port: yes                                           
+            external-fdb: no                                            
+            sending-rstp: yes                                           
+                learning: yes                                           
+              forwarding: yes                                           
+        actual-path-cost: 2000                                          
+          root-path-cost: 2400                                          
+    designated-bridge-id: 0x8000.02:00:A0:10:7E:12                      
+         designated-cost: 400                                           
+      designated-port-id: 0x80.10                                       
+  designated-message-age: 1s                                            
+      designated-max-age: 20s                                           
+              tx-rx-bpdu: 10/302210                                     
+     discard-transitions: 0                                             
+     forward-transitions: 1                                             
+                tx-rx-tc: 3/241                                         
+        topology-changes: 1                                             
+    last-topology-change: 6d23h50m51s                                   

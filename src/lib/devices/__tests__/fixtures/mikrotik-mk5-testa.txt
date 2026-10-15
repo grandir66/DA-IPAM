@@ -1,0 +1,10 @@
+                  state: enabled            
+    current-mac-address: 02:00:A0:10:0E:02  
+              bridge-id: 0.02:00:A0:10:0E:02
+            root-bridge: yes                
+         root-bridge-id: 0.02:00:A0:10:0E:02
+         root-path-cost: 0                  
+              root-port: none               
+             port-count: 10                 
+  designated-port-count: 9                  
+           fast-forward: no                 

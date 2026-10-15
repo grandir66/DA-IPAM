@@ -1,12 +1,13 @@
 /**
  * Recupera informazioni STP via SSH per MikroTik, UniFi (CLI EdgeSwitch) e Linux (brctl).
- * MikroTik: /interface bridge print + /interface bridge monitor
+ * MikroTik: /interface bridge print terse + /interface bridge monitor [find] once (lettori in mikrotik-stp.ts)
  * UniFi: telnet localhost + enable + show spanning-tree (CLI EdgeSwitch)
  * Linux: brctl showstp
  */
 
 import type { StpInfo } from "./snmp-stp-info";
 import type { SshOptions } from "./ssh-helper";
+import { erroreRouterOs, parseBridge, parseMonitorBridge } from "./mikrotik-stp";
 
 function parseMikrotikDuration(s: string): number | null {
   if (!s) return null;
@@ -20,131 +21,27 @@ function parseMikrotikDuration(s: string): number | null {
   return val;
 }
 
-function parseHexPriority(s: string): number | null {
-  if (!s) return null;
-  const m = s.match(/^0x([0-9a-fA-F]+)$/);
-  return m ? parseInt(m[1], 16) : parseInt(s, 10) || null;
-}
-
 /**
- * MikroTik: /interface bridge print
- * Output: name="bridge" ... protocol-mode=rstp ... priority=0x8000 max-message-age=20s forward-delay=15s mac-address=...
+ * MikroTik: MK3 (`/interface bridge print terse`) e MK5 (`/interface bridge monitor [find] once`), coi lettori delle
+ * forme vere (spec topologia §13.5.2). Il primo bridge, come prima. MSTP non diventa più null. Un errore riconosciuto dal
+ * testo, o nessun bridge, dà null (niente informazioni, mai informazioni sbagliate).
  */
-function parseMikrotikBridgePrint(output: string): Partial<StpInfo> {
-  const info: Partial<StpInfo> = {};
-  const line = output.split("\n").find((l) => l.includes("protocol-mode") || l.includes("priority=")) || output.split("\n")[0] || output;
-  const macMatch = line.match(/mac-address=([0-9A-Fa-f:]+)/);
-  const prioMatch = line.match(/priority=(0x[0-9a-fA-F]+|\d+)/);
-  const protocolMatch = line.match(/protocol-mode=(\w+)/);
-  const maxAgeMatch = line.match(/max-message-age=(\d+\w*)/);
-  const fwdMatch = line.match(/forward-delay=(\d+\w*)/);
-
-  const mac = macMatch?.[1];
-  const prio = prioMatch ? parseHexPriority(prioMatch[1]) : null;
-  if (mac && prio != null) {
-    info.bridge_id = `${prio}.${mac.replace(/:/g, "").toLowerCase().padStart(12, "0").replace(/(.{2})(?=.)/g, "$1:")}`;
-  }
-  info.priority = prio;
-  info.protocol = protocolMatch?.[1]?.toLowerCase() === "rstp" ? "rstp" : protocolMatch?.[1]?.toLowerCase() === "stp" ? "stp" : null;
-  info.max_age_s = maxAgeMatch ? parseMikrotikDuration(maxAgeMatch[1]) : null;
-  info.forward_delay_s = fwdMatch ? parseMikrotikDuration(fwdMatch[1]) : null;
-  return info;
-}
-
-/**
- * Converte MikroTik bridge-id (0x8000.MAC) in formato "priority.mac".
- * Es: "0x8000.78:9A:18:DA:B7:68" → "32768.78:9a:18:da:b7:68"
- */
-function mikrotikBridgeIdToPriorityMac(s: string): { priority: number; bridgeId: string } | null {
-  const m = s.trim().match(/^0x([0-9a-fA-F]+)\.([\da-fA-F:.-]+)$/);
-  if (!m) return null;
-  const priority = parseInt(m[1], 16);
-  const mac = m[2].toLowerCase().replace(/-/g, ":");
-  return { priority, bridgeId: `${priority}.${mac}` };
-}
-
-/**
- * MikroTik: /interface bridge monitor [find] once
- * Output: name, state, root-bridge, bridge-id, root-bridge-id, root-path-cost, root-port, protocol-mode, ...
- */
-function parseMikrotikBridgeMonitor(output: string): Partial<StpInfo> {
-  const info: Partial<StpInfo> = {};
-  const rootBridgeMatch = output.match(/root-bridge:\s*(.+)/i);
-  const bridgeIdMatch = output.match(/bridge-id:\s*(.+)/i);
-  const rootIdMatch = output.match(/root-bridge-id:\s*(.+)/i);
-  const rootCostMatch = output.match(/root-path-cost:\s*(.+)/i);
-  const rootPortMatch = output.match(/root-port:\s*(.+)/i);
-  const protocolMatch = output.match(/protocol-mode:\s*(.+)/i);
-
-  info.is_root_bridge = rootBridgeMatch?.[1]?.trim().toLowerCase() === "yes";
-
-  const bid = bridgeIdMatch?.[1]?.trim();
-  if (bid) {
-    const parsed = mikrotikBridgeIdToPriorityMac(bid);
-    if (parsed) {
-      info.bridge_id = parsed.bridgeId;
-      info.priority = parsed.priority;
-    } else {
-      info.bridge_id = bid;
-    }
-  }
-
-  const rid = rootIdMatch?.[1]?.trim();
-  if (rid) {
-    const parsed = mikrotikBridgeIdToPriorityMac(rid);
-    info.root_bridge_id = parsed ? parsed.bridgeId : rid;
-  }
-
-  const cost = rootCostMatch?.[1]?.trim();
-  if (cost != null && cost !== "") {
-    const n = parseInt(cost, 10);
-    if (!Number.isNaN(n)) info.root_cost = n;
-  }
-
-  const rp = rootPortMatch?.[1]?.trim();
-  info.root_port = rp && rp !== "none" && rp !== "N/A" ? rp : "none";
-
-  const proto = protocolMatch?.[1]?.trim().toLowerCase();
-  if (proto === "rstp" || proto === "stp") info.protocol = proto;
-
-  return info;
-}
-
 export async function getMikrotikStpInfo(execCommand: (cmd: string) => Promise<string>): Promise<StpInfo | null> {
   try {
-    const printOut = await execCommand("/interface bridge print");
-    const bridgeNameMatch = printOut.match(/name="([^"]+)"/);
-    const bridgeRef = bridgeNameMatch?.[1] ?? "0";
-    let monitorOut = "";
-    try {
-      monitorOut = await execCommand(`/interface bridge monitor ${bridgeRef} once`);
-    } catch {
-      try {
-        monitorOut = await execCommand("/interface bridge monitor [find] once");
-      } catch {
-        try {
-          monitorOut = await execCommand("/interface bridge monitor 0 once");
-        } catch {
-          monitorOut = await execCommand("/interface bridge monitor bridge once").catch(() => "");
-        }
-      }
-    }
-    const fromPrint = parseMikrotikBridgePrint(printOut);
-    const fromMonitor = parseMikrotikBridgeMonitor(monitorOut);
-
-    if (!fromPrint.bridge_id && !fromMonitor.bridge_id && !fromMonitor.root_bridge_id) return null;
-
+    const out3 = await execCommand("/interface bridge print terse without-paging");
+    if (erroreRouterOs(out3)) return null;
+    const b = parseBridge(out3)[0];
+    if (!b) return null;
+    const out5 = await execCommand("/interface bridge monitor [find] once");
+    if (erroreRouterOs(out5)) return null;
+    const m = parseMonitorBridge(out5)[0];
+    if (!m || (!m.bridgeId && !m.radiceId)) return null;
+    const prio = b.priorita ?? (m.bridgeId ? Number(m.bridgeId.split(".")[0]) : null);
     return {
-      bridge_id: fromMonitor.bridge_id ?? fromPrint.bridge_id ?? null,
-      root_bridge_id: fromMonitor.root_bridge_id ?? fromPrint.bridge_id ?? null,
-      priority: fromMonitor.priority ?? fromPrint.priority ?? null,
-      root_cost: fromMonitor.root_cost ?? null,
-      root_port: fromMonitor.root_port ?? "none",
-      hello_time_s: null,
-      forward_delay_s: fromPrint.forward_delay_s ?? null,
-      max_age_s: fromPrint.max_age_s ?? null,
-      is_root_bridge: fromMonitor.is_root_bridge ?? false,
-      protocol: fromMonitor.protocol ?? fromPrint.protocol ?? null,
+      bridge_id: m.bridgeId, root_bridge_id: m.radiceId ?? m.bridgeId, priority: prio, root_cost: m.costo,
+      root_port: m.portaRadice ?? "none", hello_time_s: null,
+      forward_delay_s: parseMikrotikDuration(b.forwardDelay ?? ""), max_age_s: parseMikrotikDuration(b.maxAge ?? ""),
+      is_root_bridge: m.radice === true, protocol: b.modo === "stp" || b.modo === "rstp" || b.modo === "mstp" ? b.modo : null,
     };
   } catch {
     return null;

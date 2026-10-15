@@ -2,7 +2,7 @@
 
 > Spec di progettazione. **Versione 2, 2026-10-13** — riscrive da capo la versione
 > del 12/10 (in git: il motore v1, React Flow + dagre, è sul `dev` dalla v0.3.260 e
-> sul dato vero di DTS è risultato «orribile, linee a caso, caotico»). Stato:
+> sul dato vero del cliente A è risultato «orribile, linee a caso, caotico»). Stato:
 > **approvata da Riccardo il 13/10** (piano della fase 1:
 > `docs/superpowers/plans/2026-10-13-topologia-fase1-dati.md`). Decisioni prese con Riccardo il 13/10 in una sessione di
 > progettazione con bozze sul dato vero della rete Domarc. È la **tappa 5** del piano
@@ -29,8 +29,8 @@ controller (UniFi, poi Omada); a mano si configura solo ciò che nessuna fonte s
 (testa della sede, collegamenti invisibili, sede di un apparato ambiguo). **La scelta
 manuale vince sempre sul dato automatico**, e mostra chi l'ha fatta e quando.
 
-**Metro di giudizio**: gli schemi drawio di DTS fatti a mano
-(`~/Progetti-Clienti/DTS/docs/diagrammi/`) — schemi **per sede**, collegamenti fra sedi
+**Metro di giudizio**: gli schemi drawio del cliente A fatti a mano
+(nel dossier del cliente, fuori dal repo) — schemi **per sede**, collegamenti fra sedi
 in primo piano con mezzo/porta/subnet sulla linea, pile corte gateway → core → bordo,
 AP in fila, linee dritte, tratteggio per VPN e backup.
 
@@ -56,7 +56,7 @@ Prototipo da buttare, albero dalla testa seguendo LLDP/MNDP già nel DB dell'hub
 gerarchica con `parent_id`). Una sede ha:
 
 - **apparato di testa**, scelto a mano; il sistema propone il router che fa da gateway
-  del maggior numero di subnet della sede (a Domarc: MK-RTR-CORE, non la UDM);
+  del maggior numero di subnet della sede (a Domarc: il router principale, non la UDM);
 - **subnet legate** (una subnet appartiene a una sede), usate per proporre la sede
   degli apparati.
 
@@ -196,26 +196,30 @@ Ognuna rilasciabile e guardata a schermo sul dato vero.
 ## 7. Verifica
 
 - **Prove** sul costruttore e sulla disposizione con dati della forma vera: fixture
-  DTS anonimizzata (esiste per UniFi) e fixture Domarc. Garanzie scritte come prove:
+  del cliente A anonimizzata (esiste per UniFi) e fixture Domarc. Garanzie scritte come prove:
   stessi dati → stesse coordinate; un AP in più non sposta gli altri rami; nessuna
   scritta esce dal nodo; un collegamento manuale vince su LLDP; un collegamento
   sparito diventa «non visto», non scompare.
-- **A schermo a ogni fase**, a 1920 px: rete Domarc (hub) e **copia del DB di DTS**
-  messa accanto ai drawio di DTS.
+- **A schermo a ogni fase**, a 1920 px: rete Domarc (hub) e **copia del DB del cliente A**
+  messa accanto ai suoi drawio.
 - Ogni scrittura sui dati di un cliente: copia del DB, numeri mostrati, conferma.
 
 ## 8. Aperto (si decide nella fase indicata)
 
 - **Collegamenti fra sedi** (fase 3): se i router delle sedi si vedono via
   LLDP/MNDP escono da soli; altrimenti si dichiarano a mano con mezzo e velocità.
-  Da verificare sulla copia di DTS.
+  Da verificare sulla copia del cliente A.
 - **Soglia del «non visto»**: **decisa il 13/10, 2 giorni**, modificabile (impostazione
   `topology_link_stale_days`, 1–30). Con una lettura UniFi al giorno, un giorno esatto farebbe
   diventare grigio tutto a ogni lettura in ritardo.
 - **Client veri** sotto porte e AP: con la tappa 4 (lettura dei client dal controller).
 - **Dato sporco** (19 «switch» che sono PC/server sull'hub): la mappa li mette in «Da
-  sistemare»; correggere la classificazione è un lavoro a parte.
-- **LLDP sugli host Proxmox** (Riccardo, 14/10: «se dovesse servire possiamo installarlo»).
+  sistemare»; correggere la classificazione è un lavoro a parte. **Oggi la promessa «in Da
+  sistemare» non è mantenuta** (foto dell'hub del 14/10): le postazioni registrate come switch
+  stanno nell'albero, perché la mappa crede al tipo dichiarato. La mantiene il ruolo dalle
+  prove (§13.8.2, tappa T1b).
+- **LLDP sugli host Proxmox** (Riccardo, 14/10: «se dovesse servire possiamo installarlo»);
+  ripresa in §13.5.5 (tappa T2).
   - **Perché.** Oggi gli hypervisor si attaccano alle porte deducendolo dalle VM sulla porta
     (§12.5). Quel metodo non vale per le porte senza VM accese, come i cavi di riserva dei
     bond.
@@ -625,3 +629,26 @@ Rilascio unico con la misura sulle copie e la conferma di Riccardo (la migrazion
 clienti).
 
 Rilasciato in v0.3.281 il 14/10 (cliente A e hub).
+
+## 13. Collegamenti come la rete reale (14/10, decisioni con Riccardo)
+
+Il 14/10 la mappa appendeva core 1 del cliente A a uno switch di accesso, mentre il router ha un solo cavo diretto,
+a 10G, verso core 1: una linea era una coppia di apparati con porte prese da prove diverse, e un «Ignora» su quella
+linea aveva tolto anche il cavo vero. Riccardo ha chiesto collegamenti come la rete reale, con LLDP, CDP, MNDP,
+spanning tree e controller pesati per quello che provano, a prescindere dal prodotto e per qualunque rete: il cliente
+A e la rete dell'hub sono due casi di misura, e le regole si provano con criteri generali su reti-campione inventate di
+cinque famiglie (13.3.0, 13.12.2). Quattro tappe:
+
+- **T1 · Correzione rapida e disegno** (leggero): «Ignora» per cavo, porte da una prova sola, pareggi per velocità
+  e verso, protocollo vero dei vicini del router, regola del segmento, «Altri cavi visti fra questi due oggetti» nei
+  dettagli; la porta fisica e il bridge dalla forma delle righe e mai dal nome scelto dal cliente, una VM mai padre
+  del suo hypervisor, la testa non decisa dall'id; linee sul lato più vicino, elenco comprimibile.
+- **T1b · Ruolo dalle prove** (leggero, rilascio a parte subito dopo): apparato di rete solo con prove, nessuna radice
+  sola, «Ruolo nella mappa» a mano, le frasi «Perché questo collegamento».
+- **T2 · Letture in più** (completo): in sola lettura e spente, con «Cosa cambierebbe con la mappa nuova».
+- **T3 · Una linea per cavo e albero dallo spanning tree** (completo): accesa cliente per cliente.
+
+Spec e decisioni del 14/10 sera: [`2026-10-14-topologia-collegamenti-reali-design.md`](2026-10-14-topologia-collegamenti-reali-design.md)
+(numerazione 13.x), che prevale sui §3, §4, §8, §10, §11 e §12 dove li contraddice. Aggiornata il 15/10 col passaggio
+«universale» e con la rete dell'hub letta dai suoi router: le regole entrate così nelle tappe e le scelte che restano
+a Riccardo sono nel suo 13.16.

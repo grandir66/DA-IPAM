@@ -2236,6 +2236,10 @@ rilascio (solo in chat), con a parte chi resta solo per una prova aggiunta a D6,
 escono finché le capacità non arrivano (13.8.2); radici della mappa automatica (H14, C16); nessun altro padre cambiato;
 una riga per G9 e G10 sulle reti-campione. Conferme come T1.
 
+**Stato (15/10):** pronta sul ramo `topologia/collegamenti-t1b` (dopo T1, rilasciata in v0.3.284), misurata sulle copie
+prese dopo la lettura del router col lettore nuovo, vista a schermo a 1280 e 1920, cancello completo verde; **non
+rilasciata**, in attesa della conferma di Riccardo sull'elenco di chi esce.
+
 ### 13.11.3 T2: letture in più, spente, con la traccia (D4)
 
 | Pezzo | Contenuto |

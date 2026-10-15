@@ -4,6 +4,44 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-15 · topologia T1b: il ruolo dalle prove e «Perché questo collegamento»
+
+### Modifiche
+
+- **Nella mappa automatica uno switch, un router o un access point sta nell'albero solo se ha una prova
+  sua** (vede vicini, ha una porta con spanning tree attivo, ha apparati dietro le porte, è letto da un
+  controller, ospita VM, si annuncia come apparato…). Gli altri escono dall'albero e vanno nel gruppo
+  «Da sistemare» dell'elenco con «senza prove di ruolo»; il motivo intero si legge passandoci sopra col
+  mouse. Perché: sulla rete B PC, server e uno scanner registrati come «switch» per l'inventario stavano
+  nell'albero come apparati di rete (vincolo 7 di Riccardo), e host che la classificazione automatica
+  dice router (un telefono, un notebook) anche. Un oggetto «da sistemare» conta come un client: la sua
+  tabella MAC non fa più da apparato di passaggio. Spec §13.8.2.
+- **«Ruolo nella mappa ▸ Apparato di rete · Attaccato (server, PC) · Decide il sistema»** nel menu del
+  tasto destro di un apparato (solo admin), per la via d'uscita a mano: un apparato vero che non si legge
+  torna nell'albero, un server registrato come switch diventa una foglia. Scrive `topology_role`
+  (`PATCH /api/topology/nodes/role`); «Decide il sistema» toglie la scelta. Su un host il menu dice
+  «prima Promuovi ad apparato».
+- **Nessuna radice sola, «hypervisor» solo con una prova, spanning tree solo se attivo** (passaggio
+  universale, spec §13.16): un oggetto di rete con una prova ma senza collegamenti va in «Da sistemare»
+  con «nessun collegamento» invece di fare da seconda radice (sulle copie del 15/10: rete B da 5 radici a
+  1, cliente A da 2 a 1); un nodo «hypervisor» senza VM né scansione è un attaccato; uno stato
+  `disabled` dello spanning tree non è una prova.
+
+### Aggiunte
+
+- **«Perché questo collegamento»** nei dettagli di una linea: chi vede chi, con quale lettura e a che ora
+  (ora italiana), se il cavo è confermato dai due capi, quando l'uplink del controller è la stessa
+  osservazione e non una seconda prova, e perché le righe scartate sulla coppia non sono un cavo
+  («in mezzo c'è un apparato che non si legge», un nome scelto a mano che non si sa se è una porta).
+  Perché: senza, una linea sulla mappa non si poteva verificare senza aprire il DB.
+
+### Correzioni
+
+- **«Attaccato (server, PC)» sposta davvero l'oggetto nella fascia degli attaccati.** Visto a schermo
+  prima del rilascio: il ruolo si salvava ma il disegno leggeva ancora il tipo dichiarato. Ora il disegno
+  legge la classe della mappa; per lo stesso motivo un «hypervisor» senza prove compare fra gli attaccati
+  del suo padre.
+
 ## [Non rilasciato] — 2026-10-15 · LibreNMS dell'appliance riconosciuto nella scheda
 
 ### Correzioni

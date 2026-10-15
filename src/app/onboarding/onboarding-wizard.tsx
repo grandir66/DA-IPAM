@@ -79,7 +79,9 @@ export function OnboardingWizard() {
   });
 
   const [netName, setNetName] = useState("LAN principale");
-  const [netCidr, setNetCidr] = useState("192.168.1.0/24");
+  // Vuoto: «192.168.1.0/24» resta solo come suggerimento grigio (tappa 1). Un
+  // valore precompilato veniva salvato così com'era da chi non lo cambiava.
+  const [netCidr, setNetCidr] = useState("");
   const [netGateway, setNetGateway] = useState("");
   const [netDns, setNetDns] = useState("");
   const [attachSnmp, setAttachSnmp] = useState(true);
@@ -252,18 +254,15 @@ export function OnboardingWizard() {
       dns_server: dnsMerged || null,
       router_id: routerDeviceId ?? undefined,
     };
-    if (attachSnmp && credIds.snmp !== undefined) {
-      body.snmp_credential_ids = [credIds.snmp];
-    }
-    if (attachSsh && credIds.ssh !== undefined) {
-      body.ssh_credential_ids = [credIds.ssh];
-    }
-    if (attachWin && credIds.windows !== undefined) {
-      body.windows_credential_ids = [credIds.windows];
-    }
-    if (attachLinux && credIds.linux !== undefined) {
-      body.linux_credential_ids = [credIds.linux];
-    }
+    // Lista credenziali nuova della rete (tappa 1): è quella che mostra la pagina
+    // della rete e che legge la validazione. Prima il wizard scriveva le quattro
+    // catene vecchie per ruolo, e la rete appena creata sembrava senza credenziali.
+    const credentialIds: number[] = [];
+    if (attachSnmp && credIds.snmp !== undefined) credentialIds.push(credIds.snmp);
+    if (attachSsh && credIds.ssh !== undefined) credentialIds.push(credIds.ssh);
+    if (attachWin && credIds.windows !== undefined) credentialIds.push(credIds.windows);
+    if (attachLinux && credIds.linux !== undefined) credentialIds.push(credIds.linux);
+    if (credentialIds.length > 0) body.credential_ids = credentialIds;
 
     const res = await fetch("/api/networks", {
       method: "POST",
@@ -276,7 +275,13 @@ export function OnboardingWizard() {
     }
     const net = (await res.json()) as { id: number };
     toast.success("Rete creata.");
-    await fetch("/api/onboarding/complete", { method: "POST" });
+    // Come finishAndExit: un completamento fallito si dice, altrimenti l'app
+    // rimanderebbe al wizard senza spiegare perché.
+    const fine = await fetch("/api/onboarding/complete", { method: "POST" });
+    if (!fine.ok) {
+      const data = await fine.json().catch(() => ({}));
+      throw new Error(typeof data.error === "string" ? data.error : "Rete creata, ma il completamento della configurazione non è riuscito");
+    }
     window.location.assign(`/networks/${net.id}`);
   }, [
     netName,

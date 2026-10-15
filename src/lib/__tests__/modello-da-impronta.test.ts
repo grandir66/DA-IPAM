@@ -13,7 +13,7 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import type { DeviceFingerprintSnapshot } from "@/types";
-import { modelloDaImpronta } from "@/lib/device-fingerprint-classification";
+import { applicaProfiloVendor, modelloDaImpronta } from "@/lib/device-fingerprint-classification";
 import { parseModelFromSysDescr } from "@/lib/scanner/discovery";
 import { withTenant, getTenantDb, deleteTenantDatabase, upsertHost as upsertTenant } from "@/lib/db-tenant";
 import { upsertHost as upsertFacciata } from "@/lib/db";
@@ -55,14 +55,35 @@ describe("modelloDaImpronta: l'etichetta diventa modello solo con una fonte che 
     );
   });
 
-  it("con una regola sul sysDescr o col banner → l'etichetta resta modello", () => {
+  it("con una regola sul sysDescr o sull'OID → l'etichetta resta modello", () => {
     assert.equal(
       modelloDaImpronta({ ...IMPRONTA_GATEWAY, detection_sources: ["ttl", "port_signature", "rule:ports+sysdescr"] }),
       "QNAP QTS",
     );
     assert.equal(
-      modelloDaImpronta({ ...IMPRONTA_GATEWAY, detection_sources: ["port_signature", "banner_http"] }),
+      modelloDaImpronta({ ...IMPRONTA_GATEWAY, detection_sources: ["ttl", "port_signature", "snmp", "rule:oid"] }),
       "QNAP QTS",
+    );
+  });
+
+  it("banner, snmp, smb e nmap_os non decidono l'etichetta → nessun modello", () => {
+    // In device-fingerprint.ts queste fonti entrano in detection_sources appena la sonda
+    // risponde, ma final_device lo decide solo una rule:<x> oppure matches[0] (le porte):
+    // col banner SSH della porta 22 la firma «QNAP QTS» tornava modello.
+    assert.equal(
+      modelloDaImpronta({ ...IMPRONTA_GATEWAY, detection_sources: ["port_signature", "banner_http"] }),
+      undefined,
+    );
+    assert.equal(
+      modelloDaImpronta({ ...IMPRONTA_GATEWAY, detection_sources: ["ttl", "port_signature", "banner_ssh", "rule:ports"] }),
+      undefined,
+    );
+    assert.equal(
+      modelloDaImpronta({
+        ...IMPRONTA_GATEWAY,
+        detection_sources: ["ttl", "port_signature", "snmp", "smb_os_discovery", "nmap_os", "rule:ports"],
+      }),
+      undefined,
     );
   });
 
@@ -80,13 +101,35 @@ describe("modelloDaImpronta: l'etichetta diventa modello solo con una fonte che 
 
   it("sotto la soglia di confidenza → nessun modello, come prima", () => {
     assert.equal(
-      modelloDaImpronta({ ...IMPRONTA_GATEWAY, final_confidence: 0.4, detection_sources: ["banner_http"] }),
+      modelloDaImpronta({ ...IMPRONTA_GATEWAY, final_confidence: 0.4, detection_sources: ["rule:sysdescr"] }),
       undefined,
     );
   });
 
   it("nessuna impronta → nessun modello", () => {
     assert.equal(modelloDaImpronta(null), undefined);
+  });
+});
+
+describe("applicaProfiloVendor: l'etichetta del profilo vendor diventa modello", () => {
+  it("impronta generica di porte + profilo a 0,92 → «Ubiquiti UniFi Switch» è modello", () => {
+    const generica: DeviceFingerprintSnapshot = {
+      ...IMPRONTA_GATEWAY,
+      final_device: "Linux generico",
+      final_confidence: 0.85,
+      detection_sources: ["ttl", "port_signature"],
+    };
+    const snap = applicaProfiloVendor(generica, "Ubiquiti UniFi Switch", 0.92, false);
+    assert.equal(snap?.final_device, "Ubiquiti UniFi Switch");
+    assert.equal(modelloDaImpronta(snap), "Ubiquiti UniFi Switch");
+  });
+
+  it("impronta specifica, profilo generico o sotto 0,90 → l'impronta resta com'era", () => {
+    assert.equal(applicaProfiloVendor(IMPRONTA_GATEWAY, "Ubiquiti UniFi Switch", 0.92, false), IMPRONTA_GATEWAY);
+    const generica = { ...IMPRONTA_GATEWAY, final_device: "Linux generico" };
+    assert.equal(applicaProfiloVendor(generica, "Linux", 0.95, true), generica);
+    assert.equal(applicaProfiloVendor(generica, "Ubiquiti UniFi Switch", 0.85, false), generica);
+    assert.equal(applicaProfiloVendor(null, "Ubiquiti UniFi Switch", 0.92, false), null);
   });
 });
 
@@ -180,6 +223,15 @@ for (const [nome, upsert] of [["db-tenant", upsertTenant], ["facciata db.ts", up
       assert.equal(modello("192.168.99.253"), "UCG-Fiber");
       scansione(upsert, reteId, "192.168.99.253", "Altro");
       assert.equal(modello("192.168.99.253"), "UCG-Fiber");
+    });
+
+    it("modello da una regola OID, poi scansione senza SNMP (impronta di porte con la stessa etichetta) → resta", () => {
+      // Le regole del seed condividono l'etichetta fra porte e OID/sysDescr/banner/MAC: scan_naabu e
+      // scan_nmap_base non interrogano l'SNMP e passano un'impronta di sole porte «QNAP QTS».
+      const daOid = { ...IMPRONTA_GATEWAY, detection_sources: ["ttl", "port_signature", "snmp", "rule:oid"] };
+      withTenant(T, () => host(reteId, "192.168.99.249", "QNAP QTS", daOid));
+      scansione(upsert, reteId, "192.168.99.249", undefined);
+      assert.equal(modello("192.168.99.249"), "QNAP QTS");
     });
 
     it("etichetta di un'impronta con fonti vere (sysDescr) → resta, come prima", () => {

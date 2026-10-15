@@ -13,6 +13,13 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   sysDescr/OID/hostname/MAC, profilo vendor); il sysDescr «Ubiquiti UniFi UCG-Fiber 5.1.33 …» dà `UCG-Fiber`; un
   modello salvato uguale all'etichetta di un'impronta di sole porte viene sostituito dal modello nuovo o azzerato
   alla scansione successiva. I modelli scritti a mano, da SNMP o dagli agenti non si toccano.
+- **Correzioni dalla revisione.** Perché: banner HTTP/SSH, SNMP e SMB entrano fra le fonti appena la sonda risponde
+  ma non decidono l'etichetta, e col banner della porta 22 «QNAP QTS» tornava modello; ora contano solo una regola
+  con una condizione non di porte o il profilo vendor. Il modello si azzera solo se TUTTE le impronte con
+  quell'etichetta sono di porte: una scansione senza SNMP non cancella più un «QNAP QTS» venuto da una regola OID
+  (le regole del seed condividono le etichette). Senza una colonna sulla provenienza resta un salto: due scansioni
+  di sole porte di fila lo azzerano alla seconda. L'override del profilo vendor è una funzione provata.
+
 ## [Non rilasciato] — 2026-10-16 · credenziali tappa 2b: un motore solo sceglie le credenziali
 
 Piano `docs/superpowers/plans/2026-10-15-tappa2-archivio-credenziali.md` (sotto-tappa 2b, nessun dato toccato).

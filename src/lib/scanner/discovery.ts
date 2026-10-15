@@ -34,6 +34,7 @@ import { querySnmpInfoMultiCommunity, querySnmpSysGroupMultiCommunity, normalize
 import { etichettaVersioneSnmp, type VersioneSnmp } from "@/lib/protocols/snmp-sessione";
 import { classifyDeviceDetailed } from "@/lib/device-classifier";
 import {
+  applicaProfiloVendor,
   getClassificationFromFingerprintSnapshot,
   modelloDaImpronta,
 } from "@/lib/device-fingerprint-classification";
@@ -2973,22 +2974,7 @@ async function runDiscovery(
           }
         }
 
-        if (fpSnap && vpName && vpConf >= 0.90 && !isGenericVp) {
-          const fpIsGeneric = !fpSnap.final_device ||
-            fpSnap.final_device === "Linux/net-snmp" ||
-            fpSnap.final_device === "Linux generico" ||
-            fpSnap.final_device === "Switch" ||
-            (fpSnap.final_confidence ?? 0) < 0.70;
-          if (fpIsGeneric) {
-            // La fonte si segna: modelloDaImpronta accetta l'etichetta solo se non viene dalle porte.
-            fpSnap = {
-              ...fpSnap,
-              final_device: vpName,
-              final_confidence: vpConf,
-              detection_sources: [...new Set([...fpSnap.detection_sources, "snmp_vendor_profile"])],
-            };
-          }
-        }
+        fpSnap = applicaProfiloVendor(fpSnap, vpName, vpConf, isGenericVp);
         if (fpSnap) detectionJson = JSON.stringify(fpSnap);
       } catch (fpErr) {
         console.warn("[Fingerprint]", ip, fpErr);

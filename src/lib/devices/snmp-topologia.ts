@@ -88,6 +88,7 @@ export async function leggiSnmpTopologia(walk: LettoreSnmp, opz: { lettoreCisco:
   let letture = 0, riuscite = 0;
   let codice: string | null = null;
   let muto = false;
+  let nonSoDiFila = 0;
   // null = non letta (errore, tempo scaduto, o saltata), il codice va nel resoconto; [] = letta e vuota.
   const leggi = async (fa: () => Promise<VoceSnmp[]>): Promise<VoceSnmp[] | null> => {
     if (muto) return null;
@@ -95,13 +96,16 @@ export async function leggiSnmpTopologia(walk: LettoreSnmp, opz: { lettoreCisco:
     try {
       const r = await fa();
       riuscite++;
+      nonSoDiFila = 0;
       return r;
     } catch (e) {
       const c = codiceErrore(e);
       codice ??= c;
       // Revisione del Task 6 (C4): se la prima lettura non sa dire niente lo switch non risponde (spento, irraggiungibile):
-      // le altre si saltano invece di aspettare dieci volte il tempo massimo. Un «no» dell'agente non le salta.
-      if (letture === 1 && nonSo(c)) muto = true;
+      // le altre si saltano invece di aspettare dieci volte il tempo massimo. Un «no» dell'agente non le salta. Revisione
+      // finale di T2 (M4): anche due «non so» di fila a metà giro (lo switch ha smesso di rispondere); uno isolato no.
+      nonSoDiFila = nonSo(c) ? nonSoDiFila + 1 : 0;
+      if ((letture === 1 && nonSoDiFila === 1) || nonSoDiFila >= 2) muto = true;
       return null;
     }
   };
@@ -191,7 +195,20 @@ export async function leggiSnmpTopologia(walk: LettoreSnmp, opz: { lettoreCisco:
   if (indirizzo) macs.push({ mac: indirizzo, port_key: null });
   // LLDP-MIB (SN5): indice «timeMark.porta locale.remIndex»; la porta locale è il SECONDO pezzo, ed è la porta del bridge.
   const locNome = colonna(locT, S.lldpLocali, 3), locDescr = colonna(locT, S.lldpLocali, 4);
-  const ifPerNome = new Map(indici.map((i) => [nomeDi(i).toLowerCase(), i]));
+  // Nome (minuscolo) → le interfacce con quel nome: un nome vale solo se ne indica una sola.
+  const ifPerNome = new Map<string, string[]>();
+  for (const i of indici) {
+    const k = nomeDi(i).toLowerCase();
+    ifPerNome.set(k, [...(ifPerNome.get(k) ?? []), i]);
+  }
+  /** L'interfaccia di un nome della tabella locale LLDP, se è una sola; il primo nome che ne trova almeno una decide. */
+  const ifDelNome = (...nomi: string[]): string | null => {
+    for (const n of nomi.map((x) => x.toLowerCase()).filter((x) => x !== "")) {
+      const c = ifPerNome.get(n);
+      if (c) return c.length === 1 ? c[0] : null;
+    }
+    return null;
+  };
   const ipDi = new Map<string, string>();
   for (const v of manT ?? []) {
     const parti = v.oid.slice(`${S.lldpIndirizzi}.3.`.length).split(".");
@@ -205,7 +222,13 @@ export async function leggiSnmpTopologia(walk: LettoreSnmp, opz: { lettoreCisco:
   // c'è lo stesso, col telaio come nome (il MAC, o il testo se il sottotipo non è un indirizzo). Senza niente non si scrive.
   for (const k of new Set([...nomeRem.keys(), ...telaio.keys(), ...portaRem.keys()])) {
     const [, porta] = k.split(".");
-    const ifIndex = ifDellaPorta.get(porta) ?? ifPerNome.get(testo(locNome.get(porta)).toLowerCase()) ?? ifPerNome.get(testo(locDescr.get(porta)).toLowerCase()) ?? null;
+    // La porta locale (SN5) è la porta del bridge; ma la MIB permette di numerarla con l'ifIndex, e su quegli apparati la porta
+    // del bridge col numero uguale è un'altra (revisione finale di T2, I2). Se il nome della tabella locale dice un'interfaccia
+    // sola e diversa, vale il nome, senza indice: il modello per cavo la risolve per nome nell'elenco delle porte.
+    const perBridge = ifDellaPorta.get(porta) ?? null;
+    const perNome = ifDelNome(testo(locNome.get(porta)), testo(locDescr.get(porta)));
+    const discordi = perBridge !== null && perNome !== null && perBridge !== perNome;
+    const ifIndex = discordi ? perNome : (perBridge ?? perNome);
     const sottotipo = numero(sotto.get(k));
     const mac = sottotipo === 4 ? macDi(telaio.get(k)) : null;
     const telaioTesto = sottotipo !== 4 && sottotipo !== 5 ? testo(telaio.get(k)) : "";
@@ -216,7 +239,7 @@ export async function leggiSnmpTopologia(walk: LettoreSnmp, opz: { lettoreCisco:
     const cap = capacitaDi(capRem.get(k));
     vicini.push({
       localPort: ifIndex ? nomeDi(ifIndex) : (testo(locNome.get(porta)) || testo(locDescr.get(porta)) || `porta ${porta}`),
-      localPortIndex: ifIndex ? Number(ifIndex) : null, remoteDevice, remotePort, protocol: "lldp",
+      localPortIndex: ifIndex && !discordi ? Number(ifIndex) : null, remoteDevice, remotePort, protocol: "lldp",
       ...(mac ? { remoteMac: mac } : {}), ...(ipDi.has(k) ? { remoteIp: ipDi.get(k) } : {}), ...(cap ? { remoteCaps: cap } : {}),
     });
   }

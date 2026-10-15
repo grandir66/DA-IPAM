@@ -241,3 +241,30 @@ test("C7: stati dell'interfaccia 6 e 7 = ferma; 4 e 5 = non noto", async () => {
     { lettoreCisco: true });
   assert.deepEqual(l.porte.map((p) => p.running), [0, 0, null, null]);
 });
+
+// ── Revisione finale di T2 ───────────────────────────────────────────────────
+
+// I2: la porta locale LLDP si risolveva prima come porta del bridge e poi per nome. Un apparato che numera lldpLocPortNum con
+// l'ifIndex (la MIB lo permette) dava il cavo a un'altra porta: qui il numero 25 è l'ifIndex di «Gi1/0/9», ma come porta del
+// bridge è il fascio «Po1». Se il nome dice una porta sola e diversa, vale il nome, senza indice (il modello risolve per nome).
+test("I2: porta locale LLDP — se il nome dice una porta sola e diversa dalla porta del bridge, vale il nome, senza indice", async () => {
+  const extra: Voci = [
+    [`${IF}.2.25`, "GigabitEthernet1/0/9"], [`${IF}.3.25`, 6], [`${XIF}.25`, "Gi1/0/9"], [`${LOC}.3.25`, "Gi1/0/9"],
+    [`${REM}.4.0.25.5`, 4], [`${REM}.5.0.25.5`, mac(2, 0, 0xc, 0, 0, 0x55)], [`${REM}.6.0.25.5`, 5], [`${REM}.7.0.25.5`, "eth0"], [`${REM}.9.0.25.5`, "SRV-9"],
+  ];
+  const l = await leggiSnmpTopologia(walkFinto([], conVoci({}, extra)).walk, { lettoreCisco: true });
+  const v = (nome: string) => l.vicini.find((x) => x.remoteDevice === nome);
+  assert.deepEqual([v("SRV-9")?.localPort, v("SRV-9")?.localPortIndex], ["Gi1/0/9", null], "il nome vince sulla porta del bridge");
+  assert.deepEqual([v("SW-CENTRO")?.localPort, v("SW-CENTRO")?.localPortIndex], ["Gi1/0/24", 10124], "nome e porta del bridge d'accordo: l'indice resta");
+});
+
+// M4: uno switch che smette di rispondere a metà giro (dopo la prima lettura) costava ancora fino a quindici letture da 10 s.
+// Due «non so» di fila bastano a fermarsi; un «non so» isolato (una tabella sola che scade) no.
+test("M4: due «non so» di fila fermano il giro anche dopo la prima lettura; uno isolato no", async () => {
+  const cade = walkFinto([`${IF}.6`, `${IF}.8`]);
+  const l = await leggiSnmpTopologia(cade.walk, { lettoreCisco: true });
+  assert.deepEqual([l.letture, l.riuscite, l.codice, cade.letti.length], [4, 2, "TEMPO_SCADUTO", 4]);
+  const isolato = walkFinto([`${IF}.6`, XIF]);
+  const l2 = await leggiSnmpTopologia(isolato.walk, { lettoreCisco: true });
+  assert.deepEqual([l2.letture, l2.riuscite, isolato.letti.length], [16, 14, 16], "un «non so», una risposta, un «non so»: si va avanti");
+});

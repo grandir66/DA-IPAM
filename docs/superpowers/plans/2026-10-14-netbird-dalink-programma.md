@@ -166,3 +166,18 @@ ADR [0011](../../adr/0011-netbird-rete-a-stella.md) e [0013](../../adr/0013-lice
   `DEFAULT` (regola «appliance a cliente singolo», v0.3.288). Le sonde autonome di Vul-can hanno
   lo stesso difetto di firewall: si corregge prima del gradino DTS. Riepilogo di tutte le scelte:
   https://claude.ai/artifact/MWmQ9zBv5bYygrEwSB1EUY
+- 2026-10-15 notte: **pilota, gradini 2 e 3** (risposte di Riccardo in un'unica raffica, livello leggero).
+  - Deploy-Appliance: `netbird-g1` unito in `main` (`8fcf2b3`) con l'attesa dei ruoli di LibreNMS e la
+    frase corretta sul livello; poi `8a8893d`: al rilancio la «scan-NIC» poteva essere **`wt0`** (IP tolto,
+    netplan su `wt0`, casa senza segnale per 20 minuti), ora solo schede vere.
+  - Codice di casa: **70175** (DOTT. GRANDI RICCARDO); la procedura di Zabbix e il tag dei 12 host allineati
+    da 707911. Aperto: «Domarc-OVH» 707912, anch'esso inventato.
+  - Vul-can: sonda di casa iscritta all'hub (id 6), vecchia «PX-NAS» revocata; **firewall delle sonde
+    autonome corretto** (prerouting, v0.8.89 su `main`), provato su una sonda vera nel laboratorio DA-PX-05
+    (VM 545, oggetto `70791-edge`) con NetBird collegato: senza filtro la 443 era aperta. Pubblicazione sul
+    server in attesa della conferma.
+  - **DTS in NetBird**: `71734-ipam`, snapshot di Riccardo prima; solo 22/443/6443 raggiungibili, R1–R5 verde,
+    livello «solo stato». Tailscale `--netfilter-mode=off` dopo aver messo in UFW le sue regole equivalenti.
+  - Prossimo: prova del livello abbassato (Riccardo, pagina «Cosa esce» del server di prova), revoca di
+    `70791-edge` e della VM 545, poi C1b e la rinomina dei proxy cliente per cliente.
+

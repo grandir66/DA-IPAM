@@ -38,6 +38,20 @@ l'istanza non chiama nessuno.
   con `--netfilter-mode=off`, firewall; la chiave d'ingresso solo da stdin. Prova a vuoto
   di default.
 
+### Correzioni
+
+- **Apparati che parlano solo SNMP v1: la lettura dei dati ora riesce.** In v1 una
+  richiesta di più valori è tutto o niente: se l'apparato non ne ha anche uno solo
+  (tipicamente il numero di serie, che gli apparati vecchi non espongono) rifiuta
+  l'intera richiesta e non si salvava nemmeno il nome. Ora, a quel rifiuto, i valori
+  si chiedono uno per uno e si tengono quelli che ci sono. Perché: a DTS gli access
+  point Ubiquiti 172.16.3.4–6 rispondono solo in v1 e non avevano mai salvato
+  nome, modello o descrizione. Un timeout resta un timeout, non diventa «nessun dato».
+- **Il test credenziali SNMP di un apparato non manda più in errore il processo.**
+  Quando l'apparato non rispondeva, la sessione veniva chiusa due volte (dal timer e
+  dalla risposta) e la seconda chiusura sollevava un'eccezione fuori dalla richiesta:
+  a DTS tre volte il 15/10.
+
 ## [0.3.281] — 2026-10-14
 
 Mappa verticale e stampa (ADR 0012, spec §12): rilasciata il 14/10 alle 14:25 ora italiana,

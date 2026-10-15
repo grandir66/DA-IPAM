@@ -1,227 +1,342 @@
 "use client";
 
-import { useState, useCallback } from "react";
+/**
+ * Wizard di prima configurazione (tappa 4 credenziali, proposta approvata il 15/10).
+ *
+ * Prima: il router chiedeva utente, password e community in linea (binding
+ * sull'apparato, fuori archivio), il passo «Credenziali» richiedeva SNMP, SSH,
+ * Windows e Linux in quattro blocchi fissi e la subnet sceglieva fra quei
+ * quattro; «Indietro» ignorava ciò che era già creato ed «Esci» dimenticava il
+ * punto raggiunto. Ora:
+ * 1. l'archivio delle credenziali per primo, con lo stesso modulo della pagina
+ *    Credenziali (più voci per tipo, modifica ed eliminazione);
+ * 2. il router sceglie le voci dell'archivio (regola tipo ↔ protocollo di
+ *    `credentials/tipi.ts`); già creato, si modifica col PUT dei soli campi toccati;
+ * 3. DNS, 4. Active Directory (la WinRM dall'archivio), 5. la prima subnet con
+ *    le voci da provare in ordine.
+ * Il punto raggiunto e gli oggetti creati si salvano a ogni passo
+ * (`/api/onboarding/progresso`): riaprendo da Impostazioni si riparte da lì.
+ * La logica non visiva sta in `src/lib/onboarding/` con le prove.
+ */
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronUp,
+  CircleCheck,
+  CircleX,
+  Info,
+  Loader2,
+  Pencil,
+  Plus,
+  Trash2,
+} from "lucide-react";
+import { LoadError } from "@/components/shared/load-error";
+import { CredentialFormDialog, caricaStatoModifica } from "@/components/credentials/credential-form-dialog";
+import { fetchJson } from "@/lib/fetch-json";
+import { CRED_TYPE_OPTIONS } from "@/lib/credential-protocol-map";
+import { etichettaTipo } from "@/lib/credentials/tipi";
+import { statoNuovo, type StatoModulo, type VoceArchivio } from "@/lib/credentials/modulo";
+import { PASSI_WIZARD, PASSO } from "@/lib/onboarding/passi";
+import type { ProgressoWizard } from "@/lib/onboarding/progresso";
+import type { ReteDelWizard, RiepilogoWizard } from "@/lib/onboarding/progresso-store";
+import {
+  etichettaPorta,
+  idsDaProvare,
+  riconciliaSceltaRete,
+  spostaScelta,
+  tipiDelModulo,
+  vociPerProtocollo,
+  vociSnmp,
+  vociWindows,
+  winrmPredefinita,
+  type SceltaRete,
+} from "@/lib/onboarding/credenziali-wizard";
+import {
+  ACCESSI_ROUTER,
+  MARCHE_ROUTER,
+  ROUTER_VUOTO,
+  corpoCreaRete,
+  corpoCreaRouter,
+  corpoModificaRouter,
+  corpoProvaRouter,
+  credenzialeValidaPer,
+  erroreRete,
+  erroreRouter,
+  moduloDaRouter,
+  tipoPerNuovaVoce,
+  usaSnmpSeparato,
+  type ModuloRouter,
+} from "@/lib/onboarding/corpi";
 
-const ROUTER_VENDORS = [
-  { value: "mikrotik", label: "MikroTik" },
-  { value: "ubiquiti", label: "Ubiquiti" },
-  { value: "cisco", label: "Cisco" },
-  { value: "stormshield", label: "Stormshield" },
-  { value: "other", label: "Altro" },
-] as const;
+/** Tipi offerti dal modulo nel wizard: quelli che l'archivio accetta, con le etichette di tipi.ts. */
+const OPZIONI_TIPO = tipiDelModulo(CRED_TYPE_OPTIONS.map((o) => o.value));
 
-const STEPS = [
-  { title: "Router / gateway", desc: "ARP e, se supportato, DHCP" },
-  { title: "DNS", desc: "Risoluzione nomi per le subnet" },
-  { title: "Credenziali", desc: "SNMP, SSH, Windows, Linux" },
-  { title: "Active Directory", desc: "Dominio e sincronizzazione (opz.)" },
-  { title: "Prima subnet", desc: "Rete da analizzare" },
-];
+const JSON_HEADERS = { "Content-Type": "application/json" };
+
+type Caricamento = { fase: "caricamento" } | { fase: "pronto" } | { fase: "errore"; messaggio: string };
+
+/** Dove va la voce creata dal modulo: solo nell'archivio, o anche scelta in una tendina. */
+type Destinazione = "archivio" | "router" | "router_snmp" | "ad";
+
+interface Finestra {
+  aperta: boolean;
+  stato: StatoModulo;
+  destinazione: Destinazione;
+}
+
+const AD_VUOTO = {
+  name: "Dominio principale",
+  dc_host: "",
+  domain: "",
+  base_dn: "",
+  username: "",
+  password: "",
+  use_ssl: true,
+  port: 636,
+};
 
 async function putSetting(key: string, value: string): Promise<void> {
-  const res = await fetch("/api/settings", {
+  const esito = await fetchJson<unknown>("/api/settings", {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: JSON_HEADERS,
     body: JSON.stringify({ key, value }),
   });
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(typeof data.error === "string" ? data.error : "Errore salvataggio impostazioni");
-  }
+  if (!esito.ok) throw new Error(esito.message);
 }
 
 export function OnboardingWizard() {
-  const [step, setStep] = useState(0);
+  const [avvio, setAvvio] = useState<Caricamento>({ fase: "caricamento" });
+  const [step, setStep] = useState<number>(PASSO.credenziali);
   const [busy, setBusy] = useState(false);
 
+  // Archivio delle credenziali, condiviso da tutti i passi.
+  const [voci, setVoci] = useState<VoceArchivio[]>([]);
+  const [statoVoci, setStatoVoci] = useState<Caricamento>({ fase: "caricamento" });
+  const [finestra, setFinestra] = useState<Finestra>({ aperta: false, stato: statoNuovo(), destinazione: "archivio" });
+
+  // Router: `routerSalvato` è ciò che sta nel database, per mandare solo i campi toccati.
   const [routerDeviceId, setRouterDeviceId] = useState<number | null>(null);
-  const [routerName, setRouterName] = useState("Router principale");
-  const [routerHost, setRouterHost] = useState("");
-  const [routerVendor, setRouterVendor] = useState<string>("mikrotik");
-  const [routerProtocol, setRouterProtocol] = useState<"ssh" | "snmp_v2">("ssh");
-  const [routerUser, setRouterUser] = useState("");
-  const [routerPass, setRouterPass] = useState("");
-  const [routerCommunity, setRouterCommunity] = useState("public");
+  const [routerSalvato, setRouterSalvato] = useState<ModuloRouter | null>(null);
+  const [router, setRouter] = useState<ModuloRouter>(ROUTER_VUOTO);
+  const [prova, setProva] = useState<{ ok: boolean; messaggio: string } | null>(null);
+  const [provando, setProvando] = useState(false);
 
   const [defaultDns, setDefaultDns] = useState("");
 
-  const [credSnmp, setCredSnmp] = useState({ enabled: true, name: "SNMP — scansione", community: "public" });
-  const [credSsh, setCredSsh] = useState({ enabled: false, name: "SSH — host Linux", user: "", pass: "" });
-  const [credWin, setCredWin] = useState({ enabled: false, name: "Windows — WinRM", user: "", pass: "" });
-  const [credLinux, setCredLinux] = useState({ enabled: false, name: "Linux — rilevamento", user: "", pass: "" });
-  const [credIds, setCredIds] = useState<{ snmp?: number; ssh?: number; windows?: number; linux?: number }>({});
-
   const [adEnabled, setAdEnabled] = useState(false);
-  const [adCreated, setAdCreated] = useState(false);
-  const [adForm, setAdForm] = useState({
-    name: "Dominio principale",
-    dc_host: "",
-    domain: "",
-    base_dn: "",
-    username: "",
-    password: "",
-    use_ssl: true,
-    port: 636,
-  });
+  const [adCreata, setAdCreata] = useState<{ id: number; name: string } | null>(null);
+  const [adForm, setAdForm] = useState(AD_VUOTO);
+  /** undefined = non toccata: vale la proposta (la voce Windows, se è una sola). */
+  const [adWinrm, setAdWinrm] = useState<number | null | undefined>(undefined);
 
   const [netName, setNetName] = useState("LAN principale");
   // Vuoto: «192.168.1.0/24» resta solo come suggerimento grigio (tappa 1). Un
   // valore precompilato veniva salvato così com'era da chi non lo cambiava.
   const [netCidr, setNetCidr] = useState("");
   const [netGateway, setNetGateway] = useState("");
-  // Rete già creata in questo giro: un nuovo tentativo dopo un completamento
-  // fallito non la ricrea (sarebbe rifiutata per sovrapposizione).
-  const [netCreataId, setNetCreataId] = useState<number | null>(null);
   const [netDns, setNetDns] = useState("");
-  const [attachSnmp, setAttachSnmp] = useState(true);
-  const [attachSsh, setAttachSsh] = useState(true);
-  const [attachWin, setAttachWin] = useState(true);
-  const [attachLinux, setAttachLinux] = useState(true);
+  // Rete già creata: un nuovo tentativo dopo un completamento fallito, o una
+  // riapertura, non la ricrea (sarebbe rifiutata per sovrapposizione).
+  const [reteCreata, setReteCreata] = useState<ReteDelWizard | null>(null);
+  /** null = non ancora toccata: tutte le voci, spuntate, nell'ordine predefinito. */
+  const [sceltaRete, setSceltaRete] = useState<SceltaRete[] | null>(null);
 
-  const finishAndExit = useCallback(async () => {
-    setBusy(true);
-    try {
-      // Verifica res.ok: fetch NON lancia su HTTP 4xx/5xx. Senza questo check, se
-      // /api/onboarding/complete fallisce il redirect avverrebbe comunque, l'app-shell
-      // rimanderebbe al wizard e l'utente non capirebbe perché (nessun errore mostrato).
-      const res = await fetch("/api/onboarding/complete", { method: "POST" });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(typeof data.error === "string" ? data.error : "Errore nel completamento della configurazione");
-      }
-      window.location.assign("/");
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Errore");
-    } finally {
-      setBusy(false);
+  const caricaVoci = useCallback(async (mostraCaricamento: boolean) => {
+    if (mostraCaricamento) setStatoVoci({ fase: "caricamento" });
+    // no-store: la GET delle credenziali ha una cache di 60 s, e dopo una
+    // modifica o un'eliminazione l'elenco tornerebbe com'era.
+    const esito = await fetchJson<VoceArchivio[]>("/api/credentials", { cache: "no-store" });
+    if (esito.ok) {
+      setVoci(esito.data);
+      setStatoVoci({ fase: "pronto" });
+    } else {
+      setStatoVoci({ fase: "errore", messaggio: esito.message });
     }
   }, []);
 
-  const saveRouter = useCallback(async () => {
-    if (!routerHost.trim()) {
-      setRouterDeviceId(null);
+  const caricaAvvio = useCallback(async (mostraCaricamento: boolean) => {
+    if (mostraCaricamento) setAvvio({ fase: "caricamento" });
+    const esito = await fetchJson<RiepilogoWizard>("/api/onboarding/progresso", { cache: "no-store" });
+    if (!esito.ok) {
+      setAvvio({ fase: "errore", messaggio: esito.message });
       return;
     }
-    if (routerDeviceId != null) {
-      return;
+    const r = esito.data;
+    if (r.avviso) toast.warning(r.avviso, { duration: 12000 });
+    if (r.router) {
+      const m = moduloDaRouter(r.router);
+      setRouter(m);
+      setRouterSalvato(m);
+      setRouterDeviceId(r.router.id);
     }
-    if (routerProtocol === "ssh" && (!routerUser.trim() || !routerPass)) {
-      toast.error("Per SSH inserire utente e password del router.");
-      throw new Error("validation");
+    if (r.rete) {
+      setReteCreata(r.rete);
+      setNetName(r.rete.name);
+      setNetCidr(r.rete.cidr);
+      setNetGateway(r.rete.gateway ?? "");
+      setNetDns(r.rete.dns_server ?? "");
     }
-    if (routerProtocol === "snmp_v2" && !routerCommunity.trim()) {
-      toast.error("Inserire la community SNMP.");
-      throw new Error("validation");
+    if (r.ad) {
+      setAdCreata(r.ad);
+      setAdEnabled(true);
     }
-    const body: Record<string, unknown> = {
-      name: routerName.trim() || "Router",
-      host: routerHost.trim(),
-      device_type: "router",
-      vendor: routerVendor,
-      protocol: routerProtocol,
-    };
-    if (routerProtocol === "ssh") {
-      body.username = routerUser.trim();
-      body.password = routerPass;
-      // Anche con protocollo primario SSH, invia la community SNMP per permettere
-      // scansioni porte, LLDP/CDP, STP e vendor profile (es. MikroTik via SNMP)
-      if (routerCommunity.trim()) {
-        body.community_string = routerCommunity.trim();
-      }
-    } else {
-      body.community_string = routerCommunity.trim();
-    }
-    const res = await fetch("/api/devices", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+    if (r.dns_predefinito) setDefaultDns(r.dns_predefinito);
+    if (r.progresso) setStep(r.progresso.passo);
+    setAvvio({ fase: "pronto" });
+  }, []);
+
+  useEffect(() => {
+    void caricaVoci(false);
+    void caricaAvvio(false);
+  }, [caricaVoci, caricaAvvio]);
+
+  /** Il punto da salvare, con gli oggetti creati finora (sovrascrivibili da chi li ha appena creati). */
+  const punto = (passo: number, oggetti: Partial<ProgressoWizard> = {}): ProgressoWizard => ({
+    passo,
+    router_device_id: routerDeviceId,
+    network_id: reteCreata?.id ?? null,
+    ad_integration_id: adCreata?.id ?? null,
+    ...oggetti,
+  });
+
+  const salvaPunto = async (p: ProgressoWizard): Promise<boolean> => {
+    const esito = await fetchJson<unknown>("/api/onboarding/progresso", {
+      method: "PUT",
+      headers: JSON_HEADERS,
+      body: JSON.stringify(p),
     });
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      throw new Error(typeof data.error === "string" ? data.error : "Creazione router fallita");
+    if (!esito.ok) {
+      toast.error(`Punto raggiunto non salvato: ${esito.message}. Riaprendo il wizard si ripartirebbe da un passo precedente.`);
     }
-    const created = (await res.json()) as { id: number };
-    setRouterDeviceId(created.id);
-    toast.success("Router registrato.");
-  }, [routerDeviceId, routerName, routerHost, routerVendor, routerProtocol, routerUser, routerPass, routerCommunity]);
+    return esito.ok;
+  };
 
-  const saveCredentials = useCallback(async () => {
-    const next: typeof credIds = { ...credIds };
-    let createdAny = false;
+  // ---------- archivio ----------
 
-    const postCred = async (name: string, type: string, user?: string, pass?: string) => {
-      const res = await fetch("/api/credentials", {
+  const apriNuova = (destinazione: Destinazione, tipo?: string) => {
+    setFinestra({ aperta: true, stato: statoNuovo(tipo), destinazione });
+  };
+
+  const apriModifica = async (v: VoceArchivio) => {
+    const stato = await caricaStatoModifica(v);
+    setFinestra({ aperta: true, stato, destinazione: "archivio" });
+  };
+
+  const aggiornaRouter = (campi: Partial<ModuloRouter>) => {
+    setRouter((r) => {
+      const n = { ...r, ...campi };
+      // Cambiando accesso, una voce che non vale più si toglie invece di restare nascosta.
+      if (campi.protocol !== undefined && !credenzialeValidaPer(n.credentialId, voci, n.protocol)) n.credentialId = null;
+      return n;
+    });
+    setProva(null);
+  };
+
+  const voceSalvata = (voce: VoceArchivio) => {
+    setVoci((prev) => [...prev.filter((x) => x.id !== voce.id), voce]);
+    void caricaVoci(false);
+    if (finestra.stato.editingId != null) return;
+    const nuova = [voce];
+    if (finestra.destinazione === "router") {
+      if (credenzialeValidaPer(voce.id, nuova, router.protocol)) aggiornaRouter({ credentialId: voce.id });
+      else toast.warning(`«${voce.name}» è nell'archivio, ma non vale per l'accesso scelto: non è stata selezionata`);
+    } else if (finestra.destinazione === "router_snmp") {
+      if (vociSnmp(nuova).length) aggiornaRouter({ snmpCredentialId: voce.id });
+      else toast.warning(`«${voce.name}» è nell'archivio, ma non è SNMP: non è stata selezionata`);
+    } else if (finestra.destinazione === "ad") {
+      if (vociWindows(nuova).length) setAdWinrm(voce.id);
+      else toast.warning(`«${voce.name}» è nell'archivio, ma non è Windows: non è stata selezionata`);
+    }
+  };
+
+  const eliminaVoce = async (v: VoceArchivio) => {
+    if (!confirm(`Eliminare la credenziale «${v.name}» dall'archivio?`)) return;
+    const esito = await fetchJson<unknown>(`/api/credentials/${v.id}`, { method: "DELETE" });
+    if (!esito.ok) {
+      toast.error(`Credenziale non eliminata: ${esito.message}`);
+      return;
+    }
+    toast.success("Credenziale eliminata");
+    setVoci((prev) => prev.filter((x) => x.id !== v.id));
+    void caricaVoci(false);
+  };
+
+  // ---------- router ----------
+
+  const salvaRouter = async (): Promise<number | null> => {
+    const errore = erroreRouter(router, routerDeviceId != null, voci);
+    if (errore) throw new Error(errore);
+    if (!router.host.trim()) return null; // passo saltato
+    if (routerDeviceId == null) {
+      const esito = await fetchJson<{ id: number }>("/api/devices", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name,
-          credential_type: type,
-          username: user,
-          password: pass,
-        }),
+        headers: JSON_HEADERS,
+        body: JSON.stringify(corpoCreaRouter(router)),
       });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(typeof data.error === "string" ? data.error : "Errore creazione credenziale");
+      if (!esito.ok) throw new Error(`Router non registrato: ${esito.message}`);
+      setRouterDeviceId(esito.data.id);
+      setRouterSalvato(router);
+      toast.success("Router registrato.");
+      return esito.data.id;
+    }
+    const corpo = corpoModificaRouter(routerSalvato ?? router, router);
+    if (Object.keys(corpo).length === 0) return routerDeviceId;
+    const esito = await fetchJson<unknown>(`/api/devices/${routerDeviceId}`, {
+      method: "PUT",
+      headers: JSON_HEADERS,
+      body: JSON.stringify(corpo),
+    });
+    if (!esito.ok) throw new Error(`Router non aggiornato: ${esito.message}`);
+    setRouterSalvato(router);
+    toast.success("Router aggiornato.");
+    return routerDeviceId;
+  };
+
+  const provaConnessione = async () => {
+    setProvando(true);
+    setProva(null);
+    try {
+      const esito = await fetchJson<{ success: boolean; message?: string; error?: string }>("/api/devices/test-provisional", {
+        method: "POST",
+        headers: JSON_HEADERS,
+        body: JSON.stringify(corpoProvaRouter(router, voci)),
+      });
+      if (!esito.ok) {
+        setProva({ ok: false, messaggio: esito.message });
+      } else if (esito.data.success) {
+        setProva({ ok: true, messaggio: esito.data.message || "Connessione riuscita" });
+      } else {
+        setProva({ ok: false, messaggio: esito.data.error || "Connessione non riuscita" });
       }
-      return ((await res.json()) as { id: number }).id;
-    };
+    } finally {
+      setProvando(false);
+    }
+  };
 
-    if (credSnmp.enabled && credSnmp.community.trim() && next.snmp === undefined) {
-      next.snmp = await postCred(credSnmp.name.trim() || "SNMP", "snmp", undefined, credSnmp.community.trim());
-      createdAny = true;
-    }
-    if (credSsh.enabled && credSsh.user.trim() && credSsh.pass && next.ssh === undefined) {
-      next.ssh = await postCred(credSsh.name.trim() || "SSH", "ssh", credSsh.user.trim(), credSsh.pass);
-      createdAny = true;
-    }
-    if (credWin.enabled && credWin.user.trim() && credWin.pass && next.windows === undefined) {
-      next.windows = await postCred(credWin.name.trim() || "Windows", "windows", credWin.user.trim(), credWin.pass);
-      createdAny = true;
-    }
-    if (credLinux.enabled && credLinux.user.trim() && credLinux.pass && next.linux === undefined) {
-      next.linux = await postCred(credLinux.name.trim() || "Linux", "linux", credLinux.user.trim(), credLinux.pass);
-      createdAny = true;
-    }
+  // ---------- Active Directory ----------
 
-    setCredIds(next);
+  const winrmScelta = adWinrm === undefined ? winrmPredefinita(voci) : adWinrm;
+  const winrmValida = winrmScelta != null && vociWindows(voci).some((v) => v.id === winrmScelta) ? winrmScelta : null;
 
-    if (next.windows !== undefined) {
-      await putSetting("host_windows_credential_id", String(next.windows));
-    }
-    if (next.linux !== undefined) {
-      await putSetting("host_linux_credential_id", String(next.linux));
-    }
-
-    if (createdAny) {
-      toast.success("Credenziali salvate.");
-    }
-  }, [credSnmp, credSsh, credWin, credLinux, credIds]);
-
-  const saveAd = useCallback(async () => {
-    if (!adEnabled) return;
-    if (adCreated) return;
+  const salvaAd = async (): Promise<number | null> => {
+    if (adCreata) return adCreata.id; // già creata: si modifica dalla pagina Active Directory
+    if (!adEnabled) return null;
     if (!adForm.dc_host.trim() || !adForm.domain.trim() || !adForm.base_dn.trim() || !adForm.username.trim() || !adForm.password) {
-      toast.error("Compila tutti i campi obbligatori per Active Directory.");
-      throw new Error("validation");
+      throw new Error("Compila tutti i campi obbligatori per Active Directory.");
     }
-    const res = await fetch("/api/ad", {
+    const esito = await fetchJson<{ id: number; name: string }>("/api/ad", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: JSON_HEADERS,
       body: JSON.stringify({
         name: adForm.name.trim() || "Active Directory",
         dc_host: adForm.dc_host.trim(),
@@ -232,457 +347,704 @@ export function OnboardingWizard() {
         use_ssl: adForm.use_ssl,
         port: adForm.port,
         enabled: true,
-        winrm_credential_id: credIds.windows ?? null,
+        winrm_credential_id: winrmValida,
       }),
     });
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      throw new Error(typeof data.error === "string" ? data.error : "Errore integrazione AD");
-    }
-    setAdCreated(true);
+    if (!esito.ok) throw new Error(`Integrazione Active Directory non creata: ${esito.message}`);
+    setAdCreata({ id: esito.data.id, name: esito.data.name });
     toast.success("Integrazione Active Directory creata. I lease DHCP Microsoft saranno disponibili dopo la sincronizzazione dalla pagina Active Directory.");
-  }, [adEnabled, adCreated, adForm, credIds.windows]);
+    return esito.data.id;
+  };
 
-  const saveNetwork = useCallback(async () => {
-    if (netCreataId !== null) {
-      const fine = await fetch("/api/onboarding/complete", { method: "POST" });
-      if (!fine.ok) {
-        const data = await fine.json().catch(() => ({}));
-        throw new Error(typeof data.error === "string" ? data.error : "Il completamento della configurazione non è riuscito");
-      }
-      window.location.assign(`/networks/${netCreataId}`);
-      return;
-    }
-    if (!netName.trim() || !netCidr.trim()) {
-      toast.error("Nome e CIDR della rete sono obbligatori.");
-      throw new Error("validation");
-    }
-    const dnsMerged = netDns.trim() || defaultDns.trim();
-    const body: Record<string, unknown> = {
-      name: netName.trim(),
-      cidr: netCidr.trim(),
-      description: "",
-      gateway: netGateway.trim() || "",
-      dns_server: dnsMerged || null,
-      router_id: routerDeviceId ?? undefined,
-    };
-    // Lista credenziali nuova della rete (tappa 1): è quella che mostra la pagina
-    // della rete e che legge la validazione. Prima il wizard scriveva le quattro
-    // catene vecchie per ruolo, e la rete appena creata sembrava senza credenziali.
-    const credentialIds: number[] = [];
-    if (attachSnmp && credIds.snmp !== undefined) credentialIds.push(credIds.snmp);
-    if (attachSsh && credIds.ssh !== undefined) credentialIds.push(credIds.ssh);
-    if (attachWin && credIds.windows !== undefined) credentialIds.push(credIds.windows);
-    if (attachLinux && credIds.linux !== undefined) credentialIds.push(credIds.linux);
-    if (credentialIds.length > 0) body.credential_ids = credentialIds;
-
-    const res = await fetch("/api/networks", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      throw new Error(typeof data.error === "string" ? data.error : "Errore creazione rete");
-    }
-    const net = (await res.json()) as { id: number };
-    setNetCreataId(net.id);
-    toast.success("Rete creata.");
-    // Come finishAndExit: un completamento fallito si dice, altrimenti l'app
-    // rimanderebbe al wizard senza spiegare perché.
-    const fine = await fetch("/api/onboarding/complete", { method: "POST" });
-    if (!fine.ok) {
-      const data = await fine.json().catch(() => ({}));
-      throw new Error(typeof data.error === "string" ? data.error : "Rete creata, ma il completamento della configurazione non è riuscito");
-    }
-    window.location.assign(`/networks/${net.id}`);
-  }, [
-    netName,
-    netCidr,
-    netGateway,
-    netDns,
-    defaultDns,
-    routerDeviceId,
-    credIds,
-    attachSnmp,
-    attachSsh,
-    attachWin,
-    attachLinux,
-    netCreataId,
-  ]);
+  // ---------- navigazione ----------
 
   const goNext = async () => {
     setBusy(true);
     try {
-      if (step === 0) {
-        if (routerHost.trim()) {
-          await saveRouter();
-        } else {
-          setRouterDeviceId(null);
-        }
-      }
-      if (step === 1 && defaultDns.trim()) {
-        await putSetting("default_network_dns", defaultDns.trim());
-      }
-      if (step === 2) {
-        await saveCredentials();
-      }
-      if (step === 3) {
-        await saveAd();
-      }
-      setStep((s) => Math.min(s + 1, STEPS.length - 1));
+      let idRouter = routerDeviceId;
+      let idAd = adCreata?.id ?? null;
+      if (step === PASSO.router) idRouter = await salvaRouter();
+      if (step === PASSO.dns && defaultDns.trim()) await putSetting("default_network_dns", defaultDns.trim());
+      if (step === PASSO.ad) idAd = await salvaAd();
+      const prossimo = Math.min(step + 1, PASSI_WIZARD.length - 1);
+      await salvaPunto(punto(prossimo, { router_device_id: idRouter, ad_integration_id: idAd }));
+      setStep(prossimo);
     } catch (e) {
-      if (e instanceof Error && e.message !== "validation") {
-        toast.error(e.message);
-      }
+      toast.error(e instanceof Error ? e.message : "Errore");
     } finally {
       setBusy(false);
     }
   };
 
-  const goBack = () => setStep((s) => Math.max(0, s - 1));
+  const goBack = () => {
+    const prima = Math.max(0, step - 1);
+    setStep(prima);
+    void salvaPunto(punto(prima));
+  };
+
+  /** «Esci» e «Salta creazione rete»: il wizard risulta completato, ma il punto resta per la riapertura. */
+  const esci = async () => {
+    setBusy(true);
+    try {
+      const salvato = await salvaPunto(punto(step));
+      if (!salvato && !confirm("Il punto raggiunto non è stato salvato: riaprendo il wizard si ripartirà da un passo precedente. Uscire comunque?")) {
+        return;
+      }
+      // fetch non lancia su HTTP 4xx/5xx: senza questo controllo l'app rimanderebbe
+      // al wizard senza dire perché.
+      const fine = await fetchJson<unknown>("/api/onboarding/complete", { method: "POST" });
+      if (!fine.ok) throw new Error(`Completamento della configurazione non riuscito: ${fine.message}`);
+      window.location.assign("/");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Errore");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const listaRete = riconciliaSceltaRete(sceltaRete, voci);
 
   const onSubmitLast = async () => {
     setBusy(true);
     try {
-      await saveNetwork();
-    } catch (e) {
-      if (e instanceof Error && e.message !== "validation") {
-        toast.error(e.message);
+      let rete = reteCreata;
+      let appenaCreata = false;
+      if (!rete) {
+        const errore = erroreRete({ name: netName, cidr: netCidr });
+        if (errore) throw new Error(errore);
+        const esito = await fetchJson<ReteDelWizard>("/api/networks", {
+          method: "POST",
+          headers: JSON_HEADERS,
+          body: JSON.stringify(
+            corpoCreaRete({
+              name: netName,
+              cidr: netCidr,
+              gateway: netGateway,
+              dns: netDns,
+              dnsPredefinito: defaultDns,
+              routerId: routerDeviceId,
+              credentialIds: idsDaProvare(listaRete),
+            }),
+          ),
+        });
+        if (!esito.ok) throw new Error(`Rete non creata: ${esito.message}`);
+        rete = {
+          id: esito.data.id,
+          name: esito.data.name,
+          cidr: esito.data.cidr,
+          gateway: esito.data.gateway ?? null,
+          dns_server: esito.data.dns_server ?? null,
+        };
+        setReteCreata(rete);
+        appenaCreata = true;
+        toast.success("Rete creata.");
+        await salvaPunto(punto(PASSO.subnet, { network_id: rete.id }));
       }
+      const fine = await fetchJson<unknown>("/api/onboarding/complete", { method: "POST" });
+      if (!fine.ok) {
+        throw new Error(
+          appenaCreata
+            ? `Rete creata, ma il completamento della configurazione non è riuscito: ${fine.message}`
+            : `Completamento della configurazione non riuscito: ${fine.message}`,
+        );
+      }
+      window.location.assign(`/networks/${rete.id}`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Errore");
     } finally {
       setBusy(false);
     }
   };
 
-  // Prefill DNS from step 2 when entering step 5
-  const dnsForNetwork = netDns || defaultDns;
+  const ultimo = step === PASSI_WIZARD.length - 1;
+  const passo = PASSI_WIZARD[step];
 
   return (
-    <Card className="w-full max-w-lg border-border/80 shadow-lg">
+    <Card className="w-full max-w-2xl border-border/80 shadow-lg">
       <CardHeader className="text-center space-y-3 pb-2">
         <div className="flex justify-center rounded-md bg-[#0D2537] px-6 py-4">
+          {/* eslint-disable-next-line @next/next/no-img-element -- logo statico, come prima */}
           <img src="/logo-white.png" alt="DA-IPAM" className="h-12 w-auto max-w-[260px] object-contain" />
         </div>
         <CardTitle className="text-xl">Configurazione iniziale</CardTitle>
         <CardDescription>
-          Passo {step + 1} di {STEPS.length}: {STEPS[step].title}
+          Passo {step + 1} di {PASSI_WIZARD.length}: {passo.titolo}
         </CardDescription>
-        <p className="text-xs text-muted-foreground">{STEPS[step].desc}</p>
+        <p className="text-[13px] text-muted-foreground">{passo.descrizione}</p>
         <div className="flex gap-1 justify-center pt-1">
-          {STEPS.map((_, i) => (
+          {PASSI_WIZARD.map((p, i) => (
             <div
-              key={i}
+              key={p.titolo}
               className={`h-1.5 rounded-full transition-all ${i === step ? "w-8 bg-primary" : i < step ? "w-2 bg-primary/60" : "w-2 bg-muted"}`}
             />
           ))}
         </div>
       </CardHeader>
       <CardContent className="space-y-4 pt-0">
-        {step === 0 && (
-          <div className="space-y-3 text-sm">
-            <p className="text-muted-foreground">
-              Il router viene usato per la cache ARP e, se il vendor è supportato, per importare i lease DHCP. Potrai associarlo alla subnet al passo finale.
-            </p>
-            <div className="space-y-2">
-              <Label htmlFor="rname">Nome</Label>
-              <Input id="rname" value={routerName} onChange={(e) => setRouterName(e.target.value)} placeholder="Router principale" />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="rhost">IP o hostname del router</Label>
-              <Input
-                id="rhost"
-                value={routerHost}
-                onChange={(e) => setRouterHost(e.target.value)}
-                placeholder="192.168.1.1 — lascia vuoto per saltare"
-              />
-            </div>
-            {routerHost.trim() ? (
-              <>
-                <div className="space-y-2">
-                  <Label>Vendor</Label>
-                  <Select value={routerVendor} onValueChange={(v) => v && setRouterVendor(v)}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {ROUTER_VENDORS.map((v) => (
-                        <SelectItem key={v.value} value={v.value}>
-                          {v.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+        {avvio.fase === "caricamento" ? (
+          <p className="py-8 text-center text-sm text-muted-foreground">
+            <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+            Caricamento della configurazione…
+          </p>
+        ) : avvio.fase === "errore" ? (
+          <LoadError what="il punto raggiunto nel wizard" message={avvio.messaggio} onRetry={() => void caricaAvvio(true)} />
+        ) : (
+          <>
+            {step === PASSO.credenziali && (
+              <div className="space-y-3 text-sm">
+                <p className="text-muted-foreground">
+                  Le credenziali stanno in un archivio unico: router, Active Directory e prima subnet le scelgono da qui, senza
+                  chiederle di nuovo. Puoi inserirne più di una per tipo, oppure andare avanti anche con l&apos;archivio vuoto.
+                </p>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium">
+                    {statoVoci.fase === "pronto" ? `${voci.length} ${voci.length === 1 ? "voce" : "voci"} nell'archivio` : "Archivio"}
+                  </span>
+                  <Button type="button" size="sm" onClick={() => apriNuova("archivio")} disabled={busy}>
+                    <Plus className="h-4 w-4" />
+                    Aggiungi
+                  </Button>
                 </div>
-                <div className="space-y-2">
-                  <Label>Accesso</Label>
-                  <Select
-                    value={routerProtocol}
-                    onValueChange={(v) => v && setRouterProtocol(v as "ssh" | "snmp_v2")}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="ssh">SSH</SelectItem>
-                      <SelectItem value="snmp_v2">SNMP v2 (community)</SelectItem>
-                    </SelectContent>
-                  </Select>
+                <ArchivioVoci
+                  stato={statoVoci}
+                  voci={voci}
+                  onModifica={(v) => void apriModifica(v)}
+                  onElimina={(v) => void eliminaVoce(v)}
+                  onRiprova={() => void caricaVoci(true)}
+                />
+              </div>
+            )}
+
+            {step === PASSO.router && (
+              <div className="space-y-3 text-sm">
+                <p className="text-muted-foreground">
+                  Il router serve per la cache ARP e, se la marca è supportata, per importare i lease DHCP. Sarà collegato alla
+                  subnet all&apos;ultimo passo. Lascia vuoto l&apos;IP per saltare.
+                </p>
+                {routerDeviceId != null && <Nota>Router già registrato: le modifiche si salvano con «Avanti».</Nota>}
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="rname">Nome</Label>
+                    <Input id="rname" value={router.name} onChange={(e) => aggiornaRouter({ name: e.target.value })} placeholder="Router principale" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="rhost">IP o hostname</Label>
+                    <Input
+                      id="rhost"
+                      value={router.host}
+                      onChange={(e) => aggiornaRouter({ host: e.target.value })}
+                      placeholder="192.168.1.1 — vuoto per saltare"
+                    />
+                  </div>
                 </div>
-                {routerProtocol === "ssh" ? (
+                {router.host.trim() ? (
                   <>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid gap-3 sm:grid-cols-2">
                       <div className="space-y-2">
-                        <Label>Utente SSH</Label>
-                        <Input value={routerUser} onChange={(e) => setRouterUser(e.target.value)} autoComplete="off" />
+                        <Label>Marca</Label>
+                        <Select value={router.vendor} onValueChange={(v) => v && aggiornaRouter({ vendor: String(v) })}>
+                          <SelectTrigger className="w-full">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {MARCHE_ROUTER.map((m) => (
+                              <SelectItem key={m.value} value={m.value}>
+                                {m.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </div>
                       <div className="space-y-2">
-                        <Label>Password SSH</Label>
-                        <Input type="password" value={routerPass} onChange={(e) => setRouterPass(e.target.value)} autoComplete="new-password" />
+                        <Label>Accesso</Label>
+                        <Select value={router.protocol} onValueChange={(v) => v && aggiornaRouter({ protocol: String(v) })}>
+                          <SelectTrigger className="w-full">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {ACCESSI_ROUTER.map((a) => (
+                              <SelectItem key={a.value} value={a.value}>
+                                {a.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </div>
                     </div>
+                    <TendinaVoci
+                      id="rcred"
+                      label="Credenziale"
+                      voci={vociPerProtocollo(voci, router.protocol)}
+                      valore={credenzialeValidaPer(router.credentialId, voci, router.protocol) ? router.credentialId : null}
+                      segnaposto="Scegli una voce dell'archivio"
+                      vuota="Nessuna voce adatta a questo accesso nell'archivio: creane una."
+                      onCambia={(id) => aggiornaRouter({ credentialId: id })}
+                      onNuova={() => apriNuova("router", tipoPerNuovaVoce(router.protocol))}
+                      disabled={busy}
+                    />
+                    {usaSnmpSeparato(router.protocol) && (
+                      <TendinaVoci
+                        id="rsnmp"
+                        label="SNMP per porte/LLDP"
+                        voci={vociSnmp(voci)}
+                        valore={router.snmpCredentialId != null && vociSnmp(voci).some((v) => v.id === router.snmpCredentialId) ? router.snmpCredentialId : null}
+                        nessuna="Nessuna"
+                        nota="Serve per porte, LLDP/CDP, spanning tree e dati della marca via SNMP."
+                        onCambia={(id) => aggiornaRouter({ snmpCredentialId: id })}
+                        onNuova={() => apriNuova("router_snmp", "snmp")}
+                        disabled={busy}
+                      />
+                    )}
+                    <ErroreArchivio stato={statoVoci} onRiprova={() => void caricaVoci(true)} />
                     <div className="space-y-2">
-                      <Label>Community SNMP (per scansione porte, LLDP, STP)</Label>
-                      <Input value={routerCommunity} onChange={(e) => setRouterCommunity(e.target.value)} placeholder="public" />
-                      <p className="text-xs text-muted-foreground">
-                        Necessaria per rilevare porte, LLDP/CDP, Spanning Tree e dati vendor via SNMP.
-                      </p>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => void provaConnessione()}
+                        disabled={provando || busy || !credenzialeValidaPer(router.credentialId, voci, router.protocol)}
+                      >
+                        {provando ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                        Prova connessione
+                      </Button>
+                      {prova && <EsitoProva ok={prova.ok} messaggio={prova.messaggio} />}
                     </div>
                   </>
-                ) : (
-                  <div className="space-y-2">
-                    <Label>Community SNMP</Label>
-                    <Input value={routerCommunity} onChange={(e) => setRouterCommunity(e.target.value)} />
-                  </div>
-                )}
-              </>
-            ) : null}
-          </div>
-        )}
-
-        {step === 1 && (
-          <div className="space-y-3 text-sm">
-            <p className="text-muted-foreground">
-              DNS usato per le query dalla subnet (risoluzione forward/reverse durante le scansioni). Sarà proposto come predefinito per la prima rete.
-            </p>
-            <div className="space-y-2">
-              <Label htmlFor="dns">Server DNS (solo IP)</Label>
-              <Input id="dns" value={defaultDns} onChange={(e) => setDefaultDns(e.target.value)} placeholder="es. 192.168.1.1 o DNS interno" />
-            </div>
-          </div>
-        )}
-
-        {step === 2 && (
-          <div className="space-y-4 text-sm max-h-[55vh] overflow-y-auto pr-1">
-            <p className="text-muted-foreground">
-              Credenziali archiviate per provare automaticamente SNMP, SSH e accesso host Windows/Linux durante le analisi. Potrai modificarle in Network → Credenziali.
-            </p>
-
-            <div className="rounded-lg border p-3 space-y-2">
-              <div className="flex items-center gap-2">
-                <Checkbox id="csnmp" checked={credSnmp.enabled} onCheckedChange={(c) => setCredSnmp((x) => ({ ...x, enabled: !!c }))} />
-                <Label htmlFor="csnmp">SNMP (community)</Label>
+                ) : null}
               </div>
-              {credSnmp.enabled && (
-                <>
-                  <Input
-                    placeholder="Nome etichetta"
-                    value={credSnmp.name}
-                    onChange={(e) => setCredSnmp((x) => ({ ...x, name: e.target.value }))}
-                  />
-                  <Input
-                    placeholder="Community"
-                    value={credSnmp.community}
-                    onChange={(e) => setCredSnmp((x) => ({ ...x, community: e.target.value }))}
-                  />
-                </>
-              )}
-            </div>
+            )}
 
-            <div className="rounded-lg border p-3 space-y-2">
-              <div className="flex items-center gap-2">
-                <Checkbox id="cssh" checked={credSsh.enabled} onCheckedChange={(c) => setCredSsh((x) => ({ ...x, enabled: !!c }))} />
-                <Label htmlFor="cssh">SSH</Label>
-              </div>
-              {credSsh.enabled && (
-                <>
-                  <Input placeholder="Nome" value={credSsh.name} onChange={(e) => setCredSsh((x) => ({ ...x, name: e.target.value }))} />
-                  <Input placeholder="Utente" value={credSsh.user} onChange={(e) => setCredSsh((x) => ({ ...x, user: e.target.value }))} />
-                  <Input
-                    type="password"
-                    placeholder="Password"
-                    value={credSsh.pass}
-                    onChange={(e) => setCredSsh((x) => ({ ...x, pass: e.target.value }))}
-                  />
-                </>
-              )}
-            </div>
-
-            <div className="rounded-lg border p-3 space-y-2">
-              <div className="flex items-center gap-2">
-                <Checkbox id="cwin" checked={credWin.enabled} onCheckedChange={(c) => setCredWin((x) => ({ ...x, enabled: !!c }))} />
-                <Label htmlFor="cwin">Windows (WinRM)</Label>
-              </div>
-              {credWin.enabled && (
-                <>
-                  <Input placeholder="Nome" value={credWin.name} onChange={(e) => setCredWin((x) => ({ ...x, name: e.target.value }))} />
-                  <Input placeholder="Utente (dominio\\utente o UPN)" value={credWin.user} onChange={(e) => setCredWin((x) => ({ ...x, user: e.target.value }))} />
-                  <Input
-                    type="password"
-                    placeholder="Password"
-                    value={credWin.pass}
-                    onChange={(e) => setCredWin((x) => ({ ...x, pass: e.target.value }))}
-                  />
-                </>
-              )}
-            </div>
-
-            <div className="rounded-lg border p-3 space-y-2">
-              <div className="flex items-center gap-2">
-                <Checkbox id="clin" checked={credLinux.enabled} onCheckedChange={(c) => setCredLinux((x) => ({ ...x, enabled: !!c }))} />
-                <Label htmlFor="clin">Linux (SSH rilevamento)</Label>
-              </div>
-              {credLinux.enabled && (
-                <>
-                  <Input placeholder="Nome" value={credLinux.name} onChange={(e) => setCredLinux((x) => ({ ...x, name: e.target.value }))} />
-                  <Input placeholder="Utente" value={credLinux.user} onChange={(e) => setCredLinux((x) => ({ ...x, user: e.target.value }))} />
-                  <Input
-                    type="password"
-                    placeholder="Password"
-                    value={credLinux.pass}
-                    onChange={(e) => setCredLinux((x) => ({ ...x, pass: e.target.value }))}
-                  />
-                </>
-              )}
-            </div>
-          </div>
-        )}
-
-        {step === 3 && (
-          <div className="space-y-3 text-sm">
-            <div className="flex items-center gap-2">
-              <Checkbox id="aden" checked={adEnabled} onCheckedChange={(c) => setAdEnabled(!!c)} />
-              <Label htmlFor="aden">Collega un dominio Active Directory</Label>
-            </div>
-            {adEnabled ? (
-              <div className="space-y-2">
-                <Input placeholder="Nome integrazione" value={adForm.name} onChange={(e) => setAdForm((f) => ({ ...f, name: e.target.value }))} />
-                <Input placeholder="Host DC (es. dc.corp.local)" value={adForm.dc_host} onChange={(e) => setAdForm((f) => ({ ...f, dc_host: e.target.value }))} />
-                <Input placeholder="Dominio (es. corp.local)" value={adForm.domain} onChange={(e) => setAdForm((f) => ({ ...f, domain: e.target.value }))} />
-                <Input placeholder="Base DN (es. DC=corp,DC=local)" value={adForm.base_dn} onChange={(e) => setAdForm((f) => ({ ...f, base_dn: e.target.value }))} />
-                <Input placeholder="Utente LDAP" value={adForm.username} onChange={(e) => setAdForm((f) => ({ ...f, username: e.target.value }))} />
-                <Input
-                  type="password"
-                  placeholder="Password"
-                  value={adForm.password}
-                  onChange={(e) => setAdForm((f) => ({ ...f, password: e.target.value }))}
-                />
-                <div className="flex items-center gap-2">
-                  <Checkbox id="adssl" checked={adForm.use_ssl} onCheckedChange={(c) => setAdForm((f) => ({ ...f, use_ssl: !!c, port: c ? 636 : 389 }))} />
-                  <Label htmlFor="adssl">LDAPS (consigliato)</Label>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Dopo la configurazione, dalla pagina Active Directory potrai sincronizzare computer, utenti e — se usi DHCP Microsoft — anche i lease.
-                  {credIds.windows ? " È stata collegata la credenziale Windows creata al passo precedente per WinRM ove necessario." : ""}
+            {step === PASSO.dns && (
+              <div className="space-y-3 text-sm">
+                <p className="text-muted-foreground">
+                  DNS usato per le query dalla subnet (risoluzione forward/reverse durante le scansioni). Sarà proposto come
+                  predefinito per la prima rete.
                 </p>
+                <div className="space-y-2">
+                  <Label htmlFor="dns">Server DNS (solo IP)</Label>
+                  <Input id="dns" value={defaultDns} onChange={(e) => setDefaultDns(e.target.value)} placeholder="es. 192.168.1.1 o DNS interno" />
+                </div>
               </div>
-            ) : (
-              <p className="text-muted-foreground text-xs">Puoi aggiungere Active Directory in seguito dal menu dedicato.</p>
             )}
-          </div>
-        )}
 
-        {step === 4 && (
-          <div className="space-y-3 text-sm">
-            <p className="text-muted-foreground">
-              Crea la prima subnet da analizzare usando router, DNS e credenziali già impostati. Potrai avviare scansioni dalla scheda rete.
-            </p>
-            <div className="space-y-2">
-              <Label>Nome</Label>
-              <Input value={netName} onChange={(e) => setNetName(e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label>CIDR</Label>
-              <Input value={netCidr} onChange={(e) => setNetCidr(e.target.value)} placeholder="192.168.1.0/24" />
-            </div>
-            <div className="space-y-2">
-              <Label>Gateway (opz.)</Label>
-              <Input value={netGateway} onChange={(e) => setNetGateway(e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label>DNS per questa subnet</Label>
-              <Input value={netDns || defaultDns} onChange={(e) => setNetDns(e.target.value)} placeholder={defaultDns || "es. 192.168.1.1"} />
-            </div>
-            {routerDeviceId ? (
-              <p className="text-xs text-muted-foreground">Router associato: ID {routerDeviceId} (collegato automaticamente).</p>
-            ) : (
-              <p className="text-xs text-muted-foreground">Nessun router associato: potrai collegarlo modificando la rete.</p>
-            )}
-            <div className="space-y-2 rounded-lg border p-2">
-              <p className="text-xs font-medium">Collega credenziali alla rete (tentativi in ordine)</p>
-              {credIds.snmp !== undefined && (
-                <div className="flex items-center gap-2">
-                  <Checkbox id="an1" checked={attachSnmp} onCheckedChange={(c) => setAttachSnmp(!!c)} />
-                  <Label htmlFor="an1">SNMP</Label>
-                </div>
-              )}
-              {credIds.ssh !== undefined && (
-                <div className="flex items-center gap-2">
-                  <Checkbox id="an2" checked={attachSsh} onCheckedChange={(c) => setAttachSsh(!!c)} />
-                  <Label htmlFor="an2">SSH</Label>
-                </div>
-              )}
-              {credIds.windows !== undefined && (
-                <div className="flex items-center gap-2">
-                  <Checkbox id="an3" checked={attachWin} onCheckedChange={(c) => setAttachWin(!!c)} />
-                  <Label htmlFor="an3">Windows</Label>
-                </div>
-              )}
-              {credIds.linux !== undefined && (
-                <div className="flex items-center gap-2">
-                  <Checkbox id="an4" checked={attachLinux} onCheckedChange={(c) => setAttachLinux(!!c)} />
-                  <Label htmlFor="an4">Linux (host)</Label>
-                </div>
-              )}
-              {credIds.snmp === undefined &&
-                credIds.ssh === undefined &&
-                credIds.windows === undefined &&
-                credIds.linux === undefined && (
-                  <p className="text-xs text-muted-foreground">Nessuna credenziale creata al passo 3: potrai assegnarle dopo.</p>
+            {step === PASSO.ad && (
+              <div className="space-y-3 text-sm">
+                {adCreata ? (
+                  <Nota>
+                    Dominio già collegato: «{adCreata.name}». Le modifiche si fanno dalla pagina Active Directory.
+                  </Nota>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <Checkbox id="aden" checked={adEnabled} onCheckedChange={(c) => setAdEnabled(!!c)} />
+                      <Label htmlFor="aden">Collega un dominio Active Directory</Label>
+                    </div>
+                    {adEnabled ? (
+                      <div className="space-y-2">
+                        <Input placeholder="Nome integrazione" value={adForm.name} onChange={(e) => setAdForm((f) => ({ ...f, name: e.target.value }))} />
+                        <Input placeholder="Host DC (es. dc.corp.local)" value={adForm.dc_host} onChange={(e) => setAdForm((f) => ({ ...f, dc_host: e.target.value }))} />
+                        <Input placeholder="Dominio (es. corp.local)" value={adForm.domain} onChange={(e) => setAdForm((f) => ({ ...f, domain: e.target.value }))} />
+                        <Input placeholder="Base DN (es. DC=corp,DC=local)" value={adForm.base_dn} onChange={(e) => setAdForm((f) => ({ ...f, base_dn: e.target.value }))} />
+                        <Input placeholder="Utente LDAP" value={adForm.username} onChange={(e) => setAdForm((f) => ({ ...f, username: e.target.value }))} />
+                        <Input
+                          type="password"
+                          placeholder="Password"
+                          value={adForm.password}
+                          onChange={(e) => setAdForm((f) => ({ ...f, password: e.target.value }))}
+                        />
+                        <div className="flex items-center gap-2">
+                          <Checkbox id="adssl" checked={adForm.use_ssl} onCheckedChange={(c) => setAdForm((f) => ({ ...f, use_ssl: !!c, port: c ? 636 : 389 }))} />
+                          <Label htmlFor="adssl">LDAPS (consigliato)</Label>
+                        </div>
+                        <TendinaVoci
+                          id="adwinrm"
+                          label="Credenziale WinRM collegata"
+                          voci={vociWindows(voci)}
+                          valore={winrmValida}
+                          nessuna="Nessuna"
+                          nota="Una voce Windows dell'archivio, per i comandi WinRM verso i controller di dominio."
+                          onCambia={(id) => setAdWinrm(id)}
+                          onNuova={() => apriNuova("ad", "windows")}
+                          disabled={busy}
+                        />
+                        <ErroreArchivio stato={statoVoci} onRiprova={() => void caricaVoci(true)} />
+                        <p className="text-[13px] text-muted-foreground">
+                          Dopo la configurazione, dalla pagina Active Directory potrai sincronizzare computer, utenti e — se usi DHCP
+                          Microsoft — anche i lease.
+                        </p>
+                      </div>
+                    ) : (
+                      <p className="text-muted-foreground text-[13px]">Puoi aggiungere Active Directory in seguito dal menu dedicato.</p>
+                    )}
+                  </>
                 )}
-            </div>
-          </div>
-        )}
+              </div>
+            )}
 
-        <div className="flex flex-col gap-2 pt-2">
-          {step < 4 ? (
-            <div className="flex gap-2 justify-between">
-              <Button type="button" variant="outline" size="sm" onClick={goBack} disabled={step === 0 || busy}>
-                <ChevronLeft className="h-4 w-4 mr-1" />
-                Indietro
-              </Button>
-              <Button type="button" size="sm" onClick={goNext} disabled={busy}>
-                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                Avanti
-                <ChevronRight className="h-4 w-4 ml-1" />
+            {step === PASSO.subnet && (
+              <div className="space-y-3 text-sm">
+                {reteCreata ? (
+                  <Nota>
+                    Rete già creata: «{reteCreata.name}» ({reteCreata.cidr}). «Completa e apri la rete» chiude la configurazione; le
+                    credenziali della rete si cambiano dalla sua pagina.
+                  </Nota>
+                ) : (
+                  <>
+                    <p className="text-muted-foreground">
+                      Crea la prima subnet da analizzare con il router, il DNS e le credenziali già impostati. Potrai avviare le
+                      scansioni dalla scheda della rete.
+                    </p>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="nname">Nome</Label>
+                        <Input id="nname" value={netName} onChange={(e) => setNetName(e.target.value)} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="ncidr">CIDR</Label>
+                        <Input id="ncidr" value={netCidr} onChange={(e) => setNetCidr(e.target.value)} placeholder="192.168.1.0/24" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="ngw">Gateway (opz.)</Label>
+                        <Input id="ngw" value={netGateway} onChange={(e) => setNetGateway(e.target.value)} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="ndns">DNS per questa subnet</Label>
+                        <Input
+                          id="ndns"
+                          value={netDns || defaultDns}
+                          onChange={(e) => setNetDns(e.target.value)}
+                          placeholder={defaultDns || "es. 192.168.1.1"}
+                        />
+                      </div>
+                    </div>
+                    <p className="text-[13px] text-muted-foreground">
+                      {routerDeviceId != null
+                        ? `Router collegato: «${router.name.trim() || "Router"}» (${router.host.trim()}).`
+                        : "Nessun router: potrai collegarlo modificando la rete."}
+                    </p>
+                    <VociDellaRete
+                      lista={listaRete}
+                      voci={voci}
+                      stato={statoVoci}
+                      onCambia={setSceltaRete}
+                      onRiprova={() => void caricaVoci(true)}
+                    />
+                  </>
+                )}
+              </div>
+            )}
+
+            <div className="flex flex-col gap-2 pt-2">
+              {!ultimo ? (
+                <div className="flex gap-2 justify-between">
+                  <Button type="button" variant="outline" size="sm" onClick={goBack} disabled={step === 0 || busy}>
+                    <ChevronLeft className="h-4 w-4 mr-1" />
+                    Indietro
+                  </Button>
+                  <Button type="button" size="sm" onClick={() => void goNext()} disabled={busy}>
+                    {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                    Avanti
+                    <ChevronRight className="h-4 w-4 ml-1" />
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  <Button type="button" onClick={() => void onSubmitLast()} disabled={busy} className="w-full">
+                    {busy ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                    {reteCreata ? "Completa e apri la rete" : "Crea rete e apri analisi"}
+                  </Button>
+                  <div className="flex flex-col-reverse gap-2 sm:flex-row">
+                    <Button type="button" variant="outline" onClick={goBack} disabled={busy}>
+                      <ChevronLeft className="h-4 w-4 mr-1" />
+                      Indietro
+                    </Button>
+                    <Button type="button" variant="secondary" className="h-auto min-h-8 whitespace-normal py-1.5 sm:flex-1" onClick={() => void esci()} disabled={busy}>
+                      {reteCreata ? "Vai alla dashboard" : "Salta creazione rete e vai alla dashboard"}
+                    </Button>
+                  </div>
+                </div>
+              )}
+              <Button
+                type="button"
+                variant="ghost"
+                className="h-auto min-h-8 whitespace-normal py-1.5 text-[13px] text-muted-foreground"
+                onClick={() => void esci()}
+                disabled={busy}
+              >
+                Esci dalla configurazione guidata (riprendi più tardi da Impostazioni)
               </Button>
             </div>
-          ) : (
-            <div className="flex flex-col gap-2">
-              <Button type="button" onClick={onSubmitLast} disabled={busy} className="w-full">
-                {busy ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                Crea rete e apri analisi
-              </Button>
-              <Button type="button" variant="secondary" onClick={finishAndExit} disabled={busy}>
-                Salta creazione rete e vai alla dashboard
-              </Button>
-            </div>
-          )}
-          <Button type="button" variant="ghost" className="text-xs text-muted-foreground" onClick={finishAndExit} disabled={busy}>
-            Esci dalla configurazione guidata (completa più tardi)
-          </Button>
-        </div>
+          </>
+        )}
       </CardContent>
+      <CredentialFormDialog
+        open={finestra.aperta}
+        onOpenChange={(aperta) => setFinestra((f) => ({ ...f, aperta }))}
+        stato={finestra.stato}
+        opzioniTipo={OPZIONI_TIPO}
+        onSaved={voceSalvata}
+      />
     </Card>
+  );
+}
+
+/** Riquadro informativo: fondo e bordo, con l'icona. */
+function Nota({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="flex items-start gap-2 rounded-md border border-primary/50 bg-primary/5 px-3 py-2 text-[13px]">
+      <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+      <span>{children}</span>
+    </p>
+  );
+}
+
+function EsitoProva({ ok, messaggio }: { ok: boolean; messaggio: string }) {
+  return (
+    <p
+      role="status"
+      className={`flex items-start gap-2 rounded-md border px-3 py-2 text-[13px] ${ok ? "border-success bg-success/10" : "border-destructive bg-destructive/10"}`}
+    >
+      {ok ? <CircleCheck className="mt-0.5 h-4 w-4 shrink-0" aria-hidden /> : <CircleX className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />}
+      <span>
+        <strong>{ok ? "Riuscita" : "Non riuscita"}:</strong> {messaggio}
+      </span>
+    </p>
+  );
+}
+
+/** Le tendine dei passi 2-5 dipendono dall'archivio: se non si è caricato lo si dice, non si mostra una lista vuota. */
+function ErroreArchivio({ stato, onRiprova }: { stato: Caricamento; onRiprova: () => void }) {
+  if (stato.fase !== "errore") return null;
+  return (
+    <p className="flex flex-wrap items-center gap-2 rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-[13px]">
+      <CircleX className="h-4 w-4 shrink-0" aria-hidden />
+      <span className="flex-1">Archivio delle credenziali non caricato: {stato.messaggio}</span>
+      <Button type="button" variant="outline" size="xs" onClick={onRiprova}>
+        Riprova
+      </Button>
+    </p>
+  );
+}
+
+function TendinaVoci({
+  id,
+  label,
+  voci,
+  valore,
+  onCambia,
+  onNuova,
+  nessuna,
+  segnaposto,
+  vuota,
+  nota,
+  disabled,
+}: {
+  id: string;
+  label: string;
+  voci: readonly VoceArchivio[];
+  valore: number | null;
+  onCambia: (id: number | null) => void;
+  onNuova: () => void;
+  /** Etichetta della scelta «nessuna voce»; assente = la scelta non c'è. */
+  nessuna?: string;
+  segnaposto?: string;
+  /** Testo quando non ci sono voci adatte. */
+  vuota?: string;
+  nota?: string;
+  disabled?: boolean;
+}) {
+  const valoreSelect = valore != null ? String(valore) : nessuna ? "none" : null;
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <Label htmlFor={id}>{label}</Label>
+        <Button type="button" variant="outline" size="xs" onClick={onNuova} disabled={disabled}>
+          <Plus className="h-3 w-3" />
+          nuova nell&apos;archivio
+        </Button>
+      </div>
+      <Select
+        value={valoreSelect}
+        onValueChange={(v) => onCambia(v == null || v === "none" ? null : Number(v))}
+        disabled={disabled || (voci.length === 0 && !nessuna)}
+      >
+        <SelectTrigger id={id} className="w-full">
+          <SelectValue placeholder={segnaposto ?? "Scegli"} />
+        </SelectTrigger>
+        <SelectContent>
+          {nessuna ? <SelectItem value="none">{nessuna}</SelectItem> : null}
+          {voci.map((v) => (
+            <SelectItem key={v.id} value={String(v.id)}>
+              {v.name} · {etichettaTipo(v.credential_type)}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {voci.length === 0 && vuota ? <p className="text-[13px] text-muted-foreground">{vuota}</p> : null}
+      {nota ? <p className="text-[13px] text-muted-foreground">{nota}</p> : null}
+    </div>
+  );
+}
+
+function AzioniVoce({ voce, onModifica, onElimina }: { voce: VoceArchivio; onModifica: () => void; onElimina: () => void }) {
+  return (
+    <div className="flex shrink-0 justify-end gap-1">
+      <Button type="button" variant="ghost" size="icon-sm" onClick={onModifica} aria-label={`Modifica «${voce.name}»`} title="Modifica">
+        <Pencil className="h-4 w-4" />
+      </Button>
+      <Button type="button" variant="ghost" size="icon-sm" onClick={onElimina} aria-label={`Elimina «${voce.name}»`} title="Elimina">
+        <Trash2 className="h-4 w-4 text-destructive" />
+      </Button>
+    </div>
+  );
+}
+
+/** Tabella dell'archivio; sotto i 640 px un elenco a schede. */
+function ArchivioVoci({
+  stato,
+  voci,
+  onModifica,
+  onElimina,
+  onRiprova,
+}: {
+  stato: Caricamento;
+  voci: readonly VoceArchivio[];
+  onModifica: (v: VoceArchivio) => void;
+  onElimina: (v: VoceArchivio) => void;
+  onRiprova: () => void;
+}) {
+  if (stato.fase === "caricamento") return <p className="text-muted-foreground">Caricamento dell&apos;archivio…</p>;
+  if (stato.fase === "errore") return <LoadError what="le credenziali dell'archivio" message={stato.messaggio} onRetry={onRiprova} />;
+  if (voci.length === 0) {
+    return (
+      <p className="rounded-lg border border-dashed px-3 py-6 text-center text-muted-foreground">
+        L&apos;archivio è vuoto. Aggiungi le voci che servono (SNMP per gli apparati, SSH per il router, Windows per i server…)
+        oppure vai avanti: potrai inserirle anche dopo.
+      </p>
+    );
+  }
+  return (
+    <>
+      <div className="hidden rounded-lg border sm:block">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Nome</TableHead>
+              <TableHead>Tipo</TableHead>
+              <TableHead>Utente</TableHead>
+              <TableHead>Porta</TableHead>
+              <TableHead className="w-[84px] text-right">Azioni</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {voci.map((v) => (
+              <TableRow key={v.id}>
+                <TableCell className="max-w-[200px] truncate font-medium" title={v.name}>
+                  {v.name}
+                </TableCell>
+                <TableCell>{etichettaTipo(v.credential_type)}</TableCell>
+                <TableCell className="text-muted-foreground">{v.encrypted_username ?? "—"}</TableCell>
+                <TableCell className={v.port != null ? "font-mono" : "text-muted-foreground"}>{etichettaPorta(v.port)}</TableCell>
+                <TableCell className="text-right">
+                  <AzioniVoce voce={v} onModifica={() => onModifica(v)} onElimina={() => onElimina(v)} />
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+      <ul className="space-y-2 sm:hidden">
+        {voci.map((v) => (
+          <li key={v.id} className="rounded-lg border p-3">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="break-words font-medium">{v.name}</p>
+                <p className="text-muted-foreground">{etichettaTipo(v.credential_type)}</p>
+              </div>
+              <AzioniVoce voce={v} onModifica={() => onModifica(v)} onElimina={() => onElimina(v)} />
+            </div>
+            <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[13px]">
+              <dt className="text-muted-foreground">Utente</dt>
+              <dd>{v.encrypted_username ?? "—"}</dd>
+              <dt className="text-muted-foreground">Porta</dt>
+              <dd className={v.port != null ? "font-mono" : undefined}>{etichettaPorta(v.port)}</dd>
+            </dl>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
+/** Le voci da provare sulla prima subnet: casella e frecce per l'ordine. */
+function VociDellaRete({
+  lista,
+  voci,
+  stato,
+  onCambia,
+  onRiprova,
+}: {
+  lista: SceltaRete[];
+  voci: readonly VoceArchivio[];
+  stato: Caricamento;
+  onCambia: (lista: SceltaRete[]) => void;
+  onRiprova: () => void;
+}) {
+  const perId = new Map(voci.map((v) => [v.id, v]));
+  return (
+    <div className="space-y-2 rounded-lg border p-3">
+      <p className="text-[13px] font-medium">Credenziali da provare su questa rete (in ordine)</p>
+      {stato.fase === "errore" ? (
+        <ErroreArchivio stato={stato} onRiprova={onRiprova} />
+      ) : stato.fase === "caricamento" ? (
+        <p className="text-[13px] text-muted-foreground">Caricamento dell&apos;archivio…</p>
+      ) : lista.length === 0 ? (
+        <p className="text-[13px] text-muted-foreground">L&apos;archivio è vuoto: potrai assegnarle dalla pagina della rete.</p>
+      ) : (
+        <ol className="space-y-1">
+          {lista.map((s, i) => {
+            const v = perId.get(s.id);
+            if (!v) return null;
+            const idCasella = `rete-voce-${s.id}`;
+            return (
+              <li key={s.id} className="flex items-center gap-2">
+                <Checkbox
+                  id={idCasella}
+                  checked={s.attiva}
+                  onCheckedChange={(c) => onCambia(lista.map((x) => (x.id === s.id ? { ...x, attiva: !!c } : x)))}
+                />
+                <span className="w-5 shrink-0 text-right text-[13px] tabular-nums text-muted-foreground">{i + 1}.</span>
+                <Label htmlFor={idCasella} className="min-w-0 flex-1 font-normal">
+                  <span className="truncate">{v.name}</span>
+                  <span className="shrink-0 text-[13px] text-muted-foreground">{etichettaTipo(v.credential_type)}</span>
+                </Label>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => onCambia(spostaScelta(lista, i, -1))}
+                  disabled={i === 0}
+                  aria-label={`Sposta «${v.name}» più in alto`}
+                  title="Più in alto"
+                >
+                  <ChevronUp className="h-4 w-4" />
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => onCambia(spostaScelta(lista, i, 1))}
+                  disabled={i === lista.length - 1}
+                  aria-label={`Sposta «${v.name}» più in basso`}
+                  title="Più in basso"
+                >
+                  <ChevronDown className="h-4 w-4" />
+                </Button>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+    </div>
   );
 }

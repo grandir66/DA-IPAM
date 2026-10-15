@@ -1288,7 +1288,7 @@ function SettingsPageInner() {
                   <CardTitle className="text-base">Configurazione guidata</CardTitle>
                 </div>
                 <CardDescription>
-                  Ripeti i passaggi del primo avvio (router, DNS, credenziali, Active Directory, prima subnet). I dati già salvati non vengono cancellati.
+                  Riapre i passaggi del primo avvio (credenziali, router, DNS, Active Directory, prima subnet) dal punto in cui li avevi lasciati. I dati già salvati non vengono cancellati.
                 </CardDescription>
               </CardHeader>
               <CardContent>

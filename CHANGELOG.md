@@ -4,6 +4,33 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-15 · credenziali tappa 4: il wizard usa l'archivio delle credenziali
+
+Proposta approvata da Riccardo il 15/10. Perché: il wizard apriva, ma chiedeva le stesse cose di prima. Il router
+voleva utente, password e community in linea (finivano sull'apparato, fuori dall'archivio), il passo «Credenziali»
+richiedeva di nuovo SNMP, SSH, Windows e Linux in quattro blocchi fissi (una voce per tipo) e la subnet sceglieva
+solo fra quei quattro. «Indietro» ignorava quanto già creato ed «Esci» dimenticava il punto raggiunto.
+
+### Modifiche
+
+- **Credenziali per prime**: il primo passo mostra l'archivio (nome, tipo, utente mascherato, porta) e lo gestisce
+  con lo stesso modulo della pagina Credenziali, ora un componente condiviso: più voci per tipo, modifica ed
+  eliminazione, nessuna obbligatoria. I tipi sono quelli che l'archivio accetta, con le etichette di
+  `credentials/tipi.ts` («Linux» come SSH): i tipi nuovi delle sotto-tappe 2c/2f compaiono da soli.
+- **Router dall'archivio**: «Credenziale» e «SNMP per porte/LLDP» sono tendine delle voci adatte all'accesso
+  (regola unica tipo ↔ protocollo), con «nuova nell'archivio» che crea e seleziona, e «Prova connessione».
+  Tornando indietro il router già creato si modifica, mandando solo i campi toccati.
+- **Active Directory**: la credenziale WinRM si sceglie fra le voci Windows dell'archivio.
+- **Prima subnet**: tutte le voci dell'archivio, con casella e frecce per l'ordine (prima SNMP, poi SSH, Windows, le
+  altre), nella lista nuova delle credenziali della rete.
+- **Punto raggiunto ricordato** (`/api/onboarding/progresso`, impostazione `onboarding_progresso:<cliente>`): «Esci»
+  segna il wizard completato come prima, ma riaprendolo da Impostazioni si riparte da lì; router, rete e integrazione
+  AD già creati non si ricreano. Il wizard non scrive più `host_windows_credential_id` / `host_linux_credential_id`.
+
+### Da sapere
+
+- Cambiare la credenziale di un router già creato aggiorna l'apparato ma non ancora i suoi binding: la modifica del
+  singolo apparato funziona così anche fuori dal wizard, si sistema con la sotto-tappa 2e.
 ## [Non rilasciato] — 2026-10-15 · topologia T2.5: la lettura degli hypervisor (lldpd e bond), spenta
 
 Spec §13.5.5, piano di T2 Task 7. Perché: dove sugli host Proxmox gira `lldpd`, l'host dice da sé a quale porta di

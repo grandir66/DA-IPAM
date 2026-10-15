@@ -2098,6 +2098,11 @@ su ogni appliance (con l'ok di Riccardo).
 
 ### 13.11.1 T1: rapida, rilasciabile da sola (D1)
 
+**Stato (15/10): pronta, non rilasciata.** Codice sul ramo `topologia/collegamenti-t1`; misura «dopo» sulle copie
+del 15/10 notte (con l'orologio del «prima»), C19, C18 e prova di ritorno R6, revisione finale, verifica a schermo a
+1280 e 1920 e cancello completo fatti il 15/10. Aspetta la conferma di Riccardo (punto 5 delle «Conferme», sotto).
+Le decisioni prese: ADR 0015.
+
 | Pezzo | Contenuto | File |
 | --- | --- | --- |
 | T1.0 | **misura e scenari**, fatti per primi: `scripts/misura-cavi.ts` e gli scenari S0-S4 (13.12.1), con C10 e C11; salva l'uscita del codice di oggi sulle due copie come «prima», con la data dell'ultima lettura delle VM di ogni hypervisor (R1); una riga per criterio generale G1-G17 (13.3.0) | `scripts/misura-cavi.ts` (nuovo) |

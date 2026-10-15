@@ -4,6 +4,71 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-15
+
+Mappa topologia, tappa T1 «collegamenti come la rete reale» (ADR 0015, spec §13): pronta il 15/10,
+non ancora rilasciata (aspetta la conferma di Riccardo).
+
+### Correzioni
+
+- **Core 1 del cliente A torna sotto il router, sul cavo a 10G.** Il 14/10 la mappa lo appendeva a
+  uno switch di accesso. Due cause: una linea univa porte prese da prove diverse (la porta di core 1
+  dal controller, quella del router dalla prima riga del router in ordine, che non era il cavo), e
+  «Ignora» su quella linea toglieva la coppia intera, cioè anche il cavo vero. Ora una linea prende le
+  due porte **da una prova sola**.
+- **I vicini del router col protocollo vero e i nomi interi.** Il lettore di `/ip neighbor` (lo stesso
+  comando di prima: nessun comando nuovo sui router) legge `discovered-by` e i valori con gli spazi.
+  Prima ogni riga era «MNDP» e «Port 47» diventava «Port»: il modello non poteva distinguere un cavo da
+  un annuncio arrivato attraverso uno switch. A schermo queste righe si chiamano «annuncio di rete
+  (MNDP o CDP)».
+- **Una porta che sente due o più apparati non dà cavi** (regola del segmento): in mezzo c'è qualcosa
+  che ripete gli annunci. Chi resta senza collegamenti va in «Da sistemare», «nessun collegamento»,
+  invece di restare appeso a quella porta. Sul cliente A il router di riserva va sotto uno switch di accesso
+  (porta 16), non più sulla porta della WAN di core 1; sull'hub i tre switch di
+  laboratorio dietro la porta 5 dello switch PoE escono dall'albero.
+- **Il ripiego del router parte solo dalle porte riconosciute come fisiche**: un nome scelto dal
+  cliente (bridge, VLAN, VRRP) non dà cavi.
+- La velocità di una porta si trova per chiave (indice o nome) anche quando il nome cambia forma: i due
+  cavi fra core 2 e gli switch di accesso del cliente A ora dicono «10G» (prima velocità non nota).
+
+### Modifiche
+
+- **«Ignora questo cavo…» vale per un cavo, non per la coppia.** Il dialogo dice quale cavo sparisce e
+  che gli altri fra i due oggetti restano. Una correzione di prima che non corrisponde a nessun cavo
+  visto compare in «Collegamenti ignorati» con «non corrisponde a nessun cavo visto: non toglie
+  niente», «Togli la correzione» e «Scegli il cavo da ignorare…»; una senza porte toglie solo un cavo
+  senza porte. Perché: l'«Ignora» per coppia del 14/10 aveva fatto sparire il cavo vero. Quella
+  correzione resta orfana finché Riccardo non la toglie: nessuno script la converte.
+- **«Altri cavi visti fra questi due oggetti»** nei dettagli di una linea: fino a T3 una linea unisce
+  due oggetti, e gli altri cavi fra loro si leggono qui. Serve a scegliere quale cavo ignorare.
+- **Pareggi dell'albero per verso e velocità, non per id**; la testa proposta, a pari oggetti
+  raggiunti, è il router che fa da gateway a più reti. Perché: con l'id decideva il caso.
+- **Regole scritte per ogni rete**, provate su cinque famiglie di reti-campione inventate (solo
+  MikroTik, solo UniFi, altre marche via SNMP, con hypervisor, mista) e misurate sulle due reti vere:
+  un nome scelto dal cliente non è una porta fisica; gli apparati di una porta si contano per apparato
+  (un MikroTik ha un MAC per interfaccia); fra una VM e il suo hypervisor nessun collegamento, e i MAC
+  propri di un apparato non sono client né VM; la testa proposta dalle reti di cui fa da gateway; un
+  nome doppio con una velocità sola dà la velocità. Sull'hub la linea verso il router di frontiera passa
+  dai cavi veri e non da una VLAN, e gli hypervisor vanno sotto l'aggregazione a 10G (uno stava sotto
+  una sua VM); sul cliente A nessuna di queste regole cambia qualcosa.
+- **Le linee di ridondanza escono dal lato del riquadro più vicino**, a schermo e in stampa; le linee
+  fra padre e figli restano a tronco. Perché: uscivano da un lato fisso e facevano il giro sopra la
+  mappa. Su una linea molto corta la parola si mette accanto, fuori dai riquadri.
+- **L'elenco a sinistra si chiude** («◂ Elenco» / «Elenco ▸»), così la mappa prende tutta la
+  larghezza; la scelta resta nel browser.
+- Il calcolo della mappa costa di più: sul cliente A circa 18-19 ms sul Mac invece di 14 (tetto 20).
+
+### Aggiunte
+
+- `scripts/misura-cavi.ts`: misura sulla copia di un DB (scenari, chi cambia padre, conteggi, tempo del
+  modello; `--adesso` per giudicare «non visto» all'ora del «prima», `--senza-regola` per spegnere una
+  regola alla volta). Perché: il rilascio si decide sui numeri della copia, prima.
+- `scripts/ripristina-vicini-router.ts`: lo script di «Tornare indietro» (prova a vuoto di base, copia
+  delle righe, `--applica`). Perché: il codice di prima, con le righe nuove del router fra router dai due
+  lati, cambia un padre; lo script riporta quelle righe a «mndp», il valore che il codice di prima
+  conosce. È una scrittura sul DB del cliente: si usa solo se si torna indietro, con la conferma di
+  Riccardo.
+
 ## [0.3.281] — 2026-10-14
 
 Mappa verticale e stampa (ADR 0012, spec §12): rilasciata il 14/10 alle 14:25 ora italiana,

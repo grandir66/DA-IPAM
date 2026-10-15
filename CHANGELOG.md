@@ -4,6 +4,29 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-15 · mappa: ritocchi e VM, SSH degli hypervisor
+
+Ramo `fix/mappa-ritocchi-vm`, non ancora su `dev`.
+
+### Correzioni
+
+- **Un riquadro spostato resta dove lo si lascia.** I ritocchi si applicavano in ordine di nome
+  interno (dove «120» viene prima di «78»): quando un antenato ritoccato veniva «dopo», il suo
+  spostamento si sommava una seconda volta al discendente, che al rilascio saltava altrove. Ora si
+  applicano dagli antenati ai discendenti, nei due orientamenti.
+- **Trascinare un apparato si porta dietro il suo ramo, anche i pezzi già ritoccati.** Le posizioni
+  ritoccate sono assolute: spostando un padre dopo aver sistemato un suo discendente, il discendente
+  restava fermo e il ramo si spezzava. Ora lo spostamento del padre salva, nello stesso colpo, anche
+  le posizioni dei discendenti già ritoccati spostate dello stesso tanto (spec §4/§11.2).
+- **Le VM restano sotto il loro nodo del cluster anche quando una lettura è a metà.** Se la lettura di
+  un nodo non riportava l'host di un altro nodo, le VM di quest'ultimo finivano all'apparato che aveva
+  letto, e con loro il cavo «dalle VM». Ora si usa l'abbinamento dello stesso nome di nodo trovato
+  nelle altre letture; se è ambiguo, come prima. Vale solo per le letture di cluster: un hypervisor
+  autonomo ha un nodo solo, e il nome di fabbrica («pve») si ripete su macchine diverse.
+- **Le schede di rete «vive» degli hypervisor Proxmox ora si leggono.** La lettura via SSH usava la
+  porta dell'API (443/8006) e veniva rifiutata, quindi le schede vive non arrivavano mai. Ora usa la
+  porta della credenziale SSH legata all'apparato, altrimenti 22.
+
 ## [Non rilasciato] — 2026-10-15 · topologia, tappa T1
 
 Mappa topologia, tappa T1 «collegamenti come la rete reale» (ADR 0015, spec §13): pronta il 15/10,

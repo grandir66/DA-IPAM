@@ -35,8 +35,11 @@ conversioni di dati dei clienti, segreti. Lo dice la regola di Riccardo del 15/1
 §2): «i passi che toccano una zona rossa passano al completo».
 **Stato:** piano scritto il 15/10 e corretto lo stesso giorno coi rilievi di tre
 revisori (dati, copertura, eseguibilità), verificati sul codice; quelli non accolti sono
-in fondo, con il perché. Prima di eseguirlo servono le risposte alle 13 domande D1-D12
-più D1b (qui sotto, riassunte in una tabella in testa) e l'ok sull'«Interfaccia proposta».
+in fondo, con il perché. **Approvato da Riccardo il 15/10**: «le raccomandate e procedi»,
+cioè tutte le domande D1-D12 e D1b sulla risposta raccomandata (la prima opzione, (a)),
+e l'«Interfaccia proposta» così com'è. Rilasci 2c-2f: **autorizzati senza altra
+conferma** quando backup, prova a vuoto sulle copie e conteggi prima/dopo tornano; ci si
+ferma e si chiede solo se qualcosa non torna. La 2g resta con la conferma di Riccardo.
 
 ## Vincoli globali
 

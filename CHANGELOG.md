@@ -4,6 +4,15 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-16 · una firma di porte non è un modello
+
+- **Il modello non viene più dall'impronta di sole porte, e quello già scritto così si corregge.** Perché: sul
+  pilota il UniFi Cloud Gateway Fiber (192.168.99.250) aveva modello «QNAP QTS», perché la firma 8080+22+443
+  vinceva fra le porte aperte, e le scansioni successive lo preservavano anche davanti al sysDescr SNMP. Ora
+  l'etichetta dell'impronta fa da modello solo se c'è una fonte che non sia di porte o TTL (SNMP, banner, regola su
+  sysDescr/OID/hostname/MAC, profilo vendor); il sysDescr «Ubiquiti UniFi UCG-Fiber 5.1.33 …» dà `UCG-Fiber`; un
+  modello salvato uguale all'etichetta di un'impronta di sole porte viene sostituito dal modello nuovo o azzerato
+  alla scansione successiva. I modelli scritti a mano, da SNMP o dagli agenti non si toccano.
 ## [Non rilasciato] — 2026-10-16 · credenziali tappa 2b: un motore solo sceglie le credenziali
 
 Piano `docs/superpowers/plans/2026-10-15-tappa2-archivio-credenziali.md` (sotto-tappa 2b, nessun dato toccato).

@@ -35,7 +35,7 @@ import { etichettaVersioneSnmp, type VersioneSnmp } from "@/lib/protocols/snmp-s
 import { classifyDeviceDetailed } from "@/lib/device-classifier";
 import {
   getClassificationFromFingerprintSnapshot,
-  FINGERPRINT_CLASSIFICATION_MIN_CONFIDENCE,
+  modelloDaImpronta,
 } from "@/lib/device-fingerprint-classification";
 import { mapSysObjCategory } from "@/lib/attribution/sysobj-category";
 import {
@@ -365,6 +365,38 @@ type HostScanData = {
   sysObjMatch?: import("./snmp-sysobj-lookup").SysObjMatch;
 };
 
+/** Estrae modello e firmware dal sysDescr quando ENTITY-MIB non è disponibile. */
+export function parseModelFromSysDescr(sysDescr: string | null): { model: string | null; firmware: string | null } {
+  if (!sysDescr) return { model: null, firmware: null };
+  const s = sysDescr.trim();
+
+  // UniFi OS (Cloud Gateway, UDM): "Ubiquiti UniFi UCG-Fiber 5.1.33 Linux 5.4.213 ipq9574" (pilota 16/10)
+  const unifiOsMatch = s.match(/^Ubiquiti\s+UniFi\s+([\w][\w+-]*)\s+v?(\d+\.\d+[.\d]*)/i);
+  if (unifiOsMatch) return { model: unifiOsMatch[1], firmware: unifiOsMatch[2] };
+
+  // Ubiquiti: "USW-Flex 7.2.123.16565" / "USW-Pro-48-PoE, 7.2.123.16565, Linux 3.6" / "U7-Pro 8.4.6.18068"
+  const ubiMatch = s.match(/^(U\w[\w-]*?)[\s,]+(\d+\.\d+\.\d+[\.\d]*)/);
+  if (ubiMatch) return { model: ubiMatch[1], firmware: ubiMatch[2] };
+
+  // MikroTik: "RouterOS CCR2004-1G-12S+2XS"
+  const mtMatch = s.match(/RouterOS\s+(\S+)/i);
+  if (mtMatch) return { model: mtMatch[1], firmware: null };
+
+  // Cisco: "Cisco IOS Software, C2960 Software (C2960-LANBASEK9-M), Version 15.0(2)SE"
+  const ciscoMatch = s.match(/,\s*(\S+)\s+Software.*Version\s+([\d.()A-Za-z]+)/i);
+  if (ciscoMatch) return { model: ciscoMatch[1], firmware: ciscoMatch[2] };
+
+  // HP ProCurve: "ProCurve J9729A 2920-48G-POE+ Switch..."
+  const hpMatch = s.match(/ProCurve\s+(\S+\s+\S+)/i);
+  if (hpMatch) return { model: hpMatch[1].trim(), firmware: null };
+
+  // Generico: "MODELLO, versione X.Y.Z" o "MODELLO versione X.Y.Z"
+  const genericMatch = s.match(/^([\w][\w\s-]{2,30}?)[\s,]+v?(\d+\.\d+[\.\d]*)/);
+  if (genericMatch) return { model: genericMatch[1].trim(), firmware: genericMatch[2] };
+
+  return { model: null, firmware: null };
+}
+
 /** Produttore da sysDescr / OID enterprise / prima firma fingerprint */
 function inferManufacturerFromSnmp(
   sysDescr: string | null,
@@ -620,34 +652,6 @@ async function runDiscovery(
       unionTcpPorts(byIp.get(ip) ?? [], ALWAYS_USEFUL_TCP_PORTS, basePorts),
       hostTimeoutSeconds != null ? { hostTimeoutSeconds } : undefined
     );
-  }
-
-  /** Estrae modello e firmware dal sysDescr quando ENTITY-MIB non è disponibile. */
-  function parseModelFromSysDescr(sysDescr: string | null): { model: string | null; firmware: string | null } {
-    if (!sysDescr) return { model: null, firmware: null };
-    const s = sysDescr.trim();
-
-    // Ubiquiti: "USW-Flex 7.2.123.16565" / "USW-Pro-48-PoE, 7.2.123.16565, Linux 3.6" / "U7-Pro 8.4.6.18068"
-    const ubiMatch = s.match(/^(U\w[\w-]*?)[\s,]+(\d+\.\d+\.\d+[\.\d]*)/);
-    if (ubiMatch) return { model: ubiMatch[1], firmware: ubiMatch[2] };
-
-    // MikroTik: "RouterOS CCR2004-1G-12S+2XS"
-    const mtMatch = s.match(/RouterOS\s+(\S+)/i);
-    if (mtMatch) return { model: mtMatch[1], firmware: null };
-
-    // Cisco: "Cisco IOS Software, C2960 Software (C2960-LANBASEK9-M), Version 15.0(2)SE"
-    const ciscoMatch = s.match(/,\s*(\S+)\s+Software.*Version\s+([\d.()A-Za-z]+)/i);
-    if (ciscoMatch) return { model: ciscoMatch[1], firmware: ciscoMatch[2] };
-
-    // HP ProCurve: "ProCurve J9729A 2920-48G-POE+ Switch..."
-    const hpMatch = s.match(/ProCurve\s+(\S+\s+\S+)/i);
-    if (hpMatch) return { model: hpMatch[1].trim(), firmware: null };
-
-    // Generico: "MODELLO, versione X.Y.Z" o "MODELLO versione X.Y.Z"
-    const genericMatch = s.match(/^([\w][\w\s-]{2,30}?)[\s,]+v?(\d+\.\d+[\.\d]*)/);
-    if (genericMatch) return { model: genericMatch[1].trim(), firmware: genericMatch[2] };
-
-    return { model: null, firmware: null };
   }
 
   /** Aggiunge una riga al log live (max 200 righe, le più vecchie vengono rimosse) */
@@ -2976,7 +2980,13 @@ async function runDiscovery(
             fpSnap.final_device === "Switch" ||
             (fpSnap.final_confidence ?? 0) < 0.70;
           if (fpIsGeneric) {
-            fpSnap = { ...fpSnap, final_device: vpName, final_confidence: vpConf };
+            // La fonte si segna: modelloDaImpronta accetta l'etichetta solo se non viene dalle porte.
+            fpSnap = {
+              ...fpSnap,
+              final_device: vpName,
+              final_confidence: vpConf,
+              detection_sources: [...new Set([...fpSnap.detection_sources, "snmp_vendor_profile"])],
+            };
           }
         }
         if (fpSnap) detectionJson = JSON.stringify(fpSnap);
@@ -3093,11 +3103,8 @@ async function runDiscovery(
       nmapData?.snmpModel ||
       sysDescrParsed.model ||
       nmapData?.sysObjMatch?.product ||
-      (fpSnap &&
-      (fpSnap.final_confidence ?? 0) >= FINGERPRINT_CLASSIFICATION_MIN_CONFIDENCE &&
-      fpSnap.final_device
-        ? fpSnap.final_device
-        : undefined) ||
+      // Una firma di sole porte non è un modello (pilota 16/10: «QNAP QTS» su un UniFi Cloud Gateway).
+      modelloDaImpronta(fpSnap) ||
       undefined;
     const hostSerial = nmapData?.snmpSerial || undefined;
     // Firmware: preferisci quello dal profilo vendor (OID specifici) se disponibile

@@ -67,7 +67,7 @@ import type {
   CredentialInput,
   ExcludedIpWithNetwork,
 } from "@/types";
-import type { FingerprintUserRule } from "./device-fingerprint-classification";
+import { modelloEtichettaDiPorte, type FingerprintUserRule } from "./device-fingerprint-classification";
 import { registraRipiego } from "./db-maintenance/ripieghi";
 import { cleanOrphanedForeignKeys as cleanOrphanedForeignKeysSu, NEIGHBORS_LATEST_ROUND_SQL, NEIGHBORS_MODEL_SOURCES_SQL } from "./db-tenant";
 
@@ -2952,8 +2952,14 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
     if (input.os_info !== undefined) {
       if (!preserve || !existingRow?.os_info) { fields.push("os_info = ?"); values.push(input.os_info); }
     }
+    // Un modello che è solo l'etichetta di un'impronta di porte (pilota 16/10: «QNAP QTS» su un
+    // UniFi Cloud Gateway) non si preserva: il modello nuovo lo sostituisce, e una scansione con
+    // l'impronta ma senza modello lo azzera. Gli altri modelli (a mano, SNMP, agenti) restano.
+    const modelloDiPorte = modelloEtichettaDiPorte(existingRow?.model, [existingRow?.detection_json, input.detection_json]);
     if (input.model !== undefined) {
-      if (!preserve || !existingRow?.model) { fields.push("model = ?"); values.push(input.model); }
+      if (!preserve || !existingRow?.model || modelloDiPorte) { fields.push("model = ?"); values.push(input.model); }
+    } else if (modelloDiPorte && input.detection_json !== undefined) {
+      fields.push("model = NULL");
     }
     if (input.serial_number !== undefined) {
       if (!preserve || !existingRow?.serial_number) { fields.push("serial_number = ?"); values.push(input.serial_number); }

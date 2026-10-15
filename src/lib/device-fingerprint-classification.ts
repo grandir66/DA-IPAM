@@ -132,6 +132,57 @@ export function getClassificationFromFingerprintSnapshot(
   return undefined;
 }
 
+/**
+ * Fonti che dicono solo «queste porte sono aperte» (più il TTL): bastano per una famiglia,
+ * non per un modello. Pilota 16/10: un UniFi Cloud Gateway Fiber (22, 53, 80, 443, 8080,
+ * 8443, 9443) aveva hosts.model = «QNAP QTS» perché la firma 8080+22+443 vinceva.
+ */
+function eFonteDiPorte(fonte: string): boolean {
+  if (fonte === "ttl" || fonte === "port_signature") return true;
+  if (!fonte.startsWith("rule:")) return false;
+  return fonte.slice(5).split("+").every((p) => p === "ports" || p === "ttl");
+}
+
+/** true se l'impronta ha solo fonti di porte/TTL; senza fonti non si sa, e resta com'era (false). */
+export function improntaSoloPorte(snap: Pick<DeviceFingerprintSnapshot, "detection_sources">): boolean {
+  const fonti = Array.isArray(snap.detection_sources) ? snap.detection_sources : [];
+  return fonti.length > 0 && fonti.every(eFonteDiPorte);
+}
+
+/**
+ * Il modello che l'impronta può dare: `final_device` sopra la soglia, e solo se almeno una
+ * fonte non è di porte (SNMP, banner, regola su sysDescr/OID/hostname/MAC, profilo vendor).
+ */
+export function modelloDaImpronta(
+  snap: Pick<DeviceFingerprintSnapshot, "final_device" | "final_confidence" | "detection_sources"> | null | undefined,
+): string | undefined {
+  if (!snap?.final_device) return undefined;
+  if ((snap.final_confidence ?? 0) < FINGERPRINT_CLASSIFICATION_MIN_CONFIDENCE) return undefined;
+  if (improntaSoloPorte(snap)) return undefined;
+  return snap.final_device;
+}
+
+/**
+ * true se `model` è l'etichetta finale di una delle impronte di sole porte date (JSON di
+ * `hosts.detection_json`): un modello così l'ha scritto la scansione, non un SNMP, un agente o
+ * una persona, e la scansione successiva lo sostituisce o lo azzera.
+ */
+export function modelloEtichettaDiPorte(
+  model: string | null | undefined,
+  detectionJsons: Array<string | null | undefined>,
+): boolean {
+  if (!model) return false;
+  return detectionJsons.some((raw) => {
+    if (!raw) return false;
+    try {
+      const snap = JSON.parse(raw) as Partial<DeviceFingerprintSnapshot>;
+      return snap.final_device === model && improntaSoloPorte({ detection_sources: snap.detection_sources ?? [] });
+    } catch {
+      return false;
+    }
+  });
+}
+
 /** Dato UI: etichetta e confidenza da `hosts.detection_json` (fingerprint). */
 export interface ParsedDetectedDevice {
   label: string;

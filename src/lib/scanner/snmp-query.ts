@@ -370,7 +370,7 @@ async function snmpSubwalkLimitedV3(
     name: v3.username,
     level: snmp.SecurityLevel.authNoPriv,
     authProtocol: snmp.AuthProtocols.md5,
-    authKey: v3.authKey,
+    authKey: v3.authKey ?? undefined,
   };
   const session = snmp.createV3Session(device.host, user, { port, timeout: Math.floor(timeoutMs * 0.5) });
   const rows: Array<{ oid: string; value: unknown }> = [];

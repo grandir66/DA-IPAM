@@ -60,6 +60,7 @@ import {
   type SceltaFotografia,
 } from "../../src/lib/credentials/fotografia";
 import type { NetworkDevice } from "../../src/types";
+import type { SnmpV3CredentialRecord } from "../../src/lib/protocols/snmpv3";
 
 export { cartellaTenant, getHubDbPath };
 
@@ -171,7 +172,26 @@ export function provenienzaCommunity(dbh: Database.Database, device: NetworkDevi
   return { credential_id: null, livello: "public", parti: ["public"] };
 }
 
-/** Provenienza di getDeviceSnmpV3Credentials (formato di oggi: utente e chiave da encrypted_password). */
+/**
+ * Parti del segreto v3 per l'impronta: utente e chiave d'autenticazione, più la
+ * chiave di privacy quando c'è. Il formato vecchio (authNoPriv/MD5) resta
+ * [utente, chiave], come nella fotografia del T1.
+ */
+function partiV3(r: SnmpV3CredentialRecord): string[] {
+  return [r.username, r.authKey ?? "", ...(r.privKey ? [r.privKey] : [])];
+}
+
+function chiaroRipulito(cifrato: string | null): string | null {
+  const s = cifrato ? safeDecrypt(cifrato) : null;
+  return s?.trim() ? s.trim() : null;
+}
+
+/**
+ * Provenienza di getDeviceSnmpV3Credentials. Dal T3 la voce con
+ * `security_level` è una v3 completa (chiavi in `encrypted_auth_key` e
+ * `encrypted_priv_key`, livello «v3_completa»); senza livello, con utente e
+ * password, è il formato vecchio (livello «v3», come nel T1).
+ */
 export function provenienzaV3(device: NetworkDevice): Provenienza {
   const isSnmpPrimary = device.protocol === "snmp_v2" || device.protocol === "snmp_v3";
   const ids = isSnmpPrimary ? [device.credential_id, device.snmp_credential_id] : [device.snmp_credential_id, device.credential_id];
@@ -179,9 +199,19 @@ export function provenienzaV3(device: NetworkDevice): Provenienza {
     if (!id) continue;
     const c = getCredentialById(id);
     if (!c || String(c.credential_type || "").toLowerCase() !== "snmp") continue;
-    const u = c.encrypted_username ? safeDecrypt(c.encrypted_username) : "";
-    const k = c.encrypted_password ? safeDecrypt(c.encrypted_password) : "";
-    if (u?.trim() && k?.trim()) return { credential_id: id, livello: "v3", parti: [u.trim(), k.trim()] };
+    const u = chiaroRipulito(c.encrypted_username);
+    const livello = c.security_level?.trim() || null;
+    if (livello) {
+      const auth = chiaroRipulito(c.encrypted_auth_key);
+      const priv = chiaroRipulito(c.encrypted_priv_key);
+      const completa = livello === "noAuthNoPriv" || (livello === "authNoPriv" && !!auth) || (livello === "authPriv" && !!auth && !!priv);
+      if (u && completa) {
+        return { credential_id: id, livello: "v3_completa", parti: partiV3({ username: u, securityLevel: livello, authKey: auth, privKey: priv }) };
+      }
+      continue;
+    }
+    const k = chiaroRipulito(c.encrypted_password);
+    if (u && k) return { credential_id: id, livello: "v3", parti: [u, k] };
   }
   return NESSUNA;
 }
@@ -377,7 +407,7 @@ function fotografaDentro(code: string, encryptionKey: string): EsitoTenant {
       const cred = getDeviceSnmpV3Credentials(d);
       if (cred) {
         v3 = true;
-        sceltaSnmp = scelta(ctx, [cred.username, cred.authKey], provenienzaV3(d), portaSnmp);
+        sceltaSnmp = scelta(ctx, partiV3(cred), provenienzaV3(d), portaSnmp);
       }
     }
     if (!v3) sceltaSnmp = scelta(ctx, [getDeviceCommunityString(d)], provenienzaCommunity(dbh, d), portaSnmp);

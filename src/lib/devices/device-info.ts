@@ -303,7 +303,7 @@ export async function getDeviceInfoFromSnmp(device: NetworkDevice, portaProva?: 
           name: v3.username,
           level: snmp.SecurityLevel.authNoPriv,
           authProtocol: snmp.AuthProtocols.md5,
-          authKey: v3.authKey,
+          authKey: v3.authKey ?? undefined,
         };
         session = snmp.createV3Session(device.host, user, opts);
       } else {

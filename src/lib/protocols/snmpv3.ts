@@ -21,6 +21,7 @@
  */
 import { AuthProtocols, PrivProtocols, SecurityLevel } from "net-snmp";
 import { stringifySnmpValue } from "../scanner/snmp-query";
+import { leggiSegretoDb } from "../credentials/segreti";
 
 const OID_SYSDESCR = "1.3.6.1.2.1.1.1.0";
 
@@ -175,9 +176,10 @@ export interface SnmpV3ValidateResult {
 
 /**
  * Valida una credenziale SNMPv3 su `ip:port` interrogando `sysDescr.0`.
- * Decifra con `safeDecrypt` (mai `decrypt()` nudo — regola anti-regressione
- * #3), costruisce le opzioni con `buildV3Options` (rifiuto PRIMA della rete
- * su combinazioni incoerenti) e apre una `createV3Session` con timeout
+ * Legge la voce con `leggiSegretoDb` (tappa 2 credenziali, T3: accetta
+ * `snmp_v3`, oppure `snmp` con `security_level`), costruisce le opzioni con
+ * `buildV3Options` (rifiuto PRIMA della rete su combinazioni incoerenti) e
+ * apre una `createV3Session` con timeout
  * esplicito. Non lancia mai: qualunque errore (credenziale assente, chiave
  * incoerente, timeout, autenticazione rifiutata) risolve a `{ok:false,error}`.
  * Il gate anti-lockout (`CredentialRunBudget`/`recordCredentialSuccess`/
@@ -189,30 +191,17 @@ export async function snmpValidateV3(
   credentialId: number,
   opts?: { port?: number; timeoutMs?: number }
 ): Promise<SnmpV3ValidateResult> {
-  const { getCredentialById } = await import("@/lib/db");
-  const { safeDecrypt } = await import("@/lib/crypto");
+  const { getDb } = await import("@/lib/db");
 
-  const cred = getCredentialById(credentialId);
-  if (!cred) return { ok: false, error: "Credenziale non trovata" };
-  if (String(cred.credential_type ?? "").toLowerCase() !== "snmp") {
-    return { ok: false, error: "La credenziale non è di tipo SNMP" };
+  // Un lettore solo (credentials/segreti.ts): vale una voce snmp_v3, o snmp con
+  // security_level. Una community non si prova come v3.
+  const esito = leggiSegretoDb(getDb(), credentialId, "snmp");
+  if (!esito.ok) return { ok: false, error: esito.motivo };
+  if (esito.segreto.forma !== "v3") {
+    return { ok: false, error: `La credenziale «${esito.nome}» è una community SNMP v1/v2c, non una SNMPv3` };
   }
 
-  const username = cred.encrypted_username ? safeDecrypt(cred.encrypted_username) : null;
-  if (!username || !username.trim()) {
-    return { ok: false, error: "Username SNMPv3 mancante o non decifrabile" };
-  }
-  const authKey = cred.encrypted_auth_key ? safeDecrypt(cred.encrypted_auth_key) : null;
-  const privKey = cred.encrypted_priv_key ? safeDecrypt(cred.encrypted_priv_key) : null;
-
-  const built = buildV3Options({
-    username,
-    securityLevel: cred.security_level ?? "",
-    authProtocol: cred.auth_protocol,
-    authKey,
-    privProtocol: cred.priv_protocol,
-    privKey,
-  });
+  const built = buildV3Options(esito.segreto.record);
   if (!built.ok) return { ok: false, error: built.error };
 
   const port = opts?.port ?? 161;

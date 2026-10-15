@@ -312,7 +312,7 @@ async function createSnmpArpClient(
           name: v3.username,
           level: snmp.SecurityLevel.authNoPriv,
           authProtocol: snmp.AuthProtocols.md5,
-          authKey: v3.authKey,
+          authKey: v3.authKey ?? undefined,
         };
         return snmp.createV3Session(device.host, user, opts);
       }

@@ -199,6 +199,34 @@ describe("resolveCredentialsForDb — porta propria della credenziale", () => {
   });
 });
 
+// Tappa 2 (T2, 15/10): il livello 5 usa la regola unica `tipiPerProtocollo`.
+// Prima aveva una sua copia che per `api` ammetteva solo voci `api`, mentre le
+// tendine (regola della tappa 1) offrivano anche le `ssh` (Proxmox con root).
+describe("resolveCredentialsForDb — livello 5 con la regola unica tipo ↔ protocollo", () => {
+  it("livello 5 per API: propone anche una voce SSH della catena di rete", () => {
+    seedNetwork(8, "10.8.0.0/24");
+    seedCredential(801, "api");
+    seedCredential(802, "ssh");
+    seedCredential(803, "windows");
+    db.prepare(`INSERT INTO network_credentials (network_id, credential_id, sort_order) VALUES (8, 801, 0)`).run();
+    db.prepare(`INSERT INTO network_credentials (network_id, credential_id, sort_order) VALUES (8, 802, 1)`).run();
+    db.prepare(`INSERT INTO network_credentials (network_id, credential_id, sort_order) VALUES (8, 803, 2)`).run();
+    const result = resolveCredentialsForDb(db, { networkId: 8 }, "api");
+    assert.deepEqual(result.map((r) => r.credential_id), [801, 802]);
+    assert.ok(result.every((r) => r.source === "network_chain" && r.protocol === "api"));
+  });
+
+  it("livello 5 per Redfish e ONVIF: solo voci API, mai SSH", () => {
+    seedNetwork(9, "10.9.0.0/24");
+    seedCredential(901, "api");
+    seedCredential(902, "ssh");
+    db.prepare(`INSERT INTO network_credentials (network_id, credential_id, sort_order) VALUES (9, 901, 0)`).run();
+    db.prepare(`INSERT INTO network_credentials (network_id, credential_id, sort_order) VALUES (9, 902, 1)`).run();
+    assert.deepEqual(resolveCredentialsForDb(db, { networkId: 9 }, "redfish").map((r) => r.credential_id), [901]);
+    assert.deepEqual(resolveCredentialsForDb(db, { networkId: 9 }, "onvif").map((r) => r.credential_id), [901]);
+  });
+});
+
 describe("resolveCredentialsFor / resolveCredentialFor — wrapper pubblico mai lancia", () => {
   it("senza contesto tenant attivo ritorna [] / null", () => {
     assert.deepEqual(resolveCredentialsFor({ networkId: 1 }, "ssh"), []);

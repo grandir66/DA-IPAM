@@ -26,22 +26,14 @@ import { closeTenantDb, getCredentialCommunityString, getTenantDb, withTenant } 
 import { getActiveTenants, getSetting } from "../../src/lib/db-hub";
 import { safeDecrypt } from "../../src/lib/crypto";
 import { resolveCredentialsForDb, type CredProtocol } from "../../src/lib/credentials/resolve";
+// La misura di D1b chiede cosa riceverebbero gli apparati con la regola NUOVA
+// tipo ↔ protocollo: è quella di tipi.ts (T2), non una copia.
+import { tipiPerProtocollo } from "../../src/lib/credentials/tipi";
 import { haSnmpOggi, protocolloPrincipale, provenienzaCommunity, type ProtocolloApparato } from "./appoggio-fotografia";
 import type { NetworkDevice } from "../../src/types";
 
 export { cartellaTenant, chiudiTutto, elencaTenant, getHubDbPath } from "./appoggio-fotografia";
 
-/**
- * Regola tipo ↔ protocollo della tappa 2 (tabella «Regola unica» dei vincoli
- * del piano). Copia locale: `tipiPerProtocollo` nasce nel T2, e la misura di
- * D1b chiede cosa riceverebbero gli apparati con la regola NUOVA.
- */
-const TIPI: Record<ProtocolloApparato, string[]> = {
-  ssh: ["ssh", "linux"],
-  winrm: ["windows"],
-  snmp: ["snmp"],
-  api: ["api", "ssh"],
-};
 /** Ruoli delle catene vecchie per protocollo (come legacyRolesForProtocol di resolve.ts). */
 const RUOLI_VECCHI: Record<ProtocolloApparato, string[]> = {
   ssh: ["ssh", "linux"],
@@ -187,7 +179,7 @@ function misuraD1b(dbh: Database.Database, apparati: NetworkDevice[]): Righe {
   const hubWin = idImpostato("host_windows_credential_id");
   const hubLin = idImpostato("host_linux_credential_id");
   for (const proto of ["ssh", "winrm", "api", "snmp"] as const) {
-    const tipi = TIPI[proto];
+    const tipi = tipiPerProtocollo(proto);
     const ruoli = RUOLI_VECCHI[proto];
     let senzaFonte = 0;
     let senzaHost = 0;

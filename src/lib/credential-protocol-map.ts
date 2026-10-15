@@ -4,37 +4,21 @@
  * mostrate al utente e per impostare il tipo di default nel quick-create.
  */
 
+import { etichettaTipo, tipiPerProtocollo } from "@/lib/credentials/tipi";
+
 /**
  * Regola unica (tappa 1 credenziali, 15/10): quali tipi di credenziale
  * (`credentials.credential_type`) valgono per un protocollo — di apparato
  * (`network_devices.protocol`) o di binding (`protocol_type`). Prima c'erano
  * cinque regole diverse: per SSH le tendine mostravano le «windows» e
  * nascondevano le «linux», che la scansione SSH accetta.
- * - SSH: `ssh` e `linux` (getSshLinuxCredentialPair accetta entrambe);
- * - WinRM: solo `windows` (la prova WinRM rifiuta le altre);
- * - SNMP: solo `snmp`;
- * - API: `api` e `ssh` (Proxmox con utente root: l'acquisizione non guarda il tipo);
- * - Redfish/ONVIF: `api`.
- * Protocollo sconosciuto o assente: i tipi di accesso, senza SNMP (come prima).
+ *
+ * Tappa 2 (T2, 15/10): la regola sta in `credentials/tipi.ts`
+ * (`tipiPerProtocollo`), la stessa che usa il motore; qui resta il nome che
+ * le pagine importano già.
  */
 export function tipiCredenzialePerProtocollo(protocollo: string | null | undefined): string[] {
-  switch (protocollo) {
-    case "ssh":
-      return ["ssh", "linux"];
-    case "winrm":
-      return ["windows"];
-    case "snmp":
-    case "snmp_v2":
-    case "snmp_v3":
-      return ["snmp"];
-    case "api":
-      return ["api", "ssh"];
-    case "redfish":
-    case "onvif":
-      return ["api"];
-    default:
-      return ["ssh", "api", "windows", "linux"];
-  }
+  return tipiPerProtocollo(protocollo);
 }
 
 export interface CredentialProtocolMap {
@@ -59,12 +43,18 @@ export function credTypeForProtocol(protocol: string | undefined | null): Creden
   }
 }
 
+/**
+ * Tipi della creazione rapida di una voce. Restano i cinque che
+ * `CredentialSchema` e il CHECK di `credentials` accettano fino alla 2c: un
+ * tipo nuovo qui darebbe 400 o 500. `linux` ha un'etichetta sua, altrimenti
+ * comparirebbe due volte «SSH».
+ */
 export const CRED_TYPE_OPTIONS: Array<{ value: string; label: string }> = [
-  { value: "windows", label: "Windows (WinRM)" },
-  { value: "ssh", label: "SSH" },
-  { value: "linux", label: "Linux" },
-  { value: "api", label: "API" },
-  { value: "snmp", label: "SNMP community" },
+  { value: "windows", label: etichettaTipo("windows") },
+  { value: "ssh", label: etichettaTipo("ssh") },
+  { value: "linux", label: "Linux (come SSH)" },
+  { value: "api", label: etichettaTipo("api") },
+  { value: "snmp", label: etichettaTipo("snmp") },
 ];
 
 export const CRED_TYPE_SNMP_ONLY: Array<{ value: string; label: string }> = [

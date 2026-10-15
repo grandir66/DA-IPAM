@@ -62,6 +62,7 @@ import { NetworkCredentialsTable } from "@/components/shared/network-credentials
 import { ProtocolBadges } from "@/components/shared/protocol-badges";
 import { AddableSelect } from "@/components/shared/addable-select";
 import { credTypeForProtocol, CRED_TYPE_OPTIONS, tipiCredenzialePerProtocollo } from "@/lib/credential-protocol-map";
+import { proponiApparato, riallineaAlProtocollo, type CredenzialeArchivio, type ProtocolloApparato } from "@/lib/devices/proposta-apparato";
 import { HostCredentialsDialog } from "@/components/shared/host-credentials-dialog";
 import {
   getDefaultNetworkDeviceVendorOptions,
@@ -210,12 +211,14 @@ export function NetworkDetailClient({
   const [editingField, setEditingField] = useState<"custom_name" | "notes" | "classification" | null>(null);
   const [enriching, setEnriching] = useState(false);
   const [attributionPreviewOpen, setAttributionPreviewOpen] = useState(false);
-  const [addDeviceCredentials, setAddDeviceCredentials] = useState<{ id: number; name: string; credential_type: string }[]>([]);
+  const [addDeviceCredentials, setAddDeviceCredentials] = useState<{ id: number; name: string; credential_type: string; port?: number | null }[]>([]);
   const [selectedHostIds, setSelectedHostIds] = useState<Set<number>>(new Set());
   const [bulkAddOpen, setBulkAddOpen] = useState(false);
-  const [bulkAddClassification, setBulkAddClassification] = useState("server");
+  // Valori veri li mette apriAggiungiDispositivi dalla proposta sugli host scelti (tappa 1).
+  const [bulkAddClassification, setBulkAddClassification] = useState("");
   const [bulkAddProtocol, setBulkAddProtocol] = useState("ssh");
   const [bulkAddVendor, setBulkAddVendor] = useState("other");
+  const [bulkAddHostDiversi, setBulkAddHostDiversi] = useState(false);
   const [bulkAddCredentialId, setBulkAddCredentialId] = useState<string | null>(null);
   const [bulkAddSnmpCredentialId, setBulkAddSnmpCredentialId] = useState<string | null>(null);
   const [bulkAddVendorSubtype, setBulkAddVendorSubtype] = useState<string | null>(null);
@@ -336,7 +339,7 @@ export function NetworkDetailClient({
     try {
       const r = await fetch("/api/credentials");
       if (r.ok) {
-        const data = (await r.json()) as { id: number; name: string; credential_type: string }[];
+        const data = (await r.json()) as { id: number; name: string; credential_type: string; port?: number | null }[];
         setAddDeviceCredentials(data);
       }
     } catch {
@@ -527,8 +530,52 @@ export function NetworkDetailClient({
 
   const clearHostSelection = () => setSelectedHostIds(new Set());
 
+  const archivioCredenziali = (): CredenzialeArchivio[] =>
+    addDeviceCredentials.map((c) => ({ id: c.id, name: c.name, credential_type: c.credential_type, port: c.port ?? null }));
+
+  /**
+   * Apre «Aggiungi dispositivi» coi valori proposti dagli host scelti (tappa 1):
+   * prima partiva sempre da «server + Altro + UPS + SNMP v2». Se gli host
+   * danno proposte diverse, la classificazione resta da scegliere.
+   */
+  function apriAggiungiDispositivi() {
+    const archivio = archivioCredenziali();
+    const proposte = hosts.filter((h) => selectedHostIds.has(h.id)).map((h) => proponiApparato(h, archivio));
+    const prima = proposte[0];
+    const uguali = !!prima && proposte.every(
+      (p) => p.vendor === prima.vendor && p.protocol === prima.protocol && p.classification === prima.classification
+    );
+    setBulkAddVendor(prima?.vendor ?? "other");
+    setBulkAddVendorSubtype(null);
+    setBulkAddProtocol(prima?.protocol ?? "ssh");
+    setBulkAddClassification(uguali ? prima.classification : "");
+    setBulkAddProductProfile(uguali ? prima.productProfile : null);
+    setBulkAddScanTarget(prima?.scanTarget ?? null);
+    setBulkAddCredentialId(uguali ? prima.credentialId : null);
+    setBulkAddSnmpCredentialId(uguali ? prima.snmpCredentialId : null);
+    setBulkAddHostDiversi(proposte.length > 1 && !uguali);
+    setBulkTestResult(null);
+    setBulkAddOpen(true);
+  }
+
+  /** Cambio di protocollo: credenziale incompatibile azzerata, con SNMP la principale è la SNMP. */
+  function cambiaProtocolloAggiunta(v: string) {
+    const q = riallineaAlProtocollo(
+      {
+        name: "", vendor: bulkAddVendor, protocol: bulkAddProtocol as ProtocolloApparato,
+        classification: bulkAddClassification, productProfile: bulkAddProductProfile, scanTarget: bulkAddScanTarget,
+        port: 0, credentialId: bulkAddCredentialId, snmpCredentialId: bulkAddSnmpCredentialId, useForArpPoll: false,
+      },
+      v as ProtocolloApparato,
+      archivioCredenziali(),
+    );
+    setBulkAddProtocol(v);
+    setBulkAddCredentialId(q.credentialId);
+    setBulkAddSnmpCredentialId(q.snmpCredentialId);
+  }
+
   async function handleBulkAdd() {
-    if (selectedHostIds.size === 0) return;
+    if (selectedHostIds.size === 0 || !bulkAddClassification) return;
     const hasCred = bulkAddCredentialId && bulkAddCredentialId !== "none";
     const hasSnmpCred = bulkAddSnmpCredentialId && bulkAddSnmpCredentialId !== "none";
     setBulkAddSaving(true);
@@ -1337,7 +1384,7 @@ export function NetworkDetailClient({
                       variant="default"
                       size="default"
                       className="font-medium"
-                      onClick={() => setBulkAddOpen(true)}
+                      onClick={apriAggiungiDispositivi}
                       disabled={selectedHostIds.size === 0 || bulkHostBusy}
                     >
                       <Plus className="h-4 w-4 mr-1.5 shrink-0" />
@@ -1505,20 +1552,25 @@ export function NetworkDetailClient({
                 setBulkAddVendor(v);
                 if (v !== "hp") setBulkAddVendorSubtype(null);
                 const nextP = coerceProtocolForVendor(v, bulkAddProtocol);
-                if (nextP !== bulkAddProtocol) setBulkAddProtocol(nextP);
+                if (nextP !== bulkAddProtocol) cambiaProtocolloAggiunta(nextP);
                 const nextS = coerceScanTargetForVendor(v, bulkAddScanTarget);
                 if (nextS !== bulkAddScanTarget) setBulkAddScanTarget(nextS);
               }}
               onVendorSubtypeChange={(v) => setBulkAddVendorSubtype(v)}
-              onProtocolChange={(v) => setBulkAddProtocol(v)}
+              onProtocolChange={(v) => { if (v !== bulkAddProtocol) cambiaProtocolloAggiunta(v); }}
               onScanTargetChange={(v) => setBulkAddScanTarget(v)}
               onCredentialIdChange={(v) => setBulkAddCredentialId(v)}
               onSnmpCredentialIdChange={(v) => setBulkAddSnmpCredentialId(v)}
               vendorOptions={bulkVendorOptions}
-              defaultClassification="server"
-              defaultVendor="other"
-              defaultProtocol="ssh"
+              defaultClassification=""
+              defaultVendor={bulkAddVendor}
+              defaultProtocol={bulkAddProtocol}
             />
+            {bulkAddHostDiversi && (
+              <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-800 dark:text-amber-200/90">
+                Gli host selezionati non sono dello stesso tipo: scegli classificazione, marca e protocollo validi per tutti.
+              </p>
+            )}
 
             {/* Credenziali: scelta esplicita + creazione inline ─ con badge eredità automatica */}
             {(() => {
@@ -1526,6 +1578,8 @@ export function NetworkDetailClient({
               const tipiPrincipale = tipiCredenzialePerProtocollo(bulkAddProtocol);
               const primaryOpts = addDeviceCredentials.filter((c) => tipiPrincipale.includes(c.credential_type));
               const snmpOpts = addDeviceCredentials.filter((c) => c.credential_type === "snmp");
+              // Con SNMP come protocollo la principale è già la SNMP: la seconda tendina non serve.
+              const protocolloSnmp = bulkAddProtocol === "snmp_v2" || bulkAddProtocol === "snmp_v3";
               const protos = new Set<string>();
               for (const hid of selectedHostIds) {
                 for (const p of (hostValidatedProtocols[hid] || [])) protos.add(p);
@@ -1553,6 +1607,7 @@ export function NetworkDetailClient({
                         onCreated={refreshCredentialsList}
                       />
                     </div>
+                    {!protocolloSnmp && (
                     <div className="space-y-1.5">
                       <Label className="text-xs">Credenziale SNMP (opzionale)</Label>
                       <AddableSelect
@@ -1568,6 +1623,7 @@ export function NetworkDetailClient({
                         onCreated={refreshCredentialsList}
                       />
                     </div>
+                    )}
                   </div>
                   <div className="text-xs text-muted-foreground border-t border-border/60 pt-2">
                     {protos.size > 0 ? (
@@ -1617,10 +1673,12 @@ export function NetworkDetailClient({
                       }),
                     });
                     const data = await res.json();
+                    // Si prova sul primo host scelto: lo si dice, con più host l'esito non vale per tutti.
+                    const suChi = selectedHostIds.size > 1 ? `Provato su ${firstHost.ip} (il primo dei ${selectedHostIds.size} scelti)` : `Provato su ${firstHost.ip}`;
                     if (res.ok && data.success) {
-                      setBulkTestResult({ ok: true, message: data.message || `Connessione a ${firstHost.ip} riuscita` });
+                      setBulkTestResult({ ok: true, message: `${suChi}: ${data.message || "connessione riuscita"}` });
                     } else {
-                      setBulkTestResult({ ok: false, message: data.error || "Connessione fallita" });
+                      setBulkTestResult({ ok: false, message: `${suChi}: ${data.error || "connessione fallita"}` });
                     }
                   } catch {
                     setBulkTestResult({ ok: false, message: "Errore di rete" });
@@ -1633,10 +1691,13 @@ export function NetworkDetailClient({
               >
                 {bulkTesting ? "Test in corso..." : "Prova connessione"}
               </Button>
-              <Button onClick={handleBulkAdd} disabled={bulkAddSaving} className="flex-1">
+              <Button onClick={handleBulkAdd} disabled={bulkAddSaving || !bulkAddClassification} className="flex-1">
                 {bulkAddSaving ? "Aggiunta in corso..." : "Aggiungi dispositivi"}
               </Button>
             </div>
+            {!bulkAddClassification && (
+              <p className="text-right text-sm text-amber-800 dark:text-amber-200">Scegli la classificazione</p>
+            )}
           </div>
           </DialogScrollableArea>
         </DialogContent>

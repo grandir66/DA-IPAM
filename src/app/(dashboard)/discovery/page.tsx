@@ -33,7 +33,8 @@ import { DeviceFormFields } from "@/components/shared/device-form-fields";
 import { LinkIpsDialog } from "@/components/devices/link-ips-dialog";
 import { InlineEditCell } from "@/components/shared/inline-edit-cell";
 import { AddableSelect } from "@/components/shared/addable-select";
-import { credTypeForProtocol, CRED_TYPE_OPTIONS } from "@/lib/credential-protocol-map";
+import { credTypeForProtocol, CRED_TYPE_OPTIONS, tipiCredenzialePerProtocollo } from "@/lib/credential-protocol-map";
+import { proponiApparato, riallineaAlProtocollo, type ProtocolloApparato } from "@/lib/devices/proposta-apparato";
 import { CreateFingerprintRuleDialog } from "@/components/shared/create-fingerprint-rule-dialog";
 import { SortableTableHead } from "@/components/shared/sortable-table-head";
 import { Pagination } from "@/components/shared/pagination";
@@ -521,7 +522,9 @@ export default function DiscoveryPage() {
   const [addDevicesOpen, setAddDevicesOpen] = useState(false);
   const [linkSameDeviceOpen, setLinkSameDeviceOpen] = useState(false);
   const [addDevicesSaving, setAddDevicesSaving] = useState(false);
-  const [addClassification, setAddClassification] = useState<string>("server");
+  // Valori veri li mette openAddDevices dalla proposta sugli host scelti (tappa 1).
+  const [addClassification, setAddClassification] = useState<string>("");
+  const [addHostDiversi, setAddHostDiversi] = useState(false);
   const [addVendor, setAddVendor] = useState<string>("other");
   const [addProtocol, setAddProtocol] = useState<string>("ssh");
   const [addVendorSubtype, setAddVendorSubtype] = useState<string | null>(null);
@@ -530,7 +533,7 @@ export default function DiscoveryPage() {
   const [addCredentialId, setAddCredentialId] = useState<string | null>(null);
   const [addSnmpCredentialId, setAddSnmpCredentialId] = useState<string | null>(null);
   const [addUseForArpPoll, setAddUseForArpPoll] = useState<boolean>(false);
-  const [addCredentials, setAddCredentials] = useState<Array<{ id: number; name: string; credential_type: string }>>([]);
+  const [addCredentials, setAddCredentials] = useState<Array<{ id: number; name: string; credential_type: string; port?: number | null }>>([]);
 
   const refreshCredentials = async () => {
     try {
@@ -1013,58 +1016,52 @@ export default function DiscoveryPage() {
     }
   }
 
-  // F2.3: pre-fill del bulk dialog da inferred_* degli host selezionati.
-  // Se sono tutti omogenei (stesso inferred_*), applica come default; altrimenti
-  // lascia i default generici (server/other/ssh) e lascia all'utente la scelta.
+  const archivioCredenziali = () =>
+    addCredentials.map((c) => ({ id: c.id, name: c.name, credential_type: c.credential_type, port: c.port ?? null }));
+
+  // Tappa 1 (15/10): valori iniziali dalla proposta unica sugli host scelti
+  // (piattaforma dal SO, classificazione valida). Tutti gli stati si
+  // reimpostano a ogni apertura: prima restavano quelli dell'apertura
+  // precedente, e «printer» o «microsoft» arrivavano al server.
   function openAddDevices() {
-    const selectedHosts = hosts.filter((h) => selectedIds.has(h.id));
-    if (selectedHosts.length === 0) { setAddDevicesOpen(true); return; }
-
-    // Helper: ritorna valore unanime tra gli host, altrimenti null
-    function unanimous<T>(values: Array<T | null | undefined>): T | null {
-      const nonNull = values.filter((v): v is T => v != null && v !== "");
-      if (nonNull.length === 0) return null;
-      const first = nonNull[0];
-      return nonNull.every((v) => v === first) ? first : null;
-    }
-
-    const validVendors = new Set(["cisco", "mikrotik", "juniper", "ubiquiti", "fortinet", "stormshield", "sonicwall", "draytek", "synology", "qnap", "vmware", "proxmox", "hp", "dell", "lenovo", "microsoft", "apple", "other"]);
-    const validProtocols = new Set(["ssh", "snmp_v2", "snmp_v3", "winrm", "api"]);
-    const validScanTargets = new Set(["windows", "linux", "macos", "proxmox", "vmware", "network"]);
-
-    const inferredVendor = unanimous(selectedHosts.map((h) => h.inferred_vendor));
-    const inferredProtocol = unanimous(selectedHosts.map((h) => h.inferred_protocol));
-    const inferredScanTarget = unanimous(selectedHosts.map((h) => h.inferred_scan_target));
-    const inferredDeviceType = unanimous(selectedHosts.map((h) => h.inferred_device_type));
-
-    if (inferredVendor && validVendors.has(inferredVendor)) setAddVendor(inferredVendor);
-    if (inferredProtocol && validProtocols.has(inferredProtocol)) setAddProtocol(inferredProtocol);
-    if (inferredScanTarget && validScanTargets.has(inferredScanTarget)) setAddScanTarget(inferredScanTarget);
-
-    // device_type → classification mapping per il bulk dialog (classifications più granulari)
-    if (inferredDeviceType) {
-      const dtMap: Record<string, string> = {
-        workstation: "workstation",
-        server: "server",
-        router: "router",
-        switch: "switch",
-        firewall: "firewall",
-        hypervisor: "server",
-        printer: "printer",
-        nas: "nas",
-        ups: "ups",
-        iot: "iot",
-      };
-      const mapped = dtMap[inferredDeviceType];
-      if (mapped) setAddClassification(mapped);
-    }
-
+    const archivio = archivioCredenziali();
+    const proposte = hosts.filter((h) => selectedIds.has(h.id)).map((h) => proponiApparato(h, archivio));
+    const prima = proposte[0];
+    const uguali = !!prima && proposte.every(
+      (p) => p.vendor === prima.vendor && p.protocol === prima.protocol && p.classification === prima.classification
+    );
+    setAddVendor(prima?.vendor ?? "other");
+    setAddVendorSubtype(null);
+    setAddProtocol(prima?.protocol ?? "ssh");
+    setAddClassification(uguali ? prima.classification : "");
+    setAddProductProfile(uguali ? prima.productProfile : null);
+    setAddScanTarget(prima?.scanTarget ?? null);
+    setAddCredentialId(uguali ? prima.credentialId : null);
+    setAddSnmpCredentialId(uguali ? prima.snmpCredentialId : null);
+    setAddUseForArpPoll(uguali ? prima.useForArpPoll : false);
+    setAddHostDiversi(proposte.length > 1 && !uguali);
     setAddDevicesOpen(true);
+  }
+
+  /** Cambio di protocollo: credenziale incompatibile azzerata, con SNMP la principale è la SNMP. */
+  function cambiaProtocolloAggiunta(v: string) {
+    const q = riallineaAlProtocollo(
+      {
+        name: "", vendor: addVendor, protocol: addProtocol as ProtocolloApparato,
+        classification: addClassification, productProfile: addProductProfile, scanTarget: addScanTarget,
+        port: 0, credentialId: addCredentialId, snmpCredentialId: addSnmpCredentialId, useForArpPoll: addUseForArpPoll,
+      },
+      v as ProtocolloApparato,
+      archivioCredenziali(),
+    );
+    setAddProtocol(v);
+    setAddCredentialId(q.credentialId);
+    setAddSnmpCredentialId(q.snmpCredentialId);
   }
 
   // ---------- bulk edit ----------
   async function handleBulkAddToDevices() {
-    if (selectedIds.size === 0) return;
+    if (selectedIds.size === 0 || !addClassification) return;
     setAddDevicesSaving(true);
     try {
       const body: Record<string, unknown> = {
@@ -1077,7 +1074,8 @@ export default function DiscoveryPage() {
       };
       if (addProductProfile) body.product_profile = addProductProfile;
       if (addVendorSubtype) body.vendor_subtype = addVendorSubtype;
-      if (addUseForArpPoll) body.use_for_arp_poll = 1;
+      // 0 esplicito: una spunta tolta resta tolta.
+      body.use_for_arp_poll = addUseForArpPoll ? 1 : 0;
       if (addCredentialId && addCredentialId !== "none") body.credential_id = Number(addCredentialId);
       if (addSnmpCredentialId && addSnmpCredentialId !== "none") body.snmp_credential_id = Number(addSnmpCredentialId);
       const res = await fetch("/api/devices/bulk", {
@@ -2796,21 +2794,29 @@ export default function DiscoveryPage() {
                 onClassificationChange={(v) => setAddClassification(v)}
                 onVendorChange={(v) => { setAddVendor(v); if (v !== "hp") setAddVendorSubtype(null); }}
                 onVendorSubtypeChange={setAddVendorSubtype}
-                onProtocolChange={(v) => setAddProtocol(v)}
+                onProtocolChange={(v) => { if (v !== addProtocol) cambiaProtocolloAggiunta(v); }}
                 onScanTargetChange={setAddScanTarget}
                 onCredentialIdChange={setAddCredentialId}
                 onSnmpCredentialIdChange={setAddSnmpCredentialId}
                 onProductProfileChange={(v) => setAddProductProfile(v)}
                 onUseForArpPollChange={setAddUseForArpPoll}
-                defaultClassification="server"
-                defaultVendor="other"
-                defaultProtocol="ssh"
+                defaultClassification=""
+                defaultVendor={addVendor}
+                defaultProtocol={addProtocol}
               />
+              {addHostDiversi && (
+                <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-800 dark:text-amber-200/90">
+                  Gli host selezionati non sono dello stesso tipo: scegli classificazione, marca e protocollo validi per tutti.
+                </p>
+              )}
 
               {(() => {
                 const credMap = credTypeForProtocol(addProtocol);
-                const primaryOpts = addCredentials.filter((c) => c.credential_type !== "snmp");
+                const tipiPrincipale = tipiCredenzialePerProtocollo(addProtocol);
+                const primaryOpts = addCredentials.filter((c) => tipiPrincipale.includes(c.credential_type));
                 const snmpOpts = addCredentials.filter((c) => c.credential_type === "snmp");
+                // Con SNMP come protocollo la principale è già la SNMP: la seconda tendina non serve.
+                const protocolloSnmp = addProtocol === "snmp_v2" || addProtocol === "snmp_v3";
                 return (
                   <div className="rounded-lg border border-border/60 bg-muted/20 p-3 space-y-3">
                     <div className="text-sm font-medium">Credenziali</div>
@@ -2831,6 +2837,7 @@ export default function DiscoveryPage() {
                           onCreated={refreshCredentials}
                         />
                       </div>
+                      {!protocolloSnmp && (
                       <div className="space-y-1.5">
                         <Label className="text-xs">Credenziale SNMP (opzionale)</Label>
                         <AddableSelect
@@ -2846,6 +2853,7 @@ export default function DiscoveryPage() {
                           onCreated={refreshCredentials}
                         />
                       </div>
+                      )}
                     </div>
                     <p className="text-xs text-muted-foreground border-t border-border/60 pt-2">
                       Le credenziali validate sugli host saranno ereditate come fallback. Imposta qui per forzare credenziali specifiche.
@@ -2855,11 +2863,14 @@ export default function DiscoveryPage() {
               })()}
             </div>
           </DialogScrollableArea>
-          <DialogFooter className="border-t border-border/50 px-4 py-3">
+          <DialogFooter className="border-t border-border/50 px-4 py-3 items-center">
+            {!addClassification && (
+              <span className="mr-auto text-sm text-amber-800 dark:text-amber-200">Scegli la classificazione</span>
+            )}
             <Button variant="ghost" onClick={() => setAddDevicesOpen(false)} disabled={addDevicesSaving}>
               Annulla
             </Button>
-            <Button onClick={handleBulkAddToDevices} disabled={addDevicesSaving || selectedIds.size === 0}>
+            <Button onClick={handleBulkAddToDevices} disabled={addDevicesSaving || selectedIds.size === 0 || !addClassification}>
               {addDevicesSaving ? <><Loader2 className="h-4 w-4 mr-1.5 animate-spin" />Creazione...</> : <><Server className="h-4 w-4 mr-1.5" />Crea {selectedIds.size} dispositivi</>}
             </Button>
           </DialogFooter>

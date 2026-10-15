@@ -137,7 +137,9 @@ export async function POST(request: Request) {
     }
 
     const defaultPort = protocol === "ssh" ? 22 : protocol === "api" ? 443 : protocol === "winrm" ? 5985 : 161;
-    const devicePort = port ?? defaultPort;
+    // Senza porta nel corpo vale quella propria della credenziale principale (tappa 1).
+    const mainCredRow = hasCred && credential_id ? getCredentialById(credential_id) : undefined;
+    const devicePort = port ?? mainCredRow?.port ?? defaultPort;
     // Porta propria della credenziale SNMP (tappa 1), non 161 fisso.
     const snmpCredRow = snmp_credential_id && snmp_credential_id > 0 ? getCredentialById(snmp_credential_id) : undefined;
     const snmpBindingPort = snmpCredRow ? portaCredenziale(snmpCredRow, "snmp") : 161;

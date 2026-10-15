@@ -60,6 +60,9 @@ export function creaApparato(body: unknown): EsitoCreaApparato {
     data.protocol === "ssh" ? 22 : data.protocol === "api" ? (deviceType === "hypervisor" ? 8006 : 443) : data.protocol === "winrm" ? 5985 : 161;
   const scanTarget =
     data.scan_target ?? scanTargetHintFromProductProfile(productProfile);
+  // Senza porta nel corpo vale quella propria della credenziale principale (tappa 1).
+  const mainCred = data.credential_id ? getCredentialById(data.credential_id) : undefined;
+  const devicePort = data.port || mainCred?.port || defaultPort;
   const device = createNetworkDevice({
     name: data.name,
     host: data.host,
@@ -75,7 +78,7 @@ export function creaApparato(body: unknown): EsitoCreaApparato {
     community_string: data.community_string ? encrypt(data.community_string) : null,
     api_token: data.api_token ? encrypt(data.api_token) : null,
     api_url: data.api_url || null,
-    port: data.port || defaultPort,
+    port: devicePort,
     enabled: 1,
     scan_target: scanTarget,
     product_profile: productProfile,
@@ -84,7 +87,6 @@ export function creaApparato(body: unknown): EsitoCreaApparato {
 
   // Crea bindings credenziali nella nuova tabella
   const protoType = data.protocol === "winrm" ? "winrm" : data.protocol === "snmp_v2" || data.protocol === "snmp_v3" ? "snmp" : data.protocol === "api" ? "api" : "ssh";
-  const devicePort = data.port || defaultPort;
   if (data.credential_id) {
     addDeviceCredentialBinding({ device_id: device.id, credential_id: data.credential_id, protocol_type: protoType, port: devicePort });
   } else if (data.username) {

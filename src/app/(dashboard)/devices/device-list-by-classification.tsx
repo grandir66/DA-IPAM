@@ -65,8 +65,10 @@ import {
   vendorSubtypeFromProductProfile,
   type ProductProfileId,
 } from "@/lib/device-product-profiles";
-import type { NetworkDevice } from "@/types";
+import type { HostDetail, NetworkDevice } from "@/types";
 import { getDefaultNetworkDeviceVendorOptions } from "@/lib/network-device-vendor-options";
+import { proponiApparato, type CredenzialeArchivio, type PropostaApparato } from "@/lib/devices/proposta-apparato";
+import { fetchJson } from "@/lib/fetch-json";
 
 const BULK_PROTOCOL_SELECT_OPTIONS = [
   { value: "ssh", label: "SSH" },
@@ -111,6 +113,8 @@ interface Credential {
   id: number;
   name: string;
   credential_type: string;
+  /** Porta propria (tappa 1); null = standard del protocollo. */
+  port?: number | null;
 }
 
 interface DeviceListByClassificationProps {
@@ -137,12 +141,12 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editingDevice, setEditingDevice] = useState<DeviceOrHost | null>(null);
-  const [createVendor, setCreateVendor] = useState<string>(
-    effectiveClassification === "hypervisor" ? "proxmox" : effectiveClassification === "server" || effectiveClassification === "workstation" || effectiveClassification === "notebook" ? "windows" : effectiveClassification === "storage" ? "synology" : effectiveClassification === "router" ? "mikrotik" : effectiveClassification === "access_point" ? "ubiquiti" : effectiveClassification === "firewall" ? "stormshield" : effectiveClassification === "stampante" ? "hp" : "other"
-  );
-  const [createProtocol, setCreateProtocol] = useState<string>(
-    effectiveClassification === "hypervisor" ? "ssh" : effectiveClassification === "server" || effectiveClassification === "workstation" || effectiveClassification === "notebook" ? "winrm" : effectiveClassification === "storage" ? "ssh" : effectiveClassification === "access_point" || effectiveClassification === "firewall" ? "ssh" : effectiveClassification === "stampante" || effectiveClassification === "telecamera" || effectiveClassification === "voip" || effectiveClassification === "iot" ? "snmp_v2" : "ssh"
-  );
+  // Valori di partenza del «Nuovo …» senza host: dipendono solo dalla classificazione della pagina.
+  const vendorDiPartenza = effectiveClassification === "hypervisor" ? "proxmox" : effectiveClassification === "server" || effectiveClassification === "workstation" || effectiveClassification === "notebook" ? "windows" : effectiveClassification === "storage" ? "synology" : effectiveClassification === "router" ? "mikrotik" : effectiveClassification === "access_point" ? "ubiquiti" : effectiveClassification === "firewall" ? "stormshield" : effectiveClassification === "stampante" ? "hp" : "other";
+  const protocolloDiPartenza = effectiveClassification === "hypervisor" ? "ssh" : effectiveClassification === "server" || effectiveClassification === "workstation" || effectiveClassification === "notebook" ? "winrm" : effectiveClassification === "storage" ? "ssh" : effectiveClassification === "access_point" || effectiveClassification === "firewall" ? "ssh" : effectiveClassification === "stampante" || effectiveClassification === "telecamera" || effectiveClassification === "voip" || effectiveClassification === "iot" ? "snmp_v2" : "ssh";
+  const [createVendor, setCreateVendor] = useState<string>(vendorDiPartenza);
+  const [createProtocol, setCreateProtocol] = useState<string>(protocolloDiPartenza);
+  const [createPort, setCreatePort] = useState<number | null>(null);
   const [createCredentialId, setCreateCredentialId] = useState<string | null>(null);
   const [createSnmpCredentialId, setCreateSnmpCredentialId] = useState<string | null>(null);
   const [createVendorSubtype, setCreateVendorSubtype] = useState<string | null>(null);
@@ -319,24 +323,36 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
   async function handleBulkAddFromHosts() {
     if (selectedHostItems.length === 0) return;
     setBulkAddingFromHosts(true);
-    const vendor = effectiveClassification === "stampante" ? "hp" : effectiveClassification === "telecamera" || effectiveClassification === "voip" || effectiveClassification === "iot" ? "other" : effectiveClassification === "storage" ? "synology" : effectiveClassification === "server" || effectiveClassification === "workstation" || effectiveClassification === "notebook" ? "windows" : "other";
-    const protocol = effectiveClassification === "stampante" || effectiveClassification === "telecamera" || effectiveClassification === "voip" || effectiveClassification === "iot" ? "snmp_v2" : effectiveClassification === "storage" ? "ssh" : effectiveClassification === "server" || effectiveClassification === "workstation" || effectiveClassification === "notebook" ? "winrm" : "ssh";
-    const port = protocol === "winrm" ? 5985 : protocol?.startsWith("snmp") ? 161 : 22;
+    // Tipo dispositivo dalla classificazione della pagina (prima «switch» per tutto).
+    const deviceTypeDaPagina =
+      ["router", "switch", "firewall", "access_point", "hypervisor"].includes(effectiveClassification)
+        ? effectiveClassification
+        : effectiveClassification === "storage" || effectiveClassification === "nas" ? "nas" : "server";
     let ok = 0;
     let fail = 0;
     for (const host of selectedHostItems) {
       try {
+        // Proposta per host (tappa 1): piattaforma dal suo SO, credenziale validata e porta.
+        const p = await propostaPerHost(host.host_id);
+        if (!p) {
+          fail++;
+          continue;
+        }
         const res = await fetch("/api/devices", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             name: host.name,
             host: host.host,
-            device_type: "switch",
+            device_type: deviceTypeDaPagina,
             classification: effectiveClassification,
-            vendor,
-            protocol,
-            port,
+            vendor: p.vendor,
+            protocol: p.protocol,
+            port: p.port,
+            product_profile: p.productProfile || undefined,
+            scan_target: p.scanTarget || undefined,
+            credential_id: p.credentialId ? Number(p.credentialId) : undefined,
+            snmp_credential_id: p.snmpCredentialId ? Number(p.snmpCredentialId) : undefined,
           }),
         });
         if (res.ok) ok++;
@@ -618,8 +634,54 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
 
     toast.success("Dispositivo aggiunto");
     setDialogOpen(false);
-    setHostToAdd(null);
+    azzeraNuovo();
     fetchDevices();
+  }
+
+  /**
+   * Stato del «Nuovo …» azzerato alla chiusura (tappa 1): prima la credenziale
+   * e il profilo scelti per un host restavano proposti per il successivo.
+   */
+  function azzeraNuovo() {
+    setHostToAdd(null);
+    setCreateVendor(vendorDiPartenza);
+    setCreateProtocol(protocolloDiPartenza);
+    setCreatePort(null);
+    setCreateCredentialId(null);
+    setCreateSnmpCredentialId(null);
+    setCreateVendorSubtype(null);
+    setCreateProductProfile(null);
+    setCreateUseForArpPoll(effectiveClassification === "router" || effectiveClassification === "firewall");
+  }
+
+  /**
+   * Proposta d'apparato dalla scheda dell'host (tappa 1): la riga della lista
+   * non porta famiglia SO né credenziali validate. Un errore si dice, non si
+   * trasforma in «hp + SNMP».
+   */
+  async function propostaPerHost(hostId: number): Promise<PropostaApparato | null> {
+    const r = await fetchJson<HostDetail>(`/api/hosts/${hostId}`, { cache: "no-store" });
+    if (!r.ok) {
+      toast.error(`Scheda dell'host non letta (${r.message})`);
+      return null;
+    }
+    const archivio: CredenzialeArchivio[] = credentials.map((c) => ({ id: c.id, name: c.name, credential_type: c.credential_type, port: c.port ?? null }));
+    return proponiApparato(r.data, archivio);
+  }
+
+  async function configuraDaHost(dev: { name: string; host: string; host_id: number }) {
+    const p = await propostaPerHost(dev.host_id);
+    if (!p) return;
+    setHostToAdd({ name: dev.name, host: dev.host });
+    setCreateVendor(p.vendor);
+    setCreateVendorSubtype(null);
+    setCreateProtocol(p.protocol);
+    setCreatePort(p.port);
+    setCreateCredentialId(p.credentialId);
+    setCreateSnmpCredentialId(p.snmpCredentialId);
+    setCreateProductProfile(p.productProfile);
+    setCreateUseForArpPoll(effectiveClassification === "router" || effectiveClassification === "firewall");
+    setDialogOpen(true);
   }
 
   async function handleQuery(id: number) {
@@ -760,7 +822,7 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
           </div>
         </div>
         {showAddButton && (
-          <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) setHostToAdd(null); }}>
+          <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) azzeraNuovo(); }}>
             <DialogTrigger render={<Button><Plus className="h-4 w-4 mr-2" />Aggiungi {isHypervisor ? "Proxmox" : meta.title}</Button>} />
             <DialogContent className={DIALOG_PANEL_WIDE_CLASS}>
               <DialogHeader className="shrink-0 border-b border-border/50 px-4 pt-4 pb-3">
@@ -800,7 +862,7 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
                   credentialId={createCredentialId}
                   snmpCredentialId={createSnmpCredentialId}
                   vendorSubtype={createVendorSubtype}
-                  port={createProtocol === "winrm" ? 5985 : createProtocol?.startsWith("snmp") ? 161 : 22}
+                  port={createPort ?? (createProtocol === "winrm" ? 5985 : createProtocol?.startsWith("snmp") ? 161 : 22)}
                   onVendorChange={(v) => { setCreateVendor(v); if (v !== "hp") setCreateVendorSubtype(null); }}
                   onProtocolChange={setCreateProtocol}
                   onCredentialIdChange={setCreateCredentialId}
@@ -1064,10 +1126,7 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
                               className="h-8 text-xs gap-1"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setHostToAdd({ name: dev.name, host: dev.host });
-                                setCreateVendor(effectiveClassification === "stampante" || effectiveClassification === "telecamera" || effectiveClassification === "voip" || effectiveClassification === "iot" ? "hp" : effectiveClassification === "storage" ? "synology" : effectiveClassification === "server" || effectiveClassification === "workstation" || effectiveClassification === "notebook" ? "windows" : "other");
-                                setCreateProtocol(effectiveClassification === "stampante" || effectiveClassification === "telecamera" || effectiveClassification === "voip" || effectiveClassification === "iot" ? "snmp_v2" : effectiveClassification === "storage" ? "ssh" : effectiveClassification === "server" || effectiveClassification === "workstation" || effectiveClassification === "notebook" ? "winrm" : "ssh");
-                                setDialogOpen(true);
+                                void configuraDaHost(dev);
                               }}
                               title="Aggiungi come dispositivo per configurare credenziali e scansione"
                             >

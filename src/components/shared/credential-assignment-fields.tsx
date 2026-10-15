@@ -143,6 +143,11 @@ export function CredentialAssignmentFields({
     .sort((a, b) => a.name.localeCompare(b.name, "it", { sensitivity: "base" }));
 
   const hasStoredCred = credentialId && credentialId !== "none";
+  // Con SNMP come protocollo la principale è già la SNMP: la seconda tendina si
+  // nasconde, come nelle finestre in blocco. Resta se un apparato ne ha già una
+  // (non si nasconde un valore salvato).
+  const protocolloSnmp = protocol === "snmp_v2" || protocol === "snmp_v3";
+  const mostraSnmpAggiuntiva = !protocolloSnmp || Boolean(snmpCredentialId && snmpCredentialId !== "none");
   // Porta controllata: il testo si tiene a parte, così il campo si può svuotare
   // mentre si scrive; vale solo un numero 1-65535 (all'uscita torna l'ultimo valido).
   const [portaScritta, setPortaScritta] = useState(port != null ? String(port) : "");
@@ -155,7 +160,7 @@ export function CredentialAssignmentFields({
       <div className="rounded-lg border border-border/60 bg-muted/20 p-3">
         <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Credenziali di accesso</p>
 
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 md:items-start md:gap-4">
+        <div className={mostraSnmpAggiuntiva ? "grid grid-cols-1 gap-3 md:grid-cols-2 md:items-start md:gap-4" : "grid grid-cols-1 gap-3"}>
           <div className="min-w-0 space-y-1.5 rounded-md border border-border/50 bg-background/50 p-2.5">
             <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{primarySectionTitle}</p>
             <div className="space-y-1">
@@ -180,6 +185,7 @@ export function CredentialAssignmentFields({
             </div>
           </div>
 
+          {mostraSnmpAggiuntiva && (
           <div className="min-w-0 space-y-1.5 rounded-md border border-border/50 bg-background/50 p-2.5">
             <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{snmpSectionTitle}</p>
             <div className="space-y-1">
@@ -202,6 +208,7 @@ export function CredentialAssignmentFields({
               </Select>
             </div>
           </div>
+          )}
         </div>
 
         {/* Riga 2: Credenziali inline — sempre visibili se showInlineCreds, disabilitate se credenziale archivio selezionata */}

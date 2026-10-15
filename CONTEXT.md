@@ -1,112 +1,65 @@
-# DA-IPAM — Context per onboarding agente / sviluppatore
+# DA-IPAM — passaggio di consegne
 
-Documento di **passaggio di consegne**: leggilo per primo, poi [CLAUDE.md](CLAUDE.md). Mappa ecosistema → `~/Progetti/Domarc/README.md`. Versione: vedi `package.json` / ultimo commit `release: vX.Y.Z` (non scriverla qui). Accessi, IP e utenze: `ACCESSI.md` + vault (repo pubblico: niente nomi di clienti, IP, MAC).
-> **Manutenzione**: aggiorna quando cambia architettura, moduli, rilascio o stato prod. Le voci datate portano la data. Tetto ~10k caratteri: il dettaglio storico va negli ADR.
+Leggilo per primo, poi [CLAUDE.md](CLAUDE.md) (stack e schema; su «multi-tenant» vale il §1). Ecosistema → `~/Progetti/Domarc/README.md`. Accessi: hub → skill `deploy-prod`; appliance dei clienti → vault `~/Documents/da-appliance-credentials/`, un file per appliance (repo pubblico: niente nomi di clienti, IP, MAC).
+> **Manutenzione**: voci datate, tetto ~10k caratteri (`wc -c`); il dettaglio in ADR, spec e piani (`specs/…`, `plans/…` = `docs/superpowers/…`). Numeri di sezione fissi (altri file citano §6, §7). Il CHANGELOG lascia «[Non rilasciato]» anche dopo il rilascio: fa fede `git log origin/dev`.
 
 ## 1. Cos'è
 
-> **Decisione 2026-10-12 (Riccardo) — non riaprire: la logica multi-tenant è morta, un'installazione = un cliente.** Il codice resta a tenant (hub + un DB per tenant) e `withTenantFromSession` resta obbligatorio (senza contesto si scrive in `DEFAULT.db`). Il tenant **non è un confine di sicurezza**: dati di un cliente visibili a un altro non sono difetti.
+> **Decisione 2026-10-12 (Riccardo) — non riaprire: la logica multi-tenant è morta, un'installazione = un cliente.** Il codice resta a tenant (hub + un DB per tenant) e `withTenantFromSession` resta obbligatorio (§7). Il tenant **non è un confine di sicurezza**: dati di un cliente visibili a un altro non sono difetti.
 
-**DA-INVENT** (alias DA-IPAM): IPAM/inventario per appliance cliente + hub di **9 moduli** security/network (`src/lib/modules/registry.ts`, `access: native|external`). Next.js 16 + React 19 + TS strict, custom server `server.ts` (tsx) con scheduler node-cron. better-sqlite3 WAL, NextAuth v5 beta, Tailwind v4 + shadcn v4 (`@base-ui/react`), Zod v4. Facade `src/lib/db.ts` → `db-tenant.ts` / `db-hub.ts`. Nessun framework migrazioni: `ALTER TABLE` idempotente inline. `agent/` = pacchetto Python con versioning proprio.
+**DA-INVENT** (alias DA-IPAM): IPAM/inventario per appliance cliente + hub di moduli (`MODULE_DESCRIPTORS` in `src/lib/modules/registry.ts`, `access: native|external`). `agent/` = pacchetto Python, da togliere (C1b, §6).
 
-> **Regola di Riccardo (12/10) — non riaprire:** le appliance dei clienti **non** si integrano in DA-Auth: niente `DAAUTH_URL` né pulsante Domarc. L'accesso Domarc vale solo per l'hub. Il codice di T3-29 è annullato (`fbca510`): per rimetterlo `git revert fbca510`.
+> **Regola di Riccardo (12/10) — non riaprire:** le appliance dei clienti **non** si integrano in DA-Auth: niente `DAAUTH_URL` né pulsante Domarc. L'accesso Domarc vale solo per l'hub. Codice di T3-29 annullato: `git revert fbca510` per rimetterlo.
 
 ## 3. Flusso di rilascio (CRITICO)
 
 - Branch: **`dev`** (unico pushabile). `main` avanza SOLO via promote in-app; le appliance cliente pullano `main`. Ogni modifica: `npm run version:release` + `git push origin dev`.
-- L'hub (VM 533, `/opt/da-invent`) segue **`dev`**; dopo `git pull` sempre `npm run build`. **Mai `npm run build` senza riavviare subito**: Next carica i file a richiesta e il processo acceso smette di funzionare.
+- L'hub (VM 533, `/opt/da-invent`) segue **`dev`**; dopo `git pull` sempre `npm run build`. **Mai `npm run build` senza riavviare subito**: il processo acceso carica i file a richiesta e si rompe.
 - **ATTENZIONE: `dev` arriva anche all'appliance del cliente A** (`da-ipam-update.timer` ogni 15 minuti: pull + build + restart). Un push di codice su `dev` è un rilascio al cliente: su `dev` solo codice pronto. Un commit di soli `docs/` o `.md` non riavvia.
-- Integrazioni: DA-Vul-can / Scanner-Edge (`vuln_scanners`, pin SPKI), Deploy-Appliance (installa via git `main`). Vedi README del padre.
+- `/api/version` cambia col pull, **prima del riavvio**: «gira davvero» = `ActiveEnterTimestamp` o riga d'avvio nel journal.
+- `scheduler-defaults` spegne `fast_scan`/`ping_sweep` sotto i 720 minuti sulle reti ≥1024 indirizzi: riaccesi a mano, non reggono al riavvio.
 
 ## 5. Tooling
 
-- `npm test` (node test runner; **~2.570 test verdi** il 15/10, ultimo cancello completo (tappa 1 credenziali)). Con `DA_INVENT_DATA_DIR` su una cartella temporanea. `npx tsc --noEmit`; lint 0 errori. CI: Node 22, type-check, test, build, pytest agente. Permessi API: `src/lib/permessi/rotte.ts`, `scripts/verifica-permessi.sh` (solo in locale).
-- `.claude/`: hook tsc + blocco force-push main; skill `release`, `deploy-prod`, `winrm-kerberos`; rules `api-routes`, `client-components`, `db-access`.
+- `npm test` con `DA_INVENT_DATA_DIR` su una cartella temporanea (conteggio: `pass`/`fail` in fondo al log); `npx tsc --noEmit`; lint 0 errori. Permessi API: `src/lib/permessi/rotte.ts`, `scripts/verifica-permessi.sh` (solo locale).
+- `credential-chains.test.ts` **cade a caso** nella suite intera (corsa sui profili SNMP dell'hub): da sola passa.
+- Sul Mac `grep` è ugrep e salta i file ignorati da git: per contare, `rg --no-ignore`.
 
-## 6. Stato e igiene (fotografia 2026-10-15)
+## 6. Stato e trappole per area (2026-10-15)
 
-- **Da Tailscale a NetBird, rete a stella, e DA-Link (14/10, disegno approvato a voce e rivisto, documento da rileggere)**: al centro da-vulcan, DA-ZABBIX e **DA-Link** (progetto nuovo in `Domarc/DA-Link`, inizio della tappa 9): fa entrare gli oggetti in NetBird da solo (chiavi monouso), riceve dalle istanze lo stato e, solo se l'istanza lo consente, i numeri d'inventario (privacy decisa sull'istanza, default solo stato), dà il quadro a DA-CRM. Dai clienti edge, proxy Zabbix e istanze IPAM, ciechi fra loro; Wazuh e DA-VA-OVH fuori; cliente = `codcli` del gestionale. Licenza con segreto ruotato ogni 4 settimane (+2 di tolleranza) che firma gli scambi e protegge i dati a busta, CA interna a un livello in DA-Link, DA-Link con accesso ristretto e sblocco a mano all'avvio. Spec `docs/superpowers/specs/2026-10-14-netbird-rete-a-stella-design.md`, ADR 0011 e 0013. **Fase 0 eseguita il 14/10** (conferme di Riccardo: Task 3, 4 e 5 sì). Fatti:
-  - `All` è fuori dalle policy accese e dai nameserver di NetBird; `users` è gruppo automatico
-    di ogni persona; `Default` era già spenta;
-  - da-vulcan e DA-ZABBIX sono nei gruppi `centro-*`, e Tailscale resta acceso;
-  - censimento nell'appendice A della spec, decisioni 24-27.
-
-  La verifica da un collega che sta solo in `users` è fatta (14/10): **fase 0 chiusa**.
-  **Niente YubiKey** (14/10 sera, decisione 28, ADR 0014): chiavi in file `age` in due
-  copie, CA a un livello in DA-Link.
-
-  **Trappole nuove:**
-  - Tailscale col firewall acceso scarta il traffico NetBird appena `tailscaled` si
-    riavvia. Ogni nodo a doppio binario va con `tailscale set --netfilter-mode=off` (spec,
-    rischio 1).
-  - Su questo Mac `grep` è ugrep e rispetta i `.gitignore`: per contare in `~/Progetti` si
-    usa `rg --no-ignore`.
-  - Le policy NetBird verso le risorse hanno destinazione vuota: si leggono con
-    `/api/networks`.
-- **Tappa C1 NetBird (15/10, ramo `netbird-c1`, non su `dev`)**: segnale di vita verso
-  DA-Link (`src/lib/dalink/`, timer in `server.ts`), pagina `/settings/cosa-esce`, livello al
-  `/setup`, `scripts/dalink/{firewall-wt0,prepara-netbird}.sh`. Piano e scelte
-  (**confermate da Riccardo il 15/10**) in `docs/superpowers/plans/2026-10-15-tappa-c1-netbird.md`:
-  il livello lo può cambiare anche l'utente tecnico `domarc`, col nome nel registro; C1b dopo il
-  pilota; pilota in tre gradini: VM sul laboratorio `192.168.40.5` → VM su PX-NAS `192.168.99.1` → DTS. **Trappole**: la
-  configurazione è `/etc/dalink/oggetto.env` di DA-Link (assente = niente rete; permessi
-  diversi da 600 = rifiutata); il livello sta in `dalink_livello_registro` (hub), **non** in
-  `settings`; la salute nel segnale riguarda solo i moduli accesi (le sonde dei moduli spenti
-  dicono `fail`); la tabella nft `inet dalink` sta sul **prerouting** (sull'input NetBird ci infila `iifname "wt0" accept` e la scavalca, visto sul pilota il 15/10) e restringe soltanto: con UFW acceso serve anche
-  `ufw allow in on wt0` (tappa G1). L'agente Python (decisione 26) non è ancora tolto.
-- **Credenziali, promozione IP → apparato, wizard (15/10)**: spec
-  `docs/superpowers/specs/2026-10-15-credenziali-promozione-wizard-design.md`, piano tappa 1
-  `docs/superpowers/plans/2026-10-15-tappa1-credenziali-promozione.md`. **Tappa 1 rilasciata il 15/10** (v0.3.294, hub e cliente A):
-  porta sulle credenziali, regola unica tipo ↔ protocollo (`credential-protocol-map.ts`), una proposta
-  d'apparato per le quattro finestre (`src/lib/devices/proposta-apparato.ts`), correzioni su credenziali,
-  binding, porta SNMP e wizard. **Tappa 1b** (Apple/macOS, `src/lib/devices/migra-apple-macos.ts`)
-  **rilasciata il 15/10** (v0.3.295): tabella ricostruita su hub (70791: 43 apparati; 70791a: 1) e cliente A
-  (94), stesse colonne e binding, backup `.bak-20261015-1540*` accanto ai DB; DEFAULT dell'hub si migra alla
-  prima apertura. Tappe 2-5 da fare (le 3 e 4 con l'interfaccia proposta prima).
-  **Trappole**:
-  - una ricostruzione di `network_devices` parte da `sqlite_master` (come `migra-apple-macos.ts`) e sta in
-    fondo a `getTenantDb`: quelle vecchie riscrivono un elenco fisso di colonne e perdono le altre;
-  - un tenant più vecchio di `product_profile`/`physical_device_id` non si apre già: lo schema crea indici
-    su quelle colonne prima delle migrazioni (non serve simularlo nelle prove);
-  - `credentials/resolve.ts` carica `db-tenant`: i componenti client prendono porte standard e
-    `portaCredenziale` da `credentials/porte.ts`;
-  - una credenziale SNMPv3 non ha community: niente ripiego sullo username in `getCredentialCommunityString`;
-  - segreti vuoti nel PUT delle credenziali = non modificare (`credentials/aggiornamenti.ts`); campi inline
-    dei binding solo in modalità inline (`devices/aggiornamenti-binding.ts`);
-  - misure del 15/10 in sola lettura: binding SNMP inline da convertire 0 su hub e cliente A; nessun
-    apparato SSH con credenziale «api» (la regola SSH → ssh, linux non toglie niente); hub 6 apparati SNMP
-    sulla porta 22, che il codice SNMP legge come 161 (`switch-client.ts`), nessuno su porte TCP;
-  - la rete «192.168.0.0/24» del wizard non c'è su hub e cliente A: su quale appliance Riccardo l'ha vista
-    non è scritto. Il valore precompilato è tolto.
-- **Piano di miglioramento (12/10)**: nove tappe in `docs/superpowers/specs/2026-10-12-piano-miglioramento-design.md`; decisioni in ADR 0004. Bacheca: `lavori piano-miglioramento-da-ipam`.
-- **Controller di rete (ADR 0005, 0007)**: UniFi (Omada dopo) = righe di `network_controllers` nel DB del cliente, pagina `/controllers`, job `unifi_sync` spento di default; UniFi OS con chiave API (`X-API-KEY`). Il controller della rete Domarc è un UDM sull'hub; Omada dei clienti non si legge dall'hub. LLDP sta sull'apparato, mai nelle porte.
-- **Mappa topologia, fasi 1-2 (ADR 0008, 0009)**: modello in `src/lib/topology/` (`model.ts`, `identity.ts`, `attach.ts`, `tree.ts`, `tree-layout.ts`), pagina `src/components/topology/map/`, rotte `/api/topology/maps*`, misure `scripts/misura-topologia.ts`, `misura-mac-porta.ts`. **Trappole**: i vicini non si cancellano (invecchiano, pota a 90 giorni); `switch_ports.is_uplink = 0` non vuol dire «non uplink»; MAC virtuali (VRRP/HSRP) e seriale degli host non identificano nessuno; nomi di fabbrica o corti non fondono; il job dei client UniFi è spento di default e legge solo 7:00-19:59; l'abbinamento richiede apparati già letti con `controller_mac`; la mappa automatica di una rete grande è larghissima in orizzontale: si usa il verticale (ADR 0012) o «passo passo». La migrazione sta in fondo a `getTenantDb`.
-- **Mappa topologia, fase 2b e verticale (ADR 0010, 0012; v0.3.279-281, rilasciate il 14/10 su cliente A e hub)**: le loro trappole stanno in fondo ai due ADR. Qui le tre che valgono a ogni rilascio:
-  - sull'appliance `/api/version` cambia col pull, **prima del riavvio**: «gira davvero» si legge da `ActiveEnterTimestamp` o dalla riga d'avvio nel journal;
-  - `scheduler-defaults` (incidente 25/05) spegne `fast_scan`/`ping_sweep` sotto i 720 minuti sulle reti da 1024 indirizzi in su: riaccenderli non regge al riavvio;
-  - `credential-chains.test.ts` **cade a caso** nella suite intera (corsa sui profili SNMP dell'hub); da sola passa.
-- **Mappa topologia, T1 «collegamenti come la rete reale» (ADR 0015, spec §13)**: rilasciata in v0.3.284 il 15/10. **Trappole**:
-  - il lettore dei vicini legge dalla terse `discovered-by` e i valori interi (senza virgolette): prima tutto `mndp` e «Port 47» → «Port». Le righe nuove restano accanto alle vecchie (90 giorni), anche dopo un revert;
-  - «Ignora» vale per un cavo: uno di prima che non tocca nessun cavo visto è **orfano** (si vede, non toglie niente), uno senza porte toglie solo un cavo senza porte; nessuno script li converte;
-  - modello **e** attribuzione leggono solo `source IN ('device','unifi')`; fixture del modello senza VM;
-  - «non visto» dipende dall'ora della misura: «prima» e «dopo» con `misura-cavi --adesso` (l'ora del «prima», UTC); le regole di `regole.ts` si spengono solo da lì;
-  - tornare indietro = revert **più** `scripts/ripristina-vicini-router.ts` (righe `lldp` → `mndp` dall'ora del rilascio; SQL da stdin, prova a vuoto, copia, `--applica` con la conferma di Riccardo): col codice di prima le righe nuove fra router cambiano un padre.
-- **Mappa topologia, T1b «ruolo dalle prove» (spec §13.8.2)**: pronta il 15/10 (ramo `topologia/collegamenti-t1b`), **non rilasciata**. **Trappole**: switch/router/AP nell'albero solo con una prova (`cavi/ruolo.ts`); un «da sistemare» conta come client e la sua tabella MAC no; i dati finti delle prove hanno la prova di ruolo del dato vero; `topology_role` lo scrive «Ruolo nella mappa» («core»/«accesso» = «rete»); il disegno legge la classe della mappa, non `nodeClass`.
-- **Mappa: ritocchi, VM e SSH degli hypervisor (15/10, ramo `fix/mappa-ritocchi-vm`)**: i ritocchi sono **coordinate assolute** viste coi ritocchi degli antenati già applicati: `finish` li applica per profondità nell'albero, e il trascinamento (`dragTweaks`) risalva anche i discendenti ritoccati, altrimenti il ramo si spezza. VM: l'abbinamento per nome del nodo fra letture diverse vale **solo** per letture di cluster (più nodi), perché «pve» è il nome di fabbrica. Proxmox: `network_devices.port` è la porta dell'**API**; l'SSH usa `device_credential_bindings.port` della credenziale SSH, o 22.
-- **SNMP, versioni (15/10, ADR 0016)**: in net-snmp `createSession` **senza** `version` parla **v1** e `version: 1` vuol dire **v2c**. Dalla v0.3.286 le sessioni a community si aprono **solo** da `src/lib/protocols/snmp-sessione.ts` con la versione esplicita (prova che fallisce se nasce un `createSession(` altrove). Per apparato: `network_devices.snmp_version` ('1'|'2c', NULL = ogni punto parla come prima: lettura dati/client/sonda/STP/test binding v1, profilo vendor e walk NAS v2c) e `snmp_version_fissata` (scelta a mano, la discovery non la tocca). La discovery prova v2c poi v1 **solo sugli host accesi** e salva sull'apparato collegato. Gli AP Ubiquiti di DTS (172.16.3.4-7, airFiber, sysObjectID 10002.1) rispondono **solo in v1**; firmware in `41112.1.3.2.1.40.1`, nome del prodotto assente dal MIB (si scrive «airFiber»). In v1 un GET di più OID è tutto o niente: `snmp-get-tollerante.ts`. Prove con l'agente finto `src/lib/protocols/__tests__/support/agente-snmp-finto.ts`.
-- **DB dell'hub**: tenant con 4 pagine «never used» (`quick_check`): `VACUUM` in una finestra tranquilla (servizio fermo; `systemctl stop da-invent` lascia `failed`, normale). Il sqlite3 di Ubuntu non ha `.recover`: si usa `.dump`. `DEFAULT.db` orfano ricostruito il 13/10 (originale `.bak-20261013-*`); un `.db` di 0 byte senza nome.
-- **Mappa vecchia (`/topology`, ADR 0003)** superata dalla fase 2. Rami remoti già in `dev` da potare: `auth/accesso-domarc`, `feat/ad-health-native`, `feature/attribution-fase-3-probe`, `fix/probe-real-world`; `claude/project-thread-7swirj` ha 18 commit non in `dev`.
-- Doc superata: audit maggio-luglio (`docs/audit*`, `WAVE-0-report.md`), `ROADMAP-EVOLUZIONE.md`, `docs/CLAUDE-legacy-20260511.md` (storico intenzionale).
+- **Rami aperti su origin**: `tappa3b/nucleo` (30 commit fuori da `dev`, rebase dal 20/10: non potare) e `topologia/t2-piano` (piano di T2); gli altri sono già in `dev`.
+- **NetBird e DA-Link** (ADR 0011, 0013, 0014; spec `specs/2026-10-14-netbird-rete-a-stella-design.md`; diario `plans/2026-10-14-netbird-dalink-programma.md`). Niente YubiKey (decisione 28). **C1** su `dev` dalla v0.3.282 (scelte in `plans/2026-10-15-tappa-c1-netbird.md`, pilota nel diario). Da fare: **C1b = togliere l'agente Python `agent/`** (decisione 26), dopo il pilota. **Trappole**:
+  - Tailscale col firewall acceso scarta NetBird appena `tailscaled` riparte: nodi a doppio binario con `tailscale set --netfilter-mode=off`;
+  - le policy NetBird verso le risorse hanno destinazione vuota: si leggono con `/api/networks`;
+  - configurazione = `/etc/dalink/oggetto.env` (assente = niente rete; permessi ≠ 600 = rifiutata); il livello sta in `dalink_livello_registro` (hub), **non** in `settings`; la salute nel segnale conta solo i moduli accesi (le sonde dei moduli spenti dicono `fail`: normale);
+  - la tabella nft `inet dalink` sta sul **prerouting** (sull'input NetBird mette `iifname "wt0" accept` e la scavalca) e restringe soltanto: con UFW serve anche `ufw allow in on wt0` (tappa G1).
+- **Credenziali, promozione IP → apparato, wizard** (spec `specs/2026-10-15-credenziali-promozione-wizard-design.md`, piano `plans/2026-10-15-tappa1-credenziali-promozione.md`): tappe 1 e 1b (Apple/macOS) su hub e cliente A il 15/10 (DEFAULT dell'hub alla prima apertura); 2-5 da fare (3 e 4: interfaccia proposta prima); piano della 2 in `plans/2026-10-15-tappa2-archivio-credenziali.md`, **da approvare** (13 domande D1-D12, livello completo). Punti unici, da non duplicare: tipo ↔ protocollo `src/lib/credential-protocol-map.ts`, proposta d'apparato delle quattro finestre `src/lib/devices/proposta-apparato.ts`. Backup `.bak-20261015-1540*` accanto ai DB (hub ~2 GB): via non prima del 22/10 e con l'ok di Riccardo. Misure del 15/10 (sola lettura, hub e cliente A): 0 binding SNMP inline da convertire (`converti-community-inline.ts`); nessun SSH con credenziale «api», che la regola tipo ↔ protocollo (SSH → ssh e linux) toglierebbe. **Trappole**:
+  - ricostruire `network_devices` partendo da `sqlite_master` (`devices/migra-apple-macos.ts`), in fondo a `getTenantDb`: le vecchie riscrivono un elenco fisso di colonne e perdono le altre;
+  - un tenant più vecchio di `product_profile`/`physical_device_id` già non si apre (lo schema crea gli indici su quelle colonne prima delle migrazioni): non simularlo;
+  - `credentials/resolve.ts` carica `db-tenant`: i componenti client usano `credentials/porte.ts`;
+  - SNMPv3 non ha community (niente ripiego sullo username); segreti vuoti nel PUT = non modificare (`credentials/aggiornamenti.ts`); campi inline dei binding solo in modalità inline (`devices/aggiornamenti-binding.ts`);
+  - il codice SNMP legge la porta 22 (default della colonna) come 161 e ogni altra come porta SNMP (`switch-client.ts`); 15/10: hub 6 SNMP sulla 22, nessuno su porte TCP. `SELECT port, count(*) FROM network_devices WHERE protocol LIKE 'snmp%' GROUP BY port` deve dare solo 161, 22 o vuota;
+- **Piano di miglioramento (12/10)**: tappe in `specs/2026-10-12-piano-miglioramento-design.md`, decisioni in ADR 0004; bacheca `lavori piano-miglioramento-da-ipam`.
+- **Controller di rete (ADR 0005, 0007)**: righe di `network_controllers` nel DB del cliente, `unifi_sync` spento di default; LLDP sull'apparato, mai nelle porte.
+- **Mappa topologia** (spec `specs/2026-10-14-topologia-collegamenti-reali-design.md` §13): codice in `src/lib/topology/`; su `dev` fino a T1b (v0.3.293); prossima T2. La mappa vecchia (ADR 0003) è superata. **Trappole**:
+  - fasi 1-2, 2b, verticale: in fondo ad ADR 0008, 0009, 0010, 0012 (prime: i vicini invecchiano in 90 giorni, non si cancellano; `is_uplink = 0` non vuol dire «non uplink»);
+  - T1 (ADR 0015, altre trappole lì): modello **e** attribuzione leggono solo `source IN ('device','unifi')`; le fixture del modello non hanno VM (ADR 0010 n. 8): non coprono le VM; tornare indietro = revert **più** `scripts/ripristina-vicini-router.ts` (con l'ok di Riccardo);
+  - T1b (spec §13.8.2): switch/router/AP nell'albero solo con una prova (`cavi/ruolo.ts`); dati finti con la prova di ruolo del dato vero; il disegno legge la classe della mappa, non `nodeClass`;
+  - ritocchi (v0.3.285): **coordinate assolute** coi ritocchi degli antenati già applicati; `finish` li applica per profondità e `dragTweaks` deve risalvare anche i discendenti ritoccati, se no il ramo si spezza;
+  - VM (v0.3.285): l'abbinamento per nome del nodo fra letture diverse vale **solo** per letture di cluster, perché «pve» è il nome di fabbrica; Proxmox: `network_devices.port` è la porta dell'**API**, l'SSH usa il binding SSH o 22.
+- **SNMP, versioni (ADR 0016)**: net-snmp `createSession` **senza** `version` parla **v1**, `version: 1` è **v2c**. Sessioni a community **solo** da `protocols/snmp-sessione.ts`, versione esplicita (la sua prova fallisce se nasce un `createSession(` altrove). `snmp_version` NULL = ogni punto come prima, non una versione sola: lettura dati/client/sonda/STP/test binding v1, profilo vendor e walk NAS v2c; `snmp_version_fissata` = scelta a mano. airFiber del cliente A **solo v1**; in v1 un GET di più OID è tutto o niente (`snmp-get-tollerante.ts`).
+- **DB dell'hub**: 4 pagine «never used» (`quick_check`): `VACUUM` a servizio fermo (`systemctl stop` lascia `failed`: normale). Il sqlite3 di Ubuntu non ha `.recover`: `.dump`. `DEFAULT.db` ricostruito il 13/10 (originale `.bak-20261013-*`). `data/tenants/.db` (0 byte, dall'11/06): innocuo, via solo con l'ok di Riccardo.
+- Doc superata: `docs/audit*`, `docs/WAVE-0-report.md`, `ROADMAP-EVOLUZIONE.md`.
 
 ## 7. Trappola: `db-tenant` e le due istanze sotto `tsx` (2026-09-02)
 
-L'appliance gira da sorgenti (`tsx server.ts`): **`await import()` di `db-tenant` dà una SECONDA istanza** con `AsyncLocalStorage` vuota, e il contesto tenant si perde per tutto il processo (340 job falliti in 4h40, 179 host scritti in `DEFAULT.db`). **Regola**: `db-tenant` si importa **staticamente** (prova `no-dynamic-db-tenant-import.test.ts`; restano leciti `require` e `typeof import`). Difese: `assertTenantContext()` nello scheduler, tracker `job-failure-tracker.ts`. Dettaglio: [ADR 0002](docs/adr/0002-static-db-tenant-import.md). `DEFAULT` non è un tenant registrato: il fallback silenzioso di `db.ts` è il motivo per cui una scrittura fuori contesto non fa rumore.
+L'appliance gira da sorgenti (`tsx server.ts`): **`await import()` di `db-tenant` dà una SECONDA istanza** con `AsyncLocalStorage` vuota: il contesto tenant si perde per tutto il processo e si scrive in `DEFAULT.db`, in silenzio. **Import solo statico** (prova `no-dynamic-db-tenant-import.test.ts`; leciti `require` e `typeof import`); difese e dettaglio in [ADR 0002](docs/adr/0002-static-db-tenant-import.md).
 
 ## 8. Analisi di sistema (2026-10-12)
 
-`docs/analisi-sistema.md` è **solo locale** (esclusa da git: dettagli di sicurezza, repo pubblico); se manca, chiederla sul MacBook. Trappole da non reintrodurre:
+`docs/analisi-sistema.md` è **solo locale** (`.git/info/exclude`: dettagli di sicurezza): sta in `~/Progetti/Domarc/DA-IPAM/docs/` sul MacBook, non nei worktree. Da non reintrodurre:
 
-- `Select` (`components/ui/select.tsx`) ricava `items` dalle `SelectItem`; **date del DB con `parseDbDate`**, mai `new Date(x)`; pagine sul server con `timeZone: FUSO_UTENTI`; **un caricamento usa `fetchJson` + `LoadError`**.
-- **`db.ts` e `db-tenant.ts` divergono** (~43 funzioni): guarda da quale dei due importa il chiamante.
-- **Scansioni (ADR 0006)**: `last_run` = **fine** del giro; un giro alla volta per tenant e rete con lucchetto **in memoria** (separare lo scheduler richiede prima un lucchetto sul DB); la soglia offline decide solo per gli host scansionati dal giro (`passaggioOfflineConSoglia`). La scansione veloce **manda** offline: se debba farlo è da decidere.
-- **Crescita del DB**: niente retention sugli storici; `mac_ip_history` ~31.000 righe/giorno sull'hub (2,1 GB).
+- `Select` ricava `items` dalle `SelectItem`; **date del DB con `parseDbDate`**, mai `new Date(x)`; pagine sul server con `timeZone: FUSO_UTENTI`; **un caricamento usa `fetchJson` + `LoadError`**.
+- **`db.ts` e `db-tenant.ts` divergono**: guarda da quale importa il chiamante.
+- **Scansioni (ADR 0006)**: `last_run` = **fine** del giro; lucchetto **in memoria** (separare lo scheduler vuole prima un lucchetto sul DB); la scansione veloce **manda** offline: da decidere.
+- **Crescita del DB**: niente retention sugli storici; il più grosso è `mac_ip_history`.

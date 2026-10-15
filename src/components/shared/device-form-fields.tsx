@@ -619,6 +619,7 @@ export function DeviceFormFields({
             snmpCredentialId={snmpCredentialId}
             onCredentialIdChange={onCredentialIdChange}
             onSnmpCredentialIdChange={onSnmpCredentialIdChange}
+            protocol={protocol}
             sshFilter={vendorProfile.credentialSshFilter}
             primarySectionTitle={primaryCredentialLabels.section}
             primarySelectLabel={primaryCredentialLabels.select}

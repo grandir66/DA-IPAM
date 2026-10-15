@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/dialog";
 import { Key, Plus, Trash2, ArrowUp, ArrowDown, RefreshCw, CheckCircle, XCircle, HelpCircle, Archive, Edit3 } from "lucide-react";
 import { toast } from "sonner";
+import { tipiCredenzialePerProtocollo } from "@/lib/credential-protocol-map";
 
 interface CredentialBinding {
   id: number;
@@ -260,12 +261,10 @@ export function DeviceCredentialsTable({ deviceId }: { deviceId: number }) {
     }
   };
 
-  const filteredCreds = (proto: string) =>
-    credentials.filter((c) => {
-      if (proto === "snmp") return c.credential_type === "snmp";
-      if (proto === "winrm") return ["windows", "ssh", "linux"].includes(c.credential_type);
-      return ["ssh", "linux", "api"].includes(c.credential_type);
-    });
+  const filteredCreds = (proto: string) => {
+    const tipi = tipiCredenzialePerProtocollo(proto);
+    return credentials.filter((c) => tipi.includes(c.credential_type));
+  };
 
   if (loading) return null;
 

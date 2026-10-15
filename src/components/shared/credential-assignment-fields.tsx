@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Info } from "lucide-react";
+import { tipiCredenzialePerProtocollo } from "@/lib/credential-protocol-map";
 
 export interface CredentialItem {
   id: number;
@@ -55,6 +56,11 @@ export interface CredentialAssignmentFieldsProps {
   snmpCredentialId: string | null;
   onCredentialIdChange: (value: string | null) => void;
   onSnmpCredentialIdChange: (value: string | null) => void;
+  /**
+   * Protocollo dell'apparato: se c'è, la tendina principale segue la regola
+   * unica `tipiCredenzialePerProtocollo` e `sshFilter` non conta.
+   */
+  protocol?: string;
   sshFilter?: "ssh_api" | "ssh_api_windows";
   credentialPlaceholder?: string;
   snmpPlaceholder?: string;
@@ -93,6 +99,7 @@ export function CredentialAssignmentFields({
   snmpCredentialId,
   onCredentialIdChange,
   onSnmpCredentialIdChange,
+  protocol,
   sshFilter = "ssh_api_windows",
   credentialPlaceholder = "Nessuna (credenziali inline)",
   snmpPlaceholder = "Nessuna",
@@ -109,8 +116,10 @@ export function CredentialAssignmentFields({
   snmpSectionTitle = "SNMP aggiuntivo (porte, LLDP, spanning tree)",
   snmpSelectLabel = CREDENTIAL_SNMP_SECONDARY_SELECT_LABEL,
 }: CredentialAssignmentFieldsProps) {
+  const tipiAmmessi = protocol ? tipiCredenzialePerProtocollo(protocol) : null;
   const primaryCreds = credentials
     .filter((c) => {
+      if (tipiAmmessi) return tipiAmmessi.includes(c.credential_type);
       // Protocollo SNMP: la credenziale primaria deve essere tipo SNMP (non SSH/API)
       if (primarySectionTitle?.toLowerCase().includes("snmp")) {
         return c.credential_type === "snmp";

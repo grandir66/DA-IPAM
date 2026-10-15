@@ -61,7 +61,7 @@ import { parseDetectedDeviceFromDetectionJson } from "@/lib/device-fingerprint-c
 import { NetworkCredentialsTable } from "@/components/shared/network-credentials-table";
 import { ProtocolBadges } from "@/components/shared/protocol-badges";
 import { AddableSelect } from "@/components/shared/addable-select";
-import { credTypeForProtocol, CRED_TYPE_OPTIONS } from "@/lib/credential-protocol-map";
+import { credTypeForProtocol, CRED_TYPE_OPTIONS, tipiCredenzialePerProtocollo } from "@/lib/credential-protocol-map";
 import { HostCredentialsDialog } from "@/components/shared/host-credentials-dialog";
 import {
   getDefaultNetworkDeviceVendorOptions,
@@ -1523,7 +1523,8 @@ export function NetworkDetailClient({
             {/* Credenziali: scelta esplicita + creazione inline ─ con badge eredità automatica */}
             {(() => {
               const credMap = credTypeForProtocol(bulkAddProtocol);
-              const primaryOpts = addDeviceCredentials.filter((c) => c.credential_type !== "snmp");
+              const tipiPrincipale = tipiCredenzialePerProtocollo(bulkAddProtocol);
+              const primaryOpts = addDeviceCredentials.filter((c) => tipiPrincipale.includes(c.credential_type));
               const snmpOpts = addDeviceCredentials.filter((c) => c.credential_type === "snmp");
               const protos = new Set<string>();
               for (const hid of selectedHostIds) {

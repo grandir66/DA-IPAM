@@ -11,6 +11,7 @@ import { withTenantFromSession } from "@/lib/api-tenant";
 import { networkDeviceUsesArpPoll } from "@/lib/network-device-arp";
 import { letturaAccesa, senzaCampiCavi } from "@/lib/topology/letture/interruttori";
 import { apriSessioneCommunity, versioneApparato } from "@/lib/protocols/snmp-sessione";
+import { walkConSessioneSua, type SessioneWalk } from "@/lib/devices/snmp-walk";
 
 /**
  * Esegue la query (ARP/MAC/porte) sui router delle reti selezionate.
@@ -163,12 +164,12 @@ export async function POST(request: Request) {
             if (community) {
               const { getSnmpStpInfo } = await import("@/lib/devices/snmp-stp-info");
               const snmpMod = await import("net-snmp");
-              // NULL = v1, come prima (createSession senza version).
-              const session = apriSessioneCommunity(snmpMod, device.host, community, { port: 161, timeout: 8000, versione: versioneApparato(device, "1") });
-              const snmpWalk = (oid: string) => new Promise<{ oid: string; value: Buffer | string | number }[]>((resolve, reject) => {
-                const results: { oid: string; value: Buffer | string | number }[] = [];
-                session.subtree(oid, (vbs: Array<{ oid: string; value: Buffer | string | number }>) => { for (const vb of vbs) results.push({ oid: vb.oid, value: vb.value }); }, (err: Error | undefined) => { session.close(); if (err) reject(err); else resolve(results); });
-              });
+              // SN1 (spec topologia §13.5.4): una sessione per lettura (la sessione unica chiusa dal primo walk annullava gli
+              // altri). NULL = v1, come prima (createSession senza version).
+              const snmpWalk = walkConSessioneSua(
+                () => apriSessioneCommunity(snmpMod, device.host, community, { port: 161, timeout: 8000, versione: versioneApparato(device, "1") }) as unknown as SessioneWalk,
+                10_000,
+              );
               const stpInfo = await getSnmpStpInfo(snmpWalk);
               if (stpInfo) {
                 updateNetworkDevice(deviceId, { stp_info: JSON.stringify(stpInfo) });

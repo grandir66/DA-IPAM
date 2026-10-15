@@ -37,7 +37,9 @@ import { pingHost } from "@/lib/scanner/ping";
 import { getScanIoOverride } from "@/lib/executor";
 import { tcpConnect, FALLBACK_TCP_PORTS } from "@/lib/scanner/tcp-check";
 import { createRouterClient, routerOsDurationToIsoTimestamp } from "@/lib/devices/router-client";
-import { createSwitchClient } from "@/lib/devices/switch-client";
+import { createSwitchClient, creaWalkSnmp, deviceHasSnmpSession } from "@/lib/devices/switch-client";
+import { leggiSnmpTopologia } from "@/lib/devices/snmp-topologia";
+import { TEMPO_WALK_MS } from "@/lib/devices/snmp-walk";
 import { lookupVendor } from "@/lib/scanner/mac-vendor";
 import { isIpInCidr, normalizePortNameForMatch } from "@/lib/utils";
 import { networkDeviceUsesArpPoll } from "@/lib/network-device-arp";
@@ -651,6 +653,10 @@ export type RunArpPollOptions = {
   apriEsecutore?: ApriEsecutore;
   /** Solo per le prove: l'ora del giro per la cadenza delle letture in più. */
   adesso?: () => Date;
+  /** Solo per le prove: il walk SNMP delle letture in più al posto di quello vero (spia, I33). */
+  creaWalkSnmp?: typeof creaWalkSnmp;
+  /** Solo per le prove: il client dello switch al posto di quello vero. */
+  creaClientSwitch?: typeof createSwitchClient;
 };
 
 /**
@@ -664,6 +670,21 @@ async function letturaMikrotik(device: NetworkDevice, uscitaInterfacce: string |
     const scritti = scriviFattiTopologia(device.id, "device", fattiMikrotik(r.lettura), options?.adesso?.() ?? new Date());
     if (r.vicini && r.vicini.length > 0) upsertNeighbors(device.id, r.vicini, "ssh");
     return { valore: scritti, conteggio: { comandi: r.comandi, riusciti: r.riusciti, codice: r.codice } };
+  }, options?.adesso);
+}
+
+/**
+ * Le letture SNMP in più (spec topologia §13.5.4, SN2-SN9) di uno switch che non è del controller e non è un MikroTik letto
+ * via SSH, dietro `topologia.lettura.snmp`, al più una volta l'ora. Chi legge «della marca che consuma il CDP»: il
+ * fornitore dell'apparato o la sua descrizione SNMP (SN9). Dieci letture, ognuna con la sua sessione e TEMPO_WALK_MS.
+ */
+async function letturaSnmp(device: NetworkDevice, options?: RunArpPollOptions): Promise<EsitoGiro<unknown>> {
+  return conCadenza("snmp", device.id, async () => {
+    const walk = await (options?.creaWalkSnmp ?? creaWalkSnmp)(device, TEMPO_WALK_MS);
+    const l = await leggiSnmpTopologia(walk, { lettoreCisco: device.vendor === "cisco" || /cisco/i.test(device.sysdescr ?? "") });
+    const scritti = scriviFattiTopologia(device.id, "snmp", l, options?.adesso?.() ?? new Date());
+    if (l.vicini.length > 0) upsertNeighbors(device.id, l.vicini, "snmp");
+    return { valore: scritti, conteggio: { comandi: l.letture, riusciti: l.riuscite, codice: l.codice } };
   }, options?.adesso);
 }
 
@@ -938,7 +959,14 @@ export async function runArpPoll(
         if (device.vendor === "mikrotik" && device.protocol === "ssh") {
           esitiLetture.push(await letturaMikrotik(device, null, true, options));
         }
-        const client = await createSwitchClient(device);
+        // SN6: solo per gli switch senza controller (la chiave dei vicini non ha la fonte: due lettori della stessa riga si
+        // scambierebbero la fonte) e non letti come MikroTik via SSH (hanno le loro letture). Interruttore guardato per
+        // primo: spenta, il giro degli switch fa esattamente quello di prima (nemmeno la ricerca della credenziale SNMP).
+        const delController = !!(device as NetworkDevice & { controller_mac?: string | null }).controller_mac;
+        if (!delController && !(device.vendor === "mikrotik" && device.protocol === "ssh") && letturaAccesa("snmp") && deviceHasSnmpSession(device)) {
+          esitiLetture.push(await letturaSnmp(device, options));
+        }
+        const client = await (options?.creaClientSwitch ?? createSwitchClient)(device);
         const entries = await client.getMacTable();
         salvaMacPorta(device.id, entries.map((e) => ({
           mac: e.mac,

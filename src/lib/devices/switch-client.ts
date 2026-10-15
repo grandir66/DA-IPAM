@@ -23,6 +23,7 @@ import {
 } from "./hp-vendor";
 import { createWinrmClient } from "./winrm-client";
 import { sshExec as transportSshExec } from "./ssh-transport";
+import { TEMPO_WALK_MS, walkConSessioneSua, type SessioneWalk, type SnmpWalkFn } from "./snmp-walk";
 // Un solo parser della bridge host per switch e router (scarta le righe locali, legge vid).
 import { parseMikrotikMacTable } from "./mikrotik-porte";
 
@@ -81,7 +82,7 @@ export interface SwitchClient {
  * `hasSnmpCommunity` da solo era troppo stretto: SNMPv3 e credenziali SNMP in archivio
  * senza "community" in chiaro facevano saltare porte/STP pur avendo MAC via SSH.
  */
-function deviceHasSnmpSession(device: NetworkDevice): boolean {
+export function deviceHasSnmpSession(device: NetworkDevice): boolean {
   if (device.community_string) return true;
   if (device.protocol === "snmp_v2" || device.protocol === "snmp_v3") return true;
   if (device.snmp_credential_id) {
@@ -236,32 +237,41 @@ async function createSshSwitchClient(
   };
 }
 
-async function createSnmpSwitchClient(device: NetworkDevice): Promise<SwitchClient> {
-  const snmp = await import("net-snmp");
+/**
+ * La sessione SNMP di un apparato come la apre la lettura degli switch: v3 se configurato; a community con la versione
+ * dell'apparato (NULL = v1, come prima: createSession senza version).
+ */
+export function apriSessioneSnmpApparato(snmp: typeof import("net-snmp"), device: NetworkDevice) {
   const isSnmpProtocol = device.protocol === "snmp_v2" || device.protocol === "snmp_v3";
   // device.port può essere la porta SSH (22) quando il device ha credenziali miste SSH+SNMP.
   // La porta SNMP standard è 161; usiamo device.port solo se è diversa da 22 e diversa da 0.
   const rawPort = device.port || 0;
   const snmpPort = isSnmpProtocol && rawPort > 0 && rawPort !== 22 ? rawPort : 161;
   const opts = { port: snmpPort, timeout: 10000 };
-
-  function createSession() {
-    if (device.protocol === "snmp_v3") {
-      const v3 = getDeviceSnmpV3Credentials(device);
-      if (v3) {
-        const user = {
-          name: v3.username,
-          level: snmp.SecurityLevel.authNoPriv,
-          authProtocol: snmp.AuthProtocols.md5,
-          authKey: v3.authKey,
-        };
-        return snmp.createV3Session(device.host, user, opts);
-      }
+  if (device.protocol === "snmp_v3") {
+    const v3 = getDeviceSnmpV3Credentials(device);
+    if (v3) {
+      const user = {
+        name: v3.username,
+        level: snmp.SecurityLevel.authNoPriv,
+        authProtocol: snmp.AuthProtocols.md5,
+        authKey: v3.authKey,
+      };
+      return snmp.createV3Session(device.host, user, opts);
     }
-    const community = getDeviceCommunityString(device);
-    // NULL = v1, come prima (createSession senza version).
-    return apriSessioneCommunity(snmp, device.host, community, { ...opts, versione: versioneApparato(device, "1") });
   }
+  return apriSessioneCommunity(snmp, device.host, getDeviceCommunityString(device), { ...opts, versione: versioneApparato(device, "1") });
+}
+
+/** Il walk SNMP delle letture in più (spec topologia §13.5.4): una sessione per lettura (SN1), un tempo massimo per lettura. */
+export async function creaWalkSnmp(device: NetworkDevice, tempoMs: number = TEMPO_WALK_MS): Promise<SnmpWalkFn> {
+  const snmp = await import("net-snmp");
+  return walkConSessioneSua(() => apriSessioneSnmpApparato(snmp, device) as unknown as SessioneWalk, tempoMs);
+}
+
+async function createSnmpSwitchClient(device: NetworkDevice): Promise<SwitchClient> {
+  const snmp = await import("net-snmp");
+  const createSession = () => apriSessioneSnmpApparato(snmp, device);
 
   function snmpWalk(oid: string): Promise<{ oid: string; value: Buffer | string | number }[]> {
     return new Promise((resolve, reject) => {

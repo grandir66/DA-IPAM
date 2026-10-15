@@ -17,6 +17,7 @@ import { runProxmoxDeviceScan } from "@/lib/proxmox/run-proxmox-device-scan";
 import { getScanProgress } from "@/lib/scanner/discovery";
 import type { ScanProgress } from "@/types";
 import { apriSessioneCommunity, versioneApparato } from "@/lib/protocols/snmp-sessione";
+import { walkConSessioneSua, type SessioneWalk } from "@/lib/devices/snmp-walk";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Progress tracking (stessa map globale usata da discovery.ts)
@@ -286,18 +287,13 @@ async function runRouterQuery(deviceId: number, device: Parameters<typeof create
     const { getSnmpStpInfo } = await import("@/lib/devices/snmp-stp-info");
     const snmpMod = await import("net-snmp");
     const community = getDeviceCommunityString(device);
-    // NULL = v1, come prima (createSession senza version).
-    const session = apriSessioneCommunity(snmpMod, device.host, community, { port: 161, timeout: 5000, versione: versioneApparato(device, "1") });
-    let sessionClosed = false;
-    const safeClose = () => { if (!sessionClosed) { sessionClosed = true; try { session.close(); } catch { /* */ } } };
-    const snmpWalk = (oid: string) => new Promise<{ oid: string; value: Buffer | string | number }[]>((resolve) => {
-      const results: { oid: string; value: Buffer | string | number }[] = [];
-      const timer = setTimeout(() => { safeClose(); resolve(results); }, 10_000);
-      session.subtree(oid,
-        (vbs: Array<{ oid: string; value: Buffer | string | number }>) => { for (const vb of vbs) results.push({ oid: vb.oid, value: vb.value }); },
-        (err: Error | undefined) => { clearTimeout(timer); safeClose(); if (err) resolve([]); else resolve(results); }
-      );
-    });
+    // SN1 (spec topologia §13.5.4): una sessione per lettura. La sessione unica si chiudeva alla fine del primo walk e
+    // annullava gli altri otto, partiti insieme. NULL = v1, come prima (createSession senza version). Una lettura non
+    // riuscita vale null in getSnmpStpInfo, come prima.
+    const snmpWalk = walkConSessioneSua(
+      () => apriSessioneCommunity(snmpMod, device.host, community, { port: 161, timeout: 5000, versione: versioneApparato(device, "1") }) as unknown as SessioneWalk,
+      10_000,
+    );
     const stpInfo = await getSnmpStpInfo(snmpWalk);
     if (stpInfo) {
       updateNetworkDevice(deviceId, { stp_info: JSON.stringify(stpInfo) });

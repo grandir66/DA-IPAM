@@ -20,7 +20,7 @@ Documento di **passaggio di consegne**: leggilo per primo, poi [CLAUDE.md](CLAUD
 
 ## 5. Tooling
 
-- `npm test` (node test runner; **~2.410 test verdi** il 15/10, ultimo cancello completo (T1 unita a `dev` v0.3.282)). Con `DA_INVENT_DATA_DIR` su una cartella temporanea. `npx tsc --noEmit`; lint 0 errori. CI: Node 22, type-check, test, build, pytest agente. Permessi API: `src/lib/permessi/rotte.ts`, `scripts/verifica-permessi.sh` (solo in locale).
+- `npm test` (node test runner; **~2.570 test verdi** il 15/10, ultimo cancello completo (tappa 1 credenziali)). Con `DA_INVENT_DATA_DIR` su una cartella temporanea. `npx tsc --noEmit`; lint 0 errori. CI: Node 22, type-check, test, build, pytest agente. Permessi API: `src/lib/permessi/rotte.ts`, `scripts/verifica-permessi.sh` (solo in locale).
 - `.claude/`: hook tsc + blocco force-push main; skill `release`, `deploy-prod`, `winrm-kerberos`; rules `api-routes`, `client-components`, `db-access`.
 
 ## 6. Stato e igiene (fotografia 2026-10-15)
@@ -54,15 +54,28 @@ Documento di **passaggio di consegne**: leggilo per primo, poi [CLAUDE.md](CLAUD
   `settings`; la salute nel segnale riguarda solo i moduli accesi (le sonde dei moduli spenti
   dicono `fail`); la tabella nft `inet dalink` sta sul **prerouting** (sull'input NetBird ci infila `iifname "wt0" accept` e la scavalca, visto sul pilota il 15/10) e restringe soltanto: con UFW acceso serve anche
   `ufw allow in on wt0` (tappa G1). L'agente Python (decisione 26) non è ancora tolto.
-- **Credenziali, promozione IP → apparato, wizard (15/10, approvato, da eseguire)**: spec
-  `docs/superpowers/specs/2026-10-15-credenziali-promozione-wizard-design.md` (cinque tappe:
-  bug + porta sulle credenziali, Apple/macOS, archivio unico, finestra unica di promozione,
-  wizard, classificazione), piano della tappa 1 in `docs/superpowers/plans/2026-10-15-tappa1-credenziali-promozione.md`.
-  **Trappole**: le ricostruzioni di `network_devices` in `db-tenant.ts` riscrivono un elenco
-  fisso di colonne (quelle non elencate si perdono): la prossima parte da `sqlite_master`;
-  le finestre che trasformano un IP in apparato sono **quattro** (oggetto, rete, discovery,
-  lista per classificazione) con logiche diverse; `PUT /api/credentials/[id]` con
-  `password: ""` cancella il segreto.
+- **Credenziali, promozione IP → apparato, wizard (15/10)**: spec
+  `docs/superpowers/specs/2026-10-15-credenziali-promozione-wizard-design.md`, piano tappa 1
+  `docs/superpowers/plans/2026-10-15-tappa1-credenziali-promozione.md`. **Tappa 1 rilasciata il 15/10**:
+  porta sulle credenziali, regola unica tipo ↔ protocollo (`credential-protocol-map.ts`), una proposta
+  d'apparato per le quattro finestre (`src/lib/devices/proposta-apparato.ts`), correzioni su credenziali,
+  binding, porta SNMP e wizard. **Tappa 1b** (Apple/macOS, `src/lib/devices/migra-apple-macos.ts`): ramo
+  `credenziali/tappa1b`, rilascio a parte. Tappe 2-5 da fare (le 3 e 4 con l'interfaccia proposta prima).
+  **Trappole**:
+  - una ricostruzione di `network_devices` parte da `sqlite_master` (come `migra-apple-macos.ts`) e sta in
+    fondo a `getTenantDb`: quelle vecchie riscrivono un elenco fisso di colonne e perdono le altre;
+  - un tenant più vecchio di `product_profile`/`physical_device_id` non si apre già: lo schema crea indici
+    su quelle colonne prima delle migrazioni (non serve simularlo nelle prove);
+  - `credentials/resolve.ts` carica `db-tenant`: i componenti client prendono porte standard e
+    `portaCredenziale` da `credentials/porte.ts`;
+  - una credenziale SNMPv3 non ha community: niente ripiego sullo username in `getCredentialCommunityString`;
+  - segreti vuoti nel PUT delle credenziali = non modificare (`credentials/aggiornamenti.ts`); campi inline
+    dei binding solo in modalità inline (`devices/aggiornamenti-binding.ts`);
+  - misure del 15/10 in sola lettura: binding SNMP inline da convertire 0 su hub e cliente A; nessun
+    apparato SSH con credenziale «api» (la regola SSH → ssh, linux non toglie niente); hub 6 apparati SNMP
+    sulla porta 22, che il codice SNMP legge come 161 (`switch-client.ts`), nessuno su porte TCP;
+  - la rete «192.168.0.0/24» del wizard non c'è su hub e cliente A: su quale appliance Riccardo l'ha vista
+    non è scritto. Il valore precompilato è tolto.
 - **Piano di miglioramento (12/10)**: nove tappe in `docs/superpowers/specs/2026-10-12-piano-miglioramento-design.md`; decisioni in ADR 0004. Bacheca: `lavori piano-miglioramento-da-ipam`.
 - **Controller di rete (ADR 0005, 0007)**: UniFi (Omada dopo) = righe di `network_controllers` nel DB del cliente, pagina `/controllers`, job `unifi_sync` spento di default; UniFi OS con chiave API (`X-API-KEY`). Il controller della rete Domarc è un UDM sull'hub; Omada dei clienti non si legge dall'hub. LLDP sta sull'apparato, mai nelle porte.
 - **Mappa topologia, fasi 1-2 (ADR 0008, 0009)**: modello in `src/lib/topology/` (`model.ts`, `identity.ts`, `attach.ts`, `tree.ts`, `tree-layout.ts`), pagina `src/components/topology/map/`, rotte `/api/topology/maps*`, misure `scripts/misura-topologia.ts`, `misura-mac-porta.ts`. **Trappole**: i vicini non si cancellano (invecchiano, pota a 90 giorni); `switch_ports.is_uplink = 0` non vuol dire «non uplink»; MAC virtuali (VRRP/HSRP) e seriale degli host non identificano nessuno; nomi di fabbrica o corti non fondono; il job dei client UniFi è spento di default e legge solo 7:00-19:59; l'abbinamento richiede apparati già letti con `controller_mac`; la mappa automatica di una rete grande è larghissima in orizzontale: si usa il verticale (ADR 0012) o «passo passo». La migrazione sta in fondo a `getTenantDb`.

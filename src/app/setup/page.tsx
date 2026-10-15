@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import type { Livello } from "@/lib/dalink/stato";
 import { Button } from "@/components/ui/button";
 
 /**
@@ -23,6 +24,8 @@ export default function SetupPage() {
   // Dati del cliente
   const [codiceCliente, setCodiceCliente] = useState("");
   const [ragioneSociale, setRagioneSociale] = useState("");
+  // Cosa esce verso Domarc (DA-Link): nessuna scelta preselezionata (spec NetBird §5.3).
+  const [livello, setLivello] = useState<Livello | null>(null);
 
   useEffect(() => {
     fetch("/api/setup")
@@ -80,6 +83,7 @@ export default function SetupPage() {
           mode: "single",
           codice_cliente: codiceCliente.trim().toUpperCase(),
           ragione_sociale: ragioneSociale.trim(),
+          ...(livello ? { livello_uscita: livello } : {}),
         }),
       });
 
@@ -135,6 +139,34 @@ export default function SetupPage() {
                 placeholder="es. ACME S.r.l."
               />
             </div>
+
+            {/* Cosa esce verso Domarc (DA-Link): facoltativo, nessuna scelta preselezionata */}
+            <fieldset className="space-y-2 rounded-md border p-3">
+              <legend className="px-1 text-sm font-medium">Cosa può uscire verso Domarc</legend>
+              <p className="text-sm text-muted-foreground">
+                Da chiedere al cliente. Senza risposta esce solo lo stato; si cambia poi dalla voce «Cosa esce» del menu.
+              </p>
+              <label className="flex items-start gap-2 text-sm cursor-pointer">
+                <input
+                  type="radio"
+                  name="livello_uscita"
+                  className="mt-0.5 h-4 w-4"
+                  checked={livello === "solo_stato"}
+                  onChange={() => setLivello("solo_stato")}
+                />
+                <span>Solo stato (versione, moduli, salute, porte su NetBird)</span>
+              </label>
+              <label className="flex items-start gap-2 text-sm cursor-pointer">
+                <input
+                  type="radio"
+                  name="livello_uscita"
+                  className="mt-0.5 h-4 w-4"
+                  checked={livello === "stato_inventario"}
+                  onChange={() => setLivello("stato_inventario")}
+                />
+                <span>Stato + numeri dell&apos;inventario (quanti dispositivi e reti, ultima scansione)</span>
+              </label>
+            </fieldset>
 
             {/* Credenziali */}
             <div className="space-y-2">

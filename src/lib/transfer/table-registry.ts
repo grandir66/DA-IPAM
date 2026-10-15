@@ -115,6 +115,10 @@ export const EXCLUDED_HUB_TABLES: string[] = [
   "inventory_ingest_tokens",
   "tenant_agents",
   "system_credential_events",
+  // DA-Link (tappa C1): la scelta di cosa esce è di questa istanza, non dei dati
+  // del cliente; un'altra istanza la dichiara da sé.
+  "dalink_livello_registro",
+  "dalink_segnale_stato",
 ];
 
 const BY_NAME = new Map<string, TableSpec>(

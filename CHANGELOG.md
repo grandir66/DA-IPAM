@@ -4,7 +4,7 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
-## [Non rilasciato] — 2026-10-15
+## [Non rilasciato] — 2026-10-15 · topologia, tappa T1
 
 Mappa topologia, tappa T1 «collegamenti come la rete reale» (ADR 0015, spec §13): pronta il 15/10,
 non ancora rilasciata (aspetta la conferma di Riccardo).
@@ -68,6 +68,40 @@ non ancora rilasciata (aspetta la conferma di Riccardo).
   lati, cambia un padre; lo script riporta quelle righe a «mndp», il valore che il codice di prima
   conosce. È una scrittura sul DB del cliente: si usa solo se si torna indietro, con la conferma di
   Riccardo.
+
+## [Non rilasciato] — 2026-10-15
+
+Tappa C1 del passaggio a NetBird con **DA-Link** (ramo `netbird-c1`, non ancora su `dev`).
+Piano: `docs/superpowers/plans/2026-10-15-tappa-c1-netbird.md`. Tutto nasce spento:
+senza `/etc/dalink/oggetto.env` (lo scrive il comando d'installazione di DA-Link)
+l'istanza non chiama nessuno.
+
+### Aggiunte
+
+- **Segnale di vita verso DA-Link, ogni 5 minuti.** Versione, moduli accesi, salute
+  (solo il verdetto, e solo dei moduli accesi più il sistema), porte aperte
+  sull'interfaccia NetBird lette dal firewall vivo, e il livello scelto. I numeri
+  dell'inventario (dispositivi, reti, ultima scansione) escono solo se l'istanza lo
+  consente, e a «solo stato» non si leggono nemmeno. Perché: Domarc deve sapere se
+  l'istanza è viva senza vedere i dati del cliente, e la scelta vale all'origine.
+  Il segnale dice anche se il **proxy Zabbix** della macchina gira (`zbx`: ok / fermo /
+  non letto; niente voce se non è installato). Perché: il proxy non è un modulo del
+  registro, e senza questa voce la colonna «Zabbix» del CRM non avrebbe mai un dato vero.
+- **Pagina «Cosa esce da questa istanza»** (voce «Cosa esce» del menu Sistema, solo
+  amministratori). Dice tutto ciò che esce verso Domarc, fa scegliere il livello (ogni
+  cambio resta nel registro con chi e quando), mostra il prossimo segnale così com'è e,
+  quando il livello si abbassa, dice «in attesa di conferma» finché DA-Link non conferma
+  di aver cancellato i numeri. Perché: la privacy la decide il cliente, e la deve vedere.
+- **Livello al `/setup`**, facoltativo e senza scelta preselezionata; la rotta accetta
+  `livello_uscita` per Deploy-Appliance. Perché: si chiede al cliente all'installazione.
+- **Firewall dell'interfaccia NetBird** (`scripts/dalink/firewall-wt0.sh`, servizio
+  `dalink-firewall`): su `wt0` solo 22 e 443, più 6443 con l'edge, eventualmente solo dai
+  centrali dichiarati; Wazuh mai. Restringe soltanto, non apre niente che UFW chiude.
+  Perché: la policy NetBird è la prima barriera, questa è la seconda.
+- **Preparazione all'ingresso in NetBird** (`scripts/dalink/prepara-netbird.sh`,
+  `install.sh --netbird --edge=si|no`): client NetBird dal repository firmato, Tailscale
+  con `--netfilter-mode=off`, firewall; la chiave d'ingresso solo da stdin. Prova a vuoto
+  di default.
 
 ## [0.3.281] — 2026-10-14
 

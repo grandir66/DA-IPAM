@@ -4,6 +4,7 @@ import { createUser, getUserCount, createTenant, createTenantDatabase, setUserTe
 import { SetupSchema } from "@/lib/validators";
 import { ensureEnvSecrets } from "@/lib/env-secrets";
 import { urlDaAuth } from "@/lib/daauth";
+import { impostaLivello } from "@/lib/dalink/stato";
 
 export async function GET() {
   const count = getUserCount();
@@ -31,7 +32,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
     }
 
-    const { username, password, mode, codice_cliente, ragione_sociale } = parsed.data;
+    const { username, password, mode, codice_cliente, ragione_sociale, livello_uscita } = parsed.data;
     const passwordHash = await bcrypt.hash(password, 12);
 
     if (mode === "single") {
@@ -66,6 +67,12 @@ export async function POST(request: Request) {
       // toglie quando quell'installer passa a "single" (piano di miglioramento,
       // tappa 8): lo ricorda la prova in __tests__/setup-un-cliente.test.ts.
       createUser(username, passwordHash, "superadmin");
+    }
+
+    // Cosa esce verso Domarc (DA-Link, tappa C1): si registra solo se dichiarato, con
+    // chi l'ha scelto. Senza risposta resta «nessuna scelta» = solo stato.
+    if (livello_uscita) {
+      impostaLivello(livello_uscita, `setup: ${username}`);
     }
 
     // Allinea chiavi segrete (runtime → .env.local) prima di cifrare credenziali in UI

@@ -257,6 +257,32 @@ CREATE TABLE IF NOT EXISTS inventory_ingest_tokens (
   tenant_code TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- DA-Link (tappa C1 NetBird): cosa esce da questa istanza verso Domarc.
+-- Il livello lo sceglie solo l'amministratore dell'istanza (spec NetBird §5.3):
+-- ogni cambio è una riga nuova, mai sovrascritta. È il registro d'audit locale.
+-- Nessuna riga = nessuna scelta dichiarata = esce solo lo stato.
+-- Non in settings: PUT /api/settings scrive qualunque chiave senza registro.
+CREATE TABLE IF NOT EXISTS dalink_livello_registro (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  livello TEXT NOT NULL CHECK(livello IN ('solo_stato', 'stato_inventario')),
+  scelto_da TEXT NOT NULL,
+  scelto_il TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Ultimo tentativo e ultimo invio riuscito del segnale di vita verso DA-Link.
+-- Dalla risposta si tengono solo le due date (ricevuto_il, inventario_cancellato_il):
+-- nessuna risposta di DA-Link cambia la configurazione dell'istanza.
+CREATE TABLE IF NOT EXISTS dalink_segnale_stato (
+  id INTEGER PRIMARY KEY CHECK(id = 1),
+  tentato_il TEXT,
+  esito TEXT,
+  dettaglio TEXT,
+  ok_il TEXT,
+  ok_livello TEXT,
+  ricevuto_il TEXT,
+  inventario_cancellato_il TEXT
+);
 `;
 
 export const HUB_INDEXES_SQL = `

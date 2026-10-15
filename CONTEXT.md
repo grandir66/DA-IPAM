@@ -54,6 +54,15 @@ Documento di **passaggio di consegne**: leggilo per primo, poi [CLAUDE.md](CLAUD
   `settings`; la salute nel segnale riguarda solo i moduli accesi (le sonde dei moduli spenti
   dicono `fail`); la tabella nft `inet dalink` sta sul **prerouting** (sull'input NetBird ci infila `iifname "wt0" accept` e la scavalca, visto sul pilota il 15/10) e restringe soltanto: con UFW acceso serve anche
   `ufw allow in on wt0` (tappa G1). L'agente Python (decisione 26) non è ancora tolto.
+- **Credenziali, promozione IP → apparato, wizard (15/10, approvato, da eseguire)**: spec
+  `docs/superpowers/specs/2026-10-15-credenziali-promozione-wizard-design.md` (cinque tappe:
+  bug + porta sulle credenziali, Apple/macOS, archivio unico, finestra unica di promozione,
+  wizard, classificazione), piano della tappa 1 in `docs/superpowers/plans/2026-10-15-tappa1-credenziali-promozione.md`.
+  **Trappole**: le ricostruzioni di `network_devices` in `db-tenant.ts` riscrivono un elenco
+  fisso di colonne (quelle non elencate si perdono): la prossima parte da `sqlite_master`;
+  le finestre che trasformano un IP in apparato sono **quattro** (oggetto, rete, discovery,
+  lista per classificazione) con logiche diverse; `PUT /api/credentials/[id]` con
+  `password: ""` cancella il segreto.
 - **Piano di miglioramento (12/10)**: nove tappe in `docs/superpowers/specs/2026-10-12-piano-miglioramento-design.md`; decisioni in ADR 0004. Bacheca: `lavori piano-miglioramento-da-ipam`.
 - **Controller di rete (ADR 0005, 0007)**: UniFi (Omada dopo) = righe di `network_controllers` nel DB del cliente, pagina `/controllers`, job `unifi_sync` spento di default; UniFi OS con chiave API (`X-API-KEY`). Il controller della rete Domarc è un UDM sull'hub; Omada dei clienti non si legge dall'hub. LLDP sta sull'apparato, mai nelle porte.
 - **Mappa topologia, fasi 1-2 (ADR 0008, 0009)**: modello in `src/lib/topology/` (`model.ts`, `identity.ts`, `attach.ts`, `tree.ts`, `tree-layout.ts`), pagina `src/components/topology/map/`, rotte `/api/topology/maps*`, misure `scripts/misura-topologia.ts`, `misura-mac-porta.ts`. **Trappole**: i vicini non si cancellano (invecchiano, pota a 90 giorni); `switch_ports.is_uplink = 0` non vuol dire «non uplink»; MAC virtuali (VRRP/HSRP) e seriale degli host non identificano nessuno; nomi di fabbrica o corti non fondono; il job dei client UniFi è spento di default e legge solo 7:00-19:59; l'abbinamento richiede apparati già letti con `controller_mac`; la mappa automatica di una rete grande è larghissima in orizzontale: si usa il verticale (ADR 0012) o «passo passo». La migrazione sta in fondo a `getTenantDb`.

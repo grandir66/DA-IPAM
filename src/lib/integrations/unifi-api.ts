@@ -9,15 +9,24 @@
  *   POST /api/logout
  *   GET  /api/self/sites → i site, per sceglierne uno (facoltativo)
  *
- * Backend `udm` (console UniFi OS: UDM, UDM Pro/Beast, Cloud Key Gen2+), con la
- * chiave API creata sulla console, nell'app Network (Control Plane, poi Integrazioni):
- *   GET  /proxy/network/api/s/<site>/stat/device   intestazione X-API-KEY
+ * Backend `udm` (console UniFi OS: UDM, UDM Pro/Beast, Cloud Key Gen2+), due vie:
+ * - chiave API creata sulla console, nell'app Network (Control Plane, poi
+ *   Integrazioni), intestazione X-API-KEY a ogni richiesta, niente login;
+ * - utente LOCALE e password (ADR 0019), quando la chiave non si può creare:
+ *   POST /api/auth/login {username, password, rememberMe:false}
+ *     → cookie TOKEN e intestazione x-csrf-token (aggiornata da x-updated-csrf-token)
+ *   POST /api/auth/logout alla fine. Un login rifiutato non si ritenta mai nel
+ *   giro: la console blocca l'account dopo troppi tentativi.
+ * Le letture, per tutte e due:
+ *   GET  /proxy/network/api/s/<site>/stat/device
  *   GET  /proxy/network/api/s/<site>/stat/sta
  *   GET  /proxy/network/api/self/sites
- * Niente login né logout: la chiave vale a ogni richiesta.
  *
  * Nient'altro: ogni richiesta passa da `isUnifiRequestAllowed`, che conosce
- * solo questi percorsi. Il client non scrive mai sul controller.
+ * solo questi percorsi. Il client non scrive mai sul controller. Unica
+ * eccezione, fuori da quell'elenco e senza credenziali: `detectUnifiOs`, una
+ * GET / anonima per dire «questa è una console UniFi OS» a chi ha scelto
+ * self-hosted.
  * Backend `cloud`: «backend non ancora implementato».
  *
  * Certificato: il controller è self-signed, quindi niente CA. Si usa lo
@@ -147,13 +156,16 @@ const SITE_RE = /^[A-Za-z0-9_-]{1,64}$/;
 /** Prefisso dell'applicazione Network dietro una console UniFi OS. */
 export const UNIFI_OS_PREFIX = "/proxy/network";
 
+/** I soli POST: login e logout, della Network Application e di UniFi OS. */
+const ALLOWED_POSTS: ReadonlySet<string> = new Set(["/api/login", "/api/logout", "/api/auth/login", "/api/auth/logout"]);
+
 /**
- * true solo per login e logout (self-hosted), lettura degli apparati e dei
- * client collegati di un site ed elenco dei site, con o senza il prefisso
+ * true solo per login e logout (self-hosted e UniFi OS), lettura degli apparati
+ * e dei client collegati di un site ed elenco dei site, con o senza il prefisso
  * delle console UniFi OS. Tutte GET di `stat/`: nessun comando (`cmd/`), mai.
  */
 export function isUnifiRequestAllowed(method: string, path: string): boolean {
-  if (method === "POST") return path === "/api/login" || path === "/api/logout";
+  if (method === "POST") return ALLOWED_POSTS.has(path);
   if (method === "GET") {
     const rest = path.startsWith(`${UNIFI_OS_PREFIX}/`) ? path.slice(UNIFI_OS_PREFIX.length) : path;
     if (rest === "/api/self/sites") return true;
@@ -182,8 +194,20 @@ export function controllerMsgFromBody(body: string): string | null {
   return null;
 }
 
-/** Contesto di un errore: il passo e, per una lettura, che cosa si leggeva (apparati di default). */
-type ErrorCtx = { step: "login" | "lettura"; site?: string; apiKey?: boolean; what?: "device" | "sta" };
+/**
+ * Contesto di un errore: il passo e, per una lettura, che cosa si leggeva
+ * (apparati di default). `unifiOs` = sessione con utente locale su una console
+ * UniFi OS (ADR 0019).
+ */
+type ErrorCtx = { step: "login" | "lettura"; site?: string; apiKey?: boolean; unifiOs?: boolean; what?: "device" | "sta" };
+
+export const UNIFI_OS_LOGIN_MESSAGES = {
+  401: "Utente o password non accettati dalla console",
+  403:
+    "Account senza permessi sull'app Network o con la verifica in due passaggi: serve un account locale " +
+    "senza 2FA, con almeno la lettura dell'app Network",
+  429: "La console ha bloccato i tentativi: riprova fra qualche minuto (nessun nuovo tentativo in questo giro)",
+} as const;
 
 export function classifyUnifiHttpError(
   status: number,
@@ -192,6 +216,18 @@ export function classifyUnifiHttpError(
 ): { reason: UnifiErrorReason; message: string } {
   const msg = controllerMsg ?? "";
   const cosa = ctx.what === "sta" ? "client" : "apparati";
+  if (ctx.unifiOs && ctx.step === "login") {
+    if (status === 401) return { reason: "auth", message: UNIFI_OS_LOGIN_MESSAGES[401] };
+    // 499 = la console chiede il secondo fattore (MFA_AUTH_REQUIRED): stesso rimedio del 403.
+    if (status === 403 || status === 499) return { reason: "auth", message: UNIFI_OS_LOGIN_MESSAGES[403] };
+    if (status === 429) return { reason: "auth", message: UNIFI_OS_LOGIN_MESSAGES[429] };
+  }
+  if (ctx.unifiOs && ctx.step === "lettura" && status === 403) {
+    return {
+      reason: "auth",
+      message: `L'account della console non ha il permesso di leggere ${cosa === "client" ? "i client" : "gli apparati"} nell'app Network: serve almeno la lettura`,
+    };
+  }
   if (ctx.apiKey && (status === 401 || status === 403)) {
     return {
       reason: "auth",
@@ -545,12 +581,21 @@ function validateSelfHosted(cfg: UnifiClientConfig): { base: URL; site: string; 
   return { base, site, username, password };
 }
 
-function validateUnifiOs(cfg: UnifiClientConfig): { base: URL; site: string; apiKey: string } {
+/** Come si entra in una console UniFi OS: la chiave se c'è, altrimenti utente locale e password. */
+type UnifiOsCredentials = { apiKey: string } | { username: string; password: string };
+
+function validateUnifiOs(cfg: UnifiClientConfig): { base: URL; site: string; cred: UnifiOsCredentials } {
   const base = parseBaseUrl(cfg, "l'indirizzo della console, es. https://192.168.1.1");
   const site = parseSite(cfg);
   const apiKey = (cfg.apiToken ?? "").trim();
-  if (!apiKey) throw new UnifiApiError("config", "Chiave API della console UniFi OS non configurata");
-  return { base, site, apiKey };
+  if (apiKey) return { base, site, cred: { apiKey } };
+  const username = (cfg.username ?? "").trim();
+  const password = cfg.password ?? "";
+  if (username && password) return { base, site, cred: { username, password } };
+  throw new UnifiApiError(
+    "config",
+    "Chiave API della console UniFi OS non configurata, e nemmeno utente locale e password",
+  );
 }
 
 async function login(
@@ -577,16 +622,61 @@ async function login(
   if (!cookie) {
     throw new UnifiApiError("unknown", "Il controller ha accettato il login ma non ha aperto una sessione (nessun cookie)");
   }
-  const h = res.headers["x-csrf-token"];
-  const csrf = (Array.isArray(h) ? h[0] : h) || cookieValue(cookie, "csrf_token");
+  const csrf = headerValue(res.headers, "x-csrf-token") || cookieValue(cookie, "csrf_token");
   return { cookie, csrf: csrf ?? null };
 }
 
-/** Come si autentica una lettura: sessione (self-hosted) o chiave API (UniFi OS). */
+function headerValue(headers: IncomingHttpHeaders, name: string): string | null {
+  const h = headers[name];
+  const v = Array.isArray(h) ? h[0] : h;
+  return typeof v === "string" && v.trim() !== "" ? v.trim() : null;
+}
+
+/**
+ * Login con utente LOCALE su una console UniFi OS (ADR 0019). Un tentativo
+ * solo: 401/403/429 tornano col loro messaggio e nessuno lo ripete.
+ */
+async function unifiOsLogin(
+  send: UnifiTransport,
+  username: string,
+  password: string,
+  timeoutMs: number,
+): Promise<UnifiSession> {
+  const res = await send({
+    method: "POST",
+    path: "/api/auth/login",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password, rememberMe: false }),
+    timeoutMs,
+  });
+  if (res.status !== 200) throw httpError(res, { step: "login", unifiOs: true });
+  const token = cookieValue(mergeCookieHeader("", parseSetCookies(res.headers)), "TOKEN");
+  if (!token) {
+    throw new UnifiApiError("unknown", "La console ha accettato il login ma non ha aperto una sessione (nessun cookie TOKEN)");
+  }
+  return { cookie: `TOKEN=${token}`, csrf: headerValue(res.headers, "x-csrf-token") };
+}
+
+/** La console può rinnovare il CSRF a ogni risposta: le richieste dopo usano quello nuovo. */
+function trackCsrf(send: UnifiTransport, s: UnifiSession): UnifiTransport {
+  return async (req) => {
+    const res = await send(req);
+    const updated = headerValue(res.headers, "x-updated-csrf-token");
+    if (updated) s.csrf = updated;
+    return res;
+  };
+}
+
+/**
+ * Come si autentica una lettura: sessione (self-hosted, o UniFi OS con utente
+ * locale) o chiave API (UniFi OS). `headers` si chiede a ogni richiesta: il
+ * CSRF della sessione può cambiare a metà.
+ */
 interface ReadAuth {
   prefix: string;
-  headers: Record<string, string>;
+  headers: () => Record<string, string>;
   apiKey: boolean;
+  unifiOs: boolean;
 }
 
 /** Una lettura `stat/<what>` del site: stessa gestione degli errori per apparati e client. */
@@ -607,14 +697,15 @@ async function statGet<T>(
   what: "device" | "sta",
   parse: (json: unknown) => T,
 ): Promise<T> {
-  const res = await send({ method: "GET", path: `${auth.prefix}/api/s/${site}/stat/${what}`, headers: auth.headers, timeoutMs });
-  if (res.status !== 200) throw httpError(res, { step: "lettura", site, apiKey: auth.apiKey, what });
+  const res = await send({ method: "GET", path: `${auth.prefix}/api/s/${site}/stat/${what}`, headers: auth.headers(), timeoutMs });
+  const ctx: ErrorCtx = { step: "lettura", site, apiKey: auth.apiKey, unifiOs: auth.unifiOs, what };
+  if (res.status !== 200) throw httpError(res, ctx);
   const json = parseJsonBody(res.body);
   try {
     return parse(json);
   } catch (e) {
     if (e instanceof UnifiResponseError) {
-      const c = classifyUnifiHttpError(res.status, e.controllerMsg, { step: "lettura", site, apiKey: auth.apiKey, what });
+      const c = classifyUnifiHttpError(res.status, e.controllerMsg, ctx);
       // Un rc di errore senza codice noto resta un errore del controller.
       if (c.reason === "unknown") throw new UnifiApiError("server", e.message, { status: res.status });
       throw new UnifiApiError(c.reason, c.message, { status: res.status });
@@ -641,7 +732,7 @@ export function parseSitesResponse(json: unknown): UnifiSite[] {
 /** Elenco dei site: facoltativo, un suo errore non fa fallire la prova (null = non letto). */
 async function selfSites(send: UnifiTransport, auth: ReadAuth, timeoutMs: number): Promise<UnifiSite[] | null> {
   try {
-    const res = await send({ method: "GET", path: `${auth.prefix}/api/self/sites`, headers: auth.headers, timeoutMs });
+    const res = await send({ method: "GET", path: `${auth.prefix}/api/self/sites`, headers: auth.headers(), timeoutMs });
     if (res.status !== 200) return null;
     return parseSitesResponse(JSON.parse(res.body) as unknown);
   } catch (e) {
@@ -651,14 +742,50 @@ async function selfSites(send: UnifiTransport, auth: ReadAuth, timeoutMs: number
   }
 }
 
-async function logout(send: UnifiTransport, s: UnifiSession, timeoutMs: number): Promise<void> {
+async function logout(send: UnifiTransport, s: UnifiSession, timeoutMs: number, path = "/api/logout"): Promise<void> {
   await send({
     method: "POST",
-    path: "/api/logout",
+    path,
     headers: { ...sessionHeaders(s), "Content-Type": "application/json" },
     body: "{}",
     timeoutMs,
   });
+}
+
+export const UNIFI_OS_DETECTED_MESSAGE =
+  "Questo indirizzo è una console UniFi OS: scegli UDM come tipo, con la chiave API o con un utente locale e la password";
+
+const UNIFI_OS_TITLE_RE = /<title>\s*UniFi OS\s*<\/title>/i;
+
+/**
+ * GET / anonima: la pagina di una console UniFi OS ha il titolo «UniFi OS»
+ * (la Network Application classica rinvia a /manage). Nessuna credenziale,
+ * nessun cookie. Serve solo a spiegare un fallimento: un suo errore = false,
+ * e resta il messaggio di prima.
+ */
+async function looksLikeUnifiOs(raw: UnifiTransport, timeoutMs: number): Promise<boolean> {
+  try {
+    const res = await raw({ method: "GET", path: "/", headers: { Accept: "text/html" }, timeoutMs });
+    return res.status === 200 && UNIFI_OS_TITLE_RE.test(res.body);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * «Questo indirizzo è una console UniFi OS?» per l'avviso al salvataggio di un
+ * controller self-hosted. Impronta usa e getta: nessuna credenziale parte, e
+ * niente si fissa. Non lancia.
+ */
+export async function detectUnifiOs(url: string, opts: Pick<UnifiClientOptions, "transportFactory"> = {}): Promise<boolean> {
+  let base: URL;
+  try {
+    base = parseBaseUrl({ url }, "");
+  } catch {
+    return false;
+  }
+  const factory = opts.transportFactory ?? pinnedTransportFactory;
+  return looksLikeUnifiOs(factory(base, { expected: null, recorded: null }), 5_000);
 }
 
 /**
@@ -696,13 +823,21 @@ export function createUnifiClient(
     return false;
   }
 
-  async function readSelfHosted<T>(reader: StatReader<T>, withSites: boolean): Promise<ReadResult<T>> {
-    const { base, site, username, password } = validateSelfHosted(cfg);
-    const pins: UnifiPinSession = { expected: pinStore.get(), recorded: null };
-    const send = readOnly(factory(base, pins));
-
-    const session = await login(send, username, password, loginTimeoutMs);
-    const auth: ReadAuth = { prefix: "", headers: sessionHeaders(session), apiKey: false };
+  /**
+   * Una sessione intera: login, lettura (e site), logout SEMPRE, anche dopo
+   * un errore di lettura; un fallimento del logout non annulla la lettura,
+   * tranne un certificato cambiato a metà sessione. Il login non si ritenta.
+   */
+  async function readInSession<T>(
+    send: UnifiTransport,
+    base: URL,
+    pins: UnifiPinSession,
+    site: string,
+    reader: StatReader<T>,
+    withSites: boolean,
+    s: { session: UnifiSession; prefix: string; unifiOs: boolean; logoutPath: string },
+  ): Promise<ReadResult<T>> {
+    const auth: ReadAuth = { prefix: s.prefix, headers: () => sessionHeaders(s.session), apiKey: false, unifiOs: s.unifiOs };
     let data: T | undefined;
     let sites: UnifiSite[] | null = null;
     let failure: UnifiApiError | null = null;
@@ -712,11 +847,9 @@ export function createUnifiClient(
     } catch (e) {
       failure = toUnifiError(e);
     }
-    // Logout sempre, anche dopo un errore di lettura; un suo fallimento non
-    // annulla la lettura, tranne un certificato cambiato a metà sessione.
     let logoutFailure: UnifiApiError | null = null;
     try {
-      await logout(send, session, loginTimeoutMs);
+      await logout(send, s.session, loginTimeoutMs, s.logoutPath);
     } catch (e) {
       logoutFailure = toUnifiError(e);
     }
@@ -726,11 +859,57 @@ export function createUnifiClient(
     return { data: data as T, sites, pin: pins.expected, recorded };
   }
 
-  async function readUnifiOs<T>(reader: StatReader<T>, withSites: boolean): Promise<ReadResult<T>> {
-    const { base, site, apiKey } = validateUnifiOs(cfg);
+  async function readSelfHosted<T>(reader: StatReader<T>, withSites: boolean): Promise<ReadResult<T>> {
+    const { base, site, username, password } = validateSelfHosted(cfg);
     const pins: UnifiPinSession = { expected: pinStore.get(), recorded: null };
+    const raw = factory(base, pins);
+    // Risposta del login, per capire se a rispondere è una Network Application.
+    let loginBody: string | null = null;
+    const send = readOnly(async (req) => {
+      const res = await raw(req);
+      if (req.path === "/api/login") loginBody = res.body;
+      return res;
+    });
+
+    let session: UnifiSession;
+    try {
+      session = await login(send, username, password, loginTimeoutMs);
+    } catch (e) {
+      const err = toUnifiError(e);
+      // Login fallito senza la risposta tipica della Network Application
+      // (`meta.msg`): se l'indirizzo è una console UniFi OS lo si dice (il tipo
+      // giusto è «udm»), invece di «credenziali» o «percorso inesistente».
+      const classic = loginBody !== null && controllerMsgFromBody(loginBody) !== null;
+      if (err.reason !== "cert" && err.reason !== "network" && !classic && (await looksLikeUnifiOs(raw, loginTimeoutMs))) {
+        throw new UnifiApiError("config", UNIFI_OS_DETECTED_MESSAGE, { status: err.status });
+      }
+      throw err;
+    }
+    return readInSession(send, base, pins, site, reader, withSites, {
+      session,
+      prefix: "",
+      unifiOs: false,
+      logoutPath: "/api/logout",
+    });
+  }
+
+  async function readUnifiOs<T>(reader: StatReader<T>, withSites: boolean): Promise<ReadResult<T>> {
+    const { base, site, cred } = validateUnifiOs(cfg);
+    const pins: UnifiPinSession = { expected: pinStore.get(), recorded: null };
+    if ("username" in cred) {
+      const session: UnifiSession = { cookie: "", csrf: null };
+      const send = trackCsrf(readOnly(factory(base, pins)), session);
+      Object.assign(session, await unifiOsLogin(send, cred.username, cred.password, loginTimeoutMs));
+      return readInSession(send, base, pins, site, reader, withSites, {
+        session,
+        prefix: UNIFI_OS_PREFIX,
+        unifiOs: true,
+        logoutPath: "/api/auth/logout",
+      });
+    }
     const send = readOnly(factory(base, pins));
-    const auth: ReadAuth = { prefix: UNIFI_OS_PREFIX, headers: { "X-API-KEY": apiKey }, apiKey: true };
+    const headers = { "X-API-KEY": cred.apiKey };
+    const auth: ReadAuth = { prefix: UNIFI_OS_PREFIX, headers: () => ({ ...headers }), apiKey: true, unifiOs: false };
     const data = await reader(send, auth, site, readTimeoutMs);
     const sites = withSites ? await selfSites(send, auth, loginTimeoutMs) : null;
     const recorded = commitPin(base, pins);

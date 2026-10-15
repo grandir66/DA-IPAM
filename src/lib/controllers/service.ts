@@ -45,6 +45,8 @@ import { isCiphertext } from "@/lib/integrations/config";
 import { normalizeSpkiPin } from "@/lib/integrations/wazuh-config";
 import {
   createUnifiClient,
+  detectUnifiOs,
+  UNIFI_OS_DETECTED_MESSAGE,
   type UnifiClient,
   type UnifiClientConfig,
   type UnifiClientOptions,
@@ -61,6 +63,7 @@ import {
   CONTROLLER_KINDS_AVAILABLE,
   CONTROLLER_SCHEDULE_MINUTES,
   isControllerKind,
+  unifiOsAuthOf,
   vendorOfKind,
   type ControllerInput,
   type ControllerKind,
@@ -326,8 +329,13 @@ export function checkControllerInput(raw: unknown, existing?: NetworkControllerR
       return { ok: false, error: "Per il controller self-hosted serve la password" };
     }
   } else if (kind === "udm") {
-    if (!apiKey && !(sameOrigin && existing?.api_key_enc)) {
-      return { ok: false, error: "Per la console UniFi OS serve la chiave API" };
+    // Chiave API oppure utente locale e password (ADR 0019): il metodo si deduce.
+    if (unifiOsAuthOf({ apiKey, username }) === "password") {
+      if (!password && !(sameOrigin && existing?.password_enc)) {
+        return { ok: false, error: "Per la console UniFi OS con utente locale serve la password" };
+      }
+    } else if (!apiKey && !(sameOrigin && existing?.api_key_enc)) {
+      return { ok: false, error: "Per la console UniFi OS serve la chiave API, oppure utente locale e password" };
     }
   }
 
@@ -349,17 +357,32 @@ export function checkControllerInput(raw: unknown, existing?: NetworkControllerR
 
 // ── Scritture ────────────────────────────────────────────────────────────────
 
+/**
+ * Quali segreti tiene una riga: utente e password (self-hosted, o UniFi OS con
+ * utente locale) oppure la chiave (UniFi OS con chiave API). Mai tutti e due:
+ * il segreto dell'altro metodo si toglie.
+ */
+function secretsOf(input: ControllerInput): { password: boolean; apiKey: boolean } {
+  if (input.kind === "self_hosted") return { password: true, apiKey: false };
+  if (input.kind === "udm") {
+    const usesKey = unifiOsAuthOf(input) === "api_key";
+    return { password: !usesKey, apiKey: usesKey };
+  }
+  return { password: false, apiKey: false };
+}
+
 export function createController(input: ControllerInput): NetworkControllerView {
   migrateLegacyUnifiConfig();
+  const keeps = secretsOf(input);
   const row = insertNetworkController({
     name: input.name,
     vendor: vendorOfKind(input.kind),
     kind: input.kind,
     url: input.url,
     site: input.site,
-    username: input.kind === "self_hosted" ? input.username : "",
-    password_enc: input.kind === "self_hosted" ? sealSecret(input.password) : "",
-    api_key_enc: input.kind === "udm" ? sealSecret(input.apiKey) : "",
+    username: keeps.password ? input.username : "",
+    password_enc: keeps.password ? sealSecret(input.password) : "",
+    api_key_enc: keeps.apiKey ? sealSecret(input.apiKey) : "",
     cert_pin: input.certPin ?? null,
     enabled: input.enabled ? 1 : 0,
     origin: "manual",
@@ -376,13 +399,14 @@ export function updateController(id: number, input: ControllerInput): NetworkCon
   const row = getNetworkController(id);
   if (!row) return null;
   const moved = urlOrigin(row.url) !== urlOrigin(input.url);
+  const keeps = secretsOf(input);
   const patch: NetworkControllerPatch = {
     name: input.name,
     kind: input.kind,
     vendor: vendorOfKind(input.kind),
     url: input.url,
     site: input.site,
-    username: input.kind === "self_hosted" ? input.username : "",
+    username: keeps.password ? input.username : "",
     enabled: input.enabled ? 1 : 0,
   };
   if (moved) {
@@ -390,12 +414,16 @@ export function updateController(id: number, input: ControllerInput): NetworkCon
     patch.password_enc = "";
     patch.api_key_enc = "";
   }
-  if (input.kind === "self_hosted") {
+  // Segreto vuoto = non cambiare; quello dell'altro metodo si toglie.
+  if (keeps.password) {
     if (input.password) patch.password_enc = sealSecret(input.password);
-    patch.api_key_enc = "";
-  } else if (input.kind === "udm") {
-    if (input.apiKey) patch.api_key_enc = sealSecret(input.apiKey);
+  } else {
     patch.password_enc = "";
+  }
+  if (keeps.apiKey) {
+    if (input.apiKey) patch.api_key_enc = sealSecret(input.apiKey);
+  } else {
+    patch.api_key_enc = "";
   }
   // L'impronta vista nella prova vale solo dove non ce n'è una (primo uso).
   if (input.certPin && (moved || !row.cert_pin)) patch.cert_pin = input.certPin;
@@ -501,13 +529,15 @@ export async function probeControllerInput(
   const row = id !== null ? getNetworkController(id) : undefined;
   if (id !== null && !row) return { ok: false, reason: "config", message: "Controller non trovato" };
   const sameOrigin = row !== undefined && urlOrigin(row.url) === urlOrigin(input.url);
+  // Solo i segreti del metodo scelto: la chiave salvata non parte se si prova con l'utente.
+  const keeps = secretsOf(input);
   const cfg: UnifiClientConfig = {
     url: input.url,
     kind: input.kind as UnifiKind,
     site: input.site,
-    username: input.username,
-    password: input.password || (sameOrigin && row ? openSecret(row.password_enc) : ""),
-    apiToken: input.apiKey || (sameOrigin && row ? openSecret(row.api_key_enc) : ""),
+    username: keeps.password ? input.username : "",
+    password: keeps.password ? input.password || (sameOrigin && row ? openSecret(row.password_enc) : "") : "",
+    apiToken: keeps.apiKey ? input.apiKey || (sameOrigin && row ? openSecret(row.api_key_enc) : "") : "",
   };
   const store = sameOrigin && row ? controllerPinStore(row.id) : ephemeralPinStore();
   try {
@@ -515,6 +545,19 @@ export async function probeControllerInput(
   } catch (e) {
     return { ok: false, reason: "unknown", message: errorMessage(e) };
   }
+}
+
+/**
+ * Avviso al salvataggio: un controller self-hosted il cui indirizzo è una
+ * console UniFi OS non funzionerà mai (il tipo giusto è «udm»). Domanda
+ * anonima, nessuna credenziale; null se non lo è o non risponde. Non lancia.
+ */
+export async function unifiOsWarningFor(
+  input: ControllerInput,
+  opts: Pick<UnifiClientOptions, "transportFactory"> = {},
+): Promise<string | null> {
+  if (input.kind !== "self_hosted") return null;
+  return (await detectUnifiOs(input.url, opts)) ? UNIFI_OS_DETECTED_MESSAGE : null;
 }
 
 /** «Prova» dalla riga della tabella: configurazione salvata. Non lancia. */

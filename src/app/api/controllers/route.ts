@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin, requireAuth, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
-import { checkControllerInput, createController, listControllerViews } from "@/lib/controllers/service";
+import { checkControllerInput, createController, listControllerViews, unifiOsWarningFor } from "@/lib/controllers/service";
 import { NO_STORE, readJson, reloadSchedulerForCurrentTenant } from "@/lib/controllers/route-helpers";
 
 /**
@@ -16,17 +16,19 @@ export async function GET() {
 
 /**
  * POST /api/controllers — aggiunge un controller. Admin: salva credenziali
- * del controller del cliente. Non lancia nessuna lettura.
+ * del controller del cliente. Non lancia nessuna lettura; per un self-hosted
+ * chiede in forma anonima se l'indirizzo è una console UniFi OS (avviso).
  */
 export async function POST(req: Request) {
   const adminCheck = await requireAdmin();
   if (isAuthError(adminCheck)) return adminCheck;
   const body = await readJson(req);
-  return withTenantFromSession(() => {
+  return withTenantFromSession(async () => {
     const check = checkControllerInput(body);
     if (!check.ok) return NextResponse.json({ error: check.error }, { status: 400 });
     const controller = createController(check.value);
-    const warning = reloadSchedulerForCurrentTenant();
+    const warnings = [reloadSchedulerForCurrentTenant(), await unifiOsWarningFor(check.value)];
+    const warning = warnings.filter(Boolean).join(" · ") || null;
     return NextResponse.json({ controller, warning }, { status: 201, headers: NO_STORE });
   });
 }

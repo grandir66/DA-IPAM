@@ -9,6 +9,7 @@ import {
   parseControllerPatch,
   removeController,
   setClientScheduleFor,
+  unifiOsWarningFor,
   updateController,
 } from "@/lib/controllers/service";
 import {
@@ -44,14 +45,16 @@ export async function PUT(req: Request, ctx: Ctx) {
   const id = parseControllerId((await ctx.params).id);
   if (id === null) return notFound();
   const body = await readJson(req);
-  return withTenantFromSession(() => {
+  return withTenantFromSession(async () => {
     const existing = getNetworkController(id);
     if (!existing) return notFound();
     const check = checkControllerInput(body, existing);
     if (!check.ok) return NextResponse.json({ error: check.error }, { status: 400 });
     const controller = updateController(id, check.value);
     if (!controller) return notFound();
-    const warning = reloadSchedulerForCurrentTenant();
+    // Self-hosted su una console UniFi OS: lo si dice subito (domanda anonima).
+    const warnings = [reloadSchedulerForCurrentTenant(), await unifiOsWarningFor(check.value)];
+    const warning = warnings.filter(Boolean).join(" · ") || null;
     return NextResponse.json({ controller, warning }, { headers: NO_STORE });
   });
 }

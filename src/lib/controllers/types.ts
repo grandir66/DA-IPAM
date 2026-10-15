@@ -9,12 +9,26 @@ export type ControllerVendor = "unifi" | "omada";
 /**
  * Come si parla col controller:
  * - `self_hosted`: UniFi Network Application classica (VM, es. cliente A), utente e password;
- * - `udm`: console UniFi OS (UDM, UDM Pro/Beast, Cloud Key Gen2+), chiave API;
+ * - `udm`: console UniFi OS (UDM, UDM Pro/Beast, Cloud Key Gen2+), chiave API
+ *   oppure utente LOCALE e password (ADR 0019);
  * - `omada`: controller Omada (OpenAPI, client id e secret) — non ancora disponibile.
  */
 export type ControllerKind = "self_hosted" | "udm" | "omada";
 
 export const CONTROLLER_KINDS: readonly ControllerKind[] = ["udm", "self_hosted", "omada"];
+
+/** Come si entra in una console UniFi OS (ADR 0019). */
+export type UnifiOsAuth = "api_key" | "password";
+
+/**
+ * Il metodo di una console UniFi OS si deduce dai campi: la chiave se c'è,
+ * altrimenti utente (e password) se c'è l'utente; senza nessuno dei due vale la
+ * chiave già salvata (il controllo del modulo dice se c'è davvero).
+ */
+export function unifiOsAuthOf(f: { apiKey: string; username: string }): UnifiOsAuth {
+  if (f.apiKey.trim() !== "") return "api_key";
+  return f.username.trim() !== "" ? "password" : "api_key";
+}
 
 /** Tipi che si possono già salvare e leggere. Omada si accende dopo la misura su un controller vero. */
 export const CONTROLLER_KINDS_AVAILABLE: readonly ControllerKind[] = ["udm", "self_hosted"];

@@ -4,6 +4,24 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-16 · controller UDM anche con utente locale e password
+
+Chiesto da Riccardo il 16/10 (ADR 0019). Perché: sull'appliance pilota il controller è un UDM con un account
+locale (`rgadmin`) che non può creare la chiave API, l'unico modo con cui si leggevano le console UniFi OS; salvato
+come self-hosted falliva sempre, anche con la password giusta, senza dire perché.
+
+### Modifiche
+
+- **UDM / console UniFi OS: «Chiave API» oppure «Utente locale e password»** nella finestra del controller. Con
+  l'utente: `POST /api/auth/login`, letture col cookie `TOKEN` e il CSRF, `POST /api/auth/logout` alla fine; stesso
+  certificato fissato al primo uso. Il metodo si deduce dai campi, niente colonne nuove; un controller self-hosted
+  con utente e password passa a UDM senza riscrivere la password.
+- **Login rifiutato detto chiaro e mai ritentato**: 401 utente o password, 403 (o 499) account senza permessi
+  sull'app Network o con la 2FA, 429 console che ha bloccato i tentativi. Un secondo tentativo potrebbe bloccare
+  l'account.
+- **«Questo indirizzo è una console UniFi OS: scegli UDM»**: lo dicono la prova e il salvataggio di un controller
+  self-hosted puntato a un UDM (una `GET /` anonima, senza credenziali).
+
 ## [Non rilasciato] — 2026-10-15 · credenziali tappa 4: il wizard usa l'archivio delle credenziali
 
 Proposta approvata da Riccardo il 15/10. Perché: il wizard apriva, ma chiedeva le stesse cose di prima. Il router

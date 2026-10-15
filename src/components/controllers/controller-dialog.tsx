@@ -23,10 +23,12 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { fetchJson } from "@/lib/fetch-json";
+import { cn } from "@/lib/utils";
 import type { ControllerKind, NetworkControllerView } from "@/lib/controllers/types";
 import {
   KIND_OPTIONS,
   SCHEDULE_OPTIONS,
+  UDM_AUTH_OPTIONS,
   buildControllerPayload,
   describeProbe,
   emptyControllerForm,
@@ -67,6 +69,7 @@ export function ControllerDialog({
   };
 
   const isUdm = form.kind === "udm";
+  const useKey = isUdm && form.udmAuth === "api_key";
   const probeView = probe ? describeProbe(probe) : null;
   const sites = probe?.ok ? probe.sites : [];
   const missing = formMissing(form);
@@ -213,7 +216,37 @@ export function ControllerDialog({
             )}
           </div>
 
-          {isUdm ? (
+          {isUdm && (
+            <div>
+              <Label className="text-[13px] text-muted-foreground">Accesso alla console</Label>
+              <div
+                className="mt-1 grid grid-cols-2 overflow-hidden rounded-md border border-foreground text-sm"
+                role="group"
+                aria-label="Accesso alla console"
+              >
+                {UDM_AUTH_OPTIONS.map((o) => (
+                  <button
+                    key={o.value}
+                    type="button"
+                    aria-pressed={form.udmAuth === o.value}
+                    disabled={busy !== null}
+                    onClick={() => setTarget({ udmAuth: o.value })}
+                    className={cn(
+                      "px-3 py-1.5",
+                      form.udmAuth === o.value
+                        ? "bg-foreground font-semibold text-background"
+                        : "bg-card text-foreground hover:bg-muted",
+                    )}
+                  >
+                    {form.udmAuth === o.value && "● "}
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {useKey ? (
             <div>
               <Label htmlFor="ctl-key" className="text-[13px] text-muted-foreground">
                 Chiave API
@@ -233,35 +266,43 @@ export function ControllerDialog({
               </p>
             </div>
           ) : (
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div>
-                <Label htmlFor="ctl-user" className="text-[13px] text-muted-foreground">
-                  Utente
-                </Label>
-                <Input
-                  id="ctl-user"
-                  className="mt-1"
-                  autoComplete="off"
-                  value={form.username}
-                  disabled={busy !== null}
-                  onChange={(e) => set({ username: e.target.value })}
-                />
+            <div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <Label htmlFor="ctl-user" className="text-[13px] text-muted-foreground">
+                    {isUdm ? "Utente locale" : "Utente"}
+                  </Label>
+                  <Input
+                    id="ctl-user"
+                    className="mt-1"
+                    autoComplete="off"
+                    value={form.username}
+                    disabled={busy !== null}
+                    onChange={(e) => set({ username: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="ctl-pass" className="text-[13px] text-muted-foreground">
+                    Password
+                  </Label>
+                  <Input
+                    id="ctl-pass"
+                    className="mt-1"
+                    type="password"
+                    autoComplete="new-password"
+                    placeholder={secretPlaceholder(passSet)}
+                    value={form.password}
+                    disabled={busy !== null}
+                    onChange={(e) => set({ password: e.target.value })}
+                  />
+                </div>
               </div>
-              <div>
-                <Label htmlFor="ctl-pass" className="text-[13px] text-muted-foreground">
-                  Password
-                </Label>
-                <Input
-                  id="ctl-pass"
-                  className="mt-1"
-                  type="password"
-                  autoComplete="new-password"
-                  placeholder={secretPlaceholder(passSet)}
-                  value={form.password}
-                  disabled={busy !== null}
-                  onChange={(e) => set({ password: e.target.value })}
-                />
-              </div>
+              {isUdm && (
+                <p className="mt-1 text-[13px] text-muted-foreground">
+                  Account locale della console, senza verifica in due passaggi; serve almeno la lettura dell&apos;app
+                  Network.
+                </p>
+              )}
             </div>
           )}
 

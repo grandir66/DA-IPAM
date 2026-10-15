@@ -136,6 +136,27 @@ describe("modulo e corpo del salvataggio", () => {
     assert.equal(f.username, "ro");
   });
 
+  it("UDM con utente locale: manda utente e password, non la chiave; un self-hosted con utente si apre già su «utente»", () => {
+    assert.equal(emptyControllerForm().udmAuth, "api_key");
+    const p = buildControllerPayload({
+      ...emptyControllerForm(),
+      udmAuth: "password",
+      name: "U",
+      url: "https://1.1.1.1",
+      username: " rgadmin ",
+      password: "pw",
+      apiKey: "k",
+    });
+    assert.equal(p.kind, "udm");
+    assert.equal(p.username, "rgadmin");
+    assert.equal(p.password, "pw");
+    assert.equal(p.apiKey, "");
+    // Il pilota: salvato self_hosted con utente e password; scegliendo UDM resta su «utente».
+    assert.equal(formFromController(ctrl()).udmAuth, "password");
+    assert.equal(formFromController(ctrl({ kind: "udm", username: "", passwordSet: false, apiKeySet: true })).udmAuth, "api_key");
+    assert.equal(formFromController(ctrl({ kind: "udm", username: "rgadmin", passwordSet: true })).udmAuth, "password");
+  });
+
   it("udm manda la chiave e non l'utente; self-hosted il contrario", () => {
     const udm = buildControllerPayload(
       { ...emptyControllerForm(), name: " UDM ", url: " https://1.1.1.1 ", apiKey: " k ", username: "x", password: "y" },

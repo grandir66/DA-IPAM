@@ -973,7 +973,8 @@ colonne nuove e nella fonte `snmp`: spento di default (D4), e acceso non cambia 
   hypervisor senza switch.
 - **Riserva del bond.** `ip -d -j link` si legge già; in T2 si prende anche lo stato del membro
   (`linkinfo.info_slave_data.state`: attivo o di riserva) e il suo MAC permanente (`info_slave_data.perm_hwaddr`,
-  da verificare sull'uscita vera), che va in `topology_device_macs`: è il MAC con cui il firmware delle schede si
+  **verificato il 16/10** sull'uscita vera del nodo dell'hub: c'è su tutti i membri; `permaddr` in cima alla scheda solo
+  dove il MAC di adesso è diverso), che va in `topology_device_macs`: è il MAC con cui il firmware delle schede si
   annuncia agli switch, e così i cavi verso core 1 del cliente A (8 schede che i core sentono senza nome) si
   abbinano anche senza `lldpd`. Il cavo del membro di riserva si scrive **«riserva del bond»**: non è lo spanning
   tree a fermarlo, e «bloccato» farebbe pensare a un guasto di rete che non c'è.

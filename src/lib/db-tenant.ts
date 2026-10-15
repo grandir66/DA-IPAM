@@ -103,6 +103,16 @@ export function getCurrentTenantCode(): string | null {
 
 const TENANTS_DIR = path.join(resolveDataDir(), "tenants");
 const MAX_OPEN_DBS = 20;
+
+/**
+ * Cartella dei DB tenant, fissata quando il modulo si carica. Sola lettura: la
+ * usano gli script sulle copie (tappa 2 credenziali, `guardia-copia.ts`) per
+ * verificare, prima di aprire un DB, di stare sulla copia e non sui dati veri.
+ */
+export function cartellaTenant(): string {
+  return TENANTS_DIR;
+}
+
 const tenantDbs = new Map<string, { db: Database.Database; lastUsed: number }>();
 
 /** Colonne di `scheduled_jobs`, nell'ordine dello schema (copia per nome nella v8). */

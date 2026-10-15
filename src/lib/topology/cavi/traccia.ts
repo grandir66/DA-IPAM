@@ -90,9 +90,15 @@ export function calcolaTraccia(oggi: Readonly<Record<string, string | null>>, m:
   };
 }
 
-/** I nomi degli oggetti nominati dalla traccia (righe, padri, chi entra o esce, avvisi). Un segmento: «segmento su ‹membro› ‹porta›». */
+/**
+ * I nomi degli oggetti nominati dalla traccia (righe, padri, chi entra o esce, avvisi). Un segmento: «segmento su ‹membro›
+ * ‹porta›». Due oggetti con lo stesso nome portano accanto l'indirizzo (o l'id, se manca): a schermo erano due righe
+ * identiche (verifica di T2, Task 15).
+ */
 export function nomiTraccia(t1: Pick<TopologyModel, "nodes">, m: ModelloCavi, tr: Traccia): Record<string, string> {
-  const nodi = new Map(t1.nodes.map((n) => [n.id, n.name]));
+  const quanti = new Map<string, number>();
+  for (const n of t1.nodes) quanti.set(n.name, (quanti.get(n.name) ?? 0) + 1);
+  const nodi = new Map(t1.nodes.map((n) => [n.id, (quanti.get(n.name) ?? 0) > 1 ? `${n.name} (${n.mgmtIp ?? n.id})` : n.name]));
   const seg = new Map(m.segmenti.map((s) => {
     const primo = s.membri.find((p) => p.nodo.startsWith("dev:")) ?? s.membri[0];
     return [s.id, `segmento su ${nodi.get(primo?.nodo ?? "") ?? primo?.nodo ?? "?"} ${primo?.nome ?? ""}`.trim()];

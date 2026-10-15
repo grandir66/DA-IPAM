@@ -70,7 +70,8 @@ export function LettureCard({ isAdmin }: { isAdmin: boolean }) {
               const e = righeEsito(r.esiti, (id) => r.nomi[String(id)] ?? `apparato #${id}`, 10);
               return (
                 <div key={r.lettura} className="rounded-md border p-3 space-y-1">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
+                  {/* Lo stato accanto al titolo, non in fondo alla riga: a 1920 stava a 1500 px dalla lettura che descrive. */}
+                  <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
                     <p className="text-sm font-semibold">{d.titolo}</p>
                     <p className="text-sm font-medium">{r.disponibile ? (r.stato.acceso ? "● " : "○ ") + testoStato(r.stato) : "non disponibile in questa versione"}</p>
                   </div>

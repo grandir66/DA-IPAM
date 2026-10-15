@@ -46,9 +46,12 @@ export function TracciaCard() {
           <>
             <p className="text-sm text-muted-foreground">Calcolata il {quandoItaliano(t.calcolataIl)}. Letture in più accese: {accese.length > 0 ? accese.join(", ") : "nessuna (solo le righe di oggi)"}.</p>
             {!t.schema && <p className="text-sm font-medium" role="status">Lo schema delle letture in più non c&apos;è su questo cliente: il calcolo usa solo le righe di oggi.</p>}
-            <Table><TableBody>
-              {numeri.map(([k, v]) => <TableRow key={k}><TableCell>{k}</TableCell><TableCell className="text-right tabular-nums">{v}</TableCell></TableRow>)}
-            </TableBody></Table>
+            {/* Larga quanto la tabella «Numeri»: a 1920 la riga intera metteva il numero a 1500 px dalla sua voce. */}
+            <div className="max-w-2xl">
+              <Table><TableBody>
+                {numeri.map(([k, v]) => <TableRow key={k}><TableCell>{k}</TableCell><TableCell className="text-right tabular-nums">{v}</TableCell></TableRow>)}
+              </TableBody></Table>
+            </div>
             {t.righe.length === 0 ? (
               <p className="text-sm">Nessun oggetto cambierebbe padre: l&apos;albero della mappa nuova coincide con quello di oggi.</p>
             ) : (

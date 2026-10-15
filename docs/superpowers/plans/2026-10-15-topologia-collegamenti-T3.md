@@ -1534,6 +1534,16 @@ export const TRATTI: Readonly<{ nonVisto: "6 4"; aMano: "1.5 4"; giu: "10 4"; tu
 
 ### Task 10: menu, pannello dei collegati e dettagli per cavo (T3.1, T3.3, T3.4 a schermo)
 
+> **Risposta di Riccardo alla bozza (16/10): «la rappresentazione mi piace»**, con un'aggiunta: **selezionando un nodo, i
+> suoi collegamenti si evidenziano rispetto agli altri con un colore diverso** (spec §13.10.3, «Aggiunta di Riccardo»;
+> bozza, oggetto 11). Si fa in questo task, solo con la mappa nuova (`model.cavi`): lo stato `selected` di
+> `topology-map-client.tsx` arriva ai bordi; le linee che hanno il nodo selezionato a un capo (anche le ridondanze
+> mostrate) prendono il colore del marchio `--primary` a piena intensità, tutte le altre `opacity` 0,25 con le loro parole;
+> tratteggio e spessore invariati; nessun effetto in stampa. Prova: una funzione pura `evidenzaDellaSelezione(links,
+> selected)` → insieme degli id evidenziati (vuoto senza selezione), vista fallire; a schermo una volta nel Task 14, anche in
+> scala di grigi. Le due domande della bozza (Scelte 6 e 7) restano come raccomandate: segmento con le misure di un
+> riquadro, «Ignora» di un fascio cavo per cavo.
+
 Spec §13.9 (testi del tasto destro e del dialogo, «Scegli il cavo da ignorare…», ★ di prima, ruoli), §13.4.6 («Perché
 questo ‹genere›», «Candidati per porta»), §13.8.3 punti 8-10, §13.7.2 passo 10 («visto dalle VM anche su ‹porta›»),
 Caso 3 («mappa di prima»). **Zona rossa:** no (le scritture passano dalle rotte del Task 8). **Modello:** Sonnet.

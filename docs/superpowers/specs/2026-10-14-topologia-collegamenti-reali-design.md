@@ -2046,6 +2046,12 @@ modo.
 principale», «Candidati per porta» e le anomalie stanno nella barra dei dettagli e al passaggio del mouse; correzioni
 e letture in più in «Dati della mappa». L'elenco «Cavi di ridondanza» della stampa (§12.5) riceve la colonna «stato».
 
+**Aggiunta di Riccardo sulla bozza di T3 (16/10): il nodo selezionato evidenzia i suoi collegamenti.** Con la mappa
+nuova, un clic su un riquadro porta i suoi collegamenti in cian a piena intensità e attenua tutti gli altri (opacità
+circa 25 %, parole comprese); forma e spessore non cambiano, perché dicono stato e velocità; il riquadro ha l'anello di
+selezione di oggi; un clic sul fondo toglie la selezione. Si distingue senza colore per luminanza (piena contro quasi
+bianca, provato in scala di grigi). Solo a schermo: la stampa non ha selezione. Bozza, oggetto 11.
+
 ### 13.10.4 La bozza prima del codice
 
 L'interfaccia si propone oggetto per oggetto prima di scriverla (regola grafica del parco). Ogni tappa che tocca la

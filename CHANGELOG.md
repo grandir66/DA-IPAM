@@ -4,6 +4,33 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-15 · credenziali tappa 2a: SNMPv3 letto per intero, modifica in blocco che non azzera
+
+Piano `docs/superpowers/plans/2026-10-15-tappa2-archivio-credenziali.md` (sotto-tappa 2a, solo codice,
+nessun dato toccato). Fotografia delle scelte delle credenziali prima/dopo sulla stessa copia dei dati
+del 15/10: 0 differenze su hub e cliente A.
+
+### Correzioni
+
+- **SNMPv3 letto per intero**: la chiave di autenticazione si legge da `encrypted_auth_key` (prima da
+  `encrypted_password`) e i protocolli dalla credenziale (prima MD5/authNoPriv fissi in cinque sessioni).
+  Un lettore solo dei segreti (`src/lib/credentials/segreti.ts`) e una sola regola dei tipi
+  (`src/lib/credentials/tipi.ts`), così le sotto-tappe dopo cambiano un punto e non sette.
+- **Niente community al posto di una v3**: un apparato v3 senza una v3 leggibile dà «Credenziale SNMPv3
+  assente o illeggibile» invece di provare la community (anche «public») in chiaro; vale per le cinque
+  sessioni v3 e per quella degli switch e della topologia. Il 15/10 gli apparati v3 erano 0 su hub e
+  cliente A. Resta da fare: il profilo vendor di `getDeviceInfo` apre ancora una v2c prima della v3 (passa
+  al motore unico nella 2b); la validazione v3 della discovery non salva sysDescr/sysObjectID (rinviata).
+- **La modifica in blocco e quella del singolo apparato non azzerano più le credenziali** quando si
+  lascia «Non modificare»: si mandano solo i campi toccati.
+- **Tolta la rotta `/api/credentials/[id]/test-snmp`**: la prova SNMP sta in quella generale, col ramo v3.
+
+### Aggiunte
+
+- Script di sola lettura per i rilasci della tappa 2 (`scripts/credenziali/`: copia dei dati con l'API di
+  backup di SQLite, fotografia delle scelte, misure), con una guardia che rifiuta di aprire i dati del
+  servizio invece della copia.
+
 ## [Non rilasciato] — 2026-10-15 · mappa topologia T2: letture in più spente e «Cosa cambierebbe»
 
 Spec `docs/superpowers/specs/2026-10-14-topologia-collegamenti-reali-design.md` §13.11.3, piano

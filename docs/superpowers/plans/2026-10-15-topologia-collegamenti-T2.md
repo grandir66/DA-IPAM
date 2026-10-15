@@ -127,7 +127,7 @@ Le condizioni che la spec implica e che nessuna sua prova copre, con il task che
 | T2.7 (modello per cavo) | `src/lib/topology/lettori/fonti.ts` (nuovo), `lettori/traduci.ts` e `lettori/mikrotik.ts` (tunnel di fabbrica), `src/lib/topology/cavi/{prove,collegamenti,albero,modello}.ts` (nuovi), `db-tenant.ts` (`getIngressoCavi`) | prove neutre per porta, collegamenti per cavo, albero dallo spanning tree, in ombra |
 | T2.7 (traccia) | `src/lib/topology/cavi/traccia.ts` (nuovo), `src/app/api/topology/traccia/route.ts` (nuovo), `src/lib/permessi/rotte.ts` (`ATTESI`), `src/app/(dashboard)/topology/dati/traccia-card.tsx` (nuovo), `scripts/misura-cavi.ts` (`--fatti-prova`, `--traccia`, `impronta_modello`) | «Cosa cambierebbe con la mappa nuova (una linea per cavo)» |
 | prove di tappa | `src/lib/topology/__tests__/cavi-ombra.test.ts`, `src/lib/__tests__/topologia-t2-freno.test.ts` (nuovi) | I33 al livello del DB; «letture accese» sulle reti-campione |
-| documenti | spec §13.11.3 (stato), `CONTEXT.md`, `CHANGELOG.md`, `docs/adr/0017-letture-in-piu-spente-e-modello-in-ombra.md` (nuovo), `docs/auth-matrix.md` | (Task 16) |
+| documenti | spec §13.11.3 (stato), `CONTEXT.md`, `CHANGELOG.md`, `docs/adr/0018-letture-in-piu-spente-e-modello-in-ombra.md` (nuovo), `docs/auth-matrix.md` | (Task 16) |
 
 **Tocca più file di quanto sembri, ma non tocca il modello di T1.** La revisione finale controlla che `git diff
 origin/dev -- src/lib/topology/{links,model,tree,attach,link-attrs,node-index}.ts` sia vuoto.
@@ -7094,13 +7094,13 @@ si apre «Dati della mappa», si guarda e basta. «Accendi» si prova solo nel d
 - [ ] **Step 2: i documenti** —
   - spec §13.11.3: una riga «**Stato (‹data›):** pronta sul ramo `topologia/collegamenti-t2`…» coi numeri dei Task 14 e
     15, e i fatti nuovi del 13.5.3 (P5: indice delle righe del gateway, partner LACP, «MAC + 1»), detti come fatti;
-  - `docs/adr/0017-letture-in-piu-spente-e-modello-in-ombra.md` (nuovo): Stato/Data; Contesto (D4, il freno con traccia
+  - `docs/adr/0018-letture-in-piu-spente-e-modello-in-ombra.md` (nuovo; era 0017, preso nel frattempo dal piano della tappa 2 delle credenziali): Stato/Data; Contesto (D4, il freno con traccia
     contabile); Decisione (letture in più spente e per cliente, fatti in tabelle nuove che il modello di oggi non legge, il
     modello per cavo calcolato in ombra solo per la traccia); Alternative scartate (accendere per tutti; scrivere in
     `switch_ports`; ricostruire `device_neighbors`); Conseguenze, con «che cosa diventa difficile in futuro»: due modelli
     vivi insieme fino a T3, la colonna `lag_state` aggiunta, le dieci letture SNMP dedotte dalle MIB finché non si vede una
     lettura vera;
-  - `CONTEXT.md` §6, una voce «Mappa topologia, T2 (ADR 0017)» con le trappole: le letture nascono spente e si accendono
+  - `CONTEXT.md` §6, una voce «Mappa topologia, T2 (ADR 0018)» con le trappole: le letture nascono spente e si accendono
     da «Dati della mappa»; l'esito sta in `tenant_settings`; il modello di oggi legge solo `device`/`unifi`; la
     migrazione e la sua riga nel journal; «Cosa cambierebbe» si calcola a richiesta; `host` solo dopo T2-b;
   - `CHANGELOG.md`, `## [Non rilasciato]`: Aggiunte (letture in più spente; «Letture in più per la mappa»; «Cosa

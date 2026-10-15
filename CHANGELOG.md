@@ -4,6 +4,46 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-15 · mappa topologia T2: letture in più spente e «Cosa cambierebbe»
+
+Spec `docs/superpowers/specs/2026-10-14-topologia-collegamenti-reali-design.md` §13.11.3, piano
+`docs/superpowers/plans/2026-10-15-topologia-collegamenti-T2.md`, decisione in ADR 0018. Perché: la mappa «una
+linea per cavo, albero dallo spanning tree» ha bisogno di dati che oggi non si leggono (stato delle porte nello
+spanning tree, fasci, indici delle porte). Leggerli vuol dire carico in più sugli apparati dei clienti: si
+legge prima con tutto spento, poi si accende un cliente alla volta, e si guarda che cosa cambierebbe prima di
+cambiare la mappa. **A schermo la mappa non cambia**, nemmeno con le letture accese.
+
+### Aggiunte
+
+- **Letture in più per la mappa, spente**: spanning tree e fasci dei MikroTik via SSH (6 comandi in sola
+  lettura sul router, 8 sugli switch MikroTik, al più una volta l'ora), campi in più che il controller manda
+  già nella lettura notturna, letture SNMP sugli switch che non sono del controller (16 letture in sola
+  lettura, al più una volta l'ora). Ognuna si accende **per cliente** da «Dati della mappa → Letture in più
+  per la mappa», con l'esito per apparato in parole. La lettura degli hypervisor e le istanze MSTP non sono
+  disponibili: aspettano le uscite vere degli apparati.
+- **«Cosa cambierebbe con la mappa nuova (una linea per cavo)»**, in «Dati della mappa», solo per gli
+  amministratori: si calcola quando si preme «Calcola» (mai all'apertura), in memoria, senza scrivere niente.
+  Dice quanti oggetti avrebbero un altro padre e perché, chi entra o esce dall'albero, i collegamenti per
+  genere e le anomalie per nome. Serve a decidere quando accendere la mappa nuova, a differenze spiegate.
+- **Tabelle e colonne nuove nel DB di ogni cliente**, aggiunte da sole alla prima apertura (una riga
+  `topologia cavi (T2), aggiunto …` nel journal): restano vuote finché le letture sono spente. Nessuna
+  tabella ricostruita, nessun dato di oggi toccato.
+
+### Correzioni
+
+- **La lettura a mano dello spanning tree via SNMP perdeva otto letture su nove** (pagina dell'apparato e
+  scansione in blocco degli apparati di una rete): la prima chiudeva la sessione usata anche dalle altre.
+  Adesso ogni lettura ha la sua.
+- **La lettura a mano dello spanning tree dei MikroTik via SSH** legge priorità e bridge-id nelle due forme
+  di RouterOS (`/interface bridge print terse without-paging` e `/interface bridge monitor [find] once`, in
+  sola lettura): prima la priorità usciva nulla (stava due righe sotto quella letta), il bridge-id si capiva
+  in una forma sola e un bridge in MSTP diventava «nessuno spanning tree».
+- Revisione finale (tutte senza effetto a letture spente): nel calcolo in ombra la velocità di una porta col
+  nome doppio, come nella mappa di oggi (sull'hub un hypervisor cambiava padre solo per questo); via SNMP la
+  porta locale di un vicino LLDP presa dal nome quando il numero dell'apparato è un'altra porta; uno switch
+  che smette di rispondere a metà giro si salta dopo due letture senza risposta; l'avviso «il controller non
+  riporta vicini» conta solo le righe del controller e delle letture di oggi.
+
 ## [Non rilasciato] — 2026-10-15 · promozione: una tendina SNMP sola
 
 ### Modifiche

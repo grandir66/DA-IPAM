@@ -2314,6 +2314,21 @@ spiegata (13.15, punto 5; 13.11.4).
 lette. Le righe delle fonti nuove (`snmp`, `host`, `ssh`) restano in `device_neighbors` e il modello di T1 non le
 legge, e nemmeno l'attribuzione degli host: il filtro sulle fonti c'è da T1 (13.5.7).
 
+**Stato (15/10):** pronta sul ramo `topologia/collegamenti-t2` (ADR 0018), cancello completo verde, **non
+rilasciata**: aspetta la conferma di Riccardo per il rilascio con tutto spento. Senza T2.5 (lettura dell'host) e
+senza MK7 (istanze MSTP): mancano le uscite vere T2-b e T2-a, e la pagina le dice «non disponibili». Misure sulle
+copie (Task 14): migrazione su 4 tenant in 7-22 ms per apertura, `integrity_check` invariato, seconda apertura senza
+modifiche; impronta del modello di T1 identica prima di T2, a letture spente e a letture accese, sull'hub e sul
+cliente A; classificazioni degli host invariate; traccia sul cliente A 0 padri diversi e 1 anomalia, sull'hub 1
+padre diverso dovuto alla velocità di una porta col nome doppio che il modello per cavo non cercava (regola I70 di
+T1), corretto nella revisione finale: dopo, 0 padri diversi sulla stessa copia e alla stessa ora. Tempo del modello
+di T1 sul cliente A uguale prima e dopo T2 (circa 18 ms), modello per cavo 27-43 ms, solo a richiesta. A schermo
+(Task 15, 1280 e 1920 px) la mappa è identica a prima di T2. Le letture SNMP sono 16 (colonne usate e scalari dello
+spanning tree, invece delle tabelle intere che in v1 non stanno nei 10 s). Fatti del controller visti sull'hub (P5,
+13.5.3): le righe LLDP del gateway portano l'indice della porta locale; i campi del partner LACP sono `partner_system_id` e
+`lacp_state` (non letti in T2: la loro forma non è misurata), e il gateway non ha fasci; il MAC «+ 1» compare nella tabella ethernet di 7 switch su 12; il Flex Mini
+si annuncia col modello `USF5P`.
+
 ### 13.11.4 T3: una linea per cavo e albero dallo spanning tree (D1, D2, D5)
 
 | Pezzo | Contenuto |

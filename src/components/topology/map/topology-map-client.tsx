@@ -29,7 +29,7 @@ import {
   type EdgeMenuKey, type NodeMenuKey,
 } from "@/lib/topology/map-menus";
 import { computeMapView } from "@/lib/topology/map-compute";
-import { printHref } from "@/lib/topology/map-screen";
+import { ELENCO_KEY, elencoAperto, printHref, salvaElenco } from "@/lib/topology/map-screen";
 import type { MapLink, MapOrientation, MapVm } from "@/lib/topology/model-types";
 import { isRunning, vmSummary } from "@/lib/topology/vm-nodes";
 import { missingNeighbors } from "@/lib/topology/tree";
@@ -104,6 +104,8 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
   const [centerKey, setCenterKey] = useState(1);
   const [pending, setPending] = useState<{ view: string; tweak: SavedTweak } | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(true);
+  // L'elenco a sinistra si chiude per lasciare la larghezza alla mappa (spec §13.10.2); di base è aperto.
+  const [listOpen, setListOpen] = useState(true);
   /** Oggetto trascinato senza una mappa scelta: si chiede il nome della mappa nuova. */
   const [newMapFor, setNewMapFor] = useState<string | null>(null);
   /** Oggetto appena aggiunto trascinandolo: il punto del rilascio diventa il suo ritocco quando compare. */
@@ -127,8 +129,13 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
   const { data, error, refreshError, reload, send } = useTopologyData(viewKey);
   const maps = useMemo(() => data?.maps.maps ?? [], [data]);
 
-  useEffect(() => { setDetailsOpen(readDetailsOpen()); setShowExtra(readShowRedundant()); }, []);
+  useEffect(() => {
+    setDetailsOpen(readDetailsOpen());
+    setShowExtra(readShowRedundant());
+    setListOpen(elencoAperto(() => window.localStorage.getItem(ELENCO_KEY)));
+  }, []);
   const changeDetails = (open: boolean) => { setDetailsOpen(open); writeDetailsOpen(open); };
+  const changeList = (open: boolean) => { setListOpen(open); salvaElenco((v) => window.localStorage.setItem(ELENCO_KEY, v), open); };
   const changeShowExtra = (show: boolean) => { setShowExtra(show); writeShowRedundant(show); };
 
   // La mappa scelta non c'è più (cancellata, anche da un altro) o non è ancora scelta: si passa alla prima.
@@ -416,10 +423,12 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
   }
 
   const empty = (text: string) => <p className="max-w-[620px] p-8 text-[13px] leading-relaxed text-muted-foreground">{text}</p>;
+  // I testi vuoti rimandano all'elenco a sinistra: se è chiuso, dicono come aprirlo (nessuna fascia sulla mappa, spec §13.10.2).
+  const elencoChiuso = listOpen ? "" : " (l'elenco si apre con «Elenco ▸»)";
   let canvas: ReactNode;
   let flowShown = false;
   if (mode === "passo" && maps.length === 0) {
-    canvas = empty(isAdmin ? "Nessuna mappa passo passo: trascina qui un oggetto dall'elenco a sinistra (chiede il nome della mappa), oppure «Nuova mappa…»." : "Nessuna mappa passo passo salvata.");
+    canvas = empty(isAdmin ? `Nessuna mappa passo passo: trascina qui un oggetto dall'elenco a sinistra${elencoChiuso} (chiede il nome della mappa), oppure «Nuova mappa…».` : "Nessuna mappa passo passo salvata.");
   } else if (viewLoading && refreshError) {
     // La vista appena chiesta non è arrivata: niente da tenere a schermo, errore pieno.
     canvas = <div className="p-6"><LoadError what="la mappa scelta" message={refreshError.message} onRetry={() => void reload()} /></div>;
@@ -428,9 +437,9 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
   } else if (d.visible.size === 0) {
     canvas = empty(
       mode === "auto"
-        ? "Nessun apparato con collegamenti: gli apparati da sistemare sono nell'elenco a sinistra."
+        ? `Nessun apparato con collegamenti: gli apparati da sistemare sono nell'elenco a sinistra${elencoChiuso}.`
         : isAdmin
-          ? "Trascina qui dall'elenco a sinistra un oggetto da cui partire: compare col segno +N, quanti apparati gli sono collegati ma non sono ancora nella mappa."
+          ? `Trascina qui dall'elenco a sinistra${elencoChiuso} un oggetto da cui partire: compare col segno +N, quanti apparati gli sono collegati ma non sono ancora nella mappa.`
           : "Questa mappa è vuota.",
     );
   } else {
@@ -494,18 +503,22 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
         refreshFailedAt={refreshError?.at ?? null}
         refreshMessage={refreshError?.message ?? null}
         onRetry={() => void reload()}
+        listOpen={listOpen}
+        onToggleList={() => changeList(!listOpen)}
         detailsOpen={detailsOpen}
         detailsAvailable={selected !== null || d.missing.length > 0}
         onToggleDetails={() => changeDetails(!detailsOpen)}
       />
       <div className="flex min-h-0 flex-1">
-        <ObjectList
-          model={d.model}
-          visible={d.visible}
-          selected={selected}
-          drag={!isAdmin ? "off" : mode === "auto" ? "auto" : "on"}
-          onSelect={setSelected}
-        />
+        {listOpen && (
+          <ObjectList
+            model={d.model}
+            visible={d.visible}
+            selected={selected}
+            drag={!isAdmin ? "off" : mode === "auto" ? "auto" : "on"}
+            onSelect={setSelected}
+          />
+        )}
         <div
           className={dragOver ? "relative min-w-0 flex-1 bg-card outline-2 -outline-offset-4 outline-dashed outline-foreground" : "relative min-w-0 flex-1 bg-card"}
           onDragOver={onDragOver}

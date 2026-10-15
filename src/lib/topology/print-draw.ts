@@ -7,7 +7,7 @@
  */
 import type { EdgeLook, Pt } from "@/lib/topology/edge-look";
 import { speedLabel } from "@/lib/topology/edge-look";
-import { LR_TRUNK, drawableLinks } from "@/lib/topology/map-screen";
+import { LR_TRUNK, drawableLinks, lineaAlbero, percorso } from "@/lib/topology/map-screen";
 import { CHAR_W } from "@/lib/topology/tree-layout-consts";
 import type { MapLink, MapOrientation } from "@/lib/topology/model-types";
 import type { TreeResult } from "@/lib/topology/tree";
@@ -39,6 +39,15 @@ export function stepPoints(orientation: MapOrientation, from: Rect, to: Rect): P
   const tx = to.x + to.w / 2, ty = to.y;
   const my = (sy + ty) / 2;
   return sx === tx ? [{ x: sx, y: sy }, { x: tx, y: ty }] : [{ x: sx, y: sy }, { x: sx, y: my }, { x: tx, y: my }, { x: tx, y: ty }];
+}
+
+/**
+ * I punti della linea fra un genitore e un figlio, in stampa come a schermo (spec §13.10.1, prova I31): i gradini di
+ * oggi; per un figlio spostato a mano dall'altra parte, il lato più vicino.
+ */
+export function puntiLineaAlbero(orientation: MapOrientation, from: Rect, to: Rect, ostacoli: readonly Rect[]): Pt[] {
+  const l = lineaAlbero(orientation, from, to, ostacoli);
+  return l.tronco ? stepPoints(orientation, from, to) : percorso(from, l.lati.da, to, l.lati.a);
 }
 
 export function pointsPath(points: readonly Pt[]): string {

@@ -10,8 +10,8 @@ import type { ReactNode } from "react";
 import { edgeLook, pathPoints, wavyPath, type Pt } from "@/lib/topology/edge-look";
 import { isUncensusedVmId } from "@/lib/topology/map-menus";
 import type { MapOrientation, TopologyModel } from "@/lib/topology/model-types";
-import { DARK, GREY, INK, LIGHT, MID, PAPER, edgeLabelAt, pointsPath, printStrokes, stepPoints, wrapLabel } from "@/lib/topology/print-draw";
-import { lrLabelMaxWidth } from "@/lib/topology/map-screen";
+import { DARK, GREY, INK, LIGHT, MID, PAPER, edgeLabelAt, pointsPath, printStrokes, puntiLineaAlbero, stepPoints, wrapLabel } from "@/lib/topology/print-draw";
+import { lrLabelMaxWidth, ostacoli, rettangoli } from "@/lib/topology/map-screen";
 import type { TreeResult } from "@/lib/topology/tree";
 import { ATT_INDENT, ATT_MAX, ATT_ROW, CHAR_W, DNS_H, dnsLine, fitLabel, type LayoutResult } from "@/lib/topology/tree-layout";
 import type { TopologyStatus } from "@/lib/topology/types";
@@ -60,6 +60,8 @@ export function PrintMapContent({ model, tree, layout, orientation }: PrintMapPr
   const apDone = new Set<string>();
 
   // Linee dell'albero: solo i principali (spec §12.5). Le ridondanze stanno nell'elenco del primo foglio.
+  // Un figlio spostato a mano dall'altra parte ha la linea sul lato più vicino, come a schermo (spec §13.10.1, prova I31).
+  const riquadri = rettangoli(layout);
   for (const [child, link] of tree.via) {
     const ln = layout.nodes.get(child);
     if (!ln || !ln.parent || ln.role === "attached") continue;
@@ -72,7 +74,7 @@ export function PrintMapContent({ model, tree, layout, orientation }: PrintMapPr
       lines.push(<path key={`apg:${ln.parent}`} d={pointsPath(stepPoints(orientation, parent, g))} stroke={INK} strokeWidth={1.8} fill="none" />);
       continue;
     }
-    const pts: Pt[] = stepPoints(orientation, parent, ln);
+    const pts: Pt[] = puntiLineaAlbero(orientation, parent, ln, ostacoli(riquadri, [ln.parent, child]));
     const look = edgeLook(link, { inTree: true });
     const d = look.wavy ? wavyPath(pathPoints(pointsPath(pts))) : pointsPath(pts);
     printStrokes(look).forEach((s, i) => lines.push(

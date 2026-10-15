@@ -4,6 +4,30 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-16 · credenziali tappa 2b: un motore solo sceglie le credenziali
+
+Piano `docs/superpowers/plans/2026-10-15-tappa2-archivio-credenziali.md` (sotto-tappa 2b, nessun dato toccato).
+Perché: sette funzioni sceglievano la credenziale con ordini diversi; ora le sceglie un motore solo
+(`src/lib/credentials/resolve.ts`), che legge anche le fonti vecchie come fonti dichiarate e registrate.
+
+### Modifiche
+
+- **L'acquisizione degli apparati, l'inventario, le patch e il terminale scelgono col motore unico.** Sugli
+  apparati resta sulle fonti dell'apparato (binding, inline, colonne), come prima (D1b).
+- **Un binding che ha fallito la prova si salta** finché una prova non riesce (D10): l'apparato passa al
+  candidato successivo fra le sue fonti, o resta senza credenziale invece di usarne una che non funziona.
+  Fotografia sulla stessa copia dei dati del 15/10: sull'hub 3 apparati cambiano per questo (2 WinRM restano
+  senza credenziale, 1 SSH passa alla voce d'archivio successiva).
+- **Le chiavi globali dell'hub entrano nelle catene delle reti solo se puntano a una voce che esiste ed è del
+  tipo giusto** (sull'hub, nel secondo tenant, spariscono da una rete dove non puntavano a niente).
+- **Un apparato con l'SNMP solo in un binding risulta «ha SNMP»**: per access point, stampanti, telecamere e
+  simili il piano di acquisizione diventa «periferica SNMP» (al cliente A: 2 ponti radio classificati access
+  point, che prima erano letti come switch con la tabella MAC via SSH).
+- **Patch: le righe WinRM in fermo non si usano più**; il ripiego sull'account dell'AD resta, dentro il motore
+  (D4). Corretto prima del rilascio l'ordine con più integrazioni AD.
+- Le scelte delle fonti vecchie (colonne, catene vecchie, chiave dell'hub, «public») si annotano nel registro
+  dei ripieghi: servono a decidere quando togliere il vecchio (2g).
+
 ## [Non rilasciato] — 2026-10-16 · controller UDM anche con utente locale e password
 
 Chiesto da Riccardo il 16/10 (ADR 0019). Perché: sull'appliance pilota il controller è un UDM con un account

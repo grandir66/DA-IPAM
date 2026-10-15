@@ -8,6 +8,7 @@
  *         [--uscita-router <id>=<file>]...   righe nuove del router dall'uscita incollata (lettore di T1), insieme alle vecchie
  *         [--salva <istantanea.json>] [--confronta <istantanea.json>]
  *         [--esporta-input <file.json>] [--input-json <file.json>] [--nomi] [--json]
+ *         [--senza-regola <regola>]...   spegne una regola del passaggio universale (src/lib/topology/regole.ts): la misura C19 confronta «tutte le regole» con «tutte meno una»
  *   I file di --salva, --confronta, --esporta-input e --input-json stanno dentro --cartella (dati del cliente).
  *   Uscita: 0 fatto, 1 integrità rovinata, 2 non partito.
  */
@@ -16,11 +17,11 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { controllaPercorsi, percorsoReale } from "../src/lib/scanner/__tests__/support/percorsi-prova";
 
-const CON_VALORE = ["--cartella", "--scenario", "--soglia", "--uscita-router", "--salva", "--confronta", "--esporta-input", "--input-json"];
+const CON_VALORE = ["--cartella", "--scenario", "--soglia", "--uscita-router", "--salva", "--confronta", "--esporta-input", "--input-json", "--senza-regola"];
 
 function uso(msg?: string): number {
   if (msg) process.stderr.write(`${msg}\n`);
-  process.stderr.write("Uso: npx tsx scripts/misura-cavi.ts <copia.db> --cartella <scratchpad> [--scenario …] [--uscita-router <id>=<file>] [--salva|--confronta <file>] [--esporta-input|--input-json <file>] [--nomi] [--json]\n");
+  process.stderr.write("Uso: npx tsx scripts/misura-cavi.ts <copia.db> --cartella <scratchpad> [--scenario …] [--uscita-router <id>=<file>] [--senza-regola <regola>] [--salva|--confronta <file>] [--esporta-input|--input-json <file>] [--nomi] [--json]\n");
   return 2;
 }
 
@@ -52,6 +53,10 @@ async function main(): Promise<number> {
   if (!scenario) return uso("Scenario non valido: S0, S1, S3:<id>, S4, S9:<id>:<porta>:<fonte>, S12:<id>:<vmid>.");
   const soglia = Number(val("--soglia") ?? "2");
   if (!Number.isInteger(soglia) || soglia < 1) return uso("--soglia: giorni interi, almeno 1.");
+  const { NOMI_REGOLE, REGOLE_T1, leggiRegola } = await import("../src/lib/topology/regole");
+  const senza = valori("--senza-regola");
+  if (senza.some((r) => leggiRegola(r) === null)) return uso(`--senza-regola vuole una di: ${NOMI_REGOLE.join(", ")}.`);
+  const regole = new Set([...REGOLE_T1].filter((r) => !senza.includes(r)));
   const uscite = valori("--uscita-router").map((v) => /^(\d+)=(.+)$/.exec(v));
   if (uscite.some((m) => m === null)) return uso("--uscita-router vuole <id dell'apparato>=<file>.");
 
@@ -86,7 +91,7 @@ async function main(): Promise<number> {
   const righeQuick = (): string[] => (db.prepare("PRAGMA quick_check").all() as Array<{ quick_check: string }>)
     .flatMap((r) => r.quick_check.split("\n")).map((r) => r.trim()).filter((r) => r !== "" && r !== "*** in database main ***");
   const quick = (): string => righeQuick().join("; ");
-  const out: Record<string, unknown> = { tenant, scenario: val("--scenario") ?? "S0", quick_check_prima: quick() };
+  const out: Record<string, unknown> = { tenant, scenario: val("--scenario") ?? "S0", regole_spente: senza, quick_check_prima: quick() };
 
   // C18: le classificazioni degli host prima e dopo le righe nuove del router (l'upsert ricalcola l'attribuzione).
   const classi = () => new Map((db.prepare("SELECT id, COALESCE(classification, '') AS c FROM hosts").all() as Array<{ id: number; c: string }>).map((r) => [r.id, r.c]));
@@ -118,13 +123,13 @@ async function main(): Promise<number> {
   const esporta = val("--esporta-input");
   if (esporta) fs.writeFileSync(esporta, JSON.stringify(input));
 
-  let model = buildTopologyModel(input);
+  let model = buildTopologyModel(input, regole);
   const tempi: number[] = [];
   // 30 giri, la mediana (C17): con 5 la misura appena dopo il primo giro ballava di qualche millisecondo, troppo per un margine
   // di 2-3 ms sui 20 (misura del 15/10 notte: 5 giri 15,4 / 18,5 / 21,2 ms, 30 giri 13,5 / 16,9 / 18,0 per oggi, T1 e T1b).
   for (let i = 0; i < 30; i++) {
     const t0 = performance.now();
-    model = buildTopologyModel(input);
+    model = buildTopologyModel(input, regole);
     tempi.push(performance.now() - t0);
   }
   out.modello_ms = Math.round(mediana(tempi) * 10) / 10;

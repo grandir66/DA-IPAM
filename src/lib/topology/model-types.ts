@@ -351,4 +351,9 @@ export interface TopologyModel {
   canonical: Record<string, string>;
   /** VM degli hypervisor, ognuna col suo host (spec §11.5). */
   vms: MapVm[];
+  /**
+   * Di quante reti censite ogni apparato è il gateway (spec §13.8.1): a pari nodi raggiunti la testa proposta è il router
+   * gateway di più reti. Assente con la regola «testa-per-reti» spenta e nei modelli costruiti a mano dalle prove.
+   */
+  gatewayDi?: Record<string, number>;
 }

@@ -5,7 +5,7 @@
  */
 import { nodeClass } from "@/lib/topology/identity";
 import { linkCost } from "@/lib/topology/link-attrs";
-import type { MapLink, MapNode, TopologyModel } from "@/lib/topology/model-types";
+import { LINK_SOURCE_RANK, type MapLink, type MapNode, type TopologyModel } from "@/lib/topology/model-types";
 
 export interface TreeResult {
   roots: string[];
@@ -17,6 +17,27 @@ export interface TreeResult {
    * l'albero usa («user» se è la scelta dell'admin), `redundant: true` su quelli che non usa. Il modello non cambia.
    */
   links: MapLink[];
+}
+
+/** Rango della fonte (spec §3): uplink 1, LLDP/CDP/MNDP 2, a mano 3 se confermato o 4, tabella MAC 3, VM 3,5. */
+function rango(l: MapLink): number {
+  return l.source === "manual" ? (l.manual?.confirmed ? 3 : 4) : LINK_SOURCE_RANK[l.source];
+}
+
+/**
+ * La chiave con cui l'albero sceglie (spec §13.8.1, D1), confrontata elemento per elemento: vince la più piccola. La ★
+ * vince sempre; poi i collegamenti visti; poi la fonte più affidabile; poi chi non percorre un uplink del controller dal
+ * figlio al padre; poi il cavo più veloce. A pari chiave «da|a» in ordine, solo per avere lo stesso disegno con gli
+ * stessi dati. Il verso viene DOPO il rango: messo prima, sulla copia del cliente A cambiava 4 padri e portava core 1
+ * sotto il router di riserva attraverso la porta della WAN (misura del 14/10).
+ */
+export function chiaveScelta(l: MapLink, da: string): readonly number[] {
+  return [l.primary === "user" ? 0 : 1, l.stale ? 1 : 0, rango(l), l.uplinkFrom === da ? 1 : 0, -(l.speedMbps ?? 0)];
+}
+
+function confronta(x: readonly number[], y: readonly number[]): number {
+  for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return x[i] - y[i];
+  return 0;
 }
 
 export function buildTree(model: TopologyModel, visible: ReadonlySet<string>, roots: readonly string[]): TreeResult {
@@ -42,7 +63,7 @@ export function buildTree(model: TopologyModel, visible: ReadonlySet<string>, ro
     children.set(r, []);
     outRoots.push(r);
     const pick = (strict: boolean) => {
-      let best: { c: number; from: string; to: string; l: MapLink } | null = null;
+      let best: { k: readonly number[]; from: string; to: string; l: MapLink } | null = null;
       for (const x of [...taken].sort()) {
         const cls = nodeClass(nodes.get(x)!);
         if (cls === "att" || cls === "client" || cls === "hyper") continue; // foglie: non fanno da ponte
@@ -50,8 +71,9 @@ export function buildTree(model: TopologyModel, visible: ReadonlySet<string>, ro
           const to = l.a === x ? l.b : l.a;
           if (taken.has(to)) continue;
           if (strict && chosen.has(to) && chosen.get(to) !== l) continue;
-          const c = linkCost(l);
-          if (!best || c < best.c || (c === best.c && x + "|" + to < best.from + "|" + best.to)) best = { c, from: x, to, l };
+          const k = chiaveScelta(l, x);
+          const d = best ? confronta(k, best.k) : -1;
+          if (!best || d < 0 || (d === 0 && x + "|" + to < best.from + "|" + best.to)) best = { k, from: x, to, l };
         }
       }
       return best;
@@ -126,7 +148,11 @@ export function autoVisible(model: TopologyModel): Set<string> {
   return new Set(model.nodes.filter((n) => nodeClass(n) !== "client" && !n.hidden && !isolated.has(n.id) && !inside.has(n.id)).map((n) => n.id));
 }
 
-/** Testa confermata di una sede; altrimenti il router (apparato) che raggiunge più nodi coi collegamenti non vecchi. */
+/**
+ * Testa confermata di una sede; altrimenti il router (apparato) che raggiunge più nodi coi collegamenti non vecchi; a pari
+ * nodi quello gateway di più reti (`gatewayDi`, spec §13.8.1, I63: sulla rete B il router e il gateway del controller sono
+ * pari, e vinceva l'id più basso, per caso); l'id solo per ultimo, perché stessi dati diano la stessa testa (I39).
+ */
 export function proposeHead(model: TopologyModel): string | null {
   const confirmed = model.sites.find((s) => s.headNodeId !== null && !s.headProposed)?.headNodeId;
   if (confirmed) return confirmed;
@@ -138,11 +164,12 @@ export function proposeHead(model: TopologyModel): string | null {
   }
   let best: string | null = null;
   let size = -1;
+  const reti = (id: string | null): number => (id ? (model.gatewayDi?.[id] ?? 0) : 0);
   for (const n of model.nodes.filter((x) => x.kind === "device" && x.type === "router").sort((a, b) => a.refId - b.refId)) {
     const seen = new Set([n.id]);
     const q = [n.id];
     while (q.length) for (const y of fresh.get(q.shift()!) ?? []) if (!seen.has(y)) { seen.add(y); q.push(y); }
-    if (seen.size > size) { size = seen.size; best = n.id; }
+    if (seen.size > size || (seen.size === size && reti(n.id) > reti(best))) { size = seen.size; best = n.id; }
   }
   return best;
 }

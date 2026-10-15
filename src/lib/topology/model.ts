@@ -15,7 +15,8 @@ import {
 } from "@/lib/topology/model-types";
 import { addNodeMacs, buildNodeIndex, nameKey, type NodeIndex } from "@/lib/topology/node-index";
 import { nodeClass } from "@/lib/topology/identity";
-import { assignSites } from "@/lib/topology/sites";
+import { REGOLE_T1, type Regole } from "@/lib/topology/regole";
+import { assignSites, retiDiCuiGateway } from "@/lib/topology/sites";
 import { placeVms, resolveScanHosts } from "@/lib/topology/vms";
 import { normalizeName } from "@/lib/topology/match";
 import { parseDbDate } from "@/lib/db-date";
@@ -23,7 +24,8 @@ import { parseDbDate } from "@/lib/db-date";
 export const PROMOTE_CLASSES = ["switch", "router", "access_point", "firewall"] as const;
 const SUSPICIOUS_TYPES = ["switch", "access_point"];
 
-export function buildTopologyModel(input: TopologyModelInput): TopologyModel {
+/** `regole`: le regole del passaggio universale accese (spec §13.16); le spegne solo la misura (C19). */
+export function buildTopologyModel(input: TopologyModelInput, regole: Regole = REGOLE_T1): TopologyModel {
   const idx = buildNodeIndex(input.devices, input.hosts, input.knownMacs, input.neighbors);
   // Spec §11.5: le schede vive di un hypervisor (MAC veri) lo identificano sulla tabella MAC degli switch.
   for (const { row, nodeId } of resolveScanHosts(input.scanHosts, idx)) if (nodeId) addNodeMacs(idx, nodeId, row.macs);
@@ -33,6 +35,8 @@ export function buildTopologyModel(input: TopologyModelInput): TopologyModel {
   const links = [...baseLinks, ...attachLinks].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   enrichLinks(links, input, idx);
   const sites = assignSites(input, idx, links);
+  // Spec §13.8.1 (I63, H17): le reti di cui ogni apparato è gateway, per la testa proposta della mappa automatica.
+  const gatewayDi = regole.has("testa-per-reti") ? Object.fromEntries(retiDiCuiGateway(input, idx)) : undefined;
 
   const degree = new Map<string, number>();
   for (const l of links) {
@@ -92,7 +96,7 @@ export function buildTopologyModel(input: TopologyModelInput): TopologyModel {
     vmsOnNodes: vms.filter((v) => v.nodeId !== null).length,
   };
   const canonical = Object.fromEntries([...idx.alias.entries()].sort(([x], [y]) => (x < y ? -1 : x > y ? 1 : 0)));
-  return { nodes, links, sites, promote, unmatched, isolated, suspicious, withoutSite, counts, portClients, clientCount, canonical, vms };
+  return { nodes, links, sites, promote, unmatched, isolated, suspicious, withoutSite, counts, portClients, clientCount, canonical, vms, ...(gatewayDi ? { gatewayDi } : {}) };
 }
 
 /**

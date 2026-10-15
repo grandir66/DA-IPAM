@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildTopologyModel } from "@/lib/topology/model";
 import type { TopologyModelInput } from "@/lib/topology/model-types";
-import { dev, host } from "./support/righe";
+import { baseInput, dev, host } from "./support/righe";
 
 function input(over: Partial<TopologyModelInput> = {}): TopologyModelInput {
   return {
@@ -71,4 +71,22 @@ test("un host promosso (apparato con host_id = N) ha l'id canonico dell'apparato
   assert.equal(m.canonical["host:51"], "host:50");
   assert.equal(m.canonical["host:41"], undefined, "un host non fuso non ha alias");
   assert.ok(m.nodes.some((n) => n.id === "dev:9"));
+});
+
+// I63 (spec §13.8.1): il modello conta di quante reti ogni apparato è il gateway, come la testa proposta di una sede
+// (sites.ts: il suo IP, quelli degli host fusi e degli host col suo MAC). Spenta la regola (misura C19), il conto non c'è.
+test("gatewayDi: le reti di cui ogni apparato è gateway; assente con la regola «testa-per-reti» spenta", () => {
+  const i = baseInput({
+    devices: [dev(1, { name: "RTR-1", device_type: "router", host: "10.0.0.1" }), dev(5, { name: "GW-5", device_type: "router", host: "10.0.5.1" })],
+    hosts: [host(9, { ip: "10.0.9.1", mac: "02:00:00:00:00:05" })],
+    knownMacs: [{ device_id: 5, mac: "02:00:00:00:00:05" }],
+    networks: [
+      { id: 1, cidr: "10.0.0.0/24", name: "a", gateway: "10.0.0.1", location_id: null },
+      { id: 2, cidr: "10.0.5.0/24", name: "b", gateway: "10.0.5.1", location_id: null },
+      { id: 3, cidr: "10.0.9.0/24", name: "c", gateway: "10.0.9.1", location_id: null },
+      { id: 4, cidr: "10.0.7.0/24", name: "d", gateway: null, location_id: null },
+    ],
+  });
+  assert.deepEqual(buildTopologyModel(i).gatewayDi, { "dev:1": 1, "dev:5": 2 });
+  assert.equal(buildTopologyModel(i, new Set()).gatewayDi, undefined);
 });

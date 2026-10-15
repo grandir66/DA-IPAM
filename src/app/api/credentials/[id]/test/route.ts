@@ -3,6 +3,7 @@ import { getCredentialById, getCredentialCommunityString, getHostByIp, setHostCr
 import { safeDecrypt } from "@/lib/crypto";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
+import { etichettaVersioneSnmp, provaVersioniSnmp } from "@/lib/protocols/snmp-sessione";
 
 const TEST_TIMEOUT_MS = 25000;
 
@@ -61,19 +62,18 @@ export async function POST(
         try {
           const snmp = await import("net-snmp");
           const port = typeof body.port === "number" ? body.port : 161;
-          const session = snmp.createSession(host, community, { port, timeout: 8000 });
-          await withTimeout(
-            new Promise<void>((resolve, reject) => {
-              session.get(["1.3.6.1.2.1.1.1.0"], (err: Error | null) => {
-                session.close();
-                if (err) reject(err);
-                else resolve();
-              });
-            }),
+          // Senza apparato non si sa la versione: v2c, poi v1, e si dice quale ha risposto.
+          const esito = await withTimeout(
+            provaVersioniSnmp(snmp, host, community, { port, timeoutMs: 8000, oids: ["1.3.6.1.2.1.1.1.0"] }),
             TEST_TIMEOUT_MS
           );
+          if (!esito.ok) throw new Error(`Connessione SNMP fallita (${esito.errore})`);
           persistValidatedBinding(host, Number(id), "snmp", port);
-          return NextResponse.json({ success: true, message: "Connessione SNMP riuscita" });
+          return NextResponse.json({
+            success: true,
+            message: `Connessione SNMP riuscita (${etichettaVersioneSnmp(esito.versione)})`,
+            snmp_version: esito.versione,
+          });
         } catch (e) {
           return NextResponse.json({
             success: false,

@@ -750,6 +750,8 @@ export function getDb(): Database.Database {
   // DB esistenti senza colonne aggiunte in release successive: ALTER puro può fallire in modo silenzioso con try/catch.
   ensureNetworkDevicesColumn(_db, "product_profile", "ALTER TABLE network_devices ADD COLUMN product_profile TEXT");
   ensureNetworkDevicesColumn(_db, "scan_target", "ALTER TABLE network_devices ADD COLUMN scan_target TEXT");
+  ensureNetworkDevicesColumn(_db, "snmp_version", "ALTER TABLE network_devices ADD COLUMN snmp_version TEXT CHECK(snmp_version IN ('1', '2c'))");
+  ensureNetworkDevicesColumn(_db, "snmp_version_fissata", "ALTER TABLE network_devices ADD COLUMN snmp_version_fissata INTEGER NOT NULL DEFAULT 0");
 
   // Colonne hosts aggiunte in migrazioni pre-SCHEMA: su DB nuovi la tabella non esisteva e l'ALTER veniva ignorato.
   // Ripetizione idempotente dopo CREATE TABLE garantisce schema allineato (build/prerender inclusi).
@@ -4560,6 +4562,7 @@ export function getNetworkDeviceByHostId(hostId: number): NetworkDevice | undefi
   return getDb().prepare("SELECT * FROM network_devices WHERE host_id = ? ORDER BY id LIMIT 1").get(hostId) as NetworkDevice | undefined;
 }
 
+
 type CreateDeviceInput = Omit<NetworkDevice, "id" | "created_at" | "updated_at" | "sysname" | "sysdescr" | "model" | "firmware" | "serial_number" | "part_number" | "last_info_update" | "last_device_info_json" | "classification" | "stp_info" | "last_proxmox_scan_at" | "last_proxmox_scan_result" | "scan_target" | "product_profile" | "use_for_arp_poll" | "physical_device_id"> & {
   classification?: string | null;
   scan_target?: string | null;
@@ -4605,7 +4608,7 @@ export function updateNetworkDevice(id: number, input: Partial<Omit<NetworkDevic
   const fields: string[] = [];
   const values: unknown[] = [];
 
-  const keys = ["name", "host", "device_type", "vendor", "vendor_subtype", "protocol", "credential_id", "snmp_credential_id", "username", "encrypted_password", "community_string", "api_token", "api_url", "port", "enabled", "classification", "sysname", "sysdescr", "model", "firmware", "serial_number", "part_number", "last_info_update", "last_device_info_json", "stp_info", "last_proxmox_scan_at", "last_proxmox_scan_result", "scan_target", "product_profile", "use_for_arp_poll", "host_id"] as const;
+  const keys = ["name", "host", "device_type", "vendor", "vendor_subtype", "protocol", "credential_id", "snmp_credential_id", "username", "encrypted_password", "community_string", "api_token", "api_url", "port", "enabled", "classification", "sysname", "sysdescr", "model", "firmware", "serial_number", "part_number", "last_info_update", "last_device_info_json", "stp_info", "last_proxmox_scan_at", "last_proxmox_scan_result", "scan_target", "product_profile", "use_for_arp_poll", "host_id", "snmp_version", "snmp_version_fissata"] as const;
   for (const key of keys) {
     if (input[key] !== undefined) {
       fields.push(`${key} = ?`);
@@ -7728,4 +7731,6 @@ export {
   markHostsOffline,
   selectOfflineCandidates,
   oraDelDatabase,
+  // Versione SNMP per apparato (ADR 0016): una sola copia
+  registraVersioneSnmpRilevata,
 } from "./db-tenant";

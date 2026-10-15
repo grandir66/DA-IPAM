@@ -424,6 +424,28 @@ export function migrateTopologyOrientation(db: Database.Database): string[] {
 }
 
 /**
+ * Versione SNMP per apparato (2026-10-15): `snmp_version` ('1' | '2c', NULL = non
+ * rilevata, ogni punto parla come prima) e `snmp_version_fissata` (1 = scelta a
+ * mano, la discovery non la sovrascrive). Solo colonne nuove, idempotente.
+ * Esportata per le prove (`snmp-versione-migration.test.ts`).
+ */
+export function migrateSnmpVersione(db: Database.Database): string[] {
+  const added: string[] = [];
+  const has = (table: string, col: string): boolean =>
+    (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).some((c) => c.name === col);
+  const add = (table: string, col: string, ddl: string): void => {
+    if (has(table, col)) return;
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${ddl}`);
+    added.push(`${table}.${col}`);
+  };
+  db.transaction(() => {
+    add("network_devices", "snmp_version", "TEXT CHECK(snmp_version IN ('1', '2c'))");
+    add("network_devices", "snmp_version_fissata", "INTEGER NOT NULL DEFAULT 0");
+  })();
+  return added;
+}
+
+/**
  * Quanti giorni resta una riga di mac_port_entries non più vista (spec §10.5):
  * la usano la pulizia all'apertura del database e `cleanupOldMacPortEntries`.
  */
@@ -1711,6 +1733,17 @@ export function getTenantDb(tenantCode: string): Database.Database {
     }
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: migrazione topologia orientamento fallita:`, e);
+  }
+
+  // Versione SNMP per apparato (2026-10-15). Se fallisce il tenant si apre lo stesso:
+  // chi legge snmp_version la trova assente e parla come prima.
+  try {
+    const added = migrateSnmpVersione(newDb);
+    if (added.length > 0) {
+      console.info(`[db-tenant] ${tenantCode}: versione SNMP, aggiunto ${added.join(", ")}`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione versione SNMP fallita:`, e);
   }
 
   tenantDbs.set(tenantCode, { db: newDb, lastUsed: Date.now() });
@@ -3487,6 +3520,20 @@ export function getNetworkDeviceByHostId(hostId: number): NetworkDevice | undefi
   return db().prepare("SELECT * FROM network_devices WHERE host_id = ? ORDER BY id LIMIT 1").get(hostId) as NetworkDevice | undefined;
 }
 
+/**
+ * Salva la versione SNMP che la discovery ha visto rispondere. Non tocca gli
+ * apparati con la versione fissata a mano né quelli che hanno già quel valore.
+ * Restituisce la versione precedente se ha scritto, `undefined` se no.
+ */
+export function registraVersioneSnmpRilevata(deviceId: number, versione: "1" | "2c"): { prima: "1" | "2c" | null } | undefined {
+  const row = db().prepare("SELECT snmp_version, snmp_version_fissata FROM network_devices WHERE id = ?").get(deviceId) as
+    | { snmp_version: "1" | "2c" | null; snmp_version_fissata: number }
+    | undefined;
+  if (!row || row.snmp_version_fissata === 1 || row.snmp_version === versione) return undefined;
+  db().prepare("UPDATE network_devices SET snmp_version = ?, updated_at = datetime('now') WHERE id = ? AND snmp_version_fissata = 0").run(versione, deviceId);
+  return { prima: row.snmp_version };
+}
+
 type CreateDeviceInput = Omit<NetworkDevice, "id" | "created_at" | "updated_at" | "sysname" | "sysdescr" | "model" | "firmware" | "serial_number" | "part_number" | "last_info_update" | "last_device_info_json" | "classification" | "stp_info" | "last_proxmox_scan_at" | "last_proxmox_scan_result" | "scan_target" | "product_profile" | "use_for_arp_poll"> & {
   classification?: string | null;
   scan_target?: string | null;
@@ -3536,7 +3583,7 @@ export function updateNetworkDevice(id: number, input: Partial<Omit<NetworkDevic
   const fields: string[] = [];
   const values: unknown[] = [];
 
-  const keys = ["name", "host", "device_type", "vendor", "vendor_subtype", "protocol", "credential_id", "snmp_credential_id", "username", "encrypted_password", "community_string", "api_token", "api_url", "port", "enabled", "classification", "sysname", "sysdescr", "model", "firmware", "serial_number", "part_number", "last_info_update", "last_device_info_json", "stp_info", "last_proxmox_scan_at", "last_proxmox_scan_result", "scan_target", "product_profile", "use_for_arp_poll", "host_id"] as const;
+  const keys = ["name", "host", "device_type", "vendor", "vendor_subtype", "protocol", "credential_id", "snmp_credential_id", "username", "encrypted_password", "community_string", "api_token", "api_url", "port", "enabled", "classification", "sysname", "sysdescr", "model", "firmware", "serial_number", "part_number", "last_info_update", "last_device_info_json", "stp_info", "last_proxmox_scan_at", "last_proxmox_scan_result", "scan_target", "product_profile", "use_for_arp_poll", "host_id", "snmp_version", "snmp_version_fissata"] as const;
   for (const key of keys) {
     if (input[key] !== undefined) {
       fields.push(`${key} = ?`);

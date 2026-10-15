@@ -1,4 +1,5 @@
 import type { NetworkDevice } from "@/types";
+import { apriSessioneCommunity, versioneApparato } from "@/lib/protocols/snmp-sessione";
 import {
   getDeviceCredentials,
   getDeviceCommunityString,
@@ -258,7 +259,8 @@ async function createSnmpSwitchClient(device: NetworkDevice): Promise<SwitchClie
       }
     }
     const community = getDeviceCommunityString(device);
-    return snmp.createSession(device.host, community, opts);
+    // NULL = v1, come prima (createSession senza version).
+    return apriSessioneCommunity(snmp, device.host, community, { ...opts, versione: versioneApparato(device, "1") });
   }
 
   function snmpWalk(oid: string): Promise<{ oid: string; value: Buffer | string | number }[]> {

@@ -16,6 +16,7 @@
  */
 
 import type { NetworkDevice } from "@/types";
+import { apriSessioneCommunity, versioneApparato } from "@/lib/protocols/snmp-sessione";
 import {
   getDeviceCommunityString,
   getDeviceSnmpV3Credentials,
@@ -92,7 +93,8 @@ function buildSession(device: NetworkDevice, snmp: typeof import("net-snmp")) {
     }
   }
   const community = getDeviceCommunityString(device);
-  return snmp.createSession(device.host, community, opts);
+  // NULL = v1, come prima (createSession senza version).
+  return apriSessioneCommunity(snmp, device.host, community, { ...opts, versione: versioneApparato(device, "1") });
 }
 
 function snmpWalk(device: NetworkDevice, snmp: typeof import("net-snmp"), oid: string): Promise<SnmpWalkResult[]> {

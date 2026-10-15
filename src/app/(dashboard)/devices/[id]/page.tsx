@@ -5,6 +5,7 @@ import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ScanProgress } from "@/components/shared/scan-progress";
 import type { ScanProgress as ScanProgressType } from "@/types";
+import { etichettaVersioneSnmp } from "@/lib/protocols/snmp-sessione";
 import { DeviceListByClassification } from "../device-list-by-classification";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -511,6 +512,8 @@ type DeviceCredentialRowInput = Pick<
   | "username"
   | "community_string"
   | "device_type"
+  | "snmp_version"
+  | "snmp_version_fissata"
 >;
 
 /** Righe tabella credenziali: un protocollo per riga (principale + SNMP aggiuntivo se applicabile). */
@@ -523,13 +526,17 @@ function buildDeviceCredentialRows(
   const cn = nameOf(device.credential_id);
   const sn = nameOf(device.snmp_credential_id);
   const rows: { key: string; protocolLabel: string; archiveLabel: string; note: string }[] = [];
+  // Versione che parla davvero chi apre una sessione a community (snmp-sessione.ts).
+  const versioneSnmp = device.snmp_version
+    ? `SNMP ${etichettaVersioneSnmp(device.snmp_version)} ${device.snmp_version_fissata === 1 ? "fissata a mano" : "rilevata"}`
+    : "versione SNMP non rilevata";
 
   if (device.protocol === "snmp_v2" || device.protocol === "snmp_v3") {
     rows.push({
       key: "snmp-main",
       protocolLabel: `${device.protocol.toUpperCase()} — gestione dispositivo`,
       archiveLabel: sn || cn || (device.community_string ? "Community inline" : "—"),
-      note: `Porta ${device.port}`,
+      note: device.protocol === "snmp_v2" ? `Porta ${device.port} · ${versioneSnmp}` : `Porta ${device.port}`,
     });
     return rows;
   }
@@ -561,7 +568,7 @@ function buildDeviceCredentialRows(
       key: "snmp-sup",
       protocolLabel: "SNMP — walk, porte, LLDP, spanning tree",
       archiveLabel: sn || (device.community_string ? "Community inline" : "—"),
-      note: "Opzionale, oltre all’accesso principale",
+      note: `Opzionale, oltre all’accesso principale · ${versioneSnmp}`,
     });
   }
 

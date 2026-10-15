@@ -1,4 +1,5 @@
 import type { NetworkDevice } from "@/types";
+import { apriSessioneCommunity, versioneApparato } from "@/lib/protocols/snmp-sessione";
 import { getDeviceCredentials, getDeviceCommunityString, getDeviceSnmpV3Credentials, getCredentialCommunityString, getDb } from "@/lib/db";
 import { safeDecrypt } from "@/lib/crypto";
 import type { MacTableEntry, PortInfo } from "./switch-client";
@@ -297,7 +298,8 @@ async function createSnmpArpClient(
       }
     }
     const community = getDeviceCommunityString(device);
-    return snmp.createSession(device.host, community, opts);
+    // NULL = v1, come prima (createSession senza version).
+    return apriSessioneCommunity(snmp, device.host, community, { ...opts, versione: versioneApparato(device, "1") });
   }
 
   function snmpWalk(oid: string): Promise<{ oid: string; value: Buffer | string | number }[]> {

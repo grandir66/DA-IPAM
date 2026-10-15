@@ -225,6 +225,10 @@ export interface NetworkDevice {
   protocol: "ssh" | "snmp_v2" | "snmp_v3" | "api" | "winrm";
   credential_id: number | null;
   snmp_credential_id: number | null;
+  /** Versione SNMP a community: NULL = non rilevata, ogni punto parla come prima (snmp-sessione.ts). */
+  snmp_version?: "1" | "2c" | null;
+  /** 1 = versione scelta a mano: la discovery non la sovrascrive. */
+  snmp_version_fissata?: number;
   username: string | null;
   encrypted_password: string | null;
   community_string: string | null;

@@ -14,6 +14,7 @@ import {
 } from "@/lib/db";
 import { sshExec, sshExecViaShell } from "./ssh-helper";
 import { snmpGetTollerante, type SnmpGetSession } from "./snmp-get-tollerante";
+import { apriSessioneCommunity, versioneApparato, type VersioneSnmp } from "@/lib/protocols/snmp-sessione";
 
 export interface DeviceInfo {
   sysname: string | null;
@@ -217,12 +218,78 @@ function deviceInfoHasAnyData(r: DeviceInfo | Partial<DeviceInfo>): boolean {
 }
 
 /**
+ * airFiber (MIB UBNT, ramo 41112.1.3): `fwVersion` della tabella di stato, es. «v4.1.0».
+ * Il MIB non espone il nome del prodotto: se risponde, si sa solo che è un airFiber.
+ * Misurato a DTS il 15/10 sugli AP 172.16.3.4 (v4.1.0) e .6 (v4.0.3), sysObjectID
+ * 1.3.6.1.4.1.10002.1, niente ENTITY-MIB né IEEE802dot11-MIB.
+ */
+export const OID_AIRFIBER_FW_VERSION = "1.3.6.1.4.1.41112.1.3.2.1.40.1";
+
+/**
+ * OID della lettura dati SNMP: sysDescr, sysName, ENTITY-MIB (indice 1 = chassis,
+ * 2 = alcuni device usano indice diverso: .2 entPhysicalDescr = modello,
+ * .11 entPhysicalSerialNum, .13 entPhysicalModelName = part number) e, per i
+ * Ubiquiti, il firmware airFiber. Un agente v1 che non ha un OID rifiuta il
+ * gruppo: lo regge `snmpGetTollerante`.
+ */
+export function oidLetturaDatiSnmp(device: Pick<NetworkDevice, "vendor">): string[] {
+  const oids = [
+    "1.3.6.1.2.1.1.1.0",  // sysDescr
+    "1.3.6.1.2.1.1.5.0",  // sysName
+    "1.3.6.1.2.1.47.1.1.1.1.11.1", // entPhysicalSerialNum.1 (chassis)
+    "1.3.6.1.2.1.47.1.1.1.1.11.2", // entPhysicalSerialNum.2 (fallback)
+    "1.3.6.1.2.1.47.1.1.1.1.2.1",  // entPhysicalDescr.1 (model)
+    "1.3.6.1.2.1.47.1.1.1.1.2.2",  // entPhysicalDescr.2 (fallback)
+    "1.3.6.1.2.1.47.1.1.1.1.13.1", // entPhysicalModelName.1 (part number)
+    "1.3.6.1.2.1.47.1.1.1.1.13.2", // entPhysicalModelName.2 (fallback)
+  ];
+  if (device.vendor === "ubiquiti") oids.push(OID_AIRFIBER_FW_VERSION);
+  return oids;
+}
+
+/** Legge le risposte della lettura dati SNMP (`oidLetturaDatiSnmp`). */
+export function infoDaVarbindSnmp(varbinds: Array<{ oid: string; value: unknown }>): DeviceInfo {
+  let sysdescr: string | null = null;
+  let sysname: string | null = null;
+  let serial_number: string | null = null;
+  let model: string | null = null;
+  let part_number: string | null = null;
+  let firmware: string | null = null;
+  let airFiber = false;
+
+  for (const vb of varbinds) {
+    const val = Buffer.isBuffer(vb.value) ? vb.value.toString("utf-8").trim() : String(vb.value ?? "").trim();
+    if (!val || val === "noSuchObject" || val === "noSuchInstance" || val === "endOfMibView") continue;
+
+    // Match robusto usando endsWith per gestire formati OID variabili
+    const oid = vb.oid;
+    if (oid === OID_AIRFIBER_FW_VERSION) {
+      firmware = firmware || val;
+      airFiber = true;
+      continue;
+    }
+    if (oid === "1.3.6.1.2.1.1.1.0" || oid.endsWith(".1.1.1.0")) sysdescr = sysdescr || val;
+    if (oid === "1.3.6.1.2.1.1.5.0" || oid.endsWith(".1.1.5.0")) sysname = sysname || val;
+    // entPhysicalSerialNum (.11.1 o .11.2)
+    if (oid.includes(".47.1.1.1.1.11.")) serial_number = serial_number || val;
+    // entPhysicalDescr (.2.1 o .2.2) - model
+    if (oid.includes(".47.1.1.1.1.2.")) model = model || val;
+    // entPhysicalModelName (.13.1 o .13.2) - part number
+    if (oid.includes(".47.1.1.1.1.13.")) part_number = part_number || val;
+  }
+  // Il MIB airFiber non dà il prodotto: la famiglia, solo se nient'altro ha detto il modello.
+  if (airFiber && !model) model = "airFiber";
+  return { sysname, sysdescr, model, firmware, serial_number, part_number };
+}
+
+/**
  * Recupera sysName e sysDescr via SNMP (MIB-2).
  * Usato per dispositivi con community_string o protocollo SNMP.
  */
-export async function getDeviceInfoFromSnmp(device: NetworkDevice): Promise<DeviceInfo> {
+export async function getDeviceInfoFromSnmp(device: NetworkDevice, portaProva?: number): Promise<DeviceInfo> {
   const isSnmpProtocol = device.protocol === "snmp_v2" || device.protocol === "snmp_v3";
-  const snmpPort = isSnmpProtocol ? getEffectiveSnmpPort(device) : 161;
+  // `portaProva` solo per le prove (agente finto su una porta libera): in esercizio non si passa.
+  const snmpPort = portaProva ?? (isSnmpProtocol ? getEffectiveSnmpPort(device) : 161);
   const opts = { port: snmpPort, timeout: 5000 };
 
   try {
@@ -241,26 +308,14 @@ export async function getDeviceInfoFromSnmp(device: NetworkDevice): Promise<Devi
         session = snmp.createV3Session(device.host, user, opts);
       } else {
         const community = getDeviceCommunityString(device);
-        session = snmp.createSession(device.host, community, opts);
+        session = apriSessioneCommunity(snmp, device.host, community, { ...opts, versione: versioneApparato(device, "1") });
       }
     } else {
+      // NULL = v1, come prima (createSession senza version).
       const community = getDeviceCommunityString(device);
-      session = snmp.createSession(device.host, community, opts);
+      session = apriSessioneCommunity(snmp, device.host, community, { ...opts, versione: versioneApparato(device, "1") });
     }
-    // sysDescr, sysName, ENTITY-MIB: entPhysicalSerialNum, entPhysicalDescr, entPhysicalModelName
-    // OID base ENTITY-MIB: 1.3.6.1.2.1.47.1.1.1.1
-    // .2 = entPhysicalDescr (model/description), .11 = entPhysicalSerialNum, .13 = entPhysicalModelName (part number)
-    // Proviamo indice 1 (chassis) e 2 (alcuni device usano indice diverso)
-    const oids = [
-      "1.3.6.1.2.1.1.1.0",  // sysDescr
-      "1.3.6.1.2.1.1.5.0",  // sysName
-      "1.3.6.1.2.1.47.1.1.1.1.11.1", // entPhysicalSerialNum.1 (chassis)
-      "1.3.6.1.2.1.47.1.1.1.1.11.2", // entPhysicalSerialNum.2 (fallback)
-      "1.3.6.1.2.1.47.1.1.1.1.2.1",  // entPhysicalDescr.1 (model)
-      "1.3.6.1.2.1.47.1.1.1.1.2.2",  // entPhysicalDescr.2 (fallback)
-      "1.3.6.1.2.1.47.1.1.1.1.13.1", // entPhysicalModelName.1 (part number)
-      "1.3.6.1.2.1.47.1.1.1.1.13.2", // entPhysicalModelName.2 (fallback)
-    ];
+    const oids = oidLetturaDatiSnmp(device);
 
     const emptySnmp: DeviceInfo = {
       sysname: null,
@@ -295,28 +350,7 @@ export async function getDeviceInfoFromSnmp(device: NetworkDevice): Promise<Devi
       // Tollerante: un agente v1 rifiuta tutto il gruppo se manca un solo OID (es. ENTITY-MIB).
       snmpGetTollerante(session, oids).then((varbinds) => {
         if (settled) return;
-        let sysdescr: string | null = null;
-        let sysname: string | null = null;
-        let serial_number: string | null = null;
-        let model: string | null = null;
-        let part_number: string | null = null;
-
-        for (const vb of varbinds) {
-          const val = Buffer.isBuffer(vb.value) ? vb.value.toString("utf-8").trim() : String(vb.value ?? "").trim();
-          if (!val || val === "noSuchObject" || val === "noSuchInstance" || val === "endOfMibView") continue;
-
-          // Match robusto usando endsWith per gestire formati OID variabili
-          const oid = vb.oid;
-          if (oid === "1.3.6.1.2.1.1.1.0" || oid.endsWith(".1.1.1.0")) sysdescr = sysdescr || val;
-          if (oid === "1.3.6.1.2.1.1.5.0" || oid.endsWith(".1.1.5.0")) sysname = sysname || val;
-          // entPhysicalSerialNum (.11.1 o .11.2)
-          if (oid.includes(".47.1.1.1.1.11.")) serial_number = serial_number || val;
-          // entPhysicalDescr (.2.1 o .2.2) - model
-          if (oid.includes(".47.1.1.1.1.2.")) model = model || val;
-          // entPhysicalModelName (.13.1 o .13.2) - part number
-          if (oid.includes(".47.1.1.1.1.13.")) part_number = part_number || val;
-        }
-        finish({ sysname, sysdescr, model, firmware: null, serial_number, part_number });
+        finish(infoDaVarbindSnmp(varbinds));
       }, () => finish(emptySnmp));
     });
   } catch {
@@ -1365,12 +1399,13 @@ function parseLegacyWinrmOutput(text: string): Partial<DeviceInfo> {
 export async function getDeviceInfoViaSNMPProfile(
   ip: string,
   community: string,
-  port: number = 161
+  port: number = 161,
+  versione: VersioneSnmp = "2c"
 ): Promise<DeviceInfo & { vendorProfileId?: string | null; vendorProfileName?: string | null; vendorProfileExtra?: Record<string, string | null> }> {
   const baseResult: DeviceInfo = { sysname: null, sysdescr: null, model: null, firmware: null, serial_number: null, part_number: null };
   try {
     const { querySnmpInfoMultiCommunity } = await import("@/lib/scanner/snmp-query");
-    const snmpInfo = await querySnmpInfoMultiCommunity(ip, [community], port);
+    const snmpInfo = await querySnmpInfoMultiCommunity(ip, [community], port, { versioni: [versione] });
 
     if (!snmpInfo.sysDescr && !snmpInfo.sysObjectID && !snmpInfo.sysName) {
       return baseResult;
@@ -1469,8 +1504,8 @@ export async function getDeviceInfo(device: NetworkDevice): Promise<DeviceInfo> 
     const snmpPort =
       device.protocol === "snmp_v2" || device.protocol === "snmp_v3" ? getEffectiveSnmpPort(device) : 161;
 
-    // Prima prova il profilo vendor per dati specifici
-    const profileInfo = await getDeviceInfoViaSNMPProfile(device.host, community, snmpPort);
+    // Prima prova il profilo vendor per dati specifici. NULL = v2c, come prima (passava dalla discovery).
+    const profileInfo = await getDeviceInfoViaSNMPProfile(device.host, community, snmpPort, versioneApparato(device, "2c"));
     if (profileInfo.vendorProfileId) {
       result = {
         sysname: profileInfo.sysname ?? result.sysname,
@@ -1501,7 +1536,7 @@ export async function getDeviceInfo(device: NetworkDevice): Promise<DeviceInfo> 
     // Ultimo tentativo SNMP v2c: walk ENTITY-MIB seriali (molti switch/router espongono il seriale solo su indici >2)
     if (!result.serial_number && device.protocol !== "snmp_v3") {
       const { trySnmpSerialFromEntityWalk } = await import("@/lib/scanner/snmp-query");
-      const sn = await trySnmpSerialFromEntityWalk(device.host, community, snmpPort);
+      const sn = await trySnmpSerialFromEntityWalk(device.host, community, snmpPort, versioneApparato(device, "2c"));
       if (sn) result.serial_number = sn;
     }
   } else if (nasKind) {
@@ -1510,7 +1545,7 @@ export async function getDeviceInfo(device: NetworkDevice): Promise<DeviceInfo> 
     const snmpPort =
       device.protocol === "snmp_v2" || device.protocol === "snmp_v3" ? getEffectiveSnmpPort(device) : 161;
     try {
-      const profileInfo = await getDeviceInfoViaSNMPProfile(device.host, community, snmpPort);
+      const profileInfo = await getDeviceInfoViaSNMPProfile(device.host, community, snmpPort, versioneApparato(device, "2c"));
       if (profileInfo.vendorProfileId) {
         result = {
           sysname: profileInfo.sysname ?? result.sysname,

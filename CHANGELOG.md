@@ -4,6 +4,37 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [0.3.286] — 2026-10-15 · versione SNMP per apparato
+
+Versione SNMP per apparato e firmware degli airFiber Ubiquiti (ADR 0016), approvati da Riccardo il 15/10.
+
+### Aggiunte
+
+- **Ogni apparato ricorda in che versione SNMP risponde (v1 o v2c).** La discovery prova prima la
+  v2c, come prima, e sugli host accesi che tacciono riprova in v1; la versione che risponde finisce
+  sull'apparato collegato e nel registro del giro («risponde in v1 (v2c muta) → salvata su …»).
+  Perché: gli AP Ubiquiti di DTS (172.16.3.4-7) rispondono **solo** in v1 e in v2c vanno in timeout,
+  quindi la discovery non li vedeva. La passata sugli IP che non rispondono al ping resta solo v2c:
+  la v1 lì raddoppierebbe il tempo su centinaia di indirizzi vuoti.
+- **Scelta a mano nel modulo dell'apparato**: «Automatica (rilevata: v1)», «v1, fissata a mano»,
+  «v2c, fissata a mano». Una versione fissata la discovery non la tocca (e lo dice nel registro se
+  vede altro); la scheda mostra la versione accanto all'accesso SNMP. Perché: se la discovery
+  sbaglia, ci dev'essere un modo di correggerla.
+- **Il test di una credenziale SNMP prova v2c e poi v1 e dice quale ha risposto** (anche
+  `/api/test-snmp`). Perché: prima provava solo la v1, per caso, e non diceva niente.
+- **Firmware degli airFiber Ubiquiti nella lettura dati** (`1.3.6.1.4.1.41112.1.3.2.1.40.1`, es.
+  «v4.1.0»), con «airFiber» come modello quando nient'altro lo dice: il MIB airFiber non espone il
+  nome del prodotto (letto tutto il ramo 41112 su un AP di DTS, sola lettura).
+
+### Modifiche
+
+- **Un solo punto apre le sessioni SNMP a community** (`src/lib/protocols/snmp-sessione.ts`), sempre
+  con la versione esplicita. In net-snmp `createSession` senza `version` parla **v1** e `version: 1`
+  vuol dire **v2c**: la discovery forzava v2c, mentre lettura dati, client switch/router, sonda
+  interfacce e test credenziali parlavano v1 per caso. **Un apparato non ancora rilevato si comporta
+  esattamente come prima**: ogni punto dichiara la versione che usava. Una prova fallisce se nasce un
+  `createSession(` fuori dal modulo.
+
 ## [Non rilasciato] — 2026-10-15 · mappa: ritocchi e VM, SSH degli hypervisor
 
 Ramo `fix/mappa-ritocchi-vm`, non ancora su `dev`.

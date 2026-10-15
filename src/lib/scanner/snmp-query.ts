@@ -9,6 +9,7 @@
 import { execFile } from "child_process";
 import { promisify } from "util";
 import type { NetworkDevice } from "@/types";
+import { apriSessioneCommunity, versioneApparato, type VersioneSnmp } from "@/lib/protocols/snmp-sessione";
 
 const execFileAsync = promisify(execFile);
 const OID_SYSDESCR = "1.3.6.1.2.1.1.1.0";
@@ -77,17 +78,26 @@ export interface SnmpInfo {
 const SNMP_ERROR_TYPES = new Set([128, 129, 130]);
 
 /**
- * Fallback: `snmpwalk -v2c -c … 1.3.6.1.2.1.1` (stesso sistema di `snmpwalk` da terminale).
+ * Versioni provate dalla discovery sugli host online: prima la v2c (com'era),
+ * poi la v1 per gli agenti che in v2c tacciono (AP Ubiquiti di DTS, 2026-10-15).
+ * Chi interroga un apparato noto passa `[versioneApparato(device, …)]`.
+ */
+export const VERSIONI_DISCOVERY: readonly VersioneSnmp[] = ["2c", "1"];
+
+/**
+ * Fallback: `snmpwalk -v2c -c … 1.3.6.1.2.1.1` (stesso sistema di `snmpwalk` da terminale);
+ * `-v1` quando la versione chiesta è la v1.
  * Disabilitabile con `DA_INVENT_SNMPWALK_CLI=false`.
  */
 async function snmpwalkSystemGroupCli(
   ip: string,
   community: string,
-  port: number
+  port: number,
+  versione: VersioneSnmp = "2c"
 ): Promise<{ sysName: string | null; sysDescr: string | null; sysObjectID: string | null } | null> {
   if (process.env.DA_INVENT_SNMPWALK_CLI === "false") return null;
   try {
-    const args = ["-v2c", "-c", community, "-OQ", "-t", "3", "-r", "1"];
+    const args = [`-v${versione}`, "-c", community, "-OQ", "-t", "3", "-r", "1"];
     if (port !== 161) args.push("-p", String(port));
     args.push(ip, OID_SYSTEM_TREE);
     const { stdout } = await execFileAsync("snmpwalk", args, {
@@ -196,11 +206,12 @@ export async function snmpGet(
   community: string,
   port: number,
   oids: string[],
-  timeoutMs: number = 3000
+  timeoutMs: number = 3000,
+  versione: VersioneSnmp = "2c"
 ): Promise<Array<{ oid: string; value: unknown; type?: number }>> {
   const snmp = await import("net-snmp");
-  // version: 1 = SNMPv2c (net-snmp default è 0 = v1, molti device moderni rispondono solo a v2c)
-  const session = snmp.createSession(ip, community, { port, timeout: Math.floor(timeoutMs * 0.6), version: 1 } as Record<string, unknown>);
+  // La discovery parla v2c di default (molti device moderni rispondono solo a v2c); la v1 la chiede chi la sa.
+  const session = apriSessioneCommunity(snmp, ip, community, { port, timeout: Math.floor(timeoutMs * 0.6), versione });
 
   return new Promise((resolve) => {
     let done = false;
@@ -274,10 +285,11 @@ export async function snmpSubwalkLimited(
   baseOid: string,
   maxVarbinds: number,
   timeoutMs: number,
-  maxRepetitions = 25
+  maxRepetitions = 25,
+  versione: VersioneSnmp = "2c"
 ): Promise<Array<{ oid: string; value: unknown }>> {
   const snmp = await import("net-snmp");
-  const session = snmp.createSession(ip, community, { port, timeout: Math.floor(timeoutMs * 0.5), version: 1 } as Record<string, unknown>);
+  const session = apriSessioneCommunity(snmp, ip, community, { port, timeout: Math.floor(timeoutMs * 0.5), versione });
   const rows: Array<{ oid: string; value: unknown }> = [];
 
   return new Promise((resolve) => {
@@ -337,7 +349,8 @@ export async function snmpSubwalkLimitedForDevice(
   }
   const community = getDeviceCommunityString(device);
   const port = device.protocol === "snmp_v2" || device.protocol === "snmp_v3" ? getEffectiveSnmpPort(device) : 161;
-  return snmpSubwalkLimited(device.host, community, port, baseOid, maxVarbinds, timeoutMs, maxRepetitions);
+  // NULL = v2c, come prima (passava dal walk della discovery).
+  return snmpSubwalkLimited(device.host, community, port, baseOid, maxVarbinds, timeoutMs, maxRepetitions, versioneApparato(device, "2c"));
 }
 
 async function snmpSubwalkLimitedV3(
@@ -410,11 +423,12 @@ const OID_ENT_PHYSICAL_SERIAL_NUM_SUBTREE = "1.3.6.1.2.1.47.1.1.1.1.11";
 export async function trySnmpSerialFromEntityWalk(
   ip: string,
   community: string,
-  port: number
+  port: number,
+  versione: VersioneSnmp = "2c"
 ): Promise<string | null> {
   try {
     const { isPlausibleHardwareSerial } = await import("@/lib/hardware-serial");
-    const rows = await snmpSubwalkLimited(ip, community, port, OID_ENT_PHYSICAL_SERIAL_NUM_SUBTREE, 72, 7500, 18);
+    const rows = await snmpSubwalkLimited(ip, community, port, OID_ENT_PHYSICAL_SERIAL_NUM_SUBTREE, 72, 7500, 18, versione);
     let best: string | null = null;
     for (const r of rows) {
       const v = stringifySnmpValue(r.value);
@@ -477,7 +491,8 @@ function summarizeUnifi(rows: Array<{ oid: string; value: unknown }>): string | 
 async function collectSnmpWalkExtensions(
   ip: string,
   community: string,
-  port: number
+  port: number,
+  versione: VersioneSnmp
 ): Promise<Pick<
   SnmpInfo,
   | "mikrotikIdentity"
@@ -498,12 +513,12 @@ async function collectSnmpWalkExtensions(
 
   try {
     const [mikVb, sysRows, ifRows, arpRows, unifiRows, hrRows] = await Promise.all([
-      snmpGet(ip, community, port, [OID_MIKROTIK_IDENTITY], 2500),
-      snmpSubwalkLimited(ip, community, port, OID_SYSTEM_TREE, 24, 3500, 20),
-      snmpSubwalkLimited(ip, community, port, OID_IFTABLE, 80, 4500, 25),
-      snmpSubwalkLimited(ip, community, port, OID_IPNETTOMEDIA, 250, 6000, 25),
-      snmpSubwalkLimited(ip, community, port, OID_UNIFI_ENTERPRISE, 50, 4000, 20),
-      snmpSubwalkLimited(ip, community, port, OID_HOST_RESOURCES, 150, 6000, 25),
+      snmpGet(ip, community, port, [OID_MIKROTIK_IDENTITY], 2500, versione),
+      snmpSubwalkLimited(ip, community, port, OID_SYSTEM_TREE, 24, 3500, 20, versione),
+      snmpSubwalkLimited(ip, community, port, OID_IFTABLE, 80, 4500, 25, versione),
+      snmpSubwalkLimited(ip, community, port, OID_IPNETTOMEDIA, 250, 6000, 25, versione),
+      snmpSubwalkLimited(ip, community, port, OID_UNIFI_ENTERPRISE, 50, 4000, 20, versione),
+      snmpSubwalkLimited(ip, community, port, OID_HOST_RESOURCES, 150, 6000, 25, versione),
     ]);
 
     let mikrotikIdentity: string | null = null;
@@ -525,7 +540,7 @@ async function collectSnmpWalkExtensions(
       }
     }
     if (!sysUpTime) {
-      const up = await snmpGet(ip, community, port, [OID_SYSUPTIME], 2000);
+      const up = await snmpGet(ip, community, port, [OID_SYSUPTIME], 2000, versione);
       const v = up[0] ? parseVarbind(up[0]).value : null;
       sysUpTime = v;
     }
@@ -543,11 +558,22 @@ async function collectSnmpWalkExtensions(
   }
 }
 
-export async function querySnmpInfo(ip: string, community: string, port: number = 161): Promise<SnmpInfo> {
+/**
+ * `usaCli`: ripiego su `snmpwalk` da riga di comando quando il GET non risponde.
+ * Chi prova più versioni lo chiede solo al primo giro: è lento (~6 s) e su un
+ * host che non parla SNMP raddoppierebbe ancora l'attesa.
+ */
+export async function querySnmpInfo(
+  ip: string,
+  community: string,
+  port: number = 161,
+  versione: VersioneSnmp = "2c",
+  usaCli = true
+): Promise<SnmpInfo> {
   try {
     // FASE 1: OID base — sysDescr, sysName, sysObjectID
     const baseOids = [OID_SYSDESCR, OID_SYSNAME, OID_SYSOBJECTID];
-    const baseVarbinds = await snmpGet(ip, community, port, baseOids, 3500);
+    const baseVarbinds = await snmpGet(ip, community, port, baseOids, 3500, versione);
 
     let sysName: string | null = null;
     let sysDescr: string | null = null;
@@ -573,8 +599,8 @@ export async function querySnmpInfo(ip: string, community: string, port: number 
     }
 
     // GET net-snmp vuoto: prova snmpwalk CLI (stesso subtree system)
-    if (!sysName && !sysDescr && !sysObjectID) {
-      const cli = await snmpwalkSystemGroupCli(ip, community, port);
+    if (!sysName && !sysDescr && !sysObjectID && usaCli) {
+      const cli = await snmpwalkSystemGroupCli(ip, community, port, versione);
       if (cli) {
         sysName = cli.sysName;
         sysDescr = cli.sysDescr;
@@ -594,7 +620,7 @@ export async function querySnmpInfo(ip: string, community: string, port: number 
 
     try {
       const entityOids = [OID_ENT_SERIAL_1, OID_ENT_SERIAL_2, OID_ENT_MODEL_1, OID_ENT_MODEL_2, OID_ENT_PARTNUM_1, OID_ENT_PARTNUM_2];
-      const entityVarbinds = await snmpGet(ip, community, port, entityOids, 3000);
+      const entityVarbinds = await snmpGet(ip, community, port, entityOids, 3000, versione);
 
       for (const vb of entityVarbinds) {
         const { oid, value } = parseVarbind(vb);
@@ -609,7 +635,7 @@ export async function querySnmpInfo(ip: string, community: string, port: number 
 
     if (!serialNumber) {
       try {
-        const fromWalk = await trySnmpSerialFromEntityWalk(ip, community, port);
+        const fromWalk = await trySnmpSerialFromEntityWalk(ip, community, port, versione);
         if (fromWalk) serialNumber = fromWalk;
       } catch {
         /* ignore */
@@ -617,7 +643,7 @@ export async function querySnmpInfo(ip: string, community: string, port: number 
     }
 
     // FASE 3: walk estesi (paralleli, come snmpwalk da CLI)
-    const ext = await collectSnmpWalkExtensions(ip, community, port);
+    const ext = await collectSnmpWalkExtensions(ip, community, port, versione);
 
     if (ext.mikrotikIdentity && !model) {
       model = `RouterOS (${ext.mikrotikIdentity})`;
@@ -650,7 +676,8 @@ async function testFingerprintOids(
   ip: string,
   community: string,
   port: number,
-  onLog?: (msg: string) => void
+  onLog?: (msg: string) => void,
+  versione: VersioneSnmp = "2c"
 ): Promise<SnmpFingerprintOidMatch[]> {
   const matches: SnmpFingerprintOidMatch[] = [];
 
@@ -678,7 +705,7 @@ async function testFingerprintOids(
   // Fermarsi al primo match specifico (priorità più bassa) per velocità
   for (const [prefix, info] of uniqueOids) {
     try {
-      const rows = await snmpSubwalkLimited(ip, community, port, prefix, 1, 1500, 5);
+      const rows = await snmpSubwalkLimited(ip, community, port, prefix, 1, 1500, 5, versione);
       if (rows.length > 0) {
         // Verifica che l'OID restituito inizi effettivamente con il prefisso
         const normalizedPrefix = prefix.replace(/^\./, "");
@@ -713,7 +740,8 @@ export async function querySnmpProfileFields(
   community: string,
   port: number,
   profile: import("./snmp-vendor-profiles").SnmpVendorProfile,
-  onLog?: (msg: string) => void
+  onLog?: (msg: string) => void,
+  versione: VersioneSnmp = "2c"
 ): Promise<Record<string, string | null>> {
   const result: Record<string, string | null> = {};
   const fieldsToQuery: Array<{ key: string; oids: string[] }> = [];
@@ -729,7 +757,7 @@ export async function querySnmpProfileFields(
   for (const { key, oids } of fieldsToQuery) {
     for (const oid of oids) {
       try {
-        const varbinds = await snmpGet(ip, community, port, [oid], 2500);
+        const varbinds = await snmpGet(ip, community, port, [oid], 2500, versione);
         if (varbinds.length > 0) {
           const { value } = parseVarbind(varbinds[0]);
           if (value) {
@@ -762,72 +790,76 @@ export async function querySnmpInfoMultiCommunity(
   ip: string,
   communities: string[],
   port: number = 161,
-  opts?: { onLog?: (msg: string) => void }
-): Promise<SnmpInfo & { community: string | null }> {
+  opts?: { onLog?: (msg: string) => void; versioni?: readonly VersioneSnmp[] }
+): Promise<SnmpInfo & { community: string | null; snmpVersion: VersioneSnmp | null }> {
   const { resolveSnmpVendorProfileFromDb } = await import("./snmp-vendor-profiles");
+  const versioni = opts?.versioni ?? VERSIONI_DISCOVERY;
 
-  for (const community of communities) {
-    const result = await querySnmpInfo(ip, community, port);
-    if (result.sysName || result.sysDescr || result.sysObjectID) {
-      // Testa OID enterprise fingerprint per detect accurato
-      const fpOidMatches = await testFingerprintOids(ip, community, port, opts?.onLog);
+  for (const [giro, versione] of versioni.entries()) {
+    for (const community of communities) {
+      const result = await querySnmpInfo(ip, community, port, versione, giro === 0);
+      if (result.sysName || result.sysDescr || result.sysObjectID) {
+        // Testa OID enterprise fingerprint per detect accurato
+        const fpOidMatches = await testFingerprintOids(ip, community, port, opts?.onLog, versione);
 
-      // Risolvi profilo vendor e query campi specifici (usa profili dal DB)
-      let vendorProfileId: string | null = null;
-      let vendorProfileName: string | null = null;
-      let vendorProfileConfidence: number | null = null;
-      let vendorProfileCategory: string | null = null;
-      let vendorProfileFirmware: string | null = null;
-      let vendorProfileExtra: Record<string, string | null> | undefined;
+        // Risolvi profilo vendor e query campi specifici (usa profili dal DB)
+        let vendorProfileId: string | null = null;
+        let vendorProfileName: string | null = null;
+        let vendorProfileConfidence: number | null = null;
+        let vendorProfileCategory: string | null = null;
+        let vendorProfileFirmware: string | null = null;
+        let vendorProfileExtra: Record<string, string | null> | undefined;
 
-      const profile = resolveSnmpVendorProfileFromDb(result.sysObjectID, result.sysDescr);
-      if (profile) {
-        opts?.onLog?.(`Profilo SNMP vendor: ${profile.name} (${profile.id}) — confidenza ${(profile.confidence * 100).toFixed(0)}%`);
-        vendorProfileId = profile.id;
-        vendorProfileName = profile.name;
-        vendorProfileConfidence = profile.confidence;
-        vendorProfileCategory = profile.category;
+        const profile = resolveSnmpVendorProfileFromDb(result.sysObjectID, result.sysDescr);
+        if (profile) {
+          opts?.onLog?.(`Profilo SNMP vendor: ${profile.name} (${profile.id}) — confidenza ${(profile.confidence * 100).toFixed(0)}%`);
+          vendorProfileId = profile.id;
+          vendorProfileName = profile.name;
+          vendorProfileConfidence = profile.confidence;
+          vendorProfileCategory = profile.category;
 
-        const profileFields = await querySnmpProfileFields(ip, community, port, profile, opts?.onLog);
+          const profileFields = await querySnmpProfileFields(ip, community, port, profile, opts?.onLog, versione);
 
-        // Arricchisci i campi standard da profilo (sovrascrivono ENTITY-MIB se presenti)
-        if (profileFields.model && !result.model) {
-          result.model = profileFields.model;
-        }
-        if (profileFields.serial && !result.serialNumber) {
-          result.serialNumber = profileFields.serial;
-        }
-        if (profileFields.partNumber && !result.partNumber) {
-          result.partNumber = profileFields.partNumber;
-        }
-        if (profileFields.firmware) {
-          vendorProfileFirmware = profileFields.firmware;
-        }
+          // Arricchisci i campi standard da profilo (sovrascrivono ENTITY-MIB se presenti)
+          if (profileFields.model && !result.model) {
+            result.model = profileFields.model;
+          }
+          if (profileFields.serial && !result.serialNumber) {
+            result.serialNumber = profileFields.serial;
+          }
+          if (profileFields.partNumber && !result.partNumber) {
+            result.partNumber = profileFields.partNumber;
+          }
+          if (profileFields.firmware) {
+            vendorProfileFirmware = profileFields.firmware;
+          }
 
-        // Raccogli campi extra vendor-specific
-        const standardKeys = new Set(["model", "serial", "firmware", "os", "manufacturer", "partNumber"]);
-        const extra: Record<string, string | null> = {};
-        for (const [k, v] of Object.entries(profileFields)) {
-          if (!standardKeys.has(k) && v !== null) {
-            extra[k] = v;
+          // Raccogli campi extra vendor-specific
+          const standardKeys = new Set(["model", "serial", "firmware", "os", "manufacturer", "partNumber"]);
+          const extra: Record<string, string | null> = {};
+          for (const [k, v] of Object.entries(profileFields)) {
+            if (!standardKeys.has(k) && v !== null) {
+              extra[k] = v;
+            }
+          }
+          if (Object.keys(extra).length > 0) {
+            vendorProfileExtra = extra;
           }
         }
-        if (Object.keys(extra).length > 0) {
-          vendorProfileExtra = extra;
-        }
-      }
 
-      return {
-        ...result,
-        fingerprintOidMatches: fpOidMatches.length > 0 ? fpOidMatches : null,
-        community,
-        vendorProfileId,
-        vendorProfileName,
-        vendorProfileConfidence,
-        vendorProfileCategory,
-        vendorProfileFirmware,
-        vendorProfileExtra,
-      };
+        return {
+          ...result,
+          fingerprintOidMatches: fpOidMatches.length > 0 ? fpOidMatches : null,
+          community,
+          snmpVersion: versione,
+          vendorProfileId,
+          vendorProfileName,
+          vendorProfileConfidence,
+          vendorProfileCategory,
+          vendorProfileFirmware,
+          vendorProfileExtra,
+        };
+      }
     }
   }
   return {
@@ -838,6 +870,7 @@ export async function querySnmpInfoMultiCommunity(
     model: null,
     partNumber: null,
     community: null,
+    snmpVersion: null,
   };
 }
 
@@ -858,49 +891,53 @@ export async function querySnmpSysGroupMultiCommunity(
   ip: string,
   communities: string[],
   port: number = 161,
-): Promise<{ sysName: string | null; sysDescr: string | null; sysObjectID: string | null; community: string | null }> {
-  for (const community of communities) {
-    try {
-      const baseOids = [OID_SYSDESCR, OID_SYSNAME, OID_SYSOBJECTID];
-      const baseVarbinds = await snmpGet(ip, community, port, baseOids, 3500);
+  versioni: readonly VersioneSnmp[] = VERSIONI_DISCOVERY,
+): Promise<{ sysName: string | null; sysDescr: string | null; sysObjectID: string | null; community: string | null; snmpVersion: VersioneSnmp | null }> {
+  for (const [giro, versione] of versioni.entries()) {
+    for (const community of communities) {
+      try {
+        const baseOids = [OID_SYSDESCR, OID_SYSNAME, OID_SYSOBJECTID];
+        const baseVarbinds = await snmpGet(ip, community, port, baseOids, 3500, versione);
 
-      let sysName: string | null = null;
-      let sysDescr: string | null = null;
-      let sysObjectID: string | null = null;
+        let sysName: string | null = null;
+        let sysDescr: string | null = null;
+        let sysObjectID: string | null = null;
 
-      for (const vb of baseVarbinds) {
-        const { oid, value } = parseVarbind(vb);
-        if (!value) continue;
-        if (oid === OID_SYSDESCR) sysDescr = value;
-        else if (oid === OID_SYSNAME) sysName = value;
-        else if (oid === OID_SYSOBJECTID) {
-          const v = vb.value;
-          let rawOid: string | null = null;
-          if (typeof v === "string") rawOid = v.trim() || null;
-          else if (Array.isArray(v) && v.length > 0) rawOid = v.join(".");
-          else if (v != null && typeof v === "object" && "type" in v) {
-            const obj = v as { type?: string; value?: string };
-            if (obj.type === "OID" && obj.value) rawOid = obj.value;
-            else rawOid = value;
-          } else rawOid = value;
-          sysObjectID = rawOid ? normalizeOidString(rawOid) : null;
+        for (const vb of baseVarbinds) {
+          const { oid, value } = parseVarbind(vb);
+          if (!value) continue;
+          if (oid === OID_SYSDESCR) sysDescr = value;
+          else if (oid === OID_SYSNAME) sysName = value;
+          else if (oid === OID_SYSOBJECTID) {
+            const v = vb.value;
+            let rawOid: string | null = null;
+            if (typeof v === "string") rawOid = v.trim() || null;
+            else if (Array.isArray(v) && v.length > 0) rawOid = v.join(".");
+            else if (v != null && typeof v === "object" && "type" in v) {
+              const obj = v as { type?: string; value?: string };
+              if (obj.type === "OID" && obj.value) rawOid = obj.value;
+              else rawOid = value;
+            } else rawOid = value;
+            sysObjectID = rawOid ? normalizeOidString(rawOid) : null;
+          }
         }
-      }
 
-      // Fallback CLI snmpwalk se net-snmp UDP non risponde (community-name OK su CLI ma timeout su UDP raw).
-      if (!sysName && !sysDescr && !sysObjectID) {
-        const cli = await snmpwalkSystemGroupCli(ip, community, port);
-        if (cli) {
-          sysName = cli.sysName;
-          sysDescr = cli.sysDescr;
-          sysObjectID = cli.sysObjectID;
+        // Fallback CLI snmpwalk se net-snmp UDP non risponde (community-name OK su CLI ma timeout su UDP raw).
+        // Solo al primo giro di versioni: vedi `querySnmpInfo`.
+        if (!sysName && !sysDescr && !sysObjectID && giro === 0) {
+          const cli = await snmpwalkSystemGroupCli(ip, community, port, versione);
+          if (cli) {
+            sysName = cli.sysName;
+            sysDescr = cli.sysDescr;
+            sysObjectID = cli.sysObjectID;
+          }
         }
-      }
 
-      if (sysName || sysDescr || sysObjectID) {
-        return { sysName, sysDescr, sysObjectID, community };
-      }
-    } catch { /* prova prossima community */ }
+        if (sysName || sysDescr || sysObjectID) {
+          return { sysName, sysDescr, sysObjectID, community, snmpVersion: versione };
+        }
+      } catch { /* prova prossima community */ }
+    }
   }
-  return { sysName: null, sysDescr: null, sysObjectID: null, community: null };
+  return { sysName: null, sysDescr: null, sysObjectID: null, community: null, snmpVersion: null };
 }

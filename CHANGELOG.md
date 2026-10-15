@@ -4,6 +4,14 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-15 · promozione: una tendina SNMP sola
+
+### Modifiche
+
+- **Promozione di un IP con SNMP come protocollo: niente seconda tendina «SNMP aggiuntivo».** La
+  credenziale principale è già la SNMP e la seconda ripeteva la stessa scelta (le finestre in blocco la
+  nascondevano già). Resta visibile se l'apparato ne ha già una salvata, per non nascondere un valore.
+
 ## [Non rilasciato] — 2026-10-15 · Apple e macOS fra gli apparati (tappa 1b credenziali)
 
 ### Correzioni

@@ -52,7 +52,7 @@ Documento di **passaggio di consegne**: leggilo per primo, poi [CLAUDE.md](CLAUD
   configurazione è `/etc/dalink/oggetto.env` di DA-Link (assente = niente rete; permessi
   diversi da 600 = rifiutata); il livello sta in `dalink_livello_registro` (hub), **non** in
   `settings`; la salute nel segnale riguarda solo i moduli accesi (le sonde dei moduli spenti
-  dicono `fail`); la tabella nft `inet dalink` restringe soltanto: con UFW acceso serve anche
+  dicono `fail`); la tabella nft `inet dalink` sta sul **prerouting** (sull'input NetBird ci infila `iifname "wt0" accept` e la scavalca, visto sul pilota il 15/10) e restringe soltanto: con UFW acceso serve anche
   `ufw allow in on wt0` (tappa G1). L'agente Python (decisione 26) non è ancora tolto.
 - **Piano di miglioramento (12/10)**: nove tappe in `docs/superpowers/specs/2026-10-12-piano-miglioramento-design.md`; decisioni in ADR 0004. Bacheca: `lavori piano-miglioramento-da-ipam`.
 - **Controller di rete (ADR 0005, 0007)**: UniFi (Omada dopo) = righe di `network_controllers` nel DB del cliente, pagina `/controllers`, job `unifi_sync` spento di default; UniFi OS con chiave API (`X-API-KEY`). Il controller della rete Domarc è un UDM sull'hub; Omada dei clienti non si legge dall'hub. LLDP sta sull'apparato, mai nelle porte.

@@ -66,7 +66,7 @@ function porteDa(destra: Json): number[] | null {
 
 /**
  * Porte accettate su `wt0` dalla tabella `inet dalink`, da `nft -j`. Null se la
- * tabella o la catena mancano, se la catena non finisce con uno scarto, o se il JSON
+ * tabella o la catena mancano, se la catena non sta sul prerouting, se non finisce con uno scarto, o se il JSON
  * non si legge.
  */
 export function porteDaNftJson(testo: string): { porte: number[]; sorgentiRistrette: boolean } | null {
@@ -84,7 +84,11 @@ export function porteDaNftJson(testo: string): { porte: number[]; sorgentiRistre
   for (const voce of elenco) {
     const o = oggetto(voce);
     const catena = oggetto(o?.chain);
-    if (catena && catena.table === TABELLA && catena.name === CATENA && catena.family === "inet") catenaTrovata = true;
+    // Solo sul prerouting: una catena sull'input la scavalca la regola che NetBird ci
+    // inserisce (15/10, pilota), e dichiararne le porte sarebbe un dato falso per R5.
+    if (catena && catena.table === TABELLA && catena.name === CATENA && catena.family === "inet" && catena.hook === "prerouting") {
+      catenaTrovata = true;
+    }
     const regola = oggetto(o?.rule);
     if (regola && regola.table === TABELLA && regola.chain === CATENA && regola.family === "inet" && Array.isArray(regola.expr)) {
       regole.push(regola.expr);

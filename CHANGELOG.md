@@ -4,6 +4,19 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-15 · firewall NetBird sul prerouting
+
+### Correzioni
+
+- **Il firewall dell'interfaccia NetBird ora filtra davvero.** Sul pilota (PX-NAS, 15/10)
+  NetBird, collegandosi, ha messo «accetta tutto da wt0» in cima alla nostra catena
+  sull'input, e il filtro per porta (22, 443, 6443) non contava più: restava solo la
+  policy NetBird. La catena ora sta sul prerouting, dove NetBird non inserisce niente e
+  uno scarto è definitivo (provato riavviando NetBird e bussando dal Mac: 22/443/6443
+  aperte, 7443/8443/3000/5432 chiuse dal nostro filtro). Il segnale dichiara le porte
+  del filtro solo se la catena sta lì; altrimenti ripiega sulle porte in ascolto, per
+  non dare a DA-Link (R5) un dato falso.
+
 ## [0.3.286] — 2026-10-15 · versione SNMP per apparato
 
 Versione SNMP per apparato e firmware degli airFiber Ubiquiti (ADR 0016), approvati da Riccardo il 15/10.

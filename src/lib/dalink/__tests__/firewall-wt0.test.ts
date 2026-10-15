@@ -114,3 +114,14 @@ test("il file di configurazione non si esegue (niente source)", () => {
 test("un'opzione sconosciuta si rifiuta", () => {
   assert.notEqual(lancia("DALINK_FW_EDGE=no\n", ["--apri-tutto"]).codice, 0);
 });
+
+// 15/10, pilota su PX-NAS (192.168.99.51): NetBird, collegandosi, inserisce
+// `iifname "wt0" accept` in cima alle catene sull'input che trova, compresa la nostra,
+// e il filtro per porta non conta più. Sul prerouting non inserisce niente (provato
+// riavviando NetBird) e uno scarto lì è definitivo: la catena deve stare lì.
+test("la catena sta sul prerouting, mai sull'input (NetBird la scavalcherebbe)", () => {
+  const r = lancia("DALINK_FW_EDGE=si\n");
+  assert.equal(r.codice, 0, r.err);
+  assert.match(r.out, /type filter hook prerouting priority /);
+  assert.doesNotMatch(r.out, /hook input/);
+});

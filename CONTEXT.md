@@ -20,7 +20,7 @@ Documento di **passaggio di consegne**: leggilo per primo, poi [CLAUDE.md](CLAUD
 
 ## 5. Tooling
 
-- `npm test` (node test runner; **~2.310 test verdi** il 15/10, ultimo cancello completo (T1)). Con `DA_INVENT_DATA_DIR` su una cartella temporanea. `npx tsc --noEmit`; lint 0 errori. CI: Node 22, type-check, test, build, pytest agente. Permessi API: `src/lib/permessi/rotte.ts`, `scripts/verifica-permessi.sh` (solo in locale).
+- `npm test` (node test runner; **~2.410 test verdi** il 15/10, ultimo cancello completo (T1 unita a `dev` v0.3.282)). Con `DA_INVENT_DATA_DIR` su una cartella temporanea. `npx tsc --noEmit`; lint 0 errori. CI: Node 22, type-check, test, build, pytest agente. Permessi API: `src/lib/permessi/rotte.ts`, `scripts/verifica-permessi.sh` (solo in locale).
 - `.claude/`: hook tsc + blocco force-push main; skill `release`, `deploy-prod`, `winrm-kerberos`; rules `api-routes`, `client-components`, `db-access`.
 
 ## 6. Stato e igiene (fotografia 2026-10-15)

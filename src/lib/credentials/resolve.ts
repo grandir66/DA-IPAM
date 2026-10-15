@@ -319,19 +319,21 @@ function voceHub(
 }
 
 /**
- * Account WinRM della prima integrazione AD attiva che ne ha uno, come
- * `loadWinrmCredentialsForHost` (`patch/credentials.ts`); col filtro di tipo.
+ * Account WinRM della prima integrazione AD attiva (per id dell'integrazione)
+ * che ne ha uno, come il loader delle patch prima del T9; col filtro di tipo.
+ * L'alias non si chiama `id`: in SQLite `ORDER BY id` userebbe l'alias, cioè
+ * l'id della voce, e con due integrazioni sceglierebbe l'altra.
  */
 function voceAd(dbh: Database.Database, tipi: readonly string[]): VoceTrovata | null {
   const r = dbh
     .prepare(
-      `SELECT winrm_credential_id AS id FROM ad_integrations
-       WHERE enabled = 1 AND winrm_credential_id IS NOT NULL
-       ORDER BY id ASC LIMIT 1`
+      `SELECT ai.winrm_credential_id AS cid FROM ad_integrations ai
+       WHERE ai.enabled = 1 AND ai.winrm_credential_id IS NOT NULL
+       ORDER BY ai.id ASC LIMIT 1`
     )
-    .get() as { id: number } | undefined;
+    .get() as { cid: number } | undefined;
   if (!r) return null;
-  const v = leggiVoce(dbh, r.id);
+  const v = leggiVoce(dbh, r.cid);
   return v && ammesso(tipi, v.credential_type) ? v : null;
 }
 

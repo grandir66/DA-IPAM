@@ -324,10 +324,11 @@ describe("fotografia-scelte.ts sulla copia", () => {
     // Anteprima edge: passa dal facade db.ts; se il contesto tenant si perdesse,
     // leggerebbe DEFAULT e questa riga non ci sarebbe.
     assert.equal(trova("edge", `${idRete}:ssh:0`).scelta?.credential_id, credBinding);
-    // Patch: host Windows senza righe WinRM → l'account WinRM dell'AD, sulla 5985.
+    // Patch: host Windows senza righe WinRM → l'account WinRM dell'AD, sulla 5985,
+    // con la fonte del motore (T9).
     const patch = trova("patch", `${idHost}:winrm`);
     assert.equal(patch.scelta?.credential_id, credWindows);
-    assert.equal(patch.scelta?.fonte, "lettore_vecchio:ripiego_ad");
+    assert.equal(patch.scelta?.fonte, "ad_fallback");
     assert.equal(patch.scelta?.port, 5985);
 
     // Nessun segreto né testo cifrato nel file e a terminale.

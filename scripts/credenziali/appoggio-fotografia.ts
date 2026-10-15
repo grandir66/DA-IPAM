@@ -16,15 +16,17 @@
  *   riga dice la voce, la porta e la fonte del motore (`device_binding`,
  *   `device_column`, `snmp_ripiego`…): per questo il confronto con la 2a si fa
  *   senza `--con-fonte`;
+ * - patch (dal T9): il motore con le fonti delle patch (`sceltaWinrmPatchDb`,
+ *   righe host fuori fermo, poi l'account WinRM dell'AD), con `registra:
+ *   false`; la riga dice la fonte del motore (`host_validated`, `ad_fallback`…);
  * - host: resolveCredentialsForDb e buildSnmpCommunitiesForHost; reti: le
- *   catene 2-4; anteprima edge: collectEdgeCredentialsForNetwork; patch:
- *   loadWinrmCredentialsForHost. Cambiano nel T9 e nel T26, con lo stesso
- *   formato di riga.
+ *   catene 2-4; anteprima edge: collectEdgeCredentialsForNetwork. Cambiano nel
+ *   T26, con lo stesso formato di riga.
  *
  * Un apparato snmp_v3 senza una v3 leggibile ha la riga snmp senza scelta: le
  * sessioni v3 non ripiegano sulla community (T4).
  *
- * I lettori vecchi di host, reti e patch non dicono QUALE voce hanno scelto. La
+ * I lettori vecchi di host e reti non dicono QUALE voce hanno scelto. La
  * provenienza (id della voce e livello) si ricostruisce qui con le stesse query,
  * e si controlla contro l'uscita vera: se non torna, la riga dice
  * `lettore_vecchio:discorde`, senza id, e lo script la conta. Le ricostruzioni
@@ -61,7 +63,7 @@ import {
 } from "../../src/lib/credentials/resolve";
 import { v3ApparatoDb } from "../../src/lib/credentials/segreti";
 import { collectEdgeCredentialsForNetwork } from "../../src/lib/vuln/edge-credentials-bridge";
-import { loadWinrmCredentialsForHost } from "../../src/lib/patch/credentials";
+import { sceltaWinrmPatchDb } from "../../src/lib/patch/credentials";
 import { resolveDeviceAcquisition } from "../../src/lib/devices/device-acquisition-resolve";
 import {
   chiaroDaParti,
@@ -238,66 +240,12 @@ export function provenienzaCatenaSnmp(dbh: Database.Database, target: ResolveTar
   return voci.filter((v) => (visti.has(v.community) ? false : (visti.add(v.community), true)));
 }
 
-/** Provenienza di loadWinrmCredentialsForHost: righe host WinRM, poi l'account WinRM dell'AD. */
-export function provenienzaPatch(dbh: Database.Database, hostId: number): Provenienza {
-  type Riga = { cid: number; host_ip: string | null; encrypted_username: string | null; encrypted_password: string | null };
-  let livello = "host";
-  let r = dbh.prepare(
-    `SELECT hc.credential_id AS cid, h.ip AS host_ip, c.encrypted_username, c.encrypted_password
-       FROM host_credentials hc
-       JOIN credentials c ON c.id = hc.credential_id
-       JOIN hosts h ON h.id = hc.host_id
-      WHERE hc.host_id = ? AND hc.protocol_type = 'winrm'
-      ORDER BY hc.validated DESC, hc.sort_order ASC, hc.id ASC
-      LIMIT 1`
-  ).get(hostId) as Riga | undefined;
-  if (!r) {
-    livello = "ripiego_ad";
-    r = dbh.prepare(
-      `SELECT ai.winrm_credential_id AS cid, h.ip AS host_ip, c.encrypted_username, c.encrypted_password
-         FROM ad_integrations ai
-         JOIN credentials c ON c.id = ai.winrm_credential_id
-         JOIN hosts h ON h.id = ?
-        WHERE ai.enabled = 1 AND ai.winrm_credential_id IS NOT NULL
-        ORDER BY ai.id ASC
-        LIMIT 1`
-    ).get(hostId) as Riga | undefined;
-  }
-  if (!r || !r.host_ip || !r.encrypted_username || !r.encrypted_password) return NESSUNA;
-  const u = safeDecrypt(r.encrypted_username);
-  const p = safeDecrypt(r.encrypted_password);
-  if (!u || !p) return NESSUNA;
-  return { credential_id: r.cid, livello, parti: [u, p] };
-}
-
 interface Contesto {
   chiave: string;
   discordi: number;
 }
 
 const fonte = (livello: string) => `${FONTE_LETTORE_VECCHIO}:${livello}`;
-
-const stesseParti = (a: string[] | null, b: string[] | null): boolean =>
-  !!a && !!b && a.length === b.length && a.every((x, i) => x === b[i]);
-
-/**
- * Scelta dall'uscita del lettore vero (`vero`, il segreto in parti) e dalla
- * provenienza ricostruita (oggi solo le patch, fino al T9). Se le due non
- * tornano, la riga resta senza id e con fonte `discorde`, e si conta: mai una
- * provenienza indovinata.
- */
-function scelta(ctx: Contesto, vero: string[] | null, prov: Provenienza, port: number | null): SceltaFotografia | null {
-  if (!vero) {
-    if (prov.parti) ctx.discordi += 1;
-    return null;
-  }
-  const imp = impronta(chiaroDaParti(...vero), ctx.chiave);
-  if (stesseParti(vero, prov.parti)) {
-    return { credential_id: prov.credential_id, port, fonte: fonte(prov.livello), impronta: imp };
-  }
-  ctx.discordi += 1;
-  return { credential_id: null, port, fonte: fonte("discorde"), impronta: imp };
-}
 
 function improntaVoce(ctx: Contesto, parti: string[] | null): string {
   return parti ? impronta(chiaroDaParti(...parti), ctx.chiave) : IMPRONTA_ILLEGGIBILE;
@@ -500,13 +448,22 @@ function fotografaDentro(code: string, encryptionKey: string): EsitoTenant {
       ORDER BY h.id`
   ).all() as Array<{ id: number; ip: string; hostname: string | null; custom_name: string | null }>;
   for (const h of daPatchare) {
-    const vero = loadWinrmCredentialsForHost(dbh, h.id);
+    // La stessa scelta di loadWinrmCredentialsForHost, che senza IP non dà niente.
+    const s = h.ip ? sceltaWinrmPatchDb(dbh, h.id, { registra: false }) : null;
     righe.push({
       tenant: code,
       oggetto: "patch",
       chiave: `${h.id}:winrm`,
       nome: h.custom_name || h.hostname || h.ip,
-      scelta: scelta(ctx, vero ? [vero.username, vero.password] : null, provenienzaPatch(dbh, h.id), vero?.port ?? null),
+      scelta:
+        s?.ok && s.segreto.forma === "utente"
+          ? {
+              credential_id: s.candidato.credential_id,
+              port: s.candidato.port,
+              fonte: s.candidato.source,
+              impronta: improntaVoce(ctx, [s.segreto.username, s.segreto.password]),
+            }
+          : null,
     });
   }
 

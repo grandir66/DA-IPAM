@@ -7758,36 +7758,6 @@ export function getSoftwareScansForDevice(
 }
 
 /**
- * Trova la credenziale "migliore" linkata a un device per uno specifico protocollo.
- * Priorità (DESC):
- *  1. test_status='success'
- *  2. auto_detected=1
- *  3. sort_order ASC (più bassa = preferita)
- *  4. id più recente
- * Ritorna null se nessuna binding presente per quel device+protocollo.
- */
-export function getBestCredentialBindingForDevice(
-  deviceId: number,
-  protocolType: "winrm" | "ssh" | "snmp" | "api" | "redfish" | "onvif"
-): { credential_id: number; port: number; test_status: string; auto_detected: number } | null {
-  const row = db()
-    .prepare(
-      `SELECT credential_id, port, test_status, auto_detected
-         FROM device_credential_bindings
-        WHERE device_id = ? AND protocol_type = ? AND credential_id IS NOT NULL
-        ORDER BY (test_status = 'success') DESC,
-                 auto_detected DESC,
-                 sort_order ASC,
-                 id DESC
-        LIMIT 1`
-    )
-    .get(deviceId, protocolType) as
-    | { credential_id: number; port: number; test_status: string; auto_detected: number }
-    | undefined;
-  return row ?? null;
-}
-
-/**
  * Trova il network_device linkato a un host via IP (network_devices.host = hosts.ip).
  * Ritorna il primo (i casi multi-device per stesso IP sono rari, non gestiti qui).
  */

@@ -1,0 +1,81 @@
+ 0  interface=sfp-sfpplus1,BR_RP address=10.191.234.143 address4=10.191.234.143
+    mac-address=02:00:A0:1D:30:FF identity="AV-SZ-TLP" platform="MikroTik"
+    version="7.17.2 (stable) 2025-02-11 09:40:12" unpack=none age=43s
+    board="CRS520-4XS-16XQ-RM" interface-name="sfp-sfpplus2"
+    system-description="MikroTik RouterOS 7.17.2 (stable) 2025-02-11 09:40:12 
+       CRS520-4XS-16XQ-RM" system-caps=bridge,router
+    system-caps-enabled=bridge,router discovered-by=lldp
+ 
+ 1  interface=sfp-sfpplus4,BR_RP mac-address=02:00:A1:7B:35:37 identity=""
+    platform="" version="" unpack=none age=0s system-caps=""
+    system-caps-enabled="" discovered-by=lldp
+ 
+ 2  interface=sfp-sfpplus11,bond2,BR_RP mac-address=02:00:A2:09:46:1C
+    identity="XS-B1447T-Lpmpud" platform="\12.0.5.7760" version="" unpack=none
+    age=4s interface-name="10GigabitEthernet 1/2"
+    system-description="2.0.1.0001 2026-01-01T00:00:00+08:00"
+    system-caps=bridge system-caps-enabled=bridge discovered-by=lldp
+ 
+ 3  interface=sfp28-1,bond1,BR_RP mac-address=02:00:A0:5B:CD:CC
+    identity="AV-SZ-TLP" platform="MikroTik"
+    version="7.17.2 (stable) 2025-02-11 09:40:12" unpack=none age=43s
+    interface-name="BR_RP/sfp-sfpplus12" system-caps="" system-caps-enabled=""
+    discovered-by=cdp
+ 
+ 4  interface=sfp28-1,bond1,BR_RP mac-address=02:00:A3:61:89:AA
+    identity="XC-CSU-WQT-092" platform="USW-EnterpriseXG-24," version=""
+    unpack=none age=0s interface-name="SFP28 32"
+    system-description="USW-EnterpriseXG-24, 7.0.11.10000, Linux 4.4.100"
+    system-caps=bridge,router system-caps-enabled=bridge,router
+    discovered-by=lldp
+ 
+ 5  interface=sfp28-1,bond1,BR_RP address=10.255.200.136
+    address4=10.255.200.136 mac-address=02:00:A0:04:51:EB
+    identity="FM-PU-PKZZ-WBFDLLU" platform="MikroTik"
+    version="7.16.2 (long-term) 2024-12-03 15:20:44" unpack=none age=36s
+    interface-name="BR_RP/sfp-sfpplus2" system-caps="" system-caps-enabled=""
+    discovered-by=cdp
+ 
+ 6  interface=sfp28-2,bond1,BR_RP mac-address=02:00:A0:5B:CD:CC
+    identity="AV-SZ-TLP" platform="MikroTik"
+    version="7.17.2 (stable) 2025-02-11 09:40:12" unpack=none age=43s
+    uptime=2d19h42m48s software-id="EQVT-73B2" board="CRS520-4XS-16XQ-RM"
+    ipv6=no interface-name="BR_RP/sfp-sfpplus12" system-caps=""
+    system-caps-enabled="" discovered-by=mndp
+ 
+ 7  interface=sfp28-2,bond1,BR_RP mac-address=02:00:A3:61:89:AA
+    identity="XC-CSU-WQT-092" platform="USW-EnterpriseXG-24," version=""
+    unpack=none age=36s interface-name="SFP28 31 - CA-NCR-XJUK"
+    system-description="USW-EnterpriseXG-24, 7.0.11.10000, Linux 4.4.100"
+    system-caps=bridge,router system-caps-enabled=bridge,router
+    discovered-by=lldp
+ 
+ 8  interface=VL_22_CGWR mac-address=02:00:A4:D2:E1:25
+    identity="HR-NPQ-SNF628-UC" platform="MikroTik"
+    version="7.18 (stable) 2025-03-17 11:05:30" unpack=none age=22s
+    uptime=3w1d22h4m software-id="WBE9-CU7E" board="CRS504-4XQ-IN" ipv6=no
+    interface-name="LR-BX/sfp-sfpplus3" system-caps="" system-caps-enabled=""
+    discovered-by=cdp,mndp
+ 
+ 9  interface=VL_22_CGWR address=10.143.120.130 address4=10.143.120.130
+    address6=fe80::68b5:b84e:48de:78f6 mac-address=02:00:A4:91:57:87
+    identity="FU-QHW-EMN" platform="MikroTik"
+    version="7.18 (stable) 2025-03-17 11:05:30" unpack=none age=0s
+    uptime=3w0d14h0m24s software-id="UW9R-HNM1" board="RB4011iGS+RM" ipv6=yes
+    interface-name="bridge1/ether1" system-caps="" system-caps-enabled=""
+    discovered-by=cdp,mndp
+ 
+10  interface=VL_22_CGWR address=10.101.109.236 address4=10.101.109.236
+    mac-address=02:00:A4:0B:CC:52 identity="HR-NPQ-SNF628-UC"
+    platform="MikroTik" version="7.18 (stable) 2025-03-17 11:05:30" unpack=none
+    age=22s uptime=3w1d22h4m software-id="WBE9-CU7E" board="CRS504-4XQ-IN"
+    ipv6=no interface-name="ether1" system-caps="" system-caps-enabled=""
+    discovered-by=cdp,mndp
+ 
+11  interface=VL_214_BFPTPMF address=10.191.234.143 address4=10.191.234.143
+    mac-address=02:00:A0:1D:30:FF identity="AV-SZ-TLP" platform="MikroTik"
+    version="7.17.2 (stable) 2025-02-11 09:40:12" unpack=none age=43s
+    uptime=2d19h42m48s software-id="EQVT-73B2" board="CRS520-4XS-16XQ-RM"
+    ipv6=no interface-name="sfp-sfpplus2" system-caps="" system-caps-enabled=""
+    discovered-by=cdp,mndp
+ 

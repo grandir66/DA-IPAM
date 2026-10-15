@@ -1,0 +1,52 @@
+# uscita incollata dal terminale: router 1 del cliente A, 14/10 (resa anonima, stessa forma)
+# /ip neighbor print detail without-paging
+
+[admin@RTR-1] > /ip neighbor print detail without-paging
+ 0  interface=ether1-2.5 mac-address=02:00:A5:8B:EC:4A identity="UGZ5Vcp12z-4-JLN" platform="UBNT" version="" unpack=none age=43s interface-name="Port 47"
+    system-description="ZWCV-HMXJ60N" system-caps=bridge,router system-caps-enabled=bridge,router discovered-by=lldp
+
+ 1  interface=ether1-2.5 address=10.108.9.165 address4=10.108.9.165 mac-address=00:00:5E:00:01:C6 identity="UP-N6-ZZA" platform="MikroTik"
+    version="7.17.1 (stable) 2025-01-20 13:10:05" unpack=none age=35s uptime=6w1d23h26m14s software-id="R96R-S85L" board="CCR1016-12G" ipv6=no
+    interface-name="vrrp_rete_7" system-caps="" system-caps-enabled="" discovered-by=cdp,mndp
+
+ 2  interface=ether1-2.5 address=10.86.103.2 address4=10.86.103.2 mac-address=02:00:A6:13:B8:0D identity="UP-N6-ZZA" platform="MikroTik"
+    version="7.17.1 (stable) 2025-01-20 13:10:05" unpack=none age=35s uptime=6w1d23h26m14s software-id="R96R-S85L" board="CCR1016-12G" ipv6=no
+    interface-name="bridge/sfp-sfpplus1" system-caps="" system-caps-enabled="" discovered-by=cdp,mndp
+
+ 3  interface=ether2 address=10.221.249.52 address4=10.221.249.52 mac-address=02:00:A7:2A:48:97 identity="EK-UEW-83-R9-Z7" platform="MikroTik"
+    version="7.15.1 (stable) 2024-08-26 16:45:03" unpack=none age=0s uptime=4w1d10h6m53s software-id="EA25-1K14" board="nRAYG-60adpro" ipv6=no
+    interface-name="bridge/bond1/wlan60-1" system-caps="" system-caps-enabled="" discovered-by=cdp,mndp
+
+ 4  interface=ether3,bridge mac-address=02:00:A8:94:49:7B identity="" platform="" version="" unpack=none age=4s
+    system-caps=repeater,bridge,wlan-ap,router,telephone,docsis-cable-device,station-only system-caps-enabled=bridge,telephone,docsis-cable-device
+    discovered-by=lldp
+
+ 5  interface=ether4,bridge address=10.243.2.41 address4=10.243.2.41 mac-address=02:00:A6:14:64:87 identity="QM-N5-ZXS" platform="MikroTik"
+    version="7.17.2 (stable) 2025-02-11 09:40:12" unpack=none age=35s uptime=0w1d0h3m6s software-id="5B00-X9WQ" board="CCR1016-12G" ipv6=yes
+    interface-name="bridge/ether4" system-description="MikroTik RouterOS 7.17.2 (stable) 2025-02-11 09:40:12 CCR1016-12G" system-caps=bridge,router
+    system-caps-enabled=bridge,router discovered-by=cdp,lldp,mndp
+
+ 6  interface=ether8 address=10.156.74.199 address4=10.156.74.199 mac-address=02:00:A0:B3:B1:98 identity="KJ-J7-ETHV" platform="MikroTik"
+    version="7.17.1 (stable) 2025-01-20 13:10:05" unpack=none age=35s uptime=6w5d23h40m19s software-id="AFWP-GMGC" board="CCR1016-12G" interface-name="ether8"
+    system-description="MikroTik RouterOS 7.17.1 (stable) 2025-01-20 13:10:05 CCR1016-12G" system-caps=bridge,router system-caps-enabled=bridge,router
+    discovered-by=cdp,lldp,mndp
+
+ 7  interface=ether8 address=10.223.7.5 address4=10.223.7.5 mac-address=02:00:A9:5D:41:7C identity="AGE3-NMMD-32US-13" platform="US-8-60W," version=""
+    unpack=none age=28s interface-name="Port 15 - XJS UZQ3 - Vkmeqvj" system-description="US-8-60W, 7.0.10.10000, Linux 3.6.0" system-caps=bridge
+    system-caps-enabled=bridge discovered-by=lldp
+
+ 8  interface=sfp-sfpplus1,bridge address=10.223.7.5 address4=10.223.7.5 mac-address=02:00:A9:5D:41:7C identity="AGE3-NMMD-32US-13" platform="US-8-60W,"
+    version="" unpack=none age=20s interface-name="Muczxpxa WU9649 KDM6 1.17" system-description="US-8-60W, 7.0.10.10000, Linux 3.6.0" system-caps=bridge
+    system-caps-enabled=bridge discovered-by=lldp
+
+ 9  interface=vlan57-NJL79 address=10.129.8.153 address4=10.129.8.153 mac-address=02:00:A0:CD:D3:12 identity="KJ-J7-ETHV" platform="MikroTik"
+    version="7.17.1 (stable) 2025-01-20 13:10:05" unpack=none age=35s uptime=6w5d23h40m19s software-id="AFWP-GMGC" board="CCR1016-12G" ipv6=no
+    interface-name="vlan57-NJL79" system-caps="" system-caps-enabled="" discovered-by=cdp,mndp
+
+10  interface=vrrp_rete_7 mac-address=02:00:A6:77:23:20 identity="UP-N6-ZZA" platform="MikroTik" version="7.17.1 (stable) 2025-01-20 13:10:05" unpack=none
+    age=35s uptime=6w1d23h26m14s software-id="R96R-S85L" board="CCR1016-12G" ipv6=no interface-name="ether1-2.5" system-caps="" system-caps-enabled=""
+    discovered-by=cdp,mndp
+
+11  interface=vlan63-KKLDZVDFNJ mac-address=02:00:A6:A3:49:49 identity="KM-T1-PXA" platform="MikroTik" version="7.17.1 (stable) 2025-01-20 13:10:05"
+    unpack=none age=21s uptime=2w1d12h27m54s software-id="V8HH-KA5V" board="CCR1016-12G" ipv6=no interface-name="vlan63_Lzemudfduc" system-caps=""
+    system-caps-enabled="" discovered-by=cdp,mndp

@@ -8,13 +8,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { LoadError } from "@/components/shared/load-error";
 import { fetchJson } from "@/lib/fetch-json";
+import { SOURCE_WORDS } from "@/lib/topology/edge-look";
 import type { MapLink, MapNode, TopologyModel } from "@/lib/topology/model-types";
 import { HypervisorSyncCard } from "./hypervisor-sync-card";
 import { IgnoredLinksCard } from "./ignored-links-card";
 
 type Model = TopologyModel & { staleDays: number };
 const MAX = 200;
-const FONTE: Record<string, string> = { manual: "manuale", unifi_uplink: "uplink UniFi", lldp: "LLDP", cdp: "CDP", mndp: "MNDP", mac_table: "Tabella MAC", vm_mac: "dalle VM" };
+const FONTE: Readonly<Record<string, string>> = SOURCE_WORDS;
 
 function Altri({ n }: { n: number }) {
   return n > MAX ? <p className="mt-2 text-sm text-muted-foreground">+ altri {n - MAX}</p> : null;

@@ -126,6 +126,19 @@ export function vmPortWords(l: Pick<MapLink, "sources" | "vmCount" | "uplinkFrom
   return `${l.vmCount} VM di ${nameOf(l.uplinkFrom)} ${l.vmCount === 1 ? "passa" : "passano"} da questa porta`;
 }
 
+/**
+ * «Altri cavi visti fra questi due oggetti» (spec §13.4.6, T1): le porte dalla parte dell'oggetto scelto, le fonti in
+ * parole. Servono all'«Ignora» per cavo: dicono che cosa resta se si ignora la linea.
+ */
+export function altriCaviDi(l: Pick<MapLink, "a" | "altriCavi">, nodo: string): Array<{ mia: string; sua: string; fonti: string; visto: string | null }> {
+  return (l.altriCavi ?? []).map((c) => ({
+    mia: l.a === nodo ? c.aPort : c.bPort,
+    sua: l.a === nodo ? c.bPort : c.aPort,
+    fonti: c.sources.map((s) => SOURCE_WORDS[s]).join(" + "),
+    visto: c.lastSeen,
+  }));
+}
+
 /** La linea in parole, per la barra dei dettagli: velocità, tipo, PoE, a mano (confermata o no), principale o ridondanza. */
 export function linkWords(l: MapLink): string[] {
   const out: string[] = [];

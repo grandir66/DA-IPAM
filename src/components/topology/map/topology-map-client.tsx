@@ -19,7 +19,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type
 import { useRouter } from "next/navigation";
 import { ReactFlowProvider, useReactFlow } from "@xyflow/react";
 import { toast } from "sonner";
-import { IGNORA_SI_ANNULLA } from "@/lib/topology/ignored-links";
+import { IGNORA_SI_ANNULLA, testiIgnoraCavo } from "@/lib/topology/ignored-links";
 import { LoadError } from "@/components/shared/load-error";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -471,6 +471,10 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
   }
 
   const panelShown = detailsOpen && (selected !== null || d.missing.length > 0);
+  // Il dialogo dell'«Ignora» dice quale cavo (le porte) e che gli altri cavi fra i due oggetti restano (spec §13.9).
+  const testiIgnora = ignoreAsk
+    ? testiIgnoraCavo(name(ignoreAsk.a), ignoreAsk.aPort, name(ignoreAsk.b), ignoreAsk.bPort, ignoreAsk.sources.map((s) => FONTE[s]).join(" + "))
+    : null;
   return (
     <div className="flex h-[calc(100dvh-9rem)] min-h-[560px] flex-col overflow-hidden rounded-lg border border-border bg-card">
       <TopologyIconDefs />
@@ -574,13 +578,8 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
       />
       <Dialog open={ignoreAsk !== null} onOpenChange={(o) => { if (!o) setIgnoreAsk(null); }}>
         <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Ignorare il collegamento {ignoreAsk ? `${name(ignoreAsk.a)} ↔ ${name(ignoreAsk.b)}` : ""}?</DialogTitle>
-          </DialogHeader>
-          <p className="text-[13px]">
-            La linea sparisce da tutte le mappe, anche se le letture continuano a vederla
-            ({ignoreAsk ? ignoreAsk.sources.map((s) => FONTE[s]).join(" + ") : ""}). I dati letti non si toccano.
-          </p>
+          <DialogHeader><DialogTitle>{testiIgnora?.titolo ?? ""}</DialogTitle></DialogHeader>
+          <p className="text-[13px]">{testiIgnora?.testo ?? ""}</p>
           <p className="text-[13px]">{IGNORA_SI_ANNULLA}</p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIgnoreAsk(null)}>Annulla</Button>
@@ -592,7 +591,7 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
                 if ((await ignoreLink(send, { action: "ignore", a_node: l.a, a_port: l.aPort, b_node: l.b, b_port: l.bPort })).ok) setIgnoreAsk(null);
               }}
             >
-              Ignora
+              Ignora questo cavo
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -86,7 +86,8 @@ export function edgeMenuItems(l: MapLink, isAdmin: boolean): Array<MenuItem<Edge
     /* niente voce del principale */
   } else if (l.primary === "user") out.push({ key: "unprimary", label: "Togli la scelta del principale" });
   else out.push({ key: "primary", label: l.primary === "auto" ? "★ Fissa come principale" : "★ Rendi principale" });
-  out.push(manual ? { key: "remove", label: "Rimuovi il collegamento a mano" } : { key: "ignore", label: "Ignora il collegamento…" });
+  // In T1 una linea è una coppia: «Ignora questo cavo…» per tutte (spec §13.9). Da T3 la parola segue il genere (cavo, tunnel, fascio…).
+  out.push(manual ? { key: "remove", label: "Rimuovi il collegamento a mano" } : { key: "ignore", label: "Ignora questo cavo…" });
   return out;
 }
 

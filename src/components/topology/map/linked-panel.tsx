@@ -12,7 +12,7 @@ import { Fragment } from "react";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { parseDbDate } from "@/lib/db-date";
-import { SOURCE_WORDS, linkWords, seenWords, vmPortWords } from "@/lib/topology/edge-look";
+import { SOURCE_WORDS, altriCaviDi, linkWords, seenWords, vmPortWords } from "@/lib/topology/edge-look";
 import { nodeClass } from "@/lib/topology/identity";
 import { LINK_SOURCE_RANK, type LinkSource, type MapLink, type MapNode, type MapVm } from "@/lib/topology/model-types";
 import { isRunning, vmSummary } from "@/lib/topology/vm-nodes";
@@ -163,6 +163,18 @@ function Detail(p: Props & { n: MapNode; byId: Map<string, MapNode> }) {
                     <div className={l.stale ? "font-semibold" : "text-muted-foreground"}>{visto(l)}</div>
                     {vmWords && <div>{vmWords}</div>}
                     {linkWords(l).map((w) => <div key={w}>{w}</div>)}
+                    {l.altriCavi && l.altriCavi.length > 0 && (
+                      <div className="mt-1">
+                        <div className="font-semibold">Altri cavi visti fra questi due oggetti</div>
+                        <ul>
+                          {altriCaviDi(l, n.id).map((c, k) => (
+                            <li key={k}>
+                              <Porta s={c.mia} /> → <Porta s={c.sua} /> · {c.fonti}{c.visto ? ` · visto ${quando(c.visto)}` : ""}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                   </td>
                   <td className="py-1 whitespace-nowrap">
                     {p.visible.has(other(l)) ? <span className="font-semibold">✓ nella mappa</span> : <span className="text-muted-foreground">fuori</span>}

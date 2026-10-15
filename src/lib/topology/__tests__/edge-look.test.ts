@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { SOURCE_WORDS, edgeLook, linkWords, pathPoints, poeLabel, seenWords, speedLabel, speedWidth, wavyPath } from "@/lib/topology/edge-look";
+import { SOURCE_WORDS, altriCaviDi, edgeLook, linkWords, pathPoints, poeLabel, seenWords, speedLabel, speedWidth, wavyPath } from "@/lib/topology/edge-look";
 import { LINK_ATTRS_DEFAULT, type MapLink } from "@/lib/topology/model-types";
 
 function link(over: Partial<MapLink> = {}): MapLink {
@@ -112,4 +112,12 @@ test("«visto»: oggi, N giorni fa, non visto; mai «visto oggi» per ciò che n
 
 test("una riga mndp a schermo è un «annuncio di rete (MNDP o CDP)» (spec §13.5.2)", () => {
   assert.equal(SOURCE_WORDS.mndp, "annuncio di rete (MNDP o CDP)");
+});
+
+test("«Altri cavi visti fra questi due oggetti»: le porte dalla parte dell'oggetto scelto, le fonti in parole", () => {
+  const l = { ...link(), a: "dev:114", aPort: "Port 10", b: "dev:1", bPort: "sfp-sfpplus1",
+    altriCavi: [{ aPort: "Port 15", bPort: "ether8", sources: ["mndp" as const], lastSeen: "2026-10-13 11:00:00" }] };
+  assert.deepEqual(altriCaviDi(l, "dev:1"), [{ mia: "ether8", sua: "Port 15", fonti: "annuncio di rete (MNDP o CDP)", visto: "2026-10-13 11:00:00" }]);
+  assert.deepEqual(altriCaviDi(l, "dev:114")[0].mia, "Port 15");
+  assert.deepEqual(altriCaviDi({ ...l, altriCavi: undefined }, "dev:1"), []);
 });

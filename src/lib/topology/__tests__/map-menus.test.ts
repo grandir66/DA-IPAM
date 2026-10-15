@@ -159,3 +159,7 @@ test("I-1: su una VM non censita niente «Collega a…»; una linea con una VM n
   assert.match(connectRefusal("vm:3:100", "host:2") ?? "", /VM non censita/);
   assert.equal(connectRefusal("dev:1", "host:2"), null);
 });
+
+test("§13.9: la voce della linea dice che si ignora un cavo, non la coppia", () => {
+  assert.equal(edgeMenuItems(link("dev:1", "dev:2"), true).find((x) => x.key === "ignore")!.label, "Ignora questo cavo…");
+});

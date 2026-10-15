@@ -171,6 +171,7 @@ export function vmPortLinks(
       out.push({
         id: `vmmac:${pk}`, a: s.node, aPort: s.port, b: h, bPort: "", source: "vm_mac", sources: ["vm_mac"], uplinkFrom: h,
         lastSeen: s.ts, daysUnseen, stale: false, ...LINK_ATTRS_DEFAULT, vmCount: s.vms.size,
+        perche: [{ tipo: "vm", da: s.node, porta: s.port, hypervisor: h, vm: s.vms.size, visto: s.ts }],
       });
       continue;
     }
@@ -181,6 +182,7 @@ export function vmPortLinks(
       l.altriCavi = [...(l.altriCavi ?? []), { aPort: side === "aPort" ? s.port : "", bPort: side === "bPort" ? s.port : "", sources: ["vm_mac"], lastSeen: s.ts }];
       continue;
     }
+    l.perche = [...(l.perche ?? []), { tipo: "vm", da: s.node, porta: s.port, hypervisor: h, vm: s.vms.size, visto: s.ts }];
     if (!l.sources.includes("vm_mac")) {
       l.sources.push("vm_mac");
       l.sources.sort((x, y) => LINK_SOURCE_RANK[x] - LINK_SOURCE_RANK[y] || (x < y ? -1 : x > y ? 1 : 0));

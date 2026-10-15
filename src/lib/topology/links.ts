@@ -18,7 +18,7 @@ import { ignorato, regoleIgnora, type Ignorati } from "@/lib/topology/ignorati";
 import { haTraduttore, haTraduttoreRemoto, macDelTelaio, traduciPorta, type ComeLetto } from "@/lib/topology/lettori/traduci";
 import {
   LINK_ATTRS_DEFAULT, LINK_SOURCE_RANK,
-  type AltroCavo, type LinkSource, type MapLink, type ModelNeighborRow, type TopologyModelInput, type UnmatchedNeighbor,
+  type AltroCavo, type LinkSource, type MapLink, type ModelNeighborRow, type PassoPerche, type TopologyModelInput, type UnmatchedNeighbor,
 } from "@/lib/topology/model-types";
 import { canonical, nameKey, nodeFor, resolveNode, type NodeIndex } from "@/lib/topology/node-index";
 import { REGOLE_T1, type Regole } from "@/lib/topology/regole";
@@ -164,6 +164,8 @@ interface Candidato {
   lastSeen: string | null;
   uplinkFrom: string | null;
   senzaFili: boolean;
+  /** La prova di questo candidato, per «Perché questo collegamento» (T1b, spec §13.4.6). */
+  passo: PassoPerche;
 }
 
 export interface RisultatoCollegamenti {
@@ -173,6 +175,8 @@ export interface RisultatoCollegamenti {
   ignorati: Ignorati;
   /** Le porte di segmento (passo 2): «nodo|porta normalizzata» → gli oggetti abbinati che la porta sente via LLDP o CDP. */
   segmenti: ReadonlyMap<string, ReadonlySet<string>>;
+  /** Le righe scartate (T1b, §13.4.6): «coppia» → il motivo, per la frase in fondo alla linea di quella coppia. */
+  scartate: ReadonlyMap<string, readonly PassoPerche[]>;
 }
 
 const piuRecente = (xs: ReadonlyArray<string | null>): string | null =>
@@ -229,7 +233,8 @@ export function buildLinks(input: TopologyModelInput, idx: NodeIndex, vmAccese: 
     // Senza fili dalle porte tradotte, come per le righe dei vicini: con `false` fisso la porta «wifi» di un collegamento a
     // mano non era più sulla linea e il tipo «wireless» si perdeva (prova di oggi in link-attrs.test.ts, verifica del 15/10).
     const aPorta = locale(a, o.a_port), bPorta = locale(b, o.b_port);
-    candidati.push({ a, aPorta, b, bPorta, source: "manual", lastSeen: null, uplinkFrom: null, senzaFili: aPorta?.senzaFili === true || bPorta?.senzaFili === true });
+    candidati.push({ a, aPorta, b, bPorta, source: "manual", lastSeen: null, uplinkFrom: null, senzaFili: aPorta?.senzaFili === true || bPorta?.senzaFili === true,
+      passo: { tipo: "a_mano", utente: o.created_by ?? null, quando: o.created_at ?? null } });
   }
 
   // Passi 0 e 3b: le righe dell'ultimo giro, raggruppate per apparato remoto (telaio) sulla stessa porta locale. Per
@@ -344,14 +349,21 @@ export function buildLinks(input: TopologyModelInput, idx: NodeIndex, vmAccese: 
   const contabile = (p: Porta): boolean => p.certa && (p.fisica === true || p.senzaFili === true);
   const sentiti = new Map<string, Set<string>>();
   const membri = new Map<string, Set<string>>();
+  const sentitiNomi = new Map<string, Map<string, { nodo: string | null; nome: string }>>(); // per la frase del segmento (T1b)
   for (const g of gruppi.values()) {
     if (!contabile(g.locale) || g.b === g.osservatore) continue;
     if (!g.righe.some((n) => sourceOfProtocol(n.protocol) !== "mndp" && fresca(n))) continue;
     aggiungiIn(sentiti, `${g.osservatore}|${g.locale.chiave}`, apparato(g));
+    const chi = apparato(g);
+    const nomi = sentitiNomi.get(`${g.osservatore}|${g.locale.chiave}`) ?? new Map<string, { nodo: string | null; nome: string }>();
+    if (!nomi.has(chi)) nomi.set(chi, { nodo: chi.startsWith("nodo:") ? chi.slice(5) : null, nome: g.righe[0].remote_device_name });
+    sentitiNomi.set(`${g.osservatore}|${g.locale.chiave}`, nomi);
     if (g.b) aggiungiIn(membri, `${g.osservatore}|${normale(g.locale.nome)}`, g.b);
   }
   const diSegmento = new Set([...sentiti].filter(([, s]) => s.size >= 2).map(([k]) => k));
   const sulSegmento = (g: Gruppo): boolean => diSegmento.has(`${g.osservatore}|${g.locale.chiave}`);
+  const sentitiSu = (g: Gruppo): Array<{ nodo: string | null; nome: string }> =>
+    [...(sentitiNomi.get(`${g.osservatore}|${g.locale.chiave}`)?.values() ?? [])].sort((x, y) => cmp(x.nome, y.nome));
   const segmenti = new Map<string, ReadonlySet<string>>();
   for (const g of gruppi.values()) {
     const k = `${g.osservatore}|${normale(g.locale.nome)}`;
@@ -376,19 +388,26 @@ export function buildLinks(input: TopologyModelInput, idx: NodeIndex, vmAccese: 
     const up = uplinkPort.get(d.id);
     // La porta di uplink è una riga dell'elenco delle porte (switch_ports): il suo indice è la chiave.
     const aPorta = up ? chiavePorta(a, traduciPorta(up.name, "locale", come(a, "unifi", null)), "locale", elenchi.get(a), up.index) : null;
+    // La riga del figlio sulla sua porta di uplink verso lo stesso padre: la più recente (revisione finale di T1, sotto).
+    const k = aPorta?.chiave ?? null;
+    const riga = k === null ? undefined
+      : (gruppiDi.get(a) ?? [])
+        .filter((g) => g.b === b && g.collegamento && g.locale.chiave === k && !sulSegmento(g))
+        .sort((x, y) => (timeOf(y.lastSeen) ?? 0) - (timeOf(x.lastSeen) ?? 0))[0];
     let bPorta: Porta | null = null;
     if (d.uplink_remote_port != null) {
       const nomeInElenco = elenchi.get(b)?.perIndice.get(d.uplink_remote_port);
       bPorta = chiavePorta(b, traduciPorta(nomeInElenco ?? `Port ${d.uplink_remote_port}`, "remoto", come(b, "unifi", null)), "remoto",
         elenchi.get(b), nomeInElenco !== undefined ? d.uplink_remote_port : null);
     } else if (aPorta?.chiave) {
-      const k = aPorta.chiave;
       // La riga più recente (revisione finale di T1): dopo uno spostamento del cavo sul padre la riga di ieri resta 90 giorni
       // con un altro telaio (il MAC è dell'interfaccia), e la prima in ordine dava la porta vecchia a una linea vista oggi.
-      const sullUplink = (gruppiDi.get(a) ?? []).filter((g) => g.b === b && g.collegamento && g.locale.chiave === k && !sulSegmento(g));
-      bPorta = sullUplink.sort((x, y) => (timeOf(y.lastSeen) ?? 0) - (timeOf(x.lastSeen) ?? 0))[0]?.remota ?? null;
+      bPorta = riga?.remota ?? null;
     }
-    candidati.push({ a, aPorta, b, bPorta, source: "unifi_uplink", lastSeen: d.uplink_seen_at, uplinkFrom: a, senzaFili: false });
+    candidati.push({
+      a, aPorta, b, bPorta, source: "unifi_uplink", lastSeen: d.uplink_seen_at, uplinkFrom: a, senzaFili: false,
+      passo: { tipo: "uplink", figlio: a, porta: aPorta?.nome ?? "", padre: b, dallaRiga: d.uplink_remote_port == null && bPorta !== null, stessaOsservazione: riga?.source === "lldp" },
+    });
   }
 
   // Passo 3c, conferma per porta (completa §11.1): una riga del router sulla sua porta P verso B è candidata se B è l'unico
@@ -418,19 +437,38 @@ export function buildLinks(input: TopologyModelInput, idx: NodeIndex, vmAccese: 
     if (g.b && g.collegamento && !sulSegmento(g) && vedeDaPortaFisica(g) && g.remota?.chiave) conferme.add(`${g.b}|${g.remota.chiave}|${g.osservatore}`);
   }
   for (const c of candidati) if (c.source === "unifi_uplink" && c.bPorta?.chiave) conferme.add(`${c.b}|${c.bPorta.chiave}|${c.a}`);
+  // T1b (§13.4.6, §13.15 punto 6): ogni riga scartata lascia il suo motivo sulla coppia; model.ts lo mette in fondo alla linea.
+  const scartate = new Map<string, PassoPerche[]>();
   for (const g of gruppi.values()) {
     const b = g.b;
-    if (!b || b === g.osservatore || logica(g.locale) || sulSegmento(g)) continue; // passo 1 (I5) e passo 2 (I7)
+    if (!b || b === g.osservatore) continue;
+    const stessaRete: PassoPerche = { tipo: "scartata", motivo: "stessa_rete", da: g.osservatore, porta: g.locale.nome, altro: b, fonte: g.source };
+    if (sulSegmento(g)) { // passo 2 (I7)
+      aggiungiA(scartate, pairKey(g.osservatore, b), { tipo: "scartata", motivo: "segmento", da: g.osservatore, porta: g.locale.nome, sentiti: sentitiSu(g) });
+      continue;
+    }
+    if (logica(g.locale)) { // passo 1 (I5)
+      aggiungiA(scartate, pairKey(g.osservatore, b), stessaRete);
+      continue;
+    }
     if (isRouterNode(idx, g.osservatore)) {
-      if (g.locale.nome === "" || !portaDelRouter(g)) continue;
+      if (g.locale.nome === "") continue;
+      if (!portaDelRouter(g)) { // passo 1 per i router col traduttore del loro prodotto (I58, H7): un nome scelto
+        aggiungiA(scartate, pairKey(g.osservatore, b), { tipo: "scartata", motivo: "nome_scelto", da: g.osservatore, porta: g.locale.nome, altro: b });
+        continue;
+      }
       const diretto = (nodiSu.get(chiaveSu(g))?.size ?? 0) === 1;
       const confermato = g.locale.chiave !== null && conferme.has(`${g.osservatore}|${g.locale.chiave}|${b}`);
       // Una porta senza fili del router ha le regole di una porta fisica, ma vuole la conferma (§13.6.2).
-      if (!confermato && (!diretto || g.locale.senzaFili === true)) continue;
+      if (!confermato && (!diretto || g.locale.senzaFili === true)) {
+        aggiungiA(scartate, pairKey(g.osservatore, b), stessaRete);
+        continue;
+      }
     }
     candidati.push({
       a: g.osservatore, aPorta: g.locale.nome ? g.locale : null, b, bPorta: g.remota, source: g.source, lastSeen: g.lastSeen,
       uplinkFrom: null, senzaFili: g.locale.senzaFili === true || g.remota?.senzaFili === true,
+      passo: { tipo: "vicino", da: g.osservatore, porta: g.locale.nome, altro: b, portaRemota: g.remota?.nome ?? "", fonte: g.source, visto: g.lastSeen, altreRighe: g.righe.length - 1 },
     });
   }
 
@@ -453,7 +491,7 @@ export function buildLinks(input: TopologyModelInput, idx: NodeIndex, vmAccese: 
     l.daysUnseen = Math.floor(age / DAY_MS);
     l.stale = age > input.staleDays * DAY_MS;
   }
-  return { links, unmatched, ignorati, segmenti };
+  return { links, unmatched, ignorati, segmenti, scartate };
 }
 
 const chiaveDi = (p: Porta | null): string | null => p?.chiave ?? null;
@@ -518,5 +556,6 @@ function lineaDellaCoppia(key: string, cs: readonly Candidato[], scaduto: (t: nu
     daysUnseen: null, stale: false, ...LINK_ATTRS_DEFAULT,
     ...(stessi.some((c) => c.senzaFili) ? { medium: "wireless" as const } : {}),
     ...(altriCavi.length > 0 ? { altriCavi } : {}),
+    perche: stessi.map((c) => c.passo),
   };
 }

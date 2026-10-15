@@ -120,6 +120,11 @@ export const SOURCE_WORDS: Readonly<Record<LinkSource, string>> = {
   manual: "a mano", unifi_uplink: "uplink UniFi", lldp: "LLDP", cdp: "CDP", mndp: "annuncio di rete (MNDP o CDP)", mac_table: "tabella MAC", vm_mac: "dalle VM",
 };
 
+/** Il protocollo dentro una frase di «Perché questo collegamento» (spec §13.4.6): «LLDP», «CDP», «un annuncio di rete (MNDP o CDP)». */
+export function dettoInFrase(f: LinkSource): string {
+  return f === "mndp" ? `un ${SOURCE_WORDS.mndp}` : SOURCE_WORDS[f];
+}
+
 /** Per un collegamento «dalle VM» (spec §12.5): «N VM di <hypervisor> passano da questa porta»; altrimenti null. */
 export function vmPortWords(l: Pick<MapLink, "sources" | "vmCount" | "uplinkFrom">, nameOf: (id: string) => string): string | null {
   if (!l.sources.includes("vm_mac") || !l.vmCount || !l.uplinkFrom) return null;

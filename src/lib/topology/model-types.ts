@@ -244,6 +244,21 @@ export type MapOrientation = "lr" | "tb";
 /** Un altro cavo visto fra gli stessi due oggetti (spec §13.4.6, T1): una linea è una coppia fino a T3. Porte orientate come la linea. */
 export interface AltroCavo { aPort: string; bPort: string; sources: LinkSource[]; lastSeen: string | null }
 
+/**
+ * Un passo di «Perché questo collegamento» (T1b; spec §13.4.6 in forma corta, §13.15 punto 6): un fatto sulla coppia, con
+ * gli id degli oggetti e i nomi delle porte come li dice la prova. La frase la scrive `cavi/frasi.ts`.
+ */
+export type PassoPerche =
+  | { tipo: "a_mano"; utente: string | null; quando: string | null }
+  | { tipo: "vicino"; da: string; porta: string; altro: string; portaRemota: string; fonte: LinkSource; visto: string | null; altreRighe: number }
+  | { tipo: "uplink"; figlio: string; porta: string; padre: string; dallaRiga: boolean; stessaOsservazione: boolean }
+  | { tipo: "tabella_mac"; da: string; porta: string; altro: string; visto: string | null; router: boolean }
+  | { tipo: "vm"; da: string; porta: string; hypervisor: string; vm: number; visto: string | null }
+  | { tipo: "scartata"; motivo: "segmento"; da: string; porta: string; sentiti: Array<{ nodo: string | null; nome: string }> }
+  | { tipo: "scartata"; motivo: "stessa_rete"; da: string; porta: string; altro: string; fonte: LinkSource }
+  /** Spec §13.4.6, «Nome scelto»: la riga di un router su un nome che il traduttore del suo prodotto non riconosce (I58). */
+  | { tipo: "scartata"; motivo: "nome_scelto"; da: string; porta: string; altro: string };
+
 export interface MapLink {
   id: string;
   a: string;
@@ -276,6 +291,8 @@ export interface MapLink {
   vmCount?: number;
   /** Gli altri cavi visti fra gli stessi due oggetti (spec §13.4.6): servono all'«Ignora» per cavo e alla verifica a mano. */
   altriCavi?: AltroCavo[];
+  /** «Perché questo collegamento» (T1b): le prove del cavo della linea, poi le righe scartate sulla coppia. Assente nelle linee fatte a mano dalle prove. */
+  perche?: PassoPerche[];
 }
 
 /** Attributi del collegamento che nascono neutri; li riempiono link-attrs.ts (dati) e l'albero (principale, ridondanza). */

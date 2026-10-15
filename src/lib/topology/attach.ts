@@ -162,6 +162,7 @@ export function attachMacs(input: TopologyModelInput, idx: NodeIndex, links: Map
         attachLinks.push({
           id: `mac:${key}`, a: best.node, aPort: best.port, b: other.id, bPort: "", source: "mac_table", sources: ["mac_table"],
           uplinkFrom: other.id, lastSeen: best.ts, daysUnseen, stale, ...LINK_ATTRS_DEFAULT,
+          perche: [{ tipo: "tabella_mac", da: best.node, porta: best.port, altro: other.id, visto: best.ts, router: false }],
         });
       }
       continue;
@@ -280,6 +281,7 @@ function ripiegoRouter(
         id: `mac:${key}`, a: c.node, aPort: c.port, b: node, bPort: "", source: "mac_table", sources: ["mac_table"],
         uplinkFrom: node, lastSeen: c.ts, daysUnseen: Math.max(0, Math.floor((nowMs - c.ms) / DAY)), stale: nowMs - c.ms > soglia,
         ...LINK_ATTRS_DEFAULT,
+        perche: [{ tipo: "tabella_mac", da: c.node, porta: c.port, altro: node, visto: c.ts, router: true }],
       });
     }
   }

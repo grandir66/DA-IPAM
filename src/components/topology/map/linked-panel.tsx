@@ -11,8 +11,9 @@
 import { Fragment } from "react";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { parseDbDate } from "@/lib/db-date";
-import { SOURCE_WORDS, altriCaviDi, linkWords, seenWords, vmPortWords } from "@/lib/topology/edge-look";
+import { FUSO_UTENTI, parseDbDate } from "@/lib/db-date";
+import { frasiPerche, type ParoleFrasi } from "@/lib/topology/cavi/frasi";
+import { SOURCE_WORDS, altriCaviDi, dettoInFrase, linkWords, seenWords, vmPortWords } from "@/lib/topology/edge-look";
 import { nodeClass } from "@/lib/topology/identity";
 import { LINK_SOURCE_RANK, type LinkSource, type MapLink, type MapNode, type MapVm } from "@/lib/topology/model-types";
 import { isRunning, vmSummary } from "@/lib/topology/vm-nodes";
@@ -28,6 +29,24 @@ const STATO: Record<TopologyStatus, string> = { ok: "✓ raggiungibile", warning
 function quando(s: string): string {
   const d = parseDbDate(s);
   return Number.isNaN(d.getTime()) ? s : d.toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" });
+}
+
+/**
+ * L'ora italiana di una lettura, col giorno se non è oggi. Il DB è in UTC e il fuso è quello degli utenti (FUSO_UTENTI),
+ * non quello del browser: le frasi promettono l'ora italiana (spec §13.4.6), come le altre date della topologia
+ * (`device-location-field.tsx:92`, `site-topology-dialog.tsx:112`). Anche «oggi» si decide nello stesso fuso.
+ */
+function oraBreve(s: string): string {
+  const d = parseDbDate(s);
+  if (Number.isNaN(d.getTime())) return s;
+  const fuso = { timeZone: FUSO_UTENTI } as const;
+  const ora = d.toLocaleTimeString("it-IT", { ...fuso, hour: "2-digit", minute: "2-digit" });
+  const giornoDi = (x: Date) => x.toLocaleDateString("it-IT", fuso);
+  return giornoDi(d) === giornoDi(new Date()) ? ora : `${ora} del ${d.toLocaleDateString("it-IT", { ...fuso, day: "2-digit", month: "2-digit" })}`;
+}
+function giorno(s: string): string {
+  const d = parseDbDate(s);
+  return Number.isNaN(d.getTime()) ? s : d.toLocaleDateString("it-IT", { timeZone: FUSO_UTENTI });
 }
 
 /** Le parole «visto oggi / non visto da N g» stanno con la logica pura delle linee. */
@@ -103,6 +122,7 @@ function Detail(p: Props & { n: MapNode; byId: Map<string, MapNode> }) {
   const ports = model.portClients.filter((pc) => pc.nodeId === n.id);
   const rows = ports.flatMap((pc) => pc.clients.map((c, i) => ({ port: pc.port, first: i === 0, c })));
   const infraHost = n.kind === "host" && nodeClass(n) !== "client";
+  const parole: ParoleFrasi = { nome: (id) => byId.get(id)?.name ?? id, detto: dettoInFrase, ora: oraBreve, giorno };
 
   return (
     <>
@@ -151,35 +171,50 @@ function Detail(p: Props & { n: MapNode; byId: Map<string, MapNode> }) {
             {links.slice(0, MAX).map((l) => {
               const o = byId.get(other(l));
               const vmWords = vmPortWords(l, (id) => byId.get(id)?.name ?? id);
+              const perche = frasiPerche(l, parole);
               return (
-                <tr key={l.id} className="border-t border-border align-top">
-                  <td className="py-1 pr-1">
-                    <button type="button" className="text-left underline" onClick={() => p.onSelect(other(l))}>{o?.name ?? other(l)}</button>
-                    <div className="text-muted-foreground">{o ? typeLabel(o.type) : ""}{o?.kind === "host" ? " (host)" : ""}</div>
-                  </td>
-                  <td className="py-1 pr-1 [overflow-wrap:anywhere]"><Porta s={mine(l)} /> → <Porta s={theirs(l)} /></td>
-                  <td className="py-1 pr-1">
-                    {l.sources.map((s) => FONTE[s]).join(" + ")}
-                    <div className={l.stale ? "font-semibold" : "text-muted-foreground"}>{visto(l)}</div>
-                    {vmWords && <div>{vmWords}</div>}
-                    {linkWords(l).map((w) => <div key={w}>{w}</div>)}
-                    {l.altriCavi && l.altriCavi.length > 0 && (
-                      <div className="mt-1">
-                        <div className="font-semibold">Altri cavi visti fra questi due oggetti</div>
-                        <ul>
-                          {altriCaviDi(l, n.id).map((c, k) => (
-                            <li key={k}>
-                              <Porta s={c.mia} /> → <Porta s={c.sua} /> · {c.fonti}{c.visto ? ` · visto ${quando(c.visto)}` : ""}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                  </td>
-                  <td className="py-1 whitespace-nowrap">
-                    {p.visible.has(other(l)) ? <span className="font-semibold">✓ nella mappa</span> : <span className="text-muted-foreground">fuori</span>}
-                  </td>
-                </tr>
+                <Fragment key={l.id}>
+                  <tr className="border-t border-border align-top">
+                    <td className="py-1 pr-1">
+                      <button type="button" className="text-left underline" onClick={() => p.onSelect(other(l))}>{o?.name ?? other(l)}</button>
+                      <div className="text-muted-foreground">{o ? typeLabel(o.type) : ""}{o?.kind === "host" ? " (host)" : ""}</div>
+                    </td>
+                    <td className="py-1 pr-1 [overflow-wrap:anywhere]"><Porta s={mine(l)} /> → <Porta s={theirs(l)} /></td>
+                    <td className="py-1 pr-1">
+                      {l.sources.map((s) => FONTE[s]).join(" + ")}
+                      <div className={l.stale ? "font-semibold" : "text-muted-foreground"}>{visto(l)}</div>
+                      {vmWords && <div>{vmWords}</div>}
+                      {linkWords(l).map((w) => <div key={w}>{w}</div>)}
+                      {l.altriCavi && l.altriCavi.length > 0 && (
+                        <div className="mt-1">
+                          <div className="font-semibold">Altri cavi visti fra questi due oggetti</div>
+                          <ul>
+                            {altriCaviDi(l, n.id).map((c, k) => (
+                              <li key={k}>
+                                <Porta s={c.mia} /> → <Porta s={c.sua} /> · {c.fonti}{c.visto ? ` · visto ${quando(c.visto)}` : ""}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </td>
+                    <td className="py-1 whitespace-nowrap">
+                      {p.visible.has(other(l)) ? <span className="font-semibold">✓ nella mappa</span> : <span className="text-muted-foreground">fuori</span>}
+                    </td>
+                  </tr>
+                  {perche.length > 0 && (
+                    <tr className="align-top">
+                      <td colSpan={4} className="pb-1.5">
+                        <details>
+                          <summary className="cursor-pointer">Perché questo collegamento</summary>
+                          <ul className="ml-4 list-disc">
+                            {perche.map((f, k) => <li key={k}>{f}</li>)}
+                          </ul>
+                        </details>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               );
             })}
           </tbody>

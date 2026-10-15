@@ -5,7 +5,7 @@
  */
 import { attachMacs } from "@/lib/topology/attach";
 import { correzioniOrfane } from "@/lib/topology/ignorati";
-import { buildLinks } from "@/lib/topology/links";
+import { buildLinks, pairKey } from "@/lib/topology/links";
 import { enrichLinks } from "@/lib/topology/link-attrs";
 import { classeInMappa, proveDiRuolo, ruoloLetto } from "@/lib/topology/cavi/ruolo";
 import { motivoDaSistemare } from "@/lib/topology/da-sistemare";
@@ -46,12 +46,18 @@ export function buildTopologyModel(input: TopologyModelInput, regole: Regole = R
     input.devices.map((d) => [`dev:${d.id}`, ruoloLetto(d.topology_role)]),
   );
   const classe = (n: MapNode): ClasseMappa => classeInMappa(n, prove.get(n.id), ruoloAMano.get(n.id) ?? null);
-  const { links: baseLinks, unmatched, ignorati, segmenti } = buildLinks(input, idx, runningVmMacs, regole);
+  const { links: baseLinks, unmatched, ignorati, segmenti, scartate } = buildLinks(input, idx, runningVmMacs, regole);
   const { portClients, clientCount, attachLinks } = attachMacs(input, idx, baseLinks, { vmMacs, runningVmMacs, ignorati, segmenti, ipervisori, regole, classe });
   // Nemmeno da un annuncio (una VM che sente il bridge del suo hypervisor): la VM sta dentro; un collegamento a mano resta.
   const links = [...baseLinks, ...attachLinks]
     .filter((l) => !regole.has("vm-e-mac-propri") || l.sources.includes("manual") || !vmEIpervisore(ipervisori, l.a, l.b))
     .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  // T1b (§13.4.6): il motivo delle righe scartate sulla coppia, in fondo ai passi della sua linea (anche di una linea della
+  // tabella MAC o delle VM: la coppia è la stessa).
+  for (const l of links) {
+    const s = scartate.get(pairKey(l.a, l.b));
+    if (s) l.perche = [...(l.perche ?? []), ...s];
+  }
   enrichLinks(links, input, idx, regole);
   const sites = assignSites(input, idx, links);
   // Spec §13.8.1 (I63, H17): le reti di cui ogni apparato è gateway, per la testa proposta della mappa automatica.

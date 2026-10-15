@@ -268,9 +268,13 @@ export function parseMonitorFasci(out: string): MonitorFascioMk[] {
 
 // ── Errori ───────────────────────────────────────────────────────────────────
 
+// I tre in fondo dalla revisione del Task 4 di T2: fuori elenco passavano per uscite buone («failure: …» ha la forma di una
+// riga di `monitor`). Un messaggio che resta fuori elenco e non dà righe al lettore vale USCITA_NON_CAPITA (mikrotik-letture).
 const ERRORI: ReadonlyArray<readonly [RegExp, string]> = [
   [/^no such item\b/m, "NO_SUCH_ITEM"], [/^bad command name\b/m, "BAD_COMMAND"],
   [/^syntax error\b/m, "SYNTAX_ERROR"], [/^expected end of command\b/m, "EXPECTED_END"],
+  [/^failure:/m, "FAILURE"], [/^not enough permissions\b/m, "NOT_ENOUGH_PERMISSIONS"],
+  [/^input does not match\b/m, "INPUT_DOES_NOT_MATCH"],
 ];
 /** Il codice di un errore di RouterOS dal testo dell'uscita (a inizio riga), o null. Non conta sul codice d'uscita di ssh. */
 export function erroreRouterOs(testo: string): string | null {

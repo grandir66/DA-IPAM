@@ -6,14 +6,15 @@
  * è scritto sull'uscita vera (Task 3b, T2-a): fino ad allora lo stato per istanza è «non letto». Sola lettura.
  *
  * Tre esiti per comando (spec §13.5.1): letto (l'uscita, anche vuota); non riuscito, con l'errore riconosciuto dal testo;
- * non so (tempo scaduto, `TEMPO_SCADUTO`, o il codice del trasporto). Gli ultimi due danno `null` («non letto»), mai una
- * lista vuota, e nel resoconto il solo codice.
+ * non so (tempo scaduto, `TEMPO_SCADUTO`; connessione caduta o canale chiuso senza codice d'uscita, `CONNESSIONE_CADUTA`;
+ * un'uscita non vuota che il lettore non capisce, `USCITA_NON_CAPITA`; il codice del trasporto). Gli ultimi due danno
+ * `null` («non letto»), mai una lista vuota, e nel resoconto il solo codice.
  */
 import type { NetworkDevice } from "@/types";
 import { codiceErrore } from "@/lib/devices/mikrotik-porte";
 import { parseMikrotikNeighbors } from "@/lib/devices/mikrotik-vicini";
 import { opzioniSshDiApparato, type NeighborEntry } from "@/lib/devices/router-client";
-import { SshError, execConTempo, withSshClient } from "@/lib/devices/ssh-transport";
+import { CODICE_CONNESSIONE_CADUTA, SshError, execConTempo, withSshClient, type SshOptions } from "@/lib/devices/ssh-transport";
 import {
   erroreRouterOs, parseBridge, parseFasci, parseInterfacce, parseMonitorBridge, parseMonitorFasci, parseMonitorPorte,
   parsePorteBridge, type LetturaMk,
@@ -46,21 +47,60 @@ export function codiceTrasporto(err: unknown): string {
   return codiceErrore(err);
 }
 
-/** La connessione vera: una per apparato e per lettura, chiusa alla fine anche se un comando fallisce. */
-export const apriEsecutoreSsh: ApriEsecutore = async (device, fn) => {
-  const opts = opzioniSshDiApparato(device);
-  if (!opts) throw Object.assign(new Error("Credenziali SSH mancanti"), { code: "SENZA_CREDENZIALI" });
+/**
+ * I comandi su una connessione sola, aperta con queste opzioni e chiusa alla fine anche se un comando fallisce. Una
+ * connessione caduta, o un canale chiuso senza codice d'uscita, dà `CONNESSIONE_CADUTA` («non so»): l'uscita può essere
+ * tagliata e non si legge (revisione del Task 4 di T2). Dopo una caduta i comandi successivi non partono.
+ */
+export async function eseguiSuSsh<T>(opts: SshOptions, fn: (esegui: Esegui) => Promise<T>): Promise<T> {
+  const caduta = (): Error => Object.assign(new Error("La connessione SSH è caduta durante il comando"), { code: CODICE_CONNESSIONE_CADUTA });
   try {
-    return await withSshClient(opts, (conn) => fn(async (comando, tempoMs) => {
-      const r = await execConTempo(conn, comando, tempoMs);
-      return r.stdout + r.stderr;
-    }));
+    return await withSshClient(opts, (conn) => {
+      let chiusa = false;
+      conn.once("close", () => { chiusa = true; });
+      return fn(async (comando, tempoMs) => {
+        if (chiusa) throw caduta();
+        const r = await execConTempo(conn, comando, tempoMs);
+        if (chiusa || typeof r.code !== "number") throw caduta();
+        return r.stdout + r.stderr;
+      });
+    });
   } catch (err) {
     // Un nuovo errore col solo codice: il messaggio di ssh porta host e utente, e l'esito ne tiene solo il codice.
     if (err instanceof SshError) throw Object.assign(new Error("Connessione SSH non riuscita"), { code: codiceTrasporto(err) });
     throw err;
   }
+}
+
+/** La connessione vera: una per apparato e per lettura. */
+export const apriEsecutoreSsh: ApriEsecutore = async (device, fn) => {
+  const opts = opzioniSshDiApparato(device);
+  if (!opts) throw Object.assign(new Error("Credenziali SSH mancanti"), { code: "SENZA_CREDENZIALI" });
+  return eseguiSuSsh(opts, fn);
 };
+
+/** Un'uscita non vuota da cui il lettore non ricava nessuna riga: «non so», mai «letto e vuoto» (revisione del Task 4). */
+export const CODICE_USCITA_NON_CAPITA = "USCITA_NON_CAPITA";
+/** Un lettore che lancia su un'uscita: non riuscito, col suo codice (revisione del Task 4). */
+export const CODICE_LETTORE_IN_ERRORE = "LETTORE_IN_ERRORE";
+
+/**
+ * L'esito di un'uscita già arrivata: un errore di RouterOS riconosciuto dal testo, un lettore che lancia, un'uscita non
+ * vuota da cui non si ricava niente (fallisce chiuso: un «vuoto» falso scrive «nessun bridge» nel DB del cliente), oppure
+ * le righe lette (anche nessuna, se l'uscita è vuota).
+ */
+export function interpretaUscita<T>(out: string, leggi: (out: string) => T[]): { valore: T[] } | { codice: string } {
+  const errore = erroreRouterOs(out);
+  if (errore) return { codice: errore };
+  let valore: T[];
+  try {
+    valore = leggi(out);
+  } catch {
+    return { codice: CODICE_LETTORE_IN_ERRORE };
+  }
+  if (valore.length === 0 && out.trim() !== "") return { codice: CODICE_USCITA_NON_CAPITA };
+  return { valore };
+}
 
 export interface RisultatoMk {
   lettura: LetturaMk;
@@ -74,25 +114,28 @@ export interface RisultatoMk {
 export async function leggiMikrotikTopologia(esegui: Esegui, opz: { uscitaInterfacce: string | null; conVicini: boolean }): Promise<RisultatoMk> {
   let comandi = 0, riusciti = 0;
   let codice: string | null = null;
-  const prova = async <T>(cmd: string, leggi: (out: string) => T): Promise<T | null> => {
+  const prova = async <T>(cmd: string, leggi: (out: string) => T[]): Promise<T[] | null> => {
     comandi++;
+    let out: string;
     try {
-      const out = await esegui(cmd, TEMPO_COMANDO_MS);
-      const errore = erroreRouterOs(out);
-      if (errore) {
-        codice ??= errore;
-        return null;
-      }
-      riusciti++;
-      return leggi(out);
+      out = await esegui(cmd, TEMPO_COMANDO_MS);
     } catch (e) {
       codice ??= codiceTrasporto(e);
       return null;
     }
+    // Riuscito solo dopo il lettore (revisione del Task 4): un lettore che lancia, un errore dal testo o un'uscita che non
+    // si capisce non contano, e hanno il loro codice.
+    const r = interpretaUscita(out, leggi);
+    if ("codice" in r) {
+      codice ??= r.codice;
+      return null;
+    }
+    riusciti++;
+    return r.valore;
   };
-  const interfacce = opz.uscitaInterfacce !== null && !erroreRouterOs(opz.uscitaInterfacce)
-    ? parseInterfacce(opz.uscitaInterfacce)
-    : await prova(COMANDI_MK.interfacce, parseInterfacce);
+  // MK2 già letto dal giro dei router: vale se si capisce; altrimenti si rilegge qui (errore dal testo o uscita strana).
+  const daGiro = opz.uscitaInterfacce !== null ? interpretaUscita(opz.uscitaInterfacce, parseInterfacce) : null;
+  const interfacce = daGiro !== null && "valore" in daGiro ? daGiro.valore : await prova(COMANDI_MK.interfacce, parseInterfacce);
   const vicini = opz.conVicini ? await prova(COMANDI_MK.vicini, parseMikrotikNeighbors) : null;
   const bridge = await prova(COMANDI_MK.bridge, parseBridge);
   const porteBridge = await prova(COMANDI_MK.porteBridge, parsePorteBridge);

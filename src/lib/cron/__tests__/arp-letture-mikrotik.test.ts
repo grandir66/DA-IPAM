@@ -23,7 +23,7 @@ import { parseMikrotikNeighbors } from "@/lib/devices/mikrotik-vicini";
 import { parseMikrotikInterfaceTypes } from "@/lib/devices/mikrotik-porte";
 import { ComandoScaduto, SshError } from "@/lib/devices/ssh-transport";
 import {
-  COMANDI_MK, TEMPO_COMANDO_MS, codiceTrasporto, leggiMikrotikTopologia, type ApriEsecutore,
+  COMANDI_MK, TEMPO_COMANDO_MS, codiceTrasporto, interpretaUscita, leggiMikrotikTopologia, type ApriEsecutore,
 } from "@/lib/devices/mikrotik-letture";
 import { leggiEsiti, scriviInterruttore } from "@/lib/topology/letture/interruttori";
 
@@ -170,6 +170,53 @@ test("tre esiti per comando: letto, errore dal testo (no), non so (tempo, traspo
   assert.deepEqual(r.lettura.monitorFasci, [], "uscita vuota: letta, e vuota");
   assert.ok(r.lettura.interfacce && r.lettura.interfacce.length > 0);
   assert.deepEqual([r.comandi, r.riusciti, r.codice], [7, 4, "NO_SUCH_ITEM"], "il primo errore, col solo codice");
+});
+
+// Revisione del Task 4 di T2 (rilievo 3, zona rossa): un'uscita non vuota da cui il lettore non ricava nessuna riga era
+// «letta e vuota», e scriveva nel DB del cliente «nessun bridge», «nessun fascio». Adesso è «non so» (USCITA_NON_CAPITA),
+// e i messaggi di RouterOS fuori elenco che si conoscono hanno il loro codice.
+test("un'uscita che il lettore non capisce non è «letta e vuota»: USCITA_NON_CAPITA; i messaggi nuovi col loro codice", async () => {
+  const r = await leggiMikrotikTopologia(async (cmd) => {
+    if (cmd === COMANDI_MK.bridge) return "failure: not allowed for this bridge\r\n";
+    if (cmd === COMANDI_MK.porteBridge) return "input does not match any value of interface\r\n";
+    if (cmd === COMANDI_MK.monitorBridge) return "not enough permissions (9)\r\n";
+    if (cmd === COMANDI_MK.fasci) return "una riga che nessun lettore conosce\r\n";
+    if (cmd === COMANDI_MK.monitorFasci) return F("mikrotik-vuoto.txt");
+    return USCITE[cmd];
+  }, { uscitaInterfacce: null, conVicini: false });
+  assert.deepEqual([r.lettura.bridge, r.lettura.porteBridge, r.lettura.monitorBridge, r.lettura.fasci], [null, null, null, null]);
+  assert.deepEqual(r.lettura.monitorFasci, [], "uscita vuota: letta, e vuota");
+  assert.deepEqual([r.comandi, r.riusciti, r.codice], [7, 3, "FAILURE"]);
+  const soloStrana = await leggiMikrotikTopologia(async (cmd) => (cmd === COMANDI_MK.fasci ? "una riga che nessun lettore conosce\r\n" : USCITE[cmd]),
+    { uscitaInterfacce: null, conVicini: false });
+  assert.deepEqual([soloStrana.lettura.fasci, soloStrana.codice], [null, "USCITA_NON_CAPITA"]);
+  const mk2Strana = await leggiMikrotikTopologia(async (cmd) => USCITE[cmd], { uscitaInterfacce: "uscita che non si capisce\r\n", conVicini: false });
+  assert.ok(mk2Strana.lettura.interfacce && mk2Strana.lettura.interfacce.length > 0, "MK2 del giro che non si capisce: si rilegge");
+});
+
+// Revisione del Task 4 di T2 (B4): il contatore dei riusciti cresceva prima del lettore; un lettore che lancia contava come
+// riuscito e dava il codice generico del trasporto. Adesso conta solo una lettura capita, e l'eccezione ha il suo codice.
+test("un lettore che lancia: non riuscito, col codice LETTORE_IN_ERRORE", () => {
+  assert.deepEqual(interpretaUscita("x=1\r\n", () => { throw new TypeError("rotto"); }), { codice: "LETTORE_IN_ERRORE" });
+  assert.deepEqual(interpretaUscita("\r\n", () => []), { valore: [] });
+  assert.deepEqual(interpretaUscita("x=1\r\n", () => []), { codice: "USCITA_NON_CAPITA" });
+  assert.deepEqual(interpretaUscita("no such item (4)\r\n", () => [1]), { codice: "NO_SUCH_ITEM" });
+  assert.deepEqual(interpretaUscita(" 0 name=a\r\n", () => [1]), { valore: [1] });
+});
+
+// Revisione del Task 4 di T2 (B5): se il giro del router si fermava prima (ARP che non risponde), le letture in più
+// saltavano senza esito: nella pagina l'apparato restava «mai letto» invece di «non so» col suo codice.
+test("il giro del router si ferma prima (ARP non letto): esito «non so» col codice, nessun comando nuovo", async () => {
+  accendi();
+  const s = spia();
+  const rotto = async (): Promise<RouterClient> => ({ ...clientFinto(), async getArpTable() {
+    throw new SshError({ kind: "connect_timeout", message: "x", raw: "x" });
+  } });
+  const r = await withTenant(T, () => runArpPoll(null, { skipDhcpLeases: true, creaClientRouter: rotto, apriEsecutore: s.apri, adesso: ora(8) }));
+  const e = withTenant(T, () => leggiEsiti("mikrotik"));
+  assert.deepEqual([e["1"]?.comandi, e["1"]?.riusciti, e["1"]?.codice], [0, 0, "SSH_CONNECT_TIMEOUT"]);
+  assert.deepEqual(s.chiamate.map((c) => c.device), [2], "nessuna connessione nuova verso il router");
+  assert.match(r.phase ?? "", /1 non riuscita; codici: SSH_CONNECT_TIMEOUT/);
 });
 
 test("la connessione che non si apre: esito col codice del trasporto, nessun fatto, l'apparato dopo si legge", async () => {

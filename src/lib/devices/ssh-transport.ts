@@ -64,7 +64,8 @@ export interface SshOptions {
 export interface SshResult {
   stdout: string;
   stderr: string;
-  code: number;
+  /** Il codice d'uscita; `undefined` se il canale si è chiuso senza (connessione caduta: l'uscita può essere tagliata). */
+  code: number | undefined;
 }
 
 export type SshErrorKind =
@@ -255,7 +256,7 @@ export async function sshExec(opts: SshOptions, command: string): Promise<SshRes
       }
       stream.on("data", (d: Buffer) => { stdout += d.toString(); });
       stream.stderr.on("data", (d: Buffer) => { stderr += d.toString(); });
-      stream.on("close", (code: number) => {
+      stream.on("close", (code: number | undefined) => {
         try { conn.end(); } catch { /* ignore */ }
         resolve({ stdout, stderr, code });
       });
@@ -458,6 +459,12 @@ export async function sshTryConnect(opts: SshOptions, probeCommand = "echo da-ip
 /** Codice dell'errore di un comando che non ha risposto entro il suo tempo massimo (spec topologia §13.5.1, I53). */
 export const CODICE_TEMPO_SCADUTO = "TEMPO_SCADUTO";
 
+/**
+ * Codice di un comando la cui connessione è caduta prima della fine, o il cui canale si è chiuso senza codice d'uscita
+ * (revisione del Task 4 di T2): l'uscita può essere tagliata, quindi «non so», mai «letto».
+ */
+export const CODICE_CONNESSIONE_CADUTA = "CONNESSIONE_CADUTA";
+
 export class ComandoScaduto extends Error {
   readonly code = CODICE_TEMPO_SCADUTO;
   constructor(tempoMs: number) {
@@ -482,30 +489,39 @@ export function execConTempo(conn: Pick<SshClient, "exec">, command: string, tem
       try { canale?.close?.(); } catch { /* il canale può essere già chiuso */ }
       reject(new ComandoScaduto(tempoMs));
     }, tempoMs);
-    conn.exec(command, (err, stream) => {
-      if (err) {
-        if (finito) return;
-        finito = true;
-        clearTimeout(timer);
-        reject(err);
-        return;
-      }
-      if (finito) {
-        // Il tempo è scaduto prima che il canale si aprisse: nessuno aspetta più, il canale non resta aperto.
-        try { stream.close(); } catch { /* il canale può essere già chiuso */ }
-        return;
-      }
-      canale = stream;
-      let stdout = "";
-      let stderr = "";
-      stream.on("data", (d: Buffer) => { stdout += d.toString(); });
-      stream.stderr.on("data", (d: Buffer) => { stderr += d.toString(); });
-      stream.on("close", (code: number) => {
-        if (finito) return;
-        finito = true;
-        clearTimeout(timer);
-        resolve({ stdout, stderr, code });
+    const fallito = (err: unknown): void => {
+      if (finito) return;
+      finito = true;
+      clearTimeout(timer);
+      reject(err);
+    };
+    try {
+      conn.exec(command, (err, stream) => {
+        if (err) {
+          fallito(err);
+          return;
+        }
+        if (finito) {
+          // Il tempo è scaduto prima che il canale si aprisse: nessuno aspetta più, il canale non resta aperto.
+          try { stream.close(); } catch { /* il canale può essere già chiuso */ }
+          return;
+        }
+        canale = stream;
+        let stdout = "";
+        let stderr = "";
+        stream.on("data", (d: Buffer) => { stdout += d.toString(); });
+        stream.stderr.on("data", (d: Buffer) => { stderr += d.toString(); });
+        stream.on("close", (code: number | undefined) => {
+          if (finito) return;
+          finito = true;
+          clearTimeout(timer);
+          resolve({ stdout, stderr, code });
+        });
       });
-    });
+    } catch (err) {
+      // Revisione del Task 4 di T2: `exec` lancia subito su una connessione già chiusa («Not connected»); senza questo il
+      // timer del tempo massimo restava acceso fino allo scadere.
+      fallito(err);
+    }
   });
 }

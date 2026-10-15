@@ -6,7 +6,7 @@ import type { MacTableEntry, PortInfo } from "./switch-client";
 import { parseMikrotikInterfaceTypes, parseMikrotikMacTable } from "./mikrotik-porte";
 import { parseMikrotikNeighbors } from "./mikrotik-vicini";
 import { getSnmpPortSchema } from "./snmp-port-schema";
-import { sshExec as transportSshExec } from "./ssh-transport";
+import { sshExec as transportSshExec, type SshResult } from "./ssh-transport";
 import type { SshOptions } from "./ssh-transport";
 
 export interface ArpTableEntry {
@@ -261,11 +261,15 @@ export function opzioniSshDiApparato(device: NetworkDevice): SshOptions | null {
   return buildDeviceSshOptions(device, { username: creds?.username ?? device.username ?? undefined, password: creds?.password });
 }
 
-async function execDeviceCommand(device: NetworkDevice, creds: DeviceCreds, cmd: string, timeoutMs?: number): Promise<string> {
+async function execDeviceCommandRisultato(device: NetworkDevice, creds: DeviceCreds, cmd: string, timeoutMs?: number): Promise<SshResult> {
   const opts = buildDeviceSshOptions(device, creds);
   if (!opts) throw new Error(`Credenziali SSH mancanti per il device ${device.name} (${device.host})`);
   if (timeoutMs) opts.timeout = timeoutMs;
-  const res = await transportSshExec(opts, cmd);
+  return transportSshExec(opts, cmd);
+}
+
+async function execDeviceCommand(device: NetworkDevice, creds: DeviceCreds, cmd: string, timeoutMs?: number): Promise<string> {
+  const res = await execDeviceCommandRisultato(device, creds, cmd, timeoutMs);
   return res.stdout + res.stderr;
 }
 
@@ -701,8 +705,12 @@ async function createMikrotikClient(device: NetworkDevice, creds: DeviceCreds): 
       return parseMikrotikMacTable(await execCommand("/interface bridge host print terse"));
     },
     async getInterfaceTypes() {
-      const out = await execCommand("/interface print terse");
-      uscitaInterfacce = out;
+      const r = await execDeviceCommandRisultato(device, creds, "/interface print terse", 30000);
+      const out = r.stdout + r.stderr;
+      // T2 (revisione del Task 4): l'uscita passa alle letture in più (MK2) solo se il comando è finito col suo codice
+      // d'uscita. Una connessione caduta a metà dà un'uscita tagliata: il giro di oggi la legge come prima, le letture in
+      // più la rileggono sulla loro connessione (e lì una caduta è «non so»).
+      uscitaInterfacce = typeof r.code === "number" ? out : null;
       return parseMikrotikInterfaceTypes(out);
     },
     ultimaUscitaInterfacce() {

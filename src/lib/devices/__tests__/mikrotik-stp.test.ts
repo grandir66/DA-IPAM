@@ -121,6 +121,14 @@ test("un errore si riconosce dal testo, non dal codice d'uscita; le uscite buone
   for (const f of ["mikrotik-mk2-testa.txt", "mikrotik-mk5-testa.txt", "mikrotik-mk6-testa.txt", "mikrotik-vuoto.txt"]) assert.equal(erroreRouterOs(F(f)), null, f);
 });
 
+// Revisione del Task 4 di T2 (rilievo 3): un messaggio di RouterOS fuori dall'elenco passava per un'uscita buona; quella di
+// `monitor` ha la forma «etichetta: valore», e «failure: …» diventava una colonna di bridge vuota. Tre messaggi in più.
+test("errori di RouterOS in più: failure, permessi, valore che non c'è", () => {
+  assert.equal(erroreRouterOs("failure: not allowed for this bridge\r\n"), "FAILURE");
+  assert.equal(erroreRouterOs("not enough permissions (9)\r\n"), "NOT_ENOUGH_PERMISSIONS");
+  assert.equal(erroreRouterOs("input does not match any value of interface\r\n"), "INPUT_DOES_NOT_MATCH");
+});
+
 const lettura = () => ({
   interfacce: parseInterfacce(F("mikrotik-mk2-testa.txt")), bridge: parseBridge(F("mikrotik-mk3-testa.txt")),
   porteBridge: parsePorteBridge(F("mikrotik-mk4-testa.txt")), monitorBridge: parseMonitorBridge(F("mikrotik-mk5-testa.txt")),

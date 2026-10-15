@@ -74,7 +74,7 @@ import { HYPERVISOR_SYNC_MINUTES, unifiJobKind } from "@/lib/scheduled-job-types
 // Statico: run-proxmox-device-scan importa il facade db, che risolve db-tenant (ADR 0002).
 import { runProxmoxDeviceScan } from "@/lib/proxmox/run-proxmox-device-scan";
 import { leggiMacPorteRouter } from "@/lib/devices/mikrotik-porte";
-import { apriEsecutoreSsh, leggiMikrotikTopologia, type ApriEsecutore } from "@/lib/devices/mikrotik-letture";
+import { apriEsecutoreSsh, codiceTrasporto, leggiMikrotikTopologia, type ApriEsecutore } from "@/lib/devices/mikrotik-letture";
 import { fattiMikrotik } from "@/lib/devices/mikrotik-stp";
 import { conCadenza, riassuntoLetture, type EsitoGiro } from "@/lib/topology/letture/cadenza";
 import { letturaAccesa, senzaCampiCavi } from "@/lib/topology/letture/interruttori";
@@ -721,6 +721,7 @@ export async function runArpPoll(
   const durate = { router: 0, switch: 0, nRouter: 0, nSwitch: 0 }; // la riga dei tempi del giro (misura del carico, T2)
   for (const device of devices) {
     const t0 = performance.now();
+    let mkProvata = false; // la lettura in più del MikroTik di questo giro è partita (B5, revisione del Task 4)
     try {
       if (device.device_type === "hypervisor") {
         continue;
@@ -952,6 +953,7 @@ export async function runArpPoll(
 
         // Letture in più (T2, spenta di default): MK3-MK8 su una connessione sola; MK2 è l'uscita già letta qui sopra.
         if (device.vendor === "mikrotik" && device.protocol === "ssh") {
+          mkProvata = true;
           esitiLetture.push(await letturaMikrotik(device, client.ultimaUscitaInterfacce?.() ?? null, false, options));
         }
       } else {
@@ -1070,6 +1072,13 @@ export async function runArpPoll(
     }
     } catch (error) {
       console.error(`[ARP Poll] Errore su ${device.name}:`, error);
+      // Revisione del Task 4 di T2 (B5): il giro del router fermato prima (ARP che non risponde, client che non si crea)
+      // saltava le letture in più senza esito. Adesso l'esito «non so» col codice, con le regole di sempre (spenta, cadenza).
+      if (!mkProvata && networkDeviceUsesArpPoll(device) && device.vendor === "mikrotik" && device.protocol === "ssh") {
+        esitiLetture.push(await conCadenza("mikrotik", device.id, async () => {
+          throw Object.assign(new Error("Giro del router non riuscito"), { code: codiceTrasporto(error) });
+        }, options?.adesso));
+      }
     } finally {
       if (device.device_type !== "hypervisor") {
         if (networkDeviceUsesArpPoll(device)) {

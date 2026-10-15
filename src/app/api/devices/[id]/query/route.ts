@@ -10,6 +10,7 @@ import { withTenant } from "@/lib/db-tenant";
 import { isIpInCidr, normalizePortNameForMatch } from "@/lib/utils";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { networkDeviceUsesArpPoll } from "@/lib/network-device-arp";
+import { letturaAccesa, senzaCampiCavi } from "@/lib/topology/letture/interruttori";
 import { isProxmoxDevice } from "@/lib/devices/device-connection-test";
 import { resolveDeviceAcquisition } from "@/lib/devices/device-acquisition-resolve";
 import { runProxmoxDeviceScan } from "@/lib/proxmox/run-proxmox-device-scan";
@@ -132,7 +133,8 @@ async function runRouterQuery(deviceId: number, device: Parameters<typeof create
       p.phase = "Acquisizione neighbors LLDP/CDP...";
       const neighbors = await client.getNeighbors();
       if (neighbors.length > 0) {
-        upsertNeighbors(deviceId, neighbors);
+        // T2 (spec §13.5.2, MK1): discovered-by e capacità solo con la lettura dei MikroTik accesa (I33), come nel giro.
+        upsertNeighbors(deviceId, letturaAccesa("mikrotik") ? neighbors : neighbors.map(senzaCampiCavi));
         plog(p, `✓ ${neighbors.length} neighbors (LLDP/CDP/MNDP)`);
       } else {
         plog(p, "— Nessun neighbor trovato");

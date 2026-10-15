@@ -108,6 +108,8 @@ export interface RouterClient {
   getBridgeHosts?(): Promise<MacTableEntry[]>;
   /** Solo MikroTik SSH: `/interface print terse` — nome dell'interfaccia → tipo (sola lettura). */
   getInterfaceTypes?(): Promise<Map<string, string>>;
+  /** Solo MikroTik SSH: l'ultima uscita di `/interface print terse` letta da `getInterfaceTypes` (MK2 delle letture in più, senza un comando nuovo). */
+  ultimaUscitaInterfacce?(): string | null;
 }
 
 /**
@@ -174,6 +176,7 @@ export async function createRouterClient(device: NetworkDevice): Promise<RouterC
       // Niente ripiego SNMP: un errore qui deve arrivare al resoconto, non diventare «nessuna riga».
       getBridgeHosts: client.getBridgeHosts,
       getInterfaceTypes: client.getInterfaceTypes,
+      ultimaUscitaInterfacce: client.ultimaUscitaInterfacce,
       getNeighbors: client.getNeighbors
         ? async () => {
             try { return await client.getNeighbors!(); } catch { /* ignore */ }
@@ -250,6 +253,12 @@ function buildDeviceSshOptions(device: NetworkDevice, creds: DeviceCreds): SshOp
     password: creds.password,
     timeout: 10000,
   };
+}
+
+/** Le opzioni SSH di un apparato con le sue credenziali, per le letture in più su una connessione sola (spec §13.5.1). null = credenziali mancanti. */
+export function opzioniSshDiApparato(device: NetworkDevice): SshOptions | null {
+  const creds = getDeviceCredentials(device);
+  return buildDeviceSshOptions(device, { username: creds?.username ?? device.username ?? undefined, password: creds?.password });
 }
 
 async function execDeviceCommand(device: NetworkDevice, creds: DeviceCreds, cmd: string, timeoutMs?: number): Promise<string> {
@@ -620,6 +629,7 @@ async function createMikrotikClient(device: NetworkDevice, creds: DeviceCreds): 
   }
 
   const execCommand = (cmd: string, timeoutMs = 30000) => execDeviceCommand(device, creds, cmd, timeoutMs);
+  let uscitaInterfacce: string | null = null;
 
   return {
     async getArpTable() {
@@ -691,7 +701,12 @@ async function createMikrotikClient(device: NetworkDevice, creds: DeviceCreds): 
       return parseMikrotikMacTable(await execCommand("/interface bridge host print terse"));
     },
     async getInterfaceTypes() {
-      return parseMikrotikInterfaceTypes(await execCommand("/interface print terse"));
+      const out = await execCommand("/interface print terse");
+      uscitaInterfacce = out;
+      return parseMikrotikInterfaceTypes(out);
+    },
+    ultimaUscitaInterfacce() {
+      return uscitaInterfacce;
     },
   };
 }

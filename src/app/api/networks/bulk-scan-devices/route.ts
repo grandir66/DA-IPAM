@@ -9,6 +9,7 @@ import { isIpInCidr, normalizePortNameForMatch } from "@/lib/utils";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { networkDeviceUsesArpPoll } from "@/lib/network-device-arp";
+import { letturaAccesa, senzaCampiCavi } from "@/lib/topology/letture/interruttori";
 import { apriSessioneCommunity, versioneApparato } from "@/lib/protocols/snmp-sessione";
 
 /**
@@ -72,7 +73,8 @@ export async function POST(request: Request) {
           if (client.getNeighbors) {
             try {
               const neighbors = await client.getNeighbors();
-              if (neighbors.length > 0) upsertNeighbors(deviceId, neighbors);
+              // T2 (spec §13.5.2, MK1): discovered-by e capacità solo con la lettura dei MikroTik accesa (I33), come nel giro.
+              if (neighbors.length > 0) upsertNeighbors(deviceId, letturaAccesa("mikrotik") ? neighbors : neighbors.map(senzaCampiCavi));
             } catch { /* neighbor discovery opzionale */ }
           }
 

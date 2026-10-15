@@ -66,11 +66,17 @@ import {
   cleanupOldMacPortEntries,
   MAC_PORT_RETENTION_DAYS,
   listHypervisorScanDevices,
+  scriviFattiTopologia,
 } from "@/lib/db-tenant";
 import { HYPERVISOR_SYNC_MINUTES, unifiJobKind } from "@/lib/scheduled-job-types";
 // Statico: run-proxmox-device-scan importa il facade db, che risolve db-tenant (ADR 0002).
 import { runProxmoxDeviceScan } from "@/lib/proxmox/run-proxmox-device-scan";
 import { leggiMacPorteRouter } from "@/lib/devices/mikrotik-porte";
+import { apriEsecutoreSsh, leggiMikrotikTopologia, type ApriEsecutore } from "@/lib/devices/mikrotik-letture";
+import { fattiMikrotik } from "@/lib/devices/mikrotik-stp";
+import { conCadenza, riassuntoLetture, type EsitoGiro } from "@/lib/topology/letture/cadenza";
+import { letturaAccesa, senzaCampiCavi } from "@/lib/topology/letture/interruttori";
+import type { NetworkDevice } from "@/types";
 import { syncNetworkToLibreNMS, syncAllNetworksToLibreNMS } from "@/lib/integrations/librenms-sync";
 // Import statico (come LibreNMS, non dinamico come Wazuh): unifi-sync importa
 // db-tenant, che sotto tsx non va mai caricato con `await import()` (ADR 0002).
@@ -641,7 +647,25 @@ export type RunArpPollOptions = {
   skipDhcpLeases?: boolean;
   /** Solo per le prove: il client del router al posto di quello vero (SSH/SNMP). */
   creaClientRouter?: typeof createRouterClient;
+  /** Solo per le prove: la connessione delle letture in più dei MikroTik al posto di quella SSH vera (spia, I33). */
+  apriEsecutore?: ApriEsecutore;
+  /** Solo per le prove: l'ora del giro per la cadenza delle letture in più. */
+  adesso?: () => Date;
 };
+
+/**
+ * Le letture in più di un MikroTik letto via SSH (spec topologia §13.5.2, T2.2), dietro `topologia.lettura.mikrotik`, al
+ * più una volta l'ora per apparato. `uscitaInterfacce`: MK2 già letto dal giro (ramo dei router); null = si legge qui.
+ * `conVicini`: il ramo degli switch legge anche MK1, con la fonte nuova `ssh`, che legge solo il modello per cavo.
+ */
+async function letturaMikrotik(device: NetworkDevice, uscitaInterfacce: string | null, conVicini: boolean, options?: RunArpPollOptions): Promise<EsitoGiro<unknown>> {
+  return conCadenza("mikrotik", device.id, async () => {
+    const r = await (options?.apriEsecutore ?? apriEsecutoreSsh)(device, (esegui) => leggiMikrotikTopologia(esegui, { uscitaInterfacce, conVicini }));
+    const scritti = scriviFattiTopologia(device.id, "device", fattiMikrotik(r.lettura), options?.adesso?.() ?? new Date());
+    if (r.vicini && r.vicini.length > 0) upsertNeighbors(device.id, r.vicini, "ssh");
+    return { valore: scritti, conteggio: { comandi: r.comandi, riusciti: r.riusciti, codice: r.codice } };
+  }, options?.adesso);
+}
 
 export async function runArpPoll(
   networkId?: number | null,
@@ -672,7 +696,10 @@ export async function runArpPoll(
   }
 
   const porteNonLette: string[] = []; // router la cui bridge host non si è letta: nel resoconto
+  const esitiLetture: Array<EsitoGiro<unknown>> = []; // letture in più (T2): numeri e codici, mai nomi
+  const durate = { router: 0, switch: 0, nRouter: 0, nSwitch: 0 }; // la riga dei tempi del giro (misura del carico, T2)
   for (const device of devices) {
+    const t0 = performance.now();
     try {
       if (device.device_type === "hypervisor") {
         continue;
@@ -882,7 +909,8 @@ export async function runArpPoll(
           try {
             const neighbors = await client.getNeighbors();
             if (neighbors.length > 0) {
-              upsertNeighbors(device.id, neighbors);
+              // T2 (spec §13.5.2, MK1): discovered-by e capacità solo con la lettura dei MikroTik accesa (I33).
+              upsertNeighbors(device.id, letturaAccesa("mikrotik") ? neighbors : neighbors.map(senzaCampiCavi));
             }
           } catch (err) {
             console.warn(`[Neighbors] Errore su ${device.name}:`, err);
@@ -900,7 +928,16 @@ export async function runArpPoll(
             console.warn(`[Routing] Errore su ${device.name}:`, err);
           }
         }
+
+        // Letture in più (T2, spenta di default): MK3-MK8 su una connessione sola; MK2 è l'uscita già letta qui sopra.
+        if (device.vendor === "mikrotik" && device.protocol === "ssh") {
+          esitiLetture.push(await letturaMikrotik(device, client.ultimaUscitaInterfacce?.() ?? null, false, options));
+        }
       } else {
+        // Letture in più (T2, spenta di default) per prime: una tabella MAC che fallisce non deve toglierle.
+        if (device.vendor === "mikrotik" && device.protocol === "ssh") {
+          esitiLetture.push(await letturaMikrotik(device, null, true, options));
+        }
         const client = await createSwitchClient(device);
         const entries = await client.getMacTable();
         salvaMacPorta(device.id, entries.map((e) => ({
@@ -1005,13 +1042,29 @@ export async function runArpPoll(
     }
     } catch (error) {
       console.error(`[ARP Poll] Errore su ${device.name}:`, error);
+    } finally {
+      if (device.device_type !== "hypervisor") {
+        if (networkDeviceUsesArpPoll(device)) {
+          durate.router += performance.now() - t0;
+          durate.nRouter++;
+        } else {
+          durate.switch += performance.now() - t0;
+          durate.nSwitch++;
+        }
+      }
     }
   }
   const network = networkId != null ? networks.find((n) => n.id === networkId) : null;
   const base = networkId != null && network
     ? `ARP poll completato per ${network.name}`
     : "ARP poll completato";
-  const phase = porteNonLette.length > 0 ? `${base}; porte fisiche non lette: ${porteNonLette.join(", ")}` : base;
+  const letture = riassuntoLetture(esitiLetture);
+  const phase = [base, porteNonLette.length > 0 ? `porte fisiche non lette: ${porteNonLette.join(", ")}` : null, letture]
+    .filter((x): x is string => !!x).join("; ");
+  if (networkId == null) {
+    const s = (ms: number): string => (ms / 1000).toFixed(1).replace(".", ",");
+    console.info(`[ARP Poll] giro: ${durate.nRouter} router in ${s(durate.router)} s, ${durate.nSwitch} switch in ${s(durate.switch)} s${letture ? `; ${letture}` : ""}`);
+  }
   return { phase };
 }
 

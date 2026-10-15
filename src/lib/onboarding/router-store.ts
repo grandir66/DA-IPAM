@@ -5,7 +5,7 @@
  *
  * Perché non basta il PUT dell'apparato: scrive solo le colonne
  * `credential_id`, `snmp_credential_id` e `protocol`, mentre chi usa davvero le
- * credenziali (`getDeviceCredentials`, `getDeviceCommunityString`, il poll ARP)
+ * credenziali (`getDeviceCredentials`, `credenzialeSnmpApparato`, il poll ARP)
  * legge prima i binding creati da `creaApparato`, e il client del router si
  * collega a `port`. Il wizard diceva «Router aggiornato» e il sistema
  * continuava con la voce e la porta di prima.

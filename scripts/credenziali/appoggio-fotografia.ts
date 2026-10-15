@@ -9,22 +9,28 @@
  * db-tenant si importa staticamente (ADR 0002: l'import dinamico vietato è
  * quello di db-tenant stesso, non di un modulo che lo importa).
  *
- * Lettori di oggi (2a): getDeviceCredentials, getDeviceCommunityString,
- * getDeviceSnmpV3Credentials per gli apparati; resolveCredentialsForDb e
- * buildSnmpCommunitiesForHost per gli host; le catene 2-4 per le reti;
- * collectEdgeCredentialsForNetwork per l'anteprima edge;
- * loadWinrmCredentialsForHost per le patch. Lo script cambia lettori nel T8 e
- * nel T26, con lo stesso formato di riga.
+ * Lettori di questa versione (2b):
+ * - apparati: il motore unico, con le stesse funzioni dell'acquisizione
+ *   (`sceltaLoginApparatoDb`, `credenzialeSnmpApparatoDb`, `haSnmpApparatoDb`)
+ *   chiamate con `registra: false`, così la fotografia non scrive ripieghi. La
+ *   riga dice la voce, la porta e la fonte del motore (`device_binding`,
+ *   `device_column`, `snmp_ripiego`…): per questo il confronto con la 2a si fa
+ *   senza `--con-fonte`;
+ * - host: resolveCredentialsForDb e buildSnmpCommunitiesForHost; reti: le
+ *   catene 2-4; anteprima edge: collectEdgeCredentialsForNetwork; patch:
+ *   loadWinrmCredentialsForHost. Cambiano nel T9 e nel T26, con lo stesso
+ *   formato di riga.
  *
- * Dalla 2a un apparato snmp_v3 senza una v3 leggibile ha la riga snmp senza
- * scelta: le sessioni v3 non ripiegano più sulla community (T4).
+ * Un apparato snmp_v3 senza una v3 leggibile ha la riga snmp senza scelta: le
+ * sessioni v3 non ripiegano sulla community (T4).
  *
- * Quei lettori non dicono QUALE voce hanno scelto. La provenienza (id della voce
- * e livello) si ricostruisce qui con le stesse query, e si controlla contro
- * l'uscita vera: se il segreto ricostruito non è quello del lettore, la riga
- * dice `lettore_vecchio:discorde`, senza id, e lo script la conta. L'impronta è
- * sempre quella del segreto restituito dal lettore vero. I segreti in chiaro
- * restano in memoria: escono solo come impronta.
+ * I lettori vecchi di host, reti e patch non dicono QUALE voce hanno scelto. La
+ * provenienza (id della voce e livello) si ricostruisce qui con le stesse query,
+ * e si controlla contro l'uscita vera: se non torna, la riga dice
+ * `lettore_vecchio:discorde`, senza id, e lo script la conta. Le ricostruzioni
+ * degli apparati della 2a (provenienzaCommunity, provenienzaV3, haSnmpOggi)
+ * restano per misure-2a.ts. I segreti in chiaro restano in memoria: escono solo
+ * come impronta.
  */
 import fs from "node:fs";
 import type Database from "better-sqlite3";
@@ -37,10 +43,6 @@ import {
   getCredentialById,
   getCredentialCommunityString,
   getCredentialLoginPair,
-  getDeviceCommunityString,
-  getDeviceCredentials,
-  getDeviceSnmpV3Credentials,
-  getEffectiveSnmpPort,
   getOrderedDetectCredentialIds,
   getOrderedSshLinuxCredentialIds,
   getSshLinuxCredentialPair,
@@ -50,7 +52,14 @@ import {
 } from "../../src/lib/db-tenant";
 import { closeHubDb, getHubDbPath } from "../../src/lib/db-hub";
 import { safeDecrypt } from "../../src/lib/crypto";
-import { resolveCredentialsForDb, type ResolveTarget } from "../../src/lib/credentials/resolve";
+import {
+  credenzialeSnmpApparatoDb,
+  haSnmpApparatoDb,
+  resolveCredentialsForDb,
+  sceltaLoginApparatoDb,
+  type ResolveTarget,
+} from "../../src/lib/credentials/resolve";
+import { v3ApparatoDb } from "../../src/lib/credentials/segreti";
 import { collectEdgeCredentialsForNetwork } from "../../src/lib/vuln/edge-credentials-bridge";
 import { loadWinrmCredentialsForHost } from "../../src/lib/patch/credentials";
 import { resolveDeviceAcquisition } from "../../src/lib/devices/device-acquisition-resolve";
@@ -109,40 +118,6 @@ function primoBinding(dbh: Database.Database, deviceId: number, protocollo: stri
     WHERE device_id = ? AND protocol_type = ?
     ORDER BY sort_order LIMIT 1
   `).get(deviceId, protocollo) as DeviceCredentialBinding | undefined;
-}
-
-/** Provenienza di getDeviceCredentials: binding → colonna credential_id → colonne utente/password. */
-export function provenienzaLogin(dbh: Database.Database, device: NetworkDevice): Provenienza {
-  const proto = device.protocol === "winrm" ? "winrm" : device.protocol === "api" ? "api" : "ssh";
-  const b = primoBinding(dbh, device.id, proto);
-  if (b) {
-    if (b.credential_id) {
-      const c = getCredentialById(b.credential_id);
-      if (c?.encrypted_username && c?.encrypted_password) {
-        const u = safeDecrypt(c.encrypted_username);
-        const p = safeDecrypt(c.encrypted_password);
-        if (u && p) return { credential_id: c.id, livello: "binding", parti: [u, p] };
-      }
-    } else if (b.inline_username && b.inline_encrypted_password) {
-      const p = safeDecrypt(b.inline_encrypted_password);
-      if (p) return { credential_id: null, livello: "binding_inline", parti: [b.inline_username, p] };
-    }
-  }
-  if (device.credential_id) {
-    const c = getCredentialById(device.credential_id);
-    if (c?.encrypted_username && c?.encrypted_password) {
-      const u = safeDecrypt(c.encrypted_username);
-      const p = safeDecrypt(c.encrypted_password);
-      if (u && p) return { credential_id: c.id, livello: "colonna", parti: [u, p] };
-      return NESSUNA;
-    }
-  }
-  if (device.username && device.encrypted_password) {
-    const p = safeDecrypt(device.encrypted_password);
-    if (p) return { credential_id: null, livello: "colonna_inline", parti: [device.username, p] };
-    return NESSUNA;
-  }
-  return NESSUNA;
 }
 
 function colonneSnmpInOrdine(device: NetworkDevice): Array<number | null> {
@@ -219,9 +194,9 @@ export function provenienzaV3(device: NetworkDevice): Provenienza {
   return NESSUNA;
 }
 
-/** «Ha SNMP?» come lo calcola getDeviceInfo oggi (device-info.ts, il percorso principale dell'acquisizione). */
+/** «Ha SNMP?» come lo calcolava getDeviceInfo nella 2a (per misure-2a.ts; dalla 2b la fotografia usa haSnmpApparatoDb). */
 export function haSnmpOggi(dbh: Database.Database, device: NetworkDevice): boolean {
-  const v3 = getDeviceSnmpV3Credentials(device);
+  const v3 = v3ApparatoDb(dbh, device);
   const conBinding = !!dbh
     .prepare("SELECT 1 FROM device_credential_bindings WHERE device_id = ? AND protocol_type = 'snmp' LIMIT 1")
     .get(device.id);
@@ -295,9 +270,6 @@ export function provenienzaPatch(dbh: Database.Database, hostId: number): Proven
   return { credential_id: r.cid, livello, parti: [u, p] };
 }
 
-const stesseParti = (a: string[] | null, b: string[] | null): boolean =>
-  !!a && !!b && a.length === b.length && a.every((x, i) => x === b[i]);
-
 interface Contesto {
   chiave: string;
   discordi: number;
@@ -305,10 +277,14 @@ interface Contesto {
 
 const fonte = (livello: string) => `${FONTE_LETTORE_VECCHIO}:${livello}`;
 
+const stesseParti = (a: string[] | null, b: string[] | null): boolean =>
+  !!a && !!b && a.length === b.length && a.every((x, i) => x === b[i]);
+
 /**
  * Scelta dall'uscita del lettore vero (`vero`, il segreto in parti) e dalla
- * provenienza ricostruita. Se le due non tornano, la riga resta senza id e con
- * fonte `discorde`, e si conta: mai una provenienza indovinata.
+ * provenienza ricostruita (oggi solo le patch, fino al T9). Se le due non
+ * tornano, la riga resta senza id e con fonte `discorde`, e si conta: mai una
+ * provenienza indovinata.
  */
 function scelta(ctx: Contesto, vero: string[] | null, prov: Provenienza, port: number | null): SceltaFotografia | null {
   if (!vero) {
@@ -391,32 +367,41 @@ function fotografaDentro(code: string, encryptionKey: string): EsitoTenant {
   const apparati = dbh.prepare("SELECT * FROM network_devices ORDER BY id").all() as NetworkDevice[];
   for (const d of apparati) {
     const principale = protocolloPrincipale(d);
-    const piano = resolveDeviceAcquisition(d).module;
-    const haSnmp = haSnmpOggi(dbh, d);
+    // «Ha SNMP?» e piano come li calcola l'acquisizione dalla 2b (getDeviceInfo, rotta query): protocollo SNMP o una
+    // fonte SNMP dell'apparato; il piano riceve haSnmpApparato.
+    const haSnmpProprio = haSnmpApparatoDb(dbh, d);
+    const piano = resolveDeviceAcquisition(d, haSnmpProprio).module;
+    const haSnmp = principale === "snmp" || haSnmpProprio;
     if (principale !== "snmp") {
-      const vero = getDeviceCredentials(d);
+      const s = sceltaLoginApparatoDb(dbh, d, { registra: false });
       righe.push({
         tenant: code,
         oggetto: "apparato",
         chiave: `${d.id}:${principale}`,
         nome: d.name,
-        scelta: scelta(ctx, vero ? [vero.username, vero.password] : null, provenienzaLogin(dbh, d), d.port ?? null),
+        scelta:
+          s.ok && s.segreto.forma === "utente"
+            ? {
+                credential_id: s.candidato.credential_id,
+                port: s.candidato.port,
+                fonte: s.candidato.source,
+                impronta: improntaVoce(ctx, [s.segreto.username, s.segreto.password]),
+              }
+            : null,
         piano,
         haSnmp,
       });
     }
-    const portaSnmp = getEffectiveSnmpPort(d);
-    let sceltaSnmp: SceltaFotografia | null;
-    if (d.protocol === "snmp_v3") {
-      // Dal T4 un apparato snmp_v3 senza una v3 leggibile non legge più la
-      // community: le sessioni danno «Credenziale SNMPv3 assente o
-      // illeggibile». Nessuna scelta, così --confronta col T1 mostra
-      // «community → nessuna» per ognuno (revisione della 2a).
-      const cred = getDeviceSnmpV3Credentials(d);
-      sceltaSnmp = cred ? scelta(ctx, partiV3(cred), provenienzaV3(d), portaSnmp) : null;
-    } else {
-      sceltaSnmp = scelta(ctx, [getDeviceCommunityString(d)], provenienzaCommunity(dbh, d), portaSnmp);
-    }
+    // Un apparato snmp_v3 senza una v3 leggibile: nessuna scelta (T4), come nella 2a.
+    const c = credenzialeSnmpApparatoDb(dbh, d, { registra: false });
+    const sceltaSnmp: SceltaFotografia | null = c.ok
+      ? {
+          credential_id: c.credential_id,
+          port: c.port,
+          fonte: c.fonte,
+          impronta: improntaVoce(ctx, c.cred.forma === "v3" ? partiV3(c.cred.record) : [c.cred.community]),
+        }
+      : null;
     righe.push({
       tenant: code,
       oggetto: "apparato",

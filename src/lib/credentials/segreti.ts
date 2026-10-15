@@ -355,9 +355,11 @@ function ripulito(v: string | null | undefined): string | null {
 }
 
 /**
- * getDeviceSnmpV3Credentials: la prima voce v3 fra le due colonne
- * dell'apparato (con protocollo SNMP prima `credential_id`, altrimenti prima
- * `snmp_credential_id`, come oggi), col record completo e ripulito.
+ * Il lettore v3 della 2a (getDeviceSnmpV3Credentials, tolto nel T8: ora
+ * l'acquisizione legge da `credenzialeSnmpApparatoDb` del motore, binding
+ * compresi): la prima voce v3 fra le due colonne dell'apparato (con protocollo
+ * SNMP prima `credential_id`, altrimenti prima `snmp_credential_id`), col
+ * record completo e ripulito. Resta per misure-2a.ts, che misura la 2a.
  */
 export function v3ApparatoDb(
   dbh: Database.Database,

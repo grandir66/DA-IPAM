@@ -281,29 +281,33 @@ describe("fotografia-scelte.ts sulla copia", () => {
       return x;
     };
 
-    // Apparato: il binding vince sulla colonna, come in getDeviceCredentials di oggi.
+    // Apparato: il binding vince sulla colonna (D1 = (a)). Dalla 2b la fonte è quella del motore (T8).
     const app = trova("apparato", `${idApparato}:ssh`);
     assert.equal(app.scelta?.credential_id, credBinding);
     assert.equal(app.scelta?.port, 22);
     assert.equal(app.scelta?.impronta, impronta(chiaroDaParti("op-binding", SEGRETI.passBinding), K));
-    assert.match(app.scelta?.fonte ?? "", /^lettore_vecchio/);
+    assert.equal(app.scelta?.fonte, "device_binding");
     assert.equal(typeof app.piano, "string");
     assert.equal(app.haSnmp, true);
 
     const snmp = trova("apparato", `${idApparato}:snmp`);
     assert.equal(snmp.scelta?.credential_id, credSnmp);
+    assert.equal(snmp.scelta?.fonte, "device_column");
+    assert.equal(snmp.scelta?.port, 161);
     assert.equal(snmp.scelta?.impronta, impronta(chiaroDaParti(SEGRETI.community), K));
 
-    // Colonne inline e community_string: nessun id, il livello nella fonte.
+    // Colonne inline e community_string: nessun id, la fonte del motore.
     const inline = trova("apparato", `${idApparatoInline}:api`);
     assert.equal(inline.scelta?.credential_id, null);
     assert.equal(inline.scelta?.port, 443);
-    assert.equal(inline.scelta?.fonte, "lettore_vecchio:colonna_inline");
+    assert.equal(inline.scelta?.fonte, "device_column_inline");
     assert.equal(inline.scelta?.impronta, impronta(chiaroDaParti("op-inline", SEGRETI.passInline), K));
-    assert.equal(trova("apparato", `${idApparatoInline}:snmp`).scelta?.fonte, "lettore_vecchio:community_string");
-    // L'apparato SNMP senza fonti: «public», dichiarato come tale (misura di D5).
+    const comInline = trova("apparato", `${idApparatoInline}:snmp`);
+    assert.equal(comInline.scelta?.fonte, "device_column_inline");
+    assert.equal(comInline.scelta?.impronta, impronta(chiaroDaParti(SEGRETI.communityInline), K));
+    // L'apparato SNMP senza fonti: «public», dichiarato come tale (D5), non la voce SNMP della catena (D1b = (a)).
     const pubblico = trova("apparato", `${idApparatoSnmp}:snmp`);
-    assert.equal(pubblico.scelta?.fonte, "lettore_vecchio:public");
+    assert.equal(pubblico.scelta?.fonte, "snmp_ripiego");
     assert.equal(pubblico.scelta?.impronta, impronta(chiaroDaParti("public"), K));
     assert.equal(pubblico.haSnmp, true);
     assert.equal(righe.some((y) => y.chiave === `${idApparatoSnmp}:ssh`), false, "un apparato SNMP ha solo la riga snmp");
@@ -480,7 +484,7 @@ describe("fotografia e misure della 2a sugli apparati snmp_v3", () => {
     if (radiceV3) fs.rmSync(radiceV3, { recursive: true, force: true });
   });
 
-  it("la fotografia della 2a: snmp_v3 senza v3 → nessuna scelta (era la community); la v3 resta", () => {
+  it("la fotografia: snmp_v3 senza v3 → nessuna scelta (era la community, fino alla 2a); la v3 resta", () => {
     const out = path.join(radiceV3, "fotografie", "v3.jsonl");
     const r = lancia(["--dati", TEST_DATA_DIR, "--out", out], servizioV3);
     assert.equal(r.status, 0, `uscita ${r.status}\n${r.stdout}\n${r.stderr}`);
@@ -494,10 +498,13 @@ describe("fotografia e misure della 2a sugli apparati snmp_v3", () => {
     for (const k of ["colonna", "nulla", "stringa", "binding"]) {
       assert.equal(snmp(k).scelta, null, `${k}: la 2a non legge più la community di un apparato snmp_v3 senza v3`);
     }
+    // Dalla 2b la fonte è quella del motore (T8); l'impronta resta quella della 2a.
     assert.equal(snmp("completa").scelta?.credential_id, voce.v3);
-    assert.equal(snmp("completa").scelta?.fonte, "lettore_vecchio:v3_completa");
+    assert.equal(snmp("completa").scelta?.fonte, "device_column");
+    assert.equal(snmp("completa").scelta?.impronta, impronta(chiaroDaParti("monitor", "Chiave-Auth-2B", "Chiave-Priv-3C"), K));
     assert.equal(snmp("vecchia").scelta?.credential_id, voce.vecchia);
-    assert.equal(snmp("vecchia").scelta?.fonte, "lettore_vecchio:v3");
+    assert.equal(snmp("vecchia").scelta?.fonte, "device_column");
+    assert.equal(snmp("vecchia").scelta?.impronta, impronta(chiaroDaParti("monitor-vecchio", "Chiave-Vecchia-4D"), K));
   });
 
   it("misure-2a.ts conta gli apparati snmp_v3: v3 completa, formato vecchio, senza v3 e da dove leggono oggi", () => {

@@ -10,7 +10,7 @@ import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { networkDeviceUsesArpPoll } from "@/lib/network-device-arp";
 import { letturaAccesa, senzaCampiCavi } from "@/lib/topology/letture/interruttori";
-import { apriSessioneCommunity, versioneApparato } from "@/lib/protocols/snmp-sessione";
+import { apriSessioneSnmp, versioneApparato } from "@/lib/protocols/snmp-sessione";
 import { walkConSessioneSua, type SessioneWalk } from "@/lib/devices/snmp-walk";
 
 /**
@@ -157,19 +157,20 @@ export async function POST(request: Request) {
             upsertSwitchPorts(deviceId, switchPorts);
           }
 
-          // STP info via SNMP (se disponibile)
+          // STP info via SNMP (se disponibile): credenziale e porta dal motore (tappa 2 credenziali, T8), v3 compresa.
           try {
-            const { getDeviceCommunityString } = await import("@/lib/db");
-            const community = getDeviceCommunityString(device);
-            if (community) {
+            const { credenzialeSnmpApparato } = await import("@/lib/db");
+            const scelta = credenzialeSnmpApparato(device);
+            if (scelta.ok) {
               const { getSnmpStpInfo } = await import("@/lib/devices/snmp-stp-info");
               const snmpMod = await import("net-snmp");
               // SN1 (spec topologia §13.5.4): una sessione per lettura (la sessione unica chiusa dal primo walk annullava gli
               // altri). NULL = v1, come prima (createSession senza version).
-              const snmpWalk = walkConSessioneSua(
-                () => apriSessioneCommunity(snmpMod, device.host, community, { port: 161, timeout: 8000, versione: versioneApparato(device, "1") }) as unknown as SessioneWalk,
-                10_000,
-              );
+              const snmpWalk = walkConSessioneSua(() => {
+                const aperta = apriSessioneSnmp(snmpMod, device.host, scelta.cred, { port: scelta.port, timeout: 8000, versione: versioneApparato(device, "1") });
+                if (!aperta.ok) throw new Error(aperta.motivo);
+                return aperta.session as unknown as SessioneWalk;
+              }, 10_000);
               const stpInfo = await getSnmpStpInfo(snmpWalk);
               if (stpInfo) {
                 updateNetworkDevice(deviceId, { stp_info: JSON.stringify(stpInfo) });

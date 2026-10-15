@@ -41,6 +41,8 @@ import type Database from "better-sqlite3";
 
 import { safeDecrypt } from "@/lib/crypto";
 import { registraRipiego, type CasoRipiego } from "@/lib/db-maintenance/ripieghi";
+import { V3_ASSENTE, type CredenzialeSnmp } from "@/lib/protocols/snmp-sessione";
+import type { NetworkDevice } from "@/types";
 import { DEFAULT_PORTS, portaCredenziale, type CredProtocol } from "./porte";
 import { leggiSegretoDb, leggiSegretoInline, type Segreto, type UsoSegreto } from "./segreti";
 import { normalizzaTipo, portaVoceValePer, tipiPerProtocollo } from "./tipi";
@@ -592,7 +594,18 @@ function apparatoConV3(dbh: Database.Database, app: Apparato, binding: RigaBindi
   return false;
 }
 
-function candidatiApparato(dbh: Database.Database, app: Apparato, protocol: CredProtocol, opts: OpzioniMotore): ResolvedCredential[] {
+/**
+ * `portaPropria`: ogni candidato con la porta sua, anche per il protocollo
+ * principale. Serve all'SSH di Proxmox, dove `device.port` è la porta dell'API
+ * anche quando il protocollo dell'apparato è `ssh` (riga 15 del piano).
+ */
+function candidatiApparato(
+  dbh: Database.Database,
+  app: Apparato,
+  protocol: CredProtocol,
+  opts: OpzioniMotore,
+  portaPropria = false
+): ResolvedCredential[] {
   const tipi = tipiPerProtocollo(protocol);
   const hostId = app.host_id;
   const host =
@@ -603,8 +616,16 @@ function candidatiApparato(dbh: Database.Database, app: Apparato, protocol: Cred
 
   // D11 = (a): per il protocollo principale (non SNMP) la porta dell'apparato;
   // per SNMP e per gli altri protocolli (l'SSH di Proxmox) quella del candidato.
-  const portaApparato = protocol !== "snmp" && protocol === protocolloPrincipale(app.protocol) ? app.port : null;
+  const portaApparato = !portaPropria && protocol !== "snmp" && protocol === protocolloPrincipale(app.protocol) ? app.port : null;
   const porta = (propria: number): number => portaApparato ?? propria;
+  // SNMP su un apparato SNMP: le fonti senza una porta propria (colonne, «public») usano la porta dell'apparato,
+  // come le letture degli switch e della topologia prima del T8, salvo la 22 (F3: porta SSH rimasta) o una porta
+  // non valida. Binding e voci con una porta loro tengono la loro.
+  const portaSnmpApparato =
+    protocol === "snmp" && protocolloPrincipale(app.protocol) === "snmp" && app.port != null && Number.isInteger(app.port) && app.port > 0 && app.port <= 65535 && app.port !== 22
+      ? app.port
+      : null;
+  const predefinita = portaSnmpApparato ?? DEFAULT_PORTS[protocol];
 
   const binding = bindingNonFalliti(dbh, app.id, protocol);
   const conVoce = binding.filter((b) => b.credential_id != null && ammesso(tipi, b.credential_type));
@@ -629,7 +650,8 @@ function candidatiApparato(dbh: Database.Database, app: Apparato, protocol: Cred
   for (const id of colonneVoce(app, protocol)) {
     const v = leggiVoce(dbh, id);
     if (v && ammesso(tipi, v.credential_type)) {
-      aggiungi({ source: "device_column", credential_id: id, tipo: v.credential_type, port: porta(portaVoce(v.credential_type, v.port, protocol)), conFermo: false });
+      const propria = portaVoceValePer(v.credential_type, protocol) && v.port != null ? v.port : predefinita;
+      aggiungi({ source: "device_column", credential_id: id, tipo: v.credential_type, port: porta(propria), conFermo: false });
     }
   }
   // 5. colonne col segreto dentro.
@@ -637,7 +659,7 @@ function candidatiApparato(dbh: Database.Database, app: Apparato, protocol: Cred
     protocol === "snmp"
       ? haTesto(app.community_string)
       : protocol === protocolloLogin(app.protocol) && haTesto(app.username) && haTesto(app.encrypted_password);
-  if (colonneInline) aggiungi({ source: "device_column_inline", credential_id: null, tipo: null, port: porta(DEFAULT_PORTS[protocol]), conFermo: false });
+  if (colonneInline) aggiungi({ source: "device_column_inline", credential_id: null, tipo: null, port: porta(predefinita), conFermo: false });
 
   // 6-11. host, rete, catene vecchie, hub, AD: solo con un host.
   if (conHost && hostId != null) {
@@ -653,7 +675,7 @@ function candidatiApparato(dbh: Database.Database, app: Apparato, protocol: Cred
 
   // 12. «public» (D5), ultimo.
   if (protocol === "snmp" && !apparatoConV3(dbh, app, binding)) {
-    aggiungi({ source: "snmp_ripiego", credential_id: null, tipo: null, port: DEFAULT_PORTS.snmp, conFermo: false });
+    aggiungi({ source: "snmp_ripiego", credential_id: null, tipo: null, port: predefinita, conFermo: false });
   }
   return tronca(risultati, opts);
 }
@@ -744,13 +766,22 @@ function registra(casi: Iterable<CasoRipiego | undefined>): void {
 }
 
 /**
- * Il primo candidato il cui segreto si legge. Nessun candidato, o nessuno
- * leggibile: un motivo che li elenca tutti, mai una scelta muta.
+ * Il primo candidato il cui segreto si legge (e, con `accetta`, ha la forma
+ * che serve a chi chiama: un rifiuto è un motivo, e si passa al candidato
+ * dopo). Nessun candidato, o nessuno buono: un motivo che li elenca tutti, mai
+ * una scelta muta.
  */
 function scegli(
   dbh: Database.Database,
   candidati: ResolvedCredential[],
-  c: { app: Apparato | null; apparatoV3: boolean; opts: OpzioniMotore; protocol: CredProtocol; perChi: string }
+  c: {
+    app: Apparato | null;
+    apparatoV3: boolean;
+    opts: OpzioniMotore;
+    protocol: CredProtocol;
+    perChi: string;
+    accetta?: (s: Segreto) => string | null;
+  }
 ): SceltaSegreto {
   const nome = NOME_PROTOCOLLO[c.protocol];
   if (candidati.length === 0) return { ok: false, motivo: `Nessuna credenziale ${nome} per ${c.perChi}` };
@@ -759,6 +790,11 @@ function scegli(
     const l = leggiCandidato(dbh, cand, c.app, c.apparatoV3);
     if (!l.ok) {
       motivi.push(l.motivo);
+      continue;
+    }
+    const rifiuto = c.accetta?.(l.segreto) ?? null;
+    if (rifiuto) {
+      motivi.push(rifiuto);
       continue;
     }
     if (c.opts.registra !== false) registra([CASO_PER_FONTE[cand.source], l.formatoVecchio ? "cred_v3_vecchia" : undefined]);
@@ -781,12 +817,23 @@ export function scegliSegretoApparatoDb(
 ): SceltaSegreto {
   const app = leggiApparato(dbh, deviceId);
   if (!app) return { ok: false, motivo: `L'apparato #${deviceId} non esiste` };
+  return scegliPerApparato(dbh, app, protocol, opts);
+}
+
+function scegliPerApparato(
+  dbh: Database.Database,
+  app: Apparato,
+  protocol: CredProtocol,
+  opts: OpzioniMotore,
+  accetta?: (s: Segreto) => string | null
+): SceltaSegreto {
   return scegli(dbh, candidatiApparato(dbh, app, protocol, opts), {
     app,
     apparatoV3: protocol === "snmp" && app.protocol === "snmp_v3",
     opts,
     protocol,
     perChi: `l'apparato «${app.name}»`,
+    accetta,
   });
 }
 
@@ -807,6 +854,139 @@ export function scegliSegretoHostDb(
     (target.hostId != null ? (dbh.prepare(`SELECT ip FROM hosts WHERE id = ?`).get(target.hostId) as { ip: string } | undefined)?.ip : undefined);
   const perChi = target.hostId != null ? `l'host ${ip ?? `#${target.hostId}`}` : `la rete #${target.networkId}`;
   return scegli(dbh, candidati, { app: null, apparatoV3: false, opts, protocol, perChi });
+}
+
+// ── Acquisizione degli apparati (T8) ───────────────────────────────────────
+// Le funzioni sotto sono quelle che l'acquisizione chiama (getDeviceCredentials,
+// credenzialeSnmpApparato, haSnmpApparato, portaSshApparato sono loro involucri
+// di una riga), e la fotografia le chiama con `registra: false`. Tutte con
+// FONTI_ACQUISIZIONE (D1b = (a)): mai host, rete o hub.
+
+/**
+ * I campi di un apparato che l'acquisizione passa al motore. Un apparato
+ * salvato (id > 0) si rilegge dal DB. Uno provvisorio (la prova dalla
+ * finestra, id 0, mai salvato) vale per le colonne dell'oggetto: la voce
+ * scelta nella finestra, nessun binding, nessun host.
+ */
+export type ApparatoInAcquisizione = Pick<
+  NetworkDevice,
+  "id" | "name" | "protocol" | "port" | "credential_id" | "snmp_credential_id" | "username" | "encrypted_password" | "community_string"
+>;
+
+function apparatoDi(dbh: Database.Database, device: ApparatoInAcquisizione): Apparato | null {
+  if (device.id > 0) return leggiApparato(dbh, device.id);
+  return {
+    id: device.id,
+    name: device.name || "apparato provvisorio",
+    protocol: device.protocol ?? null,
+    port: device.port ?? null,
+    host_id: null,
+    credential_id: device.credential_id ?? null,
+    snmp_credential_id: device.snmp_credential_id ?? null,
+    username: device.username ?? null,
+    encrypted_password: device.encrypted_password ?? null,
+    community_string: device.community_string ?? null,
+  };
+}
+
+const nonEsiste = (device: ApparatoInAcquisizione): { ok: false; motivo: string } => ({
+  ok: false,
+  motivo: `L'apparato «${device.name}» (#${device.id}) non esiste`,
+});
+
+/**
+ * Login dell'acquisizione (getDeviceCredentials): utente e password per il
+ * protocollo di login dell'apparato (winrm, api, altrimenti ssh). Un binding
+ * fallito si salta (D10 = (a)); la porta resta quella dell'apparato (D11 = (a)).
+ */
+export function sceltaLoginApparatoDb(
+  dbh: Database.Database,
+  device: ApparatoInAcquisizione,
+  opts: Pick<OpzioniMotore, "registra"> = {}
+): SceltaSegreto {
+  const app = apparatoDi(dbh, device);
+  if (!app) return nonEsiste(device);
+  return scegliPerApparato(dbh, app, protocolloLogin(app.protocol), { fonti: FONTI_ACQUISIZIONE, registra: opts.registra }, (s) =>
+    s.forma === "utente" ? null : `l'apparato «${app.name}» per ora accede solo con utente e password`
+  );
+}
+
+/** getDeviceCredentials: la coppia di `sceltaLoginApparatoDb`, o null senza una credenziale buona. */
+export function loginApparatoDb(dbh: Database.Database, device: ApparatoInAcquisizione): { username: string; password: string } | null {
+  const s = sceltaLoginApparatoDb(dbh, device);
+  return s.ok && s.segreto.forma === "utente" ? { username: s.segreto.username, password: s.segreto.password } : null;
+}
+
+export type SceltaSnmpApparato =
+  | { ok: true; cred: CredenzialeSnmp; port: number; fonte: ResolvedCredentialSource; credential_id: number | null }
+  | { ok: false; motivo: string };
+
+/**
+ * La credenziale SNMP dell'acquisizione, al posto di getDeviceCommunityString
+ * e getDeviceSnmpV3Credentials: binding (riusciti, poi non provati), binding
+ * inline, colonne, `community_string`, poi «public» dichiarato (D5), mai a un
+ * apparato con una voce v3. Un apparato `snmp_v3` accetta solo una v3: senza,
+ * «Credenziale SNMPv3 assente o illeggibile», mai la community (T4). La porta
+ * è quella del candidato (D11 = (a)): 161, o quella del binding o della voce.
+ * Il record v3 esce ripulito dagli spazi, come lo dava getDeviceSnmpV3Credentials.
+ */
+export function credenzialeSnmpApparatoDb(
+  dbh: Database.Database,
+  device: ApparatoInAcquisizione,
+  opts: Pick<OpzioniMotore, "registra"> = {}
+): SceltaSnmpApparato {
+  const app = apparatoDi(dbh, device);
+  if (!app) return nonEsiste(device);
+  const soloV3 = app.protocol === "snmp_v3";
+  const s = scegliPerApparato(dbh, app, "snmp", { fonti: FONTI_ACQUISIZIONE, registra: opts.registra }, (seg) => {
+    if (seg.forma !== "community" && seg.forma !== "v3") return `l'apparato «${app.name}»: credenziale non SNMP`;
+    return soloV3 && seg.forma !== "v3" ? `l'apparato «${app.name}» è SNMPv3: una community non vale` : null;
+  });
+  if (!s.ok) return { ok: false, motivo: soloV3 ? `${V3_ASSENTE}: ${s.motivo}` : s.motivo };
+  const base = { ok: true as const, port: s.candidato.port, fonte: s.candidato.source, credential_id: s.candidato.credential_id };
+  if (s.segreto.forma === "v3") {
+    const r = s.segreto.record;
+    const pulito = (v: string | null | undefined): string | null => (v == null ? null : v.trim());
+    return {
+      ...base,
+      cred: {
+        forma: "v3",
+        record: {
+          username: r.username.trim(),
+          securityLevel: r.securityLevel,
+          authProtocol: r.authProtocol ?? null,
+          authKey: pulito(r.authKey),
+          privProtocol: r.privProtocol ?? null,
+          privKey: pulito(r.privKey),
+        },
+      },
+    };
+  }
+  if (s.segreto.forma === "community") return { ...base, cred: { forma: "community", community: s.segreto.community } };
+  return { ok: false, motivo: `l'apparato «${app.name}»: credenziale non SNMP` };
+}
+
+/**
+ * «Ha SNMP?» dell'acquisizione: vero solo con una fonte SNMP dell'apparato
+ * (livelli 1-5: binding non falliti, binding inline, colonne, community_string),
+ * mai con la catena della rete o col ripiego. Non legge segreti e non registra.
+ */
+export function haSnmpApparatoDb(dbh: Database.Database, device: ApparatoInAcquisizione): boolean {
+  const app = apparatoDi(dbh, device);
+  return app != null && candidatiApparato(dbh, app, "snmp", { fonti: FONTI_APPARATO, limit: 1 }).length > 0;
+}
+
+/**
+ * Porta SSH di Proxmox, dove `device.port` è la porta dell'API (443/8006)
+ * anche con protocollo `ssh`: quella propria del primo candidato SSH
+ * dell'apparato con una porta valida (binding, voce della colonna; 22 per le
+ * colonne utente/password), altrimenti 22. Mai `device.port`.
+ */
+export function portaSshApparatoDb(dbh: Database.Database, device: ApparatoInAcquisizione): number {
+  const app = apparatoDi(dbh, device);
+  if (!app) return DEFAULT_PORTS.ssh;
+  const valida = (p: number): boolean => Number.isInteger(p) && p > 0 && p <= 65535;
+  return candidatiApparato(dbh, app, "ssh", { fonti: FONTI_APPARATO }, true).find((c) => valida(c.port))?.port ?? DEFAULT_PORTS.ssh;
 }
 
 // ── Liste per la discovery e le catene ─────────────────────────────────────

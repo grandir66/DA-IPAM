@@ -19,13 +19,13 @@
  * resta assente nel vicino, mai una stringa vuota.
  */
 import {
-  getDeviceCredentialBindings, getDeviceCredentials, getNetworkDeviceById, getNetworkDevices, scriviFattiTopologia, upsertNeighbors,
+  getDeviceCredentials, getNetworkDeviceById, getNetworkDevices, portaSshApparato, scriviFattiTopologia, upsertNeighbors,
   type FattiLettura, type FattoPortaIn, type MacApparatoIn,
 } from "@/lib/db-tenant";
 import { CODICE_USCITA_NON_CAPITA, codiceTrasporto, eseguiSuSshConCodice } from "@/lib/devices/mikrotik-letture";
 import type { SshOptions } from "@/lib/devices/ssh-transport";
 import { membriDeiBond, parseLiveInterfaces, type LiveInterfaceKind } from "@/lib/proxmox/live-interfaces";
-import { proxmoxSshPort, proxmoxSshUsername, resolveProxmoxTargetIps } from "@/lib/proxmox/proxmox-targets";
+import { proxmoxSshUsername, resolveProxmoxTargetIps } from "@/lib/proxmox/proxmox-targets";
 import { normale } from "@/lib/topology/cavi/porte";
 import { conCadenza, type EsitoGiro } from "@/lib/topology/letture/cadenza";
 import { letturaAccesa, oraUtc } from "@/lib/topology/letture/interruttori";
@@ -261,7 +261,7 @@ export async function leggiHost(deviceId: number, apri: ApriHost = apriHostSsh, 
     const codice = !creds ? "SENZA_CREDENZIALI" : "SENZA_INDIRIZZO";
     return [await conCadenza("host", deviceId, async () => { throw conCodice("Lettura dell'host non possibile", codice); }, adesso)];
   }
-  const port = proxmoxSshPort(getDeviceCredentialBindings(device.id));
+  const port = portaSshApparato(device);
   const username = proxmoxSshUsername(creds.username);
   // Una query per tutto il cluster, non una per nodo.
   const perIndirizzo = new Map<string, NetworkDevice[]>();

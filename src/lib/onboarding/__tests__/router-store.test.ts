@@ -6,7 +6,7 @@
  * router, il wizard mandava il PUT dell'apparato, che scrive solo le colonne
  * `credential_id`, `snmp_credential_id` e `protocol`. I binding creati da
  * `creaApparato` restavano quelli vecchi, e chi usa davvero le credenziali
- * (`getDeviceCredentials`, `getDeviceCommunityString`) legge prima il binding:
+ * (`getDeviceCredentials`, `credenzialeSnmpApparato`) legge prima il binding:
  * il wizard diceva «Router aggiornato» e il polling usava la voce vecchia. Anche
  * la porta dell'apparato restava quella di prima (22 con una voce sulla 2222,
  * 161 passando da SNMP a SSH).
@@ -18,7 +18,7 @@ import assert from "node:assert/strict";
 
 process.env.ENCRYPTION_KEY ||= "test-encryption-key-router-wizard";
 
-import { withTenant, getTenantDb, deleteTenantDatabase, getDeviceCredentials, getDeviceCommunityString, getNetworkDeviceById } from "@/lib/db-tenant";
+import { withTenant, getTenantDb, deleteTenantDatabase, getDeviceCredentials, credenzialeSnmpApparato, getNetworkDeviceById } from "@/lib/db-tenant";
 import { encrypt } from "@/lib/crypto";
 import { creaApparato } from "@/lib/devices/crea-apparato";
 import { modificaRouterDelWizard } from "../router-store";
@@ -49,7 +49,7 @@ function inUso(id: number) {
     assert.ok(d);
     return {
       utente: getDeviceCredentials(d)?.username ?? null,
-      community: getDeviceCommunityString(d),
+      community: ((c) => (c.ok && c.cred.forma === "community" ? c.cred.community : null))(credenzialeSnmpApparato(d)),
       porta: d.port,
       colonne: [d.protocol, d.credential_id ?? null, d.snmp_credential_id ?? null],
     };

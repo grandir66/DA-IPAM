@@ -1,5 +1,5 @@
-import { getCredentialById, getDeviceCredentials, getHostByIp, getHostCredentials } from "@/lib/db";
-import { safeDecrypt } from "@/lib/crypto";
+import { getDb, getDeviceCredentials, getHostByIp, portaSshApparato } from "@/lib/db";
+import { scegliSegretoHostDb, type CredProtocol } from "@/lib/credentials/resolve";
 import { createRouterClient } from "@/lib/devices/router-client";
 import { createSwitchClient } from "@/lib/devices/switch-client";
 import { createWinrmClient } from "@/lib/devices/winrm-client";
@@ -123,29 +123,25 @@ function buildDeviceFromProvisional(p: ProvisionalDevice): NetworkDevice {
   };
 }
 
+/**
+ * Utente e password per la prova, scelti dal motore (tappa 2 credenziali, T8).
+ * Prima le fonti dell'apparato (getDeviceCredentials: binding, binding falliti
+ * esclusi, poi colonne); un apparato provvisorio, mai salvato, ha solo la voce
+ * scelta nella finestra. Poi le righe validate dell'host con lo stesso
+ * indirizzo, per il protocollo di login dell'apparato (winrm, api, altrimenti
+ * ssh). Prima il ripiego sull'host leggeva le voci senza guardarne il tipo.
+ */
 function resolveCredentials(device: NetworkDevice): { username: string; password: string } | null {
-  // Prima: sistema bindings v2 (cerca in device_credential_bindings + fallback legacy)
   const creds = getDeviceCredentials(device);
   if (creds?.username && creds?.password) return creds;
 
-  // Fallback: se il device non ha binding ma l'host con stesso IP ha credenziali validate,
-  // riusale invece di far fallire il test. Match per protocollo del device.
-  const protoType = device.protocol === "winrm" ? "winrm"
-    : device.protocol === "api" ? "api"
-    : device.protocol?.startsWith("snmp") ? "snmp"
-    : "ssh";
   const host = getHostByIp(device.host);
   if (!host?.id) return null;
-  const candidate = getHostCredentials(host.id)
-    .filter(hc => hc.validated && hc.protocol_type === protoType)
-    .sort((a, b) => a.sort_order - b.sort_order)[0];
-  if (!candidate) return null;
-  const cred = getCredentialById(candidate.credential_id);
-  if (!cred?.encrypted_username || !cred?.encrypted_password) return null;
-  const u = safeDecrypt(cred.encrypted_username);
-  const p = safeDecrypt(cred.encrypted_password);
-  if (!u || !p) return null;
-  return { username: u, password: p };
+  const protocollo: CredProtocol = device.protocol === "winrm" ? "winrm" : device.protocol === "api" ? "api" : "ssh";
+  const s = scegliSegretoHostDb(getDb(), { hostId: host.id, networkId: host.network_id, ip: device.host }, protocollo, {
+    fonti: ["host_validated"],
+  });
+  return s.ok && s.segreto.forma === "utente" ? { username: s.segreto.username, password: s.segreto.password } : null;
 }
 
 export async function runDeviceConnectionTest(device: NetworkDevice, timeoutMs?: number): Promise<DeviceTestResult> {
@@ -175,6 +171,8 @@ export async function runDeviceConnectionTest(device: NetworkDevice, timeoutMs?:
 
       const apiUsername = username.includes("@") ? username : `${username}@pam`;
       const sshUsername = proxmoxSshUsername(username);
+      // `device.port` è la porta dell'API (8006): l'SSH va sulla porta del candidato SSH dell'apparato, o 22 (T8).
+      const sshPort = portaSshApparato(device);
 
       let anyApi = false;
       let anySsh = false;
@@ -202,7 +200,7 @@ export async function runDeviceConnectionTest(device: NetworkDevice, timeoutMs?:
         try {
           sshOk = await testProxmoxSsh({
             host: ip,
-            port: device.port ?? 22,
+            port: sshPort,
             username: sshUsername,
             password,
           });

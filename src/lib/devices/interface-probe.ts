@@ -16,11 +16,8 @@
  */
 
 import type { NetworkDevice } from "@/types";
-import { apriSessioneSnmp, V3_ASSENTE, versioneApparato, type CredenzialeSnmp } from "@/lib/protocols/snmp-sessione";
-import {
-  getDeviceCommunityString,
-  getDeviceSnmpV3Credentials,
-} from "@/lib/db";
+import { apriSessioneSnmp, versioneApparato } from "@/lib/protocols/snmp-sessione";
+import { credenzialeSnmpApparato } from "@/lib/db";
 
 const OID_IF_DESCR = "1.3.6.1.2.1.2.2.1.2";
 const OID_IF_PHYS_ADDRESS = "1.3.6.1.2.1.2.2.1.6";
@@ -80,18 +77,12 @@ interface SnmpWalkResult {
 
 /** Lanciata dentro l'executor della Promise del walk: un errore diventa il rifiuto del walk. */
 function buildSession(device: NetworkDevice, snmp: typeof import("net-snmp")) {
-  const opts = { port: 161, timeout: 10000 };
-  let cred: CredenzialeSnmp;
-  if (device.protocol === "snmp_v3") {
-    // Livello, protocolli e chiavi dal record; senza v3 nessun ripiego sulla community (tappa 2, T4).
-    const v3 = getDeviceSnmpV3Credentials(device);
-    if (!v3) throw new Error(V3_ASSENTE);
-    cred = { forma: "v3", record: v3 };
-  } else {
-    cred = { forma: "community", community: getDeviceCommunityString(device) };
-  }
+  // Credenziale e porta dal motore (tappa 2 credenziali, T8): v3 coi protocolli della voce, mai la community a un
+  // apparato snmp_v3 (T4); porta del candidato (161, o quella del binding o della voce).
+  const c = credenzialeSnmpApparato(device);
+  if (!c.ok) throw new Error(c.motivo);
   // NULL = v1, come prima (createSession senza version).
-  const aperta = apriSessioneSnmp(snmp, device.host, cred, { ...opts, versione: versioneApparato(device, "1") });
+  const aperta = apriSessioneSnmp(snmp, device.host, c.cred, { port: c.port, timeout: 10000, versione: versioneApparato(device, "1") });
   if (!aperta.ok) throw new Error(aperta.motivo);
   return aperta.session;
 }
@@ -201,18 +192,6 @@ function netmaskToPrefix(netmask: string): number | null {
 // ──────────────────────────────────────────────────────────────────
 
 /**
- * True se il device ha una community/credenziale SNMP risolvibile. NON probe-able
- * SNMP se ritorna false (router-client lo gestisce diversamente; qui restituiamo
- * `source='none'`).
- */
-function canProbeSnmp(device: NetworkDevice): boolean {
-  if (device.community_string) return true;
-  if (device.snmp_credential_id) return true;
-  // credential_id può essere SNMP community archiviata; lasciamo che getDeviceCommunityString decida
-  return !!getDeviceCommunityString(device);
-}
-
-/**
  * Fallback CLI vendor-specific quando SNMP non è disponibile o ritorna 0
  * interfacce. Mappa `device.vendor` → probe corrispondente in
  * [vendor-interface-probes.ts](./vendor-interface-probes.ts).
@@ -237,12 +216,18 @@ async function tryVendorCliFallback(
 export async function probeDeviceInterfaces(device: NetworkDevice): Promise<DeviceProbeOutcome> {
   const warnings: string[] = [];
 
-  // Prima tentativo: SNMP IP-MIB (universale per i device SNMP-compliant).
-  if (!canProbeSnmp(device)) {
+  // Prima tentativo: SNMP IP-MIB (universale per i device SNMP-compliant). La credenziale la sceglie il motore
+  // (tappa 2 credenziali, T8), «public» dichiarato compreso (D5 = (a): prima getDeviceCommunityString ripiegava in
+  // silenzio su «public», e questo controllo era sempre vero). Senza (un apparato snmp_v3 senza una v3 leggibile)
+  // il motivo va negli avvisi e si prova il CLI vendor, come quando il walk fallisce.
+  const sceltaSnmp = credenzialeSnmpApparato(device);
+  if (!sceltaSnmp.ok) {
+    warnings.push(`SNMP non usabile: ${sceltaSnmp.motivo}`);
     // Niente SNMP → prova CLI vendor (Mikrotik, Proxmox/Linux/NAS).
     const cli = await tryVendorCliFallback(device, warnings);
     if (cli) return { interfaces: cli.interfaces, source: cli.source, warnings };
-    return { interfaces: [], source: "none", warnings: ["SNMP non configurato e nessun CLI vendor applicabile"] };
+    warnings.push("SNMP non configurato e nessun CLI vendor applicabile");
+    return { interfaces: [], source: "none", warnings };
   }
 
   const snmp = await import("net-snmp");

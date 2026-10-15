@@ -30,9 +30,19 @@ import { inferIpAssignment, resolveAdDhcpLeaseForHost, resolveDhcpLeaseForHost }
 import { getActiveTenants, getHubDbPath, getSetting, getTenantByCode } from "./db-hub";
 import { buildStatusSeries, statusWindowStartMs, type StatusObservation, type StatusPoint } from "./status-over-time";
 import { registraRipiego } from "./db-maintenance/ripieghi";
-import { catenaReteDb, chiaviGlobaliHub, communitySnmpDb, type CredProtocol } from "./credentials/resolve";
-import { communityDb, coppiaLoginDb, coppiaSshDb, v3ApparatoDb } from "./credentials/segreti";
-import type { SnmpV3CredentialRecord } from "./protocols/snmpv3";
+import {
+  catenaReteDb,
+  chiaviGlobaliHub,
+  communitySnmpDb,
+  credenzialeSnmpApparatoDb,
+  haSnmpApparatoDb,
+  loginApparatoDb,
+  portaSshApparatoDb,
+  type ApparatoInAcquisizione,
+  type CredProtocol,
+  type SceltaSnmpApparato,
+} from "./credentials/resolve";
+import { communityDb, coppiaLoginDb, coppiaSshDb } from "./credentials/segreti";
 import type { ControllerRunKind, ControllerRunStoredTrigger, NetworkControllerRow } from "./controllers/types";
 import { libreStatusFrom } from "./topology/status-map";
 import { parseProxmoxScan } from "./topology/vms";
@@ -4603,88 +4613,29 @@ export function getCredentialCommunityString(credentialId: number): string | nul
   return communityDb(db(), credentialId);
 }
 
-export function getDeviceSnmpV3Credentials(device: NetworkDevice): SnmpV3CredentialRecord | null {
-  return v3ApparatoDb(db(), device);
+/**
+ * Credenziale SNMP di un apparato per l'acquisizione: v3 coi protocolli della
+ * voce, o community; porta del candidato; fonte dichiarata (tappa 2
+ * credenziali, T8). Al posto di getDeviceCommunityString,
+ * getDeviceSnmpV3Credentials e getEffectiveSnmpPort.
+ */
+export function credenzialeSnmpApparato(device: ApparatoInAcquisizione): SceltaSnmpApparato {
+  return credenzialeSnmpApparatoDb(db(), device);
 }
 
-export function getEffectiveSnmpPort(_device: NetworkDevice): number {
-  // SNMP usa sempre porta standard 161, indipendentemente da device.port
-  return 161;
+/** Vero solo con una fonte SNMP dell'apparato (livelli 1-5), mai con la catena della rete o «public». */
+export function haSnmpApparato(device: ApparatoInAcquisizione): boolean {
+  return haSnmpApparatoDb(db(), device);
 }
 
-export function getDeviceCommunityString(device: NetworkDevice): string {
-  const snmpBinding = db().prepare(`
-    SELECT * FROM device_credential_bindings
-    WHERE device_id = ? AND protocol_type = 'snmp'
-    ORDER BY sort_order LIMIT 1
-  `).get(device.id) as DeviceCredentialBinding | undefined;
-
-  if (snmpBinding) {
-    if (snmpBinding.credential_id) {
-      const fromCred = getCredentialCommunityString(snmpBinding.credential_id);
-      if (fromCred) return fromCred;
-    } else if (snmpBinding.inline_encrypted_password) {
-      const s = safeDecrypt(snmpBinding.inline_encrypted_password);
-      if (s?.trim()) return s;
-    }
-  }
-
-  const isSnmpPrimary = device.protocol === "snmp_v2" || device.protocol === "snmp_v3";
-  const tryCredIds = isSnmpPrimary
-    ? [device.credential_id, device.snmp_credential_id]
-    : [device.snmp_credential_id, device.credential_id];
-  for (const credId of tryCredIds) {
-    if (!credId) continue;
-    const fromCred = getCredentialCommunityString(credId);
-    if (fromCred) return fromCred;
-  }
-  if (device.community_string) {
-    const s = safeDecrypt(device.community_string);
-    if (s && s.trim()) return s;
-    if (typeof device.community_string === "string") return device.community_string;
-  }
-  return "public";
+/** Porta SSH di un apparato il cui protocollo principale non è SSH (Proxmox: device.port è l'API). */
+export function portaSshApparato(device: ApparatoInAcquisizione): number {
+  return portaSshApparatoDb(db(), device);
 }
 
-export function getDeviceCredentials(device: NetworkDevice): { username: string; password: string } | null {
-  const protoType = device.protocol === "winrm" ? "winrm"
-    : device.protocol === "api" ? "api"
-    : "ssh";
-  const binding = db().prepare(`
-    SELECT * FROM device_credential_bindings
-    WHERE device_id = ? AND protocol_type = ?
-    ORDER BY sort_order LIMIT 1
-  `).get(device.id, protoType) as DeviceCredentialBinding | undefined;
-
-  if (binding) {
-    if (binding.credential_id) {
-      const cred = getCredentialById(binding.credential_id);
-      if (cred?.encrypted_username && cred?.encrypted_password) {
-        const u = safeDecrypt(cred.encrypted_username);
-        const p = safeDecrypt(cred.encrypted_password);
-        if (u && p) return { username: u, password: p };
-      }
-    } else if (binding.inline_username && binding.inline_encrypted_password) {
-      const p = safeDecrypt(binding.inline_encrypted_password);
-      if (p) return { username: binding.inline_username, password: p };
-    }
-  }
-
-  if (device.credential_id) {
-    const cred = getCredentialById(device.credential_id);
-    if (cred?.encrypted_username && cred?.encrypted_password) {
-      const u = safeDecrypt(cred.encrypted_username);
-      const p = safeDecrypt(cred.encrypted_password);
-      if (u && p) return { username: u, password: p };
-      return null;
-    }
-  }
-  if (device.username && device.encrypted_password) {
-    const p = safeDecrypt(device.encrypted_password);
-    if (p) return { username: device.username, password: p };
-    return null;
-  }
-  return null;
+/** Utente e password dell'acquisizione, scelti dal motore (binding falliti saltati). */
+export function getDeviceCredentials(device: ApparatoInAcquisizione): { username: string; password: string } | null {
+  return loginApparatoDb(db(), device);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

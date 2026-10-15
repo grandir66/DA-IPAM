@@ -1,6 +1,6 @@
 import type { NetworkDevice } from "@/types";
-import { apriSessioneSnmp, V3_ASSENTE, versioneApparato, type CredenzialeSnmp } from "@/lib/protocols/snmp-sessione";
-import { getDeviceCredentials, getDeviceCommunityString, getDeviceSnmpV3Credentials, getCredentialCommunityString, getDb } from "@/lib/db";
+import { apriSessioneSnmp, versioneApparato } from "@/lib/protocols/snmp-sessione";
+import { credenzialeSnmpApparato, getDeviceCredentials, haSnmpApparato } from "@/lib/db";
 import { safeDecrypt } from "@/lib/crypto";
 import type { MacTableEntry, PortInfo } from "./switch-client";
 import { parseMikrotikInterfaceTypes, parseMikrotikMacTable } from "./mikrotik-porte";
@@ -113,20 +113,14 @@ export interface RouterClient {
 }
 
 /**
- * True se il device ha una credenziale/community SNMP risolvibile via uno dei tre
- * percorsi: `device_credential_bindings.protocol_type='snmp'`, campi legacy
- * (`snmp_credential_id`, `credential_id`) con community valida, oppure `community_string`
- * inline. Usato sia dal fallback SNMP del router-client sia dal branch Stormshield
+ * True se il device ha una fonte SNMP sua: binding SNMP (non falliti), colonne
+ * (`snmp_credential_id`, `credential_id`) con una voce SNMP, oppure
+ * `community_string` (`haSnmpApparato`, il motore unico: tappa 2 credenziali,
+ * T8). Usato sia dal fallback SNMP del router-client sia dal branch Stormshield
  * per decidere se evitare l'SSH a vuoto.
  */
 function deviceHasSnmpCredential(device: NetworkDevice): boolean {
-  if (device.community_string) return true;
-  if (device.snmp_credential_id && getCredentialCommunityString(device.snmp_credential_id)) return true;
-  if (device.credential_id && getCredentialCommunityString(device.credential_id)) return true;
-  const hasBinding = !!getDb().prepare(
-    "SELECT 1 FROM device_credential_bindings WHERE device_id = ? AND protocol_type = 'snmp' LIMIT 1"
-  ).get(device.id);
-  return hasBinding;
+  return haSnmpApparato(device);
 }
 
 export async function createRouterClient(device: NetworkDevice): Promise<RouterClient> {
@@ -301,22 +295,15 @@ async function createSnmpArpClient(
   device: NetworkDevice
 ): Promise<RouterClient> {
   const snmp = await import("net-snmp");
-  // SNMP usa sempre porta 161 (standard)
-  const opts = { port: 161, timeout: 10000 };
 
   // Lanciata dentro l'executor della Promise del walk: un errore diventa il rifiuto del walk.
   function createSession() {
-    let cred: CredenzialeSnmp;
-    if (device.protocol === "snmp_v3") {
-      // Livello, protocolli e chiavi dal record; senza v3 nessun ripiego sulla community (tappa 2, T4).
-      const v3 = getDeviceSnmpV3Credentials(device);
-      if (!v3) throw new Error(V3_ASSENTE);
-      cred = { forma: "v3", record: v3 };
-    } else {
-      cred = { forma: "community", community: getDeviceCommunityString(device) };
-    }
+    // Credenziale e porta dal motore (tappa 2 credenziali, T8): v3 coi protocolli della voce; un apparato snmp_v3
+    // senza v3 è un errore, mai la community (T4). Porta del candidato: 161, o quella del binding o della voce.
+    const c = credenzialeSnmpApparato(device);
+    if (!c.ok) throw new Error(c.motivo);
     // NULL = v1, come prima (createSession senza version).
-    const aperta = apriSessioneSnmp(snmp, device.host, cred, { ...opts, versione: versioneApparato(device, "1") });
+    const aperta = apriSessioneSnmp(snmp, device.host, c.cred, { port: c.port, timeout: 10000, versione: versioneApparato(device, "1") });
     if (!aperta.ok) throw new Error(aperta.motivo);
     return aperta.session;
   }

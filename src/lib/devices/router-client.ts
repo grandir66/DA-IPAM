@@ -3,6 +3,7 @@ import { getDeviceCredentials, getDeviceCommunityString, getDeviceSnmpV3Credenti
 import { safeDecrypt } from "@/lib/crypto";
 import type { MacTableEntry, PortInfo } from "./switch-client";
 import { parseMikrotikInterfaceTypes, parseMikrotikMacTable } from "./mikrotik-porte";
+import { parseMikrotikNeighbors } from "./mikrotik-vicini";
 import { getSnmpPortSchema } from "./snmp-port-schema";
 import { sshExec as transportSshExec } from "./ssh-transport";
 import type { SshOptions } from "./ssh-transport";
@@ -1073,33 +1074,6 @@ function parseGenericArp(output: string): ArpTableEntry[] {
 }
 
 // ─── Neighbor parsers ────────────────────────────────────────────────
-
-/** MikroTik: /ip neighbor print terse */
-function parseMikrotikNeighbors(output: string): NeighborEntry[] {
-  const entries: NeighborEntry[] = [];
-  for (const line of output.split("\n")) {
-    const iface = line.match(/interface=(\S+)/)?.[1];
-    const identity = line.match(/identity="([^"]+)"|identity=(\S+)/);
-    const address = line.match(/address=(\d+\.\d+\.\d+\.\d+)/)?.[1];
-    const macAddr = line.match(/mac-address=([0-9A-Fa-f:]+)/)?.[1];
-    const platform = line.match(/platform="([^"]+)"|platform=(\S+)/);
-    const intPort = line.match(/interface-name="([^"]+)"|interface-name=(\S+)/);
-
-    const remoteName = identity?.[1] ?? identity?.[2] ?? "";
-    if (!iface && !remoteName) continue;
-
-    entries.push({
-      localPort: iface || "",
-      remoteDevice: remoteName,
-      remotePort: intPort?.[1] ?? intPort?.[2] ?? "",
-      protocol: "mndp",
-      remoteIp: address,
-      remoteMac: macAddr?.toUpperCase(),
-      remotePlatform: platform?.[1] ?? platform?.[2],
-    });
-  }
-  return entries;
-}
 
 /** Cisco: show cdp/lldp neighbors detail */
 function parseCiscoNeighbors(output: string, proto: "cdp" | "lldp"): NeighborEntry[] {

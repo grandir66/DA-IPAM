@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { edgeLook, linkWords, pathPoints, poeLabel, seenWords, speedLabel, speedWidth, wavyPath } from "@/lib/topology/edge-look";
+import { SOURCE_WORDS, edgeLook, linkWords, pathPoints, poeLabel, seenWords, speedLabel, speedWidth, wavyPath } from "@/lib/topology/edge-look";
 import { LINK_ATTRS_DEFAULT, type MapLink } from "@/lib/topology/model-types";
 
 function link(over: Partial<MapLink> = {}): MapLink {
@@ -108,4 +108,8 @@ test("«visto»: oggi, N giorni fa, non visto; mai «visto oggi» per ciò che n
   assert.equal(seenWords(link({ lastSeen: "2026-10-01 05:00:00", daysUnseen: 13, stale: true })), "▲ non visto da 13 g");
   assert.equal(seenWords(link({ source: "manual", sources: ["manual"], lastSeen: null })), "dichiarato a mano, nessuna lettura lo vede");
   assert.equal(seenWords(link({ lastSeen: null })), "data della lettura non nota");
+});
+
+test("una riga mndp a schermo è un «annuncio di rete (MNDP o CDP)» (spec §13.5.2)", () => {
+  assert.equal(SOURCE_WORDS.mndp, "annuncio di rete (MNDP o CDP)");
 });

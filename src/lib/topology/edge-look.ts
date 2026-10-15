@@ -111,9 +111,13 @@ export function wavyPath(points: readonly Pt[], amp = 3, wave = 12): string {
   return d;
 }
 
-/** Le fonti di un collegamento in parole (dettagli, menu della linea, pagina dei dati). */
+/**
+ * Le fonti di un collegamento in parole (dettagli, menu della linea, pagina dei dati). Una riga `mndp` scritta da un
+ * router o da SNMP è un annuncio di rete: MNDP oppure il CDP di un MikroTik, che il lettore scrive `mndp` perché
+ * attraversa gli switch (spec §13.5.2): finché `discovered_by` (T2) non dice quale, a schermo «annuncio di rete».
+ */
 export const SOURCE_WORDS: Readonly<Record<LinkSource, string>> = {
-  manual: "a mano", unifi_uplink: "uplink UniFi", lldp: "LLDP", cdp: "CDP", mndp: "MNDP", mac_table: "tabella MAC", vm_mac: "dalle VM",
+  manual: "a mano", unifi_uplink: "uplink UniFi", lldp: "LLDP", cdp: "CDP", mndp: "annuncio di rete (MNDP o CDP)", mac_table: "tabella MAC", vm_mac: "dalle VM",
 };
 
 /** Per un collegamento «dalle VM» (spec §12.5): «N VM di <hypervisor> passano da questa porta»; altrimenti null. */

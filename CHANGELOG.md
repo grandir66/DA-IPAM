@@ -8,6 +8,11 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ### Correzioni
 
+- **Il segnale verso DA-Link legge l'appliance a cliente singolo.** Deploy-Appliance crea
+  sempre il cliente «DEFAULT», e il codice di DA-Link (es. 70175) lì non c'è: sul pilota il
+  segnale partiva senza moduli, salute né numeri (`cliente: non_trovato`). Ora, se il codice
+  non c'è e l'istanza ha un solo cliente «DEFAULT», si legge da lui e il segnale lo dichiara
+  (`cliente: appliance`). Con più clienti vale ancora solo il codice esatto (rischio 8).
 - **Il firewall dell'interfaccia NetBird ora filtra davvero.** Sul pilota (PX-NAS, 15/10)
   NetBird, collegandosi, ha messo «accetta tutto da wt0» in cima alla nostra catena
   sull'input, e il filtro per porta (22, 443, 6443) non contava più: restava solo la

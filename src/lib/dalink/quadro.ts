@@ -35,7 +35,7 @@ export interface DipendenzeQuadro {
   config: () => ConfigDalink;
   /** Il codice dell'unico cliente attivo dell'istanza, se è uno solo e numerico. */
   clienteUnico: () => string | null;
-  fatti: (codcli: string) => Promise<{ fatti: FattiIstanza; clienteTrovato: boolean }>;
+  fatti: (codcli: string) => Promise<{ fatti: FattiIstanza; clienteTrovato: boolean; tenant?: string | null }>;
   inventario: (codcli: string) => Inventario | null;
   proxyZabbix: () => boolean;
 }
@@ -85,12 +85,12 @@ export async function quadroCosaEsce(dip: Partial<DipendenzeQuadro> = {}): Promi
   let anteprimaErrore: string | null = null;
   if (codcli) {
     try {
-      const { fatti, clienteTrovato } = await d.fatti(codcli);
+      const { fatti, clienteTrovato, tenant } = await d.fatti(codcli);
       anteprima = costruisciSegnale(
         { codcli, nodo: cfg.stato === "pronta" ? cfg.nodo : `${codcli}-ipam` },
         livello?.livello ?? null,
         fatti,
-        () => (clienteTrovato ? d.inventario(codcli) : null),
+        () => (clienteTrovato ? d.inventario(tenant ?? codcli) : null),
       );
     } catch {
       anteprimaErrore = "errore nella raccolta dei dati dell'istanza";

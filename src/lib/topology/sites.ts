@@ -110,21 +110,7 @@ export function assignSites(input: TopologyModelInput, idx: NodeIndex, links: Ma
   }
 
   // 4. Testa.
-  const ipsByNode = new Map<string, Set<string>>();
-  const addIp = (id: string, ip: string | null | undefined) => {
-    if (!ip) return;
-    const s = ipsByNode.get(id) ?? new Set<string>();
-    s.add(ip);
-    ipsByNode.set(id, s);
-  };
-  for (const n of nodes) {
-    addIp(n.id, n.mgmtIp);
-    for (const h of n.fusedHostIds) addIp(n.id, idx.hostById.get(h)?.ip);
-  }
-  for (const h of idx.hostById.values()) {
-    const owner = h.mac ? idx.byMac.get(normalizeMacForStorage(h.mac) ?? "") : undefined;
-    if (typeof owner === "string" && owner.startsWith("dev:")) addIp(owner, h.ip);
-  }
+  const ipsByNode = ipDeiNodi(idx);
 
   const tops = input.locations
     .filter((l) => l.parent_id == null || !locById.has(l.parent_id))
@@ -156,4 +142,43 @@ export function assignSites(input: TopologyModelInput, idx: NodeIndex, links: Ma
     }
     return { locationId: loc.id, name: loc.name, headNodeId: best && !tie ? best : null, headProposed: Boolean(best && !tie), nodeIds };
   });
+}
+
+/**
+ * Gli IP di ogni nodo, per la testa (spec §3): il suo, quelli degli host fusi e quelli degli host col MAC di un apparato.
+ * Li usano la testa proposta di una sede (sopra) e quella della mappa automatica (`retiDiCuiGateway`, spec §13.8.1).
+ */
+export function ipDeiNodi(idx: NodeIndex): Map<string, Set<string>> {
+  const ipsByNode = new Map<string, Set<string>>();
+  const addIp = (id: string, ip: string | null | undefined) => {
+    if (!ip) return;
+    const s = ipsByNode.get(id) ?? new Set<string>();
+    s.add(ip);
+    ipsByNode.set(id, s);
+  };
+  for (const n of [...idx.nodes.values()].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))) {
+    addIp(n.id, n.mgmtIp);
+    for (const h of n.fusedHostIds) addIp(n.id, idx.hostById.get(h)?.ip);
+  }
+  for (const h of idx.hostById.values()) {
+    const owner = h.mac ? idx.byMac.get(normalizeMacForStorage(h.mac) ?? "") : undefined;
+    if (typeof owner === "string" && owner.startsWith("dev:")) addIp(owner, h.ip);
+  }
+  return ipsByNode;
+}
+
+/**
+ * Per ogni apparato, di quante reti censite è il gateway (`networks.gateway` è uno dei suoi IP): lo stesso conto della testa
+ * proposta di una sede (spec §3, «il router che fa da gateway del maggior numero di subnet»), su tutte le reti. Lo usa la
+ * testa proposta della mappa automatica (`proposeHead`, spec §13.8.1). Solo gli apparati con almeno una rete.
+ */
+export function retiDiCuiGateway(input: Pick<TopologyModelInput, "networks">, idx: NodeIndex): Map<string, number> {
+  const ips = ipDeiNodi(idx);
+  const out = new Map<string, number>();
+  for (const [id, mine] of [...ips].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
+    if (!id.startsWith("dev:")) continue;
+    const n = input.networks.filter((nw) => nw.gateway !== null && mine.has(nw.gateway)).length;
+    if (n > 0) out.set(id, n);
+  }
+  return out;
 }

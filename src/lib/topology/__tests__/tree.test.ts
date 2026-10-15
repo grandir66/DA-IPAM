@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { autoVisible, buildTree, missingNeighbors, proposeHead } from "@/lib/topology/tree";
+import { autoVisible, buildTree, chiaveScelta, missingNeighbors, proposeHead } from "@/lib/topology/tree";
 import { LINK_ATTRS_DEFAULT, type LinkSource, MapLink, MapNode, SiteInfo, TopologyModel } from "@/lib/topology/model-types";
 
 function node(id: string, type: string, over: Partial<MapNode> = {}): MapNode {
@@ -140,4 +140,69 @@ test("una VM che è un nodo censito, senza collegamenti propri, sta dentro il su
   assert.deepEqual([...autoVisible(m)].sort(), ["dev:1", "dev:4"]);
   assert.deepEqual([...autoVisible(model(nodi, [link("dev:1", "dev:4"), link("dev:1", "host:9")], { vms: [vm("host:9")] }))].sort(), ["dev:1", "dev:4", "host:9"]);
   assert.deepEqual([...autoVisible(model(nodi, [link("dev:1", "dev:4")], { vms: [vm(null)] }))].sort(), ["dev:1", "dev:4", "host:9"]);
+});
+
+// Spec §13.8.1 (D1). Incidente del 14/10: a pari costo vinceva la stringa «da|a» più piccola, e chi è il figlio secondo
+// il controller non contava: router 1 prendeva accesso A via ether1-2.5 (2,5G) e core 1 finiva sotto accesso A.
+// La fonte va anche a `link`, che ne fa l'id («dev:112~dev:114~unifi_uplink»): passata solo in `over`, l'id restava «~lldp».
+const sp = (a: string, b: string, speedMbps: number, over: Partial<MapLink> = {}): MapLink => ({ ...link(a, b, over.source ?? "lldp"), speedMbps, ...over });
+
+test("chiaveScelta: ★, non visto, rango, contro verso, velocità — in quest'ordine", () => {
+  assert.deepEqual(chiaveScelta(sp("dev:1", "dev:114", 10000), "dev:1"), [1, 0, 2, 0, -10000]);
+  assert.deepEqual(chiaveScelta(sp("dev:112", "dev:114", 10000, { source: "unifi_uplink", sources: ["unifi_uplink"], uplinkFrom: "dev:112" }), "dev:112"), [1, 0, 1, 1, -10000]);
+  assert.deepEqual(chiaveScelta({ ...link("dev:1", "dev:9", "manual"), manual: { confirmed: true } }, "dev:1"), [1, 0, 3, 0, -0]);
+  assert.deepEqual(chiaveScelta({ ...link("dev:1", "dev:9", "lldp", true), primary: "user" }, "dev:1"), [0, 1, 2, 0, -0]);
+});
+
+test("I11 — senza l'uplink di core 1, router 1 → core 1 (10G) vince su router 1 → accesso A (2,5G), non l'alfabeto", () => {
+  const m = model(
+    [node("dev:1", "router"), node("dev:112", "switch"), node("dev:114", "switch")],
+    [
+      sp("dev:1", "dev:114", 10000),
+      sp("dev:1", "dev:112", 2500),
+      sp("dev:112", "dev:114", 10000, { source: "unifi_uplink", sources: ["unifi_uplink"], uplinkFrom: "dev:112" }),
+    ],
+  );
+  const t = buildTree(m, all(m), ["dev:1"]);
+  assert.equal(t.via.get("dev:114")!.id, "dev:1~dev:114~lldp");
+  assert.equal(t.via.get("dev:112")!.id, "dev:112~dev:114~unifi_uplink", "accesso A sotto core 1, sul suo uplink");
+});
+
+test("I10 — il verso non batte il rango: core 1 non va sotto il router di riserva attraverso la porta della WAN", () => {
+  const m = model(
+    [node("dev:1", "router"), node("dev:112", "switch"), node("dev:114", "switch"), node("dev:7", "router")],
+    [
+      sp("dev:1", "dev:112", 2500),
+      sp("dev:112", "dev:114", 10000, { source: "unifi_uplink", sources: ["unifi_uplink"], uplinkFrom: "dev:112" }),
+      sp("dev:7", "dev:114", 1000),
+      sp("dev:1", "dev:7", 1000),
+    ],
+  );
+  const t = buildTree(m, all(m), ["dev:1"]);
+  assert.equal(t.via.get("dev:114")!.id, "dev:112~dev:114~unifi_uplink");
+});
+
+// La radice ha l'id PIÙ ALTO di proposito: con la radice «dev:1» la stringa «dev:1|dev:3» batteva comunque «dev:2|dev:3», e la
+// prova passava anche senza il verso nella chiave (vista con la chiave mutata, 15/10). Qui l'alfabeto sceglierebbe
+// «dev:2|dev:3» (dev:3 sotto dev:2, contro il verso dell'uplink): solo il verso lo scarta.
+test("a pari rango un uplink del controller si percorre dal padre al figlio", () => {
+  const m = model(
+    [node("dev:9", "router"), node("dev:2", "switch"), node("dev:3", "switch")],
+    [sp("dev:9", "dev:2", 1000), sp("dev:9", "dev:3", 1000), sp("dev:2", "dev:3", 1000, { uplinkFrom: "dev:2" })],
+  );
+  const t = buildTree(m, all(m), ["dev:9"]);
+  assert.deepEqual([t.via.get("dev:2")!.id, t.via.get("dev:3")!.id], ["dev:9~dev:2~lldp", "dev:9~dev:3~lldp"]);
+});
+
+// I63 (spec §13.8.1, H17; vincolo 9 di Riccardo: niente scelte per ordine di id prima delle prove). Rete B: il router e il
+// gateway del controller raggiungono gli stessi nodi, e vinceva l'id più basso, per caso. A pari nodi raggiunti vince il
+// router gateway di più reti (`gatewayDi`, contate come per la testa di una sede); l'id resta l'ultimo spareggio (I39).
+test("I63 — testa proposta: a pari nodi raggiunti il router gateway di più reti; a pari reti, l'id più basso", () => {
+  const nodes = [node("dev:1", "router"), node("dev:5", "router"), node("dev:3", "switch")];
+  const links = [link("dev:1", "dev:3"), link("dev:5", "dev:3")];
+  assert.equal(proposeHead(model(nodes, links, { gatewayDi: { "dev:5": 2 } })), "dev:5");
+  assert.equal(proposeHead(model(nodes, links, { gatewayDi: { "dev:1": 1, "dev:5": 1 } })), "dev:1");
+  assert.equal(proposeHead(model(nodes, links)), "dev:1", "senza il conto delle reti (regola spenta): come prima");
+  // i nodi raggiunti vengono prima delle reti
+  assert.equal(proposeHead(model(nodes, [link("dev:1", "dev:3")], { gatewayDi: { "dev:5": 9 } })), "dev:1");
 });

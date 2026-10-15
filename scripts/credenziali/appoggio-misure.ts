@@ -19,17 +19,21 @@
  *     livelli 6-11 (righe host validate, catena della rete, catene vecchie,
  *     chiave dell'hub), e di che tipo;
  *   - 2e: colonne degli apparati contro i binding (utente/password, colonna
- *     SNMP, colonna non SNMP, community_string) e binding inline.
+ *     SNMP, colonna non SNMP, community_string) e binding inline;
+ *   - snmp_v3 (revisione della 2a): apparati col protocollo snmp_v3 divisi in
+ *     v3 completa, formato vecchio e senza v3. Quelli senza v3 oggi leggono la
+ *     community (o «public»); dalla 2a danno «Credenziale SNMPv3 assente o
+ *     illeggibile». Se sono più di 0 ci si ferma prima della procedura R.
  */
 import type Database from "better-sqlite3";
-import { closeTenantDb, getCredentialCommunityString, getTenantDb, withTenant } from "../../src/lib/db-tenant";
+import { closeTenantDb, getCredentialCommunityString, getDeviceSnmpV3Credentials, getTenantDb, withTenant } from "../../src/lib/db-tenant";
 import { getActiveTenants, getSetting } from "../../src/lib/db-hub";
 import { safeDecrypt } from "../../src/lib/crypto";
 import { resolveCredentialsForDb, type CredProtocol } from "../../src/lib/credentials/resolve";
 // La misura di D1b chiede cosa riceverebbero gli apparati con la regola NUOVA
 // tipo ↔ protocollo: è quella di tipi.ts (T2), non una copia.
 import { tipiPerProtocollo } from "../../src/lib/credentials/tipi";
-import { haSnmpOggi, protocolloPrincipale, provenienzaCommunity, type ProtocolloApparato } from "./appoggio-fotografia";
+import { haSnmpOggi, protocolloPrincipale, provenienzaCommunity, provenienzaV3, type ProtocolloApparato } from "./appoggio-fotografia";
 import type { NetworkDevice } from "../../src/types";
 
 export { cartellaTenant, chiudiTutto, elencaTenant, getHubDbPath } from "./appoggio-fotografia";
@@ -117,6 +121,45 @@ function misuraPublic(dbh: Database.Database, apparati: NetworkDevice[]): Righe 
   return [
     `[D5] apparati ${apparati.length}; con «public» di ripiego ${pub} (protocollo SNMP principale ${snmpPrincipale}, «ha SNMP?» vero ${conHaSnmp}); per vendor: ${elenco(perVendor)}`,
   ];
+}
+
+/**
+ * Revisione della 2a: apparati col protocollo snmp_v3. La v3 si legge col
+ * lettore della 2a (getDeviceSnmpV3Credentials); completa o formato vecchio lo
+ * dice la provenienza ricostruita. Per quelli senza v3: da dove leggono la
+ * community oggi, cioè quello che la 2a toglie.
+ */
+function misuraSnmpV3(dbh: Database.Database, apparati: NetworkDevice[]): Righe {
+  let n = 0;
+  let completa = 0;
+  let vecchia = 0;
+  let nonRicostruita = 0;
+  const senza = { binding: 0, colonna: 0, community_string: 0, public: 0 };
+  for (const d of apparati) {
+    if (d.protocol !== "snmp_v3") continue;
+    n += 1;
+    if (getDeviceSnmpV3Credentials(d)) {
+      const livello = provenienzaV3(d).livello;
+      if (livello === "v3_completa") completa += 1;
+      else if (livello === "v3") vecchia += 1;
+      else nonRicostruita += 1;
+      continue;
+    }
+    const da = provenienzaCommunity(dbh, d).livello;
+    if (da === "binding" || da === "binding_inline") senza.binding += 1;
+    else if (da === "colonna") senza.colonna += 1;
+    else if (da === "public") senza.public += 1;
+    else senza.community_string += 1;
+  }
+  const senzaV3 = senza.binding + senza.colonna + senza.community_string + senza.public;
+  let riga = `[snmp_v3] apparati col protocollo snmp_v3: ${n} → v3 completa ${completa}, formato vecchio ${vecchia}, senza v3 ${senzaV3}`;
+  if (nonRicostruita > 0) riga += `, v3 di provenienza non ricostruita ${nonRicostruita}`;
+  if (senzaV3 > 0) {
+    riga +=
+      ` (oggi leggono la community da binding ${senza.binding}, colonna ${senza.colonna}, community_string ${senza.community_string}, «public» ${senza.public})` +
+      " → la 2a li ferma con «Credenziale SNMPv3 assente o illeggibile»: ci si ferma e si porta il numero a Riccardo prima della procedura R";
+  }
+  return [riga];
 }
 
 /** D8: usi di ogni voce per colonna figlia di `credentials`, più le chiavi dell'hub. */
@@ -355,6 +398,7 @@ export function misureTenant(code: string): Righe {
         ...misuraUsi(dbh),
         ...misuraD1b(dbh, apparati),
         ...misura2e(dbh, apparati),
+        ...misuraSnmpV3(dbh, apparati),
       ];
     });
   } finally {

@@ -21,7 +21,7 @@
 import type Database from "better-sqlite3";
 
 import { DEFAULT_PORTS, portaCredenziale, type CredProtocol } from "./porte";
-import { tipiPerProtocollo } from "./tipi";
+import { portaVoceValePer, tipiPerProtocollo } from "./tipi";
 
 export { DEFAULT_PORTS, portaCredenziale };
 export type { CredProtocol };
@@ -225,19 +225,24 @@ export function resolveCredentialsForDb(
 
   // Tier 5: catena di rete (network_credentials v2), filtrata con la regola
   // unica tipo ↔ protocollo (tappa 2, T2): per `api` anche le voci `ssh`.
+  // La porta della voce vale solo per un protocollo suo: una voce SSH proposta
+  // per API va sulla porta API standard, non sulla 22 (revisione della 2a).
   const types = tipiPerProtocollo(protocol);
   if (types.length > 0) {
     const placeholders = types.map(() => "?").join(",");
     const netRows = dbh
       .prepare(
-        `SELECT nc.credential_id, c.port
+        `SELECT nc.credential_id, c.port, c.credential_type
          FROM network_credentials nc
          JOIN credentials c ON c.id = nc.credential_id
          WHERE nc.network_id = ? AND c.credential_type IN (${placeholders})
          ORDER BY nc.sort_order ASC, nc.id ASC`
       )
-      .all(target.networkId, ...types) as Array<{ credential_id: number; port: number | null }>;
-    for (const r of netRows) push(r.credential_id, portaCredenziale(r, protocol), "network_chain");
+      .all(target.networkId, ...types) as Array<{ credential_id: number; port: number | null; credential_type: string | null }>;
+    for (const r of netRows) {
+      const porta = portaVoceValePer(r.credential_type, protocol) ? portaCredenziale(r, protocol) : DEFAULT_PORTS[protocol];
+      push(r.credential_id, porta, "network_chain");
+    }
   }
 
   // Tier 6: catena legacy — pin per host, poi lista per rete, per ciascun ruolo applicabile.

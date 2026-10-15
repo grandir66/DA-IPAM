@@ -225,6 +225,28 @@ describe("resolveCredentialsForDb — livello 5 con la regola unica tipo ↔ pro
     assert.deepEqual(resolveCredentialsForDb(db, { networkId: 9 }, "redfish").map((r) => r.credential_id), [901]);
     assert.deepEqual(resolveCredentialsForDb(db, { networkId: 9 }, "onvif").map((r) => r.credential_id), [901]);
   });
+
+  // Revisione della 2a: la voce SSH ammessa per API portava la sua porta (22,
+  // 2222), cioè un candidato API sulla porta SSH. La porta propria vale solo per
+  // il protocollo della voce; per un altro protocollo vale lo standard di quello.
+  it("livello 5 per API: la voce SSH (porta 2222) è candidata sulla porta API standard, non sulla sua", () => {
+    seedNetwork(10, "10.10.0.0/24");
+    seedCredential(1001, "ssh");
+    seedCredential(1002, "api");
+    seedCredential(1003, "linux");
+    db.prepare(`UPDATE credentials SET port = 2222 WHERE id = 1001`).run();
+    db.prepare(`UPDATE credentials SET port = 8006 WHERE id = 1002`).run();
+    db.prepare(`UPDATE credentials SET port = 22 WHERE id = 1003`).run();
+    for (const [i, c] of [1001, 1002, 1003].entries()) {
+      db.prepare(`INSERT INTO network_credentials (network_id, credential_id, sort_order) VALUES (10, ?, ?)`).run(c, i);
+    }
+    const api = resolveCredentialsForDb(db, { networkId: 10 }, "api");
+    // La voce `linux` (1003) per API non c'è: la tabella del piano ammette `ssh`, e dalla 2c `linux` non esiste più.
+    assert.deepEqual(api.map((r) => [r.credential_id, r.port]), [[1001, 443], [1002, 8006]]);
+    // Per SSH la stessa voce tiene la sua porta.
+    const ssh = resolveCredentialsForDb(db, { networkId: 10 }, "ssh");
+    assert.deepEqual(ssh.map((r) => [r.credential_id, r.port]), [[1001, 2222], [1003, 22]]);
+  });
 });
 
 describe("resolveCredentialsFor / resolveCredentialFor — wrapper pubblico mai lancia", () => {

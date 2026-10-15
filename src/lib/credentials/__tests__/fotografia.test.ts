@@ -425,3 +425,92 @@ describe("fotografia-scelte.ts sulla copia", () => {
     assert.match(diverse.stdout, /Switch uno/);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Revisione della 2a: gli apparati col protocollo snmp_v3 senza una v3
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Dal T4 le cinque sessioni v3 (lettura dati, switch, router, sonda delle
+ * interfacce, walk dei NAS) danno «Credenziale SNMPv3 assente o illeggibile»
+ * a un apparato snmp_v3 senza una v3, invece di ripiegare sulla community. La
+ * fotografia della 2a scriveva ancora la community: prima e dopo coincidevano
+ * e il criterio d'arresto («0 differenze») non vedeva l'unico cambio di
+ * lettura della 2a. E nessuna misura contava questi apparati.
+ */
+describe("fotografia e misure della 2a sugli apparati snmp_v3", () => {
+  const TV3 = "TESTFOTOV3";
+  let radiceV3 = "";
+  let servizioV3 = "";
+  const id: Record<string, number> = {};
+  const voce: Record<string, number> = {};
+
+  before(() => {
+    getHubDb();
+    const d = getTenantDb(TV3);
+    const ins = d.prepare(
+      `INSERT INTO credentials (name, credential_type, encrypted_username, encrypted_password, security_level, auth_protocol, encrypted_auth_key, priv_protocol, encrypted_priv_key)
+       VALUES (?, 'snmp', ?, ?, ?, ?, ?, ?, ?)`
+    );
+    voce.community = Number(ins.run("Community v2c", null, cifra("Comunita-V2c-1A"), null, null, null, null, null).lastInsertRowid);
+    voce.v3 = Number(
+      ins.run("V3 completa", cifra("monitor"), null, "authPriv", "SHA", cifra("Chiave-Auth-2B"), "AES", cifra("Chiave-Priv-3C")).lastInsertRowid
+    );
+    voce.vecchia = Number(ins.run("V3 vecchia", cifra("monitor-vecchio"), cifra("Chiave-Vecchia-4D"), null, null, null, null, null).lastInsertRowid);
+    const app = d.prepare(
+      `INSERT INTO network_devices (name, host, device_type, vendor, protocol, port, credential_id, community_string)
+       VALUES (?, ?, 'switch', 'hp', 'snmp_v3', 161, ?, ?)`
+    );
+    id.colonna = Number(app.run("V3 con la community in colonna", "10.98.0.1", voce.community, null).lastInsertRowid);
+    id.completa = Number(app.run("V3 completa", "10.98.0.2", voce.v3, null).lastInsertRowid);
+    id.vecchia = Number(app.run("V3 formato vecchio", "10.98.0.3", voce.vecchia, null).lastInsertRowid);
+    id.nulla = Number(app.run("V3 senza niente", "10.98.0.4", null, null).lastInsertRowid);
+    id.stringa = Number(app.run("V3 con community_string", "10.98.0.5", null, cifra("Comunita-Stringa-5E")).lastInsertRowid);
+    id.binding = Number(app.run("V3 con un binding a community", "10.98.0.6", null, null).lastInsertRowid);
+    d.prepare("INSERT INTO device_credential_bindings (device_id, credential_id, protocol_type, port, sort_order) VALUES (?, ?, 'snmp', 161, 0)")
+      .run(id.binding, voce.community);
+    closeTenantDb(TV3);
+    closeHubDb();
+    radiceV3 = fs.mkdtempSync(path.join(os.tmpdir(), "fotografia-v3-"));
+    servizioV3 = path.join(radiceV3, "servizio");
+    fs.mkdirSync(path.join(servizioV3, "tenants"), { recursive: true });
+  });
+
+  after(() => {
+    if (radiceV3) fs.rmSync(radiceV3, { recursive: true, force: true });
+  });
+
+  it("la fotografia della 2a: snmp_v3 senza v3 → nessuna scelta (era la community); la v3 resta", () => {
+    const out = path.join(radiceV3, "fotografie", "v3.jsonl");
+    const r = lancia(["--dati", TEST_DATA_DIR, "--out", out], servizioV3);
+    assert.equal(r.status, 0, `uscita ${r.status}\n${r.stdout}\n${r.stderr}`);
+    assert.match(r.stdout, new RegExp(`\\[${TV3}\\] .*provenienza non ricostruita 0`));
+    const righe = leggiFotografia(fs.readFileSync(out, "utf8"), out).filter((x) => x.tenant === TV3);
+    const snmp = (k: string) => {
+      const x = righe.find((y) => y.oggetto === "apparato" && y.chiave === `${id[k]}:snmp`);
+      assert.ok(x, `manca la riga snmp di ${k}`);
+      return x;
+    };
+    for (const k of ["colonna", "nulla", "stringa", "binding"]) {
+      assert.equal(snmp(k).scelta, null, `${k}: la 2a non legge più la community di un apparato snmp_v3 senza v3`);
+    }
+    assert.equal(snmp("completa").scelta?.credential_id, voce.v3);
+    assert.equal(snmp("completa").scelta?.fonte, "lettore_vecchio:v3_completa");
+    assert.equal(snmp("vecchia").scelta?.credential_id, voce.vecchia);
+    assert.equal(snmp("vecchia").scelta?.fonte, "lettore_vecchio:v3");
+  });
+
+  it("misure-2a.ts conta gli apparati snmp_v3: v3 completa, formato vecchio, senza v3 e da dove leggono oggi", () => {
+    const r = lancia(["--dati", TEST_DATA_DIR], servizioV3, SCRIPT_MISURE);
+    assert.equal(r.status, 0, `uscita ${r.status}\n${r.stdout}\n${r.stderr}`);
+    const blocco = r.stdout.split(`== Tenant ${TV3}`)[1]?.split("== Tenant")[0] ?? "";
+    assert.match(
+      blocco,
+      /\[snmp_v3\] apparati col protocollo snmp_v3: 6 → v3 completa 1, formato vecchio 1, senza v3 4 \(oggi leggono la community da binding 1, colonna 1, community_string 1, «public» 1\)/
+    );
+    assert.match(blocco, /\[snmp_v3\] .*la 2a li ferma.*ci si ferma/);
+    // Il tenant del primo blocco non ha apparati snmp_v3: la riga c'è e dice 0, senza l'arresto.
+    const primo = r.stdout.split(`== Tenant ${T}`)[1]?.split("== Tenant")[0] ?? "";
+    assert.match(primo, /\[snmp_v3\] apparati col protocollo snmp_v3: 0 → v3 completa 0, formato vecchio 0, senza v3 0\n/);
+  });
+});

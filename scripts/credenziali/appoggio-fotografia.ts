@@ -16,6 +16,9 @@
  * loadWinrmCredentialsForHost per le patch. Lo script cambia lettori nel T8 e
  * nel T26, con lo stesso formato di riga.
  *
+ * Dalla 2a un apparato snmp_v3 senza una v3 leggibile ha la riga snmp senza
+ * scelta: le sessioni v3 non ripiegano più sulla community (T4).
+ *
  * Quei lettori non dicono QUALE voce hanno scelto. La provenienza (id della voce
  * e livello) si ricostruisce qui con le stesse query, e si controlla contro
  * l'uscita vera: se il segreto ricostruito non è quello del lettore, la riga
@@ -401,16 +404,17 @@ function fotografaDentro(code: string, encryptionKey: string): EsitoTenant {
       });
     }
     const portaSnmp = getEffectiveSnmpPort(d);
-    let sceltaSnmp: SceltaFotografia | null = null;
-    let v3 = false;
+    let sceltaSnmp: SceltaFotografia | null;
     if (d.protocol === "snmp_v3") {
+      // Dal T4 un apparato snmp_v3 senza una v3 leggibile non legge più la
+      // community: le sessioni danno «Credenziale SNMPv3 assente o
+      // illeggibile». Nessuna scelta, così --confronta col T1 mostra
+      // «community → nessuna» per ognuno (revisione della 2a).
       const cred = getDeviceSnmpV3Credentials(d);
-      if (cred) {
-        v3 = true;
-        sceltaSnmp = scelta(ctx, partiV3(cred), provenienzaV3(d), portaSnmp);
-      }
+      sceltaSnmp = cred ? scelta(ctx, partiV3(cred), provenienzaV3(d), portaSnmp) : null;
+    } else {
+      sceltaSnmp = scelta(ctx, [getDeviceCommunityString(d)], provenienzaCommunity(dbh, d), portaSnmp);
     }
-    if (!v3) sceltaSnmp = scelta(ctx, [getDeviceCommunityString(d)], provenienzaCommunity(dbh, d), portaSnmp);
     righe.push({
       tenant: code,
       oggetto: "apparato",

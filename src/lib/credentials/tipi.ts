@@ -98,6 +98,31 @@ export function tipiPerProtocollo(protocollo: string | null | undefined): string
   }
 }
 
+/** Tipi «propri» di ogni protocollo: quelli la cui porta è una porta di quel protocollo. */
+const TIPI_PROPRI: Readonly<Record<string, readonly TipoCredenziale[]>> = {
+  ssh: ["ssh"],
+  winrm: ["windows"],
+  snmp: ["snmp", "snmp_v3"],
+  snmp_v2: ["snmp", "snmp_v3"],
+  snmp_v3: ["snmp", "snmp_v3"],
+  api: ["api"],
+  redfish: ["api"],
+  onvif: ["api"],
+};
+
+/**
+ * La porta propria di una voce vale per un protocollo solo se la voce è di un
+ * tipo suo. Una voce ammessa per un altro protocollo (una SSH per le API di
+ * Proxmox) porta la porta del protocollo per cui è nata (22, 2222), non di
+ * questo: lì vale lo standard (revisione della 2a). Protocollo sconosciuto:
+ * mai la porta della voce.
+ */
+export function portaVoceValePer(tipoVoce: string | null | undefined, protocollo: string | null | undefined): boolean {
+  const tipo = normalizzaTipo(tipoVoce);
+  const propri = protocollo ? TIPI_PROPRI[protocollo] : undefined;
+  return tipo != null && propri != null && propri.includes(tipo);
+}
+
 /**
  * Campi logici di una voce. Colonne: `username` → `encrypted_username`,
  * `password` → `encrypted_password` (anche community, token, chiave API e

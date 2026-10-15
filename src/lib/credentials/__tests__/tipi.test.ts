@@ -23,6 +23,7 @@ import {
   campiRichiesti,
   type MetodoAccesso,
   type TipoCredenziale,
+  portaVoceValePer,
 } from "../tipi";
 import { SNMP_V3_SECURITY_LEVELS } from "@/lib/protocols/snmpv3";
 
@@ -175,5 +176,29 @@ describe("campiRichiesti — i campi obbligatori di ogni metodo", () => {
 
   it("un livello SNMPv3 sconosciuto è un errore", () => {
     assert.throws(() => campiRichiesti("snmp_v3", "utente_v3", "authPrivato"), /livello SNMPv3/);
+  });
+});
+
+// Revisione della 2a: una voce ammessa per un protocollo che non è il suo (SSH
+// per le API di Proxmox) non porta la sua porta in quel protocollo.
+describe("portaVoceValePer — la porta della voce solo nei protocolli del suo tipo", () => {
+  it("SSH (e l'alias linux) per ssh sì, per api no", () => {
+    assert.equal(portaVoceValePer("ssh", "ssh"), true);
+    assert.equal(portaVoceValePer("linux", "ssh"), true);
+    assert.equal(portaVoceValePer("ssh", "api"), false);
+  });
+  it("API per api, redfish e onvif; SNMP e SNMPv3 per le tre forme di snmp; Windows per winrm", () => {
+    for (const p of ["api", "redfish", "onvif"]) assert.equal(portaVoceValePer("api", p), true, p);
+    for (const p of ["snmp", "snmp_v2", "snmp_v3"]) {
+      assert.equal(portaVoceValePer("snmp", p), true, p);
+      assert.equal(portaVoceValePer("snmp_v3", p), true, p);
+    }
+    assert.equal(portaVoceValePer("windows", "winrm"), true);
+  });
+  it("tipo o protocollo sconosciuto, o assente: mai la porta della voce", () => {
+    assert.equal(portaVoceValePer("boh", "ssh"), false);
+    assert.equal(portaVoceValePer(null, "ssh"), false);
+    assert.equal(portaVoceValePer("ssh", "telnet"), false);
+    assert.equal(portaVoceValePer("ssh", null), false);
   });
 });

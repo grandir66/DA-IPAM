@@ -39,7 +39,6 @@ Leggilo per primo, poi [CLAUDE.md](CLAUDE.md) (stack e schema; su «multi-tenant
   - `credentials/resolve.ts` carica `db-tenant`: i componenti client usano `credentials/porte.ts`;
   - SNMPv3 non ha community (niente ripiego sullo username); segreti vuoti nel PUT = non modificare (`credentials/aggiornamenti.ts`); campi inline dei binding solo in modalità inline (`devices/aggiornamenti-binding.ts`);
   - il codice SNMP legge la porta 22 (default della colonna) come 161 e ogni altra come porta SNMP (`switch-client.ts`); 15/10: hub 6 SNMP sulla 22, nessuno su porte TCP. `SELECT port, count(*) FROM network_devices WHERE protocol LIKE 'snmp%' GROUP BY port` deve dare solo 161, 22 o vuota;
-  - Da chiedere a Riccardo: su quale appliance ha visto la rete «192.168.0.0/24» nel wizard (non c'è su hub e cliente A; precompilato tolto).
 - **Piano di miglioramento (12/10)**: tappe in `specs/2026-10-12-piano-miglioramento-design.md`, decisioni in ADR 0004; bacheca `lavori piano-miglioramento-da-ipam`.
 - **Controller di rete (ADR 0005, 0007)**: righe di `network_controllers` nel DB del cliente, `unifi_sync` spento di default; LLDP sull'apparato, mai nelle porte.
 - **Mappa topologia** (spec `specs/2026-10-14-topologia-collegamenti-reali-design.md` §13): codice in `src/lib/topology/`; su `dev` fino a T1b (v0.3.293); prossima T2. La mappa vecchia (ADR 0003) è superata. **Trappole**:

@@ -151,7 +151,7 @@ d'uscita.
 | 6 | Task 12 — la traccia · **Sonnet** | Task 13 — prove di tappa (I33 sul DB, letture accese) · **Sonnet** (non usa la traccia: i suoi numeri li prova il Task 12) | unione |
 | 7 (solo se arrivate) | Task 7 — host, dopo T2-b · **Opus** | Task 3b — istanze MSTP (MK7), dopo T2-a · **Sonnet** | unione |
 | — | Task 14 (misure sulle copie), 15 (schermo), 16 (revisione, documenti, cancello, conferma, rilascio spento): sessione principale | | |
-| — | Task 17-20 (accensioni, data di revisione, promozione): sessione principale con Riccardo | | |
+| — | Task 17-20 (accensioni, promozione): sessione principale con Riccardo | | |
 
 **Perché quest'ordine.** Il 3 e il 9 non dipendono dal codice di altri task se non dallo schema (il 9 legge le tabelle
 del Task 1). Il 4 e il 6 toccano tutti e due `jobs.ts`: stanno in ondate diverse. Il 5 tocca solo i file del
@@ -7134,6 +7134,23 @@ si apre «Dati della mappa», si guarda e basta. «Accendi» si prova solo nel d
 
 ### Task 17: l'accensione sull'hub (apparati nostri) — una lettura alla volta, ognuna con la conferma di Riccardo
 
+> **Decisione di Riccardo, 15/10 notte — niente attese di settimane finché la mappa è in sviluppo.** Niente «data di
+> revisione una settimana dopo» e niente «una settimana senza ritorni»: una lettura si accende appena i numeri della
+> precedente sono spiegati, e si passa a T3 dopo **almeno un giro** di letture accese sull'hub e sul cliente A. Le
+> conferme di tutte le accensioni si chiedono **una volta, insieme**, all'inizio. La promozione a `main` (Task 20) resta a
+> parte, con la sua conferma. Spec §13.11.3 punto 5 e §13.15 punto 5.
+>
+> **Fatti del 15/10 notte, che cambiano le accensioni** (misurati in sola lettura sulle due macchine):
+> - la lettura SNMP gira solo nel giro completo degli switch (`arp_poll` senza rete) e solo su `device_type = switch`
+>   senza controller: sull'hub quel job non c'è, e su tutte e due le macchine gli unici «switch» senza controller sono
+>   server Windows/Linux segnati switch (i switch UniFi via SNMP hanno il controller e sono esclusi di proposito). Riccardo:
+>   **SNMP resta spento** su hub e cliente A finché non c'è uno switch vero di un'altra marca;
+> - sull'hub il router si legge dentro le scansioni veloci di ogni rete (ogni 15 minuti): la cadenza della lettura in più lo
+>   porta a una volta l'ora; sul cliente A il router 1 ogni ora (scansione della rete /24), gli altri router e le radio
+>   MikroTik ogni 6 ore (`arp_poll`): le altre reti sono /22 o più larghe e `scheduler-defaults` ne spegne le scansioni;
+> - il log del router di testa dell'hub non registra gli accessi dell'app: le connessioni in più si contano dal lato
+>   dell'app (una per lettura riuscita, l'esito per apparato).
+
 - [ ] **Prima di tutto**: si leggono `src/lib/cron/scheduler-defaults.ts` e le reti dell'hub (`SELECT cidr FROM networks`);
   si controlla che `unifi_sync` e `arp_poll` dell'hub siano accesi e con quale intervallo (`SELECT job_type, enabled,
   interval_minutes FROM scheduled_jobs`). T2 non accende job: se uno serve ed è spento, si chiede a Riccardo a parte.
@@ -7159,9 +7176,9 @@ si apre «Dati della mappa», si guarda e basta. «Accendi» si prova solo nel d
 - [ ] Le stesse tre accensioni, nello stesso ordine, ognuna con la sua conferma e coi numeri dell'hub accanto. Sul cliente
   A il router si legge ogni ora (il dialogo lo dice). Prima: la regola `scheduler-defaults` e le reti del cliente, come
   sopra. Se T2-a è arrivato e il Task 3b è rilasciato, MK7 parte solo sui bridge in MSTP: si guarda l'esito e la forma.
-- [ ] La **data di revisione** di ogni cliente, una settimana dopo l'accensione (spec §13.15 punto 5): un piano «pensato»
-  con `lavori apri topologia-t2-revisione-<cliente>` (`non_prima_di` = la data; `autonomo: no`, REGOLA #2), che dice di
-  guardare con Riccardo le differenze di «Cosa cambierebbe» ancora da spiegare.
+- [ ] ~~La data di revisione di ogni cliente, una settimana dopo~~ — tolta dalla decisione di Riccardo del 15/10 notte (in
+  testa al Task 17): dopo un giro si guardano «Cosa cambierebbe» e i numeri, e si va avanti appena le differenze sono
+  spiegate.
 
 ### Task 19: la lettura dell'host, dopo T2-b
 

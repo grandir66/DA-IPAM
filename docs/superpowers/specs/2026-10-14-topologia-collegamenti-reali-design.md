@@ -2303,9 +2303,12 @@ spiegata (13.15, punto 5; 13.11.4).
    `topologia.lettura.snmp` la durata del giro degli switch e il numero di letture SNMP per switch; si guarda «Cosa
    cambierebbe».
 4. **Poi il cliente A**, con la conferma di Riccardo, dopo i numeri dell'hub.
-5. Il giorno in cui si accendono le letture in più di un cliente si fissa la sua **data di revisione**, una settimana
-   dopo (13.15, punto 5): quel giorno si guardano con Riccardo le differenze di «Cosa cambierebbe» ancora da
-   spiegare, così il freno non resta acceso per dimenticanza.
+5. **Niente attese a calendario finché la mappa è in sviluppo** (decisione di Riccardo, 15/10 notte, che sostituisce
+   la «data di revisione una settimana dopo»): accese le letture in più di un cliente, dopo **un giro** si guardano
+   i numeri e «Cosa cambierebbe»; spiegate le differenze, si va avanti subito (13.15, punto 5). T3 parte dopo almeno
+   un giro di letture accese sull'hub e sul cliente A. Il freno non resta acceso per dimenticanza perché il passo
+   successivo dipende da quei numeri, non da una data. La promozione a `main` resta a parte, con la conferma di
+   Riccardo.
 6. `topologia.lettura.host` solo dopo il nodo di prova (13.5.5) e la sua uscita vera (T2-b).
 7. **Prima della promozione a `main`**: su ogni appliance, con l'ok di Riccardo, spazio libero, `quick_check` e copia
    di backup; la migrazione arriva lì al primo avvio dopo il pull.
@@ -2355,10 +2358,11 @@ sede 1; per l'hub non riproduce l'albero di oggi, perché i tre hypervisor cambi
 
 **Conferme**: bozza, una revisione finale, cancello una volta, numeri a Riccardo, conferma. Il rilascio è spento;
 l'accensione è per cliente, prima l'hub e poi il cliente A, ognuna con la sua conferma e solo quando ogni differenza
-di «Cosa cambierebbe con la mappa nuova» è spiegata (13.15, punto 5); la data di revisione, una settimana dopo
-l'accensione delle letture in più (13.11.3), dice a che punto sono.
+di «Cosa cambierebbe con la mappa nuova» è spiegata (13.15, punto 5): appena lo è, senza aspettare una data
+(decisione del 15/10 notte, 13.11.3 punto 5).
 
-**Togliere il ramo vecchio**: quando tutti i clienti sono accesi da due settimane senza ritorni, si toglie il modello
+**Togliere il ramo vecchio**: quando tutti i clienti sono accesi e le loro differenze spiegate, con l'ok di Riccardo
+(non a tempo: decisione del 15/10 notte, 13.11.3 punto 5), si toglie il modello
 di T1 e l'interruttore (13.13.3, punto 1), e con lui il ripiego «porta del bridge = ifIndex» di `snmp-port-schema.ts`
 (13.5.4).
 
@@ -2665,7 +2669,7 @@ cresce (ADR 0010, punto 8).
 | L'LLDP del firmware delle schede spento prima che `lldpd` funzioni | si spegne nello stesso intervento; se lo switch non vede `lldpd`, si riaccende (13.5.5); altrimenti tre hypervisor dell'hub tornano sotto lo switch di gestione |
 | Le appliance degli altri clienti ricevono le tappe con la promozione a `main` | conteggio delle correzioni salvate prima di T1; spazio, `quick_check` e copia prima di T2 (13.11) |
 | La posizione del segmento della WAN sembra contraddire D5 a chi la conosce | l'eccezione è scritta dove sta la regola (13.7.4, 13.8.3) e provata (I49, S10); la ★ resta per il singolo cliente |
-| Il freno non si toglie mai | data di revisione una settimana dopo l'accensione delle letture in più (13.15, punto 5; 13.11.3) |
+| Il freno non si toglie mai | il passo dopo dipende dai numeri del primo giro di letture accese, non da una data (13.15, punto 5; 13.11.3 punto 5) |
 | La regione MSTP letta a metà (il router di riserva non si legge) | si dice in parole: «lo spanning tree di ‹nome› non è letto: i cavi bloccati dietro di lui non si vedono» |
 | Le radio a 5 GHz inoltrano o no l'LLDP: non verificato | tutti e due i casi sono prove (13.12.2), compresa la radio che si annuncia anche lei |
 
@@ -2772,7 +2776,7 @@ toglie dall'albero gli oggetti senza prove; «mappa nuova» è T3, una linea per
 | 2 | La regola «una porta che sente due o più apparati non dà cavi» entra **nella correzione rapida**, con l'elenco per nome di chi esce (solo in chat) prima del rilascio | il router di riserva va subito sotto accesso B, porta 16, e la linea sulla WAN sparisce | 13.7.1 passo 2, 13.11.1, C8, H5 |
 | 3 | Il ruolo dalle prove è **un rilascio a parte, subito dopo** (T1b): dopo almeno una lettura dei router col lettore nuovo, misurato su una copia presa dopo; l'elenco per nome di chi esce si guarda con Riccardo prima del rilascio | la prova «si annuncia come apparato» è pulita solo sulle righe del lettore nuovo; un rilascio a parte si toglie da solo | 13.8.2, 13.11.2, H4 |
 | 4 | Nella mappa nuova un collegamento «dalle VM» che non è il principale del suo hypervisor e che nessun'altra lettura vede **non si disegna, nemmeno a richiesta**: sta nei dettagli dell'hypervisor («visto dalle VM anche su ‹porta›»), se la misura lo conferma; dove c'è `lldpd`, quelli che l'host non conferma si scartano | sono i tre cavi inventati verso l'hypervisor 2 (M26); il principale di un server con una VM sola resta | 13.5.5, 13.7.2 passo 10, 13.11.4, 13.14, S11, I56 |
-| 5 | La mappa nuova si accende per un cliente **a differenze spiegate**, con una data di revisione fissata una settimana dopo l'accensione delle letture in più | il freno si toglie contando; la data impedisce che resti acceso per dimenticanza | 13.11.3, 13.11.4 |
+| 5 | La mappa nuova si accende per un cliente **a differenze spiegate**, appena lo sono. *Aggiornata da Riccardo il 15/10 notte*: finché la mappa è in sviluppo niente attese di settimane (né «data di revisione una settimana dopo», né «una settimana senza ritorni»); T3 dopo almeno un giro di letture accese su hub e cliente A; la promozione a `main` resta a parte, con la sua conferma | il freno si toglie contando; il passo dopo dipende dai numeri, così non resta acceso per dimenticanza | 13.11.3, 13.11.4 |
 | 6 | Le frasi «Perché questo collegamento» entrano **col ruolo dalle prove** (T1b); «Altri cavi visti fra questi due oggetti» entra comunque in T1 | la frase non cambia la mappa, e la correzione rapida arriva prima; l'elenco degli altri cavi serve all'«Ignora» per cavo | 13.4.6, 13.11.1 (T1.6), 13.11.2 (T1b.3) |
 | 7 | I cavi bloccati dallo spanning tree si disegnano **a richiesta**, come le altre ridondanze («⇄ N», clic, «Mostra ridondanze»); i dettagli li dicono sempre | disegnati sempre rifarebbero il groviglio che la regola delle ridondanze ha tolto: core 2 da solo ne ha due | 13.10.3, I57 |
 

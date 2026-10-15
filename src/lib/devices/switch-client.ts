@@ -23,7 +23,9 @@ import {
 } from "./hp-vendor";
 import { createWinrmClient } from "./winrm-client";
 import { sshExec as transportSshExec } from "./ssh-transport";
-import { TEMPO_WALK_MS, walkConSessioneSua, type SessioneWalk, type SnmpWalkFn } from "./snmp-walk";
+import {
+  TEMPO_WALK_MS, getConSessioneSua, walkConSessioneSua, type LettoreSnmp, type SessioneGet, type SessioneWalk,
+} from "./snmp-walk";
 // Un solo parser della bridge host per switch e router (scarta le righe locali, legge vid).
 import { parseMikrotikMacTable } from "./mikrotik-porte";
 
@@ -263,10 +265,14 @@ export function apriSessioneSnmpApparato(snmp: typeof import("net-snmp"), device
   return apriSessioneCommunity(snmp, device.host, getDeviceCommunityString(device), { ...opts, versione: versioneApparato(device, "1") });
 }
 
-/** Il walk SNMP delle letture in più (spec topologia §13.5.4): una sessione per lettura (SN1), un tempo massimo per lettura. */
-export async function creaWalkSnmp(device: NetworkDevice, tempoMs: number = TEMPO_WALK_MS): Promise<SnmpWalkFn> {
+/**
+ * Il walk SNMP delle letture in più (spec topologia §13.5.4): una sessione per lettura (SN1), un tempo massimo per lettura;
+ * con `get` il GET degli scalari (revisione del Task 6 di T2), anche lui con la sua sessione.
+ */
+export async function creaWalkSnmp(device: NetworkDevice, tempoMs: number = TEMPO_WALK_MS): Promise<LettoreSnmp> {
   const snmp = await import("net-snmp");
-  return walkConSessioneSua(() => apriSessioneSnmpApparato(snmp, device) as unknown as SessioneWalk, tempoMs);
+  const apri = () => apriSessioneSnmpApparato(snmp, device) as unknown as SessioneWalk & SessioneGet;
+  return Object.assign(walkConSessioneSua(apri, tempoMs), { get: getConSessioneSua(apri, tempoMs) });
 }
 
 async function createSnmpSwitchClient(device: NetworkDevice): Promise<SwitchClient> {

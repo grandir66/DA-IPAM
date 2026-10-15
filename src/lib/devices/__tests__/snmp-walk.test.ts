@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { getSnmpStpInfo } from "@/lib/devices/snmp-stp-info";
-import { TEMPO_WALK_MS, walkConSessioneSua, type SessioneWalk, type VoceSnmp } from "@/lib/devices/snmp-walk";
+import { TEMPO_WALK_MS, getConSessioneSua, walkConSessioneSua, type SessioneGet, type SessioneWalk, type VoceSnmp } from "@/lib/devices/snmp-walk";
 import { codiceErrore } from "@/lib/devices/mikrotik-porte";
 
 const B = "1.3.6.1.2.1.17";
@@ -106,4 +106,59 @@ test("sola lettura: la sessione riceve solo subtree e close, una chiusura per le
   assert.deepEqual(a.metodi, ["subtree", "close", "subtree", "close"]);
   const testo = fs.readFileSync(path.join(__dirname, "..", "snmp-walk.ts"), "utf8");
   assert.doesNotMatch(testo, /\.set\s*\(|createSession\s*\(/, "niente set SNMP, niente sessioni aperte qui (snmp-sessione.ts, ADR 0016)");
+});
+
+// Revisione del Task 6 di T2 (C7): una lettura che riceve una parte delle voci e poi un errore (la sessione cade a metà del
+// walk) rifiuta: mezza tabella non è «letta».
+test("dati parziali poi errore: il walk rifiuta, non dà la metà arrivata", async () => {
+  const walk = walkConSessioneSua(() => ({
+    subtree(_oid, feed, done) {
+      feed([{ oid: `${B}.2.15.1.3.1`, value: 5 }]);
+      setTimeout(() => done(Object.assign(new Error("socket chiuso"), { code: "ECONNRESET" })), 1);
+    },
+    close() { /* niente */ },
+  }), 1000);
+  await assert.rejects(walk(`${B}.2.15.1.3`), (e: unknown) => codiceErrore(e) === "ECONNRESET");
+});
+
+// Revisione del Task 6 di T2 (C3, piano «Scelte» 10): gli scalari dello spanning tree con un GET solo. In v2c chi non c'è lo
+// dice il varbind (noSuchObject/noSuchInstance); in v1 lo stato «noSuchName» vale per tutta la richiesta, e allora si
+// chiede un OID alla volta. Ogni altro stato è un «no»; nessuna risposta, «non so».
+function sessioneGet(risposte: Array<(oids: string[]) => { err?: Error; vbs?: Array<{ oid: string; value: unknown; type?: number }> } | null>) {
+  const chieste: string[][] = [];
+  let chiusa = 0;
+  const apri = (): SessioneGet => ({
+    get(oids, cb) {
+      chieste.push(oids);
+      const r = risposte[chieste.length - 1]?.(oids) ?? null;
+      if (r) setTimeout(() => cb(r.err ?? null, r.vbs), 1);
+    },
+    close() { chiusa++; },
+  });
+  return { apri, chieste, chiuse: () => chiusa };
+}
+const SC = [`${B}.2.2.0`, `${B}.2.5.0`, `${B}.2.16.0`];
+
+test("GET degli scalari, v2c: le voci presenti; chi non c'è (noSuchObject) manca; una sessione, chiusa una volta", async () => {
+  const s = sessioneGet([(oids) => ({ vbs: oids.map((oid, i) => (i === 2 ? { oid, value: null, type: 128 } : { oid, value: i + 1, type: 2 })) })]);
+  const out = await getConSessioneSua(s.apri, 1000)(SC);
+  assert.deepEqual(out, [{ oid: SC[0], value: 1 }, { oid: SC[1], value: 2 }]);
+  assert.deepEqual([s.chieste.length, s.chiuse()], [1, 1]);
+});
+
+test("GET degli scalari, v1: «noSuchName» per la richiesta intera → un OID alla volta, chi non c'è manca", async () => {
+  const noSuchName = () => ({ err: Object.assign(new Error("NoSuchName"), { status: 2 }) });
+  const s = sessioneGet([noSuchName, (o) => ({ vbs: [{ oid: o[0], value: 32768 }] }), (o) => ({ vbs: [{ oid: o[0], value: Buffer.from([1]) }] }), noSuchName]);
+  const out = await getConSessioneSua(s.apri, 1000)(SC);
+  assert.deepEqual(out.map((v) => v.oid), [SC[0], SC[1]]);
+  assert.deepEqual(s.chieste, [SC, [SC[0]], [SC[1]], [SC[2]]]);
+  assert.equal(s.chiuse(), 1);
+});
+
+test("GET degli scalari: un altro stato è un «no» col suo codice; nessuna risposta è TEMPO_SCADUTO", async () => {
+  const genErr = sessioneGet([() => ({ err: Object.assign(new Error("genErr"), { status: 5 }) })]);
+  await assert.rejects(getConSessioneSua(genErr.apri, 1000)(SC), (e: unknown) => codiceErrore(e) === "SNMP_STATO_5");
+  const muto = sessioneGet([() => null]);
+  await assert.rejects(getConSessioneSua(muto.apri, 30)(SC), (e: unknown) => codiceErrore(e) === "TEMPO_SCADUTO");
+  assert.equal(muto.chiuse(), 1);
 });

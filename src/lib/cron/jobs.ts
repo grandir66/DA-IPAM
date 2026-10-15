@@ -676,12 +676,14 @@ async function letturaMikrotik(device: NetworkDevice, uscitaInterfacce: string |
 /**
  * Le letture SNMP in più (spec topologia §13.5.4, SN2-SN9) di uno switch che non è del controller e non è un MikroTik letto
  * via SSH, dietro `topologia.lettura.snmp`, al più una volta l'ora. Chi legge «della marca che consuma il CDP»: il
- * fornitore dell'apparato o la sua descrizione SNMP (SN9). Dieci letture, ognuna con la sua sessione e TEMPO_WALK_MS.
+ * fornitore dell'apparato o la sua descrizione SNMP (SN9). Sedici letture, ognuna con la sua sessione e TEMPO_WALK_MS.
+ * Nessuna lettura riuscita = errore col codice: niente scrittura né potatura (revisione del Task 6 di T2, C2).
  */
 async function letturaSnmp(device: NetworkDevice, options?: RunArpPollOptions): Promise<EsitoGiro<unknown>> {
   return conCadenza("snmp", device.id, async () => {
     const walk = await (options?.creaWalkSnmp ?? creaWalkSnmp)(device, TEMPO_WALK_MS);
     const l = await leggiSnmpTopologia(walk, { lettoreCisco: device.vendor === "cisco" || /cisco/i.test(device.sysdescr ?? "") });
+    if (l.riuscite === 0) throw Object.assign(new Error("Nessuna lettura SNMP riuscita"), { code: l.codice ?? "NESSUNA_LETTURA" });
     const scritti = scriviFattiTopologia(device.id, "snmp", l, options?.adesso?.() ?? new Date());
     if (l.vicini.length > 0) upsertNeighbors(device.id, l.vicini, "snmp");
     return { valore: scritti, conteggio: { comandi: l.letture, riusciti: l.riuscite, codice: l.codice } };
@@ -964,8 +966,10 @@ export async function runArpPoll(
         // SN6: solo per gli switch senza controller (la chiave dei vicini non ha la fonte: due lettori della stessa riga si
         // scambierebbero la fonte) e non letti come MikroTik via SSH (hanno le loro letture). Interruttore guardato per
         // primo: spenta, il giro degli switch fa esattamente quello di prima (nemmeno la ricerca della credenziale SNMP).
+        // Solo gli switch (spec §13.5.4; revisione del Task 6, C5): AP, NAS e server di questo ramo no, scelta di Riccardo.
         const delController = !!(device as NetworkDevice & { controller_mac?: string | null }).controller_mac;
-        if (!delController && !(device.vendor === "mikrotik" && device.protocol === "ssh") && letturaAccesa("snmp") && deviceHasSnmpSession(device)) {
+        if (device.device_type === "switch" && !delController && !(device.vendor === "mikrotik" && device.protocol === "ssh")
+          && letturaAccesa("snmp") && deviceHasSnmpSession(device)) {
           esitiLetture.push(await letturaSnmp(device, options));
         }
         const client = await (options?.creaClientSwitch ?? createSwitchClient)(device);

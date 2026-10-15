@@ -7194,8 +7194,8 @@ si apre «Dati della mappa», si guarda e basta. «Accendi» si prova solo nel d
 **Decise dal piano, dichiarate (a Riccardo come fatti da confermare col messaggio del rilascio):**
 1. `topology_port_facts.lag_state` in più rispetto al DDL del §13.5.7 (stato del membro di un bond, che la spec usa).
 2. Tempo massimo dei comandi nuovi: 20 s per comando SSH, 10 s per lettura SNMP, 20 s sugli host.
-3. Dieci letture SNMP, una per tabella; SN8 solo col ruolo nell'albero comune; il partner LACP dalla colonna 9 della
-   LAG-MIB; i valori del ruolo MSTP dalla MIB, da verificare sulla prima lettura vera.
+3. ~~Dieci letture SNMP, una per tabella~~ (superata dal punto 10); SN8 solo col ruolo nell'albero comune; il partner LACP
+   dalla colonna 9 della LAG-MIB; i valori del ruolo MSTP dalla MIB, da verificare sulla prima lettura vera.
 4. Di base MK3-MK8 in più `exec` sulla stessa connessione (la spec); lo script unico e il JSON con `detail` non entrano
    (servirebbe T2-a sulla RouterOS più vecchia); MK7 solo dopo T2-a (Task 3b).
 5. La fixture del gateway in un file nuovo; il controller senza cadenza (nessuna chiamata nuova), con l'esito scritto.
@@ -7224,6 +7224,19 @@ si apre «Dati della mappa», si guarda e basta. «Accendi» si prova solo nel d
    `ssh`/`snmp` sulla chiave di una riga vecchia di oggi non la rinfresca (la WHERE dell'upsert la lascia stare), e quella
    riga se ne va solo con una scrittura della sua fonte — caso raro. Prova «R7: la potatura di una fonte nuova…» in
    `topology-cavi-scrittura.test.ts`.
+10. **Letture SNMP: delle tabelle grandi solo le colonne che il lettore usa** (revisione del Task 6, 15/10; scostamento
+   dal punto 3). In v1 (GETNEXT, un valore per richiesta) la tabella intera delle interfacce (22 colonne) e quella delle
+   porte dello spanning tree non stanno nei 10 s di una lettura. Si leggono: interfacce colonne 2, 3, 6, 8 (`ifDescr`,
+   `ifType`, `ifPhysAddress`, `ifOperStatus`: quelle che il lettore usa, `ifSpeed` no); spanning tree con **un GET** degli
+   scalari (`.2.0` priorità, `.5.0` radice, `.6.0` costo, `.7.0` porta radice, `.16.0` versione RSTP-MIB) più le colonne 3,
+   8, 9 della tabella delle porte (stato, bridge e porta designati). Le altre otto letture restano per tabella (`ifName`,
+   base del bridge, LLDP ×3, CDP, fasci, MSTP). Totale **sedici letture** per switch, ognuna con la sua sessione e i suoi
+   10 s (il registro diceva «13»: il conto giusto è 4 + 1 + 1 + 4 + 6 = 16), da misurare al Task 17. Il GET in v1: lo stato
+   «noSuchName» vale per tutta la richiesta, e allora si chiede un OID alla volta sulla stessa sessione (chi non c'è manca,
+   come `noSuchObject` in v2c). Con la stessa revisione: se la **prima** lettura dà «non so» (tempo scaduto, trasporto) le
+   altre si saltano (uno switch spento costa 10 s, non 160); nessuna lettura riuscita = errore col codice, niente scrittura
+   né potatura; le letture nuove **solo su `device_type = switch`** (spec §13.5.4: estenderle ad AP e NAS è una scelta di
+   Riccardo); una porta assente dalla tabella delle porte del bridge è `in_bridge` null, non 0.
 
 **Lasciate spente o nel modo raccomandato (spec §13.16, «Scelte che restano a Riccardo»), finché non risponde:**
 1. Censire il router di frontiera e il router virtuale dell'hub (H21): nessun codice; la traccia lo mostra solo se censiti.

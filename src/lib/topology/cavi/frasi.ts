@@ -83,5 +83,6 @@ export function frasiPerche(l: Pick<MapLink, "perche" | "manual">, p: ParoleFras
         break;
     }
   }
-  return out;
+  // Due passi uguali (lo stesso apparato con due telai sulla stessa porta, Review Focus 3) fanno una frase sola.
+  return [...new Set(out)];
 }

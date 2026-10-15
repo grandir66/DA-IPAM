@@ -174,8 +174,9 @@ export function proposeHead(model: TopologyModel): string | null {
   let best: string | null = null;
   let size = -1;
   const reti = (id: string | null): number => (id ? (model.gatewayDi?.[id] ?? 0) : 0);
-  // Fra i router solo quelli che non sono «da sistemare» (T1b, spec §13.8.2).
-  for (const n of model.nodes.filter((x) => x.kind === "device" && x.type === "router" && model.classiMappa?.[x.id] !== "da_sistemare").sort((a, b) => a.refId - b.refId)) {
+  // Fra i router solo quelli che fanno da apparato di rete (T1b, spec §13.8.2): non chi è «da sistemare», e nemmeno chi è
+  // «Attaccato» a mano (revisione finale di T1b): una testa foglia non fa da ponte, e la mappa resterebbe senza albero.
+  for (const n of model.nodes.filter((x) => x.kind === "device" && x.type === "router" && classeDi(model, x) === "infra").sort((a, b) => a.refId - b.refId)) {
     const seen = new Set([n.id]);
     const q = [n.id];
     while (q.length) for (const y of fresh.get(q.shift()!) ?? []) if (!seen.has(y)) { seen.add(y); q.push(y); }

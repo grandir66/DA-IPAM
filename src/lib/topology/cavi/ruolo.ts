@@ -5,11 +5,14 @@
  * mappa li mette in Da sistemare») non era mantenuta (vincolo 7 di Riccardo, 14/10). Alle quattro prove di D6 Riccardo
  * ne ha aggiunte sei e il ruolo a mano (14/10 sera). Logica pura, senza nomi di prodotto (prova I37).
  */
-import { nodeClass, type NodeClass } from "@/lib/topology/identity";
+import { nodeClass, ruoloLetto, type NodeClass } from "@/lib/topology/identity";
 import { righeUltimoGiro } from "@/lib/topology/links";
 import type { MapVm, TopologyModelInput } from "@/lib/topology/model-types";
 import { canonical, nameKey, type NodeIndex } from "@/lib/topology/node-index";
 import { normalizeMacForStorage } from "@/lib/utils";
+
+/** Il ruolo a mano come lo legge T1b: sta in identity.ts perché serve anche al nodo (node-index.ts). */
+export { ruoloLetto };
 
 export type ProvaRuolo = "vicini" | "spanning_tree" | "mac_dietro" | "vm" | "scansione" | "uplink" | "controller" | "padre_di" | "annuncio" | "radio" | "capacita" | "a_mano";
 
@@ -38,16 +41,6 @@ function classeDi(idx: NodeIndex, id: string): NodeClass | null {
   return h ? nodeClass({ type: h.classification || "unknown" }) : null;
 }
 
-/**
- * Il ruolo a mano come lo legge T1b: «rete» e «attaccato»; «core» e «accesso», che scriverà T3 (spec §13.9), valgono
- * «rete» (una versione successiva li ha scritti e si è tornati indietro: Review Focus 7); ogni altro valore, o vuoto,
- * decide il sistema.
- */
-export function ruoloLetto(v: string | null | undefined): "rete" | "attaccato" | null {
-  const r = (v ?? "").trim();
-  return r === "rete" || r === "core" || r === "accesso" ? "rete" : r === "attaccato" ? "attaccato" : null;
-}
-
 export function proveDiRuolo(input: TopologyModelInput, idx: NodeIndex,
   extra: { vms?: readonly MapVm[]; capiRadio?: ReadonlySet<string>; scansioni?: ReadonlySet<string> } = {}): Map<string, ProvaRuolo[]> {
   const prove = new Map<string, Set<ProvaRuolo>>();
@@ -67,11 +60,18 @@ export function proveDiRuolo(input: TopologyModelInput, idx: NodeIndex,
     if (STP_ATTIVO.has((p.stp_state ?? "").trim().toLowerCase()) && !giu) metti(`dev:${p.device_id}`, "spanning_tree");
   }
   // La sua tabella MAC vede altri apparati di rete dietro una porta.
+  // Chi è un MAC si cerca una volta sola: sul cliente A 2.637 righe per poche centinaia di MAC (tetto del modello, C17).
+  const diChi = new Map<string, string | null>();
   for (const r of input.macPorts) {
     const io = `dev:${r.device_id}`;
-    const altro = chiDi(idx, { mac: r.mac });
-    const k = altro && altro !== io ? classeDi(idx, altro) : null;
-    if (k === "infra" || k === "ap") metti(io, "mac_dietro");
+    let altro = diChi.get(r.mac);
+    if (altro === undefined) {
+      const id = chiDi(idx, { mac: r.mac });
+      const k = id ? classeDi(idx, id) : null;
+      altro = k === "infra" || k === "ap" ? id : null;
+      diChi.set(r.mac, altro);
+    }
+    if (altro && altro !== io) metti(io, "mac_dietro");
   }
   // Ospita VM (allora è un hypervisor).
   for (const v of extra.vms ?? []) metti(v.hypervisorNodeId, "vm");

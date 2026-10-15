@@ -172,3 +172,10 @@ test("I58 — rete-campione della famiglia 1: la linea fra la testa e il secondo
     "RTR-TESTA sente RTR-FRONTIERA su VL_16_QWE e VL_20_ABC, nomi scelti a mano: non si sa se sono porte fisiche, e le righe del router su di loro non provano un cavo.",
   ]);
 });
+
+// Revisione finale di T1b: lo stesso apparato sentito con due telai sulla stessa porta (Review Focus 3) fa due gruppi, e ogni
+// gruppo lasciava la sua riga scartata: due frasi uguali sulla stessa linea.
+test("due passi che dicono la stessa cosa fanno una frase sola", () => {
+  const seg: PassoPerche = { tipo: "scartata", motivo: "segmento", da: "dev:1", porta: "ether8", sentiti: [{ nodo: "dev:2", nome: "SW-2" }, { nodo: null, nome: "modem-fibra" }] };
+  assert.equal(frasi([seg, { ...seg }]).length, 1);
+});

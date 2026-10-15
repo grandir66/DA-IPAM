@@ -45,6 +45,16 @@ export const IDENTITY_TYPES: readonly string[] = [
 export type NodeClass = "infra" | "ap" | "hyper" | "att" | "client";
 
 /**
+ * Il ruolo a mano come lo legge T1b (spec §13.8.2): «rete» e «attaccato»; «core» e «accesso», che scriverà T3 (spec §13.9),
+ * valgono «rete» (una versione successiva li ha scritti e si è tornati indietro: Review Focus 7); ogni altro valore, o vuoto,
+ * decide il sistema. Lo leggono il modello (cavi/ruolo.ts) e il nodo (node-index.ts, per il menu «Ruolo nella mappa»).
+ */
+export function ruoloLetto(v: string | null | undefined): "rete" | "attaccato" | null {
+  const r = (v ?? "").trim();
+  return r === "rete" || r === "core" || r === "accesso" ? "rete" : r === "attaccato" ? "attaccato" : null;
+}
+
+/**
  * Ruolo nella mappa (spec §10.3, §11.5): i client non sono nodi della mappa automatica.
  * Un hypervisor è un apparato `hypervisor`, oppure un server/NAS con fornitore Proxmox o VMware
  * o con la scansione Proxmox (`proxmoxScan`, revisione finale M-2).

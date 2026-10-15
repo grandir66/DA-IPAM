@@ -101,8 +101,8 @@ export function attachMacs(input: TopologyModelInput, idx: NodeIndex, links: Map
     // restano la prova del cavo. Uno switch vede il suo MAC sulla porta della CPU: prima era un suo client.
     if (vmEMacPropri && macProprio(idx, mac, node)) continue;
     // T1b (§13.8.2): la tabella MAC di chi è «da sistemare» non conta client e non lo rende di passaggio, nemmeno come
-    // ripiego del router.
-    const fuori = classe(n) === "da_sistemare";
+    // ripiego del router. Lo stesso per chi è «Attaccato (server, PC)» a mano: il ruolo a mano vince (revisione finale di T1b).
+    const fuori = classe(n) !== "infra" && classe(n) !== "ap";
     const fisica = (n.type === "router" || n.type === "firewall") && !fuori && fisicaDelRouter(n, r.port_name);
     cand.set(mac, [...(cand.get(mac) ?? []), { node, port: r.port_name, ts: r.timestamp, ms, counting: CLIENT_COUNTING.includes(n.type) && !fuori, fisica }]);
   }

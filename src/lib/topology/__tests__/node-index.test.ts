@@ -129,3 +129,10 @@ test("T1b — il ruolo scelto a mano arriva sul nodo dell'apparato; vuoto o asse
   const idx = buildNodeIndex([dev(1, { topology_role: "rete" }), dev(2, { topology_role: "" }), dev(3)], [], []);
   assert.deepEqual([1, 2, 3].map((i) => idx.nodes.get(`dev:${i}`)!.ruolo), ["rete", undefined, undefined]);
 });
+
+// Revisione finale di T1b, Review Focus 7: «core» e «accesso» (scritti da T3, spec §13.9) il modello li legge come «Apparato
+// di rete»; sul nodo arrivava niente, e il menu segnava «✓ Decide il sistema» spento: non si poteva tornare al sistema.
+test("Review Focus 7 — sul nodo il ruolo come lo legge il modello: «core» e «accesso» valgono «rete», un valore sconosciuto niente", () => {
+  const idx = buildNodeIndex([dev(1, { topology_role: "core" }), dev(2, { topology_role: "accesso" }), dev(3, { topology_role: "boh" }), dev(4, { topology_role: "attaccato" })], [], []);
+  assert.deepEqual([1, 2, 3, 4].map((i) => idx.nodes.get(`dev:${i}`)!.ruolo), ["rete", "rete", undefined, "attaccato"]);
+});

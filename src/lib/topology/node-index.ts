@@ -7,7 +7,7 @@
 import type { MapNode, ModelDeviceRow, ModelHostRow, ModelKnownMacRow, ModelNeighborRow } from "@/lib/topology/model-types";
 import { normalizeName } from "@/lib/topology/match";
 import { normalizeMacForStorage } from "@/lib/utils";
-import { IDENTITY_TYPES, announcedNames, identifiesByName, isVirtualMac, realOui } from "@/lib/topology/identity";
+import { IDENTITY_TYPES, announcedNames, identifiesByName, isVirtualMac, realOui, ruoloLetto } from "@/lib/topology/identity";
 
 export interface NodeIndex {
   nodes: Map<string, MapNode>;
@@ -103,7 +103,8 @@ export function buildNodeIndex(devices: ModelDeviceRow[], hosts: ModelHostRow[],
       id, kind: "device", refId: d.id, name: d.name, type: d.device_type, mgmtIp: d.host || null,
       fusedHostIds: fused.sort((a, b) => a - b), addresses: [], aliases: [], siteId: null, rackId: null, siteProposed: false,
       hidden: d.topology_hidden === 1, vendor: d.vendor || null, ...(d.proxmox_scan === 1 ? { proxmoxScan: true } : {}),
-      ...(d.topology_role === "rete" || d.topology_role === "attaccato" ? { ruolo: d.topology_role } : {}),
+      // Come lo legge il modello (Review Focus 7): «core» e «accesso» di T3 sono «rete», così il menu segna il ruolo vero.
+      ...(ruoloLetto(d.topology_role) ? { ruolo: ruoloLetto(d.topology_role)! } : {}),
       ...(d.via ? { via: d.via } : {}),
     });
     put(idx.byIp, d.host || null, id, false);

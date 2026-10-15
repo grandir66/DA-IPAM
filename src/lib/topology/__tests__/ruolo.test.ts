@@ -7,7 +7,7 @@ import { PROVE_AGGIUNTE, classeInMappa, proveDiRuolo } from "@/lib/topology/cavi
 import { motivoDaSistemare } from "@/lib/topology/da-sistemare";
 import { buildTopologyModel } from "@/lib/topology/model";
 import { buildNodeIndex } from "@/lib/topology/node-index";
-import { autoVisible, buildTree } from "@/lib/topology/tree";
+import { autoVisible, buildTree, proposeHead } from "@/lib/topology/tree";
 import { computeMapView } from "@/lib/topology/map-compute";
 import type { TopologyModelInput } from "@/lib/topology/model-types";
 import { baseInput, dev, host } from "./support/righe";
@@ -190,4 +190,34 @@ test("I65 — «hypervisor» solo con una prova; `disabled`, o uno stato su una 
   assert.equal(m.classiMappa?.["host:50"], "att", "classificato hypervisor, senza VM né scansione: un attaccato");
   assert.equal(m.classiMappa?.["dev:63"], undefined, "un hypervisor censito e letto resta hypervisor");
   assert.equal(classeInMappa({ type: "hypervisor" }, ["vm"], null), "hyper", "chi ospita VM è un hypervisor");
+});
+
+// ─── Revisione finale di T1b: il ruolo a mano vince sempre ───
+
+// Un router segnato «Attaccato (server, PC)» è una foglia: come testa proposta della mappa automatica non farebbe da ponte,
+// e la mappa resterebbe una testa sola con tutto il resto in radici sparse.
+test("il ruolo a mano vince anche sulla testa proposta: un router «Attaccato» non è la testa", () => {
+  const i = baseInput({
+    devices: [dev(1, { name: "RTR-1", device_type: "router", topology_role: "attaccato" }), dev(2, { name: "RTR-2", device_type: "router", topology_role: "rete" })],
+  });
+  assert.equal(proposeHead(buildTopologyModel(i)), "dev:2");
+});
+
+// Uno switch dichiarato e segnato «Attaccato» (un server Linux col bridge registrato come switch) è una foglia anche per la
+// tabella MAC: non si prende i client che uno switch vero vede, come chi è «da sistemare».
+test("il ruolo a mano vince anche nella tabella MAC: chi è «Attaccato» non conta client", () => {
+  const SRV = "02:00:00:00:00:31", STAMPANTE = "02:00:00:00:00:41";
+  const i = baseInput({
+    devices: [dev(2, { name: "SW-2", via: "api", controller_mac: "02:00:00:00:00:02" }), dev(31, { name: "SRV-31", vendor: "linux", topology_role: "attaccato" })],
+    knownMacs: [{ device_id: 31, mac: SRV }],
+    hosts: [host(41, { ip: "10.0.1.41", mac: STAMPANTE, hostname: "STAMPANTE-41", classification: "printer" })],
+    macPorts: [
+      { device_id: 2, mac: SRV, port_name: "Port 7", timestamp: ORA, source: "device" },
+      { device_id: 2, mac: STAMPANTE, port_name: "Port 7", timestamp: ORA, source: "device" },
+      { device_id: 31, mac: STAMPANTE, port_name: "br0", timestamp: ORA, source: "device" },
+    ],
+  });
+  const m = buildTopologyModel(i);
+  assert.equal(m.classiMappa?.["dev:31"], "att");
+  assert.deepEqual(m.portClients.map((p) => [p.nodeId, p.port, p.clients.map((c) => c.nodeId)]), [["dev:2", "Port 7", ["host:41"]]]);
 });

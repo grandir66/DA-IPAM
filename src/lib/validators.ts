@@ -334,6 +334,11 @@ export const SetupSchema = z.object({
   /** Campi obbligatori in modalità single-tenant */
   codice_cliente: z.string().trim().min(1, "Codice cliente obbligatorio").max(50).optional(),
   ragione_sociale: z.string().trim().min(1, "Ragione sociale obbligatoria").max(200).optional(),
+  /**
+   * Cosa esce verso Domarc (DA-Link, tappa C1 NetBird, spec §5.3): facoltativo e senza
+   * valore predefinito. Assente = nessuna scelta dichiarata = esce solo lo stato.
+   */
+  livello_uscita: z.enum(["solo_stato", "stato_inventario"], { message: "Livello di cosa esce non ammesso" }).optional(),
 }).refine((data) => data.password === data.confirm_password, {
   message: "Le password non corrispondono",
   path: ["confirm_password"],

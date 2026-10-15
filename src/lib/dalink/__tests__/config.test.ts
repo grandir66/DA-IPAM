@@ -80,7 +80,7 @@ test("codice cliente con lo spazio davanti → pronta, spazio tolto al confine",
 });
 
 test("codice cliente non numerico → non_valida", () => {
-  const righe = BUONO.map((r) => (r.startsWith("DALINK_CODCLI=") ? "DALINK_CODCLI=70791a" : r));
+  const righe = BUONO.map((r) => (r.startsWith("DALINK_CODCLI=") ? "DALINK_CODCLI=12345a" : r));
   assert.equal(leggiConfigDalink(scrivi("codcli.env", righe)).stato, "non_valida");
 });
 

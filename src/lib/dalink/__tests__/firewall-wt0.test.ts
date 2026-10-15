@@ -91,7 +91,7 @@ test("sorgenti dichiarate: ogni porta accetta solo da quelle", () => {
 });
 
 test("sorgente fuori dalla rete NetBird: si ferma e non stampa nessun ruleset", () => {
-  for (const s of ["192.168.4.10", "100.63.0.1", "100.128.0.1", "100.64.0.0/8", "100.64.0.300", "pippo"]) {
+  for (const s of ["192.0.2.10", "100.63.0.1", "100.128.0.1", "100.64.0.0/8", "100.64.0.300", "pippo"]) {
     const r = lancia(`DALINK_FW_EDGE=no\nDALINK_FW_SORGENTI=${s}\n`);
     assert.notEqual(r.codice, 0, `accettata la sorgente ${s}`);
     assert.doesNotMatch(r.out, /table inet dalink/, `ruleset stampato con la sorgente ${s}`);

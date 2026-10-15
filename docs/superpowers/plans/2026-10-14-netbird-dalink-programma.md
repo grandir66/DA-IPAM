@@ -159,3 +159,10 @@ ADR [0011](../../adr/0011-netbird-rete-a-stella.md) e [0013](../../adr/0013-lice
   pilota in **tre gradini**: VM sul laboratorio DA-PX-05 `192.168.40.5` → VM su PX-NAS
   `192.168.99.1` → DTS; dopo il pilota C1b e la rinomina dei proxy. Aperti: Stefano Soragni non è
   ancora utente NetBird.
+- 2026-10-15 sera: **pilota, primo gradino sul PX-NAS di casa** (scelto da Riccardo al posto del
+  laboratorio): VM 150 `192.168.99.51` installata con Deploy-Appliance `netbird-g1`, oggetto
+  `70175-ipam` connesso, segnale ricevuto. Trovati e corretti sul vero: NetBird scavalca i filtri
+  sull'input (firewall `wt0` spostato sul prerouting, v0.3.287) e l'appliance ha solo il cliente
+  `DEFAULT` (regola «appliance a cliente singolo», v0.3.288). Le sonde autonome di Vul-can hanno
+  lo stesso difetto di firewall: si corregge prima del gradino DTS. Riepilogo di tutte le scelte:
+  https://claude.ai/artifact/MWmQ9zBv5bYygrEwSB1EUY

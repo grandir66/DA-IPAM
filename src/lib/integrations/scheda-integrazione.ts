@@ -25,7 +25,7 @@ export interface VistaScheda {
 
 export function vistaScheda(s: StatoScheda): VistaScheda {
   const notaDockerLocale = s.dallAppliance
-    ? " (c'è già LibreNMS dell'appliance)"
+    ? " (c'è già)"
     : !s.dockerAvailable
       ? " (Docker non disponibile)"
       : "";

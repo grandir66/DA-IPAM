@@ -88,7 +88,8 @@ test("scheda con LibreNMS dell'appliance: lo dice, niente Docker locale, niente 
   assert.equal(v.etichettaEsterna, "Installato dall'appliance");
   assert.equal(v.badgeEsterno, "Installato dall'appliance");
   assert.equal(v.dockerLocaleSelezionabile, false);
-  assert.match(v.notaDockerLocale, /appliance/);
+  // Corta: la tendina è larga un terzo della scheda e a 1920 px la frase lunga veniva tagliata.
+  assert.equal(v.notaDockerLocale, " (c'è già)");
   assert.equal(v.mostraInstalla, false);
 });
 

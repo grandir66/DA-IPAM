@@ -5236,12 +5236,19 @@ export function upsertNeighbors(
       timestamp = excluded.timestamp
     WHERE NOT (device_neighbors.source IN ('device', 'unifi') AND excluded.source NOT IN ('device', 'unifi'))
   `);
-  const prune = d.prepare("DELETE FROM device_neighbors WHERE device_id = ? AND timestamp < datetime('now', ?)");
+  // Potatura (revisione dei Task 4 e 6 di T2; R7 vince su §13.5.1, piano «Scelte» punto 9): le fonti di oggi potano tutte le
+  // righe vecchie dell'apparato, come prima; una fonte nuova (ssh, snmp, host) solo le proprie. Prima di questa regola la
+  // prima scrittura di una lettura accesa cancellava un vicino `device` di 91 giorni che T1 mostra «non visto».
+  const fonteDiOggi = source === "device" || source === "unifi";
+  const prune = fonteDiOggi
+    ? d.prepare("DELETE FROM device_neighbors WHERE device_id = ? AND timestamp < datetime('now', ?)")
+    : d.prepare("DELETE FROM device_neighbors WHERE device_id = ? AND source = ? AND timestamp < datetime('now', ?)");
   d.transaction(() => {
     for (const n of neighbors) {
       ins.run(deviceId, n.localPort, n.remoteDevice, n.remotePort, n.protocol, n.remoteIp ?? null, n.remoteMac ?? null, n.remotePlatform ?? null, source);
     }
-    prune.run(deviceId, `-${NEIGHBOR_RETENTION_DAYS} days`);
+    if (fonteDiOggi) prune.run(deviceId, `-${NEIGHBOR_RETENTION_DAYS} days`);
+    else prune.run(deviceId, source, `-${NEIGHBOR_RETENTION_DAYS} days`);
   })();
 
   // T2 (spec §13.5.7): le colonne nuove con un'istruzione a parte, dopo quella di oggi e solo se lo schema le ha. Un
@@ -9565,8 +9572,14 @@ export function getIngressoCavi(staleDays: number, nowMs: number = Date.now()): 
   if (!schemaCaviPresente()) {
     return { t1, vicini: t1.neighbors.map(daRiga), fattiPorta: [], fattiBridge: [], macApparati: [], uplink: [], schema: false };
   }
+  // L'ultimo giro è uno per apparato e lettore, il più recente fra porte e bridge (revisione del Task 6 di T2, «Scelte» 8):
+  // calcolato tabella per tabella, un giro che scrive il bridge e non le porte (tabella che non ha risposto) lasciava le
+  // porte del giro di prima accanto al bridge nuovo.
+  const giro = `SELECT MAX(seen_at) FROM (
+      SELECT seen_at FROM topology_port_facts g WHERE g.device_id = f.device_id AND g.source = f.source
+      UNION ALL SELECT seen_at FROM topology_bridge_facts g WHERE g.device_id = f.device_id AND g.source = f.source)`;
   const ultimoGiro = (t: string) =>
-    `SELECT f.* FROM ${t} f WHERE f.seen_at >= (SELECT datetime(MAX(f2.seen_at), '-5 minutes') FROM ${t} f2 WHERE f2.device_id = f.device_id AND f2.source = f.source) ORDER BY f.device_id, f.source`;
+    `SELECT f.* FROM ${t} f WHERE f.seen_at >= (SELECT datetime((${giro}), '-5 minutes')) ORDER BY f.device_id, f.source`;
   return {
     t1,
     vicini: d.prepare(`SELECT device_id, local_port, remote_device_name, remote_port, protocol, remote_ip, remote_mac, remote_platform, timestamp,

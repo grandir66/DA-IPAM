@@ -37,6 +37,22 @@ test("I44: i fatti valgono solo dall'ultimo giro dello stesso apparato e lettore
   assert.deepEqual(f.map((x) => [x.port_key, x.in_bridge]), [["n:ether2", 0]], "ether3 non è più nell'ultimo giro; ether2 fuori dal bridge");
 });
 
+// Revisione del Task 6 di T2 (piano «Scelte» 8): l'ultimo giro si calcolava tabella per tabella. Un giro che scrive il
+// bridge e non le porte (la tabella delle porte non ha risposto) lasciava passare le porte del giro di prima accanto al
+// bridge del giro nuovo: una porta radice nuova con lo stato delle porte di un'ora prima. Il giro è uno per apparato e
+// lettore, il più recente fra porte e bridge.
+test("Scelta 8: l'ultimo giro è per apparato e lettore, fra porte e bridge insieme; una lettura parziale non mescola i giri", () => {
+  withTenant(T, () => {
+    scriviFattiTopologia(1, "device", { porte: [{ port_key: "n:ether2", port_name: "ether2", stp_state: "forwarding" }],
+      bridge: [{ bridge_name: "bridge", instance: 0, protocol: "rstp", root_port: "ether2" }], macs: [] }, new Date("2026-10-15T08:00:00Z"));
+    scriviFattiTopologia(1, "device", { porte: [], bridge: [{ bridge_name: "bridge", instance: 0, protocol: "rstp", root_port: "ether3" }], macs: [] },
+      new Date("2026-10-15T09:00:00Z"));
+  });
+  const ing = withTenant(T, () => getIngressoCavi(2));
+  assert.deepEqual(ing.fattiBridge.map((b) => b.root_port), ["ether3"]);
+  assert.deepEqual(ing.fattiPorta, [], "le porte del giro delle 8 non stanno accanto al bridge delle 9");
+});
+
 test("i MAC degli apparati: dai lettori e dalle schede dell'inventario (solo identità)", () => {
   db().exec("INSERT INTO physical_devices (id, primary_mac) VALUES (5, NULL)");
   db().exec("UPDATE network_devices SET physical_device_id = 5 WHERE id = 1");

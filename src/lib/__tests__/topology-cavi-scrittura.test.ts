@@ -141,6 +141,29 @@ test("R7: una fonte nuova sulla stessa chiave non toglie il vicino alla mappa di
   assert.equal(viciniT1(), 1);
 });
 
+// Revisione dei Task 4 e 6 di T2 (R7 vince su §13.5.1, piano «Scelte» punto 9): la potatura a 90 giorni toglieva TUTTE le
+// righe vecchie dell'apparato, qualunque fonte scrivesse. Accesa la lettura SSH o SNMP su uno switch, la prima scrittura
+// cancellava un vicino `device` di 91 giorni che la mappa di T1 mostra come «non visto»: accendere cambiava la mappa. Una
+// fonte nuova pota solo le proprie righe; le fonti di oggi potano come prima.
+test("R7: la potatura di una fonte nuova (ssh, snmp) toglie solo le sue righe; una riga device di 91 giorni resta", () => {
+  const righe = () => (db().prepare("SELECT source, remote_device_name AS n FROM device_neighbors ORDER BY source, n").all() as Array<{ source: string; n: string }>)
+    .map((r) => `${r.source}:${r.n}`);
+  for (const fonte of ["ssh", "snmp"] as const) {
+    db().exec("DELETE FROM device_neighbors");
+    withTenant(T, () => {
+      upsertNeighbors(1, [{ localPort: "ether5", remoteDevice: "VECCHIO-T1", remotePort: "Port 9", protocol: "lldp" }]);
+      upsertNeighbors(1, [{ localPort: "ether7", remoteDevice: "VECCHIO-NUOVA", remotePort: "Port 1", protocol: "lldp" }], fonte);
+    });
+    db().prepare("UPDATE device_neighbors SET timestamp = datetime('now', '-91 days')").run();
+    withTenant(T, () => upsertNeighbors(1, [{ localPort: "ether2", remoteDevice: "SW-2", remotePort: "Port 3", protocol: "lldp" }], fonte));
+    assert.deepEqual(righe(), ["device:VECCHIO-T1", `${fonte}:SW-2`], `fonte ${fonte}: la riga device resta, la sua vecchia se ne va`);
+  }
+  // Le fonti di oggi come prima: una scrittura `device` pota tutte le righe vecchie dell'apparato.
+  db().prepare("UPDATE device_neighbors SET timestamp = datetime('now', '-91 days')").run();
+  withTenant(T, () => upsertNeighbors(1, [{ localPort: "ether2", remoteDevice: "SW-2", remotePort: "Port 3", protocol: "lldp" }]));
+  assert.deepEqual(righe(), ["device:SW-2"], "la riga vecchia di T1 se ne va; quella della chiave torna `device`");
+});
+
 test("I34: una migrazione non riuscita non ferma i vicini, e il modello si calcola", () => {
   db().exec("ALTER TABLE device_neighbors DROP COLUMN remote_caps"); // simula lo schema a metà
   withTenant(T, () => {

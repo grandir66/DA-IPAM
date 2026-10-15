@@ -7214,6 +7214,16 @@ si apre «Dati della mappa», si guarda e basta. «Accendi» si prova solo nel d
    colonna che il lettore non legge in quel giro (cadenza diversa, comando non mandato) manca da tutte le righe. **Contratto
    di chi legge** (modello per cavo, Task 9): un `null` in una riga dell'ultimo giro vuol dire «vuoto o non noto adesso»,
    mai «il valore di prima». La prova: «un null letto cancella il valore di prima» in `topology-cavi-scrittura.test.ts`.
+   **L'ultimo giro** che legge il modello per cavo (`getIngressoCavi`) è uno per apparato e lettore, il più recente fra
+   porte e bridge insieme (revisione del Task 6): calcolato tabella per tabella, un giro che scrive il bridge e non le porte
+   lasciava le porte del giro di prima accanto al bridge nuovo. Prova in `topology-cavi-ingresso.test.ts` («Scelta 8»).
+9. **Potatura a 90 giorni dei vicini: R7 vince sul §13.5.1** (revisione dei Task 4 e 6, 15/10). Le fonti di oggi (`device`,
+   `unifi`) potano tutte le righe vecchie dell'apparato, come prima; una fonte nuova (`ssh`, `snmp`, `host`) pota **solo le
+   proprie**. Il §13.5.1 dice «le righe dell'apparato», ma così la prima scrittura di una lettura accesa cancellava un vicino
+   `device` di 91 giorni che la mappa di T1 mostra «non visto»: accendere cambiava la mappa, contro R7. Costo: una riga
+   `ssh`/`snmp` sulla chiave di una riga vecchia di oggi non la rinfresca (la WHERE dell'upsert la lascia stare), e quella
+   riga se ne va solo con una scrittura della sua fonte — caso raro. Prova «R7: la potatura di una fonte nuova…» in
+   `topology-cavi-scrittura.test.ts`.
 
 **Lasciate spente o nel modo raccomandato (spec §13.16, «Scelte che restano a Riccardo»), finché non risponde:**
 1. Censire il router di frontiera e il router virtuale dell'hub (H21): nessun codice; la traccia lo mostra solo se censiti.

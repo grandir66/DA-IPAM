@@ -5,8 +5,8 @@
  */
 import { z } from "zod";
 import { LINK_STALE_DAYS_MAX, LINK_STALE_DAYS_MIN } from "@/lib/topology/settings";
-import { VM_NON_COLLEGABILE } from "@/lib/topology/vm-nodes";
-import type { MapOrientation } from "@/lib/topology/model-types";
+import { SEGMENTO_NON_COLLEGABILE, VM_NON_COLLEGABILE } from "@/lib/topology/vm-nodes";
+import type { LinkMedium, MapOrientation } from "@/lib/topology/model-types";
 
 export type Parsed<T> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -50,20 +50,30 @@ export interface PortsView {
 const BODY = { error: "Corpo della richiesta non valido" };
 const NODE = z.string({ error: "Nodo non valido" }).regex(/^(dev|host):\d+$/, "Nodo non valido");
 /**
- * Un nodo che può essere anche una VM (`vm:<apparato>:<vmid>`, fase 2b): regex del
- * piano. Vale dove un oggetto della mappa può essere una VM (porte, nodi e ritocchi delle
- * mappe, togliere una scelta del principale); collegamenti e principale no (LINK_NODE);
- * testa e «nascondi» restano agli apparati e host.
+ * L'id di un segmento (T3, spec §13.7.3): «seg:<id apparato>:<indice>» oppure «seg:<id apparato>:n-<nome codificato con
+ * encodeURIComponent>», come lo scrive il modello per cavo (`cavi/collegamenti.ts`). Un solo «:» dopo l'apparato, mai «|»:
+ * la classe dei caratteri è quella che `encodeURIComponent` lascia, più «%».
  */
-const NODE_ANY = z.string({ error: "Nodo non valido" }).regex(/^(dev|host|vm):\d+(:\d+)?$/, "Nodo non valido");
+export const ID_SEGMENTO = /^seg:\d+:(\d+|n-[A-Za-z0-9\-_.!~*'()%]{1,90})$/;
+/**
+ * Un nodo che può essere anche una VM (`vm:<apparato>:<vmid>`, fase 2b) o, da T3, un segmento (`seg:…`, §13.7.3).
+ * Vale dove un oggetto della mappa può essere una VM o un segmento (porte, nodi, partenze e ritocchi delle mappe,
+ * togliere una scelta del principale); per collegamenti e principale le VM no (LINK_NODE); testa e «nascondi» restano
+ * agli apparati e host. 120 caratteri al massimo: un id più lungo non lo scrive nessuno.
+ */
+const NODE_ANY = z.string({ error: "Nodo non valido" }).max(120, "Nodo non valido")
+  .refine((v) => /^(dev|host|vm):\d+(:\d+)?$/.test(v) || ID_SEGMENTO.test(v), "Nodo non valido");
 /**
  * Revisione finale I-1: nel modello una VM non censita non è un capo di collegamento (`buildLinks` non
  * la trova), quindi un collegamento a mano o un principale verso di lei si salverebbe e non comparirebbe
  * mai. Si rifiuta in parole; le mappe passo passo continuano ad accettarla (NODE_ANY).
+ * Un segmento invece passa: si ignora un'appartenenza e si sceglie la ★ (§13.7.3); «add» verso un segmento lo rifiuta
+ * lo schema dei collegamenti, con SEGMENTO_NON_COLLEGABILE.
  */
-export { VM_NON_COLLEGABILE };
+export { SEGMENTO_NON_COLLEGABILE, VM_NON_COLLEGABILE };
 const LINK_NODE = NODE_ANY.refine((v) => !v.startsWith("vm:"), { message: VM_NON_COLLEGABILE });
-const MEDIUM = z.enum(["cavo", "fibra", "wireless"], { error: "Tipo non valido: «cavo», «fibra» o «wireless»" });
+// «tunnel» da T3 (§13.9): `medium` non ha CHECK nel DB, lo valida questo schema.
+const MEDIUM = z.enum(["cavo", "fibra", "wireless", "tunnel"], { error: "Tipo non valido: «cavo», «fibra», «wireless» o «tunnel»" });
 const NOTE = z.string({ error: "Nota non valida" }).max(500, "Nota troppo lunga (massimo 500 caratteri)");
 const id = (msg: string) => z.number({ error: msg }).int({ error: msg }).positive({ error: msg });
 const PORT = z.string({ error: "Porta non valida" }).max(100, "Porta troppo lunga (massimo 100 caratteri)");
@@ -83,7 +93,12 @@ const linkSchema = z.object(
     note: NOTE.nullish().transform((v) => v ?? null),
   },
   BODY,
-);
+).superRefine((v, ctx) => {
+  // Un segmento non si collega a mano (§13.7.3): «ignore» di un'appartenenza sì, «add» no. L'errore sul capo che è il segmento.
+  if (v.action !== "add") return;
+  const capo = v.a_node.startsWith("seg:") ? "a_node" : v.b_node.startsWith("seg:") ? "b_node" : null;
+  if (capo !== null) ctx.addIssue({ code: "custom", message: SEGMENTO_NON_COLLEGABILE, path: [capo] });
+});
 
 export function parseLinkOverrideBody(raw: unknown): Parsed<z.infer<typeof linkSchema>> {
   const r = linkSchema.safeParse(raw);
@@ -100,7 +115,7 @@ const linkPatchSchema = z.object(
   BODY,
 );
 
-export type LinkPatch = { a_port?: string; b_port?: string; medium?: "cavo" | "fibra" | "wireless" | null; note?: string | null };
+export type LinkPatch = { a_port?: string; b_port?: string; medium?: LinkMedium | null; note?: string | null };
 
 /** PATCH /api/topology/links/[id]: cambiano solo i campi presenti; `medium`/`note` null = tolti. */
 export function parseLinkPatchBody(raw: unknown): Parsed<LinkPatch> {
@@ -316,13 +331,15 @@ const roleSchema = z.object(
   {
     node_id: z.string({ error: "Apparato non valido" })
       .regex(/^dev:\d+$/, "Il ruolo nella mappa si sceglie solo per un apparato: un host prima si promuove ad apparato"),
-    // Da T3 anche «core» e «accesso» (spec §13.9): oggi la rotta non li accetta.
-    role: z.enum(["", "rete", "attaccato"], { error: "Ruolo non valido: «» (decide il sistema), «rete» o «attaccato»" }),
+    // Da T3 anche «core» e «accesso» (spec §13.9): li legge il modello per cavo; quello di T1 li legge «rete» (ruoloLetto).
+    role: z.enum(["", "rete", "attaccato", "core", "accesso"], {
+      error: "Ruolo non valido: «» (decide il sistema), «rete», «attaccato», «core» o «accesso»",
+    }),
   },
   BODY,
 );
 
-export function parseNodeRoleBody(raw: unknown): Parsed<{ deviceId: number; role: "" | "rete" | "attaccato" }> {
+export function parseNodeRoleBody(raw: unknown): Parsed<{ deviceId: number; role: "" | "rete" | "attaccato" | "core" | "accesso" }> {
   const r = roleSchema.safeParse(raw);
   return r.success ? { ok: true, data: { deviceId: Number(r.data.node_id.slice(4)), role: r.data.role } } : { ok: false, error: first(r.error) };
 }

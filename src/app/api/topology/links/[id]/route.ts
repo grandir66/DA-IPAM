@@ -3,6 +3,7 @@ import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { deleteLinkOverride, updateLinkOverride } from "@/lib/db-tenant";
 import { parseLinkPatchBody } from "@/lib/topology/api-input";
+import { mappaCaviAccesa } from "@/lib/topology/letture/mappa";
 import { parseControllerId, readJson } from "@/lib/controllers/route-helpers";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -38,7 +39,10 @@ export async function PATCH(req: Request, ctx: Ctx) {
   });
 }
 
-/** DELETE /api/topology/links/[id] — toglie una correzione: il collegamento torna come lo vedono le fonti. */
+/**
+ * DELETE /api/topology/links/[id] — toglie una correzione: il collegamento torna come lo vedono le fonti. Con la mappa
+ * nuova accesa cade solo la ★ con le stesse porte del collegamento a mano tolto (T3, §13.9); spenta, ogni ★ della coppia.
+ */
 export async function DELETE(_req: Request, ctx: Ctx) {
   return withTenantFromSession(async () => {
     const s = await requireAdmin();
@@ -46,7 +50,7 @@ export async function DELETE(_req: Request, ctx: Ctx) {
     const id = parseControllerId((await ctx.params).id);
     if (id === null) return notFound();
     try {
-      return deleteLinkOverride(id) ? NextResponse.json({ ok: true }) : notFound();
+      return deleteLinkOverride(id, { perCavo: mappaCaviAccesa() }) ? NextResponse.json({ ok: true }) : notFound();
     } catch (error) {
       console.error("[topology] correzioni, cancellazione:", error);
       return NextResponse.json({ error: "Errore nella cancellazione della correzione" }, { status: 500 });

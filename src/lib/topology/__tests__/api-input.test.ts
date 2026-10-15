@@ -214,12 +214,84 @@ test("ritocchi con l'orientamento: obbligatorio per salvarli, facoltativo per «
   });
 });
 
-test("ruolo nella mappa (T1b): solo gli apparati, solo i tre valori di oggi", async () => {
+test("ruolo nella mappa (T1b, T3): solo gli apparati; «», «rete», «attaccato» e da T3 «core» e «accesso»", async () => {
   const m = await import("@/lib/topology/api-input");
   assert.deepEqual(m.parseNodeRoleBody({ node_id: "dev:7", role: "rete" }), { ok: true, data: { deviceId: 7, role: "rete" } });
   assert.deepEqual(m.parseNodeRoleBody({ node_id: "dev:7", role: "" }), { ok: true, data: { deviceId: 7, role: "" } });
   assert.deepEqual(m.parseNodeRoleBody({ node_id: "host:7", role: "rete" }),
     { ok: false, error: "Il ruolo nella mappa si sceglie solo per un apparato: un host prima si promuove ad apparato" });
-  assert.equal(m.parseNodeRoleBody({ node_id: "dev:7", role: "core" }).ok, false, "«core» e «accesso» arrivano in T3 (§13.9)");
+  // Fino a T2 qui si provava il rifiuto di «core»: la rotta non li accettava ancora. Da T3 (§13.9) «core» e «accesso» si
+  // scrivono: li legge il modello per cavo, quello di T1 li legge «rete» (ruoloLetto, provato in node-index.test.ts).
+  for (const role of ["core", "accesso"] as const) {
+    assert.deepEqual(m.parseNodeRoleBody({ node_id: "dev:7", role }), { ok: true, data: { deviceId: 7, role } }, role);
+  }
+  assert.deepEqual(m.parseNodeRoleBody({ node_id: "dev:7", role: "boh" }),
+    { ok: false, error: "Ruolo non valido: «» (decide il sistema), «rete», «attaccato», «core» o «accesso»" });
   assert.equal(m.parseNodeRoleBody({ node_id: "dev:7" }).ok, false);
+});
+
+// ─── T3, Task 8 (spec §13.7.3 «Nelle rotte», §13.9): l'id del segmento, il tipo «tunnel» ───
+
+// Gli id che il modello per cavo dà ai segmenti (cavi/collegamenti.ts): l'indice della porta, oppure «n-» e il nome codificato.
+const SEGMENTI = ["seg:114:15", "seg:1:n-ether8", `seg:7:n-${encodeURIComponent("gi1/0/1 (x)")}`];
+
+test("T3: l'id di un segmento passa le rotte delle mappe passo passo, dei ritocchi, delle porte e della ★", async () => {
+  const m = await import("@/lib/topology/api-input");
+  for (const id of SEGMENTI) {
+    assert.deepEqual(m.parseMapNodesBody({ add: [id], remove: [id] }), { ok: true, data: { add: [id], remove: [id] } }, id);
+    assert.deepEqual(m.parseMapCreateBody({ name: "x", roots: [id], nodes: [id] }), { ok: true, data: { name: "x", roots: [id], nodes: [id] } }, id);
+    assert.deepEqual(m.parseMapPatchBody({ roots: [id] }), { ok: true, data: { roots: [id] } }, id);
+    assert.equal(m.parsePositionsBody({ view: "mappa:1", orientation: "lr", tweaks: [{ nodeId: id, x: 0, y: 0, sig: "s" }] }).ok, true, id);
+    assert.deepEqual(m.parsePositionsBody({ view: "mappa:1", rename: [{ from: id, to: "seg:114:16" }] }), {
+      ok: true, data: { view: "mappa:1", clear: false, tweaks: [], rename: [{ from: id, to: "seg:114:16" }], orientation: null },
+    }, id);
+    assert.deepEqual(m.parsePortsQuery(id), { ok: true, data: id }, id);
+    // La ★ di un membro verso il suo segmento, e quella del segmento verso il membro che lo porta (§13.7.3, «Nell'albero»).
+    assert.deepEqual(m.parsePrimaryBody({ node_id: "dev:114", other_node: id, node_port: "Port 15", other_port: "" }), {
+      ok: true, data: { node_id: "dev:114", other_node: id, node_port: "Port 15", other_port: "" },
+    }, id);
+    assert.equal(m.parsePrimaryBody({ node_id: id, other_node: "dev:114" }).ok, true, id);
+    assert.deepEqual(m.parsePrimaryDeleteBody({ node_id: id }), { ok: true, data: { node_id: id } }, id);
+  }
+});
+
+test("T3: id di segmento sbagliati rifiutati in italiano; il limite di 120 caratteri vale per ogni nodo", async () => {
+  const m = await import("@/lib/topology/api-input");
+  const lungo = (n: number) => `seg:${"1".repeat(25)}:n-${"a".repeat(n)}`;
+  assert.equal(lungo(89).length, 121);
+  assert.deepEqual(m.parsePortsQuery(lungo(88)), { ok: true, data: lungo(88) }, "120 caratteri: passa");
+  for (const bad of ["seg:1", "seg:x:1", "seg:1:n-a|b", "seg:1:n-", "seg::1", "seg:1:n-a:b", "seg:1:2:3", "seg:1:n-a b", lungo(89)]) {
+    for (const r of [m.parsePortsQuery(bad), m.parseMapNodesBody({ add: [bad] }), m.parsePrimaryDeleteBody({ node_id: bad }),
+      m.parsePrimaryBody({ node_id: "dev:1", other_node: bad }), m.parseLinkOverrideBody({ action: "ignore", a_node: "dev:1", b_node: bad })]) {
+      assert.deepEqual(r, { ok: false, error: "Nodo non valido" }, bad);
+    }
+  }
+});
+
+test("T3: «Ignora» un'appartenenza a un segmento sì, «Collega a…» un segmento no (§13.7.3)", async () => {
+  const m = await import("@/lib/topology/api-input");
+  assert.deepEqual(m.parseLinkOverrideBody({ action: "ignore", a_node: "dev:114", a_port: "Port 15", b_node: "seg:114:15" }), {
+    ok: true, data: { action: "ignore", a_node: "dev:114", a_port: "Port 15", b_node: "seg:114:15", b_port: "", medium: null, note: null },
+  });
+  assert.match(m.SEGMENTO_NON_COLLEGABILE, /segmento non si collega a mano/);
+  const atteso = { ok: false, error: m.SEGMENTO_NON_COLLEGABILE };
+  assert.deepEqual(m.parseLinkOverrideBody({ action: "add", a_node: "dev:114", a_port: "Port 15", b_node: "seg:114:15" }), atteso);
+  assert.deepEqual(m.parseLinkOverrideBody({ action: "add", a_node: "seg:1:n-ether8", b_node: "dev:2", medium: "cavo" }), atteso);
+  // Una VM non censita resta rifiutata col suo motivo, anche verso un segmento.
+  assert.deepEqual(m.parseLinkOverrideBody({ action: "add", a_node: "vm:3:100", b_node: "seg:1:5" }), { ok: false, error: m.VM_NON_COLLEGABILE });
+});
+
+test("T3: un segmento non è una testa e non si nasconde", async () => {
+  const m = await import("@/lib/topology/api-input");
+  assert.equal(m.parseAutoHeadBody({ head_node: "seg:114:15" }).ok, false);
+  assert.equal(m.parseHiddenBody({ node_id: "seg:114:15", hidden: true }).ok, false);
+});
+
+test("T3: il tipo «tunnel» in creazione e in modifica (§13.9); il rifiuto lo nomina", async () => {
+  const m = await import("@/lib/topology/api-input");
+  assert.deepEqual(m.parseLinkOverrideBody({ action: "add", a_node: "dev:1", a_port: "eoip-1", b_node: "dev:2", b_port: "eoip-1", medium: "tunnel" }), {
+    ok: true, data: { action: "add", a_node: "dev:1", a_port: "eoip-1", b_node: "dev:2", b_port: "eoip-1", medium: "tunnel", note: null },
+  });
+  assert.deepEqual(m.parseLinkPatchBody({ medium: "tunnel" }), { ok: true, data: { medium: "tunnel" } });
+  assert.deepEqual(m.parseLinkPatchBody({ medium: "rame" }), { ok: false, error: "Tipo non valido: «cavo», «fibra», «wireless» o «tunnel»" });
 });

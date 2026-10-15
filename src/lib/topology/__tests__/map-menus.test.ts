@@ -176,3 +176,13 @@ test("T1b — «Ruolo nella mappa ▸»: tre voci, quella di adesso segnata col 
   assert.equal(nodeMenuItems(ctx({ isAdmin: false, canEditMap: false })).some((x) => x.key === "role"), false);
   assert.equal(nodeMenuItems(ctx({ isDevice: false, isUncensusedVm: true, ruolo: null })).some((x) => x.key === "role"), false);
 });
+
+// T3, Task 8 (spec §13.7.3): un segmento non si collega a mano, si collegano gli apparati che ne fanno parte. La ★ su
+// un'appartenenza invece si sceglie (la rotta accetta «seg:»): la linea non perde «★ Rendi principale».
+test("T3: «Collega a…» verso un segmento si rifiuta in parole; la linea verso un segmento tiene la ★", async () => {
+  const { SEGMENTO_NON_COLLEGABILE, VM_NON_COLLEGABILE } = await import("@/lib/topology/vm-nodes");
+  assert.equal(connectRefusal("dev:1", "seg:1:5"), SEGMENTO_NON_COLLEGABILE);
+  assert.equal(connectRefusal("seg:1:n-ether8", "host:2"), SEGMENTO_NON_COLLEGABILE);
+  assert.equal(connectRefusal("vm:3:100", "seg:1:5"), VM_NON_COLLEGABILE, "la VM resta col suo motivo");
+  assert.ok(keys(edgeMenuItems(link("dev:1", "seg:1:5"), true)).includes("primary"));
+});

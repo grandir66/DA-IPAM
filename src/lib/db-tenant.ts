@@ -38,7 +38,7 @@ import { libreStatusFrom } from "./topology/status-map";
 import { parseProxmoxScan } from "./topology/vms";
 import { hypervisorNics, switchPortsToKnown, type SwitchPortRow } from "./topology/known-ports";
 import type { KnownPort } from "./topology/api-input";
-import type { MapOrientation } from "./topology/model-types";
+import type { LinkMedium, MapOrientation } from "./topology/model-types";
 
 import type {
   Network,
@@ -369,7 +369,7 @@ export function migrateTopologyPhase2(db: Database.Database): string[] {
  * 2026-10-14-topologia-fase2b, Task 2). Gemella di `migrateTopologyPhase2`:
  * solo cose nuove, in una transazione, e l'elenco di ciò che ha aggiunto.
  * - `topology_link_overrides.medium`: tipo di un collegamento a mano
- *   (`'cavo' | 'fibra' | 'wireless'` o NULL; senza CHECK, lo validano le rotte,
+ *   (`'cavo' | 'fibra' | 'wireless'`, da T3 anche `'tunnel'`, o NULL; senza CHECK, lo validano le rotte,
  *   così un tipo nuovo non chiede di ricostruire la tabella). Le righe esistenti
  *   restano con NULL.
  * - `topology_link_primary`: per l'oggetto `node_id`, il collegamento principale
@@ -9913,8 +9913,11 @@ export function setNodeHidden(deviceId: number, hidden: boolean): Esito {
   return r.changes > 0 ? { ok: true } : { ok: false, error: "Apparato non trovato" };
 }
 
-/** «Ruolo nella mappa» (T1b, spec §13.8.2): '' decide il sistema, 'rete' apparato di rete, 'attaccato' foglia (server, PC). */
-export function setTopologyRole(deviceId: number, role: "" | "rete" | "attaccato"): Esito {
+/**
+ * «Ruolo nella mappa» (T1b, spec §13.8.2): '' decide il sistema, 'rete' apparato di rete, 'attaccato' foglia (server, PC);
+ * da T3 (§13.9) 'core' e 'accesso', che il modello di T1 legge «rete» (`ruoloLetto`). Colonna senza CHECK: valida Zod.
+ */
+export function setTopologyRole(deviceId: number, role: "" | "rete" | "attaccato" | "core" | "accesso"): Esito {
   const r = db().prepare("UPDATE network_devices SET topology_role = ? WHERE id = ?").run(role, deviceId);
   return r.changes > 0 ? { ok: true } : { ok: false, error: "Apparato non trovato" };
 }
@@ -9935,8 +9938,8 @@ export function listLinkOverrides(): LinkOverrideView[] {
 export function addLinkOverride(
   input: {
     action: "add" | "ignore"; a_node: string; a_port: string; b_node: string; b_port: string;
-    /** Tipo del collegamento a mano (fase 2b); null = non indicato, sempre null per «ignore». */
-    medium: "cavo" | "fibra" | "wireless" | null;
+    /** Tipo del collegamento a mano (fase 2b, «tunnel» da T3); null = non indicato, sempre null per «ignore». */
+    medium: LinkMedium | null;
     note: string | null;
   },
   author: string,
@@ -9953,7 +9956,7 @@ export function addLinkOverride(
  */
 export function updateLinkOverride(
   id: number,
-  patch: { a_port?: string; b_port?: string; medium?: "cavo" | "fibra" | "wireless" | null; note?: string | null },
+  patch: { a_port?: string; b_port?: string; medium?: LinkMedium | null; note?: string | null },
 ): "ok" | "assente" | "non_a_mano" {
   const d = db();
   const row = d.prepare("SELECT action FROM topology_link_overrides WHERE id = ?").get(id) as { action: string } | undefined;
@@ -9970,16 +9973,28 @@ export function updateLinkOverride(
  * del principale fra gli stessi due oggetti (revisione finale M-3): altrimenti la riga restava, e un
  * collegamento automatico comparso dopo fra quei due diventava «★ scelto a mano» senza che nessuno
  * l'avesse scelto. Ripristinare un «ignora» non tocca i principali.
+ * `perCavo` (mappa nuova accesa, T3): toglie solo la ★ con le stesse porte della correzione tolta, nei due versi
+ * (ADR 0010 N-2 superato, §13.9); una ★ della coppia su altre porte resta e vale per il migliore della coppia. Le porte
+ * non sono mai NULL (`NOT NULL DEFAULT ''`): una correzione senza porte toglie la ★ senza porte della coppia, che è
+ * quella messa sul suo cavo (la linea senza porte scrive '' e ''); tenerla rifarebbe M-3. Porte confrontate come sono
+ * scritte: una ★ che non coincide resta, mai tolta per somiglianza.
+ * Senza, come oggi: ogni ★ della coppia.
  */
-export function deleteLinkOverride(id: number): boolean {
+export function deleteLinkOverride(id: number, opz?: { perCavo?: boolean }): boolean {
   const d = db();
   return d.transaction((): boolean => {
-    const row = d.prepare("SELECT action, a_node, b_node FROM topology_link_overrides WHERE id = ?").get(id) as
-      | { action: string; a_node: string; b_node: string }
+    const row = d.prepare("SELECT action, a_node, a_port, b_node, b_port FROM topology_link_overrides WHERE id = ?").get(id) as
+      | { action: string; a_node: string; a_port: string; b_node: string; b_port: string }
       | undefined;
     if (!row) return false;
     d.prepare("DELETE FROM topology_link_overrides WHERE id = ?").run(id);
-    if (row.action === "add") {
+    if (row.action === "add" && opz?.perCavo === true) {
+      d.prepare(
+        `DELETE FROM topology_link_primary
+         WHERE (node_id = ? AND other_node = ? AND node_port = ? AND other_port = ?)
+            OR (node_id = ? AND other_node = ? AND node_port = ? AND other_port = ?)`,
+      ).run(row.a_node, row.b_node, row.a_port, row.b_port, row.b_node, row.a_node, row.b_port, row.a_port);
+    } else if (row.action === "add") {
       d.prepare("DELETE FROM topology_link_primary WHERE (node_id = ? AND other_node = ?) OR (node_id = ? AND other_node = ?)")
         .run(row.a_node, row.b_node, row.b_node, row.a_node);
     }

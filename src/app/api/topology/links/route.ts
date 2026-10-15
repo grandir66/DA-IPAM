@@ -21,8 +21,9 @@ export async function GET() {
 
 /**
  * POST /api/topology/links — aggiunge un collegamento («add», con le porte e il tipo
- * `medium`: cavo, fibra, wireless o null) o ne nasconde uno visto («ignore», senza tipo).
- * Nodi `dev:N` o `host:N`: una VM non censita (`vm:N:M`) si rifiuta con 400. Risposta 201 `{ id }`.
+ * `medium`: cavo, fibra, wireless, da T3 tunnel, o null) o ne nasconde uno visto («ignore», senza tipo).
+ * Nodi `dev:N` o `host:N`: una VM non censita (`vm:N:M`) si rifiuta con 400. Un segmento (`seg:…`, T3 §13.7.3)
+ * si ignora (un'appartenenza) ma non si collega a mano: «add» verso un segmento è un 400. Risposta 201 `{ id }`.
  */
 export async function POST(req: Request) {
   return withTenantFromSession(async () => {

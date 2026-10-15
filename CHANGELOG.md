@@ -4,6 +4,22 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-15 · Apple e macOS fra gli apparati (tappa 1b credenziali)
+
+### Correzioni
+
+- **Un Mac si può promuovere ad apparato**: la tabella `network_devices` accetta la marca `apple` e la
+  scansione `macos` (la scansione macOS e il validatore li conoscevano già, il vincolo della tabella li
+  rifiutava e la promozione finiva in un errore). Accettati anche dalla creazione in blocco e dalla prova
+  provvisoria, che validano per conto loro. Perché ora: dalla tappa 1 le finestre propongono «apple» per i
+  Mac invece di ripiegare su Linux o «other».
+- **Come**: SQLite non cambia un vincolo, la tabella si ricostruisce
+  (`src/lib/devices/migra-apple-macos.ts`) partendo dalla sua definizione attuale in `sqlite_master`: cambiano
+  solo i due elenchi, nessuna colonna si perde (le ricostruzioni vecchie riscrivono un elenco fisso).
+  Chiavi esterne spente fuori dalla transazione, indici ricreati, conteggio e `foreign_key_check` dentro: se
+  non tornano si annulla. Prova a vuoto del 15/10 sulle copie dei DB di hub (3 tenant) e cliente A: stesse
+  colonne, righe e binding, nessuna violazione nuova, un Mac si inserisce.
+
 ## [Non rilasciato] — 2026-10-15 · credenziali, promozione IP → apparato, wizard (tappa 1)
 
 Spec `docs/superpowers/specs/2026-10-15-credenziali-promozione-wizard-design.md`, piano

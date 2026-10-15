@@ -12,6 +12,7 @@ import { Play, Square, RotateCcw, Trash2, CheckCircle2, XCircle, Loader2, Extern
 import type { ContainerIntegrationComponent, IntegrationMode, ComponentConfig, InstallJob, ContainerStatus } from "@/lib/integrations/types";
 import { containerRemovalConfirmText } from "@/lib/modules/uninstall-copy";
 import type { ConfigIntegrazioneVista } from "@/lib/permessi/politica";
+import { vistaScheda } from "@/lib/integrations/scheda-integrazione";
 
 interface Props {
   /** Solo i componenti installati come container: UniFi ha la sua pagina (Controller di rete). */
@@ -28,6 +29,8 @@ interface ApiState {
   config: ConfigIntegrazioneVista;
   containerStatus: ContainerStatus | null;
   browserUrl?: string;
+  /** LibreNMS messo in Docker dall'installatore dell'appliance (contenitore appliance-librenms). */
+  installatoDallAppliance?: boolean;
 }
 
 export function IntegrationCard({ component, title, description, dockerAvailable, showSyncButton }: Props) {
@@ -252,6 +255,13 @@ export function IntegrationCard({ component, title, description, dockerAvailable
   const adminPasswordImpostata = !!localConfig.adminPassword || !!state?.config.adminPasswordSet;
   const isExternal = localConfig.mode === "external";
   const isDisabled = localConfig.mode === "disabled";
+  const vista = vistaScheda({
+    dallAppliance: state?.installatoDallAppliance === true,
+    dockerAvailable,
+    managed: isManaged,
+    installing,
+    containerRunning,
+  });
 
   if (loading) {
     return (
@@ -286,7 +296,7 @@ export function IntegrationCard({ component, title, description, dockerAvailable
             {isManaged && !containerRunning && state?.containerStatus !== null && (
               <Badge variant="secondary">Fermo</Badge>
             )}
-            {isExternal && <Badge variant="outline">Esterno</Badge>}
+            {isExternal && <Badge variant="outline">{vista.badgeEsterno}</Badge>}
             {isDisabled && <Badge variant="secondary">Disabilitato</Badge>}
           </div>
         </div>
@@ -306,10 +316,10 @@ export function IntegrationCard({ component, title, description, dockerAvailable
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="disabled">Disabilitato</SelectItem>
-                <SelectItem value="managed" disabled={!dockerAvailable}>
-                  Docker locale{!dockerAvailable ? " (Docker non disponibile)" : ""}
+                <SelectItem value="managed" disabled={!vista.dockerLocaleSelezionabile}>
+                  Docker locale{vista.notaDockerLocale}
                 </SelectItem>
-                <SelectItem value="external">Istanza esterna</SelectItem>
+                <SelectItem value="external">{vista.etichettaEsterna}</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -525,7 +535,7 @@ export function IntegrationCard({ component, title, description, dockerAvailable
             </>
           )}
 
-          {isManaged && dockerAvailable && !installing && !containerRunning && (
+          {vista.mostraInstalla && (
             <Button size="sm" variant="outline" onClick={handleInstall}>
               Installa / Reinstalla
             </Button>

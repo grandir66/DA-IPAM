@@ -3,6 +3,7 @@ import { requireAuth, requireAdmin, isAuthError } from "@/lib/api-auth";
 import { getIntegrationConfig, setIntegrationConfig } from "@/lib/integrations/config";
 import { mascheraConfigIntegrazione, puoVedereSegreti } from "@/lib/permessi/politica";
 import { getContainerStatus } from "@/lib/integrations/docker";
+import { librenmsDellAppliance } from "@/lib/integrations/librenms-appliance";
 import { resolveIntegrationBrowserUrl } from "@/lib/integrations/public-url-server";
 import type { IntegrationComponent } from "@/lib/integrations/types";
 import { z } from "zod";
@@ -52,6 +53,7 @@ export async function GET(
     config: mascheraConfigIntegrazione(cfg, puoVedereSegreti(session.user.role)),
     browserUrl: cfg.browserUrl ?? resolveIntegrationBrowserUrl(component, cfg.url),
     containerStatus,
+    installatoDallAppliance: component === "librenms" ? await librenmsDellAppliance() : false,
   });
 }
 

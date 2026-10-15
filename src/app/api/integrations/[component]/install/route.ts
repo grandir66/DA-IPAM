@@ -5,6 +5,7 @@ import { installLibreNMS } from "@/lib/integrations/librenms";
 import { installLoki } from "@/lib/integrations/loki";
 import { installGraylog } from "@/lib/integrations/graylog";
 import { getIntegrationConfig } from "@/lib/integrations/config";
+import { rifiutoInstallazione } from "@/lib/integrations/librenms-appliance";
 import { parametriInstallazione } from "@/lib/integrations/segreti-installazione";
 import type { ContainerIntegrationComponent } from "@/lib/integrations/types";
 import { randomUUID } from "crypto";
@@ -41,6 +42,11 @@ export async function POST(
   const { component: raw } = await params;
   const component = parseComponent(raw);
   if (!component) return NextResponse.json({ error: "Componente non valido" }, { status: 400 });
+
+  // Il LibreNMS dell'installatore dell'appliance c'è già: un secondo sulla 8090
+  // prenderebbe il suo posto in DA-IPAM, vuoto (pilota PX-NAS 2026-10-15).
+  const rifiuto = await rifiutoInstallazione(component);
+  if (rifiuto) return NextResponse.json({ error: rifiuto }, { status: 409 });
 
   // Controlla se c'è già un job in corso per questo componente
   const running = listJobs().find(

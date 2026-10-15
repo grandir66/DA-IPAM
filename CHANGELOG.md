@@ -4,6 +4,19 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-15 · LibreNMS dell'appliance riconosciuto nella scheda
+
+### Correzioni
+
+- **La scheda LibreNMS (Impostazioni → Moduli) riconosce il LibreNMS messo dall'installatore
+  dell'appliance.** Se sulla macchina c'è il contenitore `appliance-librenms`, la modalità si
+  chiama «Installato dall'appliance» invece di «Istanza esterna», «Docker locale» non si può
+  scegliere e il pulsante «Installa» sparisce. Anche il server rifiuta l'installazione (409, col
+  motivo a schermo). Perché: sul pilota PX-NAS (15/10) la scheda faceva sembrare assente il
+  LibreNMS che c'era, e «Installa» ha avviato un secondo LibreNMS (`da-librenms`, porta 8090,
+  vuoto) che a fine lavoro avrebbe preso il posto di quello dell'installatore. Prova:
+  `src/lib/integrations/__tests__/librenms-appliance.test.ts`.
+
 ## [Non rilasciato] — 2026-10-15 · topologia: elenco aggiornato tornando sulla pagina
 
 ### Correzioni

@@ -12,6 +12,7 @@ import {
   ensureInventoryAssetForNetworkDevice,
   addDeviceCredentialBinding,
   getHostCredentials,
+  getCredentialById,
 } from "@/lib/db";
 import { encrypt } from "@/lib/crypto";
 import { z } from "zod";
@@ -29,6 +30,8 @@ import {
   type ProductProfileId,
 } from "@/lib/device-product-profiles";
 import { linkInvAgentEndpointToHost } from "@/lib/inventory-agent/db";
+import { portaCredenziale } from "@/lib/credentials/porte";
+import { tipiCredenzialePerProtocollo } from "@/lib/credential-protocol-map";
 import { isMacOsHost } from "@/lib/host-platform-detect";
 
 const productProfileEnum = z.enum(PRODUCT_PROFILE_IDS as unknown as [string, ...string[]]);
@@ -135,6 +138,9 @@ export async function POST(request: Request) {
 
     const defaultPort = protocol === "ssh" ? 22 : protocol === "api" ? 443 : protocol === "winrm" ? 5985 : 161;
     const devicePort = port ?? defaultPort;
+    // Porta propria della credenziale SNMP (tappa 1), non 161 fisso.
+    const snmpCredRow = snmp_credential_id && snmp_credential_id > 0 ? getCredentialById(snmp_credential_id) : undefined;
+    const snmpBindingPort = snmpCredRow ? portaCredenziale(snmpCredRow, "snmp") : 161;
 
     const created: { id: number; name: string; host: string }[] = [];
     const skipped: { host: string; reason: string }[] = [];
@@ -195,7 +201,7 @@ export async function POST(request: Request) {
         addDeviceCredentialBinding({ device_id: device.id, credential_id, protocol_type: protoType, port: devicePort });
       }
       if (snmp_credential_id && snmp_credential_id > 0 && snmp_credential_id !== credential_id) {
-        addDeviceCredentialBinding({ device_id: device.id, credential_id: snmp_credential_id, protocol_type: "snmp", port: 161 });
+        addDeviceCredentialBinding({ device_id: device.id, credential_id: snmp_credential_id, protocol_type: "snmp", port: snmpBindingPort });
       }
 
       // Eredita credenziali validate dall'host (default true: l'utente può opt-out con false)
@@ -204,6 +210,8 @@ export async function POST(request: Request) {
           const hostCreds = getHostCredentials(host.id);
           for (const hc of hostCreds) {
             if (!hc.validated) continue;
+            // Solo tipi che quel protocollo usa davvero (regola unica, tappa 1).
+            if (!tipiCredenzialePerProtocollo(hc.protocol_type).includes(hc.credential_type)) continue;
             // Evita duplicati con credenziali già aggiunte sopra
             if (hc.credential_id === credential_id && hc.protocol_type === protoType) continue;
             if (hc.credential_id === snmp_credential_id && hc.protocol_type === "snmp") continue;

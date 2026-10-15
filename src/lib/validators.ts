@@ -102,7 +102,12 @@ export const NetworkDeviceSchema = z.object({
   name: z.string().min(1, "Nome richiesto").max(100),
   host: z.string().min(1, "Host richiesto").max(2000),
   device_type: z.enum(["router", "switch", "firewall", "hypervisor", "access_point", "nas", "server"]),
-  classification: z.preprocess(emptyToUndefined, z.string().max(100).optional().nullable()),
+  // Solo valori dell'elenco (tappa 1, 15/10): «printer» del classificatore passava
+  // e l'apparato spariva dalle liste per classificazione.
+  classification: z.preprocess(
+    emptyToUndefined,
+    z.enum(DEVICE_CLASSIFICATIONS, { error: "Classificazione non valida: scegline una dall'elenco" }).optional().nullable()
+  ),
   vendor: z.enum(["mikrotik", "ubiquiti", "hp", "cisco", "omada", "stormshield", "proxmox", "vmware", "linux", "windows", "synology", "qnap", "apple", "other"]),
   vendor_subtype: z.preprocess(emptyToUndefined, z.enum(["procurve", "comware"]).optional().nullable()),
   /** Profilo prodotto (marca + tipologia), obbligatorio per scan e inventario dedicati */

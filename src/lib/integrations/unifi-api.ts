@@ -661,6 +661,9 @@ function headerValue(headers: IncomingHttpHeaders, name: string): string | null 
   return typeof v === "string" && v.trim() !== "" ? v.trim() : null;
 }
 
+/** Cookie di sessione di UniFi OS dopo POST /api/auth/login (è un nome di cookie, non una variabile d'ambiente). */
+const COOKIE_SESSIONE_UNIFI_OS = "TOKEN";
+
 /**
  * Login con utente LOCALE su una console UniFi OS (ADR 0019). Un tentativo
  * solo: 401/403/429 tornano col loro messaggio e nessuno lo ripete.
@@ -679,11 +682,11 @@ async function unifiOsLogin(
     timeoutMs,
   });
   if (res.status !== 200) throw httpError(res, { step: "login", unifiOs: true });
-  const token = cookieValue(mergeCookieHeader("", parseSetCookies(res.headers)), "TOKEN");
+  const token = cookieValue(mergeCookieHeader("", parseSetCookies(res.headers)), COOKIE_SESSIONE_UNIFI_OS);
   if (!token) {
     throw new UnifiApiError("unknown", "La console ha accettato il login ma non ha aperto una sessione (nessun cookie TOKEN)");
   }
-  return { cookie: `TOKEN=${token}`, csrf: headerValue(res.headers, "x-csrf-token") };
+  return { cookie: `${COOKIE_SESSIONE_UNIFI_OS}=${token}`, csrf: headerValue(res.headers, "x-csrf-token") };
 }
 
 /** La console può rinnovare il CSRF a ogni risposta: le richieste dopo usano quello nuovo. */

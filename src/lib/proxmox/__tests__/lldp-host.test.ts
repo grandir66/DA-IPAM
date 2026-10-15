@@ -385,3 +385,14 @@ test("apriHostSsh: il codice d'uscita arriva com'è (1 = lldpd assente); un cana
     srv.chiudi();
   }
 });
+
+// Revisione del Task 7 di T2: la ricerca del nodo guardava anche gli apparati spenti.
+test("cluster: un hypervisor spento sullo stesso indirizzo non rende il nodo ambiguo né riceve le righe", async () => {
+  accendi();
+  db().prepare(`INSERT INTO network_devices (id, name, host, device_type, vendor, protocol, enabled) VALUES (4, 'HV-SPENTO', '192.0.2.21', 'hypervisor', 'linux', 'ssh', 0)`).run();
+  const s = spia(VERE);
+  const r = await withTenant(T, () => leggiHost(2, s.apri, () => ORA));
+  assert.deepEqual(r.map((x) => x.stato), ["letto", "errore"]);
+  assert.equal(vicini(3).length, 4);
+  assert.deepEqual([vicini(4), porte(4), macs(4)], [[], [], []]);
+});

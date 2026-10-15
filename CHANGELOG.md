@@ -17,7 +17,8 @@ non vede; e il MAC permanente dei membri dei bond è quello con cui le schede si
   la scansione e al più una volta l'ora per apparato, manda su ogni nodo tre comandi in sola lettura, ognuno a
   parte: `command -v lldpcli`, `lldpcli -f json0 show neighbors details` (solo se c'è), `ip -d -j link show`.
   Scrive i vicini LLDP dell'host, il tipo e lo stato delle schede, il membro attivo o «di riserva» di ogni bond e
-  i MAC permanenti: solo per il modello per cavo, **la mappa di oggi non cambia**. Un host senza `lldpd` non è un
+  i MAC permanenti: servono al modello per cavo e **la mappa di oggi non cambia**; i vicini LLDP dell'host
+  compaiono anche nella scheda «Neighbors» dell'apparato, che non filtra per fonte. Un host senza `lldpd` non è un
   errore; un comando che non risponde o dà un'uscita che non si capisce non scrive niente al posto suo, e
   l'esito per apparato lo dice col codice. Il lettore è scritto sull'uscita vera di un nodo dell'hub con `lldpd`.
 

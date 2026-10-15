@@ -47,12 +47,16 @@ export function codiceTrasporto(err: unknown): string {
   return codiceErrore(err);
 }
 
+export type EsegueConCodice = (comando: string, tempoMs: number) => Promise<{ stdout: string; stderr: string; code: number }>;
+
 /**
  * I comandi su una connessione sola, aperta con queste opzioni e chiusa alla fine anche se un comando fallisce. Una
  * connessione caduta, o un canale chiuso senza codice d'uscita, dà `CONNESSIONE_CADUTA` («non so»): l'uscita può essere
- * tagliata e non si legge (revisione del Task 4 di T2). Dopo una caduta i comandi successivi non partono.
+ * tagliata e non si legge (revisione del Task 4 di T2). Dopo una caduta i comandi successivi non partono. Ogni comando
+ * torna con stdout, stderr e codice d'uscita: la base sola, usata da `eseguiSuSsh` (MikroTik, uscita unita) e dalla
+ * lettura degli host (`apriHostSsh`, che del codice ha bisogno).
  */
-export async function eseguiSuSsh<T>(opts: SshOptions, fn: (esegui: Esegui) => Promise<T>): Promise<T> {
+export async function eseguiSuSshConCodice<T>(opts: SshOptions, fn: (esegui: EsegueConCodice) => Promise<T>): Promise<T> {
   const caduta = (): Error => Object.assign(new Error("La connessione SSH è caduta durante il comando"), { code: CODICE_CONNESSIONE_CADUTA });
   try {
     return await withSshClient(opts, (conn) => {
@@ -62,7 +66,7 @@ export async function eseguiSuSsh<T>(opts: SshOptions, fn: (esegui: Esegui) => P
         if (chiusa) throw caduta();
         const r = await execConTempo(conn, comando, tempoMs);
         if (chiusa || typeof r.code !== "number") throw caduta();
-        return r.stdout + r.stderr;
+        return { stdout: r.stdout, stderr: r.stderr, code: r.code };
       });
     });
   } catch (err) {
@@ -70,6 +74,14 @@ export async function eseguiSuSsh<T>(opts: SshOptions, fn: (esegui: Esegui) => P
     if (err instanceof SshError) throw Object.assign(new Error("Connessione SSH non riuscita"), { code: codiceTrasporto(err) });
     throw err;
   }
+}
+
+/** Come sopra, per i MikroTik: ogni comando torna con l'uscita unita (stdout + stderr). */
+export function eseguiSuSsh<T>(opts: SshOptions, fn: (esegui: Esegui) => Promise<T>): Promise<T> {
+  return eseguiSuSshConCodice(opts, (conCodice) => fn(async (comando, tempoMs) => {
+    const r = await conCodice(comando, tempoMs);
+    return r.stdout + r.stderr;
+  }));
 }
 
 /** La connessione vera: una per apparato e per lettura. */

@@ -378,8 +378,8 @@ test("R7, matrice: una fonte nuova sulla chiave di una riga di oggi non la prend
     assert.deepEqual(oggi(), prima.righe, `${nuova}: le righe di oggi (fonte, data) sono cambiate`);
     assert.deepEqual(input(), prima.input, `${nuova}: l'ingresso del modello di oggi è cambiato`);
     assert.equal(conta(db, `SELECT COUNT(*) AS n FROM device_neighbors WHERE source = '${nuova}'`), 1, `${nuova}: scrive le sue righe (una sola chiave: ${nuova}-mia)`);
-    // ...ma le colonne nuove sì, sulla riga di oggi: lo scrive l'istruzione a parte, e il modello di T1 non le legge.
-    assert.equal(conta(db, "SELECT COUNT(*) AS n FROM device_neighbors WHERE source IN ('device', 'unifi') AND local_port_index = 3 AND remote_caps = 'bridge'"), 2);
+    // ...e neanche le colonne nuove: l'istruzione a parte guarda la fonte come l'INSERT (revisione del Task 7 di T2).
+    assert.equal(conta(db, "SELECT COUNT(*) AS n FROM device_neighbors WHERE source IN ('device', 'unifi') AND (local_port_index IS NOT NULL OR remote_caps IS NOT NULL)"), 0);
     db.exec(`DELETE FROM device_neighbors WHERE source = '${nuova}'`);
   }
   // Una fonte nuova pota solo le sue righe di 91 giorni.
@@ -463,7 +463,7 @@ for (const [nome, rete] of [["famiglia 1 · solo MikroTik", soloMikrotik], ["fam
     const ing = withTenant(TENANT_RETI, () => getIngressoCavi(2, ADESSO));
     assert.ok(ing.fattiPorta.length > 0 && ing.fattiBridge.length === input.devices.length && ing.macApparati.length >= input.devices.length);
     for (const nuova of NUOVE_FONTI) assert.ok(ing.vicini.filter((v) => v.source === nuova).length >= input.neighbors.length / 2, `${nuova}: le righe nuove ci sono`);
-    assert.ok(ing.vicini.filter((v) => FONTI_DI_OGGI.some((f) => f === v.source)).every((v) => v.remote_caps === "router"), "le colonne nuove sono arrivate anche sulle righe di oggi");
+    assert.ok(ing.vicini.filter((v) => FONTI_DI_OGGI.some((f) => f === v.source)).every((v) => v.remote_caps == null), "le colonne nuove non sono arrivate sulle righe di oggi (R7)");
     const modello = withTenant(TENANT_RETI, () => buildTopologyModel(getTopologyModelInput(2, ADESSO)));
     assert.ok(costruisciModelloCavi(ing, modello, { testaScelta: null }).collegamenti.length > 0);
 

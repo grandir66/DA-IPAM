@@ -22,8 +22,8 @@ import {
   getDeviceCredentialBindings, getDeviceCredentials, getNetworkDeviceById, getNetworkDevices, scriviFattiTopologia, upsertNeighbors,
   type FattiLettura, type FattoPortaIn, type MacApparatoIn,
 } from "@/lib/db-tenant";
-import { CODICE_USCITA_NON_CAPITA, codiceTrasporto } from "@/lib/devices/mikrotik-letture";
-import { CODICE_CONNESSIONE_CADUTA, SshError, execConTempo, withSshClient, type SshOptions } from "@/lib/devices/ssh-transport";
+import { CODICE_USCITA_NON_CAPITA, codiceTrasporto, eseguiSuSshConCodice } from "@/lib/devices/mikrotik-letture";
+import type { SshOptions } from "@/lib/devices/ssh-transport";
 import { membriDeiBond, parseLiveInterfaces, type LiveInterfaceKind } from "@/lib/proxmox/live-interfaces";
 import { proxmoxSshPort, proxmoxSshUsername, resolveProxmoxTargetIps } from "@/lib/proxmox/proxmox-targets";
 import { normale } from "@/lib/topology/cavi/porte";
@@ -158,26 +158,13 @@ export type ApriHost = <T>(opts: SshOptions, fn: (esegui: EseguiHost) => Promise
  * La connessione vera: una per nodo, chiusa alla fine anche se un comando fallisce. Il codice d'uscita torna com'è (serve a
  * `command -v`). Una connessione caduta, o un canale chiuso senza codice d'uscita, è `CONNESSIONE_CADUTA` («non so»: l'uscita
  * può essere tagliata), e dopo una caduta i comandi successivi non partono; una connessione che non si apre ha il solo
- * codice (`SSH_<TIPO>`), mai il messaggio di ssh con host e utente. Come `eseguiSuSsh` dei MikroTik.
+ * codice (`SSH_<TIPO>`), mai il messaggio di ssh con host e utente. Sta sulla stessa base dei MikroTik (`eseguiSuSshConCodice`).
  */
-export const apriHostSsh: ApriHost = async (opts, fn) => {
-  const caduta = (): Error => conCodice("La connessione SSH è caduta durante il comando", CODICE_CONNESSIONE_CADUTA);
-  try {
-    return await withSshClient(opts, (conn) => {
-      let chiusa = false;
-      conn.once("close", () => { chiusa = true; });
-      return fn(async (comando) => {
-        if (chiusa) throw caduta();
-        const r = await execConTempo(conn, comando, TEMPO_HOST_MS);
-        if (chiusa || typeof r.code !== "number") throw caduta();
-        return { stdout: r.stdout, code: r.code };
-      });
-    });
-  } catch (err) {
-    if (err instanceof SshError) throw conCodice("Connessione SSH non riuscita", codiceTrasporto(err));
-    throw err;
-  }
-};
+export const apriHostSsh: ApriHost = (opts, fn) =>
+  eseguiSuSshConCodice(opts, (esegui) => fn(async (comando) => {
+    const r = await esegui(comando, TEMPO_HOST_MS);
+    return { stdout: r.stdout, code: r.code };
+  }));
 
 interface LetturaNodo {
   /** null = non letti (lldpd assente, o il comando non è riuscito); [] = letti e nessuno. */
@@ -280,6 +267,7 @@ export async function leggiHost(deviceId: number, apri: ApriHost = apriHostSsh, 
   const perIndirizzo = new Map<string, NetworkDevice[]>();
   if (nodi.length > 1) {
     for (const d of getNetworkDevices()) {
+      if (!d.enabled) continue; // un apparato spento sullo stesso indirizzo non rende il nodo ambiguo né riceve righe
       const h = (d.host ?? "").trim();
       perIndirizzo.set(h, [...(perIndirizzo.get(h) ?? []), d]);
     }

@@ -7,9 +7,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  FIT_MAX, FIT_MIN, HANDLE_ATT, HANDLE_IN, HANDLE_IN_LR, HANDLE_OUT, HANDLE_OUT_LR, LR_TRUNK,
-  centerViewport, fitWidthViewport, labelBoxes, lineHandles, lrLabelMaxWidth, moreAttachedAt, printHref, redundancyCounts, redundantEnds, redundantLabelAt, visibleEdges,
+  FIT_MAX, FIT_MIN, HANDLE_ATT, HANDLE_IN, HANDLE_IN_DX, HANDLE_IN_GIU, HANDLE_IN_LR, HANDLE_OUT, HANDLE_OUT_LR, HANDLE_OUT_SU, HANDLE_OUT_SX, LR_TRUNK,
+  attraversa, candidatiLati, centerViewport, fitWidthViewport, labelBoxes, latiVicini, lineHandles, lineaAlbero, lrLabelMaxWidth, maniglieLati,
+  moreAttachedAt, ostacoli, percorso, printHref, redundancyCounts, redundantEnds, redundantLabelAt, rettangoli, siGuardano, troncoPossibile, visibleEdges,
 } from "@/lib/topology/map-screen";
+import type { LayoutResult } from "@/lib/topology/tree-layout";
 import { ATT_INDENT, ATT_MAX, ATT_ROW } from "@/lib/topology/tree-layout-consts";
 
 test("id delle maniglie fissi (le linee salvate e la stampa li danno per scontati)", () => {
@@ -169,4 +171,89 @@ test("riquadri da evitare: riquadri con la riga delle porte sopra, gruppi degli 
     { x: 10, y: 160, w: 160, h: 18 },
     { x: 300, y: 0, w: 316, h: 120 },
   ]);
+});
+
+// ─── Lato più vicino (spec §13.10.1, vincolo 5 di Riccardo, 14/10) ───
+// Oggi una ridondanza esce sempre dal lato destro del riquadro più a sinistra ed entra dal sinistro dell'altro
+// (`redundantEnds`): fra due riquadri della stessa colonna fa il giro. I candidati sono coppie di lati che si guardano.
+
+const R = (x: number, y: number, w: number, h: number) => ({ x, y, w, h });
+
+test("maniglie nuove con id fissi; quelle di oggi restano", () => {
+  assert.deepEqual([HANDLE_OUT_SU, HANDLE_OUT_SX, HANDLE_IN_GIU, HANDLE_IN_DX], ["s-su", "s-sx", "t-giu", "t-dx"]);
+  assert.deepEqual(maniglieLati({ da: "dx", a: "sx" }), { source: "dx", target: "sx" });
+  assert.deepEqual(maniglieLati({ da: "giu", a: "su" }), { source: "giu", target: "su" });
+  assert.deepEqual(maniglieLati({ da: "su", a: "giu" }), { source: "s-su", target: "t-giu" });
+  assert.deepEqual(maniglieLati({ da: "sx", a: "dx" }), { source: "s-sx", target: "t-dx" });
+});
+
+test("candidati: B a destra alla stessa altezza → solo i lati affacciati, percorso dritto", () => {
+  const a = R(0, 0, 100, 40), b = R(200, 0, 100, 40);
+  assert.deepEqual(candidatiLati(a, b, "lr"), [{ da: "dx", a: "sx" }]);
+  assert.deepEqual(percorso(a, "dx", b, "sx"), [{ x: 100, y: 20 }, { x: 200, y: 20 }]);
+});
+
+test("candidati: prima l'asse col vuoto maggiore, poi l'altro, poi le due «L» (a pari lunghezza nell'ordine)", () => {
+  const a = R(0, 0, 100, 40), b = R(150, 200, 100, 40); // vuoto orizzontale 50, verticale 160
+  assert.deepEqual(candidatiLati(a, b, "lr"), [{ da: "giu", a: "su" }, { da: "dx", a: "sx" }, { da: "dx", a: "su" }, { da: "giu", a: "sx" }]);
+  assert.deepEqual(percorso(a, "giu", b, "su"), [{ x: 50, y: 40 }, { x: 50, y: 120 }, { x: 200, y: 120 }, { x: 200, y: 200 }]);
+  assert.deepEqual(percorso(a, "dx", b, "su"), [{ x: 100, y: 20 }, { x: 200, y: 20 }, { x: 200, y: 200 }]);
+});
+
+test("candidati: a pari vuoto vince l'asse dell'orientamento", () => {
+  const a = R(0, 0, 100, 40), b = R(150, 90, 100, 40); // 50 e 50
+  assert.deepEqual(candidatiLati(a, b, "lr").slice(0, 2), [{ da: "dx", a: "sx" }, { da: "giu", a: "su" }]);
+  assert.deepEqual(candidatiLati(a, b, "tb").slice(0, 2), [{ da: "giu", a: "su" }, { da: "dx", a: "sx" }]);
+});
+
+test("latiVicini: il primo candidato che non attraversa un riquadro; se tutti attraversano, il più corto", () => {
+  const a = R(0, 0, 100, 40), b = R(300, 200, 100, 40);
+  const o1 = R(180, 100, 40, 40); // sul gradino della «Z» orizzontale e sul tratto della «Z» verticale
+  assert.deepEqual(latiVicini(a, b, "lr", []), { da: "dx", a: "sx" });
+  assert.deepEqual(latiVicini(a, b, "lr", [o1]), { da: "dx", a: "su" });
+  const o2 = R(340, 60, 30, 40), o3 = R(30, 100, 40, 40); // chiudono anche le due «L»
+  assert.deepEqual(latiVicini(a, b, "lr", [o1, o2, o3]), { da: "dx", a: "sx" }); // 400 px contro 430 e 460
+  assert.equal(attraversa(percorso(a, "dx", b, "sx"), [o1]), true);
+  assert.equal(attraversa(percorso(a, "dx", b, "su"), [o1]), false);
+});
+
+test("riquadri sovrapposti (non dovrebbe succedere): nessun candidato, i lati di oggi", () => {
+  const a = R(0, 0, 100, 40), b = R(50, 10, 100, 40);
+  assert.deepEqual(candidatiLati(a, b, "lr"), []);
+  assert.deepEqual(latiVicini(a, b, "lr", []), { da: "dx", a: "sx" });
+  assert.deepEqual(latiVicini(a, b, "tb", []), { da: "giu", a: "su" });
+});
+
+test("C10: fra due riquadri della stessa colonna i lati di oggi fanno il giro, quelli scelti no", () => {
+  const s = R(0, 0, 200, 44), t = R(0, 100, 200, 44);
+  assert.equal(siGuardano(s, "dx", t, "sx"), false);
+  const l = latiVicini(s, t, "lr", []);
+  assert.deepEqual(l, { da: "giu", a: "su" });
+  assert.equal(siGuardano(s, l.da, t, l.a), true);
+});
+
+test("ostacoli: tutti i riquadri tranne i due capi", () => {
+  const r = [{ id: "dev:1", ...R(0, 0, 10, 10) }, { id: "dev:2", ...R(20, 0, 10, 10) }, { id: "apg:dev:1", ...R(40, 0, 10, 10) }];
+  assert.deepEqual(ostacoli(r, ["dev:1", "dev:2"]), [R(40, 0, 10, 10)]);
+});
+
+test("rettangoli: i riquadri con il loro id; i gruppi degli AP come «apg:‹padre›»", () => {
+  const layout: LayoutResult = {
+    nodes: new Map([["dev:1", { id: "dev:1", x: 0, y: 0, w: 100, h: 40, role: "box", parent: null }]]),
+    apGroups: [{ parent: "dev:1", x: 120, y: 0, w: 316, h: 60, count: 4 }],
+    moreAttached: new Map(), vmChips: [], width: 436, height: 60, expired: [], orientation: "lr",
+  };
+  assert.deepEqual(rettangoli(layout), [{ id: "dev:1", ...R(0, 0, 100, 40) }, { id: "apg:dev:1", ...R(120, 0, 316, 60) }]);
+  // Gli ostacoli di una linea fra il riquadro e un altro: il gruppo degli AP resta, i due capi no.
+  assert.deepEqual(ostacoli(rettangoli(layout), ["dev:1", "dev:2"]), [R(120, 0, 316, 60)]);
+});
+
+test("linee dell'albero: restano a tronco; un figlio spostato a mano dall'altra parte usa il lato più vicino", () => {
+  const padre = R(0, 0, 200, 44);
+  assert.equal(troncoPossibile("lr", padre, R(304, 100, 180, 44)), true);
+  assert.deepEqual(lineaAlbero("lr", padre, R(304, 100, 180, 44), []), { tronco: true });
+  assert.deepEqual(lineaAlbero("lr", padre, R(0, 200, 180, 44), []), { tronco: false, lati: { da: "giu", a: "su" } });
+  const p2 = R(100, 100, 200, 44);
+  assert.deepEqual(lineaAlbero("tb", p2, R(100, 300, 200, 44), []), { tronco: true });
+  assert.deepEqual(lineaAlbero("tb", p2, R(100, 0, 200, 44), []), { tronco: false, lati: { da: "su", a: "giu" } });
 });

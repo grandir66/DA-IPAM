@@ -12,6 +12,7 @@
  */
 import type { MapLink, MapOrientation } from "@/lib/topology/model-types";
 import { ATT_INDENT, ATT_MAX, ATT_ROW } from "@/lib/topology/tree-layout-consts";
+import type { LayoutResult } from "@/lib/topology/tree-layout";
 
 /** Orizzontale: entrata in alto, uscita in basso (gli id di prima della verticale). */
 export const HANDLE_IN = "su", HANDLE_OUT = "giu";
@@ -118,7 +119,7 @@ export function redundancyCounts(links: readonly Ends[]): Map<string, number> {
 }
 
 export type Rect = { x: number; y: number; w: number; h: number };
-type Pt = { x: number; y: number };
+export type Pt = { x: number; y: number };
 
 /** Alta quanto la riga delle porte scritta sopra un riquadro («Port 11 → SFP+ 1»). */
 const PORT_ROW = 18;
@@ -172,4 +173,158 @@ export function redundantLabelAt(points: readonly Pt[], size: { w: number; h: nu
   }
   const m = at(mid);
   return { x: Math.round(m.x * 10) / 10, y: Math.round(m.y * 10) / 10 };
+}
+
+// ─── Lato più vicino (spec §13.10.1, vincolo 5) ───────────────────────────────
+// Una funzione sola per schermo, stampa e misura (ADR 0012, «cosa diventa difficile» 1; prova I31): i lati li sceglie
+// solo `latiVicini`, il percorso lo traccia solo `percorso`. Le linee dell'albero restano a tronco, per scelta
+// (confermato da Riccardo il 14/10 sera): il lato più vicino vale per ridondanze, linee a mano che non sono dell'albero
+// e figli spostati a mano dall'altra parte.
+
+/** Un lato del riquadro. */
+export type Lato = "su" | "giu" | "sx" | "dx";
+
+/** Le maniglie che mancavano: uscita in alto e a sinistra, entrata in basso e a destra. Id fissi. */
+export const HANDLE_OUT_SU = "s-su", HANDLE_OUT_SX = "s-sx", HANDLE_IN_GIU = "t-giu", HANDLE_IN_DX = "t-dx";
+
+const USCITA: Record<Lato, string> = { su: HANDLE_OUT_SU, giu: HANDLE_OUT, sx: HANDLE_OUT_SX, dx: HANDLE_OUT_LR };
+const ENTRATA: Record<Lato, string> = { su: HANDLE_IN, giu: HANDLE_IN_GIU, sx: HANDLE_IN_LR, dx: HANDLE_IN_DX };
+
+/** Le maniglie di React Flow di una linea che esce dal lato `da` ed entra dal lato `a`. */
+export function maniglieLati(l: { da: Lato; a: Lato }): { source: string; target: string } {
+  return { source: USCITA[l.da], target: ENTRATA[l.a] };
+}
+
+/** Il punto a metà di un lato (dove React Flow mette la maniglia). */
+export function centroLato(r: Rect, l: Lato): Pt {
+  switch (l) {
+    case "su": return { x: r.x + r.w / 2, y: r.y };
+    case "giu": return { x: r.x + r.w / 2, y: r.y + r.h };
+    case "sx": return { x: r.x, y: r.y + r.h / 2 };
+    case "dx": return { x: r.x + r.w, y: r.y + r.h / 2 };
+  }
+}
+
+const orizzontale = (l: Lato): boolean => l === "sx" || l === "dx";
+const arrotonda = (p: Pt): Pt => ({ x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10 });
+
+/**
+ * Il percorso ortogonale fra due punti di lato, con al massimo due curve e raggio 0 (come oggi): a «Z» fra lati
+ * paralleli, girando a metà; a «L» fra lati perpendicolari; dritto se i due punti sono allineati.
+ */
+export function percorsoDaPunti(pa: Pt, la: Lato, pb: Pt, lb: Lato): Pt[] {
+  if (orizzontale(la) && orizzontale(lb)) {
+    if (pa.y === pb.y) return [arrotonda(pa), arrotonda(pb)];
+    const mx = (pa.x + pb.x) / 2;
+    return [pa, { x: mx, y: pa.y }, { x: mx, y: pb.y }, pb].map(arrotonda);
+  }
+  if (!orizzontale(la) && !orizzontale(lb)) {
+    if (pa.x === pb.x) return [arrotonda(pa), arrotonda(pb)];
+    const my = (pa.y + pb.y) / 2;
+    return [pa, { x: pa.x, y: my }, { x: pb.x, y: my }, pb].map(arrotonda);
+  }
+  return (orizzontale(la) ? [pa, { x: pb.x, y: pa.y }, pb] : [pa, { x: pa.x, y: pb.y }, pb]).map(arrotonda);
+}
+
+/** Il percorso fra il lato `la` di A e il lato `lb` di B. */
+export function percorso(a: Rect, la: Lato, b: Rect, lb: Lato): Pt[] {
+  return percorsoDaPunti(centroLato(a, la), la, centroLato(b, lb), lb);
+}
+
+/**
+ * I due lati si guardano: la linea esce da A verso B ed entra in B venendo da A, senza tornare indietro e senza
+ * passare nel proprio riquadro (spec §13.10.1; misura C10). Fra lati paralleli B sta tutto oltre il lato di A; a «L»
+ * il gomito sta fuori da tutti e due i riquadri.
+ */
+export function siGuardano(a: Rect, la: Lato, b: Rect, lb: Lato): boolean {
+  if (orizzontale(la) && orizzontale(lb)) {
+    return (la === "dx" && lb === "sx" && b.x >= a.x + a.w) || (la === "sx" && lb === "dx" && b.x + b.w <= a.x);
+  }
+  if (!orizzontale(la) && !orizzontale(lb)) {
+    return (la === "giu" && lb === "su" && b.y >= a.y + a.h) || (la === "su" && lb === "giu" && b.y + b.h <= a.y);
+  }
+  const pa = centroLato(a, la), pb = centroLato(b, lb);
+  if (orizzontale(la)) {
+    const avanti = la === "dx" ? pb.x > pa.x : pb.x < pa.x;
+    const entra = lb === "su" ? pa.y < pb.y : pa.y > pb.y;
+    return avanti && entra;
+  }
+  const avanti = la === "giu" ? pb.y > pa.y : pb.y < pa.y;
+  const entra = lb === "sx" ? pa.x < pb.x : pa.x > pb.x;
+  return avanti && entra;
+}
+
+/** Un tratto orizzontale o verticale passa dentro un riquadro (il bordo non conta). */
+function tagliaRiquadro(p: Pt, q: Pt, r: Rect): boolean {
+  const x1 = Math.min(p.x, q.x), x2 = Math.max(p.x, q.x), y1 = Math.min(p.y, q.y), y2 = Math.max(p.y, q.y);
+  return x1 < r.x + r.w && x2 > r.x && y1 < r.y + r.h && y2 > r.y;
+}
+
+/** Il percorso attraversa almeno un riquadro (scelta di `latiVicini`, misura C11). */
+export function attraversa(punti: readonly Pt[], riquadri: readonly Rect[]): boolean {
+  for (let i = 1; i < punti.length; i++) for (const r of riquadri) if (tagliaRiquadro(punti[i - 1], punti[i], r)) return true;
+  return false;
+}
+
+function lunghezza(p: readonly Pt[]): number {
+  let s = 0;
+  for (let i = 1; i < p.length; i++) s += Math.abs(p[i].x - p[i - 1].x) + Math.abs(p[i].y - p[i - 1].y);
+  return s;
+}
+
+/**
+ * I quattro candidati (spec §13.10.1), in ordine: 1. la coppia di lati affacciati sull'asse dove il vuoto fra i due
+ * riquadri è maggiore; 2. quella sull'altro asse; 3-4. le due coppie a «L», prima la più corta. Solo coppie di lati che
+ * si guardano: una coppia che tornerebbe indietro non è un candidato. A pari vuoto vince l'asse dell'orientamento
+ * (orizzontale in «Verticale», verticale in «Orizzontale»). Riquadri sovrapposti: nessun candidato.
+ */
+export function candidatiLati(a: Rect, b: Rect, o: MapOrientation): Array<{ da: Lato; a: Lato }> {
+  const vuotoX = b.x >= a.x + a.w ? b.x - (a.x + a.w) : a.x >= b.x + b.w ? a.x - (b.x + b.w) : -1;
+  const vuotoY = b.y >= a.y + a.h ? b.y - (a.y + a.h) : a.y >= b.y + b.h ? a.y - (b.y + b.h) : -1;
+  const destra = b.x + b.w / 2 >= a.x + a.w / 2, sotto = b.y + b.h / 2 >= a.y + a.h / 2;
+  const h: { da: Lato; a: Lato } = destra ? { da: "dx", a: "sx" } : { da: "sx", a: "dx" };
+  const v: { da: Lato; a: Lato } = sotto ? { da: "giu", a: "su" } : { da: "su", a: "giu" };
+  const assi = vuotoX > vuotoY || (vuotoX === vuotoY && o === "lr") ? [h, v] : [v, h];
+  const elle = [{ da: h.da, a: v.a }, { da: v.da, a: h.a }]
+    .filter((c) => siGuardano(a, c.da, b, c.a))
+    .sort((x, y) => lunghezza(percorso(a, x.da, b, x.a)) - lunghezza(percorso(a, y.da, b, y.a)));
+  return [...assi.filter((c) => siGuardano(a, c.da, b, c.a)), ...elle];
+}
+
+/**
+ * Il lato più vicino: il primo candidato il cui percorso non attraversa un altro riquadro; se nessuno passa pulito,
+ * quello col percorso più corto. Due riquadri sovrapposti usano i lati di oggi.
+ */
+export function latiVicini(a: Rect, b: Rect, o: MapOrientation, ostacoli: readonly Rect[]): { da: Lato; a: Lato } {
+  const c = candidatiLati(a, b, o);
+  if (c.length === 0) return o === "lr" ? { da: "dx", a: "sx" } : { da: "giu", a: "su" };
+  return c.find((x) => !attraversa(percorso(a, x.da, b, x.a), ostacoli))
+    ?? [...c].sort((x, y) => lunghezza(percorso(a, x.da, b, x.a)) - lunghezza(percorso(a, y.da, b, y.a)))[0];
+}
+
+/** Gli ostacoli di una linea: tutti i riquadri della disposizione tranne i suoi due capi. */
+export function ostacoli(riquadri: Iterable<Rect & { id: string }>, tranne: readonly string[]): Rect[] {
+  const via = new Set(tranne);
+  const out: Rect[] = [];
+  for (const r of riquadri) if (!via.has(r.id)) out.push({ x: r.x, y: r.y, w: r.w, h: r.h });
+  return out;
+}
+
+/** I riquadri della disposizione con il loro id (i gruppi degli AP: «apg:‹padre›»). */
+export function rettangoli(layout: LayoutResult): Array<Rect & { id: string }> {
+  return [
+    ...[...layout.nodes.values()].map((n) => ({ id: n.id, x: n.x, y: n.y, w: n.w, h: n.h })),
+    ...layout.apGroups.map((g) => ({ id: `apg:${g.parent}`, x: g.x, y: g.y, w: g.w, h: g.h })),
+  ];
+}
+
+/** Il figlio sta dalla sua parte: in «Verticale» a destra del tronco del genitore, in «Orizzontale» sotto il genitore. */
+export function troncoPossibile(o: MapOrientation, padre: Rect, figlio: Rect): boolean {
+  return o === "lr" ? figlio.x >= padre.x + padre.w + LR_TRUNK : figlio.y >= padre.y + padre.h;
+}
+
+/** La linea fra un genitore e un figlio: a tronco come oggi; un figlio spostato a mano dall'altra parte, sul lato più vicino. */
+export function lineaAlbero(o: MapOrientation, padre: Rect, figlio: Rect, ostacoli: readonly Rect[]):
+  { tronco: true } | { tronco: false; lati: { da: Lato; a: Lato } } {
+  return troncoPossibile(o, padre, figlio) ? { tronco: true } : { tronco: false, lati: latiVicini(padre, figlio, o, ostacoli) };
 }

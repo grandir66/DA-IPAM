@@ -55,15 +55,17 @@ Copie prese dopo il giro delle letture notturne (hub e cliente A), con `misura-c
 - **Spento = T1**: l'impronta del modello di T1 è identica a quella salvata prima di T3, sulle due copie
   (0 padri diversi, 0 conteggi diversi). Rifatta dopo i criteri A-D: ancora uguale.
 - **Acceso, in memoria**:
-  - hub: 1 radice, 0 anomalie, testa uguale a oggi, 6 fasci, 4 padri diversi da oggi, 15 ms;
+  - hub: 1 radice, 0 anomalie, testa uguale a oggi, 6 fasci, 5 padri diversi da oggi, 15 ms;
   - cliente A: 1 radice, 1 anomalia (il core 2), 3 cavi bloccati, tunnel bloccato, segmento della WAN sotto
-    una porta del router, 4 padri diversi da oggi, 37 ms.
-- **Padri diversi da oggi, in parole** (sull'hub): un hypervisor passa sotto il router con un collegamento a
-  10G «probabile», perché il controller dà giù la porta dell'aggregazione su cui T1 lo appendeva; uno switch di
-  storage entra nell'albero sotto il router con un fascio 2×10G; il segmento della porta 5 di uno switch PoE
-  entra nell'albero. Sul cliente A il segmento della WAN ha due membri più un apparato non gestito. Sono
-  fatti della rete da confermare con Riccardo prima di accendere, non errori del modello; l'identità del NAS in
-  tre voci è un fatto a parte, fuori dal §13.
+    una porta del router, 4 padri diversi da oggi, 37 ms (numeri dopo i criteri A-D).
+- **Padri diversi da oggi, in parole** (dopo i criteri A-D). Hub: il firewall virtuale entra nel suo hypervisor
+  (§13.7.8); uno switch di storage entra nell'albero sotto il router con un fascio 2×10G; il segmento della porta
+  5 di uno switch PoE entra nell'albero (H5); due delle tre voci del NAS restano isolate (la terza sta sotto il
+  router col suo fascio): l'identità del NAS in tre voci è un fatto a parte, fuori dal §13. Prima del criterio D
+  un hypervisor passava sotto il router perché la porta dell'aggregazione su cui sta ha lo stesso nome di una
+  porta spenta: risolto per indice. Cliente A: le due radio a 5 GHz entrano nell'albero; il router 2 passa
+  «oltre» la radio vicina (salto non letto, §13.3.1 riga 12); il segmento della WAN entra sotto il router 1, con
+  due membri più un apparato non gestito (il router di riserva non è letto).
 - **Righe 1-11, 13, 14 della tabella 13.3.1** (cliente A) come attese; la 12 nel caso «senza salto» (il salto
   a 5 GHz non è letto); la 15 fuori criterio fino al criterio A. Le righe 12-17 non fanno da cancello (§13.3.1,
   C13): dipendono da letture che mancano.
@@ -121,8 +123,9 @@ cavo vero, si legge lì e si rivede la costante.
   - **l'id del segmento e i suoi alias**: ogni id `seg:` prodotto deve passare `ID_SEGMENTO` (nomi codificati
     oltre 90 caratteri), e gli alias passano da `canonical`;
   - **MSTP per istanza a metà**: il lettore c'è, ma finché non si leggono le istanze di tutti i bridge un tunnel
-    può dire solo «bloccato»; la regola «stesso digest di regione» è provata su uscite anonimizzate (i digest
-    dei due router, uguali nel vero, lì sono diversi): da rimisurare sulle uscite non anonime;
+    può dire solo «bloccato»; nelle uscite vere dei router 1 e 2 del cliente A il digest della regione è lo
+    stesso, e con le copie anonime corrette (16/10) il tunnel risulta «bloccato nell'albero comune, attivo per
+    l'istanza 1»; mancano le uscite del router 3 e del router di riserva;
   - **la radio nascosta nella mappa automatica**: la pagina contrae, la traccia fa due radici, e `cavi.anomalie`
     può non combaciare con l'albero a schermo;
   - `sources` delle linee nuove solo per compatibilità con i consumatori di T1;

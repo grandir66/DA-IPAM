@@ -1264,7 +1264,7 @@ function SettingsPageInner() {
                 </Badge>
               </div>
               <CardDescription>
-                Configura la connessione al server Headwind MDM per importare i dispositivi mobili (Android/iOS) come host e sincronizzarne l&apos;inventario.
+                Configura la connessione al server Headwind MDM per importare i dispositivi mobili Android come host e sincronizzarne l&apos;inventario.
               </CardDescription>
             </CardHeader>
             <CardContent>

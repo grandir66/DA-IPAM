@@ -4,6 +4,31 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-16 · MDM: il job segue l'interruttore, spegnimento automatico spiegato
+
+Passo 3 del piano di solidità del 16/10. Perché: «sincronizzazione automatica abilitata» non creava nessun job
+`mdm_sync` (nessuno lo creava), dopo cinque errori l'MDM si spegneva da solo e riaccenderlo lasciava il contatore a
+cinque (il primo errore lo rispegneva), e la pagina era aperta anche a chi non è admin.
+
+### Modifiche
+
+- **`saveMdmConfig` allinea il job `mdm_sync`** in una transazione (come `ensureWazuhSyncJobForAllTenants`): acceso →
+  il job c'è ed è acceso (creato ogni 60 minuti, o riacceso, mai doppio); spento → il job si toglie. `PUT /api/mdm/config`
+  ricarica lo scheduler del tenant quando il job cambia, e ora restituisce l'errore della vista aggregata invece di
+  ignorarlo.
+- **Riattivare azzera `consecutive_errors`** (anche dopo lo spegnimento automatico); salvare da acceso non lo tocca.
+- **Colonne nuove `last_attempt_at` e `last_success_at`** in `mdm_config`: nella CREATE di `db-tenant-schema.ts` e,
+  sui DB esistenti, con `ALTER TABLE ADD COLUMN` idempotente nello stesso file (`assicuraColonneMdmConfig`), chiamata
+  da `mdm-config.ts` all'apertura della connessione. `db-tenant.ts` non è toccato. `last_sync_at` resta com'era.
+- **Pagina /settings/mdm solo per admin** (gli altri tornano a /settings), come le sue API. Lo spegnimento automatico è
+  spiegato in pagina (quanti errori, il limite, come riattivare); ultimo tentativo e ultima riuscita separati.
+- **Testi**: «Android» al posto di «Android/iOS» (pagina MDM e scheda in Impostazioni).
+
+### Invariato
+
+- Il job resta in tabella dopo lo spegnimento automatico e gira a vuoto («disabled») finché l'admin non salva:
+  toglierlo dall'interno del job lascerebbe allo scheduler un cron senza riga.
+
 ## [Non rilasciato] — 2026-10-16 · LibreNMS solo locale: modo «Installato dall'appliance»
 
 Passo 5 del piano di solidità del 16/10, parte DA-IPAM. Perché: LibreNMS è integrato e solo locale (decisione di

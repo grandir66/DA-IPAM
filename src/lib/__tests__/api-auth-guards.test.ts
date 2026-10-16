@@ -79,6 +79,9 @@ const CONTRACT: Contract[] = [
   { route: "topology/unioni/separa", method: "POST", guard: "requireAdmin" },
   // Passo 5 (16/10): «Istanza esterna» → «Installato dall'appliance» solo da un admin.
   { route: "integrations/librenms/converti", method: "POST", guard: "requireAdmin" },
+  // Passo 3 (16/10): la configurazione MDM porta credenziali e accende/toglie il job mdm_sync.
+  { route: "mdm/config", method: "GET", guard: "requireAdmin" },
+  { route: "mdm/config", method: "PUT", guard: "requireAdmin" },
 ];
 
 /** Estrae il corpo di un metodo HTTP esportato (slice fino al prossimo export). */

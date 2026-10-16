@@ -156,10 +156,15 @@ function Detail(p: Props & { n: MapNode; byId: Map<string, MapNode> }) {
             <li key={a.ip}>
               {a.ip}
               {a.virtual && <span className="text-muted-foreground"> · virtuale VRRP</span>}
+              {a.hostId !== null && model.unioni?.aMano[n.id]?.includes(a.hostId) && <span className="text-muted-foreground"> · unito a mano</span>}
             </li>
           ))}
         </ul>
       )}
+
+      {(model.unioni?.nonApplicate ?? [])
+        .filter((u) => u.membri.some((m) => (model.canonical[m] ?? m) === n.id))
+        .map((u) => <p key={u.gruppo} className="mt-1.5">Unione a mano non applicata: {u.motivo}</p>)}
 
       {infraHost && <p className="mt-1.5">Host che è infrastruttura: si può promuovere ad apparato (tasto destro).</p>}
       <VmSections n={n} vms={model.vms} byId={byId} onSelect={p.onSelect} />

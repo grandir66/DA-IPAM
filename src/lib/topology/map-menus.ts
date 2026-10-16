@@ -39,6 +39,8 @@ export interface NodeMenuCtx {
   ruolo: RuoloMappa | null;
   /** Un segmento (T3, §13.7.3): non si collega a mano e non è una testa, la rotta lo rifiuta. Assente = no. */
   isSegmento?: boolean;
+  /** Unioni a mano: la pagina lo passa sempre; `separabili` = indirizzi che si possono separare dal nodo. Assente = le voci di prima. */
+  unioni?: { separabili: number };
 }
 
 /** Una VM non censita: un nodo della pagina, non un capo di collegamento del modello. */
@@ -58,7 +60,7 @@ export function connectRefusal(a: string, b: string): string | null {
 }
 
 export type NodeMenuKey =
-  | "details" | "toggleVms" | "refreshVms" | "connect" | "addLinked" | "start" | "head" | "remove" | "role" | "hide" | "promote";
+  | "details" | "toggleVms" | "refreshVms" | "connect" | "addLinked" | "start" | "head" | "remove" | "role" | "hide" | "merge" | "split" | "promote";
 
 export interface MenuItem<K extends string> {
   key: K;
@@ -81,6 +83,8 @@ export function nodeMenuItems(c: NodeMenuCtx): Array<MenuItem<NodeMenuKey>> {
   if (c.isAdmin && c.isDevice && c.ruolo !== null) out.push({ key: "role", label: "Ruolo nella mappa" });
   else if (c.isAdmin && c.infraHost) out.push({ key: "role", label: "Ruolo nella mappa: prima Promuovi ad apparato", disabled: true });
   if (c.isAdmin && c.isDevice) out.push({ key: "hide", label: c.hidden ? "Rimostra in tutte le mappe" : "Nascondi da tutte le mappe" });
+  if (c.unioni && c.isAdmin && !c.isUncensusedVm && !c.isSegmento) out.push({ key: "merge", label: "Unisci con…" });
+  if (c.unioni && c.isAdmin && c.unioni.separabili > 0) out.push({ key: "split", label: "Separa…" });
   if (c.isAdmin && c.infraHost) out.push({ key: "promote", label: "Promuovi ad apparato" });
   return out;
 }

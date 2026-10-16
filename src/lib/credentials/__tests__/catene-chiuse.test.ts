@@ -25,6 +25,7 @@ import Database from "better-sqlite3";
 
 import { encrypt } from "@/lib/crypto";
 import { TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL } from "@/lib/db-tenant-schema";
+import { creaCateneVecchie } from "@/lib/__tests__/support/catene-vecchie";
 import { deleteTenantDatabase, getTenantDb, withTenant, getHostById as hostTenant } from "@/lib/db-tenant";
 import { getHostById as hostFacciata } from "@/lib/db";
 import { closeHubDb, getSetting, setSetting } from "@/lib/db-hub";
@@ -50,6 +51,8 @@ function nuovoDb(): Database.Database {
     try { d.exec(`ALTER TABLE host_credentials ADD COLUMN ${c}`); } catch { /* già presente */ }
   }
   try { d.exec("ALTER TABLE network_devices ADD COLUMN host_id INTEGER REFERENCES hosts(id) ON DELETE SET NULL"); } catch { /* già presente */ }
+  // Un DB di prima della pulizia (T27): lo schema di oggi non crea più le catene vecchie.
+  creaCateneVecchie(d);
   return d;
 }
 
@@ -90,46 +93,26 @@ function scena(): Scena {
 
 const fonti = (r: Array<{ source: ResolvedCredentialSource; credential_id: number | null }>) => r.map((c) => [c.source, c.credential_id]);
 
-describe("motore: catene vecchie e chiave dell'hub col segno credenziali_t2_catene", () => {
-  it("senza segno (2d non ancora girata) le legge, come prima", () => {
-    const s = scena();
-    const r = resolveCredentialsForDb(s.d, { hostId: s.host, networkId: s.rete }, "ssh", { globaliHub: { windows: null, linux: s.K } });
-    assert.deepEqual(fonti(r), [
-      ["network_chain", s.N],
-      ["legacy_chain", s.P],
-      ["legacy_chain", s.V],
-      ["hub_default", s.K],
-    ]);
-  });
-
-  for (const segno of ["done:2026-10-16T08:00:00.000Z:lista=1", "parziale:2026-10-16T08:00:00.000Z:saltate=1"]) {
-    it(`col segno ${segno.split(":")[0]}: niente legacy_chain né hub_default, per host, rete e apparato`, () => {
+describe("motore: catene vecchie e chiave dell'hub non si leggono più, qualunque sia il segno (2g, T26)", () => {
+  // Fino alla 2g senza segno, con errore: o senza tenant_settings il motore le
+  // leggeva ancora (T17); dalla 2g (D9 rivista, 16/10) non le legge mai.
+  for (const segno of [null, "errore:UNIQUE constraint failed", "done:2026-10-16T08:00:00.000Z:lista=1", "parziale:2026-10-16T08:00:00.000Z:saltate=1"]) {
+    it(`col segno ${segno ? segno.split(":")[0] : "assente"}: niente legacy_chain né hub_default, per host, rete e apparato`, () => {
       const s = scena();
-      scriviSegno(s.d, SEGNO_CATENE, segno);
-      const globaliHub = { windows: null, linux: s.K };
-      const perHost = resolveCredentialsForDb(s.d, { hostId: s.host, networkId: s.rete }, "ssh", { globaliHub });
+      if (segno) scriviSegno(s.d, SEGNO_CATENE, segno);
+      const perHost = resolveCredentialsForDb(s.d, { hostId: s.host, networkId: s.rete }, "ssh");
       assert.deepEqual(fonti(perHost), [["network_chain", s.N]]);
-      assert.deepEqual(catenaReteDb(s.d, s.rete, "ssh", { globaliHub, registra: false }), [s.N]);
-      const perApparato = credenzialiApparatoDb(s.d, s.apparato, "ssh", { globaliHub });
+      assert.deepEqual(catenaReteDb(s.d, s.rete, "ssh", { registra: false }), [s.N]);
+      const perApparato = credenzialiApparatoDb(s.d, s.apparato, "ssh");
       assert.deepEqual(fonti(perApparato), [["network_chain", s.N]]);
     });
   }
 
-  it("col segno errore: (conversione da rifare) le legge ancora", () => {
-    const s = scena();
-    scriviSegno(s.d, SEGNO_CATENE, "errore:UNIQUE constraint failed");
-    const r = resolveCredentialsForDb(s.d, { hostId: s.host, networkId: s.rete }, "ssh", { globaliHub: { windows: null, linux: s.K } });
-    assert.deepEqual(
-      r.map((c) => c.source),
-      ["network_chain", "legacy_chain", "legacy_chain", "hub_default"]
-    );
-  });
-
-  it("un DB senza tenant_settings (copia vecchia aperta in sola lettura): nessun segno, quindi le legge", () => {
+  it("un DB senza tenant_settings (copia vecchia aperta in sola lettura): niente catene vecchie", () => {
     const s = scena();
     s.d.exec("DROP TABLE tenant_settings");
     const r = resolveCredentialsForDb(s.d, { networkId: s.rete }, "ssh", {});
-    assert.deepEqual(fonti(r), [["network_chain", s.N], ["legacy_chain", s.V]]);
+    assert.deepEqual(fonti(r), [["network_chain", s.N]]);
   });
 });
 
@@ -138,31 +121,26 @@ describe("motore: catene vecchie e chiave dell'hub col segno credenziali_t2_cate
 // Revisione della 2d (16/10): il conteggio degli usi contava ancora le tabelle
 // congelate. Una voce tolta dalla lista della rete, o saltata dalla conversione
 // per il tipo, restava «in uso» per una rete o un host dove nessuno la usa e
-// dove la pagina non la mostra: non si poteva eliminare né cambiarle tipo fino
-// alla 2g, e il messaggio («Togli prima questi usi») chiedeva una cosa
-// impossibile. Gli usi seguono la regola del motore (`cateneVecchieAperte`).
+// dove la pagina non la mostra: non si poteva eliminare né cambiarle tipo, e il
+// messaggio («Togli prima questi usi») chiedeva una cosa impossibile. Dalla 2g
+// (T26) gli usi seguono il motore: le tabelle vecchie non contano mai.
 
 const corpoParziale = (b: Record<string, unknown>) => CredentialSchema.partial().parse(b);
 
-describe("usi di una voce: catene vecchie e pin contano solo finché il motore li legge", () => {
-  it("senza segno (2d non ancora girata): la voce della sola catena vecchia e quella del solo pin sono in uso", () => {
-    const s = scena();
-    assert.deepEqual(usiCredenzialeDb(s.d, s.V).reti, [{ id: s.rete, nome: "Rete" }]);
-    assert.equal(usiCredenzialeDb(s.d, s.P).host, 1);
-    const totali = usiTotaliDb(s.d);
-    assert.equal(totali.get(s.V), 1);
-    assert.equal(totali.get(s.P), 1);
-    const via = eliminaVoceDb(s.d, s.V);
-    assert.equal(via.ok, false);
-    if (!via.ok) assert.equal(via.stato, 409);
-  });
-
-  it("col segno errore: (conversione da rifare) contano ancora", () => {
-    const s = scena();
-    scriviSegno(s.d, SEGNO_CATENE, "errore:UNIQUE constraint failed");
-    assert.equal(totaleUsi(usiCredenzialeDb(s.d, s.V)), 1);
-    assert.equal(usiTotaliDb(s.d).get(s.P), 1);
-  });
+describe("usi di una voce: catene vecchie e pin non contano più (2g)", () => {
+  for (const segno of [null, "errore:UNIQUE constraint failed"]) {
+    it(`col segno ${segno ? "errore:" : "assente"} (2d non girata o da rifare): la voce della sola catena vecchia e quella del solo pin sono libere`, () => {
+      const s = scena();
+      if (segno) scriviSegno(s.d, SEGNO_CATENE, segno);
+      assert.deepEqual(usiCredenzialeDb(s.d, s.V).reti, []);
+      assert.equal(usiCredenzialeDb(s.d, s.P).host, 0);
+      const totali = usiTotaliDb(s.d);
+      assert.equal(totali.get(s.V) ?? 0, 0);
+      assert.equal(totali.get(s.P) ?? 0, 0);
+      const via = eliminaVoceDb(s.d, s.V);
+      assert.ok(via.ok, via.ok ? "" : via.errore);
+    });
+  }
 
   for (const stato of ["done", "parziale"] as const) {
     it(`col segno ${stato}: e le voci tolte dall'utente: nessun uso, DELETE e cambio di tipo ammessi`, () => {
@@ -195,7 +173,7 @@ describe("usi di una voce: catene vecchie e pin contano solo finché il motore l
 
 const TE = "TESTEDGE2D";
 
-describe("anteprima edge: uguale prima e dopo la conversione della 2d", () => {
+describe("anteprima edge dopo la conversione della 2d: la sequenza del codice di prima", () => {
   let chiavePrima: string | null = null;
   before(() => {
     chiavePrima = getSetting("host_windows_credential_id");
@@ -209,7 +187,8 @@ describe("anteprima edge: uguale prima e dopo la conversione della 2d", () => {
   it("stessi slot, stesso ordine, stesse voci selezionate (chiave Windows dell'hub compresa, un tenant attivo)", () => {
     withTenant(TE, () => {
       const d = getTenantDb(TE);
-      // Uno stato di prima della 2d: il segno l'ha scritto l'apertura su un DB vuoto.
+      // Uno stato di prima della 2d: il segno l'ha scritto l'apertura su un DB vuoto, le tabelle vecchie come le aveva.
+      creaCateneVecchie(d);
       d.prepare("DELETE FROM tenant_settings WHERE key = ?").run(SEGNO_CATENE);
       const rete = Number(d.prepare("INSERT INTO networks (cidr, name) VALUES ('10.61.0.0/24', 'Rete edge')").run().lastInsertRowid);
       const ins = d.prepare("INSERT INTO credentials (name, credential_type, encrypted_username, encrypted_password) VALUES (?, ?, ?, ?)");
@@ -232,12 +211,21 @@ describe("anteprima edge: uguale prima e dopo la conversione della 2d", () => {
       vecchia.run(rete, S, "snmp");
       setSetting("host_windows_credential_id", String(W));
 
+      // La proprietà della 2d (anteprima uguale prima e dopo) si misurava col
+      // codice della 2d, che prima della conversione leggeva ancora le catene
+      // vecchie. Dalla 2g (T26) non le legge più: prima della conversione
+      // resta la sola lista, e dopo deve uscire la sequenza che dava il codice
+      // di prima, scritta qui sotto per esteso.
       const prima = collectEdgeCredentialsForNetwork(rete, { registra: false });
+      assert.deepEqual(
+        prima.transfer.map((t) => t.ipam_credential_id ?? null).filter((id) => id === C || id === D || id === L || id === S || id === W),
+        [],
+        "prima della conversione il motore della 2g non legge catene vecchie né la chiave dell'hub"
+      );
       const esito = convertiCateneVecchie(d, { windows: W, linux: null, tenantAttivi: 1 }, { aVuoto: false });
       scriviSegno(d, SEGNO_CATENE, segnoCatene(esito));
       const dopo = collectEdgeCredentialsForNetwork(rete, { registra: false });
 
-      assert.deepEqual(dopo, prima, "l'anteprima edge cambia con la conversione");
       assert.deepEqual(
         dopo.preview.filter((p) => p.selected_for_scan).map((p) => [p.slot, p.credential_id]),
         [["ssh", A], ["smb", C], ["ad", C], ["snmp", E]],

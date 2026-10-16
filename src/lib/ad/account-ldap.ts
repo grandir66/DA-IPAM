@@ -13,10 +13,10 @@
 export type AccountLdap = { credential_id: number } | { nuovo: { username: string; password: string } };
 
 /**
- * Con che cosa entra la riga, senza decifrare niente: la sua voce, le colonne
- * di prima della 2f (riga mai convertita) o niente («Credenziale mancante»).
+ * Con che cosa entra la riga, senza decifrare niente: la sua voce o niente
+ * («Credenziale mancante»). Dalla 2g (T26) le colonne della riga non valgono più.
  */
-export type StatoAccountLdap = "voce" | "forma_vecchia" | "mancante";
+export type StatoAccountLdap = "voce" | "mancante";
 
 /** Nome della voce che nasce da un account nuovo; se c'è già, il server aggiunge « (AD #id)». */
 export function nomeVoceAd(nomeIntegrazione: string): string {

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getNetworkDevices, getRouters, getSwitches, getDevicesByClassificationOrLegacy, getDeviceCredentialProtocolsSummary } from "@/lib/db";
+import { senzaColonneVecchie } from "@/lib/devices/colonne-vecchie";
 import { creaApparato } from "@/lib/devices/crea-apparato";
 import { avvisoPortaProtocollo } from "@/lib/devices/porta-protocollo";
 import { requireAdminOrOnboarding, isAuthError } from "@/lib/api-auth";
@@ -48,7 +49,7 @@ export async function GET(request: Request) {
           : type === "switch"
             ? getSwitches()
             : getNetworkDevices();
-        return devices as unknown as (Record<string, unknown> & { last_proxmox_scan_result?: unknown; encrypted_password?: unknown; community_string?: unknown; api_token?: unknown })[];
+        return devices as unknown as (Record<string, unknown> & { last_proxmox_scan_result?: unknown })[];
       });
       const credProtoMap = queryAllTenants(() => {
         const credMap = getDeviceCredentialProtocolsSummary();
@@ -63,13 +64,10 @@ export async function GET(request: Request) {
         credLookup.set(key, entry.protocols as unknown as string[]);
       }
       const masked = allDevices.map((d) => ({
-        ...d,
+        ...senzaColonneVecchie(d),
         source: "network_device" as const,
         credential_protocols: credLookup.get(`${d._tenantCode}:${d.id}`) || [],
         last_proxmox_scan_result: d.last_proxmox_scan_result ? "HAS_DATA" : null,
-        encrypted_password: d.encrypted_password ? "●●●●●●●●" : null,
-        community_string: d.community_string ? "●●●●●●●●" : null,
-        api_token: d.api_token ? "●●●●●●●●" : null,
       }));
       return NextResponse.json(masked, { headers: NO_CACHE_HEADERS });
     } catch (error) {
@@ -91,15 +89,12 @@ export async function GET(request: Request) {
       const networkDevices = getDevicesByClassificationOrLegacy(classification);
       const statiClasse = getHostStatusesByIp(networkDevices.map((d) => d.host));
       const maskedDevices = networkDevices.map((d) => ({
-        ...d,
+        ...senzaColonneVecchie(d),
         source: "network_device" as const,
         host_status: statiClasse.get(d.host)?.status ?? null,
         host_last_seen: statiClasse.get(d.host)?.last_seen ?? null,
         credential_protocols: credMap.get(d.id) || [],
         last_proxmox_scan_result: d.last_proxmox_scan_result ? "HAS_DATA" : null,
-        encrypted_password: d.encrypted_password ? "●●●●●●●●" : null,
-        community_string: d.community_string ? "●●●●●●●●" : null,
-        api_token: d.api_token ? "●●●●●●●●" : null,
       }));
       return NextResponse.json(maskedDevices, { headers: NO_CACHE_HEADERS });
     }
@@ -113,15 +108,12 @@ export async function GET(request: Request) {
     // "enabled" dice solo se il dispositivo è attivo in anagrafica.
     const stati = getHostStatusesByIp(devices.map((d) => d.host));
     const masked = devices.map((d) => ({
-      ...d,
+      ...senzaColonneVecchie(d),
       source: "network_device" as const,
       host_status: stati.get(d.host)?.status ?? null,
       host_last_seen: stati.get(d.host)?.last_seen ?? null,
       credential_protocols: credMap.get(d.id) || [],
       last_proxmox_scan_result: d.last_proxmox_scan_result ? "HAS_DATA" : null,
-      encrypted_password: d.encrypted_password ? "●●●●●●●●" : null,
-      community_string: d.community_string ? "●●●●●●●●" : null,
-      api_token: d.api_token ? "●●●●●●●●" : null,
     }));
     return NextResponse.json(masked, { headers: NO_CACHE_HEADERS });
     } catch (error) {
@@ -146,11 +138,8 @@ export async function POST(request: Request) {
     const avviso = avvisoPortaProtocollo(device);
 
     return NextResponse.json({
-      ...device,
+      ...senzaColonneVecchie(device),
       ...(avviso ? { avvisi: [avviso] } : {}),
-      encrypted_password: device.encrypted_password ? "●●●●●●●●" : null,
-      community_string: device.community_string ? "●●●●●●●●" : null,
-      api_token: device.api_token ? "●●●●●●●●" : null,
     }, { status: 201 });
     } catch (error) {
       console.error("Error creating device:", error);

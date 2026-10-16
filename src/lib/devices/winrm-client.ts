@@ -17,7 +17,7 @@ export interface WinrmClient {
 
 export async function createWinrmClient(device: NetworkDevice): Promise<WinrmClient> {
   const creds = getDeviceCredentials(device);
-  const username = creds?.username ?? device.username ?? "";
+  const username = creds?.username ?? "";
   const password = creds?.password ?? "";
 
   if (!username || !password) {

@@ -1,6 +1,6 @@
 # ADR 0017 — Archivio unico delle credenziali: tipi senza CHECK, validazione in `tipi.ts`
 
-**Stato:** Accepted
+**Stato:** Accepted — tappa 2 chiusa il 2026-10-16: 2g rilasciata (v0.3.310) e pulizia dei dati vecchi applicata su hub, cliente A e pilota (16:12-16:19 ora italiana)
 **Data:** 2026-10-16
 **Autore:** riccardo.grandi@gmail.com (decisione), sessione Claude (stesura)
 
@@ -54,3 +54,29 @@ al tipo SNMP v3, con un segno in `tenant_settings` (`credenziali_t2_tipi`) che i
   contiene tipi nuovi (SNMP v3, UniFi, Omada, AD); le voci SSH a chiave vi arrivano senza la chiave.
 - Tornare indietro dalla 2c non rimette il CHECK: il revert del codice lascia la tabella senza vincolo
   (innocuo) ma le voci convertite restano `ssh`/`snmp_v3`, che il codice di prima non conosce.
+
+## Aggiornamento del 16/10 — 2g: l'archivio è l'unico posto (T26, T27)
+
+Non cambia la decisione qui sopra; la completa. Dalla 2g le credenziali stanno **solo** nell'archivio:
+
+- il motore non legge più binding inline, colonne di `network_devices`, catene vecchie, chiavi «di default»
+  dell'hub e colonne di controller e AD (T26);
+- i segreti rimasti lì li toglie uno script, `scripts/credenziali/pulizia-t2.ts`, mai `getTenantDb`: su
+  un'appliance che riceve `main` la pulizia girerebbe all'apertura senza prova a vuoto, backup e conferma. Lo
+  script controlla le condizioni (`condizioni-2g.ts`), fa il backup accanto al DB, chiede la conferma scritta e
+  scrive il segno `credenziali_t2_pulizia`. Colonne svuotate, tabelle `network_host_credentials` e
+  `host_detect_credential` tolte; le colonne restano nello schema (toglierle vorrebbe dire ricostruire
+  `network_devices`, la tabella più collegata). Decisioni di Riccardo del 16/10: niente attesa di 14 giorni (D9
+  rivista) e i due apparati lasciati dell'hub accettati, svuotati come gli altri, elencati nel segno;
+- lo schema dei tenant nuovi non crea più le due tabelle vecchie; `togli-chiavi-hub.ts` toglie da hub.db le chiavi
+  di D3 e le `integration_unifi_*` quando nessuna conversione le legge più.
+
+### Cosa diventa difficile dopo la pulizia
+
+- Tornare indietro non si fa col solo revert del codice: il codice di prima rileggerebbe colonne e catene che non ci
+  sono più (e ricreerebbe le due tabelle vuote). Serve il `.bak` del tenant, e si perde quello che è stato scritto
+  dopo l'ora del backup.
+- Un bundle di prima della 2g porta ancora catene vecchie e pin: l'import li converte in memoria (tabelle temporanee),
+  quindi `converti-catene.ts` e la conversione della 2e restano finché esistono bundle o appliance di prima.
+- Un DB tenant mai aperto dopo la 2c (il DEFAULT dell'hub) farà tutte le conversioni alla prima apertura, ma la
+  pulizia lì non parte da sola: va lanciata a mano, con le stesse condizioni.

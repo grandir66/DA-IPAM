@@ -4,13 +4,40 @@ import assert from "node:assert/strict";
 import Database from "better-sqlite3";
 import { TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL } from "../../db-tenant-schema";
 import { HUB_SCHEMA_SQL } from "../../db-hub-schema";
+import zlib from "node:zlib";
 import { rekeyColumns } from "../schema-introspect";
 import { tableSpec } from "../table-registry";
+import { decryptBuffer, deriveTransportKey, encryptBuffer, readContainer, writeContainer } from "../envelope";
+import { creaCateneVecchie } from "@/lib/__tests__/support/catene-vecchie";
+
+/**
+ * Il bundle come lo scriveva l'export di prima della 2g (T26): l'export di
+ * oggi non porta più catene vecchie e pin, quindi le righe di quelle tabelle
+ * della sorgente si aggiungono qui, nello stesso formato.
+ */
+function conCateneVecchie(bundle: Buffer, passphrase: string, src: Database.Database): Buffer {
+  const { manifest, encryptedPayload } = readContainer(bundle);
+  const k = deriveTransportKey(passphrase, Buffer.from(manifest.encryption.saltHex, "hex"));
+  const righe = zlib.gunzipSync(decryptBuffer(encryptedPayload, k)).toString("utf8").split("\n").filter((l) => l.length > 0);
+  for (const tbl of ["network_host_credentials", "host_detect_credential"]) {
+    const vecchie = src.prepare(`SELECT * FROM ${tbl}`).all() as Record<string, unknown>[];
+    for (const row of vecchie) righe.push(JSON.stringify({ tbl, row }));
+    manifest.tables[tbl] = vecchie.length;
+  }
+  return writeContainer(manifest, encryptBuffer(zlib.gzipSync(Buffer.from(righe.join("\n"), "utf8")), k));
+}
 
 function freshTenant(): Database.Database {
   const d = new Database(":memory:");
   d.exec(TENANT_SCHEMA_SQL);
   d.exec(TENANT_INDEXES_SQL);
+  return d;
+}
+
+/** La sorgente di un bundle di prima della 2g: le catene vecchie c'erano (lo schema di oggi non le crea più, T27). */
+function tenantDiPrimaDellaPulizia(): Database.Database {
+  const d = freshTenant();
+  creaCateneVecchie(d);
   return d;
 }
 
@@ -225,15 +252,15 @@ for (const segnoSorgente of [null, "errore:UNIQUE constraint failed"] as const) 
     process.env.ENCRYPTION_KEY = "A".repeat(64);
     const { exportTenant } = await import("../export");
     const { importTenant } = await import("../import");
-    const src = freshTenant();
+    const src = tenantDiPrimaDellaPulizia();
     const net = Number(src.prepare("INSERT INTO networks (cidr, name) VALUES ('10.9.0.0/24', 'LAN')").run().lastInsertRowid);
     const cred = Number(src.prepare("INSERT INTO credentials (name, credential_type) VALUES ('Server', 'ssh')").run().lastInsertRowid);
     src.prepare("INSERT INTO network_host_credentials (network_id, credential_id, role, sort_order) VALUES (?, ?, 'ssh', 0)").run(net, cred);
     if (segnoSorgente) src.prepare("INSERT INTO tenant_settings (key, value) VALUES ('credenziali_t2_catene', ?)").run(segnoSorgente);
-    const bundle = exportTenant({
+    const bundle = conCateneVecchie(exportTenant({
       tenantDb: src, hubDb: freshHub(),
       options: { tenantCode: "DEFAULT", tiers: [], includeVault: false, passphrase: "trasporto-2d", exportedAt: "2026-10-16T10:00:00.000Z", appVersion: "test" },
-    });
+    }), "trasporto-2d", src);
     const dst = freshTenant();
     const res = importTenant({ bundle, tenantDb: dst, hubDb: freshHub(), options: { tenantCode: "DEFAULT", passphrase: "trasporto-2d", wipe: true } });
 
@@ -259,7 +286,7 @@ for (const segnoSorgente of ["done", "parziale"] as const) {
     const { exportTenant } = await import("../export");
     const { importTenant } = await import("../import");
     const { convertiCateneVecchie, segnoCatene } = await import("@/lib/credentials/converti-catene");
-    const src = freshTenant();
+    const src = tenantDiPrimaDellaPulizia();
     const net = Number(src.prepare("INSERT INTO networks (cidr, name) VALUES ('10.9.0.0/24', 'LAN')").run().lastInsertRowid);
     const host = Number(src.prepare("INSERT INTO hosts (network_id, ip) VALUES (?, '10.9.0.5')").run(net).lastInsertRowid);
     const cred = Number(src.prepare("INSERT INTO credentials (name, credential_type) VALUES ('Server', 'ssh')").run().lastInsertRowid);
@@ -272,10 +299,10 @@ for (const segnoSorgente of ["done", "parziale"] as const) {
     // L'utente toglie la voce dalla lista della rete e la riga nata dal pin.
     src.prepare("DELETE FROM network_credentials WHERE network_id = ?").run(net);
     src.prepare("DELETE FROM host_credentials WHERE host_id = ?").run(host);
-    const bundle = exportTenant({
+    const bundle = conCateneVecchie(exportTenant({
       tenantDb: src, hubDb: freshHub(),
       options: { tenantCode: "DEFAULT", tiers: ["asset"], includeVault: false, passphrase: "trasporto-2d", exportedAt: "2026-10-20T10:00:00.000Z", appVersion: "test" },
-    });
+    }), "trasporto-2d", src);
     const dst = freshTenant();
     const res = importTenant({ bundle, tenantDb: dst, hubDb: freshHub(), options: { tenantCode: "DEFAULT", passphrase: "trasporto-2d", wipe: true } });
 

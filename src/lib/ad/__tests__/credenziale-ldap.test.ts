@@ -132,12 +132,11 @@ beforeEach(() => {
 after(() => deleteTenantDatabase(T));
 
 describe("connectLdap prende l'account dalla voce", () => {
-  it("la voce dà lo stesso utente e la stessa password che davano le colonne", async () => {
+  it("la voce dà lo stesso utente e la stessa password che erano nelle colonne", async () => {
     const id = rigaVecchia();
     segna(PARZIALE);
-    const daColonne = ldapFinto();
-    await lega(riga(id), daColonne);
-    assert.deepEqual(daColonne.chiamate, [{ url: "ldaps://127.0.0.1:1", bind: [UTENTE, PASSWORD] }]);
+    // L'utente e la password che le colonne della riga contengono (prima della 2g il bind partiva con questi).
+    const daColonne = { chiamate: [{ url: "ldaps://127.0.0.1:1", bind: [UTENTE, PASSWORD] }] };
 
     const esito = convertiControllerEAd(dbt(), { aVuoto: false });
     assert.equal(esito.ad.length, 1);
@@ -149,14 +148,14 @@ describe("connectLdap prende l'account dalla voce", () => {
     assert.deepEqual(daVoce.chiamate, daColonne.chiamate);
   });
 
-  it("riga mai convertita col segno parziale: legge le colonne e registra il ripiego", async () => {
+  it("riga mai convertita col segno parziale: dalla 2g (T26) le colonne non si leggono più: «Credenziale mancante», nessun bind, nessun ripiego", async () => {
     const id = rigaVecchia();
     segna(PARZIALE);
     const prima = ripieghiRiga();
     const finto = ldapFinto();
-    await lega(riga(id), finto);
-    assert.deepEqual(finto.chiamate[0]?.bind, [UTENTE, PASSWORD]);
-    assert.ok(ripieghiRiga() > prima, "cred_riga_integrazione registrato");
+    await assert.rejects(lega(riga(id), finto), /Credenziale mancante/);
+    assert.equal(finto.chiamate.length, 0, "nessun client verso il DC");
+    assert.equal(ripieghiRiga(), prima);
   });
 
   it("riga senza voce col segno done: «Credenziale mancante», nessun bind e nessun ripiego", async () => {

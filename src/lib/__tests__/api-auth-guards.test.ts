@@ -74,6 +74,9 @@ const CONTRACT: Contract[] = [
   // restano a un admin. I corpi li provano api-input.test.ts e topology-t3-scritture.test.ts.
   { route: "topology/links/[id]", method: "DELETE", guard: "requireAdmin" },
   { route: "topology/nodes/role", method: "PATCH", guard: "requireAdmin" },
+  // Unioni a mano (piano 2026-10-16): scrivono il DB del cliente, anche l'anteprima resta a un admin.
+  { route: "topology/unioni", method: "POST", guard: "requireAdmin" },
+  { route: "topology/unioni/separa", method: "POST", guard: "requireAdmin" },
 ];
 
 /** Estrae il corpo di un metodo HTTP esportato (slice fino al prossimo export). */

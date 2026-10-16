@@ -72,6 +72,23 @@ export const DDL_TOPOLOGY_CAVI: ReadonlyArray<readonly [string, string]> = [
 )`],
 ];
 
+/** Unioni e separazioni a mano (ADR 0021): le scrivono solo le rotte /api/topology/unioni; mai cancellate (tolto_*: la storia).
+ *  Membri come id della mappa, senza chiavi esterne né CHECK. Indici solo nella migrazione. */
+export const DDL_TOPOLOGY_UNIONI: ReadonlyArray<readonly [string, string]> = [
+  ["topology_unioni", `CREATE TABLE IF NOT EXISTS topology_unioni (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, gruppo INTEGER NOT NULL, membro TEXT NOT NULL,
+  creato_da TEXT NOT NULL, creato_il TEXT NOT NULL DEFAULT (datetime('now')), tolto_da TEXT, tolto_il TEXT)`],
+  ["topology_separazioni", `CREATE TABLE IF NOT EXISTS topology_separazioni (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, membro TEXT NOT NULL, altro TEXT NOT NULL,
+  creato_da TEXT NOT NULL, creato_il TEXT NOT NULL DEFAULT (datetime('now')), tolto_da TEXT, tolto_il TEXT)`],
+];
+/** Sulle sole righe attive: un membro attivo in un gruppo solo, una coppia attiva una volta; le tolte restano accanto. */
+export const INDICI_TOPOLOGY_UNIONI: ReadonlyArray<readonly [string, string]> = [
+  ["idx_topology_unioni_membro_attivo", "CREATE UNIQUE INDEX idx_topology_unioni_membro_attivo ON topology_unioni(membro) WHERE tolto_il IS NULL"],
+  ["idx_topology_unioni_gruppo", "CREATE INDEX idx_topology_unioni_gruppo ON topology_unioni(gruppo) WHERE tolto_il IS NULL"],
+  ["idx_topology_separazioni_coppia_attiva", "CREATE UNIQUE INDEX idx_topology_separazioni_coppia_attiva ON topology_separazioni(membro, altro) WHERE tolto_il IS NULL"],
+];
+
 export const TENANT_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS networks (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -416,24 +433,10 @@ CREATE TABLE IF NOT EXISTS mac_ip_history (
   changed_at TEXT DEFAULT (datetime('now'))
 );
 
--- Credenziali per subnet (LEGACY)
-CREATE TABLE IF NOT EXISTS network_host_credentials (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  network_id INTEGER NOT NULL REFERENCES networks(id) ON DELETE CASCADE,
-  credential_id INTEGER NOT NULL REFERENCES credentials(id) ON DELETE CASCADE,
-  role TEXT NOT NULL CHECK(role IN ('windows', 'linux', 'ssh', 'snmp')),
-  sort_order INTEGER NOT NULL DEFAULT 0,
-  UNIQUE(network_id, credential_id, role)
-);
-
--- Credenziale detect per host (LEGACY)
-CREATE TABLE IF NOT EXISTS host_detect_credential (
-  host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
-  role TEXT NOT NULL CHECK(role IN ('windows', 'linux', 'ssh', 'snmp')),
-  credential_id INTEGER NOT NULL REFERENCES credentials(id) ON DELETE CASCADE,
-  updated_at TEXT DEFAULT (datetime('now')),
-  PRIMARY KEY (host_id, role)
-);
+-- Le catene vecchie (network_host_credentials, host_detect_credential) non
+-- nascono più dalla 2g credenziali (T27): nei DB di prima le toglie
+-- scripts/credenziali/pulizia-t2.ts, con backup e conferma; un bundle di prima
+-- le porta in tabelle temporanee (converti-catene.ts, conCateneDelBundle).
 
 -- CREDENTIAL SYSTEM v2: subnet-first, lista unificata
 CREATE TABLE IF NOT EXISTS network_credentials (
@@ -1438,6 +1441,10 @@ CREATE TABLE IF NOT EXISTS topology_link_overrides (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Topologia: unioni e separazioni a mano (ADR 0021). Stesse CREATE della migrazione
+-- runtime (migrateTopologyUnioni in db-tenant.ts), che aggiunge gli indici.
+${DDL_TOPOLOGY_UNIONI.map(([, ddl]) => `${ddl};`).join("\n\n")}
+
 -- Controller di rete (UniFi, poi Omada): uno per riga, nel DB del cliente.
 -- Prima la configurazione era una sola, nelle impostazioni globali dell'hub
 -- (integration_unifi_*): vedi ADR 0007. I segreti sono cifrati come nell'hub
@@ -1552,9 +1559,6 @@ CREATE INDEX IF NOT EXISTS idx_mac_ip_history_mac ON mac_ip_history(mac_normaliz
 
 -- Scheduled Jobs
 CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_enabled_next ON scheduled_jobs(enabled, next_run);
-
--- Network Host Credentials (legacy)
-CREATE INDEX IF NOT EXISTS idx_network_host_credentials_net_role ON network_host_credentials(network_id, role);
 
 -- Network Credentials v2
 CREATE INDEX IF NOT EXISTS idx_network_credentials_net ON network_credentials(network_id, sort_order);

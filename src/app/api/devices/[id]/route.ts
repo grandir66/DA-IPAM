@@ -13,6 +13,7 @@ import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { parseJsonSafe } from "@/lib/json-safe";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { networkDeviceUsesArpPoll } from "@/lib/network-device-arp";
+import { senzaColonneVecchie } from "@/lib/devices/colonne-vecchie";
 import { avvisoPortaProtocollo } from "@/lib/devices/porta-protocollo";
 
 const NO_CACHE_HEADERS = { "Cache-Control": "no-store, no-cache, must-revalidate" };
@@ -101,12 +102,9 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 
     return NextResponse.json(
       {
-        ...device,
+        ...senzaColonneVecchie(device),
         last_proxmox_scan_result: null,
         proxmox_data,
-        encrypted_password: device.encrypted_password ? "●●●●●●●●" : null,
-        community_string: device.community_string ? "●●●●●●●●" : null,
-        api_token: device.api_token ? "●●●●●●●●" : null,
         stp_info,
         device_info,
         arp_entries: arpEntries,
@@ -245,13 +243,10 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     const avvisi = [avvisoPortaProtocollo(device), credenziali ? avvisoFalliti(credenziali.falliti) : null].filter((a): a is string => a != null);
 
     return NextResponse.json({
-      ...device,
+      ...senzaColonneVecchie(device),
       ...(avvisi.length > 0 ? { avvisi } : {}),
       credenziali,
       last_proxmox_scan_result: null,
-      encrypted_password: device.encrypted_password ? "●●●●●●●●" : null,
-      community_string: device.community_string ? "●●●●●●●●" : null,
-      api_token: device.api_token ? "●●●●●●●●" : null,
     });
     } catch (error) {
       if (error instanceof RifiutoCredenziali) {

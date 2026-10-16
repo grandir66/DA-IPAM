@@ -1,13 +1,13 @@
 # Matrice auth API — DA-IPAM
 
-> Generato da `scripts/audit-api-auth.ts` · 2026-10-15 · rilevatore e censimento di `src/lib/permessi/` (gli stessi della prova `rotte-censite.test.ts`).
+> Generato da `scripts/audit-api-auth.ts` · 2026-10-16 · rilevatore e censimento di `src/lib/permessi/` (gli stessi della prova `rotte-censite.test.ts`).
 
 ## Riepilogo
 
-- File `route.ts`: **320** · gestori (metodo × rotta): **493**
-- Forme di export: funzione 477 · destrutturata 2 · rinomina 14
-- Guardie viste: `nessuna`=9 · `esterna`=2 · `token`=1 · `sessione`=51 · `auth-diretto`=3 · `auth`=133 · `admin-o-onboarding`=10 · `admin`=281 · `superadmin`=3
-- Esiti: ok **460** · eccezioni **33** · debiti **0** · scoperti **0**
+- File `route.ts`: **323** · gestori (metodo × rotta): **497**
+- Forme di export: funzione 481 · destrutturata 2 · rinomina 14
+- Guardie viste: `nessuna`=9 · `esterna`=2 · `token`=1 · `sessione`=51 · `auth-diretto`=3 · `auth`=135 · `admin-o-onboarding`=10 · `admin`=283 · `superadmin`=3
+- Esiti: ok **464** · eccezioni **33** · debiti **0** · scoperti **0**
 
 Livello atteso: GET/HEAD/OPTIONS → `auth`; scritture → `admin`; letture col nome sensibile → `admin`; i livelli dichiarati stanno in `ATTESI` di `src/lib/permessi/rotte.ts`. `withTenantFromSession` (`sessione`) chiede l'accesso ma non il ruolo: per una lettura vale quanto `auth`.
 
@@ -546,6 +546,10 @@ Livello atteso: GET/HEAD/OPTIONS → `auth`; scritture → `admin`; letture col 
 | `/api/topology/settings/mappa` | GET | `auth` | `auth` |  |
 | `/api/topology/settings/mappa` | PUT | `admin` | `admin` |  |
 | `/api/topology/traccia` | GET | `admin` | `admin` |  |
+| `/api/topology/unioni` | GET | `auth` | `auth` |  |
+| `/api/topology/unioni` | POST | `admin` | `admin` |  |
+| `/api/topology/unioni/candidati` | GET | `auth` | `auth` |  |
+| `/api/topology/unioni/separa` | POST | `admin` | `admin` |  |
 | `/api/user/preferences` | GET | `auth` | `auth` |  |
 | `/api/user/preferences` | PUT | `auth` | `admin` | motivata: preferenze del proprio utente |
 | `/api/users` | GET | `admin` | `auth` |  |

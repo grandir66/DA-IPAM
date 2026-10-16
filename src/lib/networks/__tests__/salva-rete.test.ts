@@ -28,12 +28,10 @@ import {
   withTenant,
   getTenantDb,
   deleteTenantDatabase,
-  replaceNetworkHostCredentials as catenaTenant,
-  setHostDetectCredential as pinTenant,
 } from "@/lib/db-tenant";
-import { replaceNetworkHostCredentials as catenaFacciata, setHostDetectCredential as pinFacciata } from "@/lib/db";
 import { NetworkUpdateSchema } from "@/lib/validators";
 import { aggiornaRete, creaRete, CredenzialiReteNonValide, AVVISO_CAMPI_VECCHI } from "../salva-rete";
+import { creaCateneVecchie } from "@/lib/__tests__/support/catene-vecchie";
 
 const T = "TESTSALVARETE";
 const SSH = 501;
@@ -59,6 +57,8 @@ const reteDaCidr = (cidr: string) => dbt().prepare(`SELECT id, name FROM network
 
 before(() => {
   withTenant(T, () => {
+    // Un DB di prima della pulizia della 2g (T27): le catene vecchie ci sono, e il salvataggio non le scrive.
+    creaCateneVecchie(dbt());
     voce(SSH, "ssh");
     voce(WIN, "windows");
     voce(SNMP, "snmp");
@@ -184,40 +184,6 @@ describe("POST della rete (creaRete)", () => {
   });
 });
 
-describe("ruoli delle catene vecchie: la famiglia del protocollo (gemelle)", () => {
-  for (const [nome, sostituisci] of [["db-tenant", catenaTenant], ["facade", catenaFacciata]] as const) {
-    it(`${nome}: linux e ssh accettano la famiglia SSH, snmp anche la v3, windows solo windows`, () => {
-      withTenant(T, () => {
-        const r = creaRete({ cidr: nome === "facade" ? "10.73.1.0/24" : "10.73.2.0/24", name: `ruoli ${nome}`, description: "", location: "" });
-        sostituisci(r.id, "linux", [SSH]);
-        sostituisci(r.id, "ssh", [SSH]);
-        sostituisci(r.id, "snmp", [SNMP, SNMP_V3]);
-        assert.deepEqual(catena(r.id, "linux"), [SSH]);
-        assert.deepEqual(catena(r.id, "snmp"), [SNMP, SNMP_V3]);
-        assert.throws(() => sostituisci(r.id, "windows", [SSH]), /non valida per ruolo windows/);
-      });
-    });
-  }
-});
-
-describe("pin dell'host per ruolo: la famiglia del protocollo (gemelle)", () => {
-  const LINUX = 505;
-  before(() => withTenant(T, () => voce(LINUX, "linux")));
-
-  for (const [nome, pin, host] of [["db-tenant", pinTenant, 901], ["facade", pinFacciata, 902]] as const) {
-    it(`${nome}: ssh accetta anche una vecchia linux, snmp anche la v3, windows no a una ssh`, () => {
-      withTenant(T, () => {
-        const r = creaRete({ cidr: nome === "facade" ? "10.74.1.0/24" : "10.74.2.0/24", name: `pin ${nome}`, description: "", location: "" });
-        dbt().prepare(`INSERT INTO hosts (id, network_id, ip) VALUES (?, ?, ?)`).run(host, r.id, nome === "facade" ? "10.74.1.5" : "10.74.2.5");
-        pin(host, "ssh", LINUX);
-        pin(host, "snmp", SNMP_V3);
-        pin(host, "windows", SSH);
-        const pins = dbt().prepare(`SELECT role, credential_id FROM host_detect_credential WHERE host_id = ? ORDER BY role`).all(host);
-        assert.deepEqual(pins, [
-          { role: "snmp", credential_id: SNMP_V3 },
-          { role: "ssh", credential_id: LINUX },
-        ]);
-      });
-    });
-  }
-});
+// Le prove dei ruoli di catene vecchie e pin (replaceNetworkHostCredentials,
+// setHostDetectCredential, le due gemelle) sono uscite con la 2g (T26): le due
+// funzioni non ci sono più, e nessuno scrive o legge quelle tabelle.

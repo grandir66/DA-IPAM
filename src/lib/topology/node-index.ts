@@ -4,7 +4,8 @@
  * nome. Una chiave contesa fra due oggetti diversi vale null: non si abbina a
  * caso (un MAC VRRP, due apparati con lo stesso nome). Logica pura.
  */
-import type { MapNode, ModelDeviceRow, ModelHostRow, ModelKnownMacRow, ModelNeighborRow } from "@/lib/topology/model-types";
+import type { MapNode, ModelDeviceRow, ModelHostRow, ModelKnownMacRow, ModelNeighborRow, TopologyModelInput } from "@/lib/topology/model-types";
+import type { ComeFuso, ModelSeparazioneRow, ModelUnioneRow } from "@/lib/topology/unioni-tipi";
 import { normalizeName } from "@/lib/topology/match";
 import { normalizeMacForStorage } from "@/lib/utils";
 import { IDENTITY_TYPES, announcedNames, identifiesByName, isVirtualMac, realOui, ruoloLetto } from "@/lib/topology/identity";
@@ -19,7 +20,20 @@ export interface NodeIndex {
   fusedHosts: number;
   /** Host fusi fra loro senza apparato (spec §10.4). */
   mergedHosts: number;
+  // Unioni e separazioni a mano (ADR 0021): interni, mai serializzati.
+  /** Perché un host sta nel nodo di un altro oggetto (il rappresentante di un nodo di soli host non c'è). */
+  come: Map<number, ComeFuso>;
+  /** Nodo → host entrati a mano, in ordine di id. */
+  aMano: Map<string, number[]>;
+  /** Gruppi che finirebbero in due o più apparati: non si applicano (Scelte 5). */
+  nonApplicate: Array<{ gruppo: number; membri: string[]; apparati: string[] }>;
+  /** Membri delle unioni che non esistono più (host o apparato cancellati). */
+  mancanti: string[];
 }
+
+/** Le scelte a mano che l'indice applica: senza righe, l'indice di sempre. */
+export interface SceltePerNodi { unioni: readonly ModelUnioneRow[]; separazioni: readonly ModelSeparazioneRow[] }
+export const NESSUNA_SCELTA: SceltePerNodi = { unioni: [], separazioni: [] };
 
 const IPV4 = /^\d{1,3}(\.\d{1,3}){3}$/;
 const MAC = /^[0-9a-f]{2}([:-]?)[0-9a-f]{2}(\1[0-9a-f]{2}){4}$/i;
@@ -70,12 +84,16 @@ function hostNode(h: ModelHostRow): MapNode {
   };
 }
 
+/**
+ * Fuori da qui e dalle prove l'indice si costruisce solo con `indiceDeiNodi` (lucchetto in unioni-indice.test.ts): le due mappe
+ * (model.ts per T1, cavi/modello.ts per T3) devono vedere gli stessi nodi, unioni e separazioni comprese.
+ */
 export function buildNodeIndex(devices: ModelDeviceRow[], hosts: ModelHostRow[], knownMacs: ModelKnownMacRow[],
-  neighbors: ModelNeighborRow[] = [],
+  neighbors: ModelNeighborRow[] = [], scelte: SceltePerNodi = NESSUNA_SCELTA,
 ): NodeIndex {
   const idx: NodeIndex = {
     nodes: new Map(), alias: new Map(), byIp: new Map(), byMac: new Map(), byName: new Map(),
-    hostById: new Map(), fusedHosts: 0, mergedHosts: 0,
+    hostById: new Map(), fusedHosts: 0, mergedHosts: 0, come: new Map(), aMano: new Map(), nonApplicate: [], mancanti: [],
   };
   const hostsByIp = new Map<string, ModelHostRow[]>();
   const hostsByPhys = new Map<number, ModelHostRow[]>();
@@ -85,20 +103,35 @@ export function buildNodeIndex(devices: ModelDeviceRow[], hosts: ModelHostRow[],
     if (h.ip) hostsByIp.set(h.ip, [...(hostsByIp.get(h.ip) ?? []), h]);
     if (h.physical_device_id != null) hostsByPhys.set(h.physical_device_id, [...(hostsByPhys.get(h.physical_device_id) ?? []), h]);
   }
+  // Separazioni a mano: «questo host non si fonde da solo con quell'oggetto». Fra due host vale nei due versi.
+  const sep = new Map<number, Set<string>>();
+  const segna = (h: number, altro: string): void => { sep.set(h, new Set([...(sep.get(h) ?? []), altro])); };
+  for (const s of scelte.separazioni) {
+    const m = /^host:(\d+)$/.exec(s.membro);
+    if (!m) continue;
+    segna(Number(m[1]), s.altro);
+    const o = /^host:(\d+)$/.exec(s.altro);
+    if (o) segna(Number(o[1]), s.membro);
+  }
+  const separato = (h: number, altro: string): boolean => sep.get(h)?.has(altro) === true;
 
   const absorbedBy = new Map<number, string>();
   for (const d of [...devices].sort((a, b) => a.id - b.id)) {
     const id = `dev:${d.id}`;
     const fused: number[] = [];
-    const take = (h: ModelHostRow | undefined): void => {
+    const take = (h: ModelHostRow | undefined, come: ComeFuso): void => {
       if (h && !absorbedBy.has(h.id)) {
         absorbedBy.set(h.id, id);
         fused.push(h.id);
+        idx.come.set(h.id, come);
       }
     };
-    if (d.host_id != null) take(idx.hostById.get(d.host_id));
-    for (const h of hostsByIp.get(d.host) ?? []) take(h);
-    if (d.physical_device_id != null) for (const h of hostsByPhys.get(d.physical_device_id) ?? []) take(h);
+    // L'host del host_id e quello con l'IP di gestione sono l'apparato: una separazione non li tocca (NON_SEPARABILI).
+    if (d.host_id != null) take(idx.hostById.get(d.host_id), "host_dell_apparato");
+    for (const h of hostsByIp.get(d.host) ?? []) take(h, "stesso_ip");
+    if (d.physical_device_id != null) {
+      for (const h of hostsByPhys.get(d.physical_device_id) ?? []) if (!separato(h.id, id)) take(h, "stesso_apparato_fisico");
+    }
     idx.nodes.set(id, {
       id, kind: "device", refId: d.id, name: d.name, type: d.device_type, mgmtIp: d.host || null,
       fusedHostIds: fused.sort((a, b) => a - b), addresses: [], aliases: [], siteId: null, rackId: null, siteProposed: false,
@@ -135,8 +168,9 @@ export function buildNodeIndex(devices: ModelDeviceRow[], hosts: ModelHostRow[],
     if (!owners || owners.size !== 1) continue;
     const devId = [...owners][0];
     const node = idx.nodes.get(devId);
-    if (!node) continue;
+    if (!node || separato(h.id, devId)) continue;
     absorbedBy.set(h.id, devId);
+    idx.come.set(h.id, "stesso_mac");
     node.fusedHostIds = [...node.fusedHostIds, h.id].sort((a, b) => a - b);
   }
   // Spec §10.4 punto 3: il nome annunciato da un host già fuso è un alias dell'apparato.
@@ -154,22 +188,43 @@ export function buildNodeIndex(devices: ModelDeviceRow[], hosts: ModelHostRow[],
     const m = normalizeMacForStorage(h.mac);
     const owners = m && !isVirtualMac(m) ? macOwners.get(m) : undefined; // MAC vero di un altro apparato = contraddizione
     const devId = namesOf(h).map((k) => aliasOwner.get(k)).find((v): v is string => typeof v === "string");
-    if (!devId || (owners && !owners.has(devId))) continue;
+    if (!devId || (owners && !owners.has(devId)) || separato(h.id, devId)) continue;
     absorbedBy.set(h.id, devId);
+    idx.come.set(h.id, "stesso_nome");
     const node = idx.nodes.get(devId)!;
     node.fusedHostIds = [...node.fusedHostIds, h.id].sort((a, b) => a - b);
   }
   // Spec §10.4 punti 1-2: gli host rimasti si raggruppano per MAC vero (tutti) e per nome (solo infrastruttura e server).
+  // La radice di un gruppo è il suo id più basso; con una separazione due gruppi che la contraddirebbero non si uniscono.
   const parent = new Map<number, number>();
   const find = (x: number): number => { const p = parent.get(x) ?? x; if (p === x) return x; const r = find(p); parent.set(x, r); return r; };
-  const union = (a: number, b: number): void => { const ra = find(a), rb = find(b); if (ra !== rb) parent.set(Math.max(ra, rb), Math.min(ra, rb)); };
+  const membri = new Map<number, number[]>(); // radice → membri
+  const membriDi = (r: number): number[] => membri.get(r) ?? [r];
+  const puo = (a: number, b: number): boolean => {
+    if (sep.size === 0) return true;
+    const B = membriDi(find(b));
+    return !membriDi(find(a)).some((x) => B.some((y) => separato(x, `host:${y}`)));
+  };
+  /** «a_mano» vince sulle separazioni: le rotte tolgono quelle che contraddirebbe. */
+  const union = (a: number, b: number, come: ComeFuso): boolean => {
+    const ra = find(a), rb = find(b);
+    if (ra === rb) return true;
+    if (come !== "a_mano" && !puo(ra, rb)) return false;
+    const lo = Math.min(ra, rb), hi = Math.max(ra, rb);
+    parent.set(hi, lo);
+    const sposta = membriDi(hi);
+    membri.set(lo, [...membriDi(lo), ...sposta]);
+    membri.delete(hi);
+    for (const x of sposta) if (!idx.come.has(x)) idx.come.set(x, come);
+    return true;
+  };
   const firstBy = new Map<string, number>();
   for (const h of sortedHosts) {
     if (absorbedBy.has(h.id)) continue;
     const m = normalizeMacForStorage(h.mac);
     if (!m || isVirtualMac(m)) continue;
     const f = firstBy.get(m);
-    if (f === undefined) firstBy.set(m, h.id); else union(f, h.id);
+    if (f === undefined) firstBy.set(m, h.id); else union(f, h.id, "stesso_mac");
   }
   // Per nome solo se nessun MAC vero lo contraddice: due gruppi con MAC veri di OUI diversi sono due oggetti.
   const ouis = new Map<number, Set<string>>(); // rappresentante → OUI dei MAC veri del gruppo
@@ -183,27 +238,73 @@ export function buildNodeIndex(devices: ModelDeviceRow[], hosts: ModelHostRow[],
     if (absorbedBy.has(h.id) || !IDENTITY_TYPES.includes(h.classification ?? "")) continue;
     for (const k of namesOf(h)) {
       const seen = byName.get(k) ?? [];
-      const other = seen.find((x) => find(x) !== find(h.id) && compatible(x, h.id));
+      const other = seen.find((x) => find(x) !== find(h.id) && compatible(x, h.id) && puo(x, h.id));
       if (other !== undefined) {
         const merged = new Set([...(ouis.get(find(other)) ?? []), ...(ouis.get(find(h.id)) ?? [])]);
-        union(other, h.id);
-        ouis.set(find(h.id), merged);
+        if (union(other, h.id, "stesso_nome")) ouis.set(find(h.id), merged);
       }
       byName.set(k, [...seen, h.id]);
     }
   }
-  const groupMembers = new Map<number, ModelHostRow[]>(); // rappresentante (id più basso) → membri in ordine di id
+  // Unioni a mano: dopo TUTTE le regole automatiche (decisione 1). Ogni membro va nel nodo che lo contiene adesso.
+  const perGruppo = new Map<number, string[]>();
+  for (const u of [...scelte.unioni].sort((x, y) => x.gruppo - y.gruppo || (x.membro < y.membro ? -1 : x.membro > y.membro ? 1 : 0))) {
+    perGruppo.set(u.gruppo, [...(perGruppo.get(u.gruppo) ?? []), u.membro]);
+  }
+  const radicePrima = new Map<number, number>(); // host → la radice del suo gruppo prima della prima unione a mano
+  for (const [gruppo, elenco] of perGruppo) {
+    const apparati = new Set<string>(), radici = new Set<number>(), espliciti = new Set<number>();
+    for (const m of elenco) {
+      const hm = /^host:(\d+)$/.exec(m);
+      if (/^dev:\d+$/.test(m) && idx.nodes.has(m)) apparati.add(m);
+      else if (hm && idx.hostById.has(Number(hm[1]))) {
+        const hid = Number(hm[1]);
+        espliciti.add(hid);
+        const dev = absorbedBy.get(hid);
+        if (dev) apparati.add(dev); else radici.add(find(hid));
+      } else idx.mancanti.push(m);
+    }
+    if (apparati.size + radici.size < 2) continue;
+    if (apparati.size >= 2) { idx.nonApplicate.push({ gruppo, membri: [...elenco].sort(), apparati: [...apparati].sort() }); continue; }
+    if (apparati.size === 1) {
+      const devId = [...apparati][0];
+      const entrano: number[] = [];
+      for (const h of sortedHosts) {
+        if (absorbedBy.has(h.id) || !radici.has(find(h.id))) continue;
+        if (!espliciti.has(h.id) && separato(h.id, devId)) continue; // un gemello separato a mano resta fuori
+        absorbedBy.set(h.id, devId);
+        idx.come.set(h.id, "a_mano");
+        entrano.push(h.id);
+      }
+      const node = idx.nodes.get(devId)!;
+      node.fusedHostIds = [...node.fusedHostIds, ...entrano].sort((a, b) => a - b);
+      idx.aMano.set(devId, [...(idx.aMano.get(devId) ?? []), ...entrano].sort((a, b) => a - b));
+    } else {
+      const rs = [...radici].sort((a, b) => a - b);
+      for (const h of sortedHosts) {
+        if (!absorbedBy.has(h.id) && radici.has(find(h.id)) && !radicePrima.has(h.id)) radicePrima.set(h.id, find(h.id));
+      }
+      for (const r of rs.slice(1)) union(rs[0], r, "a_mano");
+    }
+  }
+  // Il rappresentante di un gruppo è il primo membro rimasto: senza unioni a mano è la radice (l'id più basso), con un'unione
+  // verso un apparato la radice può esservi entrata e il gemello separato resta il nodo di sé stesso.
+  const groupMembers = new Map<number, ModelHostRow[]>(); // radice → membri rimasti, in ordine di id
   const repOf = new Map<number, number>();
   for (const h of sortedHosts) {
     if (absorbedBy.has(h.id)) continue;
     const r = find(h.id);
-    repOf.set(h.id, r);
     groupMembers.set(r, [...(groupMembers.get(r) ?? []), h]);
   }
-  for (const [rep, members] of groupMembers) {
+  for (const members of groupMembers.values()) {
+    const rep = members[0].id;
+    for (const m of members) repOf.set(m.id, rep);
+    idx.come.delete(rep); // il rappresentante è l'oggetto del nodo, non un host fuso
+  }
+  for (const members of groupMembers.values()) {
     if (members.length < 2) continue;
-    const repHost = idx.hostById.get(rep)!;
-    const node = hostNode(repHost);
+    const rep = members[0].id;
+    const node = hostNode(members[0]);
     const named = members
       .flatMap((m) => [m.custom_name, m.hostname, ...(announced.get(m.id) ?? [])])
       .find((s) => !!nameKey(s));
@@ -213,12 +314,27 @@ export function buildNodeIndex(devices: ModelDeviceRow[], hosts: ModelHostRow[],
     for (const m of members) if (m.id !== rep) idx.alias.set(`host:${m.id}`, node.id);
     idx.mergedHosts += members.length - 1;
   }
+  // Fra soli host è entrato a mano chi stava, prima delle unioni, in un gruppo diverso da quello del rappresentante.
+  for (const [h, prima] of radicePrima) {
+    const rep = repOf.get(h);
+    if (rep === undefined || rep === h || prima === radicePrima.get(rep)) continue;
+    idx.come.set(h, "a_mano");
+    const nodo = `host:${rep}`;
+    idx.aMano.set(nodo, [...(idx.aMano.get(nodo) ?? []), h].sort((a, b) => a - b));
+  }
+  // I nomi di un host entrato a mano in un apparato restano chiavi di un host (revisione finale, 16/10): deboli e dopo gli host
+  // rimasti, così un nome conteso con un altro host resta conteso e non passa all'apparato. IP e MAC restano dell'apparato.
+  const nomiAMano: Array<[ModelHostRow, string]> = [];
   for (const [hostId, devId] of absorbedBy) {
     const h = idx.hostById.get(hostId);
     if (!h) continue;
     idx.alias.set(`host:${hostId}`, devId);
     put(idx.byIp, h.ip || null, devId, false);
     putMac(idx.byMac, h.mac, devId, false);
+    if (idx.come.get(hostId) === "a_mano") {
+      nomiAMano.push([h, devId]);
+      continue;
+    }
     put(idx.byName, nameKey(h.hostname), devId, false);
     put(idx.byName, nameKey(h.custom_name), devId, false);
   }
@@ -230,6 +346,10 @@ export function buildNodeIndex(devices: ModelDeviceRow[], hosts: ModelHostRow[],
     putMac(idx.byMac, h.mac, id, true);
     put(idx.byName, nameKey(h.hostname), id, true);
     put(idx.byName, nameKey(h.custom_name), id, true);
+  }
+  for (const [h, devId] of nomiAMano) {
+    put(idx.byName, nameKey(h.hostname), devId, true);
+    put(idx.byName, nameKey(h.custom_name), devId, true);
   }
   // Indirizzi e alias di ogni nodo con host fusi.
   const ipOrder = (a: string, b: string): number => {
@@ -258,6 +378,14 @@ export function buildNodeIndex(devices: ModelDeviceRow[], hosts: ModelHostRow[],
     node.aliases = [...seen.values()].sort();
   }
   return idx;
+}
+
+/** L'indice dei nodi di un ingresso del modello, con le sue unioni e separazioni: l'unico modo di costruirlo fuori da qui. */
+export function indiceDeiNodi(
+  input: Pick<TopologyModelInput, "devices" | "hosts" | "knownMacs" | "neighbors" | "unioni" | "separazioni">,
+): NodeIndex {
+  return buildNodeIndex(input.devices, input.hosts, input.knownMacs, input.neighbors,
+    { unioni: input.unioni ?? [], separazioni: input.separazioni ?? [] });
 }
 
 export function canonical(idx: NodeIndex, nodeId: string): string {

@@ -16,9 +16,13 @@
  *
  * Dalla 2d (T16) anche le catene: righe della lista delle reti, delle righe
  * host, delle catene vecchie e dei pin; la lista e le righe host per id; per
- * ogni rete la sequenza del motore (voce:porta) per ssh, winrm e snmp, con le
- * chiavi dell'hub della copia, senza registrare ripieghi. È la proprietà della
- * 2d: la sequenza non cambia con la conversione.
+ * ogni rete la sequenza (voce:porta) per ssh, winrm e snmp che l'app usa,
+ * senza registrare ripieghi. È la proprietà della 2d: la sequenza non cambia
+ * con la conversione. Dalla 2g (T26) il motore non legge più catene vecchie
+ * e chiavi dell'hub: su un DB la cui 2d non è chiusa (nessun segno, o
+ * `errore:`) la sequenza «prima» è quella del codice di prima, ricostruita
+ * qui (`sequenzaDiPrima`: lista, catene vecchie per ruolo, chiave dell'hub,
+ * col filtro di tipo e senza doppioni); su uno convertito è quella del motore.
  *
  * Dalla 2e (T19) anche gli apparati: righe dei binding, binding inline e
  * apparati con colonne di credenziali piene; per ogni apparato il nome e le
@@ -41,7 +45,11 @@ import Database from "better-sqlite3";
 import { cartellaTenant, closeAllTenantDbs, closeTenantDb, getTenantDb, withTenant } from "../../src/lib/db-tenant";
 import { closeHubDb, getHubDbPath, getSetting } from "../../src/lib/db-hub";
 import { statoCredenziali, type StatoCredenziali } from "../../src/lib/credentials/migra-credenziali-tipi";
-import { chiaviGlobaliHub, resolveCredentialsForDb, type CredProtocol } from "../../src/lib/credentials/resolve";
+import { resolveCredentialsForDb, type CredProtocol } from "../../src/lib/credentials/resolve";
+import { chiaviGlobaliHub } from "../../src/lib/credentials/converti-catene";
+import { DEFAULT_PORTS, portaCredenziale } from "../../src/lib/credentials/porte";
+import { conversioneChiusa, leggiSegno, SEGNO_CATENE } from "../../src/lib/credentials/segni-t2";
+import { portaVoceValePer, tipiPerProtocollo } from "../../src/lib/credentials/tipi";
 import { COLONNE_APPARATO, convertiCredenzialiApparati, type EsitoApparati } from "../../src/lib/credentials/converti-apparati";
 import {
   confrontoIntegrazioni,
@@ -115,6 +123,56 @@ function haTabella(dbh: Database.Database, nome: string): boolean {
   return !!dbh.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(nome);
 }
 
+/** I ruoli vecchi di un protocollo, nell'ordine in cui il codice di prima li leggeva. */
+function ruoliVecchi(p: CredProtocol): string[] {
+  return p === "ssh" ? ["ssh", "linux"] : p === "winrm" ? ["windows"] : p === "snmp" ? ["snmp"] : [];
+}
+
+/**
+ * La sequenza «voce:porta» per una rete come la dava il motore di prima della
+ * 2g su un tenant la cui 2d non era chiusa: lista della rete, poi catene
+ * vecchie per ruolo, poi la chiave dell'hub, col filtro di tipo e senza
+ * doppioni per (voce, porta).
+ */
+function sequenzaDiPrima(dbh: Database.Database, networkId: number, p: CredProtocol, globali: { windows: number | null; linux: number | null }): string[] {
+  const tipi = tipiPerProtocollo(p);
+  const out: string[] = [];
+  const visti = new Set<string>();
+  const metti = (r: { credential_id: number; port: number | null; credential_type: string } | undefined): void => {
+    if (!r || !tipi.includes(r.credential_type)) return;
+    const porta = portaVoceValePer(r.credential_type, p) ? portaCredenziale({ port: r.port }, p) : DEFAULT_PORTS[p];
+    const k = `${r.credential_id}:${porta}`;
+    if (visti.has(k)) return;
+    visti.add(k);
+    out.push(k);
+  };
+  type R = { credential_id: number; port: number | null; credential_type: string };
+  for (const r of dbh
+    .prepare(
+      `SELECT nc.credential_id, c.port, c.credential_type FROM network_credentials nc JOIN credentials c ON c.id = nc.credential_id
+       WHERE nc.network_id = ? ORDER BY nc.sort_order ASC, nc.id ASC`
+    )
+    .all(networkId) as R[]) metti(r);
+  if (haTabella(dbh, "network_host_credentials")) {
+    const vecchie = dbh.prepare(
+      `SELECT nhc.credential_id, c.port, c.credential_type FROM network_host_credentials nhc JOIN credentials c ON c.id = nhc.credential_id
+       WHERE nhc.network_id = ? AND nhc.role = ? ORDER BY nhc.sort_order ASC, nhc.id ASC`
+    );
+    for (const ruolo of ruoliVecchi(p)) for (const r of vecchie.all(networkId, ruolo) as R[]) metti(r);
+  }
+  const hub = p === "winrm" ? globali.windows : p === "ssh" ? globali.linux : null;
+  if (hub != null) {
+    const r = dbh.prepare("SELECT id AS credential_id, port, credential_type FROM credentials WHERE id = ?").get(hub) as R | undefined;
+    metti(r);
+  }
+  return out;
+}
+
+/** La 2d è chiusa su questo DB (segno done:/parziale:)? Senza tenant_settings, no. */
+function cateneChiuse(dbh: Database.Database): boolean {
+  return haTabella(dbh, "tenant_settings") && conversioneChiusa(leggiSegno(dbh, SEGNO_CATENE));
+}
+
 function misuraCatene(dbh: Database.Database): MisuraCatene {
   const out: MisuraCatene = { righe: null, lista: [], righeHost: [], reti: {}, catene: {}, errore: null };
   const tabelle = ["networks", "hosts", "network_credentials", "host_credentials", "network_host_credentials", "host_detect_credential"];
@@ -136,12 +194,13 @@ function misuraCatene(dbh: Database.Database): MisuraCatene {
   const reti = dbh.prepare("SELECT id, name FROM networks ORDER BY id").all() as Array<{ id: number; name: string }>;
   for (const r of reti) out.reti[String(r.id)] = r.name;
   try {
-    const globaliHub = chiaviGlobaliHub(getSetting);
+    const chiuse = cateneChiuse(dbh);
+    const globali = chiaviGlobaliHub(getSetting);
     for (const r of reti) {
       for (const p of PROTOCOLLI_CATENE) {
-        out.catene[`${r.id}:${p}`] = resolveCredentialsForDb(dbh, { networkId: r.id }, p, { globaliHub, registra: false }).map(
-          (c) => `${c.credential_id ?? "-"}:${c.port}`
-        );
+        out.catene[`${r.id}:${p}`] = chiuse
+          ? resolveCredentialsForDb(dbh, { networkId: r.id }, p, { registra: false }).map((c) => `${c.credential_id ?? "-"}:${c.port}`)
+          : sequenzaDiPrima(dbh, r.id, p, globali);
       }
     }
   } catch (e) {

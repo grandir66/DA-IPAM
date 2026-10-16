@@ -18,13 +18,14 @@ import {
   type TopologyModel,
   type TopologyModelInput,
 } from "@/lib/topology/model-types";
-import { addNodeMacs, buildNodeIndex, nameKey, type NodeIndex } from "@/lib/topology/node-index";
+import { addNodeMacs, indiceDeiNodi, nameKey, type NodeIndex } from "@/lib/topology/node-index";
 import { nodeClass } from "@/lib/topology/identity";
 import { REGOLE_T1, type Regole } from "@/lib/topology/regole";
 import { assignSites, retiDiCuiGateway } from "@/lib/topology/sites";
 import { placeVms, resolveScanHosts } from "@/lib/topology/vms";
 import { ipervisoriDelleVm, vmEIpervisore } from "@/lib/topology/vm-ports";
 import { normalizeName } from "@/lib/topology/match";
+import { TESTI_UNIONI, type InfoUnioni } from "@/lib/topology/unioni-tipi";
 import { parseDbDate } from "@/lib/db-date";
 
 export const PROMOTE_CLASSES = ["switch", "router", "access_point", "firewall"] as const;
@@ -32,7 +33,7 @@ const SUSPICIOUS_TYPES = ["switch", "access_point"];
 
 /** `regole`: le regole del passaggio universale accese (spec §13.16); le spegne solo la misura (C19). */
 export function buildTopologyModel(input: TopologyModelInput, regole: Regole = REGOLE_T1): TopologyModel {
-  const idx = buildNodeIndex(input.devices, input.hosts, input.knownMacs, input.neighbors);
+  const idx = indiceDeiNodi(input);
   // Spec §11.5: le schede vive di un hypervisor (MAC veri) lo identificano sulla tabella MAC degli switch.
   for (const { row, nodeId } of resolveScanHosts(input.scanHosts, idx)) if (nodeId) addNodeMacs(idx, nodeId, row.macs);
   const { vms, vmNodeIds, vmMacs, runningVmMacs } = placeVms(input, idx);
@@ -146,6 +147,19 @@ export function buildTopologyModel(input: TopologyModelInput, regole: Regole = R
     segmenti: Object.fromEntries([...segmenti].map(([k, membri]) => [k, [...membri].sort()])),
     classiMappa, daSistemare,
     ...(gatewayDi ? { gatewayDi } : {}),
+    // Solo con righe (Scelte 8): un campo vuoto cambierebbe le impronte di oggi.
+    ...(input.unioni?.length || input.separazioni?.length ? { unioni: infoUnioni(idx, input) } : {}),
+  };
+}
+
+/** Le unioni a mano applicate, quelle che non si applicano (col perché) e i membri spariti (ADR 0021). */
+function infoUnioni(idx: NodeIndex, input: TopologyModelInput): InfoUnioni {
+  const nome = (id: string): string => idx.nodes.get(id)?.name ?? id;
+  return {
+    aMano: Object.fromEntries([...idx.aMano.entries()].sort(([x], [y]) => (x < y ? -1 : x > y ? 1 : 0))),
+    nonApplicate: idx.nonApplicate.map((n) => ({ gruppo: n.gruppo, membri: n.membri, motivo: TESTI_UNIONI.dueApparati(nome(n.apparati[0]), nome(n.apparati[1])) })),
+    mancanti: [...new Set(idx.mancanti)].sort(),
+    separazioni: input.separazioni?.length ?? 0,
   };
 }
 

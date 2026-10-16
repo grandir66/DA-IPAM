@@ -15,7 +15,7 @@ import { resolveDataDir } from "./data-dir";
 import { buildPatchFromHost, buildPatchFromDevice, buildSyncMerge, buildSourceLabel } from "./inventory/discovery-sync";
 import fs from "fs";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { DDL_TOPOLOGY_CAVI, TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL } from "./db-tenant-schema";
+import { DDL_TOPOLOGY_CAVI, DDL_TOPOLOGY_UNIONI, INDICI_TOPOLOGY_UNIONI, TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL } from "./db-tenant-schema";
 import { HYPERVISOR_SYNC_MINUTES, SCHEDULED_JOB_TYPES_CHECK_SQL } from "./scheduled-job-types";
 import { isProxmoxVeDevice } from "./devices/device-acquisition-resolve";
 import { macToHex, normalizeMac, normalizeMacForStorage } from "./utils";
@@ -27,7 +27,7 @@ import { descriviRicostruzione, descriviStato, migraCredenzialiTipi, statoCreden
 import { descriviNormalizza, normalizzaTipiCredenziali, segnoTipi } from "./credentials/normalizza-tipi";
 import { conversioneChiusa, leggiSegno, scriviSegno, segnoErrore, SEGNO_APPARATI, SEGNO_CATENE, SEGNO_INTEGRAZIONI, SEGNO_TIPI } from "./credentials/segni-t2";
 import { convertiControllerEAd, descriviIntegrazioni, segnoIntegrazioni } from "./credentials/converti-integrazioni";
-import { convertiCateneVecchie, descriviCatene, MOTIVO_DUE_TENANT, segnoCatene } from "./credentials/converti-catene";
+import { chiaviGlobaliHub, convertiCateneVecchie, descriviCatene, MOTIVO_DUE_TENANT, segnoCatene } from "./credentials/converti-catene";
 import { convertiCredenzialiApparati, descriviApparati, segnoApparati } from "./credentials/converti-apparati";
 import { migraAppleMacos } from "./devices/migra-apple-macos";
 import { randomUUID } from "crypto";
@@ -37,7 +37,6 @@ import { buildStatusSeries, statusWindowStartMs, type StatusObservation, type St
 import { registraRipiego } from "./db-maintenance/ripieghi";
 import {
   catenaReteDb,
-  chiaviGlobaliHub,
   communitySnmpDb,
   credenzialeSnmpApparatoDb,
   haSnmpApparatoDb,
@@ -50,7 +49,6 @@ import {
   type SceltaTokenApi,
 } from "./credentials/resolve";
 import { accessoSshDb, communityDb, coppiaLoginDb, coppiaSshDb, type AccessoSsh, type EsitoAccessoSsh } from "./credentials/segreti";
-import { tipiPerRuoloVecchio } from "./credentials/tipi";
 import { aggiornaCredenzialeDb, creaCredenzialeDb, eliminaCredenzialeDb, type ColonneCredenziale } from "./credentials/archivio";
 import { aggiungiAllaListaReteDb, copiaListaReteDb, sostituisciListaReteDb } from "./credentials/lista-rete";
 import type { ControllerKind, ControllerRunKind, ControllerRunStoredTrigger, MetodoVoceController, NetworkControllerRow } from "./controllers/types";
@@ -58,7 +56,6 @@ import {
   creaVoceControllerCifrataDb,
   creaVoceControllerDb,
   credenzialeControllerDb,
-  integrazioniConvertiteDb,
   vociDeiControllerDb,
   voceControllerDb,
   type ControllerDellaVoce,
@@ -73,6 +70,7 @@ import { parseProxmoxScan } from "./topology/vms";
 import { hypervisorNics, switchPortsToKnown, type SwitchPortRow } from "./topology/known-ports";
 import type { KnownPort } from "./topology/api-input";
 import type { LinkMedium, MapOrientation } from "./topology/model-types";
+import { TESTI_UNIONI, type PianoUnioni, type RigaSeparazione, type RigaUnione } from "./topology/unioni-tipi";
 
 import type {
   Network,
@@ -544,6 +542,42 @@ function verificaSchemaCavi(d: Database.Database): boolean {
   const tabelle = new Set((d.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>).map((r) => r.name));
   if (!DDL_TOPOLOGY_CAVI.every(([n]) => tabelle.has(n))) return false;
   return COLONNE_CAVI.every(([t, c]) => (d.prepare(`PRAGMA table_info(${t})`).all() as Array<{ name: string }>).some((x) => x.name === c));
+}
+
+/**
+ * Migrazione «unioni a mano» (piano 2026-10-16, Task 2; ADR 0021): le due tabelle delle unioni e delle separazioni e i loro tre
+ * indici sulle righe attive. Gemella di `migrateTopologyCavi`: additiva, idempotente, in UNA transazione (o tutto o niente),
+ * restituisce ciò che aggiunge. Le tabelle nascono anche dallo schema (stesse CREATE, `DDL_TOPOLOGY_UNIONI`), gli indici solo
+ * qui. Chiamata in fondo a `getTenantDb`. Esportata per le prove (`topology-unioni-migration.test.ts`).
+ */
+export function migrateTopologyUnioni(db: Database.Database): string[] {
+  const added: string[] = [];
+  const exists = (type: "table" | "index", name: string): boolean =>
+    !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = ? AND name = ?").get(type, name);
+  db.transaction(() => {
+    for (const [name, ddl] of DDL_TOPOLOGY_UNIONI) {
+      if (exists("table", name)) continue;
+      db.exec(ddl);
+      added.push(name);
+    }
+    for (const [name, ddl] of INDICI_TOPOLOGY_UNIONI) {
+      if (exists("index", name)) continue;
+      db.exec(ddl);
+      added.push(name);
+    }
+  })();
+  return added;
+}
+
+/** «Le tabelle delle unioni ci sono, con i loro indici», annotato all'apertura: senza, l'ingresso non ha righe e le rotte non scrivono. */
+const SCHEMA_UNIONI = new WeakMap<Database.Database, boolean>();
+const NOMI_SCHEMA_UNIONI = [...DDL_TOPOLOGY_UNIONI, ...INDICI_TOPOLOGY_UNIONI].map(([n]) => n);
+
+/** Tabelle e indici: l'indice unico dei membri è la regola «un membro attivo in un gruppo solo», senza non si scrive. */
+function verificaSchemaUnioni(d: Database.Database): boolean {
+  const c = d.prepare(`SELECT name FROM sqlite_master WHERE type IN ('table', 'index') AND name IN (${NOMI_SCHEMA_UNIONI.map(() => "?").join(", ")})`)
+    .all(...NOMI_SCHEMA_UNIONI);
+  return c.length === NOMI_SCHEMA_UNIONI.length;
 }
 
 /**
@@ -2033,6 +2067,24 @@ export function getTenantDb(tenantCode: string): Database.Database {
     SCHEMA_CAVI.set(newDb, verificaSchemaCavi(newDb));
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: verifica dello schema della topologia cavi (T2) fallita, si rifà alla prima scrittura:`, e);
+  }
+
+  // Unioni e separazioni a mano (piano 2026-10-16, ADR 0021): due tabelle e tre indici, solo cose nuove. Se la migrazione
+  // fallisce il tenant si apre lo stesso: l'annotazione dice «schema assente», l'ingresso del modello non ha righe (la mappa di
+  // oggi) e le rotte rispondono «non disponibili». La riga «topologia unioni, aggiunto …» nel journal è la prova del rilascio.
+  try {
+    const added = migrateTopologyUnioni(newDb);
+    if (added.length > 0) {
+      console.info(`[db-tenant] ${tenantCode}: topologia unioni, aggiunto ${added.join(", ")}`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione topologia unioni fallita, le unioni non sono disponibili:`, e);
+  }
+  // Come per i cavi: una verifica che fallisce non impedisce l'apertura; senza annotazione schemaUnioniPresente() la rifà.
+  try {
+    SCHEMA_UNIONI.set(newDb, verificaSchemaUnioni(newDb));
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: verifica dello schema delle unioni fallita, si rifà alla prima lettura:`, e);
   }
 
   tenantDbs.set(tenantCode, { db: newDb, lastUsed: Date.now() });
@@ -3828,7 +3880,7 @@ export function registraVersioneSnmpRilevata(deviceId: number, versione: "1" | "
   return { prima: row.snmp_version };
 }
 
-type CreateDeviceInput = Omit<NetworkDevice, "id" | "created_at" | "updated_at" | "sysname" | "sysdescr" | "model" | "firmware" | "serial_number" | "part_number" | "last_info_update" | "last_device_info_json" | "classification" | "stp_info" | "last_proxmox_scan_at" | "last_proxmox_scan_result" | "scan_target" | "product_profile" | "use_for_arp_poll"> & {
+type CreateDeviceInput = Omit<NetworkDevice, "id" | "created_at" | "updated_at" | "sysname" | "sysdescr" | "model" | "firmware" | "serial_number" | "part_number" | "last_info_update" | "last_device_info_json" | "classification" | "stp_info" | "last_proxmox_scan_at" | "last_proxmox_scan_result" | "scan_target" | "product_profile" | "use_for_arp_poll" | "voci_provvisorie"> & {
   classification?: string | null;
   scan_target?: string | null;
   product_profile?: string | null;
@@ -3847,15 +3899,14 @@ export function createNetworkDevice(input: CreateDeviceInput): NetworkDevice {
   }
 
   const stmt = db().prepare(
-    `INSERT INTO network_devices (name, host, device_type, vendor, vendor_subtype, protocol, credential_id, snmp_credential_id, username, encrypted_password, community_string, api_token, api_url, port, enabled, classification, scan_target, product_profile, use_for_arp_poll, host_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO network_devices (name, host, device_type, vendor, vendor_subtype, protocol, api_url, port, enabled, classification, scan_target, product_profile, use_for_arp_poll, host_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   const result = stmt.run(
     input.name, input.host, input.device_type, input.vendor,
     input.vendor_subtype ?? null, input.protocol,
-    input.credential_id ?? null, (input as { snmp_credential_id?: number | null }).snmp_credential_id ?? null,
-    input.username, input.encrypted_password,
-    input.community_string, input.api_token, input.api_url, input.port, input.enabled,
+    // Le credenziali si legano dopo, coi binding d'archivio (T20): le colonne vecchie non si scrivono (T26).
+    input.api_url, input.port, input.enabled,
     (input as { classification?: string | null }).classification ?? null,
     (input as { scan_target?: string | null }).scan_target ?? null,
     (input as { product_profile?: string | null }).product_profile ?? null,
@@ -3877,7 +3928,7 @@ export function updateNetworkDevice(id: number, input: Partial<Omit<NetworkDevic
   const fields: string[] = [];
   const values: unknown[] = [];
 
-  const keys = ["name", "host", "device_type", "vendor", "vendor_subtype", "protocol", "credential_id", "snmp_credential_id", "username", "encrypted_password", "community_string", "api_token", "api_url", "port", "enabled", "classification", "sysname", "sysdescr", "model", "firmware", "serial_number", "part_number", "last_info_update", "last_device_info_json", "stp_info", "last_proxmox_scan_at", "last_proxmox_scan_result", "scan_target", "product_profile", "use_for_arp_poll", "host_id", "snmp_version", "snmp_version_fissata"] as const;
+  const keys = ["name", "host", "device_type", "vendor", "vendor_subtype", "protocol", "api_url", "port", "enabled", "classification", "sysname", "sysdescr", "model", "firmware", "serial_number", "part_number", "last_info_update", "last_device_info_json", "stp_info", "last_proxmox_scan_at", "last_proxmox_scan_result", "scan_target", "product_profile", "use_for_arp_poll", "host_id", "snmp_version", "snmp_version_fissata"] as const;
   for (const key of keys) {
     if (input[key] !== undefined) {
       fields.push(`${key} = ?`);
@@ -4148,97 +4199,25 @@ export function accessoSshCredenziale(credentialId: number): EsitoAccessoSsh {
   return accessoSshDb(db(), credentialId);
 }
 
-export type NetworkCredentialRole = "windows" | "linux" | "ssh" | "snmp";
-
-/** Regola unica (T12): i tipi del protocollo del ruolo, come li legge il motore. */
-function credentialMatchesNetworkRole(
-  credentialType: string,
-  role: NetworkCredentialRole
-): boolean {
-  return tipiPerRuoloVecchio(role).includes(credentialType.toLowerCase());
-}
-
-export function getNetworkHostCredentialIds(networkId: number, role: NetworkCredentialRole): number[] {
-  const rows = db()
-    .prepare(
-      `SELECT credential_id FROM network_host_credentials WHERE network_id = ? AND role = ? ORDER BY sort_order ASC, id ASC`
-    )
-    .all(networkId, role) as { credential_id: number }[];
-  return rows.map((r) => r.credential_id);
-}
-
-export function replaceNetworkHostCredentials(
-  networkId: number,
-  role: NetworkCredentialRole,
-  credentialIds: number[]
-): void {
-  const seen = new Set<number>();
-  const unique: number[] = [];
-  for (const id of credentialIds) {
-    if (seen.has(id)) continue;
-    seen.add(id);
-    const c = getCredentialById(id);
-    if (!c || !credentialMatchesNetworkRole(String(c.credential_type), role)) {
-      throw new Error(`Credenziale #${id} non valida per ruolo ${role}`);
-    }
-    unique.push(id);
-  }
-  const d = db();
-  d.transaction(() => {
-    d.prepare(`DELETE FROM network_host_credentials WHERE network_id = ? AND role = ?`).run(networkId, role);
-    const ins = d.prepare(
-      `INSERT INTO network_host_credentials (network_id, credential_id, role, sort_order) VALUES (?,?,?,?)`
-    );
-    unique.forEach((cid, i) => ins.run(networkId, cid, role, i));
-  })();
-}
-
-export type HostDetectCredentialRole = "windows" | "linux" | "ssh" | "snmp";
-
-export function getHostDetectCredentialId(hostId: number, role: HostDetectCredentialRole): number | null {
-  const row = db()
-    .prepare(`SELECT credential_id FROM host_detect_credential WHERE host_id = ? AND role = ?`)
-    .get(hostId, role) as { credential_id: number } | undefined;
-  return row?.credential_id ?? null;
-}
-
-/** Regola unica (T12): i tipi del protocollo del ruolo, come li legge il motore. */
-function credentialMatchesDetectRole(credentialType: string, role: HostDetectCredentialRole): boolean {
-  return tipiPerRuoloVecchio(role).includes(credentialType.toLowerCase());
-}
-
-export function setHostDetectCredential(hostId: number, role: HostDetectCredentialRole, credentialId: number): void {
-  const c = getCredentialById(credentialId);
-  if (!c || !credentialMatchesDetectRole(String(c.credential_type), role)) return;
-  db()
-    .prepare(
-      `INSERT INTO host_detect_credential (host_id, role, credential_id, updated_at)
-       VALUES (?, ?, ?, datetime('now'))
-       ON CONFLICT(host_id, role) DO UPDATE SET credential_id = excluded.credential_id, updated_at = datetime('now')`
-    )
-    .run(hostId, role, credentialId);
-}
-
 /** Le verifiche (fotografia, prova a vuoto) passano `registra: false`: i ripieghi non si scrivono. */
 type OpzioniRegistro = { registra?: boolean };
 
 /**
  * Catena di rilevamento (Windows o Linux) di una rete: involucro del motore
- * (`catenaReteDb`, tappa 2 credenziali, T7). Voci della rete, catene vecchie
- * e chiave globale dell'hub, tutte col filtro di tipo: prima la chiave
- * dell'hub si accodava senza controllo, anche se puntava a una voce che nel
- * tenant non c'è o è di un altro tipo. Catene vecchie e chiave dell'hub solo
- * finché la 2d non le ha convertite (T17, lo decide il motore col segno).
- * `role="linux"` è il protocollo SSH. `registra: false` (fotografia, prova a
- * vuoto) non scrive i ripieghi.
+ * (`catenaReteDb`, tappa 2 credenziali, T7): le voci della lista della rete,
+ * col filtro di tipo. Dalla 2g (T26) niente catene vecchie né chiave «di
+ * default» dell'hub: la 2d le ha portate nella lista, e le tabelle vecchie
+ * (`network_host_credentials`, `host_detect_credential`) non hanno più né
+ * lettori né scrittori. `role="linux"` è il protocollo SSH. `registra: false`
+ * (fotografia, prova a vuoto) non scrive i ripieghi.
  */
 export function getOrderedDetectCredentialIds(networkId: number, role: "windows" | "linux", opts: OpzioniRegistro = {}): number[] {
-  return catenaReteDb(db(), networkId, role === "windows" ? "winrm" : "ssh", { globaliHub: chiaviGlobaliHub(getSetting), registra: opts.registra });
+  return catenaReteDb(db(), networkId, role === "windows" ? "winrm" : "ssh", { registra: opts.registra });
 }
 
 /** Catena SSH di una rete per la scansione: involucro del motore (vedi sopra). */
 export function getOrderedSshLinuxCredentialIds(networkId: number, opts: OpzioniRegistro = {}): number[] {
-  return catenaReteDb(db(), networkId, "ssh", { globaliHub: chiaviGlobaliHub(getSetting), registra: opts.registra });
+  return catenaReteDb(db(), networkId, "ssh", { registra: opts.registra });
 }
 
 /**
@@ -5316,6 +5295,91 @@ export function setUplinkCavi(deviceId: number, porta: number | null, origine: s
   if (!schemaCaviPresente()) return false;
   db().prepare("UPDATE network_devices SET uplink_local_port_idx = ?, uplink_source = ? WHERE id = ?").run(porta, origine, deviceId);
   return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TOPOLOGIA — unioni e separazioni a mano (piano 2026-10-16, ADR 0021)
+// Righe attive = `tolto_il IS NULL`; togliere = `tolto_da`/`tolto_il`, mai DELETE: la riga è la storia (chi e quando).
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Le tabelle delle unioni ci sono in questo tenant, con i loro indici (annotato all'apertura, `getTenantDb`). */
+export function schemaUnioniPresente(): boolean {
+  const d = db();
+  const v = SCHEMA_UNIONI.get(d);
+  if (v !== undefined) return v;
+  const ok = verificaSchemaUnioni(d);
+  SCHEMA_UNIONI.set(d, ok);
+  return ok;
+}
+
+/** Riguarda lo schema e aggiorna l'annotazione (per le prove, e per chi ha appena riparato un tenant a mano). */
+export function rileggiSchemaUnioni(): boolean {
+  const d = db();
+  const ok = verificaSchemaUnioni(d);
+  SCHEMA_UNIONI.set(d, ok);
+  return ok;
+}
+
+/** Le righe attive, in ordine (gruppo e membro; membro e altro). Schema assente → vuote: la mappa di oggi. */
+export function getRigheScelte(): { unioni: RigaUnione[]; separazioni: RigaSeparazione[] } {
+  if (!schemaUnioniPresente()) return { unioni: [], separazioni: [] };
+  const d = db();
+  return {
+    unioni: d.prepare(`SELECT id, gruppo, membro, creato_da, creato_il FROM topology_unioni
+      WHERE tolto_il IS NULL ORDER BY gruppo, membro`).all() as RigaUnione[],
+    separazioni: d.prepare(`SELECT id, membro, altro, creato_da, creato_il FROM topology_separazioni
+      WHERE tolto_il IS NULL ORDER BY membro, altro`).all() as RigaSeparazione[],
+  };
+}
+
+/** Una riga da togliere non è più attiva (un altro l'ha tolta nel frattempo, o non c'è): il piano non si scrive (409). */
+export class UnioniCambiate extends Error {
+  constructor(message: string = TESTI_UNIONI.cambiato) {
+    super(message);
+    this.name = "UnioniCambiate";
+  }
+}
+
+/** I membri come li scrivono le rotte (piano, «Dato»): id della mappa; in una separazione `membro` è sempre un host. */
+const MEMBRO_UNIONE = /^(host|dev):[1-9]\d{0,9}$/;
+const MEMBRO_SEPARAZIONE = /^host:[1-9]\d{0,9}$/;
+
+/**
+ * Scrive un piano delle rotte in UNA transazione: prima toglie (`tolto_da`/`tolto_il`, solo righe ancora attive: altrimenti
+ * `UnioniCambiate` e niente è scritto), poi aggiunge. Le righe «nuovo» prendono tutte lo stesso gruppo, `MAX(gruppo) + 1` su
+ * tutte le righe, tolte comprese: un numero di gruppo non torna. `adesso` (forma di datetime('now')) per le prove; senza, l'ora
+ * UTC del DB. Un membro scritto male è un errore di chi ha fatto il piano, e non si scrive.
+ */
+export function scriviPianoUnioni(piano: PianoUnioni, da: string, adesso?: string): void {
+  for (const m of [...piano.aggiungiUnioni.map((u) => u.membro), ...piano.aggiungiSeparazioni.map((s) => s.altro)]) {
+    if (!MEMBRO_UNIONE.test(m)) throw new Error(`Membro non valido: ${JSON.stringify(m)}`);
+  }
+  for (const s of piano.aggiungiSeparazioni) {
+    if (!MEMBRO_SEPARAZIONE.test(s.membro)) throw new Error(`Membro della separazione non valido: ${JSON.stringify(s.membro)}`);
+  }
+  // I gruppi negativi sono solo in memoria (la misura sulle copie): nel DB un gruppo è un intero positivo.
+  for (const u of piano.aggiungiUnioni) {
+    if (u.gruppo !== "nuovo" && !(Number.isInteger(u.gruppo) && u.gruppo > 0)) throw new Error(`Gruppo non valido: ${JSON.stringify(u.gruppo)}`);
+  }
+  const d = db();
+  d.transaction(() => {
+    const il = adesso ?? (d.prepare("SELECT datetime('now') AS ora").get() as { ora: string }).ora;
+    const togli = (tabella: "topology_unioni" | "topology_separazioni", ids: readonly number[]): void => {
+      const upd = d.prepare(`UPDATE ${tabella} SET tolto_da = ?, tolto_il = ? WHERE id = ? AND tolto_il IS NULL`);
+      for (const id of ids) {
+        if (upd.run(da, il, id).changes !== 1) throw new UnioniCambiate();
+      }
+    };
+    togli("topology_unioni", piano.togliUnioni);
+    togli("topology_separazioni", piano.togliSeparazioni);
+    const nuovo = piano.aggiungiUnioni.some((u) => u.gruppo === "nuovo")
+      ? (d.prepare("SELECT COALESCE(MAX(gruppo), 0) + 1 AS g FROM topology_unioni").get() as { g: number }).g
+      : null;
+    const insU = d.prepare("INSERT INTO topology_unioni (gruppo, membro, creato_da, creato_il) VALUES (?, ?, ?, ?)");
+    for (const u of piano.aggiungiUnioni) insU.run(u.gruppo === "nuovo" ? nuovo : u.gruppo, u.membro, da, il);
+    const insS = d.prepare("INSERT INTO topology_separazioni (membro, altro, creato_da, creato_il) VALUES (?, ?, ?, ?)");
+    for (const s of piano.aggiungiSeparazioni) insS.run(s.membro, s.altro, da, il);
+  })();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -7292,15 +7356,20 @@ export function getDhcpLeaseStats(): { total: number; bySource: Record<string, n
 // MISC
 // ═══════════════════════════════════════════════════════════════════════════
 
-/** Reset configurazione tenant (solo tabelle tenant, non hub). */
+/**
+ * Reset configurazione tenant (solo tabelle tenant, non hub).
+ * Le catene vecchie (`network_host_credentials`, `host_detect_credential`)
+ * non si nominano (T26): dove ci sono ancora, le loro righe se ne vanno con la
+ * cascata di `credentials`, `hosts` e `networks`; dove la pulizia della 2g le
+ * ha tolte, una DELETE darebbe «no such table» e farebbe fallire l'intero
+ * reset, che è una transazione.
+ */
 export function resetConfiguration(): void {
   const d = db();
   d.transaction(() => {
     d.exec(`
       DELETE FROM scan_history;
       DELETE FROM status_history;
-      DELETE FROM host_detect_credential;
-      DELETE FROM network_host_credentials;
       DELETE FROM host_credentials;
       DELETE FROM network_credentials;
       DELETE FROM arp_entries;
@@ -9041,9 +9110,9 @@ export function updateNetworkController(id: number, patch: NetworkControllerPatc
 // solo nel DB del tenant (il vecchio ipam.db non ha `network_controllers`, e
 // il facade non li espone).
 
-/** Con che cosa entra il controller: la voce, le colonne (righe mai convertite) o niente. Non registra. */
+/** Con che cosa entra il controller: la sua voce, o niente (dalla 2g le colonne non valgono più). Non registra. */
 export function credenzialeDelController(
-  row: Pick<NetworkControllerRow, "kind" | "credential_id" | "password_enc" | "api_key_enc">,
+  row: Pick<NetworkControllerRow, "kind" | "credential_id">,
   metodo?: MetodoVoceController,
 ): CredenzialeController {
   return credenzialeControllerDb(db(), row, metodo);
@@ -9070,11 +9139,6 @@ export function creaVoceDelControllerCifrata(
 /** Nome e metodo della voce di ogni controller, in una query. */
 export function listVociDeiController(): Map<number, VoceDelController> {
   return vociDeiControllerDb(db());
-}
-
-/** La conversione della 2f è chiusa con `done:`? Allora le colonne dei controller non valgono più. */
-export function integrazioniConvertite(): boolean {
-  return integrazioniConvertiteDb(db());
 }
 
 /**
@@ -9386,6 +9450,45 @@ export function attachOrphanUnifiJobs(controllerId: number): number {
 type ModelInput = import("@/lib/topology/model-types").TopologyModelInput;
 type Esito = { ok: true } | { ok: false; error: string };
 
+// Le tre letture dell'indice dei nodi, uguali per il modello e per l'ingresso leggero delle unioni (stesso testo SQL).
+function apparatiDelModello(d: Database.Database): ModelInput["devices"] {
+  return d.prepare(`
+      SELECT nd.id, nd.name, nd.host, nd.device_type, nd.vendor, nd.model, nd.enabled, nd.host_id, nd.physical_device_id,
+             nd.location_id, nd.controller_mac, nd.uplink_mac, nd.uplink_remote_port, nd.uplink_type, nd.uplink_seen_at, nd.topology_hidden,
+             nd.protocol AS via, nd.topology_role,
+             COALESCE(sp.n, 0) AS port_count,
+             CASE WHEN nd.scan_target = 'proxmox' OR COALESCE(nd.last_proxmox_scan_result, '') <> '' THEN 1 ELSE 0 END AS proxmox_scan
+        FROM network_devices nd
+        LEFT JOIN (SELECT device_id, COUNT(*) AS n FROM switch_ports GROUP BY device_id) sp ON sp.device_id = nd.id
+       ORDER BY nd.id`).all() as ModelInput["devices"];
+}
+function hostDelModello(d: Database.Database): ModelInput["hosts"] {
+  return d.prepare(`
+      SELECT id, network_id, ip, mac, hostname, custom_name, classification, status, physical_device_id
+        FROM hosts ORDER BY id`).all() as ModelInput["hosts"];
+}
+function viciniDelModello(d: Database.Database): ModelInput["neighbors"] {
+  return d.prepare(`
+      SELECT dn.device_id, dn.local_port, dn.remote_device_name, dn.remote_port, dn.protocol, dn.remote_ip, dn.remote_mac,
+             dn.remote_platform, dn.timestamp, dn.source
+        FROM device_neighbors dn
+       WHERE ${NEIGHBORS_MODEL_SOURCES_SQL}`).all() as ModelInput["neighbors"];
+}
+/** Le unioni e le separazioni attive per l'ingresso: ogni chiave SOLO se ha righe (senza, l'ingresso e le impronte di oggi). */
+function scelteDelModello(): Pick<ModelInput, "unioni" | "separazioni"> {
+  const r = getRigheScelte();
+  return {
+    ...(r.unioni.length > 0 ? { unioni: r.unioni.map(({ gruppo, membro }) => ({ gruppo, membro })) } : {}),
+    ...(r.separazioni.length > 0 ? { separazioni: r.separazioni.map(({ membro, altro }) => ({ membro, altro })) } : {}),
+  };
+}
+
+/** L'ingresso leggero dell'indice dei nodi (le rotte delle unioni): i quattro campi del modello e le sue righe, niente altro. */
+export function getIngressoNodi(): Pick<ModelInput, "devices" | "hosts" | "knownMacs" | "neighbors" | "unioni" | "separazioni"> {
+  const d = db();
+  return { devices: apparatiDelModello(d), hosts: hostDelModello(d), knownMacs: getNetworkDeviceKnownMacs(), neighbors: viciniDelModello(d), ...scelteDelModello() };
+}
+
 export function getTopologyModelInput(staleDays: number, nowMs: number = Date.now()): ModelInput {
   const d = db();
   // VM e host dei cluster dalle scansioni Proxmox già salvate (spec §11.5); un JSON rovinato = nessuna VM per quell'apparato.
@@ -9400,23 +9503,9 @@ export function getTopologyModelInput(staleDays: number, nowMs: number = Date.no
     scanHosts.push(...p.hosts);
   }
   return {
-    devices: d.prepare(`
-      SELECT nd.id, nd.name, nd.host, nd.device_type, nd.vendor, nd.model, nd.enabled, nd.host_id, nd.physical_device_id,
-             nd.location_id, nd.controller_mac, nd.uplink_mac, nd.uplink_remote_port, nd.uplink_type, nd.uplink_seen_at, nd.topology_hidden,
-             nd.protocol AS via, nd.topology_role,
-             COALESCE(sp.n, 0) AS port_count,
-             CASE WHEN nd.scan_target = 'proxmox' OR COALESCE(nd.last_proxmox_scan_result, '') <> '' THEN 1 ELSE 0 END AS proxmox_scan
-        FROM network_devices nd
-        LEFT JOIN (SELECT device_id, COUNT(*) AS n FROM switch_ports GROUP BY device_id) sp ON sp.device_id = nd.id
-       ORDER BY nd.id`).all() as ModelInput["devices"],
-    hosts: d.prepare(`
-      SELECT id, network_id, ip, mac, hostname, custom_name, classification, status, physical_device_id
-        FROM hosts ORDER BY id`).all() as ModelInput["hosts"],
-    neighbors: d.prepare(`
-      SELECT dn.device_id, dn.local_port, dn.remote_device_name, dn.remote_port, dn.protocol, dn.remote_ip, dn.remote_mac,
-             dn.remote_platform, dn.timestamp, dn.source
-        FROM device_neighbors dn
-       WHERE ${NEIGHBORS_MODEL_SOURCES_SQL}`).all() as ModelInput["neighbors"],
+    devices: apparatiDelModello(d),
+    hosts: hostDelModello(d),
+    neighbors: viciniDelModello(d),
     uplinkPorts: d.prepare(`
       SELECT device_id, port_index, port_name FROM switch_ports WHERE is_uplink = 1 ORDER BY device_id, port_index`).all() as ModelInput["uplinkPorts"],
     locations: d.prepare("SELECT id, name, parent_id, head_device_id FROM locations ORDER BY id").all() as ModelInput["locations"],
@@ -9439,6 +9528,8 @@ export function getTopologyModelInput(staleDays: number, nowMs: number = Date.no
     scanHosts,
     nowMs,
     staleDays,
+    // Unioni e separazioni a mano (ADR 0021): in fondo e solo se ci sono righe, così l'ordine delle chiavi di oggi resta.
+    ...scelteDelModello(),
   };
 }
 

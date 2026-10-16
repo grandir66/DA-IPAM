@@ -383,14 +383,19 @@ describe("le gemelle di db.ts e db-tenant danno lo stesso esito sullo stesso DB"
     withTenant(T, () => {
       const d = getTenantDb(T);
       for (const v of VOCI) inserisci(d, v);
-      const ins = d.prepare(
-        "INSERT INTO network_devices (name, host, device_type, vendor, protocol, credential_id, snmp_credential_id) VALUES (?, ?, 'switch', 'cisco', ?, ?, ?)",
-      );
-      apparati.v3Pagina = Number(ins.run("sw-v3", "10.0.0.1", "snmp_v3", 6, null).lastInsertRowid);
-      apparati.v3Vecchio = Number(ins.run("sw-v3-vecchio", "10.0.0.2", "snmp_v3", 8, null).lastInsertRowid);
-      apparati.soloCommunity = Number(ins.run("sw-v2c", "10.0.0.3", "snmp_v3", 5, null).lastInsertRowid);
+      // Le voci stanno nei binding d'archivio: dalla 2g (T26) le colonne dell'apparato non si leggono più.
+      const ins = d.prepare("INSERT INTO network_devices (name, host, device_type, vendor, protocol) VALUES (?, ?, 'switch', 'cisco', ?)");
+      const lega = d.prepare("INSERT INTO device_credential_bindings (device_id, credential_id, protocol_type, port, sort_order) VALUES (?, ?, ?, ?, 0)");
+      const crea = (nome: string, ip: string, protocollo: string, voci: Array<[number, string, number]>): number => {
+        const id = Number(ins.run(nome, ip, protocollo).lastInsertRowid);
+        for (const [voce, p, porta] of voci) lega.run(id, voce, p, porta);
+        return id;
+      };
+      apparati.v3Pagina = crea("sw-v3", "10.0.0.1", "snmp_v3", [[6, "snmp", 161]]);
+      apparati.v3Vecchio = crea("sw-v3-vecchio", "10.0.0.2", "snmp_v3", [[8, "snmp", 161]]);
+      apparati.soloCommunity = crea("sw-v2c", "10.0.0.3", "snmp_v3", [[5, "snmp", 161]]);
       // Apparato SSH con la v3 come credenziale SNMP secondaria.
-      apparati.sshConV3 = Number(ins.run("rt-ssh", "10.0.0.4", "ssh", 1, 6).lastInsertRowid);
+      apparati.sshConV3 = crea("rt-ssh", "10.0.0.4", "ssh", [[1, "ssh", 22], [6, "snmp", 161]]);
     });
   });
   after(() => deleteTenantDatabase(T));

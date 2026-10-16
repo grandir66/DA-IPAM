@@ -29,6 +29,7 @@ import { spawnSync } from "node:child_process";
 import { encrypt } from "@/lib/crypto";
 import { getHubDb, closeHubDb, setSetting } from "@/lib/db-hub";
 import { getTenantDb, closeTenantDb } from "@/lib/db-tenant";
+import { creaCateneVecchie } from "@/lib/__tests__/support/catene-vecchie";
 import {
   chiaroDaParti,
   confrontaFotografie,
@@ -199,6 +200,8 @@ describe("fotografia-scelte.ts sulla copia", () => {
   before(() => {
     getHubDb();
     const d = getTenantDb(T);
+    // La copia di un DB di prima della 2g: le catene vecchie c'erano (lo schema di oggi non le crea più, T27).
+    creaCateneVecchie(d);
     const insCred = d.prepare(
       "INSERT INTO credentials (name, credential_type, encrypted_username, encrypted_password) VALUES (?, ?, ?, ?)"
     );
@@ -250,11 +253,11 @@ describe("fotografia-scelte.ts sulla copia", () => {
     const insRete = d.prepare("INSERT INTO network_credentials (network_id, credential_id, sort_order) VALUES (?, ?, ?)");
     insRete.run(idRete, credBinding, 0);
     insRete.run(idRete, credSnmp, 1);
-    // Un tenant dove la 2d non si è chiusa (segno «errore:»): il motore legge
-    // ancora catene vecchie e chiave dell'hub (T17), ed è lo stato che la
-    // fotografia «prima» deve saper etichettare. L'apertura qui sopra ha scritto
-    // il segno su un DB vuoto; senza il trigger, l'apertura dello script
-    // convertirebbe e lo chiuderebbe.
+    // Un tenant dove la 2d non si è chiusa (segno «errore:»): fino alla 2g il
+    // motore leggeva ancora catene vecchie e chiave dell'hub (T17); dalla 2g
+    // (T26) non le legge comunque, e la fotografia lo deve mostrare. L'apertura
+    // qui sopra ha scritto il segno su un DB vuoto; senza il trigger, l'apertura
+    // dello script convertirebbe e lo chiuderebbe.
     d.prepare("DELETE FROM tenant_settings WHERE key = 'credenziali_t2_catene'").run();
     d.exec(`CREATE TRIGGER prova_2d_non_chiusa BEFORE INSERT ON tenant_settings
             WHEN NEW.key = 'credenziali_t2_catene' AND NEW.value NOT LIKE 'errore:%'
@@ -297,23 +300,21 @@ describe("fotografia-scelte.ts sulla copia", () => {
     assert.equal(app.scelta?.impronta, impronta(chiaroDaParti("op-binding", SEGRETI.passBinding), K));
     assert.equal(app.scelta?.fonte, "device_binding");
     assert.equal(typeof app.piano, "string");
-    assert.equal(app.haSnmp, true);
+    // Dalla 2g (T26) la voce SNMP nella colonna non conta: niente SNMP proprio, e per SNMP il «public» dichiarato.
+    assert.equal(app.haSnmp, false);
 
     const snmp = trova("apparato", `${idApparato}:snmp`);
-    assert.equal(snmp.scelta?.credential_id, credSnmp);
-    assert.equal(snmp.scelta?.fonte, "device_column");
+    assert.equal(snmp.scelta?.credential_id, null);
+    assert.equal(snmp.scelta?.fonte, "snmp_ripiego");
     assert.equal(snmp.scelta?.port, 161);
-    assert.equal(snmp.scelta?.impronta, impronta(chiaroDaParti(SEGRETI.community), K));
+    assert.equal(snmp.scelta?.impronta, impronta(chiaroDaParti("public"), K));
 
-    // Colonne inline e community_string: nessun id, la fonte del motore.
+    // Colonne col segreto (utente e password, community_string): dalla 2g non si leggono più.
     const inline = trova("apparato", `${idApparatoInline}:api`);
-    assert.equal(inline.scelta?.credential_id, null);
-    assert.equal(inline.scelta?.port, 443);
-    assert.equal(inline.scelta?.fonte, "device_column_inline");
-    assert.equal(inline.scelta?.impronta, impronta(chiaroDaParti("op-inline", SEGRETI.passInline), K));
+    assert.equal(inline.scelta, null);
     const comInline = trova("apparato", `${idApparatoInline}:snmp`);
-    assert.equal(comInline.scelta?.fonte, "device_column_inline");
-    assert.equal(comInline.scelta?.impronta, impronta(chiaroDaParti(SEGRETI.communityInline), K));
+    assert.equal(comInline.scelta?.fonte, "snmp_ripiego");
+    assert.equal(comInline.scelta?.impronta, impronta(chiaroDaParti("public"), K));
     // L'apparato SNMP senza fonti: «public», dichiarato come tale (D5), non la voce SNMP della catena (D1b = (a)).
     const pubblico = trova("apparato", `${idApparatoSnmp}:snmp`);
     assert.equal(pubblico.scelta?.fonte, "snmp_ripiego");
@@ -327,9 +328,9 @@ describe("fotografia-scelte.ts sulla copia", () => {
     assert.equal(trova("rete", `${idRete}:snmp:0`).scelta?.credential_id, credSnmp);
     assert.equal(trova("rete", `${idRete}:snmp:1`).scelta?.fonte, "lettore_vecchio:community_rete");
     assert.equal(trova("rete", `${idRete}:snmp:2`).scelta?.fonte, "lettore_vecchio:public");
-    const chiaveHub = trova("rete", `${idRete}:winrm:0`);
-    assert.equal(chiaveHub.scelta?.credential_id, credWindows);
-    assert.equal(chiaveHub.scelta?.fonte, "lettore_vecchio:chiave_hub");
+    // La chiave Windows «di default» dell'hub non si accoda più (T26): la lista della rete non ha voci Windows.
+    assert.equal(righe.some((y) => y.oggetto === "rete" && y.chiave === `${idRete}:winrm:0`), false, "la chiave dell'hub è ancora nella catena WinRM");
+    assert.equal(trova("rete", `${idRete}:ssh:0`).scelta?.fonte, "lettore_vecchio:catena");
     // Anteprima edge: passa dal facade db.ts; se il contesto tenant si perdesse,
     // leggerebbe DEFAULT e questa riga non ci sarebbe.
     assert.equal(trova("edge", `${idRete}:ssh:0`).scelta?.credential_id, credBinding);
@@ -478,6 +479,7 @@ describe("fotografia e misure della 2a sugli apparati snmp_v3", () => {
   before(() => {
     getHubDb();
     const d = getTenantDb(TV3);
+    creaCateneVecchie(d);
     const ins = d.prepare(
       `INSERT INTO credentials (name, credential_type, encrypted_username, encrypted_password, security_level, auth_protocol, encrypted_auth_key, priv_protocol, encrypted_priv_key)
        VALUES (?, 'snmp', ?, ?, ?, ?, ?, ?, ?)`
@@ -499,6 +501,11 @@ describe("fotografia e misure della 2a sugli apparati snmp_v3", () => {
     id.binding = Number(app.run("V3 con un binding a community", "10.98.0.6", null, null).lastInsertRowid);
     d.prepare("INSERT INTO device_credential_bindings (device_id, credential_id, protocol_type, port, sort_order) VALUES (?, ?, 'snmp', 161, 0)")
       .run(id.binding, voce.community);
+    // Dalla 2g (T26) il motore legge solo i binding: le due v3 stanno anche in un binding (come dopo la 2e),
+    // mentre le colonne restano per le misure della 2a, che le leggono da sé.
+    for (const [app, v] of [[id.completa, voce.v3], [id.vecchia, voce.vecchia]] as const) {
+      d.prepare("INSERT INTO device_credential_bindings (device_id, credential_id, protocol_type, port, sort_order) VALUES (?, ?, 'snmp', 161, 0)").run(app, v);
+    }
     closeTenantDb(TV3);
     closeHubDb();
     radiceV3 = fs.mkdtempSync(path.join(os.tmpdir(), "fotografia-v3-"));
@@ -524,12 +531,12 @@ describe("fotografia e misure della 2a sugli apparati snmp_v3", () => {
     for (const k of ["colonna", "nulla", "stringa", "binding"]) {
       assert.equal(snmp(k).scelta, null, `${k}: la 2a non legge più la community di un apparato snmp_v3 senza v3`);
     }
-    // Dalla 2b la fonte è quella del motore (T8); l'impronta resta quella della 2a.
+    // Dalla 2b la fonte è quella del motore (T8); l'impronta resta quella della 2a. Dalla 2g il binding.
     assert.equal(snmp("completa").scelta?.credential_id, voce.v3);
-    assert.equal(snmp("completa").scelta?.fonte, "device_column");
+    assert.equal(snmp("completa").scelta?.fonte, "device_binding");
     assert.equal(snmp("completa").scelta?.impronta, impronta(chiaroDaParti("monitor", "Chiave-Auth-2B", "Chiave-Priv-3C"), K));
     assert.equal(snmp("vecchia").scelta?.credential_id, voce.vecchia);
-    assert.equal(snmp("vecchia").scelta?.fonte, "device_column");
+    assert.equal(snmp("vecchia").scelta?.fonte, "device_binding");
     assert.equal(snmp("vecchia").scelta?.impronta, impronta(chiaroDaParti("monitor-vecchio", "Chiave-Vecchia-4D"), K));
   });
 

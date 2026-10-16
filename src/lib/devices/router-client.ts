@@ -201,7 +201,7 @@ type DeviceCreds = { username?: string; password?: string; privateKey?: string; 
 /** Le credenziali dell'acquisizione con l'utente della colonna come ripiego (com'era). */
 function credenzialiApparato(device: NetworkDevice): DeviceCreds {
   const creds = getDeviceCredentials(device);
-  return { ...(creds ?? {}), username: creds?.username ?? device.username ?? undefined };
+  return { ...(creds ?? {}), username: creds?.username ?? undefined };
 }
 
 async function getVendorRouterClient(device: NetworkDevice, creds: DeviceCreds): Promise<RouterClient> {
@@ -241,7 +241,7 @@ async function getVendorRouterClient(device: NetworkDevice, creds: DeviceCreds):
 
 /** Helper interno: opzioni transport SSH per un NetworkDevice, con fallback su username device. */
 function buildDeviceSshOptions(device: NetworkDevice, creds: DeviceCreds): SshOptions | null {
-  const username = creds.username || device.username || undefined;
+  const username = creds.username || undefined;
   if (!username || !haSegretoSsh(creds)) return null;
   return {
     host: device.host,

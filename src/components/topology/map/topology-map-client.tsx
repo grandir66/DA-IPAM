@@ -47,6 +47,9 @@ import { NodeMenuContent, VmMenuContent } from "./node-context-menu";
 import { DRAG_MIME, ObjectList } from "./object-list";
 import { TopologyIconDefs } from "./topology-icons";
 import { useTopologyData, type MapRow } from "./use-topology-data";
+import { SeparaDialog } from "@/components/topology/unioni/separa-dialog";
+import { UnisciDialog } from "@/components/topology/unioni/unisci-dialog";
+import { membriSeparabili } from "@/lib/topology/unioni-testi";
 
 /** Barra dei dettagli aperta o chiusa: si ricorda per chi guarda, in questo browser. */
 const DETAILS_KEY = "da-ipam.topologia.dettagli";
@@ -121,6 +124,11 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
   /** «Collega a…» dal menu: il prossimo clic su un oggetto è l'arrivo. */
   const [connectFrom, setConnectFrom] = useState<string | null>(null);
   const [connect, setConnect] = useState<ConnectRequest | null>(null);
+  /** «Unisci con…» / «Separa…» dal menu: l'oggetto da cui si parte (unioni a mano). */
+  const [unisciDa, setUnisciDa] = useState<string | null>(null);
+  const [separaDa, setSeparaDa] = useState<string | null>(null);
+  /** Dopo una unione o una separazione: l'oggetto da selezionare appena il modello nuovo è arrivato. */
+  const [selezionaDopo, setSelezionaDopo] = useState<string | null>(null);
   const toggleVms = useCallback((id: string) => setExpanded((s) => {
     const n = new Set(s);
     if (n.has(id)) n.delete(id);
@@ -132,6 +140,12 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
   const viewKey = mode === "auto" ? "auto" : chosenMap !== null ? String(chosenMap) : null;
   const { data, error, refreshError, reload, send } = useTopologyData(viewKey);
   const maps = useMemo(() => data?.maps.maps ?? [], [data]);
+  // Il modello nuovo è già in `data` quando `selezionaDopo` viene impostato: la selezione segue l'oggetto in cui l'unione l'ha portato.
+  useEffect(() => {
+    if (selezionaDopo === null || !data) return;
+    setSelected(data.model.canonical[selezionaDopo] ?? selezionaDopo);
+    setSelezionaDopo(null);
+  }, [selezionaDopo, data]);
 
   useEffect(() => {
     setDetailsOpen(readDetailsOpen());
@@ -333,6 +347,8 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
       case "toggleVms": return toggleVms(id);
       case "refreshVms": return void refreshVms(id);
       case "connect": setConnectFrom(id); return;
+      case "merge": setUnisciDa(id); return;
+      case "split": setSeparaDa(id); return;
       default: return;
     }
   }
@@ -426,6 +442,7 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
       expanded: expanded.has(n.id), canRefreshVms: isHyper && refreshVmDeviceIds(d.model.vms, n.id).length > 0,
       infraHost: n.kind === "host" && nodeClass(n) !== "client", addableCount: addable.length, isUncensusedVm: isUncensusedVmId(n.id),
       ruolo: n.kind === "device" ? (n.ruolo ?? "") : null, isSegmento: n.kind === "segmento",
+      unioni: { separabili: membriSeparabili(n) },
     });
     return (
       <NodeMenuContent
@@ -630,6 +647,23 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
         onPatch={async (id, body) => (await patchManualLink(send, id, body)).ok}
         mappaNuova={data?.model.mappa === "cavi"}
       />
+      {unisciDa !== null && (
+        <UnisciDialog
+          open
+          onOpenChange={(o) => { if (!o) setUnisciDa(null); }}
+          da={unisciDa}
+          nomeDa={d?.byId.get(unisciDa)?.name ?? unisciDa}
+          onFatto={() => { const id = unisciDa; setUnisciDa(null); void reload().then(() => setSelezionaDopo(id)); }}
+        />
+      )}
+      {separaDa !== null && (
+        <SeparaDialog
+          open
+          onOpenChange={(o) => { if (!o) setSeparaDa(null); }}
+          oggetto={separaDa}
+          onFatto={() => { const id = separaDa; setSeparaDa(null); void reload().then(() => setSelezionaDopo(id)); }}
+        />
+      )}
       <Dialog open={ignoreAsk !== null} onOpenChange={(o) => { if (!o) setIgnoreAsk(null); }}>
         <DialogContent>
           <DialogHeader><DialogTitle>{testiIgnoraDialogo?.titolo ?? ""}</DialogTitle></DialogHeader>

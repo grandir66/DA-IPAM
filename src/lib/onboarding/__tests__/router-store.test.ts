@@ -55,7 +55,8 @@ function inUso(id: number) {
       utente: getDeviceCredentials(d)?.username ?? null,
       community: ((c) => (c.ok && c.cred.forma === "community" ? c.cred.community : null))(credenzialeSnmpApparato(d)),
       porta: d.port,
-      colonne: [d.protocol, d.credential_id ?? null, d.snmp_credential_id ?? null],
+      // Le colonne vecchie si leggono dalla riga: il tipo NetworkDevice non le porta più (T26).
+      colonne: [d.protocol, (d as unknown as Record<string, number | null>).credential_id ?? null, (d as unknown as Record<string, number | null>).snmp_credential_id ?? null],
     };
   });
 }
@@ -170,7 +171,9 @@ describe("modifica del router del wizard", () => {
     d.prepare(
       `INSERT INTO device_credential_bindings (device_id, credential_id, protocol_type, port, sort_order, inline_username, inline_encrypted_password) VALUES (?, NULL, 'ssh', 22, 0, 'vecchio', ?), (?, NULL, 'snmp', 161, 1, NULL, ?)`,
     ).run(id, encrypt("pw-vecchia"), id, encrypt("comm-vecchia"));
-    assert.equal(inUso(id).utente, "vecchio");
+    // Dalla 2g (T26) il binding inline e le colonne non si leggono più: il router resta senza accesso finché il
+    // wizard non gli dà le voci dell'archivio (la conversione della 2e, all'apertura, li avrebbe già portati lì).
+    assert.equal(inUso(id).utente, null);
     const esito = modifica({ device_id: id, credential_id: 1, snmp_credential_id: 3 });
     assert.ok(esito.ok, esito.ok ? "" : esito.error);
     assert.equal(inUso(id).utente, "utente-a");

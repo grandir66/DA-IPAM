@@ -4,6 +4,148 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-16 · topologia: unire e separare a mano gli oggetti della mappa
+
+Piano `docs/superpowers/plans/2026-10-16-apparati-multihomed-unisci.md`, decisione in ADR 0021. Perché: un apparato con
+più schede su più reti (il NAS dell'hub: quattro indirizzi, tre reti, MAC diversi) era tre oggetti sulla mappa, e nessuna
+regola automatica può dire che sono uno solo. Riccardo (16/10): **nessuna regola automatica nuova, si unisce solo a mano**.
+
+### Aggiunte
+
+- **«Unisci con…» e «Separa…»** nel tasto destro della mappa (di oggi e per cavo), nella scheda dell'oggetto (sezione
+  «Sulla mappa») e nella barra della Discovery («Unisci (N)…» con più righe). Solo gli admin; prima di scrivere
+  un'anteprima obbligatoria («Vedi cosa succede»). Perché: decidere l'oggetto giusto vedendo che cosa cambia.
+- **«Separa…» toglie anche una fusione automatica sbagliata** (per MAC, nome, apparato fisico), mai l'indirizzo
+  dell'apparato né quello con l'IP di gestione. Perché: oggi una fusione sbagliata non aveva rimedio.
+- **Due tabelle nel DB del cliente** (`topology_unioni`, `topology_separazioni`), migrazione additiva e idempotente
+  all'apertura; le righe non si cancellano mai (chi e quando restano). Perché: `physical_device_id` lo riscrive il
+  risolutore e guida le scansioni, che un gesto sulla mappa non deve toccare.
+- **`misura-cavi --unisci/--separa/--unioni`**: le unioni in memoria su una copia, prima di farle davvero.
+- **Ogni «Unisci» in un gruppo nuovo**, con un 409 chiaro se cambierebbe un'altra unione già fatta. Perché: con «il gruppo
+  più basso» un'unione nuova poteva portare via un indirizzo a una vecchia senza dirlo (revisione finale, casi provati).
+
+### Invariato
+
+- **Senza righe la mappa è identica a prima**, nelle due mappe (impronte uguali sulle copie dell'hub e del cliente A).
+  «Stesso device fisico» delle scansioni resta com'è: convivono due funzioni simili (confermato da Riccardo).
+
+## [Non rilasciato] — 2026-10-16 · credenziali 2g (T27): via colonne e tabelle vecchie, archivio unico completo
+
+**Rilasciata e applicata il 16/10** (v0.3.310): pulizia su hub, cliente A e pilota fra le 16:12 e le 16:19, ognuno
+con il suo backup accanto; sull'hub prima un `VACUUM` della rete principale, perché le 4 pagine «never used» facevano
+fallire (giustamente) il controllo del backup. Controller e Active Directory riletti subito dopo: tutti «ok».
+
+Piano `docs/superpowers/plans/2026-10-15-tappa2-archivio-credenziali.md`, sotto-tappa 2g, Task 27. Perché: dal T26
+nessuno legge più le fonti vecchie, ma i segreti sono ancora lì, fuori dall'archivio (colonne di `network_devices`,
+di `network_controllers` e di `ad_integrations`, catene vecchie). La pulizia dei dati è **uno script**, non una
+migrazione di `getTenantDb`: su un'appliance che riceve `main` girerebbe all'apertura, senza prova a vuoto, backup e
+conferma. Lo lancia la sessione principale sul server, a servizio fermo, con l'ok di Riccardo per ognuno.
+
+### Aggiunte
+
+- `scripts/credenziali/pulizia-t2.ts` (regole in `src/lib/credentials/pulizia-t2.ts`): a vuoto di base, coi nomi a
+  terminale; `--applica` chiede la conferma scritta (il codice del tenant), fa il backup `.bak-YYYYMMDD-HHMMSS`
+  accanto al DB (spazio controllato prima) e pulisce un tenant alla volta, in una transazione col segno
+  `credenziali_t2_pulizia`. Prima controlla le condizioni del T26 (segni chiusi, lasciati della 2e uguali a
+  `--lasciati-accettati`, nessuna riga Omada, registro dei ripieghi a zero dal rilascio della 2f: niente attesa di
+  giorni). Due modi sempre dichiarati: `--copia` (guardia delle copie) o `--servizio <unità>` (dati veri: servizio e
+  timer dell'aggiornamento devono essere fermi, letti da `systemctl show`, perché `is-active` di un'unità che non
+  esiste risponde «inactive» come un servizio fermo).
+- `scripts/credenziali/togli-chiavi-hub.ts`: toglie da hub.db le due chiavi «di default» (D3) e le
+  `integration_unifi_*`, solo quando nessuno le leggerà più (con un tenant attivo, la sua 2d e la sua migrazione
+  UniFi devono essere già fatte; altrimenti restano, col perché). A vuoto stampa solo i nomi, mai i valori.
+
+### Modifiche
+
+- **Cosa si svuota** (decisioni di Riccardo del 16/10): le colonne dei soli apparati lasciati accettati che hanno
+  già un binding equivalente (la definizione della 2e, ora una funzione sola usata da conversione e pulizia); un
+  apparato con una colonna piena fuori dall'elenco, uno accettato con una colonna senza equivalente o un binding
+  inline **bloccano il tenant**, elencati. Controller e AD si svuotano (`''`) solo dove c'è la voce: le righe senza
+  voce restano com'erano e si elencano. Le due tabelle delle catene vecchie si tolgono con due `DROP` nella stessa
+  transazione: se una fallisce torna indietro tutto. L'elenco dei lasciati accettati va nel segno.
+- **Ripieghi da confermare**: il registro scrive caso, tenant e firma, non l'apparato. Con dei lasciati accettati,
+  i `cred_colonna_apparato` dal rilascio della 2f possono venire proprio da loro: non bloccano da soli, si stampano
+  per firma col conteggio e si confermano nella stessa conferma scritta, col numero (`<tenant> <n>`). Lo script
+  delle condizioni del T26 li dice «DA CONFERMARE» (uscita 3), mai «in regola».
+- **Schema dei tenant nuovi senza le catene vecchie** (`network_host_credentials`, `host_detect_credential` e il loro
+  indice): un tenant nuovo nasce senza, la 2d non ha niente da convertire. Nei DB di prima le toglie la pulizia.
+- **Script di misura della topologia e dei MAC per porta**: l'utente del controller viene dalla voce (la colonna
+  della riga, dopo la pulizia, è vuota); senza voce o se non si decifra, errore invece di un utente vuoto.
+
+### Correzioni della revisione
+
+- **`--servizio da-ipam.service` apriva il freno del timer.** La guardia ricavava il timer come
+  `<unità>-update.timer`, quindi guardava `da-ipam.service-update.timer`, che non esiste, e lasciava scrivere col vero
+  `da-ipam-update.timer` acceso (pull, npm install e build sotto lo script). Ora il nome si accetta con o senza
+  `.service` e timer e aggiornamento si ricavano dal nome dell'app; un altro suffisso o un punto nel nome è un errore.
+  Il timer che non c'è passa solo se non c'è nemmeno `<app>-update.service`; e deve essere fermo anche
+  `<app>-update.service`, perché fermare il timer non ferma un aggiornamento già partito, che alla fine riavvia il
+  servizio. Gli script stampano le tre unità guardate col loro stato.
+- **Via `--dal`** da `pulizia-t2.ts` e `condizioni-2g.ts`: sostituiva la data del segno della 2f anche con una data più
+  tarda, e un ripiego vero dopo il rilascio spariva dal conto (con `--applica` la pulizia partiva). I ripieghi contano
+  dalla data del segno, come dice il piano. I due script rifiutano le opzioni che non conoscono (uscita 2): ignorata,
+  un'opzione tolta o scritta male farebbe girare lo script senza quello che si credeva di chiedere.
+
+### Effetto accettato
+
+- Dopo la pulizia i due apparati lasciati dell'hub non hanno più nemmeno le colonne: restano senza credenziale
+  valida finché una Prova dalla scheda non riesce (il binding fallito resta, ed è la strada per tornare ad avere
+  accesso). Tornare indietro dalla pulizia vuol dire il `.bak` di quel tenant: si perde quello che è stato scritto
+  dopo l'ora del backup.
+
+## [Non rilasciato] — 2026-10-16 · credenziali 2g (T26): il vecchio non si legge più
+
+Piano `docs/superpowers/plans/2026-10-15-tappa2-archivio-credenziali.md`, sotto-tappa 2g, Task 26. Perché:
+dalla 2e e dalla 2f le credenziali stanno nell'archivio, ma il motore e i lettori ripiegavano ancora sui posti
+vecchi; finché li leggono, svuotarli (T27) cambierebbe in silenzio la credenziale di qualcuno. Due decisioni di
+Riccardo del 16/10: **niente attesa di 14 giorni** (D9 rivista: bastano i segni chiusi, il registro dei
+ripieghi a zero dal rilascio della 2f e i giri del giorno andati bene) e **i due apparati lasciati dell'hub
+accettati così**.
+
+### Modifiche
+
+- **Il motore legge solo l'archivio**: niente più binding inline, colonne di `network_devices`
+  (`credential_id`, `snmp_credential_id`, utente e password, `community_string`, `api_token`), catene vecchie
+  (`network_host_credentials`, `host_detect_credential`) né chiavi «di default» dell'hub, nemmeno in un tenant
+  senza il segno della 2d. Il «public» dichiarato (D5) resta. Perché: erano i ripieghi che la 2g toglie, e un
+  tenant mai convertito li avrebbe ripresi.
+- **Effetto accettato da Riccardo (16/10)**: sull'hub i due apparati che la 2e ha lasciato (binding fallito
+  verso la stessa voce della colonna, uno SSH e uno WinRM) da qui hanno la scelta «nessuna» e restano senza
+  credenziale valida finché una Prova dalla scheda non riesce.
+- **Controller e AD senza voce dicono «Credenziale mancante»**, qualunque sia il segno della 2f: le colonne della
+  riga non si leggono più e la «forma vecchia» sparisce dalla finestra del controller e dalla pagina AD. Le
+  righe Omada lasciate dalla 2f restano senza voce, e bloccano la pulizia.
+- **Gli usi di una voce** (D8) non contano più colonne dell'apparato, catene vecchie e pin: una voce rimasta
+  solo lì si può eliminare (le colonne hanno ON DELETE SET NULL).
+- **La prova dalla finestra** (apparato non salvato) porta le voci scelte (`voci_provvisorie`), non più le
+  colonne dell'oggetto.
+- **Le rotte degli apparati non mandano più le colonne vecchie**, nemmeno mascherate: una `SELECT *` le
+  porta ancora e un segreto rimasto (cifrato) non deve uscire.
+- **Export e import**: catene vecchie e pin non si esportano più; un bundle di prima della 2d si importa anche
+  in un DB senza quelle tabelle, con le righe convertite in memoria (tabelle temporanee) nella lista della
+  rete e nelle righe host, con le regole di sempre. La conversione della 2d su un DB senza le tabelle vecchie
+  non ha niente da convertire (`done:`).
+- **La conversione della 2e** ricostruisce lei la scelta di prima (binding inline e colonne passati al motore
+  solo per il suo controllo «prima/dopo»): serve ancora per i bundle di prima e per le appliance che arrivano
+  da prima della 2e; senza, ogni apparato con le sole colonne risulterebbe lasciato, cioè senza accesso.
+
+### Tolte
+
+- `getHostDetectCredentialId`, `setHostDetectCredential`, `getNetworkHostCredentialIds`,
+  `replaceNetworkHostCredentials` (le due gemelle): nessuno le chiamava più.
+- `resetConfiguration` (le due gemelle) non nomina più le due tabelle vecchie: dove ci sono, le loro righe se ne
+  vanno con la cascata; dove la pulizia le avrà tolte, la DELETE avrebbe fatto fallire tutto il reset.
+- I campi vecchi delle credenziali dal tipo `NetworkDevice` e da chi li scriveva (a NULL). Le colonne restano
+  nello schema: toglierle vorrebbe dire ricostruire la tabella più collegata.
+
+### Aggiunte
+
+- `scripts/credenziali/condizioni-2g.ts`: le condizioni per partire con la 2g, sulla copia dei dati, in sola
+  lettura (segni, lasciati della 2e e della 2f ricalcolati a vuoto, registro dei ripieghi dal rilascio della
+  2f). Un `parziale:` della 2e passa solo con `--lasciati-accettati <tenant>:<id>,<id>` uguale ai lasciati di
+  adesso: mai dedotto, mai di default. La regola sta in `src/lib/credentials/condizioni-2g.ts`, che userà anche
+  la pulizia (T27).
+
 ## [Non rilasciato] — 2026-10-16 · topologia T3: la mappa per cavo, spenta per cliente
 
 Spec `docs/superpowers/specs/2026-10-14-topologia-collegamenti-reali-design.md` §13.11.4, piano

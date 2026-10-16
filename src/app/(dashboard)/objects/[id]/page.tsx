@@ -16,6 +16,7 @@ import { parseDbDate } from "@/lib/db-date";
 import { useEffect, useState, useCallback, useMemo } from "react";
 import dynamic from "next/dynamic";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -34,6 +35,12 @@ import { ClassificationEvidencePanel } from "@/components/shared/classification-
 const PromoteHostDialog = dynamic(() => import("@/components/devices/promote-host-dialog").then((m) => ({ default: m.PromoteHostDialog })), { ssr: false });
 const LinkIpsDialog = dynamic(() => import("@/components/devices/link-ips-dialog").then((m) => ({ default: m.LinkIpsDialog })), { ssr: false });
 const EditDeviceDialog = dynamic(() => import("@/components/devices/edit-device-dialog").then((m) => ({ default: m.EditDeviceDialog })), { ssr: false });
+const UnisciDialog = dynamic(() => import("@/components/topology/unioni/unisci-dialog").then((m) => ({ default: m.UnisciDialog })), { ssr: false });
+const SeparaDialog = dynamic(() => import("@/components/topology/unioni/separa-dialog").then((m) => ({ default: m.SeparaDialog })), { ssr: false });
+import { LoadError } from "@/components/shared/load-error";
+import { caricaStato } from "@/components/topology/unioni/api";
+import { parolaCome } from "@/lib/topology/unioni-testi";
+import { TESTI_UNIONI, type StatoDelNodo } from "@/lib/topology/unioni-tipi";
 import { HostVulnerabilitiesCard } from "@/components/hosts/host-vulnerabilities-card";
 import { DeviceSoftwareCard } from "@/components/hosts/host-software-card";
 import { HostInventoryAgentCard } from "@/components/hosts/host-inventory-agent-card";
@@ -67,6 +74,9 @@ import {
   Table as TableIcon,
   Server,
   Layers,
+  Merge,
+  Split,
+  Workflow,
 } from "lucide-react";
 import { runDeviceAcquisitionScan } from "@/lib/devices/device-scan-client";
 import { toast } from "sonner";
@@ -419,6 +429,85 @@ function Section({ icon, title, badge, children, id }: SectionProps) {
   );
 }
 
+
+/**
+ * «Sulla mappa» (unioni a mano, piano 2026-10-16, Task 6): con quali altri indirizzi questo host è un oggetto solo
+ * nella topologia, e i pulsanti per unire o separare (solo admin). Legge lo stato dalla rotta, non dai file del repo.
+ */
+function SullaMappa({ hostId, isAdmin }: { hostId: number; isAdmin: boolean }) {
+  const oggetto = `host:${hostId}`;
+  const [stato, setStato] = useState<StatoDelNodo | null>(null);
+  const [errore, setErrore] = useState<string | null>(null);
+  const [tentativo, setTentativo] = useState(0);
+  const [unisciOpen, setUnisciOpen] = useState(false);
+  const [separaOpen, setSeparaOpen] = useState(false);
+
+  useEffect(() => {
+    let vivo = true;
+    caricaStato(oggetto).then((r) => {
+      if (!vivo) return;
+      if (r.ok) { setStato(r.data); setErrore(null); } else setErrore(r.message);
+    }).catch(() => { if (vivo) setErrore("Server non raggiungibile"); });
+    return () => { vivo = false; };
+  }, [oggetto, tentativo]);
+
+  const ricarica = () => setTentativo((t) => t + 1);
+
+  return (
+    <Section icon={<Workflow className="h-4 w-4" />} title="Sulla mappa">
+      {errore !== null ? (
+        <LoadError what="lo stato sulla mappa" message={errore} onRetry={ricarica} />
+      ) : stato === null ? (
+        <p className="text-sm text-muted-foreground">Caricamento…</p>
+      ) : !stato.disponibile ? (
+        <p className="text-sm text-muted-foreground">{TESTI_UNIONI.schemaAssente}</p>
+      ) : (
+        <div className="space-y-3">
+          <p className="text-sm">Sulla mappa è <strong>{stato.nome}</strong></p>
+          {stato.membri.length > 1 && (
+            <div className="border rounded-md divide-y">
+              {stato.membri.map((m) => {
+                const qui = m.id === oggetto;
+                const idHost = m.id.startsWith("host:") ? m.id.slice(5) : null;
+                return (
+                  <div key={m.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2">
+                    {m.ip !== null && (qui || idHost === null
+                      ? <span className="font-mono text-sm">{m.ip}</span>
+                      : <Link href={`/objects/${idHost}`} className="font-mono text-sm underline underline-offset-2">{m.ip}</Link>)}
+                    <span className="text-sm">{m.nome}</span>
+                    <span className="text-sm text-muted-foreground">· {parolaCome(m)}</span>
+                    {qui && <span className="text-sm font-semibold">· qui</span>}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {stato.nonApplicata && <p className="text-sm">Unione a mano non applicata: {stato.nonApplicata.motivo}</p>}
+          {stato.mancanti.length > 0 && <p className="text-sm">Non ci sono più: {stato.mancanti.join(", ")}</p>}
+          {isAdmin && (
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" size="sm" className="text-[13px]" onClick={() => setUnisciOpen(true)}>
+                <Merge className="h-3.5 w-3.5 mr-1.5" />
+                Unisci con…
+              </Button>
+              {stato.membri.some((m) => m.separabile) && (
+                <Button variant="outline" size="sm" className="text-[13px]" onClick={() => setSeparaOpen(true)}>
+                  <Split className="h-3.5 w-3.5 mr-1.5" />
+                  Separa…
+                </Button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+      {unisciOpen && (
+        <UnisciDialog open onOpenChange={setUnisciOpen} da={oggetto} nomeDa={stato?.nome ?? oggetto} onFatto={ricarica} />
+      )}
+      {separaOpen && <SeparaDialog open onOpenChange={setSeparaOpen} oggetto={oggetto} onFatto={ricarica} />}
+    </Section>
+  );
+}
+
 // ─── Page ───────────────────────────────────────────────────────────
 
 export default function ObjectDetailPage() {
@@ -431,6 +520,9 @@ export default function ObjectDetailPage() {
     return t && allowed.has(t) ? t : "generale";
   })();
   const hostId = typeof params.id === "string" ? Number(params.id) : NaN;
+  const { data: session } = useSession();
+  const sessionRole = (session?.user as { role?: string } | undefined)?.role;
+  const isAdmin = sessionRole === "admin" || sessionRole === "superadmin";
 
   const [host, setHost] = useState<HostDetail | null>(null);
   const [device, setDevice] = useState<DeviceFull | null>(null);
@@ -1878,6 +1970,8 @@ export default function ObjectDetailPage() {
           stesso device fisico. Caso d'uso tipico: Proxmox con NIC su VLAN
           diverse (mgmt 40.1 + VM 16.1), router/firewall con gateway multipli.
       */}
+      {Number.isFinite(hostId) && hostId > 0 && <SullaMappa hostId={hostId} isAdmin={isAdmin} />}
+
       <Section icon={<Link2 className="h-4 w-4" />} title="IP collegati allo stesso device fisico">
         <div className="space-y-3">
           {host?.physical_device_id && clusterMembers.length > 0 ? (

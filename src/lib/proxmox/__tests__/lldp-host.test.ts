@@ -205,12 +205,20 @@ const macs = (id: number) => db().prepare("SELECT mac, port_key, source FROM top
 beforeEach(() => {
   db().exec(`DELETE FROM topology_port_facts; DELETE FROM topology_bridge_facts; DELETE FROM topology_device_macs;
     DELETE FROM device_neighbors; DELETE FROM network_devices; DELETE FROM tenant_settings WHERE key LIKE 'topologia.lettura.%';`);
-  const ins = db().prepare(`INSERT INTO network_devices (id, name, host, device_type, vendor, protocol, scan_target, username, encrypted_password, enabled)
-    VALUES (?, ?, ?, 'hypervisor', 'proxmox', 'ssh', 'proxmox', 'root@pam', ?, 1)`);
-  ins.run(1, "HV-1", "192.0.2.11", encrypt("segreto-di-prova"));
+  // La credenziale SSH in un binding d'archivio (dalla 2g, T26, le colonne dell'apparato non si leggono più).
+  db().exec("DELETE FROM device_credential_bindings; DELETE FROM credentials WHERE name = 'root di prova';");
+  const voce = Number(db().prepare("INSERT INTO credentials (name, credential_type, encrypted_username, encrypted_password) VALUES ('root di prova', 'ssh', ?, ?)")
+    .run(encrypt("root@pam"), encrypt("segreto-di-prova")).lastInsertRowid);
+  const ins = db().prepare(`INSERT INTO network_devices (id, name, host, device_type, vendor, protocol, scan_target, enabled)
+    VALUES (?, ?, ?, 'hypervisor', 'proxmox', 'ssh', 'proxmox', 1)`);
+  const lega = db().prepare("INSERT INTO device_credential_bindings (device_id, credential_id, protocol_type, port, sort_order) VALUES (?, ?, 'ssh', 22, 0)");
+  ins.run(1, "HV-1", "192.0.2.11");
+  lega.run(1, voce);
   // Un cluster su un apparato solo («a,b»): il primo nodo è censito anche da solo (id 3), il secondo no.
-  ins.run(2, "PVE-C", "192.0.2.21,22", encrypt("segreto-di-prova"));
-  ins.run(3, "PVE-N1", "192.0.2.21", encrypt("segreto-di-prova"));
+  ins.run(2, "PVE-C", "192.0.2.21,22");
+  lega.run(2, voce);
+  ins.run(3, "PVE-N1", "192.0.2.21");
+  lega.run(3, voce);
   withTenant(T, () => rileggiSchemaCavi());
 });
 after(() => { deleteTenantDatabase(T); closeHubDb(); removeTestHubDb(); });

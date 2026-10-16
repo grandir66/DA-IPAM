@@ -48,7 +48,7 @@ async function main(): Promise<number> {
   const { buildTopologyModel } = await import("../src/lib/topology/model");
   const { buildTree, autoVisible, proposeHead } = await import("../src/lib/topology/tree");
   const { resolveScanHosts } = await import("../src/lib/topology/vms");
-  const { buildNodeIndex } = await import("../src/lib/topology/node-index");
+  const { indiceDeiNodi } = await import("../src/lib/topology/node-index");
 
   const input = tenantDb.withTenant(tenant, () => tenantDb.getTopologyModelInput(2));
   const senza = buildTopologyModel({ ...input, vms: [], scanHosts: [] });
@@ -65,7 +65,7 @@ async function main(): Promise<number> {
     vm_trovate: con.vms.length,
     vm_lette_prima_dei_doppioni: input.vms.length,
     host_di_cluster_letti: input.scanHosts.length,
-    host_di_cluster_abbinati_a_un_hypervisor: resolveScanHosts(input.scanHosts, buildNodeIndex(input.devices, input.hosts, input.knownMacs, input.neighbors)).filter((r) => r.nodeId !== null).length,
+    host_di_cluster_abbinati_a_un_hypervisor: resolveScanHosts(input.scanHosts, indiceDeiNodi(input)).filter((r) => r.nodeId !== null).length,
     hypervisor_riconosciuti: con.counts.hypervisors,
     hypervisor_con_vm: new Set(con.vms.map((v) => v.hypervisorNodeId).filter((x) => x !== null)).size,
     vm_senza_host_abbinato: con.vms.filter((v) => v.hypervisorNodeId === null).length,

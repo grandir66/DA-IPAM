@@ -230,3 +230,20 @@ test("«Scegli il cavo» per la ★ di prima: il corpo ha le porte della linea s
   assert.deepEqual(primaryPerNodo(l, "dev:2"), { node_id: "dev:2", other_node: "dev:1", node_port: "q6", other_port: "p5" });
   assert.deepEqual(primaryPerNodo(l, "dev:1"), { node_id: "dev:1", other_node: "dev:2", node_port: "p5", other_port: "q6" });
 });
+
+// Unioni a mano (piano 2026-10-16, Task 5): «Unisci con…» e «Separa…» dopo «Nascondi», prima di «Promuovi».
+test("unioni: admin con niente da separare → solo «Unisci con…»; con membri → anche «Separa…», nell'ordine", () => {
+  const solo = nodeMenuItems(ctx({ unioni: { separabili: 0 } }));
+  assert.deepEqual(keys(solo), ["details", "connect", "start", "remove", "role", "hide", "merge"]);
+  assert.equal(solo.find((x) => x.key === "merge")!.label, "Unisci con…");
+  const due = nodeMenuItems(ctx({ isDevice: false, infraHost: true, ruolo: null, unioni: { separabili: 2 } }));
+  assert.deepEqual(keys(due), ["details", "connect", "start", "remove", "role", "merge", "split", "promote"]);
+  assert.equal(due.find((x) => x.key === "split")!.label, "Separa…");
+});
+
+test("unioni: non admin, VM non censita e segmento non hanno «Unisci con…»; senza il contesto le voci di prima", () => {
+  assert.deepEqual(keys(nodeMenuItems(ctx({ isAdmin: false, canEditMap: false, unioni: { separabili: 3 } }))), ["details"]);
+  assert.ok(!keys(nodeMenuItems(ctx({ isUncensusedVm: true, unioni: { separabili: 0 } }))).includes("merge"));
+  assert.ok(!keys(nodeMenuItems(ctx({ isSegmento: true, unioni: { separabili: 0 } }))).includes("merge"));
+  assert.deepEqual(keys(nodeMenuItems(ctx())), ["details", "connect", "start", "remove", "role", "hide"]);
+});

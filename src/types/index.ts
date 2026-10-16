@@ -227,6 +227,24 @@ export interface Credential {
   updated_at: string;
 }
 
+/**
+ * Le voci scelte nella finestra per un apparato provvisorio (la prova prima di
+ * salvare, id 0): una per il protocollo principale, una per SNMP. Il motore le
+ * tratta come binding non ancora provati (tappa 2g credenziali, T26).
+ */
+export interface VociProvvisorie {
+  principale: number | null;
+  snmp: number | null;
+}
+
+/**
+ * Un apparato. Dalla 2g (T26) le credenziali stanno solo nei binding
+ * d'archivio (`device_credential_bindings`): le colonne vecchie della tabella
+ * (`credential_id`, `snmp_credential_id`, `username`, `encrypted_password`,
+ * `community_string`, `api_token`) restano nello schema, vuote dopo la 2e e
+ * svuotate dalla pulizia della 2g, ma il tipo non le porta più e nessuno le
+ * legge o le scrive.
+ */
 export interface NetworkDevice {
   id: number;
   name: string;
@@ -236,16 +254,10 @@ export interface NetworkDevice {
   vendor: "mikrotik" | "ubiquiti" | "hp" | "cisco" | "omada" | "stormshield" | "proxmox" | "vmware" | "linux" | "windows" | "synology" | "qnap" | "apple" | "other";
   vendor_subtype: "procurve" | "comware" | null;
   protocol: "ssh" | "snmp_v2" | "snmp_v3" | "api" | "winrm";
-  credential_id: number | null;
-  snmp_credential_id: number | null;
   /** Versione SNMP a community: NULL = non rilevata, ogni punto parla come prima (snmp-sessione.ts). */
   snmp_version?: "1" | "2c" | null;
   /** 1 = versione scelta a mano: la discovery non la sovrascrive. */
   snmp_version_fissata?: number;
-  username: string | null;
-  encrypted_password: string | null;
-  community_string: string | null;
-  api_token: string | null;
   api_url: string | null;
   port: number;
   enabled: number;
@@ -268,6 +280,8 @@ export interface NetworkDevice {
   physical_device_id: number | null;
   /** F4 (v0.2.595+): FK formale all'host originale in discovery (1:1 logico, ma schema permette 1:N). Null se il device è stato creato manualmente senza host corrispondente, oppure se l'host è stato eliminato (ON DELETE SET NULL). */
   host_id?: number | null;
+  /** Solo per l'apparato provvisorio della prova (id 0, mai salvato): le voci scelte nella finestra. */
+  voci_provvisorie?: VociProvvisorie;
   created_at: string;
   updated_at: string;
 }

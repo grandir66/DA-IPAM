@@ -4,6 +4,8 @@
  * di rete) e "host:<id>" (host non fuso con un apparato).
  */
 
+import type { InfoUnioni, ModelSeparazioneRow, ModelUnioneRow } from "@/lib/topology/unioni-tipi";
+
 export type LinkSource = "manual" | "unifi_uplink" | "lldp" | "cdp" | "mndp" | "mac_table" | "vm_mac";
 
 /**
@@ -199,6 +201,10 @@ export interface TopologyModelInput {
   nowMs: number;
   /** Giorni dopo cui un collegamento è «non visto» (decisione 13/10: 2). */
   staleDays: number;
+  /** Unioni a mano (ADR 0021): presenti solo se c'è almeno una riga. */
+  unioni?: ModelUnioneRow[];
+  /** Separazioni a mano (ADR 0021): presenti solo se c'è almeno una riga. */
+  separazioni?: ModelSeparazioneRow[];
 }
 
 export interface MapNode {
@@ -508,4 +514,6 @@ export interface TopologyModel {
   gatewayDi?: Record<string, number>;
   /** Ciò che la pagina sa del modello per cavo oltre le linee (T3): presente solo con la mappa nuova accesa. */
   cavi?: InfoCavi;
+  /** Unioni e separazioni a mano applicate (ADR 0021): presente solo se l'ingresso ha righe. */
+  unioni?: InfoUnioni;
 }

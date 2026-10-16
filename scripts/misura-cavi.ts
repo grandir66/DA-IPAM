@@ -16,6 +16,12 @@
  *         [--salva <istantanea.json>] [--confronta <istantanea.json>]
  *         [--esporta-input <file.json>] [--input-json <file.json>] [--nomi] [--json]
  *         [--senza-regola <regola>]...   spegne una regola del passaggio universale (src/lib/topology/regole.ts): la misura C19 confronta «tutte le regole» con «tutte meno una»
+ *         [--unisci <id>,<id>[,…]]...   unioni a mano (ADR 0021) IN MEMORIA, un gruppo per volta (gruppi -1, -2, …; «host:N» o «dev:N»,
+ *                                       come le scriverebbe la rotta): nessuna riga scritta, valgono per T1, --mappa-cavi e --traccia
+ *         [--separa <host:N>=<dev:N|host:N>]...   una separazione a mano in memoria, come sopra
+ *         [--unioni]   la sezione «unioni»: righe nel DB (copia della copia, dopo la migrazione), ciò che c'è già di «stesso oggetto»
+ *                      (collegamenti a mano per le scansioni, apparati e host dello stesso apparato fisico), fusioni per motivo;
+ *                      con --unisci/--separa il confronto in memoria. Solo conteggi e id; con --nomi i nomi a terminale
  *         [--adesso "AAAA-MM-GG HH:MM:SS"]   l'ora (UTC) a cui il modello giudica «non visto»: quella del «prima», per misurare il
  *                                            «dopo» sulla stessa copia con lo stesso orologio (di base l'ora vera; vale anche con --input-json)
  *   I file di --salva, --confronta, --salva-cavi, --confronta-cavi, --esporta-input e --input-json stanno dentro --cartella
@@ -27,11 +33,11 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { controllaPercorsi, percorsoReale } from "../src/lib/scanner/__tests__/support/percorsi-prova";
 
-const CON_VALORE = ["--cartella", "--scenario", "--soglia", "--uscita-router", "--ripristino", "--fatti-prova", "--salva", "--confronta", "--salva-cavi", "--confronta-cavi", "--esporta-input", "--input-json", "--senza-regola", "--adesso"];
+const CON_VALORE = ["--cartella", "--scenario", "--soglia", "--uscita-router", "--ripristino", "--fatti-prova", "--salva", "--confronta", "--salva-cavi", "--confronta-cavi", "--esporta-input", "--input-json", "--senza-regola", "--adesso", "--unisci", "--separa"];
 
 function uso(msg?: string): number {
   if (msg) process.stderr.write(`${msg}\n`);
-  process.stderr.write("Uso: npx tsx scripts/misura-cavi.ts <copia.db> --cartella <scratchpad> [--scenario …] [--uscita-router <id>=<file>] [--ripristino <ora UTC>] [--fatti-prova <id>] [--traccia] [--cavi] [--mappa-cavi] [--salva-cavi|--confronta-cavi <file>] [--senza-regola <regola>] [--adesso <ora UTC>] [--salva|--confronta <file>] [--esporta-input|--input-json <file>] [--nomi] [--json]\n");
+  process.stderr.write("Uso: npx tsx scripts/misura-cavi.ts <copia.db> --cartella <scratchpad> [--scenario …] [--uscita-router <id>=<file>] [--ripristino <ora UTC>] [--fatti-prova <id>] [--traccia] [--cavi] [--mappa-cavi] [--salva-cavi|--confronta-cavi <file>] [--senza-regola <regola>] [--adesso <ora UTC>] [--unisci <id>,<id>…] [--separa <host:N>=<id>] [--unioni] [--salva|--confronta <file>] [--esporta-input|--input-json <file>] [--nomi] [--json]\n");
   return 2;
 }
 
@@ -72,6 +78,16 @@ async function main(): Promise<number> {
   if (adessoTesto !== undefined && adesso === null) return uso("--adesso vuole l'ora in UTC come la scrive il DB: «AAAA-MM-GG HH:MM:SS».");
   const uscite = valori("--uscita-router").map((v) => /^(\d+)=(.+)$/.exec(v));
   if (uscite.some((m) => m === null)) return uso("--uscita-router vuole <id dell'apparato>=<file>.");
+  // Unioni e separazioni a mano (piano 2026-10-16, Task 3 Step 4): solo in memoria, mai nel DB del cliente («Solo a mano»).
+  const OGGETTO = /^(host|dev):[1-9]\d{0,9}$/;
+  const unisci = valori("--unisci").map((v) => v.split(",").map((x) => x.trim()));
+  if (unisci.some((g) => g.length < 2 || new Set(g).size !== g.length || !g.every((x) => OGGETTO.test(x)))) {
+    return uso("--unisci vuole almeno due oggetti diversi, «host:N» o «dev:N», separati da virgole.");
+  }
+  const separaLetti = valori("--separa").map((v) => /^(host:[1-9]\d{0,9})=((?:host|dev):[1-9]\d{0,9})$/.exec(v));
+  if (separaLetti.some((m) => m === null)) return uso("--separa vuole <host:N>=<dev:N o host:N>.");
+  const separa = separaLetti.map((m) => [m![1], m![2]] as [string, string]);
+  const inMemoria = unisci.length > 0 || separa.length > 0;
 
   const sorgente = path.resolve(liberi[0]);
   const tenant = path.basename(sorgente).replace(/\.db$/i, "");
@@ -170,7 +186,10 @@ async function main(): Promise<number> {
   // L'orologio della misura (revisione finale di T1): con --adesso quello del «prima», anche su un ingresso esportato.
   const base: Input = adesso === null ? letta : { ...letta, nowMs: adesso };
   out.adesso = new Date(base.nowMs).toISOString();
-  const input = applicaScenario(base, scenario);
+  const senzaScelte = applicaScenario(base, scenario);
+  // Le righe in memoria si aggiungono prima di ogni calcolo: valgono per T1, --mappa-cavi e --traccia (piano 2026-10-16).
+  const { aggiungiScelte, confrontoUnione, fusioniPerCome } = await import("../src/lib/topology/misura-unioni");
+  const input = aggiungiScelte(senzaScelte, unisci, separa);
   const esporta = val("--esporta-input");
   if (esporta) fs.writeFileSync(esporta, JSON.stringify(input));
 
@@ -340,6 +359,79 @@ async function main(): Promise<number> {
     }
     nuova = { mappa: mm, padri: padriC, diversi, dalSalvato };
   }
+  // Unioni a mano (piano 2026-10-16, Task 3 Step 4 e Task 7): solo conteggi e id; i nomi, con --nomi, a terminale.
+  const righeNomiUnioni: string[] = [];
+  if (a.includes("--unioni") || inMemoria) {
+    const { indiceDeiNodi } = await import("../src/lib/topology/node-index");
+    const { nodoDi } = await import("../src/lib/topology/unioni");
+    const nelDb = tenantDb.withTenant(tenant, () => ({ presente: tenantDb.schemaUnioniPresente(), righe: tenantDb.getRigheScelte() }));
+    const idxOggi = indiceDeiNodi(senzaScelte);
+    const idxMisura = indiceDeiNodi(input);
+    const nomeDi = (id: string): string => {
+      const [tipo, n] = id.split(":");
+      const h = tipo === "host" ? input.hosts.find((x) => x.id === Number(n)) : undefined;
+      const d = tipo === "dev" ? input.devices.find((x) => x.id === Number(n)) : undefined;
+      return h ? (h.custom_name || h.hostname || h.ip || id) : d ? d.name : id;
+    };
+    const perFisico = (sql: string): Map<number, string[]> => {
+      const m = new Map<number, string[]>();
+      for (const r of db.prepare(sql).all() as Array<{ pd: number; id: string }>) m.set(r.pd, [...(m.get(r.pd) ?? []), r.id]);
+      return new Map([...m].filter(([, ids]) => ids.length >= 2));
+    };
+    // Task 0 (a): i collegamenti a mano per le scansioni (non si convertono: candidati da unire a mano) e quanti sono già un oggetto solo.
+    const manuali = perFisico(`SELECT pd.id AS pd, 'host:' || h.id AS id FROM physical_devices pd JOIN hosts h ON h.physical_device_id = pd.id
+      WHERE pd.identity_anchor = 'manual_link' ORDER BY pd.id, h.id`);
+    const unNodo = (ids: readonly string[]): boolean => new Set(ids.map((x) => nodoDi(idxOggi, x))).size === 1;
+    // (b) due apparati censiti dello stesso apparato fisico («apparato + apparato», fuori tappa); (c) host dello stesso apparato
+    // fisico senza apparato censito (oggi oggetti separati).
+    const dueApparati = perFisico(`SELECT physical_device_id AS pd, 'dev:' || id AS id FROM network_devices WHERE physical_device_id IS NOT NULL ORDER BY 1, id`);
+    const senzaApparato = perFisico(`SELECT h.physical_device_id AS pd, 'host:' || h.id AS id FROM hosts h WHERE h.physical_device_id IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM network_devices nd WHERE nd.physical_device_id = h.physical_device_id) ORDER BY 1, h.id`);
+    const quanti = (m: Map<number, string[]>) => [...m.values()].reduce((n, ids) => n + ids.length, 0);
+    const sezione: Record<string, unknown> = {
+      schema_presente: nelDb.presente,
+      righe_db: { unioni: nelDb.righe.unioni.length, separazioni: nelDb.righe.separazioni.length },
+      collegamenti_scansioni: { gruppi: manuali.size, host: quanti(manuali), gia_un_nodo: [...manuali.values()].filter(unNodo).length },
+      apparati_stesso_fisico: { gruppi: dueApparati.size, apparati: quanti(dueApparati) },
+      host_stesso_fisico_senza_apparato: { gruppi: senzaApparato.size, host: quanti(senzaApparato) },
+      fusioni_automatiche: fusioniPerCome(idxMisura),
+    };
+    const elenco = (titolo: string, m: Map<number, string[]>, extra: (ids: string[]) => string = () => "") => {
+      righeNomiUnioni.push(`\n— ${titolo} —`);
+      for (const [pd, ids] of m) righeNomiUnioni.push(`apparato fisico ${pd}: ${ids.map(nomeDi).join(", ")}${extra(ids)}`);
+    };
+    elenco("unioni: collegamenti a mano per le scansioni (a)", manuali, (ids) => (unNodo(ids) ? " · già un oggetto solo" : ""));
+    elenco("unioni: apparati censiti dello stesso apparato fisico (b)", dueApparati);
+    elenco("unioni: host dello stesso apparato fisico senza apparato (c)", senzaApparato);
+    if (inMemoria) {
+      const prima = buildTopologyModel(senzaScelte, regole);
+      const memoria = (input.unioni ?? []).filter((u) => u.gruppo < 0);
+      const gruppi = [...new Set(memoria.map((u) => u.gruppo))].sort((x, y) => y - x);
+      const nodiDel = (g: number) => memoria.filter((u) => u.gruppo === g).map((u) => nodoDi(idxMisura, u.membro)).filter((x): x is string => x !== null);
+      const applicata = (g: number): boolean => nodiDel(g).length >= 2 && new Set(nodiDel(g)).size === 1;
+      const confronto = confrontoUnione(prima, model);
+      sezione.in_memoria = {
+        ...confronto,
+        gruppi: gruppi.length, applicate: gruppi.filter(applicata).length,
+        non_applicate: (model.unioni?.nonApplicate ?? []).filter((n) => n.gruppo < 0).map((n) => ({ gruppo: n.gruppo, membri: n.membri })),
+        mancanti: model.unioni?.mancanti ?? [],
+        separazioni: separa.length,
+        // La riga «capi fusi» della mappa per cavo: attesa assente (l'indice per cavo è quello di T1).
+        ...(nuova ? { capi_fusi: nuova.mappa.cavi.nonCalcolato.find((r) => /ha fuso/.test(r)) ?? null } : {}),
+      };
+      righeNomiUnioni.push("\n— unioni in memoria —");
+      for (const g of gruppi) {
+        const membri = memoria.filter((u) => u.gruppo === g).map((u) => u.membro);
+        const na = model.unioni?.nonApplicate.find((n) => n.gruppo === g);
+        const nodo = nodiDel(g)[0];
+        righeNomiUnioni.push(`gruppo ${g}: ${membri.map(nomeDi).join(", ")} → ${na ? `non applicata: ${na.motivo}` : applicata(g) && nodo ? model.nodes.find((n) => n.id === nodo)?.name ?? nodo : "non applicata"}`);
+      }
+      for (const [m, altro] of separa) righeNomiUnioni.push(`separa ${nomeDi(m)} da ${nomeDi(altro)}`);
+      righeNomiUnioni.push("\n— unioni in memoria: coppie scomparse —");
+      for (const k of confronto.coppieScomparse) righeNomiUnioni.push(k.split("–").map((x) => model.nodes.find((n) => n.id === x)?.name ?? nomeDi(x)).join(" ↔ "));
+    }
+    out.unioni = sezione;
+  }
   out.quick_check_dopo = quick();
   process.stdout.write(a.includes("--json") ? `${JSON.stringify(out, null, 1)}\n` : `${Object.entries(out).map(([k, v]) => `${k}: ${typeof v === "object" ? JSON.stringify(v) : v}`).join("\n")}\n`);
 
@@ -407,6 +499,7 @@ async function main(): Promise<number> {
       w("\n— collegamenti «dalle VM» (§13.14) —");
       for (const x of caviDaStampare.dalleVm) w(`${nome(x.ipervisore)} · ${nome(x.switch)} ${x.porta} · ${x.vm} VM · ${x.principale ? "principale" : "NON principale"} · uplink dello switch: ${x.uplink}`);
     }
+    for (const r of righeNomiUnioni) w(r);
     if (nuova) {
       const { nomiDellaMappa } = await import("../src/lib/topology/cavi/mappa");
       const nm = nomiDellaMappa(nuova.mappa);

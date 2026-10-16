@@ -19,6 +19,7 @@ import {
 } from "@/lib/db";
 import { apparatoDhcpDelDc } from "@/lib/ad/apparato-dhcp";
 import { accessoWinrmDelDc, credenzialeLdapDi } from "@/lib/ad/credenziale-ldap";
+import type { runWinrmCommand } from "@/lib/devices/winrm-run";
 import {
   isAccountEnabled,
   ldapStr,
@@ -430,10 +431,12 @@ export async function syncActiveDirectory(integrationId: number): Promise<AdSync
 }
 
 /**
- * Sincronizza lease DHCP da Windows Server via WinRM+PowerShell.
+ * Sincronizza lease DHCP da Windows Server via WinRM+PowerShell, con la voce
+ * Windows dell'AD e la sua porta (tappa 2f, T24; prima 5985 fissa). `esegui`
+ * è il comando WinRM: quello vero, o uno finto nelle prove.
  */
-async function syncAdDhcpLeases(integration: AdIntegration): Promise<number> {
-  const { runWinrmCommand } = await import("@/lib/devices/winrm-run");
+export async function syncAdDhcpLeases(integration: AdIntegration, esegui?: typeof runWinrmCommand): Promise<number> {
+  const run = esegui ?? (await import("@/lib/devices/winrm-run")).runWinrmCommand;
   const { getDb } = await import("@/lib/db");
 
   if (!integration.winrm_credential_id) return 0;
@@ -468,7 +471,7 @@ async function syncAdDhcpLeases(integration: AdIntegration): Promise<number> {
   // Recupera scopes con campi appiattiti.
   // v0.2.659: aggiungo LeaseDuration (TotalSeconds) per calcolare last_seen
   // come (LeaseExpiryTime - LeaseDuration) sui singoli lease.
-  const scopesJson = await runWinrmCommand(
+  const scopesJson = await run(
     host, port, username, password,
     `Get-DhcpServerv4Scope | Select-Object @{N='ScopeId';E={$_.ScopeId.IPAddressToString}}, Name, @{N='SubnetMask';E={$_.SubnetMask.IPAddressToString}}, @{N='State';E={$_.State.ToString()}}, @{N='LeaseDurationSeconds';E={[int]$_.LeaseDuration.TotalSeconds}} | ConvertTo-Json -Compress`,
     true,
@@ -498,7 +501,7 @@ async function syncAdDhcpLeases(integration: AdIntegration): Promise<number> {
     try {
       // v0.2.658 audit bug 2R: anche i lease hanno IPAddress come oggetto.
       // Calculated properties per estrarre stringhe pulite.
-      leasesJson = await runWinrmCommand(
+      leasesJson = await run(
         host, port, username, password,
         `Get-DhcpServerv4Lease -ScopeId "${scopeId}" | Select-Object @{N='IPAddress';E={$_.IPAddress.IPAddressToString}}, ClientId, HostName, @{N='AddressState';E={$_.AddressState.ToString()}}, @{N='LeaseExpiryTime';E={if($_.LeaseExpiryTime){$_.LeaseExpiryTime.ToString('o')}else{$null}}}, Description | ConvertTo-Json -Compress`,
         true,

@@ -33,7 +33,7 @@ import {
   updateAdIntegration as updateAdTenant,
 } from "@/lib/db-tenant";
 import { getAdIntegrationById, type AdIntegration } from "@/lib/db";
-import { connectLdap } from "../ad-client";
+import { connectLdap, syncAdDhcpLeases } from "../ad-client";
 import { collectWinrmProbe } from "../health/winrm-probe";
 import { creaIntegrazioneAd, aggiornaIntegrazioneAd } from "@/lib/credentials/lega-voce";
 import { convertiControllerEAd } from "@/lib/credentials/converti-integrazioni";
@@ -287,6 +287,17 @@ describe("WinRM del DC: la porta della voce", () => {
     const finto = winrmFinto();
     const r = await withTenant(T, () => (collectWinrmProbe as (id: number, e: unknown) => ReturnType<typeof collectWinrmProbe>)(id, finto.esegui));
     assert.equal(r.status, "ok", r.errorMessage);
+    assert.deepEqual(finto.chiamate, [{ host: "127.0.0.1", port: 5986, username: "CLIENTE\\admin", password: "pw-win" }]);
+  });
+
+  // Revisione della 2f (16/10): il DHCP non aveva una prova, e rimettere la
+  // 5985 fissa lasciava verdi tutte le prove.
+  it("il DHCP del DC usa la 5986 se la voce Windows la porta", async () => {
+    const win = voce("Admin Windows", "windows", "CLIENTE\\admin", "pw-win", 5986);
+    const id = rigaVecchia({ winrm: win });
+    const finto = winrmFinto();
+    const n = await withTenant(T, () => syncAdDhcpLeases(riga(id), finto.esegui));
+    assert.equal(n, 0, "nessuno scope nella risposta finta");
     assert.deepEqual(finto.chiamate, [{ host: "127.0.0.1", port: 5986, username: "CLIENTE\\admin", password: "pw-win" }]);
   });
 

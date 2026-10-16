@@ -322,12 +322,19 @@ export function buildNodeIndex(devices: ModelDeviceRow[], hosts: ModelHostRow[],
     const nodo = `host:${rep}`;
     idx.aMano.set(nodo, [...(idx.aMano.get(nodo) ?? []), h].sort((a, b) => a - b));
   }
+  // I nomi di un host entrato a mano in un apparato restano chiavi di un host (revisione finale, 16/10): deboli e dopo gli host
+  // rimasti, così un nome conteso con un altro host resta conteso e non passa all'apparato. IP e MAC restano dell'apparato.
+  const nomiAMano: Array<[ModelHostRow, string]> = [];
   for (const [hostId, devId] of absorbedBy) {
     const h = idx.hostById.get(hostId);
     if (!h) continue;
     idx.alias.set(`host:${hostId}`, devId);
     put(idx.byIp, h.ip || null, devId, false);
     putMac(idx.byMac, h.mac, devId, false);
+    if (idx.come.get(hostId) === "a_mano") {
+      nomiAMano.push([h, devId]);
+      continue;
+    }
     put(idx.byName, nameKey(h.hostname), devId, false);
     put(idx.byName, nameKey(h.custom_name), devId, false);
   }
@@ -339,6 +346,10 @@ export function buildNodeIndex(devices: ModelDeviceRow[], hosts: ModelHostRow[],
     putMac(idx.byMac, h.mac, id, true);
     put(idx.byName, nameKey(h.hostname), id, true);
     put(idx.byName, nameKey(h.custom_name), id, true);
+  }
+  for (const [h, devId] of nomiAMano) {
+    put(idx.byName, nameKey(h.hostname), devId, true);
+    put(idx.byName, nameKey(h.custom_name), devId, true);
   }
   // Indirizzi e alias di ogni nodo con host fusi.
   const ipOrder = (a: string, b: string): number => {

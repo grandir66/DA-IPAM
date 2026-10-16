@@ -190,6 +190,9 @@ test("11 · gemello separato: senza coppia il gemello con lo stesso MAC entra co
   assert.equal(idx.come.has(14), false);
   assert.equal(resolveNode(idx, { ip: "10.71.2.21" }), "host:14");
   assert.equal(resolveNode(idx, { ip: "10.71.2.21", mac: "02:00:7b:00:02:12" }), "host:14");
+  // Col solo MAC il vicino va all'apparato: il MAC è anche del 12, che è dentro l'apparato, e la chiave di un host (il 14, fuori)
+  // non la toglie a un apparato (`put` debole). Voluto: un vicino che annuncia quel MAC senza IP è più probabile che sia il NAS.
+  assert.equal(resolveNode(idx, { mac: "02:00:7b:00:02:12" }), "dev:5");
 });
 
 test("12 · nessuna fusione trascinata: il nome di un membro unito a mano non attira un altro host con lo stesso nome", () => {
@@ -201,6 +204,9 @@ test("12 · nessuna fusione trascinata: il nome di un membro unito a mano non at
   assert.equal(canonical(idx, "host:20"), "host:20");
   assert.equal(idx.come.has(20), false);
   assert.equal(resolveNode(idx, { ip: "10.71.4.20" }), "host:20");
+  // Il nome conteso fra il 12 (unito a mano) e il 20 resta conteso, come senza unione: unendo non cambia padrone (revisione finale).
+  assert.equal(resolveNode(indiceDeiNodi(t), { name: "ZETA-NAS" }), null, "senza unione");
+  assert.equal(resolveNode(idx, { name: "ZETA-NAS" }), null, "con l'unione");
 });
 
 test("13 · lucchetto: fuori da node-index.ts e dalle prove nessuno chiama buildNodeIndex (si passa da indiceDeiNodi)", () => {

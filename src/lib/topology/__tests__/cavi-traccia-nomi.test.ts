@@ -42,7 +42,7 @@ test("un nome che non si ripete resta com'è, senza indirizzo", () => {
 test("M1: le anomalie in elenco (nodo, padre, quanti altri), limitate, coi nomi fra quelli della traccia", () => {
   const { t1, modello } = rete();
   const m = costruisciModelloCavi(ingresso(t1), modello, { testaScelta: "dev:1" });
-  const anomalie = [{ nodo: "dev:3", padre: "dev:2", altri: ["dev:7", "dev:8"] }, ...Array.from({ length: 24 }, (_, i) => ({ nodo: `dev:${100 + i}`, padre: "dev:2", altri: ["dev:7", "dev:8", "dev:9"] }))];
+  const anomalie = [{ nodo: "dev:3", padre: "dev:2", porta: "p1", altri: ["dev:7", "dev:8"] }, ...Array.from({ length: 24 }, (_, i) => ({ nodo: `dev:${100 + i}`, padre: "dev:2", porta: "p1", altri: ["dev:7", "dev:8", "dev:9"] }))];
   const tr = calcolaTraccia({}, { ...m, albero: { ...m.albero, padri: {}, anomalie } });
   assert.equal(tr.anomalie, 25, "il numero resta il totale");
   assert.equal(tr.elencoAnomalie.length, 20, "l'elenco è limitato");

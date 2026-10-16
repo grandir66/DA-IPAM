@@ -7,7 +7,7 @@
  * conferma (§13.15 punto 4, `DALLE_VM_SOLO_DETTAGLI`). Logica pura; si calcola a richiesta e non si salva.
  */
 import { parseDbDate } from "@/lib/db-date";
-import { nodeClass, ruoloLetto } from "@/lib/topology/identity";
+import { nodeClass, ruoloLetto, ruoloRete } from "@/lib/topology/identity";
 import { macSullaPorta, parseSpeedMbps } from "@/lib/topology/link-attrs";
 import { ipervisoriLetti, lettoreDellaFonte } from "@/lib/topology/lettori/fonti";
 import { comeDi, portaSalvata } from "@/lib/topology/links";
@@ -17,7 +17,7 @@ import { isRunning } from "@/lib/topology/vm-nodes";
 import { resolveScanHosts } from "@/lib/topology/vms";
 import { normalizeMacForStorage } from "@/lib/utils";
 import { alberoCavi, type AlberoCavi, type NodoCavi } from "./albero";
-import { costruisciCollegamenti, type Collegamento, type ContestoCavi, type RisultatoCavi, type Segmento } from "./collegamenti";
+import { aliasDeiSegmenti, costruisciCollegamenti, type Collegamento, type ContestoCavi, type RisultatoCavi, type Segmento } from "./collegamenti";
 import { chiavePorta, elenchiPorte, indiciInElenco, type ElencoPorte } from "./porte";
 import { elenchiCavi, indiceFatti, proveDaInput, type IndiceFatti, type IngressoCavi, type Prova } from "./prove";
 import { classiCavi, proveDiRuolo, proveDiRuoloCavi, type ProvaRuolo } from "./ruolo";
@@ -204,9 +204,16 @@ export function costruisciModelloCavi(ing: IngressoCavi, t1: TopologyModel, opz:
   }
   const ipervisori = new Set([...nodi.values()].filter((n) => n.classe === "hyper").map((n) => n.id));
   for (const v of t1.vms) if (v.hypervisorNodeId) ipervisori.add(v.hypervisorNodeId);
+  // Le ★ con gli id canonici (come `enrichLinks` del modello di oggi) e, per un segmento, l'id di oggi del segmento che contiene
+  // ancora il membro salvato (§13.7.3); le porte restano come scritte e si confrontano per chiave (`risolviStelle`).
+  const alias = aliasDeiSegmenti(segmenti);
+  const idDi = (id: string): string => alias.get(id) ?? canonical(p.idx, id);
+  const primari = ing.t1.primaries.map((x) => ({ node_id: idDi(x.node_id), other_node: idDi(x.other_node), node_port: x.node_port, other_port: x.other_port }));
+  // I ruoli «Core» e «Accesso» scritti a mano (§13.9): solo per l'anomalia del punto 8; la classe li legge «rete» (ruoloLetto).
+  const ruoli = new Map(ing.t1.devices.flatMap((d) => { const r = ruoloRete(d.topology_role); return r ? [[`dev:${d.id}`, r] as const] : []; }));
   const albero = alberoCavi({
     nodi, visibili, collegamenti, testaConfermata, portaRadice, portaUplink, gateway, gatewayDi: t1.gatewayDi ?? {},
-    primari: ing.t1.primaries.map((x) => ({ node_id: x.node_id, other_node: x.other_node })), ipervisori,
+    primari, portaSalvata: p.ctx.portaSalvata, ipervisori, ruoli, ponti,
   });
 
   // §13.7.2 passo 10, §13.15 punto 4 (I56, S11): un collegamento con la SOLA prova «dalle VM» che non è il principale del suo

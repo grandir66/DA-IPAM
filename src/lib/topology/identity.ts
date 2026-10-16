@@ -55,6 +55,16 @@ export function ruoloLetto(v: string | null | undefined): "rete" | "attaccato" |
 }
 
 /**
+ * Il ruolo «Core» o «Accesso» scritto a mano (T3, spec §13.9: «solo per correggere l'anomalia» del §13.8.3 punto 8). Lo legge
+ * solo il modello per cavo (l'anomalia, e il menu «Ruolo nella mappa» con la mappa nuova); per la classe resta `ruoloLetto`,
+ * che li legge «rete» come in T1. Ogni altro valore: null.
+ */
+export function ruoloRete(v: string | null | undefined): "core" | "accesso" | null {
+  const r = (v ?? "").trim();
+  return r === "core" ? "core" : r === "accesso" ? "accesso" : null;
+}
+
+/**
  * Ruolo nella mappa (spec §10.3, §11.5): i client non sono nodi della mappa automatica.
  * Un hypervisor è un apparato `hypervisor`, oppure un server/NAS con fornitore Proxmox o VMware
  * o con la scansione Proxmox (`proxmoxScan`, revisione finale M-2).

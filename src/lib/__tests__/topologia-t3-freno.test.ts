@@ -4,13 +4,16 @@
 // rovinata non si sente); acceso dà la mappa per cavo. Se il calcolo nuovo cade (il modello per cavo o la sua lettura), la mappa
 // di prima con l'errore detto nel journal e a schermo: mai una pagina bianca, mai un ripiego muto (Caso 3, lezione 6). I dati
 // sono la famiglia 1 delle reti-campione scritta con le funzioni di db-tenant, come in topologia-t2-freno.test.ts.
+// Seconda parte (Task 12): lo stesso freno su OGNI rete di prova (le cinque famiglie, la rete in quattro letture, le due fixture
+// anonime) — spento è T1 bit per bit (modello, albero, linee, impronte) e non legge niente di T3; acceso e poi spento non lascia
+// niente indietro; con lo schema assente la rotta non accende, e un valore scritto a mano nel DB dà comunque una mappa.
 import { removeTestHubDb } from "@/lib/integrations/__tests__/support/hub-isolato";
 import { test, after, mock } from "node:test";
 import assert from "node:assert/strict";
 import type Database from "better-sqlite3";
 import { closeHubDb } from "@/lib/db-hub";
 import {
-  deleteTenantDatabase, getTenantDb, getTopologyModelInput, rileggiSchemaCavi, scriviFattiTopologia, setTenantSetting, upsertNeighbors, withTenant,
+  deleteTenantDatabase, getTenantDb, getTopologyModelInput, rileggiSchemaCavi, schemaCaviPresente, scriviFattiTopologia, setTenantSetting, upsertNeighbors, withTenant,
 } from "@/lib/db-tenant";
 import { buildTopologyModel } from "@/lib/topology/model";
 import { CHIAVE_MAPPA_CAVI, scriviMappaCavi } from "@/lib/topology/letture/mappa";
@@ -19,7 +22,12 @@ import {
 } from "@/lib/topology/mappa-server";
 import type { TopologyModelInput } from "@/lib/topology/model-types";
 import { soloMikrotik } from "@/lib/topology/__tests__/support/reti-campione";
-import { serializza } from "@/lib/topology/__tests__/support/impronta";
+import { impronta, improntaT1, serializza } from "@/lib/topology/__tests__/support/impronta";
+import { RETI_T1 } from "@/lib/topology/__tests__/support/famiglie-cavi";
+import { decidiCorpoMappa } from "@/lib/topology/letture/corpo";
+import { computeMapView } from "@/lib/topology/map-compute";
+import { padriDi } from "@/lib/topology/misura";
+import { autoVisible, buildTree, proposeHead } from "@/lib/topology/tree";
 
 const T = "TESTT3FRENO";
 getTenantDb(T);
@@ -32,9 +40,13 @@ const sql = (ms: number): string => new Date(ORA + ms).toISOString().slice(0, 19
 /** Scrive nel tenant la rete: apparati, reti, host, porte, vicini (un'ora fa), e i fatti di porta dei MikroTik (T2). */
 function carica(db: Database.Database, rete: TopologyModelInput): void {
   for (const n of rete.networks) db.prepare("INSERT INTO networks (id, cidr, name, gateway) VALUES (?, ?, ?, ?)").run(n.id, n.cidr, n.name, n.gateway);
+  // Le reti-campione che non dichiarano la rete dei loro host (famiglia 2): una rete segnaposto, per la chiave esterna.
+  for (const id of new Set(rete.hosts.map((h) => h.network_id))) {
+    if (!rete.networks.some((n) => n.id === id)) db.prepare("INSERT INTO networks (id, cidr, name, gateway) VALUES (?, ?, ?, NULL)").run(id, `10.250.${id}.0/24`, `rete-${id}`);
+  }
   for (const d of rete.devices) {
     db.prepare(`INSERT INTO network_devices (id, name, host, device_type, vendor, model, protocol, enabled, controller_mac, uplink_mac, uplink_remote_port, uplink_type, uplink_seen_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(d.id, d.name, d.host, d.device_type, d.vendor, d.model, d.via ?? "ssh", d.enabled, d.controller_mac, d.uplink_mac,
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(d.id, d.name, d.host, d.device_type, d.vendor === "aruba" ? "hp" : d.vendor, d.model, d.via ?? "ssh", d.enabled, d.controller_mac, d.uplink_mac,
       d.uplink_remote_port, d.uplink_type, d.uplink_seen_at);
   }
   for (const h of rete.hosts) {
@@ -46,6 +58,8 @@ function carica(db: Database.Database, rete: TopologyModelInput): void {
   for (const p of rete.ports ?? []) {
     db.prepare("INSERT INTO switch_ports (device_id, port_index, port_name, status, speed, stp_state) VALUES (?, ?, ?, ?, ?, ?)").run(p.device_id, p.port_index, p.port_name, p.status, p.speed, p.stp_state);
   }
+  for (const u of rete.uplinkPorts) db.prepare("UPDATE switch_ports SET is_uplink = 1 WHERE device_id = ? AND port_index = ?").run(u.device_id, u.port_index);
+  for (const m of rete.macPorts) db.prepare("INSERT INTO mac_port_entries (device_id, mac, port_name, timestamp) VALUES (?, ?, ?, ?)").run(m.device_id, m.mac, m.port_name, sql(-3_600_000));
   const insVicino = db.prepare(`INSERT INTO device_neighbors (device_id, local_port, remote_device_name, remote_port, protocol, remote_ip, remote_mac, remote_platform, source, first_seen, timestamp)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
   for (const n of rete.neighbors) {
@@ -174,5 +188,120 @@ test("«Candidati per porta» (§13.4.6, Scelte 11): solo con la mappa nuova acc
     assert.equal(OGGETTO_NON_NELLA_MAPPA, "Oggetto non più nella mappa");
   } finally {
     withTenant(T, () => scriviMappaCavi(false, "prova"));
+  }
+});
+
+// ─── Seconda parte (Task 12): il freno su OGNI rete di prova ───────────────────────────────────────────────────────────────────
+
+/** Lo stato della pagina da un modello: albero della mappa automatica, linee, impronta. Con `cavi` la pagina userebbe la strada nuova. */
+function paginaDi(model: ReturnType<typeof oggi>) {
+  const testa = proposeHead(model);
+  const rif = buildTree(model, autoVisible(model), testa ? [testa] : []);
+  const v = computeMapView(model, { auto: true, members: [], roots: [], head: null, tweaks: [], expanded: new Set(), orientation: "lr" });
+  return { rif, v };
+}
+
+/** Una rete di prova su un tenant suo, il tempo di una prova. */
+function conRete<T>(nome: string, rete: TopologyModelInput, prova: (tenant: string) => T): T {
+  const tenant = `TESTT3FRENO${nome.replace(/[^A-Z0-9]/gi, "").toUpperCase().slice(0, 18)}${Math.floor(Math.random() * 1e6)}`;
+  carica(getTenantDb(tenant), rete);
+  withTenant(tenant, () => rileggiSchemaCavi());
+  try {
+    return prova(tenant);
+  } finally {
+    deleteTenantDatabase(tenant);
+  }
+}
+
+for (const [nome, crea] of RETI_T1) {
+  test(`T3.7 · ${nome}: spento è T1 bit per bit — modello, albero della pagina, linee, impronte — e non legge niente di T3; acceso e poi spento non lascia niente indietro`, () => {
+    conRete(nome, crea(), (tenant) => {
+      const oggiQui = () => withTenant(tenant, () => buildTopologyModel(getTopologyModelInput(2, ORA)));
+      let letto = 0;
+      const spia: FontiDellaMappa = { ...FONTI_DELLA_MAPPA, ingressoCavi: (st, n) => { letto++; return FONTI_DELLA_MAPPA.ingressoCavi(st, n); } };
+      const prima = oggiQui();
+      const spenta = withTenant(tenant, () => modelloDellaMappa(2, ORA, spia));
+      assert.deepEqual([spenta.mappa, spenta.errore, letto], ["oggi", null, 0], "spento: la mappa di prima, senza leggere T3");
+      assert.equal(spenta.model.cavi, undefined);
+      assert.equal(serializza(spenta.model), serializza(prima), "il modello di T1, bit per bit");
+      assert.equal(impronta(spenta.model), impronta(prima));
+      // L'albero e le linee della pagina sono quelli di T1: `computeMapView` senza `cavi` è `buildTree` di T1.
+      const { rif, v } = paginaDi(spenta.model);
+      assert.deepEqual(padriDi(v.tree), padriDi(rif), "i padri");
+      assert.deepEqual([...v.tree.via].map(([n, l]) => [n, l.id]), [...rif.via].map(([n, l]) => [n, l.id]), "le linee scelte");
+      assert.deepEqual(v.tree.roots, rif.roots, "le radici");
+      assert.equal(serializza(v.tree.links.map((l) => ({ ...l, redundant: undefined, primary: undefined }))), serializza(rif.links.map((l) => ({ ...l, redundant: undefined, primary: undefined }))));
+      // L'impronta di T1 calcolata sull'ingresso del DB: quella che `cavi-ombra.test.ts` fissa per le reti in memoria.
+      const input = withTenant(tenant, () => getTopologyModelInput(2, ORA));
+      assert.equal(improntaT1(input).modello, impronta(prima));
+
+      // Acceso: la mappa per cavo, e il modello di T1 che la pagina non usa non si muove; poi spento: di nuovo uguale.
+      withTenant(tenant, () => scriviMappaCavi(true, "prova"));
+      const accesa = withTenant(tenant, () => modelloDellaMappa(2, ORA, spia));
+      assert.deepEqual([accesa.mappa, accesa.errore, letto], ["cavi", null, 1]);
+      assert.equal(serializza(oggiQui()), serializza(prima), "calcolare la mappa nuova non scrive niente che T1 legga (R7)");
+      withTenant(tenant, () => scriviMappaCavi(false, "prova"));
+      letto = 0;
+      const dopo = withTenant(tenant, () => modelloDellaMappa(2, ORA, spia));
+      assert.deepEqual([dopo.mappa, dopo.errore, letto], ["oggi", null, 0]);
+      assert.equal(serializza(dopo.model), serializza(prima), "acceso e poi spento: di nuovo T1 bit per bit");
+    });
+  });
+}
+
+test("T3.7 · lo schema delle letture assente: la rotta non accende; un valore scritto a mano nel DB dà comunque una mappa (elenchi vuoti, `cavi` presente, nessuna eccezione)", () => {
+  conRete("schema", soloMikrotik(), (tenant) => {
+    const d = getTenantDb(tenant);
+    d.exec("ALTER TABLE device_neighbors DROP COLUMN remote_caps");
+    try {
+      withTenant(tenant, () => rileggiSchemaCavi());
+      assert.equal(withTenant(tenant, () => schemaCaviPresente()), false);
+      // La rotta (PUT /api/topology/settings/mappa) decide il corpo con `decidiCorpoMappa`: accendere chiede lo schema (409); spegnere no.
+      const accendi = withTenant(tenant, () => decidiCorpoMappa({ acceso: true }, { schemaPresente: schemaCaviPresente }));
+      assert.deepEqual([accendi.ok, accendi.ok ? null : accendi.status], [false, 409]);
+      assert.equal(withTenant(tenant, () => decidiCorpoMappa({ acceso: false }, { schemaPresente: schemaCaviPresente })).ok, true, "spegnere si può sempre");
+      // Un valore scritto a mano (nessun codice lo accende da solo, ma il DB può averlo): la mappa c'è, dalle sole righe di oggi.
+      withTenant(tenant, () => scriviMappaCavi(true, "a mano"));
+      const errore = mock.method(console, "error", () => undefined);
+      try {
+        const r = withTenant(tenant, () => modelloDellaMappa(2, ORA));
+        assert.deepEqual([r.mappa, r.errore, errore.mock.callCount()], ["cavi", null, 0], "nessuna eccezione, nessuna riga nel journal");
+        assert.ok(r.model.cavi, "`cavi` c'è");
+        const ing = withTenant(tenant, () => FONTI_DELLA_MAPPA.ingressoCavi(2, ORA));
+        assert.deepEqual([ing.schema, ing.fattiPorta.length, ing.fattiBridge.length, ing.macApparati.length, ing.uplink.length], [false, 0, 0, 0, 0], "elenchi vuoti");
+        assert.ok(r.model.links.length > 0, "i collegamenti si calcolano dalle righe di oggi");
+      } finally {
+        errore.mock.restore();
+      }
+    } finally {
+      d.exec("ALTER TABLE device_neighbors ADD COLUMN remote_caps TEXT");
+      withTenant(tenant, () => rileggiSchemaCavi());
+    }
+  });
+});
+
+// ─── Caso 5 del piano (M5), sulla rete-campione del freno e dalla rotta ─────────────────────────────────────────────────────
+
+test("Caso 5 · un fatto di porta vecchio (`running = 0` di una fonte non più letta) accanto a un vicino LLDP di oggi sulla stessa porta: il cavo non è «giù»; un fatto dentro la soglia sì", () => {
+  const giorniFa = (n: number) => new Date(ORA - n * 86_400_000);
+  const fatti = { porte: [{ port_key: "i:1", port_name: "sfp-sfpplus1", port_index: 1, if_kind: "physical", running: 0 }], bridge: [], macs: [] };
+  const statoDelCavo = (): string | null | undefined => {
+    withTenant(T, () => scriviMappaCavi(true, "prova"));
+    try {
+      const r = withTenant(T, () => modelloDellaMappa(2, ORA));
+      assert.equal(r.mappa, "cavi");
+      const l = r.model.links.find((x) => [x.a, x.b].sort().join() === "dev:11,dev:21");
+      return l?.cavo?.stato;
+    } finally {
+      withTenant(T, () => scriviMappaCavi(false, "prova"));
+    }
+  };
+  try {
+    withTenant(T, () => scriviFattiTopologia(21, "device", fatti, giorniFa(3)));
+    assert.equal(statoDelCavo(), "inoltra", "tre giorni con la soglia a due: il fatto non entra, e il cavo visto oggi non è «giù»");
+    withTenant(T, () => scriviFattiTopologia(21, "device", fatti, giorniFa(1)));
+    assert.equal(statoDelCavo(), "giu", "un giorno: dentro la soglia, il fatto dice «giù»");
+  } finally {
+    withTenant(T, () => scriviFattiTopologia(21, "device", { porte: [{ port_key: "i:1", port_name: "sfp-sfpplus1", port_index: 1, if_kind: "physical", running: 1, stp_state: "forwarding", stp_role: "designated" }], bridge: [], macs: [] }));
   }
 });

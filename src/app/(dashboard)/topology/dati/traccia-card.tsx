@@ -15,7 +15,7 @@ type Risposta = Traccia & { calcolataIl: string; staleDays: number; letture: Arr
  * «Cosa cambierebbe con la mappa nuova (una linea per cavo)» (spec topologia §13.11.3), solo per gli amministratori:
  * calcolata quando si preme «Calcola», mai all'apertura della pagina. La mappa non cambia.
  */
-export function TracciaCard() {
+export function TracciaCard({ mappaAccesa = false }: { mappaAccesa?: boolean }) {
   const [t, setT] = useState<Risposta | null>(null);
   const [errore, setErrore] = useState<string | null>(null);
   const [calcolo, setCalcolo] = useState(false);
@@ -37,7 +37,7 @@ export function TracciaCard() {
   ] : [];
   return (
     <Card className="xl:col-span-2">
-      <CardHeader><CardTitle>Cosa cambierebbe con la mappa nuova (una linea per cavo)</CardTitle></CardHeader>
+      <CardHeader><CardTitle>{mappaAccesa ? "Differenze fra la mappa nuova e quella di prima" : "Cosa cambierebbe con la mappa nuova (una linea per cavo)"}</CardTitle></CardHeader>
       <CardContent className="space-y-3">
         <p className="text-sm">Un calcolo in memoria: la mappa non cambia. Serve a decidere quando accendere la mappa nuova, a differenze spiegate.</p>
         <Button variant="outline" onClick={() => void calcola()} disabled={calcolo}>{calcolo ? "Calcolo…" : t ? "Ricalcola" : "Calcola"}</Button>

@@ -6,7 +6,7 @@
  * diventano l'elenco «Cavi di ridondanza» del primo foglio (spec §12.5).
  */
 import type { EdgeLook, Pt } from "@/lib/topology/edge-look";
-import { speedLabel } from "@/lib/topology/edge-look";
+import { parolaStato, speedLabel } from "@/lib/topology/edge-look";
 import { LR_TRUNK, drawableLinks, lineaAlbero, percorso, redundantLabelAt } from "@/lib/topology/map-screen";
 import { CHAR_W } from "@/lib/topology/tree-layout-consts";
 import type { MapLink, MapOrientation } from "@/lib/topology/model-types";
@@ -99,6 +99,8 @@ export interface RedundantCable {
   toPort: string;
   /** «10G», «1G»…; «non nota» se non si sa (sta nella colonna «velocità»). */
   speed: string;
+  /** La parola intera dello stato del cavo («⊘ bloccato dallo spanning tree»…); «—» senza `cavo` (mappa di prima) o a stato normale. */
+  stato: string;
 }
 
 /**
@@ -120,11 +122,12 @@ export function redundantCables(
   }
   const d = (id: string) => depth.get(id) ?? Number.MAX_SAFE_INTEGER;
   const rows = drawableLinks(tree.links, nodes)
-    .filter((l: MapLink) => l.redundant)
+    // Una contrazione (passaggio da apparati non gestiti) non è un cavo: non ha porte da elencare.
+    .filter((l: MapLink) => l.redundant && l.cavo?.genere !== "contrazione")
     .map((l): RedundantCable => {
       const aFirst = d(l.a) < d(l.b) || (d(l.a) === d(l.b) && nameOf(l.a).localeCompare(nameOf(l.b), "it") <= 0);
       const [x, xp, y, yp] = aFirst ? [l.a, l.aPort, l.b, l.bPort] : [l.b, l.bPort, l.a, l.aPort];
-      return { id: l.id, from: nameOf(x), fromPort: xp || "porta non nota", to: nameOf(y), toPort: yp || "porta non nota", speed: speedLabel(l.speedMbps) ?? "non nota" };
+      return { id: l.id, from: nameOf(x), fromPort: xp || "porta non nota", to: nameOf(y), toPort: yp || "porta non nota", speed: speedLabel(l.speedMbps) ?? "non nota", stato: (l.cavo && parolaStato(l.cavo, "intera", nameOf)) || "—" };
     });
   return rows.sort((p, q2) => p.from.localeCompare(q2.from, "it") || p.to.localeCompare(q2.to, "it") || (p.id < q2.id ? -1 : 1));
 }

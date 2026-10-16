@@ -107,7 +107,8 @@ export function Legend({ withVms, withCavi = false }: { withVms: boolean; withCa
   );
 }
 
-export function CableTable({ rows, from, total, continued }: { rows: RedundantCable[]; from: number; total: number; continued?: boolean }) {
+/** `conStato` solo con la mappa nuova (T3): a interruttore spento la stampa è quella di prima, colonne comprese. */
+export function CableTable({ rows, from, total, continued, conStato = false }: { rows: RedundantCable[]; from: number; total: number; continued?: boolean; conStato?: boolean }) {
   const cell = "overflow-hidden text-ellipsis whitespace-nowrap px-1 text-left";
   return (
     <div>
@@ -121,11 +122,13 @@ export function CableTable({ rows, from, total, continued }: { rows: RedundantCa
       </h2>
       {rows.length > 0 && (
         <table className="w-full table-fixed border-collapse text-[13px] leading-[4.8mm]">
-          <colgroup><col style={{ width: "4%" }} /><col style={{ width: "27%" }} /><col style={{ width: "18%" }} /><col style={{ width: "4%" }} /><col style={{ width: "27%" }} /><col style={{ width: "12%" }} /><col style={{ width: "8%" }} /></colgroup>
+          {conStato
+            ? <colgroup><col style={{ width: "4%" }} /><col style={{ width: "20%" }} /><col style={{ width: "12%" }} /><col style={{ width: "3%" }} /><col style={{ width: "20%" }} /><col style={{ width: "12%" }} /><col style={{ width: "7%" }} /><col style={{ width: "22%" }} /></colgroup>
+            : <colgroup><col style={{ width: "4%" }} /><col style={{ width: "27%" }} /><col style={{ width: "18%" }} /><col style={{ width: "4%" }} /><col style={{ width: "27%" }} /><col style={{ width: "12%" }} /><col style={{ width: "8%" }} /></colgroup>}
           <thead>
             <tr style={{ borderBottom: `1px solid ${INK}` }}>
               <th className={cell}>n.</th><th className={cell}>oggetto</th><th className={cell}>porta</th><th className={cell} />
-              <th className={cell}>oggetto</th><th className={cell}>porta</th><th className={cell}>velocità</th>
+              <th className={cell}>oggetto</th><th className={cell}>porta</th><th className={cell}>velocità</th>{conStato && <th className={cell}>stato</th>}
             </tr>
           </thead>
           <tbody>
@@ -138,6 +141,7 @@ export function CableTable({ rows, from, total, continued }: { rows: RedundantCa
                 <td className={cell} title={r.to}>{r.to}</td>
                 <td className={cell} title={r.toPort}>{r.toPort}</td>
                 <td className={cell}>{r.speed}</td>
+                {conStato && <td className={cell} title={r.stato}>{r.stato}</td>}
               </tr>
             ))}
           </tbody>
@@ -217,11 +221,11 @@ export function PrintSheets({ view, plan, cables, at, withVms }: {
           />
         </div>
         <Legend withVms={withVms} withCavi={view.model.cavi !== undefined} />
-        <CableTable rows={cables.slice(0, first)} from={0} total={cables.length} />
+        <CableTable rows={cables.slice(0, first)} from={0} total={cables.length} conStato={view.model.cavi !== undefined} />
       </Sheet>
       {cablePages(cables.length, plan.pageMm).map((from) => (
         <Sheet key={`cavi-${from}`} plan={plan}>
-          <CableTable rows={cables.slice(from, from + perPage)} from={from} total={cables.length} continued />
+          <CableTable rows={cables.slice(from, from + perPage)} from={from} total={cables.length} continued conStato={view.model.cavi !== undefined} />
         </Sheet>
       ))}
       {plan.tiles.filter((t) => !t.empty).map((t) => (

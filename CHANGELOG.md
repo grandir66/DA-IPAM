@@ -4,6 +4,30 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-16 · credenziali tappa 2e: le credenziali degli apparati nell'archivio
+
+Piano `docs/superpowers/plans/2026-10-15-tappa2-archivio-credenziali.md` (sotto-tappa 2e, zona rossa).
+Perché: le credenziali di un apparato stavano in tre posti (binding d'archivio, binding «inline» con utente e
+password nel binding, colonne vecchie di `network_devices`), e la pagina ne mostrava uno solo; un «Nessuna»
+scelto dall'utente poteva essere scavalcato da una colonna invisibile.
+
+### Modifiche
+
+- **Binding inline e colonne vecchie diventano voci e binding d'archivio, una volta sola**
+  (`converti-apparati.ts`, segno `credenziali_t2_apparati`): ogni inline diventa la voce «<apparato> ·
+  <protocollo>» con lo stesso segreto cifrato e la stessa storia di prova; una colonna senza binding equivalente
+  diventa un binding non provato; poi le colonne si svuotano. Per ogni apparato si controlla che la scelta resti
+  la stessa leggendo solo i binding (impronta e porta): se cambierebbe, l'apparato si lascia com'era e si elenca.
+- **Chi scrive scrive solo nell'archivio**: creazione dell'apparato, modifica del singolo, modifica in blocco,
+  assegnazione ai router delle reti, apparato DHCP del DC, tabella delle credenziali dell'apparato. Una voce
+  scelta va in testa ai binding del protocollo e quelli che c'erano restano con la loro storia; «Nessuna» toglie
+  i binding di quel protocollo dopo una conferma che dice quanti (anche quelli riusciti).
+- **Una voce scelta che è già fallita su quell'apparato resta esclusa, e la risposta lo dice** (prima passava
+  per riuscita).
+- **Utente senza password** in creazione o modifica: 400, invece di un binding incompleto.
+- Il token di Omada viene dall'archivio; il wizard del router trova la voce da sostituire fra i binding.
+- `delete`/`update` di un binding di un altro apparato rispondono 404 (prima lo cancellavano).
+
 ## [Non rilasciato] — 2026-10-16 · credenziali tappa 2d: una lista sola per rete
 
 Piano `docs/superpowers/plans/2026-10-15-tappa2-archivio-credenziali.md` (sotto-tappa 2d, zona rossa).

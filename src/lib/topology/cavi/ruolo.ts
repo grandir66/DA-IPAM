@@ -6,10 +6,13 @@
  * ne ha aggiunte sei e il ruolo a mano (14/10 sera). Logica pura, senza nomi di prodotto (prova I37).
  */
 import { nodeClass, ruoloLetto, type NodeClass } from "@/lib/topology/identity";
+import { eReteDalleCapacita, lettoreDellaFonte } from "@/lib/topology/lettori/fonti";
 import { righeUltimoGiro } from "@/lib/topology/links";
-import type { MapVm, TopologyModelInput } from "@/lib/topology/model-types";
+import type { ClasseMappa, MapNode, MapVm, TopologyModelInput } from "@/lib/topology/model-types";
 import { canonical, nameKey, type NodeIndex } from "@/lib/topology/node-index";
 import { normalizeMacForStorage } from "@/lib/utils";
+import { normale } from "./porte";
+import type { IndiceFatti, IngressoCavi, Prova } from "./prove";
 
 /** Il ruolo a mano come lo legge T1b: sta in identity.ts perché serve anche al nodo (node-index.ts). */
 export { ruoloLetto };
@@ -112,4 +115,65 @@ export function classeInMappa(n: Parameters<typeof nodeClass>[0], prove: readonl
   if (ruoloAMano === "rete") return base === "ap" ? "ap" : "infra";
   if (base !== "infra" && base !== "ap") return base;
   return (prove?.length ?? 0) > 0 ? base : "da_sistemare";
+}
+
+/**
+ * Le prove di ruolo che vede solo il modello per cavo (spec §13.8.2, «Una prova che in T1b non c'è ancora»): lo spanning tree
+ * dai fatti per porta e dai BPDU che un apparato letto riceve da chi sta sull'altro capo, le capacità annunciate col nome di
+ * sistema, il capo di un ponte radio (§13.7.6 punto 4), e «legge vicini» coi lettori che il modello di oggi non legge. Si
+ * aggiungono a quelle di oggi (proveDiRuolo). Sull'hub lo switch di storage, che non legge vicini e che nessun controller
+ * gestisce, torna fra gli apparati di rete coi BPDU che manda al router.
+ */
+export function proveDiRuoloCavi(ing: Pick<IngressoCavi, "fattiPorta" | "vicini">, prove: readonly Prova[], fatti: IndiceFatti,
+  capiRadio: ReadonlySet<string>, nominale: (id: string) => NodeClass | null): Map<string, ProvaRuolo[]> {
+  const out = new Map<string, Set<ProvaRuolo>>();
+  const metti = (id: string | null | undefined, p: ProvaRuolo): void => {
+    if (id) out.set(id, (out.get(id) ?? new Set<ProvaRuolo>()).add(p));
+  };
+  // Legge vicini (la prova di oggi, `device_neighbors.device_id`) anche coi lettori che solo il modello per cavo legge (SNMP, da
+  // T2): lo interroghiamo come apparato di rete. Non la lettura dal lato dell'host: è un hypervisor letto come host, e un
+  // server registrato switch tornerebbe nell'albero senza prove sue (decisione del Task 3 di T3).
+  for (const n of ing.vicini) if (lettoreDellaFonte(n.source) !== "host") metti(`dev:${n.device_id}`, "vicini");
+  // Le porte dell'apparato con uno stato di spanning tree attivo, su una porta accesa (I65: `disabled` e `broken` no).
+  for (const f of ing.fattiPorta) {
+    if (f.running === 0) continue;
+    if (STP_ATTIVO.has((f.stp_state ?? "").trim().toLowerCase())) metti(`dev:${f.device_id}`, "spanning_tree");
+  }
+  // Gli apparati sentiti con un annuncio di collegamento su ogni porta, contati per apparato (§13.7.6 punto 1: una porta, un
+  // cavo; gli annunci di segmento non contano).
+  const portaDi = (p: Prova): string => `${p.da.nodo}|${p.da.chiave ?? `?${normale(p.da.nome)}`}`;
+  const collegamento = prove.filter((p) => p.classe === "annuncio_collegamento" && p.altro?.nodo !== p.da.nodo);
+  const sentiti = new Map<string, Set<string>>();
+  for (const p of collegamento) sentiti.set(portaDi(p), (sentiti.get(portaDi(p)) ?? new Set<string>()).add(p.altro?.nodo ?? p.telaio ?? "?"));
+  for (const p of collegamento) {
+    if (!p.altro) continue;
+    // I BPDU che l'osservatore riceve sulla porta che vede l'altro: l'altro parla lo spanning tree. Solo se la porta sente lui
+    // solo: su una porta che sente due apparati (un hub, uno switch non gestito) non si sa chi li manda (decisione del Task 3
+    // di T3: «da lui», §13.8.2).
+    const bpdu = fatti.porta(p.da.nodo, p.da).some((f) => (f.bpdu_rx ?? 0) > 0 && f.running !== 0);
+    if (bpdu && sentiti.get(portaDi(p))?.size === 1) metti(p.altro.nodo, "spanning_tree");
+    // Capacità annunciate: solo con il nome di sistema, mai per un server o un hypervisor noto (un server con un bridge e
+    // l'inoltro acceso annuncia «bridge, router»; l'LLDP del firmware delle schede annuncia senza nome).
+    const k = nominale(p.altro.nodo);
+    if (p.conNome === true && eReteDalleCapacita(p.capacita ?? null) && k !== "att" && k !== "hyper") metti(p.altro.nodo, "capacita");
+  }
+  for (const id of capiRadio) metti(id, "radio");
+  return new Map([...out].map(([k, v]) => [k, [...v].sort()]));
+}
+
+/**
+ * La classe di ogni nodo nel modello per cavo: classeInMappa con le prove di oggi più quelle di T3; un capo di un ponte radio
+ * non è mai «client» né «da sistemare» (diventa «att»: sta sulla linea, §13.7.6 punto 4; fare da ponte nell'albero lo decide
+ * l'albero con `ponti`). Restituisce la classe di tutti i nodi dati, non solo di quelli che cambiano. Il tipo del nodo è
+ * quello che chiede nodeClass, preso da lì (come in classeInMappa: scritto qui nominerebbe un prodotto, prova I37).
+ */
+export function classiCavi(nodi: Iterable<Parameters<typeof nodeClass>[0] & Pick<MapNode, "id">>,
+  prove: ReadonlyMap<string, readonly ProvaRuolo[]>, ruoloAMano: (id: string) => "rete" | "attaccato" | null,
+  ponti: ReadonlySet<string>): Map<string, ClasseMappa> {
+  const out = new Map<string, ClasseMappa>();
+  for (const n of nodi) {
+    const k = classeInMappa(n, prove.get(n.id), ruoloAMano(n.id));
+    out.set(n.id, ponti.has(n.id) && (k === "client" || k === "da_sistemare") ? "att" : k);
+  }
+  return out;
 }

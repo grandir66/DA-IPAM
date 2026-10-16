@@ -2,9 +2,10 @@
  * I valori delle colonne del DB in fatti neutri, per il modello per cavo (spec topologia §13.4.4: la logica di cavi/ non
  * nomina prodotti né i valori che li nominano, prova I37). Qui stanno le fonti dei vicini e dei fatti («device», «unifi»,
  * «ssh», «snmp», «host»; «controller» per i fatti) e i protocolli («lldp», «cdp», «mndp», «unknown») come li scrivono i
- * lettori, e le capacità annunciate che dicono «radio».
+ * lettori, e le capacità annunciate che dicono «radio» o «apparato di rete».
  */
 import type { Classe, Lettore } from "@/lib/topology/cavi/prove";
+import type { ModelDeviceRow } from "@/lib/topology/model-types";
 
 /** La fonte con cui il controller scrive i vicini (device_neighbors.source). */
 export const FONTE_CONTROLLER = "unifi";
@@ -44,10 +45,33 @@ export function dettoDelProtocollo(protocollo: string, discoveredBy: string | nu
   return "un annuncio di rete (MNDP o CDP)";
 }
 
+/** Le capacità annunciate, come le scrivono i lettori: un elenco con virgole, minuscolo. */
+function capacitaDi(capacita: string | null): Set<string> {
+  return new Set((capacita ?? "").split(",").map((x) => x.trim().toLowerCase()).filter((x) => x !== ""));
+}
+
 /** Le due radio di un ponte (spec §13.7.6, punto 3): capacità LLDP «WLAN» (o «station»), oppure «bridge» senza «router». */
 export function eRadioDalleCapacita(capacita: string | null): boolean {
-  const c = new Set((capacita ?? "").split(",").map((x) => x.trim().toLowerCase()).filter((x) => x !== ""));
+  const c = capacitaDi(capacita);
   return c.has("wlan-ap") || c.has("wlan") || c.has("station") || (c.has("bridge") && !c.has("router"));
+}
+
+/**
+ * Capacità annunciate che dicono «apparato di rete» (spec §13.8.2): bridge, router, AP («wlan-ap», e «wlan» come la legge
+ * eRadioDalleCapacita). Nel formato dei lettori (elenco con virgole). Chi la usa la vale solo con il nome di sistema e mai per
+ * un server o un hypervisor noto: lo dice la regola, non le capacità (cavi/ruolo.ts).
+ */
+export function eReteDalleCapacita(capacita: string | null): boolean {
+  const c = capacitaDi(capacita);
+  return c.has("bridge") || c.has("router") || c.has("wlan-ap") || c.has("wlan");
+}
+
+/**
+ * Gli hypervisor censiti e letti: chi ha la scansione delle sue VM accesa (spec §11.5). È una prova del ruolo «hypervisor»
+ * (§13.8.2, I65), come nel modello di oggi; la colonna ha il nome del prodotto, quindi si legge qui.
+ */
+export function ipervisoriLetti(devices: ReadonlyArray<Pick<ModelDeviceRow, "id" | "proxmox_scan">>): Set<string> {
+  return new Set(devices.filter((d) => d.proxmox_scan === 1).map((d) => `dev:${d.id}`));
 }
 
 /**

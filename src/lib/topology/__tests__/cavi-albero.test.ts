@@ -11,7 +11,7 @@ import { buildTopologyModel } from "@/lib/topology/model";
 import { costruisciModelloCavi } from "@/lib/topology/cavi/modello";
 import type { IngressoCavi } from "@/lib/topology/cavi/prove";
 import type { ModelDeviceRow, ModelNeighborRow, TopologyModelInput } from "@/lib/topology/model-types";
-import { baseInput, dev } from "./support/righe";
+import { baseInput, dev, host } from "./support/righe";
 import { porte } from "./support/reti-campione";
 import { fb, fp, ingresso, vic } from "./support/cavi";
 
@@ -160,7 +160,8 @@ test("I22: il bridge designato conferma un cavo già provato da LLDP; non scegli
 test("lo schema assente si dice, e le parti non calcolate in T2 sono elencate", () => {
   const m = ombra({ ...ingresso(baseInput({ devices: [dev(2)] })), schema: false });
   assert.equal(m.schema, false);
-  assert.ok(m.nonCalcolato.length >= 6);
+  // Sette in T2; il Task 3 di T3 ne toglie due (l'abbinamento «telaio, nome, IP» e le prove di ruolo coi fatti nuovi).
+  assert.ok(m.nonCalcolato.length >= 5);
 });
 
 // ── Casi aggiunti dopo il piano (fatti emersi sulle letture vere del 15/10) ────────────────────────────────────────────────
@@ -424,3 +425,21 @@ for (const nome of ["topologia-cliente-a.json", "topologia-domarc.json"]) {
     }
   });
 }
+
+// §13.7.6 punto 4 (T3, Task 3 e 5): le radio sono nodi sulla linea. Il router sente sulla stessa porta le due radio di un
+// ponte; la vicina è registrata server, la lontana è un host che la classificazione dice client; dall'altra parte il router
+// della sede 2 sente la lontana. Prima la vicina era una foglia e il router della sede 2 restava senza padre. Il Task 3 dà
+// la classe ai capi (`ponti`); passa quando il Task 5 mette `ponti` nel Prim.
+test("§13.7.6 punto 4: un capo di un ponte radio classificato server fa da ponte", { todo: "Task 5: ponti nel Prim" }, () => {
+  const t1 = rete(
+    [dev(1, { name: "RTR-1", device_type: "router", ...mk }), dev(5, { name: "RADIO-V", device_type: "server", vendor: "mikrotik" }), dev(7, { name: "RTR-S2", device_type: "router", ...mk })],
+    [],
+    { hosts: [host(60, { ip: "10.1.0.60", hostname: "RADIO-L", classification: "workstation" })] },
+  );
+  const m = ombra(ingresso(t1, { vicini: [
+    vic({ device_id: 1, local_port: "ether3", remote_device_name: "RADIO-V", remote_port: "bridge/ether1", remote_caps: "bridge", source: "device", remote_platform: "MikroTik" }),
+    vic({ device_id: 1, local_port: "ether3", remote_device_name: "RADIO-L", remote_port: "bridge/bond1/wlan60-1", remote_caps: "bridge", source: "device", remote_platform: "MikroTik" }),
+    vic({ device_id: 7, local_port: "ether1", remote_device_name: "RADIO-L", remote_port: "bridge/ether2", remote_caps: "bridge", source: "device", remote_platform: "MikroTik" }),
+  ] }), "dev:1");
+  assert.deepEqual([m.albero.padri["dev:7"], m.albero.padri["host:60"], m.albero.padri["dev:5"]], ["host:60", "dev:5", "dev:1"]);
+});

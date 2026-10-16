@@ -29,6 +29,9 @@ function c(campi: Partial<NetworkControllerView> = {}): NetworkControllerView {
     scheduleMinutes: null,
     clientSchedule: false,
     lastClientRun: null,
+    credentialId: 1,
+    credentialName: "UniFi · UDM",
+    credentialMethod: "chiave",
     ...campi,
   };
 }

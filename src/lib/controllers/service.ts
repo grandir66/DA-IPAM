@@ -2,11 +2,18 @@
  * Controller di rete (ADR 0007): logica sopra le tabelle `network_controllers`
  * e `network_controller_runs` del DB del cliente.
  *
- * - Segreti cifrati come nell'hub (`encrypt`, formato iv:tag:enc); la pagina
- *   non li riceve mai, sa solo se ci sono.
+ * - Credenziale (tappa 2f credenziali, T23): una voce dell'archivio
+ *   (`credential_id`, tipo «Controller UniFi»), scelta nella tendina o creata
+ *   dai segreti nuovi del modulo come «UniFi · <nome>» (`credenziale.ts`). La
+ *   pagina non riceve mai i segreti, sa solo se ci sono e come si chiama la
+ *   voce. Le colonne della riga (`password_enc`, `api_key_enc`) si leggono
+ *   solo per le righe mai convertite (segno della 2f diverso da `done:`),
+ *   registrando il ripiego `cred_riga_integrazione`; altrimenti senza voce è
+ *   «Credenziale mancante» e non parte nessuna connessione.
  * - Certificato: un'impronta per controller, fissata al primo uso riuscito come
- *   prima (`unifi-api.ts`). Un indirizzo nuovo azzera impronta e segreti: la
- *   password o la chiave vecchia non partono verso un host mai verificato.
+ *   prima (`unifi-api.ts`). Un indirizzo nuovo azzera impronta, voce e segreti
+ *   della riga: la password o la chiave non partono verso un host mai
+ *   verificato, a meno che la stessa richiesta non scelga di nuovo la voce.
  * - Lettura: la sincronizzazione resta `syncUnifiForTenant` (tappa 2), che
  *   riceve il client del controller come sorgente; qui si registra il giro.
  * - Configurazione vecchia (`integration_unifi_*` nelle impostazioni globali
@@ -19,6 +26,9 @@
  */
 import {
   attachOrphanUnifiJobs,
+  creaVoceDelController,
+  creaVoceDelControllerCifrata,
+  credenzialeDelController,
   deleteNetworkController,
   getCurrentTenantCode,
   getNetworkController,
@@ -30,11 +40,14 @@ import {
   listControllerScheduleJobs,
   listLastControllerClientRuns,
   listNetworkControllers,
+  listVociDeiController,
   recordControllerRun,
+  runInTenantTransaction,
   setControllerClientSchedule,
   setControllerSchedule,
   setTenantSetting,
   updateNetworkController,
+  voceDelController,
   type ControllerRunRow,
   type NetworkControllerPatch,
 } from "@/lib/db-tenant";
@@ -43,9 +56,11 @@ import { getActiveTenants, getSetting } from "@/lib/db-hub";
 import { encrypt, safeDecrypt } from "@/lib/crypto";
 import { isCiphertext } from "@/lib/integrations/config";
 import { normalizeSpkiPin } from "@/lib/integrations/wazuh-config";
+import { registraRipiego } from "@/lib/db-maintenance/ripieghi";
 import {
   createUnifiClient,
   detectUnifiOs,
+  UnifiApiError,
   UNIFI_OS_DETECTED_MESSAGE,
   type UnifiClient,
   type UnifiClientConfig,
@@ -60,9 +75,11 @@ import {
 } from "@/lib/integrations/unifi-sync";
 import type { UnifiCertPinStore, UnifiKind } from "@/lib/integrations/types";
 import {
+  accessoDiMetodoVoce,
   CONTROLLER_KINDS_AVAILABLE,
   CONTROLLER_SCHEDULE_MINUTES,
   isControllerKind,
+  metodoVoceDiAccesso,
   unifiOsAuthOf,
   vendorOfKind,
   type ControllerInput,
@@ -73,6 +90,7 @@ import {
   type NetworkControllerView,
   type UnifiOsAuth,
 } from "./types";
+import { CREDENZIALE_MANCANTE, FORMA_VECCHIA, type NuovaCredenzialeController, type VoceDelController } from "./credenziale";
 
 // ── Utilità ──────────────────────────────────────────────────────────────────
 
@@ -89,10 +107,6 @@ export function urlOrigin(raw: string): string {
   } catch {
     return v.toLowerCase();
   }
-}
-
-function sealSecret(plain: string): string {
-  return plain ? encrypt(plain) : "";
 }
 
 function openSecret(sealed: string): string {
@@ -159,11 +173,18 @@ function clientInfoByController(): Map<number, ControllerClientInfo> {
 
 const NO_CLIENT_INFO: ControllerClientInfo = { clientSchedule: false, lastClientRun: null };
 
+/**
+ * La vista di una riga. `voce`: nome e metodo della voce dell'archivio
+ * (`listVociDeiController`). Con la voce, «password» o «chiave» dicono il
+ * metodo della voce; senza, le colonne di una riga mai convertita.
+ */
 export function toControllerView(
   row: NetworkControllerRow,
   scheduleMinutes: number | null,
   client: ControllerClientInfo = NO_CLIENT_INFO,
+  voce: VoceDelController | null = null,
 ): NetworkControllerView {
+  const conVoce = row.credential_id != null;
   return {
     id: row.id,
     name: row.name,
@@ -172,8 +193,11 @@ export function toControllerView(
     url: row.url,
     site: row.site,
     username: row.username,
-    passwordSet: row.password_enc !== "",
-    apiKeySet: row.api_key_enc !== "",
+    passwordSet: conVoce ? voce?.metodo === "utente" || voce?.metodo === "client" : row.password_enc !== "",
+    apiKeySet: conVoce ? voce?.metodo === "chiave" : row.api_key_enc !== "",
+    credentialId: row.credential_id ?? null,
+    credentialName: conVoce ? (voce?.nome ?? null) : null,
+    credentialMethod: conVoce ? (voce?.metodo ?? null) : null,
     certPin: row.cert_pin || null,
     enabled: row.enabled === 1,
     lastRunAt: row.last_run_at,
@@ -193,13 +217,14 @@ export function listControllerViews(): NetworkControllerView[] {
   migrateLegacyUnifiConfig();
   const sched = scheduleByController();
   const clients = clientInfoByController();
-  return listNetworkControllers().map((r) => toControllerView(r, sched.get(r.id) ?? null, clients.get(r.id)));
+  const voci = listVociDeiController();
+  return listNetworkControllers().map((r) => toControllerView(r, sched.get(r.id) ?? null, clients.get(r.id), voci.get(r.id) ?? null));
 }
 
 export function getControllerView(id: number): NetworkControllerView | null {
   const row = getNetworkController(id);
   if (!row) return null;
-  return toControllerView(row, scheduleByController().get(id) ?? null, clientInfoByController().get(id));
+  return toControllerView(row, scheduleByController().get(id) ?? null, clientInfoByController().get(id), listVociDeiController().get(id) ?? null);
 }
 
 export function toRunView(r: ControllerRunRow): ControllerRunView {
@@ -275,10 +300,6 @@ export type ControllerInputCheck =
   | { ok: true; value: ControllerInput }
   | { ok: false; error: string };
 
-/**
- * Legge e controlla il corpo di POST/PUT. `existing` = la riga che si modifica:
- * i segreti vuoti valgono «non cambiare», quindi bastano quelli salvati.
- */
 /** Forma del corpo; le regole che dipendono dal tipo e dalla riga salvata vengono dopo. */
 const ControllerBodySchema = z.object({
   name: z.string().trim().min(1, "Il nome è obbligatorio").max(80, "Nome troppo lungo (al massimo 80 caratteri)"),
@@ -289,11 +310,81 @@ const ControllerBodySchema = z.object({
   password: z.string().optional(),
   apiKey: z.string().trim().optional(),
   udmAuth: z.enum(["api_key", "password"]).optional(),
+  credentialId: z
+    .number({ error: "Credenziale dell'archivio non valida" })
+    .int("Credenziale dell'archivio non valida")
+    .positive("Credenziale dell'archivio non valida")
+    .nullable()
+    .optional(),
   enabled: z.boolean().optional(),
   scheduleMinutes: z.number().int().nullable().optional(),
   certPin: z.string().nullable().optional(),
 });
 
+/** Il metodo che le colonne di una riga mai convertita dicono, come il client di prima (la chiave, se c'è, vince). */
+function accessoDelleColonne(row: Pick<NetworkControllerRow, "username" | "api_key_enc">, scelto?: UnifiOsAuth): UnifiOsAuth {
+  if (scelto) return scelto;
+  if (row.api_key_enc) return "api_key";
+  return row.username ? "password" : "api_key";
+}
+
+const INDIRIZZO_CAMBIATO =
+  "L'indirizzo è cambiato: scegli di nuovo la credenziale dall'archivio o scrivine una nuova (quella salvata non parte verso un indirizzo nuovo)";
+
+/**
+ * Niente voce scelta e niente segreti nuovi: vale la credenziale salvata, solo
+ * allo stesso indirizzo e se va bene per il tipo (e per l'accesso scelto).
+ * Legge il DB del tenant del contesto.
+ */
+function credenzialeSalvata(
+  kind: ControllerKind,
+  scelto: UnifiOsAuth | undefined,
+  username: string,
+  existing: NetworkControllerRow | undefined,
+  sameOrigin: boolean,
+): { ok: true; udmAuth?: UnifiOsAuth } | { ok: false; error: string } {
+  if (!existing) {
+    if (kind === "self_hosted") {
+      return { ok: false, error: "Per il controller self-hosted servono utente e password: scegli una credenziale dall'archivio o scrivine una nuova" };
+    }
+    return unifiOsAuthOf({ apiKey: "", username, udmAuth: scelto }) === "password"
+      ? { ok: false, error: "Per la console UniFi OS con utente locale serve la password" }
+      : { ok: false, error: "Per la console UniFi OS serve una credenziale: scegline una dall'archivio, oppure scrivi la chiave API o utente locale e password" };
+  }
+  if (!sameOrigin) return { ok: false, error: INDIRIZZO_CAMBIATO };
+  const metodo = kind === "udm" && scelto ? metodoVoceDiAccesso(scelto) : undefined;
+  // La voce salvata si controlla col tipo NUOVO: un self-hosted con la voce a utente passato a UDM la tiene.
+  const c = credenzialeDelController({ ...existing, kind }, metodo);
+  if (!c.ok) return { ok: false, error: c.motivo };
+  if (c.fonte === "voce") return { ok: true, ...(kind === "udm" ? { udmAuth: accessoDiMetodoVoce(c.metodo) } : {}) };
+  // Riga mai convertita (segno della 2f diverso da done:): come prima, coi segreti delle colonne.
+  if (kind === "self_hosted") {
+    return existing.username && existing.password_enc
+      ? { ok: true }
+      : { ok: false, error: "Per il controller self-hosted servono utente e password: scegli una credenziale dall'archivio o scrivine una nuova" };
+  }
+  const a = accessoDelleColonne(existing, scelto);
+  if (a === "password") {
+    return existing.username && existing.password_enc
+      ? { ok: true, udmAuth: a }
+      : { ok: false, error: "Per la console UniFi OS con utente locale serve la password: scegli una credenziale dall'archivio o scrivine una nuova" };
+  }
+  return existing.api_key_enc
+    ? { ok: true, udmAuth: a }
+    : { ok: false, error: "Per la console UniFi OS serve la chiave API: scegli una credenziale dall'archivio o scrivine una nuova" };
+}
+
+/**
+ * Legge e controlla il corpo di POST/PUT (tappa 2f, T23). `existing` = la riga
+ * che si modifica. La credenziale è una delle tre:
+ * - `credentialId`: una voce dell'archivio, che deve valere per il tipo
+ *   (ADR 0019: UniFi OS chiave o utente, self-hosted utente) e per l'accesso
+ *   scelto (`udmAuth`); senza `udmAuth` l'accesso è quello della voce;
+ * - segreti nuovi (chiave, o utente e password): diventano una voce al
+ *   salvataggio. Senza `udmAuth` il metodo si deduce dai campi;
+ * - niente dei due: la credenziale salvata, solo allo stesso indirizzo.
+ * Va chiamata nel contesto del tenant: la voce si legge dal suo DB.
+ */
 export function checkControllerInput(raw: unknown, existing?: NetworkControllerRow): ControllerInputCheck {
   const body = ControllerBodySchema.safeParse(raw);
   if (!body.success) return { ok: false, error: body.error.issues[0]?.message ?? "Dati non validi" };
@@ -323,38 +414,43 @@ export function checkControllerInput(raw: unknown, existing?: NetworkControllerR
   const username = str(b.username);
   const password = b.password ?? "";
   const apiKey = str(b.apiKey);
+  const credentialId = b.credentialId ?? null;
   const sameOrigin = existing !== undefined && urlOrigin(existing.url) === urlOrigin(url);
+  const nuovi = password !== "" || apiKey !== "";
 
-  if (kind === "self_hosted") {
-    if (!username) return { ok: false, error: "Per il controller self-hosted servono utente e password" };
-    if (!password && !(sameOrigin && existing?.password_enc)) {
-      return { ok: false, error: "Per il controller self-hosted serve la password" };
-    }
-  }
   let udmAuth: UnifiOsAuth | undefined;
-  if (kind === "udm") {
-    // Chiave API oppure utente locale e password (ADR 0019): vale il metodo
-    // scelto nel modulo, dedotto dai campi solo se manca. I campi dell'altro
-    // metodo si rifiutano: una password scritta non si scarta in silenzio
-    // lasciando entrare la chiave salvata (revisione del 16/10).
-    udmAuth = unifiOsAuthOf({ apiKey, username, udmAuth: b.udmAuth });
-    if (password && !username) {
-      return { ok: false, error: "Per la console UniFi OS con utente locale serve l'utente locale, oltre alla password" };
+  if (credentialId !== null) {
+    // Voce scelta nella tendina: il metodo lo dice la voce. Vale anche verso
+    // un indirizzo nuovo, perché è scelta nella stessa richiesta.
+    if (nuovi) return { ok: false, error: "Scegli una credenziale dell'archivio oppure scrivine una nuova, non tutte e due" };
+    const v = voceDelController(credentialId, kind, kind === "udm" && b.udmAuth ? metodoVoceDiAccesso(b.udmAuth) : undefined);
+    if (!v.ok) return { ok: false, error: v.motivo };
+    if (kind === "udm") udmAuth = accessoDiMetodoVoce(v.metodo);
+  } else if (nuovi) {
+    // Segreti nuovi: al salvataggio diventano la voce «UniFi · <nome>».
+    if (kind === "self_hosted" && (!username || !password)) {
+      return { ok: false, error: "Per il controller self-hosted servono utente e password" };
     }
-    if (udmAuth === "password") {
-      if (apiKey) return { ok: false, error: "Con utente locale e password la chiave API non si usa: scegli un metodo solo" };
-      if (!username) return { ok: false, error: "Per la console UniFi OS con utente locale serve l'utente locale" };
-      if (!password && !(sameOrigin && existing?.password_enc)) {
-        return { ok: false, error: "Per la console UniFi OS con utente locale serve la password" };
+    if (kind === "udm") {
+      // Chiave API oppure utente locale e password (ADR 0019): vale il metodo
+      // scelto nel modulo, dedotto dai campi solo se manca. I campi dell'altro
+      // metodo si rifiutano: una password scritta non si scarta in silenzio
+      // lasciando entrare la chiave salvata (revisione del 16/10).
+      udmAuth = unifiOsAuthOf({ apiKey, username, udmAuth: b.udmAuth });
+      if (password && !username) {
+        return { ok: false, error: "Per la console UniFi OS con utente locale serve l'utente locale, oltre alla password" };
       }
-    } else {
-      if (password) {
+      if (udmAuth === "password") {
+        if (apiKey) return { ok: false, error: "Con utente locale e password la chiave API non si usa: scegli un metodo solo" };
+        if (!password) return { ok: false, error: "Per la console UniFi OS con utente locale serve la password" };
+      } else if (password) {
         return { ok: false, error: "Con la chiave API la password non si usa: per l'accesso con utente scegli «Utente locale e password»" };
       }
-      if (!apiKey && !(sameOrigin && existing?.api_key_enc)) {
-        return { ok: false, error: "Per la console UniFi OS serve la chiave API, oppure utente locale e password" };
-      }
     }
+  } else {
+    const r = credenzialeSalvata(kind, b.udmAuth, username, existing, sameOrigin);
+    if (!r.ok) return r;
+    udmAuth = r.udmAuth;
   }
 
   const enabled = b.enabled ?? true;
@@ -372,16 +468,29 @@ export function checkControllerInput(raw: unknown, existing?: NetworkControllerR
 
   return {
     ok: true,
-    value: { name, kind, url, site, username, password, apiKey, ...(udmAuth ? { udmAuth } : {}), enabled, scheduleMinutes, certPin },
+    value: {
+      name,
+      kind,
+      url,
+      site,
+      username,
+      password,
+      apiKey,
+      ...(udmAuth ? { udmAuth } : {}),
+      ...(credentialId !== null ? { credentialId } : {}),
+      enabled,
+      scheduleMinutes,
+      certPin,
+    },
   };
 }
 
 // ── Scritture ────────────────────────────────────────────────────────────────
 
 /**
- * Quali segreti tiene una riga: utente e password (self-hosted, o UniFi OS con
- * utente locale) oppure la chiave (UniFi OS con chiave API). Mai tutti e due:
- * il segreto dell'altro metodo si toglie.
+ * Quali segreti del modulo valgono: utente e password (self-hosted, o UniFi OS
+ * con utente locale) oppure la chiave (UniFi OS con chiave API). Mai tutti e
+ * due: quelli dell'altro metodo non partono.
  */
 function secretsOf(input: ControllerInput): { password: boolean; apiKey: boolean } {
   if (input.kind === "self_hosted") return { password: true, apiKey: false };
@@ -392,63 +501,84 @@ function secretsOf(input: ControllerInput): { password: boolean; apiKey: boolean
   return { password: false, apiKey: false };
 }
 
-export function createController(input: ControllerInput): NetworkControllerView {
-  migrateLegacyUnifiConfig();
+/** I segreti nuovi del modulo, se ci sono e non è stata scelta una voce: diventano una voce. */
+function nuovaCredenzialeDi(input: ControllerInput): NuovaCredenzialeController | null {
+  if (input.credentialId != null || (!input.password && !input.apiKey)) return null;
   const keeps = secretsOf(input);
-  const row = insertNetworkController({
-    name: input.name,
-    vendor: vendorOfKind(input.kind),
-    kind: input.kind,
-    url: input.url,
-    site: input.site,
-    username: keeps.password ? input.username : "",
-    password_enc: keeps.password ? sealSecret(input.password) : "",
-    api_key_enc: keeps.apiKey ? sealSecret(input.apiKey) : "",
-    cert_pin: input.certPin ?? null,
-    enabled: input.enabled ? 1 : 0,
-    origin: "manual",
-  });
-  setControllerSchedule(row.id, input.enabled ? input.scheduleMinutes : null);
-  return getControllerView(row.id) as NetworkControllerView;
+  if (keeps.apiKey) return { metodo: "chiave", username: "", password: "", apiKey: input.apiKey };
+  if (keeps.password) return { metodo: "utente", username: input.username, password: input.password, apiKey: "" };
+  return null;
 }
 
 /**
- * Modifica. Indirizzo nuovo = controller nuovo: impronta e segreti salvati si
- * azzerano (se ne arrivano di nuovi in questa richiesta, valgono quelli).
+ * Nuovo controller. La credenziale è la voce scelta, oppure una voce
+ * «UniFi · <nome>» nata dai segreti nuovi, nella stessa transazione della
+ * riga (il nome della voce, se è già preso, porta l'id del controller). Le
+ * colonne vecchie dei segreti restano vuote.
+ */
+export function createController(input: ControllerInput): NetworkControllerView {
+  migrateLegacyUnifiConfig();
+  const id = runInTenantTransaction(() => {
+    const row = insertNetworkController({
+      name: input.name,
+      vendor: vendorOfKind(input.kind),
+      kind: input.kind,
+      url: input.url,
+      site: input.site,
+      username: "",
+      password_enc: "",
+      api_key_enc: "",
+      cert_pin: input.certPin ?? null,
+      enabled: input.enabled ? 1 : 0,
+      origin: "manual",
+      credential_id: input.credentialId ?? null,
+    });
+    const nuova = nuovaCredenzialeDi(input);
+    if (nuova) updateNetworkController(row.id, { credential_id: creaVoceDelController(row, nuova).id });
+    return row.id;
+  });
+  setControllerSchedule(id, input.enabled ? input.scheduleMinutes : null);
+  return getControllerView(id) as NetworkControllerView;
+}
+
+/**
+ * Modifica. La voce scelta, o una voce nuova dai segreti nuovi; niente dei due
+ * = la credenziale salvata resta. Indirizzo nuovo = controller nuovo:
+ * impronta, voce e segreti rimasti nelle colonne si azzerano, a meno che la
+ * stessa richiesta non scelga di nuovo una voce o porti segreti nuovi. È la
+ * difesa che impedisce di mandare il segreto a un host nuovo: con le colonne
+ * piene il ripiego le leggerebbe, e `unifi_sync` manderebbe chiave o password
+ * al nuovo indirizzo.
  */
 export function updateController(id: number, input: ControllerInput): NetworkControllerView | null {
   const row = getNetworkController(id);
   if (!row) return null;
   const moved = urlOrigin(row.url) !== urlOrigin(input.url);
-  const keeps = secretsOf(input);
   const patch: NetworkControllerPatch = {
     name: input.name,
     kind: input.kind,
     vendor: vendorOfKind(input.kind),
     url: input.url,
     site: input.site,
-    username: keeps.password ? input.username : "",
     enabled: input.enabled ? 1 : 0,
   };
   if (moved) {
     patch.cert_pin = null;
     patch.password_enc = "";
     patch.api_key_enc = "";
-  }
-  // Segreto vuoto = non cambiare; quello dell'altro metodo si toglie.
-  if (keeps.password) {
-    if (input.password) patch.password_enc = sealSecret(input.password);
-  } else {
-    patch.password_enc = "";
-  }
-  if (keeps.apiKey) {
-    if (input.apiKey) patch.api_key_enc = sealSecret(input.apiKey);
-  } else {
-    patch.api_key_enc = "";
+    patch.credential_id = null;
   }
   // L'impronta vista nella prova vale solo dove non ce n'è una (primo uso).
   if (input.certPin && (moved || !row.cert_pin)) patch.cert_pin = input.certPin;
-  updateNetworkController(id, patch);
+  runInTenantTransaction(() => {
+    if (input.credentialId != null) {
+      patch.credential_id = input.credentialId;
+    } else {
+      const nuova = nuovaCredenzialeDi(input);
+      if (nuova) patch.credential_id = creaVoceDelController({ id, name: input.name, kind: input.kind }, nuova).id;
+    }
+    updateNetworkController(id, patch);
+  });
   setControllerSchedule(id, input.enabled ? input.scheduleMinutes : null);
   // Controller spento: anche la lettura dei client si spegne (fallirebbe a ogni ora).
   if (!input.enabled) setControllerClientSchedule(id, false);
@@ -515,32 +645,70 @@ export function acceptControllerCertPin(id: number, pin: string, replaces: strin
 
 // ── Client e prova ───────────────────────────────────────────────────────────
 
-function clientConfigOf(row: NetworkControllerRow): UnifiClientConfig {
+export type ConfigDelController =
+  | { ok: true; fonte: "voce" | "colonne"; config: UnifiClientConfig }
+  | { ok: false; motivo: string };
+
+/**
+ * La configurazione del client di UNA riga salvata (tappa 2f, T23): dalla
+ * voce dell'archivio; senza voce, dalle colonne solo se la riga non è mai
+ * stata convertita (come prima della 2f); altrimenti «Credenziale mancante».
+ * Non registra il ripiego (lo fa chi apre la connessione) e non lancia.
+ */
+export function controllerClientConfig(row: NetworkControllerRow): ConfigDelController {
+  const c = credenzialeDelController(row);
+  if (!c.ok) return c;
+  const base = { url: row.url, kind: row.kind as UnifiKind, site: row.site };
+  if (c.fonte === "voce") {
+    return { ok: true, fonte: "voce", config: { ...base, username: c.username, password: c.password, apiToken: c.apiKey } };
+  }
   return {
-    url: row.url,
-    kind: row.kind as UnifiKind,
-    site: row.site,
-    username: row.username,
-    password: openSecret(row.password_enc),
-    apiToken: openSecret(row.api_key_enc),
+    ok: true,
+    fonte: "colonne",
+    config: { ...base, username: row.username, password: openSecret(row.password_enc), apiToken: openSecret(row.api_key_enc) },
   };
 }
 
-/**
- * Il client di UNA riga salvata: segreti decifrati con `safeDecrypt`, impronta
- * della riga. Unico punto di costruzione per la lettura degli apparati
- * (`syncController`) e dei client collegati (`unifi-clients-sync.ts`): stesse
- * difese per tutte e due.
- */
-export function controllerClientOf(row: NetworkControllerRow, opts: UnifiClientOptions = {}): UnifiClient {
-  return createUnifiClient(clientConfigOf(row), controllerPinStore(row.id), opts);
+/** Un client che non si collega mai: la credenziale manca, e lo dice. */
+function clientSenzaCredenziale(kind: UnifiKind, motivo: string): UnifiClient {
+  return {
+    kind,
+    probe: async () => ({ ok: false, reason: "config", message: motivo }),
+    listDevices: async () => {
+      throw new UnifiApiError("config", motivo);
+    },
+    listClients: async () => {
+      throw new UnifiApiError("config", motivo);
+    },
+  };
+}
+
+/** Il client della riga e, se è entrata con le colonne vecchie, l'avviso per lo storico. */
+function clientDelController(row: NetworkControllerRow, opts: UnifiClientOptions): { client: UnifiClient; avviso: string | null } {
+  const c = controllerClientConfig(row);
+  if (!c.ok) return { client: clientSenzaCredenziale(row.kind as UnifiKind, c.motivo), avviso: null };
+  if (c.fonte === "colonne") registraRipiego("cred_riga_integrazione", getCurrentTenantCode());
+  return { client: createUnifiClient(c.config, controllerPinStore(row.id), opts), avviso: c.fonte === "colonne" ? FORMA_VECCHIA : null };
 }
 
 /**
- * «Prova» dal modulo, prima di salvare. Con `id` e lo stesso indirizzo usa i
- * segreti e l'impronta salvati (e al primo uso riuscito la fissa, come prima);
- * altrimenti l'impronta vale solo per questa prova e torna nel risultato: il
- * modulo la manda col salvataggio. Non scrive nel DB del cliente. Non lancia.
+ * Il client di UNA riga salvata: credenziale dalla voce (o dalle colonne di
+ * una riga mai convertita, col ripiego registrato), impronta della riga.
+ * Unico punto di costruzione per la lettura degli apparati (`syncController`)
+ * e dei client collegati (`unifi-clients-sync.ts`): stesse difese per tutte e
+ * due. Senza credenziale il client non si collega e dice «Credenziale mancante».
+ */
+export function controllerClientOf(row: NetworkControllerRow, opts: UnifiClientOptions = {}): UnifiClient {
+  return clientDelController(row, opts).client;
+}
+
+/**
+ * «Prova» dal modulo, prima di salvare. La credenziale è la voce scelta, o i
+ * segreti nuovi scritti, o (con `id` e lo stesso indirizzo) quella salvata;
+ * con lo stesso indirizzo vale anche l'impronta salvata (e al primo uso
+ * riuscito la fissa, come prima); altrimenti l'impronta vale solo per questa
+ * prova e torna nel risultato: il modulo la manda col salvataggio. Non scrive
+ * nel DB del cliente. Non lancia.
  */
 export async function probeControllerInput(
   input: ControllerInput,
@@ -550,16 +718,43 @@ export async function probeControllerInput(
   const row = id !== null ? getNetworkController(id) : undefined;
   if (id !== null && !row) return { ok: false, reason: "config", message: "Controller non trovato" };
   const sameOrigin = row !== undefined && urlOrigin(row.url) === urlOrigin(input.url);
-  // Solo i segreti del metodo scelto: la chiave salvata non parte se si prova con l'utente.
-  const keeps = secretsOf(input);
-  const cfg: UnifiClientConfig = {
-    url: input.url,
-    kind: input.kind as UnifiKind,
-    site: input.site,
-    username: keeps.password ? input.username : "",
-    password: keeps.password ? input.password || (sameOrigin && row ? openSecret(row.password_enc) : "") : "",
-    apiToken: keeps.apiKey ? input.apiKey || (sameOrigin && row ? openSecret(row.api_key_enc) : "") : "",
-  };
+  const base = { url: input.url, kind: input.kind as UnifiKind, site: input.site };
+  const scelto = input.kind === "udm" && input.udmAuth ? metodoVoceDiAccesso(input.udmAuth) : undefined;
+  let cfg: UnifiClientConfig;
+  if (input.credentialId != null) {
+    // Voce scelta nella tendina: è una scelta, vale anche verso un indirizzo nuovo.
+    const v = voceDelController(input.credentialId, input.kind, scelto);
+    if (!v.ok) return { ok: false, reason: "config", message: v.motivo };
+    cfg = { ...base, username: v.username, password: v.password, apiToken: v.apiKey };
+  } else if (input.password || input.apiKey) {
+    // Segreti nuovi del modulo: solo quelli del metodo scelto.
+    const keeps = secretsOf(input);
+    cfg = {
+      ...base,
+      username: keeps.password ? input.username : "",
+      password: keeps.password ? input.password : "",
+      apiToken: keeps.apiKey ? input.apiKey : "",
+    };
+  } else if (row && sameOrigin) {
+    // La credenziale salvata, solo allo stesso indirizzo.
+    const c = credenzialeDelController({ ...row, kind: input.kind }, scelto);
+    if (!c.ok) return { ok: false, reason: "config", message: c.motivo };
+    if (c.fonte === "voce") {
+      cfg = { ...base, username: c.username, password: c.password, apiToken: c.apiKey };
+    } else {
+      registraRipiego("cred_riga_integrazione", getCurrentTenantCode());
+      // Solo i segreti del metodo scelto: la chiave salvata non parte se si prova con l'utente.
+      const conChiave = input.kind === "udm" && accessoDelleColonne(row, input.udmAuth) === "api_key";
+      cfg = {
+        ...base,
+        username: conChiave ? "" : row.username,
+        password: conChiave ? "" : openSecret(row.password_enc),
+        apiToken: conChiave ? openSecret(row.api_key_enc) : "",
+      };
+    }
+  } else {
+    return { ok: false, reason: "config", message: row ? INDIRIZZO_CAMBIATO : CREDENZIALE_MANCANTE };
+  }
   const store = sameOrigin && row ? controllerPinStore(row.id) : ephemeralPinStore();
   try {
     return await createUnifiClient(cfg, store, opts).probe();
@@ -634,19 +829,27 @@ export async function syncController(
   if (!row) return empty("Controller non trovato");
 
   let result: UnifiSyncResult;
+  // Riga entrata con le colonne vecchie (mai convertita): lo dice lo storico.
+  let avviso: string | null = null;
   if (row.enabled !== 1) {
     result = empty("Controller spento: nessuna lettura");
   } else if (row.kind === "omada") {
     result = empty("Omada non è ancora disponibile: nessuna lettura");
   } else {
-    const source = opts.source ?? controllerClientOf(row, opts.clientOptions);
+    let source = opts.source;
+    if (!source) {
+      const c = clientDelController(row, opts.clientOptions ?? {});
+      source = c.client;
+      avviso = c.avviso;
+    }
     result = await syncUnifiForTenant({ source });
   }
   const failure = unifiSyncFailure(result);
-  const message =
+  const esito =
     failure ??
     `${result.total} apparati, ${result.added} nuovi, ${result.updated} aggiornati` +
       (result.skipped ? `, ${result.skipped} saltati` : "");
+  const message = avviso ? `${esito} · ${avviso}` : esito;
   try {
     recordControllerRun({
       controller_id: id,
@@ -687,8 +890,11 @@ export type LegacyMigration =
  * Porta `integration_unifi_*` dell'hub nella tabella dei controller, una volta
  * per tenant (segno in `tenant_settings`). Solo se l'hub ha UN tenant attivo:
  * con più clienti non si sa di chi sia il controller, e lo si dice nel log
- * invece di indovinare. I segreti si copiano cifrati come sono (stessa chiave,
- * stessa macchina); un segreto ancora in chiaro si cifra. Idempotente.
+ * invece di indovinare. Dalla 2f (T23) il segreto va in una voce dell'archivio
+ * «UniFi · <nome>», creata nella stessa transazione del controller: copiato
+ * cifrato com'è (stessa chiave, stessa macchina); un segreto ancora in chiaro
+ * si cifra. Così un tenant aperto per la prima volta dopo la 2f, col segno
+ * `done:` già scritto, ha la voce e non resta senza credenziale. Idempotente.
  */
 export function migrateLegacyUnifiConfig(): LegacyMigration {
   if (getTenantSetting(LEGACY_MARK)) return { state: "already" };
@@ -720,24 +926,44 @@ export function migrateLegacyUnifiConfig(): LegacyMigration {
   } catch {
     /* resta l'indirizzo com'è */
   }
-  const row = insertNetworkController({
-    name: `Controller UniFi ${host}`,
-    vendor: "unifi",
-    kind,
-    url,
-    site: getSetting("integration_unifi_site")?.trim() || "default",
-    username: kind === "self_hosted" ? (getSetting("integration_unifi_username") ?? "").trim() : "",
-    password_enc: kind === "self_hosted" ? reseal("integration_unifi_password") : "",
-    api_key_enc: kind === "udm" ? reseal("integration_unifi_api_token") : "",
-    cert_pin: pin,
-    enabled: getSetting("integration_unifi_mode") === "external" ? 1 : 0,
-    origin: "legacy_hub",
+  const chiave = kind === "udm" ? reseal("integration_unifi_api_token") : "";
+  const password = kind === "self_hosted" ? reseal("integration_unifi_password") : "";
+  const utente = kind === "self_hosted" ? (getSetting("integration_unifi_username") ?? "").trim() : "";
+  const { row, jobsAttached, voce } = runInTenantTransaction(() => {
+    const row = insertNetworkController({
+      name: `Controller UniFi ${host}`,
+      vendor: "unifi",
+      kind,
+      url,
+      site: getSetting("integration_unifi_site")?.trim() || "default",
+      username: "",
+      password_enc: "",
+      api_key_enc: "",
+      cert_pin: pin,
+      enabled: getSetting("integration_unifi_mode") === "external" ? 1 : 0,
+      origin: "legacy_hub",
+    });
+    let voce: { id: number; nome: string } | null = null;
+    if (chiave) {
+      voce = creaVoceDelControllerCifrata(row, { metodo: "chiave", encrypted_username: null, encrypted_password: chiave });
+    } else if (password && utente) {
+      voce = creaVoceDelControllerCifrata(row, { metodo: "utente", encrypted_username: encrypt(utente), encrypted_password: password });
+    }
+    if (voce) updateNetworkController(row.id, { credential_id: voce.id });
+    const jobsAttached = attachOrphanUnifiJobs(row.id);
+    setTenantSetting(LEGACY_MARK, `done:${row.id}`);
+    return { row, jobsAttached, voce };
   });
-  const jobsAttached = attachOrphanUnifiJobs(row.id);
-  setTenantSetting(LEGACY_MARK, `done:${row.id}`);
+  if (!voce && (chiave || password)) {
+    // Un segreto c'era ma senza l'utente: il controller nasce senza voce, e lo si dice.
+    console.warn(
+      `[controllers] tenant ${getCurrentTenantCode()}: configurazione UniFi dell'hub senza utente, ` +
+        `controller #${row.id} portato senza credenziale (va scelta nella pagina Controller di rete)`,
+    );
+  }
   console.info(
     `[controllers] tenant ${getCurrentTenantCode()}: configurazione UniFi dell'hub portata nel controller #${row.id}` +
-      ` (${jobsAttached} job collegati)`,
+      ` (${jobsAttached} job collegati${voce ? `, voce d'archivio #${voce.id}` : ""})`,
   );
   return { state: "done", controllerId: row.id, jobsAttached };
 }

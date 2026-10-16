@@ -82,15 +82,17 @@ test("job unifi_sync di un controller spento: fallisce col motivo, non scrive ap
   assert.equal(l[0].trigger, "schedule");
 });
 
+// Tappa 2f (T23): un controller senza voce d'archivio e senza segreti nelle
+// colonne è «Credenziale mancante», detto prima di aprire una connessione.
 test("job unifi_sync con credenziali mancanti: fallisce prima di qualunque rete, e la riga del controller lo dice", async () => {
   const c = controller({ enabled: 1 });
   const id = nuovoJob(c);
-  await assert.rejects(withTenant(T, () => runJob(id)), /Utente e password del controller non configurati/);
+  await assert.rejects(withTenant(T, () => runJob(id)), /Credenziale mancante/);
   assert.equal(apparati(), 0);
   const row = getTenantDb(T).prepare("SELECT last_ok, last_message FROM network_controllers WHERE id = ?").get(c) as {
     last_ok: number;
     last_message: string;
   };
   assert.equal(row.last_ok, 0);
-  assert.match(row.last_message, /Utente e password/);
+  assert.match(row.last_message, /Credenziale mancante: scegli una voce dell'archivio/);
 });

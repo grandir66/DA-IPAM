@@ -7,10 +7,11 @@ import { NO_STORE, readJson } from "@/lib/controllers/route-helpers";
 
 /**
  * POST /api/controllers/probe — «Prova» dal modulo, prima di salvare.
- * Corpo: i campi del modulo, più `id` se si sta modificando un controller
- * (allora i segreti lasciati vuoti valgono quelli salvati, se l'indirizzo è lo
- * stesso). Non scrive nel DB del tenant; l'impronta del certificato vista torna
- * nella risposta e il modulo la manda col salvataggio.
+ * Corpo: i campi del modulo (la voce scelta `credentialId`, o segreti nuovi),
+ * più `id` se si sta modificando un controller (allora, senza voce né
+ * segreti, vale la credenziale salvata, se l'indirizzo è lo stesso). Non
+ * scrive nel DB del tenant; l'impronta del certificato vista torna nella
+ * risposta e il modulo la manda col salvataggio.
  */
 export async function POST(req: Request) {
   const adminCheck = await requireAdmin();

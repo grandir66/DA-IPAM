@@ -20,15 +20,19 @@ import {
   formFromController,
   formMissing,
   kindLabel,
+  metodoVoceRichiesto,
+  nomeVoceNuova,
   parseControllerDetail,
   parseControllerList,
   parseProbeResult,
   parseSyncResponse,
+  parseVociArchivio,
   probeOneLine,
   runOrigin,
   scheduleFromValue,
   scheduleLabel,
-  secretPlaceholder,
+  stessoIndirizzo,
+  vociPerController,
   SCHEDULE_OPTIONS,
 } from "../controllers-model";
 import type { NetworkControllerView } from "@/lib/controllers/types";
@@ -59,6 +63,9 @@ function ctrl(over: Partial<NetworkControllerView> = {}): NetworkControllerView 
     scheduleMinutes: 240,
     clientSchedule: false,
     lastClientRun: null,
+    credentialId: 7,
+    credentialName: "UniFi · Cliente A",
+    credentialMethod: "utente",
     ...over,
   };
 }
@@ -128,18 +135,23 @@ describe("modulo e corpo del salvataggio", () => {
     assert.equal(f.site, "default");
   });
 
-  it("in modifica i segreti restano vuoti", () => {
+  it("in modifica: la voce salvata è già scelta, i campi della voce nuova restano vuoti e chiusi", () => {
     const f = formFromController(ctrl());
+    assert.equal(f.credentialId, 7);
+    assert.equal(f.nuova, false);
     assert.equal(f.password, "");
     assert.equal(f.apiKey, "");
+    assert.equal(f.username, "");
     assert.equal(f.schedule, "240");
-    assert.equal(f.username, "ro");
+    assert.equal(emptyControllerForm().credentialId, null);
+    assert.equal(emptyControllerForm().nuova, false);
   });
 
   it("UDM con utente locale: manda utente e password, non la chiave; un self-hosted con utente si apre già su «utente»", () => {
     assert.equal(emptyControllerForm().udmAuth, "api_key");
     const p = buildControllerPayload({
       ...emptyControllerForm(),
+      nuova: true,
       udmAuth: "password",
       name: "U",
       url: "https://1.1.1.1",
@@ -158,20 +170,23 @@ describe("modulo e corpo del salvataggio", () => {
       "udmAuth" in buildControllerPayload({ ...emptyControllerForm(), kind: "self_hosted", name: "A", url: "https://h" }),
       false,
     );
-    // «Utente locale» senza utente: Prova e Salva restano spenti.
+    // «Utente locale» senza utente nella voce nuova: Prova e Salva restano spenti.
     assert.equal(
-      formMissing({ ...emptyControllerForm(), udmAuth: "password", name: "U", url: "https://1.1.1.1", password: "pw" }),
+      formMissing({ ...emptyControllerForm(), nuova: true, udmAuth: "password", name: "U", url: "https://1.1.1.1", password: "pw" }),
       "Scrivi l'utente locale della console",
     );
-    // Il pilota: salvato self_hosted con utente e password; scegliendo UDM resta su «utente».
+    // Il pilota: salvato self_hosted con la voce a utente; scegliendo UDM resta su «utente».
     assert.equal(formFromController(ctrl()).udmAuth, "password");
-    assert.equal(formFromController(ctrl({ kind: "udm", username: "", passwordSet: false, apiKeySet: true })).udmAuth, "api_key");
-    assert.equal(formFromController(ctrl({ kind: "udm", username: "rgadmin", passwordSet: true })).udmAuth, "password");
+    assert.equal(formFromController(ctrl({ kind: "udm", credentialMethod: "chiave", apiKeySet: true, passwordSet: false })).udmAuth, "api_key");
+    // Riga mai convertita (niente voce): il metodo si legge dalle colonne, come prima.
+    const vecchia = { credentialId: null, credentialName: null, credentialMethod: null } as const;
+    assert.equal(formFromController(ctrl({ ...vecchia, kind: "udm", username: "", passwordSet: false, apiKeySet: true })).udmAuth, "api_key");
+    assert.equal(formFromController(ctrl({ ...vecchia, kind: "udm", username: "rgadmin", passwordSet: true })).udmAuth, "password");
   });
 
   it("udm manda la chiave e non l'utente; self-hosted il contrario", () => {
     const udm = buildControllerPayload(
-      { ...emptyControllerForm(), name: " UDM ", url: " https://1.1.1.1 ", apiKey: " k ", username: "x", password: "y" },
+      { ...emptyControllerForm(), nuova: true, name: " UDM ", url: " https://1.1.1.1 ", apiKey: " k ", username: "x", password: "y" },
       PIN_A,
     );
     assert.equal(udm.name, "UDM");
@@ -182,6 +197,7 @@ describe("modulo e corpo del salvataggio", () => {
     assert.equal(udm.certPin, PIN_A);
     const sh = buildControllerPayload({
       ...emptyControllerForm(),
+      nuova: true,
       kind: "self_hosted",
       name: "A",
       url: "https://h:8443",
@@ -208,12 +224,66 @@ describe("modulo e corpo del salvataggio", () => {
     assert.equal("certPin" in p, false);
   });
 
-  it("campi obbligatori e segnaposto", () => {
+  it("campi obbligatori: nome, indirizzo e una credenziale (voce scelta, voce nuova o quella salvata)", () => {
     assert.equal(formMissing(emptyControllerForm()), "Scrivi un nome");
     assert.equal(formMissing({ ...emptyControllerForm(), name: "a" }), "Scrivi l'indirizzo del controller");
-    assert.equal(formMissing({ ...emptyControllerForm(), name: "a", url: "https://x" }), null);
-    assert.match(secretPlaceholder(true), /lascia vuoto/);
-    assert.equal(secretPlaceholder(false), "");
+    const base = { ...emptyControllerForm(), name: "a", url: "https://x" };
+    assert.equal(formMissing(base), "Scegli una credenziale dall'archivio o creane una nuova");
+    assert.equal(formMissing({ ...base, credentialId: 4 }), null);
+    assert.equal(formMissing({ ...base, nuova: true }), null);
+    // In modifica, allo stesso indirizzo, la credenziale salvata basta.
+    assert.equal(formMissing(base, { salvata: true }), null);
+  });
+});
+
+describe("credenziale dall'archivio (tappa 2f, T23)", () => {
+  const voci = parseVociArchivio([
+    { id: 1, name: "UniFi · Sede", credential_type: "unifi", auth_method: "chiave", ha_password: true },
+    { id: 2, name: "UniFi · Cliente A", credential_type: "unifi", auth_method: "utente" },
+    { id: 3, name: "UniFi vecchia", credential_type: "unifi", auth_method: null },
+    { id: 4, name: "Linux", credential_type: "ssh", auth_method: "password" },
+    { id: 5, name: "Omada", credential_type: "omada", auth_method: "client" },
+    { nome: "rotta" },
+  ]);
+
+  it("la risposta dell'archivio si legge in modo difensivo; non un elenco → null", () => {
+    assert.ok(voci);
+    assert.deepEqual(voci.map((v) => v.id), [1, 2, 3, 4, 5]);
+    assert.equal(parseVociArchivio({ error: "x" }), null);
+  });
+
+  it("la tendina: Controller UniFi col metodo che il tipo vuole (ADR 0019)", () => {
+    assert.ok(voci);
+    assert.equal(metodoVoceRichiesto("udm", "api_key"), "chiave");
+    assert.equal(metodoVoceRichiesto("udm", "password"), "utente");
+    assert.equal(metodoVoceRichiesto("self_hosted", "api_key"), "utente");
+    // auth_method NULL = il primo metodo del tipo: per UniFi la chiave.
+    assert.deepEqual(vociPerController(voci, "udm", "api_key").map((v) => v.id), [1, 3]);
+    assert.deepEqual(vociPerController(voci, "udm", "password").map((v) => v.id), [2]);
+    assert.deepEqual(vociPerController(voci, "self_hosted", "api_key").map((v) => v.id), [2]);
+    assert.deepEqual(vociPerController(voci, "omada", "api_key"), []);
+  });
+
+  it("voce scelta: nel corpo va il suo id e nessun segreto; voce nuova: i segreti e nessun id; niente dei due: la salvata", () => {
+    const scelta = buildControllerPayload({ ...emptyControllerForm(), name: "U", url: "https://1.1.1.1", credentialId: 9, apiKey: "resto" });
+    assert.equal(scelta.credentialId, 9);
+    assert.equal(scelta.apiKey, "");
+    assert.equal(scelta.password, "");
+    assert.equal(scelta.udmAuth, "api_key");
+    const nuova = buildControllerPayload({ ...emptyControllerForm(), nuova: true, name: "U", url: "https://1.1.1.1", credentialId: 9, apiKey: "k" });
+    assert.equal("credentialId" in nuova, false);
+    assert.equal(nuova.apiKey, "k");
+    const salvata = buildControllerPayload({ ...emptyControllerForm(), name: "U", url: "https://1.1.1.1" });
+    assert.equal("credentialId" in salvata, false);
+    assert.equal(salvata.apiKey, "");
+    assert.equal(nomeVoceNuova({ ...emptyControllerForm(), name: " Sede " }), "UniFi · Sede");
+  });
+
+  it("stesso indirizzo = stesso schema, host e porta; il percorso non conta", () => {
+    assert.equal(stessoIndirizzo("https://192.168.1.1/", "https://192.168.1.1"), true);
+    assert.equal(stessoIndirizzo("https://192.168.1.1/network", "HTTPS://192.168.1.1"), true);
+    assert.equal(stessoIndirizzo("https://192.168.1.1:8443", "https://192.168.1.1"), false);
+    assert.equal(stessoIndirizzo("https://192.168.1.2", "https://192.168.1.1"), false);
   });
 });
 

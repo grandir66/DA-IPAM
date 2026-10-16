@@ -32,6 +32,35 @@ export function unifiOsAuthOf(f: { apiKey: string; username: string; udmAuth?: U
   return f.username.trim() !== "" ? "password" : "api_key";
 }
 
+/**
+ * Metodo d'accesso di una voce dell'archivio usata da un controller (tappa 2f
+ * credenziali, T23): `chiave` (chiave API), `utente` (utente e password),
+ * `client` (Omada, client id e secret).
+ */
+export type MetodoVoceController = "chiave" | "utente" | "client";
+
+/**
+ * Regola tipo ↔ metodo della voce (ADR 0019): una console UniFi OS entra con
+ * la chiave API o con un utente locale; il self-hosted solo con utente e
+ * password; Omada coi suoi metodi. La voce è sempre del tipo «Controller
+ * UniFi» (`unifi`), o «Controller Omada» (`omada`) per Omada.
+ */
+export function metodiVocePerController(kind: ControllerKind): readonly MetodoVoceController[] {
+  if (kind === "udm") return ["chiave", "utente"];
+  if (kind === "self_hosted") return ["utente"];
+  return ["client", "utente"];
+}
+
+/** L'accesso scelto nel modulo di una console UniFi OS → il metodo che la voce deve avere. */
+export function metodoVoceDiAccesso(a: UnifiOsAuth): "chiave" | "utente" {
+  return a === "api_key" ? "chiave" : "utente";
+}
+
+/** Il metodo di una voce → l'accesso di una console UniFi OS. */
+export function accessoDiMetodoVoce(m: MetodoVoceController): UnifiOsAuth {
+  return m === "chiave" ? "api_key" : "password";
+}
+
 /** Tipi che si possono già salvare e leggere. Omada si accende dopo la misura su un controller vero. */
 export const CONTROLLER_KINDS_AVAILABLE: readonly ControllerKind[] = ["udm", "self_hosted"];
 
@@ -69,6 +98,13 @@ export interface NetworkControllerRow {
   last_ports: number | null;
   last_neighbors: number | null;
   origin: ControllerOrigin;
+  /**
+   * Voce dell'archivio con cui si entra (tappa 2f credenziali). NULL: riga
+   * mai convertita (si leggono le colonne qui sopra, se il segno della 2f non
+   * è `done:`) oppure voce scollegata (indirizzo cambiato, voce eliminata):
+   * «Credenziale mancante».
+   */
+  credential_id: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -81,9 +117,16 @@ export interface NetworkControllerView {
   kind: ControllerKind;
   url: string;
   site: string;
+  /** L'utente rimasto nelle colonne di una riga di prima della 2f; per una voce è dentro la voce. */
   username: string;
+  /** C'è una password con cui entrare: la voce a utente, o la colonna di una riga mai convertita. */
   passwordSet: boolean;
+  /** C'è una chiave API con cui entrare: la voce a chiave, o la colonna di una riga mai convertita. */
   apiKeySet: boolean;
+  /** Voce dell'archivio con cui il controller entra (tappa 2f, T23); null = nessuna. */
+  credentialId: number | null;
+  credentialName: string | null;
+  credentialMethod: MetodoVoceController | null;
   certPin: string | null;
   enabled: boolean;
   lastRunAt: string | null;
@@ -134,7 +177,13 @@ export interface ControllerRunView {
   offline: string[];
 }
 
-/** Corpo di POST /api/controllers e PUT /api/controllers/[id]. Segreti vuoti = «non cambiare». */
+/**
+ * Corpo di POST /api/controllers e PUT /api/controllers/[id] (tappa 2f, T23):
+ * - `credentialId`: una voce dell'archivio scelta nella tendina (niente segreti);
+ * - altrimenti segreti nuovi (chiave, o utente e password): al salvataggio
+ *   diventano una voce «UniFi · <nome>»;
+ * - niente dei due: vale la credenziale salvata, solo allo stesso indirizzo.
+ */
 export interface ControllerInput {
   name: string;
   kind: ControllerKind;
@@ -149,6 +198,8 @@ export interface ControllerInput {
    * se manca (es. accendi/spegni) si deduce dai campi.
    */
   udmAuth?: UnifiOsAuth;
+  /** Voce dell'archivio scelta (tappa 2f, T23). */
+  credentialId?: number | null;
   enabled: boolean;
   scheduleMinutes: number | null;
   /**

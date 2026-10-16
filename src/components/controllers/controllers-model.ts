@@ -11,10 +11,12 @@ import type {
   ControllerInput,
   ControllerKind,
   ControllerRunView,
+  MetodoVoceController,
   NetworkControllerView,
   UnifiOsAuth,
 } from "@/lib/controllers/types";
-import { CONTROLLER_KINDS, CONTROLLER_SCHEDULE_MINUTES } from "@/lib/controllers/types";
+import { CONTROLLER_KINDS, CONTROLLER_SCHEDULE_MINUTES, metodoVoceDiAccesso } from "@/lib/controllers/types";
+import { METODI_PER_TIPO } from "@/lib/credentials/tipi";
 
 // ── Etichette ────────────────────────────────────────────────────────────────
 
@@ -141,6 +143,10 @@ export interface ControllerForm {
   name: string;
   url: string;
   site: string;
+  /** Voce dell'archivio scelta nella tendina «Credenziale» (tappa 2f, T23); null = nessuna. */
+  credentialId: number | null;
+  /** «Nuova nell'archivio»: i campi qui sotto diventano una voce al salvataggio. */
+  nuova: boolean;
   username: string;
   password: string;
   apiKey: string;
@@ -156,6 +162,8 @@ export function emptyControllerForm(): ControllerForm {
     name: "",
     url: "",
     site: "default",
+    credentialId: null,
+    nuova: false,
     username: "",
     password: "",
     apiKey: "",
@@ -171,21 +179,32 @@ export const UDM_AUTH_OPTIONS: ReadonlyArray<{ value: UnifiOsAuth; label: string
 ];
 
 /**
- * In modifica i segreti non tornano dal server: restano vuoti. Il metodo UDM
- * si legge da quello che c'è: la chiave, altrimenti l'utente. Un self-hosted
- * con utente (il pilota del 16/10) si apre già su «utente», così passando a UDM
- * la password salvata vale senza riscriverla.
+ * In modifica la voce salvata è già scelta; i campi della voce nuova restano
+ * vuoti. Il metodo UDM è quello della voce; per una riga mai convertita (niente
+ * voce) si legge da quello che c'è nelle colonne: la chiave, altrimenti
+ * l'utente. Un self-hosted con utente (il pilota del 16/10) si apre già su
+ * «utente», così passando a UDM la voce a utente vale senza riscriverla.
  */
 export function formFromController(c: NetworkControllerView): ControllerForm {
   const udmAuth: UnifiOsAuth =
-    c.kind === "udm" && c.apiKeySet ? "api_key" : c.username || c.passwordSet ? "password" : "api_key";
+    c.credentialMethod === "chiave"
+      ? "api_key"
+      : c.credentialMethod === "utente"
+        ? "password"
+        : c.kind === "udm" && c.apiKeySet
+          ? "api_key"
+          : c.username || c.passwordSet
+            ? "password"
+            : "api_key";
   return {
     kind: c.kind,
     udmAuth,
     name: c.name,
     url: c.url,
     site: c.site || "default",
-    username: c.username,
+    credentialId: c.credentialId ?? null,
+    nuova: false,
+    username: "",
     password: "",
     apiKey: "",
     enabled: c.enabled,
@@ -197,25 +216,33 @@ export function urlPlaceholder(kind: ControllerKind): string {
   return kind === "self_hosted" ? "https://192.168.1.10:8443" : "https://192.168.1.1";
 }
 
-export function secretPlaceholder(isSet: boolean): string {
-  return isSet ? "già impostata — lascia vuoto per non cambiarla" : "";
-}
-
-/** Campi minimi per provare o salvare; il resto lo controlla il server. */
-export function formMissing(form: ControllerForm): string | null {
+/**
+ * Campi minimi per provare o salvare; il resto lo controlla il server. Serve
+ * una credenziale: la voce scelta, una voce nuova, oppure (`salvata`) quella
+ * salvata, in modifica allo stesso indirizzo.
+ */
+export function formMissing(form: ControllerForm, opts: { salvata?: boolean } = {}): string | null {
   if (!form.name.trim()) return "Scrivi un nome";
   if (!form.url.trim()) return "Scrivi l'indirizzo del controller";
-  if (form.kind === "udm" && form.udmAuth === "password" && !form.username.trim()) {
-    return "Scrivi l'utente locale della console";
+  if (form.nuova) {
+    if (form.kind === "udm" && form.udmAuth === "password" && !form.username.trim()) {
+      return "Scrivi l'utente locale della console";
+    }
+    return null;
   }
+  if (form.credentialId === null && !opts.salvata) return "Scegli una credenziale dall'archivio o creane una nuova";
   return null;
 }
 
 /**
- * Corpo di POST/PUT e della prova: il server vede solo i campi del metodo. Per
- * `udm` con la chiave l'utente non si manda; per `udm` con utente locale e per
- * `self_hosted` non si manda la chiave. Per `udm` il metodo scelto viaggia in
- * `udmAuth`: il server rifiuta i campi che non gli corrispondono.
+ * Corpo di POST/PUT e della prova (tappa 2f, T23):
+ * - voce scelta → `credentialId`, nessun segreto;
+ * - «Nuova nell'archivio» → i segreti del metodo, senza `credentialId`: per
+ *   `udm` con la chiave l'utente non si manda; per `udm` con utente locale e
+ *   per `self_hosted` non si manda la chiave;
+ * - niente dei due → la credenziale salvata.
+ * Per `udm` il metodo scelto viaggia in `udmAuth`: il server rifiuta i campi e
+ * le voci che non gli corrispondono.
  */
 export function buildControllerPayload(form: ControllerForm, certPin?: string | null): ControllerInput {
   const useKey = form.kind === "udm" && form.udmAuth === "api_key";
@@ -224,18 +251,25 @@ export function buildControllerPayload(form: ControllerForm, certPin?: string | 
     kind: form.kind,
     url: form.url.trim(),
     site: form.site.trim() || "default",
-    username: useKey ? "" : form.username.trim(),
-    password: useKey ? "" : form.password,
-    apiKey: useKey ? form.apiKey.trim() : "",
+    username: "",
+    password: "",
+    apiKey: "",
     enabled: form.enabled,
     scheduleMinutes: scheduleFromValue(form.schedule),
   };
+  if (form.nuova) {
+    body.username = useKey ? "" : form.username.trim();
+    body.password = useKey ? "" : form.password;
+    body.apiKey = useKey ? form.apiKey.trim() : "";
+  } else if (form.credentialId !== null) {
+    body.credentialId = form.credentialId;
+  }
   if (form.kind === "udm") body.udmAuth = form.udmAuth;
   if (certPin) body.certPin = certPin;
   return body;
 }
 
-/** Corpo del PUT per accendere/spegnere: stessi dati, segreti vuoti (= non cambiare). */
+/** Corpo del PUT per accendere/spegnere: stessi dati, nessuna credenziale nuova (= quella salvata). */
 export function buildTogglePayload(c: NetworkControllerView): ControllerInput {
   return {
     name: c.name,
@@ -248,6 +282,64 @@ export function buildTogglePayload(c: NetworkControllerView): ControllerInput {
     enabled: !c.enabled,
     scheduleMinutes: c.scheduleMinutes,
   };
+}
+
+// ── Credenziale dall'archivio (tappa 2f, T23) ────────────────────────────────
+
+const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
+
+/** Una voce dell'archivio come la dà GET /api/credentials: quello che serve alla tendina. */
+export interface VoceArchivio {
+  id: number;
+  name: string;
+  credential_type: string;
+  auth_method: string | null;
+}
+
+/** GET /api/credentials → le voci; null se la risposta non è un elenco. */
+export function parseVociArchivio(raw: unknown): VoceArchivio[] | null {
+  if (!Array.isArray(raw)) return null;
+  return raw.flatMap((v) => {
+    if (!isObj(v) || typeof v.id !== "number" || typeof v.name !== "string" || typeof v.credential_type !== "string") return [];
+    return [{ id: v.id, name: v.name, credential_type: v.credential_type, auth_method: typeof v.auth_method === "string" ? v.auth_method : null }];
+  });
+}
+
+/**
+ * Il metodo che la voce deve avere (ADR 0019): per una console UniFi OS
+ * quello scelto (chiave o utente), per il self-hosted l'utente; Omada non si
+ * salva ancora (null).
+ */
+export function metodoVoceRichiesto(kind: ControllerKind, udmAuth: UnifiOsAuth): MetodoVoceController | null {
+  if (kind === "udm") return metodoVoceDiAccesso(udmAuth);
+  if (kind === "self_hosted") return "utente";
+  return null;
+}
+
+/** Le voci della tendina: «Controller UniFi» col metodo richiesto (NULL = il primo del tipo, la chiave). */
+export function vociPerController(voci: readonly VoceArchivio[], kind: ControllerKind, udmAuth: UnifiOsAuth): VoceArchivio[] {
+  const metodo = metodoVoceRichiesto(kind, udmAuth);
+  if (!metodo) return [];
+  return voci.filter((v) => v.credential_type === "unifi" && (v.auth_method ?? METODI_PER_TIPO.unifi[0]) === metodo);
+}
+
+/** Il nome con cui la voce nuova entra nell'archivio; se c'è già, il server aggiunge «(controller #id)». */
+export function nomeVoceNuova(form: Pick<ControllerForm, "name" | "kind">): string {
+  return `${form.kind === "omada" ? "Omada" : "UniFi"} · ${form.name.trim()}`;
+}
+
+function origine(raw: string): string {
+  const v = raw.trim();
+  try {
+    return new URL(v).origin.toLowerCase();
+  } catch {
+    return v.replace(/\/+$/, "").toLowerCase();
+  }
+}
+
+/** Stesso controller = stesso schema, host e porta (il percorso non conta), come sul server. */
+export function stessoIndirizzo(a: string, b: string): boolean {
+  return origine(a) === origine(b);
 }
 
 // ── Esito della prova ────────────────────────────────────────────────────────
@@ -391,8 +483,6 @@ export function describeSync(r: SyncResponse): SyncView {
 }
 
 // ── Risposte delle rotte ─────────────────────────────────────────────────────
-
-const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 
 function isController(v: unknown): v is NetworkControllerView {
   return (

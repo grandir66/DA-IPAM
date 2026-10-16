@@ -12,6 +12,7 @@ import {
   unifiOsWarningFor,
   updateController,
 } from "@/lib/controllers/service";
+import { CredenzialeControllerNonValida } from "@/lib/controllers/credenziale";
 import {
   NO_STORE,
   notFound,
@@ -36,8 +37,11 @@ export async function GET(_req: Request, ctx: Ctx) {
 }
 
 /**
- * PUT /api/controllers/[id] — modifica. Segreti vuoti = non cambiare; un
- * indirizzo nuovo azzera impronta e segreti salvati (vedi `updateController`).
+ * PUT /api/controllers/[id] — modifica. La credenziale è la voce scelta
+ * (`credentialId`), o segreti nuovi che diventano una voce; niente dei due =
+ * non cambiare. Un indirizzo nuovo azzera impronta, voce e segreti salvati, a
+ * meno che la stessa richiesta non scelga di nuovo la voce (vedi
+ * `updateController`).
  */
 export async function PUT(req: Request, ctx: Ctx) {
   const adminCheck = await requireAdmin();
@@ -50,7 +54,13 @@ export async function PUT(req: Request, ctx: Ctx) {
     if (!existing) return notFound();
     const check = checkControllerInput(body, existing);
     if (!check.ok) return NextResponse.json({ error: check.error }, { status: 400 });
-    const controller = updateController(id, check.value);
+    let controller;
+    try {
+      controller = updateController(id, check.value);
+    } catch (e) {
+      if (e instanceof CredenzialeControllerNonValida) return NextResponse.json({ error: e.message }, { status: 400 });
+      throw e;
+    }
     if (!controller) return notFound();
     // Self-hosted su una console UniFi OS: lo si dice subito (domanda anonima).
     const warnings = [reloadSchedulerForCurrentTenant(), await unifiOsWarningFor(check.value)];

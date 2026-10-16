@@ -53,7 +53,19 @@ import { accessoSshDb, communityDb, coppiaLoginDb, coppiaSshDb, type AccessoSsh,
 import { tipiPerRuoloVecchio } from "./credentials/tipi";
 import { aggiornaCredenzialeDb, creaCredenzialeDb, eliminaCredenzialeDb, type ColonneCredenziale } from "./credentials/archivio";
 import { aggiungiAllaListaReteDb, copiaListaReteDb, sostituisciListaReteDb } from "./credentials/lista-rete";
-import type { ControllerRunKind, ControllerRunStoredTrigger, NetworkControllerRow } from "./controllers/types";
+import type { ControllerKind, ControllerRunKind, ControllerRunStoredTrigger, MetodoVoceController, NetworkControllerRow } from "./controllers/types";
+import {
+  creaVoceControllerCifrataDb,
+  creaVoceControllerDb,
+  credenzialeControllerDb,
+  vociDeiControllerDb,
+  voceControllerDb,
+  type ControllerDellaVoce,
+  type CredenzialeController,
+  type EsitoVoceController,
+  type NuovaCredenzialeController,
+  type VoceDelController,
+} from "./controllers/credenziale";
 import { libreStatusFrom } from "./topology/status-map";
 import { modelloEtichettaDiPorte } from "./device-fingerprint-classification";
 import { parseProxmoxScan } from "./topology/vms";
@@ -8983,15 +8995,18 @@ export function getNetworkController(id: number): NetworkControllerRow | undefin
 export type NetworkControllerInsert = Pick<
   NetworkControllerRow,
   "name" | "vendor" | "kind" | "url" | "site" | "username" | "password_enc" | "api_key_enc" | "cert_pin" | "enabled" | "origin"
->;
+> & {
+  /** Voce dell'archivio (tappa 2f, T23); assente = nessuna. */
+  credential_id?: number | null;
+};
 
 export function insertNetworkController(input: NetworkControllerInsert): NetworkControllerRow {
   const r = db()
     .prepare(
-      `INSERT INTO network_controllers (name, vendor, kind, url, site, username, password_enc, api_key_enc, cert_pin, enabled, origin)
-       VALUES (@name, @vendor, @kind, @url, @site, @username, @password_enc, @api_key_enc, @cert_pin, @enabled, @origin)`,
+      `INSERT INTO network_controllers (name, vendor, kind, url, site, username, password_enc, api_key_enc, cert_pin, enabled, origin, credential_id)
+       VALUES (@name, @vendor, @kind, @url, @site, @username, @password_enc, @api_key_enc, @cert_pin, @enabled, @origin, @credential_id)`,
     )
-    .run(input);
+    .run({ ...input, credential_id: input.credential_id ?? null });
   const row = getNetworkController(Number(r.lastInsertRowid));
   if (!row) throw new Error("controller appena inserito non trovato");
   return row;
@@ -9000,12 +9015,12 @@ export function insertNetworkController(input: NetworkControllerInsert): Network
 export type NetworkControllerPatch = Partial<
   Pick<
     NetworkControllerRow,
-    "name" | "kind" | "vendor" | "url" | "site" | "username" | "password_enc" | "api_key_enc" | "cert_pin" | "enabled"
+    "name" | "kind" | "vendor" | "url" | "site" | "username" | "password_enc" | "api_key_enc" | "cert_pin" | "enabled" | "credential_id"
   >
 >;
 
 const CONTROLLER_PATCH_COLUMNS: ReadonlyArray<keyof NetworkControllerPatch> = [
-  "name", "kind", "vendor", "url", "site", "username", "password_enc", "api_key_enc", "cert_pin", "enabled",
+  "name", "kind", "vendor", "url", "site", "username", "password_enc", "api_key_enc", "cert_pin", "enabled", "credential_id",
 ];
 
 export function updateNetworkController(id: number, patch: NetworkControllerPatch): NetworkControllerRow | undefined {
@@ -9017,6 +9032,43 @@ export function updateNetworkController(id: number, patch: NetworkControllerPatc
     db().prepare(`UPDATE network_controllers SET ${set}, updated_at = datetime('now') WHERE id = @id`).run(params);
   }
   return getNetworkController(id);
+}
+
+// Tappa 2f credenziali (T23): la credenziale del controller è una voce
+// dell'archivio. Involucri di una riga delle funzioni `…Db` di
+// `controllers/credenziale.ts`. Nessuna gemella in db.ts: i controller vivono
+// solo nel DB del tenant (il vecchio ipam.db non ha `network_controllers`, e
+// il facade non li espone).
+
+/** Con che cosa entra il controller: la voce, le colonne (righe mai convertite) o niente. Non registra. */
+export function credenzialeDelController(
+  row: Pick<NetworkControllerRow, "kind" | "credential_id" | "password_enc" | "api_key_enc">,
+  metodo?: MetodoVoceController,
+): CredenzialeController {
+  return credenzialeControllerDb(db(), row, metodo);
+}
+
+/** La voce `credentialId` vale per un controller di tipo `kind` (e col metodo scelto)? */
+export function voceDelController(credentialId: number, kind: ControllerKind, metodo?: MetodoVoceController): EsitoVoceController {
+  return voceControllerDb(db(), credentialId, kind, metodo);
+}
+
+/** Voce «UniFi · <nome>» dai segreti nuovi del modulo. */
+export function creaVoceDelController(c: ControllerDellaVoce, nuova: NuovaCredenzialeController): { id: number; nome: string } {
+  return creaVoceControllerDb(db(), c, nuova);
+}
+
+/** Voce dai segreti già cifrati della configurazione vecchia dell'hub. */
+export function creaVoceDelControllerCifrata(
+  c: ControllerDellaVoce,
+  v: { metodo: "chiave" | "utente"; encrypted_username: string | null; encrypted_password: string },
+): { id: number; nome: string } {
+  return creaVoceControllerCifrataDb(db(), c, v);
+}
+
+/** Nome e metodo della voce di ogni controller, in una query. */
+export function listVociDeiController(): Map<number, VoceDelController> {
+  return vociDeiControllerDb(db());
 }
 
 /**

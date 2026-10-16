@@ -21,6 +21,8 @@ regola automatica può dire che sono uno solo. Riccardo (16/10): **nessuna regol
   all'apertura; le righe non si cancellano mai (chi e quando restano). Perché: `physical_device_id` lo riscrive il
   risolutore e guida le scansioni, che un gesto sulla mappa non deve toccare.
 - **`misura-cavi --unisci/--separa/--unioni`**: le unioni in memoria su una copia, prima di farle davvero.
+- **Ogni «Unisci» in un gruppo nuovo**, con un 409 chiaro se cambierebbe un'altra unione già fatta. Perché: con «il gruppo
+  più basso» un'unione nuova poteva portare via un indirizzo a una vecchia senza dirlo (revisione finale, casi provati).
 
 ### Invariato
 

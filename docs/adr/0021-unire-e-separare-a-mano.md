@@ -41,6 +41,9 @@ prima, bit per bit.**
 7. **Nessun interruttore**: il gesto è già a mano e per oggetto, e senza righe ingresso e modello non hanno i campi nuovi
    (`unioni`, `separazioni`, `model.unioni` presenti solo con righe), quindi le impronte di oggi non cambiano.
 8. **Anteprima obbligatoria**: le due POST vogliono `applica` esplicito, `false` non scrive; tutte e due solo da admin.
+10. **Ogni «Unisci» scrive in un gruppo nuovo** e ci sposta le righe attive dei gruppi delle ancore, così l'unione nuova si
+   applica per ultima e non porta via membri di un'unione più vecchia (revisione finale del 16/10); se cambierebbe un'altra
+   unione già fatta risponde 409 con un testo che dice quale separare prima, mai un 500.
 9. **Un indice, due mappe**: fuori da `node-index.ts` l'indice si costruisce solo con `indiceDeiNodi(input)` (lucchetto nelle
    prove), così la mappa di oggi e quella per cavo vedono gli stessi nodi.
 
@@ -64,6 +67,9 @@ passa da tre oggetti a uno, i tre collegamenti verso il router diventano uno, ne
   T1 va passato anche in `cavi/mappa.ts`.
 - Dopo un «Separa», le mappe passo passo che avevano rinominato il membro nell'alias non lo mostrano più («Aggiungi
   collegati» lo rimette).
+- Estendere un'unione riscrive le sue righe con chi estende e l'ora: la scheda mostra l'ultimo; chi l'aveva fatta prima
+  resta nelle righe tolte. Un caso raro (un gemello separato e unito altrove) che col «gruppo più basso» riusciva ora dà
+  409: si separa prima l'altra unione.
 - Un indirizzo separato che non ha collegamenti propri esce dall'oggetto e non compare sulla mappa, come ogni host senza
   collegamenti (misurato sul cliente A).
 - Nel trasferimento fra installazioni i membri sono testo (`host:N`) e non seguono la rinumerazione degli id, come le

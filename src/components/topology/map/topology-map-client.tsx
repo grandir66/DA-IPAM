@@ -29,7 +29,7 @@ import {
   addableLinked, connectRefusal, edgeMenuItems, findManualOverride, isUncensusedVmId, nodeMenuItems, primaryPerNodo, primaryTarget, refreshVmDeviceIds, vmMenuItems,
   type EdgeMenuKey, type NodeMenuKey,
 } from "@/lib/topology/map-menus";
-import { computeMapView } from "@/lib/topology/map-compute";
+import { computeMapViewProtetta } from "@/lib/topology/map-compute";
 import { ELENCO_KEY, elencoAperto, printHref, salvaElenco } from "@/lib/topology/map-screen";
 import type { MapLink, MapOrientation, MapVm } from "@/lib/topology/model-types";
 import { isRunning, vmSummary } from "@/lib/topology/vm-nodes";
@@ -159,7 +159,9 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
     // Un calcolo solo per schermo e stampa (map-compute.ts): stesso albero, stessa disposizione, stessi nomi.
     const auto = data.maps.auto;
     const own = pending && pending.view === viewKey ? pending.tweaks : null;
-    const c = computeMapView(data.model, {
+    // Con la mappa nuova un errore del calcolo nel browser ripiega sulla mappa di prima e lo dice nella barra (revisione finale
+    // di T3, M7); senza, il calcolo è quello di sempre.
+    const { vista: c, errore: erroreVista } = computeMapViewProtetta(data.model, {
       auto: mode === "auto",
       members: view?.nodes ?? [],
       roots: view?.map?.roots ?? [],
@@ -189,7 +191,7 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
     const viewLinks = new Map(tree.links.map((l) => [l.id, l]));
     return {
       model, visible, roots, missing, head, headOrigin, tree, layout, plus, starts, promoteIds, byId, vmsOf, vmInfo, viewLinks,
-      savedRoots: c.savedRoots, renames: c.renames, tweaks: c.tweaks,
+      savedRoots: c.savedRoots, renames: c.renames, tweaks: c.tweaks, erroreVista,
     };
   }, [data, mode, view, pending, viewKey, expanded, orientation]);
 
@@ -558,7 +560,7 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
         detailsOpen={detailsOpen}
         detailsAvailable={selected !== null || d.missing.length > 0}
         onToggleDetails={() => changeDetails(!detailsOpen)}
-        mappaErrore={data.model.mappaErrore ?? null}
+        mappaErrore={data.model.mappaErrore ?? d.erroreVista}
       />
       <div className="flex min-h-0 flex-1">
         {listOpen && (

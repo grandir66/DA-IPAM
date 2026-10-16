@@ -97,3 +97,32 @@ export function computeMapView<M extends TopologyModel>(base: M, inp: MapCompute
     savedRoots: saved.roots, renames: saved.renames, tweaks, expanded, tree, layout,
   };
 }
+
+/** Il messaggio intero (al passaggio del mouse sulla scritta della barra) quando la vista della mappa nuova cade nel browser. */
+export const VISTA_NUOVA_NON_DISEGNATA = "La mappa nuova non si è potuta disegnare in questa pagina: si vede quella di prima";
+
+/** Il modello senza le parti della mappa nuova (`cavi`, il `cavo` di ogni linea): `buildTree` torna all'albero di T1. */
+export function senzaCavi<M extends TopologyModel>(m: M): M {
+  const out: M = { ...m, links: m.links.map((l) => {
+    const x = { ...l };
+    delete x.cavo;
+    return x;
+  }) };
+  delete out.cavi;
+  return out;
+}
+
+/**
+ * `computeMapView` con il ripiego del browser (revisione finale di T3, M7): il server ripiega sulla mappa di prima se il modello
+ * per cavo cade (Caso 3, `mappaErrore`), ma un errore nel calcolo della vista con la mappa nuova (l'albero della pagina, solo con
+ * `cavi`) lasciava la pagina bianca. Allora la vista si ricalcola senza `cavi` e senza `cavo`, e `errore` lo dice (la stessa
+ * scritta della barra). Senza la mappa nuova è `computeMapView` e basta: un errore esce come prima.
+ */
+export function computeMapViewProtetta<M extends TopologyModel>(base: M, inp: MapComputeInput): { vista: MapComputed<M>; errore: string | null } {
+  if (base.cavi === undefined && !base.links.some((l) => l.cavo !== undefined)) return { vista: computeMapView(base, inp), errore: null };
+  try {
+    return { vista: computeMapView(base, inp), errore: null };
+  } catch (e) {
+    return { vista: computeMapView(senzaCavi(base), inp), errore: `${VISTA_NUOVA_NON_DISEGNATA} (${e instanceof Error ? e.message : "errore"}).` };
+  }
+}

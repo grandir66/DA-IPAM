@@ -23,7 +23,7 @@ import path from "node:path";
 import ts from "typescript";
 
 /** Funzioni esportate definite in db.ts dopo il gruppo 0 (erano 275) e T3-20. */
-const SOGLIA = 270;
+const SOGLIA = 269;
 
 /** Funzioni che vivono in db-tenant.ts: db.ts le riesporta e basta. */
 const SPOSTATE = [

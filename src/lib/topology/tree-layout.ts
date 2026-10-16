@@ -12,7 +12,7 @@
 import type { MapOrientation, TopologyModel } from "@/lib/topology/model-types";
 import {
   AP_BLOCK, AP_COLS, AP_H, AP_HEAD, AP_W, ATT_MAX, ATT_ROW, ATT_SIDE, ATT_W, BOX_H, GAP, LEVEL_GAP, MARGIN, ROOT_GAP,
-  VM_COLS, VM_COLS_LR, VM_H, VM_ROW, VM_W, dnsLine, fitLabel, headHeight, nodeWidth,
+  SEGMENTO_SOTTO, VM_COLS, VM_COLS_LR, VM_H, VM_ROW, VM_W, dnsLine, fitLabel, headHeight, nodeWidth,
 } from "@/lib/topology/tree-layout-consts";
 import { layoutLr, type LrContext } from "@/lib/topology/tree-layout-lr";
 import { nodeClass, type NodeClass } from "@/lib/topology/identity";
@@ -93,7 +93,10 @@ export function layoutTree(
 
   let base: Pick<LayoutResult, "nodes" | "apGroups" | "moreAttached" | "vmChips">;
   if (orientation === "lr") {
-    const ctx: LrContext = { parts, boxW, boxH, headH, isOpen, vmsOf };
+    // Solo con la mappa nuova (`cavi`): la riga «+N apparati non gestiti» sotto un segmento (M10). Senza, nessuno spazio in più.
+    const altri = new Map((model.cavi?.segmenti ?? []).map((x) => [x.id, x.altriApparati]));
+    const sotto = (id: string) => (byId.get(id)?.kind === "segmento" && (altri.get(id) ?? 0) > 0 ? SEGMENTO_SOTTO : 0);
+    const ctx: LrContext = { parts, boxW, boxH, headH, isOpen, vmsOf, sotto };
     base = layoutLr(ctx, tree);
   } else {
     base = layoutTb();

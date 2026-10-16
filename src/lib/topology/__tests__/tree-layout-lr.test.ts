@@ -268,3 +268,29 @@ test("trascinare un padre porta con sé i discendenti già ritoccati; il resto n
   assert.equal(dragTweaks(t, prima, salvati, "dev:2", p2.x, p2.y, "lr").length, 1);
   assert.equal(dragTweaks(t, { nodes: new Map() }, salvati, "dev:2", 0, 0, "lr").length, 1);
 });
+
+/**
+ * Verifica a schermo di T3 (Task 14) e revisione finale (M10): «+N apparati non gestiti», scritto sotto la capsula del segmento,
+ * copriva le porte («‹porta› → ‹porta›») del riquadro sotto, perché la disposizione non gli lasciava la riga. In verticale il
+ * blocco del segmento ha la sua riga in più, prima dei fratelli che seguono (e prima degli attaccati, se ne ha); senza apparati
+ * non gestiti, o senza la mappa nuova, la disposizione è quella di prima.
+ */
+test("M10: in verticale «+N apparati non gestiti» ha la sua riga sotto il segmento, prima del riquadro che segue; senza, nulla cambia", () => {
+  const SEG = "seg:1:15";
+  const seg: MapNode = { ...node("dev:0", "segmento", "segmento"), id: SEG, kind: "segmento", refId: 0 };
+  // Il segmento è un oggetto di rete (la classe gliela dà il modello, `classiMappa`); «SW-Z» sta sotto di lui nella colonna.
+  const nodes = [node("dev:1", "router"), seg, node("dev:2", "switch", "SW-Z"), node("dev:3", "switch")];
+  const t = tree(["dev:1"], { "dev:1": [SEG, "dev:2"], [SEG]: ["dev:3"] });
+  const base: TopologyModel = { ...model(nodes), classiMappa: { [SEG]: "infra" } };
+  const conAltri = (altri: number): TopologyModel => ({
+    ...base, cavi: { segmenti: [{ id: SEG, membri: [], altriApparati: altri, frase: "" }] } as unknown as TopologyModel["cavi"],
+  });
+  const prima = lr(base, t);
+  assert.equal(ser(lr(conAltri(0), t)), ser(prima), "nessun apparato non gestito: come prima");
+  const r = lr(conAltri(4), t);
+  const s = r.nodes.get(SEG)!, sotto = r.nodes.get("dev:2")!;
+  assert.deepEqual([s.role, sotto.x, sotto.y > s.y], ["box", s.x, true], "SW-Z sta sotto il segmento, nella stessa colonna");
+  // Le porte del riquadro sotto stanno nei 16 px sopra di lui; «+4 apparati non gestiti» nei 17 px sotto la capsula.
+  assert.ok(s.y + s.h + 17 <= sotto.y - 16, `la riga del segmento (fino a ${s.y + s.h + 17}) e le porte di sotto (da ${sotto.y - 16}) si toccano`);
+  assert.ok(prima.nodes.get("dev:2")!.y - 16 < prima.nodes.get(SEG)!.y + prima.nodes.get(SEG)!.h + 17, "prima si sovrapponevano");
+});

@@ -100,7 +100,7 @@ function Tip({ text }: { text: string }) {
   return (
     <span className="relative group/tip inline-flex ml-1 cursor-help">
       <Info className="h-3 w-3 text-muted-foreground" />
-      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 text-xs bg-popover text-popover-foreground border rounded shadow-md whitespace-nowrap opacity-0 pointer-events-none group-hover/tip:opacity-100 group-hover/tip:pointer-events-auto transition-opacity z-50">
+      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 text-xs bg-popover text-popover-foreground border rounded shadow-md w-max max-w-xs whitespace-normal hidden group-hover/tip:block z-50">
         {text}
       </span>
     </span>
@@ -184,7 +184,7 @@ export function CredentialAssignmentFields({
                 <SelectTrigger className="h-9 bg-background">
                   <SelectValue placeholder={credentialPlaceholder} />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="w-auto min-w-(--anchor-width)">
                   <SelectItem value="none">{credentialPlaceholder}</SelectItem>
                   {conNessuna && <SelectItem value={NESSUNA}>Nessuna (togli le credenziali di questo protocollo)</SelectItem>}
                   {primaryCreds.map((c) => (
@@ -210,7 +210,7 @@ export function CredentialAssignmentFields({
                 <SelectTrigger className="h-9 bg-background">
                   <SelectValue placeholder={snmpPlaceholder} />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="w-auto min-w-(--anchor-width)">
                   <SelectItem value="none">{snmpPlaceholder}</SelectItem>
                   {conNessuna && <SelectItem value={NESSUNA}>Nessuna (togli le credenziali SNMP)</SelectItem>}
                   {snmpCreds.map((c) => (

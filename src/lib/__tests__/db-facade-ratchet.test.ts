@@ -38,6 +38,8 @@ const SPOSTATE = [
   "getRecentStatusChanges",
   // T3-20 (scansioni)
   "markHostsOffline",
+  // credenziali 2e (T20): token API dell'apparato
+  "tokenApiApparato",
 ];
 
 interface Dichiarazione {

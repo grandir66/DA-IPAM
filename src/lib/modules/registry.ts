@@ -19,7 +19,11 @@
  * connessione all'appliance è solo configurazione (tenant `vuln_scanners`).
  */
 import { listCredentials } from "@/lib/credentials-vault";
-import { resolveIntegrationBrowserUrl } from "@/lib/integrations/public-url-server";
+import {
+  resolveEdgeBrowserUrl,
+  resolveIntegrationBrowserUrl,
+  resolveWazuhBrowserUrl,
+} from "@/lib/integrations/public-url-server";
 import { resolveLibreNMSOperatorUrl } from "@/lib/integrations/librenms-proxy-auth";
 import { getIntegrationConfig } from "@/lib/integrations/config";
 import { listControllerViews } from "@/lib/controllers/service";
@@ -29,7 +33,6 @@ import { getNetServicesState } from "@/lib/network-services/feature";
 import { getFeatureStatus } from "@/lib/patch/feature";
 import { getMeshConfig } from "@/lib/integrations/meshcentral/config";
 import { getTenantDb, getTenantSetting } from "@/lib/db-tenant";
-import { deriveEdgeUiBase } from "@/lib/integrations/edge-ui-url";
 import { OFFERTA_MODULO, type Offerta } from "./offerta";
 
 export type ModuleKey =
@@ -283,8 +286,9 @@ export async function resolveModules(tenantCode: string, ruolo: unknown): Promis
       uiUrl: "/vulnerabilities",
       uiIsInternal: true,
       // UI edge completa (Greenbone/scan/reti) su :6443, in aggiunta ai
-      // findings nativi in /vulnerabilities. null se host non browser-reachable.
-      externalUiUrl: scanner?.base_url ? deriveEdgeUiBase(scanner.base_url) : null,
+      // findings nativi in /vulnerabilities: dal nodo che serve davvero la 6443
+      // (nginx sul nodo di DA-IPAM), non dall'host di base_url (passo 4b).
+      externalUiUrl: scanner?.base_url ? resolveEdgeBrowserUrl(scanner.base_url) : null,
       note: installed
         ? undefined
         : "Scanner-Edge non configurato. Importa il JSON dell'installer o compila la card edge.",
@@ -347,6 +351,8 @@ export async function resolveModules(tenantCode: string, ruolo: unknown): Promis
   {
     const cfg = getIntegrationConfig("graylog");
     const entry = findLaunchpadEntry(creds, "graylog", "Graylog");
+    // Stessa fonte del viewer (`/api/integrations/active`): passo 4b, 16/10.
+    const browserUrl = resolveIntegrationBrowserUrl("graylog", cfg.url);
     const installed = cfg.mode !== "disabled" || !!entry;
     const configured = cfg.mode !== "disabled" && !!cfg.url;
     out.push({
@@ -354,7 +360,7 @@ export async function resolveModules(tenantCode: string, ruolo: unknown): Promis
       installed,
       configured,
       enabled: configured,
-      uiUrl: entry?.url ?? null,
+      uiUrl: browserUrl || entry?.url || null,
       uiIsInternal: false,
       note: installed ? undefined : "Non configurato. Importa il JSON dell'installer Graylog.",
     });
@@ -367,6 +373,8 @@ export async function resolveModules(tenantCode: string, ruolo: unknown): Promis
     const entry =
       findLaunchpadEntry(creds, "wazuh", "Dashboard") ??
       findLaunchpadEntry(creds, "wazuh", "Wazuh");
+    // Stessa fonte del viewer (`/api/integrations/active`): passo 4b, 16/10.
+    const browserUrl = resolveWazuhBrowserUrl();
     const configured = Boolean(cfg.enabled && cfg.url && cfg.username && cfg.password);
     const installed = cfg.enabled || !!entry;
     out.push({
@@ -374,7 +382,7 @@ export async function resolveModules(tenantCode: string, ruolo: unknown): Promis
       installed,
       configured,
       enabled: configured,
-      uiUrl: entry?.url ?? null,
+      uiUrl: browserUrl || null,
       uiIsInternal: false,
       note: installed ? undefined : "Non configurato. Importa il JSON dell'installer Wazuh.",
     });

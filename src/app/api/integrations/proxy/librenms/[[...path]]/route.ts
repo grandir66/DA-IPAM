@@ -10,6 +10,7 @@ import {
   librenmsAutologinCookieHeader,
   librenmsAutologinEnabled,
   librenmsProxyHostHeader,
+  librenmsSvuotaSessioniAccesso,
 } from "@/lib/integrations/librenms-proxy-auth";
 import { gestisciProxyLibreNMS, LIBRENMS_PROXY_BASE } from "@/lib/integrations/librenms-accesso";
 import { proxyRequest, type ReverseProxyOptions } from "@/lib/integrations/reverse-proxy";
@@ -59,6 +60,7 @@ async function handle(req: Request): Promise<Response> {
     cookieAccessoAutomatico: librenmsAutologinCookieHeader,
     inoltra: (r) => proxyRequest(r, proxyOpts),
     allegaCookie: (resp, cookie) => attachLibreNMSCookiesToResponse(resp, cookie, BASE_PATH),
+    svuotaCache: librenmsSvuotaSessioniAccesso,
   });
 }
 

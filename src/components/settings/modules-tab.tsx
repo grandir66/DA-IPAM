@@ -44,6 +44,7 @@ import { MeshCentralInstallDialog } from "./meshcentral-install-dialog";
 import { Nis2ToggleCard } from "./nis2-toggle-card";
 import { ModuleJsonImport } from "./module-json-import";
 import { IntegrationViewer } from "@/components/integrations/integration-viewer";
+import { VerificaModulo } from "@/components/integrations/apertura-browser";
 import { CredentialsVaultPanel } from "./credentials-vault-panel";
 import { fetchJson } from "@/lib/fetch-json";
 import { LoadError } from "@/components/shared/load-error";
@@ -350,6 +351,7 @@ export function ModulesTab({ isAdmin }: { isAdmin: boolean }) {
       {/* ════ Moduli nativi ════ */}
       <ModuleSection id="module-edge" moduleKey="edge" title="Scanner-Edge — Vulnerability Assessment">
         <ScannerEdgeCard />
+        <VerificaModulo moduleKey="edge" isAdmin={isAdmin} />
       </ModuleSection>
 
       <ModuleSection
@@ -446,6 +448,7 @@ export function ModulesTab({ isAdmin }: { isAdmin: boolean }) {
           }
         />
         )}
+        <VerificaModulo moduleKey="meshcentral" isAdmin={isAdmin} />
       </ModuleSection>
 
       <ModuleSection id="module-nis2_inventory" title="Inventario NIS2">
@@ -468,6 +471,7 @@ export function ModulesTab({ isAdmin }: { isAdmin: boolean }) {
           </Link>
           .
         </p>
+        <VerificaModulo moduleKey="unifi" isAdmin={isAdmin} />
       </ModuleSection>
 
       <Separator />
@@ -552,6 +556,7 @@ export function ModulesTab({ isAdmin }: { isAdmin: boolean }) {
           dockerAvailable={dockerAvailable ?? false}
           showSyncButton
         />
+        <VerificaModulo moduleKey="librenms" isAdmin={isAdmin} />
       </ModuleSection>
 
       <ModuleSection id="module-graylog" moduleKey="graylog" title="Graylog">
@@ -561,10 +566,12 @@ export function ModulesTab({ isAdmin }: { isAdmin: boolean }) {
           description="Log management completo (Windows/Linux/network)."
           dockerAvailable={dockerAvailable ?? false}
         />
+        <VerificaModulo moduleKey="graylog" isAdmin={isAdmin} />
       </ModuleSection>
 
       <ModuleSection id="module-wazuh" moduleKey="wazuh" title="Wazuh SIEM">
         <WazuhCard />
+        <VerificaModulo moduleKey="wazuh" isAdmin={isAdmin} />
       </ModuleSection>
 
       <Separator />

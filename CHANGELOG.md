@@ -4,6 +4,58 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-16 · apertura delle interfacce dei moduli: «Verifica» dice perché non si aprono
+
+Passo 4b del piano di solidità del 16/10 (parte DA-IPAM; analisi `2026-10-16-catena-apertura-interfacce-moduli.md`).
+Perché: «Verifica» provava solo l'URL dell'API, mai quello che apre il browser. Un'interfaccia che non si apriva dava
+un riquadro vuoto o la pagina di login, senza una causa.
+
+### Modifiche
+
+- **Verifica «apertura per il browser»** accanto a quella dell'API, nel modulo comune di salute
+  (`verificaAperturaModulo` in `modules/health.ts`, motore `modules/apertura-browser.ts`, URL per modulo
+  `modules/apertura-bersagli.ts`, rotta `GET /api/modules/[key]/apertura?origine=…`, sessione richiesta). Esiti:
+  certificato non fidato, nome errato, scaduto (tre controlli indipendenti: OpenSSL si ferma al primo), login
+  richiesto, riquadro bloccato (X-Frame-Options, CSP `frame-ancestors`, contenuto misto), risposta di un'API invece
+  dell'interfaccia, errore HTTP, non raggiungibile, nessun indirizzo. Ogni esito ha la spiegazione in italiano; con un
+  problema di certificato, finché non c'è la CA interna di DA-Link, l'istruzione per accettarlo una volta e
+  l'**impronta SHA-256** da confrontare. Il certificato si legge senza rifiutarlo e lo si giudica nel codice; la GET che
+  segue non porta credenziali. **Modulo spento: nessuna chiamata** (verdetto `off` della sonda, prima di tutto).
+- **Pagina dei moduli** (Impostazioni → Moduli): per Scanner-Edge, LibreNMS, Graylog, Wazuh, MeshCentral e controller,
+  il riquadro «Verifica» con due righe distinte, «API» e «Apertura per il browser».
+- **LibreNMS**: il login automatico si giudica dal contenuto della risposta (rinvio a `/login`, campo password, 419),
+  non dalla presenza di `laravel_session`, che Laravel dà anche con la password sbagliata: `/sso` risponde con un errore
+  spiegato invece di un 302 verso il login. Prima di usare la sessione in cache si controlla che apra ancora LibreNMS:
+  se finisce sul login, cache svuotata e login nuovo (anche nel proxy; `clearLibreNMSWebSessionCache` non aveva
+  chiamanti). Il 302 porta a LibreNMS sullo stesso nome con cui il browser ha aperto DA-IPAM, dove finiscono i cookie,
+  se LibreNMS è servito da nginx dell'appliance; altrimenti una pagina spiega che l'accesso automatico non può
+  funzionare da quel nome. `insecureTls` del login resta (certificato autofirmato dell'appliance), ma la verifica lo
+  dice e mostra l'impronta.
+- **MeshCentral**: la sessione nel riquadro chiede subito la verifica e mostra la causa vera: certificato (con
+  l'impronta) oppure origine non ammessa da `frame-ancestors`, con le origini ammesse e quelle **da ammettere**
+  (quella di adesso più l'host dell'appliance). `allowedFramingOrigins` lo scrive l'installatore, non DA-IPAM.
+- **Scanner-Edge**: l'URL dell'interfaccia viene dal nodo che serve davvero la 6443 (`resolveEdgeBrowserUrl`: voce
+  «edge» del vault scritta dall'installatore, poi host pubblico dell'appliance), non dall'host di `base_url` (in
+  consolidated 127.0.0.1, niente pulsante; in full l'IP dell'edge, porta sbagliata). Launchpad, card e verifica usano
+  la stessa funzione; `deriveEdgeUiBase` resta solo come ripiego per un edge fuori dall'appliance.
+- **Wazuh e Graylog**: la Launchpad e il viewer leggono la stessa fonte (`resolveWazuhBrowserUrl`,
+  `resolveIntegrationBrowserUrl`). Il vault si legge con qualunque etichetta del tipo («Wazuh SIEM» dell'installatore
+  compresa, mai l'API :55000), non più solo «dashboard». Graylog ripiega sulla 9443 di nginx, non sulla 9000. Le porte
+  dell'appliance sono in una tabella sola (`PORTE_UI_APPLIANCE` in `integrations/public-url.ts`).
+
+### Prove
+
+- `modules/__tests__/apertura-browser.test.ts`: server `https.createServer` finti su 127.0.0.1 con certificati
+  generati sul momento (`certificati-finti.ts`, X.509 v3 con SAN, senza openssl): fidato, autofirmato, nome errato,
+  scaduto, login richiesto, X-Frame-Options DENY, CSP `frame-ancestors`, JSON 401, porta chiusa.
+- `integrations/__tests__/librenms-sessione-web.test.ts`: Laravel finto che dà il cookie anche col login sbagliato.
+- `modules/__tests__/apertura-moduli.test.ts`: spento = nessuna chiamata; edge in full; Wazuh/Graylog stessa fonte;
+  MeshCentral con l'origine non ammessa.
+
+### Da verificare su un'appliance vera
+
+- LibreNMS aperto con un nome diverso da `APP_URL`: se genera link assoluti verso l'IP, i cookie non li seguono.
+- Le intestazioni vere di MeshCentral con `allowedFramingOrigins`, e quelle di Graylog e LibreNMS nel viewer.
 ## [Non rilasciato] — 2026-10-16 · MDM: il job segue l'interruttore, spegnimento automatico spiegato
 
 Passo 3 del piano di solidità del 16/10. Perché: «sincronizzazione automatica abilitata» non creava nessun job

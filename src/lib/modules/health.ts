@@ -17,6 +17,10 @@
  * configurato dice `off` e non chiama niente; prima diceva `fail` e si confondeva
  * con un guasto vero. Un modulo che non ha niente da sondare (Patch Management, tutto
  * locale) dice `unverified`, non `ok` dedotto dall'interruttore.
+ *
+ * Accanto alla verifica dell'API c'è quella dell'«apertura per il browser»
+ * (passo 4b, 16/10): `verificaAperturaModulo`, su richiesta e mai per un modulo
+ * spento. Motore in `apertura-browser.ts`, URL per modulo in `apertura-bersagli.ts`.
  */
 import { statfs } from "node:fs/promises";
 import { execFile } from "node:child_process";
@@ -37,6 +41,8 @@ import { classifyDiskUsage } from "@/lib/integrations/wazuh-health-thresholds";
 import { getMeshCreds } from "@/lib/integrations/meshcentral/config";
 import { MeshControlClient } from "@/lib/integrations/meshcentral/control-client";
 import type { ModuleKey } from "./registry";
+import type { VerificaApertura } from "./apertura-browser";
+import { verificheAperturaDelModulo } from "./apertura-bersagli";
 
 export type ModuleHealthStatus =
   | "ok"
@@ -736,4 +742,40 @@ export async function getModulesHealth(
     cache.set(tenantCode, { value: cached.value.map((h) => fresh.get(h.key) ?? h), expiresAt: cached.expiresAt });
   }
   return value;
+}
+
+// ── Apertura per il browser (passo 4b) ───────────────────────────────────────
+
+export interface AperturaModulo {
+  key: ModuleKey;
+  /**
+   * - `spento`: modulo spento o mai configurato, nessuna chiamata;
+   * - `senza_interfaccia`: il modulo non ha un'interfaccia da aprire (pagine native);
+   * - `verificato`: `verifiche` contiene l'esito per ogni interfaccia.
+   */
+  stato: "spento" | "senza_interfaccia" | "verificato";
+  /** Verdetto dell'API nello stesso momento (la riga «API» accanto a questa). */
+  verdettoApi: ModuleHealthVerdict;
+  dettaglioApi: string | null;
+  verifiche: VerificaApertura[];
+  verificatoIl: string;
+}
+
+/**
+ * Prova l'apertura delle interfacce di un modulo come farebbe il browser aperto
+ * su `origineDaIpam`. Un modulo spento resta intoccato: nessuna chiamata verso
+ * di lui (il verdetto `off` della sua sonda non ne fa).
+ */
+export async function verificaAperturaModulo(
+  tenantCode: string,
+  key: ModuleKey,
+  origineDaIpam: string | null,
+): Promise<AperturaModulo> {
+  const verificatoIl = new Date().toISOString();
+  const [salute] = await getModulesHealth(tenantCode, { only: key });
+  const verdettoApi: ModuleHealthVerdict = salute?.verdict ?? "off";
+  const base = { key, verdettoApi, dettaglioApi: salute?.detail ?? null, verificatoIl };
+  if (!salute || verdettoApi === "off") return { ...base, stato: "spento", verifiche: [] };
+  const verifiche = await withTenant(tenantCode, () => verificheAperturaDelModulo(key, tenantCode, origineDaIpam));
+  return { ...base, stato: verifiche.length ? "verificato" : "senza_interfaccia", verifiche };
 }

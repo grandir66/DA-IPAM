@@ -653,6 +653,23 @@ test("primCavi: una scelta o una ★ che nominano una linea che non c'è non div
   assert.equal(prim(linee, classi).padri.H, "S1");
 });
 
+// Correzione del Task 12 di T3 (G16, lettura D): il membro di riserva di un bond (§13.5.5) non è il principale dell'hypervisor
+// (punto 6: dopo il non giù, il non di riserva) e nella chiave del punto 3 sta al posto del bloccato: cede a ogni collegamento che
+// inoltra, anche di fiducia peggiore, e fa da padre solo se non c'è altro. Prima, a pari velocità, l'id sceglieva la riserva.
+test("primCavi: il membro di riserva del bond non è il padre se c'è un collegamento che inoltra — regola dell'hypervisor e chiave", () => {
+  const riserva = linea("a-riserva", "S1", "H", { stato: "riserva_bond", fiducia: "certo", velocitaMbps: 10000 });
+  const attivo = linea("b-attivo", "S2", "H", { velocitaMbps: 10000 });
+  const linee = [linea("r1", "R", "S1"), linea("r2", "R", "S2"), riserva, attivo];
+  const classi = { R: "infra", S1: "infra", S2: "infra", H: "hyper" } as const;
+  assert.equal(prim(linee, classi, { ipervisori: new Set(["H"]) }).via.get("H")?.id, "b-attivo", "regola dell'hypervisor");
+  assert.equal(prim(linee, classi).via.get("H")?.id, "b-attivo", "senza la regola dell'hypervisor decide la chiave: la riserva cede anche con la fiducia migliore");
+  const veloce = [linee[0], linee[1], { ...riserva, velocitaMbps: 25000 }, attivo];
+  assert.equal(prim(veloce, classi, { ipervisori: new Set(["H"]) }).via.get("H")?.id, "b-attivo", "il traffico passa dalla scheda attiva anche se la riserva è più veloce");
+  assert.equal(prim(veloce, classi).via.get("H")?.id, "b-attivo", "lo stesso con la chiave");
+  assert.equal(prim([...linee.slice(0, 3)], classi).via.get("H")?.id, "a-riserva", "da solo, il membro di riserva fa da padre");
+  assert.equal(prim([...linee.slice(0, 3), { ...attivo, stato: "giu" }], classi, { ipervisori: new Set(["H"]) }).via.get("H")?.id, "a-riserva", "con l'altra scheda giù vince la riserva");
+});
+
 // §13.7.6 punto 4: il capo di un ponte radio fa da ponte anche se la classe dice foglia (eccezione a tree.ts).
 test("primCavi: un capo di un ponte radio classificato attaccato fa da ponte; senza, è una foglia", () => {
   const linee = [linea("ra", "R", "A"), linea("ab", "A", "B")];

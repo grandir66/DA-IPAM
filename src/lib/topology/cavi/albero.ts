@@ -98,6 +98,12 @@ export const RADICE = "radice";
 export const FIDUCIA: Readonly<Record<Fiducia, number>> = { certo: 0, probabile: 1, dedotto: 2, a_mano_confermato: 3, a_mano: 4 };
 const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 const fermo = (c: { stato: StatoCollegamento }): boolean => c.stato === "bloccato" || c.stato === "bloccato_comune";
+/**
+ * Il membro di riserva di un bond (§13.5.5): non porta traffico finché l'altra scheda è su, come una porta bloccata, ma non lo
+ * ferma lo spanning tree. Nell'albero vale come un bloccato (§13.8.3 punto 4: padre solo se non c'è altro); resta fuori da
+ * `fermo`, che dice «bloccato dallo spanning tree» (la testa e l'uplink del controller).
+ */
+const diRiserva = (c: { stato: StatoCollegamento }): boolean => c.stato === "riserva_bond";
 const migliore = (cs: readonly Collegamento[]): Collegamento | undefined =>
   [...cs].sort((x, y) => Number(x.nonVisto) - Number(y.nonVisto) || FIDUCIA[x.fiducia] - FIDUCIA[y.fiducia] || cmp(x.id, y.id))[0];
 
@@ -140,7 +146,9 @@ export function chiaveCavo(c: LineaAlbero, da: string, to: string, ctx: { scelto
     ctx.scelto.get(to) === c.id ? 0 : 1,
     c.nonVisto ? 1 : 0,
     c.stato === "giu" ? 1 : 0,
-    fermo(c) ? 1 : 0,
+    // Il posto della riserva del bond è quello del bloccato, e non un elemento suo: la spec non dà un ordine fra i due, e tutti e
+    // due cedono a ogni collegamento che inoltra (G16, lettura D).
+    fermo(c) || diRiserva(c) ? 1 : 0,
     c.stato === "instradato" && !versoSegmento ? 1 : 0,
     FIDUCIA[c.fiducia],
     versoSegmento ? 1 : 0,
@@ -252,13 +260,15 @@ export function primCavi(ing: IngressoPrim): EsitoPrim {
   // vale. Il padre può essere diverso fra traccia e schermo; con `DALLE_VM_SOLO_DETTAGLI` spenta (oggi) non succede.
   const forzati = new Map<string, string>();
   for (const [nodo, id] of ing.stelle) if ((adj.get(nodo) ?? []).some((c) => c.id === id)) forzati.set(nodo, id);
-  // Punto 6: il principale dell'hypervisor (§12.5): prima il non vecchio, poi il non giù, poi il più veloce, poi più VM.
+  // Punto 6: il principale dell'hypervisor (§12.5): prima il non vecchio, poi il non giù, poi il non di riserva del bond (§13.3.2
+  // riga 17: gli altri membri del bond sono ridondanze «⇄»; prima, a pari velocità, l'id sceglieva la riserva: G16, lettura D),
+  // poi il più veloce, poi più VM.
   for (const id of [...ing.ipervisori].sort()) {
     if (forzati.has(id)) continue;
     const cs = (adj.get(id) ?? []).filter((c) => !c.aMano && !foglia(altro(c, id)));
     if (cs.length < 2) continue;
     forzati.set(id, [...cs].sort((x, y) => Number(x.nonVisto) - Number(y.nonVisto) || Number(x.stato === "giu") - Number(y.stato === "giu")
-      || (y.velocitaMbps ?? 0) - (x.velocitaMbps ?? 0) || (y.vm ?? 0) - (x.vm ?? 0) || cmp(x.id, y.id))[0].id);
+      || Number(diRiserva(x)) - Number(diRiserva(y)) || (y.velocitaMbps ?? 0) - (x.velocitaMbps ?? 0) || (y.vm ?? 0) - (x.vm ?? 0) || cmp(x.id, y.id))[0].id);
   }
   const stella = (c: LineaAlbero, to: string): boolean => ing.stelle.get(to) === c.id;
   const profondita = new Map<string, number>();

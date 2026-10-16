@@ -160,7 +160,7 @@ cd "$SCRATCH/ipam-dev" && npm ci > "$SCRATCH/npm-ci-dev.log" 2>&1; echo "exit=$?
   Atteso `exit=0`. Per il secondo agente: `git -C "$REPO" worktree add "$SCRATCH/ipam-unioni-b" -b topologia/unioni-a-mano-<task> topologia/unioni-a-mano` e `npm ci`.
 
 - [ ] **P2 · Copie fresche** dell'hub e del cliente A con la **procedura P6 del piano di T2** (rimanda a P3 di T1):
-  `sqlite3 <db> ".backup '/var/tmp/copia-<tenant>.db'"` in sottofondo con `nohup` e log (il salto via `192.168.40.4` cade nei
+  `sqlite3 <db> ".backup '/var/tmp/copia-<tenant>.db'"` in sottofondo con `nohup` e log (il salto via il Proxmox di salto cade nei
   comandi lunghi; l'hub si raggiunge diretto), `sha256sum` uguale sui due lati, `rm` della copia sul server, `PRAGMA
   quick_check` sul Mac. In `$SCRATCH/copie/`; l'ora UTC di ogni copia (`ADESSO`) va in ogni misura con `--adesso`.
 

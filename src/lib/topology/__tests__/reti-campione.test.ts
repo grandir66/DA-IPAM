@@ -254,12 +254,6 @@ test("G10 · famiglia 5 · T1b: un telefono che si annuncia via CDP non è un ap
   assert.equal(modello(mista()).daSistemare?.some((d) => d.id === "host:81"), true);
 });
 
-// ─── Criteri che arrivano dopo T1 (§13.3.0): saltati col perché, una riga per famiglia ───
-for (const [g, famiglie, tappa] of [
-  ["G11", "1, 2, 3", "T3: il fascio come linea sola, provato da LACP, dalla forma o dal controller"],
-  ["G12", "2, 3, 5", "T3: l'albero dallo spanning tree"],
-  ["G13", "1, 2, 5", "T3: il collegamento instradato e la WAN del gateway"],
-  ["G14", "1, 5", "T3: tunnel e ponti radio (il senza fili è già in T1: famiglia 2)"],
-  ["G15", "1, 4", "T3: router e firewall in una VM dentro il loro hypervisor (G9 è già in T1)"],
-  ["G16", "tutte", "T3: la stessa rete in quattro letture"],
-] as const) test(`${g} · famiglie ${famiglie}`, { skip: tappa }, () => {});
+// ─── Criteri che arrivano con T3 (§13.3.0) ───
+// G11-G16: in cavi-reti-campione.test.ts (G11-G15, una prova per criterio e per famiglia, col modello per cavo) e in
+// cavi-quattro-letture.test.ts (G16, la stessa rete in quattro letture). Erano saltati qui finché T3 non c'era.

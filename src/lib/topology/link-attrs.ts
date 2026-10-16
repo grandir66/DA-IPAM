@@ -18,7 +18,8 @@ import { resolveScanHosts } from "@/lib/topology/vms";
 import { normalizeMacForStorage, normalizePortNameForMatch } from "@/lib/utils";
 
 const DAY = 86_400_000;
-const MEDIA: readonly string[] = ["cavo", "fibra", "wireless"];
+/** I tipi di una correzione «aggiungi» (spec §13.9): «tunnel» da T3. Una riga a mano senza un tipo noto non ne ha. */
+export const MEDIA: readonly string[] = ["cavo", "fibra", "wireless", "tunnel"];
 
 const pairKey = (a: string, b: string): string => (a < b ? `${a}|${b}` : `${b}|${a}`);
 
@@ -89,14 +90,19 @@ export function confirmManual(link: MapLink, input: TopologyModelInput, idx: Nod
     const t = s ? parseDbDate(s).getTime() : NaN;
     if (Number.isNaN(t) || input.nowMs - t <= soglia) return true;
   }
+  return macSullaPorta(input, idx, link.a, link.aPort, link.b) || macSullaPorta(input, idx, link.b, link.bPort, link.a);
+}
+
+/**
+ * Un MAC dell'oggetto `altro` (anche di una scheda viva dell'hypervisor o di un host fuso) visto non vecchio sulla porta `porta`
+ * di `nodo` (tabella MAC per porta). La verifica a mano di `confirmManual`, e da T3 quella per cavo del modello per cavo (§13.9).
+ */
+export function macSullaPorta(input: TopologyModelInput, idx: NodeIndex, nodo: string, porta: string, altro: string): boolean {
   const { macsOf, onPort } = lookups(input, idx);
-  const sees = (node: string, port: string, other: string): boolean => {
-    const m = /^dev:(\d+)$/.exec(node);
-    const wanted = macsOf.get(other);
-    if (!m || !wanted || !port.trim()) return false;
-    return (onPort.get(`${m[1]}|${normalizePortNameForMatch(port)}`) ?? []).some((r) => wanted.has(r.mac) && input.nowMs - r.ms <= soglia);
-  };
-  return sees(link.a, link.aPort, link.b) || sees(link.b, link.bPort, link.a);
+  const m = /^dev:(\d+)$/.exec(nodo);
+  const wanted = macsOf.get(altro);
+  if (!m || !wanted || !porta.trim()) return false;
+  return (onPort.get(`${m[1]}|${normalizePortNameForMatch(porta)}`) ?? []).some((r) => wanted.has(r.mac) && input.nowMs - r.ms <= input.staleDays * DAY);
 }
 
 /** Riempie manual, medium, velocità, PoE e la scelta a mano del principale. Le copie del modello sono nuove: si modificano sul posto. */

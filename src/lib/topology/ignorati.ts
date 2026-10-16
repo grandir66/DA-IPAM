@@ -24,15 +24,22 @@ export function nessunIgnorato(): Ignorati {
   return { regole: [], usate: new Set() };
 }
 
-/** Le correzioni «ignora», coi nodi passati dall'id canonico (un host poi promosso è l'apparato) e le porte con la chiave. */
-export function regoleIgnora(overrides: readonly LinkOverrideRow[], idx: NodeIndex, porta: (nodo: string, nome: string) => Porta | null): Ignorati {
+/**
+ * Le correzioni «ignora», coi nodi passati dall'id canonico (un host poi promosso è l'apparato) e le porte con la chiave.
+ * `segmenti: true` solo dal modello per cavo (§13.9, «Togli ‹A› dal segmento»): un capo «seg:…» resta com'è, con la porta
+ * null, e chi chiama lo risolve nel segmento di oggi (alias dei membri). Il modello di T1 non lo passa: una correzione su un
+ * segmento resta fuori dalle sue regole come prima (e orfana per lui).
+ */
+export function regoleIgnora(overrides: readonly LinkOverrideRow[], idx: NodeIndex, porta: (nodo: string, nome: string) => Porta | null,
+  opz: { segmenti?: boolean } = {}): Ignorati {
   const regole: RegolaIgnora[] = [];
+  const diSegmento = (id: string): boolean => opz.segmenti === true && id.startsWith("seg:");
   for (const o of [...overrides].sort((x, y) => x.id - y.id)) {
     if (o.action !== "ignore") continue;
-    const a = nodeFor(idx, canonical(idx, o.a_node));
-    const b = nodeFor(idx, canonical(idx, o.b_node));
+    const a = diSegmento(o.a_node) ? o.a_node : nodeFor(idx, canonical(idx, o.a_node));
+    const b = diSegmento(o.b_node) ? o.b_node : nodeFor(idx, canonical(idx, o.b_node));
     if (!a || !b || a === b) continue;
-    regole.push({ id: o.id, a, aPorta: porta(a, o.a_port), b, bPorta: porta(b, o.b_port) });
+    regole.push({ id: o.id, a, aPorta: diSegmento(a) ? null : porta(a, o.a_port), b, bPorta: diSegmento(b) ? null : porta(b, o.b_port) });
   }
   return { regole, usate: new Set() };
 }

@@ -262,8 +262,9 @@ async function main(): Promise<number> {
   if (ombra && a.includes("--cavi")) {
     const conta = (xs: readonly string[]) => xs.reduce<Record<string, number>>((o, k) => ({ ...o, [k]: (o[k] ?? 0) + 1 }), {});
     const ipv = new Set(model.vms.flatMap((v) => (v.hypervisorNodeId ? [v.hypervisorNodeId] : [])));
-    // §13.14, §13.15 punto 4: i collegamenti che hanno SOLO la prova «dalle VM».
-    const dalleVm = ombra.collegamenti.flatMap((c) => {
+    // §13.14, §13.15 punto 4: i collegamenti che hanno SOLO la prova «dalle VM» (anche quelli che, con la regola accesa, stanno
+    // solo nei dettagli: la misura deve vederli tutti, comunque sia `DALLE_VM_SOLO_DETTAGLI`).
+    const dalleVm = [...ombra.collegamenti, ...ombra.soloDettagli.map((d) => d.collegamento)].flatMap((c) => {
       if (c.prove.length === 0 || !c.prove.every((p) => p.classe === "vm")) return [];
       const h = ipv.has(c.a.nodo) ? c.a : ipv.has(c.b.nodo) ? c.b : null;
       if (!h) return [];

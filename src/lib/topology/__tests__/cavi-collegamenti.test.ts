@@ -4,7 +4,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildTopologyModel } from "@/lib/topology/model";
-import { capo as capoDi, costruisciCollegamenti, type Collegamento } from "@/lib/topology/cavi/collegamenti";
+import { aliasDeiSegmenti, capo as capoDi, costruisciCollegamenti, type Collegamento, type Segmento } from "@/lib/topology/cavi/collegamenti";
+import { normale, type Porta } from "@/lib/topology/cavi/porte";
 import { costruisciModelloCavi, preparaCavi } from "@/lib/topology/cavi/modello";
 import type { IngressoCavi, Prova } from "@/lib/topology/cavi/prove";
 import type { LinkOverrideRow, ModelVmRow, TopologyModelInput } from "@/lib/topology/model-types";
@@ -466,6 +467,22 @@ test("§13.9: «Togli dal segmento» toglie solo l'appartenenza di quel membro, 
   }
   // Un id che nessun segmento contiene più: orfana, contata (R2).
   assert.deepEqual(collega(ingresso(t1([togli("seg:9:4")]), { vicini })).correzioniOrfane, [4]);
+});
+
+/**
+ * Revisione finale di T3 (M6): l'id di un segmento nasce dal membro gestito col numero più piccolo, anche se quel membro ha la
+ * porta senza chiave (`idPorta` usa allora il nome), mentre gli alias prendevano solo i membri con la chiave: l'id di prima di un
+ * membro così non si ritrovava più quando entrava un apparato col numero più piccolo. Oggi la scoperta dei segmenti dà a ogni
+ * membro una chiave (la porta che sente è «contabile», i sentiti hanno una porta nota): la regola degli alias è la stessa dell'id,
+ * così le due non si separano se un giorno un membro arriva senza chiave.
+ */
+test("M6: ogni membro gestito dà il suo alias con la stessa porta dell'id, anche senza chiave", () => {
+  const porta = (nodo: string, chiave: string | null, nome: string): Porta => ({ nodo, chiave, nome, certa: chiave !== null, fisica: true, senzaFili: false, nelBridge: null });
+  const seg: Segmento = { id: "seg:2:n-ether8", membri: [porta("dev:2", "n:ether8", "ether8"), porta("dev:5", null, "Port 15"), porta("host:9", null, "eth9")], altriApparati: 0, frase: "" };
+  const alias = aliasDeiSegmenti([seg]);
+  assert.equal(alias.get(`seg:5:n-${encodeURIComponent(normale("Port 15"))}`), "seg:2:n-ether8", "l'id che il membro senza chiave aveva dato al segmento");
+  assert.equal(alias.get("seg:2:n-ether8"), "seg:2:n-ether8");
+  assert.equal([...alias.keys()].some((k) => k.startsWith("seg:host")), false, "un membro non gestito non dà id né alias");
 });
 
 test("§13.13.3 punto 8: bloccato fra due bridge della stessa regione senza righe d'istanza = «bloccato» con le istanze non lette; con l'istanza, «bloccato_comune»", () => {

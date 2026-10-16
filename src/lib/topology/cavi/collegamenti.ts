@@ -151,15 +151,17 @@ function nomeNellId(nome: string): string {
 const idPorta = (p: Porta): string => (p.chiave?.startsWith("i:") ? p.chiave.slice(2) : `n-${nomeNellId(p.chiave ? p.chiave.slice(2) : normale(p.nome))}`);
 
 /**
- * Alias «seg:<apparato>:<porta>» di ogni membro gestito con la chiave → id di oggi del segmento (§13.7.3: un id salvato si
- * risolve nel segmento che contiene ancora quel membro; l'id cambia quando esce il membro con la chiave più piccola). Lo usa
- * anche la mappa per `canonical`. Un id che nessun segmento contiene non ha alias: l'oggetto è perso, e si conta (R2).
+ * Alias «seg:<apparato>:<porta>» di ogni membro gestito → id di oggi del segmento (§13.7.3: un id salvato si risolve nel segmento
+ * che contiene ancora quel membro; l'id cambia quando esce, o entra, il membro col numero più piccolo). Lo usa anche la mappa per
+ * `canonical`. Ogni membro che può dare l'id dà anche l'alias, con la stessa porta (`idPorta`, anche senza chiave): prima solo i
+ * membri con la chiave, e l'id dato da un membro senza chiave si perdeva (revisione finale di T3, M6). Un id che nessun segmento
+ * contiene non ha alias: l'oggetto è perso, e si conta (R2).
  */
 export function aliasDeiSegmenti(segmenti: readonly Segmento[]): Map<string, string> {
   const out = new Map<string, string>();
   for (const s of segmenti) {
     out.set(s.id, s.id);
-    for (const m of s.membri) if (m.nodo.startsWith("dev:") && m.chiave !== null) out.set(`seg:${m.nodo.slice(4)}:${idPorta(m)}`, s.id);
+    for (const m of s.membri) if (m.nodo.startsWith("dev:")) out.set(`seg:${m.nodo.slice(4)}:${idPorta(m)}`, s.id);
   }
   return out;
 }
@@ -541,7 +543,7 @@ export function costruisciCollegamenti(prove: readonly Prova[], correzioni: read
   }
 
   // I segmenti (§13.7.3): membri = la porta che sente e gli apparati sentiti con una porta nota; due segmenti con un membro in
-  // comune sono uno solo. Id: «seg:<id apparato>:<porta>» del membro gestito con la chiave più piccola.
+  // comune sono uno solo. Id: «seg:<id apparato>:<porta>» del membro gestito col numero (poi la porta) più piccolo.
   const gruppi: Array<{ chiavi: Set<string>; membri: Map<string, Porta>; prove: Prova[]; altri: Set<string> }> = [];
   for (const k of [...diSegmento].sort()) {
     const m = sentiti.get(k)!;

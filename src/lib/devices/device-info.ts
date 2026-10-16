@@ -5,16 +5,11 @@
  */
 
 import type { NetworkDevice } from "@/types";
-import {
-  getDeviceCredentials,
-  getDeviceCommunityString,
-  getDeviceSnmpV3Credentials,
-  getCredentialCommunityString,
-  getEffectiveSnmpPort,
-} from "@/lib/db";
+import { credenzialeSnmpApparato, getDeviceCredentials, haSnmpApparato } from "@/lib/db";
 import { sshExec, sshExecViaShell } from "./ssh-helper";
+import { haSegretoSsh, segretoSsh } from "./ssh-transport";
 import { snmpGetTollerante, type SnmpGetSession } from "./snmp-get-tollerante";
-import { apriSessioneSnmp, V3_ASSENTE, versioneApparato, type CredenzialeSnmp, type VersioneSnmp } from "@/lib/protocols/snmp-sessione";
+import { apriSessioneSnmp, versioneApparato, type VersioneSnmp } from "@/lib/protocols/snmp-sessione";
 
 export interface DeviceInfo {
   sysname: string | null;
@@ -290,22 +285,15 @@ export function infoDaVarbindSnmp(varbinds: Array<{ oid: string; value: unknown 
  * dal record (tappa 2 credenziali, T4: prima authNoPriv/MD5 fissi). Una v3
  * assente, illeggibile o con opzioni che non si possono usare (DES, AES192)
  * è un errore che si vede: la funzione lancia invece di ripiegare in
- * silenzio sulla community e su «public».
+ * silenzio sulla community e su «public». Credenziale e porta vengono dal
+ * motore (T8): la porta è quella del candidato (161, o del binding o della voce).
  */
 export async function getDeviceInfoFromSnmp(device: NetworkDevice, portaProva?: number): Promise<DeviceInfo> {
-  const isSnmpProtocol = device.protocol === "snmp_v2" || device.protocol === "snmp_v3";
+  const scelta = credenzialeSnmpApparato(device);
+  if (!scelta.ok) throw new Error(scelta.motivo);
+  const cred = scelta.cred;
   // `portaProva` solo per le prove (agente finto su una porta libera): in esercizio non si passa.
-  const snmpPort = portaProva ?? (isSnmpProtocol ? getEffectiveSnmpPort(device) : 161);
-  const opts = { port: snmpPort, timeout: 5000 };
-
-  let cred: CredenzialeSnmp;
-  if (device.protocol === "snmp_v3") {
-    const v3 = getDeviceSnmpV3Credentials(device);
-    if (!v3) throw new Error(V3_ASSENTE);
-    cred = { forma: "v3", record: v3 };
-  } else {
-    cred = { forma: "community", community: getDeviceCommunityString(device) };
-  }
+  const opts = { port: portaProva ?? scelta.port, timeout: 5000 };
 
   try {
     const snmp = await import("net-snmp");
@@ -368,8 +356,8 @@ export async function getDeviceInfoFromSnmp(device: NetworkDevice, portaProva?: 
 export async function getDeviceInfoFromSsh(device: NetworkDevice): Promise<Partial<DeviceInfo>> {
   const creds = getDeviceCredentials(device);
   const username = creds?.username ?? device.username ?? undefined;
-  const password = creds?.password;
-  if (!username || !password) return {};
+  // Password o chiave privata (tappa 2 credenziali, T14).
+  if (!username || !creds || !haSegretoSsh(creds)) return {};
 
   // Se il protocollo primario è SNMP, la porta configurata è quella SNMP (161): usa 22 per SSH
   const sshPort = (device.protocol === "snmp_v2" || device.protocol === "snmp_v3") ? 22 : (device.port || 22);
@@ -377,7 +365,7 @@ export async function getDeviceInfoFromSsh(device: NetworkDevice): Promise<Parti
     host: device.host,
     port: sshPort,
     username,
-    password,
+    ...segretoSsh(creds),
     timeout: 15000,
   };
 
@@ -601,7 +589,7 @@ export async function getDeviceInfoFromSsh(device: NetworkDevice): Promise<Parti
 }
 
 /** Opzioni SSH per connessione */
-type SshOpts = { host: string; port?: number; username: string; password: string; timeout?: number };
+type SshOpts = { host: string; port?: number; username: string; password?: string; privateKey?: string; passphrase?: string; timeout?: number };
 
 /**
  * Acquisizione dati completi da host Linux (DADude3 linux_probe).
@@ -1441,21 +1429,9 @@ export async function getDeviceInfo(device: NetworkDevice): Promise<DeviceInfo> 
   let winrmFailure: Error | null = null;
   const nasKind = resolveNasKind(device);
 
-  const snmpV3Creds = getDeviceSnmpV3Credentials(device);
-  // Controlla se c'è un binding SNMP nella nuova tabella
-  const { getDb: getDbForSnmpCheck } = await import("@/lib/db");
-  const hasSnmpBinding = !!(getDbForSnmpCheck().prepare(
-    "SELECT 1 FROM device_credential_bindings WHERE device_id = ? AND protocol_type = 'snmp' LIMIT 1"
-  ).get(device.id));
-  const hasSnmp =
-    !!device.community_string ||
-    device.protocol === "snmp_v2" ||
-    device.protocol === "snmp_v3" ||
-    (device.snmp_credential_id
-      ? !!getCredentialCommunityString(device.snmp_credential_id) || !!snmpV3Creds
-      : false) ||
-    (device.credential_id ? !!getCredentialCommunityString(device.credential_id) : false) ||
-    hasSnmpBinding;
+  // «Ha SNMP?»: protocollo SNMP o una fonte SNMP dell'apparato (binding non falliti, colonne, community_string),
+  // dal motore unico (tappa 2 credenziali, T8). Mai la catena della rete.
+  const hasSnmp = device.protocol === "snmp_v2" || device.protocol === "snmp_v3" || haSnmpApparato(device);
   const scanTarget = (device as { scan_target?: string | null }).scan_target;
   const isLinuxVendorInfo =
     scanTarget === "linux" ||
@@ -1504,13 +1480,16 @@ export async function getDeviceInfo(device: NetworkDevice): Promise<DeviceInfo> 
 
   // SNMP con profilo vendor: prova a ottenere dati completi
   if (hasSnmp) {
-    const community = getDeviceCommunityString(device);
-    const snmpPort =
-      device.protocol === "snmp_v2" || device.protocol === "snmp_v3" ? getEffectiveSnmpPort(device) : 161;
+    // Il profilo vendor e il walk ENTITY-MIB parlano solo a community: con una v3 (o senza credenziale) resta la
+    // lettura base, che apre la v3 coi protocolli della voce. Prima il profilo mandava una community anche a un
+    // apparato v3 (D5: mai).
+    const sceltaSnmp = credenzialeSnmpApparato(device);
+    const community = sceltaSnmp.ok && sceltaSnmp.cred.forma === "community" ? sceltaSnmp.cred.community : null;
+    const snmpPort = sceltaSnmp.ok ? sceltaSnmp.port : 161;
 
     // Prima prova il profilo vendor per dati specifici. NULL = v2c, come prima (passava dalla discovery).
-    const profileInfo = await getDeviceInfoViaSNMPProfile(device.host, community, snmpPort, versioneApparato(device, "2c"));
-    if (profileInfo.vendorProfileId) {
+    const profileInfo = community != null ? await getDeviceInfoViaSNMPProfile(device.host, community, snmpPort, versioneApparato(device, "2c")) : null;
+    if (profileInfo?.vendorProfileId) {
       result = {
         sysname: profileInfo.sysname ?? result.sysname,
         sysdescr: profileInfo.sysdescr ?? result.sysdescr,
@@ -1538,30 +1517,31 @@ export async function getDeviceInfo(device: NetworkDevice): Promise<DeviceInfo> 
     }
 
     // Ultimo tentativo SNMP v2c: walk ENTITY-MIB seriali (molti switch/router espongono il seriale solo su indici >2)
-    if (!result.serial_number && device.protocol !== "snmp_v3") {
+    if (!result.serial_number && community != null) {
       const { trySnmpSerialFromEntityWalk } = await import("@/lib/scanner/snmp-query");
       const sn = await trySnmpSerialFromEntityWalk(device.host, community, snmpPort, versioneApparato(device, "2c"));
       if (sn) result.serial_number = sn;
     }
   } else if (nasKind) {
-    // NAS solo SSH senza community esplicita: prova comunque SNMP (community default da getDeviceCommunityString, es. public) + profilo vendor
-    const community = getDeviceCommunityString(device);
-    const snmpPort =
-      device.protocol === "snmp_v2" || device.protocol === "snmp_v3" ? getEffectiveSnmpPort(device) : 161;
-    try {
-      const profileInfo = await getDeviceInfoViaSNMPProfile(device.host, community, snmpPort, versioneApparato(device, "2c"));
-      if (profileInfo.vendorProfileId) {
-        result = {
-          sysname: profileInfo.sysname ?? result.sysname,
-          sysdescr: profileInfo.sysdescr ?? result.sysdescr,
-          model: profileInfo.model ?? result.model,
-          firmware: profileInfo.firmware ?? result.firmware,
-          serial_number: profileInfo.serial_number ?? result.serial_number,
-          part_number: profileInfo.part_number ?? result.part_number,
-        };
+    // NAS solo SSH senza SNMP proprio: prova comunque SNMP col «public» dichiarato del motore (D5) + profilo vendor
+    // Senza SNMP proprio il motore dà «public» (o niente, se l'apparato ha una voce v3 che non si legge).
+    const sceltaSnmp = credenzialeSnmpApparato(device);
+    if (sceltaSnmp.ok && sceltaSnmp.cred.forma === "community") {
+      try {
+        const profileInfo = await getDeviceInfoViaSNMPProfile(device.host, sceltaSnmp.cred.community, sceltaSnmp.port, versioneApparato(device, "2c"));
+        if (profileInfo.vendorProfileId) {
+          result = {
+            sysname: profileInfo.sysname ?? result.sysname,
+            sysdescr: profileInfo.sysdescr ?? result.sysdescr,
+            model: profileInfo.model ?? result.model,
+            firmware: profileInfo.firmware ?? result.firmware,
+            serial_number: profileInfo.serial_number ?? result.serial_number,
+            part_number: profileInfo.part_number ?? result.part_number,
+          };
+        }
+      } catch {
+        /* SNMP non raggiungibile */
       }
-    } catch {
-      /* SNMP non raggiungibile */
     }
     try {
       const { getNasSnmpInventory } = await import("./nas-acquisition");

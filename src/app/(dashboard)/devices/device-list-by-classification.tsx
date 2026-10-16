@@ -62,6 +62,7 @@ import {
   corpoHaModifiche,
   corpoModificaApparato,
   corpoModificaInBlocco,
+  inviaConConferma,
   tendineDaApparato,
 } from "./modifica-in-blocco";
 import { DeviceCredentialsTable } from "@/components/shared/device-credentials-table";
@@ -211,8 +212,11 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
     if (editingDevice) {
       setEditVendor(editingDevice.vendor ?? "other");
       setEditProtocol("protocol" in editingDevice ? editingDevice.protocol : "ssh");
-      setEditCredentialId("credential_id" in editingDevice && editingDevice.credential_id ? String(editingDevice.credential_id) : null);
-      setEditSnmpCredentialId("snmp_credential_id" in editingDevice && (editingDevice as NetworkDevice).snmp_credential_id ? String((editingDevice as NetworkDevice).snmp_credential_id) : null);
+      // Lo stesso stato iniziale di handleUpdate: dalla scelta del motore, non
+      // dalle colonne (T20). Una riga della lista non la porta: tendine vuote.
+      const tendine = tendineDaApparato(editingDevice);
+      setEditCredentialId(tendine.credentialId);
+      setEditSnmpCredentialId(tendine.snmpCredentialId);
       setEditVendorSubtype("vendor_subtype" in editingDevice ? editingDevice.vendor_subtype ?? null : null);
       setEditScanTarget((editingDevice as { scan_target?: string | null }).scan_target ?? null);
       setEditClassification((editingDevice as { classification?: string | null }).classification ?? effectiveClassification);
@@ -304,14 +308,20 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
     }
     setBulkUpdating(true);
     try {
-      const res = await fetch("/api/devices/bulk", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json();
+      const invia = (corpo: Record<string, unknown>) =>
+        fetch("/api/devices/bulk", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(corpo),
+        });
+      // «Nessuna» toglie binding (T20): il server chiede la conferma col numero, niente è scritto finché non arriva.
+      const esito = await inviaConConferma(invia, body, (domanda) => window.confirm(domanda));
+      if (!esito) return;
+      const { res, data } = esito;
       if (res.ok) {
-        toast.success(data.message);
+        // Apparati saltati (la voce non vale) o voce rimasta fallita (D10): si dice, non passa come un successo pieno.
+        if (data.credenziali?.saltati?.length || data.credenziali?.falliti?.length) toast.warning(data.message);
+        else toast.success(data.message);
         setBulkDialogOpen(false);
         setSelectedIds(new Set());
         fetchDevices();
@@ -593,7 +603,7 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
         setEditingDevice(updated);
         setEditVendor("proxmox");
         setEditProtocol("ssh");
-        setEditCredentialId(updated.credential_id != null ? String(updated.credential_id) : null);
+        setEditCredentialId(tendineDaApparato(updated).credentialId);
         setEditDialogOpen(true);
       } else {
         const data = await res.json();
@@ -643,6 +653,8 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
     }
 
     toast.success("Dispositivo aggiunto");
+    const creato = (await res.json().catch(() => ({}))) as { avvisi?: string[] };
+    for (const a of creato.avvisi ?? []) toast.warning(a);
     setDialogOpen(false);
     azzeraNuovo();
     fetchDevices();
@@ -761,19 +773,26 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
       delete body.password;
     }
 
-    const res = await fetch(`/api/devices/${editingDevice.id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-
-    if (!res.ok) {
-      const data = await res.json();
-      toast.error(data.error || "Errore nell'aggiornamento");
+    const deviceId = editingDevice.id;
+    const esito = await inviaConConferma(
+      (corpo) =>
+        fetch(`/api/devices/${deviceId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(corpo),
+        }),
+      body,
+      (domanda) => window.confirm(domanda),
+    );
+    if (!esito) return;
+    if (!esito.res.ok) {
+      toast.error(esito.data.error || "Errore nell'aggiornamento");
       return;
     }
 
-    toast.success("Dispositivo aggiornato");
+    const avvisi = esito.data.avvisi ?? [];
+    for (const a of avvisi) toast.warning(a);
+    if (avvisi.length === 0) toast.success("Dispositivo aggiornato");
     setEditDialogOpen(false);
     setEditingDevice(null);
     fetchDevices();
@@ -1312,6 +1331,7 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
                     snmpSelectLabel={CREDENTIAL_SNMP_SECONDARY_SELECT_LABEL}
                     credentialPlaceholder="Non modificare"
                     snmpPlaceholder="Non modificare"
+                    conNessuna
                     idPrefix="device-bulk"
                   />
                 </div>

@@ -11,7 +11,7 @@ import type { ArpTableEntry } from "../router-client";
 import type { AcquisitionHandler, DeviceInfo } from "./registry";
 import { registerHandler } from "./registry";
 import { getDeviceCredentials } from "@/lib/db";
-import { sshExec } from "../ssh-transport";
+import { haSegretoSsh, segretoSsh, sshExec } from "../ssh-transport";
 
 async function sshExecMikrotik(
   device: NetworkDevice,
@@ -19,7 +19,8 @@ async function sshExecMikrotik(
 ): Promise<string> {
   const creds = getDeviceCredentials(device);
   const username = creds?.username ?? device.username ?? undefined;
-  if (!username || !creds?.password) {
+  // Password o chiave privata (tappa 2 credenziali, T14).
+  if (!username || !creds || !haSegretoSsh(creds)) {
     throw new Error(`Credenziali SSH mancanti per Mikrotik ${device.name} (${device.host})`);
   }
   const res = await sshExec(
@@ -27,7 +28,7 @@ async function sshExecMikrotik(
       host: device.host,
       port: device.port || 22,
       username,
-      password: creds.password,
+      ...segretoSsh(creds),
       timeout: 10000,
     },
     command

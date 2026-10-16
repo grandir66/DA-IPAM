@@ -44,11 +44,9 @@ import {
   Clock,
   Download,
   Database,
-  Save,
   Radar,
   Pencil,
   RotateCcw,
-  Monitor,
   Users,
   Shield,
   ArrowUpCircle,
@@ -162,12 +160,6 @@ interface UserWithAccess {
   tenant_access?: { tenant_id: number; codice_cliente: string; ragione_sociale: string; role: string }[];
 }
 
-interface CredentialEntry {
-  id: number;
-  name: string;
-  credential_type: string;
-}
-
 interface TenantEntry {
   id: number;
   codice_cliente: string;
@@ -271,12 +263,6 @@ function SettingsPageInner() {
   const [appVersion, setAppVersion] = useState<string | null>(null);
   const [updateAvailable, setUpdateAvailable] = useState<{ version: string } | null>(null);
 
-  // === Host credentials ===
-  const [credentials, setCredentials] = useState<CredentialEntry[]>([]);
-  const [hostWindowsCredentialId, setHostWindowsCredentialId] = useState<string>("");
-  const [hostLinuxCredentialId, setHostLinuxCredentialId] = useState<string>("");
-  const [savingHostCreds, setSavingHostCreds] = useState(false);
-
   // === Reset state (full reconfig) ===
   const [resetting, setResetting] = useState(false);
   const [openingWizard, setOpeningWizard] = useState(false);
@@ -359,11 +345,6 @@ function SettingsPageInner() {
   useEffect(() => {
     fetch("/api/jobs").then((r) => r.json()).then(setJobs).catch(() => {});
     fetch("/api/networks").then((r) => r.json()).then(setNetworks).catch(() => {});
-    fetch("/api/settings").then((r) => r.json()).then((settings: Record<string, string>) => {
-      if (settings.host_windows_credential_id !== undefined) setHostWindowsCredentialId(settings.host_windows_credential_id || "");
-      if (settings.host_linux_credential_id !== undefined) setHostLinuxCredentialId(settings.host_linux_credential_id || "");
-    }).catch(() => {});
-    fetch("/api/credentials").then((r) => r.json()).then((creds: CredentialEntry[]) => setCredentials(creds)).catch(() => {});
     fetch("/api/version").then((r) => r.json()).then((d: { version?: string }) => setAppVersion(d.version ?? null)).catch(() => {});
     fetch("/api/system/update?action=check")
       .then((r) => r.json())
@@ -381,29 +362,6 @@ function SettingsPageInner() {
     }).catch(() => {});
     fetch("/api/tls").then((r) => r.json()).then(setTlsStatus).catch(() => {});
   }, []);
-
-  // ============ HOST CREDENTIALS ============
-
-  async function handleSaveHostCredentials() {
-    setSavingHostCreds(true);
-    try {
-      await fetch("/api/settings", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key: "host_windows_credential_id", value: hostWindowsCredentialId || "" }),
-      });
-      await fetch("/api/settings", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key: "host_linux_credential_id", value: hostLinuxCredentialId || "" }),
-      });
-      toast.success("Credenziali host salvate");
-    } catch {
-      toast.error("Errore nel salvataggio");
-    } finally {
-      setSavingHostCreds(false);
-    }
-  }
 
   // ============ ONBOARDING / RESET ============
 
@@ -1233,53 +1191,12 @@ function SettingsPageInner() {
 
       {activeTab === "aggiornamenti" && <UpdatesTab />}
 
-      {/* === Tab: Sistema (host credentials + wizard + manutenzione/dati) === */}
+      {/* === Tab: Sistema (wizard + manutenzione/dati) ===
+          La scheda «Credenziali host di default» non c'è più (tappa 2d credenziali, D3 = (a)):
+          le due chiavi dell'hub erano id del DB di un tenant, e la 2d le ha copiate nelle
+          liste delle reti dove valevano. */}
       {activeTab === "sistema" && (
         <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <div className="flex items-center gap-2">
-                <Monitor className="h-5 w-5 text-primary" />
-                <CardTitle className="text-base">Credenziali host di default (Windows / Linux)</CardTitle>
-              </div>
-              <CardDescription>
-                Credenziali usate per raccogliere informazioni da host Windows (WinRM/WMI) e Linux (SSH) quando non è specificato altro. Crea le credenziali in <strong>Credenziali</strong> con tipo &quot;Windows (host)&quot; o &quot;Linux (host)&quot;.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="flex flex-wrap items-end gap-4">
-                <div className="space-y-2 min-w-[200px]">
-                  <Label>Windows (WinRM/WMI)</Label>
-                  <Select value={hostWindowsCredentialId || "none"} onValueChange={(v) => setHostWindowsCredentialId(v === "none" ? "" : (v ?? ""))}>
-                    <SelectTrigger><SelectValue placeholder="Nessuna" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">Nessuna</SelectItem>
-                      {credentials.filter((c) => c.credential_type === "windows").map((c) => (
-                        <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2 min-w-[200px]">
-                  <Label>Linux (SSH)</Label>
-                  <Select value={hostLinuxCredentialId || "none"} onValueChange={(v) => setHostLinuxCredentialId(v === "none" ? "" : (v ?? ""))}>
-                    <SelectTrigger><SelectValue placeholder="Nessuna" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">Nessuna</SelectItem>
-                      {credentials.filter((c) => c.credential_type === "linux").map((c) => (
-                        <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Button onClick={handleSaveHostCredentials} disabled={savingHostCreds}>
-                  <Save className="h-4 w-4 mr-2" />
-                  Salva
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-
           {isAdmin && (
             <Card>
               <CardHeader>
@@ -1288,7 +1205,7 @@ function SettingsPageInner() {
                   <CardTitle className="text-base">Configurazione guidata</CardTitle>
                 </div>
                 <CardDescription>
-                  Ripeti i passaggi del primo avvio (router, DNS, credenziali, Active Directory, prima subnet). I dati già salvati non vengono cancellati.
+                  Riapre i passaggi del primo avvio (credenziali, router, DNS, Active Directory, prima subnet) dal punto in cui li avevi lasciati. I dati già salvati non vengono cancellati.
                 </CardDescription>
               </CardHeader>
               <CardContent>

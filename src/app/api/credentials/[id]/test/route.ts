@@ -5,6 +5,8 @@ import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { portaCredenziale, type CredProtocol } from "@/lib/credentials/porte";
 import { provaCredenzialeSnmpDb } from "@/lib/credentials/prova-snmp";
+import { tipiPerProtocollo } from "@/lib/credentials/tipi";
+import { accessoSshDb } from "@/lib/credentials/segreti";
 
 const TEST_TIMEOUT_MS = 25000;
 
@@ -60,9 +62,10 @@ export async function POST(
 
       const type = String(cred.credential_type || "").toLowerCase();
 
-      if (type === "snmp") {
+      if (tipiPerProtocollo("snmp").includes(type)) {
         // Ramo v3 o community dalla forma del segreto (tappa 2 credenziali, T4):
-        // prima una voce v3 rispondeva «Community string mancante».
+        // prima una voce v3 rispondeva «Community string mancante». Dalla 2c
+        // la v3 è anche un tipo a sé, `snmp_v3` (T12).
         try {
           const esito = await withTimeout(
             provaCredenzialeSnmpDb(getDb(), Number(id), host, typeof body.port === "number" ? body.port : null),
@@ -83,19 +86,17 @@ export async function POST(
         }
       }
 
-      if (type === "ssh" || type === "linux") {
-        const username = cred.encrypted_username ? safeDecrypt(cred.encrypted_username) : "";
-        const password = cred.encrypted_password ? safeDecrypt(cred.encrypted_password) : "";
-        if (username === null || password === null) {
-          return NextResponse.json({ success: false, error: "Credenziale corrotta: rigenerare la password" });
+      if (tipiPerProtocollo("ssh").includes(type)) {
+        // Password o chiave privata (tappa 2 credenziali, T14), lette da segreti.ts: il rifiuto dice cosa manca
+        // o cosa non si decifra, mai il segreto.
+        const accesso = accessoSshDb(getDb(), Number(id));
+        if (!accesso.ok) {
+          return NextResponse.json({ success: false, error: accesso.motivo });
         }
-        if (!username || !password) {
-          return NextResponse.json({ success: false, error: "Username e password richiesti" });
-        }
-        const { sshTryConnect } = await import("@/lib/devices/ssh-transport");
+        const { sshTryConnect, segretoSsh } = await import("@/lib/devices/ssh-transport");
         const port = portaDiProva(body, cred, "ssh");
         const result = await withTimeout(
-          sshTryConnect({ host, port, username, password, timeout: 15000, credentialName: cred.name }),
+          sshTryConnect({ host, port, username: accesso.accesso.username, ...segretoSsh(accesso.accesso), timeout: 15000, credentialName: cred.name }),
           TEST_TIMEOUT_MS
         );
         if (result.ok) {

@@ -25,6 +25,7 @@ import { withTenantFromSession } from "@/lib/api-tenant";
 import { isAuthError } from "@/lib/api-auth";
 import { patchModuleGuard } from "@/lib/patch/route-guard";
 import { maybeRunLazyMatch } from "@/lib/patch/matcher";
+import { hostConCredenzialeWinrmDb } from "@/lib/patch/credentials";
 
 const NO_CACHE_HEADERS = {
   "Cache-Control": "no-store, no-cache, must-revalidate",
@@ -39,7 +40,6 @@ interface HostHeaderRow {
   custom_name: string | null;
   os_info: string | null;
   os_family: string | null;
-  winrm_validated: number;
   last_probe_status: string | null;
   last_probe_at: string | null;
 }
@@ -108,19 +108,7 @@ export async function GET(
     try {
       // 1) Header host (404 se non esiste / non Windows)
       const headerSql = `
-        WITH winrm_status AS (
-          SELECT host_id, MAX(validated) AS winrm_validated
-            FROM host_credentials
-           WHERE protocol_type = 'winrm'
-           GROUP BY host_id
-        ),
-        ad_winrm_available AS (
-          SELECT CASE WHEN EXISTS(
-            SELECT 1 FROM ad_integrations
-             WHERE enabled = 1 AND winrm_credential_id IS NOT NULL
-          ) THEN 1 ELSE 0 END AS has_ad
-        ),
-        last_probe AS (
+        WITH last_probe AS (
           SELECT po.host_id, po.status AS last_probe_status, po.started_at AS last_probe_at
             FROM patch_operations po
            INNER JOIN (
@@ -132,15 +120,8 @@ export async function GET(
         )
         SELECT
           h.id, h.ip, h.hostname, h.custom_name, h.os_info, h.os_family,
-          CASE
-            WHEN COALESCE(ws.winrm_validated, 0) = 1 THEN 1
-            WHEN awa.has_ad = 1 THEN 1
-            ELSE 0
-          END AS winrm_validated,
           lp.last_probe_status, lp.last_probe_at
         FROM hosts h
-        CROSS JOIN ad_winrm_available awa
-        LEFT JOIN winrm_status ws ON ws.host_id = h.id
         LEFT JOIN last_probe lp ON lp.host_id = h.id
         WHERE h.id = ?
           AND LOWER(h.os_family) = 'windows'
@@ -369,7 +350,7 @@ export async function GET(
           customName: header.custom_name,
           osInfo: header.os_info,
           osFamily: header.os_family,
-          winrmValidated: header.winrm_validated === 1,
+          winrmValidated: hostConCredenzialeWinrmDb(db).has(header.id),
           lastProbeStatus: header.last_probe_status,
           lastProbeAt: header.last_probe_at,
           lastScanId,

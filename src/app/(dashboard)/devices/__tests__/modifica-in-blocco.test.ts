@@ -26,9 +26,33 @@ import {
   corpoModificaInBlocco,
   corpoHaModifiche,
   corpoModificaApparato,
+  inviaConConferma,
   tendineDaApparato,
   type StatoModificaInBlocco,
 } from "../modifica-in-blocco";
+import { portaAlCambioProtocollo } from "@/lib/devices/porta-protocollo";
+import type { UsataAdesso } from "@/lib/devices/usata-adesso";
+
+/**
+ * «Usata adesso» di un apparato come la dà GET /api/devices/[id] (tappa 2e,
+ * T20): la riga principale e, se c'è, quella SNMP aggiuntiva. Le tendine
+ * partono da qui, non dalle colonne `credential_id` e `snmp_credential_id`,
+ * che dopo la 2e sono vuote.
+ */
+function usate(principale: number | null, snmp?: number | null): { usata_adesso: UsataAdesso[] } {
+  const riga = (ruolo: UsataAdesso["ruolo"], protocollo: UsataAdesso["protocollo"], id: number | null): UsataAdesso => ({
+    ruolo,
+    protocollo,
+    credential_id: id,
+    nome: id != null ? `voce ${id}` : null,
+    fonte: id != null ? "device_binding" : null,
+    porta: id != null ? 22 : null,
+    motivo: id != null ? null : "Nessuna credenziale",
+  });
+  const righe = [riga("principale", "ssh", principale)];
+  if (snmp !== undefined) righe.push(riga("snmp", "snmp", snmp));
+  return { usata_adesso: righe };
+}
 
 /** Lo stato con cui si apre la finestra in blocco: tutto su «Non modificare». */
 const STATO_INIZIALE_BLOCCO: StatoModificaInBlocco = {
@@ -113,8 +137,16 @@ describe("modifica in blocco", () => {
 describe("modifica del singolo apparato", () => {
   const campi = { name: "Switch piano 2", vendor: "cisco", protocol: "ssh", scan_target: null };
 
+  it("le colonne vecchie non contano: tendine dalla scelta del motore, vuote senza (riga della lista)", () => {
+    const rigaLista = { credential_id: 5, snmp_credential_id: 9 };
+    assert.deepEqual(tendineDaApparato(rigaLista), { credentialId: null, snmpCredentialId: null });
+    assert.deepEqual(tendineDaApparato(usate(5, 9)), { credentialId: "5", snmpCredentialId: "9" });
+    const conRipiego = { usata_adesso: [{ ...usate(null).usata_adesso[0], fonte: "snmp_ripiego" as const, nome: "«public» di ripiego" }] };
+    assert.deepEqual(tendineDaApparato(conRipiego), { credentialId: null, snmpCredentialId: null });
+  });
+
   it("solo il nome cambiato, tendine vuote: niente credenziali nel corpo", () => {
-    const iniziale = tendineDaApparato({ credential_id: null, snmp_credential_id: null });
+    const iniziale = tendineDaApparato(usate(null, null));
     const corpo = corpoModificaApparato(iniziale, { campi, ...iniziale });
     assert.deepEqual(corpo, campi);
     assert.ok(!("credential_id" in corpo), "credential_id non deve esserci");
@@ -122,19 +154,19 @@ describe("modifica del singolo apparato", () => {
   });
 
   it("solo il nome cambiato, tendine con una voce: niente credenziali nel corpo", () => {
-    const iniziale = tendineDaApparato({ credential_id: 5, snmp_credential_id: 9 });
+    const iniziale = tendineDaApparato(usate(5, 9));
     const corpo = corpoModificaApparato(iniziale, { campi, ...iniziale });
     assert.deepEqual(corpo, campi);
   });
 
   it("«Nessuna» su una tendina già vuota non è una modifica", () => {
-    const iniziale = tendineDaApparato({ credential_id: null, snmp_credential_id: undefined });
+    const iniziale = tendineDaApparato(usate(null, undefined));
     const corpo = corpoModificaApparato(iniziale, { campi, credentialId: "none", snmpCredentialId: "none" });
     assert.deepEqual(corpo, campi);
   });
 
   it("una tendina cambiata si manda, l'altra no", () => {
-    const iniziale = tendineDaApparato({ credential_id: null, snmp_credential_id: 9 });
+    const iniziale = tendineDaApparato(usate(null, 9));
     assert.deepEqual(corpoModificaApparato(iniziale, { campi, credentialId: "7", snmpCredentialId: "9" }), {
       ...campi,
       credential_id: 7,
@@ -147,7 +179,7 @@ describe("modifica del singolo apparato", () => {
 
   it("non modifica l'oggetto dei campi che riceve", () => {
     const mieiCampi = { ...campi };
-    corpoModificaApparato(tendineDaApparato({ credential_id: null }), { campi: mieiCampi, credentialId: "7", snmpCredentialId: null });
+    corpoModificaApparato(tendineDaApparato(usate(null)), { campi: mieiCampi, credentialId: "7", snmpCredentialId: null });
     assert.deepEqual(mieiCampi, campi);
   });
 
@@ -156,6 +188,113 @@ describe("modifica del singolo apparato", () => {
       () => corpoModificaApparato(tendineDaApparato({}), { campi, credentialId: "7x", snmpCredentialId: null }),
       /Credenziale non valida/,
     );
+  });
+});
+
+/**
+ * La porta nel PUT della modifica (pilota, 16/10): un MikroTik creato in SNMP
+ * (161) e passato a SSH è rimasto con port=161 perché il corpo non portava la
+ * porta, e l'acquisizione SSH, che usa device.port, falliva.
+ */
+describe("modifica del singolo apparato: la porta", () => {
+  const campi = { name: "MikroTik 10G", vendor: "mikrotik", protocol: "snmp_v2", scan_target: null };
+  const ARCHIVIO = [{ id: 3, name: "Community", credential_type: "snmp", port: 161 }];
+  const apparato = { protocol: "snmp_v2", port: 161, ...usate(null, 3) };
+  const iniziale = { ...tendineDaApparato(apparato), porta: apparato.port };
+
+  it("il caso del pilota: da protocol=snmp_v2/port=161 a ssh il corpo contiene port: 22", () => {
+    const porta = portaAlCambioProtocollo({
+      protocollo: "ssh",
+      credenziali: [null, "3"],
+      archivio: ARCHIVIO,
+      portaAttuale: apparato.port,
+      salvata: { protocollo: apparato.protocol, porta: apparato.port },
+    });
+    const corpo = corpoModificaApparato(iniziale, {
+      campi: { ...campi, protocol: "ssh" },
+      credentialId: null,
+      snmpCredentialId: "3",
+      porta: String(porta),
+    });
+    assert.equal(corpo.port, 22);
+  });
+
+  it("porta uguale a quella salvata, vuota o non passata: non si manda", () => {
+    for (const porta of ["161", "", " ", undefined]) {
+      const corpo = corpoModificaApparato(iniziale, { campi, credentialId: null, snmpCredentialId: "3", porta });
+      assert.ok(!("port" in corpo), `port non deve esserci con ${JSON.stringify(porta)}`);
+    }
+  });
+
+  it("una porta non valida è un errore, non un salvataggio", () => {
+    for (const porta of ["0", "65536", "22.5", "abc"]) {
+      assert.throws(
+        () => corpoModificaApparato(iniziale, { campi, credentialId: null, snmpCredentialId: "3", porta }),
+        /Porta non valida/,
+      );
+    }
+  });
+});
+
+/**
+ * Revisione della 2e (16/10): dalla 2e il PUT del singolo risponde 409 con
+ * `conferma` quando «Nessuna» toglierebbe dei binding. Le finestre del singolo
+ * mostravano la domanda come errore, senza modo di confermare
+ * (`conferma_rimozione` non partiva mai), e il resto del salvataggio (il nome)
+ * si perdeva con la transazione annullata.
+ */
+describe("salvataggio con la conferma della rimozione", () => {
+  const risposta = (stato: number, dati: unknown) => new Response(JSON.stringify(dati), { status: stato, headers: { "Content-Type": "application/json" } });
+  const CONFERMA = { error: "Togli 1 binding SSH da 1 apparato, di cui 1 riuscito?", conferma: { domanda: "Togli 1 binding SSH da 1 apparato, di cui 1 riuscito?" } };
+
+  it("409 con la domanda, l'utente conferma: si rimanda lo stesso corpo con conferma_rimozione", async () => {
+    const mandati: Record<string, unknown>[] = [];
+    const domande: string[] = [];
+    const esito = await inviaConConferma(
+      async (corpo) => {
+        mandati.push(corpo);
+        return mandati.length === 1 ? risposta(409, CONFERMA) : risposta(200, { id: 5, name: "nuovo nome" });
+      },
+      { name: "nuovo nome", credential_id: null },
+      (d) => {
+        domande.push(d);
+        return true;
+      },
+    );
+    assert.deepEqual(domande, [CONFERMA.conferma.domanda]);
+    assert.deepEqual(mandati, [
+      { name: "nuovo nome", credential_id: null },
+      { name: "nuovo nome", credential_id: null, conferma_rimozione: true },
+    ]);
+    assert.ok(esito);
+    assert.equal(esito.res.status, 200);
+    assert.equal(esito.data.name, "nuovo nome");
+  });
+
+  it("l'utente annulla: null, e non parte una seconda richiesta", async () => {
+    let richieste = 0;
+    const esito = await inviaConConferma(
+      async () => {
+        richieste++;
+        return risposta(409, CONFERMA);
+      },
+      { credential_id: null },
+      () => false,
+    );
+    assert.equal(esito, null);
+    assert.equal(richieste, 1);
+  });
+
+  it("un 409 senza domanda, o un altro errore: torna com'è, senza chiedere", async () => {
+    for (const [stato, dati] of [
+      [409, { error: "Conflitto" }],
+      [400, { error: "La credenziale non vale" }],
+    ] as const) {
+      const esito = await inviaConConferma(async () => risposta(stato, dati), {}, () => assert.fail("non doveva chiedere"));
+      assert.ok(esito);
+      assert.equal(esito.res.status, stato);
+      assert.equal(esito.data.error, dati.error);
+    }
   });
 });
 
@@ -179,6 +318,9 @@ describe("le finestre usano il modulo", () => {
       const src = leggi(rel);
       assert.match(src, /corpoModificaApparato\(/);
       assert.doesNotMatch(src, VECCHIO_CORPO);
+    });
+    it(`${rel}: il PUT passa da inviaConConferma (la conferma di «Nessuna» si può dare)`, () => {
+      assert.match(leggi(rel), /inviaConConferma\(/);
     });
   }
 

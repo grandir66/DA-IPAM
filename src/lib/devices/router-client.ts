@@ -1,12 +1,11 @@
 import type { NetworkDevice } from "@/types";
-import { apriSessioneSnmp, V3_ASSENTE, versioneApparato, type CredenzialeSnmp } from "@/lib/protocols/snmp-sessione";
-import { getDeviceCredentials, getDeviceCommunityString, getDeviceSnmpV3Credentials, getCredentialCommunityString, getDb } from "@/lib/db";
-import { safeDecrypt } from "@/lib/crypto";
+import { apriSessioneSnmp, versioneApparato } from "@/lib/protocols/snmp-sessione";
+import { credenzialeSnmpApparato, getDeviceCredentials, haSnmpApparato, tokenApiApparato } from "@/lib/db";
 import type { MacTableEntry, PortInfo } from "./switch-client";
 import { parseMikrotikInterfaceTypes, parseMikrotikMacTable } from "./mikrotik-porte";
 import { parseMikrotikNeighbors } from "./mikrotik-vicini";
 import { getSnmpPortSchema } from "./snmp-port-schema";
-import { sshExec as transportSshExec, type SshResult } from "./ssh-transport";
+import { haSegretoSsh, segretoSsh, sshExec as transportSshExec, type SshResult } from "./ssh-transport";
 import type { SshOptions } from "./ssh-transport";
 
 export interface ArpTableEntry {
@@ -113,27 +112,18 @@ export interface RouterClient {
 }
 
 /**
- * True se il device ha una credenziale/community SNMP risolvibile via uno dei tre
- * percorsi: `device_credential_bindings.protocol_type='snmp'`, campi legacy
- * (`snmp_credential_id`, `credential_id`) con community valida, oppure `community_string`
- * inline. Usato sia dal fallback SNMP del router-client sia dal branch Stormshield
+ * True se il device ha una fonte SNMP sua: binding SNMP (non falliti), colonne
+ * (`snmp_credential_id`, `credential_id`) con una voce SNMP, oppure
+ * `community_string` (`haSnmpApparato`, il motore unico: tappa 2 credenziali,
+ * T8). Usato sia dal fallback SNMP del router-client sia dal branch Stormshield
  * per decidere se evitare l'SSH a vuoto.
  */
 function deviceHasSnmpCredential(device: NetworkDevice): boolean {
-  if (device.community_string) return true;
-  if (device.snmp_credential_id && getCredentialCommunityString(device.snmp_credential_id)) return true;
-  if (device.credential_id && getCredentialCommunityString(device.credential_id)) return true;
-  const hasBinding = !!getDb().prepare(
-    "SELECT 1 FROM device_credential_bindings WHERE device_id = ? AND protocol_type = 'snmp' LIMIT 1"
-  ).get(device.id);
-  return hasBinding;
+  return haSnmpApparato(device);
 }
 
 export async function createRouterClient(device: NetworkDevice): Promise<RouterClient> {
-  const creds = getDeviceCredentials(device);
-  const username = creds?.username ?? device.username ?? undefined;
-  const password = creds?.password;
-  const primary = await getVendorRouterClient(device, { username, password });
+  const primary = await getVendorRouterClient(device, credenzialiApparato(device));
 
   // Fallback SNMP per porte/LLDP/CDP — include anche i binding v2
   // (`device_credential_bindings`): fix anti-regressione perché in precedenza
@@ -205,7 +195,14 @@ export async function createRouterClient(device: NetworkDevice): Promise<RouterC
   return client;
 }
 
-type DeviceCreds = { username?: string; password?: string };
+/** Utente più password o chiave privata (tappa 2 credenziali, T14: getDeviceCredentials dà anche la chiave). */
+type DeviceCreds = { username?: string; password?: string; privateKey?: string; passphrase?: string };
+
+/** Le credenziali dell'acquisizione con l'utente della colonna come ripiego (com'era). */
+function credenzialiApparato(device: NetworkDevice): DeviceCreds {
+  const creds = getDeviceCredentials(device);
+  return { ...(creds ?? {}), username: creds?.username ?? device.username ?? undefined };
+}
 
 async function getVendorRouterClient(device: NetworkDevice, creds: DeviceCreds): Promise<RouterClient> {
   switch (device.vendor) {
@@ -245,20 +242,19 @@ async function getVendorRouterClient(device: NetworkDevice, creds: DeviceCreds):
 /** Helper interno: opzioni transport SSH per un NetworkDevice, con fallback su username device. */
 function buildDeviceSshOptions(device: NetworkDevice, creds: DeviceCreds): SshOptions | null {
   const username = creds.username || device.username || undefined;
-  if (!username || !creds.password) return null;
+  if (!username || !haSegretoSsh(creds)) return null;
   return {
     host: device.host,
     port: device.port || 22,
     username,
-    password: creds.password,
+    ...segretoSsh(creds),
     timeout: 10000,
   };
 }
 
 /** Le opzioni SSH di un apparato con le sue credenziali, per le letture in più su una connessione sola (spec §13.5.1). null = credenziali mancanti. */
 export function opzioniSshDiApparato(device: NetworkDevice): SshOptions | null {
-  const creds = getDeviceCredentials(device);
-  return buildDeviceSshOptions(device, { username: creds?.username ?? device.username ?? undefined, password: creds?.password });
+  return buildDeviceSshOptions(device, credenzialiApparato(device));
 }
 
 async function execDeviceCommandRisultato(device: NetworkDevice, creds: DeviceCreds, cmd: string, timeoutMs?: number): Promise<SshResult> {
@@ -301,22 +297,15 @@ async function createSnmpArpClient(
   device: NetworkDevice
 ): Promise<RouterClient> {
   const snmp = await import("net-snmp");
-  // SNMP usa sempre porta 161 (standard)
-  const opts = { port: 161, timeout: 10000 };
 
   // Lanciata dentro l'executor della Promise del walk: un errore diventa il rifiuto del walk.
   function createSession() {
-    let cred: CredenzialeSnmp;
-    if (device.protocol === "snmp_v3") {
-      // Livello, protocolli e chiavi dal record; senza v3 nessun ripiego sulla community (tappa 2, T4).
-      const v3 = getDeviceSnmpV3Credentials(device);
-      if (!v3) throw new Error(V3_ASSENTE);
-      cred = { forma: "v3", record: v3 };
-    } else {
-      cred = { forma: "community", community: getDeviceCommunityString(device) };
-    }
+    // Credenziale e porta dal motore (tappa 2 credenziali, T8): v3 coi protocolli della voce; un apparato snmp_v3
+    // senza v3 è un errore, mai la community (T4). Porta del candidato: 161, o quella del binding o della voce.
+    const c = credenzialeSnmpApparato(device);
+    if (!c.ok) throw new Error(c.motivo);
     // NULL = v1, come prima (createSession senza version).
-    const aperta = apriSessioneSnmp(snmp, device.host, cred, { ...opts, versione: versioneApparato(device, "1") });
+    const aperta = apriSessioneSnmp(snmp, device.host, c.cred, { port: c.port, timeout: 10000, versione: versioneApparato(device, "1") });
     if (!aperta.ok) throw new Error(aperta.motivo);
     return aperta.session;
   }
@@ -809,14 +798,25 @@ function createOmadaClient(device: NetworkDevice): Promise<RouterClient> {
   return createSnmpArpClient(device);
 }
 
+/**
+ * Client dell'API di Omada. Il token viene dall'archivio (tappa 2e, T20):
+ * voce `api` a token legata all'apparato, e fino alla 2g la colonna
+ * `api_token` di un apparato lasciato dalla conversione. Senza token la
+ * ragione si dice (errore col motivo), non parte un «Bearer » vuoto.
+ */
 async function createOmadaApiClient(device: NetworkDevice): Promise<RouterClient> {
-  const apiToken = device.api_token ? (safeDecrypt(device.api_token) ?? "") : "";
+  const scelta = tokenApiApparato(device);
+  const apiToken = scelta.ok ? scelta.token : null;
   const baseUrl = device.api_url || `https://${device.host}`;
+  const conToken = (): string => {
+    if (apiToken == null) throw new Error(`Omada API: ${scelta.ok ? "token assente" : scelta.motivo}`);
+    return apiToken;
+  };
 
   return {
     async getArpTable() {
       const res = await fetch(`${baseUrl}/api/v2/arp`, {
-        headers: { Authorization: `Bearer ${apiToken}` },
+        headers: { Authorization: `Bearer ${conToken()}` },
       });
       if (!res.ok) throw new Error(`Omada API error: ${res.status}`);
       const data = await res.json();
@@ -828,6 +828,7 @@ async function createOmadaApiClient(device: NetworkDevice): Promise<RouterClient
       }));
     },
     async testConnection() {
+      if (apiToken == null) return false;
       try {
         const res = await fetch(`${baseUrl}/api/v2/info`, {
           headers: { Authorization: `Bearer ${apiToken}` },

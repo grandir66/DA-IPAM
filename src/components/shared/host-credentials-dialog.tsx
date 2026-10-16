@@ -28,6 +28,8 @@ import {
 } from "@/components/ui/dialog";
 import { Key, Plus, Trash2, CheckCircle2, XCircle, Archive, ArrowUp, ArrowDown } from "lucide-react";
 import { toast } from "sonner";
+import { vociPerProtocollo } from "@/lib/credential-protocol-map";
+import { etichettaTipo } from "@/lib/credentials/tipi";
 
 const PROTOCOL_LABELS: Record<string, string> = {
   ssh: "SSH",
@@ -195,7 +197,9 @@ export function HostCredentialsDialog({
   };
 
   const existingCredIds = new Set(credentials.map((c) => c.credential_id));
-  const availableForAdd = availableCredentials.filter((c) => !existingCredIds.has(c.id));
+  // Solo le voci che il server accetta per il protocollo scelto (revisione
+  // della 2c): prima c'erano tutte, anche un account AD per WinRM → 400.
+  const availableForAdd = vociPerProtocollo(availableCredentials, addProtocol).filter((c) => !existingCredIds.has(c.id));
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -302,6 +306,8 @@ export function HostCredentialsDialog({
                     if (v) {
                       setAddProtocol(v);
                       setAddPort(String(PROTOCOL_PORTS[v] || 22));
+                      // Una voce che per il protocollo nuovo non vale non resta scelta.
+                      if (addCredId && !vociPerProtocollo(availableCredentials, v).some((c) => String(c.id) === addCredId)) setAddCredId("");
                     }
                   }}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
@@ -332,11 +338,14 @@ export function HostCredentialsDialog({
                   <SelectContent>
                     {availableForAdd.map((c) => (
                       <SelectItem key={c.id} value={String(c.id)}>
-                        {c.name} ({c.credential_type})
+                        {c.name} ({etichettaTipo(c.credential_type)})
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                {availableForAdd.length === 0 && (
+                  <p className="text-xs text-muted-foreground">Nessuna credenziale dell&apos;archivio vale per questo protocollo.</p>
+                )}
               </div>
               <div className="flex gap-2 justify-end">
                 <Button type="button" size="sm" variant="outline" onClick={() => { setShowAdd(false); setAddCredId(""); }}>

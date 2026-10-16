@@ -1,5 +1,6 @@
 "use client";
 import { parseDbDate } from "@/lib/db-date";
+import { etichettaTipo } from "@/lib/credentials/tipi";
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
@@ -739,7 +740,7 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr, networkN
                         {ipamCreds.map((c, i) => (
                           <li key={`${c.credential_id ?? "c"}-${i}`} className="flex items-center gap-2 flex-wrap">
                             <Badge variant="outline" className="text-[10px] h-5">
-                              {c.credential_type}
+                              {etichettaTipo(c.credential_type)}
                             </Badge>
                             <span className="font-medium">{c.name}</span>
                             {c.slot && (
@@ -748,6 +749,7 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr, networkN
                                 {c.selected_for_scan ? " (attiva scan)" : ""}
                               </span>
                             )}
+                            {c.motivo && <span className="text-amber-700 dark:text-amber-400">{c.motivo}</span>}
                           </li>
                         ))}
                       </ul>

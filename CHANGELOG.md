@@ -4,6 +4,206 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-16 · credenziali tappa 2e: le credenziali degli apparati nell'archivio
+
+Piano `docs/superpowers/plans/2026-10-15-tappa2-archivio-credenziali.md` (sotto-tappa 2e, zona rossa).
+Perché: le credenziali di un apparato stavano in tre posti (binding d'archivio, binding «inline» con utente e
+password nel binding, colonne vecchie di `network_devices`), e la pagina ne mostrava uno solo; un «Nessuna»
+scelto dall'utente poteva essere scavalcato da una colonna invisibile.
+
+### Modifiche
+
+- **Binding inline e colonne vecchie diventano voci e binding d'archivio, una volta sola**
+  (`converti-apparati.ts`, segno `credenziali_t2_apparati`): ogni inline diventa la voce «<apparato> ·
+  <protocollo>» con lo stesso segreto cifrato e la stessa storia di prova; una colonna senza binding equivalente
+  diventa un binding non provato; poi le colonne si svuotano. Per ogni apparato si controlla che la scelta resti
+  la stessa leggendo solo i binding (impronta e porta): se cambierebbe, l'apparato si lascia com'era e si elenca.
+- **Chi scrive scrive solo nell'archivio**: creazione dell'apparato, modifica del singolo, modifica in blocco,
+  assegnazione ai router delle reti, apparato DHCP del DC, tabella delle credenziali dell'apparato. Una voce
+  scelta va in testa ai binding del protocollo e quelli che c'erano restano con la loro storia; «Nessuna» toglie
+  i binding di quel protocollo dopo una conferma che dice quanti (anche quelli riusciti).
+- **Una voce scelta che è già fallita su quell'apparato resta esclusa, e la risposta lo dice** (prima passava
+  per riuscita).
+- **Utente senza password** in creazione o modifica: 400, invece di un binding incompleto.
+- Il token di Omada viene dall'archivio; il wizard del router trova la voce da sostituire fra i binding.
+- `delete`/`update` di un binding di un altro apparato rispondono 404 (prima lo cancellavano).
+
+## [Non rilasciato] — 2026-10-16 · credenziali tappa 2d: una lista sola per rete
+
+Piano `docs/superpowers/plans/2026-10-15-tappa2-archivio-credenziali.md` (sotto-tappa 2d, zona rossa).
+Perché: le credenziali di una rete stavano in tre posti (lista della rete, catene vecchie per ruolo, chiave
+«di default» dell'hub) e in un quarto per host (i pin del rilevamento); la pagina ne mostrava uno solo.
+
+### Modifiche
+
+- **Catene vecchie e pin entrano nella lista della rete, una volta sola** (`converti-catene.ts`, segno
+  `credenziali_t2_catene`): le voci già presenti non si duplicano, quelle di un tipo che non vale per il
+  protocollo si saltano e si contano. Le tabelle vecchie restano congelate fino alla 2g.
+- **Il motore non legge più catene vecchie né chiave dell'hub** dopo la conversione: una voce tolta dalla
+  lista non torna, e sull'hub la chiave «di default» non si accoda più alle reti.
+- **Rilevamento sul motore** (Windows, SSH, fase 4 della scansione completa): prova prima la voce che
+  funzionava, poi il resto della lista; prima un pin provava solo se stesso e un host con la password
+  cambiata restava non rilevato. La scansione completa non salta più la fase SSH con la lista vuota.
+- **Reti**: i quattro campi per ruolo si accodano alla lista con un avviso; la GET non restituisce più le
+  catene vecchie. `detect_credentials` dell'host risponde 400 («campo superato»). Via la scheda «Credenziali
+  host di default» da Impostazioni → Sistema.
+- **Anteprima per lo scanner edge**: gli slot vengono dalla catena del motore, uguali prima e dopo.
+- **Usi di una voce**: catene e pin congelati non contano più; una voce tolta dalla lista si elimina.
+- **Import**: un bundle esportato dopo la 2d (segno chiuso) non si riconverte, così le voci tolte non
+  tornano; un bundle di prima si converte come prima.
+
+## [Non rilasciato] — 2026-10-16 · credenziali tappa 2c: archivio coi tipi per esteso
+
+Piano `docs/superpowers/plans/2026-10-15-tappa2-archivio-credenziali.md` (sotto-tappa 2c, zona rossa), ADR 0017.
+Perché: la spec chiede otto tipi per esteso e un archivio unico; il CHECK della tabella ne ammetteva cinque.
+
+### Modifiche
+
+- **La tabella `credentials` si ricostruisce una volta senza il CHECK sui tipi**, partendo dalla sua
+  definizione attuale, con figli, violazioni e contatore degli id controllati prima e dopo (se non tornano,
+  ROLLBACK). I tipi validi stanno in `src/lib/credentials/tipi.ts`.
+- **«Linux» confluisce in SSH** ovunque (sull'hub 1 voce convertita, stesso id e stesso segreto); le v3 vecchie
+  diventano del tipo SNMP v3. Un segno in `tenant_settings` impedisce di rifare la conversione.
+- **Chiave SSH** come metodo della voce SSH, nel trasporto principale (D6); paramiko e il terminale la
+  rifiutano con un messaggio. Una password SSH sbagliata ora dà subito «credenziali rifiutate» invece di un
+  timeout dopo 15 secondi (i fallimenti registrati passano da [connect_timeout] ad [auth_failed]).
+- **Pagina Credenziali e API sui tipi per esteso**: eliminare una voce in uso risponde 409 con l'elenco degli
+  usi (D8); una voce non si lega più a un protocollo per cui non vale (400); le API non restituiscono più le
+  colonne `encrypted_*` ma `ha_*`; la creazione rapida offre solo i tipi del protocollo.
+- **Finestra «Modifica Rete»**: salva rete e lista credenziali in un colpo solo e un errore si vede; una rete
+  senza gateway si salva; le catene vecchie nascoste non vengono più riscritte.
+- `PATCH /api/hosts/bulk-update` restituisce `credentials_failed`: prima l'errore si ingoiava.
+- **Attenzione all'export**: un bundle esportato da questa versione, importato in un'installazione di prima
+  della 2c, viene annullato per intero se contiene voci SNMP v3, UniFi, Omada o AD; le voci SSH a chiave vi
+  arrivano senza la chiave.
+
+## [Non rilasciato] — 2026-10-16 · la porta segue il protocollo anche in modifica
+
+- **Nella finestra di modifica dell'apparato la porta segue il protocollo, e una porta di un altro protocollo
+  si segnala.** Perché: sul pilota un MikroTik creato in SNMP e passato a SSH dalla modifica è rimasto con
+  protocol=ssh, port=161 (la finestra non aveva il campo porta), e l'acquisizione SSH, che usa la porta
+  dell'apparato, falliva: niente tabella MAC né vicini, col binding SSH sulla 22 provato con successo. Ora la
+  finestra mostra la porta e la manda nel PUT se cambiata; cambiando protocollo la porta passa a quella del primo
+  binding del nuovo protocollo (la stessa regola del motore: un binding SSH sulla 2222 dà 2222), poi a quella
+  propria della credenziale compatibile, poi allo standard (SSH 22, WinRM 5985, API 443). Verso SNMP la porta non
+  si tocca: per un apparato SNMP è quella del ripiego SSH della tabella MAC, e portarla a 161 lo rompeva.
+  Tornando al protocollo salvato torna la porta salvata, una porta scritta a mano dopo il cambio resta, e Proxmox
+  tiene la porta dell'API. PUT e creazione restituiscono un avviso (non un rifiuto) se la porta
+  è lo standard di un altro protocollo: un rifiuto bloccherebbe anche il cambio del nome degli apparati già
+  storti, e Proxmox tiene la porta dell'API anche in SSH.
+- **Le scansioni non spostano più un apparato SSH su una porta che non è SSH.** Se la porta salvata non risulta aperta, si cercano prima le porte del protocollo (22, 2222); le porte del produttore (per MikroTik 8291 Winbox e 8728 API) valgono solo per l'accesso API. Prima uno switch MikroTik in SSH finiva sulla 8291 e la lettura SSH continuava a fallire (pilota, 16/10).
+
+## [Non rilasciato] — 2026-10-16 · una firma di porte non è un modello
+
+- **Il modello non viene più dall'impronta di sole porte, e quello già scritto così si corregge.** Perché: sul
+  pilota il UniFi Cloud Gateway Fiber (192.168.99.250) aveva modello «QNAP QTS», perché la firma 8080+22+443
+  vinceva fra le porte aperte, e le scansioni successive lo preservavano anche davanti al sysDescr SNMP. Ora
+  l'etichetta dell'impronta fa da modello solo se c'è una fonte che non sia di porte o TTL (SNMP, banner, regola su
+  sysDescr/OID/hostname/MAC, profilo vendor); il sysDescr «Ubiquiti UniFi UCG-Fiber 5.1.33 …» dà `UCG-Fiber`; un
+  modello salvato uguale all'etichetta di un'impronta di sole porte viene sostituito dal modello nuovo o azzerato
+  alla scansione successiva. I modelli scritti a mano, da SNMP o dagli agenti non si toccano.
+- **Correzioni dalla revisione.** Perché: banner HTTP/SSH, SNMP e SMB entrano fra le fonti appena la sonda risponde
+  ma non decidono l'etichetta, e col banner della porta 22 «QNAP QTS» tornava modello; ora contano solo una regola
+  con una condizione non di porte o il profilo vendor. Il modello si azzera solo se TUTTE le impronte con
+  quell'etichetta sono di porte: una scansione senza SNMP non cancella più un «QNAP QTS» venuto da una regola OID
+  (le regole del seed condividono le etichette). Senza una colonna sulla provenienza resta un salto: due scansioni
+  di sole porte di fila lo azzerano alla seconda. L'override del profilo vendor è una funzione provata.
+
+## [Non rilasciato] — 2026-10-16 · credenziali tappa 2b: un motore solo sceglie le credenziali
+
+Piano `docs/superpowers/plans/2026-10-15-tappa2-archivio-credenziali.md` (sotto-tappa 2b, nessun dato toccato).
+Perché: sette funzioni sceglievano la credenziale con ordini diversi; ora le sceglie un motore solo
+(`src/lib/credentials/resolve.ts`), che legge anche le fonti vecchie come fonti dichiarate e registrate.
+
+### Modifiche
+
+- **L'acquisizione degli apparati, l'inventario, le patch e il terminale scelgono col motore unico.** Sugli
+  apparati resta sulle fonti dell'apparato (binding, inline, colonne), come prima (D1b).
+- **Un binding che ha fallito la prova si salta** finché una prova non riesce (D10): l'apparato passa al
+  candidato successivo fra le sue fonti, o resta senza credenziale invece di usarne una che non funziona.
+  Fotografia sulla stessa copia dei dati del 15/10: sull'hub 3 apparati cambiano per questo (2 WinRM restano
+  senza credenziale, 1 SSH passa alla voce d'archivio successiva).
+- **Le chiavi globali dell'hub entrano nelle catene delle reti solo se puntano a una voce che esiste ed è del
+  tipo giusto** (sull'hub, nel secondo tenant, spariscono da una rete dove non puntavano a niente).
+- **Un apparato con l'SNMP solo in un binding risulta «ha SNMP»**: per access point, stampanti, telecamere e
+  simili il piano di acquisizione diventa «periferica SNMP» (al cliente A: 2 ponti radio classificati access
+  point, che prima erano letti come switch con la tabella MAC via SSH).
+- **Patch: le righe WinRM in fermo non si usano più**; il ripiego sull'account dell'AD resta, dentro il motore
+  (D4). Corretto prima del rilascio l'ordine con più integrazioni AD.
+- Le scelte delle fonti vecchie (colonne, catene vecchie, chiave dell'hub, «public») si annotano nel registro
+  dei ripieghi: servono a decidere quando togliere il vecchio (2g).
+
+## [Non rilasciato] — 2026-10-16 · controller UDM anche con utente locale e password
+
+Chiesto da Riccardo il 16/10 (ADR 0019). Perché: sull'appliance pilota il controller è un UDM con un account
+locale (`rgadmin`) che non può creare la chiave API, l'unico modo con cui si leggevano le console UniFi OS; salvato
+come self-hosted falliva sempre, anche con la password giusta, senza dire perché.
+
+### Modifiche
+
+- **UDM / console UniFi OS: «Chiave API» oppure «Utente locale e password»** nella finestra del controller. Con
+  l'utente: `POST /api/auth/login`, letture col cookie `TOKEN` e il CSRF, `POST /api/auth/logout` alla fine; stesso
+  certificato fissato al primo uso. Il metodo scelto viaggia col salvataggio e il server rifiuta i campi dell'altro
+  (una password scritta senza utente non sparisce più lasciando entrare la chiave salvata); niente colonne nuove; un
+  controller self-hosted con utente e password passa a UDM senza riscrivere la password.
+- **Login rifiutato detto chiaro e mai ritentato**: 401 utente o password, 403 (o 499) account senza permessi
+  sull'app Network o con la 2FA, 429 console che ha bloccato i tentativi. Un secondo tentativo potrebbe bloccare
+  l'account. Un 404 o un rinvio al login dicono che l'indirizzo non è una console UniFi OS (tipo self-hosted).
+- **«Questo indirizzo è una console UniFi OS: scegli UDM»**: lo dicono la prova e il salvataggio di un controller
+  self-hosted puntato a un UDM (una `GET /` anonima, dal suo cancello: niente corpo, niente cookie, chiave o CSRF).
+
+## [Non rilasciato] — 2026-10-15 · credenziali tappa 4: il wizard usa l'archivio delle credenziali
+
+Proposta approvata da Riccardo il 15/10. Perché: il wizard apriva, ma chiedeva le stesse cose di prima. Il router
+voleva utente, password e community in linea (finivano sull'apparato, fuori dall'archivio), il passo «Credenziali»
+richiedeva di nuovo SNMP, SSH, Windows e Linux in quattro blocchi fissi (una voce per tipo) e la subnet sceglieva
+solo fra quei quattro. «Indietro» ignorava quanto già creato ed «Esci» dimenticava il punto raggiunto.
+
+### Modifiche
+
+- **Credenziali per prime**: il primo passo mostra l'archivio (nome, tipo, utente mascherato, porta) e lo gestisce
+  con lo stesso modulo della pagina Credenziali, ora un componente condiviso: più voci per tipo, modifica ed
+  eliminazione, nessuna obbligatoria. I tipi sono quelli che l'archivio accetta, con le etichette di
+  `credentials/tipi.ts` («Linux» come SSH): i tipi nuovi delle sotto-tappe 2c/2f compaiono da soli.
+- **Router dall'archivio**: «Credenziale» e «SNMP per porte/LLDP» sono tendine delle voci adatte all'accesso
+  (regola unica tipo ↔ protocollo), con «nuova nell'archivio» che crea e seleziona, e «Prova connessione».
+  Tornando indietro il router già creato si modifica, mandando solo i campi toccati (`/api/onboarding/router`).
+- **Active Directory**: la credenziale WinRM si sceglie fra le voci Windows dell'archivio.
+- **Prima subnet**: tutte le voci dell'archivio, con casella e frecce per l'ordine (prima SNMP, poi SSH, Windows, le
+  altre), nella lista nuova delle credenziali della rete.
+- **Punto raggiunto ricordato** (`/api/onboarding/progresso`, impostazione `onboarding_progresso:<cliente>`): «Esci»
+  segna il wizard completato come prima, ma riaprendolo da Impostazioni si riparte da lì; router, rete e integrazione
+  AD già creati non si ricreano. Il wizard non scrive più `host_windows_credential_id` / `host_linux_credential_id`.
+
+### Correzioni della revisione
+
+- **Le credenziali cambiate nel router già creato si usano davvero**: tornando «Indietro» il wizard mandava il PUT
+  dell'apparato, che scrive solo le colonne; i binding creati alla registrazione e la porta restavano quelli di prima,
+  e il polling continuava con la voce vecchia mentre il wizard diceva «Router aggiornato». Ora la modifica passa da
+  `/api/onboarding/router`, che in una transazione aggiorna colonne, porta della voce (2222, o 22/161 cambiando
+  accesso) e i due binding che le rispecchiano; gli altri binding dell'apparato restano. Un router con lo stesso
+  indirizzo già registrato (dal vecchio wizard, o con il punto non salvato) non si crea una seconda volta: si propone
+  di usarlo, e le sue credenziali in linea passano alle voci scelte.
+- **Router registrato dopo la rete**: «Completa e apri la rete» lo collega alla rete già creata (prima il collegamento
+  si faceva solo alla creazione).
+- **«Reset lab» azzera anche il punto raggiunto**, e un punto con oggetti spariti riparte dal passo che li crea (dalle
+  credenziali se sono spariti tutti) invece che dall'ultimo passo con niente dietro.
+- **Archivio non caricato = niente creazioni alla cieca**: router, Active Directory e rete non si creano senza
+  credenziali come se l'archivio fosse vuoto; le tendine dicono «Caricamento…» o «Archivio non caricato» invece di
+  «nessuna voce, creane una».
+- **DNS svuotato = DNS cancellato** (prima il campo vuoto si ignorava); «Indietro» aspetta il salvataggio del punto.
+- **SNMP v3 riconoscibile**: il tipo si chiama «SNMP (v1/v2c o v3)» finché l'archivio non ha un tipo v3 suo, una voce
+  col livello di sicurezza si mostra «SNMP v3», e «nuova nell'archivio» con accesso SNMP v3 apre il modulo già in
+  authPriv.
+- **Active Directory già creata**: la credenziale WinRM si cambia anche dal wizard (l'account resta della sua pagina).
+- **Telefono**: il modulo della voce scorre quando è più alto dello schermo (SNMPv3 authPriv), e nella lista della
+  prima subnet il nome della voce sta sopra il tipo; i pulsanti piccoli a 13 px.
+
+### Da sapere
+
+- La modifica del singolo apparato **fuori dal wizard** aggiorna ancora solo le colonne, non i binding: si sistema con
+  la sotto-tappa 2e (che lì aggiunge la voce in testa invece di sostituirla).
+
 ## [Non rilasciato] — 2026-10-15 · topologia T2.5: la lettura degli hypervisor (lldpd e bond), spenta
 
 Spec §13.5.5, piano di T2 Task 7. Perché: dove sugli host Proxmox gira `lldpd`, l'host dice da sé a quale porta di

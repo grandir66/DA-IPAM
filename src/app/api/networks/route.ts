@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { getNetworks, getNetworksPaginated, createNetwork, setNetworkRouter, replaceNetworkHostCredentials, replaceNetworkCredentials } from "@/lib/db";
+import { getNetworks, getNetworksPaginated } from "@/lib/db";
 import { NetworkCreateSchema } from "@/lib/validators";
+import { creaRete, CredenzialiReteNonValide } from "@/lib/networks/salva-rete";
 import { requireAdminOrOnboarding, isAuthError } from "@/lib/api-auth";
 import { getTenantMode, withTenantFromSession } from "@/lib/api-tenant";
 import { queryAllTenants } from "@/lib/db-tenant";
@@ -61,42 +62,17 @@ export async function POST(request: Request) {
     if (!parsed.success) {
       return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
     }
-    const {
-      router_id,
-      windows_credential_ids,
-      linux_credential_ids,
-      ssh_credential_ids,
-      snmp_credential_ids,
-      credential_ids,
-      ...networkData
-    } = parsed.data;
-    const network = createNetwork(networkData);
-    if (router_id) {
-      setNetworkRouter(network.id, router_id);
-    }
+    // Rete, router e lista credenziali in una transazione: una voce rifiutata è
+    // un 400 e la rete non nasce (prima nasceva lo stesso). I campi delle catene
+    // vecchie si controllano prima e si accodano alla lista, con `avvisi` (T17).
+    let network;
     try {
-      // v2: lista unificata credenziali
-      if (credential_ids !== undefined && credential_ids.length > 0) {
-        replaceNetworkCredentials(network.id, credential_ids);
-      }
-      // Legacy: 4 catene separate (backward compat)
-      if (windows_credential_ids !== undefined) {
-        replaceNetworkHostCredentials(network.id, "windows", windows_credential_ids);
-      }
-      if (linux_credential_ids !== undefined) {
-        replaceNetworkHostCredentials(network.id, "linux", linux_credential_ids);
-      }
-      if (ssh_credential_ids !== undefined) {
-        replaceNetworkHostCredentials(network.id, "ssh", ssh_credential_ids);
-      }
-      if (snmp_credential_ids !== undefined) {
-        replaceNetworkHostCredentials(network.id, "snmp", snmp_credential_ids);
-      }
+      network = creaRete(parsed.data);
     } catch (e) {
-      return NextResponse.json(
-        { error: e instanceof Error ? e.message : "Credenziali non valide" },
-        { status: 400 }
-      );
+      if (e instanceof CredenzialiReteNonValide) {
+        return NextResponse.json({ error: e.message }, { status: 400 });
+      }
+      throw e;
     }
     return NextResponse.json(network, { status: 201 });
     } catch (error) {

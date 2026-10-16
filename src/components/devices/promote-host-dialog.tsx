@@ -152,8 +152,9 @@ export function PromoteHostDialog({ host, open, onOpenChange, onCreated }: Promo
         body: JSON.stringify(body),
       });
       if (res.ok) {
-        const device = (await res.json()) as NetworkDevice;
+        const device = (await res.json()) as NetworkDevice & { avvisi?: string[] };
         toast.success("Dispositivo creato");
+        for (const a of device.avvisi ?? []) toast.warning(a);
         onOpenChange(false);
         onCreated?.(device);
       } else {

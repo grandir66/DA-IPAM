@@ -1,12 +1,6 @@
 import type { NetworkDevice } from "@/types";
-import { apriSessioneSnmp, V3_ASSENTE, versioneApparato, type CredenzialeSnmp } from "@/lib/protocols/snmp-sessione";
-import {
-  getDeviceCredentials,
-  getDeviceCommunityString,
-  getDeviceSnmpV3Credentials,
-  getCredentialCommunityString,
-  getCredentialById,
-} from "@/lib/db";
+import { apriSessioneSnmp, versioneApparato } from "@/lib/protocols/snmp-sessione";
+import { credenzialeSnmpApparato, getDeviceCredentials, haSnmpApparato } from "@/lib/db";
 import { normalizePortNameForMatch } from "@/lib/utils";
 import { getSnmpPortSchema } from "./snmp-port-schema";
 import { getSnmpStpInfo, type StpInfo } from "./snmp-stp-info";
@@ -22,19 +16,26 @@ import {
   getHpComwareStpInfo,
 } from "./hp-vendor";
 import { createWinrmClient } from "./winrm-client";
-import { sshExec as transportSshExec } from "./ssh-transport";
+import { haSegretoSsh, segretoSsh, sshExec as transportSshExec } from "./ssh-transport";
 import {
   TEMPO_WALK_MS, getConSessioneSua, walkConSessioneSua, type LettoreSnmp, type SessioneGet, type SessioneWalk,
 } from "./snmp-walk";
 // Un solo parser della bridge host per switch e router (scarta le righe locali, legge vid).
 import { parseMikrotikMacTable } from "./mikrotik-porte";
 
-type DeviceCreds = { username?: string; password?: string };
+/** Utente più password o chiave privata (tappa 2 credenziali, T14: getDeviceCredentials dà anche la chiave). */
+type DeviceCreds = { username?: string; password?: string; privateKey?: string; passphrase?: string };
+
+/** Le credenziali dell'acquisizione con l'utente della colonna come ripiego (com'era). */
+function credenzialiApparato(device: NetworkDevice): DeviceCreds {
+  const creds = getDeviceCredentials(device);
+  return { ...(creds ?? {}), username: creds?.username ?? device.username ?? undefined };
+}
 
 /** Helper interno: esegue un comando SSH sul device usando il transport unico. */
 async function execDeviceCmd(device: NetworkDevice, creds: DeviceCreds, cmd: string, timeoutMs = 10000): Promise<string> {
   const username = creds.username || device.username || undefined;
-  if (!username || !creds.password) {
+  if (!username || !haSegretoSsh(creds)) {
     throw new Error(`Credenziali SSH mancanti per ${device.name} (${device.host})`);
   }
   const res = await transportSshExec(
@@ -42,7 +43,7 @@ async function execDeviceCmd(device: NetworkDevice, creds: DeviceCreds, cmd: str
       host: device.host,
       port: device.port || 22,
       username,
-      password: creds.password,
+      ...segretoSsh(creds),
       timeout: timeoutMs,
     },
     cmd
@@ -80,28 +81,17 @@ export interface SwitchClient {
 }
 
 /**
- * True se possiamo aprire una sessione SNMP (v2 community, v3, o protocollo SNMP).
- * `hasSnmpCommunity` da solo era troppo stretto: SNMPv3 e credenziali SNMP in archivio
- * senza "community" in chiaro facevano saltare porte/STP pur avendo MAC via SSH.
+ * True se possiamo aprire una sessione SNMP: protocollo SNMP, o una fonte SNMP
+ * dell'apparato (binding compresi, `haSnmpApparato`; tappa 2 credenziali, T8).
+ * Mai per la sola catena della rete o per «public».
  */
 export function deviceHasSnmpSession(device: NetworkDevice): boolean {
-  if (device.community_string) return true;
-  if (device.protocol === "snmp_v2" || device.protocol === "snmp_v3") return true;
-  if (device.snmp_credential_id) {
-    if (getCredentialCommunityString(device.snmp_credential_id)) return true;
-    if (getDeviceSnmpV3Credentials(device)) return true;
-    const cred = getCredentialById(device.snmp_credential_id);
-    if (cred && String(cred.credential_type || "").toLowerCase() === "snmp") return true;
-  }
-  if (device.credential_id && getCredentialCommunityString(device.credential_id)) return true;
-  return false;
+  return device.protocol === "snmp_v2" || device.protocol === "snmp_v3" || haSnmpApparato(device);
 }
 
 export async function createSwitchClient(device: NetworkDevice): Promise<SwitchClient> {
-  const creds = getDeviceCredentials(device);
-  const password = creds?.password;
-  const username = creds?.username ?? device.username ?? undefined;
-  const primaryClient = await createVendorClient(device, { username, password });
+  const creds = credenzialiApparato(device);
+  const primaryClient = await createVendorClient(device, creds);
   const hasSnmp = deviceHasSnmpSession(device);
 
   // UniFi con SNMP: la MAC table va presa da SNMP (Bridge MIB), non da SSH che restituisce dati incompleti
@@ -127,8 +117,8 @@ export async function createSwitchClient(device: NetworkDevice): Promise<SwitchC
         return snmpClient.getMacTable();
       }
 
-      if ((device.protocol === "snmp_v2" || device.protocol === "snmp_v3") && (password || (device.encrypted_password && device.username))) {
-        const sshClient = await createSshWithFallbackCommands(device, { username, password });
+      if ((device.protocol === "snmp_v2" || device.protocol === "snmp_v3") && (haSegretoSsh(creds) || (device.encrypted_password && device.username))) {
+        const sshClient = await createSshWithFallbackCommands(device, creds);
         return sshClient.getMacTable();
       }
 
@@ -248,21 +238,11 @@ async function createSshSwitchClient(
  * getConSessioneSua di snmp-walk.ts): l'errore diventa il rifiuto della lettura.
  */
 export function apriSessioneSnmpApparato(snmp: typeof import("net-snmp"), device: NetworkDevice) {
-  const isSnmpProtocol = device.protocol === "snmp_v2" || device.protocol === "snmp_v3";
-  // device.port può essere la porta SSH (22) quando il device ha credenziali miste SSH+SNMP.
-  // La porta SNMP standard è 161; usiamo device.port solo se è diversa da 22 e diversa da 0.
-  const rawPort = device.port || 0;
-  const snmpPort = isSnmpProtocol && rawPort > 0 && rawPort !== 22 ? rawPort : 161;
-  const opts = { port: snmpPort, timeout: 10000 };
-  let cred: CredenzialeSnmp;
-  if (device.protocol === "snmp_v3") {
-    const v3 = getDeviceSnmpV3Credentials(device);
-    if (!v3) throw new Error(V3_ASSENTE);
-    cred = { forma: "v3", record: v3 };
-  } else {
-    cred = { forma: "community", community: getDeviceCommunityString(device) };
-  }
-  const aperta = apriSessioneSnmp(snmp, device.host, cred, { ...opts, versione: versioneApparato(device, "1") });
+  // Credenziale e porta dal motore (T8): la porta è quella del candidato (161, o del binding o della voce), non
+  // `device.port`, che con credenziali miste SSH+SNMP è la porta SSH.
+  const c = credenzialeSnmpApparato(device);
+  if (!c.ok) throw new Error(c.motivo);
+  const aperta = apriSessioneSnmp(snmp, device.host, c.cred, { port: c.port, timeout: 10000, versione: versioneApparato(device, "1") });
   if (!aperta.ok) throw new Error(aperta.motivo);
   return aperta.session;
 }
@@ -483,13 +463,13 @@ async function createUbiquitiSwitchClient(device: NetworkDevice, creds: DeviceCr
       host: device.host,
       port: device.port || 22,
       username: creds.username ?? device.username ?? "",
-      password: creds.password ?? "",
+      ...segretoSsh(creds),
       timeout: 15000,
     };
     return {
       ...base,
       getStpInfo: async () => {
-        if (!opts.username || !opts.password) return null;
+        if (!opts.username || !haSegretoSsh(opts)) return null;
         return getUnifiStpInfo(opts);
       },
     };
@@ -502,7 +482,7 @@ async function createHpProcurveSwitchClient(device: NetworkDevice, creds: Device
     host: device.host,
     port: device.port || 22,
     username: creds.username!,
-    password: creds.password!,
+    ...segretoSsh(creds),
     timeout: 30000,
   };
   return {
@@ -533,7 +513,7 @@ async function createHpComwareSwitchClient(device: NetworkDevice, creds: DeviceC
     host: device.host,
     port: device.port || 22,
     username: creds.username!,
-    password: creds.password!,
+    ...segretoSsh(creds),
     timeout: 30000,
   };
   return {
@@ -574,7 +554,7 @@ function mergeLldpIntoPorts(ports: PortInfo[], lldp: { interface: string; system
 }
 
 function createHpSwitchClient(device: NetworkDevice, creds: DeviceCreds): Promise<SwitchClient> {
-  if (device.protocol === "ssh" && creds?.username && creds?.password) {
+  if (device.protocol === "ssh" && creds?.username && haSegretoSsh(creds)) {
     const subtype = device.vendor_subtype ?? "procurve";
     if (subtype === "comware") {
       return createHpComwareSwitchClient(device, creds);

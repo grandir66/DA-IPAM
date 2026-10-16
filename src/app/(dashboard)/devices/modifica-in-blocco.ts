@@ -16,6 +16,7 @@
  * - `"none"`: «Nessuna», cioè togliere la voce;
  * - `"<id>"`: la voce dell'archivio con quell'id.
  */
+import { vociUsateAdesso, type UsataAdesso } from "@/lib/devices/usata-adesso";
 
 /** Lo stato della finestra «Assegna caratteristiche» (modifica in blocco). */
 export interface StatoModificaInBlocco {
@@ -41,6 +42,13 @@ export interface TendineCredenziali {
 export interface StatoModificaApparato extends TendineCredenziali {
   /** I campi che la finestra manda già (nome, IP, profilo, protocollo…), senza credenziali. */
   campi: Record<string, unknown>;
+  /** Il campo porta, se la finestra lo ha (16/10); vuoto o assente = non si manda. */
+  porta?: string;
+}
+
+/** Come parte la finestra del singolo: le due tendine e, se la finestra ha il campo, la porta salvata. */
+export interface StatoInizialeApparato extends TendineCredenziali {
+  porta?: number | null;
 }
 
 /** Campi che la rotta in blocco applica: senza almeno uno di questi non c'è niente da fare. */
@@ -87,14 +95,20 @@ export function corpoHaModifiche(corpo: Record<string, unknown>): boolean {
   return CAMPI_DA_APPLICARE.some((campo) => campo in corpo);
 }
 
-/** Le tendine come partono per un apparato: dalle sue colonne `credential_id` e `snmp_credential_id`. */
-export function tendineDaApparato(device: {
-  credential_id?: number | null;
-  snmp_credential_id?: number | null;
-}): TendineCredenziali {
+/**
+ * Le tendine come partono per un apparato: dalla scelta del motore («Usata
+ * adesso», GET /api/devices/[id]), non dalle colonne `credential_id` e
+ * `snmp_credential_id`, che dopo la 2e sono vuote (T20, 16/10). Senza
+ * `usata_adesso` (una riga della lista) partono vuote; il confronto in
+ * `corpoModificaApparato` usa lo stesso stato iniziale, quindi una tendina non
+ * toccata non parte.
+ */
+export function tendineDaApparato(device: object): TendineCredenziali {
+  const usate = "usata_adesso" in device ? (device as { usata_adesso?: readonly Pick<UsataAdesso, "ruolo" | "credential_id">[] | null }).usata_adesso : null;
+  const voci = vociUsateAdesso(usate);
   return {
-    credentialId: device.credential_id != null ? String(device.credential_id) : null,
-    snmpCredentialId: device.snmp_credential_id != null ? String(device.snmp_credential_id) : null,
+    credentialId: voci.principale != null ? String(voci.principale) : null,
+    snmpCredentialId: voci.snmp != null ? String(voci.snmp) : null,
   };
 }
 
@@ -103,9 +117,13 @@ export function tendineDaApparato(device: {
  * credenziali solo se cambiate rispetto a `statoIniziale`. Tendina vuota e
  * «Nessuna» valgono uguale (nessuna voce). Dalla 2e un `null` toglie i binding
  * di quel protocollo: un campo non toccato non deve partire.
+ *
+ * La porta (16/10) parte solo se diversa da quella salvata: sul pilota il PUT
+ * non la portava, e un apparato passato da SNMP a SSH restava sulla 161. Una
+ * porta non valida è un errore, non un salvataggio.
  */
 export function corpoModificaApparato(
-  statoIniziale: TendineCredenziali,
+  statoIniziale: StatoInizialeApparato,
   stato: StatoModificaApparato,
 ): Record<string, unknown> {
   const corpo: Record<string, unknown> = { ...stato.campi };
@@ -113,5 +131,52 @@ export function corpoModificaApparato(
   if (credenziale !== valoreTendina(statoIniziale.credentialId, "nessuna")) corpo.credential_id = credenziale;
   const snmp = valoreTendina(stato.snmpCredentialId, "nessuna");
   if (snmp !== valoreTendina(statoIniziale.snmpCredentialId, "nessuna")) corpo.snmp_credential_id = snmp;
+  const testoPorta = stato.porta?.trim();
+  if (testoPorta) {
+    const porta = Number(testoPorta);
+    if (!Number.isInteger(porta) || porta < 1 || porta > 65535) {
+      throw new Error(`Porta non valida: «${testoPorta}», serve un numero fra 1 e 65535`);
+    }
+    if (porta !== statoIniziale.porta) corpo.port = porta;
+  }
   return corpo;
+}
+
+/** La risposta delle rotte di modifica degli apparati, per i campi che le finestre leggono. */
+export interface RispostaModifica {
+  error?: string;
+  message?: string;
+  /** 409: la domanda da fare prima di togliere binding («Nessuna»). */
+  conferma?: { domanda: string };
+  /** Avvisi da mostrare anche se il salvataggio è riuscito (porta, voce rimasta fallita). */
+  avvisi?: string[];
+  credenziali?: { saltati?: unknown[]; falliti?: unknown[] } | null;
+  [campo: string]: unknown;
+}
+
+/**
+ * Manda una modifica e, se il server chiede la conferma della rimozione dei
+ * binding (409 con `conferma`), fa la domanda all'utente e rimanda lo stesso
+ * corpo con `conferma_rimozione: true`. Annullata → null, e non parte niente
+ * altro. Ogni altra risposta torna com'è.
+ *
+ * Perché (revisione della 2e, 16/10): dalla 2e «Nessuna» toglie i binding, e
+ * il PUT del singolo risponde 409 con la domanda. Le finestre del singolo la
+ * mostravano come errore, senza modo di confermare, e la transazione annullata
+ * perdeva anche il resto del salvataggio (il nome). Solo la finestra in blocco
+ * la gestiva.
+ */
+export async function inviaConConferma(
+  invia: (corpo: Record<string, unknown>) => Promise<Response>,
+  corpo: Record<string, unknown>,
+  chiedi: (domanda: string) => boolean,
+): Promise<{ res: Response; data: RispostaModifica } | null> {
+  let res = await invia(corpo);
+  let data = (await res.json()) as RispostaModifica;
+  if (res.status === 409 && data.conferma) {
+    if (!chiedi(data.conferma.domanda)) return null;
+    res = await invia({ ...corpo, conferma_rimozione: true });
+    data = (await res.json()) as RispostaModifica;
+  }
+  return { res, data };
 }

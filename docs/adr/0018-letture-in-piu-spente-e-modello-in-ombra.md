@@ -1,6 +1,6 @@
 # ADR 0018 — Letture in più spente e modello per cavo in ombra (topologia, tappa T2)
 
-**Stato:** Accepted (pronta il 2026-10-15 sul ramo `topologia/collegamenti-t2`, non ancora rilasciata: aspetta la conferma di Riccardo)
+**Stato:** Accepted — rilasciata con tutto spento il 2026-10-15 (v0.3.297); lettura dell'host (T2.5) il 2026-10-15 notte (v0.3.299); letture accese il 15-16/10 (sotto, «Aggiornamento del 16/10»)
 **Data:** 2026-10-15
 **Autore:** Riccardo Grandi, con Claude
 
@@ -97,3 +97,23 @@ dopo T2 (circa 18 ms sul Mac), modello per cavo 27-43 ms (solo a richiesta). A s
     sulle uscite vere e si rimisura la traccia.
 - Tornare indietro: si spegne l'interruttore, senza codice; oppure `git revert`, e le tabelle nuove restano,
   non lette da nessuno (spec §13.11.3).
+
+## Aggiornamento del 16/10 (accensioni e secondo rilascio)
+
+- **Accensioni** (con l'ok di Riccardo, decisione del 15/10 notte: niente attese di settimane, si va avanti appena i
+  numeri sono spiegati): MikroTik e controller sull'hub e sul cliente A; host solo sull'hub. **SNMP spento** su tutti e
+  due: la lettura gira solo nel giro completo degli switch e solo su `device_type = switch` senza controller, e gli unici
+  apparati così sono server segnati switch (sull'hub manca anche il job `arp_poll`). Prima lettura MikroTik: 6 comandi su
+  6, nessun «non so» (B1 confermato: RouterOS dà il codice d'uscita), +1-2 s sulla scansione che la fa.
+- **T2-b**: `lldpd` 1.0.18 sul nodo 1 dell'hub, LLDP del firmware X710 spento un porto alla volta (coppia LACP sempre
+  intera; servizio `i40e-fw-lldp-off` per i riavvii). Il controller ora vede il nodo su 4 porte come un apparato solo
+  (telaio = MAC della prima scheda, port id = MAC di ogni scheda, nessun nome di sistema). Sugli altri nodi il bond a 10G
+  regge su un cavo solo: lì cambiare la bandiera fa ripartire la porta, quindi non si fa senza un intervento a parte.
+- **T2.5 (Task 7) sulla forma vera**: gli switch UniFi non annunciano l'indirizzo di gestione, uno annuncia le capacità e
+  uno no; lo stato del membro è `info_slave_data.state` (un bond active-backup, uno LACP); il MAC permanente
+  `perm_hwaddr`. Lettura parziale come per i MikroTik (schede scritte anche se `lldpcli` manca o scade); un nodo con più
+  apparati sullo stesso indirizzo dà `NODO_AMBIGUO`, gli apparati spenti non contano.
+- **Non accolto dalla revisione**: che una fonte nuova non riempia le colonne nuove (`discovered_by`, indici, capacità)
+  di una riga `device`/`unifi` sulla stessa chiave. È voluto: la chiave non contiene la fonte, quelle colonne le legge solo
+  il modello per cavo (§13.5.7, «Chi legge che cosa»), ed è l'unico posto dove una lettura in più dice qualcosa di un
+  vicino già noto. Tre prove lo tengono.

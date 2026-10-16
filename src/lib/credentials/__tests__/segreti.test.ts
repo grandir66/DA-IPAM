@@ -34,14 +34,14 @@ import {
   getCredentialLoginPair as loginTenant,
   getSshLinuxCredentialPair as sshTenant,
   getCredentialCommunityString as communityTenant,
-  getDeviceSnmpV3Credentials as v3Tenant,
+  credenzialeSnmpApparato as snmpTenant,
   getNetworkDeviceById as apparatoTenant,
 } from "@/lib/db-tenant";
 import {
   getCredentialLoginPair as loginFacciata,
   getSshLinuxCredentialPair as sshFacciata,
   getCredentialCommunityString as communityFacciata,
-  getDeviceSnmpV3Credentials as v3Facciata,
+  credenzialeSnmpApparato as snmpFacciata,
   getNetworkDeviceById as apparatoFacciata,
 } from "@/lib/db";
 import { leggiSegretoDb, leggiSegretoInline, opzioniSsh, type EsitoSegreto, type Segreto } from "../segreti";
@@ -433,13 +433,16 @@ describe("le gemelle di db.ts e db-tenant danno lo stesso esito sullo stesso DB"
     });
   });
 
-  it("getDeviceSnmpV3Credentials: il record completo, uguale sulle due gemelle", () => {
+  // Dal T8 la v3 di un apparato la dà credenzialeSnmpApparato (il motore), che ha preso il posto di
+  // getDeviceSnmpV3Credentials: stesso record, ripulito; un apparato snmp_v3 senza v3 è un rifiuto.
+  it("credenzialeSnmpApparato: il record v3 completo, uguale sulle due gemelle", () => {
     withTenant(T, () => {
-      for (const [v3, apparato] of [[v3Tenant, apparatoTenant], [v3Facciata, apparatoFacciata]] as const) {
+      for (const [snmp, apparato] of [[snmpTenant, apparatoTenant], [snmpFacciata, apparatoFacciata]] as const) {
         const leggi = (chiave: string) => {
           const dev = apparato(apparati[chiave]);
           assert.ok(dev, chiave);
-          return v3(dev);
+          const c = snmp(dev);
+          return c.ok && c.cred.forma === "v3" ? c.cred.record : null;
         };
         assert.deepEqual(leggi("v3Pagina"), {
           username: "monitor",

@@ -87,8 +87,10 @@ const SCHEMA = leggi("src/lib/db-tenant-schema.ts");
 test("schema: le colonne cifrate delle credenziali si leggono (se cambiano, la prova si rilegge)", () => {
   assert.deepEqual(colonneCifrate(SCHEMA, "credentials"), [
     "encrypted_auth_key",
+    "encrypted_key_passphrase",
     "encrypted_password",
     "encrypted_priv_key",
+    "encrypted_private_key",
     "encrypted_username",
   ]);
   assert.deepEqual(colonneCifrate(SCHEMA, "device_credential_bindings"), ["inline_encrypted_password"]);
@@ -106,13 +108,11 @@ export async function GET() {
 }
 `;
   assert.deepEqual(colonneNonMascherate(finto, colonneCifrate(SCHEMA, "credentials")), [
-    ["encrypted_auth_key", "encrypted_priv_key"],
+    ["encrypted_auth_key", "encrypted_key_passphrase", "encrypted_priv_key", "encrypted_private_key"],
   ]);
 });
 
 const MASCHERATE: Array<{ rotta: string; tabella: string }> = [
-  { rotta: "src/app/api/credentials/route.ts", tabella: "credentials" },
-  { rotta: "src/app/api/credentials/[id]/route.ts", tabella: "credentials" },
   { rotta: "src/app/api/devices/[id]/credentials/route.ts", tabella: "device_credential_bindings" },
 ];
 
@@ -122,6 +122,57 @@ for (const { rotta, tabella } of MASCHERATE) {
     for (const mancanti of colonneNonMascherate(leggi(rotta), cifrate)) {
       assert.deepEqual(mancanti, [], `${rotta}: colonne cifrate restituite senza maschera`);
     }
+  });
+}
+
+/**
+ * Le rotte dell'archivio (T13, 16/10) non restituiscono più la riga con le
+ * colonne cifrate sovrascritte una per una: rispondono con la vista di
+ * `mascheraCredenziale`, costruita campo per campo (la sua prova, sulle
+ * colonne lette dallo schema, è in credentials/__tests__/archivio-voci.test.ts).
+ * Qui si guarda che ogni risposta passi da lì: nessuno spread di altro che la
+ * vista, e nessuna proprietà `encrypted_*` scritta a mano.
+ */
+const VISTA = ["src/app/api/credentials/route.ts", "src/app/api/credentials/[id]/route.ts"];
+
+/** Spread ammessi: `...mascheraCredenziale(…)` e `...esito.vista`. */
+function spreadNonAmmessi(sorgente: string): string[] {
+  const sf = ts.createSourceFile("route.ts", sorgente, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const fuori: string[] = [];
+  const visita = (n: ts.Node) => {
+    if (ts.isSpreadAssignment(n)) {
+      const e = n.expression;
+      const vista =
+        (ts.isCallExpression(e) && ts.isIdentifier(e.expression) && e.expression.text === "mascheraCredenziale") ||
+        (ts.isPropertyAccessExpression(e) && e.name.text === "vista");
+      if (!vista) fuori.push(n.getText(sf));
+    }
+    if (ts.isPropertyAssignment(n) && /encrypt/i.test(n.name.getText(sf))) fuori.push(n.getText(sf));
+    ts.forEachChild(n, visita);
+  };
+  visita(sf);
+  return fuori;
+}
+
+test("controllo: lo spread della riga o una colonna cifrata scritta a mano vengono segnalati", () => {
+  const finto = `
+export async function GET() {
+  const c = getCredentialById(1);
+  return Response.json({ ...c, encrypted_password: c.encrypted_password ? "●●●●●●●●" : null });
+}
+`;
+  assert.deepEqual(spreadNonAmmessi(finto), ["...c", 'encrypted_password: c.encrypted_password ? "●●●●●●●●" : null']);
+  assert.deepEqual(spreadNonAmmessi("const x = { ...mascheraCredenziale(c, 0), username };\nconst y = { ...esito.vista };"), []);
+});
+
+for (const rotta of VISTA) {
+  test(`${rotta}: ogni risposta è la vista di mascheraCredenziale`, () => {
+    const sorgente = leggi(rotta);
+    assert.deepEqual(spreadNonAmmessi(sorgente), [], `${rotta}: risposte che non passano dalla vista`);
+    const sf = ts.createSourceFile("route.ts", sorgente, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+    const get = sf.statements.find((s): s is ts.FunctionDeclaration => ts.isFunctionDeclaration(s) && s.name?.text === "GET");
+    assert.ok(get?.body, "GET non trovato");
+    assert.match(get.body.getText(sf), /mascheraCredenziale\(/, `${rotta}: il GET non usa mascheraCredenziale`);
   });
 }
 

@@ -10,6 +10,7 @@ import {
   getNetworksWithCredentials,
 } from "@/lib/db";
 import { requireAuth, requireAdmin, isAuthError } from "@/lib/api-auth";
+import { CredenzialeNonAmmessa } from "@/lib/credentials/lista-rete";
 import { withTenantFromSession } from "@/lib/api-tenant";
 
 /** GET — lista credenziali assegnate alla subnet (ordinate). */
@@ -57,6 +58,8 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     const credentials = getNetworkCredentials(networkId);
     return NextResponse.json({ credentials });
     } catch (error) {
+      // Una voce che non vale per una rete (UniFi, Omada, AD): 400 col messaggio (T13).
+      if (error instanceof CredenzialeNonAmmessa) return NextResponse.json({ error: error.message }, { status: 400 });
       console.error("Error updating network credentials:", error);
       return NextResponse.json({ error: "Errore nell'aggiornamento credenziali" }, { status: 500 });
     }
@@ -114,6 +117,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const credentials = getNetworkCredentials(networkId);
     return NextResponse.json({ credentials });
     } catch (error) {
+      if (error instanceof CredenzialeNonAmmessa) return NextResponse.json({ error: error.message }, { status: 400 });
       console.error("Error managing network credentials:", error);
       return NextResponse.json({ error: "Errore nella gestione credenziali" }, { status: 500 });
     }

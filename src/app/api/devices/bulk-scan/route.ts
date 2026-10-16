@@ -1,7 +1,7 @@
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { resolveDeviceAcquisition, deviceScanApiPath } from "@/lib/devices/device-acquisition-resolve";
 import { NextResponse } from "next/server";
-import { getNetworkDeviceById, getMultihomedStatusByDeviceId } from "@/lib/db";
+import { getNetworkDeviceById, getMultihomedStatusByDeviceId, haSnmpApparato } from "@/lib/db";
 import { z } from "zod";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 
@@ -70,7 +70,7 @@ export async function POST(request: Request) {
         continue;
       }
 
-      const plan = resolveDeviceAcquisition(device);
+      const plan = resolveDeviceAcquisition(device, haSnmpApparato(device));
       if (!plan.implemented) {
         failed.push({
           id,

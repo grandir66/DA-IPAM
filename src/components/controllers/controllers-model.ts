@@ -12,6 +12,7 @@ import type {
   ControllerKind,
   ControllerRunView,
   NetworkControllerView,
+  UnifiOsAuth,
 } from "@/lib/controllers/types";
 import { CONTROLLER_KINDS, CONTROLLER_SCHEDULE_MINUTES } from "@/lib/controllers/types";
 
@@ -29,7 +30,7 @@ export function kindLabel(kind: ControllerKind): string {
 
 /** Voci del Select «Tipo» nel modulo; Omada c'è ma non si può scegliere. */
 export const KIND_OPTIONS: ReadonlyArray<{ value: ControllerKind; label: string; disabled: boolean }> = [
-  { value: "udm", label: "UniFi OS (UDM, Cloud Key Gen2+) — chiave API", disabled: false },
+  { value: "udm", label: "UDM / console UniFi OS — chiave API o utente locale", disabled: false },
   { value: "self_hosted", label: "UniFi Network self-hosted — utente e password", disabled: false },
   { value: "omada", label: "Omada — client id e secret (in arrivo)", disabled: true },
 ];
@@ -135,6 +136,8 @@ export function clientRunLine(c: Pick<NetworkControllerView, "lastClientRun">): 
 
 export interface ControllerForm {
   kind: ControllerKind;
+  /** Solo per `udm`: chiave API oppure utente locale e password (ADR 0019). */
+  udmAuth: UnifiOsAuth;
   name: string;
   url: string;
   site: string;
@@ -149,6 +152,7 @@ export interface ControllerForm {
 export function emptyControllerForm(): ControllerForm {
   return {
     kind: "udm",
+    udmAuth: "api_key",
     name: "",
     url: "",
     site: "default",
@@ -160,10 +164,24 @@ export function emptyControllerForm(): ControllerForm {
   };
 }
 
-/** In modifica i segreti non tornano dal server: restano vuoti. */
+/** Opzioni del metodo d'accesso di una console UniFi OS. */
+export const UDM_AUTH_OPTIONS: ReadonlyArray<{ value: UnifiOsAuth; label: string }> = [
+  { value: "api_key", label: "Chiave API" },
+  { value: "password", label: "Utente locale e password" },
+];
+
+/**
+ * In modifica i segreti non tornano dal server: restano vuoti. Il metodo UDM
+ * si legge da quello che c'è: la chiave, altrimenti l'utente. Un self-hosted
+ * con utente (il pilota del 16/10) si apre già su «utente», così passando a UDM
+ * la password salvata vale senza riscriverla.
+ */
 export function formFromController(c: NetworkControllerView): ControllerForm {
+  const udmAuth: UnifiOsAuth =
+    c.kind === "udm" && c.apiKeySet ? "api_key" : c.username || c.passwordSet ? "password" : "api_key";
   return {
     kind: c.kind,
+    udmAuth,
     name: c.name,
     url: c.url,
     site: c.site || "default",
@@ -187,26 +205,32 @@ export function secretPlaceholder(isSet: boolean): string {
 export function formMissing(form: ControllerForm): string | null {
   if (!form.name.trim()) return "Scrivi un nome";
   if (!form.url.trim()) return "Scrivi l'indirizzo del controller";
+  if (form.kind === "udm" && form.udmAuth === "password" && !form.username.trim()) {
+    return "Scrivi l'utente locale della console";
+  }
   return null;
 }
 
 /**
- * Corpo di POST/PUT e della prova. Per `udm` l'utente non si manda (e per
- * `self_hosted` non si manda la chiave): il server vede solo i campi del tipo.
+ * Corpo di POST/PUT e della prova: il server vede solo i campi del metodo. Per
+ * `udm` con la chiave l'utente non si manda; per `udm` con utente locale e per
+ * `self_hosted` non si manda la chiave. Per `udm` il metodo scelto viaggia in
+ * `udmAuth`: il server rifiuta i campi che non gli corrispondono.
  */
 export function buildControllerPayload(form: ControllerForm, certPin?: string | null): ControllerInput {
-  const isUdm = form.kind === "udm";
+  const useKey = form.kind === "udm" && form.udmAuth === "api_key";
   const body: ControllerInput = {
     name: form.name.trim(),
     kind: form.kind,
     url: form.url.trim(),
     site: form.site.trim() || "default",
-    username: isUdm ? "" : form.username.trim(),
-    password: isUdm ? "" : form.password,
-    apiKey: isUdm ? form.apiKey.trim() : "",
+    username: useKey ? "" : form.username.trim(),
+    password: useKey ? "" : form.password,
+    apiKey: useKey ? form.apiKey.trim() : "",
     enabled: form.enabled,
     scheduleMinutes: scheduleFromValue(form.schedule),
   };
+  if (form.kind === "udm") body.udmAuth = form.udmAuth;
   if (certPin) body.certPin = certPin;
   return body;
 }

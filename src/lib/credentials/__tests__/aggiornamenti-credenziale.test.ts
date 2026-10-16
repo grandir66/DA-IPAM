@@ -12,7 +12,7 @@ import assert from "node:assert/strict";
 
 process.env.ENCRYPTION_KEY ||= "test-encryption-key-aggiornamenti";
 
-import { aggiornamentiCredenziale } from "../aggiornamenti";
+import { aggiornamentiCredenziale, colonneNuovaCredenziale } from "../aggiornamenti";
 import { safeDecrypt } from "@/lib/crypto";
 
 describe("aggiornamentiCredenziale", () => {
@@ -45,4 +45,55 @@ describe("aggiornamentiCredenziale", () => {
     assert.equal(aggiornamentiCredenziale({}, { port: "" }).port, null);
     assert.equal("port" in aggiornamentiCredenziale({ name: "x" }, { name: "x" }), false);
   });
+
+  // T13 (16/10): le colonne della chiave SSH e il metodo d'accesso.
+  it("chiave privata e passphrase vuote → non si toccano; nuove → cifrate", () => {
+    const vuote = aggiornamentiCredenziale({ private_key: "", passphrase: "" }, {});
+    assert.equal("encrypted_private_key" in vuote, false);
+    assert.equal("encrypted_key_passphrase" in vuote, false);
+    const u = aggiornamentiCredenziale({ private_key: "CHIAVE", passphrase: "frase" }, {});
+    assert.equal(safeDecrypt(String(u.encrypted_private_key)), "CHIAVE");
+    assert.equal(safeDecrypt(String(u.encrypted_key_passphrase)), "frase");
+  });
+
+  it("una chiave nuova senza passphrase toglie la passphrase vecchia (era della chiave vecchia)", () => {
+    const u = aggiornamentiCredenziale({ private_key: "CHIAVE NUOVA" }, {});
+    assert.equal(u.encrypted_key_passphrase, null);
+  });
+
+  it("solo la passphrase nuova → si scrive, la chiave resta", () => {
+    const u = aggiornamentiCredenziale({ passphrase: "frase" }, {});
+    assert.equal("encrypted_private_key" in u, false);
+    assert.equal(safeDecrypt(String(u.encrypted_key_passphrase)), "frase");
+  });
+
+  it("metodo: presente → si scrive, null → torna al primo del tipo, assente → non si tocca", () => {
+    assert.equal(aggiornamentiCredenziale({ auth_method: "chiave" }, {}).auth_method, "chiave");
+    assert.equal(aggiornamentiCredenziale({ auth_method: null }, {}).auth_method, null);
+    assert.equal("auth_method" in aggiornamentiCredenziale({ name: "x" }, {}), false);
+  });
 });
+
+describe("colonneNuovaCredenziale (POST)", () => {
+  it("i segreti cifrati nelle loro colonne, i vuoti come NULL, linux già normalizzato dal validatore", () => {
+    const c = colonneNuovaCredenziale({
+      name: "chiave",
+      credential_type: "ssh",
+      auth_method: "chiave",
+      username: "root",
+      password: "",
+      private_key: "CHIAVE",
+      passphrase: "frase",
+      port: 2222,
+    });
+    assert.equal(c.name, "chiave");
+    assert.equal(c.credential_type, "ssh");
+    assert.equal(c.auth_method, "chiave");
+    assert.equal(safeDecrypt(String(c.encrypted_username)), "root");
+    assert.equal(c.encrypted_password, null);
+    assert.equal(safeDecrypt(String(c.encrypted_private_key)), "CHIAVE");
+    assert.equal(safeDecrypt(String(c.encrypted_key_passphrase)), "frase");
+    assert.equal(c.port, 2222);
+  });
+});
+

@@ -8,14 +8,15 @@ import {
   getCredentialById,
   getCredentialCommunityString,
   getCredentialLoginPair,
+  getDb,
   getNetworkById,
-  getNetworkCredentials,
-  getNetworkHostCredentialIds,
   getOrderedDetectCredentialIds,
   getOrderedSshLinuxCredentialIds,
   getSshLinuxCredentialPair,
   buildSnmpCommunitiesForNetwork,
 } from "@/lib/db";
+import { catenaReteDb } from "@/lib/credentials/resolve";
+import { normalizzaTipo } from "@/lib/credentials/tipi";
 
 export type EdgeCredentialSlot = "ssh" | "smb" | "snmp" | "ad";
 
@@ -25,6 +26,8 @@ export interface EdgeCredentialPreview {
   credential_type: string;
   slot: EdgeCredentialSlot | null;
   selected_for_scan: boolean;
+  /** Perché la voce non parte verso lo scanner, quando lo si sa (es. SNMP v3). */
+  motivo?: string;
 }
 
 /** Payload verso edge (contiene secret — solo server-side). */
@@ -53,11 +56,17 @@ function splitWindowsLogin(raw: string): { login: string; domain: string | null 
   return { login: s, domain: null };
 }
 
-function slotForType(credentialType: string): EdgeCredentialSlot | null {
-  const t = credentialType.toLowerCase();
-  if (t === "ssh" || t === "linux") return "ssh";
-  if (t === "windows") return "smb";
-  if (t === "snmp") return "snmp";
+/**
+ * Perché una voce non può partire verso lo scanner, per tipo e metodo. Lo slot
+ * SNMP dello scanner prende solo una community (`cred_type: "snmp"`) e lo slot
+ * SSH solo utente e password (`cred_type: "up"`): una SNMP v3 (T12) o una SSH a
+ * chiave (T14, interfaccia punto 9) compare nell'anteprima, non selezionata,
+ * invece di sparire o di partire con la password vuota.
+ */
+function motivoEsclusione(cred: { credential_type: string; auth_method?: string | null }): string | null {
+  const tipo = normalizzaTipo(String(cred.credential_type || ""));
+  if (tipo === "snmp_v3") return "Non inviata allo scanner: SNMP v3 (lo scanner usa solo community)";
+  if (tipo === "ssh" && cred.auth_method === "chiave") return "Non inviata allo scanner: chiave SSH";
   return null;
 }
 
@@ -69,8 +78,10 @@ function buildTransferFromCredential(
   const cred = getCredentialById(credentialId);
   if (!cred) return null;
 
-  const type = String(cred.credential_type || "").toLowerCase();
+  const type = normalizzaTipo(String(cred.credential_type || ""));
   const baseName = `IPAM · ${cred.name}`.slice(0, 80);
+
+  if (motivoEsclusione(cred)) return null;
 
   if (slot === "snmp" || type === "snmp") {
     const community = getCredentialCommunityString(credentialId);
@@ -119,8 +130,20 @@ function buildTransferFromCredential(
   return null;
 }
 
-/** Elenco credenziali subnet (preview UI + payload sync edge). */
-export function collectEdgeCredentialsForNetwork(networkId: number): {
+/**
+ * Elenco credenziali subnet (preview UI + payload sync edge). `registra: false`
+ * per le verifiche (fotografia).
+ *
+ * Gli slot si fanno dalla catena della rete del motore, un protocollo alla
+ * volta: SSH, poi Windows (SMB, e AD con le stesse voci), poi SNMP (tappa 2
+ * credenziali, T17). Prima si mettevano davanti le voci della lista della
+ * rete, in ordine di lista, e dopo le catene vecchie: le stesse voci, spostate
+ * dalla catena vecchia alla lista dalla conversione della 2d, uscivano in un
+ * altro ordine. Dentro ogni slot l'ordine è quello di prima (la lista viene
+ * per prima anche nel motore); le catene vecchie e la chiave dell'hub entrano
+ * solo finché la 2d non le ha convertite.
+ */
+export function collectEdgeCredentialsForNetwork(networkId: number, opts: { registra?: boolean } = {}): {
   preview: EdgeCredentialPreview[];
   transfer: EdgeCredentialTransfer[];
 } {
@@ -137,6 +160,7 @@ export function collectEdgeCredentialsForNetwork(networkId: number): {
 
     const spec = buildTransferFromCredential(credentialId, slot, order);
     order += 1;
+    const motivo = motivoEsclusione(cred);
 
     preview.push({
       credential_id: credentialId,
@@ -144,22 +168,16 @@ export function collectEdgeCredentialsForNetwork(networkId: number): {
       credential_type: String(cred.credential_type),
       slot,
       selected_for_scan: spec != null,
+      ...(motivo ? { motivo } : {}),
     });
 
     if (spec) transfer.push(spec);
   };
 
-  // v2 — lista unificata subnet
-  for (const row of getNetworkCredentials(networkId)) {
-    const slot = slotForType(row.credential_type);
-    if (slot) pushCred(row.credential_id, slot);
-  }
-
-  // Legacy per ruolo (ordine tentativi scan IPAM)
-  for (const credId of getOrderedSshLinuxCredentialIds(networkId)) {
+  for (const credId of getOrderedSshLinuxCredentialIds(networkId, opts)) {
     pushCred(credId, "ssh");
   }
-  for (const credId of getOrderedDetectCredentialIds(networkId, "windows")) {
+  for (const credId of getOrderedDetectCredentialIds(networkId, "windows", opts)) {
     pushCred(credId, "smb");
   }
   // Slot AD per assessment cred-bind (stesse cred Windows, payload dedicato edge).
@@ -180,14 +198,14 @@ export function collectEdgeCredentialsForNetwork(networkId: number): {
       });
     }
   }
-  for (const credId of getNetworkHostCredentialIds(networkId, "snmp")) {
+  for (const credId of catenaReteDb(getDb(), networkId, "snmp", { registra: opts.registra })) {
     pushCred(credId, "snmp");
   }
 
   // Community SNMP di default subnet (se nessuna cred SNMP valida)
   const hasSnmpTransfer = transfer.some((t) => t.slot === "snmp");
   if (!hasSnmpTransfer) {
-    const communities = buildSnmpCommunitiesForNetwork(networkId);
+    const communities = buildSnmpCommunitiesForNetwork(networkId, null, opts);
     const community = communities.find((c) => c && c !== "public" && c !== "private") ?? communities[0];
     if (community?.trim()) {
       const net = getNetworkById(networkId);

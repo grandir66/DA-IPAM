@@ -26,7 +26,8 @@
  *     illeggibile». Se sono più di 0 ci si ferma prima della procedura R.
  */
 import type Database from "better-sqlite3";
-import { closeTenantDb, getCredentialCommunityString, getDeviceSnmpV3Credentials, getTenantDb, withTenant } from "../../src/lib/db-tenant";
+import { closeTenantDb, getCredentialCommunityString, getTenantDb, withTenant } from "../../src/lib/db-tenant";
+import { v3ApparatoDb } from "../../src/lib/credentials/segreti";
 import { getActiveTenants, getSetting } from "../../src/lib/db-hub";
 import { safeDecrypt } from "../../src/lib/crypto";
 import { resolveCredentialsForDb, type CredProtocol } from "../../src/lib/credentials/resolve";
@@ -125,7 +126,7 @@ function misuraPublic(dbh: Database.Database, apparati: NetworkDevice[]): Righe 
 
 /**
  * Revisione della 2a: apparati col protocollo snmp_v3. La v3 si legge col
- * lettore della 2a (getDeviceSnmpV3Credentials); completa o formato vecchio lo
+ * lettore della 2a (v3ApparatoDb, che getDeviceSnmpV3Credentials avvolgeva fino al T8); completa o formato vecchio lo
  * dice la provenienza ricostruita. Per quelli senza v3: da dove leggono la
  * community oggi, cioè quello che la 2a toglie.
  */
@@ -138,7 +139,7 @@ function misuraSnmpV3(dbh: Database.Database, apparati: NetworkDevice[]): Righe 
   for (const d of apparati) {
     if (d.protocol !== "snmp_v3") continue;
     n += 1;
-    if (getDeviceSnmpV3Credentials(d)) {
+    if (v3ApparatoDb(dbh, d)) {
       const livello = provenienzaV3(d).livello;
       if (livello === "v3_completa") completa += 1;
       else if (livello === "v3") vecchia += 1;

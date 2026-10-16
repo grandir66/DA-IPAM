@@ -23,12 +23,24 @@ import fs from "fs";
 import { SCHEMA_SQL } from "./db-schema";
 import { macToHex, normalizeMac, normalizeMacForStorage } from "./utils";
 import { ipSortKey, sqlOrderByDhcpLeases, sqlOrderByNetworks, type SortDirection } from "./table-sort";
-import { decrypt, safeDecrypt } from "./crypto";
 import { randomUUID } from "crypto";
 import { inferIpAssignment, resolveAdDhcpLeaseForHost, resolveDhcpLeaseForHost } from "./ip-assignment";
-import { resolveCredentialsForDb, type CredProtocol } from "./credentials/resolve";
-import { communityDb, coppiaLoginDb, coppiaSshDb, v3ApparatoDb } from "./credentials/segreti";
-import type { SnmpV3CredentialRecord } from "./protocols/snmpv3";
+import {
+  catenaReteDb,
+  chiaviGlobaliHub,
+  communitySnmpDb,
+  credenzialeSnmpApparatoDb,
+  haSnmpApparatoDb,
+  loginApparatoDb,
+  portaSshApparatoDb,
+  type ApparatoInAcquisizione,
+  type CredProtocol,
+  type SceltaSnmpApparato,
+} from "./credentials/resolve";
+import { accessoSshDb, communityDb, coppiaLoginDb, coppiaSshDb, type AccessoSsh, type EsitoAccessoSsh } from "./credentials/segreti";
+import { tipiPerRuoloVecchio } from "./credentials/tipi";
+import { aggiornaCredenzialeDb, creaCredenzialeDb, eliminaCredenzialeDb, type ColonneCredenziale } from "./credentials/archivio";
+import { aggiungiAllaListaReteDb, copiaListaReteDb, sostituisciListaReteDb } from "./credentials/lista-rete";
 import { lookupVendorSync } from "./scanner/mac-vendor";
 import { VENDOR_PLACEHOLDER_RE } from "./attribution/emitters";
 
@@ -54,10 +66,9 @@ import type {
   HostInput,
   HostUpdate,
   ScheduledJobInput,
-  CredentialInput,
   ExcludedIpWithNetwork,
 } from "@/types";
-import type { FingerprintUserRule } from "./device-fingerprint-classification";
+import { modelloEtichettaDiPorte, type FingerprintUserRule } from "./device-fingerprint-classification";
 import { registraRipiego } from "./db-maintenance/ripieghi";
 import { cleanOrphanedForeignKeys as cleanOrphanedForeignKeysSu, NEIGHBORS_LATEST_ROUND_SQL, NEIGHBORS_MODEL_SOURCES_SQL } from "./db-tenant";
 
@@ -2799,7 +2810,6 @@ export function getHostById(id: number): HostDetail | undefined {
     ...host,
     recent_scans: recentScans,
     scan_types_used: scanTypesSeen,
-    detect_credentials: getHostDetectCredentialsEnriched(id),
     host_credentials: getHostCredentials(id),
     arp_source: arpSource || null,
     switch_port: switchPort || null,
@@ -2942,8 +2952,14 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
     if (input.os_info !== undefined) {
       if (!preserve || !existingRow?.os_info) { fields.push("os_info = ?"); values.push(input.os_info); }
     }
+    // Un modello che è solo l'etichetta di un'impronta di porte (pilota 16/10: «QNAP QTS» su un
+    // UniFi Cloud Gateway) non si preserva: il modello nuovo lo sostituisce, e una scansione con
+    // l'impronta ma senza modello lo azzera. Gli altri modelli (a mano, SNMP, agenti) restano.
+    const modelloDiPorte = modelloEtichettaDiPorte(existingRow?.model, [existingRow?.detection_json, input.detection_json]);
     if (input.model !== undefined) {
-      if (!preserve || !existingRow?.model) { fields.push("model = ?"); values.push(input.model); }
+      if (!preserve || !existingRow?.model || modelloDiPorte) { fields.push("model = ?"); values.push(input.model); }
+    } else if (modelloDiPorte && input.detection_json !== undefined) {
+      fields.push("model = NULL");
     }
     if (input.serial_number !== undefined) {
       if (!preserve || !existingRow?.serial_number) { fields.push("serial_number = ?"); values.push(input.serial_number); }
@@ -3736,107 +3752,17 @@ export function getCredentialById(id: number): Credential | undefined {
   return getDb().prepare("SELECT * FROM credentials WHERE id = ?").get(id) as Credential | undefined;
 }
 
-export function createCredential(
-  input: CredentialInput & {
-    encrypted_username?: string | null;
-    encrypted_password?: string | null;
-    encrypted_auth_key?: string | null;
-    auth_protocol?: string | null;
-    encrypted_priv_key?: string | null;
-    priv_protocol?: string | null;
-    security_level?: string | null;
-    port?: number | null;
-  }
-): Credential {
-  const stmt = getDb().prepare(
-    `INSERT INTO credentials (name, credential_type, encrypted_username, encrypted_password, encrypted_auth_key, auth_protocol, encrypted_priv_key, priv_protocol, security_level, port)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  );
-  const result = stmt.run(
-    input.name,
-    input.credential_type,
-    input.encrypted_username ?? null,
-    input.encrypted_password ?? null,
-    input.encrypted_auth_key ?? null,
-    input.auth_protocol ?? null,
-    input.encrypted_priv_key ?? null,
-    input.priv_protocol ?? null,
-    input.security_level ?? null,
-    input.port ?? null
-  );
-  return getDb().prepare("SELECT * FROM credentials WHERE id = ?").get(result.lastInsertRowid) as Credential;
+/** CRUD dell'archivio: `creaCredenzialeDb` (tipo controllato, `linux` scritto come `ssh`). */
+export function createCredential(input: ColonneCredenziale): Credential {
+  return creaCredenzialeDb(getDb(), input);
 }
 
-export function updateCredential(
-  id: number,
-  input: Partial<CredentialInput> & {
-    encrypted_username?: string | null;
-    encrypted_password?: string | null;
-    encrypted_auth_key?: string | null;
-    auth_protocol?: string | null;
-    encrypted_priv_key?: string | null;
-    priv_protocol?: string | null;
-    security_level?: string | null;
-    port?: number | null;
-  }
-): Credential | undefined {
-  const fields: string[] = [];
-  const values: unknown[] = [];
-  const keys = [
-    "name",
-    "credential_type",
-    "encrypted_username",
-    "encrypted_password",
-    "encrypted_auth_key",
-    "auth_protocol",
-    "encrypted_priv_key",
-    "priv_protocol",
-    "security_level",
-    "port",
-  ] as const;
-  for (const key of keys) {
-    if (input[key] !== undefined) {
-      fields.push(`${key} = ?`);
-      values.push(input[key]);
-    }
-  }
-  if (fields.length === 0) return getCredentialById(id);
-  fields.push("updated_at = datetime('now')");
-  values.push(id);
-  getDb().prepare(`UPDATE credentials SET ${fields.join(", ")} WHERE id = ?`).run(...values);
-  return getCredentialById(id);
+export function updateCredential(id: number, input: Partial<ColonneCredenziale>): Credential | undefined {
+  return aggiornaCredenzialeDb(getDb(), id, input);
 }
 
 export function deleteCredential(id: number): boolean {
-  return getDb().prepare("DELETE FROM credentials WHERE id = ?").run(id).changes > 0;
-}
-
-/** Restituisce le credenziali host Windows (da settings host_windows_credential_id). Per WinRM/WMI. */
-export function getHostWindowsCredentials(): { username: string; password: string } | null {
-  const idStr = getSetting("host_windows_credential_id");
-  if (!idStr?.trim()) return null;
-  const id = parseInt(idStr, 10);
-  if (isNaN(id)) return null;
-  const cred = getCredentialById(id);
-  if (!cred || String(cred.credential_type || "").toLowerCase() !== "windows") return null;
-  const username = cred.encrypted_username ? safeDecrypt(cred.encrypted_username) : "";
-  const password = cred.encrypted_password ? safeDecrypt(cred.encrypted_password) : "";
-  if (username?.trim() && password?.trim()) return { username: username.trim(), password: password.trim() };
-  return null;
-}
-
-/** Restituisce le credenziali host Linux (da settings host_linux_credential_id). Per SSH. */
-export function getHostLinuxCredentials(): { username: string; password: string } | null {
-  const idStr = getSetting("host_linux_credential_id");
-  if (!idStr?.trim()) return null;
-  const id = parseInt(idStr, 10);
-  if (isNaN(id)) return null;
-  const cred = getCredentialById(id);
-  if (!cred || String(cred.credential_type || "").toLowerCase() !== "linux") return null;
-  const username = cred.encrypted_username ? safeDecrypt(cred.encrypted_username) : "";
-  const password = cred.encrypted_password ? safeDecrypt(cred.encrypted_password) : "";
-  if (username?.trim() && password?.trim()) return { username: username.trim(), password: password.trim() };
-  return null;
+  return eliminaCredenzialeDb(getDb(), id);
 }
 
 /**
@@ -3855,21 +3781,22 @@ export function getCredentialLoginPair(
 /** Ruoli catena credenziali per subnet (detect / SNMP). */
 export type NetworkCredentialRole = "windows" | "linux" | "ssh" | "snmp";
 
+/** Regola unica (T12): i tipi del protocollo del ruolo, come li legge il motore. */
 function credentialMatchesNetworkRole(
   credentialType: string,
   role: NetworkCredentialRole
 ): boolean {
-  const t = credentialType.toLowerCase();
-  if (role === "windows") return t === "windows";
-  if (role === "linux") return t === "linux";
-  if (role === "ssh") return t === "ssh";
-  if (role === "snmp") return t === "snmp";
-  return false;
+  return tipiPerRuoloVecchio(role).includes(credentialType.toLowerCase());
 }
 
 /** Username/password per credenziali SSH o Linux (scan SSH unificato). */
 export function getSshLinuxCredentialPair(credentialId: number): { username: string; password: string; port: number | null } | null {
   return coppiaSshDb(getDb(), credentialId);
+}
+
+/** Accesso SSH di una voce: utente con password o con chiave (T14), con la porta della voce, o il perché no. */
+export function accessoSshCredenziale(credentialId: number): EsitoAccessoSsh {
+  return accessoSshDb(getDb(), credentialId);
 }
 
 /** Credenziali Windows/Linux/SSH/SNMP assegnate alla subnet (ordine = priorità tentativi). */
@@ -3919,13 +3846,9 @@ export function getHostDetectCredentialId(hostId: number, role: HostDetectCreden
   return row?.credential_id ?? null;
 }
 
+/** Regola unica (T12): i tipi del protocollo del ruolo, come li legge il motore. */
 function credentialMatchesDetectRole(credentialType: string, role: HostDetectCredentialRole): boolean {
-  const t = credentialType.toLowerCase();
-  if (role === "windows") return t === "windows";
-  if (role === "linux") return t === "linux" || t === "ssh";
-  if (role === "ssh") return t === "ssh";
-  if (role === "snmp") return t === "snmp";
-  return false;
+  return tipiPerRuoloVecchio(role).includes(credentialType.toLowerCase());
 }
 
 export function setHostDetectCredential(hostId: number, role: HostDetectCredentialRole, credentialId: number): void {
@@ -3940,139 +3863,48 @@ export function setHostDetectCredential(hostId: number, role: HostDetectCredenti
     .run(hostId, role, credentialId);
 }
 
-export function deleteHostDetectCredential(hostId: number, role: HostDetectCredentialRole): void {
-  getDb().prepare(`DELETE FROM host_detect_credential WHERE host_id = ? AND role = ?`).run(hostId, role);
-}
-
-/** Credenziali archiviate per host (detect) con nome per UI. */
-export function getHostDetectCredentialsEnriched(hostId: number): Array<{
-  role: HostDetectCredentialRole;
-  credential_id: number;
-  credential_name: string;
-}> {
-  const rows = getDb()
-    .prepare(`SELECT role, credential_id FROM host_detect_credential WHERE host_id = ? ORDER BY role`)
-    .all(hostId) as Array<{ role: HostDetectCredentialRole; credential_id: number }>;
-  return rows.map((r) => {
-    const c = getCredentialById(r.credential_id);
-    return {
-      role: r.role,
-      credential_id: r.credential_id,
-      credential_name: c?.name ?? `#${r.credential_id}`,
-    };
-  });
-}
+/** Le verifiche (fotografia, prova a vuoto) passano `registra: false`: i ripieghi non si scrivono. */
+type OpzioniRegistro = { registra?: boolean };
 
 /**
- * Ordine: wrapper del resolver unico (fase 1b, §7.1-7.2) — credenziali v2
- * pertinenti (`network_credentials` filtrate per tipo adatto al ruolo), poi
- * legacy attuali (rete), poi quella globale Impostazioni (se non già in elenco).
- * Vedi commento gemello in db-tenant.ts sulla nota role="linux"→protocol "ssh".
+ * Catena di rilevamento (Windows o Linux) di una rete: involucro del motore
+ * (`catenaReteDb`, tappa 2 credenziali, T7). Voci della rete, catene vecchie
+ * e chiave globale dell'hub, tutte col filtro di tipo: prima la chiave
+ * dell'hub si accodava senza controllo, anche se puntava a una voce che nel
+ * tenant non c'è o è di un altro tipo. Catene vecchie e chiave dell'hub solo
+ * finché la 2d non le ha convertite (T17, lo decide il motore col segno).
+ * `role="linux"` è il protocollo SSH. `registra: false` (fotografia, prova a
+ * vuoto) non scrive i ripieghi.
  */
-export function getOrderedDetectCredentialIds(networkId: number, role: "windows" | "linux"): number[] {
-  const protocol: CredProtocol = role === "windows" ? "winrm" : "ssh";
-  const resolved = resolveCredentialsForDb(getDb(), { networkId }, protocol);
-  const out: number[] = [];
-  const seen = new Set<number>();
-  for (const r of resolved) {
-    if (seen.has(r.credential_id)) continue;
-    seen.add(r.credential_id);
-    out.push(r.credential_id);
-  }
-  const globalKey = role === "windows" ? "host_windows_credential_id" : "host_linux_credential_id";
-  const gStr = getSetting(globalKey);
-  const gId = gStr?.trim() ? parseInt(gStr, 10) : NaN;
-  if (!Number.isNaN(gId) && gId > 0 && !seen.has(gId)) out.push(gId);
-  return out;
+export function getOrderedDetectCredentialIds(networkId: number, role: "windows" | "linux", opts: OpzioniRegistro = {}): number[] {
+  return catenaReteDb(getDb(), networkId, role === "windows" ? "winrm" : "ssh", { globaliHub: chiaviGlobaliHub(getSetting), registra: opts.registra });
+}
+
+/** Catena SSH di una rete per la scansione: involucro del motore (vedi sopra). */
+export function getOrderedSshLinuxCredentialIds(networkId: number, opts: OpzioniRegistro = {}): number[] {
+  return catenaReteDb(getDb(), networkId, "ssh", { globaliHub: chiaviGlobaliHub(getSetting), registra: opts.registra });
 }
 
 /**
- * Catena SSH per scan: wrapper del resolver unico — credenziali v2 pertinenti
- * (ssh/linux), poi legacy (ruolo `ssh` poi `linux`, stesso ordine di prima),
- * poi globale Impostazioni. Ordine e dedup preservati.
+ * Community SNMP per una rete: involucro del motore (`communitySnmpDb`). Voci
+ * della rete e catene vecchie, poi override, community della rete e
+ * public/private in fondo, dichiarati come ripiego (D5).
  */
-export function getOrderedSshLinuxCredentialIds(networkId: number): number[] {
-  const resolved = resolveCredentialsForDb(getDb(), { networkId }, "ssh");
-  const out: number[] = [];
-  const seen = new Set<number>();
-  for (const r of resolved) {
-    if (seen.has(r.credential_id)) continue;
-    seen.add(r.credential_id);
-    out.push(r.credential_id);
-  }
-  const gStr = getSetting("host_linux_credential_id");
-  const gId = gStr?.trim() ? parseInt(gStr, 10) : NaN;
-  if (!Number.isNaN(gId) && gId > 0 && !seen.has(gId)) out.push(gId);
-  return out;
+export function buildSnmpCommunitiesForNetwork(networkId: number, profileOrOverride?: string | null, opts: OpzioniRegistro = {}): string[] {
+  return communitySnmpDb(getDb(), { networkId }, profileOrOverride ?? null, opts).map((c) => c.community);
 }
 
 /**
- * Community SNMP per scan su una rete: wrapper del resolver unico — v2
- * (`network_credentials` tipo snmp) poi legacy (ruolo snmp, stesso ordine di
- * prima), poi override profilo/scan, poi community di default sulla rete,
- * infine public/private SEMPRE in fondo.
- */
-export function buildSnmpCommunitiesForNetwork(networkId: number, profileOrOverride?: string | null): string[] {
-  const fromCreds: string[] = [];
-  for (const r of resolveCredentialsForDb(getDb(), { networkId }, "snmp")) {
-    const com = getCredentialCommunityString(r.credential_id);
-    if (com?.trim()) fromCreds.push(com.trim());
-  }
-  const net = getNetworkById(networkId);
-  const pushSplit = (s: string | null | undefined, into: string[]) => {
-    const t = s?.trim();
-    if (!t) return;
-    for (const part of t.split(",").map((x) => x.trim()).filter(Boolean)) into.push(part);
-  };
-  const mid: string[] = [];
-  pushSplit(profileOrOverride, mid);
-  pushSplit(net?.snmp_community ?? null, mid);
-  const ordered = [...fromCreds, ...mid, "public", "private"];
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const x of ordered) {
-    if (!x || seen.has(x)) continue;
-    seen.add(x);
-    out.push(x);
-  }
-  return out;
-}
-
-/**
- * Community SNMP per un host: wrapper del resolver unico con `hostId` — le
- * credenziali già VALIDATE per questo host vengono anteposte alla catena di
- * rete v2 e a quella legacy (incluso il pin `host_detect_credential`, ora
- * parte della catena invece di uno short-circuit esclusivo come prima).
- * `public`/`private` restano SEMPRE in fondo. Vedi commento gemello in db-tenant.ts.
+ * Community SNMP per un host: come per la rete, con davanti le voci
+ * dell'host (righe validate, binding dell'apparato collegato, pin vecchio).
  */
 export function buildSnmpCommunitiesForHost(
   networkId: number,
   hostId: number | null,
-  profileOrOverride?: string | null
+  profileOrOverride?: string | null,
+  opts: OpzioniRegistro = {}
 ): string[] {
-  const fromCreds: string[] = [];
-  for (const r of resolveCredentialsForDb(getDb(), { hostId: hostId ?? undefined, networkId }, "snmp")) {
-    const com = getCredentialCommunityString(r.credential_id);
-    if (com?.trim()) fromCreds.push(com.trim());
-  }
-  const net = getNetworkById(networkId);
-  const pushSplit = (s: string | null | undefined, into: string[]) => {
-    const t = s?.trim();
-    if (!t) return;
-    for (const part of t.split(",").map((x) => x.trim()).filter(Boolean)) into.push(part);
-  };
-  const mid: string[] = [];
-  pushSplit(profileOrOverride, mid);
-  pushSplit(net?.snmp_community ?? null, mid);
-  const ordered = [...fromCreds, ...mid, "public", "private"];
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const x of ordered) {
-    if (!x || seen.has(x)) continue;
-    seen.add(x);
-    out.push(x);
-  }
-  return out;
+  return communitySnmpDb(getDb(), { hostId: hostId ?? undefined, networkId }, profileOrOverride ?? null, opts).map((c) => c.community);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -4106,32 +3938,12 @@ export function getNetworkCredentials(networkId: number): NetworkCredentialRow[]
 
 /** Sostituisce atomicamente la lista credenziali della subnet. */
 export function replaceNetworkCredentials(networkId: number, credentialIds: number[]): void {
-  const seen = new Set<number>();
-  const unique: number[] = [];
-  for (const id of credentialIds) {
-    if (seen.has(id)) continue;
-    seen.add(id);
-    unique.push(id);
-  }
-  const db = getDb();
-  db.transaction(() => {
-    db.prepare(`DELETE FROM network_credentials WHERE network_id = ?`).run(networkId);
-    const ins = db.prepare(
-      `INSERT INTO network_credentials (network_id, credential_id, sort_order) VALUES (?, ?, ?)`
-    );
-    unique.forEach((cid, i) => ins.run(networkId, cid, i));
-  })();
+  sostituisciListaReteDb(getDb(), networkId, credentialIds);
 }
 
 /** Aggiunge una credenziale alla subnet (in coda). */
 export function addNetworkCredential(networkId: number, credentialId: number): void {
-  const db = getDb();
-  const max = db.prepare(
-    `SELECT COALESCE(MAX(sort_order), -1) AS m FROM network_credentials WHERE network_id = ?`
-  ).get(networkId) as { m: number };
-  db.prepare(
-    `INSERT OR IGNORE INTO network_credentials (network_id, credential_id, sort_order) VALUES (?, ?, ?)`
-  ).run(networkId, credentialId, max.m + 1);
+  aggiungiAllaListaReteDb(getDb(), networkId, credentialId);
 }
 
 /** Rimuove una credenziale dalla subnet. */
@@ -4154,27 +3966,7 @@ export function reorderNetworkCredentials(networkId: number, orderedCredentialId
 
 /** Copia credenziali da una subnet sorgente alla destinazione (senza duplicare quelle già presenti). */
 export function copyNetworkCredentials(sourceNetworkId: number, targetNetworkId: number): number {
-  const db = getDb();
-  const source = getNetworkCredentials(sourceNetworkId);
-  const existing = new Set(
-    getNetworkCredentials(targetNetworkId).map((r) => r.credential_id)
-  );
-  const max = db.prepare(
-    `SELECT COALESCE(MAX(sort_order), -1) AS m FROM network_credentials WHERE network_id = ?`
-  ).get(targetNetworkId) as { m: number };
-  let order = max.m + 1;
-  let added = 0;
-  const ins = db.prepare(
-    `INSERT OR IGNORE INTO network_credentials (network_id, credential_id, sort_order) VALUES (?, ?, ?)`
-  );
-  db.transaction(() => {
-    for (const s of source) {
-      if (existing.has(s.credential_id)) continue;
-      ins.run(targetNetworkId, s.credential_id, order++);
-      added++;
-    }
-  })();
-  return added;
+  return copiaListaReteDb(getDb(), sourceNetworkId, targetNetworkId);
 }
 
 /** Subnet che hanno almeno una credenziale configurata (per UI "importa da altra subnet"). */
@@ -4428,104 +4220,28 @@ export function getCredentialCommunityString(credentialId: number): string | nul
 }
 
 /**
- * Credenziale SNMPv3 di un apparato, col record completo (livello, protocolli, chiavi):
- * la lettura sta in credentials/segreti.ts. Il formato v3 «vecchio» (voce snmp senza
- * livello, con utente e password) resta authNoPriv/MD5 come prima.
+ * Credenziale SNMP di un apparato per l'acquisizione: v3 coi protocolli della
+ * voce, o community; porta del candidato; fonte dichiarata (tappa 2
+ * credenziali, T8). Al posto di getDeviceCommunityString,
+ * getDeviceSnmpV3Credentials e getEffectiveSnmpPort.
  */
-export function getDeviceSnmpV3Credentials(device: NetworkDevice): SnmpV3CredentialRecord | null {
-  return v3ApparatoDb(getDb(), device);
+export function credenzialeSnmpApparato(device: ApparatoInAcquisizione): SceltaSnmpApparato {
+  return credenzialeSnmpApparatoDb(getDb(), device);
 }
 
-/**
- * SNMP usa sempre porta standard 161, indipendentemente da device.port.
- */
-export function getEffectiveSnmpPort(_device: NetworkDevice): number {
-  return 161;
+/** Vero solo con una fonte SNMP dell'apparato (livelli 1-5), mai con la catena della rete o «public». */
+export function haSnmpApparato(device: ApparatoInAcquisizione): boolean {
+  return haSnmpApparatoDb(getDb(), device);
 }
 
-/**
- * Community SNMP: con protocollo principale snmp_v2/v3 la credenziale di «gestione» è credential_id;
- * snmp_credential_id è tipicamente SNMP secondario (porte/LLDP su router). Con SSH/API prima snmp_credential_id.
- */
-export function getDeviceCommunityString(device: NetworkDevice): string {
-  // Prima: cerca nei bindings SNMP (nuovo sistema tabellare)
-  const snmpBinding = getDb().prepare(`
-    SELECT * FROM device_credential_bindings
-    WHERE device_id = ? AND protocol_type = 'snmp'
-    ORDER BY sort_order LIMIT 1
-  `).get(device.id) as DeviceCredentialBinding | undefined;
-
-  if (snmpBinding) {
-    if (snmpBinding.credential_id) {
-      const fromCred = getCredentialCommunityString(snmpBinding.credential_id);
-      if (fromCred) return fromCred;
-    } else if (snmpBinding.inline_encrypted_password) {
-      const s = safeDecrypt(snmpBinding.inline_encrypted_password);
-      if (s?.trim()) return s;
-    }
-  }
-
-  // Fallback: vecchio sistema
-  const isSnmpPrimary = device.protocol === "snmp_v2" || device.protocol === "snmp_v3";
-  const tryCredIds = isSnmpPrimary
-    ? [device.credential_id, device.snmp_credential_id]
-    : [device.snmp_credential_id, device.credential_id];
-  for (const credId of tryCredIds) {
-    if (!credId) continue;
-    const fromCred = getCredentialCommunityString(credId);
-    if (fromCred) return fromCred;
-  }
-  if (device.community_string) {
-    const s = safeDecrypt(device.community_string);
-    if (s && s.trim()) return s;
-    // Se la decifratura fallisce, prova a usare il valore raw (legacy non cifrato)
-    if (typeof device.community_string === "string") return device.community_string;
-  }
-  return "public";
+/** Porta SSH di un apparato il cui protocollo principale non è SSH (Proxmox: device.port è l'API). */
+export function portaSshApparato(device: ApparatoInAcquisizione): number {
+  return portaSshApparatoDb(getDb(), device);
 }
 
-/** Restituisce { username, password } per un device: da credential_id se presente, altrimenti da device */
-export function getDeviceCredentials(device: NetworkDevice): { username: string; password: string } | null {
-  // Prima: cerca nei bindings (nuovo sistema tabellare) — primo binding SSH/WinRM/API per sort_order
-  const protoType = device.protocol === "winrm" ? "winrm"
-    : device.protocol === "api" ? "api"
-    : "ssh";
-  const binding = getDb().prepare(`
-    SELECT * FROM device_credential_bindings
-    WHERE device_id = ? AND protocol_type = ?
-    ORDER BY sort_order LIMIT 1
-  `).get(device.id, protoType) as DeviceCredentialBinding | undefined;
-
-  if (binding) {
-    if (binding.credential_id) {
-      const cred = getCredentialById(binding.credential_id);
-      if (cred?.encrypted_username && cred?.encrypted_password) {
-        const u = safeDecrypt(cred.encrypted_username);
-        const p = safeDecrypt(cred.encrypted_password);
-        if (u && p) return { username: u, password: p };
-      }
-    } else if (binding.inline_username && binding.inline_encrypted_password) {
-      const p = safeDecrypt(binding.inline_encrypted_password);
-      if (p) return { username: binding.inline_username, password: p };
-    }
-  }
-
-  // Fallback: vecchio sistema (credential_id diretto sul device)
-  if (device.credential_id) {
-    const cred = getCredentialById(device.credential_id);
-    if (cred?.encrypted_username && cred?.encrypted_password) {
-      const u = safeDecrypt(cred.encrypted_username);
-      const p = safeDecrypt(cred.encrypted_password);
-      if (u && p) return { username: u, password: p };
-      return null;
-    }
-  }
-  if (device.username && device.encrypted_password) {
-    const p = safeDecrypt(device.encrypted_password);
-    if (p) return { username: device.username, password: p };
-    return null;
-  }
-  return null;
+/** Accesso dell'acquisizione (utente con password, o con chiave per l'SSH), scelto dal motore (binding falliti saltati). */
+export function getDeviceCredentials(device: ApparatoInAcquisizione): AccessoSsh | null {
+  return loginApparatoDb(getDb(), device);
 }
 
 // ========================
@@ -6414,9 +6130,12 @@ export function syncNetworkDeviceFromHostScan(ip: string, hostOpenPorts: Array<{
   // scansione spostava un MikroTik in SNMP sulla 8291 (tappa 1, 15/10).
   const protocolloSnmp = protocol === "snmp_v2" || protocol === "snmp_v3";
   if (!protocolloSnmp && !tcpPorts.has(currentPort)) {
-    const vendorCandidates = candidatesVendor[vendor] ?? [];
+    // Prima le porte del protocollo: per SSH le porte del produttore (8291 Winbox,
+    // 8728 API di MikroTik, 23 telnet…) non sono SSH, e un MikroTik in SSH finiva
+    // sulla 8291 (pilota, 16/10). Le porte del produttore restano solo per l'API.
+    const vendorCandidates = protocol === "api" ? candidatesVendor[vendor] ?? [] : [];
     const protoCandidates = candidatesMap[protocol] ?? [];
-    const orderedCandidates = [...new Set([...vendorCandidates, ...protoCandidates])];
+    const orderedCandidates = [...new Set([...protoCandidates, ...vendorCandidates])];
     for (const c of orderedCandidates) {
       if (tcpPorts.has(c)) {
         updates.port = c;
@@ -7719,4 +7438,6 @@ export {
   oraDelDatabase,
   // Versione SNMP per apparato (ADR 0016): una sola copia
   registraVersioneSnmpRilevata,
+  // Token API dell'apparato dall'archivio (credenziali 2e, T20): una sola copia
+  tokenApiApparato,
 } from "./db-tenant";

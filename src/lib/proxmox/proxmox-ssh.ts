@@ -4,6 +4,7 @@
  */
 
 import { sshExec, type SshOptions, type SshResult } from "@/lib/devices/ssh-helper";
+import { segretoSsh } from "@/lib/devices/ssh-transport";
 import type { ProxmoxHostInfo, ProxmoxVM } from "./proxmox-client";
 import { LIVE_INTERFACES_COMMAND, parseLiveOutput, type LiveInterface } from "./live-interfaces";
 
@@ -25,11 +26,18 @@ function secondsToHuman(seconds: number): string {
   return parts.join(" ");
 }
 
+/**
+ * Accesso SSH a un nodo Proxmox: utente più password o chiave privata (tappa 2
+ * credenziali, T14, D6 = (a)). L'API di Proxmox invece vuole la password: con
+ * una voce a chiave la parte API non si prova e chi chiama lo dice.
+ */
 export interface ProxmoxSshConfig {
   host: string;
   port?: number;
   username: string;
-  password: string;
+  password?: string;
+  privateKey?: string;
+  passphrase?: string;
 }
 
 /**
@@ -46,7 +54,7 @@ export async function extractProxmoxViaSsh(
     host,
     port,
     username: config.username,
-    password: config.password,
+    ...segretoSsh(config),
     timeout: 30000,
   };
 
@@ -179,7 +187,7 @@ export async function readLiveInterfaces(
 ): Promise<LiveInterface[]> {
   const host = config.host.replace(/^https?:\/\//i, "").split(":")[0];
   const res = await exec(
-    { host, port: config.port ?? 22, username: config.username, password: config.password, timeout: 30000 },
+    { host, port: config.port ?? 22, username: config.username, ...segretoSsh(config), timeout: 30000 },
     LIVE_INTERFACES_COMMAND,
   );
   if (res.code !== 0 || !res.stdout.trim()) {
@@ -198,7 +206,7 @@ export async function testProxmoxSsh(config: ProxmoxSshConfig): Promise<boolean>
     host,
     port,
     username: config.username,
-    password: config.password,
+    ...segretoSsh(config),
     timeout: 15000,
   };
   try {

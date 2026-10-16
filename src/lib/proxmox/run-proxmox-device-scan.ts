@@ -1,4 +1,4 @@
-import { getNetworkDeviceById, updateNetworkDevice, getDeviceCredentials, getDeviceCredentialBindings, syncInventoryFromDevice } from "@/lib/db";
+import { getNetworkDeviceById, updateNetworkDevice, getDeviceCredentials, portaSshApparato, syncInventoryFromDevice } from "@/lib/db";
 import { ProxmoxClient, resolveProxmoxApiPortOverride, type ProxmoxHostInfo, type ProxmoxVM } from "@/lib/proxmox/proxmox-client";
 import { extractProxmoxViaSsh, readLiveInterfaces, type ProxmoxSshConfig } from "@/lib/proxmox/proxmox-ssh";
 import { mergeProxmoxExtractResults } from "@/lib/proxmox/proxmox-merge-results";
@@ -11,11 +11,11 @@ import {
 import {
   buildProxmoxApiUrlForIp,
   MAX_PROXMOX_SCAN_TARGETS,
-  proxmoxSshPort,
   proxmoxSshUsername,
   resolveProxmoxTargetIps,
 } from "@/lib/proxmox/proxmox-targets";
 import { isProxmoxVeDevice } from "@/lib/devices/device-acquisition-resolve";
+import { segretoSsh } from "@/lib/devices/ssh-transport";
 
 export interface ProxmoxDeviceScanResult {
   hosts: ProxmoxHostInfo[];
@@ -48,7 +48,7 @@ export interface ProxmoxScanDeps {
    * una copia (`scripts/misura-fase2b.ts`), dove i segreti cifrati della copia
    * non si decifrano e la password arriva da stdin.
    */
-  credentials?: () => { username: string; password: string };
+  credentials?: () => { username: string; password?: string; privateKey?: string; passphrase?: string };
 }
 
 /**
@@ -124,8 +124,10 @@ export async function runProxmoxDeviceScan(
 
   const creds = io.credentials ? io.credentials() : getDeviceCredentials(device);
   if (!creds) {
-    throw new Error("Configura le credenziali (SSH o API) per questo dispositivo. Per Proxmox usa root e password.");
+    throw new Error("Configura le credenziali (SSH o API) per questo dispositivo. Per Proxmox usa root con la password (API e SSH) o con una chiave (solo SSH).");
   }
+  // Con una voce SSH a chiave (tappa 2 credenziali, T14) l'SSH entra con la chiave; l'API vuole la password e,
+  // senza, non si prova: lo dice un avviso per nodo, al posto di un login con la password vuota.
   const { username, password } = creds;
 
   const targets = resolveProxmoxTargetIps(device);
@@ -138,8 +140,8 @@ export async function runProxmoxDeviceScan(
 
   const apiUsername = username.includes("@") ? username : `${username}@pam`;
   const sshUsername = proxmoxSshUsername(username);
-  // `device.port` è la porta dell'API (443/8006): l'SSH va sulla porta della credenziale SSH, o 22.
-  const sshPort = proxmoxSshPort(getDeviceCredentialBindings(device.id));
+  // `device.port` è la porta dell'API (443/8006): l'SSH va sulla porta del candidato SSH del motore, o 22 (tappa 2, T8).
+  const sshPort = portaSshApparato(device);
 
   const chunks: ProxmoxExtract[] = [];
   const partialErrors: string[] = [];
@@ -148,14 +150,18 @@ export async function runProxmoxDeviceScan(
 
   for (const ip of targets) {
     const apiUrl = buildProxmoxApiUrlForIp(ip, device.api_url);
-    try {
-      const port = resolveProxmoxApiPortOverride(apiUrl, device.port ?? undefined);
-      chunks.push(await io.readApi({ apiUrl, ...(port !== undefined ? { port } : {}), username: apiUsername, password }));
-    } catch (e) {
-      partialErrors.push(`API ${ip}: ${e instanceof Error ? e.message : String(e)}`);
+    if (password) {
+      try {
+        const port = resolveProxmoxApiPortOverride(apiUrl, device.port ?? undefined);
+        chunks.push(await io.readApi({ apiUrl, ...(port !== undefined ? { port } : {}), username: apiUsername, password }));
+      } catch (e) {
+        partialErrors.push(`API ${ip}: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    } else {
+      partialErrors.push(`API ${ip}: non provata, la credenziale è a chiave SSH e l'API di Proxmox vuole utente e password`);
     }
 
-    const ssh: ProxmoxSshConfig = { host: ip, port: sshPort, username: sshUsername, password };
+    const ssh: ProxmoxSshConfig = { host: ip, port: sshPort, username: sshUsername, ...segretoSsh(creds) };
     try {
       chunks.push(await io.readSsh(ssh));
     } catch (e) {

@@ -31,6 +31,8 @@ export interface ScenarioFinto {
   cancello?: Promise<void>;
   /** Se presente, ping e nmap falliscono con questo errore (esecutore guasto). */
   lancia?: Error;
+  /** Porte TCP aperte che `nmapPortScan` restituisce per IP (gli altri: nessun esito, come oggi). */
+  porte?: Record<string, number[]>;
 }
 
 export interface Chiamate {
@@ -101,9 +103,17 @@ export function creaEsecutoreFinto(s: ScenarioFinto): { override: ScanIoOverride
         .filter(dentro)
         .map((ip): NmapResult => ({ ip, alive: true, ports: [], os: null, mac: null }));
     },
-    async nmapPortScan() {
+    async nmapPortScan(ip) {
       chiamate.nmapPortScan++;
-      return null;
+      const aperte = s.porte?.[ip];
+      if (!aperte) return null;
+      return {
+        ip,
+        alive: true,
+        ports: aperte.map((port) => ({ port, protocol: "tcp", state: "open", service: port === 22 ? "ssh" : null, version: null })),
+        os: null,
+        mac: null,
+      };
     },
     async reverseDns(ip) {
       chiamate.dns++;

@@ -14,7 +14,7 @@ import { WebSocketServer, type WebSocket } from "ws";
 import { Client as SshClient, type ClientChannel } from "ssh2";
 import { verifySshToken, type SshTokenPayload } from "./token";
 import { getTenantDb } from "@/lib/db-tenant";
-import { loadSshCredentialsForHost } from "@/lib/patch/credentials";
+import { caricaSshPerHost, type EsitoSshHost } from "@/lib/patch/credentials";
 
 const WS_PATH = "/ws/ssh";
 
@@ -47,19 +47,21 @@ export function attachSshTerminalWs(server: HttpServer): void {
 }
 
 function handleSession(ws: WebSocket, payload: SshTokenPayload): void {
-  const creds = (() => {
+  // Il terminale non usa la chiave (D6 = (a)): una voce a chiave dà il messaggio che lo dice (T14).
+  const esito = ((): EsitoSshHost => {
     try {
-      return loadSshCredentialsForHost(getTenantDb(payload.tenantCode), payload.hostId);
+      return caricaSshPerHost(getTenantDb(payload.tenantCode), payload.hostId, "dal terminale SSH");
     } catch {
-      return null;
+      return { ok: false, motivo: "credenziali SSH non disponibili per questo host" };
     }
   })();
 
-  if (!creds) {
-    ws.send("\r\n[credenziali SSH non disponibili per questo host]\r\n");
+  if (!esito.ok) {
+    ws.send(`\r\n[${esito.motivo}]\r\n`);
     ws.close();
     return;
   }
+  const creds = esito.creds;
 
   const conn = new SshClient();
   let channel: ClientChannel | null = null;

@@ -15,6 +15,13 @@
  * gli ID di credenziale usati nei test partono da 50 per non collidere ed è per
  * questo che le asserzioni confrontano il PREFISSO atteso, non l'array intero.
  *
+ * Dalla 2d (T17) il motore legge catene vecchie e chiave dell'hub solo finché
+ * la conversione non le ha portate nella lista (segno `credenziali_t2_catene`
+ * a `done:` o `parziale:`). L'apertura del tenant di prova scrive il segno su
+ * un DB vuoto: qui lo si toglie, perché queste prove descrivono un tenant di
+ * prima della 2d. Il caso col segno chiuso sta in
+ * `credentials/__tests__/catene-chiuse.test.ts`.
+ *
  * Run: node --import tsx --test src/lib/__tests__/credential-chains.test.ts
  */
 process.env.ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || "0".repeat(64);
@@ -56,6 +63,7 @@ function seedTypedCredential(id: number, type: "windows" | "ssh" | "linux") {
 
 before(() => {
   withTenant(T, () => {
+    getTenantDb(T).prepare(`DELETE FROM tenant_settings WHERE key = 'credenziali_t2_catene'`).run();
     seedNetwork(1, "10.50.0.0/24");
     seedHost(1, 1, "10.50.0.1");
 

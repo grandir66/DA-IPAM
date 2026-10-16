@@ -2,11 +2,11 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import {
   getHostCredentials,
-  addHostCredential,
   removeHostCredential,
   setHostCredentialValidated,
   reorderHostCredentials,
 } from "@/lib/db";
+import { aggiungiRigaHost, VoceNonValePerProtocollo } from "@/lib/credentials/lega-voce";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 
@@ -46,10 +46,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
     }
     const { credential_id, protocol_type, port, validated } = parsed.data;
-    addHostCredential(hostId, credential_id, protocol_type, port, { validated });
+    // La voce deve valere per il protocollo (T13): un account AD non è una riga
+    // WinRM. Il controllo sta in aggiungiRigaHost, qui il rifiuto è un 400.
+    aggiungiRigaHost(hostId, credential_id, protocol_type, port, { validated });
     const credentials = getHostCredentials(hostId);
     return NextResponse.json({ credentials });
     } catch (error) {
+      if (error instanceof VoceNonValePerProtocollo) return NextResponse.json({ error: error.message }, { status: 400 });
       console.error("Error adding host credential:", error);
       return NextResponse.json({ error: "Errore nell'aggiunta credenziale" }, { status: 500 });
     }

@@ -1,18 +1,14 @@
 import { NextResponse } from "next/server";
 import {
   getNetworkById,
-  updateNetwork,
   deleteNetwork,
-  setNetworkRouter,
-  deleteNetworkRouter,
   getNetworkRouterId,
   getHostsByNetworkWithDevices,
-  getNetworkHostCredentialIds,
-  replaceNetworkHostCredentials,
   getNetworkCredentials,
   getHostValidatedProtocolsByNetwork,
 } from "@/lib/db";
 import { NetworkUpdateSchema } from "@/lib/validators";
+import { aggiornaRete, CredenzialiReteNonValide } from "@/lib/networks/salva-rete";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 
@@ -26,10 +22,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     }
     const hosts = getHostsByNetworkWithDevices(Number(id));
     const router_id = getNetworkRouterId(Number(id));
-    const windows_credential_ids = getNetworkHostCredentialIds(Number(id), "windows");
-    const linux_credential_ids = getNetworkHostCredentialIds(Number(id), "linux");
-    const ssh_credential_ids = getNetworkHostCredentialIds(Number(id), "ssh");
-    const snmp_credential_ids = getNetworkHostCredentialIds(Number(id), "snmp");
+    // Dalla 2d (T17) la rete ha una lista sola: le catene vecchie per ruolo non si restituiscono più.
     const network_credentials = getNetworkCredentials(Number(id));
     // Badge: protocolli validati per host (mappa host_id → protocol_type[])
     const validatedMap = getHostValidatedProtocolsByNetwork(Number(id));
@@ -41,10 +34,6 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       ...network,
       hosts,
       router_id,
-      windows_credential_ids,
-      linux_credential_ids,
-      ssh_credential_ids,
-      snmp_credential_ids,
       network_credentials,
       host_validated_protocols,
     });
@@ -67,54 +56,22 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     if (!parsed.success) {
       return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
     }
-    const {
-      router_id,
-      windows_credential_ids,
-      linux_credential_ids,
-      ssh_credential_ids,
-      snmp_credential_ids,
-      ...networkData
-    } = parsed.data;
-    const network = updateNetwork(networkId, networkData);
-    if (!network) {
+    // Rete, router e lista credenziali (`credential_ids`) in una transazione:
+    // una voce rifiutata è un 400 e non lascia scritto niente. I campi delle
+    // catene vecchie si accodano alla lista, con `avvisi` nella risposta (T17).
+    let salvata;
+    try {
+      salvata = aggiornaRete(networkId, parsed.data);
+    } catch (e) {
+      if (e instanceof CredenzialiReteNonValide) {
+        return NextResponse.json({ error: e.message }, { status: 400 });
+      }
+      throw e;
+    }
+    if (!salvata) {
       return NextResponse.json({ error: "Rete non trovata" }, { status: 404 });
     }
-    if (router_id !== undefined) {
-      if (router_id) {
-        setNetworkRouter(networkId, router_id);
-      } else {
-        deleteNetworkRouter(networkId);
-      }
-    }
-    try {
-      if (windows_credential_ids !== undefined) {
-        replaceNetworkHostCredentials(networkId, "windows", windows_credential_ids);
-      }
-      if (linux_credential_ids !== undefined) {
-        replaceNetworkHostCredentials(networkId, "linux", linux_credential_ids);
-      }
-      if (ssh_credential_ids !== undefined) {
-        replaceNetworkHostCredentials(networkId, "ssh", ssh_credential_ids);
-      }
-      if (snmp_credential_ids !== undefined) {
-        replaceNetworkHostCredentials(networkId, "snmp", snmp_credential_ids);
-      }
-    } catch (e) {
-      return NextResponse.json(
-        { error: e instanceof Error ? e.message : "Credenziali non valide" },
-        { status: 400 }
-      );
-    }
-    const updated = getNetworkById(networkId);
-    const currentRouterId = getNetworkRouterId(networkId);
-    return NextResponse.json({
-      ...updated,
-      router_id: currentRouterId,
-      windows_credential_ids: getNetworkHostCredentialIds(networkId, "windows"),
-      linux_credential_ids: getNetworkHostCredentialIds(networkId, "linux"),
-      ssh_credential_ids: getNetworkHostCredentialIds(networkId, "ssh"),
-      snmp_credential_ids: getNetworkHostCredentialIds(networkId, "snmp"),
-    });
+    return NextResponse.json(salvata);
     } catch (error) {
       console.error("Error updating network:", error);
       return NextResponse.json({ error: "Errore nell'aggiornamento della rete" }, { status: 500 });

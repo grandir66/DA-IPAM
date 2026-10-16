@@ -32,6 +32,7 @@ import {
 import { Key, Plus, Trash2, ArrowUp, ArrowDown, RefreshCw, CheckCircle, XCircle, HelpCircle, Archive, Edit3 } from "lucide-react";
 import { toast } from "sonner";
 import { tipiCredenzialePerProtocollo } from "@/lib/credential-protocol-map";
+import { etichettaTipo } from "@/lib/credentials/tipi";
 
 interface CredentialBinding {
   id: number;
@@ -82,12 +83,24 @@ const STATUS_ICONS = {
   untested: <HelpCircle className="h-4 w-4 text-muted-foreground" />,
 };
 
-export function DeviceCredentialsTable({ deviceId }: { deviceId: number }) {
+export function DeviceCredentialsTable({
+  deviceId,
+  onBindingsChange,
+}: {
+  deviceId: number;
+  /** I binding a ogni caricamento: la finestra di modifica ne prende la porta SSH (16/10). */
+  onBindingsChange?: (bindings: CredentialBinding[]) => void;
+}) {
   const [bindings, setBindings] = useState<CredentialBinding[]>([]);
   const [credentials, setCredentials] = useState<ArchiveCredential[]>([]);
   const [loading, setLoading] = useState(true);
+  // Solo binding caricati: prima del caricamento la lista vuota non è «nessun binding».
+  useEffect(() => {
+    if (!loading) onBindingsChange?.(bindings);
+  }, [bindings, loading, onBindingsChange]);
   const [showAddDialog, setShowAddDialog] = useState(false);
-  const [addMode, setAddMode] = useState<"archive" | "inline">("archive");
+  // «Nuova» (tappa 2e, T20): la voce nasce nell'archivio col nome dell'apparato.
+  const [addMode, setAddMode] = useState<"archive" | "nuova">("archive");
   const [testing, setTesting] = useState<number | null>(null);
   const [diagnostic, setDiagnostic] = useState<{
     bindingId: number;
@@ -110,7 +123,7 @@ export function DeviceCredentialsTable({ deviceId }: { deviceId: number }) {
   const [editUsername, setEditUsername] = useState("");
   const [editPassword, setEditPassword] = useState("");
   const [editCredentialId, setEditCredentialId] = useState<string>("");
-  const [editSource, setEditSource] = useState<"archive" | "inline">("archive");
+  const [editSource, setEditSource] = useState<"archive" | "nuova">("archive");
 
   const fetchBindings = useCallback(async () => {
     try {
@@ -152,14 +165,14 @@ export function DeviceCredentialsTable({ deviceId }: { deviceId: number }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
+    const data = await res.json().catch(() => ({}));
     if (res.ok) {
-      toast.success("Credenziale aggiunta");
+      toast.success(data.voce?.nome ? `Salvata nell'archivio come «${data.voce.nome}»` : "Credenziale aggiunta");
       setShowAddDialog(false);
       resetAddForm();
       fetchBindings();
     } else {
-      const err = await res.json().catch(() => ({}));
-      toast.error(err.error || "Errore");
+      toast.error(data.error || "Errore");
     }
   };
 
@@ -178,7 +191,13 @@ export function DeviceCredentialsTable({ deviceId }: { deviceId: number }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "delete", binding_id: bindingId }),
     });
-    if (res.ok) { toast.success("Eliminata"); fetchBindings(); }
+    if (res.ok) {
+      toast.success("Eliminata");
+      fetchBindings();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      toast.error(err.error || "Errore nell'eliminazione");
+    }
   };
 
   const handleTest = async (bindingId: number) => {
@@ -230,7 +249,8 @@ export function DeviceCredentialsTable({ deviceId }: { deviceId: number }) {
     setEditingId(b.id);
     setEditProtocol(b.protocol_type);
     setEditPort(b.port);
-    setEditSource(b.source);
+    // Un binding inline rimasto (apparato lasciato dalla 2e) si modifica come «Nuova»: diventa una voce.
+    setEditSource(b.source === "archive" ? "archive" : "nuova");
     setEditCredentialId(b.credential_id ? String(b.credential_id) : "");
     // SNMP: la community è cifrata e non torna indietro; il campo parte vuoto.
     setEditUsername(b.protocol_type === "snmp" ? "" : (b.inline_username_display ?? b.inline_username ?? ""));
@@ -263,12 +283,13 @@ export function DeviceCredentialsTable({ deviceId }: { deviceId: number }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
+    const data = await res.json().catch(() => ({}));
     if (res.ok) {
-      toast.success("Credenziale aggiornata");
+      toast.success(data.voce?.nuova ? `Salvata nell'archivio come «${data.voce.nome}»` : "Credenziale aggiornata");
       setEditingId(null);
       fetchBindings();
     } else {
-      toast.error("Errore aggiornamento");
+      toast.error(data.error || "Errore nell'aggiornamento");
     }
   };
 
@@ -288,14 +309,14 @@ export function DeviceCredentialsTable({ deviceId }: { deviceId: number }) {
               <Key className="h-4 w-4" />
               Credenziali ({bindings.length})
             </CardTitle>
-            <CardDescription>Credenziali assegnate al dispositivo, ordinate per priorita</CardDescription>
+            <CardDescription>Credenziali assegnate al dispositivo, ordinate per priorità</CardDescription>
           </div>
           <div className="flex gap-2">
             <Button size="sm" variant="outline" onClick={() => { setAddMode("archive"); setShowAddDialog(true); }}>
               <Archive className="h-3.5 w-3.5 mr-1" />Da archivio
             </Button>
-            <Button size="sm" variant="outline" onClick={() => { setAddMode("inline"); setShowAddDialog(true); }}>
-              <Plus className="h-3.5 w-3.5 mr-1" />Inline
+            <Button size="sm" variant="outline" onClick={() => { setAddMode("nuova"); setShowAddDialog(true); }}>
+              <Plus className="h-3.5 w-3.5 mr-1" />Nuova
             </Button>
           </div>
         </div>
@@ -353,6 +374,9 @@ export function DeviceCredentialsTable({ deviceId }: { deviceId: number }) {
                         </span>
                       )}
                     </div>
+                    {b.test_status === "failed" && (
+                      <p className="text-xs text-muted-foreground mt-0.5">Esclusa finché la prova non riesce</p>
+                    )}
                     {b.test_message && b.test_status === "failed" && (
                       <div className="flex items-start gap-1 mt-0.5">
                         <p className="text-[10px] text-red-500 truncate max-w-[200px]">{b.test_message}</p>
@@ -408,7 +432,7 @@ export function DeviceCredentialsTable({ deviceId }: { deviceId: number }) {
         )}
         {bindings.length > 0 && (
           <p className="text-xs text-muted-foreground mt-2">
-            La credenziale #1 e quella principale usata per le operazioni sul dispositivo.
+            Per ogni protocollo si usa prima una credenziale riuscita, poi le non provate in quest&apos;ordine; le fallite si saltano.
           </p>
         )}
       </CardContent>
@@ -418,7 +442,7 @@ export function DeviceCredentialsTable({ deviceId }: { deviceId: number }) {
         <DialogContent className={DIALOG_PANEL_COMPACT_CLASS}>
           <DialogHeader>
             <DialogTitle>
-              {addMode === "archive" ? "Aggiungi da archivio" : "Aggiungi credenziale inline"}
+              {addMode === "archive" ? "Aggiungi da archivio" : "Nuova credenziale"}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 pt-2">
@@ -450,7 +474,7 @@ export function DeviceCredentialsTable({ deviceId }: { deviceId: number }) {
                   <SelectTrigger><SelectValue placeholder="Seleziona credenziale..." /></SelectTrigger>
                   <SelectContent>
                     {filteredCreds(addProtocol).map((c) => (
-                      <SelectItem key={c.id} value={String(c.id)}>{c.name} ({c.credential_type})</SelectItem>
+                      <SelectItem key={c.id} value={String(c.id)}>{c.name} ({etichettaTipo(c.credential_type)})</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -472,6 +496,7 @@ export function DeviceCredentialsTable({ deviceId }: { deviceId: number }) {
                     <Input type="password" value={addPassword} onChange={(e) => setAddPassword(e.target.value)} />
                   </div>
                 )}
+                <p className="text-xs text-muted-foreground">Si salva nell&apos;archivio col nome dell&apos;apparato.</p>
               </>
             )}
 
@@ -513,11 +538,11 @@ export function DeviceCredentialsTable({ deviceId }: { deviceId: number }) {
 
             <div className="space-y-1.5">
               <Label className="text-xs">Origine</Label>
-              <Select value={editSource} onValueChange={(v) => setEditSource(v as "archive" | "inline")}>
+              <Select value={editSource} onValueChange={(v) => setEditSource(v as "archive" | "nuova")}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="archive">Da archivio</SelectItem>
-                  <SelectItem value="inline">Inline</SelectItem>
+                  <SelectItem value="nuova">Nuova (utente e password)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -529,7 +554,7 @@ export function DeviceCredentialsTable({ deviceId }: { deviceId: number }) {
                   <SelectTrigger><SelectValue placeholder="Seleziona..." /></SelectTrigger>
                   <SelectContent>
                     {filteredCreds(editProtocol).map((c) => (
-                      <SelectItem key={c.id} value={String(c.id)}>{c.name} ({c.credential_type})</SelectItem>
+                      <SelectItem key={c.id} value={String(c.id)}>{c.name} ({etichettaTipo(c.credential_type)})</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -551,6 +576,9 @@ export function DeviceCredentialsTable({ deviceId }: { deviceId: number }) {
                     <Input type="password" value={editPassword} onChange={(e) => setEditPassword(e.target.value)} placeholder="••••••••" />
                   </div>
                 )}
+                <p className="text-xs text-muted-foreground">
+                  Se la credenziale è solo di questo apparato si aggiorna; se è usata anche altrove se ne crea una nuova col nome dell&apos;apparato.
+                </p>
               </>
             )}
 

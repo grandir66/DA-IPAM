@@ -250,6 +250,15 @@ describe("fotografia-scelte.ts sulla copia", () => {
     const insRete = d.prepare("INSERT INTO network_credentials (network_id, credential_id, sort_order) VALUES (?, ?, ?)");
     insRete.run(idRete, credBinding, 0);
     insRete.run(idRete, credSnmp, 1);
+    // Un tenant dove la 2d non si è chiusa (segno «errore:»): il motore legge
+    // ancora catene vecchie e chiave dell'hub (T17), ed è lo stato che la
+    // fotografia «prima» deve saper etichettare. L'apertura qui sopra ha scritto
+    // il segno su un DB vuoto; senza il trigger, l'apertura dello script
+    // convertirebbe e lo chiuderebbe.
+    d.prepare("DELETE FROM tenant_settings WHERE key = 'credenziali_t2_catene'").run();
+    d.exec(`CREATE TRIGGER prova_2d_non_chiusa BEFORE INSERT ON tenant_settings
+            WHEN NEW.key = 'credenziali_t2_catene' AND NEW.value NOT LIKE 'errore:%'
+            BEGIN SELECT RAISE(ABORT, 'conversione 2d fermata dalla prova'); END`);
     closeTenantDb(T);
     closeHubDb();
 
@@ -281,29 +290,33 @@ describe("fotografia-scelte.ts sulla copia", () => {
       return x;
     };
 
-    // Apparato: il binding vince sulla colonna, come in getDeviceCredentials di oggi.
+    // Apparato: il binding vince sulla colonna (D1 = (a)). Dalla 2b la fonte è quella del motore (T8).
     const app = trova("apparato", `${idApparato}:ssh`);
     assert.equal(app.scelta?.credential_id, credBinding);
     assert.equal(app.scelta?.port, 22);
     assert.equal(app.scelta?.impronta, impronta(chiaroDaParti("op-binding", SEGRETI.passBinding), K));
-    assert.match(app.scelta?.fonte ?? "", /^lettore_vecchio/);
+    assert.equal(app.scelta?.fonte, "device_binding");
     assert.equal(typeof app.piano, "string");
     assert.equal(app.haSnmp, true);
 
     const snmp = trova("apparato", `${idApparato}:snmp`);
     assert.equal(snmp.scelta?.credential_id, credSnmp);
+    assert.equal(snmp.scelta?.fonte, "device_column");
+    assert.equal(snmp.scelta?.port, 161);
     assert.equal(snmp.scelta?.impronta, impronta(chiaroDaParti(SEGRETI.community), K));
 
-    // Colonne inline e community_string: nessun id, il livello nella fonte.
+    // Colonne inline e community_string: nessun id, la fonte del motore.
     const inline = trova("apparato", `${idApparatoInline}:api`);
     assert.equal(inline.scelta?.credential_id, null);
     assert.equal(inline.scelta?.port, 443);
-    assert.equal(inline.scelta?.fonte, "lettore_vecchio:colonna_inline");
+    assert.equal(inline.scelta?.fonte, "device_column_inline");
     assert.equal(inline.scelta?.impronta, impronta(chiaroDaParti("op-inline", SEGRETI.passInline), K));
-    assert.equal(trova("apparato", `${idApparatoInline}:snmp`).scelta?.fonte, "lettore_vecchio:community_string");
-    // L'apparato SNMP senza fonti: «public», dichiarato come tale (misura di D5).
+    const comInline = trova("apparato", `${idApparatoInline}:snmp`);
+    assert.equal(comInline.scelta?.fonte, "device_column_inline");
+    assert.equal(comInline.scelta?.impronta, impronta(chiaroDaParti(SEGRETI.communityInline), K));
+    // L'apparato SNMP senza fonti: «public», dichiarato come tale (D5), non la voce SNMP della catena (D1b = (a)).
     const pubblico = trova("apparato", `${idApparatoSnmp}:snmp`);
-    assert.equal(pubblico.scelta?.fonte, "lettore_vecchio:public");
+    assert.equal(pubblico.scelta?.fonte, "snmp_ripiego");
     assert.equal(pubblico.scelta?.impronta, impronta(chiaroDaParti("public"), K));
     assert.equal(pubblico.haSnmp, true);
     assert.equal(righe.some((y) => y.chiave === `${idApparatoSnmp}:ssh`), false, "un apparato SNMP ha solo la riga snmp");
@@ -320,10 +333,11 @@ describe("fotografia-scelte.ts sulla copia", () => {
     // Anteprima edge: passa dal facade db.ts; se il contesto tenant si perdesse,
     // leggerebbe DEFAULT e questa riga non ci sarebbe.
     assert.equal(trova("edge", `${idRete}:ssh:0`).scelta?.credential_id, credBinding);
-    // Patch: host Windows senza righe WinRM → l'account WinRM dell'AD, sulla 5985.
+    // Patch: host Windows senza righe WinRM → l'account WinRM dell'AD, sulla 5985,
+    // con la fonte del motore (T9).
     const patch = trova("patch", `${idHost}:winrm`);
     assert.equal(patch.scelta?.credential_id, credWindows);
-    assert.equal(patch.scelta?.fonte, "lettore_vecchio:ripiego_ad");
+    assert.equal(patch.scelta?.fonte, "ad_fallback");
     assert.equal(patch.scelta?.port, 5985);
 
     // Nessun segreto né testo cifrato nel file e a terminale.
@@ -334,6 +348,22 @@ describe("fotografia-scelte.ts sulla copia", () => {
     // Cartella 0700, file 0600.
     assert.equal(fs.statSync(path.dirname(out)).mode & 0o777, 0o700);
     assert.equal(fs.statSync(out).mode & 0o777, 0o600);
+  });
+
+  it("la fotografia non registra ripieghi, nemmeno coi lettori di host, reti ed edge (vincolo «Le verifiche non registrano»)", () => {
+    // La chiave dell'hub e «public» di questi dati sono ripieghi del motore (casi cred_*): un lettore che registra
+    // li scrive nel registro sotto --dati e stampa «[db] ripiego cred_…» a terminale. Il tenant di prova non è
+    // nell'hub, quindi «tenant_non_registrato» c'è comunque: non è una scelta di credenziale e qui non si conta.
+    const registro = path.join(TEST_DATA_DIR, "logs", "ripieghi");
+    const righeCred = () =>
+      fs.existsSync(registro)
+        ? fs.readdirSync(registro).flatMap((f) => fs.readFileSync(path.join(registro, f), "utf8").split("\n")).filter((x) => x.includes('"caso":"cred_')).length
+        : 0;
+    const prima = righeCred();
+    const r = lancia(["--dati", TEST_DATA_DIR, "--out", path.join(radice, "fotografie", "senza-registro.jsonl")], servizio);
+    assert.equal(r.status, 0, `uscita ${r.status}\n${r.stdout}\n${r.stderr}`);
+    assert.doesNotMatch(`${r.stdout}\n${r.stderr}`, /\[db\] ripiego cred_/);
+    assert.equal(righeCred(), prima, "la fotografia ha scritto ripieghi del motore nel registro");
   });
 
   it("misure-2a.ts: solo conteggi, servizio intatto, nessun segreto", () => {
@@ -480,7 +510,7 @@ describe("fotografia e misure della 2a sugli apparati snmp_v3", () => {
     if (radiceV3) fs.rmSync(radiceV3, { recursive: true, force: true });
   });
 
-  it("la fotografia della 2a: snmp_v3 senza v3 → nessuna scelta (era la community); la v3 resta", () => {
+  it("la fotografia: snmp_v3 senza v3 → nessuna scelta (era la community, fino alla 2a); la v3 resta", () => {
     const out = path.join(radiceV3, "fotografie", "v3.jsonl");
     const r = lancia(["--dati", TEST_DATA_DIR, "--out", out], servizioV3);
     assert.equal(r.status, 0, `uscita ${r.status}\n${r.stdout}\n${r.stderr}`);
@@ -494,10 +524,13 @@ describe("fotografia e misure della 2a sugli apparati snmp_v3", () => {
     for (const k of ["colonna", "nulla", "stringa", "binding"]) {
       assert.equal(snmp(k).scelta, null, `${k}: la 2a non legge più la community di un apparato snmp_v3 senza v3`);
     }
+    // Dalla 2b la fonte è quella del motore (T8); l'impronta resta quella della 2a.
     assert.equal(snmp("completa").scelta?.credential_id, voce.v3);
-    assert.equal(snmp("completa").scelta?.fonte, "lettore_vecchio:v3_completa");
+    assert.equal(snmp("completa").scelta?.fonte, "device_column");
+    assert.equal(snmp("completa").scelta?.impronta, impronta(chiaroDaParti("monitor", "Chiave-Auth-2B", "Chiave-Priv-3C"), K));
     assert.equal(snmp("vecchia").scelta?.credential_id, voce.vecchia);
-    assert.equal(snmp("vecchia").scelta?.fonte, "lettore_vecchio:v3");
+    assert.equal(snmp("vecchia").scelta?.fonte, "device_column");
+    assert.equal(snmp("vecchia").scelta?.impronta, impronta(chiaroDaParti("monitor-vecchio", "Chiave-Vecchia-4D"), K));
   });
 
   it("misure-2a.ts conta gli apparati snmp_v3: v3 completa, formato vecchio, senza v3 e da dove leggono oggi", () => {

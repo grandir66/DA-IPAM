@@ -9,28 +9,37 @@
  * (es. via `withTenantFromSession()`). Il runner non sa nulla del tenant code.
  *
  * Target di scan: host (entry di rete in `hosts`) o device (`network_devices`).
- * Per device la credenziale di default è quella linkata (device.credential_id).
+ * Senza una voce esplicita la credenziale la sceglie il motore unico
+ * (`credentials/resolve.ts`, vedi `resolveTarget`).
  *
  * Detection OS:
- *   - host: da `credentials.credential_type` ('windows' | 'linux')
+ *   - host: dal tipo della voce, con `tipiPerProtocollo` (WinRM → windows,
+ *     SSH → linux: valgono `windows`, `ssh` e l'alias `linux`)
  *   - device: da `network_devices.vendor` ('windows' | 'linux') — gli appliance
  *     di rete (router/switch/firewall/hypervisor) sono rifiutati con errore.
  */
 
+import type Database from "better-sqlite3";
 import {
   cleanupOldSoftwareScansForTarget,
   createSoftwareScan,
-  getBestCredentialBindingForDevice,
-  getCredentialById,
+  getCurrentTenantCode,
   getHostById,
   getNetworkDeviceById,
   getSoftwareScanRetention,
+  getTenantDb,
   insertSoftwareInventoryBulk,
   insertSoftwareScanLog,
   updateSoftwareScanFinish,
 } from "@/lib/db-tenant";
-import { resolveCredentialFor } from "@/lib/credentials/resolve";
-import { safeDecrypt } from "@/lib/crypto";
+import {
+  FONTI_APPARATO,
+  scegliSegretoApparatoDb,
+  scegliSegretoHostDb,
+  type ResolvedCredentialSource,
+} from "@/lib/credentials/resolve";
+import { chiaveNonSupportata, leggiSegretoDb, nomeVoceDb, type Segreto } from "@/lib/credentials/segreti";
+import { etichettaTipo, tipiPerProtocollo } from "@/lib/credentials/tipi";
 import { runWindowsSoftwareProbe } from "@/lib/probes/software-windows";
 import { runLinuxSoftwareScan } from "@/lib/probes/software-linux";
 import type {
@@ -112,61 +121,127 @@ interface ResolvedTarget {
   label: string;
   osFamily: SoftwareOsFamily;
   initialProbe: SoftwareProbe;
-  credentialId: number;
+  /** Voce d'archivio usata; null per un segreto fuori archivio (binding inline, colonne dell'apparato). */
+  credentialId: number | null;
+  /** Codice della voce com'è nel DB, null senza voce. */
+  credentialType: string | null;
+  /** Da dove viene la credenziale: «scelta» se l'ha passata chi lancia lo scan, altrimenti la fonte del motore. */
+  fonte: ResolvedCredentialSource | "scelta";
+  username: string;
+  password: string;
   defaultPort: number;
   identification: Record<string, unknown>;
 }
 
+/** Il DB del tenant corrente: il runner gira dentro withTenant (vedi testa del file). */
+function dbTenant(): Database.Database {
+  const code = getCurrentTenantCode();
+  if (!code) throw new Error("Inventario software senza contesto tenant");
+  return getTenantDb(code);
+}
+
+const PROTOCOLLO: Record<SoftwareOsFamily, "winrm" | "ssh"> = { windows: "winrm", linux: "ssh" };
+const PROBE_INIZIALE: Record<SoftwareOsFamily, SoftwareProbe> = { windows: "winrm", linux: "ssh-mixed" };
+
+/**
+ * Utente e password dal segreto. L'inventario Linux passa dal ponte paramiko, che con D6 = (a) non usa la chiave:
+ * una voce SSH a chiave dà il rifiuto che lo dice (T14), senza ripiegare su un'altra voce. Altre forme (token…) no.
+ */
+function utenteEPassword(s: Segreto, chi: string, nomeVoce: string | null): { username: string; password: string } {
+  if (s.forma === "chiave_ssh") throw new Error(chiaveNonSupportata("dall'inventario software (ponte paramiko)", nomeVoce));
+  if (s.forma !== "utente") throw new Error(`${chi}: l'inventario software per ora accede solo con utente e password`);
+  return { username: s.username, password: s.password };
+}
+
+/**
+ * Voce scelta da chi lancia lo scan: il tipo si controlla con
+ * `tipiPerProtocollo`, quindi per un host una voce `ssh` vale come `linux`.
+ * Con `famiglia` (l'apparato, dal vendor) la voce deve valere per quella.
+ */
+function voceScelta(
+  dbh: Database.Database,
+  credentialId: number,
+  famiglia: SoftwareOsFamily | null
+): { osFamily: SoftwareOsFamily; credentialType: string; username: string; password: string } {
+  const riga = dbh.prepare("SELECT name, credential_type FROM credentials WHERE id = ?").get(credentialId) as
+    | { name: string; credential_type: string }
+    | undefined;
+  if (!riga) throw new Error(`Credenziale ${credentialId} non trovata`);
+  const famiglie: SoftwareOsFamily[] = famiglia ? [famiglia] : ["windows", "linux"];
+  const osFamily = famiglie.find((f) => tipiPerProtocollo(PROTOCOLLO[f]).includes(riga.credential_type));
+  if (!osFamily) {
+    const attese = famiglia === "windows" ? "Windows" : famiglia === "linux" ? "SSH" : "Windows o SSH";
+    throw new Error(
+      `La credenziale «${riga.name}» è di tipo ${etichettaTipo(riga.credential_type) || riga.credential_type}: per l'inventario software serve una credenziale ${attese}.`
+    );
+  }
+  const e = leggiSegretoDb(dbh, credentialId, PROTOCOLLO[osFamily]);
+  if (!e.ok) throw new Error(e.motivo);
+  return { osFamily, credentialType: riga.credential_type, ...utenteEPassword(e.segreto, `La credenziale «${riga.name}»`, riga.name) };
+}
+
+/**
+ * Bersaglio e credenziale dello scan. Con una voce esplicita si usa quella;
+ * senza, sceglie il motore unico (tappa 2 credenziali, T9):
+ * - host: `scegliSegretoHostDb` su WinRM e poi su SSH (l'OS non è ancora
+ *   noto), con la porta del candidato;
+ * - apparato: `scegliSegretoApparatoDb` sulle fonti dell'apparato
+ *   (FONTI_APPARATO: binding riusciti, non provati, inline, colonne), come
+ *   prima solo le sue, ma nell'ordine del motore (D1: binding prima delle
+ *   colonne) e senza i binding falliti (D10).
+ */
 function resolveTarget(opts: SoftwareScanOptions): ResolvedTarget {
+  const dbh = dbTenant();
   if (opts.target.kind === "host") {
     const host = getHostById(opts.target.hostId);
     if (!host) {
       throw new Error(`Host ${opts.target.hostId} non trovato`);
     }
-    // Fase 1b: se non è passato un credentialId esplicito, prova la
-    // risoluzione automatica via resolver unico (winrm poi ssh, in quest'ordine
-    // perché l'osFamily non è ancora nota) prima di fallire. Il messaggio
-    // d'errore originale resta invariato quando nemmeno il resolver trova nulla.
-    const resolvedCredentialId =
-      opts.credentialId ??
-      resolveCredentialFor({ hostId: host.id, networkId: host.network_id }, "winrm")?.credential_id ??
-      resolveCredentialFor({ hostId: host.id, networkId: host.network_id }, "ssh")?.credential_id ??
-      null;
-    if (!resolvedCredentialId) {
-      throw new Error("credentialId obbligatorio per scan su host");
-    }
-    const cred = getCredentialById(resolvedCredentialId);
-    if (!cred) {
-      throw new Error(`Credenziale ${resolvedCredentialId} non trovata`);
-    }
-    const credType = String(cred.credential_type || "").toLowerCase();
-    let osFamily: SoftwareOsFamily;
-    let initialProbe: SoftwareProbe;
-    if (credType === "windows") {
-      osFamily = "windows";
-      initialProbe = "winrm";
-    } else if (credType === "linux") {
-      osFamily = "linux";
-      initialProbe = "ssh-mixed";
-    } else {
-      throw new Error(
-        `Tipo credenziale non supportato per software scan: '${cred.credential_type}'. Usa una credenziale 'windows' o 'linux'.`
-      );
-    }
-    return {
-      ip: host.ip,
-      label: host.hostname ?? host.custom_name ?? host.ip,
-      osFamily,
-      initialProbe,
-      credentialId: resolvedCredentialId,
-      defaultPort: osFamily === "windows" ? WINRM_DEFAULT_PORT : SSH_DEFAULT_PORT,
-      identification: {
-        target_kind: "host",
-        host_id: opts.target.hostId,
-        host_ip: host.ip,
-        host_hostname: host.hostname ?? null,
-      },
+    const identification = {
+      target_kind: "host",
+      host_id: opts.target.hostId,
+      host_ip: host.ip,
+      host_hostname: host.hostname ?? null,
     };
+    const label = host.hostname ?? host.custom_name ?? host.ip;
+    if (opts.credentialId != null) {
+      const v = voceScelta(dbh, opts.credentialId, null);
+      return {
+        ip: host.ip,
+        label,
+        osFamily: v.osFamily,
+        initialProbe: PROBE_INIZIALE[v.osFamily],
+        credentialId: opts.credentialId,
+        credentialType: v.credentialType,
+        fonte: "scelta",
+        username: v.username,
+        password: v.password,
+        defaultPort: v.osFamily === "windows" ? WINRM_DEFAULT_PORT : SSH_DEFAULT_PORT,
+        identification,
+      };
+    }
+    const bersaglio = { hostId: host.id, ip: host.ip, networkId: host.network_id };
+    const motivi: string[] = [];
+    for (const osFamily of ["windows", "linux"] as const) {
+      const s = scegliSegretoHostDb(dbh, bersaglio, PROTOCOLLO[osFamily]);
+      if (!s.ok) {
+        motivi.push(s.motivo);
+        continue;
+      }
+      return {
+        ip: host.ip,
+        label,
+        osFamily,
+        initialProbe: PROBE_INIZIALE[osFamily],
+        credentialId: s.candidato.credential_id,
+        credentialType: s.candidato.tipo,
+        fonte: s.candidato.source,
+        ...utenteEPassword(s.segreto, `L'host ${host.ip}`, nomeVoceDb(dbh, s.candidato.credential_id)),
+        defaultPort: s.candidato.port,
+        identification,
+      };
+    }
+    throw new Error(`Nessuna credenziale per l'inventario software dell'host ${host.ip}: ${motivi.join("; ")}`);
   }
 
   // device
@@ -176,56 +251,50 @@ function resolveTarget(opts: SoftwareScanOptions): ResolvedTarget {
   }
 
   let osFamily: SoftwareOsFamily;
-  let initialProbe: SoftwareProbe;
   if (device.vendor === "windows") {
     osFamily = "windows";
-    initialProbe = "winrm";
   } else if (device.vendor === "linux") {
     osFamily = "linux";
-    initialProbe = "ssh-mixed";
   } else {
     throw new Error(
       `Device '${device.name}' ha vendor '${device.vendor}': software inventory supporta solo vendor 'windows' o 'linux'. Per appliance di rete usare gli scan dedicati.`
     );
   }
 
-  // Cerca credenziale in priorità:
-  //   1. opts.credentialId esplicito (se passato dal POST)
-  //   2. network_devices.credential_id (legacy, single)
-  //   3. device_credential_bindings (riusa quelle scoperte da auto-detect subnet)
-  let credentialId: number | null = opts.credentialId ?? device.credential_id ?? null;
-  let bindingPort: number | null = null;
-  if (!credentialId) {
-    const bindingProtocol = osFamily === "windows" ? "winrm" : "ssh";
-    const binding = getBestCredentialBindingForDevice(device.id, bindingProtocol);
-    if (binding) {
-      credentialId = binding.credential_id;
-      bindingPort = binding.port;
+  let scelta: { credentialId: number | null; credentialType: string | null; fonte: ResolvedTarget["fonte"]; username: string; password: string; port: number | null };
+  if (opts.credentialId != null) {
+    const v = voceScelta(dbh, opts.credentialId, osFamily);
+    scelta = { credentialId: opts.credentialId, credentialType: v.credentialType, fonte: "scelta", username: v.username, password: v.password, port: null };
+  } else {
+    const s = scegliSegretoApparatoDb(dbh, device.id, PROTOCOLLO[osFamily], { fonti: FONTI_APPARATO });
+    if (!s.ok) {
+      throw new Error(
+        `Device '${device.name}' non ha credenziali ${osFamily === "windows" ? "WinRM" : "SSH"} utilizzabili (${s.motivo}). Vai sul device → Credenziali e abbinane una, oppure lancia l'auto-detect dalla pagina della subnet.`
+      );
     }
-  }
-  if (!credentialId) {
-    throw new Error(
-      `Device '${device.name}' non ha credenziali ${osFamily === "windows" ? "WinRM" : "SSH"} linkate. Vai sul device → Credenziali e abbinane una, oppure lancia l'auto-detect dalla pagina della subnet.`
-    );
-  }
-  const cred = getCredentialById(credentialId);
-  if (!cred) {
-    throw new Error(`Credenziale ${credentialId} non trovata`);
+    scelta = {
+      credentialId: s.candidato.credential_id,
+      credentialType: s.candidato.tipo,
+      fonte: s.candidato.source,
+      ...utenteEPassword(s.segreto, `Device '${device.name}'`, nomeVoceDb(dbh, s.candidato.credential_id)),
+      port: s.candidato.port,
+    };
   }
 
-  // Porta default: priorità binding > device.port valido > default standard
+  // Porta: quella del candidato > device.port valido > default standard (per WinRM solo 5985/5986).
+  const candidata = scelta.port;
   let defaultPort: number;
   if (osFamily === "windows") {
-    if (bindingPort && (bindingPort === 5985 || bindingPort === 5986)) {
-      defaultPort = bindingPort;
+    if (candidata && (candidata === 5985 || candidata === 5986)) {
+      defaultPort = candidata;
     } else if (device.port && (device.port === 5985 || device.port === 5986)) {
       defaultPort = device.port;
     } else {
       defaultPort = WINRM_DEFAULT_PORT;
     }
   } else {
-    defaultPort = bindingPort && bindingPort > 0
-      ? bindingPort
+    defaultPort = candidata && candidata > 0
+      ? candidata
       : device.port && device.port > 0
         ? device.port
         : SSH_DEFAULT_PORT;
@@ -235,8 +304,12 @@ function resolveTarget(opts: SoftwareScanOptions): ResolvedTarget {
     ip: device.host,
     label: device.name || device.host,
     osFamily,
-    initialProbe,
-    credentialId,
+    initialProbe: PROBE_INIZIALE[osFamily],
+    credentialId: scelta.credentialId,
+    credentialType: scelta.credentialType,
+    fonte: scelta.fonte,
+    username: scelta.username,
+    password: scelta.password,
     defaultPort,
     identification: {
       target_kind: "device",
@@ -268,11 +341,6 @@ export async function runSoftwareScan(
 
   // ── 1. Risolvi target + credential prima di creare lo scan ─────────────
   const resolved = resolveTarget(opts);
-  const cred = getCredentialById(resolved.credentialId);
-  if (!cred) {
-    // Difensivo: già verificato in resolveTarget, ma ricontroliamo dopo l'INSERT
-    throw new Error(`Credenziale ${resolved.credentialId} non trovata`);
-  }
 
   // ── 2. Crea record scan ────────────────────────────────────────────────
   const scanId = createSoftwareScan({
@@ -288,7 +356,8 @@ export async function runSoftwareScan(
   insertSoftwareScanLog(scanId, "info", "init", "Scan creato", {
     ...resolved.identification,
     credential_id: resolved.credentialId,
-    credential_type: cred.credential_type,
+    credential_type: resolved.credentialType,
+    fonte: resolved.fonte,
     os_family: resolved.osFamily,
     probe: resolved.initialProbe,
     timeout_ms: timeoutMs,
@@ -302,17 +371,7 @@ export async function runSoftwareScan(
   let resolvedProbe: SoftwareProbe = resolved.initialProbe;
 
   try {
-    const username = cred.encrypted_username
-      ? safeDecrypt(cred.encrypted_username)
-      : null;
-    const password = cred.encrypted_password
-      ? safeDecrypt(cred.encrypted_password)
-      : null;
-    if (!username || !password) {
-      throw new Error(
-        `Credenziale ${resolved.osFamily} priva di username o password (decifrazione fallita o campo vuoto)`
-      );
-    }
+    const { username, password } = resolved;
 
     const port =
       opts.port && Number.isFinite(opts.port) && opts.port > 0

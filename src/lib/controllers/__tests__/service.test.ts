@@ -47,6 +47,7 @@ import {
   removeController,
   setClientScheduleFor,
   syncController,
+  unifiOsWarningFor,
   updateController,
 } from "../service";
 import type { ControllerInput } from "../types";
@@ -268,6 +269,147 @@ test("modulo in modifica allo stesso indirizzo: la chiave salvata basta; a un al
   const row = getTenantDb(T).prepare("SELECT * FROM network_controllers WHERE id = ?").get(v.id) as never;
   assert.equal(checkControllerInput({ ...input(), apiKey: "" }, row).ok, true);
   assert.equal(checkControllerInput({ ...input(), apiKey: "", url: "https://10.0.0.1" }, row).ok, false);
+});
+
+// ── UniFi OS con utente locale e password (ADR 0019) ────────────────────────
+
+const PW_LOCALE = "pw-locale-di-prova-rgadmin";
+
+/** Console UniFi OS finta che accetta solo rgadmin/PW_LOCALE e poi il cookie TOKEN. */
+function consoleConUtente(pin = PIN_A): { factory: UnifiTransportFactory; calls: UnifiHttpRequest[] } {
+  const calls: UnifiHttpRequest[] = [];
+  const factory: UnifiTransportFactory = (_base, pins) => async (req) => {
+    checkPresentedPin(pins, pin);
+    calls.push(req);
+    if (req.path === "/api/auth/login") {
+      const b = JSON.parse(req.body ?? "{}") as { username?: string; password?: string };
+      if (b.username === "rgadmin" && b.password === PW_LOCALE) {
+        return { status: 200, headers: { "set-cookie": ["TOKEN=T1; path=/; httponly"], "x-csrf-token": "C1" }, body: "{}" };
+      }
+      return { status: 401, headers: {}, body: "{}" };
+    }
+    if (req.headers.Cookie !== "TOKEN=T1") return { status: 401, headers: {}, body: "{}" };
+    if (req.path === "/api/auth/logout") return { status: 200, headers: {}, body: "{}" };
+    if (req.path === "/proxy/network/api/self/sites") return { status: 200, headers: {}, body: SITES_BODY };
+    if (req.path === "/proxy/network/api/s/default/stat/device") return { status: 200, headers: {}, body: STAT_BODY };
+    return { status: 404, headers: {}, body: "{}" };
+  };
+  return { factory, calls };
+}
+
+const rigaDb = (id: number) => getTenantDb(T).prepare("SELECT * FROM network_controllers WHERE id = ?").get(id) as never;
+
+test("UDM con utente locale: senza chiave né utente o senza password si rifiuta; salvato tiene utente e password, niente chiave", () => {
+  const nessuno = checkControllerInput({ ...input(), apiKey: "" });
+  assert.equal(nessuno.ok, false);
+  if (!nessuno.ok) assert.match(nessuno.error, /chiave API.*utente locale/);
+  const senzaPw = checkControllerInput({ ...input(), apiKey: "", username: "rgadmin" });
+  assert.equal(senzaPw.ok, false);
+  if (!senzaPw.ok) assert.match(senzaPw.error, /password/);
+  const buono = checkControllerInput({ ...input(), apiKey: "", username: "rgadmin", password: PW_LOCALE });
+  assert.equal(buono.ok, true);
+  if (!buono.ok) return;
+  const v = inTenant(() => createController(buono.value));
+  assert.equal(v.kind, "udm");
+  assert.equal(v.username, "rgadmin");
+  assert.equal(v.passwordSet, true);
+  assert.equal(v.apiKeySet, false);
+  const raw = getTenantDb(T).prepare("SELECT password_enc FROM network_controllers WHERE id = ?").get(v.id) as {
+    password_enc: string;
+  };
+  assert.notEqual(raw.password_enc, PW_LOCALE);
+  assert.doesNotMatch(JSON.stringify(inTenant(() => listControllerViews())), new RegExp(PW_LOCALE));
+});
+
+test("pilota: il controller salvato self_hosted con utente e password, passato a UDM dalla pagina, entra col login senza ridare la password", async () => {
+  const sh = inTenant(() =>
+    createController(input({ kind: "self_hosted", apiKey: "", username: "rgadmin", password: PW_LOCALE })),
+  );
+  const check = checkControllerInput({ ...input(), apiKey: "", username: "rgadmin", password: "" }, rigaDb(sh.id));
+  assert.equal(check.ok, true, check.ok ? "" : check.error);
+  if (!check.ok) return;
+  const prova = consoleConUtente();
+  const r = await inTenant(() => probeControllerInput(check.value, sh.id, { transportFactory: prova.factory }));
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(prova.calls[0].path, "/api/auth/login");
+  const v = inTenant(() => updateController(sh.id, check.value));
+  assert.equal(v?.kind, "udm");
+  assert.equal(v?.username, "rgadmin");
+  assert.equal(v?.passwordSet, true);
+  assert.equal(v?.apiKeySet, false);
+  const giro = consoleConUtente();
+  const r2 = await inTenant(() => probeSavedController(sh.id, { transportFactory: giro.factory }));
+  assert.equal(r2.ok, true, JSON.stringify(r2));
+  assert.deepEqual(
+    giro.calls.map((c) => c.path),
+    ["/api/auth/login", "/proxy/network/api/s/default/stat/device", "/proxy/network/api/self/sites", "/api/auth/logout"],
+  );
+});
+
+test("salvataggio di un self_hosted su una console UniFi OS: avviso «scegli UDM»; per UDM nessuna domanda", async () => {
+  const calls: UnifiHttpRequest[] = [];
+  const factory: UnifiTransportFactory = () => async (req) => {
+    calls.push(req);
+    return { status: 200, headers: {}, body: "<html><head><title>UniFi OS</title></head></html>" };
+  };
+  const sh = input({ kind: "self_hosted", apiKey: "", username: "rgadmin", password: PW_LOCALE });
+  assert.match((await unifiOsWarningFor(sh, { transportFactory: factory })) ?? "", /Questo indirizzo è una console UniFi OS: scegli UDM/);
+  assert.deepEqual(calls.map((c) => `${c.method} ${c.path}`), ["GET /"]);
+  assert.equal(JSON.stringify(calls).includes(PW_LOCALE), false, "la domanda parte senza credenziali");
+  assert.equal(await unifiOsWarningFor(input(), { transportFactory: factory }), null);
+  assert.equal(calls.length, 1);
+});
+
+test("UDM: da chiave a utente si toglie la chiave (e la prova non la usa); da utente a chiave si tolgono utente e password", async () => {
+  const v = inTenant(() => createController(input()));
+  assert.equal(v.apiKeySet, true);
+  const aUtente = checkControllerInput({ ...input(), apiKey: "", username: "rgadmin", password: PW_LOCALE }, rigaDb(v.id));
+  assert.equal(aUtente.ok, true);
+  if (!aUtente.ok) return;
+  const prova = consoleConUtente();
+  const r = await inTenant(() => probeControllerInput(aUtente.value, v.id, { transportFactory: prova.factory }));
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(prova.calls[0].headers["X-API-KEY"], undefined, "la chiave salvata non parte se si è scelto l'utente");
+  const u = inTenant(() => updateController(v.id, aUtente.value));
+  assert.equal(u?.apiKeySet, false);
+  assert.equal(u?.passwordSet, true);
+  assert.equal(u?.username, "rgadmin");
+  const aChiave = checkControllerInput({ ...input(), apiKey: CHIAVE }, rigaDb(v.id));
+  assert.equal(aChiave.ok, true);
+  if (!aChiave.ok) return;
+  const k = inTenant(() => updateController(v.id, aChiave.value));
+  assert.equal(k?.apiKeySet, true);
+  assert.equal(k?.passwordSet, false);
+  assert.equal(k?.username, "");
+});
+
+// Revisione del 16/10: su un UDM salvato con la chiave, il modulo su «Utente
+// locale e password» con la password scritta e l'utente vuoto passava il
+// controllo grazie alla chiave salvata, la password spariva in silenzio e la
+// Prova riusciva con la CHIAVE: l'utente credeva di aver attivato l'utente.
+test("UDM salvato con la chiave, modulo su «utente» senza utente: rifiutato, niente ripiego sulla chiave", () => {
+  const v = inTenant(() => createController(input()));
+  const dichiarato = checkControllerInput(
+    { ...input(), apiKey: "", username: "", password: PW_LOCALE, udmAuth: "password" },
+    rigaDb(v.id),
+  );
+  assert.equal(dichiarato.ok, false);
+  if (!dichiarato.ok) assert.match(dichiarato.error, /utente locale/);
+  // Anche senza il metodo nel corpo: una password senza utente non si scarta.
+  const dedotto = checkControllerInput({ ...input(), apiKey: "", username: "", password: PW_LOCALE }, rigaDb(v.id));
+  assert.equal(dedotto.ok, false);
+  if (!dedotto.ok) assert.match(dedotto.error, /utente locale/);
+  // Metodo «utente» scelto e campi vuoti: la chiave salvata non lo sostituisce.
+  const vuoto = checkControllerInput({ ...input(), apiKey: "", udmAuth: "password" }, rigaDb(v.id));
+  assert.equal(vuoto.ok, false);
+  // Metodo «chiave» scelto con una password: non si scarta in silenzio.
+  const misto = checkControllerInput({ ...input(), apiKey: "", password: PW_LOCALE, udmAuth: "api_key" }, rigaDb(v.id));
+  assert.equal(misto.ok, false);
+  // Il metodo scelto vale anche quando è giusto: chiave salvata e campi vuoti = chiave.
+  const chiave = checkControllerInput({ ...input(), apiKey: "", udmAuth: "api_key" }, rigaDb(v.id));
+  assert.equal(chiave.ok, true);
+  if (chiave.ok) assert.equal(chiave.value.udmAuth, "api_key");
+  assert.equal(inTenant(() => getControllerView(v.id))?.apiKeySet, true, "la riga resta com'era");
 });
 
 test("pianificazione: un job unifi_sync per controller con il suo id; spenta o controller cancellato = job via", () => {

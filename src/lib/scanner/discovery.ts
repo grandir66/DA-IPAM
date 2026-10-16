@@ -34,8 +34,9 @@ import { querySnmpInfoMultiCommunity, querySnmpSysGroupMultiCommunity, normalize
 import { etichettaVersioneSnmp, type VersioneSnmp } from "@/lib/protocols/snmp-sessione";
 import { classifyDeviceDetailed } from "@/lib/device-classifier";
 import {
+  applicaProfiloVendor,
   getClassificationFromFingerprintSnapshot,
-  FINGERPRINT_CLASSIFICATION_MIN_CONFIDENCE,
+  modelloDaImpronta,
 } from "@/lib/device-fingerprint-classification";
 import { mapSysObjCategory } from "@/lib/attribution/sysobj-category";
 import {
@@ -47,9 +48,7 @@ import {
   addScanHistory,
   addStatusHistory,
   getCredentialLoginPair,
-  getSshLinuxCredentialPair,
-  getHostDetectCredentialId,
-  setHostDetectCredential,
+  accessoSshCredenziale,
   getOrderedDetectCredentialIds,
   getOrderedSshLinuxCredentialIds,
   buildSnmpCommunitiesForHost,
@@ -73,8 +72,9 @@ import {
   recordCredentialSuccess,
   getCredentialById,
 } from "@/lib/db";
-import { resolveCredentialsFor } from "@/lib/credentials/resolve";
-import type { CredProtocol } from "@/lib/credentials/resolve";
+import { chiaviGlobaliHub, resolveCredentialsFor, resolveCredentialsForDb } from "@/lib/credentials/resolve";
+import type { CredProtocol, ResolveTarget, ResolvedCredential } from "@/lib/credentials/resolve";
+import { normalizzaTipo, tipiPerProtocollo } from "@/lib/credentials/tipi";
 import { CredentialRunBudget } from "./credential-run-budget";
 import { evidenceFromAuthOutcome } from "@/lib/attribution/credential-evidence";
 import type { AuthOutcome } from "@/lib/attribution/credential-evidence";
@@ -174,6 +174,34 @@ function autoBindCredentialToDevice(
     });
     updateBindingTestStatus(binding.id, "success", "Auto-detect riuscito");
   } catch { /* ignore: device non trovato o duplicato */ }
+}
+
+/**
+ * Catena di un host per i rilevamenti `windows`, `ssh` e la fase 4 di
+ * `ipam_full` (tappa 2 credenziali, T17, D2 = (a)): i candidati del motore per
+ * l'host (righe validate, binding dell'apparato collegato, righe non validate,
+ * lista della rete; catene vecchie e chiave dell'hub finché la 2d non le ha
+ * convertite), con quelli in fermo compresi, perché il fermo e il tetto per
+ * credenziale li applica `CredentialRunBudget` prima di ogni prova. Una voce
+ * una volta sola, nella prima posizione.
+ *
+ * Prima un pin (`host_detect_credential`) faceva da corto circuito: si provava
+ * solo quella voce, e se la password era cambiata l'host restava non rilevato
+ * per sempre. Ora la voce che funzionava si prova per prima; se fallisce va in
+ * fermo (`recordCredentialFailure`) e si passa al resto della catena.
+ *
+ * Il motore puro sull'handle del giro, non `resolveCredentialsFor`: quello su
+ * un errore del DB restituisce una lista vuota, e qui diventerebbe «nessuna
+ * credenziale» per ogni host invece di un giro fallito che dice perché.
+ */
+function catenaHost(target: ResolveTarget, protocol: CredProtocol): { candidati: ResolvedCredential[]; ids: number[] } {
+  const candidati = resolveCredentialsForDb(getDb(), target, protocol, {
+    includeBackoff: true,
+    globaliHub: chiaviGlobaliHub(getSetting),
+  });
+  const ids: number[] = [];
+  for (const c of candidati) if (c.credential_id != null && !ids.includes(c.credential_id)) ids.push(c.credential_id);
+  return { candidati, ids };
 }
 
 /**
@@ -364,6 +392,38 @@ type HostScanData = {
   /** Match da tabella sysObjectID (vendor, prodotto, categoria) */
   sysObjMatch?: import("./snmp-sysobj-lookup").SysObjMatch;
 };
+
+/** Estrae modello e firmware dal sysDescr quando ENTITY-MIB non è disponibile. */
+export function parseModelFromSysDescr(sysDescr: string | null): { model: string | null; firmware: string | null } {
+  if (!sysDescr) return { model: null, firmware: null };
+  const s = sysDescr.trim();
+
+  // UniFi OS (Cloud Gateway, UDM): "Ubiquiti UniFi UCG-Fiber 5.1.33 Linux 5.4.213 ipq9574" (pilota 16/10)
+  const unifiOsMatch = s.match(/^Ubiquiti\s+UniFi\s+([\w][\w+-]*)\s+v?(\d+\.\d+[.\d]*)/i);
+  if (unifiOsMatch) return { model: unifiOsMatch[1], firmware: unifiOsMatch[2] };
+
+  // Ubiquiti: "USW-Flex 7.2.123.16565" / "USW-Pro-48-PoE, 7.2.123.16565, Linux 3.6" / "U7-Pro 8.4.6.18068"
+  const ubiMatch = s.match(/^(U\w[\w-]*?)[\s,]+(\d+\.\d+\.\d+[\.\d]*)/);
+  if (ubiMatch) return { model: ubiMatch[1], firmware: ubiMatch[2] };
+
+  // MikroTik: "RouterOS CCR2004-1G-12S+2XS"
+  const mtMatch = s.match(/RouterOS\s+(\S+)/i);
+  if (mtMatch) return { model: mtMatch[1], firmware: null };
+
+  // Cisco: "Cisco IOS Software, C2960 Software (C2960-LANBASEK9-M), Version 15.0(2)SE"
+  const ciscoMatch = s.match(/,\s*(\S+)\s+Software.*Version\s+([\d.()A-Za-z]+)/i);
+  if (ciscoMatch) return { model: ciscoMatch[1], firmware: ciscoMatch[2] };
+
+  // HP ProCurve: "ProCurve J9729A 2920-48G-POE+ Switch..."
+  const hpMatch = s.match(/ProCurve\s+(\S+\s+\S+)/i);
+  if (hpMatch) return { model: hpMatch[1].trim(), firmware: null };
+
+  // Generico: "MODELLO, versione X.Y.Z" o "MODELLO versione X.Y.Z"
+  const genericMatch = s.match(/^([\w][\w\s-]{2,30}?)[\s,]+v?(\d+\.\d+[\.\d]*)/);
+  if (genericMatch) return { model: genericMatch[1].trim(), firmware: genericMatch[2] };
+
+  return { model: null, firmware: null };
+}
 
 /** Produttore da sysDescr / OID enterprise / prima firma fingerprint */
 function inferManufacturerFromSnmp(
@@ -620,34 +680,6 @@ async function runDiscovery(
       unionTcpPorts(byIp.get(ip) ?? [], ALWAYS_USEFUL_TCP_PORTS, basePorts),
       hostTimeoutSeconds != null ? { hostTimeoutSeconds } : undefined
     );
-  }
-
-  /** Estrae modello e firmware dal sysDescr quando ENTITY-MIB non è disponibile. */
-  function parseModelFromSysDescr(sysDescr: string | null): { model: string | null; firmware: string | null } {
-    if (!sysDescr) return { model: null, firmware: null };
-    const s = sysDescr.trim();
-
-    // Ubiquiti: "USW-Flex 7.2.123.16565" / "USW-Pro-48-PoE, 7.2.123.16565, Linux 3.6" / "U7-Pro 8.4.6.18068"
-    const ubiMatch = s.match(/^(U\w[\w-]*?)[\s,]+(\d+\.\d+\.\d+[\.\d]*)/);
-    if (ubiMatch) return { model: ubiMatch[1], firmware: ubiMatch[2] };
-
-    // MikroTik: "RouterOS CCR2004-1G-12S+2XS"
-    const mtMatch = s.match(/RouterOS\s+(\S+)/i);
-    if (mtMatch) return { model: mtMatch[1], firmware: null };
-
-    // Cisco: "Cisco IOS Software, C2960 Software (C2960-LANBASEK9-M), Version 15.0(2)SE"
-    const ciscoMatch = s.match(/,\s*(\S+)\s+Software.*Version\s+([\d.()A-Za-z]+)/i);
-    if (ciscoMatch) return { model: ciscoMatch[1], firmware: ciscoMatch[2] };
-
-    // HP ProCurve: "ProCurve J9729A 2920-48G-POE+ Switch..."
-    const hpMatch = s.match(/ProCurve\s+(\S+\s+\S+)/i);
-    if (hpMatch) return { model: hpMatch[1].trim(), firmware: null };
-
-    // Generico: "MODELLO, versione X.Y.Z" o "MODELLO versione X.Y.Z"
-    const genericMatch = s.match(/^([\w][\w\s-]{2,30}?)[\s,]+v?(\d+\.\d+[\.\d]*)/);
-    if (genericMatch) return { model: genericMatch[1].trim(), firmware: genericMatch[2] };
-
-    return { model: null, firmware: null };
   }
 
   /** Aggiunge una riga al log live (max 200 righe, le più vecchie vengono rimosse) */
@@ -1419,7 +1451,7 @@ async function runDiscovery(
   }
 
   // ═══════════════════════════════════════════════════════════════
-  // WINDOWS: WinRM — credenziali dalla subnet (ordine) o globali; una prova per credenziale; salvataggio su IP
+  // WINDOWS: WinRM — catena dell'host dal motore (D2 = (a)); una prova per credenziale; salvataggio su IP
   // ═══════════════════════════════════════════════════════════════
   else if (scanType === "windows") {
     const existingHosts = getHostsByNetwork(networkId);
@@ -1439,7 +1471,7 @@ async function runDiscovery(
     progress.scanned = 0;
     const defaultChain = getOrderedDetectCredentialIds(networkId, "windows");
     log(
-      `Trovati ${windowsHosts.length} host Windows in DB; catena credenziali: ${defaultChain.length ? defaultChain.map((id) => `#${id}`).join(" → ") : "nessuna (configura rete o Impostazioni)"}`
+      `Trovati ${windowsHosts.length} host Windows in DB; catena della rete: ${defaultChain.length ? defaultChain.map((id) => `#${id}`).join(" → ") : "nessuna"} (per ogni host prima le sue credenziali)`
     );
     if (windowsHosts.length === 0) {
       log("Nessun host con porte Windows. Esegui prima Nmap.");
@@ -1468,10 +1500,9 @@ async function runDiscovery(
     for (let i = 0; i < windowsHosts.length; i++) {
       const host = windowsHosts[i];
       const ip = host.ip;
-      const bound = getHostDetectCredentialId(host.id, "windows");
-      const chain = bound != null ? [bound] : defaultChain;
+      const { candidati: resolved, ids: chain } = catenaHost({ hostId: host.id, ip, networkId }, "winrm");
       if (chain.length === 0) {
-        log(`✗ ${ip} — nessuna credenziale Windows (subnet o globale)`);
+        log(`✗ ${ip} — nessuna credenziale Windows (né dell'host né della rete)`);
         progress.scanned = i + 1;
         progress.found = nmapResults.size;
         progress.phase = `Scansione WinRM — ${i + 1}/${onlineIps.length}`;
@@ -1481,7 +1512,6 @@ async function runDiscovery(
       const nowIso = new Date().toISOString();
       // hasWindowsIndicator sempre true qui: `windowsHosts` è già filtrato per
       // porte SMB/WinRM (445/135/5985/5986) — vedi definizione sopra.
-      const resolved = resolveCredentialsFor({ hostId: host.id, ip, networkId }, "winrm", { includeBackoff: true });
       let ok = false;
       for (const credId of chain) {
         const backoffUntil = resolved.find(
@@ -1507,7 +1537,6 @@ async function runDiscovery(
               mac: null,
               snmpHostname: hn,
             });
-            setHostDetectCredential(host.id, "windows", credId);
             addHostCredential(host.id, credId, "winrm", winrmPort, { validated: true, auto_detected: true });
             recordCredentialSuccess(host.id, credId, "winrm", winrmPort);
             runBudget.recordSuccess(credId);
@@ -1540,7 +1569,7 @@ async function runDiscovery(
   }
 
   // ═══════════════════════════════════════════════════════════════
-  // SSH: credenziali Linux per subnet (ordine) o globali; una connessione per credenziale; salvataggio su IP
+  // SSH: catena dell'host dal motore (D2 = (a)); una connessione per credenziale; salvataggio su IP
   // ═══════════════════════════════════════════════════════════════
   else if (scanType === "ssh") {
     const existingHosts = getHostsByNetwork(networkId);
@@ -1562,14 +1591,14 @@ async function runDiscovery(
     progress.scanned = 0;
     const defaultSshChain = getOrderedSshLinuxCredentialIds(networkId);
     log(
-      `Trovati ${sshHosts.length} host SSH in DB; catena credenziali: ${defaultSshChain.length ? defaultSshChain.map((id) => `#${id}`).join(" → ") : "nessuna (configura rete o Impostazioni)"}`
+      `Trovati ${sshHosts.length} host SSH in DB; catena della rete: ${defaultSshChain.length ? defaultSshChain.map((id) => `#${id}`).join(" → ") : "nessuna"} (per ogni host prima le sue credenziali)`
     );
     if (sshHosts.length === 0) {
       log("Nessun host con porta 22 (senza 445). Esegui prima Nmap.");
     }
     progress.phase = `Scansione SSH — 0/${onlineIps.length}`;
 
-    const { sshExec: transportSshExec, SshError } = await import("@/lib/devices/ssh-transport");
+    const { sshExec: transportSshExec, SshError, segretoSsh } = await import("@/lib/devices/ssh-transport");
 
     // Anti-lockout (fix Critical post-review, §7.5): stesso motivo del loop
     // Windows sopra — riusa `CredentialRunBudget`, non duplica la logica.
@@ -1577,33 +1606,21 @@ async function runDiscovery(
     for (let i = 0; i < sshHosts.length; i++) {
       const host = sshHosts[i];
       const ip = host.ip;
-      const boundLinux = getHostDetectCredentialId(host.id, "linux");
-      const boundSsh = getHostDetectCredentialId(host.id, "ssh");
-      const boundSshForSave = boundSsh;
-      let chain: number[];
-      if (boundLinux != null && boundSsh != null && boundLinux !== boundSsh) {
-        chain = [boundLinux, boundSsh];
-      } else if (boundLinux != null) {
-        chain = [boundLinux];
-      } else if (boundSsh != null) {
-        chain = [boundSsh];
-      } else {
-        chain = defaultSshChain;
-      }
+      const { candidati: resolved, ids: chain } = catenaHost({ hostId: host.id, ip, networkId }, "ssh");
       if (chain.length === 0) {
-        log(`✗ ${ip} — nessuna credenziale Linux (subnet o globale)`);
+        log(`✗ ${ip} — nessuna credenziale SSH (né dell'host né della rete)`);
         progress.scanned = i + 1;
         progress.found = nmapResults.size;
         progress.phase = `Scansione SSH — ${i + 1}/${onlineIps.length}`;
         continue;
       }
       const nowIso = new Date().toISOString();
-      const resolved = resolveCredentialsFor({ hostId: host.id, ip, networkId }, "ssh", { includeBackoff: true });
       let ok = false;
       for (const credId of chain) {
         // Tappa 1 credenziali: la porta propria della credenziale, poi la 22.
-        const creds = getSshLinuxCredentialPair(credId);
-        const sshPort = creds?.port ?? 22;
+        // Tappa 2 (T14): utente con password o con chiave; il rifiuto dice perché.
+        const creds = accessoSshCredenziale(credId);
+        const sshPort = (creds.ok ? creds.port : null) ?? 22;
         const backoffUntil = resolved.find(
           (r) => r.credential_id === credId && r.protocol === "ssh" && r.port === sshPort
         )?.backoff_until ?? null;
@@ -1611,14 +1628,14 @@ async function runDiscovery(
         // il gate distingue solo credType==="windows" (nessuna catena SSH può
         // contenerne uno — resolveCredentialsFor filtra per protocollo).
         if (!runBudget.gate({ ip, credId, credType: "ssh", hasWindowsIndicator: false, backoffUntil, nowIso })) continue;
-        if (!creds) {
-          log(`✗ ${ip} cred#${credId} — dati mancanti`);
+        if (!creds.ok) {
+          log(`✗ ${ip} cred#${credId} — ${creds.motivo}`);
           continue;
         }
         log(`SSH ${ip} — prova cred#${credId}`);
         try {
           const res = await transportSshExec(
-            { host: ip, port: sshPort, username: creds.username, password: creds.password, timeout: 6000 },
+            { host: ip, port: sshPort, username: creds.accesso.username, ...segretoSsh(creds.accesso), timeout: 6000 },
             "hostname -f 2>/dev/null || hostname; uname -sr 2>/dev/null; cat /etc/os-release 2>/dev/null | head -5"
           );
           const output = res.stdout + res.stderr;
@@ -1645,14 +1662,10 @@ async function runDiscovery(
             mac: null,
             snmpHostname: hn,
           });
-          setHostDetectCredential(host.id, "linux", credId);
           addHostCredential(host.id, credId, "ssh", sshPort, { validated: true, auto_detected: true });
           recordCredentialSuccess(host.id, credId, "ssh", sshPort);
           runBudget.recordSuccess(credId);
           autoBindCredentialToDevice(ip, credId, "ssh", sshPort, host.id);
-          if (boundSshForSave == null) {
-            setHostDetectCredential(host.id, "ssh", credId);
-          }
           log(`✓ ${ip} → ${hn || "—"}, OS: ${osInfo} (cred#${credId})`);
           ok = true;
           break;
@@ -1886,46 +1899,50 @@ async function runDiscovery(
     progress.total = sshHosts.length;
     progress.scanned = 0;
     const defaultSshChain = getOrderedSshLinuxCredentialIds(networkId);
-    log(`Fase 4: SSH su ${sshHosts.length} host (porta 22, no 445); catena credenziali: ${defaultSshChain.length ? defaultSshChain.map((id) => `#${id}`).join(" → ") : "nessuna"}`);
+    log(`Fase 4: SSH su ${sshHosts.length} host (porta 22, no 445); catena della rete: ${defaultSshChain.length ? defaultSshChain.map((id) => `#${id}`).join(" → ") : "nessuna"} (per ogni host prima le sue credenziali)`);
 
-    if (sshHosts.length > 0 && defaultSshChain.length > 0) {
-      const { sshExec: transportSshExec, SshError } = await import("@/lib/devices/ssh-transport");
+    // Prima la fase si saltava per tutta la rete con la catena della rete
+    // vuota, anche per gli host con una credenziale propria (T17).
+    if (sshHosts.length > 0) {
+      const { sshExec: transportSshExec, SshError, segretoSsh } = await import("@/lib/devices/ssh-transport");
 
       // Anti-lockout (fix Critical post-review, §7.5): stesso motivo dei loop
       // windows/ssh sopra — riusa `CredentialRunBudget`, non duplica la logica.
       const runBudget = new CredentialRunBudget(log);
+      // Host senza nessuna credenziale SSH: contati e detti una volta a fine fase, non uno per riga.
+      let senzaCredenziali = 0;
       for (let i = 0; i < sshHosts.length; i++) {
         const ip = sshHosts[i];
         const hostRow = existingHosts.find((h) => h.ip === ip);
         const hostId = hostRow?.id;
-        const boundLinux = hostId != null ? getHostDetectCredentialId(hostId, "linux") : null;
-        const boundSsh = hostId != null ? getHostDetectCredentialId(hostId, "ssh") : null;
-        let chain: number[];
-        if (boundLinux != null && boundSsh != null && boundLinux !== boundSsh) {
-          chain = [boundLinux, boundSsh];
-        } else if (boundLinux != null) {
-          chain = [boundLinux];
-        } else if (boundSsh != null) {
-          chain = [boundSsh];
-        } else {
-          chain = defaultSshChain;
+        // Un host nuovo di questo giro (non ancora nel DB) ha la sola catena della rete.
+        const { candidati: resolved, ids: chain } = catenaHost({ hostId, ip, networkId }, "ssh");
+        if (chain.length === 0) {
+          senzaCredenziali += 1;
+          progress.scanned = i + 1;
+          progress.found = nmapResults.size;
+          progress.phase = `IPAM [4/4] SSH — ${i + 1}/${sshHosts.length}`;
+          continue;
         }
 
         const nowIso = new Date().toISOString();
-        const resolved = resolveCredentialsFor({ hostId, ip, networkId }, "ssh", { includeBackoff: true });
         let ok = false;
         for (const credId of chain) {
           // Tappa 1 credenziali: la porta propria della credenziale, poi la 22.
-          const creds = getSshLinuxCredentialPair(credId);
-          const sshPort = creds?.port ?? 22;
+          // Tappa 2 (T14): utente con password o con chiave.
+          const creds = accessoSshCredenziale(credId);
+          const sshPort = (creds.ok ? creds.port : null) ?? 22;
           const backoffUntil = resolved.find(
             (r) => r.credential_id === credId && r.protocol === "ssh" && r.port === sshPort
           )?.backoff_until ?? null;
           if (!runBudget.gate({ ip, credId, credType: "ssh", hasWindowsIndicator: false, backoffUntil, nowIso })) continue;
-          if (!creds) continue;
+          if (!creds.ok) {
+            log(`SSH ✗ ${ip} cred#${credId}: ${creds.motivo}`);
+            continue;
+          }
           try {
             const res = await transportSshExec(
-              { host: ip, port: sshPort, username: creds.username, password: creds.password, timeout: 8000 },
+              { host: ip, port: sshPort, username: creds.accesso.username, ...segretoSsh(creds.accesso), timeout: 8000 },
               "hostname -f 2>/dev/null || hostname; uname -sr 2>/dev/null; cat /etc/os-release 2>/dev/null | head -5"
             );
             const output = res.stdout + res.stderr;
@@ -1952,12 +1969,8 @@ async function runDiscovery(
               snmpHostname: hn ?? existing?.snmpHostname ?? null,
             });
             if (hostId != null) {
-              setHostDetectCredential(hostId, "linux", credId);
               addHostCredential(hostId, credId, "ssh", sshPort, { validated: true, auto_detected: true });
               recordCredentialSuccess(hostId, credId, "ssh", sshPort);
-              if (boundSsh == null) {
-                setHostDetectCredential(hostId, "ssh", credId);
-              }
             }
             runBudget.recordSuccess(credId);
             autoBindCredentialToDevice(ip, credId, "ssh", sshPort, hostId);
@@ -1979,10 +1992,11 @@ async function runDiscovery(
         progress.phase = `IPAM [4/4] SSH — ${i + 1}/${sshHosts.length}`;
       }
       runBudget.logSummary();
-    } else if (sshHosts.length === 0) {
-      log("Nessun host con porta 22 (senza 445)");
+      if (senzaCredenziali > 0) {
+        log(`SSH: ${senzaCredenziali} host su ${sshHosts.length} senza credenziali SSH (né dell'host né della rete), non provati`);
+      }
     } else {
-      log("Nessuna credenziale SSH configurata (rete o Impostazioni)");
+      log("Nessun host con porta 22 (senza 445)");
     }
 
     progress.found = onlineIps.length;
@@ -2346,7 +2360,7 @@ async function runDiscovery(
     progress.scanned = 0;
 
     let validated = 0;
-    const { sshExec: transportSshExec, SshError } = await import("@/lib/devices/ssh-transport");
+    const { sshExec: transportSshExec, SshError, segretoSsh } = await import("@/lib/devices/ssh-transport");
     const { runWinrmCommand, WinrmError } = await import("@/lib/devices/winrm-run");
 
     // Codici WinRM che indicano un servizio RAGGIUNTO (auth/negoziazione fallita),
@@ -2462,16 +2476,20 @@ async function runDiscovery(
             || (host.classification ?? "") === "networking"
             || (host.os_info ?? "").toLowerCase().includes("linux")
           ));
-        if ((credType === "ssh" || credType === "linux") && hasSshIndicator && !validatedProtos.has("ssh")) {
+        if (tipiPerProtocollo("ssh").includes(credType) && hasSshIndicator && !validatedProtos.has("ssh")) {
           const sshPort = credPort ?? openPorts.find((p) => p.port === 22 || p.service === "ssh")?.port ?? 22;
           if (!gateCredential("ssh", credId, credType, sshPort)) continue;
-          const creds = getSshLinuxCredentialPair(credId);
-          if (!creds) continue;
+          // Tappa 2 (T14): utente con password o con chiave.
+          const creds = accessoSshCredenziale(credId);
+          if (!creds.ok) {
+            log(`✗ ${ip}:${sshPort} SSH cred#${credId} (${nc.credential_name}): ${creds.motivo}`);
+            continue;
+          }
           try {
             await transportSshExec(
               // Timeout 6000→15000 (§7.5): allineato al default del transport, evita
               // falsi negativi (quindi falsi FALLIMENTI persistiti) su link lenti.
-              { host: ip, port: sshPort, username: creds.username, password: creds.password, timeout: 15000, credentialName: nc.credential_name },
+              { host: ip, port: sshPort, username: creds.accesso.username, ...segretoSsh(creds.accesso), timeout: 15000, credentialName: nc.credential_name },
               "true"
             );
             recordCredentialSuccess(host.id, credId, "ssh", sshPort);
@@ -2494,7 +2512,8 @@ async function runDiscovery(
           }
         }
 
-        if (credType === "snmp" && !validatedProtos.has("snmp")) {
+        // Regola unica (T12): community e SNMP v3 (dalla 2c tipo `snmp_v3`).
+        if (tipiPerProtocollo("snmp").includes(credType) && !validatedProtos.has("snmp")) {
           // Tappa 1 credenziali: porta propria della credenziale, poi la 161.
           const snmpPort = credPort ?? 161;
           if (!gateCredential("snmp", credId, credType, snmpPort)) continue;
@@ -2507,7 +2526,7 @@ async function runDiscovery(
           // (`gateCredential` sopra) e stessa persistenza esito di ogni altro
           // protocollo — nessun bypass del budget di run.
           const credRow = getCredentialById(credId);
-          if (credRow?.security_level) {
+          if (normalizzaTipo(credType) === "snmp_v3" || credRow?.security_level) {
             try {
               const v3 = await snmpValidateV3(ip, credId, { port: snmpPort });
               if (v3.ok) {
@@ -2969,16 +2988,7 @@ async function runDiscovery(
           }
         }
 
-        if (fpSnap && vpName && vpConf >= 0.90 && !isGenericVp) {
-          const fpIsGeneric = !fpSnap.final_device ||
-            fpSnap.final_device === "Linux/net-snmp" ||
-            fpSnap.final_device === "Linux generico" ||
-            fpSnap.final_device === "Switch" ||
-            (fpSnap.final_confidence ?? 0) < 0.70;
-          if (fpIsGeneric) {
-            fpSnap = { ...fpSnap, final_device: vpName, final_confidence: vpConf };
-          }
-        }
+        fpSnap = applicaProfiloVendor(fpSnap, vpName, vpConf, isGenericVp);
         if (fpSnap) detectionJson = JSON.stringify(fpSnap);
       } catch (fpErr) {
         console.warn("[Fingerprint]", ip, fpErr);
@@ -3093,11 +3103,8 @@ async function runDiscovery(
       nmapData?.snmpModel ||
       sysDescrParsed.model ||
       nmapData?.sysObjMatch?.product ||
-      (fpSnap &&
-      (fpSnap.final_confidence ?? 0) >= FINGERPRINT_CLASSIFICATION_MIN_CONFIDENCE &&
-      fpSnap.final_device
-        ? fpSnap.final_device
-        : undefined) ||
+      // Una firma di sole porte non è un modello (pilota 16/10: «QNAP QTS» su un UniFi Cloud Gateway).
+      modelloDaImpronta(fpSnap) ||
       undefined;
     const hostSerial = nmapData?.snmpSerial || undefined;
     // Firmware: preferisci quello dal profilo vendor (OID specifici) se disponibile

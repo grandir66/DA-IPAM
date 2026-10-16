@@ -20,8 +20,8 @@ import Database from "better-sqlite3";
 
 process.env.ENCRYPTION_KEY ||= "test-encryption-key-credential-protocol-map";
 
-import { tipiCredenzialePerProtocollo, credTypeForProtocol, CRED_TYPE_OPTIONS } from "@/lib/credential-protocol-map";
-import { ETICHETTE_TIPO, tipiPerProtocollo } from "@/lib/credentials/tipi";
+import { tipiCredenzialePerProtocollo, credTypeForProtocol, CRED_TYPE_OPTIONS, opzioniCreazioneRapida, tipoCreazioneRapida } from "@/lib/credential-protocol-map";
+import { ETICHETTE_TIPO, TIPI_CREDENZIALE, tipiPerProtocollo } from "@/lib/credentials/tipi";
 import { CredentialSchema } from "@/lib/validators";
 import { TENANT_SCHEMA_SQL } from "@/lib/db-tenant-schema";
 import { encrypt } from "@/lib/crypto";
@@ -65,17 +65,19 @@ describe("tipiCredenzialePerProtocollo — valori esatti", () => {
   });
 });
 
-// Fino alla 2c il validatore (CredentialSchema) e il CHECK del DB accettano
-// solo cinque tipi: un tipo nuovo nella creazione rapida darebbe 400 o 500.
+// Dalla 2c (T13, 16/10) la creazione rapida passa agli otto tipi d'archivio, e
+// ogni tendina li filtra col protocollo dell'apparato: prima offriva sempre i
+// cinque codici grezzi, e una voce UniFi, Omada o AD si sarebbe legata a un
+// apparato.
 describe("CRED_TYPE_OPTIONS — creazione rapida", () => {
-  it("offre esattamente i tipi che il validatore accetta", () => {
-    assert.deepEqual(
-      CRED_TYPE_OPTIONS.map((o) => o.value).sort(),
-      [...CredentialSchema.shape.credential_type.options].sort(),
-    );
+  it("offre gli otto tipi d'archivio, e il validatore li accetta tutti", () => {
+    assert.deepEqual(CRED_TYPE_OPTIONS.map((o) => o.value), [...TIPI_CREDENZIALE]);
+    for (const o of CRED_TYPE_OPTIONS) {
+      assert.equal(CredentialSchema.safeParse({ name: "x", credential_type: o.value }).success, true, o.value);
+    }
   });
 
-  it("ogni tipo offerto entra nel DB (CHECK di credentials)", () => {
+  it("ogni tipo offerto entra nel DB (niente CHECK sui tipi dalla 2c)", () => {
     const d = new Database(":memory:");
     try {
       d.exec(TENANT_SCHEMA_SQL);
@@ -90,13 +92,33 @@ describe("CRED_TYPE_OPTIONS — creazione rapida", () => {
     }
   });
 
-  it("le etichette sono quelle per esteso, e «linux» non si confonde con SSH", () => {
-    const etichetta = new Map(CRED_TYPE_OPTIONS.map((o) => [o.value, o.label]));
-    assert.equal(etichetta.get("ssh"), ETICHETTE_TIPO.ssh);
-    assert.equal(etichetta.get("snmp"), ETICHETTE_TIPO.snmp);
-    assert.equal(etichetta.get("windows"), ETICHETTE_TIPO.windows);
-    assert.equal(etichetta.get("api"), ETICHETTE_TIPO.api);
+  it("le etichette sono quelle per esteso, tutte diverse", () => {
+    for (const o of CRED_TYPE_OPTIONS) assert.equal(o.label, ETICHETTE_TIPO[o.value as keyof typeof ETICHETTE_TIPO], o.value);
     assert.equal(new Set(CRED_TYPE_OPTIONS.map((o) => o.label)).size, CRED_TYPE_OPTIONS.length, "due voci con la stessa etichetta");
+  });
+
+  it("per un apparato SSH non offre UniFi, Omada né AD", () => {
+    const offerti = opzioniCreazioneRapida("ssh").map((o) => o.value);
+    assert.deepEqual(offerti, ["ssh"]);
+    for (const p of ["ssh", "winrm", "snmp_v2", "snmp_v3", "api", "redfish", "onvif", null]) {
+      for (const vietato of ["unifi", "omada", "ad"]) {
+        assert.equal(opzioniCreazioneRapida(p).some((o) => o.value === vietato), false, `${String(p)} offre ${vietato}`);
+      }
+    }
+  });
+
+  it("solo i tipi del protocollo, compilabili con utente e password (la v3 si crea dalla pagina Credenziali)", () => {
+    assert.deepEqual(opzioniCreazioneRapida("winrm").map((o) => o.value), ["windows"]);
+    assert.deepEqual(opzioniCreazioneRapida("api").map((o) => o.value), ["ssh", "api"]);
+    assert.deepEqual(opzioniCreazioneRapida("snmp_v3").map((o) => o.value), ["snmp"]);
+    assert.deepEqual(opzioniCreazioneRapida(null).map((o) => o.value), ["ssh", "windows", "api"]);
+  });
+
+  it("il tipo proposto è sempre fra quelli offerti", () => {
+    for (const p of ["ssh", "winrm", "snmp_v2", "snmp_v3", "api", "redfish", "onvif", null]) {
+      const proposto = tipoCreazioneRapida(p);
+      assert.ok(opzioniCreazioneRapida(p).some((o) => o.value === proposto), `${String(p)} → ${proposto}`);
+    }
   });
 });
 

@@ -1,4 +1,5 @@
 import type { ScheduledJobType } from "@/lib/scheduled-job-types";
+import type { MetodoAccesso, TipoCredenziale } from "@/lib/credentials/tipi";
 
 // ========================
 // Database Row Types
@@ -201,9 +202,19 @@ export interface ScanHistory {
 export interface Credential {
   id: number;
   name: string;
-  credential_type: "ssh" | "snmp" | "api" | "windows" | "linux";
+  /**
+   * Tipo d'archivio per esteso (tappa 2c). Il CRUD scrive `linux` come `ssh`
+   * (T13) e la normalizzazione ha convertito le voci vecchie (T11); chi legge
+   * un codice dal DB passa comunque da `normalizzaTipo`.
+   */
+  credential_type: TipoCredenziale;
+  /** Metodo d'accesso; null = il primo del tipo (`METODI_PER_TIPO`). */
+  auth_method: MetodoAccesso | null;
   encrypted_username: string | null;
   encrypted_password: string | null;
+  /** Chiave SSH (metodo «chiave») e passphrase: mai restituite dalle GET, write-only. */
+  encrypted_private_key: string | null;
+  encrypted_key_passphrase: string | null;
   /** SNMPv3 (Fase 4b Task 2, §7.1) — mai restituiti dalle GET, write-only. */
   encrypted_auth_key: string | null;
   auth_protocol: string | null;
@@ -718,12 +729,6 @@ export interface NetworkWithStats extends Network {
   last_scan: string | null;
 }
 
-export interface HostDetectCredentialRow {
-  role: "windows" | "linux" | "ssh" | "snmp";
-  credential_id: number;
-  credential_name: string;
-}
-
 export interface HostDetail extends Host {
   network_cidr: string;
   network_name: string;
@@ -732,8 +737,6 @@ export interface HostDetail extends Host {
   recent_scans: ScanHistory[];
   /** Tipi di scansione già eseguiti su questo host (deduplicati). */
   scan_types_used?: string[];
-  /** Credenziali archivio usate con successo per acquisizione (per ruolo). [Legacy] */
-  detect_credentials?: HostDetectCredentialRow[];
   /** Credenziali validate per questo host (sistema v2 — multi-protocollo). */
   host_credentials?: Array<{
     id: number;
@@ -799,7 +802,7 @@ export interface NetworkInput {
   cidr: string;
   name: string;
   description?: string;
-  gateway?: string;
+  gateway?: string | null;
   vlan_id?: number | null;
   location?: string;
   snmp_community?: string | null;
@@ -854,7 +857,10 @@ export interface NetworkDeviceInput {
 
 export interface CredentialInput {
   name: string;
-  credential_type: "ssh" | "snmp" | "api" | "windows" | "linux";
+  /** `linux` lo accetta il validatore e lo scrive come `ssh` (T13). */
+  credential_type: TipoCredenziale;
+  /** Metodo d'accesso; null o assente = il primo del tipo. */
+  auth_method?: MetodoAccesso | null;
   username?: string;
   password?: string;
   /** SNMPv3 (Fase 4b Task 2) — plaintext lato validazione, cifrati prima di createCredential/updateCredential. */

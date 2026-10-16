@@ -5,6 +5,7 @@ import { parseDbDate } from "@/lib/db-date";
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { librenmsDevicePath } from "@/lib/integrations/public-url";
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,6 +32,8 @@ import { FingerprintConfidenceBadge } from "@/components/shared/fingerprint-conf
 import { ProtocolBadges } from "@/components/shared/protocol-badges";
 import { DeviceFormFields } from "@/components/shared/device-form-fields";
 import { LinkIpsDialog } from "@/components/devices/link-ips-dialog";
+import { SeparaDialog } from "@/components/topology/unioni/separa-dialog";
+import { UnisciDialog } from "@/components/topology/unioni/unisci-dialog";
 import { InlineEditCell } from "@/components/shared/inline-edit-cell";
 import { AddableSelect } from "@/components/shared/addable-select";
 import { opzioniCreazioneRapida, tipiCredenzialePerProtocollo, tipoCreazioneRapida, vociDAccesso, vociSnmpAggiuntive } from "@/lib/credential-protocol-map";
@@ -51,7 +54,7 @@ import {
   Terminal as TerminalIcon, Globe,
   Phone, Printer, Camera, Cpu, Database, Smartphone, Link2,
   Lock, KeyRound, Trash2, ShieldCheck, MoreVertical, Wifi,
-  BatteryCharging, Network, ArrowUp, ArrowDown,
+  BatteryCharging, Network, ArrowUp, ArrowDown, Merge, Split,
 } from "lucide-react";
 
 /**
@@ -522,6 +525,12 @@ export default function DiscoveryPage() {
   // ─── Add to devices (bulk promote host → device) ──────────
   const [addDevicesOpen, setAddDevicesOpen] = useState(false);
   const [linkSameDeviceOpen, setLinkSameDeviceOpen] = useState(false);
+  // Unioni a mano sulla mappa (piano 2026-10-16, Task 6): solo admin; «Unisci…» / «Separa…» per gli host selezionati.
+  const { data: sessioneUnioni } = useSession();
+  const ruoloUnioni = (sessioneUnioni?.user as { role?: string } | undefined)?.role;
+  const adminUnioni = ruoloUnioni === "admin" || ruoloUnioni === "superadmin";
+  const [unisciOpen, setUnisciOpen] = useState(false);
+  const [separaOpen, setSeparaOpen] = useState(false);
   const [addDevicesSaving, setAddDevicesSaving] = useState(false);
   // Valori veri li mette openAddDevices dalla proposta sugli host scelti (tappa 1).
   const [addClassification, setAddClassification] = useState<string>("");
@@ -2054,6 +2063,24 @@ export default function DiscoveryPage() {
                   Stesso device fisico
                 </Button>
               )}
+              {adminUnioni && selectedIds.size === 1 && (
+                <>
+                  <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setUnisciOpen(true)}>
+                    <Merge className="h-3.5 w-3.5" />
+                    Unisci con…
+                  </Button>
+                  <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setSeparaOpen(true)}>
+                    <Split className="h-3.5 w-3.5" />
+                    Separa…
+                  </Button>
+                </>
+              )}
+              {adminUnioni && selectedIds.size >= 2 && (
+                <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setUnisciOpen(true)}>
+                  <Merge className="h-3.5 w-3.5" />
+                  Unisci ({selectedIds.size})…
+                </Button>
+              )}
               <Button
                 size="sm"
                 variant="outline"
@@ -3014,6 +3041,33 @@ export default function DiscoveryPage() {
         )}
         onLinked={() => { setSelectedIds(new Set()); fetchData(); }}
       />
+
+      {/* Unioni a mano sulla mappa: i dialoghi stanno montati solo da aperti, con la selezione di quel momento */}
+      {unisciOpen && selectedIds.size > 0 && (() => {
+        const scelti = Array.from(selectedIds).map((id) => `host:${id}`);
+        const primo = hosts.find((h) => h.id === Array.from(selectedIds)[0]);
+        return (
+          <UnisciDialog
+            open
+            onOpenChange={setUnisciOpen}
+            da={scelti[0]}
+            nomeDa={primo?.hostname || primo?.ip || scelti[0]}
+            scelti={scelti.length >= 2 ? scelti : undefined}
+            onFatto={() => { setUnisciOpen(false); setSelectedIds(new Set()); void fetchData(); }}
+          />
+        );
+      })()}
+      {separaOpen && selectedIds.size === 1 && (() => {
+        const id = Array.from(selectedIds)[0];
+        return (
+          <SeparaDialog
+            open
+            onOpenChange={setSeparaOpen}
+            oggetto={`host:${id}`}
+            onFatto={() => { setSeparaOpen(false); setSelectedIds(new Set()); void fetchData(); }}
+          />
+        );
+      })()}
 
       {/* v0.2.628: Preset chip manager */}
       <PresetsDialog

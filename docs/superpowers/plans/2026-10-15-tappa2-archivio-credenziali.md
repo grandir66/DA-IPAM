@@ -1961,6 +1961,12 @@ scrivere colonne e inline.
   - `self_hosted` → `unifi`/`utente`, con `encrypted_username = encrypt(username)` ed
     `encrypted_password = password_enc`;
   - `omada` → `omada`, col metodo dai campi presenti;
+    *(revisione della 2f, da confermare con Riccardo: nel codice ogni riga Omada va fra i
+    `lasciati` e il segno resta `parziale:`. Omada non si legge ancora e non ha un
+    formato dei segreti (client id e secret in quali colonne?): dedurre il metodo dai
+    campi sarebbe un'ipotesi, e una voce sbagliata durerebbe oltre la 2g; vale la regola
+    dei «Casi da non dimenticare», punto 7. Sui dati del 15/10 l'effetto è nullo: H1 e
+    A non hanno righe Omada, e `CONTROLLER_KINDS_AVAILABLE` non lascia salvarne.)*
   - AD → `ad`, con utente e password cifrati copiati byte per byte;
   - un valore in chiaro si cifra.
 
@@ -2102,6 +2108,13 @@ scrivere colonne e inline.
     quando qualcuno ripiega sul facade), non ha segni: si dichiara per nome nel messaggio
     a Riccardo e si esclude. Quando si aprirà farà tutte le conversioni in fila; la
     pulizia dei dati lì non partirà mai da sola, perché è uno script (T27).
+  - *(revisione della 2f)* un tenant con righe Omada lasciate dal T22 ha il segno della
+    2f a `parziale:` per sempre: è un blocco esplicito, non un caso da aggirare. Il
+    registro non lo vede (una riga Omada non arriva mai al client, quindi
+    `cred_riga_integrazione` non scatta): si guarda il segno. Le colonne di quelle righe
+    non si svuotano finché non esiste una voce (conversione a mano quando Omada avrà un
+    formato, o riga tolta con l'ok di Riccardo); la pulizia del T27 le salta già, perché
+    svuota solo dove `credential_id` non è NULL.
 - [ ] **File**
   - modifica `resolve.ts`: via le fonti `device_inline`, `device_column*`, `legacy_chain`
     e `hub_default` (`snmp_ripiego` resta secondo D5);

@@ -6,6 +6,7 @@ import {
   buildLinkPatch,
   buildManualLink,
   initialPort,
+  mediaDelDialogo,
   portChoices,
   type KnownPort,
 } from "@/lib/topology/connect-form";
@@ -59,4 +60,16 @@ test("la modifica: stesse regole, solo porte, tipo e nota", () => {
     buildLinkPatch({ aPort: { choice: "Port 3", text: "" }, bPort: { choice: PORT_NONE, text: "" }, medium: "wireless", note: "ponte" }),
     { ok: true, body: { a_port: "Port 3", b_port: "", medium: "wireless", note: "ponte" } },
   );
+});
+
+// Revisione finale di T3 (I1): «Collega a…» non offriva «tunnel», che le rotte accettano da T3 (§13.9). Solo con la mappa nuova
+// accesa: spenta, il dialogo è quello di prima, voce per voce.
+test("I1: il tipo «tunnel» nel dialogo solo con la mappa nuova; spenta, le tre voci di prima", () => {
+  const prima = [
+    { value: "cavo", label: "cavo" },
+    { value: "fibra", label: "fibra" },
+    { value: "wireless", label: "wireless (ponte radio, mesh)" },
+  ];
+  assert.deepEqual(mediaDelDialogo(false), prima);
+  assert.deepEqual(mediaDelDialogo(true), [...prima, { value: "tunnel", label: "tunnel" }]);
 });

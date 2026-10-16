@@ -626,6 +626,7 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
         onClose={() => setConnect(null)}
         onCreate={async (body) => (await createManualLink(send, body)).ok}
         onPatch={async (id, body) => (await patchManualLink(send, id, body)).ok}
+        mappaNuova={data?.model.mappa === "cavi"}
       />
       <Dialog open={ignoreAsk !== null} onOpenChange={(o) => { if (!o) setIgnoreAsk(null); }}>
         <DialogContent>

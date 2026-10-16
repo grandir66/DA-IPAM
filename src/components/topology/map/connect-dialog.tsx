@@ -18,6 +18,7 @@ import {
   buildLinkPatch,
   buildManualLink,
   initialPort,
+  mediaDelDialogo,
   portChoices,
   type KnownPort,
   type LinkPatchBody,
@@ -42,21 +43,18 @@ interface Props {
   /** Le scritture rispondono true se sono andate: solo allora il dialogo si chiude. */
   onCreate: (body: ManualLinkBody) => Promise<boolean>;
   onPatch: (id: number, body: LinkPatchBody) => Promise<boolean>;
+  /** La mappa nuova è accesa (T3): fra i tipi c'è anche «tunnel». Spenta, il dialogo è quello di prima. */
+  mappaNuova?: boolean;
 }
 
 const MEDIUM_NONE = "__non_indicato__";
-const MEDIA: Array<{ value: LinkMedium; label: string }> = [
-  { value: "cavo", label: "cavo" },
-  { value: "fibra", label: "fibra" },
-  { value: "wireless", label: "wireless (ponte radio, mesh)" },
-];
 
-export function ConnectDialog({ request, onClose, onCreate, onPatch }: Props) {
+export function ConnectDialog({ request, onClose, onCreate, onPatch, mappaNuova = false }: Props) {
   return (
     <Dialog open={request !== null} onOpenChange={(o) => { if (!o) onClose(); }}>
       <DialogContent className="sm:max-w-[560px]">
         {/* Il modulo si rimonta a ogni apertura: porte e scelte ripartono da capo. */}
-        {request && <ConnectForm request={request} onClose={onClose} onCreate={onCreate} onPatch={onPatch} />}
+        {request && <ConnectForm request={request} onClose={onClose} onCreate={onCreate} onPatch={onPatch} mappaNuova={mappaNuova} />}
       </DialogContent>
     </Dialog>
   );
@@ -81,8 +79,9 @@ function usePorts(nodeId: string): { state: PortsState; retry: () => void } {
   return { state, retry };
 }
 
-function ConnectForm({ request, onClose, onCreate, onPatch }: Props & { request: ConnectRequest }) {
+function ConnectForm({ request, onClose, onCreate, onPatch, mappaNuova = false }: Props & { request: ConnectRequest }) {
   const { a, b, aName, bName, edit } = request;
+  const MEDIA = mediaDelDialogo(mappaNuova);
   const aPorts = usePorts(a);
   const bPorts = usePorts(b);
   const [aPick, setAPick] = useState<PortPick | null>(null);

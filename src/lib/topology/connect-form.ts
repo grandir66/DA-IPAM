@@ -41,6 +41,20 @@ export interface PortPick {
   text: string;
 }
 
+const MEDIA_DI_PRIMA: ReadonlyArray<{ value: LinkMedium; label: string }> = [
+  { value: "cavo", label: "cavo" },
+  { value: "fibra", label: "fibra" },
+  { value: "wireless", label: "wireless (ponte radio, mesh)" },
+];
+
+/**
+ * I tipi del dialogo. «tunnel» (T3, §13.9: le rotte lo accettano) solo con la mappa nuova accesa: spenta, il dialogo è quello
+ * di prima (revisione finale di T3, I1).
+ */
+export function mediaDelDialogo(mappaNuova: boolean): Array<{ value: LinkMedium; label: string }> {
+  return mappaNuova ? [...MEDIA_DI_PRIMA, { value: "tunnel", label: "tunnel" }] : [...MEDIA_DI_PRIMA];
+}
+
 /** La scelta iniziale per una porta già salvata (modifica) o vuota (nuovo collegamento). */
 export function initialPort(ports: readonly KnownPort[], current: string): PortPick {
   if (!current.trim()) return { choice: PORT_NONE, text: "" };

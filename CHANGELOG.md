@@ -4,6 +4,30 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-16 · credenziali tappa 2d: una lista sola per rete
+
+Piano `docs/superpowers/plans/2026-10-15-tappa2-archivio-credenziali.md` (sotto-tappa 2d, zona rossa).
+Perché: le credenziali di una rete stavano in tre posti (lista della rete, catene vecchie per ruolo, chiave
+«di default» dell'hub) e in un quarto per host (i pin del rilevamento); la pagina ne mostrava uno solo.
+
+### Modifiche
+
+- **Catene vecchie e pin entrano nella lista della rete, una volta sola** (`converti-catene.ts`, segno
+  `credenziali_t2_catene`): le voci già presenti non si duplicano, quelle di un tipo che non vale per il
+  protocollo si saltano e si contano. Le tabelle vecchie restano congelate fino alla 2g.
+- **Il motore non legge più catene vecchie né chiave dell'hub** dopo la conversione: una voce tolta dalla
+  lista non torna, e sull'hub la chiave «di default» non si accoda più alle reti.
+- **Rilevamento sul motore** (Windows, SSH, fase 4 della scansione completa): prova prima la voce che
+  funzionava, poi il resto della lista; prima un pin provava solo se stesso e un host con la password
+  cambiata restava non rilevato. La scansione completa non salta più la fase SSH con la lista vuota.
+- **Reti**: i quattro campi per ruolo si accodano alla lista con un avviso; la GET non restituisce più le
+  catene vecchie. `detect_credentials` dell'host risponde 400 («campo superato»). Via la scheda «Credenziali
+  host di default» da Impostazioni → Sistema.
+- **Anteprima per lo scanner edge**: gli slot vengono dalla catena del motore, uguali prima e dopo.
+- **Usi di una voce**: catene e pin congelati non contano più; una voce tolta dalla lista si elimina.
+- **Import**: un bundle esportato dopo la 2d (segno chiuso) non si riconverte, così le voci tolte non
+  tornano; un bundle di prima si converte come prima.
+
 ## [Non rilasciato] — 2026-10-16 · credenziali tappa 2c: archivio coi tipi per esteso
 
 Piano `docs/superpowers/plans/2026-10-15-tappa2-archivio-credenziali.md` (sotto-tappa 2c, zona rossa), ADR 0017.

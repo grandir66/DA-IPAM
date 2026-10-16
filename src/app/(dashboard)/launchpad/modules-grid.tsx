@@ -28,9 +28,15 @@ import {
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import type { ModuleState, ModuleKey } from "@/lib/modules/registry";
-import type { ModuleHealth, ModuleHealthStatus, ModuleVerdict } from "@/lib/modules/health";
+import type { ModuleHealth, ModuleHealthStatus, ModuleHealthVerdict } from "@/lib/modules/health";
 import { isModuleLaunchable } from "@/lib/modules/launchable";
 import { externalUiText } from "@/lib/modules/external-ui";
+import {
+  ETICHETTA_OPZIONE,
+  ETICHETTA_STATO_OFFERTA,
+  opzioneAcquistata,
+  statoOfferta,
+} from "@/lib/modules/offerta";
 
 const ICONS: Record<string, LucideIcon> = {
   ShieldAlert,
@@ -64,16 +70,21 @@ const STATUS_LABEL: Record<ModuleHealthStatus, string> = {
 };
 
 // F2/F5: il semaforo è guidato dal verdict L7 (ok/degraded/fail) quando disponibile.
-const VERDICT_DOT: Record<ModuleVerdict, string> = {
+// Passo 4 (16/10): spento ≠ guasto, e un modulo locale senza sonda non è «connesso».
+const VERDICT_DOT: Record<ModuleHealthVerdict, string> = {
   ok: "bg-emerald-500",
   degraded: "bg-amber-500",
   fail: "bg-red-500",
+  off: "bg-muted-foreground/40",
+  unverified: "bg-primary/50",
 };
 
-const VERDICT_LABEL: Record<ModuleVerdict, string> = {
+const VERDICT_LABEL: Record<ModuleHealthVerdict, string> = {
   ok: "Connesso",
   degraded: "Degradato",
   fail: "Non connesso",
+  off: "Spento",
+  unverified: "Locale, non verificato",
 };
 
 function relativeTime(iso: string | null): string | null {
@@ -206,6 +217,17 @@ function ModuleTile({
   const stateLabel = verdict ? VERDICT_LABEL[verdict] : (health?.message ?? STATUS_LABEL[status]);
   const lastSync = relativeTime(health?.lastSyncAt ?? null);
   const showRepair = !!verdict && verdict !== "ok" && !!health?.repairAction;
+  // Passo 4c: un modulo opzionale porta l'etichetta «Opzione»; lo stato
+  // commerciale sta nel suggerimento. Solo presentazione, nessun blocco.
+  const statoOpzione =
+    m.offerta === "opzione"
+      ? statoOfferta({
+          acquistato: opzioneAcquistata(m.key),
+          configured: m.configured,
+          enabled: m.enabled,
+          verdict,
+        })
+      : null;
 
   async function verify() {
     setVerifying(true);
@@ -221,6 +243,8 @@ function ModuleTile({
         onHealthUpdate(h);
         if (h.verdict === "ok") toast.success(`${m.label}: connesso`);
         else if (h.verdict === "degraded") toast.warning(`${m.label}: degradato — ${h.detail ?? ""}`);
+        else if (h.verdict === "off") toast.info(`${m.label}: spento`);
+        else if (h.verdict === "unverified") toast.info(`${m.label}: locale, non verificato`);
         else toast.error(`${m.label}: non connesso — ${h.detail ?? ""}`);
       } else {
         toast.error(`Verifica ${m.label} fallita`);
@@ -248,7 +272,7 @@ function ModuleTile({
       } else {
         toast.error(data?.fix ?? `${m.label}: ${data?.detail ?? "ancora non connesso"}`);
         if (data) {
-          onHealthUpdate({ ...(health as ModuleHealth), verdict: (data.verdict as ModuleVerdict) ?? "fail", detail: data.detail ?? null });
+          onHealthUpdate({ ...(health as ModuleHealth), verdict: (data.verdict as ModuleHealthVerdict) ?? "fail", detail: data.detail ?? null });
         }
       }
     } catch {
@@ -274,6 +298,15 @@ function ModuleTile({
             <Badge variant="outline" className="text-[10px] uppercase shrink-0">
               {m.category}
             </Badge>
+            {statoOpzione && (
+              <Badge
+                variant="secondary"
+                className="text-[10px] shrink-0"
+                title={`Modulo opzionale · ${ETICHETTA_STATO_OFFERTA[statoOpzione]}`}
+              >
+                {ETICHETTA_OPZIONE}
+              </Badge>
+            )}
           </div>
           <div className="flex items-center gap-1.5 mt-1">
             <span className={`h-2 w-2 rounded-full shrink-0 ${dotClass}`} />

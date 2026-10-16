@@ -1,9 +1,12 @@
 import { getIntegrationConfig } from "@/lib/integrations/config";
 import {
+  clearLibreNMSWebSessionCache,
   getLibreNMSWebSession,
   librenmsHostHeaderFromUiUrl,
+  verificaSessioneLibreNMS,
+  type LibreNMSWebSessionOptions,
 } from "@/lib/integrations/librenms-web-session";
-import { isInternalIntegrationUrl } from "@/lib/integrations/public-url";
+import { applianceHostPubblici, isInternalIntegrationUrl } from "@/lib/integrations/public-url";
 import { scegliUrlOperatoreLibreNMS } from "@/lib/integrations/librenms-accesso";
 
 const DEFAULT_USERNAME = "admin";
@@ -38,21 +41,35 @@ export function librenmsAutologinUpstreamOrigin(): string | null {
   return null;
 }
 
-/** Cookie sessione LibreNMS se adminPassword configurata e autologin attivo. */
-export async function librenmsAutologinCookieHeader(): Promise<string | null> {
+/**
+ * Opzioni del login web automatico, o null se l'accesso automatico non è
+ * configurato.
+ *
+ * `insecureTls: true` è VOLUTO e resta (passo 4b, 16/10): LibreNMS dell'appliance
+ * sta dietro il certificato autofirmato di nginx, che il server DA-IPAM non conosce.
+ * L'esito però è esplicito: la verifica «apertura per il browser» di LibreNMS
+ * mostra il certificato e la sua impronta (`modules/apertura-bersagli.ts`).
+ */
+function opzioniAccessoAutomatico(): LibreNMSWebSessionOptions | null {
   const cfg = getIntegrationConfig("librenms");
   const password = cfg.adminPassword?.trim();
   const loginOrigin = librenmsAutologinUpstreamOrigin();
   if (!password || cfg.mode === "disabled" || !cfg.url || !loginOrigin) return null;
+  return {
+    upstreamOrigin: loginOrigin,
+    hostHeader: librenmsHostHeaderFromUiUrl(loginOrigin),
+    username: DEFAULT_USERNAME,
+    password,
+    insecureTls: true,
+  };
+}
 
+/** Cookie sessione LibreNMS se adminPassword configurata e autologin attivo. */
+export async function librenmsAutologinCookieHeader(): Promise<string | null> {
+  const opts = opzioniAccessoAutomatico();
+  if (!opts) return null;
   try {
-    const { cookieHeader } = await getLibreNMSWebSession({
-      upstreamOrigin: loginOrigin,
-      hostHeader: librenmsHostHeaderFromUiUrl(loginOrigin),
-      username: DEFAULT_USERNAME,
-      password,
-      insecureTls: true,
-    });
+    const { cookieHeader } = await getLibreNMSWebSession(opts);
     return cookieHeader;
   } catch (e) {
     console.warn(
@@ -61,6 +78,35 @@ export async function librenmsAutologinCookieHeader(): Promise<string | null> {
     );
     return null;
   }
+}
+
+/**
+ * La sessione dell'accesso automatico apre ancora LibreNMS, o finisce sul login?
+ * In caso di errore di rete risponde `true`: non si butta una sessione buona per
+ * un intoppo, e sarà l'apertura a dire cosa non va.
+ */
+export async function librenmsSessioneAccessoValida(cookieHeader: string): Promise<boolean> {
+  const opts = opzioniAccessoAutomatico();
+  if (!opts) return false;
+  try {
+    return await verificaSessioneLibreNMS(opts, cookieHeader);
+  } catch {
+    return true;
+  }
+}
+
+/** Svuota la cache delle sessioni: la prossima apertura rifà il login. */
+export function librenmsSvuotaSessioniAccesso(): void {
+  clearLibreNMSWebSessionCache();
+}
+
+/**
+ * Nomi con cui il browser raggiunge l'appliance che serve LibreNMS (nginx :7443):
+ * se l'URL di LibreNMS usa uno di questi, l'accesso automatico può rimandare il
+ * browser sullo stesso nome con cui ha aperto DA-IPAM (i cookie seguono il nome).
+ */
+export function librenmsHostAllineabili(): string[] {
+  return applianceHostPubblici();
 }
 
 export function librenmsAutologinEnabled(): boolean {

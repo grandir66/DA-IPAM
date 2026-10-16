@@ -4,6 +4,225 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-16 · apertura delle interfacce dei moduli: «Verifica» dice perché non si aprono
+
+Passo 4b del piano di solidità del 16/10 (parte DA-IPAM; analisi `2026-10-16-catena-apertura-interfacce-moduli.md`).
+Perché: «Verifica» provava solo l'URL dell'API, mai quello che apre il browser. Un'interfaccia che non si apriva dava
+un riquadro vuoto o la pagina di login, senza una causa.
+
+### Modifiche
+
+- **Verifica «apertura per il browser»** accanto a quella dell'API, nel modulo comune di salute
+  (`verificaAperturaModulo` in `modules/health.ts`, motore `modules/apertura-browser.ts`, URL per modulo
+  `modules/apertura-bersagli.ts`, rotta `GET /api/modules/[key]/apertura?origine=…`, sessione richiesta). Esiti:
+  certificato non fidato, nome errato, scaduto (tre controlli indipendenti: OpenSSL si ferma al primo), login
+  richiesto, riquadro bloccato (X-Frame-Options, CSP `frame-ancestors`, contenuto misto), risposta di un'API invece
+  dell'interfaccia, errore HTTP, non raggiungibile, nessun indirizzo. Ogni esito ha la spiegazione in italiano; con un
+  problema di certificato, finché non c'è la CA interna di DA-Link, l'istruzione per accettarlo una volta e
+  l'**impronta SHA-256** da confrontare. Il certificato si legge senza rifiutarlo e lo si giudica nel codice; la GET che
+  segue non porta credenziali. **Modulo spento: nessuna chiamata** (verdetto `off` della sonda, prima di tutto).
+- **Pagina dei moduli** (Impostazioni → Moduli): per Scanner-Edge, LibreNMS, Graylog, Wazuh, MeshCentral e controller,
+  il riquadro «Verifica» con due righe distinte, «API» e «Apertura per il browser».
+- **LibreNMS**: il login automatico si giudica dal contenuto della risposta (rinvio a `/login`, campo password, 419),
+  non dalla presenza di `laravel_session`, che Laravel dà anche con la password sbagliata: `/sso` risponde con un errore
+  spiegato invece di un 302 verso il login. Prima di usare la sessione in cache si controlla che apra ancora LibreNMS:
+  se finisce sul login, cache svuotata e login nuovo (anche nel proxy; `clearLibreNMSWebSessionCache` non aveva
+  chiamanti). Il 302 porta a LibreNMS sullo stesso nome con cui il browser ha aperto DA-IPAM, dove finiscono i cookie,
+  se LibreNMS è servito da nginx dell'appliance; altrimenti una pagina spiega che l'accesso automatico non può
+  funzionare da quel nome. `insecureTls` del login resta (certificato autofirmato dell'appliance), ma la verifica lo
+  dice e mostra l'impronta.
+- **MeshCentral**: la sessione nel riquadro chiede subito la verifica e mostra la causa vera: certificato (con
+  l'impronta) oppure origine non ammessa da `frame-ancestors`, con le origini ammesse e quelle **da ammettere**
+  (quella di adesso più l'host dell'appliance). `allowedFramingOrigins` lo scrive l'installatore, non DA-IPAM.
+- **Scanner-Edge**: l'URL dell'interfaccia viene dal nodo che serve davvero la 6443 (`resolveEdgeBrowserUrl`: voce
+  «edge» del vault scritta dall'installatore, poi host pubblico dell'appliance), non dall'host di `base_url` (in
+  consolidated 127.0.0.1, niente pulsante; in full l'IP dell'edge, porta sbagliata). Launchpad, card e verifica usano
+  la stessa funzione; `deriveEdgeUiBase` resta solo come ripiego per un edge fuori dall'appliance.
+- **Wazuh e Graylog**: la Launchpad e il viewer leggono la stessa fonte (`resolveWazuhBrowserUrl`,
+  `resolveIntegrationBrowserUrl`). Il vault si legge con qualunque etichetta del tipo («Wazuh SIEM» dell'installatore
+  compresa, mai l'API :55000), non più solo «dashboard». Graylog ripiega sulla 9443 di nginx, non sulla 9000. Le porte
+  dell'appliance sono in una tabella sola (`PORTE_UI_APPLIANCE` in `integrations/public-url.ts`).
+
+### Prove
+
+- `modules/__tests__/apertura-browser.test.ts`: server `https.createServer` finti su 127.0.0.1 con certificati
+  generati sul momento (`certificati-finti.ts`, X.509 v3 con SAN, senza openssl): fidato, autofirmato, nome errato,
+  scaduto, login richiesto, X-Frame-Options DENY, CSP `frame-ancestors`, JSON 401, porta chiusa.
+- `integrations/__tests__/librenms-sessione-web.test.ts`: Laravel finto che dà il cookie anche col login sbagliato.
+- `modules/__tests__/apertura-moduli.test.ts`: spento = nessuna chiamata; edge in full; Wazuh/Graylog stessa fonte;
+  MeshCentral con l'origine non ammessa.
+
+### Da verificare su un'appliance vera
+
+- LibreNMS aperto con un nome diverso da `APP_URL`: se genera link assoluti verso l'IP, i cookie non li seguono.
+- Le intestazioni vere di MeshCentral con `allowedFramingOrigins`, e quelle di Graylog e LibreNMS nel viewer.
+## [Non rilasciato] — 2026-10-16 · MDM: il job segue l'interruttore, spegnimento automatico spiegato
+
+Passo 3 del piano di solidità del 16/10. Perché: «sincronizzazione automatica abilitata» non creava nessun job
+`mdm_sync` (nessuno lo creava), dopo cinque errori l'MDM si spegneva da solo e riaccenderlo lasciava il contatore a
+cinque (il primo errore lo rispegneva), e la pagina era aperta anche a chi non è admin.
+
+### Modifiche
+
+- **`saveMdmConfig` allinea il job `mdm_sync`** in una transazione (come `ensureWazuhSyncJobForAllTenants`): acceso →
+  il job c'è ed è acceso (creato ogni 60 minuti, o riacceso, mai doppio); spento → il job si toglie. `PUT /api/mdm/config`
+  ricarica lo scheduler del tenant quando il job cambia, e ora restituisce l'errore della vista aggregata invece di
+  ignorarlo.
+- **Riattivare azzera `consecutive_errors`** (anche dopo lo spegnimento automatico); salvare da acceso non lo tocca.
+- **Colonne nuove `last_attempt_at` e `last_success_at`** in `mdm_config`: nella CREATE di `db-tenant-schema.ts` e,
+  sui DB esistenti, con `ALTER TABLE ADD COLUMN` idempotente nello stesso file (`assicuraColonneMdmConfig`), chiamata
+  da `mdm-config.ts` all'apertura della connessione. `db-tenant.ts` non è toccato. `last_sync_at` resta com'era.
+- **Pagina /settings/mdm solo per admin** (gli altri tornano a /settings), come le sue API. Lo spegnimento automatico è
+  spiegato in pagina (quanti errori, il limite, come riattivare); ultimo tentativo e ultima riuscita separati.
+- **Testi**: «Android» al posto di «Android/iOS» (pagina MDM e scheda in Impostazioni).
+
+### Invariato
+
+- Il job resta in tabella dopo lo spegnimento automatico e gira a vuoto («disabled») finché l'admin non salva:
+  toglierlo dall'interno del job lascerebbe allo scheduler un cron senza riga.
+
+## [Non rilasciato] — 2026-10-16 · LibreNMS solo locale: modo «Installato dall'appliance»
+
+Passo 5 del piano di solidità del 16/10, parte DA-IPAM. Perché: LibreNMS è integrato e solo locale (decisione di
+Riccardo), ma l'installatore dell'appliance lo registra come «Istanza esterna» e la scheda offriva ancora di puntare un
+LibreNMS esterno.
+
+### Aggiunte
+
+- **Modo nuovo `appliance`** (`IntegrationMode`): LibreNMS installato dall'installatore dell'appliance. Accettato dove si
+  accetta `managed` (PUT `/api/integrations/librenms`); per sync, grafici, accesso automatico e salute vale come
+  `external` (URL + token). DA-IPAM non ne gestisce il contenitore: avvio, arresto e rimozione restano solo per `managed`.
+  Solo per LibreNMS: Graylog e Loki lo rifiutano (400, motivo in italiano). Logica pura in `integrations/librenms-modo.ts`.
+- **«Istanza esterna» sparisce dalla tendina di LibreNMS** per le configurazioni nuove (`vociModalita`); al suo posto
+  «Installato dall'appliance». Graylog e Loki come prima.
+- **«Converti in «Installato dall'appliance»…»**: unico passaggio da `external` ad `appliance`, nella scheda di
+  LibreNMS con conferma in italiano, e `POST /api/integrations/librenms/converti` (solo admin, corpo
+  `{ "conferma": true }`). Cambia solo il modo: indirizzo, token e password restano. Rifiutato (409) se il modo non è
+  `external` o se manca l'indirizzo.
+
+### Invariato
+
+- **Le righe `external` esistenti restano leggibili e funzionanti**: nessuna migrazione automatica; in tendina compaiono
+  come «Istanza esterna (da convertire)». Il PUT continua ad accettare `external`: lo manda ancora Deploy-Appliance
+  (`connect.sh`), e così l'import del JSON dei moduli.
+- Da fare fuori da qui: censimento in sola lettura su hub, cliente A e pilota; Deploy-Appliance `connect.sh` che scrive
+  `appliance`; il kit di DA-Link (K2a).
+
+## [Non rilasciato] — 2026-10-16 · moduli opzionali: campo «offerta» ed etichetta «Opzione»
+
+Passo 4c del piano di solidità del 16/10. Perché: Riccardo ha deciso che MDM, Patch/Chocolatey, MeshCentral, Wazuh e
+Zabbix sono moduli opzionali, potenzialmente a pagamento, mentre LibreNMS è integrato. La fonte del diritto sarà la
+licenza consegnata da DA-Link, che non esiste ancora: si prepara solo il campo e la presentazione.
+
+### Aggiunte
+
+- **Campo `offerta: "base" | "opzione"`** nel descrittore dei moduli (`modules/registry.ts`), letto dalla tabella pura
+  `OFFERTA_MODULO` (`modules/offerta.ts`). Opzioni nel catalogo: Patch Management, MeshCentral, Wazuh. LibreNMS e gli
+  altri: base. **MDM e Zabbix non hanno una voce nel catalogo**: non se ne inventa una (l'MDM ha comunque l'etichetta
+  sulla sua scheda in Impostazioni → Sistema).
+- **Stato di presentazione** delle opzioni, funzione pura `statoOfferta`: non acquistato · acquistato da configurare ·
+  spento · attivo · guasto. L'ingresso `acquistato` oggi è sempre vero (`opzioneAcquistata`), col perché scritto nel codice.
+- **Etichetta «Opzione»** nella griglia della Launchpad (lo stato nel suggerimento), nelle sezioni del tab Moduli e
+  sulla scheda MDM.
+
+### Invariato
+
+- **Nessun blocco e nessun cambio di comportamento** su hub, cliente A e pilota: nessun modulo si spegne, nessuna sonda
+  di salute cambia, il segnale verso DA-Link è lo stesso.
+
+## [Non rilasciato] — 2026-10-16 · salute dei moduli: «spento» non è «guasto»
+
+Passo 4 del piano di solidità del 16/10. Perché: su un'istanza appena installata ogni sonda di un modulo spento diceva
+`fail` (visto a schermo il 15/10), Patch Management diceva `ok` solo perché l'interruttore era acceso, Inventory Agent
+non aveva sonda e Network Services era «ok» con un 200 anche con Unbound fermo.
+
+### Modifiche
+
+- **Verdetto nuovo `off`** (`ModuleHealthVerdict` in `modules/health.ts`): modulo spento o mai configurato, nessuna
+  chiamata, status «never» (fuori dal conteggio di errori e avvisi). Vale per Scanner-Edge, Wazuh, LibreNMS, Graylog,
+  MeshCentral (ora segue l'interruttore: spento non chiama più il server anche coi parametri rimasti), Network
+  Services, Patch, Inventory Agent e controller UniFi. Un modulo **acceso a metà** (LibreNMS o Graylog senza URL,
+  Wazuh senza URL, MeshCentral senza parametri, Network Services senza bridge) resta un guasto: `fail`.
+- **Patch Management acceso: «locale, non verificato»** (`unverified`) invece di `ok` dedotto dall'interruttore.
+- **Inventory Agent ha una sonda**: l'età dell'ultimo inventario ricevuto (`inv_agent_endpoint.last_seen_at`), non
+  l'interruttore. Fino a 48 ore ok, fino a 8 giorni degradato (l'intervallo massimo degli agenti è 7), oltre guasto;
+  mai ricevuto = degradato.
+- **Network Services letto dal contenuto di `/api/v1/status`**: un verdetto per servizio (Unbound, AdGuard, PowerDNS,
+  Kea; `network-services/salute.ts`): acceso ok, fermo ma abilitato guasto, fermo e disabilitato spento. Il modulo è
+  degradato con un servizio guasto, guasto se nessuno è acceso. La pagina /network-services mostra lo stesso verdetto
+  per servizio e, a tutti, «configurazione dalle variabili d'ambiente» quando `source` è `env` (anche nel dettaglio
+  della sonda).
+- **Consumatori**: Launchpad (pallino e scritta «Spento» / «Locale, non verificato»), dashboard («Locale, non
+  verificato» al posto di «Mai eseguita»), «Ripara» (un modulo spento non è riparato: dice di accenderlo),
+  notifica di salute dell'appliance (salta i verdetti che non sono una misura).
+
+### Invariato
+
+- **Segnale verso DA-Link**: parte solo la salute dei moduli accesi (più il sistema), e solo con `ok` | `degraded` |
+  `fail`. `unverified` va come `ok` (come prima per Patch), `off` non parte (`verdettoPerDaLink` in `dalink/fatti.ts`).
+  Inventory Agent acceso ora ha la sua voce.
+- **Deploy-Appliance `connect.sh`**: legge `verdict`; un modulo `off` cade nel ramo «health non determinato» (avviso,
+  l'installazione prosegue) invece che in `fail`.
+## [Non rilasciato] — 2026-10-16 · errori e operazioni lunghe nell'interfaccia dei moduli
+
+Passo 2 del piano di solidità del 16/10. Perché: nella pagina Moduli un errore si vedeva come uno stato («Docker non
+trovato», «Non configurato», «Non installato», scheda «Disabilitato») e il polling di un'installazione con la sessione
+scaduta, il servizio riavviato o la rete giù girava per sempre senza dire niente.
+
+### Modifiche
+
+- **Caricamenti con `fetchJson` + `LoadError`** in `integration-card.tsx` e `modules-tab.tsx` (stato di Docker, moduli
+  opzionali, Network Services, configurazione di LibreNMS/Graylog/Loki): con un errore compare il riquadro «Impossibile
+  caricare…» con «Riprova»; durante il caricamento «Caricamento…», non «Non installato».
+- **Polling dell'installazione** (integrazioni e Docker) da un modulo puro, `src/lib/integrations/polling-job.ts`, e
+  dall'hook `useJobPolling` (un giro alla volta, fermo all'uscita dalla pagina). 401 → «Sessione scaduta», polling fermo;
+  404 → «Esito sconosciuto: il servizio è stato riavviato», polling fermo; rete giù o 5xx → messaggio col tentativo
+  («tentativo 2 di 5»), e al quinto di fila polling fermo col perché. Il messaggio resta accanto al log.
+- **Un solo `toggleServizio`** (`src/lib/network-services/toggle-servizio.ts`) per Network Services e DNS: non lancia
+  mai, dà sempre un messaggio; a schermo resta lo stato di prima finché la rilettura del bridge non lo cambia.
+- **`job-store.ts`**: log tenuto alle ultime 500 righe (la prima dice quante ne mancano) e job finiti tolti dopo un'ora,
+  alla prima creazione o lettura dell'elenco. L'esecutore fuori processo resta nella tappa 4 del piano del 12/10.
+
+### Prove
+
+- `polling-job.test.ts` (200 in corso e finito, 401, 404, 500 fino alla soglia, rete giù, conto azzerato, corpo strano),
+  `job-store.test.ts` (tetto del log, pulizia), `toggle-servizio.test.ts` (riuscito, 502, ok:false, 401, rete giù).
+## [Non rilasciato] — 2026-10-16 · lo stato dell'aggiornamento nel segnale verso DA-Link
+
+Passo 1d del piano di solidità (metà DA-IPAM; la metà DA-Link è in DA-Link, con le email ad allarmiDA@domarc.it).
+Perché: DA-Link vedeva versione e salute, ma non che un'appliance era ferma su un aggiornamento fallito.
+
+### Aggiunte
+
+- **Campo `aggiornamento` nel segnale**: commit avviato, ramo, esito, fase, commit tentato, tentativi e date, da
+  `data/aggiornamento.json`. Solo stato: messaggi e avvisi restano sull'istanza (possono contenere percorsi).
+  Assente se l'istanza non ha ancora uno stato; una lettura rotta non ferma il segnale.
+
+## [Non rilasciato] — 2026-10-16 · «Aggiorna ora» passa dal servizio d'aggiornamento
+
+Passo 1c del piano di solidità. Perché: c'erano due strade d'aggiornamento. Il timer usava `update.sh` (ora con
+build separata, salute e ritorno indietro), mentre «Aggiorna ora» faceva pull, `npm install` e build dentro il
+processo acceso, sopra la sua `.next`, con un ritorno indietro tutto suo.
+
+### Cambiate
+
+- **«Aggiorna ora»** (Impostazioni → Aggiornamenti e banner) lascia `data/aggiornamento-richiesto` e avvia
+  `<servizio>-update.service` con `systemctl --no-block start`. La rotta non esegue più comandi; risponde
+  `started` con l'ora della richiesta. `auto-update.sh` consuma il file e lo tratta come
+  `DA_INVENT_FORZA_AGGIORNAMENTO=1`: chi preme il pulsante riprova anche un commit già fallito 3 volte.
+- **Ogni giro di `auto-update.sh` lascia il suo esito** in `ultimo_controllo` (già aggiornato, solo documentazione,
+  aggiornamento avviato, commit fallito in attesa, fetch fallito), così il pulsante non resta mai senza risposta.
+- **Scheda «Stato dell'aggiornamento»**: codice scaricato e avviato, ultimo tentativo con fase, esito, tentativi e
+  avvisi. Dopo il clic la segue fase per fase anche durante il riavvio (fino a 5 minuti senza risposta), e a
+  esito riuscito ricarica la pagina. Un aggiornamento già in corso all'apertura si segue lo stesso.
+- «Riavvia» controlla la build in uso (`.next-attiva`), non per forza `.next`.
+- Fuori da systemd (sviluppo) «Aggiorna ora» spiega di usare `scripts/update.sh --restart`.
+
+### Documenti
+
+- Piano del 12/10: MDM, GLPI e «Verifica» per modulo nella tappa 6; la tappa 9 riscritta (elenco delle
+  appliance e stato dell'aggiornamento a DA-Link, nessun comando verso le appliance).
+
 ## [Non rilasciato] — 2026-10-16 · aggiornamento automatico: ritenta e non lascia l'app rotta
 
 Passo 1 del piano di solidità (1a + 1b). Perché: `auto-update.sh` confrontava origin con HEAD, e HEAD avanza col pull

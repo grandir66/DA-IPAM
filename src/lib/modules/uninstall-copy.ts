@@ -175,7 +175,7 @@ export function containerRemovalConfirmText(
   return `Eliminare ${tutti}? ${nonTornano}`;
 }
 
-const NET_SERVICES_ENV_VARS = "NET_SERVICES_API_URL e NET_SERVICES_API_TOKEN";
+export const NET_SERVICES_ENV_VARS = "NET_SERVICES_API_URL e NET_SERVICES_API_TOKEN";
 const NET_SERVICES_BRIDGE_INTATTO = "Il bridge e i suoi servizi DNS/DHCP non vengono toccati.";
 
 /**

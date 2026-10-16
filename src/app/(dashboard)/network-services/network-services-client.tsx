@@ -9,13 +9,18 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { BridgeStatus } from "@/lib/network-services/client";
+import { toggleServizio, type ServizioRete } from "@/lib/network-services/toggle-servizio";
+import { verdettoServizio, type VerdettoServizio } from "@/lib/network-services/salute";
+import { NET_SERVICES_ENV_VARS } from "@/lib/modules/uninstall-copy";
 
 import { NetworkServicesSettings } from "./network-services-setup";
 
-type ServiceKey = "resolver" | "adblock" | "dns" | "dhcp";
+type ServiceKey = ServizioRete;
 
 interface Props {
   apiBase: string;
+  /** Da dove viene la configurazione del bridge: «env» si mostra a tutti (passo 4, 16/10). */
+  source?: "database" | "env" | null;
   isAdmin?: boolean;
   initialBridge: BridgeStatus | null;
   initialError: string | null;
@@ -51,8 +56,17 @@ const SERVICE_META: Record<
   },
 };
 
+/** Colore del verdetto per servizio (stesso calcolo della sonda di salute). */
+const VERDETTO_BADGE: Record<VerdettoServizio, "default" | "secondary" | "destructive" | "outline"> = {
+  ok: "default",
+  off: "secondary",
+  fail: "destructive",
+  non_so: "outline",
+};
+
 export function NetworkServicesClient({
   apiBase,
+  source = null,
   initialBridge,
   initialError,
   isAdmin = false,
@@ -80,28 +94,12 @@ export function NetworkServicesClient({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function toggleService(svc: ServiceKey, enable: boolean) {
+  function toggleService(svc: ServiceKey, enable: boolean) {
     startTransition(async () => {
-      const r = await fetch(`/api/network-services/toggle/${svc}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enable }),
-      });
-      const data = (await r.json()) as {
-        ok?: boolean;
-        error?: string;
-        results?: Array<{ unit: string; out?: string }>;
-      };
-      if (!r.ok || data.ok === false) {
-        const detail =
-          data.error ||
-          data.results?.map((x) => `${x.unit}: ${x.out ?? "?"}`).join(" · ") ||
-          r.statusText;
-        toast.error(`Toggle ${svc} fallito: ${detail}`);
-        await refreshAll();
-        return;
-      }
-      toast.success(`${SERVICE_META[svc].label} ${enable ? "abilitato" : "disabilitato"}`);
+      // Non lancia mai; a schermo resta lo stato di prima finché la rilettura non lo cambia.
+      const esito = await toggleServizio(svc, enable, SERVICE_META[svc].label);
+      if (esito.ok) toast.success(esito.messaggio);
+      else toast.error(esito.messaggio);
       await refreshAll();
     });
   }
@@ -121,6 +119,11 @@ export function NetworkServicesClient({
               DHCP
             </Link>
           </p>
+          {source === "env" && (
+            <p className="text-sm text-muted-foreground mt-1">
+              Configurazione dalle variabili d&apos;ambiente {NET_SERVICES_ENV_VARS}, non dal database.
+            </p>
+          )}
         </div>
         <Button variant="outline" onClick={() => refreshAll()} disabled={pending}>
           <RefreshCw className={`h-4 w-4 mr-2 ${pending ? "animate-spin" : ""}`} />
@@ -161,13 +164,14 @@ export function NetworkServicesClient({
               const Icon = meta.icon;
               const state = bridge?.services?.[svc];
               const active = state?.active === "active";
+              const verdetto = verdettoServizio(svc, state);
               return (
                 <Card key={svc}>
                   <CardHeader className="pb-3">
                     <div className="flex items-start justify-between">
                       <Icon className="h-5 w-5 text-muted-foreground" />
-                      <Badge variant={active ? "default" : "secondary"}>
-                        {active ? "active" : "inactive"}
+                      <Badge variant={VERDETTO_BADGE[verdetto.verdetto]} title={verdetto.nome}>
+                        {verdetto.stato}
                       </Badge>
                     </div>
                     <CardTitle className="text-base mt-2">{meta.label}</CardTitle>

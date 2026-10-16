@@ -22,8 +22,14 @@
  * Il login-token e' MONOUSO e dura 3 minuti: si conia alla bisogna e si passa
  * all'iframe una sola volta. Ogni cambio di modalita' → nuovo token, nuovo mount
  * (da qui la `key` sull'iframe: senza, React riusa il nodo e l'URL non ricarica).
+ *
+ * Riquadro vuoto (passo 4b, 16/10): il messaggio diceva sempre «certificato», ma
+ * spesso e' MeshCentral che rifiuta l'origine di DA-IPAM (frame-ancestors con una
+ * sola origine, `https://<ip>`, e DA-IPAM aperto per nome). Alla prima sessione
+ * si chiede al server la verifica di apertura e si mostra la causa vera: certificato
+ * (con l'impronta da confrontare) oppure riquadro bloccato (con le origini da ammettere).
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -39,6 +45,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { CommandPanel } from "@/components/rmm/command-panel";
 import { Badge } from "@/components/ui/badge";
+import { EsitiApertura, chiediApertura } from "@/components/integrations/apertura-browser";
+import type { AperturaModulo } from "@/lib/modules/health";
 
 /**
  * Modalita' della sessione. I viewmode 11/12/13 sono di MeshCentral e vivono
@@ -79,6 +87,20 @@ export default function RemoteSessionPage() {
   // è arrivato, mostriamo l'istruzione per accettare il cert una volta.
   const [frameLoaded, setFrameLoaded] = useState(false);
   const [frameStuck, setFrameStuck] = useState(false);
+  // Diagnosi dal server (certificato vs riquadro bloccato), chiesta una volta:
+  // un iframe bloccato da frame-ancestors emette onLoad lo stesso, quindi il
+  // watchdog da solo non basta a vederlo.
+  const [diagnosi, setDiagnosi] = useState<AperturaModulo | null>(null);
+  const [diagnosiErrore, setDiagnosiErrore] = useState<string | null>(null);
+  const diagnosiChiesta = useRef(false);
+  const montato = useRef(true);
+
+  useEffect(() => {
+    montato.current = true;
+    return () => {
+      montato.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!Number.isFinite(hostId)) return;
@@ -142,6 +164,19 @@ export default function RemoteSessionPage() {
     const t = setTimeout(() => setFrameStuck(true), 7000);
     return () => clearTimeout(t);
   }, [url]);
+
+  useEffect(() => {
+    if (!url || diagnosiChiesta.current) return;
+    diagnosiChiesta.current = true;
+    void chiediApertura("meshcentral").then((r) => {
+      if (!montato.current) return;
+      if (r.ok) setDiagnosi(r.apertura);
+      else setDiagnosiErrore(r.message);
+    });
+  }, [url]);
+
+  const problemiRiquadro = diagnosi?.verifiche.filter((v) => v.esito !== "ok") ?? [];
+  const riquadroBloccato = problemiRiquadro.some((v) => v.problemi.includes("iframe_bloccato"));
 
   const online = status?.conn === 1;
   const title = status?.rname ?? status?.name ?? `Host ${hostId}`;
@@ -277,21 +312,37 @@ export default function RemoteSessionPage() {
               />
             ) : null}
 
-            {/* Se l'iframe non carica, quasi sempre e' il cert self-signed di
-                MeshCentral non ancora accettato dal browser: lo diciamo e diamo
-                il link per accettarlo una volta, invece del riquadro vuoto muto. */}
-            {url && frameStuck && !frameLoaded ? (
-              <div className="absolute inset-x-0 bottom-0 border-t bg-background/95 p-4 text-sm">
-                <p className="font-medium">Il riquadro resta vuoto?</p>
-                <p className="mt-1 text-muted-foreground">
-                  MeshCentral usa un certificato self-signed che il browser blocca finché non
-                  lo accetti una volta. Apri il server in una scheda, accetta l&apos;avviso di
-                  sicurezza, poi torna qui e premi Riconnetti.
-                </p>
+            {/* Riquadro vuoto: la causa la dice la verifica del server (certificato
+                oppure origine non ammessa da MeshCentral), non piu' un'ipotesi fissa. */}
+            {url && (problemiRiquadro.length > 0 || (frameStuck && !frameLoaded)) ? (
+              <div className="absolute inset-x-0 bottom-0 max-h-[60%] overflow-y-auto border-t bg-background/95 p-4 text-sm">
+                {problemiRiquadro.length > 0 ? (
+                  <>
+                    <p className="font-medium">
+                      {riquadroBloccato
+                        ? "MeshCentral non si lascia mostrare dentro DA-IPAM da questo indirizzo"
+                        : "Il certificato di MeshCentral va accettato una volta"}
+                    </p>
+                    <div className="mt-2">
+                      <EsitiApertura verifiche={problemiRiquadro} />
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <p className="font-medium">Il riquadro resta vuoto?</p>
+                    <p className="mt-1 text-muted-foreground">
+                      {diagnosi
+                        ? "La verifica dal server non trova problemi di certificato né di riquadro. Se il browser non ha ancora accettato il certificato di MeshCentral, aprilo in una scheda e accetta l'avviso, poi premi Riconnetti."
+                        : diagnosiErrore
+                          ? `Verifica dal server non riuscita (${diagnosiErrore}). Se è il certificato di MeshCentral, aprilo in una scheda e accetta l'avviso, poi premi Riconnetti.`
+                          : "Verifica in corso: certificato o riquadro bloccato?"}
+                    </p>
+                  </>
+                )}
                 <div className="mt-2 flex gap-2">
                   <a href={new URL(url).origin} target="_blank" rel="noopener noreferrer">
                     <Button size="sm" variant="outline">
-                      <ExternalLink className="mr-2 h-4 w-4" /> Apri il server e accetta il certificato
+                      <ExternalLink className="mr-2 h-4 w-4" /> Apri MeshCentral in una scheda
                     </Button>
                   </a>
                   <Button size="sm" variant="ghost" onClick={() => void openSession(mode)}>

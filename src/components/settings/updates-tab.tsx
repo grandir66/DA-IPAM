@@ -1,7 +1,7 @@
 "use client";
 import { parseDbDate } from "@/lib/db-date";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ArrowUpCircle,
   RefreshCw,
@@ -23,6 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { UpdateChannelCard } from "@/components/settings/update-channel-card";
+import { StatoAggiornamentoCard } from "@/components/settings/stato-aggiornamento-card";
 
 interface UpdateInfo {
   currentVersion: string;
@@ -46,19 +47,17 @@ interface ChannelStatus {
   envFileWritable: boolean;
 }
 
-/** Risposta di POST /api/system/update con action=apply. */
+/**
+ * Risposta di POST /api/system/update con action=apply: il servizio
+ * d'aggiornamento è partito (`started`) e la pagina ne segue lo stato.
+ */
 interface ApplyResponse {
   status?: string;
   message?: string;
   error?: string;
-  detail?: string;
-  steps?: Array<{ status: string; message: string }>;
-  /** Il server ha già programmato il riavvio: non se ne chiede un secondo. */
-  restartScheduled?: boolean;
+  /** Ora del server in cui è partita la richiesta: conta solo ciò che succede dopo. */
+  richiestoIl?: string;
 }
-
-/** Dopo un aggiornamento riuscito la pagina si ricarica da sola fra questo tempo. */
-const RICARICA_DOPO_MS = 60_000;
 
 const CHANNEL_LABEL: Record<string, string> = {
   stable: "Stable (main)",
@@ -82,13 +81,8 @@ export function UpdatesTab() {
   const [checking, setChecking] = useState(false);
   const [updating, setUpdating] = useState(false);
   const [updateLog, setUpdateLog] = useState<string[]>([]);
-  const ricaricaRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (ricaricaRef.current) clearTimeout(ricaricaRef.current);
-    };
-  }, []);
+  /** Ora in cui il servizio d'aggiornamento è partito: la scheda di stato lo segue. */
+  const [richiestoIl, setRichiestoIl] = useState<string | null>(null);
 
   const fetchChannel = async () => {
     try {
@@ -133,16 +127,17 @@ export function UpdatesTab() {
     if (
       !confirm(
         `Avviare l'aggiornamento a v${target}?\n\n` +
-          "Durata stimata: 2-5 minuti.\n" +
-          "Il servizio verrà riavviato automaticamente al termine.\n" +
-          "L'interfaccia potrebbe non rispondere per ~30 secondi durante il restart.\n\n" +
+          "Durata stimata: 2-5 minuti. L'app continua a rispondere durante il build.\n" +
+          "Il servizio si riavvia al termine; se l'app non risponde dopo il riavvio,\n" +
+          "torna da sola alla versione di prima.\n\n" +
           "Confermi?",
       )
     ) {
       return;
     }
     setUpdating(true);
-    setUpdateLog(["Avvio aggiornamento… (può durare alcuni minuti)"]);
+    setUpdateLog([]);
+    let partito = false;
     try {
       const r = await fetch("/api/system/update", {
         method: "POST",
@@ -155,45 +150,22 @@ export function UpdatesTab() {
       } catch {
         d = null;
       }
-      if (!d) {
-        // Tipicamente un 504 di nginx: la build ha superato il tempo d'attesa del
-        // proxy. Il server la porta a termine e si riavvia da solo.
-        setUpdateLog((l) => [
-          ...l,
-          `ERRORE: risposta non leggibile dal server (HTTP ${r.status}).`,
-          "Se l'aggiornamento era partito, il server lo porta a termine e riavvia il servizio da solo: ricarica la pagina fra qualche minuto e controlla la versione installata.",
-        ]);
-        toast.error(`Risposta non leggibile dal server (HTTP ${r.status})`);
-        return;
-      }
-      const righe = (d.steps ?? []).map((s) => `[${s.status}] ${s.message}`);
-      if (!r.ok || d.error || d.status !== "completed") {
-        const errore = d.error ?? `Aggiornamento non riuscito (HTTP ${r.status})`;
-        righe.push(`ERRORE: ${errore}`);
-        if (d.detail) righe.push(d.detail);
-        if (d.message) righe.push(d.message);
-        setUpdateLog((l) => [...l, ...righe]);
+      if (!r.ok || !d || d.status !== "started" || !d.richiestoIl) {
+        const errore = d?.error ?? `Aggiornamento non avviato (HTTP ${r.status})`;
+        setUpdateLog([`ERRORE: ${errore}`]);
         toast.error(errore);
         return;
       }
-      righe.push(d.message ?? "Aggiornamento completato.");
-      if (d.restartScheduled) {
-        righe.push(
-          `Il server riavvia il servizio da solo: la pagina si ricarica fra ${RICARICA_DOPO_MS / 1000} secondi.`,
-        );
-        toast.success("Aggiornamento applicato. Riavvio in corso…");
-        ricaricaRef.current = setTimeout(() => window.location.reload(), RICARICA_DOPO_MS);
-      } else {
-        righe.push("Il servizio NON è stato riavviato: va riavviato sul server.");
-        toast.warning("Aggiornamento applicato, ma il servizio non è stato riavviato.");
-      }
-      setUpdateLog((l) => [...l, ...righe]);
+      partito = true;
+      setRichiestoIl(d.richiestoIl);
+      toast.info(d.message ?? "Aggiornamento avviato.");
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      setUpdateLog((l) => [...l, `ERRORE: ${msg}`]);
+      setUpdateLog([`ERRORE: ${msg}`]);
       toast.error(msg);
     } finally {
-      setUpdating(false);
+      // Se è partito, «updating» resta acceso finché la scheda di stato non dice che è finito.
+      if (!partito) setUpdating(false);
     }
   };
 
@@ -355,10 +327,19 @@ export function UpdatesTab() {
         </Card>
       )}
 
+      <StatoAggiornamentoCard
+        richiestoIl={richiestoIl}
+        onFine={() => {
+          setUpdating(false);
+          setRichiestoIl(null);
+          void fetchInfo();
+        }}
+      />
+
       {updateLog.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Log ultimo aggiornamento</CardTitle>
+            <CardTitle className="text-base">Avvio dell&apos;aggiornamento</CardTitle>
           </CardHeader>
           <CardContent>
             <pre className="bg-muted/40 rounded p-3 text-xs font-mono overflow-x-auto max-h-72 overflow-y-auto">

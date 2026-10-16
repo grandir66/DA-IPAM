@@ -5,6 +5,7 @@
 import * as http from "node:http";
 import * as https from "node:https";
 import { URL } from "node:url";
+import { sembraPaginaDiLogin } from "./pagina-login";
 
 export interface LibreNMSWebSessionOptions {
   upstreamOrigin: string;
@@ -173,12 +174,72 @@ export async function getLibreNMSWebSession(
 
   cookies = mergeCookieHeader(cookies, parseSetCookies(post.headers));
 
+  // Il login si giudica da dove porta la risposta, non dal cookie: Laravel dà
+  // `laravel_session` anche con la password sbagliata (passo 4b, 16/10).
+  const esito = esitoLoginLibreNMS(post);
+  if (!esito.ok) throw new Error(esito.motivo);
   if (!requestHasLibreNMSSession(cookies)) {
-    throw new Error(`LibreNMS login fallito (HTTP ${post.status})`);
+    throw new Error(`LibreNMS login fallito: nessun cookie di sessione (HTTP ${post.status})`);
   }
 
   cache.set(key, { cookieHeader: cookies, expiresAt: Date.now() + TTL_MS });
   return { cookieHeader: cookies };
+}
+
+/**
+ * Esito del POST /login di LibreNMS letto dal contenuto della risposta.
+ *  - 302/303 verso una pagina che non è il login → entrato;
+ *  - 302 di nuovo verso /login (credenziali rifiutate: Laravel rimanda indietro
+ *    con l'errore in sessione), 200 col modulo di login, 419 (token CSRF scaduto),
+ *    422 o altro → non entrato, col motivo in italiano.
+ */
+export function esitoLoginLibreNMS(post: {
+  status: number;
+  headers: http.IncomingHttpHeaders;
+  body: string;
+}): { ok: true } | { ok: false; motivo: string } {
+  const location = typeof post.headers.location === "string" ? post.headers.location : null;
+  if (post.status === 419) {
+    return { ok: false, motivo: "LibreNMS login fallito: token CSRF scaduto (HTTP 419)" };
+  }
+  if (sembraPaginaDiLogin({ status: post.status, location, body: post.body })) {
+    return {
+      ok: false,
+      motivo: "LibreNMS login rifiutato: la risposta riporta alla pagina di login (password admin errata?)",
+    };
+  }
+  if (post.status >= 300 && post.status < 400) {
+    return location ? { ok: true } : { ok: false, motivo: `LibreNMS login: rinvio senza destinazione (HTTP ${post.status})` };
+  }
+  if (post.status >= 200 && post.status < 300) return { ok: true };
+  return { ok: false, motivo: `LibreNMS login fallito (HTTP ${post.status})` };
+}
+
+/**
+ * La sessione in cache è ancora buona? Apre la home di LibreNMS col cookie e
+ * guarda se finisce sulla pagina di login (sessione scaduta o invalidata a monte,
+ * LibreNMS riavviato, password cambiata). Stesso trasporto del login.
+ */
+export async function verificaSessioneLibreNMS(
+  opts: LibreNMSWebSessionOptions,
+  cookieHeader: string,
+): Promise<boolean> {
+  const origin = opts.upstreamOrigin.replace(/\/+$/, "");
+  const headers: Record<string, string> = { Accept: "text/html", Cookie: cookieHeader };
+  if (opts.hostHeader) headers.host = opts.hostHeader;
+  const res = await httpRequest(new URL("/", `${origin}/`), {
+    headers,
+    insecureTls: opts.insecureTls,
+    timeoutMs: opts.timeoutMs,
+  });
+  const location = typeof res.headers.location === "string" ? res.headers.location : null;
+  if (sembraPaginaDiLogin({ status: res.status, location, body: res.body })) return false;
+  return res.status < 400;
+}
+
+/** Toglie dalla cache la sessione di queste opzioni (la prossima apertura rifà il login). */
+export function invalidaSessioneLibreNMS(opts: LibreNMSWebSessionOptions): void {
+  cache.delete(cacheKey(opts));
 }
 
 export function librenmsHostHeaderFromUiUrl(uiUrl: string | undefined | null): string | undefined {

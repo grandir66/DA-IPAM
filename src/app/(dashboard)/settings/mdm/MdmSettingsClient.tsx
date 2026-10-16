@@ -26,6 +26,10 @@ interface MdmConfig {
   last_sync_at: string | null;
   last_error: string | null;
   consecutive_errors: number;
+  last_attempt_at: string | null;
+  last_success_at: string | null;
+  /** Spenta da sola dopo troppi errori di fila, non dall'admin. */
+  auto_disabled: boolean;
 }
 
 interface SyncResult {
@@ -41,7 +45,21 @@ const USER_FIELD_OPTIONS: { value: string; label: string }[] = [
   { value: "custom3", label: "Campo personalizzato 3 (custom3)" },
 ];
 
-export function MdmSettingsClient({ config }: { config: MdmConfig }) {
+function quando(v: string | null): string {
+  return v ? parseDbDate(v).toLocaleString("it-IT") : "Mai";
+}
+
+export function MdmSettingsClient({
+  config,
+  maxErrori,
+  intervalloMinuti,
+}: {
+  config: MdmConfig;
+  /** Errori di fila dopo cui la sincronizzazione si spegne da sola. */
+  maxErrori: number;
+  /** Ogni quanto gira la sincronizzazione automatica (minuti). */
+  intervalloMinuti: number;
+}) {
   const router = useRouter();
 
   const [baseUrl, setBaseUrl] = useState(config.base_url ?? "");
@@ -74,7 +92,12 @@ export function MdmSettingsClient({ config }: { config: MdmConfig }) {
         toast.error(typeof data.error === "string" ? data.error : "Errore nel salvataggio");
         return;
       }
-      toast.success("Configurazione MDM salvata");
+      const esito = (await res.json().catch(() => null)) as { riattivato?: boolean } | null;
+      toast.success(
+        esito?.riattivato
+          ? "Configurazione MDM salvata: sincronizzazione riattivata, errori azzerati"
+          : "Configurazione MDM salvata",
+      );
       setPassword("");
       router.refresh();
     } catch (e) {
@@ -191,9 +214,13 @@ export function MdmSettingsClient({ config }: { config: MdmConfig }) {
                 onCheckedChange={(checked) => setEnabled(checked === true)}
               />
               <span className={enabled ? "text-foreground font-medium" : ""}>
-                Integrazione MDM attiva (sincronizzazione automatica abilitata)
+                Integrazione MDM attiva (sincronizzazione automatica ogni {intervalloMinuti} minuti)
               </span>
             </label>
+            <p className="text-xs text-muted-foreground pl-1">
+              Accesa, crea il job pianificato «mdm_sync»; spenta, lo toglie. Dopo {maxErrori} errori
+              consecutivi la sincronizzazione si spegne da sola: riattivarla azzera il contatore.
+            </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
@@ -254,21 +281,32 @@ export function MdmSettingsClient({ config }: { config: MdmConfig }) {
             Esito dell&apos;ultima sincronizzazione con il server MDM.
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
+          {config.auto_disabled && (
+            <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/20 px-4 py-3 text-sm text-amber-900 dark:text-amber-300">
+              <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+              <span>
+                La sincronizzazione si è spenta da sola dopo {config.consecutive_errors} errori
+                consecutivi (il limite è {maxErrori}), per non interrogare a vuoto il server MDM.
+                Controlla l&apos;ultimo errore qui sotto, correggi indirizzo o credenziali, poi
+                spunta «Integrazione MDM attiva» e salva: il contatore riparte da zero.
+              </span>
+            </div>
+          )}
           <dl className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
             <div className="space-y-1">
-              <dt className="text-xs uppercase tracking-wider text-muted-foreground">Ultima sincronizzazione</dt>
-              <dd className="font-medium">
-                {config.last_sync_at
-                  ? parseDbDate(config.last_sync_at).toLocaleString("it-IT")
-                  : "Mai"}
-              </dd>
+              <dt className="text-xs uppercase tracking-wider text-muted-foreground">Ultimo tentativo</dt>
+              <dd className="font-medium">{quando(config.last_attempt_at ?? config.last_sync_at)}</dd>
+            </div>
+            <div className="space-y-1">
+              <dt className="text-xs uppercase tracking-wider text-muted-foreground">Ultima riuscita</dt>
+              <dd className="font-medium">{quando(config.last_success_at)}</dd>
             </div>
             <div className="space-y-1">
               <dt className="text-xs uppercase tracking-wider text-muted-foreground">Errori consecutivi</dt>
               <dd className={`font-medium ${config.consecutive_errors > 0 ? "text-amber-700 dark:text-amber-400" : ""}`}>
                 {config.consecutive_errors}
-                {config.consecutive_errors >= 5 && " (auto-disattivata)"}
+                {config.auto_disabled && " (spenta da sola)"}
               </dd>
             </div>
             <div className="space-y-1">

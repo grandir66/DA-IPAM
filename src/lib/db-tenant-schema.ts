@@ -6,7 +6,40 @@
  * risiedono solo nel DB centrale.
  */
 
+import type Database from "better-sqlite3";
 import { SCHEDULED_JOB_TYPES_CHECK_SQL } from "./scheduled-job-types";
+
+/**
+ * MDM (passo 3 del piano di solidità, 16/10): `last_attempt_at` = ultimo tentativo
+ * di sincronizzazione, riuscito o no; `last_success_at` = ultima riuscita.
+ * `last_sync_at` resta com'era (aggiornato a ogni tentativo) per chi lo legge già.
+ *
+ * Le colonne stanno anche nella CREATE di `mdm_config` qui sotto (DB nuovi); sui DB
+ * esistenti le aggiunge `assicuraColonneMdmConfig`, `ALTER TABLE ADD COLUMN`
+ * idempotente, solo additiva. La chiama `integrations/mdm-config.ts` all'apertura
+ * della connessione: così la migrazione non tocca `db-tenant.ts` (fermo fino alla
+ * pubblicazione di `tappa3b/nucleo`, dopo il 20/10).
+ */
+export const COLONNE_NUOVE_MDM_CONFIG: ReadonlyArray<readonly [string, string]> = [
+  ["last_attempt_at", "ALTER TABLE mdm_config ADD COLUMN last_attempt_at TEXT"],
+  ["last_success_at", "ALTER TABLE mdm_config ADD COLUMN last_success_at TEXT"],
+];
+
+/** Aggiunge a `mdm_config` le colonne che mancano; restituisce quelle aggiunte. Ripetibile. */
+export function assicuraColonneMdmConfig(db: Database.Database): string[] {
+  const colonne = new Set(
+    (db.prepare("PRAGMA table_info(mdm_config)").all() as Array<{ name: string }>).map((c) => c.name),
+  );
+  // Tabella assente (DB molto vecchio): la crea lo schema all'apertura, non questa funzione.
+  if (colonne.size === 0) return [];
+  const aggiunte: string[] = [];
+  for (const [nome, ddl] of COLONNE_NUOVE_MDM_CONFIG) {
+    if (colonne.has(nome)) continue;
+    db.exec(ddl);
+    aggiunte.push(nome);
+  }
+  return aggiunte;
+}
 
 /**
  * Topologia T2 (spec 2026-10-14 §13.5.7): i fatti delle letture in più, uno per lettore (la fonte sta nella chiave:
@@ -1260,7 +1293,9 @@ CREATE TABLE IF NOT EXISTS mdm_config (
   enabled INTEGER DEFAULT 0,
   last_sync_at TEXT,
   last_error TEXT,
-  consecutive_errors INTEGER DEFAULT 0
+  consecutive_errors INTEGER DEFAULT 0,
+  last_attempt_at TEXT,
+  last_success_at TEXT
 );
 CREATE TABLE IF NOT EXISTS mobile_devices (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

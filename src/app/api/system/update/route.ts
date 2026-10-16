@@ -1,7 +1,9 @@
 /**
  * API System Update - Controlla e applica aggiornamenti da GitHub
- * GET: Controlla se ci sono aggiornamenti disponibili
- * POST: Scarica e applica l'aggiornamento
+ * GET: Controlla se ci sono aggiornamenti disponibili; ?action=aggiornamento dà lo
+ *      stato dell'aggiornamento in corso o dell'ultimo (data/aggiornamento.json)
+ * POST: action=apply avvia il servizio d'aggiornamento di systemd
+ *       (src/lib/aggiornamento-servizio.ts): la rotta non fa più pull né build
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -19,6 +21,13 @@ import {
   restartWithSystemd,
 } from "@/lib/app-service";
 import { readUpdateAction } from "@/lib/system-update-action";
+import {
+  avviaAggiornamento,
+  cartellaBuildAttiva,
+  leggiStatoAggiornamento,
+  leggiRichiestaInAttesa,
+  unitaAggiornamento,
+} from "@/lib/aggiornamento-servizio";
 import {
   getConfiguredUpdateBranch,
   getGitBranch,
@@ -45,13 +54,6 @@ interface UpdateInfo {
   deployMode?: "container" | "systemd";
   configuredBranch?: string;
   gitBranch?: string | null;
-}
-
-interface UpdateStatus {
-  status: "idle" | "checking" | "downloading" | "installing" | "restarting" | "completed" | "error";
-  message: string;
-  progress?: number;
-  error?: string;
 }
 
 function getProjectRoot(): string {
@@ -224,44 +226,18 @@ function listDirtyFiles(root: string): string[] {
 }
 
 /**
- * Ripristina file gestiti da Git che possono essere stati modificati localmente
- * da npm install (package-lock.json) o version:bump (package.json, VERSION).
- * Restituisce true se dopo il ripristino il working tree è pulito.
- */
-function tryRestoreKnownDirtyFiles(root: string): boolean {
-  const dirty = listDirtyFiles(root);
-  const autoRestoreable = new Set(["package-lock.json", "package.json", "VERSION"]);
-  const allKnown = dirty.every((f) => autoRestoreable.has(f));
-  if (!allKnown || dirty.length === 0) return false;
-  for (const file of dirty) {
-    try {
-      execSync(`git restore --source=HEAD --staged --worktree ${file}`, {
-        cwd: root,
-        encoding: "utf-8",
-        stdio: ["ignore", "pipe", "pipe"],
-      });
-    } catch {
-      try {
-        execSync(`git checkout HEAD -- ${file}`, { cwd: root, encoding: "utf-8" });
-      } catch {
-        return false;
-      }
-    }
-  }
-  return true;
-}
-
-/**
- * Perché non si può riavviare sulla build presente, o null se si può: senza
- * `.next` o senza `.next/BUILD_ID` il processo nuovo non partirebbe.
+ * Perché non si può riavviare sulla build presente, o null se si può: senza la
+ * cartella della build (`.next`, o `.next-a`/`.next-b` indicata da `.next-attiva`)
+ * o senza il suo BUILD_ID il processo nuovo non partirebbe.
  */
 function problemaBuild(root: string): string | null {
-  const nextDir = path.join(root, ".next");
+  const nextDir = cartellaBuildAttiva(root);
+  const nome = path.basename(nextDir);
   if (!fs.existsSync(nextDir)) {
-    return "La directory .next non esiste. Esegui npm run build prima di riavviare.";
+    return `La directory ${nome} non esiste. Esegui npm run build prima di riavviare.`;
   }
   if (!fs.existsSync(path.join(nextDir, "BUILD_ID"))) {
-    return "La build sembra incompleta (BUILD_ID mancante). Esegui npm run build sul server.";
+    return `La build sembra incompleta (BUILD_ID mancante in ${nome}). Esegui npm run build sul server.`;
   }
   return null;
 }
@@ -316,7 +292,7 @@ function riavviaFuoriDaSystemd(): void {
   process.exit(0);
 }
 
-/** Il riavvio parte un secondo dopo, così la risposta arriva prima al browser. */
+/** Il riavvio parte un secondo dopo, così la risposta arriva prima al browser. Solo «Riavvia». */
 function programmaRiavvio(): void {
   setTimeout(riavviaApp, 1000);
 }
@@ -332,12 +308,32 @@ function getGitStatus(): { clean: boolean; branch: string; dirtyFiles: string[];
   }
 }
 
+/** Lo stato dell'aggiornamento per la pagina: file di stato, HEAD su disco, unità. */
+function statoPerPagina(root: string) {
+  let commitScaricato: string | null = null;
+  try {
+    commitScaricato = execSync("git rev-parse HEAD", { cwd: root, encoding: "utf-8", timeout: 5000 }).trim() || null;
+  } catch {
+    /* installazione senza git */
+  }
+  return {
+    stato: leggiStatoAggiornamento(),
+    commitScaricato,
+    unita: unitaAggiornamento(readRestartContext().unit),
+    richiestaInAttesa: leggiRichiestaInAttesa(),
+  };
+}
+
 export async function GET(request: NextRequest) {
   const authResult = await requireAuth();
   if (isAuthError(authResult)) return authResult;
 
   const url = new URL(request.url);
   const action = url.searchParams.get("action");
+
+  if (action === "aggiornamento") {
+    return NextResponse.json(statoPerPagina(getProjectRoot()));
+  }
 
   if (action === "status") {
     const root = getProjectRoot();
@@ -351,6 +347,7 @@ export async function GET(request: NextRequest) {
       projectRoot: root,
       updateSupported: isGitUpdateSupported(root),
       deployMode: isContainerDeploy() ? "container" : "systemd",
+      aggiornamento: statoPerPagina(root),
     });
   }
 
@@ -461,176 +458,38 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    let gitStatus = getGitStatus();
-    if (!gitStatus.clean) {
-      if (tryRestoreKnownDirtyFiles(root)) {
-        gitStatus = getGitStatus();
-      }
-    }
-
-    if (!gitStatus.clean) {
-      const fileList = gitStatus.dirtyFiles.slice(0, 15).join(", ");
-      const more = gitStatus.dirtyFiles.length > 15 ? ` (+${gitStatus.dirtyFiles.length - 15} altri)` : "";
+    // Una sola strada: lo stesso servizio del timer (scripts/auto-update.sh →
+    // scripts/update.sh), con build in una cartella separata, salute dopo il
+    // riavvio e ritorno indietro. Il ramo è quello del canale configurato, e le
+    // modifiche locali le sistema lo script come nei giri del timer.
+    const unita = unitaAggiornamento(readRestartContext().unit);
+    if (!unita) {
       return NextResponse.json({
         error:
-          "Ci sono modifiche locali non committate. Esegui sul server (come root): git status, poi git stash, oppure git restore <file>, oppure elimina i file non tracciati se sicuro.",
-        dirtyFiles: gitStatus.dirtyFiles,
-        detail: `File modificati: ${fileList}${more}`,
+          "L'aggiornamento dall'interfaccia passa dal servizio d'aggiornamento di systemd, " +
+          "e questa istanza non gira come servizio di systemd. Sul server esegui: bash scripts/update.sh --restart",
         status: "error" as const,
       }, { status: 400 });
     }
 
-    // Il branch target dell'update è il branch git CORRENTE (quello che il
-    // timer auto-update mantiene allineato a DA_INVENT_BRANCH). Supportati:
-    // main/master per canale Stable, dev per canale Dev. Validato con regex
-    // strict — esce da `git rev-parse`, non da user input, ma paranoia ok.
-    const targetBranch = gitStatus.branch;
-    const allowedBranches = ["main", "master", "dev"];
-    if (!allowedBranches.includes(targetBranch) || !/^[a-z][a-z0-9_\-/]*$/i.test(targetBranch)) {
+    const avvio = await avviaAggiornamento(unita);
+    if (!avvio.ok) {
+      console.error("[Update] avvio del servizio d'aggiornamento non riuscito:", avvio.errore);
       return NextResponse.json({
-        error: `Sei sul branch "${targetBranch}". L'aggiornamento è supportato solo per main/master/dev. Usa la card "Canale aggiornamenti" per cambiare canale.`,
+        error: `Impossibile avviare l'aggiornamento: ${avvio.errore}. Sul server: systemctl start ${unita}`,
         status: "error" as const,
-      }, { status: 400 });
-    }
-
-    // Salva il commit corrente per rollback sicuro
-    let previousCommit: string | null = null;
-    try {
-      previousCommit = execSync("git rev-parse HEAD", { cwd: root, encoding: "utf-8", timeout: 10000 }).trim();
-    } catch {
-      /* se non riesce, rollback non sarà possibile */
-    }
-
-    // Backup della directory .next per poter ripristinare in caso di fallimento build
-    const nextDir = path.join(root, ".next");
-    const nextBackup = path.join(root, ".next.bak");
-    let hasNextBackup = false;
-    try {
-      if (fs.existsSync(nextDir)) {
-        // Rimuovi backup precedente se esiste
-        if (fs.existsSync(nextBackup)) {
-          fs.rmSync(nextBackup, { recursive: true, force: true });
-        }
-        fs.renameSync(nextDir, nextBackup);
-        hasNextBackup = true;
-        console.log("[Update] Backup .next → .next.bak completato");
-      }
-    } catch (e) {
-      console.warn("[Update] Impossibile creare backup .next:", e);
-    }
-
-    // I passi eseguiti tornano al browser anche in caso di errore: l'ultimo è
-    // quello che è fallito.
-    const steps: UpdateStatus[] = [];
-    try {
-      steps.push({ status: "downloading", message: `Scaricamento aggiornamenti da GitHub (${targetBranch})...`, progress: 10 });
-      execSync(`git fetch origin ${targetBranch}`, { cwd: root, encoding: "utf-8", timeout: 60000 });
-
-      steps.push({ status: "downloading", message: "Applicazione modifiche...", progress: 30 });
-      execSync(`git pull origin ${targetBranch} --ff-only`, { cwd: root, encoding: "utf-8", timeout: 120000 });
-
-      steps.push({ status: "installing", message: "Installazione dipendenze...", progress: 50 });
-      execSync("npm install --production=false", { cwd: root, encoding: "utf-8", timeout: 300000 });
-
-      steps.push({ status: "installing", message: "Build applicazione...", progress: 70 });
-      execSync("npm run build", { cwd: root, encoding: "utf-8", timeout: 600000 });
-
-      // Build riuscita: rimuovi backup
-      if (hasNextBackup && fs.existsSync(nextBackup)) {
-        try {
-          fs.rmSync(nextBackup, { recursive: true, force: true });
-        } catch { /* non critico */ }
-      }
-
-      const newVersion = getCurrentVersion();
-
-      // Il riavvio lo programma la rotta stessa, dopo aver risposto. Prima lo
-      // chiedeva il browser con «Riavvia» quando riceveva questa risposta: con una
-      // build più lunga del proxy_read_timeout di nginx (300 s) o con la scheda
-      // chiusa, la build nuova restava su disco e girava ancora il processo vecchio.
-      const ostacolo = problemaBuild(root);
-      if (!ostacolo) programmaRiavvio();
-      steps.push(
-        ostacolo
-          ? { status: "error", message: `Riavvio non programmato: ${ostacolo}` }
-          : { status: "restarting", message: "Riavvio del servizio programmato", progress: 90 },
-      );
-
-      return NextResponse.json({
-        status: "completed" as const,
-        message: ostacolo
-          ? `Aggiornamento completato alla versione ${newVersion}, ma il riavvio non è stato programmato: ${ostacolo}`
-          : `Aggiornamento completato alla versione ${newVersion}. Il servizio si riavvia da solo fra pochi secondi.`,
-        newVersion,
-        steps,
-        // Il riavvio l'ha già programmato il server: il browser non ne chiede un secondo.
-        restartScheduled: !ostacolo,
-        // Sempre false: un'interfaccia rimasta aperta da prima di questa versione
-        // chiederebbe un secondo riavvio se fosse true.
-        requiresRestart: false,
-      });
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      console.error("[Update] Error applying update:", errorMsg);
-
-      const rollbackErrors: string[] = [];
-
-      // 1. Ripristina il codice sorgente al commit precedente
-      if (previousCommit) {
-        try {
-          execSync(`git reset --hard ${previousCommit}`, { cwd: root, encoding: "utf-8", timeout: 30000 });
-        } catch (e) {
-          rollbackErrors.push(`git reset: ${e}`);
-        }
-      }
-
-      // 2. Ripristina node_modules per la versione precedente
-      try {
-        execSync("npm install --production=false", { cwd: root, encoding: "utf-8", timeout: 300000 });
-      } catch (e) {
-        rollbackErrors.push(`npm install rollback: ${e}`);
-      }
-
-      // 3. Ripristina la build precedente (.next.bak)
-      if (hasNextBackup && fs.existsSync(nextBackup)) {
-        try {
-          // Rimuovi la build corrotta/parziale
-          if (fs.existsSync(nextDir)) {
-            fs.rmSync(nextDir, { recursive: true, force: true });
-          }
-          fs.renameSync(nextBackup, nextDir);
-          console.log("[Update] Ripristinata .next da backup");
-        } catch (e) {
-          rollbackErrors.push(`ripristino .next: ${e}`);
-          // Ultimo tentativo: ricostruisci dalla versione precedente
-          try {
-            execSync("npm run build", { cwd: root, encoding: "utf-8", timeout: 600000 });
-            console.log("[Update] Rebuild dalla versione precedente completato");
-          } catch (e2) {
-            rollbackErrors.push(`rebuild fallback: ${e2}`);
-          }
-        }
-      } else {
-        // Nessun backup .next: prova a ricostruire
-        try {
-          execSync("npm run build", { cwd: root, encoding: "utf-8", timeout: 600000 });
-          console.log("[Update] Rebuild dalla versione precedente completato");
-        } catch (e) {
-          rollbackErrors.push(`rebuild: ${e}`);
-        }
-      }
-
-      const rollbackDetail = rollbackErrors.length > 0
-        ? ` Problemi durante il rollback: ${rollbackErrors.join("; ")}`
-        : "";
-
-      return NextResponse.json({
-        status: "error" as const,
-        error: `Errore durante l'aggiornamento: ${errorMsg}`,
-        message: `L'aggiornamento è stato annullato e il sistema ripristinato.${rollbackDetail}`,
-        steps,
       }, { status: 500 });
     }
+
+    return NextResponse.json({
+      status: "started" as const,
+      message: `Aggiornamento avviato (${unita}). Build e riavvio richiedono alcuni minuti: la pagina segue l'avanzamento.`,
+      unit: unita,
+      richiestoIl: avvio.richiestoIl,
+      // Il riavvio lo fa il servizio d'aggiornamento, dopo una build riuscita.
+      restartScheduled: false,
+      requiresRestart: false,
+    });
   }
 
   if (action === "restart") {

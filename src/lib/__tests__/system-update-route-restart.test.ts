@@ -11,8 +11,9 @@
  * ogni 15 minuti. La rotta importa next/server e l'autenticazione, quindi la si
  * prova leggendone il sorgente, come le altre prove-invariante del repo.
  *
- * Dice anche che «Aggiorna» programma da sé il riavvio (prima lo chiedeva il
- * browser, se riceveva la risposta) e che l'azione si legge da indirizzo o corpo.
+ * Dice anche che «Aggiorna» non fa più pull né build nel processo: avvia il
+ * servizio d'aggiornamento di systemd (passo 1c del 16/10, src/lib/aggiornamento-servizio.ts),
+ * e che l'azione si legge da indirizzo o corpo.
  *
  * Run: node --import tsx --test src/lib/__tests__/system-update-route-restart.test.ts
  */
@@ -73,11 +74,23 @@ test("process.exit compare solo nel ramo fuori da systemd (PM2, sviluppo)", () =
   assert.doesNotMatch(SRC, /pickServiceToRestart|readServiceStates|is-active/);
 });
 
-test("«Riavvia» e «Aggiorna» riuscito passano dallo stesso riavvio programmato", () => {
+test("«Riavvia» passa dal riavvio programmato", () => {
   const post = corpo("POST");
-  assert.ok((post.match(/programmaRiavvio\(\)/g)?.length ?? 0) >= 2, "restart e apply");
-  assert.match(post, /restartScheduled/);
+  assert.equal(post.match(/programmaRiavvio\(\)/g)?.length, 1, "solo restart");
   assert.match(corpo("programmaRiavvio"), /setTimeout\(\s*riavviaApp\s*,/);
+});
+
+test("«Aggiorna» non fa pull né build nel processo: avvia il servizio d'aggiornamento (passo 1c)", () => {
+  const post = corpo("POST");
+  const apply = post.slice(post.indexOf('action === "apply"'), post.indexOf('action === "restart"'));
+  assert.ok(apply.length > 0, "manca il ramo apply");
+  // i testi d'errore possono nominare git pull: si vieta il modo di eseguirlo
+  assert.doesNotMatch(apply, /execSync|execFile|spawn\(|programmaRiavvio/, "niente comandi né riavvio dal processo");
+  assert.match(apply, /unitaAggiornamento\(\s*readRestartContext\(\)\.unit\s*\)/);
+  assert.match(apply, /avviaAggiornamento\(/);
+  assert.match(apply, /restartScheduled:\s*false/);
+  // la build da cui si riavvia è quella in uso, non per forza .next
+  assert.match(corpo("problemaBuild"), /cartellaBuildAttiva\(/);
 });
 
 test("POST legge l'azione da indirizzo o corpo (readUpdateAction)", () => {

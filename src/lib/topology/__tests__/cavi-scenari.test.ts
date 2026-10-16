@@ -331,7 +331,7 @@ test("Caso 1 · entra un apparato con l'id più piccolo: l'id del segmento cambi
   assert.deepEqual([r.visible, r.missing, r.roots], [["seg:2:n-ether8"], [], ["seg:2:n-ether8"]], "la mappa salvata ritrova il segmento");
   const stella = mod(wanCon(true, { primaries: [{ node_id: "seg:5:15", other_node: "dev:7", node_port: "", other_port: "" }] }));
   assert.deepEqual(stella.m.albero.stelle.map((s) => [s.nodo, s.altro]), [["seg:2:n-ether8", "dev:7"]], "la ★ salvata con l'id di prima vale per il segmento di oggi");
-  const togli: LinkOverrideRow = { id: 4, action: "ignore", a_node: "dev:6", a_port: "ether8", b_node: "seg:5:15", b_port: "", medium: null, note: null, created_by: "tecnico", created_at: "2026-10-16 08:00:00" };
+  const togli: LinkOverrideRow = { id: 4, action: "ignore", a_node: "dev:6", a_port: "ether8", b_node: "seg:5:15", b_port: "", medium: null, created_by: "tecnico", created_at: "2026-10-16 08:00:00" };
   const tolto = mod(wanCon(true, { overrides: [togli] }));
   assert.deepEqual(tolto.m.collegamenti.filter((c) => c.genere === "segmento").map((c) => c.a.nodo).sort(), ["dev:2", "dev:5", "dev:7"], "«Togli dal segmento» toglie RTR-6");
   assert.deepEqual(tolto.m.correzioniOrfane, [], "e non è orfana");

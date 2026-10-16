@@ -92,7 +92,7 @@ test("decidiUnione: i tre indirizzi del NAS in un gruppo nuovo; l'anteprima è i
   });
   assert.deepEqual(d.dati.anteprima, {
     nodo: "host:11", nome: "QWNAS-7", separazioniTolte: [],
-    entrano: [{ id: "host:12", nome: "10.71.2.20", perche: A_MANO }, { id: "host:13", nome: "10.71.3.20", perche: A_MANO }],
+    entrano: [{ id: "host:12", nome: "10.71.2.20", ip: "10.71.2.20", perche: A_MANO }, { id: "host:13", nome: "10.71.3.20", ip: "10.71.3.20", perche: A_MANO }],
   });
   // L'anteprima e la mappa sono la stessa cosa: il modello con le righe del piano ha quel nodo.
   const m = buildTopologyModel({ ...nas(), ...righeDopo(NESSUNA, d.dati.piano) });
@@ -103,7 +103,20 @@ test("decidiUnione: per un apparato si scrive il suo host; il nodo che resta è 
   const d = decidiUnione(nasPromosso(), NESSUNA, ["dev:5", "host:12"]);
   assert.ok(d.ok, JSON.stringify(d));
   assert.deepEqual(d.dati.piano.aggiungiUnioni, [{ gruppo: "nuovo", membro: "host:11" }, { gruppo: "nuovo", membro: "host:12" }]);
-  assert.deepEqual(d.dati.anteprima, { nodo: "dev:5", nome: "QWNAS-7", separazioniTolte: [], entrano: [{ id: "host:12", nome: "10.71.2.20", perche: A_MANO }] });
+  assert.deepEqual(d.dati.anteprima, { nodo: "dev:5", nome: "QWNAS-7", separazioniTolte: [], entrano: [{ id: "host:12", nome: "10.71.2.20", ip: "10.71.2.20", perche: A_MANO }] });
+});
+
+test("decidiUnione: chi entra porta il suo IP, così tre indirizzi con lo stesso nome non sono tre righe uguali (verifica a schermo)", () => {
+  // Lo stesso hostname sui tre indirizzi, MAC di OUI diversi: da soli non si fondono (node-index.ts, «per nome solo se nessun
+  // MAC vero lo contraddice»). Prima l'anteprima diceva «QWNAS-7» due volte, e nient'altro.
+  const t = nas();
+  t.hosts = t.hosts.map((h) => ({ ...h, hostname: "QWNAS-7" }));
+  assert.equal(indiceDeiNodi(t).nodes.has("host:11"), false, "senza unione tre oggetti");
+  const d = decidiUnione(t, NESSUNA, ["host:11", "host:12", "host:13"]);
+  assert.ok(d.ok, JSON.stringify(d));
+  assert.deepEqual(d.dati.anteprima.entrano, [
+    { id: "host:12", nome: "QWNAS-7", ip: "10.71.2.20", perche: A_MANO }, { id: "host:13", nome: "QWNAS-7", ip: "10.71.3.20", perche: A_MANO },
+  ]);
 });
 
 test("decidiUnione: doppi 409, un oggetto che non c'è 404, già lo stesso oggetto 409 (anche un apparato col suo host)", () => {
@@ -130,7 +143,7 @@ test("decidiUnione: sempre un gruppo nuovo; le righe dei gruppi delle ancore si 
     togliUnioni: [1, 2], togliSeparazioni: [], aggiungiSeparazioni: [],
     aggiungiUnioni: [{ gruppo: "nuovo", membro: "host:11" }, { gruppo: "nuovo", membro: "host:12" }, { gruppo: "nuovo", membro: "host:13" }],
   });
-  assert.deepEqual(uno.dati.anteprima.entrano, [{ id: "host:13", nome: "10.71.3.20", perche: A_MANO }]);
+  assert.deepEqual(uno.dati.anteprima.entrano, [{ id: "host:13", nome: "10.71.3.20", ip: "10.71.3.20", perche: A_MANO }]);
 
   const t = nas();
   t.hosts.push(host(20, { network_id: 4, ip: "10.71.4.20", mac: "02:00:7d:00:04:20" }));
@@ -143,7 +156,7 @@ test("decidiUnione: sempre un gruppo nuovo; le righe dei gruppi delle ancore si 
   });
   assert.deepEqual(due.dati.anteprima, {
     nodo: "host:11", nome: "QWNAS-7", separazioniTolte: [],
-    entrano: [{ id: "host:13", nome: "10.71.3.20", perche: A_MANO }, { id: "host:20", nome: "10.71.4.20", perche: A_MANO }],
+    entrano: [{ id: "host:13", nome: "10.71.3.20", ip: "10.71.3.20", perche: A_MANO }, { id: "host:20", nome: "10.71.4.20", ip: "10.71.4.20", perche: A_MANO }],
   });
 });
 
@@ -152,7 +165,7 @@ test("decidiUnione: chi arriva col gemello (stesso MAC) entra «insieme a» lui,
   assert.ok(soli.ok, JSON.stringify(soli));
   assert.deepEqual(soli.dati.piano.aggiungiUnioni, [{ gruppo: "nuovo", membro: "host:11" }, { gruppo: "nuovo", membro: "host:12" }], "il gemello non si scrive");
   assert.deepEqual(soli.dati.anteprima.entrano, [
-    { id: "host:12", nome: "10.71.2.20", perche: A_MANO }, { id: "host:14", nome: "10.71.2.21", perche: "insieme a 10.71.2.20" },
+    { id: "host:12", nome: "10.71.2.20", ip: "10.71.2.20", perche: A_MANO }, { id: "host:14", nome: "10.71.2.21", ip: "10.71.2.21", perche: "insieme a 10.71.2.20" },
   ]);
   const app = decidiUnione(conGemello(nasPromosso()), NESSUNA, ["dev:5", "host:12"]);
   assert.ok(app.ok, JSON.stringify(app));
@@ -182,8 +195,8 @@ test("Caso 5: «Unisci» dopo un «Separa» fra gli stessi oggetti toglie quella
     aggiungiUnioni: [{ gruppo: "nuovo", membro: "host:12" }, { gruppo: "nuovo", membro: "host:11" }],
   });
   assert.deepEqual(d.dati.anteprima, {
-    nodo: "dev:5", nome: "QWNAS-7", entrano: [{ id: "host:12", nome: "10.71.2.20", perche: A_MANO }],
-    separazioniTolte: [{ membro: "host:12", altro: "dev:5", il: ORA_S }],
+    nodo: "dev:5", nome: "QWNAS-7", entrano: [{ id: "host:12", nome: "10.71.2.20", ip: "10.71.2.20", perche: A_MANO }],
+    separazioniTolte: [{ membro: "host:12", altro: "dev:5", il: ORA_S, nomeMembro: "10.71.2.20", ipMembro: "10.71.2.20", nomeAltro: "QWNAS-7", ipAltro: "10.71.1.20" }],
   });
   // Fra soli host: separato il 31 dalla catena, riunirlo al 20 toglie le coppie verso i nodi che si uniscono, non quella col 40.
   const sep = righe([{ gruppo: 1, membro: "host:20" }, { gruppo: 1, membro: "host:30" }],

@@ -109,6 +109,13 @@ function nomeOggetto(idx: NodeIndex, id: string): string {
   return idx.nodes.get(id)?.name ?? id;
 }
 
+/** L'IP di un oggetto: di un host il suo, di un apparato quello di gestione; null se non ne ha. */
+function ipOggetto(idx: NodeIndex, id: string): string | null {
+  const m = HOST.exec(id);
+  if (m) return idx.hostById.get(Number(m[1]))?.ip || null;
+  return idx.nodes.get(id)?.mgmtIp ?? null;
+}
+
 /** Il nome del nodo, come lo scrive la mappa. */
 const nomeNodo = (idx: NodeIndex, nodo: string): string => idx.nodes.get(nodo)?.name ?? nomeOggetto(idx, nodo);
 
@@ -183,8 +190,14 @@ function anteprimaFra(
   return ok({
     nodo, nome: nomeNodo(idx, nodo),
     // Un apparato non entra mai in un altro nodo: chi entra è un host.
-    entrano: membriDi(idx, nodo).filter((m) => !giaDentro.has(m)).map((m) => ({ id: m, nome: nomeOggetto(idx, m), perche: perche(m) })),
-    separazioniTolte: tolte.map((s) => ({ membro: s.membro, altro: s.altro, il: s.creato_il })),
+    entrano: membriDi(idx, nodo).filter((m) => !giaDentro.has(m))
+      .map((m) => ({ id: m, nome: nomeOggetto(idx, m), ip: ipOggetto(idx, m), perche: perche(m) })),
+    // I capi di una separazione come si vedevano quando è stata scritta: dall'indice di prima.
+    separazioniTolte: tolte.map((s) => ({
+      membro: s.membro, altro: s.altro, il: s.creato_il,
+      nomeMembro: nomeOggetto(prima, s.membro), ipMembro: ipOggetto(prima, s.membro),
+      nomeAltro: nomeOggetto(prima, s.altro), ipAltro: ipOggetto(prima, s.altro),
+    })),
   });
 }
 
@@ -337,8 +350,7 @@ export function statoDelNodo(ing: IngressoNodi, righe: RigheScelte, oggetto: str
   const auto = indiceAutomatico(ing, righe.separazioni);
   const membro = (id: string): MembroDelNodo => {
     const m = HOST.exec(id);
-    const h = m ? idx.hostById.get(Number(m[1])) : undefined;
-    const ip = h ? h.ip || null : (idx.nodes.get(id)?.mgmtIp ?? null);
+    const ip = ipOggetto(idx, id);
     const come: ComeFuso | "oggetto" = id === nodo || !m ? "oggetto" : (idx.come.get(Number(m[1])) ?? "a_mano");
     const propria = rigaDi.get(id);
     const gemello = !propria && come === "a_mano" ? gemelloDi(auto, id, conRiga) : null;

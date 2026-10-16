@@ -55,7 +55,7 @@ test("anteprima: 200 con `scritto: false` e il nodo che la mappa avrà; nessuna 
   assert.equal(r.status, 200, JSON.stringify(r.body));
   assert.deepEqual(r.body, {
     nodo: "host:11", nome: "QWNAS-7", separazioniTolte: [], scritto: false,
-    entrano: [{ id: "host:12", nome: "10.71.2.20", perche: "unito a mano" }, { id: "host:13", nome: "10.71.3.20", perche: "unito a mano" }],
+    entrano: [{ id: "host:12", nome: "10.71.2.20", ip: "10.71.2.20", perche: "unito a mano" }, { id: "host:13", nome: "10.71.3.20", ip: "10.71.3.20", perche: "unito a mano" }],
   });
   assert.deepEqual([righe(t, "topology_unioni").length, righe(t, "topology_separazioni").length], [0, 0]);
   const m = modello(t);
@@ -68,7 +68,7 @@ test("`applica: true`: tre righe con chi, il NAS un nodo nella mappa; lo stato d
   assert.equal(r.status, 200, JSON.stringify(r.body));
   assert.deepEqual(r.body, {
     nodo: "host:11", nome: "QWNAS-7", separazioniTolte: [], scritto: true,
-    entrano: [{ id: "host:12", nome: "10.71.2.20", perche: "unito a mano" }, { id: "host:13", nome: "10.71.3.20", perche: "unito a mano" }],
+    entrano: [{ id: "host:12", nome: "10.71.2.20", ip: "10.71.2.20", perche: "unito a mano" }, { id: "host:13", nome: "10.71.3.20", ip: "10.71.3.20", perche: "unito a mano" }],
   });
   const u = righe(t, "topology_unioni");
   assert.deepEqual(u.map((x) => [x.gruppo, x.membro, x.creato_da, x.tolto_il]), [[1, "host:11", "anna", null], [1, "host:12", "anna", null], [1, "host:13", "anna", null]]);

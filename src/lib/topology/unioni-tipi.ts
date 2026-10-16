@@ -36,9 +36,13 @@ export interface StatoDelNodo {
   nonApplicata: { membri: string[]; motivo: string } | null; mancanti: string[];
   disponibile: boolean; // false = tabelle assenti su questo cliente
 }
+/** Nomi e IP accanto agli id: tre indirizzi con lo stesso nome non sono tre righe uguali (verifica a schermo, 16/10). */
 export interface AnteprimaUnione {
-  nodo: string; nome: string; entrano: Array<{ id: string; nome: string; perche: string }>;
-  separazioniTolte: Array<{ membro: string; altro: string; il: string }>; scritto: boolean;
+  nodo: string; nome: string; entrano: Array<{ id: string; nome: string; ip: string | null; perche: string }>;
+  separazioniTolte: Array<{
+    membro: string; altro: string; il: string; nomeMembro: string; ipMembro: string | null; nomeAltro: string; ipAltro: string | null;
+  }>;
+  scritto: boolean;
 }
 export interface AnteprimaSeparazione {
   resta: { nodo: string; nome: string; membri: string[] };

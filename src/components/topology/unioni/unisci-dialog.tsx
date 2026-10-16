@@ -206,6 +206,20 @@ function Corpo({ onOpenChange, da, nomeDa, scelti, onFatto }: UnisciDialogProps)
   );
 }
 
+/** L'IP accanto al nome, quando dice qualcosa in più (un host senza nome si chiama già col suo IP). */
+const ipInPiu = (nome: string, ip: string | null): string | null => (ip && ip !== nome ? ip : null);
+
+/** Un capo di una separazione annullata: «nome (IP)». */
+function Capo({ nome, ip }: { nome: string; ip: string | null }) {
+  const altro = ipInPiu(nome, ip);
+  return (
+    <>
+      <span className="font-medium">{nome}</span>
+      {altro && <> (<span className="font-mono text-[13px]">{altro}</span>)</>}
+    </>
+  );
+}
+
 function Anteprima({ a }: { a: AnteprimaUnione }) {
   return (
     <div className="space-y-3 text-sm">
@@ -213,11 +227,16 @@ function Anteprima({ a }: { a: AnteprimaUnione }) {
       <div>
         <p className="font-semibold">Entrano</p>
         <ul className="mt-1 border rounded-md divide-y">
-          {a.entrano.map((e) => (
-            <li key={e.id} className="px-3 py-1.5">
-              <span className="font-medium">{e.nome}</span> <span className="text-muted-foreground">— {e.perche}</span>
-            </li>
-          ))}
+          {a.entrano.map((e) => {
+            const ip = ipInPiu(e.nome, e.ip);
+            return (
+              <li key={e.id} className="px-3 py-1.5">
+                <span className="font-medium">{e.nome}</span>
+                {ip && <span className="ml-2 font-mono text-[13px] text-muted-foreground">{ip}</span>}
+                {" "}<span className="text-muted-foreground">— {e.perche}</span>
+              </li>
+            );
+          })}
         </ul>
       </div>
       {a.separazioniTolte.length > 0 && (
@@ -228,7 +247,8 @@ function Anteprima({ a }: { a: AnteprimaUnione }) {
               const g = giornoItaliano(s.il);
               return (
                 <li key={`${s.membro}|${s.altro}`} className="px-3 py-1.5">
-                  {s.membro} non resta più separato da {s.altro}{g ? ` (separati il ${g})` : ""}
+                  <Capo nome={s.nomeMembro} ip={s.ipMembro} /> non resta più separato da <Capo nome={s.nomeAltro} ip={s.ipAltro} />
+                  {g ? ` (separati il ${g})` : ""}
                 </li>
               );
             })}

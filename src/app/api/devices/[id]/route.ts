@@ -8,7 +8,7 @@ import {
   type ProductProfileId,
 } from "@/lib/device-product-profiles";
 import { coerceProtocolForVendor } from "@/lib/vendor-device-profile";
-import { applicaCorpoApparatoDb, RifiutoCredenziali, usataAdessoDb, type EsitoScelte } from "@/lib/credentials/apparato-archivio";
+import { applicaCorpoApparatoDb, avvisoFalliti, RifiutoCredenziali, usataAdessoDb, type EsitoScelte } from "@/lib/credentials/apparato-archivio";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { parseJsonSafe } from "@/lib/json-safe";
 import { withTenantFromSession } from "@/lib/api-tenant";
@@ -241,11 +241,12 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     // Avviso, non rifiuto (16/10): SSH sulla 161 si salva ma si dice. Un rifiuto
     // bloccherebbe anche il cambio del nome degli apparati già storti, e Proxmox
     // tiene in device.port la porta dell'API anche col protocollo SSH.
-    const avviso = avvisoPortaProtocollo(device);
+    // La voce scelta che resta fallita (D10) si dice, non passa come aggiornata.
+    const avvisi = [avvisoPortaProtocollo(device), credenziali ? avvisoFalliti(credenziali.falliti) : null].filter((a): a is string => a != null);
 
     return NextResponse.json({
       ...device,
-      ...(avviso ? { avvisi: [avviso] } : {}),
+      ...(avvisi.length > 0 ? { avvisi } : {}),
       credenziali,
       last_proxmox_scan_result: null,
       encrypted_password: device.encrypted_password ? "●●●●●●●●" : null,

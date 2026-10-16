@@ -16,6 +16,8 @@ process.env.ENCRYPTION_KEY ||= "test-encryption-key-crea-apparato";
 
 import { creaApparato } from "../crea-apparato";
 import { withTenant, getTenantDb, deleteTenantDatabase } from "@/lib/db-tenant";
+import { encrypt } from "@/lib/crypto";
+import { eliminaBindingApparatoDb, usataAdessoDb } from "@/lib/credentials/apparato-archivio";
 
 const T = "TESTCREAAPPARATO";
 
@@ -105,6 +107,41 @@ describe("creaApparato", () => {
     assert.deepEqual(c, { username: null, encrypted_password: null, community_string: null, api_token: null });
     const b = d.prepare(`SELECT credential_id, protocol_type, port FROM device_credential_bindings WHERE device_id = ?`).all(esito.device.id);
     assert.deepEqual(b, [{ credential_id: 7, protocol_type: "snmp", port: 1161 }]);
+  });
+
+  // Revisione della 2e (16/10): creaApparato scriveva ancora gli id delle voci
+  // in `credential_id` / `snmp_credential_id`, che la conversione non svuota
+  // più (segno `done:`). Il motore le legge come livello 4 (device_column):
+  // con il binding fallito riprendeva la voce dalla colonna (D10 aggirato, per
+  // WinRM accessi falliti sull'account di dominio), e con il binding tolto
+  // dalla tabella dell'apparato continuava a usarla.
+  it("voce scelta: solo il binding; fallito o tolto, il motore non la riprende da una colonna", () => {
+    const d = getTenantDb(T);
+    d.prepare(`INSERT INTO credentials (id, name, credential_type, encrypted_username, encrypted_password) VALUES (80, 'ssh scelta', 'ssh', ?, ?)`).run(
+      encrypt("admin"),
+      encrypt("segreta"),
+    );
+    const esito = withTenant(T, () =>
+      creaApparato({ name: "fw scelta", host: "10.40.0.43", device_type: "router", classification: "firewall", vendor: "other", protocol: "ssh", credential_id: 80, snmp_credential_id: 7 })
+    );
+    assert.ok(esito.ok, esito.ok ? "" : esito.error);
+    const id = esito.device.id;
+    assert.deepEqual(d.prepare(`SELECT credential_id, snmp_credential_id FROM network_devices WHERE id = ?`).get(id), {
+      credential_id: null,
+      snmp_credential_id: null,
+    });
+
+    d.prepare(`UPDATE device_credential_bindings SET test_status = 'failed' WHERE device_id = ? AND protocol_type = 'ssh'`).run(id);
+    const snmp = d.prepare(`SELECT id FROM device_credential_bindings WHERE device_id = ? AND protocol_type = 'snmp'`).get(id) as { id: number };
+    assert.ok(eliminaBindingApparatoDb(d, id, snmp.id));
+
+    const usate = usataAdessoDb(d, id);
+    const principale = usate.find((u) => u.ruolo === "principale");
+    assert.equal(principale?.fonte ?? null, null, `il binding fallito si salta e non c'è altro: ${JSON.stringify(principale)}`);
+    assert.equal(principale?.credential_id ?? null, null);
+    const riga = usate.find((u) => u.ruolo === "snmp");
+    assert.notEqual(riga?.fonte, "device_column", `binding SNMP tolto: niente voce da una colonna (${JSON.stringify(riga)})`);
+    assert.equal(riga?.credential_id ?? null, null);
   });
 
   it("utente senza password: 400 e nessun apparato creato", () => {

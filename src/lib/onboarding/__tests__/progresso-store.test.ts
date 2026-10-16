@@ -64,6 +64,20 @@ describe("riepilogo del wizard", () => {
     assert.deepEqual(r.rete, { id: 9, name: "LAN", cidr: "10.9.0.0/24", gateway: "10.9.0.1", dns_server: "10.9.0.2", router_id: null });
   });
 
+  // Revisione della 2e (16/10): dopo la conversione le colonne del router sono
+  // vuote e le voci stanno solo nei binding; il wizard riaperto non le vedeva.
+  it("il router riporta le voci dai binding (colonne vuote dopo la 2e)", () => {
+    const d = getTenantDb(T);
+    d.prepare(`INSERT INTO credentials (id, name, credential_type) VALUES (41, 'ssh router', 'ssh'), (42, 'snmp router', 'snmp')`).run();
+    d.prepare(
+      `INSERT INTO device_credential_bindings (device_id, credential_id, protocol_type, port, sort_order) VALUES (3, 41, 'ssh', 22, 0), (3, 42, 'snmp', 161, 1)`,
+    ).run();
+    salvaProgresso(T, { passo: 4, router_device_id: 3, network_id: 9, ad_integration_id: null });
+    const r = withTenant(T, () => leggiRiepilogoWizard(T));
+    assert.deepEqual([r.router?.credential_id, r.router?.snmp_credential_id], [41, 42]);
+    d.prepare(`DELETE FROM device_credential_bindings WHERE device_id = 3`).run();
+  });
+
   it("la rete riporta il router collegato: un router creato dopo la rete si collega al completamento", () => {
     getTenantDb(T).prepare(`INSERT OR REPLACE INTO network_router (network_id, router_id) VALUES (9, 3)`).run();
     salvaProgresso(T, { passo: 4, router_device_id: 3, network_id: 9, ad_integration_id: null });

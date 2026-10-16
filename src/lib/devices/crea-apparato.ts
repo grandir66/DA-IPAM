@@ -83,11 +83,14 @@ export function creaApparato(body: unknown): EsitoCreaApparato {
         vendor: data.vendor,
         vendor_subtype: data.vendor_subtype ?? vendorSubtypeFromProductProfile(productProfile),
         protocol: data.protocol,
-        // Gli id delle voci scelte restano anche in colonna (come il wizard del
-        // router, `onboarding/router-store.ts`, che trova da lì il binding da
-        // sostituire): li toglie la 2g (T26). I segreti no.
-        credential_id: data.credential_id ?? null,
-        snmp_credential_id: data.snmp_credential_id ?? null,
+        // Nemmeno gli id delle voci (revisione della 2e, 16/10): il motore legge
+        // `credential_id` / `snmp_credential_id` come livello 4 (device_column),
+        // quindi con il binding fallito (D10) o tolto dalla tabella
+        // dell'apparato la voce tornava da una colonna che la pagina non mostra.
+        // Le voci stanno solo nei binding qui sotto; il wizard del router le
+        // cerca lì (`onboarding/router-store.ts`).
+        credential_id: null,
+        snmp_credential_id: null,
         username: null,
         encrypted_password: null,
         community_string: null,

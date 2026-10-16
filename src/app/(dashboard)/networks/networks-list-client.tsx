@@ -257,7 +257,9 @@ export function NetworksListClient({ initialNetworks, routers: initialRouters }:
       });
       const data = await res.json();
       if (res.ok) {
-        toast.success(data.message);
+        // Router saltati o voce rimasta fallita (D10): si dice, non passa come un successo pieno.
+        if (data.credenziali?.saltati?.length || data.credenziali?.falliti?.length) toast.warning(data.message);
+        else toast.success(data.message);
         setAssignDialogOpen(false);
         setAssignCredentialId(null);
         setAssignSnmpCredentialId(null);

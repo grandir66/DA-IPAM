@@ -11,7 +11,8 @@
  * riaprire sull'ultimo passo con niente dietro (revisione del 15/10).
  */
 import { getSetting, setSetting } from "@/lib/db-hub";
-import { getAdIntegrationById, getNetworkById, getNetworkDeviceById, getNetworkRouterId } from "@/lib/db";
+import { getAdIntegrationById, getDeviceCredentialBindings, getNetworkById, getNetworkDeviceById, getNetworkRouterId } from "@/lib/db";
+import { vociDelRouter } from "@/lib/devices/binding-apparato";
 import { PASSO } from "./passi";
 import { chiaveProgresso, leggiProgresso, scriviProgresso, type ProgressoWizard } from "./progresso";
 
@@ -84,8 +85,8 @@ export function leggiRiepilogoWizard(tenantCode: string): RiepilogoWizard {
         host: d.host,
         vendor: d.vendor,
         protocol: d.protocol,
-        credential_id: d.credential_id ?? null,
-        snmp_credential_id: d.snmp_credential_id ?? null,
+        // Dai binding (revisione della 2e, 16/10): le colonne sono vuote.
+        ...vociDelRouter(d.protocol, getDeviceCredentialBindings(d.id)),
       };
     } else {
       spariti.push(`il router (id ${progresso.router_device_id})`);

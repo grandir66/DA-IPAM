@@ -57,7 +57,7 @@ import {
 } from "@/lib/device-product-profiles";
 import type { NetworkDevice, ArpEntry, MacPortEntry, SwitchPort } from "@/types";
 import { networkDeviceUsesArpPoll } from "@/lib/network-device-arp";
-import { corpoModificaApparato, tendineDaApparato } from "../modifica-in-blocco";
+import { corpoModificaApparato, inviaConConferma, tendineDaApparato } from "../modifica-in-blocco";
 import { nomeFonteUsata, type UsataAdesso } from "@/lib/devices/usata-adesso";
 
 interface Credential {
@@ -852,18 +852,26 @@ function DeviceDetailPage() {
       }
     });
     try {
-      const res = await fetch(`/api/devices/${device.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (res.ok) {
-        toast.success("Dispositivo aggiornato");
+      // «Nessuna» che toglie binding: il server chiede la conferma col numero (409), qui si dà e si rimanda tutto.
+      const esito = await inviaConConferma(
+        (corpo) =>
+          fetch(`/api/devices/${device.id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(corpo),
+          }),
+        body,
+        (domanda) => window.confirm(domanda),
+      );
+      if (esito?.res.ok) {
+        // Avvisi del server (porta, voce scelta rimasta fallita): si dicono, non passano come un successo pieno.
+        const avvisi = esito.data.avvisi ?? [];
+        for (const a of avvisi) toast.warning(a);
+        if (avvisi.length === 0) toast.success("Dispositivo aggiornato");
         setEditOpen(false);
         fetchDevice();
-      } else {
-        const data = await res.json();
-        toast.error(data.error || "Errore nell'aggiornamento");
+      } else if (esito) {
+        toast.error(esito.data.error || "Errore nell'aggiornamento");
       }
     } catch {
       toast.error("Errore nell'aggiornamento");

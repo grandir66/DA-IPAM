@@ -141,3 +141,42 @@ export function corpoModificaApparato(
   }
   return corpo;
 }
+
+/** La risposta delle rotte di modifica degli apparati, per i campi che le finestre leggono. */
+export interface RispostaModifica {
+  error?: string;
+  message?: string;
+  /** 409: la domanda da fare prima di togliere binding («Nessuna»). */
+  conferma?: { domanda: string };
+  /** Avvisi da mostrare anche se il salvataggio è riuscito (porta, voce rimasta fallita). */
+  avvisi?: string[];
+  credenziali?: { saltati?: unknown[]; falliti?: unknown[] } | null;
+  [campo: string]: unknown;
+}
+
+/**
+ * Manda una modifica e, se il server chiede la conferma della rimozione dei
+ * binding (409 con `conferma`), fa la domanda all'utente e rimanda lo stesso
+ * corpo con `conferma_rimozione: true`. Annullata → null, e non parte niente
+ * altro. Ogni altra risposta torna com'è.
+ *
+ * Perché (revisione della 2e, 16/10): dalla 2e «Nessuna» toglie i binding, e
+ * il PUT del singolo risponde 409 con la domanda. Le finestre del singolo la
+ * mostravano come errore, senza modo di confermare, e la transazione annullata
+ * perdeva anche il resto del salvataggio (il nome). Solo la finestra in blocco
+ * la gestiva.
+ */
+export async function inviaConConferma(
+  invia: (corpo: Record<string, unknown>) => Promise<Response>,
+  corpo: Record<string, unknown>,
+  chiedi: (domanda: string) => boolean,
+): Promise<{ res: Response; data: RispostaModifica } | null> {
+  let res = await invia(corpo);
+  let data = (await res.json()) as RispostaModifica;
+  if (res.status === 409 && data.conferma) {
+    if (!chiedi(data.conferma.domanda)) return null;
+    res = await invia({ ...corpo, conferma_rimozione: true });
+    data = (await res.json()) as RispostaModifica;
+  }
+  return { res, data };
+}

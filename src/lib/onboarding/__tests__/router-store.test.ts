@@ -42,7 +42,11 @@ function binding(id: number): [string, number | null, number][] {
   return righe.map((r) => [r.protocol_type, r.credential_id, r.port]);
 }
 
-/** Cosa userà davvero il sistema: utente SSH, community e porta dell'apparato. */
+/**
+ * Cosa userà davvero il sistema: utente SSH, community e porta dell'apparato.
+ * `colonne`: protocollo e colonne `credential_id` / `snmp_credential_id`, che
+ * dalla revisione della 2e il wizard non scrive più (le voci stanno nei binding).
+ */
 function inUso(id: number) {
   return withTenant(T, () => {
     const d = getNetworkDeviceById(id);
@@ -81,7 +85,8 @@ describe("modifica del router del wizard", () => {
     assert.deepEqual(inUso(id).utente, "utente-a");
     const esito = modifica({ device_id: id, credential_id: 2, snmp_credential_id: 4 });
     assert.ok(esito.ok, esito.ok ? "" : esito.error);
-    assert.deepEqual(inUso(id), { utente: "utente-b", community: "comm-s2", porta: 2222, colonne: ["ssh", 2, 4] });
+    assert.deepEqual(inUso(id), { utente: "utente-b", community: "comm-s2", porta: 2222, colonne: ["ssh", null, null] });
+    assert.deepEqual(esito.ok && [esito.router.credential_id, esito.router.snmp_credential_id], [2, 4]);
     assert.deepEqual(binding(id), [
       ["snmp", 4, 161],
       ["ssh", 2, 2222],
@@ -92,7 +97,8 @@ describe("modifica del router del wizard", () => {
     const id = crea({ protocol: "ssh", credential_id: 1, snmp_credential_id: 3 });
     const esito = modifica({ device_id: id, protocol: "snmp_v2", credential_id: 4 });
     assert.ok(esito.ok, esito.ok ? "" : esito.error);
-    assert.deepEqual(inUso(id), { utente: null, community: "comm-s2", porta: 161, colonne: ["snmp_v2", 4, null] });
+    assert.deepEqual(inUso(id), { utente: null, community: "comm-s2", porta: 161, colonne: ["snmp_v2", null, null] });
+    assert.deepEqual(esito.ok && [esito.router.credential_id, esito.router.snmp_credential_id], [4, null]);
     assert.deepEqual(binding(id), [["snmp", 4, 161]]);
   });
 
@@ -109,7 +115,8 @@ describe("modifica del router del wizard", () => {
     assert.equal(inUso(id).porta, 161);
     const esito = modifica({ device_id: id, protocol: "ssh", credential_id: 1, snmp_credential_id: 3 });
     assert.ok(esito.ok, esito.ok ? "" : esito.error);
-    assert.deepEqual(inUso(id), { utente: "utente-a", community: "comm-s", porta: 22, colonne: ["ssh", 1, 3] });
+    assert.deepEqual(inUso(id), { utente: "utente-a", community: "comm-s", porta: 22, colonne: ["ssh", null, null] });
+    assert.deepEqual(esito.ok && [esito.router.credential_id, esito.router.snmp_credential_id], [1, 3]);
     assert.deepEqual(binding(id), [
       ["snmp", 3, 161],
       ["ssh", 1, 22],
@@ -121,7 +128,8 @@ describe("modifica del router del wizard", () => {
     const esito = modifica({ device_id: id, snmp_credential_id: null });
     assert.ok(esito.ok, esito.ok ? "" : esito.error);
     assert.deepEqual(binding(id), [["ssh", 1, 22]]);
-    assert.deepEqual(inUso(id).colonne, ["ssh", 1, null]);
+    assert.deepEqual(inUso(id).colonne, ["ssh", null, null]);
+    assert.deepEqual(esito.ok && [esito.router.credential_id, esito.router.snmp_credential_id], [1, null]);
   });
 
   it("la stessa modifica due volte non crea doppioni (un nuovo tentativo dopo un errore)", () => {
@@ -171,6 +179,29 @@ describe("modifica del router del wizard", () => {
       ["snmp", 3, 161],
       ["ssh", 1, 22],
     ]);
+  });
+
+  // Revisione della 2e (16/10): il wizard cercava il binding da sostituire
+  // dalle colonne `credential_id` / `snmp_credential_id`. La conversione della
+  // 2e le svuota (e creaApparato non le scrive più): il wizard leggeva «nessuna
+  // voce», e cambiando la credenziale aggiungeva i binding nuovi accanto ai
+  // vecchi invece di sostituirli. Le colonne non le scrive più nemmeno lui.
+  it("router con le colonne vuote (convertito dalla 2e): voci lette dai binding e sostituite, colonne vuote", () => {
+    const id = crea({ protocol: "ssh", credential_id: 1, snmp_credential_id: 3 });
+    getTenantDb(T).prepare(`UPDATE network_devices SET credential_id = NULL, snmp_credential_id = NULL WHERE id = ?`).run(id);
+
+    const nome = modifica({ device_id: id, name: "Gateway convertito" });
+    assert.ok(nome.ok, nome.ok ? "" : nome.error);
+    assert.deepEqual(nome.ok && [nome.router.credential_id, nome.router.snmp_credential_id], [1, 3], "il wizard rilegge le voci dai binding");
+
+    const esito = modifica({ device_id: id, credential_id: 2, snmp_credential_id: 4 });
+    assert.ok(esito.ok, esito.ok ? "" : esito.error);
+    assert.deepEqual(binding(id), [
+      ["snmp", 4, 161],
+      ["ssh", 2, 2222],
+    ]);
+    assert.deepEqual(esito.ok && [esito.router.credential_id, esito.router.snmp_credential_id], [2, 4]);
+    assert.deepEqual(inUso(id), { utente: "utente-b", community: "comm-s2", porta: 2222, colonne: ["ssh", null, null] });
   });
 
   it("rifiuti: voce che non vale per l'accesso, voce che non c'è, apparato che non c'è, campo sconosciuto", () => {

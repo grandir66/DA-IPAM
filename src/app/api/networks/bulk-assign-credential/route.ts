@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getDb } from "@/lib/db";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
-import { assegnaVociAiRouterDb, RifiutoCredenziali, type SceltaVoci } from "@/lib/credentials/apparato-archivio";
+import { assegnaVociAiRouterDb, avvisoFalliti, RifiutoCredenziali, type SceltaVoci } from "@/lib/credentials/apparato-archivio";
 
 /** 0 o null = «Nessuna» (toglie i binding di quel protocollo), assente = non modificare. */
 const IdVoce = z.coerce.number().int().min(0, "Credenziale non valida").optional().nullable();
@@ -56,6 +56,8 @@ export async function POST(request: Request) {
       if (esito.saltati.length > 0) {
         parti.push(`non assegnate a ${esito.saltati.map((x) => `«${x.nome}»`).join(", ")}: ${esito.saltati[0].motivo}`);
       }
+      const falliti = avvisoFalliti(esito.falliti);
+      if (falliti) parti.push(falliti);
 
       return NextResponse.json({
         success: true,

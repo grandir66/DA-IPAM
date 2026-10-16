@@ -32,7 +32,7 @@ import { linkInvAgentEndpointToHost } from "@/lib/inventory-agent/db";
 import { portaCredenziale } from "@/lib/credentials/porte";
 import { tipiCredenzialePerProtocollo } from "@/lib/credential-protocol-map";
 import { isMacOsHost } from "@/lib/host-platform-detect";
-import { applicaVociApparatiDb, RifiutoCredenziali, type SceltaVoci } from "@/lib/credentials/apparato-archivio";
+import { applicaVociApparatiDb, avvisoFalliti, RifiutoCredenziali, type SceltaVoci } from "@/lib/credentials/apparato-archivio";
 
 const productProfileEnum = z.enum(PRODUCT_PROFILE_IDS as unknown as [string, ...string[]]);
 
@@ -105,7 +105,6 @@ export async function POST(request: Request) {
       parsed.data;
 
     const hasCred = credential_id && credential_id > 0;
-    const snmpProto = protocol === "snmp_v2" || protocol === "snmp_v3";
 
     /** Prima: vendor dal form; poi: inferenza da OUI/MAC host; infine: default per protocollo.
      *  Prima SNMP forzava sempre "other" e l'UI non inviava vendor → Ubiquiti/Cisco persi. */
@@ -173,13 +172,13 @@ export async function POST(request: Request) {
         device_type: deviceType,
         vendor: deviceVendor,
         vendor_subtype: vendorSubtypeFromProductProfile(profileId),
-        // Gli id delle voci restano anche in colonna, come prima (il wizard
-        // del router trova da lì il binding da sostituire; li toglie la 2g,
-        // T26). La community no (T20): prima si copiava cifrata nella colonna,
-        // che la pagina non mostra; la voce SNMP sta nel binding qui sotto.
-        credential_id: (hasCred || (protocol === "winrm" && credential_id)) ? credential_id : (snmpProto && snmp_credential_id ? snmp_credential_id : null),
+        // Nessuna colonna di credenziali (T20 e revisione della 2e, 16/10): né
+        // la community (prima copiata cifrata), né gli id delle voci, che il
+        // motore legge come livello 4 (device_column) e che riportavano la
+        // voce con il binding fallito o tolto. Le voci stanno nei binding qui sotto.
+        credential_id: null,
         protocol,
-        snmp_credential_id: hasCred && snmpProto && snmp_credential_id ? snmp_credential_id : null,
+        snmp_credential_id: null,
         username: null,
         encrypted_password: null,
         community_string: null,
@@ -328,6 +327,8 @@ export async function PATCH(request: Request) {
         const nomi = credenziali.saltati.slice(0, 5).map((x) => `«${x.nome}»`).join(", ") + (k > 5 ? "…" : "");
         parti.push(`non assegnata a ${k} apparat${k === 1 ? "o" : "i"} (${nomi}): ${credenziali.saltati[0].motivo}`);
       }
+      const falliti = avvisoFalliti(credenziali.falliti);
+      if (falliti) parti.push(falliti);
     }
     return NextResponse.json({
       success: true,

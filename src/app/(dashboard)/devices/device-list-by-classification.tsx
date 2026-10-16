@@ -62,6 +62,7 @@ import {
   corpoHaModifiche,
   corpoModificaApparato,
   corpoModificaInBlocco,
+  inviaConConferma,
   tendineDaApparato,
 } from "./modifica-in-blocco";
 import { DeviceCredentialsTable } from "@/components/shared/device-credentials-table";
@@ -313,17 +314,13 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(corpo),
         });
-      let res = await invia(body);
-      let data = await res.json();
       // «Nessuna» toglie binding (T20): il server chiede la conferma col numero, niente è scritto finché non arriva.
-      if (res.status === 409 && data.conferma) {
-        if (!window.confirm(data.conferma.domanda)) return;
-        res = await invia({ ...body, conferma_rimozione: true });
-        data = await res.json();
-      }
+      const esito = await inviaConConferma(invia, body, (domanda) => window.confirm(domanda));
+      if (!esito) return;
+      const { res, data } = esito;
       if (res.ok) {
-        // Apparati saltati (la voce non vale per il loro protocollo): si dice, non passa come un successo pieno.
-        if (data.credenziali?.saltati?.length) toast.warning(data.message);
+        // Apparati saltati (la voce non vale) o voce rimasta fallita (D10): si dice, non passa come un successo pieno.
+        if (data.credenziali?.saltati?.length || data.credenziali?.falliti?.length) toast.warning(data.message);
         else toast.success(data.message);
         setBulkDialogOpen(false);
         setSelectedIds(new Set());
@@ -776,19 +773,26 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
       delete body.password;
     }
 
-    const res = await fetch(`/api/devices/${editingDevice.id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-
-    if (!res.ok) {
-      const data = await res.json();
-      toast.error(data.error || "Errore nell'aggiornamento");
+    const deviceId = editingDevice.id;
+    const esito = await inviaConConferma(
+      (corpo) =>
+        fetch(`/api/devices/${deviceId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(corpo),
+        }),
+      body,
+      (domanda) => window.confirm(domanda),
+    );
+    if (!esito) return;
+    if (!esito.res.ok) {
+      toast.error(esito.data.error || "Errore nell'aggiornamento");
       return;
     }
 
-    toast.success("Dispositivo aggiornato");
+    const avvisi = esito.data.avvisi ?? [];
+    for (const a of avvisi) toast.warning(a);
+    if (avvisi.length === 0) toast.success("Dispositivo aggiornato");
     setEditDialogOpen(false);
     setEditingDevice(null);
     fetchDevices();

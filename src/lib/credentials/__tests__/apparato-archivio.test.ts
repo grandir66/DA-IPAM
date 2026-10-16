@@ -35,6 +35,7 @@ import {
   applicaCorpoApparatoDb,
   applicaVociApparatiDb,
   assegnaVociAiRouterDb,
+  avvisoFalliti,
   eliminaBindingApparatoDb,
   nuovaVoceEBindingDb,
   RifiutoCredenziali,
@@ -174,6 +175,31 @@ describe("modifica in blocco: una voce scelta va in testa, i binding che ci sono
     assert.equal(righe.length, 2);
     assert.equal(righe[0].id, giaLegata);
     assert.equal(righe[0].test_status, "success");
+  });
+
+  // Revisione della 2e (16/10): la voce scelta era già legata con un binding
+  // fallito. Con D10 = (a) il motore lo salta finché una prova non riesce, ma la
+  // risposta diceva «aggiornato» come se la scelta valesse: un ripiego muto.
+  // Il binding resta fallito (niente accessi WinRM falliti in più) e l'esito lo dice.
+  it("la voce scelta ha già un binding fallito: resta fallito (D10) e l'esito lo dice", () => {
+    const d = nuovoDb();
+    const x = voce(d, "admin dominio", "windows", { utente: "a", segreto: "b" });
+    const A = apparato(d, "srv-a", "winrm", 5985);
+    const B = apparato(d, "srv-b", "winrm", 5985);
+    const fallito = binding(d, A, x, "winrm", 5985, { ordine: 0, stato: "failed", provato: "2026-10-12 07:00:00" });
+
+    const esito = applicaVociApparatiDb(d, [A, B], { credential_id: x }, { conferma: false });
+
+    assert.equal(esito.aggiunti, 1, "su B il binding nasce");
+    assert.deepEqual(esito.falliti, [{ device_id: A, nome: "srv-a", voce: "admin dominio", protocollo: "winrm" }]);
+    const r = bindingDi(d, A, "winrm");
+    assert.deepEqual(
+      r.map((b) => [b.id, b.test_status, b.tested_at]),
+      [[fallito, "failed", "2026-10-12 07:00:00"]],
+      "il binding fallito non torna fra i non provati",
+    );
+    assert.match(avvisoFalliti(esito.falliti) ?? "", /«admin dominio» è fallita su 1 apparato \(«srv-a»\).*prova/);
+    assert.equal(avvisoFalliti([]), null);
   });
 
   it("SNMP: binding sulla porta della voce o 161, mai sulla porta dell'apparato (F3)", () => {

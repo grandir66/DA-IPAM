@@ -38,7 +38,7 @@ import { networkDeviceUsesArpPoll } from "@/lib/network-device-arp";
 import { DeviceLocationField } from "@/components/topology/device-location-field";
 import { toast } from "sonner";
 import type { NetworkDevice } from "@/types";
-import { corpoModificaApparato, tendineDaApparato } from "@/app/(dashboard)/devices/modifica-in-blocco";
+import { corpoModificaApparato, inviaConConferma, tendineDaApparato } from "@/app/(dashboard)/devices/modifica-in-blocco";
 import { avvisoPortaProtocollo, portaAlCambioProtocollo, type BindingPorta } from "@/lib/devices/porta-protocollo";
 import type { CredenzialeArchivio, ProtocolloApparato } from "@/lib/devices/proposta-apparato";
 
@@ -176,13 +176,21 @@ export function EditDeviceDialog({ device, open, onOpenChange, onSaved }: EditDe
     });
 
     try {
-      const res = await fetch(`/api/devices/${device.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
+      // «Nessuna» che toglie binding: il server chiede la conferma col numero (409), qui si dà e si rimanda tutto.
+      const esito = await inviaConConferma(
+        (corpo) =>
+          fetch(`/api/devices/${device.id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(corpo),
+          }),
+        body,
+        (domanda) => window.confirm(domanda),
+      );
+      if (!esito) return;
+      const { res, data } = esito;
       if (res.ok) {
-        const updated = await res.json() as NetworkDevice & { avvisi?: string[] };
+        const updated = data as unknown as NetworkDevice & { avvisi?: string[] };
         for (const a of updated.avvisi ?? []) toast.warning(a);
         const errLoc = await saveLocation.current();
         if (errLoc) {
@@ -195,7 +203,6 @@ export function EditDeviceDialog({ device, open, onOpenChange, onSaved }: EditDe
           onSaved?.(updated);
         }
       } else {
-        const data = await res.json();
         toast.error(data.error || "Errore nell'aggiornamento");
       }
     } catch {

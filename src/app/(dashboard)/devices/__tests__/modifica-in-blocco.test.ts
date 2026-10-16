@@ -26,6 +26,7 @@ import {
   corpoModificaInBlocco,
   corpoHaModifiche,
   corpoModificaApparato,
+  inviaConConferma,
   tendineDaApparato,
   type StatoModificaInBlocco,
 } from "../modifica-in-blocco";
@@ -236,6 +237,68 @@ describe("modifica del singolo apparato: la porta", () => {
 });
 
 /**
+ * Revisione della 2e (16/10): dalla 2e il PUT del singolo risponde 409 con
+ * `conferma` quando «Nessuna» toglierebbe dei binding. Le finestre del singolo
+ * mostravano la domanda come errore, senza modo di confermare
+ * (`conferma_rimozione` non partiva mai), e il resto del salvataggio (il nome)
+ * si perdeva con la transazione annullata.
+ */
+describe("salvataggio con la conferma della rimozione", () => {
+  const risposta = (stato: number, dati: unknown) => new Response(JSON.stringify(dati), { status: stato, headers: { "Content-Type": "application/json" } });
+  const CONFERMA = { error: "Togli 1 binding SSH da 1 apparato, di cui 1 riuscito?", conferma: { domanda: "Togli 1 binding SSH da 1 apparato, di cui 1 riuscito?" } };
+
+  it("409 con la domanda, l'utente conferma: si rimanda lo stesso corpo con conferma_rimozione", async () => {
+    const mandati: Record<string, unknown>[] = [];
+    const domande: string[] = [];
+    const esito = await inviaConConferma(
+      async (corpo) => {
+        mandati.push(corpo);
+        return mandati.length === 1 ? risposta(409, CONFERMA) : risposta(200, { id: 5, name: "nuovo nome" });
+      },
+      { name: "nuovo nome", credential_id: null },
+      (d) => {
+        domande.push(d);
+        return true;
+      },
+    );
+    assert.deepEqual(domande, [CONFERMA.conferma.domanda]);
+    assert.deepEqual(mandati, [
+      { name: "nuovo nome", credential_id: null },
+      { name: "nuovo nome", credential_id: null, conferma_rimozione: true },
+    ]);
+    assert.ok(esito);
+    assert.equal(esito.res.status, 200);
+    assert.equal(esito.data.name, "nuovo nome");
+  });
+
+  it("l'utente annulla: null, e non parte una seconda richiesta", async () => {
+    let richieste = 0;
+    const esito = await inviaConConferma(
+      async () => {
+        richieste++;
+        return risposta(409, CONFERMA);
+      },
+      { credential_id: null },
+      () => false,
+    );
+    assert.equal(esito, null);
+    assert.equal(richieste, 1);
+  });
+
+  it("un 409 senza domanda, o un altro errore: torna com'è, senza chiedere", async () => {
+    for (const [stato, dati] of [
+      [409, { error: "Conflitto" }],
+      [400, { error: "La credenziale non vale" }],
+    ] as const) {
+      const esito = await inviaConConferma(async () => risposta(stato, dati), {}, () => assert.fail("non doveva chiedere"));
+      assert.ok(esito);
+      assert.equal(esito.res.status, stato);
+      assert.equal(esito.data.error, dati.error);
+    }
+  });
+});
+
+/**
  * Guardia sul collegamento: le finestre non si possono rendere senza le API,
  * quindi si legge il sorgente. Le regole sono provate sopra eseguendo il
  * modulo; qui si controlla solo che le finestre lo usino e che il vecchio
@@ -255,6 +318,9 @@ describe("le finestre usano il modulo", () => {
       const src = leggi(rel);
       assert.match(src, /corpoModificaApparato\(/);
       assert.doesNotMatch(src, VECCHIO_CORPO);
+    });
+    it(`${rel}: il PUT passa da inviaConConferma (la conferma di «Nessuna» si può dare)`, () => {
+      assert.match(leggi(rel), /inviaConConferma\(/);
     });
   }
 

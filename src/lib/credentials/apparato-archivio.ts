@@ -11,7 +11,8 @@
  *   protocollo, non provata; i binding che ci sono restano con la loro storia
  *   di prova. Con D1 = (a) si usa prima degli altri non provati ma dopo i
  *   riusciti: per sostituire una credenziale che funziona la si toglie dalla
- *   tabella dell'apparato (interfaccia, punto 8);
+ *   tabella dell'apparato (interfaccia, punto 8). Se era già legata con un
+ *   binding fallito, resta fallito (D10 = (a)) e l'esito lo dice (`falliti`);
  * - «Nessuna» toglie i binding di quel protocollo, e svuota le colonne che il
  *   motore leggerebbe per lui (un apparato lasciato dalla 2e le ha ancora):
  *   solo dopo una conferma che ne dice il numero (409 con la domanda);
@@ -333,9 +334,35 @@ export interface EsitoScelte {
   vociNuove: Array<{ id: number; nome: string; device_id: number; protocollo: CredProtocol }>;
   /** Apparati su cui la voce non vale per il protocollo (solo in blocco: nel singolo è un 400). */
   saltati: Array<{ device_id: number; nome: string; motivo: string }>;
+  /**
+   * Apparati su cui la voce scelta era già legata con un binding fallito: resta
+   * fallito, quindi il motore lo salta finché una prova non riesce (D10 = (a)).
+   * Va detto a chi ha scelto (`avvisoFalliti`), non passato come riuscito.
+   */
+  falliti: Array<{ device_id: number; nome: string; voce: string; protocollo: CredProtocol }>;
 }
 
-const esitoVuoto = (): EsitoScelte => ({ aggiunti: 0, spostati: 0, tolti: 0, vociNuove: [], saltati: [] });
+const esitoVuoto = (): EsitoScelte => ({ aggiunti: 0, spostati: 0, tolti: 0, vociNuove: [], saltati: [], falliti: [] });
+
+/**
+ * L'avviso per le voci scelte che restano fallite; null se non ce ne sono.
+ *
+ * Perché (revisione della 2e, 16/10): scegliere una voce già legata con un
+ * binding fallito la portava in testa ma fallita, e il motore la salta (D10 =
+ * (a)): la risposta diceva «aggiornato» e la scelta non aveva effetto. Rimetterla
+ * fra le non provate da sola vorrebbe dire riprovarla a ogni acquisizione (con
+ * WinRM, accessi falliti sull'account di dominio): resta fallita e lo si dice.
+ */
+export function avvisoFalliti(falliti: EsitoScelte["falliti"]): string | null {
+  if (falliti.length === 0) return null;
+  const perVoce = new Map<string, string[]>();
+  for (const f of falliti) perVoce.set(f.voce, [...(perVoce.get(f.voce) ?? []), f.nome]);
+  const frasi = [...perVoce].map(([voce, nomi]) => {
+    const elenco = nomi.slice(0, 5).map((n) => `«${n}»`).join(", ") + (nomi.length > 5 ? "…" : "");
+    return `la credenziale «${voce}» è fallita su ${plurale(nomi.length, "apparato", "apparati")} (${elenco})`;
+  });
+  return `${frasi.join("; ")}: resta esclusa finché una prova non riesce, provala dalla tabella delle credenziali dell'apparato`;
+}
 
 export interface OpzioniScelte {
   /** L'utente ha confermato la rimozione dei binding («Nessuna»). */
@@ -389,6 +416,10 @@ export function applicaVociApparatiDb(dbh: Database.Database, deviceIds: readonl
           const r = legaVoceDb(dbh, app, p, valore, { inTesta: true });
           if (r.nuovo) esito.aggiunti++;
           if (r.spostato) esito.spostati++;
+          if (!r.nuovo) {
+            const b = leggiBinding(dbh, r.binding_id);
+            if (b?.test_status === "failed") esito.falliti.push({ device_id: app.id, nome: app.name, voce: b.credential_name ?? `#${valore}`, protocollo: p });
+          }
         } catch (e) {
           if (!(e instanceof RifiutoCredenziali) || opzioni.rigido) throw e;
           esito.saltati.push({ device_id: app.id, nome: app.name, motivo: e.message });

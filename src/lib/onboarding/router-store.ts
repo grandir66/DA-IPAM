@@ -10,12 +10,18 @@
  * collega a `port`. Il wizard diceva «Router aggiornato» e il sistema
  * continuava con la voce e la porta di prima.
  *
- * Qui, in una transazione: le colonne, la porta della voce principale e i due
- * binding che rispecchiano le colonne (il principale e quello SNMP separato)
+ * Qui, in una transazione: la porta della voce principale e i due binding del
+ * router (il primo sul protocollo principale e il primo SNMP separato)
  * sostituiti dai nuovi. Gli altri binding dell'apparato (aggiunti dalla sua
  * pagina) non si toccano; un binding già uguale a quello voluto resta com'è,
  * con l'esito della sua prova. Va chiamata nel contesto del cliente
  * (`withTenant`): senza, è un errore e non si scrive niente.
+ *
+ * Dalla revisione della 2e (16/10) le voci si leggono dai binding e non si
+ * scrivono più nelle colonne `credential_id` / `snmp_credential_id`: la
+ * conversione della 2e le svuota, e il motore le legge come ripiego (livello 4)
+ * quando il binding è fallito o tolto. Sostituendo una voce, le colonne di quel
+ * ruolo si svuotano.
  */
 import { z } from "zod";
 // Tutto da `db-tenant` (import statico): la transazione e le scritture devono
@@ -34,7 +40,7 @@ import {
 import { NetworkDeviceSchema } from "@/lib/validators";
 import { portaCredenziale } from "@/lib/credentials/porte";
 import { etichettaTipo, tipiPerProtocollo } from "@/lib/credentials/tipi";
-import { portaVocePrincipale, tipoBindingPerProtocollo } from "@/lib/devices/binding-apparato";
+import { bindingDelRouter, portaVocePrincipale, tipoBindingPerProtocollo, vociDelRouter } from "@/lib/devices/binding-apparato";
 import { ACCESSI_ROUTER, usaSnmpSeparato } from "./corpi";
 import type { RouterDelWizard } from "./progresso-store";
 import type { NetworkDevice } from "@/types";
@@ -70,15 +76,15 @@ function voceDellArchivio(id: number): NonNullable<ReturnType<typeof getCredenti
   return voce;
 }
 
-export function routerDelWizard(d: NetworkDevice): RouterDelWizard {
+/** Il router come lo vede il wizard: le voci dai binding (dopo la 2e le colonne sono vuote). */
+export function routerDelWizard(d: NetworkDevice, bindings: readonly DeviceCredentialBinding[]): RouterDelWizard {
   return {
     id: d.id,
     name: d.name,
     host: d.host,
     vendor: d.vendor,
     protocol: d.protocol,
-    credential_id: d.credential_id ?? null,
-    snmp_credential_id: d.snmp_credential_id ?? null,
+    ...vociDelRouter(d.protocol, bindings),
   };
 }
 
@@ -103,36 +109,37 @@ export function modificaRouterDelWizard(corpo: unknown): EsitoModificaRouter {
   }
   const dopo = getNetworkDeviceById(c.device_id);
   if (!dopo) return { ok: false, status: 404, error: "Il router registrato dal wizard non c'è più" };
-  return { ok: true, router: routerDelWizard(dopo) };
+  return { ok: true, router: routerDelWizard(dopo, getDeviceCredentialBindings(dopo.id)) };
 }
 
 function aggiorna(prima: NetworkDevice, c: z.infer<typeof SchemaModificaRouter>): void {
+  const bindings = getDeviceCredentialBindings(prima.id);
+  // Le voci di prima stanno nei binding, non nelle colonne (revisione della 2e,
+  // 16/10): la conversione le svuota e la creazione non le scrive più. Con
+  // accesso SNMP la voce SNMP separata non serve: la principale è già SNMP.
+  const { principale: bindingPrincipale, snmp: bindingSnmp } = bindingDelRouter(prima.protocol, bindings);
+  const principalePrima = bindingPrincipale?.credential_id ?? null;
+  const snmpPrima = bindingSnmp?.credential_id ?? null;
   const protocollo = c.protocol ?? prima.protocol;
-  const credenziale = c.credential_id ?? prima.credential_id ?? null;
-  // Con accesso SNMP la voce SNMP separata non serve: la principale è già SNMP.
-  const snmpPrima = usaSnmpSeparato(prima.protocol) ? (prima.snmp_credential_id ?? null) : null;
+  const credenziale = c.credential_id ?? principalePrima;
   const snmpDopo = usaSnmpSeparato(protocollo)
     ? c.snmp_credential_id !== undefined
       ? c.snmp_credential_id
       : snmpPrima
     : null;
-  const cambiaPrincipale = protocollo !== prima.protocol || credenziale !== (prima.credential_id ?? null);
-  const cambiaSnmp = snmpDopo !== (prima.snmp_credential_id ?? null);
+  const cambiaPrincipale = protocollo !== prima.protocol || credenziale !== principalePrima;
+  const cambiaSnmp = snmpDopo !== snmpPrima;
 
   const campi: Partial<NetworkDevice> = {};
   if (c.name !== undefined) campi.name = c.name;
   if (c.host !== undefined) campi.host = c.host;
   if (c.vendor !== undefined) campi.vendor = c.vendor;
 
-  const bindings = getDeviceCredentialBindings(prima.id);
   const usati = new Set<number>();
   const ordineInCima = bindings.length ? Math.min(...bindings.map((b) => b.sort_order)) - 1 : 0;
 
-  /** Il binding che rispecchia le colonne di prima: per id della voce, o in linea se la colonna era vuota. */
-  const speculare = (protocolType: string, credId: number | null): DeviceCredentialBinding | undefined =>
-    bindings.find(
-      (b) => !usati.has(b.id) && b.protocol_type === protocolType && (credId != null ? b.credential_id === credId : b.credential_id == null),
-    );
+  /** Il binding di prima per quel ruolo, se nessuna sostituzione l'ha già preso. */
+  const libero = (b: DeviceCredentialBinding | undefined): DeviceCredentialBinding | undefined => (b && !usati.has(b.id) ? b : undefined);
 
   const sostituisci = (vecchio: DeviceCredentialBinding | undefined, voluto: Voluto | null) => {
     if (voluto) {
@@ -165,12 +172,13 @@ function aggiorna(prima: NetworkDevice, c: z.infer<typeof SchemaModificaRouter>)
     }
     const porta = portaVocePrincipale(voce, protocollo);
     campi.protocol = protocollo as NetworkDevice["protocol"];
-    campi.credential_id = credenziale;
     campi.port = porta;
-    // Come il PUT dell'apparato: con una voce d'archivio utente e password in linea non valgono più.
+    // La voce va solo nel binding; le colonne si svuotano (un apparato lasciato
+    // dalla 2e può averle ancora piene, e il motore le leggerebbe come ripiego).
+    campi.credential_id = null;
     campi.username = null;
     campi.encrypted_password = null;
-    sostituisci(speculare(tipoBindingPerProtocollo(prima.protocol), prima.credential_id ?? null), {
+    sostituisci(libero(bindingPrincipale), {
       credential_id: credenziale,
       protocol_type: tipoBindingPerProtocollo(protocollo),
       port: porta,
@@ -187,9 +195,8 @@ function aggiorna(prima: NetworkDevice, c: z.infer<typeof SchemaModificaRouter>)
       voluto = { credential_id: snmpDopo, protocol_type: "snmp", port: portaCredenziale(voce, "snmp") };
     }
     // Il binding SNMP separato di prima (anche la community in linea del vecchio wizard, se la si sostituisce).
-    const vecchio = usaSnmpSeparato(prima.protocol) && (snmpPrima != null || voluto) ? speculare("snmp", snmpPrima) : undefined;
-    sostituisci(vecchio, voluto);
-    campi.snmp_credential_id = snmpDopo;
+    sostituisci(libero(bindingSnmp), voluto);
+    campi.snmp_credential_id = null;
   }
 
   if (Object.keys(campi).length) updateNetworkDevice(prima.id, campi);

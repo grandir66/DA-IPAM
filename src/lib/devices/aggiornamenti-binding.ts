@@ -1,12 +1,17 @@
 /**
  * Campi dei binding credenziale di un apparato (POST/PUT
- * /api/devices/[id]/credentials), tappa 1 credenziali (15/10).
+ * /api/devices/[id]/credentials), tappa 1 credenziali (15/10); tappa 2e (T20,
+ * 16/10).
  *
- * SNMP inline: la community va nel campo cifrato e lo username resta vuoto.
- * Prima la tabella la mandava come `inline_username`, in chiaro, e chi legge la
- * community guarda solo il campo cifrato.
+ * SNMP: la community è il segreto e lo username resta vuoto. Prima la tabella
+ * la mandava come `inline_username`, in chiaro, e chi legge la community
+ * guarda solo il campo cifrato.
+ *
+ * Dalla 2e utente e password nuovi non si scrivono più dentro il binding
+ * (inline): vanno a parte, in chiaro, alla rotta, che crea o aggiorna la voce
+ * d'archivio dell'apparato (`credentials/apparato-archivio.ts`). Un binding ha
+ * sempre una voce: `credential_id: null` non la stacca più.
  */
-import { encrypt } from "@/lib/crypto";
 
 export function normalizzaInlineSnmp(
   protocolType: string | undefined,
@@ -17,40 +22,52 @@ export function normalizzaInlineSnmp(
   return { inline_username: null, inline_password: inlinePassword || inlineUsername || null };
 }
 
+/** Quello che cambia nel binding: voce, protocollo, porta. Mai campi inline. */
 export interface AggiornamentoBinding {
-  credential_id?: number | null;
+  credential_id?: number;
   protocol_type?: string;
   port?: number;
-  inline_username?: string | null;
-  inline_encrypted_password?: string | null;
 }
 
-/** Aggiornamenti per «update»: i campi inline si toccano solo in modalità inline. */
+/**
+ * Segreto nuovo, in chiaro, per la voce dell'apparato. `undefined` = non
+ * cambiare (una password vuota non cancella quella che c'è).
+ */
+export interface SegretoBinding {
+  username?: string | null;
+  password?: string;
+}
+
+/**
+ * «update»: la modifica del binding e, se l'utente ha scritto utente o
+ * segreto («Nuova»), il segreto da portare nella voce. Con una voce
+ * dell'archivio scelta il segreto non c'è.
+ */
 export function aggiornamentiBinding(data: {
   credential_id?: number | null;
   protocol_type?: string;
   port?: number;
   inline_username?: string | null;
   inline_password?: string | null;
-}): AggiornamentoBinding {
-  const updates: AggiornamentoBinding = {};
-  if (data.credential_id !== undefined) updates.credential_id = data.credential_id;
-  if (data.protocol_type !== undefined) updates.protocol_type = data.protocol_type;
-  if (data.port !== undefined) updates.port = data.port;
-  // Un aggiornamento della sola porta di un binding d'archivio non deve scrivere
-  // i campi inline: scriverli stacca la credenziale (updateDeviceCredentialBinding).
-  const modificaInline = !data.credential_id && (data.inline_username !== undefined || data.inline_password !== undefined);
-  if (!modificaInline) return updates;
+}): { modifica: AggiornamentoBinding; segreto: SegretoBinding | null } {
+  const modifica: AggiornamentoBinding = {};
+  if (data.protocol_type !== undefined) modifica.protocol_type = data.protocol_type;
+  if (data.port !== undefined) modifica.port = data.port;
+  if (data.credential_id != null) {
+    modifica.credential_id = data.credential_id;
+    return { modifica, segreto: null };
+  }
+  if (data.inline_username === undefined && data.inline_password === undefined) return { modifica, segreto: null };
   if (data.protocol_type === "snmp") {
-    const inline = normalizzaInlineSnmp(data.protocol_type, data.inline_username, data.inline_password);
-    updates.inline_username = null;
+    const community = normalizzaInlineSnmp("snmp", data.inline_username, data.inline_password).inline_password;
     // Community vuota = non modificare (come le password).
-    if (inline.inline_password) updates.inline_encrypted_password = encrypt(inline.inline_password);
-    return updates;
+    return { modifica, segreto: community ? { username: null, password: community } : null };
   }
-  if (data.inline_username !== undefined) updates.inline_username = data.inline_username;
-  if (data.inline_password !== undefined) {
-    updates.inline_encrypted_password = data.inline_password ? encrypt(data.inline_password) : null;
-  }
-  return updates;
+  return {
+    modifica,
+    segreto: {
+      username: data.inline_username,
+      password: data.inline_password ? data.inline_password : undefined,
+    },
+  };
 }

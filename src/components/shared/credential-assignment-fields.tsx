@@ -88,6 +88,12 @@ export interface CredentialAssignmentFieldsProps {
   snmpSectionTitle?: string;
   /** Etichetta select SNMP. */
   snmpSelectLabel?: string;
+  /**
+   * Modifica in blocco (tappa 2e, T20): oltre a «Non modificare» (il
+   * segnaposto, valore null) le tendine offrono «Nessuna», che vale "none" e
+   * toglie i binding di quel protocollo dopo una conferma.
+   */
+  conNessuna?: boolean;
 }
 
 function Tip({ text }: { text: string }) {
@@ -125,6 +131,7 @@ export function CredentialAssignmentFields({
   primarySelectLabel = "SSH / API / Windows",
   snmpSectionTitle = "SNMP aggiuntivo (porte, LLDP, spanning tree)",
   snmpSelectLabel = CREDENTIAL_SNMP_SECONDARY_SELECT_LABEL,
+  conNessuna = false,
 }: CredentialAssignmentFieldsProps) {
   const tipiAmmessi = protocol ? tipiCredenzialePerProtocollo(protocol) : null;
   const primaryCreds = credentials
@@ -144,6 +151,10 @@ export function CredentialAssignmentFields({
     .sort((a, b) => a.name.localeCompare(b.name, "it", { sensitivity: "base" }));
 
   const hasStoredCred = credentialId && credentialId !== "none";
+  // Con «Nessuna» il valore "none" ha una voce sua; il segnaposto resta null.
+  const NESSUNA = "__nessuna";
+  const valoreTendina = (v: string | null): string => (conNessuna && v === "none" ? NESSUNA : (v ?? "none"));
+  const daTendina = (v: string | null): string | null => (v === NESSUNA ? "none" : v === "none" || v == null ? null : v);
   // Con SNMP come protocollo la principale è già la SNMP: la seconda tendina si
   // nasconde, come nelle finestre in blocco. Resta se un apparato ne ha già una
   // (non si nasconde un valore salvato).
@@ -169,12 +180,13 @@ export function CredentialAssignmentFields({
                 {primarySelectLabel}
                 <Tip text={showInlineCreds ? "Da archivio: usa username e password della credenziale registrata. Se 'Nessuna', usa i campi inline sotto." : "Credenziale dall'archivio: username e password registrati lì."} />
               </Label>
-              <Select value={credentialId ?? "none"} onValueChange={(v) => onCredentialIdChange(v === "none" ? null : v)}>
+              <Select value={valoreTendina(credentialId)} onValueChange={(v) => onCredentialIdChange(daTendina(v))}>
                 <SelectTrigger className="h-9 bg-background">
                   <SelectValue placeholder={credentialPlaceholder} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">{credentialPlaceholder}</SelectItem>
+                  {conNessuna && <SelectItem value={NESSUNA}>Nessuna (togli le credenziali di questo protocollo)</SelectItem>}
                   {primaryCreds.map((c) => (
                     <SelectItem key={c.id} value={String(c.id)}>
                       {c.name}
@@ -194,12 +206,13 @@ export function CredentialAssignmentFields({
                 {snmpSelectLabel}
                 <Tip text="Opzionale se diversa dalla gestione: community da archivio per walk su porte, LLDP, spanning tree. Se «Nessuna», usa la community sotto (o la stessa della gestione)." />
               </Label>
-              <Select value={snmpCredentialId ?? "none"} onValueChange={(v) => onSnmpCredentialIdChange(v === "none" ? null : v)}>
+              <Select value={valoreTendina(snmpCredentialId)} onValueChange={(v) => onSnmpCredentialIdChange(daTendina(v))}>
                 <SelectTrigger className="h-9 bg-background">
                   <SelectValue placeholder={snmpPlaceholder} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">{snmpPlaceholder}</SelectItem>
+                  {conNessuna && <SelectItem value={NESSUNA}>Nessuna (togli le credenziali SNMP)</SelectItem>}
                   {snmpCreds.map((c) => (
                     <SelectItem key={c.id} value={String(c.id)}>
                       {c.name}

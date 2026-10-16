@@ -60,8 +60,9 @@ export function EditDeviceDialog({ device, open, onOpenChange, onSaved }: EditDe
   const [editVendor, setEditVendor] = useState(device.vendor);
   const [editVendorSubtype, setEditVendorSubtype] = useState<string | null>(device.vendor_subtype ?? null);
   const [editProtocol, setEditProtocol] = useState(device.protocol);
-  const [editCredentialId, setEditCredentialId] = useState<string | null>(device.credential_id != null ? String(device.credential_id) : null);
-  const [editSnmpCredentialId, setEditSnmpCredentialId] = useState<string | null>(device.snmp_credential_id != null ? String(device.snmp_credential_id) : null);
+  // Le tendine partono dalla scelta del motore («Usata adesso»), non dalle colonne (T20).
+  const [editCredentialId, setEditCredentialId] = useState<string | null>(() => tendineDaApparato(device).credentialId);
+  const [editSnmpCredentialId, setEditSnmpCredentialId] = useState<string | null>(() => tendineDaApparato(device).snmpCredentialId);
   const [editScanTarget, setEditScanTarget] = useState<string | null>((device as { scan_target?: string | null }).scan_target ?? null);
   const [editProductProfile, setEditProductProfile] = useState<string | null>((device as { product_profile?: string | null }).product_profile ?? null);
   const [editClassification, setEditClassification] = useState<string>((device as { classification?: string | null }).classification ?? "");
@@ -83,8 +84,9 @@ export function EditDeviceDialog({ device, open, onOpenChange, onSaved }: EditDe
     setEditVendor(device.vendor);
     setEditVendorSubtype(device.vendor_subtype ?? null);
     setEditProtocol(device.protocol);
-    setEditCredentialId(device.credential_id != null ? String(device.credential_id) : null);
-    setEditSnmpCredentialId(device.snmp_credential_id != null ? String(device.snmp_credential_id) : null);
+    const tendine = tendineDaApparato(device);
+    setEditCredentialId(tendine.credentialId);
+    setEditSnmpCredentialId(tendine.snmpCredentialId);
     setEditScanTarget((device as { scan_target?: string | null }).scan_target ?? null);
     setEditProductProfile((device as { product_profile?: string | null }).product_profile ?? null);
     setEditClassification((device as { classification?: string | null }).classification ?? "");

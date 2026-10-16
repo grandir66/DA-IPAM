@@ -147,7 +147,21 @@ describe("modifica del router del wizard", () => {
   });
 
   it("un router del vecchio wizard (utente e community in linea) passa alle voci dell'archivio", () => {
-    const id = crea({ protocol: "ssh", username: "vecchio", password: "pw-vecchia", community_string: "comm-vecchia" });
+    // Lo stato che il vecchio wizard lasciava: colonne e binding inline. Dalla
+    // 2e (T20) creaApparato non lo crea più (utente e community diventano voci),
+    // quindi si scrive com'era.
+    ultimoHost += 1;
+    const d = getTenantDb(T);
+    const id = Number(
+      d
+        .prepare(
+          `INSERT INTO network_devices (name, host, device_type, vendor, protocol, port, username, encrypted_password, community_string) VALUES ('Router', ?, 'router', 'mikrotik', 'ssh', 22, 'vecchio', ?, ?)`,
+        )
+        .run(`10.50.0.${ultimoHost}`, encrypt("pw-vecchia"), encrypt("comm-vecchia")).lastInsertRowid,
+    );
+    d.prepare(
+      `INSERT INTO device_credential_bindings (device_id, credential_id, protocol_type, port, sort_order, inline_username, inline_encrypted_password) VALUES (?, NULL, 'ssh', 22, 0, 'vecchio', ?), (?, NULL, 'snmp', 161, 1, NULL, ?)`,
+    ).run(id, encrypt("pw-vecchia"), id, encrypt("comm-vecchia"));
     assert.equal(inUso(id).utente, "vecchio");
     const esito = modifica({ device_id: id, credential_id: 1, snmp_credential_id: 3 });
     assert.ok(esito.ok, esito.ok ? "" : esito.error);

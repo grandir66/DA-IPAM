@@ -53,15 +53,14 @@ export function aggiungiBindingApparato(input: Parameters<typeof addDeviceCreden
 /**
  * Modifica un binding dell'apparato. Si controlla la voce che il binding avrà
  * dopo la modifica, sul protocollo che avrà dopo: quelli mandati, altrimenti
- * quelli di adesso. Campi inline senza voce staccano la voce
- * (`updateDeviceCredentialBinding`): lì non c'è niente da controllare.
+ * quelli di adesso. Dalla 2e (T20) la modifica non porta campi inline: un
+ * segreto nuovo va nella voce (`credentials/apparato-archivio.ts`).
  * False = il binding non c'è su quell'apparato.
  */
 export function aggiornaBindingApparato(deviceId: number, bindingId: number, modifica: AggiornamentoBinding): boolean {
   const attuale = getDeviceCredentialBindings(deviceId).find((b) => b.id === bindingId);
   if (!attuale) return false;
-  const staccaVoce = modifica.inline_username !== undefined || modifica.inline_encrypted_password !== undefined;
-  const voceDopo = modifica.credential_id !== undefined ? modifica.credential_id : staccaVoce ? null : attuale.credential_id;
+  const voceDopo = modifica.credential_id ?? attuale.credential_id;
   if (voceDopo) controlla(voceDopo, modifica.protocol_type ?? attuale.protocol_type);
   updateDeviceCredentialBinding(bindingId, modifica);
   return true;

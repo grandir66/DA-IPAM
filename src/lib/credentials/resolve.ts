@@ -1020,6 +1020,40 @@ export function credenzialeSnmpApparatoDb(
   return { ok: false, motivo: `l'apparato «${app.name}»: credenziale non SNMP` };
 }
 
+export type SceltaTokenApi =
+  | { ok: true; token: string; fonte: ResolvedCredentialSource; credential_id: number | null }
+  | { ok: false; motivo: string };
+
+/**
+ * Il token dell'API di un apparato (client Omada, tappa 2e, T20): una voce
+ * `api` col metodo `token` legata all'apparato, coi binding nell'ordine
+ * dell'acquisizione (falliti saltati). Fino alla 2g, per un apparato che la
+ * conversione ha lasciato com'era, la colonna `api_token`, registrata come
+ * ripiego. Prima il client leggeva solo la colonna, che la 2e svuota: sarebbe
+ * partito «Bearer » vuoto.
+ */
+export function tokenApiApparatoDb(
+  dbh: Database.Database,
+  device: ApparatoInAcquisizione,
+  opts: Pick<OpzioniMotore, "registra"> = {}
+): SceltaTokenApi {
+  const app = apparatoDi(dbh, device);
+  if (!app) return nonEsiste(device);
+  const s = scegliPerApparato(dbh, app, "api", { fonti: FONTI_ACQUISIZIONE, registra: opts.registra }, (seg) =>
+    seg.forma === "token" ? null : `l'apparato «${app.name}» per l'API vuole un token`
+  );
+  if (s.ok && s.segreto.forma === "token") return { ok: true, token: s.segreto.token, fonte: s.candidato.source, credential_id: s.candidato.credential_id };
+  const riga = device.id > 0 ? (dbh.prepare(`SELECT * FROM network_devices WHERE id = ?`).get(device.id) as Record<string, unknown> | undefined) : undefined;
+  const grezzo = typeof riga?.api_token === "string" ? riga.api_token : "";
+  const token = grezzo ? safeDecrypt(grezzo) : null;
+  if (token && token.trim() !== "") {
+    if (opts.registra !== false) registra(["cred_colonna_apparato"]);
+    return { ok: true, token, fonte: "device_column_inline", credential_id: null };
+  }
+  const perche = [s.ok ? null : s.motivo, grezzo ? "il token nella colonna dell'apparato non si decifra" : null].filter(Boolean).join("; ");
+  return { ok: false, motivo: `Nessun token API per l'apparato «${app.name}»${perche ? `: ${perche}` : ""}` };
+}
+
 /**
  * «Ha SNMP?» dell'acquisizione: vero solo con una fonte SNMP dell'apparato
  * (livelli 1-5: binding non falliti, binding inline, colonne, community_string),

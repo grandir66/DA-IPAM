@@ -30,6 +30,28 @@ import {
   type StatoModificaInBlocco,
 } from "../modifica-in-blocco";
 import { portaAlCambioProtocollo } from "@/lib/devices/porta-protocollo";
+import type { UsataAdesso } from "@/lib/devices/usata-adesso";
+
+/**
+ * «Usata adesso» di un apparato come la dà GET /api/devices/[id] (tappa 2e,
+ * T20): la riga principale e, se c'è, quella SNMP aggiuntiva. Le tendine
+ * partono da qui, non dalle colonne `credential_id` e `snmp_credential_id`,
+ * che dopo la 2e sono vuote.
+ */
+function usate(principale: number | null, snmp?: number | null): { usata_adesso: UsataAdesso[] } {
+  const riga = (ruolo: UsataAdesso["ruolo"], protocollo: UsataAdesso["protocollo"], id: number | null): UsataAdesso => ({
+    ruolo,
+    protocollo,
+    credential_id: id,
+    nome: id != null ? `voce ${id}` : null,
+    fonte: id != null ? "device_binding" : null,
+    porta: id != null ? 22 : null,
+    motivo: id != null ? null : "Nessuna credenziale",
+  });
+  const righe = [riga("principale", "ssh", principale)];
+  if (snmp !== undefined) righe.push(riga("snmp", "snmp", snmp));
+  return { usata_adesso: righe };
+}
 
 /** Lo stato con cui si apre la finestra in blocco: tutto su «Non modificare». */
 const STATO_INIZIALE_BLOCCO: StatoModificaInBlocco = {
@@ -114,8 +136,16 @@ describe("modifica in blocco", () => {
 describe("modifica del singolo apparato", () => {
   const campi = { name: "Switch piano 2", vendor: "cisco", protocol: "ssh", scan_target: null };
 
+  it("le colonne vecchie non contano: tendine dalla scelta del motore, vuote senza (riga della lista)", () => {
+    const rigaLista = { credential_id: 5, snmp_credential_id: 9 };
+    assert.deepEqual(tendineDaApparato(rigaLista), { credentialId: null, snmpCredentialId: null });
+    assert.deepEqual(tendineDaApparato(usate(5, 9)), { credentialId: "5", snmpCredentialId: "9" });
+    const conRipiego = { usata_adesso: [{ ...usate(null).usata_adesso[0], fonte: "snmp_ripiego" as const, nome: "«public» di ripiego" }] };
+    assert.deepEqual(tendineDaApparato(conRipiego), { credentialId: null, snmpCredentialId: null });
+  });
+
   it("solo il nome cambiato, tendine vuote: niente credenziali nel corpo", () => {
-    const iniziale = tendineDaApparato({ credential_id: null, snmp_credential_id: null });
+    const iniziale = tendineDaApparato(usate(null, null));
     const corpo = corpoModificaApparato(iniziale, { campi, ...iniziale });
     assert.deepEqual(corpo, campi);
     assert.ok(!("credential_id" in corpo), "credential_id non deve esserci");
@@ -123,19 +153,19 @@ describe("modifica del singolo apparato", () => {
   });
 
   it("solo il nome cambiato, tendine con una voce: niente credenziali nel corpo", () => {
-    const iniziale = tendineDaApparato({ credential_id: 5, snmp_credential_id: 9 });
+    const iniziale = tendineDaApparato(usate(5, 9));
     const corpo = corpoModificaApparato(iniziale, { campi, ...iniziale });
     assert.deepEqual(corpo, campi);
   });
 
   it("«Nessuna» su una tendina già vuota non è una modifica", () => {
-    const iniziale = tendineDaApparato({ credential_id: null, snmp_credential_id: undefined });
+    const iniziale = tendineDaApparato(usate(null, undefined));
     const corpo = corpoModificaApparato(iniziale, { campi, credentialId: "none", snmpCredentialId: "none" });
     assert.deepEqual(corpo, campi);
   });
 
   it("una tendina cambiata si manda, l'altra no", () => {
-    const iniziale = tendineDaApparato({ credential_id: null, snmp_credential_id: 9 });
+    const iniziale = tendineDaApparato(usate(null, 9));
     assert.deepEqual(corpoModificaApparato(iniziale, { campi, credentialId: "7", snmpCredentialId: "9" }), {
       ...campi,
       credential_id: 7,
@@ -148,7 +178,7 @@ describe("modifica del singolo apparato", () => {
 
   it("non modifica l'oggetto dei campi che riceve", () => {
     const mieiCampi = { ...campi };
-    corpoModificaApparato(tendineDaApparato({ credential_id: null }), { campi: mieiCampi, credentialId: "7", snmpCredentialId: null });
+    corpoModificaApparato(tendineDaApparato(usate(null)), { campi: mieiCampi, credentialId: "7", snmpCredentialId: null });
     assert.deepEqual(mieiCampi, campi);
   });
 
@@ -168,7 +198,7 @@ describe("modifica del singolo apparato", () => {
 describe("modifica del singolo apparato: la porta", () => {
   const campi = { name: "MikroTik 10G", vendor: "mikrotik", protocol: "snmp_v2", scan_target: null };
   const ARCHIVIO = [{ id: 3, name: "Community", credential_type: "snmp", port: 161 }];
-  const apparato = { protocol: "snmp_v2", port: 161, credential_id: null, snmp_credential_id: 3 };
+  const apparato = { protocol: "snmp_v2", port: 161, ...usate(null, 3) };
   const iniziale = { ...tendineDaApparato(apparato), porta: apparato.port };
 
   it("il caso del pilota: da protocol=snmp_v2/port=161 a ssh il corpo contiene port: 22", () => {

@@ -58,6 +58,7 @@ import {
 import type { NetworkDevice, ArpEntry, MacPortEntry, SwitchPort } from "@/types";
 import { networkDeviceUsesArpPoll } from "@/lib/network-device-arp";
 import { corpoModificaApparato, tendineDaApparato } from "../modifica-in-blocco";
+import { nomeFonteUsata, type UsataAdesso } from "@/lib/devices/usata-adesso";
 
 interface Credential {
   id: number;
@@ -246,6 +247,8 @@ interface DeviceDetail extends Omit<NetworkDevice, "stp_info" | "last_device_inf
   neighbors?: NeighborRow[];
   routes?: RouteRow[];
   dhcp_leases?: DhcpLeaseRow[];
+  /** La scelta del motore per il protocollo principale e per SNMP (T20). */
+  usata_adesso?: UsataAdesso[];
 }
 
 interface DhcpLeaseRow {
@@ -504,76 +507,46 @@ function getPortTypeIcon(portName: string, isTrunk: boolean) {
 
 const CLASSIFICATION_SLUGS = ["access_point", "firewall", "hypervisor", "iot", "notebook", "router", "server", "stampante", "storage", "switch", "telecamera", "voip", "vm", "workstation"];
 
-type DeviceCredentialRowInput = Pick<
-  NetworkDevice,
-  | "protocol"
-  | "port"
-  | "credential_id"
-  | "snmp_credential_id"
-  | "username"
-  | "community_string"
-  | "device_type"
-  | "snmp_version"
-  | "snmp_version_fissata"
->;
+type DeviceCredentialRowInput = Pick<NetworkDevice, "protocol" | "snmp_version" | "snmp_version_fissata"> & {
+  usata_adesso?: UsataAdesso[];
+};
 
-/** Righe tabella credenziali: un protocollo per riga (principale + SNMP aggiuntivo se applicabile). */
+/**
+ * Righe del riquadro «Usata adesso» (tappa 2e, T20, interfaccia punto 5): la
+ * credenziale che il motore sceglie per il protocollo principale e per SNMP,
+ * con la fonte. Prima il riquadro leggeva le colonne dell'apparato, mentre la
+ * tabella sotto mostrava i binding: due risposte diverse sulla stessa pagina.
+ */
 function buildDeviceCredentialRows(
   device: DeviceCredentialRowInput,
-  creds: Credential[]
-): { key: string; protocolLabel: string; archiveLabel: string; note: string }[] {
-  const nameOf = (id: number | null | undefined) =>
-    id ? creds.find((c) => c.id === id)?.name ?? `ID ${id}` : null;
-  const cn = nameOf(device.credential_id);
-  const sn = nameOf(device.snmp_credential_id);
-  const rows: { key: string; protocolLabel: string; archiveLabel: string; note: string }[] = [];
+): { key: string; protocolLabel: string; archiveLabel: string; conVoce: boolean; note: string }[] {
   // Versione che parla davvero chi apre una sessione a community (snmp-sessione.ts).
   const versioneSnmp = device.snmp_version
     ? `SNMP ${etichettaVersioneSnmp(device.snmp_version)} ${device.snmp_version_fissata === 1 ? "fissata a mano" : "rilevata"}`
     : "versione SNMP non rilevata";
-
-  if (device.protocol === "snmp_v2" || device.protocol === "snmp_v3") {
-    rows.push({
-      key: "snmp-main",
-      protocolLabel: `${device.protocol.toUpperCase()} — gestione dispositivo`,
-      archiveLabel: sn || cn || (device.community_string ? "Community inline" : "—"),
-      note: device.protocol === "snmp_v2" ? `Porta ${device.port} · ${versioneSnmp}` : `Porta ${device.port}`,
-    });
-    return rows;
-  }
-
-  const primaryTitle =
-    device.protocol === "ssh"
-      ? "SSH — shell / comandi"
-      : device.protocol === "winrm"
-        ? "WinRM — Windows Management"
-        : device.protocol === "api"
-          ? "API REST"
-          : String(device.protocol);
-
-  rows.push({
-    key: "primary",
-    protocolLabel: primaryTitle,
-    archiveLabel: cn || (device.username ? "Credenziali inline (utente/password)" : "—"),
-    note: `Porta ${device.port}`,
+  const titolo = (u: UsataAdesso): string => {
+    if (u.ruolo === "snmp") return "SNMP — walk, porte, LLDP, spanning tree";
+    if (u.protocollo === "snmp") return `${String(device.protocol).toUpperCase()} — gestione dispositivo`;
+    if (u.protocollo === "winrm") return "WinRM — Windows Management";
+    if (u.protocollo === "api") return "API REST";
+    return "SSH — shell / comandi";
+  };
+  return (device.usata_adesso ?? []).map((u) => {
+    const parti: string[] = [];
+    if (u.fonte == null) parti.push(u.motivo ?? "Nessuna credenziale");
+    else {
+      if (u.porta != null) parti.push(`Porta ${u.porta}`);
+      parti.push(nomeFonteUsata(u.fonte));
+    }
+    if (u.protocollo === "snmp" && device.protocol !== "snmp_v3") parti.push(versioneSnmp);
+    return {
+      key: `${u.ruolo}-${u.protocollo}`,
+      protocolLabel: titolo(u),
+      archiveLabel: u.nome ?? "Nessuna",
+      conVoce: u.credential_id != null,
+      note: parti.join(" · "),
+    };
   });
-
-  const showSnmp =
-    !!device.snmp_credential_id ||
-    !!device.community_string ||
-    device.device_type === "router" ||
-    device.device_type === "switch";
-
-  if (showSnmp) {
-    rows.push({
-      key: "snmp-sup",
-      protocolLabel: "SNMP — walk, porte, LLDP, spanning tree",
-      archiveLabel: sn || (device.community_string ? "Community inline" : "—"),
-      note: `Opzionale, oltre all’accesso principale · ${versioneSnmp}`,
-    });
-  }
-
-  return rows;
 }
 
 export default function DevicePage() {
@@ -626,8 +599,10 @@ function DeviceDetailPage() {
       setEditVendor(device.vendor);
       setEditProtocol(device.protocol);
       setEditVendorSubtype(device.vendor_subtype ?? null);
-      setEditCredentialId(device.credential_id != null ? String(device.credential_id) : null);
-      setEditSnmpCredentialId(device.snmp_credential_id != null ? String(device.snmp_credential_id) : null);
+      // Dalla scelta del motore, non dalle colonne (T20): lo stesso stato iniziale di handleEdit.
+      const tendine = tendineDaApparato(device);
+      setEditCredentialId(tendine.credentialId);
+      setEditSnmpCredentialId(tendine.snmpCredentialId);
       setEditScanTarget((device as { scan_target?: string | null }).scan_target ?? null);
       setEditClassification((device as { classification?: string | null }).classification ?? "");
       setEditUseForArpPoll(networkDeviceUsesArpPoll(device));
@@ -828,10 +803,16 @@ function DeviceDetailPage() {
     }
   }
 
-  const credentialRows = useMemo(
-    () => (device ? buildDeviceCredentialRows(device, credentials) : []),
-    [device, credentials]
-  );
+  const credentialRows = useMemo(() => (device ? buildDeviceCredentialRows(device) : []), [device]);
+  // «Usata adesso» si ricalcola quando i binding cambiano nella tabella (non al primo caricamento).
+  const bindingCaricati = useRef(false);
+  const ricaricaUsataAdesso = useCallback(() => {
+    if (!bindingCaricati.current) {
+      bindingCaricati.current = true;
+      return;
+    }
+    void fetchDevice();
+  }, [fetchDevice]);
   const primaryCredLabels = useMemo(() => getPrimaryCredentialLabels(editProtocol), [editProtocol]);
 
   async function handleEdit(e: React.FormEvent<HTMLFormElement>) {
@@ -1049,16 +1030,16 @@ function DeviceDetailPage() {
           <div className="mt-5 pt-4 border-t border-border">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-2">
               <Key className="h-3.5 w-3.5" />
-              Credenziali archivio per protocollo
+              Usata adesso
             </p>
             <p className="text-xs text-muted-foreground mb-3">
-              Ogni riga indica quale credenziale viene usata per quel tipo di accesso. Modifica da &quot;Modifica&quot; in alto.
+              La credenziale che l&apos;acquisizione sceglie fra quelle dell&apos;apparato: prima una riuscita, poi le non provate; le fallite si saltano.
             </p>
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[40%]">Protocollo / ambito</TableHead>
-                  <TableHead>Credenziale archivio</TableHead>
+                  <TableHead>Credenziale</TableHead>
                   <TableHead className="w-[28%]">Nota</TableHead>
                 </TableRow>
               </TableHeader>
@@ -1068,9 +1049,7 @@ function DeviceDetailPage() {
                     <TableCell className="font-medium text-sm">{row.protocolLabel}</TableCell>
                     <TableCell>
                       <span className="flex items-center gap-1.5 text-sm">
-                        {row.archiveLabel !== "—" && !row.archiveLabel.includes("inline") && (
-                          <Key className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                        )}
+                        {row.conVoce && <Key className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
                         {row.archiveLabel}
                       </span>
                     </TableCell>
@@ -1972,7 +1951,7 @@ function DeviceDetailPage() {
         </DialogContent>
       </Dialog>
 
-      <DeviceCredentialsTable deviceId={device.id} />
+      <DeviceCredentialsTable deviceId={device.id} onBindingsChange={ricaricaUsataAdesso} />
 
       <Tabs defaultValue={isMikrotik ? "mikrotik" : showArpTab && totalPorts === 0 ? "arp" : "ports"}>
         <TabsList>

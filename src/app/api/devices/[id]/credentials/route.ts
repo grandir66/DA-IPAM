@@ -7,12 +7,12 @@ import { provaBinding } from "@/lib/devices/prova-binding";
 import {
   getNetworkDeviceById,
   getDeviceCredentialBindings,
-  deleteDeviceCredentialBinding,
   reorderDeviceCredentialBindings,
   updateBindingTestStatus,
+  getDb,
 } from "@/lib/db";
 import { aggiungiBindingApparato, aggiornaBindingApparato, VoceNonValePerProtocollo } from "@/lib/credentials/lega-voce";
-import { encrypt } from "@/lib/crypto";
+import { aggiornaSegretoBindingDb, eliminaBindingApparatoDb, nuovaVoceEBindingDb, RifiutoCredenziali } from "@/lib/credentials/apparato-archivio";
 import { aggiornamentiBinding, normalizzaInlineSnmp } from "@/lib/devices/aggiornamenti-binding";
 
 /**
@@ -81,21 +81,27 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const { credential_id, protocol_type, port } = parsed.data;
     const { inline_username, inline_password } = normalizzaInlineSnmp(protocol_type, parsed.data.inline_username, parsed.data.inline_password);
 
+    // «Nuova» (tappa 2e, T20): utente e segreto diventano una voce
+    // dell'archivio col nome dell'apparato, e il binding la punta. Prima
+    // restavano dentro il binding (inline), che la pagina non mostra come voce
+    // e che la 2g smetterà di leggere.
+    if (!credential_id) {
+      if (!inline_password && !inline_username) {
+        return NextResponse.json({ error: "Scegli una credenziale dell'archivio o scrivine una nuova" }, { status: 400 });
+      }
+      const nuova = nuovaVoceEBindingDb(getDb(), Number(id), protocol_type, port, { username: inline_username ?? null, password: inline_password ?? null });
+      return NextResponse.json({ ...nuova.binding, inline_encrypted_password: null, voce: nuova.voce }, { status: 201 });
+    }
+
     // La voce d'archivio deve valere per il protocollo del binding (T13, 16/10):
     // prima si salvava e il motore la scartava in silenzio. Il controllo sta in
     // aggiungiBindingApparato; qui il rifiuto diventa un 400.
-    const binding = aggiungiBindingApparato({
-      device_id: Number(id),
-      credential_id: credential_id ?? null,
-      protocol_type,
-      port,
-      inline_username: credential_id ? null : (inline_username ?? null),
-      inline_encrypted_password: credential_id ? null : (inline_password ? encrypt(inline_password) : null),
-    });
+    const binding = aggiungiBindingApparato({ device_id: Number(id), credential_id, protocol_type, port });
 
     return NextResponse.json(binding, { status: 201 });
     } catch (err: unknown) {
       if (err instanceof VoceNonValePerProtocollo) return NextResponse.json({ error: err.message }, { status: 400 });
+      if (err instanceof RifiutoCredenziali) return NextResponse.json({ error: err.message }, { status: err.stato });
       return NextResponse.json({ error: err instanceof Error ? err.message : "Errore" }, { status: 500 });
     }
   });
@@ -136,7 +142,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
     if (data.action === "delete") {
       if (!data.binding_id) return NextResponse.json({ error: "binding_id richiesto" }, { status: 400 });
-      deleteDeviceCredentialBinding(data.binding_id);
+      // Solo un binding di questo apparato (T20): prima si cancellava qualunque id.
+      if (!eliminaBindingApparatoDb(getDb(), Number(id), data.binding_id)) {
+        return NextResponse.json({ error: "Binding non trovato" }, { status: 404 });
+      }
       return NextResponse.json({ success: true });
     }
 
@@ -148,20 +157,28 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
     if (data.action === "update") {
       if (!data.binding_id) return NextResponse.json({ error: "binding_id richiesto" }, { status: 400 });
-      // Campi inline solo in modalità inline, community SNMP nel campo cifrato
-      // (tappa 1): dettaglio in src/lib/devices/aggiornamenti-binding.ts.
-      const updates = aggiornamentiBinding(data);
-      // La voce dopo la modifica deve valere per il protocollo dopo la modifica
-      // (T13): il controllo sta in aggiornaBindingApparato, qui diventa un 400.
+      // Voce, protocollo e porta nel binding; utente e segreto nuovi nella
+      // voce dell'apparato (T20): dettaglio in aggiornamenti-binding.ts e in
+      // credentials/apparato-archivio.ts. Tutto o niente.
+      const { modifica, segreto } = aggiornamentiBinding(data);
+      let voce: { credential_id: number; nome: string; nuova: boolean } | null = null;
       try {
-        if (!aggiornaBindingApparato(Number(id), data.binding_id, updates)) {
+        if (segreto) {
+          // Protocollo e porta, poi la voce: aggiornata se è solo di questo
+          // binding, altrimenti una nuova dell'apparato (una condivisa non
+          // cambia per gli altri). Un binding di un altro apparato è un 404.
+          voce = aggiornaSegretoBindingDb(getDb(), Number(id), data.binding_id, segreto, { protocol_type: data.protocol_type, port: data.port });
+        } else if (!aggiornaBindingApparato(Number(id), data.binding_id, modifica)) {
+          // La voce dopo la modifica deve valere per il protocollo dopo la
+          // modifica (T13): il controllo sta in aggiornaBindingApparato.
           return NextResponse.json({ error: "Binding non trovato" }, { status: 404 });
         }
       } catch (err) {
         if (err instanceof VoceNonValePerProtocollo) return NextResponse.json({ error: err.message }, { status: 400 });
+        if (err instanceof RifiutoCredenziali) return NextResponse.json({ error: err.message }, { status: err.stato });
         throw err;
       }
-      return NextResponse.json({ success: true });
+      return NextResponse.json({ success: true, ...(voce ? { voce } : {}) });
     }
 
     if (data.action === "test") {

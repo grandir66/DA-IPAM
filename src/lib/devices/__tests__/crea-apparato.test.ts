@@ -70,4 +70,50 @@ describe("creaApparato", () => {
       .get(esito.device.id) as { port: number };
     assert.equal(b.port, 1161);
   });
+
+  // Tappa 2e (T20, 16/10): utente e password diventavano colonne dell'apparato
+  // più un binding inline, che la pagina non mostra come voce e che la 2g
+  // smetterà di leggere.
+  it("utente e password → 0 colonne scritte, 1 voce «<nome> · SSH», 1 binding che la punta", () => {
+    const d = getTenantDb(T);
+    const vociPrima = (d.prepare(`SELECT COUNT(*) AS n FROM credentials`).get() as { n: number }).n;
+    const esito = withTenant(T, () =>
+      creaApparato({ name: "fw nuovo", host: "10.40.0.40", device_type: "router", classification: "firewall", vendor: "other", protocol: "ssh", username: "admin", password: "segreta", community_string: "c0mm" })
+    );
+    assert.ok(esito.ok, esito.ok ? "" : esito.error);
+    const colonne = d
+      .prepare(`SELECT credential_id, snmp_credential_id, username, encrypted_password, community_string, api_token FROM network_devices WHERE id = ?`)
+      .get(esito.device.id);
+    assert.deepEqual(colonne, { credential_id: null, snmp_credential_id: null, username: null, encrypted_password: null, community_string: null, api_token: null });
+    const binding = d
+      .prepare(`SELECT b.protocol_type, b.port, b.inline_username, b.inline_encrypted_password, c.name, c.credential_type FROM device_credential_bindings b JOIN credentials c ON c.id = b.credential_id WHERE b.device_id = ? ORDER BY b.sort_order, b.id`)
+      .all(esito.device.id);
+    assert.deepEqual(binding, [
+      { protocol_type: "ssh", port: 22, inline_username: null, inline_encrypted_password: null, name: "fw nuovo · SSH", credential_type: "ssh" },
+      { protocol_type: "snmp", port: 161, inline_username: null, inline_encrypted_password: null, name: "fw nuovo · SNMP", credential_type: "snmp" },
+    ]);
+    assert.equal((d.prepare(`SELECT COUNT(*) AS n FROM credentials`).get() as { n: number }).n, vociPrima + 2);
+  });
+
+  it("voce d'archivio scelta più una community scritta: il binding della voce, la community non va in colonna", () => {
+    const d = getTenantDb(T);
+    const esito = withTenant(T, () =>
+      creaApparato({ name: "sw2", host: "10.40.0.41", device_type: "switch", classification: "switch", vendor: "hp", protocol: "ssh", snmp_credential_id: 7, community_string: "ignorata" })
+    );
+    assert.ok(esito.ok, esito.ok ? "" : esito.error);
+    const c = d.prepare(`SELECT username, encrypted_password, community_string, api_token FROM network_devices WHERE id = ?`).get(esito.device.id);
+    assert.deepEqual(c, { username: null, encrypted_password: null, community_string: null, api_token: null });
+    const b = d.prepare(`SELECT credential_id, protocol_type, port FROM device_credential_bindings WHERE device_id = ?`).all(esito.device.id);
+    assert.deepEqual(b, [{ credential_id: 7, protocol_type: "snmp", port: 1161 }]);
+  });
+
+  it("utente senza password: 400 e nessun apparato creato", () => {
+    const d = getTenantDb(T);
+    const esito = withTenant(T, () =>
+      creaApparato({ name: "mezzo", host: "10.40.0.42", device_type: "server", vendor: "linux", protocol: "ssh", username: "root" })
+    );
+    assert.equal(esito.ok, false);
+    if (!esito.ok) assert.equal(esito.status, 400);
+    assert.equal(d.prepare(`SELECT id FROM network_devices WHERE host = '10.40.0.42'`).get(), undefined);
+  });
 });

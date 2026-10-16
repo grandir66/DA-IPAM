@@ -1,7 +1,6 @@
 import type { NetworkDevice } from "@/types";
 import { apriSessioneSnmp, versioneApparato } from "@/lib/protocols/snmp-sessione";
-import { credenzialeSnmpApparato, getDeviceCredentials, haSnmpApparato } from "@/lib/db";
-import { safeDecrypt } from "@/lib/crypto";
+import { credenzialeSnmpApparato, getDeviceCredentials, haSnmpApparato, tokenApiApparato } from "@/lib/db";
 import type { MacTableEntry, PortInfo } from "./switch-client";
 import { parseMikrotikInterfaceTypes, parseMikrotikMacTable } from "./mikrotik-porte";
 import { parseMikrotikNeighbors } from "./mikrotik-vicini";
@@ -799,14 +798,25 @@ function createOmadaClient(device: NetworkDevice): Promise<RouterClient> {
   return createSnmpArpClient(device);
 }
 
+/**
+ * Client dell'API di Omada. Il token viene dall'archivio (tappa 2e, T20):
+ * voce `api` a token legata all'apparato, e fino alla 2g la colonna
+ * `api_token` di un apparato lasciato dalla conversione. Senza token la
+ * ragione si dice (errore col motivo), non parte un «Bearer » vuoto.
+ */
 async function createOmadaApiClient(device: NetworkDevice): Promise<RouterClient> {
-  const apiToken = device.api_token ? (safeDecrypt(device.api_token) ?? "") : "";
+  const scelta = tokenApiApparato(device);
+  const apiToken = scelta.ok ? scelta.token : null;
   const baseUrl = device.api_url || `https://${device.host}`;
+  const conToken = (): string => {
+    if (apiToken == null) throw new Error(`Omada API: ${scelta.ok ? "token assente" : scelta.motivo}`);
+    return apiToken;
+  };
 
   return {
     async getArpTable() {
       const res = await fetch(`${baseUrl}/api/v2/arp`, {
-        headers: { Authorization: `Bearer ${apiToken}` },
+        headers: { Authorization: `Bearer ${conToken()}` },
       });
       if (!res.ok) throw new Error(`Omada API error: ${res.status}`);
       const data = await res.json();
@@ -818,6 +828,7 @@ async function createOmadaApiClient(device: NetworkDevice): Promise<RouterClient
       }));
     },
     async testConnection() {
+      if (apiToken == null) return false;
       try {
         const res = await fetch(`${baseUrl}/api/v2/info`, {
           headers: { Authorization: `Bearer ${apiToken}` },

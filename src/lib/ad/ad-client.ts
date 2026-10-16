@@ -15,10 +15,10 @@ import {
   upsertDhcpLease,
   upsertMacIpMapping,
   getNetworkDeviceByHost,
-  createNetworkDevice,
   syncIpAssignmentsForAllNetworks,
   type AdIntegration,
 } from "@/lib/db";
+import { apparatoDhcpDelDc } from "@/lib/ad/apparato-dhcp";
 import {
   isAccountEnabled,
   ldapStr,
@@ -444,32 +444,13 @@ async function syncAdDhcpLeases(integration: AdIntegration): Promise<number> {
   // v0.2.659: trova/crea un network_device "DHCP server" per il DC, così
   // possiamo popolare anche `dhcp_leases` (tabella unificata UI) oltre a
   // `ad_dhcp_leases`. Senza source_device_id la UNIQUE constraint non
-  // permette l'UPSERT per i lease Windows. Auto-create idempotente.
+  // permette l'UPSERT per i lease Windows. Dalla 2e (T20) nasce col binding
+  // WinRM d'archivio, non con la colonna: `apparatoDhcpDelDc`.
   let windowsDhcpDeviceId: number | null = null;
   try {
-    let dev = getNetworkDeviceByHost(integration.dc_host);
-    if (!dev) {
-      const created = createNetworkDevice({
-        name: `${integration.name} — Windows DHCP`,
-        host: integration.dc_host,
-        device_type: "router",
-        vendor: "windows",
-        vendor_subtype: null,
-        protocol: "winrm",
-        credential_id: integration.winrm_credential_id ?? null,
-        snmp_credential_id: null,
-        username: null,
-        encrypted_password: null,
-        community_string: null,
-        api_token: null,
-        api_url: null,
-        port: 5985,
-        enabled: 1,
-      });
-      dev = created;
-      console.info(`[ad-client] creato network_device per Windows DHCP: ${dev.name} (${dev.host})`);
-    }
-    windowsDhcpDeviceId = dev.id;
+    const esisteva = getNetworkDeviceByHost(integration.dc_host) != null;
+    windowsDhcpDeviceId = apparatoDhcpDelDc(integration);
+    if (!esisteva) console.info(`[ad-client] creato l'apparato #${windowsDhcpDeviceId} per il DHCP Windows di «${integration.name}»`);
   } catch (e) {
     console.warn(`[ad-client] impossibile trovare/creare network_device DHCP: ${(e as Error).message}`);
   }

@@ -16,6 +16,7 @@
  * - `"none"`: «Nessuna», cioè togliere la voce;
  * - `"<id>"`: la voce dell'archivio con quell'id.
  */
+import { vociUsateAdesso, type UsataAdesso } from "@/lib/devices/usata-adesso";
 
 /** Lo stato della finestra «Assegna caratteristiche» (modifica in blocco). */
 export interface StatoModificaInBlocco {
@@ -94,14 +95,20 @@ export function corpoHaModifiche(corpo: Record<string, unknown>): boolean {
   return CAMPI_DA_APPLICARE.some((campo) => campo in corpo);
 }
 
-/** Le tendine come partono per un apparato: dalle sue colonne `credential_id` e `snmp_credential_id`. */
-export function tendineDaApparato(device: {
-  credential_id?: number | null;
-  snmp_credential_id?: number | null;
-}): TendineCredenziali {
+/**
+ * Le tendine come partono per un apparato: dalla scelta del motore («Usata
+ * adesso», GET /api/devices/[id]), non dalle colonne `credential_id` e
+ * `snmp_credential_id`, che dopo la 2e sono vuote (T20, 16/10). Senza
+ * `usata_adesso` (una riga della lista) partono vuote; il confronto in
+ * `corpoModificaApparato` usa lo stesso stato iniziale, quindi una tendina non
+ * toccata non parte.
+ */
+export function tendineDaApparato(device: object): TendineCredenziali {
+  const usate = "usata_adesso" in device ? (device as { usata_adesso?: readonly Pick<UsataAdesso, "ruolo" | "credential_id">[] | null }).usata_adesso : null;
+  const voci = vociUsateAdesso(usate);
   return {
-    credentialId: device.credential_id != null ? String(device.credential_id) : null,
-    snmpCredentialId: device.snmp_credential_id != null ? String(device.snmp_credential_id) : null,
+    credentialId: voci.principale != null ? String(voci.principale) : null,
+    snmpCredentialId: voci.snmp != null ? String(voci.snmp) : null,
   };
 }
 

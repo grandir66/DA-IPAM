@@ -188,9 +188,10 @@ describe("una voce AD come binding WinRM → rifiuto (400), niente scritto", () 
       // Voce e protocollo che valgono: scritto.
       assert.equal(aggiornaBindingApparato(apparato, b.id, { credential_id: SSH, protocol_type: "ssh", port: 22 }), true);
       assert.deepEqual(riga(), { credential_id: SSH, protocol_type: "ssh", port: 22 });
-      // Passaggio a inline: la voce si stacca, non c'è niente da controllare.
-      assert.equal(aggiornaBindingApparato(apparato, b.id, { protocol_type: "winrm", port: 5985, inline_username: "admin" }), true);
-      assert.deepEqual(riga(), { credential_id: null, protocol_type: "winrm", port: 5985 });
+      // Dalla 2e (T20) un binding non passa più a inline e non perde la voce:
+      // il protocollo nuovo si controlla con la voce che ha.
+      assert.throws(() => aggiornaBindingApparato(apparato, b.id, { protocol_type: "winrm", port: 5985 }), /non vale per WinRM/);
+      assert.deepEqual(riga(), { credential_id: SSH, protocol_type: "ssh", port: 22 });
       // Un binding di un altro apparato, o che non c'è: false, la rotta risponde 404.
       assert.equal(aggiornaBindingApparato(apparato + 1000, b.id, { port: 1 }), false);
     });

@@ -211,8 +211,11 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
     if (editingDevice) {
       setEditVendor(editingDevice.vendor ?? "other");
       setEditProtocol("protocol" in editingDevice ? editingDevice.protocol : "ssh");
-      setEditCredentialId("credential_id" in editingDevice && editingDevice.credential_id ? String(editingDevice.credential_id) : null);
-      setEditSnmpCredentialId("snmp_credential_id" in editingDevice && (editingDevice as NetworkDevice).snmp_credential_id ? String((editingDevice as NetworkDevice).snmp_credential_id) : null);
+      // Lo stesso stato iniziale di handleUpdate: dalla scelta del motore, non
+      // dalle colonne (T20). Una riga della lista non la porta: tendine vuote.
+      const tendine = tendineDaApparato(editingDevice);
+      setEditCredentialId(tendine.credentialId);
+      setEditSnmpCredentialId(tendine.snmpCredentialId);
       setEditVendorSubtype("vendor_subtype" in editingDevice ? editingDevice.vendor_subtype ?? null : null);
       setEditScanTarget((editingDevice as { scan_target?: string | null }).scan_target ?? null);
       setEditClassification((editingDevice as { classification?: string | null }).classification ?? effectiveClassification);
@@ -304,14 +307,24 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
     }
     setBulkUpdating(true);
     try {
-      const res = await fetch("/api/devices/bulk", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json();
+      const invia = (corpo: Record<string, unknown>) =>
+        fetch("/api/devices/bulk", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(corpo),
+        });
+      let res = await invia(body);
+      let data = await res.json();
+      // «Nessuna» toglie binding (T20): il server chiede la conferma col numero, niente è scritto finché non arriva.
+      if (res.status === 409 && data.conferma) {
+        if (!window.confirm(data.conferma.domanda)) return;
+        res = await invia({ ...body, conferma_rimozione: true });
+        data = await res.json();
+      }
       if (res.ok) {
-        toast.success(data.message);
+        // Apparati saltati (la voce non vale per il loro protocollo): si dice, non passa come un successo pieno.
+        if (data.credenziali?.saltati?.length) toast.warning(data.message);
+        else toast.success(data.message);
         setBulkDialogOpen(false);
         setSelectedIds(new Set());
         fetchDevices();
@@ -593,7 +606,7 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
         setEditingDevice(updated);
         setEditVendor("proxmox");
         setEditProtocol("ssh");
-        setEditCredentialId(updated.credential_id != null ? String(updated.credential_id) : null);
+        setEditCredentialId(tendineDaApparato(updated).credentialId);
         setEditDialogOpen(true);
       } else {
         const data = await res.json();
@@ -1314,6 +1327,7 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
                     snmpSelectLabel={CREDENTIAL_SNMP_SECONDARY_SELECT_LABEL}
                     credentialPlaceholder="Non modificare"
                     snmpPlaceholder="Non modificare"
+                    conNessuna
                     idPrefix="device-bulk"
                   />
                 </div>

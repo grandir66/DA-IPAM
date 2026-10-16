@@ -33,9 +33,11 @@ import {
   haSnmpApparatoDb,
   loginApparatoDb,
   portaSshApparatoDb,
+  tokenApiApparatoDb,
   type ApparatoInAcquisizione,
   type CredProtocol,
   type SceltaSnmpApparato,
+  type SceltaTokenApi,
 } from "./credentials/resolve";
 import { accessoSshDb, communityDb, coppiaLoginDb, coppiaSshDb, type AccessoSsh, type EsitoAccessoSsh } from "./credentials/segreti";
 import { tipiPerRuoloVecchio } from "./credentials/tipi";
@@ -4227,6 +4229,11 @@ export function getCredentialCommunityString(credentialId: number): string | nul
  */
 export function credenzialeSnmpApparato(device: ApparatoInAcquisizione): SceltaSnmpApparato {
   return credenzialeSnmpApparatoDb(getDb(), device);
+}
+
+/** Token dell'API dell'apparato (client Omada): voce `api` a token legata all'apparato; fino alla 2g la colonna (T20). */
+export function tokenApiApparato(device: ApparatoInAcquisizione): SceltaTokenApi {
+  return tokenApiApparatoDb(getDb(), device);
 }
 
 /** Vero solo con una fonte SNMP dell'apparato (livelli 1-5), mai con la catena della rete o «public». */

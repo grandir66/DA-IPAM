@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getNetworkDeviceById, updateNetworkDevice, deleteNetworkDevice, getArpEntriesByDevice, getMacPortEntriesByDevice, getSwitchPortsByDevice, getNeighborsByDevice, getRoutesByDevice, getDeviceCredentialBindings, getDhcpLeasesByDevice } from "@/lib/db";
+import { getNetworkDeviceById, updateNetworkDevice, deleteNetworkDevice, getArpEntriesByDevice, getMacPortEntriesByDevice, getSwitchPortsByDevice, getNeighborsByDevice, getRoutesByDevice, getDeviceCredentialBindings, getDhcpLeasesByDevice, getDb } from "@/lib/db";
 import {
   isValidProductProfileForVendor,
   resolveDeviceTypeForCreate,
@@ -8,7 +8,7 @@ import {
   type ProductProfileId,
 } from "@/lib/device-product-profiles";
 import { coerceProtocolForVendor } from "@/lib/vendor-device-profile";
-import { encrypt } from "@/lib/crypto";
+import { applicaCorpoApparatoDb, RifiutoCredenziali, usataAdessoDb, type EsitoScelte } from "@/lib/credentials/apparato-archivio";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { parseJsonSafe } from "@/lib/json-safe";
 import { withTenantFromSession } from "@/lib/api-tenant";
@@ -116,6 +116,9 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
         routes,
         dhcp_leases,
         credential_bindings,
+        // La scelta del motore per il protocollo principale e per SNMP (T20,
+        // interfaccia punto 5): la scheda la mostra come «Usata adesso».
+        usata_adesso: usataAdessoDb(getDb(), Number(id)),
       },
       { headers: NO_CACHE_HEADERS }
     );
@@ -146,16 +149,11 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     if (body.vendor !== undefined) updates.vendor = body.vendor;
     if (body.vendor_subtype !== undefined) updates.vendor_subtype = body.vendor_subtype;
     if (body.protocol !== undefined) updates.protocol = body.protocol;
-    if (body.credential_id !== undefined) updates.credential_id = body.credential_id;
-    if (body.snmp_credential_id !== undefined) updates.snmp_credential_id = body.snmp_credential_id;
-    if (body.username !== undefined) updates.username = body.username;
-    if (body.password) updates.encrypted_password = encrypt(body.password);
-    if (body.credential_id != null) {
-      updates.username = null;
-      updates.encrypted_password = null;
-    }
-    if (body.community_string) updates.community_string = encrypt(body.community_string);
-    if (body.api_token) updates.api_token = encrypt(body.api_token);
+    // Credenziali (tappa 2e, T20): nessuna colonna. `credential_id` e
+    // `snmp_credential_id` vanno nei binding con la semantica della modifica
+    // in blocco; utente e password, community e token diventano voci
+    // dell'apparato. Lo fa `applicaCorpoApparatoDb`, sotto, dopo il
+    // protocollo nuovo.
     if (body.api_url !== undefined) updates.api_url = body.api_url;
     if (body.port !== undefined) updates.port = body.port;
     if (body.enabled !== undefined) updates.enabled = body.enabled;
@@ -227,7 +225,16 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       });
     }
 
-    const device = updateNetworkDevice(Number(id), updates as Partial<import("@/types").NetworkDevice>);
+    // Apparato e credenziali in una transazione: un 409 (togliere binding
+    // chiede la conferma) o una voce che non vale non lasciano il resto scritto.
+    const dbh = getDb();
+    const { device, credenziali } = dbh.transaction(() => {
+      const aggiornato = updateNetworkDevice(Number(id), updates as Partial<import("@/types").NetworkDevice>);
+      const esito: EsitoScelte | null = aggiornato
+        ? applicaCorpoApparatoDb(dbh, Number(id), body as Record<string, unknown>, { conferma: body.conferma_rimozione === true })
+        : null;
+      return { device: aggiornato, credenziali: esito };
+    })();
     if (!device) {
       return NextResponse.json({ error: "Dispositivo non trovato" }, { status: 404 });
     }
@@ -239,12 +246,16 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     return NextResponse.json({
       ...device,
       ...(avviso ? { avvisi: [avviso] } : {}),
+      credenziali,
       last_proxmox_scan_result: null,
       encrypted_password: device.encrypted_password ? "●●●●●●●●" : null,
       community_string: device.community_string ? "●●●●●●●●" : null,
       api_token: device.api_token ? "●●●●●●●●" : null,
     });
     } catch (error) {
+      if (error instanceof RifiutoCredenziali) {
+        return NextResponse.json({ error: error.message, ...(error.conferma ? { conferma: error.conferma } : {}) }, { status: error.stato });
+      }
       console.error("Error updating device:", error);
       return NextResponse.json({ error: "Errore nell'aggiornamento" }, { status: 500 });
     }

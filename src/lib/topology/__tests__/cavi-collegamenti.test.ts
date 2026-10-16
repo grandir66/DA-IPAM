@@ -784,3 +784,49 @@ test("criterio B (misura del 16/10, §13.6.3): il bond è il suo fascio — le p
   assert.deepEqual(soli.collegamenti.filter((c) => c.b.nodo.startsWith("host:") || c.a.nodo.startsWith("host:")).map((c) => [capoDi(c, "dev:1").nome, c.stato]),
     [["bond3", "inoltra"], ["bond3", "inoltra"]]);
 });
+
+/**
+ * Criterio D (§13.6.1, la chiave della porta; I14, I70 per la velocità). Forma vera della rete B, dal controller: lo switch di
+ * aggregazione (dev:2) ha la porta d'indice 15 chiamata «SFP+ 15» spenta e la porta d'indice 16 chiamata anche lei «SFP+ 15»,
+ * accesa a 10G; la riga LLDP del controller porta l'indice 16 (`local_port_index`) e il vicino è una scheda a 10G
+ * dell'hypervisor (dev:41), che ha anche il cavo di gestione a 1G verso uno switch d'accesso (dev:3). I fatti di porta del
+ * controller hanno gli indici 15 e 16 con lo stesso nome. Il 16/10 il modello per cavo prendeva per nome anche i fatti della 15:
+ * il cavo era «giù», e l'hypervisor passava sotto lo switch d'accesso.
+ */
+const portaDoppia = (conIndice = true) => {
+  const M = { agg: "02:00:d4:00:02:00", acc: "02:00:d4:00:03:00", hv: "02:00:d4:00:41:01", nic10: "02:00:d4:00:41:a1", nic1: "02:00:d4:00:41:b1" };
+  const ctrl = (r: Partial<Parameters<typeof vic>[0]> & Pick<Parameters<typeof vic>[0], "device_id" | "local_port">) => vic({ source: "unifi", timestamp: "2026-10-13 03:00:00", ...r });
+  const t1 = baseInput({
+    devices: [dev(1, { name: "RTR-D", device_type: "router", ...mk }), dev(2, { name: "AGG-D", controller_mac: M.agg, ...uf }),
+      dev(3, { name: "ACC-D", controller_mac: M.acc, ...uf }),
+      dev(41, { name: "pve-d", device_type: "server", vendor: "proxmox", host: "10.6.0.41", proxmox_scan: 1, port_count: 0 })],
+    knownMacs: [{ device_id: 2, mac: M.agg }, { device_id: 3, mac: M.acc }],
+    ports: [...porte(2, [[1, "SFP+ 1", "10000 Mbps"], [2, "SFP+ 2", "10000 Mbps"], [15, "SFP+ 15", "10000 Mbps"], [16, "SFP+ 15", "10000 Mbps"]]).map((p) => (p.port_index === 15 ? { ...p, status: "down" } : p)),
+      ...porte(3, [[25, "SFP+ 1", "10000 Mbps"], [3, "Port 3", "1000 Mbps"]]), ...porte(1, [[1, "sfp-sfpplus1", "10000 Mbps"]])],
+    scanHosts: [{ scannedDeviceId: 41, hostname: "pve-d", ips: ["10.6.0.41"], macs: [M.hv, M.nic10, M.nic1], scannedAt: "2026-10-13T06:00:00.000Z" }],
+    networks: [{ id: 1, cidr: "10.6.0.0/24", name: "lan", gateway: "10.6.0.1", location_id: null }],
+  });
+  return ingresso(t1, {
+    vicini: [
+      vic({ device_id: 1, local_port: "sfp-sfpplus1,bridge", remote_device_name: "AGG-D", remote_mac: M.agg, remote_port: "SFP+ 1", source: "device" }),
+      ctrl({ device_id: 2, local_port: "SFP+ 1", local_port_index: 1, remote_device_name: "RTR-D", remote_port: "sfp-sfpplus1", remote_platform: "MikroTik" }),
+      ctrl({ device_id: 2, local_port: "SFP+ 2", local_port_index: 2, remote_device_name: "ACC-D", remote_mac: M.acc, remote_port: "SFP+ 1" }),
+      ctrl({ device_id: 3, local_port: "SFP+ 1", local_port_index: 25, remote_device_name: "AGG-D", remote_mac: M.agg, remote_port: "SFP+ 2" }),
+      // l'LLDP del firmware delle due schede dell'hypervisor: senza nome, col MAC della scheda
+      ctrl({ device_id: 2, local_port: "SFP+ 15", local_port_index: conIndice ? 16 : null, remote_device_name: "", remote_mac: M.nic10, remote_port: M.nic10 }),
+      ctrl({ device_id: 3, local_port: "Port 3", local_port_index: 3, remote_device_name: "", remote_mac: M.nic1, remote_port: M.nic1 }),
+    ],
+    fattiPorta: [fp(2, "i:1", "SFP+ 1"), fp(2, "i:2", "SFP+ 2"), fp(2, "i:15", "SFP+ 15", { running: 0 }), fp(2, "i:16", "SFP+ 15", { running: 1 }),
+      fp(3, "i:25", "SFP+ 1"), fp(3, "i:3", "Port 3")],
+  });
+};
+
+test("criterio D (misura del 16/10, §13.6.1): due porte con lo stesso nome si distinguono per indice; col solo nome la porta è da completare, mai lo stato di una delle due", () => {
+  const m = ombra(portaDoppia());
+  const c = fra(m.collegamenti, "dev:2", "dev:41");
+  assert.deepEqual(c.map((x) => [capoDi(x, "dev:2").chiave, x.stato, x.velocitaMbps]), [["i:16", "inoltra", 10000]], c.map((x) => x.id).join(" | "));
+  assert.equal(m.albero.padri["dev:41"], "dev:2", "il cavo a 10G è il principale dell'hypervisor (§12.5)");
+  const soloNome = ombra(portaDoppia(false));
+  const d = fra(soloNome.collegamenti, "dev:2", "dev:41");
+  assert.deepEqual(d.map((x) => [capoDi(x, "dev:2").chiave, x.stato, x.velocitaMbps]), [[null, "inoltra", 10000]], "porta da completare; lo stato non è quello della porta spenta; la velocità del nome doppio (I70)");
+});

@@ -51,6 +51,33 @@ del cliente A, dopo ogni correzione).
   verso lo stesso hypervisor, nessuno nella mappa attesa.
 - Nessuna migrazione: nessuna tabella o colonna nuova.
 
+## [Non rilasciato] — 2026-10-16 · credenziali tappa 2f: controller e AD dall'archivio
+
+Piano `docs/superpowers/plans/2026-10-15-tappa2-archivio-credenziali.md` (sotto-tappa 2f, zona rossa).
+Perché: chiave e password dei controller UniFi e l'account LDAP dell'AD stavano nelle righe delle loro tabelle,
+fuori dall'archivio: non si vedevano nella pagina Credenziali e non si potevano riusare né contare fra gli usi.
+
+### Modifiche
+
+- **Le credenziali dei controller e dell'AD diventano voci dell'archivio, una volta sola**
+  (`converti-integrazioni.ts`, segno `credenziali_t2_integrazioni`): «UniFi · <nome>» (chiave, oppure utente e
+  password: anche una console UniFi OS con utente locale, ADR 0019) e «AD · <nome>». Per ogni riga il segreto
+  si decifra in memoria prima e dopo e deve essere uguale, altrimenti ROLLBACK. Le colonne vecchie restano
+  piene fino alla 2g, per poter tornare al codice di prima.
+- **Controller e AD leggono la voce**. Le colonne della riga valgono solo per una riga mai convertita, e il
+  ripiego si registra; con la conversione chiusa una riga senza voce dice «Credenziale mancante» e non parte
+  nessuna connessione.
+- **Un cambio d'indirizzo del controller o del DC scollega la voce e svuota le colonne** (D12), a meno che la
+  stessa richiesta non scelga di nuovo una voce: così una chiave o una password non partono verso un host
+  nuovo che nessuno ha confermato.
+- Una voce di controller o di AD non si elimina finché è in uso (409 con l'uso elencato).
+- Il WinRM del DHCP dell'AD e la sonda WinRM accettano solo una voce Windows e usano la sua porta (prima
+  5985 fissa).
+- Nella finestra del controller una voce nuova vuole tutti i campi del suo metodo; il server rifiuta un
+  utente nuovo senza password invece di scartarlo.
+- **Omada**: le righe Omada non si convertono (Omada non si legge ancora e i suoi segreti non hanno un
+  formato): si lasciano come sono e il segno resta `parziale:`. Oggi non ce ne sono.
+
 ## [Non rilasciato] — 2026-10-16 · credenziali tappa 2e: le credenziali degli apparati nell'archivio
 
 Piano `docs/superpowers/plans/2026-10-15-tappa2-archivio-credenziali.md` (sotto-tappa 2e, zona rossa).

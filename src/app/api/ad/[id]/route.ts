@@ -3,12 +3,10 @@ import { requireAdmin } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import {
   getAdIntegrationById,
-  updateAdIntegration,
   deleteAdIntegration,
   clearAdData,
-  getCredentialById,
 } from "@/lib/db";
-import { erroreVocePerProtocollo } from "@/lib/credentials/tipi";
+import { aggiornaIntegrazioneAd, VoceNonValePerProtocollo } from "@/lib/credentials/lega-voce";
 import { encrypt } from "@/lib/crypto";
 import { z } from "zod/v4";
 
@@ -73,14 +71,7 @@ export async function PUT(request: Request, { params }: Params) {
         return NextResponse.json({ error: "Dati non validi", details: parsed.error.issues }, { status: 400 });
       }
 
-      // WinRM/DHCP dell'AD: solo voci Windows, mai l'account AD (D7 = (a), T13).
-      const winrm = parsed.data.winrm_credential_id;
-      if (winrm) {
-        const errore = erroreVocePerProtocollo(winrm, getCredentialById(winrm), "winrm");
-        if (errore) return NextResponse.json({ error: errore }, { status: 400 });
-      }
-
-      const updates: Parameters<typeof updateAdIntegration>[1] = {};
+      const updates: Parameters<typeof aggiornaIntegrazioneAd>[1] = {};
       if (parsed.data.name !== undefined) updates.name = parsed.data.name;
       if (parsed.data.dc_host !== undefined) updates.dc_host = parsed.data.dc_host;
       if (parsed.data.domain !== undefined) updates.domain = parsed.data.domain;
@@ -92,7 +83,9 @@ export async function PUT(request: Request, { params }: Params) {
       if (parsed.data.enabled !== undefined) updates.enabled = parsed.data.enabled ? 1 : 0;
       if (parsed.data.winrm_credential_id !== undefined) updates.winrm_credential_id = parsed.data.winrm_credential_id ?? null;
 
-      const updated = updateAdIntegration(numId, updates);
+      // WinRM/DHCP dell'AD: solo voci Windows, mai l'account AD (D7 = (a), T13).
+      // Il controllo sta in aggiornaIntegrazioneAd, qui il rifiuto è un 400.
+      const updated = aggiornaIntegrazioneAd(numId, updates);
 
       return NextResponse.json({
         ...updated,
@@ -102,6 +95,7 @@ export async function PUT(request: Request, { params }: Params) {
         password: "●●●●●●●●",
       });
     } catch (err) {
+      if (err instanceof VoceNonValePerProtocollo) return NextResponse.json({ error: err.message }, { status: 400 });
       const msg = err instanceof Error ? err.message : "Errore sconosciuto";
       return NextResponse.json({ error: msg }, { status: 500 });
     }

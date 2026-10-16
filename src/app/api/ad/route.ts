@@ -3,12 +3,8 @@ import { requireAdminOrOnboarding } from "@/lib/api-auth";
 import { withTenantFromSession, getServerTenantCode } from "@/lib/api-tenant";
 import { getTenantDb } from "@/lib/db-tenant";
 import { reloadTenantScheduler } from "@/lib/cron/scheduler";
-import {
-  getAdIntegrations,
-  createAdIntegration,
-  getCredentialById,
-} from "@/lib/db";
-import { erroreVocePerProtocollo } from "@/lib/credentials/tipi";
+import { getAdIntegrations } from "@/lib/db";
+import { creaIntegrazioneAd, VoceNonValePerProtocollo } from "@/lib/credentials/lega-voce";
 import { encrypt } from "@/lib/crypto";
 import { z } from "zod/v4";
 
@@ -85,12 +81,8 @@ export async function POST(request: Request) {
 
     const { name, dc_host, domain, base_dn, username, password, use_ssl, port, enabled, winrm_credential_id } = parsed.data;
     // WinRM/DHCP dell'AD: solo voci Windows, mai l'account AD (D7 = (a), T13).
-    if (winrm_credential_id) {
-      const errore = erroreVocePerProtocollo(winrm_credential_id, getCredentialById(winrm_credential_id), "winrm");
-      if (errore) return NextResponse.json({ error: errore }, { status: 400 });
-    }
-
-    const integration = createAdIntegration({
+    // Il controllo sta in creaIntegrazioneAd, qui il rifiuto è un 400.
+    const integration = creaIntegrazioneAd({
       name,
       dc_host,
       domain,
@@ -118,6 +110,7 @@ export async function POST(request: Request) {
       password: "●●●●●●●●",
     }, { status: 201 });
   } catch (err) {
+    if (err instanceof VoceNonValePerProtocollo) return NextResponse.json({ error: err.message }, { status: 400 });
     const msg = err instanceof Error ? err.message : "Errore sconosciuto";
     if (msg.includes("UNIQUE constraint")) {
       return NextResponse.json({ error: "Integrazione già esistente per questo DC e dominio" }, { status: 409 });

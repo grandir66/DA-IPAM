@@ -4,6 +4,31 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-16 · «Aggiorna ora» passa dal servizio d'aggiornamento
+
+Passo 1c del piano di solidità. Perché: c'erano due strade d'aggiornamento. Il timer usava `update.sh` (ora con
+build separata, salute e ritorno indietro), mentre «Aggiorna ora» faceva pull, `npm install` e build dentro il
+processo acceso, sopra la sua `.next`, con un ritorno indietro tutto suo.
+
+### Cambiate
+
+- **«Aggiorna ora»** (Impostazioni → Aggiornamenti e banner) lascia `data/aggiornamento-richiesto` e avvia
+  `<servizio>-update.service` con `systemctl --no-block start`. La rotta non esegue più comandi; risponde
+  `started` con l'ora della richiesta. `auto-update.sh` consuma il file e lo tratta come
+  `DA_INVENT_FORZA_AGGIORNAMENTO=1`: chi preme il pulsante riprova anche un commit già fallito 3 volte.
+- **Ogni giro di `auto-update.sh` lascia il suo esito** in `ultimo_controllo` (già aggiornato, solo documentazione,
+  aggiornamento avviato, commit fallito in attesa, fetch fallito), così il pulsante non resta mai senza risposta.
+- **Scheda «Stato dell'aggiornamento»**: codice scaricato e avviato, ultimo tentativo con fase, esito, tentativi e
+  avvisi. Dopo il clic la segue fase per fase anche durante il riavvio (fino a 5 minuti senza risposta), e a
+  esito riuscito ricarica la pagina. Un aggiornamento già in corso all'apertura si segue lo stesso.
+- «Riavvia» controlla la build in uso (`.next-attiva`), non per forza `.next`.
+- Fuori da systemd (sviluppo) «Aggiorna ora» spiega di usare `scripts/update.sh --restart`.
+
+### Documenti
+
+- Piano del 12/10: MDM, GLPI e «Verifica» per modulo nella tappa 6; la tappa 9 riscritta (elenco delle
+  appliance e stato dell'aggiornamento a DA-Link, nessun comando verso le appliance).
+
 ## [Non rilasciato] — 2026-10-16 · aggiornamento automatico: ritenta e non lascia l'app rotta
 
 Passo 1 del piano di solidità (1a + 1b). Perché: `auto-update.sh` confrontava origin con HEAD, e HEAD avanza col pull

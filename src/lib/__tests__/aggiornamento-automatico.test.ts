@@ -319,6 +319,39 @@ describe("aggiornamento automatico", () => {
     assert.equal(giro(a, { DA_INVENT_FORZA_AGGIORNAMENTO: "1" }).codice, 0);
     assert.equal(stato(a).commit_avviato, rotto);
   });
+
+  test("«Aggiorna ora»: la richiesta vale come forzatura, si consuma e resta scritta nel controllo", () => {
+    giro(a);
+    const controllo = () => stato(a).ultimo_controllo as { esito?: string; richiesto_da_interfaccia?: boolean } | undefined;
+    assert.equal(controllo()?.esito, "gia_aggiornato");
+    assert.equal(controllo()?.richiesto_da_interfaccia, false);
+
+    const rotto = pubblica(a, { "rompi-build": "x" });
+    for (let i = 0; i < 3; i++) giro(a);
+    assert.match(giro(a).uscita, /fallito 3 volte/);
+    assert.equal(controllo()?.esito, "commit_fallito_attendo");
+
+    // Il pulsante lascia il file e avvia il servizio: si ritenta subito.
+    const richiesta = path.join(a.app, "data", "aggiornamento-richiesto");
+    fs.mkdirSync(path.dirname(richiesta), { recursive: true });
+    fs.writeFileSync(richiesta, new Date().toISOString());
+    const r = giro(a);
+    assert.match(r.uscita, /richiesto dall'interfaccia/);
+    assert.ok(r.chiamate.includes("npm run build"), r.chiamate.join("\n"));
+    assert.equal(fs.existsSync(richiesta), false, "la richiesta si consuma");
+    assert.equal(stato(a).ultimo_tentativo?.commit, rotto);
+    assert.equal(stato(a).ultimo_tentativo?.tentativi, 4);
+    assert.equal(controllo()?.esito, "aggiornamento_avviato");
+    assert.equal(controllo()?.richiesto_da_interfaccia, true);
+
+    // Senza novità il pulsante dice «già aggiornato», non resta appeso.
+    pubblica(a, { "rompi-build": null });
+    assert.equal(giro(a).codice, 0);
+    fs.writeFileSync(richiesta, new Date().toISOString());
+    assert.equal(giro(a).codice, 0);
+    assert.equal(controllo()?.esito, "gia_aggiornato");
+    assert.equal(controllo()?.richiesto_da_interfaccia, true);
+  });
 });
 
 describe("stato-aggiornamento.mjs (funzioni pure)", () => {

@@ -23,11 +23,22 @@
 //                                 commit tentato diventa il commit avviato
 //   avviato <commit> [messaggio]  il commit gira già (solo documentazione, primo giro)
 //   avviso <testo>                aggiunge un avviso al tentativo in corso
+//   controllo <esito> [interfaccia]  com'è finito l'ultimo giro di auto-update.sh:
+//                                 gia_aggiornato | commit_fallito_attendo |
+//                                 solo_documentazione | aggiornamento_avviato |
+//                                 fetch_fallito; «interfaccia» se l'ha chiesto «Aggiorna ora»
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ESITI = new Set(["riuscito", "fallito", "interrotto"]);
+const ESITI_CONTROLLO = new Set([
+  "gia_aggiornato",
+  "commit_fallito_attendo",
+  "solo_documentazione",
+  "aggiornamento_avviato",
+  "fetch_fallito",
+]);
 
 export function percorsoStato(env = process.env) {
   if (env.DA_INVENT_STATO_AGGIORNAMENTO) return env.DA_INVENT_STATO_AGGIORNAMENTO;
@@ -101,6 +112,12 @@ export function applica(stato, comando, args, ora = new Date().toISOString()) {
       if (!commit) throw new Error("avviato: manca il commit");
       s.commit_avviato = commit;
       s.ultimo_successo = { commit, il: ora, nota: msg.join(" ") || null };
+      return s;
+    }
+    case "controllo": {
+      const [esito, origine] = args;
+      if (!ESITI_CONTROLLO.has(esito)) throw new Error(`controllo: esito non valido «${esito}»`);
+      s.ultimo_controllo = { il: ora, esito, richiesto_da_interfaccia: origine === "interfaccia" };
       return s;
     }
     default:

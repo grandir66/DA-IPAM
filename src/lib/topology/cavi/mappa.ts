@@ -78,11 +78,10 @@ function cavoDi(c: Collegamento): CavoLinea {
 
 /** Una linea della pagina per un collegamento (§13.11.4, T3.1): una linea è un cavo, quindi niente «altri cavi» né «perché» di T1. */
 function lineaDellaMappa(c: Collegamento, ctx: ContestoLinea): MapLink {
-  // Le fonti di oggi solo per compatibilità (piano di T3, «Scelte» 2): senza doppi, nell'ordine di fiducia di T1.
+  // Le fonti di oggi solo per compatibilità (piano di T3, «Scelte» 2): senza doppi, nell'ordine di fiducia di T1. Almeno una:
+  // `modelloMappaCavi` rifiuta prima un collegamento senza prove.
   const sources = [...new Set(c.prove.map((p) => FONTE_DELLA_CLASSE[p.classe]))]
     .sort((x: LinkSource, y: LinkSource) => LINK_SOURCE_RANK[x] - LINK_SOURCE_RANK[y] || cmp(x, y));
-  // Un collegamento nasce sempre da una prova: senza, è un difetto del modello, e la rotta lo dice (Caso 3), non lo copre.
-  if (sources.length === 0) throw new Error(`collegamento senza prove: ${c.id}`);
   const aMano = c.prove.some((p) => p.tipo === "a_mano");
   const lastSeen = piuRecente(c.prove.map((p) => p.visto));
   const t = lastSeen === null ? Number.NaN : parseDbDate(lastSeen).getTime();
@@ -116,6 +115,10 @@ function primoGestito(s: Segmento): Porta | null {
  * classi, gli isolati, «Da sistemare», le proposte e i conteggi si ricalcolano sulle linee nuove.
  */
 export function modelloMappaCavi(t1: TopologyModel, m: ModelloCavi, ing: IngressoCavi): MappaCavi {
+  // Un collegamento nasce sempre da una prova: senza, è un difetto del modello, e la rotta lo dice (Caso 3), non lo copre. Il
+  // messaggio finisce nel journal: il numero, mai l'id (porta i nomi delle porte, anche quelli scelti dal cliente).
+  const senzaProve = m.collegamenti.filter((c) => c.prove.length === 0).length;
+  if (senzaProve > 0) throw new Error(`${senzaProve} ${senzaProve === 1 ? "collegamento" : "collegamenti"} senza prove`);
   const perId = new Map(t1.nodes.map((n) => [n.id, n]));
   // Il nodo del segmento (§13.7.3): calcolato, mai salvato; nella sede del suo primo membro gestito.
   const sedeDi = new Map<string, number | null>();
@@ -281,6 +284,8 @@ export function nomiDellaMappa(mappa: Pick<MappaCavi, "nodes" | "cavi">): (id: s
 }
 
 const NON_NOTA = "porta non nota";
+/** Dentro una riga di «Candidati per porta»: al massimo tante prove e tanti scartati, gli altri si contano (revisione del Task 6). */
+const PER_RIGA = 16;
 const chiaveDi = (p: Pick<Porta, "chiave" | "nome">): string => p.chiave ?? `?${normale(p.nome)}`;
 
 /** Chi è l'apparato di una riga che non si abbina a un oggetto censito: il nome o il MAC che la riga annuncia. */
@@ -302,10 +307,11 @@ function motivoStessaRete(p: Prova): string {
  * «Candidati per porta» di un nodo (§13.4.6): una riga per porta, con le prove (chi, con quale protocollo, quando), il collegamento
  * scelto e gli apparati scartati col motivo; un limite e quante righe restano fuori. Le prove sono tutte quelle che riguardano la
  * porta, dai due lati: quelle di chi osserva da lì e quelle di chi la vede come porta remota. Uno scartato compare una volta per
- * porta, col motivo più preciso («oltre» una radio, poi il bordo per porta, poi la stessa rete). Porte in ordine di nome coi numeri.
+ * porta, col motivo più preciso («oltre» una radio, poi il bordo per porta, poi la stessa rete). Porte in ordine di nome coi numeri;
+ * dentro una riga al massimo 16 prove e 16 scartati, con quanti restano fuori (`altreProve`, `altriScartati`).
  */
 export function candidatiPerPorta(m: ModelloCavi, nodo: string, nomeDi: (id: string) => string, limite = 64): { righe: CandidatoPorta[]; altri: number } {
-  interface Riga extends CandidatoPorta { chiave: string; daQui: boolean }
+  interface Riga extends Omit<CandidatoPorta, "altreProve" | "altriScartati"> { chiave: string; daQui: boolean }
   const righe = new Map<string, Riga>();
   const riga = (p: Porta, daQui: boolean): Riga => {
     const k = chiaveDi(p);
@@ -358,7 +364,10 @@ export function candidatiPerPorta(m: ModelloCavi, nodo: string, nomeDi: (id: str
   const tutte = [...righe.values()].sort((x, y) => Number(x.porta === NON_NOTA) - Number(y.porta === NON_NOTA)
     || x.porta.localeCompare(y.porta, "it", { numeric: true }) || cmp(x.chiave, y.chiave));
   return {
-    righe: tutte.slice(0, limite).map(({ porta, prove, scelto, scartati }) => ({ porta, prove, scelto, scartati })),
+    righe: tutte.slice(0, limite).map(({ porta, prove, scelto, scartati }) => ({
+      porta, prove: prove.slice(0, PER_RIGA), altreProve: Math.max(0, prove.length - PER_RIGA),
+      scelto, scartati: scartati.slice(0, PER_RIGA), altriScartati: Math.max(0, scartati.length - PER_RIGA),
+    })),
     altri: Math.max(0, tutte.length - limite),
   };
 }

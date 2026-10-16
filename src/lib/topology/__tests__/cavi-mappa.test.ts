@@ -367,6 +367,31 @@ test("§13.4.6 Candidati per porta: la WAN con le prove dei membri e il segmento
   const due = candidatiPerPorta(m, "dev:1", nomeDi, 2);
   assert.deepEqual([due.righe.map((r) => r.porta), due.altri], [["ether1", "ether8"], 2]);
   assert.deepEqual(candidatiPerPorta(m, "dev:404", nomeDi), { righe: [], altri: 0 }, "un oggetto senza prove: nessuna riga");
+  assert.ok(righe.every((r) => r.altreProve === 0 && r.altriScartati === 0));
+});
+
+test("§13.4.6 Candidati per porta (revisione del Task 6): dentro una riga al massimo 16 prove e 16 scartati, con quanti restano fuori", () => {
+  const altri = Array.from({ length: 20 }, (_, i) => 101 + i);
+  const t1 = baseInput({
+    devices: [dev(1, { name: "RTR-1", device_type: "router", ...mk }), ...altri.map((id) => dev(id, { name: `SW-RETE-${id}`, ...mk }))],
+    knownMacs: altri.map((id) => ({ device_id: id, mac: `02:00:eb:00:${String(id - 100).padStart(2, "0")}:00` })),
+    ports: porte(1, [[2, "ether2", "1000 Mbps"]]),
+  });
+  // Sulla LAN il router sente venti apparati con un annuncio di rete: venti prove, venti scartati.
+  const ing = ingresso(t1, { vicini: altri.map((id) => vic({ device_id: 1, local_port: "ether2,bridge", remote_device_name: `SW-RETE-${id}`,
+    remote_mac: `02:00:eb:00:${String(id - 100).padStart(2, "0")}:00`, remote_port: "bridge", protocol: "mndp", source: "device", remote_platform: "MikroTik" })) });
+  const { m, mappa } = mappaDi(ing);
+  const r = candidatiPerPorta(m, "dev:1", nomiDellaMappa(mappa)).righe.find((x) => x.porta === "ether2")!;
+  assert.deepEqual([r.prove.length, r.altreProve, r.scartati.length, r.altriScartati], [16, 4, 16, 4]);
+});
+
+test("un collegamento senza prove è un difetto del modello: la mappa cade col numero, senza id né nomi di porta (revisione del Task 6)", () => {
+  const ing = ingresso(reteWan());
+  const t1 = buildTopologyModel(ing.t1);
+  const m = costruisciModelloCavi(ing, t1, { testaScelta: null });
+  const rotto = (n: number) => ({ ...m, collegamenti: m.collegamenti.map((c, i) => (i < n ? { ...c, prove: [] } : c)) });
+  assert.throws(() => modelloMappaCavi(t1, rotto(1), ing), (e: unknown) => e instanceof Error && e.message === "1 collegamento senza prove");
+  assert.throws(() => modelloMappaCavi(t1, rotto(2), ing), (e: unknown) => e instanceof Error && e.message === "2 collegamenti senza prove");
 });
 
 /** Bordo per porta (come «I9» di cavi-collegamenti.test.ts): sulla porta 5 il cavo verso SW-3 letto solo via SNMP, e la tabella MAC vi vede SRV-11. */
@@ -460,6 +485,10 @@ test("revisione del Task 8: un nome di porta lungo (apparato senza elenco) dà u
   }
   // L'alias del membro col nome lungo è l'id stesso del segmento: la stessa forma accorciata.
   for (const s of m.segmenti) assert.ok(s.id.startsWith("seg:2:n-"), s.id);
+  // Valori fissati (revisione del Task 6): se cambia l'accorciamento o l'impronta, gli id salvati nelle mappe (membri, partenze,
+  // ritocchi, «Togli dal segmento», ★) non trovano più il loro segmento, in silenzio. Cambiarli vuol dire una conversione.
+  const testa = "seg:2:n-porta-col-nome-scelto-dal-cliente-molto-lungo%2Fxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
+  assert.deepEqual(segs, [`${testa}~93714b80`, `${testa}~96715039`]);
 });
 
 // ── Dall'ingresso alla mappa ─────────────────────────────────────────────────────────────────────────────────────────────

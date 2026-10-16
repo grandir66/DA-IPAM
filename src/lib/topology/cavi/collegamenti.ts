@@ -554,18 +554,36 @@ export function costruisciCollegamenti(prove: readonly Prova[], correzioni: read
   const neiFasci = new Set<Bozza>();
   for (const cavi of perCoppia.values()) {
     if (cavi.length < 2) continue;
-    const perLag = new Map<string, Bozza[]>();
-    for (const z of cavi) {
-      const la = statoCapo(z.a).lag, lb = statoCapo(z.b).lag;
-      const k = la !== null ? `a:${z.a.nodo}:${la}` : lb !== null ? `b:${z.b.nodo}:${lb}` : null;
-      if (k === null) continue;
-      const v = perLag.get(k) ?? [];
-      v.push(z);
-      perLag.set(k, v);
+    // La chiave del fascio letto non dipende dal verso del cavo (revisione del Task 6 di T3): un cavo costruito dall'altro capo ha
+    // i capi scambiati, e la chiave «a:‹nodo›» o «b:‹nodo›» di prima ne faceva due cavi. Ogni capo con un fascio letto dà la chiave
+    // «nodo|nome del fascio»; due cavi della coppia che ne condividono una sono membri dello stesso fascio (anche coi fatti LAG
+    // letti da un capo per un membro e dall'altro per un altro).
+    const chiaviDi = new Map(cavi.map((z) => [z, new Set([z.a, z.b].flatMap((p) => {
+      const l = statoCapo(p).lag;
+      return l === null ? [] : [`${p.nodo}|${normale(l)}`];
+    }))]));
+    const gruppi: Array<Set<string>> = [];
+    for (const ks of chiaviDi.values()) {
+      if (ks.size === 0) continue;
+      const unito = new Set(ks);
+      for (const g of gruppi.filter((x) => [...ks].some((k) => x.has(k)))) {
+        for (const k of g) unito.add(k);
+        gruppi.splice(gruppi.indexOf(g), 1);
+      }
+      gruppi.push(unito);
     }
-    for (const membri of perLag.values()) {
+    for (const g of gruppi) {
+      const membri = cavi.filter((z) => [...chiaviDi.get(z)!].some((k) => g.has(k)));
       if (membri.length < 2) continue;
-      fasci.set(membri[0], { membri, dedotto: false, lagA: statoCapo(membri[0].a).lag, lagB: statoCapo(membri[0].b).lag });
+      // Il nome del fascio su un capo: da qualunque membro l'abbia letto su quel nodo (il primo membro può essere visto dall'altro capo).
+      const lagSu = (nodo: string): string | null => {
+        for (const m of membri) {
+          const l = statoCapo(m.a.nodo === nodo ? m.a : m.b).lag;
+          if (l !== null) return l;
+        }
+        return null;
+      };
+      fasci.set(membri[0], { membri, dedotto: false, lagA: lagSu(membri[0].a.nodo), lagB: lagSu(membri[0].b.nodo) });
       for (const z of membri) neiFasci.add(z);
     }
     const liberi = cavi.filter((z) => !neiFasci.has(z));

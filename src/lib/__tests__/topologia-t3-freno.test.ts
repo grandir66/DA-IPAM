@@ -15,7 +15,7 @@ import {
 import { buildTopologyModel } from "@/lib/topology/model";
 import { CHIAVE_MAPPA_CAVI, scriviMappaCavi } from "@/lib/topology/letture/mappa";
 import {
-  CANDIDATI_SOLO_ACCESA, FONTI_DELLA_MAPPA, MAPPA_NON_CALCOLATA, candidatiDellaMappa, modelloDellaMappa, type FontiDellaMappa,
+  CANDIDATI_SOLO_ACCESA, FONTI_DELLA_MAPPA, MAPPA_NON_CALCOLATA, OGGETTO_NON_NELLA_MAPPA, candidatiDellaMappa, modelloDellaMappa, type FontiDellaMappa,
 } from "@/lib/topology/mappa-server";
 import type { TopologyModelInput } from "@/lib/topology/model-types";
 import { soloMikrotik } from "@/lib/topology/__tests__/support/reti-campione";
@@ -123,7 +123,11 @@ test("Caso 3: acceso e il modello per cavo cade — la mappa di prima, «mappaEr
     assert.deepEqual([r.mappa, r.errore], ["oggi", MAPPA_NON_CALCOLATA]);
     assert.equal(serializza(r.model), serializza(oggi()), "la mappa di prima, com'era");
     assert.equal(errore.mock.callCount(), 1);
-    assert.match(String(errore.mock.calls[0].arguments[0]), /^\[topology\] mappa nuova non calcolata/);
+    const riga = String(errore.mock.calls[0].arguments[0]);
+    assert.match(riga, /^\[topology\] mappa nuova non calcolata/);
+    // Revisione del Task 6: dove è caduto, i primi punti della pila (solo file:riga:colonna), su una riga sola del journal.
+    assert.match(riga, /\(in [^()]*\.ts:\d+:\d+/, riga);
+    assert.ok(!riga.includes("\n"), "una riga sola");
   } finally {
     errore.mock.restore();
     withTenant(T, () => scriviMappaCavi(false, "prova"));
@@ -165,6 +169,9 @@ test("«Candidati per porta» (§13.4.6, Scelte 11): solo con la mappa nuova acc
     assert.equal(fascio?.scelto?.verso, "AGG-CRS", JSON.stringify(fascio));
     // Un id fuso (host:81 è un altro indirizzo della testa) vale per il suo oggetto.
     assert.deepEqual(withTenant(T, () => candidatiDellaMappa(2, "host:81", ORA)), r);
+    // Un id scritto bene di un oggetto che non c'è più: 404, non un elenco vuoto che sembra «nessuna prova» (revisione del Task 6).
+    assert.deepEqual(withTenant(T, () => candidatiDellaMappa(2, "dev:404", ORA)), { ok: false, status: 404, error: OGGETTO_NON_NELLA_MAPPA });
+    assert.equal(OGGETTO_NON_NELLA_MAPPA, "Oggetto non più nella mappa");
   } finally {
     withTenant(T, () => scriviMappaCavi(false, "prova"));
   }

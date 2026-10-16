@@ -33,6 +33,19 @@ export const FONTI_DELLA_MAPPA: FontiDellaMappa = {
 /** La scritta della pagina quando la mappa nuova non si è potuta calcolare (`mappaErrore` della rotta del modello). */
 export const MAPPA_NON_CALCOLATA = "La mappa nuova non si è potuta calcolare: si vede quella di prima.";
 
+/**
+ * Dove è caduto il calcolo, per il journal: i primi punti della pila, solo «file:riga:colonna» (il testo delle righe della pila
+ * no: la prima è il messaggio, già scritto). Una riga sola. Senza, «… is not iterable» non diceva in quale modulo (revisione del Task 6).
+ */
+function doveECaduto(e: unknown, quanti = 3): string {
+  if (!(e instanceof Error) || !e.stack) return "";
+  const punti = e.stack.split("\n").slice(1)
+    .map((r) => /([^\s()]+:\d+:\d+)\)?\s*$/.exec(r.trim())?.[1])
+    .filter((x): x is string => x !== undefined)
+    .slice(0, quanti);
+  return punti.length > 0 ? ` (in ${punti.join(" ← ")})` : "";
+}
+
 export function modelloDellaMappa(staleDays: number, nowMs: number = Date.now(), fonti: FontiDellaMappa = FONTI_DELLA_MAPPA): ModelloDellaMappa {
   // Spento (o assente, o rovinato): la mappa di T1 com'era, senza leggere niente di T3 (spec §13.11.4, T3.7; R7).
   if (!fonti.accesa()) {
@@ -46,23 +59,27 @@ export function modelloDellaMappa(staleDays: number, nowMs: number = Date.now(),
     return { model: mappa, mappa: "cavi", errore: null, nowMs: ing.t1.nowMs };
   } catch (e) {
     // Caso 3: la mappa di prima, riletta da capo (nessuno stato del calcolo caduto), detta nel journal e a schermo.
-    console.error(`[topology] mappa nuova non calcolata, si mostra quella di prima: ${e instanceof Error ? e.message : "errore"}`);
+    console.error(`[topology] mappa nuova non calcolata, si mostra quella di prima: ${e instanceof Error ? e.message : "errore"}${doveECaduto(e)}`);
     const input = fonti.ingressoT1(staleDays, nowMs);
     return { model: buildTopologyModel(input), mappa: "oggi", errore: MAPPA_NON_CALCOLATA, nowMs: input.nowMs };
   }
 }
 
 export const CANDIDATI_SOLO_ACCESA = "«Candidati per porta» c'è solo con la mappa nuova accesa";
+export const OGGETTO_NON_NELLA_MAPPA = "Oggetto non più nella mappa";
 
-export type EsitoCandidati = { ok: true; righe: CandidatoPorta[]; altri: number } | { ok: false; status: 409; error: string };
+export type EsitoCandidati = { ok: true; righe: CandidatoPorta[]; altri: number } | { ok: false; status: 404 | 409; error: string };
 
 /**
  * «Candidati per porta» di un oggetto (§13.4.6; piano di T3, «Scelte» 11: a richiesta, con una rotta sua, solo con la mappa
  * accesa). Lo stesso giro della rotta del modello (stessa testa), poi le righe dell'oggetto; un id fuso o il membro di un segmento
- * valgono per l'oggetto di oggi. Un errore del calcolo esce: la rotta lo dice (500), non mostra un elenco vuoto.
+ * valgono per l'oggetto di oggi; un id che non è più un oggetto della mappa dà 404, non un elenco vuoto che sembrerebbe «nessuna
+ * prova». Un errore del calcolo esce: la rotta lo dice (500), non mostra un elenco vuoto.
  */
 export function candidatiDellaMappa(staleDays: number, nodo: string, nowMs: number = Date.now(), fonti: FontiDellaMappa = FONTI_DELLA_MAPPA): EsitoCandidati {
   if (!fonti.accesa()) return { ok: false, status: 409, error: CANDIDATI_SOLO_ACCESA };
   const { m, mappa } = modelloMappaDaIngresso(fonti.ingressoCavi(staleDays, nowMs), { testaScelta: fonti.testa() });
-  return { ok: true, ...candidatiPerPorta(m, mappa.canonical[nodo] ?? nodo, nomiDellaMappa(mappa)) };
+  const id = mappa.canonical[nodo] ?? nodo;
+  if (!mappa.nodes.some((n) => n.id === id)) return { ok: false, status: 404, error: OGGETTO_NON_NELLA_MAPPA };
+  return { ok: true, ...candidatiPerPorta(m, id, nomiDellaMappa(mappa)) };
 }

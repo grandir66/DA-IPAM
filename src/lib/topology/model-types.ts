@@ -305,9 +305,13 @@ export interface InfoCavi {
 /** Una riga di «Candidati per porta» (§13.4.6): le prove di una porta, il collegamento scelto, gli scartati col motivo. */
 export interface CandidatoPorta {
   porta: string;
+  /** Al massimo 16 (`altreProve` dice quante restano fuori: «+ altre N»). */
   prove: Array<{ chi: string; detto: string; quando: string | null }>;
+  altreProve: number;
   scelto: { linea: string; verso: string; genere: Genere } | null;
+  /** Al massimo 16 (`altriScartati` dice quanti restano fuori: «+ altri N»). */
   scartati: Array<{ chi: string; motivo: string }>;
+  altriScartati: number;
 }
 
 /** Orientamento della mappa (spec §12.2): `lr` «Verticale», da sinistra a destra con i fratelli impilati (predefinito); `tb` «Orizzontale», dall'alto. */

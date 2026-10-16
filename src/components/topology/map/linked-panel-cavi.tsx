@@ -161,6 +161,7 @@ function RigaPorta({ r, nomeDi, ora }: { r: CandidatoPorta; nomeDi: (id: string)
       <Etichetta k="prove">
         <ul className="list-disc pl-4">
           {r.prove.map((p, i) => <li key={i}>{[nomeDi(p.chi), p.detto, p.quando ? `alle ${ora(p.quando)}` : null].filter(Boolean).join(" · ")}</li>)}
+          {r.altreProve > 0 && <li className="list-none text-muted-foreground">+ altre {r.altreProve}</li>}
         </ul>
       </Etichetta>
       <Etichetta k="scelto">{r.scelto ? <p>{sceltoInParole(r.scelto, nomeDi)}</p> : <p className="text-muted-foreground">nessuno</p>}</Etichetta>
@@ -168,6 +169,7 @@ function RigaPorta({ r, nomeDi, ora }: { r: CandidatoPorta; nomeDi: (id: string)
         {r.scartati.length === 0 ? <p className="text-muted-foreground">nessuno</p> : (
           <ul className="list-disc pl-4">
             {r.scartati.map((s, i) => <li key={i}>{nomeDi(s.chi)}: {s.motivo}</li>)}
+            {r.altriScartati > 0 && <li className="list-none text-muted-foreground">+ altri {r.altriScartati}</li>}
           </ul>
         )}
       </Etichetta>

@@ -10,12 +10,16 @@
  *         [--fatti-prova <id>]   T2: fatti dei MikroTik (fixture anonime del repo) e vicini con le fonti nuove (ssh, snmp) sull'apparato <id>, nella copia della copia
  *         [--traccia]   T2: «Cosa cambierebbe con la mappa nuova» (numeri; con --nomi le righe a terminale)
  *         [--cavi]   T3, Task 0: i collegamenti del modello per cavo (numeri; con --nomi riga per riga a terminale)
+ *         [--mappa-cavi]   T3, Task 6: la mappa nuova (una linea per collegamento) con l'interruttore acceso in memoria:
+ *                          tempo, impronta, albero della mappa automatica contro quello di oggi, ritocchi per mappa (R2)
+ *         [--salva-cavi <file.json>] [--confronta-cavi <file.json>]   i padri della mappa nuova, salvati o confrontati
  *         [--salva <istantanea.json>] [--confronta <istantanea.json>]
  *         [--esporta-input <file.json>] [--input-json <file.json>] [--nomi] [--json]
  *         [--senza-regola <regola>]...   spegne una regola del passaggio universale (src/lib/topology/regole.ts): la misura C19 confronta «tutte le regole» con «tutte meno una»
  *         [--adesso "AAAA-MM-GG HH:MM:SS"]   l'ora (UTC) a cui il modello giudica «non visto»: quella del «prima», per misurare il
  *                                            «dopo» sulla stessa copia con lo stesso orologio (di base l'ora vera; vale anche con --input-json)
- *   I file di --salva, --confronta, --esporta-input e --input-json stanno dentro --cartella (dati del cliente).
+ *   I file di --salva, --confronta, --salva-cavi, --confronta-cavi, --esporta-input e --input-json stanno dentro --cartella
+ *   (dati del cliente).
  *   Uscita: 0 fatto, 1 integrità rovinata, 2 non partito.
  */
 import fs from "node:fs";
@@ -23,11 +27,11 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { controllaPercorsi, percorsoReale } from "../src/lib/scanner/__tests__/support/percorsi-prova";
 
-const CON_VALORE = ["--cartella", "--scenario", "--soglia", "--uscita-router", "--ripristino", "--fatti-prova", "--salva", "--confronta", "--esporta-input", "--input-json", "--senza-regola", "--adesso"];
+const CON_VALORE = ["--cartella", "--scenario", "--soglia", "--uscita-router", "--ripristino", "--fatti-prova", "--salva", "--confronta", "--salva-cavi", "--confronta-cavi", "--esporta-input", "--input-json", "--senza-regola", "--adesso"];
 
 function uso(msg?: string): number {
   if (msg) process.stderr.write(`${msg}\n`);
-  process.stderr.write("Uso: npx tsx scripts/misura-cavi.ts <copia.db> --cartella <scratchpad> [--scenario …] [--uscita-router <id>=<file>] [--ripristino <ora UTC>] [--fatti-prova <id>] [--traccia] [--cavi] [--senza-regola <regola>] [--adesso <ora UTC>] [--salva|--confronta <file>] [--esporta-input|--input-json <file>] [--nomi] [--json]\n");
+  process.stderr.write("Uso: npx tsx scripts/misura-cavi.ts <copia.db> --cartella <scratchpad> [--scenario …] [--uscita-router <id>=<file>] [--ripristino <ora UTC>] [--fatti-prova <id>] [--traccia] [--cavi] [--mappa-cavi] [--salva-cavi|--confronta-cavi <file>] [--senza-regola <regola>] [--adesso <ora UTC>] [--salva|--confronta <file>] [--esporta-input|--input-json <file>] [--nomi] [--json]\n");
   return 2;
 }
 
@@ -48,7 +52,7 @@ async function main(): Promise<number> {
   const liberi = a.filter((x, i) => !x.startsWith("--") && !CON_VALORE.includes(a[i - 1] ?? ""));
   const cartella = val("--cartella");
   if (!cartella || liberi.length !== 1) return uso();
-  for (const k of ["--salva", "--confronta", "--esporta-input", "--input-json"]) {
+  for (const k of ["--salva", "--confronta", "--salva-cavi", "--confronta-cavi", "--esporta-input", "--input-json"]) {
     const f = val(k);
     if (f && !dentro(f, cartella)) return uso(`${k} deve stare dentro --cartella: i dati del cliente non escono dallo scratchpad.`);
   }
@@ -208,15 +212,17 @@ async function main(): Promise<number> {
   // `layout.expired` conta solo l'orientamento in uso: si calcola in quello salvato e in ogni altro che ha ritocchi
   // (verifica del 15/10: calcolata solo nel suo, la mappa della sede 1 dava 0 ritocchi).
   const ORIENTAMENTI = ["lr", "tb"] as const;
-  const mappe = [
+  // Lo stesso conto per il modello di oggi e, con --mappa-cavi, per la mappa nuova (stesse mappe salvate, stessi ritocchi).
+  const ritocchiPerMappa = (mod: typeof model) => [
     { vista: "auto", base: { auto: true, members: [] as string[], roots: [] as string[], head: viste.auto?.head_node ?? null }, tweaks: viste.autoVista.tweaks, salvato: viste.autoVista.orientation },
     ...viste.mappe.map(({ m, v }) => ({ vista: `mappa:${m.id}`, base: { auto: false, members: v.nodes, roots: m.roots, head: null }, tweaks: v.tweaks, salvato: v.orientation })),
   ].flatMap((x) => ORIENTAMENTI.filter((o) => o === x.salvato || x.tweaks.some((t) => t.orientation === o)).map((o) => {
-    const c = computeMapView(model, { ...x.base, tweaks: x.tweaks, expanded: new Set(), orientation: o });
+    const c = computeMapView(mod, { ...x.base, tweaks: x.tweaks, expanded: new Set(), orientation: o });
     const delVerso = c.tweaks.filter((t) => t.orientation === o);
     const validi = delVerso.filter((t) => c.layout.nodes.get(t.nodeId)?.role === "box" && !c.layout.expired.includes(t.nodeId)).length;
     return { vista: x.vista, orientamento: o, ritocchi: delVerso.length, validi, scaduti: c.layout.expired, oggetti_persi: c.missing.length };
   }));
+  const mappe = ritocchiPerMappa(model);
   out.mappe = mappe.map((x) => ({ ...x, scaduti: x.scaduti.length }));
 
   const padri = padriDi(auto.tree);
@@ -291,6 +297,49 @@ async function main(): Promise<number> {
     };
     caviDaStampare = { dalleVm };
   }
+  // T3, Task 6: la mappa nuova con l'interruttore acceso in memoria (non si scrive niente), sulla stessa misura: lo stesso giro della
+  // rotta del modello (`modelloMappaDaIngresso` con la testa della mappa automatica salvata), 30 volte per il tempo (C17); poi la
+  // mappa automatica con la stessa testa, gli stessi ritocchi e lo stesso orientamento, contro quella di oggi.
+  let nuova: { mappa: import("../src/lib/topology/cavi/mappa").MappaCavi; padri: Record<string, string | null>; diversi: ReturnType<typeof padriCambiati>; dalSalvato: ReturnType<typeof padriCambiati> | null } | null = null;
+  if (a.includes("--mappa-cavi")) {
+    const { modelloMappaDaIngresso } = await import("../src/lib/topology/cavi/mappa");
+    const ingC = { ...tenantDb.withTenant(tenant, () => tenantDb.getIngressoCavi(soglia, base.nowMs)), t1: input };
+    const testaSalvata = viste.auto?.head_node ?? null;
+    let mm = modelloMappaDaIngresso(ingC, { testaScelta: testaSalvata }).mappa;
+    const tempiC: number[] = [];
+    for (let i = 0; i < 30; i++) {
+      const t0 = performance.now();
+      mm = modelloMappaDaIngresso(ingC, { testaScelta: testaSalvata }).mappa;
+      tempiC.push(performance.now() - t0);
+    }
+    out.mappa_cavi_ms = Math.round(mediana(tempiC) * 10) / 10;
+    out.impronta_mappa_cavi = crypto.createHash("sha256").update(JSON.stringify(mm)).digest("hex").slice(0, 16);
+    const vistaC = computeMapView(mm, {
+      auto: true, members: [], roots: [], head: testaSalvata, tweaks: viste.autoVista.tweaks, expanded: new Set(), orientation: viste.autoVista.orientation,
+    });
+    const padriC = padriDi(vistaC.tree);
+    const diversi = padriCambiati(padri, padriC);
+    const contaC = (xs: readonly string[]) => xs.reduce<Record<string, number>>((o, k) => ({ ...o, [k]: (o[k] ?? 0) + 1 }), {});
+    const mappeC = ritocchiPerMappa(mm);
+    out.mappa_cavi = {
+      radici: vistaC.tree.roots.length, padri_diversi_da_oggi: diversi.length, testa_cambiata: vistaC.head !== auto.head,
+      isolati: mm.isolated.length, da_sistemare: (mm.daSistemare ?? []).length, segmenti: mm.cavi.segmenti.length, anomalie: mm.cavi.anomalie.length,
+      per_genere: contaC(mm.links.map((l) => l.cavo?.genere ?? "nessuno")), per_stato: contaC(mm.links.map((l) => l.cavo?.stato ?? "nessuno")),
+      stelle_di_prima: mm.cavi.stelleDiPrima.length, dalle_vm_nei_dettagli: Object.values(mm.cavi.dalleVm).reduce((n, xs) => n + xs.length, 0),
+      mappe: mappeC.map((x) => ({ ...x, scaduti: x.scaduti.length })),
+    };
+    const salvaC = val("--salva-cavi");
+    if (salvaC) fs.writeFileSync(salvaC, JSON.stringify({ padri: padriC, radici: vistaC.tree.roots, adesso: base.nowMs }, null, 1));
+    let dalSalvato: ReturnType<typeof padriCambiati> | null = null;
+    const confrontaC = val("--confronta-cavi");
+    if (confrontaC) {
+      let prima: { padri: Record<string, string | null>; adesso?: number };
+      try { prima = JSON.parse(fs.readFileSync(confrontaC, "utf8")) as typeof prima; } catch { return uso("--confronta-cavi: istantanea non leggibile."); }
+      dalSalvato = padriCambiati(prima.padri, padriC);
+      out.mappa_cavi_dal_salvato = { padri_cambiati: dalSalvato.length, stesso_orologio: prima.adesso === undefined ? "istantanea senza orologio" : prima.adesso === base.nowMs };
+    }
+    nuova = { mappa: mm, padri: padriC, diversi, dalSalvato };
+  }
   out.quick_check_dopo = quick();
   process.stdout.write(a.includes("--json") ? `${JSON.stringify(out, null, 1)}\n` : `${Object.entries(out).map(([k, v]) => `${k}: ${typeof v === "object" ? JSON.stringify(v) : v}`).join("\n")}\n`);
 
@@ -357,6 +406,23 @@ async function main(): Promise<number> {
       for (const x of ombra.albero.avvisi) w(`${nc(x.nodo)}: ${x.testo}`);
       w("\n— collegamenti «dalle VM» (§13.14) —");
       for (const x of caviDaStampare.dalleVm) w(`${nome(x.ipervisore)} · ${nome(x.switch)} ${x.porta} · ${x.vm} VM · ${x.principale ? "principale" : "NON principale"} · uplink dello switch: ${x.uplink}`);
+    }
+    if (nuova) {
+      const { nomiDellaMappa } = await import("../src/lib/topology/cavi/mappa");
+      const nm = nomiDellaMappa(nuova.mappa);
+      const nn = (id: string | null | undefined) => (id === undefined ? "fuori dall'albero" : id === null ? "partenza" : nm(id));
+      w("\n— mappa nuova: padri diversi da oggi (T3, Task 6) —");
+      for (const c of nuova.diversi) w(`${nn(c.id)}: oggi ${nn(c.prima)} → con la mappa nuova ${nn(c.dopo)}`);
+      if (nuova.dalSalvato) {
+        w("\n— mappa nuova: padri cambiati dall'istantanea —");
+        for (const c of nuova.dalSalvato) w(`${nn(c.id)}: ${nn(c.prima)} → ${nn(c.dopo)}`);
+      }
+      w("\n— mappa nuova: isolati —");
+      for (const id of nuova.mappa.isolated) w(nm(id));
+      w("\n— mappa nuova: «Da sistemare» —");
+      for (const d of nuova.mappa.daSistemare ?? []) w(`${nm(d.id)} · ${d.motivo}`);
+      w("\n— mappa nuova: anomalie —");
+      for (const x of nuova.mappa.cavi.anomalie) w(`${nm(x.nodo)} sotto ${nm(x.padre)} (porta ${x.porta || "non nota"}); allo stesso livello: ${x.altri.map(nm).join(", ")}`);
     }
   }
   return righeQuick().every((r) => r === "ok" || /^Page \d+: never used$/.test(r)) ? 0 : 1;

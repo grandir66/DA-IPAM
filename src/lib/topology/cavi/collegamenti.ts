@@ -126,8 +126,29 @@ const unisci = (x: Porta, y: Porta): Porta => (x.chiave !== null ? x : y.chiave 
 export const capo = (c: Pick<Collegamento, "a" | "b">, nodo: string): Porta => (c.a.nodo === nodo ? c.a : c.b);
 export const altroCapo = (c: Pick<Collegamento, "a" | "b">, nodo: string): Porta => (c.a.nodo === nodo ? c.b : c.a);
 const macDelBridge = (id: string | null): string | null => (id ? (id.split(".").pop() ?? "").toUpperCase() : null);
+/**
+ * Il nome nell'id di un segmento resta entro i 90 caratteri che le rotte accettano (`ID_SEGMENTO` di api-input.ts): un nome
+ * codificato più lungo (una porta col nome scelto, su un apparato senza elenco delle porte) si accorcia, mai a metà di un «%XX»,
+ * e prende in coda «~» e un'impronta del nome intero, così due nomi lunghi con lo stesso inizio restano due segmenti. Senza,
+ * l'id c'era nel modello ma ogni scrittura con quell'id (una mappa passo passo, «Togli dal segmento», la ★) era rifiutata
+ * (revisione del Task 8 di T3). Un nome entro il limite resta com'è: gli id già salvati non cambiano.
+ */
+const MAX_NOME_ID = 90;
+function impronta(s: string): string {
+  let h = 0x811c9dc5;   // FNV-1a a 32 bit: deterministica, senza dipendenze (cavi/ gira anche nella pagina)
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 0x01000193) >>> 0;
+  return h.toString(16).padStart(8, "0");
+}
+function nomeNellId(nome: string): string {
+  const intero = encodeURIComponent(nome);
+  if (intero.length <= MAX_NOME_ID) return intero;
+  let testa = intero.slice(0, MAX_NOME_ID - 9);
+  const p = testa.lastIndexOf("%");
+  if (p >= 0 && p > testa.length - 3) testa = testa.slice(0, p);
+  return `${testa}~${impronta(nome)}`;
+}
 /** La porta nell'id di un segmento (§13.7.3): l'indice, oppure «n-» più il nome normalizzato codificato; mai «|», un solo «:». */
-const idPorta = (p: Porta): string => (p.chiave?.startsWith("i:") ? p.chiave.slice(2) : `n-${encodeURIComponent(p.chiave ? p.chiave.slice(2) : normale(p.nome))}`);
+const idPorta = (p: Porta): string => (p.chiave?.startsWith("i:") ? p.chiave.slice(2) : `n-${nomeNellId(p.chiave ? p.chiave.slice(2) : normale(p.nome))}`);
 
 /**
  * Alias «seg:<apparato>:<porta>» di ogni membro gestito con la chiave → id di oggi del segmento (§13.7.3: un id salvato si
@@ -533,18 +554,36 @@ export function costruisciCollegamenti(prove: readonly Prova[], correzioni: read
   const neiFasci = new Set<Bozza>();
   for (const cavi of perCoppia.values()) {
     if (cavi.length < 2) continue;
-    const perLag = new Map<string, Bozza[]>();
-    for (const z of cavi) {
-      const la = statoCapo(z.a).lag, lb = statoCapo(z.b).lag;
-      const k = la !== null ? `a:${z.a.nodo}:${la}` : lb !== null ? `b:${z.b.nodo}:${lb}` : null;
-      if (k === null) continue;
-      const v = perLag.get(k) ?? [];
-      v.push(z);
-      perLag.set(k, v);
+    // La chiave del fascio letto non dipende dal verso del cavo (revisione del Task 6 di T3): un cavo costruito dall'altro capo ha
+    // i capi scambiati, e la chiave «a:‹nodo›» o «b:‹nodo›» di prima ne faceva due cavi. Ogni capo con un fascio letto dà la chiave
+    // «nodo|nome del fascio»; due cavi della coppia che ne condividono una sono membri dello stesso fascio (anche coi fatti LAG
+    // letti da un capo per un membro e dall'altro per un altro).
+    const chiaviDi = new Map(cavi.map((z) => [z, new Set([z.a, z.b].flatMap((p) => {
+      const l = statoCapo(p).lag;
+      return l === null ? [] : [`${p.nodo}|${normale(l)}`];
+    }))]));
+    const gruppi: Array<Set<string>> = [];
+    for (const ks of chiaviDi.values()) {
+      if (ks.size === 0) continue;
+      const unito = new Set(ks);
+      for (const g of gruppi.filter((x) => [...ks].some((k) => x.has(k)))) {
+        for (const k of g) unito.add(k);
+        gruppi.splice(gruppi.indexOf(g), 1);
+      }
+      gruppi.push(unito);
     }
-    for (const membri of perLag.values()) {
+    for (const g of gruppi) {
+      const membri = cavi.filter((z) => [...chiaviDi.get(z)!].some((k) => g.has(k)));
       if (membri.length < 2) continue;
-      fasci.set(membri[0], { membri, dedotto: false, lagA: statoCapo(membri[0].a).lag, lagB: statoCapo(membri[0].b).lag });
+      // Il nome del fascio su un capo: da qualunque membro l'abbia letto su quel nodo (il primo membro può essere visto dall'altro capo).
+      const lagSu = (nodo: string): string | null => {
+        for (const m of membri) {
+          const l = statoCapo(m.a.nodo === nodo ? m.a : m.b).lag;
+          if (l !== null) return l;
+        }
+        return null;
+      };
+      fasci.set(membri[0], { membri, dedotto: false, lagA: lagSu(membri[0].a.nodo), lagB: lagSu(membri[0].b.nodo) });
       for (const z of membri) neiFasci.add(z);
     }
     const liberi = cavi.filter((z) => !neiFasci.has(z));

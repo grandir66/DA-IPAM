@@ -155,6 +155,9 @@ export interface ModelloCavi {
   /** I collegamenti «dalle VM» non principali che non si disegnano (con `DALLE_VM_SOLO_DETTAGLI`): nei dettagli dell'hypervisor.
    * Nessuno è un `albero.via`; `albero.scelto` può nominarne uno (la porta radice o l'uplink di uno switch che vede solo le VM). */
   soloDettagli: Array<{ collegamento: Collegamento; ipervisore: string; altro: string; porta: string; vm: number }>;
+  /** Tutte le prove dall'ingresso, come le dà `proveDaInput` (prima delle regole): «Candidati per porta» (§13.4.6) le mostra porta
+   * per porta, anche quelle che non diventano un collegamento né uno scarto (gli altri apparati sentiti sulla porta di un segmento). */
+  prove: readonly Prova[];
 }
 
 const macDel = (id: string | null): string | null => (id ? (id.split(".").pop() ?? "").toLowerCase() : null);
@@ -235,6 +238,6 @@ export function costruisciModelloCavi(ing: IngressoCavi, t1: TopologyModel, opz:
   });
   return {
     collegamenti: disegnati, segmenti, albero, correzioniOrfane, schema: ing.schema, nonCalcolato: nonCalcolato(dalleVm), classi, ponti,
-    stessaRete: r.stessaRete, oltre: r.oltre, scartateBordo: r.scartateBordo, scartateVm: r.scartateVm, soloDettagli,
+    stessaRete: r.stessaRete, oltre: r.oltre, scartateBordo: r.scartateBordo, scartateVm: r.scartateVm, soloDettagli, prove: p.prove,
   };
 }

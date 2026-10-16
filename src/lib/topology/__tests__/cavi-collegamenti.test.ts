@@ -670,3 +670,26 @@ test("§13.9 (revisione del Task 4): la porta di un cavo ignorato è occupata so
   const r = collega(ingresso(t1, { vicini: lldpSnmp }));
   assert.deepEqual(fra(r.collegamenti, "dev:2", "dev:12").map((c) => capoDi(c, "dev:2").chiave), ["i:7"]);
 });
+
+// Revisione del Task 6 (16/10): la chiave del fascio letto dai fatti LAG dipendeva dal capo da cui era stato costruito il cavo
+// («a:‹nodo›» o «b:‹nodo›»): un fascio coi membri visti da capi opposti diventava due cavi. Sonda del Task 6: «stesso capo» →
+// fascio, «capi opposti» → cavo, cavo.
+test("§13.6.3 (revisione del Task 6): il fascio letto dai fatti LAG è lo stesso fascio da qualunque capo si vedano i suoi membri", () => {
+  const t1 = baseInput({
+    devices: [dev(2, { name: "SW-2", ...mk }), dev(3, { name: "SW-3", ...mk })],
+    ports: [...porte(2, [[2, "ether2", "10000 Mbps"], [3, "ether3", "10000 Mbps"]]), ...porte(3, [[12, "ether12", "10000 Mbps"], [13, "ether13", "10000 Mbps"]])],
+  });
+  const da = (d: number, p: string, altro: string, r: string) =>
+    vic({ device_id: d, local_port: `${p},bridge`, remote_device_name: altro, remote_port: `bridge/${r}`, source: "device", remote_platform: "MikroTik" });
+  const lag2 = [fp(2, "i:2", "ether2", { source: "device", lag_group: "bond1" }), fp(2, "i:3", "ether3", { source: "device", lag_group: "bond1" })];
+  const lag3 = [fp(3, "i:12", "ether12", { source: "device", lag_group: "bond7" }), fp(3, "i:13", "ether13", { source: "device", lag_group: "bond7" })];
+  const fasci = (vicini: ReturnType<typeof vic>[], fattiPorta: ReturnType<typeof fp>[]) =>
+    fra(collega(ingresso(t1, { vicini, fattiPorta })).collegamenti, "dev:2", "dev:3").map((c) => [c.genere, c.membri?.length ?? 1, c.fascio ?? null, c.velocitaMbps]);
+  const stesso = [da(2, "ether2", "SW-3", "ether12"), da(2, "ether3", "SW-3", "ether13")];
+  const opposti = [da(2, "ether2", "SW-3", "ether12"), da(3, "ether13", "SW-2", "ether3")];
+  const soloDal3 = [da(3, "ether12", "SW-2", "ether2"), da(3, "ether13", "SW-2", "ether3")];
+  assert.deepEqual(fasci(stesso, lag2), [["fascio", 2, { a: "bond1", b: null }, 20000]], "stesso capo");
+  assert.deepEqual(fasci(opposti, lag2), [["fascio", 2, { a: "bond1", b: null }, 20000]], "capi opposti: lo stesso fascio");
+  assert.deepEqual(fasci(soloDal3, lag2), [["fascio", 2, { a: null, b: "bond1" }, 20000]], "visti solo dal capo senza fatti LAG");
+  assert.deepEqual(fasci(opposti, [...lag2, ...lag3]), [["fascio", 2, { a: "bond1", b: "bond7" }, 20000]], "fatti LAG ai due capi");
+});

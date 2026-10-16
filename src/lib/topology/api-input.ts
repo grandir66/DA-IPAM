@@ -150,6 +150,20 @@ export function parsePrimaryDeleteBody(raw: unknown): Parsed<{ node_id: string }
   return r.success ? { ok: true, data: { node_id: r.data.node_id } } : { ok: false, error: first(r.error) };
 }
 
+/**
+ * GET /api/topology/candidati?nodo=… (T3, «Candidati per porta», spec §13.4.6): un nodo solo, nella forma delle mappe (anche un
+ * segmento), e nessun altro parametro (Zod strict: l'errore dell'oggetto vale anche per un parametro in più, in italiano).
+ */
+const candidatiQuerySchema = z.object({ nodo: NODE_ANY }, { error: "Richiesta non valida" }).strict();
+
+export function parseCandidatiQuery(params: URLSearchParams): Parsed<string> {
+  const chiavi = [...params.keys()];
+  if (!chiavi.includes("nodo")) return { ok: false, error: "Manca il nodo: ?nodo=dev:N" };
+  if (chiavi.filter((k) => k === "nodo").length > 1) return { ok: false, error: "Il nodo si indica una volta sola" };
+  const r = candidatiQuerySchema.safeParse(Object.fromEntries([...params].map(([k, v]) => [k, k === "nodo" ? v.trim() : v])));
+  return r.success ? { ok: true, data: r.data.nodo } : { ok: false, error: first(r.error) };
+}
+
 /** GET /api/topology/ports?node=…: il nodo di cui si vogliono le porte note. */
 export function parsePortsQuery(node: string | null): Parsed<string> {
   if (node === null || node.trim() === "") return { ok: false, error: "Manca il nodo: ?node=dev:N" };

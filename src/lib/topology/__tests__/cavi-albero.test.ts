@@ -674,3 +674,40 @@ test("l'invariante di primCavi sulle fixture anonime e sulle reti-campione: lo s
     primUgualeAlModello(costruisciModelloCavi(ingresso(t1), mod, { testaScelta: null }), mod);
   }
 });
+
+// ── Revisione del Task 5 di T3 ─────────────────────────────────────────────────────────────────────────────────────────────
+
+// Importante 1: due linee parallele fra la stessa coppia con la stessa chiave si spareggiavano su «da|a» (uguale per tutte e due)
+// e vinceva la prima dell'elenco. Il modello dà le linee ordinate per id, la pagina (Task 7) no: stesse linee, stesso albero (I39).
+test("primCavi: due linee pari fra la stessa coppia, date in ordine diverso, danno la stessa scelta", () => {
+  const linee = [linea("r1", "R", "S"), linea("x1", "S", "X"), linea("x2", "S", "X")];
+  const classi = { R: "infra", S: "infra", X: "infra" } as const;
+  assert.equal(prim(linee, classi).via.get("X")?.id, "x1");
+  assert.equal(prim([...linee].reverse(), classi).via.get("X")?.id, "x1", "in ordine inverso, la stessa linea");
+});
+
+// Importante 2 (decisione della sessione principale, §13.9 e Scelta 10): una ★ con tutte e due le porte vuote risultava sempre
+// «di prima», anche messa in T3 sull'uplink senza fili di un AP in mesh, che porte non ne ha: «Scegli il cavo» riscriveva la
+// stessa ★ e il giro non si chiudeva. Come «Ignora» a porte vuote, vale per il collegamento senza porte della coppia; se la coppia
+// non ne ha, è una ★ di prima e vale per il migliore (la prova «senza porte» qui sopra).
+test("§13.9: la ★ a porte vuote vale per il collegamento senza porte della coppia (AP in mesh), e non è «di prima»", () => {
+  const u = { vendor: "ubiquiti", via: "api" } as const;
+  const mesh = (primaries: ModelPrimaryRow[]) => rete(
+    [dev(6, { name: "AP-6", device_type: "access_point", controller_mac: "02:00:e8:00:06:00", ...u }),
+      dev(5, { name: "AP-5", device_type: "access_point", controller_mac: "02:00:e8:00:05:00", uplink_mac: "02:00:e8:00:06:00", uplink_type: "wireless", uplink_seen_at: "2026-10-13 03:00:00", ...u })],
+    [], { primaries },
+  );
+  const m = ombra(ingresso(mesh([{ node_id: "dev:5", other_node: "dev:6", node_port: "", other_port: "" }])), "dev:6");
+  const sf = fra(m, "dev:5", "dev:6");
+  assert.deepEqual(sf.map((c) => [c.genere, c.a.nome, c.b.nome]), [["senza_fili", "", ""]], "l'uplink senza fili non ha porte");
+  assert.deepEqual(m.albero.stelle, [{ nodo: "dev:5", altro: "dev:6", linea: sf[0].id, diPrima: false }]);
+});
+
+test("§13.9: la ★ a porte vuote sceglie la linea senza porte della coppia anche se un cavo visto è migliore", () => {
+  const add: LinkOverrideRow = { id: 1, action: "add", a_node: "dev:2", a_port: "", b_node: "dev:3", b_port: "", medium: null, created_by: "tecnico", created_at: "2026-10-14 08:00:00" };
+  const r = dueCavi({}, { overrides: [add] });
+  const vuota = fra(r.m, "dev:2", "dev:3").find((c) => c.a.nome === "" && c.b.nome === "");
+  assert.ok(vuota && r.cavo1, "fra S e X ci sono i due cavi visti e la linea a mano senza porte");
+  assert.equal(r.m.albero.via.get("dev:3")?.id, vuota.id, "la ★ vale per la linea senza porte, non per il cavo migliore");
+  assert.deepEqual(r.m.albero.stelle.map((s) => [s.linea, s.diPrima]), [[vuota.id, false]]);
+});

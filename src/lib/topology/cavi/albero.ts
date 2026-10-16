@@ -192,9 +192,12 @@ export function lineaDi(c: Collegamento): LineaAlbero {
 /**
  * Le ★ salvate, per collegamento (§13.9, I20). Da T3 la ★ vale per il collegamento con quelle porte (una porta vuota vale per
  * qualunque porta su quel lato); una ★ di prima (senza porte, o con porte che non indicano più un collegamento fra i due) vale
- * per il migliore della coppia, e i dettagli lo dicono (`diPrima`). Una ★ fra due oggetti che oggi non hanno collegamenti qui non
- * c'è: la dice il pannello («★ senza collegamento»). Le porte si confrontano per chiave, calcolata alla lettura (`portaSalvata`),
- * come le correzioni: una porta senza chiave non indica un collegamento.
+ * per il migliore della coppia, e i dettagli lo dicono (`diPrima`). Con tutte e due le porte vuote, come «Ignora» a porte vuote,
+ * vale per il collegamento senza porte della coppia, se c'è (l'uplink senza fili di un AP in mesh: la pagina scrive così la sua
+ * ★, e prima tornava sempre «di prima», con «Scegli il cavo» che riscriveva la stessa ★; revisione del Task 5); se non c'è, è
+ * una ★ di prima. Una ★ fra due oggetti che oggi non hanno collegamenti qui non c'è: la dice il pannello («★ senza
+ * collegamento»). Le porte si confrontano per chiave, calcolata alla lettura (`portaSalvata`), come le correzioni: una porta senza
+ * chiave non indica un collegamento.
  */
 export function risolviStelle(cs: readonly Collegamento[], primari: ReadonlyArray<Primario>, portaSalvata: (nodo: string, nome: string) => Porta | null): Stella[] {
   const out: Stella[] = [];
@@ -203,10 +206,11 @@ export function risolviStelle(cs: readonly Collegamento[], primari: ReadonlyArra
     if (fra.length === 0) continue;
     const pn = s.node_port.trim() ? portaSalvata(s.node_id, s.node_port) : null;
     const po = s.other_port.trim() ? portaSalvata(s.other_node, s.other_port) : null;
-    const combacia = (c: Collegamento): boolean => (pn !== null || po !== null)
-      && (pn === null || stessaPorta(pn, capo(c, s.node_id)))
+    const combacia = (c: Collegamento): boolean => (pn === null || stessaPorta(pn, capo(c, s.node_id)))
       && (po === null || stessaPorta(po, altroCapo(c, s.node_id)));
-    const esatto = migliore(fra.filter(combacia));
+    const senzaPorte = (c: Collegamento): boolean => capo(c, s.node_id).nome.trim() === "" && altroCapo(c, s.node_id).nome.trim() === "";
+    // `portaSalvata` dà null solo per una porta vuota: pn e po null = tutte e due le porte vuote.
+    const esatto = migliore(fra.filter(pn === null && po === null ? senzaPorte : combacia));
     out.push({ nodo: s.node_id, altro: s.other_node, linea: (esatto ?? migliore(fra)!).id, diPrima: esatto === undefined });
   }
   return out;
@@ -218,8 +222,11 @@ export function risolviStelle(cs: readonly Collegamento[], primari: ReadonlyArra
  * (`alberoCavi`) e la pagina (Task 7), con le stesse linee: stesso esito.
  */
 export function primCavi(ing: IngressoPrim): EsitoPrim {
+  // Le linee in ordine di id: due linee parallele con la stessa chiave si spareggiano su «da|a», uguale per tutte e due, e vinceva
+  // la prima dell'elenco. Il modello le dà già in quest'ordine; la pagina no (revisione del Task 5, I39).
+  const linee = [...ing.linee].sort((x, y) => cmp(x.id, y.id));
   const adj = new Map<string, LineaAlbero[]>();
-  for (const c of ing.linee) {
+  for (const c of linee) {
     if (!ing.visibili.has(c.a) || !ing.visibili.has(c.b)) continue;
     adj.set(c.a, [...(adj.get(c.a) ?? []), c]);
     adj.set(c.b, [...(adj.get(c.b) ?? []), c]);
@@ -234,7 +241,10 @@ export function primCavi(ing: IngressoPrim): EsitoPrim {
   };
   const altro = (c: LineaAlbero, n: string): string => (c.a === n ? c.b : c.a);
   // ★ (I20): vince sempre, se raggiungibile. Forza solo una linea fra quelle visibili del nodo (come prima di T3): una ★ su una
-  // linea che non c'è (fuori vista, o finita nei dettagli) non toglie all'hypervisor la sua regola.
+  // linea che non c'è (fuori vista, o finita nei dettagli) non toglie all'hypervisor la sua regola. Caso limite (revisione del
+  // Task 5): la ★ di un hypervisor su una linea «dalle VM» che non diventa `via` (l'altro capo si raggiunge solo da lui) finisce
+  // nei dettagli: nel modello la linea c'è e la ★ spegne la regola dell'hypervisor, sulla pagina la linea non c'è e la regola
+  // vale. Il padre può essere diverso fra traccia e schermo; con `DALLE_VM_SOLO_DETTAGLI` spenta (oggi) non succede.
   const forzati = new Map<string, string>();
   for (const [nodo, id] of ing.stelle) if ((adj.get(nodo) ?? []).some((c) => c.id === id)) forzati.set(nodo, id);
   // Punto 6: il principale dell'hypervisor (§12.5): prima il non vecchio, poi il non giù, poi il più veloce, poi più VM.

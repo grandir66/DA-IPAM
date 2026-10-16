@@ -23,7 +23,8 @@
  *      toglie dalla lista non torna dalla catena congelata (le tabelle vecchie
  *      restano piene fino alla 2g);
  *   7. un import riporta i segni del bundle: lì la conversione gira senza
- *      guardare il segno e senza chiavi dell'hub (`globali = null`);
+ *      chiavi dell'hub (`globali = null`), e con la cancellazione solo se il
+ *      segno del bundle non è chiuso (prove in `transfer/__tests__/roundtrip.test.ts`);
  *   8. la prova a vuoto sulla copia mostra le voci entrate e il confronto
  *      delle catene del motore.
  *

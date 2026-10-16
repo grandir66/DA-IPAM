@@ -214,31 +214,77 @@ test("import di un bundle di prima della 2c: linux → ssh, segno riscritto, esi
 });
 
 // Tappa 2d credenziali (T16): un bundle esportato prima della 2d porta le
-// catene vecchie per ruolo e il segno `credenziali_t2_catene` della sorgente.
-// Un import con cancellazione sostituisce tenant_settings, quindi il segno:
-// l'import converte le catene direttamente, senza chiavi dell'hub (gli id
-// dell'hub di destinazione non dicono niente sul bundle), e riscrive il segno
-// con l'esito, che va anche nella risposta.
-test("import di un bundle di prima della 2d: catena vecchia nella lista, segno riscritto, esito nella risposta", async () => {
-  process.env.ENCRYPTION_KEY = "A".repeat(64);
-  const { exportTenant } = await import("../export");
-  const { importTenant } = await import("../import");
-  const src = freshTenant();
-  const net = Number(src.prepare("INSERT INTO networks (cidr, name) VALUES ('10.9.0.0/24', 'LAN')").run().lastInsertRowid);
-  const cred = Number(src.prepare("INSERT INTO credentials (name, credential_type) VALUES ('Server', 'ssh')").run().lastInsertRowid);
-  src.prepare("INSERT INTO network_host_credentials (network_id, credential_id, role, sort_order) VALUES (?, ?, 'ssh', 0)").run(net, cred);
-  src.prepare("INSERT INTO tenant_settings (key, value) VALUES ('credenziali_t2_catene', 'done:2026-01-01T00:00:00.000Z:dal-bundle')").run();
-  const bundle = exportTenant({
-    tenantDb: src, hubDb: freshHub(),
-    options: { tenantCode: "DEFAULT", tiers: [], includeVault: false, passphrase: "trasporto-2d", exportedAt: "2026-10-16T10:00:00.000Z", appVersion: "test" },
-  });
-  const dst = freshTenant();
-  const res = importTenant({ bundle, tenantDb: dst, hubDb: freshHub(), options: { tenantCode: "DEFAULT", passphrase: "trasporto-2d", wipe: true } });
+// catene vecchie per ruolo e nessun segno `credenziali_t2_catene` (o uno
+// `errore:`, se la conversione della sorgente era fallita). Un import con
+// cancellazione sostituisce tenant_settings col bundle: l'import converte le
+// catene direttamente, senza chiavi dell'hub (gli id dell'hub di destinazione
+// non dicono niente sul bundle), e riscrive il segno con l'esito, che va anche
+// nella risposta.
+for (const segnoSorgente of [null, "errore:UNIQUE constraint failed"] as const) {
+  test(`import di un bundle di prima della 2d (segno ${segnoSorgente ?? "assente"}): catena vecchia nella lista, segno riscritto, esito nella risposta`, async () => {
+    process.env.ENCRYPTION_KEY = "A".repeat(64);
+    const { exportTenant } = await import("../export");
+    const { importTenant } = await import("../import");
+    const src = freshTenant();
+    const net = Number(src.prepare("INSERT INTO networks (cidr, name) VALUES ('10.9.0.0/24', 'LAN')").run().lastInsertRowid);
+    const cred = Number(src.prepare("INSERT INTO credentials (name, credential_type) VALUES ('Server', 'ssh')").run().lastInsertRowid);
+    src.prepare("INSERT INTO network_host_credentials (network_id, credential_id, role, sort_order) VALUES (?, ?, 'ssh', 0)").run(net, cred);
+    if (segnoSorgente) src.prepare("INSERT INTO tenant_settings (key, value) VALUES ('credenziali_t2_catene', ?)").run(segnoSorgente);
+    const bundle = exportTenant({
+      tenantDb: src, hubDb: freshHub(),
+      options: { tenantCode: "DEFAULT", tiers: [], includeVault: false, passphrase: "trasporto-2d", exportedAt: "2026-10-16T10:00:00.000Z", appVersion: "test" },
+    });
+    const dst = freshTenant();
+    const res = importTenant({ bundle, tenantDb: dst, hubDb: freshHub(), options: { tenantCode: "DEFAULT", passphrase: "trasporto-2d", wipe: true } });
 
-  const lista = dst.prepare("SELECT credential_id FROM network_credentials WHERE network_id = ?").all(net) as Array<{ credential_id: number }>;
-  assert.deepEqual(lista.map((r) => r.credential_id), [cred]);
-  const segno = (dst.prepare("SELECT value FROM tenant_settings WHERE key = 'credenziali_t2_catene'").get() as { value: string }).value;
-  assert.match(segno, /^done:.*lista=1/);
-  assert.equal(res.conversioni.credenziali_t2_catene?.segno, segno);
-  assert.match(res.conversioni.credenziali_t2_catene?.dettaglio ?? "", /1 voci nella lista/);
-});
+    const lista = dst.prepare("SELECT credential_id FROM network_credentials WHERE network_id = ?").all(net) as Array<{ credential_id: number }>;
+    assert.deepEqual(lista.map((r) => r.credential_id), [cred]);
+    const segno = (dst.prepare("SELECT value FROM tenant_settings WHERE key = 'credenziali_t2_catene'").get() as { value: string }).value;
+    assert.match(segno, /^done:.*lista=1/);
+    assert.equal(res.conversioni.credenziali_t2_catene?.segno, segno);
+    assert.match(res.conversioni.credenziali_t2_catene?.dettaglio ?? "", /1 voci nella lista/);
+  });
+}
+
+// Revisione della 2d (16/10): un bundle esportato DOPO la 2d porta le liste già
+// convertite, le catene vecchie congelate e il segno chiuso della sorgente.
+// Riconvertire riporterebbe nella lista le voci che l'utente aveva tolto (e le
+// righe host dei pin), contro la regola per cui col segno chiuso la
+// conversione non si richiama (piano, «Casi da non dimenticare» 9). Con la
+// cancellazione il segno in tenant_settings è quello del bundle: chiuso → non
+// si converte, il segno resta, e la risposta lo dice.
+for (const segnoSorgente of ["done", "parziale"] as const) {
+  test(`import con cancellazione di un bundle di dopo la 2d (segno ${segnoSorgente}:): la voce tolta dalla lista non torna, il segno del bundle resta`, async () => {
+    process.env.ENCRYPTION_KEY = "A".repeat(64);
+    const { exportTenant } = await import("../export");
+    const { importTenant } = await import("../import");
+    const { convertiCateneVecchie, segnoCatene } = await import("@/lib/credentials/converti-catene");
+    const src = freshTenant();
+    const net = Number(src.prepare("INSERT INTO networks (cidr, name) VALUES ('10.9.0.0/24', 'LAN')").run().lastInsertRowid);
+    const host = Number(src.prepare("INSERT INTO hosts (network_id, ip) VALUES (?, '10.9.0.5')").run(net).lastInsertRowid);
+    const cred = Number(src.prepare("INSERT INTO credentials (name, credential_type) VALUES ('Server', 'ssh')").run().lastInsertRowid);
+    src.prepare("INSERT INTO network_host_credentials (network_id, credential_id, role, sort_order) VALUES (?, ?, 'ssh', 0)").run(net, cred);
+    src.prepare("INSERT INTO host_detect_credential (host_id, role, credential_id) VALUES (?, 'ssh', ?)").run(host, cred);
+    // La 2d all'apertura della sorgente: conversione e segno.
+    const esito = convertiCateneVecchie(src, null, { aVuoto: false });
+    const segnoBundle = segnoSorgente === "done" ? segnoCatene(esito) : "parziale:2026-10-16T08:00:00.000Z:lista=1,saltate=1";
+    src.prepare("INSERT INTO tenant_settings (key, value) VALUES ('credenziali_t2_catene', ?)").run(segnoBundle);
+    // L'utente toglie la voce dalla lista della rete e la riga nata dal pin.
+    src.prepare("DELETE FROM network_credentials WHERE network_id = ?").run(net);
+    src.prepare("DELETE FROM host_credentials WHERE host_id = ?").run(host);
+    const bundle = exportTenant({
+      tenantDb: src, hubDb: freshHub(),
+      options: { tenantCode: "DEFAULT", tiers: ["asset"], includeVault: false, passphrase: "trasporto-2d", exportedAt: "2026-10-20T10:00:00.000Z", appVersion: "test" },
+    });
+    const dst = freshTenant();
+    const res = importTenant({ bundle, tenantDb: dst, hubDb: freshHub(), options: { tenantCode: "DEFAULT", passphrase: "trasporto-2d", wipe: true } });
+
+    assert.equal((dst.prepare("SELECT COUNT(*) AS n FROM hosts").get() as { n: number }).n, 1, "l'host non è arrivato col bundle");
+    assert.deepEqual(dst.prepare("SELECT credential_id FROM network_credentials WHERE network_id = ?").all(net), [], "la voce tolta dalla lista è tornata");
+    assert.deepEqual(dst.prepare("SELECT credential_id FROM host_credentials WHERE host_id = ?").all(host), [], "la riga host tolta è tornata dal pin");
+    const segno = (dst.prepare("SELECT value FROM tenant_settings WHERE key = 'credenziali_t2_catene'").get() as { value: string }).value;
+    assert.equal(segno, segnoBundle);
+    assert.equal(res.conversioni.credenziali_t2_catene?.segno, segnoBundle);
+    assert.match(res.conversioni.credenziali_t2_catene?.dettaglio ?? "", /già nella sorgente del bundle/);
+  });
+}

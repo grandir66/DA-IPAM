@@ -181,3 +181,34 @@ test("guard: ogni colonna cifrata nota è nel rekey-set effettivo (heuristic ∪
   }
 });
 
+
+// Tappa 2c credenziali (T11): un bundle esportato prima della 2c porta voci
+// `linux` e il segno `credenziali_t2_tipi` della sorgente (o nessuno). Un import
+// con cancellazione sostituisce tenant_settings col contenuto del bundle, quindi
+// il segno: l'import normalizza i tipi direttamente e riscrive il segno con
+// l'esito, che si legge anche nella risposta. Senza, all'apertura dopo la
+// conversione non ripartirebbe (segno del bundle) e resterebbero voci `linux`.
+test("import di un bundle di prima della 2c: linux → ssh, segno riscritto, esito nella risposta", async () => {
+  process.env.ENCRYPTION_KEY = "A".repeat(64);
+  const { exportTenant } = await import("../export");
+  const { importTenant } = await import("../import");
+  const cryptoA = await import("@/lib/crypto");
+  const src = freshTenant();
+  src.prepare("INSERT INTO credentials (name, credential_type, encrypted_username, encrypted_password) VALUES (?, ?, ?, ?)").run(
+    "Server Linux", "linux", cryptoA.encrypt("root"), cryptoA.encrypt("p"),
+  );
+  src.prepare("INSERT INTO tenant_settings (key, value) VALUES ('credenziali_t2_tipi', 'done:2026-01-01T00:00:00.000Z:dal-bundle')").run();
+  const bundle = exportTenant({
+    tenantDb: src, hubDb: freshHub(),
+    options: { tenantCode: "DEFAULT", tiers: [], includeVault: false, passphrase: "trasporto-2c", exportedAt: "2026-10-16T10:00:00.000Z", appVersion: "test" },
+  });
+  const dst = freshTenant();
+  const res = importTenant({ bundle, tenantDb: dst, hubDb: freshHub(), options: { tenantCode: "DEFAULT", passphrase: "trasporto-2c", wipe: true } });
+
+  assert.equal((dst.prepare("SELECT credential_type FROM credentials").get() as { credential_type: string }).credential_type, "ssh");
+  const segno = (dst.prepare("SELECT value FROM tenant_settings WHERE key = 'credenziali_t2_tipi'").get() as { value: string }).value;
+  assert.match(segno, /^done:.*linux_ssh=1/);
+  assert.notEqual(segno, "done:2026-01-01T00:00:00.000Z:dal-bundle");
+  assert.equal(res.conversioni.credenziali_t2_tipi?.segno, segno);
+  assert.match(res.conversioni.credenziali_t2_tipi?.dettaglio ?? "", /linux → ssh 1/);
+});

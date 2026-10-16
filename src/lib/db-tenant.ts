@@ -24,6 +24,9 @@ import { VENDOR_PLACEHOLDER_RE } from "./attribution/emitters";
 import { ipSortKey, sqlOrderByDhcpLeases, sqlOrderByNetworks, type SortDirection } from "./table-sort";
 import { decrypt, safeDecrypt } from "./crypto";
 import { convertiCommunityInlineSnmp } from "./credentials/converti-community-inline";
+import { descriviRicostruzione, descriviStato, migraCredenzialiTipi, statoCredenziali } from "./credentials/migra-credenziali-tipi";
+import { descriviNormalizza, normalizzaTipiCredenziali, segnoTipi } from "./credentials/normalizza-tipi";
+import { conversioneChiusa, leggiSegno, scriviSegno, segnoErrore, SEGNO_TIPI } from "./credentials/segni-t2";
 import { migraAppleMacos } from "./devices/migra-apple-macos";
 import { randomUUID } from "crypto";
 import { inferIpAssignment, resolveAdDhcpLeaseForHost, resolveDhcpLeaseForHost } from "./ip-assignment";
@@ -1419,7 +1422,10 @@ export function getTenantDb(tenantCode: string): Database.Database {
     // Fase 4b Task 2 — colonne SNMPv3 completo su credentials (§7.1): niente
     // CHECK sui protocolli (validati in TS da buildV3Options), idempotente
     // come il pattern attrCols sopra. Tappa 1 credenziali (15/10): `port`,
-    // NULL = porta standard del protocollo.
+    // NULL = porta standard del protocollo. Tappa 2c (T11): metodo d'accesso
+    // (NULL = il primo del tipo, tipi.ts) e chiave SSH con la sua passphrase.
+    // Qui, prima della ricostruzione senza CHECK in fondo a getTenantDb: un
+    // DEFAULT con lo schema vecchio arriva senza `port`.
     const credCols = newDb.prepare("PRAGMA table_info(credentials)").all() as Array<{ name: string }>;
     const credColsNuove: Array<{ name: string; sql: string }> = [
       { name: "encrypted_auth_key", sql: "ALTER TABLE credentials ADD COLUMN encrypted_auth_key TEXT" },
@@ -1428,6 +1434,9 @@ export function getTenantDb(tenantCode: string): Database.Database {
       { name: "priv_protocol", sql: "ALTER TABLE credentials ADD COLUMN priv_protocol TEXT" },
       { name: "security_level", sql: "ALTER TABLE credentials ADD COLUMN security_level TEXT" },
       { name: "port", sql: "ALTER TABLE credentials ADD COLUMN port INTEGER" },
+      { name: "auth_method", sql: "ALTER TABLE credentials ADD COLUMN auth_method TEXT" },
+      { name: "encrypted_private_key", sql: "ALTER TABLE credentials ADD COLUMN encrypted_private_key TEXT" },
+      { name: "encrypted_key_passphrase", sql: "ALTER TABLE credentials ADD COLUMN encrypted_key_passphrase TEXT" },
     ];
     for (const col of credColsNuove) {
       if (!credCols.some((c) => c.name === col.name)) {
@@ -1850,6 +1859,36 @@ export function getTenantDb(tenantCode: string): Database.Database {
     }
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: conversione community SNMP inline fallita:`, e);
+  }
+
+  // Tappa 2c credenziali (T11): credentials senza CHECK sui tipi, poi i tipi per
+  // esteso (linux → ssh, SNMP v3 come tipo, ibride e v3 vecchie divise). Dopo
+  // gli ALTER di credColsNuove e dopo le altre conversioni delle credenziali.
+  // Col segno done:/parziale: non si richiama più; senza segno o con errore: si
+  // riprova all'apertura dopo. Il journal ha il prima/dopo sullo stesso DB
+  // (righe, figli per colonna, violazioni, seq): è quello che si controlla al
+  // rilascio (procedura R, passo 6). Se fallisce il tenant si apre lo stesso.
+  try {
+    if (!conversioneChiusa(leggiSegno(newDb, SEGNO_TIPI))) {
+      const prima = statoCredenziali(newDb);
+      const ricostruzione = migraCredenzialiTipi(newDb);
+      const esito = normalizzaTipiCredenziali(newDb);
+      const dopo = statoCredenziali(newDb);
+      const segno = segnoTipi(esito);
+      scriviSegno(newDb, SEGNO_TIPI, segno);
+      const riga =
+        `[db-tenant] ${tenantCode}: ${SEGNO_TIPI} ${segno}; ${descriviRicostruzione(ricostruzione)}; ` +
+        `prima ${descriviStato(prima)}; dopo ${descriviStato(dopo)}; ${descriviNormalizza(esito)}`;
+      if (esito.lasciate.length > 0) console.warn(riga);
+      else console.info(riga);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: ${SEGNO_TIPI} fallita (ROLLBACK), si riprova alla prossima apertura:`, e);
+    try {
+      scriviSegno(newDb, SEGNO_TIPI, segnoErrore(e));
+    } catch (e2) {
+      console.error(`[db-tenant] ${tenantCode}: ${SEGNO_TIPI}, segno d'errore non scritto:`, e2);
+    }
   }
 
   // Topologia T2 (spec §13.5.7): fatti delle letture in più. Per ultima, dopo le ricostruzioni di network_devices

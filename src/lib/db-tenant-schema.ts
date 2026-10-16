@@ -194,9 +194,17 @@ CREATE INDEX IF NOT EXISTS idx_host_class_hist_host ON host_classification_histo
 CREATE TABLE IF NOT EXISTS credentials (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
-  credential_type TEXT NOT NULL CHECK(credential_type IN ('ssh', 'snmp', 'api', 'windows', 'linux')),
+  -- Tappa 2c credenziali (ADR 0017): niente CHECK sul tipo. I tipi validi
+  -- stanno in src/lib/credentials/tipi.ts e li controlla il CRUD: un tipo nuovo
+  -- non chiede di ricostruire la tabella più referenziata del tenant.
+  credential_type TEXT NOT NULL,
+  -- Metodo d'accesso (tipi.ts, METODI_PER_TIPO); NULL = il primo del tipo.
+  auth_method TEXT,
   encrypted_username TEXT,
   encrypted_password TEXT,
+  -- Chiave SSH (metodo «chiave») e la sua passphrase, facoltativa.
+  encrypted_private_key TEXT,
+  encrypted_key_passphrase TEXT,
   -- SNMPv3 completo (Fase 4b Task 2, §7.1): niente CHECK sui protocolli (non
   -- estendibili senza migrazione, vedi ADR pattern rebuild) — validati in
   -- TypeScript da buildV3Options (src/lib/protocols/snmpv3.ts).

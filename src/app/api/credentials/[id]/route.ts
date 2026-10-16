@@ -34,6 +34,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         // un indicatore booleano di presenza per la UI ("chiave già impostata").
         encrypted_auth_key: credential.encrypted_auth_key ? "●●●●●●●●" : null,
         encrypted_priv_key: credential.encrypted_priv_key ? "●●●●●●●●" : null,
+        encrypted_private_key: credential.encrypted_private_key ? "●●●●●●●●" : null,
+        encrypted_key_passphrase: credential.encrypted_key_passphrase ? "●●●●●●●●" : null,
         ...(username != null ? { username } : {}),
       });
     } catch (error) {
@@ -70,6 +72,8 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
         encrypted_password: credential.encrypted_password ? "●●●●●●●●" : null,
         encrypted_auth_key: credential.encrypted_auth_key ? "●●●●●●●●" : null,
         encrypted_priv_key: credential.encrypted_priv_key ? "●●●●●●●●" : null,
+        encrypted_private_key: credential.encrypted_private_key ? "●●●●●●●●" : null,
+        encrypted_key_passphrase: credential.encrypted_key_passphrase ? "●●●●●●●●" : null,
       });
     } catch (error) {
       console.error("Error updating credential:", error);

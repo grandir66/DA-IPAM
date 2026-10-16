@@ -6,6 +6,8 @@ import { readContainer, deriveTransportKey, decryptBuffer, decryptFieldWithKey }
 import { tableSpec, TENANT_TABLES } from "./table-registry";
 import { writableColumns, rekeyColumns } from "./schema-introspect";
 import { encrypt } from "@/lib/crypto";
+import { descriviNormalizza, normalizzaTipiCredenziali, segnoTipi } from "@/lib/credentials/normalizza-tipi";
+import { scriviSegno, segnoErrore, SEGNO_TIPI } from "@/lib/credentials/segni-t2";
 
 export interface ImportArgs {
   bundle: Buffer;
@@ -42,7 +44,7 @@ export function importTenant(args: ImportArgs): ImportResult {
     byTable.get(tbl)!.push(row);
   }
 
-  const result: ImportResult = { tables: {}, profilesMerged: 0, vaultMerged: 0, rekeyedSecrets: 0, fkViolations: 0 };
+  const result: ImportResult = { tables: {}, profilesMerged: 0, vaultMerged: 0, rekeyedSecrets: 0, fkViolations: 0, conversioni: {} };
 
   // --- Import tabelle TENANT (replace) in un'unica transazione ---
   // PRAGMA foreign_keys è no-op dentro una transazione aperta: il toggle va FUORI
@@ -71,6 +73,30 @@ export function importTenant(args: ImportArgs): ImportResult {
     tenantTx();
   } finally {
     tenantDb.pragma("foreign_keys = ON");
+  }
+
+  // Tappa 2c credenziali (T11): il bundle può venire da prima della 2c (voci
+  // `linux`, `snmp` col livello SNMPv3), e un import con cancellazione ha
+  // sostituito tenant_settings col contenuto del bundle, segni compresi. Qui la
+  // normalizzazione si chiama direttamente, senza guardare il segno (i dati sono
+  // quelli del bundle, o quelli uniti), e il segno si riscrive con l'esito, che
+  // va anche nella risposta: con un'unione quello che cambia non passa in
+  // silenzio. Se fallisce i dati restano importati, il segno dice errore: e la
+  // conversione si riprova alla prossima apertura del tenant.
+  try {
+    const esito = normalizzaTipiCredenziali(tenantDb);
+    const segno = segnoTipi(esito);
+    scriviSegno(tenantDb, SEGNO_TIPI, segno);
+    result.conversioni[SEGNO_TIPI] = { segno, dettaglio: descriviNormalizza(esito) };
+  } catch (e) {
+    console.error(`[transfer] import: ${SEGNO_TIPI} fallita, si riprova alla prossima apertura del tenant:`, e);
+    const segno = segnoErrore(e);
+    try {
+      scriviSegno(tenantDb, SEGNO_TIPI, segno);
+    } catch (e2) {
+      console.error(`[transfer] import: ${SEGNO_TIPI}, segno d'errore non scritto:`, e2);
+    }
+    result.conversioni[SEGNO_TIPI] = { segno, dettaglio: "normalizzazione dei tipi delle credenziali non eseguita" };
   }
 
   // --- Import tabelle HUB (merge, non distruttivo) ---

@@ -71,6 +71,11 @@ export interface ImportResult {
   vaultMerged: number;
   rekeyedSecrets: number;
   fkViolations: number;
+  /**
+   * Conversioni rilanciate dopo l'import (tappa 2 credenziali), per segno di
+   * `tenant_settings`: il valore scritto e cosa hanno cambiato, per id.
+   */
+  conversioni: Record<string, { segno: string; dettaglio: string }>;
 }
 
 export const BUNDLE_FORMAT = "da-ipam-tenant-bundle" as const;

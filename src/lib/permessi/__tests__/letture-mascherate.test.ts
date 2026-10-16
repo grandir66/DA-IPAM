@@ -87,8 +87,10 @@ const SCHEMA = leggi("src/lib/db-tenant-schema.ts");
 test("schema: le colonne cifrate delle credenziali si leggono (se cambiano, la prova si rilegge)", () => {
   assert.deepEqual(colonneCifrate(SCHEMA, "credentials"), [
     "encrypted_auth_key",
+    "encrypted_key_passphrase",
     "encrypted_password",
     "encrypted_priv_key",
+    "encrypted_private_key",
     "encrypted_username",
   ]);
   assert.deepEqual(colonneCifrate(SCHEMA, "device_credential_bindings"), ["inline_encrypted_password"]);
@@ -106,7 +108,7 @@ export async function GET() {
 }
 `;
   assert.deepEqual(colonneNonMascherate(finto, colonneCifrate(SCHEMA, "credentials")), [
-    ["encrypted_auth_key", "encrypted_priv_key"],
+    ["encrypted_auth_key", "encrypted_key_passphrase", "encrypted_priv_key", "encrypted_private_key"],
   ]);
 });
 

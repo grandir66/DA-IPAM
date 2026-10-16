@@ -19,6 +19,8 @@ export async function GET() {
         // servono alla UI per precompilare la select in modifica.
         encrypted_auth_key: c.encrypted_auth_key ? "●●●●●●●●" : null,
         encrypted_priv_key: c.encrypted_priv_key ? "●●●●●●●●" : null,
+        encrypted_private_key: c.encrypted_private_key ? "●●●●●●●●" : null,
+        encrypted_key_passphrase: c.encrypted_key_passphrase ? "●●●●●●●●" : null,
       }));
       // v0.2.642 audit perf UI7: cache client 60s + SWR 5min su credenziali
       // mascherate (sono read-mostly, mutate solo dalla UI Settings).
@@ -79,6 +81,8 @@ export async function POST(request: Request) {
         encrypted_password: credential.encrypted_password ? "●●●●●●●●" : null,
         encrypted_auth_key: credential.encrypted_auth_key ? "●●●●●●●●" : null,
         encrypted_priv_key: credential.encrypted_priv_key ? "●●●●●●●●" : null,
+        encrypted_private_key: credential.encrypted_private_key ? "●●●●●●●●" : null,
+        encrypted_key_passphrase: credential.encrypted_key_passphrase ? "●●●●●●●●" : null,
       }, { status: 201 });
     } catch (error) {
       console.error("Error creating credential:", error);

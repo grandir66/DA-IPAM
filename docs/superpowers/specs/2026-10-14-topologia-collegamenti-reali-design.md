@@ -2364,6 +2364,20 @@ Il prototipo di lavoro (fuori dal repo, nella cartella di lavoro dell'indagine) 
 sede 1; per l'hub non riproduce l'albero di oggi, perché i tre hypervisor cambiano padre già con la correzione rapida
 (H9). Poi mappe salvate (oggetti e ritocchi); a schermo e in stampa a 1920 e 1280, in verticale e in orizzontale.
 
+**Stato (16/10):** pronta sul ramo `topologia/collegamenti-t3` (ADR 0020), **non rilasciata**: la mappa nuova nasce
+spenta per cliente (`topologia.mappa.cavi`). Misure sulle copie (Task 13): spento = T1 bit per bit, impronta uguale
+sull'hub e sul cliente A, anche dopo i criteri A-D (0 padri e 0 conteggi diversi); acceso in memoria, hub 1 radice,
+0 anomalie, 6 fasci, 4 padri diversi, 15 ms; cliente A 1 radice, 1 anomalia (core 2, C15), 3 cavi bloccati, tunnel
+bloccato, segmento della WAN, 4 padri diversi, 37 ms (C17). Righe 1-11, 13, 14 della tabella 13.3.1 come attese, la 12
+nel caso «senza salto». La misura ha trovato quattro criteri, ora nel modello: A (una porta che sente due apparati non
+dà un cavo), B (il bond è il suo fascio), C (router e firewall in VM dentro il loro hypervisor), D (due porte omonime
+per indice); e ha deciso `DALLE_VM_SOLO_DETTAGLI = true` (2 casi sul cliente A, 0 sull'hub). A schermo (Task 14, 1280
+e 1920 px, copie locali): nessun difetto bloccante; a interruttore spento l'hash di nodi e tracciati è uguale in tutte
+le viste e `GET /api/topology/model` identico dopo un ciclo acceso-spento (521 nodi, 125 linee); acceso 522 nodi e 141
+linee sul cliente A, 235 e 52 sull'hub, nessun `mappaErrore`. Da sistemare prima di accendere: la scritta «+N apparati
+non gestiti» del segmento si sovrappone all'etichetta della porta del nodo sotto (hub). Il lettore MSTP (MK7) viaggia
+col rilascio.
+
 **Conferme**: bozza, una revisione finale, cancello una volta, numeri a Riccardo, conferma. Il rilascio è spento;
 l'accensione è per cliente, prima l'hub e poi il cliente A, ognuna con la sua conferma e solo quando ogni differenza
 di «Cosa cambierebbe con la mappa nuova» è spiegata (13.15, punto 5): appena lo è, senza aspettare una data

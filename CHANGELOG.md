@@ -4,6 +4,30 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-16 · errori e operazioni lunghe nell'interfaccia dei moduli
+
+Passo 2 del piano di solidità del 16/10. Perché: nella pagina Moduli un errore si vedeva come uno stato («Docker non
+trovato», «Non configurato», «Non installato», scheda «Disabilitato») e il polling di un'installazione con la sessione
+scaduta, il servizio riavviato o la rete giù girava per sempre senza dire niente.
+
+### Modifiche
+
+- **Caricamenti con `fetchJson` + `LoadError`** in `integration-card.tsx` e `modules-tab.tsx` (stato di Docker, moduli
+  opzionali, Network Services, configurazione di LibreNMS/Graylog/Loki): con un errore compare il riquadro «Impossibile
+  caricare…» con «Riprova»; durante il caricamento «Caricamento…», non «Non installato».
+- **Polling dell'installazione** (integrazioni e Docker) da un modulo puro, `src/lib/integrations/polling-job.ts`, e
+  dall'hook `useJobPolling` (un giro alla volta, fermo all'uscita dalla pagina). 401 → «Sessione scaduta», polling fermo;
+  404 → «Esito sconosciuto: il servizio è stato riavviato», polling fermo; rete giù o 5xx → messaggio col tentativo
+  («tentativo 2 di 5»), e al quinto di fila polling fermo col perché. Il messaggio resta accanto al log.
+- **Un solo `toggleServizio`** (`src/lib/network-services/toggle-servizio.ts`) per Network Services e DNS: non lancia
+  mai, dà sempre un messaggio; a schermo resta lo stato di prima finché la rilettura del bridge non lo cambia.
+- **`job-store.ts`**: log tenuto alle ultime 500 righe (la prima dice quante ne mancano) e job finiti tolti dopo un'ora,
+  alla prima creazione o lettura dell'elenco. L'esecutore fuori processo resta nella tappa 4 del piano del 12/10.
+
+### Prove
+
+- `polling-job.test.ts` (200 in corso e finito, 401, 404, 500 fino alla soglia, rete giù, conto azzerato, corpo strano),
+  `job-store.test.ts` (tetto del log, pulizia), `toggle-servizio.test.ts` (riuscito, 502, ok:false, 401, rete giù).
 ## [Non rilasciato] — 2026-10-16 · lo stato dell'aggiornamento nel segnale verso DA-Link
 
 Passo 1d del piano di solidità (metà DA-IPAM; la metà DA-Link è in DA-Link, con le email ad allarmiDA@domarc.it).

@@ -9,10 +9,11 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { BridgeStatus } from "@/lib/network-services/client";
+import { toggleServizio, type ServizioRete } from "@/lib/network-services/toggle-servizio";
 
 import { NetworkServicesSettings } from "./network-services-setup";
 
-type ServiceKey = "resolver" | "adblock" | "dns" | "dhcp";
+type ServiceKey = ServizioRete;
 
 interface Props {
   apiBase: string;
@@ -80,28 +81,12 @@ export function NetworkServicesClient({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function toggleService(svc: ServiceKey, enable: boolean) {
+  function toggleService(svc: ServiceKey, enable: boolean) {
     startTransition(async () => {
-      const r = await fetch(`/api/network-services/toggle/${svc}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enable }),
-      });
-      const data = (await r.json()) as {
-        ok?: boolean;
-        error?: string;
-        results?: Array<{ unit: string; out?: string }>;
-      };
-      if (!r.ok || data.ok === false) {
-        const detail =
-          data.error ||
-          data.results?.map((x) => `${x.unit}: ${x.out ?? "?"}`).join(" · ") ||
-          r.statusText;
-        toast.error(`Toggle ${svc} fallito: ${detail}`);
-        await refreshAll();
-        return;
-      }
-      toast.success(`${SERVICE_META[svc].label} ${enable ? "abilitato" : "disabilitato"}`);
+      // Non lancia mai; a schermo resta lo stato di prima finché la rilettura non lo cambia.
+      const esito = await toggleServizio(svc, enable, SERVICE_META[svc].label);
+      if (esito.ok) toast.success(esito.messaggio);
+      else toast.error(esito.messaggio);
       await refreshAll();
     });
   }

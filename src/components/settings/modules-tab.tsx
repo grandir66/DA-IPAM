@@ -1,7 +1,7 @@
 "use client";
 import { parseDbDate } from "@/lib/db-date";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -45,7 +45,10 @@ import { Nis2ToggleCard } from "./nis2-toggle-card";
 import { ModuleJsonImport } from "./module-json-import";
 import { IntegrationViewer } from "@/components/integrations/integration-viewer";
 import { CredentialsVaultPanel } from "./credentials-vault-panel";
-import type { InstallJob } from "@/lib/integrations/types";
+import { fetchJson } from "@/lib/fetch-json";
+import { LoadError } from "@/components/shared/load-error";
+import { useJobPolling } from "@/hooks/use-job-polling";
+import type { PassoPolling } from "@/lib/integrations/polling-job";
 import type { ModuleKey } from "@/lib/modules/registry";
 import {
   UNINSTALL_COPY,
@@ -124,66 +127,62 @@ export function ModulesTab({ isAdmin }: { isAdmin: boolean }) {
 
   // ── Docker availability (per le integrazioni Docker-managed) ───────
   const [dockerAvailable, setDockerAvailable] = useState<boolean | null>(null);
+  // Errore nel leggere lo stato di Docker: non è «Docker non trovato».
+  const [dockerError, setDockerError] = useState<string | null>(null);
   const [installingDocker, setInstallingDocker] = useState(false);
   const [meshInstallOpen, setMeshInstallOpen] = useState(false);
-  const [dockerInstallJob, setDockerInstallJob] = useState<InstallJob | null>(null);
-  const dockerPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const checkDocker = useCallback(() => {
-    fetch("/api/integrations/docker-status")
-      .then((r) => r.json())
-      .then((d: { available: boolean }) => setDockerAvailable(d.available))
-      .catch(() => setDockerAvailable(false));
+  const checkDocker = useCallback(async () => {
+    const r = await fetchJson<{ available: boolean }>("/api/integrations/docker-status", { cache: "no-store" });
+    if (!r.ok) {
+      setDockerError(r.message);
+      return;
+    }
+    setDockerError(null);
+    setDockerAvailable(r.data.available === true);
   }, []);
 
   useEffect(() => {
-    checkDocker();
-    return () => {
-      if (dockerPollRef.current) clearInterval(dockerPollRef.current);
-    };
+    void checkDocker();
   }, [checkDocker]);
+
+  const onFineDocker = (passo: PassoPolling) => {
+    setInstallingDocker(false);
+    if (passo.esito === "finito" && passo.job) {
+      if (passo.job.phase === "done") {
+        toast.success("Docker installato — ricarica la pagina");
+        void checkDocker();
+      } else {
+        toast.error(`Errore installazione Docker: ${passo.job.error ?? "sconosciuto"}`);
+      }
+      return;
+    }
+    // Fermo senza esito: il messaggio resta anche accanto al log.
+    if (passo.messaggio) toast.error(passo.messaggio);
+    if (passo.esito === "esito_sconosciuto") void checkDocker();
+  };
+  const {
+    job: dockerInstallJob,
+    avviso: dockerJobAvviso,
+    attivo: dockerJobAttivo,
+    avvia: avviaPollingDocker,
+  } = useJobPolling(onFineDocker);
 
   const handleInstallDocker = async () => {
     setInstallingDocker(true);
-    setDockerInstallJob(null);
-    try {
-      const res = await fetch("/api/integrations/install-docker", { method: "POST" });
-      const data = (await res.json()) as { jobId?: string; error?: string };
-      if (!res.ok || !data.jobId) {
-        toast.error(data.error ?? "Errore avvio installazione Docker");
-        setInstallingDocker(false);
-        return;
-      }
-      const jobId = data.jobId;
-      if (dockerPollRef.current) clearInterval(dockerPollRef.current);
-      dockerPollRef.current = setInterval(async () => {
-        try {
-          const r = await fetch(`/api/integrations/install-progress/${jobId}`);
-          if (!r.ok) return;
-          const job = (await r.json()) as InstallJob;
-          setDockerInstallJob(job);
-          if (job.phase === "done" || job.phase === "error") {
-            clearInterval(dockerPollRef.current!);
-            setInstallingDocker(false);
-            if (job.phase === "done") {
-              toast.success("Docker installato — ricarica la pagina");
-              checkDocker();
-            } else {
-              toast.error(`Errore installazione Docker: ${job.error ?? "sconosciuto"}`);
-            }
-          }
-        } catch {
-          /* ignore */
-        }
-      }, 1500);
-    } catch {
-      toast.error("Errore di rete");
+    const r = await fetchJson<{ jobId?: string }>("/api/integrations/install-docker", { method: "POST" });
+    if (!r.ok || !r.data.jobId) {
+      toast.error(r.ok ? "Errore avvio installazione Docker" : r.message);
       setInstallingDocker(false);
+      return;
     }
+    avviaPollingDocker(r.data.jobId);
   };
 
   // ── Patch Management (feature install/uninstall) ───────────────────
-  const [features, setFeatures] = useState<FeatureEntry[]>([]);
+  // null = non ancora letti: «Non installato» si dice solo dopo una risposta buona.
+  const [features, setFeatures] = useState<FeatureEntry[] | null>(null);
+  const [featuresError, setFeaturesError] = useState<string | null>(null);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [uninstallDialog, setUninstallDialog] = useState<{
     open: boolean;
@@ -192,23 +191,35 @@ export function ModulesTab({ isAdmin }: { isAdmin: boolean }) {
   }>({ open: false, feature: null, dropData: false });
 
   const fetchFeatures = useCallback(async () => {
-    try {
-      const r = await fetch("/api/features", { cache: "no-store" });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const data = (await r.json()) as { features: FeatureEntry[] };
-      setFeatures(data.features ?? []);
-    } catch {
-      toast.error("Errore nel recupero dei moduli opzionali");
+    const r = await fetchJson<{ features?: FeatureEntry[] }>("/api/features", { cache: "no-store" });
+    if (!r.ok) {
+      setFeaturesError(r.message);
+      return;
     }
+    setFeaturesError(null);
+    setFeatures(r.data.features ?? []);
   }, []);
 
   useEffect(() => {
     void fetchFeatures();
   }, [fetchFeatures]);
 
-  const patch = features.find((f) => f.key === "patch_management");
-  const inventoryAgent = features.find((f) => f.key === "inventory_agent");
-  const meshcentral = features.find((f) => f.key === "meshcentral");
+  const patch = features?.find((f) => f.key === "patch_management");
+  const inventoryAgent = features?.find((f) => f.key === "inventory_agent");
+  const meshcentral = features?.find((f) => f.key === "meshcentral");
+  // Al posto delle card dei moduli opzionali finché lo stato non è letto.
+  const featuresPlaceholder = featuresError ? (
+    <LoadError
+      what="lo stato dei moduli opzionali"
+      message={featuresError}
+      onRetry={() => void fetchFeatures()}
+    />
+  ) : features === null ? (
+    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+      <Loader2 className="h-4 w-4 animate-spin" />
+      Caricamento…
+    </div>
+  ) : null;
 
   const handleInstallPatch = async () => {
     setBusyKey("patch_management");
@@ -331,6 +342,7 @@ export function ModulesTab({ isAdmin }: { isAdmin: boolean }) {
         moduleKey="patch_management"
         title="Patch Management"
       >
+        {featuresPlaceholder ?? (
         <Card>
           <CardHeader>
             <div className="flex items-start justify-between gap-4">
@@ -380,12 +392,14 @@ export function ModulesTab({ isAdmin }: { isAdmin: boolean }) {
             </CardContent>
           )}
         </Card>
+        )}
       </ModuleSection>
 
       <ModuleSection
         id="module-inventory_agent"
         title="Inventory Agent"
       >
+        {featuresPlaceholder ?? (
         <InventoryAgentCard
           isAdmin={isAdmin}
           installed={inventoryInstalled}
@@ -396,12 +410,14 @@ export function ModulesTab({ isAdmin }: { isAdmin: boolean }) {
             setUninstallDialog({ open: true, feature: inventoryAgent, dropData: false })
           }
         />
+        )}
       </ModuleSection>
 
       <ModuleSection
         id="module-meshcentral"
         title="MeshCentral — Controllo remoto"
       >
+        {featuresPlaceholder ?? (
         <MeshCentralCard
           isAdmin={isAdmin}
           installed={meshInstalled}
@@ -412,6 +428,7 @@ export function ModulesTab({ isAdmin }: { isAdmin: boolean }) {
             setUninstallDialog({ open: true, feature: meshcentral, dropData: false })
           }
         />
+        )}
       </ModuleSection>
 
       <ModuleSection id="module-nis2_inventory" title="Inventario NIS2">
@@ -447,6 +464,10 @@ export function ModulesTab({ isAdmin }: { isAdmin: boolean }) {
         </p>
       </div>
 
+      {dockerError && (
+        <LoadError what="lo stato di Docker" message={dockerError} onRetry={() => void checkDocker()} />
+      )}
+
       {dockerAvailable === false && (
         <div className="rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/20 px-4 py-3 text-sm text-amber-900 dark:text-amber-300 space-y-3">
           <div className="flex items-start gap-2">
@@ -473,13 +494,22 @@ export function ModulesTab({ isAdmin }: { isAdmin: boolean }) {
               Oppure installa manualmente e ricarica la pagina
             </span>
           </div>
+          {dockerJobAvviso && (
+            <div className="flex items-start gap-2 rounded-md border border-amber-400 bg-white/60 dark:bg-black/20 px-3 py-2 text-xs">
+              <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+              <span>{dockerJobAvviso}</span>
+            </div>
+          )}
           {dockerInstallJob && (
             <div className="rounded-md bg-black/90 text-green-400 font-mono text-xs p-3 max-h-36 overflow-y-auto space-y-0.5">
               <div className="flex items-center gap-2 mb-1 text-white/60">
                 {dockerInstallJob.phase !== "done" &&
-                  dockerInstallJob.phase !== "error" && (
+                  dockerInstallJob.phase !== "error" &&
+                  (dockerJobAttivo ? (
                     <Loader2 className="h-3 w-3 animate-spin" />
-                  )}
+                  ) : (
+                    <AlertTriangle className="h-3 w-3 text-amber-400" />
+                  ))}
                 <span className="capitalize">{dockerInstallJob.phase}</span>
               </div>
               {dockerInstallJob.log.map((line, i) => (
@@ -624,30 +654,27 @@ interface NetServicesSetupState {
 function NetServicesConfigCard({ isAdmin }: { isAdmin: boolean }) {
   const router = useRouter();
   const [state, setState] = useState<NetServicesSetupState | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [apiUrl, setApiUrl] = useState("https://192.168.99.52:8443");
   const [apiToken, setApiToken] = useState("");
   const [busy, setBusy] = useState(false);
   const [testing, setTesting] = useState(false);
 
-  const load = useCallback(() => {
-    fetch("/api/network-services/setup")
-      .then((r) => (r.ok ? r.json() : null))
-      .then(
-        (d: NetServicesSetupState | null) => {
-          if (d) {
-            setState(d);
-            if (d.apiUrl) setApiUrl(d.apiUrl);
-          } else {
-            setState({ installed: false, configured: false, apiUrl: "", hasToken: false });
-          }
-        },
-      )
-      .catch(() =>
-        setState({ installed: false, configured: false, apiUrl: "", hasToken: false }),
-      );
+  const load = useCallback(async () => {
+    const r = await fetchJson<NetServicesSetupState>("/api/network-services/setup", { cache: "no-store" });
+    if (!r.ok) {
+      // Un errore non è «Non configurato»: si dice e si lascia riprovare.
+      setLoadError(r.message);
+      return;
+    }
+    setLoadError(null);
+    setState(r.data);
+    if (r.data.apiUrl) setApiUrl(r.data.apiUrl);
   }, []);
 
-  useEffect(() => load(), [load]);
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   async function testConnection() {
     setTesting(true);
@@ -683,7 +710,7 @@ function NetServicesConfigCard({ isAdmin }: { isAdmin: boolean }) {
       if (!r.ok) throw new Error(d?.error ?? r.statusText);
       toast.success(d.message ?? "Modulo installato");
       setApiToken("");
-      load();
+      void load();
       router.refresh();
     } catch (e) {
       toast.error(`Install fallita: ${e instanceof Error ? e.message : "errore"}`);
@@ -706,7 +733,7 @@ function NetServicesConfigCard({ isAdmin }: { isAdmin: boolean }) {
       const d = await r.json();
       if (!r.ok) throw new Error(d?.error ?? r.statusText);
       toast.success(d.message ?? "Modulo disinstallato");
-      load();
+      void load();
       router.refresh();
     } catch (e) {
       toast.error(`Disinstall fallita: ${e instanceof Error ? e.message : "errore"}`);
@@ -725,7 +752,7 @@ function NetServicesConfigCard({ isAdmin }: { isAdmin: boolean }) {
             <CardTitle className="flex items-center gap-2">
               <ServerCog className="h-4 w-4" />
               Network Services bridge
-              {configured ? (
+              {state === null ? null : configured ? (
                 <Badge variant="default" className="bg-emerald-600">
                   <CheckCircle2 className="h-3 w-3 mr-1" />
                   Configurato
@@ -745,7 +772,18 @@ function NetServicesConfigCard({ isAdmin }: { isAdmin: boolean }) {
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        {!isAdmin ? (
+        {loadError ? (
+          <LoadError
+            what="lo stato di Network Services"
+            message={loadError}
+            onRetry={() => void load()}
+          />
+        ) : state === null ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Caricamento…
+          </div>
+        ) : !isAdmin ? (
           <p className="text-sm text-muted-foreground">
             Solo un amministratore può configurare questo modulo.
           </p>

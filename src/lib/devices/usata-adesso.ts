@@ -11,14 +11,18 @@
  */
 import type { CredProtocol } from "@/lib/credentials/porte";
 
-/** Fonte della scelta, coi nomi del motore (`ResolvedCredentialSource`) che l'acquisizione usa. */
-export type FonteUsata = "device_binding" | "device_inline" | "device_column" | "device_column_inline" | "snmp_ripiego";
+/**
+ * Fonte della scelta, coi nomi del motore (`ResolvedCredentialSource`) che
+ * l'acquisizione usa. Dalla 2g (T26) il motore non legge più binding inline
+ * e colonne dell'apparato: restano i binding e il «public» dichiarato.
+ */
+export type FonteUsata = "device_binding" | "snmp_ripiego";
 
 export interface UsataAdesso {
   /** «principale» = il protocollo dell'apparato (per un apparato SNMP, SNMP); «snmp» = SNMP in più. */
   ruolo: "principale" | "snmp";
   protocollo: CredProtocol;
-  /** La voce d'archivio scelta; null per binding inline, colonne col segreto, «public» o nessuna. */
+  /** La voce d'archivio scelta; null per «public» o nessuna. */
   credential_id: number | null;
   /** Nome della voce, o com'è fatta la scelta senza voce; null = nessuna. */
   nome: string | null;
@@ -30,9 +34,6 @@ export interface UsataAdesso {
 
 const NOME_FONTE: Record<FonteUsata, string> = {
   device_binding: "binding dell'apparato",
-  device_inline: "binding inline (vecchio)",
-  device_column: "colonna dell'apparato (vecchia)",
-  device_column_inline: "colonne dell'apparato (vecchie)",
   snmp_ripiego: "ripiego dichiarato",
 };
 

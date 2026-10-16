@@ -121,18 +121,21 @@ describe("acquisizione degli apparati sul motore", () => {
       id.stampanteNuda = crea("Stampante senza SNMP proprio", "10.77.0.20", "switch", "hp", "ssh", 22, "stampante");
       d.prepare("UPDATE network_devices SET host_id = ? WHERE id = ?").run(host, id.stampanteNuda);
 
-      // LibreNMS: community nella colonna, cifrata come la scrive l'API.
-      id.apColonna = crea("AP con la community in colonna", "10.77.0.4", "access_point", "ubiquiti", "api", 443, "access_point", encrypt("comm-colonna"));
+      // LibreNMS: community in un binding (dalla 2g, T26, la colonna community_string non si legge più).
+      id.apColonna = crea("AP con la community nel binding", "10.77.0.4", "access_point", "ubiquiti", "api", 443, "access_point");
+      bind.run(id.apColonna, v("Community AP", "snmp", null, "comm-colonna"), "snmp", 161, 0, "untested");
 
       // Proxmox: porta dell'API 8006, binding SSH su un'altra porta (qui quella del server finto).
       id.proxmox = crea("Proxmox di prova", "127.0.0.1", "hypervisor", "proxmox", "api", 8006, null, null, "proxmox", "https://127.0.0.1:1");
       bind.run(id.proxmox, apiProxmox, "api", 8006, 0, "success");
       bind.run(id.proxmox, sshProxmox, "ssh", portaSsh, 1, "untested");
 
-      // Apparati SNMP con la community in colonna, senza una porta loro: SNMP sulla 161 (D11 = (a)), qualunque sia
-      // device.port (1161, o la 22 rimasta di F3).
-      id.snmp1161 = crea("Switch SNMP sulla 1161", "10.77.0.6", "switch", "hp", "snmp_v2", 1161, null, encrypt("comm-1161"));
-      id.snmp22 = crea("Switch SNMP con la porta SSH", "10.77.0.7", "switch", "hp", "snmp_v2", 22, null, encrypt("comm-22"));
+      // Apparati SNMP con la community in un binding sulla 161 e una voce senza porta sua: SNMP sulla 161
+      // (D11 = (a)), qualunque sia device.port (1161, o la 22 rimasta di F3). Dalla 2g (T26) la colonna non conta.
+      id.snmp1161 = crea("Switch SNMP sulla 1161", "10.77.0.6", "switch", "hp", "snmp_v2", 1161);
+      bind.run(id.snmp1161, v("Community 1161", "snmp", null, "comm-1161"), "snmp", 161, 0, "untested");
+      id.snmp22 = crea("Switch SNMP con la porta SSH", "10.77.0.7", "switch", "hp", "snmp_v2", 22);
+      bind.run(id.snmp22, v("Community 22", "snmp", null, "comm-22"), "snmp", 161, 0, "untested");
 
       // v3 in un binding, su una porta sua.
       id.v3 = crea("Switch v3 col binding", "10.77.0.5", "switch", "hp", "snmp_v3", 161);
@@ -187,12 +190,12 @@ describe("acquisizione degli apparati sul motore", () => {
       });
     });
 
-    it(`${nome}: apparato SNMP con la community in colonna e senza una porta sua → 161, non device.port (D11 = (a), F3)`, () => {
+    it(`${nome}: apparato SNMP con la community in un binding sulla 161 → 161, non device.port (D11 = (a), F3)`, () => {
       withTenant(T, () => {
         const a = l.credenzialeSnmpApparato(apparato(l, "snmp1161"));
         const b = l.credenzialeSnmpApparato(apparato(l, "snmp22"));
-        assert.deepEqual(a.ok && [a.port, a.fonte, a.cred], [161, "device_column_inline", { forma: "community", community: "comm-1161" }]);
-        assert.deepEqual(b.ok && [b.port, b.fonte], [161, "device_column_inline"]);
+        assert.deepEqual(a.ok && [a.port, a.fonte, a.cred], [161, "device_binding", { forma: "community", community: "comm-1161" }]);
+        assert.deepEqual(b.ok && [b.port, b.fonte], [161, "device_binding"]);
       });
     });
 

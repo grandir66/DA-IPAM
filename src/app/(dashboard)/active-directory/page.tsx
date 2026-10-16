@@ -128,8 +128,8 @@ interface AdIntegration {
   /** Account LDAP: voce «Active Directory» dell'archivio (tappa 2f, T24). */
   credential_id: number | null;
   credential_name: string | null;
-  /** Con che cosa entra: la voce, le colonne di una riga mai convertita, niente. */
-  account: "voce" | "forma_vecchia" | "mancante";
+  /** Con che cosa entra: la voce, o niente (dalla 2g le colonne della riga non valgono più). */
+  account: "voce" | "mancante";
   dhcp_leases_count: number;
   last_sync_at: string | null;
   last_sync_status: string | null;
@@ -959,7 +959,6 @@ export default function ActiveDirectoryPage() {
               vociErrore={vociErrore}
               onRiprova={() => void caricaVoci()}
               nomeIntegrazione={editForm.name}
-              formaVecchia={selectedIntegration?.account === "forma_vecchia"}
               dcCambiato={dcEditCambiato}
               disabled={editSaving}
             />

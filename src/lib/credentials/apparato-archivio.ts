@@ -629,19 +629,7 @@ export function eliminaBindingApparatoDb(dbh: Database.Database, deviceId: numbe
 
 // ── «Usata adesso» ──────────────────────────────────────────────────────────
 
-const FONTI_USATE: ReadonlySet<ResolvedCredentialSource> = new Set<ResolvedCredentialSource>([
-  "device_binding",
-  "device_inline",
-  "device_column",
-  "device_column_inline",
-  "snmp_ripiego",
-]);
-
-function nomeSenzaVoce(fonte: ResolvedCredentialSource): string {
-  if (fonte === "snmp_ripiego") return "«public»";
-  if (fonte === "device_inline") return "Binding inline";
-  return "Utente e password dell'apparato";
-}
+const FONTI_USATE: ReadonlySet<ResolvedCredentialSource> = new Set<ResolvedCredentialSource>(["device_binding", "snmp_ripiego"]);
 
 function riga(
   dbh: Database.Database,
@@ -652,7 +640,8 @@ function riga(
   if (!scelta.ok) return { ruolo, protocollo, credential_id: null, nome: null, fonte: null, porta: null, motivo: scelta.motivo };
   const fonte = FONTI_USATE.has(scelta.fonte) ? (scelta.fonte as FonteUsata) : null;
   const voce = scelta.credential_id != null ? leggiVoce(dbh, scelta.credential_id) : undefined;
-  const nome = voce ? voce.name : scelta.fonte === "device_column_inline" && protocollo === "snmp" ? "Community dell'apparato" : nomeSenzaVoce(scelta.fonte);
+  // Senza voce, dalla 2g (T26) l'acquisizione sceglie solo il «public» dichiarato (D5).
+  const nome = voce ? voce.name : scelta.fonte === "snmp_ripiego" ? "«public»" : null;
   return { ruolo, protocollo, credential_id: scelta.credential_id, nome, fonte, porta: scelta.porta, motivo: null };
 }
 

@@ -19,12 +19,22 @@
  * - le colonne dell'apparato si svuotano, così il motore non ripiega su una
  *   colonna invisibile e una voce non resta «in uso» per lei (D8);
  * - controllo: per il login e per SNMP (e per ogni protocollo toccato) la
- *   scelta dell'acquisizione si calcola prima, con tutte le fonti, e dopo, con
- *   le sole fonti della 2g (`FONTI_ACQUISIZIONE_2G`, niente inline né
- *   colonne), senza registrare ripieghi: porta e segreto (confrontati in
- *   memoria, mai stampati) devono restare uguali. Altrimenti, o con una forma
- *   che la conversione non tratta, l'apparato torna com'era (ROLLBACK al suo
- *   SAVEPOINT) e va in `lasciati` col motivo: il segno dirà `parziale:`.
+ *   scelta dell'acquisizione si calcola prima, con le fonti di prima della
+ *   2g, e dopo, col motore della 2g (solo l'archivio), senza registrare
+ *   ripieghi: porta e segreto (confrontati in memoria, mai stampati) devono
+ *   restare uguali. Altrimenti, o con una forma che la conversione non
+ *   tratta, l'apparato torna com'era (ROLLBACK al suo SAVEPOINT) e va in
+ *   `lasciati` col motivo: il segno dirà `parziale:`.
+ *
+ * Dalla 2g (T26) il motore non legge più binding inline e colonne: la scelta
+ * di prima la ricostruisce questo modulo, che gli passa quelle fonti con
+ * `fontiVecchie` (`opzioniDiPrima`), nell'ordine e con le regole del codice
+ * di prima. Serve ancora: un bundle di prima della 2e, o un'appliance che
+ * riceve `main` da prima della 2e, arriva qui coi dati vecchi. Senza, ogni
+ * apparato con le sole colonne risulterebbe «prima: nessuna» e finirebbe fra
+ * i lasciati, cioè senza accesso. Un lasciato (sull'hub due, accettati da
+ * Riccardo il 16/10: binding fallito verso la voce della colonna) ha, col
+ * motore della 2g, la scelta «nessuna» finché una prova non riesce.
  * Alla fine: nessun binding inline fuori dai lasciati, e `foreign_key_check`
  * dei binding non peggiore di prima, altrimenti ROLLBACK di tutto.
  *
@@ -41,9 +51,13 @@ import { DEFAULT_PORTS, type CredProtocol } from "./porte";
 import {
   credenzialeSnmpApparatoDb,
   FONTI_ACQUISIZIONE,
-  FONTI_ACQUISIZIONE_2G,
   scegliSegretoApparatoDb,
   sceltaLoginApparatoDb,
+  voceSnmpV3Db,
+  type CandidatoVecchio,
+  type FontiVecchie,
+  type LetturaCandidato,
+  type OpzioniMotore,
   type ResolvedCredentialSource,
 } from "./resolve";
 import { leggiSegretoDb, leggiSegretoInline, type Segreto, type UsoSegreto } from "./segreti";
@@ -89,9 +103,6 @@ const NOME_PROTOCOLLO: Record<CredProtocol, string> = {
 
 const NOME_FONTE: Partial<Record<ResolvedCredentialSource, string>> = {
   device_binding: "binding d'archivio",
-  device_inline: "binding inline",
-  device_column: "colonna con la voce",
-  device_column_inline: "colonne col segreto",
   snmp_ripiego: "«public»",
 };
 
@@ -247,30 +258,154 @@ interface Scelta {
 
 const NESSUNA: Scelta = { chiave: "nessuna", testo: "nessuna" };
 
-function descriviScelta(fonte: ResolvedCredentialSource, credentialId: number | null, porta: number): string {
-  return `${NOME_FONTE[fonte] ?? fonte}${credentialId != null ? ` #${credentialId}` : ""} porta ${porta}`;
+function descriviScelta(fonte: ResolvedCredentialSource, etichetta: string | undefined, credentialId: number | null, porta: number): string {
+  return `${etichetta ?? NOME_FONTE[fonte] ?? fonte}${credentialId != null ? ` #${credentialId}` : ""} porta ${porta}`;
+}
+
+// ── Le fonti di prima della 2g ─────────────────────────────────────────────
+
+/** Le colonne con una voce, nell'ordine del codice di prima: per SNMP, con un apparato SNMP, prima `credential_id`. */
+function colonneVoce(app: Apparato, protocollo: CredProtocol): number[] {
+  if (protocollo !== "snmp") return app.credential_id != null ? [app.credential_id] : [];
+  const ids = protocolloPrincipale(app.protocol) === "snmp" ? [app.credential_id, app.snmp_credential_id] : [app.snmp_credential_id, app.credential_id];
+  return ids.filter((id): id is number => id != null);
+}
+
+/**
+ * Il segreto delle colonne dell'apparato, come lo leggeva il motore di prima:
+ * la community scritta in chiaro prima della cifratura vale com'è; una
+ * cifrata che non si decifra è un rifiuto, non una community.
+ */
+function leggiColonneInline(app: Apparato, protocollo: CredProtocol): LetturaCandidato {
+  const chi = `L'apparato «${app.name}»`;
+  if (protocollo === "snmp") {
+    const grezzo = app.community_string ?? "";
+    const chiaro = safeDecrypt(grezzo);
+    if (chiaro != null) {
+      return chiaro.trim() ? { ok: true, segreto: { forma: "community", community: chiaro } } : { ok: false, motivo: `${chi} ha la community vuota` };
+    }
+    if (FORMATO_CIFRATO.test(grezzo)) {
+      return { ok: false, motivo: `${chi}: la community non si decifra (ENCRYPTION_KEY diversa da quella che l'ha cifrata?)` };
+    }
+    return { ok: true, segreto: { forma: "community", community: grezzo } };
+  }
+  const password = safeDecrypt(app.encrypted_password ?? "");
+  if (!password) return { ok: false, motivo: `${chi}: la password nelle colonne non si decifra` };
+  return { ok: true, segreto: { forma: "utente", username: app.username ?? "", password } };
+}
+
+function daEsito(e: ReturnType<typeof leggiSegretoDb>): LetturaCandidato {
+  return e.ok ? { ok: true, segreto: e.segreto, formatoVecchio: e.formatoVecchio === true } : { ok: false, motivo: e.motivo };
+}
+
+/**
+ * Le fonti che il motore leggeva prima della 2g dopo i binding d'archivio,
+ * nello stesso ordine: binding inline non falliti, colonne con una voce (col
+ * filtro di tipo), colonne col segreto (utente e password per il protocollo
+ * di login, community per SNMP). L'apparato è la riga letta prima di
+ * scrivere.
+ */
+function fontiVecchieDi(db: Database.Database, app: Apparato): FontiVecchie {
+  const inline = db
+    .prepare(
+      `SELECT id, protocol_type, port, test_status, inline_username, inline_encrypted_password
+       FROM device_credential_bindings
+       WHERE device_id = ? AND credential_id IS NULL AND test_status != 'failed'
+       ORDER BY sort_order ASC, id ASC`
+    )
+    .all(app.id) as Array<{ id: number; protocol_type: string; port: number; test_status: string; inline_username: string | null; inline_encrypted_password: string | null }>;
+  const tipoDi = db.prepare("SELECT credential_type, port FROM credentials WHERE id = ?");
+  return {
+    conV3: colonneVoce(app, "snmp").some((id) => voceSnmpV3Db(db, id)),
+    candidati: (protocollo: CredProtocol): CandidatoVecchio[] => {
+      const out: CandidatoVecchio[] = [];
+      for (const b of inline) {
+        if (b.protocol_type !== protocollo) continue;
+        out.push({
+          etichetta: "binding inline",
+          credential_id: null,
+          binding_id: b.id,
+          tipo: null,
+          porta: b.port,
+          validated: b.test_status === "success",
+          leggi: () => {
+            const e = leggiSegretoInline(b);
+            return e.ok ? { ok: true, segreto: e.segreto } : { ok: false, motivo: e.motivo };
+          },
+        });
+      }
+      const tipi = tipiPerProtocollo(protocollo);
+      const apparatoV3 = protocollo === "snmp" && app.protocol === "snmp_v3";
+      for (const id of colonneVoce(app, protocollo)) {
+        const v = tipoDi.get(id) as { credential_type: string; port: number | null } | undefined;
+        if (!v || !tipi.includes(v.credential_type)) continue;
+        out.push({
+          etichetta: "colonna con la voce",
+          credential_id: id,
+          binding_id: null,
+          tipo: v.credential_type,
+          porta: portaVoceValePer(v.credential_type, protocollo) && v.port != null ? v.port : DEFAULT_PORTS[protocollo],
+          validated: false,
+          leggi: () => daEsito(leggiSegretoDb(db, id, usoPer(protocollo), { apparatoV3 })),
+        });
+      }
+      const colonneInline =
+        protocollo === "snmp"
+          ? haTesto(app.community_string)
+          : protocollo === protocolloLogin(app.protocol) && haTesto(app.username) && haTesto(app.encrypted_password);
+      if (colonneInline) {
+        out.push({
+          etichetta: "colonne col segreto",
+          credential_id: null,
+          binding_id: null,
+          tipo: null,
+          porta: DEFAULT_PORTS[protocollo],
+          validated: false,
+          leggi: () => leggiColonneInline(app, protocollo),
+        });
+      }
+      return out;
+    },
+  };
+}
+
+/** Le opzioni del motore che ricostruiscono la scelta del codice di prima della 2g per un apparato. */
+function opzioniDiPrimaPer(db: Database.Database, app: Apparato): Pick<OpzioniMotore, "fonti" | "fontiVecchie"> {
+  return { fonti: [...FONTI_ACQUISIZIONE, "fonte_vecchia"], fontiVecchie: fontiVecchieDi(db, app) };
+}
+
+/**
+ * La stessa cosa per un apparato salvato, letto dal DB: per le prove e per
+ * chi deve confrontare la scelta di prima con quella della 2g. Apparato che
+ * non c'è → le fonti dell'acquisizione, senza fonti vecchie.
+ */
+export function opzioniDiPrima(db: Database.Database, deviceId: number): Pick<OpzioniMotore, "fonti" | "fontiVecchie"> {
+  const r = db.prepare("SELECT * FROM network_devices WHERE id = ?").get(deviceId) as Riga | undefined;
+  return r ? opzioniDiPrimaPer(db, apparatoDa(r)) : { fonti: FONTI_ACQUISIZIONE };
 }
 
 /**
  * La scelta dell'acquisizione per un protocollo: il login con le regole di
  * getDeviceCredentials, SNMP con quelle di credenzialeSnmpApparato, gli altri
- * col motore per apparato. Sempre senza registrare.
+ * col motore per apparato. Sempre senza registrare. `prima`: con le fonti di
+ * prima della 2g (`opzioniDiPrimaPer`); altrimenti il motore della 2g.
  */
-function scelta(db: Database.Database, app: Apparato, protocollo: CredProtocol, fonti: readonly ResolvedCredentialSource[]): Scelta {
+function scelta(db: Database.Database, app: Apparato, protocollo: CredProtocol, prima: boolean): Scelta {
   const dev = app.riga as unknown as NetworkDevice;
+  const fonti = prima ? opzioniDiPrimaPer(db, app) : { fonti: FONTI_ACQUISIZIONE };
   if (protocollo === "snmp") {
-    const c = credenzialeSnmpApparatoDb(db, dev, { registra: false, fonti });
-    return c.ok ? { chiave: canonico({ porta: c.port, cred: c.cred }), testo: descriviScelta(c.fonte, c.credential_id, c.port) } : NESSUNA;
+    const c = credenzialeSnmpApparatoDb(db, dev, { registra: false, ...fonti });
+    return c.ok ? { chiave: canonico({ porta: c.port, cred: c.cred }), testo: descriviScelta(c.fonte, c.etichetta, c.credential_id, c.port) } : NESSUNA;
   }
   const s =
     protocollo === protocolloLogin(app.protocol)
-      ? sceltaLoginApparatoDb(db, dev, { registra: false, fonti })
-      : scegliSegretoApparatoDb(db, app.id, protocollo, { registra: false, fonti });
+      ? sceltaLoginApparatoDb(db, dev, { registra: false, ...fonti })
+      : scegliSegretoApparatoDb(db, app.id, protocollo, { registra: false, ...fonti });
   if (!s.ok) return NESSUNA;
   const segreto: Segreto = s.segreto;
   return {
     chiave: canonico({ porta: s.candidato.port, segreto }),
-    testo: descriviScelta(s.candidato.source, s.candidato.credential_id, s.candidato.port),
+    testo: descriviScelta(s.candidato.source, s.candidato.etichetta, s.candidato.credential_id, s.candidato.port),
   };
 }
 
@@ -465,7 +600,7 @@ function convertiApparato(db: Database.Database, app: Apparato, c: Contesto, nom
   for (const b of inline) protocolli.add(protocolloBinding(b.protocol_type));
   for (const n of nuovi) protocolli.add(n.protocollo);
   const prima = new Map<CredProtocol, Scelta>();
-  for (const p of protocolli) prima.set(p, scelta(db, app, p, FONTI_ACQUISIZIONE));
+  for (const p of protocolli) prima.set(p, scelta(db, app, p, true));
 
   // ── Le scritture ──
   const nomeVoce = (p: CredProtocol): string => {
@@ -532,10 +667,10 @@ function convertiApparato(db: Database.Database, app: Apparato, c: Contesto, nom
     out.colonneSvuotate.push({ device_id: app.id, colonne: daSvuotare });
   }
 
-  // ── La scelta dopo, con le fonti della 2g ──
+  // ── La scelta dopo, col motore della 2g (solo l'archivio) ──
   for (const p of protocolli) {
     const a = prima.get(p) as Scelta;
-    const d = scelta(db, app, p, FONTI_ACQUISIZIONE_2G);
+    const d = scelta(db, app, p, false);
     if (a.chiave !== d.chiave) {
       const nota = a.testo === d.testo ? " (segreto diverso)" : "";
       throw new Lasciato(`la scelta ${NOME_PROTOCOLLO[p]} cambierebbe: prima ${a.testo}, dopo ${d.testo}${nota}`);

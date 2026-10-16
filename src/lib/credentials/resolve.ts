@@ -6,27 +6,30 @@
  * per un protocollo. Prima della tappa 2 l'acquisizione degli apparati
  * sceglieva fuori da qui: il primo binding in ordine anche se fallito, poi le
  * colonne di `network_devices` senza guardare il tipo (una voce `windows`
- * diventava il login SSH di un apparato snmp_v2), e «public» in silenzio. Le
- * fonti vecchie restano finché le conversioni della 2c-2f non le svuotano, ma
- * ogni candidato dice da dove viene (`source`), e chi sceglie da una fonte
- * vecchia lo registra (`db-maintenance/ripieghi.ts`): la pulizia della 2g si
- * decide su quel registro.
+ * diventava il login SSH di un apparato snmp_v2), e «public» in silenzio.
+ * Ogni candidato dice da dove viene (`source`).
+ *
+ * Dalla 2g (T26, D9 rivista da Riccardo il 16/10) il motore legge solo
+ * l'archivio: niente più binding inline, colonne di `network_devices`, catene
+ * vecchie (`network_host_credentials`, `host_detect_credential`) né chiavi «di
+ * default» dell'hub. Le conversioni 2c-2f le hanno portate in binding, lista
+ * della rete e righe host; un apparato che la 2e ha lasciato (sull'hub due,
+ * accettati da Riccardo) resta senza credenziale finché una prova non
+ * riesce. La conversione della 2e, che gira ancora su dati vecchi (bundle di
+ * prima, appliance che arrivano da prima della 2e), ricostruisce la scelta di
+ * prima con `fontiVecchie`: è l'unico innesto, e lo passa solo lei.
  *
  * Ordine per un apparato (D1 = (a)):
- *   1. binding d'archivio riusciti;            2. binding d'archivio non provati;
- *   3. binding inline (`device_inline`);       4. colonne `credential_id` / `snmp_credential_id`;
- *   5. colonne `username` / `encrypted_password` / `community_string`;
- *   6. righe host validate;                    7. righe host non validate fuori fermo;
- *   8. catena della rete;                      9. catene vecchie;
- *  10. chiave dell'hub (solo WinRM e SSH);    11. ripiego AD (solo WinRM, con l'opzione);
- *  12. per SNMP, «public» (`snmp_ripiego`, D5), mai a un apparato con una voce v3.
+ *   1. binding d'archivio riusciti;            2. binding d'archivio non provati
+ *      (per l'apparato provvisorio, la voce scelta nella finestra);
+ *   3. righe host validate;                    4. righe host non validate fuori fermo;
+ *   5. catena della rete;                      6. ripiego AD (solo WinRM, con l'opzione);
+ *   7. per SNMP, «public» (`snmp_ripiego`, D5), mai a un apparato con una voce v3.
  * Un binding fallito si salta finché una prova non riesce (D10 = (a)). Un
- * apparato senza `host_id` non ha i livelli 6-11. I livelli 9 e 10 si leggono
- * solo finché la 2d non li ha convertiti (segno `credenziali_t2_catene`, T17).
+ * apparato senza `host_id` non ha i livelli 3-6.
  *
- * Ordine per un host: quello di prima (righe validate, binding riusciti
- * dell'apparato collegato, righe non validate, binding non provati, rete,
- * catene vecchie), con in più la chiave dell'hub e il ripiego AD.
+ * Ordine per un host: righe validate, binding riusciti dell'apparato
+ * collegato, righe non validate, binding non provati, rete, ripiego AD.
  *
  * Regole comuni: ogni livello con una voce passa da `tipiPerProtocollo`; si
  * deduplica per (voce o binding, porta); le righe in fermo (`backoff_until`
@@ -40,13 +43,11 @@
  */
 import type Database from "better-sqlite3";
 
-import { safeDecrypt } from "@/lib/crypto";
 import { registraRipiego, type CasoRipiego } from "@/lib/db-maintenance/ripieghi";
 import { V3_ASSENTE, type CredenzialeSnmp } from "@/lib/protocols/snmp-sessione";
-import type { NetworkDevice } from "@/types";
+import type { NetworkDevice, VociProvvisorie } from "@/types";
 import { DEFAULT_PORTS, portaCredenziale, type CredProtocol } from "./porte";
-import { leggiSegretoDb, leggiSegretoInline, opzioniSsh, type AccessoSsh, type Segreto, type UsoSegreto } from "./segreti";
-import { cateneVecchieAperte } from "./segni-t2";
+import { leggiSegretoDb, opzioniSsh, type AccessoSsh, type Segreto, type UsoSegreto } from "./segreti";
 import { normalizzaTipo, portaVoceValePer, tipiPerProtocollo } from "./tipi";
 
 export { DEFAULT_PORTS, portaCredenziale };
@@ -59,24 +60,26 @@ export interface ResolveTarget {
   networkId: number;
 }
 
+/**
+ * `fonte_vecchia`: un candidato che il motore non legge più dalla 2g e che
+ * gli passa, con `fontiVecchie`, solo la conversione della 2e (T19) per
+ * ricostruire la scelta di prima.
+ */
 export type ResolvedCredentialSource =
   | "device_binding"
-  | "device_inline"
-  | "device_column"
-  | "device_column_inline"
   | "host_validated"
   | "host_unvalidated"
   | "network_chain"
-  | "legacy_chain"
-  | "hub_default"
   | "ad_fallback"
-  | "snmp_ripiego";
+  | "snmp_ripiego"
+  | "fonte_vecchia";
 
 /**
  * Un candidato. `credential_id` è null per le fonti senza voce d'archivio
- * (binding inline, colonne inline dell'apparato, «public»); `binding_id` è
- * quello del binding da cui viene; `device_id` è l'apparato del bersaglio.
- * `tipo` è il codice della voce com'è nel DB, null senza voce.
+ * («public», e fra le fonti vecchie binding inline e colonne col segreto);
+ * `binding_id` è quello del binding da cui viene; `device_id` è l'apparato del
+ * bersaglio. `tipo` è il codice della voce com'è nel DB, null senza voce.
+ * `etichetta` solo per `fonte_vecchia`: come la chiama chi l'ha data.
  */
 export interface ResolvedCredential {
   credential_id: number | null;
@@ -89,6 +92,7 @@ export interface ResolvedCredential {
   validated: boolean;
   fail_count: number;
   backoff_until: string | null;
+  etichetta?: string;
 }
 
 export interface ResolveOptions {
@@ -103,19 +107,43 @@ export interface OpzioniMotore extends ResolveOptions {
   fonti?: readonly ResolvedCredentialSource[];
   /** Ripiego sull'account WinRM dell'AD, solo per WinRM (D4). */
   conAdFallback?: boolean;
-  /** Chiavi globali dell'hub (fino alla 2d): id di voci del DB del tenant. */
-  globaliHub?: { windows: number | null; linux: number | null } | null;
   /** Default true. False per controlli, fotografia e prova a vuoto: non registrano ripieghi. */
   registra?: boolean;
+  /**
+   * Solo per la conversione della 2e (T19), che deve ricostruire la scelta
+   * del codice di prima della 2g su dati non ancora convertiti: i candidati
+   * che il motore non legge più (binding inline, colonne dell'apparato), dopo
+   * i binding d'archivio e prima di host, rete e «public». Nessun altro lo
+   * passa; per entrare, `fonti` deve contenere `fonte_vecchia`.
+   */
+  fontiVecchie?: FontiVecchie;
 }
 
-/** Le fonti dell'apparato (livelli 1-5). */
-export const FONTI_APPARATO: readonly ResolvedCredentialSource[] = Object.freeze([
-  "device_binding",
-  "device_inline",
-  "device_column",
-  "device_column_inline",
-] as const);
+/** Lettura del segreto di un candidato: il segreto, o il perché no. */
+export type LetturaCandidato = { ok: true; segreto: Segreto; formatoVecchio?: boolean } | { ok: false; motivo: string };
+
+/** Un candidato che il motore non legge più, col suo lettore (vedi `fontiVecchie`). */
+export interface CandidatoVecchio {
+  /** Come lo chiama chi lo dà: «binding inline», «colonna con la voce», «colonne col segreto». */
+  etichetta: string;
+  credential_id: number | null;
+  binding_id: number | null;
+  tipo: string | null;
+  /** La porta propria; quella usata segue la regola di D11 come per gli altri candidati. */
+  porta: number;
+  validated: boolean;
+  leggi: () => LetturaCandidato;
+}
+
+export interface FontiVecchie {
+  /** I candidati per un protocollo, nell'ordine in cui il codice di prima li provava. */
+  candidati: (protocol: CredProtocol) => CandidatoVecchio[];
+  /** Una voce v3 fra le fonti vecchie: il «public» non vale (D5). */
+  conV3: boolean;
+}
+
+/** Le fonti dell'apparato: i suoi binding d'archivio (e, per l'apparato provvisorio, la voce scelta). */
+export const FONTI_APPARATO: readonly ResolvedCredentialSource[] = Object.freeze(["device_binding"] as const);
 
 /**
  * Acquisizione, «ha SNMP?», LibreNMS e Omada (D1b = (a)): le fonti
@@ -124,27 +152,12 @@ export const FONTI_APPARATO: readonly ResolvedCredentialSource[] = Object.freeze
  */
 export const FONTI_ACQUISIZIONE: readonly ResolvedCredentialSource[] = Object.freeze([...FONTI_APPARATO, "snmp_ripiego"] as const);
 
-/**
- * Le fonti dell'acquisizione dopo la 2g: senza binding inline né colonne
- * dell'apparato. La conversione della 2e (T19) calcola con queste la scelta
- * «dopo»: così dimostra che togliere colonne e inline non cambia la scelta, e
- * una colonna rimasta piena non la maschera.
- */
-export const FONTI_ACQUISIZIONE_2G: readonly ResolvedCredentialSource[] = Object.freeze(
-  FONTI_ACQUISIZIONE.filter((f) => f !== "device_inline" && f !== "device_column" && f !== "device_column_inline")
-);
-
 export type SceltaSegreto =
   | { ok: true; candidato: ResolvedCredential; segreto: Segreto }
   | { ok: false; motivo: string };
 
-/** Il caso del registro per ogni fonte vecchia; le altre non si registrano. */
+/** Il caso del registro per ogni ripiego dichiarato; le altre fonti non si registrano. */
 const CASO_PER_FONTE: Partial<Record<ResolvedCredentialSource, CasoRipiego>> = {
-  device_inline: "cred_binding_inline",
-  device_column: "cred_colonna_apparato",
-  device_column_inline: "cred_colonna_apparato",
-  legacy_chain: "cred_catena_vecchia",
-  hub_default: "cred_chiave_hub",
   snmp_ripiego: "cred_public",
 };
 
@@ -156,22 +169,6 @@ const NOME_PROTOCOLLO: Record<CredProtocol, string> = {
   redfish: "Redfish",
   onvif: "ONVIF",
 };
-
-/** role vecchio (network_host_credentials/host_detect_credential) per protocollo. 'api'/'redfish'/'onvif' non hanno ruolo vecchio. */
-function legacyRolesForProtocol(protocol: CredProtocol): Array<"windows" | "linux" | "ssh" | "snmp"> {
-  switch (protocol) {
-    case "ssh":
-      return ["ssh", "linux"];
-    case "winrm":
-      return ["windows"];
-    case "snmp":
-      return ["snmp"];
-    case "api":
-    case "redfish":
-    case "onvif":
-      return [];
-  }
-}
 
 function usoPer(protocol: CredProtocol): UsoSegreto {
   if (protocol === "ssh" || protocol === "winrm" || protocol === "snmp") return protocol;
@@ -245,7 +242,7 @@ function righeHost(dbh: Database.Database, hostId: number, protocol: CredProtoco
     .all(hostId, protocol, ...tipi) as RigaHost[];
 }
 
-/** Binding del protocollo, falliti esclusi (D10 = (a)); la voce può mancare (inline o orfano). */
+/** Binding del protocollo, falliti esclusi (D10 = (a)); la voce può mancare (inline o orfano: il motore li salta). */
 function bindingNonFalliti(dbh: Database.Database, deviceId: number, protocol: CredProtocol): RigaBinding[] {
   return dbh
     .prepare(
@@ -270,42 +267,6 @@ function vociRete(dbh: Database.Database, networkId: number, tipi: readonly stri
     .all(networkId, ...tipi) as VoceTrovata[];
 }
 
-/** Catene vecchie: prima il pin dell'host per ogni ruolo, poi la lista della rete per ogni ruolo. */
-function vociCatenaVecchia(
-  dbh: Database.Database,
-  hostId: number | null,
-  networkId: number | null,
-  protocol: CredProtocol,
-  tipi: readonly string[]
-): VoceTrovata[] {
-  const out: VoceTrovata[] = [];
-  const ruoli = legacyRolesForProtocol(protocol);
-  const filtro = `c.credential_type IN (${segnaposti(tipi.length)})`;
-  if (hostId != null) {
-    const pin = dbh.prepare(
-      `SELECT hdc.credential_id, c.port, c.credential_type
-       FROM host_detect_credential hdc
-       JOIN credentials c ON c.id = hdc.credential_id
-       WHERE hdc.host_id = ? AND hdc.role = ? AND ${filtro}`
-    );
-    for (const ruolo of ruoli) {
-      const r = pin.get(hostId, ruolo, ...tipi) as VoceTrovata | undefined;
-      if (r) out.push(r);
-    }
-  }
-  if (networkId != null) {
-    const lista = dbh.prepare(
-      `SELECT nhc.credential_id, c.port, c.credential_type
-       FROM network_host_credentials nhc
-       JOIN credentials c ON c.id = nhc.credential_id
-       WHERE nhc.network_id = ? AND nhc.role = ? AND ${filtro}
-       ORDER BY nhc.sort_order ASC, nhc.id ASC`
-    );
-    for (const ruolo of ruoli) out.push(...(lista.all(networkId, ruolo, ...tipi) as VoceTrovata[]));
-  }
-  return out;
-}
-
 function leggiVoce(dbh: Database.Database, id: number): VoceTrovata | null {
   const r = dbh.prepare(`SELECT * FROM credentials WHERE id = ?`).get(id) as Record<string, unknown> | undefined;
   if (!r) return null;
@@ -314,20 +275,6 @@ function leggiVoce(dbh: Database.Database, id: number): VoceTrovata | null {
     port: typeof r.port === "number" ? r.port : null,
     credential_type: typeof r.credential_type === "string" ? r.credential_type : "",
   };
-}
-
-/** Chiave globale dell'hub del ruolo del protocollo, se punta a una voce del tipo giusto. */
-function voceHub(
-  dbh: Database.Database,
-  globali: OpzioniMotore["globaliHub"],
-  protocol: CredProtocol,
-  tipi: readonly string[]
-): VoceTrovata | null {
-  if (!globali) return null;
-  const id = protocol === "winrm" ? globali.windows : protocol === "ssh" ? globali.linux : null;
-  if (id == null) return null;
-  const v = leggiVoce(dbh, id);
-  return v && ammesso(tipi, v.credential_type) ? v : null;
 }
 
 /**
@@ -363,7 +310,13 @@ interface Proposta {
   validated?: boolean;
   /** Stato della riga host da cui viene; altrimenti cercato per (voce, porta). */
   stato?: StatoRigaHost;
+  /** Solo per `fonte_vecchia`: il nome e il lettore che dà chi lo passa. */
+  etichetta?: string;
+  leggi?: () => LetturaCandidato;
 }
+
+/** Il lettore di ogni candidato `fonte_vecchia`, fuori dall'oggetto (che resta un dato). */
+const lettoriVecchi = new WeakMap<ResolvedCredential, () => LetturaCandidato>();
 
 function nuovaRaccolta(
   protocol: CredProtocol,
@@ -377,13 +330,17 @@ function nuovaRaccolta(
   const aggiungi = (p: Proposta): void => {
     if (opts.fonti && !opts.fonti.includes(p.source)) return;
     const chiave =
-      p.credential_id != null ? `v${p.credential_id}:${p.port}` : p.binding_id != null ? `b${p.binding_id}:${p.port}` : `${p.source}:${p.port}`;
+      p.credential_id != null
+        ? `v${p.credential_id}:${p.port}`
+        : p.binding_id != null
+          ? `b${p.binding_id}:${p.port}`
+          : `${p.source}:${p.etichetta ?? ""}:${p.port}`;
     if (visti.has(chiave)) return;
     visti.add(chiave);
     const stato = p.stato ?? (p.credential_id != null ? stati.get(`${p.credential_id}:${p.port}`) : undefined);
     const backoffUntil = stato?.backoff_until ?? null;
     if (p.conFermo && !opts.includeBackoff && backoffUntil && backoffUntil > adesso) return;
-    risultati.push({
+    const r: ResolvedCredential = {
       credential_id: p.credential_id,
       binding_id: p.binding_id ?? null,
       device_id: deviceId,
@@ -394,7 +351,10 @@ function nuovaRaccolta(
       validated: p.validated ?? stato?.validated === 1,
       fail_count: stato?.fail_count ?? 0,
       backoff_until: backoffUntil,
-    });
+      ...(p.etichetta != null ? { etichetta: p.etichetta } : {}),
+    };
+    if (p.leggi) lettoriVecchi.set(r, p.leggi);
+    risultati.push(r);
   };
   return { aggiungi, risultati };
 }
@@ -447,12 +407,11 @@ function bridgeIds(
  * Candidati per un host (o una rete), nell'ordine di oggi:
  *   1. righe host validate;           2. binding riusciti dell'apparato collegato;
  *   3. righe host non validate;       4. binding non provati;
- *   5. catena della rete;             6. catene vecchie (pin, poi lista);
- *   7. chiave dell'hub;               8. ripiego AD (WinRM, con `conAdFallback`).
- * Tutti col filtro di tipo e col fermo; 6 e 7 solo finché la 2d non li ha
- * convertiti (`fontiVecchieAperte`). Non registra: è una lista, sceglie chi la
- * usa (`scegliSegretoHostDb`, o la discovery, che dalla 2d prova questa
- * catena per ogni host: D2 = (a)).
+ *   5. catena della rete;             6. ripiego AD (WinRM, con `conAdFallback`).
+ * Tutti col filtro di tipo e col fermo. Dalla 2g niente catene vecchie né
+ * chiave dell'hub, anche in un tenant senza il segno della 2d (T26). Non
+ * registra: è una lista, sceglie chi la usa (`scegliSegretoHostDb`, o la
+ * discovery, che dalla 2d prova questa catena per ogni host: D2 = (a)).
  */
 export function resolveCredentialsForDb(
   dbh: Database.Database,
@@ -488,27 +447,9 @@ export function resolveCredentialsForDb(
   for (const b of binding) if (b.test_status === "success") aggiungi(daBinding(b));
   for (const r of righe) if (r.validated !== 1) aggiungi(daRiga(r, "host_unvalidated"));
   for (const b of binding) if (b.test_status === "untested") aggiungi(daBinding(b));
-  livelliComuni(dbh, aggiungi, { hostId, networkId: target.networkId, protocol, tipi, opts, porta: (p) => p });
+  livelliComuni(dbh, aggiungi, { networkId: target.networkId, protocol, tipi, opts, porta: (p) => p });
 
   return tronca(risultati, opts);
-}
-
-/**
- * Catene vecchie e chiave dell'hub si leggono solo finché la 2d non le ha
- * portate nella lista della rete e nelle righe dell'host (T16): col segno
- * `credenziali_t2_catene` a `done:` o `parziale:` sono già lì. Le tabelle
- * vecchie restano congelate fino alla 2g, e rileggerle riporterebbe una voce
- * che l'utente ha tolto dalla lista; sull'hub (due tenant attivi, D3 = (a)) la
- * chiave «di default» non si copia e smette di accodarsi. Le righe `saltate`
- * della conversione hanno un tipo che il filtro scarterebbe comunque, o
- * puntano a voci, reti o host che non ci sono. Con `errore:`, senza segno, o
- * su una copia senza `tenant_settings` (nessun segno possibile) si leggono
- * come prima (`cateneVecchieAperte`, la stessa regola degli usi di una voce).
- * Una lettura per chiamata pubblica, e solo se le fonti lo chiedono.
- */
-function fontiVecchieAperte(dbh: Database.Database, opts: OpzioniMotore): boolean {
-  if (opts.fonti && !opts.fonti.includes("legacy_chain") && !opts.fonti.includes("hub_default")) return false;
-  return cateneVecchieAperte(dbh);
 }
 
 /** Livelli dalla catena della rete in giù, uguali per host e apparati. */
@@ -516,7 +457,6 @@ function livelliComuni(
   dbh: Database.Database,
   aggiungi: (p: Proposta) => void,
   c: {
-    hostId: number | null;
     networkId: number | null;
     protocol: CredProtocol;
     tipi: readonly string[];
@@ -532,11 +472,6 @@ function livelliComuni(
     conFermo: true,
   });
   if (c.networkId != null) for (const v of vociRete(dbh, c.networkId, c.tipi)) aggiungi(daVoce(v, "network_chain"));
-  if (fontiVecchieAperte(dbh, c.opts)) {
-    for (const v of vociCatenaVecchia(dbh, c.hostId, c.networkId, c.protocol, c.tipi)) aggiungi(daVoce(v, "legacy_chain"));
-    const hub = voceHub(dbh, c.opts.globaliHub, c.protocol, c.tipi);
-    if (hub) aggiungi(daVoce(hub, "hub_default"));
-  }
   if (c.opts.conAdFallback && c.protocol === "winrm") {
     const ad = voceAd(dbh, c.tipi);
     // Porta 5985 come il ripiego di oggi delle patch: 5986 vuole un certificato sul bersaglio.
@@ -562,11 +497,8 @@ interface Apparato {
   protocol: string | null;
   port: number | null;
   host_id: number | null;
-  credential_id: number | null;
-  snmp_credential_id: number | null;
-  username: string | null;
-  encrypted_password: string | null;
-  community_string: string | null;
+  /** Solo per l'apparato provvisorio (id 0, mai salvato): le voci scelte nella finestra. */
+  voci: VociProvvisorie | null;
 }
 
 /** Riga dell'apparato con SELECT *: in un DEFAULT mai riaperto `host_id` può mancare. */
@@ -581,11 +513,7 @@ function leggiApparato(dbh: Database.Database, deviceId: number): Apparato | nul
     protocol: str("protocol"),
     port: num("port"),
     host_id: num("host_id"),
-    credential_id: num("credential_id"),
-    snmp_credential_id: num("snmp_credential_id"),
-    username: str("username"),
-    encrypted_password: str("encrypted_password"),
-    community_string: str("community_string"),
+    voci: null,
   };
 }
 
@@ -596,25 +524,26 @@ function protocolloPrincipale(p: string | null): CredProtocol | null {
   return null;
 }
 
-/** Il protocollo per cui valgono le colonne di login, come in getDeviceCredentials. */
+/** Il protocollo di login dell'acquisizione (getDeviceCredentials): winrm, api, altrimenti ssh. */
 function protocolloLogin(p: string | null): CredProtocol {
   return p === "winrm" ? "winrm" : p === "api" ? "api" : "ssh";
 }
 
-/** Colonne con una voce, nell'ordine di oggi: per SNMP quella del protocollo principale prima. */
-function colonneVoce(app: Apparato, protocol: CredProtocol): number[] {
-  if (protocol !== "snmp") return app.credential_id != null ? [app.credential_id] : [];
-  const snmpPrincipale = protocolloPrincipale(app.protocol) === "snmp";
-  const ids = snmpPrincipale ? [app.credential_id, app.snmp_credential_id] : [app.snmp_credential_id, app.credential_id];
+/**
+ * Le voci scelte nella finestra di un apparato provvisorio, nell'ordine in cui
+ * le provava la prova di prima (quando stavano nelle colonne dell'oggetto): per
+ * SNMP, con un apparato SNMP, prima quella del protocollo principale.
+ */
+function vociProvvisorie(app: Apparato, protocol: CredProtocol): number[] {
+  if (!app.voci) return [];
+  const { principale, snmp } = app.voci;
+  if (protocol !== "snmp") return principale != null ? [principale] : [];
+  const ids = protocolloPrincipale(app.protocol) === "snmp" ? [principale, snmp] : [snmp, principale];
   return ids.filter((id): id is number => id != null);
 }
 
-function haTesto(v: string | null): boolean {
-  return v != null && v.trim() !== "";
-}
-
 /** Una voce SNMP è v3 col tipo `snmp_v3` o con un livello di sicurezza. */
-function voceV3(dbh: Database.Database, id: number): boolean {
+export function voceSnmpV3Db(dbh: Database.Database, id: number): boolean {
   const r = dbh.prepare(`SELECT * FROM credentials WHERE id = ?`).get(id) as Record<string, unknown> | undefined;
   if (!r) return false;
   const tipo = normalizzaTipo(typeof r.credential_type === "string" ? r.credential_type : null);
@@ -622,11 +551,12 @@ function voceV3(dbh: Database.Database, id: number): boolean {
   return tipo === "snmp_v3" || (tipo === "snmp" && livello !== "");
 }
 
-/** D5: «public» mai a un apparato che ha una sua voce v3 (binding o colonne). */
-function apparatoConV3(dbh: Database.Database, app: Apparato, binding: RigaBinding[]): boolean {
-  const ids = new Set<number>(colonneVoce(app, "snmp"));
+/** D5: «public» mai a un apparato che ha una sua voce v3 (binding, voce provvisoria o, per la 2e, fonte vecchia). */
+function apparatoConV3(dbh: Database.Database, app: Apparato, binding: RigaBinding[], opts: OpzioniMotore): boolean {
+  if (opts.fontiVecchie?.conV3) return true;
+  const ids = new Set<number>(vociProvvisorie(app, "snmp"));
   for (const b of binding) if (b.credential_id != null) ids.add(b.credential_id);
-  for (const id of ids) if (voceV3(dbh, id)) return true;
+  for (const id of ids) if (voceSnmpV3Db(dbh, id)) return true;
   return false;
 }
 
@@ -658,6 +588,7 @@ function candidatiApparato(
   // non vale per SNMP: può essere la porta SSH rimasta (F3), e prima del T8 sette lettori su otto usavano la 161.
   const predefinita = DEFAULT_PORTS[protocol];
 
+  // Binding falliti esclusi (D10); quelli senza voce (inline, orfani) il motore non li legge più (2g).
   const binding = bindingNonFalliti(dbh, app.id, protocol);
   const conVoce = binding.filter((b) => b.credential_id != null && ammesso(tipi, b.credential_type));
   // 1-2. binding d'archivio: riusciti, poi non provati.
@@ -671,28 +602,30 @@ function candidatiApparato(
       aggiungi({ source: "device_binding", credential_id: b.credential_id, binding_id: b.id, tipo: b.credential_type, port: porta(b.port), conFermo: false });
     }
   }
-  // 3. binding inline.
-  for (const b of binding) {
-    if (b.credential_id == null) {
-      aggiungi({ source: "device_inline", credential_id: null, binding_id: b.id, tipo: null, port: porta(b.port), conFermo: false, validated: b.test_status === "success" });
-    }
-  }
-  // 4. colonne con una voce.
-  for (const id of colonneVoce(app, protocol)) {
+  // 2. per l'apparato provvisorio, la voce scelta nella finestra: un binding non ancora provato.
+  for (const id of vociProvvisorie(app, protocol)) {
     const v = leggiVoce(dbh, id);
     if (v && ammesso(tipi, v.credential_type)) {
       const propria = portaVoceValePer(v.credential_type, protocol) && v.port != null ? v.port : predefinita;
-      aggiungi({ source: "device_column", credential_id: id, tipo: v.credential_type, port: porta(propria), conFermo: false });
+      aggiungi({ source: "device_binding", credential_id: id, tipo: v.credential_type, port: porta(propria), conFermo: false });
     }
   }
-  // 5. colonne col segreto dentro.
-  const colonneInline =
-    protocol === "snmp"
-      ? haTesto(app.community_string)
-      : protocol === protocolloLogin(app.protocol) && haTesto(app.username) && haTesto(app.encrypted_password);
-  if (colonneInline) aggiungi({ source: "device_column_inline", credential_id: null, tipo: null, port: porta(predefinita), conFermo: false });
+  // Solo per la conversione della 2e: le fonti di prima, dove le provava il codice di prima.
+  for (const v of opts.fontiVecchie?.candidati(protocol) ?? []) {
+    aggiungi({
+      source: "fonte_vecchia",
+      credential_id: v.credential_id,
+      binding_id: v.binding_id,
+      tipo: v.tipo,
+      port: porta(v.porta),
+      conFermo: false,
+      validated: v.validated,
+      etichetta: v.etichetta,
+      leggi: v.leggi,
+    });
+  }
 
-  // 6-11. host, rete, catene vecchie, hub, AD: solo con un host.
+  // 3-6. host e rete (e ripiego AD): solo con un host.
   if (conHost && hostId != null) {
     const righe = righeHost(dbh, hostId, protocol, tipi);
     for (const r of righe) {
@@ -701,11 +634,11 @@ function candidatiApparato(
     for (const r of righe) {
       if (r.validated !== 1) aggiungi({ source: "host_unvalidated", credential_id: r.credential_id, tipo: r.credential_type, port: porta(r.port), conFermo: true, stato: r });
     }
-    livelliComuni(dbh, aggiungi, { hostId, networkId: host?.network_id ?? null, protocol, tipi, opts, porta });
+    livelliComuni(dbh, aggiungi, { networkId: host?.network_id ?? null, protocol, tipi, opts, porta });
   }
 
-  // 12. «public» (D5), ultimo.
-  if (protocol === "snmp" && !apparatoConV3(dbh, app, binding)) {
+  // 7. «public» (D5), ultimo.
+  if (protocol === "snmp" && !apparatoConV3(dbh, app, binding, opts)) {
     aggiungi({ source: "snmp_ripiego", credential_id: null, tipo: null, port: predefinita, conFermo: false });
   }
   return tronca(risultati, opts);
@@ -728,46 +661,11 @@ export function credenzialiApparatoDb(
 
 // ── Scelta col segreto ─────────────────────────────────────────────────────
 
-type Lettura = { ok: true; segreto: Segreto; formatoVecchio?: boolean } | { ok: false; motivo: string };
-
-/** Formato di `encrypt()`: iv:tag:testo, in esadecimale. */
-const FORMATO_CIFRATO = /^[0-9a-f]+:[0-9a-f]+:[0-9a-f]*$/i;
-
-/**
- * Segreto delle colonne dell'apparato. La community scritta in chiaro prima
- * della cifratura vale com'è (come in getDeviceCommunityString); una cifrata
- * che non si decifra è un rifiuto, non una community.
- */
-function leggiColonneInline(app: Apparato, protocol: CredProtocol): Lettura {
-  const chi = `L'apparato «${app.name}»`;
-  if (protocol === "snmp") {
-    const grezzo = app.community_string ?? "";
-    const chiaro = safeDecrypt(grezzo);
-    if (chiaro != null) {
-      return chiaro.trim() ? { ok: true, segreto: { forma: "community", community: chiaro } } : { ok: false, motivo: `${chi} ha la community vuota` };
-    }
-    if (FORMATO_CIFRATO.test(grezzo)) {
-      return { ok: false, motivo: `${chi}: la community non si decifra (ENCRYPTION_KEY diversa da quella che l'ha cifrata?)` };
-    }
-    return { ok: true, segreto: { forma: "community", community: grezzo } };
-  }
-  const password = safeDecrypt(app.encrypted_password ?? "");
-  if (!password) return { ok: false, motivo: `${chi}: la password nelle colonne non si decifra` };
-  return { ok: true, segreto: { forma: "utente", username: app.username ?? "", password } };
-}
-
-function leggiCandidato(dbh: Database.Database, c: ResolvedCredential, app: Apparato | null, apparatoV3: boolean): Lettura {
+function leggiCandidato(dbh: Database.Database, c: ResolvedCredential, apparatoV3: boolean): LetturaCandidato {
   if (c.source === "snmp_ripiego") return { ok: true, segreto: { forma: "community", community: "public" } };
-  if (c.source === "device_column_inline") {
-    return app ? leggiColonneInline(app, c.protocol) : { ok: false, motivo: "Colonne dell'apparato senza apparato" };
-  }
-  if (c.source === "device_inline") {
-    const b = dbh
-      .prepare(`SELECT protocol_type, inline_username, inline_encrypted_password FROM device_credential_bindings WHERE id = ?`)
-      .get(c.binding_id) as { protocol_type: string; inline_username: string | null; inline_encrypted_password: string | null } | undefined;
-    if (!b) return { ok: false, motivo: `Il binding #${c.binding_id} non esiste più` };
-    const e = leggiSegretoInline(b);
-    return e.ok ? { ok: true, segreto: e.segreto } : { ok: false, motivo: e.motivo };
+  if (c.source === "fonte_vecchia") {
+    const leggi = lettoriVecchi.get(c);
+    return leggi ? leggi() : { ok: false, motivo: `Candidato «${c.etichetta ?? c.source}» senza lettore` };
   }
   if (c.credential_id == null) return { ok: false, motivo: `Candidato ${c.source} senza voce d'archivio` };
   const e = leggiSegretoDb(dbh, c.credential_id, usoPer(c.protocol), { apparatoV3 });
@@ -806,7 +704,6 @@ function scegli(
   dbh: Database.Database,
   candidati: ResolvedCredential[],
   c: {
-    app: Apparato | null;
     apparatoV3: boolean;
     opts: OpzioniMotore;
     protocol: CredProtocol;
@@ -818,7 +715,7 @@ function scegli(
   if (candidati.length === 0) return { ok: false, motivo: `Nessuna credenziale ${nome} per ${c.perChi}` };
   const motivi: string[] = [];
   for (const cand of candidati) {
-    const l = leggiCandidato(dbh, cand, c.app, c.apparatoV3);
+    const l = leggiCandidato(dbh, cand, c.apparatoV3);
     if (!l.ok) {
       motivi.push(l.motivo);
       continue;
@@ -837,8 +734,8 @@ function scegli(
 /**
  * La credenziale da usare per un apparato, col segreto: il primo candidato
  * (`credenzialiApparatoDb`) il cui segreto si legge. Registra il ripiego
- * quando la scelta viene da una fonte vecchia (livelli 3, 4, 5, 9, 10, 12) o
- * da una v3 nel formato vecchio, salvo `registra: false`.
+ * quando la scelta è il «public» dichiarato (D5) o una v3 nel formato
+ * vecchio, salvo `registra: false`.
  */
 export function scegliSegretoApparatoDb(
   dbh: Database.Database,
@@ -859,7 +756,6 @@ function scegliPerApparato(
   accetta?: (s: Segreto) => string | null
 ): SceltaSegreto {
   return scegli(dbh, candidatiApparato(dbh, app, protocol, opts), {
-    app,
     apparatoV3: protocol === "snmp" && app.protocol === "snmp_v3",
     opts,
     protocol,
@@ -884,7 +780,7 @@ export function scegliSegretoHostDb(
     target.ip ??
     (target.hostId != null ? (dbh.prepare(`SELECT ip FROM hosts WHERE id = ?`).get(target.hostId) as { ip: string } | undefined)?.ip : undefined);
   const perChi = target.hostId != null ? `l'host ${ip ?? `#${target.hostId}`}` : `la rete #${target.networkId}`;
-  return scegli(dbh, candidati, { app: null, apparatoV3: false, opts, protocol, perChi });
+  return scegli(dbh, candidati, { apparatoV3: false, opts, protocol, perChi });
 }
 
 // ── Acquisizione degli apparati (T8) ───────────────────────────────────────
@@ -896,13 +792,12 @@ export function scegliSegretoHostDb(
 /**
  * I campi di un apparato che l'acquisizione passa al motore. Un apparato
  * salvato (id > 0) si rilegge dal DB. Uno provvisorio (la prova dalla
- * finestra, id 0, mai salvato) vale per le colonne dell'oggetto: la voce
- * scelta nella finestra, nessun binding, nessun host.
+ * finestra, id 0, mai salvato) vale per l'oggetto: le voci scelte nella
+ * finestra (`voci_provvisorie`, una per il protocollo principale e una per
+ * SNMP), nessun binding, nessun host. Fino alla 2g le voci stavano nelle
+ * colonne dell'oggetto, che il motore non legge più (T26).
  */
-export type ApparatoInAcquisizione = Pick<
-  NetworkDevice,
-  "id" | "name" | "protocol" | "port" | "credential_id" | "snmp_credential_id" | "username" | "encrypted_password" | "community_string"
->;
+export type ApparatoInAcquisizione = Pick<NetworkDevice, "id" | "name" | "protocol" | "port" | "voci_provvisorie">;
 
 function apparatoDi(dbh: Database.Database, device: ApparatoInAcquisizione): Apparato | null {
   if (device.id > 0) return leggiApparato(dbh, device.id);
@@ -912,11 +807,7 @@ function apparatoDi(dbh: Database.Database, device: ApparatoInAcquisizione): App
     protocol: device.protocol ?? null,
     port: device.port ?? null,
     host_id: null,
-    credential_id: device.credential_id ?? null,
-    snmp_credential_id: device.snmp_credential_id ?? null,
-    username: device.username ?? null,
-    encrypted_password: device.encrypted_password ?? null,
-    community_string: device.community_string ?? null,
+    voci: device.voci_provvisorie ?? null,
   };
 }
 
@@ -939,18 +830,19 @@ const nonEsiste = (device: ApparatoInAcquisizione): { ok: false; motivo: string 
  *   chi chiama lo dice. Così una voce a chiave non prende mai il posto di una
  *   con password che oggi fa funzionare l'API.
  *
- * `fonti` (default FONTI_ACQUISIZIONE) serve solo ai controlli della 2e
- * (FONTI_ACQUISIZIONE_2G): l'acquisizione non lo passa.
+ * `fonti` (default FONTI_ACQUISIZIONE) e `fontiVecchie` servono solo alla
+ * conversione della 2e, che ricostruisce la scelta di prima della 2g:
+ * l'acquisizione non li passa.
  */
 export function sceltaLoginApparatoDb(
   dbh: Database.Database,
   device: ApparatoInAcquisizione,
-  opts: Pick<OpzioniMotore, "registra" | "fonti"> = {}
+  opts: Pick<OpzioniMotore, "registra" | "fonti" | "fontiVecchie"> = {}
 ): SceltaSegreto {
   const app = apparatoDi(dbh, device);
   if (!app) return nonEsiste(device);
   const protocollo = protocolloLogin(app.protocol);
-  const motore: OpzioniMotore = { fonti: opts.fonti ?? FONTI_ACQUISIZIONE, registra: opts.registra };
+  const motore: OpzioniMotore = { fonti: opts.fonti ?? FONTI_ACQUISIZIONE, registra: opts.registra, fontiVecchie: opts.fontiVecchie };
   if (protocollo === "ssh") {
     return scegliPerApparato(dbh, app, "ssh", motore, (s) =>
       s.forma === "utente" || s.forma === "chiave_ssh" ? null : `l'apparato «${app.name}» accede con utente e password o con una chiave SSH`
@@ -970,34 +862,42 @@ export function loginApparatoDb(dbh: Database.Database, device: ApparatoInAcquis
   return s.ok ? opzioniSsh(s.segreto) : null;
 }
 
+/** `etichetta` solo per una `fonte_vecchia` (conversione della 2e). */
 export type SceltaSnmpApparato =
-  | { ok: true; cred: CredenzialeSnmp; port: number; fonte: ResolvedCredentialSource; credential_id: number | null }
+  | { ok: true; cred: CredenzialeSnmp; port: number; fonte: ResolvedCredentialSource; credential_id: number | null; etichetta?: string }
   | { ok: false; motivo: string };
 
 /**
  * La credenziale SNMP dell'acquisizione, al posto di getDeviceCommunityString
- * e getDeviceSnmpV3Credentials: binding (riusciti, poi non provati), binding
- * inline, colonne, `community_string`, poi «public» dichiarato (D5), mai a un
- * apparato con una voce v3. Un apparato `snmp_v3` accetta solo una v3: senza,
- * «Credenziale SNMPv3 assente o illeggibile», mai la community (T4). La porta
- * è quella del candidato (D11 = (a)): 161, o quella del binding o della voce.
- * Il record v3 esce ripulito dagli spazi, come lo dava getDeviceSnmpV3Credentials.
- * `fonti` come in `sceltaLoginApparatoDb`: solo per i controlli della 2e.
+ * e getDeviceSnmpV3Credentials: binding d'archivio (riusciti, poi non
+ * provati), poi «public» dichiarato (D5), mai a un apparato con una voce v3.
+ * Un apparato `snmp_v3` accetta solo una v3: senza, «Credenziale SNMPv3
+ * assente o illeggibile», mai la community (T4). La porta è quella del
+ * candidato (D11 = (a)): 161, o quella del binding o della voce. Il record v3
+ * esce ripulito dagli spazi, come lo dava getDeviceSnmpV3Credentials.
+ * `fonti` e `fontiVecchie` come in `sceltaLoginApparatoDb`: solo per la 2e.
  */
 export function credenzialeSnmpApparatoDb(
   dbh: Database.Database,
   device: ApparatoInAcquisizione,
-  opts: Pick<OpzioniMotore, "registra" | "fonti"> = {}
+  opts: Pick<OpzioniMotore, "registra" | "fonti" | "fontiVecchie"> = {}
 ): SceltaSnmpApparato {
   const app = apparatoDi(dbh, device);
   if (!app) return nonEsiste(device);
   const soloV3 = app.protocol === "snmp_v3";
-  const s = scegliPerApparato(dbh, app, "snmp", { fonti: opts.fonti ?? FONTI_ACQUISIZIONE, registra: opts.registra }, (seg) => {
+  const motore: OpzioniMotore = { fonti: opts.fonti ?? FONTI_ACQUISIZIONE, registra: opts.registra, fontiVecchie: opts.fontiVecchie };
+  const s = scegliPerApparato(dbh, app, "snmp", motore, (seg) => {
     if (seg.forma !== "community" && seg.forma !== "v3") return `l'apparato «${app.name}»: credenziale non SNMP`;
     return soloV3 && seg.forma !== "v3" ? `l'apparato «${app.name}» è SNMPv3: una community non vale` : null;
   });
   if (!s.ok) return { ok: false, motivo: soloV3 ? `${V3_ASSENTE}: ${s.motivo}` : s.motivo };
-  const base = { ok: true as const, port: s.candidato.port, fonte: s.candidato.source, credential_id: s.candidato.credential_id };
+  const base = {
+    ok: true as const,
+    port: s.candidato.port,
+    fonte: s.candidato.source,
+    credential_id: s.candidato.credential_id,
+    ...(s.candidato.etichetta != null ? { etichetta: s.candidato.etichetta } : {}),
+  };
   if (s.segreto.forma === "v3") {
     const r = s.segreto.record;
     const pulito = (v: string | null | undefined): string | null => (v == null ? null : v.trim());
@@ -1027,10 +927,9 @@ export type SceltaTokenApi =
 /**
  * Il token dell'API di un apparato (client Omada, tappa 2e, T20): una voce
  * `api` col metodo `token` legata all'apparato, coi binding nell'ordine
- * dell'acquisizione (falliti saltati). Fino alla 2g, per un apparato che la
- * conversione ha lasciato com'era, la colonna `api_token`, registrata come
- * ripiego. Prima il client leggeva solo la colonna, che la 2e svuota: sarebbe
- * partito «Bearer » vuoto.
+ * dell'acquisizione (falliti saltati). Prima il client leggeva solo la
+ * colonna `api_token`, che la 2e svuota: sarebbe partito «Bearer » vuoto.
+ * Dalla 2g (T26) la colonna non si legge più nemmeno come ripiego.
  */
 export function tokenApiApparatoDb(
   dbh: Database.Database,
@@ -1043,21 +942,14 @@ export function tokenApiApparatoDb(
     seg.forma === "token" ? null : `l'apparato «${app.name}» per l'API vuole un token`
   );
   if (s.ok && s.segreto.forma === "token") return { ok: true, token: s.segreto.token, fonte: s.candidato.source, credential_id: s.candidato.credential_id };
-  const riga = device.id > 0 ? (dbh.prepare(`SELECT * FROM network_devices WHERE id = ?`).get(device.id) as Record<string, unknown> | undefined) : undefined;
-  const grezzo = typeof riga?.api_token === "string" ? riga.api_token : "";
-  const token = grezzo ? safeDecrypt(grezzo) : null;
-  if (token && token.trim() !== "") {
-    if (opts.registra !== false) registra(["cred_colonna_apparato"]);
-    return { ok: true, token, fonte: "device_column_inline", credential_id: null };
-  }
-  const perche = [s.ok ? null : s.motivo, grezzo ? "il token nella colonna dell'apparato non si decifra" : null].filter(Boolean).join("; ");
-  return { ok: false, motivo: `Nessun token API per l'apparato «${app.name}»${perche ? `: ${perche}` : ""}` };
+  return { ok: false, motivo: `Nessun token API per l'apparato «${app.name}»${s.ok ? "" : `: ${s.motivo}`}` };
 }
 
 /**
  * «Ha SNMP?» dell'acquisizione: vero solo con una fonte SNMP dell'apparato
- * (livelli 1-5: binding non falliti, binding inline, colonne, community_string),
- * mai con la catena della rete o col ripiego. Non legge segreti e non registra.
+ * (binding d'archivio non falliti, o la voce provvisoria), mai con la catena
+ * della rete o col ripiego. Non legge segreti e non registra. Dalla 2g una
+ * `community_string` rimasta nella colonna non conta più (T26).
  */
 export function haSnmpApparatoDb(dbh: Database.Database, device: ApparatoInAcquisizione): boolean {
   const app = apparatoDi(dbh, device);
@@ -1067,8 +959,8 @@ export function haSnmpApparatoDb(dbh: Database.Database, device: ApparatoInAcqui
 /**
  * Porta SSH di Proxmox, dove `device.port` è la porta dell'API (443/8006)
  * anche con protocollo `ssh`: quella propria del primo candidato SSH
- * dell'apparato con una porta valida (binding, voce della colonna; 22 per le
- * colonne utente/password), altrimenti 22. Mai `device.port`.
+ * dell'apparato con una porta valida (binding, o la voce provvisoria),
+ * altrimenti 22. Mai `device.port`.
  */
 export function portaSshApparatoDb(dbh: Database.Database, device: ApparatoInAcquisizione): number {
   const app = apparatoDi(dbh, device);
@@ -1083,8 +975,8 @@ export function portaSshApparatoDb(dbh: Database.Database, device: ApparatoInAcq
  * Community SNMP da provare per un host o una rete, con la fonte di ognuna:
  * voci del motore (community, mai v3), poi l'override del profilo o della
  * scansione, la community della rete, «public» e «private». Le ultime tre sono
- * ripieghi dichiarati (D5) e si registrano come `cred_public`; le catene
- * vecchie come `cred_catena_vecchia`. Senza doppioni, nell'ordine.
+ * ripieghi dichiarati (D5) e si registrano come `cred_public`. Senza doppioni,
+ * nell'ordine.
  */
 export function communitySnmpDb(
   dbh: Database.Database,
@@ -1117,9 +1009,8 @@ export function communitySnmpDb(
 
 /**
  * Catena di una rete per la discovery e l'anteprima edge: gli id delle voci
- * del motore, senza doppioni; catene vecchie e chiave dell'hub (col filtro di
- * tipo) solo finché la 2d non le ha convertite. Registra le fonti vecchie che
- * ci entrano: la scelta la fa chi prova la catena.
+ * del motore (la lista della rete), senza doppioni. Dalla 2g niente catene
+ * vecchie né chiave dell'hub (T26).
  */
 export function catenaReteDb(dbh: Database.Database, networkId: number, protocol: CredProtocol, opts: OpzioniMotore = {}): number[] {
   const ids: number[] = [];
@@ -1133,17 +1024,6 @@ export function catenaReteDb(dbh: Database.Database, networkId: number, protocol
   }
   if (opts.registra !== false) registra(casi);
   return ids;
-}
-
-/** Chiavi globali dell'hub lette con il `getSetting` di chi chiama; id non validi → null. */
-export function chiaviGlobaliHub(leggi: (chiave: string) => string | null): { windows: number | null; linux: number | null } {
-  const id = (chiave: string): number | null => {
-    const s = leggi(chiave)?.trim();
-    if (!s) return null;
-    const n = parseInt(s, 10);
-    return Number.isNaN(n) || n <= 0 ? null : n;
-  };
-  return { windows: id("host_windows_credential_id"), linux: id("host_linux_credential_id") };
 }
 
 // ── Funzioni col tenant corrente ───────────────────────────────────────────

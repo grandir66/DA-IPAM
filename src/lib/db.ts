@@ -27,7 +27,6 @@ import { randomUUID } from "crypto";
 import { inferIpAssignment, resolveAdDhcpLeaseForHost, resolveDhcpLeaseForHost } from "./ip-assignment";
 import {
   catenaReteDb,
-  chiaviGlobaliHub,
   communitySnmpDb,
   credenzialeSnmpApparatoDb,
   haSnmpApparatoDb,
@@ -38,7 +37,6 @@ import {
   type SceltaSnmpApparato,
 } from "./credentials/resolve";
 import { accessoSshDb, communityDb, coppiaLoginDb, coppiaSshDb, type AccessoSsh, type EsitoAccessoSsh } from "./credentials/segreti";
-import { tipiPerRuoloVecchio } from "./credentials/tipi";
 import { aggiornaCredenzialeDb, creaCredenzialeDb, eliminaCredenzialeDb, type ColonneCredenziale } from "./credentials/archivio";
 import { aggiungiAllaListaReteDb, copiaListaReteDb, sostituisciListaReteDb } from "./credentials/lista-rete";
 import { lookupVendorSync } from "./scanner/mac-vendor";
@@ -3780,17 +3778,6 @@ export function getCredentialLoginPair(
   return coppiaLoginDb(getDb(), credentialId, expectedType);
 }
 
-/** Ruoli catena credenziali per subnet (detect / SNMP). */
-export type NetworkCredentialRole = "windows" | "linux" | "ssh" | "snmp";
-
-/** Regola unica (T12): i tipi del protocollo del ruolo, come li legge il motore. */
-function credentialMatchesNetworkRole(
-  credentialType: string,
-  role: NetworkCredentialRole
-): boolean {
-  return tipiPerRuoloVecchio(role).includes(credentialType.toLowerCase());
-}
-
 /** Username/password per credenziali SSH o Linux (scan SSH unificato). */
 export function getSshLinuxCredentialPair(credentialId: number): { username: string; password: string; port: number | null } | null {
   return coppiaSshDb(getDb(), credentialId);
@@ -3801,90 +3788,25 @@ export function accessoSshCredenziale(credentialId: number): EsitoAccessoSsh {
   return accessoSshDb(getDb(), credentialId);
 }
 
-/** Credenziali Windows/Linux/SSH/SNMP assegnate alla subnet (ordine = priorità tentativi). */
-export function getNetworkHostCredentialIds(networkId: number, role: NetworkCredentialRole): number[] {
-  const rows = getDb()
-    .prepare(
-      `SELECT credential_id FROM network_host_credentials WHERE network_id = ? AND role = ? ORDER BY sort_order ASC, id ASC`
-    )
-    .all(networkId, role) as { credential_id: number }[];
-  return rows.map((r) => r.credential_id);
-}
-
-export function replaceNetworkHostCredentials(
-  networkId: number,
-  role: NetworkCredentialRole,
-  credentialIds: number[]
-): void {
-  const seen = new Set<number>();
-  const unique: number[] = [];
-  for (const id of credentialIds) {
-    if (seen.has(id)) continue;
-    seen.add(id);
-    const c = getCredentialById(id);
-    if (!c || !credentialMatchesNetworkRole(String(c.credential_type), role)) {
-      throw new Error(`Credenziale #${id} non valida per ruolo ${role}`);
-    }
-    unique.push(id);
-  }
-  const db = getDb();
-  db.transaction(() => {
-    db.prepare(`DELETE FROM network_host_credentials WHERE network_id = ? AND role = ?`).run(networkId, role);
-    const ins = db.prepare(
-      `INSERT INTO network_host_credentials (network_id, credential_id, role, sort_order) VALUES (?,?,?,?)`
-    );
-    unique.forEach((cid, i) => ins.run(networkId, cid, role, i));
-  })();
-}
-
-/** Ruoli binding detect su host (stesso nome tabella host_detect_credential). */
-export type HostDetectCredentialRole = "windows" | "linux" | "ssh" | "snmp";
-
-/** Credenziale salvata dopo primo detect riuscito (un solo tentativo per credenziale in scan). */
-export function getHostDetectCredentialId(hostId: number, role: HostDetectCredentialRole): number | null {
-  const row = getDb()
-    .prepare(`SELECT credential_id FROM host_detect_credential WHERE host_id = ? AND role = ?`)
-    .get(hostId, role) as { credential_id: number } | undefined;
-  return row?.credential_id ?? null;
-}
-
-/** Regola unica (T12): i tipi del protocollo del ruolo, come li legge il motore. */
-function credentialMatchesDetectRole(credentialType: string, role: HostDetectCredentialRole): boolean {
-  return tipiPerRuoloVecchio(role).includes(credentialType.toLowerCase());
-}
-
-export function setHostDetectCredential(hostId: number, role: HostDetectCredentialRole, credentialId: number): void {
-  const c = getCredentialById(credentialId);
-  if (!c || !credentialMatchesDetectRole(String(c.credential_type), role)) return;
-  getDb()
-    .prepare(
-      `INSERT INTO host_detect_credential (host_id, role, credential_id, updated_at)
-       VALUES (?, ?, ?, datetime('now'))
-       ON CONFLICT(host_id, role) DO UPDATE SET credential_id = excluded.credential_id, updated_at = datetime('now')`
-    )
-    .run(hostId, role, credentialId);
-}
-
 /** Le verifiche (fotografia, prova a vuoto) passano `registra: false`: i ripieghi non si scrivono. */
 type OpzioniRegistro = { registra?: boolean };
 
 /**
  * Catena di rilevamento (Windows o Linux) di una rete: involucro del motore
- * (`catenaReteDb`, tappa 2 credenziali, T7). Voci della rete, catene vecchie
- * e chiave globale dell'hub, tutte col filtro di tipo: prima la chiave
- * dell'hub si accodava senza controllo, anche se puntava a una voce che nel
- * tenant non c'è o è di un altro tipo. Catene vecchie e chiave dell'hub solo
- * finché la 2d non le ha convertite (T17, lo decide il motore col segno).
- * `role="linux"` è il protocollo SSH. `registra: false` (fotografia, prova a
- * vuoto) non scrive i ripieghi.
+ * (`catenaReteDb`, tappa 2 credenziali, T7): le voci della lista della rete,
+ * col filtro di tipo. Dalla 2g (T26) niente catene vecchie né chiave «di
+ * default» dell'hub: la 2d le ha portate nella lista, e le tabelle vecchie
+ * (`network_host_credentials`, `host_detect_credential`) non hanno più né
+ * lettori né scrittori. `role="linux"` è il protocollo SSH. `registra: false`
+ * (fotografia, prova a vuoto) non scrive i ripieghi.
  */
 export function getOrderedDetectCredentialIds(networkId: number, role: "windows" | "linux", opts: OpzioniRegistro = {}): number[] {
-  return catenaReteDb(getDb(), networkId, role === "windows" ? "winrm" : "ssh", { globaliHub: chiaviGlobaliHub(getSetting), registra: opts.registra });
+  return catenaReteDb(getDb(), networkId, role === "windows" ? "winrm" : "ssh", { registra: opts.registra });
 }
 
 /** Catena SSH di una rete per la scansione: involucro del motore (vedi sopra). */
 export function getOrderedSshLinuxCredentialIds(networkId: number, opts: OpzioniRegistro = {}): number[] {
-  return catenaReteDb(getDb(), networkId, "ssh", { globaliHub: chiaviGlobaliHub(getSetting), registra: opts.registra });
+  return catenaReteDb(getDb(), networkId, "ssh", { registra: opts.registra });
 }
 
 /**
@@ -4264,7 +4186,7 @@ export function getNetworkDeviceByHostId(hostId: number): NetworkDevice | undefi
 }
 
 
-type CreateDeviceInput = Omit<NetworkDevice, "id" | "created_at" | "updated_at" | "sysname" | "sysdescr" | "model" | "firmware" | "serial_number" | "part_number" | "last_info_update" | "last_device_info_json" | "classification" | "stp_info" | "last_proxmox_scan_at" | "last_proxmox_scan_result" | "scan_target" | "product_profile" | "use_for_arp_poll" | "physical_device_id"> & {
+type CreateDeviceInput = Omit<NetworkDevice, "id" | "created_at" | "updated_at" | "sysname" | "sysdescr" | "model" | "firmware" | "serial_number" | "part_number" | "last_info_update" | "last_device_info_json" | "classification" | "stp_info" | "last_proxmox_scan_at" | "last_proxmox_scan_result" | "scan_target" | "product_profile" | "use_for_arp_poll" | "physical_device_id" | "voci_provvisorie"> & {
   classification?: string | null;
   scan_target?: string | null;
   product_profile?: string | null;
@@ -4282,15 +4204,14 @@ export function createNetworkDevice(input: CreateDeviceInput): NetworkDevice {
   }
 
   const stmt = getDb().prepare(
-    `INSERT INTO network_devices (name, host, device_type, vendor, vendor_subtype, protocol, credential_id, snmp_credential_id, username, encrypted_password, community_string, api_token, api_url, port, enabled, classification, scan_target, product_profile, use_for_arp_poll, host_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO network_devices (name, host, device_type, vendor, vendor_subtype, protocol, api_url, port, enabled, classification, scan_target, product_profile, use_for_arp_poll, host_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   const result = stmt.run(
     input.name, input.host, input.device_type, input.vendor,
     input.vendor_subtype ?? null, input.protocol,
-    input.credential_id ?? null, (input as { snmp_credential_id?: number | null }).snmp_credential_id ?? null,
-    input.username, input.encrypted_password,
-    input.community_string, input.api_token, input.api_url, input.port, input.enabled,
+    // Le credenziali si legano dopo, coi binding d'archivio (T20): le colonne vecchie non si scrivono (T26).
+    input.api_url, input.port, input.enabled,
     (input as { classification?: string | null }).classification ?? null,
     (input as { scan_target?: string | null }).scan_target ?? null,
     (input as { product_profile?: string | null }).product_profile ?? null,
@@ -4309,7 +4230,7 @@ export function updateNetworkDevice(id: number, input: Partial<Omit<NetworkDevic
   const fields: string[] = [];
   const values: unknown[] = [];
 
-  const keys = ["name", "host", "device_type", "vendor", "vendor_subtype", "protocol", "credential_id", "snmp_credential_id", "username", "encrypted_password", "community_string", "api_token", "api_url", "port", "enabled", "classification", "sysname", "sysdescr", "model", "firmware", "serial_number", "part_number", "last_info_update", "last_device_info_json", "stp_info", "last_proxmox_scan_at", "last_proxmox_scan_result", "scan_target", "product_profile", "use_for_arp_poll", "host_id", "snmp_version", "snmp_version_fissata"] as const;
+  const keys = ["name", "host", "device_type", "vendor", "vendor_subtype", "protocol", "api_url", "port", "enabled", "classification", "sysname", "sysdescr", "model", "firmware", "serial_number", "part_number", "last_info_update", "last_device_info_json", "stp_info", "last_proxmox_scan_at", "last_proxmox_scan_result", "scan_target", "product_profile", "use_for_arp_poll", "host_id", "snmp_version", "snmp_version_fissata"] as const;
   for (const key of keys) {
     if (input[key] !== undefined) {
       fields.push(`${key} = ?`);
@@ -5898,15 +5819,18 @@ export function deleteUser(userId: number): boolean {
   return hub.deleteUser(userId);
 }
 
-/** Reset all networks and devices for new client. Keeps nmap_profiles e regole fingerprint (vedi corpo transazione). */
+/**
+ * Reset all networks and devices for new client. Keeps nmap_profiles e regole fingerprint (vedi corpo transazione).
+ * Le catene vecchie (`network_host_credentials`, `host_detect_credential`) non si nominano (T26): dove ci
+ * sono ancora, le loro righe se ne vanno con la cascata di `credentials`, `hosts` e `networks`; dove la
+ * pulizia della 2g le ha tolte, una DELETE darebbe «no such table» e farebbe fallire l'intero reset.
+ */
 export function resetConfiguration(): void {
   const db = getDb();
   db.transaction(() => {
     db.exec(`
       DELETE FROM scan_history;
       DELETE FROM status_history;
-      DELETE FROM host_detect_credential;
-      DELETE FROM network_host_credentials;
       DELETE FROM arp_entries;
       DELETE FROM mac_port_entries;
       DELETE FROM mac_ip_history;

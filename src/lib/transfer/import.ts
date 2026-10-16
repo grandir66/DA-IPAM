@@ -8,7 +8,7 @@ import { writableColumns, rekeyColumns } from "./schema-introspect";
 import { encrypt } from "@/lib/crypto";
 import { descriviNormalizza, normalizzaTipiCredenziali, segnoTipi } from "@/lib/credentials/normalizza-tipi";
 import { conversioneChiusa, leggiSegno, scriviSegno, segnoErrore, SEGNO_APPARATI, SEGNO_CATENE, SEGNO_INTEGRAZIONI, SEGNO_TIPI } from "@/lib/credentials/segni-t2";
-import { convertiCateneVecchie, descriviCatene, segnoCatene } from "@/lib/credentials/converti-catene";
+import { conCateneDelBundle, convertiCateneVecchie, descriviCatene, segnoCatene, TABELLE_CATENE_VECCHIE, type TabellaCateneVecchie } from "@/lib/credentials/converti-catene";
 import { convertiCredenzialiApparati, descriviApparati, segnoApparati } from "@/lib/credentials/converti-apparati";
 import { convertiControllerEAd, descriviIntegrazioni, segnoIntegrazioni } from "@/lib/credentials/converti-integrazioni";
 
@@ -49,6 +49,14 @@ export function importTenant(args: ImportArgs): ImportResult {
 
   const result: ImportResult = { tables: {}, profilesMerged: 0, vaultMerged: 0, rekeyedSecrets: 0, fkViolations: 0, conversioni: {} };
 
+  // Tappa 2g (T26): catene vecchie e pin di un bundle di prima della 2d non si
+  // scrivono più nelle loro tabelle (non le legge nessuno, e dopo la pulizia
+  // della 2g non ci sono): si convertono più sotto, dalle temporanee.
+  const catenaDelBundle: Record<TabellaCateneVecchie, Record<string, unknown>[]> = {
+    network_host_credentials: byTable.get("network_host_credentials") ?? [],
+    host_detect_credential: byTable.get("host_detect_credential") ?? [],
+  };
+
   // --- Import tabelle TENANT (replace) in un'unica transazione ---
   // PRAGMA foreign_keys è no-op dentro una transazione aperta: il toggle va FUORI
   tenantDb.pragma("foreign_keys = OFF");
@@ -57,6 +65,12 @@ export function importTenant(args: ImportArgs): ImportResult {
       if (options.wipe) {
         for (const spec of [...TENANT_TABLES].reverse()) {
           if (tableExists(tenantDb, spec.table)) tenantDb.prepare(`DELETE FROM "${spec.table}"`).run();
+        }
+        // Le tabelle vecchie non sono più nel registro, ma dove ci sono ancora
+        // una cancellazione le svuota come prima: righe del tenant di prima,
+        // senza le reti e gli host a cui puntavano.
+        for (const t of TABELLE_CATENE_VECCHIE) {
+          if (tableExists(tenantDb, t)) tenantDb.prepare(`DELETE FROM "${t}"`).run();
         }
       }
 
@@ -106,7 +120,10 @@ export function importTenant(args: ImportArgs): ImportResult {
   // il segno della sorgente. La conversione si chiama direttamente, senza
   // chiavi dell'hub (globali = null: sono id del DB di un tenant salvati
   // nell'hub, e quelli di questa installazione non dicono niente sul bundle),
-  // e il segno si riscrive con l'esito, nella stessa transazione.
+  // e il segno si riscrive con l'esito, nella stessa transazione. Dalla 2g
+  // (T26) le righe vecchie del bundle stanno in tabelle temporanee con gli
+  // stessi nomi (`conCateneDelBundle`), che nascondono quelle del DB: si
+  // convertono solo le righe del bundle, anche dove le tabelle non ci sono più.
   // Eccezione (revisione della 2d, 16/10): con la cancellazione il segno in
   // tenant_settings è quello del bundle; se è chiuso (done:/parziale:) la
   // sorgente era già convertita, le sue catene vecchie sono congelate e le
@@ -122,7 +139,7 @@ export function importTenant(args: ImportArgs): ImportResult {
       };
     } else {
       const { esito, segno } = tenantDb.transaction(() => {
-        const esito = convertiCateneVecchie(tenantDb, null, { aVuoto: false });
+        const esito = conCateneDelBundle(tenantDb, catenaDelBundle, () => convertiCateneVecchie(tenantDb, null, { aVuoto: false }));
         const segno = segnoCatene(esito);
         scriviSegno(tenantDb, SEGNO_CATENE, segno);
         return { esito, segno };

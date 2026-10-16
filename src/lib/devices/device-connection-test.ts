@@ -55,21 +55,26 @@ export function isSshScannableDevice(device: { vendor?: string; protocol?: strin
   return device.protocol === "ssh" && (device.vendor === "linux" || device.vendor === "other" || device.vendor === "synology" || device.vendor === "qnap");
 }
 
+/**
+ * L'apparato della prova dalla finestra, prima di salvarlo: indirizzo,
+ * protocollo e le voci d'archivio scelte (tappa 2g credenziali, T26). Prima
+ * portava anche utente, password e community in chiaro nelle colonne
+ * dell'oggetto, che il motore non legge più.
+ */
 export interface ProvisionalDevice {
   host: string;
   vendor: string;
   protocol: string;
   port?: number;
+  /** La voce scelta per il protocollo principale. */
   credential_id?: number | null;
+  /** La voce SNMP scelta in più. */
   snmp_credential_id?: number | null;
   scan_target?: string | null;
   api_url?: string | null;
   /** Profilo prodotto (marca + tipologia); per test coerente con device_type e vendor_subtype */
   product_profile?: string | null;
   device_type?: string;
-  username?: string | null;
-  encrypted_password?: string | null;
-  community_string?: string | null;
 }
 
 function buildDeviceFromProvisional(p: ProvisionalDevice): NetworkDevice {
@@ -96,12 +101,8 @@ function buildDeviceFromProvisional(p: ProvisionalDevice): NetworkDevice {
     vendor: p.vendor as NetworkDevice["vendor"],
     vendor_subtype: vendorSubtypeFromProductProfile(profileId),
     protocol: p.protocol as NetworkDevice["protocol"],
-    credential_id: p.credential_id ?? null,
-    snmp_credential_id: p.snmp_credential_id ?? null,
-    username: p.username ?? null,
-    encrypted_password: p.encrypted_password ?? null,
-    community_string: p.community_string ?? null,
-    api_token: null,
+    // Le voci scelte nella finestra: il motore le prova come binding non ancora provati.
+    voci_provvisorie: { principale: p.credential_id ?? null, snmp: p.snmp_credential_id ?? null },
     api_url: p.api_url ?? null,
     port: p.port ?? (p.protocol === "ssh" ? 22 : p.protocol === "winrm" ? 5985 : p.protocol === "api" ? 443 : 161),
     enabled: 1,
@@ -128,9 +129,9 @@ function buildDeviceFromProvisional(p: ProvisionalDevice): NetworkDevice {
 /**
  * L'accesso per la prova, scelto dal motore (tappa 2 credenziali, T8): utente
  * con password, o con chiave per l'SSH (T14).
- * Prima le fonti dell'apparato (getDeviceCredentials: binding, binding falliti
- * esclusi, poi colonne); un apparato provvisorio, mai salvato, ha solo la voce
- * scelta nella finestra. Poi le righe validate dell'host con lo stesso
+ * Prima le fonti dell'apparato (getDeviceCredentials: binding d'archivio,
+ * falliti esclusi); un apparato provvisorio, mai salvato, ha solo la voce
+ * scelta nella finestra (`voci_provvisorie`). Poi le righe validate dell'host con lo stesso
  * indirizzo, per il protocollo di login dell'apparato (winrm, api, altrimenti
  * ssh). Prima il ripiego sull'host leggeva le voci senza guardarne il tipo.
  * Un apparato SNMP non ripiega sull'host: prima del T8 cercava righe 'snmp',

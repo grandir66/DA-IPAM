@@ -83,18 +83,9 @@ export function creaApparato(body: unknown): EsitoCreaApparato {
         vendor: data.vendor,
         vendor_subtype: data.vendor_subtype ?? vendorSubtypeFromProductProfile(productProfile),
         protocol: data.protocol,
-        // Nemmeno gli id delle voci (revisione della 2e, 16/10): il motore legge
-        // `credential_id` / `snmp_credential_id` come livello 4 (device_column),
-        // quindi con il binding fallito (D10) o tolto dalla tabella
-        // dell'apparato la voce tornava da una colonna che la pagina non mostra.
-        // Le voci stanno solo nei binding qui sotto; il wizard del router le
-        // cerca lì (`onboarding/router-store.ts`).
-        credential_id: null,
-        snmp_credential_id: null,
-        username: null,
-        encrypted_password: null,
-        community_string: null,
-        api_token: null,
+        // Nessuna colonna di credenziali (T20; dalla 2g il tipo non le ha più e
+        // il motore non le legge): le voci stanno solo nei binding qui sotto, e
+        // il wizard del router le cerca lì (`onboarding/router-store.ts`).
         api_url: data.api_url || null,
         port: devicePort,
         enabled: 1,

@@ -58,10 +58,10 @@ export function metodoVoceDiAccesso(a: UnifiOsAuth): "chiave" | "utente" {
 
 /**
  * Con che cosa entra un controller salvato (tappa 2f), col criterio del server
- * (`credenzialeControllerDb`): la sua voce; le colonne di una riga mai
- * convertita (segno della 2f diverso da `done:`); oppure niente.
+ * (`credenzialeControllerDb`): la sua voce, oppure niente. Dalla 2g (T26) le
+ * colonne della riga non si leggono più.
  */
-export type StatoCredenzialeController = "voce" | "forma_vecchia" | "mancante";
+export type StatoCredenzialeController = "voce" | "mancante";
 
 /** Il metodo di una voce → l'accesso di una console UniFi OS. */
 export function accessoDiMetodoVoce(m: MetodoVoceController): UnifiOsAuth {

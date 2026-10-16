@@ -110,10 +110,11 @@ describe("voce SSH a chiave nei percorsi SSH", () => {
       );
       id.serverChiave = Number(crea.run("Server a chiave", "server", "linux", "ssh", srv.porta, null, null, null).lastInsertRowid);
       bind.run(id.serverChiave, id.chiave, "ssh", srv.porta, 0);
-      // Proxmox: l'API sulla 8006, la voce SSH della colonna con la sua porta (quella del server finto).
-      id.proxmoxChiave = Number(
-        crea.run("Proxmox a chiave", "hypervisor", "proxmox", "api", 8006, id.chiave, "proxmox", "https://127.0.0.1:1").lastInsertRowid,
-      );
+      // Proxmox: l'API sulla 8006 e l'SSH sulla porta del server finto, tutti e due nei binding della voce a
+      // chiave (dalla 2g, T26, la colonna credential_id non si legge più).
+      id.proxmoxChiave = Number(crea.run("Proxmox a chiave", "hypervisor", "proxmox", "api", 8006, null, "proxmox", "https://127.0.0.1:1").lastInsertRowid);
+      bind.run(id.proxmoxChiave, id.chiave, "api", 8006, 0);
+      bind.run(id.proxmoxChiave, id.chiave, "ssh", srv.porta, 1);
       id.proxmoxMisto = Number(crea.run("Proxmox misto", "hypervisor", "proxmox", "api", 8006, null, "proxmox", "https://127.0.0.1:1").lastInsertRowid);
       bind.run(id.proxmoxMisto, id.chiave, "api", 8006, 0);
       bind.run(id.proxmoxMisto, id.password, "api", 8006, 1);

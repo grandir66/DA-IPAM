@@ -15,12 +15,11 @@
  * gli ID di credenziale usati nei test partono da 50 per non collidere ed è per
  * questo che le asserzioni confrontano il PREFISSO atteso, non l'array intero.
  *
- * Dalla 2d (T17) il motore legge catene vecchie e chiave dell'hub solo finché
- * la conversione non le ha portate nella lista (segno `credenziali_t2_catene`
- * a `done:` o `parziale:`). L'apertura del tenant di prova scrive il segno su
- * un DB vuoto: qui lo si toglie, perché queste prove descrivono un tenant di
- * prima della 2d. Il caso col segno chiuso sta in
- * `credentials/__tests__/catene-chiuse.test.ts`.
+ * Dalla 2d (T17) il motore leggeva catene vecchie e chiave dell'hub solo
+ * finché la conversione non le aveva portate nella lista; dalla 2g (T26) non
+ * le legge mai, nemmeno senza il segno `credenziali_t2_catene` (qui lo si
+ * toglie, come per un tenant di prima della 2d): le catene sono la lista della
+ * rete e le righe dell'host. Vedi `credentials/__tests__/catene-chiuse.test.ts`.
  *
  * Run: node --import tsx --test src/lib/__tests__/credential-chains.test.ts
  */
@@ -133,13 +132,10 @@ describe("buildSnmpCommunitiesForHost — fase 1b", () => {
     assert.ok(result.includes("netv2community"), `attesa 'netv2community' in ${JSON.stringify(result)}`);
   });
 
-  it("(b) le credenziali validate per l'host vanno per prime, poi v2 di rete, poi legacy", () => {
+  it("(b) le credenziali validate per l'host vanno per prime, poi v2 di rete; la catena vecchia non entra (2g)", () => {
     const result = withTenant(T, () => buildSnmpCommunitiesForHost(1, 1, null));
-    assert.deepEqual(
-      result.slice(0, 3),
-      ["hostvalidated", "netv2community", "legacycommunity"],
-      `ordine inatteso: ${JSON.stringify(result)}`
-    );
+    assert.deepEqual(result.slice(0, 2), ["hostvalidated", "netv2community"], `ordine inatteso: ${JSON.stringify(result)}`);
+    assert.equal(result.includes("legacycommunity"), false, `catena vecchia letta: ${JSON.stringify(result)}`);
   });
 
   it("(c) public/private restano SEMPRE ultimi e non duplicati anche se net.snmp_community='public'", () => {
@@ -156,16 +152,18 @@ describe("buildSnmpCommunitiesForHost — fase 1b", () => {
 });
 
 describe("getOrderedDetectCredentialIds — fase 1b", () => {
-  it("(d) include le credenziali v2 (network_credentials) oltre alle legacy, v2 prima", () => {
+  it("(d) le credenziali v2 (network_credentials), senza la catena vecchia (2g)", () => {
     const result = withTenant(T, () => getOrderedDetectCredentialIds(4, "windows"));
-    assert.deepEqual(result.slice(0, 2), [80, 81], `atteso [80,81] come prefisso: ${JSON.stringify(result)}`);
+    assert.equal(result[0], 80, `atteso 80 per primo: ${JSON.stringify(result)}`);
+    assert.equal(result.includes(81), false, `catena vecchia letta: ${JSON.stringify(result)}`);
   });
 });
 
 describe("getOrderedSshLinuxCredentialIds — fase 1b", () => {
-  it("v2 + legacy (ssh poi linux) senza duplicati", () => {
+  it("solo v2, senza le catene vecchie ssh e linux (2g), e senza duplicati", () => {
     const result = withTenant(T, () => getOrderedSshLinuxCredentialIds(5));
-    assert.deepEqual(result.slice(0, 3), [95, 96, 97], `atteso [95,96,97] come prefisso: ${JSON.stringify(result)}`);
-    assert.equal(result.filter((x) => x === 95).length, 1, "95 non deve duplicarsi (v2 + legacy ssh + legacy linux)");
+    assert.equal(result[0], 95, `atteso 95 per primo: ${JSON.stringify(result)}`);
+    assert.equal(result.includes(96) || result.includes(97), false, `catene vecchie lette: ${JSON.stringify(result)}`);
+    assert.equal(result.filter((x) => x === 95).length, 1, "95 non deve duplicarsi");
   });
 });

@@ -99,8 +99,13 @@ test("MK2 dei router (sshExec, giro di oggi): l'uscita tagliata resta al giro di
     assert.equal(caduto.code, undefined, "sshExec risolve senza codice: chi la usa deve guardarlo");
     const device = withTenant(T, () => {
       getTenantDb(T).exec("DELETE FROM network_devices");
-      getTenantDb(T).prepare("INSERT INTO network_devices (id, name, host, port, device_type, vendor, protocol, username, encrypted_password, enabled) "
-        + "VALUES (1, 'RTR-1', '127.0.0.1', ?, 'router', 'mikrotik', 'ssh', 'u', ?, 1)").run(srv.porta, encrypt("p"));
+      // La credenziale nel binding d'archivio: dalla 2g (T26) le colonne dell'apparato non si leggono più.
+      getTenantDb(T).prepare("INSERT INTO network_devices (id, name, host, port, device_type, vendor, protocol, enabled) "
+        + "VALUES (1, 'RTR-1', '127.0.0.1', ?, 'router', 'mikrotik', 'ssh', 1)").run(srv.porta);
+      const voce = Number(getTenantDb(T).prepare("INSERT INTO credentials (name, credential_type, encrypted_username, encrypted_password) VALUES ('RTR-1 · SSH', 'ssh', ?, ?)")
+        .run(encrypt("u"), encrypt("p")).lastInsertRowid);
+      getTenantDb(T).prepare("INSERT INTO device_credential_bindings (device_id, credential_id, protocol_type, port, sort_order) VALUES (1, ?, 'ssh', ?, 0)")
+        .run(voce, srv.porta);
       return getTenantDb(T).prepare("SELECT * FROM network_devices WHERE id = 1").get() as NetworkDevice;
     });
     const client = await withTenant(T, () => createRouterClient(device));

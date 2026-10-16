@@ -13,7 +13,11 @@
  *     da `encrypted_password`: dopo la conversione deve dare lo stesso record;
  *   - un tipo che non si conosce non si indovina: resta com'è e si elenca.
  * Le letture si controllano col motore vero (`credenzialeSnmpApparatoDb`,
- * `leggiSegretoDb`), con `registra: false`.
+ * `leggiSegretoDb`), con `registra: false`. Gli apparati di queste prove hanno
+ * la voce nelle colonne, come prima della 2e: dalla 2g (T26) il motore non le
+ * legge più da solo, e la scelta di prima la ricostruiscono le fonti vecchie
+ * della conversione della 2e (`opzioniDiPrima`), le stesse con cui la 2e
+ * controlla di non cambiare la scelta.
  *
  * Run: DA_INVENT_DATA_DIR="$(mktemp -d "${TMPDIR:-/tmp}/ipam.XXXXXX")" node --import tsx --test src/lib/credentials/__tests__/normalizza-tipi.test.ts
  */
@@ -26,6 +30,7 @@ import { encrypt, decrypt } from "@/lib/crypto";
 import { getTenantDb, deleteTenantDatabase, withTenant } from "@/lib/db-tenant";
 import { normalizzaTipiCredenziali } from "@/lib/credentials/normalizza-tipi";
 import { credenzialeSnmpApparatoDb, type ApparatoInAcquisizione } from "@/lib/credentials/resolve";
+import { opzioniDiPrima } from "@/lib/credentials/converti-apparati";
 import { coppiaSshDb, leggiSegretoDb } from "@/lib/credentials/segreti";
 
 const T = "TESTNORMTIPI";
@@ -67,7 +72,7 @@ function riga(id: number): Record<string, unknown> {
 }
 
 function snmpDi(deviceId: number) {
-  return credenzialeSnmpApparatoDb(db, { id: deviceId, name: "" } as ApparatoInAcquisizione, { registra: false });
+  return credenzialeSnmpApparatoDb(db, { id: deviceId, name: "" } as ApparatoInAcquisizione, { registra: false, ...opzioniDiPrima(db, deviceId) });
 }
 
 function tutto(): unknown {

@@ -173,11 +173,7 @@ function aggiorna(prima: NetworkDevice, c: z.infer<typeof SchemaModificaRouter>)
     const porta = portaVocePrincipale(voce, protocollo);
     campi.protocol = protocollo as NetworkDevice["protocol"];
     campi.port = porta;
-    // La voce va solo nel binding; le colonne si svuotano (un apparato lasciato
-    // dalla 2e può averle ancora piene, e il motore le leggerebbe come ripiego).
-    campi.credential_id = null;
-    campi.username = null;
-    campi.encrypted_password = null;
+    // La voce va solo nel binding (dalla 2g il motore non legge più le colonne).
     sostituisci(libero(bindingPrincipale), {
       credential_id: credenziale,
       protocol_type: tipoBindingPerProtocollo(protocollo),
@@ -196,7 +192,6 @@ function aggiorna(prima: NetworkDevice, c: z.infer<typeof SchemaModificaRouter>)
     }
     // Il binding SNMP separato di prima (anche la community in linea del vecchio wizard, se la si sostituisce).
     sostituisci(libero(bindingSnmp), voluto);
-    campi.snmp_credential_id = null;
   }
 
   if (Object.keys(campi).length) updateNetworkDevice(prima.id, campi);

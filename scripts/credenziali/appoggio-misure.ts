@@ -34,8 +34,7 @@ import { resolveCredentialsForDb, type CredProtocol } from "../../src/lib/creden
 // La misura di D1b chiede cosa riceverebbero gli apparati con la regola NUOVA
 // tipo ↔ protocollo: è quella di tipi.ts (T2), non una copia.
 import { tipiPerProtocollo } from "../../src/lib/credentials/tipi";
-import { haSnmpOggi, protocolloPrincipale, provenienzaCommunity, provenienzaV3, type ProtocolloApparato } from "./appoggio-fotografia";
-import type { NetworkDevice } from "../../src/types";
+import { haSnmpOggi, protocolloPrincipale, provenienzaCommunity, provenienzaV3, type ProtocolloApparato, type RigaApparatoVecchia } from "./appoggio-fotografia";
 
 export { cartellaTenant, chiudiTutto, elencaTenant, getHubDbPath } from "./appoggio-fotografia";
 
@@ -107,7 +106,7 @@ function misuraChiaviHub(dbh: Database.Database): Righe {
 }
 
 /** D5: apparati che oggi ricevono «public» come ripiego. */
-function misuraPublic(dbh: Database.Database, apparati: NetworkDevice[]): Righe {
+function misuraPublic(dbh: Database.Database, apparati: RigaApparatoVecchia[]): Righe {
   let pub = 0;
   let snmpPrincipale = 0;
   let conHaSnmp = 0;
@@ -130,7 +129,7 @@ function misuraPublic(dbh: Database.Database, apparati: NetworkDevice[]): Righe 
  * dice la provenienza ricostruita. Per quelli senza v3: da dove leggono la
  * community oggi, cioè quello che la 2a toglie.
  */
-function misuraSnmpV3(dbh: Database.Database, apparati: NetworkDevice[]): Righe {
+function misuraSnmpV3(dbh: Database.Database, apparati: RigaApparatoVecchia[]): Righe {
   let n = 0;
   let completa = 0;
   let vecchia = 0;
@@ -206,7 +205,7 @@ function bindingPropri(dbh: Database.Database, deviceId: number, proto: string):
     .all(deviceId, proto) as Array<{ credential_id: number | null; inline_username: string | null; inline_encrypted_password: string | null }>;
 }
 
-function haFontePropria(dbh: Database.Database, d: NetworkDevice, proto: ProtocolloApparato): boolean {
+function haFontePropria(dbh: Database.Database, d: RigaApparatoVecchia, proto: ProtocolloApparato): boolean {
   const bindings = bindingPropri(dbh, d.id, proto);
   if (bindings.some((b) => b.credential_id != null || !!b.inline_encrypted_password)) return true;
   if (proto === "snmp") {
@@ -217,7 +216,7 @@ function haFontePropria(dbh: Database.Database, d: NetworkDevice, proto: Protoco
 }
 
 /** D1b: apparati senza fonte propria che riceverebbero un candidato dai livelli 6-11. */
-function misuraD1b(dbh: Database.Database, apparati: NetworkDevice[]): Righe {
+function misuraD1b(dbh: Database.Database, apparati: RigaApparatoVecchia[]): Righe {
   const out: Righe = [];
   const inTipi = (tipi: string[]) => tipi.map(() => "?").join(",");
   const hubWin = idImpostato("host_windows_credential_id");
@@ -311,7 +310,7 @@ function communityBinding(b: { credential_id: number | null; inline_encrypted_pa
 }
 
 /** 2e: colonne degli apparati contro i binding; binding inline. */
-function misura2e(dbh: Database.Database, apparati: NetworkDevice[]): Righe {
+function misura2e(dbh: Database.Database, apparati: RigaApparatoVecchia[]): Righe {
   const out: Righe = [];
   // a. utente/password in colonna contro i binding del protocollo che getDeviceCredentials legge.
   const col = { n: 0, conBinding: 0, uguale: 0, diverso: 0, senzaBinding: 0, illeggibili: 0 };
@@ -392,7 +391,7 @@ export function misureTenant(code: string): Righe {
   try {
     return withTenant(code, () => {
       const dbh = getTenantDb(code);
-      const apparati = dbh.prepare("SELECT * FROM network_devices ORDER BY id").all() as NetworkDevice[];
+      const apparati = dbh.prepare("SELECT * FROM network_devices ORDER BY id").all() as RigaApparatoVecchia[];
       return [
         ...misuraChiaviHub(dbh),
         ...misuraPublic(dbh, apparati),

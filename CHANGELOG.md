@@ -4,6 +4,59 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-16 · credenziali 2g (T26): il vecchio non si legge più
+
+Piano `docs/superpowers/plans/2026-10-15-tappa2-archivio-credenziali.md`, sotto-tappa 2g, Task 26. Perché:
+dalla 2e e dalla 2f le credenziali stanno nell'archivio, ma il motore e i lettori ripiegavano ancora sui posti
+vecchi; finché li leggono, svuotarli (T27) cambierebbe in silenzio la credenziale di qualcuno. Due decisioni di
+Riccardo del 16/10: **niente attesa di 14 giorni** (D9 rivista: bastano i segni chiusi, il registro dei
+ripieghi a zero dal rilascio della 2f e i giri del giorno andati bene) e **i due apparati lasciati dell'hub
+accettati così**.
+
+### Modifiche
+
+- **Il motore legge solo l'archivio**: niente più binding inline, colonne di `network_devices`
+  (`credential_id`, `snmp_credential_id`, utente e password, `community_string`, `api_token`), catene vecchie
+  (`network_host_credentials`, `host_detect_credential`) né chiavi «di default» dell'hub, nemmeno in un tenant
+  senza il segno della 2d. Il «public» dichiarato (D5) resta. Perché: erano i ripieghi che la 2g toglie, e un
+  tenant mai convertito li avrebbe ripresi.
+- **Effetto accettato da Riccardo (16/10)**: sull'hub i due apparati che la 2e ha lasciato (binding fallito
+  verso la stessa voce della colonna, uno SSH e uno WinRM) da qui hanno la scelta «nessuna» e restano senza
+  credenziale valida finché una Prova dalla scheda non riesce.
+- **Controller e AD senza voce dicono «Credenziale mancante»**, qualunque sia il segno della 2f: le colonne della
+  riga non si leggono più e la «forma vecchia» sparisce dalla finestra del controller e dalla pagina AD. Le
+  righe Omada lasciate dalla 2f restano senza voce, e bloccano la pulizia.
+- **Gli usi di una voce** (D8) non contano più colonne dell'apparato, catene vecchie e pin: una voce rimasta
+  solo lì si può eliminare (le colonne hanno ON DELETE SET NULL).
+- **La prova dalla finestra** (apparato non salvato) porta le voci scelte (`voci_provvisorie`), non più le
+  colonne dell'oggetto.
+- **Le rotte degli apparati non mandano più le colonne vecchie**, nemmeno mascherate: una `SELECT *` le
+  porta ancora e un segreto rimasto (cifrato) non deve uscire.
+- **Export e import**: catene vecchie e pin non si esportano più; un bundle di prima della 2d si importa anche
+  in un DB senza quelle tabelle, con le righe convertite in memoria (tabelle temporanee) nella lista della
+  rete e nelle righe host, con le regole di sempre. La conversione della 2d su un DB senza le tabelle vecchie
+  non ha niente da convertire (`done:`).
+- **La conversione della 2e** ricostruisce lei la scelta di prima (binding inline e colonne passati al motore
+  solo per il suo controllo «prima/dopo»): serve ancora per i bundle di prima e per le appliance che arrivano
+  da prima della 2e; senza, ogni apparato con le sole colonne risulterebbe lasciato, cioè senza accesso.
+
+### Tolte
+
+- `getHostDetectCredentialId`, `setHostDetectCredential`, `getNetworkHostCredentialIds`,
+  `replaceNetworkHostCredentials` (le due gemelle): nessuno le chiamava più.
+- `resetConfiguration` (le due gemelle) non nomina più le due tabelle vecchie: dove ci sono, le loro righe se ne
+  vanno con la cascata; dove la pulizia le avrà tolte, la DELETE avrebbe fatto fallire tutto il reset.
+- I campi vecchi delle credenziali dal tipo `NetworkDevice` e da chi li scriveva (a NULL). Le colonne restano
+  nello schema: toglierle vorrebbe dire ricostruire la tabella più collegata.
+
+### Aggiunte
+
+- `scripts/credenziali/condizioni-2g.ts`: le condizioni per partire con la 2g, sulla copia dei dati, in sola
+  lettura (segni, lasciati della 2e e della 2f ricalcolati a vuoto, registro dei ripieghi dal rilascio della
+  2f). Un `parziale:` della 2e passa solo con `--lasciati-accettati <tenant>:<id>,<id>` uguale ai lasciati di
+  adesso: mai dedotto, mai di default. La regola sta in `src/lib/credentials/condizioni-2g.ts`, che userà anche
+  la pulizia (T27).
+
 ## [Non rilasciato] — 2026-10-16 · topologia T3: la mappa per cavo, spenta per cliente
 
 Spec `docs/superpowers/specs/2026-10-14-topologia-collegamenti-reali-design.md` §13.11.4, piano

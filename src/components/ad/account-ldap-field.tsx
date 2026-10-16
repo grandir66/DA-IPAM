@@ -43,7 +43,6 @@ export function AccountLdapField({
   vociErrore,
   onRiprova,
   nomeIntegrazione,
-  formaVecchia = false,
   dcCambiato = false,
   disabled = false,
 }: {
@@ -55,8 +54,6 @@ export function AccountLdapField({
   vociErrore: string | null;
   onRiprova: () => void;
   nomeIntegrazione: string;
-  /** Riga di prima della 2f mai convertita: senza scelta restano le colonne. */
-  formaVecchia?: boolean;
   /** L'indirizzo del DC è diverso da quello salvato. */
   dcCambiato?: boolean;
   disabled?: boolean;
@@ -70,9 +67,7 @@ export function AccountLdapField({
       ? vociErrore
         ? "Voci dell'archivio non caricate"
         : "Caricamento delle voci…"
-      : formaVecchia && !dcCambiato
-        ? "Account nella forma vecchia: resta finché non ne scegli uno"
-        : vociAd.length === 0
+      : vociAd.length === 0
           ? "Nessuna voce Active Directory nell'archivio"
           : "Scegli una voce dell'archivio";
 

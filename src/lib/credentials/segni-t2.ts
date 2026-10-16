@@ -6,7 +6,9 @@
  * `parziale:<data ISO>:<conteggi>` (fatta, con voci lasciate o saltate),
  * `errore:<messaggio>` (ROLLBACK, niente scritto). Con `done:` o `parziale:` la
  * conversione non si richiama più: le sorgenti vecchie restano piene fino alla
- * 2g, e rigirarla annullerebbe le modifiche fatte nel frattempo dagli utenti.
+ * pulizia della 2g, e rigirarla annullerebbe le modifiche fatte nel frattempo
+ * dagli utenti. Dalla 2g (T26) nessun lettore guarda i segni per decidere se
+ * leggere il vecchio: il vecchio non si legge più.
  * Senza segno, o con `errore:`, si riprova all'apertura successiva.
  *
  * Si leggono e si scrivono con l'handle ricevuto, mai con
@@ -39,20 +41,6 @@ export function scriviSegno(dbh: Database.Database, chiave: string, valore: stri
 /** Vero se la conversione è già stata fatta (`done:` o `parziale:`) e non va richiamata. */
 export function conversioneChiusa(valore: string | null): boolean {
   return valore != null && (valore.startsWith("done:") || valore.startsWith("parziale:"));
-}
-
-/**
- * Vero finché le catene vecchie (`network_host_credentials`) e i pin
- * (`host_detect_credential`) contano: senza segno `credenziali_t2_catene`, con
- * `errore:`, o su una copia senza `tenant_settings` (nessun segno possibile).
- * Dopo la 2d (`done:`/`parziale:`) le tabelle restano congelate fino alla 2g e
- * nessuno le legge: il motore non ne prende voci e gli usi di una voce (D8)
- * non le contano, altrimenti una voce tolta dalla lista resterebbe «in uso»
- * per una rete o un host dove non si vede (revisione della 2d, 16/10).
- */
-export function cateneVecchieAperte(dbh: Database.Database): boolean {
-  const conSettings = dbh.prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'tenant_settings'`).get();
-  return !conSettings || !conversioneChiusa(leggiSegno(dbh, SEGNO_CATENE));
 }
 
 /** Segno d'errore: il messaggio su una riga, tagliato. */

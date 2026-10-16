@@ -825,18 +825,28 @@ test("T23: un controller con la voce costruisce la stessa configurazione del cli
     rigaVecchia({ kind: "udm", name: "Pilota", username: "rgadmin", password_enc: encrypt(PW_LOCALE) }),
   ];
   segna2f(PARZIALE_2F);
-  const prima = ids.map((id) => inTenant(() => controllerClientConfig(riga2f(id))));
+  // Quella che il codice di prima della 2g costruiva dalle colonne (la chiave, se c'è, vince).
+  const base = (id: number) => ({ url: riga2f(id).url, kind: riga2f(id).kind, site: riga2f(id).site });
+  const dalleColonne = [
+    { ...base(ids[0]), username: "", password: "", apiToken: CHIAVE },
+    { ...base(ids[1]), username: "map", password: "pw-map", apiToken: "" },
+    { ...base(ids[2]), username: "rgadmin", password: PW_LOCALE, apiToken: "" },
+  ];
+  // Dalla 2g (T26) senza voce le colonne non si leggono più, nemmeno col segno parziale:.
+  for (const id of ids) {
+    const prima = inTenant(() => controllerClientConfig(riga2f(id)));
+    assert.equal(prima.ok, false);
+    if (!prima.ok) assert.match(prima.motivo, /Credenziale mancante/);
+  }
   const esito = convertiControllerEAd(getTenantDb(T), { aVuoto: false });
   assert.deepEqual(esito.controller.map((c) => c.metodo), ["chiave", "utente", "utente"]);
   const dopo = ids.map((id) => inTenant(() => controllerClientConfig(riga2f(id))));
   for (let i = 0; i < ids.length; i++) {
-    const a = prima[i];
     const b = dopo[i];
-    assert.ok(a.ok && b.ok, JSON.stringify({ a, b }));
-    if (!a.ok || !b.ok) continue;
-    assert.equal(a.fonte, "colonne");
+    assert.ok(b.ok, JSON.stringify(b));
+    if (!b.ok) continue;
     assert.equal(b.fonte, "voce");
-    assert.deepEqual(b.config, a.config, `controller #${ids[i]}`);
+    assert.deepEqual(b.config, dalleColonne[i], `controller #${ids[i]}`);
   }
 });
 
@@ -943,21 +953,28 @@ test("T23: segreti nuovi → voce «UniFi · <nome>» nell'archivio, niente nell
   assert.deepEqual(righe, { password_enc: "", api_key_enc: "" });
 });
 
-test("T23: riga mai convertita (colonne piene, segno parziale:) → si legge dalle colonne, il ripiego si registra e la riga lo dice", async () => {
+// Fino alla 2g una riga mai convertita (colonne piene, segno della 2f diverso
+// da done:) entrava con le colonne, col ripiego registrato. Dalla 2g (T26) le
+// colonne non si leggono più: è il caso delle righe Omada lasciate dalla 2f,
+// che bloccano la pulizia (condizioni-2g.ts) finché non hanno una voce.
+test("T26: riga mai convertita (colonne piene, segno parziale:) → «Credenziale mancante»: nessuna richiesta, nessun ripiego, va scelta una voce", async () => {
   const id = rigaVecchia({ kind: "udm", api_key_enc: encrypt(CHIAVE) });
   segna2f(PARZIALE_2F);
   const prima = ripieghiRiga();
-  const r = await inTenant(() => syncController(id, "manual", null, { clientOptions: { transportFactory: consoleFinta().factory } }));
-  assert.equal(r.ok, true, r.errors.join("; "));
-  assert.ok(ripieghiRiga() > prima, "cred_riga_integrazione registrato");
+  const finta = consoleFinta();
+  const r = await inTenant(() => syncController(id, "manual", null, { clientOptions: { transportFactory: finta.factory } }));
+  assert.equal(r.ok, false);
+  assert.match(r.failure ?? "", /Credenziale mancante/);
+  const p = await inTenant(() => probeSavedController(id, { transportFactory: finta.factory }));
+  assert.equal(p.ok, false);
+  assert.equal(finta.calls.length, 0);
+  assert.equal(ripieghiRiga(), prima, "nessun ripiego");
   const vista = inTenant(() => getControllerView(id));
-  assert.equal(vista?.lastOk, true);
-  assert.match(vista?.lastMessage ?? "", /Credenziale ancora nella forma vecchia/);
-  const p = await inTenant(() => probeSavedController(id, { transportFactory: consoleFinta().factory }));
-  assert.equal(p.ok, true, JSON.stringify(p));
-  // Si può accendere, spegnere e rinominare senza scegliere una voce: resta sulle colonne.
+  assert.equal(vista?.credentialState, "mancante");
+  assert.doesNotMatch(vista?.lastMessage ?? "", /forma vecchia/);
+  // Rinominare senza scegliere una voce non passa: senza voce non c'è una credenziale salvata.
   const check = inTenant(() => checkControllerInput({ ...input(), name: "Rinominato", apiKey: "" }, riga2f(id)));
-  assert.equal(check.ok, true, check.ok ? "" : check.error);
+  assert.equal(check.ok, false);
 });
 
 test("T23: voce cancellata col segno done: → «Credenziale mancante» anche con le colonne piene: nessuna richiesta, nessun ripiego", async () => {
@@ -1025,15 +1042,15 @@ test("T23: in modifica un utente nuovo senza password è un 400, non sparisce; a
 // vecchia: resta finché non ne scegli una» e lasciava salvare, poi il server
 // rispondeva «Credenziale mancante». Ora la vista porta lo stato calcolato
 // col criterio del server.
-test("T23: la vista dice con che cosa entra la riga col criterio del server: voce, forma vecchia o mancante", () => {
+test("T23: la vista dice con che cosa entra la riga col criterio del server: voce o mancante (dalla 2g niente forma vecchia)", () => {
   const conVoce = inTenant(() => createController(input({ name: "Con voce" })));
   assert.equal(conVoce.credentialState, "voce");
   const id = rigaVecchia({ kind: "udm", api_key_enc: encrypt(CHIAVE) });
   const vuota = rigaVecchia({ kind: "udm", name: "Vuota", url: "https://10.0.0.7" });
   segna2f(PARZIALE_2F);
   const vecchia = inTenant(() => getControllerView(id));
-  assert.equal(vecchia?.credentialState, "forma_vecchia");
-  assert.equal(vecchia?.apiKeySet, true);
+  assert.equal(vecchia?.credentialState, "mancante", "le colonne piene non contano più, qualunque sia il segno (T26)");
+  assert.equal(vecchia?.apiKeySet, false);
   assert.equal(inTenant(() => getControllerView(vuota))?.credentialState, "mancante");
   // resetConfiguration con la 2f chiusa: le voci se ne vanno, le colonne restano, segno done:.
   segna2f(DONE_2F);

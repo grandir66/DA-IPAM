@@ -19,8 +19,11 @@ function porta(binding: B[]): number {
     d.prepare("INSERT INTO network_devices (name, host, device_type, vendor, protocol, port) VALUES ('pve', '10.0.0.1', 'hypervisor', 'proxmox', 'api', 8006)")
       .run().lastInsertRowid,
   );
-  const ins = d.prepare("INSERT INTO device_credential_bindings (device_id, protocol_type, port, sort_order, test_status) VALUES (?, ?, ?, ?, ?)");
-  binding.forEach(([p, port, esito], i) => ins.run(id, p, port, i, esito ?? "untested"));
+  // Binding d'archivio, con una voce del tipo del protocollo: dalla 2g (T26) un binding senza voce non è un candidato.
+  const voce = (tipo: string) => Number(d.prepare("INSERT INTO credentials (name, credential_type) VALUES (?, ?)").run(`voce ${tipo}`, tipo).lastInsertRowid);
+  const voci: Record<string, number> = { ssh: voce("ssh"), api: voce("api") };
+  const ins = d.prepare("INSERT INTO device_credential_bindings (device_id, credential_id, protocol_type, port, sort_order, test_status) VALUES (?, ?, ?, ?, ?, ?)");
+  binding.forEach(([p, port, esito], i) => ins.run(id, voci[p] ?? null, p, port, i, esito ?? "untested"));
   const device = d.prepare("SELECT * FROM network_devices WHERE id = ?").get(id) as NetworkDevice;
   const r = portaSshApparatoDb(d, device);
   d.close();

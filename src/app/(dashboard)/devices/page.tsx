@@ -658,7 +658,12 @@ export default function DevicesUnifiedPage() {
                               className="h-6 px-2 text-xs gap-1"
                               disabled={isAdding}
                               onClick={() => addDeviceToLibreNMS(item)}
-                              title={item.community_string ? "Aggiungi a LibreNMS con SNMP" : "Aggiungi a LibreNMS (ping-only)"}
+                              title={
+                                // Un binding SNMP riuscito (dalla 2g la colonna community_string non arriva più).
+                                ((item as unknown as { credential_protocols?: string[] }).credential_protocols ?? []).includes("snmp")
+                                  ? "Aggiungi a LibreNMS con SNMP"
+                                  : "Aggiungi a LibreNMS (ping-only)"
+                              }
                             >
                               {isAdding ? <Loader2 className="h-3 w-3 animate-spin" /> : <PlusCircle className="h-3 w-3" />}
                               Aggiungi

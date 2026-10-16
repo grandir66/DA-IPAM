@@ -12,7 +12,6 @@ import {
   clientScheduleLabel,
   controllerStatus,
   countOrDash,
-  credenzialeFormaVecchia,
   describeProbe,
   describeSync,
   emptyControllerForm,
@@ -265,16 +264,9 @@ describe("modulo e corpo del salvataggio", () => {
     assert.equal(formMissing({ ...formFromController(ctrl()), nuova: true }, { salvata: true }), "Scrivi l'utente");
   });
 
-  // Revisione della 2f (16/10): la finestra contava le colonne (passwordSet,
-  // apiKeySet) e, con la 2f chiusa e la voce cancellata, diceva «forma
-  // vecchia: resta finché non ne scegli una» e lasciava salvare; il server
-  // rispondeva «Credenziale mancante». Lo stato ora viene dal server.
-  it("la credenziale salvata nella forma vecchia la dice lo stato del server, non le colonne", () => {
-    const senzaVoce = { credentialId: null, credentialName: null, credentialMethod: null } as const;
-    assert.equal(credenzialeFormaVecchia(ctrl({ ...senzaVoce, credentialState: "forma_vecchia" })), true);
-    assert.equal(credenzialeFormaVecchia(ctrl({ ...senzaVoce, credentialState: "mancante", passwordSet: true })), false);
-    assert.equal(credenzialeFormaVecchia(ctrl()), false);
-  });
+  // La «forma vecchia» (riga mai convertita, coi segreti nelle colonne) non c'è
+  // più dalla 2g (T26): senza voce lo stato è «mancante», e la finestra non la
+  // propone. La prova di prima (credenzialeFormaVecchia) è uscita con la funzione.
 });
 
 describe("credenziale dall'archivio (tappa 2f, T23)", () => {

@@ -59,15 +59,22 @@ const CLUSTER = { hosts: [host("pve-a", "192.0.2.11"), host("pve-b", "192.0.2.12
 
 /** Un hypervisor Proxmox con credenziali (SSH root), eventualmente con una scansione di prima. */
 function hypervisor(prima?: { at: string; result: string }): number {
-  return Number(
-    getTenantDb(T)
+  const d = getTenantDb(T);
+  const id = Number(
+    d
       .prepare(
-        `INSERT INTO network_devices (name, host, device_type, vendor, protocol, scan_target, username, encrypted_password, enabled,
-                                      last_proxmox_scan_at, last_proxmox_scan_result)
-         VALUES ('HV-1', '192.0.2.11', 'hypervisor', 'proxmox', 'ssh', 'proxmox', 'root', ?, 1, ?, ?)`,
+        `INSERT INTO network_devices (name, host, device_type, vendor, protocol, scan_target, enabled, last_proxmox_scan_at, last_proxmox_scan_result)
+         VALUES ('HV-1', '192.0.2.11', 'hypervisor', 'proxmox', 'ssh', 'proxmox', 1, ?, ?)`,
       )
-      .run(encrypt("segreto-di-prova"), prima?.at ?? null, prima?.result ?? null).lastInsertRowid,
+      .run(prima?.at ?? null, prima?.result ?? null).lastInsertRowid,
   );
+  // La credenziale in un binding d'archivio (dalla 2g, T26, le colonne dell'apparato non si leggono più).
+  const voce = Number(
+    d.prepare("INSERT INTO credentials (name, credential_type, encrypted_username, encrypted_password) VALUES (?, 'ssh', ?, ?)")
+      .run(`root di HV-1 #${id}`, encrypt("root"), encrypt("segreto-di-prova")).lastInsertRowid,
+  );
+  d.prepare("INSERT INTO device_credential_bindings (device_id, credential_id, protocol_type, port, sort_order) VALUES (?, ?, 'ssh', 22, 0)").run(id, voce);
+  return id;
 }
 
 function riga(id: number): { at: string | null; result: string | null } {
@@ -279,9 +286,10 @@ test("SSH e schede vive sulla porta SSH (credenziale legata o 22), mai sulla por
   await withTenant(T, () => runProxmoxDeviceScan(id, conPorte()));
   assert.deepEqual(porte, [22, 22]);
   porte.length = 0;
-  getTenantDb(T)
-    .prepare("INSERT INTO device_credential_bindings (device_id, protocol_type, port, sort_order) VALUES (?, 'api', 8006, 0), (?, 'ssh', 2222, 1)")
-    .run(id, id);
+  // La credenziale SSH legata all'apparato (binding d'archivio) sulla 2222, con un binding API sulla 8006 davanti.
+  const voce = (getTenantDb(T).prepare("SELECT credential_id FROM device_credential_bindings WHERE device_id = ? AND protocol_type = 'ssh'").get(id) as { credential_id: number }).credential_id;
+  getTenantDb(T).prepare("UPDATE device_credential_bindings SET port = 2222, sort_order = 1 WHERE device_id = ? AND protocol_type = 'ssh'").run(id);
+  getTenantDb(T).prepare("INSERT INTO device_credential_bindings (device_id, credential_id, protocol_type, port, sort_order) VALUES (?, ?, 'api', 8006, 0)").run(id, voce);
   await withTenant(T, () => runProxmoxDeviceScan(id, conPorte()));
   assert.deepEqual(porte, [2222, 2222]);
 });

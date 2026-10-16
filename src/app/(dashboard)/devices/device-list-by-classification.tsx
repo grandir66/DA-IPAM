@@ -524,9 +524,6 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
   const isStorageDevice = (dev: DeviceOrHost) =>
     !isHostItem(dev) && (dev as NetworkDevice).protocol === "ssh" && ((dev as NetworkDevice).vendor === "synology" || (dev as NetworkDevice).vendor === "qnap");
 
-  const isSnmpDevice = (dev: DeviceOrHost) =>
-    !isHostItem(dev) && ((dev as NetworkDevice).protocol === "snmp_v2" || (dev as NetworkDevice).protocol === "snmp_v3" || !!(dev as NetworkDevice).community_string || !!((dev as NetworkDevice).snmp_credential_id));
-
   async function handleProxmoxScan(id: number) {
     setProxmoxScanning(id);
     try {

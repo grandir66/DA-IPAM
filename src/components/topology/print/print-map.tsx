@@ -7,7 +7,7 @@
  * stato «▲ giù» con bordo spesso, «◆ avviso», «?»; linee con spessore, forma e parole.
  */
 import type { ReactNode } from "react";
-import { edgeLook, pathPoints, wavyPath, type Pt } from "@/lib/topology/edge-look";
+import { edgeLook, pathPoints, pezzoNelloSpazio, wavyPath, type Pt } from "@/lib/topology/edge-look";
 import { isUncensusedVmId } from "@/lib/topology/map-menus";
 import type { MapOrientation, TopologyModel } from "@/lib/topology/model-types";
 import { DARK, GREY, INK, LIGHT, MID, PAPER, edgeLabelAt, parolaLineaSpostata, pointsPath, printStrokes, puntiLineaAlbero, stepPoints, wrapLabel } from "@/lib/topology/print-draw";
@@ -20,6 +20,19 @@ import { typeLabel } from "@/components/topology/map/topology-icons";
 
 const FONT = 13;
 const STATO: Record<TopologyStatus, string | null> = { ok: null, warning: "◆ avviso", fail: "▲ giù", unknown: "?" };
+
+/** Il punto a metà della lunghezza di una spezzata. */
+function mezzoLinea(pts: readonly Pt[]): Pt {
+  let tot = 0;
+  for (let i = 1; i < pts.length; i++) tot += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+  let resto = tot / 2;
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1], b = pts[i], len = Math.hypot(b.x - a.x, b.y - a.y);
+    if (len > 0 && resto <= len) return { x: a.x + ((b.x - a.x) * resto) / len, y: a.y + ((b.y - a.y) * resto) / len };
+    resto -= len;
+  }
+  return pts[pts.length - 1];
+}
 
 /** Un testo che non supera `width` px (stima a CHAR_W per carattere), con «…». */
 function clip(text: string, width: number): string {
@@ -51,6 +64,7 @@ export interface PrintMapProps {
 /** Il contenuto della mappa (un `<g>`): lo stesso per la panoramica e per ogni tassello. */
 export function PrintMapContent({ model, tree, layout, orientation }: PrintMapProps) {
   const byId = new Map(model.nodes.map((n) => [n.id, n]));
+  const nomeDi = (id: string): string => byId.get(id)?.name ?? id;
   const vmsOf = new Map<string, TopologyModel["vms"]>();
   for (const v of model.vms) if (v.hypervisorNodeId) vmsOf.set(v.hypervisorNodeId, [...(vmsOf.get(v.hypervisorNodeId) ?? []), v]);
   const open = new Set(layout.vmChips.map((c) => c.hypervisor));
@@ -76,11 +90,16 @@ export function PrintMapContent({ model, tree, layout, orientation }: PrintMapPr
       continue;
     }
     const pts: Pt[] = puntiLineaAlbero(orientation, parent, ln, ostacoli(riquadri, [ln.parent, child]));
-    const look = edgeLook(link, { inTree: true });
+    const look = edgeLook(link, { inTree: true, nomeDi });
     const d = look.wavy ? wavyPath(pathPoints(pointsPath(pts))) : pointsPath(pts);
     printStrokes(look).forEach((s, i) => lines.push(
       <path key={`e:${child}:${i}`} d={d} stroke={s.color} strokeWidth={s.width} strokeDasharray={s.dash ?? undefined} strokeLinecap={s.cap} fill="none" />,
     ));
+    // La contrazione via segmento porta il «⋯» a metà linea (spec §13.10.3), anche sulla carta.
+    if (look.centro) {
+      const m = mezzoLinea(pts);
+      labels.push(<Label key={`c:${child}`} x={m.x} y={m.y + 5} anchor="middle" weight={700}>{look.centro}</Label>);
+    }
     if (look.tokens.length && !troncoPossibile(orientation, parent, ln)) {
       // Un figlio spostato a mano dall'altra parte: la parola come a schermo, vicino alla metà del percorso e fuori dai
       // riquadri (revisione finale di T1: in fondo alla linea cadeva dentro il riquadro del figlio).
@@ -90,7 +109,10 @@ export function PrintMapContent({ model, tree, layout, orientation }: PrintMapPr
     } else if (look.tokens.length) {
       const at = edgeLabelAt(orientation, pts);
       // In verticale va a capo come a schermo: righe impilate verso l'alto, l'ultima appena sopra il braccio.
-      const rows = orientation === "lr" ? wrapLabel(look.tokens, lrLabelMaxWidth(pts[0].x, pts[pts.length - 1].x)) : [look.tokens.join(" · ")];
+      // Con la mappa nuova un pezzo che non sta nello spazio si accorcia con «…», come a schermo (I32).
+      const spazio = lrLabelMaxWidth(pts[0].x, pts[pts.length - 1].x);
+      const pezzi = link.cavo && orientation === "lr" ? look.tokens.map((t) => (t.startsWith("⚡") ? t : pezzoNelloSpazio(t, Math.floor((spazio - 8) / CHAR_W)))) : look.tokens;
+      const rows = orientation === "lr" ? wrapLabel(pezzi, spazio) : [look.tokens.join(" · ")];
       rows.forEach((r, i) => labels.push(
         <Label key={`t:${child}:${i}`} x={at.x} y={at.y - (rows.length - 1 - i) * 16} anchor={at.anchor}>{r}</Label>,
       ));
@@ -121,6 +143,20 @@ export function PrintMapContent({ model, tree, layout, orientation }: PrintMapPr
         <g key={ln.id}>
           <rect x={ln.x} y={ln.y} width={ln.w} height={ln.h} rx={3} fill={LIGHT} stroke={MID} strokeWidth={1} />
           <text x={ln.x + 4} y={ln.y + 13.5} fontSize={FONT} fill={INK}>{clip(n.name, ln.w - 8)}</text>
+        </g>,
+      );
+      continue;
+    }
+    if (n.kind === "segmento") {
+      // Il segmento (spec §13.10.3): capsula a bordo pieno sottile, «⋯» e due righe; sotto, gli apparati non gestiti.
+      const altri = model.cavi?.segmenti.find((x) => x.id === ln.id)?.altriApparati ?? 0;
+      boxes.push(
+        <g key={ln.id}>
+          <rect x={ln.x} y={ln.y} width={ln.w} height={ln.h} rx={ln.h / 2} fill={PAPER} stroke={INK} strokeWidth={1.2} />
+          <text x={ln.x + 18} y={ln.y + ln.h / 2 + 7} textAnchor="middle" fontSize={20} fontWeight={700} fill={INK}>⋯</text>
+          <text x={ln.x + 34} y={ln.y + 18} fontSize={FONT} fontWeight={700} fill={INK}>segmento</text>
+          <text x={ln.x + 34} y={ln.y + 35} fontSize={FONT} fill={DARK}>{clip("modem o switch non gestito", ln.w - 46)}</text>
+          {altri > 0 && <text x={ln.x + 8} y={ln.y + ln.h + 15} fontSize={FONT} fill={DARK}>+{altri} apparati non gestiti</text>}
         </g>,
       );
       continue;

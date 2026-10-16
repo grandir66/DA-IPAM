@@ -67,6 +67,17 @@ test("in stampa le linee sono nere o grigie, con lo spessore della velocità; ma
   for (const s of [...plain, ...stale, ...manual, ...dbl]) assert.ok([INK, GREY, PAPER].includes(s.color));
 });
 
+// T3.5: in bianco e nero «giù» è un tratteggio lungo nero, «non visto» uno corto grigio, il tunnel un lungo-corto.
+test("in stampa «cavo giù» e il tunnel hanno il loro tratto, diverso da «non visto»", () => {
+  const c = { fiducia: "certo" as const, porteDaVerificare: false, detti: [], frasi: [] };
+  const giu = printStrokes(edgeLook(link({ stale: true, daysUnseen: 3, speedMbps: 10000, cavo: { ...c, genere: "cavo", stato: "giu" } }), { inTree: true }));
+  assert.deepEqual(giu, [{ color: INK, width: 6, dash: "10 4", cap: "butt" }]);
+  const tun = printStrokes(edgeLook(link({ medium: "tunnel", cavo: { ...c, genere: "tunnel", stato: null } }), { inTree: true }));
+  assert.deepEqual(tun, [{ color: INK, width: 2.4, dash: "8 3 2 3", cap: "butt" }]);
+  const radio = edgeLook(link({ cavo: { ...c, genere: "radio", stato: null } }), { inTree: true });
+  assert.equal(radio.wavy, true);
+});
+
 const boxes = (ids: string[], attached: string[] = []) => new Map<string, LayoutNode>(
   [...ids.map((id) => [id, "box"] as const), ...attached.map((id) => [id, "attached"] as const)]
     .map(([id, role]) => [id, { id, x: 0, y: 0, w: 1, h: 1, role, parent: null }]),

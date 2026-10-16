@@ -9,7 +9,7 @@
 import type { CSSProperties, ReactNode } from "react";
 import { FUSO_UTENTI } from "@/lib/db-date";
 import { edgeLook, wavyPath } from "@/lib/topology/edge-look";
-import { LINK_ATTRS_DEFAULT, type MapLink, type TopologyModel } from "@/lib/topology/model-types";
+import { LINK_ATTRS_DEFAULT, type CavoLinea, type MapLink, type TopologyModel } from "@/lib/topology/model-types";
 import { DARK, GREY, INK, LIGHT, MID, PAPER, printStrokes, type RedundantCable } from "@/lib/topology/print-draw";
 import { TILE_HEADER_MM, cablePages, cableRows, gridLabelSize, gridSummary, neighbours, type SheetPlan, type Tile } from "@/lib/topology/print-tiles";
 import type { PrintView } from "@/lib/topology/print-view";
@@ -45,14 +45,15 @@ function LineSample({ over, inTree = true }: { over: Partial<MapLink>; inTree?: 
       {printStrokes(look).map((s, i) => (
         <path key={i} d={d} stroke={s.color} strokeWidth={s.width} strokeDasharray={s.dash ?? undefined} strokeLinecap={s.cap} fill="none" />
       ))}
+      {look.centro && <text x={24} y={11} textAnchor="middle" fontSize={13} fontWeight={700} fill={INK} stroke={PAPER} strokeWidth={3} paintOrder="stroke">{look.centro}</text>}
     </svg>
   );
 }
 
-function BoxSample({ thick, dashed, fill = PAPER, stroke = INK }: { thick?: boolean; dashed?: boolean; fill?: string; stroke?: string }) {
+function BoxSample({ thick, dashed, capsula, fill = PAPER, stroke = INK }: { thick?: boolean; dashed?: boolean; capsula?: boolean; fill?: string; stroke?: string }) {
   return (
     <svg width={48} height={14} aria-hidden="true" className="shrink-0">
-      <rect x={2} y={1.5} width={44} height={11} rx={2.5} fill={fill} stroke={stroke} strokeWidth={thick ? 2.6 : 1.2} strokeDasharray={dashed ? "4 2.5" : undefined} />
+      <rect x={2} y={1.5} width={44} height={11} rx={capsula ? 5.5 : 2.5} fill={fill} stroke={stroke} strokeWidth={thick ? 2.6 : 1.2} strokeDasharray={dashed ? "4 2.5" : undefined} />
     </svg>
   );
 }
@@ -61,7 +62,11 @@ function Item({ sample: s, children }: { sample: ReactNode; children: ReactNode 
   return <li className="flex items-center gap-1.5 leading-tight" style={{ breakInside: "avoid" }}>{s}<span>{children}</span></li>;
 }
 
-export function Legend({ withVms }: { withVms: boolean }) {
+/** Un collegamento di prova della mappa nuova: il genere e lo stato che si vogliono mostrare (spec §13.10.3). */
+const cavo = (c: Partial<CavoLinea>): CavoLinea => ({ genere: "cavo", stato: null, fiducia: "certo", porteDaVerificare: false, detti: [], frasi: [], ...c });
+const membro = { aPort: "", bPort: "", stato: "inoltra" as const, velocitaMbps: 25000 };
+
+export function Legend({ withVms, withCavi = false }: { withVms: boolean; withCavi?: boolean }) {
   return (
     <div>
       <h2 className="mb-1 text-[14px] font-semibold">Legenda</h2>
@@ -82,6 +87,20 @@ export function Legend({ withVms }: { withVms: boolean }) {
         <Item sample={<BoxSample />}>«◆ avviso», «?» stato sconosciuto</Item>
         <Item sample={<BoxSample dashed />}>bordo tratteggiato: host da promuovere</Item>
         <Item sample={<BoxSample fill={LIGHT} stroke={MID} />}>attaccati (fino a 4, poi «+ altri N») e «N AP»</Item>
+        {withCavi && (
+          <>
+            <Item sample={<LineSample over={{ redundant: true, cavo: cavo({ stato: "bloccato" }) }} inTree={false} />}>doppia «bloccato»: fermo per lo spanning tree</Item>
+            <Item sample={<LineSample over={{ redundant: true, cavo: cavo({ stato: "bloccato_comune" }) }} inTree={false} />}>doppia «in parte»: bloccato nell&apos;albero comune</Item>
+            <Item sample={<LineSample over={{ cavo: cavo({ stato: "instradato" }) }} />}>«instradato»: passa fuori dal bridge</Item>
+            <Item sample={<LineSample over={{ cavo: cavo({ stato: "giu" }) }} />}>nera a tratti lunghi «cavo giù»</Item>
+            <Item sample={<LineSample over={{ speedMbps: 50000, cavo: cavo({ genere: "fascio", fascio: { membri: [membro, membro], dedotto: false } }) }} />}>«2 cavi»: fascio, spessore della somma</Item>
+            <Item sample={<LineSample over={{ medium: "tunnel", cavo: cavo({ genere: "tunnel" }) }} />}>lungo-corto «tunnel»</Item>
+            <Item sample={<LineSample over={{ cavo: cavo({ genere: "radio" }) }} />}>ondulata «≋ radio»: ponte radio</Item>
+            <Item sample={<LineSample over={{ redundant: true, cavo: cavo({ stato: "riserva_bond" }) }} inTree={false} />}>doppia «riserva»: riserva del bond</Item>
+            <Item sample={<LineSample over={{ cavo: cavo({ genere: "contrazione", via: "segmento" }) }} />}>«⋯» e «segmento»: passa da apparati non gestiti</Item>
+            <Item sample={<BoxSample capsula />}>capsula «⋯»: segmento, modem o switch non gestito</Item>
+          </>
+        )}
         {withVms && <Item sample={<BoxSample fill={LIGHT} />}>VM «▶» accesa; bordo tratteggiato «■» spenta</Item>}
       </ul>
     </div>
@@ -197,7 +216,7 @@ export function PrintSheets({ view, plan, cables, at, withVms }: {
             viewBox={{ x: 0, y: 0, w: gridW, h: gridH }} width="100%" height="100%" content={content} overlay={grid}
           />
         </div>
-        <Legend withVms={withVms} />
+        <Legend withVms={withVms} withCavi={view.model.cavi !== undefined} />
         <CableTable rows={cables.slice(0, first)} from={0} total={cables.length} />
       </Sheet>
       {cablePages(cables.length, plan.pageMm).map((from) => (

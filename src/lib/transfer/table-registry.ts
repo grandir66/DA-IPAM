@@ -25,6 +25,9 @@ export const TENANT_TABLES: TableSpec[] = [
   { table: "topology_position", scope: "tenant", tier: "config" },
   { table: "topology_link_overrides", scope: "tenant", tier: "config" },
   { table: "topology_maps", scope: "tenant", tier: "config" }, // nasce in migrateTopologyPhase2, non nello schema
+  // Unioni e separazioni a mano (ADR 0021): scelte di un admin, con la loro storia (righe tolte comprese).
+  { table: "topology_unioni", scope: "tenant", tier: "config" },
+  { table: "topology_separazioni", scope: "tenant", tier: "config" },
   { table: "device_interface_addresses", scope: "tenant", tier: "config" },
   { table: "multihomed_links", scope: "tenant", tier: "config" },
   { table: "device_classifications_custom", scope: "tenant", tier: "config" },

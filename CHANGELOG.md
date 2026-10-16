@@ -29,6 +29,10 @@ regola automatica può dire che sono uno solo. Riccardo (16/10): **nessuna regol
 
 ## [Non rilasciato] — 2026-10-16 · credenziali 2g (T27): via colonne e tabelle vecchie, archivio unico completo
 
+**Rilasciata e applicata il 16/10** (v0.3.310): pulizia su hub, cliente A e pilota fra le 16:12 e le 16:19, ognuno
+con il suo backup accanto; sull'hub prima un `VACUUM` della rete principale, perché le 4 pagine «never used» facevano
+fallire (giustamente) il controllo del backup. Controller e Active Directory riletti subito dopo: tutti «ok».
+
 Piano `docs/superpowers/plans/2026-10-15-tappa2-archivio-credenziali.md`, sotto-tappa 2g, Task 27. Perché: dal T26
 nessuno legge più le fonti vecchie, ma i segreti sono ancora lì, fuori dall'archivio (colonne di `network_devices`,
 di `network_controllers` e di `ad_integrations`, catene vecchie). La pulizia dei dati è **uno script**, non una

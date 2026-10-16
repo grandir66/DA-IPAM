@@ -1,6 +1,6 @@
 # ADR 0017 — Archivio unico delle credenziali: tipi senza CHECK, validazione in `tipi.ts`
 
-**Stato:** Accepted
+**Stato:** Accepted — tappa 2 chiusa il 2026-10-16: 2g rilasciata (v0.3.310) e pulizia dei dati vecchi applicata su hub, cliente A e pilota (16:12-16:19 ora italiana)
 **Data:** 2026-10-16
 **Autore:** riccardo.grandi@gmail.com (decisione), sessione Claude (stesura)
 

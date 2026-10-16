@@ -11,8 +11,10 @@ import { fetchJson } from "@/lib/fetch-json";
 import { SOURCE_WORDS } from "@/lib/topology/edge-look";
 import type { MapLink, MapNode, TopologyModel } from "@/lib/topology/model-types";
 import { HypervisorSyncCard } from "./hypervisor-sync-card";
+import { AnomalieCard } from "./anomalie-card";
 import { IgnoredLinksCard } from "./ignored-links-card";
 import { LettureCard } from "./letture-card";
+import { MappaCard } from "./mappa-card";
 import { TracciaCard } from "./traccia-card";
 
 type Model = TopologyModel & { staleDays: number };
@@ -118,7 +120,11 @@ export function DatiClient({ isAdmin }: { isAdmin: boolean }) {
 
       <LettureCard isAdmin={isAdmin} />
 
-      {isAdmin && <TracciaCard />}
+      <MappaCard isAdmin={isAdmin} onChanged={() => void load()} />
+
+      {m.cavi && <AnomalieCard cavi={m.cavi} nomeDi={nn} />}
+
+      {isAdmin && <TracciaCard mappaAccesa={m.cavi !== undefined} />}
 
       <Card className="xl:col-span-2">
         <CardHeader><CardTitle>Proposte «promuovi ad apparato»</CardTitle></CardHeader>

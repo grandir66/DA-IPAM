@@ -121,11 +121,11 @@ export function CableTable({ rows, from, total, continued }: { rows: RedundantCa
       </h2>
       {rows.length > 0 && (
         <table className="w-full table-fixed border-collapse text-[13px] leading-[4.8mm]">
-          <colgroup><col style={{ width: "4%" }} /><col style={{ width: "27%" }} /><col style={{ width: "18%" }} /><col style={{ width: "4%" }} /><col style={{ width: "27%" }} /><col style={{ width: "12%" }} /><col style={{ width: "8%" }} /></colgroup>
+          <colgroup><col style={{ width: "4%" }} /><col style={{ width: "20%" }} /><col style={{ width: "12%" }} /><col style={{ width: "3%" }} /><col style={{ width: "20%" }} /><col style={{ width: "12%" }} /><col style={{ width: "7%" }} /><col style={{ width: "22%" }} /></colgroup>
           <thead>
             <tr style={{ borderBottom: `1px solid ${INK}` }}>
               <th className={cell}>n.</th><th className={cell}>oggetto</th><th className={cell}>porta</th><th className={cell} />
-              <th className={cell}>oggetto</th><th className={cell}>porta</th><th className={cell}>velocità</th>
+              <th className={cell}>oggetto</th><th className={cell}>porta</th><th className={cell}>velocità</th><th className={cell}>stato</th>
             </tr>
           </thead>
           <tbody>
@@ -138,6 +138,7 @@ export function CableTable({ rows, from, total, continued }: { rows: RedundantCa
                 <td className={cell} title={r.to}>{r.to}</td>
                 <td className={cell} title={r.toPort}>{r.toPort}</td>
                 <td className={cell}>{r.speed}</td>
+                <td className={cell} title={r.stato}>{r.stato}</td>
               </tr>
             ))}
           </tbody>

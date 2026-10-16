@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { edgeLook } from "@/lib/topology/edge-look";
-import { LINK_ATTRS_DEFAULT, type MapLink, type MapNode, type TopologyModel } from "@/lib/topology/model-types";
+import { LINK_ATTRS_DEFAULT, type CavoLinea, type MapLink, type MapNode, type TopologyModel } from "@/lib/topology/model-types";
 import { GREY, INK, PAPER, edgeLabelAt, parolaLineaSpostata, printStrokes, puntiLineaAlbero, redundantCables, stepPoints, wrapLabel } from "@/lib/topology/print-draw";
 import { buildPrintView } from "@/lib/topology/print-view";
 import { drawableLinks, labelBoxes, latiVicini, percorso, redundancyCounts } from "@/lib/topology/map-screen";
@@ -98,8 +98,8 @@ test("cavi di ridondanza: solo i collegamenti che l'albero non usa, dalla parte 
   const names: Record<string, string> = { "dev:1": "Centrale", "dev:2": "SW-A", "dev:3": "SW-B", "dev:4": "Server-1" };
   const rows = redundantCables(tree, boxes(["dev:1", "dev:2", "dev:3", "dev:4"]), (id) => names[id] ?? id);
   assert.deepEqual(rows, [
-    { id: "l3", from: "SW-A", fromPort: "Port 24", to: "SW-B", toPort: "Port 23", speed: "non nota" },
-    { id: "l2", from: "SW-B", fromPort: "porta non nota", to: "Server-1", toPort: "sfp2", speed: "10G" },
+    { id: "l3", from: "SW-A", fromPort: "Port 24", to: "SW-B", toPort: "Port 23", speed: "non nota", stato: "—" },
+    { id: "l2", from: "SW-B", fromPort: "porta non nota", to: "Server-1", toPort: "sfp2", speed: "10G", stato: "—" },
   ]);
 });
 
@@ -183,4 +183,24 @@ test("I31 — la parola della linea di un figlio spostato a mano: in stampa fuor
     parola.x < r.x + r.w && r.x < parola.x + parola.w && parola.y < r.y + r.h && r.y < parola.y + parola.h;
   assert.deepEqual(riquadri.filter(tocca), []);
   assert.equal(at.y > spostato.y + spostato.h && at.y < padre.y, true, "fra i due riquadri, sulla linea");
+});
+
+// T3.3 (spec §13.10.3): l'elenco «Cavi di ridondanza» della stampa riceve la colonna «stato», con la parola intera della
+// mappa; senza `cavo` (mappa di prima) «—»; le contrazioni (passaggio da apparati non gestiti) non sono cavi.
+test("T3: «Cavi di ridondanza» ha lo stato in parole intere, «—» senza cavo, e non elenca le contrazioni", () => {
+  const cavo = (over: Partial<CavoLinea>): CavoLinea => ({ genere: "cavo", stato: null, fiducia: "certo", porteDaVerificare: false, detti: [], frasi: [], ...over });
+  const tree: TreeResult = {
+    roots: ["dev:1"],
+    children: new Map([["dev:1", ["dev:2", "dev:3"]], ["dev:2", []], ["dev:3", []]]),
+    via: new Map(),
+    links: [
+      link({ id: "l1", a: "dev:1", b: "dev:2" }), link({ id: "l2", a: "dev:1", b: "dev:3" }),
+      link({ id: "r1", a: "dev:2", aPort: "p1", b: "dev:3", bPort: "p1", redundant: true, cavo: cavo({ stato: "bloccato" }) }),
+      link({ id: "r2", a: "dev:2", aPort: "p2", b: "dev:3", bPort: "p2", redundant: true, cavo: cavo({ stato: "instradato" }) }),
+      link({ id: "r3", a: "dev:2", aPort: "p3", b: "dev:3", bPort: "p3", redundant: true }),
+      link({ id: "r4", a: "dev:2", aPort: "p4", b: "dev:3", bPort: "p4", redundant: true, cavo: cavo({ genere: "contrazione", via: "segmento" }) }),
+    ],
+  };
+  const rows = redundantCables(tree, boxes(["dev:1", "dev:2", "dev:3"]), (id) => id);
+  assert.deepEqual(rows.map((r) => [r.id, r.stato]), [["r1", "⊘ bloccato dallo spanning tree"], ["r2", "instradato, fuori dal bridge"], ["r3", "—"]]);
 });

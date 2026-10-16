@@ -9,7 +9,9 @@ import { costruisciModelloCavi } from "@/lib/topology/cavi/modello";
 import { calcolaTraccia, confrontaAlberi, nomiTraccia } from "@/lib/topology/cavi/traccia";
 import { baseInput, dev, host } from "./support/righe";
 import type { Porta } from "@/lib/topology/cavi/porte";
-import { fb, fp, ingresso, vic } from "./support/cavi";
+import { fb, fp, ingresso, ORA_T2, vic } from "./support/cavi";
+import { candidatiPerPorta, modelloMappaCavi, nomiDellaMappa } from "@/lib/topology/cavi/mappa";
+import { porte, riga } from "./support/reti-campione";
 
 test("confrontaAlberi: padre diverso, entra, esce; VM e segmenti non contano come oggetti", () => {
   const d = confrontaAlberi(
@@ -145,4 +147,65 @@ test("un server attaccato dalla tabella MAC resta nell'albero per cavo: a lettur
   assert.equal(m.albero.padri["host:9"], "dev:2");
   const tr = calcolaTraccia(oggi, m);
   assert.deepEqual([tr.escono, tr.entrano, tr.righe], [[], [], []]);
+});
+
+/**
+ * Criterio C della misura del 16/10 (§13.7.8, ultimo punto). Forma vera della rete B: un firewall virtuale censito come apparato
+ * (tipo «switch», schede «vtnet»), VM accesa del suo hypervisor e abbinata per MAC. Nella mappa di oggi sta sotto il router: la sua
+ * «tabella MAC» vede il MAC del router sulla scheda vtnet3. Nel modello per cavo i suoi annunci e la sua tabella MAC sono «stessa
+ * rete» (giusto), ma la traccia lo dava «fuori dall'albero: nella mappa nuova non ha un collegamento verso l'albero».
+ */
+const firewallVirtuale = (tabellaSua = true) => {
+  const M = { rtr: "02:00:c1:00:01:01", sw: "02:00:c1:00:02:01", hv: "02:00:c1:00:41:01", v0: "02:00:c1:00:52:00", v3: "02:00:c1:00:52:03" };
+  return ingresso(baseInput({
+    devices: [dev(1, { name: "RTR-1", device_type: "router", ...mk }), dev(2, { name: "SW-2", ...mk }),
+      dev(41, { name: "pve-1", device_type: "server", vendor: "proxmox", host: "10.1.0.41", proxmox_scan: 1, port_count: 0 }),
+      dev(52, { name: "FW-V", device_type: "switch", vendor: "fw-x", via: "ssh", host: "10.1.0.52", port_count: 4 })],
+    knownMacs: [{ device_id: 1, mac: M.rtr }, { device_id: 2, mac: M.sw }, { device_id: 52, mac: M.v0 }, { device_id: 52, mac: M.v3 }],
+    networks: [{ id: 1, cidr: "10.1.0.0/24", name: "lan", gateway: "10.1.0.1", location_id: null }],
+    ports: [...porte(1, [[1, "ether1", "1000 Mbps"]]), ...porte(2, [[1, "ether1", "1000 Mbps"], [5, "ether5", "10000 Mbps"]])],
+    neighbors: [
+      riga({ device_id: 1, local_port: "ether1,bridge", remote_device_name: "SW-2", remote_mac: M.sw, remote_port: "bridge/ether1", remote_platform: "MikroTik" }),
+      riga({ device_id: 2, local_port: "ether1,bridge", remote_device_name: "RTR-1", remote_mac: M.rtr, remote_port: "bridge/ether1", remote_platform: "MikroTik" }),
+    ],
+    macPorts: [
+      { device_id: 2, mac: M.hv, port_name: "ether5", timestamp: ORA_T2, source: "device" },
+      { device_id: 2, mac: M.v0, port_name: "ether5", timestamp: ORA_T2, source: "device" },
+      ...(tabellaSua ? [{ device_id: 52, mac: M.rtr, port_name: "vtnet3", timestamp: ORA_T2, source: "device" }, { device_id: 52, mac: M.v3, port_name: "vtnet3", timestamp: ORA_T2, source: "device" }] : []),
+    ],
+    vms: [{ scannedDeviceId: 41, vmid: 120, name: "fw-v", node: "pve-1", status: "running", type: "qemu", macs: [M.v0], ips: [], scannedAt: "2026-10-13T06:00:00.000Z" }],
+    scanHosts: [{ scannedDeviceId: 41, hostname: "pve-1", ips: ["10.1.0.41"], macs: [M.hv], scannedAt: "2026-10-13T06:00:00.000Z" }],
+  }));
+};
+const vistaAuto = (model: Parameters<typeof computeMapView>[0]) =>
+  computeMapView(model, { auto: true, members: [], roots: [], head: "dev:1", tweaks: [], expanded: new Set(), orientation: "lr" });
+
+test("criterio C (misura del 16/10, §13.7.8): un firewall in una VM sta dentro il suo hypervisor nella mappa nuova e nella traccia, con «stessa rete» nei dettagli; mai fuori", () => {
+  const ing = firewallVirtuale();
+  const t1 = buildTopologyModel(ing.t1);
+  const oggi = padriDi(vistaAuto(t1).tree);
+  assert.equal(oggi["dev:52"], "dev:1", "premessa: nella mappa di oggi la VM, coi collegamenti suoi, è un oggetto sotto il router");
+  const m = costruisciModelloCavi(ing, t1, { testaScelta: "dev:1" });
+  assert.equal(m.dentro.get("dev:52"), "dev:41", "nel modello per cavo sta dentro il suo hypervisor");
+  const tr = calcolaTraccia(oggi, m);
+  assert.deepEqual(tr.escono, [], "mai fuori dall'albero");
+  const r = tr.righe.find((x) => x.id === "dev:52");
+  assert.deepEqual([r?.prima, r?.dopo], ["dev:1", "dev:41"]);
+  assert.match(r?.perche ?? "", /dentro il suo hypervisor/);
+  assert.match(r?.perche ?? "", /stessa rete/);
+  // Schermo = traccia: nella mappa nuova la VM non è un oggetto a sé ma una VM del riquadro del suo hypervisor, che sta nell'albero
+  // dove lo mette la traccia.
+  const mappa = modelloMappaCavi(t1, m, ing);
+  const v = vistaAuto(mappa);
+  assert.equal(v.visible.has("dev:52"), false, "dentro il riquadro dell'hypervisor, non un riquadro suo");
+  assert.ok(v.visible.has("dev:41") && padriDi(v.tree)["dev:41"] === m.albero.padri["dev:41"], JSON.stringify(padriDi(v.tree)));
+  assert.ok(mappa.vms.some((x) => x.nodeId === "dev:52" && x.hypervisorNodeId === "dev:41"), "la VM sta fra quelle dell'hypervisor");
+  assert.ok(candidatiPerPorta(m, "dev:52", nomiDellaMappa(mappa)).righe.some((x) => x.scartati.some((s) => /stessa rete/.test(s.motivo))), "«stessa rete» nei dettagli");
+  // Una VM che anche oggi sta dentro il suo hypervisor (senza collegamenti suoi) non «entra» e non cambia padre.
+  const senza = firewallVirtuale(false);
+  const t1s = buildTopologyModel(senza.t1);
+  const trs = calcolaTraccia(padriDi(vistaAuto(t1s).tree), costruisciModelloCavi(senza, t1s, { testaScelta: "dev:1" }));
+  assert.deepEqual([trs.entrano, trs.escono, trs.righe.filter((x) => x.id === "dev:52")], [[], [], []]);
+  // Eccezione già decisa (§13.16 punto 3): la VM confermata come testa resta fuori dalla regola.
+  assert.equal(costruisciModelloCavi(ing, t1, { testaScelta: "dev:52" }).dentro.has("dev:52"), false);
 });

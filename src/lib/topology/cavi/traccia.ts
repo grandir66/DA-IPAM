@@ -52,6 +52,9 @@ const fra = (cs: readonly Collegamento[], x: string, y: string): Collegamento | 
   cs.find((c) => (c.a.nodo === x && c.b.nodo === y) || (c.a.nodo === y && c.b.nodo === x));
 
 function perche(d: Differenza, m: ModelloCavi): string {
+  if (d.dopo !== undefined && d.dopo !== null && m.dentro.get(d.id) === d.dopo) {
+    return "è una VM accesa: sta dentro il suo hypervisor, e i suoi annunci e la sua tabella MAC sono «stessa rete»";
+  }
   if (d.dopo === undefined) return "nella mappa nuova non ha un collegamento verso l'albero";
   if (d.dopo === null) return "nella mappa nuova è una partenza dell'albero";
   const c = m.albero.via.get(d.id);
@@ -73,7 +76,11 @@ function perche(d: Differenza, m: ModelloCavi): string {
 export const LIMITE_ANOMALIE = 20;
 
 export function calcolaTraccia(oggi: Readonly<Record<string, string | null>>, m: ModelloCavi, limite = 50): Traccia {
-  const diff = confrontaAlberi(oggi, m.albero.padri);
+  // §13.7.8 (criterio C): una VM che sta dentro il suo hypervisor è nella mappa nuova dove è lui (schermo = traccia: nella pagina è
+  // una VM del suo riquadro). Conta solo se oggi è un oggetto a sé: se anche oggi sta dentro, non è una differenza.
+  const nuovo: Record<string, string | null> = { ...m.albero.padri };
+  for (const [vm, h] of m.dentro) if (oggi[vm] !== undefined && h in m.albero.padri && !(vm in nuovo)) nuovo[vm] = h;
+  const diff = confrontaAlberi(oggi, nuovo);
   const perGenere: Record<Genere, number> = { cavo: 0, fascio: 0, tunnel: 0, radio: 0, senza_fili: 0, segmento: 0 };
   for (const c of m.collegamenti) perGenere[c.genere]++;
   return {

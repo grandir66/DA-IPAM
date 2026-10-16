@@ -165,6 +165,13 @@ export interface ModelloCavi {
    * del Task 7 di T3).
    */
   nodiIndice: ReadonlyMap<string, MapNode>;
+  /**
+   * §13.7.8, ultimo punto (criterio C della misura del 16/10): le VM che stanno dentro il loro hypervisor (accese, abbinate per MAC,
+   * non la testa confermata) e che nella mappa nuova non hanno collegamenti: VM → hypervisor. Nella pagina sono VM del riquadro
+   * dell'hypervisor, come le VM senza collegamenti propri di oggi; la traccia le mette sotto di lui. Anche con collegamenti propri
+   * nella mappa di oggi (vicini, una tabella MAC sua), che qui sono «stessa rete».
+   */
+  dentro: ReadonlyMap<string, string>;
 }
 
 const macDel = (id: string | null): string | null => (id ? (id.split(".").pop() ?? "").toLowerCase() : null);
@@ -249,8 +256,10 @@ export function costruisciModelloCavi(ing: IngressoCavi, t1: TopologyModel, opz:
     soloDettagli.push({ collegamento: c, ipervisore: h.nodo, altro: sw.nodo, porta: sw.nome, vm: c.vm ?? 0 });
     return false;
   });
+  const conLinea = new Set(disegnati.flatMap((c) => [c.a.nodo, c.b.nodo]));
+  const dentro = new Map([...p.ctx.vmDentro].filter(([vm]) => !conLinea.has(vm)).sort(([x], [y]) => (x < y ? -1 : x > y ? 1 : 0)));
   return {
-    collegamenti: disegnati, segmenti, albero, correzioniOrfane, schema: ing.schema, nonCalcolato: nonCalcolato(dalleVm), classi, ponti,
+    collegamenti: disegnati, segmenti, albero, dentro, correzioniOrfane, schema: ing.schema, nonCalcolato: nonCalcolato(dalleVm), classi, ponti,
     stessaRete: r.stessaRete, oltre: r.oltre, scartateBordo: r.scartateBordo, scartateVm: r.scartateVm, soloDettagli, prove: p.prove,
     nodiIndice: p.idx.nodes,
   };

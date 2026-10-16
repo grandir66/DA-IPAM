@@ -480,6 +480,28 @@ test("§13.13.3 punto 8: bloccato fra due bridge della stessa regione senza righ
   assert.deepEqual(stato([fb(2, regione), fb(3, { ...regione, config_digest: "02:00:00:00:00:D2" })]), [["bloccato", undefined, undefined]], "un'altra regione: bloccato e basta");
 });
 
+/**
+ * Revisione finale di T3 (M4): `msti print` letto, con la sola riga dell'albero comune (nessuna istanza in più), non è «istanze
+ * non lette»: l'albero comune porta tutte le VLAN, e un cavo bloccato lì non ne porta altre. Lo si sa dalla riga dell'istanza 0:
+ * le sue VLAN sono tutte (1-4094). Se le VLAN dell'albero comune non sono tutte, altre istanze ci sono e, senza le loro righe
+ * (monitor non letto o non buono), restano non lette.
+ */
+test("M4: istanze lette con il solo albero comune (VLAN 1-4094 nell'istanza 0) = «bloccato» e basta; VLAN in meno senza righe d'istanza = non lette", () => {
+  const regione = { protocol: "mstp", region_name: "REGIONE-A", region_revision: 1, config_digest: "02:00:00:00:00:D1" };
+  const t1 = baseInput({ devices: [dev(2, { name: "SW-2", ...mk }), dev(3, { name: "SW-3", ...mk })] });
+  const vicini = [vic({ device_id: 2, local_port: "ether1", remote_device_name: "SW-3", remote_port: "bridge/ether1", source: "device", remote_platform: "MikroTik" })];
+  const fattiPorta = [fp(3, "n:ether1", "ether1", { source: "device", stp_role: "alternate", stp_state: "discarding" })];
+  const stato = (fattiBridge: ReturnType<typeof fb>[]) => fra(collega(ingresso(t1, { vicini, fattiPorta, fattiBridge })).collegamenti, "dev:2", "dev:3")
+    .map((c) => [c.stato, c.istanzeNonLette, c.attivoPerVlan]);
+  const soloComune = { ...regione, vlans: "1-4094" };
+  assert.deepEqual(stato([fb(2, soloComune), fb(3, soloComune)]), [["bloccato", undefined, undefined]], "letto: c'è solo l'albero comune");
+  assert.deepEqual(stato([fb(2, regione), fb(3, soloComune)]), [["bloccato", undefined, undefined]], "basta un capo: stessa regione, stessa mappa");
+  assert.deepEqual(stato([fb(2, { ...regione, vlans: "1,2-4093,4094" }), fb(3, regione)]), [["bloccato", undefined, undefined]], "tutte, scritte a pezzi");
+  const conAltre = { ...regione, vlans: "1-76,78-4094" };
+  assert.deepEqual(stato([fb(2, conAltre), fb(3, conAltre)]), [["bloccato", true, undefined]], "la VLAN 77 sta in un'altra istanza, non letta");
+  assert.deepEqual(stato([fb(2, regione), fb(3, regione)]), [["bloccato", true, undefined]], "VLAN dell'albero comune non lette: come prima");
+});
+
 test("Caso 4 del piano: un fascio con un membro giù resta un fascio; la velocità è dei membri accesi, il membro giù porta la sua", () => {
   const t1 = baseInput({ devices: [dev(2, { name: "SW-2" }), dev(3, { name: "SW-3" })],
     ports: [...porte(2, [[1, "Port 1", "25000 Mbps"], [6, "Port 6", "25000 Mbps"]]), ...porte(3, [[2, "Port 2", "25000 Mbps"], [7, "Port 7", "25000 Mbps"]])] });

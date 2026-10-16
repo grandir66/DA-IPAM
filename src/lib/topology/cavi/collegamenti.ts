@@ -189,6 +189,17 @@ function vlanDa(testo: string | null): number[] {
   return out;
 }
 
+/**
+ * La mappa delle VLAN dell'albero comune le dice tutte (1-4094): oltre a lui non c'è nessuna istanza, perché ogni VLAN sta in
+ * un'istanza sola. Una mappa non letta (null) o in un'altra forma non lo dice.
+ */
+function tutteLeVlan(testo: string | null): boolean {
+  if (testo === null) return false;
+  const v = new Set(vlanDa(testo));
+  for (let x = 1; x <= 4094; x++) if (!v.has(x)) return false;
+  return true;
+}
+
 export function costruisciCollegamenti(prove: readonly Prova[], correzioni: readonly LinkOverrideRow[], ctx: ContestoCavi): RisultatoCavi {
   const finestra = ctx.staleDays * DAY_MS;
   const velocitaDi = (p: Porta): number | null => (p.chiave ? (ctx.velocita.get(`${p.nodo}|${p.chiave}`) ?? null)
@@ -680,9 +691,11 @@ export function costruisciCollegamenti(prove: readonly Prova[], correzioni: read
           const ist = ctx.fatti.bridge(p.nodo).find((b) => b.instance > 0 && b.root_port !== null && normale(b.root_port) === normale(p.nome));
           if (ist) return { stato: "bloccato_comune", vlan: vlanDa(ist.vlans) };
         }
-        // §13.13.3 punto 8: la stessa regione e nessuna riga d'istanza su nessuno dei due: le istanze non sono lette (oggi senza
-        // T2-a), e il cavo bloccato nell'albero comune può portare altre VLAN.
-        if (![z.a.nodo, z.b.nodo].some((n) => ctx.fatti.bridge(n).some((b) => b.instance > 0))) return { stato: "bloccato", istanzeNonLette: true };
+        // §13.13.3 punto 8: la stessa regione e nessuna riga d'istanza su nessuno dei due: le istanze non sono lette, e il cavo
+        // bloccato nell'albero comune può portare altre VLAN. Tranne quando le istanze sono lette e c'è solo l'albero comune: le VLAN
+        // della sua riga sono tutte (revisione finale di T3, M4). Stessa regione, stessa mappa: basta un capo.
+        const soloComune = [ra, rb].some((b) => tutteLeVlan(b.vlans));
+        if (!soloComune && ![z.a.nodo, z.b.nodo].some((n) => ctx.fatti.bridge(n).some((b) => b.instance > 0))) return { stato: "bloccato", istanzeNonLette: true };
       }
       return { stato: "bloccato" };
     }

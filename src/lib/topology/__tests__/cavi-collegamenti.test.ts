@@ -8,7 +8,7 @@ import { capo as capoDi, costruisciCollegamenti, type Collegamento } from "@/lib
 import { costruisciModelloCavi, preparaCavi } from "@/lib/topology/cavi/modello";
 import type { IngressoCavi, Prova } from "@/lib/topology/cavi/prove";
 import type { LinkOverrideRow, ModelVmRow, TopologyModelInput } from "@/lib/topology/model-types";
-import { baseInput, dev } from "./support/righe";
+import { baseInput, dev, host } from "./support/righe";
 import { conHypervisor, porte, riga } from "./support/reti-campione";
 import { fb, fp, ingresso, ORA_T2, vic } from "./support/cavi";
 
@@ -743,4 +743,44 @@ test("criterio A (misura del 16/10, I51, C7): la porta che sente due apparati, c
   // LLDP del router 3 torna una prova di cavo (non più stessa rete).
   const senza = collega(sedeRouter3(false));
   assert.equal(senza.stessaRete.filter((p) => p.da.nodo === "dev:3" && p.altro?.nodo === "dev:1" && p.classe === "annuncio_collegamento").length, 0);
+});
+
+/**
+ * Criterio B (§13.6.3, §13.7.2 passo 10). Forma vera della rete B: il router (dev:1) ha `bond3` — tipo «lag», nel bridge,
+ * designato e in inoltro, partner LACP = il MAC del NAS — coi membri sfp-sfpplus9 e sfp-sfpplus10; la sua tabella MAC sulla
+ * porta `bond3` vede i MAC delle due schede del NAS, che l'identità tiene in due nodi (host:61 e host:62, OUI diversi:
+ * §13.14). Il 16/10 il modello per cavo dava il fascio giusto più due linee «router bond3 ↔ NAS · instradato · dedotto».
+ */
+const fascioDelNas = (partner = true) => {
+  const NAS1 = "02:00:b1:00:61:01", NAS2 = "02:00:c2:00:62:01";
+  return ingresso(baseInput({
+    devices: [dev(1, { name: "RTR-B", device_type: "router", ...mk }), dev(2, { name: "AGG-B", ...mk })],
+    hosts: [host(61, { ip: "10.5.0.61", mac: NAS1, hostname: "nas-dati", classification: "nas" }), host(62, { ip: "10.5.0.62", mac: NAS2, hostname: "nas-dati", classification: "nas" })],
+    networks: [{ id: 1, cidr: "10.5.0.0/24", name: "lan", gateway: "10.5.0.1", location_id: null }],
+    ports: porte(1, [[1, "sfp-sfpplus1", "10000 Mbps"], [9, "sfp-sfpplus9", "10000 Mbps"], [10, "sfp-sfpplus10", "10000 Mbps"], [20, "bond3", "10000 Mbps"]]),
+    neighbors: [riga({ device_id: 1, local_port: "sfp-sfpplus1,BR_QB", remote_device_name: "AGG-B", remote_mac: "02:00:a2:00:02:01", remote_port: "bridge/sfp-sfpplus1", remote_platform: "MikroTik" })],
+    macPorts: [{ device_id: 1, mac: NAS1, port_name: "bond3", timestamp: ORA_T2, source: "device" }, { device_id: 1, mac: NAS2, port_name: "bond3", timestamp: ORA_T2, source: "device" }],
+  }), {
+    fattiPorta: [
+      fp(1, "n:bond3", "bond3", { source: "device", if_kind: "lag", in_bridge: 1, bridge: "BR_QB", stp_role: "designated", stp_state: "forwarding", lag_partner: NAS1 }),
+      fp(1, "i:9", "sfp-sfpplus9", { source: "device", lag_group: "bond3", lag_partner: partner ? NAS1 : null }),
+      fp(1, "i:10", "sfp-sfpplus10", { source: "device", lag_group: "bond3", lag_partner: partner ? NAS1 : null }),
+    ],
+    fattiBridge: [fb(1, { bridge_name: "BR_QB", bridge_id: "8000.02:00:a1:00:01:00", root_id: "8000.02:00:a1:00:01:00" })],
+  });
+};
+
+test("criterio B (misura del 16/10, §13.6.3): il bond è il suo fascio — le prove sulla porta del bond sono del fascio, lo stato dai fatti del bond, mai «instradato»", () => {
+  const r = collega(fascioDelNas());
+  const verso = (n: string) => r.collegamenti.filter((c) => c.a.nodo === n || c.b.nodo === n);
+  assert.deepEqual(verso("host:61").map((c) => [c.genere, c.stato, c.velocitaMbps, c.membri?.length]), [["fascio", "inoltra", 20000, 2]], verso("host:61").map((c) => c.id).join(" | "));
+  assert.ok(verso("host:61")[0].prove.some((p) => p.classe === "tabella_mac" && p.da.nome === "bond3"), "la tabella MAC della porta del bond è una prova del fascio");
+  assert.deepEqual(verso("host:62"), [], "la porta del bond è il capo del fascio verso un altro oggetto: non è di bordo");
+  assert.ok(r.scartateBordo.some((s) => s.porta.nome === "bond3" && s.verso === "host:62"), JSON.stringify(r.scartateBordo));
+  assert.deepEqual(r.collegamenti.filter((c) => c.stato === "instradato").map((c) => c.id), []);
+  // Senza i membri visti (nessun partner LACP): le linee della tabella MAC sulla porta del bond restano, con lo stato dei fatti del
+  // bond (nel bridge: inoltra), non quello del nome (una porta senza bridge nel nome sarebbe «instradata»).
+  const soli = collega(fascioDelNas(false));
+  assert.deepEqual(soli.collegamenti.filter((c) => c.b.nodo.startsWith("host:") || c.a.nodo.startsWith("host:")).map((c) => [capoDi(c, "dev:1").nome, c.stato]),
+    [["bond3", "inoltra"], ["bond3", "inoltra"]]);
 });

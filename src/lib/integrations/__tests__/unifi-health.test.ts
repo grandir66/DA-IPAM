@@ -41,6 +41,7 @@ test("nessun controller, o tutti spenti: «Non configurato», non un errore", ()
   for (const lista of [[], [c({ enabled: false })]]) {
     const r = composeControllersHealth(lista);
     assert.equal(r.configured, false);
+    assert.equal(r.verdict, "off");
     assert.equal(r.detail, "Non configurato");
     assert.equal(r.repair, null);
   }

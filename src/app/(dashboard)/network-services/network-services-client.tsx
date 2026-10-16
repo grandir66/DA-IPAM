@@ -10,6 +10,8 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { BridgeStatus } from "@/lib/network-services/client";
 import { toggleServizio, type ServizioRete } from "@/lib/network-services/toggle-servizio";
+import { verdettoServizio, type VerdettoServizio } from "@/lib/network-services/salute";
+import { NET_SERVICES_ENV_VARS } from "@/lib/modules/uninstall-copy";
 
 import { NetworkServicesSettings } from "./network-services-setup";
 
@@ -17,6 +19,8 @@ type ServiceKey = ServizioRete;
 
 interface Props {
   apiBase: string;
+  /** Da dove viene la configurazione del bridge: «env» si mostra a tutti (passo 4, 16/10). */
+  source?: "database" | "env" | null;
   isAdmin?: boolean;
   initialBridge: BridgeStatus | null;
   initialError: string | null;
@@ -52,8 +56,17 @@ const SERVICE_META: Record<
   },
 };
 
+/** Colore del verdetto per servizio (stesso calcolo della sonda di salute). */
+const VERDETTO_BADGE: Record<VerdettoServizio, "default" | "secondary" | "destructive" | "outline"> = {
+  ok: "default",
+  off: "secondary",
+  fail: "destructive",
+  non_so: "outline",
+};
+
 export function NetworkServicesClient({
   apiBase,
+  source = null,
   initialBridge,
   initialError,
   isAdmin = false,
@@ -106,6 +119,11 @@ export function NetworkServicesClient({
               DHCP
             </Link>
           </p>
+          {source === "env" && (
+            <p className="text-sm text-muted-foreground mt-1">
+              Configurazione dalle variabili d&apos;ambiente {NET_SERVICES_ENV_VARS}, non dal database.
+            </p>
+          )}
         </div>
         <Button variant="outline" onClick={() => refreshAll()} disabled={pending}>
           <RefreshCw className={`h-4 w-4 mr-2 ${pending ? "animate-spin" : ""}`} />
@@ -146,13 +164,14 @@ export function NetworkServicesClient({
               const Icon = meta.icon;
               const state = bridge?.services?.[svc];
               const active = state?.active === "active";
+              const verdetto = verdettoServizio(svc, state);
               return (
                 <Card key={svc}>
                   <CardHeader className="pb-3">
                     <div className="flex items-start justify-between">
                       <Icon className="h-5 w-5 text-muted-foreground" />
-                      <Badge variant={active ? "default" : "secondary"}>
-                        {active ? "active" : "inactive"}
+                      <Badge variant={VERDETTO_BADGE[verdetto.verdetto]} title={verdetto.nome}>
+                        {verdetto.stato}
                       </Badge>
                     </div>
                     <CardTitle className="text-base mt-2">{meta.label}</CardTitle>

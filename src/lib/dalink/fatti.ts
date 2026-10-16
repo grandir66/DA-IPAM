@@ -4,7 +4,9 @@
  * - versione: quella di `package.json`, come `/api/version`;
  * - moduli accesi: dal registro dei moduli (`enabled`);
  * - salute: dei soli moduli accesi più il sistema, e SOLO i verdetti (`ok` | `degraded` | `fail`) delle sonde dei moduli, mai il
- *   testo di dettaglio, che può contenere indirizzi e nomi della rete del cliente. In
+ *   testo di dettaglio, che può contenere indirizzi e nomi della rete del cliente. Le sonde
+ *   dicono anche `off` (spento) e `unverified` (locale, non verificato): DA-Link non li
+ *   conosce, e `verdettoPerDaLink` li riporta al suo vocabolario (passo 4, 16/10). In
  *   più tre voci dell'istanza: `cliente`, `firewall_wt0`, `interfaccia_wt0`, e `zbx` per il
  *   proxy Zabbix della macchina, che non è un modulo del registro (`ok` se gira, `fail` se è
  *   installato e fermo, nessuna voce se non c'è, `non_so` se non si legge);
@@ -26,7 +28,7 @@ import type { Database } from "better-sqlite3";
 import { getTenantByCode, getTenants } from "@/lib/db-hub";
 import { getTenantDb, withTenant } from "@/lib/db-tenant";
 import { resolveModules } from "@/lib/modules/registry";
-import { getModulesHealth } from "@/lib/modules/health";
+import { getModulesHealth, type ModuleHealthVerdict, type ModuleVerdict } from "@/lib/modules/health";
 import { leggiStatoAggiornamento } from "@/lib/aggiornamento-servizio";
 import { getConfiguredUpdateBranch } from "@/lib/update-branch";
 import { leggiPorteWt0, type PorteWt0 } from "./porte-wt0";
@@ -66,7 +68,7 @@ export interface DipendenzeFatti {
   unicoClienteAppliance: () => boolean;
   porte: () => Promise<PorteWt0>;
   moduli: (codcli: string) => Promise<Record<string, boolean>>;
-  salute: (codcli: string) => Promise<Record<string, string>>;
+  salute: (codcli: string) => Promise<Record<string, ModuleHealthVerdict>>;
   proxyZabbix: () => "ok" | "fail" | null;
   /** Stato dell'aggiornamento automatico (data/aggiornamento.json) col ramo seguito. */
   aggiornamento: () => AggiornamentoSegnale | null;
@@ -83,6 +85,20 @@ export function versioneIstanza(): string {
     versioneLetta = "sconosciuta";
   }
   return versioneLetta;
+}
+
+/**
+ * Il verdetto di una sonda nel vocabolario che DA-Link riceve da sempre per un modulo
+ * acceso: `ok` | `degraded` | `fail`.
+ * - `unverified` (Patch Management: locale, niente da sondare) → `ok`, come prima del
+ *   passo 4: per DA-Link il modulo è acceso e l'istanza risponde;
+ * - `off` → null, la voce non parte: la sonda dice che il modulo è spento, anche se il
+ *   registro lo dava acceso un attimo prima (letture non simultanee).
+ */
+export function verdettoPerDaLink(v: ModuleHealthVerdict): ModuleVerdict | null {
+  if (v === "off") return null;
+  if (v === "unverified") return "ok";
+  return v;
 }
 
 export function saluteFirewall(p: PorteWt0): string {
@@ -146,10 +162,13 @@ export async function fattiIstanza(
     }
     try {
       // Solo i moduli accesi, più il sistema (la macchina): un modulo spento non
-      // ha salute, e la sua sonda direbbe «fail» (visto a schermo il 15/10).
+      // ha salute (visto a schermo il 15/10: le sonde dei moduli spenti dicevano
+      // «fail»; dal passo 4 dicono «off», e comunque non partono).
       const sonde = await d.salute(tenant);
       for (const [k, v] of Object.entries(sonde)) {
-        if (moduli[k] === true || k === MODULO_SISTEMA) salute[k] = v;
+        if (moduli[k] !== true && k !== MODULO_SISTEMA) continue;
+        const voce = verdettoPerDaLink(v);
+        if (voce) salute[k] = voce;
       }
     } catch {
       salute.moduli = "non_so";

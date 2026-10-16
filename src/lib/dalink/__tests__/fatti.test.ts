@@ -16,7 +16,7 @@ import assert from "node:assert/strict";
 import Database from "better-sqlite3";
 import { closeHubDb } from "@/lib/db-hub";
 import { TENANT_SCHEMA_SQL } from "@/lib/db-tenant-schema";
-import { fattiIstanza, inventarioDaDb, saluteFirewall } from "../fatti";
+import { fattiIstanza, inventarioDaDb, saluteFirewall, verdettoPerDaLink } from "../fatti";
 
 after(() => {
   closeHubDb();
@@ -103,6 +103,55 @@ test("la salute riguarda solo i moduli accesi (più il sistema): un modulo spent
   assert.equal(r.fatti.salute.appliance, "degraded");
   assert.ok(!("wazuh" in r.fatti.salute));
   assert.ok(!("librenms" in r.fatti.salute));
+});
+
+// Passo 4 del piano di solidità (16/10): le sonde dicono anche «off» (spento) e
+// «unverified» (locale, non verificato). Il segnale manda sempre e solo i moduli accesi,
+// e per loro sempre e solo i valori che DA-Link riceveva già: ok | degraded | fail.
+test("verdettoPerDaLink: tabella dei casi", () => {
+  assert.equal(verdettoPerDaLink("ok"), "ok");
+  assert.equal(verdettoPerDaLink("degraded"), "degraded");
+  assert.equal(verdettoPerDaLink("fail"), "fail");
+  assert.equal(verdettoPerDaLink("unverified"), "ok");
+  assert.equal(verdettoPerDaLink("off"), null);
+});
+
+test("segnale dopo il passo 4: solo moduli accesi, e solo ok | degraded | fail", async () => {
+  const r = await fattiIstanza("99999", null, {
+    clienteEsiste: () => true,
+    porte: async () => ({ fonte: "non_so", porte: [], sorgentiRistrette: false, wt0Presente: false }),
+    proxyZabbix: () => null,
+    moduli: async () => ({
+      edge: true,
+      patch_management: true,
+      inventory_agent: true,
+      network_services: true,
+      wazuh: false,
+      librenms: false,
+      meshcentral: false,
+    }),
+    salute: async () => ({
+      edge: "fail",
+      patch_management: "unverified",
+      inventory_agent: "degraded",
+      // acceso per il registro, spento per la sonda (letture non simultanee): non parte
+      network_services: "off",
+      wazuh: "off",
+      librenms: "fail",
+      meshcentral: "ok",
+      appliance: "ok",
+    }),
+  });
+  const moduliInSalute = Object.fromEntries(
+    Object.entries(r.fatti.salute).filter(([k]) => !["cliente", "firewall_wt0", "interfaccia_wt0"].includes(k)),
+  );
+  assert.deepEqual(moduliInSalute, {
+    edge: "fail",
+    patch_management: "ok",
+    inventory_agent: "degraded",
+    appliance: "ok",
+  });
+  for (const v of Object.values(moduliInSalute)) assert.ok(["ok", "degraded", "fail"].includes(v), v);
 });
 
 test("una sonda che fallisce non ferma il segnale: la salute dice non_so", async () => {

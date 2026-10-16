@@ -157,3 +157,12 @@ test("riga senza stato del registry (Sistema appliance): resta sulla configurazi
   assert.equal(t.apre, "configurazione");
   assert.equal(t.notaStato, null);
 });
+
+test("Patch Management acceso, «locale, non verificato»: apre la pagina e lo dice al posto dell'ora", () => {
+  // Passo 4 (16/10): prima la sonda diceva «ok» dall'interruttore.
+  const p = stato("patch_management", { uiUrl: "/patch-management" });
+  const t = moduleRowTarget(desc("patch_management"), p, salute("patch_management", "unverified"));
+  assert.equal(t.href, "/patch-management");
+  assert.equal(t.apre, "modulo");
+  assert.equal(t.notaStato, "Locale, non verificato");
+});

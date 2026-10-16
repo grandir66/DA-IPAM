@@ -27,6 +27,7 @@ import { isModuleLaunchable } from "./launchable";
 
 export const MODULI_CONFIG_HREF = "/settings?tab=moduli";
 export const LAUNCHPAD_HREF = "/launchpad";
+export const NOTA_NON_VERIFICATO = "Locale, non verificato";
 
 export interface DestinazioneRigaModulo {
   href: string;
@@ -66,11 +67,15 @@ export function moduleRowTarget(
   if (!state.configured) return { ...config, notaStato: "Modulo non attivo: da configurare" };
   if (!state.enabled) return { ...config, notaStato: "Modulo disattivato" };
 
-  if (!state.uiUrl) return config;
+  // Attivo ma senza niente da sondare (Patch Management, passo 4 del 16/10): la
+  // colonna dell'ora lo dice, invece di «Mai eseguita».
+  const notaStato = health?.verdict === "unverified" ? NOTA_NON_VERIFICATO : null;
+
+  if (!state.uiUrl) return { ...config, notaStato };
 
   if (state.access === "external" || !state.uiIsInternal) {
-    if (!isModuleLaunchable(state, health)) return config;
-    return { href: LAUNCHPAD_HREF, apre: "launchpad", notaStato: null, contaNegliErrori: true };
+    if (!isModuleLaunchable(state, health)) return { ...config, notaStato };
+    return { href: LAUNCHPAD_HREF, apre: "launchpad", notaStato, contaNegliErrori: true };
   }
-  return { href: state.uiUrl, apre: "modulo", notaStato: null, contaNegliErrori: true };
+  return { href: state.uiUrl, apre: "modulo", notaStato, contaNegliErrori: true };
 }

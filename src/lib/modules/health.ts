@@ -12,6 +12,11 @@
  *    dall'installer (connect.sh fail-fast) e dal bottone "Verifica".
  *
  * Ogni probe è bounded con withTimeout (PROBE_TIMEOUT_MS).
+ *
+ * Spento ≠ guasto (passo 4 del piano di solidità, 16/10): un modulo spento o mai
+ * configurato dice `off` e non chiama niente; prima diceva `fail` e si confondeva
+ * con un guasto vero. Un modulo che non ha niente da sondare (Patch Management, tutto
+ * locale) dice `unverified`, non `ok` dedotto dall'interruttore.
  */
 import { statfs } from "node:fs/promises";
 import { execFile } from "node:child_process";
@@ -25,6 +30,8 @@ import { pingEdge, EdgeClientError } from "@/lib/vuln/scanner-edge-client";
 import { getFeatureStatus } from "@/lib/patch/feature";
 import { getNetServicesState } from "@/lib/network-services/feature";
 import { probeBridgeWithAuth } from "@/lib/network-services/client";
+import { leggiServiziBridge, verdettoBridge, type SaluteServizio } from "@/lib/network-services/salute";
+import { parseDbDate } from "@/lib/db-date";
 import { safeDecrypt } from "@/lib/crypto";
 import { classifyDiskUsage } from "@/lib/integrations/wazuh-health-thresholds";
 import { getMeshCreds } from "@/lib/integrations/meshcentral/config";
@@ -39,7 +46,24 @@ export type ModuleHealthStatus =
   | "never"
   | "unknown";
 
+/**
+ * Verdetto di una sonda che ha misurato qualcosa. È anche il vocabolario della
+ * salute nel segnale verso DA-Link (`dalink/fatti.ts`) e delle notifiche.
+ */
 export type ModuleVerdict = "ok" | "degraded" | "fail";
+
+/**
+ * Verdetto mostrato per un modulo: quelli misurati più due che non sono un esito
+ * di sonda:
+ *  - `off`: modulo spento o mai configurato. Nessuna chiamata, nessun errore;
+ *  - `unverified`: modulo acceso ma senza niente da sondare («locale, non verificato»).
+ */
+export type ModuleHealthVerdict = ModuleVerdict | "off" | "unverified";
+
+/** Il verdetto viene da una misura (non `off`, non `unverified`). */
+export function isMeasuredVerdict(v: ModuleHealthVerdict): v is ModuleVerdict {
+  return v === "ok" || v === "degraded" || v === "fail";
+}
 
 /** Azione di riparazione machine-readable (consumata da /repair + UI). */
 export type ModuleRepairAction =
@@ -64,9 +88,11 @@ export interface ModuleHealth {
   reachable: boolean;
   authOk: boolean;
   lastSyncAt: string | null;
-  verdict: ModuleVerdict;
+  verdict: ModuleHealthVerdict;
   detail: string | null;
   repairAction: ModuleRepairAction;
+  /** Solo Network Services: il verdetto di ciascun servizio del bridge. */
+  servizi?: SaluteServizio[];
 }
 
 const TTL_MS = 60_000;
@@ -99,12 +125,16 @@ function withTimeoutReject<T>(p: Promise<T>, ms: number, message: string): Promi
   ]);
 }
 
-/** verdict → status storico (per i consumer che usano ancora `status`). */
-function verdictToStatus(v: ModuleVerdict, configured: boolean): ModuleHealthStatus {
-  if (!configured) return "never";
+/**
+ * verdict → status storico (per i consumer che usano ancora `status`, come la
+ * dashboard). `off` e `unverified` → «never»: nessuna verifica fatta, quindi
+ * fuori dal conteggio di errori e avvisi.
+ */
+function verdictToStatus(v: ModuleHealthVerdict): ModuleHealthStatus {
   if (v === "ok") return "ok";
   if (v === "degraded") return "warning";
-  return "error";
+  if (v === "fail") return "error";
+  return "never";
 }
 
 /** Costruisce un ModuleHealth normalizzato (riempie sia i campi nuovi sia gli storici). */
@@ -114,17 +144,16 @@ function mk(
   opts: {
     reachable: boolean;
     authOk: boolean;
-    verdict: ModuleVerdict;
+    verdict: ModuleHealthVerdict;
     detail: string | null;
     lastSyncAt?: string | null;
     repairAction?: ModuleRepairAction;
-    configured?: boolean;
+    servizi?: SaluteServizio[];
   },
 ): ModuleHealth {
-  const configured = opts.configured ?? true;
   return {
     key,
-    status: verdictToStatus(opts.verdict, configured),
+    status: verdictToStatus(opts.verdict),
     message: opts.detail,
     lastSync: opts.lastSyncAt ?? null,
     probedAt,
@@ -134,7 +163,13 @@ function mk(
     verdict: opts.verdict,
     detail: opts.detail,
     repairAction: opts.repairAction ?? null,
+    ...(opts.servizi ? { servizi: opts.servizi } : {}),
   };
+}
+
+/** Un modulo spento: nessuna sonda partita, nessun errore. */
+function spento(key: ModuleKey, probedAt: string, detail: string, lastSyncAt: string | null = null): ModuleHealth {
+  return mk(key, probedAt, { reachable: false, authOk: false, verdict: "off", detail, lastSyncAt });
 }
 
 // ── Probe: meshcentral (RMM) ─────────────────────────────────────────────────
@@ -160,13 +195,17 @@ async function probeMeshcentral(tenantCode: string, probedAt: string): Promise<M
         .get() as { last_run: string | null } | undefined
     )?.last_run ?? null;
 
+  // Spento dall'interruttore del modulo: non si chiama il server, anche se i
+  // parametri di collegamento sono rimasti (prima la sonda girava lo stesso).
+  const feature = await getFeatureStatus(tenantCode, "meshcentral");
+  if (!feature.enabled) return spento("meshcentral", probedAt, "Spento", lastSyncAt);
   if (!creds) {
     return mk("meshcentral", probedAt, {
       reachable: false,
       authOk: false,
       verdict: "fail",
-      detail: "MeshCentral non configurato",
-      configured: false,
+      detail: "MeshCentral acceso ma non configurato (URL, MeshID o credenziali mancanti)",
+      lastSyncAt,
     });
   }
 
@@ -230,14 +269,7 @@ function probeEdge(tenantCode: string, probedAt: string): Promise<ModuleHealth> 
     | { base_url: string; token_encrypted: string; cert_pin: string | null; last_sync_at: string | null }
     | undefined;
 
-  if (!row) {
-    return Promise.resolve(
-      mk("edge", probedAt, {
-        reachable: false, authOk: false, verdict: "fail",
-        detail: "Scanner-Edge non configurato", configured: false,
-      }),
-    );
-  }
+  if (!row) return Promise.resolve(spento("edge", probedAt, "Scanner-Edge non configurato"));
   const token = safeDecrypt(row.token_encrypted);
   if (!token) {
     return Promise.resolve(
@@ -272,12 +304,7 @@ function probeEdge(tenantCode: string, probedAt: string): Promise<ModuleHealth> 
 // ── Probe: wazuh (manager + indexer) ─────────────────────────────────────────
 async function probeWazuh(probedAt: string): Promise<ModuleHealth> {
   const cfg = getWazuhConfig();
-  if (!cfg.enabled || !cfg.url) {
-    return mk("wazuh", probedAt, {
-      reachable: false, authOk: false, verdict: "fail",
-      detail: "Wazuh non configurato", configured: false,
-    });
-  }
+  if (!cfg.enabled) return spento("wazuh", probedAt, "Wazuh non configurato");
   const mgr = createWazuhClient({
     url: cfg.url, username: cfg.username, password: cfg.password, verifyTls: cfg.verifyTls,
   });
@@ -336,9 +363,10 @@ async function probeHttpIntegration(
 ): Promise<ModuleHealth> {
   const cfg = getIntegrationConfig(key);
   const repair: ModuleRepairAction = key === "librenms" ? "reconfigure_librenms" : "reconfigure_graylog";
-  if (cfg.mode === "disabled" || !cfg.url) {
+  if (cfg.mode === "disabled") return spento(key, probedAt, "Non configurato");
+  if (!cfg.url) {
     return mk(key, probedAt, {
-      reachable: false, authOk: false, verdict: "fail", detail: "Non configurato", configured: false,
+      reachable: false, authOk: false, verdict: "fail", detail: "Acceso ma senza URL", repairAction: repair,
     });
   }
   const base = cfg.url.replace(/\/$/, "");
@@ -370,28 +398,50 @@ async function probeHttpIntegration(
 // ── Probe: network_services (bridge) ─────────────────────────────────────────
 async function probeNetServices(tenantCode: string, probedAt: string): Promise<ModuleHealth> {
   const net = await getNetServicesState(tenantCode);
-  if (!net.enabled) {
-    return mk("network_services", probedAt, {
-      reachable: false, authOk: false, verdict: "fail", detail: "Non installato", configured: false,
-    });
-  }
+  if (!net.enabled) return spento("network_services", probedAt, "Non installato");
   if (!net.configured) {
     return mk("network_services", probedAt, {
       reachable: false, authOk: false, verdict: "fail",
       detail: "Config mancante", repairAction: "reconfigure_net_services",
     });
   }
-  const probe = await withTimeout(
+  const probe = await withTimeout<Awaited<ReturnType<typeof probeBridgeWithAuth>>>(
     probeBridgeWithAuth(net.apiUrl, net.apiToken),
     PROBE_TIMEOUT_MS,
-    { ok: false as const, error: "Timeout probe bridge" },
+    { ok: false, error: "Timeout probe bridge" },
   );
+  return composeNetServicesHealth(probedAt, net.source, probe);
+}
+
+/**
+ * Verdetto di Network Services dalla risposta del bridge: il contenuto di
+ * `/api/v1/status` dà un verdetto per servizio (Unbound, AdGuard, PowerDNS, Kea),
+ * non basta più il codice HTTP. Con la configurazione dalle variabili d'ambiente
+ * il dettaglio lo dice: la disinstallazione da DA-IPAM non spegne il modulo (MOD-19).
+ */
+export function composeNetServicesHealth(
+  probedAt: string,
+  source: "database" | "env" | null,
+  probe: { ok: true; corpo: unknown } | { ok: false; error: string },
+): ModuleHealth {
+  const daEnv = source === "env" ? " (configurazione dalle variabili d'ambiente)" : "";
+  if (!probe.ok) {
+    return mk("network_services", probedAt, {
+      reachable: false,
+      authOk: false,
+      verdict: "fail",
+      detail: `${probe.error}${daEnv}`,
+      repairAction: "reconfigure_net_services",
+    });
+  }
+  const servizi = leggiServiziBridge(probe.corpo);
+  const { verdict, detail } = verdettoBridge(servizi);
   return mk("network_services", probedAt, {
-    reachable: probe.ok,
-    authOk: probe.ok,
-    verdict: probe.ok ? "ok" : "fail",
-    detail: probe.ok ? null : probe.error,
-    repairAction: probe.ok ? null : "reconfigure_net_services",
+    reachable: true,
+    authOk: true,
+    verdict,
+    detail: `${detail}${daEnv}`,
+    ...(servizi ? { servizi } : {}),
   });
 }
 
@@ -399,7 +449,7 @@ async function probeNetServices(tenantCode: string, probedAt: string): Promise<M
 /**
  * Non contatta i controller (ADR 0007): legge l'esito dell'ultima lettura di
  * ciascuno, dettagli in `readUnifiHealth`. Nessun controller acceso =
- * «Non configurato» (configured=false), non un errore.
+ * «Non configurato» (`off`), non un errore.
  */
 async function probeUnifi(probedAt: string): Promise<ModuleHealth> {
   const r = readUnifiHealth();
@@ -409,19 +459,90 @@ async function probeUnifi(probedAt: string): Promise<ModuleHealth> {
     verdict: r.verdict,
     detail: r.detail,
     repairAction: r.repair,
-    configured: r.configured,
     lastSyncAt: r.lastSyncAt,
   });
 }
 
 // ── Probe: patch_management (modulo locale) ──────────────────────────────────
+/**
+ * Patch Management non ha un servizio da interrogare: acceso non vuol dire che
+ * funzioni. Prima diceva `ok` dall'interruttore; ora dice che non è verificato.
+ */
+export function composePatchHealth(probedAt: string, enabled: boolean): ModuleHealth {
+  if (!enabled) return spento("patch_management", probedAt, "Non installato");
+  return mk("patch_management", probedAt, {
+    reachable: true,
+    authOk: true,
+    verdict: "unverified",
+    detail: "Modulo locale: nessun servizio esterno da interrogare",
+  });
+}
+
 async function probePatch(tenantCode: string, probedAt: string): Promise<ModuleHealth> {
   const st = await getFeatureStatus(tenantCode, "patch_management");
-  return mk("patch_management", probedAt, {
-    reachable: st.enabled, authOk: st.enabled,
-    verdict: st.enabled ? "ok" : "fail",
-    detail: st.enabled ? "Modulo locale, nessun servizio esterno" : "Non installato",
-    configured: st.enabled,
+  return composePatchHealth(probedAt, st.enabled);
+}
+
+// ── Probe: inventory_agent (inventari spinti dagli agenti) ───────────────────
+/**
+ * Gli agenti mandano l'inventario ogni 6 ore di base (da 1 a 168 ore,
+ * `normalizePushIntervalHours`): la salute è l'età dell'ultimo inventario
+ * ricevuto, non l'interruttore. Fino a 48 ore è fresco (copre un fine
+ * settimana a PC spenti); oltre 8 giorni, più dell'intervallo massimo, nessun
+ * agente sta più mandando niente.
+ */
+export const INVENTARIO_FRESCO_ORE = 48;
+export const INVENTARIO_FERMO_ORE = 8 * 24;
+
+export function composeInventoryAgentHealth(
+  probedAt: string,
+  lettura: { enabled: boolean; ultimoInventario: string | null; endpoint: number; nowMs: number },
+): ModuleHealth {
+  if (!lettura.enabled) return spento("inventory_agent", probedAt, "Non installato");
+  const base = { reachable: true, authOk: true, lastSyncAt: lettura.ultimoInventario };
+  if (!lettura.ultimoInventario) {
+    return mk("inventory_agent", probedAt, {
+      ...base,
+      verdict: "degraded",
+      detail: "Nessun inventario ricevuto finora: installa l'agente su almeno un computer",
+    });
+  }
+  const ms = parseDbDate(lettura.ultimoInventario).getTime();
+  if (Number.isNaN(ms)) {
+    return mk("inventory_agent", probedAt, {
+      ...base,
+      verdict: "degraded",
+      detail: `Data dell'ultimo inventario non leggibile: ${lettura.ultimoInventario}`,
+    });
+  }
+  const ore = Math.max(0, Math.floor((lettura.nowMs - ms) / 3_600_000));
+  const eta = ore < 1 ? "meno di un'ora fa" : ore < 48 ? `${ore} ore fa` : `${Math.floor(ore / 24)} giorni fa`;
+  const detail = `Ultimo inventario ${eta} (${lettura.endpoint} computer)`;
+  const verdict: ModuleVerdict =
+    ore <= INVENTARIO_FRESCO_ORE ? "ok" : ore <= INVENTARIO_FERMO_ORE ? "degraded" : "fail";
+  return mk("inventory_agent", probedAt, { ...base, verdict, detail });
+}
+
+async function probeInventoryAgent(tenantCode: string, probedAt: string): Promise<ModuleHealth> {
+  const st = await getFeatureStatus(tenantCode, "inventory_agent");
+  if (!st.enabled) {
+    return composeInventoryAgentHealth(probedAt, { enabled: false, ultimoInventario: null, endpoint: 0, nowMs: Date.now() });
+  }
+  const db = getTenantDb(tenantCode);
+  // Le tabelle nascono al primo inventario ricevuto (`migrateInventoryAgentSchema`).
+  const tabella = db
+    .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'inv_agent_endpoint'")
+    .get();
+  const riga = tabella
+    ? (db
+        .prepare("SELECT MAX(last_seen_at) AS ultimo, COUNT(*) AS n FROM inv_agent_endpoint")
+        .get() as { ultimo: string | null; n: number })
+    : { ultimo: null, n: 0 };
+  return composeInventoryAgentHealth(probedAt, {
+    enabled: true,
+    ultimoInventario: riga.ultimo,
+    endpoint: riga.n,
+    nowMs: Date.now(),
   });
 }
 
@@ -530,6 +651,7 @@ export const PROBED_MODULE_KEYS: readonly ModuleKey[] = [
   "graylog",
   "network_services",
   "patch_management",
+  "inventory_agent",
   "meshcentral",
   "unifi",
   "appliance",
@@ -548,6 +670,7 @@ async function compute(tenantCode: string, only?: ModuleKey): Promise<ModuleHeal
     ["graylog", () => probeHttpIntegration("graylog", probedAt)],
     ["network_services", () => probeNetServices(tenantCode, probedAt)],
     ["patch_management", () => probePatch(tenantCode, probedAt)],
+    ["inventory_agent", () => withTenant(tenantCode, () => probeInventoryAgent(tenantCode, probedAt))],
     ["meshcentral", () => withTenant(tenantCode, () => probeMeshcentral(tenantCode, probedAt))],
     ["unifi", () => withTenant(tenantCode, () => probeUnifi(probedAt))],
     ["appliance", () => probeAppliance(probedAt)],

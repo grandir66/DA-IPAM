@@ -28,7 +28,7 @@ import {
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import type { ModuleState, ModuleKey } from "@/lib/modules/registry";
-import type { ModuleHealth, ModuleHealthStatus, ModuleVerdict } from "@/lib/modules/health";
+import type { ModuleHealth, ModuleHealthStatus, ModuleHealthVerdict } from "@/lib/modules/health";
 import { isModuleLaunchable } from "@/lib/modules/launchable";
 import { externalUiText } from "@/lib/modules/external-ui";
 
@@ -64,16 +64,21 @@ const STATUS_LABEL: Record<ModuleHealthStatus, string> = {
 };
 
 // F2/F5: il semaforo è guidato dal verdict L7 (ok/degraded/fail) quando disponibile.
-const VERDICT_DOT: Record<ModuleVerdict, string> = {
+// Passo 4 (16/10): spento ≠ guasto, e un modulo locale senza sonda non è «connesso».
+const VERDICT_DOT: Record<ModuleHealthVerdict, string> = {
   ok: "bg-emerald-500",
   degraded: "bg-amber-500",
   fail: "bg-red-500",
+  off: "bg-muted-foreground/40",
+  unverified: "bg-primary/50",
 };
 
-const VERDICT_LABEL: Record<ModuleVerdict, string> = {
+const VERDICT_LABEL: Record<ModuleHealthVerdict, string> = {
   ok: "Connesso",
   degraded: "Degradato",
   fail: "Non connesso",
+  off: "Spento",
+  unverified: "Locale, non verificato",
 };
 
 function relativeTime(iso: string | null): string | null {
@@ -221,6 +226,8 @@ function ModuleTile({
         onHealthUpdate(h);
         if (h.verdict === "ok") toast.success(`${m.label}: connesso`);
         else if (h.verdict === "degraded") toast.warning(`${m.label}: degradato — ${h.detail ?? ""}`);
+        else if (h.verdict === "off") toast.info(`${m.label}: spento`);
+        else if (h.verdict === "unverified") toast.info(`${m.label}: locale, non verificato`);
         else toast.error(`${m.label}: non connesso — ${h.detail ?? ""}`);
       } else {
         toast.error(`Verifica ${m.label} fallita`);
@@ -248,7 +255,7 @@ function ModuleTile({
       } else {
         toast.error(data?.fix ?? `${m.label}: ${data?.detail ?? "ancora non connesso"}`);
         if (data) {
-          onHealthUpdate({ ...(health as ModuleHealth), verdict: (data.verdict as ModuleVerdict) ?? "fail", detail: data.detail ?? null });
+          onHealthUpdate({ ...(health as ModuleHealth), verdict: (data.verdict as ModuleHealthVerdict) ?? "fail", detail: data.detail ?? null });
         }
       }
     } catch {

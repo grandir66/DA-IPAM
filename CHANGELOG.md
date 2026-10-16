@@ -4,6 +4,39 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-16 · salute dei moduli: «spento» non è «guasto»
+
+Passo 4 del piano di solidità del 16/10. Perché: su un'istanza appena installata ogni sonda di un modulo spento diceva
+`fail` (visto a schermo il 15/10), Patch Management diceva `ok` solo perché l'interruttore era acceso, Inventory Agent
+non aveva sonda e Network Services era «ok» con un 200 anche con Unbound fermo.
+
+### Modifiche
+
+- **Verdetto nuovo `off`** (`ModuleHealthVerdict` in `modules/health.ts`): modulo spento o mai configurato, nessuna
+  chiamata, status «never» (fuori dal conteggio di errori e avvisi). Vale per Scanner-Edge, Wazuh, LibreNMS, Graylog,
+  MeshCentral (ora segue l'interruttore: spento non chiama più il server anche coi parametri rimasti), Network
+  Services, Patch, Inventory Agent e controller UniFi. Un modulo **acceso a metà** (LibreNMS o Graylog senza URL,
+  Wazuh senza URL, MeshCentral senza parametri, Network Services senza bridge) resta un guasto: `fail`.
+- **Patch Management acceso: «locale, non verificato»** (`unverified`) invece di `ok` dedotto dall'interruttore.
+- **Inventory Agent ha una sonda**: l'età dell'ultimo inventario ricevuto (`inv_agent_endpoint.last_seen_at`), non
+  l'interruttore. Fino a 48 ore ok, fino a 8 giorni degradato (l'intervallo massimo degli agenti è 7), oltre guasto;
+  mai ricevuto = degradato.
+- **Network Services letto dal contenuto di `/api/v1/status`**: un verdetto per servizio (Unbound, AdGuard, PowerDNS,
+  Kea; `network-services/salute.ts`): acceso ok, fermo ma abilitato guasto, fermo e disabilitato spento. Il modulo è
+  degradato con un servizio guasto, guasto se nessuno è acceso. La pagina /network-services mostra lo stesso verdetto
+  per servizio e, a tutti, «configurazione dalle variabili d'ambiente» quando `source` è `env` (anche nel dettaglio
+  della sonda).
+- **Consumatori**: Launchpad (pallino e scritta «Spento» / «Locale, non verificato»), dashboard («Locale, non
+  verificato» al posto di «Mai eseguita»), «Ripara» (un modulo spento non è riparato: dice di accenderlo),
+  notifica di salute dell'appliance (salta i verdetti che non sono una misura).
+
+### Invariato
+
+- **Segnale verso DA-Link**: parte solo la salute dei moduli accesi (più il sistema), e solo con `ok` | `degraded` |
+  `fail`. `unverified` va come `ok` (come prima per Patch), `off` non parte (`verdettoPerDaLink` in `dalink/fatti.ts`).
+  Inventory Agent acceso ora ha la sua voce.
+- **Deploy-Appliance `connect.sh`**: legge `verdict`; un modulo `off` cade nel ramo «health non determinato» (avviso,
+  l'installazione prosegue) invece che in `fail`.
 ## [Non rilasciato] — 2026-10-16 · errori e operazioni lunghe nell'interfaccia dei moduli
 
 Passo 2 del piano di solidità del 16/10. Perché: nella pagina Moduli un errore si vedeva come uno stato («Docker non

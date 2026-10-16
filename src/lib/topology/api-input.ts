@@ -48,6 +48,14 @@ export interface PortsView {
 // Ogni schema porta il suo messaggio: quelli predefiniti di Zod sono in inglese
 // e arriverebbero così all'admin.
 const BODY = { error: "Corpo della richiesta non valido" };
+/**
+ * Per gli schemi stretti (`.strict()`): lo stesso messaggio di BODY e, per un campo che lo schema non conosce, il suo nome. Senza,
+ * «medio» al posto di «medium» passava e il collegamento si salvava senza tipo, in silenzio (revisione finale di T3, M9).
+ */
+const BODY_STRETTO = {
+  error: (iss: z.core.$ZodRawIssue): string =>
+    iss.code === "unrecognized_keys" ? `Campo non previsto: ${(iss as { keys: readonly string[] }).keys.map((k) => `«${k}»`).join(", ")}` : BODY.error,
+};
 const NODE = z.string({ error: "Nodo non valido" }).regex(/^(dev|host):\d+$/, "Nodo non valido");
 /**
  * L'id di un segmento (T3, spec §13.7.3): «seg:<id apparato>:<indice>» oppure «seg:<id apparato>:n-<nome codificato con
@@ -92,8 +100,8 @@ const linkSchema = z.object(
     medium: MEDIUM.nullish().transform((v) => v ?? null),
     note: NOTE.nullish().transform((v) => v ?? null),
   },
-  BODY,
-).superRefine((v, ctx) => {
+  BODY_STRETTO,
+).strict().superRefine((v, ctx) => {
   // Un segmento non si collega a mano (§13.7.3): «ignore» di un'appartenenza sì, «add» no. L'errore sul capo che è il segmento.
   if (v.action !== "add") return;
   const capo = v.a_node.startsWith("seg:") ? "a_node" : v.b_node.startsWith("seg:") ? "b_node" : null;
@@ -112,8 +120,8 @@ export function parseLinkOverrideBody(raw: unknown): Parsed<z.infer<typeof linkS
 
 const linkPatchSchema = z.object(
   { a_port: PORT.optional(), b_port: PORT.optional(), medium: MEDIUM.nullable().optional(), note: NOTE.nullable().optional() },
-  BODY,
-);
+  BODY_STRETTO,
+).strict();
 
 export type LinkPatch = { a_port?: string; b_port?: string; medium?: LinkMedium | null; note?: string | null };
 
@@ -131,8 +139,8 @@ export function parseLinkPatchBody(raw: unknown): Parsed<LinkPatch> {
 
 const primarySchema = z.object(
   { node_id: LINK_NODE, other_node: LINK_NODE, node_port: PORT.optional().default(""), other_port: PORT.optional().default("") },
-  BODY,
-);
+  BODY_STRETTO,
+).strict();
 
 /** PUT /api/topology/primary: per `node_id` il principale è il collegamento verso `other_node` su quelle porte. */
 export function parsePrimaryBody(raw: unknown): Parsed<{ node_id: string; other_node: string; node_port: string; other_port: string }> {
@@ -350,8 +358,8 @@ const roleSchema = z.object(
       error: "Ruolo non valido: «» (decide il sistema), «rete», «attaccato», «core» o «accesso»",
     }),
   },
-  BODY,
-);
+  BODY_STRETTO,
+).strict();
 
 export function parseNodeRoleBody(raw: unknown): Parsed<{ deviceId: number; role: "" | "rete" | "attaccato" | "core" | "accesso" }> {
   const r = roleSchema.safeParse(raw);

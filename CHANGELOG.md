@@ -18,6 +18,7 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   tiene la porta dell'API. PUT e creazione restituiscono un avviso (non un rifiuto) se la porta
   è lo standard di un altro protocollo: un rifiuto bloccherebbe anche il cambio del nome degli apparati già
   storti, e Proxmox tiene la porta dell'API anche in SSH.
+- **Le scansioni non spostano più un apparato SSH su una porta che non è SSH.** Se la porta salvata non risulta aperta, si cercano prima le porte del protocollo (22, 2222); le porte del produttore (per MikroTik 8291 Winbox e 8728 API) valgono solo per l'accesso API. Prima uno switch MikroTik in SSH finiva sulla 8291 e la lettura SSH continuava a fallire (pilota, 16/10).
 
 ## [Non rilasciato] — 2026-10-16 · una firma di porte non è un modello
 

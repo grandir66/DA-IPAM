@@ -3909,9 +3909,12 @@ export function syncNetworkDeviceFromHostScan(ip: string, hostOpenPorts: Array<{
   // scansione spostava un MikroTik in SNMP sulla 8291 (tappa 1, 15/10).
   const protocolloSnmp = protocol === "snmp_v2" || protocol === "snmp_v3";
   if (!protocolloSnmp && !tcpPorts.has(currentPort)) {
-    const vendorCandidates = candidatesVendor[vendor] ?? [];
+    // Prima le porte del protocollo: per SSH le porte del produttore (8291 Winbox,
+    // 8728 API di MikroTik, 23 telnet…) non sono SSH, e un MikroTik in SSH finiva
+    // sulla 8291 (pilota, 16/10). Le porte del produttore restano solo per l'API.
+    const vendorCandidates = protocol === "api" ? candidatesVendor[vendor] ?? [] : [];
     const protoCandidates = candidatesMap[protocol] ?? [];
-    const orderedCandidates = [...new Set([...vendorCandidates, ...protoCandidates])];
+    const orderedCandidates = [...new Set([...protoCandidates, ...vendorCandidates])];
     for (const c of orderedCandidates) {
       if (tcpPorts.has(c)) {
         updates.port = c;

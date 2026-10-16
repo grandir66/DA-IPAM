@@ -29,6 +29,9 @@ describe("syncNetworkDeviceFromHostScan — porta", () => {
       ins.run(2, "mk-snmp3", "10.50.0.2", "router", "mikrotik", "snmp_v3", 161);
       ins.run(3, "linux-ssh", "10.50.0.3", "server", "linux", "ssh", 22);
       ins.run(4, "mk-snmp-facciata", "10.50.0.4", "router", "mikrotik", "snmp_v2", 161);
+      // Pilota 16/10: MikroTik passato da SNMP a SSH con la porta rimasta 161.
+      ins.run(5, "mk-ssh-161", "10.50.0.5", "switch", "mikrotik", "ssh", 161);
+      ins.run(6, "mk-api", "10.50.0.6", "router", "mikrotik", "api", 443);
     });
   });
   after(() => deleteTenantDatabase(T));
@@ -46,6 +49,16 @@ describe("syncNetworkDeviceFromHostScan — porta", () => {
   it("stesso caso dalla facciata db.ts", () => {
     withTenant(T, () => syncFacciata("10.50.0.4", [{ port: 8291 }, { port: 22 }], null));
     assert.equal(porta(4), 161);
+  });
+
+  it("MikroTik in SSH sulla 161 con 21, 22, 23, 80, 8291 aperte → va sulla 22, non sulla 8291 (Winbox)", () => {
+    withTenant(T, () => syncTenant("10.50.0.5", [{ port: 21 }, { port: 22 }, { port: 23 }, { port: 80 }, { port: 8291 }], null));
+    assert.equal(porta(5), 22);
+  });
+
+  it("MikroTik in API con la 443 chiusa e la 8728 aperta → le porte del produttore valgono ancora per l'API", () => {
+    withTenant(T, () => syncTenant("10.50.0.6", [{ port: 8728 }, { port: 22 }], null));
+    assert.equal(porta(6), 8728);
   });
 
   it("SSH con la 22 chiusa e la 2222 aperta → passa alla 2222, come prima", () => {

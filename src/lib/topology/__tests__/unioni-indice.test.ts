@@ -2,7 +2,8 @@
 // `buildNodeIndex`, che è l'indice di tutte e due le mappe. 1: senza righe la mappa è quella di oggi (il freno del rilascio).
 // 2-8: il NAS dell'hub (support/nas.ts) da solo, unito, promosso, censito due volte, con un membro sparito. 9-11: le
 // separazioni tolgono solo le fusioni automatiche deboli. 12: un'unione non trascina fusioni per nome. 13: nessuno costruisce
-// l'indice senza passare da `indiceDeiNodi`, così le due mappe non possono dare due risposte diverse.
+// l'indice senza passare da `indiceDeiNodi`, così le due mappe non possono dare due risposte diverse. 14 (revisione del Task 1):
+// una catena di due gruppi attraverso due host con lo stesso MAC, e chi è entrato a mano.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -216,4 +217,28 @@ test("13 · lucchetto: fuori da node-index.ts e dalle prove nessuno chiama build
     .filter((f) => f !== "src/lib/topology/node-index.ts")
     .filter((f) => fs.readFileSync(path.join(radice, f), "utf8").includes("buildNodeIndex("));
   assert.deepEqual(fuori, []);
+});
+
+test("14 · catena attraverso un gemello fra soli host: due gruppi legati da due host con lo stesso MAC fanno un nodo solo, e chi è entrato si sa", () => {
+  // 30 e 31 hanno lo stesso MAC vero (un gruppo automatico); 20 e 40 sono soli, con MAC di altri OUI e senza nome. Il gruppo 1
+  // lega 20 a 30, il 2 lega 31 a 40: la catena 20–30=31–40 è un oggetto solo. Revisione del Task 1: con `radicePrima` riscritta
+  // dal secondo gruppo, 30 e 31 non risultavano entrati a mano (la loro radice «di prima» diventava quella del rappresentante).
+  const ing = baseInput({
+    hosts: [
+      host(20, { ip: "10.71.5.20", mac: "02:00:71:00:05:20" }),
+      host(30, { ip: "10.71.5.30", mac: "02:00:72:00:05:30" }),
+      host(31, { ip: "10.71.6.31", mac: "02:00:72:00:05:30" }),
+      host(40, { ip: "10.71.6.40", mac: "02:00:73:00:06:40" }),
+    ],
+  });
+  assert.equal(canonical(indiceDeiNodi(ing), "host:31"), "host:30", "senza unioni 30 e 31 sono già un nodo (stesso MAC)");
+  const idx = indiceDeiNodi({ ...ing, unioni: [
+    { gruppo: 1, membro: "host:20" }, { gruppo: 1, membro: "host:30" }, { gruppo: 2, membro: "host:31" }, { gruppo: 2, membro: "host:40" },
+  ] });
+  assert.deepEqual([...idx.nodes.keys()], ["host:20"]);
+  assert.deepEqual(idx.nodes.get("host:20")?.fusedHostIds, [30, 31, 40]);
+  for (const h of [30, 31, 40]) assert.equal(canonical(idx, `host:${h}`), "host:20", `host:${h}`);
+  assert.deepEqual(idx.aMano.get("host:20"), [30, 31, 40]);
+  assert.deepEqual([30, 31, 40].map((h) => idx.come.get(h)), ["a_mano", "a_mano", "a_mano"]);
+  assert.equal(idx.come.has(20), false, "il rappresentante è l'oggetto del nodo");
 });

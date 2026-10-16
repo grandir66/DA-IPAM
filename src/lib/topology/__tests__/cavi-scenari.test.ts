@@ -140,7 +140,7 @@ function conRegolaDalleVm(ing: IngressoCavi, accesa: boolean) {
 test("S11 e I56 (famiglia 4: le reti vere non hanno VM, ADR 0010 n. 8) · con la regola accesa un collegamento «dalle VM» non principale non si disegna e sta nei dettagli; i principali e i padri sono uguali", () => {
   const ing = ingresso(conHypervisorEAltri());
   const spenta = conRegolaDalleVm(ing, false), accesa = conRegolaDalleVm(ing, true);
-  assert.equal(fra(spenta.m, "dev:4", "dev:41").length, 1, "spenta (oggi): una ridondanza a richiesta");
+  assert.equal(fra(spenta.m, "dev:4", "dev:41").length, 1, "spenta: una ridondanza a richiesta");
   assert.equal(fra(accesa.m, "dev:4", "dev:41").length, 0, "accesa: non si disegna, nemmeno a richiesta");
   assert.deepEqual(accesa.mappa.cavi.dalleVm, { "dev:41": [{ altro: "dev:4", porta: "Port 5", vm: 1 }] }, "nei dettagli dell'hypervisor, con la porta e le VM");
   assert.deepEqual(spenta.mappa.cavi.dalleVm, {});

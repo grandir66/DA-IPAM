@@ -192,12 +192,13 @@ test("lo schema assente si dice, e le parti non calcolate in T2 sono elencate", 
   assert.equal(m.schema, false);
   // Sette in T2; il Task 3 di T3 ne toglie due (l'abbinamento «telaio, nome, IP» e le prove di ruolo coi fatti nuovi), il Task 4
   // altre tre («oltre» una radio, le VM dentro l'hypervisor, le mappe passo passo che fa il Task 7) e aggiunge la testa quando
-  // l'unico router è una VM (§13.16 punto 3). Con `DALLE_VM_SOLO_DETTAGLI` spenta resta la riga «dalle VM» (§13.15 punto 4).
-  assert.equal(m.nonCalcolato.length, 3);
+  // l'unico router è una VM (§13.16 punto 3). Dalla misura del 16/10 `DALLE_VM_SOLO_DETTAGLI` è accesa (§13.15 punto 4): la riga
+  // «dalle VM» non c'è più; con la regola spenta (passata alla funzione) torna.
+  assert.equal(m.nonCalcolato.length, 2);
   assert.deepEqual(m.nonCalcolato.filter((x) => /abbinamento|prove di ruolo|oltre|passo passo/.test(x)), []);
-  assert.equal(m.nonCalcolato.filter((x) => x.includes("dalle VM")).length, 1);
+  assert.equal(m.nonCalcolato.filter((x) => x.includes("dalle VM")).length, 0, "con la regola accesa (il valore deciso) la riga non c'è");
   assert.equal(costruisciModelloCavi({ ...ingresso(baseInput({ devices: [dev(2)] })), schema: false }, buildTopologyModel(baseInput({ devices: [dev(2)] })),
-    { testaScelta: null, dalleVmSoloDettagli: true }).nonCalcolato.filter((x) => x.includes("dalle VM")).length, 0, "con la regola accesa la riga non c'è");
+    { testaScelta: null, dalleVmSoloDettagli: false }).nonCalcolato.filter((x) => x.includes("dalle VM")).length, 1, "con la regola spenta la riga c'è");
 });
 
 // ── Casi aggiunti dopo il piano (fatti emersi sulle letture vere del 15/10) ────────────────────────────────────────────────

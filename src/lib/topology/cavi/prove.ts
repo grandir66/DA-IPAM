@@ -155,7 +155,15 @@ export function indiceFatti(ing: Pick<IngressoCavi, "fattiPorta" | "fattiBridge"
     porta: (nodo, p) => {
       const a = p.chiave ? (perChiave.get(`${nodo}|${p.chiave}`) ?? []) : [];
       const b = p.nome ? (perNome.get(`${nodo}|${normale(p.nome)}`) ?? []) : [];
-      return [...new Set([...a, ...b])];
+      // §13.6.1, la chiave della porta (criterio D della misura del 16/10): due porte dello stesso apparato con lo stesso nome si
+      // distinguono per indice. Se un lettore scrive quel nome per due porte (indici diversi), per nome valgono solo i suoi fatti
+      // con l'indice della chiave; senza la chiave d'indice, nessuno: la porta è da completare, mai lo stato di una delle due. Sulla
+      // rete B la porta 16 «SFP+ 15» accesa prendeva anche i fatti della 15 «SFP+ 15» spenta, e il cavo risultava giù.
+      const i = p.chiave?.startsWith("i:") ? Number(p.chiave.slice(2)) : null;
+      const indici = new Map<string, Set<number>>();
+      for (const f of b) if (f.port_index !== null) indici.set(f.source, (indici.get(f.source) ?? new Set<number>()).add(f.port_index));
+      const dellaPorta = b.filter((f) => f.port_index === null || (indici.get(f.source)?.size ?? 0) <= 1 || f.port_index === i);
+      return [...new Set([...a, ...dellaPorta])];
     },
     bridge: (nodo) => br.get(nodo) ?? [],
   };

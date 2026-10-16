@@ -3,8 +3,8 @@
  * all'albero dallo spanning tree. L'identità degli oggetti è quella del modello di oggi (stessi nodi, stessi id), con in più
  * i MAC degli apparati letti in T2 (solo per abbinare le righe). Da T3 le righe si abbinano per telaio, nome e IP (§13.6.4,
  * in prove.ts) e la classe di ogni oggetto ha anche le prove di ruolo che vede solo il modello per cavo (§13.8.2, in
- * ruolo.ts). Da T3 i collegamenti «dalle VM» che non sono principali stanno nei dettagli dell'hypervisor, se la misura lo
- * conferma (§13.15 punto 4, `DALLE_VM_SOLO_DETTAGLI`). Logica pura; si calcola a richiesta e non si salva.
+ * ruolo.ts). Da T3 i collegamenti «dalle VM» che non sono principali stanno nei dettagli dell'hypervisor: la misura del 16/10
+ * lo ha confermato (§13.15 punto 4, `DALLE_VM_SOLO_DETTAGLI`). Logica pura; si calcola a richiesta e non si salva.
  */
 import { parseDbDate } from "@/lib/db-date";
 import { nodeClass, ruoloLetto, ruoloRete } from "@/lib/topology/identity";
@@ -119,11 +119,13 @@ export function preparaCavi(ing: IngressoCavi, t1: TopologyModel, opz: { testa?:
  * §13.7.2 passo 10, §13.15 punto 4 (I56, S11): un collegamento con la SOLA prova «dalle VM» che non è il principale del suo
  * hypervisor non si disegna, nemmeno a richiesta, e sta nei dettagli dell'hypervisor. Il valore lo decide la misura del Task 0
  * del piano di T3 (riga «Decisione: dalle VM» del registro): entra se ogni collegamento «dalle VM» non principale è una
- * ridondanza che nessun'altra lettura vede. Al 16/10 la misura non c'è ancora: spenta, e quei collegamenti restano ridondanze
- * a richiesta, come oggi (§13.14). Costo se resta spenta e la regola era giusta: i cavi inventati verso un hypervisor (M26)
- * restano disegnabili a richiesta; se si accende e uno era un cavo vero, sparisce dalla mappa (resta nei dettagli).
+ * ridondanza che nessun'altra lettura vede. Misura del 16/10 sulle copie (hub 06:14 UTC, cliente A 06:21 UTC): sul cliente A
+ * i collegamenti «dalle VM» non principali sono 2, tutti verso l'hypervisor 2 (il caso M26), visti da una VM ciascuno (uno su
+ * uno switch di un'altra sede), nessuno nella mappa attesa; sull'hub 0. Decisione: entra. Costo se è sbagliata: un cavo vero
+ * visto solo dalle VM sparisce dalla mappa, anche a richiesta, e resta nei dettagli dell'hypervisor («visto dalle VM anche su
+ * ‹porta›»), dove si ritrova; il principale di un hypervisor e ogni collegamento che fa da padre restano sempre disegnati.
  */
-export const DALLE_VM_SOLO_DETTAGLI: boolean = false;
+export const DALLE_VM_SOLO_DETTAGLI: boolean = true;
 
 /** Le parti del modello per cavo che non si calcolano ancora: la traccia e la pagina le dicono in una riga ciascuna (§13.11.3). */
 function nonCalcolato(dalleVmSoloDettagli: boolean): readonly string[] {
@@ -165,6 +167,13 @@ export interface ModelloCavi {
    * del Task 7 di T3).
    */
   nodiIndice: ReadonlyMap<string, MapNode>;
+  /**
+   * §13.7.8, ultimo punto (criterio C della misura del 16/10): le VM che stanno dentro il loro hypervisor (accese, abbinate per MAC,
+   * non la testa confermata) e che nella mappa nuova non hanno collegamenti: VM → hypervisor. Nella pagina sono VM del riquadro
+   * dell'hypervisor, come le VM senza collegamenti propri di oggi; la traccia le mette sotto di lui. Anche con collegamenti propri
+   * nella mappa di oggi (vicini, una tabella MAC sua), che qui sono «stessa rete».
+   */
+  dentro: ReadonlyMap<string, string>;
 }
 
 const macDel = (id: string | null): string | null => (id ? (id.split(".").pop() ?? "").toLowerCase() : null);
@@ -249,8 +258,10 @@ export function costruisciModelloCavi(ing: IngressoCavi, t1: TopologyModel, opz:
     soloDettagli.push({ collegamento: c, ipervisore: h.nodo, altro: sw.nodo, porta: sw.nome, vm: c.vm ?? 0 });
     return false;
   });
+  const conLinea = new Set(disegnati.flatMap((c) => [c.a.nodo, c.b.nodo]));
+  const dentro = new Map([...p.ctx.vmDentro].filter(([vm]) => !conLinea.has(vm)).sort(([x], [y]) => (x < y ? -1 : x > y ? 1 : 0)));
   return {
-    collegamenti: disegnati, segmenti, albero, correzioniOrfane, schema: ing.schema, nonCalcolato: nonCalcolato(dalleVm), classi, ponti,
+    collegamenti: disegnati, segmenti, albero, dentro, correzioniOrfane, schema: ing.schema, nonCalcolato: nonCalcolato(dalleVm), classi, ponti,
     stessaRete: r.stessaRete, oltre: r.oltre, scartateBordo: r.scartateBordo, scartateVm: r.scartateVm, soloDettagli, prove: p.prove,
     nodiIndice: p.idx.nodes,
   };

@@ -8,7 +8,7 @@ import { capo as capoDi, costruisciCollegamenti, type Collegamento } from "@/lib
 import { costruisciModelloCavi, preparaCavi } from "@/lib/topology/cavi/modello";
 import type { IngressoCavi, Prova } from "@/lib/topology/cavi/prove";
 import type { LinkOverrideRow, ModelVmRow, TopologyModelInput } from "@/lib/topology/model-types";
-import { baseInput, dev } from "./support/righe";
+import { baseInput, dev, host } from "./support/righe";
 import { conHypervisor, porte, riga } from "./support/reti-campione";
 import { fb, fp, ingresso, ORA_T2, vic } from "./support/cavi";
 
@@ -692,4 +692,141 @@ test("§13.6.3 (revisione del Task 6): il fascio letto dai fatti LAG è lo stess
   assert.deepEqual(fasci(opposti, lag2), [["fascio", 2, { a: "bond1", b: null }, 20000]], "capi opposti: lo stesso fascio");
   assert.deepEqual(fasci(soloDal3, lag2), [["fascio", 2, { a: null, b: "bond1" }, 20000]], "visti solo dal capo senza fatti LAG");
   assert.deepEqual(fasci(opposti, [...lag2, ...lag3]), [["fascio", 2, { a: "bond1", b: "bond7" }, 20000]], "fatti LAG ai due capi");
+});
+
+// ── Misura del Task 0 di T3 sulle copie del 16/10: i criteri (forme vere, valori inventati) ─────────────────────────────────
+
+/**
+ * Criterio A (§13.7.1 passo 2, §13.6.4, I60, I51; §13.3.1 riga 15, C7). Il router 3 (dev:3) ha la porta 4 nel bridge, porta
+ * radice, dietro un ponte radio trasparente: sente il router 1 (dev:1) da tre sue interfacce — la porta fisica annunciata via
+ * LLDP come «bridge/ether4», un'altra interfaccia via MNDP (MAC di un altro OUI, che il nome non unisce), un indirizzo VRRP — e
+ * un SECONDO apparato, il router di riserva, con una riga MNDP che non si abbina a nessun nodo ma ha un nome che identifica. Il
+ * router 1 dalla sua porta 4 sente solo il router 3. Il 16/10 il modello per cavo dava «router 1 ether4 ↔ router 3 ether4 ·
+ * certo» più «router 3 ether4 ↔ router 1 ether1 · instradato · probabile».
+ */
+const sedeRouter3 = (riserva = true) => {
+  const r3 = (over: Partial<Parameters<typeof vic>[0]>) => vic({ device_id: 3, local_port: "ether4,BR_QX", source: "device", remote_platform: "MikroTik", ...over });
+  const righe = [
+    vic({ device_id: 1, local_port: "ether4,bridge", remote_device_name: "RTR-3", remote_mac: "02:00:a3:00:03:04", remote_port: "BR_QX/ether4", source: "device", remote_platform: "MikroTik" }),
+    r3({ remote_device_name: "RTR-1", remote_mac: "02:00:a1:00:01:04", remote_port: "bridge/ether4" }),
+    r3({ remote_device_name: "RTR-1", remote_mac: "02:00:b7:00:01:01", remote_port: "ether1", protocol: "mndp" }),
+    r3({ remote_device_name: "RTR-1", remote_mac: "00:00:5E:00:01:0A", remote_ip: "10.9.0.254", remote_port: "vrrp-lan", protocol: "mndp" }),
+    ...(riserva ? [r3({ remote_device_name: "RISERVA-SEDE1", remote_mac: "02:00:a2:00:02:10", remote_ip: "10.9.7.3", remote_port: "VL_9_ZXQ", protocol: "mndp" })] : []),
+  ];
+  return ingresso(baseInput({
+    devices: [dev(1, { name: "RTR-1", device_type: "router", ...mk }), dev(3, { name: "RTR-3", device_type: "router", ...mk }), dev(2, { name: "RTR-RISERVA", device_type: "router", ...mk })],
+    ports: [...porte(1, [[1, "ether1", "1000 Mbps"], [4, "ether4", "1000 Mbps"]]), ...porte(3, [[4, "ether4", "1000 Mbps"]])],
+    neighbors: righe,
+  }), {
+    fattiPorta: [
+      fp(3, "n:ether4", "ether4", { source: "device", in_bridge: 1, stp_role: "root", stp_state: "forwarding", designated_bridge: "8000.02:00:a1:00:01:00", sending_rstp: 1 }),
+      fp(1, "n:ether1", "ether1", { source: "device", in_bridge: 0 }),
+      fp(1, "n:ether4", "ether4", { source: "device", in_bridge: 1, stp_role: "designated", stp_state: "forwarding" }),
+    ],
+    fattiBridge: [fb(1, { bridge_name: "bridge", bridge_id: "8000.02:00:a1:00:01:00", root_id: "8000.02:00:a1:00:01:00" }),
+      fb(3, { bridge_name: "BR_QX", bridge_id: "8000.02:00:a3:00:03:00", root_id: "8000.02:00:a1:00:01:00", root_port: "ether4" })],
+    macApparati: [{ device_id: 1, mac: "02:00:a1:00:01:04", source: "device" }, { device_id: 1, mac: "02:00:b7:00:01:01", source: "device" },
+      { device_id: 3, mac: "02:00:a3:00:03:04", source: "device" }],
+  });
+};
+
+test("criterio A (misura del 16/10, I51, C7): la porta che sente due apparati, contati per apparato anche non abbinati, non dà cavi fra router né conferma; il cavo dall'altro capo è «probabile, attraverso apparati non letti»", () => {
+  const r = collega(sedeRouter3());
+  const c = fra(r.collegamenti, "dev:1", "dev:3");
+  assert.deepEqual(c.map((x) => [capoDi(x, "dev:1").nome, capoDi(x, "dev:3").chiave, x.genere, x.fiducia, x.attraverso ?? false]),
+    [["ether4", "i:4", "cavo", "probabile", true]], c.map((x) => `${x.id} ${x.fiducia} ${x.stato}`).join(" | "));
+  assert.ok(c[0].frasi.at(-1)?.startsWith("→ probabile, attraverso apparati non letti"), c[0].frasi.join(" | "));
+  assert.equal(r.segmenti.length, 0, "gli annunci di rete non fanno un segmento (§13.7.3)");
+  const da3 = r.stessaRete.filter((p) => p.da.nodo === "dev:3" && p.altro?.nodo === "dev:1");
+  assert.equal(da3.length, 2, "le righe del router 3 verso il router 1 (le tre interfacce, due prove) restano stessa rete");
+  // Le tre interfacce del router 1 sono un apparato solo: senza il router di riserva la porta 4 sente un apparato, e la riga
+  // LLDP del router 3 torna una prova di cavo (non più stessa rete).
+  const senza = collega(sedeRouter3(false));
+  assert.equal(senza.stessaRete.filter((p) => p.da.nodo === "dev:3" && p.altro?.nodo === "dev:1" && p.classe === "annuncio_collegamento").length, 0);
+});
+
+/**
+ * Criterio B (§13.6.3, §13.7.2 passo 10). Forma vera della rete B: il router (dev:1) ha `bond3` — tipo «lag», nel bridge,
+ * designato e in inoltro, partner LACP = il MAC del NAS — coi membri sfp-sfpplus9 e sfp-sfpplus10; la sua tabella MAC sulla
+ * porta `bond3` vede i MAC delle due schede del NAS, che l'identità tiene in due nodi (host:61 e host:62, OUI diversi:
+ * §13.14). Il 16/10 il modello per cavo dava il fascio giusto più due linee «router bond3 ↔ NAS · instradato · dedotto».
+ */
+const fascioDelNas = (partner = true) => {
+  const NAS1 = "02:00:b1:00:61:01", NAS2 = "02:00:c2:00:62:01";
+  return ingresso(baseInput({
+    devices: [dev(1, { name: "RTR-B", device_type: "router", ...mk }), dev(2, { name: "AGG-B", ...mk })],
+    hosts: [host(61, { ip: "10.5.0.61", mac: NAS1, hostname: "nas-dati", classification: "nas" }), host(62, { ip: "10.5.0.62", mac: NAS2, hostname: "nas-dati", classification: "nas" })],
+    networks: [{ id: 1, cidr: "10.5.0.0/24", name: "lan", gateway: "10.5.0.1", location_id: null }],
+    ports: porte(1, [[1, "sfp-sfpplus1", "10000 Mbps"], [9, "sfp-sfpplus9", "10000 Mbps"], [10, "sfp-sfpplus10", "10000 Mbps"], [20, "bond3", "10000 Mbps"]]),
+    neighbors: [riga({ device_id: 1, local_port: "sfp-sfpplus1,BR_QB", remote_device_name: "AGG-B", remote_mac: "02:00:a2:00:02:01", remote_port: "bridge/sfp-sfpplus1", remote_platform: "MikroTik" })],
+    macPorts: [{ device_id: 1, mac: NAS1, port_name: "bond3", timestamp: ORA_T2, source: "device" }, { device_id: 1, mac: NAS2, port_name: "bond3", timestamp: ORA_T2, source: "device" }],
+  }), {
+    fattiPorta: [
+      fp(1, "n:bond3", "bond3", { source: "device", if_kind: "lag", in_bridge: 1, bridge: "BR_QB", stp_role: "designated", stp_state: "forwarding", lag_partner: NAS1 }),
+      fp(1, "i:9", "sfp-sfpplus9", { source: "device", lag_group: "bond3", lag_partner: partner ? NAS1 : null }),
+      fp(1, "i:10", "sfp-sfpplus10", { source: "device", lag_group: "bond3", lag_partner: partner ? NAS1 : null }),
+    ],
+    fattiBridge: [fb(1, { bridge_name: "BR_QB", bridge_id: "8000.02:00:a1:00:01:00", root_id: "8000.02:00:a1:00:01:00" })],
+  });
+};
+
+test("criterio B (misura del 16/10, §13.6.3): il bond è il suo fascio — le prove sulla porta del bond sono del fascio, lo stato dai fatti del bond, mai «instradato»", () => {
+  const r = collega(fascioDelNas());
+  const verso = (n: string) => r.collegamenti.filter((c) => c.a.nodo === n || c.b.nodo === n);
+  assert.deepEqual(verso("host:61").map((c) => [c.genere, c.stato, c.velocitaMbps, c.membri?.length]), [["fascio", "inoltra", 20000, 2]], verso("host:61").map((c) => c.id).join(" | "));
+  assert.ok(verso("host:61")[0].prove.some((p) => p.classe === "tabella_mac" && p.da.nome === "bond3"), "la tabella MAC della porta del bond è una prova del fascio");
+  assert.deepEqual(verso("host:62"), [], "la porta del bond è il capo del fascio verso un altro oggetto: non è di bordo");
+  assert.ok(r.scartateBordo.some((s) => s.porta.nome === "bond3" && s.verso === "host:62"), JSON.stringify(r.scartateBordo));
+  assert.deepEqual(r.collegamenti.filter((c) => c.stato === "instradato").map((c) => c.id), []);
+  // Senza i membri visti (nessun partner LACP): le linee della tabella MAC sulla porta del bond restano, con lo stato dei fatti del
+  // bond (nel bridge: inoltra), non quello del nome (una porta senza bridge nel nome sarebbe «instradata»).
+  const soli = collega(fascioDelNas(false));
+  assert.deepEqual(soli.collegamenti.filter((c) => c.b.nodo.startsWith("host:") || c.a.nodo.startsWith("host:")).map((c) => [capoDi(c, "dev:1").nome, c.stato]),
+    [["bond3", "inoltra"], ["bond3", "inoltra"]]);
+});
+
+/**
+ * Criterio D (§13.6.1, la chiave della porta; I14, I70 per la velocità). Forma vera della rete B, dal controller: lo switch di
+ * aggregazione (dev:2) ha la porta d'indice 15 chiamata «SFP+ 15» spenta e la porta d'indice 16 chiamata anche lei «SFP+ 15»,
+ * accesa a 10G; la riga LLDP del controller porta l'indice 16 (`local_port_index`) e il vicino è una scheda a 10G
+ * dell'hypervisor (dev:41), che ha anche il cavo di gestione a 1G verso uno switch d'accesso (dev:3). I fatti di porta del
+ * controller hanno gli indici 15 e 16 con lo stesso nome. Il 16/10 il modello per cavo prendeva per nome anche i fatti della 15:
+ * il cavo era «giù», e l'hypervisor passava sotto lo switch d'accesso.
+ */
+const portaDoppia = (conIndice = true) => {
+  const M = { agg: "02:00:d4:00:02:00", acc: "02:00:d4:00:03:00", hv: "02:00:d4:00:41:01", nic10: "02:00:d4:00:41:a1", nic1: "02:00:d4:00:41:b1" };
+  const ctrl = (r: Partial<Parameters<typeof vic>[0]> & Pick<Parameters<typeof vic>[0], "device_id" | "local_port">) => vic({ source: "unifi", timestamp: "2026-10-13 03:00:00", ...r });
+  const t1 = baseInput({
+    devices: [dev(1, { name: "RTR-D", device_type: "router", ...mk }), dev(2, { name: "AGG-D", controller_mac: M.agg, ...uf }),
+      dev(3, { name: "ACC-D", controller_mac: M.acc, ...uf }),
+      dev(41, { name: "pve-d", device_type: "server", vendor: "proxmox", host: "10.6.0.41", proxmox_scan: 1, port_count: 0 })],
+    knownMacs: [{ device_id: 2, mac: M.agg }, { device_id: 3, mac: M.acc }],
+    ports: [...porte(2, [[1, "SFP+ 1", "10000 Mbps"], [2, "SFP+ 2", "10000 Mbps"], [15, "SFP+ 15", "10000 Mbps"], [16, "SFP+ 15", "10000 Mbps"]]).map((p) => (p.port_index === 15 ? { ...p, status: "down" } : p)),
+      ...porte(3, [[25, "SFP+ 1", "10000 Mbps"], [3, "Port 3", "1000 Mbps"]]), ...porte(1, [[1, "sfp-sfpplus1", "10000 Mbps"]])],
+    scanHosts: [{ scannedDeviceId: 41, hostname: "pve-d", ips: ["10.6.0.41"], macs: [M.hv, M.nic10, M.nic1], scannedAt: "2026-10-13T06:00:00.000Z" }],
+    networks: [{ id: 1, cidr: "10.6.0.0/24", name: "lan", gateway: "10.6.0.1", location_id: null }],
+  });
+  return ingresso(t1, {
+    vicini: [
+      vic({ device_id: 1, local_port: "sfp-sfpplus1,bridge", remote_device_name: "AGG-D", remote_mac: M.agg, remote_port: "SFP+ 1", source: "device" }),
+      ctrl({ device_id: 2, local_port: "SFP+ 1", local_port_index: 1, remote_device_name: "RTR-D", remote_port: "sfp-sfpplus1", remote_platform: "MikroTik" }),
+      ctrl({ device_id: 2, local_port: "SFP+ 2", local_port_index: 2, remote_device_name: "ACC-D", remote_mac: M.acc, remote_port: "SFP+ 1" }),
+      ctrl({ device_id: 3, local_port: "SFP+ 1", local_port_index: 25, remote_device_name: "AGG-D", remote_mac: M.agg, remote_port: "SFP+ 2" }),
+      // l'LLDP del firmware delle due schede dell'hypervisor: senza nome, col MAC della scheda
+      ctrl({ device_id: 2, local_port: "SFP+ 15", local_port_index: conIndice ? 16 : null, remote_device_name: "", remote_mac: M.nic10, remote_port: M.nic10 }),
+      ctrl({ device_id: 3, local_port: "Port 3", local_port_index: 3, remote_device_name: "", remote_mac: M.nic1, remote_port: M.nic1 }),
+    ],
+    fattiPorta: [fp(2, "i:1", "SFP+ 1"), fp(2, "i:2", "SFP+ 2"), fp(2, "i:15", "SFP+ 15", { running: 0 }), fp(2, "i:16", "SFP+ 15", { running: 1 }),
+      fp(3, "i:25", "SFP+ 1"), fp(3, "i:3", "Port 3")],
+  });
+};
+
+test("criterio D (misura del 16/10, §13.6.1): due porte con lo stesso nome si distinguono per indice; col solo nome la porta è da completare, mai lo stato di una delle due", () => {
+  const m = ombra(portaDoppia());
+  const c = fra(m.collegamenti, "dev:2", "dev:41");
+  assert.deepEqual(c.map((x) => [capoDi(x, "dev:2").chiave, x.stato, x.velocitaMbps]), [["i:16", "inoltra", 10000]], c.map((x) => x.id).join(" | "));
+  assert.equal(m.albero.padri["dev:41"], "dev:2", "il cavo a 10G è il principale dell'hypervisor (§12.5)");
+  const soloNome = ombra(portaDoppia(false));
+  const d = fra(soloNome.collegamenti, "dev:2", "dev:41");
+  assert.deepEqual(d.map((x) => [capoDi(x, "dev:2").chiave, x.stato, x.velocitaMbps]), [[null, "inoltra", 10000]], "porta da completare; lo stato non è quello della porta spenta; la velocità del nome doppio (I70)");
 });

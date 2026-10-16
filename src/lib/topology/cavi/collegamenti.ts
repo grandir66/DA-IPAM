@@ -278,16 +278,33 @@ export function costruisciCollegamenti(prove: readonly Prova[], correzioni: read
 
   // Passi 1, 3, 5, 6: i vicini. Il ritorno serve alla conferma per porta dei router e al salto radio.
   const vede = (x: string, y: string, porta: Porta): boolean => vicini.some((q) => q.da.nodo === x && q.altro?.nodo === y
-    && q.classe === "annuncio_collegamento" && (q.tipo === "cavo" || q.tipo === "senza_fili") && !diSegmento.has(chiaveDi(q.da))
+    && q.classe === "annuncio_collegamento" && (q.tipo === "cavo" || q.tipo === "senza_fili") && !diSegmento.has(chiaveDi(q.da)) && !fraRouterSuPiu(q)
     && porta.chiave !== null && q.altro.chiave === porta.chiave);
   const uplinkVerso = (figlio: string, padre: string, porta: Porta): boolean => normali.some((q) => q.classe === "uplink"
     && q.da.nodo === figlio && q.altro?.nodo === padre && porta.chiave !== null && q.altro.chiave === porta.chiave);
+  // Gli apparati che una porta sente con TUTTE le sue righe, annunci di rete compresi (§11.1, passo 5), contati per apparato come
+  // al passo 2 (§13.6.4, I60): il nodo abbinato (un hypervisor e le sue VM sono uno); una riga che non si abbina col suo telaio,
+  // che per i lettori che scrivono il MAC dell'interfaccia è il nome annunciato quando identifica (`unisciPerNome` in prove.ts).
+  // Misura del 16/10 (criterio A): contando solo i nodi abbinati, il router di riserva sentito con un annuncio di rete sulla porta
+  // 4 del router 3 non c'era, e le righe di quella porta davano un secondo cavo verso il router 1.
   const tuttiSu = new Map<string, Set<string>>();
-  for (const p of vicini) {
+  for (const p of normali) {
+    if ((p.classe !== "annuncio_collegamento" && p.classe !== "annuncio_segmento") || (p.tipo !== "cavo" && p.tipo !== "senza_fili" && p.tipo !== "stessa_rete")) continue;
+    if (p.altro?.nodo === p.da.nodo || (p.altro === null && p.telaio === null)) continue;
     const s = tuttiSu.get(chiaveDi(p.da)) ?? new Set<string>();
-    s.add(p.altro!.nodo);
+    s.add(apparato(p));
     tuttiSu.set(chiaveDi(p.da), s);
   }
+  /**
+   * I51, §13.7.1 passo 2: fra due router, una porta che sente due o più apparati (tutte le righe, per apparato) non dà il cavo
+   * e non lo conferma: in mezzo c'è un apparato che non si legge (sul cliente A il ponte radio trasparente fra router 1 e router
+   * 3, dove si sente anche il router di riserva). Il cavo resta quello visto dall'altro capo, se la sua porta sente solo lui.
+   */
+  const fraRouterSuPiu = (q: Prova): boolean => q.altro !== null && ctx.router.has(q.da.nodo) && ctx.router.has(q.altro.nodo)
+    && !ponti.has(chiaveDi(q.da)) && (tuttiSu.get(chiaveDi(q.da))?.size ?? 0) >= 2;
+  /** Il capo `b` di un cavo fra router sente più apparati: «probabile, attraverso apparati non letti», mai certo (C7). */
+  const attraversoVerso = (da: string, b: Porta): boolean => ctx.router.has(da) && ctx.router.has(b.nodo) && b.chiave !== null
+    && !ponti.has(chiaveDi(b)) && (tuttiSu.get(chiaveDi(b))?.size ?? 0) >= 2;
   const portaDelRouter = (p: Prova): boolean => p.da.senzaFili === true || (p.traduttoreLocale ? p.da.fisica === true : p.da.fisica !== false);
   for (const p of vicini) {
     const k = chiaveDi(p.da);
@@ -298,6 +315,7 @@ export function costruisciCollegamenti(prove: readonly Prova[], correzioni: read
     const collegamento = p.classe === "annuncio_collegamento";
     if (ctx.router.has(p.da.nodo)) {
       if (!portaDelRouter(p)) { stessaRete.push(p); continue; }             // un nome scelto non è una porta fisica (I58)
+      if (fraRouterSuPiu(p)) { stessaRete.push(p); continue; }              // I51: verso un router, da una porta con più apparati
       const confermato = vede(b.nodo, p.da.nodo, p.da) || uplinkVerso(b.nodo, p.da.nodo, p.da);
       if (!collegamento) {
         // Un annuncio di segmento non conferma mai (M-5): vale solo come unico vicino su una porta fisica, contando tutte le
@@ -309,6 +327,7 @@ export function costruisciCollegamenti(prove: readonly Prova[], correzioni: read
       const unico = (sentiti.get(k)?.size ?? 0) <= 1 || ponti.has(k);   // le due radio di un ponte contano come il cavo verso la vicina
       if (p.da.chiave === null && !confermato) { stessaRete.push(p); continue; }
       if (p.da.senzaFili === true ? !confermato : !(unico || confermato)) { stessaRete.push(p); continue; }
+      if (attraversoVerso(p.da.nodo, b)) { aggiungi("cavo", p.da, b, p, p.da.nodo).attraverso = true; continue; }
     } else if (!collegamento || p.tipo === "stessa_rete") {
       stessaRete.push(p);
       continue;
@@ -393,17 +412,39 @@ export function costruisciCollegamenti(prove: readonly Prova[], correzioni: read
   // I partner dei fasci: sono cavi, e prima del bordo (le loro porte sono capi).
   for (const p of normali) if (p.altro && p.classe === "fascio") aggiungi("cavo", p.da, p.altro, p, p.da.nodo);
 
+  // Il fascio ha un nome solo, comunque lo dica il lettore: «bond1», o «if:<indice>» tradotto col nome di quell'interfaccia.
+  const nomeFascio = (nodo: string, gruppo: string | null): string | null => {
+    const i = indiceDelFascio(gruppo);
+    return i === null ? gruppo : (ctx.porte.get(nodo)?.perIndice.get(i) ?? gruppo);
+  };
+  // §13.6.3 (criterio B della misura del 16/10): l'interfaccia del fascio (tipo letto «lag») è il fascio stesso. Sulla rete B la
+  // tabella MAC del router sulla porta `bond3` vedeva le schede del NAS, e ne venivano due linee in più accanto al fascio dei membri.
+  const interfacciaDelFascio = (p: Porta): boolean => !p.nodo.startsWith("seg:") && p.nome !== "" && ctx.fatti.porta(p.nodo, p).some((x) => x.if_kind === "lag");
+  /** «nodo|fascio» di un membro (dal suo gruppo) o dell'interfaccia del fascio (dal suo nome); null fuori da un fascio. */
+  const chiaveFascio = (p: Porta): string | null => {
+    if (p.nodo.startsWith("seg:")) return null;
+    if (interfacciaDelFascio(p)) return `${p.nodo}|${normale(p.nome)}`;
+    const l = nomeFascio(p.nodo, ctx.fatti.porta(p.nodo, p).find((x) => x.lag_group !== null)?.lag_group ?? null);
+    return l === null ? null : `${p.nodo}|${normale(l)}`;
+  };
+
   // §13.7.2 passo 10 (I9): tabella MAC, VM e ripiego del router restano le regole di oggi, ma per porta. Una porta che è il capo
   // di un cavo verso un altro oggetto non è di bordo; la porta di un cavo ignorato resta occupata verso quell'oggetto (§13.9).
+  // Il capo di un membro di un fascio occupa anche l'interfaccia del fascio, e viceversa: è la stessa porta per lo spanning tree.
   const capiDati = new Map<string, Set<string>>();
   for (const z of bozze) {
     // Un cavo ignorato non è un capo: la sua porta resta occupata solo verso quell'oggetto (`portaOccupata` sotto, §13.9).
     if (!z.prove.some((p) => p.tipo !== "bordo" && p.tipo !== "a_mano") || ignorato(ig, z.a.nodo, z.a, z.b.nodo, z.b)) continue;
     for (const [x, y] of [[z.a, z.b], [z.b, z.a]] as const) {
       if (x.chiave !== null) capiDati.set(chiaveDi(x), (capiDati.get(chiaveDi(x)) ?? new Set<string>()).add(y.nodo));
+      const f = chiaveFascio(x);
+      if (f !== null) capiDati.set(`fascio:${f}`, (capiDati.get(`fascio:${f}`) ?? new Set<string>()).add(y.nodo));
     }
   }
-  const occupata = (x: Porta, verso: string): boolean => x.chiave !== null && [...(capiDati.get(chiaveDi(x)) ?? [])].some((n) => n !== verso);
+  const occupata = (x: Porta, verso: string): boolean => {
+    const f = chiaveFascio(x);
+    return [...(x.chiave !== null ? (capiDati.get(chiaveDi(x)) ?? []) : []), ...(f !== null ? (capiDati.get(`fascio:${f}`) ?? []) : [])].some((n) => n !== verso);
+  };
   // Le righe fresche della lettura dal lato dell'host (`lldpd`, §13.5.5), per hypervisor.
   const dallHost = new Map<string, Prova[]>();
   for (const q of normali) if (q.lettore === "host" && q.altro !== null && fresca(q)) dallHost.set(q.da.nodo, [...(dallHost.get(q.da.nodo) ?? []), q]);
@@ -457,11 +498,6 @@ export function costruisciCollegamenti(prove: readonly Prova[], correzioni: read
   // Lo stato di un capo (passo 8): giù su una porta giù o spenta, qualunque stato dica lo spanning tree (I25, I67);
   // bloccato se discarding, alternate o backup su una porta accesa («disabled» su una porta accesa inoltra); fuori dal
   // bridge = instradato; il membro di riserva di un bond.
-  // Il fascio ha un nome solo, comunque lo dica il lettore: «bond1», o «if:<indice>» tradotto col nome di quell'interfaccia.
-  const nomeFascio = (nodo: string, gruppo: string | null): string | null => {
-    const i = indiceDelFascio(gruppo);
-    return i === null ? gruppo : (ctx.porte.get(nodo)?.perIndice.get(i) ?? gruppo);
-  };
   const statoCapo = (p: Porta) => {
     const f = p.nodo.startsWith("seg:") ? [] : ctx.fatti.porta(p.nodo, p);
     const sp = p.chiave ? ctx.statoPorte.get(`${p.nodo}|${p.chiave}`) : undefined;
@@ -469,7 +505,9 @@ export function costruisciCollegamenti(prove: readonly Prova[], correzioni: read
     return {
       giu,
       bloccato: !giu && f.some((x) => x.stp_state === "discarding" || x.stp_role === "alternate" || x.stp_role === "backup"),
-      instradato: f.some((x) => x.in_bridge === 0) || p.nelBridge === false,
+      // Il tipo letto vince sul nome (§13.6.1, come `conFatti`): `in_bridge` letto dice se la porta è nel bridge; il nome solo quando
+      // non c'è (l'interfaccia del fascio nella tabella MAC si chiama senza il bridge, ed era «instradata»: criterio B).
+      instradato: f.some((x) => x.in_bridge === 0) || (p.nelBridge === false && !f.some((x) => x.in_bridge !== null)),
       riserva: f.some((x) => x.lag_state === "riserva"),
       lag: nomeFascio(p.nodo, f.find((x) => x.lag_group !== null)?.lag_group ?? null),
       stpAttivo: f.some((x) => (x.edge === 0 && (x.bpdu_rx ?? 0) > 0) || (x.stp_state !== null && x.stp_state !== "disabled")),
@@ -552,13 +590,18 @@ export function costruisciCollegamenti(prove: readonly Prova[], correzioni: read
   }
   const fasci = new Map<Bozza, { membri: Bozza[]; dedotto: boolean; lagA: string | null; lagB: string | null }>();
   const neiFasci = new Set<Bozza>();
+  /** I cavi sull'interfaccia di un fascio fra gli stessi due oggetti (criterio B): le loro prove vanno al fascio dei membri. */
+  const assorbiti = new Map<Bozza, Bozza[]>();
   for (const cavi of perCoppia.values()) {
     if (cavi.length < 2) continue;
     // La chiave del fascio letto non dipende dal verso del cavo (revisione del Task 6 di T3): un cavo costruito dall'altro capo ha
     // i capi scambiati, e la chiave «a:‹nodo›» o «b:‹nodo›» di prima ne faceva due cavi. Ogni capo con un fascio letto dà la chiave
     // «nodo|nome del fascio»; due cavi della coppia che ne condividono una sono membri dello stesso fascio (anche coi fatti LAG
     // letti da un capo per un membro e dall'altro per un altro).
-    const chiaviDi = new Map(cavi.map((z) => [z, new Set([z.a, z.b].flatMap((p) => {
+    // Un cavo che sta sull'interfaccia del fascio (la tabella MAC della porta `bond3`, un vicino letto lì) non è un membro: è il
+    // fascio stesso, e le sue prove vanno al fascio dei suoi membri (§13.6.3, criterio B).
+    const sulFascio = (z: Bozza): string[] => [z.a, z.b].filter(interfacciaDelFascio).map((p) => `${p.nodo}|${normale(p.nome)}`);
+    const chiaviDi = new Map(cavi.map((z) => [z, new Set(sulFascio(z).length > 0 ? [] : [z.a, z.b].flatMap((p) => {
       const l = statoCapo(p).lag;
       return l === null ? [] : [`${p.nodo}|${normale(l)}`];
     }))]));
@@ -574,6 +617,11 @@ export function costruisciCollegamenti(prove: readonly Prova[], correzioni: read
     }
     for (const g of gruppi) {
       const membri = cavi.filter((z) => [...chiaviDi.get(z)!].some((k) => g.has(k)));
+      const interfacce = cavi.filter((z) => sulFascio(z).some((k) => g.has(k)));
+      if (interfacce.length > 0) {
+        assorbiti.set(membri[0], interfacce);
+        for (const z of interfacce) neiFasci.add(z);
+      }
       if (membri.length < 2) continue;
       // Il nome del fascio su un capo: da qualunque membro l'abbia letto su quel nodo (il primo membro può essere visto dall'altro capo).
       const lagSu = (nodo: string): string | null => {
@@ -662,8 +710,9 @@ export function costruisciCollegamenti(prove: readonly Prova[], correzioni: read
     if (neiFasci.has(z) && !fasci.has(z)) continue;
     const f = fasci.get(z);
     const membri = f?.membri ?? [z];
-    const tutte = membri.flatMap((m) => m.prove);
-    const sintesi: Bozza = { ...z, prove: tutte, osservatori: new Set(membri.flatMap((m) => [...m.osservatori])) };
+    const conAssorbiti = [...membri, ...membri.flatMap((m) => assorbiti.get(m) ?? [])];
+    const tutte = conAssorbiti.flatMap((m) => m.prove);
+    const sintesi: Bozza = { ...z, prove: tutte, osservatori: new Set(conAssorbiti.flatMap((m) => [...m.osservatori])) };
     // Lo stato di un fascio è quello del fascio (lo spanning tree lo vede come una porta sola), letto sull'interfaccia del fascio.
     const capi = f && f.lagA ? [{ a: { ...z.a, chiave: `n:${normale(f.lagA)}`, nome: f.lagA }, b: f.lagB ? { ...z.b, chiave: `n:${normale(f.lagB)}`, nome: f.lagB } : z.b }] : membri.map((m) => ({ a: m.a, b: m.b }));
     const st = statoDi(sintesi, capi);
@@ -701,7 +750,8 @@ export function costruisciCollegamenti(prove: readonly Prova[], correzioni: read
     const n = visti.get(base) ?? 0;
     visti.set(base, n + 1);
     c.id = n === 0 ? base : `${base}#${n + 1}`;
-    c.frasi.push(`→ ${PAROLE_FIDUCIA[c.fiducia]}${c.stato && c.stato !== "inoltra" ? `, ${c.stato.replace("_", " ")}` : ""}`);
+    // «probabile, attraverso apparati non letti» (§13.4.5, I51): le parole della fiducia di un cavo fra router che passa da apparati non letti.
+    c.frasi.push(`→ ${PAROLE_FIDUCIA[c.fiducia]}${c.attraverso && c.fiducia === "probabile" ? ", attraverso apparati non letti" : ""}${c.stato && c.stato !== "inoltra" ? `, ${c.stato.replace("_", " ")}` : ""}`);
   }
   collegamenti.sort((x, y) => cmp(x.id, y.id) || FIDUCIA_ORDINE[x.fiducia] - FIDUCIA_ORDINE[y.fiducia]);
   return {

@@ -4,7 +4,7 @@
  * mostrate al utente e per impostare il tipo di default nel quick-create.
  */
 
-import { ETICHETTE_TIPO, TIPI_CREDENZIALE, tipiPerProtocollo } from "@/lib/credentials/tipi";
+import { ETICHETTE_TIPO, TIPI_CREDENZIALE, tipiPerProtocollo, valePerAccesso } from "@/lib/credentials/tipi";
 
 /**
  * Regola unica (tappa 1 credenziali, 15/10): quali tipi di credenziale
@@ -19,6 +19,28 @@ import { ETICHETTE_TIPO, TIPI_CREDENZIALE, tipiPerProtocollo } from "@/lib/crede
  */
 export function tipiCredenzialePerProtocollo(protocollo: string | null | undefined): string[] {
   return tipiPerProtocollo(protocollo);
+}
+
+/**
+ * Voci di una tendina legata a un protocollo (riga host, binding): quelle che
+ * il server accetta per quel protocollo, con la regola unica. Revisione della
+ * 2c (16/10): la finestra delle credenziali dell'host offriva tutte le voci,
+ * anche un account AD per WinRM, che il server rifiuta con 400.
+ */
+export function vociPerProtocollo<T extends { credential_type: string }>(voci: readonly T[], protocollo: string): T[] {
+  const tipi = tipiPerProtocollo(protocollo);
+  return voci.filter((v) => tipi.includes(v.credential_type));
+}
+
+/**
+ * Voci che valgono per almeno un protocollo d'accesso (SSH, SNMP, Windows,
+ * API): la lista di una rete e la modifica in blocco degli host. UniFi, Omada
+ * e AD le sceglie chi configura il controller o l'integrazione (revisione
+ * della 2c, 16/10: «Aggiungi da archivio» le offriva e il PUT della rete
+ * rispondeva 400 annullando tutta la modifica).
+ */
+export function vociDAccesso<T extends { credential_type: string }>(voci: readonly T[]): T[] {
+  return voci.filter((v) => valePerAccesso(v.credential_type));
 }
 
 /**

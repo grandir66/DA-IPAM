@@ -30,6 +30,7 @@ import {
 import { Key, Plus, Trash2, ArrowUp, ArrowDown, Archive, Copy } from "lucide-react";
 import { toast } from "sonner";
 import { etichettaTipo, normalizzaTipo } from "@/lib/credentials/tipi";
+import { vociDAccesso } from "@/lib/credential-protocol-map";
 
 export interface CredentialRow {
   id: number;
@@ -218,7 +219,9 @@ export function NetworkCredentialsTable({
     }
   };
 
-  const availableCreds = credentials.filter((c) => !credentialIds.includes(c.id));
+  // Solo voci d'accesso (revisione della 2c): UniFi, Omada e AD il server le
+  // rifiuta nella lista della rete, e il PUT annullava tutta la modifica.
+  const availableCreds = vociDAccesso(credentials).filter((c) => !credentialIds.includes(c.id));
 
   return (
     <div className="rounded-lg border border-border/60 bg-card/50">

@@ -33,7 +33,7 @@ import { DeviceFormFields } from "@/components/shared/device-form-fields";
 import { LinkIpsDialog } from "@/components/devices/link-ips-dialog";
 import { InlineEditCell } from "@/components/shared/inline-edit-cell";
 import { AddableSelect } from "@/components/shared/addable-select";
-import { opzioniCreazioneRapida, tipiCredenzialePerProtocollo, tipoCreazioneRapida, vociSnmpAggiuntive } from "@/lib/credential-protocol-map";
+import { opzioniCreazioneRapida, tipiCredenzialePerProtocollo, tipoCreazioneRapida, vociDAccesso, vociSnmpAggiuntive } from "@/lib/credential-protocol-map";
 import { etichettaTipo, normalizzaTipo } from "@/lib/credentials/tipi";
 import { profiloPerClassificazione, proponiApparato, riallineaAlProtocollo, type ProtocolloApparato } from "@/lib/devices/proposta-apparato";
 import { CreateFingerprintRuleDialog } from "@/components/shared/create-fingerprint-rule-dialog";
@@ -2466,7 +2466,8 @@ export default function DiscoveryPage() {
                     <SelectTrigger><SelectValue placeholder="Seleziona credenziale..." /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="__empty__">— Seleziona —</SelectItem>
-                      {credentials.map((c) => (
+                      {/* Solo voci d'accesso: UniFi, Omada e AD il server le rifiuta per ogni protocollo (revisione 2c). */}
+                      {vociDAccesso(credentials).map((c) => (
                         <SelectItem key={c.id} value={String(c.id)}>
                           {c.name} ({etichettaTipo(c.credential_type)})
                         </SelectItem>

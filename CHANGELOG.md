@@ -4,6 +4,21 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-16 · LibreNMS «appliance» dall'import JSON
+
+Seguito del passo 5 del piano di solidità. Perché: Deploy-Appliance ora dichiara il LibreNMS che installa lui
+(`extra.mode = "appliance"` nell'import JSON dei moduli, `mode: "appliance"` nel PUT di ripiego), ma l'import
+scriveva sempre `external`, e la scheda proponeva «Converti» a ogni installazione nuova.
+
+### Modifiche
+
+- **Import JSON dei moduli** (`POST /api/modules/import`): per LibreNMS con `extra.mode` uguale a `"appliance"` scrive
+  il modo `appliance`; senza `extra.mode` (installatore vecchio), con un altro valore o per Graylog scrive `external`
+  come prima. Logica in `modules/import-integrazione.ts` (pura, provata in `import-integrazione.test.ts`).
+- Il PUT di ripiego (`/api/integrations/librenms`) accettava già `mode: "appliance"` dal passo 5: niente da cambiare.
+- **Installazioni esistenti**: nessuna migrazione. Una riga `external` resta tale finché un import nuovo con
+  `extra.mode` o «Converti» non la riscrive.
+
 ## [Non rilasciato] — 2026-10-16 · apertura delle interfacce dei moduli: «Verifica» dice perché non si aprono
 
 Passo 4b del piano di solidità del 16/10 (parte DA-IPAM; analisi `2026-10-16-catena-apertura-interfacce-moduli.md`).

@@ -7,6 +7,7 @@ import { signOut, useSession } from "next-auth/react";
 import { TenantSwitcher } from "./tenant-switcher";
 import { useSidebar } from "./sidebar-context";
 import {
+  Activity,
   LayoutDashboard,
   ArrowUpFromLine,
   Network,
@@ -300,18 +301,22 @@ export function Sidebar() {
   // dei moduli compare SOLO se il modulo è enabled per il tenant.
   const [enabledModules, setEnabledModules] = useState<Set<string>>(new Set());
   const [externalModules, setExternalModules] = useState<Array<{ key: string; label: string; url: string }>>([]);
+  // Pannello Zabbix (passo 7.4): fuori dal catalogo dei moduli, in menu solo se acquistato, configurato e acceso.
+  const [pannelloZabbix, setPannelloZabbix] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     if (!tenantCode || tenantCode === "__ALL__") {
       setEnabledModules(new Set());
       setExternalModules([]);
+      setPannelloZabbix(false);
       return;
     }
     fetch("/api/modules", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
-      .then((d: { modules?: Array<{ key: string; label: string; enabled: boolean; uiUrl: string | null; uiIsInternal: boolean }> } | null) => {
+      .then((d: { modules?: Array<{ key: string; label: string; enabled: boolean; uiUrl: string | null; uiIsInternal: boolean }>; pannelli?: { zabbix?: boolean } } | null) => {
         const mods = d?.modules ?? [];
+        setPannelloZabbix(d?.pannelli?.zabbix === true);
         setEnabledModules(new Set(mods.filter((m) => m.enabled).map((m) => m.key)));
         setExternalModules(
           mods
@@ -438,6 +443,11 @@ export function Sidebar() {
         {/* RMM / Controllo remoto (MeshCentral) — solo se il modulo è abilitato */}
         {enabledModules.has("meshcentral") && (
           <NavItem href="/rmm" icon={MonitorSmartphone} label="Controllo remoto" active={isActive("/rmm")} collapsed={collapsed} onNavigate={closeMobile} />
+        )}
+
+        {/* Pannello Zabbix in sola lettura — solo se acquistato, configurato e acceso */}
+        {pannelloZabbix && (
+          <NavItem href="/zabbix" icon={Activity} label="Zabbix" active={isActive("/zabbix")} collapsed={collapsed} onNavigate={closeMobile} />
         )}
 
         {/* Moduli esterni abilitati (LibreNMS / Wazuh / Graylog) — link diretto alla dashboard */}

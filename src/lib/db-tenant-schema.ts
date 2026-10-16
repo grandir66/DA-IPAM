@@ -122,6 +122,55 @@ export const INDICI_TOPOLOGY_UNIONI: ReadonlyArray<readonly [string, string]> = 
   ["idx_topology_separazioni_coppia_attiva", "CREATE UNIQUE INDEX idx_topology_separazioni_coppia_attiva ON topology_separazioni(membro, altro) WHERE tolto_il IS NULL"],
 ];
 
+/**
+ * Pannello Zabbix in sola lettura (passo 7.4-7.5 del piano di solidità, 16/10; API del centro in DA-Zabbix,
+ * `docs/2026-10-16-api-lettura-per-cliente-design.md`). Dati del cliente → DB del tenant.
+ *
+ * - `zabbix_lettura_config`: riga unica. Indirizzo del centro, chiave di lettura cifrata (`zl1.<id>.<segreto>`:
+ *   `chiave_id` è la sola parte pubblica), impronta TLS facoltativa, codice cliente atteso nelle risposte, nome del
+ *   proxy della macchina (facoltativo: se vuoto si legge `Hostname=` dal file del proxy), interruttore, e lo stato
+ *   dei tentativi (fallimenti consecutivi, prossimo tentativo, ultimo errore, ultima lettura buona) che regge
+ *   l'attesa crescente anche dopo un riavvio.
+ * - `zabbix_abbinamenti`: solo gli abbinamenti **verificati** da una persona (§5 dell'API). `host_id` senza chiave
+ *   esterna: un host tolto da DA-IPAM lascia una riga orfana che la lettura ignora (JOIN), e una ricostruzione di
+ *   `hosts` non la cancella a cascata. Proposti, ambigui e persi si calcolano a ogni lettura e non si salvano.
+ *
+ * Tabelle nuove con `CREATE TABLE IF NOT EXISTS` dentro `TENANT_SCHEMA_SQL`, che gira a ogni apertura: sui DB
+ * esistenti nascono alla prima apertura dopo l'aggiornamento. `assicuraTabelleZabbixLettura` rifà le stesse CREATE
+ * (ripetibile) per chi apre un DB senza passare da `getTenantDb` (prove).
+ */
+export const DDL_ZABBIX_LETTURA: ReadonlyArray<readonly [string, string]> = [
+  ["zabbix_lettura_config", `CREATE TABLE IF NOT EXISTS zabbix_lettura_config (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  base_url TEXT NOT NULL,
+  chiave_enc TEXT NOT NULL,
+  chiave_id TEXT NOT NULL,
+  impronta TEXT,
+  codcli TEXT NOT NULL,
+  proxy_locale TEXT,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  fallimenti INTEGER NOT NULL DEFAULT 0,
+  prossimo_tentativo TEXT,
+  ultimo_errore TEXT,
+  ultima_lettura_ok TEXT,
+  aggiornato_il TEXT NOT NULL DEFAULT (datetime('now')),
+  aggiornato_da TEXT
+)`],
+  ["zabbix_abbinamenti", `CREATE TABLE IF NOT EXISTS zabbix_abbinamenti (
+  hostid TEXT PRIMARY KEY,
+  host_id INTEGER NOT NULL,
+  ip TEXT NOT NULL,
+  confermato_da TEXT NOT NULL,
+  confermato_il TEXT NOT NULL DEFAULT (datetime('now'))
+)`],
+  ["idx_zabbix_abbinamenti_host", "CREATE INDEX IF NOT EXISTS idx_zabbix_abbinamenti_host ON zabbix_abbinamenti(host_id)"],
+];
+
+/** Crea le tabelle del pannello Zabbix se mancano. Ripetibile, solo additiva. */
+export function assicuraTabelleZabbixLettura(db: Database.Database): void {
+  for (const [, ddl] of DDL_ZABBIX_LETTURA) db.exec(ddl);
+}
+
 export const TENANT_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS networks (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1534,6 +1583,9 @@ CREATE TABLE IF NOT EXISTS network_controller_runs (
   offline_json TEXT NOT NULL DEFAULT '[]'
 );
 CREATE INDEX IF NOT EXISTS idx_controller_runs_controller ON network_controller_runs(controller_id, id);
+
+-- Pannello Zabbix in sola lettura (passo 7.4): vedi DDL_ZABBIX_LETTURA.
+${DDL_ZABBIX_LETTURA.map(([, ddl]) => `${ddl};`).join("\n\n")}
 `;
 
 export const TENANT_INDEXES_SQL = `

@@ -195,3 +195,16 @@ ADR [0011](../../adr/0011-netbird-rete-a-stella.md) e [0013](../../adr/0013-lice
   Corretti in Deploy-Appliance: sorgente IPAM dal ramo e non dalla copia del PVE (`e895eae`), chiave
   `network_services` (`f869c9e`), dipendenze WinRM (`486bef5`), doppioni della pagina dei servizi
   (`ac5b955`). Spec e piano di «cambia moduli» e kit d'installazione in DA-Link, da approvare.
+- 2026-10-16 pomeriggio: **la fase 0 aveva lasciato fuori DA-TRAEFIK** (`da-traefik`, .40 in DMZ).
+  Togliendo `All` dalle policy `DA-sns`/`AD01`/`AD02 Access` e dai nameserver `da-dc01`/`da-dc02`
+  (14/10 15:40 UTC), il .40 ha perso la strada verso `192.168.4.42` e il DNS di `domarc.it`: stava solo
+  in `All` e `server-interni`, e la verifica di quel giorno guardava i colleghi, non i server con chiave.
+  Effetto: dal 14/10 l'accesso con Entra di portale Proxmox, Fibertest e DA-GEO (e il relè d'identità
+  della survey) rispondeva «Accesso non riuscito». Rimedio, con conferma di Riccardo e fotografia
+  `netbird-backup-20261016-161933-prima-di-traefik.json` nel vault: gruppo **`dmz-traefik`** (solo
+  `da-traefik`; non `centro-*`, che sono di DA-Link), cinque policy `DA-TRAEFIK → DA-sns (DA-Auth)` tcp 443 e
+  `→ AD01/AD02 DNS` udp/tcp 53, gruppo aggiunto ai due nameserver. Niente `All`: R3 resta verde. Verificato
+  dal .40: `Nameservers 2/2`, `entra.domarc.it` → .42, `/whoami` 200 dai tre container. Controllati gli
+  altri peer fuori da `users`/`admins`: o stanno sulla LAN (non usano le risorse) o sono remoti, che
+  devono restare ciechi. **Regola per i prossimi passi che stringono policy o nameserver**: prima
+  l'elenco dei peer con chiave che usano quell'oggetto, non solo la prova da un collega.

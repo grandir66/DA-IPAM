@@ -38,6 +38,11 @@ services:
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-}
       NEXTAUTH_URL: ${NEXTAUTH_URL:-https://${APPLIANCE_LAN_IP:-localhost}/}
       AUTH_TRUST_HOST: ${AUTH_TRUST_HOST:-true}
+      # Accesso con l'account Domarc (SSO interno). VUOTO sulle installazioni
+      # dei clienti: senza indirizzo la funzione non esiste e il bottone non
+      # compare. Si valorizza solo sugli impianti Domarc, con l'indirizzo del
+      # servizio di autenticazione.
+      DAAUTH_URL: ${DAAUTH_URL:-}
     volumes:
       - ipam_data:/data
     healthcheck:

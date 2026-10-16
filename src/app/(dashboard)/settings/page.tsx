@@ -1,6 +1,10 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
+import { scheduledJobLabel } from "@/lib/scheduled-job-types";
+import { fetchJson } from "@/lib/fetch-json";
+import { LoadError } from "@/components/shared/load-error";
 
-import { useEffect, useState, useMemo, Suspense } from "react";
+import { useEffect, useState, useMemo, useCallback, Suspense } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -40,14 +44,14 @@ import {
   Clock,
   Download,
   Database,
-  Save,
   Radar,
   Pencil,
   RotateCcw,
-  Monitor,
   Users,
   Shield,
   ArrowUpCircle,
+  Bell,
+  Siren,
   Sparkles,
   Play,
   RefreshCw,
@@ -63,6 +67,8 @@ import { ScanConfigTab } from "@/components/settings/scan-config-tab";
 import { DeviceIdentificationTab } from "@/components/settings/device-identification-tab";
 import { ModulesTab } from "@/components/settings/modules-tab";
 import { UpdatesTab } from "@/components/settings/updates-tab";
+import { NotificationsTab } from "@/components/settings/notifications-tab";
+import { SecurityAlertsTab } from "@/components/settings/security-alerts-tab";
 
 const JOB_TYPE_LABELS: Record<string, string> = {
   ping_sweep: "Scoperta rete (ICMP + Nmap quick + DNS + ARP)",
@@ -78,6 +84,8 @@ const JOB_TYPE_LABELS: Record<string, string> = {
   vuln_sync: "Sincronizzazione vulnerability scanner",
   wazuh_sync: "Sincronizzazione Wazuh (agent/sysc/CVE)",
   ad_sync: "Sincronizzazione Active Directory",
+  unifi_sync: "Sincronizzazione controller UniFi",
+  hypervisor_sync: "Lettura hypervisor (VM e schede)",
 };
 
 const HEAVY_JOB_TYPES = new Set(["fast_scan", "ping_sweep"]);
@@ -106,6 +114,8 @@ type TabKey =
   | "jobs"
   | "https"
   | "moduli"
+  | "alert-sicurezza"
+  | "notifiche"
   | "aggiornamenti"
   | "sistema";
 
@@ -126,6 +136,11 @@ const TAB_ALIASES: Record<string, TabKey> = {
   moduli: "moduli",
   modules: "moduli",
   features: "moduli",
+  notifiche: "notifiche",
+  notifications: "notifiche",
+  "alert-sicurezza": "alert-sicurezza",
+  alert: "alert-sicurezza",
+  alerts: "alert-sicurezza",
   aggiornamenti: "aggiornamenti",
   updates: "aggiornamenti",
   sistema: "sistema",
@@ -145,12 +160,6 @@ interface UserWithAccess {
   tenant_access?: { tenant_id: number; codice_cliente: string; ragione_sociale: string; role: string }[];
 }
 
-interface CredentialEntry {
-  id: number;
-  name: string;
-  credential_type: string;
-}
-
 interface TenantEntry {
   id: number;
   codice_cliente: string;
@@ -165,6 +174,54 @@ interface TlsStatus {
   cert_info: Record<string, string> | null;
 }
 
+/**
+ * Clienti di un utente nei dialoghi Nuovo/Modifica. Per l'admin di un cliente
+ * solo il cliente è fisso (UI-18): si mostra, non si sceglie.
+ */
+function TenantPicker({
+  fixedName,
+  tenants,
+  selected,
+  onChange,
+}: {
+  fixedName: string | null;
+  tenants: TenantEntry[];
+  selected: number[];
+  onChange: (update: (prev: number[]) => number[]) => void;
+}) {
+  if (fixedName) {
+    return (
+      <div className="space-y-2">
+        <Label>Cliente</Label>
+        <p className="rounded-md border bg-muted/40 px-3 py-2 text-sm">{fixedName}</p>
+      </div>
+    );
+  }
+  if (tenants.length === 0) return null;
+  return (
+    <div className="space-y-2">
+      <Label>Clienti assegnati</Label>
+      <div className="max-h-40 overflow-y-auto rounded-md border p-2 space-y-1">
+        {tenants.map((t) => (
+          <label key={t.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted/50 rounded px-1 py-0.5">
+            <input
+              type="checkbox"
+              checked={selected.includes(t.id)}
+              onChange={(e) => {
+                if (e.target.checked) onChange((prev) => [...prev, t.id]);
+                else onChange((prev) => prev.filter((id) => id !== t.id));
+              }}
+              className="rounded"
+            />
+            <span>{t.ragione_sociale || t.codice_cliente}</span>
+          </label>
+        ))}
+      </div>
+      <p className="text-xs text-muted-foreground">Le modifiche avranno effetto al prossimo accesso dell&apos;utente</p>
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   return (
     <Suspense fallback={<div className="p-4 text-sm text-muted-foreground">Caricamento…</div>}>
@@ -176,14 +233,19 @@ export default function SettingsPage() {
 function SettingsPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { data: session } = useSession();
+  const { data: session, status: sessionStatus } = useSession();
   const isAdmin = (session?.user as { role?: string } | undefined)?.role === "admin"
     || (session?.user as { role?: string } | undefined)?.role === "superadmin";
+  const isSuperAdmin = (session?.user as { role?: string } | undefined)?.role === "superadmin";
+  const sessionUsername = session?.user?.name ?? "";
+  // Sessione caricata e ruolo di sola lettura: la gestione utenti non lo riguarda
+  // (/api/users gli risponde 403 per scelta). Finché la sessione carica non si decide.
+  const isViewer = sessionStatus === "authenticated" && !isAdmin;
 
   const initialTab: TabKey = useMemo(() => {
     const raw = (searchParams?.get("tab") ?? "").toLowerCase();
-    return TAB_ALIASES[raw] ?? "utenti";
-  }, [searchParams]);
+    return TAB_ALIASES[raw] ?? (isViewer ? "scansione" : "utenti");
+  }, [searchParams, isViewer]);
   const [activeTab, setActiveTab] = useState<TabKey>(initialTab);
 
   useEffect(() => {
@@ -201,12 +263,6 @@ function SettingsPageInner() {
   const [appVersion, setAppVersion] = useState<string | null>(null);
   const [updateAvailable, setUpdateAvailable] = useState<{ version: string } | null>(null);
 
-  // === Host credentials ===
-  const [credentials, setCredentials] = useState<CredentialEntry[]>([]);
-  const [hostWindowsCredentialId, setHostWindowsCredentialId] = useState<string>("");
-  const [hostLinuxCredentialId, setHostLinuxCredentialId] = useState<string>("");
-  const [savingHostCreds, setSavingHostCreds] = useState(false);
-
   // === Reset state (full reconfig) ===
   const [resetting, setResetting] = useState(false);
   const [openingWizard, setOpeningWizard] = useState(false);
@@ -214,6 +270,8 @@ function SettingsPageInner() {
 
   // === Users ===
   const [users, setUsers] = useState<UserWithAccess[]>([]);
+  const [usersLoading, setUsersLoading] = useState(true);
+  const [usersError, setUsersError] = useState<string | null>(null);
   const [tenantsList, setTenantsList] = useState<TenantEntry[]>([]);
   const [newUserOpen, setNewUserOpen] = useState(false);
   const [newUsername, setNewUsername] = useState("");
@@ -227,6 +285,40 @@ function SettingsPageInner() {
   const [editUserRole, setEditUserRole] = useState<"superadmin" | "admin" | "viewer">("admin");
   const [editUserTenantIds, setEditUserTenantIds] = useState<number[]>([]);
   const [savingEditUser, setSavingEditUser] = useState(false);
+
+  // UI-18: un errore dell'API (403, 500, server giù) si mostra come errore,
+  // non come «Nessun utente trovato».
+  const loadUsers = useCallback(async () => {
+    setUsersLoading(true);
+    try {
+      const r = await fetchJson<UserWithAccess[]>("/api/users");
+      if (r.ok && Array.isArray(r.data)) {
+        setUsers(r.data);
+        setUsersError(null);
+      } else {
+        setUsersError(r.ok ? "Risposta non valida dal server" : r.message);
+      }
+    } finally {
+      setUsersLoading(false);
+    }
+  }, []);
+
+  // Solo per chi gestisce utenti: al viewer il 403 è voluto, non un guasto da mostrare.
+  useEffect(() => {
+    if (isAdmin) void loadUsers();
+  }, [isAdmin, loadUsers]);
+
+  // L'admin assegna solo i clienti che amministra (il server lo impone comunque).
+  // Con un cliente solo — l'appliance di un cliente — il cliente è fisso: non si
+  // manda tenant_ids e il server mette l'utente nel suo cliente.
+  const sessionTenants =
+    (session?.user as { tenants?: Array<{ code: string; name: string; role: string }> } | undefined)?.tenants ?? [];
+  const adminTenants = sessionTenants.filter((t) => t.role === "admin");
+  const fixedTenantName =
+    !isSuperAdmin && adminTenants.length === 1 ? adminTenants[0].name || adminTenants[0].code : null;
+  const assignableTenants = isSuperAdmin
+    ? tenantsList
+    : tenantsList.filter((t) => adminTenants.some((a) => a.code === t.codice_cliente));
 
   // === Reset password (admin action on a user) ===
   const [resetPwOpen, setResetPwOpen] = useState(false);
@@ -253,11 +345,6 @@ function SettingsPageInner() {
   useEffect(() => {
     fetch("/api/jobs").then((r) => r.json()).then(setJobs).catch(() => {});
     fetch("/api/networks").then((r) => r.json()).then(setNetworks).catch(() => {});
-    fetch("/api/settings").then((r) => r.json()).then((settings: Record<string, string>) => {
-      if (settings.host_windows_credential_id !== undefined) setHostWindowsCredentialId(settings.host_windows_credential_id || "");
-      if (settings.host_linux_credential_id !== undefined) setHostLinuxCredentialId(settings.host_linux_credential_id || "");
-    }).catch(() => {});
-    fetch("/api/credentials").then((r) => r.json()).then((creds: CredentialEntry[]) => setCredentials(creds)).catch(() => {});
     fetch("/api/version").then((r) => r.json()).then((d: { version?: string }) => setAppVersion(d.version ?? null)).catch(() => {});
     fetch("/api/system/update?action=check")
       .then((r) => r.json())
@@ -269,35 +356,12 @@ function SettingsPageInner() {
         }
       })
       .catch(() => {});
-    fetch("/api/users").then((r) => r.json()).then(setUsers).catch(() => {});
+    // /api/users si carica con loadUsers (sopra), che distingue errore e lista vuota.
     fetch("/api/tenants").then((r) => r.json()).then((data: TenantEntry[]) => {
       if (Array.isArray(data)) setTenantsList(data);
     }).catch(() => {});
     fetch("/api/tls").then((r) => r.json()).then(setTlsStatus).catch(() => {});
   }, []);
-
-  // ============ HOST CREDENTIALS ============
-
-  async function handleSaveHostCredentials() {
-    setSavingHostCreds(true);
-    try {
-      await fetch("/api/settings", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key: "host_windows_credential_id", value: hostWindowsCredentialId || "" }),
-      });
-      await fetch("/api/settings", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key: "host_linux_credential_id", value: hostLinuxCredentialId || "" }),
-      });
-      toast.success("Credenziali host salvate");
-    } catch {
-      toast.error("Errore nel salvataggio");
-    } finally {
-      setSavingHostCreds(false);
-    }
-  }
 
   // ============ ONBOARDING / RESET ============
 
@@ -371,23 +435,25 @@ function SettingsPageInner() {
     e.preventDefault();
     setSavingUser(true);
     try {
+      const payload: Record<string, unknown> = {
+        username: newUsername,
+        password: newUserPassword,
+        role: newUserRole,
+        email: newUserEmail || null,
+      };
+      // Cliente fisso (admin di un cliente solo): lo decide il server.
+      if (isSuperAdmin) payload.tenant_ids = newUserRole !== "superadmin" ? newUserTenantIds : [];
+      else if (!fixedTenantName) payload.tenant_ids = newUserTenantIds;
       const res = await fetch("/api/users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          username: newUsername,
-          password: newUserPassword,
-          role: newUserRole,
-          email: newUserEmail || null,
-          tenant_ids: newUserRole !== "superadmin" ? newUserTenantIds : [],
-        }),
+        body: JSON.stringify(payload),
       });
       if (res.ok) {
         toast.success("Utente creato");
         setNewUserOpen(false);
         setNewUsername(""); setNewUserEmail(""); setNewUserPassword(""); setNewUserRole("viewer"); setNewUserTenantIds([]);
-        const updated = await fetch("/api/users").then((r) => r.json());
-        setUsers(updated);
+        await loadUsers();
       } else {
         const data = await res.json();
         toast.error(data.error || "Errore nella creazione utente");
@@ -408,19 +474,19 @@ function SettingsPageInner() {
     if (editUserId == null) return;
     setSavingEditUser(true);
     try {
+      const payload: Record<string, unknown> = { role: editUserRole };
+      // Cliente fisso: senza tenant_ids il server lascia i clienti che l'utente ha già.
+      if (isSuperAdmin) payload.tenant_ids = editUserRole !== "superadmin" ? editUserTenantIds : [];
+      else if (!fixedTenantName) payload.tenant_ids = editUserTenantIds;
       const res = await fetch(`/api/users/${editUserId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          role: editUserRole,
-          tenant_ids: editUserRole !== "superadmin" ? editUserTenantIds : [],
-        }),
+        body: JSON.stringify(payload),
       });
       if (res.ok) {
         toast.success("Utente aggiornato");
         setEditUserOpen(false);
-        const updated = await fetch("/api/users").then((r) => r.json());
-        setUsers(updated);
+        await loadUsers();
       } else {
         const data = await res.json();
         toast.error(data.error || "Errore");
@@ -431,14 +497,16 @@ function SettingsPageInner() {
 
   async function handleDeleteUser(userId: number, username: string) {
     if (!confirm(`Eliminare l'utente "${username}"? L'azione è irreversibile.`)) return;
-    const res = await fetch(`/api/users/${userId}`, { method: "DELETE" });
-    if (res.ok) {
-      toast.success("Utente eliminato");
-      setUsers((prev) => prev.filter((u) => u.id !== userId));
-    } else {
-      const data = await res.json();
-      toast.error(data.error || "Errore nell'eliminazione");
-    }
+    try {
+      const res = await fetch(`/api/users/${userId}`, { method: "DELETE" });
+      if (res.ok) {
+        toast.success("Utente eliminato");
+        setUsers((prev) => prev.filter((u) => u.id !== userId));
+      } else {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error || "Errore nell'eliminazione");
+      }
+    } catch { toast.error("Errore di rete"); }
   }
 
   function openResetPassword(user: UserWithAccess) {
@@ -560,9 +628,15 @@ function SettingsPageInner() {
     try {
       const res = await fetch(`/api/jobs/${id}/run`, { method: "POST" });
       const data = await res.json().catch(() => ({}));
-      if (res.ok) {
+      if (res.status === 202) {
+        // Job di scansione: il giro continua in background, «Ultima esecuzione» si aggiorna a fine giro.
+        toast.success("Scansione avviata: l'ultima esecuzione si aggiorna a fine giro");
+        const updated = await fetch("/api/jobs").then((r) => r.json());
+        setJobs(updated);
+      } else if (res.ok) {
         const ms = typeof data.duration_ms === "number" ? `${data.duration_ms} ms` : "ok";
-        toast.success(`Job eseguito (${ms})`);
+        if (typeof data.note === "string") toast.warning(data.note);
+        else toast.success(`Job eseguito (${ms})`);
         const updated = await fetch("/api/jobs").then((r) => r.json());
         setJobs(updated);
       } else {
@@ -584,16 +658,19 @@ function SettingsPageInner() {
 
   // ============ RENDER ============
 
-  const tabs: Array<{ key: TabKey; label: string; icon: React.ComponentType<{ className?: string }> }> = [
+  const allTabs: Array<{ key: TabKey; label: string; icon: React.ComponentType<{ className?: string }> }> = [
     { key: "utenti", label: "Utenti", icon: Users },
     { key: "scansione", label: "Scansione", icon: Radar },
     { key: "identificazione", label: "Identificazione", icon: Fingerprint },
     { key: "jobs", label: "Job pianificati", icon: Clock },
     { key: "https", label: "HTTPS", icon: Shield },
     { key: "moduli", label: "Moduli", icon: PackageOpen },
+    { key: "alert-sicurezza", label: "Alert sicurezza", icon: Siren },
+    { key: "notifiche", label: "Notifiche", icon: Bell },
     { key: "aggiornamenti", label: "Aggiornamenti", icon: ArrowUpCircle },
     { key: "sistema", label: "Sistema", icon: Wrench },
   ];
+  const tabs = isViewer ? allTabs.filter((tab) => tab.key !== "utenti") : allTabs;
 
   return (
     <div className="space-y-6">
@@ -643,7 +720,14 @@ function SettingsPageInner() {
       </div>
 
       {/* === Tab: Utenti === */}
-      {activeTab === "utenti" && (
+      {activeTab === "utenti" && isViewer && (
+        <Card>
+          <CardContent className="py-6 text-sm text-muted-foreground">
+            La gestione degli utenti è riservata agli amministratori.
+          </CardContent>
+        </Card>
+      )}
+      {activeTab === "utenti" && !isViewer && (
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <div>
@@ -652,13 +736,18 @@ function SettingsPageInner() {
                 <CardTitle className="text-base">Gestione utenti</CardTitle>
               </div>
               <CardDescription className="mt-1">
-                Gestisci gli account di accesso al sistema. Per cambiare la tua password usa il menu utente in alto a destra.
+                {isSuperAdmin
+                  ? "Gestisci gli account di accesso al sistema."
+                  : "Gestisci gli account di accesso del tuo cliente."}{" "}
+                Per cambiare la tua password usa il menu utente in alto a destra.
               </CardDescription>
             </div>
             <Dialog open={newUserOpen} onOpenChange={setNewUserOpen}>
-              <DialogTrigger render={<Button size="sm" />}>
-                <Plus className="h-4 w-4 mr-2" />Nuovo utente
-              </DialogTrigger>
+              {!usersError && (
+                <DialogTrigger render={<Button size="sm" />}>
+                  <Plus className="h-4 w-4 mr-2" />Nuovo utente
+                </DialogTrigger>
+              )}
               <DialogContent>
                 <DialogHeader>
                   <DialogTitle>Nuovo utente</DialogTitle>
@@ -681,33 +770,19 @@ function SettingsPageInner() {
                     <Select value={newUserRole} onValueChange={(v) => { setNewUserRole((v ?? newUserRole) as "superadmin" | "admin" | "viewer"); if (v === "superadmin") setNewUserTenantIds([]); }}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="superadmin">Super amministratore</SelectItem>
+                        {isSuperAdmin && <SelectItem value="superadmin">Super amministratore</SelectItem>}
                         <SelectItem value="admin">Amministratore</SelectItem>
                         <SelectItem value="viewer">Solo lettura</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
-                  {newUserRole !== "superadmin" && tenantsList.length > 0 && (
-                    <div className="space-y-2">
-                      <Label>Clienti assegnati</Label>
-                      <div className="max-h-40 overflow-y-auto rounded-md border p-2 space-y-1">
-                        {tenantsList.map((t) => (
-                          <label key={t.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted/50 rounded px-1 py-0.5">
-                            <input
-                              type="checkbox"
-                              checked={newUserTenantIds.includes(t.id)}
-                              onChange={(e) => {
-                                if (e.target.checked) setNewUserTenantIds((prev) => [...prev, t.id]);
-                                else setNewUserTenantIds((prev) => prev.filter((id) => id !== t.id));
-                              }}
-                              className="rounded"
-                            />
-                            <span>{t.ragione_sociale || t.codice_cliente}</span>
-                          </label>
-                        ))}
-                      </div>
-                      <p className="text-xs text-muted-foreground">Le modifiche avranno effetto al prossimo accesso dell&apos;utente</p>
-                    </div>
+                  {newUserRole !== "superadmin" && (
+                    <TenantPicker
+                      fixedName={fixedTenantName}
+                      tenants={assignableTenants}
+                      selected={newUserTenantIds}
+                      onChange={setNewUserTenantIds}
+                    />
                   )}
                   <Button type="submit" disabled={savingUser}>Crea utente</Button>
                 </form>
@@ -726,33 +801,19 @@ function SettingsPageInner() {
                     <Select value={editUserRole} onValueChange={(v) => { setEditUserRole((v ?? editUserRole) as "superadmin" | "admin" | "viewer"); if (v === "superadmin") setEditUserTenantIds([]); }}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="superadmin">Super amministratore</SelectItem>
+                        {isSuperAdmin && <SelectItem value="superadmin">Super amministratore</SelectItem>}
                         <SelectItem value="admin">Amministratore</SelectItem>
                         <SelectItem value="viewer">Solo lettura</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
-                  {editUserRole !== "superadmin" && tenantsList.length > 0 && (
-                    <div className="space-y-2">
-                      <Label>Clienti assegnati</Label>
-                      <div className="max-h-40 overflow-y-auto rounded-md border p-2 space-y-1">
-                        {tenantsList.map((t) => (
-                          <label key={t.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted/50 rounded px-1 py-0.5">
-                            <input
-                              type="checkbox"
-                              checked={editUserTenantIds.includes(t.id)}
-                              onChange={(e) => {
-                                if (e.target.checked) setEditUserTenantIds((prev) => [...prev, t.id]);
-                                else setEditUserTenantIds((prev) => prev.filter((id) => id !== t.id));
-                              }}
-                              className="rounded"
-                            />
-                            <span>{t.ragione_sociale || t.codice_cliente}</span>
-                          </label>
-                        ))}
-                      </div>
-                      <p className="text-xs text-muted-foreground">Le modifiche avranno effetto al prossimo accesso dell&apos;utente</p>
-                    </div>
+                  {editUserRole !== "superadmin" && (
+                    <TenantPicker
+                      fixedName={fixedTenantName}
+                      tenants={assignableTenants}
+                      selected={editUserTenantIds}
+                      onChange={setEditUserTenantIds}
+                    />
                   )}
                   <Button type="submit" disabled={savingEditUser}>Salva</Button>
                 </form>
@@ -798,6 +859,12 @@ function SettingsPageInner() {
             </Dialog>
           </CardHeader>
           <CardContent>
+            {usersError ? (
+              <LoadError what="gli utenti" message={usersError} onRetry={() => void loadUsers()} />
+            ) : usersLoading && users.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">Caricamento…</p>
+            ) : (
+            <>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -835,8 +902,8 @@ function SettingsPageInner() {
                         <span className="text-xs text-muted-foreground">Nessuno</span>
                       )}
                     </TableCell>
-                    <TableCell>{new Date(user.created_at).toLocaleDateString("it-IT")}</TableCell>
-                    <TableCell>{user.last_login ? new Date(user.last_login).toLocaleString("it-IT") : "Mai"}</TableCell>
+                    <TableCell>{parseDbDate(user.created_at).toLocaleDateString("it-IT")}</TableCell>
+                    <TableCell>{user.last_login ? parseDbDate(user.last_login).toLocaleString("it-IT") : "Mai"}</TableCell>
                     <TableCell>
                       <div className="flex gap-1">
                         <Button
@@ -849,7 +916,10 @@ function SettingsPageInner() {
                         <Button
                           size="sm" variant="ghost"
                           onClick={() => openResetPassword(user)}
-                          title="Reset password"
+                          disabled={!isSuperAdmin && user.username === sessionUsername}
+                          title={!isSuperAdmin && user.username === sessionUsername
+                            ? "Per la tua password usa «Cambia password» nel menu utente"
+                            : "Reset password"}
                         >
                           <KeyRound className="h-3.5 w-3.5" />
                         </Button>
@@ -857,7 +927,8 @@ function SettingsPageInner() {
                           size="sm" variant="ghost"
                           onClick={() => handleDeleteUser(user.id, user.username)}
                           className="text-destructive hover:text-destructive"
-                          title="Elimina utente"
+                          disabled={user.username === sessionUsername}
+                          title={user.username === sessionUsername ? "Non puoi eliminare il tuo stesso account" : "Elimina utente"}
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
@@ -869,6 +940,8 @@ function SettingsPageInner() {
             </Table>
             {users.length === 0 && (
               <p className="text-sm text-muted-foreground text-center py-4">Nessun utente trovato</p>
+            )}
+            </>
             )}
           </CardContent>
         </Card>
@@ -988,7 +1061,7 @@ function SettingsPageInner() {
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2 flex-wrap">
-                          <Badge variant="outline">{JOB_TYPE_LABELS[job.job_type] || job.job_type}</Badge>
+                          <Badge variant="outline">{scheduledJobLabel(job, JOB_TYPE_LABELS)}</Badge>
                           {riskyCpu && (
                             <Badge variant="outline" className="border-amber-500 text-amber-700 dark:text-amber-400" title="Scan completo subnet grande con frequenza <12h: rischio saturazione CPU.">
                               ⚠ Carico CPU alto
@@ -1001,10 +1074,10 @@ function SettingsPageInner() {
                         {INTERVAL_OPTIONS.find((o) => o.value === String(job.interval_minutes))?.label || `${job.interval_minutes} min`}
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">
-                        {job.last_run ? new Date(job.last_run).toLocaleString("it-IT") : "Mai"}
+                        {job.last_run ? parseDbDate(job.last_run).toLocaleString("it-IT") : "Mai"}
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">
-                        {job.next_run ? new Date(job.next_run).toLocaleString("it-IT") : "—"}
+                        {job.next_run ? parseDbDate(job.next_run).toLocaleString("it-IT") : "—"}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1">
@@ -1112,55 +1185,18 @@ function SettingsPageInner() {
       {activeTab === "moduli" && <ModulesTab isAdmin={isAdmin} />}
 
       {/* === Tab: Aggiornamenti === */}
+      {activeTab === "alert-sicurezza" && <SecurityAlertsTab />}
+
+      {activeTab === "notifiche" && <NotificationsTab />}
+
       {activeTab === "aggiornamenti" && <UpdatesTab />}
 
-      {/* === Tab: Sistema (host credentials + wizard + manutenzione/dati) === */}
+      {/* === Tab: Sistema (wizard + manutenzione/dati) ===
+          La scheda «Credenziali host di default» non c'è più (tappa 2d credenziali, D3 = (a)):
+          le due chiavi dell'hub erano id del DB di un tenant, e la 2d le ha copiate nelle
+          liste delle reti dove valevano. */}
       {activeTab === "sistema" && (
         <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <div className="flex items-center gap-2">
-                <Monitor className="h-5 w-5 text-primary" />
-                <CardTitle className="text-base">Credenziali host di default (Windows / Linux)</CardTitle>
-              </div>
-              <CardDescription>
-                Credenziali usate per raccogliere informazioni da host Windows (WinRM/WMI) e Linux (SSH) quando non è specificato altro. Crea le credenziali in <strong>Credenziali</strong> con tipo &quot;Windows (host)&quot; o &quot;Linux (host)&quot;.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="flex flex-wrap items-end gap-4">
-                <div className="space-y-2 min-w-[200px]">
-                  <Label>Windows (WinRM/WMI)</Label>
-                  <Select value={hostWindowsCredentialId || "none"} onValueChange={(v) => setHostWindowsCredentialId(v === "none" ? "" : (v ?? ""))}>
-                    <SelectTrigger><SelectValue placeholder="Nessuna" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">Nessuna</SelectItem>
-                      {credentials.filter((c) => c.credential_type === "windows").map((c) => (
-                        <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2 min-w-[200px]">
-                  <Label>Linux (SSH)</Label>
-                  <Select value={hostLinuxCredentialId || "none"} onValueChange={(v) => setHostLinuxCredentialId(v === "none" ? "" : (v ?? ""))}>
-                    <SelectTrigger><SelectValue placeholder="Nessuna" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">Nessuna</SelectItem>
-                      {credentials.filter((c) => c.credential_type === "linux").map((c) => (
-                        <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Button onClick={handleSaveHostCredentials} disabled={savingHostCreds}>
-                  <Save className="h-4 w-4 mr-2" />
-                  Salva
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-
           {isAdmin && (
             <Card>
               <CardHeader>
@@ -1169,7 +1205,7 @@ function SettingsPageInner() {
                   <CardTitle className="text-base">Configurazione guidata</CardTitle>
                 </div>
                 <CardDescription>
-                  Ripeti i passaggi del primo avvio (router, DNS, credenziali, Active Directory, prima subnet). I dati già salvati non vengono cancellati.
+                  Riapre i passaggi del primo avvio (credenziali, router, DNS, Active Directory, prima subnet) dal punto in cui li avevi lasciati. I dati già salvati non vengono cancellati.
                 </CardDescription>
               </CardHeader>
               <CardContent>

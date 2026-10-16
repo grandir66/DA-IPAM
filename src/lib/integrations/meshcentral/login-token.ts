@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { getMeshCreds, type MeshCreds } from "@/lib/integrations/meshcentral/config";
+import { meshProbeStatus } from "./tls-fetch";
 
 /**
  * Creds loader seam. Defaults to the real per-tenant `getMeshCreds()`. Exposed as
@@ -152,11 +153,14 @@ export async function loginTokenSelfCheck(
     : `https://${creds.serverUrl}`;
   const probeUrl = `${base.replace(/\/+$/, "")}/?login=${encodeURIComponent(token)}`;
   try {
-    const res = await fetch(probeUrl, { redirect: "manual" });
+    // meshProbeStatus (NON fetch): il MeshCentral co-locato ha un cert self-signed
+    // che fetch rifiuterebbe al TLS, dando un self-check falso-negativo ("il
+    // controllo remoto potrebbe non funzionare") pur con token valido.
+    const status = await meshProbeStatus(probeUrl);
     // Server accepts the token: not a 401/403, and not the login screen.
-    const ok = res.status !== 401 && res.status !== 403;
+    const ok = status !== 401 && status !== 403;
     if (!ok) {
-      console.warn(`[meshcentral] self-check rejected by server (status ${res.status})`);
+      console.warn(`[meshcentral] self-check rejected by server (status ${status})`);
     }
     return ok;
   } catch (err) {

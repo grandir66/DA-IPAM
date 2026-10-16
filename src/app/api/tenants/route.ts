@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getTenants, createTenant, getUserTenantAccess } from "@/lib/db-hub";
-import { requireAuth, requireAdmin, isAuthError } from "@/lib/api-auth";
+import { requireAuth, requireSuperAdmin, isAuthError } from "@/lib/api-auth";
 import { z } from "zod";
 
 const TenantCreateSchema = z.object({
@@ -48,7 +48,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const adminCheck = await requireAdmin();
+    const adminCheck = await requireSuperAdmin();
     if (isAuthError(adminCheck)) return adminCheck;
 
     // Verifica ruolo superadmin (solo superadmin puo' creare tenant)

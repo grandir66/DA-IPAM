@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -273,7 +274,7 @@ export function UpdateChannelCard() {
                         <td className="px-2 py-1">{c.subject}</td>
                         <td className="px-2 py-1 text-muted-foreground">{c.author}</td>
                         <td className="px-2 py-1 text-muted-foreground">
-                          {new Date(c.date).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" })}
+                          {parseDbDate(c.date).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" })}
                         </td>
                       </tr>
                     ))}

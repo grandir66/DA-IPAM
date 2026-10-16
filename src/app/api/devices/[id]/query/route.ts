@@ -1,6 +1,6 @@
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { NextResponse } from "next/server";
-import { getNetworkDeviceById, updateNetworkDevice, upsertArpEntries, upsertMacPortEntries, upsertSwitchPorts, resolveMacToDevice, resolveMacToNetworkDevice, getInventoryAssetByNetworkDevice, updateInventoryAsset, syncDeviceToHost, trackDeviceInfoChanges, upsertNeighbors, upsertRoutes, getDeviceCommunityString, cleanOrphanedForeignKeys, getMultihomedStatusByDeviceId } from "@/lib/db";
+import { getNetworkDeviceById, updateNetworkDevice, upsertArpEntries, upsertMacPortEntries, upsertSwitchPorts, resolveMacToDevice, resolveMacToNetworkDevice, getInventoryAssetByNetworkDevice, updateInventoryAsset, syncDeviceToHost, trackDeviceInfoChanges, upsertNeighbors, upsertRoutes, credenzialeSnmpApparato, haSnmpApparato, cleanOrphanedForeignKeys, getMultihomedStatusByDeviceId } from "@/lib/db";
 import { createRouterClient } from "@/lib/devices/router-client";
 import { createSwitchClient } from "@/lib/devices/switch-client";
 import { getDeviceInfo, resolveNasKind } from "@/lib/devices/device-info";
@@ -10,11 +10,14 @@ import { withTenant } from "@/lib/db-tenant";
 import { isIpInCidr, normalizePortNameForMatch } from "@/lib/utils";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { networkDeviceUsesArpPoll } from "@/lib/network-device-arp";
+import { letturaAccesa, senzaCampiCavi } from "@/lib/topology/letture/interruttori";
 import { isProxmoxDevice } from "@/lib/devices/device-connection-test";
 import { resolveDeviceAcquisition } from "@/lib/devices/device-acquisition-resolve";
 import { runProxmoxDeviceScan } from "@/lib/proxmox/run-proxmox-device-scan";
 import { getScanProgress } from "@/lib/scanner/discovery";
 import type { ScanProgress } from "@/types";
+import { apriSessioneSnmp, versioneApparato } from "@/lib/protocols/snmp-sessione";
+import { walkConSessioneSua, type SessioneWalk } from "@/lib/devices/snmp-walk";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Progress tracking (stessa map globale usata da discovery.ts)
@@ -131,7 +134,8 @@ async function runRouterQuery(deviceId: number, device: Parameters<typeof create
       p.phase = "Acquisizione neighbors LLDP/CDP...";
       const neighbors = await client.getNeighbors();
       if (neighbors.length > 0) {
-        upsertNeighbors(deviceId, neighbors);
+        // T2 (spec §13.5.2, MK1): discovered-by e capacità solo con la lettura dei MikroTik accesa (I33), come nel giro.
+        upsertNeighbors(deviceId, letturaAccesa("mikrotik") ? neighbors : neighbors.map(senzaCampiCavi));
         plog(p, `✓ ${neighbors.length} neighbors (LLDP/CDP/MNDP)`);
       } else {
         plog(p, "— Nessun neighbor trovato");
@@ -282,24 +286,26 @@ async function runRouterQuery(deviceId: number, device: Parameters<typeof create
     p.phase = "Acquisizione STP (SNMP)...";
     const { getSnmpStpInfo } = await import("@/lib/devices/snmp-stp-info");
     const snmpMod = await import("net-snmp");
-    const community = getDeviceCommunityString(device);
-    const session = snmpMod.createSession(device.host, community, { port: 161, timeout: 5000 });
-    let sessionClosed = false;
-    const safeClose = () => { if (!sessionClosed) { sessionClosed = true; try { session.close(); } catch { /* */ } } };
-    const snmpWalk = (oid: string) => new Promise<{ oid: string; value: Buffer | string | number }[]>((resolve) => {
-      const results: { oid: string; value: Buffer | string | number }[] = [];
-      const timer = setTimeout(() => { safeClose(); resolve(results); }, 10_000);
-      session.subtree(oid,
-        (vbs: Array<{ oid: string; value: Buffer | string | number }>) => { for (const vb of vbs) results.push({ oid: vb.oid, value: vb.value }); },
-        (err: Error | undefined) => { clearTimeout(timer); safeClose(); if (err) resolve([]); else resolve(results); }
-      );
-    });
+    // Credenziale e porta dal motore (tappa 2 credenziali, T8): a un apparato v3 non parte più una community.
+    const scelta = credenzialeSnmpApparato(device);
+    if (!scelta.ok) throw new Error(scelta.motivo);
+    // SN1 (spec topologia §13.5.4): una sessione per lettura. La sessione unica si chiudeva alla fine del primo walk e
+    // annullava gli altri otto, partiti insieme. NULL = v1, come prima (createSession senza version). Una lettura non
+    // riuscita vale null in getSnmpStpInfo, come prima.
+    const snmpWalk = walkConSessioneSua(() => {
+      const aperta = apriSessioneSnmp(snmpMod, device.host, scelta.cred, { port: scelta.port, timeout: 5000, versione: versioneApparato(device, "1") });
+      if (!aperta.ok) throw new Error(aperta.motivo);
+      return aperta.session as unknown as SessioneWalk;
+    }, 10_000);
     const stpInfo = await getSnmpStpInfo(snmpWalk);
     if (stpInfo) {
       updateNetworkDevice(deviceId, { stp_info: JSON.stringify(stpInfo) });
       plog(p, "✓ STP info acquisite");
     }
-  } catch { /* STP opzionale */ }
+  } catch (e) {
+    // STP opzionale: la scansione continua, ma il motivo si vede nel registro della scansione.
+    plog(p, `— STP non letto: ${e instanceof Error ? e.message : String(e)}`);
+  }
 
   const portsMsg = portInfos.length > 0 ? `, ${portInfos.length} porte` : "";
 
@@ -354,7 +360,7 @@ async function runSwitchQuery(deviceId: number, device: Parameters<typeof create
 
   upsertMacPortEntries(deviceId, entries.map((e) => ({
     mac: e.mac, port_name: e.port_name.trim(), vlan: e.vlan, port_status: e.port_status, speed: e.speed,
-  })));
+  })), "device");
   p.scanned = entries.length;
   plog(p, `✓ MAC table salvata`);
 
@@ -504,7 +510,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
         }, { status: 409 });
       }
 
-      const acquisition = resolveDeviceAcquisition(device);
+      const acquisition = resolveDeviceAcquisition(device, haSnmpApparato(device));
 
       if (!acquisition.implemented) {
         return NextResponse.json(
@@ -552,7 +558,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
       const isWindows = device.protocol === "winrm" || device.vendor === "windows" || scanTarget === "windows";
       const isLinuxVendor = scanTarget === "linux" || device.vendor === "linux" || device.vendor === "other" || device.vendor === "synology" || device.vendor === "qnap";
       const isSshScannable = isLinuxVendor || nasKindRoute != null;
-      const isSnmpInfoDevice = (device.protocol === "snmp_v2" || device.protocol === "snmp_v3" || device.community_string || device.snmp_credential_id)
+      const isSnmpInfoDevice = (device.protocol === "snmp_v2" || device.protocol === "snmp_v3" || haSnmpApparato(device))
         && ["stampante", "telecamera", "voip", "iot", "access_point", "firewall", "vm"].includes(device.classification ?? "");
 
       // Determina tipo di scan e label

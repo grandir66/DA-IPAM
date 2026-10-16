@@ -1,3 +1,6 @@
+import type { ScheduledJobType } from "@/lib/scheduled-job-types";
+import type { MetodoAccesso, TipoCredenziale } from "@/lib/credentials/tipi";
+
 // ========================
 // Database Row Types
 // ========================
@@ -22,6 +25,11 @@ export interface Network {
   snmp_community: string | null;
   dns_server: string | null;
   targeting_mode: "full_subnet" | "found_ips" | "populated_24" | null;
+  /** Post-scan assessment sull'edge (tls-deep, enum, …). */
+  assessment_enabled: number | null;
+  assessment_profile_id: string | null;
+  /** Override per rete del gating probe passivi di attribuzione (fase 3, default 1 = abilitati). */
+  probes_enabled: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -79,6 +87,32 @@ export interface Host {
   inferred_at?: string | null;
   /** Versione del classifier che ha popolato i campi inferred_*. Bump → ricomputo automatico. */
   inferred_classifier_version?: number | null;
+  /** One-liner spiegabile dal classification-engine (riusa inferred_confidence come overall). */
+  classification_reason?: string | null;
+  /** JSON snapshot decisionale: evidence, conflicts, fingerprint_hash, engine_version, sources. */
+  classification_json?: string | null;
+  /** Attribution v2 (src/lib/attribution/): slug categoria fuso da evidenze multi-fonte (es. "network.access_point"). */
+  attr_category?: string | null;
+  /** Slug vendor fuso (normalizzato, es. "ubiquiti"). */
+  attr_vendor?: string | null;
+  /** Nome vendor leggibile citato dall'evidenza vincente (es. "Ubiquiti Inc"). */
+  attr_vendor_name?: string | null;
+  /** Famiglia OS fusa (es. "linux", "windows", "network-os"). */
+  attr_os_family?: string | null;
+  /** Nome/versione OS leggibile citato dall'evidenza vincente. */
+  attr_os_name?: string | null;
+  /** Confidenza 0-100 della categoria fusa. */
+  attr_confidence_category?: number | null;
+  /** Confidenza 0-100 del vendor fuso. */
+  attr_confidence_vendor?: number | null;
+  /** Confidenza 0-100 dell'OS fuso. */
+  attr_confidence_os?: number | null;
+  /** Fase minima richiesta dalle evidenze citate per la categoria (es. "scan_snmp_verify"). */
+  attr_min_phase?: string | null;
+  /** Timestamp ultimo ricalcolo attribuzione. */
+  attr_at?: string | null;
+  /** Versione motore Attribution v2 che ha prodotto l'ultimo risultato. */
+  attr_engine_version?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -157,7 +191,7 @@ export interface ScanHistory {
   id: number;
   host_id: number | null;
   network_id: number | null;
-  scan_type: "ping" | "fast" | "snmp" | "nmap" | "arp" | "dns" | "windows" | "ssh" | "network_discovery" | "ipam_full" | "credential_validate" | "scan_icmp" | "scan_nmap_base" | "scan_snmp_verify";
+  scan_type: "ping" | "fast" | "snmp" | "nmap" | "arp" | "dns" | "windows" | "ssh" | "network_discovery" | "ipam_full" | "credential_validate" | "scan_icmp" | "scan_nmap_base" | "scan_snmp_verify" | "scan_naabu" | "scan_enrich";
   status: string;
   ports_open: string | null;
   raw_output: string | null;
@@ -168,9 +202,27 @@ export interface ScanHistory {
 export interface Credential {
   id: number;
   name: string;
-  credential_type: "ssh" | "snmp" | "api" | "windows" | "linux";
+  /**
+   * Tipo d'archivio per esteso (tappa 2c). Il CRUD scrive `linux` come `ssh`
+   * (T13) e la normalizzazione ha convertito le voci vecchie (T11); chi legge
+   * un codice dal DB passa comunque da `normalizzaTipo`.
+   */
+  credential_type: TipoCredenziale;
+  /** Metodo d'accesso; null = il primo del tipo (`METODI_PER_TIPO`). */
+  auth_method: MetodoAccesso | null;
   encrypted_username: string | null;
   encrypted_password: string | null;
+  /** Chiave SSH (metodo «chiave») e passphrase: mai restituite dalle GET, write-only. */
+  encrypted_private_key: string | null;
+  encrypted_key_passphrase: string | null;
+  /** SNMPv3 (Fase 4b Task 2, §7.1) — mai restituiti dalle GET, write-only. */
+  encrypted_auth_key: string | null;
+  auth_protocol: string | null;
+  encrypted_priv_key: string | null;
+  priv_protocol: string | null;
+  security_level: string | null;
+  /** Porta propria (tappa 1 credenziali): null = porta standard del protocollo. */
+  port: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -179,13 +231,17 @@ export interface NetworkDevice {
   id: number;
   name: string;
   host: string;
-  device_type: "router" | "switch" | "firewall" | "hypervisor";
+  device_type: "router" | "switch" | "firewall" | "hypervisor" | "access_point" | "nas" | "server";
   classification: string | null;
   vendor: "mikrotik" | "ubiquiti" | "hp" | "cisco" | "omada" | "stormshield" | "proxmox" | "vmware" | "linux" | "windows" | "synology" | "qnap" | "apple" | "other";
   vendor_subtype: "procurve" | "comware" | null;
   protocol: "ssh" | "snmp_v2" | "snmp_v3" | "api" | "winrm";
   credential_id: number | null;
   snmp_credential_id: number | null;
+  /** Versione SNMP a community: NULL = non rilevata, ogni punto parla come prima (snmp-sessione.ts). */
+  snmp_version?: "1" | "2c" | null;
+  /** 1 = versione scelta a mano: la discovery non la sovrascrive. */
+  snmp_version_fissata?: number;
   username: string | null;
   encrypted_password: string | null;
   community_string: string | null;
@@ -623,13 +679,14 @@ export interface SwitchPort {
   trunk_primary_device_id: number | null;
   trunk_primary_name: string | null;
   stp_state: string | null;
+  is_uplink?: number;
   timestamp: string;
 }
 
 export interface ScheduledJob {
   id: number;
   network_id: number | null;
-  job_type: "ping_sweep" | "fast_scan" | "snmp_scan" | "nmap_scan" | "arp_poll" | "dns_resolve" | "cleanup" | "known_host_check" | "ad_sync" | "anomaly_check" | "librenms_sync" | "vuln_sync" | "wazuh_sync" | "mdm_sync" | "meshcentral_sync";
+  job_type: ScheduledJobType;
   interval_minutes: number;
   last_run: string | null;
   next_run: string | null;
@@ -672,26 +729,20 @@ export interface NetworkWithStats extends Network {
   last_scan: string | null;
 }
 
-export interface HostDetectCredentialRow {
-  role: "windows" | "linux" | "ssh" | "snmp";
-  credential_id: number;
-  credential_name: string;
-}
-
 export interface HostDetail extends Host {
   network_cidr: string;
   network_name: string;
+  /** 1 = classificazione scelta a mano (getHostById legge h.*): la proposta d'apparato la tiene. */
+  classification_manual?: number;
   recent_scans: ScanHistory[];
   /** Tipi di scansione già eseguiti su questo host (deduplicati). */
   scan_types_used?: string[];
-  /** Credenziali archivio usate con successo per acquisizione (per ruolo). [Legacy] */
-  detect_credentials?: HostDetectCredentialRow[];
   /** Credenziali validate per questo host (sistema v2 — multi-protocollo). */
   host_credentials?: Array<{
     id: number;
     host_id: number;
     credential_id: number;
-    protocol_type: "ssh" | "snmp" | "winrm" | "api";
+    protocol_type: "ssh" | "snmp" | "winrm" | "api" | "redfish" | "onvif";
     port: number;
     validated: number;
     validated_at: string | null;
@@ -751,7 +802,7 @@ export interface NetworkInput {
   cidr: string;
   name: string;
   description?: string;
-  gateway?: string;
+  gateway?: string | null;
   vlan_id?: number | null;
   location?: string;
   snmp_community?: string | null;
@@ -806,14 +857,25 @@ export interface NetworkDeviceInput {
 
 export interface CredentialInput {
   name: string;
-  credential_type: "ssh" | "snmp" | "api" | "windows" | "linux";
+  /** `linux` lo accetta il validatore e lo scrive come `ssh` (T13). */
+  credential_type: TipoCredenziale;
+  /** Metodo d'accesso; null o assente = il primo del tipo. */
+  auth_method?: MetodoAccesso | null;
   username?: string;
   password?: string;
+  /** SNMPv3 (Fase 4b Task 2) — plaintext lato validazione, cifrati prima di createCredential/updateCredential. */
+  security_level?: string | null;
+  auth_protocol?: string | null;
+  auth_key?: string;
+  priv_protocol?: string | null;
+  priv_key?: string;
+  /** Porta propria; null o assente = porta standard del protocollo. */
+  port?: number | null;
 }
 
 export interface ScheduledJobInput {
   network_id?: number | null;
-  job_type: "ping_sweep" | "fast_scan" | "snmp_scan" | "nmap_scan" | "arp_poll" | "dns_resolve" | "cleanup" | "known_host_check" | "ad_sync" | "anomaly_check" | "librenms_sync" | "vuln_sync" | "wazuh_sync" | "mdm_sync" | "meshcentral_sync";
+  job_type: ScheduledJobType;
   interval_minutes: number;
   config?: Record<string, unknown>;
 }
@@ -828,6 +890,12 @@ export interface PingResult {
   latency_ms: number | null;
   /** TTL ICMP se ricavato dall'output di ping (fingerprint OS). */
   ttl?: number | null;
+  /**
+   * Presente quando il ping non ha potuto girare (binario assente, permessi,
+   * errore locale): l'esito è «sconosciuto», non «host spento» (T3-19, INV-2).
+   * `alive: false` senza `error` vuol dire «nessuna risposta».
+   */
+  error?: string;
 }
 
 export interface NmapResult {
@@ -846,7 +914,19 @@ export interface NmapPort {
   protocol: string;
   state: string;
   service: string | null;
+  /** Prodotto e versione uniti in una stringa ("OpenSSH 9.6p1 Ubuntu 3ubuntu13.15").
+   *  E' cio' che mostra la UI e che leggono classificatore e fingerprint: resta
+   *  invariata. I tre campi qui sotto la **affiancano**, non la sostituiscono. */
   version: string | null;
+  /** Solo il prodotto ("OpenSSH"). Separato perche' dalla stringa unita non si
+   *  torna indietro in modo affidabile: "Samba smbd 4" non si scompone a colpo sicuro. */
+  product?: string | null;
+  /** Solo la versione ("9.6p1 Ubuntu 3ubuntu13.15"). */
+  product_version?: string | null;
+  /** I `cpe:/...` dichiarati da nmap sotto `<service>`. Chiave del match CVE:
+   *  `cpe:/a:openbsd:openssh:9.6p1` si confronta con i cpeMatch dell'NVD, la
+   *  stringa libera no. Fino al 2026-09-07 venivano scartati dal parser. */
+  cpes?: string[];
 }
 
 export interface ScanProgress {

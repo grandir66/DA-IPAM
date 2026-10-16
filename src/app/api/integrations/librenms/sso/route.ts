@@ -1,8 +1,9 @@
 /**
- * SSO LibreNMS per accesso diretto su nginx :7443.
- * Esegue login server-side e reindirizza con cookie laravel_session (Path=/).
+ * Accesso automatico a LibreNMS sull'interfaccia diretta (nginx :7443): per chi
+ * è almeno admin fa il login lato server e rimanda coi cookie laravel_session
+ * (Path=/); per gli altri rimanda all'URL diretto, dove LibreNMS chiede il suo
+ * login (T3-26, SEC-6 parte viewer).
  */
-import { NextResponse } from "next/server";
 import { requireAuth, isAuthError } from "@/lib/api-auth";
 import { getIntegrationConfig } from "@/lib/integrations/config";
 import { resolveIntegrationBrowserUrl } from "@/lib/integrations/public-url-server";
@@ -11,13 +12,14 @@ import {
   librenmsAutologinCookieHeader,
   librenmsAutologinEnabled,
 } from "@/lib/integrations/librenms-proxy-auth";
+import { gestisciAccessoAutomaticoLibreNMS } from "@/lib/integrations/librenms-accesso";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function GET() {
-  const authCheck = await requireAuth();
-  if (isAuthError(authCheck)) return authCheck;
+  const session = await requireAuth();
+  if (isAuthError(session)) return session;
 
   const cfg = getIntegrationConfig("librenms");
   if (cfg.mode === "disabled" || !cfg.url) {
@@ -25,23 +27,9 @@ export async function GET() {
   }
 
   const target = `${resolveIntegrationBrowserUrl("librenms", cfg.url).replace(/\/+$/, "")}/`;
-
-  if (!librenmsAutologinEnabled()) {
-    return NextResponse.redirect(target);
-  }
-
-  const cookies = await librenmsAutologinCookieHeader();
-  if (!cookies) {
-    return new Response(
-      "SSO LibreNMS non disponibile — verifica password admin in Impostazioni → Moduli → LibreNMS",
-      { status: 502, headers: { "content-type": "text/plain; charset=utf-8" } },
-    );
-  }
-
-  const headers = new Headers();
-  headers.set("Location", target);
-  for (const sc of buildDirectLibreNMSSetCookies(cookies)) {
-    headers.append("Set-Cookie", sc);
-  }
-  return new Response(null, { status: 302, headers });
+  return gestisciAccessoAutomaticoLibreNMS(target, session.user.role, {
+    accessoAutomaticoAttivo: librenmsAutologinEnabled,
+    cookieAccessoAutomatico: librenmsAutologinCookieHeader,
+    setCookieDiretti: buildDirectLibreNMSSetCookies,
+  });
 }

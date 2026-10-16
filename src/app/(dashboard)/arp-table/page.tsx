@@ -1,4 +1,8 @@
 "use client";
+import { useLatestRequest } from "@/hooks/use-latest-request";
+import { parseDbDate } from "@/lib/db-date";
+import { fetchJson } from "@/lib/fetch-json";
+import { LoadError } from "@/components/shared/load-error";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -26,6 +30,9 @@ import type { Network } from "@/types";
 import { useClientTableSort } from "@/hooks/use-table-sort";
 import { SortableTableHead } from "@/components/shared/sortable-table-head";
 
+/** Tetto della lista: oltre, la pagina lo dice (UI-5) invece di tagliare in silenzio. */
+const ARP_LIMIT = 500;
+
 const SOURCE_LABELS: Record<string, string> = {
   arp: "ARP",
   dhcp: "DHCP",
@@ -35,6 +42,8 @@ const SOURCE_LABELS: Record<string, string> = {
 
 export default function ArpTablePage() {
   const [mappings, setMappings] = useState<MacIpMapping[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [truncated, setTruncated] = useState(false);
   const [networks, setNetworks] = useState<Network[]>([]);
   const [loading, setLoading] = useState(true);
   const [polling, setPolling] = useState(false);
@@ -42,25 +51,38 @@ export default function ArpTablePage() {
   const [networkId, setNetworkId] = useState<string>("");
   const [source, setSource] = useState<string>("");
 
+  const nextSignal = useLatestRequest();
+
   const fetchData = useCallback(async () => {
+    const signal = nextSignal();
     setLoading(true);
     try {
       const params = new URLSearchParams();
       if (networkId) params.set("network_id", networkId);
       if (source) params.set("source", source);
       if (q.trim()) params.set("q", q.trim());
-      params.set("limit", "500");
-      const res = await fetch(`/api/mac-ip-mapping?${params}`);
-      if (res.ok) {
-        const data = await res.json();
-        setMappings(data);
+      // uno in più del tetto: se arriva, la lista è davvero troncata
+      params.set("limit", String(ARP_LIMIT + 1));
+      const r = await fetchJson<MacIpMapping[]>(`/api/mac-ip-mapping?${params}`, { signal });
+      if (signal.aborted) return;
+      // Prima un errore lasciava a schermo l'elenco vecchio senza messaggio (UI-7).
+      if (r.ok) {
+        const rows = Array.isArray(r.data) ? r.data : [];
+        setMappings(rows.slice(0, ARP_LIMIT));
+        setTruncated(rows.length > ARP_LIMIT);
+        setError(null);
+      } else {
+        setMappings([]);
+        setTruncated(false);
+        setError(r.message);
       }
-    } catch {
-      setMappings([]);
+    } catch (e) {
+      if (signal.aborted) return;
+      throw e;
     } finally {
-      setLoading(false);
+      if (!signal.aborted) setLoading(false);
     }
-  }, [networkId, source, q]);
+  }, [networkId, source, q, nextSignal]);
 
   /**
    * Forza il poll ARP/DHCP reale sul router: interroga il dispositivo via SSH/SNMP
@@ -117,7 +139,7 @@ export default function ArpTablePage() {
   }, [fetchData, q]);
 
   const formatDate = (dateStr: string) =>
-    new Date(dateStr).toLocaleString("it-IT", {
+    parseDbDate(dateStr).toLocaleString("it-IT", {
       day: "2-digit",
       month: "2-digit",
       year: "numeric",
@@ -133,7 +155,7 @@ export default function ArpTablePage() {
       network_name: (m: MacIpMapping) => m.network_name ?? "",
       hostname: (m: MacIpMapping) => m.hostname ?? "",
       vendor: (m: MacIpMapping) => m.vendor ?? "",
-      last_seen: (m: MacIpMapping) => new Date(m.last_seen).getTime(),
+      last_seen: (m: MacIpMapping) => parseDbDate(m.last_seen).getTime(),
       previous_ip: (m: MacIpMapping) => m.previous_ip ?? "",
     }),
     []
@@ -215,8 +237,17 @@ export default function ArpTablePage() {
           </div>
         </CardHeader>
         <CardContent className="p-0">
+          {!loading && !error && truncated && (
+            <p className="px-4 pt-3 text-sm text-amber-700 dark:text-amber-400">
+              Sono mostrati i primi {ARP_LIMIT} risultati: restringi con la ricerca o i filtri per vedere gli altri.
+            </p>
+          )}
           {loading ? (
             <div className="py-12 text-center text-muted-foreground">Caricamento...</div>
+          ) : error ? (
+            <div className="p-4">
+              <LoadError what="la tabella ARP" message={error} onRetry={() => void fetchData()} />
+            </div>
           ) : mappings.length === 0 ? (
             <div className="py-12 text-center text-muted-foreground">
               Nessun mapping trovato. I dati vengono popolati da ARP, DHCP e scansioni host.

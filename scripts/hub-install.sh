@@ -56,6 +56,7 @@ apt-get update -qq
 apt-get install -y -qq \
     nmap snmp \
     fping iputils-arping iputils-ping mtr-tiny \
+    net-tools libcap2-bin openssl curl \
     openssh-client \
     libkrb5-dev krb5-config krb5-user libffi-dev \
     python3 python3-venv python3-dev python3-pip \

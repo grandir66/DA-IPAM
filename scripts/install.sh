@@ -1,6 +1,11 @@
 #!/bin/bash
 # DA-INVENT — Installer per LXC/Proxmox e Debian/Ubuntu
-# Uso: ./scripts/install.sh [--systemd]
+# Uso: ./scripts/install.sh [--systemd] [--netbird --edge=si|no]
+#   --netbird --edge=si|no  prepara anche l'ingresso in NetBird (DA-Link, tappa C1):
+#                           client NetBird, Tailscale con --netfilter-mode=off, firewall
+#                           su wt0. La chiave d'ingresso NON passa da qui: si incolla il
+#                           comando emesso da DA-Link, o scripts/dalink/prepara-netbird.sh
+#                           --chiave-da-stdin.
 #
 # Installa tutte le dipendenze di sistema (apt), Node.js 20+, dipendenze npm e build.
 # Per clone automatico su Linux senza Proxmox: scripts/bootstrap-linux.sh
@@ -11,9 +16,17 @@ set -e
 SCRIPT_ARGS=("$@")
 
 INSTALL_SYSTEMD=false
+PREPARA_NETBIRD=false
+NETBIRD_EDGE=""
 for arg in "$@"; do
   [[ "$arg" == "--systemd" ]] && INSTALL_SYSTEMD=true
+  [[ "$arg" == "--netbird" ]] && PREPARA_NETBIRD=true
+  [[ "$arg" == --edge=* ]] && NETBIRD_EDGE="${arg#--edge=}"
 done
+if [ "$PREPARA_NETBIRD" = true ] && [ "$NETBIRD_EDGE" != "si" ] && [ "$NETBIRD_EDGE" != "no" ]; then
+  echo "Errore: con --netbird serve --edge=si oppure --edge=no (l'istanza contiene lo Scanner-Edge?)" >&2
+  exit 1
+fi
 
 APP_NAME="da-invent"
 APP_USER="${DA_INVENT_USER:-da-invent}"
@@ -297,6 +310,16 @@ if bash "$APP_DIR/scripts/verify-install.sh"; then
 else
   echo "    ERRORE: verifica fallita — controllare scripts/setup-winrm-venv.sh" >&2
   exit 1
+fi
+
+if [ "$PREPARA_NETBIRD" = true ]; then
+  echo ""
+  echo ">>> NetBird / DA-Link: preparazione dell'ingresso (client, Tailscale, firewall wt0)..."
+  if ! bash "$APP_DIR/scripts/dalink/prepara-netbird.sh" --applica --edge "$NETBIRD_EDGE"; then
+    echo "    ERRORE: preparazione NetBird non riuscita — vedi i messaggi sopra" >&2
+    exit 1
+  fi
+  echo "    Ora si incolla il comando emesso da DA-Link (chiave monouso e token)."
 fi
 
 echo ""

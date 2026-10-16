@@ -1,6 +1,6 @@
 # Plan — DA-IPAM Software Inventory (Windows + Linux, on-demand)
 
-**Progetto**: DA-IPAM (`/Users/riccardo/Progetti/DA-IPAM`)
+**Progetto**: DA-IPAM (`/Users/riccardo/Progetti/Domarc/DA-IPAM`)
 **Data**: 2026-05-22
 **Stato**: bozza per approvazione
 

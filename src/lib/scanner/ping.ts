@@ -4,6 +4,46 @@ import type { PingResult } from "@/types";
 
 const execFileAsync = promisify(execFile);
 
+export type EsitoPing = "vivo" | "nessuna_risposta" | "sconosciuto";
+
+/**
+ * Classifica l'esito di un `ping -c 1` dall'errore di `execFile` (T3-19, INV-2).
+ * Funzione pura: la piattaforma è un argomento, così le prove coprono Linux e
+ * macOS da qualunque macchina.
+ *
+ * - nessun errore → vivo;
+ * - processo terminato per timeout (`killed`/segnale) → nessuna risposta;
+ * - Linux (iputils): exit 1 = nessuna risposta, exit 2 = errore → sconosciuto;
+ * - macOS: exit 2 = nessuna risposta, altri codici (sysexits) → sconosciuto;
+ * - spawn fallito (ENOENT, EACCES, …) o forma non riconosciuta → sconosciuto.
+ *
+ * «Sconosciuto» non è «host spento»: il chiamante non deve usarlo per marcare
+ * offline.
+ */
+export function classifyPingError(
+  err: unknown,
+  platform: NodeJS.Platform,
+): { esito: EsitoPing; errore?: string } {
+  if (err == null) return { esito: "vivo" };
+  if (typeof err !== "object") return { esito: "sconosciuto", errore: "ping: errore non riconosciuto" };
+  const e = err as { code?: unknown; killed?: unknown; signal?: unknown };
+  // Solo il timeout di execFile (killed) vale «nessuna risposta»: un segnale
+  // arrivato da fuori (OOM killer, SIGTERM al gruppo) non dice niente dell'host.
+  if (e.killed === true) return { esito: "nessuna_risposta" };
+  if (typeof e.signal === "string" && e.signal.length > 0) {
+    return { esito: "sconosciuto", errore: `ping terminato da segnale ${e.signal}` };
+  }
+  if (typeof e.code === "string") {
+    return { esito: "sconosciuto", errore: `ping non eseguibile (${e.code})` };
+  }
+  if (typeof e.code === "number") {
+    const nessunaRisposta = platform === "darwin" ? e.code === 2 : e.code === 1;
+    if (nessunaRisposta) return { esito: "nessuna_risposta" };
+    return { esito: "sconosciuto", errore: `ping uscito con codice ${e.code}` };
+  }
+  return { esito: "sconosciuto", errore: "ping: errore non riconosciuto" };
+}
+
 export async function pingHost(ip: string, timeoutMs: number = 2000): Promise<PingResult> {
   const timeoutSec = Math.ceil(timeoutMs / 1000);
   const startTime = Date.now();
@@ -25,7 +65,11 @@ export async function pingHost(ip: string, timeoutMs: number = 2000): Promise<Pi
     const ttl = ttlMatch ? parseInt(ttlMatch[1], 10) : null;
 
     return { ip, alive: true, latency_ms: latency, ttl };
-  } catch {
+  } catch (err) {
+    const { esito, errore } = classifyPingError(err, process.platform);
+    if (esito === "sconosciuto") {
+      return { ip, alive: false, latency_ms: null, ttl: null, error: errore ?? "ping: esito sconosciuto" };
+    }
     return { ip, alive: false, latency_ms: null, ttl: null };
   }
 }
@@ -46,8 +90,8 @@ export async function pingSweep(
         const currentIndex = index++;
         active++;
 
-        pingHost(ips[currentIndex]).catch((): { ip: string; alive: boolean; latency_ms: null } => ({
-          ip: ips[currentIndex], alive: false, latency_ms: null,
+        pingHost(ips[currentIndex]).catch((): PingResult => ({
+          ip: ips[currentIndex], alive: false, latency_ms: null, error: "ping: errore inatteso",
         })).then((result) => {
           results.push(result);
           active--;

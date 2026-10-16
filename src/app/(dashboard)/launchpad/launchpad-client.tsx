@@ -105,6 +105,7 @@ function isCredentialIncomplete(item: SystemCredential): boolean {
 }
 
 const KIND_META: Record<CredentialKind, { icon: typeof Shield; label: string; color: string }> = {
+  master: { icon: KeyRound, label: "Password master moduli", color: "text-yellow-600" },
   wazuh: { icon: Shield, label: "Wazuh", color: "text-blue-600" },
   graylog: { icon: Activity, label: "Graylog", color: "text-amber-600" },
   librenms: { icon: Server, label: "LibreNMS", color: "text-emerald-600" },
@@ -635,7 +636,7 @@ export function LaunchpadClient({ initialItems, embedded = false }: LaunchpadCli
                         variant="outline"
                         size="sm"
                         className="flex-1"
-                        onClick={() => window.open(item.url!, "_blank", "noopener,noreferrer")}
+                        onClick={() => window.open(item.open_url ?? item.url!, "_blank", "noopener,noreferrer")}
                       >
                         <ExternalLink className="h-3 w-3 mr-1" />
                         Apri

@@ -4,7 +4,8 @@
  * Lista host vulnerabili alla CVE indicata, deduplicati per host_id.
  * Per ogni host:
  *   - ip, hostname, os_info, os_family
- *   - winrmAvailable: true se esiste host_credentials protocol_type='winrm' validated=1
+ *   - winrmAvailable: true se le patch hanno una credenziale WinRM per l'host
+ *     (hostConCredenzialeWinrmDb: la regola di loadWinrmCredentialsForHost)
  *   - softwareInventoryAvailable: true se almeno uno scan ok
  *   - lastProbeStatus: status dell'ultima operation action='probe' (se esiste)
  *
@@ -17,6 +18,7 @@ import { getCurrentTenantCode, getTenantDb } from "@/lib/db-tenant";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { isAuthError } from "@/lib/api-auth";
 import { patchModuleGuard } from "@/lib/patch/route-guard";
+import { hostConCredenzialeWinrmDb } from "@/lib/patch/credentials";
 
 const NO_CACHE_HEADERS = {
   "Cache-Control": "no-store, no-cache, must-revalidate",
@@ -29,7 +31,6 @@ interface HostRow {
   custom_name: string | null;
   os_info: string | null;
   os_family: string | null;
-  winrm_validated: number;
   inventory_ok_count: number;
   last_probe_status: string | null;
   last_probe_at: string | null;
@@ -76,18 +77,6 @@ export async function GET(
            WHERE vf.cve_id = ? AND vf.host_id IS NOT NULL
              AND LOWER(h.os_family) = 'windows'
         ),
-        winrm_status AS (
-          SELECT host_id, MAX(validated) AS winrm_validated
-            FROM host_credentials
-           WHERE protocol_type = 'winrm'
-           GROUP BY host_id
-        ),
-        ad_winrm_available AS (
-          SELECT CASE WHEN EXISTS(
-            SELECT 1 FROM ad_integrations
-             WHERE enabled = 1 AND winrm_credential_id IS NOT NULL
-          ) THEN 1 ELSE 0 END AS has_ad
-        ),
         inventory_status AS (
           SELECT host_id, SUM(cnt) AS inventory_ok_count
             FROM (
@@ -128,18 +117,11 @@ export async function GET(
           h.custom_name     AS custom_name,
           h.os_info         AS os_info,
           h.os_family       AS os_family,
-          CASE
-            WHEN COALESCE(ws.winrm_validated, 0) = 1 THEN 1
-            WHEN awa.has_ad = 1 THEN 1
-            ELSE 0
-          END AS winrm_validated,
           COALESCE(inv.inventory_ok_count, 0) AS inventory_ok_count,
           lp.last_probe_status              AS last_probe_status,
           lp.last_probe_at                  AS last_probe_at
         FROM affected a
         INNER JOIN hosts h ON h.id = a.host_id
-        CROSS JOIN ad_winrm_available awa
-        LEFT JOIN winrm_status ws ON ws.host_id = h.id
         LEFT JOIN inventory_status inv ON inv.host_id = h.id
         LEFT JOIN last_probe lp ON lp.host_id = h.id
         ORDER BY h.ip ASC
@@ -147,6 +129,7 @@ export async function GET(
 
       const rows = db.prepare(sql).all(cveId, cveId) as HostRow[];
 
+      const conWinrm = hostConCredenzialeWinrmDb(db);
       const items = rows.map((r) => ({
         hostId: r.host_id,
         ip: r.ip,
@@ -154,7 +137,7 @@ export async function GET(
         customName: r.custom_name,
         osInfo: r.os_info,
         osFamily: r.os_family,
-        winrmAvailable: r.winrm_validated === 1,
+        winrmAvailable: conWinrm.has(r.host_id),
         softwareInventoryAvailable: r.inventory_ok_count > 0,
         lastProbeStatus: r.last_probe_status,
         lastProbeAt: r.last_probe_at,

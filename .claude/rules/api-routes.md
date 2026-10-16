@@ -1,6 +1,7 @@
 ---
 scope: API routes (Next.js App Router)
-applies_to: src/app/api/**/route.ts
+paths:
+  - "src/app/api/**/route.ts"
 ---
 
 # API routes — regole

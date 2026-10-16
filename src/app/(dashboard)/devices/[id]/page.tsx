@@ -1,9 +1,11 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ScanProgress } from "@/components/shared/scan-progress";
 import type { ScanProgress as ScanProgressType } from "@/types";
+import { etichettaVersioneSnmp } from "@/lib/protocols/snmp-sessione";
 import { DeviceListByClassification } from "../device-list-by-classification";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -55,6 +57,8 @@ import {
 } from "@/lib/device-product-profiles";
 import type { NetworkDevice, ArpEntry, MacPortEntry, SwitchPort } from "@/types";
 import { networkDeviceUsesArpPoll } from "@/lib/network-device-arp";
+import { corpoModificaApparato, inviaConConferma, tendineDaApparato } from "../modifica-in-blocco";
+import { nomeFonteUsata, type UsataAdesso } from "@/lib/devices/usata-adesso";
 
 interface Credential {
   id: number;
@@ -243,6 +247,8 @@ interface DeviceDetail extends Omit<NetworkDevice, "stp_info" | "last_device_inf
   neighbors?: NeighborRow[];
   routes?: RouteRow[];
   dhcp_leases?: DhcpLeaseRow[];
+  /** La scelta del motore per il protocollo principale e per SNMP (T20). */
+  usata_adesso?: UsataAdesso[];
 }
 
 interface DhcpLeaseRow {
@@ -477,7 +483,7 @@ function DeviceInventoryCard({ deviceId, onRefresh }: { deviceId: number; onRefr
             {asset.fine_garanzia && (
               <div>
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Fine garanzia</p>
-                <p className="text-sm font-medium mt-0.5">{new Date(asset.fine_garanzia).toLocaleDateString("it-IT")}</p>
+                <p className="text-sm font-medium mt-0.5">{parseDbDate(asset.fine_garanzia).toLocaleDateString("it-IT")}</p>
               </div>
             )}
             {!asset.asset_tag && !asset.serial_number && !asset.stato && !asset.fine_garanzia && (
@@ -501,70 +507,46 @@ function getPortTypeIcon(portName: string, isTrunk: boolean) {
 
 const CLASSIFICATION_SLUGS = ["access_point", "firewall", "hypervisor", "iot", "notebook", "router", "server", "stampante", "storage", "switch", "telecamera", "voip", "vm", "workstation"];
 
-type DeviceCredentialRowInput = Pick<
-  NetworkDevice,
-  | "protocol"
-  | "port"
-  | "credential_id"
-  | "snmp_credential_id"
-  | "username"
-  | "community_string"
-  | "device_type"
->;
+type DeviceCredentialRowInput = Pick<NetworkDevice, "protocol" | "snmp_version" | "snmp_version_fissata"> & {
+  usata_adesso?: UsataAdesso[];
+};
 
-/** Righe tabella credenziali: un protocollo per riga (principale + SNMP aggiuntivo se applicabile). */
+/**
+ * Righe del riquadro «Usata adesso» (tappa 2e, T20, interfaccia punto 5): la
+ * credenziale che il motore sceglie per il protocollo principale e per SNMP,
+ * con la fonte. Prima il riquadro leggeva le colonne dell'apparato, mentre la
+ * tabella sotto mostrava i binding: due risposte diverse sulla stessa pagina.
+ */
 function buildDeviceCredentialRows(
   device: DeviceCredentialRowInput,
-  creds: Credential[]
-): { key: string; protocolLabel: string; archiveLabel: string; note: string }[] {
-  const nameOf = (id: number | null | undefined) =>
-    id ? creds.find((c) => c.id === id)?.name ?? `ID ${id}` : null;
-  const cn = nameOf(device.credential_id);
-  const sn = nameOf(device.snmp_credential_id);
-  const rows: { key: string; protocolLabel: string; archiveLabel: string; note: string }[] = [];
-
-  if (device.protocol === "snmp_v2" || device.protocol === "snmp_v3") {
-    rows.push({
-      key: "snmp-main",
-      protocolLabel: `${device.protocol.toUpperCase()} — gestione dispositivo`,
-      archiveLabel: sn || cn || (device.community_string ? "Community inline" : "—"),
-      note: `Porta ${device.port}`,
-    });
-    return rows;
-  }
-
-  const primaryTitle =
-    device.protocol === "ssh"
-      ? "SSH — shell / comandi"
-      : device.protocol === "winrm"
-        ? "WinRM — Windows Management"
-        : device.protocol === "api"
-          ? "API REST"
-          : String(device.protocol);
-
-  rows.push({
-    key: "primary",
-    protocolLabel: primaryTitle,
-    archiveLabel: cn || (device.username ? "Credenziali inline (utente/password)" : "—"),
-    note: `Porta ${device.port}`,
+): { key: string; protocolLabel: string; archiveLabel: string; conVoce: boolean; note: string }[] {
+  // Versione che parla davvero chi apre una sessione a community (snmp-sessione.ts).
+  const versioneSnmp = device.snmp_version
+    ? `SNMP ${etichettaVersioneSnmp(device.snmp_version)} ${device.snmp_version_fissata === 1 ? "fissata a mano" : "rilevata"}`
+    : "versione SNMP non rilevata";
+  const titolo = (u: UsataAdesso): string => {
+    if (u.ruolo === "snmp") return "SNMP — walk, porte, LLDP, spanning tree";
+    if (u.protocollo === "snmp") return `${String(device.protocol).toUpperCase()} — gestione dispositivo`;
+    if (u.protocollo === "winrm") return "WinRM — Windows Management";
+    if (u.protocollo === "api") return "API REST";
+    return "SSH — shell / comandi";
+  };
+  return (device.usata_adesso ?? []).map((u) => {
+    const parti: string[] = [];
+    if (u.fonte == null) parti.push(u.motivo ?? "Nessuna credenziale");
+    else {
+      if (u.porta != null) parti.push(`Porta ${u.porta}`);
+      parti.push(nomeFonteUsata(u.fonte));
+    }
+    if (u.protocollo === "snmp" && device.protocol !== "snmp_v3") parti.push(versioneSnmp);
+    return {
+      key: `${u.ruolo}-${u.protocollo}`,
+      protocolLabel: titolo(u),
+      archiveLabel: u.nome ?? "Nessuna",
+      conVoce: u.credential_id != null,
+      note: parti.join(" · "),
+    };
   });
-
-  const showSnmp =
-    !!device.snmp_credential_id ||
-    !!device.community_string ||
-    device.device_type === "router" ||
-    device.device_type === "switch";
-
-  if (showSnmp) {
-    rows.push({
-      key: "snmp-sup",
-      protocolLabel: "SNMP — walk, porte, LLDP, spanning tree",
-      archiveLabel: sn || (device.community_string ? "Community inline" : "—"),
-      note: "Opzionale, oltre all’accesso principale",
-    });
-  }
-
-  return rows;
 }
 
 export default function DevicePage() {
@@ -617,8 +599,10 @@ function DeviceDetailPage() {
       setEditVendor(device.vendor);
       setEditProtocol(device.protocol);
       setEditVendorSubtype(device.vendor_subtype ?? null);
-      setEditCredentialId(device.credential_id != null ? String(device.credential_id) : null);
-      setEditSnmpCredentialId(device.snmp_credential_id != null ? String(device.snmp_credential_id) : null);
+      // Dalla scelta del motore, non dalle colonne (T20): lo stesso stato iniziale di handleEdit.
+      const tendine = tendineDaApparato(device);
+      setEditCredentialId(tendine.credentialId);
+      setEditSnmpCredentialId(tendine.snmpCredentialId);
       setEditScanTarget((device as { scan_target?: string | null }).scan_target ?? null);
       setEditClassification((device as { classification?: string | null }).classification ?? "");
       setEditUseForArpPoll(networkDeviceUsesArpPoll(device));
@@ -819,10 +803,16 @@ function DeviceDetailPage() {
     }
   }
 
-  const credentialRows = useMemo(
-    () => (device ? buildDeviceCredentialRows(device, credentials) : []),
-    [device, credentials]
-  );
+  const credentialRows = useMemo(() => (device ? buildDeviceCredentialRows(device) : []), [device]);
+  // «Usata adesso» si ricalcola quando i binding cambiano nella tabella (non al primo caricamento).
+  const bindingCaricati = useRef(false);
+  const ricaricaUsataAdesso = useCallback(() => {
+    if (!bindingCaricati.current) {
+      bindingCaricati.current = true;
+      return;
+    }
+    void fetchDevice();
+  }, [fetchDevice]);
   const primaryCredLabels = useMemo(() => getPrimaryCredentialLabels(editProtocol), [editProtocol]);
 
   async function handleEdit(e: React.FormEvent<HTMLFormElement>) {
@@ -831,14 +821,24 @@ function DeviceDetailPage() {
     setEditSaving(true);
     const form = e.currentTarget;
     const formData = new FormData(form);
-    const body: Record<string, unknown> = {
-      vendor: editVendor,
-      protocol: editProtocol,
-      vendor_subtype: editVendorSubtype || null,
-      credential_id: editCredentialId && editCredentialId !== "none" ? Number(editCredentialId) : null,
-      snmp_credential_id: editSnmpCredentialId && editSnmpCredentialId !== "none" ? Number(editSnmpCredentialId) : null,
-      scan_target: editScanTarget || null,
-    };
+    // Le credenziali partono solo se cambiate rispetto all'apparato (dalla 2e un null toglie i binding).
+    let body: Record<string, unknown>;
+    try {
+      body = corpoModificaApparato(tendineDaApparato(device), {
+        campi: {
+          vendor: editVendor,
+          protocol: editProtocol,
+          vendor_subtype: editVendorSubtype || null,
+          scan_target: editScanTarget || null,
+        },
+        credentialId: editCredentialId,
+        snmpCredentialId: editSnmpCredentialId,
+      });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Credenziale non valida");
+      setEditSaving(false);
+      return;
+    }
     if (editProductProfile) body.product_profile = editProductProfile;
     if (editClassification) body.classification = editClassification;
     body.use_for_arp_poll = editUseForArpPoll ? 1 : 0;
@@ -852,18 +852,26 @@ function DeviceDetailPage() {
       }
     });
     try {
-      const res = await fetch(`/api/devices/${device.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (res.ok) {
-        toast.success("Dispositivo aggiornato");
+      // «Nessuna» che toglie binding: il server chiede la conferma col numero (409), qui si dà e si rimanda tutto.
+      const esito = await inviaConConferma(
+        (corpo) =>
+          fetch(`/api/devices/${device.id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(corpo),
+          }),
+        body,
+        (domanda) => window.confirm(domanda),
+      );
+      if (esito?.res.ok) {
+        // Avvisi del server (porta, voce scelta rimasta fallita): si dicono, non passano come un successo pieno.
+        const avvisi = esito.data.avvisi ?? [];
+        for (const a of avvisi) toast.warning(a);
+        if (avvisi.length === 0) toast.success("Dispositivo aggiornato");
         setEditOpen(false);
         fetchDevice();
-      } else {
-        const data = await res.json();
-        toast.error(data.error || "Errore nell'aggiornamento");
+      } else if (esito) {
+        toast.error(esito.data.error || "Errore nell'aggiornamento");
       }
     } catch {
       toast.error("Errore nell'aggiornamento");
@@ -1022,7 +1030,7 @@ function DeviceDetailPage() {
             <div>
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Ultimo aggiornamento</p>
               <p className="text-sm font-medium mt-0.5">
-                {lastRefresh ? new Date(lastRefresh).toLocaleString("it-IT") : <span className="text-muted-foreground">Mai</span>}
+                {lastRefresh ? parseDbDate(lastRefresh).toLocaleString("it-IT") : <span className="text-muted-foreground">Mai</span>}
               </p>
             </div>
           </div>
@@ -1030,16 +1038,16 @@ function DeviceDetailPage() {
           <div className="mt-5 pt-4 border-t border-border">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-2">
               <Key className="h-3.5 w-3.5" />
-              Credenziali archivio per protocollo
+              Usata adesso
             </p>
             <p className="text-xs text-muted-foreground mb-3">
-              Ogni riga indica quale credenziale viene usata per quel tipo di accesso. Modifica da &quot;Modifica&quot; in alto.
+              La credenziale che l&apos;acquisizione sceglie fra quelle dell&apos;apparato: prima una riuscita, poi le non provate; le fallite si saltano.
             </p>
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[40%]">Protocollo / ambito</TableHead>
-                  <TableHead>Credenziale archivio</TableHead>
+                  <TableHead>Credenziale</TableHead>
                   <TableHead className="w-[28%]">Nota</TableHead>
                 </TableRow>
               </TableHeader>
@@ -1049,9 +1057,7 @@ function DeviceDetailPage() {
                     <TableCell className="font-medium text-sm">{row.protocolLabel}</TableCell>
                     <TableCell>
                       <span className="flex items-center gap-1.5 text-sm">
-                        {row.archiveLabel !== "—" && !row.archiveLabel.includes("inline") && (
-                          <Key className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                        )}
+                        {row.conVoce && <Key className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
                         {row.archiveLabel}
                       </span>
                     </TableCell>
@@ -1096,7 +1102,7 @@ function DeviceDetailPage() {
               </CardTitle>
               {di.scanned_at && (
                 <span className="text-xs text-muted-foreground">
-                  Acquisiti il {new Date(di.scanned_at).toLocaleString("it-IT")}
+                  Acquisiti il {parseDbDate(di.scanned_at).toLocaleString("it-IT")}
                 </span>
               )}
             </div>
@@ -1123,9 +1129,9 @@ function DeviceDetailPage() {
                 {di.domain_role && <div><dt className="text-xs text-muted-foreground">Ruolo</dt><dd><Badge variant="outline" className="text-xs">{di.domain_role}</Badge></dd></div>}
                 {di.uptime_days != null && <div><dt className="text-xs text-muted-foreground flex items-center gap-1"><Clock className="h-3 w-3" /> Uptime</dt><dd className="font-semibold">{di.uptime_days} giorni</dd></div>}
                 {!di.uptime_days && di.uptime && <div className="col-span-2"><dt className="text-xs text-muted-foreground flex items-center gap-1"><Clock className="h-3 w-3" /> Uptime</dt><dd className="text-xs">{di.uptime}</dd></div>}
-                {di.last_boot && <div className="col-span-2"><dt className="text-xs text-muted-foreground">Ultimo avvio</dt><dd className="text-xs font-mono">{(() => { try { return new Date(di.last_boot!).toLocaleString("it-IT"); } catch { return di.last_boot; } })()}</dd></div>}
+                {di.last_boot && <div className="col-span-2"><dt className="text-xs text-muted-foreground">Ultimo avvio</dt><dd className="text-xs font-mono">{(() => { try { return parseDbDate(di.last_boot!).toLocaleString("it-IT"); } catch { return di.last_boot; } })()}</dd></div>}
                 {di.load_average && <div className="col-span-2"><dt className="text-xs text-muted-foreground">Load average</dt><dd className="font-mono text-xs">{di.load_average}</dd></div>}
-                {di.install_date && <div><dt className="text-xs text-muted-foreground">Data installazione</dt><dd className="text-xs">{(() => { try { return new Date(di.install_date!).toLocaleDateString("it-IT"); } catch { return di.install_date; } })()}</dd></div>}
+                {di.install_date && <div><dt className="text-xs text-muted-foreground">Data installazione</dt><dd className="text-xs">{(() => { try { return parseDbDate(di.install_date!).toLocaleDateString("it-IT"); } catch { return di.install_date; } })()}</dd></div>}
                 {di.registered_user && <div><dt className="text-xs text-muted-foreground">Utente registrato</dt><dd>{di.registered_user}</dd></div>}
                 {di.organization && <div><dt className="text-xs text-muted-foreground">Organizzazione</dt><dd>{di.organization}</dd></div>}
               </dl>
@@ -1541,7 +1547,7 @@ function DeviceDetailPage() {
                         <span className="inline-block h-1.5 w-1.5 rounded-full bg-green-500" />
                         <span className="font-mono font-medium">{u.username}</span>
                         {u.session_type && <Badge variant="secondary" className="text-[10px] py-0">{u.session_type}</Badge>}
-                        {u.logon_time && <span className="text-muted-foreground">{new Date(u.logon_time).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" })}</span>}
+                        {u.logon_time && <span className="text-muted-foreground">{parseDbDate(u.logon_time).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" })}</span>}
                       </div>
                     ))}
                   </div>
@@ -1567,11 +1573,11 @@ function DeviceDetailPage() {
                           <div className="flex flex-wrap gap-1">
                             {p.ad_department && <Badge variant="outline" className="text-[10px] py-0">{p.ad_department}</Badge>}
                             {p.ad_title && <Badge variant="outline" className="text-[10px] py-0">{p.ad_title}</Badge>}
-                            {p.last_use && <span className="text-muted-foreground text-[10px]">Ultimo uso: {new Date(p.last_use).toLocaleDateString("it-IT")}</span>}
+                            {p.last_use && <span className="text-muted-foreground text-[10px]">Ultimo uso: {parseDbDate(p.last_use).toLocaleDateString("it-IT")}</span>}
                           </div>
                         </div>
                         {p.ad_email && <div className="text-muted-foreground mt-0.5">{p.ad_email}</div>}
-                        {p.ad_last_logon && <div className="text-muted-foreground text-[10px]">Ultimo login AD: {new Date(p.ad_last_logon).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" })}</div>}
+                        {p.ad_last_logon && <div className="text-muted-foreground text-[10px]">Ultimo login AD: {parseDbDate(p.ad_last_logon).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" })}</div>}
                       </div>
                     ))}
                   </div>
@@ -1623,7 +1629,7 @@ function DeviceDetailPage() {
               Dati Proxmox
             </CardTitle>
             <CardDescription>
-              Scan del {proxmoxScanData.scanned_at ? new Date(proxmoxScanData.scanned_at).toLocaleString("it-IT") : "—"}
+              Scan del {proxmoxScanData.scanned_at ? parseDbDate(proxmoxScanData.scanned_at).toLocaleString("it-IT") : "—"}
               {proxmoxScanData._truncated && (
                 <span className="ml-2 text-amber-600">
                   (mostrate {proxmoxScanData.vms?.length ?? 0} di {proxmoxScanData._total_vm_rows} VM)
@@ -1953,7 +1959,7 @@ function DeviceDetailPage() {
         </DialogContent>
       </Dialog>
 
-      <DeviceCredentialsTable deviceId={device.id} />
+      <DeviceCredentialsTable deviceId={device.id} onBindingsChange={ricaricaUsataAdesso} />
 
       <Tabs defaultValue={isMikrotik ? "mikrotik" : showArpTab && totalPorts === 0 ? "arp" : "ports"}>
         <TabsList>
@@ -2229,7 +2235,7 @@ function DeviceDetailPage() {
                           ) : "—"}
                         </TableCell>
                         <TableCell className="text-xs text-muted-foreground">
-                          {new Date(entry.timestamp).toLocaleString("it-IT")}
+                          {parseDbDate(entry.timestamp).toLocaleString("it-IT")}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -2426,7 +2432,7 @@ function DeviceDetailPage() {
                             ) : "—"}
                           </TableCell>
                           <TableCell className="text-xs text-muted-foreground">
-                            {new Date(entry.timestamp).toLocaleString("it-IT")}
+                            {parseDbDate(entry.timestamp).toLocaleString("it-IT")}
                           </TableCell>
                         </TableRow>
                       ))}
@@ -2583,7 +2589,7 @@ function DeviceDetailPage() {
                         </TableCell>
                         <TableCell className="text-xs text-muted-foreground">{l.lease_expires || "—"}</TableCell>
                         <TableCell className="text-xs text-muted-foreground">
-                          {new Date(l.last_synced).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" })}
+                          {parseDbDate(l.last_synced).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" })}
                         </TableCell>
                       </TableRow>
                     ))}

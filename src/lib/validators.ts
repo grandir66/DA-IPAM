@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { PRODUCT_PROFILE_IDS } from "@/lib/device-product-profiles";
 import { DEVICE_CLASSIFICATIONS } from "@/lib/device-classifications";
+import { SNMP_V3_AUTH_PROTOCOLS, SNMP_V3_PRIV_PROTOCOLS, SNMP_V3_SECURITY_LEVELS } from "@/lib/protocols/snmpv3";
+import { METODI_ACCESSO, TIPI_CREDENZIALE, normalizzaTipo } from "@/lib/credentials/tipi";
 
 const cidrRegex = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\/(\d{1,2})$/;
 const ipRegex = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
@@ -18,7 +20,10 @@ export const NetworkSchema = z.object({
   }, "Indirizzo IP o prefisso non valido"),
   name: z.string().min(1, "Nome richiesto").max(100),
   description: z.string().max(500).optional().default(""),
-  gateway: z.string().regex(ipRegex, "Indirizzo IP gateway non valido").optional().or(z.literal("")),
+  // null: la pagina della rete manda null col campo vuoto (T12, 16/10). Prima
+  // il PUT rispondeva «Invalid input» e la lista credenziali si salvava solo
+  // con una seconda richiesta, che ingoiava gli errori.
+  gateway: z.string().regex(ipRegex, "Indirizzo IP gateway non valido").optional().nullable().or(z.literal("")),
   vlan_id: z.coerce.number().int().min(1).max(4094).optional().nullable(),
   location: z.string().max(200).optional().default(""),
   snmp_community: z.string().max(100).optional().nullable(),
@@ -26,7 +31,11 @@ export const NetworkSchema = z.object({
   router_id: z.coerce.number().int().positive().optional().nullable(),
 });
 
-/** Creazione rete + eventuali catene credenziali (stessa semantica della modifica). */
+/**
+ * Creazione rete + lista credenziali (stessa semantica della modifica). I
+ * quattro campi per ruolo sono superati dalla 2d (T17): si accodano alla
+ * lista e la risposta porta un avviso.
+ */
 export const NetworkCreateSchema = NetworkSchema.extend({
   credential_ids: z.array(z.number().int().positive()).optional(),
   windows_credential_ids: z.array(z.number().int().positive()).optional(),
@@ -35,7 +44,7 @@ export const NetworkCreateSchema = NetworkSchema.extend({
   snmp_credential_ids: z.array(z.number().int().positive()).optional(),
 });
 
-/** Aggiornamento rete + credenziali detect (ordine = priorità tentativi, un solo accesso per credenziale in scan). */
+/** Aggiornamento rete + lista credenziali (ordine = priorità tentativi); i quattro campi per ruolo come nella creazione. */
 export const NetworkUpdateSchema = NetworkSchema.partial().extend({
   credential_ids: z.array(z.number().int().positive()).optional(),
   windows_credential_ids: z.array(z.number().int().positive()).optional(),
@@ -69,12 +78,13 @@ export const HostUpdateSchema = z.object({
   firmware: z.string().max(200).optional().nullable(),
   // v0.2.618: editing inline produttore nella lista discovery
   device_manufacturer: z.string().max(200).optional().nullable(),
-  /** Forza credenziali archivio per ruolo detect (null = rimuovi binding). */
+  /**
+   * Superato dalla 2d (T17): il pin per ruolo non lo legge più nessuno (la
+   * discovery prova la catena dell'host dal motore). Un 400 che lo dice, non
+   * un campo ignorato in silenzio.
+   */
   detect_credentials: z
-    .record(
-      z.enum(["windows", "linux", "ssh", "snmp"]),
-      z.union([z.number().int().positive(), z.null()])
-    )
+    .never({ error: "detect_credentials è un campo superato: le credenziali dell'host si gestiscono nella sua scheda (Credenziali)" })
     .optional(),
 });
 
@@ -100,8 +110,13 @@ const emptyToUndefined = (v: unknown) => (v === "" ? undefined : v);
 export const NetworkDeviceSchema = z.object({
   name: z.string().min(1, "Nome richiesto").max(100),
   host: z.string().min(1, "Host richiesto").max(2000),
-  device_type: z.enum(["router", "switch", "firewall", "hypervisor"]),
-  classification: z.preprocess(emptyToUndefined, z.string().max(100).optional().nullable()),
+  device_type: z.enum(["router", "switch", "firewall", "hypervisor", "access_point", "nas", "server"]),
+  // Solo valori dell'elenco (tappa 1, 15/10): «printer» del classificatore passava
+  // e l'apparato spariva dalle liste per classificazione.
+  classification: z.preprocess(
+    emptyToUndefined,
+    z.enum(DEVICE_CLASSIFICATIONS, { error: "Classificazione non valida: scegline una dall'elenco" }).optional().nullable()
+  ),
   vendor: z.enum(["mikrotik", "ubiquiti", "hp", "cisco", "omada", "stormshield", "proxmox", "vmware", "linux", "windows", "synology", "qnap", "apple", "other"]),
   vendor_subtype: z.preprocess(emptyToUndefined, z.enum(["procurve", "comware"]).optional().nullable()),
   /** Profilo prodotto (marca + tipologia), obbligatorio per scan e inventario dedicati */
@@ -125,11 +140,40 @@ export const NetworkDeviceSchema = z.object({
   use_for_arp_poll: z.preprocess((v) => (v === "" || v === null || v === undefined ? undefined : v === true || v === 1 || v === "1" || v === "true" ? 1 : 0), z.union([z.literal(0), z.literal(1)]).optional()),
 });
 
+/** null dai moduli (AddableSelect manda null per un campo vuoto) = campo assente. */
+const nullToUndefined = (v: unknown) => (v === null ? undefined : v);
+
+/**
+ * Voce dell'archivio (tappa 2 credenziali, T13, 16/10): gli otto tipi di
+ * `credentials/tipi.ts`, `linux` accettato e scritto come `ssh`. I campi
+ * richiesti per tipo e metodo non stanno qui ma nel CRUD
+ * (`credentials/archivio.ts`, con `campiRichiesti`): in modifica ogni campo è
+ * facoltativo e si guarda la voce risultante.
+ */
 export const CredentialSchema = z.object({
   name: z.string().min(1, "Nome richiesto").max(100),
-  credential_type: z.enum(["ssh", "snmp", "api", "windows", "linux"]),
-  username: z.string().max(100).optional(),
-  password: z.string().max(200).optional(),
+  credential_type: z.preprocess(
+    (v) => (typeof v === "string" ? (normalizzaTipo(v) ?? v) : v),
+    z.enum(TIPI_CREDENZIALE, { error: "Tipo di credenziale non valido: scegline uno dall'elenco" }),
+  ),
+  /** Metodo d'accesso; null o assente = il primo del tipo. */
+  auth_method: z.preprocess(emptyToUndefined, z.enum(METODI_ACCESSO, { error: "Metodo d'accesso non valido" }).optional().nullable()),
+  username: z.preprocess(nullToUndefined, z.string().max(256, "Utente troppo lungo (al massimo 256 caratteri)").optional()),
+  /** Password, community, token, chiave API o client secret, secondo il metodo. */
+  password: z.preprocess(nullToUndefined, z.string().max(4096, "Segreto troppo lungo (al massimo 4096 caratteri)").optional()),
+  /** Chiave SSH privata (OpenSSH o PEM). */
+  private_key: z.preprocess(nullToUndefined, z.string().max(16384, "Chiave privata troppo lunga (al massimo 16 KB)").optional()),
+  passphrase: z.preprocess(nullToUndefined, z.string().max(1024, "Passphrase troppo lunga (al massimo 1024 caratteri)").optional()),
+  // SNMPv3 (tipo snmp_v3). Niente CHECK lato DB sui protocolli (non
+  // estendibili): qui è l'unica validazione degli enum.
+  security_level: z.preprocess(emptyToUndefined, z.enum(SNMP_V3_SECURITY_LEVELS).optional().nullable()),
+  auth_protocol: z.preprocess(emptyToUndefined, z.enum(SNMP_V3_AUTH_PROTOCOLS).optional().nullable()),
+  auth_key: z.preprocess(nullToUndefined, z.string().max(200).optional()),
+  priv_protocol: z.preprocess(emptyToUndefined, z.enum(SNMP_V3_PRIV_PROTOCOLS).optional().nullable()),
+  priv_key: z.preprocess(nullToUndefined, z.string().max(200).optional()),
+  // Porta propria (tappa 1): vuota = porta standard del protocollo; null
+  // esplicito in modifica = torna alla porta standard.
+  port: z.preprocess(emptyToUndefined, z.coerce.number().int().min(1, "Porta fra 1 e 65535").max(65535, "Porta fra 1 e 65535").optional().nullable()),
 });
 
 export const ScheduledJobSchema = z.object({
@@ -157,6 +201,7 @@ export const ScanTriggerSchema = z.object({
     "scan_icmp",
     "scan_nmap_base",
     "scan_snmp_verify",
+    "scan_naabu",
     "scan_enrich",
     "scan_full",
   ]),
@@ -313,11 +358,20 @@ export const SetupSchema = z.object({
   username: z.string().trim().min(3, "Username minimo 3 caratteri").max(50),
   password: z.string().min(8, "Password minimo 8 caratteri").max(100),
   confirm_password: z.string(),
-  /** Modalità installazione: single = un cliente, multi = MSP/multi-tenant */
+  /**
+   * Modalità installazione: single = un cliente, l'unica che offre la pagina
+   * /setup (UI-17); multi = superadmin senza cliente, rimasta solo per
+   * l'installer di Deploy-Appliance `core/ipam-installer.sh`.
+   */
   mode: z.enum(["single", "multi"]).default("single"),
   /** Campi obbligatori in modalità single-tenant */
   codice_cliente: z.string().trim().min(1, "Codice cliente obbligatorio").max(50).optional(),
   ragione_sociale: z.string().trim().min(1, "Ragione sociale obbligatoria").max(200).optional(),
+  /**
+   * Cosa esce verso Domarc (DA-Link, tappa C1 NetBird, spec §5.3): facoltativo e senza
+   * valore predefinito. Assente = nessuna scelta dichiarata = esce solo lo stato.
+   */
+  livello_uscita: z.enum(["solo_stato", "stato_inventario"], { message: "Livello di cosa esce non ammesso" }).optional(),
 }).refine((data) => data.password === data.confirm_password, {
   message: "Le password non corrispondono",
   path: ["confirm_password"],

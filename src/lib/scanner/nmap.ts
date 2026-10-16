@@ -167,11 +167,41 @@ function ensureTcpOnly(argsStr: string): string {
   return argsStr;
 }
 
-function parseNmapXml(xml: string): NmapResult[] {
+/**
+ * I `<cpe>` che nmap emette sotto `<service>` quando riconosce il software.
+ *
+ * Perche' esiste: sono la chiave del match CVE. `cpe:/a:openbsd:openssh:9.6p1`
+ * si confronta con i cpeMatch dell'NVD; la stringa libera "OpenSSH 9.6p1 Ubuntu
+ * 3ubuntu13.15" no. Fino al 2026-09-07 il parser leggeva solo product+version e
+ * buttava i CPE: misurato su 664 porte reali, 194 avevano la versione e **zero**
+ * arrivavano al database con un CPE.
+ *
+ * Tollera le tre forme che fast-xml-parser puo' restituire (stringa singola,
+ * array, oggetto con `#text`) perche' dipendono da come nmap ha scritto il nodo.
+ */
+function extractCpes(raw: unknown): string[] {
+  if (!raw) return [];
+  const list = Array.isArray(raw) ? raw : [raw];
+  const out: string[] = [];
+  for (const item of list) {
+    const testo =
+      typeof item === "string"
+        ? item
+        : typeof item === "object" && item !== null && "#text" in item
+          ? String((item as { "#text"?: unknown })["#text"] ?? "")
+          : "";
+    const cpe = testo.trim();
+    if (cpe.startsWith("cpe:") && !out.includes(cpe)) out.push(cpe);
+  }
+  return out;
+}
+
+/** Esportata per i test: e' il punto dove i CPE si perdevano in silenzio. */
+export function parseNmapXml(xml: string): NmapResult[] {
   const parser = new XMLParser({
     ignoreAttributes: false,
     attributeNamePrefix: "@_",
-    isArray: (name) => ["host", "port", "hostname", "script", "elem"].includes(name),
+    isArray: (name) => ["host", "port", "hostname", "script", "elem", "cpe"].includes(name),
   });
 
   const parsed = parser.parse(xml);
@@ -239,14 +269,21 @@ function parseNmapXml(xml: string): NmapResult[] {
             : portState === "open" || portState === "open|filtered";
         if (isResponding) {
           const portId = port["@_portid"];
+          const svc = port.service as
+            | { "@_name"?: string; "@_product"?: string; "@_version"?: string; cpe?: unknown }
+            | undefined;
+          const prodotto = svc?.["@_product"]?.trim() || null;
+          const versione = svc?.["@_version"]?.trim() || null;
           ports.push({
             port: parseInt(portId),
             protocol,
             state: portState ?? "open",
-            service: port.service?.["@_name"] || null,
-            version: port.service?.["@_product"]
-              ? `${port.service["@_product"]} ${port.service["@_version"] || ""}`.trim()
-              : null,
+            service: svc?.["@_name"] || null,
+            /* Stringa unita invariata: la leggono UI, classificatore e fingerprint. */
+            version: prodotto ? `${prodotto} ${versione || ""}`.trim() : null,
+            product: prodotto,
+            product_version: versione,
+            cpes: extractCpes(svc?.cpe),
           });
           if (port["@_portid"] === "161" && port.script) {
             const scripts = Array.isArray(port.script) ? port.script : [port.script];

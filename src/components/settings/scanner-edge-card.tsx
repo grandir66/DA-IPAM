@@ -1,10 +1,12 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { CheckCircle2, Loader2, RefreshCw, ShieldCheck, ShieldAlert, Trash2, PlayCircle, Network, ExternalLink, Plug } from "lucide-react";
 import { deriveEdgeUiBase } from "@/lib/integrations/edge-ui-url";
+import { edgeRemovalConfirmText } from "@/lib/modules/uninstall-copy";
 
 interface ScannerRow {
   id: number;
@@ -248,10 +250,12 @@ export function ScannerEdgeCard() {
   };
 
   const handleDelete = async () => {
-    if (!confirm("Rimuovere la configurazione scanner-edge? I findings storici restano in archivio.")) return;
+    // MOD-19: la rimozione cancella a cascata findings e storico delle
+    // scansioni (vedi removeEdgeScanner): la conferma lo dice, con il numero.
+    if (!confirm(edgeRemovalConfirmText(scanner?.finding_count ?? 0))) return;
     const r = await fetch("/api/integrations/scanner-edge", { method: "DELETE" });
     if (r.ok) {
-      toast.success("Scanner-edge rimosso");
+      toast.success("Scanner-Edge rimosso, con i suoi findings e lo storico delle scansioni");
       await load();
     } else {
       toast.error("Rimozione fallita");
@@ -319,7 +323,7 @@ export function ScannerEdgeCard() {
                 Auto-disabilitato dopo {scanner.consecutive_errors} errori consecutivi
               </div>
               <div className="text-xs">
-                Disabilitato il {new Date(scanner.auto_disabled_at).toLocaleString("it-IT")}.
+                Disabilitato il {parseDbDate(scanner.auto_disabled_at).toLocaleString("it-IT")}.
                 Il cron è fermo finché non riattivi. Token e SPKI pin restano salvati.
               </div>
             </div>

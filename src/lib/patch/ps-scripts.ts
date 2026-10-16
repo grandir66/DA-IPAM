@@ -10,6 +10,7 @@
  * di essere inserito nello script — vedi `assertSafeIdentifier`. Eventuale
  * carattere fuori whitelist => throw, l'executor segna l'operation come failed.
  */
+import { PS_TRUST_SELF_SIGNED } from "@/lib/ps-tls";
 
 const SAFE_IDENTIFIER_RE = /^[a-zA-Z0-9._-]+$/;
 
@@ -139,6 +140,81 @@ if ($listOut) {
 exit $ec`;
 }
 
+/**
+ * Uninstall di un software su Windows.
+ *   - `chocoId` presente → `choco uninstall <id> -y` (lifecycle Chocolatey).
+ *   - altrimenti → uninstall SILENZIOSO da registro per DisplayName == `name`:
+ *       · MSI (ProductCode {GUID})     → msiexec /x {code} /qn /norestart
+ *       · EXE con QuietUninstallString  → eseguito così com'è (già silenzioso)
+ *       · nessuno dei due               → EXIT_CODE=3, NON eseguiamo la
+ *         UninstallString interattiva (aprirebbe una UI e bloccherebbe WinRM).
+ *
+ * `chocoId` passa per assertSafeIdentifier. `name` NON è un identifier (ha
+ * spazi/apostrofi): entra come literal PS single-quoted (apici raddoppiati) e
+ * viene solo confrontato con -eq nel registro, mai eseguito → no injection.
+ * Exit: 0=ok, 2=non trovato, 3=uninstall silenzioso non disponibile.
+ */
+export function buildUninstallScript(
+  opId: number,
+  name: string,
+  chocoId?: string | null,
+): string {
+  const logPath = logFilePathForOperation(opId);
+  const nameLit = "'" + name.replace(/'/g, "''") + "'";
+
+  // Disinstallazione da REGISTRO per DisplayName == name: funziona per QUALSIASI
+  // software installato (MSI /qn oppure QuietUninstallString), a prescindere da
+  // come è stato installato. È anche il fallback quando 'choco uninstall' fallisce
+  // perché il pacchetto non è gestito da Chocolatey (es. FortiClient installato
+  // col suo installer → 'is not installed'). Tutti i Tee in -Append per non
+  // sovrascrivere l'eventuale output di choco.
+  const registryBlock = `$name = ${nameLit}
+$keys = @(
+  'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*',
+  'HKLM:\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*',
+  'HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*'
+)
+$app = Get-ItemProperty $keys -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -eq $name } | Select-Object -First 1
+if (-not $app) {
+  "Software non trovato nel registro (DisplayName == $name)" | Tee-Object -FilePath $logPath -Append
+  'EXIT_CODE=2' | Tee-Object -FilePath $logPath -Append
+  exit 2
+}
+$ec = 3
+if ($app.PSChildName -match '^\\{[0-9A-Fa-f-]+\\}$') {
+  "Uninstall MSI: $($app.DisplayName) $($app.PSChildName)" | Tee-Object -FilePath $logPath -Append
+  $p = Start-Process msiexec.exe -ArgumentList "/x $($app.PSChildName) /qn /norestart" -Wait -PassThru
+  $ec = $p.ExitCode
+} elseif ($app.QuietUninstallString) {
+  "Uninstall silenzioso: $($app.DisplayName)" | Tee-Object -FilePath $logPath -Append
+  $p = Start-Process cmd.exe -ArgumentList '/c', $app.QuietUninstallString -Wait -PassThru
+  $ec = $p.ExitCode
+} else {
+  "Uninstall silenzioso non disponibile per '$name'. UninstallString: $($app.UninstallString). Disinstallare manualmente sull'host." | Tee-Object -FilePath $logPath -Append
+  $ec = 3
+}
+"EXIT_CODE=$ec" | Tee-Object -FilePath $logPath -Append
+exit $ec`;
+
+  const head = `$ErrorActionPreference='Continue'
+$logPath = '${logPath}'
+New-Item -ItemType Directory -Force -Path (Split-Path $logPath) | Out-Null`;
+
+  if (chocoId) {
+    assertSafeIdentifier(chocoId, "chocoId");
+    return `${head}
+$choco = (Get-Command choco -ErrorAction SilentlyContinue).Source
+if ($choco) {
+  & choco uninstall ${chocoId} -y --no-progress --limit-output 2>&1 | Tee-Object -FilePath $logPath
+  if ($LASTEXITCODE -eq 0) { 'EXIT_CODE=0' | Tee-Object -FilePath $logPath -Append; exit 0 }
+  "Pacchetto '${chocoId}' non gestito da Chocolatey su questo host — provo la disinstallazione dal registro." | Tee-Object -FilePath $logPath -Append
+}
+${registryBlock}`;
+  }
+  return `${head}
+${registryBlock}`;
+}
+
 // Hostname valido: lettere/digit/dot/dash, max 253, almeno 1 dot oppure puro IPv4.
 const SAFE_HOSTNAME_RE = /^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)*[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$/;
 const SAFE_IPV4_RE = /^(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)$/;
@@ -173,8 +249,24 @@ export function assertSafeManagerHost(value: string): void {
  *
  * `managerHost` passa per `assertSafeManagerHost` per evitare PS injection.
  */
-export function buildWazuhInstallScript(opId: number, managerHost: string): string {
+/**
+ * URL MSI agent Wazuh. L'URL GENERICO `wazuh-agent.msi` non è più servito
+ * (packages.wazuh.com → 403); solo gli URL VERSIONATI funzionano. Pin su una
+ * versione ≤ manager (da-wazuh è 4.14.x): un agent versionato non va mai in 403.
+ * Overridabile per matchare la versione del manager quando serve.
+ */
+export const DEFAULT_WAZUH_AGENT_MSI =
+  "https://packages.wazuh.com/4.x/windows/wazuh-agent-4.14.5-1.msi";
+
+export function buildWazuhInstallScript(
+  opId: number,
+  managerHost: string,
+  msiUrl: string = DEFAULT_WAZUH_AGENT_MSI,
+): string {
   assertSafeManagerHost(managerHost);
+  if (!/^https:\/\/packages\.wazuh\.com\/[\w./-]+\.msi$/.test(msiUrl)) {
+    throw new Error(`[patch/ps-scripts] URL MSI Wazuh non valido: ${msiUrl}`);
+  }
   const logPath = logFilePathForOperation(opId);
   return `$ErrorActionPreference='Continue'
 $logPath = '${logPath}'
@@ -192,7 +284,7 @@ $msi = "$env:TEMP\\wazuh-agent.msi"
 'DOWNLOADING_MSI from packages.wazuh.com' | Tee-Object -FilePath $logPath -Append
 try {
   [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
-  Invoke-WebRequest -Uri 'https://packages.wazuh.com/4.x/windows/wazuh-agent.msi' -OutFile $msi -UseBasicParsing 2>&1 | Out-String | Tee-Object -FilePath $logPath -Append
+  Invoke-WebRequest -Uri '${msiUrl}' -OutFile $msi -UseBasicParsing 2>&1 | Out-String | Tee-Object -FilePath $logPath -Append
 } catch {
   "ERROR: Download MSI failed: $_" | Tee-Object -FilePath $logPath -Append
   'EXIT_CODE=1' | Tee-Object -FilePath $logPath -Append
@@ -277,6 +369,15 @@ function psQuoteInline(value: string): string {
  * Idempotente: se il servizio "Mesh Agent" è già Running → exit 0 senza
  * reinstallare, marker `MESHAGENT_ALREADY_INSTALLED_AND_RUNNING`.
  *
+ * `--copy-msh=1` è OBBLIGATORIO: copia il `.msh` adiacente all'exe dentro la dir
+ * di servizio (`C:\Program Files (x86)\Mesh Agent`). Senza, l'agente si installa,
+ * il servizio parte e lo script dichiara SUCCESSO — ma l'agente non ha la config
+ * del gruppo, non si connette mai e il nodo non compare in MeshCentral: un falso
+ * positivo silenzioso. Verificato su RGSERVER il 2026-07-17: service Running, dir
+ * di installazione con MeshAgent.exe + MeshAgent.db (0 byte) e NESSUN .msh, zero
+ * connessioni verso :4443. Lo script della UI aveva già il flag: era l'ennesima
+ * divergenza fra i due generatori — la blocca il test "push e UI concordano".
+ *
  * Exit code:
  *   0 → success (installato o già presente e running)
  *   1 → download agent/.msh failed
@@ -306,7 +407,7 @@ if ($existing -and $existing.Status -eq 'Running') {
   'EXIT_CODE=0' | Tee-Object -FilePath $logPath -Append
   exit 0
 }
-[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+${PS_TRUST_SELF_SIGNED}
 $dir = "$env:ProgramData\\Domarc\\meshagent"
 New-Item -ItemType Directory -Force -Path $dir | Out-Null
 $exe = Join-Path $dir 'meshagent.exe'
@@ -328,7 +429,7 @@ if (-not (Test-Path $exe) -or -not (Test-Path $msh)) {
 }
 # Install servizio con nome FISSO
 'INSTALLING_AGENT' | Tee-Object -FilePath $logPath -Append
-& $exe -fullinstall --meshServiceName "$ServiceName" 2>&1 | Out-String | Tee-Object -FilePath $logPath -Append
+& $exe -fullinstall --meshServiceName "$ServiceName" --copy-msh=1 2>&1 | Out-String | Tee-Object -FilePath $logPath -Append
 Start-Sleep -Seconds 3
 $svc = Get-Service "$ServiceName" -ErrorAction SilentlyContinue
 if ($svc -and $svc.Status -ne 'Running') { Start-Service "$ServiceName" 2>&1 | Out-String | Tee-Object -FilePath $logPath -Append; Start-Sleep -Seconds 2; $svc = Get-Service "$ServiceName" -ErrorAction SilentlyContinue }

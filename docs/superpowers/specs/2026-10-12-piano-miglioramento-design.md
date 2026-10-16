@@ -1,0 +1,457 @@
+# Piano di miglioramento di DA-IPAM — dall'inventario all'appliance
+
+> **Documento vivo**: lo stato delle tappe si aggiorna qui (§9), non in documenti
+> nuovi accanto. Le decisioni stanno in [ADR 0004](../../adr/0004-da-ipam-appliance-edge-guidato.md).
+> I codici dei difetti (`UI-n`, `MOD-n`, `EDG-n`, `INS-n`, `SEC-n`, `NUC-n`, `DB-n`,
+> `INV-n`) sono descritti nell'analisi `docs/analisi-sistema.md`, **solo locale**
+> perché contiene dettagli di sicurezza e questo repo è pubblico: qui si citano, non
+> si spiegano.
+>
+> Fotografia: 2026-10-12 sera, `dev` a v0.3.266. Richiesta di Riccardo: moduli più
+> semplici, edge dentro DA-IPAM, installazione dentro DA-IPAM, topologia completa
+> con i controller UniFi e Omada; **senza compromettere il dialogo fra edge e
+> DA-Vul-can e senza distruggere quello che funziona**. Integra la spec e il piano
+> dell'integrazione UniFi dello stesso giorno (`2026-10-12-unifi-controller-integration*`),
+> che diventano la tappa 2.
+
+## 1. Dove si vuole arrivare
+
+- **Un'installazione**: immagine pronta → `/setup` → configurazione guidata che
+  comprende la scelta dei moduli.
+- **Un catalogo**: ogni modulo si accende con lo stesso gesto, si guarda nello stesso
+  modo, si aggiorna dallo stesso ciclo e si spegne sapendo cosa si perde.
+- **L'edge è il motore delle scansioni di DA-IPAM**: si accende dal catalogo, si
+  comanda da *Sicurezza → Scanner*, e continua a parlare con DA-Vul-can come oggi.
+- **La rete si vede tutta**: dispositivi, porte, collegamenti LLDP, access point e
+  client, letti anche dai controller UniFi e Omada, nella mappa e nelle schede.
+- **Un menu per compiti** e una dashboard che dice cosa c'è da fare.
+- **Prima le fondamenta**: i difetti noti di dati, scansioni e permessi si chiudono
+  prima di aggiungere fonti che creano host.
+
+## 2. Decisioni prese (Riccardo, 12/10 — non riaprire)
+
+1. Un'installazione = un cliente; il tenant non è un confine di sicurezza.
+2. Catalogo unico dei moduli, descritti da un manifesto dentro DA-IPAM.
+3. Edge = motore guidato da DA-IPAM: container separato, installato, abbinato e
+   aggiornato da DA-IPAM, tutte le funzioni in DA-IPAM, nessuna interfaccia propria
+   per le scansioni interne. Lo scanner esterno dal cloud resta stand-alone.
+4. Il dialogo edge ↔ DA-Vul-can non cambia (vedi §3, regola 3).
+5. Installazione: prima l'appliance che si completa da sola, poi la console centrale
+   Domarc come progetto separato.
+6. Wazuh server, Graylog completo e DNS/DHCP restano su macchine proprie, DA-IPAM li
+   collega; nessun diritto di DA-IPAM sull'host Proxmox.
+7. I controller UniFi e Omada creano oggetti: access point, switch, router e client.
+8. L'integrazione nativa del controller UniFi è **prioritaria** (cliente A, decisione del
+   12/10 nel dossier cliente A).
+
+Ne discende un vincolo: il codice dell'edge resta nel repo privato DA-Vul-can, perché
+questo repo è pubblico; DA-IPAM riceve l'edge come immagine pronta.
+
+## 3. Regole del piano: migliorare senza distruggere
+
+1. **Affiancare, poi sostituire.** Ogni pezzo nuovo nasce accanto al vecchio,
+   spento; si prova, si accende, e il vecchio si toglie in un passo successivo, con la
+   prova che nessuno lo usa più.
+2. **`dev` non è un banco di prova: arriva da solo, entro 15 minuti, all'hub (VM 533)
+   e all'appliance del cliente A**, un cliente. Quindi: il cancello si passa **prima** del
+   push; tutto ciò che è nuovo nasce spento; ogni migrazione del database si prova
+   prima su una copia di un database tenant vero. Le altre appliance ricevono `main`
+   col promote, confermato da Riccardo. Ogni tappa si rilascia da sola e non lascia
+   il sistema a metà: ci si può fermare dopo qualunque tappa.
+3. **Il canale edge ↔ DA-Vul-can non si tocca.** Restano com'erano: coda d'invio e
+   cifratura dei risultati (ADR-0001 di DA-Vul-can), segnale di vita verso l'hub,
+   aggiornamento dal tarball dell'hub (finché l'immagine nuova non lo sostituisce
+   con lo stesso esito), comandi dell'hub via SSH, rotte dell'hub. **Verifica fissa** a
+   ogni rilascio che tocca l'edge: sull'hub l'ultimo segnale di vita di quell'edge è
+   recente e un invio di prova arriva. Lo script di verifica, in sola lettura, nasce
+   nella tappa 7 prima di ogni modifica.
+4. **Dati dei clienti**: migrazioni solo additive; prima di ogni scrittura nuova su
+   un database di produzione (anche la prima sincronizzazione di una fonte nuova)
+   backup, prova su una copia e conferma.
+5. **Deploy-Appliance resta funzionante**, per le appliance esistenti e come piano
+   B, finché il percorso nuovo non ha installato un'appliance vera.
+6. **L'interfaccia si propone oggetto per oggetto prima di scriverla** (regola grafica
+   del parco) e si guarda resa a 1920 px.
+7. **Livello di controllo per tappa** (§4); il cancello completo precede sempre il
+   promote a `main`.
+8. **Ogni tappa nel suo ramo.** Più tappe procedono insieme solo se toccano parti
+   diverse; ciascuna lavora in un ramo proprio e si integra in `dev` una alla volta
+   (rebase su `dev`, cancello, push). Prima di cominciare si guarda chi sta già
+   lavorando sul repo (rami recenti, worktree, sessioni vive).
+9. **Ogni regola che può diventare un test lo diventa**: ogni modulo del manifesto
+   ha salute e disattivazione; nessuna rotta di modulo senza guardia; il token
+   dell'edge di sola lettura non comanda niente; il vincolo dei job nello schema e
+   nelle migrazioni è lo stesso.
+10. **Le prove usano dati con la forma vera**: una risposta vera (controller, edge),
+    presa in sola lettura e anonimizzata, prima di scrivere i test che la leggono.
+
+## 4. Le tappe in un colpo d'occhio
+
+| Tappa | Obiettivo | Livello | Dipende da | Dimensione | Cosa si vede |
+|---|---|---|---|---|---|
+| 1 | Correzioni visibili e difetti d'installazione | leggero (completo per permessi e installazione) | — | 1-2 sessioni | setup, utenti, link, testi giusti |
+| 2 | Controller UniFi: dispositivi, porte, LLDP | completo per migrazione e prima sync, leggero per la card | — | 2-3 sessioni | i 74 apparati UniFi del cliente A fra i dispositivi; la mappa si riempie |
+| 3 | Fondamenta: dati, scansioni, permessi | completo | — | 3-5 sessioni | database più piccolo, scansioni che non si accavallano |
+| 4 | Catalogo dei moduli; controller completo (Omada, client) | completo per installazioni e scritture, leggero per le pagine | 2, 3 | 4-5 sessioni | pagina Moduli nuova; client e access point visti dal controller |
+| 5 | Topologia completa | leggero | 2, 4 | 2-3 sessioni | mappa con AP, porte, client; export drawio |
+| 6 | Tutti i moduli nel catalogo, navigazione, dashboard | completo per installazioni e segreti, leggero per le pagine | 4 | 4-6 sessioni | menu per compiti, una scheda host, dashboard delle cose da fare |
+| 7 | Edge guidato da DA-IPAM | completo | 3, 4 | 5-7 sessioni, due repo | *Sicurezza → Scanner*; edge acceso dal catalogo |
+| 8 | Installazione dall'immagine | completo | 4, 7 | 3-5 sessioni | una nuova PX-NAS installata così |
+| 9 | Console centrale Domarc | da decidere | 8 | progetto separato | elenco delle appliance con versione e salute |
+
+Le tappe 1, 2 e 3 sono indipendenti fra loro e possono procedere in sessioni diverse;
+la 7 può partire in parallelo alla 6 perché tocca soprattutto DA-Vul-can.
+
+**Come parte una tappa**: in una sessione nuova (contesto pulito), che scrive per
+prima cosa il piano di dettaglio della tappa (task, file toccati, prove) in
+`docs/superpowers/plans/` e poi lo esegue fino al rilascio su `dev` e alla verifica.
+La tappa 2 il piano ce l'ha già. Finché si resta dentro quanto scritto qui non serve
+un nuovo via; serve se cambia lo scope, per il promote a `main` e per ogni scrittura
+su dati di produzione.
+
+### Esecuzione (decisione di Riccardo, 12/10 sera): in locale
+
+Le tappe si eseguono **sul Mac**, con gruppi di agenti: uno per parte indipendente,
+ciascuno nel suo worktree, poi revisori avversari con lenti diverse, poi un agente che
+verifica i rilievi e corregge quelli reali; l'integrazione in `dev` (fusione, cancello
+completo, foto a schermo, rilascio) la fa la sessione principale. Lo stato condiviso è
+il §9 di questo documento; la bacheca sul Mac (`piano-miglioramento-da-ipam`) lo segue.
+
+- **Memoria**: la macchina ha ceduto una volta (12/10) con tre gruppi in parallelo; al
+  massimo due agenti che compilano insieme, e il controllo di tipo completo una sola
+  volta per agente, alla fine.
+- **Dati veri** (risposte di controller ed edge, copie di database di clienti) li
+  prende la sessione principale, in sola lettura; le copie restano nello scratchpad,
+  mai in git; ciò che va in git è ridotto e anonimizzato, con controllo automatico.
+
+- **Regole per ogni sessione o agente** che esegue questo piano (valgono anche
+  per chi non carica `~/.claude`):
+  - si risponde e si scrive in italiano, in linguaggio semplice;
+  - livello di controllo della tappa (§4);
+  - dopo due tentativi falliti uguali ci si ferma, si legge l'errore intero e si
+    scrive la causa, invece di riprovare;
+  - niente push su `main`, niente promote, niente scritture su dati di produzione;
+  - a fine sessione si aggiornano il §9 (cosa è fatto, come è verificato, **cosa resta
+    da fare in locale**) e `CONTEXT.md`, e si chiude con un rapporto in linguaggio
+    semplice e i miglioramenti consigliati.
+
+## 5. Le tappe nel dettaglio
+
+### Tappa 1 — Correzioni visibili e difetti d'installazione
+
+**Già fatto o in corso altrove**: il blocco dei filtri (UI-1, UI-2, UI-8 chiusi;
+restano UI-5, UI-7, UI-9) in un'altra sessione; NUC-5 chiuso in v0.3.266; INS-1
+chiuso per l'aggiornamento automatico in v0.3.265 (`update.sh` riavvia il servizio
+attivo fra `da-invent` e `da-ipam`, verificato sul cliente A). Non si duplica.
+
+- Il setup non propone più "Multi-Tenant" (UI-17).
+- L'amministratore del cliente gestisce gli utenti del proprio cliente, con test di
+  autorizzazione (UI-18).
+- Link che portano dove dicono (UI-24); un nome solo, DA-IPAM, e "Moduli" nei testi
+  (UI-23, parte).
+- Testi della disinstallazione veri e conferma che dice cosa si perde (MOD-19).
+- Profili di scansione letti dall'edge invece di una lista fissa (EDG-1).
+- Le righe "Stato moduli" della dashboard portano al modulo (UI-20, parte).
+- Installazione: anche il pulsante "Riavvia" dell'interfaccia riconosce tutti e due
+  i nomi del servizio (resto di INS-1); l'installazione su VM esistente parte da
+  `main` (INS-2).
+
+**Dove si mette mano** (righe indicative al 12/10, per chi esegue senza l'analisi
+locale):
+
+- setup: `src/app/setup/page.tsx`, `src/app/api/setup/route.ts:63-64` (ramo
+  multi-tenant);
+- utenti: `src/app/api/users/route.ts:10,41` usa `requireSuperAdmin`; l'admin deve
+  poter gestire gli utenti del proprio cliente, e un errore va mostrato come errore,
+  non come "Nessun utente trovato";
+- link: `vulnerabilities-list-client.tsx:399` e
+  `lib/integrations/meshcentral/install.ts:138` ("Impostazioni → Integrazioni", che
+  non esiste più); `rmm/page.tsx:131` (apre il tab Utenti invece di Moduli);
+  `modules-grid.tsx:317-328` ("Interfaccia edge" che apre MeshCentral);
+- nome: `components/shared/sidebar.tsx:358` ("DA-INVENT") e il setup;
+- disinstallazione: `settings/modules-tab.tsx:536-541` contro
+  `api/features/[key]/uninstall/route.ts:68-79`; `settings/scanner-edge-card.tsx:252`;
+- profili: `api/networks/[id]/edge-scan/route.ts:20-25` (lista fissa) → elenco letto
+  da `GET /api/v1/profiles` dell'edge (`{ "profiles": [...] }`; la forma delle voci si
+  conferma in locale su un edge vero), con un avviso a schermo se l'edge non risponde;
+- dashboard: `(dashboard)/page.tsx:48` (le righe aprono la configurazione),
+  `lib/modules/health.ts:504-513`;
+- riavvio: `api/system/update/route.ts:544-571` cerca solo `da-invent`; stesso
+  criterio di `scripts/update.sh` (il servizio attivo fra `da-invent` e `da-ipam`);
+- INS-2 sta nel repo Deploy-Appliance (`scripts/install-on-vm.sh:54`): in locale o in
+  una sessione su quel repo.
+
+**Verifica**: prove mirate; foto a 1920 di setup, Utenti, Moduli, dashboard.
+**Fatto quando**: tutto su `dev`, verificato sull'hub e sul cliente A, promote confermato.
+
+### Tappa 2 — Controller UniFi: dispositivi, porte, LLDP
+
+È la spec `2026-10-12-unifi-controller-integration-design.md` col suo piano
+`plans/2026-10-12-unifi-controller-integration.md` (fasi A, B, C ed E: backend
+installato a sessione, mappatura pura, sync, job, card). Si esegue com'è, con le
+**correzioni scritte in testa al piano** il 12/10 sera; in breve:
+
+- test sulla **forma vera** della risposta di `stat/device` (presa in sola lettura con
+  l'account di sola lettura del cliente A e anonimizzata), non su campi scritti a mano;
+- il vicino LLDP salvato **anche per MAC**, normalizzato;
+- funzioni del database importate da `db-tenant` (le copie in `db.ts` divergono,
+  NUC-2);
+- **guardia "zero sospetto"**: una risposta vuota non cancella porte e vicini buoni;
+- certificato del controller fissato al primo uso;
+- migrazione del job provata su una copia di un database tenant vero, con lo stesso
+  elenco dello schema (test);
+- **prima sincronizzazione su una copia del database del cliente A**, poi sull'appliance con
+  backup e conferma;
+- voce nel registry con la sonda di salute, credenziali solo nella configurazione.
+
+**Chi fa cosa:**
+
+1. *in locale, prima* (10-15 minuti, rete cliente A): la risposta vera di `stat/device`
+   presa con l'account di sola lettura, **ridotta** a pochi apparati rappresentativi
+   (uno switch con LLDP verso un altro, un access point, il gateway se c'è) e
+   **anonimizzata** in modo coerente (nomi, MAC, IP, seriali sostituiti; campi `x_*`
+   tolti), poi committata come fixture. Il repo è pubblico: il file si guarda prima
+   del commit;
+2. *con un gruppo di agenti*: i task 1-8 del piano UniFi sulla fixture, tutto spento di default,
+   push su `dev`;
+3. *in locale, dopo*: la sync su una copia del database cliente A, poi sull'appliance con
+   backup e conferma di Riccardo.
+
+Non crea host: per questo non aspetta le fondamenta della tappa 3. I client e Omada
+arrivano nella tappa 4. Il backend UDM e cloud (fase D della spec) si fa quando serve
+un cliente che li usa, misurando prima (chiave cloud Domarc da rigenerare con
+permessi di lettura).
+
+**Verifica**: test sulla risposta vera; conteggi prima e dopo sulla copia del
+database cliente A (attesi ~74 dispositivi, 50 switch e 24 AP); `/topology` del cliente A a schermo.
+
+### Tappa 3 — Fondamenta: dati, scansioni, permessi
+
+- **Nucleo**: una sola copia delle funzioni del database (NUC-2: `db.ts` riesporta
+  `db-tenant.ts`, per gruppi, con test di parità nel frattempo); niente ripiego muto
+  sul tenant DEFAULT (NUC-1). Proposta: un'ultima ricostruzione di `scheduled_jobs`
+  che sostituisce il vincolo sui tipi di job con la validazione nel codice, così i
+  moduli nuovi non ricostruiscono più la tabella (oggi siamo alla settima).
+- **Database**: MAC normalizzato come chiave d'identità (DB-3); modello per MAC con
+  più IP (DB-1); retention configurabile (DB-2); bonifica dello storico in
+  produzione con backup, prova a vuoto e conferma.
+- **Scansioni**: attese dallo scheduler, un lucchetto per rete, soglia prima di
+  segnare offline (INV-1, INV-2). È il prerequisito per una fonte che crea host.
+- **Permessi**: SEC-4, 5, 6, 13, 18 più i test di autorizzazione delle API.
+- **Edge, solo permessi della sua API** (EDG-3, in DA-Vul-can). Non tocca il canale
+  con l'hub.
+
+**Verifica**: test di parità e di autorizzazione; misura del database prima e dopo;
+due giri di scansione sovrapposti provati su una copia.
+
+### Tappa 4 — Catalogo dei moduli; controller completo
+
+**Il catalogo:**
+
+- Manifesto unico dei moduli; `requireModule()` su API e pagine (assorbe il gating
+  del vecchio blocco 7); stato in un solo vocabolario (Non attivo · In
+  installazione · Da completare · Attivo · Problema).
+- Registro attività persistente; **esecutore fuori dal processo di DA-IPAM** per le
+  operazioni lunghe (installare, aggiornare), con un elenco chiuso di operazioni:
+  un aggiornamento che riavvia DA-IPAM non deve uccidere sé stesso a metà (MOD-17).
+- Pagina *Moduli* a catalogo e una pagina per modulo, uguale per tutti: Stato,
+  Configurazione, Registro, Versione e aggiornamento, Disattiva. Proposta oggetto per
+  oggetto prima di scriverla.
+- La pagina Moduli vecchia resta per i moduli non ancora migrati.
+
+**Due moduli pilota sul catalogo nuovo:** NIS2, il più semplice, e il **controller
+di rete** della tappa 2, che passa dalla card al catalogo e si completa:
+
+- **Backend Omada**: OpenAPI del controller (client id e secret, sola lettura), dopo
+  una misura su un controller vero da individuare; la stessa forma della tappa 2
+  (dispositivi, porte, LLDP).
+- **Client** (decisione 7), per UniFi e Omada: MAC, IP, nome; per i cablati switch e
+  porta; per i Wi-Fi access point, SSID, banda, segnale; ultimo visto.
+- **Gli apparati del controller arricchiscono il loro host** (richiesta di Riccardo, 13/10 sera): quando l'IP (o il MAC) di un apparato letto dal controller — switch, access point, gateway, il controller stesso — combacia con un host dell'inventario, i fatti del controller (tipo, modello, firmware, seriale, nome, MAC) arricchiscono quell'host e **fissano la sua tipologia**: il controller è la fonte più affidabile dopo la scelta manuale (che vince sempre, `classification_manual`), sopra l'attribuzione dalla scansione. Oggi la sync scrive solo `network_devices` e il collegamento `host_id`: l'host resta classificato dalla scansione. Da progettare: evidenza «controller» nell'attribuzione (non una scrittura diretta su `hosts`), cosa succede se l'apparato sparisce dal controller, e la misura sulla copia del cliente A (quanti host cambiano tipologia) prima di accenderla.
+- **Dal controller tutto quello che serve a riconoscere un oggetto, anche per i client** (Riccardo, 13/10 sera): oltre a MAC/IP/porta, i campi con cui il controller classifica il client (nome e alias dati dall'amministratore, riconoscimento del dispositivo — famiglia, sistema operativo, produttore —, rete/VLAN, primo e ultimo visto) diventano evidenza «controller» nell'attribuzione, come per gli apparati. Prima di scegliere i campi: misura su una risposta vera di UniFi e di Omada, anonimizzata (quali campi ci sono davvero e quanto sono pieni).
+- **Regole di nascita dei client**:
+  - diventano host con origine "controller", fusi per MAC con quelli trovati dalla
+    scansione;
+  - i MAC privati casuali dei telefoni si riconoscono e hanno vita breve;
+  - le subnet non censite si segnalano e non si creano da sole;
+  - storico dei collegamenti: proposta 30 giorni, configurabile.
+
+**Verifica**: test del manifesto e delle regole di nascita sulle risposte vere
+registrate; prima lettura dei client su una copia del database cliente A, misura di quante
+righe al giorno aggiunge, confronto dei numeri con l'interfaccia del controller.
+
+### Tappa 5 — Topologia completa
+
+Si aggiornano la spec e il piano esistenti (`2026-10-12-topology-map*`), non se ne
+scrivono di nuovi. Comprende la fase F della spec UniFi.
+
+**Il motore di rappresentazione si ripensa (Riccardo, 13/10).** Vista la mappa del cliente A
+piena dei 74 apparati UniFi: «orribile, le linee sono messe a caso, è caotica». La
+disposizione automatica di oggi non regge un impianto vero; non si rattoppa. La tappa
+comincia da un progetto del motore, discusso con Riccardo prima di scrivere codice:
+disposizione per livelli (centro → distribuzione → accesso → access point → client),
+collegamenti che non si incrociano a caso, raggruppamento per sito e per armadio,
+posizioni salvate che sopravvivono alle letture nuove. Riferimento per giudicarlo: gli
+schemi drawio del cliente A fatti a mano. Le altre tappe vanno avanti intanto.
+
+- **Archi**: LLDP da SNMP e SSH e dal controller, abbinati anche per MAC del vicino
+  e non solo per nome o IP; tabella MAC delle porte (SNMP) per collocare i client
+  anche dietro switch che non sono UniFi; collegamenti correggibili a mano
+  (`physical-devices/link`); archi dritti.
+- **Nodi**: apparati che oggi sono host ma sono dispositivi di rete; access point;
+  client raggruppati per porta o per access point, aperti a richiesta; icone per
+  tipo; livelli e filtri (infrastruttura · Wi-Fi · client) per sito.
+- **Schede**: l'access point coi client collegati; lo switch con chi c'è dietro ogni
+  porta; il client con dove è collegato e un breve storico.
+- **Export drawio** (fase 2 della spec della topologia).
+
+**Verifica**: test del grafo con risposte registrate; foto della mappa del cliente A
+confrontata coi drawio già fatti a mano per il cliente A.
+
+### Tappa 6 — Tutti i moduli nel catalogo, navigazione, dashboard
+
+- **Migrazione modulo per modulo**: Inventory Agent, Patch, LibreNMS, Graylog e
+  Loki, MeshCentral (versioni unificate con Deploy-Appliance, password generate
+  all'installazione); Wazuh e DNS/DHCP come *servizi esterni da collegare*, con
+  procedura guidata.
+- **Accesso unico** a tutte le interfacce esterne (MOD-21); credenziali dei moduli in
+  un posto solo (MOD-22); sincronizzazioni che non cancellano dati buoni (MOD-3,
+  MOD-8, MOD-10, MOD-11).
+- **Rimozione** della pagina Moduli vecchia e del vault doppio, solo dopo la prova
+  che nessun modulo ci dipende.
+- **Navigazione per compiti**: Rete · Sicurezza · Inventario · Strumenti · Sistema
+  (proposta in analisi §14.6 D); una sola scheda host; dashboard con le cose da fare;
+  passo "Moduli" nella configurazione guidata; liste con filtri nell'URL (vecchio
+  blocco 3).
+
+**Verifica**: per ogni modulo migrato un giro completo sul dev (attiva → configura
+→ apri → disattiva); foto del menu e della dashboard a 1920.
+
+### Tappa 7 — Edge guidato da DA-IPAM
+
+**Prima di tutto**: lo script di verifica del canale con l'hub (§3, regola 3), in
+sola lettura, provato sugli edge di oggi.
+
+- **7a — Contratto**: stati di scansione con errori e avanzamento (EDG-2), chiave di
+  rete stabile invece del CIDR (EDG-4), ciclo di vita dei finding senza
+  cancellazioni a cascata (MOD-4, MOD-5, MOD-7).
+- **7b — API dell'edge che manca** (in DA-Vul-can, solo aggiunte, con versione
+  dichiarata): motore e feed con avvio della sincronizzazione; reti con VLAN;
+  sorgenti ARP; credenziali con chiave SSH; programmazioni ARP e web; moduli (nuclei,
+  web) e loro risultati; stato del collegamento all'hub, **in sola lettura**.
+- **7c — Pagine *Sicurezza → Scanner*** in DA-IPAM.
+- **7d — Immagine dell'edge** costruita una volta nella CI di DA-Vul-can, versionata
+  e firmata, con un solo Dockerfile; l'edge diventa un modulo del catalogo:
+  installazione, abbinamento automatico, aggiornamento.
+- **7e — Migrazione degli edge esistenti**, uno per volta: prima uno di prova, poi
+  gli altri. L'interfaccia dell'edge resta come accesso tecnico Domarc, aperta da
+  DA-IPAM.
+
+**Non si tocca**: il dialogo con l'hub (§3, regola 3) e lo scanner esterno dal
+cloud. **Verifica**: lo script del canale a ogni rilascio; un giro completo di
+scansione dal nuovo pannello; risultati arrivati sia in DA-IPAM sia sull'hub.
+
+### Tappa 8 — Installazione dall'immagine
+
+- **Un solo script d'installazione** per le VM esistenti e **un'immagine**
+  (qcow2/OVA) costruita dalla CI con lo stesso script; primo avvio = `/setup`.
+- **Un nome di servizio**, un solo scrittore della configurazione (INS-3), segreti
+  generati all'installazione.
+- **Deploy-Appliance si riduce** a costruire l'immagine e le macchine per i servizi
+  esterni (Wazuh, Graylog completo, DNS/DHCP) sull'host Proxmox; resta per le
+  appliance esistenti.
+- **Prova**: rifare PX-NAS con la logica nuova, poi migrare un'appliance esistente.
+
+**Verifica**: installazione da zero cronometrata; tutti i moduli accesi dal
+catalogo; aggiornamento di un modulo e di DA-IPAM senza interventi a mano.
+
+### Tappa 9 — Console centrale Domarc (progetto separato, dopo)
+
+Elenco delle appliance con versione, salute, moduli e ultimo contatto; canale
+d'aggiornamento; creazione di un'appliance nuova dall'immagine. Punto di partenza:
+un segnale di vita da ogni appliance (l'hub DA-Vul-can li riceve già dagli edge).
+Spec propria quando ci si arriva; dove vive la console si decide lì.
+
+### Igiene, in coda alle tappe
+
+CHANGELOG allineato alle release; archiviazione degli audit superati; potatura dei
+rami; `verify-bug-report.ts` riparato; manuale utente aggiornato quando cambiano
+menu e moduli.
+
+## 6. Cosa non si tocca, in nessuna tappa
+
+- L'hub DA-Vul-can e il suo dialogo con gli edge.
+- Lo scanner esterno dal cloud.
+- Il flusso `dev` → `main` via promote.
+- I dati dei clienti senza backup, prova su una copia e conferma.
+- Le appliance esistenti, finché il percorso nuovo non è provato: si aggiornano come
+  oggi.
+
+## 7. Come si verifica
+
+- **Prove automatiche**: parti pure (manifesto, mappature dei controller, regole di
+  nascita, grafo) su risposte vere registrate; test di autorizzazione delle API;
+  test-invarianti (§3, regola 9).
+- **A schermo**: a 1920 px sui dati finti in locale; sul dev o sull'hub coi dati veri
+  per le tappe che toccano dati.
+- **Sul campo**: cliente A per controller e topologia, prima su una copia del suo database;
+  la nuova PX-NAS per installazione ed edge.
+- **Canale edge**: lo script di verifica sull'hub a ogni rilascio che tocca l'edge.
+
+## 8. Rischi e come si tengono bassi
+
+- **`dev` arriva a un cliente** (cliente A) in 15 minuti: tutto nasce spento, migrazioni
+  provate su copia, cancello prima del push.
+- **Più sessioni sullo stesso repo**: una tappa per volta, worktree propri, si
+  pubblica da lì.
+- **Volume dei client** (MAC casuali dei telefoni): retention e fusione per MAC nella
+  tappa 3, misura del volume nella tappa 4 prima di accendere.
+- **Contratto edge fra due repo**: versione dell'API dichiarata, DA-IPAM controlla la
+  versione prima di usare una funzione.
+- **API dei controller che cambiano fra versioni** (UniFi 9 e 10, Omada 5): un
+  backend per tipo, misura sui controller veri, prove sulle risposte registrate.
+- **Durata**: è un programma di settimane; ogni tappa porta qualcosa di visibile o
+  chiude un rischio, così ci si può fermare dopo qualunque tappa.
+
+**Aperti, non bloccano le tappe 1-3**: quale controller Omada usare per la misura;
+chiave UniFi cloud Domarc da rigenerare con permessi di lettura (Riccardo); dove
+vive la console centrale (tappa 9).
+
+## 9. Stato delle tappe
+
+| Tappa | Stato | Data | Note |
+|---|---|---|---|
+| 1 | fatta (v0.3.269, verificata sul cliente A) | 12/10 | UI-17, UI-18, UI-20 (righe Stato moduli), UI-23 (nome), UI-24, MOD-19, EDG-1, INS-1 chiusi; INS-2 in Deploy-Appliance (`e4609c7`). Da vedere su un edge vero: l'elenco dei profili. Rimandati con motivo: import del JSON dell'edge che cancella lo storico (tappa 7), manuale utente da riallineare (igiene), finestra degli agenti che perde il token con Esc (tappa 6), `GET /api/tenants` che elenca tutti i clienti a un admin (tappa 3) |
+| 2 | fatta, ACCESA sul cliente A (v0.3.270) | 12/10 | Provata sul controller vero del cliente A (sola lettura) verso una COPIA del DB: migrazione v8 ok; 74 apparati aggiunti (50 switch, 24 AP), 753 porte, 168 vicini LLDP su 69 apparati (138 col nome risolto), 0 errori; secondo giro 0 aggiunti; dati esistenti intatti (11 dispositivi, 138 vicini MNDP, 965 host). Mappa del cliente A piena a schermo. Da fare: accendere sul cliente A (scrittura sul DB del cliente: backup + conferma di Riccardo); rimandati: uplink non usato, due scrittori sulle porte (sync e poll ARP), tenant del controller da fissare, anonimizzatore della fixture |
+| 3 | in corso: 3a fatta (v0.3.273); 3b scansioni rilasciata (v0.3.275); 3b nucleo pronta, si pubblica dopo il 20/10 | 12-13/10 | Piano di dettaglio solo locale (`docs/tappa3-fondamenta-piano.md`), divisa in 3a/3b/3c (decisione di Riccardo). **3b scansioni** (T3-17, 18, 20-23) su hub e cliente A il 13/10: scansioni attese dallo scheduler, un giro alla volta per rete, un giro vecchio non spegne chi è stato visto dopo, soglia sugli spegnimenti in massa solo in registrazione (accenderla chiede conferma); numeri sulla copia cliente A mostrati prima del push (D3). **3b nucleo** (T3-05..08, ramo `tappa3b/nucleo`, non pubblicato): una sola copia delle funzioni del database; fuori contesto è un errore invece di un ripiego, quindi si pubblica a finestra dei ripieghi chiusa (20/10) e col registro a zero; comprende il reset del cliente reso funzionante con doppia conferma (decisione del 13/10). T3-09 dopo il nucleo. Poi 3c
+| 4 | in corso: controller di rete fatto (ramo `feat/controller-rete`) | 13/10 | Anticipata la parte «controller» (decisione di Riccardo del 13/10): pagina **Rete → Controller di rete** al posto della card, più controller per cliente nel DB del cliente, storico delle letture, pianificazione per controller, **console UniFi OS con chiave API**, «Stato moduli» senza login sui controller; la configurazione vecchia dell'hub passa da sola (misurato sulla copia cliente A: 1 controller, nessuna tabella esistente cambiata). ADR 0007. Omada visibile e spento (si misura su un controller di un cliente; `da-omada` è dei clienti, non si legge dall'hub Domarc). Da fare: Omada, client, catalogo dei moduli, provenienza degli apparati per controller |
+| 5 | da fare | — | la mappa di base è su `dev` (v0.3.260); il motore di rappresentazione va ripensato (13/10: caotica sul dato vero del cliente A) |
+| 6 | da fare | — | |
+| 7 | da fare | — | |
+| 8 | da fare | — | |
+| 9 | da fare | — | progetto separato |
+
+### Verifiche registrate (data e fonte)
+
+- **T3-22, 13/10 — due giri sovrapposti.** Fonte: copia del database del cliente A
+  presa il 12/10, lavorata in una sua copia nella cartella temporanea; niente
+  rete (esecutore finto e guardia). Rete scelta dallo script: /22, 155 host, 25
+  online. Comando: `npx tsx scripts/prova-giri-sovrapposti.ts <copia.db>
+  --cartella <scratchpad>`, soglia in `applica`.
+  - Base `dev` prima della parte 3b (`e6b49c5`, con il banco di T3-16): il giro
+    B parte durante A; A spegne 5 host visti dopo la sua partenza; il giro a
+    zero vivi spegne tutti i 20 host online; host già offline riscritti offline
+    130 (giro A) e 135 (giro a zero vivi). Esito: difetto (uscita 1).
+  - Ramo `tappa3b/scansioni` (T3-17, T3-18, T3-20, T3-21): B rifiutato; 0 host
+    visti dopo spenti (2 spenti, mai visti da nessuno); il giro a zero vivi non
+    scrive lo stato di nessun host (bloccati 23); 0 host già offline riscritti;
+    0 tentativi di uscire sulla rete. Esito: ok (uscita 0).
+  - Resta aperto: `updated_at` avanza su tutti i 155 host a ogni giro, prima e
+    dopo, perché lo riscrive l'aggiornamento delle assegnazioni IP di fine giro
+    (non il passaggio a offline). Da sistemare nel nucleo.
+  - Copertura: il giro della prova è di tipo «ping» sulla rete scelta dallo
+    script. Il solo job di scansione acceso sul cliente A è la scansione veloce di
+    un'altra rete (224 host, 207 offline: sono le righe che T3-20 smette di
+    riscrivere a ogni giro); la rete con più host offline (248) ha il job spento
+    da luglio. Il percorso della scansione veloce (ARP/DHCP, secondo passaggio
+    TCP) non è provato sul dato vero: lo verifica il modo `registra` sul cliente A.

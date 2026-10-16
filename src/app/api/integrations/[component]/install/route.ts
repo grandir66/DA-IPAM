@@ -5,7 +5,9 @@ import { installLibreNMS } from "@/lib/integrations/librenms";
 import { installLoki } from "@/lib/integrations/loki";
 import { installGraylog } from "@/lib/integrations/graylog";
 import { getIntegrationConfig } from "@/lib/integrations/config";
-import type { IntegrationComponent } from "@/lib/integrations/types";
+import { rifiutoInstallazione } from "@/lib/integrations/librenms-appliance";
+import { parametriInstallazione } from "@/lib/integrations/segreti-installazione";
+import type { ContainerIntegrationComponent } from "@/lib/integrations/types";
 import { randomUUID } from "crypto";
 import { networkInterfaces } from "os";
 
@@ -22,11 +24,11 @@ function detectServerIp(): string {
   return "localhost";
 }
 
-const VALID_COMPONENTS: IntegrationComponent[] = ["librenms", "loki", "graylog"];
+const VALID_COMPONENTS: ContainerIntegrationComponent[] = ["librenms", "loki", "graylog"];
 
-function parseComponent(raw: string): IntegrationComponent | null {
-  return VALID_COMPONENTS.includes(raw as IntegrationComponent)
-    ? (raw as IntegrationComponent)
+function parseComponent(raw: string): ContainerIntegrationComponent | null {
+  return VALID_COMPONENTS.includes(raw as ContainerIntegrationComponent)
+    ? (raw as ContainerIntegrationComponent)
     : null;
 }
 
@@ -41,6 +43,11 @@ export async function POST(
   const component = parseComponent(raw);
   if (!component) return NextResponse.json({ error: "Componente non valido" }, { status: 400 });
 
+  // Il LibreNMS dell'installatore dell'appliance c'è già: un secondo sulla 8090
+  // prenderebbe il suo posto in DA-IPAM, vuoto (pilota PX-NAS 2026-10-15).
+  const rifiuto = await rifiutoInstallazione(component);
+  if (rifiuto) return NextResponse.json({ error: rifiuto }, { status: 409 });
+
   // Controlla se c'è già un job in corso per questo componente
   const running = listJobs().find(
     (j) => j.component === component && (j.phase !== "done" && j.phase !== "error")
@@ -52,22 +59,21 @@ export async function POST(
   const cfg = getIntegrationConfig(component);
   const containerName = cfg.containerName ?? `da-${component}`;
 
-  let adminPassword = "admin";
-  let serverUrl = "";
+  // Password admin: quella della richiesta (almeno 6 caratteri) oppure una
+  // generata qui — mai un valore predefinito (SEC-13). Si salva cifrata e la
+  // mostra la card dell'integrazione agli admin.
+  let corpo: unknown = {};
   try {
-    const body = await req.json() as { adminPassword?: string; serverUrl?: string };
-    if (body.adminPassword && typeof body.adminPassword === "string" && body.adminPassword.trim().length >= 6) {
-      adminPassword = body.adminPassword.trim();
-    }
-    if (body.serverUrl && typeof body.serverUrl === "string" && body.serverUrl.trim()) {
-      serverUrl = body.serverUrl.trim().replace(/\/$/, "");
-    }
+    corpo = await req.json();
   } catch { /* body vuoto ok */ }
+  const parametri = parametriInstallazione(corpo);
+  const adminPassword = parametri.adminPassword;
+  let serverUrl = parametri.serverUrl;
 
   // Se l'utente non ha specificato un URL, lo rileva automaticamente
   if (!serverUrl) {
     const ip = detectServerIp();
-    const defaultPorts: Record<IntegrationComponent, number> = { librenms: 8090, graylog: 9000, loki: 3100 };
+    const defaultPorts: Record<ContainerIntegrationComponent, number> = { librenms: 8090, graylog: 9000, loki: 3100 };
     serverUrl = `http://${ip}:${defaultPorts[component]}`;
   }
 
@@ -81,7 +87,7 @@ export async function POST(
   });
 
   // Avvia in background
-  const runners: Record<IntegrationComponent, () => Promise<void>> = {
+  const runners: Record<ContainerIntegrationComponent, () => Promise<void>> = {
     librenms: () => installLibreNMS(jobId, containerName, adminPassword, serverUrl),
     loki: () => installLoki(jobId, containerName),
     graylog: () => installGraylog(jobId, containerName, adminPassword, serverUrl),

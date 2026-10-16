@@ -16,6 +16,7 @@ import type { Database } from "better-sqlite3";
 import { requireAdmin, requireAuth, isAuthError } from "@/lib/api-auth";
 import { getActiveTenants } from "@/lib/db-hub";
 import { withTenant, getTenantDb } from "@/lib/db-tenant";
+import { withTenantFromSession } from "@/lib/api-tenant";
 import { reloadTenantScheduler } from "@/lib/cron/scheduler";
 import { getMeshConfig, saveMeshConfig } from "@/lib/integrations/meshcentral/config";
 import { loginTokenSelfCheck } from "@/lib/integrations/meshcentral/login-token";
@@ -91,43 +92,57 @@ function removeMeshSyncJobFromAllTenants(): number {
 }
 
 export async function GET() {
-  const authCheck = await requireAuth();
-  if (isAuthError(authCheck)) return authCheck;
-  const cfg = getMeshConfig();
-  // getMeshConfig() è già public-safe (MeshConfigPublic, niente segreti).
-  return NextResponse.json(cfg ?? { present: false });
+  // withTenantFromSession OBBLIGATORIO: getMeshConfig() legge il DB del tenant
+  // corrente e senza questo contesto lancia "mesh-config: no tenant context" →
+  // HTTP 500. Era l'unica delle 7 rotte meshcentral a non averlo: la pagina
+  // Impostazioni mostrava i campi VUOTI e la config non era ne' leggibile ne'
+  // salvabile dalla UI, pur essendo presente nel DB (seminata per altra via).
+  // Segnalato dall'utente il 2026-07-17 ("i parametri non sono inseriti").
+  return withTenantFromSession(async () => {
+    const authCheck = await requireAuth();
+    if (isAuthError(authCheck)) return authCheck;
+    const cfg = getMeshConfig();
+    // getMeshConfig() è già public-safe (MeshConfigPublic, niente segreti).
+    return NextResponse.json(cfg ?? { present: false });
+  });
 }
 
 export async function POST(req: Request) {
-  const adminCheck = await requireAdmin();
-  if (isAuthError(adminCheck)) return adminCheck;
+  // withTenantFromSession OBBLIGATORIO anche qui: saveMeshConfig(),
+  // getMeshConfig() e loginTokenSelfCheck() lavorano tutti sul DB del tenant
+  // corrente. Senza contesto il salvataggio dalla UI falliva con HTTP 500 —
+  // configurare MeshCentral dall'interfaccia era di fatto impossibile.
+  return withTenantFromSession(async () => {
+    const adminCheck = await requireAdmin();
+    if (isAuthError(adminCheck)) return adminCheck;
 
-  let body: unknown;
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "JSON non valido" }, { status: 400 });
-  }
-  const parsed = PostSchema.safeParse(body);
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Dati non validi" }, { status: 400 });
-  }
+    let body: unknown;
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json({ error: "JSON non valido" }, { status: 400 });
+    }
+    const parsed = PostSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Dati non validi" }, { status: 400 });
+    }
 
-  const { syncIntervalMinutes, ...input } = parsed.data;
-  saveMeshConfig(input);
+    const { syncIntervalMinutes, ...input } = parsed.data;
+    saveMeshConfig(input);
 
-  const scheduler = ensureMeshSyncJobForAllTenants(syncIntervalMinutes ?? DEFAULT_SYNC_MINUTES);
+    const scheduler = ensureMeshSyncJobForAllTenants(syncIntervalMinutes ?? DEFAULT_SYNC_MINUTES);
 
-  // C3: self-check soft del codec login-token contro il server (non blocca il save).
-  let selfCheck: { ok: boolean; error?: string };
-  try {
-    selfCheck = { ok: await loginTokenSelfCheck() };
-  } catch (err) {
-    selfCheck = { ok: false, error: (err as Error)?.message ?? "self-check non eseguibile" };
-  }
+    // C3: self-check soft del codec login-token contro il server (non blocca il save).
+    let selfCheck: { ok: boolean; error?: string };
+    try {
+      selfCheck = { ok: await loginTokenSelfCheck() };
+    } catch (err) {
+      selfCheck = { ok: false, error: (err as Error)?.message ?? "self-check non eseguibile" };
+    }
 
-  const cfg = getMeshConfig();
-  return NextResponse.json({ ...(cfg ?? { present: false }), scheduler, selfCheck });
+    const cfg = getMeshConfig();
+    return NextResponse.json({ ...(cfg ?? { present: false }), scheduler, selfCheck });
+  });
 }
 
 export async function DELETE() {

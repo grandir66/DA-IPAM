@@ -1,16 +1,14 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { requireAdmin, isAuthError, getTenantCodeFromSession } from "@/lib/api-auth";
 import { setTenantOnboardingCompleted, setSetting } from "@/lib/db-hub";
 
 /**
- * Segna l'onboarding come completato per il tenant corrente.
+ * Segna l'onboarding come completato per il tenant corrente (mutazione → admin, G6).
  */
 export async function POST() {
-  const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "Non autenticato" }, { status: 401 });
-  }
-  const tenantCode = (session.user as Record<string, unknown>).tenantCode as string | null;
+  const session = await requireAdmin();
+  if (isAuthError(session)) return session;
+  const tenantCode = getTenantCodeFromSession(session);
   if (!tenantCode || tenantCode === "__ALL__") {
     return NextResponse.json({ error: "Nessun tenant selezionato" }, { status: 400 });
   }

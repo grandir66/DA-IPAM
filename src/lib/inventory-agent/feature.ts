@@ -2,7 +2,7 @@
  * Feature flag + ingest token lifecycle (hub tenant_features).
  */
 import crypto from "node:crypto";
-import { encrypt, decrypt } from "@/lib/crypto";
+import { encrypt, safeDecrypt } from "@/lib/crypto";
 import { getHubDb } from "@/lib/db-hub";
 import {
   getFeatureStatus,
@@ -68,7 +68,7 @@ export function getStoredInventoryIngestTokenPlaintext(tenantCode: string): stri
   try {
     const cfg = JSON.parse(row.config_json) as InventoryAgentConfig;
     if (!cfg.ingestTokenEnc) return null;
-    return decrypt(cfg.ingestTokenEnc);
+    return safeDecrypt(cfg.ingestTokenEnc);
   } catch {
     return null;
   }

@@ -1,0 +1,296 @@
+/**
+ * Tipi d'archivio delle credenziali, metodi d'accesso, etichette e la regola
+ * unica tipo ↔ protocollo (tappa 2 credenziali, T2, 15/10).
+ *
+ * Modulo puro, senza DB e senza dipendenze: lo importano anche i componenti
+ * client, come `porte.ts`. Prima la regola tipo ↔ protocollo stava in due
+ * posti con valori diversi (`credential-protocol-map.ts` e il livello 5 di
+ * `resolve.ts`): per `api` le tendine offrivano le voci `ssh` (Proxmox con
+ * root) e il motore no.
+ *
+ * Dalla 2c (T11-T13) il DB non ha più il CHECK sui tipi: la validazione sta
+ * qui e nel CRUD (`archivio.ts`). `linux` non è un tipo: è un alias di `ssh`
+ * in lettura, e dalla 2c non ci sono più voci `linux`.
+ */
+
+export const TIPI_CREDENZIALE = ["ssh", "snmp", "snmp_v3", "windows", "api", "unifi", "omada", "ad"] as const;
+export type TipoCredenziale = (typeof TIPI_CREDENZIALE)[number];
+
+export const METODI_ACCESSO = ["password", "chiave", "community", "utente_v3", "utente", "token", "client"] as const;
+export type MetodoAccesso = (typeof METODI_ACCESSO)[number];
+
+/**
+ * Metodi d'accesso di ogni tipo. Il primo è quello di una voce con
+ * `auth_method` NULL (le voci scritte prima della tappa 2).
+ */
+export const METODI_PER_TIPO: Record<TipoCredenziale, readonly MetodoAccesso[]> = {
+  ssh: ["password", "chiave"],
+  snmp: ["community"],
+  snmp_v3: ["utente_v3"],
+  windows: ["password"],
+  api: ["utente", "token"],
+  unifi: ["chiave", "utente"],
+  omada: ["client", "utente"],
+  ad: ["password"],
+};
+
+export const ETICHETTE_TIPO: Record<TipoCredenziale, string> = {
+  ssh: "SSH (password o chiave)",
+  snmp: "SNMP v1/v2c",
+  snmp_v3: "SNMP v3",
+  windows: "Windows (WinRM e WMI)",
+  api: "API (token o utente)",
+  unifi: "Controller UniFi",
+  omada: "Controller Omada",
+  ad: "Active Directory",
+};
+
+const TIPI_NOTI: ReadonlySet<string> = new Set(TIPI_CREDENZIALE);
+
+/** Codice del DB → tipo d'archivio. `linux` → `ssh`; sconosciuto o assente → null. */
+export function normalizzaTipo(t: string | null | undefined): TipoCredenziale | null {
+  if (t == null) return null;
+  const codice = t.trim().toLowerCase();
+  if (codice === "linux") return "ssh";
+  return TIPI_NOTI.has(codice) ? (codice as TipoCredenziale) : null;
+}
+
+/** Etichetta per esteso; un codice sconosciuto si mostra com'è, mai nascosto. */
+export function etichettaTipo(t: string | null | undefined): string {
+  const tipo = normalizzaTipo(t);
+  return tipo ? ETICHETTE_TIPO[tipo] : (t ?? "");
+}
+
+/**
+ * Regola unica: quali codici di `credentials.credential_type` valgono per un
+ * protocollo, di apparato (`network_devices.protocol`) o di binding
+ * (`protocol_type`).
+ * - SSH: `ssh` e l'alias `linux`;
+ * - WinRM: solo `windows`. L'account AD non entra (D7 = (a)): finirebbe nelle
+ *   catene e nelle prove in sequenza, cioè in accessi falliti con l'account
+ *   più delicato;
+ * - SNMP (`snmp`, `snmp_v2`, `snmp_v3`): `snmp` e `snmp_v3`, la versione la
+ *   decide la credenziale;
+ * - API: `api` e `ssh` (Proxmox con utente root, regola della tappa 1);
+ * - Redfish, ONVIF: solo `api`;
+ * - protocollo sconosciuto o assente: i tipi d'accesso, senza SNMP.
+ * UniFi, Omada e AD non valgono per nessun protocollo: li sceglie chi
+ * configura il controller o l'integrazione.
+ * Ogni chiamata restituisce un elenco nuovo.
+ */
+export function tipiPerProtocollo(protocollo: string | null | undefined): string[] {
+  switch (protocollo) {
+    case "ssh":
+      return ["ssh", "linux"];
+    case "winrm":
+      return ["windows"];
+    case "snmp":
+    case "snmp_v2":
+    case "snmp_v3":
+      return ["snmp", "snmp_v3"];
+    case "api":
+      return ["api", "ssh"];
+    case "redfish":
+    case "onvif":
+      return ["api"];
+    default:
+      return ["ssh", "windows", "api", "linux"];
+  }
+}
+
+/** Ruolo delle catene vecchie → protocollo della regola unica. */
+const PROTOCOLLO_DEL_RUOLO = { windows: "winrm", linux: "ssh", ssh: "ssh", snmp: "snmp" } as const;
+
+/**
+ * Tipi ammessi in un ruolo delle catene vecchie (`network_host_credentials`,
+ * `host_detect_credential`): quelli del protocollo del ruolo, la stessa regola
+ * con cui il motore le legge (T12, 16/10). Prima `linux` accettava solo
+ * `linux`: dalla 2c le voci `linux` sono `ssh`, e la pagina della rete che
+ * rimandava la catena rispondeva 400 dopo aver salvato la rete.
+ */
+export function tipiPerRuoloVecchio(ruolo: keyof typeof PROTOCOLLO_DEL_RUOLO): string[] {
+  return tipiPerProtocollo(PROTOCOLLO_DEL_RUOLO[ruolo]);
+}
+
+/** Tipi «propri» di ogni protocollo: quelli la cui porta è una porta di quel protocollo. */
+const TIPI_PROPRI: Readonly<Record<string, readonly TipoCredenziale[]>> = {
+  ssh: ["ssh"],
+  winrm: ["windows"],
+  snmp: ["snmp", "snmp_v3"],
+  snmp_v2: ["snmp", "snmp_v3"],
+  snmp_v3: ["snmp", "snmp_v3"],
+  api: ["api"],
+  redfish: ["api"],
+  onvif: ["api"],
+};
+
+/**
+ * La porta propria di una voce vale per un protocollo solo se la voce è di un
+ * tipo suo. Una voce ammessa per un altro protocollo (una SSH per le API di
+ * Proxmox) porta la porta del protocollo per cui è nata (22, 2222), non di
+ * questo: lì vale lo standard (revisione della 2a). Protocollo sconosciuto:
+ * mai la porta della voce.
+ */
+export function portaVoceValePer(tipoVoce: string | null | undefined, protocollo: string | null | undefined): boolean {
+  const tipo = normalizzaTipo(tipoVoce);
+  const propri = protocollo ? TIPI_PROPRI[protocollo] : undefined;
+  return tipo != null && propri != null && propri.includes(tipo);
+}
+
+/**
+ * Campi logici di una voce. Colonne: `username` → `encrypted_username`,
+ * `password` → `encrypted_password` (anche community, token, chiave API e
+ * client secret), `private_key` → `encrypted_private_key`, `auth_key` →
+ * `encrypted_auth_key`, `priv_key` → `encrypted_priv_key`.
+ */
+export type CampoCredenziale = "username" | "password" | "private_key" | "auth_key" | "priv_key";
+
+const LIVELLI_V3 = ["noAuthNoPriv", "authNoPriv", "authPriv"] as const;
+
+/**
+ * Campi obbligatori di una voce per tipo e metodo. Facoltativi, quindi assenti
+ * qui: la passphrase della chiave SSH e l'id del token API.
+ * SNMP v3 dipende dal livello; senza livello si chiedono tutti i campi
+ * (authPriv), mai di meno. Un metodo che il tipo non ha, o un livello SNMPv3
+ * sconosciuto, è un errore: un elenco vuoto vorrebbe dire «nessun campo
+ * obbligatorio» e farebbe passare una voce vuota.
+ */
+export function campiRichiesti(tipo: TipoCredenziale, metodo: MetodoAccesso, livelloV3?: string | null): CampoCredenziale[] {
+  if (!METODI_PER_TIPO[tipo].includes(metodo)) {
+    throw new Error(`Il metodo «${metodo}» non vale per il tipo «${ETICHETTE_TIPO[tipo]}»`);
+  }
+  switch (metodo) {
+    case "password":
+    case "utente":
+    case "client":
+      return ["username", "password"];
+    case "chiave":
+      return tipo === "ssh" ? ["username", "private_key"] : ["password"];
+    case "community":
+    case "token":
+      return ["password"];
+    case "utente_v3": {
+      const livello = livelloV3 ?? "authPriv";
+      if (!(LIVELLI_V3 as readonly string[]).includes(livello)) {
+        throw new Error(`Il livello SNMPv3 «${livello}» non è riconosciuto (ammessi: ${LIVELLI_V3.join(", ")})`);
+      }
+      if (livello === "noAuthNoPriv") return ["username"];
+      if (livello === "authNoPriv") return ["username", "auth_key"];
+      return ["username", "auth_key", "priv_key"];
+    }
+  }
+}
+
+/** Etichetta di un metodo d'accesso; «chiave» dice di quale chiave si tratta. */
+export function etichettaMetodo(tipo: TipoCredenziale, metodo: MetodoAccesso): string {
+  switch (metodo) {
+    case "password":
+    case "utente":
+      return "Utente e password";
+    case "chiave":
+      return tipo === "ssh" ? "Chiave privata" : "Chiave API";
+    case "community":
+      return "Community";
+    case "utente_v3":
+      return "Utente SNMP v3";
+    case "token":
+      return "Token";
+    case "client":
+      return "Client ID e secret";
+  }
+}
+
+/**
+ * Campi che una voce di quel tipo e metodo può avere (T13, 16/10): quelli
+ * obbligatori di `campiRichiesti` più i facoltativi (passphrase della chiave
+ * SSH, id del token, livello e protocolli SNMP v3). Il resto non si scrive, e
+ * cambiando metodo le colonne fuori da qui si svuotano: una SSH passata a
+ * chiave non tiene la password vecchia, che il trasporto proverebbe ancora.
+ */
+export type CampoVoce = CampoCredenziale | "passphrase" | "v3";
+
+export function campiDelMetodo(tipo: TipoCredenziale, metodo: MetodoAccesso): CampoVoce[] {
+  switch (metodo) {
+    case "password":
+    case "utente":
+    case "client":
+    case "token":
+      return ["username", "password"];
+    case "chiave":
+      return tipo === "ssh" ? ["username", "private_key", "passphrase"] : ["password"];
+    case "community":
+      return ["password"];
+    case "utente_v3":
+      return ["username", "v3", "auth_key", "priv_key"];
+  }
+}
+
+/**
+ * Che cosa contengono le colonne dei segreti per tipo e metodo. Due accessi
+ * con la stessa forma (SSH e Windows con utente e password) si scambiano i
+ * segreti salvati; con forme diverse no: la password di una SSH passata a
+ * chiave, o la chiave API di un UniFi passato a utente, non sono più quel
+ * segreto.
+ */
+export function formaSegreto(tipo: TipoCredenziale, metodo: MetodoAccesso): string {
+  switch (metodo) {
+    case "password":
+    case "utente":
+      return "utente_password";
+    case "chiave":
+      return tipo === "ssh" ? "chiave_ssh" : "chiave_api";
+    default:
+      return metodo;
+  }
+}
+
+const NOMI_PROTOCOLLO: Readonly<Record<string, string>> = {
+  ssh: "SSH",
+  winrm: "WinRM",
+  snmp: "SNMP",
+  snmp_v2: "SNMP v2c",
+  snmp_v3: "SNMP v3",
+  api: "API",
+  redfish: "Redfish",
+  onvif: "ONVIF",
+};
+
+/** Nome leggibile di un protocollo d'accesso (di apparato, binding o riga host). */
+export function etichettaProtocollo(protocollo: string): string {
+  return NOMI_PROTOCOLLO[protocollo] ?? protocollo;
+}
+
+/**
+ * Tipi che valgono per almeno un protocollo d'accesso: quelli che possono
+ * stare nella lista di una rete, in un binding o in una riga host. UniFi,
+ * Omada e AD no: li sceglie chi configura il controller o l'integrazione.
+ */
+export const TIPI_D_ACCESSO: readonly TipoCredenziale[] = ["ssh", "snmp", "snmp_v3", "windows", "api"];
+
+export function valePerAccesso(tipo: string | null | undefined): boolean {
+  const t = normalizzaTipo(tipo);
+  return t != null && TIPI_D_ACCESSO.includes(t);
+}
+
+interface VoceConTipo {
+  name: string;
+  credential_type: string;
+}
+
+/**
+ * Il rifiuto di chi lega una voce a un protocollo (T13, 16/10), o null se la
+ * voce vale. Prima il controllo c'era solo sulle catene vecchie della rete:
+ * un binding o una riga host di tipo sbagliato si salvavano e il motore poi
+ * scartava la voce in silenzio.
+ */
+export function erroreVocePerProtocollo(id: number, voce: VoceConTipo | null | undefined, protocollo: string): string | null {
+  if (!voce) return `La credenziale #${id} non esiste nell'archivio`;
+  if (tipiPerProtocollo(protocollo).includes(voce.credential_type.trim().toLowerCase())) return null;
+  return `La credenziale «${voce.name}» è di tipo ${etichettaTipo(voce.credential_type)}, non vale per ${etichettaProtocollo(protocollo)}`;
+}
+
+/** Il rifiuto di una voce nella lista di una rete, o null se vale. */
+export function erroreVocePerRete(voce: VoceConTipo): string | null {
+  if (valePerAccesso(voce.credential_type)) return null;
+  return `La credenziale «${voce.name}» è di tipo ${etichettaTipo(voce.credential_type)}: nella lista di una rete vanno solo voci SSH, SNMP, Windows o API`;
+}

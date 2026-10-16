@@ -22,6 +22,12 @@ export interface TableSpec {
    * Usare solo per i casi che sfuggono all'heuristic (es. community_string, api_token).
    */
   secretColumns?: string[];
+  /**
+   * Chiave unica del destinatario che la sorgente può non avere (una versione
+   * precedente): all'import le righe con la stessa chiave si riducono a una,
+   * quella col `latest` più recente (a parità, l'id più alto).
+   */
+  dedupe?: { key: string[]; latest: string };
 }
 
 export interface BundleManifest {
@@ -65,6 +71,11 @@ export interface ImportResult {
   vaultMerged: number;
   rekeyedSecrets: number;
   fkViolations: number;
+  /**
+   * Conversioni rilanciate dopo l'import (tappa 2 credenziali), per segno di
+   * `tenant_settings`: il valore scritto e cosa hanno cambiato, per id.
+   */
+  conversioni: Record<string, { segno: string; dettaglio: string }>;
 }
 
 export const BUNDLE_FORMAT = "da-ipam-tenant-bundle" as const;

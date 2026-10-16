@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "FILE=$(echo \"$CLAUDE_TOOL_INPUT\" | python3 -c 'import sys,json;print(json.load(sys.stdin).get(\"file_path\",\"\"))' 2>/dev/null); if echo \"$FILE\" | grep -qE '\\.(ts|tsx)$' && ! echo \"$FILE\" | grep -qE '(\\.test\\.|\\.spec\\.|node_modules/|\\.next/|tsconfig\\.tsbuildinfo)'; then cd /Users/riccardo/Progetti/DA-IPAM && timeout 30 npx --no-install tsc --noEmit -p tsconfig.json 2>&1 | grep -E \"^${FILE}:\" | head -10; fi"
+            "command": "FILE=$(echo \"$CLAUDE_TOOL_INPUT\" | python3 -c 'import sys,json;print(json.load(sys.stdin).get(\"file_path\",\"\"))' 2>/dev/null); if echo \"$FILE\" | grep -qE '\\.(ts|tsx)$' && ! echo \"$FILE\" | grep -qE '(\\.test\\.|\\.spec\\.|node_modules/|\\.next/|tsconfig\\.tsbuildinfo)'; then cd /Users/riccardo/Progetti/Domarc/DA-IPAM && timeout 30 npx --no-install tsc --noEmit -p tsconfig.json 2>&1 | grep -E \"^${FILE}:\" | head -10; fi"
           }
         ]
       }

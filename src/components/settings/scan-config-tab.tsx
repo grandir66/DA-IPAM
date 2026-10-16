@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Radar, Zap, Terminal, Save, ChevronDown, ChevronRight } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { buildTcpScanArgs, buildUdpScanArgs } from "@/lib/scanner/ports";
 
@@ -29,6 +30,8 @@ interface NmapProfile {
   updated_at: string;
 }
 
+type PortDiscoveryMode = "nmap" | "naabu+nmap";
+
 interface ScanConfig {
   quickScan: {
     tcpPorts: string;
@@ -44,6 +47,9 @@ interface ScanConfig {
     tcpArgs: string;
     udpArgs: string;
   };
+  portDiscovery?: PortDiscoveryMode;
+  naabuBinPath?: string;
+  naabuAvailable?: boolean;
   envOverrides: Record<string, string | null>;
 }
 
@@ -145,6 +151,13 @@ export function ScanConfigTab() {
   const [quickPortsDirty, setQuickPortsDirty] = useState(false);
   const [savingQuickPorts, setSavingQuickPorts] = useState(false);
 
+  // --- Naabu / port discovery ---
+  const [portDiscovery, setPortDiscovery] = useState<PortDiscoveryMode>("nmap");
+  const [naabuBinPath, setNaabuBinPath] = useState("");
+  const [naabuAvailable, setNaabuAvailable] = useState<boolean | null>(null);
+  const [naabuDirty, setNaabuDirty] = useState(false);
+  const [savingNaabu, setSavingNaabu] = useState(false);
+
   // --- Env vars collapsible ---
   const [envOpen, setEnvOpen] = useState(false);
 
@@ -210,6 +223,18 @@ export function ScanConfigTab() {
         setQuickPorts(
           savedSettings.quick_scan_tcp_ports || sc.quickScan.tcpPorts
         );
+
+        const modeFromApi = sc.portDiscovery === "naabu+nmap" ? "naabu+nmap" : "nmap";
+        const modeFromSettings =
+          savedSettings.port_discovery === "naabu+nmap" ? "naabu+nmap" : "nmap";
+        setPortDiscovery(sc.portDiscovery ? modeFromApi : modeFromSettings);
+        setNaabuBinPath(
+          (sc.naabuBinPath ?? savedSettings.naabu_bin_path ?? "").trim()
+        );
+        setNaabuAvailable(
+          typeof sc.naabuAvailable === "boolean" ? sc.naabuAvailable : null
+        );
+        setNaabuDirty(false);
       }
     } catch {
       toast.error("Errore nel caricamento configurazione scansione");
@@ -321,6 +346,41 @@ export function ScanConfigTab() {
       toast.error(err instanceof Error ? err.message : "Errore di rete");
     } finally {
       setSavingQuickPorts(false);
+    }
+  }
+
+  async function handleSaveNaabu() {
+    setSavingNaabu(true);
+    try {
+      const entries: [string, string][] = [
+        ["port_discovery", portDiscovery],
+        ["naabu_bin_path", naabuBinPath.trim()],
+      ];
+      for (const [key, value] of entries) {
+        const res = await fetch("/api/settings", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key, value }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error((data as { error?: string }).error || `Errore salvando ${key}`);
+        }
+      }
+      toast.success("Port discovery salvato");
+      setNaabuDirty(false);
+      // Refresh availability with the new path
+      const scanRes = await fetch("/api/scan-config");
+      if (scanRes.ok) {
+        const sc = (await scanRes.json()) as ScanConfig;
+        setNaabuAvailable(
+          typeof sc.naabuAvailable === "boolean" ? sc.naabuAvailable : null
+        );
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Errore di rete");
+    } finally {
+      setSavingNaabu(false);
     }
   }
 
@@ -530,7 +590,83 @@ export function ScanConfigTab() {
       )}
 
       {/* ================================================================= */}
-      {/* Card 3 — Variabili ambiente (collapsible) */}
+      {/* Card 3 — Port discovery (Naabu opzionale) */}
+      {/* ================================================================= */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Zap className="h-5 w-5 text-primary" />
+            <CardTitle className="text-base">Port discovery TCP</CardTitle>
+          </div>
+          <CardDescription>
+            Opzionale: pre-pass Naabu prima di Nmap mirato (-sV). Se Naabu non è installato, lo scan continua con Nmap only (fail-soft).
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4 max-w-2xl">
+          <div className="flex items-center justify-between gap-4 rounded-md border p-3">
+            <div className="space-y-1">
+              <Label htmlFor="port-discovery-naabu" className="text-sm font-medium">
+                Naabu + Nmap
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Off = solo Nmap (default). On = Naabu TCP poi Nmap -sV sulle porte trovate + porte sempre utili.
+              </p>
+            </div>
+            <Switch
+              id="port-discovery-naabu"
+              checked={portDiscovery === "naabu+nmap"}
+              onCheckedChange={(on) => {
+                setPortDiscovery(on ? "naabu+nmap" : "nmap");
+                setNaabuDirty(true);
+              }}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Label htmlFor="naabu-bin-path">Path binario Naabu</Label>
+              {naabuAvailable === true && (
+                <Badge variant="outline" className="text-green-700 border-green-300 bg-green-50 dark:bg-green-950/30 dark:text-green-300">
+                  naabu: disponibile
+                </Badge>
+              )}
+              {naabuAvailable === false && (
+                <Badge variant="outline" className="text-amber-800 border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:text-amber-300">
+                  naabu: non trovato
+                </Badge>
+              )}
+              {naabuAvailable === null && (
+                <Badge variant="outline" className="text-muted-foreground">
+                  naabu: —
+                </Badge>
+              )}
+            </div>
+            <Input
+              id="naabu-bin-path"
+              value={naabuBinPath}
+              onChange={(e) => {
+                setNaabuBinPath(e.target.value);
+                setNaabuDirty(true);
+              }}
+              placeholder="vuoto = naabu in PATH"
+              className="font-mono text-sm"
+            />
+            <p className="text-xs text-muted-foreground">
+              Lascia vuoto per usare <code className="text-[11px]">naabu</code> dal PATH del server. Binary opzionale ProjectDiscovery.
+            </p>
+          </div>
+
+          {naabuDirty && (
+            <Button onClick={handleSaveNaabu} disabled={savingNaabu} size="sm">
+              <Save className="h-4 w-4 mr-2" />
+              {savingNaabu ? "Salvataggio..." : "Salva port discovery"}
+            </Button>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ================================================================= */}
+      {/* Card 4 — Variabili ambiente (collapsible) */}
       {/* ================================================================= */}
       {config && (
         <Card>

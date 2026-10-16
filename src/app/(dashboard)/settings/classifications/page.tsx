@@ -161,7 +161,7 @@ export default function ClassificationsPage() {
   return (
     <div className="container mx-auto p-4 space-y-4 max-w-5xl">
       <div className="flex items-center gap-2">
-        <Link href="/settings"><Button variant="ghost" size="sm"><ChevronLeft className="h-4 w-4 mr-1" />Settings</Button></Link>
+        <Link href="/discovery"><Button variant="ghost" size="sm"><ChevronLeft className="h-4 w-4 mr-1" />Discovery</Button></Link>
       </div>
 
       <Card>

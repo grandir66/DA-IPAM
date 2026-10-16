@@ -1,0 +1,18 @@
+# DA-IPAM — firewall dell'interfaccia NetBird (wt0). Tappa C1 NetBird/DA-Link.
+# Lo installa scripts/dalink/prepara-netbird.sh, che sostituisce @APP_DIR@.
+# Parte prima di NetBird, così wt0 non è mai su senza la tabella `inet dalink`.
+# Niente ExecStop: fermare il servizio non apre l'interfaccia; si toglie solo a mano
+# con `firewall-wt0.sh --togli`.
+[Unit]
+Description=DA-Link: firewall dell'interfaccia NetBird (wt0) di DA-IPAM
+Before=netbird.service
+After=nftables.service
+ConditionPathExists=/etc/dalink/firewall.env
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/bash @APP_DIR@/scripts/dalink/firewall-wt0.sh --applica
+
+[Install]
+WantedBy=multi-user.target

@@ -1,4 +1,7 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
+import { fetchJson } from "@/lib/fetch-json";
+import { LoadError } from "@/components/shared/load-error";
 
 import { useEffect, useState, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -11,13 +14,18 @@ export function ExcludedIpsClient() {
   const [items, setItems] = useState<ExcludedIpWithNetwork[]>([]);
   const [loading, setLoading] = useState(true);
   const [removing, setRemoving] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/excluded-ips");
-      const data = await res.json();
-      setItems(data.excluded_ips ?? []);
+      const r = await fetchJson<{ excluded_ips?: ExcludedIpWithNetwork[] }>("/api/excluded-ips");
+      if (r.ok) {
+        setItems(r.data.excluded_ips ?? []);
+        setError(null);
+      } else {
+        setError(r.message);
+      }
     } finally {
       setLoading(false);
     }
@@ -78,6 +86,8 @@ export function ExcludedIpsClient() {
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" /> Caricamento...
             </div>
+          ) : error ? (
+            <LoadError what="gli IP esclusi" message={error} onRetry={() => void load()} />
           ) : items.length === 0 ? (
             <div className="text-sm text-muted-foreground">
               Nessun IP escluso. Quando elimini un host la sua coppia (rete, IP) finirà qui.
@@ -107,7 +117,7 @@ export function ExcludedIpsClient() {
                       <TableCell>{reasonLabel(it.reason)}</TableCell>
                       <TableCell>{it.excluded_by ?? "—"}</TableCell>
                       <TableCell className="text-xs text-muted-foreground">
-                        {new Date(it.excluded_at).toLocaleString("it-IT")}
+                        {parseDbDate(it.excluded_at).toLocaleString("it-IT")}
                       </TableCell>
                       <TableCell>
                         <Button

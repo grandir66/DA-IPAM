@@ -1,23 +1,24 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { CredentialFormDialog, caricaStatoModifica } from "@/components/credentials/credential-form-dialog";
+import { haPorta, statoNuovo, type StatoModulo, type VoceArchivio } from "@/lib/credentials/modulo";
+import { CRED_TYPE_OPTIONS } from "@/lib/credential-protocol-map";
+import { DEFAULT_PORTS } from "@/lib/credentials/porte";
+import type { UsiCredenziale } from "@/lib/credentials/usi";
+import { fetchJson } from "@/lib/fetch-json";
+import { LoadError } from "@/components/shared/load-error";
 import {
   Table,
   TableBody,
@@ -26,126 +27,118 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Plus, Trash2, Pencil, BookOpen } from "lucide-react";
+import { Plus, Trash2, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { WinRMSetupGuideDialog } from "@/components/shared/winrm-setup-guide-dialog";
 
-interface Credential {
-  id: number;
-  name: string;
-  credential_type: string;
-  encrypted_username: string | null;
-  encrypted_password: string | null;
-  created_at: string;
-  updated_at: string;
-}
+type Credential = VoceArchivio;
+
+/** Porta proposta nella prova di connessione (la stessa di DEFAULT_PORTS). */
+const PORTA_PROVA: Record<string, number> = {
+  ssh: DEFAULT_PORTS.ssh,
+  snmp: DEFAULT_PORTS.snmp,
+  snmp_v3: DEFAULT_PORTS.snmp,
+  windows: DEFAULT_PORTS.winrm,
+};
+
+/** Tipi che la prova di connessione su un host sa provare. */
+const TIPI_CON_PROVA = new Set(["ssh", "snmp", "snmp_v3", "windows"]);
+
+type Caricamento = { fase: "caricamento" } | { fase: "pronto" } | { fase: "errore"; messaggio: string };
+
+/** La voce aperta nella finestra degli usi: gli usi arrivano da GET /api/credentials/[id]. */
+type FinestraUsi =
+  | { stato: "chiusa" }
+  | { stato: "caricamento"; voce: Credential }
+  | { stato: "pronta"; voce: Credential; usi: UsiCredenziale; totale: number }
+  | { stato: "errore"; voce: Credential; messaggio: string };
 
 export default function CredentialsPage() {
   const [credentials, setCredentials] = useState<Credential[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [caricamento, setCaricamento] = useState<Caricamento>({ fase: "caricamento" });
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [form, setForm] = useState({ name: "", credential_type: "ssh" as "ssh" | "snmp" | "api" | "windows" | "linux", username: "", password: "" });
-  // v0.2.649: guida WinRM accessibile dal form quando type=windows.
+  const [statoModulo, setStatoModulo] = useState<StatoModulo>(() => statoNuovo());
+  // v0.2.649: guida WinRM, aperta dal test non riuscito di una voce Windows.
   const [winrmGuideOpen, setWinrmGuideOpen] = useState(false);
   const [testingId, setTestingId] = useState<number | null>(null);
   const [testDialogOpen, setTestDialogOpen] = useState(false);
   const [testCredId, setTestCredId] = useState<number | null>(null);
   const [testHost, setTestHost] = useState("");
   const [testPort, setTestPort] = useState("");
+  const [finestraUsi, setFinestraUsi] = useState<FinestraUsi>({ stato: "chiusa" });
+  const [eliminando, setEliminando] = useState(false);
 
-  const fetchCredentials = async () => {
-    try {
-      const res = await fetch("/api/credentials");
-      if (res.ok) {
-        const data = await res.json();
-        setCredentials(data);
-      }
-    } catch {
-      toast.error("Errore nel caricamento delle credenziali");
-    } finally {
-      setLoading(false);
+  // no-store: la GET ha una cache di 60 s, e dopo una modifica o
+  // un'eliminazione l'elenco (e la colonna «Usata da») tornerebbe com'era.
+  const fetchCredentials = useCallback(async () => {
+    const esito = await fetchJson<Credential[]>("/api/credentials", { cache: "no-store" });
+    if (esito.ok) {
+      setCredentials(esito.data);
+      setCaricamento({ fase: "pronto" });
+    } else {
+      setCaricamento({ fase: "errore", messaggio: esito.message });
     }
-  };
-
-  useEffect(() => {
-    fetchCredentials();
   }, []);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!form.name.trim()) {
-      toast.error("Nome richiesto");
-      return;
-    }
-    if ((form.credential_type === "ssh" || form.credential_type === "api" || form.credential_type === "windows" || form.credential_type === "linux") && (!form.username || !form.password)) {
-      toast.error("Username e password richiesti");
-      return;
-    }
-    if (form.credential_type === "snmp" && !editingId && !form.password?.trim()) {
-      toast.error("Community string richiesta per credenziali SNMP");
-      return;
-    }
-    try {
-      const url = editingId ? `/api/credentials/${editingId}` : "/api/credentials";
-      const method = editingId ? "PUT" : "POST";
-      const body = editingId
-        ? { name: form.name, credential_type: form.credential_type, username: form.username || undefined, password: form.password || undefined }
-        : form;
-      const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || "Errore");
-      }
-      toast.success(editingId ? "Credenziale aggiornata" : "Credenziale creata");
-      setDialogOpen(false);
-      setEditingId(null);
-      setForm({ name: "", credential_type: "ssh" as const, username: "", password: "" });
-      fetchCredentials();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Errore");
+  useEffect(() => {
+    void fetchCredentials();
+  }, [fetchCredentials]);
+
+  /** Gli usi della voce, letti al momento: la colonna può essere vecchia di qualche secondo. */
+  const apriUsi = async (c: Credential) => {
+    setFinestraUsi({ stato: "caricamento", voce: c });
+    const esito = await fetchJson<VoceArchivio & { usi: UsiCredenziale }>(`/api/credentials/${c.id}`, { cache: "no-store" });
+    if (esito.ok) {
+      setFinestraUsi({ stato: "pronta", voce: c, usi: esito.data.usi, totale: esito.data.usi_totale });
+    } else {
+      setFinestraUsi({ stato: "errore", voce: c, messaggio: esito.message });
     }
   };
 
-  const handleDelete = async (id: number) => {
-    if (!confirm("Eliminare questa credenziale?")) return;
+  const elimina = async (c: Credential): Promise<void> => {
+    setEliminando(true);
     try {
-      const res = await fetch(`/api/credentials/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Errore");
-      toast.success("Credenziale eliminata");
-      fetchCredentials();
-    } catch {
-      toast.error("Errore nell'eliminazione");
+      const esito = await fetchJson<unknown>(`/api/credentials/${c.id}`, { method: "DELETE" });
+      if (esito.ok) {
+        toast.success("Credenziale eliminata");
+        setFinestraUsi({ stato: "chiusa" });
+      } else if (esito.status === 409) {
+        // Nel frattempo qualcuno l'ha messa in uso: si mostra dove.
+        await apriUsi(c);
+      } else {
+        toast.error(`Credenziale non eliminata: ${esito.message}`);
+      }
+    } finally {
+      setEliminando(false);
+      void fetchCredentials();
     }
+  };
+
+  /** D8 = (a): una voce in uso non si elimina; «Elimina» mostra dove è usata. */
+  const handleDelete = async (c: Credential) => {
+    if (c.usi_totale > 0) {
+      await apriUsi(c);
+      return;
+    }
+    if (!confirm(`Eliminare la credenziale «${c.name}»?`)) return;
+    await elimina(c);
   };
 
   const openEdit = async (c: Credential) => {
-    setEditingId(c.id);
-    let username = "";
-    if (c.credential_type === "ssh" || c.credential_type === "api" || c.credential_type === "windows" || c.credential_type === "linux") {
-      try {
-        const res = await fetch(`/api/credentials/${c.id}?for_edit=1`);
-        if (res.ok) {
-          const data = await res.json();
-          username = data.username ?? "";
-        }
-      } catch { /* ignore */ }
-    }
-    setForm({ name: c.name, credential_type: c.credential_type as "ssh" | "snmp" | "api" | "windows" | "linux", username, password: "" });
+    setStatoModulo(await caricaStatoModifica(c));
     setDialogOpen(true);
   };
 
   const openCreate = () => {
-    setEditingId(null);
-    setForm({ name: "", credential_type: "ssh" as const, username: "", password: "" });
+    setStatoModulo(statoNuovo());
     setDialogOpen(true);
   };
 
   const openTestDialog = (c: Credential) => {
     setTestCredId(c.id);
     setTestHost("");
-    const defaultPort = c.credential_type === "ssh" || c.credential_type === "linux" ? "22" : c.credential_type === "windows" ? "5985" : c.credential_type === "snmp" ? "161" : "";
-    setTestPort(defaultPort);
+    const defaultPort = c.port ?? PORTA_PROVA[c.credential_type] ?? null;
+    setTestPort(defaultPort != null ? String(defaultPort) : "");
     setTestDialogOpen(true);
   };
 
@@ -198,7 +191,7 @@ export default function CredentialsPage() {
       <div>
         <h1 className="text-2xl font-bold">Credenziali riutilizzabili</h1>
         <p className="text-muted-foreground mt-1">
-          Gestisci credenziali per dispositivi di rete (SSH, SNMP, API) e per host Windows/Linux.
+          L&apos;archivio delle credenziali: accesso agli apparati (SSH, SNMP, Windows, API), controller UniFi e Omada, Active Directory.
         </p>
       </div>
 
@@ -206,103 +199,19 @@ export default function CredentialsPage() {
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
             <CardTitle>Elenco credenziali</CardTitle>
-            <CardDescription>Usa credential_id nel dispositivo per riferire una credenziale.</CardDescription>
+            <CardDescription>Una voce in uso non si elimina e non cambia tipo: «Usata da» dice dove serve.</CardDescription>
           </div>
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <Button onClick={openCreate}>
-              <Plus className="h-4 w-4 mr-2" />
-              Nuova credenziale
-            </Button>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>{editingId ? "Modifica credenziale" : "Nuova credenziale"}</DialogTitle>
-              </DialogHeader>
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div>
-                  <Label>Nome</Label>
-                  <Input
-                    value={form.name}
-                    onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                    placeholder="es. Admin MikroTik"
-                  />
-                </div>
-                <div>
-                  <Label>Tipo</Label>
-                  <Select
-                    value={form.credential_type}
-                    onValueChange={(v) => setForm((f) => ({ ...f, credential_type: v as "ssh" | "snmp" | "api" | "windows" | "linux" }))}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="ssh">SSH (dispositivi)</SelectItem>
-                      <SelectItem value="snmp">SNMP</SelectItem>
-                      <SelectItem value="api">API</SelectItem>
-                      <SelectItem value="windows">Windows (host)</SelectItem>
-                      <SelectItem value="linux">Linux (host)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                {(form.credential_type === "ssh" || form.credential_type === "api" || form.credential_type === "windows" || form.credential_type === "linux") && (
-                  <>
-                    <div>
-                      <div className="flex items-center justify-between">
-                        <Label>Username</Label>
-                        {form.credential_type === "windows" && (
-                          <button
-                            type="button"
-                            onClick={() => setWinrmGuideOpen(true)}
-                            className="text-[11px] text-primary hover:underline inline-flex items-center gap-1"
-                            title="Guida per abilitare WinRM sul server target"
-                          >
-                            <BookOpen className="h-3 w-3" />
-                            Come abilitare WinRM?
-                          </button>
-                        )}
-                      </div>
-                      <Input
-                        value={form.username}
-                        onChange={(e) => setForm((f) => ({ ...f, username: e.target.value }))}
-                        placeholder={form.credential_type === "windows" ? "es. .\\admin (locale), DOMINIO\\utente (AD), o utente@dominio.fqdn" : "es. admin o DOMINIO\\utente"}
-                      />
-                      {form.credential_type === "windows" && (
-                        <p className="text-[11px] text-muted-foreground mt-1">
-                          Account locale → <code>.\nomeutente</code> · Dominio AD → <code>DOMINIO\nomeutente</code> o <code>utente@dominio.fqdn</code>
-                        </p>
-                      )}
-                    </div>
-                    <div>
-                      <Label>Password {editingId && "(lascia vuoto per non modificare)"}</Label>
-                      <Input
-                        type="password"
-                        value={form.password}
-                        onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
-                        placeholder="••••••••"
-                      />
-                    </div>
-                  </>
-                )}
-                {form.credential_type === "snmp" && (
-                  <div>
-                    <Label>Community string {editingId && "(lascia vuoto per non modificare)"}</Label>
-                    <Input
-                      type="password"
-                      value={form.password}
-                      onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
-                      placeholder="es. public"
-                    />
-                  </div>
-                )}
-                <div className="flex justify-end gap-2">
-                  <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
-                    Annulla
-                  </Button>
-                  <Button type="submit">Salva</Button>
-                </div>
-              </form>
-            </DialogContent>
-          </Dialog>
+          <Button onClick={openCreate}>
+            <Plus className="h-4 w-4 mr-2" />
+            Nuova credenziale
+          </Button>
+          <CredentialFormDialog
+            open={dialogOpen}
+            onOpenChange={setDialogOpen}
+            stato={statoModulo}
+            opzioniTipo={CRED_TYPE_OPTIONS}
+            onSaved={() => void fetchCredentials()}
+          />
           <Dialog open={testDialogOpen} onOpenChange={(open) => { setTestDialogOpen(open); if (!open) setTestCredId(null); }}>
             <DialogContent>
               <DialogHeader>
@@ -341,8 +250,10 @@ export default function CredentialsPage() {
           </Dialog>
         </CardHeader>
         <CardContent>
-          {loading ? (
+          {caricamento.fase === "caricamento" ? (
             <p className="text-muted-foreground">Caricamento...</p>
+          ) : caricamento.fase === "errore" ? (
+            <LoadError what="le credenziali" message={caricamento.messaggio} onRetry={() => void fetchCredentials()} />
           ) : credentials.length === 0 ? (
             <p className="text-muted-foreground">Nessuna credenziale. Clicca &quot;Nuova credenziale&quot; per aggiungerne una.</p>
           ) : (
@@ -352,6 +263,8 @@ export default function CredentialsPage() {
                   <TableHead>Nome</TableHead>
                   <TableHead>Tipo</TableHead>
                   <TableHead>Username</TableHead>
+                  <TableHead>Porta</TableHead>
+                  <TableHead>Usata da</TableHead>
                   <TableHead className="w-[100px]">Azioni</TableHead>
                 </TableRow>
               </TableHeader>
@@ -359,13 +272,29 @@ export default function CredentialsPage() {
                 {credentials.map((c) => (
                   <TableRow key={c.id}>
                     <TableCell className="font-medium">{c.name}</TableCell>
-                    <TableCell>
-                      <span className="uppercase text-xs">{c.credential_type}</span>
+                    <TableCell>{c.etichetta}</TableCell>
+                    <TableCell className="text-muted-foreground">{c.ha_username ? "●●●●●●●●" : "—"}</TableCell>
+                    <TableCell className={c.port != null ? "font-mono" : "text-muted-foreground"}>
+                      {/* Controller e AD hanno la porta nella loro configurazione, non nella voce. */}
+                      {c.port ?? (haPorta(c.credential_type) ? "standard" : "—")}
                     </TableCell>
-                    <TableCell className="text-muted-foreground">{c.encrypted_username ? "●●●●●●●●" : "—"}</TableCell>
+                    <TableCell>
+                      {c.usi_totale > 0 ? (
+                        <button
+                          type="button"
+                          className="tabular-nums font-medium underline underline-offset-2"
+                          onClick={() => void apriUsi(c)}
+                          title="Dove è usata"
+                        >
+                          {c.usi_totale}
+                        </button>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
                     <TableCell>
                       <div className="flex gap-2">
-                        {(c.credential_type === "ssh" || c.credential_type === "snmp" || c.credential_type === "windows" || c.credential_type === "linux") && (
+                        {TIPI_CON_PROVA.has(c.credential_type) && (
                           <Button
                             variant="ghost"
                             size="sm"
@@ -376,10 +305,15 @@ export default function CredentialsPage() {
                             {testingId === c.id ? "..." : "Test"}
                           </Button>
                         )}
-                        <Button variant="ghost" size="icon" onClick={() => openEdit(c)}>
+                        <Button variant="ghost" size="icon" onClick={() => void openEdit(c)} title="Modifica">
                           <Pencil className="h-4 w-4" />
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={() => handleDelete(c.id)}>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => void handleDelete(c)}
+                          title={c.usi_totale > 0 ? "In uso: mostra dove" : "Elimina"}
+                        >
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
                       </div>
@@ -392,8 +326,127 @@ export default function CredentialsPage() {
         </CardContent>
       </Card>
 
+      <Dialog open={finestraUsi.stato !== "chiusa"} onOpenChange={(open) => { if (!open) setFinestraUsi({ stato: "chiusa" }); }}>
+        <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto">
+          {finestraUsi.stato !== "chiusa" && (
+            <>
+              <DialogHeader>
+                <DialogTitle>Dove è usata «{finestraUsi.voce.name}»</DialogTitle>
+              </DialogHeader>
+              {finestraUsi.stato === "caricamento" && <p className="text-muted-foreground">Caricamento...</p>}
+              {finestraUsi.stato === "errore" && (
+                <LoadError what="gli usi della credenziale" message={finestraUsi.messaggio} onRetry={() => void apriUsi(finestraUsi.voce)} />
+              )}
+              {finestraUsi.stato === "pronta" && (
+                <ElencoUsi
+                  usi={finestraUsi.usi}
+                  totale={finestraUsi.totale}
+                  eliminando={eliminando}
+                  onElimina={() => void elimina(finestraUsi.voce)}
+                />
+              )}
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
       {/* v0.2.649: guida WinRM apribile dal form credenziali (type=windows) */}
       <WinRMSetupGuideDialog open={winrmGuideOpen} onOpenChange={setWinrmGuideOpen} />
+    </div>
+  );
+}
+
+/** Gli usi di una voce, per tipo; con zero usi la voce si può eliminare da qui. */
+function ElencoUsi({
+  usi,
+  totale,
+  eliminando,
+  onElimina,
+}: {
+  usi: UsiCredenziale;
+  totale: number;
+  eliminando: boolean;
+  onElimina: () => void;
+}) {
+  if (totale === 0) {
+    return (
+      <div className="space-y-4">
+        <p className="text-sm">Non è più in uso: si può eliminare.</p>
+        {usi.scansioniSoftware > 0 && (
+          <p className="text-[13px] text-muted-foreground">
+            È servita a {usi.scansioniSoftware} {usi.scansioniSoftware === 1 ? "scansione software passata" : "scansioni software passate"}: la storia resta, senza la credenziale.
+          </p>
+        )}
+        <div className="flex justify-end">
+          <Button variant="destructive" onClick={onElimina} disabled={eliminando}>
+            <Trash2 className="h-4 w-4 mr-2" />
+            Elimina
+          </Button>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-4 text-sm">
+      <p>Per eliminarla, o cambiarle tipo, toglila prima da qui.</p>
+      {usi.apparati.length > 0 && (
+        <section className="space-y-1">
+          <h3 className="font-medium">Apparati</h3>
+          <ul className="space-y-0.5">
+            {usi.apparati.map((a) => (
+              <li key={`${a.id}-${a.come}`}>
+                <Link href={`/devices/${a.id}`} className="underline underline-offset-2">{a.nome}</Link>
+                <span className="text-muted-foreground"> · {a.come === "binding" ? "credenziale dell'apparato" : "campo credenziale della scheda"}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      {usi.reti.length > 0 && (
+        <section className="space-y-1">
+          <h3 className="font-medium">Reti</h3>
+          <ul className="space-y-0.5">
+            {usi.reti.map((r) => (
+              <li key={r.id}>
+                <Link href={`/networks/${r.id}`} className="underline underline-offset-2">{r.nome}</Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      {usi.host > 0 && (
+        <p>
+          <span className="font-medium">Host:</span> {usi.host} (credenziali validate o rilevate sull&apos;host)
+        </p>
+      )}
+      {usi.controller.length > 0 && (
+        <section className="space-y-1">
+          <h3 className="font-medium">Controller</h3>
+          <ul className="space-y-0.5">
+            {usi.controller.map((c) => (
+              <li key={c.id}>{c.nome}</li>
+            ))}
+          </ul>
+        </section>
+      )}
+      {usi.ad.length > 0 && (
+        <section className="space-y-1">
+          <h3 className="font-medium">Active Directory</h3>
+          <ul className="space-y-0.5">
+            {usi.ad.map((a) => (
+              <li key={`${a.id}-${a.come}`}>
+                <Link href="/active-directory" className="underline underline-offset-2">{a.nome}</Link>
+                <span className="text-muted-foreground"> · {a.come === "ldap" ? "account LDAP" : "WinRM e DHCP"}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      {usi.proxmox > 0 && (
+        <p>
+          <span className="font-medium">Host Proxmox:</span> {usi.proxmox}
+        </p>
+      )}
     </div>
   );
 }

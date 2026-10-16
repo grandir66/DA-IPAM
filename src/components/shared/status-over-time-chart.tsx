@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 import { useEffect, useState } from "react";
 import {
@@ -19,7 +20,7 @@ interface Point {
   offline: number;
   unknown: number;
   total: number;
-  health_pct: number;
+  health_pct: number | null;
 }
 
 type Period = "24h" | "7d" | "30d";
@@ -82,7 +83,7 @@ export function StatusOverTimeChart() {
             </span>
             <span className="inline-flex items-center gap-1 ml-2 pl-2 border-l border-border">
               <span className="text-muted-foreground">Health</span>
-              <span className="font-mono font-semibold text-primary">{latest.health_pct}%</span>
+              <span className="font-mono font-semibold text-primary">{latest.health_pct === null ? "—" : `${latest.health_pct}%`}</span>
             </span>
           </div>
         )}
@@ -113,7 +114,7 @@ export function StatusOverTimeChart() {
             <XAxis
               dataKey="time"
               tickFormatter={(t: string) => {
-                const d = new Date(t);
+                const d = parseDbDate(t);
                 return period === "24h"
                   ? d.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })
                   : d.toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit" });
@@ -138,7 +139,7 @@ export function StatusOverTimeChart() {
                 borderRadius: "8px",
                 fontSize: "12px",
               }}
-              labelFormatter={(t) => (typeof t === "string" ? new Date(t).toLocaleString("it-IT") : String(t ?? ""))}
+              labelFormatter={(t) => (typeof t === "string" ? parseDbDate(t).toLocaleString("it-IT") : String(t ?? ""))}
               formatter={(v, name) => {
                 const val = typeof v === "number" ? v : Number(v ?? 0);
                 return name === "Health %" ? [`${val}%`, name as string] : [val, name as string];

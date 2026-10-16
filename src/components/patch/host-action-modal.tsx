@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 /**
  * Patch Management — Modal esecuzione bulk con tail log live (F8).
@@ -164,9 +165,9 @@ function statusBadge(state: OperationState) {
 
 function elapsed(state: OperationState): string {
   if (!state.startedAt) return "—";
-  const start = new Date(state.startedAt).getTime();
+  const start = parseDbDate(state.startedAt).getTime();
   const end = state.finishedAt
-    ? new Date(state.finishedAt).getTime()
+    ? parseDbDate(state.finishedAt).getTime()
     : Date.now();
   const secs = Math.max(0, Math.floor((end - start) / 1000));
   if (secs < 60) return `${secs}s`;
@@ -595,7 +596,7 @@ export function HostActionModal({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
-      <DialogContent className="max-w-4xl">
+      <DialogContent className="sm:max-w-6xl">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           {description ? (
@@ -660,7 +661,7 @@ export function HostActionModal({
           </div>
         ) : null}
 
-        <div className="border rounded-md max-h-[55vh] overflow-y-auto divide-y">
+        <div className="border rounded-md max-h-[72vh] overflow-y-auto divide-y">
           {operations.map((op) => {
             const st = states[op.operationId];
             const logEntry = logs[op.operationId] ?? emptyLogState();
@@ -743,8 +744,8 @@ export function HostActionModal({
                       ref={(el) => {
                         outputContainerRefs.current[op.operationId] = el;
                       }}
-                      className="mt-1 border rounded bg-muted/40 font-mono text-xs leading-relaxed p-2 overflow-y-auto"
-                      style={{ maxHeight: "200px" }}
+                      className="mt-1 border rounded bg-muted/40 font-mono text-xs leading-relaxed p-2 overflow-auto"
+                      style={{ maxHeight: "min(52vh, 640px)", minHeight: "180px" }}
                     >
                       {logEntry.truncated ? (
                         <div className="text-amber-600 dark:text-amber-400 italic mb-1">

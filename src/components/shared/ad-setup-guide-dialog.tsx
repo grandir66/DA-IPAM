@@ -72,7 +72,7 @@ export function ADSetupGuideDialog({ open, onOpenChange, initialTab = "prereq" }
             <div className="flex-1 min-w-[200px]">
               <p className="text-sm font-semibold">Manuale completo</p>
               <p className="text-xs text-muted-foreground">
-                Dettagli su tutti gli scenari, hardening e incident reali (DTS.local, 2R).
+                Dettagli su tutti gli scenari, hardening e incident reali (cliente-a.local, 2R).
               </p>
             </div>
             <div className="flex gap-2 flex-wrap">
@@ -162,7 +162,7 @@ $rootStore.Close()
 # Restart NTDS per caricare il cert
 Restart-Service NTDS -Force`} />
               <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
-                ⚠ <strong>Incident DTS.local</strong>: il cert DEVE essere SIA in <code>My</code> (Personal\Computer) SIA in <code>Root</code>
+                ⚠ <strong>Incident cliente-a.local</strong>: il cert DEVE essere SIA in <code>My</code> (Personal\Computer) SIA in <code>Root</code>
                 (Trusted Root) del DC stesso, altrimenti NTDS lo carica ma rifiuta i bind LDAPS come untrusted.
               </p>
 

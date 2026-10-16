@@ -1,0 +1,289 @@
+/**
+ * Dove è attaccato un MAC (spec §10.5): sulla porta di bordo — non uplink, non
+ * porta di un collegamento fra apparati — di uno switch o AP; un router solo se
+ * nessuno switch lo vede (e allora non conta client: il suo bridge vede tutta la
+ * rete). Contano solo le letture dell'ultimo giro di quel MAC (entro la soglia
+ * «non visto» dalla più recente: un MAC passato dall'AP1 all'AP2 sta sull'AP2).
+ * Fra quelle, la porta con meno MAC distinti e freschi (una porta di passaggio
+ * ne ha tanti), poi la lettura più recente, poi nodo e porta. Il MAC di un nodo noto che non è un client (apparato,
+ * server) diventa un collegamento «mac_table»; gli altri sono client contati
+ * sulla porta, con nome e IP se l'host è noto; il numero sul riquadro conta
+ * solo i client freschi, i vecchi restano nell'elenco «visto l'ultima volta».
+ * I MAC delle VM (vmMacs) non sono client e non creano collegamenti «mac_table»; quelli delle VM accese
+ * (runningVmMacs) propongono i collegamenti «dalle VM» verso il loro hypervisor (vm-ports.ts, spec §12.5),
+ * calcolati prima del ripiego del router, che così li conosce come padri.
+ * «Ignora» vale anche qui, per cavo (spec §13.9, I9): la porta di un cavo ignorato (le regole da `buildLinks`) resta
+ * occupata verso quell'oggetto, e da lì non tornano «tabella MAC», ripiego del router o «dalle VM»; su un'altra porta il
+ * cavo compare (revisione finale I-3, prima per coppia: la correzione si salvava e la linea restava).
+ *
+ * Router (Task 1b): una riga del router su una porta fisica (bridge host: ether, sfp, bond) propone
+ * un collegamento solo come RIPIEGO, per un apparato che nessuno switch o AP vede su una porta di
+ * bordo, e solo se (1) l'apparato non ha già un padre da una fonte più forte — uplink UniFi, uno switch
+ * che lo vede, un LLDP/CDP verso un apparato di rete fuori da quel ramo — e (2) ogni altro apparato
+ * di rete (switch, AP, router) visto su quella porta del router gli sta sotto nei collegamenti noti;
+ * se due apparati di rete passano la prova sulla stessa porta (un LLDP non dice chi sta sopra), niente.
+ * Perché: una porta del router verso un ramo vede decine di switch, AP e server, e nel DB gli switch
+ * UniFi non registrano i MAC degli altri apparati; trattare ogni MAC su una porta fisica come un cavo
+ * dava ~230 collegamenti falsi sul cliente A. Il router non conta client. Logica pura.
+ */
+import { LINK_ATTRS_DEFAULT, type ClasseMappa, type MapLink, type MapNode, type PortClients, type TopologyModelInput } from "@/lib/topology/model-types";
+import { type NodeIndex, resolveNode } from "@/lib/topology/node-index";
+import { nodeClass } from "@/lib/topology/identity";
+import { nessunIgnorato, portaOccupata, type Ignorati } from "@/lib/topology/ignorati";
+import { haTraduttore, traduciPorta, type ComeLetto } from "@/lib/topology/lettori/traduci";
+import { portaLocale } from "@/lib/topology/links";
+import { normalizeMacForStorage, normalizePortNameForMatch } from "@/lib/utils";
+import { parseDbDate } from "@/lib/db-date";
+import { REGOLE_T1, type Regole } from "@/lib/topology/regole";
+import { macProprio, vmEIpervisore, vmPortLinks, type IpervisoriDi, type RunningVmMacs } from "@/lib/topology/vm-ports";
+
+const CLIENT_COUNTING = ["switch", "access_point"];
+const DAY = 86_400_000;
+
+interface Cand { node: string; port: string; ts: string; ms: number; counting: boolean; fisica: boolean }
+
+export interface OpzioniAttacco {
+  vmMacs?: ReadonlySet<string>;
+  runningVmMacs?: RunningVmMacs;
+  /** Le correzioni «ignora» per cavo (`buildLinks`): la porta del cavo non torna da tabella MAC, ripiego del router, VM (I-3, I9). */
+  ignorati?: Ignorati;
+  /** Le porte di segmento (`buildLinks`, §13.7.1 passo 2): da lì niente linee verso chi la porta sente via LLDP o CDP. */
+  segmenti?: ReadonlyMap<string, ReadonlySet<string>>;
+  /** Spec §13.7.8: per ogni nodo che è una VM, il suo hypervisor; fra i due nessun collegamento (`ipervisoriDelleVm`). */
+  ipervisori?: IpervisoriDi;
+  /** Le regole del passaggio universale accese (spec §13.16; le spegne solo la misura C19). */
+  regole?: Regole;
+  /** La classe nella mappa (T1b, §13.8.2): chi è «da sistemare» conta come un client e i MAC dietro di lui non lo rendono di passaggio. */
+  classe?: (n: MapNode) => ClasseMappa;
+}
+
+/**
+ * Una porta del router è fisica per il suo traduttore (spec §13.6.1): la bridge host dà ether, sfp e bond. Un router col
+ * traduttore del suo prodotto (MikroTik letto via SSH) conosce i nomi delle sue porte fisiche: un nome che il traduttore
+ * non riconosce («VL_…», `fisica: null`) non è una porta del bridge host. Col traduttore generico vale «non logica», come
+ * prima. Sull'hub, senza questa distinzione, il ripiego appendeva un hypervisor al router da una VLAN col nome scelto.
+ */
+function fisicaDelRouter(n: MapNode, porta: string): boolean {
+  const come: ComeLetto = { vendor: n.vendor, via: n.via ?? null, fonte: "device", piattaforma: null };
+  const f = traduciPorta(porta, "locale", come).fisica;
+  return haTraduttore(come) ? f === true : f !== false;
+}
+
+export function attachMacs(input: TopologyModelInput, idx: NodeIndex, links: MapLink[], opzioni: OpzioniAttacco = {}):
+  { portClients: PortClients[]; clientCount: Record<string, number>; attachLinks: MapLink[] } {
+  const { vmMacs = new Set<string>(), runningVmMacs = new Map(), ignorati = nessunIgnorato(), segmenti = new Map(), ipervisori = new Map(), regole = REGOLE_T1, classe = nodeClass } = opzioni;
+  const vmEMacPropri = regole.has("vm-e-mac-propri");
+  const portaDi = portaLocale(input);
+  const portKey = (node: string, port: string) => `${node}|${normalizePortNameForMatch(port)}`;
+  const linkPorts = new Set<string>();
+  for (const l of links) {
+    if (l.aPort) linkPorts.add(portKey(l.a, l.aPort));
+    if (l.bPort) linkPorts.add(portKey(l.b, l.bPort));
+  }
+  for (const u of input.uplinkPorts) linkPorts.add(portKey(`dev:${u.device_id}`, u.port_name));
+  // Una coppia ignorata non è più «già collegata»: lo è solo la porta del cavo ignorato (spec §13.9, `portaOccupata` sotto).
+  const linked = new Set(links.map((l) => [l.a, l.b].sort().join("|")));
+
+  const soglia = input.staleDays * DAY;
+  const perPort = new Map<string, Set<string>>(); // porta → MAC distinti visti entro la soglia
+  const cand = new Map<string, Cand[]>();
+  for (const r of input.macPorts) {
+    const node = `dev:${r.device_id}`;
+    const n = idx.nodes.get(node);
+    const mac = normalizeMacForStorage(r.mac);
+    if (!n || !mac || linkPorts.has(portKey(node, r.port_name))) continue;
+    // Spec §11.5: il MAC di una VM sta dentro il suo hypervisor, non su una porta dello switch.
+    if (vmMacs.has(mac)) continue;
+    const k = portKey(node, r.port_name);
+    const ms = parseDbDate(r.timestamp).getTime();
+    if (input.nowMs - ms <= soglia) perPort.set(k, (perPort.get(k) ?? new Set()).add(mac));
+    // Spec §13.7.8 (G9): i MAC propri dell'apparato che osserva non sono suoi client né suoi vicini; su un altro apparato
+    // restano la prova del cavo. Uno switch vede il suo MAC sulla porta della CPU: prima era un suo client.
+    if (vmEMacPropri && macProprio(idx, mac, node)) continue;
+    // T1b (§13.8.2): la tabella MAC di chi è «da sistemare» non conta client e non lo rende di passaggio, nemmeno come
+    // ripiego del router. Lo stesso per chi è «Attaccato (server, PC)» a mano: il ruolo a mano vince (revisione finale di T1b).
+    const fuori = classe(n) !== "infra" && classe(n) !== "ap";
+    const fisica = (n.type === "router" || n.type === "firewall") && !fuori && fisicaDelRouter(n, r.port_name);
+    cand.set(mac, [...(cand.get(mac) ?? []), { node, port: r.port_name, ts: r.timestamp, ms, counting: CLIENT_COUNTING.includes(n.type) && !fuori, fisica }]);
+  }
+  const macsOn = (c: Cand): number => perPort.get(portKey(c.node, c.port))?.size ?? 0;
+  const ordine = (x: Cand, y: Cand) =>
+    macsOn(x) - macsOn(y)
+    || y.ms - x.ms
+    || (x.node < y.node ? -1 : x.node > y.node ? 1 : 0)
+    || x.port.localeCompare(y.port);
+  const sullaPortaDelRouter = new Map<string, Set<string>>(); // porta fisica del router → apparati visti lì
+  const ripiego: Array<{ node: string; c: Cand }> = [];
+
+  const byPort = new Map<string, PortClients>();
+  const clientCount: Record<string, number> = {};
+  const attachLinks: MapLink[] = [];
+  for (const mac of [...cand.keys()].sort()) {
+    const latest = Math.max(...cand.get(mac)!.map((c) => c.ms));
+    const recent = cand.get(mac)!.filter((c) => latest - c.ms <= soglia); // l'ultimo giro di questo MAC
+    const pool = recent.some((c) => c.counting) ? recent.filter((c) => c.counting) : recent;
+    pool.sort(ordine);
+    const best = pool[0];
+    const daysUnseen = Math.max(0, Math.floor((input.nowMs - best.ms) / DAY));
+    const stale = input.nowMs - best.ms > soglia;
+    const otherId = resolveNode(idx, { mac });
+    const other = otherId ? idx.nodes.get(otherId) : undefined;
+    // «Da sistemare» (T1b) come un client: finisce fra i client della porta, nessuna linea «tabella MAC».
+    const nonClient = !!other && !["client", "da_sistemare"].includes(classe(other));
+    const apparato = other && nonClient ? other : undefined;
+    if (apparato) {
+      for (const c of recent) {
+        if (!c.fisica || c.node === apparato.id) continue;
+        const k = portKey(c.node, c.port);
+        sullaPortaDelRouter.set(k, (sullaPortaDelRouter.get(k) ?? new Set()).add(apparato.id));
+      }
+    }
+    if (other && other.id !== best.node && nonClient) {
+      // Spec §11.1: ciò che un router vede sul bridge o su una VLAN non prova nessun cavo. Una porta
+      // fisica del router sì, ma solo come ripiego: si decide sotto, quando tutti i padri noti ci sono.
+      if (!best.counting) {
+        const fisiche = recent.filter((c) => c.fisica && c.node !== other.id).sort(ordine);
+        if (fisiche.length > 0) ripiego.push({ node: other.id, c: fisiche[0] });
+        continue;
+      }
+      // Spec §13.7.1 passo 2 e §13.3.1 riga 3: una porta che sente due o più apparati non dà linee verso di loro, nemmeno
+      // dalla tabella MAC. Il ripiego del router ha le sue regole (§11.1 bis) e non passa da qui.
+      if (segmenti.get(portKey(best.node, best.port))?.has(other.id)) continue;
+      // Spec §13.7.8: fra una VM e il suo hypervisor nessun collegamento, nemmeno dalla tabella MAC.
+      if (vmEMacPropri && vmEIpervisore(ipervisori, best.node, other.id)) continue;
+      const key = [best.node, other.id].sort().join("|");
+      if (!linked.has(key)) {
+        // §13.9: la porta di un cavo ignorato resta occupata verso quell'oggetto (I9), anche se la regola ha le due porte di
+        // una linea LLDP; su un'altra porta il cavo compare. Si guarda solo quando la linea nascerebbe davvero (come nel
+        // ripiego del router): con la coppia già collegata la correzione non nasconde niente, e resta orfana (revisione
+        // finale di T1).
+        if (portaOccupata(ignorati, best.node, portaDi(best.node, best.port), other.id)) continue;
+        linked.add(key);
+        attachLinks.push({
+          id: `mac:${key}`, a: best.node, aPort: best.port, b: other.id, bPort: "", source: "mac_table", sources: ["mac_table"],
+          uplinkFrom: other.id, lastSeen: best.ts, daysUnseen, stale, ...LINK_ATTRS_DEFAULT,
+          perche: [{ tipo: "tabella_mac", da: best.node, porta: best.port, altro: other.id, visto: best.ts, router: false }],
+        });
+      }
+      continue;
+    }
+    if (!best.counting) continue;
+    const pk = `${best.node}|${best.port}`;
+    const pc = byPort.get(pk) ?? { nodeId: best.node, port: best.port, clients: [] };
+    pc.clients.push({ mac, nodeId: other?.id ?? null, name: other?.name ?? null, ip: other?.mgmtIp ?? null, lastSeen: best.ts, stale });
+    byPort.set(pk, pc);
+    if (!stale) clientCount[best.node] = (clientCount[best.node] ?? 0) + 1;
+  }
+  for (const l of vmPortLinks(input, idx, [...links, ...attachLinks], runningVmMacs, ignorati, { ipervisori, regole })) {
+    linked.add([l.a, l.b].sort().join("|"));
+    attachLinks.push(l);
+  }
+  attachLinks.push(...ripiegoRouter(idx, [...links, ...attachLinks], ripiego, sullaPortaDelRouter, linked, portKey, input.nowMs, soglia,
+    (router, porta, nodo) => portaOccupata(ignorati, router, portaDi(router, porta), nodo) || (vmEMacPropri && vmEIpervisore(ipervisori, router, nodo)),
+    classe));
+  const portClients = [...byPort.values()].sort((a, b) =>
+    (a.nodeId < b.nodeId ? -1 : a.nodeId > b.nodeId ? 1 : 0) || a.port.localeCompare(b.port, "it", { numeric: true }));
+  attachLinks.sort((a, b) => (a.id < b.id ? -1 : 1));
+  return { portClients, clientCount, attachLinks };
+}
+
+/** Apparati di rete: possono stare sopra un altro apparato (lo switch, l'AP, un altro router). «Da sistemare» no (T1b). */
+function diRete(idx: NodeIndex, id: string, classe: (n: MapNode) => ClasseMappa): boolean {
+  const n = idx.nodes.get(id);
+  if (!n) return false;
+  const k = classe(n);
+  return k === "infra" || k === "ap";
+}
+
+/**
+ * Il ripiego del router (Task 1b): vedi il commento in testa. `noti` sono i collegamenti da fonti
+ * più forti (correzioni, uplink UniFi, LLDP/CDP/MNDP, tabella MAC degli switch). Un collegamento con
+ * `uplinkFrom` ha un verso (figlio → padre); gli altri no. `bloccato`: la porta del router è quella di un cavo
+ * ignorato a mano verso quel nodo (spec §13.9, I9), o il router è una VM di quel nodo o il suo hypervisor (§13.7.8).
+ */
+function ripiegoRouter(
+  idx: NodeIndex,
+  noti: MapLink[],
+  ripiego: Array<{ node: string; c: Cand }>,
+  sullaPorta: ReadonlyMap<string, ReadonlySet<string>>,
+  linked: Set<string>,
+  portKey: (node: string, port: string) => string,
+  nowMs: number,
+  soglia: number,
+  bloccato: (router: string, porta: string, nodo: string) => boolean,
+  classe: (n: MapNode) => ClasseMappa,
+): MapLink[] {
+  const padri = new Map<string, Set<string>>();
+  const figli = new Map<string, Set<string>>();
+  const senzaVerso = new Map<string, Set<string>>();
+  const cavoProvato = new Map<string, Set<string>>(); // LLDP/CDP o correzione: un cavo vero, verso ignoto
+  const aggiungi = (m: Map<string, Set<string>>, k: string, v: string) => m.set(k, (m.get(k) ?? new Set()).add(v));
+  for (const l of noti) {
+    if (l.uplinkFrom === l.a || l.uplinkFrom === l.b) {
+      const figlio = l.uplinkFrom;
+      const padre = figlio === l.a ? l.b : l.a;
+      aggiungi(padri, figlio, padre);
+      aggiungi(figli, padre, figlio);
+    } else {
+      aggiungi(senzaVerso, l.a, l.b);
+      aggiungi(senzaVerso, l.b, l.a);
+      if (l.sources.some((x) => x === "lldp" || x === "cdp" || x === "manual")) {
+        aggiungi(cavoProvato, l.a, l.b);
+        aggiungi(cavoProvato, l.b, l.a);
+      }
+    }
+  }
+  /** Chi sta sotto x nei collegamenti noti, senza passare dal router della porta. */
+  const sotto = (x: string, router: string): Set<string> => {
+    const visti = new Set([x]);
+    const coda = [x];
+    while (coda.length > 0) {
+      const y = coda.shift()!;
+      for (const z of [...(figli.get(y) ?? []), ...(senzaVerso.get(y) ?? [])]) {
+        if (z === router || visti.has(z)) continue;
+        visti.add(z);
+        coda.push(z);
+      }
+    }
+    return visti;
+  };
+
+  const buoni = new Map<string, Array<{ node: string; c: Cand }>>(); // porta del router → chi passa la prova
+  for (const r of [...ripiego].sort((x, y) => (x.node < y.node ? -1 : x.node > y.node ? 1 : 0))) {
+    const router = r.c.node;
+    if (linked.has([router, r.node].sort().join("|"))) continue;
+    if (bloccato(router, r.c.port, r.node)) continue;
+    const k = portKey(router, r.c.port);
+    const qui = sullaPorta.get(k) ?? new Set<string>();
+    // (1) un padre da una fonte più forte: un verso noto (uplink UniFi, uno switch che lo vede), o un
+    // cavo LLDP/CDP verso un apparato di rete fuori da questo ramo. Non per un router: i suoi vicini
+    // stanno sulle sue porte (sono i suoi figli), non sopra di lui. MNDP non conta: attraversa gli switch.
+    if ((padri.get(r.node)?.size ?? 0) > 0) continue;
+    const t = idx.nodes.get(r.node)?.type;
+    if (t !== "router" && t !== "firewall"
+      && [...(cavoProvato.get(r.node) ?? [])].some((z) => z !== router && !qui.has(z) && diRete(idx, z, classe))) continue;
+    // (2) ogni altro apparato di rete su questa porta gli sta sotto.
+    const giu = sotto(r.node, router);
+    if ([...qui].some((y) => y !== r.node && diRete(idx, y, classe) && !giu.has(y))) continue;
+    buoni.set(k, [...(buoni.get(k) ?? []), r]);
+  }
+
+  const out: MapLink[] = [];
+  for (const gruppo of buoni.values()) {
+    // Due apparati di rete che passano la prova sulla stessa porta: non si sa chi sta sopra.
+    const rete = gruppo.filter((r) => diRete(idx, r.node, classe));
+    const validi = rete.length > 1 ? gruppo.filter((r) => !diRete(idx, r.node, classe)) : gruppo;
+    for (const { node, c } of validi) {
+      const key = [c.node, node].sort().join("|");
+      if (linked.has(key)) continue;
+      linked.add(key);
+      out.push({
+        id: `mac:${key}`, a: c.node, aPort: c.port, b: node, bPort: "", source: "mac_table", sources: ["mac_table"],
+        uplinkFrom: node, lastSeen: c.ts, daysUnseen: Math.max(0, Math.floor((nowMs - c.ms) / DAY)), stale: nowMs - c.ms > soglia,
+        ...LINK_ATTRS_DEFAULT,
+        perche: [{ tipo: "tabella_mac", da: c.node, porta: c.port, altro: node, visto: c.ts, router: true }],
+      });
+    }
+  }
+  return out;
+}

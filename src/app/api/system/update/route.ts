@@ -11,6 +11,15 @@ import path from "path";
 import fs from "fs";
 import { isContainerDeploy } from "@/lib/env-secrets";
 import {
+  exitForSystemd,
+  pickPm2Process,
+  planRestart,
+  readPm2Ids,
+  readRestartContext,
+  restartWithSystemd,
+} from "@/lib/app-service";
+import { readUpdateAction } from "@/lib/system-update-action";
+import {
   getConfiguredUpdateBranch,
   getGitBranch,
   isGitUpdateSupported,
@@ -242,6 +251,76 @@ function tryRestoreKnownDirtyFiles(root: string): boolean {
   return true;
 }
 
+/**
+ * Perché non si può riavviare sulla build presente, o null se si può: senza
+ * `.next` o senza `.next/BUILD_ID` il processo nuovo non partirebbe.
+ */
+function problemaBuild(root: string): string | null {
+  const nextDir = path.join(root, ".next");
+  if (!fs.existsSync(nextDir)) {
+    return "La directory .next non esiste. Esegui npm run build prima di riavviare.";
+  }
+  if (!fs.existsSync(path.join(nextDir, "BUILD_ID"))) {
+    return "La build sembra incompleta (BUILD_ID mancante). Esegui npm run build sul server.";
+  }
+  return null;
+}
+
+/**
+ * Riavvia l'app (src/lib/app-service.ts). Sotto systemd si riavvia l'unità del
+ * proprio cgroup, o si esce con 1 se non si capisce quale: mai il rilancio di sé
+ * e mai un'uscita con 0, che con Restart=on-failure lascerebbe il servizio
+ * spento. Presidiata da src/lib/__tests__/system-update-route-restart.test.ts.
+ */
+function riavviaApp(): void {
+  const piano = planRestart(readRestartContext());
+  if (piano.mode === "not-systemd") {
+    riavviaFuoriDaSystemd();
+    return;
+  }
+  if (piano.mode === "unit") restartWithSystemd(piano.unit);
+  else exitForSystemd(piano.reason);
+}
+
+/** Fuori da systemd (sviluppo): PM2 se gestisce l'app, altrimenti il rilancio di sé. */
+function riavviaFuoriDaSystemd(): void {
+  const projectRoot = getProjectRoot();
+
+  try {
+    const pm2Name = pickPm2Process(readPm2Ids());
+    if (pm2Name) {
+      const restarter = spawn("pm2", ["restart", pm2Name], {
+        detached: true,
+        stdio: "ignore",
+        cwd: projectRoot,
+      });
+      restarter.unref();
+      process.exit(0);
+      return;
+    }
+  } catch {
+    // PM2 non disponibile
+  }
+
+  // Rilancio di sé: un nuovo processo Node.js identico, poi si esce
+  const isDev = process.env.NODE_ENV !== "production";
+  const args = isDev ? ["tsx", "watch", "server.ts"] : ["tsx", "server.ts"];
+
+  const child = spawn("npx", args, {
+    detached: true,
+    stdio: "ignore",
+    cwd: projectRoot,
+    env: { ...process.env },
+  });
+  child.unref();
+  process.exit(0);
+}
+
+/** Il riavvio parte un secondo dopo, così la risposta arriva prima al browser. */
+function programmaRiavvio(): void {
+  setTimeout(riavviaApp, 1000);
+}
+
 function getGitStatus(): { clean: boolean; branch: string; dirtyFiles: string[]; error?: string } {
   try {
     const root = getProjectRoot();
@@ -336,8 +415,21 @@ export async function POST(request: NextRequest) {
   const authResult = await requireAdmin();
   if (isAuthError(authResult)) return authResult;
 
-  const url = new URL(request.url);
-  const action = url.searchParams.get("action");
+  // L'azione arriva nell'indirizzo (?action=apply, banner) o nel corpo JSON
+  // ({ action: "apply" }, Impostazioni → Aggiornamenti): si accettano tutte e due.
+  let corpoRichiesta: string;
+  try {
+    corpoRichiesta = await request.text();
+  } catch (error) {
+    return NextResponse.json({
+      error: `Impossibile leggere il corpo della richiesta: ${error instanceof Error ? error.message : String(error)}`,
+    }, { status: 400 });
+  }
+  const lettura = readUpdateAction(new URL(request.url).searchParams.get("action"), corpoRichiesta);
+  if (!lettura.ok) {
+    return NextResponse.json({ error: lettura.error }, { status: 400 });
+  }
+  const action = lettura.action;
 
   if (action === "check") {
     const remote = await getRemoteVersion();
@@ -427,9 +519,10 @@ export async function POST(request: NextRequest) {
       console.warn("[Update] Impossibile creare backup .next:", e);
     }
 
+    // I passi eseguiti tornano al browser anche in caso di errore: l'ultimo è
+    // quello che è fallito.
+    const steps: UpdateStatus[] = [];
     try {
-      const steps: UpdateStatus[] = [];
-
       steps.push({ status: "downloading", message: `Scaricamento aggiornamenti da GitHub (${targetBranch})...`, progress: 10 });
       execSync(`git fetch origin ${targetBranch}`, { cwd: root, encoding: "utf-8", timeout: 60000 });
 
@@ -451,11 +544,30 @@ export async function POST(request: NextRequest) {
 
       const newVersion = getCurrentVersion();
 
+      // Il riavvio lo programma la rotta stessa, dopo aver risposto. Prima lo
+      // chiedeva il browser con «Riavvia» quando riceveva questa risposta: con una
+      // build più lunga del proxy_read_timeout di nginx (300 s) o con la scheda
+      // chiusa, la build nuova restava su disco e girava ancora il processo vecchio.
+      const ostacolo = problemaBuild(root);
+      if (!ostacolo) programmaRiavvio();
+      steps.push(
+        ostacolo
+          ? { status: "error", message: `Riavvio non programmato: ${ostacolo}` }
+          : { status: "restarting", message: "Riavvio del servizio programmato", progress: 90 },
+      );
+
       return NextResponse.json({
         status: "completed" as const,
-        message: `Aggiornamento completato alla versione ${newVersion}. Riavvia l'applicazione per applicare le modifiche.`,
+        message: ostacolo
+          ? `Aggiornamento completato alla versione ${newVersion}, ma il riavvio non è stato programmato: ${ostacolo}`
+          : `Aggiornamento completato alla versione ${newVersion}. Il servizio si riavvia da solo fra pochi secondi.`,
         newVersion,
-        requiresRestart: true,
+        steps,
+        // Il riavvio l'ha già programmato il server: il browser non ne chiede un secondo.
+        restartScheduled: !ostacolo,
+        // Sempre false: un'interfaccia rimasta aperta da prima di questa versione
+        // chiederebbe un secondo riavvio se fosse true.
+        requiresRestart: false,
       });
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
@@ -516,85 +628,21 @@ export async function POST(request: NextRequest) {
         status: "error" as const,
         error: `Errore durante l'aggiornamento: ${errorMsg}`,
         message: `L'aggiornamento è stato annullato e il sistema ripristinato.${rollbackDetail}`,
+        steps,
       }, { status: 500 });
     }
   }
 
   if (action === "restart") {
     try {
-      // Verifica che la build esista prima di riavviare
-      const nextDir = path.join(getProjectRoot(), ".next");
-      if (!fs.existsSync(nextDir)) {
-        return NextResponse.json({
-          status: "error" as const,
-          error: "La directory .next non esiste. Esegui npm run build prima di riavviare.",
-        }, { status: 400 });
+      // Si riavvia solo su una build completa: senza, il processo nuovo non parte
+      const ostacolo = problemaBuild(getProjectRoot());
+      if (ostacolo) {
+        return NextResponse.json({ status: "error" as const, error: ostacolo }, { status: 400 });
       }
 
-      // Verifica che la build contenga file essenziali
-      const buildManifest = path.join(nextDir, "BUILD_ID");
-      if (!fs.existsSync(buildManifest)) {
-        return NextResponse.json({
-          status: "error" as const,
-          error: "La build sembra incompleta (BUILD_ID mancante). Esegui npm run build sul server.",
-        }, { status: 400 });
-      }
-
-      // Strategia di riavvio:
-      // 1. Se systemd è disponibile, usa systemctl restart (più affidabile)
-      // 2. Altrimenti self-restart: spawna un nuovo processo e poi esce
-      setTimeout(() => {
-        const projectRoot = getProjectRoot();
-
-        // Tentativo 1: systemd (produzione tipica)
-        try {
-          execSync("systemctl is-active da-invent", { timeout: 3000, stdio: "pipe" });
-          // Il servizio systemd esiste ed è attivo → usa systemctl restart
-          const restarter = spawn("systemctl", ["restart", "da-invent"], {
-            detached: true,
-            stdio: "ignore",
-            cwd: projectRoot,
-          });
-          restarter.unref();
-          process.exit(0);
-          return;
-        } catch {
-          // systemd non disponibile o servizio non registrato → self-restart
-        }
-
-        // Tentativo 2: PM2
-        try {
-          const pm2Name = execSync("pm2 id da-invent 2>/dev/null || true", {
-            timeout: 3000, encoding: "utf-8",
-          }).trim();
-          if (pm2Name && pm2Name !== "[]") {
-            const restarter = spawn("pm2", ["restart", "da-invent"], {
-              detached: true,
-              stdio: "ignore",
-              cwd: projectRoot,
-            });
-            restarter.unref();
-            process.exit(0);
-            return;
-          }
-        } catch {
-          // PM2 non disponibile
-        }
-
-        // Tentativo 3: self-restart — spawna un nuovo processo Node.js identico
-        const isDev = process.env.NODE_ENV !== "production";
-        const cmd = isDev ? "npx" : "npx";
-        const args = isDev ? ["tsx", "watch", "server.ts"] : ["tsx", "server.ts"];
-
-        const child = spawn(cmd, args, {
-          detached: true,
-          stdio: "ignore",
-          cwd: projectRoot,
-          env: { ...process.env },
-        });
-        child.unref();
-        process.exit(0);
-      }, 1000);
+      // Lo stesso riavvio di un «Aggiorna» riuscito: vedi riavviaApp
+      programmaRiavvio();
 
       return NextResponse.json({
         status: "restarting" as const,

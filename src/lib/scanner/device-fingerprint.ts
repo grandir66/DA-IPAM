@@ -330,8 +330,8 @@ export async function buildDeviceFingerprint(
     ttl: input.ttl ?? null,
   });
 
-  let final_device = ruleResult?.device_label ?? matches[0]?.name ?? null;
-  let final_confidence = ruleResult?.confidence ?? matches[0]?.confidence ?? 0;
+  const final_device = ruleResult?.device_label ?? matches[0]?.name ?? null;
+  const final_confidence = ruleResult?.confidence ?? matches[0]?.confidence ?? 0;
 
   if (ruleResult?.source) {
     detection_sources.push(`rule:${ruleResult.source}`);

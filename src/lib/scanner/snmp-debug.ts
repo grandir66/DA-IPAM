@@ -1,6 +1,7 @@
 /**
  * Diagnostica SNMP dettagliata — mostra esattamente cosa risponde un device.
  */
+import { apriSessioneCommunity } from "@/lib/protocols/snmp-sessione";
 
 const OID_SYSDESCR = "1.3.6.1.2.1.1.1.0";
 const OID_SYSNAME = "1.3.6.1.2.1.1.5.0";
@@ -40,8 +41,8 @@ export async function snmpDebugQuery(ip: string, community: string, port: number
 
   try {
     const snmp = await import("net-snmp");
-    // version: 1 = SNMPv2c
-    const session = snmp.createSession(ip, community, { port, timeout: 5000, version: 1 } as Record<string, unknown>);
+    // Diagnostica della discovery: v2c, come la discovery al primo giro.
+    const session = apriSessioneCommunity(snmp, ip, community, { port, timeout: 5000, versione: "2c" });
     // Solo i 3 OID base per diagnostica
     const oids = [OID_SYSDESCR, OID_SYSNAME, OID_SYSOBJECTID];
 

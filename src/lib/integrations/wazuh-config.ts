@@ -21,6 +21,40 @@ export interface WazuhConfig {
   indexerUrl: string;       // es. https://da-wazuh.domarc.it:9200
   indexerUsername: string;  // utente OS read-only (es. "da-ipam-os")
   indexerPassword: string;  // plaintext lato applicativo, cifrato a riposo
+
+  /**
+   * ID delle regole locali degli apparati (MikroTik, firewall, VPN) da
+   * raccogliere. Servono perche' quei decoder non emettono gruppi di esito:
+   * gli id sono specifici della singola installazione Wazuh, non del prodotto.
+   */
+  deviceRuleIds: string[];
+
+  // Endpoint di stato delle repliche/archivio immutabile (cruscotto salute,
+  // fase 2). Servizio separato dalla Manager API: espone GET /status con
+  // bearer token dedicato. TLS opzionale con SPKI pinning (TOFU), come lo
+  // scanner-edge.
+  immutableStoreUrl: string;              // es. https://da-wazuh.domarc.it:9100
+  immutableStoreToken: string;            // plaintext lato applicativo, cifrato a riposo
+  immutableStoreCertPin: string | null;   // sha256/<base64>, null = nessun pinning
+}
+
+/**
+ * Normalizza un'impronta SPKI nella forma canonica `sha256/<base64>` usata
+ * dal confronto (`probePinTls` in scanner-edge-client.ts).
+ *
+ * Accetta sia la forma con prefisso (`sha256/AAA...`, quella prodotta da
+ * `spkiPinFromDer`) sia il solo base64 (quella stampata da alcuni script di
+ * installazione dell'endpoint di stato repliche): senza normalizzazione le
+ * due forme sono visivamente quasi identiche ma non fanno mai match, un
+ * mismatch fantasma che blocca la funzionalità alla prima configurazione.
+ * Spazi/newline attorno vengono tollerati. Stringa vuota resta vuota (nessun
+ * pin configurato non deve diventare "sha256/").
+ */
+export function normalizeSpkiPin(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed === "") return "";
+  const base64 = trimmed.startsWith("sha256/") ? trimmed.slice("sha256/".length).trim() : trimmed;
+  return `sha256/${base64}`;
 }
 
 const KEY_ENABLED       = "integration_wazuh_enabled";
@@ -31,10 +65,15 @@ const KEY_VERIFY_TLS    = "integration_wazuh_verify_tls";
 const KEY_IDX_URL       = "integration_wazuh_indexer_url";
 const KEY_IDX_USERNAME  = "integration_wazuh_indexer_username";
 const KEY_IDX_PASSWORD  = "integration_wazuh_indexer_password_encrypted";
+const KEY_DEVICE_RULES  = "integration_wazuh_device_rule_ids";
+const KEY_IMMUTABLE_URL      = "integration_immutable_store_url";
+const KEY_IMMUTABLE_TOKEN    = "integration_immutable_store_token_encrypted";
+const KEY_IMMUTABLE_CERT_PIN = "integration_immutable_store_cert_pin";
 
 export function getWazuhConfig(): WazuhConfig {
   const passwordEnc = getSetting(KEY_PASSWORD);
   const idxPasswordEnc = getSetting(KEY_IDX_PASSWORD);
+  const immutableTokenEnc = getSetting(KEY_IMMUTABLE_TOKEN);
   return {
     enabled:         getSetting(KEY_ENABLED) === "1",
     url:             getSetting(KEY_URL) ?? "",
@@ -44,10 +83,20 @@ export function getWazuhConfig(): WazuhConfig {
     indexerUrl:      getSetting(KEY_IDX_URL) ?? "",
     indexerUsername: getSetting(KEY_IDX_USERNAME) ?? "",
     indexerPassword: idxPasswordEnc ? (safeDecrypt(idxPasswordEnc) ?? "") : "",
+    deviceRuleIds: (getSetting(KEY_DEVICE_RULES) ?? "")
+      .split(/[,;\s]+/)
+      .map((v) => v.trim())
+      .filter(Boolean),
+    immutableStoreUrl:     getSetting(KEY_IMMUTABLE_URL) ?? "",
+    immutableStoreToken:   immutableTokenEnc ? (safeDecrypt(immutableTokenEnc) ?? "") : "",
+    immutableStoreCertPin: getSetting(KEY_IMMUTABLE_CERT_PIN) ?? null,
   };
 }
 
 export function setWazuhConfig(cfg: Partial<WazuhConfig>): void {
+  if (cfg.deviceRuleIds !== undefined) {
+    setSetting(KEY_DEVICE_RULES, cfg.deviceRuleIds.join(","));
+  }
   if (cfg.enabled !== undefined)   setSetting(KEY_ENABLED, cfg.enabled ? "1" : "0");
   if (cfg.url !== undefined)       setSetting(KEY_URL, cfg.url.trim());
   if (cfg.username !== undefined)  setSetting(KEY_USERNAME, cfg.username.trim());
@@ -59,6 +108,22 @@ export function setWazuhConfig(cfg: Partial<WazuhConfig>): void {
   if (cfg.indexerUsername !== undefined) setSetting(KEY_IDX_USERNAME, cfg.indexerUsername.trim());
   if (cfg.indexerPassword !== undefined && cfg.indexerPassword !== "") {
     setSetting(KEY_IDX_PASSWORD, encrypt(cfg.indexerPassword));
+  }
+  if (cfg.immutableStoreUrl !== undefined) setSetting(KEY_IMMUTABLE_URL, cfg.immutableStoreUrl.trim());
+  if (cfg.immutableStoreToken !== undefined) {
+    // Trim come url/username/indexerUrl sopra: un token incollato da un
+    // terminale porta spesso un newline finale, che poi manda in crash Node
+    // (ERR_INVALID_CHAR) mascherato da "errore di rete" nella chiamata HTTP.
+    const trimmed = cfg.immutableStoreToken.trim();
+    if (trimmed !== "") setSetting(KEY_IMMUTABLE_TOKEN, encrypt(trimmed));
+  }
+  if (cfg.immutableStoreCertPin !== undefined) {
+    // Normalizza (trim + forma canonica sha256/<base64>): un pin copiato da
+    // un terminale con un newline in coda, o senza il prefisso sha256/ (come
+    // lo stampano alcuni script di installazione), fa fallire il confronto
+    // esatto in probePinTls (got !== expectedPin) con due impronte
+    // visivamente identiche — un debug frustrante e ingannevole.
+    setSetting(KEY_IMMUTABLE_CERT_PIN, normalizeSpkiPin(cfg.immutableStoreCertPin ?? ""));
   }
 }
 
@@ -72,15 +137,17 @@ export function isWazuhIndexerConfigured(): boolean {
   return Boolean(cfg.indexerUrl && cfg.indexerUsername && cfg.indexerPassword);
 }
 
-/** Versione safe per UI: non espone le password decifrate. */
-export function getWazuhConfigPublic(): Omit<WazuhConfig, "password" | "indexerPassword"> & {
+/** Versione safe per UI: non espone le password decifrate ne' il token. */
+export function getWazuhConfigPublic(): Omit<WazuhConfig, "password" | "indexerPassword" | "immutableStoreToken"> & {
   passwordSet: boolean;
   indexerPasswordSet: boolean;
+  immutableStoreTokenSet: boolean;
 } {
-  const { password, indexerPassword, ...rest } = getWazuhConfig();
+  const { password, indexerPassword, immutableStoreToken, ...rest } = getWazuhConfig();
   return {
     ...rest,
     passwordSet: password.length > 0,
     indexerPasswordSet: indexerPassword.length > 0,
+    immutableStoreTokenSet: immutableStoreToken.length > 0,
   };
 }

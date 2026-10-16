@@ -6,6 +6,72 @@
  * risiedono solo nel DB centrale.
  */
 
+import { SCHEDULED_JOB_TYPES_CHECK_SQL } from "./scheduled-job-types";
+
+/**
+ * Topologia T2 (spec 2026-10-14 §13.5.7): i fatti delle letture in più, uno per lettore (la fonte sta nella chiave:
+ * due lettori dello stesso apparato non si sovrascrivono, ADR 0009 punto 4). Le stesse CREATE stanno qui e nella
+ * migrazione (`migrateTopologyCavi`, db-tenant.ts); gli indici solo nella migrazione. Nessun CHECK: i valori li valida
+ * TypeScript (un valore nuovo non deve chiedere una ricostruzione, vietata con le chiavi esterne). `lag_state`
+ * ('attivo' | 'riserva') è lo stato del membro di un bond letto dall'host (§13.5.5), che il DDL della spec non aveva.
+ */
+export const DDL_TOPOLOGY_CAVI: ReadonlyArray<readonly [string, string]> = [
+  ["topology_port_facts", `CREATE TABLE IF NOT EXISTS topology_port_facts (
+  device_id INTEGER NOT NULL REFERENCES network_devices(id) ON DELETE CASCADE,
+  source TEXT NOT NULL,
+  port_key TEXT NOT NULL,
+  port_name TEXT NOT NULL,
+  port_index INTEGER,
+  if_kind TEXT,
+  running INTEGER,
+  in_bridge INTEGER,
+  bridge TEXT,
+  lag_group TEXT,
+  lag_partner TEXT,
+  lag_state TEXT,
+  stp_role TEXT,
+  stp_state TEXT,
+  designated_bridge TEXT,
+  designated_port TEXT,
+  path_cost INTEGER,
+  edge INTEGER,
+  point_to_point INTEGER,
+  sending_rstp INTEGER,
+  bpdu_rx INTEGER,
+  first_seen TEXT NOT NULL DEFAULT (datetime('now')),
+  seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (device_id, source, port_key)
+)`],
+  ["topology_bridge_facts", `CREATE TABLE IF NOT EXISTS topology_bridge_facts (
+  device_id INTEGER NOT NULL REFERENCES network_devices(id) ON DELETE CASCADE,
+  source TEXT NOT NULL,
+  bridge_name TEXT NOT NULL DEFAULT '',
+  instance INTEGER NOT NULL DEFAULT 0,
+  protocol TEXT,
+  priority INTEGER,
+  bridge_id TEXT,
+  root_id TEXT,
+  regional_root_id TEXT,
+  region_name TEXT,
+  region_revision INTEGER,
+  config_digest TEXT,
+  vlans TEXT,
+  root_port TEXT,
+  root_path_cost INTEGER,
+  first_seen TEXT NOT NULL DEFAULT (datetime('now')),
+  seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (device_id, source, bridge_name, instance)
+)`],
+  ["topology_device_macs", `CREATE TABLE IF NOT EXISTS topology_device_macs (
+  device_id INTEGER NOT NULL REFERENCES network_devices(id) ON DELETE CASCADE,
+  mac TEXT NOT NULL,
+  source TEXT NOT NULL,
+  port_key TEXT,
+  seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (device_id, mac)
+)`],
+];
+
 export const TENANT_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS networks (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -18,6 +84,12 @@ CREATE TABLE IF NOT EXISTS networks (
   snmp_community TEXT,
   dns_server TEXT,
   targeting_mode TEXT DEFAULT 'full_subnet',
+  assessment_enabled INTEGER NOT NULL DEFAULT 0,
+  assessment_profile_id TEXT,
+  probes_enabled INTEGER DEFAULT 1,
+  location_id INTEGER REFERENCES locations(id) ON DELETE SET NULL,
+  location_set_by TEXT,
+  location_set_at TEXT,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );
@@ -46,6 +118,8 @@ CREATE TABLE IF NOT EXISTS hosts (
   snmp_data TEXT,
   known_host INTEGER DEFAULT 0,
   classification_manual INTEGER DEFAULT 0,
+  classification_reason TEXT,
+  classification_json TEXT,
   last_response_time_ms INTEGER,
   monitor_ports TEXT,
   hostname_source TEXT,
@@ -85,7 +159,7 @@ CREATE TABLE IF NOT EXISTS scan_history (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   host_id INTEGER REFERENCES hosts(id) ON DELETE CASCADE,
   network_id INTEGER REFERENCES networks(id) ON DELETE CASCADE,
-  scan_type TEXT NOT NULL CHECK(scan_type IN ('ping', 'snmp', 'nmap', 'arp', 'dns', 'windows', 'ssh', 'network_discovery', 'credential_validate', 'fast', 'ipam_full', 'scan_icmp', 'scan_nmap_base', 'scan_snmp_verify')),
+  scan_type TEXT NOT NULL CHECK(scan_type IN ('ping', 'snmp', 'nmap', 'arp', 'dns', 'windows', 'ssh', 'network_discovery', 'credential_validate', 'fast', 'ipam_full', 'scan_icmp', 'scan_nmap_base', 'scan_snmp_verify', 'scan_naabu', 'scan_enrich')),
   status TEXT NOT NULL,
   ports_open TEXT,
   raw_output TEXT,
@@ -101,12 +175,47 @@ CREATE TABLE IF NOT EXISTS status_history (
   checked_at TEXT DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS host_classification_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
+  at TEXT NOT NULL DEFAULT (datetime('now')),
+  classification TEXT,
+  confidence INTEGER NOT NULL DEFAULT 0,
+  reason TEXT,
+  evidence_json TEXT,
+  conflicts_json TEXT,
+  attr_vendor TEXT,
+  attr_category TEXT,
+  attr_os TEXT,
+  trigger TEXT NOT NULL CHECK(trigger IN ('scan','apply','manual','backfill'))
+);
+CREATE INDEX IF NOT EXISTS idx_host_class_hist_host ON host_classification_history(host_id, at DESC);
+
 CREATE TABLE IF NOT EXISTS credentials (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
-  credential_type TEXT NOT NULL CHECK(credential_type IN ('ssh', 'snmp', 'api', 'windows', 'linux')),
+  -- Tappa 2c credenziali (ADR 0017): niente CHECK sul tipo. I tipi validi
+  -- stanno in src/lib/credentials/tipi.ts e li controlla il CRUD: un tipo nuovo
+  -- non chiede di ricostruire la tabella più referenziata del tenant.
+  credential_type TEXT NOT NULL,
+  -- Metodo d'accesso (tipi.ts, METODI_PER_TIPO); NULL = il primo del tipo.
+  auth_method TEXT,
   encrypted_username TEXT,
   encrypted_password TEXT,
+  -- Chiave SSH (metodo «chiave») e la sua passphrase, facoltativa.
+  encrypted_private_key TEXT,
+  encrypted_key_passphrase TEXT,
+  -- SNMPv3 completo (Fase 4b Task 2, §7.1): niente CHECK sui protocolli (non
+  -- estendibili senza migrazione, vedi ADR pattern rebuild) — validati in
+  -- TypeScript da buildV3Options (src/lib/protocols/snmpv3.ts).
+  encrypted_auth_key TEXT,
+  auth_protocol TEXT,
+  encrypted_priv_key TEXT,
+  priv_protocol TEXT,
+  security_level TEXT,
+  -- Porta propria (tappa 1 credenziali, 15/10): NULL = porta standard del
+  -- protocollo (DEFAULT_PORTS in src/lib/credentials/resolve.ts).
+  port INTEGER,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );
@@ -115,8 +224,8 @@ CREATE TABLE IF NOT EXISTS network_devices (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
   host TEXT NOT NULL,
-  device_type TEXT NOT NULL CHECK(device_type IN ('router', 'switch', 'firewall', 'hypervisor')),
-  vendor TEXT NOT NULL CHECK(vendor IN ('mikrotik', 'ubiquiti', 'hp', 'cisco', 'omada', 'stormshield', 'proxmox', 'vmware', 'linux', 'windows', 'synology', 'qnap', 'other')),
+  device_type TEXT NOT NULL CHECK(device_type IN ('router', 'switch', 'firewall', 'hypervisor', 'access_point', 'nas', 'server')),
+  vendor TEXT NOT NULL CHECK(vendor IN ('mikrotik', 'ubiquiti', 'hp', 'cisco', 'omada', 'stormshield', 'proxmox', 'vmware', 'linux', 'windows', 'synology', 'qnap', 'other', 'apple')),
   vendor_subtype TEXT CHECK(vendor_subtype IN ('procurve', 'comware')),
   protocol TEXT NOT NULL CHECK(protocol IN ('ssh', 'snmp_v2', 'snmp_v3', 'api', 'winrm')),
   credential_id INTEGER REFERENCES credentials(id) ON DELETE SET NULL,
@@ -140,10 +249,23 @@ CREATE TABLE IF NOT EXISTS network_devices (
   stp_info TEXT,
   last_proxmox_scan_at TEXT,
   last_proxmox_scan_result TEXT,
-  scan_target TEXT CHECK(scan_target IN ('proxmox', 'vmware', 'windows', 'linux')),
+  scan_target TEXT CHECK(scan_target IN ('proxmox', 'vmware', 'windows', 'linux', 'macos')),
   product_profile TEXT,
   use_for_arp_poll INTEGER NOT NULL DEFAULT 0,
   physical_device_id INTEGER REFERENCES physical_devices(id) ON DELETE SET NULL,
+  location_id INTEGER REFERENCES locations(id) ON DELETE SET NULL,
+  location_set_by TEXT,
+  location_set_at TEXT,
+  topology_role TEXT,
+  topology_hidden INTEGER NOT NULL DEFAULT 0,
+  controller_mac TEXT,
+  uplink_mac TEXT,
+  uplink_remote_port INTEGER,
+  uplink_seen_at TEXT,
+  -- Versione SNMP a community ('1' | '2c'). NULL = non rilevata: ogni punto parla come prima
+  -- (src/lib/protocols/snmp-sessione.ts). snmp_version_fissata = 1: scelta a mano, la discovery non la tocca.
+  snmp_version TEXT CHECK(snmp_version IN ('1', '2c')),
+  snmp_version_fissata INTEGER NOT NULL DEFAULT 0,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );
@@ -252,6 +374,7 @@ CREATE TABLE IF NOT EXISTS switch_ports (
   trunk_primary_device_id INTEGER REFERENCES network_devices(id) ON DELETE SET NULL,
   trunk_primary_name TEXT,
   stp_state TEXT,
+  is_uplink INTEGER NOT NULL DEFAULT 0,
   timestamp TEXT DEFAULT (datetime('now')),
   UNIQUE(device_id, port_index)
 );
@@ -259,7 +382,7 @@ CREATE TABLE IF NOT EXISTS switch_ports (
 CREATE TABLE IF NOT EXISTS scheduled_jobs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   network_id INTEGER REFERENCES networks(id) ON DELETE CASCADE,
-  job_type TEXT NOT NULL CHECK(job_type IN ('ping_sweep', 'snmp_scan', 'nmap_scan', 'arp_poll', 'dns_resolve', 'fast_scan', 'cleanup', 'known_host_check', 'ad_sync', 'anomaly_check', 'librenms_sync', 'vuln_sync', 'wazuh_sync', 'mdm_sync', 'meshcentral_sync')),
+  job_type TEXT NOT NULL CHECK(${SCHEDULED_JOB_TYPES_CHECK_SQL}),
   interval_minutes INTEGER NOT NULL DEFAULT 60,
   last_run TEXT,
   next_run TEXT,
@@ -326,13 +449,23 @@ CREATE TABLE IF NOT EXISTS host_credentials (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
   credential_id INTEGER NOT NULL REFERENCES credentials(id) ON DELETE CASCADE,
-  protocol_type TEXT NOT NULL CHECK(protocol_type IN ('ssh', 'snmp', 'winrm', 'api')),
+  protocol_type TEXT NOT NULL CHECK(protocol_type IN ('ssh', 'snmp', 'winrm', 'api', 'redfish', 'onvif')),
   port INTEGER NOT NULL,
   validated INTEGER NOT NULL DEFAULT 0,
   validated_at TEXT,
   sort_order INTEGER NOT NULL DEFAULT 0,
   auto_detected INTEGER NOT NULL DEFAULT 0,
   created_at TEXT DEFAULT (datetime('now')),
+  -- Stato fallimenti/backoff (fase 1b credenziali, §7.5). fail_count/backoff_until
+  -- azzerati da recordCredentialSuccess, incrementati da recordCredentialFailure
+  -- (backoff esponenziale: min(2^fail_count * 5min, 24h)). last_attempt_at e
+  -- backoff_until sono ISO-8601 UTC (new Date().toISOString(), NON datetime('now')
+  -- SQLite) — stesso invariante di attribution_evidence.expires_at, vedi
+  -- normalizeExpiresAt in src/lib/attribution/evidence.ts.
+  fail_count INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT,
+  last_attempt_at TEXT,
+  backoff_until TEXT,
   UNIQUE(host_id, credential_id, protocol_type, port)
 );
 
@@ -360,7 +493,7 @@ CREATE TABLE IF NOT EXISTS device_credential_bindings (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   device_id INTEGER NOT NULL REFERENCES network_devices(id) ON DELETE CASCADE,
   credential_id INTEGER REFERENCES credentials(id) ON DELETE CASCADE,
-  protocol_type TEXT NOT NULL CHECK(protocol_type IN ('ssh', 'snmp', 'winrm', 'api')),
+  protocol_type TEXT NOT NULL CHECK(protocol_type IN ('ssh', 'snmp', 'winrm', 'api', 'redfish', 'onvif')),
   port INTEGER NOT NULL DEFAULT 22,
   sort_order INTEGER NOT NULL DEFAULT 0,
   inline_username TEXT,
@@ -390,6 +523,9 @@ CREATE TABLE IF NOT EXISTS locations (
   name TEXT NOT NULL,
   parent_id INTEGER REFERENCES locations(id) ON DELETE SET NULL,
   address TEXT,
+  head_device_id INTEGER REFERENCES network_devices(id) ON DELETE SET NULL,
+  head_set_by TEXT,
+  head_set_at TEXT,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );
@@ -584,6 +720,9 @@ CREATE TABLE IF NOT EXISTS ad_integrations (
   groups_count INTEGER DEFAULT 0,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now')),
+  -- Tappa 2f credenziali: l'account LDAP è una voce d'archivio (tipo «ad»).
+  -- In fondo, come la aggiunge l'ALTER di getTenantDb ai DB di prima.
+  credential_id INTEGER REFERENCES credentials(id) ON DELETE SET NULL,
   UNIQUE(dc_host, domain)
 );
 
@@ -729,9 +868,12 @@ CREATE TABLE IF NOT EXISTS device_neighbors (
   remote_ip TEXT,
   remote_mac TEXT,
   remote_platform TEXT,
+  first_seen TEXT,
+  source TEXT NOT NULL DEFAULT 'device',
   timestamp TEXT DEFAULT (datetime('now')),
   UNIQUE(device_id, local_port, remote_device_name, remote_port)
 );
+${DDL_TOPOLOGY_CAVI.map(([, ddl]) => `${ddl};`).join("\n\n")}
 
 -- Routing table
 CREATE TABLE IF NOT EXISTS routing_table (
@@ -1229,6 +1371,127 @@ CREATE TABLE IF NOT EXISTS mc_node_bind (
   operator    TEXT NOT NULL,
   created_at  TEXT DEFAULT (datetime('now'))
 );
+
+-- Audit esecuzione comandi remoti (Fase 2 RMM). L'OUTPUT non si salva mai: puo'
+-- contenere password/token (un 'cat .env' basta) e finirebbe in chiaro nel DB e
+-- nei backup. Restano comando, operatore ed esito.
+-- NB: duplicato di MC_SCHEMA_SQL (integrations/meshcentral/schema.ts) — le due
+-- copie DEVONO restare allineate; lo verifica tenant-schema-wiring.test.ts, che
+-- itera MC_TABLES invece di una lista scritta a mano.
+CREATE TABLE IF NOT EXISTS mc_command_log (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  host_id     INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
+  node_id     TEXT REFERENCES mc_node(node_id) ON DELETE SET NULL,
+  operator    TEXT NOT NULL,
+  command     TEXT NOT NULL,
+  shell       TEXT NOT NULL DEFAULT 'auto',
+  run_as_user INTEGER NOT NULL DEFAULT 0,
+  status      TEXT NOT NULL DEFAULT 'ok',
+  error       TEXT,
+  created_at  TEXT DEFAULT (datetime('now'))
+);
+
+-- Attribution v2 (spec §4.2): evidenze append-only per host/dimensione.
+-- NB: 'source' e 'phase' senza CHECK deliberatamente — il vocabolario è chiuso
+-- a livello TypeScript (AttributionSource/AttributionPhase) e crescerà nelle fasi 2-5;
+-- i CHECK SQLite non sono estendibili senza rebuild della tabella.
+CREATE TABLE IF NOT EXISTS attribution_evidence (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
+  source TEXT NOT NULL,
+  phase TEXT NOT NULL,
+  dimension TEXT NOT NULL CHECK(dimension IN ('vendor','category','os')),
+  claim TEXT NOT NULL,
+  confidence REAL NOT NULL DEFAULT 0,
+  weight REAL NOT NULL DEFAULT 0,
+  raw_value TEXT,
+  observed_at TEXT NOT NULL DEFAULT (datetime('now')),
+  expires_at TEXT,
+  superseded_by INTEGER REFERENCES attribution_evidence(id) ON DELETE SET NULL
+);
+
+-- Topologia: posizioni salvate dei nodi della mappa (per vista/tenant)
+CREATE TABLE IF NOT EXISTS topology_position (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  view TEXT NOT NULL DEFAULT 'default',
+  node_id TEXT NOT NULL,
+  x REAL NOT NULL,
+  y REAL NOT NULL,
+  pinned INTEGER NOT NULL DEFAULT 1,
+  structure_sig TEXT,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(view, node_id)
+);
+
+-- Topologia: correzioni manuali dei collegamenti (aggiungi/ignora), vincono sui
+-- dati letti dagli apparati. Stessa definizione della migrazione runtime
+-- (migrateTopologyPhase1 in db-tenant.ts).
+CREATE TABLE IF NOT EXISTS topology_link_overrides (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  action TEXT NOT NULL CHECK(action IN ('add', 'ignore')),
+  a_node TEXT NOT NULL,
+  a_port TEXT NOT NULL DEFAULT '',
+  b_node TEXT NOT NULL,
+  b_port TEXT NOT NULL DEFAULT '',
+  note TEXT,
+  created_by TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Controller di rete (UniFi, poi Omada): uno per riga, nel DB del cliente.
+-- Prima la configurazione era una sola, nelle impostazioni globali dell'hub
+-- (integration_unifi_*): vedi ADR 0007. I segreti sono cifrati come nell'hub
+-- (AES-GCM iv:tag:enc). vendor/kind senza CHECK: si validano in TypeScript
+-- (src/lib/controllers/types.ts), così Omada non chiede un rebuild.
+CREATE TABLE IF NOT EXISTS network_controllers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  vendor TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  url TEXT NOT NULL,
+  site TEXT NOT NULL DEFAULT 'default',
+  username TEXT NOT NULL DEFAULT '',
+  password_enc TEXT NOT NULL DEFAULT '',
+  api_key_enc TEXT NOT NULL DEFAULT '',
+  cert_pin TEXT,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  last_run_at TEXT,
+  last_ok INTEGER,
+  last_message TEXT,
+  last_devices INTEGER,
+  last_ports INTEGER,
+  last_neighbors INTEGER,
+  origin TEXT NOT NULL DEFAULT 'manual',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  -- Tappa 2f credenziali: i segreti sono una voce d'archivio (tipo «unifi»);
+  -- le colonne qui sopra restano piene fino alla 2g. In fondo, come la
+  -- aggiunge l'ALTER di getTenantDb ai DB di prima.
+  credential_id INTEGER REFERENCES credentials(id) ON DELETE SET NULL
+);
+
+-- Storico delle letture di un controller: le ultime 50 per controller
+-- (la potatura la fa recordControllerRun, non una buona intenzione).
+CREATE TABLE IF NOT EXISTS network_controller_runs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  controller_id INTEGER NOT NULL REFERENCES network_controllers(id) ON DELETE CASCADE,
+  started_at TEXT NOT NULL,
+  finished_at TEXT NOT NULL,
+  trigger TEXT NOT NULL,
+  triggered_by TEXT,
+  ok INTEGER NOT NULL,
+  total INTEGER NOT NULL DEFAULT 0,
+  added INTEGER NOT NULL DEFAULT 0,
+  updated INTEGER NOT NULL DEFAULT 0,
+  skipped INTEGER NOT NULL DEFAULT 0,
+  ports INTEGER NOT NULL DEFAULT 0,
+  neighbors INTEGER NOT NULL DEFAULT 0,
+  message TEXT,
+  errors_json TEXT NOT NULL DEFAULT '[]',
+  skipped_reasons_json TEXT NOT NULL DEFAULT '[]',
+  offline_json TEXT NOT NULL DEFAULT '[]'
+);
+CREATE INDEX IF NOT EXISTS idx_controller_runs_controller ON network_controller_runs(controller_id, id);
 `;
 
 export const TENANT_INDEXES_SQL = `
@@ -1367,6 +1630,7 @@ CREATE INDEX IF NOT EXISTS idx_classification_feedback_created ON classification
 -- Neighbors / Routes
 CREATE INDEX IF NOT EXISTS idx_device_neighbors_device ON device_neighbors(device_id);
 CREATE INDEX IF NOT EXISTS idx_device_neighbors_remote ON device_neighbors(remote_device_name);
+CREATE INDEX IF NOT EXISTS idx_topology_position_view ON topology_position(view);
 CREATE INDEX IF NOT EXISTS idx_routing_table_device ON routing_table(device_id);
 CREATE INDEX IF NOT EXISTS idx_routing_table_dest ON routing_table(destination);
 
@@ -1466,4 +1730,8 @@ CREATE INDEX IF NOT EXISTS idx_mobile_devices_host ON mobile_devices(host_id);
 CREATE INDEX IF NOT EXISTS idx_mc_node_host ON mc_node(host_id);
 CREATE INDEX IF NOT EXISTS idx_mc_node_mesh ON mc_node(mesh_id);
 CREATE INDEX IF NOT EXISTS idx_mc_remote_session_host_ts ON mc_remote_session(host_id, created_at DESC);
+
+-- Attribution v2 (spec §4.2)
+CREATE INDEX IF NOT EXISTS idx_attr_evidence_host ON attribution_evidence(host_id, dimension);
+CREATE INDEX IF NOT EXISTS idx_attr_evidence_active ON attribution_evidence(host_id, superseded_by) WHERE superseded_by IS NULL;
 `;

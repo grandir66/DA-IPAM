@@ -98,8 +98,16 @@ export function isMacosDevice(device: DeviceAcquisitionInput): boolean {
 /**
  * Sorgente unica di verità: da vendor + profilo + protocollo + scan_target
  * al modulo di acquisizione e all'endpoint da invocare.
+ *
+ * `haSnmp` è «ha SNMP?» dell'apparato salvato: lo passa chi chiama sul server,
+ * da `haSnmpApparato` (le fonti SNMP dell'apparato, binding compresi; tappa 2
+ * credenziali, T8), così il modulo resta puro e si usa anche nel browser.
+ * Prima guardava solo `community_string` e `snmp_credential_id`: una stampante
+ * con l'SNMP in un binding finiva nel piano degli switch. Senza `haSnmp`
+ * (l'anteprima nella finestra, apparato non ancora salvato) valgono le colonne
+ * del modulo.
  */
-export function resolveDeviceAcquisition(device: DeviceAcquisitionInput): DeviceAcquisitionPlan {
+export function resolveDeviceAcquisition(device: DeviceAcquisitionInput, haSnmp?: boolean): DeviceAcquisitionPlan {
   if (isProxmoxVeDevice(device)) {
     return {
       module: "proxmox_ve",
@@ -173,11 +181,9 @@ export function resolveDeviceAcquisition(device: DeviceAcquisitionInput): Device
     };
   }
 
+  const snmpProprio = haSnmp ?? (!!device.community_string || !!device.snmp_credential_id);
   const isSnmpPeripheral =
-    (device.protocol === "snmp_v2" ||
-      device.protocol === "snmp_v3" ||
-      !!device.community_string ||
-      !!device.snmp_credential_id) &&
+    (device.protocol === "snmp_v2" || device.protocol === "snmp_v3" || snmpProprio) &&
     ["stampante", "telecamera", "voip", "iot", "access_point", "firewall", "vm"].includes(
       device.classification ?? ""
     );

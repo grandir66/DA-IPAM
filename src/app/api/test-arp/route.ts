@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getNetworkDeviceById, getRouters } from "@/lib/db";
 import { createRouterClient } from "@/lib/devices/router-client";
+import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { networkDeviceUsesArpPoll } from "@/lib/network-device-arp";
 
@@ -8,8 +9,11 @@ import { networkDeviceUsesArpPoll } from "@/lib/network-device-arp";
  * Test ARP table retrieval from a router device.
  * GET /api/test-arp?device_id=1
  * GET /api/test-arp?device_id=DA_RTR  (cerca per nome)
+ * Usa le credenziali del dispositivo router: solo admin.
  */
 export async function GET(request: Request) {
+  const authCheck = await requireAdmin();
+  if (isAuthError(authCheck)) return authCheck;
   return withTenantFromSession(async () => {
     const { searchParams } = new URL(request.url);
   const deviceId = searchParams.get("device_id");

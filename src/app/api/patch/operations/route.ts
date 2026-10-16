@@ -14,6 +14,7 @@
  *        ?action=...         → uno tra probe|bootstrap|upgrade|install|uninstall|rollback
  *        ?since=ISO          → started_at >= since (UTC ISO 8601)
  *        ?until=ISO          → started_at <= until
+ *        ?search=testo       → hostname / IP / nome personalizzato dell'host (LIKE)
  *        ?limit=&offset=     → paginazione (limit default 50, max 200)
  *      Ritorna { items, limit, offset } dove ogni item include anche
  *      host_hostname/host_ip/host_custom_name via LEFT JOIN su hosts (stesso
@@ -37,6 +38,7 @@ import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { patchModuleGuard, userIdFromSession } from "@/lib/patch/route-guard";
 import { executeUpgrade } from "@/lib/patch/executor";
 import { mapOperationRow, type PatchOperationDbRow } from "@/lib/patch/types";
+import { LIKE_ESCAPE, likeContains } from "@/lib/sql-like";
 
 const NO_CACHE_HEADERS = {
   "Cache-Control": "no-store, no-cache, must-revalidate",
@@ -179,6 +181,7 @@ export async function GET(request: Request) {
     const action = searchParams.get("action");
     const since = searchParams.get("since");
     const until = searchParams.get("until");
+    const search = (searchParams.get("search") ?? "").trim();
     const rawLimit = Number(searchParams.get("limit") ?? 50);
     const limit = Math.min(
       Number.isFinite(rawLimit) && rawLimit > 0 ? rawLimit : 50,
@@ -233,6 +236,16 @@ export async function GET(request: Request) {
     if (until && isValidIsoDatetime(until)) {
       where.push("po.started_at <= ?");
       params.push(until);
+    }
+
+    if (search) {
+      // Filtro sul server, non sulla pagina corrente: con la ricerca applicata
+      // dopo la paginazione un host fuori dalle prime 50 righe «non c'era».
+      const like = likeContains(search);
+      where.push(
+        `(h.hostname LIKE ? ${LIKE_ESCAPE} OR h.ip LIKE ? ${LIKE_ESCAPE} OR h.custom_name LIKE ? ${LIKE_ESCAPE})`
+      );
+      params.push(like, like, like);
     }
 
     const whereClause = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";

@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 /**
  * Mini-icona presenza MeshCentral (3 stati, spec §8/D7), clone semplificato di
@@ -46,7 +47,7 @@ function colorClass(kind: "active" | "stale" | "absent"): string {
 function fmtTs(ts?: string): string {
   if (!ts) return "—";
   try {
-    return new Date(ts.includes("T") ? ts : ts.replace(" ", "T") + "Z").toLocaleString("it-IT", {
+    return parseDbDate(ts.includes("T") ? ts : ts.replace(" ", "T") + "Z").toLocaleString("it-IT", {
       dateStyle: "short",
       timeStyle: "short",
     });

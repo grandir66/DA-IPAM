@@ -3,8 +3,7 @@
  * Usa ldapts (client LDAP puro TypeScript, compatibile con Next.js).
  */
 
-import { Client, SearchOptions } from "ldapts";
-import { decrypt } from "@/lib/crypto";
+import { Client, type ClientOptions, type SearchOptions } from "ldapts";
 import {
   getAdIntegrationById,
   updateAdIntegration,
@@ -15,10 +14,17 @@ import {
   upsertDhcpLease,
   upsertMacIpMapping,
   getNetworkDeviceByHost,
-  createNetworkDevice,
   syncIpAssignmentsForAllNetworks,
   type AdIntegration,
 } from "@/lib/db";
+import { apparatoDhcpDelDc } from "@/lib/ad/apparato-dhcp";
+import { accessoWinrmDelDc, credenzialeLdapDi } from "@/lib/ad/credenziale-ldap";
+import type { runWinrmCommand } from "@/lib/devices/winrm-run";
+import {
+  isAccountEnabled,
+  ldapStr,
+  ldapTimestampToIso,
+} from "@/lib/ad/ldap-utils";
 
 /**
  * Risultato della sincronizzazione AD.
@@ -37,23 +43,6 @@ export interface AdSyncResult {
 }
 
 /**
- * Converte timestamp LDAP (Windows FILETIME: 100-nanoseconds dal 1601) in ISO string.
- * Se il valore è 0 o "0" (mai loggato), restituisce null.
- */
-function ldapTimestampToIso(val: string | number | undefined | null): string | null {
-  if (val == null || val === "0" || val === 0) return null;
-  const num = typeof val === "string" ? BigInt(val) : BigInt(val);
-  if (num <= BigInt(0)) return null;
-  const milliseconds = Number(num / BigInt(10000)) - 11644473600000;
-  if (milliseconds < 0 || milliseconds > Date.now() + 86400000 * 365 * 10) return null;
-  try {
-    return new Date(milliseconds).toISOString();
-  } catch {
-    return null;
-  }
-}
-
-/**
  * Converte objectGUID (Buffer) in stringa UUID.
  */
 function guidBufferToString(buf: Buffer | Uint8Array | undefined): string | null {
@@ -68,16 +57,6 @@ function guidBufferToString(buf: Buffer | Uint8Array | undefined): string | null
 }
 
 /**
- * Estrae valore stringa da attributo LDAP (può essere array o stringa).
- */
-function ldapStr(val: unknown): string | null {
-  if (val == null) return null;
-  if (Array.isArray(val)) return val[0]?.toString() ?? null;
-  if (Buffer.isBuffer(val)) return val.toString("utf-8");
-  return String(val);
-}
-
-/**
  * Estrae la prima OU dal distinguishedName (es. "OU=Workstations,DC=..." → "Workstations").
  */
 function ouFromDn(dn: string): string | null {
@@ -85,34 +64,29 @@ function ouFromDn(dn: string): string | null {
   return match ? match[1] : null;
 }
 
-/**
- * Verifica se account è abilitato da userAccountControl.
- * Bit 0x02 = ACCOUNTDISABLE.
- */
-function isAccountEnabled(uac: string | number | undefined | null): number {
-  if (uac == null) return 1;
-  const num = typeof uac === "string" ? parseInt(uac, 10) : uac;
-  if (isNaN(num)) return 1;
-  return (num & 0x02) === 0 ? 1 : 0;
-}
+/** Crea il client LDAP: quello vero, o uno finto nelle prove (niente rete). */
+export type NuovoClientLdap = (opzioni: ClientOptions) => Client;
+
+const clientLdapVero: NuovoClientLdap = (opzioni) => new Client(opzioni);
 
 /**
  * Connette a LDAP e restituisce il client.
+ * Esportato per AD Health extras (ldap-extras).
+ *
+ * L'account è la voce «Active Directory» dell'integrazione (tappa 2f, T24,
+ * `credenziale-ldap.ts`); le colonne della riga solo per una riga mai
+ * convertita. Senza account («Credenziale mancante») si lancia prima di
+ * creare il client: nessun bind parte verso il DC.
  */
-async function connectLdap(integration: AdIntegration): Promise<Client> {
-  let username: string;
-  let password: string;
-  try {
-    username = decrypt(integration.encrypted_username);
-    password = decrypt(integration.encrypted_password);
-  } catch {
-    throw new Error("Impossibile decifrare le credenziali AD. Verificare ENCRYPTION_KEY e riconfigurare l'integrazione.");
-  }
+export async function connectLdap(integration: AdIntegration, nuovoClient: NuovoClientLdap = clientLdapVero): Promise<Client> {
+  const account = credenzialeLdapDi(integration);
+  if (!account.ok) throw new Error(account.motivo);
+  const { username, password } = account;
 
   const protocol = integration.use_ssl ? "ldaps" : "ldap";
   const url = `${protocol}://${integration.dc_host}:${integration.port}`;
 
-  const client = new Client({
+  const client = nuovoClient({
     url,
     tlsOptions: integration.use_ssl
       ? { rejectUnauthorized: false }
@@ -258,6 +232,7 @@ export async function syncActiveDirectory(integrationId: number): Promise<AdSync
         "department",
         "title",
         "userAccountControl",
+        "lastLogonTimestamp",
         "lastLogon",
         "pwdLastSet",
         "memberOf",
@@ -284,7 +259,10 @@ export async function syncActiveDirectory(integrationId: number): Promise<AdSync
         const phone = ldapStr(entry.telephoneNumber);
         const distinguishedNameUser = ldapStr(entry.distinguishedName) ?? "";
         const enabled = isAccountEnabled(entry.userAccountControl as string);
-        const lastLogonAt = ldapTimestampToIso(entry.lastLogon as string);
+        // Prefer replicated lastLogonTimestamp over DC-local lastLogon
+        const lastLogonAt =
+          ldapTimestampToIso(entry.lastLogonTimestamp as string) ??
+          ldapTimestampToIso(entry.lastLogon as string);
         const passwordLastSetAt = ldapTimestampToIso(entry.pwdLastSet as string);
 
         upsertAdUser(integrationId, {
@@ -453,57 +431,32 @@ export async function syncActiveDirectory(integrationId: number): Promise<AdSync
 }
 
 /**
- * Sincronizza lease DHCP da Windows Server via WinRM+PowerShell.
+ * Sincronizza lease DHCP da Windows Server via WinRM+PowerShell, con la voce
+ * Windows dell'AD e la sua porta (tappa 2f, T24; prima 5985 fissa). `esegui`
+ * è il comando WinRM: quello vero, o uno finto nelle prove.
  */
-async function syncAdDhcpLeases(integration: AdIntegration): Promise<number> {
-  const { runWinrmCommand } = await import("@/lib/devices/winrm-run");
-  const { getDb, getCredentialById } = await import("@/lib/db");
+export async function syncAdDhcpLeases(integration: AdIntegration, esegui?: typeof runWinrmCommand): Promise<number> {
+  const run = esegui ?? (await import("@/lib/devices/winrm-run")).runWinrmCommand;
+  const { getDb } = await import("@/lib/db");
 
   if (!integration.winrm_credential_id) return 0;
-  const cred = getCredentialById(integration.winrm_credential_id);
-  if (!cred) throw new Error("Credenziale WinRM non trovata");
-
-  let username: string;
-  let password: string;
-  try {
-    username = cred.encrypted_username ? decrypt(cred.encrypted_username) : "";
-    password = cred.encrypted_password ? decrypt(cred.encrypted_password) : "";
-  } catch {
-    throw new Error("Impossibile decifrare le credenziali WinRM. Verificare ENCRYPTION_KEY.");
-  }
+  // La voce Windows dell'AD, con la sua porta (tappa 2f, T24): prima 5985 fissa.
+  const accesso = accessoWinrmDelDc(integration.winrm_credential_id);
+  if (!accesso.ok) throw new Error(accesso.motivo);
+  const { username, password, port } = accesso;
   const host = integration.dc_host;
-  const port = 5985;
   const realm = integration.domain || "";
 
   // v0.2.659: trova/crea un network_device "DHCP server" per il DC, così
   // possiamo popolare anche `dhcp_leases` (tabella unificata UI) oltre a
   // `ad_dhcp_leases`. Senza source_device_id la UNIQUE constraint non
-  // permette l'UPSERT per i lease Windows. Auto-create idempotente.
+  // permette l'UPSERT per i lease Windows. Dalla 2e (T20) nasce col binding
+  // WinRM d'archivio, non con la colonna: `apparatoDhcpDelDc`.
   let windowsDhcpDeviceId: number | null = null;
   try {
-    let dev = getNetworkDeviceByHost(integration.dc_host);
-    if (!dev) {
-      const created = createNetworkDevice({
-        name: `${integration.name} — Windows DHCP`,
-        host: integration.dc_host,
-        device_type: "router",
-        vendor: "windows",
-        vendor_subtype: null,
-        protocol: "winrm",
-        credential_id: integration.winrm_credential_id ?? null,
-        snmp_credential_id: null,
-        username: null,
-        encrypted_password: null,
-        community_string: null,
-        api_token: null,
-        api_url: null,
-        port: 5985,
-        enabled: 1,
-      });
-      dev = created;
-      console.info(`[ad-client] creato network_device per Windows DHCP: ${dev.name} (${dev.host})`);
-    }
-    windowsDhcpDeviceId = dev.id;
+    const esisteva = getNetworkDeviceByHost(integration.dc_host) != null;
+    windowsDhcpDeviceId = apparatoDhcpDelDc(integration);
+    if (!esisteva) console.info(`[ad-client] creato l'apparato #${windowsDhcpDeviceId} per il DHCP Windows di «${integration.name}»`);
   } catch (e) {
     console.warn(`[ad-client] impossibile trovare/creare network_device DHCP: ${(e as Error).message}`);
   }
@@ -518,7 +471,7 @@ async function syncAdDhcpLeases(integration: AdIntegration): Promise<number> {
   // Recupera scopes con campi appiattiti.
   // v0.2.659: aggiungo LeaseDuration (TotalSeconds) per calcolare last_seen
   // come (LeaseExpiryTime - LeaseDuration) sui singoli lease.
-  const scopesJson = await runWinrmCommand(
+  const scopesJson = await run(
     host, port, username, password,
     `Get-DhcpServerv4Scope | Select-Object @{N='ScopeId';E={$_.ScopeId.IPAddressToString}}, Name, @{N='SubnetMask';E={$_.SubnetMask.IPAddressToString}}, @{N='State';E={$_.State.ToString()}}, @{N='LeaseDurationSeconds';E={[int]$_.LeaseDuration.TotalSeconds}} | ConvertTo-Json -Compress`,
     true,
@@ -548,7 +501,7 @@ async function syncAdDhcpLeases(integration: AdIntegration): Promise<number> {
     try {
       // v0.2.658 audit bug 2R: anche i lease hanno IPAddress come oggetto.
       // Calculated properties per estrarre stringhe pulite.
-      leasesJson = await runWinrmCommand(
+      leasesJson = await run(
         host, port, username, password,
         `Get-DhcpServerv4Lease -ScopeId "${scopeId}" | Select-Object @{N='IPAddress';E={$_.IPAddress.IPAddressToString}}, ClientId, HostName, @{N='AddressState';E={$_.AddressState.ToString()}}, @{N='LeaseExpiryTime';E={if($_.LeaseExpiryTime){$_.LeaseExpiryTime.ToString('o')}else{$null}}}, Description | ConvertTo-Json -Compress`,
         true,
@@ -689,6 +642,7 @@ async function linkComputersToHosts(integrationId: number): Promise<{ linked: nu
   let linked = 0;
   const created = 0;
   let enriched = 0;
+  const linkedHostIds: number[] = [];
 
   const computers = db
     .prepare(`SELECT id, object_guid, dns_host_name, sam_account_name, ip_address,
@@ -706,11 +660,11 @@ async function linkComputersToHosts(integrationId: number): Promise<{ linked: nu
       const samName = comp.sam_account_name.replace(/\$$/, "").toLowerCase();
       const shortDns = dnsHostName.split(".")[0];
 
-      type HostRow = { id: number; ip: string; hostname: string | null; os_info: string | null; classification: string | null };
+      type HostRow = { id: number; ip: string; hostname: string | null; os_info: string | null };
 
       // 1. Cerca per hostname/dns nei host IPAM
       let host: HostRow | undefined = (dnsHostName || samName) ? db.prepare(`
-        SELECT id, ip, hostname, os_info, classification FROM hosts
+        SELECT id, ip, hostname, os_info FROM hosts
         WHERE LOWER(hostname) = ? OR LOWER(hostname) = ? OR LOWER(hostname) = ?
            OR LOWER(dns_forward) LIKE ? OR LOWER(dns_reverse) LIKE ?
         LIMIT 1
@@ -718,7 +672,7 @@ async function linkComputersToHosts(integrationId: number): Promise<{ linked: nu
 
       // 2. Cerca per IP (da DNS lookup o DHCP)
       if (!host && comp.ip_address) {
-        host = db.prepare("SELECT id, ip, hostname, os_info, classification FROM hosts WHERE ip = ? LIMIT 1")
+        host = db.prepare("SELECT id, ip, hostname, os_info FROM hosts WHERE ip = ? LIMIT 1")
           .get(comp.ip_address) as HostRow | undefined;
       }
 
@@ -731,7 +685,7 @@ async function linkComputersToHosts(integrationId: number): Promise<{ linked: nu
           LIMIT 1
         `).get(integrationId, `${dnsHostName}%`, `${samName}%`, `${shortDns}%`) as { mac_address: string } | undefined;
         if (dhcpLease?.mac_address) {
-          host = db.prepare("SELECT id, ip, hostname, os_info, classification FROM hosts WHERE LOWER(mac) = ? LIMIT 1")
+          host = db.prepare("SELECT id, ip, hostname, os_info FROM hosts WHERE LOWER(mac) = ? LIMIT 1")
             .get(dhcpLease.mac_address.toLowerCase()) as HostRow | undefined;
         }
       }
@@ -747,17 +701,19 @@ async function linkComputersToHosts(integrationId: number): Promise<{ linked: nu
         `).get(samName, dnsHostName, shortDns, `${samName}.%`, `${shortDns}.%`) as { mac_normalized: string } | undefined;
         if (mipLease?.mac_normalized) {
           host = db.prepare(`
-            SELECT id, ip, hostname, os_info, classification FROM hosts
+            SELECT id, ip, hostname, os_info FROM hosts
             WHERE LOWER(mac) = ? OR LOWER(REPLACE(mac, ':', '')) = LOWER(REPLACE(?, ':', ''))
             LIMIT 1
           `).get(mipLease.mac_normalized, mipLease.mac_normalized) as HostRow | undefined;
         }
       }
 
-      // Calcola classificazione e OS string per enrich/create
+      // OS string per enrich/create. Fase 4: l'euristica server_windows/workstation
+      // (da os_info) è stata rimossa — un solo scrittore (attribution v2).
+      // L'evidenza "ad" emessa da emitEvidenceFromSignals (dimension category,
+      // claim compute.server/compute.workstation da questo stesso operating_system)
+      // la sostituisce nella fusione.
       const osRaw = comp.operating_system ?? "";
-      const osLower = osRaw.toLowerCase();
-      const classification = osLower.includes("server") ? "server_windows" : "workstation";
       const hostname = comp.dns_host_name ?? comp.sam_account_name.replace(/\$$/, "");
 
       if (host) {
@@ -768,7 +724,6 @@ async function linkComputersToHosts(integrationId: number): Promise<{ linked: nu
         if (osRaw && (!host.os_info || host.os_info === "unknown")) updates.os_info = osRaw;
         // AD è la fonte più affidabile per hostname: sovrascrive SEMPRE
         if (hostname) { updates.hostname = hostname; updates.hostname_source = "ad"; }
-        if (!host.classification || host.classification === "unknown") updates.classification = classification;
 
         if (Object.keys(updates).length > 0) {
           const setClause = Object.keys(updates).map((k) => `${k} = ?`).join(", ");
@@ -778,6 +733,7 @@ async function linkComputersToHosts(integrationId: number): Promise<{ linked: nu
         }
 
         linked++;
+        linkedHostIds.push(host.id);
       } else if (comp.ip_address) {
         // ── AD ha un IP ma IPAM non ha l'host: aggiorna solo se esiste ──
         // AD è una fonte PASSIVA (computer rimangono in AD anche se spenti/dismessi):
@@ -791,17 +747,21 @@ async function linkComputersToHosts(integrationId: number): Promise<{ linked: nu
             hostname,
             hostname_source: "ad",
             os_info: osRaw || undefined,
-            classification,
           });
           if (updated) {
             linkHost(integrationId, comp.object_guid, updated.id);
             linked++;
             enriched++;
+            linkedHostIds.push(updated.id);
           }
         }
       }
     } catch { /* errore su singolo computer, continua */ }
   }
+
+  // Attribution v2 (fase 1, parallel-run): rifusione evidenze sugli host linkati/arricchiti
+  const { recomputeAttributionSafe } = await import("@/lib/attribution/recompute");
+  for (const id of linkedHostIds) recomputeAttributionSafe(id, "scan");
 
   return { linked, created, enriched };
 }

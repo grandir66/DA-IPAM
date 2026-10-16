@@ -78,7 +78,7 @@ La redazione parallela ha lasciato 12 gap (wiring + 1 dubbio fattuale). **Applic
 
 ## Phase 0 — Deploy-Appliance provisioning (BLOCKING prerequisite)
 
-> **Repo: `grandir66/Deploy-Appliance` (separate from DA-IPAM).** All work in this phase happens in `/Users/riccardo/Progetti/Deploy-Appliance`. Use a feature branch; the Deploy-Appliance `CLAUDE.md` and `~/.claude/CLAUDE.md` apply (idempotent bash, no secrets in git, explicit `cd` before any release/push).
+> **Repo: `grandir66/Deploy-Appliance` (separate from DA-IPAM).** All work in this phase happens in `/Users/riccardo/Progetti/Domarc/Deploy-Appliance`. Use a feature branch; the Deploy-Appliance `CLAUDE.md` and `~/.claude/CLAUDE.md` apply (idempotent bash, no secrets in git, explicit `cd` before any release/push).
 >
 > ⛔ **This entire phase is a HARD BLOCKER.** Per spec §4 the ordering is load-bearing (chicken-and-egg): the MeshCentral container, the pinned `LoginCookieEncryptionKey`, the nginx WebSocket pass-through, the least-privilege service account, and the **captured MeshID** must all exist and be persisted into the DA-IPAM tenant config **before any DA-IPAM launch-out / install-script / sync task (Phase 1+) can function.** The login-token codec (DA-IPAM `login-token.ts`) is worthless without the pinned key written here; `MeshControlClient` cannot `addmesh`/`listNodes` without the service account; the deep-link desktop session dies silently without the nginx WS pass-through (spec §4.3). Do **not** start Phase 1 until Task 6 (verification) is green.
 >
@@ -91,8 +91,8 @@ La redazione parallela ha lasciato 12 gap (wiring + 1 dubbio fattuale). **Applic
 ### Task 0: New `modules/meshcentral.sh` — Docker MeshCentral with deterministic pinned config
 
 **Files:**
-- Create: `/Users/riccardo/Progetti/Deploy-Appliance/modules/meshcentral.sh`
-- Test (verification script): `/Users/riccardo/Progetti/Deploy-Appliance/tests/meshcentral-provision.sh`
+- Create: `/Users/riccardo/Progetti/Domarc/Deploy-Appliance/modules/meshcentral.sh`
+- Test (verification script): `/Users/riccardo/Progetti/Domarc/Deploy-Appliance/tests/meshcentral-provision.sh`
 
 **Interfaces:**
 - Consumes (existing helpers): `on_node <node> <cmd>`, `push_to_node`, `service_main` (from `lib/_service-common.sh`), `secret_write`/`secret_read`/`config_get`/`config_set`/`random_hex` (from `lib/common.sh`), `wait_for` (from `lib/common.sh`).
@@ -104,7 +104,7 @@ La redazione parallela ha lasciato 12 gap (wiring + 1 dubbio fattuale). **Applic
 
 **Steps:**
 
-- [ ] Create the module skeleton with the pinned image and Docker bootstrap (clone of `librenms.sh:13-28` Docker-install block). Write `/Users/riccardo/Progetti/Deploy-Appliance/modules/meshcentral.sh`:
+- [ ] Create the module skeleton with the pinned image and Docker bootstrap (clone of `librenms.sh:13-28` Docker-install block). Write `/Users/riccardo/Progetti/Domarc/Deploy-Appliance/modules/meshcentral.sh`:
 
 ```bash
 #!/usr/bin/env bash
@@ -161,7 +161,7 @@ service_main meshcentral "$@"
 - [ ] Run it expecting **FAIL** (functions `meshcentral_write_config` / `meshcentral_up` not yet defined):
 
 ```bash
-cd /Users/riccardo/Progetti/Deploy-Appliance && bash -n modules/meshcentral.sh && echo "SYNTAX OK"
+cd /Users/riccardo/Progetti/Domarc/Deploy-Appliance && bash -n modules/meshcentral.sh && echo "SYNTAX OK"
 # Expected: prints "SYNTAX OK" (syntax valid) — but a real `install` run would fail:
 #   modules/meshcentral.sh: line N: meshcentral_write_config: command not found
 ```
@@ -290,7 +290,7 @@ meshcentral_status() {
 }
 ```
 
-- [ ] Run syntax + idempotency-of-key check (verification-based — no live guest needed for the key logic). Write `/Users/riccardo/Progetti/Deploy-Appliance/tests/meshcentral-provision.sh`:
+- [ ] Run syntax + idempotency-of-key check (verification-based — no live guest needed for the key logic). Write `/Users/riccardo/Progetti/Domarc/Deploy-Appliance/tests/meshcentral-provision.sh`:
 
 ```bash
 #!/usr/bin/env bash
@@ -349,21 +349,21 @@ echo "ALL PASS: meshcentral provision logic"
 - [ ] Run it expecting **PASS**:
 
 ```bash
-cd /Users/riccardo/Progetti/Deploy-Appliance && chmod +x tests/meshcentral-provision.sh && bash tests/meshcentral-provision.sh
+cd /Users/riccardo/Progetti/Domarc/Deploy-Appliance && chmod +x tests/meshcentral-provision.sh && bash tests/meshcentral-provision.sh
 # Expected last line: "ALL PASS: meshcentral provision logic"
 ```
 
 - [ ] Lint with shellcheck (repo has `.shellcheckrc`):
 
 ```bash
-cd /Users/riccardo/Progetti/Deploy-Appliance && shellcheck modules/meshcentral.sh
+cd /Users/riccardo/Progetti/Domarc/Deploy-Appliance && shellcheck modules/meshcentral.sh
 # Expected: no output (exit 0) or only inherited SC1091 (already disabled at top)
 ```
 
 - [ ] Commit:
 
 ```bash
-cd /Users/riccardo/Progetti/Deploy-Appliance && git checkout -b feat/meshcentral-provisioning && git add modules/meshcentral.sh tests/meshcentral-provision.sh && git commit -m "feat(meshcentral): Docker module with pinned LoginCookieEncryptionKey + deterministic config.json
+cd /Users/riccardo/Progetti/Domarc/Deploy-Appliance && git checkout -b feat/meshcentral-provisioning && git add modules/meshcentral.sh tests/meshcentral-provision.sh && git commit -m "feat(meshcentral): Docker module with pinned LoginCookieEncryptionKey + deterministic config.json
 
 Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ```
@@ -373,8 +373,8 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ### Task 1: nginx WebSocket pass-through location for MeshCentral
 
 **Files:**
-- Modify: `/Users/riccardo/Progetti/Deploy-Appliance/compose/nginx/conf.d/default.conf:130` (add a new `server` block after the `:8443` Wazuh block; mirror the existing per-port pattern at `:53-100`).
-- Test: extend `/Users/riccardo/Progetti/Deploy-Appliance/tests/meshcentral-provision.sh`.
+- Modify: `/Users/riccardo/Progetti/Domarc/Deploy-Appliance/compose/nginx/conf.d/default.conf:130` (add a new `server` block after the `:8443` Wazuh block; mirror the existing per-port pattern at `:53-100`).
+- Test: extend `/Users/riccardo/Progetti/Domarc/Deploy-Appliance/tests/meshcentral-provision.sh`.
 
 **Interfaces:**
 - Consumes: nginx container `host.docker.internal` host-gateway (already wired for scanner-edge, see `default.conf:69`).
@@ -440,21 +440,21 @@ echo "PASS: nginx MeshCentral WS pass-through + log strip"
 - [ ] Run it expecting **PASS**:
 
 ```bash
-cd /Users/riccardo/Progetti/Deploy-Appliance && bash tests/meshcentral-provision.sh
+cd /Users/riccardo/Progetti/Domarc/Deploy-Appliance && bash tests/meshcentral-provision.sh
 # Expected: "PASS: nginx MeshCentral WS pass-through + log strip" then "ALL PASS: meshcentral provision logic"
 ```
 
 - [ ] Validate the nginx config syntactically with a throwaway container (the appliance cert paths won't exist locally, so check only directive parse via `-t` against a stubbed file is overkill; instead lint structure):
 
 ```bash
-cd /Users/riccardo/Progetti/Deploy-Appliance && awk '/listen 5443 ssl/,/^}$/' compose/nginx/conf.d/default.conf | grep -c 'proxy_pass\|listen 5443\|Connection "upgrade"'
+cd /Users/riccardo/Progetti/Domarc/Deploy-Appliance && awk '/listen 5443 ssl/,/^}$/' compose/nginx/conf.d/default.conf | grep -c 'proxy_pass\|listen 5443\|Connection "upgrade"'
 # Expected: 3
 ```
 
 - [ ] Commit:
 
 ```bash
-cd /Users/riccardo/Progetti/Deploy-Appliance && git add compose/nginx/conf.d/default.conf tests/meshcentral-provision.sh && git commit -m "feat(meshcentral): nginx :5443 WebSocket pass-through + login-token log strip
+cd /Users/riccardo/Progetti/Domarc/Deploy-Appliance && git add compose/nginx/conf.d/default.conf tests/meshcentral-provision.sh && git commit -m "feat(meshcentral): nginx :5443 WebSocket pass-through + login-token log strip
 
 Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ```
@@ -464,8 +464,8 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ### Task 2: Least-privilege service account `svc-daipam` via MeshCtrl
 
 **Files:**
-- Modify: `/Users/riccardo/Progetti/Deploy-Appliance/modules/meshcentral.sh` (add `meshcentral_create_service_account()`; call it from `meshcentral_install` after `meshcentral_up`).
-- Test: extend `/Users/riccardo/Progetti/Deploy-Appliance/tests/meshcentral-provision.sh`.
+- Modify: `/Users/riccardo/Progetti/Domarc/Deploy-Appliance/modules/meshcentral.sh` (add `meshcentral_create_service_account()`; call it from `meshcentral_install` after `meshcentral_up`).
+- Test: extend `/Users/riccardo/Progetti/Domarc/Deploy-Appliance/tests/meshcentral-provision.sh`.
 
 **Interfaces:**
 - Consumes: running container `meshcentral`, `secret_read meshcentral.admin_password`/`meshcentral.admin_user` (Task 0).
@@ -542,14 +542,14 @@ echo "PASS: service account svc-daipam secret stabile"
 - [ ] Run expecting **PASS**:
 
 ```bash
-cd /Users/riccardo/Progetti/Deploy-Appliance && bash tests/meshcentral-provision.sh
+cd /Users/riccardo/Progetti/Domarc/Deploy-Appliance && bash tests/meshcentral-provision.sh
 # Expected: "PASS: service account svc-daipam secret stabile" then "ALL PASS..."
 ```
 
 - [ ] Commit:
 
 ```bash
-cd /Users/riccardo/Progetti/Deploy-Appliance && git add modules/meshcentral.sh tests/meshcentral-provision.sh && git commit -m "feat(meshcentral): least-privilege service account svc-daipam via meshctrl
+cd /Users/riccardo/Progetti/Domarc/Deploy-Appliance && git add modules/meshcentral.sh tests/meshcentral-provision.sh && git commit -m "feat(meshcentral): least-privilege service account svc-daipam via meshctrl
 
 Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ```
@@ -559,8 +559,8 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ### Task 3: Create device group via `addmesh` and CAPTURE the MeshID
 
 **Files:**
-- Modify: `/Users/riccardo/Progetti/Deploy-Appliance/modules/meshcentral.sh` (add `meshcentral_create_device_group()`; call from `meshcentral_install` after service account).
-- Test: extend `/Users/riccardo/Progetti/Deploy-Appliance/tests/meshcentral-provision.sh`.
+- Modify: `/Users/riccardo/Progetti/Domarc/Deploy-Appliance/modules/meshcentral.sh` (add `meshcentral_create_device_group()`; call from `meshcentral_install` after service account).
+- Test: extend `/Users/riccardo/Progetti/Domarc/Deploy-Appliance/tests/meshcentral-provision.sh`.
 
 **Interfaces:**
 - Consumes: running container, admin creds, service-account name (Tasks 0+2).
@@ -653,14 +653,14 @@ echo "PASS: MeshID catturato e persistito (${MID})"
 - [ ] Run expecting **PASS**:
 
 ```bash
-cd /Users/riccardo/Progetti/Deploy-Appliance && bash tests/meshcentral-provision.sh
+cd /Users/riccardo/Progetti/Domarc/Deploy-Appliance && bash tests/meshcentral-provision.sh
 # Expected: "PASS: MeshID catturato e persistito (mesh//AbCdEf123456)" then "ALL PASS..."
 ```
 
 - [ ] Commit:
 
 ```bash
-cd /Users/riccardo/Progetti/Deploy-Appliance && git add modules/meshcentral.sh tests/meshcentral-provision.sh && git commit -m "feat(meshcentral): create device group via addmesh + capture & validate MeshID
+cd /Users/riccardo/Progetti/Domarc/Deploy-Appliance && git add modules/meshcentral.sh tests/meshcentral-provision.sh && git commit -m "feat(meshcentral): create device group via addmesh + capture & validate MeshID
 
 Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ```
@@ -670,8 +670,8 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ### Task 4: Write MeshCentral config into the DA-IPAM tenant `.env.local` (consumed by `saveMeshConfig`)
 
 **Files:**
-- Modify: `/Users/riccardo/Progetti/Deploy-Appliance/lib/secrets.sh:158-170` (inside `secrets_render_ipam_env`, after the Wazuh/Graylog/LibreNMS blocks).
-- Test: extend `/Users/riccardo/Progetti/Deploy-Appliance/tests/meshcentral-provision.sh`.
+- Modify: `/Users/riccardo/Progetti/Domarc/Deploy-Appliance/lib/secrets.sh:158-170` (inside `secrets_render_ipam_env`, after the Wazuh/Graylog/LibreNMS blocks).
+- Test: extend `/Users/riccardo/Progetti/Domarc/Deploy-Appliance/tests/meshcentral-provision.sh`.
 
 **Interfaces:**
 - Consumes: secrets `meshcentral.*` (Tasks 0–3), config `meshcentral_server_url`/`meshcentral_domain`.
@@ -736,21 +736,21 @@ echo "PASS: env fragment DA-IPAM con config MeshCentral completa"
 - [ ] Run expecting **PASS**:
 
 ```bash
-cd /Users/riccardo/Progetti/Deploy-Appliance && bash tests/meshcentral-provision.sh
+cd /Users/riccardo/Progetti/Domarc/Deploy-Appliance && bash tests/meshcentral-provision.sh
 # Expected: "PASS: env fragment DA-IPAM con config MeshCentral completa" then "ALL PASS..."
 ```
 
 - [ ] Shellcheck the modified lib:
 
 ```bash
-cd /Users/riccardo/Progetti/Deploy-Appliance && shellcheck lib/secrets.sh
+cd /Users/riccardo/Progetti/Domarc/Deploy-Appliance && shellcheck lib/secrets.sh
 # Expected: exit 0 (no new findings)
 ```
 
 - [ ] Commit:
 
 ```bash
-cd /Users/riccardo/Progetti/Deploy-Appliance && git add lib/secrets.sh tests/meshcentral-provision.sh && git commit -m "feat(meshcentral): emit MeshCentral config into DA-IPAM .env.local (consumed by saveMeshConfig)
+cd /Users/riccardo/Progetti/Domarc/Deploy-Appliance && git add lib/secrets.sh tests/meshcentral-provision.sh && git commit -m "feat(meshcentral): emit MeshCentral config into DA-IPAM .env.local (consumed by saveMeshConfig)
 
 Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ```
@@ -760,9 +760,9 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ### Task 5: Wire `meshcentral` into `deploy.sh --profile` and module dispatch
 
 **Files:**
-- Modify: `/Users/riccardo/Progetti/Deploy-Appliance/deploy.sh` (add `meshcentral` to the optional-modules profile list — mirror how `wazuh`/`graylog`/`librenms` are wired).
-- Modify: `/Users/riccardo/Progetti/Deploy-Appliance/da-appliance.sh` (ensure `add-module meshcentral` resolves to `modules/meshcentral.sh` and sets `config_set install_meshcentral local`).
-- Test: extend `/Users/riccardo/Progetti/Deploy-Appliance/tests/meshcentral-provision.sh`.
+- Modify: `/Users/riccardo/Progetti/Domarc/Deploy-Appliance/deploy.sh` (add `meshcentral` to the optional-modules profile list — mirror how `wazuh`/`graylog`/`librenms` are wired).
+- Modify: `/Users/riccardo/Progetti/Domarc/Deploy-Appliance/da-appliance.sh` (ensure `add-module meshcentral` resolves to `modules/meshcentral.sh` and sets `config_set install_meshcentral local`).
+- Test: extend `/Users/riccardo/Progetti/Domarc/Deploy-Appliance/tests/meshcentral-provision.sh`.
 
 **Interfaces:**
 - Consumes: `modules/meshcentral.sh` (Task 0), `secrets_render_ipam_env` MeshCentral block (Task 4).
@@ -773,7 +773,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 - [ ] Inspect how modules are registered so the edit matches exactly:
 
 ```bash
-cd /Users/riccardo/Progetti/Deploy-Appliance && grep -n "librenms\|graylog\|install_wazuh\|add-module\|OPTIONAL_MODULES\|MODULES=\|resolve_service_script\|install_librenms" deploy.sh da-appliance.sh | head -40
+cd /Users/riccardo/Progetti/Domarc/Deploy-Appliance && grep -n "librenms\|graylog\|install_wazuh\|add-module\|OPTIONAL_MODULES\|MODULES=\|resolve_service_script\|install_librenms" deploy.sh da-appliance.sh | head -40
 ```
 
 - [ ] In `deploy.sh`, add `meshcentral` to the optional-modules list/profile-map alongside `librenms`/`graylog`/`wazuh`. Use the exact list variable found above. For example, if the list is `OPTIONAL_MODULES="wazuh graylog librenms net-services"`, change it to include `meshcentral`:
@@ -809,21 +809,21 @@ echo "PASS: meshcentral wired in deploy.sh + da-appliance.sh"
 - [ ] Run expecting **PASS**:
 
 ```bash
-cd /Users/riccardo/Progetti/Deploy-Appliance && bash tests/meshcentral-provision.sh
+cd /Users/riccardo/Progetti/Domarc/Deploy-Appliance && bash tests/meshcentral-provision.sh
 # Expected: "PASS: meshcentral wired in deploy.sh + da-appliance.sh" then "ALL PASS..."
 ```
 
 - [ ] Shellcheck both modified entrypoints:
 
 ```bash
-cd /Users/riccardo/Progetti/Deploy-Appliance && shellcheck deploy.sh da-appliance.sh
+cd /Users/riccardo/Progetti/Domarc/Deploy-Appliance && shellcheck deploy.sh da-appliance.sh
 # Expected: exit 0 / no new findings
 ```
 
 - [ ] Commit:
 
 ```bash
-cd /Users/riccardo/Progetti/Deploy-Appliance && git add deploy.sh da-appliance.sh tests/meshcentral-provision.sh && git commit -m "feat(meshcentral): wire module into deploy.sh --profile + add-module dispatch
+cd /Users/riccardo/Progetti/Domarc/Deploy-Appliance && git add deploy.sh da-appliance.sh tests/meshcentral-provision.sh && git commit -m "feat(meshcentral): wire module into deploy.sh --profile + add-module dispatch
 
 Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ```
@@ -833,7 +833,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ### Task 6: End-to-end provisioning verification on a live appliance (PHASE GATE — must pass before Phase 1)
 
 **Files:**
-- Test (runbook + assertion script): `/Users/riccardo/Progetti/Deploy-Appliance/tests/meshcentral-e2e-verify.sh`
+- Test (runbook + assertion script): `/Users/riccardo/Progetti/Domarc/Deploy-Appliance/tests/meshcentral-e2e-verify.sh`
 
 **Interfaces:**
 - Consumes: a provisioned appliance with `da-appliance add-module meshcentral` already run (Tasks 0–5).
@@ -841,7 +841,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 **Steps:**
 
-- [ ] Create the E2E assertion script. Write `/Users/riccardo/Progetti/Deploy-Appliance/tests/meshcentral-e2e-verify.sh`:
+- [ ] Create the E2E assertion script. Write `/Users/riccardo/Progetti/Domarc/Deploy-Appliance/tests/meshcentral-e2e-verify.sh`:
 
 ```bash
 #!/usr/bin/env bash
@@ -894,7 +894,7 @@ echo "GO: tutti i 5 prerequisiti MeshCentral verdi — Phase 1 (DA-IPAM) può in
 - [ ] Make executable and run on the appliance PVE host (per `~/.claude` SSH allowlist; this is the one real-infra step). Expected output is the GO banner; any NO-GO line is a hard blocker:
 
 ```bash
-cd /Users/riccardo/Progetti/Deploy-Appliance && chmod +x tests/meshcentral-e2e-verify.sh
+cd /Users/riccardo/Progetti/Domarc/Deploy-Appliance && chmod +x tests/meshcentral-e2e-verify.sh
 # Then on the appliance PVE host:
 #   bash /opt/da-appliance/tests/meshcentral-e2e-verify.sh
 # Expected final line:
@@ -904,14 +904,14 @@ cd /Users/riccardo/Progetti/Deploy-Appliance && chmod +x tests/meshcentral-e2e-v
 - [ ] Shellcheck:
 
 ```bash
-cd /Users/riccardo/Progetti/Deploy-Appliance && shellcheck tests/meshcentral-e2e-verify.sh
+cd /Users/riccardo/Progetti/Domarc/Deploy-Appliance && shellcheck tests/meshcentral-e2e-verify.sh
 # Expected: exit 0
 ```
 
 - [ ] Commit and open the Deploy-Appliance PR (separate repo — explicit `cd`, do not bump/commit DA-IPAM):
 
 ```bash
-cd /Users/riccardo/Progetti/Deploy-Appliance && git add tests/meshcentral-e2e-verify.sh && git commit -m "test(meshcentral): E2E phase-gate verify (5 blocking prerequisites)
+cd /Users/riccardo/Progetti/Domarc/Deploy-Appliance && git add tests/meshcentral-e2e-verify.sh && git commit -m "test(meshcentral): E2E phase-gate verify (5 blocking prerequisites)
 
 Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>" && gh pr create --repo grandir66/Deploy-Appliance --base main --head feat/meshcentral-provisioning --title "feat(meshcentral): RMM provisioning module (Phase 0 prerequisite for DA-IPAM RMM)" --body "Phase 0 of the MeshCentral RMM integration (spec DA-IPAM 2026-06-29). Adds Docker MeshCentral module with pinned LoginCookieEncryptionKey, nginx WS pass-through, least-privilege service account, device-group/MeshID capture, and DA-IPAM tenant config wiring. BLOCKING prerequisite before any DA-IPAM launch-out work.
 
@@ -1013,7 +1013,7 @@ test("dropMcSchema removes all 3 tables in reverse FK order", () => {
 });
 ```
 
-- [ ] Run, expect FAIL (module missing): `cd /Users/riccardo/Progetti/DA-IPAM && ENCRYPTION_KEY=test-mc node --import tsx --test src/lib/integrations/meshcentral/__tests__/schema.test.ts`
+- [ ] Run, expect FAIL (module missing): `cd /Users/riccardo/Progetti/Domarc/DA-IPAM && ENCRYPTION_KEY=test-mc node --import tsx --test src/lib/integrations/meshcentral/__tests__/schema.test.ts`
 - [ ] Implement `src/lib/integrations/meshcentral/schema.ts`:
 
 ```ts
@@ -1100,8 +1100,8 @@ export function mcTablesExist(db: Database): boolean {
 }
 ```
 
-- [ ] Run, expect PASS: `cd /Users/riccardo/Progetti/DA-IPAM && ENCRYPTION_KEY=test-mc node --import tsx --test src/lib/integrations/meshcentral/__tests__/schema.test.ts`
-- [ ] Commit: `cd /Users/riccardo/Progetti/DA-IPAM && git add src/lib/integrations/meshcentral/schema.ts src/lib/integrations/meshcentral/__tests__/schema.test.ts && git commit -m "feat(rmm): mc_node/mc_remote_session/mc_node_bind schema module (idempotent, reverse-drop)"`
+- [ ] Run, expect PASS: `cd /Users/riccardo/Progetti/Domarc/DA-IPAM && ENCRYPTION_KEY=test-mc node --import tsx --test src/lib/integrations/meshcentral/__tests__/schema.test.ts`
+- [ ] Commit: `cd /Users/riccardo/Progetti/Domarc/DA-IPAM && git add src/lib/integrations/meshcentral/schema.ts src/lib/integrations/meshcentral/__tests__/schema.test.ts && git commit -m "feat(rmm): mc_node/mc_remote_session/mc_node_bind schema module (idempotent, reverse-drop)"`
 
 ---
 
@@ -1169,7 +1169,7 @@ test("mc_node indexes present", () => {
 
 > Note: if `scheduled_jobs` declares `network_id` as `NOT NULL` without default, change the INSERT to supply a valid value; verify columns with `PRAGMA table_info` at line 259-266 before finalizing. The test reads `PRAGMA table_info` first so adjust the INSERT column list to the actual NOT-NULL columns.
 
-- [ ] Run, expect FAIL: `cd /Users/riccardo/Progetti/DA-IPAM && ENCRYPTION_KEY=test-mc node --import tsx --test src/lib/integrations/meshcentral/__tests__/tenant-schema-wiring.test.ts`
+- [ ] Run, expect FAIL: `cd /Users/riccardo/Progetti/Domarc/DA-IPAM && ENCRYPTION_KEY=test-mc node --import tsx --test src/lib/integrations/meshcentral/__tests__/tenant-schema-wiring.test.ts`
 - [ ] Edit `src/lib/db-tenant-schema.ts:262` — add `'meshcentral_sync'` to the CHECK list. Change:
 
 ```
@@ -1248,8 +1248,8 @@ CREATE INDEX IF NOT EXISTS idx_mc_node_mesh ON mc_node(mesh_id);
 CREATE INDEX IF NOT EXISTS idx_mc_remote_session_host_ts ON mc_remote_session(host_id, created_at DESC);
 ```
 
-- [ ] Run, expect PASS: `cd /Users/riccardo/Progetti/DA-IPAM && ENCRYPTION_KEY=test-mc node --import tsx --test src/lib/integrations/meshcentral/__tests__/tenant-schema-wiring.test.ts`
-- [ ] Commit: `cd /Users/riccardo/Progetti/DA-IPAM && git add src/lib/db-tenant-schema.ts src/lib/integrations/meshcentral/__tests__/tenant-schema-wiring.test.ts && git commit -m "feat(rmm): wire mc_* + mc_config tables + meshcentral_sync job_type into tenant schema"`
+- [ ] Run, expect PASS: `cd /Users/riccardo/Progetti/Domarc/DA-IPAM && ENCRYPTION_KEY=test-mc node --import tsx --test src/lib/integrations/meshcentral/__tests__/tenant-schema-wiring.test.ts`
+- [ ] Commit: `cd /Users/riccardo/Progetti/Domarc/DA-IPAM && git add src/lib/db-tenant-schema.ts src/lib/integrations/meshcentral/__tests__/tenant-schema-wiring.test.ts && git commit -m "feat(rmm): wire mc_* + mc_config tables + meshcentral_sync job_type into tenant schema"`
 
 ---
 
@@ -1339,7 +1339,7 @@ test("getMeshConfig returns null when unconfigured", () => {
 });
 ```
 
-- [ ] Run, expect FAIL: `cd /Users/riccardo/Progetti/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/config.test.ts`
+- [ ] Run, expect FAIL: `cd /Users/riccardo/Progetti/Domarc/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/config.test.ts`
 - [ ] Implement `src/lib/integrations/meshcentral/config.ts`:
 
 ```ts
@@ -1463,8 +1463,8 @@ export function saveMeshConfig(input: {
 }
 ```
 
-- [ ] Run, expect PASS: `cd /Users/riccardo/Progetti/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/config.test.ts`
-- [ ] Commit: `cd /Users/riccardo/Progetti/DA-IPAM && git add src/lib/integrations/meshcentral/config.ts src/lib/integrations/meshcentral/__tests__/config.test.ts && git commit -m "feat(rmm): per-tenant encrypted MeshCentral config (getMeshConfig public-safe, getMeshCreds hex Buffer)"`
+- [ ] Run, expect PASS: `cd /Users/riccardo/Progetti/Domarc/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/config.test.ts`
+- [ ] Commit: `cd /Users/riccardo/Progetti/Domarc/DA-IPAM && git add src/lib/integrations/meshcentral/config.ts src/lib/integrations/meshcentral/__tests__/config.test.ts && git commit -m "feat(rmm): per-tenant encrypted MeshCentral config (getMeshConfig public-safe, getMeshCreds hex Buffer)"`
 
 ---
 
@@ -1521,7 +1521,7 @@ test("install creates schema + flips state to installed; uninstall reverses", ()
 
 > The tenant DB created by `withTenant`/`getTenantDb` already runs `TENANT_SCHEMA_SQL` (Task 11), so `mc_*` tables pre-exist as IF-NOT-EXISTS. `installMeshFeature` re-applies them (no-op) and flips the hub flag; `uninstallMeshFeature` drops them so `mcTablesExist` goes false. The state source of truth is the hub `tenant_features` flag.
 
-- [ ] Run, expect FAIL: `cd /Users/riccardo/Progetti/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/feature.test.ts`
+- [ ] Run, expect FAIL: `cd /Users/riccardo/Progetti/Domarc/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/feature.test.ts`
 - [ ] Implement `src/lib/integrations/meshcentral/feature.ts`:
 
 ```ts
@@ -1597,9 +1597,9 @@ void getFeatureStatus;
 
 > If a synchronous hub read helper already exists (check `src/lib/patch/feature.ts` for a sync variant before using the `require` shim), prefer importing it and drop the inline `require`. The `require` is used only because `getFeatureStatus` is declared `async`; better-sqlite3 underneath is synchronous so a direct `.get()` is correct and matches the contract's sync `getMeshState()` signature. Replace the `void getFeatureStatus;` line and the unused import if lint flags it.
 
-- [ ] Run, expect PASS: `cd /Users/riccardo/Progetti/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/feature.test.ts`
-- [ ] Lint the new files: `cd /Users/riccardo/Progetti/DA-IPAM && npx eslint src/lib/integrations/meshcentral/` — fix any `no-require-imports`/unused-import findings per the note above.
-- [ ] Commit: `cd /Users/riccardo/Progetti/DA-IPAM && git add src/lib/integrations/meshcentral/feature.ts src/lib/integrations/meshcentral/__tests__/feature.test.ts && git commit -m "feat(rmm): MeshCentral feature lifecycle (install applies schema+flag, uninstall drops+disables)"`
+- [ ] Run, expect PASS: `cd /Users/riccardo/Progetti/Domarc/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/feature.test.ts`
+- [ ] Lint the new files: `cd /Users/riccardo/Progetti/Domarc/DA-IPAM && npx eslint src/lib/integrations/meshcentral/` — fix any `no-require-imports`/unused-import findings per the note above.
+- [ ] Commit: `cd /Users/riccardo/Progetti/Domarc/DA-IPAM && git add src/lib/integrations/meshcentral/feature.ts src/lib/integrations/meshcentral/__tests__/feature.test.ts && git commit -m "feat(rmm): MeshCentral feature lifecycle (install applies schema+flag, uninstall drops+disables)"`
 
 ---
 
@@ -1609,9 +1609,9 @@ void getFeatureStatus;
 
 Steps:
 
-- [ ] Run all MeshCentral tests together: `cd /Users/riccardo/Progetti/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/*.test.ts` — expect all PASS.
-- [ ] Lint: `cd /Users/riccardo/Progetti/DA-IPAM && npx eslint src/lib/integrations/meshcentral src/lib/db-tenant-schema.ts`
-- [ ] Release (branch governance: push only to `dev`): `cd /Users/riccardo/Progetti/DA-IPAM && npm run version:release` then push to `dev`.
+- [ ] Run all MeshCentral tests together: `cd /Users/riccardo/Progetti/Domarc/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/*.test.ts` — expect all PASS.
+- [ ] Lint: `cd /Users/riccardo/Progetti/Domarc/DA-IPAM && npx eslint src/lib/integrations/meshcentral src/lib/db-tenant-schema.ts`
+- [ ] Release (branch governance: push only to `dev`): `cd /Users/riccardo/Progetti/Domarc/DA-IPAM && npm run version:release` then push to `dev`.
 
 ---
 
@@ -1746,7 +1746,7 @@ Steps:
 
 - [ ] Run it, expect FAIL (module does not exist yet):
   ```bash
-  cd /Users/riccardo/Progetti/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/login-token-codec.test.ts
+  cd /Users/riccardo/Progetti/Domarc/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/login-token-codec.test.ts
   ```
 
 - [ ] Minimal implementation. Create `src/lib/integrations/meshcentral/login-token.ts` with REAL code (codec only — minting/self-check added in later tasks):
@@ -1783,17 +1783,17 @@ Steps:
 
 - [ ] Run it, expect PASS:
   ```bash
-  cd /Users/riccardo/Progetti/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/login-token-codec.test.ts
+  cd /Users/riccardo/Progetti/Domarc/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/login-token-codec.test.ts
   ```
 
 - [ ] Type-check the new file:
   ```bash
-  cd /Users/riccardo/Progetti/DA-IPAM && npx tsc --noEmit 2>&1 | grep -E 'login-token' || echo "no login-token type errors"
+  cd /Users/riccardo/Progetti/Domarc/DA-IPAM && npx tsc --noEmit 2>&1 | grep -E 'login-token' || echo "no login-token type errors"
   ```
 
 - [ ] Commit:
   ```bash
-  cd /Users/riccardo/Progetti/DA-IPAM && git add src/lib/integrations/meshcentral/login-token.ts src/lib/integrations/meshcentral/__tests__/login-token-codec.test.ts && git commit -m "feat(rmm): port MeshCentral encodeCookie codec (AES-256-GCM, iv|tag|ct)
+  cd /Users/riccardo/Progetti/Domarc/DA-IPAM && git add src/lib/integrations/meshcentral/login-token.ts src/lib/integrations/meshcentral/__tests__/login-token-codec.test.ts && git commit -m "feat(rmm): port MeshCentral encodeCookie codec (AES-256-GCM, iv|tag|ct)
 
 Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
   ```
@@ -1874,13 +1874,13 @@ Steps:
 
 - [ ] Run, expect PASS (codec from Task 20 already satisfies these — they pin the contract):
   ```bash
-  cd /Users/riccardo/Progetti/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/login-token-codec.test.ts
+  cd /Users/riccardo/Progetti/Domarc/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/login-token-codec.test.ts
   ```
   If any FAIL, the bug is in the Task 20 codec (substitution direction or padding) — fix `encodeCookie`, do not weaken the test.
 
 - [ ] Commit:
   ```bash
-  cd /Users/riccardo/Progetti/DA-IPAM && git add src/lib/integrations/meshcentral/__tests__/login-token-codec.test.ts && git commit -m "test(rmm): pin @/\$ url-safe substitution + hex-key load for login-token codec
+  cd /Users/riccardo/Progetti/Domarc/DA-IPAM && git add src/lib/integrations/meshcentral/__tests__/login-token-codec.test.ts && git commit -m "test(rmm): pin @/\$ url-safe substitution + hex-key load for login-token codec
 
 Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
   ```
@@ -2038,12 +2038,12 @@ Steps:
 
 - [ ] Run, expect PASS (self-seeded path):
   ```bash
-  cd /Users/riccardo/Progetti/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/login-token-golden.test.ts
+  cd /Users/riccardo/Progetti/Domarc/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/login-token-golden.test.ts
   ```
 
 - [ ] Commit:
   ```bash
-  cd /Users/riccardo/Progetti/DA-IPAM && git add src/lib/integrations/meshcentral/__tests__/fixtures src/lib/integrations/meshcentral/__tests__/login-token-golden.test.ts && git commit -m "test(rmm): golden-vector interop fixture + regen runbook for login-token codec
+  cd /Users/riccardo/Progetti/Domarc/DA-IPAM && git add src/lib/integrations/meshcentral/__tests__/fixtures src/lib/integrations/meshcentral/__tests__/login-token-golden.test.ts && git commit -m "test(rmm): golden-vector interop fixture + regen runbook for login-token codec
 
 Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
   ```
@@ -2140,7 +2140,7 @@ Steps:
 
 - [ ] Run, expect FAIL (`mintLoginToken` not exported yet):
   ```bash
-  cd /Users/riccardo/Progetti/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/login-token-mint.test.ts
+  cd /Users/riccardo/Progetti/Domarc/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/login-token-mint.test.ts
   ```
 
 - [ ] Implement. Append to `src/lib/integrations/meshcentral/login-token.ts` with REAL code:
@@ -2233,17 +2233,17 @@ Steps:
 
 - [ ] Run, expect PASS:
   ```bash
-  cd /Users/riccardo/Progetti/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/login-token-mint.test.ts
+  cd /Users/riccardo/Progetti/Domarc/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/login-token-mint.test.ts
   ```
 
 - [ ] Type-check:
   ```bash
-  cd /Users/riccardo/Progetti/DA-IPAM && npx tsc --noEmit 2>&1 | grep -E 'meshcentral/login-token|login-token-mint' || echo "no login-token type errors"
+  cd /Users/riccardo/Progetti/Domarc/DA-IPAM && npx tsc --noEmit 2>&1 | grep -E 'meshcentral/login-token|login-token-mint' || echo "no login-token type errors"
   ```
 
 - [ ] Commit:
   ```bash
-  cd /Users/riccardo/Progetti/DA-IPAM && git add src/lib/integrations/meshcentral/login-token.ts src/lib/integrations/meshcentral/__tests__/login-token-mint.test.ts && git commit -m "feat(rmm): mintLoginToken (a:3, once, 3min TTL) + loud loginTokenSelfCheck
+  cd /Users/riccardo/Progetti/Domarc/DA-IPAM && git add src/lib/integrations/meshcentral/login-token.ts src/lib/integrations/meshcentral/__tests__/login-token-mint.test.ts && git commit -m "feat(rmm): mintLoginToken (a:3, once, 3min TTL) + loud loginTokenSelfCheck
 
 Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
   ```
@@ -2332,7 +2332,7 @@ Steps:
 
 - [ ] Run, expect FAIL (module missing):
   ```bash
-  cd /Users/riccardo/Progetti/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/deep-link.test.ts
+  cd /Users/riccardo/Progetti/Domarc/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/deep-link.test.ts
   ```
 
 - [ ] Implement. Create `src/lib/integrations/meshcentral/deep-link.ts` with REAL code:
@@ -2384,24 +2384,24 @@ Steps:
 
 - [ ] Run, expect PASS:
   ```bash
-  cd /Users/riccardo/Progetti/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/deep-link.test.ts
+  cd /Users/riccardo/Progetti/Domarc/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/deep-link.test.ts
   ```
 
 - [ ] Type-check + run the whole meshcentral codec suite together:
   ```bash
-  cd /Users/riccardo/Progetti/DA-IPAM && npx tsc --noEmit 2>&1 | grep -E 'meshcentral/(deep-link|login-token)' || echo "no type errors" ; node --import tsx --test src/lib/integrations/meshcentral/__tests__/*.test.ts
+  cd /Users/riccardo/Progetti/Domarc/DA-IPAM && npx tsc --noEmit 2>&1 | grep -E 'meshcentral/(deep-link|login-token)' || echo "no type errors" ; node --import tsx --test src/lib/integrations/meshcentral/__tests__/*.test.ts
   ```
 
 - [ ] Commit:
   ```bash
-  cd /Users/riccardo/Progetti/DA-IPAM && git add src/lib/integrations/meshcentral/deep-link.ts src/lib/integrations/meshcentral/__tests__/deep-link.test.ts && git commit -m "feat(rmm): buildRemoteSessionUrl deep-link (login/node/viewmode/hide=15, https)
+  cd /Users/riccardo/Progetti/Domarc/DA-IPAM && git add src/lib/integrations/meshcentral/deep-link.ts src/lib/integrations/meshcentral/__tests__/deep-link.test.ts && git commit -m "feat(rmm): buildRemoteSessionUrl deep-link (login/node/viewmode/hide=15, https)
 
 Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
   ```
 
 - [ ] Version release (anti-regressione: `npm run version:release` after the code change, on a `dev`/feature branch per DA-IPAM branch governance — never push `main` directly):
   ```bash
-  cd /Users/riccardo/Progetti/DA-IPAM && npm run version:release
+  cd /Users/riccardo/Progetti/Domarc/DA-IPAM && npm run version:release
   ```
 
 ---
@@ -2588,7 +2588,7 @@ Steps:
 
 - [ ] Run it, expect FAIL (module does not exist):
   ```bash
-  cd /Users/riccardo/Progetti/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/control-client.test.ts
+  cd /Users/riccardo/Progetti/Domarc/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/control-client.test.ts
   ```
 
 - [ ] Minimal implementation `src/lib/integrations/meshcentral/control-client.ts`. The real WS lives behind `defaultWsConnector` (uses the `ws` package already in deps); the seam `_setWsConnector` lets tests inject a fake. COMPLETE code:
@@ -2779,17 +2779,17 @@ Steps:
 
 - [ ] Run it, expect PASS:
   ```bash
-  cd /Users/riccardo/Progetti/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/control-client.test.ts
+  cd /Users/riccardo/Progetti/Domarc/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/control-client.test.ts
   ```
 
 - [ ] Type-check the new files only:
   ```bash
-  cd /Users/riccardo/Progetti/DA-IPAM && npx tsc --noEmit
+  cd /Users/riccardo/Progetti/Domarc/DA-IPAM && npx tsc --noEmit
   ```
 
 - [ ] Commit (on `dev`, per DA-IPAM branch governance):
   ```bash
-  cd /Users/riccardo/Progetti/DA-IPAM && git add src/lib/integrations/meshcentral/control-client.ts src/lib/integrations/meshcentral/__tests__/control-client.test.ts && git commit -m "feat(mesh): MeshControlClient over control.ashx WS (listNodes/addMesh/listMeshes), mockable WS seam"
+  cd /Users/riccardo/Progetti/Domarc/DA-IPAM && git add src/lib/integrations/meshcentral/control-client.ts src/lib/integrations/meshcentral/__tests__/control-client.test.ts && git commit -m "feat(mesh): MeshControlClient over control.ashx WS (listNodes/addMesh/listMeshes), mockable WS seam"
   ```
 
 ---
@@ -2937,7 +2937,7 @@ Steps:
 
 - [ ] Run it, expect FAIL:
   ```bash
-  cd /Users/riccardo/Progetti/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/mesh-sync.test.ts
+  cd /Users/riccardo/Progetti/Domarc/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/mesh-sync.test.ts
   ```
 
 - [ ] Minimal implementation `src/lib/integrations/meshcentral/mesh-sync.ts`. Mirrors `wazuh-sync.ts` structure (tenant guard, single remote call, per-row upsert, manual-preserve). COMPLETE code:
@@ -3069,17 +3069,17 @@ Steps:
 
 - [ ] Run it, expect PASS:
   ```bash
-  cd /Users/riccardo/Progetti/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/mesh-sync.test.ts
+  cd /Users/riccardo/Progetti/Domarc/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/mesh-sync.test.ts
   ```
 
 - [ ] Type-check:
   ```bash
-  cd /Users/riccardo/Progetti/DA-IPAM && npx tsc --noEmit
+  cd /Users/riccardo/Progetti/Domarc/DA-IPAM && npx tsc --noEmit
   ```
 
 - [ ] Commit:
   ```bash
-  cd /Users/riccardo/Progetti/DA-IPAM && git add src/lib/integrations/meshcentral/mesh-sync.ts src/lib/integrations/meshcentral/__tests__/mesh-sync.test.ts && git commit -m "feat(mesh): syncMeshForTenant — listNodes -> resolve -> upsert mc_node, manual bind preserved"
+  cd /Users/riccardo/Progetti/Domarc/DA-IPAM && git add src/lib/integrations/meshcentral/mesh-sync.ts src/lib/integrations/meshcentral/__tests__/mesh-sync.test.ts && git commit -m "feat(mesh): syncMeshForTenant — listNodes -> resolve -> upsert mc_node, manual bind preserved"
   ```
 
 ---
@@ -3149,7 +3149,7 @@ Steps:
 
 - [ ] Run it, expect FAIL (job_type not dispatched → no mc_node row):
   ```bash
-  cd /Users/riccardo/Progetti/DA-IPAM && node --import tsx --test src/lib/cron/__tests__/meshcentral-job.test.ts
+  cd /Users/riccardo/Progetti/Domarc/DA-IPAM && node --import tsx --test src/lib/cron/__tests__/meshcentral-job.test.ts
   ```
 
 - [ ] Minimal implementation: add the `meshcentral_sync` case in `src/lib/cron/jobs.ts`. Insert immediately after the `mdm_sync` case block (after line 124, before the `}` closing the `switch` at line 125):
@@ -3167,7 +3167,7 @@ Steps:
 
 - [ ] Run it, expect PASS:
   ```bash
-  cd /Users/riccardo/Progetti/DA-IPAM && node --import tsx --test src/lib/cron/__tests__/meshcentral-job.test.ts
+  cd /Users/riccardo/Progetti/Domarc/DA-IPAM && node --import tsx --test src/lib/cron/__tests__/meshcentral-job.test.ts
   ```
 
 - [ ] Wire `reloadTenantScheduler()` on config save (scheduler in-memory trap). In the mesh config POST route `src/app/api/integrations/meshcentral/config/route.ts` (owned by the config/routes task-group — coordinate; this step adds the seed+reload logic there). After `saveMeshConfig(...)` succeeds, idempotently seed the cron job and reload the scheduler. COMPLETE snippet to insert after the save call inside `withTenantFromSession`:
@@ -3190,12 +3190,12 @@ Steps:
 
 - [ ] Type-check + lint:
   ```bash
-  cd /Users/riccardo/Progetti/DA-IPAM && npm run lint && npx tsc --noEmit
+  cd /Users/riccardo/Progetti/Domarc/DA-IPAM && npm run lint && npx tsc --noEmit
   ```
 
 - [ ] Version bump + commit (DA-IPAM convention — `version:release`, push only to `dev`):
   ```bash
-  cd /Users/riccardo/Progetti/DA-IPAM && git add src/lib/cron/jobs.ts src/lib/cron/__tests__/meshcentral-job.test.ts && npm run version:release
+  cd /Users/riccardo/Progetti/Domarc/DA-IPAM && git add src/lib/cron/jobs.ts src/lib/cron/__tests__/meshcentral-job.test.ts && npm run version:release
   ```
   (the `version:release` script commits `release: vX.Y.Z`; the staged source files ride along — verify `git log -1 --stat` shows `jobs.ts` included)
 
@@ -3204,11 +3204,11 @@ Steps:
 ### Group-level final check
 - [ ] Run all three new test files together:
   ```bash
-  cd /Users/riccardo/Progetti/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/control-client.test.ts src/lib/integrations/meshcentral/__tests__/mesh-sync.test.ts src/lib/cron/__tests__/meshcentral-job.test.ts
+  cd /Users/riccardo/Progetti/Domarc/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/control-client.test.ts src/lib/integrations/meshcentral/__tests__/mesh-sync.test.ts src/lib/cron/__tests__/meshcentral-job.test.ts
   ```
 - [ ] Confirm push target is `dev`:
   ```bash
-  cd /Users/riccardo/Progetti/DA-IPAM && git rev-parse --abbrev-ref HEAD
+  cd /Users/riccardo/Progetti/Domarc/DA-IPAM && git rev-parse --abbrev-ref HEAD
   ```
 
 ---
@@ -3357,7 +3357,7 @@ test("no MAC anchor -> unmatched", () => {
 ```
 - [ ] **Run it, expect FAIL** (module not found):
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && npx tsx --test src/lib/integrations/meshcentral/__tests__/node-resolver.test.ts
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && npx tsx --test src/lib/integrations/meshcentral/__tests__/node-resolver.test.ts
 ```
 - [ ] **Minimal implementation.** Create `src/lib/integrations/meshcentral/node-resolver.ts`:
 ```ts
@@ -3418,11 +3418,11 @@ export function resolveNodeToHostId(node: MeshNode): NodeMatch {
 ```
 - [ ] **Run, expect PASS:**
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && npx tsx --test src/lib/integrations/meshcentral/__tests__/node-resolver.test.ts
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && npx tsx --test src/lib/integrations/meshcentral/__tests__/node-resolver.test.ts
 ```
 - [ ] **Commit:**
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && git add src/lib/integrations/meshcentral/node-resolver.ts src/lib/integrations/meshcentral/__tests__/node-resolver.test.ts && git commit -m "feat(meshcentral): node-resolver MAC->IP->hostname auto-resolve" -m "Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && git add src/lib/integrations/meshcentral/node-resolver.ts src/lib/integrations/meshcentral/__tests__/node-resolver.test.ts && git commit -m "feat(meshcentral): node-resolver MAC->IP->hostname auto-resolve" -m "Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ```
 
 ---
@@ -3496,7 +3496,7 @@ test("re-sync simulation does not overwrite a manual bind", () => {
 ```
 - [ ] **Run it, expect FAIL** (`applyManualBind` not exported):
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && npx tsx --test src/lib/integrations/meshcentral/__tests__/bind-route.test.ts
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && npx tsx --test src/lib/integrations/meshcentral/__tests__/bind-route.test.ts
 ```
 - [ ] **Add `applyManualBind` to `node-resolver.ts`** (append at end of the file from Task 40):
 ```ts
@@ -3524,7 +3524,7 @@ export function applyManualBind(nodeId: string, hostId: number, operator: string
 ```
 - [ ] **Run, expect PASS:**
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && npx tsx --test src/lib/integrations/meshcentral/__tests__/bind-route.test.ts
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && npx tsx --test src/lib/integrations/meshcentral/__tests__/bind-route.test.ts
 ```
 - [ ] **Create the route** `src/app/api/integrations/meshcentral/bind/route.ts`:
 ```ts
@@ -3579,11 +3579,11 @@ export async function POST(req: Request) {
 ```
 - [ ] **Type-check the new files:**
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && npx tsc --noEmit
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && npx tsc --noEmit
 ```
 - [ ] **Commit:**
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && git add src/app/api/integrations/meshcentral/bind/route.ts src/lib/integrations/meshcentral/node-resolver.ts src/lib/integrations/meshcentral/__tests__/bind-route.test.ts && git commit -m "feat(meshcentral): manual-bind route (requireAdmin, audit, manual not overwritten)" -m "Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && git add src/app/api/integrations/meshcentral/bind/route.ts src/lib/integrations/meshcentral/node-resolver.ts src/lib/integrations/meshcentral/__tests__/bind-route.test.ts && git commit -m "feat(meshcentral): manual-bind route (requireAdmin, audit, manual not overwritten)" -m "Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ```
 
 ---
@@ -3646,7 +3646,7 @@ test("listMcNodes returns matched and unmatched, unmatched first", () => {
 ```
 - [ ] **Run it, expect FAIL** (`listMcNodes` not exported):
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && npx tsx --test src/lib/integrations/meshcentral/__tests__/list-nodes.test.ts
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && npx tsx --test src/lib/integrations/meshcentral/__tests__/list-nodes.test.ts
 ```
 - [ ] **Add `listMcNodes` to `node-resolver.ts`** (append):
 ```ts
@@ -3693,7 +3693,7 @@ export function listMcNodes(): McNodeRow[] {
 ```
 - [ ] **Run, expect PASS:**
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && npx tsx --test src/lib/integrations/meshcentral/__tests__/list-nodes.test.ts
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && npx tsx --test src/lib/integrations/meshcentral/__tests__/list-nodes.test.ts
 ```
 - [ ] **Create the route** `src/app/api/integrations/meshcentral/nodes/route.ts`:
 ```ts
@@ -3719,15 +3719,15 @@ export async function GET() {
 ```
 - [ ] **Type-check:**
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && npx tsc --noEmit
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && npx tsc --noEmit
 ```
 - [ ] **Run the whole meshcentral test directory + lint:**
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && npx tsx --test src/lib/integrations/meshcentral/__tests__/*.test.ts && npm run lint
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && npx tsx --test src/lib/integrations/meshcentral/__tests__/*.test.ts && npm run lint
 ```
 - [ ] **Commit + release** (anti-regression #: `version:release` after code change):
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && git add src/app/api/integrations/meshcentral/nodes/route.ts src/lib/integrations/meshcentral/node-resolver.ts src/lib/integrations/meshcentral/__tests__/list-nodes.test.ts && git commit -m "feat(meshcentral): nodes list route (requireAuth, incl. unmatched)" -m "Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>" && npm run version:release
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && git add src/app/api/integrations/meshcentral/nodes/route.ts src/lib/integrations/meshcentral/node-resolver.ts src/lib/integrations/meshcentral/__tests__/list-nodes.test.ts && git commit -m "feat(meshcentral): nodes list route (requireAuth, incl. unmatched)" -m "Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>" && npm run version:release
 ```
 
 > **Branch governance reminder (anti-regression):** DA-IPAM pushes go to `dev` only; `main` advances via promote UI. Do not `git push origin main`.
@@ -3848,7 +3848,7 @@ test("filename + content-type + platform guard", () => {
 - [ ] Run it, expect FAIL (module missing):
 
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/install-scripts.test.ts
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/install-scripts.test.ts
 ```
 
 - [ ] Implement `src/lib/integrations/meshcentral/install-scripts.ts` (mirrors `src/lib/inventory-agent/install-scripts.ts` quoting helpers `bashQuote`/`psQuote`):
@@ -4001,19 +4001,19 @@ export function isMeshInstallPlatform(v: string): v is MeshInstallPlatform {
 - [ ] Run the test, expect PASS:
 
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/install-scripts.test.ts
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/install-scripts.test.ts
 ```
 
 - [ ] Type-check the new file:
 
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && npx tsc --noEmit
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && npx tsc --noEmit
 ```
 
 - [ ] Commit:
 
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && git add src/lib/integrations/meshcentral/install-scripts.ts src/lib/integrations/meshcentral/__tests__/install-scripts.test.ts && git commit -m "feat(rmm): buildMeshInstallScript (generic meshagent + per-group .msh)"
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && git add src/lib/integrations/meshcentral/install-scripts.ts src/lib/integrations/meshcentral/__tests__/install-scripts.test.ts && git commit -m "feat(rmm): buildMeshInstallScript (generic meshagent + per-group .msh)"
 ```
 
 ---
@@ -4094,7 +4094,7 @@ test("MeshID present → 200 with embedded script + filename", async () => {
 - [ ] Run it, expect FAIL:
 
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/install-script-route.test.ts
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/install-script-route.test.ts
 ```
 
 - [ ] Implement `src/app/api/integrations/meshcentral/install-script/route.ts` (mirrors `install-wazuh/route.ts` auth pattern; `withTenantFromSession` + `requireAdmin`; JSON.parse in try-catch):
@@ -4234,19 +4234,19 @@ export async function POST(request: Request) {
 - [ ] Run the test, expect PASS:
 
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/install-script-route.test.ts
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/install-script-route.test.ts
 ```
 
 - [ ] Type-check + lint:
 
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && npx tsc --noEmit && npm run lint
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && npx tsc --noEmit && npm run lint
 ```
 
 - [ ] Commit:
 
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && git add src/app/api/integrations/meshcentral/install-script/route.ts src/lib/integrations/meshcentral/__tests__/install-script-route.test.ts && git commit -m "feat(rmm): install-script route — validate MeshID exists, embed serverUrl+meshId"
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && git add src/app/api/integrations/meshcentral/install-script/route.ts src/lib/integrations/meshcentral/__tests__/install-script-route.test.ts && git commit -m "feat(rmm): install-script route — validate MeshID exists, embed serverUrl+meshId"
 ```
 
 ---
@@ -4295,7 +4295,7 @@ test("single quotes in serverUrl/meshId are PS-escaped (doubled)", () => {
 - [ ] Run it, expect FAIL (function missing):
 
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && node --import tsx --test src/lib/patch/__tests__/mesh-install-script.test.ts
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && node --import tsx --test src/lib/patch/__tests__/mesh-install-script.test.ts
 ```
 
 - [ ] Implement: add to `src/lib/patch/ps-scripts.ts` immediately after `buildWazuhInstallScript` closes (after current line `:232`). Note: this file does not currently export a `psQuote`; add a local `psQuoteInline` helper next to the new function (the existing Wazuh builder relies on `assertSafeManagerHost` instead of quoting, but serverUrl/meshId are not hostnames so we quote them):
@@ -4385,19 +4385,19 @@ if ($svc -and $svc.Status -eq 'Running') {
 - [ ] Run the test, expect PASS:
 
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && node --import tsx --test src/lib/patch/__tests__/mesh-install-script.test.ts
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && node --import tsx --test src/lib/patch/__tests__/mesh-install-script.test.ts
 ```
 
 - [ ] Type-check:
 
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && npx tsc --noEmit
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && npx tsc --noEmit
 ```
 
 - [ ] Commit:
 
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && git add src/lib/patch/ps-scripts.ts src/lib/patch/__tests__/mesh-install-script.test.ts && git commit -m "feat(rmm): buildMeshAgentInstallScript WinRM (idempotent, fixed service name)"
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && git add src/lib/patch/ps-scripts.ts src/lib/patch/__tests__/mesh-install-script.test.ts && git commit -m "feat(rmm): buildMeshAgentInstallScript WinRM (idempotent, fixed service name)"
 ```
 
 ---
@@ -4451,7 +4451,7 @@ test("missing markers / no exit code → failed", () => {
 - [ ] Run it, expect FAIL:
 
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && node --import tsx --test src/lib/patch/__tests__/mesh-executor.test.ts
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && node --import tsx --test src/lib/patch/__tests__/mesh-executor.test.ts
 ```
 
 - [ ] Implement. First extend the `./ps-scripts` import block in `src/lib/patch/executor.ts` (`:25-31`) to include `buildMeshAgentInstallScript`:
@@ -4603,19 +4603,19 @@ function getCurrentUserIdOrZero(): number {
 - [ ] Run the test, expect PASS:
 
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && node --import tsx --test src/lib/patch/__tests__/mesh-executor.test.ts
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && node --import tsx --test src/lib/patch/__tests__/mesh-executor.test.ts
 ```
 
 - [ ] Type-check:
 
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && npx tsc --noEmit
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && npx tsc --noEmit
 ```
 
 - [ ] Commit:
 
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && git add src/lib/patch/executor.ts src/lib/patch/__tests__/mesh-executor.test.ts && git commit -m "feat(rmm): executeMeshAgentInstall WinRM push (packageId=meshagent, idempotent)"
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && git add src/lib/patch/executor.ts src/lib/patch/__tests__/mesh-executor.test.ts && git commit -m "feat(rmm): executeMeshAgentInstall WinRM push (packageId=meshagent, idempotent)"
 ```
 
 ---
@@ -4667,7 +4667,7 @@ test("zero/negative hostId → error", () => {
 - [ ] Run it, expect FAIL:
 
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && node --import tsx --test src/lib/patch/__tests__/install-meshagent-route.test.ts
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && node --import tsx --test src/lib/patch/__tests__/install-meshagent-route.test.ts
 ```
 
 - [ ] Implement `src/app/api/patch/install-meshagent/route.ts`:
@@ -4740,19 +4740,19 @@ export async function POST(request: Request) {
 - [ ] Run the test, expect PASS:
 
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && node --import tsx --test src/lib/patch/__tests__/install-meshagent-route.test.ts
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && node --import tsx --test src/lib/patch/__tests__/install-meshagent-route.test.ts
 ```
 
 - [ ] Full type-check + lint:
 
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && npx tsc --noEmit && npm run lint
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && npx tsc --noEmit && npm run lint
 ```
 
 - [ ] Commit:
 
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && git add src/app/api/patch/install-meshagent/route.ts src/lib/patch/__tests__/install-meshagent-route.test.ts && git commit -m "feat(rmm): install-meshagent route (requireAdmin + patchModuleGuard)"
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && git add src/app/api/patch/install-meshagent/route.ts src/lib/patch/__tests__/install-meshagent-route.test.ts && git commit -m "feat(rmm): install-meshagent route (requireAdmin + patchModuleGuard)"
 ```
 
 ---
@@ -4766,7 +4766,7 @@ Steps:
 - [ ] Run all install/WinRM tests for this group together, expect ALL PASS:
 
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && node --import tsx --test \
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && node --import tsx --test \
   src/lib/integrations/meshcentral/__tests__/install-scripts.test.ts \
   src/lib/integrations/meshcentral/__tests__/install-script-route.test.ts \
   src/lib/patch/__tests__/mesh-install-script.test.ts \
@@ -4777,13 +4777,13 @@ cd /Users/riccardo/Progetti/DA-IPAM && node --import tsx --test \
 - [ ] Full build gate:
 
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && npx tsc --noEmit && npm run lint
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && npx tsc --noEmit && npm run lint
 ```
 
 - [ ] Version release (DA-IPAM branch governance: this work lives on `dev`, never push `main` directly):
 
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && npm run version:release
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && npm run version:release
 ```
 
 
@@ -4867,7 +4867,7 @@ test("recordRemoteSession writes audit row WITHOUT token/key and returns id", ()
 ```
 - [ ] Run it, expect FAIL (module not found):
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/remote-session-audit.test.ts
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/remote-session-audit.test.ts
 ```
 - [ ] Create `src/lib/integrations/meshcentral/remote-session-audit.ts`:
 ```ts
@@ -4914,11 +4914,11 @@ export function recordRemoteSession(input: {
 ```
 - [ ] Run it, expect PASS:
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/remote-session-audit.test.ts
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/remote-session-audit.test.ts
 ```
 - [ ] Commit:
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && git add src/lib/integrations/meshcentral/remote-session-audit.ts src/lib/integrations/meshcentral/__tests__/remote-session-audit.test.ts && git commit -m "feat(meshcentral): remote-session audit helper (no token/key persisted)"
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && git add src/lib/integrations/meshcentral/remote-session-audit.ts src/lib/integrations/meshcentral/__tests__/remote-session-audit.test.ts && git commit -m "feat(meshcentral): remote-session audit helper (no token/key persisted)"
 ```
 
 ---
@@ -5033,7 +5033,7 @@ test("prepareRemoteSession 404 when no matched node", () => {
 ```
 - [ ] Run it, expect FAIL:
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/remote-session.test.ts
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/remote-session.test.ts
 ```
 - [ ] Create `src/lib/integrations/meshcentral/remote-session.ts`:
 ```ts
@@ -5126,11 +5126,11 @@ export function prepareRemoteSession(input: {
 ```
 - [ ] Run it, expect PASS:
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/remote-session.test.ts
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/remote-session.test.ts
 ```
 - [ ] Commit:
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && git add src/lib/integrations/meshcentral/remote-session.ts src/lib/integrations/meshcentral/__tests__/remote-session.test.ts && git commit -m "feat(meshcentral): launch-out handler core (mint 3min/once token, audit, deep-link)"
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && git add src/lib/integrations/meshcentral/remote-session.ts src/lib/integrations/meshcentral/__tests__/remote-session.test.ts && git commit -m "feat(meshcentral): launch-out handler core (mint 3min/once token, audit, deep-link)"
 ```
 
 ---
@@ -5224,7 +5224,7 @@ test("admin: invalid hostId -> 400", async () => {
 ```
 - [ ] Run it, expect FAIL:
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && node --import tsx --test "src/app/api/integrations/meshcentral/host/[hostId]/remote-session/__tests__/route.test.ts"
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && node --import tsx --test "src/app/api/integrations/meshcentral/host/[hostId]/remote-session/__tests__/route.test.ts"
 ```
 - [ ] Create `src/app/api/integrations/meshcentral/host/[hostId]/remote-session/route.ts`:
 ```ts
@@ -5288,11 +5288,11 @@ export async function POST(req: Request, ctx: { params: Promise<{ hostId: string
 ```
 - [ ] Run it, expect PASS:
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && node --import tsx --test "src/app/api/integrations/meshcentral/host/[hostId]/remote-session/__tests__/route.test.ts"
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && node --import tsx --test "src/app/api/integrations/meshcentral/host/[hostId]/remote-session/__tests__/route.test.ts"
 ```
 - [ ] Lint + commit:
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && npm run lint && git add "src/app/api/integrations/meshcentral/host/[hostId]/remote-session" && git commit -m "feat(meshcentral): POST host/[hostId]/remote-session launch-out route (requireAdmin)"
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && npm run lint && git add "src/app/api/integrations/meshcentral/host/[hostId]/remote-session" && git commit -m "feat(meshcentral): POST host/[hostId]/remote-session launch-out route (requireAdmin)"
 ```
 
 ---
@@ -5420,11 +5420,11 @@ export function HostMeshcentralCard({
 ```
 - [ ] Type-check + lint:
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && npx tsc --noEmit && npm run lint
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && npx tsc --noEmit && npm run lint
 ```
 - [ ] Commit:
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && git add src/components/hosts/host-meshcentral-card.tsx && git commit -m "feat(meshcentral): host detail 'Controllo remoto' card (popup-safe launch-out)"
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && git add src/components/hosts/host-meshcentral-card.tsx && git commit -m "feat(meshcentral): host detail 'Controllo remoto' card (popup-safe launch-out)"
 ```
 
 ---
@@ -5437,11 +5437,11 @@ Steps:
 
 - [ ] Run the mandatory full check, then release (anti-regression #1 / §16):
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && npm run lint && npx tsc --noEmit && node --import tsx --test "src/lib/integrations/meshcentral/__tests__/remote-session-audit.test.ts" "src/lib/integrations/meshcentral/__tests__/remote-session.test.ts" "src/app/api/integrations/meshcentral/host/[hostId]/remote-session/__tests__/route.test.ts"
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && npm run lint && npx tsc --noEmit && node --import tsx --test "src/lib/integrations/meshcentral/__tests__/remote-session-audit.test.ts" "src/lib/integrations/meshcentral/__tests__/remote-session.test.ts" "src/app/api/integrations/meshcentral/host/[hostId]/remote-session/__tests__/route.test.ts"
 ```
 - [ ] Bump + commit (branch governance: on `dev`, never push `main` directly):
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && npm run version:release
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && npm run version:release
 ```
 
 ---
@@ -5496,8 +5496,8 @@ Freshness thresholds (spec §8): mesh active = `conn&1` AND `synced_at > now-14d
 ### Task 70: `presence.ts` — batch endpoint-agents query (one query per source, anti-N+1)
 
 **Files:**
-- Create: `/Users/riccardo/Progetti/DA-IPAM/src/lib/integrations/meshcentral/presence.ts`
-- Test: `/Users/riccardo/Progetti/DA-IPAM/src/lib/integrations/meshcentral/__tests__/presence.test.ts`
+- Create: `/Users/riccardo/Progetti/Domarc/DA-IPAM/src/lib/integrations/meshcentral/presence.ts`
+- Test: `/Users/riccardo/Progetti/Domarc/DA-IPAM/src/lib/integrations/meshcentral/__tests__/presence.test.ts`
 
 **Interfaces:**
 - Consumes (from contract / earlier groups):
@@ -5602,7 +5602,7 @@ test("no N+1: exactly 4 prepared statements (one per source)", () => {
 ```
 - [ ] Run, expect FAIL (module missing):
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/presence.test.ts
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/presence.test.ts
 ```
 - [ ] Implement `presence.ts`. REAL code:
 ```ts
@@ -5732,11 +5732,11 @@ function isWithin(ts: string, days: number): boolean {
 > Note: mesh present=true even when offline/old (the `conn`/`syncedAt` drive the 3-state UI badge in Task 72). The `:memory:`/tenant DB must already have `mc_node` created by the schema.ts group's `applyMcSchemaMigrations` wired into `TENANT_SCHEMA_SQL`; if a standalone test fails on missing table, the schema-group wiring task is a prerequisite (do not create the table here).
 - [ ] Run, expect PASS:
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/presence.test.ts
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/presence.test.ts
 ```
 - [ ] Type-check + commit:
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && npx tsc --noEmit && git add src/lib/integrations/meshcentral/presence.ts src/lib/integrations/meshcentral/__tests__/presence.test.ts && git commit -m "feat(mesh): batch endpoint-agents presence query (anti-N+1, 3-state freshness)"
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && npx tsc --noEmit && git add src/lib/integrations/meshcentral/presence.ts src/lib/integrations/meshcentral/__tests__/presence.test.ts && git commit -m "feat(mesh): batch endpoint-agents presence query (anti-N+1, 3-state freshness)"
 ```
 
 ---
@@ -5744,8 +5744,8 @@ cd /Users/riccardo/Progetti/DA-IPAM && npx tsc --noEmit && git add src/lib/integ
 ### Task 71: `host-status/route.ts` — batch presence API (POST requireAuth, cap ≤1000)
 
 **Files:**
-- Create: `/Users/riccardo/Progetti/DA-IPAM/src/app/api/integrations/meshcentral/host-status/route.ts`
-- Test: `/Users/riccardo/Progetti/DA-IPAM/src/lib/integrations/meshcentral/__tests__/host-status-cap.test.ts`
+- Create: `/Users/riccardo/Progetti/Domarc/DA-IPAM/src/app/api/integrations/meshcentral/host-status/route.ts`
+- Test: `/Users/riccardo/Progetti/Domarc/DA-IPAM/src/lib/integrations/meshcentral/__tests__/host-status-cap.test.ts`
 
 **Interfaces:**
 - Consumes: `getEndpointAgentsForHosts(hostIds: number[]): Map<number, EndpointAgentCapabilities>` (Task 70); `requireAuth`, `isAuthError` from `@/lib/api-auth`; `withTenantFromSession` from `@/lib/api-tenant`.
@@ -5771,7 +5771,7 @@ test("parseHostIdsCapped filters + caps at 1000", () => {
 ```
 - [ ] Run, expect FAIL:
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/host-status-cap.test.ts
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/host-status-cap.test.ts
 ```
 - [ ] Implement route. REAL code:
 ```ts
@@ -5830,11 +5830,11 @@ export async function POST(request: Request) {
 ```
 - [ ] Run, expect PASS:
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/host-status-cap.test.ts
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && node --import tsx --test src/lib/integrations/meshcentral/__tests__/host-status-cap.test.ts
 ```
 - [ ] Type-check + commit:
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && npx tsc --noEmit && git add src/app/api/integrations/meshcentral/host-status/route.ts src/lib/integrations/meshcentral/__tests__/host-status-cap.test.ts && git commit -m "feat(mesh): POST host-status batch presence API (requireAuth, cap 1000)"
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && npx tsc --noEmit && git add src/app/api/integrations/meshcentral/host-status/route.ts src/lib/integrations/meshcentral/__tests__/host-status-cap.test.ts && git commit -m "feat(mesh): POST host-status batch presence API (requireAuth, cap 1000)"
 ```
 
 ---
@@ -5842,7 +5842,7 @@ cd /Users/riccardo/Progetti/DA-IPAM && npx tsc --noEmit && git add src/app/api/i
 ### Task 72: `meshcentral-host-badge.tsx` — 3-state Mesh presence icon
 
 **Files:**
-- Create: `/Users/riccardo/Progetti/DA-IPAM/src/components/integrations/meshcentral-host-badge.tsx`
+- Create: `/Users/riccardo/Progetti/Domarc/DA-IPAM/src/components/integrations/meshcentral-host-badge.tsx`
 
 **Interfaces:**
 - Consumes: `EndpointAgentCapabilities['mesh']` shape `{ present: boolean; nodeId?: string; conn?: number; syncedAt?: string }` (prefetched by Task 73).
@@ -5940,7 +5940,7 @@ export function MeshCentralHostBadge({ hostId, mesh, mode = "icon", className }:
 ```
 - [ ] Type-check + commit:
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && npx tsc --noEmit && git add src/components/integrations/meshcentral-host-badge.tsx && git commit -m "feat(mesh): 3-state MeshCentral presence badge"
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && npx tsc --noEmit && git add src/components/integrations/meshcentral-host-badge.tsx && git commit -m "feat(mesh): 3-state MeshCentral presence badge"
 ```
 
 ---
@@ -5948,7 +5948,7 @@ cd /Users/riccardo/Progetti/DA-IPAM && npx tsc --noEmit && git add src/component
 ### Task 73: Wire MeshCentral presence into `discovery/page.tsx` (prefetch, renderCell, sort)
 
 **Files:**
-- Modify: `/Users/riccardo/Progetti/DA-IPAM/src/app/(dashboard)/discovery/page.tsx`
+- Modify: `/Users/riccardo/Progetti/Domarc/DA-IPAM/src/app/(dashboard)/discovery/page.tsx`
   - `:695-709` — add a second batch POST inside the existing prefetch block, store in a new `meshMap` state.
   - `:1660-1783` — in `case "profilo"` renderCell, add `<MeshCentralHostBadge>` after the `<WazuhHostBadge>` (currently at :1730).
   - `:1391-1400` — extend the `case "profilo"` sort bitmask to include mesh presence.
@@ -6015,11 +6015,11 @@ with:
 ```
 - [ ] Lint + type-check + build:
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && npm run lint && npx tsc --noEmit
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && npm run lint && npx tsc --noEmit
 ```
 - [ ] Commit:
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && git add "src/app/(dashboard)/discovery/page.tsx" && git commit -m "feat(mesh): wire MeshCentral presence badge into /discovery (prefetch+cell+sort)"
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && git add "src/app/(dashboard)/discovery/page.tsx" && git commit -m "feat(mesh): wire MeshCentral presence badge into /discovery (prefetch+cell+sort)"
 ```
 
 ---
@@ -6033,15 +6033,15 @@ Steps:
 
 - [ ] Confirm on `dev` branch (DA-IPAM branch governance: push only to `dev`, never `main` directly):
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && git branch --show-current
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && git branch --show-current
 ```
 - [ ] Run the full verification gate (anti-regression #16):
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && npm run lint && npx tsc --noEmit && node --import tsx --test src/lib/integrations/meshcentral/__tests__/presence.test.ts src/lib/integrations/meshcentral/__tests__/host-status-cap.test.ts
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && npm run lint && npx tsc --noEmit && node --import tsx --test src/lib/integrations/meshcentral/__tests__/presence.test.ts src/lib/integrations/meshcentral/__tests__/host-status-cap.test.ts
 ```
 - [ ] Bump patch + release commit (project versioning rule):
 ```bash
-cd /Users/riccardo/Progetti/DA-IPAM && npm run version:release
+cd /Users/riccardo/Progetti/Domarc/DA-IPAM && npm run version:release
 ```
 
 
@@ -6127,7 +6127,7 @@ cd /Users/riccardo/Progetti/DA-IPAM && npm run version:release
 - [ ] **Run it, expect FAIL** (module not created yet):
 
   ```bash
-  cd /Users/riccardo/Progetti/DA-IPAM && node --import tsx --test --env-file=.env.local "src/app/api/integrations/meshcentral/config/__tests__/route.test.ts"
+  cd /Users/riccardo/Progetti/Domarc/DA-IPAM && node --import tsx --test --env-file=.env.local "src/app/api/integrations/meshcentral/config/__tests__/route.test.ts"
   ```
 
 - [ ] **Minimal implementation** — create `src/app/api/integrations/meshcentral/config/route.ts`. Mirror `wazuh/config/route.ts` exactly for auth/seed/scheduler; export `seedMeshSyncJobForTenant` so the test can drive it. Full code:
@@ -6265,13 +6265,13 @@ cd /Users/riccardo/Progetti/DA-IPAM && npm run version:release
 - [ ] **Run it, expect PASS:**
 
   ```bash
-  cd /Users/riccardo/Progetti/DA-IPAM && node --import tsx --test --env-file=.env.local "src/app/api/integrations/meshcentral/config/__tests__/route.test.ts"
+  cd /Users/riccardo/Progetti/Domarc/DA-IPAM && node --import tsx --test --env-file=.env.local "src/app/api/integrations/meshcentral/config/__tests__/route.test.ts"
   ```
 
 - [ ] **Commit:**
 
   ```bash
-  cd /Users/riccardo/Progetti/DA-IPAM && git add src/app/api/integrations/meshcentral/config/route.ts src/app/api/integrations/meshcentral/config/__tests__/route.test.ts && git commit -m "feat(meshcentral): config route GET/POST/DELETE + meshcentral_sync job seed"
+  cd /Users/riccardo/Progetti/Domarc/DA-IPAM && git add src/app/api/integrations/meshcentral/config/route.ts src/app/api/integrations/meshcentral/config/__tests__/route.test.ts && git commit -m "feat(meshcentral): config route GET/POST/DELETE + meshcentral_sync job seed"
   ```
 
 ---
@@ -6628,13 +6628,13 @@ cd /Users/riccardo/Progetti/DA-IPAM && npm run version:release
 - [ ] **Verify card compiles & lint clean:**
 
   ```bash
-  cd /Users/riccardo/Progetti/DA-IPAM && npx tsc --noEmit 2>&1 | grep -E "meshcentral-card|modules-tab" || echo "no type errors in changed files"
+  cd /Users/riccardo/Progetti/Domarc/DA-IPAM && npx tsc --noEmit 2>&1 | grep -E "meshcentral-card|modules-tab" || echo "no type errors in changed files"
   ```
 
 - [ ] **Commit:**
 
   ```bash
-  cd /Users/riccardo/Progetti/DA-IPAM && git add src/components/settings/meshcentral-card.tsx src/components/settings/modules-tab.tsx && git commit -m "feat(meshcentral): settings card (config form + install-script + node list) mounted in modules-tab"
+  cd /Users/riccardo/Progetti/Domarc/DA-IPAM && git add src/components/settings/meshcentral-card.tsx src/components/settings/modules-tab.tsx && git commit -m "feat(meshcentral): settings card (config form + install-script + node list) mounted in modules-tab"
   ```
 
 ---
@@ -6781,13 +6781,13 @@ cd /Users/riccardo/Progetti/DA-IPAM && npm run version:release
 - [ ] **Verify compiles:**
 
   ```bash
-  cd /Users/riccardo/Progetti/DA-IPAM && npx tsc --noEmit 2>&1 | grep -E "meshcentral-unmatched" || echo "no type errors in changed file"
+  cd /Users/riccardo/Progetti/Domarc/DA-IPAM && npx tsc --noEmit 2>&1 | grep -E "meshcentral-unmatched" || echo "no type errors in changed file"
   ```
 
 - [ ] **Commit:**
 
   ```bash
-  cd /Users/riccardo/Progetti/DA-IPAM && git add src/components/integrations/meshcentral-unmatched.tsx && git commit -m "feat(meshcentral): manual-bind UI for unmatched nodes"
+  cd /Users/riccardo/Progetti/Domarc/DA-IPAM && git add src/components/integrations/meshcentral-unmatched.tsx && git commit -m "feat(meshcentral): manual-bind UI for unmatched nodes"
   ```
 
 ---
@@ -6805,7 +6805,7 @@ cd /Users/riccardo/Progetti/DA-IPAM && npm run version:release
 - [ ] **Verify first** that the only redaction mechanism is the transfer registry (no log-redactor / anonymizer module):
 
   ```bash
-  cd /Users/riccardo/Progetti/DA-IPAM && grep -rln "redact\|anonymiz\|sanitizeForLog\|maskSecret\|REDACTED" src/lib | grep -v transfer || echo "CONFIRMED: redaction only via transfer secretColumns"
+  cd /Users/riccardo/Progetti/Domarc/DA-IPAM && grep -rln "redact\|anonymiz\|sanitizeForLog\|maskSecret\|REDACTED" src/lib | grep -v transfer || echo "CONFIRMED: redaction only via transfer secretColumns"
   ```
 
   Expected output: `CONFIRMED: redaction only via transfer secretColumns`. (If a redactor module is later added by another group, register `loginTokenKey` there too.)
@@ -6813,7 +6813,7 @@ cd /Users/riccardo/Progetti/DA-IPAM && npm run version:release
 - [ ] **Confirm the config table name** the config.ts group used for the encrypted columns (so we register the right `secretColumns`):
 
   ```bash
-  cd /Users/riccardo/Progetti/DA-IPAM && grep -rn "CREATE TABLE.*mc_config\|mc_config\|login_token_key_encrypted\|admin_pass_encrypted" src/lib/integrations/meshcentral/ src/lib/db-tenant-schema.ts
+  cd /Users/riccardo/Progetti/Domarc/DA-IPAM && grep -rn "CREATE TABLE.*mc_config\|mc_config\|login_token_key_encrypted\|admin_pass_encrypted" src/lib/integrations/meshcentral/ src/lib/db-tenant-schema.ts
   ```
 
   Use the actual table/column names from this output in the registry entry below (the placeholder names `mc_config`, `login_token_key_encrypted`, `admin_pass_encrypted` match the config.ts contract's `safeDecrypt`-backed fields — adjust verbatim to what the grep returns).
@@ -6870,7 +6870,7 @@ cd /Users/riccardo/Progetti/DA-IPAM && npm run version:release
 - [ ] **Run it, expect FAIL** (registry entry not yet added):
 
   ```bash
-  cd /Users/riccardo/Progetti/DA-IPAM && node --import tsx --test --env-file=.env.local "src/lib/integrations/meshcentral/__tests__/secret-redaction.test.ts"
+  cd /Users/riccardo/Progetti/Domarc/DA-IPAM && node --import tsx --test --env-file=.env.local "src/lib/integrations/meshcentral/__tests__/secret-redaction.test.ts"
   ```
 
 - [ ] **Add the registry entry** in `src/lib/transfer/table-registry.ts`. Read the file first to match the exact `TABLE_REGISTRY` array literal and entry shape, then add (use the real column names confirmed two steps above):
@@ -6884,19 +6884,19 @@ cd /Users/riccardo/Progetti/DA-IPAM && npm run version:release
 - [ ] **Run it, expect PASS:**
 
   ```bash
-  cd /Users/riccardo/Progetti/DA-IPAM && node --import tsx --test --env-file=.env.local "src/lib/integrations/meshcentral/__tests__/secret-redaction.test.ts"
+  cd /Users/riccardo/Progetti/Domarc/DA-IPAM && node --import tsx --test --env-file=.env.local "src/lib/integrations/meshcentral/__tests__/secret-redaction.test.ts"
   ```
 
 - [ ] **Run the full meshcentral + transfer suites** to confirm nothing regressed:
 
   ```bash
-  cd /Users/riccardo/Progetti/DA-IPAM && node --import tsx --test --env-file=.env.local "src/lib/integrations/meshcentral/__tests__/"*.test.ts "src/lib/transfer/__tests__/"*.test.ts
+  cd /Users/riccardo/Progetti/Domarc/DA-IPAM && node --import tsx --test --env-file=.env.local "src/lib/integrations/meshcentral/__tests__/"*.test.ts "src/lib/transfer/__tests__/"*.test.ts
   ```
 
 - [ ] **Commit:**
 
   ```bash
-  cd /Users/riccardo/Progetti/DA-IPAM && git add src/lib/transfer/table-registry.ts src/lib/integrations/meshcentral/__tests__/secret-redaction.test.ts && git commit -m "security(meshcentral): register config secret columns for redaction + grep-guard no-log of loginTokenKey"
+  cd /Users/riccardo/Progetti/Domarc/DA-IPAM && git add src/lib/transfer/table-registry.ts src/lib/integrations/meshcentral/__tests__/secret-redaction.test.ts && git commit -m "security(meshcentral): register config secret columns for redaction + grep-guard no-log of loginTokenKey"
   ```
 
 ---
@@ -6914,7 +6914,7 @@ cd /Users/riccardo/Progetti/DA-IPAM && npm run version:release
 - [ ] **Static audit** — every new route file must reference an auth helper; GET → `requireAuth`, mutations → `requireAdmin`:
 
   ```bash
-  cd /Users/riccardo/Progetti/DA-IPAM && for f in $(find src/app/api/integrations/meshcentral src/app/api/patch/install-meshagent -name route.ts 2>/dev/null); do echo "== $f =="; grep -nE "export async function (GET|POST|PUT|PATCH|DELETE)|requireAuth|requireAdmin|patchModuleGuard" "$f"; done
+  cd /Users/riccardo/Progetti/Domarc/DA-IPAM && for f in $(find src/app/api/integrations/meshcentral src/app/api/patch/install-meshagent -name route.ts 2>/dev/null); do echo "== $f =="; grep -nE "export async function (GET|POST|PUT|PATCH|DELETE)|requireAuth|requireAdmin|patchModuleGuard" "$f"; done
   ```
 
   Confirm by eye: each `GET` has `requireAuth`; each `POST/PUT/PATCH/DELETE` has `requireAdmin` (the install-meshagent route additionally `patchModuleGuard`).
@@ -6968,13 +6968,13 @@ cd /Users/riccardo/Progetti/DA-IPAM && npm run version:release
 - [ ] **Run it, expect PASS** (all earlier-group routes already guarded; if it fails, the named file is the bug to fix in its owning group):
 
   ```bash
-  cd /Users/riccardo/Progetti/DA-IPAM && node --import tsx --test --env-file=.env.local "src/app/api/integrations/meshcentral/__tests__/auth-guard.test.ts"
+  cd /Users/riccardo/Progetti/Domarc/DA-IPAM && node --import tsx --test --env-file=.env.local "src/app/api/integrations/meshcentral/__tests__/auth-guard.test.ts"
   ```
 
 - [ ] **Commit:**
 
   ```bash
-  cd /Users/riccardo/Progetti/DA-IPAM && git add src/app/api/integrations/meshcentral/__tests__/auth-guard.test.ts && git commit -m "test(meshcentral): static guard that every route enforces requireAuth/requireAdmin"
+  cd /Users/riccardo/Progetti/Domarc/DA-IPAM && git add src/app/api/integrations/meshcentral/__tests__/auth-guard.test.ts && git commit -m "test(meshcentral): static guard that every route enforces requireAuth/requireAdmin"
   ```
 
 ---
@@ -6988,19 +6988,19 @@ cd /Users/riccardo/Progetti/DA-IPAM && npm run version:release
 - [ ] **Lint, 0 errors required:**
 
   ```bash
-  cd /Users/riccardo/Progetti/DA-IPAM && npm run lint
+  cd /Users/riccardo/Progetti/Domarc/DA-IPAM && npm run lint
   ```
 
 - [ ] **Typecheck, 0 errors required:**
 
   ```bash
-  cd /Users/riccardo/Progetti/DA-IPAM && npx tsc --noEmit
+  cd /Users/riccardo/Progetti/Domarc/DA-IPAM && npx tsc --noEmit
   ```
 
 - [ ] **Run the full MeshCentral test surface** (all unit + integration + security tests added by every group):
 
   ```bash
-  cd /Users/riccardo/Progetti/DA-IPAM && node --import tsx --test --env-file=.env.local "src/lib/integrations/meshcentral/__tests__/"*.test.ts "src/app/api/integrations/meshcentral/**/__tests__/"*.test.ts
+  cd /Users/riccardo/Progetti/Domarc/DA-IPAM && node --import tsx --test --env-file=.env.local "src/lib/integrations/meshcentral/__tests__/"*.test.ts "src/app/api/integrations/meshcentral/**/__tests__/"*.test.ts
   ```
 
   All tests must pass. If any fail, STOP and fix the root cause in the owning group before releasing (project anti-regression: no release on red).
@@ -7008,7 +7008,7 @@ cd /Users/riccardo/Progetti/DA-IPAM && npm run version:release
 - [ ] **Confirm cwd before releasing** (cross-project bump trap — global rule):
 
   ```bash
-  cd /Users/riccardo/Progetti/DA-IPAM && pwd && git branch --show-current
+  cd /Users/riccardo/Progetti/Domarc/DA-IPAM && pwd && git branch --show-current
   ```
 
   Expected: path ends in `/DA-IPAM`, branch is `dev` (DA-IPAM branch governance: push only to `dev`, never `main` directly).
@@ -7016,12 +7016,12 @@ cd /Users/riccardo/Progetti/DA-IPAM && npm run version:release
 - [ ] **Version release** (DA-IPAM convention — `npm run version:release` if present; otherwise the repo's documented release command):
 
   ```bash
-  cd /Users/riccardo/Progetti/DA-IPAM && npm run version:release
+  cd /Users/riccardo/Progetti/Domarc/DA-IPAM && npm run version:release
   ```
 
 - [ ] **Confirm the release commit and that nothing landed on `main`:**
 
   ```bash
-  cd /Users/riccardo/Progetti/DA-IPAM && git log --oneline -3 && git branch --show-current
+  cd /Users/riccardo/Progetti/Domarc/DA-IPAM && git log --oneline -3 && git branch --show-current
   ```
 

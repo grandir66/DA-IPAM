@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -145,7 +146,7 @@ export function MobileProfilePanel({ hostId }: { hostId: number }) {
               {detail.history.map((h, i) => (
                 <li key={`${h.changed_at}-${h.field}-${i}`} className="flex items-start gap-3 text-sm">
                   <span className="text-xs text-muted-foreground whitespace-nowrap mt-0.5 font-mono">
-                    {new Date(h.changed_at).toLocaleString("it-IT")}
+                    {parseDbDate(h.changed_at).toLocaleString("it-IT")}
                   </span>
                   <div className="min-w-0">
                     <span className="font-medium">{h.field}</span>

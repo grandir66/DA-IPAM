@@ -155,6 +155,17 @@ export interface DeviceFormFieldsProps {
   useForArpPoll?: boolean;
   onUseForArpPollChange?: (v: boolean) => void;
   defaultUseForArpPoll?: boolean;
+  /**
+   * Promozione (tappa 1): niente username/password/community inline, che
+   * nessuno legge; resta la porta, controllata con `port` + `onPortChange`.
+   */
+  senzaCredenzialiInline?: boolean;
+  onPortChange?: (port: number) => void;
+  /**
+   * Modalità «bulk» usata per CREARE apparati in blocco (rete, discovery): la
+   * classificazione vuota vuol dire «da scegliere», non «Non modificare».
+   */
+  creazioneInBlocco?: boolean;
 }
 
 /**
@@ -200,6 +211,9 @@ export function DeviceFormFields({
   useForArpPoll,
   onUseForArpPollChange,
   defaultUseForArpPoll,
+  senzaCredenzialiInline = false,
+  onPortChange,
+  creazioneInBlocco = false,
 }: DeviceFormFieldsProps) {
   const isBulk = mode === "bulk";
   const noChange = isBulk ? "Non modificare" : "";
@@ -399,10 +413,10 @@ export function DeviceFormFields({
                 onValueChange={(v) => onClassificationChange?.(v ?? "")}
               >
                 <SelectTrigger className="w-full">
-                  <SelectValue placeholder={noChange || "Seleziona"} />
+                  <SelectValue placeholder={creazioneInBlocco ? "Scegli la classificazione" : noChange || "Seleziona"} />
                 </SelectTrigger>
                 <SelectContent>
-                  {isBulk && <SelectItem value="">{noChange}</SelectItem>}
+                  {isBulk && !creazioneInBlocco && <SelectItem value="">{noChange}</SelectItem>}
                   {classificationOptionsSorted.map((c) => (
                     <SelectItem key={c} value={c}>
                       {getClassificationLabel(c)}
@@ -457,7 +471,7 @@ export function DeviceFormFields({
           {onProductProfileChange && (
             <FieldRow
               label="Tipologia prodotto"
-              tip="Dettaglio per questa marca (es. switch gestito). Influenza scan e inventario. Catalogo OID: Impostazioni → SNMP."
+              tip="Dettaglio per questa marca (es. switch gestito). Influenza scan e inventario. Catalogo OID: Impostazioni → Identificazione → Gestisci profili SNMP."
               tipWide
             >
               <Select
@@ -619,17 +633,20 @@ export function DeviceFormFields({
             snmpCredentialId={snmpCredentialId}
             onCredentialIdChange={onCredentialIdChange}
             onSnmpCredentialIdChange={onSnmpCredentialIdChange}
+            protocol={protocol}
             sshFilter={vendorProfile.credentialSshFilter}
             primarySectionTitle={primaryCredentialLabels.section}
             primarySelectLabel={primaryCredentialLabels.select}
             snmpSectionTitle="SNMP aggiuntivo (porte, LLDP, spanning tree)"
             snmpSelectLabel={CREDENTIAL_SNMP_SECONDARY_SELECT_LABEL}
-            credentialPlaceholder={isBulk ? noChange : "Nessuna (credenziali inline)"}
+            credentialPlaceholder={isBulk ? noChange : senzaCredenzialiInline ? "Nessuna" : "Nessuna (credenziali inline)"}
             snmpPlaceholder={isBulk ? noChange : "Nessuna"}
-            showInlineCreds={!isBulk && (protocol === "ssh" || protocol === "api" || protocol === "winrm")}
+            showInlineCreds={!isBulk && !senzaCredenzialiInline && (protocol === "ssh" || protocol === "api" || protocol === "winrm")}
             inlineUsername={inlineUsername}
-            showPortAndCommunity={!isBulk}
+            showPortAndCommunity={!isBulk && !senzaCredenzialiInline}
             portDefaultValue={port}
+            port={senzaCredenzialiInline ? port : undefined}
+            onPortChange={senzaCredenzialiInline ? onPortChange : undefined}
             idPrefix={idPrefix}
           />
         </>

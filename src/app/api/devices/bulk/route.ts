@@ -6,14 +6,14 @@ import {
   getHostById,
   getNetworkDeviceByHost,
   getNetworkDeviceById,
-  getCredentialCommunityString,
+  getDb,
   updateHost,
   updateNetworkDevice,
   ensureInventoryAssetForNetworkDevice,
   addDeviceCredentialBinding,
   getHostCredentials,
+  getCredentialById,
 } from "@/lib/db";
-import { encrypt } from "@/lib/crypto";
 import { z } from "zod";
 import { DEVICE_CLASSIFICATIONS } from "@/lib/device-classifications";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
@@ -29,7 +29,10 @@ import {
   type ProductProfileId,
 } from "@/lib/device-product-profiles";
 import { linkInvAgentEndpointToHost } from "@/lib/inventory-agent/db";
+import { portaCredenziale } from "@/lib/credentials/porte";
+import { tipiCredenzialePerProtocollo } from "@/lib/credential-protocol-map";
 import { isMacOsHost } from "@/lib/host-platform-detect";
+import { applicaVociApparatiDb, avvisoFalliti, RifiutoCredenziali, type SceltaVoci } from "@/lib/credentials/apparato-archivio";
 
 const productProfileEnum = z.enum(PRODUCT_PROFILE_IDS as unknown as [string, ...string[]]);
 
@@ -44,6 +47,8 @@ const BulkUpdateSchema = z.object({
   vendor_subtype: z.enum(["procurve", "comware"]).optional().nullable(),
   credential_id: z.coerce.number().int().positive().optional().nullable(),
   snmp_credential_id: z.coerce.number().int().positive().optional().nullable(),
+  /** L'utente ha confermato la rimozione dei binding («Nessuna»): senza, la risposta è 409 con la domanda. */
+  conferma_rimozione: z.boolean().optional(),
 }).refine(
   (d) => (d.device_ids?.length ?? 0) + (d.host_ids?.length ?? 0) > 0,
   { message: "Specificare almeno device_ids o host_ids" }
@@ -62,12 +67,13 @@ const BulkDeviceSchema = z.object({
   host_ids: z.array(z.coerce.number().int().positive()),
   classification: classificationSchema,
   protocol: z.enum(["ssh", "snmp_v2", "snmp_v3", "api", "winrm"]),
-  vendor: z.enum(["mikrotik", "ubiquiti", "hp", "cisco", "omada", "stormshield", "proxmox", "vmware", "linux", "windows", "synology", "qnap", "other"]).optional(),
+  // apple/macos dalla tappa 1b: la tabella degli apparati li accetta.
+  vendor: z.enum(["mikrotik", "ubiquiti", "hp", "cisco", "omada", "stormshield", "proxmox", "vmware", "linux", "windows", "synology", "qnap", "other", "apple"]).optional(),
   vendor_subtype: z.enum(["procurve", "comware"]).optional().nullable(),
   credential_id: z.coerce.number().int().positive().optional().nullable(),
   snmp_credential_id: z.coerce.number().int().positive().optional().nullable(),
   port: z.coerce.number().int().min(1).max(65535).optional(),
-  scan_target: z.enum(["proxmox", "vmware", "windows", "linux"]).optional().nullable(),
+  scan_target: z.enum(["proxmox", "vmware", "windows", "linux", "macos"]).optional().nullable(),
   product_profile: productProfileEnum.optional().nullable(),
   inherit_host_credentials: z.boolean().optional(),
   use_for_arp_poll: z.preprocess(
@@ -99,16 +105,6 @@ export async function POST(request: Request) {
       parsed.data;
 
     const hasCred = credential_id && credential_id > 0;
-    let communityString: string | null = null;
-    let snmpCredWarning = false;
-    if (snmp_credential_id && snmp_credential_id > 0 && (protocol === "snmp_v2" || protocol === "snmp_v3")) {
-      communityString = getCredentialCommunityString(snmp_credential_id);
-      if (!communityString) {
-        snmpCredWarning = true;
-        communityString = null;
-      }
-    }
-    const hasSnmpCred = !!communityString;
 
     /** Prima: vendor dal form; poi: inferenza da OUI/MAC host; infine: default per protocollo.
      *  Prima SNMP forzava sempre "other" e l'UI non inviava vendor → Ubiquiti/Cisco persi. */
@@ -134,7 +130,12 @@ export async function POST(request: Request) {
     }
 
     const defaultPort = protocol === "ssh" ? 22 : protocol === "api" ? 443 : protocol === "winrm" ? 5985 : 161;
-    const devicePort = port ?? defaultPort;
+    // Senza porta nel corpo vale quella propria della credenziale principale (tappa 1).
+    const mainCredRow = hasCred && credential_id ? getCredentialById(credential_id) : undefined;
+    const devicePort = port ?? mainCredRow?.port ?? defaultPort;
+    // Porta propria della credenziale SNMP (tappa 1), non 161 fisso.
+    const snmpCredRow = snmp_credential_id && snmp_credential_id > 0 ? getCredentialById(snmp_credential_id) : undefined;
+    const snmpBindingPort = snmpCredRow ? portaCredenziale(snmpCredRow, "snmp") : 161;
 
     const created: { id: number; name: string; host: string }[] = [];
     const skipped: { host: string; reason: string }[] = [];
@@ -171,12 +172,16 @@ export async function POST(request: Request) {
         device_type: deviceType,
         vendor: deviceVendor,
         vendor_subtype: vendorSubtypeFromProductProfile(profileId),
-        credential_id: (hasCred || (protocol === "winrm" && credential_id)) ? credential_id : (hasSnmpCred && snmp_credential_id ? snmp_credential_id : null),
+        // Nessuna colonna di credenziali (T20 e revisione della 2e, 16/10): né
+        // la community (prima copiata cifrata), né gli id delle voci, che il
+        // motore legge come livello 4 (device_column) e che riportavano la
+        // voce con il binding fallito o tolto. Le voci stanno nei binding qui sotto.
+        credential_id: null,
         protocol,
-        snmp_credential_id: hasCred && hasSnmpCred && snmp_credential_id ? snmp_credential_id : null,
+        snmp_credential_id: null,
         username: null,
         encrypted_password: null,
-        community_string: hasSnmpCred && communityString ? encrypt(communityString) : null,
+        community_string: null,
         api_token: null,
         api_url: null,
         port: devicePort,
@@ -195,7 +200,7 @@ export async function POST(request: Request) {
         addDeviceCredentialBinding({ device_id: device.id, credential_id, protocol_type: protoType, port: devicePort });
       }
       if (snmp_credential_id && snmp_credential_id > 0 && snmp_credential_id !== credential_id) {
-        addDeviceCredentialBinding({ device_id: device.id, credential_id: snmp_credential_id, protocol_type: "snmp", port: 161 });
+        addDeviceCredentialBinding({ device_id: device.id, credential_id: snmp_credential_id, protocol_type: "snmp", port: snmpBindingPort });
       }
 
       // Eredita credenziali validate dall'host (default true: l'utente può opt-out con false)
@@ -204,6 +209,8 @@ export async function POST(request: Request) {
           const hostCreds = getHostCredentials(host.id);
           for (const hc of hostCreds) {
             if (!hc.validated) continue;
+            // Solo tipi che quel protocollo usa davvero (regola unica, tappa 1).
+            if (!tipiCredenzialePerProtocollo(hc.protocol_type).includes(hc.credential_type)) continue;
             // Evita duplicati con credenziali già aggiunte sopra
             if (hc.credential_id === credential_id && hc.protocol_type === protoType) continue;
             if (hc.credential_id === snmp_credential_id && hc.protocol_type === "snmp") continue;
@@ -229,10 +236,7 @@ export async function POST(request: Request) {
       ensureInventoryAssetForNetworkDevice(device);
     }
 
-    let message = `${created.length} dispositivo${created.length !== 1 ? "i" : ""} aggiunto${created.length !== 1 ? "i" : ""}${skipped.length > 0 ? `, ${skipped.length} saltati` : ""}`;
-    if (snmpCredWarning) {
-      message += ". Credenziale SNMP ignorata (verifica in Credenziali: tipo SNMP e community string nel campo password).";
-    }
+    const message = `${created.length} dispositivo${created.length !== 1 ? "i" : ""} aggiunto${created.length !== 1 ? "i" : ""}${skipped.length > 0 ? `, ${skipped.length} saltati` : ""}`;
     return NextResponse.json({
       success: true,
       created: created.length,
@@ -266,68 +270,77 @@ export async function PATCH(request: Request) {
       );
     }
 
-    const { device_ids = [], host_ids = [], classification, protocol, vendor, vendor_subtype, credential_id, snmp_credential_id } = parsed.data;
+    const { device_ids = [], host_ids = [], classification, protocol, vendor, vendor_subtype, conferma_rimozione } = parsed.data;
 
-    let communityString: string | null = null;
-    if (snmp_credential_id != null && snmp_credential_id > 0 && protocol && (protocol === "snmp_v2" || protocol === "snmp_v3")) {
-      communityString = getCredentialCommunityString(snmp_credential_id);
-    }
+    // Credenziali (tappa 2e, T20): una voce scelta va in testa ai binding del
+    // suo protocollo, non provata, e i binding che ci sono restano con la loro
+    // storia di prova; «Nessuna» (null) li toglie, dopo la conferma. Prima il
+    // PATCH scriveva solo colonne, che il motore legge dopo i binding.
+    const scelte: SceltaVoci = {};
+    if ("credential_id" in parsed.data) scelte.credential_id = parsed.data.credential_id ?? null;
+    if ("snmp_credential_id" in parsed.data) scelte.snmp_credential_id = parsed.data.snmp_credential_id ?? null;
+    const conCredenziali = Object.keys(scelte).length > 0;
 
     const deviceVendor = protocol && (protocol === "ssh" || protocol === "api" || protocol === "winrm")
       ? (vendor ?? (protocol === "winrm" ? "windows" : "other"))
       : vendor;
 
-    let devicesUpdated = 0;
-    let hostsUpdated = 0;
-
-    for (const id of device_ids) {
-      const device = getNetworkDeviceById(id);
-      if (!device) continue;
-
-      const updates: Record<string, unknown> = {};
-      if (classification !== undefined) updates.classification = classification;
-      if (protocol !== undefined) updates.protocol = protocol;
-      if (deviceVendor !== undefined) updates.vendor = deviceVendor;
-      if (vendor_subtype !== undefined) updates.vendor_subtype = vendor_subtype;
-      if ("credential_id" in parsed.data) {
-        updates.credential_id = credential_id;
-        if (credential_id != null && credential_id > 0) {
-          updates.username = null;
-          updates.encrypted_password = null;
-        } else if (credential_id === null) {
-          updates.username = null;
-          updates.encrypted_password = null;
+    const dbh = getDb();
+    // Una transazione: un 409 (serve la conferma) o un errore non lasciano
+    // metà degli apparati cambiati. Il protocollo nuovo si scrive prima delle
+    // credenziali, che vanno sul protocollo che l'apparato avrà.
+    const { devicesUpdated, hostsUpdated, credenziali } = dbh.transaction(() => {
+      let aggiornati = 0;
+      let host = 0;
+      const esistenti: number[] = [];
+      for (const id of device_ids) {
+        const device = getNetworkDeviceById(id);
+        if (!device) continue;
+        esistenti.push(id);
+        const updates: Record<string, unknown> = {};
+        if (classification !== undefined) updates.classification = classification;
+        if (protocol !== undefined) updates.protocol = protocol;
+        if (deviceVendor !== undefined) updates.vendor = deviceVendor;
+        if (vendor_subtype !== undefined) updates.vendor_subtype = vendor_subtype;
+        if (Object.keys(updates).length > 0) updateNetworkDevice(id, updates as Parameters<typeof updateNetworkDevice>[1]);
+        if (Object.keys(updates).length > 0 || conCredenziali) aggiornati++;
+      }
+      for (const id of host_ids) {
+        if (!getHostBasic(id)) continue;
+        if (classification !== undefined) {
+          updateHost(id, { classification });
+          host++;
         }
       }
-      if ("snmp_credential_id" in parsed.data) updates.snmp_credential_id = snmp_credential_id;
-      if (communityString && (protocol === "snmp_v2" || protocol === "snmp_v3")) {
-        updates.community_string = encrypt(communityString);
-      }
-
-      if (Object.keys(updates).length > 0) {
-        updateNetworkDevice(id, updates as Parameters<typeof updateNetworkDevice>[1]);
-        devicesUpdated++;
-      }
-    }
-
-    for (const id of host_ids) {
-      const host = getHostBasic(id);
-      if (!host) continue;
-
-      if (classification !== undefined) {
-        updateHost(id, { classification });
-        hostsUpdated++;
-      }
-    }
+      const esito = conCredenziali ? applicaVociApparatiDb(dbh, esistenti, scelte, { conferma: conferma_rimozione === true }) : null;
+      return { devicesUpdated: aggiornati, hostsUpdated: host, credenziali: esito };
+    })();
 
     const total = devicesUpdated + hostsUpdated;
+    const parti = [total === 1 ? "1 elemento aggiornato" : `${total} elementi aggiornati`];
+    if (credenziali) {
+      const inTesta = credenziali.aggiunti + credenziali.spostati;
+      if (inTesta > 0) parti.push(`credenziale in testa su ${inTesta} binding`);
+      if (credenziali.tolti > 0) parti.push(`${credenziali.tolti} binding tolti`);
+      if (credenziali.saltati.length > 0) {
+        const k = credenziali.saltati.length;
+        const nomi = credenziali.saltati.slice(0, 5).map((x) => `«${x.nome}»`).join(", ") + (k > 5 ? "…" : "");
+        parti.push(`non assegnata a ${k} apparat${k === 1 ? "o" : "i"} (${nomi}): ${credenziali.saltati[0].motivo}`);
+      }
+      const falliti = avvisoFalliti(credenziali.falliti);
+      if (falliti) parti.push(falliti);
+    }
     return NextResponse.json({
       success: true,
       devices_updated: devicesUpdated,
       hosts_updated: hostsUpdated,
-      message: `${total} elemento${total !== 1 ? "i" : ""} aggiornato${total !== 1 ? "i" : ""}`,
+      credenziali,
+      message: parti.join("; "),
     });
   } catch (error) {
+    if (error instanceof RifiutoCredenziali) {
+      return NextResponse.json({ error: error.message, ...(error.conferma ? { conferma: error.conferma } : {}) }, { status: error.stato });
+    }
     console.error("Bulk update error:", error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Errore nell'aggiornamento" },

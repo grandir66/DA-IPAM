@@ -3,7 +3,7 @@ import { requireAuth, requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import {
   insertClassificationFeedback,
-  getClassificationFeedback,
+  getClassificationFeedbackWithHost,
 } from "@/lib/analytics/classification-feedback-db";
 import { z } from "zod";
 
@@ -25,7 +25,9 @@ export async function GET(req: NextRequest) {
     const host_id = p.get("host_id") ? Number(p.get("host_id")) : undefined;
     const limit = Math.min(Number(p.get("limit") ?? 50), 200);
 
-    const feedback = getClassificationFeedback({ host_id, limit });
+    // JOIN con hosts (mai N+1): la UI (mac-product-map-tab, loop di feedback)
+    // usa host_mac per abilitare/disabilitare "Promuovi a regola" per riga.
+    const feedback = getClassificationFeedbackWithHost({ host_id, limit });
     return NextResponse.json(feedback);
   });
 }

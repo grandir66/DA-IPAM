@@ -4,6 +4,7 @@ import { mintLoginToken as realMintLoginToken } from "@/lib/integrations/meshcen
 import { buildRemoteSessionUrl as realBuildRemoteSessionUrl } from "@/lib/integrations/meshcentral/deep-link";
 import { recordRemoteSession as realRecordRemoteSession } from "@/lib/integrations/meshcentral/remote-session-audit";
 import type { MeshCreds } from "@/lib/integrations/meshcentral/config";
+import { meshAttivo as realMeshAttivo, MESH_DISATTIVATO } from "@/lib/integrations/meshcentral/feature";
 
 interface MatchedNodeRow {
   node_id: string;
@@ -16,6 +17,7 @@ interface MatchedNodeRow {
  * via `deps`. I caller di produzione usano i default.
  */
 export interface RemoteSessionDeps {
+  meshAttivo: () => boolean;
   getMeshCreds: () => MeshCreds | null;
   mintLoginToken: (opts: { meshUser: string; expireMinutes: number; once?: boolean }) => string;
   buildRemoteSessionUrl: (opts: { serverUrl: string; token: string; nodeId: string; viewmode: number }) => string;
@@ -23,6 +25,7 @@ export interface RemoteSessionDeps {
 }
 
 const defaultDeps: RemoteSessionDeps = {
+  meshAttivo: () => realMeshAttivo(),
   getMeshCreds: realGetMeshCreds,
   mintLoginToken: realMintLoginToken,
   buildRemoteSessionUrl: realBuildRemoteSessionUrl,
@@ -42,6 +45,11 @@ export function prepareRemoteSession(
   const code = getCurrentTenantCode();
   if (!code) {
     return { ok: false, status: 401, error: "Nessun contesto tenant" };
+  }
+  // SEC-18: a modulo disinstallato la chiave per i token resta salvata, la
+  // sessione no.
+  if (!deps.meshAttivo()) {
+    return { ok: false, status: 409, error: MESH_DISATTIVATO };
   }
   const db = getTenantDb(code);
 

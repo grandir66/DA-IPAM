@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -259,7 +260,7 @@ export function MdmSettingsClient({ config }: { config: MdmConfig }) {
               <dt className="text-xs uppercase tracking-wider text-muted-foreground">Ultima sincronizzazione</dt>
               <dd className="font-medium">
                 {config.last_sync_at
-                  ? new Date(config.last_sync_at).toLocaleString("it-IT")
+                  ? parseDbDate(config.last_sync_at).toLocaleString("it-IT")
                   : "Mai"}
               </dd>
             </div>

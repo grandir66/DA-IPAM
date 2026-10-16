@@ -4,10 +4,7 @@ import { getIntegrationConfig } from "@/lib/integrations/config";
 import { getWazuhConfig } from "@/lib/integrations/wazuh-config";
 import { isInternalIntegrationUrl, deriveDefaultIntegrationUiUrl } from "@/lib/integrations/public-url";
 import { resolveIntegrationBrowserUrl } from "@/lib/integrations/public-url-server";
-import {
-  librenmsAutologinEnabled,
-  resolveLibreNMSOperatorUrl,
-} from "@/lib/integrations/librenms-proxy-auth";
+import { resolveLibreNMSOperatorUrl } from "@/lib/integrations/librenms-proxy-auth";
 import { listCredentials } from "@/lib/credentials-vault";
 import type { IntegrationComponent } from "@/lib/integrations/types";
 
@@ -68,27 +65,29 @@ export interface ActiveIntegrationInfo {
 }
 
 export async function GET() {
-  const authError = await requireAuth();
-  if (isAuthError(authError)) return authError;
+  const session = await requireAuth();
+  if (isAuthError(session)) return session;
 
   const result: Record<string, ActiveIntegrationInfo> = {};
 
-  // LibreNMS — SSO same-origin poi redirect :7443 (evita login ripetuto; proxy rompe CSS).
+  // LibreNMS — per l'admin accesso automatico same-origin poi redirect :7443
+  // (evita login ripetuto; proxy rompe CSS); per gli altri l'URL diretto (T3-26).
   const librenms = getIntegrationConfig("librenms");
   if (librenms.mode !== "disabled" && librenms.url) {
     const browserBase = resolveLanUrl("librenms", librenms.url);
-    const openUrl = browserBase ? resolveLibreNMSOperatorUrl(browserBase) : "";
+    const openUrl = browserBase ? resolveLibreNMSOperatorUrl(browserBase, session.user.role) : "";
+    const automatico = !!browserBase && openUrl !== browserBase;
     result.librenms = {
       enabled: true,
       url: openUrl || browserBase,
       directUrl: browserBase,
       label: "LibreNMS",
       iframeNeedsHandshake: browserBase.startsWith("https://"),
-      ...(browserBase.startsWith("https://") && !librenmsAutologinEnabled() && {
+      ...(browserBase.startsWith("https://") && !automatico && {
         handshakeReason:
           "Accetta il certificato self-signed su :7443 al primo accesso.",
       }),
-      ...(librenmsAutologinEnabled() && {
+      ...(automatico && {
         handshakeReason: "Accesso automatico con credenziali appliance (SSO).",
       }),
     };

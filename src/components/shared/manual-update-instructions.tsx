@@ -9,11 +9,21 @@ const SCRIPT_SNIPPET = `export DA_INVENT_DIR=/opt/da-invent
 cd "$DA_INVENT_DIR"
 ./scripts/update.sh --restart`;
 
+// Riavvio: il servizio attivo fra da-invent e da-ipam, come scripts/update.sh
+// (da-ipam sulle appliance installate con Deploy-Appliance). Se nessuno dei due
+// è attivo lo dice, invece di finire in silenzio senza aver riavviato niente.
 const MANUAL_SNIPPET = `cd /opt/da-invent
 git pull
 npm install
 npm run build
-sudo systemctl restart da-invent`;
+if systemctl is-active --quiet da-invent; then
+  sudo systemctl restart da-invent
+elif systemctl is-active --quiet da-ipam; then
+  sudo systemctl restart da-ipam
+else
+  echo "Nessun servizio attivo fra da-invent e da-ipam: niente è stato riavviato." >&2
+  echo "Cerca il servizio con: systemctl list-units --all 'da-*'" >&2
+fi`;
 
 function CopySnippetButton({ text, label }: { text: string; label: string }) {
   return (
@@ -101,8 +111,9 @@ export function ManualUpdateInstructions({ variant = "default", className }: Man
           Lo script esegue <code className="text-[10px] bg-muted px-1 rounded">git pull</code>,{" "}
           <code className="text-[10px] bg-muted px-1 rounded">npm install</code>,{" "}
           <code className="text-[10px] bg-muted px-1 rounded">npm run build</code> e, con{" "}
-          <code className="text-[10px] bg-muted px-1 rounded">--restart</code>, riavvia il servizio systemd{" "}
-          <code className="text-[10px] bg-muted px-1 rounded">da-invent</code> se attivo.
+          <code className="text-[10px] bg-muted px-1 rounded">--restart</code>, riavvia il servizio systemd attivo fra{" "}
+          <code className="text-[10px] bg-muted px-1 rounded">da-invent</code> e{" "}
+          <code className="text-[10px] bg-muted px-1 rounded">da-ipam</code>.
         </p>
       </div>
 
@@ -113,8 +124,13 @@ export function ManualUpdateInstructions({ variant = "default", className }: Man
         </div>
         <PreBlock>{MANUAL_SNIPPET}</PreBlock>
         <p className="text-[11px] text-muted-foreground">
-          Adatta il percorso e il nome servizio se la tua installazione usa directory o unità systemd diverse.
-          Come root puoi omettere <code className="text-[10px] bg-muted px-1 rounded">sudo</code>.
+          Le ultime righe riavviano il servizio attivo fra{" "}
+          <code className="text-[10px] bg-muted px-1 rounded">da-invent</code> e{" "}
+          <code className="text-[10px] bg-muted px-1 rounded">da-ipam</code>, come lo script; se nessuno dei due
+          è attivo lo scrivono e non riavviano niente. Adatta il percorso
+          se l&apos;installazione sta in un&apos;altra directory (sulle appliance è{" "}
+          <code className="text-[10px] bg-muted px-1 rounded">/opt/da-ipam</code>). Come root puoi omettere{" "}
+          <code className="text-[10px] bg-muted px-1 rounded">sudo</code>.
         </p>
       </div>
     </div>

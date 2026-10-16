@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { requireAuth, requireAdmin, isAuthError } from "@/lib/api-auth";
+import { requireAuth, requireAdmin, isAuthError, getTenantCodeFromSession } from "@/lib/api-auth";
 import { getClientConfig, saveClientConfig, deleteClientConfig, listClientConfigs } from "@/lib/client-config";
+import { denyCrossTenantConfig, isSuperadmin } from "@/lib/client-config-access";
 import type { ClientConfig } from "@/lib/client-config";
 
 /**
@@ -16,9 +17,15 @@ export async function GET(req: Request) {
   const code = searchParams.get("code");
 
   if (!code) {
+    // Lista: superadmin vede tutti i clienti; gli altri solo il proprio.
     const codes = listClientConfigs();
-    return NextResponse.json(codes);
+    if (isSuperadmin(session)) return NextResponse.json(codes);
+    const own = getTenantCodeFromSession(session);
+    return NextResponse.json(own ? codes.filter((c) => c === own) : []);
   }
+
+  const denied = denyCrossTenantConfig(session, code);
+  if (denied) return denied;
 
   const config = getClientConfig(code);
   if (!config) {
@@ -40,6 +47,8 @@ export async function PUT(req: Request) {
   if (!code) {
     return NextResponse.json({ error: "Parametro 'code' richiesto" }, { status: 400 });
   }
+  const denied = denyCrossTenantConfig(session, code);
+  if (denied) return denied;
 
   let data: ClientConfig;
   try {
@@ -73,6 +82,8 @@ export async function DELETE(req: Request) {
   if (!code) {
     return NextResponse.json({ error: "Parametro 'code' richiesto" }, { status: 400 });
   }
+  const denied = denyCrossTenantConfig(session, code);
+  if (denied) return denied;
 
   const deleted = deleteClientConfig(code);
   if (!deleted) {

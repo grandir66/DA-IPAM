@@ -1,22 +1,25 @@
 import { NextResponse } from "next/server";
-import { getAllCredentials, createCredential } from "@/lib/db";
+import { getAllCredentials, getDb } from "@/lib/db";
 import { CredentialSchema } from "@/lib/validators";
-import { encrypt } from "@/lib/crypto";
+import { creaVoceDb } from "@/lib/credentials/archivio";
+import { mascheraCredenziale } from "@/lib/credentials/maschera";
+import { usiTotaliDb } from "@/lib/credentials/usi";
 import { requireAdminOrOnboarding, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 
+/**
+ * Elenco dell'archivio: ogni voce come vista mascherata (T13, 16/10), che dei
+ * segreti dice solo se ci sono, col numero degli usi per la colonna «Usata da».
+ */
 export async function GET() {
   return withTenantFromSession(async () => {
     try {
-      const credentials = getAllCredentials();
-      const masked = credentials.map((c) => ({
-        ...c,
-        encrypted_username: c.encrypted_username ? "●●●●●●●●" : null,
-        encrypted_password: c.encrypted_password ? "●●●●●●●●" : null,
-      }));
-      // v0.2.642 audit perf UI7: cache client 60s + SWR 5min su credenziali
-      // mascherate (sono read-mostly, mutate solo dalla UI Settings).
-      return NextResponse.json(masked, {
+      const usi = usiTotaliDb(getDb());
+      const voci = getAllCredentials().map((c) => mascheraCredenziale(c, usi.get(c.id) ?? 0));
+      // v0.2.642 audit perf UI7: cache client 60s + SWR 5min (read-mostly).
+      // La pagina Credenziali e il wizard chiedono `no-store`: dopo una
+      // modifica l'elenco non deve tornare com'era.
+      return NextResponse.json(voci, {
         headers: { "Cache-Control": "private, max-age=60, stale-while-revalidate=300" },
       });
     } catch (error) {
@@ -26,6 +29,11 @@ export async function GET() {
   });
 }
 
+/**
+ * Voce nuova. I campi richiesti per tipo e metodo li decide `campiRichiesti`
+ * di `credentials/tipi.ts` (in `creaVoceDb`): prima erano regole scritte qui a
+ * mano, solo per cinque tipi.
+ */
 export async function POST(request: Request) {
   return withTenantFromSession(async () => {
     try {
@@ -36,31 +44,9 @@ export async function POST(request: Request) {
       if (!parsed.success) {
         return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
       }
-
-      const data = parsed.data;
-      if (data.credential_type === "ssh" || data.credential_type === "api" || data.credential_type === "windows" || data.credential_type === "linux") {
-        if (!data.username || !data.password) {
-          return NextResponse.json({ error: "Username e password richiesti" }, { status: 400 });
-        }
-      }
-      if (data.credential_type === "snmp") {
-        if (!data.password?.trim()) {
-          return NextResponse.json({ error: "Community string richiesta per credenziali SNMP" }, { status: 400 });
-        }
-      }
-
-      const credential = createCredential({
-        name: data.name,
-        credential_type: data.credential_type,
-        encrypted_username: data.username ? encrypt(data.username) : null,
-        encrypted_password: data.password ? encrypt(data.password) : null,
-      });
-
-      return NextResponse.json({
-        ...credential,
-        encrypted_username: credential.encrypted_username ? "●●●●●●●●" : null,
-        encrypted_password: credential.encrypted_password ? "●●●●●●●●" : null,
-      }, { status: 201 });
+      const esito = creaVoceDb(getDb(), parsed.data);
+      if (!esito.ok) return NextResponse.json({ error: esito.errore }, { status: esito.stato });
+      return NextResponse.json(esito.vista, { status: esito.stato });
     } catch (error) {
       console.error("Error creating credential:", error);
       return NextResponse.json({ error: "Errore nella creazione della credenziale" }, { status: 500 });

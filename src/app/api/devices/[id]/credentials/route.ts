@@ -1,17 +1,19 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireAdmin, isAuthError } from "@/lib/api-auth";
+import { requireAdmin, requireAuth, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
+import { versioneApparato } from "@/lib/protocols/snmp-sessione";
+import { provaBinding } from "@/lib/devices/prova-binding";
 import {
   getNetworkDeviceById,
   getDeviceCredentialBindings,
-  addDeviceCredentialBinding,
-  updateDeviceCredentialBinding,
-  deleteDeviceCredentialBinding,
   reorderDeviceCredentialBindings,
   updateBindingTestStatus,
+  getDb,
 } from "@/lib/db";
-import { encrypt, decrypt } from "@/lib/crypto";
+import { aggiungiBindingApparato, aggiornaBindingApparato, VoceNonValePerProtocollo } from "@/lib/credentials/lega-voce";
+import { aggiornaSegretoBindingDb, eliminaBindingApparatoDb, nuovaVoceEBindingDb, RifiutoCredenziali } from "@/lib/credentials/apparato-archivio";
+import { aggiornamentiBinding, normalizzaInlineSnmp } from "@/lib/devices/aggiornamenti-binding";
 
 /**
  * GET /api/devices/:id/credentials — lista bindings credenziali per device
@@ -19,21 +21,30 @@ import { encrypt, decrypt } from "@/lib/crypto";
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   return withTenantFromSession(async () => {
     try {
+      const session = await requireAuth();
+      if (isAuthError(session)) return session;
+      // Lo username inline lo vede solo chi può modificarlo (tappa 1).
+      const role = (session.user as { role?: string }).role;
+      const vedeUsername = role === "admin" || role === "superadmin";
       const { id } = await params;
     const device = getNetworkDeviceById(Number(id));
     if (!device) return NextResponse.json({ error: "Dispositivo non trovato" }, { status: 404 });
 
     const bindings = getDeviceCredentialBindings(Number(id));
     // Maschera password inline
-    const safe = bindings.map((b) => ({
-      ...b,
-      inline_encrypted_password: b.inline_encrypted_password ? "●●●●●●●●" : null,
-      inline_username_display: b.inline_username ?? null,
-      source: b.credential_id ? "archive" as const : "inline" as const,
-      display_name: b.credential_id
-        ? (b.credential_name || `Credenziale #${b.credential_id}`)
-        : (b.inline_username ? `${b.inline_username} (inline)` : "Inline"),
-    }));
+    const safe = bindings.map((b) => {
+      const username = vedeUsername ? (b.inline_username ?? null) : null;
+      return {
+        ...b,
+        inline_username: username,
+        inline_encrypted_password: b.inline_encrypted_password ? "●●●●●●●●" : null,
+        inline_username_display: username,
+        source: b.credential_id ? "archive" as const : "inline" as const,
+        display_name: b.credential_id
+          ? (b.credential_name || `Credenziale #${b.credential_id}`)
+          : (username ? `${username} (inline)` : "Inline"),
+      };
+    });
     return NextResponse.json(safe);
     } catch {
       return NextResponse.json({ error: "Errore" }, { status: 500 });
@@ -43,7 +54,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
 const AddBindingSchema = z.object({
   credential_id: z.number().int().positive().optional().nullable(),
-  protocol_type: z.enum(["ssh", "snmp", "winrm", "api"]),
+  protocol_type: z.enum(["ssh", "snmp", "winrm", "api", "redfish", "onvif"]),
   port: z.number().int().min(1).max(65535),
   inline_username: z.string().max(100).optional().nullable(),
   inline_password: z.string().max(200).optional().nullable(),
@@ -67,19 +78,30 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       return NextResponse.json({ error: parsed.error.issues.map((i) => i.message).join(", ") }, { status: 400 });
     }
 
-    const { credential_id, protocol_type, port, inline_username, inline_password } = parsed.data;
+    const { credential_id, protocol_type, port } = parsed.data;
+    const { inline_username, inline_password } = normalizzaInlineSnmp(protocol_type, parsed.data.inline_username, parsed.data.inline_password);
 
-    const binding = addDeviceCredentialBinding({
-      device_id: Number(id),
-      credential_id: credential_id ?? null,
-      protocol_type,
-      port,
-      inline_username: credential_id ? null : (inline_username ?? null),
-      inline_encrypted_password: credential_id ? null : (inline_password ? encrypt(inline_password) : null),
-    });
+    // «Nuova» (tappa 2e, T20): utente e segreto diventano una voce
+    // dell'archivio col nome dell'apparato, e il binding la punta. Prima
+    // restavano dentro il binding (inline), che la pagina non mostra come voce
+    // e che la 2g smetterà di leggere.
+    if (!credential_id) {
+      if (!inline_password && !inline_username) {
+        return NextResponse.json({ error: "Scegli una credenziale dell'archivio o scrivine una nuova" }, { status: 400 });
+      }
+      const nuova = nuovaVoceEBindingDb(getDb(), Number(id), protocol_type, port, { username: inline_username ?? null, password: inline_password ?? null });
+      return NextResponse.json({ ...nuova.binding, inline_encrypted_password: null, voce: nuova.voce }, { status: 201 });
+    }
+
+    // La voce d'archivio deve valere per il protocollo del binding (T13, 16/10):
+    // prima si salvava e il motore la scartava in silenzio. Il controllo sta in
+    // aggiungiBindingApparato; qui il rifiuto diventa un 400.
+    const binding = aggiungiBindingApparato({ device_id: Number(id), credential_id, protocol_type, port });
 
     return NextResponse.json(binding, { status: 201 });
     } catch (err: unknown) {
+      if (err instanceof VoceNonValePerProtocollo) return NextResponse.json({ error: err.message }, { status: 400 });
+      if (err instanceof RifiutoCredenziali) return NextResponse.json({ error: err.message }, { status: err.stato });
       return NextResponse.json({ error: err instanceof Error ? err.message : "Errore" }, { status: 500 });
     }
   });
@@ -90,7 +112,7 @@ const UpdateBindingSchema = z.object({
   binding_id: z.number().int().positive().optional(),
   // Per update
   credential_id: z.number().int().positive().optional().nullable(),
-  protocol_type: z.enum(["ssh", "snmp", "winrm", "api"]).optional(),
+  protocol_type: z.enum(["ssh", "snmp", "winrm", "api", "redfish", "onvif"]).optional(),
   port: z.number().int().min(1).max(65535).optional(),
   inline_username: z.string().max(100).optional().nullable(),
   inline_password: z.string().max(200).optional().nullable(),
@@ -120,7 +142,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
     if (data.action === "delete") {
       if (!data.binding_id) return NextResponse.json({ error: "binding_id richiesto" }, { status: 400 });
-      deleteDeviceCredentialBinding(data.binding_id);
+      // Solo un binding di questo apparato (T20): prima si cancellava qualunque id.
+      if (!eliminaBindingApparatoDb(getDb(), Number(id), data.binding_id)) {
+        return NextResponse.json({ error: "Binding non trovato" }, { status: 404 });
+      }
       return NextResponse.json({ success: true });
     }
 
@@ -132,16 +157,28 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
     if (data.action === "update") {
       if (!data.binding_id) return NextResponse.json({ error: "binding_id richiesto" }, { status: 400 });
-      const updates: Parameters<typeof updateDeviceCredentialBinding>[1] = {};
-      if (data.credential_id !== undefined) updates.credential_id = data.credential_id;
-      if (data.protocol_type !== undefined) updates.protocol_type = data.protocol_type;
-      if (data.port !== undefined) updates.port = data.port;
-      if (data.inline_username !== undefined) updates.inline_username = data.inline_username;
-      if (data.inline_password !== undefined) {
-        updates.inline_encrypted_password = data.inline_password ? encrypt(data.inline_password) : null;
+      // Voce, protocollo e porta nel binding; utente e segreto nuovi nella
+      // voce dell'apparato (T20): dettaglio in aggiornamenti-binding.ts e in
+      // credentials/apparato-archivio.ts. Tutto o niente.
+      const { modifica, segreto } = aggiornamentiBinding(data);
+      let voce: { credential_id: number; nome: string; nuova: boolean } | null = null;
+      try {
+        if (segreto) {
+          // Protocollo e porta, poi la voce: aggiornata se è solo di questo
+          // binding, altrimenti una nuova dell'apparato (una condivisa non
+          // cambia per gli altri). Un binding di un altro apparato è un 404.
+          voce = aggiornaSegretoBindingDb(getDb(), Number(id), data.binding_id, segreto, { protocol_type: data.protocol_type, port: data.port });
+        } else if (!aggiornaBindingApparato(Number(id), data.binding_id, modifica)) {
+          // La voce dopo la modifica deve valere per il protocollo dopo la
+          // modifica (T13): il controllo sta in aggiornaBindingApparato.
+          return NextResponse.json({ error: "Binding non trovato" }, { status: 404 });
+        }
+      } catch (err) {
+        if (err instanceof VoceNonValePerProtocollo) return NextResponse.json({ error: err.message }, { status: 400 });
+        if (err instanceof RifiutoCredenziali) return NextResponse.json({ error: err.message }, { status: err.stato });
+        throw err;
       }
-      updateDeviceCredentialBinding(data.binding_id, updates);
-      return NextResponse.json({ success: true });
+      return NextResponse.json({ success: true, ...(voce ? { voce } : {}) });
     }
 
     if (data.action === "test") {
@@ -151,7 +188,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       const binding = bindings.find((b) => b.id === data.binding_id);
       if (!binding) return NextResponse.json({ error: "Binding non trovato" }, { status: 404 });
 
-      const testResult = await testBinding(device.host, binding);
+      const testResult = await provaBinding(device.host, binding, versioneApparato(device, "1"));
+      // Per API/Redfish/ONVIF una prova non c'è: il binding non si marca fallito
+      // (il motore delle credenziali scarterebbe un binding buono).
+      if (testResult.nonDisponibile) return NextResponse.json(testResult);
       updateBindingTestStatus(data.binding_id, testResult.success ? "success" : "failed", testResult.message);
       // Promuovi il binding validato anche su host_credentials dell'host con stesso IP,
       // così la credenziale resta associata anche se il device viene rimosso/ricreato.
@@ -163,7 +203,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
             setHostCredentialValidatedByKey(
               h.id,
               binding.credential_id,
-              binding.protocol_type as "ssh" | "snmp" | "winrm" | "api",
+              binding.protocol_type as "ssh" | "snmp" | "winrm" | "api" | "redfish" | "onvif",
               binding.port,
               { auto_detected: false }
             );
@@ -182,117 +222,3 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   });
 }
 
-/** Testa una singola credenziale binding su un host */
-/** Esito test binding: i campi extra (`kind`, `hint`, `methodsOffered`, `methodsTried`)
- *  sono presenti solo per failure SSH e servono al pannello "Diagnostica" in UI. */
-async function testBinding(
-  host: string,
-  binding: { protocol_type: string; port: number; credential_id: number | null; inline_username: string | null; inline_encrypted_password: string | null; credential_type?: string | null }
-): Promise<{
-  success: boolean;
-  message: string;
-  kind?: string;
-  hint?: string;
-  methodsOffered?: string[];
-  methodsTried?: string[];
-}> {
-  try {
-    if (binding.protocol_type === "ssh") {
-      let username: string | undefined;
-      let password: string | undefined;
-      if (binding.credential_id) {
-        const { getSshLinuxCredentialPair } = await import("@/lib/db");
-        const pair = getSshLinuxCredentialPair(binding.credential_id);
-        username = pair?.username;
-        password = pair?.password;
-      } else {
-        username = binding.inline_username ?? undefined;
-        password = binding.inline_encrypted_password ? decrypt(binding.inline_encrypted_password) : undefined;
-      }
-      if (!username) return { success: false, message: "Username mancante" };
-      if (!password) return { success: false, message: "Password mancante" };
-
-      const { sshTryConnect } = await import("@/lib/devices/ssh-transport");
-      const result = await sshTryConnect({
-        host,
-        port: binding.port,
-        username,
-        password,
-        timeout: 10000,
-        credentialName: binding.credential_id ? `cred#${binding.credential_id}` : "inline",
-      });
-      if (result.ok) return { success: true, message: "Connessione SSH riuscita" };
-      const err = result.error;
-      const detail = err.hint ? `${err.message} ${err.hint}` : err.message;
-      return {
-        success: false,
-        message: `[${err.kind}] ${detail}`,
-        kind: err.kind,
-        hint: err.hint,
-        methodsOffered: err.methodsOffered,
-        methodsTried: err.methodsTried,
-      };
-    }
-
-    if (binding.protocol_type === "snmp") {
-      let community: string;
-      if (binding.credential_id) {
-        const { getCredentialCommunityString } = await import("@/lib/db");
-        community = getCredentialCommunityString(binding.credential_id) ?? "public";
-      } else {
-        community = binding.inline_encrypted_password ? decrypt(binding.inline_encrypted_password) : "public";
-      }
-      const snmp = await import("net-snmp");
-      const session = snmp.createSession(host, community, { port: binding.port, timeout: 5000 });
-      return new Promise((resolve) => {
-        const timer = setTimeout(() => { session.close(); resolve({ success: false, message: "Timeout SNMP" }); }, 8000);
-        session.get(["1.3.6.1.2.1.1.1.0"], (error: Error | null) => {
-          clearTimeout(timer);
-          session.close();
-          resolve(error
-            ? { success: false, message: `SNMP: ${error.message}` }
-            : { success: true, message: "SNMP raggiungibile" }
-          );
-        });
-      });
-    }
-
-    if (binding.protocol_type === "winrm") {
-      let username: string | undefined;
-      let password: string | undefined;
-      if (binding.credential_id) {
-        const { getCredentialLoginPair } = await import("@/lib/db");
-        const pair = getCredentialLoginPair(binding.credential_id, "windows");
-        username = pair?.username;
-        password = pair?.password;
-      } else {
-        username = binding.inline_username ?? undefined;
-        password = binding.inline_encrypted_password ? decrypt(binding.inline_encrypted_password) : undefined;
-      }
-      if (!username) return { success: false, message: "Username mancante" };
-      try {
-        const { runWinrmCommand } = await import("@/lib/devices/winrm-run");
-        const { getAdRealm } = await import("@/lib/db");
-        const realm = getAdRealm()?.realm ?? "";
-        const out = await runWinrmCommand(
-          host,
-          binding.port ?? 5985,
-          username,
-          password ?? "",
-          "echo DA-IPAM-TEST",
-          false,
-          realm
-        );
-        return String(out).includes("DA-IPAM-TEST")
-          ? { success: true, message: "WinRM funzionante" }
-          : { success: false, message: "WinRM: risposta inattesa" };
-      } catch (err: unknown) {
-        return { success: false, message: `WinRM: ${err instanceof Error ? err.message : "errore"}` };
-      }
-    }
-
-    return { success: false, message: `Test per protocollo ${binding.protocol_type} non implementato` };
-  } catch (err: unknown) {
-    return { success: false, message: err instanceof Error ? err.message : "Errore test" };
-  }
-}

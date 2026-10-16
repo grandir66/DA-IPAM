@@ -1,9 +1,11 @@
 import type { NetworkDevice } from "@/types";
-import { getDeviceCredentials, getDeviceCommunityString, getDeviceSnmpV3Credentials, getCredentialCommunityString, getDb } from "@/lib/db";
-import { safeDecrypt } from "@/lib/crypto";
-import type { PortInfo } from "./switch-client";
+import { apriSessioneSnmp, versioneApparato } from "@/lib/protocols/snmp-sessione";
+import { credenzialeSnmpApparato, getDeviceCredentials, haSnmpApparato, tokenApiApparato } from "@/lib/db";
+import type { MacTableEntry, PortInfo } from "./switch-client";
+import { parseMikrotikInterfaceTypes, parseMikrotikMacTable } from "./mikrotik-porte";
+import { parseMikrotikNeighbors } from "./mikrotik-vicini";
 import { getSnmpPortSchema } from "./snmp-port-schema";
-import { sshExec as transportSshExec } from "./ssh-transport";
+import { haSegretoSsh, segretoSsh, sshExec as transportSshExec, type SshResult } from "./ssh-transport";
 import type { SshOptions } from "./ssh-transport";
 
 export interface ArpTableEntry {
@@ -51,6 +53,13 @@ export interface NeighborEntry {
   remoteIp?: string;
   remoteMac?: string;
   remotePlatform?: string;
+  /**
+   * T2 (spec §13.5.2, MK1): l'elenco letto di `discovered-by` («cdp,lldp,mndp», in ordine) e le capacità annunciate
+   * attive (`system-caps-enabled`). Le legge il lettore dei MikroTik; si scrivono solo con `topologia.lettura.mikrotik`
+   * accesa (chi chiama `upsertNeighbors` le toglie altrimenti, `senzaCampiCavi`).
+   */
+  discoveredBy?: string;
+  remoteCaps?: string;
 }
 
 /** Riga della tabella di routing */
@@ -94,30 +103,27 @@ export interface RouterClient {
   getNeighbors?(): Promise<NeighborEntry[]>;
   /** Tabella di routing (multi-vendor SSH + SNMP) */
   getRoutingTable?(): Promise<RouteEntry[]>;
+  /** Solo MikroTik SSH: `/interface bridge host print terse` — il MAC sulla porta del cavo (sola lettura). */
+  getBridgeHosts?(): Promise<MacTableEntry[]>;
+  /** Solo MikroTik SSH: `/interface print terse` — nome dell'interfaccia → tipo (sola lettura). */
+  getInterfaceTypes?(): Promise<Map<string, string>>;
+  /** Solo MikroTik SSH: l'ultima uscita di `/interface print terse` letta da `getInterfaceTypes` (MK2 delle letture in più, senza un comando nuovo). */
+  ultimaUscitaInterfacce?(): string | null;
 }
 
 /**
- * True se il device ha una credenziale/community SNMP risolvibile via uno dei tre
- * percorsi: `device_credential_bindings.protocol_type='snmp'`, campi legacy
- * (`snmp_credential_id`, `credential_id`) con community valida, oppure `community_string`
- * inline. Usato sia dal fallback SNMP del router-client sia dal branch Stormshield
+ * True se il device ha una fonte SNMP sua: binding SNMP (non falliti), colonne
+ * (`snmp_credential_id`, `credential_id`) con una voce SNMP, oppure
+ * `community_string` (`haSnmpApparato`, il motore unico: tappa 2 credenziali,
+ * T8). Usato sia dal fallback SNMP del router-client sia dal branch Stormshield
  * per decidere se evitare l'SSH a vuoto.
  */
 function deviceHasSnmpCredential(device: NetworkDevice): boolean {
-  if (device.community_string) return true;
-  if (device.snmp_credential_id && getCredentialCommunityString(device.snmp_credential_id)) return true;
-  if (device.credential_id && getCredentialCommunityString(device.credential_id)) return true;
-  const hasBinding = !!getDb().prepare(
-    "SELECT 1 FROM device_credential_bindings WHERE device_id = ? AND protocol_type = 'snmp' LIMIT 1"
-  ).get(device.id);
-  return hasBinding;
+  return haSnmpApparato(device);
 }
 
 export async function createRouterClient(device: NetworkDevice): Promise<RouterClient> {
-  const creds = getDeviceCredentials(device);
-  const username = creds?.username ?? device.username ?? undefined;
-  const password = creds?.password;
-  const primary = await getVendorRouterClient(device, { username, password });
+  const primary = await getVendorRouterClient(device, credenzialiApparato(device));
 
   // Fallback SNMP per porte/LLDP/CDP — include anche i binding v2
   // (`device_credential_bindings`): fix anti-regressione perché in precedenza
@@ -157,6 +163,10 @@ export async function createRouterClient(device: NetworkDevice): Promise<RouterC
         return snmpClient.testConnection();
       },
       getDhcpLeases: client.getDhcpLeases,
+      // Niente ripiego SNMP: un errore qui deve arrivare al resoconto, non diventare «nessuna riga».
+      getBridgeHosts: client.getBridgeHosts,
+      getInterfaceTypes: client.getInterfaceTypes,
+      ultimaUscitaInterfacce: client.ultimaUscitaInterfacce,
       getNeighbors: client.getNeighbors
         ? async () => {
             try { return await client.getNeighbors!(); } catch { /* ignore */ }
@@ -185,7 +195,14 @@ export async function createRouterClient(device: NetworkDevice): Promise<RouterC
   return client;
 }
 
-type DeviceCreds = { username?: string; password?: string };
+/** Utente più password o chiave privata (tappa 2 credenziali, T14: getDeviceCredentials dà anche la chiave). */
+type DeviceCreds = { username?: string; password?: string; privateKey?: string; passphrase?: string };
+
+/** Le credenziali dell'acquisizione con l'utente della colonna come ripiego (com'era). */
+function credenzialiApparato(device: NetworkDevice): DeviceCreds {
+  const creds = getDeviceCredentials(device);
+  return { ...(creds ?? {}), username: creds?.username ?? device.username ?? undefined };
+}
 
 async function getVendorRouterClient(device: NetworkDevice, creds: DeviceCreds): Promise<RouterClient> {
   switch (device.vendor) {
@@ -225,21 +242,30 @@ async function getVendorRouterClient(device: NetworkDevice, creds: DeviceCreds):
 /** Helper interno: opzioni transport SSH per un NetworkDevice, con fallback su username device. */
 function buildDeviceSshOptions(device: NetworkDevice, creds: DeviceCreds): SshOptions | null {
   const username = creds.username || device.username || undefined;
-  if (!username || !creds.password) return null;
+  if (!username || !haSegretoSsh(creds)) return null;
   return {
     host: device.host,
     port: device.port || 22,
     username,
-    password: creds.password,
+    ...segretoSsh(creds),
     timeout: 10000,
   };
 }
 
-async function execDeviceCommand(device: NetworkDevice, creds: DeviceCreds, cmd: string, timeoutMs?: number): Promise<string> {
+/** Le opzioni SSH di un apparato con le sue credenziali, per le letture in più su una connessione sola (spec §13.5.1). null = credenziali mancanti. */
+export function opzioniSshDiApparato(device: NetworkDevice): SshOptions | null {
+  return buildDeviceSshOptions(device, credenzialiApparato(device));
+}
+
+async function execDeviceCommandRisultato(device: NetworkDevice, creds: DeviceCreds, cmd: string, timeoutMs?: number): Promise<SshResult> {
   const opts = buildDeviceSshOptions(device, creds);
   if (!opts) throw new Error(`Credenziali SSH mancanti per il device ${device.name} (${device.host})`);
   if (timeoutMs) opts.timeout = timeoutMs;
-  const res = await transportSshExec(opts, cmd);
+  return transportSshExec(opts, cmd);
+}
+
+async function execDeviceCommand(device: NetworkDevice, creds: DeviceCreds, cmd: string, timeoutMs?: number): Promise<string> {
+  const res = await execDeviceCommandRisultato(device, creds, cmd, timeoutMs);
   return res.stdout + res.stderr;
 }
 
@@ -271,24 +297,17 @@ async function createSnmpArpClient(
   device: NetworkDevice
 ): Promise<RouterClient> {
   const snmp = await import("net-snmp");
-  // SNMP usa sempre porta 161 (standard)
-  const opts = { port: 161, timeout: 10000 };
 
+  // Lanciata dentro l'executor della Promise del walk: un errore diventa il rifiuto del walk.
   function createSession() {
-    if (device.protocol === "snmp_v3") {
-      const v3 = getDeviceSnmpV3Credentials(device);
-      if (v3) {
-        const user = {
-          name: v3.username,
-          level: snmp.SecurityLevel.authNoPriv,
-          authProtocol: snmp.AuthProtocols.md5,
-          authKey: v3.authKey,
-        };
-        return snmp.createV3Session(device.host, user, opts);
-      }
-    }
-    const community = getDeviceCommunityString(device);
-    return snmp.createSession(device.host, community, opts);
+    // Credenziale e porta dal motore (tappa 2 credenziali, T8): v3 coi protocolli della voce; un apparato snmp_v3
+    // senza v3 è un errore, mai la community (T4). Porta del candidato: 161, o quella del binding o della voce.
+    const c = credenzialeSnmpApparato(device);
+    if (!c.ok) throw new Error(c.motivo);
+    // NULL = v1, come prima (createSession senza version).
+    const aperta = apriSessioneSnmp(snmp, device.host, c.cred, { port: c.port, timeout: 10000, versione: versioneApparato(device, "1") });
+    if (!aperta.ok) throw new Error(aperta.motivo);
+    return aperta.session;
   }
 
   function snmpWalk(oid: string): Promise<{ oid: string; value: Buffer | string | number }[]> {
@@ -602,6 +621,7 @@ async function createMikrotikClient(device: NetworkDevice, creds: DeviceCreds): 
   }
 
   const execCommand = (cmd: string, timeoutMs = 30000) => execDeviceCommand(device, creds, cmd, timeoutMs);
+  let uscitaInterfacce: string | null = null;
 
   return {
     async getArpTable() {
@@ -668,6 +688,21 @@ async function createMikrotikClient(device: NetworkDevice, creds: DeviceCreds): 
     async getRoutingTable() {
       const output = await execCommand("/ip route print terse");
       return parseMikrotikRoutes(output);
+    },
+    async getBridgeHosts() {
+      return parseMikrotikMacTable(await execCommand("/interface bridge host print terse"));
+    },
+    async getInterfaceTypes() {
+      const r = await execDeviceCommandRisultato(device, creds, "/interface print terse", 30000);
+      const out = r.stdout + r.stderr;
+      // T2 (revisione del Task 4): l'uscita passa alle letture in più (MK2) solo se il comando è finito col suo codice
+      // d'uscita. Una connessione caduta a metà dà un'uscita tagliata: il giro di oggi la legge come prima, le letture in
+      // più la rileggono sulla loro connessione (e lì una caduta è «non so»).
+      uscitaInterfacce = typeof r.code === "number" ? out : null;
+      return parseMikrotikInterfaceTypes(out);
+    },
+    ultimaUscitaInterfacce() {
+      return uscitaInterfacce;
     },
   };
 }
@@ -763,14 +798,25 @@ function createOmadaClient(device: NetworkDevice): Promise<RouterClient> {
   return createSnmpArpClient(device);
 }
 
+/**
+ * Client dell'API di Omada. Il token viene dall'archivio (tappa 2e, T20):
+ * voce `api` a token legata all'apparato, e fino alla 2g la colonna
+ * `api_token` di un apparato lasciato dalla conversione. Senza token la
+ * ragione si dice (errore col motivo), non parte un «Bearer » vuoto.
+ */
 async function createOmadaApiClient(device: NetworkDevice): Promise<RouterClient> {
-  const apiToken = device.api_token ? (safeDecrypt(device.api_token) ?? "") : "";
+  const scelta = tokenApiApparato(device);
+  const apiToken = scelta.ok ? scelta.token : null;
   const baseUrl = device.api_url || `https://${device.host}`;
+  const conToken = (): string => {
+    if (apiToken == null) throw new Error(`Omada API: ${scelta.ok ? "token assente" : scelta.motivo}`);
+    return apiToken;
+  };
 
   return {
     async getArpTable() {
       const res = await fetch(`${baseUrl}/api/v2/arp`, {
-        headers: { Authorization: `Bearer ${apiToken}` },
+        headers: { Authorization: `Bearer ${conToken()}` },
       });
       if (!res.ok) throw new Error(`Omada API error: ${res.status}`);
       const data = await res.json();
@@ -782,6 +828,7 @@ async function createOmadaApiClient(device: NetworkDevice): Promise<RouterClient
       }));
     },
     async testConnection() {
+      if (apiToken == null) return false;
       try {
         const res = await fetch(`${baseUrl}/api/v2/info`, {
           headers: { Authorization: `Bearer ${apiToken}` },
@@ -1060,33 +1107,6 @@ function parseGenericArp(output: string): ArpTableEntry[] {
 
 // ─── Neighbor parsers ────────────────────────────────────────────────
 
-/** MikroTik: /ip neighbor print terse */
-function parseMikrotikNeighbors(output: string): NeighborEntry[] {
-  const entries: NeighborEntry[] = [];
-  for (const line of output.split("\n")) {
-    const iface = line.match(/interface=(\S+)/)?.[1];
-    const identity = line.match(/identity="([^"]+)"|identity=(\S+)/);
-    const address = line.match(/address=(\d+\.\d+\.\d+\.\d+)/)?.[1];
-    const macAddr = line.match(/mac-address=([0-9A-Fa-f:]+)/)?.[1];
-    const platform = line.match(/platform="([^"]+)"|platform=(\S+)/);
-    const intPort = line.match(/interface-name="([^"]+)"|interface-name=(\S+)/);
-
-    const remoteName = identity?.[1] ?? identity?.[2] ?? "";
-    if (!iface && !remoteName) continue;
-
-    entries.push({
-      localPort: iface || "",
-      remoteDevice: remoteName,
-      remotePort: intPort?.[1] ?? intPort?.[2] ?? "",
-      protocol: "mndp",
-      remoteIp: address,
-      remoteMac: macAddr?.toUpperCase(),
-      remotePlatform: platform?.[1] ?? platform?.[2],
-    });
-  }
-  return entries;
-}
-
 /** Cisco: show cdp/lldp neighbors detail */
 function parseCiscoNeighbors(output: string, proto: "cdp" | "lldp"): NeighborEntry[] {
   const entries: NeighborEntry[] = [];
@@ -1264,7 +1284,7 @@ function parseCiscoRoutes(output: string): RouteEntry[] {
   for (const line of output.split("\n")) {
     // Formato: "C    192.168.1.0/24 is directly connected, GigabitEthernet0/0"
     //          "S    10.0.0.0/8 [1/0] via 192.168.1.1"
-    //          "O    172.16.0.0/16 [110/20] via 10.1.1.1, 00:05:00, Ethernet0"
+    //          "O    10.2.0.0/16 [110/20] via 10.1.1.1, 00:05:00, Ethernet0"
     const match = line.match(/^([CSOBDR*>i\s]+)\s+(\d+\.\d+\.\d+\.\d+(?:\/\d+)?)\s/);
     if (!match) continue;
     const flags = match[1].trim();

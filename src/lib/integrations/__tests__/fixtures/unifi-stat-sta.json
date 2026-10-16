@@ -1,0 +1,48 @@
+{
+  "meta": {
+    "rc": "ok"
+  },
+  "data": [
+    {
+      "site_id": "000000000000000000000001",
+      "mac": "02:00:00:00:10:01",
+      "hostname": "client-1",
+      "ip": "192.0.2.21",
+      "is_wired": true,
+      "sw_mac": "02:00:00:00:00:a1",
+      "sw_port": 5,
+      "uptime": 86400,
+      "last_seen": 1791818864
+    },
+    {
+      "site_id": "000000000000000000000001",
+      "mac": "02:00:00:00:10:02",
+      "hostname": "client-2",
+      "ip": "192.0.2.22",
+      "is_wired": false,
+      "ap_mac": "02:00:00:00:00:b1",
+      "essid": "rete-di-prova",
+      "sw_mac": "02:00:00:00:00:a1",
+      "sw_port": 7,
+      "uptime": 3600,
+      "last_seen": 1791818870
+    },
+    {
+      "site_id": "000000000000000000000001",
+      "mac": "02:00:00:00:10:03",
+      "hostname": "client-3",
+      "ip": "192.0.2.23",
+      "is_wired": true,
+      "uptime": 7200,
+      "last_seen": 1791818880
+    },
+    {
+      "site_id": "000000000000000000000001",
+      "hostname": "client-4",
+      "ip": "192.0.2.24",
+      "is_wired": true,
+      "uptime": 60,
+      "last_seen": 1791818890
+    }
+  ]
+}

@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
@@ -17,7 +18,7 @@ export function ScanProgress({ progress, onClose }: ScanProgressProps) {
   const isFinished = progress.status === "completed" || progress.status === "failed";
 
   useEffect(() => {
-    const start = new Date(progress.started_at).getTime();
+    const start = parseDbDate(progress.started_at).getTime();
     const timer = setInterval(() => {
       setElapsed(Math.floor((Date.now() - start) / 1000));
     }, 1000);

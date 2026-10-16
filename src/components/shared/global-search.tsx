@@ -62,20 +62,28 @@ export function GlobalSearch() {
       setResults({ hosts: [], networks: [] });
       return;
     }
+    // Un tasto nuovo annulla anche la richiesta già partita (UI-6): una risposta
+    // lenta per «19» non deve sostituire quella per «192.168».
+    const ac = new AbortController();
     const timer = setTimeout(() => {
       // Guard r.ok + shape (fix UI#2 2026-06-23): GlobalSearch vive nell'app-shell;
       // su 401/500 un body {error} rendeva results.hosts/networks undefined →
       // "undefined is not iterable" in flatResults → CRASH di ogni pagina. Niente
       // .catch può salvarlo (è 200/4xx con shape sbagliata, non un reject).
-      fetch(`/api/search?q=${encodeURIComponent(query)}`)
+      fetch(`/api/search?q=${encodeURIComponent(query)}`, { signal: ac.signal })
         .then(async (r) => (r.ok ? r.json() : null))
         .then((d) => setResults({
           hosts: Array.isArray(d?.hosts) ? d.hosts : [],
           networks: Array.isArray(d?.networks) ? d.networks : [],
         }))
-        .catch(() => setResults({ hosts: [], networks: [] }));
+        .catch(() => {
+          if (!ac.signal.aborted) setResults({ hosts: [], networks: [] });
+        });
     }, 300);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      ac.abort();
+    };
   }, [query]);
 
   // Click outside to close

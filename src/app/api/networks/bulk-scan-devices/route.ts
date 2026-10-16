@@ -9,6 +9,9 @@ import { isIpInCidr, normalizePortNameForMatch } from "@/lib/utils";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { networkDeviceUsesArpPoll } from "@/lib/network-device-arp";
+import { letturaAccesa, senzaCampiCavi } from "@/lib/topology/letture/interruttori";
+import { apriSessioneSnmp, versioneApparato } from "@/lib/protocols/snmp-sessione";
+import { walkConSessioneSua, type SessioneWalk } from "@/lib/devices/snmp-walk";
 
 /**
  * Esegue la query (ARP/MAC/porte) sui router delle reti selezionate.
@@ -71,7 +74,8 @@ export async function POST(request: Request) {
           if (client.getNeighbors) {
             try {
               const neighbors = await client.getNeighbors();
-              if (neighbors.length > 0) upsertNeighbors(deviceId, neighbors);
+              // T2 (spec §13.5.2, MK1): discovered-by e capacità solo con la lettura dei MikroTik accesa (I33), come nel giro.
+              if (neighbors.length > 0) upsertNeighbors(deviceId, letturaAccesa("mikrotik") ? neighbors : neighbors.map(senzaCampiCavi));
             } catch { /* neighbor discovery opzionale */ }
           }
 
@@ -153,18 +157,20 @@ export async function POST(request: Request) {
             upsertSwitchPorts(deviceId, switchPorts);
           }
 
-          // STP info via SNMP (se disponibile)
+          // STP info via SNMP (se disponibile): credenziale e porta dal motore (tappa 2 credenziali, T8), v3 compresa.
           try {
-            const { getDeviceCommunityString } = await import("@/lib/db");
-            const community = getDeviceCommunityString(device);
-            if (community) {
+            const { credenzialeSnmpApparato } = await import("@/lib/db");
+            const scelta = credenzialeSnmpApparato(device);
+            if (scelta.ok) {
               const { getSnmpStpInfo } = await import("@/lib/devices/snmp-stp-info");
               const snmpMod = await import("net-snmp");
-              const session = snmpMod.createSession(device.host, community, { port: 161, timeout: 8000 });
-              const snmpWalk = (oid: string) => new Promise<{ oid: string; value: Buffer | string | number }[]>((resolve, reject) => {
-                const results: { oid: string; value: Buffer | string | number }[] = [];
-                session.subtree(oid, (vbs: Array<{ oid: string; value: Buffer | string | number }>) => { for (const vb of vbs) results.push({ oid: vb.oid, value: vb.value }); }, (err: Error | undefined) => { session.close(); if (err) reject(err); else resolve(results); });
-              });
+              // SN1 (spec topologia §13.5.4): una sessione per lettura (la sessione unica chiusa dal primo walk annullava gli
+              // altri). NULL = v1, come prima (createSession senza version).
+              const snmpWalk = walkConSessioneSua(() => {
+                const aperta = apriSessioneSnmp(snmpMod, device.host, scelta.cred, { port: scelta.port, timeout: 8000, versione: versioneApparato(device, "1") });
+                if (!aperta.ok) throw new Error(aperta.motivo);
+                return aperta.session as unknown as SessioneWalk;
+              }, 10_000);
               const stpInfo = await getSnmpStpInfo(snmpWalk);
               if (stpInfo) {
                 updateNetworkDevice(deviceId, { stp_info: JSON.stringify(stpInfo) });
@@ -182,7 +188,7 @@ export async function POST(request: Request) {
             vlan: e.vlan,
             port_status: e.port_status,
             speed: e.speed,
-          })));
+          })), "device");
           const portInfos = await client.getPortSchema();
           if (portInfos.length > 0) {
             const macsByPort = new Map<string, { macs: string[]; vlan: number | null }>();

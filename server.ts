@@ -1,10 +1,10 @@
 import { createServer } from "http";
 import { createServer as createSecureServer } from "https";
 import { readFileSync } from "fs";
-import { join } from "path";
 import next from "next";
 import { ensureEnvSecrets, assertContainerSecretsConfigured } from "./src/lib/env-secrets";
 import { logEncryptionKeyHealthAtBoot } from "./src/lib/encryption-key-health";
+import { attachSshTerminalWs } from "./src/lib/ssh-terminal/ws-handler";
 
 // ── Segreti: container = compose .env host; systemd = .env.local (install.sh) ──
 assertContainerSecretsConfigured();
@@ -36,9 +36,11 @@ app.prepare().then(() => {
         cert: readFileSync(tlsCert),
         key: readFileSync(tlsKey),
       };
-      createSecureServer(options, (req, res) => {
+      const httpsServer = createSecureServer(options, (req, res) => {
         handle(req, res);
-      }).listen(port, hostname, () => {
+      });
+      attachSshTerminalWs(httpsServer); // terminale SSH web (/ws/ssh)
+      httpsServer.listen(port, hostname, () => {
         console.log(`> DA-INVENT ready on https://localhost:${port}`);
         initCron();
       });
@@ -65,9 +67,11 @@ app.prepare().then(() => {
   }
 
   function startHttp() {
-    createServer((req, res) => {
+    const httpServer = createServer((req, res) => {
       handle(req, res);
-    }).listen(port, hostname, () => {
+    });
+    attachSshTerminalWs(httpServer); // terminale SSH web (/ws/ssh)
+    httpServer.listen(port, hostname, () => {
       console.log(`> DA-INVENT ready on http://0.0.0.0:${port} (anche http://localhost:${port})`);
       initCron();
     });
@@ -76,12 +80,21 @@ app.prepare().then(() => {
   function initCron() {
     // Boot migration prima dello scheduler: garantisce che ogni tenant abbia
     // known_host_check sui propri network e nessun fast_scan rischioso schedulato.
-    // Vedi src/lib/cron/scheduler-defaults.ts e incident DTS 2026-05-25.
+    // Vedi src/lib/cron/scheduler-defaults.ts e incident cliente A 2026-05-25.
     import("./src/lib/cron/scheduler-defaults").then(({ applySchedulerBootMigration }) => {
       try { applySchedulerBootMigration(); }
       catch (e) { console.error("WARNING: scheduler boot migration failed:", e); }
     }).catch((error) => {
       console.error("WARNING: scheduler-defaults module load failed:", error);
+    });
+
+    // Segreti delle installazioni LibreNMS/Graylog fatte prima di T3-27: se
+    // manca la copia cifrata nell'hub, la legge dall'ambiente del container
+    // (sola lettura) e la salva. Non blocca l'avvio.
+    import("./src/lib/integrations/segreti-migrazione").then(({ migraSegretiInstallazioniAllAvvio }) =>
+      migraSegretiInstallazioniAllAvvio(),
+    ).catch((error) => {
+      console.error("WARNING: migrazione dei segreti delle installazioni fallita:", error);
     });
 
     import("./src/lib/cron/scheduler").then(({ initializeScheduler }) => {
@@ -98,6 +111,35 @@ app.prepare().then(() => {
       console.log("> Backup scheduler initialized");
     }).catch((error) => {
       console.error("WARNING: Backup scheduler init failed (backup nightly NON attivo):", error);
+    });
+
+    // Notifica salute appliance (disco/Docker) ogni 30 min, indipendente
+    // dalla UI: l'incident cliente A 2026-07-28 (disco 100%) è passato inosservato
+    // proprio perché nessuno aveva la dashboard aperta.
+    import("./src/lib/modules/appliance-health-notify").then(({ initializeApplianceHealthNotifier }) => {
+      initializeApplianceHealthNotifier();
+      console.log("> Appliance health notifier initialized");
+    }).catch((error) => {
+      console.error("WARNING: appliance health notifier init failed:", error);
+    });
+
+    // Allarme sulle sincronizzazioni ferme, ogni 30 min. Stesso motivo del
+    // precedente, incidente diverso: il 2026-09-02 tutti i job di un tenant
+    // hanno fallito per 4h40 senza che nessun canale lo dicesse.
+    import("./src/lib/health/scheduler-health-notify").then(({ initializeSchedulerHealthNotifier }) => {
+      initializeSchedulerHealthNotifier();
+      console.log("> Scheduler health notifier initialized");
+    }).catch((error) => {
+      console.error("WARNING: scheduler health notifier init failed:", error);
+    });
+
+    // Segnale di vita verso DA-Link (tappa C1 NetBird). Spento finché non esiste
+    // /etc/dalink/oggetto.env, scritto dal comando d'installazione di DA-Link:
+    // senza quel file nessun giro arriva alla rete.
+    import("./src/lib/dalink/segnale-job").then(({ avviaSegnaleDalink }) => {
+      avviaSegnaleDalink();
+    }).catch((error) => {
+      console.error("WARNING: segnale DA-Link non avviato:", error);
     });
   }
 });

@@ -4,6 +4,8 @@ import { isOnboardingCompleted } from "@/lib/db";
 
 interface AuthSession {
   user: {
+    /** id della riga in hub.users (lo mette la callback `session` di auth.config); "0" per l'utenza di servizio. */
+    id?: string | null;
     name?: string | null;
     email?: string | null;
     role?: string;

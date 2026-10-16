@@ -241,7 +241,7 @@ def _is_basic_unavailable(error_msg: str) -> bool:
 def _windows_winrm_config_hint() -> str:
     return (
         "\n\nComandi PowerShell (Admin) per abilitare WinRM sul Windows target:\n"
-        "  # Opzione A — Kerberos (consigliato, DA-INVENT esegue kinit automatico):\n"
+        "  # Opzione A — Kerberos (consigliato, DA-IPAM esegue kinit automatico):\n"
         "  winrm quickconfig -force\n"
         "  # Nessuna modifica necessaria: Kerberos è abilitato per default.\n"
         "  # Verifica: winrm get winrm/config/service/auth → Negotiate=true\n\n"
@@ -289,7 +289,7 @@ def main():
                     "error": (
                         "Modulo Python pywinrm assente: "
                         + str(e)
-                        + ". Sul server DA-INVENT: python3 -m venv ~/.da-invent-venv && "
+                        + ". Sul server DA-IPAM: python3 -m venv ~/.da-invent-venv && "
                         "~/.da-invent-venv/bin/pip install pywinrm requests-ntlm requests-credssp "
                         "oppure reinstalla con scripts/install.sh. Imposta WINRM_PYTHON se usi un altro interprete."
                     )
@@ -482,7 +482,7 @@ def main():
             error_code = "TCP_CLOSED"
             error_msg = (
                 "Connessione rifiutata: WinRM non in ascolto o firewall. Sul Windows: "
-                "winrm quickconfig; apri porta 5985 (HTTP) o 5986 (HTTPS) verso l'IP del server DA-INVENT."
+                "winrm quickconfig; apri porta 5985 (HTTP) o 5986 (HTTPS) verso l'IP del server DA-IPAM."
             )
         elif "timed out" in err_lower or "timeout" in err_lower:
             error_code = "TCP_TIMEOUT"

@@ -14,7 +14,7 @@
  * Submit: PUT /api/devices/[id]
  */
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -27,14 +27,27 @@ import { CardDescription } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { etichettaVersioneSnmp } from "@/lib/protocols/snmp-sessione";
 import { DeviceFormFields } from "@/components/shared/device-form-fields";
 import { DeviceCredentialsTable } from "@/components/shared/device-credentials-table";
 import { getClassificationLabel } from "@/lib/device-classifications";
 import { isProxmoxVeDevice } from "@/lib/devices/device-acquisition-resolve";
 import { applyProductProfileScanDefaults, type ProductProfileId } from "@/lib/device-product-profiles";
 import { networkDeviceUsesArpPoll } from "@/lib/network-device-arp";
+import { DeviceLocationField } from "@/components/topology/device-location-field";
 import { toast } from "sonner";
 import type { NetworkDevice } from "@/types";
+import { corpoModificaApparato, inviaConConferma, tendineDaApparato } from "@/app/(dashboard)/devices/modifica-in-blocco";
+import { avvisoPortaProtocollo, portaAlCambioProtocollo, type BindingPorta } from "@/lib/devices/porta-protocollo";
+import type { CredenzialeArchivio, ProtocolloApparato } from "@/lib/devices/proposta-apparato";
+
+/** «auto» = la sceglie la discovery (v2c, poi v1); «1»/«2c» = fissata a mano. */
+type SceltaVersioneSnmp = "auto" | "1" | "2c";
+
+function sceltaVersioneSnmp(device: NetworkDevice): SceltaVersioneSnmp {
+  return device.snmp_version_fissata === 1 && device.snmp_version ? device.snmp_version : "auto";
+}
 
 interface EditDeviceDialogProps {
   device: NetworkDevice;
@@ -47,26 +60,39 @@ export function EditDeviceDialog({ device, open, onOpenChange, onSaved }: EditDe
   const [editVendor, setEditVendor] = useState(device.vendor);
   const [editVendorSubtype, setEditVendorSubtype] = useState<string | null>(device.vendor_subtype ?? null);
   const [editProtocol, setEditProtocol] = useState(device.protocol);
-  const [editCredentialId, setEditCredentialId] = useState<string | null>(device.credential_id != null ? String(device.credential_id) : null);
-  const [editSnmpCredentialId, setEditSnmpCredentialId] = useState<string | null>(device.snmp_credential_id != null ? String(device.snmp_credential_id) : null);
+  // Le tendine partono dalla scelta del motore («Usata adesso»), non dalle colonne (T20).
+  const [editCredentialId, setEditCredentialId] = useState<string | null>(() => tendineDaApparato(device).credentialId);
+  const [editSnmpCredentialId, setEditSnmpCredentialId] = useState<string | null>(() => tendineDaApparato(device).snmpCredentialId);
   const [editScanTarget, setEditScanTarget] = useState<string | null>((device as { scan_target?: string | null }).scan_target ?? null);
   const [editProductProfile, setEditProductProfile] = useState<string | null>((device as { product_profile?: string | null }).product_profile ?? null);
   const [editClassification, setEditClassification] = useState<string>((device as { classification?: string | null }).classification ?? "");
   const [editUseForArpPoll, setEditUseForArpPoll] = useState<boolean>(() => networkDeviceUsesArpPoll(device));
+  const [editSnmpVersione, setEditSnmpVersione] = useState<SceltaVersioneSnmp>(() => sceltaVersioneSnmp(device));
+  // Porta controllata (16/10): cambiando protocollo segue il nuovo (prima restava quella vecchia: SSH sulla 161).
+  const [editPort, setEditPort] = useState<string>(device.port != null ? String(device.port) : "");
   const [editSaving, setEditSaving] = useState(false);
-  const [credentials, setCredentials] = useState<Array<{ id: number; name: string; credential_type: string }>>([]);
+  const saveLocation = useRef<() => Promise<string | null>>(async () => null);
+  const registerLocationSave = useCallback((f: () => Promise<string | null>) => {
+    saveLocation.current = f;
+  }, []);
+  const [credentials, setCredentials] = useState<CredenzialeArchivio[]>([]);
+  // I binding della tabella qui sotto: la porta SSH dell'apparato sta lì (binding sulla 2222), non nelle colonne.
+  const [binding, setBinding] = useState<BindingPorta[]>([]);
 
   // Re-syncronizza lo state quando cambia il device (es. dopo onSaved)
   useEffect(() => {
     setEditVendor(device.vendor);
     setEditVendorSubtype(device.vendor_subtype ?? null);
     setEditProtocol(device.protocol);
-    setEditCredentialId(device.credential_id != null ? String(device.credential_id) : null);
-    setEditSnmpCredentialId(device.snmp_credential_id != null ? String(device.snmp_credential_id) : null);
+    const tendine = tendineDaApparato(device);
+    setEditCredentialId(tendine.credentialId);
+    setEditSnmpCredentialId(tendine.snmpCredentialId);
     setEditScanTarget((device as { scan_target?: string | null }).scan_target ?? null);
     setEditProductProfile((device as { product_profile?: string | null }).product_profile ?? null);
     setEditClassification((device as { classification?: string | null }).classification ?? "");
     setEditUseForArpPoll(networkDeviceUsesArpPoll(device));
+    setEditSnmpVersione(sceltaVersioneSnmp(device));
+    setEditPort(device.port != null ? String(device.port) : "");
   }, [device]);
 
   // Carica credenziali quando il modale si apre
@@ -74,28 +100,71 @@ export function EditDeviceDialog({ device, open, onOpenChange, onSaved }: EditDe
     if (!open) return;
     fetch("/api/credentials", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : []))
-      .then((data: Array<{ id: number; name: string; credential_type: string }>) => {
+      .then((data: CredenzialeArchivio[]) => {
         if (Array.isArray(data)) setCredentials(data);
       })
       .catch(() => { /* modale funziona comunque */ });
   }, [open]);
+
+  /**
+   * Cambio di protocollo: la porta passa a quella del nuovo (binding, voce
+   * compatibile, o lo standard); verso SNMP resta (è la porta del ripiego SSH);
+   * tornando al protocollo salvato torna la porta salvata; Proxmox tiene la porta
+   * dell'API. Una porta scritta a mano dopo il cambio resta: la sovrascrive solo un altro cambio.
+   */
+  function cambiaProtocollo(
+    v: NetworkDevice["protocol"],
+    nuovo: { product_profile?: string | null; scan_target?: string | null } = {},
+  ) {
+    if (v === editProtocol) return;
+    setEditProtocol(v);
+    const proxmox = isProxmoxVeDevice({
+      vendor: editVendor,
+      protocol: v,
+      scan_target: nuovo.scan_target !== undefined ? nuovo.scan_target : editScanTarget,
+      product_profile: nuovo.product_profile !== undefined ? nuovo.product_profile : editProductProfile,
+      classification: editClassification || device.classification,
+    });
+    const attuale = Number(editPort);
+    setEditPort(String(portaAlCambioProtocollo({
+      protocollo: v as ProtocolloApparato,
+      credenziali: [editCredentialId, editSnmpCredentialId],
+      archivio: credentials,
+      binding,
+      proxmox,
+      portaAttuale: editPort.trim() !== "" && Number.isInteger(attuale) && attuale > 0 ? attuale : null,
+      salvata: { protocollo: device.protocol, porta: device.port },
+    })));
+  }
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setEditSaving(true);
     const form = e.currentTarget;
     const formData = new FormData(form);
-    const body: Record<string, unknown> = {
-      vendor: editVendor,
-      protocol: editProtocol,
-      vendor_subtype: editVendorSubtype || null,
-      credential_id: editCredentialId && editCredentialId !== "none" ? Number(editCredentialId) : null,
-      snmp_credential_id: editSnmpCredentialId && editSnmpCredentialId !== "none" ? Number(editSnmpCredentialId) : null,
-      scan_target: editScanTarget || null,
-    };
+    // Le credenziali partono solo se cambiate rispetto all'apparato (dalla 2e un null toglie i binding).
+    let body: Record<string, unknown>;
+    try {
+      body = corpoModificaApparato({ ...tendineDaApparato(device), porta: device.port }, {
+        campi: {
+          vendor: editVendor,
+          protocol: editProtocol,
+          vendor_subtype: editVendorSubtype || null,
+          scan_target: editScanTarget || null,
+        },
+        credentialId: editCredentialId,
+        snmpCredentialId: editSnmpCredentialId,
+        porta: editPort,
+      });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Credenziale o porta non valida");
+      setEditSaving(false);
+      return;
+    }
     if (editProductProfile) body.product_profile = editProductProfile;
     if (editClassification) body.classification = editClassification;
     body.use_for_arp_poll = editUseForArpPoll ? 1 : 0;
+    if (editSnmpVersione !== sceltaVersioneSnmp(device)) body.snmp_version_scelta = editSnmpVersione;
     formData.forEach((val, key) => {
       if (key === "password" || key === "community_string") {
         if (val && String(val).trim()) body[key] = val;
@@ -107,18 +176,33 @@ export function EditDeviceDialog({ device, open, onOpenChange, onSaved }: EditDe
     });
 
     try {
-      const res = await fetch(`/api/devices/${device.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
+      // «Nessuna» che toglie binding: il server chiede la conferma col numero (409), qui si dà e si rimanda tutto.
+      const esito = await inviaConConferma(
+        (corpo) =>
+          fetch(`/api/devices/${device.id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(corpo),
+          }),
+        body,
+        (domanda) => window.confirm(domanda),
+      );
+      if (!esito) return;
+      const { res, data } = esito;
       if (res.ok) {
-        const updated = await res.json() as NetworkDevice;
-        toast.success("Dispositivo aggiornato");
-        onOpenChange(false);
-        onSaved?.(updated);
+        const updated = data as unknown as NetworkDevice & { avvisi?: string[] };
+        for (const a of updated.avvisi ?? []) toast.warning(a);
+        const errLoc = await saveLocation.current();
+        if (errLoc) {
+          // L'apparato è salvato, la sede no: la finestra resta aperta con l'errore.
+          toast.error(errLoc);
+          onSaved?.(updated);
+        } else {
+          toast.success("Dispositivo aggiornato");
+          onOpenChange(false);
+          onSaved?.(updated);
+        }
       } else {
-        const data = await res.json();
         toast.error(data.error || "Errore nell'aggiornamento");
       }
     } catch {
@@ -136,6 +220,16 @@ export function EditDeviceDialog({ device, open, onOpenChange, onSaved }: EditDe
       product_profile: editProductProfile,
       classification: editClassification || device.classification,
     }) || device.device_type === "hypervisor";
+
+  const portaScritta = Number(editPort);
+  const avvisoPorta = editPort.trim() === "" ? null : avvisoPortaProtocollo({
+    vendor: editVendor,
+    protocol: editProtocol,
+    scan_target: editScanTarget,
+    product_profile: editProductProfile,
+    classification: editClassification || device.classification,
+    port: Number.isInteger(portaScritta) ? portaScritta : null,
+  });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -169,7 +263,7 @@ export function EditDeviceDialog({ device, open, onOpenChange, onSaved }: EditDe
                 {isHypervisorOrProxmox && (
                   <>
                     <p className="text-xs text-muted-foreground col-span-2 -mt-1">
-                      Scan Proxmox: su ogni IP si usano API (8006) e SSH (porta dispositivo); più nodi stesso /24 con virgole dopo il primo IP.
+                      Scan Proxmox: su ogni IP si usano API (la porta API qui sotto, di solito 8006) e SSH (porta della credenziale SSH, o 22); più nodi stesso /24 con virgole dopo il primo IP.
                     </p>
                     <div className="space-y-2 col-span-2">
                       <Label htmlFor="api_url">URL API Proxmox</Label>
@@ -208,7 +302,7 @@ export function EditDeviceDialog({ device, open, onOpenChange, onSaved }: EditDe
                 if (v !== "hp") setEditVendorSubtype(null);
               }}
               onVendorSubtypeChange={setEditVendorSubtype}
-              onProtocolChange={(v) => setEditProtocol(v as NetworkDevice["protocol"])}
+              onProtocolChange={(v) => cambiaProtocollo(v as NetworkDevice["protocol"])}
               onScanTargetChange={setEditScanTarget}
               onProductProfileChange={(v) => {
                 setEditProductProfile(v);
@@ -217,7 +311,9 @@ export function EditDeviceDialog({ device, open, onOpenChange, onSaved }: EditDe
                 const defaults = applyProductProfileScanDefaults(pid, editVendor, editClassification || null);
                 setEditVendorSubtype(defaults.vendor_subtype);
                 if (defaults.scan_target != null) setEditScanTarget(defaults.scan_target);
-                if (defaults.protocol) setEditProtocol(defaults.protocol);
+                if (defaults.protocol) {
+                  cambiaProtocollo(defaults.protocol, { product_profile: v, scan_target: defaults.scan_target ?? editScanTarget });
+                }
                 setEditUseForArpPoll(defaults.use_for_arp_poll === 1);
               }}
               useForArpPoll={editUseForArpPoll}
@@ -225,7 +321,51 @@ export function EditDeviceDialog({ device, open, onOpenChange, onSaved }: EditDe
               defaultUseForArpPoll={editClassification === "router" || editClassification === "firewall"}
             />
 
-            <DeviceCredentialsTable deviceId={device.id} />
+            <div className="space-y-1">
+              <Label className="text-xs" htmlFor="edit-device-port">
+                {isProxmoxVeDevice({ vendor: editVendor, protocol: editProtocol, scan_target: editScanTarget, product_profile: editProductProfile, classification: editClassification || device.classification })
+                  ? "Porta API"
+                  : "Porta"}
+              </Label>
+              <Input
+                id="edit-device-port"
+                type="number"
+                min={1}
+                max={65535}
+                value={editPort}
+                onChange={(e) => setEditPort(e.target.value)}
+                className="max-w-[12rem] font-mono"
+              />
+              {avvisoPorta && (
+                <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-800 dark:text-amber-200/90">
+                  {avvisoPorta}
+                </p>
+              )}
+            </div>
+
+            {editProtocol !== "snmp_v3" && (
+              <div className="space-y-1">
+                <Label className="text-xs">Versione SNMP</Label>
+                <Select value={editSnmpVersione} onValueChange={(v) => setEditSnmpVersione((v ?? "auto") as SceltaVersioneSnmp)}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="auto">
+                      {device.snmp_version && device.snmp_version_fissata !== 1
+                        ? `Automatica (rilevata: ${etichettaVersioneSnmp(device.snmp_version)})`
+                        : "Automatica (non ancora rilevata)"}
+                    </SelectItem>
+                    <SelectItem value="1">v1, fissata a mano</SelectItem>
+                    <SelectItem value="2c">v2c, fissata a mano</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            <DeviceLocationField deviceId={device.id} onReady={registerLocationSave} />
+
+            <DeviceCredentialsTable deviceId={device.id} onBindingsChange={setBinding} />
 
             <Button type="submit" className="w-full" disabled={editSaving}>
               {editSaving ? "Salvataggio..." : "Salva modifiche"}

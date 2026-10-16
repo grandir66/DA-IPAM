@@ -49,7 +49,8 @@ export function MeshCentralCard({
 }: {
   isAdmin: boolean;
   installed: boolean;
-  onInstall: () => Promise<void>;
+  /** Sync o async: ora apre un wizard (sync), prima lanciava una fetch. */
+  onInstall: () => void | Promise<void>;
   onUninstall: () => void;
   installBusy: boolean;
 }) {

@@ -1,13 +1,16 @@
 /**
  * Batch re-fingerprint di tutti gli host di una subnet.
  * Usa i dati già presenti in DB (nessuna scansione di rete).
- * Aggiorna detection_json e classification solo su host con classification_manual = 0.
+ * Aggiorna detection_json (dato di rilevazione) su host con classification_manual = 0.
+ * Fase 4 (ritiro legacy, 2026-07-28): non scrive più `classification` — un solo
+ * scrittore (attribution v2, vedi src/lib/attribution/). recomputeAttributionSafe
+ * rifonde l'host dai segnali appena aggiornati (incl. detection_json).
  */
 
 import { getTenantDb, getCurrentTenantCode, getHostsByNetwork } from "@/lib/db-tenant";
 import { getEnabledDeviceFingerprintRules } from "@/lib/db-hub";
 import { buildDeviceFingerprint } from "@/lib/scanner/device-fingerprint";
-import { getClassificationFromFingerprintSnapshot } from "@/lib/device-fingerprint-classification";
+import { recomputeAttributionSafe } from "@/lib/attribution/recompute";
 import type { Host } from "@/types";
 
 function db() {
@@ -78,7 +81,7 @@ export async function batchRefingerPrintAsync(networkId: number): Promise<BatchR
 
   const updateStmt = db().prepare(
     `UPDATE hosts
-     SET detection_json = ?, classification = ?, updated_at = datetime('now')
+     SET detection_json = ?, updated_at = datetime('now')
      WHERE id = ? AND classification_manual = 0`
   );
 
@@ -105,11 +108,13 @@ export async function batchRefingerPrintAsync(networkId: number): Promise<BatchR
         rules
       );
 
-      const classification =
-        getClassificationFromFingerprintSnapshot(snap) ?? host.classification ?? "unknown";
-
-      const changed = updateStmt.run(JSON.stringify(snap), classification, host.id);
-      if (changed.changes > 0) updated++;
+      const changed = updateStmt.run(JSON.stringify(snap), host.id);
+      if (changed.changes > 0) {
+        updated++;
+        // Attribution v2: detection_json appena aggiornato è un segnale per la
+        // fusione — rifonde l'host (nessun writer diretto di `classification` qui).
+        recomputeAttributionSafe(host.id, "scan");
+      }
     } catch {
       errors++;
     }

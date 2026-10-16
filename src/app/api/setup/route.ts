@@ -3,10 +3,19 @@ import bcrypt from "bcrypt";
 import { createUser, getUserCount, createTenant, createTenantDatabase, setUserTenantAccess } from "@/lib/db";
 import { SetupSchema } from "@/lib/validators";
 import { ensureEnvSecrets } from "@/lib/env-secrets";
+import { urlDaAuth } from "@/lib/daauth";
+import { impostaLivello } from "@/lib/dalink/stato";
 
 export async function GET() {
   const count = getUserCount();
-  return NextResponse.json({ needsSetup: count === 0 });
+  return NextResponse.json({
+    needsSetup: count === 0,
+    // Indirizzo del servizio di autenticazione Domarc, o "" se questa
+    // installazione non lo usa (è il caso delle appliance dei clienti). La
+    // pagina di accesso mostra il bottone solo se arriva valorizzato: la
+    // variabile vive sul server, e il browser non può leggerla da sé.
+    daauthUrl: urlDaAuth(),
+  });
 }
 
 export async function POST(request: Request) {
@@ -23,7 +32,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
     }
 
-    const { username, password, mode, codice_cliente, ragione_sociale } = parsed.data;
+    const { username, password, mode, codice_cliente, ragione_sociale, livello_uscita } = parsed.data;
     const passwordHash = await bcrypt.hash(password, 12);
 
     if (mode === "single") {
@@ -52,8 +61,18 @@ export async function POST(request: Request) {
       const user = createUser(username, passwordHash, "admin", tenant.id);
       setUserTenantAccess(user.id, tenant.id, "admin");
     } else {
-      // Multi-tenant (MSP): crea superadmin
+      // Superadmin non legato a un cliente. La pagina /setup non lo propone più
+      // (UI-17: un'installazione = un cliente), ma lo chiede ancora l'installer
+      // di Deploy-Appliance `core/ipam-installer.sh` con "mode":"multi". Si
+      // toglie quando quell'installer passa a "single" (piano di miglioramento,
+      // tappa 8): lo ricorda la prova in __tests__/setup-un-cliente.test.ts.
       createUser(username, passwordHash, "superadmin");
+    }
+
+    // Cosa esce verso Domarc (DA-Link, tappa C1): si registra solo se dichiarato, con
+    // chi l'ha scelto. Senza risposta resta «nessuna scelta» = solo stato.
+    if (livello_uscita) {
+      impostaLivello(livello_uscita, `setup: ${username}`);
     }
 
     // Allinea chiavi segrete (runtime → .env.local) prima di cifrare credenziali in UI

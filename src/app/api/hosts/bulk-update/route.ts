@@ -1,12 +1,9 @@
 import { NextResponse } from "next/server";
-import { updateHost, addHostCredential, getHostCredentials } from "@/lib/db";
+import { updateHost } from "@/lib/db";
+import { assegnaCredenzialeAgliHost, VoceNonValePerProtocollo } from "@/lib/credentials/lega-voce";
 import {
   bulkUpdateNetworkDeviceByHostId,
   bulkUpdateInventoryAssetByHostId,
-  addDeviceCredentialBinding,
-  getNetworkDeviceByIp,
-  getDeviceCredentialBindings,
-  getHostById,
 } from "@/lib/db-tenant";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
@@ -31,7 +28,7 @@ const BulkHostUpdateSchema = z.object({
   ip_assignment: z.enum(["dynamic", "static", "reserved", "unknown"]).optional(),
   // Credenziali da assegnare a tutti gli host selezionati
   credential_id: z.coerce.number().int().positive().optional().nullable(),
-  credential_protocol: z.enum(["ssh", "snmp", "winrm", "api"]).optional(),
+  credential_protocol: z.enum(["ssh", "snmp", "winrm", "api", "redfish", "onvif"]).optional(),
   credential_port: z.coerce.number().int().min(1).max(65535).optional(),
   // network_devices (applicati a quelli linkati via IP=hosts.ip)
   device_type: deviceTypeSchema.optional(),
@@ -89,8 +86,28 @@ export async function PATCH(request: Request) {
         );
       }
 
-      let updated = 0;
+      // Assegna la credenziale: riga host validata (scelta esplicita, deve
+      // comparire subito nella discovery) e binding sull'apparato con lo stesso
+      // IP. La voce deve valere per il protocollo scelto (T13, 16/10): prima un
+      // account AD finiva come riga host WinRM e il motore lo scartava in
+      // silenzio. assegnaCredenzialeAgliHost controlla una volta, prima di
+      // toccare qualunque host; qui il rifiuto diventa un 400.
       let credentialsAdded = 0;
+      let credentialsFailed = 0;
+      if (credential_id != null && credential_id > 0) {
+        const proto = credential_protocol ?? "ssh";
+        const port = credential_port ?? (proto === "snmp" ? 161 : proto === "winrm" ? 5985 : proto === "api" ? 443 : 22);
+        try {
+          const esito = assegnaCredenzialeAgliHost(host_ids, credential_id, proto, port);
+          credentialsAdded = esito.aggiunte;
+          credentialsFailed = esito.falliti.length;
+        } catch (err) {
+          if (err instanceof VoceNonValePerProtocollo) return NextResponse.json({ error: err.message }, { status: 400 });
+          throw err;
+        }
+      }
+
+      let updated = 0;
       let devicesUpdated = 0;
       let assetsUpdated = 0;
 
@@ -118,46 +135,6 @@ export async function PATCH(request: Request) {
           if (result) updated++;
         }
 
-        // Assegna credenziale: aggiunge a host_credentials (marcata validated=1 perché
-        // è una scelta utente esplicita, deve apparire subito nel discovery) e propaga
-        // a device_credential_bindings se l'host ha network_device linkato.
-        if (credential_id != null && credential_id > 0) {
-          const proto = credential_protocol ?? "ssh";
-          const port = credential_port ?? (proto === "snmp" ? 161 : proto === "winrm" ? 5985 : proto === "api" ? 443 : 22);
-          try {
-            const existing = getHostCredentials(id);
-            const alreadyBound = existing.some(
-              (hc) => hc.credential_id === credential_id && hc.protocol_type === proto,
-            );
-            if (!alreadyBound) {
-              addHostCredential(id, credential_id, proto, port, { validated: true });
-              credentialsAdded++;
-            }
-            // Propaga al device linkato (network_devices.host = hosts.ip)
-            const host = getHostById(id);
-            if (host) {
-              const device = getNetworkDeviceByIp(host.ip);
-              if (device && (proto === "ssh" || proto === "snmp" || proto === "winrm" || proto === "api")) {
-                const dcb = getDeviceCredentialBindings(device.id);
-                const dcbExists = dcb.some(
-                  (b) => b.credential_id === credential_id && b.protocol_type === proto && b.port === port,
-                );
-                if (!dcbExists) {
-                  addDeviceCredentialBinding({
-                    device_id: device.id,
-                    credential_id,
-                    protocol_type: proto,
-                    port,
-                    auto_detected: false,
-                  });
-                }
-              }
-            }
-          } catch {
-            // Host non trovato o errore DB — skip
-          }
-        }
-
         // Aggiorna network_devices linkati via IP (se ci sono campi device da aggiornare)
         if (Object.keys(ndUpdate).length > 0) {
           try {
@@ -180,6 +157,7 @@ export async function PATCH(request: Request) {
       const parts: string[] = [];
       if (updated > 0) parts.push(`${updated} host aggiornato${updated !== 1 ? "i" : ""}`);
       if (credentialsAdded > 0) parts.push(`${credentialsAdded} credenzial${credentialsAdded !== 1 ? "i" : "e"} assegnat${credentialsAdded !== 1 ? "e" : "a"}`);
+      if (credentialsFailed > 0) parts.push(`credenziale non assegnata a ${credentialsFailed} host per un errore`);
       if (devicesUpdated > 0) parts.push(`${devicesUpdated} device aggiornat${devicesUpdated !== 1 ? "i" : "o"}`);
       if (assetsUpdated > 0) parts.push(`${assetsUpdated} asset aggiornat${assetsUpdated !== 1 ? "i" : "o"}`);
       const message = parts.join(", ") || "Nessuna modifica";
@@ -188,6 +166,7 @@ export async function PATCH(request: Request) {
         success: true,
         updated,
         credentials_added: credentialsAdded,
+        credentials_failed: credentialsFailed,
         devices_updated: devicesUpdated,
         assets_updated: assetsUpdated,
         message,

@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
@@ -39,8 +40,8 @@ import { IpGrid } from "@/components/shared/ip-grid";
 import { ScanProgress } from "@/components/shared/scan-progress";
 import { SubnetScheduleCard } from "@/components/networks/subnet-schedule-card";
 import { SubnetEdgeScanPanel } from "@/components/networks/subnet-edge-scan-panel";
-import { ClassificationProposalDialog } from "@/components/networks/classification-proposal-dialog";
-import { ArrowLeft, Scan, Download, LayoutGrid, List, Pencil, RefreshCw, CheckCircle2, Cpu, ExternalLink, X, Plus, Server, Sparkles, Trash2, UserCheck, UserX, Key, PlusCircle, Loader2, Activity, Zap, Radar, Layers, Wifi, Tags } from "lucide-react";
+import { AttributionPreviewDialog } from "@/components/networks/attribution-preview-dialog";
+import { ArrowLeft, Scan, Download, LayoutGrid, List, Pencil, RefreshCw, CheckCircle2, Cpu, ExternalLink, X, Plus, Server, Sparkles, Trash2, UserCheck, UserX, Key, PlusCircle, Loader2, Activity, Radar, Layers, Tags } from "lucide-react";
 import { toast } from "sonner";
 import type { Network, Host, NetworkDevice, ScanProgress as ScanProgressType } from "@/types";
 import { cn, hostOpenPortsToFullLabel } from "@/lib/utils";
@@ -60,7 +61,9 @@ import { parseDetectedDeviceFromDetectionJson } from "@/lib/device-fingerprint-c
 import { NetworkCredentialsTable } from "@/components/shared/network-credentials-table";
 import { ProtocolBadges } from "@/components/shared/protocol-badges";
 import { AddableSelect } from "@/components/shared/addable-select";
-import { credTypeForProtocol, CRED_TYPE_OPTIONS } from "@/lib/credential-protocol-map";
+import { opzioniCreazioneRapida, tipiCredenzialePerProtocollo, tipoCreazioneRapida, vociSnmpAggiuntive } from "@/lib/credential-protocol-map";
+import { etichettaTipo } from "@/lib/credentials/tipi";
+import { profiloPerClassificazione, proponiApparato, riallineaAlProtocollo, type CredenzialeArchivio, type ProtocolloApparato } from "@/lib/devices/proposta-apparato";
 import { HostCredentialsDialog } from "@/components/shared/host-credentials-dialog";
 import {
   getDefaultNetworkDeviceVendorOptions,
@@ -81,7 +84,61 @@ type HostWithDevice = Host & {
   device?: { id: number; name: string; sysname: string | null; vendor: string; protocol: string };
   ad_dns_host_name?: string | null;
   multihomed?: { group_id: string; match_type: string; peers: Array<{ ip: string; network_name: string; host_id: number }> } | null;
+  /** 1 = classificazione bloccata da modifica manuale dell'utente, esclusa dalle proiezioni automatiche di Attribution v2. */
+  classification_manual?: number;
 };
+
+/** Contratto di GET /api/networks/[id]/scan-phases (Task 1, fase 3b). */
+interface ScanPhasesResponse {
+  naabuAvailable: boolean;
+  phases: Array<{
+    key: "initial" | "nmap_deep" | "snmp" | "enrich" | "credentials";
+    label: string;
+    adds: string;
+    last_run: string | null;
+    stale: boolean;
+  }>;
+  attribution: {
+    total: number;
+    level2: number;
+    level1: number;
+    none: number;
+    suggestion: string | null;
+  };
+}
+
+/** "network.access_point" → "Access Point" (ultimo segmento dello slug categoria, capitalizzato). */
+function attrCategoryLabel(slug: string): string {
+  const last = slug.includes(".") ? slug.slice(slug.lastIndexOf(".") + 1) : slug;
+  return last.split("_").filter(Boolean).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+}
+
+/** Formatta un ISO timestamp come "il DD/MM HH:mm" per la riga di stato fase. */
+function formatPhaseLastRun(iso: string): string {
+  const d = parseDbDate(iso);
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mi = String(d.getMinutes()).padStart(2, "0");
+  return `il ${dd}/${mm} ${hh}:${mi}`;
+}
+
+/** Riga di stato sotto ciascun pulsante fase (§6.2): "mai eseguita" / "il DD/MM HH:mm" [+ badge "obsoleta"]. */
+function PhaseStatusLine({ phase }: { phase: ScanPhasesResponse["phases"][number] | null }) {
+  if (!phase?.last_run) {
+    return <p className="text-[10px] text-muted-foreground leading-snug px-0.5">mai eseguita</p>;
+  }
+  return (
+    <p className="text-[10px] text-muted-foreground leading-snug px-0.5 flex items-center gap-1">
+      {formatPhaseLastRun(phase.last_run)}
+      {phase.stale && (
+        <Badge variant="outline" className="text-[9px] leading-none py-0 px-1 h-3.5">
+          obsoleta
+        </Badge>
+      )}
+    </p>
+  );
+}
 
 const REFRESH_INTERVALS = [
   { value: 0, label: "Off" },
@@ -96,12 +153,6 @@ interface NetworkDetailClientProps {
   initialHosts: (Host & { device_id?: number })[];
   routerId: number | null;
   routers: NetworkDevice[];
-  initialCredentialChains: {
-    windows: number[];
-    linux: number[];
-    ssh: number[];
-    snmp: number[];
-  };
   initialCredentialIds: number[];
   initialAvailableSources: Array<{ id: number; name: string; cidr: string; credential_count: number }>;
   initialHostValidatedProtocols: Record<number, string[]>;
@@ -112,7 +163,6 @@ export function NetworkDetailClient({
   initialHosts,
   routerId: initialRouterId,
   routers,
-  initialCredentialChains,
   initialCredentialIds,
   initialAvailableSources,
   initialHostValidatedProtocols,
@@ -130,6 +180,10 @@ export function NetworkDetailClient({
       if (scanIntervalRef.current) clearInterval(scanIntervalRef.current);
     };
   }, []);
+  // Stato fasi di scansione + completezza attribuzione (§6.2/6.3, fase 3b)
+  const [scanPhases, setScanPhases] = useState<ScanPhasesResponse | null>(null);
+  const [scanPhasesRefreshKey, setScanPhasesRefreshKey] = useState(0);
+  const [applyingAttribution, setApplyingAttribution] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [view, setView] = useState<"grid" | "list">("list");
@@ -150,13 +204,15 @@ export function NetworkDetailClient({
   const [editingHostId, setEditingHostId] = useState<number | null>(null);
   const [editingField, setEditingField] = useState<"custom_name" | "notes" | "classification" | null>(null);
   const [enriching, setEnriching] = useState(false);
-  const [classifyOpen, setClassifyOpen] = useState(false);
-  const [addDeviceCredentials, setAddDeviceCredentials] = useState<{ id: number; name: string; credential_type: string }[]>([]);
+  const [attributionPreviewOpen, setAttributionPreviewOpen] = useState(false);
+  const [addDeviceCredentials, setAddDeviceCredentials] = useState<{ id: number; name: string; credential_type: string; port?: number | null }[]>([]);
   const [selectedHostIds, setSelectedHostIds] = useState<Set<number>>(new Set());
   const [bulkAddOpen, setBulkAddOpen] = useState(false);
-  const [bulkAddClassification, setBulkAddClassification] = useState("server");
+  // Valori veri li mette apriAggiungiDispositivi dalla proposta sugli host scelti (tappa 1).
+  const [bulkAddClassification, setBulkAddClassification] = useState("");
   const [bulkAddProtocol, setBulkAddProtocol] = useState("ssh");
   const [bulkAddVendor, setBulkAddVendor] = useState("other");
+  const [bulkAddHostDiversi, setBulkAddHostDiversi] = useState(false);
   const [bulkAddCredentialId, setBulkAddCredentialId] = useState<string | null>(null);
   const [bulkAddSnmpCredentialId, setBulkAddSnmpCredentialId] = useState<string | null>(null);
   const [bulkAddVendorSubtype, setBulkAddVendorSubtype] = useState<string | null>(null);
@@ -169,11 +225,9 @@ export function NetworkDetailClient({
   const [bulkTestResult, setBulkTestResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [bulkTesting, setBulkTesting] = useState(false);
   const [bulkHostBusy, setBulkHostBusy] = useState(false);
-  const [credWindows, setCredWindows] = useState<number[]>(initialCredentialChains.windows);
-  const [credLinux, setCredLinux] = useState<number[]>(initialCredentialChains.linux);
-  const [credSsh, setCredSsh] = useState<number[]>(initialCredentialChains.ssh);
-  const [credSnmp, setCredSnmp] = useState<number[]>(initialCredentialChains.snmp);
-  // v2: lista unificata credenziali subnet
+  // Lista unica delle credenziali della rete. Le quattro catene vecchie non si
+  // leggono né si rimandano più (tappa 2 credenziali, T12): restano nel DB,
+  // congelate, fino alla 2d.
   const [networkCredentialIds, setNetworkCredentialIds] = useState<number[]>(initialCredentialIds);
   const [availableSources, setAvailableSources] = useState(initialAvailableSources);
   const [hostValidatedProtocols, setHostValidatedProtocols] = useState<Record<number, string[]>>(initialHostValidatedProtocols);
@@ -238,13 +292,6 @@ export function NetworkDetailClient({
   }
 
   useEffect(() => {
-    setCredWindows(initialCredentialChains.windows);
-    setCredLinux(initialCredentialChains.linux);
-    setCredSsh(initialCredentialChains.ssh);
-    setCredSnmp(initialCredentialChains.snmp);
-  }, [initialCredentialChains]);
-
-  useEffect(() => {
     setNetworkCredentialIds(initialCredentialIds);
   }, [initialCredentialIds]);
 
@@ -277,7 +324,7 @@ export function NetworkDetailClient({
     try {
       const r = await fetch("/api/credentials");
       if (r.ok) {
-        const data = (await r.json()) as { id: number; name: string; credential_type: string }[];
+        const data = (await r.json()) as { id: number; name: string; credential_type: string; port?: number | null }[];
         setAddDeviceCredentials(data);
       }
     } catch {
@@ -293,11 +340,6 @@ export function NetworkDetailClient({
         setHosts(data.hosts ?? []);
         setNetwork((n) => ({ ...n, ...data }));
         setRouterId(data.router_id ?? null);
-        if (Array.isArray(data.windows_credential_ids)) setCredWindows(data.windows_credential_ids);
-        if (Array.isArray(data.linux_credential_ids)) setCredLinux(data.linux_credential_ids);
-        if (Array.isArray(data.ssh_credential_ids)) setCredSsh(data.ssh_credential_ids);
-        if (Array.isArray(data.snmp_credential_ids)) setCredSnmp(data.snmp_credential_ids);
-        // v2
         if (Array.isArray(data.network_credentials)) {
           setNetworkCredentialIds(data.network_credentials.map((c: { credential_id: number }) => c.credential_id));
         }
@@ -307,6 +349,20 @@ export function NetworkDetailClient({
       }
     } catch { /* ignore */ }
   }, [network.id]);
+
+  // Stato fasi di scansione + completezza attribuzione (§6.3): al mount e dopo
+  // ogni scan completato (scanPhasesRefreshKey incrementato). Cleanup con
+  // AbortController per evitare setState su fetch pendenti allo unmount.
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(`/api/networks/${network.id}/scan-phases`, { signal: controller.signal })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("fetch failed"))))
+      .then((data: ScanPhasesResponse) => setScanPhases(data))
+      .catch((err) => {
+        if (err instanceof Error && err.name === "AbortError") return;
+      });
+    return () => controller.abort();
+  }, [network.id, scanPhasesRefreshKey]);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -454,8 +510,52 @@ export function NetworkDetailClient({
 
   const clearHostSelection = () => setSelectedHostIds(new Set());
 
+  const archivioCredenziali = (): CredenzialeArchivio[] =>
+    addDeviceCredentials.map((c) => ({ id: c.id, name: c.name, credential_type: c.credential_type, port: c.port ?? null }));
+
+  /**
+   * Apre «Aggiungi dispositivi» coi valori proposti dagli host scelti (tappa 1):
+   * prima partiva sempre da «server + Altro + UPS + SNMP v2». Se gli host
+   * danno proposte diverse, la classificazione resta da scegliere.
+   */
+  function apriAggiungiDispositivi() {
+    const archivio = archivioCredenziali();
+    const proposte = hosts.filter((h) => selectedHostIds.has(h.id)).map((h) => proponiApparato(h, archivio));
+    const prima = proposte[0];
+    const uguali = !!prima && proposte.every(
+      (p) => p.vendor === prima.vendor && p.protocol === prima.protocol && p.classification === prima.classification
+    );
+    setBulkAddVendor(prima?.vendor ?? "other");
+    setBulkAddVendorSubtype(null);
+    setBulkAddProtocol(prima?.protocol ?? "ssh");
+    setBulkAddClassification(uguali ? prima.classification : "");
+    setBulkAddProductProfile(uguali ? prima.productProfile : null);
+    setBulkAddScanTarget(prima?.scanTarget ?? null);
+    setBulkAddCredentialId(uguali ? prima.credentialId : null);
+    setBulkAddSnmpCredentialId(uguali ? prima.snmpCredentialId : null);
+    setBulkAddHostDiversi(proposte.length > 1 && !uguali);
+    setBulkTestResult(null);
+    setBulkAddOpen(true);
+  }
+
+  /** Cambio di protocollo: credenziale incompatibile azzerata, con SNMP la principale è la SNMP. */
+  function cambiaProtocolloAggiunta(v: string) {
+    const q = riallineaAlProtocollo(
+      {
+        name: "", vendor: bulkAddVendor, protocol: bulkAddProtocol as ProtocolloApparato,
+        classification: bulkAddClassification, productProfile: bulkAddProductProfile, scanTarget: bulkAddScanTarget,
+        port: 0, credentialId: bulkAddCredentialId, snmpCredentialId: bulkAddSnmpCredentialId, useForArpPoll: false,
+      },
+      v as ProtocolloApparato,
+      archivioCredenziali(),
+    );
+    setBulkAddProtocol(v);
+    setBulkAddCredentialId(q.credentialId);
+    setBulkAddSnmpCredentialId(q.snmpCredentialId);
+  }
+
   async function handleBulkAdd() {
-    if (selectedHostIds.size === 0) return;
+    if (selectedHostIds.size === 0 || !bulkAddClassification) return;
     const hasCred = bulkAddCredentialId && bulkAddCredentialId !== "none";
     const hasSnmpCred = bulkAddSnmpCredentialId && bulkAddSnmpCredentialId !== "none";
     setBulkAddSaving(true);
@@ -609,37 +709,22 @@ export function NetworkDetailClient({
       snmp_community: (form.elements.namedItem("snmp_community") as HTMLInputElement).value?.trim() || null,
       dns_server: (form.elements.namedItem("dns_server") as HTMLInputElement).value?.trim() || null,
       router_id: (form.elements.namedItem("router_id") as HTMLSelectElement).value ? Number((form.elements.namedItem("router_id") as HTMLSelectElement).value) : null,
-      windows_credential_ids: credWindows,
-      linux_credential_ids: credLinux,
-      ssh_credential_ids: credSsh,
-      snmp_credential_ids: credSnmp,
+      // Un PUT solo, con la lista: rete e credenziali si salvano insieme o per
+      // niente. Prima la lista partiva in una seconda richiesta che ingoiava
+      // gli errori, e le catene vecchie nascoste tornavano indietro col PUT.
+      credential_ids: networkCredentialIds,
     };
-    // Salva anche credenziali v2 (lista unificata) in parallelo
-    const saveV2 = fetch(`/api/networks/${network.id}/credentials`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ credential_ids: networkCredentialIds }),
-    }).catch(() => null);
     try {
-      const [res] = await Promise.all([
-        fetch(`/api/networks/${network.id}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        }),
-        saveV2,
-      ]);
+      const res = await fetch(`/api/networks/${network.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
       if (res.ok) {
         const updated = await res.json();
         setNetwork((n) => ({ ...n, ...updated }));
         setRouterId(updated.router_id ?? null);
-        if (Array.isArray(updated.windows_credential_ids)) setCredWindows(updated.windows_credential_ids);
-        if (Array.isArray(updated.linux_credential_ids)) setCredLinux(updated.linux_credential_ids);
-        if (Array.isArray(updated.ssh_credential_ids)) setCredSsh(updated.ssh_credential_ids);
-        if (Array.isArray(updated.snmp_credential_ids)) setCredSnmp(updated.snmp_credential_ids);
-        if (Array.isArray(updated.network_credentials)) {
-          setNetworkCredentialIds(updated.network_credentials.map((c: { credential_id: number }) => c.credential_id));
-        }
+        if (Array.isArray(updated.credential_ids)) setNetworkCredentialIds(updated.credential_ids);
         setEditOpen(false);
         toast.success("Rete aggiornata");
         router.refresh();
@@ -671,6 +756,7 @@ export function NetworkDetailClient({
     | "scan_icmp"
     | "scan_nmap_base"
     | "scan_snmp_verify"
+    | "scan_naabu"
     | "scan_full";
 
   const SCAN_LABELS: Record<ScanJobType, string> = {
@@ -684,6 +770,7 @@ export function NetworkDetailClient({
     scan_icmp: "ICMP",
     scan_nmap_base: "Nmap base",
     scan_snmp_verify: "SNMP verify",
+    scan_naabu: "Naabu",
     scan_full: "Scan completo",
   };
 
@@ -700,7 +787,9 @@ export function NetworkDetailClient({
       scanType === "scan_full" ||
       scanType === "scan_icmp" ||
       scanType === "scan_nmap_base" ||
-      scanType === "scan_snmp_verify";
+      scanType === "scan_snmp_verify" ||
+      scanType === "scan_naabu";
+    // credential_validate NON è qui di proposito: ogni tentativo è un logon fallito reale (allarmi MDR/XDR, lockout AD) → solo host selezionati.
     if (!noHostSelectionNeeded && selectedHostIds.size === 0) {
       toast.error("Seleziona uno o più host nella vista lista (azioni manuali solo sugli IP selezionati)");
       return { ok: false, lastProgress: null };
@@ -720,7 +809,11 @@ export function NetworkDetailClient({
     });
 
     if (!res.ok) {
-      toast.error("Errore nell'avvio della scansione");
+      // 409: sulla rete c'è già un giro in corso (T3-18); il server manda il messaggio pronto.
+      const errore = res.status === 409
+        ? await res.json().then((d: { error?: unknown }) => (typeof d.error === "string" ? d.error : null)).catch(() => null)
+        : null;
+      toast.error(errore ?? "Errore nell'avvio della scansione");
       return { ok: false, lastProgress: null };
     }
 
@@ -752,6 +845,7 @@ export function NetworkDetailClient({
                 if (refreshOnComplete) {
                   refreshHosts();
                   router.refresh();
+                  setScanPhasesRefreshKey((k) => k + 1);
                 }
                 resolve({
                   ok: progress.status === "completed",
@@ -781,6 +875,42 @@ export function NetworkDetailClient({
     await runScanJob(scanType);
   }
 
+  /**
+   * "Scansione iniziale" (§6.2, Blocco A): unico ingresso, percorso deciso
+   * client-side da naabuAvailable (letto da scan-phases). Mai chiedere
+   * all'utente quale percorso — naabu se disponibile, altrimenti ICMP → Nmap
+   * base in sequenza. Toast finale col percorso effettivo.
+   */
+  async function runInitialScan() {
+    if (!!scanning || enriching) return;
+    let naabuAvailable = scanPhases?.naabuAvailable ?? false;
+    if (!scanPhases) {
+      // scan-phases non ancora risolto (mount fetch in corso/fallito): un
+      // tentativo sincrono qui evita di sottostimare naabu col fallback
+      // ICMP+Nmap quando naabu è in realtà disponibile. Se fallisce, resta
+      // il fallback attuale (naabuAvailable = false).
+      try {
+        const res = await fetch(`/api/networks/${network.id}/scan-phases`);
+        if (res.ok) {
+          const data = (await res.json()) as ScanPhasesResponse;
+          naabuAvailable = data.naabuAvailable;
+          setScanPhases(data);
+        }
+      } catch {
+        /* fallback al percorso ICMP + Nmap sotto */
+      }
+    }
+    if (naabuAvailable) {
+      const { ok } = await runScanJob("scan_naabu");
+      if (ok) toast.success("Percorso: ICMP + Naabu");
+    } else {
+      const first = await runScanJob("scan_icmp");
+      if (!first.ok) return;
+      const second = await runScanJob("scan_nmap_base");
+      if (second.ok) toast.success("Percorso: ICMP + Nmap quick");
+    }
+  }
+
   // scan_enrich non passa per discoverNetwork: chiama l'endpoint dedicato che
   // esegue ARP + DHCP + DNS + AD relink. Con fresh_sync=true esegue prima un
   // sync LDAP fresco (più lento, ma utile se la cache AD è obsoleta).
@@ -797,6 +927,7 @@ export function NetworkDetailClient({
         toast.success(data.progress?.phase ?? "Enrich completato");
         await refreshHosts();
         router.refresh();
+        setScanPhasesRefreshKey((k) => k + 1);
       } else {
         toast.error(data.error || "Errore enrich");
       }
@@ -804,6 +935,32 @@ export function NetworkDetailClient({
       toast.error("Errore di rete");
     } finally {
       setEnriching(false);
+    }
+  }
+
+  /** Blocco B — "Applica diretto": ricalcola e applica l'attribuzione senza anteprima. */
+  async function applyAttributionDirect() {
+    if (applyingAttribution) return;
+    setApplyingAttribution(true);
+    try {
+      const res = await fetch("/api/attribution/recompute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ network_id: network.id }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error((data as { error?: string }).error || "Errore nel ricalcolo dell'attribuzione");
+        return;
+      }
+      toast.success((data as { message?: string }).message || "Attribuzione ricalcolata");
+      await refreshHosts();
+      router.refresh();
+      setScanPhasesRefreshKey((k) => k + 1);
+    } catch {
+      toast.error("Errore di rete");
+    } finally {
+      setApplyingAttribution(false);
     }
   }
 
@@ -840,6 +997,12 @@ export function NetworkDetailClient({
 
   const onlineCount = hosts.filter((h) => h.status === "online").length;
   const offlineCount = hosts.filter((h) => h.status === "offline").length;
+
+  // Stato delle fasi successive alla "Scansione iniziale" (§6.2 Blocco A)
+  const phaseNmapDeep = scanPhases?.phases.find((p) => p.key === "nmap_deep") ?? null;
+  const phaseSnmp = scanPhases?.phases.find((p) => p.key === "snmp") ?? null;
+  const phaseEnrich = scanPhases?.phases.find((p) => p.key === "enrich") ?? null;
+  const phaseCredentials = scanPhases?.phases.find((p) => p.key === "credentials") ?? null;
 
   return (
     <div className="space-y-3">
@@ -958,6 +1121,15 @@ export function NetworkDetailClient({
 
         {/* Toolbar a fasi: area principale in evidenza rispetto ad auto-refresh sotto */}
         <div className="space-y-2">
+          {/* Riga di completezza attribuzione (§6.3) — nessuna riga se scan-phases non ancora caricato */}
+          {scanPhases && (
+            <p className="text-xs text-muted-foreground px-1">
+              Attribuzione: {scanPhases.attribution.level2}/{scanPhases.attribution.total} a livello 2 · {scanPhases.attribution.level1} a livello 1 · {scanPhases.attribution.none} senza
+              {scanPhases.attribution.suggestion ? ` — ${scanPhases.attribution.suggestion}` : ""}
+              {" · "}
+              {scanPhases.phases.filter((p) => p.last_run).length}/{scanPhases.phases.length} fasi eseguite
+            </p>
+          )}
           <div className="rounded-xl border-2 border-primary/20 bg-card/95 shadow-md ring-1 ring-primary/10 p-3">
             <p className="text-xs font-semibold text-foreground mb-1.5 flex items-center gap-2">
               <span className="rounded bg-primary/15 text-primary px-1.5 py-0.5 text-[10px] uppercase tracking-wide">Azioni</span>
@@ -965,77 +1137,100 @@ export function NetworkDetailClient({
             </p>
             <div className="flex flex-wrap gap-2 items-stretch content-start">
 
-            {/* ─── SCAN — intera subnet ─────────────────────────────── */}
-            <div className={`${ACTION_PANEL} min-w-[min(100%,22rem)]`}>
-              <p className={ACTION_PANEL_TITLE}>Scan — intera subnet</p>
+            {/* ─── ACQUISIZIONE — intera subnet (§6.2 Blocco A) ────────── */}
+            <div className={`${ACTION_PANEL} min-w-[min(100%,26rem)]`}>
+              <p className={ACTION_PANEL_TITLE}>Acquisizione</p>
               <div className="flex flex-col gap-1.5 flex-1 justify-end">
-                <Button
-                  size="default"
-                  variant="default"
-                  className={cn("w-full", ACTION_BTN)}
-                  onClick={() => triggerScan("scan_full")}
-                  disabled={!!scanning || enriching}
-                  title="Scan completo: ICMP → Nmap base → SNMP verify → Enrich (ARP/DHCP/AD)"
-                >
-                  <Radar className="h-3.5 w-3.5 mr-1 shrink-0" />
-                  Scan completo
-                </Button>
-                <div className="flex flex-nowrap gap-1 overflow-x-auto pb-0.5">
+                <div className="flex flex-nowrap gap-1.5">
                   <Button
                     size="default"
-                    variant="outline"
-                    className={cn(ACTION_BTN, "bg-background/90")}
-                    onClick={() => triggerScan("scan_icmp")}
+                    variant="default"
+                    className={cn(ACTION_BTN, "flex-1")}
+                    onClick={() => void runInitialScan()}
                     disabled={!!scanning || enriching}
-                    title="1.1 — Solo ICMP sweep + second-pass TCP. Additivo, niente flip offline."
+                    title="Scoperta host attivi: Naabu se disponibile (Impostazioni → Scansione), altrimenti ICMP + Nmap quick. Percorso scelto automaticamente."
                   >
-                    <Zap className="h-3.5 w-3.5 mr-1 shrink-0" />
-                    ICMP
+                    {scanning ? (
+                      <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin shrink-0" />
+                    ) : (
+                      <Radar className="h-3.5 w-3.5 mr-1 shrink-0" />
+                    )}
+                    Scansione iniziale
                   </Button>
                   <Button
                     size="default"
                     variant="outline"
                     className={cn(ACTION_BTN, "bg-background/90")}
-                    onClick={() => triggerScan("scan_nmap_base")}
+                    onClick={() => triggerScan("scan_full")}
                     disabled={!!scanning || enriching}
-                    title="1.2 — Nmap quick TCP sugli host già online in DB"
+                    title="Esegue in sequenza tutte le fasi di acquisizione (ICMP/Naabu → Nmap -sV → SNMP → Enrich)"
                   >
-                    <Scan className="h-3.5 w-3.5 mr-1 shrink-0" />
-                    Nmap base
+                    Esegui tutte le fasi
                   </Button>
-                  <Button
-                    size="default"
-                    variant="outline"
-                    className={cn(ACTION_BTN, "bg-background/90")}
-                    onClick={() => triggerScan("scan_snmp_verify")}
-                    disabled={!!scanning || enriching}
-                    title="1.3 — SNMP sysObjectID probe (community subnet + public)"
-                  >
-                    <Cpu className="h-3.5 w-3.5 mr-1 shrink-0" />
-                    SNMP verify
-                  </Button>
-                  <Button
-                    size="default"
-                    variant="outline"
-                    className={cn(ACTION_BTN, "bg-background/90")}
-                    onClick={() => void triggerEnrich(false)}
-                    disabled={!!scanning || enriching}
-                    title="1.4 — ARP router + DHCP MikroTik + DNS + AD relink (cache)"
-                  >
-                    <Layers className="h-3.5 w-3.5 mr-1 shrink-0" />
-                    {enriching ? "Enrich…" : "Enrich"}
-                  </Button>
-                  <Button
-                    size="default"
-                    variant="outline"
-                    className={cn(ACTION_BTN, "bg-background/90")}
-                    onClick={() => void triggerEnrich(true)}
-                    disabled={!!scanning || enriching}
-                    title="1.4 + sync LDAP fresco dall'AD prima del relink (più lento, 10-60s)"
-                  >
-                    <Wifi className="h-3.5 w-3.5 mr-1 shrink-0" />
-                    Enrich + AD sync
-                  </Button>
+                </div>
+                <div className="flex flex-nowrap gap-2 overflow-x-auto pb-0.5">
+                  <div className="flex flex-col gap-0.5 min-w-[8rem]">
+                    <Button
+                      size="default"
+                      variant="outline"
+                      className={cn(ACTION_BTN, "bg-background/90 w-full")}
+                      onClick={() => triggerScan("scan_nmap_base")}
+                      disabled={!!scanning || enriching}
+                      title={phaseNmapDeep?.adds ?? "Nmap -sV: banner e versioni dei servizi, OS fingerprint approfondito"}
+                    >
+                      <Scan className="h-3.5 w-3.5 mr-1 shrink-0" />
+                      Porte approfondite
+                    </Button>
+                    <PhaseStatusLine phase={phaseNmapDeep} />
+                  </div>
+                  <div className="flex flex-col gap-0.5 min-w-[6rem]">
+                    <Button
+                      size="default"
+                      variant="outline"
+                      className={cn(ACTION_BTN, "bg-background/90 w-full")}
+                      onClick={() => triggerScan("scan_snmp_verify")}
+                      disabled={!!scanning || enriching}
+                      title={phaseSnmp?.adds ?? "SNMP → sysObjectID, LLDP: distingue AP da switch"}
+                    >
+                      <Cpu className="h-3.5 w-3.5 mr-1 shrink-0" />
+                      SNMP
+                    </Button>
+                    <PhaseStatusLine phase={phaseSnmp} />
+                  </div>
+                  <div className="flex flex-col gap-0.5 min-w-[7rem]">
+                    <Button
+                      size="default"
+                      variant="outline"
+                      className={cn(ACTION_BTN, "bg-background/90 w-full")}
+                      onClick={() => void triggerEnrich(true)}
+                      disabled={!!scanning || enriching}
+                      title={phaseEnrich?.adds ?? "ARP/DHCP/AD: hostname, MAC/vendor, collegamento a computer Active Directory"}
+                    >
+                      <Layers className="h-3.5 w-3.5 mr-1 shrink-0" />
+                      {enriching ? "Enrich…" : "Enrich"}
+                    </Button>
+                    <PhaseStatusLine phase={phaseEnrich} />
+                  </div>
+                  <div className="flex flex-col gap-0.5 min-w-[8rem]">
+                    <Button
+                      size="default"
+                      variant="outline"
+                      className={cn(ACTION_BTN, "bg-background/90 w-full")}
+                      onClick={() => triggerScan("credential_validate")}
+                      disabled={!!scanning || enriching || networkCredentialIds.length === 0 || selectedHostIds.size === 0}
+                      title={
+                        networkCredentialIds.length === 0
+                          ? "Configura credenziali nella modifica rete"
+                          : selectedHostIds.size === 0
+                            ? "Seleziona gli host nella vista lista: la validazione genera tentativi di login reali (allarmi MDR/XDR, rischio lockout AD)"
+                            : `Valida le credenziali sugli ${selectedHostIds.size} host selezionati`
+                      }
+                    >
+                      <Key className="h-3.5 w-3.5 mr-1 shrink-0" />
+                      Credenziali
+                    </Button>
+                    <PhaseStatusLine phase={phaseCredentials} />
+                  </div>
                 </div>
               </div>
             </div>
@@ -1080,49 +1275,34 @@ export function NetworkDetailClient({
               </div>
             </div>
 
-            {/* ─── CREDENZIALI — host selezionati ────────────────────── */}
-            <div className={ACTION_PANEL}>
-              <p className={ACTION_PANEL_TITLE}>Test credenziali</p>
-              <Button
-                size="default"
-                variant="default"
-                className={cn("w-full mt-auto", ACTION_BTN)}
-                onClick={() => triggerScan("credential_validate")}
-                disabled={!!scanning || networkCredentialIds.length === 0 || view !== "list" || selectedHostIds.size === 0}
-                title={networkCredentialIds.length === 0
-                  ? "Configura credenziali nella modifica rete"
-                  : "Verifica SSH/WinRM/SNMP della subnet sugli IP selezionati. Le credenziali validate vengono salvate sul host."}
-              >
-                <Key className="h-3.5 w-3.5 mr-1 shrink-0" />
-                Verifica SSH/WinRM
-              </Button>
-            </div>
-
-            {/* ─── CLASSIFICAZIONE ──────────────────────────────────── */}
-            <div className="rounded-lg border border-dashed border-border bg-muted/25 px-2.5 pt-1.5 pb-1.5 min-w-[min(100%,12rem)] flex-1 sm:flex-none flex flex-col">
+            {/* ─── ATTRIBUZIONE (§6.2 Blocco B) — Test credenziali assorbito nella fase Credenziali sopra ─── */}
+            <div className="rounded-lg border border-dashed border-border bg-muted/25 px-2.5 pt-1.5 pb-1.5 min-w-[min(100%,14rem)] flex-1 sm:flex-none flex flex-col">
               <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide leading-tight mb-1.5">
-                Classificazione
+                Attribuzione
               </p>
-              <div className="flex flex-nowrap gap-1.5 overflow-x-auto pb-0.5 items-center mt-auto">
+              <div className="flex flex-col gap-1.5 mt-auto">
                 <Button
                   size="default"
-                  variant="secondary"
-                  className={ACTION_BTN}
-                  onClick={() => setClassifyOpen(true)}
-                  disabled={!!scanning || enriching}
-                  title="Analizza proposte: mostra anteprima delle riclassificazioni e applica solo quelle scelte"
+                  variant="default"
+                  className={cn(ACTION_BTN, "w-full")}
+                  onClick={() => setAttributionPreviewOpen(true)}
+                  title="Anteprima: mostra i cambi di vendor/categoria/OS proposti dalle evidenze già salvate, prima di applicarli. Funziona anche durante uno scan."
                 >
-                  <Tags className="h-3.5 w-3.5 mr-1" />
-                  Analizza proposte
+                  <Tags className="h-3.5 w-3.5 mr-1 shrink-0" />
+                  Ricalcola attribuzione
                 </Button>
                 <Button
-                  variant="ghost"
-                  size="icon"
-                  className="size-8 shrink-0"
-                  onClick={() => refreshHosts()}
-                  title="Aggiorna elenco"
+                  size="default"
+                  variant="outline"
+                  className={cn(ACTION_BTN, "w-full")}
+                  onClick={() => void applyAttributionDirect()}
+                  disabled={applyingAttribution}
+                  title="Ricalcola e applica direttamente l'attribuzione su tutta la subnet, senza anteprima."
                 >
-                  <RefreshCw className="h-3.5 w-3.5" />
+                  {applyingAttribution ? (
+                    <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin shrink-0" />
+                  ) : null}
+                  Applica diretto
                 </Button>
               </div>
             </div>
@@ -1169,7 +1349,7 @@ export function NetworkDetailClient({
                       variant="default"
                       size="default"
                       className="font-medium"
-                      onClick={() => setBulkAddOpen(true)}
+                      onClick={apriAggiungiDispositivi}
                       disabled={selectedHostIds.size === 0 || bulkHostBusy}
                     >
                       <Plus className="h-4 w-4 mr-1.5 shrink-0" />
@@ -1332,31 +1512,42 @@ export function NetworkDetailClient({
               onProductProfileChange={setBulkAddProductProfile}
               credentialId={bulkAddCredentialId}
               snmpCredentialId={bulkAddSnmpCredentialId}
-              onClassificationChange={(v) => setBulkAddClassification(v)}
+              onClassificationChange={(v) => {
+                setBulkAddClassification(v);
+                if (v) setBulkAddProductProfile(profiloPerClassificazione(bulkAddVendor, v));
+              }}
+              creazioneInBlocco
               onVendorChange={(v) => {
                 setBulkAddVendor(v);
                 if (v !== "hp") setBulkAddVendorSubtype(null);
                 const nextP = coerceProtocolForVendor(v, bulkAddProtocol);
-                if (nextP !== bulkAddProtocol) setBulkAddProtocol(nextP);
+                if (nextP !== bulkAddProtocol) cambiaProtocolloAggiunta(nextP);
                 const nextS = coerceScanTargetForVendor(v, bulkAddScanTarget);
                 if (nextS !== bulkAddScanTarget) setBulkAddScanTarget(nextS);
               }}
               onVendorSubtypeChange={(v) => setBulkAddVendorSubtype(v)}
-              onProtocolChange={(v) => setBulkAddProtocol(v)}
+              onProtocolChange={(v) => { if (v !== bulkAddProtocol) cambiaProtocolloAggiunta(v); }}
               onScanTargetChange={(v) => setBulkAddScanTarget(v)}
               onCredentialIdChange={(v) => setBulkAddCredentialId(v)}
               onSnmpCredentialIdChange={(v) => setBulkAddSnmpCredentialId(v)}
               vendorOptions={bulkVendorOptions}
-              defaultClassification="server"
-              defaultVendor="other"
-              defaultProtocol="ssh"
+              defaultClassification=""
+              defaultVendor={bulkAddVendor}
+              defaultProtocol={bulkAddProtocol}
             />
+            {bulkAddHostDiversi && (
+              <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-800 dark:text-amber-200/90">
+                Gli host selezionati non sono dello stesso tipo: scegli classificazione, marca e protocollo validi per tutti.
+              </p>
+            )}
 
             {/* Credenziali: scelta esplicita + creazione inline ─ con badge eredità automatica */}
             {(() => {
-              const credMap = credTypeForProtocol(bulkAddProtocol);
-              const primaryOpts = addDeviceCredentials.filter((c) => c.credential_type !== "snmp");
-              const snmpOpts = addDeviceCredentials.filter((c) => c.credential_type === "snmp");
+              const tipiPrincipale = tipiCredenzialePerProtocollo(bulkAddProtocol);
+              const primaryOpts = addDeviceCredentials.filter((c) => tipiPrincipale.includes(c.credential_type));
+              const snmpOpts = vociSnmpAggiuntive(addDeviceCredentials);
+              // Con SNMP come protocollo la principale è già la SNMP: la seconda tendina non serve.
+              const protocolloSnmp = bulkAddProtocol === "snmp_v2" || bulkAddProtocol === "snmp_v3";
               const protos = new Set<string>();
               for (const hid of selectedHostIds) {
                 for (const p of (hostValidatedProtocols[hid] || [])) protos.add(p);
@@ -1373,23 +1564,24 @@ export function NetworkDetailClient({
                       <AddableSelect
                         value={bulkAddCredentialId && bulkAddCredentialId !== "none" ? Number(bulkAddCredentialId) : null}
                         onChange={(v) => setBulkAddCredentialId(v != null ? String(v) : null)}
-                        options={primaryOpts.map((c) => ({ id: c.id, label: c.name, extra: c.credential_type }))}
+                        options={primaryOpts.map((c) => ({ id: c.id, label: c.name, extra: etichettaTipo(c.credential_type) }))}
                         entityLabel="credenziale"
                         createApiUrl="/api/credentials"
                         extraFields={[
-                          { key: "credential_type", label: "Tipo", type: "select", required: true, defaultValue: credMap.primary, options: CRED_TYPE_OPTIONS },
+                          { key: "credential_type", label: "Tipo", type: "select", required: true, defaultValue: tipoCreazioneRapida(bulkAddProtocol), options: opzioniCreazioneRapida(bulkAddProtocol) },
                           { key: "username", label: "Username", placeholder: "admin" },
                           { key: "password", label: "Password / Community", type: "password", required: true },
                         ]}
                         onCreated={refreshCredentialsList}
                       />
                     </div>
+                    {!protocolloSnmp && (
                     <div className="space-y-1.5">
                       <Label className="text-xs">Credenziale SNMP (opzionale)</Label>
                       <AddableSelect
                         value={bulkAddSnmpCredentialId && bulkAddSnmpCredentialId !== "none" ? Number(bulkAddSnmpCredentialId) : null}
                         onChange={(v) => setBulkAddSnmpCredentialId(v != null ? String(v) : null)}
-                        options={snmpOpts.map((c) => ({ id: c.id, label: c.name }))}
+                        options={snmpOpts.map((c) => ({ id: c.id, label: c.name, extra: etichettaTipo(c.credential_type) }))}
                         entityLabel="credenziale SNMP"
                         createApiUrl="/api/credentials"
                         extraFields={[
@@ -1399,6 +1591,7 @@ export function NetworkDetailClient({
                         onCreated={refreshCredentialsList}
                       />
                     </div>
+                    )}
                   </div>
                   <div className="text-xs text-muted-foreground border-t border-border/60 pt-2">
                     {protos.size > 0 ? (
@@ -1445,13 +1638,17 @@ export function NetworkDetailClient({
                         product_profile: bulkAddProductProfile,
                         credential_id: bulkAddCredentialId && bulkAddCredentialId !== "none" ? Number(bulkAddCredentialId) : null,
                         snmp_credential_id: bulkAddSnmpCredentialId && bulkAddSnmpCredentialId !== "none" ? Number(bulkAddSnmpCredentialId) : null,
+                        // La stessa porta che userà la creazione: quella propria della credenziale, se c'è.
+                        port: addDeviceCredentials.find((c) => String(c.id) === bulkAddCredentialId)?.port ?? undefined,
                       }),
                     });
                     const data = await res.json();
+                    // Si prova sul primo host scelto: lo si dice, con più host l'esito non vale per tutti.
+                    const suChi = selectedHostIds.size > 1 ? `Provato su ${firstHost.ip} (il primo dei ${selectedHostIds.size} scelti)` : `Provato su ${firstHost.ip}`;
                     if (res.ok && data.success) {
-                      setBulkTestResult({ ok: true, message: data.message || `Connessione a ${firstHost.ip} riuscita` });
+                      setBulkTestResult({ ok: true, message: `${suChi}: ${data.message || "connessione riuscita"}` });
                     } else {
-                      setBulkTestResult({ ok: false, message: data.error || "Connessione fallita" });
+                      setBulkTestResult({ ok: false, message: `${suChi}: ${data.error || "connessione fallita"}` });
                     }
                   } catch {
                     setBulkTestResult({ ok: false, message: "Errore di rete" });
@@ -1464,10 +1661,13 @@ export function NetworkDetailClient({
               >
                 {bulkTesting ? "Test in corso..." : "Prova connessione"}
               </Button>
-              <Button onClick={handleBulkAdd} disabled={bulkAddSaving} className="flex-1">
+              <Button onClick={handleBulkAdd} disabled={bulkAddSaving || !bulkAddClassification} className="flex-1">
                 {bulkAddSaving ? "Aggiunta in corso..." : "Aggiungi dispositivi"}
               </Button>
             </div>
+            {!bulkAddClassification && (
+              <p className="text-right text-sm text-amber-800 dark:text-amber-200">Scegli la classificazione</p>
+            )}
           </div>
           </DialogScrollableArea>
         </DialogContent>
@@ -1572,8 +1772,14 @@ export function NetworkDetailClient({
                 <SortableTableHead columnId="name" sortColumn={listSortColumn} sortDirection={listSortDir} onSort={handleListSort}>
                   Nome
                 </SortableTableHead>
-                <SortableTableHead columnId="classification" sortColumn={listSortColumn} sortDirection={listSortDir} onSort={handleListSort}>
-                  Classificazione
+                <SortableTableHead
+                  columnId="classification"
+                  sortColumn={listSortColumn}
+                  sortDirection={listSortDir}
+                  onSort={handleListSort}
+                  title="Attribution v2: categoria/vendor/OS calcolati da evidenze multi-fonte (OUI, SNMP, AD, Wazuh, LLDP/CDP). Badge 'Manuale' = classificazione impostata a mano, esclusa dai ricalcoli automatici."
+                >
+                  Attribuzione
                 </SortableTableHead>
                 <TableHead title="Tipo dispositivo da fingerprint (porte, SNMP, banner)">Rilevato</TableHead>
                 <TableHead>Dispositivo</TableHead>
@@ -1625,8 +1831,8 @@ export function NetworkDetailClient({
                       <StatusBadge status={host.status} />
                       {host.last_seen && (
                         <div className="text-[10px] text-muted-foreground mt-0.5">
-                          {new Date(host.last_seen).toLocaleDateString("it-IT", { day: "2-digit", month: "short" })}{" "}
-                          {new Date(host.last_seen).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}
+                          {parseDbDate(host.last_seen).toLocaleDateString("it-IT", { day: "2-digit", month: "short" })}{" "}
+                          {parseDbDate(host.last_seen).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}
                         </div>
                       )}
                     </TableCell>
@@ -1690,7 +1896,7 @@ export function NetworkDetailClient({
                       )}
                     </TableCell>
                     <TableCell
-                      className="min-w-[140px] cursor-text"
+                      className="min-w-[160px] cursor-text text-xs"
                       onClick={(e) => { e.stopPropagation(); if (!(e.target as HTMLElement).closest("button, [role=combobox]")) { setEditingHostId(host.id); setEditingField("classification"); } }}
                     >
                       {editingHostId === host.id && editingField === "classification" ? (
@@ -1715,8 +1921,45 @@ export function NetworkDetailClient({
                             ))}
                           </SelectContent>
                         </Select>
+                      ) : (host as HostWithDevice).classification_manual === 1 ? (
+                        // Lock manuale: la proiezione automatica di Attribution v2 non tocca
+                        // classification/inferred_* per questo host (invariante sacro, persist.ts).
+                        // Mostriamo il valore impostato a mano + eventuale suggerimento v2 non applicato.
+                        <div className="flex flex-col gap-0.5 leading-tight">
+                          <div className="flex items-center gap-1 flex-wrap">
+                            <Badge variant="outline" className="text-[10px] py-0">Manuale</Badge>
+                            <Badge variant="outline">{host.classification ? getClassificationLabel(host.classification) : "—"}</Badge>
+                          </div>
+                          {host.attr_category ? (
+                            <span
+                              className="text-muted-foreground truncate max-w-[160px] block"
+                              title="Suggerimento Attribution v2 non applicato: classificazione bloccata manualmente"
+                            >
+                              v2: {attrCategoryLabel(host.attr_category)}
+                            </span>
+                          ) : null}
+                        </div>
+                      ) : host.attr_category ? (
+                        <div className="flex flex-col gap-0.5 leading-tight">
+                          <span
+                            className="font-medium text-foreground"
+                            title={`${host.attr_category}${host.attr_confidence_category != null ? ` (confidenza ${host.attr_confidence_category}%)` : ""}`}
+                          >
+                            {attrCategoryLabel(host.attr_category)}
+                            {host.attr_confidence_category != null && (
+                              <span className="text-muted-foreground font-normal ml-1">{host.attr_confidence_category}%</span>
+                            )}
+                          </span>
+                          {(host.attr_vendor_name || host.attr_vendor || host.attr_os_family) ? (
+                            <span className="text-muted-foreground truncate max-w-[160px] block">
+                              {[host.attr_vendor_name || host.attr_vendor, host.attr_os_family].filter(Boolean).join(" · ")}
+                            </span>
+                          ) : null}
+                        </div>
+                      ) : host.classification ? (
+                        <Badge variant="outline">{getClassificationLabel(host.classification)}</Badge>
                       ) : (
-                        <Badge variant="outline">{host.classification ? getClassificationLabel(host.classification) : "—"}</Badge>
+                        <span className="text-muted-foreground">—</span>
                       )}
                     </TableCell>
                     <TableCell className="text-sm max-w-[200px]">
@@ -1870,11 +2113,15 @@ export function NetworkDetailClient({
         />
       )}
 
-      <ClassificationProposalDialog
-        open={classifyOpen}
-        onOpenChange={setClassifyOpen}
+      <AttributionPreviewDialog
+        open={attributionPreviewOpen}
+        onOpenChange={setAttributionPreviewOpen}
         networkId={network.id}
-        onApplied={() => { void refreshHosts(); router.refresh(); }}
+        onApplied={() => {
+          void refreshHosts();
+          router.refresh();
+          setScanPhasesRefreshKey((k) => k + 1);
+        }}
       />
     </div>
   );

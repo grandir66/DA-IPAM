@@ -32,6 +32,9 @@ test("isRekeyColumn riconosce le colonne env-key", () => {
   }
 });
 
-test("rekeyColumns(credentials) = encrypted_username, encrypted_password", () => {
-  assert.deepEqual(rekeyColumns(db(), "credentials").sort(), ["encrypted_password", "encrypted_username"]);
+test("rekeyColumns(credentials): le sei colonne cifrate (SNMPv3 Fase 4b Task 2; chiave SSH e passphrase, tappa 2c)", () => {
+  assert.deepEqual(
+    rekeyColumns(db(), "credentials").sort(),
+    ["encrypted_auth_key", "encrypted_key_passphrase", "encrypted_password", "encrypted_priv_key", "encrypted_private_key", "encrypted_username"]
+  );
 });

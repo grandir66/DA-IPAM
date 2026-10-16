@@ -1,82 +1,75 @@
 import { NextResponse } from "next/server";
-import { getNetworkRouterId, updateNetworkDevice, getCredentialCommunityString } from "@/lib/db";
-import { encrypt } from "@/lib/crypto";
+import { z } from "zod";
+import { getDb } from "@/lib/db";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
+import { assegnaVociAiRouterDb, avvisoFalliti, RifiutoCredenziali, type SceltaVoci } from "@/lib/credentials/apparato-archivio";
+
+/** 0 o null = «Nessuna» (toglie i binding di quel protocollo), assente = non modificare. */
+const IdVoce = z.coerce.number().int().min(0, "Credenziale non valida").optional().nullable();
+
+const AssegnaSchema = z.object({
+  network_ids: z.array(z.coerce.number().int().positive()).min(1, "Seleziona almeno una rete"),
+  credential_id: IdVoce,
+  snmp_credential_id: IdVoce,
+  /** L'utente ha confermato la rimozione dei binding: senza, la risposta è 409 con la domanda. */
+  conferma_rimozione: z.boolean().optional(),
+});
 
 /**
  * Assegna credenziali (SSH e/o SNMP) ai router delle reti selezionate.
  * POST /api/networks/bulk-assign-credential
- * Body: { network_ids: number[], credential_id?: number | null, snmp_credential_id?: number | null }
+ * Body: { network_ids: number[], credential_id?: number | null, snmp_credential_id?: number | null, conferma_rimozione?: boolean }
  * Le credenziali devono essere scelte da quelle registrate.
- * credential_id = SSH (per ARP), snmp_credential_id = SNMP (per porte/LLDP/community).
+ * credential_id = accesso del router (SSH per l'ARP), snmp_credential_id = SNMP (porte, LLDP).
+ *
+ * Dalla 2e (tappa 2 credenziali, T20, 16/10) la voce va nei binding del
+ * router, in testa a quelli del suo protocollo (regola tipo ↔ protocollo:
+ * una SSH su un router SNMP diventa il suo login SSH), come la modifica in
+ * blocco degli apparati; null toglie i binding di quel protocollo, dopo la
+ * conferma. Prima si scrivevano le colonne del router (con la community
+ * cifrata), che la pagina non mostra e che dopo la 2g nessuno leggerebbe:
+ * «Credenziali assegnate a N router» senza effetto.
  */
 export async function POST(request: Request) {
   return withTenantFromSession(async () => {
     try {
       const adminCheck = await requireAdmin();
       if (isAuthError(adminCheck)) return adminCheck;
-    const body = await request.json();
-    const networkIds = Array.isArray(body.network_ids) ? body.network_ids.map(Number) : [];
-    const credentialId = body.credential_id != null ? Number(body.credential_id) : undefined;
-    const snmpCredentialId = body.snmp_credential_id != null ? Number(body.snmp_credential_id) : undefined;
-
-    if (networkIds.length === 0) {
-      return NextResponse.json({ error: "Seleziona almeno una rete" }, { status: 400 });
-    }
-
-    if (credentialId === undefined && snmpCredentialId === undefined) {
-      return NextResponse.json({ error: "Indica almeno una credenziale SSH o SNMP registrata" }, { status: 400 });
-    }
-
-    let communityString: string | undefined;
-    if (snmpCredentialId && snmpCredentialId > 0) {
-      communityString = getCredentialCommunityString(snmpCredentialId) ?? undefined;
-      if (!communityString) {
-        return NextResponse.json({ error: "Credenziale SNMP non valida: verifica che sia registrata con tipo SNMP e community string" }, { status: 400 });
+      const parsed = AssegnaSchema.safeParse(await request.json().catch(() => null));
+      if (!parsed.success) {
+        return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Dati non validi" }, { status: 400 });
       }
-    }
-
-    const updates: Record<string, unknown> = {};
-    if (credentialId !== undefined) {
-      updates.credential_id = credentialId === 0 ? null : credentialId;
-      if (updates.credential_id) {
-        updates.username = null;
-        updates.encrypted_password = null;
+      const { network_ids: networkIds, conferma_rimozione } = parsed.data;
+      const scelte: SceltaVoci = {};
+      for (const campo of ["credential_id", "snmp_credential_id"] as const) {
+        if (campo in parsed.data && parsed.data[campo] !== undefined) scelte[campo] = parsed.data[campo] || null;
       }
-    }
-    if (snmpCredentialId !== undefined) {
-      updates.snmp_credential_id = snmpCredentialId === 0 ? null : snmpCredentialId;
-    }
-    if (communityString !== undefined && communityString !== "") {
-      updates.community_string = encrypt(communityString);
-    } else if (body.snmp_credential_id === null || body.snmp_credential_id === 0) {
-      updates.community_string = null;
-    }
-
-    if (Object.keys(updates).length === 0) {
-      return NextResponse.json({ error: "Nessuna modifica da applicare" }, { status: 400 });
-    }
-
-    let updated = 0;
-    const routerIds = new Set<number>();
-
-    for (const networkId of networkIds) {
-      const routerId = getNetworkRouterId(networkId);
-      if (routerId && !routerIds.has(routerId)) {
-        routerIds.add(routerId);
-        const device = updateNetworkDevice(routerId, updates as Parameters<typeof updateNetworkDevice>[1]);
-        if (device) updated++;
+      if (Object.keys(scelte).length === 0) {
+        return NextResponse.json({ error: "Indica almeno una credenziale SSH o SNMP registrata" }, { status: 400 });
       }
-    }
 
-    return NextResponse.json({
-      success: true,
-      networks_processed: networkIds.length,
-      devices_updated: updated,
-      message: `Credenziali assegnate a ${updated} router`,
-    });
+      const esito = assegnaVociAiRouterDb(getDb(), networkIds, scelte, { conferma: conferma_rimozione === true });
+      const toccati = esito.router - new Set(esito.saltati.map((x) => x.device_id)).size;
+      const parti = [`Credenziali assegnate a ${toccati} router`];
+      if (esito.tolti > 0) parti.push(`${esito.tolti} binding tolti`);
+      if (esito.saltati.length > 0) {
+        parti.push(`non assegnate a ${esito.saltati.map((x) => `«${x.nome}»`).join(", ")}: ${esito.saltati[0].motivo}`);
+      }
+      const falliti = avvisoFalliti(esito.falliti);
+      if (falliti) parti.push(falliti);
+
+      return NextResponse.json({
+        success: true,
+        networks_processed: networkIds.length,
+        devices_updated: toccati,
+        credenziali: esito,
+        message: parti.join("; "),
+      });
     } catch (error) {
+      if (error instanceof RifiutoCredenziali) {
+        return NextResponse.json({ error: error.message, ...(error.conferma ? { conferma: error.conferma } : {}) }, { status: error.stato });
+      }
       console.error("Bulk assign credential error:", error);
       return NextResponse.json(
         { error: error instanceof Error ? error.message : "Errore nell'assegnazione" },

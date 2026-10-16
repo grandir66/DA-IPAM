@@ -6,6 +6,7 @@
  * manual-bind per gli unmatched, e link alla console MeshCentral.
  */
 import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Loader2, MonitorSmartphone, RefreshCw, ExternalLink, Settings } from "lucide-react";
 import Link from "next/link";
@@ -33,10 +34,11 @@ interface MeshNodeRow {
 }
 
 export default function RmmPage() {
+  const router = useRouter();
   const [cfg, setCfg] = useState<MeshConfigPublic | null>(null);
   const [nodes, setNodes] = useState<MeshNodeRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [launchBusy, setLaunchBusy] = useState<number | null>(null);
+  const [syncing, setSyncing] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -54,41 +56,39 @@ export default function RmmPage() {
     }
   }, []);
 
+  // Forza un mesh-sync ORA (il job automatico gira ogni 15 min): utile subito dopo
+  // aver installato un nuovo agente, senza aspettare il prossimo giro schedulato.
+  const syncNow = useCallback(async () => {
+    setSyncing(true);
+    try {
+      const r = await fetch("/api/integrations/meshcentral/nodes", { method: "POST" });
+      const data = (await r.json()) as {
+        ok?: boolean;
+        totalNodes?: number;
+        matched?: number;
+        unmatched?: number;
+        nodes?: MeshNodeRow[];
+        error?: string;
+      };
+      if (!r.ok || !data.ok) {
+        toast.error(data.error ?? "Sync MeshCentral fallito");
+        return;
+      }
+      setNodes(data.nodes ?? []);
+      toast.success(
+        `Sync completato: ${data.totalNodes ?? 0} nodi (${data.matched ?? 0} associati, ${data.unmatched ?? 0} da associare)`,
+      );
+    } catch {
+      toast.error("Sync MeshCentral fallito");
+    } finally {
+      setSyncing(false);
+    }
+  }, []);
+
   useEffect(() => {
     void load();
   }, [load]);
 
-  async function startRemote(hostId: number) {
-    if (launchBusy) return;
-    setLaunchBusy(hostId);
-    const win = window.open("", "_blank", "noopener,noreferrer");
-    try {
-      const r = await fetch(`/api/integrations/meshcentral/host/${hostId}/remote-session`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ viewmode: 11 }),
-      });
-      const data = (await r.json().catch(() => ({}))) as { url?: string };
-      if (!r.ok || !data.url) {
-        if (win) win.close();
-        toast.error("Avvio sessione remota fallito");
-        return;
-      }
-      if (win) {
-        win.opener = null;
-        win.location.href = data.url;
-      } else {
-        toast("Popup bloccato — apri manualmente", {
-          action: { label: "Apri", onClick: () => window.open(data.url, "_blank", "noopener,noreferrer") },
-        });
-      }
-    } catch {
-      if (win) win.close();
-      toast.error("Errore di rete");
-    } finally {
-      setLaunchBusy(null);
-    }
-  }
 
   const matched = nodes.filter((n) => n.host_id != null);
 
@@ -108,6 +108,10 @@ export default function RmmPage() {
           <Button variant="outline" size="sm" disabled={loading} onClick={() => void load()}>
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
           </Button>
+          <Button variant="default" size="sm" disabled={syncing} onClick={() => void syncNow()}>
+            {syncing ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <MonitorSmartphone className="h-4 w-4 mr-1" />}
+            Sincronizza ora
+          </Button>
           {cfg?.present && cfg.serverUrl && (
             <a href={cfg.serverUrl} target="_blank" rel="noopener noreferrer">
               <Button variant="outline" size="sm">
@@ -124,7 +128,7 @@ export default function RmmPage() {
             <p className="text-sm text-muted-foreground">
               Modulo MeshCentral non configurato per questo tenant.
             </p>
-            <Link href="/settings">
+            <Link href="/settings?tab=moduli#module-meshcentral">
               <Button variant="outline" size="sm">
                 <Settings className="h-4 w-4 mr-1" /> Vai a Impostazioni → Moduli
               </Button>
@@ -169,16 +173,16 @@ export default function RmmPage() {
                               </Badge>
                             </td>
                             <td className="p-2 text-right">
+                              {/* Sessione INCORPORATA in DA-IPAM (/rmm/[hostId]): niente
+                                  scheda esterna, niente console MeshCentral. Il launch-out
+                                  in nuova scheda resta disponibile da lì, per i casi in cui
+                                  serve una finestra a parte. */}
                               <Button
                                 size="sm"
-                                disabled={launchBusy === n.host_id || !online}
-                                onClick={() => n.host_id != null && void startRemote(n.host_id)}
+                                disabled={!online || n.host_id == null}
+                                onClick={() => n.host_id != null && router.push(`/rmm/${n.host_id}`)}
                               >
-                                {launchBusy === n.host_id ? (
-                                  <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
-                                ) : (
-                                  <MonitorSmartphone className="h-3.5 w-3.5 mr-1" />
-                                )}
+                                <MonitorSmartphone className="h-3.5 w-3.5 mr-1" />
                                 Controllo remoto
                               </Button>
                             </td>

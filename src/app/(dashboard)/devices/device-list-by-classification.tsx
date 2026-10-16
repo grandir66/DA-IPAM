@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
@@ -57,6 +58,13 @@ import {
   CREDENTIAL_SNMP_SECONDARY_SELECT_LABEL,
   getPrimaryCredentialLabels,
 } from "@/components/shared/credential-assignment-fields";
+import {
+  corpoHaModifiche,
+  corpoModificaApparato,
+  corpoModificaInBlocco,
+  inviaConConferma,
+  tendineDaApparato,
+} from "./modifica-in-blocco";
 import { DeviceCredentialsTable } from "@/components/shared/device-credentials-table";
 import {
   inferProductProfileFromLegacy,
@@ -64,8 +72,10 @@ import {
   vendorSubtypeFromProductProfile,
   type ProductProfileId,
 } from "@/lib/device-product-profiles";
-import type { NetworkDevice } from "@/types";
+import type { HostDetail, NetworkDevice } from "@/types";
 import { getDefaultNetworkDeviceVendorOptions } from "@/lib/network-device-vendor-options";
+import { proponiApparato, type CredenzialeArchivio, type PropostaApparato } from "@/lib/devices/proposta-apparato";
+import { fetchJson } from "@/lib/fetch-json";
 
 const BULK_PROTOCOL_SELECT_OPTIONS = [
   { value: "ssh", label: "SSH" },
@@ -110,6 +120,8 @@ interface Credential {
   id: number;
   name: string;
   credential_type: string;
+  /** Porta propria (tappa 1); null = standard del protocollo. */
+  port?: number | null;
 }
 
 interface DeviceListByClassificationProps {
@@ -136,12 +148,12 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editingDevice, setEditingDevice] = useState<DeviceOrHost | null>(null);
-  const [createVendor, setCreateVendor] = useState<string>(
-    effectiveClassification === "hypervisor" ? "proxmox" : effectiveClassification === "server" || effectiveClassification === "workstation" || effectiveClassification === "notebook" ? "windows" : effectiveClassification === "storage" ? "synology" : effectiveClassification === "router" ? "mikrotik" : effectiveClassification === "access_point" ? "ubiquiti" : effectiveClassification === "firewall" ? "stormshield" : effectiveClassification === "stampante" ? "hp" : "other"
-  );
-  const [createProtocol, setCreateProtocol] = useState<string>(
-    effectiveClassification === "hypervisor" ? "ssh" : effectiveClassification === "server" || effectiveClassification === "workstation" || effectiveClassification === "notebook" ? "winrm" : effectiveClassification === "storage" ? "ssh" : effectiveClassification === "access_point" || effectiveClassification === "firewall" ? "ssh" : effectiveClassification === "stampante" || effectiveClassification === "telecamera" || effectiveClassification === "voip" || effectiveClassification === "iot" ? "snmp_v2" : "ssh"
-  );
+  // Valori di partenza del «Nuovo …» senza host: dipendono solo dalla classificazione della pagina.
+  const vendorDiPartenza = effectiveClassification === "hypervisor" ? "proxmox" : effectiveClassification === "server" || effectiveClassification === "workstation" || effectiveClassification === "notebook" ? "windows" : effectiveClassification === "storage" ? "synology" : effectiveClassification === "router" ? "mikrotik" : effectiveClassification === "access_point" ? "ubiquiti" : effectiveClassification === "firewall" ? "stormshield" : effectiveClassification === "stampante" ? "hp" : "other";
+  const protocolloDiPartenza = effectiveClassification === "hypervisor" ? "ssh" : effectiveClassification === "server" || effectiveClassification === "workstation" || effectiveClassification === "notebook" ? "winrm" : effectiveClassification === "storage" ? "ssh" : effectiveClassification === "access_point" || effectiveClassification === "firewall" ? "ssh" : effectiveClassification === "stampante" || effectiveClassification === "telecamera" || effectiveClassification === "voip" || effectiveClassification === "iot" ? "snmp_v2" : "ssh";
+  const [createVendor, setCreateVendor] = useState<string>(vendorDiPartenza);
+  const [createProtocol, setCreateProtocol] = useState<string>(protocolloDiPartenza);
+  const [createPort, setCreatePort] = useState<number | null>(null);
   const [createCredentialId, setCreateCredentialId] = useState<string | null>(null);
   const [createSnmpCredentialId, setCreateSnmpCredentialId] = useState<string | null>(null);
   const [createVendorSubtype, setCreateVendorSubtype] = useState<string | null>(null);
@@ -200,8 +212,11 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
     if (editingDevice) {
       setEditVendor(editingDevice.vendor ?? "other");
       setEditProtocol("protocol" in editingDevice ? editingDevice.protocol : "ssh");
-      setEditCredentialId("credential_id" in editingDevice && editingDevice.credential_id ? String(editingDevice.credential_id) : null);
-      setEditSnmpCredentialId("snmp_credential_id" in editingDevice && (editingDevice as NetworkDevice).snmp_credential_id ? String((editingDevice as NetworkDevice).snmp_credential_id) : null);
+      // Lo stesso stato iniziale di handleUpdate: dalla scelta del motore, non
+      // dalle colonne (T20). Una riga della lista non la porta: tendine vuote.
+      const tendine = tendineDaApparato(editingDevice);
+      setEditCredentialId(tendine.credentialId);
+      setEditSnmpCredentialId(tendine.snmpCredentialId);
       setEditVendorSubtype("vendor_subtype" in editingDevice ? editingDevice.vendor_subtype ?? null : null);
       setEditScanTarget((editingDevice as { scan_target?: string | null }).scan_target ?? null);
       setEditClassification((editingDevice as { classification?: string | null }).classification ?? effectiveClassification);
@@ -269,34 +284,44 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
       if (key.startsWith("device-")) deviceIds.push(Number(key.replace("device-", "")));
       else if (key.startsWith("host-")) hostIds.push(Number(key.replace("host-", "")));
     }
-    const body: Record<string, unknown> = {};
-    if (deviceIds.length) body.device_ids = deviceIds;
-    if (hostIds.length) body.host_ids = hostIds;
-    if (bulkClassification) body.classification = bulkClassification;
-    if (bulkProtocol) body.protocol = bulkProtocol;
-    if (bulkVendor) body.vendor = bulkVendor;
-    if (deviceIds.length) {
-      if (bulkCredentialId === "none" || bulkCredentialId === null) body.credential_id = null;
-      else if (bulkCredentialId) body.credential_id = Number(bulkCredentialId);
-      if (bulkSnmpCredentialId === "none" || bulkSnmpCredentialId === null) body.snmp_credential_id = null;
-      else if (bulkSnmpCredentialId) body.snmp_credential_id = Number(bulkSnmpCredentialId);
+    // «Non modificare» = campo assente: prima le tendine vuote partivano come
+    // null e il PATCH azzerava le credenziali di ogni apparato selezionato.
+    let body: Record<string, unknown>;
+    try {
+      body = corpoModificaInBlocco({
+        deviceIds,
+        hostIds,
+        classification: bulkClassification,
+        protocol: bulkProtocol,
+        vendor: bulkVendor,
+        credentialId: bulkCredentialId,
+        snmpCredentialId: bulkSnmpCredentialId,
+      });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Credenziale non valida");
+      return;
     }
 
-    const hasUpdate = bulkClassification || bulkProtocol || bulkVendor || bulkCredentialId || bulkSnmpCredentialId;
-    if (!hasUpdate) {
+    if (!corpoHaModifiche(body)) {
       toast.error("Seleziona almeno un campo da aggiornare");
       return;
     }
     setBulkUpdating(true);
     try {
-      const res = await fetch("/api/devices/bulk", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json();
+      const invia = (corpo: Record<string, unknown>) =>
+        fetch("/api/devices/bulk", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(corpo),
+        });
+      // «Nessuna» toglie binding (T20): il server chiede la conferma col numero, niente è scritto finché non arriva.
+      const esito = await inviaConConferma(invia, body, (domanda) => window.confirm(domanda));
+      if (!esito) return;
+      const { res, data } = esito;
       if (res.ok) {
-        toast.success(data.message);
+        // Apparati saltati (la voce non vale) o voce rimasta fallita (D10): si dice, non passa come un successo pieno.
+        if (data.credenziali?.saltati?.length || data.credenziali?.falliti?.length) toast.warning(data.message);
+        else toast.success(data.message);
         setBulkDialogOpen(false);
         setSelectedIds(new Set());
         fetchDevices();
@@ -318,24 +343,36 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
   async function handleBulkAddFromHosts() {
     if (selectedHostItems.length === 0) return;
     setBulkAddingFromHosts(true);
-    const vendor = effectiveClassification === "stampante" ? "hp" : effectiveClassification === "telecamera" || effectiveClassification === "voip" || effectiveClassification === "iot" ? "other" : effectiveClassification === "storage" ? "synology" : effectiveClassification === "server" || effectiveClassification === "workstation" || effectiveClassification === "notebook" ? "windows" : "other";
-    const protocol = effectiveClassification === "stampante" || effectiveClassification === "telecamera" || effectiveClassification === "voip" || effectiveClassification === "iot" ? "snmp_v2" : effectiveClassification === "storage" ? "ssh" : effectiveClassification === "server" || effectiveClassification === "workstation" || effectiveClassification === "notebook" ? "winrm" : "ssh";
-    const port = protocol === "winrm" ? 5985 : protocol?.startsWith("snmp") ? 161 : 22;
+    // Tipo dispositivo dalla classificazione della pagina (prima «switch» per tutto).
+    const deviceTypeDaPagina =
+      ["router", "switch", "firewall", "access_point", "hypervisor"].includes(effectiveClassification)
+        ? effectiveClassification
+        : effectiveClassification === "storage" || effectiveClassification === "nas" ? "nas" : "server";
     let ok = 0;
     let fail = 0;
     for (const host of selectedHostItems) {
       try {
+        // Proposta per host (tappa 1): piattaforma dal suo SO, credenziale validata e porta.
+        const p = await propostaPerHost(host.host_id);
+        if (!p) {
+          fail++;
+          continue;
+        }
         const res = await fetch("/api/devices", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             name: host.name,
             host: host.host,
-            device_type: "switch",
+            device_type: deviceTypeDaPagina,
             classification: effectiveClassification,
-            vendor,
-            protocol,
-            port,
+            vendor: p.vendor,
+            protocol: p.protocol,
+            port: p.port,
+            product_profile: p.productProfile || undefined,
+            scan_target: p.scanTarget || undefined,
+            credential_id: p.credentialId ? Number(p.credentialId) : undefined,
+            snmp_credential_id: p.snmpCredentialId ? Number(p.snmpCredentialId) : undefined,
           }),
         });
         if (res.ok) ok++;
@@ -566,7 +603,7 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
         setEditingDevice(updated);
         setEditVendor("proxmox");
         setEditProtocol("ssh");
-        setEditCredentialId(updated.credential_id != null ? String(updated.credential_id) : null);
+        setEditCredentialId(tendineDaApparato(updated).credentialId);
         setEditDialogOpen(true);
       } else {
         const data = await res.json();
@@ -616,9 +653,57 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
     }
 
     toast.success("Dispositivo aggiunto");
+    const creato = (await res.json().catch(() => ({}))) as { avvisi?: string[] };
+    for (const a of creato.avvisi ?? []) toast.warning(a);
     setDialogOpen(false);
-    setHostToAdd(null);
+    azzeraNuovo();
     fetchDevices();
+  }
+
+  /**
+   * Stato del «Nuovo …» azzerato alla chiusura (tappa 1): prima la credenziale
+   * e il profilo scelti per un host restavano proposti per il successivo.
+   */
+  function azzeraNuovo() {
+    setHostToAdd(null);
+    setCreateVendor(vendorDiPartenza);
+    setCreateProtocol(protocolloDiPartenza);
+    setCreatePort(null);
+    setCreateCredentialId(null);
+    setCreateSnmpCredentialId(null);
+    setCreateVendorSubtype(null);
+    setCreateProductProfile(null);
+    setCreateUseForArpPoll(effectiveClassification === "router" || effectiveClassification === "firewall");
+  }
+
+  /**
+   * Proposta d'apparato dalla scheda dell'host (tappa 1): la riga della lista
+   * non porta famiglia SO né credenziali validate. Un errore si dice, non si
+   * trasforma in «hp + SNMP».
+   */
+  async function propostaPerHost(hostId: number): Promise<PropostaApparato | null> {
+    const r = await fetchJson<HostDetail>(`/api/hosts/${hostId}`, { cache: "no-store" });
+    if (!r.ok) {
+      toast.error(`Scheda dell'host non letta (${r.message})`);
+      return null;
+    }
+    const archivio: CredenzialeArchivio[] = credentials.map((c) => ({ id: c.id, name: c.name, credential_type: c.credential_type, port: c.port ?? null }));
+    return proponiApparato(r.data, archivio);
+  }
+
+  async function configuraDaHost(dev: { name: string; host: string; host_id: number }) {
+    const p = await propostaPerHost(dev.host_id);
+    if (!p) return;
+    setHostToAdd({ name: dev.name, host: dev.host });
+    setCreateVendor(p.vendor);
+    setCreateVendorSubtype(null);
+    setCreateProtocol(p.protocol);
+    setCreatePort(p.port);
+    setCreateCredentialId(p.credentialId);
+    setCreateSnmpCredentialId(p.snmpCredentialId);
+    setCreateProductProfile(p.productProfile);
+    setCreateUseForArpPoll(effectiveClassification === "router" || effectiveClassification === "firewall");
+    setDialogOpen(true);
   }
 
   async function handleQuery(id: number) {
@@ -653,14 +738,24 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
     if (!editingDevice) return;
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
-    const body: Record<string, unknown> = {
+    const campi: Record<string, unknown> = {
       vendor: editVendor,
       protocol: editProtocol,
-      credential_id: editCredentialId && editCredentialId !== "none" ? Number(editCredentialId) : null,
-      snmp_credential_id: editSnmpCredentialId && editSnmpCredentialId !== "none" ? Number(editSnmpCredentialId) : null,
       vendor_subtype: editVendor === "hp" && editVendorSubtype ? editVendorSubtype : null,
       scan_target: editScanTarget || null,
     };
+    // Le credenziali partono solo se cambiate rispetto all'apparato (dalla 2e un null toglie i binding).
+    let body: Record<string, unknown>;
+    try {
+      body = corpoModificaApparato(tendineDaApparato(editingDevice as NetworkDevice), {
+        campi,
+        credentialId: editCredentialId,
+        snmpCredentialId: editSnmpCredentialId,
+      });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Credenziale non valida");
+      return;
+    }
     if (editProductProfile) body.product_profile = editProductProfile;
     if (editClassification) body.classification = editClassification;
     body.use_for_arp_poll = editUseForArpPoll ? 1 : 0;
@@ -678,19 +773,26 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
       delete body.password;
     }
 
-    const res = await fetch(`/api/devices/${editingDevice.id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-
-    if (!res.ok) {
-      const data = await res.json();
-      toast.error(data.error || "Errore nell'aggiornamento");
+    const deviceId = editingDevice.id;
+    const esito = await inviaConConferma(
+      (corpo) =>
+        fetch(`/api/devices/${deviceId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(corpo),
+        }),
+      body,
+      (domanda) => window.confirm(domanda),
+    );
+    if (!esito) return;
+    if (!esito.res.ok) {
+      toast.error(esito.data.error || "Errore nell'aggiornamento");
       return;
     }
 
-    toast.success("Dispositivo aggiornato");
+    const avvisi = esito.data.avvisi ?? [];
+    for (const a of avvisi) toast.warning(a);
+    if (avvisi.length === 0) toast.success("Dispositivo aggiornato");
     setEditDialogOpen(false);
     setEditingDevice(null);
     fetchDevices();
@@ -706,7 +808,7 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
       last_scan: (d: DeviceOrHost) => {
         if (isHostItem(d)) return 0;
         const at = (d as NetworkDevice).last_proxmox_scan_at;
-        return at ? new Date(at).getTime() : 0;
+        return at ? parseDbDate(at).getTime() : 0;
       },
       vendor: (d: DeviceOrHost) => d.vendor ?? "",
       profile: (d: DeviceOrHost) => {
@@ -759,7 +861,7 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
           </div>
         </div>
         {showAddButton && (
-          <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) setHostToAdd(null); }}>
+          <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) azzeraNuovo(); }}>
             <DialogTrigger render={<Button><Plus className="h-4 w-4 mr-2" />Aggiungi {isHypervisor ? "Proxmox" : meta.title}</Button>} />
             <DialogContent className={DIALOG_PANEL_WIDE_CLASS}>
               <DialogHeader className="shrink-0 border-b border-border/50 px-4 pt-4 pb-3">
@@ -799,7 +901,7 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
                   credentialId={createCredentialId}
                   snmpCredentialId={createSnmpCredentialId}
                   vendorSubtype={createVendorSubtype}
-                  port={createProtocol === "winrm" ? 5985 : createProtocol?.startsWith("snmp") ? 161 : 22}
+                  port={createPort ?? (createProtocol === "winrm" ? 5985 : createProtocol?.startsWith("snmp") ? 161 : 22)}
                   onVendorChange={(v) => { setCreateVendor(v); if (v !== "hp") setCreateVendorSubtype(null); }}
                   onProtocolChange={setCreateProtocol}
                   onCredentialIdChange={setCreateCredentialId}
@@ -981,7 +1083,7 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
                   {isHypervisor && devices.some((d) => !isHostItem(d)) && (
                     <TableCell className="text-sm text-muted-foreground">
                       {!isHostItem(dev) && (dev as NetworkDevice & { last_proxmox_scan_at?: string | null }).last_proxmox_scan_at
-                        ? new Date((dev as NetworkDevice & { last_proxmox_scan_at: string }).last_proxmox_scan_at).toLocaleString("it-IT")
+                        ? parseDbDate((dev as NetworkDevice & { last_proxmox_scan_at: string }).last_proxmox_scan_at).toLocaleString("it-IT")
                         : "—"}
                     </TableCell>
                   )}
@@ -1063,10 +1165,7 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
                               className="h-8 text-xs gap-1"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setHostToAdd({ name: dev.name, host: dev.host });
-                                setCreateVendor(effectiveClassification === "stampante" || effectiveClassification === "telecamera" || effectiveClassification === "voip" || effectiveClassification === "iot" ? "hp" : effectiveClassification === "storage" ? "synology" : effectiveClassification === "server" || effectiveClassification === "workstation" || effectiveClassification === "notebook" ? "windows" : "other");
-                                setCreateProtocol(effectiveClassification === "stampante" || effectiveClassification === "telecamera" || effectiveClassification === "voip" || effectiveClassification === "iot" ? "snmp_v2" : effectiveClassification === "storage" ? "ssh" : effectiveClassification === "server" || effectiveClassification === "workstation" || effectiveClassification === "notebook" ? "winrm" : "ssh");
-                                setDialogOpen(true);
+                                void configuraDaHost(dev);
                               }}
                               title="Aggiungi come dispositivo per configurare credenziali e scansione"
                             >
@@ -1232,6 +1331,7 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
                     snmpSelectLabel={CREDENTIAL_SNMP_SECONDARY_SELECT_LABEL}
                     credentialPlaceholder="Non modificare"
                     snmpPlaceholder="Non modificare"
+                    conNessuna
                     idPrefix="device-bulk"
                   />
                 </div>
@@ -1259,7 +1359,7 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
               Dati estratti da {proxmoxSelectedDevice.name}
             </CardTitle>
             <CardDescription>
-              Scan del {proxmoxScanResult.scanned_at ? new Date(proxmoxScanResult.scanned_at).toLocaleString("it-IT") : "—"}
+              Scan del {proxmoxScanResult.scanned_at ? parseDbDate(proxmoxScanResult.scanned_at).toLocaleString("it-IT") : "—"}
             </CardDescription>
           </CardHeader>
           <CardContent>

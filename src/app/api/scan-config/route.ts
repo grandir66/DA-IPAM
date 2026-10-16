@@ -14,6 +14,14 @@ import {
   buildUdpScanArgs,
   setGetSettingFn,
 } from "@/lib/scanner/ports";
+import { isNaabuAvailable } from "@/lib/scanner/naabu";
+
+export type PortDiscoveryMode = "nmap" | "naabu+nmap";
+
+function readPortDiscovery(): PortDiscoveryMode {
+  const raw = (getSetting("port_discovery") ?? "nmap").trim();
+  return raw === "naabu+nmap" ? "naabu+nmap" : "nmap";
+}
 
 export async function GET() {
   try {
@@ -24,6 +32,14 @@ export async function GET() {
     setGetSettingFn(getSetting);
 
     const customQuickPorts = getSetting("quick_scan_tcp_ports");
+    const portDiscovery = readPortDiscovery();
+    const naabuBinPath = (getSetting("naabu_bin_path") ?? "").trim();
+    let naabuAvailable = false;
+    try {
+      naabuAvailable = await isNaabuAvailable(naabuBinPath || undefined);
+    } catch {
+      naabuAvailable = false;
+    }
 
     return NextResponse.json({
       quickScan: {
@@ -40,6 +56,9 @@ export async function GET() {
         tcpArgs: buildTcpScanArgs(),
         udpArgs: buildUdpScanArgs(),
       },
+      portDiscovery,
+      naabuBinPath,
+      naabuAvailable,
       envOverrides: {
         DA_INVENT_NMAP_HOST_TIMEOUT_S: process.env.DA_INVENT_NMAP_HOST_TIMEOUT_S ?? null,
         DA_INVENT_NMAP_DISCOVERY_QUICK_TIMEOUT_S: process.env.DA_INVENT_NMAP_DISCOVERY_QUICK_TIMEOUT_S ?? null,

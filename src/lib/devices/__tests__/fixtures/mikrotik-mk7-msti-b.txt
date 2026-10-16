@@ -1,0 +1,2 @@
+0   identifier=1 bridge=bridge priority=0x1000 vlan-mapping=77
+1 D identifier=0 bridge=bridge priority=0x8000 vlan-mapping=1-76,78-4094

@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -98,7 +99,7 @@ function effectiveIngestUrl(state: InventoryAgentState | null): string {
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
   try {
-    return new Date(iso).toLocaleString("it-IT");
+    return parseDbDate(iso).toLocaleString("it-IT");
   } catch {
     return iso;
   }

@@ -8,7 +8,7 @@
  * - Gli host senza SNMP vengono ignorati (non aggiunti, non rimossi)
  * - Gli host rimossi dall'inventario locale vengono rimossi anche da LibreNMS
  */
-import { getHostsByNetwork, getNetworkById, getHostById, getNetworkDeviceById } from "../db-tenant";
+import { credenzialeSnmpApparato, getHostsByNetwork, getNetworkById, getHostById, getNetworkDeviceById, getNetworks, haSnmpApparato } from "../db-tenant";
 import { getIntegrationConfig } from "./config";
 import { createLibreNMSClient } from "./librenms-api";
 import {
@@ -18,7 +18,7 @@ import {
   getLibreNMSMapForNetwork,
   deleteLibreNMSMap,
 } from "./librenms-db";
-import type { LibreNMSSyncResult, HostSnmpData } from "@/types";
+import type { LibreNMSSyncResult, HostSnmpData, NetworkDevice } from "@/types";
 
 /**
  * LibreNMS usa "hostname" come indirizzo di polling SNMP/ICMP.
@@ -115,7 +115,7 @@ export async function syncNetworkToLibreNMS(networkId: number): Promise<LibreNMS
   }
 
   // Device già censiti in LibreNMS (per evitare duplicati)
-  let existingLibreNMSDevices = new Map<string, number>();
+  const existingLibreNMSDevices = new Map<string, number>();
   try {
     const devices = await client.getDevices();
     for (const d of devices) {
@@ -290,6 +290,24 @@ export async function addSingleHostToLibreNMS(
 }
 
 /**
+ * Campi SNMP di un apparato per LibreNMS (aggiunta e aggiornamento), dal motore
+ * unico (tappa 2 credenziali, T8). Prima partiva `device.community_string` com'è
+ * nel DB, cioè il testo cifrato, e la community di un binding o di una voce
+ * d'archivio non partiva mai. La community decifrata parte solo se l'apparato
+ * ha una fonte SNMP sua e la scelta non è «public» di ripiego; altrimenti
+ * `snmp_disable: true` (ping-only), come prima per un apparato senza community.
+ * Una v3 non si manda: LibreNMS la riceverebbe come v2c.
+ */
+export function campiSnmpPerLibreNms(
+  device: NetworkDevice,
+): { community: string; snmpver: "v2c"; port: number; snmp_disable: false } | { snmp_disable: true } {
+  if (!haSnmpApparato(device)) return { snmp_disable: true };
+  const c = credenzialeSnmpApparato(device);
+  if (!c.ok || c.fonte === "snmp_ripiego" || c.cred.forma !== "community") return { snmp_disable: true };
+  return { community: c.cred.community, snmpver: "v2c", port: c.port, snmp_disable: false };
+}
+
+/**
  * Aggiunge o aggiorna un singolo NetworkDevice (router/switch) in LibreNMS.
  * Usa network_id = 0 come sentinella nella mappa locale.
  * Funziona anche senza SNMP (aggiunge in modalità ping-only).
@@ -313,10 +331,8 @@ export async function addSingleNetworkDeviceToLibreNMS(
   const hostname = device.host; // IP come hostname per polling affidabile
   const sysName  = device.sysname || device.name || undefined;
 
-  // Parametri SNMP se disponibili
-  const snmpFields: Record<string, unknown> = device.community_string
-    ? { community: device.community_string, snmpver: "v2c", port: 161, snmp_disable: false }
-    : { snmp_disable: true };
+  // Parametri SNMP se disponibili (gli stessi per aggiornamento e aggiunta)
+  const snmpFields = campiSnmpPerLibreNms(device);
 
   const existing = getLibreNMSMapByDeviceIp(device.host);
 
@@ -345,8 +361,7 @@ export async function addSingleNetworkDeviceToLibreNMS(
   } else {
     librenmsId = await client.addDevice({
       hostname,
-      ...(device.community_string ? { community: device.community_string, snmpver: "v2c" as const, port: 161 } : {}),
-      snmp_disable: !device.community_string,
+      ...snmpFields,
       force_add: true,
       sysName:  sysName                  ?? undefined,
       hardware: device.model             ?? undefined,
@@ -372,7 +387,12 @@ export async function addSingleNetworkDeviceToLibreNMS(
  * Deve essere chiamata con contesto tenant attivo.
  */
 export async function syncAllNetworksToLibreNMS(): Promise<LibreNMSSyncResult[]> {
-  const { getNetworks } = await import("../db-tenant");
+  // getNetworks va importato STATICAMENTE (riga 11). Con `await import()` tsx
+  // restituisce una SECONDA istanza del modulo, con la propria AsyncLocalStorage
+  // vuota: getCurrentTenantCode() torna null e ogni accesso al DB tenant muore
+  // con "Nessun contesto tenant". Non si vede sui build Next (il bundler
+  // deduplica), solo sulle installazioni che girano da sorgente con tsx —
+  // dove il job schedulato librenms_sync falliva a ogni esecuzione.
   const networks = getNetworks();
   const results: LibreNMSSyncResult[] = [];
 

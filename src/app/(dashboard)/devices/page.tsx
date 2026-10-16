@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import { compareUnknown } from "@/lib/table-sort";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -71,12 +72,18 @@ import {
 } from "@/lib/network-device-acquisition";
 
 type DeviceOrHost = 
-  | (NetworkDevice & { source: "device"; host_status?: string })
+  | (NetworkDevice & { source: "device"; host_status?: string | null; host_last_seen?: string | null })
   | (Host & { source: "host"; device_id?: number });
 
-interface ClassificationCount {
-  classification: string;
-  count: number;
+/**
+ * Stato di raggiungibilità di una riga. Per i dispositivi viene dall'host
+ * scansionato con lo stesso IP (`host_status` dall'API): prima si usava
+ * `enabled`, cioè "attivo in anagrafica", e ogni dispositivo abilitato
+ * risultava Online anche se spento (difetto UI-8, analisi 2026-10-12).
+ */
+function rowStatus(item: DeviceOrHost): "online" | "offline" | "unknown" {
+  const s = item.source === "device" ? item.host_status : item.status;
+  return s === "online" || s === "offline" ? s : "unknown";
 }
 
 const CLASSIFICATION_ICONS: Record<string, typeof Router> = {
@@ -104,7 +111,6 @@ export default function DevicesUnifiedPage() {
   const router = useRouter();
   const [items, setItems] = useState<DeviceOrHost[]>([]);
   const [loading, setLoading] = useState(true);
-  const [counts, setCounts] = useState<ClassificationCount[]>([]);
 
   // ─── LibreNMS: mapping IP → device_id per NetworkDevice ───
   const [librenmsMap, setLibrenmsMap] = useState<Map<string, number>>(new Map());
@@ -131,7 +137,9 @@ export default function DevicesUnifiedPage() {
       // Solo network_devices: gli host IPAM restano in Reti / scheda host. Unire tutti gli host
       // qui faceva esplodere la lista e apriva /hosts/[id] invece del dettaglio dispositivo.
       const devicesRes = await fetch("/api/devices");
-      const devices: NetworkDevice[] = devicesRes.ok ? await devicesRes.json() : [];
+      // Un errore non è «nessun dispositivo» (UI-7): finisce nel toast del catch.
+      if (!devicesRes.ok) throw new Error(`HTTP ${devicesRes.status}`);
+      const devices: NetworkDevice[] = await devicesRes.json();
 
       const combined: DeviceOrHost[] = devices.map((d) => ({
         ...d,
@@ -139,17 +147,6 @@ export default function DevicesUnifiedPage() {
       }));
 
       setItems(combined);
-
-      const countMap = new Map<string, number>();
-      for (const item of combined) {
-        const cls = item.classification || "unknown";
-        countMap.set(cls, (countMap.get(cls) || 0) + 1);
-      }
-      setCounts(
-        Array.from(countMap.entries())
-          .map(([classification, count]) => ({ classification, count }))
-          .sort((a, b) => b.count - a.count)
-      );
     } catch {
       toast.error("Errore nel caricamento dispositivi");
     } finally {
@@ -215,7 +212,9 @@ export default function DevicesUnifiedPage() {
     });
   }, [items]);
 
-  const filteredItems = useMemo(() => {
+  // Tutti i filtri tranne la classificazione: da qui escono i chip, che così
+  // contano i risultati filtrati e non l'insieme (UI-14).
+  const filteredExceptClass = useMemo(() => {
     let result = items;
 
     if (search.trim()) {
@@ -238,16 +237,9 @@ export default function DevicesUnifiedPage() {
       });
     }
 
-    if (classificationFilter !== "all") {
-      result = result.filter((item) => item.classification === classificationFilter);
-    }
-
     if (statusFilter !== "all") {
       result = result.filter((item) => {
-        if (item.source === "device") {
-          return statusFilter === "online" ? item.enabled : !item.enabled;
-        }
-        return item.status === statusFilter;
+        return rowStatus(item) === statusFilter;
       });
     }
 
@@ -262,7 +254,27 @@ export default function DevicesUnifiedPage() {
     }
 
     return result;
-  }, [items, search, classificationFilter, statusFilter, vendorFilter, productProfileFilter]);
+  }, [items, search, statusFilter, vendorFilter, productProfileFilter]);
+
+  const filteredItems = useMemo(
+    () =>
+      classificationFilter === "all"
+        ? filteredExceptClass
+        : filteredExceptClass.filter((item) => (item.classification || "unknown") === classificationFilter),
+    [filteredExceptClass, classificationFilter],
+  );
+
+  const facetCounts = useMemo(() => {
+    const countMap = new Map<string, number>();
+    for (const item of filteredExceptClass) {
+      const cls = item.classification || "unknown";
+      countMap.set(cls, (countMap.get(cls) || 0) + 1);
+    }
+    if (classificationFilter !== "all" && !countMap.has(classificationFilter)) countMap.set(classificationFilter, 0);
+    return Array.from(countMap.entries())
+      .map(([classification, count]) => ({ classification, count }))
+      .sort((a, b) => b.count - a.count);
+  }, [filteredExceptClass, classificationFilter]);
 
   const sortedItems = useMemo(() => {
     const sorted = [...filteredItems].sort((a, b) => {
@@ -275,16 +287,13 @@ export default function DevicesUnifiedPage() {
           bVal = b.source === "device" ? b.name : (b.hostname || b.custom_name || b.ip);
           break;
         case "ip":
-          aVal = a.source === "device" ? a.host : a.ip;
-          bVal = b.source === "device" ? b.host : b.ip;
-          const aParts = aVal.split(".").map(Number);
-          const bParts = bVal.split(".").map(Number);
-          for (let i = 0; i < 4; i++) {
-            if (aParts[i] !== bParts[i]) {
-              return sortDirection === "asc" ? aParts[i] - bParts[i] : bParts[i] - aParts[i];
-            }
-          }
-          return 0;
+          // compareUnknown: IP in ordine numerico, e un hostname al posto dell'IP
+          // non dà più NaN (prima le righe "saltavano" di posto, UI-9).
+          return compareUnknown(
+            a.source === "device" ? a.host : a.ip,
+            b.source === "device" ? b.host : b.ip,
+            sortDirection,
+          );
         case "classification":
           aVal = a.classification || "zzz";
           bVal = b.classification || "zzz";
@@ -308,12 +317,10 @@ export default function DevicesUnifiedPage() {
           bVal = b.source === "host" ? (b.mac ?? "").toLowerCase() : "zzz";
           break;
         case "status":
-          if (a.source === "device" && b.source === "device") {
-            aVal = a.enabled ? 0 : 1;
-            bVal = b.enabled ? 0 : 1;
-          } else {
-            aVal = a.source === "host" ? (a.status === "online" ? 0 : 1) : 0;
-            bVal = b.source === "host" ? (b.status === "online" ? 0 : 1) : 0;
+          {
+            const ordine = { online: 0, offline: 1, unknown: 2 } as const;
+            aVal = ordine[rowStatus(a)];
+            bVal = ordine[rowStatus(b)];
           }
           break;
       }
@@ -402,16 +409,16 @@ export default function DevicesUnifiedPage() {
       </div>
 
       {/* Contatori per classificazione */}
-      {counts.length > 0 && (
+      {facetCounts.length > 0 && (
         <div className="flex flex-wrap gap-2">
           <Badge
             variant={classificationFilter === "all" ? "default" : "outline"}
             className="cursor-pointer hover:bg-primary/80 transition-colors"
             onClick={() => { setClassificationFilter("all"); setPage(1); }}
           >
-            Tutti ({items.length})
+            Tutti ({filteredExceptClass.length})
           </Badge>
-          {counts.slice(0, 12).map((c) => {
+          {facetCounts.map((c) => {
             const Icon = CLASSIFICATION_ICONS[c.classification] || Server;
             return (
               <Badge
@@ -455,6 +462,7 @@ export default function DevicesUnifiedPage() {
                 <SelectItem value="all">Tutti gli stati</SelectItem>
                 <SelectItem value="online">Online</SelectItem>
                 <SelectItem value="offline">Offline</SelectItem>
+                <SelectItem value="unknown">Sconosciuto</SelectItem>
               </SelectContent>
             </Select>
             <Select value={vendorFilter} onValueChange={(v) => { if (v) { setVendorFilter(v); setPage(1); } }}>
@@ -567,9 +575,8 @@ export default function DevicesUnifiedPage() {
                   const mac = item.source === "device" ? null : item.mac;
                   const classification = item.classification || "unknown";
                   const Icon = CLASSIFICATION_ICONS[classification] || Server;
-                  const status = item.source === "device" 
-                    ? (item.enabled ? "online" : "offline") 
-                    : (item.status || "unknown");
+                  const status = rowStatus(item);
+                  const lastSeen = item.source === "device" ? item.host_last_seen : item.last_seen;
                   const acquisitionAt =
                     item.source === "device" ? networkDeviceAcquisitionAt(item) : null;
                   const showAcquisitionBadge =
@@ -626,7 +633,7 @@ export default function DevicesUnifiedPage() {
                         {mac || "—"}
                       </TableCell>
                       <TableCell>
-                        <StatusBadge status={status} />
+                        <StatusBadge status={status} lastSeen={lastSeen} />
                       </TableCell>
                       <TableCell>
                         <ProtocolBadges protocols={(item as unknown as { credential_protocols?: string[] }).credential_protocols || []} />

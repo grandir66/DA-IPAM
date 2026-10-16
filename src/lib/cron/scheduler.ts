@@ -1,13 +1,111 @@
 import cron from "node-cron";
-import { getEnabledJobs, updateJobLastRun } from "@/lib/db";
+import { currentFacadeTenant, getEnabledJobs, updateJobLastRun } from "@/lib/db";
 import { getActiveTenants } from "@/lib/db-hub";
 import { withTenant } from "@/lib/db-tenant";
-import { runJob } from "./jobs";
+import { runJob, type OpzioniRunJob } from "./jobs";
+import {
+  createFailureState,
+  findTenantOutages,
+  markContextCorruption,
+  recordOutcome,
+  shouldEmitAlarm,
+  summarizeFailures,
+} from "@/lib/health/job-failure-tracker";
 
 type ScheduledTask = ReturnType<typeof cron.schedule>;
-const activeTasks = new Map<string, ScheduledTask>();
-/** Guard: job keys currently running (prevents overlapping execution) */
-const runningJobs = new Set<string>();
+
+/**
+ * Cron attivi e job in esecuzione: UNO stato per processo, non per istanza del
+ * modulo. Sotto tsx (e nei bundle delle rotte) questo file può essere caricato
+ * due volte nello stesso processo: con lo stato nel modulo, una rotta che
+ * chiamava `reloadTenantScheduler` non vedeva i cron registrati da server.ts,
+ * non li fermava e ne aggiungeva altri — sul cliente A il controllo host è partito due
+ * volte alle 15:04 del 2026-10-12 (NUC-5). Stessa classe dell'incidente
+ * db-tenant del 2026-09-02 (ADR 0002).
+ */
+interface SchedulerState {
+  activeTasks: Map<string, ScheduledTask>;
+  /** Guard: job keys currently running (prevents overlapping execution) */
+  runningJobs: Set<string>;
+}
+const STATE_KEY = Symbol.for("da-ipam.cron.scheduler.state");
+const processGlobals = globalThis as unknown as Record<symbol, SchedulerState | undefined>;
+const state: SchedulerState =
+  processGlobals[STATE_KEY] ??
+  (processGlobals[STATE_KEY] = { activeTasks: new Map(), runningJobs: new Set() });
+const activeTasks = state.activeTasks;
+const runningJobs = state.runningJobs;
+/**
+ * Serie di fallimenti per chiave job. Vive SOLO in questo processo (quello che
+ * regge node-cron): non va esposto alle route Next, che sotto build girano in un
+ * bundle separato e ne vedrebbero una copia sempre vuota. La superficie di
+ * allarme verso l'esterno resta `/api/health?strict=1`, che legge da DB.
+ */
+const failureState = createFailureState();
+
+/**
+ * Guardia del contesto tenant, da eseguire DENTRO withTenant e PRIMA del job.
+ *
+ * PERCHE' ESISTE: il 2026-09-02 il processo ha perso l'AsyncLocalStorage di
+ * `db-tenant` (istanza duplicata del modulo sotto tsx). Senza contesto il facade
+ * `getDb()` ripiega in silenzio sul tenant DEFAULT, e questo ha prodotto DUE
+ * danni: 340 job falliti con un messaggio fuorviante ("Job #N non trovato",
+ * perche' quei job non esistono nel DB di DEFAULT) e — piu' grave — 179 host del
+ * tenant 70791 scritti dentro DEFAULT.db dai fast_scan gia' in corso.
+ *
+ * Qui il confronto e' possibile perche' lo scheduler SA quale tenant ha aperto:
+ * se il modulo legge qualcosa di diverso, si ferma prima di toccare il DB.
+ */
+function assertTenantContext(key: string, tenantCode: string): void {
+  // Si interroga il FACADE, non l'import statico qui sopra. Cruciale: withTenant
+  // ha aperto il contesto sull'istanza importata staticamente, che quindi vede
+  // sempre il codice giusto — chiedere a lei darebbe un "tutto bene" falso. La
+  // scrittura passa da getDb(), ed e' la SUA risoluzione che va verificata.
+  const seen = currentFacadeTenant();
+  if (seen === tenantCode) return;
+
+  markContextCorruption(failureState, { tenantCode, seen }, Date.now());
+  console.error(
+    `[Scheduler] CONTESTO TENANT CORROTTO su ${key}: withTenant("${tenantCode}") ` +
+      `e' attivo ma il facade getDb() risolve su ${seen === null ? "nessun contesto (-> tenant DEFAULT)" : `"${seen}"`}. ` +
+      "Causa tipica: due istanze del modulo db-tenant nello stesso processo " +
+      "(import dinamico di db-tenant sotto tsx). Il job NON viene eseguito, per non " +
+      "scrivere sul database del tenant sbagliato. Ogni job successivo fallira' " +
+      "allo stesso modo: IL PROCESSO VA RIAVVIATO (systemctl restart da-invent, " +
+      "o da-ipam sulle appliance).",
+  );
+  throw new Error(
+    `Contesto tenant corrotto: atteso "${tenantCode}", letto ${seen ?? "null"} — processo da riavviare`,
+  );
+}
+
+/**
+ * Escalation sui fallimenti in serie. Un singolo errore e' gia' nel log; qui si
+ * alza la voce quando il guasto si ripete, e si distingue il caso sistemico
+ * (piu' job dello stesso tenant) da un'integrazione rotta per conto sua.
+ *
+ * PERCHE' ESISTE: cinque ore di fallimento totale senza un solo allarme. Il log
+ * conteneva 340 righe identiche e nessuna che dicesse "stanno fallendo tutti".
+ */
+function escalateIfSerial(key: string, tenantCode: string): void {
+  const now = Date.now();
+  if (!shouldEmitAlarm(failureState, key, now)) return;
+
+  const health = summarizeFailures(failureState);
+  console.error(
+    `[Scheduler] ALLARME: il job ${key} e' fallito ${health.worstStreak ?? "?"} volte di fila. ` +
+      `Job in fallimento seriale nel processo: ${health.failingJobs}.`,
+  );
+
+  const outage = findTenantOutages(failureState).find((o) => o.tenantCode === tenantCode);
+  if (outage) {
+    console.error(
+      `[Scheduler] ALLARME SISTEMICO: ${outage.jobCount} job del tenant ${tenantCode} ` +
+        "falliscono in serie. Un guasto comune a piu' job non e' un'integrazione rotta: " +
+        "cercare 'CONTESTO TENANT CORROTTO' nel log e verificare /api/health?strict=1.",
+    );
+  }
+}
 
 export function initializeScheduler(): void {
   console.info("[Scheduler] Inizializzazione scheduler multi-tenant...");
@@ -67,26 +165,69 @@ export function scheduleJob(
   const cronExpr = intervalToCron(intervalMinutes);
 
   const task = cron.schedule(cronExpr, async () => {
-    if (runningJobs.has(key)) {
-      console.warn(`[Scheduler] Job ${key} già in esecuzione, skip`);
-      return;
-    }
-    runningJobs.add(key);
-    console.info(`[Scheduler] Esecuzione job ${key} (tenant: ${tenantCode})`);
-    try {
-      await withTenant(tenantCode, async () => {
-        await runJob(jobId);
-        updateJobLastRun(jobId);
-      });
-      console.info(`[Scheduler] Job ${key} completato`);
-    } catch (error) {
-      console.error(`[Scheduler] Job ${key} fallito:`, error);
-    } finally {
-      runningJobs.delete(key);
-    }
+    await eseguiJobProgrammato(key, jobId, tenantCode);
   });
 
   activeTasks.set(key, task);
+}
+
+/**
+ * Un tick del cron per un job. Esportata per le prove: è il corpo del cron.
+ *
+ * Rete già in scansione (T3-18, revisione 3b): il job aspetta che il giro che
+ * la tiene si chiuda e poi parte, così non perde l'intervallo (gli intervalli
+ * da un'ora in su partono tutti al minuto 0: due job sulla stessa rete
+ * partirebbero sempre insieme e il secondo non girerebbe mai). Il proprio giro
+ * e quello altrui si aspettano fino alla soglia d'allarme del tenant: oltre, il
+ * job scrive l'allarme e smette di aspettare (vedi `giroCompleto` in jobs.ts).
+ *
+ * «saltato»: la rete è rimasta occupata oltre l'attesa, il giro non è partito.
+ * Non si scrive `last_run` (non è girato niente) e non si registra nel tracker
+ * né come riuscito né come fallito. `last_run` invecchia e /api/health lo
+ * segnala: è voluto, vuol dire un giro appeso (vedi scheduler-freshness.ts).
+ *
+ * @param opzioni solo per le prove (attesa massima accorciata)
+ */
+export async function eseguiJobProgrammato(
+  key: string,
+  jobId: number,
+  tenantCode: string,
+  opzioni?: Pick<OpzioniRunJob, "attesaMassimaMs">,
+): Promise<"eseguito" | "saltato" | "fallito" | "gia_in_esecuzione"> {
+  if (runningJobs.has(key)) {
+    console.warn(`[Scheduler] Job ${key} già in esecuzione, skip`);
+    return "gia_in_esecuzione";
+  }
+  runningJobs.add(key);
+  console.info(`[Scheduler] Esecuzione job ${key} (tenant: ${tenantCode})`);
+  try {
+    const esito = await withTenant(tenantCode, async () => {
+      assertTenantContext(key, tenantCode);
+      const e = await runJob(jobId, { ...opzioni, attendiReteLibera: true });
+      if (e.esito === "eseguito") updateJobLastRun(jobId);
+      return e;
+    });
+    if (esito.esito === "saltato") {
+      console.info(`[Scheduler] Job ${key} saltato: ${esito.motivo}`);
+      return "saltato";
+    }
+    recordOutcome(failureState, key, { ok: true }, Date.now());
+    console.info(`[Scheduler] Job ${key} completato${esito.motivo ? ` (${esito.motivo})` : ""}`);
+    return "eseguito";
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    recordOutcome(failureState, key, { ok: false, error: message }, Date.now());
+    console.error(`[Scheduler] Job ${key} fallito:`, error);
+    escalateIfSerial(key, tenantCode);
+    return "fallito";
+  } finally {
+    runningJobs.delete(key);
+  }
+}
+
+/** Chiavi dei cron attivi in questo processo (diagnostica e prove). */
+export function activeJobKeys(): string[] {
+  return [...activeTasks.keys()];
 }
 
 export function stopJob(key: string): void {

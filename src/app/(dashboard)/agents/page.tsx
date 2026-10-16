@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -77,7 +78,7 @@ type WizardStep = "tenant" | "agent" | "token";
 
 const formatLastSeen = (iso: string | null): string => {
   if (!iso) return "—";
-  try { return new Date(iso).toLocaleString("it-IT"); } catch { return iso; }
+  try { return parseDbDate(iso).toLocaleString("it-IT"); } catch { return iso; }
 };
 
 export default function AgentsOverviewPage() {
@@ -173,6 +174,35 @@ export default function AgentsOverviewPage() {
       });
     });
   }, [loading]);
+
+  // Il riquadro Hub URL si apre in un'altra scheda dal passo token della finestra
+  // «Nuovo agente», per non perdere il token in chiaro (UI-24): al ritorno su
+  // questa scheda si rilegge l'Hub URL, e il comando di install si aggiorna da solo.
+  const refreshHubUrl = useCallback(async () => {
+    try {
+      const [hubUrlRes, settingsRes] = await Promise.all([fetch("/api/settings/hub-url"), fetch("/api/settings")]);
+      if (!hubUrlRes.ok || !settingsRes.ok) throw new Error(`HTTP ${hubUrlRes.status}/${settingsRes.status}`);
+      setHubUrlInfo((await hubUrlRes.json()) as { effective_url: string | null; source: "public_hub_url" | "tailnet_hostname" | "none" });
+      const settings = (await settingsRes.json()) as Record<string, string>;
+      if (settings.public_hub_url !== undefined) setPublicHubUrl(settings.public_hub_url || "");
+      if (settings.hub_tailnet_hostname !== undefined) setHubTailnetHostname(settings.hub_tailnet_hostname || "");
+    } catch {
+      toast.error("Hub URL non riletto: il comando di install usa ancora il valore di prima");
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!wizardOpen || wizardStep !== "token") return;
+    const onReturn = () => {
+      if (document.visibilityState === "visible") void refreshHubUrl();
+    };
+    document.addEventListener("visibilitychange", onReturn);
+    window.addEventListener("focus", onReturn);
+    return () => {
+      document.removeEventListener("visibilitychange", onReturn);
+      window.removeEventListener("focus", onReturn);
+    };
+  }, [wizardOpen, wizardStep, refreshHubUrl]);
 
   const testOne = async (agentId: number): Promise<void> => {
     setRowState((s) => ({ ...s, [agentId]: { status: "testing" } }));
@@ -687,9 +717,15 @@ export default function AgentsOverviewPage() {
                   <p>
                     Il comando sotto usa <code className="font-mono">{typeof window !== "undefined" ? window.location.origin : "?"}</code>
                     {" "}come HUB_URL. Se stai accedendo a questa UI da rete interna, il cliente
-                    non riuscirà a raggiungerlo. Imposta <em>Hub URL pubblico</em> o
-                    <em> Hostname Tailscale</em> in <a href="/settings" className="underline">Impostazioni</a>{" "}
-                    prima di eseguire l&apos;install, oppure apri questa UI via MagicDNS tailnet.
+                    non riuscirà a raggiungerlo. Prima di eseguire l&apos;install imposta{" "}
+                    <em>Hub URL pubblico</em> o <em>Hostname Tailscale</em> nel riquadro{" "}
+                    {/* In un'altra scheda: chiudere questa finestra butterebbe il token, che
+                        non si rigenera (UI-24). Al ritorno refreshHubUrl aggiorna il comando. */}
+                    <a href="/agents#hub-url-config" target="_blank" rel="noopener noreferrer" className="underline">
+                      Hub URL pubblico
+                    </a>{" "}
+                    (si apre in una nuova scheda: questa finestra resta aperta col token e, quando
+                    torni qui, il comando sotto si aggiorna), oppure apri questa UI via MagicDNS tailnet.
                   </p>
                 </div>
               )}

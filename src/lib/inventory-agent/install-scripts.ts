@@ -1,3 +1,4 @@
+import { PS_TRUST_SELF_SIGNED } from "@/lib/ps-tls";
 import {
   getGlpiClientDownloads,
   type InventoryInstallPlatform,
@@ -135,21 +136,35 @@ echo ">>> OK — log: /var/log/domarc-inventory-agent.log"
 const WINDOWS_PUSH_SCRIPT_BODY = [
   "param([string]$IngestUrl, [string]$IngestToken)",
   '$ErrorActionPreference = "Stop"',
-  "if ($env:DA_IPAM_INSECURE_SSL -ne '0') {",
-  "  [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }",
-  "}",
+  // Lo scheduled task gira NON interattivo verso l'ingest DA-IPAM (self-signed):
+  // il tipo compilato di PS_TRUST_SELF_SIGNED funziona lì dove lo ScriptBlock
+  // ServerCertificateValidationCallback si rompe (stesso bug del push choco).
+  PS_TRUST_SELF_SIGNED,
+  // L'MSI GLPI Agent NON installa glpi-inventory.exe: installa glpi-inventory.bat
+  // (wrapper del perl\\bin\\glpi-agent.exe). Verificato su Windows reale 2026-07-21.
   "$glpi = @(",
-  '  "$env:ProgramFiles\\GLPI-Agent\\glpi-inventory.exe",',
-  '  "${env:ProgramFiles(x86)}\\GLPI-Agent\\glpi-inventory.exe"',
+  '  "$env:ProgramFiles\\GLPI-Agent\\glpi-inventory.bat",',
+  '  "${env:ProgramFiles(x86)}\\GLPI-Agent\\glpi-inventory.bat"',
   ") | Where-Object { Test-Path $_ } | Select-Object -First 1",
-  'if (-not $glpi) { throw "glpi-inventory.exe non trovato" }',
+  'if (-not $glpi) { throw "glpi-inventory non trovato (GLPI Agent installato?)" }',
   "$tmp = [IO.Path]::GetTempFileName()",
   "try {",
+  // glpi-inventory.bat logga i suoi [info] su stderr: con ErrorActionPreference='Stop'
+  // PowerShell 5.1 tratta OGNI riga stderr di un comando nativo come errore fatale,
+  // anche se l'inventario e' andato a buon fine. Isolo la chiamata con EAP='Continue'
+  // (il 2>$null da solo NON basta). Verificato su Windows reale 2026-07-21.
+  "  $prevEAP = $ErrorActionPreference; $ErrorActionPreference = 'Continue'",
   "  & $glpi --json 2>$null | Set-Content -Path $tmp -Encoding UTF8",
+  "  $ErrorActionPreference = $prevEAP",
   '  $headers = @{ Authorization = "Bearer $IngestToken"; "Content-Type" = "application/json" }',
   "  Invoke-WebRequest -Uri $IngestUrl -Method POST -Headers $headers -Body (Get-Content $tmp -Raw) -UseBasicParsing | Out-Null",
   "} finally { Remove-Item $tmp -Force -ErrorAction SilentlyContinue }",
 ].join("\n");
+
+/** Corpo dello script di push (per riuso: pacchetto choco GLPI). */
+export function getWindowsPushScriptBody(): string {
+  return Array.isArray(WINDOWS_PUSH_SCRIPT_BODY) ? WINDOWS_PUSH_SCRIPT_BODY.join("\n") : String(WINDOWS_PUSH_SCRIPT_BODY);
+}
 
 export function buildWindowsInstallScript(params?: Partial<InstallScriptParams>): string {
   const dl = getGlpiClientDownloads();
@@ -193,7 +208,9 @@ Set-Content -Path $PushScript -Value ${JSON.stringify(WINDOWS_PUSH_SCRIPT_BODY)}
 
 Write-Host ">>> [4/4] Scheduled Task ogni $IntervalHours h"
 $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -File \`"$PushScript\`" -IngestUrl \`"$IngestUrl\`" -IngestToken \`"$IngestToken\`""
-$trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(2) -RepetitionInterval (New-TimeSpan -Hours $IntervalHours) -RepetitionDuration ([TimeSpan]::MaxValue)
+# [TimeSpan]::MaxValue -> Duration fuori range, Task Scheduler rifiuta l'XML.
+# 3650gg = indefinito nella pratica ma accettato. Verificato su Windows reale.
+$trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(2) -RepetitionInterval (New-TimeSpan -Hours $IntervalHours) -RepetitionDuration (New-TimeSpan -Days 3650)
 Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Force | Out-Null
 & $PushScript -IngestUrl $IngestUrl -IngestToken $IngestToken
 Write-Host ">>> OK — task: $TaskName"

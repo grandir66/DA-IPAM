@@ -182,7 +182,11 @@ export async function syncSingleAgent(agentId: string): Promise<void> {
   ]);
   if (hw) upsertWazuhHw(agent.id, hw);
   if (os) upsertWazuhOs(agent.id, os);
-  if (hostId && (hw || os)) enrichHostFromWazuh(hostId, hw, os);
+  if (hostId && (hw || os)) {
+    enrichHostFromWazuh(hostId, hw, os);
+    const { recomputeAttributionSafe } = await import("@/lib/attribution/recompute");
+    recomputeAttributionSafe(hostId, "scan");
+  }
   replaceSoftwareForAgent(agent.id, pkgs);
   replacePortsForAgent(agent.id, ports);
   replaceHotfixesForAgent(agent.id, hotfixes);
@@ -289,6 +293,8 @@ export async function syncWazuhForTenant(): Promise<WazuhSyncResult> {
       if (os) upsertWazuhOs(agent.id, os);
       if (hostId && (hw || os)) {
         if (enrichHostFromWazuh(hostId, hw, os) > 0) result.hostsEnriched++;
+        const { recomputeAttributionSafe } = await import("@/lib/attribution/recompute");
+        recomputeAttributionSafe(hostId, "scan");
       }
       result.softwareRows += replaceSoftwareForAgent(agent.id, pkgs);
       result.portRows += replacePortsForAgent(agent.id, ports);

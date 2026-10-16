@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -77,7 +78,7 @@ const OS_FILTERS: OsFamily[] = ["Windows", "Linux", "Apple", "Unknown"];
 function formatDate(ts: string | null): string {
   if (!ts) return "—";
   try {
-    return new Date(ts).toLocaleDateString("it-IT");
+    return parseDbDate(ts).toLocaleDateString("it-IT");
   } catch {
     return ts;
   }
@@ -393,9 +394,17 @@ export function VulnerabilitiesListClient() {
                 {!loading && data.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={8} className="text-center py-10 text-muted-foreground">
-                      {hasFilters
-                        ? "Nessuna vulnerabilità trovata con questi filtri."
-                        : "Nessuna vulnerabilità archiviata. Configura scanner-edge o Wazuh in Impostazioni → Integrazioni."}
+                      {hasFilters ? (
+                        "Nessuna vulnerabilità trovata con questi filtri."
+                      ) : (
+                        <>
+                          Nessuna vulnerabilità archiviata. Configura lo Scanner-Edge o Wazuh in{" "}
+                          <Link href="/settings?tab=moduli" className="underline underline-offset-2 hover:text-foreground">
+                            Impostazioni → Moduli
+                          </Link>
+                          .
+                        </>
+                      )}
                     </TableCell>
                   </TableRow>
                 )}

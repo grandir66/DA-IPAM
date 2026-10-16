@@ -3,6 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import Database from "better-sqlite3";
 import { TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL } from "@/lib/db-tenant-schema";
+import { MC_TABLES } from "@/lib/integrations/meshcentral/schema";
 
 function buildTenant(): Database.Database {
   const db = new Database(":memory:");
@@ -16,7 +17,10 @@ test("tenant schema includes mc_node / mc_remote_session / mc_node_bind / mc_con
   const names = new Set(
     (db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[]).map((r) => r.name),
   );
-  for (const t of ["mc_node", "mc_remote_session", "mc_node_bind", "mc_config"]) {
+  // Itera MC_TABLES invece di una lista scritta a mano: il DDL e' duplicato fra
+  // MC_SCHEMA_SQL e TENANT_SCHEMA_SQL, e aggiungere una tabella solo al modulo la
+  // renderebbe inesistente sui DB tenant. Cosi' la divergenza rompe il test.
+  for (const t of [...MC_TABLES, "mc_config"]) {
     assert.ok(names.has(t), `missing ${t}`);
   }
 });

@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
-import { requireAuth, isAuthError } from "@/lib/api-auth";
+import { requireAdmin, isAuthError } from "@/lib/api-auth";
+import { provaVersioniSnmp, type VersioneSnmp } from "@/lib/protocols/snmp-sessione";
 
 /**
  * Test SNMP connectivity on a host.
  * GET /api/test-snmp?host=192.168.1.1&community=public
+ * Probe SNMP verso host arbitrario (audit SEC-9): solo admin.
  */
 export async function GET(request: Request) {
-  const authCheck = await requireAuth();
+  const authCheck = await requireAdmin();
   if (isAuthError(authCheck)) return authCheck;
   const { searchParams } = new URL(request.url);
   const host = searchParams.get("host");
@@ -19,30 +21,22 @@ export async function GET(request: Request) {
 
   try {
     const snmp = await import("net-snmp");
-    const result: { success: boolean; sysDescr?: string; sysName?: string; error?: string } = { success: false };
+    const result: { success: boolean; sysDescr?: string; sysName?: string; snmp_version?: VersioneSnmp; error?: string } = { success: false };
 
-    const session = snmp.createSession(host, community, { port, timeout: 5000 });
-
-    const getOids = ["1.3.6.1.2.1.1.1.0", "1.3.6.1.2.1.1.5.0"];
-
-    await new Promise<void>((resolve, reject) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (session as any).get(getOids, (error: Error | null, varbinds: Array<{ oid: string; value: Buffer | string | number }>) => {
-        session.close();
-        if (error) {
-          result.error = error.message;
-          reject(error);
-          return;
-        }
-        for (const vb of varbinds) {
-          const val = Buffer.isBuffer(vb.value) ? vb.value.toString("utf-8") : String(vb.value);
-          if (vb.oid === "1.3.6.1.2.1.1.1.0") result.sysDescr = val;
-          if (vb.oid === "1.3.6.1.2.1.1.5.0") result.sysName = val;
-        }
-        result.success = true;
-        resolve();
-      });
+    // Senza apparato non si sa la versione: v2c, poi v1, e si dice quale ha risposto.
+    const esito = await provaVersioniSnmp(snmp, host, community, {
+      port,
+      timeoutMs: 5000,
+      oids: ["1.3.6.1.2.1.1.1.0", "1.3.6.1.2.1.1.5.0"],
     });
+    if (!esito.ok) throw new Error(esito.errore);
+    for (const vb of esito.varbinds) {
+      const val = Buffer.isBuffer(vb.value) ? vb.value.toString("utf-8") : String(vb.value);
+      if (vb.oid === "1.3.6.1.2.1.1.1.0") result.sysDescr = val;
+      if (vb.oid === "1.3.6.1.2.1.1.5.0") result.sysName = val;
+    }
+    result.success = true;
+    result.snmp_version = esito.versione;
 
     return NextResponse.json(result);
   } catch (error) {

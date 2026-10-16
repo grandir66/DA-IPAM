@@ -1,8 +1,10 @@
+import { parseDbDate, FUSO_UTENTI } from "@/lib/db-date";
 import { getDashboardStats, getNetworks, getRecentActivity, getUserCount, getKnownHostStats, getOfflineKnownHosts } from "@/lib/db";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { auth } from "@/lib/auth";
 import { Network, Monitor, Wifi, WifiOff, HelpCircle, Shield, AlertTriangle, Activity, TrendingUp, PlugZap, CheckCircle2, XCircle, Clock } from "lucide-react";
 import { StatusOverTimeChart } from "@/components/shared/status-over-time-chart";
 import { StatusChangeFeed } from "@/components/shared/status-change-feed";
@@ -10,7 +12,16 @@ import { getServerTenantCode } from "@/lib/api-tenant";
 import { withTenant } from "@/lib/db-tenant";
 import { getIntegrationsOverview, type IntegrationHealth } from "@/lib/integrations/dashboard-health";
 import { getModulesHealth } from "@/lib/modules/health";
-import { MODULE_DESCRIPTORS } from "@/lib/modules/registry";
+import { MODULE_DESCRIPTORS, resolveModules, type ModuleState } from "@/lib/modules/registry";
+import { moduleRowTarget, type DestinazioneRigaModulo } from "@/lib/modules/dashboard-rows";
+
+/** Riga «Stato moduli»: le righe dei moduli portano anche dove aprono (UI-20). */
+type StatoModuloRiga = IntegrationHealth & {
+  apre?: DestinazioneRigaModulo["apre"];
+  notaStato?: string | null;
+  /** false = modulo non installato: fuori dal conteggio errori, icona neutra. */
+  contaNegliErrori?: boolean;
+};
 
 export const dynamic = "force-dynamic";
 
@@ -30,8 +41,24 @@ export default async function DashboardPage() {
   // Stato moduli (registry + health cachato 60s) + riga Active Directory separata
   // (AD non è uno dei 6 moduli base ma resta visibile per non regredire).
   const moduleHealth = await getModulesHealth(tenantCode);
-  const moduleRows: IntegrationHealth[] = moduleHealth.map((h) => {
+  // Stato dal registry (solo letture locali, niente sonde): decide se la riga
+  // apre il modulo o la configurazione (UI-20). Se non si legge, le righe
+  // tornano ad aprire la configurazione, come prima, e l'errore va nel log.
+  let moduleStates: ModuleState[] = [];
+  try {
+    // Il ruolo decide il link di LibreNMS (accesso automatico solo admin, T3-26).
+    const ruolo = ((await auth())?.user as { role?: string } | undefined)?.role;
+    moduleStates = await withTenant(tenantCode, () => resolveModules(tenantCode, ruolo));
+  } catch (e) {
+    console.error("[dashboard] stato dei moduli non leggibile:", e);
+  }
+  const moduleRows: StatoModuloRiga[] = moduleHealth.map((h) => {
     const d = MODULE_DESCRIPTORS.find((m) => m.key === h.key);
+    const target = moduleRowTarget(
+      d,
+      moduleStates.find((m) => m.key === h.key),
+      h,
+    );
     return {
       key: h.key,
       label: d?.label ?? h.key,
@@ -40,19 +67,26 @@ export default async function DashboardPage() {
       // espone un last_sync_at reale; gli altri probe sono live ma senza timestamp
       // di data-sync → senza fallback un modulo CONNESSO mostrava "Mai eseguita"
       // (l'utente lo leggeva come "non sincronizzato"). Fallback al `probedAt`
-      // (istante dell'health-check) per i moduli configurati; i moduli non
-      // configurati (status "never") restano senza timestamp → "Mai eseguita".
+      // (istante dell'health-check) per i moduli configurati. I moduli non
+      // attivi mostrano al posto dell'ora la nota di moduleRowTarget
+      // («Modulo non attivo», UI-20), non più «Mai eseguita».
       lastSync: h.lastSync ?? (h.status === "never" ? null : h.probedAt),
       message: h.message,
-      href: d?.configHref ?? "/settings?tab=moduli",
+      href: target.href,
+      apre: target.apre,
+      notaStato: target.notaStato,
+      contaNegliErrori: target.contaNegliErrori,
     };
   });
   const adRows = withTenant(tenantCode, () => getIntegrationsOverview()).filter((i) =>
     i.key.startsWith("ad_"),
   );
-  const integrations: IntegrationHealth[] = [...moduleRows, ...adRows];
-  const integrationErrors = integrations.filter((i) => i.status === "error").length;
-  const integrationWarnings = integrations.filter(
+  const integrations: StatoModuloRiga[] = [...moduleRows, ...adRows];
+  // Un modulo non installato non conta: la sua sonda può fallire (MeshCentral
+  // disinstallato tiene i parametri di collegamento) senza che sia un guasto.
+  const contate = integrations.filter((i) => i.contaNegliErrori !== false);
+  const integrationErrors = contate.filter((i) => i.status === "error").length;
+  const integrationWarnings = contate.filter(
     (i) => i.status === "warning" || i.status === "stale",
   ).length;
 
@@ -182,7 +216,7 @@ export default async function DashboardPage() {
                       </span>
                       {h.last_seen && (
                         <span className="text-xs text-muted-foreground">
-                          Ultimo contatto: {new Date(h.last_seen).toLocaleString("it-IT")}
+                          Ultimo contatto: {parseDbDate(h.last_seen).toLocaleString("it-IT", { timeZone: FUSO_UTENTI })}
                         </span>
                       )}
                     </Link>
@@ -282,7 +316,7 @@ export default async function DashboardPage() {
                       </span>
                       {net.last_scan && (
                         <span className="hidden md:inline text-[11px] text-muted-foreground whitespace-nowrap w-24 text-right shrink-0">
-                          {new Date(net.last_scan).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                          {parseDbDate(net.last_scan).toLocaleString("it-IT", { timeZone: FUSO_UTENTI, day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
                         </span>
                       )}
                     </Link>
@@ -314,7 +348,7 @@ export default async function DashboardPage() {
                     {activity.status}
                   </span>
                   <span className="ml-auto text-xs text-muted-foreground">
-                    {new Date(activity.timestamp).toLocaleString("it-IT")}
+                    {parseDbDate(activity.timestamp).toLocaleString("it-IT", { timeZone: FUSO_UTENTI })}
                   </span>
                 </div>
               ))}
@@ -349,25 +383,37 @@ function KpiCard({ title, value, icon, color, href }: {
   return href ? <Link href={href}>{card}</Link> : card;
 }
 
-function IntegrationRow({ item }: { item: IntegrationHealth }) {
+const TITOLO_APRE: Record<DestinazioneRigaModulo["apre"], string> = {
+  modulo: "Apri il modulo",
+  launchpad: "Apri dal Launchpad",
+  configurazione: "Apri la configurazione del modulo",
+};
+
+function IntegrationRow({ item }: { item: StatoModuloRiga }) {
   const icon =
+    item.contaNegliErrori === false ? <HelpCircle className="h-4 w-4 text-muted-foreground" /> :
     item.status === "ok" ? <CheckCircle2 className="h-4 w-4 text-success" /> :
     item.status === "error" ? <XCircle className="h-4 w-4 text-destructive" /> :
     item.status === "warning" ? <AlertTriangle className="h-4 w-4 text-amber-500" /> :
     item.status === "stale" ? <Clock className="h-4 w-4 text-amber-500" /> :
     <HelpCircle className="h-4 w-4 text-muted-foreground" />;
-  const lastSyncLabel = item.lastSync
-    ? new Date(item.lastSync).toLocaleString("it-IT")
-    : "Mai eseguita";
+  // Un modulo non attivo non «non ha mai girato»: lo si dice (UI-20).
+  const lastSyncLabel = item.notaStato
+    ? item.notaStato
+    : item.lastSync
+      ? parseDbDate(item.lastSync).toLocaleString("it-IT", { timeZone: FUSO_UTENTI })
+      : "Mai eseguita";
   return (
     <Link
       href={item.href}
+      title={item.apre ? TITOLO_APRE[item.apre] : undefined}
       className="flex items-center justify-between gap-3 rounded-md px-2 py-1.5 hover:bg-muted/50 transition-colors"
     >
       <span className="flex items-center gap-2 min-w-0">
         {icon}
         <span className="text-sm font-medium truncate">{item.label}</span>
-        {item.message && (
+        {/* Di un modulo non installato non si mostra l'esito della sonda. */}
+        {item.message && item.contaNegliErrori !== false && (
           <span className="text-xs text-muted-foreground truncate hidden sm:inline">
             — {item.message}
           </span>

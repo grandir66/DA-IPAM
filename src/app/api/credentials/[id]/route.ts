@@ -1,10 +1,19 @@
 import { NextResponse } from "next/server";
-import { getCredentialById, updateCredential, deleteCredential } from "@/lib/db";
+import { getCredentialById, getDb } from "@/lib/db";
 import { CredentialSchema } from "@/lib/validators";
-import { encrypt, decrypt } from "@/lib/crypto";
+import { safeDecrypt } from "@/lib/crypto";
+import { eliminaVoceDb, modificaVoceDb } from "@/lib/credentials/archivio";
+import { mascheraCredenziale, type CredenzialeVista } from "@/lib/credentials/maschera";
+import { totaleUsi, usiCredenzialeDb, type UsiCredenziale } from "@/lib/credentials/usi";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 
+/**
+ * Una voce, mascherata (T13, 16/10), con l'elenco degli usi: la pagina
+ * Credenziali lo mostra al posto di eliminare una voce in uso (D8 = (a)).
+ * `for_edit=1` (solo admin) aggiunge lo username in chiaro per il modulo di
+ * modifica; chiavi e password non escono mai, nemmeno così.
+ */
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   return withTenantFromSession(async () => {
     try {
@@ -15,18 +24,18 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       }
       const url = new URL(request.url);
       const forEdit = url.searchParams.get("for_edit") === "1";
-      let username: string | null = null;
-      if (forEdit && credential.encrypted_username) {
-        try {
-          username = decrypt(credential.encrypted_username);
-        } catch { /* ignore */ }
+      // for_edit=1 decifra i dati: solo admin. La lettura mascherata resta ai viewer.
+      if (forEdit) {
+        const adminCheck = await requireAdmin();
+        if (isAuthError(adminCheck)) return adminCheck;
       }
-      return NextResponse.json({
-        ...credential,
-        encrypted_username: credential.encrypted_username ? "●●●●●●●●" : null,
-        encrypted_password: credential.encrypted_password ? "●●●●●●●●" : null,
-        ...(username != null ? { username } : {}),
-      });
+      const usi = usiCredenzialeDb(getDb(), credential.id);
+      const risposta: CredenzialeVista & { usi: UsiCredenziale; username?: string | null } = {
+        ...mascheraCredenziale(credential, totaleUsi(usi)),
+        usi,
+      };
+      if (forEdit) risposta.username = credential.encrypted_username ? safeDecrypt(credential.encrypted_username) : null;
+      return NextResponse.json(risposta);
     } catch (error) {
       console.error("Error fetching credential:", error);
       return NextResponse.json({ error: "Errore nel recupero della credenziale" }, { status: 500 });
@@ -34,6 +43,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   });
 }
 
+/**
+ * Modifica. Segreti vuoti = non modificare (tappa 1); i campi richiesti si
+ * guardano sulla voce risultante; una voce in uso non cambia tipo (409 con gli
+ * usi, D8 = (a)). Dettaglio in `src/lib/credentials/archivio.ts`.
+ */
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   return withTenantFromSession(async () => {
     try {
@@ -45,24 +59,9 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       if (!parsed.success) {
         return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
       }
-
-      const data = parsed.data;
-      const updates: Record<string, unknown> = {};
-      if (data.name !== undefined) updates.name = data.name;
-      if (data.credential_type !== undefined) updates.credential_type = data.credential_type;
-      if (data.username !== undefined) updates.encrypted_username = data.username ? encrypt(data.username) : null;
-      if (data.password !== undefined) updates.encrypted_password = data.password ? encrypt(data.password) : null;
-
-      const credential = updateCredential(Number(id), updates);
-      if (!credential) {
-        return NextResponse.json({ error: "Credenziale non trovata" }, { status: 404 });
-      }
-
-      return NextResponse.json({
-        ...credential,
-        encrypted_username: credential.encrypted_username ? "●●●●●●●●" : null,
-        encrypted_password: credential.encrypted_password ? "●●●●●●●●" : null,
-      });
+      const esito = modificaVoceDb(getDb(), Number(id), parsed.data, body);
+      if (!esito.ok) return NextResponse.json({ error: esito.errore, usi: esito.usi }, { status: esito.stato });
+      return NextResponse.json(esito.vista);
     } catch (error) {
       console.error("Error updating credential:", error);
       return NextResponse.json({ error: "Errore nell'aggiornamento" }, { status: 500 });
@@ -70,16 +69,19 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   });
 }
 
+/**
+ * Eliminazione. Una voce in uso non si elimina: 409 con gli usi (D8 = (a)).
+ * Prima la cancellazione toglieva in silenzio binding, catene e righe host e
+ * spegneva il WinRM dell'AD.
+ */
 export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   return withTenantFromSession(async () => {
     try {
       const adminCheck = await requireAdmin();
       if (isAuthError(adminCheck)) return adminCheck;
       const { id } = await params;
-      const deleted = deleteCredential(Number(id));
-      if (!deleted) {
-        return NextResponse.json({ error: "Credenziale non trovata" }, { status: 404 });
-      }
+      const esito = eliminaVoceDb(getDb(), Number(id));
+      if (!esito.ok) return NextResponse.json({ error: esito.errore, usi: esito.usi }, { status: esito.stato });
       return NextResponse.json({ success: true });
     } catch (error) {
       console.error("Error deleting credential:", error);

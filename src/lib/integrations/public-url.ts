@@ -25,7 +25,7 @@ export function isInternalIntegrationUrl(url: string | null | undefined): boolea
       return true;
     }
     if (/^10\.255\.255\./.test(host)) return true;
-    // 172.17–172.31: reti Docker/appliance. 172.16.x spesso è LAN cliente (es. DTS).
+    // 172.17–172.31: reti Docker/appliance. 172.16.x spesso è LAN cliente (es. cliente A).
     const pubHost = publicHostFromEnv()?.toLowerCase();
     if (pubHost && host === pubHost) return false;
     if (/^172\.(1[7-9]|2\d|3[01])\./.test(host)) return true;

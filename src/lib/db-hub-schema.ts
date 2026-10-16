@@ -167,6 +167,25 @@ CREATE TABLE IF NOT EXISTS sysobj_lookup (
   updated_at TEXT DEFAULT (datetime('now'))
 );
 
+-- Linea di prodotto per prefisso MAC (Attribution v2 Fase 2, Task 3): hub perché
+-- il dato (es. "prefisso X di Ubiquiti + hostname ap-* → UniFi AP") è uguale per
+-- tutti i tenant, non una correzione per-cliente (quelle restano evidenze "manual").
+CREATE TABLE IF NOT EXISTS mac_product_map (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  mac_prefix TEXT NOT NULL,              -- esadecimale maiuscolo senza separatori, 6/7/9 cifre
+  hostname_pattern TEXT,                 -- regex opzionale, applicata solo se presente
+  vendor TEXT NOT NULL,                  -- slug (vendorSlug)
+  product_family TEXT,                   -- es. "UniFi AP"
+  category TEXT,                         -- slug tassonomia v2, validato in scrittura
+  confidence REAL NOT NULL DEFAULT 0.7,
+  source TEXT NOT NULL DEFAULT 'domarc' CHECK(source IN ('seed','domarc','feedback')),
+  enabled INTEGER NOT NULL DEFAULT 1,
+  note TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(mac_prefix, hostname_pattern)
+);
+
 CREATE TABLE IF NOT EXISTS tenant_agents (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   tenant_id INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
@@ -238,6 +257,32 @@ CREATE TABLE IF NOT EXISTS inventory_ingest_tokens (
   tenant_code TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- DA-Link (tappa C1 NetBird): cosa esce da questa istanza verso Domarc.
+-- Il livello lo sceglie solo l'amministratore dell'istanza (spec NetBird §5.3):
+-- ogni cambio è una riga nuova, mai sovrascritta. È il registro d'audit locale.
+-- Nessuna riga = nessuna scelta dichiarata = esce solo lo stato.
+-- Non in settings: PUT /api/settings scrive qualunque chiave senza registro.
+CREATE TABLE IF NOT EXISTS dalink_livello_registro (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  livello TEXT NOT NULL CHECK(livello IN ('solo_stato', 'stato_inventario')),
+  scelto_da TEXT NOT NULL,
+  scelto_il TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Ultimo tentativo e ultimo invio riuscito del segnale di vita verso DA-Link.
+-- Dalla risposta si tengono solo le due date (ricevuto_il, inventario_cancellato_il):
+-- nessuna risposta di DA-Link cambia la configurazione dell'istanza.
+CREATE TABLE IF NOT EXISTS dalink_segnale_stato (
+  id INTEGER PRIMARY KEY CHECK(id = 1),
+  tentato_il TEXT,
+  esito TEXT,
+  dettaglio TEXT,
+  ok_il TEXT,
+  ok_livello TEXT,
+  ricevuto_il TEXT,
+  inventario_cancellato_il TEXT
+);
 `;
 
 export const HUB_INDEXES_SQL = `
@@ -252,6 +297,7 @@ CREATE INDEX IF NOT EXISTS idx_device_fp_rules_pri ON device_fingerprint_rules(e
 CREATE INDEX IF NOT EXISTS idx_fingerprint_class_map_pri ON fingerprint_classification_map(enabled, priority ASC, id ASC);
 CREATE INDEX IF NOT EXISTS idx_sysobj_lookup_oid ON sysobj_lookup(oid);
 CREATE INDEX IF NOT EXISTS idx_sysobj_lookup_enabled ON sysobj_lookup(enabled);
+CREATE INDEX IF NOT EXISTS idx_mac_product_prefix ON mac_product_map(mac_prefix, enabled);
 CREATE INDEX IF NOT EXISTS idx_tenant_agents_tenant ON tenant_agents(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_tenant_features_key ON tenant_features(feature_key, enabled);
 CREATE INDEX IF NOT EXISTS idx_inventory_ingest_tenant ON inventory_ingest_tokens(tenant_code);

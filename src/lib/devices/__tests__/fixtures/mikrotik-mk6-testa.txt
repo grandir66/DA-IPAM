@@ -1,0 +1,23 @@
+               interface: sfp-sfpplus1        sfp-sfpplus2        sfp-sfpplus3        sfp-sfpplus4        sfp-sfpplus5 sfp-sfpplus6        bond1               bond2               bond3               sfp-sfpplus7
+                  status: in-bridge           in-bridge           in-bridge           in-bridge           inactive     in-bridge           in-bridge           in-bridge           in-bridge           in-bridge
+                 port-id: 0x80.1              0x80.2              0x80.3              0x80.4                           0x80.6              0x80.8              0x80.9              0x80.10             0x80.7
+                    role: designated-port     designated-port     designated-port     designated-port                  designated-port     designated-port     designated-port     designated-port     designated-port
+               edge-port: yes                 yes                 yes                 yes                              yes                 no                  no                  yes                 yes
+     edge-port-discovery: yes                 yes                 yes                 yes                              yes                 yes                 yes                 yes                 yes
+     point-to-point-port: yes                 yes                 yes                 yes                              yes                 yes                 yes                 yes                 yes
+            external-fdb: no                  no                  no                  no                               no                  no                  no                  no                  no
+            sending-rstp: yes                 yes                 yes                 yes                              yes                 yes                 yes                 yes                 yes
+                learning: yes                 yes                 yes                 yes                              yes                 yes                 yes                 yes                 yes
+              forwarding: yes                 yes                 yes                 yes                              yes                 yes                 yes                 yes                 yes
+        actual-path-cost: 10                  10                  10                  10                               10                  800                 2000                4000                2000
+    designated-bridge-id: 0.02:00:A0:10:0E:02 0.02:00:A0:10:0E:02 0.02:00:A0:10:0E:02 0.02:00:A0:10:0E:02              0.02:00:A0:10:0E:02 0.02:00:A0:10:0E:02 0.02:00:A0:10:0E:02 0.02:00:A0:10:0E:02 0.02:00:A0:10:0E:02
+         designated-cost: 0                   0                   0                   0                                0                   0                   0                   0                   0
+      designated-port-id: 0x80.1              0x80.2              0x80.3              0x80.4                           0x80.6              0x80.8              0x80.9              0x80.10             0x80.7
+  designated-message-age: 0s                  0s                  0s                  0s                               0s                  0s                  0s                  0s                  0s
+      designated-max-age: 20s                 20s                 20s                 20s                              20s                 20s                 20s                 20s                 20s
+              tx-rx-bpdu: 301466/0            301466/0            301466/0            301466/0                         301464/0            301466/237          301584/4            301463/0            301464/0
+     discard-transitions: 0                   0                   0                   0                                0                   0                   1                   0                   0
+     forward-transitions: 1                   1                   1                   1                                1                   1                   2                   1                   1
+                tx-rx-tc: 0/0                 0/0                 0/0                 0/0                              0/0                 2/237               236/3               0/0                 0/0
+        topology-changes: 0                   0                   0                   0                                0                   1                   118                 0                   0
+    last-topology-change:                                                                                                                  6d23h41m30s         2h9m25s

@@ -6,18 +6,9 @@ import {
   setFeatureDisabled,
   invalidateFeatureCache,
 } from "@/lib/patch/feature";
-import {
-  dropPatchModuleSchema,
-  patchModuleTablesExist,
-} from "@/lib/patch/schema";
-import {
-  dropInventoryAgentSchema,
-  INVENTORY_AGENT_TABLES,
-} from "@/lib/inventory-agent/schema";
 import { uninstallInventoryAgentFeature } from "@/lib/inventory-agent/feature";
-import { dropMcSchema } from "@/lib/integrations/meshcentral/schema";
-
-const ALLOWED_FEATURES = new Set<string>(["patch_management", "inventory_agent", "meshcentral"]);
+import { isUninstallableFeature } from "@/lib/modules/uninstall-copy";
+import { dropFeatureData } from "@/lib/modules/uninstall-data";
 
 const NO_CACHE_HEADERS = { "Cache-Control": "no-store, no-cache, must-revalidate" };
 
@@ -31,8 +22,13 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ key: string }> }
 ) {
+  // Auth prima di tutto (regola del repo): prima rispondeva 404/400 anche a
+  // chi non era autenticato.
+  const adminCheck = await requireAdmin();
+  if (isAuthError(adminCheck)) return adminCheck;
+
   const { key } = await params;
-  if (!ALLOWED_FEATURES.has(key)) {
+  if (!isUninstallableFeature(key)) {
     return NextResponse.json({ error: "Feature sconosciuta" }, { status: 404 });
   }
 
@@ -49,9 +45,6 @@ export async function POST(
   }
 
   return withTenantFromSession(async () => {
-    const adminCheck = await requireAdmin();
-    if (isAuthError(adminCheck)) return adminCheck;
-
     const tenantCode = getCurrentTenantCode();
     if (!tenantCode) {
       return NextResponse.json(
@@ -61,23 +54,12 @@ export async function POST(
     }
 
     try {
-      // F1: se dropData=true droppa le tabelle del modulo dal DB tenant.
-      // Hardcoded patch_management (unica feature whitelistata). Quando
-      // aggiungeremo altri moduli demultiplexeremo qui per feature key.
-      let dataDropped = false;
-      if (dropData) {
-        const tenantDb = getTenantDb(tenantCode);
-        if (key === "patch_management" && patchModuleTablesExist(tenantDb)) {
-          const dropResult = dropPatchModuleSchema(tenantDb);
-          dataDropped = dropResult.tablesDropped.length > 0;
-        } else if (key === "inventory_agent") {
-          dropInventoryAgentSchema(tenantDb);
-          dataDropped = INVENTORY_AGENT_TABLES.length > 0;
-        } else if (key === "meshcentral") {
-          dropMcSchema(tenantDb);
-          dataDropped = true;
-        }
-      }
+      // dropData=true cancella le tabelle del modulo dal DB tenant. La
+      // conferma in UI dice quali (UNINSTALL_COPY in lib/modules/uninstall-copy,
+      // MOD-19): le prove confrontano i due.
+      const dataDropped = dropData
+        ? dropFeatureData(getTenantDb(tenantCode), key)
+        : false;
 
       if (key === "inventory_agent") {
         uninstallInventoryAgentFeature(tenantCode);

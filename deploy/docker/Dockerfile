@@ -36,10 +36,10 @@ ENV NODE_ENV=production \
 
 # Tool di rete per scan + Python bridge WinRM/WMI/SSH
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ca-certificates curl sqlite3 \
-      iputils-ping nmap iproute2 snmp \
+      ca-certificates curl sqlite3 openssl \
+      iputils-ping nmap iproute2 snmp net-tools \
       python3 python3-venv python3-dev python3-pip \
-      libffi-dev libkrb5-dev gcc \
+      libffi-dev libkrb5-dev krb5-user gcc \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt/da-ipam

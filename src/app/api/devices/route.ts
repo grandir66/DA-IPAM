@@ -1,19 +1,10 @@
 import { NextResponse } from "next/server";
-import { getNetworkDevices, getRouters, getSwitches, getDevicesByClassificationOrLegacy, createNetworkDevice, getHostByIp, updateHost, ensureInventoryAssetForNetworkDevice, addDeviceCredentialBinding, getDeviceCredentialProtocolsSummary } from "@/lib/db";
-import { NetworkDeviceSchema } from "@/lib/validators";
-import { encrypt } from "@/lib/crypto";
-import {
-  suggestProductProfileForClassification,
-  resolveDeviceTypeForCreate,
-  resolveUseForArpPoll,
-  scanTargetHintFromProductProfile,
-  vendorSubtypeFromProductProfile,
-  type ProductProfileId,
-} from "@/lib/device-product-profiles";
-import { linkInvAgentEndpointToHost } from "@/lib/inventory-agent/db";
+import { getNetworkDevices, getRouters, getSwitches, getDevicesByClassificationOrLegacy, getDeviceCredentialProtocolsSummary } from "@/lib/db";
+import { creaApparato } from "@/lib/devices/crea-apparato";
+import { avvisoPortaProtocollo } from "@/lib/devices/porta-protocollo";
 import { requireAdminOrOnboarding, isAuthError } from "@/lib/api-auth";
 import { getTenantMode, withTenantFromSession } from "@/lib/api-tenant";
-import { queryAllTenants } from "@/lib/db-tenant";
+import { queryAllTenants, getHostStatusesByIp } from "@/lib/db-tenant";
 
 const NO_CACHE_HEADERS = { "Cache-Control": "no-store, no-cache, must-revalidate" };
 
@@ -98,9 +89,12 @@ export async function GET(request: Request) {
 
     if (classification) {
       const networkDevices = getDevicesByClassificationOrLegacy(classification);
+      const statiClasse = getHostStatusesByIp(networkDevices.map((d) => d.host));
       const maskedDevices = networkDevices.map((d) => ({
         ...d,
         source: "network_device" as const,
+        host_status: statiClasse.get(d.host)?.status ?? null,
+        host_last_seen: statiClasse.get(d.host)?.last_seen ?? null,
         credential_protocols: credMap.get(d.id) || [],
         last_proxmox_scan_result: d.last_proxmox_scan_result ? "HAS_DATA" : null,
         encrypted_password: d.encrypted_password ? "●●●●●●●●" : null,
@@ -115,9 +109,14 @@ export async function GET(request: Request) {
       : type === "switch"
         ? getSwitches()
         : getNetworkDevices();
+    // Stato di raggiungibilità dagli host scansionati con lo stesso IP (UI-8):
+    // "enabled" dice solo se il dispositivo è attivo in anagrafica.
+    const stati = getHostStatusesByIp(devices.map((d) => d.host));
     const masked = devices.map((d) => ({
       ...d,
       source: "network_device" as const,
+      host_status: stati.get(d.host)?.status ?? null,
+      host_last_seen: stati.get(d.host)?.last_seen ?? null,
       credential_protocols: credMap.get(d.id) || [],
       last_proxmox_scan_result: d.last_proxmox_scan_result ? "HAS_DATA" : null,
       encrypted_password: d.encrypted_password ? "●●●●●●●●" : null,
@@ -138,91 +137,17 @@ export async function POST(request: Request) {
       const adminCheck = await requireAdminOrOnboarding();
       if (isAuthError(adminCheck)) return adminCheck;
     const body = await request.json();
-    const parsed = NetworkDeviceSchema.safeParse(body);
-    if (!parsed.success) {
-      return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
+    const esito = creaApparato(body);
+    if (!esito.ok) {
+      return NextResponse.json({ error: esito.error }, { status: esito.status });
     }
-
-    const data = parsed.data;
-    const deviceClassification =
-      data.classification ??
-      (data.device_type === "router" ? "router" : data.device_type === "switch" ? "switch" : "hypervisor");
-    const productProfile = suggestProductProfileForClassification(
-      data.vendor,
-      deviceClassification,
-      data.product_profile
-    ) as ProductProfileId;
-    const deviceType = resolveDeviceTypeForCreate({
-      product_profile: productProfile,
-      device_type: data.device_type,
-      classification: deviceClassification,
-    });
-    const useForArpPoll = resolveUseForArpPoll({
-      use_for_arp_poll: data.use_for_arp_poll,
-      device_type: deviceType,
-      classification: deviceClassification,
-      vendor: data.vendor,
-    });
-    const defaultPort =
-      data.protocol === "ssh" ? 22 : data.protocol === "api" ? (deviceType === "hypervisor" ? 8006 : 443) : data.protocol === "winrm" ? 5985 : 161;
-    const scanTarget =
-      data.scan_target ?? scanTargetHintFromProductProfile(productProfile);
-    const device = createNetworkDevice({
-      name: data.name,
-      host: data.host,
-      device_type: deviceType,
-      classification: deviceClassification,
-      vendor: data.vendor,
-      vendor_subtype: data.vendor_subtype ?? vendorSubtypeFromProductProfile(productProfile),
-      protocol: data.protocol,
-      credential_id: data.credential_id ?? null,
-      snmp_credential_id: data.snmp_credential_id ?? null,
-      username: data.credential_id ? null : (data.username || null),
-      encrypted_password: data.credential_id ? null : (data.password ? encrypt(data.password) : null),
-      community_string: data.community_string ? encrypt(data.community_string) : null,
-      api_token: data.api_token ? encrypt(data.api_token) : null,
-      api_url: data.api_url || null,
-      port: data.port || defaultPort,
-      enabled: 1,
-      scan_target: scanTarget,
-      product_profile: productProfile,
-      use_for_arp_poll: useForArpPoll,
-    });
-
-    // Crea bindings credenziali nella nuova tabella
-    const protoType = data.protocol === "winrm" ? "winrm" : data.protocol === "snmp_v2" || data.protocol === "snmp_v3" ? "snmp" : data.protocol === "api" ? "api" : "ssh";
-    const devicePort = data.port || defaultPort;
-    if (data.credential_id) {
-      addDeviceCredentialBinding({ device_id: device.id, credential_id: data.credential_id, protocol_type: protoType, port: devicePort });
-    } else if (data.username) {
-      addDeviceCredentialBinding({
-        device_id: device.id, protocol_type: protoType, port: devicePort,
-        inline_username: data.username, inline_encrypted_password: data.password ? encrypt(data.password) : null,
-      });
-    }
-    if (data.snmp_credential_id && data.snmp_credential_id !== data.credential_id) {
-      addDeviceCredentialBinding({ device_id: device.id, credential_id: data.snmp_credential_id, protocol_type: "snmp", port: 161 });
-    } else if (data.community_string && !data.snmp_credential_id) {
-      addDeviceCredentialBinding({
-        device_id: device.id, protocol_type: "snmp", port: 161,
-        inline_encrypted_password: encrypt(data.community_string),
-      });
-    }
-
-    const host = getHostByIp(data.host);
-    if (host) {
-      updateHost(host.id, { classification: deviceClassification });
-      try {
-        linkInvAgentEndpointToHost(host.id);
-      } catch {
-        /* inventory agent opzionale */
-      }
-    }
-
-    ensureInventoryAssetForNetworkDevice(device);
+    const device = esito.device;
+    // Avviso, non rifiuto (16/10): vedi PUT /api/devices/[id].
+    const avviso = avvisoPortaProtocollo(device);
 
     return NextResponse.json({
       ...device,
+      ...(avviso ? { avvisi: [avviso] } : {}),
       encrypted_password: device.encrypted_password ? "●●●●●●●●" : null,
       community_string: device.community_string ? "●●●●●●●●" : null,
       api_token: device.api_token ? "●●●●●●●●" : null,

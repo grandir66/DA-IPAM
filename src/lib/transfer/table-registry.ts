@@ -22,12 +22,19 @@ export const TENANT_TABLES: TableSpec[] = [
   { table: "excluded_ips", scope: "tenant", tier: "config" },
   { table: "physical_devices", scope: "tenant", tier: "config" },
   { table: "device_interfaces", scope: "tenant", tier: "config" },
+  { table: "topology_position", scope: "tenant", tier: "config" },
+  { table: "topology_link_overrides", scope: "tenant", tier: "config" },
+  { table: "topology_maps", scope: "tenant", tier: "config" }, // nasce in migrateTopologyPhase2, non nello schema
   { table: "device_interface_addresses", scope: "tenant", tier: "config" },
   { table: "multihomed_links", scope: "tenant", tier: "config" },
   { table: "device_classifications_custom", scope: "tenant", tier: "config" },
   { table: "proxmox_hosts", scope: "tenant", tier: "config" },
+  { table: "mdm_config", scope: "tenant", tier: "config", secretColumns: ["password_encrypted"] },
+  { table: "edge_scan_schedules", scope: "tenant", tier: "config" },
+  { table: "network_controllers", scope: "tenant", tier: "config", secretColumns: ["password_enc", "api_key_enc"] },
   // --- asset (default ON) ---
   { table: "hosts", scope: "tenant", tier: "asset" },
+  { table: "mobile_devices", scope: "tenant", tier: "asset" },
   { table: "inventory_assets", scope: "tenant", tier: "asset" },
   { table: "asset_assignees", scope: "tenant", tier: "asset" },
   { table: "locations", scope: "tenant", tier: "asset" },
@@ -37,21 +44,36 @@ export const TENANT_TABLES: TableSpec[] = [
   { table: "license_seats", scope: "tenant", tier: "asset" },
   { table: "inventory_audit_log", scope: "tenant", tier: "asset" },
   // --- history (default OFF) ---
+  { table: "network_controller_runs", scope: "tenant", tier: "history" },
   { table: "scan_history", scope: "tenant", tier: "history" },
   { table: "status_history", scope: "tenant", tier: "history" },
   { table: "software_scans", scope: "tenant", tier: "history" },
   { table: "software_scan_logs", scope: "tenant", tier: "history" },
   { table: "anomaly_events", scope: "tenant", tier: "history" },
   { table: "classification_feedback", scope: "tenant", tier: "history" },
+  { table: "host_classification_history", scope: "tenant", tier: "history" },
+  { table: "attribution_evidence", scope: "tenant", tier: "history" },
   { table: "arp_entries", scope: "tenant", tier: "history" },
-  { table: "mac_port_entries", scope: "tenant", tier: "history" },
+  // Indice unico (device_id, mac, port_name) dalla fase 2 della topologia: una sorgente più vecchia ha i doppi.
+  { table: "mac_port_entries", scope: "tenant", tier: "history", dedupe: { key: ["device_id", "mac", "port_name"], latest: "timestamp" } },
   { table: "mac_ip_mapping", scope: "tenant", tier: "history" },
   { table: "mac_ip_history", scope: "tenant", tier: "history" },
   { table: "switch_ports", scope: "tenant", tier: "history" },
   { table: "routing_table", scope: "tenant", tier: "history" },
   { table: "device_neighbors", scope: "tenant", tier: "history" },
+  // Fatti delle letture in più della topologia (T2, spec §13.5.7): storico per lettore, potato a 90 giorni come i vicini.
+  { table: "topology_port_facts", scope: "tenant", tier: "history" },
+  { table: "topology_bridge_facts", scope: "tenant", tier: "history" },
+  { table: "topology_device_macs", scope: "tenant", tier: "history" },
+  { table: "mobile_inventory_history", scope: "tenant", tier: "history" },
+  { table: "mc_remote_session", scope: "tenant", tier: "history" }, // sessioni remote effimere
+  { table: "mc_command_log", scope: "tenant", tier: "history" },    // audit comandi RMM
   // --- mirror (default ON) ---
   { table: "software_inventory", scope: "tenant", tier: "mirror" },
+  { table: "mobile_device_inventory", scope: "tenant", tier: "mirror" },
+  { table: "mobile_device_apps", scope: "tenant", tier: "mirror" },
+  { table: "mc_node", scope: "tenant", tier: "mirror" },      // mapping host→nodo MeshCentral
+  { table: "mc_node_bind", scope: "tenant", tier: "mirror" },
   { table: "wazuh_agent", scope: "tenant", tier: "mirror" },
   { table: "wazuh_hw", scope: "tenant", tier: "mirror" },
   { table: "wazuh_os", scope: "tenant", tier: "mirror" },
@@ -83,6 +105,7 @@ export const HUB_TABLES: TableSpec[] = [
   { table: "device_fingerprint_rules", scope: "hub-global", tier: "config", mergeKey: ["name"] },
   { table: "fingerprint_classification_map", scope: "hub-global", tier: "config", mergeKey: ["fingerprint"] },
   { table: "sysobj_lookup", scope: "hub-global", tier: "config", mergeKey: ["oid"] },
+  { table: "mac_product_map", scope: "hub-global", tier: "config", mergeKey: ["mac_prefix", "hostname_pattern"] },
 ];
 
 /** Tabelle tenant volutamente NON esportate (nessuna oggi: tutte classificate). */
@@ -96,6 +119,10 @@ export const EXCLUDED_HUB_TABLES: string[] = [
   "inventory_ingest_tokens",
   "tenant_agents",
   "system_credential_events",
+  // DA-Link (tappa C1): la scelta di cosa esce è di questa istanza, non dei dati
+  // del cliente; un'altra istanza la dichiara da sé.
+  "dalink_livello_registro",
+  "dalink_segnale_stato",
 ];
 
 const BY_NAME = new Map<string, TableSpec>(

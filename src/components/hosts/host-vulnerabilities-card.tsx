@@ -1,6 +1,8 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -44,7 +46,7 @@ interface VulnPayload {
 const PAGE_SIZE = 50;
 
 function formatDate(ts: string): string {
-  try { return new Date(ts).toLocaleDateString("it-IT"); } catch { return ts; }
+  try { return parseDbDate(ts).toLocaleDateString("it-IT"); } catch { return ts; }
 }
 
 function BreakdownBadges({ b }: { b: FindingGroup["breakdown"] }) {
@@ -134,7 +136,7 @@ export function HostVulnerabilitiesCard({ hostId }: { hostId: number }) {
           </span>
           {data.last_run && (
             <span className="text-xs text-muted-foreground font-normal">
-              Ultimo scan: {new Date(data.last_run.finished_at || data.last_run.started_at).toLocaleString("it-IT")}
+              Ultimo scan: {parseDbDate(data.last_run.finished_at || data.last_run.started_at).toLocaleString("it-IT")}
               {" · "}{totalFindings} CVE · {totalGroups} pacchetti
             </span>
           )}
@@ -143,7 +145,11 @@ export function HostVulnerabilitiesCard({ hostId }: { hostId: number }) {
       <CardContent>
         {!hasFindings ? (
           <p className="text-sm text-muted-foreground">
-            {"Nessun finding archiviato. Verifica che scanner-edge e/o Wazuh siano configurati in Impostazioni → Integrazioni e che il sync sia avvenuto."}
+            Nessun finding archiviato. Verifica che lo Scanner-Edge e/o Wazuh siano configurati in{" "}
+            <Link href="/settings?tab=moduli" className="underline underline-offset-2 hover:text-foreground">
+              Impostazioni → Moduli
+            </Link>{" "}
+            e che il sync sia avvenuto.
           </p>
         ) : (
           <>

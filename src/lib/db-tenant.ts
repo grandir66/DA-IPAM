@@ -15,14 +15,64 @@ import { resolveDataDir } from "./data-dir";
 import { buildPatchFromHost, buildPatchFromDevice, buildSyncMerge, buildSourceLabel } from "./inventory/discovery-sync";
 import fs from "fs";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL } from "./db-tenant-schema";
+import { DDL_TOPOLOGY_CAVI, TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL } from "./db-tenant-schema";
+import { HYPERVISOR_SYNC_MINUTES, SCHEDULED_JOB_TYPES_CHECK_SQL } from "./scheduled-job-types";
+import { isProxmoxVeDevice } from "./devices/device-acquisition-resolve";
 import { macToHex, normalizeMac, normalizeMacForStorage } from "./utils";
 import { lookupVendorSync } from "./scanner/mac-vendor";
-import { sqlOrderByDhcpLeases, sqlOrderByNetworks, type SortDirection } from "./table-sort";
-import { decrypt, safeDecrypt } from "./crypto";
+import { VENDOR_PLACEHOLDER_RE } from "./attribution/emitters";
+import { ipSortKey, sqlOrderByDhcpLeases, sqlOrderByNetworks, type SortDirection } from "./table-sort";
+import { convertiCommunityInlineSnmp } from "./credentials/converti-community-inline";
+import { descriviRicostruzione, descriviStato, migraCredenzialiTipi, statoCredenziali } from "./credentials/migra-credenziali-tipi";
+import { descriviNormalizza, normalizzaTipiCredenziali, segnoTipi } from "./credentials/normalizza-tipi";
+import { conversioneChiusa, leggiSegno, scriviSegno, segnoErrore, SEGNO_APPARATI, SEGNO_CATENE, SEGNO_INTEGRAZIONI, SEGNO_TIPI } from "./credentials/segni-t2";
+import { convertiControllerEAd, descriviIntegrazioni, segnoIntegrazioni } from "./credentials/converti-integrazioni";
+import { convertiCateneVecchie, descriviCatene, MOTIVO_DUE_TENANT, segnoCatene } from "./credentials/converti-catene";
+import { convertiCredenzialiApparati, descriviApparati, segnoApparati } from "./credentials/converti-apparati";
+import { migraAppleMacos } from "./devices/migra-apple-macos";
 import { randomUUID } from "crypto";
 import { inferIpAssignment, resolveAdDhcpLeaseForHost, resolveDhcpLeaseForHost } from "./ip-assignment";
-import { getActiveTenants } from "./db-hub";
+import { getActiveTenants, getHubDbPath, getSetting, getTenantByCode } from "./db-hub";
+import { buildStatusSeries, statusWindowStartMs, type StatusObservation, type StatusPoint } from "./status-over-time";
+import { registraRipiego } from "./db-maintenance/ripieghi";
+import {
+  catenaReteDb,
+  chiaviGlobaliHub,
+  communitySnmpDb,
+  credenzialeSnmpApparatoDb,
+  haSnmpApparatoDb,
+  loginApparatoDb,
+  portaSshApparatoDb,
+  tokenApiApparatoDb,
+  type ApparatoInAcquisizione,
+  type CredProtocol,
+  type SceltaSnmpApparato,
+  type SceltaTokenApi,
+} from "./credentials/resolve";
+import { accessoSshDb, communityDb, coppiaLoginDb, coppiaSshDb, type AccessoSsh, type EsitoAccessoSsh } from "./credentials/segreti";
+import { tipiPerRuoloVecchio } from "./credentials/tipi";
+import { aggiornaCredenzialeDb, creaCredenzialeDb, eliminaCredenzialeDb, type ColonneCredenziale } from "./credentials/archivio";
+import { aggiungiAllaListaReteDb, copiaListaReteDb, sostituisciListaReteDb } from "./credentials/lista-rete";
+import type { ControllerKind, ControllerRunKind, ControllerRunStoredTrigger, MetodoVoceController, NetworkControllerRow } from "./controllers/types";
+import {
+  creaVoceControllerCifrataDb,
+  creaVoceControllerDb,
+  credenzialeControllerDb,
+  integrazioniConvertiteDb,
+  vociDeiControllerDb,
+  voceControllerDb,
+  type ControllerDellaVoce,
+  type CredenzialeController,
+  type EsitoVoceController,
+  type NuovaCredenzialeController,
+  type VoceDelController,
+} from "./controllers/credenziale";
+import { libreStatusFrom } from "./topology/status-map";
+import { modelloEtichettaDiPorte } from "./device-fingerprint-classification";
+import { parseProxmoxScan } from "./topology/vms";
+import { hypervisorNics, switchPortsToKnown, type SwitchPortRow } from "./topology/known-ports";
+import type { KnownPort } from "./topology/api-input";
+import type { LinkMedium, MapOrientation } from "./topology/model-types";
 
 import type {
   Network,
@@ -41,7 +91,6 @@ import type {
   HostInput,
   HostUpdate,
   ScheduledJobInput,
-  CredentialInput,
   SoftwareScan,
   SoftwareScanTarget,
   SoftwareScanStatus,
@@ -61,6 +110,20 @@ import type {
 
 const tenantContext = new AsyncLocalStorage<string>();
 
+/**
+ * Il contesto tenant c'è ma il suo database non si apre (NUC-1). Prima il
+ * facade `getDb()` ripiegava in silenzio su DEFAULT: una scrittura nel
+ * database del tenant sbagliato al posto di un errore (incidente 2026-09-02).
+ */
+export class TenantContextError extends Error {
+  readonly tenantCode: string;
+  constructor(tenantCode: string, cause?: unknown) {
+    super(`Database del tenant ${tenantCode} non apribile`, { cause });
+    this.name = "TenantContextError";
+    this.tenantCode = tenantCode;
+  }
+}
+
 export function withTenant<T>(tenantCode: string, fn: () => T): T {
   return tenantContext.run(tenantCode, fn);
 }
@@ -75,7 +138,419 @@ export function getCurrentTenantCode(): string | null {
 
 const TENANTS_DIR = path.join(resolveDataDir(), "tenants");
 const MAX_OPEN_DBS = 20;
+
+/**
+ * Cartella dei DB tenant, fissata quando il modulo si carica. Sola lettura: la
+ * usano gli script sulle copie (tappa 2 credenziali, `guardia-copia.ts`) per
+ * verificare, prima di aprire un DB, di stare sulla copia e non sui dati veri.
+ */
+export function cartellaTenant(): string {
+  return TENANTS_DIR;
+}
+
 const tenantDbs = new Map<string, { db: Database.Database; lastUsed: number }>();
+
+/** Colonne di `scheduled_jobs`, nell'ordine dello schema (copia per nome nella v8). */
+const SCHEDULED_JOBS_COLUMNS = [
+  "id",
+  "network_id",
+  "job_type",
+  "interval_minutes",
+  "last_run",
+  "next_run",
+  "enabled",
+  "config",
+  "created_at",
+  "updated_at",
+] as const;
+
+/**
+ * Migrazione runtime v8 di `scheduled_jobs` (tappa 2 UniFi): il CHECK di
+ * `job_type` accetta `'unifi_sync'`. Stessa forma delle v2…v7 (guardia sul
+ * testo dello schema, tabella ricostruita con `foreign_keys` OFF), con tre
+ * differenze:
+ * - il CHECK viene da `SCHEDULED_JOB_TYPES_CHECK_SQL`, la stessa costante dello
+ *   schema: un DB nuovo e uno aggiornato accettano gli stessi job;
+ * - le colonne si copiano per nome (non `SELECT *` per posizione), il contatore
+ *   AUTOINCREMENT resta dov'era (gli id dei job cancellati non si riusano) e
+ *   l'indice `idx_scheduled_jobs_enabled_next` si ricrea subito: nelle v2…v7
+ *   spariva con la vecchia tabella fino al riavvio successivo;
+ * - tutto in una transazione: se la copia non riesce la tabella resta com'era
+ *   (e l'errore sale al chiamante, che lo registra).
+ *
+ * Restituisce true se ha ricostruito, false se non c'era niente da fare.
+ * Esportata per le prove (`scheduled-jobs-v8.test.ts`).
+ */
+export function migrateScheduledJobsV8(db: Database.Database): boolean {
+  const row = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='scheduled_jobs'").get() as
+    | { sql?: string }
+    | undefined;
+  if (!row?.sql || row.sql.includes("'unifi_sync'")) return false;
+
+  const present = new Set(
+    (db.prepare("PRAGMA table_info(scheduled_jobs)").all() as Array<{ name: string }>).map((c) => c.name),
+  );
+  const cols = SCHEDULED_JOBS_COLUMNS.filter((c) => present.has(c)).join(", ");
+
+  // PRAGMA foreign_keys non ha effetto dentro una transazione: si spegne prima.
+  db.pragma("foreign_keys = OFF");
+  try {
+    db.transaction(() => {
+      const seq = db.prepare("SELECT seq FROM sqlite_sequence WHERE name = 'scheduled_jobs'").get() as
+        | { seq: number }
+        | undefined;
+      db.exec("DROP TABLE IF EXISTS scheduled_jobs_v8");
+      db.exec(`CREATE TABLE scheduled_jobs_v8 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        network_id INTEGER REFERENCES networks(id) ON DELETE CASCADE,
+        job_type TEXT NOT NULL CHECK(${SCHEDULED_JOB_TYPES_CHECK_SQL}),
+        interval_minutes INTEGER NOT NULL DEFAULT 60,
+        last_run TEXT,
+        next_run TEXT,
+        enabled INTEGER DEFAULT 1,
+        config TEXT DEFAULT '{}',
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      )`);
+      db.exec(`INSERT INTO scheduled_jobs_v8 (${cols}) SELECT ${cols} FROM scheduled_jobs`);
+      if (seq) {
+        const upd = db.prepare("UPDATE sqlite_sequence SET seq = MAX(seq, ?) WHERE name = 'scheduled_jobs_v8'").run(seq.seq);
+        if (upd.changes === 0) {
+          db.prepare("INSERT INTO sqlite_sequence (name, seq) VALUES ('scheduled_jobs_v8', ?)").run(seq.seq);
+        }
+      }
+      db.exec("DROP TABLE scheduled_jobs");
+      db.exec("ALTER TABLE scheduled_jobs_v8 RENAME TO scheduled_jobs");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_enabled_next ON scheduled_jobs(enabled, next_run)");
+    })();
+  } finally {
+    db.pragma("foreign_keys = ON");
+  }
+  return true;
+}
+
+/**
+ * Migrazione runtime v9 di `scheduled_jobs` (topologia fase 2b): il CHECK di
+ * `job_type` accetta `'hypervisor_sync'`. Copia esatta della v8 (CHECK dalla
+ * stessa costante dello schema, colonne copiate per nome, contatore
+ * AUTOINCREMENT conservato, indice ricreato subito, tutto in una transazione);
+ * cambia solo la guardia. Su un DB della v7 la v8 scrive già il CHECK con
+ * `hypervisor_sync` e qui non resta niente da fare.
+ *
+ * Restituisce true se ha ricostruito, false se non c'era niente da fare.
+ * Esportata per le prove (`scheduled-jobs-v9.test.ts`).
+ */
+export function migrateScheduledJobsV9(db: Database.Database): boolean {
+  const row = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='scheduled_jobs'").get() as
+    | { sql?: string }
+    | undefined;
+  if (!row?.sql || row.sql.includes("'hypervisor_sync'")) return false;
+
+  const present = new Set(
+    (db.prepare("PRAGMA table_info(scheduled_jobs)").all() as Array<{ name: string }>).map((c) => c.name),
+  );
+  const cols = SCHEDULED_JOBS_COLUMNS.filter((c) => present.has(c)).join(", ");
+
+  // PRAGMA foreign_keys non ha effetto dentro una transazione: si spegne prima.
+  db.pragma("foreign_keys = OFF");
+  try {
+    db.transaction(() => {
+      const seq = db.prepare("SELECT seq FROM sqlite_sequence WHERE name = 'scheduled_jobs'").get() as
+        | { seq: number }
+        | undefined;
+      db.exec("DROP TABLE IF EXISTS scheduled_jobs_v9");
+      db.exec(`CREATE TABLE scheduled_jobs_v9 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        network_id INTEGER REFERENCES networks(id) ON DELETE CASCADE,
+        job_type TEXT NOT NULL CHECK(${SCHEDULED_JOB_TYPES_CHECK_SQL}),
+        interval_minutes INTEGER NOT NULL DEFAULT 60,
+        last_run TEXT,
+        next_run TEXT,
+        enabled INTEGER DEFAULT 1,
+        config TEXT DEFAULT '{}',
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      )`);
+      db.exec(`INSERT INTO scheduled_jobs_v9 (${cols}) SELECT ${cols} FROM scheduled_jobs`);
+      if (seq) {
+        const upd = db.prepare("UPDATE sqlite_sequence SET seq = MAX(seq, ?) WHERE name = 'scheduled_jobs_v9'").run(seq.seq);
+        if (upd.changes === 0) {
+          db.prepare("INSERT INTO sqlite_sequence (name, seq) VALUES ('scheduled_jobs_v9', ?)").run(seq.seq);
+        }
+      }
+      db.exec("DROP TABLE scheduled_jobs");
+      db.exec("ALTER TABLE scheduled_jobs_v9 RENAME TO scheduled_jobs");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_enabled_next ON scheduled_jobs(enabled, next_run)");
+    })();
+  } finally {
+    db.pragma("foreign_keys = ON");
+  }
+  return true;
+}
+
+/**
+ * Migrazione runtime «topologia fase 1» (spec 2026-10-12-topology-map-design
+ * §5, piano 2026-10-13-topologia-fase1-dati). Solo colonne e una tabella nuove,
+ * in una transazione: o tutto o niente. Gli indici sulle colonne nuove stanno
+ * QUI e non nello schema: lo schema gira prima, e su un DB vecchio un indice su
+ * una colonna che ancora non c'è impedirebbe di aprire il tenant.
+ * Esportata per le prove (`topology-phase1-migration.test.ts`).
+ */
+export function migrateTopologyPhase1(db: Database.Database): string[] {
+  const added: string[] = [];
+  const has = (table: string, col: string): boolean =>
+    (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).some((c) => c.name === col);
+  const add = (table: string, col: string, ddl: string): void => {
+    if (has(table, col)) return;
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${ddl}`);
+    added.push(`${table}.${col}`);
+  };
+  db.transaction(() => {
+    add("network_devices", "location_id", "INTEGER REFERENCES locations(id) ON DELETE SET NULL");
+    add("network_devices", "location_set_by", "TEXT");
+    add("network_devices", "location_set_at", "TEXT");
+    add("network_devices", "topology_role", "TEXT");
+    add("network_devices", "topology_hidden", "INTEGER NOT NULL DEFAULT 0");
+    add("network_devices", "controller_mac", "TEXT");
+    add("network_devices", "uplink_mac", "TEXT");
+    add("network_devices", "uplink_remote_port", "INTEGER");
+    add("network_devices", "uplink_seen_at", "TEXT");
+    add("switch_ports", "is_uplink", "INTEGER NOT NULL DEFAULT 0");
+    add("device_neighbors", "first_seen", "TEXT");
+    add("device_neighbors", "source", "TEXT NOT NULL DEFAULT 'device'");
+    add("locations", "head_device_id", "INTEGER REFERENCES network_devices(id) ON DELETE SET NULL");
+    add("locations", "head_set_by", "TEXT");
+    add("locations", "head_set_at", "TEXT");
+    add("networks", "location_id", "INTEGER REFERENCES locations(id) ON DELETE SET NULL");
+    add("networks", "location_set_by", "TEXT");
+    add("networks", "location_set_at", "TEXT");
+    add("topology_position", "structure_sig", "TEXT");
+    if (added.includes("device_neighbors.first_seen")) {
+      db.exec("UPDATE device_neighbors SET first_seen = timestamp WHERE first_seen IS NULL");
+    }
+    db.exec(`CREATE TABLE IF NOT EXISTS topology_link_overrides (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      action TEXT NOT NULL CHECK(action IN ('add', 'ignore')),
+      a_node TEXT NOT NULL,
+      a_port TEXT NOT NULL DEFAULT '',
+      b_node TEXT NOT NULL,
+      b_port TEXT NOT NULL DEFAULT '',
+      note TEXT,
+      created_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`);
+    db.exec("CREATE INDEX IF NOT EXISTS idx_network_devices_location ON network_devices(location_id)");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_networks_location ON networks(location_id)");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_device_neighbors_timestamp ON device_neighbors(device_id, timestamp)");
+  })();
+  return added;
+}
+
+/**
+ * Migrazione runtime «topologia fase 2» (spec §10.5-10.6, piano
+ * 2026-10-13-topologia-fase2-mappa). La tabella dei MAC per porta invecchia
+ * invece di essere riscritta a ogni lettura: serve una riga per (apparato, MAC,
+ * porta), quindi prima si tolgono i doppi (si tiene la più recente, con la prima
+ * volta vista più vecchia) e poi l'indice unico. Più la tabella delle mappe.
+ * Tutto in una transazione. Esportata per le prove.
+ */
+export function migrateTopologyPhase2(db: Database.Database): string[] {
+  const added: string[] = [];
+  const has = (table: string, col: string): boolean =>
+    (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).some((c) => c.name === col);
+  const exists = (name: string): boolean => !!db.prepare("SELECT 1 FROM sqlite_master WHERE name = ?").get(name);
+  db.transaction(() => {
+    if (!has("mac_port_entries", "first_seen")) {
+      db.exec("ALTER TABLE mac_port_entries ADD COLUMN first_seen TEXT");
+      added.push("mac_port_entries.first_seen");
+    }
+    if (!has("mac_port_entries", "source")) {
+      db.exec("ALTER TABLE mac_port_entries ADD COLUMN source TEXT NOT NULL DEFAULT 'device'");
+      added.push("mac_port_entries.source");
+    }
+    if (!exists("idx_mac_port_entries_key")) {
+      db.exec(`UPDATE mac_port_entries SET first_seen = (
+                 SELECT MIN(COALESCE(m2.first_seen, m2.timestamp)) FROM mac_port_entries m2
+                  WHERE m2.device_id = mac_port_entries.device_id AND m2.mac = mac_port_entries.mac AND m2.port_name = mac_port_entries.port_name)
+               WHERE first_seen IS NULL`);
+      db.exec(`DELETE FROM mac_port_entries WHERE id NOT IN (
+                 SELECT id FROM (SELECT id, ROW_NUMBER() OVER (PARTITION BY device_id, mac, port_name ORDER BY timestamp DESC, id DESC) AS rn
+                                   FROM mac_port_entries) WHERE rn = 1)`);
+      db.exec("CREATE UNIQUE INDEX idx_mac_port_entries_key ON mac_port_entries(device_id, mac, port_name)");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_mac_port_entries_mac ON mac_port_entries(mac)");
+    }
+    if (!exists("topology_maps")) {
+      db.exec(`CREATE TABLE topology_maps (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK(kind IN ('auto', 'passo')),
+        roots TEXT NOT NULL DEFAULT '[]',
+        head_node TEXT,
+        created_by TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`);
+      db.exec("CREATE UNIQUE INDEX idx_topology_maps_auto ON topology_maps(kind) WHERE kind = 'auto'");
+      added.push("topology_maps");
+    }
+  })();
+  return added;
+}
+
+/**
+ * Migrazione runtime «topologia fase 2b» (spec §11.3-11.5, piano
+ * 2026-10-14-topologia-fase2b, Task 2). Gemella di `migrateTopologyPhase2`:
+ * solo cose nuove, in una transazione, e l'elenco di ciò che ha aggiunto.
+ * - `topology_link_overrides.medium`: tipo di un collegamento a mano
+ *   (`'cavo' | 'fibra' | 'wireless'`, da T3 anche `'tunnel'`, o NULL; senza CHECK, lo validano le rotte,
+ *   così un tipo nuovo non chiede di ricostruire la tabella). Le righe esistenti
+ *   restano con NULL.
+ * - `topology_link_primary`: per l'oggetto `node_id`, il collegamento principale
+ *   scelto a mano è quello verso `other_node` su quelle porte (vince sulla
+ *   scelta del sistema). Uno per oggetto.
+ * - `network_devices.uplink_type`: `'wire' | 'wireless'` dalla lettura UniFi.
+ *   Dopo le ricostruzioni di `network_devices` (ADR 0008 punto 6).
+ * Esportata per le prove (`topology-phase2b-migration.test.ts`).
+ */
+export function migrateTopologyPhase2b(db: Database.Database): string[] {
+  const added: string[] = [];
+  const has = (table: string, col: string): boolean =>
+    (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).some((c) => c.name === col);
+  const add = (table: string, col: string, ddl: string): void => {
+    if (has(table, col)) return;
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${ddl}`);
+    added.push(`${table}.${col}`);
+  };
+  const exists = (name: string): boolean => !!db.prepare("SELECT 1 FROM sqlite_master WHERE name = ?").get(name);
+  db.transaction(() => {
+    add("topology_link_overrides", "medium", "TEXT");
+    add("network_devices", "uplink_type", "TEXT");
+    if (!exists("topology_link_primary")) {
+      db.exec(`CREATE TABLE topology_link_primary (
+        node_id TEXT PRIMARY KEY,
+        other_node TEXT NOT NULL,
+        node_port TEXT NOT NULL DEFAULT '',
+        other_port TEXT NOT NULL DEFAULT '',
+        set_by TEXT,
+        set_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`);
+      added.push("topology_link_primary");
+    }
+  })();
+  return added;
+}
+
+/**
+ * Migrazione runtime «orientamento della mappa» (spec §12.2, piano
+ * 2026-10-14-topologia-verticale-stampa, Task 1). Gemella di
+ * `migrateTopologyPhase2b`: solo cose nuove, in una transazione, e l'elenco di
+ * ciò che ha aggiunto.
+ * - `topology_maps.orientation`: `'lr'` «Verticale» (predefinito, anche per le
+ *   mappe già salvate) o `'tb'` «Orizzontale». Una scelta di come si consegna la
+ *   mappa, uguale per tutti quelli che la guardano.
+ * - `topology_position.orientation`: l'orientamento in cui è stato fatto un
+ *   ritocco. NULL = `'tb'`: le righe di oggi sono nate in orizzontale. Le righe
+ *   di sola appartenenza (`pinned = 0`) lo lasciano NULL.
+ * Dopo `topology_maps` (fase 2), quindi dopo la fase 2b. Esportata per le prove
+ * (`topology-orientation-migration.test.ts`).
+ */
+export function migrateTopologyOrientation(db: Database.Database): string[] {
+  const added: string[] = [];
+  const has = (table: string, col: string): boolean =>
+    (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).some((c) => c.name === col);
+  const add = (table: string, col: string, ddl: string): void => {
+    if (has(table, col)) return;
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${ddl}`);
+    added.push(`${table}.${col}`);
+  };
+  db.transaction(() => {
+    add("topology_maps", "orientation", "TEXT NOT NULL DEFAULT 'lr' CHECK(orientation IN ('lr','tb'))");
+    add("topology_position", "orientation", "TEXT");
+  })();
+  return added;
+}
+
+/**
+ * Versione SNMP per apparato (2026-10-15): `snmp_version` ('1' | '2c', NULL = non
+ * rilevata, ogni punto parla come prima) e `snmp_version_fissata` (1 = scelta a
+ * mano, la discovery non la sovrascrive). Solo colonne nuove, idempotente.
+ * Esportata per le prove (`snmp-versione-migration.test.ts`).
+ */
+export function migrateSnmpVersione(db: Database.Database): string[] {
+  const added: string[] = [];
+  const has = (table: string, col: string): boolean =>
+    (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).some((c) => c.name === col);
+  const add = (table: string, col: string, ddl: string): void => {
+    if (has(table, col)) return;
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${ddl}`);
+    added.push(`${table}.${col}`);
+  };
+  db.transaction(() => {
+    add("network_devices", "snmp_version", "TEXT CHECK(snmp_version IN ('1', '2c'))");
+    add("network_devices", "snmp_version_fissata", "INTEGER NOT NULL DEFAULT 0");
+  })();
+  return added;
+}
+
+/**
+ * Migrazione «topologia cavi» (spec 2026-10-14 §13.5.7, tappa T2): le colonne nuove dei vicini e degli apparati e le tre
+ * tabelle dei fatti delle letture in più, con l'indice sui MAC. Additiva, idempotente, in UNA transazione (o tutto o
+ * niente); restituisce ciò che aggiunge. Le tabelle nascono anche dallo schema (stesse CREATE, `DDL_TOPOLOGY_CAVI`): qui
+ * servono ai DB aperti senza lo schema di oggi e alle prove. Chiamata in fondo a `getTenantDb`, dopo le ricostruzioni di
+ * network_devices (ADR 0008 punto 6). Esportata per le prove (`topology-cavi-migration.test.ts`).
+ */
+export function migrateTopologyCavi(db: Database.Database): string[] {
+  const added: string[] = [];
+  const has = (table: string, col: string): boolean =>
+    (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).some((c) => c.name === col);
+  const exists = (type: "table" | "index", name: string): boolean =>
+    !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = ? AND name = ?").get(type, name);
+  const add = (table: string, col: string, ddl: string): void => {
+    if (has(table, col)) return;
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${ddl}`);
+    added.push(`${table}.${col}`);
+  };
+  db.transaction(() => {
+    add("device_neighbors", "discovered_by", "TEXT");
+    add("device_neighbors", "local_port_index", "INTEGER");
+    add("device_neighbors", "remote_port_index", "INTEGER");
+    add("device_neighbors", "remote_caps", "TEXT");
+    add("network_devices", "uplink_local_port_idx", "INTEGER");
+    add("network_devices", "uplink_source", "TEXT");
+    for (const [name, ddl] of DDL_TOPOLOGY_CAVI) {
+      if (exists("table", name)) continue;
+      db.exec(ddl);
+      added.push(name);
+    }
+    add("topology_port_facts", "lag_state", "TEXT");
+    if (!exists("index", "idx_topology_device_macs_mac")) {
+      db.exec("CREATE INDEX idx_topology_device_macs_mac ON topology_device_macs(mac)");
+      added.push("idx_topology_device_macs_mac");
+    }
+  })();
+  return added;
+}
+
+/** Le colonne che le letture in più scrivono: tutte, o le letture non scrivono (§13.5.7, «Se la migrazione non riesce»). */
+const COLONNE_CAVI: ReadonlyArray<readonly [string, string]> = [
+  ["device_neighbors", "discovered_by"], ["device_neighbors", "local_port_index"], ["device_neighbors", "remote_port_index"],
+  ["device_neighbors", "remote_caps"], ["network_devices", "uplink_local_port_idx"], ["network_devices", "uplink_source"],
+  ["topology_port_facts", "lag_state"],
+];
+/** «Lo schema nuovo c'è», annotato all'apertura del DB del tenant: chi scrive i fatti lo chiede, non lo indovina. */
+const SCHEMA_CAVI = new WeakMap<Database.Database, boolean>();
+
+function verificaSchemaCavi(d: Database.Database): boolean {
+  const tabelle = new Set((d.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>).map((r) => r.name));
+  if (!DDL_TOPOLOGY_CAVI.every(([n]) => tabelle.has(n))) return false;
+  return COLONNE_CAVI.every(([t, c]) => (d.prepare(`PRAGMA table_info(${t})`).all() as Array<{ name: string }>).some((x) => x.name === c));
+}
+
+/**
+ * Quanti giorni resta una riga di mac_port_entries non più vista (spec §10.5):
+ * la usano la pulizia all'apertura del database e `cleanupOldMacPortEntries`.
+ */
+export const MAC_PORT_RETENTION_DAYS = 30;
 
 export function getTenantDb(tenantCode: string): Database.Database {
   const existing = tenantDbs.get(tenantCode);
@@ -105,7 +580,28 @@ export function getTenantDb(tenantCode: string): Database.Database {
   }
 
   const dbPath = path.join(TENANTS_DIR, `${tenantCode}.db`);
+  // TEN-02 hardening: containment. Il file DB del tenant DEVE trovarsi
+  // direttamente dentro TENANTS_DIR. Un tenantCode con path traversal
+  // (es. "../hub") aprirebbe altrimenti hub.db come se fosse un DB tenant,
+  // applicandovi schema/migrazioni e corrompendolo. Fail-closed.
+  if (path.dirname(path.resolve(dbPath)) !== path.resolve(TENANTS_DIR)) {
+    throw new Error(`Tenant code non valido: ${tenantCode}`);
+  }
+  // NUC-1 fase A: ogni apertura (fuori dalla cache) del database di un codice
+  // che l'hub non conosce si conta, che il file stia per nascere o esista già
+  // (file orfani nati prima del registro, anche da 0 byte). L'esito non cambia
+  // ancora. Solo con l'hub presente: senza hub (script, generazione del
+  // template) non c'è un registro da consultare.
+  if (fs.existsSync(getHubDbPath())) {
+    let registrato = true;
+    try {
+      registrato = getTenantByCode(tenantCode) !== undefined;
+    } catch { /* hub illeggibile: non si sa, non si conta */ }
+    if (!registrato) registraRipiego("tenant_non_registrato", tenantCode);
+  }
   const newDb = new Database(dbPath);
+  // Ordinamento numerico di IP e CIDR nelle liste paginate (UI-9).
+  newDb.function("ip_sort_key", { deterministic: true }, (v: unknown) => ipSortKey(v));
 
   // Apply PRAGMAs
   newDb.pragma("journal_mode = WAL");
@@ -288,34 +784,68 @@ export function getTenantDb(tenantCode: string): Database.Database {
   // Senza questi due valori il fast_scan crasha a metà (CHECK constraint failed)
   // e il flip-offline di Phase 4 non viene mai raggiunto → host fantasma.
   // v3 aggiunge i sub-step UI: scan_icmp, scan_nmap_base, scan_snmp_verify.
+  // v4 aggiunge scan_naabu (ICMP → Naabu obbligatorio → Nmap -sV mirato).
   try {
     const row = newDb.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='scan_history'").get() as { sql?: string } | undefined;
     const needsBase = row?.sql && (!row.sql.includes("'fast'") || !row.sql.includes("'ipam_full'"));
     const needsSubsteps = row?.sql && !row.sql.includes("'scan_nmap_base'");
-    if (needsBase || needsSubsteps) {
+    const needsNaabu = row?.sql && !row.sql.includes("'scan_naabu'");
+    if (needsBase || needsSubsteps || needsNaabu) {
       newDb.pragma("foreign_keys = OFF");
-      newDb.exec("DROP TABLE IF EXISTS scan_history_v3");
-      newDb.exec(`CREATE TABLE scan_history_v3 (
+      newDb.exec("DROP TABLE IF EXISTS scan_history_v4");
+      newDb.exec(`CREATE TABLE scan_history_v4 (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         host_id INTEGER REFERENCES hosts(id) ON DELETE CASCADE,
         network_id INTEGER REFERENCES networks(id) ON DELETE CASCADE,
-        scan_type TEXT NOT NULL CHECK(scan_type IN ('ping', 'snmp', 'nmap', 'arp', 'dns', 'windows', 'ssh', 'network_discovery', 'credential_validate', 'fast', 'ipam_full', 'scan_icmp', 'scan_nmap_base', 'scan_snmp_verify')),
+        scan_type TEXT NOT NULL CHECK(scan_type IN ('ping', 'snmp', 'nmap', 'arp', 'dns', 'windows', 'ssh', 'network_discovery', 'credential_validate', 'fast', 'ipam_full', 'scan_icmp', 'scan_nmap_base', 'scan_snmp_verify', 'scan_naabu')),
         status TEXT NOT NULL,
         ports_open TEXT,
         raw_output TEXT,
         duration_ms INTEGER,
         timestamp TEXT DEFAULT (datetime('now'))
       )`);
-      newDb.exec("INSERT INTO scan_history_v3 SELECT * FROM scan_history");
+      newDb.exec("INSERT INTO scan_history_v4 SELECT * FROM scan_history");
       newDb.exec("DROP TABLE scan_history");
-      newDb.exec("ALTER TABLE scan_history_v3 RENAME TO scan_history");
+      newDb.exec("ALTER TABLE scan_history_v4 RENAME TO scan_history");
       newDb.exec("CREATE INDEX IF NOT EXISTS idx_scan_history_host ON scan_history(host_id)");
       newDb.exec("CREATE INDEX IF NOT EXISTS idx_scan_history_network ON scan_history(network_id)");
       newDb.pragma("foreign_keys = ON");
-      console.info(`[db-tenant] ${tenantCode}: scan_history CHECK aggiornato a v3 (fast, ipam_full, scan_icmp, scan_nmap_base, scan_snmp_verify)`);
+      console.info(`[db-tenant] ${tenantCode}: scan_history CHECK aggiornato a v4 (+ scan_naabu)`);
     }
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: migrazione scan_history CHECK fallita:`, e);
+  }
+
+  // Migrazione runtime: scan_history.scan_type CHECK include 'scan_enrich'.
+  // v5 (fase 3b): la fase Enrich (ARP/DHCP/AD) ora scrive in scan_history (prima
+  // non scriveva affatto → last_run sempre null nel pannello acquisizione UI).
+  try {
+    const row = newDb.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='scan_history'").get() as { sql?: string } | undefined;
+    const needsScanEnrich = row?.sql && !row.sql.includes("'scan_enrich'");
+    if (needsScanEnrich) {
+      newDb.pragma("foreign_keys = OFF");
+      newDb.exec("DROP TABLE IF EXISTS scan_history_v5");
+      newDb.exec(`CREATE TABLE scan_history_v5 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        host_id INTEGER REFERENCES hosts(id) ON DELETE CASCADE,
+        network_id INTEGER REFERENCES networks(id) ON DELETE CASCADE,
+        scan_type TEXT NOT NULL CHECK(scan_type IN ('ping', 'snmp', 'nmap', 'arp', 'dns', 'windows', 'ssh', 'network_discovery', 'credential_validate', 'fast', 'ipam_full', 'scan_icmp', 'scan_nmap_base', 'scan_snmp_verify', 'scan_naabu', 'scan_enrich')),
+        status TEXT NOT NULL,
+        ports_open TEXT,
+        raw_output TEXT,
+        duration_ms INTEGER,
+        timestamp TEXT DEFAULT (datetime('now'))
+      )`);
+      newDb.exec("INSERT INTO scan_history_v5 SELECT * FROM scan_history");
+      newDb.exec("DROP TABLE scan_history");
+      newDb.exec("ALTER TABLE scan_history_v5 RENAME TO scan_history");
+      newDb.exec("CREATE INDEX IF NOT EXISTS idx_scan_history_host ON scan_history(host_id)");
+      newDb.exec("CREATE INDEX IF NOT EXISTS idx_scan_history_network ON scan_history(network_id)");
+      newDb.pragma("foreign_keys = ON");
+      console.info(`[db-tenant] ${tenantCode}: scan_history CHECK aggiornato a v5 (+ scan_enrich)`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione scan_history CHECK v5 fallita:`, e);
   }
 
   // Migrazione runtime: scheduled_jobs.job_type CHECK include 'vuln_sync' (sync findings da scanner-edge).
@@ -433,6 +963,55 @@ export function getTenantDb(tenantCode: string): Database.Database {
     console.error(`[db-tenant] ${tenantCode}: migrazione meshcentral_sync fallita:`, e);
   }
 
+  // Migrazione runtime: scheduled_jobs.job_type CHECK include 'wazuh_alerts_sync'
+  // (poll degli alert di sicurezza selezionati dall'indexer Wazuh).
+  try {
+    const row = newDb.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='scheduled_jobs'").get() as { sql?: string } | undefined;
+    if (row?.sql && !row.sql.includes("'wazuh_alerts_sync'")) {
+      newDb.pragma("foreign_keys = OFF");
+      newDb.exec("DROP TABLE IF EXISTS scheduled_jobs_v7");
+      newDb.exec(`CREATE TABLE scheduled_jobs_v7 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        network_id INTEGER REFERENCES networks(id) ON DELETE CASCADE,
+        job_type TEXT NOT NULL CHECK(job_type IN ('ping_sweep', 'snmp_scan', 'nmap_scan', 'arp_poll', 'dns_resolve', 'fast_scan', 'cleanup', 'known_host_check', 'ad_sync', 'anomaly_check', 'librenms_sync', 'vuln_sync', 'wazuh_sync', 'wazuh_alerts_sync', 'mdm_sync', 'meshcentral_sync')),
+        interval_minutes INTEGER NOT NULL DEFAULT 60,
+        last_run TEXT,
+        next_run TEXT,
+        enabled INTEGER DEFAULT 1,
+        config TEXT DEFAULT '{}',
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      )`);
+      newDb.exec("INSERT INTO scheduled_jobs_v7 SELECT * FROM scheduled_jobs");
+      newDb.exec("DROP TABLE scheduled_jobs");
+      newDb.exec("ALTER TABLE scheduled_jobs_v7 RENAME TO scheduled_jobs");
+      newDb.pragma("foreign_keys = ON");
+      console.info(`[db-tenant] ${tenantCode}: scheduled_jobs CHECK aggiornato con 'wazuh_alerts_sync'`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione wazuh_alerts_sync fallita:`, e);
+  }
+
+  // Migrazione runtime v8: scheduled_jobs.job_type CHECK include 'unifi_sync'
+  // (sync del controller UniFi). CHECK dalla stessa costante dello schema.
+  try {
+    if (migrateScheduledJobsV8(newDb)) {
+      console.info(`[db-tenant] ${tenantCode}: scheduled_jobs CHECK aggiornato con 'unifi_sync' (v8)`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione unifi_sync fallita:`, e);
+  }
+
+  // Migrazione runtime v9: scheduled_jobs.job_type CHECK include 'hypervisor_sync'
+  // (lettura giornaliera degli hypervisor, topologia fase 2b). Dopo la v8.
+  try {
+    if (migrateScheduledJobsV9(newDb)) {
+      console.info(`[db-tenant] ${tenantCode}: scheduled_jobs CHECK aggiornato con 'hypervisor_sync' (v9)`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione hypervisor_sync fallita:`, e);
+  }
+
   // Migrazione runtime: vuln_scanners.{cert_pin,cert_fingerprint} per
   // TOFU pinning HTTPS sull'edge. Additivo (ALTER ADD COLUMN).
   try {
@@ -461,7 +1040,7 @@ export function getTenantDb(tenantCode: string): Database.Database {
     // `edge_scan_id` è l'autoincrement LOCALE dell'edge: se l'edge viene
     // ricostruito riparte da 1 e collide con lo storico → UNIQUE(scanner_id,
     // edge_scan_id) faceva scartare in silenzio gli scan nuovi e attribuiva i
-    // findings a run vecchi (incident DTS 2026-07). L'UUID è stabile e unico.
+    // findings a run vecchi (incident cliente A 2026-07). L'UUID è stabile e unico.
     const runsTbl = newDb.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='vuln_scan_runs'").get();
     if (runsTbl) {
       const rcols = newDb.prepare("PRAGMA table_info(vuln_scan_runs)").all() as Array<{ name: string }>;
@@ -524,6 +1103,7 @@ export function getTenantDb(tenantCode: string): Database.Database {
       newDb.pragma("foreign_keys = OFF");
       newDb.exec("DROP TABLE IF EXISTS network_devices_v2");
       // CREATE TABLE con nuovo CHECK (compresi firewall e use_for_arp_poll). Copiamo la definizione completa.
+      // Le colonne non elencate qui si perdono; quelle della topologia fase 1 le aggiunge dopo migrateTopologyPhase1 (ADR 0008).
       newDb.exec(`CREATE TABLE network_devices_v2 (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
@@ -810,6 +1390,9 @@ export function getTenantDb(tenantCode: string): Database.Database {
       { name: "inferred_at",          sql: "ALTER TABLE hosts ADD COLUMN inferred_at TEXT" },
       // v0.2.602: versione classifier per ricomputo automatico quando le regole cambiano.
       { name: "inferred_classifier_version", sql: "ALTER TABLE hosts ADD COLUMN inferred_classifier_version INTEGER" },
+      // Classification-engine summary (confidence = inferred_confidence, no duplicate column).
+      { name: "classification_reason", sql: "ALTER TABLE hosts ADD COLUMN classification_reason TEXT" },
+      { name: "classification_json", sql: "ALTER TABLE hosts ADD COLUMN classification_json TEXT" },
     ];
     for (const col of inferredCols) {
       if (!hCols.some((c) => c.name === col.name)) {
@@ -817,31 +1400,180 @@ export function getTenantDb(tenantCode: string): Database.Database {
         console.info(`[db-tenant] ${tenantCode}: hosts.${col.name} aggiunto`);
       }
     }
-    // Backfill/upgrade:
-    //   - host senza inferred_at → mai classificato
-    //   - host con inferred_classifier_version < CLASSIFIER_VERSION → ricomputo richiesto
-    // Idempotente: alle prossime apriture del tenant nessuno rientra nel WHERE
-    // (applyAutoClassification scrive sempre il numero di versione corrente).
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { applyAutoClassification, CLASSIFIER_VERSION } = require("./devices/auto-classify");
-      const toBackfill = newDb.prepare(
-        "SELECT id FROM hosts WHERE inferred_at IS NULL OR inferred_classifier_version IS NULL OR inferred_classifier_version < ?"
-      ).all(CLASSIFIER_VERSION) as Array<{ id: number }>;
-      if (toBackfill.length > 0) {
-        // v0.2.641 audit perf DB1: backfill di N host in singola transazione.
-        // Prima: 1 fsync per host (SELECT + UPDATE). Su 2000 host = ~30s.
-        // Ora: 1 fsync totale per tutto il backfill (~1s).
-        newDb.transaction(() => {
-          for (const row of toBackfill) {
-            try { applyAutoClassification(newDb, row.id); } catch { /* skip singolo host non classificabile */ }
-          }
-        })();
-        console.info(`[db-tenant] ${tenantCode}: auto-classify backfill v${CLASSIFIER_VERSION} su ${toBackfill.length} host`);
+    // Attribution v2 fase 1 — colonne risultato fusione (spec §5)
+    const attrCols: Array<{ name: string; sql: string }> = [
+      { name: "attr_vendor", sql: "ALTER TABLE hosts ADD COLUMN attr_vendor TEXT" },
+      { name: "attr_vendor_name", sql: "ALTER TABLE hosts ADD COLUMN attr_vendor_name TEXT" },
+      { name: "attr_category", sql: "ALTER TABLE hosts ADD COLUMN attr_category TEXT" },
+      { name: "attr_os_family", sql: "ALTER TABLE hosts ADD COLUMN attr_os_family TEXT" },
+      { name: "attr_os_name", sql: "ALTER TABLE hosts ADD COLUMN attr_os_name TEXT" },
+      { name: "attr_confidence_vendor", sql: "ALTER TABLE hosts ADD COLUMN attr_confidence_vendor INTEGER" },
+      { name: "attr_confidence_category", sql: "ALTER TABLE hosts ADD COLUMN attr_confidence_category INTEGER" },
+      { name: "attr_confidence_os", sql: "ALTER TABLE hosts ADD COLUMN attr_confidence_os INTEGER" },
+      { name: "attr_min_phase", sql: "ALTER TABLE hosts ADD COLUMN attr_min_phase TEXT" },
+      { name: "attr_at", sql: "ALTER TABLE hosts ADD COLUMN attr_at TEXT" },
+      { name: "attr_engine_version", sql: "ALTER TABLE hosts ADD COLUMN attr_engine_version TEXT" },
+    ];
+    for (const col of attrCols) {
+      if (!hCols.some((c) => c.name === col.name)) {
+        newDb.exec(col.sql);
+        console.info(`[db-tenant] ${tenantCode}: hosts.${col.name} aggiunto`);
       }
-    } catch (e) {
-      console.warn(`[db-tenant] ${tenantCode}: backfill auto-classify fallito:`, e);
     }
+    // Tabella evidenze per DB creati prima di questa versione
+    newDb.exec(`CREATE TABLE IF NOT EXISTS attribution_evidence (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
+      source TEXT NOT NULL,
+      phase TEXT NOT NULL,
+      dimension TEXT NOT NULL CHECK(dimension IN ('vendor','category','os')),
+      claim TEXT NOT NULL,
+      confidence REAL NOT NULL DEFAULT 0,
+      weight REAL NOT NULL DEFAULT 0,
+      raw_value TEXT,
+      observed_at TEXT NOT NULL DEFAULT (datetime('now')),
+      expires_at TEXT,
+      superseded_by INTEGER REFERENCES attribution_evidence(id) ON DELETE SET NULL
+    )`);
+    newDb.exec("CREATE INDEX IF NOT EXISTS idx_attr_evidence_host ON attribution_evidence(host_id, dimension)");
+    newDb.exec("CREATE INDEX IF NOT EXISTS idx_attr_evidence_active ON attribution_evidence(host_id, superseded_by) WHERE superseded_by IS NULL");
+
+    // Fase 4b Task 2 — colonne SNMPv3 completo su credentials (§7.1): niente
+    // CHECK sui protocolli (validati in TS da buildV3Options), idempotente
+    // come il pattern attrCols sopra. Tappa 1 credenziali (15/10): `port`,
+    // NULL = porta standard del protocollo. Tappa 2c (T11): metodo d'accesso
+    // (NULL = il primo del tipo, tipi.ts) e chiave SSH con la sua passphrase.
+    // Qui, prima della ricostruzione senza CHECK in fondo a getTenantDb: un
+    // DEFAULT con lo schema vecchio arriva senza `port`.
+    const credCols = newDb.prepare("PRAGMA table_info(credentials)").all() as Array<{ name: string }>;
+    const credColsNuove: Array<{ name: string; sql: string }> = [
+      { name: "encrypted_auth_key", sql: "ALTER TABLE credentials ADD COLUMN encrypted_auth_key TEXT" },
+      { name: "auth_protocol", sql: "ALTER TABLE credentials ADD COLUMN auth_protocol TEXT" },
+      { name: "encrypted_priv_key", sql: "ALTER TABLE credentials ADD COLUMN encrypted_priv_key TEXT" },
+      { name: "priv_protocol", sql: "ALTER TABLE credentials ADD COLUMN priv_protocol TEXT" },
+      { name: "security_level", sql: "ALTER TABLE credentials ADD COLUMN security_level TEXT" },
+      { name: "port", sql: "ALTER TABLE credentials ADD COLUMN port INTEGER" },
+      { name: "auth_method", sql: "ALTER TABLE credentials ADD COLUMN auth_method TEXT" },
+      { name: "encrypted_private_key", sql: "ALTER TABLE credentials ADD COLUMN encrypted_private_key TEXT" },
+      { name: "encrypted_key_passphrase", sql: "ALTER TABLE credentials ADD COLUMN encrypted_key_passphrase TEXT" },
+    ];
+    for (const col of credColsNuove) {
+      if (!credCols.some((c) => c.name === col.name)) {
+        newDb.exec(col.sql);
+        console.info(`[db-tenant] ${tenantCode}: credentials.${col.name} aggiunto`);
+      }
+    }
+
+    // Fase 1b credenziali — stato fallimenti su host_credentials (resolver unico, §7.5)
+    const hostCredCols = newDb.prepare("PRAGMA table_info(host_credentials)").all() as Array<{ name: string }>;
+    const hostCredNewCols: Array<{ name: string; sql: string }> = [
+      { name: "fail_count", sql: "ALTER TABLE host_credentials ADD COLUMN fail_count INTEGER NOT NULL DEFAULT 0" },
+      { name: "last_error", sql: "ALTER TABLE host_credentials ADD COLUMN last_error TEXT" },
+      { name: "last_attempt_at", sql: "ALTER TABLE host_credentials ADD COLUMN last_attempt_at TEXT" },
+      { name: "backoff_until", sql: "ALTER TABLE host_credentials ADD COLUMN backoff_until TEXT" },
+    ];
+    for (const col of hostCredNewCols) {
+      if (!hostCredCols.some((c) => c.name === col.name)) {
+        newDb.exec(col.sql);
+        console.info(`[db-tenant] ${tenantCode}: host_credentials.${col.name} aggiunto`);
+      }
+    }
+    // History estesa alle 3 dimensioni (il CHECK su trigger resta invariato — decisione 8 del piano)
+    const histCols = newDb.prepare("PRAGMA table_info(host_classification_history)").all() as Array<{ name: string }>;
+    for (const c of ["attr_vendor", "attr_category", "attr_os"]) {
+      if (!histCols.some((x) => x.name === c)) {
+        newDb.exec(`ALTER TABLE host_classification_history ADD COLUMN ${c} TEXT`);
+      }
+    }
+    // History decisioni classificazione (CREATE IF NOT EXISTS → idempotente su DB esistenti).
+    newDb.exec(`
+      CREATE TABLE IF NOT EXISTS host_classification_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
+        at TEXT NOT NULL DEFAULT (datetime('now')),
+        classification TEXT,
+        confidence INTEGER NOT NULL DEFAULT 0,
+        reason TEXT,
+        evidence_json TEXT,
+        conflicts_json TEXT,
+        trigger TEXT NOT NULL CHECK(trigger IN ('scan','apply','manual','backfill'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_host_class_hist_host ON host_classification_history(host_id, at DESC);
+    `);
+    // Migrazione: estendi il CHECK device_type con access_point/nas/server.
+    // SQLite non consente ALTER di un CHECK → ricostruzione tabella (stesso idiom
+    // di network_devices_hypervisor_new). Idempotente: il probe INSERT/DELETE
+    // fallisce solo finché il CHECK vecchio è in vigore.
+    try {
+      newDb.prepare(
+        "INSERT INTO network_devices (name, host, device_type, vendor, protocol) VALUES ('__probe__', '0.0.0.0', 'access_point', 'other', 'ssh')"
+      ).run();
+      newDb.prepare("DELETE FROM network_devices WHERE name = '__probe__'").run();
+    } catch {
+      newDb.pragma("foreign_keys = OFF");
+      newDb.transaction(() => {
+        // FK verso physical_devices solo se la tabella esiste (tenant molto vecchi
+        // possono non averla ancora al momento di questo rebuild).
+        const hasPhysicalDevices = Boolean(
+          newDb.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='physical_devices'").get()
+        );
+        const physicalDeviceCol = hasPhysicalDevices
+          ? "physical_device_id INTEGER REFERENCES physical_devices(id) ON DELETE SET NULL,"
+          : "physical_device_id INTEGER,";
+        // Le colonne non elencate qui si perdono; quelle della topologia fase 1 le aggiunge dopo migrateTopologyPhase1 (ADR 0008).
+        newDb.exec(`CREATE TABLE network_devices__ap_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          host TEXT NOT NULL,
+          device_type TEXT NOT NULL CHECK(device_type IN ('router', 'switch', 'firewall', 'hypervisor', 'access_point', 'nas', 'server')),
+          vendor TEXT NOT NULL CHECK(vendor IN ('mikrotik', 'ubiquiti', 'hp', 'cisco', 'omada', 'stormshield', 'proxmox', 'vmware', 'linux', 'windows', 'synology', 'qnap', 'other')),
+          vendor_subtype TEXT CHECK(vendor_subtype IN ('procurve', 'comware')),
+          protocol TEXT NOT NULL CHECK(protocol IN ('ssh', 'snmp_v2', 'snmp_v3', 'api', 'winrm')),
+          credential_id INTEGER REFERENCES credentials(id) ON DELETE SET NULL,
+          snmp_credential_id INTEGER REFERENCES credentials(id) ON DELETE SET NULL,
+          username TEXT, encrypted_password TEXT, community_string TEXT, api_token TEXT, api_url TEXT,
+          port INTEGER DEFAULT 22, enabled INTEGER DEFAULT 1, classification TEXT,
+          sysname TEXT, sysdescr TEXT, model TEXT, firmware TEXT, serial_number TEXT, part_number TEXT,
+          last_info_update TEXT, last_device_info_json TEXT, stp_info TEXT,
+          last_proxmox_scan_at TEXT, last_proxmox_scan_result TEXT,
+          scan_target TEXT CHECK(scan_target IN ('proxmox', 'vmware', 'windows', 'linux')),
+          product_profile TEXT,
+          use_for_arp_poll INTEGER NOT NULL DEFAULT 0,
+          host_id INTEGER REFERENCES hosts(id) ON DELETE SET NULL,
+          ${physicalDeviceCol}
+          created_at TEXT DEFAULT (datetime('now')),
+          updated_at TEXT DEFAULT (datetime('now'))
+        )`);
+        const srcCols = (newDb.prepare("PRAGMA table_info(network_devices)").all() as Array<{ name: string }>)
+          .map((r) => r.name);
+        const dstCols = new Set(
+          (newDb.prepare("PRAGMA table_info(network_devices__ap_new)").all() as Array<{ name: string }>)
+            .map((r) => r.name)
+        );
+        const common = srcCols.filter((c) => dstCols.has(c)).join(", ");
+        newDb.exec(`INSERT INTO network_devices__ap_new (${common}) SELECT ${common} FROM network_devices`);
+        newDb.exec("DROP TABLE network_devices");
+        newDb.exec("ALTER TABLE network_devices__ap_new RENAME TO network_devices");
+        newDb.exec(`
+          CREATE INDEX IF NOT EXISTS idx_network_devices_credential ON network_devices(credential_id);
+          CREATE INDEX IF NOT EXISTS idx_network_devices_host ON network_devices(host);
+          CREATE INDEX IF NOT EXISTS idx_network_devices_device_type ON network_devices(device_type);
+          CREATE INDEX IF NOT EXISTS idx_network_devices_product_profile ON network_devices(product_profile);
+          CREATE INDEX IF NOT EXISTS idx_network_devices_classification ON network_devices(classification);
+          CREATE INDEX IF NOT EXISTS idx_network_devices_physical_device_id ON network_devices(physical_device_id);
+          CREATE INDEX IF NOT EXISTS idx_network_devices_host_id ON network_devices(host_id);
+        `);
+      })();
+      newDb.pragma("foreign_keys = ON");
+      console.info(`[db-tenant] ${tenantCode}: network_devices.device_type esteso (access_point/nas/server)`);
+    }
+    // Fase 4 (ritiro legacy, 2026-07-28): il backfill auto-classify al boot
+    // tenant è stato rimosso — era lavoro inutile ad ogni avvio (v0.2.641
+    // l'aveva già reso 1 fsync/tenant, ma resta comunque un giro completo
+    // della tabella hosts ad ogni boot). Le colonne inferred_*/classification
+    // sono ora una proiezione dell'attribution v2 (vedi
+    // src/lib/attribution/legacy-projection.ts + persist.ts), scritta quando
+    // la fusione ricomputa un host — nessun backfill dedicato necessario.
     // v0.2.610: bridge multihomed. Identity-resolver automatico (anchor=serial_number/
     // primary_mac) ha popolato hosts.physical_device_id, ma `recomputeMultihomedLinks`
     // non era chiamato in quel path → tabella multihomed_links vuota nonostante
@@ -866,13 +1598,30 @@ export function getTenantDb(tenantCode: string): Database.Database {
     console.error(`[db-tenant] ${tenantCode}: migrazione physical_devices fallita:`, e);
   }
 
-  // v0.2.651: cleanup one-shot mac_port_entries più vecchi di 24h al boot tenant.
-  // Su tenant esistenti con backlog accumulato (es. 9300 righe in 25 giorni),
-  // libera subito spazio e velocizza getAllHostsEnriched.
+  // Tappa 2f credenziali (T22): controller e AD puntano una voce d'archivio.
+  // Un ADD COLUMN con REFERENCES e default NULL è ammesso con le chiavi esterne
+  // attive. A sé, fuori dal blocco qui sopra: se fallisce, la conversione in
+  // fondo lo dice col segno errore: e si riprova all'apertura dopo.
+  try {
+    for (const tabella of ["network_controllers", "ad_integrations"]) {
+      const cols = newDb.prepare(`PRAGMA table_info(${tabella})`).all() as Array<{ name: string }>;
+      if (cols.length > 0 && !cols.some((c) => c.name === "credential_id")) {
+        newDb.exec(`ALTER TABLE ${tabella} ADD COLUMN credential_id INTEGER REFERENCES credentials(id) ON DELETE SET NULL`);
+        console.info(`[db-tenant] ${tenantCode}: ${tabella}.credential_id aggiunto`);
+      }
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: colonne credential_id di controller e AD (2f) non aggiunte:`, e);
+  }
+
+  // v0.2.651: cleanup one-shot mac_port_entries all'apertura del DB tenant.
+  // Topologia fase 2 (spec §10.5): la soglia è la stessa del job cleanup
+  // (30 giorni), non più 24 ore — con le 24 ore ogni riavvio, o ogni riapertura
+  // dopo l'uscita dalla LRU, cancellava il «visto l'ultima volta».
   try {
     const r = newDb.prepare(
-      "DELETE FROM mac_port_entries WHERE timestamp < datetime('now', '-24 hours')"
-    ).run() as { changes: number };
+      "DELETE FROM mac_port_entries WHERE timestamp < datetime('now', '-' || ? || ' days')"
+    ).run(MAC_PORT_RETENTION_DAYS) as { changes: number };
     if (r.changes > 0) {
       console.info(`[db-tenant] ${tenantCode}: mac_port_entries one-shot cleanup — ${r.changes} righe rimosse`);
     }
@@ -946,6 +1695,344 @@ export function getTenantDb(tenantCode: string): Database.Database {
     }
   } catch (e) {
     console.warn(`[db-tenant] ${tenantCode}: migrazione networks.targeting_mode fallita:`, e);
+  }
+
+  // Assessment IPAM-driven (2026-07-21): post-scan moduli sull'edge.
+  try {
+    const netCols = newDb.prepare("PRAGMA table_info(networks)").all() as Array<{ name: string }>;
+    const names = new Set(netCols.map((c) => c.name));
+    if (names.size > 0 && !names.has("assessment_enabled")) {
+      newDb.exec("ALTER TABLE networks ADD COLUMN assessment_enabled INTEGER NOT NULL DEFAULT 0");
+      console.info(`[db-tenant] ${tenantCode}: aggiunta networks.assessment_enabled`);
+    }
+    if (names.size > 0 && !names.has("assessment_profile_id")) {
+      newDb.exec("ALTER TABLE networks ADD COLUMN assessment_profile_id TEXT");
+      console.info(`[db-tenant] ${tenantCode}: aggiunta networks.assessment_profile_id`);
+    }
+  } catch (e) {
+    console.warn(`[db-tenant] ${tenantCode}: migrazione networks.assessment_* fallita:`, e);
+  }
+
+  // Attribution v2 fase 3 — override per rete del gating probe passivi (default ON).
+  try {
+    const netCols = newDb.prepare("PRAGMA table_info(networks)").all() as Array<{ name: string }>;
+    if (netCols.length > 0 && !netCols.some((c) => c.name === "probes_enabled")) {
+      newDb.exec("ALTER TABLE networks ADD COLUMN probes_enabled INTEGER DEFAULT 1");
+      console.info(`[db-tenant] ${tenantCode}: aggiunta networks.probes_enabled`);
+    }
+  } catch (e) {
+    console.warn(`[db-tenant] ${tenantCode}: migrazione networks.probes_enabled fallita:`, e);
+  }
+
+  // Migrazione runtime: host_credentials.protocol_type CHECK include 'redfish'/'onvif'
+  // (Fase 4b Task 3+4 — BMC Redfish e telecamere ONVIF ora hanno un protocol_type
+  // dedicato invece di riusare 'api', vedi task-1-report.md §Decisione da confermare).
+  try {
+    const row = newDb.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='host_credentials'").get() as { sql?: string } | undefined;
+    if (row?.sql && !row.sql.includes("'redfish'")) {
+      newDb.pragma("foreign_keys = OFF");
+      newDb.exec("DROP TABLE IF EXISTS host_credentials_v2");
+      newDb.exec(`CREATE TABLE host_credentials_v2 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
+        credential_id INTEGER NOT NULL REFERENCES credentials(id) ON DELETE CASCADE,
+        protocol_type TEXT NOT NULL CHECK(protocol_type IN ('ssh', 'snmp', 'winrm', 'api', 'redfish', 'onvif')),
+        port INTEGER NOT NULL,
+        validated INTEGER NOT NULL DEFAULT 0,
+        validated_at TEXT,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        auto_detected INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT DEFAULT (datetime('now')),
+        fail_count INTEGER NOT NULL DEFAULT 0,
+        last_error TEXT,
+        last_attempt_at TEXT,
+        backoff_until TEXT,
+        UNIQUE(host_id, credential_id, protocol_type, port)
+      )`);
+      newDb.exec(`INSERT INTO host_credentials_v2 (
+        id, host_id, credential_id, protocol_type, port, validated, validated_at,
+        sort_order, auto_detected, created_at, fail_count, last_error, last_attempt_at, backoff_until
+      ) SELECT
+        id, host_id, credential_id, protocol_type, port, validated, validated_at,
+        sort_order, auto_detected, created_at, fail_count, last_error, last_attempt_at, backoff_until
+      FROM host_credentials`);
+      newDb.exec("DROP TABLE host_credentials");
+      newDb.exec("ALTER TABLE host_credentials_v2 RENAME TO host_credentials");
+      newDb.exec("CREATE INDEX IF NOT EXISTS idx_host_credentials_host ON host_credentials(host_id, sort_order)");
+      newDb.exec("CREATE INDEX IF NOT EXISTS idx_host_credentials_validated ON host_credentials(host_id, validated)");
+      newDb.pragma("foreign_keys = ON");
+      console.info(`[db-tenant] ${tenantCode}: host_credentials CHECK aggiornato (+ redfish/onvif)`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione host_credentials protocol_type fallita:`, e);
+  }
+
+  // Migrazione runtime: device_credential_bindings.protocol_type CHECK include 'redfish'/'onvif'
+  // (stessa motivazione della migrazione host_credentials sopra).
+  try {
+    const row = newDb.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='device_credential_bindings'").get() as { sql?: string } | undefined;
+    if (row?.sql && !row.sql.includes("'redfish'")) {
+      newDb.pragma("foreign_keys = OFF");
+      newDb.exec("DROP TABLE IF EXISTS device_credential_bindings_v2");
+      newDb.exec(`CREATE TABLE device_credential_bindings_v2 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        device_id INTEGER NOT NULL REFERENCES network_devices(id) ON DELETE CASCADE,
+        credential_id INTEGER REFERENCES credentials(id) ON DELETE CASCADE,
+        protocol_type TEXT NOT NULL CHECK(protocol_type IN ('ssh', 'snmp', 'winrm', 'api', 'redfish', 'onvif')),
+        port INTEGER NOT NULL DEFAULT 22,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        inline_username TEXT,
+        inline_encrypted_password TEXT,
+        test_status TEXT NOT NULL DEFAULT 'untested' CHECK(test_status IN ('success', 'failed', 'untested')),
+        test_message TEXT,
+        tested_at TEXT,
+        auto_detected INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT DEFAULT (datetime('now')),
+        UNIQUE(device_id, credential_id, protocol_type, port)
+      )`);
+      newDb.exec(`INSERT INTO device_credential_bindings_v2 (
+        id, device_id, credential_id, protocol_type, port, sort_order, inline_username,
+        inline_encrypted_password, test_status, test_message, tested_at, auto_detected, created_at
+      ) SELECT
+        id, device_id, credential_id, protocol_type, port, sort_order, inline_username,
+        inline_encrypted_password, test_status, test_message, tested_at, auto_detected, created_at
+      FROM device_credential_bindings`);
+      newDb.exec("DROP TABLE device_credential_bindings");
+      newDb.exec("ALTER TABLE device_credential_bindings_v2 RENAME TO device_credential_bindings");
+      newDb.exec("CREATE INDEX IF NOT EXISTS idx_dcb_device ON device_credential_bindings(device_id, sort_order)");
+      newDb.exec("CREATE INDEX IF NOT EXISTS idx_dcb_credential ON device_credential_bindings(credential_id)");
+      newDb.pragma("foreign_keys = ON");
+      console.info(`[db-tenant] ${tenantCode}: device_credential_bindings CHECK aggiornato (+ redfish/onvif)`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione device_credential_bindings protocol_type fallita:`, e);
+  }
+
+  // Topologia fase 1 (piano 2026-10-13): colonne e tabella delle correzioni.
+  // Gira PER ULTIMA: i rebuild di network_devices qui sopra (CHECK 'firewall',
+  // 'access_point') copiano solo le colonne che conoscono, e una migrazione
+  // fatta prima perderebbe colonne e indice fino all'apertura successiva
+  // (prova: topology-phase1-migration.test.ts, «tenant vecchio … rebuild»).
+  try {
+    const added = migrateTopologyPhase1(newDb);
+    if (added.length > 0) {
+      console.info(`[db-tenant] ${tenantCode}: topologia fase 1, aggiunte ${added.length} colonne`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione topologia fase 1 fallita:`, e);
+  }
+
+  // Topologia fase 2 (piano 2026-10-13-topologia-fase2-mappa): MAC per porta
+  // che invecchiano (indice unico, doppi ridotti) e tabella delle mappe. Dopo
+  // la fase 1, per la stessa ragione (ADR 0008 punto 6).
+  try {
+    const added = migrateTopologyPhase2(newDb);
+    if (added.length > 0) {
+      console.info(`[db-tenant] ${tenantCode}: topologia fase 2, aggiunto ${added.join(", ")}`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione topologia fase 2 fallita:`, e);
+  }
+
+  // Topologia fase 2b (piano 2026-10-14-topologia-fase2b): tipo e principale dei
+  // collegamenti, tipo di uplink UniFi. Subito dopo la fase 2, per la stessa
+  // ragione (ADR 0008 punto 6). Se fallisce il tenant si apre lo stesso: le
+  // letture che nominano le colonne nuove falliscono finché non riesce.
+  try {
+    const added = migrateTopologyPhase2b(newDb);
+    if (added.length > 0) {
+      console.info(`[db-tenant] ${tenantCode}: topologia fase 2b, aggiunto ${added.join(", ")}`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione topologia fase 2b fallita:`, e);
+  }
+
+  // Orientamento della mappa (piano 2026-10-14-topologia-verticale-stampa): colonne
+  // su topology_maps e topology_position. Subito dopo la fase 2b (topology_maps nasce
+  // nella fase 2). Se fallisce il tenant si apre lo stesso: le letture delle mappe
+  // che nominano la colonna falliscono finché non riesce.
+  try {
+    const added = migrateTopologyOrientation(newDb);
+    if (added.length > 0) {
+      console.info(`[db-tenant] ${tenantCode}: topologia orientamento, aggiunto ${added.join(", ")}`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione topologia orientamento fallita:`, e);
+  }
+
+  // Versione SNMP per apparato (2026-10-15). Se fallisce il tenant si apre lo stesso:
+  // chi legge snmp_version la trova assente e parla come prima.
+  try {
+    const added = migrateSnmpVersione(newDb);
+    if (added.length > 0) {
+      console.info(`[db-tenant] ${tenantCode}: versione SNMP, aggiunto ${added.join(", ")}`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione versione SNMP fallita:`, e);
+  }
+
+  // Apple e macOS nella tabella degli apparati (tappa 1b, 15/10). In fondo, dopo
+  // ogni migrazione che aggiunge colonne a network_devices: la ricostruzione parte
+  // dalla definizione attuale e non perde colonne. Se fallisce si annulla (ROLLBACK)
+  // e il tenant si apre lo stesso: un Mac resta rifiutato come prima.
+  try {
+    const esito = migraAppleMacos(newDb);
+    if (esito.eseguita) {
+      console.info(`[db-tenant] ${tenantCode}: network_devices accetta apple/macos (${esito.righe} righe ricopiate)`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione apple/macos fallita:`, e);
+  }
+
+  // Binding SNMP inline con la community nel campo username (tappa 1 credenziali,
+  // 15/10): community spostata nel campo cifrato. Idempotente; il 15/10 le righe
+  // erano 0 sull'hub e sul cliente A. Se fallisce il tenant si apre lo stesso.
+  try {
+    const convertiti = convertiCommunityInlineSnmp(newDb);
+    if (convertiti > 0) {
+      console.info(`[db-tenant] ${tenantCode}: ${convertiti} binding SNMP inline con la community spostata nel campo cifrato`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: conversione community SNMP inline fallita:`, e);
+  }
+
+  // Tappa 2c credenziali (T11): credentials senza CHECK sui tipi, poi i tipi per
+  // esteso (linux → ssh, SNMP v3 come tipo, ibride e v3 vecchie divise). Dopo
+  // gli ALTER di credColsNuove e dopo le altre conversioni delle credenziali.
+  // Col segno done:/parziale: non si richiama più; senza segno o con errore: si
+  // riprova all'apertura dopo. Il journal ha il prima/dopo sullo stesso DB
+  // (righe, figli per colonna, violazioni, seq): è quello che si controlla al
+  // rilascio (procedura R, passo 6). Se fallisce il tenant si apre lo stesso.
+  try {
+    if (!conversioneChiusa(leggiSegno(newDb, SEGNO_TIPI))) {
+      const prima = statoCredenziali(newDb);
+      const ricostruzione = migraCredenzialiTipi(newDb);
+      const esito = normalizzaTipiCredenziali(newDb);
+      const dopo = statoCredenziali(newDb);
+      const segno = segnoTipi(esito);
+      scriviSegno(newDb, SEGNO_TIPI, segno);
+      const riga =
+        `[db-tenant] ${tenantCode}: ${SEGNO_TIPI} ${segno}; ${descriviRicostruzione(ricostruzione)}; ` +
+        `prima ${descriviStato(prima)}; dopo ${descriviStato(dopo)}; ${descriviNormalizza(esito)}`;
+      if (esito.lasciate.length > 0) console.warn(riga);
+      else console.info(riga);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: ${SEGNO_TIPI} fallita (ROLLBACK), si riprova alla prossima apertura:`, e);
+    try {
+      scriviSegno(newDb, SEGNO_TIPI, segnoErrore(e));
+    } catch (e2) {
+      console.error(`[db-tenant] ${tenantCode}: ${SEGNO_TIPI}, segno d'errore non scritto:`, e2);
+    }
+  }
+
+  // Tappa 2d credenziali (T16): catene vecchie per ruolo e pin nella lista
+  // della rete e nelle righe dell'host; le chiavi «di default» dell'hub solo
+  // con un tenant attivo (D3 = (a)). Dopo la 2c. Conversione e segno nella
+  // stessa transazione; col segno done:/parziale: non si richiama più (le
+  // catene vecchie restano congelate fino alla 2g, e una voce tolta dalla
+  // lista tornerebbe). Se fallisce: ROLLBACK, segno errore:, il tenant si apre
+  // lo stesso e si riprova all'apertura dopo.
+  try {
+    if (!conversioneChiusa(leggiSegno(newDb, SEGNO_CATENE))) {
+      const globali = { ...chiaviGlobaliHub(getSetting), tenantAttivi: getActiveTenants().length };
+      const { esito, segno } = newDb.transaction(() => {
+        const esito = convertiCateneVecchie(newDb, globali, { aVuoto: false });
+        const segno = segnoCatene(esito);
+        scriviSegno(newDb, SEGNO_CATENE, segno);
+        return { esito, segno };
+      })();
+      const riga = `[db-tenant] ${tenantCode}: ${SEGNO_CATENE} ${segno}; ${descriviCatene(esito)}`;
+      if (esito.saltate.some((x) => x.motivo !== MOTIVO_DUE_TENANT)) console.warn(riga);
+      else console.info(riga);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: ${SEGNO_CATENE} fallita (ROLLBACK), si riprova alla prossima apertura:`, e);
+    try {
+      scriviSegno(newDb, SEGNO_CATENE, segnoErrore(e));
+    } catch (e2) {
+      console.error(`[db-tenant] ${tenantCode}: ${SEGNO_CATENE}, segno d'errore non scritto:`, e2);
+    }
+  }
+
+  // Tappa 2e credenziali (T19): binding inline e colonne di network_devices
+  // diventano voci e binding d'archivio, e le colonne si svuotano. Dopo la 2c
+  // (tipi per esteso) e la 2d. Conversione e segno nella stessa transazione;
+  // col segno done:/parziale: non si richiama più (un binding tolto tornerebbe
+  // da una colonna riscritta dal codice di prima). Il journal elenca per id
+  // binding nati, voci nuove, colonne svuotate e apparati lasciati col motivo.
+  // Se fallisce: ROLLBACK, segno errore:, il tenant si apre lo stesso e si
+  // riprova all'apertura dopo.
+  try {
+    if (!conversioneChiusa(leggiSegno(newDb, SEGNO_APPARATI))) {
+      const { esito, segno } = newDb.transaction(() => {
+        const esito = convertiCredenzialiApparati(newDb, { aVuoto: false });
+        const segno = segnoApparati(esito);
+        scriviSegno(newDb, SEGNO_APPARATI, segno);
+        return { esito, segno };
+      })();
+      const riga = `[db-tenant] ${tenantCode}: ${SEGNO_APPARATI} ${segno}; ${descriviApparati(esito)}`;
+      if (esito.lasciati.length > 0) console.warn(riga);
+      else console.info(riga);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: ${SEGNO_APPARATI} fallita (ROLLBACK), si riprova alla prossima apertura:`, e);
+    try {
+      scriviSegno(newDb, SEGNO_APPARATI, segnoErrore(e));
+    } catch (e2) {
+      console.error(`[db-tenant] ${tenantCode}: ${SEGNO_APPARATI}, segno d'errore non scritto:`, e2);
+    }
+  }
+
+  // Tappa 2f credenziali (T22): i segreti di controller e AD diventano voci
+  // d'archivio («UniFi · <nome>», «AD · <nome>») e la riga le punta con
+  // credential_id; le colonne vecchie restano piene fino alla 2g. Dopo la 2c
+  // (tipi per esteso) e la 2e. Conversione e segno nella stessa transazione;
+  // col segno done:/parziale: non si richiama più: con le colonne ancora
+  // piene ricreerebbe voci doppie, o ricollegherebbe a una voce un controller
+  // spostato senza che nessuno l'abbia scelta. Il journal elenca per id le
+  // righe convertite (confronto decifrato «uguale») e quelle lasciate col
+  // motivo. Se fallisce (anche per un confronto «diverso»): ROLLBACK, segno
+  // errore:, il tenant si apre lo stesso e si riprova all'apertura dopo.
+  try {
+    if (!conversioneChiusa(leggiSegno(newDb, SEGNO_INTEGRAZIONI))) {
+      const { esito, segno } = newDb.transaction(() => {
+        const esito = convertiControllerEAd(newDb, { aVuoto: false });
+        const segno = segnoIntegrazioni(esito);
+        scriviSegno(newDb, SEGNO_INTEGRAZIONI, segno);
+        return { esito, segno };
+      })();
+      const riga = `[db-tenant] ${tenantCode}: ${SEGNO_INTEGRAZIONI} ${segno}; ${descriviIntegrazioni(esito)}`;
+      if (esito.lasciati.length > 0) console.warn(riga);
+      else console.info(riga);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: ${SEGNO_INTEGRAZIONI} fallita (ROLLBACK), si riprova alla prossima apertura:`, e);
+    try {
+      scriviSegno(newDb, SEGNO_INTEGRAZIONI, segnoErrore(e));
+    } catch (e2) {
+      console.error(`[db-tenant] ${tenantCode}: ${SEGNO_INTEGRAZIONI}, segno d'errore non scritto:`, e2);
+    }
+  }
+
+  // Topologia T2 (spec §13.5.7): fatti delle letture in più. Per ultima, dopo le ricostruzioni di network_devices
+  // (ADR 0008 punto 6; anche dopo migraAppleMacos, che riparte dalla definizione attuale e non perderebbe colonne,
+  // ma così l'ordine non conta). Se fallisce il tenant si apre lo stesso: l'annotazione dice «schema assente», le
+  // letture in più non scrivono, il modello per cavo riceve elenchi vuoti e «Dati della mappa» lo dice. La riga
+  // «topologia cavi (T2), aggiunto …» nel journal è la prova del rilascio (piano di T2, Task 16).
+  try {
+    const added = migrateTopologyCavi(newDb);
+    if (added.length > 0) {
+      console.info(`[db-tenant] ${tenantCode}: topologia cavi (T2), aggiunto ${added.join(", ")}`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione topologia cavi (T2) fallita, le letture in più non scrivono:`, e);
+  }
+  // Anche la verifica non deve impedire l'apertura: se fallisce non si annota niente, e schemaCaviPresente() la rifà.
+  try {
+    SCHEMA_CAVI.set(newDb, verificaSchemaCavi(newDb));
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: verifica dello schema della topologia cavi (T2) fallita, si rifà alla prima scrittura:`, e);
   }
 
   tenantDbs.set(tenantCode, { db: newDb, lastUsed: Date.now() });
@@ -1270,6 +2357,18 @@ export function setNetworkTargetingMode(
     .run(mode, id);
 }
 
+export function setNetworkAssessmentConfig(
+  id: number,
+  opts: { enabled: boolean; profileId: string | null },
+): void {
+  db()
+    .prepare(
+      `UPDATE networks SET assessment_enabled = ?, assessment_profile_id = ?,
+       updated_at = datetime('now') WHERE id = ?`,
+    )
+    .run(opts.enabled ? 1 : 0, opts.profileId, id);
+}
+
 export function deleteNetwork(id: number): boolean {
   const result = db().prepare("DELETE FROM networks WHERE id = ?").run(id);
   return result.changes > 0;
@@ -1353,10 +2452,14 @@ export function getAllHostsEnriched(limit = 5000): Array<Host & {
     -- duplicati osservati su switch_port discovery che inserisce stessa riga ad
     -- ogni tick) → INNER JOIN moltiplicava gli host. MAX(rowid) garantisce 1 riga
     -- per mac (rowid univoco di default in SQLite).
+    -- Topologia fase 2: con le righe aggiornate sul posto (una per apparato, MAC,
+    -- porta) MAX(rowid) non è più la lettura più recente. SQLite, con un solo
+    -- MAX() nel GROUP BY, restituisce le colonne nude della riga che lo realizza:
+    -- una riga per mac, quella col timestamp più recente.
     LEFT JOIN (
       SELECT mac, port_name, device_id
       FROM mac_port_entries
-      WHERE rowid IN (SELECT MAX(rowid) FROM mac_port_entries GROUP BY mac)
+      WHERE rowid IN (SELECT rid FROM (SELECT rowid AS rid, MAX(timestamp) FROM mac_port_entries GROUP BY mac))
     ) mpe ON mpe.mac = h.mac
     LEFT JOIN network_devices sw ON sw.id = mpe.device_id
     LEFT JOIN (
@@ -1567,6 +2670,31 @@ export function getHostBasic(
     .get(id) as Pick<Host, "id" | "ip" | "custom_name" | "hostname" | "vendor" | "device_manufacturer"> | undefined;
 }
 
+/**
+ * Stato di raggiungibilità degli host scansionati per un insieme di IP, in una
+ * sola query (a blocchi, per il limite di parametri di SQLite). Se lo stesso IP
+ * sta in più reti vince l'host visto più di recente. Serve alla lista
+ * Dispositivi, che prima mostrava "Online" per ogni dispositivo abilitato in
+ * anagrafica (difetto UI-8, analisi 2026-10-12). Gli IP senza host non compaiono.
+ */
+export function getHostStatusesByIp(ips: string[]): Map<string, { status: string; last_seen: string | null }> {
+  const stati = new Map<string, { status: string; last_seen: string | null }>();
+  const unici = [...new Set(ips.filter((ip) => ip && ip.trim()))];
+  for (let i = 0; i < unici.length; i += 500) {
+    const blocco = unici.slice(i, i + 500);
+    const righe = db()
+      .prepare(
+        `SELECT ip, status, last_seen FROM hosts WHERE ip IN (${blocco.map(() => "?").join(",")})
+         ORDER BY last_seen DESC`
+      )
+      .all(...blocco) as { ip: string; status: string; last_seen: string | null }[];
+    for (const r of righe) {
+      if (!stati.has(r.ip)) stati.set(r.ip, { status: r.status, last_seen: r.last_seen });
+    }
+  }
+  return stati;
+}
+
 export function getHostByIp(ip: string): Host | undefined {
   return db().prepare("SELECT * FROM hosts WHERE ip = ? LIMIT 1").get(ip) as Host | undefined;
 }
@@ -1602,7 +2730,9 @@ export function getHostById(id: number): HostDetail | undefined {
     FROM mac_port_entries mpe
     JOIN network_devices nd ON nd.id = mpe.device_id
     WHERE ${MAC_HEX("mpe.mac")} = ? AND nd.device_type = 'switch'
-    ORDER BY mpe.rowid DESC LIMIT 1
+    -- Topologia fase 2: le righe si aggiornano sul posto, il rowid non dice più
+    -- «la lettura più recente»; il timestamp sì (rowid solo a parità).
+    ORDER BY mpe.timestamp DESC, mpe.rowid DESC LIMIT 1
   `).get(macToHex(host.mac)) as { device_name: string; device_vendor: string; port_name: string; vlan: number | null } | undefined : undefined;
 
   // F4: prefer FK lookup (network_devices.host_id) over fragile IP string match;
@@ -1656,7 +2786,6 @@ export function getHostById(id: number): HostDetail | undefined {
     ...host,
     recent_scans: recentScans,
     scan_types_used: scanTypesSeen,
-    detect_credentials: getHostDetectCredentialsEnriched(id),
     host_credentials: getHostCredentials(id),
     arp_source: arpSource || null,
     switch_port: switchPort || null,
@@ -1751,8 +2880,14 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
     if (input.os_info !== undefined) {
       if (!preserve || !existingRow?.os_info) { fields.push("os_info = ?"); values.push(input.os_info); }
     }
+    // Un modello che è solo l'etichetta di un'impronta di porte (pilota 16/10: «QNAP QTS» su un
+    // UniFi Cloud Gateway) non si preserva: il modello nuovo lo sostituisce, e una scansione con
+    // l'impronta ma senza modello lo azzera. Gli altri modelli (a mano, SNMP, agenti) restano.
+    const modelloDiPorte = modelloEtichettaDiPorte(existingRow?.model, [existingRow?.detection_json, input.detection_json]);
     if (input.model !== undefined) {
-      if (!preserve || !existingRow?.model) { fields.push("model = ?"); values.push(input.model); }
+      if (!preserve || !existingRow?.model || modelloDiPorte) { fields.push("model = ?"); values.push(input.model); }
+    } else if (modelloDiPorte && input.detection_json !== undefined) {
+      fields.push("model = NULL");
     }
     if (input.serial_number !== undefined) {
       if (!preserve || !existingRow?.serial_number) { fields.push("serial_number = ?"); values.push(input.serial_number); }
@@ -1815,13 +2950,17 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
         syncIpAssignmentsForNetwork(input.network_id);
       }
     }
-    // v0.2.637 audit B3: ricomputo classifier SOLO se cambia un signal rilevante.
-    // Prima `applyAutoClassification` veniva chiamato a ogni upsert — quindi
-    // anche su passaggi `status=online ↔ offline` da fast_scan/ping → migliaia
-    // di UPDATE+ricalcoli inutili al minuto. Ora gate con shouldRecomputeClassification.
+    // v0.2.637 audit B3: ricomputo SOLO se cambia un signal rilevante. Prima
+    // `applyAutoClassification` veniva chiamato a ogni upsert — quindi anche
+    // su passaggi `status=online ↔ offline` da fast_scan/ping → migliaia di
+    // UPDATE+ricalcoli inutili al minuto. Gate con shouldRecomputeClassification
+    // (preservato dall'audit, i segnali rilevanti non cambiano con l'engine).
+    // Fase 4: applyAutoClassification (legacy) rimosso — un solo scrittore
+    // (attribution v2, vedi src/lib/attribution/). recomputeAttributionSafe
+    // emette evidenza dai segnali già in DB e proietta classification/inferred_*.
     try {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { applyAutoClassification, shouldRecomputeClassification } = require("./devices/auto-classify");
+      const { shouldRecomputeClassification } = require("./devices/auto-classify");
       const changedSignals = new Set<string>();
       if (input.open_ports !== undefined && input.open_ports !== existingRow?.open_ports) changedSignals.add("open_ports");
       if (input.snmp_data !== undefined && input.snmp_data !== existingRow?.snmp_data) changedSignals.add("snmp_data");
@@ -1831,9 +2970,11 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
       if (input.detection_json !== undefined && input.detection_json !== existingRow?.detection_json) changedSignals.add("detection_json");
       if (input.os_info !== undefined && input.os_info !== existingRow?.os_info) changedSignals.add("os_info");
       if (shouldRecomputeClassification(changedSignals)) {
-        applyAutoClassification(db(), host.id);
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { recomputeAttributionSafe } = require("@/lib/attribution/recompute") as typeof import("@/lib/attribution/recompute");
+        recomputeAttributionSafe(host.id, "scan");
       }
-    } catch { /* non blocca l'upsert se la classificazione fallisce */ }
+    } catch { /* non blocca l'upsert se il recompute fallisce */ }
     // F4 v0.2.597: reverse trigger — se esiste un network_device con host = IP
     // dell'host appena aggiornato e host_id NULL, lo collega ora (caso tipico:
     // device creato manualmente prima che l'host fosse scoperto via discovery).
@@ -1898,12 +3039,14 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
       hostname: host.hostname ?? undefined,
     });
   }
-  // F1: prima classificazione automatica all'insert.
+  // F1: prima attribuzione all'insert. Fase 4: applyAutoClassification
+  // (legacy) rimosso — recomputeAttributionSafe emette evidenza dai segnali
+  // già scritti sopra e proietta classification/inferred_* (un solo scrittore).
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { applyAutoClassification } = require("./devices/auto-classify");
-    applyAutoClassification(db(), host.id);
-  } catch { /* non blocca l'insert se la classificazione fallisce */ }
+    const { recomputeAttributionSafe } = require("@/lib/attribution/recompute") as typeof import("@/lib/attribution/recompute");
+    recomputeAttributionSafe(host.id, "scan");
+  } catch { /* non blocca l'insert se il recompute fallisce */ }
   // F4 v0.2.597: reverse trigger anche nel branch INSERT (host nuovo) — un device
   // potrebbe già esistere col suo IP e attendere il host_id.
   try {
@@ -1912,6 +3055,111 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
     ).run(host.id, host.ip);
   } catch { /* niente */ }
   return host;
+}
+
+// Snapshot dei segnali di un host già persistiti (nessun probe): input puro per gli
+// emettitori di src/lib/attribution/emitters.ts.
+export interface AttributionSignals {
+  host: {
+    id: number; ip: string; mac: string | null; vendor: string | null;
+    hostname: string | null; os_info: string | null; open_ports: string | null;
+    snmp_data: string | null; detection_json: string | null;
+  };
+  adComputer: { operating_system: string | null; operating_system_version: string | null } | null;
+  wazuh: { os_platform: string | null; os_name: string | null; os_version: string | null; board_vendor: string | null } | null;
+  neighborSightings: Array<{ protocol: string; remote_platform: string | null; remote_device_name: string }>;
+}
+
+export function getAttributionSignalsForHost(hostId: number): AttributionSignals | null {
+  const d = db();
+  const host = d.prepare(
+    `SELECT id, ip, mac, vendor, hostname, os_info, open_ports, snmp_data, detection_json
+     FROM hosts WHERE id = ?`
+  ).get(hostId) as AttributionSignals["host"] | undefined;
+  if (!host) return null;
+  const adComputer = d.prepare(
+    `SELECT operating_system, operating_system_version FROM ad_computers
+     WHERE host_id = ? ORDER BY synced_at DESC LIMIT 1`
+  ).get(hostId) as AttributionSignals["adComputer"] ?? null;
+  const wazuh = d.prepare(
+    `SELECT wo.os_platform, wo.os_name, wo.os_version, wh.board_vendor
+     FROM wazuh_agent wa
+     LEFT JOIN wazuh_os wo ON wo.agent_id = wa.agent_id
+     LEFT JOIN wazuh_hw wh ON wh.agent_id = wa.agent_id
+     WHERE wa.host_id = ? LIMIT 1`
+  ).get(hostId) as AttributionSignals["wazuh"] ?? null;
+  const neighborSightings = d.prepare(
+    `SELECT dn.protocol, dn.remote_platform, dn.remote_device_name
+     FROM device_neighbors dn, hosts h
+     WHERE h.id = ?
+       AND ((dn.remote_mac IS NOT NULL AND dn.remote_mac = h.mac)
+         OR (dn.remote_ip IS NOT NULL AND dn.remote_ip = h.ip))
+       AND ${NEIGHBORS_LATEST_ROUND_SQL}
+       AND ${NEIGHBORS_MODEL_SOURCES_SQL}
+     ORDER BY dn.timestamp DESC LIMIT 5`
+  ).all(hostId) as AttributionSignals["neighborSightings"];
+  return { host, adComputer, wazuh, neighborSightings };
+}
+
+/**
+ * Ririsolve `hosts.vendor` dal MAC per gli host il cui vendor è assente o è
+ * ancora un placeholder scritto a scan-time da una vecchia catena di
+ * risoluzione (es. "IEEE Registration Authority" da oui-data, prima che la KB
+ * vendorizzata — 57.778 prefissi incl. MA-M/28 e MA-S/36 — fosse disponibile).
+ * Caso reale: VM 533/tenant 70791 dopo il deploy KB v0.3.236, 16 host restati
+ * bloccati sul placeholder finché non venissero riscansionati — il ricalcolo
+ * attribuzione legge `hosts.vendor` così com'è e non rifà da solo il lookup.
+ *
+ * Passo di risoluzione riusabile (non solo dal CLI): un solo lookup MAC→vendor
+ * per host, via `lookupVendorSync` (stesso ordine custom_oui → KB → oui-data
+ * usato a scan-time), scritto SOLO se il risultato è diverso ed è a sua volta
+ * un produttore reale (non un placeholder). Non tocca altri campi. Non lancia
+ * mai: un errore sul singolo host viene loggato e contato in `unresolved`,
+ * senza abortire il giro sugli altri host.
+ */
+export function refreshHostVendorsFromMac(
+  networkId?: number
+): { examined: number; updated: number; unresolved: number } {
+  const d = db();
+  const rows = (
+    networkId != null
+      ? d.prepare(
+          "SELECT id, mac, vendor FROM hosts WHERE network_id = ? AND mac IS NOT NULL AND mac != ''"
+        ).all(networkId)
+      : d.prepare(
+          "SELECT id, mac, vendor FROM hosts WHERE mac IS NOT NULL AND mac != ''"
+        ).all()
+  ) as Array<{ id: number; mac: string; vendor: string | null }>;
+
+  const candidates = rows.filter(
+    (r) => !r.vendor || VENDOR_PLACEHOLDER_RE.test(r.vendor.trim())
+  );
+
+  const result = { examined: candidates.length, updated: 0, unresolved: 0 };
+  const updateStmt = d.prepare(
+    "UPDATE hosts SET vendor = ? WHERE id = ?"
+  );
+
+  const run = d.transaction((items: typeof candidates) => {
+    for (const row of items) {
+      try {
+        const resolved = lookupVendorSync(row.mac);
+        if (!resolved || VENDOR_PLACEHOLDER_RE.test(resolved.trim())) {
+          result.unresolved += 1;
+          continue;
+        }
+        if (resolved === row.vendor) continue;
+        updateStmt.run(resolved, row.id);
+        result.updated += 1;
+      } catch (err) {
+        result.unresolved += 1;
+        console.error(`[refreshHostVendorsFromMac] host ${row.id} (mac ${row.mac}) fallito:`, err instanceof Error ? err.message : String(err));
+      }
+    }
+  });
+  run(candidates);
+
+  return result;
 }
 
 export function updateHost(id: number, input: HostUpdate): Host | undefined {
@@ -2089,27 +3337,130 @@ export function getKnownHostsWithNetwork(): KnownHostWithNetworkRow[] {
     .all() as KnownHostWithNetworkRow[];
 }
 
-export function markHostsOffline(networkId: number, onlineIps: string[], scannedIps?: string[]): void {
-  if (scannedIps?.length) {
-    const onlineSet = new Set(onlineIps);
-    const toOffline = scannedIps.filter((ip) => !onlineSet.has(ip));
-    if (toOffline.length === 0) return;
-    const ph = toOffline.map(() => "?").join(",");
-    db().prepare(
-      `UPDATE hosts SET status = 'offline', updated_at = datetime('now') WHERE network_id = ? AND ip IN (${ph})`
-    ).run(networkId, ...toOffline);
-    return;
+/** Forma di `datetime('now')` di SQLite, la stessa di `hosts.last_seen`. */
+const FORMA_DATA_SQLITE = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
+
+/**
+ * Ora del database del tenant, nella forma di `datetime('now')`: è l'inizio di un
+ * giro di scansione, da confrontare come testo con `hosts.last_seen` (stesso
+ * formato e stesso fuso, UTC). Un'ora presa da JavaScript (`toISOString`, col
+ * «T») si confronterebbe male.
+ */
+export function oraDelDatabase(): string {
+  const r = db().prepare("SELECT datetime('now') AS ora").get() as { ora: string };
+  return r.ora;
+}
+
+/**
+ * Filtro unico del passaggio a offline di fine giro (T3-20, INV-1/INV-2), usato
+ * sia dalla lettura dei candidati sia dalla scrittura:
+ * - solo gli IP scansionati dal giro che non hanno risposto;
+ * - solo host non ancora offline (un host già offline non si riscrive: prima
+ *   ogni giro ne aggiornava `updated_at`);
+ * - solo host con `last_seen` nullo o anteriore all'inizio del giro: un host
+ *   visto vivo dopo la partenza (da un altro giro, dal controllo degli host
+ *   noti) non lo spegne un giro che non l'ha visto.
+ */
+const WHERE_OFFLINE =
+  "network_id = ? AND (status IS NULL OR status <> 'offline') AND (last_seen IS NULL OR last_seen < ?)";
+
+function candidatiOffline(
+  networkId: number,
+  onlineIps: readonly string[],
+  scannedIps: readonly string[],
+  startedAt: string,
+): Array<{ id: number; ip: string }> {
+  if (!FORMA_DATA_SQLITE.test(startedAt)) {
+    throw new Error("Inizio del giro non valido: serve la forma di datetime('now') (AAAA-MM-GG hh:mm:ss)");
   }
-  if (onlineIps.length === 0) {
-    db().prepare(
-      "UPDATE hosts SET status = 'offline', updated_at = datetime('now') WHERE network_id = ? AND status = 'online'"
-    ).run(networkId);
-    return;
-  }
-  const placeholders = onlineIps.map(() => "?").join(",");
-  db().prepare(
-    `UPDATE hosts SET status = 'offline', updated_at = datetime('now') WHERE network_id = ? AND status = 'online' AND ip NOT IN (${placeholders})`
-  ).run(networkId, ...onlineIps);
+  if (scannedIps.length === 0) return [];
+  const online = new Set(onlineIps);
+  const scansionati = new Set(scannedIps);
+  const righe = db()
+    .prepare(`SELECT id, ip FROM hosts WHERE ${WHERE_OFFLINE} ORDER BY id`)
+    .all(networkId, startedAt) as Array<{ id: number; ip: string }>;
+  return righe.filter((r) => scansionati.has(r.ip) && !online.has(r.ip));
+}
+
+/**
+ * Host che il giro manderebbe offline, senza scrivere (T3-20). Stesso filtro di
+ * `markHostsOffline`: le righe restituite sono quelle che cambierebbe.
+ * @param startedAt inizio del giro, da `oraDelDatabase()`
+ */
+export function selectOfflineCandidates(
+  networkId: number,
+  onlineIps: readonly string[],
+  scannedIps: readonly string[],
+  startedAt: string,
+): Array<{ id: number; ip: string }> {
+  return candidatiOffline(networkId, onlineIps, scannedIps, startedAt);
+}
+
+/**
+ * Host della rete non offline (online, `unknown` o senza stato) fra gli IP
+ * scansionati: il denominatore della soglia offline (T3-21). Usa la stessa
+ * idea di «non offline» del filtro dei candidati, così i candidati sono sempre
+ * un sottoinsieme; gli host già offline non entrano nel conto.
+ */
+export function contaHostAttiviScansionati(networkId: number, scannedIps: readonly string[]): number {
+  if (scannedIps.length === 0) return 0;
+  const scansionati = new Set(scannedIps);
+  const righe = db()
+    .prepare("SELECT ip FROM hosts WHERE network_id = ? AND (status IS NULL OR status <> 'offline')")
+    .all(networkId) as Array<{ ip: string }>;
+  let n = 0;
+  for (const r of righe) if (scansionati.has(r.ip)) n++;
+  return n;
+}
+
+/**
+ * Id degli host della rete divisi fra quelli di cui il giro ha scansionato l'IP
+ * (`dentro`) e gli altri (`fuori`): il perimetro della soglia offline (T3-21,
+ * revisione 3b).
+ */
+export function idHostScansionati(
+  networkId: number,
+  scannedIps: readonly string[],
+): { dentro: number[]; fuori: number[] } {
+  const scansionati = new Set(scannedIps);
+  const righe = db().prepare("SELECT id, ip FROM hosts WHERE network_id = ?").all(networkId) as Array<{
+    id: number;
+    ip: string;
+  }>;
+  const dentro: number[] = [];
+  const fuori: number[] = [];
+  for (const r of righe) (scansionati.has(r.ip) ? dentro : fuori).push(r.id);
+  return { dentro, fuori };
+}
+
+/**
+ * Marca offline gli host scansionati che non hanno risposto, col filtro di
+ * `selectOfflineCandidates` (T3-20). Una lista di scansionati vuota non tocca
+ * niente (prima valeva come «tutta la rete»). Restituisce quanti host ha
+ * cambiato.
+ * @param startedAt inizio del giro, da `oraDelDatabase()`
+ */
+export function markHostsOffline(
+  networkId: number,
+  onlineIps: readonly string[],
+  scannedIps: readonly string[],
+  startedAt: string,
+): number {
+  const d = db();
+  return d.transaction((): number => {
+    const ids = candidatiOffline(networkId, onlineIps, scannedIps, startedAt).map((r) => r.id);
+    let cambiati = 0;
+    for (let i = 0; i < ids.length; i += 500) {
+      const blocco = ids.slice(i, i + 500);
+      cambiati += d
+        .prepare(
+          `UPDATE hosts SET status = 'offline', updated_at = datetime('now')
+           WHERE id IN (${blocco.map(() => "?").join(",")}) AND ${WHERE_OFFLINE}`,
+        )
+        .run(...blocco, networkId, startedAt).changes;
+    }
+    return cambiati;
+  })();
 }
 
 export function noteHostsNonResponding(
@@ -2170,6 +3521,172 @@ export function getScanHistory(filters: { host_id?: number; network_id?: number;
   return db().prepare(
     `SELECT * FROM scan_history ${where} ORDER BY timestamp DESC LIMIT ?`
   ).all(...values, limit) as ScanHistory[];
+}
+
+// Chiave fase acquisizione (spec §6.2) → scan_type multipli in scan_history che la alimentano.
+export type ScanPhaseKey = "initial" | "nmap_deep" | "snmp" | "enrich" | "credentials";
+
+// Mappa fase→scan_type. 'enrich' (ARP/DHCP/AD, endpoint scan_type="scan_enrich" in
+// /api/scans/trigger) scrive ora "scan_enrich" in scan_history a fine esecuzione
+// (fix 2026-07-27: prima non scriveva nulla → last_run sempre null in UI). Teniamo
+// anche i tipi legacy 'arp'/'dhcp'/'dns' nell'OR nel caso esistano righe storiche o
+// scritture dirette introdotte altrove.
+const SCAN_PHASE_TYPES: Record<ScanPhaseKey, string[]> = {
+  initial: ["scan_icmp", "scan_naabu", "network_discovery"],
+  nmap_deep: ["scan_nmap_base", "nmap", "network_discovery"],
+  snmp: ["scan_snmp_verify", "snmp", "network_discovery"],
+  enrich: ["scan_enrich", "arp", "dhcp", "dns", "network_discovery"],
+  credentials: ["credential_validate"],
+};
+
+export interface ScanPhaseStatus {
+  key: ScanPhaseKey;
+  last_run: string | null;
+  stale: boolean;
+}
+
+const STALE_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
+
+export function getScanPhaseStatusForNetwork(networkId: number): ScanPhaseStatus[] {
+  const rows = db().prepare(
+    `SELECT scan_type, MAX(timestamp) t FROM scan_history WHERE network_id = ? GROUP BY scan_type`
+  ).all(networkId) as Array<{ scan_type: string; t: string | null }>;
+  const maxByType = new Map(rows.map((r) => [r.scan_type, r.t]));
+  const now = Date.now();
+  return (Object.keys(SCAN_PHASE_TYPES) as ScanPhaseKey[]).map((key) => {
+    const types = SCAN_PHASE_TYPES[key];
+    let lastRun: string | null = null;
+    for (const t of types) {
+      const v = maxByType.get(t);
+      if (v && (lastRun === null || v > lastRun)) lastRun = v;
+    }
+    const stale = lastRun !== null && now - new Date(lastRun).getTime() > STALE_AFTER_MS;
+    return { key, last_run: lastRun, stale };
+  });
+}
+
+export interface AttributionCompleteness {
+  total: number;
+  level2: number;
+  level1: number;
+  none: number;
+  suggestion: string | null;
+}
+
+export function getAttributionCompletenessForNetwork(networkId: number): AttributionCompleteness {
+  const row = db().prepare(
+    `SELECT
+       COUNT(*) AS total,
+       SUM(CASE WHEN attr_category LIKE '%.%' THEN 1 ELSE 0 END) AS level2,
+       SUM(CASE WHEN attr_category IS NOT NULL AND attr_category != 'unknown' AND attr_category NOT LIKE '%.%' THEN 1 ELSE 0 END) AS level1
+     FROM hosts WHERE network_id = ?`
+  ).get(networkId) as { total: number; level2: number | null; level1: number | null };
+  const total = row.total ?? 0;
+  const level2 = row.level2 ?? 0;
+  const level1 = row.level1 ?? 0;
+  const none = total - level2 - level1;
+
+  let suggestion: string | null = null;
+  const snmpNeverRun = getScanPhaseStatusForNetwork(networkId).find((p) => p.key === "snmp")?.last_run == null;
+  if (level1 + none > 0 && snmpNeverRun) {
+    suggestion = `${level1 + none} host fermi al livello 1: esegui SNMP per distinguere AP da switch`;
+  } else if (none > level2) {
+    suggestion = `${none} host senza attribuzione: esegui la scansione iniziale`;
+  }
+
+  return { total, level2, level1, none, suggestion };
+}
+
+export interface CredentialCoverageRow {
+  category: string;
+  hosts: number;
+  withValidCredential: number;
+  expectedProtocol: string;
+}
+
+// Fase 4b Task 4 (spec §7.6): categoria attribuita → protocollo/i pertinenti
+// per raggiungerla con credenziali. Solo le categorie con un protocollo
+// "giusto" chiaro compaiono nella vista — le altre (peripheral.*, voip.*,
+// power.*, iot.*, mobile.*, av.nvr/display/speaker) non hanno un protocollo
+// di autenticazione bersaglio in questa fase e sono escluse deliberatamente
+// (mostrare "nessun protocollo pertinente" sarebbe rumore, non un'evidenza
+// utile). compute.server/hypervisor: BMC (redfish) è alternativo a OS
+// (winrm/ssh) — qualunque delle tre soddisfa la copertura.
+const CREDENTIAL_COVERAGE_PROTOCOLS: Record<string, readonly CredProtocol[]> = {
+  network: ["snmp"],
+  "network.router": ["snmp"],
+  "network.switch": ["snmp"],
+  "network.access_point": ["snmp"],
+  "network.firewall": ["snmp"],
+  "network.controller": ["snmp"],
+  "network.modem": ["snmp"],
+  "compute.workstation": ["winrm"],
+  "compute.laptop": ["winrm"],
+  "compute.server": ["winrm", "ssh", "redfish"],
+  "compute.hypervisor": ["winrm", "ssh", "redfish"],
+  "av.camera": ["onvif"],
+  storage: ["ssh", "snmp"],
+  "storage.nas": ["ssh", "snmp"],
+  "storage.san": ["ssh", "snmp"],
+  "storage.tape": ["ssh", "snmp"],
+};
+
+/**
+ * Vista di copertura credenziali (§7.6): per ogni categoria attribuita con un
+ * protocollo pertinente noto, conta quanti host in totale e quanti hanno
+ * ALMENO una credenziale VALIDATA (`host_credentials.validated=1`) su uno dei
+ * protocolli applicabili a quella categoria (es. compute.server: winrm O ssh
+ * O redfish soddisfano la copertura). Loop bounded sul piccolo insieme fisso
+ * di categorie mappate (non per-host): non è il pattern N+1 vietato dalle
+ * regole DB, il numero di query è costante indipendentemente dal numero di
+ * host. Non lancia mai (coerente col resto del modulo attribuzione): un
+ * errore su una singola categoria la esclude dal risultato invece di far
+ * fallire l'intera vista.
+ */
+export function getCredentialCoverageByCategory(): CredentialCoverageRow[] {
+  const d = db();
+  let categoryRows: Array<{ category: string; hosts: number }>;
+  try {
+    categoryRows = d
+      .prepare(
+        `SELECT attr_category AS category, COUNT(*) AS hosts
+         FROM hosts
+         WHERE attr_category IS NOT NULL AND attr_category != 'unknown'
+         GROUP BY attr_category`
+      )
+      .all() as Array<{ category: string; hosts: number }>;
+  } catch (e) {
+    console.error("[db-tenant] getCredentialCoverageByCategory: query categorie fallita:", e);
+    return [];
+  }
+
+  const out: CredentialCoverageRow[] = [];
+  for (const row of categoryRows) {
+    const protocols = CREDENTIAL_COVERAGE_PROTOCOLS[row.category];
+    if (!protocols || protocols.length === 0) continue;
+    try {
+      const placeholders = protocols.map(() => "?").join(",");
+      const withValid = d
+        .prepare(
+          `SELECT COUNT(*) AS n FROM hosts h
+           WHERE h.attr_category = ? AND EXISTS (
+             SELECT 1 FROM host_credentials hc
+             WHERE hc.host_id = h.id AND hc.validated = 1 AND hc.protocol_type IN (${placeholders})
+           )`
+        )
+        .get(row.category, ...protocols) as { n: number };
+      out.push({
+        category: row.category,
+        hosts: row.hosts,
+        withValidCredential: withValid.n ?? 0,
+        expectedProtocol: protocols.join("/"),
+      });
+    } catch (e) {
+      console.error(`[db-tenant] getCredentialCoverageByCategory: query copertura fallita per ${row.category}:`, e);
+    }
+  }
+
+  return out.sort((a, b) => a.category.localeCompare(b.category));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -2297,6 +3814,20 @@ export function getNetworkDeviceByHostId(hostId: number): NetworkDevice | undefi
   return db().prepare("SELECT * FROM network_devices WHERE host_id = ? ORDER BY id LIMIT 1").get(hostId) as NetworkDevice | undefined;
 }
 
+/**
+ * Salva la versione SNMP che la discovery ha visto rispondere. Non tocca gli
+ * apparati con la versione fissata a mano né quelli che hanno già quel valore.
+ * Restituisce la versione precedente se ha scritto, `undefined` se no.
+ */
+export function registraVersioneSnmpRilevata(deviceId: number, versione: "1" | "2c"): { prima: "1" | "2c" | null } | undefined {
+  const row = db().prepare("SELECT snmp_version, snmp_version_fissata FROM network_devices WHERE id = ?").get(deviceId) as
+    | { snmp_version: "1" | "2c" | null; snmp_version_fissata: number }
+    | undefined;
+  if (!row || row.snmp_version_fissata === 1 || row.snmp_version === versione) return undefined;
+  db().prepare("UPDATE network_devices SET snmp_version = ?, updated_at = datetime('now') WHERE id = ? AND snmp_version_fissata = 0").run(versione, deviceId);
+  return { prima: row.snmp_version };
+}
+
 type CreateDeviceInput = Omit<NetworkDevice, "id" | "created_at" | "updated_at" | "sysname" | "sysdescr" | "model" | "firmware" | "serial_number" | "part_number" | "last_info_update" | "last_device_info_json" | "classification" | "stp_info" | "last_proxmox_scan_at" | "last_proxmox_scan_result" | "scan_target" | "product_profile" | "use_for_arp_poll"> & {
   classification?: string | null;
   scan_target?: string | null;
@@ -2346,7 +3877,7 @@ export function updateNetworkDevice(id: number, input: Partial<Omit<NetworkDevic
   const fields: string[] = [];
   const values: unknown[] = [];
 
-  const keys = ["name", "host", "device_type", "vendor", "vendor_subtype", "protocol", "credential_id", "snmp_credential_id", "username", "encrypted_password", "community_string", "api_token", "api_url", "port", "enabled", "classification", "sysname", "sysdescr", "model", "firmware", "serial_number", "part_number", "last_info_update", "last_device_info_json", "stp_info", "last_proxmox_scan_at", "last_proxmox_scan_result", "scan_target", "product_profile", "use_for_arp_poll", "host_id"] as const;
+  const keys = ["name", "host", "device_type", "vendor", "vendor_subtype", "protocol", "credential_id", "snmp_credential_id", "username", "encrypted_password", "community_string", "api_token", "api_url", "port", "enabled", "classification", "sysname", "sysdescr", "model", "firmware", "serial_number", "part_number", "last_info_update", "last_device_info_json", "stp_info", "last_proxmox_scan_at", "last_proxmox_scan_result", "scan_target", "product_profile", "use_for_arp_poll", "host_id", "snmp_version", "snmp_version_fissata"] as const;
   for (const key of keys) {
     if (input[key] !== undefined) {
       fields.push(`${key} = ?`);
@@ -2364,6 +3895,33 @@ export function updateNetworkDevice(id: number, input: Partial<Omit<NetworkDevic
 
 export function deleteNetworkDevice(id: number): boolean {
   return db().prepare("DELETE FROM network_devices WHERE id = ?").run(id).changes > 0;
+}
+
+// ========================
+// Cleanup FK orfani (una volta per database)
+// ========================
+
+/**
+ * Database già ripuliti in questo processo. Uno per database e non uno solo
+ * per il processo: con la bandierina unica di `db.ts` sull'hub con più tenant
+ * la pulizia avveniva sul primo tenant toccato e mai sugli altri (NUC-2).
+ */
+const fkCleanedDbs = new WeakSet<Database.Database>();
+
+/**
+ * Pulisce riferimenti FK orfani in mac_ip_mapping e dhcp_leases (causati da
+ * migrazioni con foreign_keys=OFF). `target` serve alla facciata `db.ts`, che
+ * lo chiama sul database che ha già risolto; senza, il tenant del contesto.
+ */
+export function cleanOrphanedForeignKeys(target?: Database.Database): void {
+  const d = target ?? db();
+  if (fkCleanedDbs.has(d)) return;
+  d.prepare("UPDATE mac_ip_mapping SET source_device_id = NULL WHERE source_device_id IS NOT NULL AND source_device_id NOT IN (SELECT id FROM network_devices)").run();
+  d.prepare("UPDATE mac_ip_mapping SET network_id = NULL WHERE network_id IS NOT NULL AND network_id NOT IN (SELECT id FROM networks)").run();
+  d.prepare("UPDATE mac_ip_mapping SET host_id = NULL WHERE host_id IS NOT NULL AND host_id NOT IN (SELECT id FROM hosts)").run();
+  d.prepare("UPDATE dhcp_leases SET host_id = NULL WHERE host_id IS NOT NULL AND host_id NOT IN (SELECT id FROM hosts)").run();
+  d.prepare("UPDATE dhcp_leases SET network_id = NULL WHERE network_id IS NOT NULL AND network_id NOT IN (SELECT id FROM networks)").run();
+  fkCleanedDbs.add(d);
 }
 
 export function getDevicesPaginated(
@@ -2509,10 +4067,16 @@ export function syncNetworkDeviceFromHostScan(ip: string, hostOpenPorts: Array<{
   const protocol = device.protocol ?? "ssh";
   const vendor = (device.vendor ?? "generic").toLowerCase();
 
-  if (!tcpPorts.has(currentPort)) {
-    const vendorCandidates = candidatesVendor[vendor] ?? [];
+  // SNMP è UDP: la 161 non compare mai fra le porte TCP aperte, e prima la
+  // scansione spostava un MikroTik in SNMP sulla 8291 (tappa 1, 15/10).
+  const protocolloSnmp = protocol === "snmp_v2" || protocol === "snmp_v3";
+  if (!protocolloSnmp && !tcpPorts.has(currentPort)) {
+    // Prima le porte del protocollo: per SSH le porte del produttore (8291 Winbox,
+    // 8728 API di MikroTik, 23 telnet…) non sono SSH, e un MikroTik in SSH finiva
+    // sulla 8291 (pilota, 16/10). Le porte del produttore restano solo per l'API.
+    const vendorCandidates = protocol === "api" ? candidatesVendor[vendor] ?? [] : [];
     const protoCandidates = candidatesMap[protocol] ?? [];
-    const orderedCandidates = [...new Set([...vendorCandidates, ...protoCandidates])];
+    const orderedCandidates = [...new Set([...protoCandidates, ...vendorCandidates])];
     for (const c of orderedCandidates) {
       if (tcpPorts.has(c)) {
         updates.port = c;
@@ -2549,111 +4113,49 @@ export function getCredentialById(id: number): Credential | undefined {
   return db().prepare("SELECT * FROM credentials WHERE id = ?").get(id) as Credential | undefined;
 }
 
-export function createCredential(input: CredentialInput & { encrypted_username?: string | null; encrypted_password?: string | null }): Credential {
-  const stmt = db().prepare(
-    `INSERT INTO credentials (name, credential_type, encrypted_username, encrypted_password)
-     VALUES (?, ?, ?, ?)`
-  );
-  const result = stmt.run(
-    input.name,
-    input.credential_type,
-    input.encrypted_username ?? null,
-    input.encrypted_password ?? null
-  );
-  return db().prepare("SELECT * FROM credentials WHERE id = ?").get(result.lastInsertRowid) as Credential;
+/** CRUD dell'archivio: `creaCredenzialeDb` (tipo controllato, `linux` scritto come `ssh`). */
+export function createCredential(input: ColonneCredenziale): Credential {
+  return creaCredenzialeDb(db(), input);
 }
 
-export function updateCredential(id: number, input: Partial<CredentialInput> & { encrypted_username?: string | null; encrypted_password?: string | null }): Credential | undefined {
-  const fields: string[] = [];
-  const values: unknown[] = [];
-  const keys = ["name", "credential_type", "encrypted_username", "encrypted_password"] as const;
-  for (const key of keys) {
-    if (input[key] !== undefined) {
-      fields.push(`${key} = ?`);
-      values.push(input[key]);
-    }
-  }
-  if (fields.length === 0) return getCredentialById(id);
-  fields.push("updated_at = datetime('now')");
-  values.push(id);
-  db().prepare(`UPDATE credentials SET ${fields.join(", ")} WHERE id = ?`).run(...values);
-  return getCredentialById(id);
+export function updateCredential(id: number, input: Partial<ColonneCredenziale>): Credential | undefined {
+  return aggiornaCredenzialeDb(db(), id, input);
 }
 
 export function deleteCredential(id: number): boolean {
-  return db().prepare("DELETE FROM credentials WHERE id = ?").run(id).changes > 0;
+  return eliminaCredenzialeDb(db(), id);
 }
 
 /**
- * Restituisce le credenziali host Windows (da settings host_windows_credential_id).
- * Importa getSetting dal hub.
+ * Username/password decifrati se la credenziale esiste ed è del tipo atteso
+ * (Windows/Linux/API — "api" riusato anche per Redfish/BMC, Fase 4b Task 1:
+ * niente tipo dedicato finché il CHECK di host_credentials/device_credential_bindings
+ * non viene migrato, vedi Task 4).
  */
-export function getHostWindowsCredentials(): { username: string; password: string } | null {
-  // getSetting lives in the hub DB — lazy import to avoid circular deps
-  const { getSetting } = require("./db") as { getSetting: (key: string) => string | null };
-  const idStr = getSetting("host_windows_credential_id");
-  if (!idStr?.trim()) return null;
-  const id = parseInt(idStr, 10);
-  if (isNaN(id)) return null;
-  const cred = getCredentialById(id);
-  if (!cred || String(cred.credential_type || "").toLowerCase() !== "windows") return null;
-  const username = cred.encrypted_username ? safeDecrypt(cred.encrypted_username) : "";
-  const password = cred.encrypted_password ? safeDecrypt(cred.encrypted_password) : "";
-  if (username?.trim() && password?.trim()) return { username: username.trim(), password: password.trim() };
-  return null;
-}
-
-export function getHostLinuxCredentials(): { username: string; password: string } | null {
-  const { getSetting } = require("./db") as { getSetting: (key: string) => string | null };
-  const idStr = getSetting("host_linux_credential_id");
-  if (!idStr?.trim()) return null;
-  const id = parseInt(idStr, 10);
-  if (isNaN(id)) return null;
-  const cred = getCredentialById(id);
-  if (!cred || String(cred.credential_type || "").toLowerCase() !== "linux") return null;
-  const username = cred.encrypted_username ? safeDecrypt(cred.encrypted_username) : "";
-  const password = cred.encrypted_password ? safeDecrypt(cred.encrypted_password) : "";
-  if (username?.trim() && password?.trim()) return { username: username.trim(), password: password.trim() };
-  return null;
-}
-
 export function getCredentialLoginPair(
   credentialId: number,
-  expectedType: "windows" | "linux"
+  expectedType: "windows" | "linux" | "api"
 ): { username: string; password: string } | null {
-  const cred = getCredentialById(credentialId);
-  if (!cred) return null;
-  const type = String(cred.credential_type || "").toLowerCase();
-  if (type !== expectedType) return null;
-  const username = cred.encrypted_username ? safeDecrypt(cred.encrypted_username) : "";
-  const password = cred.encrypted_password ? safeDecrypt(cred.encrypted_password) : "";
-  if (username?.trim() && password?.trim()) return { username: username.trim(), password: password.trim() };
-  return null;
+  return coppiaLoginDb(db(), credentialId, expectedType);
 }
 
-export function getSshLinuxCredentialPair(credentialId: number): { username: string; password: string } | null {
-  const cred = getCredentialById(credentialId);
-  if (!cred) return null;
-  const type = String(cred.credential_type || "").toLowerCase();
-  if (type !== "ssh" && type !== "linux") return null;
-  const username = cred.encrypted_username ? safeDecrypt(cred.encrypted_username) : "";
-  const password = cred.encrypted_password ? safeDecrypt(cred.encrypted_password) : "";
-  if (username?.trim() && password?.trim()) return { username: username.trim(), password: password.trim() };
-  return null;
+export function getSshLinuxCredentialPair(credentialId: number): { username: string; password: string; port: number | null } | null {
+  return coppiaSshDb(db(), credentialId);
+}
+
+/** Accesso SSH di una voce: utente con password o con chiave (T14), con la porta della voce, o il perché no. */
+export function accessoSshCredenziale(credentialId: number): EsitoAccessoSsh {
+  return accessoSshDb(db(), credentialId);
 }
 
 export type NetworkCredentialRole = "windows" | "linux" | "ssh" | "snmp";
 
+/** Regola unica (T12): i tipi del protocollo del ruolo, come li legge il motore. */
 function credentialMatchesNetworkRole(
   credentialType: string,
   role: NetworkCredentialRole
 ): boolean {
-  const t = credentialType.toLowerCase();
-  if (role === "windows") return t === "windows";
-  if (role === "linux") return t === "linux";
-  if (role === "ssh") return t === "ssh";
-  if (role === "snmp") return t === "snmp";
-  return false;
+  return tipiPerRuoloVecchio(role).includes(credentialType.toLowerCase());
 }
 
 export function getNetworkHostCredentialIds(networkId: number, role: NetworkCredentialRole): number[] {
@@ -2700,13 +4202,9 @@ export function getHostDetectCredentialId(hostId: number, role: HostDetectCreden
   return row?.credential_id ?? null;
 }
 
+/** Regola unica (T12): i tipi del protocollo del ruolo, come li legge il motore. */
 function credentialMatchesDetectRole(credentialType: string, role: HostDetectCredentialRole): boolean {
-  const t = credentialType.toLowerCase();
-  if (role === "windows") return t === "windows";
-  if (role === "linux") return t === "linux" || t === "ssh";
-  if (role === "ssh") return t === "ssh";
-  if (role === "snmp") return t === "snmp";
-  return false;
+  return tipiPerRuoloVecchio(role).includes(credentialType.toLowerCase());
 }
 
 export function setHostDetectCredential(hostId: number, role: HostDetectCredentialRole, credentialId: number): void {
@@ -2721,95 +4219,48 @@ export function setHostDetectCredential(hostId: number, role: HostDetectCredenti
     .run(hostId, role, credentialId);
 }
 
-export function deleteHostDetectCredential(hostId: number, role: HostDetectCredentialRole): void {
-  db().prepare(`DELETE FROM host_detect_credential WHERE host_id = ? AND role = ?`).run(hostId, role);
+/** Le verifiche (fotografia, prova a vuoto) passano `registra: false`: i ripieghi non si scrivono. */
+type OpzioniRegistro = { registra?: boolean };
+
+/**
+ * Catena di rilevamento (Windows o Linux) di una rete: involucro del motore
+ * (`catenaReteDb`, tappa 2 credenziali, T7). Voci della rete, catene vecchie
+ * e chiave globale dell'hub, tutte col filtro di tipo: prima la chiave
+ * dell'hub si accodava senza controllo, anche se puntava a una voce che nel
+ * tenant non c'è o è di un altro tipo. Catene vecchie e chiave dell'hub solo
+ * finché la 2d non le ha convertite (T17, lo decide il motore col segno).
+ * `role="linux"` è il protocollo SSH. `registra: false` (fotografia, prova a
+ * vuoto) non scrive i ripieghi.
+ */
+export function getOrderedDetectCredentialIds(networkId: number, role: "windows" | "linux", opts: OpzioniRegistro = {}): number[] {
+  return catenaReteDb(db(), networkId, role === "windows" ? "winrm" : "ssh", { globaliHub: chiaviGlobaliHub(getSetting), registra: opts.registra });
 }
 
-export function getHostDetectCredentialsEnriched(hostId: number): Array<{
-  role: HostDetectCredentialRole;
-  credential_id: number;
-  credential_name: string;
-}> {
-  const rows = db()
-    .prepare(`SELECT role, credential_id FROM host_detect_credential WHERE host_id = ? ORDER BY role`)
-    .all(hostId) as Array<{ role: HostDetectCredentialRole; credential_id: number }>;
-  return rows.map((r) => {
-    const c = getCredentialById(r.credential_id);
-    return {
-      role: r.role,
-      credential_id: r.credential_id,
-      credential_name: c?.name ?? `#${r.credential_id}`,
-    };
-  });
+/** Catena SSH di una rete per la scansione: involucro del motore (vedi sopra). */
+export function getOrderedSshLinuxCredentialIds(networkId: number, opts: OpzioniRegistro = {}): number[] {
+  return catenaReteDb(db(), networkId, "ssh", { globaliHub: chiaviGlobaliHub(getSetting), registra: opts.registra });
 }
 
-export function getOrderedDetectCredentialIds(networkId: number, role: "windows" | "linux"): number[] {
-  const { getSetting } = require("./db") as { getSetting: (key: string) => string | null };
-  const netIds = getNetworkHostCredentialIds(networkId, role);
-  const globalKey = role === "windows" ? "host_windows_credential_id" : "host_linux_credential_id";
-  const gStr = getSetting(globalKey);
-  const gId = gStr?.trim() ? parseInt(gStr, 10) : NaN;
-  const out: number[] = [...netIds];
-  if (!Number.isNaN(gId) && gId > 0 && !out.includes(gId)) out.push(gId);
-  return out;
+/**
+ * Community SNMP per una rete: involucro del motore (`communitySnmpDb`). Voci
+ * della rete e catene vecchie, poi override, community della rete e
+ * public/private in fondo, dichiarati come ripiego (D5).
+ */
+export function buildSnmpCommunitiesForNetwork(networkId: number, profileOrOverride?: string | null, opts: OpzioniRegistro = {}): string[] {
+  return communitySnmpDb(db(), { networkId }, profileOrOverride ?? null, opts).map((c) => c.community);
 }
 
-export function getOrderedSshLinuxCredentialIds(networkId: number): number[] {
-  const { getSetting } = require("./db") as { getSetting: (key: string) => string | null };
-  const sshIds = getNetworkHostCredentialIds(networkId, "ssh");
-  const linuxIds = getNetworkHostCredentialIds(networkId, "linux");
-  const out: number[] = [];
-  const seen = new Set<number>();
-  for (const id of [...sshIds, ...linuxIds]) {
-    if (seen.has(id)) continue;
-    seen.add(id);
-    out.push(id);
-  }
-  const gStr = getSetting("host_linux_credential_id");
-  const gId = gStr?.trim() ? parseInt(gStr, 10) : NaN;
-  if (!Number.isNaN(gId) && gId > 0 && !seen.has(gId)) out.push(gId);
-  return out;
-}
-
-export function buildSnmpCommunitiesForNetwork(networkId: number, profileOrOverride?: string | null): string[] {
-  const fromCreds: string[] = [];
-  for (const credId of getNetworkHostCredentialIds(networkId, "snmp")) {
-    const com = getCredentialCommunityString(credId);
-    if (com?.trim()) fromCreds.push(com.trim());
-  }
-  const net = getNetworkById(networkId);
-  const pushSplit = (s: string | null | undefined, into: string[]) => {
-    const t = s?.trim();
-    if (!t) return;
-    for (const part of t.split(",").map((x) => x.trim()).filter(Boolean)) into.push(part);
-  };
-  const mid: string[] = [];
-  pushSplit(profileOrOverride, mid);
-  pushSplit(net?.snmp_community ?? null, mid);
-  const ordered = [...fromCreds, ...mid, "public", "private"];
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const x of ordered) {
-    if (!x || seen.has(x)) continue;
-    seen.add(x);
-    out.push(x);
-  }
-  return out;
-}
-
+/**
+ * Community SNMP per un host: come per la rete, con davanti le voci
+ * dell'host (righe validate, binding dell'apparato collegato, pin vecchio).
+ */
 export function buildSnmpCommunitiesForHost(
   networkId: number,
   hostId: number | null,
-  profileOrOverride?: string | null
+  profileOrOverride?: string | null,
+  opts: OpzioniRegistro = {}
 ): string[] {
-  if (hostId != null) {
-    const boundId = getHostDetectCredentialId(hostId, "snmp");
-    if (boundId != null) {
-      const com = getCredentialCommunityString(boundId);
-      if (com?.trim()) return [com.trim()];
-    }
-  }
-  return buildSnmpCommunitiesForNetwork(networkId, profileOrOverride);
+  return communitySnmpDb(db(), { hostId: hostId ?? undefined, networkId }, profileOrOverride ?? null, opts).map((c) => c.community);
 }
 
 // ── network_credentials v2 ──
@@ -2821,13 +4272,15 @@ export interface NetworkCredentialRow {
   sort_order: number;
   credential_name: string;
   credential_type: string;
+  /** Porta propria della credenziale, NULL = standard del protocollo. */
+  credential_port: number | null;
 }
 
 export function getNetworkCredentials(networkId: number): NetworkCredentialRow[] {
   return db()
     .prepare(
       `SELECT nc.id, nc.network_id, nc.credential_id, nc.sort_order,
-              c.name AS credential_name, c.credential_type
+              c.name AS credential_name, c.credential_type, c.port AS credential_port
        FROM network_credentials nc
        JOIN credentials c ON c.id = nc.credential_id
        WHERE nc.network_id = ?
@@ -2837,31 +4290,11 @@ export function getNetworkCredentials(networkId: number): NetworkCredentialRow[]
 }
 
 export function replaceNetworkCredentials(networkId: number, credentialIds: number[]): void {
-  const seen = new Set<number>();
-  const unique: number[] = [];
-  for (const id of credentialIds) {
-    if (seen.has(id)) continue;
-    seen.add(id);
-    unique.push(id);
-  }
-  const d = db();
-  d.transaction(() => {
-    d.prepare(`DELETE FROM network_credentials WHERE network_id = ?`).run(networkId);
-    const ins = d.prepare(
-      `INSERT INTO network_credentials (network_id, credential_id, sort_order) VALUES (?, ?, ?)`
-    );
-    unique.forEach((cid, i) => ins.run(networkId, cid, i));
-  })();
+  sostituisciListaReteDb(db(), networkId, credentialIds);
 }
 
 export function addNetworkCredential(networkId: number, credentialId: number): void {
-  const d = db();
-  const max = d.prepare(
-    `SELECT COALESCE(MAX(sort_order), -1) AS m FROM network_credentials WHERE network_id = ?`
-  ).get(networkId) as { m: number };
-  d.prepare(
-    `INSERT OR IGNORE INTO network_credentials (network_id, credential_id, sort_order) VALUES (?, ?, ?)`
-  ).run(networkId, credentialId, max.m + 1);
+  aggiungiAllaListaReteDb(db(), networkId, credentialId);
 }
 
 export function removeNetworkCredential(networkId: number, credentialId: number): void {
@@ -2881,27 +4314,7 @@ export function reorderNetworkCredentials(networkId: number, orderedCredentialId
 }
 
 export function copyNetworkCredentials(sourceNetworkId: number, targetNetworkId: number): number {
-  const d = db();
-  const source = getNetworkCredentials(sourceNetworkId);
-  const existing = new Set(
-    getNetworkCredentials(targetNetworkId).map((r) => r.credential_id)
-  );
-  const max = d.prepare(
-    `SELECT COALESCE(MAX(sort_order), -1) AS m FROM network_credentials WHERE network_id = ?`
-  ).get(targetNetworkId) as { m: number };
-  let order = max.m + 1;
-  let added = 0;
-  const ins = d.prepare(
-    `INSERT OR IGNORE INTO network_credentials (network_id, credential_id, sort_order) VALUES (?, ?, ?)`
-  );
-  d.transaction(() => {
-    for (const s of source) {
-      if (existing.has(s.credential_id)) continue;
-      ins.run(targetNetworkId, s.credential_id, order++);
-      added++;
-    }
-  })();
-  return added;
+  return copiaListaReteDb(db(), sourceNetworkId, targetNetworkId);
 }
 
 export function getNetworksWithCredentials(): Array<{ id: number; name: string; cidr: string; credential_count: number }> {
@@ -2923,7 +4336,7 @@ export interface HostCredentialRow {
   id: number;
   host_id: number;
   credential_id: number;
-  protocol_type: "ssh" | "snmp" | "winrm" | "api";
+  protocol_type: "ssh" | "snmp" | "winrm" | "api" | "redfish" | "onvif";
   port: number;
   validated: number;
   validated_at: string | null;
@@ -3039,7 +4452,7 @@ export function getAllMultihomedLinks(): Map<number, { group_id: string; match_t
 export function addHostCredential(
   hostId: number,
   credentialId: number,
-  protocolType: "ssh" | "snmp" | "winrm" | "api",
+  protocolType: "ssh" | "snmp" | "winrm" | "api" | "redfish" | "onvif",
   port: number,
   options?: { validated?: boolean; auto_detected?: boolean }
 ): void {
@@ -3090,7 +4503,7 @@ export function setHostCredentialValidated(id: number, validated: boolean): void
 export function setHostCredentialValidatedByKey(
   hostId: number,
   credentialId: number,
-  protocolType: "ssh" | "snmp" | "winrm" | "api",
+  protocolType: "ssh" | "snmp" | "winrm" | "api" | "redfish" | "onvif",
   port: number,
   options?: { auto_detected?: boolean }
 ): void {
@@ -3114,111 +4527,142 @@ export function setHostCredentialValidatedByKey(
   );
 }
 
+/** Bridge host→device best-effort per il cross-update dei binding: FK prima, poi match IP. */
+function findDeviceIdForHostCred(hostId: number): number | null {
+  const byFk = getNetworkDeviceByHostId(hostId);
+  if (byFk) return byFk.id;
+  const host = db().prepare(`SELECT ip FROM hosts WHERE id = ?`).get(hostId) as { ip: string } | undefined;
+  if (!host) return null;
+  const byIp = getNetworkDeviceByHost(host.ip);
+  return byIp?.id ?? null;
+}
+
+/**
+ * Registra un fallimento di autenticazione su (host, credenziale, protocollo, porta) —
+ * resolver unico fase 1b, §7.5. Upsert idempotente: se la riga in `host_credentials`
+ * non esiste ancora (es. la credenziale è stata tentata via network_chain/legacy_chain
+ * e non era mai stata materializzata per questo host) la crea con fail_count=1,
+ * MAI un no-op silenzioso — altrimenti il primo fallimento su una credenziale non
+ * ancora vista per l'host andrebbe perso e il backoff non scatterebbe mai.
+ * backoff_until = now + min(2^fail_count * 5min, 24h) col fail_count AGGIORNATO
+ * (post-incremento). validated viene invalidato incondizionatamente (§7.5:
+ * "invalidazione al fallimento") — se era già 0 l'UPDATE è un no-op sul valore.
+ * last_attempt_at/backoff_until in ISO-8601 UTC (vedi commento sullo schema in
+ * db-tenant-schema.ts e normalizeExpiresAt in attribution/evidence.ts).
+ */
+export function recordCredentialFailure(
+  hostId: number,
+  credentialId: number,
+  protocol: CredProtocol,
+  port: number,
+  error: string
+): void {
+  const d = db();
+  const existing = d
+    .prepare(
+      `SELECT id, fail_count FROM host_credentials WHERE host_id = ? AND credential_id = ? AND protocol_type = ? AND port = ?`
+    )
+    .get(hostId, credentialId, protocol, port) as { id: number; fail_count: number } | undefined;
+
+  const newFailCount = (existing?.fail_count ?? 0) + 1;
+  const backoffMs = Math.min(2 ** newFailCount * 5 * 60 * 1000, 24 * 60 * 60 * 1000);
+  const nowIso = new Date().toISOString();
+  const backoffUntil = new Date(Date.now() + backoffMs).toISOString();
+
+  if (existing) {
+    d.prepare(
+      `UPDATE host_credentials
+       SET fail_count = ?, last_error = ?, last_attempt_at = ?, backoff_until = ?,
+           validated = 0, validated_at = NULL
+       WHERE id = ?`
+    ).run(newFailCount, error, nowIso, backoffUntil, existing.id);
+  } else {
+    const max = d.prepare(
+      `SELECT COALESCE(MAX(sort_order), -1) AS m FROM host_credentials WHERE host_id = ?`
+    ).get(hostId) as { m: number };
+    d.prepare(
+      `INSERT INTO host_credentials
+         (host_id, credential_id, protocol_type, port, validated, validated_at, sort_order, auto_detected, fail_count, last_error, last_attempt_at, backoff_until)
+       VALUES (?, ?, ?, ?, 0, NULL, ?, 0, ?, ?, ?, ?)`
+    ).run(hostId, credentialId, protocol, port, max.m + 1, newFailCount, error, nowIso, backoffUntil);
+  }
+
+  const deviceId = findDeviceIdForHostCred(hostId);
+  if (deviceId != null) {
+    const binding = findExistingBinding(deviceId, credentialId, protocol, port);
+    if (binding) updateBindingTestStatus(binding.id, "failed", error);
+  }
+}
+
+/**
+ * Registra un'autenticazione riuscita su (host, credenziale, protocollo, porta):
+ * azzera fail_count/last_error/backoff_until e marca validated=1 (upsert, come
+ * setHostCredentialValidatedByKey). Propaga anche a device_credential_bindings
+ * se esiste un binding corrispondente per il device collegato all'host.
+ */
+export function recordCredentialSuccess(
+  hostId: number,
+  credentialId: number,
+  protocol: CredProtocol,
+  port: number
+): void {
+  const d = db();
+  const nowIso = new Date().toISOString();
+  const max = d.prepare(
+    `SELECT COALESCE(MAX(sort_order), -1) AS m FROM host_credentials WHERE host_id = ?`
+  ).get(hostId) as { m: number };
+  d.prepare(
+    `INSERT INTO host_credentials
+       (host_id, credential_id, protocol_type, port, validated, validated_at, sort_order, auto_detected, fail_count, last_error, last_attempt_at, backoff_until)
+     VALUES (?, ?, ?, ?, 1, datetime('now'), ?, 0, 0, NULL, ?, NULL)
+     ON CONFLICT(host_id, credential_id, protocol_type, port) DO UPDATE SET
+       validated = 1,
+       validated_at = datetime('now'),
+       fail_count = 0,
+       last_error = NULL,
+       last_attempt_at = excluded.last_attempt_at,
+       backoff_until = NULL`
+  ).run(hostId, credentialId, protocol, port, max.m + 1, nowIso);
+
+  const deviceId = findDeviceIdForHostCred(hostId);
+  if (deviceId != null) {
+    const binding = findExistingBinding(deviceId, credentialId, protocol, port);
+    if (binding) updateBindingTestStatus(binding.id, "success", "Autenticazione riuscita");
+  }
+}
+
 export function getCredentialCommunityString(credentialId: number): string | null {
-  const cred = getCredentialById(credentialId);
-  if (!cred) return null;
-  const type = String(cred.credential_type || "").toLowerCase();
-  if (type !== "snmp") return null;
-  const enc = cred.encrypted_password || cred.encrypted_username;
-  if (!enc) return null;
-  const s = safeDecrypt(enc);
-  return s && s.trim() ? s : null;
+  return communityDb(db(), credentialId);
 }
 
-export function getDeviceSnmpV3Credentials(device: NetworkDevice): { username: string; authKey: string } | null {
-  const isSnmpPrimary = device.protocol === "snmp_v2" || device.protocol === "snmp_v3";
-  const credIds = isSnmpPrimary
-    ? [device.credential_id, device.snmp_credential_id]
-    : [device.snmp_credential_id, device.credential_id];
-  for (const credId of credIds) {
-    if (!credId) continue;
-    const cred = getCredentialById(credId);
-    if (!cred || String(cred.credential_type || "").toLowerCase() !== "snmp") continue;
-    const username = cred.encrypted_username ? safeDecrypt(cred.encrypted_username) : "";
-    const authKey = cred.encrypted_password ? safeDecrypt(cred.encrypted_password) : "";
-    if (username?.trim() && authKey?.trim()) return { username: username.trim(), authKey: authKey.trim() };
-  }
-  return null;
+/**
+ * Credenziale SNMP di un apparato per l'acquisizione: v3 coi protocolli della
+ * voce, o community; porta del candidato; fonte dichiarata (tappa 2
+ * credenziali, T8). Al posto di getDeviceCommunityString,
+ * getDeviceSnmpV3Credentials e getEffectiveSnmpPort.
+ */
+export function credenzialeSnmpApparato(device: ApparatoInAcquisizione): SceltaSnmpApparato {
+  return credenzialeSnmpApparatoDb(db(), device);
 }
 
-export function getEffectiveSnmpPort(_device: NetworkDevice): number {
-  // SNMP usa sempre porta standard 161, indipendentemente da device.port
-  return 161;
+/** Token dell'API dell'apparato (client Omada): voce `api` a token legata all'apparato; fino alla 2g la colonna (T20). */
+export function tokenApiApparato(device: ApparatoInAcquisizione): SceltaTokenApi {
+  return tokenApiApparatoDb(db(), device);
 }
 
-export function getDeviceCommunityString(device: NetworkDevice): string {
-  const snmpBinding = db().prepare(`
-    SELECT * FROM device_credential_bindings
-    WHERE device_id = ? AND protocol_type = 'snmp'
-    ORDER BY sort_order LIMIT 1
-  `).get(device.id) as DeviceCredentialBinding | undefined;
-
-  if (snmpBinding) {
-    if (snmpBinding.credential_id) {
-      const fromCred = getCredentialCommunityString(snmpBinding.credential_id);
-      if (fromCred) return fromCred;
-    } else if (snmpBinding.inline_encrypted_password) {
-      const s = safeDecrypt(snmpBinding.inline_encrypted_password);
-      if (s?.trim()) return s;
-    }
-  }
-
-  const isSnmpPrimary = device.protocol === "snmp_v2" || device.protocol === "snmp_v3";
-  const tryCredIds = isSnmpPrimary
-    ? [device.credential_id, device.snmp_credential_id]
-    : [device.snmp_credential_id, device.credential_id];
-  for (const credId of tryCredIds) {
-    if (!credId) continue;
-    const fromCred = getCredentialCommunityString(credId);
-    if (fromCred) return fromCred;
-  }
-  if (device.community_string) {
-    const s = safeDecrypt(device.community_string);
-    if (s && s.trim()) return s;
-    if (typeof device.community_string === "string") return device.community_string;
-  }
-  return "public";
+/** Vero solo con una fonte SNMP dell'apparato (livelli 1-5), mai con la catena della rete o «public». */
+export function haSnmpApparato(device: ApparatoInAcquisizione): boolean {
+  return haSnmpApparatoDb(db(), device);
 }
 
-export function getDeviceCredentials(device: NetworkDevice): { username: string; password: string } | null {
-  const protoType = device.protocol === "winrm" ? "winrm"
-    : device.protocol === "api" ? "api"
-    : "ssh";
-  const binding = db().prepare(`
-    SELECT * FROM device_credential_bindings
-    WHERE device_id = ? AND protocol_type = ?
-    ORDER BY sort_order LIMIT 1
-  `).get(device.id, protoType) as DeviceCredentialBinding | undefined;
+/** Porta SSH di un apparato il cui protocollo principale non è SSH (Proxmox: device.port è l'API). */
+export function portaSshApparato(device: ApparatoInAcquisizione): number {
+  return portaSshApparatoDb(db(), device);
+}
 
-  if (binding) {
-    if (binding.credential_id) {
-      const cred = getCredentialById(binding.credential_id);
-      if (cred?.encrypted_username && cred?.encrypted_password) {
-        const u = safeDecrypt(cred.encrypted_username);
-        const p = safeDecrypt(cred.encrypted_password);
-        if (u && p) return { username: u, password: p };
-      }
-    } else if (binding.inline_username && binding.inline_encrypted_password) {
-      const p = safeDecrypt(binding.inline_encrypted_password);
-      if (p) return { username: binding.inline_username, password: p };
-    }
-  }
-
-  if (device.credential_id) {
-    const cred = getCredentialById(device.credential_id);
-    if (cred?.encrypted_username && cred?.encrypted_password) {
-      const u = safeDecrypt(cred.encrypted_username);
-      const p = safeDecrypt(cred.encrypted_password);
-      if (u && p) return { username: u, password: p };
-      return null;
-    }
-  }
-  if (device.username && device.encrypted_password) {
-    const p = safeDecrypt(device.encrypted_password);
-    if (p) return { username: device.username, password: p };
-    return null;
-  }
-  return null;
+/** Accesso dell'acquisizione (utente con password, o con chiave per l'SSH), scelto dal motore (binding falliti saltati). */
+export function getDeviceCredentials(device: ApparatoInAcquisizione): AccessoSsh | null {
+  return loginApparatoDb(db(), device);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -3426,38 +4870,66 @@ export function getArpEntriesByDevice(deviceId: number): (ArpEntry & { host_ip?:
 // MAC PORT ENTRIES
 // ═══════════════════════════════════════════════════════════════════════════
 
-export function upsertMacPortEntries(deviceId: number, entries: { mac: string; port_name: string; vlan: number | null; port_status: "up" | "down" | null; speed: string | null }[]): void {
+export type MacPortInput = { mac: string; port_name: string; vlan: number | null; port_status: "up" | "down" | null; speed: string | null };
+
+/**
+ * Le righe invecchiano (spec §10.5, come i vicini nell'ADR 0008): una lettura
+ * aggiorna o crea, non cancella. `timestamp` uguale per tutto il giro = «ultimo
+ * giro» riconoscibile. La pulizia a 30 giorni la fa il job cleanup.
+ * ON CONFLICT sull'indice UNIQUE (device_id, mac, port_name) del Task 1: lo
+ * stesso (MAC, porta) ripetuto nel giro (es. su due VLAN) aggiorna la riga
+ * invece di far fallire la transazione dell'intero apparato.
+ */
+export function upsertMacPortEntries(deviceId: number, entries: MacPortInput[], source: "device" | "unifi"): void {
   const d = db();
-  d.prepare("DELETE FROM mac_port_entries WHERE device_id = ?").run(deviceId);
-
+  const now = (d.prepare("SELECT datetime('now') AS t").get() as { t: string }).t;
   const stmt = d.prepare(
-    `INSERT INTO mac_port_entries (device_id, mac, port_name, vlan, port_status, speed)
-     VALUES (?, ?, ?, ?, ?, ?)`
+    `INSERT INTO mac_port_entries (device_id, mac, port_name, vlan, port_status, speed, timestamp, first_seen, source)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(device_id, mac, port_name) DO UPDATE SET
+       vlan = COALESCE(excluded.vlan, mac_port_entries.vlan),
+       port_status = COALESCE(excluded.port_status, mac_port_entries.port_status),
+       speed = COALESCE(excluded.speed, mac_port_entries.speed),
+       timestamp = excluded.timestamp, source = excluded.source`,
   );
-
-  const insertMany = d.transaction((items: typeof entries) => {
-    for (const entry of items) {
-      stmt.run(deviceId, entry.mac, entry.port_name, entry.vlan, entry.port_status, entry.speed);
-    }
-  });
-
-  insertMany(entries);
+  d.transaction((items: MacPortInput[]) => {
+    for (const e of items) stmt.run(deviceId, e.mac, e.port_name, e.vlan, e.port_status, e.speed, now, now, source);
+  })(entries);
 }
 
 /**
- * v0.2.651: retention mac_port_entries — elimina row più vecchie di N ore.
- * Lo switch_port discovery inserisce fino a 4096 row per ogni run (intera MAC
- * table dello switch). Senza retention la tabella cresce indefinitamente:
- * misurato su tenant prod 70791 ~9300 righe in 25 giorni con tabelle MAC piccole;
- * su switch enterprise (4096 MAC × 4 scan/giorno) diventa milioni in poche
- * settimane. Default 24h è sicuro: getMacPortEntriesByDevice mostra solo le
- * ultime, e `upsertMacPortEntries` rimpiazza per device ad ogni scan.
+ * Retention mac_port_entries in giorni (prima v0.2.651: 24 ore, perché ogni
+ * giro riscriveva l'intera MAC table). Ora c'è una riga per (apparato, MAC,
+ * porta) aggiornata a ogni giro: il volume non cresce col numero dei giri, e
+ * una riga vecchia vuol dire «visto l'ultima volta» — si tiene 30 giorni.
  */
-export function cleanupOldMacPortEntries(retentionHours: number = 24): number {
-  const r = db().prepare(
-    "DELETE FROM mac_port_entries WHERE timestamp < datetime('now', '-' || ? || ' hours')"
-  ).run(retentionHours) as { changes: number };
-  return r.changes;
+export function cleanupOldMacPortEntries(retentionDays: number = MAC_PORT_RETENTION_DAYS): number {
+  return (db().prepare("DELETE FROM mac_port_entries WHERE timestamp < datetime('now', '-' || ? || ' days')").run(retentionDays) as { changes: number }).changes;
+}
+
+/**
+ * Apparati del tenant col MAC del controller (UniFi) e nomi delle loro porte:
+ * l'ingresso di `mapClientsToPorts` (lettura dei client collegati). Due query,
+ * niente N+1.
+ */
+export function getControllerDevicePortNames(): {
+  devices: Array<{ id: number; controller_mac: string }>;
+  ports: Array<{ device_id: number; port_index: number; port_name: string }>;
+} {
+  const d = db();
+  return {
+    devices: d
+      .prepare("SELECT id, controller_mac FROM network_devices WHERE controller_mac IS NOT NULL AND controller_mac != '' ORDER BY id")
+      .all() as Array<{ id: number; controller_mac: string }>,
+    ports: d
+      .prepare(
+        `SELECT sp.device_id, sp.port_index, sp.port_name
+           FROM switch_ports sp
+           JOIN network_devices nd ON nd.id = sp.device_id
+          WHERE nd.controller_mac IS NOT NULL AND nd.controller_mac != ''`,
+      )
+      .all() as Array<{ device_id: number; port_index: number; port_name: string }>,
+  };
 }
 
 export function getMacPortEntriesByDevice(deviceId: number): (MacPortEntry & { host_ip?: string; host_name?: string })[] {
@@ -3468,6 +4940,9 @@ export function getMacPortEntriesByDevice(deviceId: number): (MacPortEntry & { h
     FROM mac_port_entries mpe
     LEFT JOIN hosts h ON ${MAC_HEX("h.mac")} = ${MAC_HEX("mpe.mac")}
     WHERE mpe.device_id = ?
+      -- Solo l'ultimo giro di ogni fonte: le righe non viste restano (invecchiano)
+      -- ma non si mostrano come attuali. Stessa idea di NEIGHBORS_LATEST_ROUND_SQL.
+      AND mpe.timestamp = (SELECT MAX(m2.timestamp) FROM mac_port_entries m2 WHERE m2.device_id = mpe.device_id AND m2.source = mpe.source)
     ORDER BY mpe.port_name
   `).all(deviceId) as (MacPortEntry & { host_ip?: string; host_name?: string })[];
 }
@@ -3506,8 +4981,8 @@ export function upsertSwitchPorts(deviceId: number, ports: Omit<import("@/types"
   }
 
   const stmt = d.prepare(
-    `INSERT INTO switch_ports (device_id, port_index, port_name, status, speed, duplex, vlan, poe_status, poe_power_mw, mac_count, is_trunk, single_mac, single_mac_vendor, single_mac_ip, single_mac_hostname, host_id, trunk_neighbor_name, trunk_neighbor_port, trunk_primary_device_id, trunk_primary_name, stp_state)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO switch_ports (device_id, port_index, port_name, status, speed, duplex, vlan, poe_status, poe_power_mw, mac_count, is_trunk, single_mac, single_mac_vendor, single_mac_ip, single_mac_hostname, host_id, trunk_neighbor_name, trunk_neighbor_port, trunk_primary_device_id, trunk_primary_name, stp_state, is_uplink)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
 
   const replaceAll = d.transaction((items: typeof ports) => {
@@ -3515,7 +4990,7 @@ export function upsertSwitchPorts(deviceId: number, ports: Omit<import("@/types"
     for (const p of items) {
       const hostId = p.host_id != null && validHosts.has(p.host_id) ? p.host_id : null;
       const trunkDeviceId = p.trunk_primary_device_id != null && validDevices.has(p.trunk_primary_device_id) ? p.trunk_primary_device_id : null;
-      stmt.run(deviceId, p.port_index, p.port_name, p.status, p.speed, p.duplex, p.vlan, p.poe_status, p.poe_power_mw, p.mac_count, p.is_trunk, p.single_mac, p.single_mac_vendor, p.single_mac_ip, p.single_mac_hostname, hostId, p.trunk_neighbor_name ?? null, p.trunk_neighbor_port ?? null, trunkDeviceId, trunkDeviceId ? (p.trunk_primary_name ?? null) : null, p.stp_state ?? null);
+      stmt.run(deviceId, p.port_index, p.port_name, p.status, p.speed, p.duplex, p.vlan, p.poe_status, p.poe_power_mw, p.mac_count, p.is_trunk, p.single_mac, p.single_mac_vendor, p.single_mac_ip, p.single_mac_hostname, hostId, p.trunk_neighbor_name ?? null, p.trunk_neighbor_port ?? null, trunkDeviceId, trunkDeviceId ? (p.trunk_primary_name ?? null) : null, p.stp_state ?? null, p.is_uplink ?? 0);
     }
   });
 
@@ -3545,6 +5020,57 @@ export interface DbNeighborEntry {
   timestamp: string;
 }
 
+/**
+ * Chi ha scritto una riga dei vicini. `device` e `unifi` sono quelle che leggono il modello di oggi e l'attribuzione
+ * (NEIGHBORS_MODEL_SOURCES_SQL); `ssh` (switch MikroTik nel giro), `snmp` (switch non del controller) e `host` (`lldpcli`
+ * sugli hypervisor) sono le fonti nuove di T2 (spec §13.5.7): le legge solo il modello per cavo. La colonna non ha
+ * vincoli (db-tenant-schema.ts): non serve schema.
+ */
+export type NeighborSource = "device" | "unifi" | "ssh" | "snmp" | "host";
+
+/**
+ * Le colonne nuove dei vicini (spec §13.5.7): l'elenco letto di `discovered-by`, gli indici delle due porte quando il
+ * lettore li sa, le capacità annunciate attive. Si scrivono con un'istruzione a parte, solo se lo schema le ha.
+ */
+export interface CampiViciniCavi {
+  discoveredBy?: string | null;
+  localPortIndex?: number | null;
+  remotePortIndex?: number | null;
+  remoteCaps?: string | null;
+}
+
+/**
+ * Condizione SQL «solo l'ultimo giro di questo apparato per questa fonte», da
+ * mettere in AND nel WHERE di un lettore che usa l'alias `dn` per
+ * device_neighbors.
+ *
+ * Perché: fino alla topologia fase 1 upsertNeighbors cancellava i vicini
+ * dell'apparato a ogni giro, quindi la tabella conteneva solo l'ultimo poll.
+ * Ora le righe restano (timestamp = ultima volta visto, pulizia a 90 giorni,
+ * ADR 0008) e il modello nuovo le usa tutte per dire «non visto». I lettori
+ * scritti prima (scheda «Neighbors» dell'apparato, vecchia mappa /topology,
+ * attribuzione) mostrerebbero come attuali anche vicini spariti: con questa
+ * condizione rivedono la semantica di prima. Un giro scrive tutte le righe
+ * nella stessa transazione con lo stesso datetime('now'); i 5 minuti di
+ * margine coprono un giro che scavalca il secondo, mai due giri distinti.
+ * Una copia identica sta in attribution/recompute.ts (vedi lì il perché),
+ * presidiata da src/lib/__tests__/neighbors-old-readers.test.ts.
+ */
+export const NEIGHBORS_LATEST_ROUND_SQL =
+  "dn.timestamp >= (SELECT datetime(MAX(d2.timestamp), '-5 minutes') FROM device_neighbors d2 WHERE d2.device_id = dn.device_id AND d2.source = dn.source)";
+
+/**
+ * Le fonti dei vicini che leggono il modello della mappa di oggi e l'attribuzione degli host (spec topologia §13.5.7,
+ * «Chi legge che cosa»; R7). Oggi le fonti sono solo queste due e il filtro non cambia niente; da T2 le letture in più
+ * scrivono fonti nuove (snmp, host, ssh), che legge solo il modello per cavo: accenderle non cambia la mappa né le
+ * classificazioni degli host, che sono dati di produzione. Una copia identica sta in attribution/recompute.ts
+ * (ciclo db-tenant ↔ attribution), presidiata da neighbors-old-readers.test.ts.
+ */
+export const NEIGHBORS_MODEL_SOURCES_SQL = "dn.source IN ('device', 'unifi')";
+
+/** Un vicino non visto da più di tanti giorni si toglie alla scrittura successiva del suo apparato. */
+const NEIGHBOR_RETENTION_DAYS = 90;
+
 export function upsertNeighbors(
   deviceId: number,
   neighbors: Array<{
@@ -3555,30 +5081,343 @@ export function upsertNeighbors(
     remoteIp?: string;
     remoteMac?: string;
     remotePlatform?: string;
-  }>
+  } & CampiViciniCavi>,
+  source: NeighborSource = "device",
 ): void {
   const d = db();
-  const del = d.prepare("DELETE FROM device_neighbors WHERE device_id = ?");
-  // OR IGNORE: lo stesso batch LLDP/CDP può contenere due vicini con identica
-  // chiave (device_id, local_port, remote_device_name, remote_port) — es. doppio
-  // annuncio CDP/LLDP sulla stessa porta. Senza OR IGNORE il 2° INSERT lancia
-  // UNIQUE constraint e interrompe la persistenza dei vicini del device.
+  // Topologia fase 1: niente DELETE del giro. Chi c'è si aggiorna (timestamp =
+  // adesso, first_seen resta), chi non c'è invecchia e diventa «non visto».
+  // Due fonti sullo stesso apparato (poll SNMP/SSH e UniFi) non si cancellano
+  // più a vicenda. ON CONFLICT copre anche due voci uguali nello stesso giro.
+  // T2 (spec §13.5.7, R7; revisione del Task 1): la chiave unica non contiene la fonte, quindi una fonte nuova (ssh, snmp,
+  // host) sulla chiave di un vicino `device`/`unifi` gli cambierebbe fonte e lo toglierebbe alla mappa di T1. La WHERE la
+  // lascia stare (le colonne nuove dei vicini si aggiornano a parte, qui sotto); una fonte di oggi sopra una nuova sì.
   const ins = d.prepare(`
-    INSERT OR IGNORE INTO device_neighbors (device_id, local_port, remote_device_name, remote_port, protocol, remote_ip, remote_mac, remote_platform)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO device_neighbors (device_id, local_port, remote_device_name, remote_port, protocol, remote_ip, remote_mac, remote_platform, source, first_seen, timestamp)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+    ON CONFLICT(device_id, local_port, remote_device_name, remote_port) DO UPDATE SET
+      protocol = excluded.protocol,
+      remote_ip = excluded.remote_ip,
+      remote_mac = excluded.remote_mac,
+      remote_platform = excluded.remote_platform,
+      source = excluded.source,
+      timestamp = excluded.timestamp
+    WHERE NOT (device_neighbors.source IN ('device', 'unifi') AND excluded.source NOT IN ('device', 'unifi'))
   `);
+  // Potatura (revisione dei Task 4 e 6 di T2; R7 vince su §13.5.1, piano «Scelte» punto 9): le fonti di oggi potano tutte le
+  // righe vecchie dell'apparato, come prima; una fonte nuova (ssh, snmp, host) solo le proprie. Prima di questa regola la
+  // prima scrittura di una lettura accesa cancellava un vicino `device` di 91 giorni che T1 mostra «non visto».
+  const fonteDiOggi = source === "device" || source === "unifi";
+  const prune = fonteDiOggi
+    ? d.prepare("DELETE FROM device_neighbors WHERE device_id = ? AND timestamp < datetime('now', ?)")
+    : d.prepare("DELETE FROM device_neighbors WHERE device_id = ? AND source = ? AND timestamp < datetime('now', ?)");
   d.transaction(() => {
-    del.run(deviceId);
     for (const n of neighbors) {
-      ins.run(deviceId, n.localPort, n.remoteDevice, n.remotePort, n.protocol, n.remoteIp ?? null, n.remoteMac ?? null, n.remotePlatform ?? null);
+      ins.run(deviceId, n.localPort, n.remoteDevice, n.remotePort, n.protocol, n.remoteIp ?? null, n.remoteMac ?? null, n.remotePlatform ?? null, source);
     }
+    if (fonteDiOggi) prune.run(deviceId, `-${NEIGHBOR_RETENTION_DAYS} days`);
+    else prune.run(deviceId, source, `-${NEIGHBOR_RETENTION_DAYS} days`);
   })();
+
+  // T2 (spec §13.5.7): le colonne nuove con un'istruzione a parte, dopo quella di oggi e solo se lo schema le ha. Un
+  // errore qui non tocca i vicini già scritti (I34): si scrive nel log col solo messaggio di SQLite, senza dati.
+  const conCavi = neighbors.filter((n) => n.discoveredBy !== undefined || n.localPortIndex !== undefined
+    || n.remotePortIndex !== undefined || n.remoteCaps !== undefined);
+  if (conCavi.length > 0 && schemaCaviPresente()) {
+    try {
+      const up = d.prepare(`UPDATE device_neighbors SET
+          discovered_by = COALESCE(?, discovered_by), local_port_index = COALESCE(?, local_port_index),
+          remote_port_index = COALESCE(?, remote_port_index), remote_caps = COALESCE(?, remote_caps)
+        WHERE device_id = ? AND local_port = ? AND remote_device_name = ? AND remote_port = ?`);
+      d.transaction(() => {
+        for (const n of conCavi) {
+          up.run(n.discoveredBy ?? null, n.localPortIndex ?? null, n.remotePortIndex ?? null, n.remoteCaps ?? null,
+            deviceId, n.localPort, n.remoteDevice, n.remotePort);
+        }
+      })();
+    } catch (e) {
+      console.error(`[db-tenant] apparato #${deviceId}: colonne nuove dei vicini non scritte (${e instanceof Error ? e.message : "errore"})`);
+    }
+  }
+
+  // Attribution v2: i vicini LLDP/CDP appena scritti sono evidenza per gli host remoti. Solo per le fonti di oggi: le
+  // nuove non entrano nell'attribuzione (NEIGHBORS_MODEL_SOURCES_SQL), e il ricalcolo scriverebbe lo stesso sulle evidenze
+  // (observed_at, expires_at) a ogni lettura accesa (spec §13.5.7, «Come si scrive»; revisione del Task 1 di T2).
+  if (source !== "device" && source !== "unifi") return;
+  try {
+    const { recomputeAttributionSafe } = require("@/lib/attribution/recompute") as typeof import("@/lib/attribution/recompute");
+    const touched = d.prepare(
+      `SELECT DISTINCT h.id FROM hosts h
+       JOIN device_neighbors dn ON dn.device_id = ?
+        AND ((dn.remote_mac IS NOT NULL AND dn.remote_mac = h.mac)
+          OR (dn.remote_ip IS NOT NULL AND dn.remote_ip = h.ip))`
+    ).all(deviceId) as Array<{ id: number }>;
+    for (const t of touched) recomputeAttributionSafe(t.id, "scan");
+  } catch (e) {
+    console.error("[attribution] recompute da neighbors fallito:", e);
+  }
 }
 
 export function getNeighborsByDevice(deviceId: number): DbNeighborEntry[] {
+  // Solo l'ultimo giro per fonte: la scheda «Neighbors» mostra i vicini di adesso.
   return db().prepare(
-    "SELECT * FROM device_neighbors WHERE device_id = ? ORDER BY local_port, protocol"
+    `SELECT dn.* FROM device_neighbors dn
+      WHERE dn.device_id = ? AND ${NEIGHBORS_LATEST_ROUND_SQL}
+      ORDER BY dn.local_port, dn.protocol`
   ).all(deviceId) as DbNeighborEntry[];
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TOPOLOGIA T2 — fatti delle letture in più (spec 2026-10-14 §13.5.7)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Lo schema delle letture in più c'è in questo tenant (annotato all'apertura, `getTenantDb`). */
+export function schemaCaviPresente(): boolean {
+  const d = db();
+  const v = SCHEMA_CAVI.get(d);
+  if (v !== undefined) return v;
+  const ok = verificaSchemaCavi(d);
+  SCHEMA_CAVI.set(d, ok);
+  return ok;
+}
+
+/** Riguarda lo schema e aggiorna l'annotazione (per le prove, e per chi ha appena riparato un tenant a mano). */
+export function rileggiSchemaCavi(): boolean {
+  const d = db();
+  const ok = verificaSchemaCavi(d);
+  SCHEMA_CAVI.set(d, ok);
+  return ok;
+}
+
+/** Chi ha letto i fatti (spec §13.5.7): il lettore, mai la marca. */
+export type FonteFatti = "device" | "controller" | "snmp" | "host";
+
+/**
+ * Un fatto di porta come lo scrive un lettore. `port_key`: «i:<indice>» se l'indice è noto, altrimenti «n:<nome
+ * normalizzato>» (minuscole, senza spazi). Un campo ASSENTE (undefined) da tutte le righe di una scrittura = «questo
+ * lettore non lo sa»: resta com'era. Un campo `null` = letto e vuoto: si scrive null. Contratto dei lettori (piano di T2,
+ * «Scelte» punto 8): ogni riga porta tutte le colonne che il lettore conosce, null dove il valore è vuoto o non noto per
+ * quella riga; un campo assente solo da ALCUNE righe vale null in quelle righe, non «resta». Così una riga dell'ultimo
+ * giro non tiene mai un valore di un giro vecchio (vale anche per `FattoBridgeIn`: `root_port` null = è la radice).
+ */
+export interface FattoPortaIn {
+  port_key: string;
+  port_name: string;
+  port_index?: number | null;
+  /** 'physical' | 'lag' | 'vlan' | 'vrrp' | 'bridge' | 'tunnel' | 'wireless' | 'other' */
+  if_kind?: string | null;
+  running?: number | null;
+  in_bridge?: number | null;
+  bridge?: string | null;
+  lag_group?: string | null;
+  lag_partner?: string | null;
+  /** 'attivo' | 'riserva' (membro di un bond letto dall'host). */
+  lag_state?: string | null;
+  /** 'root' | 'designated' | 'alternate' | 'backup' | 'disabled' */
+  stp_role?: string | null;
+  /** 'forwarding' | 'discarding' | 'learning' | 'disabled' */
+  stp_state?: string | null;
+  designated_bridge?: string | null;
+  designated_port?: string | null;
+  path_cost?: number | null;
+  edge?: number | null;
+  point_to_point?: number | null;
+  sending_rstp?: number | null;
+  bpdu_rx?: number | null;
+}
+
+/** Un bridge per istanza (0 = albero comune). `root_port` null con `root_id` uguale a `bridge_id` = la radice. */
+export interface FattoBridgeIn {
+  bridge_name: string;
+  instance: number;
+  protocol?: string | null;
+  priority?: number | null;
+  bridge_id?: string | null;
+  root_id?: string | null;
+  regional_root_id?: string | null;
+  region_name?: string | null;
+  region_revision?: number | null;
+  config_digest?: string | null;
+  vlans?: string | null;
+  root_port?: string | null;
+  root_path_cost?: number | null;
+}
+
+export interface MacApparatoIn { mac: string; port_key: string | null }
+
+export interface FattiLettura {
+  porte: readonly FattoPortaIn[];
+  bridge: readonly FattoBridgeIn[];
+  macs: readonly MacApparatoIn[];
+}
+
+const COLONNE_PORTA = ["port_index", "if_kind", "running", "in_bridge", "bridge", "lag_group", "lag_partner", "lag_state", "stp_role",
+  "stp_state", "designated_bridge", "designated_port", "path_cost", "edge", "point_to_point", "sending_rstp", "bpdu_rx"] as const;
+const COLONNE_BRIDGE = ["protocol", "priority", "bridge_id", "root_id", "regional_root_id", "region_name", "region_revision",
+  "config_digest", "vlans", "root_port", "root_path_cost"] as const;
+/** I fatti non visti da tanti giorni si tolgono alla scrittura successiva dello stesso apparato (come i vicini). */
+const FATTI_RETENTION_DAYS = 90;
+
+/** Le colonne che un lettore conosce: presenti (anche null) in almeno una riga della scrittura. Elenco chiuso: niente SQL dal dato. */
+function colonneNote<C extends string>(righe: readonly object[], tutte: readonly C[]): C[] {
+  return tutte.filter((c) => righe.some((r) => (r as Record<string, unknown>)[c] !== undefined));
+}
+
+/**
+ * Scrive i fatti di un giro di un lettore su un apparato (spec §13.5.7): una transazione, INSERT … ON CONFLICT DO UPDATE,
+ * niente DELETE del giro, e la potatura delle righe dell'apparato non viste da 90 giorni. `adesso` è l'ora del giro, una
+ * per tutte le righe (così «ultimo giro» = `seen_at` più recente meno 5 minuti). null = schema assente: non si scrive.
+ */
+export function scriviFattiTopologia(deviceId: number, fonte: FonteFatti, fatti: FattiLettura, adesso: Date = new Date()):
+  { porte: number; bridge: number; macs: number } | null {
+  if (!schemaCaviPresente()) return null;
+  const d = db();
+  const ora = adesso.toISOString().slice(0, 19).replace("T", " ");
+  const cp = colonneNote(fatti.porte, COLONNE_PORTA);
+  const cb = colonneNote(fatti.bridge, COLONNE_BRIDGE);
+  const insP = d.prepare(`INSERT INTO topology_port_facts (device_id, source, port_key, port_name, ${cp.map((c) => `${c}, `).join("")}first_seen, seen_at)
+    VALUES (?, ?, ?, ?, ${cp.map(() => "?, ").join("")}?, ?)
+    ON CONFLICT(device_id, source, port_key) DO UPDATE SET port_name = excluded.port_name, ${cp.map((c) => `${c} = excluded.${c}, `).join("")}seen_at = excluded.seen_at`);
+  const insB = d.prepare(`INSERT INTO topology_bridge_facts (device_id, source, bridge_name, instance, ${cb.map((c) => `${c}, `).join("")}first_seen, seen_at)
+    VALUES (?, ?, ?, ?, ${cb.map(() => "?, ").join("")}?, ?)
+    ON CONFLICT(device_id, source, bridge_name, instance) DO UPDATE SET ${cb.map((c) => `${c} = excluded.${c}, `).join("")}seen_at = excluded.seen_at`);
+  const insM = d.prepare(`INSERT INTO topology_device_macs (device_id, mac, source, port_key, seen_at) VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(device_id, mac) DO UPDATE SET source = excluded.source, port_key = COALESCE(excluded.port_key, port_key), seen_at = excluded.seen_at`);
+  const limite = `datetime(?, '-${FATTI_RETENTION_DAYS} days')`;
+  const out = { porte: 0, bridge: 0, macs: 0 };
+  d.transaction(() => {
+    for (const p of fatti.porte) {
+      const r = p as unknown as Record<string, unknown>;
+      insP.run(deviceId, fonte, p.port_key, p.port_name, ...cp.map((c) => r[c] ?? null), ora, ora);
+      out.porte++;
+    }
+    for (const b of fatti.bridge) {
+      const r = b as unknown as Record<string, unknown>;
+      insB.run(deviceId, fonte, b.bridge_name, b.instance, ...cb.map((c) => r[c] ?? null), ora, ora);
+      out.bridge++;
+    }
+    const visti = new Set<string>();
+    for (const m of fatti.macs) {
+      const mac = normalizeMacForStorage(m.mac);
+      if (!mac || visti.has(mac)) continue;
+      visti.add(mac);
+      insM.run(deviceId, mac, fonte, m.port_key, ora);
+      out.macs++;
+    }
+    d.prepare(`DELETE FROM topology_port_facts WHERE device_id = ? AND seen_at < ${limite}`).run(deviceId, ora);
+    d.prepare(`DELETE FROM topology_bridge_facts WHERE device_id = ? AND seen_at < ${limite}`).run(deviceId, ora);
+    d.prepare(`DELETE FROM topology_device_macs WHERE device_id = ? AND seen_at < ${limite}`).run(deviceId, ora);
+  })();
+  return out;
+}
+
+/** Porta di uscita secondo il controller, per indice, e da dove la ricava (`uplink.port_idx`, `uplink_source`). */
+export function setUplinkCavi(deviceId: number, porta: number | null, origine: string | null): boolean {
+  if (!schemaCaviPresente()) return false;
+  db().prepare("UPDATE network_devices SET uplink_local_port_idx = ?, uplink_source = ? WHERE id = ?").run(porta, origine, deviceId);
+  return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SYNC DA CONTROLLER (UniFi) — letture in blocco, collegamento, transazione
+// ═══════════════════════════════════════════════════════════════════════════
+// Una query per tutto il giro invece di una per apparato (no N+1). Qui e non
+// in `devices/physical-device-db.ts`: quel modulo passa da `getDb()` del
+// facade, che risolve il tenant con un `require` di db-tenant.
+
+/**
+ * MAC noti di ogni network_device: dell'host collegato (`host_id`, o stesso
+ * IP in qualunque rete) e dell'identità fisica. I MAC escono come sono
+ * scritti: li normalizza chi li confronta.
+ */
+export function getNetworkDeviceKnownMacs(): Array<{ device_id: number; mac: string }> {
+  return db().prepare(`
+    SELECT nd.id AS device_id, h.mac AS mac
+      FROM network_devices nd JOIN hosts h ON h.id = nd.host_id
+     WHERE h.mac IS NOT NULL AND h.mac <> ''
+    UNION
+    SELECT nd.id, h.mac
+      FROM network_devices nd JOIN hosts h ON h.ip = nd.host
+     WHERE h.mac IS NOT NULL AND h.mac <> ''
+    UNION
+    SELECT nd.id, p.primary_mac
+      FROM network_devices nd JOIN physical_devices p ON p.id = nd.physical_device_id
+     WHERE p.primary_mac IS NOT NULL AND p.primary_mac <> ''
+  `).all() as Array<{ device_id: number; mac: string }>;
+}
+
+/** Ancore d'identità delle `physical_devices` esistenti: solo lettura, per collegare senza creare. */
+export function getPhysicalDeviceAnchors(): Array<{ id: number; serial_number: string | null; primary_mac: string | null }> {
+  return db().prepare(
+    "SELECT id, serial_number, primary_mac FROM physical_devices WHERE serial_number IS NOT NULL OR primary_mac IS NOT NULL"
+  ).all() as Array<{ id: number; serial_number: string | null; primary_mac: string | null }>;
+}
+
+/** Quante porte e quanti vicini ha oggi ogni apparato (due query, per la guardia «zero sospetto»). */
+export function getPortAndNeighborCountsByDevice(): Map<number, { ports: number; neighbors: number }> {
+  const d = db();
+  const out = new Map<number, { ports: number; neighbors: number }>();
+  const entry = (id: number) => {
+    let e = out.get(id);
+    if (!e) {
+      e = { ports: 0, neighbors: 0 };
+      out.set(id, e);
+    }
+    return e;
+  };
+  for (const r of d.prepare("SELECT device_id, COUNT(*) AS n FROM switch_ports GROUP BY device_id").all() as Array<{ device_id: number; n: number }>) {
+    entry(r.device_id).ports = r.n;
+  }
+  // Solo le fonti del modello di oggi (revisione finale di T2, M3): le righe delle letture in più (ssh, snmp, controller, host)
+  // non le scrive il controller, e contarle farebbe dire «nel DB ce ne sono N» per righe che non sono sue (R7).
+  for (const r of d.prepare("SELECT device_id, COUNT(*) AS n FROM device_neighbors WHERE source IN ('device', 'unifi') GROUP BY device_id").all() as Array<{ device_id: number; n: number }>) {
+    entry(r.device_id).neighbors = r.n;
+  }
+  return out;
+}
+
+/** Collega un network_device a un'identità fisica GIÀ esistente. */
+export function linkNetworkDeviceToPhysicalDevice(deviceId: number, physicalDeviceId: number): void {
+  db().prepare(
+    "UPDATE network_devices SET physical_device_id = ?, updated_at = datetime('now') WHERE id = ?"
+  ).run(physicalDeviceId, deviceId);
+}
+
+/**
+ * MAC del controller e uplink di un apparato (topologia fase 1). L'uplink si
+ * scrive solo quando il controller lo riporta: se sparisce, quello di prima
+ * resta con la sua data e invecchia («non visto»), come i vicini.
+ */
+export function setNetworkDeviceControllerFacts(
+  deviceId: number,
+  f: {
+    controllerMac: string | null;
+    uplinkMac: string | null;
+    uplinkRemotePort: number | null;
+    /** Cavo o wireless (topologia fase 2b): si scrive insieme all'uplink, mai da solo. */
+    uplinkType: "wire" | "wireless" | null;
+  },
+): void {
+  const d = db();
+  if (f.controllerMac) {
+    d.prepare("UPDATE network_devices SET controller_mac = ? WHERE id = ?").run(f.controllerMac, deviceId);
+  }
+  // Senza uplink nella lettura (offline, o il controller non lo riporta) restano
+  // MAC, porta, tipo e data di prima: la lettura non sa niente di nuovo.
+  if (f.uplinkMac) {
+    d.prepare(
+      "UPDATE network_devices SET uplink_mac = ?, uplink_remote_port = ?, uplink_type = ?, uplink_seen_at = datetime('now') WHERE id = ?",
+    ).run(f.uplinkMac, f.uplinkRemotePort, f.uplinkType, deviceId);
+  }
+}
+
+/**
+ * Esegue `fn` in una transazione del DB del tenant corrente: o tutto o niente.
+ * Le upsert che hanno già una loro transazione (`upsertSwitchPorts`,
+ * `upsertNeighbors`) dentro diventano savepoint.
+ */
+export function runInTenantTransaction<T>(fn: () => T): T {
+  return db().transaction(fn)();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -3639,7 +5478,7 @@ export interface DeviceCredentialBinding {
   id: number;
   device_id: number;
   credential_id: number | null;
-  protocol_type: "ssh" | "snmp" | "winrm" | "api";
+  protocol_type: "ssh" | "snmp" | "winrm" | "api" | "redfish" | "onvif";
   port: number;
   sort_order: number;
   inline_username: string | null;
@@ -3833,12 +5672,18 @@ export function toggleJob(id: number, enabled: boolean): void {
   db().prepare("UPDATE scheduled_jobs SET enabled = ?, updated_at = datetime('now') WHERE id = ?").run(enabled ? 1 : 0, id);
 }
 
+export function updateScheduledJobInterval(id: number, intervalMinutes: number): void {
+  db().prepare(
+    `UPDATE scheduled_jobs SET interval_minutes = ?, next_run = datetime('now', '+' || ? || ' minutes'), updated_at = datetime('now') WHERE id = ?`
+  ).run(intervalMinutes, intervalMinutes, id);
+}
+
 export function deleteScheduledJob(id: number): boolean {
   return db().prepare("DELETE FROM scheduled_jobs WHERE id = ?").run(id).changes > 0;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// Default provisioning (post-incident 2026-05-25 DTS)
+// Default provisioning (post-incident 2026-05-25 cliente A)
 //
 // `known_host_check` è il default safe: pinga SOLO host già registrati,
 // scope deterministico, costo CPU proporzionale a |host noti|, non a |IP nel subnet|.
@@ -3995,6 +5840,98 @@ export function recordHostHeartbeat(
   tx();
 }
 
+/**
+ * Stato host nel tempo, bucket dinamico in base al periodo richiesto:
+ * - ≤ 48h → bucket orari
+ * - ≤ 14gg → bucket giornalieri
+ * - > 14gg → bucket giornalieri (limite di leggibilità asse X)
+ *
+ * Ogni host conta col suo ultimo stato noto, valido 24 h (status-over-time.ts).
+ * "unknown" = `total_hosts_corrente - online - offline` clampato a ≥0: host mai
+ * controllati o con l'ultimo controllo più vecchio di 24 h. È un'approssimazione
+ * (il totale storico cambia nel tempo).
+ *
+ * `health_pct` = online / (online + offline) × 100, arrotondato; null quando
+ * nessuno stato è noto. Serie vuota se nella finestra non c'è nessun controllo.
+ */
+export function getStatusOverTime(
+  hours: number = 24
+): StatusPoint[] {
+  // Ultimo stato noto di ogni host portato avanti per 24 h (status-over-time.ts):
+  // prima un host contava solo nell'ora in cui era stato controllato, e con il
+  // controllo ogni 3 ore il grafico andava su e giù (cliente A, ottobre 2026).
+  const STALE_HOURS = 24;
+  if (!Number.isFinite(hours)) hours = 24;
+  hours = Math.min(Math.max(Math.round(hours), 1), 720);
+  const nowMs = Date.now();
+  const startMs = statusWindowStartMs(hours, nowMs);
+  const toSql = (ms: number) => new Date(ms).toISOString().replace("T", " ").slice(0, 19);
+  const bucketFmt = hours <= 48 ? "%Y-%m-%dT%H:00:00" : "%Y-%m-%dT00:00:00";
+  const totalRow = db().prepare("SELECT COUNT(*) as c FROM hosts").get() as { c: number };
+  // Per ogni host: l'ultimo controllo di ciascun periodo della finestra, più
+  // l'ultimo prima della finestra (entro STALE_HOURS) come stato di partenza.
+  const observations = db().prepare(`
+    WITH dentro AS (
+      SELECT host_id, status, checked_at,
+        ROW_NUMBER() OVER (PARTITION BY strftime(?, checked_at), host_id ORDER BY checked_at DESC, id DESC) AS rn
+      FROM status_history
+      WHERE checked_at >= ?
+    ),
+    prima AS (
+      SELECT host_id, status, checked_at,
+        ROW_NUMBER() OVER (PARTITION BY host_id ORDER BY checked_at DESC, id DESC) AS rn
+      FROM status_history
+      WHERE checked_at >= ? AND checked_at < ?
+    )
+    SELECT host_id, status, checked_at FROM dentro WHERE rn = 1
+    UNION ALL
+    SELECT host_id, status, checked_at FROM prima WHERE rn = 1
+  `).all(
+    bucketFmt,
+    toSql(startMs),
+    toSql(startMs - STALE_HOURS * 3_600_000),
+    toSql(startMs),
+  ) as StatusObservation[];
+  return buildStatusSeries({ hours, nowMs, totalHosts: totalRow.c, observations, staleAfterHours: STALE_HOURS });
+}
+
+/**
+ * Recenti transizioni di stato dei known-hosts (host registrati / con MAC noto).
+ * Una "transizione" è una riga di `status_history` il cui status differisce
+ * dalla riga precedente per lo stesso host.
+ * Ritorna gli ultimi `limit` cambi entro le ultime `hoursWindow` ore.
+ *
+ * Per ogni cambio: { host_id, ip, hostname, from_status, to_status, changed_at }.
+ */
+export function getRecentStatusChanges(
+  limit: number = 10,
+  hoursWindow: number = 24
+): { host_id: number; ip: string; hostname: string | null; from_status: string | null; to_status: string; changed_at: string }[] {
+  // CTE: per ogni riga di status_history, recupera il PREV status dello stesso host
+  // (window LAG). Filtra dove status != prev_status → vere transizioni.
+  return db().prepare(`
+    WITH ordered AS (
+      SELECT
+        sh.host_id, sh.status, sh.checked_at,
+        LAG(sh.status) OVER (PARTITION BY sh.host_id ORDER BY sh.checked_at) AS prev_status
+      FROM status_history sh
+      WHERE sh.checked_at >= datetime('now', '-' || ? || ' hours')
+    )
+    SELECT
+      o.host_id,
+      h.ip,
+      COALESCE(h.custom_name, h.hostname) AS hostname,
+      o.prev_status AS from_status,
+      o.status AS to_status,
+      o.checked_at AS changed_at
+    FROM ordered o
+    JOIN hosts h ON h.id = o.host_id
+    WHERE o.prev_status IS NOT NULL AND o.prev_status != o.status
+    ORDER BY o.checked_at DESC
+    LIMIT ?
+  `).all(hoursWindow, limit) as { host_id: number; ip: string; hostname: string | null; from_status: string | null; to_status: string; changed_at: string }[];
+}
+
 export function getStatusHistory(hostId: number, limit: number = 100): StatusHistory[] {
   return db().prepare(
     "SELECT * FROM status_history WHERE host_id = ? ORDER BY checked_at DESC LIMIT ?"
@@ -4064,10 +6001,15 @@ export function getRecentActivity(limit: number = 10): ScanHistory[] {
 }
 
 export function cleanupStaleHosts(daysUntilStale: number, daysUntilDelete: number): { flagged: number; deleted: number } {
+  // Fix C2 (fase 4): un host classificato a mano (classification_manual=1) non
+  // deve mai essere sovrascritto automaticamente — nemmeno col sentinel 'stale'.
+  // Senza questo filtro, un host bloccato dall'utente che va offline perde il
+  // valore scelto E resta con classification_manual=1 (nessuno lo ripara più,
+  // perché quel flag è pensato per proteggerlo, non per segnalare un problema).
   const flagged = db().prepare(
     `UPDATE hosts SET classification = 'stale', updated_at = datetime('now')
      WHERE status = 'offline' AND last_seen < datetime('now', '-' || ? || ' days')
-     AND classification != 'stale'`
+     AND classification != 'stale' AND classification_manual = 0`
   ).run(daysUntilStale);
 
   const deleted = db().prepare(
@@ -4838,7 +6780,7 @@ export function deleteProxmoxHost(id: number): boolean {
 // ACTIVE DIRECTORY
 // ═══════════════════════════════════════════════════════════════════════════
 
-export interface AdIntegration { id: number; name: string; dc_host: string; domain: string; base_dn: string; encrypted_username: string; encrypted_password: string; use_ssl: number; port: number; enabled: number; winrm_credential_id: number | null; dhcp_leases_count: number; last_sync_at: string | null; last_sync_status: string | null; computers_count: number; users_count: number; groups_count: number; created_at: string; updated_at: string; }
+export interface AdIntegration { id: number; name: string; dc_host: string; domain: string; base_dn: string; encrypted_username: string; encrypted_password: string; use_ssl: number; port: number; enabled: number; winrm_credential_id: number | null; /** Account LDAP: voce «Active Directory» dell'archivio (tappa 2f, T24). */ credential_id: number | null; dhcp_leases_count: number; last_sync_at: string | null; last_sync_status: string | null; computers_count: number; users_count: number; groups_count: number; created_at: string; updated_at: string; }
 export interface AdComputer { id: number; integration_id: number; object_guid: string; sam_account_name: string; dns_host_name: string | null; display_name: string | null; distinguished_name: string; operating_system: string | null; operating_system_version: string | null; last_logon_at: string | null; enabled: number; host_id: number | null; ip_address: string | null; ou: string | null; raw_data: string | null; synced_at: string; }
 export interface AdUser { id: number; integration_id: number; object_guid: string; sam_account_name: string; user_principal_name: string | null; display_name: string | null; email: string | null; department: string | null; title: string | null; phone: string | null; ou: string | null; enabled: number; last_logon_at: string | null; password_last_set_at: string | null; raw_data: string | null; synced_at: string; }
 export interface AdDhcpLease { id: number; integration_id: number; scope_id: string; scope_name: string | null; ip_address: string; mac_address: string; hostname: string | null; lease_expires: string | null; address_state: string | null; description: string | null; last_synced: string; }
@@ -4858,12 +6800,12 @@ export function getAdIntegrationById(id: number): AdIntegration | undefined {
   return db().prepare("SELECT * FROM ad_integrations WHERE id = ?").get(id) as AdIntegration | undefined;
 }
 
-export function createAdIntegration(input: { name: string; dc_host: string; domain: string; base_dn: string; encrypted_username: string; encrypted_password: string; use_ssl?: number; port?: number; enabled?: number; winrm_credential_id?: number | null }): AdIntegration {
-  const r = db().prepare(`INSERT INTO ad_integrations (name, dc_host, domain, base_dn, encrypted_username, encrypted_password, use_ssl, port, enabled, winrm_credential_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(input.name, input.dc_host, input.domain, input.base_dn, input.encrypted_username, input.encrypted_password, input.use_ssl ?? 1, input.port ?? 636, input.enabled ?? 1, input.winrm_credential_id ?? null);
+export function createAdIntegration(input: { name: string; dc_host: string; domain: string; base_dn: string; encrypted_username: string; encrypted_password: string; use_ssl?: number; port?: number; enabled?: number; winrm_credential_id?: number | null; credential_id?: number | null }): AdIntegration {
+  const r = db().prepare(`INSERT INTO ad_integrations (name, dc_host, domain, base_dn, encrypted_username, encrypted_password, use_ssl, port, enabled, winrm_credential_id, credential_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(input.name, input.dc_host, input.domain, input.base_dn, input.encrypted_username, input.encrypted_password, input.use_ssl ?? 1, input.port ?? 636, input.enabled ?? 1, input.winrm_credential_id ?? null, input.credential_id ?? null);
   return getAdIntegrationById(Number(r.lastInsertRowid))!;
 }
 
-export function updateAdIntegration(id: number, input: Partial<{ name: string; dc_host: string; domain: string; base_dn: string; encrypted_username: string; encrypted_password: string; use_ssl: number; port: number; enabled: number; winrm_credential_id: number | null; dhcp_leases_count: number; last_sync_at: string | null; last_sync_status: string | null; computers_count: number; users_count: number; groups_count: number }>): AdIntegration | undefined {
+export function updateAdIntegration(id: number, input: Partial<{ name: string; dc_host: string; domain: string; base_dn: string; encrypted_username: string; encrypted_password: string; use_ssl: number; port: number; enabled: number; winrm_credential_id: number | null; credential_id: number | null; dhcp_leases_count: number; last_sync_at: string | null; last_sync_status: string | null; computers_count: number; users_count: number; groups_count: number }>): AdIntegration | undefined {
   const fields: string[] = [];
   const values: unknown[] = [];
   for (const [k, v] of Object.entries(input)) {
@@ -4907,7 +6849,7 @@ export function relinkAdComputersForNetwork(networkId: number): { linked: number
   const d = db();
   let linked = 0;
   let enriched = 0;
-  const hosts = d.prepare(`SELECT id, ip, mac, hostname, dns_forward, dns_reverse, os_info, classification FROM hosts WHERE network_id = ?`).all(networkId) as Array<{ id: number; ip: string; mac: string | null; hostname: string | null; dns_forward: string | null; dns_reverse: string | null; os_info: string | null; classification: string | null }>;
+  const hosts = d.prepare(`SELECT id, ip, mac, hostname, dns_forward, dns_reverse, os_info FROM hosts WHERE network_id = ?`).all(networkId) as Array<{ id: number; ip: string; mac: string | null; hostname: string | null; dns_forward: string | null; dns_reverse: string | null; os_info: string | null }>;
   if (hosts.length === 0) return { linked: 0, enriched: 0 };
   const unlinked = d.prepare(`SELECT ac.id, ac.integration_id, ac.object_guid, ac.dns_host_name, ac.sam_account_name, ac.ip_address, ac.operating_system, ac.host_id FROM ad_computers ac WHERE ac.host_id IS NULL OR ac.host_id IN (SELECT id FROM hosts WHERE network_id = ?)`).all(networkId) as Array<{ id: number; integration_id: number; object_guid: string; dns_host_name: string | null; sam_account_name: string; ip_address: string | null; operating_system: string | null; host_id: number | null }>;
   const hostByIp = new Map(hosts.map((h) => [h.ip, h]));
@@ -4918,19 +6860,21 @@ export function relinkAdComputersForNetwork(networkId: number): { linked: number
     if (h.dns_forward) hostByHostname.set(h.dns_forward.toLowerCase(), h);
   }
   const linkStmt = d.prepare(`UPDATE ad_computers SET host_id = ? WHERE integration_id = ? AND object_guid = ?`);
+  // Fase 4: l'euristica server_windows/workstation (da os_info) è stata
+  // rimossa — l'evidenza "ad" già emessa in emitters.ts (dimension category,
+  // claim compute.server/compute.workstation) la sostituisce nella fusione
+  // v2. os_info/hostname restano: sono anagrafica, non attribuzione.
   function enrichHost(hostId: number, comp: typeof unlinked[0], currentHost: typeof hosts[0]) {
     const adHostname = comp.dns_host_name || comp.sam_account_name.replace(/\$$/, "");
     const osRaw = comp.operating_system ?? "";
-    const osLower = osRaw.toLowerCase();
-    const classification = osLower.includes("server") ? "server_windows" : "workstation";
     const sets: string[] = [];
     const vals: unknown[] = [];
     if (adHostname) { sets.push("hostname = ?", "hostname_source = 'ad'"); vals.push(adHostname); }
     if (adHostname && !currentHost.hostname) { sets.push("custom_name = CASE WHEN custom_name IS NULL OR custom_name = '' THEN ? ELSE custom_name END"); vals.push(adHostname); }
     if (osRaw && (!currentHost.os_info || currentHost.os_info === "unknown")) { sets.push("os_info = ?"); vals.push(osRaw); }
-    if (!currentHost.classification || currentHost.classification === "unknown") { sets.push("classification = ?"); vals.push(classification); }
     if (sets.length > 0) { sets.push("updated_at = datetime('now')"); d.prepare(`UPDATE hosts SET ${sets.join(", ")} WHERE id = ?`).run(...vals, hostId); enriched++; }
   }
+  const touchedHostIds: number[] = [];
   d.transaction(() => {
     for (const comp of unlinked) {
       const dnsHostName = comp.dns_host_name?.toLowerCase() ?? "";
@@ -4941,8 +6885,18 @@ export function relinkAdComputersForNetwork(networkId: number): { linked: number
       if (!host) continue;
       if (comp.host_id !== host.id) { linkStmt.run(host.id, comp.integration_id, comp.object_guid); linked++; }
       enrichHost(host.id, comp, host);
+      touchedHostIds.push(host.id);
     }
   })();
+
+  // Attribution v2 (fase 1, parallel-run): rifusione evidenze sugli host toccati
+  try {
+    const { recomputeAttributionSafe } = require("@/lib/attribution/recompute") as typeof import("@/lib/attribution/recompute");
+    for (const id of touchedHostIds) recomputeAttributionSafe(id, "scan");
+  } catch (e) {
+    console.error("[attribution] recompute da relinkAdComputersForNetwork fallito:", e);
+  }
+
   return { linked, enriched };
 }
 
@@ -5239,6 +7193,8 @@ export function getDhcpLeasesPaginated(
     sourceType?: string;
     sourceDeviceId?: number;
     networkId?: number;
+    /** Solo lease visti negli ultimi N giorni (prima filtrato nel browser sulla sola pagina, UI-4). */
+    recentDays?: number;
     sortKey?: string;
     sortDir?: SortDirection;
   }
@@ -5250,6 +7206,7 @@ export function getDhcpLeasesPaginated(
   if (filters?.sourceType) { conditions.push("d.source_type = ?"); params.push(filters.sourceType); }
   if (filters?.sourceDeviceId) { conditions.push("d.source_device_id = ?"); params.push(filters.sourceDeviceId); }
   if (filters?.networkId) { conditions.push("d.network_id = ?"); params.push(filters.networkId); }
+  if (filters?.recentDays && filters.recentDays > 0) { conditions.push("datetime(d.last_seen) >= datetime('now', ?)"); params.push(`-${Math.floor(filters.recentDays)} days`); }
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
   const total = (db().prepare(`SELECT COUNT(*) as c FROM dhcp_leases d ${whereClause}`).get(...params) as { c: number }).c;
   const orderSql = sqlOrderByDhcpLeases(filters?.sortKey, filters?.sortDir ?? "desc");
@@ -5825,36 +7782,6 @@ export function getSoftwareScansForDevice(
         LIMIT ? OFFSET ?`
     )
     .all(deviceId, safeLimit, safeOffset) as SoftwareScan[];
-}
-
-/**
- * Trova la credenziale "migliore" linkata a un device per uno specifico protocollo.
- * Priorità (DESC):
- *  1. test_status='success'
- *  2. auto_detected=1
- *  3. sort_order ASC (più bassa = preferita)
- *  4. id più recente
- * Ritorna null se nessuna binding presente per quel device+protocollo.
- */
-export function getBestCredentialBindingForDevice(
-  deviceId: number,
-  protocolType: "winrm" | "ssh" | "snmp" | "api"
-): { credential_id: number; port: number; test_status: string; auto_detected: number } | null {
-  const row = db()
-    .prepare(
-      `SELECT credential_id, port, test_status, auto_detected
-         FROM device_credential_bindings
-        WHERE device_id = ? AND protocol_type = ? AND credential_id IS NOT NULL
-        ORDER BY (test_status = 'success') DESC,
-                 auto_detected DESC,
-                 sort_order ASC,
-                 id DESC
-        LIMIT 1`
-    )
-    .get(deviceId, protocolType) as
-    | { credential_id: number; port: number; test_status: string; auto_detected: number }
-    | undefined;
-  return row ?? null;
 }
 
 /**
@@ -6944,4 +8871,1091 @@ export function countHostsByClassification(classification: string): number {
 
 export function deleteCustomClassification(slug: string): void {
   db().prepare("DELETE FROM device_classifications_custom WHERE slug = ?").run(slug);
+}
+
+// ─── Topologia: posizioni salvate + dati per la mappa ────────────────────────
+
+export function getTopologyPositions(view: string): import("@/lib/topology/types").SavedPosition[] {
+  const rows = db()
+    .prepare("SELECT node_id, x, y, pinned FROM topology_position WHERE view = ?")
+    .all(view) as Array<{ node_id: string; x: number; y: number; pinned: number }>;
+  return rows.map((r) => ({ nodeId: r.node_id, x: r.x, y: r.y, pinned: r.pinned === 1 }));
+}
+
+export function upsertTopologyPositions(
+  view: string,
+  rows: import("@/lib/topology/types").SavedPosition[],
+): void {
+  const d = db();
+  const ins = d.prepare(`
+    INSERT INTO topology_position (view, node_id, x, y, pinned, updated_at)
+    VALUES (?, ?, ?, ?, ?, datetime('now'))
+    ON CONFLICT(view, node_id) DO UPDATE SET
+      x = excluded.x, y = excluded.y, pinned = excluded.pinned, updated_at = datetime('now')
+  `);
+  d.transaction(() => {
+    for (const r of rows) ins.run(view, r.nodeId, r.x, r.y, r.pinned ? 1 : 0);
+  })();
+}
+
+export function getTopologyData(): {
+  devices: import("@/lib/topology/types").DeviceRow[];
+  hosts: import("@/lib/topology/types").HostRow[];
+  neighbors: import("@/lib/topology/types").NeighborRow[];
+  portsDown: Set<number>;
+  libreStatus: Map<string, number>;
+  anomalyBySeverity: Map<string, "low" | "medium" | "high">;
+} {
+  const d = db();
+  const tableExists = (name: string): boolean =>
+    !!d.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name);
+
+  const devices = d
+    .prepare("SELECT id, name, device_type, model, host, enabled FROM network_devices")
+    .all() as import("@/lib/topology/types").DeviceRow[];
+  const hosts = d
+    .prepare(
+      "SELECT id, ip, hostname, custom_name, classification, status, last_response_time_ms, last_seen, model, network_id FROM hosts",
+    )
+    .all() as import("@/lib/topology/types").HostRow[];
+  const neighbors = d
+    .prepare(
+      // Vecchia mappa /topology: solo l'ultimo giro per apparato e fonte (ADR 0008).
+      `SELECT dn.device_id, dn.local_port, dn.remote_device_name, dn.remote_port, dn.protocol, dn.remote_ip
+         FROM device_neighbors dn WHERE ${NEIGHBORS_LATEST_ROUND_SQL}`,
+    )
+    .all() as import("@/lib/topology/types").NeighborRow[];
+
+  const downRows = d
+    .prepare(
+      "SELECT DISTINCT device_id FROM switch_ports WHERE status = 'down' AND trunk_neighbor_name IS NOT NULL AND trunk_neighbor_name <> ''",
+    )
+    .all() as Array<{ device_id: number }>;
+  const portsDown = new Set(downRows.map((r) => r.device_id));
+
+  const libreStatus = new Map<string, number>();
+  if (tableExists("librenms_host_map")) {
+    const libre = d
+      .prepare("SELECT network_id, host_ip, last_status FROM librenms_host_map")
+      .all() as Array<{ network_id: number; host_ip: string; last_status: string | null }>;
+    for (const l of libre) {
+      const v = libreStatusFrom(l.last_status);
+      if (v !== null) libreStatus.set(`${l.network_id}|${l.host_ip}`, v);
+    }
+  }
+
+  const anomalyBySeverity = new Map<string, "low" | "medium" | "high">();
+  if (tableExists("anomaly_events")) {
+    const anomalies = d
+      .prepare("SELECT host_id, severity FROM anomaly_events WHERE acknowledged = 0 AND host_id IS NOT NULL")
+      .all() as Array<{ host_id: number; severity: "low" | "medium" | "high" }>;
+    const rank = { low: 1, medium: 2, high: 3 } as const;
+    for (const a of anomalies) {
+      const k = `host:${a.host_id}`;
+      const cur = anomalyBySeverity.get(k);
+      if (!cur || rank[a.severity] > rank[cur]) anomalyBySeverity.set(k, a.severity);
+    }
+  }
+
+  return { devices, hosts, neighbors, portsDown, libreStatus, anomalyBySeverity };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CONTROLLER DI RETE (ADR 0007) — network_controllers, network_controller_runs
+// e le loro pianificazioni (scheduled_jobs di tipo unifi_sync con
+// config.controller_id). La logica (segreti, pin, sincronizzazione) sta in
+// src/lib/controllers/; qui solo letture e scritture.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Letture di un controller tenute nello storico, PER TIPO (apparati / client):
+ * le più vecchie si potano a ogni scrittura. Per tipo perché i client si
+ * leggono ogni ora: in tre giorni avrebbero spinto fuori ogni lettura degli apparati.
+ */
+export const CONTROLLER_RUNS_KEPT = 50;
+
+/** Tipo di un giro dalla colonna `trigger` (i giri dei client hanno il prefisso «client:»). */
+const RUN_KIND_SQL = "CASE WHEN trigger LIKE 'client:%' THEN 'client' ELSE 'apparati' END";
+
+export function controllerRunKindOf(trigger: string): ControllerRunKind {
+  return trigger.startsWith("client:") ? "client" : "apparati";
+}
+
+/** Il job unifi_sync è quello dei client (`config.cosa = "client"`); senza `cosa` è degli apparati. */
+const CLIENT_JOB_SQL = "json_extract(COALESCE(NULLIF(config, ''), '{}'), '$.cosa') = 'client'";
+const DEVICE_JOB_SQL = `COALESCE(json_extract(COALESCE(NULLIF(config, ''), '{}'), '$.cosa'), 'apparati') = 'apparati'`;
+
+export function listNetworkControllers(): NetworkControllerRow[] {
+  return db().prepare("SELECT * FROM network_controllers ORDER BY name COLLATE NOCASE, id").all() as NetworkControllerRow[];
+}
+
+export function getNetworkController(id: number): NetworkControllerRow | undefined {
+  return db().prepare("SELECT * FROM network_controllers WHERE id = ?").get(id) as NetworkControllerRow | undefined;
+}
+
+export type NetworkControllerInsert = Pick<
+  NetworkControllerRow,
+  "name" | "vendor" | "kind" | "url" | "site" | "username" | "password_enc" | "api_key_enc" | "cert_pin" | "enabled" | "origin"
+> & {
+  /** Voce dell'archivio (tappa 2f, T23); assente = nessuna. */
+  credential_id?: number | null;
+};
+
+export function insertNetworkController(input: NetworkControllerInsert): NetworkControllerRow {
+  const r = db()
+    .prepare(
+      `INSERT INTO network_controllers (name, vendor, kind, url, site, username, password_enc, api_key_enc, cert_pin, enabled, origin, credential_id)
+       VALUES (@name, @vendor, @kind, @url, @site, @username, @password_enc, @api_key_enc, @cert_pin, @enabled, @origin, @credential_id)`,
+    )
+    .run({ ...input, credential_id: input.credential_id ?? null });
+  const row = getNetworkController(Number(r.lastInsertRowid));
+  if (!row) throw new Error("controller appena inserito non trovato");
+  return row;
+}
+
+export type NetworkControllerPatch = Partial<
+  Pick<
+    NetworkControllerRow,
+    "name" | "kind" | "vendor" | "url" | "site" | "username" | "password_enc" | "api_key_enc" | "cert_pin" | "enabled" | "credential_id"
+  >
+>;
+
+const CONTROLLER_PATCH_COLUMNS: ReadonlyArray<keyof NetworkControllerPatch> = [
+  "name", "kind", "vendor", "url", "site", "username", "password_enc", "api_key_enc", "cert_pin", "enabled", "credential_id",
+];
+
+export function updateNetworkController(id: number, patch: NetworkControllerPatch): NetworkControllerRow | undefined {
+  const cols = CONTROLLER_PATCH_COLUMNS.filter((c) => patch[c] !== undefined);
+  if (cols.length > 0) {
+    const set = cols.map((c) => `${c} = @${c}`).join(", ");
+    const params: Record<string, unknown> = { id };
+    for (const c of cols) params[c] = patch[c];
+    db().prepare(`UPDATE network_controllers SET ${set}, updated_at = datetime('now') WHERE id = @id`).run(params);
+  }
+  return getNetworkController(id);
+}
+
+// Tappa 2f credenziali (T23): la credenziale del controller è una voce
+// dell'archivio. Involucri di una riga delle funzioni `…Db` di
+// `controllers/credenziale.ts`. Nessuna gemella in db.ts: i controller vivono
+// solo nel DB del tenant (il vecchio ipam.db non ha `network_controllers`, e
+// il facade non li espone).
+
+/** Con che cosa entra il controller: la voce, le colonne (righe mai convertite) o niente. Non registra. */
+export function credenzialeDelController(
+  row: Pick<NetworkControllerRow, "kind" | "credential_id" | "password_enc" | "api_key_enc">,
+  metodo?: MetodoVoceController,
+): CredenzialeController {
+  return credenzialeControllerDb(db(), row, metodo);
+}
+
+/** La voce `credentialId` vale per un controller di tipo `kind` (e col metodo scelto)? */
+export function voceDelController(credentialId: number, kind: ControllerKind, metodo?: MetodoVoceController): EsitoVoceController {
+  return voceControllerDb(db(), credentialId, kind, metodo);
+}
+
+/** Voce «UniFi · <nome>» dai segreti nuovi del modulo. */
+export function creaVoceDelController(c: ControllerDellaVoce, nuova: NuovaCredenzialeController): { id: number; nome: string } {
+  return creaVoceControllerDb(db(), c, nuova);
+}
+
+/** Voce dai segreti già cifrati della configurazione vecchia dell'hub. */
+export function creaVoceDelControllerCifrata(
+  c: ControllerDellaVoce,
+  v: { metodo: "chiave" | "utente"; encrypted_username: string | null; encrypted_password: string },
+): { id: number; nome: string } {
+  return creaVoceControllerCifrataDb(db(), c, v);
+}
+
+/** Nome e metodo della voce di ogni controller, in una query. */
+export function listVociDeiController(): Map<number, VoceDelController> {
+  return vociDeiControllerDb(db());
+}
+
+/** La conversione della 2f è chiusa con `done:`? Allora le colonne dei controller non valgono più. */
+export function integrazioniConvertite(): boolean {
+  return integrazioniConvertiteDb(db());
+}
+
+/**
+ * Cancella il controller, le sue letture (cascade) e le sue pianificazioni
+ * (apparati e client: tutti i job unifi_sync col suo id). Gli apparati letti restano.
+ */
+export function deleteNetworkController(id: number): boolean {
+  return runInTenantTransaction(() => {
+    db()
+      .prepare("DELETE FROM scheduled_jobs WHERE job_type = 'unifi_sync' AND json_extract(config, '$.controller_id') = ?")
+      .run(id);
+    return db().prepare("DELETE FROM network_controllers WHERE id = ?").run(id).changes > 0;
+  });
+}
+
+export interface ControllerRunInsert {
+  controller_id: number;
+  started_at: string;
+  finished_at: string;
+  trigger: ControllerRunStoredTrigger;
+  triggered_by: string | null;
+  ok: number;
+  total: number;
+  added: number;
+  updated: number;
+  skipped: number;
+  ports: number;
+  neighbors: number;
+  message: string | null;
+  errors_json: string;
+  skipped_reasons_json: string;
+  offline_json: string;
+}
+
+/**
+ * Registra una lettura, aggiorna il riepilogo sulla riga del controller e pota
+ * lo storico oltre `CONTROLLER_RUNS_KEPT` letture dello stesso tipo. Una lettura
+ * riuscita aggiorna anche i conteggi; una fallita lascia quelli dell'ultima
+ * riuscita. Una lettura dei client (trigger «client:…», topologia fase 2)
+ * registra solo lo storico: il riepilogo della riga è quello degli apparati e
+ * lo leggono la pagina e «Stato moduli». `summary` forza l'una o l'altra cosa.
+ */
+export function recordControllerRun(run: ControllerRunInsert, opts: { summary?: boolean } = {}): void {
+  const kind = controllerRunKindOf(run.trigger);
+  const summary = opts.summary ?? kind === "apparati";
+  runInTenantTransaction(() => {
+    const d = db();
+    d.prepare(
+      `INSERT INTO network_controller_runs
+         (controller_id, started_at, finished_at, trigger, triggered_by, ok, total, added, updated, skipped,
+          ports, neighbors, message, errors_json, skipped_reasons_json, offline_json)
+       VALUES (@controller_id, @started_at, @finished_at, @trigger, @triggered_by, @ok, @total, @added, @updated, @skipped,
+          @ports, @neighbors, @message, @errors_json, @skipped_reasons_json, @offline_json)`,
+    ).run(run);
+    // summary false = lettura che non è quella degli apparati (es. client
+    // collegati): solo storico, il riepilogo della riga resta quello degli apparati.
+    if (summary && run.ok) {
+      d.prepare(
+        `UPDATE network_controllers
+            SET last_run_at = ?, last_ok = 1, last_message = ?, last_devices = ?, last_ports = ?, last_neighbors = ?
+          WHERE id = ?`,
+      ).run(run.finished_at, run.message, run.total, run.ports, run.neighbors, run.controller_id);
+    } else if (summary) {
+      d.prepare("UPDATE network_controllers SET last_run_at = ?, last_ok = 0, last_message = ? WHERE id = ?").run(
+        run.finished_at,
+        run.message,
+        run.controller_id,
+      );
+    }
+    d.prepare(
+      `DELETE FROM network_controller_runs
+        WHERE controller_id = ? AND ${RUN_KIND_SQL} = ?
+          AND id NOT IN (SELECT id FROM network_controller_runs
+                          WHERE controller_id = ? AND ${RUN_KIND_SQL} = ? ORDER BY id DESC LIMIT ?)`,
+    ).run(run.controller_id, kind, run.controller_id, kind, CONTROLLER_RUNS_KEPT);
+  });
+}
+
+export type ControllerRunRow = ControllerRunInsert & { id: number };
+
+/** Ultime letture di un controller di un tipo (di default gli apparati: lo storico della pagina). */
+export function listControllerRuns(controllerId: number, limit = 10, kind: ControllerRunKind = "apparati"): ControllerRunRow[] {
+  return db()
+    .prepare(`SELECT * FROM network_controller_runs WHERE controller_id = ? AND ${RUN_KIND_SQL} = ? ORDER BY id DESC LIMIT ?`)
+    .all(controllerId, kind, Math.max(1, Math.min(limit, CONTROLLER_RUNS_KEPT))) as ControllerRunRow[];
+}
+
+/** L'ultima lettura dei client di ogni controller, in una query (niente N+1). */
+export function listLastControllerClientRuns(): ControllerRunRow[] {
+  return db()
+    .prepare(
+      `SELECT r.* FROM network_controller_runs r
+         JOIN (SELECT controller_id, MAX(id) AS id FROM network_controller_runs
+                WHERE trigger LIKE 'client:%' GROUP BY controller_id) last ON last.id = r.id`,
+    )
+    .all() as ControllerRunRow[];
+}
+
+export interface ControllerScheduleRow {
+  job_id: number;
+  controller_id: number | null;
+  interval_minutes: number;
+  enabled: number;
+}
+
+/**
+ * I job unifi_sync degli apparati del tenant, col controller a cui puntano
+ * (null = job vecchio, senza controller). Il job dei client non c'è: è
+ * `listControllerClientScheduleJobs`.
+ */
+export function listControllerScheduleJobs(): ControllerScheduleRow[] {
+  return db()
+    .prepare(
+      `SELECT id AS job_id, json_extract(config, '$.controller_id') AS controller_id, interval_minutes, enabled
+         FROM scheduled_jobs WHERE job_type = 'unifi_sync' AND ${DEVICE_JOB_SQL} ORDER BY id`,
+    )
+    .all() as ControllerScheduleRow[];
+}
+
+/** I job unifi_sync dei client (`config.cosa = "client"`), uno per controller. */
+export function listControllerClientScheduleJobs(): ControllerScheduleRow[] {
+  return db()
+    .prepare(
+      `SELECT id AS job_id, json_extract(config, '$.controller_id') AS controller_id, interval_minutes, enabled
+         FROM scheduled_jobs WHERE job_type = 'unifi_sync' AND ${CLIENT_JOB_SQL} ORDER BY id`,
+    )
+    .all() as ControllerScheduleRow[];
+}
+
+/** Il job dei client gira ogni ora; la finestra 7-20 la guarda il job (`inFinestraClient`). */
+export const CONTROLLER_CLIENT_JOB_MINUTES = 60;
+
+/**
+ * Lettura dei client di un controller ogni ora (topologia fase 2, spec §10.5):
+ * `on` = un job unifi_sync con `config.cosa = "client"` (creato se manca, uno
+ * solo), `!on` = cancellato. Non tocca il job degli apparati.
+ */
+export function setControllerClientSchedule(controllerId: number, on: boolean): void {
+  runInTenantTransaction(() => {
+    const d = db();
+    const existing = d
+      .prepare(
+        `SELECT id FROM scheduled_jobs
+          WHERE job_type = 'unifi_sync' AND json_extract(config, '$.controller_id') = ? AND ${CLIENT_JOB_SQL} ORDER BY id`,
+      )
+      .all(controllerId) as Array<{ id: number }>;
+    const [keep, ...extra] = existing;
+    const drop = on ? extra : existing;
+    for (const j of drop) d.prepare("DELETE FROM scheduled_jobs WHERE id = ?").run(j.id);
+    if (!on) return;
+    if (keep) {
+      d.prepare("UPDATE scheduled_jobs SET interval_minutes = ?, enabled = 1, updated_at = datetime('now') WHERE id = ?").run(
+        CONTROLLER_CLIENT_JOB_MINUTES,
+        keep.id,
+      );
+    } else {
+      d.prepare(
+        "INSERT INTO scheduled_jobs (network_id, job_type, interval_minutes, enabled, config) VALUES (NULL, 'unifi_sync', ?, 1, ?)",
+      ).run(CONTROLLER_CLIENT_JOB_MINUTES, JSON.stringify({ controller_id: controllerId, cosa: "client" }));
+    }
+  });
+}
+
+/**
+ * Pianificazione degli apparati di un controller: un solo job unifi_sync
+ * (senza `cosa`) per controller; il job dei client non si tocca.
+ * `minutes` null = spenta, e il job si cancella (non resta un job spento che
+ * qualcuno riaccende dalla pagina dei job senza vedere il controller).
+ */
+export function setControllerSchedule(controllerId: number, minutes: number | null): void {
+  runInTenantTransaction(() => {
+    const d = db();
+    const existing = d
+      .prepare(
+        `SELECT id FROM scheduled_jobs
+          WHERE job_type = 'unifi_sync' AND json_extract(config, '$.controller_id') = ? AND ${DEVICE_JOB_SQL} ORDER BY id`,
+      )
+      .all(controllerId) as Array<{ id: number }>;
+    if (minutes === null) {
+      for (const j of existing) d.prepare("DELETE FROM scheduled_jobs WHERE id = ?").run(j.id);
+      return;
+    }
+    const [keep, ...extra] = existing;
+    for (const j of extra) d.prepare("DELETE FROM scheduled_jobs WHERE id = ?").run(j.id);
+    if (keep) {
+      d.prepare("UPDATE scheduled_jobs SET interval_minutes = ?, enabled = 1, updated_at = datetime('now') WHERE id = ?").run(
+        minutes,
+        keep.id,
+      );
+    } else {
+      d.prepare(
+        "INSERT INTO scheduled_jobs (network_id, job_type, interval_minutes, enabled, config) VALUES (NULL, 'unifi_sync', ?, 1, ?)",
+      ).run(minutes, JSON.stringify({ controller_id: controllerId }));
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LETTURA DEGLI HYPERVISOR (topologia fase 2b): un job hypervisor_sync per
+// tenant, ogni giorno, SPENTO di default. Lo accende un amministratore dalla
+// pagina «Dati della mappa»; nessuna migrazione lo crea.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Gli apparati che il job legge: hypervisor con scansione Proxmox, accesi. Solo i campi che servono. */
+export function listHypervisorScanDevices(): Array<{ id: number; last_proxmox_scan_at: string | null }> {
+  const rows = db()
+    .prepare(
+      `SELECT id, vendor, protocol, device_type, classification, scan_target, product_profile, enabled, last_proxmox_scan_at
+         FROM network_devices ORDER BY id`,
+    )
+    .all() as Array<{
+    id: number;
+    vendor: string;
+    protocol: string;
+    device_type: string;
+    classification: string | null;
+    scan_target: string | null;
+    product_profile: string | null;
+    enabled: number;
+    last_proxmox_scan_at: string | null;
+  }>;
+  return rows
+    .filter((r) => r.enabled === 1 && isProxmoxVeDevice(r))
+    .map((r) => ({ id: r.id, last_proxmox_scan_at: r.last_proxmox_scan_at }));
+}
+
+export interface HypervisorSyncState {
+  /** Il job c'è ed è acceso. */
+  enabled: boolean;
+  jobId: number | null;
+  /** Fine dell'ultimo giro del job (UTC del DB), null se non è mai girato. */
+  lastRun: string | null;
+  /** Quanti apparati il job leggerebbe. */
+  hypervisors: number;
+  /** La scansione Proxmox più recente fra quegli apparati (ISO), null se nessuna. */
+  lastScanAt: string | null;
+}
+
+export function getHypervisorSyncSchedule(): HypervisorSyncState {
+  const job = db()
+    .prepare("SELECT id, enabled, last_run FROM scheduled_jobs WHERE job_type = 'hypervisor_sync' ORDER BY id LIMIT 1")
+    .get() as { id: number; enabled: number; last_run: string | null } | undefined;
+  const devices = listHypervisorScanDevices();
+  const scans = devices.map((d) => d.last_proxmox_scan_at).filter((x): x is string => !!x).sort();
+  return {
+    enabled: !!job && job.enabled === 1,
+    jobId: job?.id ?? null,
+    lastRun: job?.last_run ?? null,
+    hypervisors: devices.length,
+    lastScanAt: scans.length > 0 ? scans[scans.length - 1] : null,
+  };
+}
+
+/**
+ * Accende o spegne la lettura giornaliera degli hypervisor: `on` = un job
+ * hypervisor_sync (creato se manca, uno solo, config `{}`), `!on` = cancellato
+ * (non resta un job spento che si riaccende dalla pagina dei job senza vedere
+ * cosa fa). Chi chiama ricarica lo scheduler del tenant.
+ */
+export function setHypervisorSyncSchedule(on: boolean): void {
+  runInTenantTransaction(() => {
+    const d = db();
+    const existing = d.prepare("SELECT id FROM scheduled_jobs WHERE job_type = 'hypervisor_sync' ORDER BY id").all() as Array<{ id: number }>;
+    const [keep, ...extra] = existing;
+    for (const j of on ? extra : existing) d.prepare("DELETE FROM scheduled_jobs WHERE id = ?").run(j.id);
+    if (!on) return;
+    if (keep) {
+      d.prepare("UPDATE scheduled_jobs SET interval_minutes = ?, enabled = 1, updated_at = datetime('now') WHERE id = ?").run(
+        HYPERVISOR_SYNC_MINUTES,
+        keep.id,
+      );
+    } else {
+      d.prepare(
+        "INSERT INTO scheduled_jobs (network_id, job_type, interval_minutes, enabled, config) VALUES (NULL, 'hypervisor_sync', ?, 1, '{}')",
+      ).run(HYPERVISOR_SYNC_MINUTES);
+    }
+  });
+}
+
+/**
+ * Ogni quanto si leggono router e switch (spec §13.5.6, il dialogo delle letture in più): il router lo leggono il giro
+ * ARP e le scansioni delle reti (il più frequente fra i job accesi); gli switch solo il giro ARP. null = nessun job acceso.
+ */
+export function cadenzaLetture(): { router: { minuti: number | null; daScansioni: boolean }; switch: number | null } {
+  const righe = db().prepare(`SELECT job_type, MIN(interval_minutes) AS m FROM scheduled_jobs
+     WHERE enabled = 1 AND job_type IN ('arp_poll', 'fast_scan', 'ping_sweep', 'snmp_scan', 'nmap_scan') GROUP BY job_type`).all() as Array<{ job_type: string; m: number }>;
+  const arp = righe.find((r) => r.job_type === "arp_poll")?.m ?? null;
+  if (righe.length === 0) return { router: { minuti: null, daScansioni: false }, switch: null };
+  const min = Math.min(...righe.map((r) => r.m));
+  return { router: { minuti: min, daScansioni: righe.some((r) => r.m === min && r.job_type !== "arp_poll") }, switch: arp };
+}
+
+/** Lega al controller i job unifi_sync nati prima dei controller multipli (config senza controller_id). */
+export function attachOrphanUnifiJobs(controllerId: number): number {
+  return db()
+    .prepare(
+      `UPDATE scheduled_jobs
+          SET config = json_set(COALESCE(NULLIF(config, ''), '{}'), '$.controller_id', ?), updated_at = datetime('now')
+        WHERE job_type = 'unifi_sync' AND json_extract(COALESCE(NULLIF(config, ''), '{}'), '$.controller_id') IS NULL`,
+    )
+    .run(controllerId).changes;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TOPOLOGIA — modello (fase 1, piano 2026-10-13): letture in blocco (no N+1)
+// e le sole scritture che un admin conferma (sede, testa, subnet, correzioni).
+// ═══════════════════════════════════════════════════════════════════════════
+
+type ModelInput = import("@/lib/topology/model-types").TopologyModelInput;
+type Esito = { ok: true } | { ok: false; error: string };
+
+export function getTopologyModelInput(staleDays: number, nowMs: number = Date.now()): ModelInput {
+  const d = db();
+  // VM e host dei cluster dalle scansioni Proxmox già salvate (spec §11.5); un JSON rovinato = nessuna VM per quell'apparato.
+  const vms: ModelInput["vms"] = [];
+  const scanHosts: ModelInput["scanHosts"] = [];
+  const scans = d
+    .prepare("SELECT id, last_proxmox_scan_result AS raw FROM network_devices WHERE last_proxmox_scan_result IS NOT NULL AND last_proxmox_scan_result <> '' ORDER BY id")
+    .all() as Array<{ id: number; raw: string }>;
+  for (const s of scans) {
+    const p = parseProxmoxScan(s.id, s.raw);
+    vms.push(...p.vms);
+    scanHosts.push(...p.hosts);
+  }
+  return {
+    devices: d.prepare(`
+      SELECT nd.id, nd.name, nd.host, nd.device_type, nd.vendor, nd.model, nd.enabled, nd.host_id, nd.physical_device_id,
+             nd.location_id, nd.controller_mac, nd.uplink_mac, nd.uplink_remote_port, nd.uplink_type, nd.uplink_seen_at, nd.topology_hidden,
+             nd.protocol AS via, nd.topology_role,
+             COALESCE(sp.n, 0) AS port_count,
+             CASE WHEN nd.scan_target = 'proxmox' OR COALESCE(nd.last_proxmox_scan_result, '') <> '' THEN 1 ELSE 0 END AS proxmox_scan
+        FROM network_devices nd
+        LEFT JOIN (SELECT device_id, COUNT(*) AS n FROM switch_ports GROUP BY device_id) sp ON sp.device_id = nd.id
+       ORDER BY nd.id`).all() as ModelInput["devices"],
+    hosts: d.prepare(`
+      SELECT id, network_id, ip, mac, hostname, custom_name, classification, status, physical_device_id
+        FROM hosts ORDER BY id`).all() as ModelInput["hosts"],
+    neighbors: d.prepare(`
+      SELECT dn.device_id, dn.local_port, dn.remote_device_name, dn.remote_port, dn.protocol, dn.remote_ip, dn.remote_mac,
+             dn.remote_platform, dn.timestamp, dn.source
+        FROM device_neighbors dn
+       WHERE ${NEIGHBORS_MODEL_SOURCES_SQL}`).all() as ModelInput["neighbors"],
+    uplinkPorts: d.prepare(`
+      SELECT device_id, port_index, port_name FROM switch_ports WHERE is_uplink = 1 ORDER BY device_id, port_index`).all() as ModelInput["uplinkPorts"],
+    locations: d.prepare("SELECT id, name, parent_id, head_device_id FROM locations ORDER BY id").all() as ModelInput["locations"],
+    networks: d.prepare("SELECT id, cidr, name, gateway, location_id FROM networks ORDER BY id").all() as ModelInput["networks"],
+    knownMacs: getNetworkDeviceKnownMacs(),
+    overrides: d
+      .prepare("SELECT id, action, a_node, a_port, b_node, b_port, medium, created_by, created_at FROM topology_link_overrides ORDER BY id")
+      .all() as ModelInput["overrides"],
+    macPorts: d.prepare(`
+      SELECT device_id, mac, port_name, timestamp, source FROM mac_port_entries
+       WHERE timestamp >= datetime('now', '-30 days') ORDER BY device_id, port_name, mac`).all() as ModelInput["macPorts"],
+    primaries: listTopologyLinkPrimaries(),
+    portInfo: d.prepare(`
+      SELECT device_id, port_name, speed, poe_status, poe_power_mw FROM switch_ports
+       WHERE COALESCE(speed, '') <> '' OR COALESCE(poe_power_mw, 0) > 0 ORDER BY device_id, port_index`).all() as ModelInput["portInfo"],
+    // Spec §13.6.1: l'elenco intero delle porte, con l'indice e lo stato (anche quelle giù), per la chiave della porta.
+    ports: d.prepare(`
+      SELECT device_id, port_index, port_name, speed, status, stp_state FROM switch_ports ORDER BY device_id, port_index`).all() as ModelInput["ports"],
+    vms,
+    scanHosts,
+    nowMs,
+    staleDays,
+  };
+}
+
+type IngressoCavi = import("@/lib/topology/cavi/prove").IngressoCavi;
+
+/**
+ * L'ingresso del modello per cavo (spec §13.5.7, «Chi legge che cosa»): quello del modello di oggi più le righe dei vicini di
+ * TUTTE le fonti con le colonne nuove, i fatti dell'ultimo giro di ogni apparato e lettore (`seen_at` almeno pari al più
+ * recente meno 5 minuti, come NEIGHBORS_LATEST_ROUND_SQL) e non più vecchi della soglia «non visto» (M5), i MAC dei lettori e
+ * le schede dell'inventario (solo identità, mai `getNetworkDeviceKnownMacs`), gli uplink per indice. Senza schema, elenchi
+ * vuoti e `schema: false`: la traccia lo dice.
+ */
+export function getIngressoCavi(staleDays: number, nowMs: number = Date.now()): IngressoCavi {
+  const d = db();
+  const t1 = getTopologyModelInput(staleDays, nowMs);
+  const daRiga = (n: ModelInput["neighbors"][number]) => ({ ...n, remote_platform: n.remote_platform ?? null, discovered_by: null, local_port_index: null, remote_port_index: null, remote_caps: null });
+  if (!schemaCaviPresente()) {
+    return { t1, vicini: t1.neighbors.map(daRiga), fattiPorta: [], fattiBridge: [], macApparati: [], uplink: [], schema: false };
+  }
+  // L'ultimo giro è uno per apparato e lettore, il più recente fra porte e bridge (revisione del Task 6 di T2, «Scelte» 8):
+  // calcolato tabella per tabella, un giro che scrive il bridge e non le porte (tabella che non ha risposto) lasciava le
+  // porte del giro di prima accanto al bridge nuovo.
+  const giro = `SELECT MAX(seen_at) FROM (
+      SELECT seen_at FROM topology_port_facts g WHERE g.device_id = f.device_id AND g.source = f.source
+      UNION ALL SELECT seen_at FROM topology_bridge_facts g WHERE g.device_id = f.device_id AND g.source = f.source)`;
+  // M5 (revisione finale di T2): l'«ultimo giro» di una fonte che non si legge più resta nel DB fino alla potatura (90
+  // giorni), e un `running = 0` di allora faceva «giù» un cavo che l'LLDP vede oggi. Un fatto più vecchio della soglia «non
+  // visto» non entra: per il modello per cavo quella porta non è letta. Stessa soglia dei collegamenti (staleDays), calcolata
+  // dall'orologio passato (`nowMs`), non da datetime('now'): la misura con `--adesso` resta coerente.
+  const soglia = new Date(nowMs - staleDays * 86_400_000).toISOString().slice(0, 19).replace("T", " ");
+  const ultimoGiro = (t: string) =>
+    `SELECT f.* FROM ${t} f WHERE f.seen_at >= ? AND f.seen_at >= (SELECT datetime((${giro}), '-5 minutes')) ORDER BY f.device_id, f.source`;
+  return {
+    t1,
+    vicini: d.prepare(`SELECT device_id, local_port, remote_device_name, remote_port, protocol, remote_ip, remote_mac, remote_platform, timestamp,
+        source, discovered_by, local_port_index, remote_port_index, remote_caps FROM device_neighbors`).all() as IngressoCavi["vicini"],
+    fattiPorta: d.prepare(`${ultimoGiro("topology_port_facts")}, f.port_key`).all(soglia) as IngressoCavi["fattiPorta"],
+    fattiBridge: d.prepare(`${ultimoGiro("topology_bridge_facts")}, f.bridge_name, f.instance`).all(soglia) as IngressoCavi["fattiBridge"],
+    macApparati: d.prepare(`SELECT device_id, mac, source FROM topology_device_macs
+      UNION SELECT nd.id, di.mac, 'inventario' FROM network_devices nd JOIN device_interfaces di ON di.physical_device_id = nd.physical_device_id
+       WHERE di.mac IS NOT NULL AND di.mac <> '' AND di.is_virtual_mac = 0 ORDER BY 1, 2`).all() as IngressoCavi["macApparati"],
+    uplink: d.prepare(`SELECT id AS device_id, uplink_local_port_idx, uplink_source FROM network_devices
+      WHERE uplink_local_port_idx IS NOT NULL OR uplink_source IS NOT NULL ORDER BY id`).all() as IngressoCavi["uplink"],
+    schema: true,
+  };
+}
+
+/** Sede confermata di un apparato e chi l'ha scelta; null se l'apparato non esiste. */
+export function getDeviceLocation(
+  deviceId: number,
+): { location_id: number | null; location_set_by: string | null; location_set_at: string | null } | null {
+  const row = db().prepare("SELECT location_id, location_set_by, location_set_at FROM network_devices WHERE id = ?").get(deviceId) as
+    | { location_id: number | null; location_set_by: string | null; location_set_at: string | null }
+    | undefined;
+  return row ?? null;
+}
+
+export function setDeviceLocation(deviceId: number, locationId: number | null, author: string): Esito {
+  const d = db();
+  if (!d.prepare("SELECT 1 FROM network_devices WHERE id = ?").get(deviceId)) return { ok: false, error: "Apparato non trovato" };
+  if (locationId !== null && !d.prepare("SELECT 1 FROM locations WHERE id = ?").get(locationId)) {
+    return { ok: false, error: "Ubicazione non trovata" };
+  }
+  d.prepare("UPDATE network_devices SET location_id = ?, location_set_by = ?, location_set_at = datetime('now') WHERE id = ?")
+    .run(locationId, author, deviceId);
+  return { ok: true };
+}
+
+export interface SiteTopologyRow {
+  location_id: number;
+  head_device_id: number | null;
+  head_set_by: string | null;
+  head_set_at: string | null;
+  network_ids: number[];
+}
+
+export function getSiteTopology(locationId: number): SiteTopologyRow | null {
+  const d = db();
+  const loc = d.prepare("SELECT id, head_device_id, head_set_by, head_set_at FROM locations WHERE id = ?").get(locationId) as
+    | { id: number; head_device_id: number | null; head_set_by: string | null; head_set_at: string | null }
+    | undefined;
+  if (!loc) return null;
+  const nets = d.prepare("SELECT id FROM networks WHERE location_id = ? ORDER BY id").all(locationId) as Array<{ id: number }>;
+  return { location_id: loc.id, head_device_id: loc.head_device_id, head_set_by: loc.head_set_by, head_set_at: loc.head_set_at, network_ids: nets.map((n) => n.id) };
+}
+
+/** Testa e subnet di una SEDE (ubicazione di primo livello). `networkIds` sostituisce l'elenco. */
+export function setSiteTopology(locationId: number, input: { headDeviceId?: number | null; networkIds?: number[] }, author: string): Esito {
+  const d = db();
+  const loc = d.prepare("SELECT parent_id FROM locations WHERE id = ?").get(locationId) as { parent_id: number | null } | undefined;
+  if (!loc) return { ok: false, error: "Ubicazione non trovata" };
+  if (loc.parent_id !== null) return { ok: false, error: "Testa e subnet si scelgono solo per una sede (ubicazione di primo livello)" };
+  if (input.headDeviceId != null && !d.prepare("SELECT 1 FROM network_devices WHERE id = ?").get(input.headDeviceId)) {
+    return { ok: false, error: "Apparato di testa non trovato" };
+  }
+  const ids = [...new Set(input.networkIds ?? [])];
+  if (ids.length > 0) {
+    const found = d.prepare(`SELECT COUNT(*) AS n FROM networks WHERE id IN (${ids.map(() => "?").join(",")})`).get(...ids) as { n: number };
+    if (found.n !== ids.length) return { ok: false, error: "Una delle subnet non esiste" };
+  }
+  d.transaction(() => {
+    if (input.headDeviceId !== undefined) {
+      d.prepare("UPDATE locations SET head_device_id = ?, head_set_by = ?, head_set_at = datetime('now'), updated_at = datetime('now') WHERE id = ?")
+        .run(input.headDeviceId, author, locationId);
+    }
+    if (input.networkIds !== undefined) {
+      const keep = ids.length > 0 ? `AND id NOT IN (${ids.map(() => "?").join(",")})` : "";
+      d.prepare(`UPDATE networks SET location_id = NULL, location_set_by = ?, location_set_at = datetime('now') WHERE location_id = ? ${keep}`)
+        .run(author, locationId, ...ids);
+      if (ids.length > 0) {
+        d.prepare(`UPDATE networks SET location_id = ?, location_set_by = ?, location_set_at = datetime('now') WHERE id IN (${ids.map(() => "?").join(",")})`)
+          .run(locationId, author, ...ids);
+      }
+    }
+  })();
+  return { ok: true };
+}
+
+// ─── Topologia: mappe salvate («passo passo»), ritocchi con firma, «nascondi» ──
+// Vista 'auto' = la mappa automatica; 'mappa:<id>' = una passo passo. Una riga di
+// topology_position con pinned 0 / x 0 / y 0 è solo l'appartenenza alla mappa;
+// un ritocco è pinned 1 con x, y e la firma della struttura al momento del salvataggio.
+
+export interface TopologyMapRow {
+  id: number;
+  name: string;
+  kind: "auto" | "passo";
+  roots: string[];
+  head_node: string | null;
+  /** «Verticale» (`lr`, predefinito) o «Orizzontale» (`tb`), spec §12.2. */
+  orientation: MapOrientation;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface TopologyMapDbRow extends Omit<TopologyMapRow, "roots" | "orientation"> {
+  roots: string;
+  orientation: string;
+}
+
+/** Vista di una mappa: l'automatica o una passo passo. */
+export type TopologyView = "auto" | `mappa:${number}`;
+
+// Il CHECK della colonna ammette solo 'lr' e 'tb'.
+const mapOrientationOf = (v: string): MapOrientation => (v === "tb" ? "tb" : "lr");
+// Un ritocco senza orientamento è nato prima della colonna, in orizzontale (spec §12.2).
+const tweakOrientationOf = (v: string | null): MapOrientation => (v === "lr" ? "lr" : "tb");
+
+function toMapRow(r: TopologyMapDbRow): TopologyMapRow {
+  let roots: string[] = [];
+  try {
+    const p: unknown = JSON.parse(r.roots);
+    if (Array.isArray(p)) roots = p.filter((x): x is string => typeof x === "string");
+  } catch {
+    roots = []; // JSON rovinato: la mappa si apre lo stesso, senza radici
+  }
+  return { ...r, roots, orientation: mapOrientationOf(r.orientation) };
+}
+
+const MAP_COLS = "id, name, kind, roots, head_node, orientation, created_by, created_at, updated_at";
+
+export function listTopologyMaps(): TopologyMapRow[] {
+  const rows = db().prepare(`SELECT ${MAP_COLS} FROM topology_maps WHERE kind = 'passo' ORDER BY name COLLATE NOCASE, id`).all() as TopologyMapDbRow[];
+  return rows.map(toMapRow);
+}
+
+export function getTopologyMap(id: number): TopologyMapRow | null {
+  const r = db().prepare(`SELECT ${MAP_COLS} FROM topology_maps WHERE id = ? AND kind = 'passo'`).get(id) as TopologyMapDbRow | undefined;
+  return r ? toMapRow(r) : null;
+}
+
+export function getAutoMap(): TopologyMapRow | null {
+  const r = db().prepare(`SELECT ${MAP_COLS} FROM topology_maps WHERE kind = 'auto'`).get() as TopologyMapDbRow | undefined;
+  return r ? toMapRow(r) : null;
+}
+
+const ADD_MEMBER_SQL = `INSERT INTO topology_position (view, node_id, x, y, pinned, updated_at)
+  VALUES (?, ?, 0, 0, 0, datetime('now')) ON CONFLICT(view, node_id) DO NOTHING`;
+
+export function createTopologyMap(input: { name: string; roots: string[]; nodes: string[] }, author: string): TopologyMapRow {
+  return runInTenantTransaction(() => {
+    const d = db();
+    const id = Number(
+      d.prepare("INSERT INTO topology_maps (name, kind, roots, created_by) VALUES (?, 'passo', ?, ?)")
+        .run(input.name, JSON.stringify([...new Set(input.roots)]), author).lastInsertRowid,
+    );
+    const ins = d.prepare(ADD_MEMBER_SQL);
+    for (const n of new Set(input.nodes)) ins.run(`mappa:${id}`, n);
+    return getTopologyMap(id) as TopologyMapRow;
+  });
+}
+
+export function updateTopologyMap(id: number, patch: { name?: string; roots?: string[] }): Esito {
+  const d = db();
+  if (!getTopologyMap(id)) return { ok: false, error: "Mappa non trovata" };
+  if (patch.name !== undefined && patch.name.trim() === "") return { ok: false, error: "Il nome della mappa non può essere vuoto" };
+  if (patch.name !== undefined) d.prepare("UPDATE topology_maps SET name = ?, updated_at = datetime('now') WHERE id = ?").run(patch.name, id);
+  if (patch.roots !== undefined) {
+    d.prepare("UPDATE topology_maps SET roots = ?, updated_at = datetime('now') WHERE id = ?").run(JSON.stringify([...new Set(patch.roots)]), id);
+  }
+  return { ok: true };
+}
+
+/** Aggiungere è idempotente e non tocca un ritocco già salvato; togliere toglie il nodo anche dalle radici. */
+export function setTopologyMapNodes(id: number, add: string[], remove: string[]): Esito {
+  const map = getTopologyMap(id);
+  if (!map) return { ok: false, error: "Mappa non trovata" };
+  runInTenantTransaction(() => {
+    const d = db();
+    const view = `mappa:${id}`;
+    const ins = d.prepare(ADD_MEMBER_SQL);
+    for (const n of new Set(add)) ins.run(view, n);
+    const del = d.prepare("DELETE FROM topology_position WHERE view = ? AND node_id = ?");
+    for (const n of new Set(remove)) del.run(view, n);
+    const gone = new Set(remove);
+    const roots = map.roots.filter((r) => !gone.has(r));
+    d.prepare("UPDATE topology_maps SET roots = ?, updated_at = datetime('now') WHERE id = ?").run(JSON.stringify(roots), id);
+  });
+  return { ok: true };
+}
+
+export function deleteTopologyMap(id: number): boolean {
+  return runInTenantTransaction(() => {
+    const d = db();
+    d.prepare("DELETE FROM topology_position WHERE view = ?").run(`mappa:${id}`);
+    return d.prepare("DELETE FROM topology_maps WHERE id = ? AND kind = 'passo'").run(id).changes > 0;
+  });
+}
+
+/**
+ * Nodi della vista (anche quelli che non esistono più: li dichiara la pagina), ritocchi
+ * salvati col loro orientamento (spec §12.2: un ritocco vale nell'orientamento in cui è
+ * fatto; NULL = `tb`) e l'orientamento della mappa.
+ */
+export function getTopologyMapView(view: string): {
+  nodes: string[];
+  tweaks: Array<{ nodeId: string; x: number; y: number; sig: string | null; orientation: MapOrientation }>;
+  orientation: MapOrientation;
+} {
+  const rows = db()
+    .prepare("SELECT node_id, x, y, pinned, structure_sig, orientation FROM topology_position WHERE view = ? ORDER BY node_id")
+    .all(view) as Array<{ node_id: string; x: number; y: number; pinned: number; structure_sig: string | null; orientation: string | null }>;
+  return {
+    nodes: rows.map((r) => r.node_id),
+    tweaks: rows
+      .filter((r) => r.pinned === 1)
+      .map((r) => ({ nodeId: r.node_id, x: r.x, y: r.y, sig: r.structure_sig, orientation: tweakOrientationOf(r.orientation) })),
+    orientation: getMapOrientation(asTopologyView(view)),
+  };
+}
+
+function asTopologyView(view: string): TopologyView {
+  if (view === "auto" || /^mappa:\d+$/.test(view)) return view as TopologyView;
+  throw new Error(`Vista della mappa non valida: ${view}`);
+}
+
+/**
+ * Salva i ritocchi fatti nell'orientamento `orientation`. Una riga per mappa e
+ * oggetto: un ritocco nuovo sostituisce il vecchio anche se era dell'altro
+ * orientamento (spec §12.2). L'appartenenza non cambia: la riga c'era già o nasce qui.
+ */
+export function saveTopologyTweaks(
+  view: string,
+  rows: Array<{ nodeId: string; x: number; y: number; sig: string }>,
+  orientation: MapOrientation,
+): void {
+  runInTenantTransaction(() => {
+    const ins = db().prepare(`
+      INSERT INTO topology_position (view, node_id, x, y, pinned, structure_sig, orientation, updated_at)
+      VALUES (?, ?, ?, ?, 1, ?, ?, datetime('now'))
+      ON CONFLICT(view, node_id) DO UPDATE SET
+        x = excluded.x, y = excluded.y, pinned = 1, structure_sig = excluded.structure_sig,
+        orientation = excluded.orientation, updated_at = datetime('now')`);
+    for (const r of rows) ins.run(view, r.nodeId, r.x, r.y, r.sig, orientation);
+  });
+}
+
+/** Orientamento della mappa; senza riga (l'automatica prima della prima scelta, o una mappa che non c'è) è `lr`. */
+export function getMapOrientation(view: TopologyView): MapOrientation {
+  const r = (
+    view === "auto"
+      ? db().prepare("SELECT orientation FROM topology_maps WHERE kind = 'auto'").get()
+      : db().prepare("SELECT orientation FROM topology_maps WHERE id = ? AND kind = 'passo'").get(Number(view.slice("mappa:".length)))
+  ) as { orientation: string } | undefined;
+  return r ? mapOrientationOf(r.orientation) : "lr";
+}
+
+/**
+ * Cambia l'orientamento della mappa (spec §12.2). Per l'automatica la riga nasce
+ * alla prima scelta, come per la testa; la testa e chi l'ha scelta non cambiano.
+ */
+export function setMapOrientation(view: TopologyView, orientation: MapOrientation, actor: string): Esito {
+  return runInTenantTransaction((): Esito => {
+    const d = db();
+    if (view === "auto") {
+      const r = d.prepare("UPDATE topology_maps SET orientation = ?, updated_at = datetime('now') WHERE kind = 'auto'").run(orientation);
+      if (r.changes === 0) {
+        d.prepare("INSERT INTO topology_maps (name, kind, roots, head_node, orientation, created_by) VALUES ('Tutta la rete', 'auto', '[]', NULL, ?, ?)")
+          .run(orientation, actor);
+      }
+      return { ok: true };
+    }
+    const r = d
+      .prepare("UPDATE topology_maps SET orientation = ?, updated_at = datetime('now') WHERE id = ? AND kind = 'passo'")
+      .run(orientation, Number(view.slice("mappa:".length)));
+    return r.changes > 0 ? { ok: true } : { ok: false, error: "Mappa non trovata" };
+  });
+}
+
+/**
+ * Riscrive gli id di una vista sull'id canonico del modello (revisione finale
+ * I5): un host promosso o fuso cambia id, e la mappa salvata lo seguirebbe solo
+ * in lettura. Lo chiama la pagina alla prima modifica della mappa, mai alla
+ * lettura. Righe di topology_position (membri e ritocchi), partenze di una
+ * passo passo e testa dell'automatica (senza cambiare chi l'ha scelta). Se il
+ * nuovo id è già nella vista, la riga vecchia si toglie.
+ */
+export function renameTopologyNodes(view: string, renames: Array<{ from: string; to: string }>): void {
+  if (renames.length === 0) return;
+  runInTenantTransaction(() => {
+    const d = db();
+    const has = d.prepare("SELECT 1 FROM topology_position WHERE view = ? AND node_id = ?");
+    const del = d.prepare("DELETE FROM topology_position WHERE view = ? AND node_id = ?");
+    const upd = d.prepare("UPDATE topology_position SET node_id = ?, updated_at = datetime('now') WHERE view = ? AND node_id = ?");
+    for (const { from, to } of renames) {
+      if (from === to) continue;
+      if (has.get(view, to)) del.run(view, from);
+      else upd.run(to, view, from);
+    }
+    const to = new Map(renames.map((r) => [r.from, r.to]));
+    const m = /^mappa:(\d+)$/.exec(view);
+    if (m) {
+      const map = getTopologyMap(Number(m[1]));
+      if (map && map.roots.some((r) => to.has(r))) {
+        const roots = [...new Set(map.roots.map((r) => to.get(r) ?? r))];
+        d.prepare("UPDATE topology_maps SET roots = ?, updated_at = datetime('now') WHERE id = ?").run(JSON.stringify(roots), map.id);
+      }
+    } else if (view === "auto") {
+      const head = getAutoMap()?.head_node;
+      const next = head ? to.get(head) : undefined;
+      if (next) d.prepare("UPDATE topology_maps SET head_node = ?, updated_at = datetime('now') WHERE kind = 'auto'").run(next);
+    }
+  });
+}
+
+/**
+ * «Riordina»: nelle passo passo i nodi restano, i ritocchi spariscono; nell'automatica non c'è
+ * appartenenza, si cancella. Con `orientation` solo i ritocchi di quell'orientamento (NULL = `tb`):
+ * quelli dell'altro restano da parte (spec §12.2). Senza, tutti.
+ */
+export function clearTopologyTweaks(view: string, orientation?: MapOrientation): void {
+  const d = db();
+  const only = orientation ? " AND pinned = 1 AND COALESCE(orientation, 'tb') = ?" : "";
+  const args = orientation ? [view, orientation] : [view];
+  if (view === "auto") d.prepare(`DELETE FROM topology_position WHERE view = ?${only}`).run(...args);
+  else {
+    d.prepare(
+      `UPDATE topology_position SET pinned = 0, x = 0, y = 0, structure_sig = NULL, orientation = NULL, updated_at = datetime('now') WHERE view = ?${only}`,
+    ).run(...args);
+  }
+}
+
+/** Testa della mappa automatica; la riga «Tutta la rete» nasce alla prima scrittura. */
+export function setAutoHead(nodeId: string | null, author: string): void {
+  runInTenantTransaction(() => {
+    const d = db();
+    // Sulla riga «auto» created_by è chi ha scelto la testa per ultimo: la pagina scrive «scelta da <autore>».
+    const r = d.prepare("UPDATE topology_maps SET head_node = ?, created_by = ?, updated_at = datetime('now') WHERE kind = 'auto'").run(nodeId, author);
+    if (r.changes === 0) {
+      d.prepare("INSERT INTO topology_maps (name, kind, roots, head_node, created_by) VALUES ('Tutta la rete', 'auto', '[]', ?, ?)").run(nodeId, author);
+    }
+  });
+}
+
+export function setNodeHidden(deviceId: number, hidden: boolean): Esito {
+  const r = db().prepare("UPDATE network_devices SET topology_hidden = ? WHERE id = ?").run(hidden ? 1 : 0, deviceId);
+  return r.changes > 0 ? { ok: true } : { ok: false, error: "Apparato non trovato" };
+}
+
+/**
+ * «Ruolo nella mappa» (T1b, spec §13.8.2): '' decide il sistema, 'rete' apparato di rete, 'attaccato' foglia (server, PC);
+ * da T3 (§13.9) 'core' e 'accesso', che il modello di T1 legge «rete» (`ruoloLetto`). Colonna senza CHECK: valida Zod.
+ */
+export function setTopologyRole(deviceId: number, role: "" | "rete" | "attaccato" | "core" | "accesso"): Esito {
+  const r = db().prepare("UPDATE network_devices SET topology_role = ? WHERE id = ?").run(role, deviceId);
+  return r.changes > 0 ? { ok: true } : { ok: false, error: "Apparato non trovato" };
+}
+
+// `extends` non accetta un `import(...)` diretto: passa da un alias di tipo.
+type LinkOverrideRowT = import("@/lib/topology/model-types").LinkOverrideRow;
+
+export interface LinkOverrideView extends LinkOverrideRowT {
+  note: string | null;
+  created_by: string | null;
+  created_at: string;
+}
+
+export function listLinkOverrides(): LinkOverrideView[] {
+  return db().prepare("SELECT * FROM topology_link_overrides ORDER BY id").all() as LinkOverrideView[];
+}
+
+export function addLinkOverride(
+  input: {
+    action: "add" | "ignore"; a_node: string; a_port: string; b_node: string; b_port: string;
+    /** Tipo del collegamento a mano (fase 2b, «tunnel» da T3); null = non indicato, sempre null per «ignore». */
+    medium: LinkMedium | null;
+    note: string | null;
+  },
+  author: string,
+): number {
+  const r = db().prepare(
+    "INSERT INTO topology_link_overrides (action, a_node, a_port, b_node, b_port, medium, note, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+  ).run(input.action, input.a_node, input.a_port, input.b_node, input.b_port, input.medium, input.note, author);
+  return Number(r.lastInsertRowid);
+}
+
+/**
+ * Modifica un collegamento aggiunto a mano (fase 2b, «Modifica porte»): cambiano
+ * solo i campi presenti. Un «ignora» non si modifica (si toglie e si rifà).
+ */
+export function updateLinkOverride(
+  id: number,
+  patch: { a_port?: string; b_port?: string; medium?: LinkMedium | null; note?: string | null },
+): "ok" | "assente" | "non_a_mano" {
+  const d = db();
+  const row = d.prepare("SELECT action FROM topology_link_overrides WHERE id = ?").get(id) as { action: string } | undefined;
+  if (!row) return "assente";
+  if (row.action !== "add") return "non_a_mano";
+  const cols = (["a_port", "b_port", "medium", "note"] as const).filter((k) => patch[k] !== undefined);
+  if (cols.length === 0) return "ok";
+  d.prepare(`UPDATE topology_link_overrides SET ${cols.map((k) => `${k} = ?`).join(", ")} WHERE id = ?`).run(...cols.map((k) => patch[k] ?? null), id);
+  return "ok";
+}
+
+/**
+ * Toglie una correzione. Se è un collegamento a mano, nella stessa transazione toglie anche la scelta
+ * del principale fra gli stessi due oggetti (revisione finale M-3): altrimenti la riga restava, e un
+ * collegamento automatico comparso dopo fra quei due diventava «★ scelto a mano» senza che nessuno
+ * l'avesse scelto. Ripristinare un «ignora» non tocca i principali.
+ * `perCavo` (mappa nuova accesa, T3): toglie solo la ★ con le stesse porte della correzione tolta, nei due versi
+ * (ADR 0010 N-2 superato, §13.9); una ★ della coppia su altre porte resta e vale per il migliore della coppia. Le porte
+ * non sono mai NULL (`NOT NULL DEFAULT ''`): una correzione senza porte toglie la ★ senza porte della coppia, che è
+ * quella messa sul suo cavo (la linea senza porte scrive '' e ''); tenerla rifarebbe M-3. Porte confrontate come sono
+ * scritte: una ★ che non coincide resta, mai tolta per somiglianza.
+ * Senza, come oggi: ogni ★ della coppia.
+ */
+export function deleteLinkOverride(id: number, opz?: { perCavo?: boolean }): boolean {
+  const d = db();
+  return d.transaction((): boolean => {
+    const row = d.prepare("SELECT action, a_node, a_port, b_node, b_port FROM topology_link_overrides WHERE id = ?").get(id) as
+      | { action: string; a_node: string; a_port: string; b_node: string; b_port: string }
+      | undefined;
+    if (!row) return false;
+    d.prepare("DELETE FROM topology_link_overrides WHERE id = ?").run(id);
+    if (row.action === "add" && opz?.perCavo === true) {
+      d.prepare(
+        `DELETE FROM topology_link_primary
+         WHERE (node_id = ? AND other_node = ? AND node_port = ? AND other_port = ?)
+            OR (node_id = ? AND other_node = ? AND node_port = ? AND other_port = ?)`,
+      ).run(row.a_node, row.b_node, row.a_port, row.b_port, row.b_node, row.a_node, row.b_port, row.a_port);
+    } else if (row.action === "add") {
+      d.prepare("DELETE FROM topology_link_primary WHERE (node_id = ? AND other_node = ?) OR (node_id = ? AND other_node = ?)")
+        .run(row.a_node, row.b_node, row.b_node, row.a_node);
+    }
+    return true;
+  })();
+}
+
+/**
+ * I collegamenti principali scelti a mano (spec §11.3, «★ Rendi principale»):
+ * per ogni oggetto `node_id`, il collegamento verso `other_node` su quelle porte.
+ * Una lettura in blocco per il modello (tappa E); le scritture le fanno le rotte.
+ */
+export function listTopologyLinkPrimaries(): Array<{ node_id: string; other_node: string; node_port: string; other_port: string }> {
+  return db()
+    .prepare("SELECT node_id, other_node, node_port, other_port FROM topology_link_primary ORDER BY node_id")
+    .all() as Array<{ node_id: string; other_node: string; node_port: string; other_port: string }>;
+}
+
+/** «★ Rendi principale» (spec §11.3): una scelta per oggetto; una nuova sostituisce quella di prima. */
+export function setTopologyLinkPrimary(
+  input: { node_id: string; other_node: string; node_port: string; other_port: string },
+  author: string,
+): void {
+  db().prepare(
+    `INSERT INTO topology_link_primary (node_id, other_node, node_port, other_port, set_by, set_at)
+     VALUES (?, ?, ?, ?, ?, datetime('now'))
+     ON CONFLICT(node_id) DO UPDATE SET other_node = excluded.other_node, node_port = excluded.node_port,
+       other_port = excluded.other_port, set_by = excluded.set_by, set_at = excluded.set_at`,
+  ).run(input.node_id, input.other_node, input.node_port, input.other_port, author);
+}
+
+/** «Togli la scelta»: il principale torna a sceglierlo il sistema. true se c'era una scelta. */
+export function deleteTopologyLinkPrimary(nodeId: string): boolean {
+  return db().prepare("DELETE FROM topology_link_primary WHERE node_id = ?").run(nodeId).changes > 0;
+}
+
+/**
+ * Porte note di un oggetto per «Collega a…» (GET /api/topology/ports): per un
+ * apparato le sue porte (`switch_ports`), oppure, se non ne ha, le schede della
+ * scansione Proxmox dell'host che è lui. Host e VM: nessuna porta nota (elenco
+ * vuoto). null = apparato inesistente.
+ */
+export function getTopologyKnownPorts(nodeId: string): KnownPort[] | null {
+  const m = /^dev:(\d+)$/.exec(nodeId);
+  if (!m) return [];
+  const d = db();
+  const id = Number(m[1]);
+  const dev = d.prepare("SELECT id, host, name FROM network_devices WHERE id = ?").get(id) as { id: number; host: string; name: string } | undefined;
+  if (!dev) return null;
+  const ports = d.prepare(
+    "SELECT port_name, speed, poe_power_mw, status, is_uplink, is_trunk FROM switch_ports WHERE device_id = ? ORDER BY port_index",
+  ).all(id) as SwitchPortRow[];
+  if (ports.length > 0) return switchPortsToKnown(ports);
+  const scans = d.prepare(
+    "SELECT id, last_proxmox_scan_result AS raw FROM network_devices WHERE last_proxmox_scan_result IS NOT NULL AND last_proxmox_scan_result <> '' ORDER BY id",
+  ).all() as Array<{ id: number; raw: string }>;
+  return hypervisorNics({ id: dev.id, host: dev.host ?? "", name: dev.name ?? "" }, scans);
 }

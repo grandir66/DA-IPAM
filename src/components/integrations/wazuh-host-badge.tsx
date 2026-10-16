@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 /**
  * Badge "Wazuh agent presente" riusabile in tutte le viste host (header detail,
@@ -20,6 +21,7 @@
  */
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { Shield, PlusCircle, Loader2, ExternalLink } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DIALOG_PANEL_COMPACT_CLASS } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -95,7 +97,7 @@ function colorClass(kind: "active" | "disconnected" | "unknown" | "absent"): str
 function formatTs(ts: string | null | undefined): string {
   if (!ts) return "—";
   try {
-    return new Date(ts).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" });
+    return parseDbDate(ts).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" });
   } catch {
     return ts;
   }
@@ -236,7 +238,10 @@ export function WazuhHostBadge({ hostId, hostName, hostIp, prefetched, mode = "i
                     </>
                   ) : (
                     <p className="text-xs text-amber-600">
-                      {"URL dashboard non configurato — vai a Settings → Integrazioni → Wazuh"}
+                      URL dashboard non configurato — vai a{" "}
+                      <Link href="/settings?tab=moduli#module-wazuh" className="underline underline-offset-2">
+                        Impostazioni → Moduli → Wazuh
+                      </Link>
                     </p>
                   )}
                 </div>
@@ -314,7 +319,11 @@ NET START WazuhSvc`;
       </p>
       {!managerHost && (
         <p className="text-amber-600 text-xs">
-          {"⚠ Manager Wazuh non configurato in DA-IPAM (Settings → Integrazioni → Wazuh). Sostituisci "}<code>&lt;WAZUH_MANAGER_IP&gt;</code>{" con l'IP/FQDN del tuo manager."}
+          {"⚠ Manager Wazuh non configurato in DA-IPAM ("}
+          <Link href="/settings?tab=moduli#module-wazuh" className="underline underline-offset-2">
+            Impostazioni → Moduli → Wazuh
+          </Link>
+          {"). Sostituisci "}<code>&lt;WAZUH_MANAGER_IP&gt;</code>{" con l'IP/FQDN del tuo manager."}
         </p>
       )}
       <div className="flex gap-1 border-b">

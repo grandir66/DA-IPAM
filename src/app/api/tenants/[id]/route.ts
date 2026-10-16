@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getTenantById, updateTenant, deleteTenant } from "@/lib/db-hub";
 import { deleteTenantDatabase } from "@/lib/db-tenant";
-import { requireAuth, requireAdmin, isAuthError } from "@/lib/api-auth";
+import { requireAuth, requireSuperAdmin, isAuthError } from "@/lib/api-auth";
 import { z } from "zod";
 
 const TenantUpdateSchema = z.object({
@@ -46,7 +46,7 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const adminCheck = await requireAdmin();
+    const adminCheck = await requireSuperAdmin();
     if (isAuthError(adminCheck)) return adminCheck;
 
     const { id } = await params;
@@ -61,6 +61,20 @@ export async function PUT(
     const parsed = TenantUpdateSchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
+    }
+
+    // COR-01: codice_cliente immutabile. Cambiarlo aggiornerebbe solo il registry
+    // hub mentre il DB del tenant resta risolto come <codice>.db: al primo accesso
+    // col nuovo codice verrebbe creato un DB vuoto, orfaneggiando i dati esistenti.
+    const current = getTenantById(Number(id));
+    if (!current) {
+      return NextResponse.json({ error: "Cliente non trovato" }, { status: 404 });
+    }
+    if (parsed.data.codice_cliente && parsed.data.codice_cliente !== current.codice_cliente) {
+      return NextResponse.json(
+        { error: "Il codice cliente non è modificabile: orfaneggerebbe il database del tenant." },
+        { status: 400 },
+      );
     }
 
     const updated = updateTenant(Number(id), parsed.data);
@@ -83,7 +97,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const adminCheck = await requireAdmin();
+    const adminCheck = await requireSuperAdmin();
     if (isAuthError(adminCheck)) return adminCheck;
 
     const { id } = await params;

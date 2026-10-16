@@ -1,12 +1,26 @@
 import { NextResponse } from "next/server";
 import { requireAuth, requireAdmin, isAuthError } from "@/lib/api-auth";
 import { getIntegrationConfig, setIntegrationConfig } from "@/lib/integrations/config";
+import { mascheraConfigIntegrazione, puoVedereSegreti } from "@/lib/permessi/politica";
 import { getContainerStatus } from "@/lib/integrations/docker";
+import { librenmsDellAppliance } from "@/lib/integrations/librenms-appliance";
 import { resolveIntegrationBrowserUrl } from "@/lib/integrations/public-url-server";
 import type { IntegrationComponent } from "@/lib/integrations/types";
 import { z } from "zod";
 
 const VALID_COMPONENTS: IntegrationComponent[] = ["librenms", "loki", "graylog"];
+
+/**
+ * UniFi non passa più da qui (ADR 0007): i controller sono righe del DB del
+ * cliente, gestite da /api/controllers. Scrivere qui la configurazione unica
+ * dell'hub non farebbe niente, e lo si dice invece di accettarla in silenzio.
+ */
+function unifiMoved(): NextResponse {
+  return NextResponse.json(
+    { error: "I controller UniFi si gestiscono da Rete → Controller di rete (/api/controllers)" },
+    { status: 410 },
+  );
+}
 
 function parseComponent(raw: string): IntegrationComponent | null {
   return VALID_COMPONENTS.includes(raw as IntegrationComponent)
@@ -18,10 +32,11 @@ export async function GET(
   req: Request,
   { params }: { params: Promise<{ component: string }> }
 ) {
-  const authError = await requireAuth();
-  if (isAuthError(authError)) return authError;
+  const session = await requireAuth();
+  if (isAuthError(session)) return session;
 
   const { component: raw } = await params;
+  if (raw === "unifi") return unifiMoved();
   const component = parseComponent(raw);
   if (!component) return NextResponse.json({ error: "Componente non valido" }, { status: 400 });
 
@@ -34,9 +49,11 @@ export async function GET(
 
   return NextResponse.json({
     component,
-    config: cfg,
+    // Questo GET basta a un utente in sola lettura: i segreti solo all'admin (SEC-5).
+    config: mascheraConfigIntegrazione(cfg, puoVedereSegreti(session.user.role)),
     browserUrl: cfg.browserUrl ?? resolveIntegrationBrowserUrl(component, cfg.url),
     containerStatus,
+    installatoDallAppliance: component === "librenms" ? await librenmsDellAppliance() : false,
   });
 }
 
@@ -58,6 +75,7 @@ export async function PUT(
   if (isAuthError(authError)) return authError;
 
   const { component: raw } = await params;
+  if (raw === "unifi") return unifiMoved();
   const component = parseComponent(raw);
   if (!component) return NextResponse.json({ error: "Componente non valido" }, { status: 400 });
 

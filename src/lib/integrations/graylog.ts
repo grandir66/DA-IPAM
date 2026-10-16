@@ -1,6 +1,8 @@
 import { appendLog, updateJob } from "./job-store";
-import { spawnDockerStream, execDockerCommand } from "./docker";
-import { setIntegrationConfig } from "./config";
+import { dockerReale, type DockerIniettabile, type OpzioniDocker } from "./docker";
+import { salvaSegretiGraylog, setIntegrationConfig } from "./config";
+import type { ComponentConfig } from "./types";
+import { generaSegretiGraylog, mascheraSegreti, type SegretiGraylog } from "./segreti-installazione";
 import { execFile as _execFile } from "child_process";
 import { promisify } from "util";
 
@@ -11,17 +13,34 @@ const OPENSEARCH_IMAGE = "opensearchproject/opensearch:2.12.0";
 const MONGODB_IMAGE    = "mongo:6.0";
 const SEC_OPT          = ["--security-opt", "apparmor=unconfined"];
 
+/**
+ * Dipendenze dell'installazione, iniettabili per le prove (docker finto,
+ * attese istantanee). I segreti arrivano al container solo per ambiente:
+ * negli argomenti c'è `-e NOME`, il valore sta in `env`.
+ */
+export interface DipendenzeGraylog {
+  docker: DockerIniettabile;
+  attendi: (ms: number) => Promise<void>;
+  fetch: typeof fetch;
+  ora: () => number;
+  registro: (jobId: string, riga: string) => void;
+  aggiornaJob: typeof updateJob;
+  salvaConfig: (cfg: Partial<ComponentConfig>) => void;
+  salvaSegreti: (s: SegretiGraylog) => void;
+  generaSegreti: () => SegretiGraylog;
+  /** Controllo di vm.max_map_count sull'host (requisito di OpenSearch). */
+  preparaHost: (log: (l: string) => void) => Promise<void>;
+}
+
 /** Esegue un comando dentro un container, senza lanciare eccezione. */
 async function containerExec(
+  d: DipendenzeGraylog,
   name: string,
   cmd: string[],
   timeoutMs = 20_000
 ): Promise<{ out: string; ok: boolean }> {
   try {
-    const r = await execFileAsync("docker", ["exec", name, ...cmd], {
-      timeout: timeoutMs,
-      maxBuffer: 1024 * 1024,
-    });
+    const r = await d.docker.exec(["exec", name, ...cmd], { timeout: timeoutMs });
     return { out: (r.stdout + r.stderr).trim(), ok: true };
   } catch (err) {
     const e = err as { stdout?: string; stderr?: string };
@@ -30,15 +49,15 @@ async function containerExec(
 }
 
 /** Attende che MongoDB sia pronto (ping). */
-async function waitForMongo(name: string, maxMs: number, log: (l: string) => void): Promise<void> {
-  const deadline = Date.now() + maxMs;
-  while (Date.now() < deadline) {
-    const { ok } = await containerExec(name, [
+async function waitForMongo(d: DipendenzeGraylog, name: string, maxMs: number, log: (l: string) => void): Promise<void> {
+  const deadline = d.ora() + maxMs;
+  while (d.ora() < deadline) {
+    const { ok } = await containerExec(d, name, [
       "mongosh", "--quiet", "--eval", "db.adminCommand({ping:1})",
     ]);
     if (ok) { log("[wait] MongoDB pronto."); return; }
     log("[wait] MongoDB non ancora pronto, attesa 5s...");
-    await new Promise((r) => setTimeout(r, 5000));
+    await d.attendi(5000);
   }
   throw new Error("MongoDB non pronto dopo il timeout.");
 }
@@ -47,17 +66,11 @@ async function waitForMongo(name: string, maxMs: number, log: (l: string) => voi
  * Attende che OpenSearch sia pronto controllando i log del container dal host.
  * L'immagine OpenSearch 2.12.0 (Amazon Linux 2023) non include curl/wget.
  */
-async function waitForOpenSearch(name: string, maxMs: number, log: (l: string) => void): Promise<void> {
-  const { execFile: _ef } = await import("child_process");
-  const { promisify } = await import("util");
-  const execFile = promisify(_ef);
-  const deadline = Date.now() + maxMs;
-  while (Date.now() < deadline) {
+async function waitForOpenSearch(d: DipendenzeGraylog, name: string, maxMs: number, log: (l: string) => void): Promise<void> {
+  const deadline = d.ora() + maxMs;
+  while (d.ora() < deadline) {
     try {
-      const r = await execFile("docker", ["logs", "--tail", "300", name], {
-        timeout: 10_000,
-        maxBuffer: 4 * 1024 * 1024,
-      });
+      const r = await d.docker.exec(["logs", "--tail", "300", name], { timeout: 10_000 });
       const output = r.stdout + r.stderr;
 
       // Fail-fast: vm.max_map_count troppo basso → OpenSearch si chiude subito
@@ -82,7 +95,7 @@ async function waitForOpenSearch(name: string, maxMs: number, log: (l: string) =
       /* container non ancora avviato — continua */
     }
     log("[wait] OpenSearch non ancora pronto, attesa 10s...");
-    await new Promise((r) => setTimeout(r, 10_000));
+    await d.attendi(10_000);
   }
   throw new Error("OpenSearch non pronto dopo il timeout.");
 }
@@ -127,15 +140,15 @@ async function ensureMaxMapCount(log: (l: string) => void): Promise<void> {
  * Graylog 6.x non espone /api/system/liveness — usiamo /api/ e la root.
  * Pronto = qualsiasi risposta non-5xx (200, 401, 302, 404 sulla root = nginx up + app up).
  */
-async function waitForGraylog(internalUrl: string, maxMs: number, log: (l: string) => void): Promise<void> {
-  const deadline = Date.now() + maxMs;
+async function waitForGraylog(d: DipendenzeGraylog, internalUrl: string, maxMs: number, log: (l: string) => void): Promise<void> {
+  const deadline = d.ora() + maxMs;
   let attempt = 0;
   const endpoints = ["/api/", "/"];
-  while (Date.now() < deadline) {
+  while (d.ora() < deadline) {
     attempt++;
     for (const path of endpoints) {
       try {
-        const res = await fetch(`${internalUrl}${path}`, {
+        const res = await d.fetch(`${internalUrl}${path}`, {
           signal: AbortSignal.timeout(6000),
           redirect: "manual",   // non seguire redirect — 302 = Graylog pronto
         });
@@ -150,34 +163,56 @@ async function waitForGraylog(internalUrl: string, maxMs: number, log: (l: strin
       }
     }
     log(`[wait] Tentativo ${attempt} — Graylog non ancora raggiungibile, attesa 10s...`);
-    await new Promise((r) => setTimeout(r, 10_000));
+    await d.attendi(10_000);
   }
   throw new Error(`Graylog non raggiungibile dopo ${maxMs / 1000}s`);
 }
 
+export const dipendenzeGraylogReali: DipendenzeGraylog = {
+  docker: dockerReale,
+  attendi: (ms) => new Promise((r) => setTimeout(r, ms)),
+  fetch: (...a) => fetch(...a),
+  ora: () => Date.now(),
+  registro: appendLog,
+  aggiornaJob: updateJob,
+  salvaConfig: (cfg) => setIntegrationConfig("graylog", cfg),
+  salvaSegreti: salvaSegretiGraylog,
+  generaSegreti: generaSegretiGraylog,
+  preparaHost: ensureMaxMapCount,
+};
+
 export async function installGraylog(
   jobId: string,
   containerName: string,
-  adminPassword = "admin",
-  serverUrl = "http://localhost:9000"
+  adminPassword: string,
+  serverUrl = "http://localhost:9000",
+  d: DipendenzeGraylog = dipendenzeGraylogReali,
 ): Promise<void> {
-  const log = (line: string) => appendLog(jobId, line);
+  const segreti = d.generaSegreti();
+  let apiTokenGenerato: string | null = null;
+  const { createHash } = await import("crypto");
+  const rootPasswordSha2 = createHash("sha256").update(adminPassword).digest("hex");
+  // Seconda difesa: nessuna riga del registro porta un segreto.
+  const log = (line: string) =>
+    d.registro(jobId, mascheraSegreti(line, [segreti.passwordSecret, adminPassword, rootPasswordSha2, apiTokenGenerato]));
+  const run = (args: string[], env?: OpzioniDocker["env"], throwOnError = true) =>
+    d.docker.stream(args, log, { env, throwOnError });
   const network  = "da-graylog-net";
   const hostPort = (() => { try { return new URL(serverUrl).port || "9000"; } catch { return "9000"; } })();
   const internalUrl = `http://localhost:${hostPort}`;
 
   try {
-    updateJob(jobId, { phase: "pulling" });
+    d.aggiornaJob(jobId, { phase: "pulling" });
     log("[pull] Scaricamento immagini (MongoDB + OpenSearch + Graylog)...");
-    await spawnDockerStream(["pull", MONGODB_IMAGE],    log, false);
-    await spawnDockerStream(["pull", OPENSEARCH_IMAGE], log, false);
-    await spawnDockerStream(["pull", GRAYLOG_IMAGE],    log, false);
+    await run(["pull", MONGODB_IMAGE],    undefined, false);
+    await run(["pull", OPENSEARCH_IMAGE], undefined, false);
+    await run(["pull", GRAYLOG_IMAGE],    undefined, false);
 
-    updateJob(jobId, { phase: "creating" });
+    d.aggiornaJob(jobId, { phase: "creating" });
 
     // ── Rete ──────────────────────────────────────────────────────────────────
     try {
-      await execDockerCommand(["network", "create", network]);
+      await d.docker.exec(["network", "create", network]);
       log(`[net] Rete '${network}' creata.`);
     } catch {
       log(`[net] Rete '${network}' già esistente.`);
@@ -185,28 +220,28 @@ export async function installGraylog(
 
     // ── Rimuove container precedenti ──────────────────────────────────────────
     for (const c of [containerName, "da-graylog-opensearch", "da-graylog-mongo"]) {
-      try { await execDockerCommand(["rm", "-f", c]); } catch { /* non esisteva */ }
+      try { await d.docker.exec(["rm", "-f", c]); } catch { /* non esisteva */ }
     }
 
     // ── MongoDB ───────────────────────────────────────────────────────────────
     log("[create] Avvio MongoDB...");
-    await spawnDockerStream([
+    await run([
       "run", "-d",
       "--name", "da-graylog-mongo",
       "--network", network,
       "--restart", "unless-stopped",
       ...SEC_OPT,
       MONGODB_IMAGE,
-    ], log);
+    ]);
 
     // ── vm.max_map_count — requisito OpenSearch ───────────────────────────────
     // --sysctl vm.max_map_count non è consentito dal Docker daemon standard.
     // Leggiamo il valore dall'host e proviamo a impostarlo via sysctl se troppo basso.
-    await ensureMaxMapCount(log);
+    await d.preparaHost(log);
 
     // ── OpenSearch ────────────────────────────────────────────────────────────
     log("[create] Avvio OpenSearch...");
-    await spawnDockerStream([
+    await run([
       "run", "-d",
       "--name", "da-graylog-opensearch",
       "--network", network,
@@ -222,23 +257,23 @@ export async function installGraylog(
       "-e", "DISABLE_INSTALL_DEMO_CONFIG=true",
       "-e", "OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g",
       OPENSEARCH_IMAGE,
-    ], log);
+    ]);
 
     // ── Attende MongoDB e OpenSearch ──────────────────────────────────────────
-    updateJob(jobId, { phase: "waiting" });
+    d.aggiornaJob(jobId, { phase: "waiting" });
     log("[wait] Attesa MongoDB (max 60s)...");
-    await waitForMongo("da-graylog-mongo", 60_000, log);
+    await waitForMongo(d, "da-graylog-mongo", 60_000, log);
     log("[wait] Attesa OpenSearch (max 3 min)...");
-    await waitForOpenSearch("da-graylog-opensearch", 180_000, log);
+    await waitForOpenSearch(d, "da-graylog-opensearch", 180_000, log);
 
     // ── Graylog ───────────────────────────────────────────────────────────────
+    // Segreto interno generato per questa installazione e salvato cifrato
+    // prima di creare il container (Graylog vuole almeno 16 caratteri, 64+ consigliati).
+    d.salvaSegreti(segreti);
+    log("[create] Segreto interno di Graylog generato e salvato cifrato.");
     log("[create] Avvio Graylog...");
-    const { createHash } = await import("crypto");
-    const rootPasswordSha2 = createHash("sha256").update(adminPassword).digest("hex");
-    // Password secret: minimo 16 char, consigliati 64+ (usato per cifratura interna)
-    const passwordSecret = "dainvent-graylog-secret-pepper-2024-abcdef0123456789abcdef01234567";
 
-    await spawnDockerStream([
+    await run([
       "run", "-d",
       "--name", containerName,
       "--network", network,
@@ -246,27 +281,28 @@ export async function installGraylog(
       "-p", `${hostPort}:9000`,
       "-p", "12201:12201/udp",
       ...SEC_OPT,
-      "-e", `GRAYLOG_PASSWORD_SECRET=${passwordSecret}`,
-      "-e", `GRAYLOG_ROOT_PASSWORD_SHA2=${rootPasswordSha2}`,
+      "-e", "GRAYLOG_PASSWORD_SECRET",
+      "-e", "GRAYLOG_ROOT_PASSWORD_SHA2",
       "-e", `GRAYLOG_HTTP_EXTERNAL_URI=${serverUrl}/`,
       "-e", "GRAYLOG_ELASTICSEARCH_HOSTS=http://da-graylog-opensearch:9200",
       "-e", "GRAYLOG_MONGODB_URI=mongodb://da-graylog-mongo:27017/graylog",
       "-e", "GRAYLOG_JAVA_OPTS=-Xms1g -Xmx1g",
       GRAYLOG_IMAGE,
-    ], log);
+    ], { GRAYLOG_PASSWORD_SECRET: segreti.passwordSecret, GRAYLOG_ROOT_PASSWORD_SHA2: rootPasswordSha2 });
 
     // ── Attende Graylog ────────────────────────────────────────────────────────
     log("[wait] Attesa Graylog pronto — primo avvio può richiedere 2-4 min...");
-    await waitForGraylog(internalUrl, 300_000, log);
+    await waitForGraylog(d, internalUrl, 300_000, log);
     // Warm-up: l'HTTP server risponde prima che l'API interna (auth, users) sia pronta
     log("[wait] Warm-up 20s per completare inizializzazione API...");
-    await new Promise((r) => setTimeout(r, 20_000));
+    await d.attendi(20_000);
 
     // ── API Token ─────────────────────────────────────────────────────────────
     log("[token] Generazione API token...");
-    const apiToken = await generateGraylogToken(internalUrl, "admin", adminPassword, log);
+    const apiToken = await generateGraylogToken(d, internalUrl, "admin", adminPassword, log);
+    apiTokenGenerato = apiToken;
 
-    setIntegrationConfig("graylog", {
+    d.salvaConfig({
       mode: "managed",
       url: serverUrl,
       username: "admin",
@@ -276,7 +312,7 @@ export async function installGraylog(
       containerName,
     });
 
-    updateJob(jobId, { phase: "done", finishedAt: new Date().toISOString() });
+    d.aggiornaJob(jobId, { phase: "done", finishedAt: new Date().toISOString() });
     if (apiToken) {
       log(`[done] Graylog installato e configurato su ${serverUrl}`);
       log("[done] API token generato e salvato automaticamente.");
@@ -284,10 +320,12 @@ export async function installGraylog(
       log(`[done] Graylog installato su ${serverUrl}`);
       log("[warn] Token automatico fallito. Crea un token in Graylog → System → Users → admin → API Tokens.");
     }
-    log(`[done] Credenziali: utente=admin  password=${adminPassword}`);
+    log("[done] Utente: admin. La password è salvata cifrata: la mostra la card dell'integrazione agli admin.");
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    updateJob(jobId, { phase: "error", error: msg, finishedAt: new Date().toISOString() });
+    const msg = mascheraSegreti(err instanceof Error ? err.message : String(err), [
+      segreti.passwordSecret, adminPassword, rootPasswordSha2, apiTokenGenerato,
+    ]);
+    d.aggiornaJob(jobId, { phase: "error", error: msg, finishedAt: new Date().toISOString() });
     log(`[error] ${msg}`);
   }
 }
@@ -298,23 +336,24 @@ export async function installGraylog(
  * Endpoint: POST /api/users/{userId}/tokens/{tokenName}
  */
 async function generateGraylogToken(
+  d: DipendenzeGraylog,
   baseUrl: string,
   username: string,
   password: string,
   log: (l: string) => void
 ): Promise<string | null> {
-  const tokenName = `da-invent-${Date.now()}`;
-  const deadline = Date.now() + 120_000;
+  const tokenName = `da-invent-${d.ora()}`;
+  const deadline = d.ora() + 120_000;
 
   // Graylog 6.x usa "local:admin" come ID utente nell'endpoint token
   // Le versioni precedenti usano il semplice username (es. "admin")
   const userIds = [`local:${username}`, username];
 
-  while (Date.now() < deadline) {
+  while (d.ora() < deadline) {
     for (const userId of userIds) {
       try {
         const url = `${baseUrl}/api/users/${encodeURIComponent(userId)}/tokens/${encodeURIComponent(tokenName)}`;
-        const res = await fetch(url, {
+        const res = await d.fetch(url, {
           method: "POST",
           headers: {
             "Authorization": "Basic " + Buffer.from(`${username}:${password}`).toString("base64"),
@@ -340,7 +379,7 @@ async function generateGraylogToken(
       }
     }
     log("[token] Retry tra 10s...");
-    await new Promise((r) => setTimeout(r, 10_000));
+    await d.attendi(10_000);
   }
   return null;
 }

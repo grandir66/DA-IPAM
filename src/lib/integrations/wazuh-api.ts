@@ -467,6 +467,56 @@ export class WazuhClient {
   }
 
   /**
+   * Stato dei demoni del manager. Un demone fermo è la causa più comune di
+   * "Wazuh non registra più". Verificato contro l'API reale (192.168.4.19):
+   * la risposta è un unico oggetto { "wazuh-analysisd": "running", ... }
+   * dentro affected_items[0], come documentato per tutta l'API Wazuh.
+   */
+  async getManagerStatus(): Promise<Array<{ name: string; status: string }>> {
+    try {
+      const data = await this.getJson<{ data?: { affected_items?: Array<Record<string, string>> } }>(
+        "/manager/status",
+      );
+      const items = data?.data?.affected_items ?? [];
+      const primo = items[0] ?? {};
+      return Object.entries(primo).map(([name, status]) => ({ name, status: String(status) }));
+    } catch (e) {
+      // 404 → versione senza questo endpoint: nessun demone da segnalare.
+      if (e instanceof Error && /HTTP 404\b/.test(e.message)) return [];
+      throw e;
+    }
+  }
+
+  /**
+   * Statistiche di ingestione dell'analysisd: eventi scartati e riempimento
+   * massimo delle code. Verificato contro l'API reale (192.168.4.19):
+   * affected_items[0] è un oggetto piatto con `events_dropped` (numero) e N
+   * campi `*_queue_usage` (percentuale 0-100 per singola coda, non un unico
+   * aggregato) — si prende il massimo fra questi come "riempimento code".
+   * `null` su 404 (versioni che non espongono l'endpoint).
+   */
+  async getAnalysisdStats(): Promise<{ eventsDropped: number; queueUsage: number } | null> {
+    try {
+      const data = await this.getJson<{ data?: { affected_items?: Array<Record<string, unknown>> } }>(
+        "/manager/stats/analysisd",
+      );
+      const stats = data?.data?.affected_items?.[0];
+      if (!stats) return null;
+      const eventsDropped = typeof stats.events_dropped === "number" ? stats.events_dropped : 0;
+      let queueUsage = 0;
+      for (const [key, value] of Object.entries(stats)) {
+        if (key.endsWith("_queue_usage") && typeof value === "number" && value > queueUsage) {
+          queueUsage = value;
+        }
+      }
+      return { eventsDropped, queueUsage };
+    } catch (e) {
+      if (e instanceof Error && /HTTP 404\b/.test(e.message)) return null;
+      throw e;
+    }
+  }
+
+  /**
    * NOTA: in Wazuh ≥ 4.8 l'endpoint /vulnerability è stato rimosso dal manager
    * API. I dati CVE vivono ora nell'indexer (OpenSearch) sull'indice
    * `wazuh-states-vulnerabilities-*` e richiedono un utente OpenSearch separato.

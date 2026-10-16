@@ -3,7 +3,8 @@
  *
  *  GET    — ritorna config attuale o null
  *  POST   — crea/sostituisce (409 se esiste già senza ?replace=1)
- *  DELETE — rimuove e azzera findings collegate via cascade
+ *  DELETE — rimuove lo scanner: findings e storico delle scansioni se ne vanno
+ *           a cascata (ON DELETE CASCADE), e la UI lo dice nella conferma
  *
  * Vincolo 1:1: applicato a livello applicativo. Schema DB consente più
  * righe ma la POST rifiuta. Per cambiare token: DELETE → POST.
@@ -16,6 +17,7 @@ import { withTenantFromSession } from "@/lib/api-tenant";
 import { getTenantDb, getCurrentTenantCode } from "@/lib/db-tenant";
 import { encrypt } from "@/lib/crypto";
 import { validateBaseUrl } from "@/lib/vuln/scanner-edge-client";
+import { removeEdgeScanner } from "@/lib/vuln/edge-scanner-db";
 import { reloadTenantScheduler } from "@/lib/cron/scheduler";
 
 const PostSchema = z.object({
@@ -112,21 +114,39 @@ export async function POST(req: Request) {
         { status: 409 },
       );
     }
-    if (existing) {
-      db.prepare("DELETE FROM vuln_scanners WHERE id = ?").run(existing.id);
-    }
     const enc = encrypt(parsed.data.token);
-    db.prepare(
-      `INSERT INTO vuln_scanners
-         (name, base_url, token_encrypted, enabled, cert_pin, cert_fingerprint)
-       VALUES (?, ?, ?, 1, ?, ?)`,
-    ).run(
-      parsed.data.name,
-      parsed.data.base_url.replace(/\/$/, ""),
-      enc,
-      parsed.data.cert_pin ?? null,
-      parsed.data.cert_fingerprint ?? null,
-    );
+    const cleanUrl = parsed.data.base_url.replace(/\/$/, "");
+    if (existing) {
+      // COR-05: UPDATE in-place invece di DELETE+INSERT. Il DELETE del singleton
+      // farebbe scattare ON DELETE CASCADE su vuln_scan_runs/vuln_findings,
+      // cancellando tutto lo storico auditabile; mantenendo lo stesso id le FK
+      // restano valide e lo storico è preservato.
+      db.prepare(
+        `UPDATE vuln_scanners
+           SET name = ?, base_url = ?, token_encrypted = ?, enabled = 1,
+               cert_pin = ?, cert_fingerprint = ?
+         WHERE id = ?`,
+      ).run(
+        parsed.data.name,
+        cleanUrl,
+        enc,
+        parsed.data.cert_pin ?? null,
+        parsed.data.cert_fingerprint ?? null,
+        existing.id,
+      );
+    } else {
+      db.prepare(
+        `INSERT INTO vuln_scanners
+           (name, base_url, token_encrypted, enabled, cert_pin, cert_fingerprint)
+         VALUES (?, ?, ?, 1, ?, ?)`,
+      ).run(
+        parsed.data.name,
+        cleanUrl,
+        enc,
+        parsed.data.cert_pin ?? null,
+        parsed.data.cert_fingerprint ?? null,
+      );
+    }
 
     // Registra il job vuln_sync se non esiste (30 min default).
     const existingJob = db
@@ -185,11 +205,9 @@ export async function DELETE() {
   if (session instanceof NextResponse) return session;
   return await withTenantFromSession(() => {
     const code = getCurrentTenantCode() ?? "DEFAULT";
-    const db = getTenantDb(code);
-    db.prepare("DELETE FROM vuln_scanners").run();
-    db.prepare(
-      "DELETE FROM scheduled_jobs WHERE job_type = 'vuln_sync' AND network_id IS NULL",
-    ).run();
+    // Cancella a cascata anche findings e storico delle scansioni: la
+    // conferma in UI lo dice (MOD-19). Vedi removeEdgeScanner.
+    removeEdgeScanner(getTenantDb(code));
     reloadTenantScheduler(code);
     return NextResponse.json({ ok: true });
   });

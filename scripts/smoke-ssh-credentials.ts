@@ -6,7 +6,10 @@
  * Esegue, per ogni tenant DB sotto `data/tenants/*.db`:
  *   1. Per ogni credenziale di tipo `ssh`/`linux`: nessun test puro (serve un host).
  *   2. Per ogni `device_credential_bindings` con `protocol_type='ssh'`: prova la
- *      connessione + comando innocuo (`true`) verso il device.
+ *      connessione + comando innocuo (`true`) verso il device. Il segreto si legge
+ *      dall'archivio (`leggiSegretoDb`, password o chiave SSH), come il motore:
+ *      dalla 2e (tappa 2 credenziali, T20) un binding inline rimasto è un apparato
+ *      che la conversione ha lasciato, e si segnala senza provarlo.
  *   3. Per ogni `host_credentials` con `protocol_type='ssh'`: stessa cosa verso host.
  *   4. Aggiorna `test_status`/`test_message`/`tested_at` nel binding con il
  *      messaggio parlante di `mapSshError`.
@@ -35,7 +38,15 @@ async function main() {
   const ciMode = args.includes("--ci");
 
   const { sshTryConnect } = await import("../src/lib/devices/ssh-transport");
-  const { safeDecrypt } = await import("../src/lib/crypto");
+  const { leggiSegretoDb, opzioniSsh } = await import("../src/lib/credentials/segreti");
+
+  /** Accesso SSH dalla voce d'archivio (password o chiave), o il motivo per cui non c'è. */
+  const accessoDaVoce = (db: Database.Database, credentialId: number) => {
+    const e = leggiSegretoDb(db, credentialId, "ssh");
+    if (!e.ok) return { accesso: null, motivo: e.motivo };
+    const accesso = opzioniSsh(e.segreto);
+    return accesso ? { accesso, motivo: null } : { accesso: null, motivo: "la voce non è utente e password né chiave SSH" };
+  };
 
   const tenantsDir = path.join(process.cwd(), "data", "tenants");
   if (!fs.existsSync(tenantsDir)) {
@@ -67,10 +78,8 @@ async function main() {
     const deviceBindings = db
       .prepare(
         `SELECT b.id AS binding_id, b.device_id, b.credential_id, b.port,
-                b.inline_username, b.inline_encrypted_password,
                 d.name AS device_name, d.host AS device_host, d.vendor,
-                c.name AS cred_name, c.credential_type,
-                c.encrypted_username, c.encrypted_password
+                c.name AS cred_name, c.credential_type
            FROM device_credential_bindings b
            JOIN network_devices d ON d.id = b.device_id
            LEFT JOIN credentials c ON c.id = b.credential_id
@@ -81,15 +90,11 @@ async function main() {
         device_id: number;
         credential_id: number | null;
         port: number;
-        inline_username: string | null;
-        inline_encrypted_password: string | null;
         device_name: string;
         device_host: string;
         vendor: string;
         cred_name: string | null;
         credential_type: string | null;
-        encrypted_username: string | null;
-        encrypted_password: string | null;
       }>;
 
     if (deviceBindings.length === 0) {
@@ -109,17 +114,9 @@ async function main() {
       console.log("  " + "".padEnd(140, "-"));
 
       for (const b of deviceBindings) {
-        let username: string | null = null;
-        let password: string | null = null;
-        if (b.credential_id) {
-          username = b.encrypted_username ? safeDecrypt(b.encrypted_username) : null;
-          password = b.encrypted_password ? safeDecrypt(b.encrypted_password) : null;
-        } else if (b.inline_username && b.inline_encrypted_password) {
-          username = b.inline_username;
-          password = safeDecrypt(b.inline_encrypted_password);
-        }
         const credLabel = b.cred_name ?? "inline";
-        if (!username || !password) {
+        const letto = b.credential_id ? accessoDaVoce(db, b.credential_id) : { accesso: null, motivo: "binding inline: apparato lasciato dalla conversione 2e" };
+        if (!letto.accesso) {
           console.log(
             "  " +
               String(b.binding_id).padEnd(5) +
@@ -127,15 +124,15 @@ async function main() {
               `${b.device_host}:${b.port}`.padEnd(24) +
               credLabel.slice(0, 20).padEnd(22) +
               "—".padEnd(14) +
-              "⚠ credenziale corrotta/mancante"
+              `⚠ ${letto.motivo}`
           );
           continue;
         }
+        const username = letto.accesso.username;
         const result = await sshTryConnect({
           host: b.device_host,
           port: b.port,
-          username,
-          password,
+          ...letto.accesso,
           timeout: 12000,
           credentialName: credLabel,
         });
@@ -169,7 +166,7 @@ async function main() {
     const hostBindings = db
       .prepare(
         `SELECT h.id AS host_id, h.ip, hc.id AS hc_id, hc.credential_id, hc.port,
-                c.name AS cred_name, c.encrypted_username, c.encrypted_password
+                c.name AS cred_name
            FROM host_credentials hc
            JOIN hosts h ON h.id = hc.host_id
            JOIN credentials c ON c.id = hc.credential_id
@@ -182,20 +179,16 @@ async function main() {
         credential_id: number;
         port: number;
         cred_name: string;
-        encrypted_username: string | null;
-        encrypted_password: string | null;
       }>;
     if (hostBindings.length > 0) {
       console.log(`\n  Host bindings SSH: ${hostBindings.length}`);
       for (const h of hostBindings) {
-        const username = h.encrypted_username ? safeDecrypt(h.encrypted_username) : null;
-        const password = h.encrypted_password ? safeDecrypt(h.encrypted_password) : null;
-        if (!username || !password) continue;
+        const { accesso } = accessoDaVoce(db, h.credential_id);
+        if (!accesso) continue;
         const result = await sshTryConnect({
           host: h.ip,
           port: h.port,
-          username,
-          password,
+          ...accesso,
           timeout: 12000,
           credentialName: h.cred_name,
         });

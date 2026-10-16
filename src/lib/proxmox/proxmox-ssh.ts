@@ -3,8 +3,10 @@
  * Alternativa all'API: evita problemi SSL/TLS, usa porta 22 standard.
  */
 
-import { sshExec } from "@/lib/devices/ssh-helper";
+import { sshExec, type SshOptions, type SshResult } from "@/lib/devices/ssh-helper";
+import { segretoSsh } from "@/lib/devices/ssh-transport";
 import type { ProxmoxHostInfo, ProxmoxVM } from "./proxmox-client";
+import { LIVE_INTERFACES_COMMAND, parseLiveOutput, type LiveInterface } from "./live-interfaces";
 
 function bytesToGib(value: number): number {
   return value / (1024 ** 3);
@@ -24,11 +26,18 @@ function secondsToHuman(seconds: number): string {
   return parts.join(" ");
 }
 
+/**
+ * Accesso SSH a un nodo Proxmox: utente più password o chiave privata (tappa 2
+ * credenziali, T14, D6 = (a)). L'API di Proxmox invece vuole la password: con
+ * una voce a chiave la parte API non si prova e chi chiama lo dice.
+ */
 export interface ProxmoxSshConfig {
   host: string;
   port?: number;
   username: string;
-  password: string;
+  password?: string;
+  privateKey?: string;
+  passphrase?: string;
 }
 
 /**
@@ -45,7 +54,7 @@ export async function extractProxmoxViaSsh(
     host,
     port,
     username: config.username,
-    password: config.password,
+    ...segretoSsh(config),
     timeout: 30000,
   };
 
@@ -166,6 +175,28 @@ export async function extractProxmoxViaSsh(
 }
 
 /**
+ * Le schede vive del nodo raggiunto (topologia fase 2b): UN comando SSH in sola
+ * lettura, `LIVE_INTERFACES_COMMAND`. Un errore di trasporto (rete, credenziali)
+ * o un comando che non risponde come ci si aspetta è un errore, mai «nessuna
+ * scheda»: chi chiama tiene le schede lette l'ultima volta. `exec` si passa
+ * nelle prove.
+ */
+export async function readLiveInterfaces(
+  config: ProxmoxSshConfig,
+  exec: (options: SshOptions, command: string) => Promise<SshResult> = sshExec,
+): Promise<LiveInterface[]> {
+  const host = config.host.replace(/^https?:\/\//i, "").split(":")[0];
+  const res = await exec(
+    { host, port: config.port ?? 22, username: config.username, ...segretoSsh(config), timeout: 30000 },
+    LIVE_INTERFACES_COMMAND,
+  );
+  if (res.code !== 0 || !res.stdout.trim()) {
+    throw new Error(`Lettura delle schede vive non riuscita (uscita ${res.code})`);
+  }
+  return parseLiveOutput(res.stdout);
+}
+
+/**
  * Testa connessione SSH a Proxmox (esegue pveversion).
  */
 export async function testProxmoxSsh(config: ProxmoxSshConfig): Promise<boolean> {
@@ -175,7 +206,7 @@ export async function testProxmoxSsh(config: ProxmoxSshConfig): Promise<boolean>
     host,
     port,
     username: config.username,
-    password: config.password,
+    ...segretoSsh(config),
     timeout: 15000,
   };
   try {

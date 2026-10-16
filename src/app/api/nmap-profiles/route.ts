@@ -21,7 +21,7 @@ export async function POST(request: Request) {
     const existing = getNmapProfiles();
     if (existing.length > 0) {
       return NextResponse.json(
-        { error: "È supportato un solo profilo Nmap. Modificalo da Impostazioni → Profilo Nmap." },
+        { error: "È supportato un solo profilo Nmap. Modificalo da Impostazioni → Scansione." },
         { status: 400 }
       );
     }

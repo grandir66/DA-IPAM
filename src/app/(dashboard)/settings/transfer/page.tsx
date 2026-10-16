@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Download, Upload, Database, AlertTriangle } from "lucide-react";
+import { righeConversioni, type RigaConversione } from "@/lib/transfer/esito-import";
 
 const TIER_OPTIONS: { value: string; label: string }[] = [
   { value: "config", label: "Configurazione (reti, impostazioni)" },
@@ -21,7 +22,7 @@ export default function TransferPage() {
   const [tiers, setTiers] = useState<string[]>(["asset", "mirror"]);
   const [includeVault, setIncludeVault] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
+  const [msg, setMsg] = useState<{ text: string; ok: boolean; righe?: RigaConversione[] } | null>(null);
 
   // --- Import state ---
   const [impPass, setImpPass] = useState("");
@@ -94,7 +95,10 @@ export default function TransferPage() {
       const json = await res.json();
       const r = json.result;
       const totalRows = r?.tables ? Object.values(r.tables).reduce<number>((a, b) => a + (b as number), 0) : 0;
-      setMsg({ text: `Import completato: ${totalRows} righe, ${r?.rekeyedSecrets ?? 0} segreti ri-cifrati, ${r?.profilesMerged ?? 0} profili e ${r?.vaultMerged ?? 0} credenziali sistema uniti, ${r?.fkViolations ?? 0} riferimenti orfani preservati.`, ok: true });
+      // Esito delle conversioni rilanciate dall'import (dalla 2c): un parziale o
+      // una voce divisa dopo un'unione si devono vedere, non solo stare nella risposta.
+      const righe = righeConversioni(r?.conversioni);
+      setMsg({ text: `Import completato: ${totalRows} righe, ${r?.rekeyedSecrets ?? 0} segreti ri-cifrati, ${r?.profilesMerged ?? 0} profili e ${r?.vaultMerged ?? 0} credenziali sistema uniti, ${r?.fkViolations ?? 0} riferimenti orfani preservati.`, ok: true, righe });
     } catch (e) {
       setMsg({ text: "Errore di rete: " + (e instanceof Error ? e.message : String(e)), ok: false });
     } finally {
@@ -122,6 +126,9 @@ export default function TransferPage() {
           <CardDescription>
             Genera un file .dab cifrato con i dati del tenant corrente.
             Seleziona i livelli da includere e imposta la passphrase di cifratura.
+            Un&apos;installazione di una versione precedente rifiuta le credenziali di tipo SNMP v3, UniFi,
+            Omada, Active Directory (e annulla tutto l&apos;import) e riceve quelle SSH a chiave senza chiave:
+            importalo in un&apos;installazione aggiornata.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
@@ -275,17 +282,34 @@ export default function TransferPage() {
       </Card>
 
       {/* === Status message === */}
-      {msg && (
-        <div
-          className={`rounded-md border px-4 py-3 text-sm ${
-            msg.ok
-              ? "border-green-500/30 bg-green-50/30 dark:bg-green-950/20 text-green-800 dark:text-green-400"
-              : "border-destructive/30 bg-destructive/5 text-destructive"
-          }`}
-        >
-          {msg.text}
-        </div>
-      )}
+      {msg && (() => {
+        // Una conversione parziale o fallita non è un «tutto bene»: riquadro
+        // ambra (fondo e bordo) e la riga marcata a parole.
+        const daControllare = (msg.righe ?? []).some((r) => r.daControllare);
+        const stile = !msg.ok
+          ? "border-destructive/30 bg-destructive/5 text-destructive"
+          : daControllare
+            ? "border-amber-500/60 bg-amber-50/60 dark:bg-amber-950/30 text-amber-900 dark:text-amber-300"
+            : "border-green-500/30 bg-green-50/30 dark:bg-green-950/20 text-green-800 dark:text-green-400";
+        return (
+          <div className={`rounded-md border px-4 py-3 text-sm ${stile}`}>
+            {msg.text}
+            {msg.righe && msg.righe.length > 0 && (
+              <ul className="mt-2 space-y-1">
+                {msg.righe.map((riga, i) => (
+                  <li key={i} className="flex items-start gap-2">
+                    {riga.daControllare && <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />}
+                    <span>
+                      {riga.daControllare && <span className="font-semibold">Da controllare: </span>}
+                      {riga.testo}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 }

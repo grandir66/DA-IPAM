@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -177,7 +178,7 @@ export default function LicensesPage() {
                       {l.free_seats === 0 && <Badge variant="secondary" className="ml-2">Esaurita</Badge>}
                     </TableCell>
                     <TableCell className="text-muted-foreground">
-                      {l.expiration_date ? new Date(l.expiration_date).toLocaleDateString("it-IT") : "—"}
+                      {l.expiration_date ? parseDbDate(l.expiration_date).toLocaleDateString("it-IT") : "—"}
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-1">

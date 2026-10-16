@@ -9,6 +9,16 @@ import Credentials from "next-auth/providers/credentials";
  */
 export const authConfig: NextAuthConfig = {
   providers: [
+    // Segnaposto per l'Edge runtime, come quello sotto: la `authorize` vera
+    // vive in auth.ts, che qui non può essere importato (usa il database).
+    // Deve però ESISTERE anche qui, o il middleware non riconoscerebbe il
+    // provider e la sessione emessa da «domarc» risulterebbe di nessuno.
+    Credentials({
+      id: "domarc",
+      name: "Account Domarc",
+      credentials: {},
+      authorize: () => null,
+    }),
     Credentials({
       name: "credentials",
       credentials: {
@@ -72,17 +82,17 @@ export const authConfig: NextAuthConfig = {
       const isLoggedIn = !!auth?.user;
       const pathname = nextUrl.pathname;
 
-      // Allow auth API, setup, login, debug test APIs, e installer agent.
+      // Allow auth API, setup, login, e installer agent.
       // `/agent-install.sh` deve essere raggiungibile da macchine senza
       // sessione (l'host del cliente che fa `curl|bash` per provisioning).
+      // NB: `/api/test-snmp` e `/api/test-arp` RIMOSSI dall'allowlist (erano
+      // debug leftover): ora richiedono admin nell'handler (audit SEC-9).
       if (
         pathname.startsWith("/api/auth") ||
         pathname === "/setup" ||
         pathname === "/api/setup" ||
         pathname === "/api/health" ||
         pathname === "/api/version" ||
-        pathname === "/api/test-snmp" ||
-        pathname === "/api/test-arp" ||
         pathname === "/api/inventory/ingest" ||
         pathname.startsWith("/api/integrations/inventory-agent/install/") ||
         pathname === "/agent-install.sh"

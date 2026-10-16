@@ -22,6 +22,8 @@ import { listCredentials } from "@/lib/credentials-vault";
 import { resolveIntegrationBrowserUrl } from "@/lib/integrations/public-url-server";
 import { resolveLibreNMSOperatorUrl } from "@/lib/integrations/librenms-proxy-auth";
 import { getIntegrationConfig } from "@/lib/integrations/config";
+import { listControllerViews } from "@/lib/controllers/service";
+import { withTenant } from "@/lib/db-tenant";
 import { getWazuhConfig } from "@/lib/integrations/wazuh-config";
 import { getNetServicesState } from "@/lib/network-services/feature";
 import { getFeatureStatus } from "@/lib/patch/feature";
@@ -38,9 +40,11 @@ export type ModuleKey =
   | "wazuh"
   | "meshcentral"
   | "inventory_agent"
-  | "nis2_inventory";
+  | "nis2_inventory"
+  | "unifi"
+  | "appliance";
 
-export type ModuleCategory = "va" | "patch" | "network" | "nms" | "logs" | "siem" | "rmm" | "inventory";
+export type ModuleCategory = "va" | "patch" | "network" | "nms" | "logs" | "siem" | "rmm" | "inventory" | "sistema";
 
 export interface ModuleDescriptor {
   key: ModuleKey;
@@ -192,6 +196,32 @@ export const MODULE_DESCRIPTORS: ReadonlyArray<ModuleDescriptor> = [
     access: "native",
     configHref: "/settings?tab=moduli#module-nis2_inventory",
   },
+  {
+    // Fonte di dati, non dashboard: switch e AP del controller del cliente
+    // finiscono in DA-IPAM (apparati, porte, vicini LLDP). La console del
+    // controller resta raggiungibile come interfaccia esterna.
+    key: "unifi",
+    label: "Controller UniFi",
+    category: "network",
+    description:
+      "Switch e access point letti dai controller UniFi in sola lettura: apparati, porte e vicini LLDP nella mappa di rete.",
+    icon: "Network",
+    access: "native",
+    configHref: "/controllers",
+  },
+  {
+    // Non è un'integrazione ma la macchina che le ospita tutte: disco root e
+    // demone Docker. Due appliance si sono fermate sul campo per disco pieno
+    // (cliente A 2026-07-28, PX-NAS 2026-07-30) senza che questa griglia desse
+    // alcun segnale — questa voce esiste per non ripetere quell'incidente.
+    key: "appliance",
+    label: "Sistema appliance",
+    category: "sistema",
+    description: "Salute della macchina che ospita DA-IPAM: spazio disco e demone Docker.",
+    icon: "HardDrive",
+    access: "native",
+    configHref: "/settings?tab=moduli",
+  },
 ];
 
 interface VulnScannerLite {
@@ -206,7 +236,7 @@ interface VulnScannerLite {
  * getCurrentTenantCode). I getter hub (wazuh/integration) sono globali; edge
  * usa il DB tenant esplicito; net_services/patch prendono tenantCode in arg.
  */
-export async function resolveModules(tenantCode: string): Promise<ModuleState[]> {
+export async function resolveModules(tenantCode: string, ruolo: unknown): Promise<ModuleState[]> {
   const desc = (key: ModuleKey): ModuleDescriptor =>
     MODULE_DESCRIPTORS.find((d) => d.key === key)!;
   const creds = listCredentials() as SystemCredentialLite[];
@@ -280,7 +310,8 @@ export async function resolveModules(tenantCode: string): Promise<ModuleState[]>
     const cfg = getIntegrationConfig("librenms");
     const entry = findLaunchpadEntry(creds, "librenms", "LibreNMS");
     const browserUrl = resolveIntegrationBrowserUrl("librenms", cfg.url);
-    const launchUrl = browserUrl ? resolveLibreNMSOperatorUrl(browserUrl) : null;
+    // Accesso automatico solo per chi è almeno admin (T3-26).
+    const launchUrl = browserUrl ? resolveLibreNMSOperatorUrl(browserUrl, ruolo) : null;
     const installed = cfg.mode !== "disabled" || !!entry;
     const configured = cfg.mode !== "disabled" && !!cfg.url;
     out.push({
@@ -382,6 +413,34 @@ export async function resolveModules(tenantCode: string): Promise<ModuleState[]>
       uiUrl: "/services",
       uiIsInternal: true,
       note: enabled ? undefined : "Disattivato. Attivalo da Impostazioni → Moduli.",
+    });
+  }
+
+  // ── unifi: controller di rete del tenant (ADR 0007) — dati nativi (/topology) + console del controller ──
+  {
+    let controllers: ReturnType<typeof listControllerViews> = [];
+    let readError: string | null = null;
+    try {
+      controllers = withTenant(tenantCode, () => listControllerViews());
+    } catch (e) {
+      readError = e instanceof Error ? e.message : String(e);
+    }
+    const on = controllers.filter((c) => c.enabled && c.kind !== "omada");
+    out.push({
+      ...desc("unifi"),
+      installed: controllers.length > 0,
+      configured: on.length > 0,
+      enabled: on.length > 0,
+      uiUrl: "/topology",
+      uiIsInternal: true,
+      externalUiUrl: on[0]?.url ?? null,
+      note: readError
+        ? `Controller non leggibili dal database: ${readError}`
+        : controllers.length === 0
+          ? "Nessun controller. Aggiungilo da Rete → Controller di rete."
+          : on.length === 0
+            ? "Controller presenti ma spenti: accendili da Rete → Controller di rete."
+            : undefined,
     });
   }
 

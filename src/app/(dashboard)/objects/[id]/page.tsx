@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 /**
  * Pagina unificata "Oggetto di rete" — `/objects/[hostId]`.
@@ -25,6 +26,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { ClassificationEvidencePanel } from "@/components/shared/classification-evidence-panel";
 // v0.2.646 audit perf UI9: i dialog modali (Promote/LinkIps/EditDevice) e i
 // componenti grafici pesanti (LatencyChart/UptimeTimeline/LibreNMSGraphs) sono
 // caricati on-demand. Prima erano nel bundle iniziale anche se l'utente non li
@@ -125,8 +127,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
  * Forziamo UTC se manca un marker esplicito.
  */
 function parseUtcDate(s: string): Date {
-  if (/Z$|[+-]\d{2}:?\d{2}$/.test(s)) return new Date(s);
-  return new Date(s.replace(" ", "T") + "Z");
+  if (/Z$|[+-]\d{2}:?\d{2}$/.test(s)) return parseDbDate(s);
+  return parseDbDate(s.replace(" ", "T") + "Z");
 }
 
 function formatDate(iso: string | null | undefined): string {
@@ -1233,6 +1235,7 @@ export default function ObjectDetailPage() {
           const vendor = host.inferred_vendor ?? device?.vendor ?? host.vendor ?? null;
           const osFamily = host.inferred_os_family ?? null;
           return (
+            <>
             <dl className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-2">
               <InfoRow label="Tipologia" value={tipologia} />
               <InfoRow label="Vendor" value={vendor} />
@@ -1246,10 +1249,16 @@ export default function ObjectDetailPage() {
               {host.inferred_at && (
                 <InfoRow
                   label="Auto-classificazione"
-                  value={`${host.inferred_confidence ?? 0}% · ${new Date(host.inferred_at).toLocaleDateString("it-IT")}`}
+                  value={`${host.inferred_confidence ?? 0}% · ${parseDbDate(host.inferred_at).toLocaleDateString("it-IT")}`}
                 />
               )}
             </dl>
+            <ClassificationEvidencePanel
+              reason={host.classification_reason ?? null}
+              confidence={host.inferred_confidence ?? null}
+              classificationJson={host.classification_json ?? null}
+            />
+            </>
           );
         })()}
       </Section>
@@ -1941,7 +1950,7 @@ export default function ObjectDetailPage() {
           <Section icon={<Server className="h-4 w-4" />} title="Proxmox VE"
             badge={px.scanned_at && (
               <span className="ml-2 text-[10px] text-muted-foreground">
-                scan {new Date(px.scanned_at).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                scan {parseDbDate(px.scanned_at).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
               </span>
             )}>
             <Tabs defaultValue="px-host" className="space-y-3">

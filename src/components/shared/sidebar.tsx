@@ -8,6 +8,7 @@ import { TenantSwitcher } from "./tenant-switcher";
 import { useSidebar } from "./sidebar-context";
 import {
   LayoutDashboard,
+  ArrowUpFromLine,
   Network,
   Scan,
   Key,
@@ -27,8 +28,10 @@ import {
   Building2,
   ClipboardList,
   Radar,
+  Router,
   AlertTriangle,
   ShieldAlert,
+  Siren,
   Workflow,
   BookOpen,
   Ban,
@@ -65,7 +68,10 @@ const inventorySubItems: readonly SubItem[] = [
 const networkSubItems: readonly SubItem[] = [
   { href: "/networks", label: "Subnet", icon: Network },
   { href: "/discovery", label: "Discovery", icon: Radar },
+  { href: "/controllers", label: "Controller di rete", icon: Router },
+  { href: "/topology", label: "Topologia", icon: Workflow },
   { href: "/vulnerabilities", label: "Vulnerabilità", icon: ShieldAlert },
+  { href: "/security-alerts", label: "Alert sicurezza", icon: Siren },
   { href: "/software", label: "Software", icon: Package },
   { href: "/active-directory", label: "Active Directory", icon: FolderTree },
   { href: "/credentials", label: "Credenziali", icon: Key },
@@ -272,6 +278,7 @@ export function Sidebar() {
   const { collapsed, toggle } = useSidebar();
   const userRole = (session?.user as { role?: string } | undefined)?.role;
   const isSuperadmin = userRole === "superadmin";
+  const isAdmin = isSuperadmin || userRole === "admin";
   const tenantCode = (session?.user as { tenantCode?: string } | undefined)?.tenantCode;
   const tenants = ((session?.user as Record<string, unknown>)?.tenants ?? []) as Array<{ code: string; name: string }>;
   const currentTenantName = tenantCode === "__ALL__"
@@ -352,7 +359,7 @@ export function Sidebar() {
           alt="Logo"
           className={cn("h-9 mx-auto object-contain", collapsed ? "hidden md:block" : "hidden")}
         />
-        <h1 className={cn("text-xl font-bold text-primary mt-3", collapsed && "md:hidden")}>DA-INVENT</h1>
+        <h1 className={cn("text-xl font-bold text-primary mt-3", collapsed && "md:hidden")}>DA-IPAM</h1>
         <p className={cn("text-xs text-sidebar-foreground/60 mt-0.5", collapsed && "md:hidden")}>IP Address Management</p>
       </div>
 
@@ -465,7 +472,12 @@ export function Sidebar() {
         </div>
 
         {/* Impostazioni (globale) */}
-        <NavItem href="/settings" icon={Settings} label="Impostazioni" active={pathname.startsWith("/settings")} collapsed={collapsed} onNavigate={closeMobile} />
+        <NavItem href="/settings" icon={Settings} label="Impostazioni" active={pathname.startsWith("/settings") && !pathname.startsWith("/settings/cosa-esce")} collapsed={collapsed} onNavigate={closeMobile} />
+
+        {/* Cosa esce verso Domarc (DA-Link, tappa C1): solo gli amministratori dell'istanza */}
+        {isAdmin && (
+          <NavItem href="/settings/cosa-esce" icon={ArrowUpFromLine} label="Cosa esce" active={pathname.startsWith("/settings/cosa-esce")} collapsed={collapsed} onNavigate={closeMobile} />
+        )}
 
       </nav>
 

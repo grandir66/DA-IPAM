@@ -17,6 +17,8 @@ let lastMintOpts: unknown = null;
 // DI fakes (no mock.module — unsupported under Node22+tsx). Real audit writer so
 // we can assert the persisted row really omits the token.
 const deps: RemoteSessionDeps = {
+  // Modulo attivo: il caso spento sta in disinstallato.test.ts (SEC-18).
+  meshAttivo: () => true,
   getMeshCreds: () => ({
     serverUrl: "https://appliance.example/",
     domain: "mesh",

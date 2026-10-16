@@ -1,4 +1,8 @@
 "use client";
+import { useLatestRequest } from "@/hooks/use-latest-request";
+import { parseDbDate } from "@/lib/db-date";
+import { fetchJson } from "@/lib/fetch-json";
+import { LoadError } from "@/components/shared/load-error";
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
@@ -85,10 +89,19 @@ function emptyBulkForm(): BulkEditForm {
   };
 }
 
+// Righe chieste all'API: con «Solo con gap» il filtro si applica sulle righe
+// caricate, quindi si chiede il massimo che l'API concede (1000).
+const INVENTORY_LIMIT = 200;
+const INVENTORY_LIMIT_GAPS = 1000;
+
+type InventoryRow = InventoryAsset & { network_device_name?: string; host_ip?: string; assignee_name?: string };
+
 export default function InventoryPage() {
   const { viewMode, setViewMode, isNis2View, hydrated } = useInventoryViewMode();
-  const [assets, setAssets] = useState<(InventoryAsset & { network_device_name?: string; host_ip?: string; assignee_name?: string })[]>([]);
+  const [assets, setAssets] = useState<InventoryRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [truncated, setTruncated] = useState(false);
   const [q, setQ] = useState("");
   const [categoria, setCategoria] = useState<string>("");
   const [stato, setStato] = useState<string>("");
@@ -106,7 +119,10 @@ export default function InventoryPage() {
   const [bulkSyncing, setBulkSyncing] = useState(false);
   const [bulkForm, setBulkForm] = useState<BulkEditForm>(emptyBulkForm);
 
+  const nextSignal = useLatestRequest();
+
   const fetchAssets = useCallback(async () => {
+    const signal = nextSignal();
     setLoading(true);
     try {
       const params = new URLSearchParams();
@@ -114,17 +130,30 @@ export default function InventoryPage() {
       if (categoria) params.set("categoria", categoria);
       if (stato) params.set("stato", stato);
       if (scopeNis2) params.set("in_scope_nis2", scopeNis2);
-      params.set("limit", "200");
-      const res = await fetch(`/api/inventory?${params}`, { cache: "no-store" });
-      if (res.ok) setAssets(await res.json());
-      else setAssets([]);
-    } catch {
-      setAssets([]);
+      const limit = onlyWithGaps ? INVENTORY_LIMIT_GAPS : INVENTORY_LIMIT;
+      // Una riga in più per sapere se la lista è troncata.
+      params.set("limit", String(Math.min(limit + 1, INVENTORY_LIMIT_GAPS)));
+      // Un 401/500 non è «inventario vuoto» (UI-7): si mostra l'errore.
+      const r = await fetchJson<InventoryRow[]>(`/api/inventory?${params}`, { cache: "no-store", signal });
+      if (signal.aborted) return;
+      if (r.ok) {
+        const rows = Array.isArray(r.data) ? r.data : [];
+        setAssets(rows.slice(0, limit));
+        setTruncated(rows.length > limit || (onlyWithGaps && rows.length >= INVENTORY_LIMIT_GAPS));
+        setError(null);
+      } else {
+        setError(r.message);
+      }
+    } catch (e) {
+      if (signal.aborted) return;
+      throw e;
     } finally {
-      setLoading(false);
-      setSelectedIds(new Set());
+      if (!signal.aborted) {
+        setLoading(false);
+        setSelectedIds(new Set());
+      }
     }
-  }, [q, categoria, stato, scopeNis2]);
+  }, [q, categoria, stato, scopeNis2, onlyWithGaps, nextSignal]);
 
   const fetchGaps = useCallback(async () => {
     try {
@@ -145,7 +174,10 @@ export default function InventoryPage() {
     fetchGaps();
   }, [fetchGaps, assets.length]);
 
-  const formatDate = (d: string | null) => d ? new Date(d).toLocaleDateString("it-IT") : "—";
+  const visibleAssets = onlyWithGaps ? assets.filter((a) => gapAssetIds.has(a.id)) : assets;
+  const shownLimit = onlyWithGaps ? INVENTORY_LIMIT_GAPS : INVENTORY_LIMIT;
+
+  const formatDate = (d: string | null) => d ? parseDbDate(d).toLocaleDateString("it-IT") : "—";
 
   // ─── Selezione helpers ────────────────────────────────
   function toggleSelect(id: number) {
@@ -183,10 +215,10 @@ export default function InventoryPage() {
   }
 
   function toggleSelectAll() {
-    if (selectedIds.size === assets.length) {
+    if (selectedIds.size === visibleAssets.length) {
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(assets.map((a) => a.id)));
+      setSelectedIds(new Set(visibleAssets.map((a) => a.id)));
     }
   }
 
@@ -449,11 +481,20 @@ export default function InventoryPage() {
             </div>
           )}
 
+          {!loading && !error && truncated && (
+            <p className="pb-3 text-sm text-amber-700 dark:text-amber-400">
+              Sono mostrati i primi {shownLimit} asset: restringi con la ricerca o i filtri per vedere gli altri.
+            </p>
+          )}
           {loading ? (
             <div className="py-12 text-center text-muted-foreground">Caricamento...</div>
-          ) : assets.length === 0 ? (
+          ) : error ? (
+            <LoadError what="l'inventario" message={error} onRetry={() => void fetchAssets()} />
+          ) : visibleAssets.length === 0 ? (
             <div className="py-12 text-center text-muted-foreground">
-              Nessun asset in inventario. Collega un asset da una scheda device o host.
+              {assets.length === 0
+                ? "Nessun asset in inventario. Collega un asset da una scheda device o host."
+                : "Nessun asset con gap NIS2 fra quelli caricati."}
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -462,7 +503,7 @@ export default function InventoryPage() {
                   <TableRow>
                     <TableHead className="w-10">
                       <Checkbox
-                        checked={assets.length > 0 && selectedIds.size === assets.length}
+                        checked={visibleAssets.length > 0 && selectedIds.size === visibleAssets.length}
                         onCheckedChange={toggleSelectAll}
                       />
                     </TableHead>
@@ -492,7 +533,7 @@ export default function InventoryPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {(onlyWithGaps ? assets.filter((a) => gapAssetIds.has(a.id)) : assets).map((a) => (
+                  {visibleAssets.map((a) => (
                     <TableRow key={a.id} className={selectedIds.has(a.id) ? "bg-primary/5" : undefined}>
                       <TableCell>
                         <Checkbox

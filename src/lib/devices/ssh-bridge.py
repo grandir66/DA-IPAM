@@ -51,7 +51,7 @@ def main() -> None:
         _err(
             "Modulo Python paramiko assente: "
             + str(e)
-            + ". Sul server DA-INVENT: python3 -m venv ~/.da-invent-venv && "
+            + ". Sul server DA-IPAM: python3 -m venv ~/.da-invent-venv && "
             "~/.da-invent-venv/bin/pip install paramiko"
         )
         return

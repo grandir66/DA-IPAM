@@ -99,20 +99,31 @@ npm install --include=dev
 # Venv Python WinRM/WMI/SSH (script canonico condiviso con install.sh)
 if [ -f "$APP_DIR/scripts/setup-winrm-venv.sh" ]; then
   echo ">>> setup-winrm-venv..."
-  bash "$APP_DIR/scripts/setup-winrm-venv.sh"
+  # WinRM è una funzione facoltativa: un suo guasto non deve fermare l'aggiornamento.
+  # Sul cliente A un venv senza pip ha bloccato build e restart per mesi (2026-10-12).
+  bash "$APP_DIR/scripts/setup-winrm-venv.sh" || \
+    echo "AVVISO: setup-winrm-venv fallito — WinRM non disponibile, l'aggiornamento prosegue." >&2
 fi
 
 # Build
 echo ">>> npm run build..."
 npm run build
 
+# Nome del servizio: da-invent sulle installazioni classiche, da-ipam sulle
+# appliance consolidate. Prima si cercava solo da-invent: sul cliente A (da-ipam) il
+# restart veniva saltato e la build nuova non partiva mai (2026-10-12).
+SERVICE="da-invent"
+for s in da-invent da-ipam; do
+  if systemctl is-active --quiet "$s" 2>/dev/null; then SERVICE="$s"; break; fi
+done
+
 # Restart servizio systemd (se richiesto)
 # In LXC Debian minimale spesso non c'è `sudo`; come root usare systemctl diretto.
 restart_service() {
   if [ "$(id -u)" -eq 0 ]; then
-    systemctl restart da-invent
+    systemctl restart "$SERVICE"
   elif command -v sudo >/dev/null 2>&1; then
-    sudo systemctl restart da-invent
+    sudo systemctl restart "$SERVICE"
   else
     echo "Errore: servizio da riavviare ma né root né sudo disponibili."
     return 1
@@ -120,24 +131,34 @@ restart_service() {
 }
 
 if [ "$RESTART" = true ]; then
-  if systemctl is-active --quiet da-invent 2>/dev/null; then
-    echo ">>> systemctl restart da-invent..."
+  if systemctl is-active --quiet "$SERVICE" 2>/dev/null; then
+    echo ">>> systemctl restart $SERVICE..."
     restart_service
     echo "    Servizio riavviato."
   else
-    echo ">>> Servizio da-invent non attivo, skip restart."
+    echo ">>> Servizio $SERVICE non attivo, skip restart."
   fi
 fi
 
 if [ -f "$APP_DIR/scripts/verify-install.sh" ]; then
   echo ">>> verify-install..."
   VERIFY_ARGS=()
-  if systemctl is-active --quiet da-invent 2>/dev/null; then
+  if systemctl is-active --quiet "$SERVICE" 2>/dev/null; then
     PORT="$(grep -E '^PORT=' "$APP_DIR/.env.local" 2>/dev/null | cut -d= -f2- | tr -d '"' || true)"
     VERIFY_ARGS=(--url "http://127.0.0.1:${PORT:-3001}")
+    # Il servizio appena riavviato impiega qualche secondo ad ascoltare: senza
+    # attesa verify-install falliva sempre, con un avviso che rimandava a WinRM
+    # (cliente A, 2026-10-12). Si aspetta fino a 60 s una risposta qualsiasi, http o https.
+    for _ in $(seq 1 30); do
+      if curl -s -o /dev/null --max-time 2 "http://127.0.0.1:${PORT:-3001}/api/health" \
+        || curl -sk -o /dev/null --max-time 2 "https://127.0.0.1:${PORT:-3001}/api/health"; then
+        break
+      fi
+      sleep 2
+    done
   fi
   bash "$APP_DIR/scripts/verify-install.sh" "${VERIFY_ARGS[@]}" || {
-    echo "AVVISO: verify-install fallito — controllare scripts/setup-winrm-venv.sh" >&2
+    echo "AVVISO: verify-install fallito (dettagli sopra)" >&2
   }
 fi
 

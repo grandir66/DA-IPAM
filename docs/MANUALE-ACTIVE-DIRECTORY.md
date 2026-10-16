@@ -4,7 +4,7 @@
 >
 > Questo manuale copre la configurazione lato **Domain Controller** necessaria per consentire a DA-IPAM di estrarre informazioni da Active Directory (utenti, computer, gruppi, organizational unit) e dal server DHCP eventualmente co-installato sul DC.
 >
-> **Incident reali coperti**: DC DTS.local con LDAPS signing forzato (richiesto fix lato DC); DC 2R con DHCP installato dove il sync DA-IPAM non riusciva a leggere i lease.
+> **Incident reali coperti**: DC cliente-a.local con LDAPS signing forzato (richiesto fix lato DC); DC 2R con DHCP installato dove il sync DA-IPAM non riusciva a leggere i lease.
 
 ---
 
@@ -149,7 +149,7 @@ $rootStore.Close()
 Restart-Service NTDS -Force
 ```
 
-> ⚠ **Caveat noto** (incident DTS.local): il cert deve essere SIA in `My` (Personal\Computer) SIA in `Root` (Trusted Root) del DC stesso, altrimenti NTDS lo carica ma il bind LDAPS lo rifiuta come untrusted. Vedi memoria `reference_da_ipam_ldaps_client_dc`.
+> ⚠ **Caveat noto** (incident cliente-a.local): il cert deve essere SIA in `My` (Personal\Computer) SIA in `Root` (Trusted Root) del DC stesso, altrimenti NTDS lo carica ma il bind LDAPS lo rifiuta come untrusted. Vedi memoria `reference_da_ipam_ldaps_client_dc`.
 
 ### 3.4 Distribuzione del cert al DA-IPAM appliance
 
@@ -455,7 +455,7 @@ Add-LocalGroupMember -Group "Administrators" -Member "DOMINIO\svc-ipam"
 
 ## Appendice B: incident reali documentati
 
-- **DTS.local DC** — LDAPS rifiutato da DA-IPAM con "channel binding". Causa: cert non in `Trusted Root` del DC. Fix: §3.3 (My + Root + restart NTDS). Vedi memoria `reference_da_ipam_ldaps_client_dc`.
+- **cliente-a.local DC** — LDAPS rifiutato da DA-IPAM con "channel binding". Causa: cert non in `Trusted Root` del DC. Fix: §3.3 (My + Root + restart NTDS). Vedi memoria `reference_da_ipam_ldaps_client_dc`.
 - **2R DC con DHCP co-installato** — Sync DHCP ritornava 0 scope. Da diagnosticare con checklist §4.4.
 
 **Manutenzione**: ogni nuovo incident sul campo va documentato qui + salvato in memoria persistente del progetto.

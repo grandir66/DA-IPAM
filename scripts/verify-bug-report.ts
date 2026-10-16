@@ -168,10 +168,14 @@ function verifyH10() {
     }
   }
   walkDir(path.join(ROOT, "src"));
-  record("H10", "db-legacy.ts dead code (zero imports)", imports === 0 ? "CONFIRMED" : "REJECTED", {
-    filesImportingDbLegacy: imports,
-    dbLegacyExists: fs.existsSync("src/lib/db-legacy.ts"),
-  });
+  // db-legacy.ts rimosso in v0.3.151 (ADR 0001): se il file non esiste, il problema è risolto.
+  const dbLegacyExists = fs.existsSync(path.join(ROOT, "src/lib/db-legacy.ts"));
+  record(
+    "H10",
+    "db-legacy.ts dead code (zero imports)",
+    !dbLegacyExists ? "REJECTED" : imports === 0 ? "CONFIRMED" : "REJECTED",
+    { filesImportingDbLegacy: imports, dbLegacyExists },
+  );
 }
 
 // H11: nmap target injection in agent

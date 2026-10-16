@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 import { useEffect, useState } from "react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -48,14 +49,14 @@ export function UptimeTimeline({ hostId }: { hostId: number }) {
             <TooltipContent side="top" className="text-xs">
               <p className="font-medium capitalize">{entry.status}</p>
               <p className="text-muted-foreground">
-                {new Date(entry.checked_at).toLocaleString("it-IT")}
+                {parseDbDate(entry.checked_at).toLocaleString("it-IT")}
               </p>
             </TooltipContent>
           </Tooltip>
         ))}
       </div>
       <div className="flex justify-between mt-1 text-[10px] text-muted-foreground">
-        <span>{reversed.length > 0 ? new Date(reversed[0].checked_at).toLocaleDateString("it-IT") : ""}</span>
+        <span>{reversed.length > 0 ? parseDbDate(reversed[0].checked_at).toLocaleDateString("it-IT") : ""}</span>
         <span>Adesso</span>
       </div>
     </div>

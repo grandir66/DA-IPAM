@@ -9,10 +9,14 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { Play, Square, RotateCcw, Trash2, CheckCircle2, XCircle, Loader2, ExternalLink, Wifi, WifiOff, RefreshCw, Eye, EyeOff, Terminal } from "lucide-react";
-import type { IntegrationComponent, IntegrationMode, ComponentConfig, InstallJob, ContainerStatus } from "@/lib/integrations/types";
+import type { ContainerIntegrationComponent, IntegrationMode, ComponentConfig, InstallJob, ContainerStatus } from "@/lib/integrations/types";
+import { containerRemovalConfirmText } from "@/lib/modules/uninstall-copy";
+import type { ConfigIntegrazioneVista } from "@/lib/permessi/politica";
+import { vistaScheda } from "@/lib/integrations/scheda-integrazione";
 
 interface Props {
-  component: IntegrationComponent;
+  /** Solo i componenti installati come container: UniFi ha la sua pagina (Controller di rete). */
+  component: ContainerIntegrationComponent;
   title: string;
   description: string;
   dockerAvailable: boolean;
@@ -21,9 +25,12 @@ interface Props {
 }
 
 interface ApiState {
-  config: ComponentConfig;
+  /** Per chi non è admin i segreti arrivano vuoti, con i flag «impostato». */
+  config: ConfigIntegrazioneVista;
   containerStatus: ContainerStatus | null;
   browserUrl?: string;
+  /** LibreNMS messo in Docker dall'installatore dell'appliance (contenitore appliance-librenms). */
+  installatoDallAppliance?: boolean;
 }
 
 export function IntegrationCard({ component, title, description, dockerAvailable, showSyncButton }: Props) {
@@ -128,8 +135,13 @@ export function IntegrationCard({ component, title, description, dockerAvailable
   };
 
   const handleAction = async (action: "start" | "stop" | "restart" | "remove" | "remove-all") => {
-    if (action === "remove" && !confirm(`Rimuovere il container Docker di ${title}?`)) return;
-    if (action === "remove-all" && !confirm(`Eliminare tutti i container Docker di ${title} (incluse dipendenze come database e cache)? I dati non saranno conservati.`)) return;
+    // MOD-19: la conferma dice cosa si perde (testi in lib/modules/uninstall-copy).
+    if (
+      (action === "remove" || action === "remove-all") &&
+      !confirm(containerRemovalConfirmText(component, title, action))
+    ) {
+      return;
+    }
     try {
       const res = await fetch(`/api/integrations/${component}/action`, {
         method: "POST",
@@ -238,8 +250,18 @@ export function IntegrationCard({ component, title, description, dockerAvailable
 
   const containerRunning = state?.containerStatus?.running ?? false;
   const isManaged = localConfig.mode === "managed";
+  // Il valore c'è per l'admin; per chi non lo vede resta il flag «impostato».
+  const apiTokenImpostato = !!localConfig.apiToken || !!state?.config.apiTokenSet;
+  const adminPasswordImpostata = !!localConfig.adminPassword || !!state?.config.adminPasswordSet;
   const isExternal = localConfig.mode === "external";
   const isDisabled = localConfig.mode === "disabled";
+  const vista = vistaScheda({
+    dallAppliance: state?.installatoDallAppliance === true,
+    dockerAvailable,
+    managed: isManaged,
+    installing,
+    containerRunning,
+  });
 
   if (loading) {
     return (
@@ -274,7 +296,7 @@ export function IntegrationCard({ component, title, description, dockerAvailable
             {isManaged && !containerRunning && state?.containerStatus !== null && (
               <Badge variant="secondary">Fermo</Badge>
             )}
-            {isExternal && <Badge variant="outline">Esterno</Badge>}
+            {isExternal && <Badge variant="outline">{vista.badgeEsterno}</Badge>}
             {isDisabled && <Badge variant="secondary">Disabilitato</Badge>}
           </div>
         </div>
@@ -294,10 +316,10 @@ export function IntegrationCard({ component, title, description, dockerAvailable
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="disabled">Disabilitato</SelectItem>
-                <SelectItem value="managed" disabled={!dockerAvailable}>
-                  Docker locale{!dockerAvailable ? " (Docker non disponibile)" : ""}
+                <SelectItem value="managed" disabled={!vista.dockerLocaleSelezionabile}>
+                  Docker locale{vista.notaDockerLocale}
                 </SelectItem>
-                <SelectItem value="external">Istanza esterna</SelectItem>
+                <SelectItem value="external">{vista.etichettaEsterna}</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -351,7 +373,7 @@ export function IntegrationCard({ component, title, description, dockerAvailable
                   onChange={(e) => setLocalConfig((c) => ({ ...c, apiToken: e.target.value }))}
                 />
               </div>
-            ) : isManaged && localConfig.apiToken ? (
+            ) : isManaged && apiTokenImpostato ? (
               <div className="flex items-center gap-2 text-xs text-green-600 dark:text-green-400">
                 <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
                 API token configurato automaticamente
@@ -394,7 +416,7 @@ export function IntegrationCard({ component, title, description, dockerAvailable
             )}
 
             {/* URL di accesso per il prossimo install (managed, librenms/graylog) */}
-            {isManaged && !containerRunning && !localConfig.apiToken && (component === "librenms" || component === "graylog") && (
+            {isManaged && !containerRunning && !apiTokenImpostato && (component === "librenms" || component === "graylog") && (
               <div>
                 <Label className="text-xs text-muted-foreground">
                   URL di accesso <span className="text-muted-foreground/60">(rilevato automaticamente se vuoto)</span>
@@ -413,9 +435,9 @@ export function IntegrationCard({ component, title, description, dockerAvailable
               <div>
                 <Label className="text-xs text-muted-foreground">
                   Password admin — prossimo install
-                  {localConfig.adminPassword && (
+                  {adminPasswordImpostata && (
                     <span className="ml-2 text-green-600 dark:text-green-400">
-                      (attuale: {localConfig.adminPassword})
+                      {localConfig.adminPassword ? `(attuale: ${localConfig.adminPassword})` : "(impostata)"}
                     </span>
                   )}
                 </Label>
@@ -424,7 +446,7 @@ export function IntegrationCard({ component, title, description, dockerAvailable
                     type={showAdminPassword ? "text" : "password"}
                     value={installAdminPassword}
                     onChange={(e) => setInstallAdminPassword(e.target.value)}
-                    placeholder="min. 6 caratteri"
+                    placeholder="vuota = generata (min. 6 caratteri)"
                     className="pr-8"
                   />
                   <button
@@ -513,7 +535,7 @@ export function IntegrationCard({ component, title, description, dockerAvailable
             </>
           )}
 
-          {isManaged && dockerAvailable && !installing && !containerRunning && (
+          {vista.mostraInstalla && (
             <Button size="sm" variant="outline" onClick={handleInstall}>
               Installa / Reinstalla
             </Button>

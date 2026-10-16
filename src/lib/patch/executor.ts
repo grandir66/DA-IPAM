@@ -20,13 +20,18 @@
 
 import type { Database } from "better-sqlite3";
 import { runWinrmCommand } from "@/lib/devices/winrm-run";
-import { getTenantDb, getCurrentTenantCode } from "@/lib/db-tenant";
-import { loadWinrmCredentialsForHost } from "./credentials";
+import { getTenantDb, getCurrentTenantCode, withTenant } from "@/lib/db-tenant";
+import { loadWinrmCredentialsForHost, caricaSshPerHost } from "./credentials";
+import { runSshCommand } from "@/lib/devices/ssh-run";
 import { getMeshCreds } from "@/lib/integrations/meshcentral/config";
+import { buildMeshAgentChocoScript, buildGlpiAgentChocoScript } from "./choco-packages";
+import { getWindowsPushScriptBody } from "@/lib/inventory-agent/install-scripts";
+import { getGlpiClientDownloads } from "@/lib/inventory-agent/client-downloads";
 import {
   buildBootstrapScript,
   buildProbeScript,
   buildUpgradeScript,
+  buildUninstallScript,
   buildWazuhInstallScript,
   buildMeshAgentInstallScript,
   logFilePathForOperation,
@@ -668,6 +673,244 @@ export async function executeMeshAgentInstall(
   return { operationId, status };
 }
 
+/** Esito comune per gli install via pacchetto Chocolatey (EXIT_CODE=0 = ok). */
+function finalizeChocoOp(
+  db: Database,
+  operationId: number,
+  stdout: string,
+  failMsg: string,
+): { operationId: number; status: string } {
+  const exit = parseExitCodeFromOutput(stdout);
+  const ok = exit === 0;
+  updateOperation(db, operationId, {
+    status: ok ? "success" : "failed",
+    exitCode: exit ?? null,
+    finishedAt: nowIso(),
+    errorMessage: ok ? null : tailForError(stdout) || failMsg,
+  });
+  return { operationId, status: ok ? "success" : "failed" };
+}
+
+/** Push WinRM di uno script già costruito, con gestione errori uniforme. */
+async function runChocoPush(
+  db: Database,
+  operationId: number,
+  hostId: number,
+  script: string,
+  failMsg: string,
+): Promise<{ operationId: number; status: string }> {
+  const winrm = loadWinrmCredentialsForHost(db, hostId);
+  if (!winrm) {
+    updateOperation(db, operationId, {
+      status: "failed",
+      finishedAt: nowIso(),
+      errorMessage: "Credenziali WinRM mancanti o non decifrabili per l'host",
+    });
+    return { operationId, status: "failed" };
+  }
+  try {
+    const stdout = await runWinrmCommand(
+      winrm.host,
+      winrm.port,
+      winrm.username,
+      winrm.password,
+      script,
+      true,
+      winrm.realm ?? "",
+    );
+    return finalizeChocoOp(db, operationId, stdout, failMsg);
+  } catch (err) {
+    const message = (err as Error)?.message ?? String(err);
+    updateOperation(db, operationId, {
+      status: "failed",
+      finishedAt: nowIso(),
+      errorMessage: message.slice(0, 2000),
+    });
+    return { operationId, status: "failed" };
+  }
+}
+
+/**
+ * Installa il MeshCentral Agent come PACCHETTO CHOCOLATEY configurato
+ * (`domarc-meshagent`): DA-IPAM genera il pacchetto sull'host (nuspec +
+ * chocolateyInstall che scarica exe+.msh dal server co-locato) e lo installa via
+ * `choco`. Diverso da executeMeshAgentInstall (download diretto): qui il lifecycle
+ * è gestito da Chocolatey (`choco upgrade`/`uninstall domarc-meshagent`).
+ */
+export async function executeMeshAgentChocoInstall(
+  opts: ExecutorOptions,
+): Promise<{ operationId: number; status: string }> {
+  const db = resolveTenantDb(opts.tenantCode);
+  const operationId = createOperation(db, {
+    hostId: opts.hostId,
+    userId: opts.userId,
+    action: "install",
+    packageId: "domarc-meshagent",
+  });
+  updateOperation(db, operationId, {
+    status: "running",
+    startedAt: nowIso(),
+    logFilePath: logFilePathForOperation(operationId),
+  });
+
+  const meshCreds = getMeshCreds();
+  if (!meshCreds) {
+    updateOperation(db, operationId, {
+      status: "failed",
+      finishedAt: nowIso(),
+      errorMessage: "MeshCentral non configurato per il tenant",
+    });
+    return { operationId, status: "failed" };
+  }
+
+  const script = buildMeshAgentChocoScript(operationId, meshCreds.serverUrl, meshCreds.meshId);
+  return runChocoPush(db, operationId, opts.hostId, script, "Install choco MeshAgent fallito");
+}
+
+/**
+ * Installa il GLPI Agent come PACCHETTO CHOCOLATEY configurato
+ * (`domarc-glpi-agent`): MSI silenzioso + task di push inventario verso
+ * l'endpoint ingest di DA-IPAM. `ingestUrl`/`ingestToken` li risolve la route
+ * (che ha il contesto Request per l'URL pubblico).
+ */
+export async function executeGlpiAgentChocoInstall(
+  opts: ExecutorOptions & { ingestUrl: string; ingestToken: string; intervalHours?: number },
+): Promise<{ operationId: number; status: string }> {
+  const db = resolveTenantDb(opts.tenantCode);
+  const operationId = createOperation(db, {
+    hostId: opts.hostId,
+    userId: opts.userId,
+    action: "install",
+    packageId: "domarc-glpi-agent",
+  });
+  updateOperation(db, operationId, {
+    status: "running",
+    startedAt: nowIso(),
+    logFilePath: logFilePathForOperation(operationId),
+  });
+
+  const dl = getGlpiClientDownloads();
+  const msi = dl.windows[0];
+  if (!msi) {
+    updateOperation(db, operationId, {
+      status: "failed",
+      finishedAt: nowIso(),
+      errorMessage: "Download MSI GLPI Agent non disponibile",
+    });
+    return { operationId, status: "failed" };
+  }
+
+  const script = buildGlpiAgentChocoScript(operationId, {
+    ingestUrl: opts.ingestUrl,
+    ingestToken: opts.ingestToken,
+    intervalHours: opts.intervalHours ?? 6,
+    msiUrl: msi.url,
+    msiVersion: dl.version,
+    pushScriptBody: getWindowsPushScriptBody(),
+  });
+  return runChocoPush(db, operationId, opts.hostId, script, "Install choco GLPI Agent fallito");
+}
+
+/**
+ * Disinstalla un software dall'host Windows (await, esito con log live).
+ *   - `chocoId` presente → `choco uninstall <id>`.
+ *   - altrimenti → uninstall silenzioso da registro per DisplayName == `name`
+ *     (MSI /qn o QuietUninstallString; mai la UninstallString interattiva).
+ * Riusa runChocoPush/finalizeChocoOp: EXIT_CODE=0 → success.
+ */
+export async function executeUninstall(
+  opts: ExecutorOptions & { name: string; chocoId?: string | null },
+): Promise<{ operationId: number; status: string }> {
+  const db = resolveTenantDb(opts.tenantCode);
+  const operationId = createOperation(db, {
+    hostId: opts.hostId,
+    userId: opts.userId,
+    action: "uninstall",
+    packageId: opts.chocoId ?? opts.name.slice(0, 200),
+  });
+  updateOperation(db, operationId, {
+    status: "running",
+    startedAt: nowIso(),
+    logFilePath: logFilePathForOperation(operationId),
+  });
+
+  const script = buildUninstallScript(operationId, opts.name, opts.chocoId ?? null);
+  return runChocoPush(db, operationId, opts.hostId, script, "Disinstallazione fallita");
+}
+
+/**
+ * Push install su host Linux/macOS via SSH (equivalente del push WinRM su
+ * Windows). Carica le credenziali SSH dell'host, esegue lo `script` (già
+ * costruito per la platform: Wazuh/GLPI/MeshCentral) e traccia l'operazione con
+ * log su patch_operation_logs. Lo script deve girare come root (o l'utente SSH
+ * deve esserlo): lo script stesso verifica `id -u` e fallisce con messaggio chiaro.
+ * runSshCommand ritorna già l'exitCode → niente parsing EXIT_CODE.
+ */
+export async function executeSshInstall(
+  opts: ExecutorOptions & { script: string; packageId: string },
+): Promise<{ operationId: number; status: string }> {
+  const db = resolveTenantDb(opts.tenantCode);
+  const operationId = createOperation(db, {
+    hostId: opts.hostId,
+    userId: opts.userId,
+    action: "install",
+    packageId: opts.packageId,
+  });
+  updateOperation(db, operationId, { status: "running", startedAt: nowIso() });
+
+  // Il perché, se non c'è una credenziale con password (anche una voce a chiave: il ponte paramiko non la usa, D6).
+  const esitoSsh = caricaSshPerHost(db, opts.hostId, "dall'installazione via SSH (ponte paramiko)");
+  if (!esitoSsh.ok) {
+    updateOperation(db, operationId, {
+      status: "failed",
+      finishedAt: nowIso(),
+      errorMessage: esitoSsh.motivo.slice(0, 2000),
+    });
+    return { operationId, status: "failed" };
+  }
+  const ssh = esitoSsh.creds;
+
+  const insertLog = db.prepare(
+    "INSERT INTO patch_operation_logs (operation_id, ts, stream, line) VALUES (?, ?, ?, ?)",
+  );
+  const logStream = (text: string, stream: "stdout" | "stderr" | "system") => {
+    const ts = nowIso();
+    for (const l of text.split(/\r?\n/).filter((x) => x.length > 0).slice(-300)) {
+      insertLog.run(operationId, ts, stream, l.slice(0, 4000));
+    }
+  };
+
+  try {
+    const res = await runSshCommand({
+      host: ssh.host,
+      port: ssh.port,
+      username: ssh.username,
+      password: ssh.password,
+      command: opts.script,
+      timeoutSec: 600,
+    });
+    logStream(res.stdout, "stdout");
+    logStream(res.stderr, "stderr");
+    const ok = res.exitCode === 0;
+    updateOperation(db, operationId, {
+      status: ok ? "success" : "failed",
+      exitCode: res.exitCode,
+      finishedAt: nowIso(),
+      ...(ok ? {} : { errorMessage: `SSH install exit ${res.exitCode}` }),
+    });
+    return { operationId, status: ok ? "success" : "failed" };
+  } catch (err) {
+    const msg = (err as Error)?.message ?? String(err);
+    logStream(msg, "system");
+    updateOperation(db, operationId, {
+      status: "failed",
+      finishedAt: nowIso(),
+      errorMessage: msg.slice(0, 2000),
+    });
+    return { operationId, status: "failed" };
+  }
+}
+
 /**
  * Upgrade: lancia `choco upgrade` FIRE-AND-FORGET.
  *
@@ -833,7 +1076,12 @@ async function executeUpgradeAsync(
           const { getWazuhAgentForHost, syncSingleAgent } = await import(
             "@/lib/integrations/wazuh-sync"
           );
-          const { withTenant } = await import("@/lib/db-tenant");
+          // withTenant DEVE venire dall'import statico (riga 23): con
+          // `await import("@/lib/db-tenant")` tsx restituisce una seconda
+          // istanza del modulo con la propria AsyncLocalStorage, e il contesto
+          // impostato qui resterebbe invisibile a chi legge dall'istanza
+          // statica. Vale solo per db-tenant: importare dinamicamente ALTRI
+          // moduli (come wazuh-sync qui sopra) è sicuro, il contesto lo vedono.
           await withTenant(tenantCode, async () => {
             const agent = getWazuhAgentForHost(opts.hostId);
             if (!agent) return; // host non collegato a Wazuh: skip

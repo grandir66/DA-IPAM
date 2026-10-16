@@ -15,6 +15,18 @@
 import * as https from "node:https";
 import { URL } from "node:url";
 import { getSharedAgent } from "./http-pool";
+import {
+  buildAlertsQuery,
+  normalizeAlert,
+  type NormalizedAlert,
+  type SelfIdentity,
+  type WazuhAlertDoc,
+} from "./wazuh-alerts";
+import {
+  buildStatsQuery,
+  parseStatsResponse,
+  type AlertStats,
+} from "./wazuh-alerts-stats";
 
 export interface WazuhIndexerConfig {
   url: string;            // es. https://da-wazuh.domarc.it:9200
@@ -146,16 +158,33 @@ export class WazuhIndexerClient {
     }
   }
 
-  /** Test connessione + ritorna stato cluster. */
-  async ping(): Promise<{ clusterName?: string; status?: string; numberOfNodes?: number }> {
-    const res = await this.json<{ cluster_name?: string; status?: string; number_of_nodes?: number }>(
-      "GET",
-      "/_cluster/health",
-    );
+  /**
+   * Test connessione + ritorna stato cluster. `numberOfNodes` e
+   * `initializingShards` (fix cruscotto salute, blocco indexer: cluster
+   * yellow a nodo singolo) servono a `classifyIndexer` per distinguere un
+   * giallo strutturale (repliche non assegnabili su un solo nodo) da un
+   * giallo vero su un cluster multi-nodo — non aggiungono chiamate, sono già
+   * nella risposta di `_cluster/health`. Firma retrocompatibile: i chiamanti
+   * esistenti (route di test, `modules/health.ts`) che leggono solo
+   * `status`/`clusterName` non sono affetti.
+   */
+  async ping(): Promise<{
+    clusterName?: string;
+    status?: string;
+    numberOfNodes?: number;
+    initializingShards?: number;
+  }> {
+    const res = await this.json<{
+      cluster_name?: string;
+      status?: string;
+      number_of_nodes?: number;
+      initializing_shards?: number;
+    }>("GET", "/_cluster/health");
     return {
       clusterName: res.cluster_name,
       status: res.status,
       numberOfNodes: res.number_of_nodes,
+      initializingShards: res.initializing_shards,
     };
   }
 
@@ -215,10 +244,140 @@ export class WazuhIndexerClient {
     return out;
   }
 
+  /**
+   * Legge gli alert di sicurezza selezionati da `wazuh-alerts-*` a partire da
+   * `since` (ISO). Paginazione search_after, cap su `maxRows` per non tirare
+   * dentro milioni di documenti: l'indice reale misurato supera i 390M doc.
+   *
+   * Ritorna anche il cursore dell'ultimo documento, da persistere per il poll
+   * successivo ed evitare di rileggere la stessa finestra.
+   */
+  async searchAlerts(args: {
+    since: string;
+    minLevel?: number;
+    maxRows?: number;
+    searchAfter?: unknown[];
+    self?: SelfIdentity;
+    deviceRuleIds?: string[];
+  }): Promise<{ alerts: NormalizedAlert[]; nextCursor: unknown[] | null }> {
+    const maxRows = args.maxRows ?? 2_000;
+    const pageSize = Math.min(500, maxRows);
+    const out: NormalizedAlert[] = [];
+    let searchAfter = args.searchAfter;
+    let nextCursor: unknown[] | null = null;
+
+    while (out.length < maxRows) {
+      const body = buildAlertsQuery({
+        since: args.since,
+        minLevel: args.minLevel,
+        size: Math.min(pageSize, maxRows - out.length),
+        searchAfter,
+        extraRuleIds: args.deviceRuleIds,
+      });
+      const res = await this.json<IndexerSearchResponse<WazuhAlertDoc>>(
+        "POST",
+        "/wazuh-alerts-*/_search",
+        body as unknown as Record<string, unknown>,
+      );
+      const hits = res.hits?.hits ?? [];
+      if (hits.length === 0) break;
+      for (const h of hits)
+        out.push(normalizeAlert(h._source, h._id, args.self, args.deviceRuleIds));
+
+      const last = hits[hits.length - 1] as IndexerHit<WazuhAlertDoc> & {
+        sort?: unknown[];
+      };
+      if (!last?.sort || !Array.isArray(last.sort)) break;
+      nextCursor = last.sort;
+      searchAfter = last.sort;
+      if (hits.length < body.size) break;
+    }
+    return { alerts: out, nextCursor };
+  }
+
+  /**
+   * Distribuzione temporale e composizione degli alert selezionati.
+   * Aggregazione pura (size 0): non scarica documenti.
+   */
+  async alertStats(args: {
+    since: string;
+    interval: string;
+    excludeAccounts?: string[];
+    excludeIps?: string[];
+    system?: string;
+    extraRuleIds?: string[];
+  }): Promise<AlertStats> {
+    const body = buildStatsQuery(args);
+    const res = await this.json<Record<string, unknown>>(
+      "POST",
+      "/wazuh-alerts-*/_search",
+      body as unknown as Record<string, unknown>,
+    );
+    return parseStatsResponse(res);
+  }
+
+  /**
+   * `@timestamp` del documento più recente in `wazuh-alerts-*` (cruscotto
+   * salute, blocco ingestione — misura Wazuh stesso, non la tabella locale
+   * DA-IPAM: vedi brief fix-misure Difetto 2). Aggregazione `max` con
+   * `size: 0`: nessun documento scaricato, costo minimo anche sull'indice
+   * reale (>390M doc). Si legge `value` (epoch millis), non
+   * `value_as_string`, per non dipendere da un parametro `format`
+   * sull'aggregazione. `null` = indice raggiungibile ma senza alcun
+   * documento (fresh install). Una ricerca su pattern wildcard
+   * (`wazuh-alerts-*`) senza indici corrispondenti risponde normalmente 200
+   * con l'aggregazione a `null`, non 404: il ramo 404 sotto è una difesa in
+   * più per varianti di OpenSearch/Elasticsearch meno comuni che lo
+   * restituissero comunque, non il percorso atteso. Qualsiasi altro errore
+   * di rete/HTTP lancia, e il chiamante (wazuh-health.ts) decide come
+   * trattarlo senza inventare un verdetto "ok".
+   */
+  async getLatestAlertTimestamp(): Promise<string | null> {
+    try {
+      const res = await this.json<{
+        aggregations?: { latest?: { value?: number | null } };
+      }>("POST", "/wazuh-alerts-*/_search", {
+        size: 0,
+        aggs: { latest: { max: { field: "@timestamp" } } },
+      });
+      const value = res.aggregations?.latest?.value;
+      return typeof value === "number" && Number.isFinite(value) ? new Date(value).toISOString() : null;
+    } catch (e) {
+      if (e instanceof Error && /HTTP 404\b/.test(e.message)) return null;
+      throw e;
+    }
+  }
+
   /** Numero totale di documenti CVE nell'indice (sanity check). */
   async totalVulnDocs(): Promise<number> {
     const res = await this.json<{ count: number }>("GET", "/wazuh-states-vulnerabilities-*/_count");
     return res.count;
+  }
+
+  /**
+   * Spazio disco per nodo (cruscotto salute, blocco indexer). Verificato
+   * contro l'API reale (192.168.4.19): `_cat/allocation?format=json` ritorna
+   * righe con chiave letterale `"disk.percent"` (stringa, es. "53", o `null`
+   * per lo pseudo-nodo "UNASSIGNED" che rappresenta shard non assegnate — non
+   * un nodo fisico, escluso dal risultato).
+   */
+  async getNodesDiskUsage(): Promise<Array<{ node: string; diskPercent: number | null }>> {
+    try {
+      const rows = await this.json<Array<Record<string, string | null>>>(
+        "GET",
+        "/_cat/allocation?format=json",
+      );
+      return rows
+        .filter((r) => r.node && r.node !== "UNASSIGNED")
+        .map((r) => {
+          const raw = r["disk.percent"];
+          const n = raw !== null && raw !== undefined && raw !== "" ? Number(raw) : NaN;
+          return { node: r.node ?? "", diskPercent: Number.isFinite(n) ? n : null };
+        });
+    } catch (e) {
+      if (e instanceof Error && /HTTP 404\b/.test(e.message)) return [];
+      throw e;
+    }
   }
 }
 

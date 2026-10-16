@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { ScanTriggerSchema } from "@/lib/validators";
-import { getNmapProfileById, getActiveNmapProfile, getHostById, relinkAdComputersForNetwork } from "@/lib/db";
+import { getNmapProfileById, getActiveNmapProfile, getHostById, relinkAdComputersForNetwork, addScanHistory } from "@/lib/db";
 import { discoverNetwork } from "@/lib/scanner/discovery";
+import { corpoScanInCorso, isScanInCorso } from "@/lib/scanner/network-scan-lock";
 import { buildCustomScanArgs } from "@/lib/scanner/ports";
 import { runArpPoll, runDhcpPollForNetwork, runDnsResolve } from "@/lib/cron/jobs";
 import { withTenantFromSession } from "@/lib/api-tenant";
@@ -37,6 +38,8 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Nessun host valido tra quelli selezionati per questa rete" }, { status: 400 });
       }
 
+      // credential_validate e altre MANUAL_SCAN_TYPES richiedono host_ids esplicito:
+      // ogni tentativo è un logon fallito reale (allarmi MDR/XDR, rischio lockout AD).
       if (MANUAL_SCAN_TYPES.has(parsed.data.scan_type) && !parsed.data.host_ids?.length) {
         return NextResponse.json(
           { error: "Seleziona uno o più host nella lista e riprova (azioni manuali solo su IP selezionati)" },
@@ -79,6 +82,7 @@ export async function POST(request: Request) {
       // Con fresh_sync=true esegue una query LDAP fresca prima del relink:
       // utile quando la cache AD è vecchia o vuota, ma più lento (10-60s).
       if (parsed.data.scan_type === "scan_enrich") {
+        const enrichStart = Date.now();
         const phases: string[] = [];
         const errors: string[] = [];
         const freshSync = parsed.data.fresh_sync === true;
@@ -130,11 +134,29 @@ export async function POST(request: Request) {
 
         const phaseMsg = phases.length > 0 ? phases.join(" · ") : "Enrich completato";
         const status = errors.length > 0 && phases.length === 0 ? "failed" : "completed";
+        const statusText = phaseMsg + (errors.length > 0 ? ` (errori: ${errors.join("; ")})` : "");
+
+        // Traccia in scan_history così il pannello acquisizione (fase 3b) mostra
+        // last_run reale per "Enrich" invece di "mai eseguita" (bug fix 2026-07-27).
+        try {
+          addScanHistory({
+            host_id: null,
+            network_id: parsed.data.network_id,
+            scan_type: "scan_enrich",
+            status: statusText,
+            ports_open: null,
+            raw_output: errors.length > 0 ? errors.join("; ") : null,
+            duration_ms: Date.now() - enrichStart,
+          });
+        } catch (e) {
+          console.error("scan_enrich: scrittura scan_history fallita:", e);
+        }
+
         return NextResponse.json({
           id: "scan-enrich",
           progress: {
             status,
-            phase: phaseMsg + (errors.length > 0 ? ` (errori: ${errors.join("; ")})` : ""),
+            phase: statusText,
           },
         });
       }
@@ -181,6 +203,10 @@ export async function POST(request: Request) {
 
       return NextResponse.json({ id, progress });
     } catch (error) {
+      // Un giro alla volta per rete (T3-18): rete già in scansione → 409 con il giro in corso.
+      if (isScanInCorso(error)) {
+        return NextResponse.json(corpoScanInCorso(error.giro), { status: 409 });
+      }
       console.error("Scan trigger error:", error);
       return NextResponse.json(
         { error: error instanceof Error ? error.message : "Errore nell'avvio della scansione" },

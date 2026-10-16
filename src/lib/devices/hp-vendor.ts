@@ -12,7 +12,10 @@ export interface HpConnectionOptions {
   host: string;
   port?: number;
   username: string;
-  password: string;
+  /** Password o chiave privata (tappa 2 credenziali, T14). */
+  password?: string;
+  privateKey?: string;
+  passphrase?: string;
   timeout?: number;
 }
 

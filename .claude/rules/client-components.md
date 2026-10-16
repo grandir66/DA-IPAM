@@ -1,6 +1,9 @@
 ---
 scope: React client components
-applies_to: src/components/**, src/app/**/page.tsx, src/app/**/*.tsx (con "use client")
+paths:
+  - "src/components/**"
+  - "src/app/**/page.tsx"
+  - "src/app/**/*.tsx"
 ---
 
 # Client components — regole
@@ -34,6 +37,18 @@ NON usare `asChild`:
 // CORRETTO
 <DialogTrigger render={<Button>Apri</Button>} />
 ```
+
+## Date dal database, errori di caricamento, Select (2026-10-12)
+
+- **Date del DB → `parseDbDate(x)`** da `@/lib/db-date`, mai `new Date(x)`: SQLite
+  scrive UTC senza fuso (`2026-10-12 08:00:00`) e `new Date` lo legge come ora
+  locale (orari indietro di 1-2 ore, «Invalid Date» su Safari). Nelle pagine rese
+  sul server: `toLocaleString("it-IT", { timeZone: FUSO_UTENTI })`, la VM è in UTC.
+- **Caricare dati → `fetchJson`** (`@/lib/fetch-json`) e, se `!ok`, il riquadro
+  `LoadError` con «Riprova». Mai `if (!res.ok) return` né `catch { setX([]) }`:
+  un errore mostrato come lista vuota fa credere che i dati non ci siano.
+- **`<Select>`**: l'etichetta nel trigger la ricava il wrapper dalle `<SelectItem>`
+  figlie. Se le voci le genera un componente proprio, passare `items` a mano.
 
 ## Fetch + refresh
 

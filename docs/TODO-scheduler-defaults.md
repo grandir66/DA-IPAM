@@ -1,6 +1,6 @@
 # TODO — Scheduler defaults: `known_host_check` first, `fast_scan` solo on-demand
 
-**Origine**: incident 2026-05-25, tenant DTS (`tenant_code=71734`).
+**Origine**: incident 2026-05-25, tenant cliente A (`tenant_code=71734`).
 **Stato**: runtime fix applicato in produzione; codebase ancora da allineare.
 **Priorità**: alta (regressione potenziale su ogni nuovo tenant/network creato).
 
@@ -8,9 +8,9 @@
 
 ## 1. Contesto incident
 
-Su LXC dts-invent (172.16.1.133 → CT 10001) il framework auto-creava 2 job
+Su LXC cliente-a-invent (10.0.1.133 → CT 10001) il framework auto-creava 2 job
 `fast_scan` (= full subnet ICMP sweep) ogni 15 min per ciascun network del
-tenant DTS, di cui uno su una `/17` (32 768 IP). Risultato: container saturato
+tenant cliente A, di cui uno su una `/17` (32 768 IP). Risultato: container saturato
 ~100% CPU per ore, load 7+.
 
 Handler in [src/lib/cron/jobs.ts](../src/lib/cron/jobs.ts) sono corretti:
@@ -22,7 +22,7 @@ Il bug è solo nei **default di provisioning + UI**.
 
 ---
 
-## 2. Runtime fix già applicato (DTS, 2026-05-25)
+## 2. Runtime fix già applicato (cliente A, 2026-05-25)
 
 Eseguito direttamente sul DB tenant `data/tenants/71734/tenant.db`:
 
@@ -41,7 +41,7 @@ WHERE NOT EXISTS (
 ```
 
 Effetto immediato: load 7.66 → 5.95 in 90 s, sceso sotto 1 nei minuti successivi.
-**Non rifare manualmente** su DTS — già fatto. La migrazione del punto 3.2 deve
+**Non rifare manualmente** sul cliente A — già fatto. La migrazione del punto 3.2 deve
 essere idempotente per non duplicare.
 
 ---
@@ -118,7 +118,7 @@ git push
 CHANGELOG:
 
 > `feat(scheduler)`: `known_host_check` default per nuovi tenant + migrazione
-> automatica disabilita `fast_scan` auto-schedulato (incident 2026-05-25 DTS-INVENT).
+> automatica disabilita `fast_scan` auto-schedulato (incident 2026-05-25 CLIENTE-A-INVENT).
 
 ### 3.7 Documentazione
 
@@ -148,7 +148,7 @@ function computeMinInterval(hostCount: number): number {
 }
 ```
 
-Casi reali dal tenant DTS (2026-05-25):
+Casi reali dal tenant cliente A (2026-05-25):
 
 | Host registrati | Interval minimo |
 |----------------:|:----------------|

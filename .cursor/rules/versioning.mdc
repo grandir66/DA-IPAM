@@ -1,0 +1,37 @@
+---
+description: Versioning e bump automatico della patch
+alwaysApply: true
+---
+
+# Versioning DA-INVENT
+
+## Regola obbligatoria
+
+**Ogni modifica al codice che comporta un commit deve incrementare la patch version.**
+
+- Versione attuale: vedi `package.json` → `version`
+- Formato: `MAJOR.MINOR.PATCH` (es. 0.2.1)
+- Dopo aver completato modifiche significative: esegui `npm run version:bump` oppure incrementa manualmente il numero PATCH in `package.json`
+
+## Cosa aggiornare
+
+1. **package.json** — campo `version`
+2. **package-lock.json** — campo `version` (in sync con package.json)
+
+## Comando
+
+```bash
+npm run version:bump
+```
+
+Incrementa automaticamente la patch (0.2.1 → 0.2.2).
+
+## Workflow
+
+1. Completa le modifiche al codice
+2. **Pubblica versione + commit Git** (scegline uno):
+   - **Consigliato:** `npm run version:release` — incrementa la patch, poi `git add -A` e commit `release: vX.Y.Z`
+   - In alternativa: `npm run version:bump` e subito dopo `npm run version:commit` (solo commit, se hai già fatto il bump)
+3. **Push** su `origin` (`git push`) così `git pull` sul server ottiene la versione aggiornata
+
+Senza push su GitHub, gli aggiornamenti sul server restano alla vecchia versione nel `package.json` remoto.

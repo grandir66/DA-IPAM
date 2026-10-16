@@ -18,9 +18,11 @@ if ! command -v python3 >/dev/null 2>&1; then
   exit 1
 fi
 
-if [ ! -x "${WINRM_VENV}/bin/python3" ]; then
+# Un venv creato senza python3-venv ha python3 ma non pip: si ricrea da capo,
+# altrimenti lo script falliva più sotto su ${WINRM_VENV}/bin/pip (cliente A, giugno-ottobre 2026).
+if [ ! -x "${WINRM_VENV}/bin/python3" ] || [ ! -x "${WINRM_VENV}/bin/pip" ]; then
   echo "[setup-winrm-venv] Creazione venv in ${WINRM_VENV}..."
-  python3 -m venv "${WINRM_VENV}" || {
+  python3 -m venv --clear "${WINRM_VENV}" || {
     echo "[setup-winrm-venv] Errore venv. Installare: apt-get install -y python3-venv" >&2
     exit 1
   }

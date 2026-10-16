@@ -1,4 +1,8 @@
 "use client";
+import { useLatestRequest } from "@/hooks/use-latest-request";
+import { parseDbDate } from "@/lib/db-date";
+import { fetchJson } from "@/lib/fetch-json";
+import { LoadError } from "@/components/shared/load-error";
 
 import { useEffect, useState, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -126,8 +130,12 @@ export default function AnalyticsPage() {
   const [filterType, setFilterType] = useState<string>("all");
   const [filterAck, setFilterAck] = useState<string>("unacked");
   const [selected, setSelected] = useState<AnomalyEvent | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const nextSignal = useLatestRequest();
 
   const fetchEvents = useCallback(async () => {
+    const signal = nextSignal();
     setLoading(true);
     try {
       const params = new URLSearchParams({
@@ -138,16 +146,28 @@ export default function AnalyticsPage() {
       if (filterAck === "unacked") params.set("acknowledged", "false");
       if (filterAck === "acked") params.set("acknowledged", "true");
 
-      const res = await fetch(`/api/analytics/anomalies?${params}`);
-      if (!res.ok) return;
-      const data = await res.json() as { events: AnomalyEvent[]; total: number; unacked: number };
+      const r = await fetchJson<{ events: AnomalyEvent[]; total: number; unacked: number }>(`/api/analytics/anomalies?${params}`, { signal });
+      if (signal.aborted) return;
+      // Prima un errore lasciava a schermo gli eventi vecchi senza dire niente (UI-7).
+      if (!r.ok) {
+        setEvents([]);
+        setTotal(0);
+        setUnacked(0);
+        setError(r.message);
+        return;
+      }
+      setError(null);
+      const data = r.data;
       setEvents(data.events.map((e) => ({ ...e, _detailParsed: parseDetail(e) })));
       setTotal(data.total);
       setUnacked(data.unacked);
+    } catch (e) {
+      if (signal.aborted) return;
+      throw e;
     } finally {
-      setLoading(false);
+      if (!signal.aborted) setLoading(false);
     }
-  }, [page, filterType, filterAck]);
+  }, [page, filterType, filterAck, nextSignal]);
 
   useEffect(() => { void fetchEvents(); }, [fetchEvents]);
 
@@ -255,7 +275,14 @@ export default function AnalyticsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {events.length === 0 && !loading && (
+              {error && !loading && (
+                <TableRow>
+                  <TableCell colSpan={6} className="p-4">
+                    <LoadError what="le anomalie" message={error} onRetry={() => void fetchEvents()} />
+                  </TableCell>
+                </TableRow>
+              )}
+              {events.length === 0 && !loading && !error && (
                 <TableRow>
                   <TableCell colSpan={6} className="text-center text-sm text-muted-foreground py-8">
                     Nessun evento trovato
@@ -280,7 +307,7 @@ export default function AnalyticsPage() {
                     {ev.description}
                   </TableCell>
                   <TableCell className="py-2 text-xs text-muted-foreground">
-                    {new Date(ev.detected_at).toLocaleString("it-IT", {
+                    {parseDbDate(ev.detected_at).toLocaleString("it-IT", {
                       day: "2-digit", month: "2-digit", year: "2-digit",
                       hour: "2-digit", minute: "2-digit",
                     })}
@@ -334,11 +361,11 @@ export default function AnalyticsPage() {
                 <p className="text-sm">{selected.description}</p>
                 <DetailContent ev={selected} />
                 <p className="text-xs text-muted-foreground">
-                  Rilevato: {new Date(selected.detected_at).toLocaleString("it-IT")}
+                  Rilevato: {parseDbDate(selected.detected_at).toLocaleString("it-IT")}
                 </p>
                 {selected.acknowledged && (
                   <p className="text-xs text-green-700">
-                    Gestito da {selected.acknowledged_by ?? "—"} il {selected.acknowledged_at ? new Date(selected.acknowledged_at).toLocaleString("it-IT") : "—"}
+                    Gestito da {selected.acknowledged_by ?? "—"} il {selected.acknowledged_at ? parseDbDate(selected.acknowledged_at).toLocaleString("it-IT") : "—"}
                   </p>
                 )}
                 {!selected.acknowledged && (

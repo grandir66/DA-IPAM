@@ -53,6 +53,9 @@ class PingResult(BaseModel):
     alive: bool
     latency_ms: float | None = None
     ttl: int | None = None
+    # Valorizzato quando il ping non ha potuto dare un esito (comando assente,
+    # permessi, errore suo): «sconosciuto», non «host spento» (T3-19, INV-2).
+    error: str | None = None
 
 
 class PingRequest(BaseModel):

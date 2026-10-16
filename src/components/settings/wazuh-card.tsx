@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { CheckCircle2, Loader2, RefreshCw, Shield, Trash2, BookOpen, Copy, ChevronDown, ChevronRight, AlertTriangle, ExternalLink } from "lucide-react";
+import { CheckCircle2, Loader2, RefreshCw, Shield, Trash2, BookOpen, Copy, ChevronDown, ChevronRight, AlertTriangle, ExternalLink, Download } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface WazuhConfig {
   enabled: boolean;
@@ -14,6 +15,16 @@ interface WazuhConfig {
   indexerUrl: string;
   indexerUsername: string;
   indexerPasswordSet: boolean;
+  immutableStoreUrl: string;
+  immutableStoreCertPin: string | null;
+  immutableStoreTokenSet: boolean;
+}
+
+interface ReplicationBlock {
+  verdict: "ok" | "degraded" | "fail";
+  headline: string;
+  detail?: string[];
+  configured: boolean;
 }
 
 interface WazuhStatus {
@@ -60,8 +71,71 @@ export function WazuhCard() {
   const [testResult, setTestResult] = useState<TestResult | null>(null);
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [storeForm, setStoreForm] = useState({
+    immutableStoreUrl: "",
+    immutableStoreToken: "",
+    immutableStoreCertPin: "",
+  });
+  const [storeSaving, setStoreSaving] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [replicationResult, setReplicationResult] = useState<ReplicationBlock | null>(null);
   const [showSetup, setShowSetup] = useState(false);
   const [setupContent, setSetupContent] = useState<{ script: string; playbook: string } | null>(null);
+  const [scriptBusy, setScriptBusy] = useState<"windows" | "linux" | "macos" | null>(null);
+  const [scriptView, setScriptView] = useState<{ platform: "windows" | "linux" | "macos"; text: string } | null>(null);
+
+  const fetchAgentScript = async (platform: "windows" | "linux" | "macos"): Promise<string> => {
+    const r = await fetch("/api/integrations/wazuh/agent-script", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ platform }),
+    });
+    if (!r.ok) {
+      const err = (await r.json().catch(() => null)) as { error?: string } | null;
+      throw new Error(err?.error ?? `HTTP ${r.status}`);
+    }
+    return r.text();
+  };
+
+  // Mostra lo script inline (per install manuale copia/incolla).
+  const handleShowAgentScript = async (platform: "windows" | "linux" | "macos") => {
+    setScriptBusy(platform);
+    setScriptView(null);
+    try {
+      setScriptView({ platform, text: await fetchAgentScript(platform) });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Errore generazione script");
+    } finally {
+      setScriptBusy(null);
+    }
+  };
+
+  const copyScriptView = () => {
+    if (!scriptView) return;
+    void navigator.clipboard.writeText(scriptView.text).then(
+      () => toast.success("Script copiato"),
+      () => toast.error("Copia non riuscita"),
+    );
+  };
+
+  const handleDownloadAgentScript = async (platform: "windows" | "linux" | "macos") => {
+    setScriptBusy(platform);
+    try {
+      const text = await fetchAgentScript(platform);
+      const blob = new Blob([text], { type: "text/plain" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `install-wazuh-agent-${platform}.${platform === "windows" ? "ps1" : "sh"}`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success("Script scaricato");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Errore download script");
+    } finally {
+      setScriptBusy(null);
+    }
+  };
   const [setupTab, setSetupTab] = useState<"playbook" | "script">("playbook");
   const [editMode, setEditMode] = useState(false);
 
@@ -85,6 +159,12 @@ export function WazuhCard() {
             indexerUsername: data.indexerUsername,
           }));
         }
+        // Il token è write-only: non viene mai ripopolato in lettura.
+        setStoreForm({
+          immutableStoreUrl: data.immutableStoreUrl ?? "",
+          immutableStoreToken: "",
+          immutableStoreCertPin: data.immutableStoreCertPin ?? "",
+        });
       }
       if (sRes.ok) setStatus((await sRes.json()) as WazuhStatus);
     } finally {
@@ -208,6 +288,68 @@ export function WazuhCard() {
       await load();
     } else {
       toast.error("Operazione fallita");
+    }
+  };
+
+  const handleSaveStore = async () => {
+    setStoreSaving(true);
+    try {
+      // Il token è write-only: omesso se vuoto, il backend lascia invariato
+      // quello già salvato (stesso pattern di password/indexerPassword).
+      const payload: Record<string, unknown> = {
+        immutableStoreUrl: storeForm.immutableStoreUrl,
+        immutableStoreCertPin: storeForm.immutableStoreCertPin || null,
+      };
+      if (storeForm.immutableStoreToken) payload.immutableStoreToken = storeForm.immutableStoreToken;
+      const r = await fetch("/api/integrations/wazuh/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!r.ok) {
+        const d = (await r.json()) as { error?: string };
+        toast.error(d.error ?? "Salvataggio fallito");
+        return;
+      }
+      toast.success("Endpoint di stato repliche salvato");
+      setReplicationResult(null);
+      await load();
+    } catch (e) {
+      toast.error(`Errore rete: ${(e as Error).message}`);
+    } finally {
+      setStoreSaving(false);
+    }
+  };
+
+  const handleVerify = async () => {
+    setVerifying(true);
+    setReplicationResult(null);
+    try {
+      const r = await fetch("/api/integrations/wazuh/health", { method: "POST" });
+      const d = (await r.json()) as {
+        blocks?: Array<{ key: string; verdict: "ok" | "degraded" | "fail"; headline: string; detail?: string[]; configured: boolean }>;
+        error?: string;
+      };
+      if (!r.ok) {
+        toast.error(d.error ?? "Verifica fallita");
+        return;
+      }
+      const block = d.blocks?.find((b) => b.key === "replication") ?? null;
+      if (!block) {
+        toast.error("Blocco repliche assente nella risposta");
+        return;
+      }
+      setReplicationResult(block);
+      const verdictLabel = block.verdict === "ok" ? "OK" : block.verdict === "degraded" ? "degradato" : "non riuscito";
+      if (block.verdict === "ok") {
+        toast.success(`Repliche: ${verdictLabel} — ${block.headline}`);
+      } else {
+        toast.error(`Repliche: ${verdictLabel} — ${block.headline}`);
+      }
+    } catch (e) {
+      toast.error(`Errore rete: ${(e as Error).message}`);
+    } finally {
+      setVerifying(false);
     }
   };
 
@@ -408,6 +550,134 @@ export function WazuhCard() {
                     : `KO · ${testResult.indexer.error}`}
                 </div>
               )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ──────────────── Endpoint di stato repliche (cruscotto salute) ──────────────── */}
+      <div className="border-t pt-3 mt-1 space-y-2">
+        <div className="text-sm font-medium flex items-center gap-1.5">
+          <Shield className="h-3.5 w-3.5" /> Endpoint di stato repliche (cruscotto salute)
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Servizio separato dal Manager Wazuh: espone lo stato dell&apos;archivio immutabile e
+          delle repliche. Il token è write-only — non viene mai ripopolato in lettura.
+        </p>
+        <fieldset className="border rounded-md p-3 space-y-2">
+          <legend className="text-xs font-semibold px-1 text-muted-foreground">Endpoint di stato</legend>
+          <label className="text-sm space-y-1 block">
+            <span>URL</span>
+            <input
+              className="w-full rounded border px-2 py-1 text-sm bg-background"
+              placeholder="https://192.168.4.19:9443"
+              value={storeForm.immutableStoreUrl}
+              onChange={(e) => { setStoreForm({ ...storeForm, immutableStoreUrl: e.target.value }); setReplicationResult(null); }}
+            />
+          </label>
+          <div className="grid grid-cols-2 gap-2">
+            <label className="text-sm space-y-1 block">
+              <span>Token</span>
+              <input
+                className="w-full rounded border px-2 py-1 text-sm bg-background font-mono"
+                placeholder={cfg?.immutableStoreTokenSet ? "•••• (salvato — lascia vuoto per non cambiarlo)" : "••••••••"}
+                value={storeForm.immutableStoreToken}
+                onChange={(e) => { setStoreForm({ ...storeForm, immutableStoreToken: e.target.value }); setReplicationResult(null); }}
+                type="password"
+                autoComplete="off"
+              />
+            </label>
+            <label className="text-sm space-y-1 block">
+              <span>Impronta certificato <span className="text-xs text-muted-foreground">(opzionale)</span></span>
+              <input
+                className="w-full rounded border px-2 py-1 text-sm bg-background font-mono"
+                placeholder="sha256/AAAA..."
+                value={storeForm.immutableStoreCertPin}
+                onChange={(e) => { setStoreForm({ ...storeForm, immutableStoreCertPin: e.target.value }); setReplicationResult(null); }}
+                autoComplete="off"
+              />
+            </label>
+          </div>
+        </fieldset>
+
+        <div className="flex gap-2 flex-wrap">
+          <Button size="sm" onClick={handleSaveStore} disabled={storeSaving}>
+            {storeSaving && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />}
+            Salva
+          </Button>
+          <Button size="sm" variant="outline" onClick={handleVerify} disabled={verifying}>
+            {verifying && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />}
+            Verifica
+          </Button>
+        </div>
+
+        {replicationResult && (
+          <div
+            className={`rounded-md border px-3 py-2 text-xs ${
+              replicationResult.verdict === "ok"
+                ? "border-green-300 bg-green-50 dark:bg-green-950/20 text-green-800 dark:text-green-300"
+                : replicationResult.verdict === "degraded"
+                  ? "border-amber-300 bg-amber-50 dark:bg-amber-950/20 text-amber-900 dark:text-amber-300"
+                  : "border-red-300 bg-red-50 dark:bg-red-950/20 text-red-800 dark:text-red-300"
+            }`}
+          >
+            <strong>Repliche:</strong>{" "}
+            {replicationResult.verdict === "ok" ? "OK" : replicationResult.verdict === "degraded" ? "Degradato" : "Non riuscito"}
+            {" · "}
+            {replicationResult.headline}
+          </div>
+        )}
+      </div>
+
+      {/* ──────────── Script install AGENTE per sistema operativo ──────────── */}
+      {configured && (
+        <div className="border-t pt-3 mt-1 space-y-2">
+          <div className="text-sm font-medium flex items-center gap-1.5">
+            <Download className="h-3.5 w-3.5" /> Script install agente (per sistema operativo)
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Scarica lo script che installa l&apos;agente Wazuh puntato a questo manager
+            (auto-arruolo). Windows = <code>.ps1</code> (PowerShell admin); Linux/macOS =
+            <code>.sh</code> (root). Aggiunge da sé la voce hosts del manager se serve.
+          </p>
+          <Tabs defaultValue="windows" onValueChange={() => setScriptView(null)}>
+            <TabsList className="h-8">
+              <TabsTrigger value="windows" className="text-xs">Windows</TabsTrigger>
+              <TabsTrigger value="linux" className="text-xs">Linux</TabsTrigger>
+              <TabsTrigger value="macos" className="text-xs">macOS</TabsTrigger>
+            </TabsList>
+            {(["windows", "linux", "macos"] as const).map((p) => (
+              <TabsContent key={p} value={p} className="mt-3 flex gap-2">
+                <Button size="sm" disabled={scriptBusy === p} onClick={() => void handleShowAgentScript(p)}>
+                  {scriptBusy === p ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                  ) : (
+                    <BookOpen className="h-3.5 w-3.5 mr-1" />
+                  )}
+                  Mostra script
+                </Button>
+                <Button size="sm" variant="outline" disabled={scriptBusy === p} onClick={() => void handleDownloadAgentScript(p)}>
+                  <Download className="h-3.5 w-3.5 mr-1" />
+                  Scarica
+                </Button>
+              </TabsContent>
+            ))}
+          </Tabs>
+
+          {scriptView && (
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-muted-foreground">
+                  Script {scriptView.platform === "macos" ? "macOS" : scriptView.platform === "windows" ? "Windows" : "Linux"}
+                  {" "}— lancialo sul target ({scriptView.platform === "windows" ? "PowerShell come amministratore" : "root/sudo"})
+                </span>
+                <Button size="xs" variant="outline" onClick={copyScriptView}>
+                  <Copy className="h-3.5 w-3.5 mr-1" /> Copia
+                </Button>
+              </div>
+              <pre className="max-h-72 overflow-auto rounded-md border bg-muted/40 p-2 text-xs font-mono whitespace-pre-wrap break-all">
+                {scriptView.text}
+              </pre>
             </div>
           )}
         </div>

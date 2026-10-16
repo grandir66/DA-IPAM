@@ -1,4 +1,6 @@
 "use client";
+import { useLatestRequest } from "@/hooks/use-latest-request";
+import { parseDbDate } from "@/lib/db-date";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -107,31 +109,50 @@ export default function DhcpPage() {
   const [sortColumn, setSortColumn] = useState<string | null>("last_synced");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
 
+  // La ricerca parte 300 ms dopo l'ultimo tasto e riporta a pagina 1 (prima
+  // restava sulla pagina aperta, spesso vuota); una richiesta nuova annulla la
+  // precedente (UI-6).
+  const [searchQuery, setSearchQuery] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setSearchQuery(searchTerm.trim());
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [searchTerm]);
+  const nextSignal = useLatestRequest();
+
   const fetchLeases = useCallback(async () => {
+    const signal = nextSignal();
     try {
       const params = new URLSearchParams({
         page: String(page),
         pageSize: String(pageSize),
       });
-      if (searchTerm) params.set("search", searchTerm);
+      if (searchQuery) params.set("search", searchQuery);
       if (sourceTypeFilter !== "all") params.set("sourceType", sourceTypeFilter);
       if (sourceDeviceFilter !== "all") params.set("sourceDeviceId", sourceDeviceFilter);
+      // "Solo recenti" lo applica il server: prima filtrava solo la pagina corrente
+      // e totali e pagine restavano quelli non filtrati (UI-4).
+      if (onlyRecent) params.set("recentDays", String(recentDays));
       if (sortColumn) {
         params.set("sortBy", sortColumn);
         params.set("sortOrder", sortDirection);
       }
 
-      const res = await fetch(`/api/dhcp-leases?${params}`);
+      const res = await fetch(`/api/dhcp-leases?${params}`, { signal });
       if (!res.ok) throw new Error("Errore caricamento");
       const data = await res.json();
+      if (signal.aborted) return;
       setLeases(data.leases || []);
       setTotal(data.total || 0);
     } catch {
+      if (signal.aborted) return;
       toast.error("Impossibile caricare i lease DHCP");
     } finally {
-      setLoading(false);
+      if (!signal.aborted) setLoading(false);
     }
-  }, [page, pageSize, searchTerm, sourceTypeFilter, sourceDeviceFilter, sortColumn, sortDirection]);
+  }, [page, pageSize, searchQuery, sourceTypeFilter, sourceDeviceFilter, sortColumn, sortDirection, onlyRecent, recentDays, nextSignal]);
 
   const fetchSources = useCallback(async () => {
     try {
@@ -369,12 +390,12 @@ export default function DhcpPage() {
               <input
                 type="checkbox"
                 checked={onlyRecent}
-                onChange={(e) => setOnlyRecent(e.target.checked)}
+                onChange={(e) => { setOnlyRecent(e.target.checked); setPage(1); }}
                 className="h-3.5 w-3.5"
               />
               Solo attivi negli ultimi
             </label>
-            <Select value={String(recentDays)} onValueChange={(v) => v && setRecentDays(parseInt(v, 10))} disabled={!onlyRecent}>
+            <Select value={String(recentDays)} onValueChange={(v) => { if (v) { setRecentDays(parseInt(v, 10)); setPage(1); } }} disabled={!onlyRecent}>
               <SelectTrigger className="w-[110px] h-8 text-xs">
                 <SelectValue />
               </SelectTrigger>
@@ -399,9 +420,7 @@ export default function DhcpPage() {
           ) : (() => {
               // v0.2.661: se il filtro "solo attivi recenti" nasconde TUTTI i lease,
               // mostra un messaggio chiaro invece di tabella vuota silenziosa.
-              const visibleCount = onlyRecent
-                ? leases.filter((l) => l.last_seen && (Date.now() - Date.parse(l.last_seen)) / 86400000 <= recentDays).length
-                : leases.length;
+              const visibleCount = leases.length;
               if (visibleCount === 0 && onlyRecent) {
                 return (
                   <div className="text-center py-12 text-muted-foreground">
@@ -452,12 +471,6 @@ export default function DhcpPage() {
                   </TableHeader>
                   <TableBody>
                     {leases
-                      .filter((lease) => {
-                        if (!onlyRecent) return true;
-                        if (!lease.last_seen) return false;
-                        const ageDays = (Date.now() - Date.parse(lease.last_seen)) / 86400000;
-                        return ageDays <= recentDays;
-                      })
                       .map((lease) => (
                       <TableRow key={lease.id}>
                         <TableCell className="font-mono">
@@ -522,7 +535,7 @@ export default function DhcpPage() {
                               ageDays < 365 ? `${Math.round(ageDays / 30)}mesi fa` :
                               `${(ageDays / 365).toFixed(1)}a fa`;
                             return (
-                              <Badge variant="outline" className={`text-xs ${color}`} title={new Date(lease.last_seen).toLocaleString("it-IT")}>
+                              <Badge variant="outline" className={`text-xs ${color}`} title={parseDbDate(lease.last_seen).toLocaleString("it-IT")}>
                                 {label}
                               </Badge>
                             );
@@ -531,7 +544,7 @@ export default function DhcpPage() {
                           )}
                         </TableCell>
                         <TableCell className="text-xs text-muted-foreground">
-                          {new Date(lease.last_synced).toLocaleString("it-IT")}
+                          {parseDbDate(lease.last_synced).toLocaleString("it-IT")}
                         </TableCell>
                       </TableRow>
                     ))}

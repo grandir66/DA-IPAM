@@ -13,7 +13,6 @@ import {
   getActiveNmapProfile,
   updateHostIfExists,
   upsertArpEntries,
-  upsertMacPortEntries,
   upsertSwitchPorts,
   resolveMacToDevice,
   resolveMacToNetworkDevice,
@@ -22,15 +21,26 @@ import {
   syncIpAssignmentsForNetwork,
   upsertNeighbors,
   upsertRoutes,
+  updateJobLastRun,
 } from "@/lib/db";
-import { discoverNetwork } from "@/lib/scanner/discovery";
+import { discoverNetwork, type AvvioDiscovery } from "@/lib/scanner/discovery";
+import {
+  attendiRilascio,
+  CHIAVE_SOGLIA_ALLARME,
+  isScanInCorso,
+  segnalaGiroLungo,
+  sogliaAllarmeDa,
+  type GiroOccupante,
+} from "@/lib/scanner/network-scan-lock";
 import { reverseDns, forwardDns } from "@/lib/scanner/dns";
 import { pingHost } from "@/lib/scanner/ping";
+import { getScanIoOverride } from "@/lib/executor";
 import { tcpConnect, FALLBACK_TCP_PORTS } from "@/lib/scanner/tcp-check";
 import { createRouterClient, routerOsDurationToIsoTimestamp } from "@/lib/devices/router-client";
-import { createSwitchClient } from "@/lib/devices/switch-client";
+import { createSwitchClient, creaWalkSnmp, deviceHasSnmpSession } from "@/lib/devices/switch-client";
+import { leggiSnmpTopologia } from "@/lib/devices/snmp-topologia";
+import { TEMPO_WALK_MS } from "@/lib/devices/snmp-walk";
 import { lookupVendor } from "@/lib/scanner/mac-vendor";
-import { classifyDevice } from "@/lib/device-classifier";
 import { isIpInCidr, normalizePortNameForMatch } from "@/lib/utils";
 import { networkDeviceUsesArpPoll } from "@/lib/network-device-arp";
 import {
@@ -52,27 +62,223 @@ import {
   getStatusHistory,
   getHostLatencyHistory,
   getScanHistory,
+  getCurrentTenantCode,
+  getTenantSetting,
+  upsertMacPortEntries,
+  cleanupOldMacPortEntries,
+  MAC_PORT_RETENTION_DAYS,
+  listHypervisorScanDevices,
+  scriviFattiTopologia,
 } from "@/lib/db-tenant";
+import { HYPERVISOR_SYNC_MINUTES, unifiJobKind } from "@/lib/scheduled-job-types";
+// Statico: run-proxmox-device-scan importa il facade db, che risolve db-tenant (ADR 0002).
+import { runProxmoxDeviceScan } from "@/lib/proxmox/run-proxmox-device-scan";
+import { codiceErrore, leggiMacPorteRouter } from "@/lib/devices/mikrotik-porte";
+import { apriEsecutoreSsh, codiceTrasporto, leggiMikrotikTopologia, type ApriEsecutore } from "@/lib/devices/mikrotik-letture";
+import { fattiMikrotik } from "@/lib/devices/mikrotik-stp";
+import { conCadenza, riassuntoLetture, type EsitoGiro } from "@/lib/topology/letture/cadenza";
+import { letturaAccesa, oraUtc, senzaCampiCavi } from "@/lib/topology/letture/interruttori";
+import { leggiHost } from "@/lib/proxmox/lldp-host";
+import type { NetworkDevice } from "@/types";
 import { syncNetworkToLibreNMS, syncAllNetworksToLibreNMS } from "@/lib/integrations/librenms-sync";
+// Import statico (come LibreNMS, non dinamico come Wazuh): unifi-sync importa
+// db-tenant, che sotto tsx non va mai caricato con `await import()` (ADR 0002).
+import { syncController } from "@/lib/controllers/service";
+import { syncUnifiClientsForController } from "@/lib/integrations/unifi-clients-sync";
+// Statici per la stessa ragione: mesh-sync e feature importano db-tenant.
+import { syncMeshForTenant } from "@/lib/integrations/meshcentral/mesh-sync";
+import { meshAttivo } from "@/lib/integrations/meshcentral/feature";
 
-export async function runJob(jobId: number): Promise<void> {
+/** Job che lanciano giri di discovery: durano quanto il giro (fino a ~49 minuti misurati). */
+export const JOB_DI_SCANSIONE: ReadonlySet<string> = new Set(["ping_sweep", "fast_scan", "snmp_scan", "nmap_scan"]);
+
+export interface OpzioniRunJob {
+  /** Chiamata alla partenza di ogni giro di scansione, con il suo id (per «Esegui ora»). */
+  onGiroAvviato?: (scanId: string, networkId: number) => void;
+  /**
+   * Rete occupata da un altro giro: aspetta che si chiuda e parte, invece di
+   * saltare (lo scheduler). Senza, il giro è «saltato» subito («Esegui ora»,
+   * che non può tenere aperta la richiesta per un giro altrui).
+   */
+  attendiReteLibera?: boolean;
+  /**
+   * Quanto si aspetta un giro (il proprio fino al `done`, o quello che tiene la
+   * rete) prima di smettere. Predefinito: la soglia d'allarme del tenant
+   * (`scan_lock_alarm_minutes`, 100 minuti). Le prove la accorciano.
+   */
+  attesaMassimaMs?: number;
+  /** L'ora con cui il job dei client UniFi guarda la finestra 7-20 (le prove la fissano). */
+  adesso?: Date;
+}
+
+/** Attesa massima predefinita: la soglia d'allarme del lucchetto, in ms. */
+function attesaMassimaPredefinitaMs(): number {
+  let valore: string | null = null;
+  try {
+    valore = getTenantSetting(CHIAVE_SOGLIA_ALLARME);
+  } catch {
+    valore = null; // impostazione illeggibile: soglia predefinita
+  }
+  return sogliaAllarmeDa(valore) * 60_000;
+}
+
+const SCADUTO = Symbol("scaduto");
+
+/** La promessa, oppure SCADUTO dopo `ms`; il timer si toglie appena la promessa arriva. */
+async function entro<T>(p: Promise<T>, ms: number): Promise<T | typeof SCADUTO> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const scadenza = new Promise<typeof SCADUTO>((r) => {
+    timer = setTimeout(() => r(SCADUTO), Math.max(0, ms));
+  });
+  try {
+    return await Promise.race([p, scadenza]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/**
+ * Esito di un job arrivato in fondo senza errori (T3-18). «saltato»: la rete era
+ * già occupata da un altro giro e non si è scansionato niente; chi chiama non
+ * aggiorna `last_run` e non lo conta come riuscito.
+ */
+export type EsitoRunJob =
+  | { esito: "eseguito"; motivo?: string }
+  | { esito: "saltato"; motivo: string; giroInCorso?: GiroOccupante };
+
+const ESEGUITO: EsitoRunJob = { esito: "eseguito" };
+
+/**
+ * Esegue un job e torna quando il lavoro è FINITO (T3-17, INV-1): per i job di
+ * scansione vuol dire a giro chiuso, e un giro fallito fa rifiutare `runJob`,
+ * così lo scheduler lo conta fra i fallimenti e `last_run` segna la fine.
+ * Su una rete già in scansione il giro non parte e l'esito è «saltato» (T3-18).
+ */
+/** Il controller di un job unifi_sync (`config.controller_id`); null se manca o non è leggibile. */
+export function unifiJobControllerId(configStr: string | null | undefined): number | null {
+  try {
+    const v = (JSON.parse(configStr || "{}") as { controller_id?: unknown }).controller_id;
+    const n = Number(v);
+    return Number.isInteger(n) && n > 0 ? n : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Che cosa legge un job unifi_sync: sta nel modulo puro dei tipi di job, perché serve anche alla pagina. */
+export { unifiJobKind };
+
+/** Spec §10.5: i client si leggono dalle 7 alle 20 (ora italiana): di notte sono spenti. */
+export function inFinestraClient(d: Date): boolean {
+  const ora = Number(
+    new Intl.DateTimeFormat("it-IT", { timeZone: "Europe/Rome", hour: "2-digit", hourCycle: "h23" }).format(d),
+  );
+  return ora >= 7 && ora < 20;
+}
+
+/**
+ * Il job dei client di UN controller. Fuori dalle 7-20 non chiama il controller:
+ * una riga di log e il motivo a chi chiama («Esegui ora» lo mostra), non è un
+ * fallimento. Dentro, un giro non riuscito (rete, chiave, certificato: «non
+ * so», le righe esistenti restano) lancia, così lo scheduler lo conta fra i
+ * falliti come per gli apparati. Torna null se ha letto.
+ * `adesso` si passa nelle prove.
+ */
+export async function runUnifiClientJob(controllerId: number, adesso: Date = new Date()): Promise<string | null> {
+  if (!inFinestraClient(adesso)) {
+    console.info(`[Scheduler] unifi_sync client #${controllerId}: fuori dalle 7-20, non letto`);
+    return "Fuori dalle 7-20 (ora italiana): i client non sono stati letti";
+  }
+  const result = await syncUnifiClientsForController(controllerId, "schedule");
+  if (result.failure) {
+    throw new Error(`Lettura dei client UniFi non riuscita (controller #${controllerId}): ${result.failure}`);
+  }
+  // Solo i numeri: MAC, nomi e IP dei client non vanno nel log.
+  console.info(
+    `[Scheduler] unifi_sync client #${controllerId}: ${result.clients} letti, ${result.saved} salvati, ` +
+      `${result.unmatched} non abbinati`,
+  );
+  return null;
+}
+
+export { HYPERVISOR_SYNC_MINUTES };
+
+/** Resoconto del job hypervisor_sync. `errori`: uno per apparato non letto (per chi guarda, mai nel log). */
+export interface EsitoHypervisorSync {
+  hypervisors: number;
+  letti: number;
+  falliti: number;
+  errori: string[];
+  /** Le letture in più dell'host (T2.5): una riga di soli numeri e codici; null = spente o niente da dire. */
+  letture: string | null;
+}
+
+/** Il motivo nel resoconto del job: gli hypervisor non letti e, in coda, le letture in più (T2.5). null = niente da dire. */
+export function motivoHypervisorSync(r: EsitoHypervisorSync): string | null {
+  const parti = [r.falliti > 0 ? `${r.falliti} hypervisor su ${r.hypervisors} non letti: resta la lettura di prima` : null, r.letture];
+  const s = parti.filter((x): x is string => !!x).join("; ");
+  return s === "" ? null : s;
+}
+
+/**
+ * Lettura degli hypervisor del tenant (topologia fase 2b, spec §11.5): la
+ * scansione Proxmox esistente più le schede vive, per ogni apparato hypervisor
+ * con scansione Proxmox configurato e acceso, uno alla volta. Un apparato che
+ * non si legge non ferma gli altri e non scrive niente (la scansione tiene
+ * quella di prima, Review Focus 4). Nel log solo numeri e id: niente nomi,
+ * indirizzi o MAC. `scan` e `host` si passano nelle prove.
+ *
+ * T2 (spec topologia §13.5.5, T2.5): dopo una scansione riuscita, la lettura dal lato dell'host (`leggiHost`: lldpcli e
+ * membri dei bond, in comandi a parte, I54), dietro `topologia.lettura.host`, spenta di default. Un suo errore va nel
+ * resoconto (`letture`, solo numeri e codici) e non tocca la scansione né il conto degli apparati letti.
+ */
+export async function runHypervisorSync(
+  scan: (deviceId: number) => Promise<unknown> = (id) => runProxmoxDeviceScan(id),
+  host: (deviceId: number) => Promise<Array<EsitoGiro<unknown>>> = (id) => leggiHost(id),
+): Promise<EsitoHypervisorSync> {
+  const devices = listHypervisorScanDevices();
+  const esito: EsitoHypervisorSync = { hypervisors: devices.length, letti: 0, falliti: 0, errori: [], letture: null };
+  const conHost = letturaAccesa("host");
+  const esitiHost: Array<EsitoGiro<unknown>> = [];
+  for (const d of devices) {
+    let letto = false;
+    try {
+      await scan(d.id);
+      esito.letti++;
+      letto = true;
+    } catch (e) {
+      esito.falliti++;
+      esito.errori.push(`Apparato #${d.id}: ${e instanceof Error ? e.message : String(e)}`);
+      console.warn(`[Scheduler] hypervisor_sync: apparato #${d.id} non letto, resta la lettura di prima`);
+    }
+    if (!letto || !conHost) continue;
+    try {
+      esitiHost.push(...await host(d.id));
+    } catch (e) {
+      // Un errore fuori dalla cadenza (che gli errori della lettura li tiene già): il solo codice, mai il messaggio.
+      const codice = codiceErrore(e);
+      esitiHost.push({ stato: "errore", esito: { il: oraUtc(new Date()), comandi: 0, riusciti: 0, codice } });
+      console.warn(`[Scheduler] hypervisor_sync: apparato #${d.id}, lettura dell'host non riuscita (${codice})`);
+    }
+  }
+  esito.letture = riassuntoLetture(esitiHost);
+  return esito;
+}
+
+export async function runJob(jobId: number, opzioni?: OpzioniRunJob): Promise<EsitoRunJob> {
   // v0.2.642 audit perf MC3: SELECT WHERE id invece di full-scan + .find().
   const job = getScheduledJobById(jobId);
   if (!job) throw new Error(`Job #${jobId} non trovato`);
 
   switch (job.job_type) {
     case "ping_sweep":
-      await runPingSweep(job.network_id);
-      break;
+      return runPingSweep(job.network_id, opzioni);
     case "fast_scan":
-      await runFastScan(job.network_id);
-      break;
+      return runFastScan(job.network_id, opzioni);
     case "snmp_scan":
-      await runSnmpScan(job.network_id);
-      break;
+      return runSnmpScan(job.network_id, opzioni);
     case "nmap_scan":
-      await runNmapScan(job.network_id);
-      break;
+      return runNmapScan(job.network_id, opzioni);
     case "arp_poll":
       await runArpPoll();
       break;
@@ -113,6 +319,21 @@ export async function runJob(jobId: number): Promise<void> {
       );
       break;
     }
+    case "wazuh_alerts_sync": {
+      const { syncWazuhAlertsForTenant } = await import(
+        "@/lib/integrations/wazuh-alerts-sync"
+      );
+      const result = await syncWazuhAlertsForTenant();
+      console.info(
+        result.skipped
+          ? `[Scheduler] wazuh_alerts_sync: saltato (${result.reason})`
+          : `[Scheduler] wazuh_alerts_sync: ${result.fetched} alert letti, ` +
+            `${result.opened} eventi aperti, ${result.updated} aggiornati, ` +
+            `${result.ignored} fuori selezione, ` +
+            `notifiche ${result.notifiedImmediate} immediate / ${result.notifiedDigest} in digest`
+      );
+      break;
+    }
     case "mdm_sync": {
       const { runMdmSync } = await import("@/lib/integrations/mdm-runner");
       const result = await runMdmSync();
@@ -123,7 +344,12 @@ export async function runJob(jobId: number): Promise<void> {
       break;
     }
     case "meshcentral_sync": {
-      const { syncMeshForTenant } = await import("@/lib/integrations/meshcentral/mesh-sync");
+      // SEC-18: a modulo disinstallato il job resta in tabella ma non gira.
+      // Non è un guasto: niente eccezione, così non si accumulano avvisi.
+      if (!meshAttivo()) {
+        console.info("[Scheduler] meshcentral_sync saltato: modulo MeshCentral disattivato");
+        break;
+      }
       const result = await syncMeshForTenant();
       console.info(
         `[Scheduler] meshcentral_sync: ${result.matched}/${result.totalNodes} nodi matchati, ` +
@@ -131,56 +357,270 @@ export async function runJob(jobId: number): Promise<void> {
       );
       break;
     }
-  }
-}
-
-async function runPingSweep(networkId: number | null): Promise<void> {
-  if (networkId) {
-    await discoverNetwork(networkId, "network_discovery");
-  } else {
-    const networks = getNetworks();
-    for (const net of networks) {
-      await discoverNetwork(net.id, "network_discovery");
+    case "unifi_sync": {
+      // Pianificazione di UN controller (ADR 0007): la crea la pagina Controller
+      // di rete, con config.controller_id. Un job senza controller (nato prima)
+      // non legge niente: lo si dice, invece di indovinare quale.
+      const controllerId = unifiJobControllerId(job.config);
+      if (controllerId === null) {
+        throw new Error("Job unifi_sync senza controller: la pianificazione si imposta dalla pagina Controller di rete");
+      }
+      if (unifiJobKind(job.config) === "client") {
+        const nonLetto = await runUnifiClientJob(controllerId, opzioni?.adesso);
+        if (nonLetto) return { esito: "eseguito", motivo: nonLetto };
+        break;
+      }
+      const result = await syncController(controllerId, "schedule", null);
+      // Niente letto o niente scritto: si lancia, così lo scheduler lo conta
+      // fra i job falliti invece di dirlo completato.
+      if (result.failure) throw new Error(`Sync UniFi non riuscita (controller #${controllerId}): ${result.failure}`);
+      console.info(
+        `[Scheduler] unifi_sync #${controllerId}: ${result.total} apparati dal controller, ${result.added} nuovi, ` +
+        `${result.updated} aggiornati, ${result.skipped} saltati, ${result.portsUpserted} porte, ` +
+        `${result.neighborsUpserted} vicini, ${result.errors.length} avvisi`
+      );
+      // Gli avvisi per apparato (nomi e IP) non vanno nel log: si leggono nel
+      // resoconto della sync manuale.
+      break;
+    }
+    case "hypervisor_sync": {
+      const r = await runHypervisorSync();
+      if (r.hypervisors === 0) {
+        return { esito: "eseguito", motivo: "Nessun hypervisor con scansione Proxmox configurata: niente da leggere" };
+      }
+      // Nessuno letto: si lancia, così lo scheduler lo conta fra i falliti. Il
+      // motivo per apparato (con gli indirizzi) resta fuori dal messaggio e dal log.
+      if (r.letti === 0) {
+        throw new Error(`Lettura degli hypervisor non riuscita: 0 letti su ${r.hypervisors}`);
+      }
+      console.info(`[Scheduler] hypervisor_sync: ${r.letti} hypervisor letti su ${r.hypervisors}${r.letture ? `; ${r.letture}` : ""}`);
+      const motivo = motivoHypervisorSync(r);
+      if (motivo) return { esito: "eseguito", motivo };
+      break;
     }
   }
+  return ESEGUITO;
 }
 
-async function runFastScan(networkId: number | null): Promise<void> {
-  // Scansione veloce schedulata: ICMP ping sweep + ARP/DHCP router (vedi discovery.ts blocco "fast").
-  // Non fa port scan, non marca offline i non rispondenti: è una fotografia di presenza.
-  if (networkId) {
-    await discoverNetwork(networkId, "fast");
-  } else {
-    const networks = getNetworks();
-    for (const net of networks) {
-      await discoverNetwork(net.id, "fast");
+/**
+ * «Esegui ora» dalla UI. Un job di scansione non si aspetta: la richiesta HTTP
+ * resterebbe aperta per tutto il giro (fino a ~49 minuti). Si risponde appena
+ * parte il primo giro, con il suo id; `last_run` si scrive a giro finito, come
+ * fa lo scheduler. Gli altri job si aspettano come prima.
+ */
+export type EsitoEseguiOra =
+  | { modo: "avviato"; scanId: string }
+  /** `motivo`: il job è finito senza fare tutto (es. client UniFi fuori dalle 7-20): la pagina lo mostra. */
+  | { modo: "eseguito"; durationMs: number; motivo?: string }
+  /** Rete già in scansione (T3-18): niente giro, niente `last_run`. */
+  | { modo: "saltato"; motivo: string; giroInCorso?: GiroOccupante };
+
+export async function eseguiJobOra(jobId: number, opzioni?: Pick<OpzioniRunJob, "adesso">): Promise<EsitoEseguiOra> {
+  const job = getScheduledJobById(jobId);
+  if (!job) throw new Error(`Job #${jobId} non trovato`);
+  const inizio = Date.now();
+
+  if (!JOB_DI_SCANSIONE.has(job.job_type)) {
+    const e = await runJob(jobId, opzioni);
+    updateJobLastRun(jobId);
+    return { modo: "eseguito", durationMs: Date.now() - inizio, ...(e.motivo ? { motivo: e.motivo } : {}) };
+  }
+
+  return new Promise<EsitoEseguiOra>((resolve, reject) => {
+    let risposto = false;
+    runJob(jobId, {
+      onGiroAvviato: (scanId) => {
+        if (risposto) return;
+        risposto = true;
+        resolve({ modo: "avviato", scanId });
+      },
+    }).then(
+      (esito) => {
+        if (esito.esito === "saltato") {
+          // Nessun giro partito: la rete era già occupata. last_run resta com'era.
+          if (!risposto) {
+            risposto = true;
+            resolve({ modo: "saltato", motivo: esito.motivo, giroInCorso: esito.giroInCorso });
+          }
+          return;
+        }
+        updateJobLastRun(jobId);
+        if (!risposto) {
+          // Nessun giro partito (nessuna rete): il job è già finito.
+          risposto = true;
+          resolve({ modo: "eseguito", durationMs: Date.now() - inizio });
+        }
+      },
+      (error: unknown) => {
+        if (!risposto) {
+          risposto = true;
+          reject(error);
+          return;
+        }
+        // La risposta è già partita: il fallimento resta nel log, come per lo scheduler.
+        const msg = error instanceof Error ? error.message : String(error);
+        console.error(`[Jobs] Esecuzione manuale del job #${jobId} fallita a giro avviato: ${msg}`);
+      },
+    );
+  });
+}
+
+/**
+ * Un giro su una rete, atteso fino alla fine vera; se fallisce, lancia.
+ *
+ * Rete già in scansione: senza `attendi` il giro non parte ed è «saltato» col
+ * giro che la tiene; con `attendi` (scheduler) si aspetta che quel giro si
+ * chiuda e si riparte, fino all'attesa massima, poi «saltato».
+ *
+ * Il proprio giro si aspetta fino all'attesa massima (revisione 3b): oltre, il
+ * job smette di aspettare, scrive la riga d'allarme e fallisce, ma il giro NON
+ * si chiude e la rete resta occupata finché non finisce davvero (ADR 0006).
+ * Senza questo limite un giro appeso teneva il job per sempre, in silenzio, e
+ * su un job a rete nulla fermava anche tutte le reti successive.
+ */
+async function giroCompleto(
+  networkId: number,
+  avvia: () => Promise<AvvioDiscovery>,
+  opzioni: OpzioniRunJob | undefined,
+  attendi: boolean,
+): Promise<EsitoRunJob> {
+  const tenantCode = getCurrentTenantCode();
+  const attesaMs = opzioni?.attesaMassimaMs ?? attesaMassimaPredefinitaMs();
+  const sogliaAllarmeMinuti = attesaMs / 60_000;
+  const scadenza = Date.now() + attesaMs;
+
+  let avviato: AvvioDiscovery;
+  for (;;) {
+    try {
+      avviato = await avvia();
+      break;
+    } catch (e) {
+      if (!isScanInCorso(e)) throw e;
+      const saltato: EsitoRunJob = {
+        esito: "saltato",
+        motivo: `rete ${networkId} già in scansione`,
+        giroInCorso: e.giro,
+      };
+      if (!attendi || !tenantCode) {
+        console.info(
+          `[Jobs] Rete ${networkId} già in scansione (giro ${e.giro.scanId}, ${e.giro.scanType}): giro saltato`,
+        );
+        return saltato;
+      }
+      const resto = scadenza - Date.now();
+      const rilascio = attendiRilascio(tenantCode, networkId);
+      if (resto <= 0 || (rilascio && (await entro(rilascio, resto)) === SCADUTO)) {
+        segnalaGiroLungo(tenantCode, networkId, e.giro.scanId, { sogliaAllarmeMinuti });
+        console.warn(
+          `[Jobs] Rete ${networkId} ancora occupata dal giro ${e.giro.scanId} (${e.giro.scanType}) ` +
+            "oltre l'attesa massima: giro saltato",
+        );
+        return { ...saltato, motivo: `rete ${networkId} occupata oltre l'attesa massima` };
+      }
+      // Rete rilasciata: si riprova subito, prima di chi arriva dopo.
     }
   }
+
+  const { id, done } = avviato;
+  opzioni?.onGiroAvviato?.(id, networkId);
+  const esito = await entro(done, attesaMs);
+  if (esito === SCADUTO) {
+    if (tenantCode) segnalaGiroLungo(tenantCode, networkId, id, { sogliaAllarmeMinuti });
+    // Il giro va avanti per conto suo: la sua chiusura non la aspetta più nessuno.
+    done.catch(() => undefined);
+    throw new Error(
+      `Scansione ${id} della rete ${networkId} non chiusa dopo ${Math.round(attesaMs / 60_000)} minuti: ` +
+        "il job smette di aspettarla, la rete resta occupata finché il giro non si chiude",
+    );
+  }
+  if (esito.status === "failed") {
+    throw new Error(`Scansione ${id} della rete ${networkId} fallita: ${esito.error ?? "errore sconosciuto"}`);
+  }
+  return ESEGUITO;
 }
 
-async function runSnmpScan(networkId: number | null): Promise<void> {
-  const runForNetwork = async (nid: number) => {
-    const network = getNetworkById(nid);
-    if (!network) return;
-    const snmpCommunity = network.snmp_community ?? null;
-    await discoverNetwork(nid, "snmp", undefined, snmpCommunity);
+/** Un giro per rete: `attendi` dice se aspettare una rete occupata (vedi `giroCompleto`). */
+type GiroSuRete = (nid: number, attendi: boolean) => Promise<EsitoRunJob>;
+
+/**
+ * Rete indicata: un giro. Rete nulla: tutte le reti, una dopo l'altra (prima
+ * partivano tutte insieme); una rete che fallisce, o il cui giro non si chiude
+ * entro l'attesa massima, non ferma le altre e il job fallisce alla fine con
+ * l'elenco degli errori. Una rete già in scansione si rimanda in coda: con
+ * `attendiReteLibera` la si riprende aspettando che si liberi, senza si salta
+ * (T3-18). Il job è «saltato» solo se le ha saltate tutte.
+ */
+async function suOgniRete(
+  networkId: number | null,
+  opzioni: OpzioniRunJob | undefined,
+  giro: GiroSuRete,
+): Promise<EsitoRunJob> {
+  const attendi = opzioni?.attendiReteLibera === true;
+  if (networkId) return giro(networkId, attendi);
+
+  const networks = getNetworks();
+  const errori: string[] = [];
+  const saltate: Array<Extract<EsitoRunJob, { esito: "saltato" }>> = [];
+  const rimandate: number[] = [];
+  const esegui = async (nid: number, attendiQui: boolean, rimandaSeOccupata: boolean): Promise<void> => {
+    try {
+      const esito = await giro(nid, attendiQui);
+      if (esito.esito !== "saltato") return;
+      if (rimandaSeOccupata) rimandate.push(nid);
+      else saltate.push(esito);
+    } catch (e) {
+      errori.push(e instanceof Error ? e.message : String(e));
+    }
   };
-  if (networkId) {
-    await runForNetwork(networkId);
-  } else {
-    const networks = getNetworks();
-    for (const net of networks) {
-      await runForNetwork(net.id);
-    }
+  // Prima le reti libere, senza aspettare nessuno; poi, se richiesto, le occupate.
+  for (const net of networks) await esegui(net.id, false, attendi);
+  for (const nid of rimandate) await esegui(nid, true, false);
+
+  if (errori.length > 0) {
+    throw new Error(`${errori.length} reti su ${networks.length} non scansionate: ${errori.join(" · ")}`);
   }
+  if (saltate.length === 0) return ESEGUITO;
+  const motivo = `${saltate.length} ${saltate.length === 1 ? "rete" : "reti"} su ${networks.length} ${
+    saltate.length === 1 ? "saltata" : "saltate"
+  }: già in scansione`;
+  if (saltate.length === networks.length) {
+    return { esito: "saltato", motivo, giroInCorso: saltate[0].giroInCorso };
+  }
+  return { esito: "eseguito", motivo };
 }
 
-async function runNmapScan(networkId: number | null): Promise<void> {
+async function runPingSweep(networkId: number | null, opzioni?: OpzioniRunJob): Promise<EsitoRunJob> {
+  return suOgniRete(networkId, opzioni, (nid, attendi) =>
+    giroCompleto(nid, () => discoverNetwork(nid, "network_discovery"), opzioni, attendi),
+  );
+}
+
+async function runFastScan(networkId: number | null, opzioni?: OpzioniRunJob): Promise<EsitoRunJob> {
+  // Scansione veloce schedulata: nmap -sn (ripiego ping sweep) + secondo passaggio TCP
+  // sugli host già online + ARP/DHCP router (vedi discovery.ts blocco "fast"). Niente
+  // port scan. A fine giro MANDA offline i non rispondenti, come network_discovery,
+  // passando dal filtro sulla partenza del giro e dalla soglia: se debba farlo è una
+  // decisione aperta (ADR 0006), fino ad allora il codice resta così.
+  return suOgniRete(networkId, opzioni, (nid, attendi) =>
+    giroCompleto(nid, () => discoverNetwork(nid, "fast"), opzioni, attendi),
+  );
+}
+
+async function runSnmpScan(networkId: number | null, opzioni?: OpzioniRunJob): Promise<EsitoRunJob> {
+  return suOgniRete(networkId, opzioni, async (nid, attendi) => {
+    const network = getNetworkById(nid);
+    if (!network) return ESEGUITO;
+    const snmpCommunity = network.snmp_community ?? null;
+    return giroCompleto(nid, () => discoverNetwork(nid, "snmp", undefined, snmpCommunity), opzioni, attendi);
+  });
+}
+
+async function runNmapScan(networkId: number | null, opzioni?: OpzioniRunJob): Promise<EsitoRunJob> {
   const { buildCustomScanArgs } = await import("@/lib/scanner/ports");
   const profile = getActiveNmapProfile();
-  const runForNetwork = async (nid: number) => {
+  const runForNetwork = async (nid: number, attendi: boolean): Promise<EsitoRunJob> => {
     const network = getNetworkById(nid);
-    if (!network) return;
+    if (!network) return ESEGUITO;
     let nmapArgs: string | undefined;
     let tcpPorts: string | null = null;
     let udpPorts: string | null = null;
@@ -197,15 +637,36 @@ async function runNmapScan(networkId: number | null): Promise<void> {
       nmapArgs = buildCustomScanArgs(null);
     }
     const snmpCommunity = profile?.snmp_community || network.snmp_community || null;
-    await discoverNetwork(nid, "nmap", nmapArgs, snmpCommunity, { tcpPorts, udpPorts });
+    return giroCompleto(
+      nid,
+      () => discoverNetwork(nid, "nmap", nmapArgs, snmpCommunity, { tcpPorts, udpPorts }),
+      opzioni,
+      attendi,
+    );
   };
-  if (networkId) {
-    await runForNetwork(networkId);
-  } else {
-    const networks = getNetworks();
-    for (const net of networks) {
-      await runForNetwork(net.id);
-    }
+  return suOgniRete(networkId, opzioni, runForNetwork);
+}
+
+/**
+ * Salva i MAC per porta di un apparato (spec §10.5) senza fermare il resto del
+ * giro (revisione finale I1): nel ramo SNMP vicini e routing vengono dopo, e una
+ * scrittura che lancia (indice unico mancante perché la migrazione di fase 2 è
+ * fallita all'apertura del tenant, una riga storta) li saltava tutti e due fino
+ * al riavvio. Una riga di log col solo id dell'apparato e il codice d'errore:
+ * niente MAC, nomi o IP. `scrivi` si passa nelle prove.
+ */
+export function salvaMacPorta(
+  deviceId: number,
+  entries: Parameters<typeof upsertMacPortEntries>[1],
+  scrivi: typeof upsertMacPortEntries = upsertMacPortEntries,
+): boolean {
+  try {
+    scrivi(deviceId, entries, "device");
+    return true;
+  } catch (err) {
+    const code = (err as { code?: unknown } | null)?.code;
+    console.warn(`[MacPorta] apparato #${deviceId}: MAC per porta non salvati (${typeof code === "string" ? code : "errore"})`);
+    return false;
   }
 }
 
@@ -214,7 +675,48 @@ export type RunArpPollOptions = {
   onlyEnrichIps?: string[];
   /** Se true, non importa lease DHCP MikroTik (evita host extra durante scoperta rete). */
   skipDhcpLeases?: boolean;
+  /** Solo per le prove: il client del router al posto di quello vero (SSH/SNMP). */
+  creaClientRouter?: typeof createRouterClient;
+  /** Solo per le prove: la connessione delle letture in più dei MikroTik al posto di quella SSH vera (spia, I33). */
+  apriEsecutore?: ApriEsecutore;
+  /** Solo per le prove: l'ora del giro per la cadenza delle letture in più. */
+  adesso?: () => Date;
+  /** Solo per le prove: il walk SNMP delle letture in più al posto di quello vero (spia, I33). */
+  creaWalkSnmp?: typeof creaWalkSnmp;
+  /** Solo per le prove: il client dello switch al posto di quello vero. */
+  creaClientSwitch?: typeof createSwitchClient;
 };
+
+/**
+ * Le letture in più di un MikroTik letto via SSH (spec topologia §13.5.2, T2.2), dietro `topologia.lettura.mikrotik`, al
+ * più una volta l'ora per apparato. `uscitaInterfacce`: MK2 già letto dal giro (ramo dei router); null = si legge qui.
+ * `conVicini`: il ramo degli switch legge anche MK1, con la fonte nuova `ssh`, che legge solo il modello per cavo.
+ */
+async function letturaMikrotik(device: NetworkDevice, uscitaInterfacce: string | null, conVicini: boolean, options?: RunArpPollOptions): Promise<EsitoGiro<unknown>> {
+  return conCadenza("mikrotik", device.id, async () => {
+    const r = await (options?.apriEsecutore ?? apriEsecutoreSsh)(device, (esegui) => leggiMikrotikTopologia(esegui, { uscitaInterfacce, conVicini }));
+    const scritti = scriviFattiTopologia(device.id, "device", fattiMikrotik(r.lettura), options?.adesso?.() ?? new Date());
+    if (r.vicini && r.vicini.length > 0) upsertNeighbors(device.id, r.vicini, "ssh");
+    return { valore: scritti, conteggio: { comandi: r.comandi, riusciti: r.riusciti, codice: r.codice } };
+  }, options?.adesso);
+}
+
+/**
+ * Le letture SNMP in più (spec topologia §13.5.4, SN2-SN9) di uno switch che non è del controller e non è un MikroTik letto
+ * via SSH, dietro `topologia.lettura.snmp`, al più una volta l'ora. Chi legge «della marca che consuma il CDP»: il
+ * fornitore dell'apparato o la sua descrizione SNMP (SN9). Sedici letture, ognuna con la sua sessione e TEMPO_WALK_MS.
+ * Nessuna lettura riuscita = errore col codice: niente scrittura né potatura (revisione del Task 6 di T2, C2).
+ */
+async function letturaSnmp(device: NetworkDevice, options?: RunArpPollOptions): Promise<EsitoGiro<unknown>> {
+  return conCadenza("snmp", device.id, async () => {
+    const walk = await (options?.creaWalkSnmp ?? creaWalkSnmp)(device, TEMPO_WALK_MS);
+    const l = await leggiSnmpTopologia(walk, { lettoreCisco: device.vendor === "cisco" || /cisco/i.test(device.sysdescr ?? "") });
+    if (l.riuscite === 0) throw Object.assign(new Error("Nessuna lettura SNMP riuscita"), { code: l.codice ?? "NESSUNA_LETTURA" });
+    const scritti = scriviFattiTopologia(device.id, "snmp", l, options?.adesso?.() ?? new Date());
+    if (l.vicini.length > 0) upsertNeighbors(device.id, l.vicini, "snmp");
+    return { valore: scritti, conteggio: { comandi: l.letture, riusciti: l.riuscite, codice: l.codice } };
+  }, options?.adesso);
+}
 
 export async function runArpPoll(
   networkId?: number | null,
@@ -244,13 +746,18 @@ export async function runArpPoll(
     devices = [device];
   }
 
+  const porteNonLette: string[] = []; // router la cui bridge host non si è letta: nel resoconto
+  const esitiLetture: Array<EsitoGiro<unknown>> = []; // letture in più (T2): numeri e codici, mai nomi
+  const durate = { router: 0, switch: 0, nRouter: 0, nSwitch: 0 }; // la riga dei tempi del giro (misura del carico, T2)
   for (const device of devices) {
+    const t0 = performance.now();
+    let mkProvata = false; // la lettura in più del MikroTik di questo giro è partita (B5, revisione del Task 4)
     try {
       if (device.device_type === "hypervisor") {
         continue;
       }
       if (networkDeviceUsesArpPoll(device)) {
-        const client = await createRouterClient(device);
+        const client = await (options?.creaClientRouter ?? createRouterClient)(device);
         const entries = await client.getArpTable();
 
         // Prima aggiorna hosts con MAC e vendor, poi upsertArpEntries (così host_id in arp_entries è corretto)
@@ -260,21 +767,26 @@ export async function runArpPoll(
           const network = networks.find((n) => isIpInCidr(entry.ip!, n.cidr));
           if (!network) continue;
           const vendor = await lookupVendor(entry.mac);
-          const classification = classifyDevice({ hostname: null, vendor: vendor ?? null });
           // ARP è fonte PASSIVA: aggiorna solo host già esistenti, MAI inserisce.
           // I router tengono entry ARP per ore (Cisco 4h default), quindi un IP nella
           // tabella ARP non prova reachability attuale né "esistenza" del device.
           // Solo i probe attivi (ICMP + TCP fallback in network_discovery) sono
           // autoritativi per la CREAZIONE di un host. Se l'host è stato cancellato
           // dall'utente, NON va ricreato fino a quando ICMP non lo ri-conferma.
-          updateHostIfExists({
+          // Fase 4: bypass classifyDevice→classification rimosso — un solo
+          // scrittore (attribution v2). recomputeAttributionSafe sotto emette
+          // l'evidenza "oui" dal vendor appena scritto e proietta il risultato.
+          const host = updateHostIfExists({
             network_id: network.id,
             ip: entry.ip,
             mac: entry.mac,
             vendor: vendor || undefined,
             hostname_source: "arp",
-            ...(classification && { classification }),
           });
+          if (host) {
+            const { recomputeAttributionSafe } = await import("@/lib/attribution/recompute");
+            recomputeAttributionSafe(host.id, "scan");
+          }
         }
         upsertArpEntries(device.id, entries, (ip) => {
           const n = networks.find((net) => isIpInCidr(ip, net.cidr));
@@ -291,14 +803,12 @@ export async function runArpPoll(
               const network = networks.find((n) => isIpInCidr(lease.ip, n.cidr));
               if (!network) continue;
               const vendor = await lookupVendor(lease.mac);
-              const classification = classifyDevice({
-                hostname: lease.hostname ?? null,
-                vendor: vendor ?? null,
-              });
               // DHCP è fonte PASSIVA: aggiorna solo host esistenti, MAI inserisce.
               // I DHCP server tengono lease per ore/giorni dopo che il device si
               // spegne, quindi un lease attivo non prova che l'host esista più.
               // Vedi commento in arp_poll sopra.
+              // Fase 4: bypass classifyDevice→classification rimosso — un solo
+              // scrittore (attribution v2), vedi recomputeAttributionSafe sotto.
               const host = updateHostIfExists({
                 network_id: network.id,
                 ip: lease.ip,
@@ -306,8 +816,11 @@ export async function runArpPoll(
                 ...(lease.hostname && { hostname: lease.hostname }),
                 hostname_source: "dhcp",
                 vendor: vendor || undefined,
-                ...(classification && { classification }),
               });
+              if (host) {
+                const { recomputeAttributionSafe } = await import("@/lib/attribution/recompute");
+                recomputeAttributionSafe(host.id, "scan");
+              }
               upsertMacIpMapping({
                 mac: lease.mac,
                 ip: lease.ip,
@@ -429,6 +942,18 @@ export async function runArpPoll(
           });
 
           upsertSwitchPorts(device.id, switchPorts);
+          // Fase 2b, Task 1b: l'ARP di un router non va più in mac_port_entries — la sua
+          // `interface=` è bridge/VLAN/VRRP, non il cavo. I MAC per porta vengono dalla bridge host, sotto.
+        }
+
+        // MAC per porta del router: la bridge host sulle porte fisiche (ether, bond), in sola lettura.
+        // Un errore non ferma il resto del giro: va nel resoconto, col solo codice (niente MAC né IP).
+        const porte = await leggiMacPorteRouter(client);
+        if (porte.righe) {
+          salvaMacPorta(device.id, porte.righe.map((e) => ({ ...e, port_name: e.port_name.trim() })));
+        } else if (porte.errore) {
+          console.warn(`[ARP Poll] apparato #${device.id}: porte fisiche non lette (${porte.errore})`);
+          porteNonLette.push(`${device.name} (${porte.errore})`);
         }
 
         // Neighbors LLDP/CDP/MNDP
@@ -436,7 +961,8 @@ export async function runArpPoll(
           try {
             const neighbors = await client.getNeighbors();
             if (neighbors.length > 0) {
-              upsertNeighbors(device.id, neighbors);
+              // T2 (spec §13.5.2, MK1): discovered-by e capacità solo con la lettura dei MikroTik accesa (I33).
+              upsertNeighbors(device.id, letturaAccesa("mikrotik") ? neighbors : neighbors.map(senzaCampiCavi));
             }
           } catch (err) {
             console.warn(`[Neighbors] Errore su ${device.name}:`, err);
@@ -454,10 +980,29 @@ export async function runArpPoll(
             console.warn(`[Routing] Errore su ${device.name}:`, err);
           }
         }
+
+        // Letture in più (T2, spenta di default): MK3-MK8 su una connessione sola; MK2 è l'uscita già letta qui sopra.
+        if (device.vendor === "mikrotik" && device.protocol === "ssh") {
+          mkProvata = true;
+          esitiLetture.push(await letturaMikrotik(device, client.ultimaUscitaInterfacce?.() ?? null, false, options));
+        }
       } else {
-        const client = await createSwitchClient(device);
+        // Letture in più (T2, spenta di default) per prime: una tabella MAC che fallisce non deve toglierle.
+        if (device.vendor === "mikrotik" && device.protocol === "ssh") {
+          esitiLetture.push(await letturaMikrotik(device, null, true, options));
+        }
+        // SN6: solo per gli switch senza controller (la chiave dei vicini non ha la fonte: due lettori della stessa riga si
+        // scambierebbero la fonte) e non letti come MikroTik via SSH (hanno le loro letture). Interruttore guardato per
+        // primo: spenta, il giro degli switch fa esattamente quello di prima (nemmeno la ricerca della credenziale SNMP).
+        // Solo gli switch (spec §13.5.4; revisione del Task 6, C5): AP, NAS e server di questo ramo no, scelta di Riccardo.
+        const delController = !!(device as NetworkDevice & { controller_mac?: string | null }).controller_mac;
+        if (device.device_type === "switch" && !delController && !(device.vendor === "mikrotik" && device.protocol === "ssh")
+          && letturaAccesa("snmp") && deviceHasSnmpSession(device)) {
+          esitiLetture.push(await letturaSnmp(device, options));
+        }
+        const client = await (options?.creaClientSwitch ?? createSwitchClient)(device);
         const entries = await client.getMacTable();
-        upsertMacPortEntries(device.id, entries.map((e) => ({
+        salvaMacPorta(device.id, entries.map((e) => ({
           mac: e.mac,
           port_name: e.port_name.trim(),
           vlan: e.vlan,
@@ -559,12 +1104,36 @@ export async function runArpPoll(
     }
     } catch (error) {
       console.error(`[ARP Poll] Errore su ${device.name}:`, error);
+      // Revisione del Task 4 di T2 (B5): il giro del router fermato prima (ARP che non risponde, client che non si crea)
+      // saltava le letture in più senza esito. Adesso l'esito «non so» col codice, con le regole di sempre (spenta, cadenza).
+      if (!mkProvata && networkDeviceUsesArpPoll(device) && device.vendor === "mikrotik" && device.protocol === "ssh") {
+        esitiLetture.push(await conCadenza("mikrotik", device.id, async () => {
+          throw Object.assign(new Error("Giro del router non riuscito"), { code: codiceTrasporto(error) });
+        }, options?.adesso));
+      }
+    } finally {
+      if (device.device_type !== "hypervisor") {
+        if (networkDeviceUsesArpPoll(device)) {
+          durate.router += performance.now() - t0;
+          durate.nRouter++;
+        } else {
+          durate.switch += performance.now() - t0;
+          durate.nSwitch++;
+        }
+      }
     }
   }
   const network = networkId != null ? networks.find((n) => n.id === networkId) : null;
-  const phase = networkId != null && network
+  const base = networkId != null && network
     ? `ARP poll completato per ${network.name}`
     : "ARP poll completato";
+  const letture = riassuntoLetture(esitiLetture);
+  const phase = [base, porteNonLette.length > 0 ? `porte fisiche non lette: ${porteNonLette.join(", ")}` : null, letture]
+    .filter((x): x is string => !!x).join("; ");
+  if (networkId == null) {
+    const s = (ms: number): string => (ms / 1000).toFixed(1).replace(".", ",");
+    console.info(`[ARP Poll] giro: ${durate.nRouter} router in ${s(durate.router)} s, ${durate.nSwitch} switch in ${s(durate.switch)} s${letture ? `; ${letture}` : ""}`);
+  }
   return { phase };
 }
 
@@ -599,11 +1168,9 @@ export async function runDhcpPollForNetwork(
     if (allow && !allow.has(lease.ip)) continue;
     if (!isIpInCidr(lease.ip, network.cidr)) continue;
     const vendor = await lookupVendor(lease.mac);
-    const classification = classifyDevice({
-      hostname: lease.hostname ?? null,
-      vendor: vendor ?? null,
-    });
     // DHCP è fonte PASSIVA: aggiorna solo host esistenti, MAI inserisce.
+    // Fase 4: bypass classifyDevice→classification rimosso — un solo
+    // scrittore (attribution v2), vedi recomputeAttributionSafe sotto.
     const host = updateHostIfExists({
       network_id: networkId,
       ip: lease.ip,
@@ -611,8 +1178,11 @@ export async function runDhcpPollForNetwork(
       ...(lease.hostname && { hostname: lease.hostname }),
       hostname_source: "dhcp",
       vendor: vendor || undefined,
-      ...(classification && { classification }),
     });
+    if (host) {
+      const { recomputeAttributionSafe } = await import("@/lib/attribution/recompute");
+      recomputeAttributionSafe(host.id, "scan");
+    }
     upsertMacIpMapping({
       mac: lease.mac,
       ip: lease.ip,
@@ -664,7 +1234,13 @@ async function checkSingleKnownHost(host: ReturnType<typeof getKnownHosts>[numbe
   let alive = false;
   let latencyMs: number | null = null;
 
-  const pingResult = await pingHost(host.ip, timeoutMs);
+  // Porta delle prove (banco T3-16): vuota in produzione, dove restano il
+  // `pingHost` e il `tcpConnect` locali di sempre.
+  const io = getScanIoOverride();
+  const ping = io ? (ip: string, t: number) => io.executor.pingHost(ip, t) : pingHost;
+  const tcp = io ? (io.tcpConnect ?? (async () => false)) : tcpConnect;
+
+  const pingResult = await ping(host.ip, timeoutMs);
   latencyMs = pingResult.latency_ms;
   if (pingResult.alive) {
     alive = true;
@@ -677,9 +1253,17 @@ async function checkSingleKnownHost(host: ReturnType<typeof getKnownHosts>[numbe
       } catch { /* invalid JSON, fallback */ }
     }
     for (const port of portsToCheck) {
-      const ok = await tcpConnect(host.ip, port, 2000);
+      const ok = await tcp(host.ip, port, 2000);
       if (ok) { alive = true; break; }
     }
+  }
+
+  // T3-19 (INV-2): un ping che non ha potuto girare non è «nessuna risposta».
+  // Se nemmeno il TCP ha recuperato l'host, lo stato resta com'era e lo
+  // storico non riceve una riga che direbbe «offline» senza saperlo.
+  if (!alive && pingResult.error) {
+    console.warn(`[KnownHostCheck] host ${host.ip}: esito sconosciuto, stato invariato (${pingResult.error})`);
+    return;
   }
 
   const newStatus = alive ? "online" : "offline";
@@ -779,7 +1363,7 @@ export async function runDnsResolve(
 }
 
 async function runCleanup(configStr: string): Promise<void> {
-  let config: { days_until_stale?: number; days_until_delete?: number; mac_port_retention_hours?: number };
+  let config: { days_until_stale?: number; days_until_delete?: number; mac_port_retention_days?: number };
   try {
     config = JSON.parse(configStr || "{}");
   } catch {
@@ -788,23 +1372,42 @@ async function runCleanup(configStr: string): Promise<void> {
   }
   const daysUntilStale = config.days_until_stale || 30;
   const daysUntilDelete = config.days_until_delete || 90;
-  // v0.2.651: retention mac_port_entries (default 24h). Switch_port discovery
-  // inserisce fino a 4096 row per scan (intera MAC table) → senza cleanup
-  // la tabella cresce a milioni di righe in poche settimane.
-  const macPortRetentionHours = config.mac_port_retention_hours ?? 24;
+  // Retention mac_port_entries in giorni (topologia fase 2, spec §10.5). Fino
+  // alla v0.2.651 erano 24 ore perché ogni giro riscriveva l'intera MAC table;
+  // ora le righe sono una per (apparato, MAC, porta), aggiornate a ogni giro:
+  // il volume non cresce coi giri, e una riga vecchia dice «visto l'ultima volta».
+  const macPortRetentionDays = config.mac_port_retention_days ?? MAC_PORT_RETENTION_DAYS;
 
   const result = cleanupStaleHosts(daysUntilStale, daysUntilDelete);
   console.info(`[Cleanup] ${result.flagged} host segnalati stale, ${result.deleted} eliminati`);
 
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { cleanupOldMacPortEntries } = require("@/lib/db-tenant");
-    const deleted = cleanupOldMacPortEntries(macPortRetentionHours);
+    const deleted = cleanupOldMacPortEntries(macPortRetentionDays);
     if (deleted > 0) {
-      console.info(`[Cleanup] mac_port_entries: eliminate ${deleted} righe più vecchie di ${macPortRetentionHours}h`);
+      console.info(`[Cleanup] mac_port_entries: eliminate ${deleted} righe più vecchie di ${macPortRetentionDays} giorni`);
     }
   } catch (e) {
     console.warn(`[Cleanup] mac_port_entries cleanup fallito:`, e);
+  }
+
+  // Retention alert Wazuh: elimina solo gli eventi PRESI IN CARICO più vecchi
+  // della soglia. Gli eventi ancora aperti restano, per quanto vecchi siano.
+  try {
+    const { getNotificationConfig } = await import("@/lib/notifications/config");
+    const { ensureWazuhAlertSchema, purgeAcknowledgedOlderThan, tenantDb } = await import(
+      "@/lib/integrations/wazuh-alerts-db"
+    );
+    const days = getNotificationConfig().retentionDays;
+    const db = tenantDb();
+    ensureWazuhAlertSchema(db);
+    const removed = purgeAcknowledgedOlderThan(db, days);
+    if (removed > 0) {
+      console.info(
+        `[Cleanup] wazuh_alert_event: eliminati ${removed} eventi presi in carico più vecchi di ${days} giorni`,
+      );
+    }
+  } catch (e) {
+    console.warn(`[Cleanup] retention alert Wazuh fallita:`, e);
   }
 }
 

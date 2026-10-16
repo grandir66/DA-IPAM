@@ -13,8 +13,11 @@
  *
  * Ogni probe è bounded con withTimeout (PROBE_TIMEOUT_MS).
  */
+import { statfs } from "node:fs/promises";
+import { execFile } from "node:child_process";
 import { withTenant, getTenantDb } from "@/lib/db-tenant";
 import { getIntegrationConfig } from "@/lib/integrations/config";
+import { readUnifiHealth } from "@/lib/integrations/unifi-health";
 import { getWazuhConfig } from "@/lib/integrations/wazuh-config";
 import { createWazuhClient } from "@/lib/integrations/wazuh-api";
 import { createWazuhIndexerClient } from "@/lib/integrations/wazuh-indexer-api";
@@ -23,6 +26,9 @@ import { getFeatureStatus } from "@/lib/patch/feature";
 import { getNetServicesState } from "@/lib/network-services/feature";
 import { probeBridgeWithAuth } from "@/lib/network-services/client";
 import { safeDecrypt } from "@/lib/crypto";
+import { classifyDiskUsage } from "@/lib/integrations/wazuh-health-thresholds";
+import { getMeshCreds } from "@/lib/integrations/meshcentral/config";
+import { MeshControlClient } from "@/lib/integrations/meshcentral/control-client";
 import type { ModuleKey } from "./registry";
 
 export type ModuleHealthStatus =
@@ -43,6 +49,8 @@ export type ModuleRepairAction =
   | "reconfigure_librenms"
   | "reconfigure_graylog"
   | "reconfigure_net_services"
+  | "reconfigure_unifi"
+  | "check_unifi_cert"
   | null;
 
 export interface ModuleHealth {
@@ -127,6 +135,89 @@ function mk(
     detail: opts.detail,
     repairAction: opts.repairAction ?? null,
   };
+}
+
+// ── Probe: meshcentral (RMM) ─────────────────────────────────────────────────
+/**
+ * Verifica in un colpo solo le tre cose che rendono l'RMM utilizzabile:
+ * il server risponde, il service account si autentica sul control WebSocket, e
+ * il device group configurato esiste ancora la' sopra. Riporta anche l'ultimo
+ * `meshcentral_sync` riuscito: un server sano con il sync fermo e' comunque un
+ * problema (cfr. incidente 2026-07-05, 11 giorni di sync fermo non visti).
+ *
+ * NB: usa `listMeshes()`, che fino alla v0.3.132 andava sempre in timeout —
+ * MeshCentral risponde a 'meshes' con il solo `tag`, senza `responseid`.
+ */
+async function probeMeshcentral(tenantCode: string, probedAt: string): Promise<ModuleHealth> {
+  const creds = getMeshCreds();
+  const lastSyncAt =
+    (
+      getTenantDb(tenantCode)
+        .prepare(
+          `SELECT last_run FROM scheduled_jobs
+            WHERE job_type = 'meshcentral_sync' AND network_id IS NULL`,
+        )
+        .get() as { last_run: string | null } | undefined
+    )?.last_run ?? null;
+
+  if (!creds) {
+    return mk("meshcentral", probedAt, {
+      reachable: false,
+      authOk: false,
+      verdict: "fail",
+      detail: "MeshCentral non configurato",
+      configured: false,
+    });
+  }
+
+  const client = new MeshControlClient(creds);
+  try {
+    const meshes = await withTimeoutReject(
+      client.listMeshes(),
+      PROBE_TIMEOUT_MS,
+      "control.ashx 'meshes' timeout",
+    );
+    // Se rispondiamo qui, il server e' raggiungibile E il service account e'
+    // autenticato: control.ashx chiude la connessione (action 'close') se l'auth
+    // fallisce, quindi una risposta valida implica entrambe le cose.
+    const groupOk = meshes.some((m) => m.meshId === creds.meshId);
+    if (!groupOk) {
+      return mk("meshcentral", probedAt, {
+        reachable: true,
+        authOk: true,
+        verdict: "degraded",
+        detail:
+          "Device group configurato non presente sul server: gli agenti non verranno associati",
+        lastSyncAt,
+      });
+    }
+    const nodes = getTenantDb(tenantCode)
+      .prepare("SELECT COUNT(*) AS n, SUM(conn) AS c FROM mc_node")
+      .get() as { n: number; c: number | null };
+    return mk("meshcentral", probedAt, {
+      reachable: true,
+      authOk: true,
+      verdict: "ok",
+      detail: `${nodes.n} endpoint, ${nodes.c ?? 0} connessi`,
+      lastSyncAt,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    // L'auth fallita si manifesta come chiusura della connessione, non come 401.
+    const authIssue = /auth|noauth|close/i.test(msg);
+    return mk("meshcentral", probedAt, {
+      reachable: !authIssue,
+      authOk: false,
+      verdict: "fail",
+      detail: authIssue
+        ? `Autenticazione MeshCentral fallita: ${msg}`
+        : `MeshCentral non raggiungibile: ${msg}`,
+      lastSyncAt,
+    });
+  } finally {
+    // Senza close() le richieste in volo restano appese e il socket perde.
+    client.close();
+  }
 }
 
 // ── Probe: edge ──────────────────────────────────────────────────────────────
@@ -304,6 +395,25 @@ async function probeNetServices(tenantCode: string, probedAt: string): Promise<M
   });
 }
 
+// ── Probe: controller di rete (UniFi) ────────────────────────────────────────
+/**
+ * Non contatta i controller (ADR 0007): legge l'esito dell'ultima lettura di
+ * ciascuno, dettagli in `readUnifiHealth`. Nessun controller acceso =
+ * «Non configurato» (configured=false), non un errore.
+ */
+async function probeUnifi(probedAt: string): Promise<ModuleHealth> {
+  const r = readUnifiHealth();
+  return mk("unifi", probedAt, {
+    reachable: r.reachable,
+    authOk: r.authOk,
+    verdict: r.verdict,
+    detail: r.detail,
+    repairAction: r.repair,
+    configured: r.configured,
+    lastSyncAt: r.lastSyncAt,
+  });
+}
+
 // ── Probe: patch_management (modulo locale) ──────────────────────────────────
 async function probePatch(tenantCode: string, probedAt: string): Promise<ModuleHealth> {
   const st = await getFeatureStatus(tenantCode, "patch_management");
@@ -315,20 +425,139 @@ async function probePatch(tenantCode: string, probedAt: string): Promise<ModuleH
   });
 }
 
-async function compute(tenantCode: string): Promise<ModuleHealth[]> {
+// ── Probe: sistema appliance (disco + Docker) ────────────────────────────────
+/**
+ * Salute della macchina che ospita DA-IPAM. Il disco pieno è la morte
+ * silenziosa delle appliance: cliente A 2026-07-28 e PX-NAS 2026-07-30 si sono
+ * fermate (build falliti, SQLite in "disk I/O error") senza che la griglia
+ * moduli desse alcun segnale. Le soglie sono le stesse della fascia Wazuh
+ * (`classifyDiskUsage`, ambra ≥85% / rosso ≥95%): un solo concetto di
+ * "disco pieno" in tutto il prodotto.
+ */
+export interface ApplianceProbeReading {
+  disk: { usePercent: number; freeGb: number } | { error: string };
+  docker: { state: "attivo" | "assente" | "giu"; detail: string };
+}
+
+/** Composizione pura verdetto+messaggio: testabile senza I/O. */
+export function composeApplianceHealth(reading: ApplianceProbeReading): {
+  verdict: ModuleVerdict;
+  detail: string;
+} {
+  const rank: Record<ModuleVerdict, number> = { ok: 0, degraded: 1, fail: 2 };
+  const worst = (a: ModuleVerdict, b: ModuleVerdict): ModuleVerdict => (rank[b] > rank[a] ? b : a);
+
+  let diskVerdict: ModuleVerdict;
+  let diskLabel: string;
+  if ("error" in reading.disk) {
+    // Non sapere quanto disco resta non è "ok": è esattamente lo stato in cui
+    // eravamo durante i due incident. Ma nemmeno "fail": il filesystem
+    // potrebbe essere sano e il probe no.
+    diskVerdict = "degraded";
+    diskLabel = `disco non leggibile (${reading.disk.error})`;
+  } else {
+    diskVerdict = classifyDiskUsage(reading.disk.usePercent);
+    diskLabel = `disco ${reading.disk.usePercent}% occupato (${reading.disk.freeGb} GB liberi)`;
+  }
+
+  // Docker assente non è un guasto (host senza container); demone
+  // irraggiungibile sì — è il caso da-va-ovh 2026-07-29: docker giù dal boot
+  // e l'intero stack Greenbone spento per 3 giorni.
+  const dockerVerdict: ModuleVerdict = reading.docker.state === "giu" ? "fail" : "ok";
+
+  return {
+    verdict: worst(diskVerdict, dockerVerdict),
+    detail: `${diskLabel} · ${reading.docker.detail}`,
+  };
+}
+
+function probeDockerDaemon(): Promise<ApplianceProbeReading["docker"]> {
+  return new Promise((resolve) => {
+    execFile("docker", ["version", "--format", "{{.Server.Version}}"], { timeout: 5000 }, (err, stdout, stderr) => {
+      if (!err) {
+        resolve({ state: "attivo", detail: `Docker ${stdout.trim()} attivo` });
+        return;
+      }
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+        resolve({ state: "assente", detail: "Docker non installato" });
+        return;
+      }
+      const why = (stderr || err.message || "errore sconosciuto").trim().slice(0, 120);
+      resolve({ state: "giu", detail: `demone Docker non raggiungibile: ${why}` });
+    });
+  });
+}
+
+async function probeAppliance(probedAt: string): Promise<ModuleHealth> {
+  let disk: ApplianceProbeReading["disk"];
+  try {
+    const s = await statfs("/");
+    const total = s.blocks * s.bsize;
+    // `bavail` = spazio per processi non-root, lo stesso che vede `df` (e che
+    // vedono npm/SQLite quando falliscono): `bfree` mentirebbe per ottimismo.
+    const avail = s.bavail * s.bsize;
+    disk = {
+      usePercent: total > 0 ? Math.round(((total - avail) / total) * 100) : 0,
+      freeGb: Math.round((avail / 1e9) * 10) / 10,
+    };
+  } catch (e) {
+    disk = { error: e instanceof Error ? e.message : "errore sconosciuto" };
+  }
+  const dockerTimeoutFallback: ApplianceProbeReading["docker"] = {
+    state: "giu",
+    detail: "timeout interrogando il demone Docker",
+  };
+  const docker = await withTimeout(probeDockerDaemon(), PROBE_TIMEOUT_MS, dockerTimeoutFallback);
+  const { verdict, detail } = composeApplianceHealth({ disk, docker });
+  return mk("appliance", probedAt, {
+    reachable: true,
+    authOk: true,
+    verdict,
+    detail,
+  });
+}
+
+/**
+ * I moduli con una sonda, nell'ordine in cui escono da `getModulesHealth`.
+ * La rotta /api/modules/health accetta solo questi; la prova
+ * `modules/__tests__/unifi-module.test.ts` controlla che `compute` li produca
+ * tutti e soli.
+ */
+export const PROBED_MODULE_KEYS: readonly ModuleKey[] = [
+  "edge",
+  "wazuh",
+  "librenms",
+  "graylog",
+  "network_services",
+  "patch_management",
+  "meshcentral",
+  "unifi",
+  "appliance",
+];
+
+async function compute(tenantCode: string, only?: ModuleKey): Promise<ModuleHealth[]> {
   const probedAt = new Date().toISOString();
   // I probe per-modulo sono indipendenti → in parallelo (ognuno bounded).
   // allSettled (NON all): se un probe RIGETTA (es. lettura DB fuori try su
   // disk-full / integrity-check failed) NON deve abbattere l'intera health API
   // né la home dashboard SSR che la consuma. Il probe fallito → verdict "fail".
-  const tasks: Array<[ModuleKey, Promise<ModuleHealth>]> = [
-    ["edge", withTenant(tenantCode, () => probeEdge(tenantCode, probedAt))],
-    ["wazuh", probeWazuh(probedAt)],
-    ["librenms", probeHttpIntegration("librenms", probedAt)],
-    ["graylog", probeHttpIntegration("graylog", probedAt)],
-    ["network_services", probeNetServices(tenantCode, probedAt)],
-    ["patch_management", probePatch(tenantCode, probedAt)],
+  const all: Array<[ModuleKey, () => Promise<ModuleHealth>]> = [
+    ["edge", () => withTenant(tenantCode, () => probeEdge(tenantCode, probedAt))],
+    ["wazuh", () => probeWazuh(probedAt)],
+    ["librenms", () => probeHttpIntegration("librenms", probedAt)],
+    ["graylog", () => probeHttpIntegration("graylog", probedAt)],
+    ["network_services", () => probeNetServices(tenantCode, probedAt)],
+    ["patch_management", () => probePatch(tenantCode, probedAt)],
+    ["meshcentral", () => withTenant(tenantCode, () => probeMeshcentral(tenantCode, probedAt))],
+    ["unifi", () => withTenant(tenantCode, () => probeUnifi(probedAt))],
+    ["appliance", () => probeAppliance(probedAt)],
   ];
+  // `only`: parte SOLO la sonda chiesta. La notifica disco dell'appliance
+  // (`only: "appliance"` ogni 30 minuti) non deve diventare una raffica di
+  // sonde di rete sugli altri moduli.
+  const tasks: Array<[ModuleKey, Promise<ModuleHealth>]> = all
+    .filter(([key]) => !only || key === only)
+    .map(([key, run]) => [key, run()]);
   const settled = await Promise.allSettled(tasks.map(([, p]) => p));
   const byKey = {} as Record<ModuleKey, ModuleHealth>;
   settled.forEach((res, i) => {
@@ -345,20 +574,19 @@ async function compute(tenantCode: string): Promise<ModuleHealth[]> {
       });
     }
   });
-  return [
-    byKey.edge,
-    byKey.librenms,
-    byKey.wazuh,
-    byKey.graylog,
-    byKey.patch_management,
-    byKey.network_services,
-  ];
+  // NB: questa lista e' la SORGENTE di cio' che esce dall'API. Aggiungere un
+  // probe a `tasks` senza aggiungerlo qui lo fa girare e ne butta il risultato
+  // (successo silenzioso: nessun errore, il modulo semplicemente non compare).
+  // Ricavarla da `tasks` invece di riscriverla a mano rende impossibile lo
+  // sfasamento, e mantiene l'ordine di dichiarazione.
+  return tasks.map(([key]) => byKey[key]).filter(Boolean);
 }
 
 /**
  * Stato di salute dei moduli per il tenant.
  * @param opts.force bypassa la cache (re-probe live).
- * @param opts.only limita il risultato a un singolo modulo (force consigliato).
+ * @param opts.only esegue la sonda di un solo modulo (force consigliato); la
+ *   voce si aggiorna anche nella cache completa, se c'è, senza allungarla.
  */
 export async function getModulesHealth(
   tenantCode: string,
@@ -371,7 +599,18 @@ export async function getModulesHealth(
       return opts?.only ? cached.value.filter((h) => h.key === opts.only) : cached.value;
     }
   }
-  const value = await compute(tenantCode);
-  cache.set(tenantCode, { value, expiresAt: now + TTL_MS });
-  return opts?.only ? value.filter((h) => h.key === opts.only) : value;
+  // Con `only` parte solo quella sonda (vedi `compute`): la notifica disco
+  // dell'appliance forza `only: "appliance"` ogni 30 minuti e non deve
+  // diventare una raffica di sonde sugli altri moduli.
+  const value = await compute(tenantCode, opts?.only);
+  if (!opts?.only) {
+    cache.set(tenantCode, { value, expiresAt: now + TTL_MS });
+    return value;
+  }
+  const cached = cache.get(tenantCode);
+  if (cached && cached.expiresAt > now) {
+    const fresh = new Map(value.map((h) => [h.key, h]));
+    cache.set(tenantCode, { value: cached.value.map((h) => fresh.get(h.key) ?? h), expiresAt: cached.expiresAt });
+  }
+  return value;
 }

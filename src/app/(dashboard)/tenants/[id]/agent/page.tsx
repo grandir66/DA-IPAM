@@ -1,4 +1,5 @@
 "use client";
+import { parseDbDate } from "@/lib/db-date";
 
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
@@ -227,7 +228,7 @@ export default function TenantAgentPage() {
   const formatLastSeen = (iso: string | null): string => {
     if (!iso) return "—";
     try {
-      const d = new Date(iso);
+      const d = parseDbDate(iso);
       return d.toLocaleString("it-IT");
     } catch {
       return iso;

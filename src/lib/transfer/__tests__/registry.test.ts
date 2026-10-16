@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import Database from "better-sqlite3";
 import { TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL } from "../../db-tenant-schema";
 import { HUB_SCHEMA_SQL } from "../../db-hub-schema";
+import { migrateTopologyPhase1, migrateTopologyPhase2 } from "../../db-tenant";
 import {
   TENANT_TABLES,
   HUB_TABLES,
@@ -14,6 +15,11 @@ import {
 function realTables(...sqlParts: string[]): string[] {
   const db = new Database(":memory:");
   for (const sql of sqlParts) db.exec(sql);
+  // Le tabelle nate nelle migrazioni runtime (topology_maps, revisione finale I6) contano come quelle dello schema.
+  if (sqlParts.includes(TENANT_SCHEMA_SQL)) {
+    migrateTopologyPhase1(db);
+    migrateTopologyPhase2(db);
+  }
   const rows = db
     .prepare(
       "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",

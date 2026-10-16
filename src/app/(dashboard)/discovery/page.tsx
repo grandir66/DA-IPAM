@@ -1,4 +1,6 @@
 "use client";
+import { joinCsvRow } from "@/lib/csv-utils";
+import { parseDbDate } from "@/lib/db-date";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { librenmsDevicePath } from "@/lib/integrations/public-url";
@@ -31,7 +33,9 @@ import { DeviceFormFields } from "@/components/shared/device-form-fields";
 import { LinkIpsDialog } from "@/components/devices/link-ips-dialog";
 import { InlineEditCell } from "@/components/shared/inline-edit-cell";
 import { AddableSelect } from "@/components/shared/addable-select";
-import { credTypeForProtocol, CRED_TYPE_OPTIONS } from "@/lib/credential-protocol-map";
+import { opzioniCreazioneRapida, tipiCredenzialePerProtocollo, tipoCreazioneRapida, vociDAccesso, vociSnmpAggiuntive } from "@/lib/credential-protocol-map";
+import { etichettaTipo, normalizzaTipo } from "@/lib/credentials/tipi";
+import { profiloPerClassificazione, proponiApparato, riallineaAlProtocollo, type ProtocolloApparato } from "@/lib/devices/proposta-apparato";
 import { CreateFingerprintRuleDialog } from "@/components/shared/create-fingerprint-rule-dialog";
 import { SortableTableHead } from "@/components/shared/sortable-table-head";
 import { Pagination } from "@/components/shared/pagination";
@@ -44,6 +48,7 @@ import {
   Search, RefreshCw, Columns3, Download, Radar, ExternalLink,
   Pencil, X, Loader2, Save, PlusCircle, Sparkles, Activity, PackagePlus, Server,
   Wrench, Package, Boxes, Router as RouterIcon, Cable, Shield, ShieldAlert, HardDrive, Monitor,
+  Terminal as TerminalIcon, Globe,
   Phone, Printer, Camera, Cpu, Database, Smartphone, Link2,
   Lock, KeyRound, Trash2, ShieldCheck, MoreVertical, Wifi,
   BatteryCharging, Network, ArrowUp, ArrowDown,
@@ -86,6 +91,8 @@ const DEFAULT_CLASS_PRESETS: ClassPreset[] = [
 import { toast } from "sonner";
 import type { Host, LibreNMSHostMap, DeviceFingerprintSnapshot } from "@/types";
 import { WazuhHostBadge, type WazuhHostStatus } from "@/components/integrations/wazuh-host-badge";
+import { InstallAgentsDialog } from "@/components/patch/install-agents-dialog";
+import { SshTerminalDialog } from "@/components/ssh-terminal/ssh-terminal-dialog";
 import { MeshCentralHostBadge } from "@/components/integrations/meshcentral-host-badge";
 import type { ClassPreset, IconName } from "./preset-types";
 import { PresetsDialog } from "@/components/devices/presets-dialog";
@@ -285,7 +292,7 @@ function displayName(h: EnrichedHost): string {
 
 function formatDate(d: string | null): string {
   if (!d) return "—";
-  return new Date(d).toLocaleString("it-IT", {
+  return parseDbDate(d).toLocaleString("it-IT", {
     day: "2-digit", month: "2-digit", year: "numeric",
     hour: "2-digit", minute: "2-digit",
   });
@@ -516,7 +523,9 @@ export default function DiscoveryPage() {
   const [addDevicesOpen, setAddDevicesOpen] = useState(false);
   const [linkSameDeviceOpen, setLinkSameDeviceOpen] = useState(false);
   const [addDevicesSaving, setAddDevicesSaving] = useState(false);
-  const [addClassification, setAddClassification] = useState<string>("server");
+  // Valori veri li mette openAddDevices dalla proposta sugli host scelti (tappa 1).
+  const [addClassification, setAddClassification] = useState<string>("");
+  const [addHostDiversi, setAddHostDiversi] = useState(false);
   const [addVendor, setAddVendor] = useState<string>("other");
   const [addProtocol, setAddProtocol] = useState<string>("ssh");
   const [addVendorSubtype, setAddVendorSubtype] = useState<string | null>(null);
@@ -525,7 +534,7 @@ export default function DiscoveryPage() {
   const [addCredentialId, setAddCredentialId] = useState<string | null>(null);
   const [addSnmpCredentialId, setAddSnmpCredentialId] = useState<string | null>(null);
   const [addUseForArpPoll, setAddUseForArpPoll] = useState<boolean>(false);
-  const [addCredentials, setAddCredentials] = useState<Array<{ id: number; name: string; credential_type: string }>>([]);
+  const [addCredentials, setAddCredentials] = useState<Array<{ id: number; name: string; credential_type: string; port?: number | null }>>([]);
 
   const refreshCredentials = async () => {
     try {
@@ -593,6 +602,10 @@ export default function DiscoveryPage() {
   const [deleteHostRow, setDeleteHostRow] = useState<EnrichedHost | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [testHostRow, setTestHostRow] = useState<EnrichedHost | null>(null);
+  // Riga per cui è aperto il dialog "Installa agent/moduli" (Wazuh/GLPI/Mesh/choco).
+  const [installAgentsRow, setInstallAgentsRow] = useState<EnrichedHost | null>(null);
+  // Riga per cui è aperto il terminale SSH interattivo.
+  const [sshTermRow, setSshTermRow] = useState<EnrichedHost | null>(null);
   const [testRowCredId, setTestRowCredId] = useState<string>("");
   const [testRowPort, setTestRowPort] = useState<string>("");
   const [testRowRunning, setTestRowRunning] = useState(false);
@@ -604,10 +617,11 @@ export default function DiscoveryPage() {
   }
 
   function defaultPortFor(type: string): string {
-    const t = (type || "").toLowerCase();
-    if (t === "ssh" || t === "linux") return "22";
-    if (t === "windows" || t === "winrm") return "5985";
-    if (t === "snmp") return "161";
+    // Tipo d'archivio (T12): `linux` è `ssh`, la v3 è `snmp_v3`.
+    const t = normalizzaTipo(type);
+    if (t === "ssh") return "22";
+    if (t === "windows") return "5985";
+    if (t === "snmp" || t === "snmp_v3") return "161";
     return "";
   }
 
@@ -676,8 +690,14 @@ export default function DiscoveryPage() {
       if (res.ok) {
         const data: EnrichedHost[] = await res.json();
         setHosts(data);
-        // Carica librenms map per le reti presenti
-        const networkIds = [...new Set(data.map((h) => h.network_id))];
+        // Carica librenms map per le reti presenti — solo se il modulo è attivo:
+        // a modulo spento erano N richieste a vuoto a ogni caricamento (UI-13).
+        const modRes = await fetch("/api/modules").catch(() => null);
+        const mods = modRes?.ok
+          ? ((await modRes.json()) as { modules?: Array<{ key: string; enabled: boolean }> }).modules ?? []
+          : [];
+        const librenmsOn = mods.some((m) => m.key === "librenms" && m.enabled);
+        const networkIds = librenmsOn ? [...new Set(data.map((h) => h.network_id))] : [];
         const maps: LibreNMSHostMap[] = [];
         await Promise.all(
           networkIds.map(async (nid) => {
@@ -842,10 +862,11 @@ export default function DiscoveryPage() {
     return [...set].sort((a, b) => a.localeCompare(b, "it"));
   }, [hosts]);
 
+  // Per id, non per nome: due subnet con lo stesso nome si fondevano (UI-13).
   const networks = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const h of hosts) map.set(h.network_name, h.network_cidr);
-    return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0], "it"));
+    const map = new Map<string, { name: string; cidr: string }>();
+    for (const h of hosts) map.set(String(h.network_id), { name: h.network_name, cidr: h.network_cidr });
+    return [...map.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name, "it") || a[1].cidr.localeCompare(b[1].cidr));
   }, [hosts]);
 
   // ---------- pre-arricchimento ----------
@@ -893,7 +914,7 @@ export default function DiscoveryPage() {
           return false;
         }
       }
-      if (networkFilter && h.network_name !== networkFilter) return false;
+      if (networkFilter && String(h.network_id) !== networkFilter) return false;
       if (vulnFilter === "critical_high" && !(h.vuln && (h.vuln.critical > 0 || h.vuln.high > 0))) return false;
       if (vulnFilter === "critical" && !(h.vuln && h.vuln.critical > 0)) return false;
       if (vulnFilter === "with_findings" && !(h.vuln && h.vuln.total > 0)) return false;
@@ -929,8 +950,8 @@ export default function DiscoveryPage() {
     model:               (h: EnrichedHost) => h.model ?? "",
     serial_number:       (h: EnrichedHost) => h.serial_number ?? "",
     firmware:            (h: EnrichedHost) => h.firmware ?? "",
-    last_seen:           (h: EnrichedHost) => h.last_seen ? new Date(h.last_seen).getTime() : 0,
-    first_seen:          (h: EnrichedHost) => h.first_seen ? new Date(h.first_seen).getTime() : 0,
+    last_seen:           (h: EnrichedHost) => h.last_seen ? parseDbDate(h.last_seen).getTime() : 0,
+    first_seen:          (h: EnrichedHost) => h.first_seen ? parseDbDate(h.first_seen).getTime() : 0,
     // v0.2.646 audit perf UI3: accessor leggono dalla Map precalcolata (O(1))
     // invece di JSON.parse per ogni invocazione (sort = O(N log N) × parse).
     fp_confidence:       (h: EnrichedHost) => hostExtras.get(h.id)?.fpConfidence ?? 0,
@@ -960,7 +981,7 @@ export default function DiscoveryPage() {
   );
 
   // reset page on filter change
-  useEffect(() => { setPage(1); }, [q, statusFilter, classFilter, networkFilter]);
+  useEffect(() => { setPage(1); }, [q, statusFilter, classFilter, networkFilter, vulnFilter]);
 
   // persiste la dimensione pagina e torna a pagina 1 quando cambia
   const handlePageSizeChange = useCallback((size: number) => {
@@ -997,58 +1018,52 @@ export default function DiscoveryPage() {
     }
   }
 
-  // F2.3: pre-fill del bulk dialog da inferred_* degli host selezionati.
-  // Se sono tutti omogenei (stesso inferred_*), applica come default; altrimenti
-  // lascia i default generici (server/other/ssh) e lascia all'utente la scelta.
+  const archivioCredenziali = () =>
+    addCredentials.map((c) => ({ id: c.id, name: c.name, credential_type: c.credential_type, port: c.port ?? null }));
+
+  // Tappa 1 (15/10): valori iniziali dalla proposta unica sugli host scelti
+  // (piattaforma dal SO, classificazione valida). Tutti gli stati si
+  // reimpostano a ogni apertura: prima restavano quelli dell'apertura
+  // precedente, e «printer» o «microsoft» arrivavano al server.
   function openAddDevices() {
-    const selectedHosts = hosts.filter((h) => selectedIds.has(h.id));
-    if (selectedHosts.length === 0) { setAddDevicesOpen(true); return; }
-
-    // Helper: ritorna valore unanime tra gli host, altrimenti null
-    function unanimous<T>(values: Array<T | null | undefined>): T | null {
-      const nonNull = values.filter((v): v is T => v != null && v !== "");
-      if (nonNull.length === 0) return null;
-      const first = nonNull[0];
-      return nonNull.every((v) => v === first) ? first : null;
-    }
-
-    const validVendors = new Set(["cisco", "mikrotik", "juniper", "ubiquiti", "fortinet", "stormshield", "sonicwall", "draytek", "synology", "qnap", "vmware", "proxmox", "hp", "dell", "lenovo", "microsoft", "apple", "other"]);
-    const validProtocols = new Set(["ssh", "snmp_v2", "snmp_v3", "winrm", "api"]);
-    const validScanTargets = new Set(["windows", "linux", "macos", "proxmox", "vmware", "network"]);
-
-    const inferredVendor = unanimous(selectedHosts.map((h) => h.inferred_vendor));
-    const inferredProtocol = unanimous(selectedHosts.map((h) => h.inferred_protocol));
-    const inferredScanTarget = unanimous(selectedHosts.map((h) => h.inferred_scan_target));
-    const inferredDeviceType = unanimous(selectedHosts.map((h) => h.inferred_device_type));
-
-    if (inferredVendor && validVendors.has(inferredVendor)) setAddVendor(inferredVendor);
-    if (inferredProtocol && validProtocols.has(inferredProtocol)) setAddProtocol(inferredProtocol);
-    if (inferredScanTarget && validScanTargets.has(inferredScanTarget)) setAddScanTarget(inferredScanTarget);
-
-    // device_type → classification mapping per il bulk dialog (classifications più granulari)
-    if (inferredDeviceType) {
-      const dtMap: Record<string, string> = {
-        workstation: "workstation",
-        server: "server",
-        router: "router",
-        switch: "switch",
-        firewall: "firewall",
-        hypervisor: "server",
-        printer: "printer",
-        nas: "nas",
-        ups: "ups",
-        iot: "iot",
-      };
-      const mapped = dtMap[inferredDeviceType];
-      if (mapped) setAddClassification(mapped);
-    }
-
+    const archivio = archivioCredenziali();
+    const proposte = hosts.filter((h) => selectedIds.has(h.id)).map((h) => proponiApparato(h, archivio));
+    const prima = proposte[0];
+    const uguali = !!prima && proposte.every(
+      (p) => p.vendor === prima.vendor && p.protocol === prima.protocol && p.classification === prima.classification
+    );
+    setAddVendor(prima?.vendor ?? "other");
+    setAddVendorSubtype(null);
+    setAddProtocol(prima?.protocol ?? "ssh");
+    setAddClassification(uguali ? prima.classification : "");
+    setAddProductProfile(uguali ? prima.productProfile : null);
+    setAddScanTarget(prima?.scanTarget ?? null);
+    setAddCredentialId(uguali ? prima.credentialId : null);
+    setAddSnmpCredentialId(uguali ? prima.snmpCredentialId : null);
+    setAddUseForArpPoll(uguali ? prima.useForArpPoll : false);
+    setAddHostDiversi(proposte.length > 1 && !uguali);
     setAddDevicesOpen(true);
+  }
+
+  /** Cambio di protocollo: credenziale incompatibile azzerata, con SNMP la principale è la SNMP. */
+  function cambiaProtocolloAggiunta(v: string) {
+    const q = riallineaAlProtocollo(
+      {
+        name: "", vendor: addVendor, protocol: addProtocol as ProtocolloApparato,
+        classification: addClassification, productProfile: addProductProfile, scanTarget: addScanTarget,
+        port: 0, credentialId: addCredentialId, snmpCredentialId: addSnmpCredentialId, useForArpPoll: addUseForArpPoll,
+      },
+      v as ProtocolloApparato,
+      archivioCredenziali(),
+    );
+    setAddProtocol(v);
+    setAddCredentialId(q.credentialId);
+    setAddSnmpCredentialId(q.snmpCredentialId);
   }
 
   // ---------- bulk edit ----------
   async function handleBulkAddToDevices() {
-    if (selectedIds.size === 0) return;
+    if (selectedIds.size === 0 || !addClassification) return;
     setAddDevicesSaving(true);
     try {
       const body: Record<string, unknown> = {
@@ -1061,6 +1076,8 @@ export default function DiscoveryPage() {
       };
       if (addProductProfile) body.product_profile = addProductProfile;
       if (addVendorSubtype) body.vendor_subtype = addVendorSubtype;
+      // Solo 1: in modalità «bulk» la spunta non si vede, quindi assente = il
+      // server decide dalla classificazione finale (router e firewall accesi).
       if (addUseForArpPoll) body.use_for_arp_poll = 1;
       if (addCredentialId && addCredentialId !== "none") body.credential_id = Number(addCredentialId);
       if (addSnmpCredentialId && addSnmpCredentialId !== "none") body.snmp_credential_id = Number(addSnmpCredentialId);
@@ -1357,13 +1374,8 @@ export default function DiscoveryPage() {
   // ---------- CSV export ----------
   const exportCsv = () => {
     const visibleDefs = orderedVisibleCols;
-    const header = visibleDefs.map((c) => c.label).join(";");
-    const rows = sortedRows.map((h) =>
-      visibleDefs.map((c) => {
-        const v = getCellText(h, c.id);
-        return `"${String(v).replace(/"/g, '""')}"`;
-      }).join(";"),
-    );
+    const header = joinCsvRow(visibleDefs.map((c) => c.label));
+    const rows = sortedRows.map((h) => joinCsvRow(visibleDefs.map((c) => getCellText(h, c.id))));
     const csv = [header, ...rows].join("\n");
     const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -1936,8 +1948,8 @@ export default function DiscoveryPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="">Tutte le subnet</SelectItem>
-                  {networks.map(([name, cidr]) => (
-                    <SelectItem key={name} value={name}>{name} ({cidr})</SelectItem>
+                  {networks.map(([id, n]) => (
+                    <SelectItem key={id} value={id}>{n.name} ({n.cidr})</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -2194,6 +2206,35 @@ export default function DiscoveryPage() {
                                     Test credenziali host
                                   </DropdownMenuItem>
 
+                                  {/* Installa agent/moduli (Windows/WinRM): Chocolatey,
+                                      MeshAgent RMM, GLPI inventario, Wazuh. Riusa gli
+                                      endpoint /api/patch/* verificati; la validazione
+                                      Windows/WinRM è lato server. */}
+                                  <DropdownMenuItem onClick={() => setInstallAgentsRow(h)}>
+                                    <Package className="h-3.5 w-3.5" />
+                                    Installa agent/moduli
+                                  </DropdownMenuItem>
+
+                                  {/* Terminale SSH interattivo (host con credenziali SSH salvate) */}
+                                  <DropdownMenuItem onClick={() => setSshTermRow(h)}>
+                                    <TerminalIcon className="h-3.5 w-3.5" />
+                                    Terminale SSH
+                                  </DropdownMenuItem>
+
+                                  {/* Apri un servizio web dell'host in una tab separata (porta/schema editabili) */}
+                                  <DropdownMenuItem
+                                    onClick={() => {
+                                      const url = window.prompt(
+                                        `Apri servizio web su ${h.ip} (modifica schema/porta):`,
+                                        `https://${h.ip}`,
+                                      );
+                                      if (url) window.open(url, "_blank", "noopener,noreferrer");
+                                    }}
+                                  >
+                                    <Globe className="h-3.5 w-3.5" />
+                                    Apri web (http/s)
+                                  </DropdownMenuItem>
+
                                   <DropdownMenuSeparator />
 
                                   {/* Integrazione LibreNMS */}
@@ -2425,9 +2466,10 @@ export default function DiscoveryPage() {
                     <SelectTrigger><SelectValue placeholder="Seleziona credenziale..." /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="__empty__">— Seleziona —</SelectItem>
-                      {credentials.map((c) => (
+                      {/* Solo voci d'accesso: UniFi, Omada e AD il server le rifiuta per ogni protocollo (revisione 2c). */}
+                      {vociDAccesso(credentials).map((c) => (
                         <SelectItem key={c.id} value={String(c.id)}>
-                          {c.name} ({c.credential_type})
+                          {c.name} ({etichettaTipo(c.credential_type)})
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -2753,24 +2795,35 @@ export default function DiscoveryPage() {
                 credentialId={addCredentialId}
                 snmpCredentialId={addSnmpCredentialId}
                 useForArpPoll={addUseForArpPoll}
-                onClassificationChange={(v) => setAddClassification(v)}
+                onClassificationChange={(v) => {
+                  setAddClassification(v);
+                  if (v) setAddProductProfile(profiloPerClassificazione(addVendor, v));
+                }}
+                creazioneInBlocco
                 onVendorChange={(v) => { setAddVendor(v); if (v !== "hp") setAddVendorSubtype(null); }}
                 onVendorSubtypeChange={setAddVendorSubtype}
-                onProtocolChange={(v) => setAddProtocol(v)}
+                onProtocolChange={(v) => { if (v !== addProtocol) cambiaProtocolloAggiunta(v); }}
                 onScanTargetChange={setAddScanTarget}
                 onCredentialIdChange={setAddCredentialId}
                 onSnmpCredentialIdChange={setAddSnmpCredentialId}
                 onProductProfileChange={(v) => setAddProductProfile(v)}
                 onUseForArpPollChange={setAddUseForArpPoll}
-                defaultClassification="server"
-                defaultVendor="other"
-                defaultProtocol="ssh"
+                defaultClassification=""
+                defaultVendor={addVendor}
+                defaultProtocol={addProtocol}
               />
+              {addHostDiversi && (
+                <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-800 dark:text-amber-200/90">
+                  Gli host selezionati non sono dello stesso tipo: scegli classificazione, marca e protocollo validi per tutti.
+                </p>
+              )}
 
               {(() => {
-                const credMap = credTypeForProtocol(addProtocol);
-                const primaryOpts = addCredentials.filter((c) => c.credential_type !== "snmp");
-                const snmpOpts = addCredentials.filter((c) => c.credential_type === "snmp");
+                const tipiPrincipale = tipiCredenzialePerProtocollo(addProtocol);
+                const primaryOpts = addCredentials.filter((c) => tipiPrincipale.includes(c.credential_type));
+                const snmpOpts = vociSnmpAggiuntive(addCredentials);
+                // Con SNMP come protocollo la principale è già la SNMP: la seconda tendina non serve.
+                const protocolloSnmp = addProtocol === "snmp_v2" || addProtocol === "snmp_v3";
                 return (
                   <div className="rounded-lg border border-border/60 bg-muted/20 p-3 space-y-3">
                     <div className="text-sm font-medium">Credenziali</div>
@@ -2780,23 +2833,24 @@ export default function DiscoveryPage() {
                         <AddableSelect
                           value={addCredentialId && addCredentialId !== "none" ? Number(addCredentialId) : null}
                           onChange={(v) => setAddCredentialId(v != null ? String(v) : null)}
-                          options={primaryOpts.map((c) => ({ id: c.id, label: c.name, extra: c.credential_type }))}
+                          options={primaryOpts.map((c) => ({ id: c.id, label: c.name, extra: etichettaTipo(c.credential_type) }))}
                           entityLabel="credenziale"
                           createApiUrl="/api/credentials"
                           extraFields={[
-                            { key: "credential_type", label: "Tipo", type: "select", required: true, defaultValue: credMap.primary, options: CRED_TYPE_OPTIONS },
+                            { key: "credential_type", label: "Tipo", type: "select", required: true, defaultValue: tipoCreazioneRapida(addProtocol), options: opzioniCreazioneRapida(addProtocol) },
                             { key: "username", label: "Username", placeholder: "admin" },
                             { key: "password", label: "Password / Community", type: "password", required: true },
                           ]}
                           onCreated={refreshCredentials}
                         />
                       </div>
+                      {!protocolloSnmp && (
                       <div className="space-y-1.5">
                         <Label className="text-xs">Credenziale SNMP (opzionale)</Label>
                         <AddableSelect
                           value={addSnmpCredentialId && addSnmpCredentialId !== "none" ? Number(addSnmpCredentialId) : null}
                           onChange={(v) => setAddSnmpCredentialId(v != null ? String(v) : null)}
-                          options={snmpOpts.map((c) => ({ id: c.id, label: c.name }))}
+                          options={snmpOpts.map((c) => ({ id: c.id, label: c.name, extra: etichettaTipo(c.credential_type) }))}
                           entityLabel="credenziale SNMP"
                           createApiUrl="/api/credentials"
                           extraFields={[
@@ -2806,6 +2860,7 @@ export default function DiscoveryPage() {
                           onCreated={refreshCredentials}
                         />
                       </div>
+                      )}
                     </div>
                     <p className="text-xs text-muted-foreground border-t border-border/60 pt-2">
                       Le credenziali validate sugli host saranno ereditate come fallback. Imposta qui per forzare credenziali specifiche.
@@ -2815,11 +2870,14 @@ export default function DiscoveryPage() {
               })()}
             </div>
           </DialogScrollableArea>
-          <DialogFooter className="border-t border-border/50 px-4 py-3">
+          <DialogFooter className="border-t border-border/50 px-4 py-3 items-center">
+            {!addClassification && (
+              <span className="mr-auto text-sm text-amber-800 dark:text-amber-200">Scegli la classificazione</span>
+            )}
             <Button variant="ghost" onClick={() => setAddDevicesOpen(false)} disabled={addDevicesSaving}>
               Annulla
             </Button>
-            <Button onClick={handleBulkAddToDevices} disabled={addDevicesSaving || selectedIds.size === 0}>
+            <Button onClick={handleBulkAddToDevices} disabled={addDevicesSaving || selectedIds.size === 0 || !addClassification}>
               {addDevicesSaving ? <><Loader2 className="h-4 w-4 mr-1.5 animate-spin" />Creazione...</> : <><Server className="h-4 w-4 mr-1.5" />Crea {selectedIds.size} dispositivi</>}
             </Button>
           </DialogFooter>
@@ -2898,7 +2956,7 @@ export default function DiscoveryPage() {
                   <SelectContent>
                     {credentials.map((c) => (
                       <SelectItem key={c.id} value={String(c.id)}>
-                        {c.name} <span className="text-muted-foreground text-xs">({c.credential_type})</span>
+                        {c.name} <span className="text-muted-foreground text-xs">({etichettaTipo(c.credential_type)})</span>
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -2923,6 +2981,26 @@ export default function DiscoveryPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Installa agent/moduli sull'host selezionato dal kebab (Windows/WinRM) */}
+      {installAgentsRow && (
+        <InstallAgentsDialog
+          hostId={installAgentsRow.id}
+          hostLabel={displayName(installAgentsRow) || installAgentsRow.ip}
+          open={installAgentsRow !== null}
+          onOpenChange={(o) => { if (!o) setInstallAgentsRow(null); }}
+        />
+      )}
+
+      {/* Terminale SSH interattivo sull'host selezionato dal kebab */}
+      {sshTermRow && (
+        <SshTerminalDialog
+          hostId={sshTermRow.id}
+          hostLabel={displayName(sshTermRow) || sshTermRow.ip}
+          open={sshTermRow !== null}
+          onOpenChange={(o) => { if (!o) setSshTermRow(null); }}
+        />
+      )}
 
       {/* v0.2.594+: bulk link manuale "stesso device fisico" */}
       <LinkIpsDialog

@@ -33,6 +33,22 @@ export function getNmapHostTimeoutSeconds(): number {
 }
 
 /**
+ * Intensita' delle probe `-sV` (0-9), da `DA_INVENT_NMAP_VERSION_INTENSITY`.
+ *
+ * **Resta 0 di default, di proposito**: e' il valore con cui gira oggi in
+ * produzione, e alzarlo costa tempo di scansione su ogni host di ogni cliente.
+ * La manopola esiste perche' il match CVE (piano `daipam-cve-locali`) vive sui
+ * CPE che nmap emette quando riconosce un servizio, e a intensita' piu' alta ne
+ * riconosce di piu'. Si alza **misurando** il tempo prima e dopo su una rete
+ * vera, non a sensazione: un default cambiato al buio si paga su tutta la flotta.
+ */
+export function getNmapVersionIntensity(): number {
+  const n = parseInt(process.env.DA_INVENT_NMAP_VERSION_INTENSITY || "0", 10);
+  if (Number.isNaN(n)) return 0;
+  return Math.min(9, Math.max(0, n));
+}
+
+/**
  * Porte TCP "quick" per scoperta rete dopo ICMP (SSH, HTTP/S, RDP, SMB, …).
  *
  * Criteri: ogni porta serve per **identificare il tipo di device** (fingerprint / product profile).
@@ -115,10 +131,65 @@ export function buildNetworkDiscoveryQuickTcpArgs(): string {
 }
 
 /**
- * Build nmap args per scansione TCP (non richiede root).
- * Porte default + eventuali porte extra dal profilo.
- * @param customPorts - Porte TCP aggiuntive separate da virgola (es. "8444,9443")
+ * Porte TCP "sempre utili" da unire alle hit naabu per Nmap -sV mirato
+ * (allineate a DEFAULT_NAABU_PORTS / design §7.1).
  */
+export const ALWAYS_USEFUL_TCP_PORTS = [22, 80, 443, 445, 161, 3389, 554, 623, 9100] as const;
+
+/** Unione ordinata di elenchi porte (dedupe, solo > 0). */
+export function unionTcpPorts(...lists: Array<readonly number[] | number[] | null | undefined>): number[] {
+  const set = new Set<number>();
+  for (const list of lists) {
+    if (!list) continue;
+    for (const p of list) {
+      if (typeof p === "number" && Number.isFinite(p) && p > 0) set.add(Math.trunc(p));
+    }
+  }
+  return [...set].sort((a, b) => a - b);
+}
+
+/**
+ * Nmap -sV mirato su un elenco porte esplicito (post naabu).
+ * Se `ports` è vuoto → fallback al profilo quick standard.
+ */
+export function buildTargetedServiceTcpArgs(
+  ports: number[],
+  opts?: { hostTimeoutSeconds?: number }
+): string {
+  const list = unionTcpPorts(ports);
+  if (list.length === 0) return buildNetworkDiscoveryQuickTcpArgs();
+  const ht = opts?.hostTimeoutSeconds ?? getNetworkDiscoveryQuickHostTimeoutSeconds();
+  return `-Pn -sT -p ${list.join(",")} -sV --version-intensity ${getNmapVersionIntensity()} -T4 --max-retries 1 --min-rate 200 --host-timeout ${ht}s`;
+}
+
+/** Parse comma-separated TCP port specs → sorted unique numbers. */
+export function parseTcpPortSpec(spec: string): number[] {
+  return unionTcpPorts(
+    spec
+      .split(",")
+      .map((p) => parseInt(p.trim(), 10))
+      .filter((n) => Number.isFinite(n) && n > 0)
+  );
+}
+
+/**
+ * Elenco porte TCP dello scan completo (default ∪ profilo), stessa logica di `buildTcpScanArgs`.
+ */
+export function getFullScanTcpPortList(
+  explicitTcpPorts?: string | null,
+  customPorts?: string | null
+): number[] {
+  if (explicitTcpPorts && explicitTcpPorts.trim()) {
+    return unionTcpPorts(parseTcpPortSpec(NMAP_DEFAULT_TCP_PORTS), parseTcpPortSpec(explicitTcpPorts));
+  }
+  return unionTcpPorts(parseTcpPortSpec(NMAP_DEFAULT_TCP_PORTS), parseTcpPortSpec(customPorts ?? ""));
+}
+
+/** Spec stringa porte per naabu / log (quick o full). */
+export function tcpPortListToSpec(ports: number[]): string {
+  return unionTcpPorts(ports).join(",");
+}
+
 /**
  * Build nmap args per scansione TCP.
  * @param customPorts - Porte TCP aggiuntive (legacy, merge con default)
@@ -127,26 +198,13 @@ export function buildNetworkDiscoveryQuickTcpArgs(): string {
  *   infrastrutturali (es. MikroTik 8291/8728 già nel default).
  */
 export function buildTcpScanArgs(customPorts?: string | null, explicitTcpPorts?: string | null): string {
-  const parsePortNums = (s: string) =>
-    s
-      .split(",")
-      .map((p) => p.trim())
-      .filter((p) => /^\d+$/.test(p));
-  let tcpList: string;
-  if (explicitTcpPorts && explicitTcpPorts.trim()) {
-    const tcpSet = new Set([...parsePortNums(NMAP_DEFAULT_TCP_PORTS), ...parsePortNums(explicitTcpPorts)]);
-    tcpList = [...tcpSet].map(Number).sort((a, b) => a - b).join(",");
-  } else {
-    const tcpExtra = parsePortNums(customPorts ?? "");
-    const tcpSet = new Set([...NMAP_DEFAULT_TCP_PORTS.split(","), ...tcpExtra]);
-    tcpList = [...tcpSet].map(Number).sort((a, b) => a - b).join(",");
-  }
+  const tcpList = tcpPortListToSpec(getFullScanTcpPortList(explicitTcpPorts, customPorts));
   const ht = getNmapHostTimeoutSeconds();
   /* -Pn: host già verificato online da ping/nmap-sn → salta host discovery di Nmap (evita falsi "down").
    * v0.2.643 audit perf SC5: --max-retries 3→1, --min-rate 35→200. Su host già
    * confermati live i retry pesanti raramente cambiano l'esito; min-rate basso
    * era pensato per reti congestionate ma rallenta enormemente lo scan profondo. */
-  return `-Pn -sT -p ${tcpList} -sV --version-intensity 0 -T4 --max-retries 1 --min-rate 200 --host-timeout ${ht}s`;
+  return `-Pn -sT -p ${tcpList} -sV --version-intensity ${getNmapVersionIntensity()} -T4 --max-retries 1 --min-rate 200 --host-timeout ${ht}s`;
 }
 
 /**
@@ -163,7 +221,7 @@ export function buildUdpScanArgs(explicitUdpPorts?: string | null): string {
     : NMAP_DEFAULT_UDP_PORTS;
   const ht = getNmapHostTimeoutSeconds();
   /* -Pn: host già verificato online; UDP scan spesso richiede root, -Pn evita doppio controllo liveness */
-  return `-Pn -sU -p ${udpList} -sV --version-intensity 0 -T4 --max-retries 2 --min-rate 40 --host-timeout ${ht}s`;
+  return `-Pn -sU -p ${udpList} -sV --version-intensity ${getNmapVersionIntensity()} -T4 --max-retries 2 --min-rate 40 --host-timeout ${ht}s`;
 }
 
 /** @deprecated Usa buildTcpScanArgs — mantenuto per retrocompatibilità */

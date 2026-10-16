@@ -44,6 +44,8 @@ export async function GET(request: NextRequest) {
   const sourceDeviceId = url.searchParams.get("sourceDeviceId");
   const networkId = url.searchParams.get("networkId");
 
+  const recentDaysParam = Number(url.searchParams.get("recentDays") || "");
+  const recentDays = Number.isFinite(recentDaysParam) && recentDaysParam > 0 ? recentDaysParam : undefined;
   const sortBy = url.searchParams.get("sortBy") || undefined;
   const sortOrderParam = url.searchParams.get("sortOrder");
   const sortDir = sortOrderParam === "asc" || sortOrderParam === "desc" ? sortOrderParam : "desc";
@@ -53,6 +55,7 @@ export async function GET(request: NextRequest) {
     sourceType,
     sourceDeviceId: sourceDeviceId ? parseInt(sourceDeviceId, 10) : undefined,
     networkId: networkId ? parseInt(networkId, 10) : undefined,
+    recentDays,
     sortKey: sortBy,
     sortDir,
   });

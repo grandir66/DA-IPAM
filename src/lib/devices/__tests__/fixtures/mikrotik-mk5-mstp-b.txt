@@ -8,5 +8,5 @@
                 root-port: ether3
                port-count: 8
     designated-port-count: 2
-        mst-config-digest: 36b3216fdaeeb975729fae923d5a4fd1
+        mst-config-digest: a4c123b1612dd272d1371c17149d4395
              fast-forward: no

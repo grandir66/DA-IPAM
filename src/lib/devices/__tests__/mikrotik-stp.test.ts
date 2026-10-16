@@ -180,14 +180,14 @@ test("MK3 in MSTP: modo, regione e revisione dall'uscita vera", () => {
   assert.deepEqual(parseBridge(CRLF(F("mikrotik-mk3-mstp-a.txt"))), b);
 });
 
-test("MK5 in MSTP: radice regionale e digest; B ha la porta radice dell'albero comune su ether3", () => {
+test("MK5 in MSTP: radice regionale e digest (lo stesso sui due router: stessa regione); B ha la porta radice dell'albero comune su ether3", () => {
   assert.deepEqual(parseMonitorBridge(F("mikrotik-mk5-mstp-a.txt")), [{
     bridgeId: "8192.02:00:00:00:00:10", radice: true, radiceId: "8192.02:00:00:00:00:10", radiceRegionaleId: "8192.02:00:00:00:00:10",
     portaRadice: null, costo: 0, digest: "a4c123b1612dd272d1371c17149d4395",
   }]);
   assert.deepEqual(parseMonitorBridge(CRLF(F("mikrotik-mk5-mstp-b.txt"))), [{
     bridgeId: "32768.02:00:00:00:00:11", radice: false, radiceId: "8192.02:00:00:00:00:10", radiceRegionaleId: "8192.02:00:00:00:00:10",
-    portaRadice: "ether3", costo: 0, digest: "36b3216fdaeeb975729fae923d5a4fd1",
+    portaRadice: "ether3", costo: 0, digest: "a4c123b1612dd272d1371c17149d4395",
   }]);
 });
 
@@ -284,9 +284,8 @@ function tunnelInRegione(digestB: string | null): ReturnType<typeof modelloMappa
 
 test("il tunnel della regione sui fatti veri di MK7: bloccato nell'albero comune, attivo per la VLAN 77 dell'istanza 1", () => {
   const stato = (m: ReturnType<typeof tunnelInRegione>) => m.collegamenti.map((c) => [c.genere, c.stato, c.attivoPerVlan, c.istanzeNonLette]);
-  assert.deepEqual(stato(tunnelInRegione("a4c123b1612dd272d1371c17149d4395")), [["tunnel", "bloccato_comune", [77], undefined]]);
-  // Con i digest come li scrivono le uscite rese anonime (diversi) i due bridge non sono la stessa regione (§13.7.2 passo 8:
-  // stesso nome, revisione e digest): il tunnel è «bloccato» e basta. Sulla rete vera i due digest sono per forza uguali (la
-  // radice regionale dell'istanza 1 vista da A è B), ma l'uscita non anonima va guardata (resoconto del Task 3b).
-  assert.deepEqual(stato(tunnelInRegione(null)), [["tunnel", "bloccato", undefined, undefined]]);
+  assert.deepEqual(stato(tunnelInRegione(null)), [["tunnel", "bloccato_comune", [77], undefined]], "i digest come li scrivono i due router");
+  // Con un digest diverso i due bridge non sono la stessa regione (§13.7.2 passo 8: stesso nome, revisione e digest): il
+  // tunnel è «bloccato» e basta. (La prima copia anonima aveva cambiato i digest uno per uno: sulle uscite vere sono uguali.)
+  assert.deepEqual(stato(tunnelInRegione("36b3216fdaeeb975729fae923d5a4fd1")), [["tunnel", "bloccato", undefined, undefined]]);
 });

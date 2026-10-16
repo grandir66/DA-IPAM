@@ -330,6 +330,6 @@ test("MK7: ogni comando ha il suo tempo massimo, anche i due nuovi (10 comandi c
 });
 
 test("MK7: la scheda «Letture in più» dice anche i due comandi nuovi e quando partono (l'interruttore è già acceso dal cliente)", () => {
-  assert.ok(DESCRIZIONE_LETTURE.mikrotik.comandi.includes("/interface bridge msti print e monitor, solo sui bridge in MSTP"));
+  assert.ok(DESCRIZIONE_LETTURE.mikrotik.comandi.includes("/interface bridge msti print e monitor (2 in più dove un bridge è in MSTP)"));
   assert.ok(DESCRIZIONE_LETTURE.mikrotik.legge.includes("sui bridge in MSTP la porta radice e le VLAN di ogni istanza"));
 });

@@ -643,6 +643,8 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
     }
 
     toast.success("Dispositivo aggiunto");
+    const creato = (await res.json().catch(() => ({}))) as { avvisi?: string[] };
+    for (const a of creato.avvisi ?? []) toast.warning(a);
     setDialogOpen(false);
     azzeraNuovo();
     fetchDevices();

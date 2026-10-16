@@ -4,6 +4,18 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-16 · la porta segue il protocollo anche in modifica
+
+- **Nella finestra di modifica dell'apparato la porta segue il protocollo, e una porta di un altro protocollo
+  si segnala.** Perché: sul pilota un MikroTik creato in SNMP e passato a SSH dalla modifica è rimasto con
+  protocol=ssh, port=161 (la finestra non aveva il campo porta), e l'acquisizione SSH, che usa la porta
+  dell'apparato, falliva: niente tabella MAC né vicini, col binding SSH sulla 22 provato con successo. Ora la
+  finestra mostra la porta e, cambiando protocollo, la porta passa allo standard del nuovo (SSH 22, SNMP 161,
+  WinRM 5985, API 443) o a quella propria della credenziale compatibile; una porta scritta a mano dopo il cambio
+  resta, e Proxmox tiene la porta dell'API. PUT e creazione restituiscono un avviso (non un rifiuto) se la porta
+  è lo standard di un altro protocollo: un rifiuto bloccherebbe anche il cambio del nome degli apparati già
+  storti, e Proxmox tiene la porta dell'API anche in SSH.
+
 ## [Non rilasciato] — 2026-10-16 · una firma di porte non è un modello
 
 - **Il modello non viene più dall'impronta di sole porte, e quello già scritto così si corregge.** Perché: sul

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getNetworkDevices, getRouters, getSwitches, getDevicesByClassificationOrLegacy, getDeviceCredentialProtocolsSummary } from "@/lib/db";
 import { creaApparato } from "@/lib/devices/crea-apparato";
+import { avvisoPortaProtocollo } from "@/lib/devices/porta-protocollo";
 import { requireAdminOrOnboarding, isAuthError } from "@/lib/api-auth";
 import { getTenantMode, withTenantFromSession } from "@/lib/api-tenant";
 import { queryAllTenants, getHostStatusesByIp } from "@/lib/db-tenant";
@@ -141,9 +142,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: esito.error }, { status: esito.status });
     }
     const device = esito.device;
+    // Avviso, non rifiuto (16/10): vedi PUT /api/devices/[id].
+    const avviso = avvisoPortaProtocollo(device);
 
     return NextResponse.json({
       ...device,
+      ...(avviso ? { avvisi: [avviso] } : {}),
       encrypted_password: device.encrypted_password ? "●●●●●●●●" : null,
       community_string: device.community_string ? "●●●●●●●●" : null,
       api_token: device.api_token ? "●●●●●●●●" : null,

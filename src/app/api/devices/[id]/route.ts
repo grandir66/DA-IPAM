@@ -13,6 +13,7 @@ import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { parseJsonSafe } from "@/lib/json-safe";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { networkDeviceUsesArpPoll } from "@/lib/network-device-arp";
+import { avvisoPortaProtocollo } from "@/lib/devices/porta-protocollo";
 
 const NO_CACHE_HEADERS = { "Cache-Control": "no-store, no-cache, must-revalidate" };
 
@@ -230,9 +231,14 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     if (!device) {
       return NextResponse.json({ error: "Dispositivo non trovato" }, { status: 404 });
     }
+    // Avviso, non rifiuto (16/10): SSH sulla 161 si salva ma si dice. Un rifiuto
+    // bloccherebbe anche il cambio del nome degli apparati già storti, e Proxmox
+    // tiene in device.port la porta dell'API anche col protocollo SSH.
+    const avviso = avvisoPortaProtocollo(device);
 
     return NextResponse.json({
       ...device,
+      ...(avviso ? { avvisi: [avviso] } : {}),
       last_proxmox_scan_result: null,
       encrypted_password: device.encrypted_password ? "●●●●●●●●" : null,
       community_string: device.community_string ? "●●●●●●●●" : null,

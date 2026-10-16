@@ -4,7 +4,7 @@ tono: ok
 famiglia: 01-nucleo
 ordine: 10
 stato: cantiere
-prossimo: blocco 1 dell'analisi (CONTEXT §8): ordinamenti, filtri sulla sola pagina corrente, ricerche di Active Directory; mappa topologia T3 (mappa per cavo, ADR 0020) pronta il 16/10 sul ramo `topologia/collegamenti-t3`, rilascio con la mappa nuova spenta per cliente, poi accensione sull'hub e sul cliente A con l'ok di Riccardo
+prossimo: blocco 1 dell'analisi (CONTEXT §8): ordinamenti, filtri sulla sola pagina corrente, ricerche di Active Directory; mappa topologia T3 (mappa per cavo, ADR 0020) su dev dalla v0.3.308 e accesa il 16/10 su hub e cliente A; aperti: lldpd sui nodi 3-4 dell'hub, uscite MSTP di router 3 e router di riserva, identità del NAS dell'hub in tre voci
 applicazione: ipam
 ---
 IPAM e inventario per le appliance cliente (un'installazione = un cliente:

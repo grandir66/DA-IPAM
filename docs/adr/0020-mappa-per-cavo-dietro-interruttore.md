@@ -1,6 +1,6 @@
 # ADR 0020 — La mappa per cavo dietro un interruttore per cliente (topologia, tappa T3)
 
-**Stato:** Accepted — pronta il 2026-10-16 sul ramo `topologia/collegamenti-t3`; rilascio con la mappa nuova **spenta** (il numero di versione si scrive al rilascio)
+**Stato:** Accepted — rilasciata con la mappa nuova spenta il 2026-10-16 (v0.3.308, hub 10:51, cliente A 10:52); accesa lo stesso giorno sull'hub (10:54) e sul cliente A (10:55), a differenze spiegate
 **Data:** 2026-10-16
 **Autore:** Riccardo Grandi, con Claude
 

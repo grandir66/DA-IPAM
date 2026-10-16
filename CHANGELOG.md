@@ -4,6 +4,29 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-16 · topologia: unire e separare a mano gli oggetti della mappa
+
+Piano `docs/superpowers/plans/2026-10-16-apparati-multihomed-unisci.md`, decisione in ADR 0021. Perché: un apparato con
+più schede su più reti (il NAS dell'hub: quattro indirizzi, tre reti, MAC diversi) era tre oggetti sulla mappa, e nessuna
+regola automatica può dire che sono uno solo. Riccardo (16/10): **nessuna regola automatica nuova, si unisce solo a mano**.
+
+### Aggiunte
+
+- **«Unisci con…» e «Separa…»** nel tasto destro della mappa (di oggi e per cavo), nella scheda dell'oggetto (sezione
+  «Sulla mappa») e nella barra della Discovery («Unisci (N)…» con più righe). Solo gli admin; prima di scrivere
+  un'anteprima obbligatoria («Vedi cosa succede»). Perché: decidere l'oggetto giusto vedendo che cosa cambia.
+- **«Separa…» toglie anche una fusione automatica sbagliata** (per MAC, nome, apparato fisico), mai l'indirizzo
+  dell'apparato né quello con l'IP di gestione. Perché: oggi una fusione sbagliata non aveva rimedio.
+- **Due tabelle nel DB del cliente** (`topology_unioni`, `topology_separazioni`), migrazione additiva e idempotente
+  all'apertura; le righe non si cancellano mai (chi e quando restano). Perché: `physical_device_id` lo riscrive il
+  risolutore e guida le scansioni, che un gesto sulla mappa non deve toccare.
+- **`misura-cavi --unisci/--separa/--unioni`**: le unioni in memoria su una copia, prima di farle davvero.
+
+### Invariato
+
+- **Senza righe la mappa è identica a prima**, nelle due mappe (impronte uguali sulle copie dell'hub e del cliente A).
+  «Stesso device fisico» delle scansioni resta com'è: convivono due funzioni simili (confermato da Riccardo).
+
 ## [Non rilasciato] — 2026-10-16 · topologia T3: la mappa per cavo, spenta per cliente
 
 Spec `docs/superpowers/specs/2026-10-14-topologia-collegamenti-reali-design.md` §13.11.4, piano

@@ -332,6 +332,7 @@ tre suoi IP; quattro IP con lo stesso MAC diventano un oggetto solo, da promuove
 Logica pura del costruttore: nessuno schema, nessuna scrittura. Unire o separare a
 mano due oggetti resta fuori dalla fase 2 (servirebbe una tabella; si valuta se le
 regole sbagliano sul dato vero).
+**Superato il 16/10:** ADR 0021, piano `plans/2026-10-16-apparati-multihomed-unisci.md`.
 
 ### 10.5 La tabella dei MAC per porta
 

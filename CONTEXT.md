@@ -23,7 +23,7 @@ Leggilo per primo, poi [CLAUDE.md](CLAUDE.md) (stack e schema; su «multi-tenant
 ## 5. Tooling
 
 - `npm test` con `DA_INVENT_DATA_DIR` su una cartella temporanea (conteggio: `pass`/`fail` in fondo al log); `npx tsc --noEmit`; lint 0 errori. Permessi API: `src/lib/permessi/rotte.ts`, `scripts/verifica-permessi.sh` (solo locale).
-- `credential-chains.test.ts` e `parita-gruppo0.test.ts` («getRecentStatusChanges: stesse transizioni», orari a 2 s) **cadono a caso** nella suite intera: da soli passano.
+- **Cadono a caso** nella suite intera e da sole passano: `credential-chains`, `parita-gruppo0` (orari a 2 s), `ssh-connessione-caduta` e `chiave-ssh-percorsi` (chiavi SSH casuali, ed25519 rotte ~1 su 200).
 - Sul Mac `grep` è ugrep e salta i file ignorati da git: per contare, `rg --no-ignore`.
 
 ## 6. Stato e trappole per area (2026-10-15)

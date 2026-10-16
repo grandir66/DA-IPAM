@@ -2,6 +2,7 @@ import { z } from "zod";
 import { PRODUCT_PROFILE_IDS } from "@/lib/device-product-profiles";
 import { DEVICE_CLASSIFICATIONS } from "@/lib/device-classifications";
 import { SNMP_V3_AUTH_PROTOCOLS, SNMP_V3_PRIV_PROTOCOLS, SNMP_V3_SECURITY_LEVELS } from "@/lib/protocols/snmpv3";
+import { METODI_ACCESSO, TIPI_CREDENZIALE, normalizzaTipo } from "@/lib/credentials/tipi";
 
 const cidrRegex = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\/(\d{1,2})$/;
 const ipRegex = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
@@ -134,21 +135,37 @@ export const NetworkDeviceSchema = z.object({
   use_for_arp_poll: z.preprocess((v) => (v === "" || v === null || v === undefined ? undefined : v === true || v === 1 || v === "1" || v === "true" ? 1 : 0), z.union([z.literal(0), z.literal(1)]).optional()),
 });
 
+/** null dai moduli (AddableSelect manda null per un campo vuoto) = campo assente. */
+const nullToUndefined = (v: unknown) => (v === null ? undefined : v);
+
+/**
+ * Voce dell'archivio (tappa 2 credenziali, T13, 16/10): gli otto tipi di
+ * `credentials/tipi.ts`, `linux` accettato e scritto come `ssh`. I campi
+ * richiesti per tipo e metodo non stanno qui ma nel CRUD
+ * (`credentials/archivio.ts`, con `campiRichiesti`): in modifica ogni campo è
+ * facoltativo e si guarda la voce risultante.
+ */
 export const CredentialSchema = z.object({
   name: z.string().min(1, "Nome richiesto").max(100),
-  credential_type: z.enum(["ssh", "snmp", "api", "windows", "linux"]),
-  username: z.string().max(100).optional(),
-  password: z.string().max(200).optional(),
-  // SNMPv3 completo (Fase 4b Task 2, §7.1) — solo per credential_type='snmp'.
-  // Niente CHECK lato DB sui protocolli (non estendibili): qui è l'unica
-  // validazione degli enum: campi non ammessi respinti già a livello Zod,
-  // le combinazioni incoerenti (es. authPriv senza privKey) le rifiuta
-  // buildV3Options (src/lib/protocols/snmpv3.ts) al momento dell'uso.
+  credential_type: z.preprocess(
+    (v) => (typeof v === "string" ? (normalizzaTipo(v) ?? v) : v),
+    z.enum(TIPI_CREDENZIALE, { error: "Tipo di credenziale non valido: scegline uno dall'elenco" }),
+  ),
+  /** Metodo d'accesso; null o assente = il primo del tipo. */
+  auth_method: z.preprocess(emptyToUndefined, z.enum(METODI_ACCESSO, { error: "Metodo d'accesso non valido" }).optional().nullable()),
+  username: z.preprocess(nullToUndefined, z.string().max(256, "Utente troppo lungo (al massimo 256 caratteri)").optional()),
+  /** Password, community, token, chiave API o client secret, secondo il metodo. */
+  password: z.preprocess(nullToUndefined, z.string().max(4096, "Segreto troppo lungo (al massimo 4096 caratteri)").optional()),
+  /** Chiave SSH privata (OpenSSH o PEM). */
+  private_key: z.preprocess(nullToUndefined, z.string().max(16384, "Chiave privata troppo lunga (al massimo 16 KB)").optional()),
+  passphrase: z.preprocess(nullToUndefined, z.string().max(1024, "Passphrase troppo lunga (al massimo 1024 caratteri)").optional()),
+  // SNMPv3 (tipo snmp_v3). Niente CHECK lato DB sui protocolli (non
+  // estendibili): qui è l'unica validazione degli enum.
   security_level: z.preprocess(emptyToUndefined, z.enum(SNMP_V3_SECURITY_LEVELS).optional().nullable()),
   auth_protocol: z.preprocess(emptyToUndefined, z.enum(SNMP_V3_AUTH_PROTOCOLS).optional().nullable()),
-  auth_key: z.string().max(200).optional(),
+  auth_key: z.preprocess(nullToUndefined, z.string().max(200).optional()),
   priv_protocol: z.preprocess(emptyToUndefined, z.enum(SNMP_V3_PRIV_PROTOCOLS).optional().nullable()),
-  priv_key: z.string().max(200).optional(),
+  priv_key: z.preprocess(nullToUndefined, z.string().max(200).optional()),
   // Porta propria (tappa 1): vuota = porta standard del protocollo; null
   // esplicito in modifica = torna alla porta standard.
   port: z.preprocess(emptyToUndefined, z.coerce.number().int().min(1, "Porta fra 1 e 65535").max(65535, "Porta fra 1 e 65535").optional().nullable()),

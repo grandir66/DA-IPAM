@@ -6,7 +6,9 @@ import {
   removeHostCredential,
   setHostCredentialValidated,
   reorderHostCredentials,
+  getCredentialById,
 } from "@/lib/db";
+import { erroreVocePerProtocollo } from "@/lib/credentials/tipi";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 
@@ -46,6 +48,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
     }
     const { credential_id, protocol_type, port, validated } = parsed.data;
+    // La voce deve valere per il protocollo (T13): un account AD non è una riga WinRM.
+    const errore = erroreVocePerProtocollo(credential_id, getCredentialById(credential_id), protocol_type);
+    if (errore) return NextResponse.json({ error: errore }, { status: 400 });
     addHostCredential(hostId, credential_id, protocol_type, port, { validated });
     const credentials = getHostCredentials(hostId);
     return NextResponse.json({ credentials });

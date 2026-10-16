@@ -33,7 +33,7 @@ import { DeviceFormFields } from "@/components/shared/device-form-fields";
 import { LinkIpsDialog } from "@/components/devices/link-ips-dialog";
 import { InlineEditCell } from "@/components/shared/inline-edit-cell";
 import { AddableSelect } from "@/components/shared/addable-select";
-import { credTypeForProtocol, CRED_TYPE_OPTIONS, tipiCredenzialePerProtocollo, vociSnmpAggiuntive } from "@/lib/credential-protocol-map";
+import { opzioniCreazioneRapida, tipiCredenzialePerProtocollo, tipoCreazioneRapida, vociSnmpAggiuntive } from "@/lib/credential-protocol-map";
 import { etichettaTipo, normalizzaTipo } from "@/lib/credentials/tipi";
 import { profiloPerClassificazione, proponiApparato, riallineaAlProtocollo, type ProtocolloApparato } from "@/lib/devices/proposta-apparato";
 import { CreateFingerprintRuleDialog } from "@/components/shared/create-fingerprint-rule-dialog";
@@ -2818,7 +2818,6 @@ export default function DiscoveryPage() {
               )}
 
               {(() => {
-                const credMap = credTypeForProtocol(addProtocol);
                 const tipiPrincipale = tipiCredenzialePerProtocollo(addProtocol);
                 const primaryOpts = addCredentials.filter((c) => tipiPrincipale.includes(c.credential_type));
                 const snmpOpts = vociSnmpAggiuntive(addCredentials);
@@ -2837,7 +2836,7 @@ export default function DiscoveryPage() {
                           entityLabel="credenziale"
                           createApiUrl="/api/credentials"
                           extraFields={[
-                            { key: "credential_type", label: "Tipo", type: "select", required: true, defaultValue: credMap.primary, options: CRED_TYPE_OPTIONS },
+                            { key: "credential_type", label: "Tipo", type: "select", required: true, defaultValue: tipoCreazioneRapida(addProtocol), options: opzioniCreazioneRapida(addProtocol) },
                             { key: "username", label: "Username", placeholder: "admin" },
                             { key: "password", label: "Password / Community", type: "password", required: true },
                           ]}

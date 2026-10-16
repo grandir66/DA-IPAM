@@ -31,6 +31,7 @@ import {
   getNetworkCredentials,
   type NetworkCredentialRow,
 } from "@/lib/db";
+import { CredenzialeNonAmmessa } from "@/lib/credentials/lista-rete";
 
 /** Una credenziale della richiesta non vale per la rete: la rotta risponde 400. */
 export class CredenzialiReteNonValide extends Error {
@@ -60,11 +61,15 @@ function codiceSqlite(e: unknown): string | null {
   return typeof codice === "string" && codice.startsWith("SQLITE_") ? codice : null;
 }
 
-/** La lista unica della rete. Un id che non c'è più nell'archivio è un rifiuto, non un 500. */
+/**
+ * La lista unica della rete. Un id che non c'è più nell'archivio, o una voce
+ * che non vale per una rete (UniFi, Omada, AD: T13), è un rifiuto, non un 500.
+ */
 function lista(networkId: number, ids: number[]): void {
   try {
     replaceNetworkCredentials(networkId, ids);
   } catch (e) {
+    if (e instanceof CredenzialeNonAmmessa) throw new CredenzialiReteNonValide(e.message);
     if (codiceSqlite(e) === "SQLITE_CONSTRAINT_FOREIGNKEY") {
       throw new CredenzialiReteNonValide("Una delle credenziali scelte non esiste più nell'archivio: ricarica la pagina");
     }

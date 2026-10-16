@@ -30,14 +30,18 @@ import {
 const v = (id: number, credential_type: string, name = `voce ${id}`) => ({ id, name, credential_type });
 
 describe("tipi offerti nel modulo del wizard", () => {
-  it("i tipi che l'archivio accetta oggi, con le etichette di tipi.ts e senza «linux» (è SSH)", () => {
-    // Fino alla 2c il tipo «snmp» copre anche la v3 (sezione «Sicurezza SNMPv3»
-    // del modulo): «SNMP v1/v2c» faceva credere che la v3 mancasse (revisione).
+  it("i tipi che l'archivio accetta, con le etichette di tipi.ts e senza «linux» (è SSH)", () => {
+    // Dalla 2c (T13) l'archivio accetta gli otto tipi, «snmp_v3» compreso:
+    // «snmp» torna «SNMP v1/v2c» e la v3 è un tipo a sé.
     assert.deepEqual(tipiDelModulo(CRED_TYPE_OPTIONS.map((o) => o.value)), [
       { value: "ssh", label: "SSH (password o chiave)" },
-      { value: "snmp", label: "SNMP (v1/v2c o v3)" },
+      { value: "snmp", label: "SNMP v1/v2c" },
+      { value: "snmp_v3", label: "SNMP v3" },
       { value: "windows", label: "Windows (WinRM e WMI)" },
       { value: "api", label: "API (token o utente)" },
+      { value: "unifi", label: "Controller UniFi" },
+      { value: "omada", label: "Controller Omada" },
+      { value: "ad", label: "Active Directory" },
     ]);
   });
 

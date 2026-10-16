@@ -61,7 +61,7 @@ import { parseDetectedDeviceFromDetectionJson } from "@/lib/device-fingerprint-c
 import { NetworkCredentialsTable } from "@/components/shared/network-credentials-table";
 import { ProtocolBadges } from "@/components/shared/protocol-badges";
 import { AddableSelect } from "@/components/shared/addable-select";
-import { credTypeForProtocol, CRED_TYPE_OPTIONS, tipiCredenzialePerProtocollo, vociSnmpAggiuntive } from "@/lib/credential-protocol-map";
+import { opzioniCreazioneRapida, tipiCredenzialePerProtocollo, tipoCreazioneRapida, vociSnmpAggiuntive } from "@/lib/credential-protocol-map";
 import { etichettaTipo } from "@/lib/credentials/tipi";
 import { profiloPerClassificazione, proponiApparato, riallineaAlProtocollo, type CredenzialeArchivio, type ProtocolloApparato } from "@/lib/devices/proposta-apparato";
 import { HostCredentialsDialog } from "@/components/shared/host-credentials-dialog";
@@ -1543,7 +1543,6 @@ export function NetworkDetailClient({
 
             {/* Credenziali: scelta esplicita + creazione inline ─ con badge eredità automatica */}
             {(() => {
-              const credMap = credTypeForProtocol(bulkAddProtocol);
               const tipiPrincipale = tipiCredenzialePerProtocollo(bulkAddProtocol);
               const primaryOpts = addDeviceCredentials.filter((c) => tipiPrincipale.includes(c.credential_type));
               const snmpOpts = vociSnmpAggiuntive(addDeviceCredentials);
@@ -1569,7 +1568,7 @@ export function NetworkDetailClient({
                         entityLabel="credenziale"
                         createApiUrl="/api/credentials"
                         extraFields={[
-                          { key: "credential_type", label: "Tipo", type: "select", required: true, defaultValue: credMap.primary, options: CRED_TYPE_OPTIONS },
+                          { key: "credential_type", label: "Tipo", type: "select", required: true, defaultValue: tipoCreazioneRapida(bulkAddProtocol), options: opzioniCreazioneRapida(bulkAddProtocol) },
                           { key: "username", label: "Username", placeholder: "admin" },
                           { key: "password", label: "Password / Community", type: "password", required: true },
                         ]}

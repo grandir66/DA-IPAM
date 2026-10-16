@@ -6,7 +6,9 @@ import { reloadTenantScheduler } from "@/lib/cron/scheduler";
 import {
   getAdIntegrations,
   createAdIntegration,
+  getCredentialById,
 } from "@/lib/db";
+import { erroreVocePerProtocollo } from "@/lib/credentials/tipi";
 import { encrypt } from "@/lib/crypto";
 import { z } from "zod/v4";
 
@@ -82,6 +84,11 @@ export async function POST(request: Request) {
     }
 
     const { name, dc_host, domain, base_dn, username, password, use_ssl, port, enabled, winrm_credential_id } = parsed.data;
+    // WinRM/DHCP dell'AD: solo voci Windows, mai l'account AD (D7 = (a), T13).
+    if (winrm_credential_id) {
+      const errore = erroreVocePerProtocollo(winrm_credential_id, getCredentialById(winrm_credential_id), "winrm");
+      if (errore) return NextResponse.json({ error: errore }, { status: 400 });
+    }
 
     const integration = createAdIntegration({
       name,

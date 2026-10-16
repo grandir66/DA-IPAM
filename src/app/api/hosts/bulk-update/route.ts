@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { updateHost, addHostCredential, getHostCredentials } from "@/lib/db";
+import { updateHost, addHostCredential, getHostCredentials, getCredentialById } from "@/lib/db";
+import { erroreVocePerProtocollo } from "@/lib/credentials/tipi";
 import {
   bulkUpdateNetworkDeviceByHostId,
   bulkUpdateInventoryAssetByHostId,
@@ -87,6 +88,14 @@ export async function PATCH(request: Request) {
           { error: "Specificare almeno un campo da aggiornare" },
           { status: 400 },
         );
+      }
+
+      // La voce deve valere per il protocollo scelto (T13, 16/10): prima un
+      // account AD finiva come riga host WinRM e il motore lo scartava in
+      // silenzio. Si controlla una volta, prima di toccare qualunque host.
+      if (credential_id != null && credential_id > 0) {
+        const errore = erroreVocePerProtocollo(credential_id, getCredentialById(credential_id), credential_protocol ?? "ssh");
+        if (errore) return NextResponse.json({ error: errore }, { status: 400 });
       }
 
       let updated = 0;

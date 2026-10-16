@@ -46,6 +46,8 @@ import {
 } from "./credentials/resolve";
 import { communityDb, coppiaLoginDb, coppiaSshDb } from "./credentials/segreti";
 import { tipiPerRuoloVecchio } from "./credentials/tipi";
+import { aggiornaCredenzialeDb, creaCredenzialeDb, eliminaCredenzialeDb, type ColonneCredenziale } from "./credentials/archivio";
+import { aggiungiAllaListaReteDb, copiaListaReteDb, sostituisciListaReteDb } from "./credentials/lista-rete";
 import type { ControllerRunKind, ControllerRunStoredTrigger, NetworkControllerRow } from "./controllers/types";
 import { libreStatusFrom } from "./topology/status-map";
 import { modelloEtichettaDiPorte } from "./device-fingerprint-classification";
@@ -71,7 +73,6 @@ import type {
   HostInput,
   HostUpdate,
   ScheduledJobInput,
-  CredentialInput,
   SoftwareScan,
   SoftwareScanTarget,
   SoftwareScanStatus,
@@ -3990,79 +3991,17 @@ export function getCredentialById(id: number): Credential | undefined {
   return db().prepare("SELECT * FROM credentials WHERE id = ?").get(id) as Credential | undefined;
 }
 
-export function createCredential(
-  input: CredentialInput & {
-    encrypted_username?: string | null;
-    encrypted_password?: string | null;
-    encrypted_auth_key?: string | null;
-    auth_protocol?: string | null;
-    encrypted_priv_key?: string | null;
-    priv_protocol?: string | null;
-    security_level?: string | null;
-    port?: number | null;
-  }
-): Credential {
-  const stmt = db().prepare(
-    `INSERT INTO credentials (name, credential_type, encrypted_username, encrypted_password, encrypted_auth_key, auth_protocol, encrypted_priv_key, priv_protocol, security_level, port)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  );
-  const result = stmt.run(
-    input.name,
-    input.credential_type,
-    input.encrypted_username ?? null,
-    input.encrypted_password ?? null,
-    input.encrypted_auth_key ?? null,
-    input.auth_protocol ?? null,
-    input.encrypted_priv_key ?? null,
-    input.priv_protocol ?? null,
-    input.security_level ?? null,
-    input.port ?? null
-  );
-  return db().prepare("SELECT * FROM credentials WHERE id = ?").get(result.lastInsertRowid) as Credential;
+/** CRUD dell'archivio: `creaCredenzialeDb` (tipo controllato, `linux` scritto come `ssh`). */
+export function createCredential(input: ColonneCredenziale): Credential {
+  return creaCredenzialeDb(db(), input);
 }
 
-export function updateCredential(
-  id: number,
-  input: Partial<CredentialInput> & {
-    encrypted_username?: string | null;
-    encrypted_password?: string | null;
-    encrypted_auth_key?: string | null;
-    auth_protocol?: string | null;
-    encrypted_priv_key?: string | null;
-    priv_protocol?: string | null;
-    security_level?: string | null;
-    port?: number | null;
-  }
-): Credential | undefined {
-  const fields: string[] = [];
-  const values: unknown[] = [];
-  const keys = [
-    "name",
-    "credential_type",
-    "encrypted_username",
-    "encrypted_password",
-    "encrypted_auth_key",
-    "auth_protocol",
-    "encrypted_priv_key",
-    "priv_protocol",
-    "security_level",
-    "port",
-  ] as const;
-  for (const key of keys) {
-    if (input[key] !== undefined) {
-      fields.push(`${key} = ?`);
-      values.push(input[key]);
-    }
-  }
-  if (fields.length === 0) return getCredentialById(id);
-  fields.push("updated_at = datetime('now')");
-  values.push(id);
-  db().prepare(`UPDATE credentials SET ${fields.join(", ")} WHERE id = ?`).run(...values);
-  return getCredentialById(id);
+export function updateCredential(id: number, input: Partial<ColonneCredenziale>): Credential | undefined {
+  return aggiornaCredenzialeDb(db(), id, input);
 }
 
 export function deleteCredential(id: number): boolean {
-  return db().prepare("DELETE FROM credentials WHERE id = ?").run(id).changes > 0;
+  return eliminaCredenzialeDb(db(), id);
 }
 
 /**
@@ -4244,31 +4183,11 @@ export function getNetworkCredentials(networkId: number): NetworkCredentialRow[]
 }
 
 export function replaceNetworkCredentials(networkId: number, credentialIds: number[]): void {
-  const seen = new Set<number>();
-  const unique: number[] = [];
-  for (const id of credentialIds) {
-    if (seen.has(id)) continue;
-    seen.add(id);
-    unique.push(id);
-  }
-  const d = db();
-  d.transaction(() => {
-    d.prepare(`DELETE FROM network_credentials WHERE network_id = ?`).run(networkId);
-    const ins = d.prepare(
-      `INSERT INTO network_credentials (network_id, credential_id, sort_order) VALUES (?, ?, ?)`
-    );
-    unique.forEach((cid, i) => ins.run(networkId, cid, i));
-  })();
+  sostituisciListaReteDb(db(), networkId, credentialIds);
 }
 
 export function addNetworkCredential(networkId: number, credentialId: number): void {
-  const d = db();
-  const max = d.prepare(
-    `SELECT COALESCE(MAX(sort_order), -1) AS m FROM network_credentials WHERE network_id = ?`
-  ).get(networkId) as { m: number };
-  d.prepare(
-    `INSERT OR IGNORE INTO network_credentials (network_id, credential_id, sort_order) VALUES (?, ?, ?)`
-  ).run(networkId, credentialId, max.m + 1);
+  aggiungiAllaListaReteDb(db(), networkId, credentialId);
 }
 
 export function removeNetworkCredential(networkId: number, credentialId: number): void {
@@ -4288,27 +4207,7 @@ export function reorderNetworkCredentials(networkId: number, orderedCredentialId
 }
 
 export function copyNetworkCredentials(sourceNetworkId: number, targetNetworkId: number): number {
-  const d = db();
-  const source = getNetworkCredentials(sourceNetworkId);
-  const existing = new Set(
-    getNetworkCredentials(targetNetworkId).map((r) => r.credential_id)
-  );
-  const max = d.prepare(
-    `SELECT COALESCE(MAX(sort_order), -1) AS m FROM network_credentials WHERE network_id = ?`
-  ).get(targetNetworkId) as { m: number };
-  let order = max.m + 1;
-  let added = 0;
-  const ins = d.prepare(
-    `INSERT OR IGNORE INTO network_credentials (network_id, credential_id, sort_order) VALUES (?, ?, ?)`
-  );
-  d.transaction(() => {
-    for (const s of source) {
-      if (existing.has(s.credential_id)) continue;
-      ins.run(targetNetworkId, s.credential_id, order++);
-      added++;
-    }
-  })();
-  return added;
+  return copiaListaReteDb(db(), sourceNetworkId, targetNetworkId);
 }
 
 export function getNetworksWithCredentials(): Array<{ id: number; name: string; cidr: string; credential_count: number }> {

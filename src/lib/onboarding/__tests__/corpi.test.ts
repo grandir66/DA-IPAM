@@ -77,7 +77,8 @@ describe("router: controlli", () => {
     assert.equal(credenzialeValidaPer(null, voci, "ssh"), false);
     assert.equal(tipoPerNuovaVoce("ssh"), "ssh");
     assert.equal(tipoPerNuovaVoce("snmp_v2"), "snmp");
-    assert.equal(tipoPerNuovaVoce("snmp_v3"), "snmp");
+    // Dalla 2c (T13) la v3 è un tipo d'archivio a sé.
+    assert.equal(tipoPerNuovaVoce("snmp_v3"), "snmp_v3");
   });
 
   it("con accesso SNMP v3 la voce nuova parte già v3 (authPriv), non con la community", () => {

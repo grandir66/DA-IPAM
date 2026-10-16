@@ -1081,7 +1081,7 @@ function ArchivioVoci({
                   {v.name}
                 </TableCell>
                 <TableCell>{etichettaVoce(v)}</TableCell>
-                <TableCell className="text-muted-foreground">{v.encrypted_username ?? "—"}</TableCell>
+                <TableCell className="text-muted-foreground">{v.ha_username ? "●●●●●●●●" : "—"}</TableCell>
                 <TableCell className={v.port != null ? "font-mono" : "text-muted-foreground"}>{etichettaPorta(v.port)}</TableCell>
                 <TableCell className="text-right">
                   <AzioniVoce voce={v} onModifica={() => onModifica(v)} onElimina={() => onElimina(v)} />
@@ -1103,7 +1103,7 @@ function ArchivioVoci({
             </div>
             <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[13px]">
               <dt className="text-muted-foreground">Utente</dt>
-              <dd>{v.encrypted_username ?? "—"}</dd>
+              <dd>{v.ha_username ? "●●●●●●●●" : "—"}</dd>
               <dt className="text-muted-foreground">Porta</dt>
               <dd className={v.port != null ? "font-mono" : undefined}>{etichettaPorta(v.port)}</dd>
             </dl>

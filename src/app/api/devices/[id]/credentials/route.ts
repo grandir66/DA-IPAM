@@ -12,7 +12,9 @@ import {
   deleteDeviceCredentialBinding,
   reorderDeviceCredentialBindings,
   updateBindingTestStatus,
+  getCredentialById,
 } from "@/lib/db";
+import { erroreVocePerProtocollo } from "@/lib/credentials/tipi";
 import { encrypt } from "@/lib/crypto";
 import { aggiornamentiBinding, normalizzaInlineSnmp } from "@/lib/devices/aggiornamenti-binding";
 
@@ -80,6 +82,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     }
 
     const { credential_id, protocol_type, port } = parsed.data;
+    // La voce d'archivio deve valere per il protocollo del binding (T13, 16/10):
+    // prima si salvava e il motore la scartava in silenzio.
+    if (credential_id) {
+      const errore = erroreVocePerProtocollo(credential_id, getCredentialById(credential_id), protocol_type);
+      if (errore) return NextResponse.json({ error: errore }, { status: 400 });
+    }
     const { inline_username, inline_password } = normalizzaInlineSnmp(protocol_type, parsed.data.inline_username, parsed.data.inline_password);
 
     const binding = addDeviceCredentialBinding({
@@ -145,6 +153,14 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
     if (data.action === "update") {
       if (!data.binding_id) return NextResponse.json({ error: "binding_id richiesto" }, { status: 400 });
+      // Voce e protocollo dopo la modifica: quelli mandati, altrimenti quelli del binding.
+      const attuale = getDeviceCredentialBindings(Number(id)).find((b) => b.id === data.binding_id);
+      if (!attuale) return NextResponse.json({ error: "Binding non trovato" }, { status: 404 });
+      const voceDopo = data.credential_id !== undefined ? data.credential_id : attuale.credential_id;
+      if (voceDopo) {
+        const errore = erroreVocePerProtocollo(voceDopo, getCredentialById(voceDopo), data.protocol_type ?? attuale.protocol_type);
+        if (errore) return NextResponse.json({ error: errore }, { status: 400 });
+      }
       // Campi inline solo in modalità inline, community SNMP nel campo cifrato
       // (tappa 1): dettaglio in src/lib/devices/aggiornamenti-binding.ts.
       const updates = aggiornamentiBinding(data);

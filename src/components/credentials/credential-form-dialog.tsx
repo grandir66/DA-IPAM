@@ -8,6 +8,10 @@
  * quattro blocchi fissi (una voce per tipo): la stessa voce si chiedeva più
  * volte e non tutte finivano nell'archivio. Controlli e corpi delle richieste
  * stanno in `src/lib/credentials/modulo.ts`, con le prove.
+ *
+ * Tappa 2 (T13, 16/10): gli otto tipi d'archivio, un «Metodo» per i tipi che
+ * ne hanno due (SSH, API, UniFi, Omada) e i campi di quel metodo; SNMP v3 è
+ * un tipo a sé, col suo blocco (utente, livello, protocolli e chiavi).
  */
 import { useState } from "react";
 import { toast } from "sonner";
@@ -20,12 +24,17 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { WinRMSetupGuideDialog } from "@/components/shared/winrm-setup-guide-dialog";
 import { etichettaPrivacyV3, SNMP_V3_AUTH_PROTOCOLS, SNMP_V3_PRIV_PROTOCOLS } from "@/lib/protocols/snmp-sessione";
 import { fetchJson } from "@/lib/fetch-json";
+import { Textarea } from "@/components/ui/textarea";
 import {
+  campiDelModulo,
   erroreModulo,
-  haUtentePassword,
+  etichetteCampi,
+  haPorta,
+  metodiDelTipo,
   opzioniConTipoAttuale,
   richiestaSalvataggio,
   segnapostoPorta,
+  segretoGiaImpostato,
   serveUtenteInModifica,
   statoModifica,
   type LivelloV3,
@@ -108,12 +117,26 @@ function ModuloVoce({
 }) {
   const [form, setForm] = useState<ModuloCredenziale>(stato.form);
   const [salvando, setSalvando] = useState(false);
-  const { editingId, existingAuthKey, existingPrivKey } = stato;
+  const corrente: StatoModulo = { ...stato, form };
+  const { editingId } = stato;
   const opzioni = opzioniConTipoAttuale(opzioniTipo, form.credential_type);
+  const metodi = metodiDelTipo(form.credential_type);
+  const metodo = form.auth_method || metodi[0]?.value || "";
+  const campi = campiDelModulo(corrente);
+  const etichette = etichetteCampi(form.credential_type, metodo);
+  const giaImpostata = (campo: Parameters<typeof segretoGiaImpostato>[1]) => segretoGiaImpostato(corrente, campo);
+
+  const cambiaTipo = (tipo: string) =>
+    setForm((f) => ({
+      ...f,
+      credential_type: tipo,
+      // Il metodo è del tipo: cambiando tipo si riparte dal primo.
+      auth_method: "",
+      security_level: tipo === "snmp_v3" ? f.security_level || "authPriv" : f.security_level,
+    }));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const corrente: StatoModulo = { ...stato, form };
     const errore = erroreModulo(corrente);
     if (errore) {
       toast.error(errore);
@@ -138,6 +161,8 @@ function ModuloVoce({
     }
   };
 
+  const nonModificare = " (lascia vuoto per non modificare)";
+
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
@@ -146,7 +171,7 @@ function ModuloVoce({
       </div>
       <div>
         <Label>Tipo</Label>
-        <Select value={form.credential_type} onValueChange={(v) => v && setForm((f) => ({ ...f, credential_type: String(v) }))}>
+        <Select value={form.credential_type} onValueChange={(v) => v && cambiaTipo(String(v))}>
           <SelectTrigger>
             <SelectValue />
           </SelectTrigger>
@@ -159,86 +184,122 @@ function ModuloVoce({
           </SelectContent>
         </Select>
       </div>
-      {haUtentePassword(form.credential_type) && (
-        <>
-          <div>
-            <div className="flex items-center justify-between">
-              <Label>Username</Label>
-              {form.credential_type === "windows" && (
-                <button
-                  type="button"
-                  onClick={onApriGuida}
-                  className="text-[11px] text-primary hover:underline inline-flex items-center gap-1"
-                  title="Guida per abilitare WinRM sul server target"
-                >
-                  <BookOpen className="h-3 w-3" />
-                  Come abilitare WinRM?
-                </button>
-              )}
-            </div>
-            <Input
-              value={form.username}
-              onChange={(e) => setForm((f) => ({ ...f, username: e.target.value }))}
-              placeholder={form.credential_type === "windows" ? "es. .\\admin (locale), DOMINIO\\utente (AD), o utente@dominio.fqdn" : "es. admin o DOMINIO\\utente"}
-            />
+      {metodi.length > 0 && (
+        <div>
+          <Label>Metodo</Label>
+          <Select value={metodo} onValueChange={(v) => v && setForm((f) => ({ ...f, auth_method: String(v) }))}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {metodi.map((m) => (
+                <SelectItem key={m.value} value={m.value}>
+                  {m.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+      {campi.includes("username") && (
+        <div>
+          <div className="flex items-center justify-between">
+            <Label htmlFor="cred-utente">{form.credential_type === "snmp_v3" ? "Username SNMPv3" : etichette.username}</Label>
             {form.credential_type === "windows" && (
-              <p className="text-[11px] text-muted-foreground mt-1">
-                Account locale → <code>.\nomeutente</code> · Dominio AD → <code>DOMINIO\nomeutente</code> o <code>utente@dominio.fqdn</code>
-              </p>
+              <button
+                type="button"
+                onClick={onApriGuida}
+                className="text-[13px] text-primary hover:underline inline-flex items-center gap-1"
+                title="Guida per abilitare WinRM sul server target"
+              >
+                <BookOpen className="h-3 w-3" />
+                Come abilitare WinRM?
+              </button>
             )}
           </div>
-          <div>
-            <Label>Password {editingId && "(lascia vuoto per non modificare)"}</Label>
-            <Input
-              type="password"
-              value={form.password}
-              onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
-              placeholder="••••••••"
-            />
-          </div>
-        </>
+          <Input
+            id="cred-utente"
+            value={form.username}
+            onChange={(e) => setForm((f) => ({ ...f, username: e.target.value }))}
+            placeholder={
+              form.credential_type === "windows" || form.credential_type === "ad"
+                ? "es. .\\admin (locale), DOMINIO\\utente (AD), o utente@dominio.fqdn"
+                : form.credential_type === "snmp_v3"
+                  ? "es. monitor"
+                  : "es. admin o DOMINIO\\utente"
+            }
+          />
+          {form.credential_type === "windows" && (
+            <p className="text-[13px] text-muted-foreground mt-1">
+              Account locale → <code>.\nomeutente</code> · Dominio AD → <code>DOMINIO\nomeutente</code> o <code>utente@dominio.fqdn</code>
+            </p>
+          )}
+        </div>
       )}
-      {form.credential_type === "snmp" && (
+      {campi.includes("password") && (
+        <div>
+          <Label htmlFor="cred-segreto">
+            {etichette.password}
+            {giaImpostata("password") && nonModificare}
+          </Label>
+          <Input
+            id="cred-segreto"
+            type="password"
+            value={form.password}
+            onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+            placeholder={giaImpostata("password") ? "••••••••" : form.credential_type === "snmp" ? "es. public" : ""}
+          />
+        </div>
+      )}
+      {campi.includes("private_key") && (
+        <div>
+          <Label htmlFor="cred-chiave">
+            Chiave privata (OpenSSH o PEM)
+            {giaImpostata("private_key") && " (già impostata — lascia vuota per non modificare)"}
+          </Label>
+          <Textarea
+            id="cred-chiave"
+            rows={6}
+            spellCheck={false}
+            autoComplete="off"
+            className="font-mono text-[13px]"
+            value={form.private_key}
+            onChange={(e) => setForm((f) => ({ ...f, private_key: e.target.value }))}
+            placeholder={giaImpostata("private_key") ? "••••••••" : "-----BEGIN OPENSSH PRIVATE KEY-----"}
+          />
+        </div>
+      )}
+      {campi.includes("passphrase") && (
+        <div>
+          <Label htmlFor="cred-passphrase">
+            Passphrase della chiave (facoltativa)
+            {giaImpostata("passphrase") && nonModificare}
+          </Label>
+          <Input
+            id="cred-passphrase"
+            type="password"
+            value={form.passphrase}
+            onChange={(e) => setForm((f) => ({ ...f, passphrase: e.target.value }))}
+            placeholder={giaImpostata("passphrase") ? "••••••••" : ""}
+          />
+          <p className="text-[13px] text-muted-foreground mt-1">Cambiando la chiave, la passphrase vecchia si toglie: se la chiave nuova ne ha una, scrivila qui.</p>
+        </div>
+      )}
+      {campi.includes("v3") && (
         <>
           <div>
-            <Label>Community string (SNMPv2c) {editingId && "(lascia vuoto per non modificare)"}</Label>
-            <Input
-              type="password"
-              value={form.password}
-              onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
-              placeholder="es. public"
-            />
-            <p className="text-[11px] text-muted-foreground mt-1">Non serve se sotto imposti la sicurezza SNMPv3.</p>
-          </div>
-          <div className="border-t pt-4">
-            <Label>Sicurezza SNMPv3 (opzionale)</Label>
-            <Select
-              value={form.security_level || "none"}
-              onValueChange={(v) => setForm((f) => ({ ...f, security_level: v === "none" ? "" : (v as LivelloV3) }))}
-            >
+            <Label>Livello di sicurezza</Label>
+            <Select value={form.security_level || undefined} onValueChange={(v) => setForm((f) => ({ ...f, security_level: (v ?? "") as LivelloV3 }))}>
               <SelectTrigger>
-                <SelectValue />
+                <SelectValue placeholder="Seleziona il livello" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="none">Nessuna — SNMPv2c (community string)</SelectItem>
-                <SelectItem value="noAuthNoPriv">SNMPv3 noAuthNoPriv</SelectItem>
-                <SelectItem value="authNoPriv">SNMPv3 authNoPriv</SelectItem>
-                <SelectItem value="authPriv">SNMPv3 authPriv (completo)</SelectItem>
+                <SelectItem value="noAuthNoPriv">noAuthNoPriv (senza autenticazione)</SelectItem>
+                <SelectItem value="authNoPriv">authNoPriv (autenticazione)</SelectItem>
+                <SelectItem value="authPriv">authPriv (autenticazione e cifratura)</SelectItem>
               </SelectContent>
             </Select>
-            <p className="text-[11px] text-muted-foreground mt-1">Per apparati enterprise dove v2c è disabilitato per policy.</p>
           </div>
-          {form.security_level && (
-            <div>
-              <Label htmlFor="cred-snmpv3-user">Username SNMPv3</Label>
-              <Input
-                id="cred-snmpv3-user"
-                value={form.username}
-                onChange={(e) => setForm((f) => ({ ...f, username: e.target.value }))}
-                placeholder="es. monitor"
-              />
-            </div>
-          )}
           {(form.security_level === "authNoPriv" || form.security_level === "authPriv") && (
             <>
               <div>
@@ -257,12 +318,12 @@ function ModuloVoce({
                 </Select>
               </div>
               <div>
-                <Label>Chiave di autenticazione {existingAuthKey && "(già impostata — lascia vuoto per non modificare)"}</Label>
+                <Label>Chiave di autenticazione {giaImpostata("auth_key") && "(già impostata — lascia vuoto per non modificare)"}</Label>
                 <Input
                   type="password"
                   value={form.auth_key}
                   onChange={(e) => setForm((f) => ({ ...f, auth_key: e.target.value }))}
-                  placeholder={existingAuthKey ? "••••••••" : "chiave di autenticazione"}
+                  placeholder={giaImpostata("auth_key") ? "••••••••" : "chiave di autenticazione"}
                 />
               </div>
             </>
@@ -284,38 +345,40 @@ function ModuloVoce({
                   </SelectContent>
                 </Select>
                 {form.priv_protocol === "AES192" && (
-                  <p className="text-[11px] text-destructive mt-1">
+                  <p className="text-[13px] text-destructive mt-1">
                     AES192 non è supportato dalla libreria SNMP disponibile: usa AES o AES256.
                   </p>
                 )}
               </div>
               <div>
-                <Label>Chiave di privacy {existingPrivKey && "(già impostata — lascia vuoto per non modificare)"}</Label>
+                <Label>Chiave di privacy {giaImpostata("priv_key") && "(già impostata — lascia vuoto per non modificare)"}</Label>
                 <Input
                   type="password"
                   value={form.priv_key}
                   onChange={(e) => setForm((f) => ({ ...f, priv_key: e.target.value }))}
-                  placeholder={existingPrivKey ? "••••••••" : "chiave di privacy"}
+                  placeholder={giaImpostata("priv_key") ? "••••••••" : "chiave di privacy"}
                 />
               </div>
             </>
           )}
         </>
       )}
-      <div>
-        <Label htmlFor="cred-porta">Porta</Label>
-        <Input
-          id="cred-porta"
-          inputMode="numeric"
-          value={form.port}
-          onChange={(e) => setForm((f) => ({ ...f, port: e.target.value.replace(/[^0-9]/g, "") }))}
-          placeholder={segnapostoPorta(form.credential_type)}
-          className="w-40"
-        />
-        <p className="text-[11px] text-muted-foreground mt-1">
-          Vuota = porta standard. Serve per SSH su una porta diversa (es. 2022) o SNMP fuori dalla 161.
-        </p>
-      </div>
+      {haPorta(form.credential_type) && (
+        <div>
+          <Label htmlFor="cred-porta">Porta</Label>
+          <Input
+            id="cred-porta"
+            inputMode="numeric"
+            value={form.port}
+            onChange={(e) => setForm((f) => ({ ...f, port: e.target.value.replace(/[^0-9]/g, "") }))}
+            placeholder={segnapostoPorta(form.credential_type)}
+            className="w-40"
+          />
+          <p className="text-[13px] text-muted-foreground mt-1">
+            Vuota = porta standard. Serve per SSH su una porta diversa (es. 2022) o SNMP fuori dalla 161.
+          </p>
+        </div>
+      )}
       <div className="flex justify-end gap-2">
         <Button type="button" variant="outline" onClick={onAnnulla}>
           Annulla

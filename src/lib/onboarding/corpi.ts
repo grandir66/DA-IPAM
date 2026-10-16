@@ -58,9 +58,12 @@ export function credenzialeValidaPer(id: number | null, voci: readonly VoceMinim
   return id != null && vociPerProtocollo(voci, protocollo).some((v) => v.id === id);
 }
 
-/** Tipo con cui si apre il modulo dal «+ nuova nell'archivio» della credenziale del router. */
+/**
+ * Tipo con cui si apre il modulo dal «+ nuova nell'archivio» della credenziale
+ * del router. Dalla 2c (T13) la SNMP v3 è un tipo d'archivio a sé.
+ */
 export function tipoPerNuovaVoce(protocollo: string): string {
-  return credTypeForProtocol(protocollo).primary;
+  return protocollo === "snmp_v3" ? "snmp_v3" : credTypeForProtocol(protocollo).primary;
 }
 
 /**

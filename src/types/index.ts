@@ -203,11 +203,11 @@ export interface Credential {
   id: number;
   name: string;
   /**
-   * Tipo d'archivio per esteso (tappa 2c). `linux` resta nel tipo finché c'è
-   * chi lo scrive o lo filtra (validatore, wizard, scheda software: T12-T13
-   * dello stesso rilascio); la normalizzazione lo porta a `ssh`.
+   * Tipo d'archivio per esteso (tappa 2c). Il CRUD scrive `linux` come `ssh`
+   * (T13) e la normalizzazione ha convertito le voci vecchie (T11); chi legge
+   * un codice dal DB passa comunque da `normalizzaTipo`.
    */
-  credential_type: TipoCredenziale | "linux";
+  credential_type: TipoCredenziale;
   /** Metodo d'accesso; null = il primo del tipo (`METODI_PER_TIPO`). */
   auth_method: MetodoAccesso | null;
   encrypted_username: string | null;
@@ -865,8 +865,8 @@ export interface NetworkDeviceInput {
 
 export interface CredentialInput {
   name: string;
-  /** `linux` finché il validatore lo accetta (T13 dello stesso rilascio). */
-  credential_type: TipoCredenziale | "linux";
+  /** `linux` lo accetta il validatore e lo scrive come `ssh` (T13). */
+  credential_type: TipoCredenziale;
   /** Metodo d'accesso; null o assente = il primo del tipo. */
   auth_method?: MetodoAccesso | null;
   username?: string;

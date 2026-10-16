@@ -6,7 +6,9 @@ import {
   updateAdIntegration,
   deleteAdIntegration,
   clearAdData,
+  getCredentialById,
 } from "@/lib/db";
+import { erroreVocePerProtocollo } from "@/lib/credentials/tipi";
 import { encrypt } from "@/lib/crypto";
 import { z } from "zod/v4";
 
@@ -69,6 +71,13 @@ export async function PUT(request: Request, { params }: Params) {
       const parsed = AdIntegrationUpdateSchema.safeParse(body);
       if (!parsed.success) {
         return NextResponse.json({ error: "Dati non validi", details: parsed.error.issues }, { status: 400 });
+      }
+
+      // WinRM/DHCP dell'AD: solo voci Windows, mai l'account AD (D7 = (a), T13).
+      const winrm = parsed.data.winrm_credential_id;
+      if (winrm) {
+        const errore = erroreVocePerProtocollo(winrm, getCredentialById(winrm), "winrm");
+        if (errore) return NextResponse.json({ error: errore }, { status: 400 });
       }
 
       const updates: Parameters<typeof updateAdIntegration>[1] = {};

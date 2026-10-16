@@ -49,7 +49,7 @@ import {
   getCredentialLoginPair,
   getOrderedDetectCredentialIds,
   getOrderedSshLinuxCredentialIds,
-  getSshLinuxCredentialPair,
+  accessoSshCredenziale,
   getTenantDb,
   withTenant,
   type DeviceCredentialBinding,
@@ -63,7 +63,7 @@ import {
   sceltaLoginApparatoDb,
   type ResolveTarget,
 } from "../../src/lib/credentials/resolve";
-import { v3ApparatoDb } from "../../src/lib/credentials/segreti";
+import { opzioniSsh, v3ApparatoDb, type AccessoSsh } from "../../src/lib/credentials/segreti";
 import { collectEdgeCredentialsForNetwork } from "../../src/lib/vuln/edge-credentials-bridge";
 import { sceltaWinrmPatchDb } from "../../src/lib/patch/credentials";
 import { resolveDeviceAcquisition } from "../../src/lib/devices/device-acquisition-resolve";
@@ -256,9 +256,17 @@ function improntaVoce(ctx: Contesto, parti: string[] | null): string {
   return parti ? impronta(chiaroDaParti(...parti), ctx.chiave) : IMPRONTA_ILLEGGIBILE;
 }
 
+/**
+ * Le parti dell'impronta di un accesso SSH: utente e password come prima (stessa impronta di prima per le voci a
+ * password), utente, chiave e passphrase per una voce a chiave (T14: l'acquisizione e la discovery la usano).
+ */
+function partiAccesso(a: AccessoSsh): string[] {
+  return a.privateKey ? [a.username, a.privateKey, a.passphrase ?? ""] : [a.username, a.password ?? ""];
+}
+
 function coppiaSsh(id: number): string[] | null {
-  const p = getSshLinuxCredentialPair(id);
-  return p ? [p.username, p.password] : null;
+  const e = accessoSshCredenziale(id);
+  return e.ok ? partiAccesso(e.accesso) : null;
 }
 
 function coppiaWindows(id: number): string[] | null {
@@ -327,18 +335,19 @@ function fotografaDentro(code: string, encryptionKey: string): EsitoTenant {
     const haSnmp = principale === "snmp" || haSnmpProprio;
     if (principale !== "snmp") {
       const s = sceltaLoginApparatoDb(dbh, d, { registra: false });
+      const accesso = s.ok ? opzioniSsh(s.segreto) : null;
       righe.push({
         tenant: code,
         oggetto: "apparato",
         chiave: `${d.id}:${principale}`,
         nome: d.name,
         scelta:
-          s.ok && s.segreto.forma === "utente"
+          s.ok && accesso
             ? {
                 credential_id: s.candidato.credential_id,
                 port: s.candidato.port,
                 fonte: s.candidato.source,
-                impronta: improntaVoce(ctx, [s.segreto.username, s.segreto.password]),
+                impronta: improntaVoce(ctx, partiAccesso(accesso)),
               }
             : null,
         piano,
@@ -410,7 +419,7 @@ function fotografaDentro(code: string, encryptionKey: string): EsitoTenant {
     });
     const motoreSsh = nelMotore("ssh");
     getOrderedSshLinuxCredentialIds(n.id, SENZA_REGISTRO).forEach((id, i) => {
-      const p = getSshLinuxCredentialPair(id);
+      const p = accessoSshCredenziale(id);
       righe.push({
         tenant: code,
         oggetto: "rete",
@@ -418,9 +427,9 @@ function fotografaDentro(code: string, encryptionKey: string): EsitoTenant {
         nome: n.name,
         scelta: {
           credential_id: id,
-          port: p ? (p.port ?? 22) : null,
+          port: p.ok ? (p.port ?? 22) : null,
           fonte: fonte(motoreSsh.has(id) ? "catena" : "chiave_hub"),
-          impronta: improntaVoce(ctx, p ? [p.username, p.password] : null),
+          impronta: improntaVoce(ctx, p.ok ? partiAccesso(p.accesso) : null),
         },
       });
     });

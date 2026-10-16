@@ -38,7 +38,7 @@ import {
   scegliSegretoHostDb,
   type ResolvedCredentialSource,
 } from "@/lib/credentials/resolve";
-import { leggiSegretoDb, type Segreto } from "@/lib/credentials/segreti";
+import { chiaveNonSupportata, leggiSegretoDb, nomeVoceDb, type Segreto } from "@/lib/credentials/segreti";
 import { etichettaTipo, tipiPerProtocollo } from "@/lib/credentials/tipi";
 import { runWindowsSoftwareProbe } from "@/lib/probes/software-windows";
 import { runLinuxSoftwareScan } from "@/lib/probes/software-linux";
@@ -143,8 +143,12 @@ function dbTenant(): Database.Database {
 const PROTOCOLLO: Record<SoftwareOsFamily, "winrm" | "ssh"> = { windows: "winrm", linux: "ssh" };
 const PROBE_INIZIALE: Record<SoftwareOsFamily, SoftwareProbe> = { windows: "winrm", linux: "ssh-mixed" };
 
-/** Utente e password dal segreto; un'altra forma (chiave SSH, token…) l'inventario per ora non la usa. */
-function utenteEPassword(s: Segreto, chi: string): { username: string; password: string } {
+/**
+ * Utente e password dal segreto. L'inventario Linux passa dal ponte paramiko, che con D6 = (a) non usa la chiave:
+ * una voce SSH a chiave dà il rifiuto che lo dice (T14), senza ripiegare su un'altra voce. Altre forme (token…) no.
+ */
+function utenteEPassword(s: Segreto, chi: string, nomeVoce: string | null): { username: string; password: string } {
+  if (s.forma === "chiave_ssh") throw new Error(chiaveNonSupportata("dall'inventario software (ponte paramiko)", nomeVoce));
   if (s.forma !== "utente") throw new Error(`${chi}: l'inventario software per ora accede solo con utente e password`);
   return { username: s.username, password: s.password };
 }
@@ -173,7 +177,7 @@ function voceScelta(
   }
   const e = leggiSegretoDb(dbh, credentialId, PROTOCOLLO[osFamily]);
   if (!e.ok) throw new Error(e.motivo);
-  return { osFamily, credentialType: riga.credential_type, ...utenteEPassword(e.segreto, `La credenziale «${riga.name}»`) };
+  return { osFamily, credentialType: riga.credential_type, ...utenteEPassword(e.segreto, `La credenziale «${riga.name}»`, riga.name) };
 }
 
 /**
@@ -232,7 +236,7 @@ function resolveTarget(opts: SoftwareScanOptions): ResolvedTarget {
         credentialId: s.candidato.credential_id,
         credentialType: s.candidato.tipo,
         fonte: s.candidato.source,
-        ...utenteEPassword(s.segreto, `L'host ${host.ip}`),
+        ...utenteEPassword(s.segreto, `L'host ${host.ip}`, nomeVoceDb(dbh, s.candidato.credential_id)),
         defaultPort: s.candidato.port,
         identification,
       };
@@ -272,7 +276,7 @@ function resolveTarget(opts: SoftwareScanOptions): ResolvedTarget {
       credentialId: s.candidato.credential_id,
       credentialType: s.candidato.tipo,
       fonte: s.candidato.source,
-      ...utenteEPassword(s.segreto, `Device '${device.name}'`),
+      ...utenteEPassword(s.segreto, `Device '${device.name}'`, nomeVoceDb(dbh, s.candidato.credential_id)),
       port: s.candidato.port,
     };
   }

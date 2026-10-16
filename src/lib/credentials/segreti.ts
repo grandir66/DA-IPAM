@@ -307,13 +307,58 @@ export function leggiSegretoInline(b: { protocol_type: string; inline_username: 
   return { ...base, segreto: { forma: "utente", username: b.inline_username, password: p.valore } };
 }
 
+/**
+ * Accesso SSH da una voce: utente più password, oppure utente più chiave
+ * privata (con la passphrase, se è cifrata). È la forma che il trasporto ssh2
+ * (`SshOptions`) e l'acquisizione (`getDeviceCredentials`) ricevono dalla
+ * tappa 2, T14 (D6 = (a)).
+ */
+export type AccessoSsh = { username: string; password?: string; privateKey?: string; passphrase?: string };
+
 /** Opzioni di connessione SSH (ssh2) da un segreto: password o chiave. Altre forme → null. */
-export function opzioniSsh(s: Segreto): { username: string; password?: string; privateKey?: string; passphrase?: string } | null {
+export function opzioniSsh(s: Segreto): AccessoSsh | null {
   if (s.forma === "utente") return { username: s.username, password: s.password };
   if (s.forma === "chiave_ssh") {
     return s.passphrase ? { username: s.username, privateKey: s.privateKey, passphrase: s.passphrase } : { username: s.username, privateKey: s.privateKey };
   }
   return null;
+}
+
+/**
+ * Il rifiuto dei percorsi SSH che non usano la chiave (D6 = (a): il ponte
+ * paramiko delle patch e dell'inventario Linux, il terminale web). `percorso`
+ * comincia con la preposizione: «dal terminale SSH». Niente ripiego su
+ * un'altra voce: la voce scelta è quella, e si dice perché non va.
+ */
+export function chiaveNonSupportata(percorso: string, nomeVoce?: string | null): string {
+  return `Credenziale a chiave non supportata ${percorso}: usa una credenziale con password${nomeVoce ? ` (la voce «${nomeVoce}» è a chiave)` : ""}`;
+}
+
+/** Il nome di una voce, per i messaggi; null senza voce o se non c'è. */
+export function nomeVoceDb(dbh: Database.Database, credentialId: number | null): string | null {
+  if (credentialId == null) return null;
+  const r = dbh.prepare("SELECT name FROM credentials WHERE id = ?").get(credentialId) as { name: string | null } | undefined;
+  return r?.name ?? null;
+}
+
+export type EsitoAccessoSsh = { ok: true; accesso: AccessoSsh; port: number | null } | { ok: false; motivo: string };
+
+/**
+ * L'accesso SSH di una voce `ssh` (o `linux`) con la porta della voce: utente
+ * e password ripuliti dagli spazi come in getSshLinuxCredentialPair, oppure
+ * utente ripulito e chiave com'è (T14). Il rifiuto dice perché.
+ */
+export function accessoSshDb(dbh: Database.Database, credentialId: number): EsitoAccessoSsh {
+  const e = leggiSegretoDb(dbh, credentialId, "ssh");
+  if (!e.ok) return e;
+  if (e.segreto.forma === "utente") {
+    return { ok: true, accesso: { username: e.segreto.username.trim(), password: e.segreto.password.trim() }, port: e.port };
+  }
+  if (e.segreto.forma === "chiave_ssh") {
+    const a = opzioniSsh(e.segreto) as AccessoSsh;
+    return { ok: true, accesso: { ...a, username: a.username.trim() }, port: e.port };
+  }
+  return { ok: false, motivo: `La credenziale «${e.nome}» non ha un accesso SSH (utente con password o chiave)` };
 }
 
 // ── Involucri: le letture di oggi, una funzione pura ciascuna ─────────────

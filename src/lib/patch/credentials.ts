@@ -16,6 +16,11 @@
  * `hostConCredenzialeWinrmDb` dà la stessa regola in una query sola, per le
  * pagine patch che mostrano «WinRM disponibile» su un elenco di host.
  *
+ * SSH a chiave (T14, D6 = (a)): l'installazione via SSH passa dal ponte
+ * paramiko e il terminale web non usa la chiave. Se il motore sceglie una voce
+ * a chiave, `caricaSshPerHost` lo dice col percorso («Credenziale a chiave non
+ * supportata dal terminale SSH…»), senza ripiegare su un'altra voce.
+ *
  * Anti-pattern evitati:
  *  - NIENTE `decrypt()` raw: i segreti li legge `segreti.ts` con `safeDecrypt`.
  *  - NIENTE log della password, e nessuna password nei messaggi d'errore.
@@ -31,6 +36,7 @@ import {
 } from "@/lib/credentials/resolve";
 import { DEFAULT_PORTS } from "@/lib/credentials/porte";
 import { tipiPerProtocollo } from "@/lib/credentials/tipi";
+import { chiaveNonSupportata, nomeVoceDb } from "@/lib/credentials/segreti";
 import type { WinrmCredentialsResolved } from "./types";
 
 /** Le fonti delle patch e del terminale: righe host, poi l'account WinRM dell'AD. */
@@ -59,7 +65,8 @@ function sceltaPatch(
     conAdFallback: protocol === "winrm",
     registra: opts.registra,
   });
-  if (s.ok && s.segreto.forma !== "utente") {
+  // Per l'SSH passa anche la chiave: chi la riceve (caricaSshPerHost) dice se il suo percorso la usa.
+  if (s.ok && s.segreto.forma !== "utente" && !(protocol === "ssh" && s.segreto.forma === "chiave_ssh")) {
     return { ok: false, motivo: `La credenziale scelta per l'host ${h.ip ?? `#${hostId}`} non ha utente e password` };
   }
   return s;
@@ -129,20 +136,26 @@ export interface SshCredentialsResolved {
   password: string;
 }
 
+export type EsitoSshHost = { ok: true; creds: SshCredentialsResolved } | { ok: false; motivo: string };
+
 /**
  * La credenziale SSH da usare per `hostId`, già decifrata (push install su
  * Linux/macOS, terminale SSH): righe host `ssh` (voci `ssh` o `linux`), senza
- * ripiego AD. `null` se l'host non ha IP o se nessuna riga dà una credenziale
- * utilizzabile.
+ * ripiego AD. Al posto di `loadSshCredentialsForHost`, che dava `null` senza
+ * dire perché: il rifiuto dice se l'host non ha IP, se nessuna riga dà una
+ * credenziale, o se la voce scelta è a chiave e `percorso` non la usa (D6;
+ * `percorso` comincia con la preposizione: «dal terminale SSH»).
  */
-export function loadSshCredentialsForHost(
-  db: Database,
-  hostId: number,
-): SshCredentialsResolved | null {
+export function caricaSshPerHost(db: Database, hostId: number, percorso: string): EsitoSshHost {
   const h = leggiHost(db, hostId);
-  if (!h?.ip) return null;
-  const c = utenteDi(sceltaSshPatchDb(db, hostId));
-  return c ? { host: h.ip, port: c.port || DEFAULT_PORTS.ssh, username: c.username, password: c.password } : null;
+  if (!h) return { ok: false, motivo: `L'host #${hostId} non esiste` };
+  if (!h.ip) return { ok: false, motivo: `L'host #${hostId} non ha un indirizzo IP` };
+  const s = sceltaSshPatchDb(db, hostId);
+  if (!s.ok) return s;
+  if (s.segreto.forma === "chiave_ssh") return { ok: false, motivo: chiaveNonSupportata(percorso, nomeVoceDb(db, s.candidato.credential_id)) };
+  const c = utenteDi(s);
+  if (!c) return { ok: false, motivo: `La credenziale scelta per l'host ${h.ip} non ha utente e password` };
+  return { ok: true, creds: { host: h.ip, port: c.port || DEFAULT_PORTS.ssh, username: c.username, password: c.password } };
 }
 
 /**

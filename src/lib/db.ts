@@ -37,7 +37,7 @@ import {
   type CredProtocol,
   type SceltaSnmpApparato,
 } from "./credentials/resolve";
-import { communityDb, coppiaLoginDb, coppiaSshDb } from "./credentials/segreti";
+import { accessoSshDb, communityDb, coppiaLoginDb, coppiaSshDb, type AccessoSsh, type EsitoAccessoSsh } from "./credentials/segreti";
 import { tipiPerRuoloVecchio } from "./credentials/tipi";
 import { aggiornaCredenzialeDb, creaCredenzialeDb, eliminaCredenzialeDb, type ColonneCredenziale } from "./credentials/archivio";
 import { aggiungiAllaListaReteDb, copiaListaReteDb, sostituisciListaReteDb } from "./credentials/lista-rete";
@@ -3795,6 +3795,11 @@ export function getSshLinuxCredentialPair(credentialId: number): { username: str
   return coppiaSshDb(getDb(), credentialId);
 }
 
+/** Accesso SSH di una voce: utente con password o con chiave (T14), con la porta della voce, o il perché no. */
+export function accessoSshCredenziale(credentialId: number): EsitoAccessoSsh {
+  return accessoSshDb(getDb(), credentialId);
+}
+
 /** Credenziali Windows/Linux/SSH/SNMP assegnate alla subnet (ordine = priorità tentativi). */
 export function getNetworkHostCredentialIds(networkId: number, role: NetworkCredentialRole): number[] {
   const rows = getDb()
@@ -4256,8 +4261,8 @@ export function portaSshApparato(device: ApparatoInAcquisizione): number {
   return portaSshApparatoDb(getDb(), device);
 }
 
-/** Utente e password dell'acquisizione, scelti dal motore (binding falliti saltati). */
-export function getDeviceCredentials(device: ApparatoInAcquisizione): { username: string; password: string } | null {
+/** Accesso dell'acquisizione (utente con password, o con chiave per l'SSH), scelto dal motore (binding falliti saltati). */
+export function getDeviceCredentials(device: ApparatoInAcquisizione): AccessoSsh | null {
   return loginApparatoDb(getDb(), device);
 }
 

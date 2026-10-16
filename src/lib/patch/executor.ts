@@ -21,7 +21,7 @@
 import type { Database } from "better-sqlite3";
 import { runWinrmCommand } from "@/lib/devices/winrm-run";
 import { getTenantDb, getCurrentTenantCode, withTenant } from "@/lib/db-tenant";
-import { loadWinrmCredentialsForHost, loadSshCredentialsForHost } from "./credentials";
+import { loadWinrmCredentialsForHost, caricaSshPerHost } from "./credentials";
 import { runSshCommand } from "@/lib/devices/ssh-run";
 import { getMeshCreds } from "@/lib/integrations/meshcentral/config";
 import { buildMeshAgentChocoScript, buildGlpiAgentChocoScript } from "./choco-packages";
@@ -858,15 +858,17 @@ export async function executeSshInstall(
   });
   updateOperation(db, operationId, { status: "running", startedAt: nowIso() });
 
-  const ssh = loadSshCredentialsForHost(db, opts.hostId);
-  if (!ssh) {
+  // Il perché, se non c'è una credenziale con password (anche una voce a chiave: il ponte paramiko non la usa, D6).
+  const esitoSsh = caricaSshPerHost(db, opts.hostId, "dall'installazione via SSH (ponte paramiko)");
+  if (!esitoSsh.ok) {
     updateOperation(db, operationId, {
       status: "failed",
       finishedAt: nowIso(),
-      errorMessage: "Credenziali SSH mancanti o non decifrabili per l'host",
+      errorMessage: esitoSsh.motivo.slice(0, 2000),
     });
     return { operationId, status: "failed" };
   }
+  const ssh = esitoSsh.creds;
 
   const insertLog = db.prepare(
     "INSERT INTO patch_operation_logs (operation_id, ts, stream, line) VALUES (?, ?, ?, ?)",

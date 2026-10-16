@@ -10,6 +10,7 @@
 import type { NetworkDevice } from "@/types";
 import { getDeviceCredentials } from "@/lib/db";
 import { sshExec } from "./ssh-helper";
+import { haSegretoSsh, segretoSsh } from "./ssh-transport";
 import type { DeviceInfo, NasInventorySnapshot } from "./device-info";
 import { snmpSubwalkLimitedForDevice, stringifySnmpValue } from "@/lib/scanner/snmp-query";
 
@@ -381,7 +382,8 @@ export async function getNasSnmpInventory(
   }
 }
 
-type SshOpts = { host: string; port?: number; username: string; password: string; timeout?: number };
+/** Utente più password o chiave privata (tappa 2 credenziali, T14). */
+type SshOpts = { host: string; port?: number; username: string; password?: string; privateKey?: string; passphrase?: string; timeout?: number };
 
 function parseMdstatSummary(md: string): string {
   const lines = md.trim().split("\n").slice(0, 8);
@@ -504,8 +506,7 @@ function countSynopkgLines(out: string): number | null {
 export async function getNasDeviceInfoFromSsh(device: NetworkDevice, vendor: NasVendor): Promise<Partial<DeviceInfo>> {
   const creds = getDeviceCredentials(device);
   const username = creds?.username ?? device.username ?? undefined;
-  const password = creds?.password;
-  if (!username || !password) return {};
+  if (!username || !creds || !haSegretoSsh(creds)) return {};
 
   // Se il protocollo primario è SNMP, la porta configurata è quella SNMP (161): usa 22 per SSH
   const sshPort = (device.protocol === "snmp_v2" || device.protocol === "snmp_v3") ? 22 : (device.port || 22);
@@ -513,7 +514,7 @@ export async function getNasDeviceInfoFromSsh(device: NetworkDevice, vendor: Nas
     host: device.host,
     port: sshPort,
     username,
-    password,
+    ...segretoSsh(creds),
     timeout: 45_000,
   };
 

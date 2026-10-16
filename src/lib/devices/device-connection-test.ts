@@ -4,6 +4,8 @@ import { createRouterClient } from "@/lib/devices/router-client";
 import { createSwitchClient } from "@/lib/devices/switch-client";
 import { createWinrmClient } from "@/lib/devices/winrm-client";
 import { sshExec, SshError } from "@/lib/devices/ssh-helper";
+import { haSegretoSsh, segretoSsh } from "@/lib/devices/ssh-transport";
+import { opzioniSsh, type AccessoSsh } from "@/lib/credentials/segreti";
 import { ProxmoxClient, resolveProxmoxApiPortOverride } from "@/lib/proxmox/proxmox-client";
 import { testProxmoxSsh } from "@/lib/proxmox/proxmox-ssh";
 import {
@@ -124,7 +126,8 @@ function buildDeviceFromProvisional(p: ProvisionalDevice): NetworkDevice {
 }
 
 /**
- * Utente e password per la prova, scelti dal motore (tappa 2 credenziali, T8).
+ * L'accesso per la prova, scelto dal motore (tappa 2 credenziali, T8): utente
+ * con password, o con chiave per l'SSH (T14).
  * Prima le fonti dell'apparato (getDeviceCredentials: binding, binding falliti
  * esclusi, poi colonne); un apparato provvisorio, mai salvato, ha solo la voce
  * scelta nella finestra. Poi le righe validate dell'host con lo stesso
@@ -134,9 +137,9 @@ function buildDeviceFromProvisional(p: ProvisionalDevice): NetworkDevice {
  * che non hanno utente e password, e un ripiego su 'ssh' gli farebbe tentare
  * un login SSH vero con la credenziale dell'host (revisione 2b).
  */
-function resolveCredentials(device: NetworkDevice): { username: string; password: string } | null {
+function resolveCredentials(device: NetworkDevice): AccessoSsh | null {
   const creds = getDeviceCredentials(device);
-  if (creds?.username && creds?.password) return creds;
+  if (creds?.username && haSegretoSsh(creds)) return creds;
   if (device.protocol === "snmp_v2" || device.protocol === "snmp_v3") return null;
 
   const host = getHostByIp(device.host);
@@ -145,7 +148,10 @@ function resolveCredentials(device: NetworkDevice): { username: string; password
   const s = scegliSegretoHostDb(getDb(), { hostId: host.id, networkId: host.network_id, ip: device.host }, protocollo, {
     fonti: ["host_validated"],
   });
-  return s.ok && s.segreto.forma === "utente" ? { username: s.segreto.username, password: s.segreto.password } : null;
+  if (!s.ok) return null;
+  // La chiave vale solo per l'SSH; per WinRM e API serve la password (com'era).
+  const a = opzioniSsh(s.segreto);
+  return a && (protocollo === "ssh" || a.password) ? a : null;
 }
 
 export async function runDeviceConnectionTest(device: NetworkDevice, timeoutMs?: number): Promise<DeviceTestResult> {
@@ -161,9 +167,10 @@ export async function runDeviceConnectionTest(device: NetworkDevice, timeoutMs?:
   const testPromise = (async (): Promise<DeviceTestResult> => {
     if (isProxmoxDevice(device)) {
       const creds = resolveCredentials(device);
-      if (!creds?.password) {
-        throw new Error("Configura le credenziali (SSH o API) per questo dispositivo. Per Proxmox usa root e password.");
+      if (!creds) {
+        throw new Error("Configura le credenziali (SSH o API) per questo dispositivo. Per Proxmox usa root con la password (API e SSH) o con una chiave (solo SSH).");
       }
+      // Con una voce a chiave (T14) si prova solo l'SSH: l'API di Proxmox vuole la password, e il messaggio lo dice.
       const { username, password } = creds;
       const targets = resolveProxmoxTargetIps(device);
       if (targets.length === 0) {
@@ -185,20 +192,22 @@ export async function runDeviceConnectionTest(device: NetworkDevice, timeoutMs?:
       for (const ip of targets) {
         const apiUrl = buildProxmoxApiUrlForIp(ip, device.api_url ?? undefined);
         let apiOk = false;
-        try {
-          const apiPort = resolveProxmoxApiPortOverride(apiUrl, device.port ?? undefined);
-          const client = new ProxmoxClient({
-            host: apiUrl,
-            ...(apiPort !== undefined ? { port: apiPort } : {}),
-            username: apiUsername,
-            password,
-            verifySsl: false,
-          });
-          await client.login();
-          apiOk = true;
-          anyApi = true;
-        } catch {
-          /* tentativo API su questo IP fallito */
+        if (password) {
+          try {
+            const apiPort = resolveProxmoxApiPortOverride(apiUrl, device.port ?? undefined);
+            const client = new ProxmoxClient({
+              host: apiUrl,
+              ...(apiPort !== undefined ? { port: apiPort } : {}),
+              username: apiUsername,
+              password,
+              verifySsl: false,
+            });
+            await client.login();
+            apiOk = true;
+            anyApi = true;
+          } catch {
+            /* tentativo API su questo IP fallito */
+          }
         }
         let sshOk = false;
         try {
@@ -206,7 +215,7 @@ export async function runDeviceConnectionTest(device: NetworkDevice, timeoutMs?:
             host: ip,
             port: sshPort,
             username: sshUsername,
-            password,
+            ...segretoSsh(creds),
           });
           if (sshOk) anySsh = true;
         } catch {
@@ -215,19 +224,22 @@ export async function runDeviceConnectionTest(device: NetworkDevice, timeoutMs?:
         proxmox_targets.push({ ip, api: apiOk, ssh: sshOk });
       }
 
+      const esito = anyApi && anySsh
+        ? `Connessione OK (API + SSH)`
+        : anyApi
+        ? `Connessione OK (solo API)`
+        : anySsh
+        ? `Connessione OK (solo SSH)`
+        : undefined;
+      const senzaApi = password ? "" : "API non provata: la credenziale è a chiave SSH, l'API di Proxmox vuole utente e password.";
       return {
         success: anyApi || anySsh,
         device_type: "hypervisor",
         proxmox_api_ok: anyApi,
         proxmox_ssh_ok: anySsh,
         proxmox_targets,
-        message: anyApi && anySsh
-          ? `Connessione OK (API + SSH)`
-          : anyApi
-          ? `Connessione OK (solo API)`
-          : anySsh
-          ? `Connessione OK (solo SSH)`
-          : undefined,
+        message: esito && senzaApi ? `${esito}. ${senzaApi}` : esito,
+        ...(!anySsh && senzaApi ? { error: `SSH non riuscita. ${senzaApi}` } : {}),
       };
     }
 
@@ -249,14 +261,14 @@ export async function runDeviceConnectionTest(device: NetworkDevice, timeoutMs?:
 
     if (isSshScannableDevice(device)) {
       const creds = resolveCredentials(device);
-      if (!creds?.username || !creds?.password) {
-        throw new Error("Credenziali mancanti. Assegna una credenziale di tipo Linux (SSH) al dispositivo.");
+      if (!creds?.username || !haSegretoSsh(creds)) {
+        throw new Error("Credenziali mancanti. Assegna una credenziale SSH (password o chiave) al dispositivo.");
       }
       const host = device.host.replace(/^https?:\/\//i, "").split(":")[0];
       const dtype = device.vendor === "synology" || device.vendor === "qnap" ? "storage" : "linux";
       try {
         const res = await sshExec(
-          { host, port: device.port ?? 22, username: creds.username, password: creds.password, timeout: 15000 },
+          { host, port: device.port ?? 22, username: creds.username, ...segretoSsh(creds), timeout: 15000 },
           "hostname 2>/dev/null || echo ok"
         );
         return { success: res.code === 0, device_type: dtype, message: res.code === 0 ? `Connessione SSH OK` : undefined };

@@ -6,7 +6,7 @@ import type { MacTableEntry, PortInfo } from "./switch-client";
 import { parseMikrotikInterfaceTypes, parseMikrotikMacTable } from "./mikrotik-porte";
 import { parseMikrotikNeighbors } from "./mikrotik-vicini";
 import { getSnmpPortSchema } from "./snmp-port-schema";
-import { sshExec as transportSshExec, type SshResult } from "./ssh-transport";
+import { haSegretoSsh, segretoSsh, sshExec as transportSshExec, type SshResult } from "./ssh-transport";
 import type { SshOptions } from "./ssh-transport";
 
 export interface ArpTableEntry {
@@ -124,10 +124,7 @@ function deviceHasSnmpCredential(device: NetworkDevice): boolean {
 }
 
 export async function createRouterClient(device: NetworkDevice): Promise<RouterClient> {
-  const creds = getDeviceCredentials(device);
-  const username = creds?.username ?? device.username ?? undefined;
-  const password = creds?.password;
-  const primary = await getVendorRouterClient(device, { username, password });
+  const primary = await getVendorRouterClient(device, credenzialiApparato(device));
 
   // Fallback SNMP per porte/LLDP/CDP — include anche i binding v2
   // (`device_credential_bindings`): fix anti-regressione perché in precedenza
@@ -199,7 +196,14 @@ export async function createRouterClient(device: NetworkDevice): Promise<RouterC
   return client;
 }
 
-type DeviceCreds = { username?: string; password?: string };
+/** Utente più password o chiave privata (tappa 2 credenziali, T14: getDeviceCredentials dà anche la chiave). */
+type DeviceCreds = { username?: string; password?: string; privateKey?: string; passphrase?: string };
+
+/** Le credenziali dell'acquisizione con l'utente della colonna come ripiego (com'era). */
+function credenzialiApparato(device: NetworkDevice): DeviceCreds {
+  const creds = getDeviceCredentials(device);
+  return { ...(creds ?? {}), username: creds?.username ?? device.username ?? undefined };
+}
 
 async function getVendorRouterClient(device: NetworkDevice, creds: DeviceCreds): Promise<RouterClient> {
   switch (device.vendor) {
@@ -239,20 +243,19 @@ async function getVendorRouterClient(device: NetworkDevice, creds: DeviceCreds):
 /** Helper interno: opzioni transport SSH per un NetworkDevice, con fallback su username device. */
 function buildDeviceSshOptions(device: NetworkDevice, creds: DeviceCreds): SshOptions | null {
   const username = creds.username || device.username || undefined;
-  if (!username || !creds.password) return null;
+  if (!username || !haSegretoSsh(creds)) return null;
   return {
     host: device.host,
     port: device.port || 22,
     username,
-    password: creds.password,
+    ...segretoSsh(creds),
     timeout: 10000,
   };
 }
 
 /** Le opzioni SSH di un apparato con le sue credenziali, per le letture in più su una connessione sola (spec §13.5.1). null = credenziali mancanti. */
 export function opzioniSshDiApparato(device: NetworkDevice): SshOptions | null {
-  const creds = getDeviceCredentials(device);
-  return buildDeviceSshOptions(device, { username: creds?.username ?? device.username ?? undefined, password: creds?.password });
+  return buildDeviceSshOptions(device, credenzialiApparato(device));
 }
 
 async function execDeviceCommandRisultato(device: NetworkDevice, creds: DeviceCreds, cmd: string, timeoutMs?: number): Promise<SshResult> {

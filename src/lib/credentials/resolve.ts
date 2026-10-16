@@ -44,7 +44,7 @@ import { registraRipiego, type CasoRipiego } from "@/lib/db-maintenance/ripieghi
 import { V3_ASSENTE, type CredenzialeSnmp } from "@/lib/protocols/snmp-sessione";
 import type { NetworkDevice } from "@/types";
 import { DEFAULT_PORTS, portaCredenziale, type CredProtocol } from "./porte";
-import { leggiSegretoDb, leggiSegretoInline, type Segreto, type UsoSegreto } from "./segreti";
+import { leggiSegretoDb, leggiSegretoInline, opzioniSsh, type AccessoSsh, type Segreto, type UsoSegreto } from "./segreti";
 import { normalizzaTipo, portaVoceValePer, tipiPerProtocollo } from "./tipi";
 
 export { DEFAULT_PORTS, portaCredenziale };
@@ -892,9 +892,18 @@ const nonEsiste = (device: ApparatoInAcquisizione): { ok: false; motivo: string 
 });
 
 /**
- * Login dell'acquisizione (getDeviceCredentials): utente e password per il
- * protocollo di login dell'apparato (winrm, api, altrimenti ssh). Un binding
- * fallito si salta (D10 = (a)); la porta resta quella dell'apparato (D11 = (a)).
+ * Login dell'acquisizione (getDeviceCredentials) per il protocollo di login
+ * dell'apparato (winrm, api, altrimenti ssh). Un binding fallito si salta
+ * (D10 = (a)); la porta resta quella dell'apparato (D11 = (a)).
+ *
+ * Forme (T14, D6 = (a)):
+ * - ssh: utente con password o con chiave, nell'ordine dei candidati;
+ * - winrm: utente e password;
+ * - api: prima utente e password (l'API li vuole); solo se nessun candidato
+ *   li ha, una voce SSH a chiave. È l'SSH di Proxmox (voce `ssh` legata
+ *   all'API, regola della tappa 1): con la chiave l'SSH entra, l'API no, e
+ *   chi chiama lo dice. Così una voce a chiave non prende mai il posto di una
+ *   con password che oggi fa funzionare l'API.
  */
 export function sceltaLoginApparatoDb(
   dbh: Database.Database,
@@ -903,15 +912,25 @@ export function sceltaLoginApparatoDb(
 ): SceltaSegreto {
   const app = apparatoDi(dbh, device);
   if (!app) return nonEsiste(device);
-  return scegliPerApparato(dbh, app, protocolloLogin(app.protocol), { fonti: FONTI_ACQUISIZIONE, registra: opts.registra }, (s) =>
-    s.forma === "utente" ? null : `l'apparato «${app.name}» per ora accede solo con utente e password`
+  const protocollo = protocolloLogin(app.protocol);
+  const motore: OpzioniMotore = { fonti: FONTI_ACQUISIZIONE, registra: opts.registra };
+  if (protocollo === "ssh") {
+    return scegliPerApparato(dbh, app, "ssh", motore, (s) =>
+      s.forma === "utente" || s.forma === "chiave_ssh" ? null : `l'apparato «${app.name}» accede con utente e password o con una chiave SSH`
+    );
+  }
+  const conPassword = scegliPerApparato(dbh, app, protocollo, motore, (s) =>
+    s.forma === "utente" ? null : `l'apparato «${app.name}» per ${NOME_PROTOCOLLO[protocollo]} accede solo con utente e password`
   );
+  if (conPassword.ok || protocollo !== "api") return conPassword;
+  const conChiave = scegliPerApparato(dbh, app, "api", motore, (s) => (s.forma === "chiave_ssh" ? null : "nessuna chiave SSH"));
+  return conChiave.ok ? conChiave : conPassword;
 }
 
-/** getDeviceCredentials: la coppia di `sceltaLoginApparatoDb`, o null senza una credenziale buona. */
-export function loginApparatoDb(dbh: Database.Database, device: ApparatoInAcquisizione): { username: string; password: string } | null {
+/** getDeviceCredentials: l'accesso di `sceltaLoginApparatoDb` (password o chiave), o null senza una credenziale buona. */
+export function loginApparatoDb(dbh: Database.Database, device: ApparatoInAcquisizione): AccessoSsh | null {
   const s = sceltaLoginApparatoDb(dbh, device);
-  return s.ok && s.segreto.forma === "utente" ? { username: s.segreto.username, password: s.segreto.password } : null;
+  return s.ok ? opzioniSsh(s.segreto) : null;
 }
 
 export type SceltaSnmpApparato =

@@ -7,6 +7,7 @@
 import type { NetworkDevice } from "@/types";
 import { credenzialeSnmpApparato, getDeviceCredentials, haSnmpApparato } from "@/lib/db";
 import { sshExec, sshExecViaShell } from "./ssh-helper";
+import { haSegretoSsh, segretoSsh } from "./ssh-transport";
 import { snmpGetTollerante, type SnmpGetSession } from "./snmp-get-tollerante";
 import { apriSessioneSnmp, versioneApparato, type VersioneSnmp } from "@/lib/protocols/snmp-sessione";
 
@@ -355,8 +356,8 @@ export async function getDeviceInfoFromSnmp(device: NetworkDevice, portaProva?: 
 export async function getDeviceInfoFromSsh(device: NetworkDevice): Promise<Partial<DeviceInfo>> {
   const creds = getDeviceCredentials(device);
   const username = creds?.username ?? device.username ?? undefined;
-  const password = creds?.password;
-  if (!username || !password) return {};
+  // Password o chiave privata (tappa 2 credenziali, T14).
+  if (!username || !creds || !haSegretoSsh(creds)) return {};
 
   // Se il protocollo primario è SNMP, la porta configurata è quella SNMP (161): usa 22 per SSH
   const sshPort = (device.protocol === "snmp_v2" || device.protocol === "snmp_v3") ? 22 : (device.port || 22);
@@ -364,7 +365,7 @@ export async function getDeviceInfoFromSsh(device: NetworkDevice): Promise<Parti
     host: device.host,
     port: sshPort,
     username,
-    password,
+    ...segretoSsh(creds),
     timeout: 15000,
   };
 
@@ -588,7 +589,7 @@ export async function getDeviceInfoFromSsh(device: NetworkDevice): Promise<Parti
 }
 
 /** Opzioni SSH per connessione */
-type SshOpts = { host: string; port?: number; username: string; password: string; timeout?: number };
+type SshOpts = { host: string; port?: number; username: string; password?: string; privateKey?: string; passphrase?: string; timeout?: number };
 
 /**
  * Acquisizione dati completi da host Linux (DADude3 linux_probe).

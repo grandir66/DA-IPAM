@@ -10,7 +10,7 @@ import { withTenantFromSession } from "@/lib/api-tenant";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { userIdFromSession } from "@/lib/patch/route-guard";
 import { getTenantDb, getCurrentTenantCode } from "@/lib/db-tenant";
-import { loadSshCredentialsForHost } from "@/lib/patch/credentials";
+import { caricaSshPerHost } from "@/lib/patch/credentials";
 import { signSshToken } from "@/lib/ssh-terminal/token";
 
 export async function POST(request: Request) {
@@ -30,13 +30,12 @@ export async function POST(request: Request) {
     }
 
     const tenantCode = getCurrentTenantCode() ?? "DEFAULT";
-    const creds = loadSshCredentialsForHost(getTenantDb(tenantCode), hostId);
-    if (!creds) {
-      return NextResponse.json(
-        { error: "Nessuna credenziale SSH salvata per questo host" },
-        { status: 400 },
-      );
+    // Il perché, se il terminale non può partire (anche una voce a chiave: il terminale non la usa, D6).
+    const esito = caricaSshPerHost(getTenantDb(tenantCode), hostId, "dal terminale SSH");
+    if (!esito.ok) {
+      return NextResponse.json({ error: esito.motivo }, { status: 400 });
     }
+    const creds = esito.creds;
 
     const userId = userIdFromSession(adminCheck);
     if (userId === null) {

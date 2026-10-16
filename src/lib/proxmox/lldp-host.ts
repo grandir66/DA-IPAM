@@ -23,7 +23,7 @@ import {
   type FattiLettura, type FattoPortaIn, type MacApparatoIn,
 } from "@/lib/db-tenant";
 import { CODICE_USCITA_NON_CAPITA, codiceTrasporto, eseguiSuSshConCodice } from "@/lib/devices/mikrotik-letture";
-import type { SshOptions } from "@/lib/devices/ssh-transport";
+import { segretoSsh, type SshOptions } from "@/lib/devices/ssh-transport";
 import { membriDeiBond, parseLiveInterfaces, type LiveInterfaceKind } from "@/lib/proxmox/live-interfaces";
 import { proxmoxSshUsername, resolveProxmoxTargetIps } from "@/lib/proxmox/proxmox-targets";
 import { normale } from "@/lib/topology/cavi/porte";
@@ -280,7 +280,7 @@ export async function leggiHost(deviceId: number, apri: ApriHost = apriHostSsh, 
       continue;
     }
     esiti.push(await conCadenza("host", dev.id, async () => {
-      const r = await apri({ host: ip, port, username, password: creds.password, timeout: TEMPO_CONNESSIONE_MS }, leggiNodo);
+      const r = await apri({ host: ip, port, username, ...segretoSsh(creds), timeout: TEMPO_CONNESSIONE_MS }, leggiNodo);
       if (r.schede === null && r.vicini === null) throw conCodice("Lettura dell'host non riuscita", r.codice ?? "NESSUNA_LETTURA");
       const fatti = r.schede !== null ? scriviFattiTopologia(dev.id, "host", fattiHost(r.schede), adesso?.() ?? new Date()) : null;
       if (r.vicini !== null && r.vicini.length > 0) upsertNeighbors(dev.id, r.vicini, "host");

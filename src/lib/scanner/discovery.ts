@@ -48,7 +48,7 @@ import {
   addScanHistory,
   addStatusHistory,
   getCredentialLoginPair,
-  getSshLinuxCredentialPair,
+  accessoSshCredenziale,
   getHostDetectCredentialId,
   setHostDetectCredential,
   getOrderedDetectCredentialIds,
@@ -1575,7 +1575,7 @@ async function runDiscovery(
     }
     progress.phase = `Scansione SSH — 0/${onlineIps.length}`;
 
-    const { sshExec: transportSshExec, SshError } = await import("@/lib/devices/ssh-transport");
+    const { sshExec: transportSshExec, SshError, segretoSsh } = await import("@/lib/devices/ssh-transport");
 
     // Anti-lockout (fix Critical post-review, §7.5): stesso motivo del loop
     // Windows sopra — riusa `CredentialRunBudget`, non duplica la logica.
@@ -1608,8 +1608,9 @@ async function runDiscovery(
       let ok = false;
       for (const credId of chain) {
         // Tappa 1 credenziali: la porta propria della credenziale, poi la 22.
-        const creds = getSshLinuxCredentialPair(credId);
-        const sshPort = creds?.port ?? 22;
+        // Tappa 2 (T14): utente con password o con chiave; il rifiuto dice perché.
+        const creds = accessoSshCredenziale(credId);
+        const sshPort = (creds.ok ? creds.port : null) ?? 22;
         const backoffUntil = resolved.find(
           (r) => r.credential_id === credId && r.protocol === "ssh" && r.port === sshPort
         )?.backoff_until ?? null;
@@ -1617,14 +1618,14 @@ async function runDiscovery(
         // il gate distingue solo credType==="windows" (nessuna catena SSH può
         // contenerne uno — resolveCredentialsFor filtra per protocollo).
         if (!runBudget.gate({ ip, credId, credType: "ssh", hasWindowsIndicator: false, backoffUntil, nowIso })) continue;
-        if (!creds) {
-          log(`✗ ${ip} cred#${credId} — dati mancanti`);
+        if (!creds.ok) {
+          log(`✗ ${ip} cred#${credId} — ${creds.motivo}`);
           continue;
         }
         log(`SSH ${ip} — prova cred#${credId}`);
         try {
           const res = await transportSshExec(
-            { host: ip, port: sshPort, username: creds.username, password: creds.password, timeout: 6000 },
+            { host: ip, port: sshPort, username: creds.accesso.username, ...segretoSsh(creds.accesso), timeout: 6000 },
             "hostname -f 2>/dev/null || hostname; uname -sr 2>/dev/null; cat /etc/os-release 2>/dev/null | head -5"
           );
           const output = res.stdout + res.stderr;
@@ -1895,7 +1896,7 @@ async function runDiscovery(
     log(`Fase 4: SSH su ${sshHosts.length} host (porta 22, no 445); catena credenziali: ${defaultSshChain.length ? defaultSshChain.map((id) => `#${id}`).join(" → ") : "nessuna"}`);
 
     if (sshHosts.length > 0 && defaultSshChain.length > 0) {
-      const { sshExec: transportSshExec, SshError } = await import("@/lib/devices/ssh-transport");
+      const { sshExec: transportSshExec, SshError, segretoSsh } = await import("@/lib/devices/ssh-transport");
 
       // Anti-lockout (fix Critical post-review, §7.5): stesso motivo dei loop
       // windows/ssh sopra — riusa `CredentialRunBudget`, non duplica la logica.
@@ -1922,16 +1923,20 @@ async function runDiscovery(
         let ok = false;
         for (const credId of chain) {
           // Tappa 1 credenziali: la porta propria della credenziale, poi la 22.
-          const creds = getSshLinuxCredentialPair(credId);
-          const sshPort = creds?.port ?? 22;
+          // Tappa 2 (T14): utente con password o con chiave.
+          const creds = accessoSshCredenziale(credId);
+          const sshPort = (creds.ok ? creds.port : null) ?? 22;
           const backoffUntil = resolved.find(
             (r) => r.credential_id === credId && r.protocol === "ssh" && r.port === sshPort
           )?.backoff_until ?? null;
           if (!runBudget.gate({ ip, credId, credType: "ssh", hasWindowsIndicator: false, backoffUntil, nowIso })) continue;
-          if (!creds) continue;
+          if (!creds.ok) {
+            log(`SSH ✗ ${ip} cred#${credId}: ${creds.motivo}`);
+            continue;
+          }
           try {
             const res = await transportSshExec(
-              { host: ip, port: sshPort, username: creds.username, password: creds.password, timeout: 8000 },
+              { host: ip, port: sshPort, username: creds.accesso.username, ...segretoSsh(creds.accesso), timeout: 8000 },
               "hostname -f 2>/dev/null || hostname; uname -sr 2>/dev/null; cat /etc/os-release 2>/dev/null | head -5"
             );
             const output = res.stdout + res.stderr;
@@ -2352,7 +2357,7 @@ async function runDiscovery(
     progress.scanned = 0;
 
     let validated = 0;
-    const { sshExec: transportSshExec, SshError } = await import("@/lib/devices/ssh-transport");
+    const { sshExec: transportSshExec, SshError, segretoSsh } = await import("@/lib/devices/ssh-transport");
     const { runWinrmCommand, WinrmError } = await import("@/lib/devices/winrm-run");
 
     // Codici WinRM che indicano un servizio RAGGIUNTO (auth/negoziazione fallita),
@@ -2471,13 +2476,17 @@ async function runDiscovery(
         if (tipiPerProtocollo("ssh").includes(credType) && hasSshIndicator && !validatedProtos.has("ssh")) {
           const sshPort = credPort ?? openPorts.find((p) => p.port === 22 || p.service === "ssh")?.port ?? 22;
           if (!gateCredential("ssh", credId, credType, sshPort)) continue;
-          const creds = getSshLinuxCredentialPair(credId);
-          if (!creds) continue;
+          // Tappa 2 (T14): utente con password o con chiave.
+          const creds = accessoSshCredenziale(credId);
+          if (!creds.ok) {
+            log(`✗ ${ip}:${sshPort} SSH cred#${credId} (${nc.credential_name}): ${creds.motivo}`);
+            continue;
+          }
           try {
             await transportSshExec(
               // Timeout 6000→15000 (§7.5): allineato al default del transport, evita
               // falsi negativi (quindi falsi FALLIMENTI persistiti) su link lenti.
-              { host: ip, port: sshPort, username: creds.username, password: creds.password, timeout: 15000, credentialName: nc.credential_name },
+              { host: ip, port: sshPort, username: creds.accesso.username, ...segretoSsh(creds.accesso), timeout: 15000, credentialName: nc.credential_name },
               "true"
             );
             recordCredentialSuccess(host.id, credId, "ssh", sshPort);

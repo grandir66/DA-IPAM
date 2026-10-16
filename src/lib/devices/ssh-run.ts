@@ -2,8 +2,14 @@
  * Esecuzione comandi SSH tramite paramiko (Python subprocess).
  *
  * Sidecar `ssh-bridge.py`: input JSON da stdin, output JSON da stdout.
- * Auth: **solo password** (riusa `credentials.encrypted_password`).
- * Niente key auth, niente known_hosts strict (AutoAddPolicy).
+ * Auth: **solo password** (riusa `credentials.encrypted_password`), e
+ * `SshRunOptions.password` resta obbligatoria: con D6 = (a) (tappa 2
+ * credenziali, T14) la chiave SSH vale nel trasporto ssh2, non qui. Chi sceglie
+ * la voce per questo ponte (inventario software Linux, installazione via SSH
+ * delle patch) rifiuta una voce a chiave PRIMA di arrivare qui, col messaggio
+ * unico `chiaveNonSupportata` di `credentials/segreti.ts`, senza ripiegare su
+ * un'altra voce.
+ * Niente known_hosts strict (AutoAddPolicy).
  * Mai loggare la password.
  */
 

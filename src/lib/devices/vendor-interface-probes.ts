@@ -12,7 +12,7 @@
 
 import type { NetworkDevice } from "@/types";
 import { getDeviceCredentials } from "@/lib/db";
-import { sshExec } from "./ssh-transport";
+import { haSegretoSsh, segretoSsh, sshExec } from "./ssh-transport";
 import type { InterfaceProbeResult, InterfaceProbeAddress } from "./interface-probe";
 
 const PROBE_TIMEOUT_MS = 15_000;
@@ -20,13 +20,14 @@ const PROBE_TIMEOUT_MS = 15_000;
 function buildSshOptions(device: NetworkDevice) {
   const creds = getDeviceCredentials(device);
   const username = creds?.username ?? device.username ?? undefined;
-  if (!username || !creds?.password) return null;
+  // Password o chiave privata (tappa 2 credenziali, T14).
+  if (!username || !creds || !haSegretoSsh(creds)) return null;
   const host = device.host.replace(/^https?:\/\//i, "").split(":")[0];
   return {
     host,
     port: device.port || 22,
     username,
-    password: creds.password,
+    ...segretoSsh(creds),
     timeout: PROBE_TIMEOUT_MS,
   };
 }

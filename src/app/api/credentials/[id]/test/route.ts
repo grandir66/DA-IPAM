@@ -6,6 +6,7 @@ import { withTenantFromSession } from "@/lib/api-tenant";
 import { portaCredenziale, type CredProtocol } from "@/lib/credentials/porte";
 import { provaCredenzialeSnmpDb } from "@/lib/credentials/prova-snmp";
 import { tipiPerProtocollo } from "@/lib/credentials/tipi";
+import { accessoSshDb } from "@/lib/credentials/segreti";
 
 const TEST_TIMEOUT_MS = 25000;
 
@@ -86,18 +87,16 @@ export async function POST(
       }
 
       if (tipiPerProtocollo("ssh").includes(type)) {
-        const username = cred.encrypted_username ? safeDecrypt(cred.encrypted_username) : "";
-        const password = cred.encrypted_password ? safeDecrypt(cred.encrypted_password) : "";
-        if (username === null || password === null) {
-          return NextResponse.json({ success: false, error: "Credenziale corrotta: rigenerare la password" });
+        // Password o chiave privata (tappa 2 credenziali, T14), lette da segreti.ts: il rifiuto dice cosa manca
+        // o cosa non si decifra, mai il segreto.
+        const accesso = accessoSshDb(getDb(), Number(id));
+        if (!accesso.ok) {
+          return NextResponse.json({ success: false, error: accesso.motivo });
         }
-        if (!username || !password) {
-          return NextResponse.json({ success: false, error: "Username e password richiesti" });
-        }
-        const { sshTryConnect } = await import("@/lib/devices/ssh-transport");
+        const { sshTryConnect, segretoSsh } = await import("@/lib/devices/ssh-transport");
         const port = portaDiProva(body, cred, "ssh");
         const result = await withTimeout(
-          sshTryConnect({ host, port, username, password, timeout: 15000, credentialName: cred.name }),
+          sshTryConnect({ host, port, username: accesso.accesso.username, ...segretoSsh(accesso.accesso), timeout: 15000, credentialName: cred.name }),
           TEST_TIMEOUT_MS
         );
         if (result.ok) {

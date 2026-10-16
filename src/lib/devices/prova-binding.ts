@@ -7,7 +7,7 @@
  * della voce. Prima una voce v3 rispondeva «Community mancante».
  */
 import { apriSessioneCommunity, etichettaVersioneSnmp, type VersioneSnmp } from "@/lib/protocols/snmp-sessione";
-import { leggiSegretoDb } from "@/lib/credentials/segreti";
+import { leggiSegretoDb, type AccessoSsh } from "@/lib/credentials/segreti";
 import { provaV3 } from "@/lib/protocols/snmpv3";
 import { safeDecrypt } from "@/lib/crypto";
 
@@ -33,26 +33,27 @@ export async function provaBinding(
 ): Promise<EsitoProvaBinding> {
   try {
     if (binding.protocol_type === "ssh") {
-      let username: string | undefined;
-      let password: string | undefined;
+      // Voce d'archivio: utente con password o con chiave (tappa 2 credenziali, T14); il rifiuto dice perché.
+      // Binding inline: utente e password, com'era.
+      let accesso: AccessoSsh;
       if (binding.credential_id) {
-        const { getSshLinuxCredentialPair } = await import("@/lib/db");
-        const pair = getSshLinuxCredentialPair(binding.credential_id);
-        username = pair?.username;
-        password = pair?.password;
+        const { accessoSshCredenziale } = await import("@/lib/db");
+        const e = accessoSshCredenziale(binding.credential_id);
+        if (!e.ok) return { success: false, message: e.motivo };
+        accesso = e.accesso;
       } else {
-        username = binding.inline_username ?? undefined;
-        password = binding.inline_encrypted_password ? (safeDecrypt(binding.inline_encrypted_password) ?? undefined) : undefined;
+        const password = binding.inline_encrypted_password ? (safeDecrypt(binding.inline_encrypted_password) ?? undefined) : undefined;
+        accesso = { username: binding.inline_username ?? "", ...(password ? { password } : {}) };
       }
-      if (!username) return { success: false, message: "Username mancante" };
-      if (!password) return { success: false, message: "Password mancante" };
+      if (!accesso.username) return { success: false, message: "Username mancante" };
+      if (!accesso.password && !accesso.privateKey) return { success: false, message: "Password mancante" };
 
-      const { sshTryConnect } = await import("@/lib/devices/ssh-transport");
+      const { sshTryConnect, segretoSsh } = await import("@/lib/devices/ssh-transport");
       const result = await sshTryConnect({
         host,
         port: binding.port,
-        username,
-        password,
+        username: accesso.username,
+        ...segretoSsh(accesso),
         timeout: 10000,
         credentialName: binding.credential_id ? `cred#${binding.credential_id}` : "inline",
       });

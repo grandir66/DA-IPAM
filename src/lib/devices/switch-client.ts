@@ -16,19 +16,26 @@ import {
   getHpComwareStpInfo,
 } from "./hp-vendor";
 import { createWinrmClient } from "./winrm-client";
-import { sshExec as transportSshExec } from "./ssh-transport";
+import { haSegretoSsh, segretoSsh, sshExec as transportSshExec } from "./ssh-transport";
 import {
   TEMPO_WALK_MS, getConSessioneSua, walkConSessioneSua, type LettoreSnmp, type SessioneGet, type SessioneWalk,
 } from "./snmp-walk";
 // Un solo parser della bridge host per switch e router (scarta le righe locali, legge vid).
 import { parseMikrotikMacTable } from "./mikrotik-porte";
 
-type DeviceCreds = { username?: string; password?: string };
+/** Utente più password o chiave privata (tappa 2 credenziali, T14: getDeviceCredentials dà anche la chiave). */
+type DeviceCreds = { username?: string; password?: string; privateKey?: string; passphrase?: string };
+
+/** Le credenziali dell'acquisizione con l'utente della colonna come ripiego (com'era). */
+function credenzialiApparato(device: NetworkDevice): DeviceCreds {
+  const creds = getDeviceCredentials(device);
+  return { ...(creds ?? {}), username: creds?.username ?? device.username ?? undefined };
+}
 
 /** Helper interno: esegue un comando SSH sul device usando il transport unico. */
 async function execDeviceCmd(device: NetworkDevice, creds: DeviceCreds, cmd: string, timeoutMs = 10000): Promise<string> {
   const username = creds.username || device.username || undefined;
-  if (!username || !creds.password) {
+  if (!username || !haSegretoSsh(creds)) {
     throw new Error(`Credenziali SSH mancanti per ${device.name} (${device.host})`);
   }
   const res = await transportSshExec(
@@ -36,7 +43,7 @@ async function execDeviceCmd(device: NetworkDevice, creds: DeviceCreds, cmd: str
       host: device.host,
       port: device.port || 22,
       username,
-      password: creds.password,
+      ...segretoSsh(creds),
       timeout: timeoutMs,
     },
     cmd
@@ -83,10 +90,8 @@ export function deviceHasSnmpSession(device: NetworkDevice): boolean {
 }
 
 export async function createSwitchClient(device: NetworkDevice): Promise<SwitchClient> {
-  const creds = getDeviceCredentials(device);
-  const password = creds?.password;
-  const username = creds?.username ?? device.username ?? undefined;
-  const primaryClient = await createVendorClient(device, { username, password });
+  const creds = credenzialiApparato(device);
+  const primaryClient = await createVendorClient(device, creds);
   const hasSnmp = deviceHasSnmpSession(device);
 
   // UniFi con SNMP: la MAC table va presa da SNMP (Bridge MIB), non da SSH che restituisce dati incompleti
@@ -112,8 +117,8 @@ export async function createSwitchClient(device: NetworkDevice): Promise<SwitchC
         return snmpClient.getMacTable();
       }
 
-      if ((device.protocol === "snmp_v2" || device.protocol === "snmp_v3") && (password || (device.encrypted_password && device.username))) {
-        const sshClient = await createSshWithFallbackCommands(device, { username, password });
+      if ((device.protocol === "snmp_v2" || device.protocol === "snmp_v3") && (haSegretoSsh(creds) || (device.encrypted_password && device.username))) {
+        const sshClient = await createSshWithFallbackCommands(device, creds);
         return sshClient.getMacTable();
       }
 
@@ -458,13 +463,13 @@ async function createUbiquitiSwitchClient(device: NetworkDevice, creds: DeviceCr
       host: device.host,
       port: device.port || 22,
       username: creds.username ?? device.username ?? "",
-      password: creds.password ?? "",
+      ...segretoSsh(creds),
       timeout: 15000,
     };
     return {
       ...base,
       getStpInfo: async () => {
-        if (!opts.username || !opts.password) return null;
+        if (!opts.username || !haSegretoSsh(opts)) return null;
         return getUnifiStpInfo(opts);
       },
     };
@@ -477,7 +482,7 @@ async function createHpProcurveSwitchClient(device: NetworkDevice, creds: Device
     host: device.host,
     port: device.port || 22,
     username: creds.username!,
-    password: creds.password!,
+    ...segretoSsh(creds),
     timeout: 30000,
   };
   return {
@@ -508,7 +513,7 @@ async function createHpComwareSwitchClient(device: NetworkDevice, creds: DeviceC
     host: device.host,
     port: device.port || 22,
     username: creds.username!,
-    password: creds.password!,
+    ...segretoSsh(creds),
     timeout: 30000,
   };
   return {
@@ -549,7 +554,7 @@ function mergeLldpIntoPorts(ports: PortInfo[], lldp: { interface: string; system
 }
 
 function createHpSwitchClient(device: NetworkDevice, creds: DeviceCreds): Promise<SwitchClient> {
-  if (device.protocol === "ssh" && creds?.username && creds?.password) {
+  if (device.protocol === "ssh" && creds?.username && haSegretoSsh(creds)) {
     const subtype = device.vendor_subtype ?? "procurve";
     if (subtype === "comware") {
       return createHpComwareSwitchClient(device, creds);

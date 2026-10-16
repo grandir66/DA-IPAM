@@ -72,12 +72,16 @@ function slotForType(credentialType: string): EdgeCredentialSlot | null {
 }
 
 /**
- * Perché una voce non può partire verso lo scanner, per tipo. Lo slot SNMP
- * dello scanner prende solo una community (`cred_type: "snmp"`): una SNMP v3
- * compare nell'anteprima, non selezionata, invece di sparire (T12, 16/10).
+ * Perché una voce non può partire verso lo scanner, per tipo e metodo. Lo slot
+ * SNMP dello scanner prende solo una community (`cred_type: "snmp"`) e lo slot
+ * SSH solo utente e password (`cred_type: "up"`): una SNMP v3 (T12) o una SSH a
+ * chiave (T14, interfaccia punto 9) compare nell'anteprima, non selezionata,
+ * invece di sparire o di partire con la password vuota.
  */
-function motivoEsclusione(credentialType: string): string | null {
-  if (normalizzaTipo(credentialType) === "snmp_v3") return "Non inviata allo scanner: SNMP v3 (lo scanner usa solo community)";
+function motivoEsclusione(cred: { credential_type: string; auth_method?: string | null }): string | null {
+  const tipo = normalizzaTipo(String(cred.credential_type || ""));
+  if (tipo === "snmp_v3") return "Non inviata allo scanner: SNMP v3 (lo scanner usa solo community)";
+  if (tipo === "ssh" && cred.auth_method === "chiave") return "Non inviata allo scanner: chiave SSH";
   return null;
 }
 
@@ -92,7 +96,7 @@ function buildTransferFromCredential(
   const type = normalizzaTipo(String(cred.credential_type || ""));
   const baseName = `IPAM · ${cred.name}`.slice(0, 80);
 
-  if (motivoEsclusione(String(cred.credential_type || ""))) return null;
+  if (motivoEsclusione(cred)) return null;
 
   if (slot === "snmp" || type === "snmp") {
     const community = getCredentialCommunityString(credentialId);
@@ -159,7 +163,7 @@ export function collectEdgeCredentialsForNetwork(networkId: number, opts: { regi
 
     const spec = buildTransferFromCredential(credentialId, slot, order);
     order += 1;
-    const motivo = motivoEsclusione(String(cred.credential_type));
+    const motivo = motivoEsclusione(cred);
 
     preview.push({
       credential_id: credentialId,

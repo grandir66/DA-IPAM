@@ -34,7 +34,7 @@ type Nuove = {
   hostConCredenzialeWinrmDb: (dbh: Database.Database) => Set<number>;
 };
 const nuove = patch as unknown as Nuove;
-const { loadWinrmCredentialsForHost, loadSshCredentialsForHost } = patch;
+const { loadWinrmCredentialsForHost, caricaSshPerHost } = patch;
 
 let db: Database.Database;
 const futuro = (): string => new Date(Date.now() + 60 * 60 * 1000).toISOString();
@@ -153,7 +153,8 @@ describe("terminale: SSH col motore", () => {
     const h = host("10.9.0.20");
     riga(h, voce("Linux in fermo", "linux", "root-fermo", "pw-fermo"), "ssh", 22, 1, 0, futuro());
     riga(h, voce("SSH buona", "ssh", "root-buono", "pw-buona"), "ssh", 2222, 0, 1);
-    const c = loadSshCredentialsForHost(db, h);
+    const e = caricaSshPerHost(db, h, "dal terminale SSH");
+    const c = e.ok ? e.creds : null;
     assert.equal(c?.username, "root-buono");
     assert.equal(c?.port, 2222);
     assert.equal(c?.host, "10.9.0.20");

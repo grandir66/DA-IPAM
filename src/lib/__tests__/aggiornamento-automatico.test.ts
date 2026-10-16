@@ -87,7 +87,10 @@ function preparaAmbiente(): Ambiente {
   const bin = path.join(radice, "bin");
   const log = path.join(radice, "chiamate.log");
   fs.mkdirSync(bin);
-  for (const [nome, testo] of [["npm", NPM_FINTO], ["systemctl", SYSTEMCTL_FINTO], ["curl", CURL_FINTO], ["sleep", "#!/bin/bash\nexit 0\n"]]) {
+  for (const [nome, testo] of [["npm", NPM_FINTO], ["systemctl", SYSTEMCTL_FINTO], ["curl", CURL_FINTO], ["sleep", "#!/bin/bash\nexit 0\n"],
+    // Da utente normale (la CI) update.sh riavvia con `sudo systemctl`: il sudo vero
+    // azzera il PATH e salterebbe il systemctl finto.
+    ["sudo", '#!/bin/bash\nexec "$@"\n']]) {
     fs.writeFileSync(path.join(bin, nome), testo, { mode: 0o755 });
   }
   fs.writeFileSync(log, "");

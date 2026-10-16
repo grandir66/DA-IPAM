@@ -10,8 +10,17 @@ export type IntegrationComponent = ContainerIntegrationComponent | "unifi";
 /** Famiglia del controller UniFi: sceglie autenticazione e percorsi API. */
 export type UnifiKind = "self_hosted" | "udm" | "cloud";
 
-/** "managed" = Docker locale gestito da DA-INVENT; "external" = istanza esterna configurata manualmente */
-export type IntegrationMode = "managed" | "external" | "disabled";
+/**
+ * - "managed" = Docker locale gestito da DA-INVENT (contenitore `da-<nome>`);
+ * - "appliance" = solo LibreNMS: installato dall'installatore dell'appliance
+ *   (Deploy-Appliance, contenitore `appliance-librenms`) sulla stessa macchina.
+ *   Per le chiamate vale come "external" (URL + token); DA-IPAM non ne gestisce
+ *   il contenitore (passo 5 del piano di solidità, 16/10);
+ * - "external" = istanza esterna configurata a mano. Per LibreNMS non si sceglie
+ *   più (LibreNMS è solo locale): le righe che ce l'hanno restano leggibili e
+ *   funzionanti, e si convertono solo con un passaggio esplicito.
+ */
+export type IntegrationMode = "managed" | "appliance" | "external" | "disabled";
 
 export interface ContainerStatus {
   running: boolean;

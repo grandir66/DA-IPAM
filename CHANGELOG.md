@@ -4,6 +4,33 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-16 · LibreNMS solo locale: modo «Installato dall'appliance»
+
+Passo 5 del piano di solidità del 16/10, parte DA-IPAM. Perché: LibreNMS è integrato e solo locale (decisione di
+Riccardo), ma l'installatore dell'appliance lo registra come «Istanza esterna» e la scheda offriva ancora di puntare un
+LibreNMS esterno.
+
+### Aggiunte
+
+- **Modo nuovo `appliance`** (`IntegrationMode`): LibreNMS installato dall'installatore dell'appliance. Accettato dove si
+  accetta `managed` (PUT `/api/integrations/librenms`); per sync, grafici, accesso automatico e salute vale come
+  `external` (URL + token). DA-IPAM non ne gestisce il contenitore: avvio, arresto e rimozione restano solo per `managed`.
+  Solo per LibreNMS: Graylog e Loki lo rifiutano (400, motivo in italiano). Logica pura in `integrations/librenms-modo.ts`.
+- **«Istanza esterna» sparisce dalla tendina di LibreNMS** per le configurazioni nuove (`vociModalita`); al suo posto
+  «Installato dall'appliance». Graylog e Loki come prima.
+- **«Converti in «Installato dall'appliance»…»**: unico passaggio da `external` ad `appliance`, nella scheda di
+  LibreNMS con conferma in italiano, e `POST /api/integrations/librenms/converti` (solo admin, corpo
+  `{ "conferma": true }`). Cambia solo il modo: indirizzo, token e password restano. Rifiutato (409) se il modo non è
+  `external` o se manca l'indirizzo.
+
+### Invariato
+
+- **Le righe `external` esistenti restano leggibili e funzionanti**: nessuna migrazione automatica; in tendina compaiono
+  come «Istanza esterna (da convertire)». Il PUT continua ad accettare `external`: lo manda ancora Deploy-Appliance
+  (`connect.sh`), e così l'import del JSON dei moduli.
+- Da fare fuori da qui: censimento in sola lettura su hub, cliente A e pilota; Deploy-Appliance `connect.sh` che scrive
+  `appliance`; il kit di DA-Link (K2a).
+
 ## [Non rilasciato] — 2026-10-16 · moduli opzionali: campo «offerta» ed etichetta «Opzione»
 
 Passo 4c del piano di solidità del 16/10. Perché: Riccardo ha deciso che MDM, Patch/Chocolatey, MeshCentral, Wazuh e

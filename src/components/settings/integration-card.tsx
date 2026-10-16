@@ -16,7 +16,13 @@ import { useJobPolling } from "@/hooks/use-job-polling";
 import type { PassoPolling } from "@/lib/integrations/polling-job";
 import { containerRemovalConfirmText } from "@/lib/modules/uninstall-copy";
 import type { ConfigIntegrazioneVista } from "@/lib/permessi/politica";
-import { vistaScheda } from "@/lib/integrations/scheda-integrazione";
+import {
+  ETICHETTA_APPLIANCE,
+  mostraConversione,
+  vistaScheda,
+  vociModalita,
+} from "@/lib/integrations/scheda-integrazione";
+import { CONFERMA_CONVERSIONE_LIBRENMS } from "@/lib/integrations/librenms-modo";
 
 interface Props {
   /** Solo i componenti installati come container: UniFi ha la sua pagina (Controller di rete). */
@@ -64,6 +70,7 @@ export function IntegrationCard({ component, title, description, dockerAvailable
   const [installing, setInstalling] = useState(false);
   const [browserUrl, setBrowserUrl] = useState("");
   const [syncing, setSyncing] = useState(false);
+  const [converting, setConverting] = useState(false);
   const [lastSyncResult, setLastSyncResult] = useState<string | null>(null);
 
   const load = async () => {
@@ -180,6 +187,31 @@ export function IntegrationCard({ component, title, description, dockerAvailable
     }
   };
 
+  // Passo 5: «Istanza esterna» → «Installato dall'appliance», solo su richiesta
+  // esplicita e dopo la conferma; nessuna riga si converte da sola.
+  const handleConverti = async () => {
+    if (!confirm(CONFERMA_CONVERSIONE_LIBRENMS)) return;
+    setConverting(true);
+    try {
+      const res = await fetch("/api/integrations/librenms/converti", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conferma: true }),
+      });
+      const d = (await res.json().catch(() => null)) as { error?: string } | null;
+      if (res.ok) {
+        toast.success("LibreNMS convertito in «Installato dall'appliance»");
+        await load();
+      } else {
+        toast.error(`Conversione non riuscita: ${d?.error ?? `errore ${res.status}`}`);
+      }
+    } catch {
+      toast.error("Errore di rete");
+    } finally {
+      setConverting(false);
+    }
+  };
+
   const handleSyncInventory = async () => {
     setSyncing(true);
     setLastSyncResult(null);
@@ -247,6 +279,9 @@ export function IntegrationCard({ component, title, description, dockerAvailable
   const apiTokenImpostato = !!localConfig.apiToken || !!state?.config.apiTokenSet;
   const adminPasswordImpostata = !!localConfig.adminPassword || !!state?.config.adminPasswordSet;
   const isExternal = localConfig.mode === "external";
+  const isAppliance = localConfig.mode === "appliance";
+  // URL e token si scrivono a mano per un'istanza esterna e per quella dell'appliance.
+  const tokenAMano = isExternal || isAppliance;
   const isDisabled = localConfig.mode === "disabled";
   const vista = vistaScheda({
     dallAppliance: state?.installatoDallAppliance === true,
@@ -255,6 +290,9 @@ export function IntegrationCard({ component, title, description, dockerAvailable
     installing,
     containerRunning,
   });
+  const modoSalvato = state?.config.mode ?? null;
+  const voci = vociModalita(component, modoSalvato, vista);
+  const proponiConversione = mostraConversione(component, modoSalvato);
 
   if (loading) {
     return (
@@ -302,6 +340,7 @@ export function IntegrationCard({ component, title, description, dockerAvailable
               <Badge variant="secondary">Fermo</Badge>
             )}
             {isExternal && <Badge variant="outline">{vista.badgeEsterno}</Badge>}
+            {isAppliance && <Badge variant="outline">{ETICHETTA_APPLIANCE}</Badge>}
             {isDisabled && <Badge variant="secondary">Disabilitato</Badge>}
           </div>
         </div>
@@ -314,17 +353,18 @@ export function IntegrationCard({ component, title, description, dockerAvailable
             <Label className="text-xs text-muted-foreground">Modalità</Label>
             <Select
               value={localConfig.mode}
+              items={voci.map((v) => ({ value: v.value, label: v.label }))}
               onValueChange={(v) => setLocalConfig((c) => ({ ...c, mode: v as IntegrationMode }))}
             >
               <SelectTrigger className="mt-1">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="disabled">Disabilitato</SelectItem>
-                <SelectItem value="managed" disabled={!vista.dockerLocaleSelezionabile}>
-                  Docker locale{vista.notaDockerLocale}
-                </SelectItem>
-                <SelectItem value="external">{vista.etichettaEsterna}</SelectItem>
+                {voci.map((v) => (
+                  <SelectItem key={v.value} value={v.value} disabled={v.disabled}>
+                    {v.label}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -366,8 +406,8 @@ export function IntegrationCard({ component, title, description, dockerAvailable
 
         {!isDisabled && (
           <>
-            {/* API Token — solo per modalità external; in managed è auto-configurato */}
-            {isExternal ? (
+            {/* API Token — external e appliance; in managed è auto-configurato */}
+            {tokenAMano ? (
               <div>
                 <Label className="text-xs text-muted-foreground">API Token</Label>
                 <Input
@@ -480,6 +520,21 @@ export function IntegrationCard({ component, title, description, dockerAvailable
           <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/20 px-3 py-2 text-xs text-amber-900 dark:text-amber-300">
             <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
             <span>{jobAvviso}</span>
+          </div>
+        )}
+
+        {/* Passo 5: LibreNMS è solo locale; una riga «external» si converte solo da qui. */}
+        {proponiConversione && (
+          <div className="rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/20 px-3 py-2 text-sm text-amber-900 dark:text-amber-300 space-y-2">
+            <p>
+              Questa configurazione è «Istanza esterna», una modalità che per LibreNMS non si
+              sceglie più: LibreNMS è solo locale. Continua a funzionare com&apos;è; se è il
+              LibreNMS installato dall&apos;appliance, convertila.
+            </p>
+            <Button size="sm" variant="outline" onClick={() => void handleConverti()} disabled={converting}>
+              {converting ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : null}
+              Converti in «{ETICHETTA_APPLIANCE}»…
+            </Button>
           </div>
         )}
 

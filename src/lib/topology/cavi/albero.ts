@@ -257,7 +257,7 @@ export function primCavi(ing: IngressoPrim): EsitoPrim {
   // linea che non c'è (fuori vista, o finita nei dettagli) non toglie all'hypervisor la sua regola. Caso limite (revisione del
   // Task 5): la ★ di un hypervisor su una linea «dalle VM» che non diventa `via` (l'altro capo si raggiunge solo da lui) finisce
   // nei dettagli: nel modello la linea c'è e la ★ spegne la regola dell'hypervisor, sulla pagina la linea non c'è e la regola
-  // vale. Il padre può essere diverso fra traccia e schermo; con `DALLE_VM_SOLO_DETTAGLI` spenta (oggi) non succede.
+  // vale. Il padre può essere diverso fra traccia e schermo; con `DALLE_VM_SOLO_DETTAGLI` spenta non succede (accesa dal 16/10).
   const forzati = new Map<string, string>();
   for (const [nodo, id] of ing.stelle) if ((adj.get(nodo) ?? []).some((c) => c.id === id)) forzati.set(nodo, id);
   // Punto 6: il principale dell'hypervisor (§12.5): prima il non vecchio, poi il non giù, poi il non di riserva del bond (§13.3.2

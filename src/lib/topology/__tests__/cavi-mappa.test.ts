@@ -328,7 +328,7 @@ test("§13.7.2 passo 10 (S11): i collegamenti «dalle VM» che non si disegnano 
   assert.equal(m.soloDettagli.length, 1);
   assert.deepEqual(mappa.cavi.dalleVm, { "dev:41": [{ altro: "dev:4", porta: "Port 5", vm: 1 }] });
   assert.deepEqual(fra(mappa, "dev:4", "dev:41"), [], "quella linea non c'è, nemmeno a richiesta");
-  assert.deepEqual(mappaDi(ingresso(conHypervisorEAltri()), { dalleVmSoloDettagli: false }).mappa.cavi.dalleVm, {}, "con la regola spenta (oggi) niente nei dettagli");
+  assert.deepEqual(mappaDi(ingresso(conHypervisorEAltri()), { dalleVmSoloDettagli: false }).mappa.cavi.dalleVm, {}, "con la regola spenta niente nei dettagli");
 });
 
 // ── «Candidati per porta» (§13.4.6) ──────────────────────────────────────────────────────────────────────────────────────

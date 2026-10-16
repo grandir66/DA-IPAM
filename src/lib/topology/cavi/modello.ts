@@ -6,13 +6,16 @@
  * ruolo.ts). Da T3 i collegamenti «dalle VM» che non sono principali stanno nei dettagli dell'hypervisor, se la misura lo
  * conferma (§13.15 punto 4, `DALLE_VM_SOLO_DETTAGLI`). Logica pura; si calcola a richiesta e non si salva.
  */
+import { parseDbDate } from "@/lib/db-date";
 import { nodeClass, ruoloLetto } from "@/lib/topology/identity";
 import { macSullaPorta, parseSpeedMbps } from "@/lib/topology/link-attrs";
 import { ipervisoriLetti, lettoreDellaFonte } from "@/lib/topology/lettori/fonti";
 import { comeDi, portaSalvata } from "@/lib/topology/links";
 import type { ClasseMappa, TopologyModel } from "@/lib/topology/model-types";
-import { addNodeMacs, buildNodeIndex, type NodeIndex } from "@/lib/topology/node-index";
+import { addNodeMacs, buildNodeIndex, canonical, type NodeIndex } from "@/lib/topology/node-index";
+import { isRunning } from "@/lib/topology/vm-nodes";
 import { resolveScanHosts } from "@/lib/topology/vms";
+import { normalizeMacForStorage } from "@/lib/utils";
 import { alberoCavi, type AlberoCavi, type NodoCavi } from "./albero";
 import { costruisciCollegamenti, type Collegamento, type ContestoCavi, type RisultatoCavi, type Segmento } from "./collegamenti";
 import { chiavePorta, elenchiPorte, indiciInElenco, type ElencoPorte } from "./porte";
@@ -25,7 +28,8 @@ export interface PreparatoCavi {
   classi: (ponti: ReadonlySet<string>) => Map<string, ClasseMappa>;
 }
 
-export function preparaCavi(ing: IngressoCavi, t1: TopologyModel): PreparatoCavi {
+/** `testa`: la testa confermata. Se è una VM resta fuori dalla regola del §13.7.8 (§13.16 punto 3, scelta di Riccardo: come oggi). */
+export function preparaCavi(ing: IngressoCavi, t1: TopologyModel, opz: { testa?: string | null } = {}): PreparatoCavi {
   const idx = buildNodeIndex(ing.t1.devices, ing.t1.hosts, ing.t1.knownMacs, ing.t1.neighbors);
   for (const { row, nodeId } of resolveScanHosts(ing.t1.scanHosts, idx)) if (nodeId) addNodeMacs(idx, nodeId, row.macs);
   const macApparati = new Map<string, Set<string>>();
@@ -60,6 +64,28 @@ export function preparaCavi(ing: IngressoCavi, t1: TopologyModel): PreparatoCavi
   };
   const router = new Set([...idx.nodes.values()].filter((n) => n.type === "router" || n.type === "firewall").map((n) => n.id));
   const vmIpervisore = new Map(t1.vms.flatMap((v) => (v.nodeId && v.hypervisorNodeId ? [[v.nodeId, v.hypervisorNodeId] as const] : [])));
+  // §13.7.8: sta dentro il suo hypervisor la VM ACCESA nell'ultima lettura e abbinata al nodo PER MAC. L'abbinamento di vms.ts vale
+  // anche per IP, e le VM spente ci sono: un firewall fisico con l'IP di una vecchia VM spenta diventava una VM e perdeva tutti i
+  // suoi cavi (revisione del Task 4). Di ogni MAC di una VM conta la lettura più recente che lo riporta (come `runningVmMacs`).
+  const ultimaDelMac = new Map<string, { t: number; accesa: boolean }>();
+  for (const r of ing.t1.vms) {
+    const t = r.scannedAt ? parseDbDate(r.scannedAt).getTime() : 0;
+    for (const raw of r.macs) {
+      const m = normalizeMacForStorage(raw);
+      if (!m) continue;
+      const u = ultimaDelMac.get(m);
+      const tt = Number.isNaN(t) ? 0 : t;
+      if (!u || tt > u.t) ultimaDelMac.set(m, { t: tt, accesa: isRunning(r.status) });
+      else if (tt === u.t && isRunning(r.status)) u.accesa = true;
+    }
+  }
+  const perMac = new Set<string>();
+  for (const [m, u] of ultimaDelMac) {
+    const id = idx.byMac.get(m);
+    if (u.accesa && typeof id === "string") perMac.add(canonical(idx, id));
+  }
+  const accese = new Set(t1.vms.filter((v) => v.nodeId && isRunning(v.status)).map((v) => v.nodeId));
+  const vmDentro = new Map([...vmIpervisore].filter(([n]) => accese.has(n) && perMac.has(n) && n !== (opz.testa ?? null)));
 
   // Le classi del modello per cavo (§13.8.2, T3): le prove di oggi (le stesse di buildTopologyModel, ricalcolate sull'indice del
   // modello per cavo, che ha anche i MAC letti in T2) e quelle che vede solo il modello per cavo; i capi dei ponti radio dati.
@@ -83,7 +109,7 @@ export function preparaCavi(ing: IngressoCavi, t1: TopologyModel): PreparatoCavi
   for (const h of vmIpervisore.values()) ipervisori.add(h);
   const ctx: ContestoCavi = {
     nowMs: ing.t1.nowMs, staleDays: ing.t1.staleDays, porte: elenchi, fatti, statoPorte, velocita, velocitaPerNome, macApparati, idx, router,
-    vmIpervisore, portaSalvata: portaSalvata(ing.t1), letti: new Set(ing.vicini.map((n) => `dev:${n.device_id}`)), rete, ipervisori,
+    vmIpervisore, vmDentro, portaSalvata: portaSalvata(ing.t1), letti: new Set(ing.vicini.map((n) => `dev:${n.device_id}`)), rete, ipervisori,
   };
   return { idx, prove, ctx, elenchi, fatti, classi };
 }
@@ -102,7 +128,7 @@ export const DALLE_VM_SOLO_DETTAGLI: boolean = false;
 function nonCalcolato(dalleVmSoloDettagli: boolean): readonly string[] {
   return [
     "lo stato per istanza dello spanning tree, finché le istanze non sono lette sulla forma vera (Task 3b del piano di T2)",
-    "la testa quando l'unico router è una VM: resta la regola di oggi, scelta di Riccardo (§13.16, punto 3)",
+    "la testa quando l'unico router è una VM (§13.16, punto 3, scelta di Riccardo): una VM confermata come testa resta fuori dalla regola delle VM dentro l'hypervisor (§13.7.8), come oggi; senza testa confermata la VM non è mai la testa",
     ...(dalleVmSoloDettagli ? [] : ["i collegamenti «dalle VM» non principali restano ridondanze a richiesta: la misura non ha ancora confermato la regola (§13.15, punto 4)"]),
   ];
 }
@@ -126,14 +152,16 @@ export interface ModelloCavi {
   oltre: RisultatoCavi["oltre"];
   scartateBordo: RisultatoCavi["scartateBordo"];
   scartateVm: RisultatoCavi["scartateVm"];
-  /** I collegamenti «dalle VM» non principali che non si disegnano (con `DALLE_VM_SOLO_DETTAGLI`): nei dettagli dell'hypervisor. */
+  /** I collegamenti «dalle VM» non principali che non si disegnano (con `DALLE_VM_SOLO_DETTAGLI`): nei dettagli dell'hypervisor.
+   * Nessuno è un `albero.via`; `albero.scelto` può nominarne uno (la porta radice o l'uplink di uno switch che vede solo le VM). */
   soloDettagli: Array<{ collegamento: Collegamento; ipervisore: string; altro: string; porta: string; vm: number }>;
 }
 
 const macDel = (id: string | null): string | null => (id ? (id.split(".").pop() ?? "").toLowerCase() : null);
 
 export function costruisciModelloCavi(ing: IngressoCavi, t1: TopologyModel, opz: { testaScelta: string | null; dalleVmSoloDettagli?: boolean }): ModelloCavi {
-  const p = preparaCavi(ing, t1);
+  const testaConfermata = opz.testaScelta ?? t1.sites.find((s) => s.headNodeId !== null && !s.headProposed)?.headNodeId ?? null;
+  const p = preparaCavi(ing, t1, { testa: testaConfermata });
   const r = costruisciCollegamenti(p.prove, ing.t1.overrides, p.ctx);
   const { collegamenti, segmenti, correzioniOrfane } = r;
   // I capi dei salti radio (§13.7.6 punto 4): letti o dedotti, dichiarati a mano (tipo wireless, D7), la radio vicina del punto 5.
@@ -176,21 +204,24 @@ export function costruisciModelloCavi(ing: IngressoCavi, t1: TopologyModel, opz:
   }
   const ipervisori = new Set([...nodi.values()].filter((n) => n.classe === "hyper").map((n) => n.id));
   for (const v of t1.vms) if (v.hypervisorNodeId) ipervisori.add(v.hypervisorNodeId);
-  const testaConfermata = opz.testaScelta ?? t1.sites.find((s) => s.headNodeId !== null && !s.headProposed)?.headNodeId ?? null;
   const albero = alberoCavi({
     nodi, visibili, collegamenti, testaConfermata, portaRadice, portaUplink, gateway, gatewayDi: t1.gatewayDi ?? {},
     primari: ing.t1.primaries.map((x) => ({ node_id: x.node_id, other_node: x.other_node })), ipervisori,
   });
 
   // §13.7.2 passo 10, §13.15 punto 4 (I56, S11): un collegamento con la SOLA prova «dalle VM» che non è il principale del suo
-  // hypervisor non si disegna, nemmeno a richiesta: sta nei dettagli dell'hypervisor. L'hypervisor è una foglia, quindi quel
-  // collegamento non è il padre di nessuno: toglierlo dopo l'albero non cambia l'albero (lo prova cavi-collegamenti.test.ts).
+  // hypervisor non si disegna, nemmeno a richiesta: sta nei dettagli dell'hypervisor. Si toglie dopo l'albero, e resta ogni
+  // collegamento che fa da padre a qualcuno (il principale dell'hypervisor, anche con una VM sola; e il padre di uno switch se
+  // l'hypervisor non è una foglia: `ipervisori` prende l'hypervisor di ogni VM, di qualunque classe). Così l'albero non cambia.
+  // `albero.scelto` può nominare un collegamento finito qui (la porta radice o l'uplink di uno switch dove si vedono solo le VM):
+  // chi lo legge lo cerca anche in `soloDettagli` (revisione del Task 4).
   const dalleVm = opz.dalleVmSoloDettagli ?? DALLE_VM_SOLO_DETTAGLI;
+  const padri = new Set([...albero.via.values()].map((c) => c.id));
   const soloDettagli: ModelloCavi["soloDettagli"] = [];
   const disegnati = !dalleVm ? collegamenti : collegamenti.filter((c) => {
-    if (c.prove.length === 0 || !c.prove.every((q) => q.classe === "vm")) return true;
+    if (c.prove.length === 0 || !c.prove.every((q) => q.classe === "vm") || padri.has(c.id)) return true;
     const h = ipervisori.has(c.a.nodo) ? c.a : ipervisori.has(c.b.nodo) ? c.b : null;
-    if (h === null || albero.via.get(h.nodo)?.id === c.id) return true;     // il principale resta, anche con una VM sola
+    if (h === null) return true;
     const sw = h === c.a ? c.b : c.a;
     soloDettagli.push({ collegamento: c, ipervisore: h.nodo, altro: sw.nodo, porta: sw.nome, vm: c.vm ?? 0 });
     return false;

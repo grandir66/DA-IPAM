@@ -258,8 +258,10 @@ const ombra = (ing: IngressoCavi, opz: { dalleVmSoloDettagli?: boolean } = {}) =
  */
 const sedeOltre = (altri: ReturnType<typeof vic>[] = [], over: Partial<TopologyModelInput> = {}) => baseInput({
   devices: [dev(1, { name: "RTR-SEDE1", device_type: "router", ...mk }), dev(7, { name: "RADIO-VICINA", device_type: "access_point", ...mk }),
-    dev(5, { name: "RTR-SEDE2", device_type: "router", ...mk }), dev(6, { name: "RTR-SEDE3", device_type: "router", ...mk }), dev(9, { name: "SW-SEDE2", ...mk })],
-  knownMacs: [{ device_id: 7, mac: "02:00:e1:00:07:01" }, { device_id: 5, mac: "02:00:e1:00:05:01" }, { device_id: 6, mac: "02:00:e1:00:06:01" }],
+    dev(5, { name: "RTR-SEDE2", device_type: "router", ...mk }), dev(6, { name: "RTR-SEDE3", device_type: "router", ...mk }), dev(9, { name: "SW-SEDE2", ...mk }),
+    dev(8, { name: "RADIO-LONTANA", device_type: "access_point", ...mk }), dev(10, { name: "RADIO-ALTRA", device_type: "access_point", ...mk })],
+  knownMacs: [{ device_id: 7, mac: "02:00:e1:00:07:01" }, { device_id: 5, mac: "02:00:e1:00:05:01" }, { device_id: 6, mac: "02:00:e1:00:06:01" },
+    { device_id: 8, mac: "02:00:e1:00:08:01" }, { device_id: 10, mac: "02:00:e1:00:10:01" }],
   neighbors: [
     vic({ device_id: 1, local_port: "ether3", remote_device_name: "RADIO-VICINA", remote_mac: "02:00:e1:00:07:01", remote_port: "ether1", source: "device", remote_platform: "MikroTik" }),
     vic({ device_id: 5, local_port: "ether2", remote_device_name: "SW-SEDE2", remote_port: "ether1", source: "device", remote_platform: "MikroTik" }),
@@ -323,10 +325,15 @@ test("I69 e §13.7.5: un tunnel di livello 3 sentito da un capo solo è un tunne
   const da1 = vic({ device_id: 1, local_port: "wg1", remote_device_name: "RTR-2", remote_mac: "02:00:e2:00:02:01", remote_port: "wg1", protocol: "mndp", source: "device" });
   const fatti = [fp(1, "n:wg1", "wg1", { source: "device", if_kind: "tunnel", running: 1 })];
   const conMac = { ...t1, knownMacs: [{ device_id: 2, mac: "02:00:e2:00:02:01" }, { device_id: 1, mac: "02:00:e2:00:01:01" }] };
-  const r = collega(ingresso(conMac, { vicini: [da1], fattiPorta: fatti }));
+  // RTR-2 legge i suoi vicini (una riga verso un modem non censito): che non senta RTR-1 è un fatto letto.
+  const legge2 = vic({ device_id: 2, local_port: "ether1", remote_device_name: "MODEM", remote_port: "lan1", source: "device" });
+  const r = collega(ingresso(conMac, { vicini: [da1, legge2], fattiPorta: fatti }));
   assert.deepEqual(r.collegamenti.map((c) => [c.genere, c.fiducia, c.unVerso]), [["tunnel", "probabile", true]]);
+  // Revisione del Task 4 (minore 7): se RTR-2 non legge vicini, «non sente» non è un fatto: niente «in un verso solo».
+  const nonLegge = collega(ingresso(conMac, { vicini: [da1], fattiPorta: fatti }));
+  assert.deepEqual(nonLegge.collegamenti.map((c) => [c.genere, c.unVerso]), [["tunnel", undefined]]);
   assert.ok(r.collegamenti[0].frasi.includes("RTR-1 sente RTR-2 sul tunnel wg1, ma RTR-2 non sente RTR-1: il tunnel c'è, e gli annunci passano in un verso solo."), r.collegamenti[0].frasi.join(" | "));
-  const daTutti = collega(ingresso(conMac, { vicini: [da1, vic({ device_id: 2, local_port: "wg1", remote_device_name: "RTR-1", remote_mac: "02:00:e2:00:01:01", remote_port: "wg1", protocol: "mndp", source: "device" })],
+  const daTutti = collega(ingresso(conMac, { vicini: [da1, legge2, vic({ device_id: 2, local_port: "wg1", remote_device_name: "RTR-1", remote_mac: "02:00:e2:00:01:01", remote_port: "wg1", protocol: "mndp", source: "device" })],
     fattiPorta: [...fatti, fp(2, "n:wg1", "wg1", { source: "device", if_kind: "tunnel", running: 1 })] }));
   assert.deepEqual(daTutti.collegamenti.map((c) => [c.genere, c.unVerso]), [["tunnel", undefined]], "sentito dai due capi non è in un verso solo");
   const nonCensito = collega(ingresso(baseInput({ devices: [dev(1, { name: "RTR-1", device_type: "router", ...mk })] }), {
@@ -528,4 +535,138 @@ test("S11 e I56: un collegamento solo «dalle VM» che non è il principale del 
   // La linea di oggi che ha anche la tabella MAC (il MAC dell'hypervisor sulla porta) non è «solo dalle VM».
   const core42 = fra(accesa.collegamenti, "dev:2", "dev:42");
   assert.ok(core42.some((c) => c.prove.some((p) => p.classe === "tabella_mac") && c.prove.some((p) => p.classe === "vm")), core42.map((c) => c.prove.map((p) => p.classe).join(",")).join(" | "));
+});
+
+// ── Revisione del Task 4 (16/10): le correzioni ──────────────────────────────────────────────────────────────────────────────
+
+// Importante 1: l'abbinamento VM ↔ nodo di vms.ts vale anche per IP, e le VM spente ci sono: un firewall fisico con l'IP di una
+// vecchia VM spenta diventava «VM» e perdeva tutti i suoi cavi.
+test("§13.7.8 (revisione del Task 4): sta dentro l'hypervisor solo la VM accesa e abbinata per MAC; un firewall con l'IP di una VM spenta tiene i suoi cavi", () => {
+  const rete = (status: string, macs: string[]) => baseInput({
+    devices: [dev(3, { name: "SW-3", controller_mac: "02:00:e7:00:03:00" }), dev(60, { name: "FW-60", device_type: "firewall", host: "10.0.0.60" }),
+      dev(41, { name: "pve-41", device_type: "server", vendor: "proxmox", host: "10.0.0.41", proxmox_scan: 1, port_count: 0 })],
+    ports: porte(3, [[2, "Port 2", "1000 Mbps"]]),
+    knownMacs: [{ device_id: 60, mac: "02:00:e7:00:60:01" }],
+    vms: [{ ...vmRow(41, 160, "fw-vecchio", "pve-41", macs), status, ips: ["10.0.0.60"] }],
+    scanHosts: [{ scannedDeviceId: 41, hostname: "pve-41", ips: ["10.0.0.41"], macs: ["02:00:e7:00:41:01"], scannedAt: "2026-10-13T06:00:00.000Z" }],
+  });
+  const lldp = vic({ device_id: 3, local_port: "Port 2", remote_device_name: "FW-60", remote_mac: "02:00:e7:00:60:01", remote_port: "port1" });
+  for (const [status, macs, dentro] of [["stopped", ["02:00:e7:01:60:09"], false], ["running", ["02:00:e7:01:60:09"], false], ["running", ["02:00:e7:00:60:01"], true]] as const) {
+    const t1 = rete(status, [...macs]);
+    assert.equal(buildTopologyModel(t1).vms[0]?.nodeId, "dev:60", `${status}/${macs[0]}: per vms.ts la VM è il firewall (per IP o per MAC)`);
+    const r = collega(ingresso(t1, { vicini: [lldp] }));
+    assert.equal(fra(r.collegamenti, "dev:3", "dev:60").length, dentro ? 0 : 1, `${status}/${macs[0]}`);
+    assert.equal(fra(r.collegamenti, "dev:3", "dev:41").length, dentro ? 1 : 0, `${status}/${macs[0]}: il cavo dell'hypervisor solo per la VM vera`);
+  }
+});
+
+// Importante 2: la VM confermata come testa veniva scartata in silenzio (senza collegamenti non è visibile), mentre la scelta del
+// §13.16 punto 3 è di Riccardo: resta fuori dalla regola del §13.7.8, come oggi.
+test("§13.16 punto 3 (revisione del Task 4): una VM confermata come testa resta fuori dalla regola delle VM dentro l'hypervisor, e la testa è lei", () => {
+  const t1 = conHypervisor();
+  const m = costruisciModelloCavi(ingresso(t1), buildTopologyModel(t1), { testaScelta: "dev:51" });
+  assert.equal(m.albero.testa, "dev:51");
+  assert.ok(m.collegamenti.some((c) => c.a.nodo === "dev:51" || c.b.nodo === "dev:51"), "la testa tiene i suoi collegamenti di oggi");
+  assert.ok(m.nonCalcolato.some((x) => x.includes("una VM confermata come testa resta fuori dalla regola")), m.nonCalcolato.join(" | "));
+  const senza = costruisciModelloCavi(ingresso(t1), buildTopologyModel(t1), { testaScelta: null });
+  assert.equal(senza.collegamenti.filter((c) => c.a.nodo === "dev:51" || c.b.nodo === "dev:51").length, 0, "non scelta, sta dentro l'hypervisor");
+});
+
+// Importante 3: «oltre» vale solo con il salto «non letto né dichiarato» (§13.7.6 punto 5), e la radio lontana non è un apparato
+// «oltre» (niente voce falsa «oltre ‹N› ci sono 2 apparati»).
+test("§13.7.6 punto 5 (revisione del Task 4): niente «oltre» se il salto è letto (ponte sulla porta, radio capo di un salto) o dichiarato a mano; la radio lontana non conta", () => {
+  const S2 = sentitoSu3("RTR-SEDE2", "02:00:e1:00:05:01");
+  const nessunOltre = (m: ReturnType<typeof ombra>, caso: string) => {
+    assert.deepEqual(m.collegamenti.filter((c) => c.oltre !== undefined).map((c) => c.id), [], caso);
+    assert.deepEqual(m.oltre, [], caso);
+  };
+  // (a) Le due radio del ponte sentite sulla porta del router: il salto è letto.
+  const vicinaRadio = vic({ device_id: 1, local_port: "ether3", remote_device_name: "RADIO-VICINA", remote_mac: "02:00:e1:00:07:01", remote_port: "bridge/ether1", remote_caps: "bridge", source: "device", remote_platform: "MikroTik" });
+  const lontanaSu = (d: number, porta: string) => vic({ device_id: d, local_port: porta, remote_device_name: "RADIO-LONTANA", remote_mac: "02:00:e1:00:08:01", remote_port: "bridge/bond1/wlan60-1", remote_caps: "bridge", source: "device", remote_platform: "MikroTik" });
+  // Le righe con le capacità stanno fra le righe dei lettori di T2 (`vicini`): quelle del modello di oggi non le hanno.
+  const conPonte = ombra(ingresso(sedeOltre([S2]), { vicini: [vicinaRadio, lontanaSu(1, "ether3")] }));
+  assert.ok(conPonte.collegamenti.some((c) => c.genere === "radio"), "il salto è letto sulla porta");
+  nessunOltre(conPonte, "ponte sulla porta");
+  // (b) La radio vicina è capo di un salto letto altrove (le due radio sentite su una porta di SW-SEDE2).
+  const vicinaSu9 = vic({ device_id: 9, local_port: "ether5", remote_device_name: "RADIO-VICINA", remote_mac: "02:00:e1:00:07:01", remote_port: "bridge/ether1", remote_caps: "bridge", source: "device", remote_platform: "MikroTik" });
+  const b = ombra(ingresso(sedeOltre([S2]), { vicini: [vicinaSu9, lontanaSu(9, "ether5")] }));
+  assert.ok(b.collegamenti.some((c) => c.genere === "radio"), "il salto è letto");
+  nessunOltre(b, "radio capo di un salto");
+  // (c) Il salto dichiarato a mano (tipo wireless).
+  const add: LinkOverrideRow = { id: 1, action: "add", a_node: "dev:7", a_port: "", b_node: "dev:8", b_port: "", medium: "wireless" };
+  nessunOltre(ombra(ingresso(sedeOltre([S2], { overrides: [add] }))), "salto dichiarato");
+  // (d) La radio lontana di un altro ponte sentita oltre la radio vicina non è un secondo apparato di rete.
+  const altra = vic({ device_id: 9, local_port: "ether5", remote_device_name: "RADIO-ALTRA", remote_mac: "02:00:e1:00:10:01", remote_port: "bridge/ether1", remote_caps: "bridge", source: "device", remote_platform: "MikroTik" });
+  const d = ombra(ingresso(sedeOltre([S2, sentitoSu3("RADIO-LONTANA", "02:00:e1:00:08:01")]), { vicini: [altra, lontanaSu(9, "ether5")] }));
+  assert.deepEqual(d.oltre, [], "la radio lontana non è «oltre»");
+  assert.deepEqual(fra(d.collegamenti, "dev:7", "dev:5").map((c) => [c.fiducia, c.oltre]), [["dedotto", "dev:7"]]);
+});
+
+// Importante 4: la linea a mano del modello di oggi si saltava per intero, e con lei la prova «dalle VM» che vm-ports le aggiunge:
+// T1 diceva «✎ ✓», la mappa nuova «a mano, non visto».
+test("§13.9 (revisione del Task 4): le prove di bordo di una linea a mano restano; sulla stessa porta confermano, su un'altra porta sono un cavo loro", () => {
+  const add = (bPort: string): LinkOverrideRow => ({ id: 1, action: "add", a_node: "dev:41", a_port: "", b_node: "dev:3", b_port: bPort, medium: null });
+  const stessa = conVm();
+  stessa.overrides = [add("Port 9")];
+  assert.equal(buildTopologyModel(stessa).links.find((l) => l.sources.includes("manual"))?.manual?.confirmed, true, "T1: ✎ ✓");
+  assert.deepEqual(fra(collega(ingresso(stessa)).collegamenti, "dev:3", "dev:41").map((c) => [capoDi(c, "dev:3").chiave, c.fiducia]), [["i:9", "a_mano_confermato"]]);
+  const altra = conVm();
+  altra.overrides = [add("Port 1")];
+  const linee = fra(collega(ingresso(altra)).collegamenti, "dev:3", "dev:41").map((c) => [capoDi(c, "dev:3").chiave, c.fiducia, c.aManoDiverse ?? false]).sort();
+  assert.deepEqual(linee, [["i:1", "a_mano", true], ["i:9", "dedotto", false]], "le VM sulla porta 9 (altri cavi della linea di oggi) sono un cavo loro");
+});
+
+// Importante 5: due correzioni uguali, o una senza e una con le porte, davano due linee dove T1 ne mostra una; lo stesso con un
+// collegamento visto «senza fili» e la correzione senza tipo.
+test("§13.9 (revisione del Task 4): correzioni senza porte sulla stessa coppia sono una linea; senza tipo si uniscono anche a un collegamento senza fili visto", () => {
+  const add = (id: number, aPort: string, bPort: string): LinkOverrideRow => ({ id, action: "add", a_node: "dev:2", a_port: aPort, b_node: "dev:3", b_port: bPort, medium: null });
+  assert.equal(fra(collega(ingresso(due({ overrides: [add(1, "", ""), add(2, "", "")] }))).collegamenti, "dev:2", "dev:3").length, 1, "due uguali senza porte");
+  assert.equal(fra(collega(ingresso(due({ overrides: [add(1, "Port 1", "Port 2"), add(2, "", "")] }))).collegamenti, "dev:2", "dev:3").length, 1, "una con e una senza porte");
+  assert.equal(fra(collega(ingresso(due({ overrides: [add(1, "", ""), add(2, "Port 1", "Port 2")] }))).collegamenti, "dev:2", "dev:3").length, 1, "una senza e una con le porte");
+  const mesh = baseInput({
+    devices: [dev(5, { name: "AP-5", device_type: "access_point", controller_mac: "02:00:e8:00:05:00", uplink_mac: "02:00:e8:00:06:00", uplink_type: "wireless", uplink_seen_at: "2026-10-13 03:00:00" }),
+      dev(6, { name: "AP-6", device_type: "access_point", controller_mac: "02:00:e8:00:06:00" })],
+    overrides: [{ id: 1, action: "add", a_node: "dev:5", a_port: "", b_node: "dev:6", b_port: "", medium: null }],
+  });
+  const c = fra(collega(ingresso(mesh)).collegamenti, "dev:5", "dev:6");
+  assert.deepEqual(c.map((x) => [x.genere, x.fiducia]), [["senza_fili", "a_mano_confermato"]]);
+});
+
+// Importante 6: l'albero si calcola prima del filtro «dalle VM», e un hypervisor non è sempre una foglia (ipervisori prende ogni
+// hypervisor di una VM, di qualunque classe): un collegamento «dalle VM» che è il padre di qualcuno non sparisce.
+test("§13.15 punto 4 (revisione del Task 4): un collegamento «dalle VM» che fa da padre resta; nessun id dei dettagli è un padre, e `scelto` nomina solo collegamenti noti", () => {
+  const t1 = baseInput({
+    devices: [dev(1, { name: "RTR-1", device_type: "router", ...mk }), dev(3, { name: "SW-3", controller_mac: "02:00:e9:00:03:00" }),
+      dev(4, { name: "SW-4", controller_mac: "02:00:e9:00:04:00" }),
+      // un hypervisor registrato come switch e gestito dal controller: classe «infra», non una foglia
+      dev(41, { name: "HV-SW", device_type: "switch", controller_mac: "02:00:e9:00:41:00", host: "10.0.0.41", proxmox_scan: 1 })],
+    ports: [...porte(3, [[1, "Port 1", "10000 Mbps"], [2, "Port 2", "10000 Mbps"]]), ...porte(4, [[5, "Port 5", "1000 Mbps"]])],
+    knownMacs: [{ device_id: 1, mac: "02:00:e9:00:01:00" }, { device_id: 3, mac: "02:00:e9:00:03:00" }, { device_id: 41, mac: "02:00:e9:00:41:00" }],
+    neighbors: [
+      vic({ device_id: 1, local_port: "ether1", remote_device_name: "SW-3", remote_mac: "02:00:e9:00:03:00", remote_port: "Port 2", source: "device", remote_platform: "MikroTik" }),
+      vic({ device_id: 3, local_port: "Port 1", remote_device_name: "HV-SW", remote_mac: "02:00:e9:00:41:00", remote_port: "eno1" }),
+    ],
+    macPorts: [{ device_id: 4, mac: "02:00:e9:01:41:01", port_name: "Port 5", timestamp: ORA_T2, source: "unifi" }],
+    vms: [vmRow(41, 101, "srv-a", "HV-SW", ["02:00:e9:01:41:01"])],
+    scanHosts: [{ scannedDeviceId: 41, hostname: "HV-SW", ips: ["10.0.0.41"], macs: ["02:00:e9:00:41:00"], scannedAt: "2026-10-13T06:00:00.000Z" }],
+  });
+  const spenta = ombra(ingresso(t1), { dalleVmSoloDettagli: false });
+  const accesa = ombra(ingresso(t1), { dalleVmSoloDettagli: true });
+  const vm = fra(spenta.collegamenti, "dev:4", "dev:41");
+  assert.equal(vm.length, 1);
+  assert.equal(spenta.albero.via.get("dev:4")?.id, vm[0].id, "il collegamento «dalle VM» è il padre di SW-4");
+  assert.equal(fra(accesa.collegamenti, "dev:4", "dev:41").length, 1, "fa da padre: resta disegnato");
+  const padri = new Set([...accesa.albero.via.values()].map((c) => c.id));
+  assert.deepEqual(accesa.soloDettagli.filter((d) => padri.has(d.collegamento.id)), []);
+  const noti = new Set([...accesa.collegamenti, ...accesa.soloDettagli.map((d) => d.collegamento)].map((c) => c.id));
+  assert.deepEqual([...accesa.albero.scelto.values()].filter((id) => !noti.has(id)), []);
+  assert.deepEqual(accesa.albero.padri, spenta.albero.padri);
+});
+
+// Minore 9: un cavo ignorato non è un capo per il bordo: la sua porta resta occupata solo verso quell'oggetto (§13.9).
+test("§13.9 (revisione del Task 4): la porta di un cavo ignorato è occupata solo verso quell'oggetto; un altro oggetto della tabella MAC vi si attacca", () => {
+  const t1 = bordo("Port 8");
+  t1.macPorts = t1.macPorts.map((m) => (m.mac === "02:00:e3:00:12:01" ? { ...m, port_name: "Port 7" } : m));
+  const r = collega(ingresso(t1, { vicini: lldpSnmp }));
+  assert.deepEqual(fra(r.collegamenti, "dev:2", "dev:12").map((c) => capoDi(c, "dev:2").chiave), ["i:7"]);
 });

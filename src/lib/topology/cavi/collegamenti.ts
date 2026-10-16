@@ -86,6 +86,9 @@ export interface ContestoCavi {
   router: ReadonlySet<string>;
   /** VM → il suo hypervisor: un hypervisor e le sue VM sentiti sulla stessa porta sono un apparato solo. */
   vmIpervisore: ReadonlyMap<string, string>;
+  /** Le VM che stanno dentro il loro hypervisor (§13.7.8): accese nell'ultima lettura e abbinate al nodo per MAC, tranne la testa
+   * confermata (§13.16 punto 3). Un sottoinsieme di `vmIpervisore`. */
+  vmDentro: ReadonlyMap<string, string>;
   /** La porta di una correzione salvata (`portaSalvata` di links.ts: anche la forma di prima di T1). */
   portaSalvata: (nodo: string, nome: string) => Porta | null;
   /** Gli apparati che leggono vicini propri, qualunque fonte (§13.7.6 punto 5: la radio «non letta» non c'è). */
@@ -183,8 +186,8 @@ export function costruisciCollegamenti(prove: readonly Prova[], correzioni: read
   const normali: Prova[] = [];
   for (const p of prove) {
     if (p.tipo === "a_mano" || p.tipo === "tunnel") { normali.push(p); continue; }
-    if (ctx.vmIpervisore.has(p.da.nodo)) { stessaRete.push(p); continue; }
-    const h = p.altro ? (ctx.vmIpervisore.get(p.altro.nodo) ?? null) : null;
+    if (ctx.vmDentro.has(p.da.nodo)) { stessaRete.push(p); continue; }
+    const h = p.altro ? (ctx.vmDentro.get(p.altro.nodo) ?? null) : null;
     if (h === null) { normali.push(p); continue; }
     if (p.da.nodo === h) { stessaRete.push(p); continue; }
     if (p.tipo === "bordo") continue;   // la VM vista su una porta: lo dice già la prova «dalle VM» del suo hypervisor
@@ -232,18 +235,21 @@ export function costruisciCollegamenti(prove: readonly Prova[], correzioni: read
   const diSegmento = new Set([...sentiti].filter(([k, m]) => m.size >= 2 && !ponti.has(k)).map(([k]) => k));
 
   const bozze: Bozza[] = [];
+  /** I capi della prova combaciano con la bozza (porte compatibili), nel verso diritto o rovescio. */
+  const combacia = (z: Bozza, pa: Porta, pb: Porta): "diritto" | "rovescio" | null =>
+    z.a.nodo === pa.nodo && z.b.nodo === pb.nodo && compatibili(z.a, pa) && compatibili(z.b, pb) ? "diritto"
+      : z.a.nodo === pb.nodo && z.b.nodo === pa.nodo && compatibili(z.a, pb) && compatibili(z.b, pa) ? "rovescio" : null;
+  const unisciIn = (z: Bozza, pa: Porta, pb: Porta, p: Prova, osservatore: string | null): Bozza => {
+    const verso = combacia(z, pa, pb);
+    if (verso === "diritto") { z.a = unisci(z.a, pa); z.b = unisci(z.b, pb); } else if (verso === "rovescio") { z.a = unisci(z.a, pb); z.b = unisci(z.b, pa); }
+    z.prove.push(p);
+    if (osservatore) z.osservatori.add(osservatore);
+    if (p.vm) z.vm = Math.max(z.vm, p.vm);
+    return z;
+  };
   const aggiungi = (genere: Genere, pa: Porta, pb: Porta, p: Prova, osservatore: string | null, distinto = false): Bozza => {
-    for (const z of bozze) {
-      if (distinto || z.genere !== genere) continue;
-      const diritto = z.a.nodo === pa.nodo && z.b.nodo === pb.nodo && compatibili(z.a, pa) && compatibili(z.b, pb);
-      const rovescio = !diritto && z.a.nodo === pb.nodo && z.b.nodo === pa.nodo && compatibili(z.a, pb) && compatibili(z.b, pa);
-      if (!diritto && !rovescio) continue;
-      if (diritto) { z.a = unisci(z.a, pa); z.b = unisci(z.b, pb); } else { z.a = unisci(z.a, pb); z.b = unisci(z.b, pa); }
-      z.prove.push(p);
-      if (osservatore) z.osservatori.add(osservatore);
-      if (p.vm) z.vm = Math.max(z.vm, p.vm);
-      return z;
-    }
+    const gia = distinto ? undefined : bozze.find((z) => z.genere === genere && combacia(z, pa, pb) !== null);
+    if (gia) return unisciIn(gia, pa, pb, p, osservatore);
     const z: Bozza = { genere, a: pa, b: pb, prove: [p], osservatori: new Set(osservatore ? [osservatore] : []), verso: null, porteDaVerificare: false, wan: false, attraverso: false, vm: p.vm ?? 0 };
     bozze.push(z);
     return z;
@@ -300,13 +306,21 @@ export function costruisciCollegamenti(prove: readonly Prova[], correzioni: read
   // apparati via LLDP è un segmento (§13.7.3, prima di questa regola): qui arrivano solo porte col loro cavo (Scelte, 15).
   const oltre: RisultatoCavi["oltre"] = [];
   const fraLoro = (z: Bozza, x: string, y: string): boolean => (z.a.nodo === x && z.b.nodo === y) || (z.a.nodo === y && z.b.nodo === x);
+  // «Salto non letto né dichiarato» (revisione del Task 4): letto = le due radio sentite sulla porta, o la radio capo di un
+  // collegamento «radio»; dichiarato = una correzione a mano senza fili che la tocca (le correzioni diventano bozze più sotto,
+  // quindi si guardano le prove). Le radio capo di un salto non sono «apparati di rete oltre»: la radio lontana dava la voce falsa
+  // «oltre ‹N› ci sono 2 apparati».
+  const capiRadio = new Set(bozze.filter((z) => z.genere === "radio").flatMap((z) => [z.a.nodo, z.b.nodo]));
+  const dichiarati = new Set(normali.flatMap((q) => (q.tipo === "a_mano" && q.altro !== null
+    && (q.medio === "wireless" || q.da.senzaFili === true || q.altro.senzaFili === true) ? [q.da.nodo, q.altro.nodo] : [])));
   for (const z of [...bozze]) {
-    if (z.genere !== "cavo" || z.prove.some((p) => p.tipo === "a_mano" || p.tipo === "bordo")) continue;
+    if (z.genere !== "cavo") continue;
     for (const [P, N] of [[z.a, z.b.nodo], [z.b, z.a.nodo]] as const) {
       if (!ctx.router.has(P.nodo) || P.fisica !== true || P.chiave === null || ctx.letti.has(N)) continue;
       const k = chiaveDi(P);
+      if (ponti.has(k) || capiRadio.has(N) || dichiarati.has(N)) continue;
       const sentitiOltre = vicini.filter((q) => chiaveDi(q.da) === k && fresca(q) && q.altro !== null && q.altro.nodo !== N && q.altro.nodo !== P.nodo
-        && ctx.rete.has(q.altro.nodo));
+        && !capiRadio.has(q.altro.nodo) && ctx.rete.has(q.altro.nodo));
       const R = [...new Set(sentitiOltre.map((q) => q.altro!.nodo))].sort();
       if (R.length >= 2) { oltre.push({ porta: P, radio: N, apparati: R }); continue; }
       // Un cavo già visto fra la radio e R (R la sente da sé) non è un buco: la regola non serve.
@@ -362,7 +376,8 @@ export function costruisciCollegamenti(prove: readonly Prova[], correzioni: read
   // di un cavo verso un altro oggetto non è di bordo; la porta di un cavo ignorato resta occupata verso quell'oggetto (§13.9).
   const capiDati = new Map<string, Set<string>>();
   for (const z of bozze) {
-    if (!z.prove.some((p) => p.tipo !== "bordo" && p.tipo !== "a_mano")) continue;
+    // Un cavo ignorato non è un capo: la sua porta resta occupata solo verso quell'oggetto (`portaOccupata` sotto, §13.9).
+    if (!z.prove.some((p) => p.tipo !== "bordo" && p.tipo !== "a_mano") || ignorato(ig, z.a.nodo, z.a, z.b.nodo, z.b)) continue;
     for (const [x, y] of [[z.a, z.b], [z.b, z.a]] as const) {
       if (x.chiave !== null) capiDati.set(chiaveDi(x), (capiDati.get(chiaveDi(x)) ?? new Set<string>()).add(y.nodo));
     }
@@ -399,16 +414,20 @@ export function costruisciCollegamenti(prove: readonly Prova[], correzioni: read
       // §13.9, «Verifica» da T3: la conferma un cavo visto CON LE STESSE PORTE (o il MAC sulla porta dichiarata, in prove.ts); un
       // cavo fra gli stessi oggetti su altre porte non conferma più, e la linea a mano è una linea sua. Due porte vuote: si unisce
       // solo a un cavo solo fra i due.
+      // Senza tipo, il collegamento visto fra i due può essere di qualunque genere (un uplink senza fili, un salto radio, un
+      // tunnel): come la linea della coppia di T1, una sola. Con le porte vuote si unisce prima a un'altra correzione senza porte
+      // fra gli stessi due, poi al cavo solo, poi a un'altra correzione con le porte (revisione del Task 4: T1 ne mostra una).
       const genere: Genere = p.medio === "tunnel" ? "tunnel"
         : p.medio === "wireless" || p.da.senzaFili === true || p.altro.senzaFili === true ? "senza_fili" : "cavo";
       const altro = p.altro;
-      const visti = bozze.filter((z) => z.genere === genere && z.prove.some((q) => q.tipo !== "a_mano") && fraLoro(z, p.da.nodo, altro.nodo));
+      const fraI = bozze.filter((z) => z.genere !== "segmento" && (p.medio ? z.genere === genere : true) && fraLoro(z, p.da.nodo, altro.nodo));
+      const visti = fraI.filter((z) => z.prove.some((q) => q.tipo !== "a_mano"));
+      const soloAMano = fraI.filter((z) => z.prove.every((q) => q.tipo === "a_mano"));
       const vuote = p.da.nome === "" && altro.nome === "";
-      let z: Bozza;
-      if (vuote && visti.length === 1) {
-        z = visti[0];
-        z.prove.push(p);
-      } else z = aggiungi(genere, p.da, altro, p, null, vuote);
+      const dove = vuote
+        ? (soloAMano.find((z) => z.a.nome === "" && z.b.nome === "") ?? (visti.length === 1 ? visti[0] : soloAMano[0]))
+        : [...visti, ...soloAMano].find((z) => combacia(z, p.da, altro) !== null);
+      const z = dove ? unisciIn(dove, p.da, altro, p, null) : aggiungi(genere, p.da, altro, p, null, true);
       if (p.medio) z.medio = p.medio;
       if (z.prove.every((q) => q.tipo === "a_mano") && visti.length > 0) z.aManoDiverse = true;
     } else if (p.tipo === "tunnel") aggiungi("tunnel", p.da, p.altro, p, p.da.nodo);
@@ -543,7 +562,8 @@ export function costruisciCollegamenti(prove: readonly Prova[], correzioni: read
   const fiduciaDi = (z: Bozza): Fiducia => {
     // A mano (§13.9): confermata da un cavo visto con le stesse porte (è nella stessa bozza) o dal MAC sulla porta dichiarata.
     const aMano = z.prove.filter((p) => p.tipo === "a_mano");
-    if (aMano.length > 0) return z.prove.some((p) => p.tipo !== "a_mano" && p.tipo !== "bordo") || aMano.some((p) => p.confermato) ? "a_mano_confermato" : "a_mano";
+    // Anche una prova di bordo della stessa bozza (VM o MAC sulla porta: la verifica di T1, per cavo) conferma.
+    if (aMano.length > 0) return z.prove.some((p) => p.tipo !== "a_mano") || aMano.some((p) => p.confermato) ? "a_mano_confermato" : "a_mano";
     if (z.oltre !== undefined && z.osservatori.size === 0) return "dedotto";
     const dati = z.prove.filter((p) => p.tipo !== "bordo");
     if (dati.length > 0) {
@@ -614,10 +634,12 @@ export function costruisciCollegamenti(prove: readonly Prova[], correzioni: read
     const stato = z.genere === "segmento" ? (statoCapo(z.a).giu ? "giu" : "inoltra") : st.stato;
     const giuSu = stato === "giu" ? giuDi(z.genere === "segmento" ? [{ a: z.a, b: z.a }] : capi) : undefined;
     // §13.7.5 (I69): un tunnel fra due router sentito da un capo solo: c'è, e gli annunci passano in un verso solo.
-    const unVerso = z.genere === "tunnel" && sintesi.osservatori.size === 1 && !tutte.some((p) => p.tipo === "a_mano") && ctx.router.has(z.a.nodo) && ctx.router.has(z.b.nodo);
+    // «Non sente» è un fatto solo se l'altro capo legge i suoi vicini (revisione del Task 4).
+    const oss = sintesi.osservatori.size === 1 ? [...sintesi.osservatori][0] : null;
+    const unVerso = z.genere === "tunnel" && oss !== null && !tutte.some((p) => p.tipo === "a_mano") && ctx.router.has(z.a.nodo) && ctx.router.has(z.b.nodo)
+      && ctx.letti.has(altroCapo(z, oss).nodo);
     const frasi = [...new Set(tutte.map((p) => p.frase))];
-    if (unVerso) {
-      const oss = [...sintesi.osservatori][0];
+    if (unVerso && oss !== null) {
       const altro = altroCapo(z, oss).nodo;
       frasi.push(`${nome(oss)} sente ${nome(altro)} sul tunnel ${capo(z, oss).nome}, ma ${nome(altro)} non sente ${nome(oss)}: il tunnel c'è, e gli annunci passano in un verso solo.`);
     }

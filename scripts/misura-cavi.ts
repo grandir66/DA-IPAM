@@ -270,8 +270,9 @@ async function main(): Promise<number> {
       if (!h) return [];
       const sw = h === c.a ? c.b : c.a;
       const sc = ombra.albero.scelto.get(sw.nodo);
+      // Con la regola accesa il collegamento può stare solo nei dettagli: `scelto` lo nomina, ma `collegamenti` non lo ha.
       const uplink = sc === undefined ? "non noto"
-        : ombra.collegamenti.some((x) => x.id === sc && ((x.a.nodo === sw.nodo && x.a.chiave === sw.chiave) || (x.b.nodo === sw.nodo && x.b.chiave === sw.chiave)))
+        : sc === c.id || ombra.collegamenti.some((x) => x.id === sc && ((x.a.nodo === sw.nodo && x.a.chiave === sw.chiave) || (x.b.nodo === sw.nodo && x.b.chiave === sw.chiave)))
           ? "noto, è questa porta" : "noto, è un'altra porta";
       return [{ id: c.id, ipervisore: h.nodo, switch: sw.nodo, porta: sw.nome, vm: c.vm ?? 0, principale: ombra.albero.via.get(h.nodo)?.id === c.id, uplink }];
     });

@@ -414,8 +414,29 @@ export function proveDaInput(ing: IngressoCavi, ctx: ContestoProve, t1: { links:
   // oggi, con le porte tradotte; il bordo per porta lo fa collegamenti.ts. Una linea di oggi che ha la tabella MAC e le VM sono
   // due prove: il MAC dell'hypervisor sulla porta è un'altra lettura, e quel collegamento non è «solo dalle VM» (§13.15 punto 4).
   const locale = portaLocale(ing.t1);
+  const bordo = (n: string, porta: string, altro: string, classe: "vm" | "tabella_mac", visto: string | null, vm?: number): void => {
+    prove.push({
+      tipo: "bordo", da: (porta ? locale(n, porta) : null) ?? portaVuota(n), altro: portaVuota(altro), telaio: null, classe,
+      detto: classe === "vm" ? "VM sulla porta" : "tabella MAC", lettore: "apparato", visto, ...(vm ? { vm } : {}),
+      frase: `Dedotto: ${classe === "vm" ? "VM" : "MAC"} di ${nome(altro)} visto sulla porta ${porta || "non nota"} di ${nome(n)}.`,
+    });
+  };
   for (const l of t1.links) {
-    if (l.sources.includes("manual")) continue;   // le correzioni a mano, sotto, una per riga
+    if (l.sources.includes("manual")) {
+      // La parte a mano sta sotto, una prova per correzione; le prove di bordo che vm-ports e la tabella MAC hanno messo sulla linea
+      // della coppia restano (revisione del Task 4: senza, T1 diceva «✎ ✓» e la mappa nuova «a mano, non visto»). Dalla linea coi
+      // passi del «Perché», che dicono apparato e porta; dagli altri cavi visti col lato che ha la porta (vm-ports lo scrive così).
+      for (const x of l.perche ?? []) {
+        if (x.tipo === "vm") bordo(x.da, x.porta, x.hypervisor, "vm", x.visto, x.vm);
+        else if (x.tipo === "tabella_mac") bordo(x.da, x.porta, x.altro, "tabella_mac", x.visto);
+      }
+      for (const c of l.altriCavi ?? []) {
+        const [n, porta, altro] = c.aPort ? [l.a, c.aPort, l.b] : [l.b, c.bPort, l.a];
+        if (c.sources.includes("vm_mac")) bordo(n, porta, altro, "vm", c.lastSeen);
+        if (c.sources.includes("mac_table")) bordo(n, porta, altro, "tabella_mac", c.lastSeen);
+      }
+      continue;
+    }
     const vm = l.sources.includes("vm_mac"), mac = l.sources.includes("mac_table");
     if (!vm && !mac) continue;
     const pa = (l.aPort ? locale(l.a, l.aPort) : null) ?? portaVuota(l.a);

@@ -1,0 +1,12 @@
+                    state: enabled
+      current-mac-address: 02:00:00:00:00:10
+                bridge-id: 0x2000.02:00:00:00:00:10
+              root-bridge: yes
+           root-bridge-id: 0x2000.02:00:00:00:00:10
+  regional-root-bridge-id: 0x2000.02:00:00:00:00:10
+           root-path-cost: 0
+                root-port: none
+               port-count: 8
+    designated-port-count: 6
+        mst-config-digest: a4c123b1612dd272d1371c17149d4395
+             fast-forward: no

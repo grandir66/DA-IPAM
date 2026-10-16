@@ -1019,8 +1019,9 @@ colonne nuove e nella fonte `snmp`: spento di default (D4), e acceso non cambia 
   solo, perché una scrittura con `requireAdmin` è al livello atteso. Il dialogo dice che cosa succede con la
   **cadenza vera di quel cliente**. Per l'hub: «Accendere la lettura dello spanning tree sui MikroTik di questo
   cliente? Il router si legge ogni 15 minuti dalle scansioni veloci: le letture in più partono al più una volta
-  l'ora, sei comandi in sola lettura su una connessione sola. La mappa non cambia finché non si accende la mappa
-  nuova. Si spegne da qui.» Per il cliente A: «… Il router si legge ogni ora …».
+  l'ora, sei comandi in sola lettura (2 in più dove un bridge è in MSTP; aggiornato il 16/10 con MK7) su una
+  connessione sola. La mappa non cambia finché non si accende la mappa nuova. Si spegne da qui.» Per il cliente A:
+  «… Il router si legge ogni ora …».
 
 ### 13.5.7 Dove si salva: solo schema additivo
 

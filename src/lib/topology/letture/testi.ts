@@ -12,9 +12,9 @@ export const NASCE_SPENTA = "Nasce spenta: si accende solo da qui, cliente per c
 export const DESCRIZIONE_LETTURE: Readonly<Record<Lettura, { titolo: string; legge: string; apparati: string; comandi: string }>> = {
   mikrotik: {
     titolo: "Spanning tree, bridge e fasci dei MikroTik",
-    legge: "Per ogni porta: nel bridge o instradata, ruolo e stato nello spanning tree, fascio e partner; i bridge e la radice; tutti i MAC dell'apparato. Sugli switch MikroTik anche i vicini.",
+    legge: "Per ogni porta: nel bridge o instradata, ruolo e stato nello spanning tree, fascio e partner; i bridge e la radice; sui bridge in MSTP la porta radice e le VLAN di ogni istanza; tutti i MAC dell'apparato. Sugli switch MikroTik anche i vicini.",
     apparati: "router e switch MikroTik letti via SSH",
-    comandi: "/interface bridge print · /interface bridge port print · /interface bridge monitor · /interface bridge port monitor · /interface bonding print e monitor; sugli switch anche /interface print e /ip neighbor print (sola lettura, una connessione per apparato)",
+    comandi: "/interface bridge print · /interface bridge port print · /interface bridge monitor · /interface bridge port monitor · /interface bonding print e monitor · /interface bridge msti print e monitor (2 in più dove un bridge è in MSTP); sugli switch anche /interface print e /ip neighbor print (sola lettura, una connessione per apparato)",
   },
   controller: {
     titolo: "Campi del controller",
@@ -75,7 +75,7 @@ export function testoDialogo(l: Lettura, accendi: boolean, c: { router: { minuti
   if (!accendi) return `Spegnere la lettura «${DESCRIZIONE_LETTURE[l].titolo}»? I dati già letti restano e invecchiano; la mappa non cambia.`;
   switch (l) {
     case "mikrotik":
-      return `Accendere la lettura dello spanning tree sui MikroTik di questo cliente? Il router si legge ${frequenza(c.router.minuti, c.router.daScansioni)}: le letture in più partono al più una volta l'ora, 6 comandi in sola lettura sul router e 8 sugli switch MikroTik, su una connessione sola per apparato. ${NEIGHBORS_MIKROTIK} ${CHIUSA}`;
+      return `Accendere la lettura dello spanning tree sui MikroTik di questo cliente? Il router si legge ${frequenza(c.router.minuti, c.router.daScansioni)}: le letture in più partono al più una volta l'ora, 6 comandi in sola lettura sul router e 8 sugli switch MikroTik (2 in più dove un bridge è in MSTP), su una connessione sola per apparato. ${NEIGHBORS_MIKROTIK} ${CHIUSA}`;
     case "controller":
       return `Accendere la lettura dei campi del controller? Nessuna chiamata nuova agli apparati: si salvano campi che la lettura notturna riceve già. ${CHIUSA}`;
     case "snmp":

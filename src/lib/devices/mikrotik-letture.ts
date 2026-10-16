@@ -2,8 +2,9 @@
  * Le letture in più di un MikroTik via SSH (spec topologia §13.5.2, T2.2): una connessione sola (`withSshClient`), un
  * `exec` per comando, ognuno col suo tempo massimo e il suo esito; un errore si riconosce dal testo (ssh esce con 0). MK2 nel
  * ramo dei router è l'uscita che il giro ha già letto per la tabella del bridge (nessun comando nuovo); nel ramo degli
- * switch MikroTik si legge qui, con MK1 (i vicini, fonte `ssh`). MK7 (istanze MSTP) non si manda finché il suo lettore non
- * è scritto sull'uscita vera (Task 3b, T2-a): fino ad allora lo stato per istanza è «non letto». Sola lettura.
+ * switch MikroTik si legge qui, con MK1 (i vicini, fonte `ssh`). MK7 (istanze MSTP, Task 3b sulle uscite vere T2-a) parte
+ * solo se MK3 dice che un bridge è in MSTP, in coda e sulla stessa connessione; il monitor solo se `msti print` è riuscito.
+ * Sola lettura.
  *
  * Tre esiti per comando (spec §13.5.1): letto (l'uscita, anche vuota); non riuscito, con l'errore riconosciuto dal testo;
  * non so (tempo scaduto, `TEMPO_SCADUTO`; connessione caduta o canale chiuso senza codice d'uscita, `CONNESSIONE_CADUTA`;
@@ -16,8 +17,8 @@ import { parseMikrotikNeighbors } from "@/lib/devices/mikrotik-vicini";
 import { opzioniSshDiApparato, type NeighborEntry } from "@/lib/devices/router-client";
 import { CODICE_CONNESSIONE_CADUTA, SshError, execConTempo, withSshClient, type SshOptions } from "@/lib/devices/ssh-transport";
 import {
-  erroreRouterOs, parseBridge, parseFasci, parseInterfacce, parseMonitorBridge, parseMonitorFasci, parseMonitorPorte,
-  parsePorteBridge, type LetturaMk,
+  erroreRouterOs, parseBridge, parseFasci, parseInterfacce, parseMonitorBridge, parseMonitorFasci, parseMonitorMsti, parseMonitorPorte,
+  parseMsti, parsePorteBridge, type LetturaMk,
 } from "@/lib/devices/mikrotik-stp";
 
 /** Il tempo massimo di un comando nuovo (spec §13.5.1). Sulla rete B 32 comandi in circa un secondo: 20 s è largo. */
@@ -33,6 +34,8 @@ export const COMANDI_MK = {
   monitorPorte: "/interface bridge port monitor [find] once",
   fasci: "/interface bonding print terse without-paging",
   monitorFasci: "/interface bonding monitor [find] once",
+  msti: "/interface bridge msti print terse without-paging",
+  monitorMsti: "/interface bridge msti monitor [find] once",
 } as const;
 
 export type Esegui = (comando: string, tempoMs: number) => Promise<string>;
@@ -155,5 +158,13 @@ export async function leggiMikrotikTopologia(esegui: Esegui, opz: { uscitaInterf
   const monitorPorte = await prova(COMANDI_MK.monitorPorte, parseMonitorPorte);
   const fasci = await prova(COMANDI_MK.fasci, parseFasci);
   const monitorFasci = await prova(COMANDI_MK.monitorFasci, parseMonitorFasci);
-  return { lettura: { interfacce, bridge, porteBridge, monitorBridge, monitorPorte, fasci, monitorFasci }, vicini, comandi, riusciti, codice };
+  // MK7 (spec §13.5.2): solo se un bridge è in MSTP, lo decide il codice fra un comando e l'altro (MK3 non letto: non si sa,
+  // non si manda). Il monitor si attacca alle righe di `msti print`: senza quelle non servirebbe, e non parte.
+  const mstp = (bridge ?? []).some((b) => b.modo === "mstp");
+  const istanze = mstp ? await prova(COMANDI_MK.msti, parseMsti) : null;
+  const monitorIstanze = istanze !== null ? await prova(COMANDI_MK.monitorMsti, parseMonitorMsti) : null;
+  return {
+    lettura: { interfacce, bridge, porteBridge, monitorBridge, monitorPorte, fasci, monitorFasci, istanze, monitorIstanze },
+    vicini, comandi, riusciti, codice,
+  };
 }

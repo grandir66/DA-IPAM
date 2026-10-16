@@ -149,7 +149,7 @@ test("I33: con tutto ciò che T2 scrive a mano, l'ingresso e il modello di oggi 
       interfacce: parseInterfacce(F("mikrotik-mk2-testa.txt")), bridge: parseBridge(F("mikrotik-mk3-testa.txt")),
       porteBridge: parsePorteBridge(F("mikrotik-mk4-testa.txt")), monitorBridge: parseMonitorBridge(F("mikrotik-mk5-testa.txt")),
       monitorPorte: parseMonitorPorte(F("mikrotik-mk6-testa.txt")), fasci: parseFasci(F("mikrotik-mk8a-testa.txt")),
-      monitorFasci: parseMonitorFasci(F("mikrotik-mk8b-testa.txt")),
+      monitorFasci: parseMonitorFasci(F("mikrotik-mk8b-testa.txt")), istanze: null, monitorIstanze: null,
     }));
     scriviFattiTopologia(2, "controller", {
       porte: [{ port_key: "i:1", port_name: "Port 1", port_index: 1, if_kind: "physical", running: 1, stp_state: "forwarding" }],

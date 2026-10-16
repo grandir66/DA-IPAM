@@ -12,14 +12,14 @@ const CLIENTE_A = { router: { minuti: 60, daScansioni: false }, switch: 60 };
 
 test("il dialogo con la cadenza dell'hub e quella del cliente A, alla lettera della spec", () => {
   assert.equal(testoDialogo("mikrotik", true, HUB),
-    "Accendere la lettura dello spanning tree sui MikroTik di questo cliente? Il router si legge ogni 15 minuti dalle scansioni veloci: le letture in più partono al più una volta l'ora, 6 comandi in sola lettura sul router e 8 sugli switch MikroTik, su una connessione sola per apparato. Sugli switch MikroTik la scheda «Neighbors» dell'apparato mostra anche le righe lette via SSH. La mappa non cambia finché non si accende la mappa nuova. Si spegne da qui.");
+    "Accendere la lettura dello spanning tree sui MikroTik di questo cliente? Il router si legge ogni 15 minuti dalle scansioni veloci: le letture in più partono al più una volta l'ora, 6 comandi in sola lettura sul router e 8 sugli switch MikroTik (2 in più dove un bridge è in MSTP), su una connessione sola per apparato. Sugli switch MikroTik la scheda «Neighbors» dell'apparato mostra anche le righe lette via SSH. La mappa non cambia finché non si accende la mappa nuova. Si spegne da qui.");
   assert.ok(testoDialogo("mikrotik", true, CLIENTE_A).includes("Il router si legge ogni ora: "));
   assert.ok(testoDialogo("snmp", false, CLIENTE_A).startsWith("Spegnere la lettura"));
 });
 
 test("il dialogo di accensione tiene intero il testo della spec e dice dei Neighbors solo per i MikroTik", () => {
   const t = testoDialogo("mikrotik", true, HUB);
-  assert.ok(t.startsWith("Accendere la lettura dello spanning tree sui MikroTik di questo cliente? Il router si legge ogni 15 minuti dalle scansioni veloci: le letture in più partono al più una volta l'ora, 6 comandi in sola lettura sul router e 8 sugli switch MikroTik, su una connessione sola per apparato. "));
+  assert.ok(t.startsWith("Accendere la lettura dello spanning tree sui MikroTik di questo cliente? Il router si legge ogni 15 minuti dalle scansioni veloci: le letture in più partono al più una volta l'ora, 6 comandi in sola lettura sul router e 8 sugli switch MikroTik (2 in più dove un bridge è in MSTP), su una connessione sola per apparato. "));
   assert.ok(t.endsWith("La mappa non cambia finché non si accende la mappa nuova. Si spegne da qui."));
   for (const l of ["controller", "snmp", "host"] as const) {
     assert.ok(!testoDialogo(l, true, HUB).includes("Neighbors"), `${l}: la scheda Neighbors è un fatto dei MikroTik`);

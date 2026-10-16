@@ -49,7 +49,10 @@ export function probeEncryptionKeyHealth(): EncryptionKeyHealth {
   let credentialCount = 0;
   let decryptOkCount = 0;
 
-  // 1. Credenziali per-tenant (tenants/*.db → credentials.encrypted_password).
+  // 1. Credenziali per-tenant (tenants/*.db → credentials.encrypted_password ed
+  //    encrypted_username). Dalla tappa 2 una voce SNMP v3 ha la password NULL
+  //    e l'utente cifrato: senza l'utente un tenant di sole v3 contava zero
+  //    credenziali, cioè «tutto bene» con la chiave sbagliata.
   const tenantsDir = resolveTenantsDir();
   if (existsSync(tenantsDir)) {
     for (const file of readdirSync(tenantsDir)) {
@@ -60,14 +63,17 @@ export function probeEncryptionKeyHealth(): EncryptionKeyHealth {
         db = new Database(dbPath, { readonly: true, fileMustExist: true });
         const rows = db
           .prepare(
-            `SELECT encrypted_password FROM credentials
-             WHERE encrypted_password IS NOT NULL AND trim(encrypted_password) != ''
+            `SELECT encrypted_username, encrypted_password FROM credentials
+             WHERE trim(COALESCE(encrypted_password, '')) != '' OR trim(COALESCE(encrypted_username, '')) != ''
              LIMIT 50`
           )
-          .all() as { encrypted_password: string }[];
+          .all() as { encrypted_username: string | null; encrypted_password: string | null }[];
         for (const row of rows) {
-          credentialCount++;
-          if (safeDecrypt(row.encrypted_password)) decryptOkCount++;
+          for (const enc of [row.encrypted_username, row.encrypted_password]) {
+            if (!enc?.trim()) continue;
+            credentialCount++;
+            if (safeDecrypt(enc)) decryptOkCount++;
+          }
         }
       } catch {
         /* DB tenant vuoto o schema non ancora migrato */

@@ -21,6 +21,44 @@ export function tipiCredenzialePerProtocollo(protocollo: string | null | undefin
   return tipiPerProtocollo(protocollo);
 }
 
+/**
+ * Voci della tendina «SNMP aggiuntivo» (porte, LLDP, spanning tree): community
+ * e SNMP v3, con la regola unica. Prima il filtro era `credential_type ===
+ * "snmp"`: dalla 2c una voce `snmp_v3` sarebbe sparita (T12, 16/10).
+ */
+export function vociSnmpAggiuntive<T extends { credential_type: string }>(voci: readonly T[]): T[] {
+  const tipi = tipiPerProtocollo("snmp");
+  return voci.filter((v) => tipi.includes(v.credential_type));
+}
+
+/**
+ * Piattaforma (`network_devices.vendor` di un sistema) → protocollo
+ * dell'inventario software. Null: piattaforma assente o non riconosciuta.
+ */
+export function protocolloSoftware(piattaforma: string | null | undefined): "ssh" | "winrm" | null {
+  switch ((piattaforma ?? "").trim().toLowerCase()) {
+    case "windows":
+      return "winrm";
+    case "linux":
+    case "macos":
+      return "ssh";
+    default:
+      return null;
+  }
+}
+
+/**
+ * Voci della tendina dell'inventario software (T12, 16/10). Con la
+ * piattaforma nota, quelle del suo protocollo; senza (un host), Windows e SSH.
+ * Prima si teneva il tipo uguale al vendor («linux»): dalla 2c le voci
+ * `linux` sono `ssh` e sarebbero sparite.
+ */
+export function vociSoftware<T extends { credential_type: string }>(voci: readonly T[], piattaforma?: string | null): T[] {
+  const protocollo = protocolloSoftware(piattaforma);
+  const tipi = protocollo ? tipiPerProtocollo(protocollo) : [...tipiPerProtocollo("winrm"), ...tipiPerProtocollo("ssh")];
+  return voci.filter((v) => tipi.includes(v.credential_type));
+}
+
 export interface CredentialProtocolMap {
   /** Tipo di credenziale "atteso" (default in quick-create). */
   primary: string;

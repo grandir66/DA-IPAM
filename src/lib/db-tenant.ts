@@ -22,7 +22,6 @@ import { macToHex, normalizeMac, normalizeMacForStorage } from "./utils";
 import { lookupVendorSync } from "./scanner/mac-vendor";
 import { VENDOR_PLACEHOLDER_RE } from "./attribution/emitters";
 import { ipSortKey, sqlOrderByDhcpLeases, sqlOrderByNetworks, type SortDirection } from "./table-sort";
-import { decrypt, safeDecrypt } from "./crypto";
 import { convertiCommunityInlineSnmp } from "./credentials/converti-community-inline";
 import { descriviRicostruzione, descriviStato, migraCredenzialiTipi, statoCredenziali } from "./credentials/migra-credenziali-tipi";
 import { descriviNormalizza, normalizzaTipiCredenziali, segnoTipi } from "./credentials/normalizza-tipi";
@@ -46,6 +45,7 @@ import {
   type SceltaSnmpApparato,
 } from "./credentials/resolve";
 import { communityDb, coppiaLoginDb, coppiaSshDb } from "./credentials/segreti";
+import { tipiPerRuoloVecchio } from "./credentials/tipi";
 import type { ControllerRunKind, ControllerRunStoredTrigger, NetworkControllerRow } from "./controllers/types";
 import { libreStatusFrom } from "./topology/status-map";
 import { modelloEtichettaDiPorte } from "./device-fingerprint-classification";
@@ -4066,36 +4066,6 @@ export function deleteCredential(id: number): boolean {
 }
 
 /**
- * Restituisce le credenziali host Windows (da settings host_windows_credential_id).
- * Importa getSetting dal hub.
- */
-export function getHostWindowsCredentials(): { username: string; password: string } | null {
-  const idStr = getSetting("host_windows_credential_id");
-  if (!idStr?.trim()) return null;
-  const id = parseInt(idStr, 10);
-  if (isNaN(id)) return null;
-  const cred = getCredentialById(id);
-  if (!cred || String(cred.credential_type || "").toLowerCase() !== "windows") return null;
-  const username = cred.encrypted_username ? safeDecrypt(cred.encrypted_username) : "";
-  const password = cred.encrypted_password ? safeDecrypt(cred.encrypted_password) : "";
-  if (username?.trim() && password?.trim()) return { username: username.trim(), password: password.trim() };
-  return null;
-}
-
-export function getHostLinuxCredentials(): { username: string; password: string } | null {
-  const idStr = getSetting("host_linux_credential_id");
-  if (!idStr?.trim()) return null;
-  const id = parseInt(idStr, 10);
-  if (isNaN(id)) return null;
-  const cred = getCredentialById(id);
-  if (!cred || String(cred.credential_type || "").toLowerCase() !== "linux") return null;
-  const username = cred.encrypted_username ? safeDecrypt(cred.encrypted_username) : "";
-  const password = cred.encrypted_password ? safeDecrypt(cred.encrypted_password) : "";
-  if (username?.trim() && password?.trim()) return { username: username.trim(), password: password.trim() };
-  return null;
-}
-
-/**
  * Username/password decifrati se la credenziale esiste ed è del tipo atteso
  * (Windows/Linux/API — "api" riusato anche per Redfish/BMC, Fase 4b Task 1:
  * niente tipo dedicato finché il CHECK di host_credentials/device_credential_bindings
@@ -4114,16 +4084,12 @@ export function getSshLinuxCredentialPair(credentialId: number): { username: str
 
 export type NetworkCredentialRole = "windows" | "linux" | "ssh" | "snmp";
 
+/** Regola unica (T12): i tipi del protocollo del ruolo, come li legge il motore. */
 function credentialMatchesNetworkRole(
   credentialType: string,
   role: NetworkCredentialRole
 ): boolean {
-  const t = credentialType.toLowerCase();
-  if (role === "windows") return t === "windows";
-  if (role === "linux") return t === "linux";
-  if (role === "ssh") return t === "ssh";
-  if (role === "snmp") return t === "snmp";
-  return false;
+  return tipiPerRuoloVecchio(role).includes(credentialType.toLowerCase());
 }
 
 export function getNetworkHostCredentialIds(networkId: number, role: NetworkCredentialRole): number[] {
@@ -4170,13 +4136,9 @@ export function getHostDetectCredentialId(hostId: number, role: HostDetectCreden
   return row?.credential_id ?? null;
 }
 
+/** Regola unica (T12): i tipi del protocollo del ruolo, come li legge il motore. */
 function credentialMatchesDetectRole(credentialType: string, role: HostDetectCredentialRole): boolean {
-  const t = credentialType.toLowerCase();
-  if (role === "windows") return t === "windows";
-  if (role === "linux") return t === "linux" || t === "ssh";
-  if (role === "ssh") return t === "ssh";
-  if (role === "snmp") return t === "snmp";
-  return false;
+  return tipiPerRuoloVecchio(role).includes(credentialType.toLowerCase());
 }
 
 export function setHostDetectCredential(hostId: number, role: HostDetectCredentialRole, credentialId: number): void {

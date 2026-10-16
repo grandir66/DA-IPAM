@@ -5,6 +5,7 @@ import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { portaCredenziale, type CredProtocol } from "@/lib/credentials/porte";
 import { provaCredenzialeSnmpDb } from "@/lib/credentials/prova-snmp";
+import { tipiPerProtocollo } from "@/lib/credentials/tipi";
 
 const TEST_TIMEOUT_MS = 25000;
 
@@ -60,9 +61,10 @@ export async function POST(
 
       const type = String(cred.credential_type || "").toLowerCase();
 
-      if (type === "snmp") {
+      if (tipiPerProtocollo("snmp").includes(type)) {
         // Ramo v3 o community dalla forma del segreto (tappa 2 credenziali, T4):
-        // prima una voce v3 rispondeva «Community string mancante».
+        // prima una voce v3 rispondeva «Community string mancante». Dalla 2c
+        // la v3 è anche un tipo a sé, `snmp_v3` (T12).
         try {
           const esito = await withTimeout(
             provaCredenzialeSnmpDb(getDb(), Number(id), host, typeof body.port === "number" ? body.port : null),
@@ -83,7 +85,7 @@ export async function POST(
         }
       }
 
-      if (type === "ssh" || type === "linux") {
+      if (tipiPerProtocollo("ssh").includes(type)) {
         const username = cred.encrypted_username ? safeDecrypt(cred.encrypted_username) : "";
         const password = cred.encrypted_password ? safeDecrypt(cred.encrypted_password) : "";
         if (username === null || password === null) {

@@ -105,8 +105,9 @@ export function collectSelfIdentity(db: Database): SelfIdentity {
     const u = r.encrypted_username ? safeDecrypt(r.encrypted_username) : null;
     if (u) dbAccounts.push(u);
   }
+  // Voci Windows e, dalla tappa 2 (2f), l'account LDAP dell'AD come voce `ad`.
   for (const r of tryAll<{ encrypted_username: string | null }>(
-    "SELECT encrypted_username FROM credentials WHERE credential_type = 'windows'",
+    "SELECT encrypted_username FROM credentials WHERE credential_type IN ('windows', 'ad')",
   )) {
     const u = r.encrypted_username ? safeDecrypt(r.encrypted_username) : null;
     if (u) dbAccounts.push(u);

@@ -1,18 +1,15 @@
 import { NextResponse } from "next/server";
 import {
   getNetworkById,
-  updateNetwork,
   deleteNetwork,
-  setNetworkRouter,
-  deleteNetworkRouter,
   getNetworkRouterId,
   getHostsByNetworkWithDevices,
   getNetworkHostCredentialIds,
-  replaceNetworkHostCredentials,
   getNetworkCredentials,
   getHostValidatedProtocolsByNetwork,
 } from "@/lib/db";
 import { NetworkUpdateSchema } from "@/lib/validators";
+import { aggiornaRete, CredenzialiReteNonValide } from "@/lib/networks/salva-rete";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 
@@ -67,54 +64,21 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     if (!parsed.success) {
       return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
     }
-    const {
-      router_id,
-      windows_credential_ids,
-      linux_credential_ids,
-      ssh_credential_ids,
-      snmp_credential_ids,
-      ...networkData
-    } = parsed.data;
-    const network = updateNetwork(networkId, networkData);
-    if (!network) {
+    // Rete, router, lista credenziali (`credential_ids`) e catene vecchie in
+    // una transazione: una voce rifiutata è un 400 e non lascia scritto niente.
+    let salvata;
+    try {
+      salvata = aggiornaRete(networkId, parsed.data);
+    } catch (e) {
+      if (e instanceof CredenzialiReteNonValide) {
+        return NextResponse.json({ error: e.message }, { status: 400 });
+      }
+      throw e;
+    }
+    if (!salvata) {
       return NextResponse.json({ error: "Rete non trovata" }, { status: 404 });
     }
-    if (router_id !== undefined) {
-      if (router_id) {
-        setNetworkRouter(networkId, router_id);
-      } else {
-        deleteNetworkRouter(networkId);
-      }
-    }
-    try {
-      if (windows_credential_ids !== undefined) {
-        replaceNetworkHostCredentials(networkId, "windows", windows_credential_ids);
-      }
-      if (linux_credential_ids !== undefined) {
-        replaceNetworkHostCredentials(networkId, "linux", linux_credential_ids);
-      }
-      if (ssh_credential_ids !== undefined) {
-        replaceNetworkHostCredentials(networkId, "ssh", ssh_credential_ids);
-      }
-      if (snmp_credential_ids !== undefined) {
-        replaceNetworkHostCredentials(networkId, "snmp", snmp_credential_ids);
-      }
-    } catch (e) {
-      return NextResponse.json(
-        { error: e instanceof Error ? e.message : "Credenziali non valide" },
-        { status: 400 }
-      );
-    }
-    const updated = getNetworkById(networkId);
-    const currentRouterId = getNetworkRouterId(networkId);
-    return NextResponse.json({
-      ...updated,
-      router_id: currentRouterId,
-      windows_credential_ids: getNetworkHostCredentialIds(networkId, "windows"),
-      linux_credential_ids: getNetworkHostCredentialIds(networkId, "linux"),
-      ssh_credential_ids: getNetworkHostCredentialIds(networkId, "ssh"),
-      snmp_credential_ids: getNetworkHostCredentialIds(networkId, "snmp"),
-    });
+    return NextResponse.json(salvata);
     } catch (error) {
       console.error("Error updating network:", error);
       return NextResponse.json({ error: "Errore nell'aggiornamento della rete" }, { status: 500 });

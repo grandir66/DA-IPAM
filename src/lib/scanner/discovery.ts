@@ -76,6 +76,7 @@ import {
 } from "@/lib/db";
 import { resolveCredentialsFor } from "@/lib/credentials/resolve";
 import type { CredProtocol } from "@/lib/credentials/resolve";
+import { normalizzaTipo, tipiPerProtocollo } from "@/lib/credentials/tipi";
 import { CredentialRunBudget } from "./credential-run-budget";
 import { evidenceFromAuthOutcome } from "@/lib/attribution/credential-evidence";
 import type { AuthOutcome } from "@/lib/attribution/credential-evidence";
@@ -2467,7 +2468,7 @@ async function runDiscovery(
             || (host.classification ?? "") === "networking"
             || (host.os_info ?? "").toLowerCase().includes("linux")
           ));
-        if ((credType === "ssh" || credType === "linux") && hasSshIndicator && !validatedProtos.has("ssh")) {
+        if (tipiPerProtocollo("ssh").includes(credType) && hasSshIndicator && !validatedProtos.has("ssh")) {
           const sshPort = credPort ?? openPorts.find((p) => p.port === 22 || p.service === "ssh")?.port ?? 22;
           if (!gateCredential("ssh", credId, credType, sshPort)) continue;
           const creds = getSshLinuxCredentialPair(credId);
@@ -2499,7 +2500,8 @@ async function runDiscovery(
           }
         }
 
-        if (credType === "snmp" && !validatedProtos.has("snmp")) {
+        // Regola unica (T12): community e SNMP v3 (dalla 2c tipo `snmp_v3`).
+        if (tipiPerProtocollo("snmp").includes(credType) && !validatedProtos.has("snmp")) {
           // Tappa 1 credenziali: porta propria della credenziale, poi la 161.
           const snmpPort = credPort ?? 161;
           if (!gateCredential("snmp", credId, credType, snmpPort)) continue;
@@ -2512,7 +2514,7 @@ async function runDiscovery(
           // (`gateCredential` sopra) e stessa persistenza esito di ogni altro
           // protocollo — nessun bypass del budget di run.
           const credRow = getCredentialById(credId);
-          if (credRow?.security_level) {
+          if (normalizzaTipo(credType) === "snmp_v3" || credRow?.security_level) {
             try {
               const v3 = await snmpValidateV3(ip, credId, { port: snmpPort });
               if (v3.ok) {

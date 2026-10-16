@@ -16,6 +16,7 @@ import {
   getSshLinuxCredentialPair,
   buildSnmpCommunitiesForNetwork,
 } from "@/lib/db";
+import { normalizzaTipo } from "@/lib/credentials/tipi";
 
 export type EdgeCredentialSlot = "ssh" | "smb" | "snmp" | "ad";
 
@@ -25,6 +26,8 @@ export interface EdgeCredentialPreview {
   credential_type: string;
   slot: EdgeCredentialSlot | null;
   selected_for_scan: boolean;
+  /** Perché la voce non parte verso lo scanner, quando lo si sa (es. SNMP v3). */
+  motivo?: string;
 }
 
 /** Payload verso edge (contiene secret — solo server-side). */
@@ -53,11 +56,28 @@ function splitWindowsLogin(raw: string): { login: string; domain: string | null 
   return { login: s, domain: null };
 }
 
+/** Slot dello scanner per tipo d'archivio (`linux` è `ssh`, la v3 va nello slot SNMP e lì si scarta). */
 function slotForType(credentialType: string): EdgeCredentialSlot | null {
-  const t = credentialType.toLowerCase();
-  if (t === "ssh" || t === "linux") return "ssh";
-  if (t === "windows") return "smb";
-  if (t === "snmp") return "snmp";
+  switch (normalizzaTipo(credentialType)) {
+    case "ssh":
+      return "ssh";
+    case "windows":
+      return "smb";
+    case "snmp":
+    case "snmp_v3":
+      return "snmp";
+    default:
+      return null;
+  }
+}
+
+/**
+ * Perché una voce non può partire verso lo scanner, per tipo. Lo slot SNMP
+ * dello scanner prende solo una community (`cred_type: "snmp"`): una SNMP v3
+ * compare nell'anteprima, non selezionata, invece di sparire (T12, 16/10).
+ */
+function motivoEsclusione(credentialType: string): string | null {
+  if (normalizzaTipo(credentialType) === "snmp_v3") return "Non inviata allo scanner: SNMP v3 (lo scanner usa solo community)";
   return null;
 }
 
@@ -69,8 +89,10 @@ function buildTransferFromCredential(
   const cred = getCredentialById(credentialId);
   if (!cred) return null;
 
-  const type = String(cred.credential_type || "").toLowerCase();
+  const type = normalizzaTipo(String(cred.credential_type || ""));
   const baseName = `IPAM · ${cred.name}`.slice(0, 80);
+
+  if (motivoEsclusione(String(cred.credential_type || ""))) return null;
 
   if (slot === "snmp" || type === "snmp") {
     const community = getCredentialCommunityString(credentialId);
@@ -137,6 +159,7 @@ export function collectEdgeCredentialsForNetwork(networkId: number, opts: { regi
 
     const spec = buildTransferFromCredential(credentialId, slot, order);
     order += 1;
+    const motivo = motivoEsclusione(String(cred.credential_type));
 
     preview.push({
       credential_id: credentialId,
@@ -144,6 +167,7 @@ export function collectEdgeCredentialsForNetwork(networkId: number, opts: { regi
       credential_type: String(cred.credential_type),
       slot,
       selected_for_scan: spec != null,
+      ...(motivo ? { motivo } : {}),
     });
 
     if (spec) transfer.push(spec);

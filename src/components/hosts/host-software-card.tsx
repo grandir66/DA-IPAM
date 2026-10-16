@@ -1,6 +1,8 @@
 "use client";
 import { escapeCsvField } from "@/lib/csv-utils";
 import { parseDbDate } from "@/lib/db-date";
+import { vociSoftware } from "@/lib/credential-protocol-map";
+import { normalizzaTipo } from "@/lib/credentials/tipi";
 
 /**
  * Card "Software" sulla pagina dettaglio host o device.
@@ -276,9 +278,8 @@ function SoftwareScanCard({ target, osHint }: InternalProps) {
         const r = await fetch("/api/credentials");
         if (!r.ok) return;
         const data = (await r.json()) as Credential[];
-        const compat = data.filter(
-          (c) => c.credential_type === "windows" || c.credential_type === "linux"
-        );
+        // Windows e famiglia SSH (le vecchie `linux` sono `ssh` dalla 2c).
+        const compat = vociSoftware(data);
         setCredentials(compat);
         if (compat.length > 0 && !scanForm.credentialId) {
           setScanForm((f) => ({ ...f, credentialId: String(compat[0].id) }));
@@ -418,10 +419,9 @@ function SoftwareScanCard({ target, osHint }: InternalProps) {
 
   const lastScan = current?.scan ?? null;
   // Se sappiamo l'OS del target (hint da device.vendor), filtra il dropdown
-  // mostrando solo le credenziali del tipo compatibile. Senza hint mostra tutte (host).
-  const credentialOptions = osHint
-    ? credentials.filter((c) => c.credential_type === osHint)
-    : credentials;
+  // con la regola unica del suo protocollo (linux/macos → SSH, windows →
+  // WinRM). Senza hint mostra tutte (host).
+  const credentialOptions = vociSoftware(credentials, osHint);
   // Su device il bottone resta cliccabile anche senza credenziali nel dropdown:
   // il backend usera` device_credential_bindings (selezione automatica).
   const noCompatCredentials = credentialOptions.length === 0;
@@ -722,7 +722,7 @@ function SoftwareScanCard({ target, osHint }: InternalProps) {
                     </SelectItem>
                   )}
                   {credentialOptions.map((c) => {
-                    const isWin = c.credential_type === "windows";
+                    const isWin = normalizzaTipo(c.credential_type) === "windows";
                     return (
                       <SelectItem key={c.id} value={String(c.id)}>
                         <span className="inline-flex items-center gap-2">
@@ -734,7 +734,7 @@ function SoftwareScanCard({ target, osHint }: InternalProps) {
                                 : "border-orange-400 text-orange-700 bg-orange-50 dark:bg-orange-950"
                             }
                           >
-                            {isWin ? "Windows" : "Linux"}
+                            {isWin ? "Windows" : "SSH"}
                           </Badge>
                           <span>{c.name}</span>
                         </span>

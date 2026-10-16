@@ -33,7 +33,8 @@ import { DeviceFormFields } from "@/components/shared/device-form-fields";
 import { LinkIpsDialog } from "@/components/devices/link-ips-dialog";
 import { InlineEditCell } from "@/components/shared/inline-edit-cell";
 import { AddableSelect } from "@/components/shared/addable-select";
-import { credTypeForProtocol, CRED_TYPE_OPTIONS, tipiCredenzialePerProtocollo } from "@/lib/credential-protocol-map";
+import { credTypeForProtocol, CRED_TYPE_OPTIONS, tipiCredenzialePerProtocollo, vociSnmpAggiuntive } from "@/lib/credential-protocol-map";
+import { etichettaTipo, normalizzaTipo } from "@/lib/credentials/tipi";
 import { profiloPerClassificazione, proponiApparato, riallineaAlProtocollo, type ProtocolloApparato } from "@/lib/devices/proposta-apparato";
 import { CreateFingerprintRuleDialog } from "@/components/shared/create-fingerprint-rule-dialog";
 import { SortableTableHead } from "@/components/shared/sortable-table-head";
@@ -616,10 +617,11 @@ export default function DiscoveryPage() {
   }
 
   function defaultPortFor(type: string): string {
-    const t = (type || "").toLowerCase();
-    if (t === "ssh" || t === "linux") return "22";
-    if (t === "windows" || t === "winrm") return "5985";
-    if (t === "snmp") return "161";
+    // Tipo d'archivio (T12): `linux` è `ssh`, la v3 è `snmp_v3`.
+    const t = normalizzaTipo(type);
+    if (t === "ssh") return "22";
+    if (t === "windows") return "5985";
+    if (t === "snmp" || t === "snmp_v3") return "161";
     return "";
   }
 
@@ -2466,7 +2468,7 @@ export default function DiscoveryPage() {
                       <SelectItem value="__empty__">— Seleziona —</SelectItem>
                       {credentials.map((c) => (
                         <SelectItem key={c.id} value={String(c.id)}>
-                          {c.name} ({c.credential_type})
+                          {c.name} ({etichettaTipo(c.credential_type)})
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -2819,7 +2821,7 @@ export default function DiscoveryPage() {
                 const credMap = credTypeForProtocol(addProtocol);
                 const tipiPrincipale = tipiCredenzialePerProtocollo(addProtocol);
                 const primaryOpts = addCredentials.filter((c) => tipiPrincipale.includes(c.credential_type));
-                const snmpOpts = addCredentials.filter((c) => c.credential_type === "snmp");
+                const snmpOpts = vociSnmpAggiuntive(addCredentials);
                 // Con SNMP come protocollo la principale è già la SNMP: la seconda tendina non serve.
                 const protocolloSnmp = addProtocol === "snmp_v2" || addProtocol === "snmp_v3";
                 return (
@@ -2831,7 +2833,7 @@ export default function DiscoveryPage() {
                         <AddableSelect
                           value={addCredentialId && addCredentialId !== "none" ? Number(addCredentialId) : null}
                           onChange={(v) => setAddCredentialId(v != null ? String(v) : null)}
-                          options={primaryOpts.map((c) => ({ id: c.id, label: c.name, extra: c.credential_type }))}
+                          options={primaryOpts.map((c) => ({ id: c.id, label: c.name, extra: etichettaTipo(c.credential_type) }))}
                           entityLabel="credenziale"
                           createApiUrl="/api/credentials"
                           extraFields={[
@@ -2848,7 +2850,7 @@ export default function DiscoveryPage() {
                         <AddableSelect
                           value={addSnmpCredentialId && addSnmpCredentialId !== "none" ? Number(addSnmpCredentialId) : null}
                           onChange={(v) => setAddSnmpCredentialId(v != null ? String(v) : null)}
-                          options={snmpOpts.map((c) => ({ id: c.id, label: c.name }))}
+                          options={snmpOpts.map((c) => ({ id: c.id, label: c.name, extra: etichettaTipo(c.credential_type) }))}
                           entityLabel="credenziale SNMP"
                           createApiUrl="/api/credentials"
                           extraFields={[
@@ -2954,7 +2956,7 @@ export default function DiscoveryPage() {
                   <SelectContent>
                     {credentials.map((c) => (
                       <SelectItem key={c.id} value={String(c.id)}>
-                        {c.name} <span className="text-muted-foreground text-xs">({c.credential_type})</span>
+                        {c.name} <span className="text-muted-foreground text-xs">({etichettaTipo(c.credential_type)})</span>
                       </SelectItem>
                     ))}
                   </SelectContent>

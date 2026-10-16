@@ -748,6 +748,7 @@ export function SubnetEdgeScanPanel({ networkId, disabled, hosts, cidr, networkN
                                 {c.selected_for_scan ? " (attiva scan)" : ""}
                               </span>
                             )}
+                            {c.motivo && <span className="text-amber-700 dark:text-amber-400">{c.motivo}</span>}
                           </li>
                         ))}
                       </ul>

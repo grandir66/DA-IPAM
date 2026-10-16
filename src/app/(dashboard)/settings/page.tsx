@@ -71,6 +71,7 @@ import { ModulesTab } from "@/components/settings/modules-tab";
 import { UpdatesTab } from "@/components/settings/updates-tab";
 import { NotificationsTab } from "@/components/settings/notifications-tab";
 import { SecurityAlertsTab } from "@/components/settings/security-alerts-tab";
+import { tipiPerProtocollo } from "@/lib/credentials/tipi";
 
 const JOB_TYPE_LABELS: Record<string, string> = {
   ping_sweep: "Scoperta rete (ICMP + Nmap quick + DNS + ARP)",
@@ -1266,7 +1267,7 @@ function SettingsPageInner() {
                     <SelectTrigger><SelectValue placeholder="Nessuna" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="none">Nessuna</SelectItem>
-                      {credentials.filter((c) => c.credential_type === "linux").map((c) => (
+                      {credentials.filter((c) => tipiPerProtocollo("ssh").includes(c.credential_type)).map((c) => (
                         <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
                       ))}
                     </SelectContent>

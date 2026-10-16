@@ -15,7 +15,8 @@ import {
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Info } from "lucide-react";
-import { tipiCredenzialePerProtocollo } from "@/lib/credential-protocol-map";
+import { tipiCredenzialePerProtocollo, vociSnmpAggiuntive } from "@/lib/credential-protocol-map";
+import { etichettaTipo, normalizzaTipo, tipiPerProtocollo } from "@/lib/credentials/tipi";
 
 export interface CredentialItem {
   id: number;
@@ -129,17 +130,17 @@ export function CredentialAssignmentFields({
   const primaryCreds = credentials
     .filter((c) => {
       if (tipiAmmessi) return tipiAmmessi.includes(c.credential_type);
-      // Protocollo SNMP: la credenziale primaria deve essere tipo SNMP (non SSH/API)
+      // Protocollo SNMP: la credenziale primaria deve essere SNMP (community o v3), non SSH/API
       if (primarySectionTitle?.toLowerCase().includes("snmp")) {
-        return c.credential_type === "snmp";
+        return tipiPerProtocollo("snmp").includes(c.credential_type);
       }
+      const t = normalizzaTipo(c.credential_type);
       return sshFilter === "ssh_api_windows"
-        ? c.credential_type === "ssh" || c.credential_type === "api" || c.credential_type === "windows"
-        : c.credential_type === "ssh" || c.credential_type === "api";
+        ? t === "ssh" || t === "api" || t === "windows"
+        : t === "ssh" || t === "api";
     })
     .sort((a, b) => a.name.localeCompare(b.name, "it", { sensitivity: "base" }));
-  const snmpCreds = credentials
-    .filter((c) => c.credential_type === "snmp")
+  const snmpCreds = vociSnmpAggiuntive(credentials)
     .sort((a, b) => a.name.localeCompare(b.name, "it", { sensitivity: "base" }));
 
   const hasStoredCred = credentialId && credentialId !== "none";
@@ -177,7 +178,7 @@ export function CredentialAssignmentFields({
                   {primaryCreds.map((c) => (
                     <SelectItem key={c.id} value={String(c.id)}>
                       {c.name}
-                      <span className="ml-2 text-xs text-muted-foreground uppercase">({c.credential_type})</span>
+                      <span className="ml-2 text-xs text-muted-foreground">({etichettaTipo(c.credential_type)})</span>
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -202,6 +203,7 @@ export function CredentialAssignmentFields({
                   {snmpCreds.map((c) => (
                     <SelectItem key={c.id} value={String(c.id)}>
                       {c.name}
+                      <span className="ml-2 text-xs text-muted-foreground">({etichettaTipo(c.credential_type)})</span>
                     </SelectItem>
                   ))}
                 </SelectContent>

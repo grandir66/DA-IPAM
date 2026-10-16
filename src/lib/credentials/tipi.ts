@@ -98,6 +98,20 @@ export function tipiPerProtocollo(protocollo: string | null | undefined): string
   }
 }
 
+/** Ruolo delle catene vecchie → protocollo della regola unica. */
+const PROTOCOLLO_DEL_RUOLO = { windows: "winrm", linux: "ssh", ssh: "ssh", snmp: "snmp" } as const;
+
+/**
+ * Tipi ammessi in un ruolo delle catene vecchie (`network_host_credentials`,
+ * `host_detect_credential`): quelli del protocollo del ruolo, la stessa regola
+ * con cui il motore le legge (T12, 16/10). Prima `linux` accettava solo
+ * `linux`: dalla 2c le voci `linux` sono `ssh`, e la pagina della rete che
+ * rimandava la catena rispondeva 400 dopo aver salvato la rete.
+ */
+export function tipiPerRuoloVecchio(ruolo: keyof typeof PROTOCOLLO_DEL_RUOLO): string[] {
+  return tipiPerProtocollo(PROTOCOLLO_DEL_RUOLO[ruolo]);
+}
+
 /** Tipi «propri» di ogni protocollo: quelli la cui porta è una porta di quel protocollo. */
 const TIPI_PROPRI: Readonly<Record<string, readonly TipoCredenziale[]>> = {
   ssh: ["ssh"],

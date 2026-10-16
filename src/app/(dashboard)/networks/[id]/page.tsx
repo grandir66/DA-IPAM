@@ -4,7 +4,6 @@ import {
   getHostsByNetworkWithDevices,
   getNetworkRouterId,
   getArpSourceDevices,
-  getNetworkHostCredentialIds,
   getNetworkCredentials,
   getNetworksWithCredentials,
   getHostValidatedProtocolsByNetwork,
@@ -30,13 +29,6 @@ export default async function NetworkDetailPage({
   const hosts = withTenant(tenantCode, () => getHostsByNetworkWithDevices(nid));
   const routerId = withTenant(tenantCode, () => getNetworkRouterId(nid));
   const routers = withTenant(tenantCode, () => getArpSourceDevices());
-  const initialCredentialChains = withTenant(tenantCode, () => ({
-    windows: getNetworkHostCredentialIds(nid, "windows"),
-    linux: getNetworkHostCredentialIds(nid, "linux"),
-    ssh: getNetworkHostCredentialIds(nid, "ssh"),
-    snmp: getNetworkHostCredentialIds(nid, "snmp"),
-  }));
-
   // v2: lista unificata credenziali subnet
   const networkCredentials = withTenant(tenantCode, () => getNetworkCredentials(nid));
   const initialCredentialIds = networkCredentials.map((c) => c.credential_id);
@@ -55,7 +47,6 @@ export default async function NetworkDetailPage({
       initialHosts={hosts}
       routerId={routerId}
       routers={routers}
-      initialCredentialChains={initialCredentialChains}
       initialCredentialIds={initialCredentialIds}
       initialAvailableSources={availableSources}
       initialHostValidatedProtocols={hostValidatedProtocols}

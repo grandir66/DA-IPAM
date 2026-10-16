@@ -61,7 +61,8 @@ import { parseDetectedDeviceFromDetectionJson } from "@/lib/device-fingerprint-c
 import { NetworkCredentialsTable } from "@/components/shared/network-credentials-table";
 import { ProtocolBadges } from "@/components/shared/protocol-badges";
 import { AddableSelect } from "@/components/shared/addable-select";
-import { credTypeForProtocol, CRED_TYPE_OPTIONS, tipiCredenzialePerProtocollo } from "@/lib/credential-protocol-map";
+import { credTypeForProtocol, CRED_TYPE_OPTIONS, tipiCredenzialePerProtocollo, vociSnmpAggiuntive } from "@/lib/credential-protocol-map";
+import { etichettaTipo } from "@/lib/credentials/tipi";
 import { profiloPerClassificazione, proponiApparato, riallineaAlProtocollo, type CredenzialeArchivio, type ProtocolloApparato } from "@/lib/devices/proposta-apparato";
 import { HostCredentialsDialog } from "@/components/shared/host-credentials-dialog";
 import {
@@ -152,12 +153,6 @@ interface NetworkDetailClientProps {
   initialHosts: (Host & { device_id?: number })[];
   routerId: number | null;
   routers: NetworkDevice[];
-  initialCredentialChains: {
-    windows: number[];
-    linux: number[];
-    ssh: number[];
-    snmp: number[];
-  };
   initialCredentialIds: number[];
   initialAvailableSources: Array<{ id: number; name: string; cidr: string; credential_count: number }>;
   initialHostValidatedProtocols: Record<number, string[]>;
@@ -168,7 +163,6 @@ export function NetworkDetailClient({
   initialHosts,
   routerId: initialRouterId,
   routers,
-  initialCredentialChains,
   initialCredentialIds,
   initialAvailableSources,
   initialHostValidatedProtocols,
@@ -231,11 +225,9 @@ export function NetworkDetailClient({
   const [bulkTestResult, setBulkTestResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [bulkTesting, setBulkTesting] = useState(false);
   const [bulkHostBusy, setBulkHostBusy] = useState(false);
-  const [credWindows, setCredWindows] = useState<number[]>(initialCredentialChains.windows);
-  const [credLinux, setCredLinux] = useState<number[]>(initialCredentialChains.linux);
-  const [credSsh, setCredSsh] = useState<number[]>(initialCredentialChains.ssh);
-  const [credSnmp, setCredSnmp] = useState<number[]>(initialCredentialChains.snmp);
-  // v2: lista unificata credenziali subnet
+  // Lista unica delle credenziali della rete. Le quattro catene vecchie non si
+  // leggono né si rimandano più (tappa 2 credenziali, T12): restano nel DB,
+  // congelate, fino alla 2d.
   const [networkCredentialIds, setNetworkCredentialIds] = useState<number[]>(initialCredentialIds);
   const [availableSources, setAvailableSources] = useState(initialAvailableSources);
   const [hostValidatedProtocols, setHostValidatedProtocols] = useState<Record<number, string[]>>(initialHostValidatedProtocols);
@@ -300,13 +292,6 @@ export function NetworkDetailClient({
   }
 
   useEffect(() => {
-    setCredWindows(initialCredentialChains.windows);
-    setCredLinux(initialCredentialChains.linux);
-    setCredSsh(initialCredentialChains.ssh);
-    setCredSnmp(initialCredentialChains.snmp);
-  }, [initialCredentialChains]);
-
-  useEffect(() => {
     setNetworkCredentialIds(initialCredentialIds);
   }, [initialCredentialIds]);
 
@@ -355,11 +340,6 @@ export function NetworkDetailClient({
         setHosts(data.hosts ?? []);
         setNetwork((n) => ({ ...n, ...data }));
         setRouterId(data.router_id ?? null);
-        if (Array.isArray(data.windows_credential_ids)) setCredWindows(data.windows_credential_ids);
-        if (Array.isArray(data.linux_credential_ids)) setCredLinux(data.linux_credential_ids);
-        if (Array.isArray(data.ssh_credential_ids)) setCredSsh(data.ssh_credential_ids);
-        if (Array.isArray(data.snmp_credential_ids)) setCredSnmp(data.snmp_credential_ids);
-        // v2
         if (Array.isArray(data.network_credentials)) {
           setNetworkCredentialIds(data.network_credentials.map((c: { credential_id: number }) => c.credential_id));
         }
@@ -729,37 +709,22 @@ export function NetworkDetailClient({
       snmp_community: (form.elements.namedItem("snmp_community") as HTMLInputElement).value?.trim() || null,
       dns_server: (form.elements.namedItem("dns_server") as HTMLInputElement).value?.trim() || null,
       router_id: (form.elements.namedItem("router_id") as HTMLSelectElement).value ? Number((form.elements.namedItem("router_id") as HTMLSelectElement).value) : null,
-      windows_credential_ids: credWindows,
-      linux_credential_ids: credLinux,
-      ssh_credential_ids: credSsh,
-      snmp_credential_ids: credSnmp,
+      // Un PUT solo, con la lista: rete e credenziali si salvano insieme o per
+      // niente. Prima la lista partiva in una seconda richiesta che ingoiava
+      // gli errori, e le catene vecchie nascoste tornavano indietro col PUT.
+      credential_ids: networkCredentialIds,
     };
-    // Salva anche credenziali v2 (lista unificata) in parallelo
-    const saveV2 = fetch(`/api/networks/${network.id}/credentials`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ credential_ids: networkCredentialIds }),
-    }).catch(() => null);
     try {
-      const [res] = await Promise.all([
-        fetch(`/api/networks/${network.id}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        }),
-        saveV2,
-      ]);
+      const res = await fetch(`/api/networks/${network.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
       if (res.ok) {
         const updated = await res.json();
         setNetwork((n) => ({ ...n, ...updated }));
         setRouterId(updated.router_id ?? null);
-        if (Array.isArray(updated.windows_credential_ids)) setCredWindows(updated.windows_credential_ids);
-        if (Array.isArray(updated.linux_credential_ids)) setCredLinux(updated.linux_credential_ids);
-        if (Array.isArray(updated.ssh_credential_ids)) setCredSsh(updated.ssh_credential_ids);
-        if (Array.isArray(updated.snmp_credential_ids)) setCredSnmp(updated.snmp_credential_ids);
-        if (Array.isArray(updated.network_credentials)) {
-          setNetworkCredentialIds(updated.network_credentials.map((c: { credential_id: number }) => c.credential_id));
-        }
+        if (Array.isArray(updated.credential_ids)) setNetworkCredentialIds(updated.credential_ids);
         setEditOpen(false);
         toast.success("Rete aggiornata");
         router.refresh();
@@ -1581,7 +1546,7 @@ export function NetworkDetailClient({
               const credMap = credTypeForProtocol(bulkAddProtocol);
               const tipiPrincipale = tipiCredenzialePerProtocollo(bulkAddProtocol);
               const primaryOpts = addDeviceCredentials.filter((c) => tipiPrincipale.includes(c.credential_type));
-              const snmpOpts = addDeviceCredentials.filter((c) => c.credential_type === "snmp");
+              const snmpOpts = vociSnmpAggiuntive(addDeviceCredentials);
               // Con SNMP come protocollo la principale è già la SNMP: la seconda tendina non serve.
               const protocolloSnmp = bulkAddProtocol === "snmp_v2" || bulkAddProtocol === "snmp_v3";
               const protos = new Set<string>();
@@ -1600,7 +1565,7 @@ export function NetworkDetailClient({
                       <AddableSelect
                         value={bulkAddCredentialId && bulkAddCredentialId !== "none" ? Number(bulkAddCredentialId) : null}
                         onChange={(v) => setBulkAddCredentialId(v != null ? String(v) : null)}
-                        options={primaryOpts.map((c) => ({ id: c.id, label: c.name, extra: c.credential_type }))}
+                        options={primaryOpts.map((c) => ({ id: c.id, label: c.name, extra: etichettaTipo(c.credential_type) }))}
                         entityLabel="credenziale"
                         createApiUrl="/api/credentials"
                         extraFields={[
@@ -1617,7 +1582,7 @@ export function NetworkDetailClient({
                       <AddableSelect
                         value={bulkAddSnmpCredentialId && bulkAddSnmpCredentialId !== "none" ? Number(bulkAddSnmpCredentialId) : null}
                         onChange={(v) => setBulkAddSnmpCredentialId(v != null ? String(v) : null)}
-                        options={snmpOpts.map((c) => ({ id: c.id, label: c.name }))}
+                        options={snmpOpts.map((c) => ({ id: c.id, label: c.name, extra: etichettaTipo(c.credential_type) }))}
                         entityLabel="credenziale SNMP"
                         createApiUrl="/api/credentials"
                         extraFields={[

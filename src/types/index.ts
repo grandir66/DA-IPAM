@@ -810,7 +810,7 @@ export interface NetworkInput {
   cidr: string;
   name: string;
   description?: string;
-  gateway?: string;
+  gateway?: string | null;
   vlan_id?: number | null;
   location?: string;
   snmp_community?: string | null;

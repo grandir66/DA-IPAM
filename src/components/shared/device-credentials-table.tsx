@@ -32,6 +32,7 @@ import {
 import { Key, Plus, Trash2, ArrowUp, ArrowDown, RefreshCw, CheckCircle, XCircle, HelpCircle, Archive, Edit3 } from "lucide-react";
 import { toast } from "sonner";
 import { tipiCredenzialePerProtocollo } from "@/lib/credential-protocol-map";
+import { etichettaTipo } from "@/lib/credentials/tipi";
 
 interface CredentialBinding {
   id: number;
@@ -460,7 +461,7 @@ export function DeviceCredentialsTable({
                   <SelectTrigger><SelectValue placeholder="Seleziona credenziale..." /></SelectTrigger>
                   <SelectContent>
                     {filteredCreds(addProtocol).map((c) => (
-                      <SelectItem key={c.id} value={String(c.id)}>{c.name} ({c.credential_type})</SelectItem>
+                      <SelectItem key={c.id} value={String(c.id)}>{c.name} ({etichettaTipo(c.credential_type)})</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -539,7 +540,7 @@ export function DeviceCredentialsTable({
                   <SelectTrigger><SelectValue placeholder="Seleziona..." /></SelectTrigger>
                   <SelectContent>
                     {filteredCreds(editProtocol).map((c) => (
-                      <SelectItem key={c.id} value={String(c.id)}>{c.name} ({c.credential_type})</SelectItem>
+                      <SelectItem key={c.id} value={String(c.id)}>{c.name} ({etichettaTipo(c.credential_type)})</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>

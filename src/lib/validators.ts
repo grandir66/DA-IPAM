@@ -19,7 +19,10 @@ export const NetworkSchema = z.object({
   }, "Indirizzo IP o prefisso non valido"),
   name: z.string().min(1, "Nome richiesto").max(100),
   description: z.string().max(500).optional().default(""),
-  gateway: z.string().regex(ipRegex, "Indirizzo IP gateway non valido").optional().or(z.literal("")),
+  // null: la pagina della rete manda null col campo vuoto (T12, 16/10). Prima
+  // il PUT rispondeva «Invalid input» e la lista credenziali si salvava solo
+  // con una seconda richiesta, che ingoiava gli errori.
+  gateway: z.string().regex(ipRegex, "Indirizzo IP gateway non valido").optional().nullable().or(z.literal("")),
   vlan_id: z.coerce.number().int().min(1).max(4094).optional().nullable(),
   location: z.string().max(200).optional().default(""),
   snmp_community: z.string().max(100).optional().nullable(),

@@ -7,6 +7,7 @@ import { z } from "zod";
 import { LINK_STALE_DAYS_MAX, LINK_STALE_DAYS_MIN } from "@/lib/topology/settings";
 import { SEGMENTO_NON_COLLEGABILE, VM_NON_COLLEGABILE } from "@/lib/topology/vm-nodes";
 import type { LinkMedium, MapOrientation } from "@/lib/topology/model-types";
+import { MAX_MEMBRI_UNIONE, TESTI_UNIONI, type CorpoSeparazione, type CorpoUnione } from "@/lib/topology/unioni-tipi";
 
 export type Parsed<T> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -364,4 +365,54 @@ const roleSchema = z.object(
 export function parseNodeRoleBody(raw: unknown): Parsed<{ deviceId: number; role: "" | "rete" | "attaccato" | "core" | "accesso" }> {
   const r = roleSchema.safeParse(raw);
   return r.success ? { ok: true, data: { deviceId: Number(r.data.node_id.slice(4)), role: r.data.role } } : { ok: false, error: first(r.error) };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Unioni e separazioni a mano (piano 2026-10-16, Task 3; ADR 0021): /api/topology/unioni e /api/topology/unioni/separa.
+// Scrivono il DB del cliente: corpi stretti, `applica` sempre detto (false = anteprima, non scrive), 2-20 oggetti distinti. Un
+// oggetto è un apparato o un host della mappa («dev:N», «host:N»): VM e segmenti non si uniscono.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const MEMBRO = z.string({ error: "Oggetto non valido" }).regex(/^(dev|host):[1-9]\d{0,9}$/, "Oggetto non valido: «host:N» o «dev:N»");
+const INDIRIZZO = z.string({ error: "Si separa un indirizzo: «host:N»" }).regex(/^host:[1-9]\d{0,9}$/, "Si separa un indirizzo: «host:N»");
+const APPLICA = z.boolean({ error: "«applica» deve essere vero o falso" });
+
+const unioneSchema = z.object(
+  {
+    membri: z.array(MEMBRO, { error: "Elenco degli oggetti non valido" })
+      .min(2, "Servono almeno due oggetti").max(MAX_MEMBRI_UNIONE, `Al massimo ${MAX_MEMBRI_UNIONE} oggetti alla volta`),
+    applica: APPLICA,
+  },
+  BODY_STRETTO,
+).strict();
+
+/** POST /api/topology/unioni: gli oggetti da far diventare uno sulla mappa; `applica: false` è l'anteprima. */
+export function parseUnioneBody(raw: unknown): Parsed<CorpoUnione> {
+  const r = unioneSchema.safeParse(raw);
+  if (!r.success) return { ok: false, error: first(r.error) };
+  if (new Set(r.data.membri).size !== r.data.membri.length) return { ok: false, error: TESTI_UNIONI.doppio };
+  return { ok: true, data: { membri: r.data.membri, applica: r.data.applica } };
+}
+
+const separaSchema = z.object({ nodo: MEMBRO, membro: INDIRIZZO, applica: APPLICA }, BODY_STRETTO).strict();
+
+/** POST /api/topology/unioni/separa: l'indirizzo che esce dall'oggetto `nodo` della mappa; `applica: false` è l'anteprima. */
+export function parseSeparaBody(raw: unknown): Parsed<CorpoSeparazione> {
+  const r = separaSchema.safeParse(raw);
+  return r.success ? { ok: true, data: { nodo: r.data.nodo, membro: r.data.membro, applica: r.data.applica } } : { ok: false, error: first(r.error) };
+}
+
+/** GET /api/topology/unioni?oggetto=… e …/candidati?da=…: un oggetto della mappa, «host:N» o «dev:N». */
+export function parseOggettoParam(v: string | null): Parsed<string> {
+  if (v === null || v.trim() === "") return { ok: false, error: "Manca l'oggetto: «host:N» o «dev:N»" };
+  const r = MEMBRO.safeParse(v.trim());
+  return r.success ? { ok: true, data: r.data } : { ok: false, error: first(r.error) };
+}
+
+const RICERCA_MAX = 100;
+
+/** GET /api/topology/unioni/candidati?q=…: il testo cercato (vuoto = niente), al massimo 100 caratteri. */
+export function parseRicercaParam(v: string | null): Parsed<string> {
+  const s = (v ?? "").trim();
+  return s.length > RICERCA_MAX ? { ok: false, error: `Ricerca troppo lunga (massimo ${RICERCA_MAX} caratteri)` } : { ok: true, data: s };
 }

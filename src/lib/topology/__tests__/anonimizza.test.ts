@@ -219,3 +219,19 @@ test("ingressoDellaFixture: senza VM né host dei cluster; la fixture anonima d�
   assert.deepEqual([r.vms, r.scanHosts], [[], []]);
   assert.deepEqual(buildTopologyModel(anonimizzaInput(r)).counts, buildTopologyModel(r).counts);
 });
+
+// Unioni a mano (piano 2026-10-16, Task 3; ADR 0021): nelle righe solo gruppi e id della mappa, che l'anonimizzazione non cambia
+// (apparati e host tengono il loro id). Si copiano così come sono, e solo se l'ingresso le ha: senza, le impronte di oggi.
+test("unioni e separazioni: copiate così come sono (solo id, in un elenco nuovo) e solo se ci sono; il modello anonimo le applica uguale", () => {
+  const con: TopologyModelInput = {
+    ...VERO, unioni: [{ gruppo: 1, membro: "host:7" }, { gruppo: 1, membro: "dev:2" }], separazioni: [{ membro: "host:7", altro: "dev:1" }],
+  };
+  const out = anonimizzaInput(con);
+  assert.deepEqual([out.unioni, out.separazioni], [con.unioni, con.separazioni]);
+  assert.ok(out.unioni !== con.unioni && out.separazioni !== con.separazioni, "elenchi nuovi, come per le altre righe");
+  const senza = anonimizzaInput(VERO);
+  assert.deepEqual(["unioni" in senza, "separazioni" in senza], [false, false]);
+  assert.deepEqual(buildTopologyModel(out).counts, buildTopologyModel(con).counts);
+  assert.deepEqual(buildTopologyModel(out).unioni, buildTopologyModel(con).unioni);
+  assert.deepEqual(contaValoriVeri(con, out), { ip: 0, mac: 0, nomi: 0 });
+});

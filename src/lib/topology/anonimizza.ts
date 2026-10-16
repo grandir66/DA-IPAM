@@ -397,6 +397,10 @@ export function anonimizzaInput(input: TopologyModelInput): TopologyModelInput {
     vms: [],
     scanHosts: [],
     ...(input.ports ? { ports: input.ports.map((p) => ({ ...p, port_name: porta(p.port_name) })) } : {}),
+    // Unioni e separazioni a mano (ADR 0021): solo gruppi e id della mappa, che qui non cambiano. Così come sono, e solo se ci
+    // sono: un elenco vuoto in più cambierebbe le impronte delle fixture.
+    ...(input.unioni ? { unioni: input.unioni.map((u) => ({ gruppo: u.gruppo, membro: u.membro })) } : {}),
+    ...(input.separazioni ? { separazioni: input.separazioni.map((x) => ({ membro: x.membro, altro: x.altro })) } : {}),
   };
 }
 

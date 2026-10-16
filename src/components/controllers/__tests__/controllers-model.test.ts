@@ -12,6 +12,7 @@ import {
   clientScheduleLabel,
   controllerStatus,
   countOrDash,
+  credenzialeFormaVecchia,
   describeProbe,
   describeSync,
   emptyControllerForm,
@@ -66,6 +67,7 @@ function ctrl(over: Partial<NetworkControllerView> = {}): NetworkControllerView 
     credentialId: 7,
     credentialName: "UniFi · Cliente A",
     credentialMethod: "utente",
+    credentialState: "voce",
     ...over,
   };
 }
@@ -230,9 +232,48 @@ describe("modulo e corpo del salvataggio", () => {
     const base = { ...emptyControllerForm(), name: "a", url: "https://x" };
     assert.equal(formMissing(base), "Scegli una credenziale dall'archivio o creane una nuova");
     assert.equal(formMissing({ ...base, credentialId: 4 }), null);
-    assert.equal(formMissing({ ...base, nuova: true }), null);
     // In modifica, allo stesso indirizzo, la credenziale salvata basta.
     assert.equal(formMissing(base, { salvata: true }), null);
+  });
+
+  // Revisione della 2f (16/10): con «Nuova nell'archivio» e i campi a metà il
+  // modulo passava, il server ricadeva sulla voce salvata (niente segreti =
+  // credenziale salvata), rispondeva 200 e scartava l'utente scritto; la prova
+  // usava in silenzio la voce salvata. Ora servono i campi del metodo scelto,
+  // come per l'account dell'AD (`accountLdapCompleto`).
+  it("«Nuova nell'archivio» vuole tutti i campi del metodo scelto, anche in modifica", () => {
+    const base = { ...emptyControllerForm(), name: "a", url: "https://x", nuova: true };
+    // UniFi OS con la chiave: la chiave (spazi = vuota, il server la taglia).
+    assert.equal(formMissing(base), "Scrivi la chiave API");
+    assert.equal(formMissing({ ...base, apiKey: "   " }), "Scrivi la chiave API");
+    assert.equal(formMissing({ ...base, apiKey: "k" }), null);
+    // UniFi OS con utente locale: utente e password.
+    const locale = { ...base, udmAuth: "password" as const };
+    assert.equal(formMissing({ ...locale, password: "pw" }), "Scrivi l'utente locale della console");
+    assert.equal(formMissing({ ...locale, username: "rgadmin" }), "Scrivi la password dell'utente locale");
+    assert.equal(formMissing({ ...locale, username: "rgadmin", password: "pw" }), null);
+    // Self-hosted: utente e password.
+    const sh = { ...base, kind: "self_hosted" as const };
+    assert.equal(formMissing(sh), "Scrivi l'utente");
+    assert.equal(formMissing({ ...sh, username: "ro" }), "Scrivi la password");
+    assert.equal(formMissing({ ...sh, username: "ro", password: "pw" }), null);
+    // Il caso della revisione: in modifica allo stesso indirizzo, utente nuovo e
+    // password vuota; la credenziale salvata non copre una voce nuova a metà.
+    const modifica = { ...formFromController(ctrl()), nuova: true, username: "altro-utente", password: "" };
+    assert.equal(formMissing(modifica), "Scrivi la password");
+    assert.equal(formMissing(modifica, { salvata: true }), "Scrivi la password");
+    assert.equal(formMissing({ ...formFromController(ctrl()), nuova: true }, { salvata: true }), "Scrivi l'utente");
+  });
+
+  // Revisione della 2f (16/10): la finestra contava le colonne (passwordSet,
+  // apiKeySet) e, con la 2f chiusa e la voce cancellata, diceva «forma
+  // vecchia: resta finché non ne scegli una» e lasciava salvare; il server
+  // rispondeva «Credenziale mancante». Lo stato ora viene dal server.
+  it("la credenziale salvata nella forma vecchia la dice lo stato del server, non le colonne", () => {
+    const senzaVoce = { credentialId: null, credentialName: null, credentialMethod: null } as const;
+    assert.equal(credenzialeFormaVecchia(ctrl({ ...senzaVoce, credentialState: "forma_vecchia" })), true);
+    assert.equal(credenzialeFormaVecchia(ctrl({ ...senzaVoce, credentialState: "mancante", passwordSet: true })), false);
+    assert.equal(credenzialeFormaVecchia(ctrl()), false);
   });
 });
 

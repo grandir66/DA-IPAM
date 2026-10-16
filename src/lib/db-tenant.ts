@@ -58,6 +58,7 @@ import {
   creaVoceControllerCifrataDb,
   creaVoceControllerDb,
   credenzialeControllerDb,
+  integrazioniConvertiteDb,
   vociDeiControllerDb,
   voceControllerDb,
   type ControllerDellaVoce,
@@ -9069,6 +9070,11 @@ export function creaVoceDelControllerCifrata(
 /** Nome e metodo della voce di ogni controller, in una query. */
 export function listVociDeiController(): Map<number, VoceDelController> {
   return vociDeiControllerDb(db());
+}
+
+/** La conversione della 2f è chiusa con `done:`? Allora le colonne dei controller non valgono più. */
+export function integrazioniConvertite(): boolean {
+  return integrazioniConvertiteDb(db());
 }
 
 /**

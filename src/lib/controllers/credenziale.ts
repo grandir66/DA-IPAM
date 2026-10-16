@@ -29,7 +29,13 @@ import { creaCredenzialeDb, creaVoceDb } from "@/lib/credentials/archivio";
 import { leggiSegretoDb } from "@/lib/credentials/segreti";
 import { leggiSegno, SEGNO_INTEGRAZIONI } from "@/lib/credentials/segni-t2";
 import { METODI_PER_TIPO, normalizzaTipo } from "@/lib/credentials/tipi";
-import { metodiVocePerController, type ControllerKind, type MetodoVoceController, type NetworkControllerRow } from "./types";
+import {
+  metodiVocePerController,
+  type ControllerKind,
+  type MetodoVoceController,
+  type NetworkControllerRow,
+  type StatoCredenzialeController,
+} from "./types";
 
 type DatiCredenziale = z.infer<typeof CredentialSchema>;
 
@@ -113,6 +119,28 @@ export function voceControllerDb(
 }
 
 /**
+ * Vero se la conversione della 2f è chiusa con `done:`: ogni riga col segreto
+ * ha ricevuto la sua voce, e le colonne rimaste piene non valgono più.
+ */
+export function integrazioniConvertiteDb(dbh: Database.Database): boolean {
+  return (leggiSegno(dbh, SEGNO_INTEGRAZIONI) ?? "").startsWith("done:");
+}
+
+/**
+ * Con che cosa entra la riga, senza decifrare: un criterio solo per il server
+ * (`credenzialeControllerDb`) e per la vista della pagina, che così non si
+ * contraddicono (revisione della 2f). `convertita` = `integrazioniConvertiteDb`.
+ */
+export function statoCredenzialeController(
+  row: Pick<NetworkControllerRow, "credential_id" | "password_enc" | "api_key_enc">,
+  convertita: boolean,
+): StatoCredenzialeController {
+  if (row.credential_id != null) return "voce";
+  if (!row.password_enc && !row.api_key_enc) return "mancante";
+  return convertita ? "mancante" : "forma_vecchia";
+}
+
+/**
  * Con che cosa entra la riga salvata: la sua voce; senza voce, le colonne
  * solo se la riga non è mai stata convertita (segno della 2f diverso da
  * `done:`) e se ci sono; altrimenti «Credenziale mancante». Non lancia, non
@@ -127,8 +155,7 @@ export function credenzialeControllerDb(
     const v = voceControllerDb(dbh, row.credential_id, row.kind, metodo);
     return v.ok ? { ...v, fonte: "voce" } : v;
   }
-  if (!row.password_enc && !row.api_key_enc) return { ok: false, motivo: CREDENZIALE_MANCANTE };
-  if ((leggiSegno(dbh, SEGNO_INTEGRAZIONI) ?? "").startsWith("done:")) return { ok: false, motivo: CREDENZIALE_MANCANTE };
+  if (statoCredenzialeController(row, integrazioniConvertiteDb(dbh)) === "mancante") return { ok: false, motivo: CREDENZIALE_MANCANTE };
   return { ok: true, fonte: "colonne" };
 }
 

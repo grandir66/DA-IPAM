@@ -982,3 +982,66 @@ test("T23: voce cancellata col segno done: → «Credenziale mancante» anche co
   // E il modulo non la tiene buona senza una scelta.
   assert.equal(inTenant(() => checkControllerInput({ ...input(), apiKey: "" }, riga)).ok, false);
 });
+
+// Revisione della 2f (16/10): in modifica allo stesso indirizzo un utente
+// scritto senza password passava il controllo (niente segreti = credenziale
+// salvata), il server rispondeva 200 e l'utente spariva; prima della 2f si
+// salvava. Accendi/spegni rimanda l'utente rimasto nella riga
+// (`buildTogglePayload`): solo un utente DIVERSO da quello è una scelta
+// dell'utente, e senza password si rifiuta invece di scartarlo.
+test("T23: in modifica un utente nuovo senza password è un 400, non sparisce; accendi/spegni con l'utente della riga passa", async () => {
+  const url = "https://10.0.1.222:8443";
+  const corpo = { ...input(), kind: "self_hosted", url, apiKey: "", username: "altro-utente", password: "" };
+  // Controller nato dopo la 2f: voce a utente, colonna dell'utente vuota.
+  const nuovo = inTenant(() => createController(input({ name: "Self", kind: "self_hosted", url, apiKey: "", username: "map", password: "pw-map" })));
+  const voce = riga2f(nuovo.id).credential_id;
+  const r = inTenant(() => checkControllerInput(corpo, riga2f(nuovo.id)));
+  assert.equal(r.ok, false, "l'utente scritto non si scarta in silenzio");
+  if (!r.ok) assert.match(r.error, /password/);
+  // La prova passa dallo stesso controllo (rotta probe): non prova la voce salvata al posto dell'utente scritto.
+  const toggle = inTenant(() => checkControllerInput({ ...corpo, username: riga2f(nuovo.id).username, enabled: false }, riga2f(nuovo.id)));
+  assert.equal(toggle.ok, true, toggle.ok ? "" : toggle.error);
+  if (toggle.ok) inTenant(() => updateController(nuovo.id, toggle.value));
+  assert.equal(riga2f(nuovo.id).credential_id, voce, "spento con la stessa voce");
+  // L'utente della voce senza password è la credenziale salvata (il pilota): passa.
+  assert.equal(inTenant(() => checkControllerInput({ ...corpo, username: "map" }, riga2f(nuovo.id))).ok, true);
+  // Riga convertita dal T22: l'utente resta nella colonna fino alla 2g, e accendi/spegni lo rimanda.
+  const id = rigaVecchia({ kind: "self_hosted", name: "Cliente A", url, username: "map", password_enc: encrypt("pw-map") });
+  convertiControllerEAd(getTenantDb(T), { aVuoto: false });
+  assert.equal(inTenant(() => checkControllerInput({ ...corpo, username: "map" }, riga2f(id))).ok, true);
+  assert.equal(inTenant(() => checkControllerInput(corpo, riga2f(id))).ok, false);
+  // UniFi OS con utente locale: lo stesso.
+  const udm = inTenant(() => createController(input({ name: "Pilota", apiKey: "", username: "rgadmin", password: PW_LOCALE, udmAuth: "password" })));
+  const u = inTenant(() => checkControllerInput({ ...input(), apiKey: "", username: "altro", password: "", udmAuth: "password" }, riga2f(udm.id)));
+  assert.equal(u.ok, false);
+  if (!u.ok) assert.match(u.error, /password/);
+  // Con la password è una voce nuova, come prima.
+  assert.equal(inTenant(() => checkControllerInput({ ...corpo, password: "pw-altro" }, riga2f(nuovo.id))).ok, true);
+});
+
+// Revisione della 2f (16/10): con `credential_id` NULL la vista contava le
+// colonne senza guardare il segno. Dopo resetConfiguration con la 2f chiusa
+// (voci cancellate, colonne piene, segno done:) la finestra diceva «forma
+// vecchia: resta finché non ne scegli una» e lasciava salvare, poi il server
+// rispondeva «Credenziale mancante». Ora la vista porta lo stato calcolato
+// col criterio del server.
+test("T23: la vista dice con che cosa entra la riga col criterio del server: voce, forma vecchia o mancante", () => {
+  const conVoce = inTenant(() => createController(input({ name: "Con voce" })));
+  assert.equal(conVoce.credentialState, "voce");
+  const id = rigaVecchia({ kind: "udm", api_key_enc: encrypt(CHIAVE) });
+  const vuota = rigaVecchia({ kind: "udm", name: "Vuota", url: "https://10.0.0.7" });
+  segna2f(PARZIALE_2F);
+  const vecchia = inTenant(() => getControllerView(id));
+  assert.equal(vecchia?.credentialState, "forma_vecchia");
+  assert.equal(vecchia?.apiKeySet, true);
+  assert.equal(inTenant(() => getControllerView(vuota))?.credentialState, "mancante");
+  // resetConfiguration con la 2f chiusa: le voci se ne vanno, le colonne restano, segno done:.
+  segna2f(DONE_2F);
+  const chiusa = inTenant(() => getControllerView(id));
+  assert.equal(chiusa?.credentialState, "mancante");
+  assert.equal(chiusa?.apiKeySet, false, "la chiave rimasta nelle colonne non vale più: la vista non la conta");
+  assert.equal(inTenant(() => checkControllerInput({ ...input(), apiKey: "" }, riga2f(id))).ok, false, "il server dice lo stesso");
+  // L'elenco dice quello che dice il singolo.
+  const elenco = new Map(inTenant(() => listControllerViews()).map((c) => [c.id, c.credentialState]));
+  assert.deepEqual([elenco.get(conVoce.id), elenco.get(id), elenco.get(vuota)], ["voce", "mancante", "mancante"]);
+});

@@ -32,6 +32,7 @@ function c(campi: Partial<NetworkControllerView> = {}): NetworkControllerView {
     credentialId: 1,
     credentialName: "UniFi · UDM",
     credentialMethod: "chiave",
+    credentialState: "voce",
     ...campi,
   };
 }

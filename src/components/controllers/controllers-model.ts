@@ -212,6 +212,17 @@ export function formFromController(c: NetworkControllerView): ControllerForm {
   };
 }
 
+/**
+ * Riga di prima della 2f mai convertita: senza voce la credenziale salvata
+ * sono le colonne, e vale finché non se ne sceglie una. Lo dice lo stato
+ * calcolato dal server, non `passwordSet`/`apiKeySet`: con la 2f chiusa
+ * (`done:`) le colonne rimaste piene non valgono più, e la finestra non deve
+ * promettere una credenziale che il server rifiuta (revisione della 2f).
+ */
+export function credenzialeFormaVecchia(c: Pick<NetworkControllerView, "credentialState">): boolean {
+  return c.credentialState === "forma_vecchia";
+}
+
 export function urlPlaceholder(kind: ControllerKind): string {
   return kind === "self_hosted" ? "https://192.168.1.10:8443" : "https://192.168.1.1";
 }
@@ -220,14 +231,22 @@ export function urlPlaceholder(kind: ControllerKind): string {
  * Campi minimi per provare o salvare; il resto lo controlla il server. Serve
  * una credenziale: la voce scelta, una voce nuova, oppure (`salvata`) quella
  * salvata, in modifica allo stesso indirizzo.
+ *
+ * Una voce nuova vuole tutti i campi del suo metodo: la chiave API, oppure
+ * utente e password. Senza segreti il server legge «tieni la salvata»: una
+ * chiave vuota o un utente rimasto a metà finivano, salvataggio e prova, sulla
+ * voce salvata in silenzio (revisione della 2f, 16/10). Un utente diverso da
+ * quello salvato senza password lo rifiuta anche il server; la chiave vuota
+ * no, perché non si distingue da accendi/spegni.
  */
 export function formMissing(form: ControllerForm, opts: { salvata?: boolean } = {}): string | null {
   if (!form.name.trim()) return "Scrivi un nome";
   if (!form.url.trim()) return "Scrivi l'indirizzo del controller";
   if (form.nuova) {
-    if (form.kind === "udm" && form.udmAuth === "password" && !form.username.trim()) {
-      return "Scrivi l'utente locale della console";
-    }
+    const isUdm = form.kind === "udm";
+    if (isUdm && form.udmAuth === "api_key") return form.apiKey.trim() ? null : "Scrivi la chiave API";
+    if (!form.username.trim()) return isUdm ? "Scrivi l'utente locale della console" : "Scrivi l'utente";
+    if (!form.password) return isUdm ? "Scrivi la password dell'utente locale" : "Scrivi la password";
     return null;
   }
   if (form.credentialId === null && !opts.salvata) return "Scegli una credenziale dall'archivio o creane una nuova";

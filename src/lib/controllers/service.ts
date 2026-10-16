@@ -35,6 +35,7 @@ import {
   getTenantSetting,
   controllerRunKindOf,
   insertNetworkController,
+  integrazioniConvertite,
   listControllerClientScheduleJobs,
   listControllerRuns,
   listControllerScheduleJobs,
@@ -90,7 +91,13 @@ import {
   type NetworkControllerView,
   type UnifiOsAuth,
 } from "./types";
-import { CREDENZIALE_MANCANTE, FORMA_VECCHIA, type NuovaCredenzialeController, type VoceDelController } from "./credenziale";
+import {
+  CREDENZIALE_MANCANTE,
+  FORMA_VECCHIA,
+  statoCredenzialeController,
+  type NuovaCredenzialeController,
+  type VoceDelController,
+} from "./credenziale";
 
 // ── Utilità ──────────────────────────────────────────────────────────────────
 
@@ -175,16 +182,21 @@ const NO_CLIENT_INFO: ControllerClientInfo = { clientSchedule: false, lastClient
 
 /**
  * La vista di una riga. `voce`: nome e metodo della voce dell'archivio
- * (`listVociDeiController`). Con la voce, «password» o «chiave» dicono il
- * metodo della voce; senza, le colonne di una riga mai convertita.
+ * (`listVociDeiController`). `convertita`: la 2f è chiusa con `done:`
+ * (`integrazioniConvertite`). Lo stato della credenziale segue il criterio
+ * del server; con la voce, «password» o «chiave» dicono il metodo della voce;
+ * senza, le colonne valgono solo per una riga mai convertita.
  */
 export function toControllerView(
   row: NetworkControllerRow,
   scheduleMinutes: number | null,
-  client: ControllerClientInfo = NO_CLIENT_INFO,
-  voce: VoceDelController | null = null,
+  client: ControllerClientInfo,
+  voce: VoceDelController | null,
+  convertita: boolean,
 ): NetworkControllerView {
-  const conVoce = row.credential_id != null;
+  const stato = statoCredenzialeController(row, convertita);
+  const conVoce = stato === "voce";
+  const colonne = stato === "forma_vecchia";
   return {
     id: row.id,
     name: row.name,
@@ -193,8 +205,9 @@ export function toControllerView(
     url: row.url,
     site: row.site,
     username: row.username,
-    passwordSet: conVoce ? voce?.metodo === "utente" || voce?.metodo === "client" : row.password_enc !== "",
-    apiKeySet: conVoce ? voce?.metodo === "chiave" : row.api_key_enc !== "",
+    credentialState: stato,
+    passwordSet: conVoce ? voce?.metodo === "utente" || voce?.metodo === "client" : colonne && row.password_enc !== "",
+    apiKeySet: conVoce ? voce?.metodo === "chiave" : colonne && row.api_key_enc !== "",
     credentialId: row.credential_id ?? null,
     credentialName: conVoce ? (voce?.nome ?? null) : null,
     credentialMethod: conVoce ? (voce?.metodo ?? null) : null,
@@ -218,13 +231,22 @@ export function listControllerViews(): NetworkControllerView[] {
   const sched = scheduleByController();
   const clients = clientInfoByController();
   const voci = listVociDeiController();
-  return listNetworkControllers().map((r) => toControllerView(r, sched.get(r.id) ?? null, clients.get(r.id), voci.get(r.id) ?? null));
+  const convertita = integrazioniConvertite();
+  return listNetworkControllers().map((r) =>
+    toControllerView(r, sched.get(r.id) ?? null, clients.get(r.id) ?? NO_CLIENT_INFO, voci.get(r.id) ?? null, convertita),
+  );
 }
 
 export function getControllerView(id: number): NetworkControllerView | null {
   const row = getNetworkController(id);
   if (!row) return null;
-  return toControllerView(row, scheduleByController().get(id) ?? null, clientInfoByController().get(id), listVociDeiController().get(id) ?? null);
+  return toControllerView(
+    row,
+    scheduleByController().get(id) ?? null,
+    clientInfoByController().get(id) ?? NO_CLIENT_INFO,
+    listVociDeiController().get(id) ?? null,
+    integrazioniConvertite(),
+  );
 }
 
 export function toRunView(r: ControllerRunRow): ControllerRunView {
@@ -331,6 +353,9 @@ function accessoDelleColonne(row: Pick<NetworkControllerRow, "username" | "api_k
 const INDIRIZZO_CAMBIATO =
   "L'indirizzo è cambiato: scegli di nuovo la credenziale dall'archivio o scrivine una nuova (quella salvata non parte verso un indirizzo nuovo)";
 
+const UTENTE_SENZA_PASSWORD =
+  "Hai scritto un utente senza la password: per una credenziale nuova servono utente e password, oppure scegline una dall'archivio";
+
 /**
  * Niente voce scelta e niente segreti nuovi: vale la credenziale salvata, solo
  * allo stesso indirizzo e se va bene per il tipo (e per l'accesso scelto).
@@ -355,6 +380,12 @@ function credenzialeSalvata(
   const metodo = kind === "udm" && scelto ? metodoVoceDiAccesso(scelto) : undefined;
   // La voce salvata si controlla col tipo NUOVO: un self-hosted con la voce a utente passato a UDM la tiene.
   const c = credenzialeDelController({ ...existing, kind }, metodo);
+  // Un utente scritto senza password non è una voce nuova, e la credenziale
+  // salvata non è la sua: si rifiuta invece di scartarlo in silenzio
+  // (revisione della 2f). Passano l'utente rimasto nella riga, che
+  // accendi/spegni rimanda (`buildTogglePayload`), e quello della voce.
+  const utenteSalvato = username === existing.username || (c.ok && c.fonte === "voce" && username === c.username);
+  if (username && !utenteSalvato) return { ok: false, error: UTENTE_SENZA_PASSWORD };
   if (!c.ok) return { ok: false, error: c.motivo };
   if (c.fonte === "voce") return { ok: true, ...(kind === "udm" ? { udmAuth: accessoDiMetodoVoce(c.metodo) } : {}) };
   // Riga mai convertita (segno della 2f diverso da done:): come prima, coi segreti delle colonne.

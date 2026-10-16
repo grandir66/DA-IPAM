@@ -37,6 +37,7 @@ import {
   SCHEDULE_OPTIONS,
   UDM_AUTH_OPTIONS,
   buildControllerPayload,
+  credenzialeFormaVecchia,
   describeProbe,
   emptyControllerForm,
   formFromController,
@@ -109,8 +110,8 @@ export function ControllerDialog({
   // Una voce che non vale per il tipo o l'accesso scelti non si manda: se ne sceglie un'altra.
   const scelta =
     form.credentialId !== null && (voci === null || ammesse.some((v) => v.id === form.credentialId)) ? form.credentialId : null;
-  // Riga di prima della 2f mai convertita: senza voce, con i segreti nelle colonne.
-  const formaVecchia = editing && controller.credentialId === null && (controller.passwordSet || controller.apiKeySet);
+  // Riga di prima della 2f mai convertita: senza voce, con i segreti nelle colonne (stato del server).
+  const formaVecchia = editing && credenzialeFormaVecchia(controller);
   const sent: ControllerForm = { ...form, credentialId: scelta };
   const missing = formMissing(sent, { salvata: formaVecchia && !moved });
   const sceltaDaRifare = moved && !form.nuova && scelta === null && (controller.credentialId !== null || formaVecchia);

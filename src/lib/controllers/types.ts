@@ -56,6 +56,13 @@ export function metodoVoceDiAccesso(a: UnifiOsAuth): "chiave" | "utente" {
   return a === "api_key" ? "chiave" : "utente";
 }
 
+/**
+ * Con che cosa entra un controller salvato (tappa 2f), col criterio del server
+ * (`credenzialeControllerDb`): la sua voce; le colonne di una riga mai
+ * convertita (segno della 2f diverso da `done:`); oppure niente.
+ */
+export type StatoCredenzialeController = "voce" | "forma_vecchia" | "mancante";
+
 /** Il metodo di una voce → l'accesso di una console UniFi OS. */
 export function accessoDiMetodoVoce(m: MetodoVoceController): UnifiOsAuth {
   return m === "chiave" ? "api_key" : "password";
@@ -119,6 +126,12 @@ export interface NetworkControllerView {
   site: string;
   /** L'utente rimasto nelle colonne di una riga di prima della 2f; per una voce è dentro la voce. */
   username: string;
+  /**
+   * Con che cosa entra, col criterio del server: la finestra legge da qui se
+   * la credenziale salvata vale ancora (revisione della 2f: con le colonne
+   * piene e il segno `done:` diceva «forma vecchia» e il server «mancante»).
+   */
+  credentialState: StatoCredenzialeController;
   /** C'è una password con cui entrare: la voce a utente, o la colonna di una riga mai convertita. */
   passwordSet: boolean;
   /** C'è una chiave API con cui entrare: la voce a chiave, o la colonna di una riga mai convertita. */

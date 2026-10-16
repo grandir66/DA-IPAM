@@ -73,11 +73,11 @@ describe("token di Omada dall'archivio", () => {
     assert.deepEqual(intestazioni, []);
   });
 
-  it("apparato lasciato dalla conversione (token ancora in colonna): vale fino alla 2g", async () => {
+  it("apparato lasciato dalla conversione (token ancora in colonna): dalla 2g (T26) la colonna non si legge, nessuna richiesta", async () => {
     const dev = apparato("gw vecchio", "10.90.0.3", { api_token: encrypt("tok-colonna") });
     finto();
-    const ok = await withTenant(T, async () => (await createRouterClient(dev)).testConnection());
-    assert.equal(ok, true);
-    assert.deepEqual(intestazioni, ["Bearer tok-colonna"]);
+    const client = await withTenant(T, () => createRouterClient(dev));
+    assert.equal(await withTenant(T, () => client.testConnection()), false);
+    assert.deepEqual(intestazioni, []);
   });
 });

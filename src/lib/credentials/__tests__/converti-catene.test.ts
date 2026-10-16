@@ -45,6 +45,7 @@ import { closeHubDb, getHubDb } from "@/lib/db-hub";
 import { catenaReteDb, resolveCredentialsForDb, type CredProtocol } from "@/lib/credentials/resolve";
 import { convertiCateneVecchie, descriviCatene, segnoCatene, type GlobaliHub } from "@/lib/credentials/converti-catene";
 import { righeConversioni } from "@/lib/transfer/esito-import";
+import { creaCateneVecchie } from "@/lib/__tests__/support/catene-vecchie";
 
 // ── Appoggio ────────────────────────────────────────────────────────────────
 
@@ -53,6 +54,8 @@ function nuovoDb(): Database.Database {
   d.pragma("foreign_keys = ON");
   d.exec(TENANT_SCHEMA_SQL);
   d.exec(TENANT_INDEXES_SQL);
+  // Un DB di prima della 2g: lo schema di oggi non crea più le catene vecchie (T27).
+  creaCateneVecchie(d);
   return d;
 }
 
@@ -101,14 +104,13 @@ function istantanea(d: Database.Database): string {
 const PROTOCOLLI: CredProtocol[] = ["ssh", "winrm", "snmp"];
 
 /** Sequenza del motore per ogni rete e protocollo: «voce:porta», nell'ordine. */
-function sequenze(d: Database.Database, globali: GlobaliHub | null): Record<string, { motore: string[]; catena: number[] }> {
+function sequenze(d: Database.Database): Record<string, { motore: string[]; catena: number[] }> {
   const out: Record<string, { motore: string[]; catena: number[] }> = {};
-  const globaliHub = globali ? { windows: globali.windows, linux: globali.linux } : null;
   for (const { id } of d.prepare("SELECT id FROM networks ORDER BY id").all() as Array<{ id: number }>) {
     for (const p of PROTOCOLLI) {
       out[`${id}:${p}`] = {
-        motore: resolveCredentialsForDb(d, { networkId: id }, p, { globaliHub }).map((c) => `${c.credential_id}:${c.port}`),
-        catena: catenaReteDb(d, id, p, { globaliHub, registra: false }),
+        motore: resolveCredentialsForDb(d, { networkId: id }, p).map((c) => `${c.credential_id}:${c.port}`),
+        catena: catenaReteDb(d, id, p, { registra: false }),
       };
     }
   }
@@ -143,7 +145,7 @@ describe("convertiCateneVecchie", () => {
     assert.equal(conta(d, "network_host_credentials"), 3);
   });
 
-  it("per ssh, winrm e snmp il motore dà la stessa sequenza di voci e porte prima e dopo la conversione", () => {
+  it("per ssh, winrm e snmp il motore dà, dopo la conversione, la sequenza di voci e porte che dava il codice di prima", () => {
     const d = nuovoDb();
     const n1 = rete(d, "10.1.0.0/24", "Rete uno");
     const n2 = rete(d, "10.2.0.0/24", "Rete due");
@@ -171,9 +173,24 @@ describe("convertiCateneVecchie", () => {
     lista(d, n3, [J]);
     const globali: GlobaliHub = { windows: J, linux: K, tenantAttivi: 1 };
 
-    const prima = sequenze(d, globali);
+    // La sequenza del codice di prima della 2g (lista, poi catene vecchie per
+    // ruolo, poi chiave dell'hub, col filtro di tipo e senza doppioni). Fino
+    // alla 2g la si calcolava col motore stesso; dalla 2g (T26) il motore non
+    // legge più catene vecchie e chiavi dell'hub, quindi è scritta qui.
+    const v = (id: number, porta: number) => `${id}:${porta}`;
+    const prima: Record<string, { motore: string[]; catena: number[] }> = {
+      [`${n1}:ssh`]: { motore: [v(B, 22), v(H, 22), v(D, 2222), v(K, 22)], catena: [B, H, D, K] },
+      [`${n1}:winrm`]: { motore: [v(A, 5985), v(C, 5985), v(J, 5985)], catena: [A, C, J] },
+      [`${n1}:snmp`]: { motore: [v(E, 161), v(F, 1161)], catena: [E, F] },
+      [`${n2}:ssh`]: { motore: [v(B, 22), v(K, 22)], catena: [B, K] },
+      [`${n2}:winrm`]: { motore: [v(J, 5985)], catena: [J] },
+      [`${n2}:snmp`]: { motore: [], catena: [] },
+      [`${n3}:ssh`]: { motore: [v(K, 22)], catena: [K] },
+      [`${n3}:winrm`]: { motore: [v(J, 5985)], catena: [J] },
+      [`${n3}:snmp`]: { motore: [], catena: [] },
+    };
     const e = convertiCateneVecchie(d, globali, { aVuoto: false });
-    const dopo = sequenze(d, globali);
+    const dopo = sequenze(d);
 
     assert.deepEqual(dopo, prima);
     assert.deepEqual(listaDi(d, n1), [A, B, H, C, D, E, F, J, K]);
@@ -350,7 +367,8 @@ describe("getTenantDb: conversione delle catene col segno credenziali_t2_catene"
   it("conversione fatta; l'utente toglie dalla lista la voce arrivata dalla catena vecchia; alla seconda apertura non torna", () => {
     let d = withTenant(CODE, () => getTenantDb(CODE));
     assert.match(segno(d) ?? "", /^done:/);
-    // Uno stato di prima della 2d: una catena vecchia, segno assente.
+    // Uno stato di prima della 2d: una catena vecchia, segno assente (le tabelle vecchie come le aveva quel DB).
+    creaCateneVecchie(d);
     d.prepare("DELETE FROM tenant_settings WHERE key = 'credenziali_t2_catene'").run();
     const n = rete(d, "10.77.0.0/24", "Rete prova 2d");
     const B = voce(d, "Server", "ssh");
@@ -398,6 +416,7 @@ describe("prova-a-vuoto.ts: la conversione delle catene sulla copia", () => {
     const d = new Database(path.join(copia, "tenants", `${TPAV}.db`));
     d.exec(TENANT_SCHEMA_SQL);
     d.exec(TENANT_INDEXES_SQL);
+    creaCateneVecchie(d);
     const n = rete(d, "10.88.0.0/24", "Rete della copia");
     const B = voce(d, "Server della copia", "ssh");
     vecchia(d, n, "ssh", B, 0);
@@ -426,6 +445,7 @@ describe("prova-a-vuoto.ts: la conversione delle catene sulla copia", () => {
     const d = new Database(path.join(altra, "tenants", `${TPAV}.db`));
     d.exec(TENANT_SCHEMA_SQL);
     d.exec(TENANT_INDEXES_SQL);
+    creaCateneVecchie(d);
     const n = rete(d, "10.89.0.0/24", "Rete che cambia");
     lista(d, n, [voce(d, "Voce che sparisce", "ssh")]);
     // Simula una conversione sbagliata: quando si scrive il segno, la lista si svuota.

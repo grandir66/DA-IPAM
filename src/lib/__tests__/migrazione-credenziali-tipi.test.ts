@@ -34,6 +34,7 @@ import { spawnSync } from "node:child_process";
 import Database from "better-sqlite3";
 
 import { TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL } from "@/lib/db-tenant-schema";
+import { creaCateneVecchie } from "@/lib/__tests__/support/catene-vecchie";
 import { cartellaTenant, closeTenantDb, deleteTenantDatabase, getTenantDb, withTenant } from "@/lib/db-tenant";
 import { closeHubDb, getHubDb } from "@/lib/db-hub";
 import { encrypt } from "@/lib/crypto";
@@ -143,6 +144,8 @@ function dbVecchio(crea: (db: Database.Database) => void): Database.Database {
   crea(db);
   db.exec(TENANT_SCHEMA_SQL);
   db.exec(TENANT_INDEXES_SQL);
+  // Le catene vecchie c'erano (lo schema di oggi non le crea più, T27): due delle figlie da contare.
+  creaCateneVecchie(db);
   return db;
 }
 

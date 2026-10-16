@@ -28,15 +28,51 @@
  * e snmp prima e dopo: le voci che prendeva dalle catene vecchie e dalla
  * chiave dell'hub le trova nella lista, nello stesso ordine.
  *
- * Le tabelle vecchie non si svuotano: restano congelate fino alla 2g. Per
- * questo, col segno `done:` o `parziale:`, la conversione non si richiama:
- * una voce tolta dalla lista tornerebbe dalla catena congelata.
+ * Le tabelle vecchie non si svuotano: restano congelate fino alla pulizia
+ * della 2g. Per questo, col segno `done:` o `parziale:`, la conversione non si
+ * richiama: una voce tolta dalla lista tornerebbe dalla catena congelata.
+ *
+ * Dalla 2g (T26) nessuno legge più le tabelle vecchie, e un DB che non le ha
+ * (la pulizia della 2g le toglie; un tenant nato dopo) non ha niente da
+ * convertire: esito vuoto, segno `done:`. Un bundle di prima della 2d le porta
+ * ancora: l'import le mette in tabelle temporanee con gli stessi nomi
+ * (`conCateneDelBundle`) e chiama questa conversione, con le stesse regole.
  *
  * Modulo puro: riceve l'handle, non importa né `db.ts` né `db-tenant.ts`.
  */
 import type Database from "better-sqlite3";
 import { portaCredenziale, type CredProtocol } from "./porte";
 import { tipiPerRuoloVecchio } from "./tipi";
+
+/** Le due tabelle delle catene vecchie: nessuno le legge dalla 2g, le toglie la pulizia (T27). */
+export const TABELLE_CATENE_VECCHIE = ["network_host_credentials", "host_detect_credential"] as const;
+export type TabellaCateneVecchie = (typeof TABELLE_CATENE_VECCHIE)[number];
+
+/**
+ * Chiavi «di default» dell'hub (`host_windows_credential_id`,
+ * `host_linux_credential_id`) lette con il `getSetting` di chi chiama; id non
+ * validi → null. Le legge solo questa conversione (D3 = (a)): dal T26 il
+ * motore non le accoda più.
+ */
+export function chiaviGlobaliHub(leggi: (chiave: string) => string | null): { windows: number | null; linux: number | null } {
+  const id = (chiave: string): number | null => {
+    const s = leggi(chiave)?.trim();
+    if (!s) return null;
+    const n = parseInt(s, 10);
+    return Number.isNaN(n) || n <= 0 ? null : n;
+  };
+  return { windows: id("host_windows_credential_id"), linux: id("host_linux_credential_id") };
+}
+
+/** La tabella c'è, nel DB o fra le temporanee della connessione (l'import di un bundle vecchio). */
+function tabellaVisibile(db: Database.Database, nome: string): boolean {
+  return !!db
+    .prepare(
+      `SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?
+       UNION ALL SELECT 1 FROM sqlite_temp_master WHERE type = 'table' AND name = ?`
+    )
+    .get(nome, nome);
+}
 
 export interface GlobaliHub {
   windows: number | null;
@@ -113,28 +149,40 @@ export function convertiCateneVecchie(db: Database.Database, globali: GlobaliHub
       }
     }
 
+    // Senza le tabelle vecchie (tolte dalla 2g, o un tenant nato dopo) non c'è niente da convertire:
+    // restano solo le chiavi dell'hub, se ci sono, e le regole di sempre.
+    const conCatene = tabellaVisibile(db, "network_host_credentials");
+    const conPin = tabellaVisibile(db, "host_detect_credential");
+
     // Reti: tutte se c'è una chiave dell'hub da copiare, altrimenti quelle con una catena vecchia;
     // in più le catene orfane (rete tolta con le chiavi esterne spente), che si saltano.
-    const reti = db
-      .prepare(
-        `SELECT id, 1 AS esiste FROM networks
-           WHERE ? = 1 OR id IN (SELECT network_id FROM network_host_credentials)
-         UNION
-         SELECT DISTINCT network_id, 0 FROM network_host_credentials
-           WHERE network_id NOT IN (SELECT id FROM networks)
-         ORDER BY id`
-      )
-      .all(chiavi.length > 0 ? 1 : 0) as Array<{ id: number; esiste: number }>;
+    const reti = conCatene
+      ? (db
+          .prepare(
+            `SELECT id, 1 AS esiste FROM networks
+               WHERE ? = 1 OR id IN (SELECT network_id FROM network_host_credentials)
+             UNION
+             SELECT DISTINCT network_id, 0 FROM network_host_credentials
+               WHERE network_id NOT IN (SELECT id FROM networks)
+             ORDER BY id`
+          )
+          .all(chiavi.length > 0 ? 1 : 0) as Array<{ id: number; esiste: number }>)
+      : chiavi.length > 0
+        ? (db.prepare("SELECT id, 1 AS esiste FROM networks ORDER BY id").all() as Array<{ id: number; esiste: number }>)
+        : [];
     const presentiDi = db.prepare("SELECT credential_id FROM network_credentials WHERE network_id = ?");
     const maxDi = db.prepare("SELECT COALESCE(MAX(sort_order), -1) AS m FROM network_credentials WHERE network_id = ?");
-    const vecchieDi = db.prepare(
-      `SELECT nhc.role, nhc.credential_id, c.credential_type
-       FROM network_host_credentials nhc
-       LEFT JOIN credentials c ON c.id = nhc.credential_id
-       WHERE nhc.network_id = ?
-       ORDER BY CASE nhc.role WHEN 'windows' THEN 0 WHEN 'ssh' THEN 1 WHEN 'linux' THEN 2 ELSE 3 END,
-                nhc.sort_order ASC, nhc.id ASC`
-    );
+    const vecchieStmt = conCatene
+      ? db.prepare(
+          `SELECT nhc.role, nhc.credential_id, c.credential_type
+           FROM network_host_credentials nhc
+           LEFT JOIN credentials c ON c.id = nhc.credential_id
+           WHERE nhc.network_id = ?
+           ORDER BY CASE nhc.role WHEN 'windows' THEN 0 WHEN 'ssh' THEN 1 WHEN 'linux' THEN 2 ELSE 3 END,
+                    nhc.sort_order ASC, nhc.id ASC`
+        )
+      : null;
+    const vecchieDi = { all: (networkId: number): RigaVecchia[] => (vecchieStmt ? (vecchieStmt.all(networkId) as RigaVecchia[]) : []) };
     const accoda = db.prepare("INSERT INTO network_credentials (network_id, credential_id, sort_order) VALUES (?, ?, ?)");
 
     for (const { id: networkId, esiste } of reti) {
@@ -162,16 +210,18 @@ export function convertiCateneVecchie(db: Database.Database, globali: GlobaliHub
     }
 
     // Pin → righe validate dell'host.
-    const pins = db
-      .prepare(
-        `SELECT hdc.host_id, hdc.role, hdc.credential_id, hdc.updated_at, c.credential_type, c.port,
-                (SELECT COUNT(*) FROM hosts h WHERE h.id = hdc.host_id) AS host_esiste
-         FROM host_detect_credential hdc
-         LEFT JOIN credentials c ON c.id = hdc.credential_id
-         ORDER BY hdc.host_id ASC,
-                  CASE hdc.role WHEN 'windows' THEN 0 WHEN 'ssh' THEN 1 WHEN 'linux' THEN 2 ELSE 3 END`
-      )
-      .all() as RigaPin[];
+    const pins = conPin
+      ? (db
+          .prepare(
+            `SELECT hdc.host_id, hdc.role, hdc.credential_id, hdc.updated_at, c.credential_type, c.port,
+                    (SELECT COUNT(*) FROM hosts h WHERE h.id = hdc.host_id) AS host_esiste
+             FROM host_detect_credential hdc
+             LEFT JOIN credentials c ON c.id = hdc.credential_id
+             ORDER BY hdc.host_id ASC,
+                      CASE hdc.role WHEN 'windows' THEN 0 WHEN 'ssh' THEN 1 WHEN 'linux' THEN 2 ELSE 3 END`
+          )
+          .all() as RigaPin[])
+      : [];
     const giaDi = db.prepare("SELECT 1 FROM host_credentials WHERE host_id = ? AND credential_id = ? AND protocol_type = ? LIMIT 1");
     const maxHost = db.prepare("SELECT COALESCE(MAX(sort_order), -1) AS m FROM host_credentials WHERE host_id = ?");
     const inserisci = db.prepare(
@@ -240,4 +290,42 @@ export function descriviCatene(e: EsitoCatene): string {
     `${e.aggiunteLista.length} voci nella lista${aggiunte}, righe host dai pin ${e.righeHostDaPin}, ` +
     `pin già presenti ${e.pinGiaPresenti}, saltate ${e.saltate.length}${saltate}`
   );
+}
+
+/** Le colonne che una riga di un bundle vecchio porta per ognuna delle due tabelle. */
+const COLONNE_VECCHIE: Readonly<Record<TabellaCateneVecchie, readonly string[]>> = {
+  network_host_credentials: ["id", "network_id", "credential_id", "role", "sort_order"],
+  host_detect_credential: ["host_id", "role", "credential_id", "updated_at"],
+};
+
+/**
+ * Per l'import di un bundle di prima della 2d (T26): le righe di catene
+ * vecchie e pin del bundle vanno in tabelle TEMPORANEE con gli stessi nomi,
+ * che nascondono quelle del DB se ci sono ancora; `fn` (la conversione) le
+ * legge con le regole di sempre; alla fine le temporanee si tolgono. Così le
+ * righe del bundle non finiscono in tabelle che nessuno legge più, e su un DB
+ * senza le tabelle vecchie non si perdono in silenzio. Va chiamata dentro la
+ * transazione della conversione: se `fn` lancia, si annulla tutto.
+ */
+export function conCateneDelBundle<T>(
+  db: Database.Database,
+  righe: Readonly<Record<TabellaCateneVecchie, ReadonlyArray<Record<string, unknown>>>>,
+  fn: () => T
+): T {
+  db.exec(`CREATE TEMP TABLE network_host_credentials (id INTEGER, network_id INTEGER, credential_id INTEGER, role TEXT, sort_order INTEGER DEFAULT 0)`);
+  try {
+    db.exec(`CREATE TEMP TABLE host_detect_credential (host_id INTEGER, role TEXT, credential_id INTEGER, updated_at TEXT)`);
+    try {
+      for (const t of TABELLE_CATENE_VECCHIE) {
+        const colonne = COLONNE_VECCHIE[t];
+        const ins = db.prepare(`INSERT INTO temp.${t} (${colonne.join(", ")}) VALUES (${colonne.map(() => "?").join(", ")})`);
+        for (const r of righe[t]) ins.run(...colonne.map((c) => (r[c] === undefined ? null : r[c])));
+      }
+      return fn();
+    } finally {
+      db.exec("DROP TABLE temp.host_detect_credential");
+    }
+  } finally {
+    db.exec("DROP TABLE temp.network_host_credentials");
+  }
 }

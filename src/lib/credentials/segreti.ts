@@ -37,7 +37,6 @@
  */
 import type Database from "better-sqlite3";
 import { safeDecrypt } from "@/lib/crypto";
-import type { NetworkDevice } from "@/types";
 import type { SnmpV3CredentialRecord } from "@/lib/protocols/snmpv3";
 import { campiRichiesti, etichettaTipo, METODI_PER_TIPO, normalizzaTipo, tipiPerProtocollo, type MetodoAccesso, type TipoCredenziale } from "./tipi";
 
@@ -408,7 +407,8 @@ function ripulito(v: string | null | undefined): string | null {
  */
 export function v3ApparatoDb(
   dbh: Database.Database,
-  device: Pick<NetworkDevice, "protocol" | "credential_id" | "snmp_credential_id">,
+  // Le colonne vecchie di `network_devices`, lette dalla riga: il tipo `NetworkDevice` non le porta più (T26).
+  device: { protocol: string; credential_id?: number | null; snmp_credential_id?: number | null },
 ): SnmpV3CredentialRecord | null {
   const snmpPrincipale = device.protocol === "snmp_v2" || device.protocol === "snmp_v3";
   const ids = snmpPrincipale ? [device.credential_id, device.snmp_credential_id] : [device.snmp_credential_id, device.credential_id];

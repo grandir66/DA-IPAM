@@ -30,6 +30,7 @@ import { creaVoceDb, modificaVoceDb, eliminaVoceDb } from "../archivio";
 import { mascheraCredenziale } from "../maschera";
 import { usiCredenzialeDb, usiTotaliDb, totaleUsi } from "../usi";
 import type { Credential } from "@/types";
+import { creaCateneVecchie } from "@/lib/__tests__/support/catene-vecchie";
 
 const T = "TESTARCHIVIOVOCI";
 const dbt = () => getTenantDb(T);
@@ -330,6 +331,8 @@ describe("usi di una voce", () => {
     withTenant(T, () => {
       const id = voce("molto usata", "windows");
       const d = dbt();
+      // Un DB di prima della pulizia della 2g (T27): le tabelle vecchie ci sono ancora.
+      creaCateneVecchie(d);
       d.prepare("UPDATE network_devices SET credential_id = ? WHERE id = ?").run(id, apparatoId);
       d.prepare("INSERT INTO device_credential_bindings (device_id, credential_id, protocol_type, port) VALUES (?, ?, 'winrm', 5986)").run(apparatoId, id);
       d.prepare("INSERT INTO network_credentials (network_id, credential_id, sort_order) VALUES (?, ?, 70)").run(reteId, id);
@@ -343,18 +346,16 @@ describe("usi di una voce", () => {
       d.prepare("INSERT INTO software_scans (host_id, started_at, status, os_family, probe, credential_id) VALUES (?, datetime('now'), 'ok', 'windows', 'winrm', ?)").run(hostId, id);
 
       const usi = usiCredenzialeDb(d, id);
-      assert.deepEqual(usi.apparati, [
-        { id: apparatoId, nome: "SW-prova", come: "binding" },
-        { id: apparatoId, nome: "SW-prova", come: "colonna" },
-      ]);
+      // Dalla 2g (T26) la colonna dell'apparato e le catene vecchie non sono usi: il motore non le legge più.
+      assert.deepEqual(usi.apparati, [{ id: apparatoId, nome: "SW-prova", come: "binding" }]);
       assert.deepEqual(usi.reti, [{ id: reteId, nome: "LAN prova" }]);
       assert.equal(usi.host, 1);
       assert.deepEqual(usi.controller, []);
       assert.deepEqual(usi.ad, [{ id: adId, nome: "dominio", come: "winrm" }]);
       assert.equal(usi.proxmox, 1);
       assert.equal(usi.scansioniSoftware, 1);
-      // Le scansioni software sono storia: non tengono ferma una voce.
-      assert.equal(totaleUsi(usi), 6);
+      // Le scansioni software sono storia: non tengono ferma una voce. (Erano 6 con la colonna dell'apparato, fino alla 2g.)
+      assert.equal(totaleUsi(usi), 5);
 
       const totali = usiTotaliDb(d);
       const voci = d.prepare("SELECT id FROM credentials").all() as Array<{ id: number }>;

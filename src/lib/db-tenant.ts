@@ -27,7 +27,7 @@ import { descriviRicostruzione, descriviStato, migraCredenzialiTipi, statoCreden
 import { descriviNormalizza, normalizzaTipiCredenziali, segnoTipi } from "./credentials/normalizza-tipi";
 import { conversioneChiusa, leggiSegno, scriviSegno, segnoErrore, SEGNO_APPARATI, SEGNO_CATENE, SEGNO_INTEGRAZIONI, SEGNO_TIPI } from "./credentials/segni-t2";
 import { convertiControllerEAd, descriviIntegrazioni, segnoIntegrazioni } from "./credentials/converti-integrazioni";
-import { convertiCateneVecchie, descriviCatene, MOTIVO_DUE_TENANT, segnoCatene } from "./credentials/converti-catene";
+import { chiaviGlobaliHub, convertiCateneVecchie, descriviCatene, MOTIVO_DUE_TENANT, segnoCatene } from "./credentials/converti-catene";
 import { convertiCredenzialiApparati, descriviApparati, segnoApparati } from "./credentials/converti-apparati";
 import { migraAppleMacos } from "./devices/migra-apple-macos";
 import { randomUUID } from "crypto";
@@ -37,7 +37,6 @@ import { buildStatusSeries, statusWindowStartMs, type StatusObservation, type St
 import { registraRipiego } from "./db-maintenance/ripieghi";
 import {
   catenaReteDb,
-  chiaviGlobaliHub,
   communitySnmpDb,
   credenzialeSnmpApparatoDb,
   haSnmpApparatoDb,
@@ -50,7 +49,6 @@ import {
   type SceltaTokenApi,
 } from "./credentials/resolve";
 import { accessoSshDb, communityDb, coppiaLoginDb, coppiaSshDb, type AccessoSsh, type EsitoAccessoSsh } from "./credentials/segreti";
-import { tipiPerRuoloVecchio } from "./credentials/tipi";
 import { aggiornaCredenzialeDb, creaCredenzialeDb, eliminaCredenzialeDb, type ColonneCredenziale } from "./credentials/archivio";
 import { aggiungiAllaListaReteDb, copiaListaReteDb, sostituisciListaReteDb } from "./credentials/lista-rete";
 import type { ControllerKind, ControllerRunKind, ControllerRunStoredTrigger, MetodoVoceController, NetworkControllerRow } from "./controllers/types";
@@ -58,7 +56,6 @@ import {
   creaVoceControllerCifrataDb,
   creaVoceControllerDb,
   credenzialeControllerDb,
-  integrazioniConvertiteDb,
   vociDeiControllerDb,
   voceControllerDb,
   type ControllerDellaVoce,
@@ -3883,7 +3880,7 @@ export function registraVersioneSnmpRilevata(deviceId: number, versione: "1" | "
   return { prima: row.snmp_version };
 }
 
-type CreateDeviceInput = Omit<NetworkDevice, "id" | "created_at" | "updated_at" | "sysname" | "sysdescr" | "model" | "firmware" | "serial_number" | "part_number" | "last_info_update" | "last_device_info_json" | "classification" | "stp_info" | "last_proxmox_scan_at" | "last_proxmox_scan_result" | "scan_target" | "product_profile" | "use_for_arp_poll"> & {
+type CreateDeviceInput = Omit<NetworkDevice, "id" | "created_at" | "updated_at" | "sysname" | "sysdescr" | "model" | "firmware" | "serial_number" | "part_number" | "last_info_update" | "last_device_info_json" | "classification" | "stp_info" | "last_proxmox_scan_at" | "last_proxmox_scan_result" | "scan_target" | "product_profile" | "use_for_arp_poll" | "voci_provvisorie"> & {
   classification?: string | null;
   scan_target?: string | null;
   product_profile?: string | null;
@@ -3902,15 +3899,14 @@ export function createNetworkDevice(input: CreateDeviceInput): NetworkDevice {
   }
 
   const stmt = db().prepare(
-    `INSERT INTO network_devices (name, host, device_type, vendor, vendor_subtype, protocol, credential_id, snmp_credential_id, username, encrypted_password, community_string, api_token, api_url, port, enabled, classification, scan_target, product_profile, use_for_arp_poll, host_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO network_devices (name, host, device_type, vendor, vendor_subtype, protocol, api_url, port, enabled, classification, scan_target, product_profile, use_for_arp_poll, host_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   const result = stmt.run(
     input.name, input.host, input.device_type, input.vendor,
     input.vendor_subtype ?? null, input.protocol,
-    input.credential_id ?? null, (input as { snmp_credential_id?: number | null }).snmp_credential_id ?? null,
-    input.username, input.encrypted_password,
-    input.community_string, input.api_token, input.api_url, input.port, input.enabled,
+    // Le credenziali si legano dopo, coi binding d'archivio (T20): le colonne vecchie non si scrivono (T26).
+    input.api_url, input.port, input.enabled,
     (input as { classification?: string | null }).classification ?? null,
     (input as { scan_target?: string | null }).scan_target ?? null,
     (input as { product_profile?: string | null }).product_profile ?? null,
@@ -3932,7 +3928,7 @@ export function updateNetworkDevice(id: number, input: Partial<Omit<NetworkDevic
   const fields: string[] = [];
   const values: unknown[] = [];
 
-  const keys = ["name", "host", "device_type", "vendor", "vendor_subtype", "protocol", "credential_id", "snmp_credential_id", "username", "encrypted_password", "community_string", "api_token", "api_url", "port", "enabled", "classification", "sysname", "sysdescr", "model", "firmware", "serial_number", "part_number", "last_info_update", "last_device_info_json", "stp_info", "last_proxmox_scan_at", "last_proxmox_scan_result", "scan_target", "product_profile", "use_for_arp_poll", "host_id", "snmp_version", "snmp_version_fissata"] as const;
+  const keys = ["name", "host", "device_type", "vendor", "vendor_subtype", "protocol", "api_url", "port", "enabled", "classification", "sysname", "sysdescr", "model", "firmware", "serial_number", "part_number", "last_info_update", "last_device_info_json", "stp_info", "last_proxmox_scan_at", "last_proxmox_scan_result", "scan_target", "product_profile", "use_for_arp_poll", "host_id", "snmp_version", "snmp_version_fissata"] as const;
   for (const key of keys) {
     if (input[key] !== undefined) {
       fields.push(`${key} = ?`);
@@ -4203,97 +4199,25 @@ export function accessoSshCredenziale(credentialId: number): EsitoAccessoSsh {
   return accessoSshDb(db(), credentialId);
 }
 
-export type NetworkCredentialRole = "windows" | "linux" | "ssh" | "snmp";
-
-/** Regola unica (T12): i tipi del protocollo del ruolo, come li legge il motore. */
-function credentialMatchesNetworkRole(
-  credentialType: string,
-  role: NetworkCredentialRole
-): boolean {
-  return tipiPerRuoloVecchio(role).includes(credentialType.toLowerCase());
-}
-
-export function getNetworkHostCredentialIds(networkId: number, role: NetworkCredentialRole): number[] {
-  const rows = db()
-    .prepare(
-      `SELECT credential_id FROM network_host_credentials WHERE network_id = ? AND role = ? ORDER BY sort_order ASC, id ASC`
-    )
-    .all(networkId, role) as { credential_id: number }[];
-  return rows.map((r) => r.credential_id);
-}
-
-export function replaceNetworkHostCredentials(
-  networkId: number,
-  role: NetworkCredentialRole,
-  credentialIds: number[]
-): void {
-  const seen = new Set<number>();
-  const unique: number[] = [];
-  for (const id of credentialIds) {
-    if (seen.has(id)) continue;
-    seen.add(id);
-    const c = getCredentialById(id);
-    if (!c || !credentialMatchesNetworkRole(String(c.credential_type), role)) {
-      throw new Error(`Credenziale #${id} non valida per ruolo ${role}`);
-    }
-    unique.push(id);
-  }
-  const d = db();
-  d.transaction(() => {
-    d.prepare(`DELETE FROM network_host_credentials WHERE network_id = ? AND role = ?`).run(networkId, role);
-    const ins = d.prepare(
-      `INSERT INTO network_host_credentials (network_id, credential_id, role, sort_order) VALUES (?,?,?,?)`
-    );
-    unique.forEach((cid, i) => ins.run(networkId, cid, role, i));
-  })();
-}
-
-export type HostDetectCredentialRole = "windows" | "linux" | "ssh" | "snmp";
-
-export function getHostDetectCredentialId(hostId: number, role: HostDetectCredentialRole): number | null {
-  const row = db()
-    .prepare(`SELECT credential_id FROM host_detect_credential WHERE host_id = ? AND role = ?`)
-    .get(hostId, role) as { credential_id: number } | undefined;
-  return row?.credential_id ?? null;
-}
-
-/** Regola unica (T12): i tipi del protocollo del ruolo, come li legge il motore. */
-function credentialMatchesDetectRole(credentialType: string, role: HostDetectCredentialRole): boolean {
-  return tipiPerRuoloVecchio(role).includes(credentialType.toLowerCase());
-}
-
-export function setHostDetectCredential(hostId: number, role: HostDetectCredentialRole, credentialId: number): void {
-  const c = getCredentialById(credentialId);
-  if (!c || !credentialMatchesDetectRole(String(c.credential_type), role)) return;
-  db()
-    .prepare(
-      `INSERT INTO host_detect_credential (host_id, role, credential_id, updated_at)
-       VALUES (?, ?, ?, datetime('now'))
-       ON CONFLICT(host_id, role) DO UPDATE SET credential_id = excluded.credential_id, updated_at = datetime('now')`
-    )
-    .run(hostId, role, credentialId);
-}
-
 /** Le verifiche (fotografia, prova a vuoto) passano `registra: false`: i ripieghi non si scrivono. */
 type OpzioniRegistro = { registra?: boolean };
 
 /**
  * Catena di rilevamento (Windows o Linux) di una rete: involucro del motore
- * (`catenaReteDb`, tappa 2 credenziali, T7). Voci della rete, catene vecchie
- * e chiave globale dell'hub, tutte col filtro di tipo: prima la chiave
- * dell'hub si accodava senza controllo, anche se puntava a una voce che nel
- * tenant non c'è o è di un altro tipo. Catene vecchie e chiave dell'hub solo
- * finché la 2d non le ha convertite (T17, lo decide il motore col segno).
- * `role="linux"` è il protocollo SSH. `registra: false` (fotografia, prova a
- * vuoto) non scrive i ripieghi.
+ * (`catenaReteDb`, tappa 2 credenziali, T7): le voci della lista della rete,
+ * col filtro di tipo. Dalla 2g (T26) niente catene vecchie né chiave «di
+ * default» dell'hub: la 2d le ha portate nella lista, e le tabelle vecchie
+ * (`network_host_credentials`, `host_detect_credential`) non hanno più né
+ * lettori né scrittori. `role="linux"` è il protocollo SSH. `registra: false`
+ * (fotografia, prova a vuoto) non scrive i ripieghi.
  */
 export function getOrderedDetectCredentialIds(networkId: number, role: "windows" | "linux", opts: OpzioniRegistro = {}): number[] {
-  return catenaReteDb(db(), networkId, role === "windows" ? "winrm" : "ssh", { globaliHub: chiaviGlobaliHub(getSetting), registra: opts.registra });
+  return catenaReteDb(db(), networkId, role === "windows" ? "winrm" : "ssh", { registra: opts.registra });
 }
 
 /** Catena SSH di una rete per la scansione: involucro del motore (vedi sopra). */
 export function getOrderedSshLinuxCredentialIds(networkId: number, opts: OpzioniRegistro = {}): number[] {
-  return catenaReteDb(db(), networkId, "ssh", { globaliHub: chiaviGlobaliHub(getSetting), registra: opts.registra });
+  return catenaReteDb(db(), networkId, "ssh", { registra: opts.registra });
 }
 
 /**
@@ -7432,15 +7356,20 @@ export function getDhcpLeaseStats(): { total: number; bySource: Record<string, n
 // MISC
 // ═══════════════════════════════════════════════════════════════════════════
 
-/** Reset configurazione tenant (solo tabelle tenant, non hub). */
+/**
+ * Reset configurazione tenant (solo tabelle tenant, non hub).
+ * Le catene vecchie (`network_host_credentials`, `host_detect_credential`)
+ * non si nominano (T26): dove ci sono ancora, le loro righe se ne vanno con la
+ * cascata di `credentials`, `hosts` e `networks`; dove la pulizia della 2g le
+ * ha tolte, una DELETE darebbe «no such table» e farebbe fallire l'intero
+ * reset, che è una transazione.
+ */
 export function resetConfiguration(): void {
   const d = db();
   d.transaction(() => {
     d.exec(`
       DELETE FROM scan_history;
       DELETE FROM status_history;
-      DELETE FROM host_detect_credential;
-      DELETE FROM network_host_credentials;
       DELETE FROM host_credentials;
       DELETE FROM network_credentials;
       DELETE FROM arp_entries;
@@ -9181,9 +9110,9 @@ export function updateNetworkController(id: number, patch: NetworkControllerPatc
 // solo nel DB del tenant (il vecchio ipam.db non ha `network_controllers`, e
 // il facade non li espone).
 
-/** Con che cosa entra il controller: la voce, le colonne (righe mai convertite) o niente. Non registra. */
+/** Con che cosa entra il controller: la sua voce, o niente (dalla 2g le colonne non valgono più). Non registra. */
 export function credenzialeDelController(
-  row: Pick<NetworkControllerRow, "kind" | "credential_id" | "password_enc" | "api_key_enc">,
+  row: Pick<NetworkControllerRow, "kind" | "credential_id">,
   metodo?: MetodoVoceController,
 ): CredenzialeController {
   return credenzialeControllerDb(db(), row, metodo);
@@ -9210,11 +9139,6 @@ export function creaVoceDelControllerCifrata(
 /** Nome e metodo della voce di ogni controller, in una query. */
 export function listVociDeiController(): Map<number, VoceDelController> {
   return vociDeiControllerDb(db());
-}
-
-/** La conversione della 2f è chiusa con `done:`? Allora le colonne dei controller non valgono più. */
-export function integrazioniConvertite(): boolean {
-  return integrazioniConvertiteDb(db());
 }
 
 /**

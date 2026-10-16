@@ -355,7 +355,7 @@ export async function getDeviceInfoFromSnmp(device: NetworkDevice, portaProva?: 
  */
 export async function getDeviceInfoFromSsh(device: NetworkDevice): Promise<Partial<DeviceInfo>> {
   const creds = getDeviceCredentials(device);
-  const username = creds?.username ?? device.username ?? undefined;
+  const username = creds?.username ?? undefined;
   // Password o chiave privata (tappa 2 credenziali, T14).
   if (!username || !creds || !haSegretoSsh(creds)) return {};
 
@@ -1272,7 +1272,7 @@ export async function getDeviceInfoFromWmi(device: NetworkDevice): Promise<Parti
   const { getDeviceCredentials } = await import("@/lib/db");
   const { runWmiProbe } = await import("./wmi-run");
   const creds = getDeviceCredentials(device);
-  const username = creds?.username ?? device.username ?? "";
+  const username = creds?.username ?? "";
   const password = creds?.password ?? "";
   if (!username || !password) {
     throw new Error("Credenziali Windows mancanti — fallback WMI non eseguibile.");
@@ -1442,7 +1442,7 @@ export async function getDeviceInfo(device: NetworkDevice): Promise<DeviceInfo> 
     nasKind != null;
   const hasSsh =
     (device.protocol === "ssh" || isLinuxVendorInfo) &&
-    !!(device.username || getDeviceCredentials(device)?.username);
+    !!getDeviceCredentials(device)?.username;
   const hasWinrm =
     device.protocol === "winrm" || device.vendor === "windows" || scanTarget === "windows";
 

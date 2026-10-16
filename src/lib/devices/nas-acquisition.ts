@@ -505,7 +505,7 @@ function countSynopkgLines(out: string): number | null {
  */
 export async function getNasDeviceInfoFromSsh(device: NetworkDevice, vendor: NasVendor): Promise<Partial<DeviceInfo>> {
   const creds = getDeviceCredentials(device);
-  const username = creds?.username ?? device.username ?? undefined;
+  const username = creds?.username ?? undefined;
   if (!username || !creds || !haSegretoSsh(creds)) return {};
 
   // Se il protocollo primario è SNMP, la porta configurata è quella SNMP (161): usa 22 per SSH

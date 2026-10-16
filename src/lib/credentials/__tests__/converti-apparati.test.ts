@@ -43,15 +43,9 @@ import { closeTenantDb, deleteTenantDatabase, getTenantDb, withTenant } from "@/
 import { closeHubDb, getHubDb } from "@/lib/db-hub";
 import { decrypt, encrypt } from "@/lib/crypto";
 import { riepilogoRipieghi } from "@/lib/db-maintenance/ripieghi";
-import {
-  credenzialeSnmpApparatoDb,
-  FONTI_ACQUISIZIONE,
-  FONTI_ACQUISIZIONE_2G,
-  sceltaLoginApparatoDb,
-  type ResolvedCredentialSource,
-} from "@/lib/credentials/resolve";
+import { credenzialeSnmpApparatoDb, FONTI_ACQUISIZIONE, sceltaLoginApparatoDb, type OpzioniMotore } from "@/lib/credentials/resolve";
 import { opzioniSsh } from "@/lib/credentials/segreti";
-import { convertiCredenzialiApparati, descriviApparati, segnoApparati, type EsitoApparati } from "@/lib/credentials/converti-apparati";
+import { convertiCredenzialiApparati, descriviApparati, opzioniDiPrima, segnoApparati, type EsitoApparati } from "@/lib/credentials/converti-apparati";
 import { righeConversioni } from "@/lib/transfer/esito-import";
 import type { NetworkDevice } from "@/types";
 
@@ -200,13 +194,16 @@ function riga(d: Database.Database, id: number): NetworkDevice {
 }
 
 /**
- * La scelta dell'acquisizione per login e SNMP, con le fonti date: porta e
- * segreto (in memoria, mai stampati), e a parte la fonte.
+ * La scelta dell'acquisizione per login e SNMP: porta e segreto (in memoria,
+ * mai stampati), e a parte la fonte. `prima`: con le fonti di prima della 2g
+ * (`opzioniDiPrima`, come le ricostruisce la conversione); altrimenti il
+ * motore della 2g, che legge solo l'archivio.
  */
-function scelte(d: Database.Database, id: number, fonti: readonly ResolvedCredentialSource[]): { firma: string; fonti: string[] } {
+function scelte(d: Database.Database, id: number, prima: boolean): { firma: string; fonti: string[] } {
   const dev = riga(d, id);
-  const login = sceltaLoginApparatoDb(d, dev, { registra: false, fonti });
-  const snmp = credenzialeSnmpApparatoDb(d, dev, { registra: false, fonti });
+  const opts: Pick<OpzioniMotore, "fonti" | "fontiVecchie"> = prima ? opzioniDiPrima(d, id) : { fonti: FONTI_ACQUISIZIONE };
+  const login = sceltaLoginApparatoDb(d, dev, { registra: false, ...opts });
+  const snmp = credenzialeSnmpApparatoDb(d, dev, { registra: false, ...opts });
   const a = login.ok ? { porta: login.candidato.port, segreto: opzioniSsh(login.segreto) } : null;
   const s = snmp.ok ? { porta: snmp.port, cred: snmp.cred } : null;
   return {
@@ -452,7 +449,7 @@ describe("convertiCredenzialiApparati", () => {
     assert.equal(e.bindingDaColonne[0].colonna, "api_token");
   });
 
-  it("le scelte di login e SNMP hanno la stessa porta e lo stesso segreto prima (tutte le fonti) e dopo (fonti della 2g)", () => {
+  it("le scelte di login e SNMP hanno la stessa porta e lo stesso segreto prima (fonti di prima della 2g) e dopo (motore della 2g)", () => {
     const d = nuovoDb();
     const V = voce(d, "Community sede", "snmp", { segreto: "c-sede" });
     const S = voce(d, "Root Proxmox", "ssh", { utente: "root", segreto: "pw-root" });
@@ -468,15 +465,15 @@ describe("convertiCredenzialiApparati", () => {
     binding(d, F, "ssh", 22, { inline_username: "admin", inline_encrypted_password: encrypt("pw-fw"), test_status: "success" });
     binding(d, F, "snmp", 1161, { inline_encrypted_password: encrypt("c-fw") });
     ids.push(F);
-    const prima = Object.fromEntries(ids.map((id) => [id, scelte(d, id, FONTI_ACQUISIZIONE)]));
-    // La prova vale: senza la conversione, le fonti della 2g cambiano le scelte.
-    assert.ok(ids.some((id) => scelte(d, id, FONTI_ACQUISIZIONE_2G).firma !== prima[id].firma));
+    const prima = Object.fromEntries(ids.map((id) => [id, scelte(d, id, true)]));
+    // La prova vale: senza la conversione, il motore della 2g cambia le scelte.
+    assert.ok(ids.some((id) => scelte(d, id, false).firma !== prima[id].firma));
 
     const e = convertiCredenzialiApparati(d, { aVuoto: false });
 
     assert.deepEqual(e.lasciati, []);
     for (const id of ids) {
-      const dopo = scelte(d, id, FONTI_ACQUISIZIONE_2G);
+      const dopo = scelte(d, id, false);
       assert.equal(dopo.firma, prima[id].firma, `apparato #${id}: porta o segreto cambiati`);
       for (const f of dopo.fonti) assert.ok(f === "device_binding" || f === "snmp_ripiego" || f === "nessuna", `apparato #${id}: fonte ${f} dopo`);
     }

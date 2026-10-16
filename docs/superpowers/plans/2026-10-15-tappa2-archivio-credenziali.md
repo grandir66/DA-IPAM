@@ -40,6 +40,10 @@ cioè tutte le domande D1-D12 e D1b sulla risposta raccomandata (la prima opzion
 e l'«Interfaccia proposta» così com'è. Rilasci 2c-2f: **autorizzati senza altra
 conferma** quando backup, prova a vuoto sulle copie e conteggi prima/dopo tornano; ci si
 ferma e si chiede solo se qualcosa non torna. La 2g resta con la conferma di Riccardo.
+**Decisioni di Riccardo del 16/10 per la 2g** (scritte in D9 e nei T26-T27): D9 rivista,
+niente attesa di 14 giorni («non voglio attendere»); e i due apparati lasciati dalla 2e
+sull'hub accettati così, cioè senza credenziale valida dopo la 2g finché una Prova non
+riesce.
 
 ## Vincoli globali
 
@@ -399,7 +403,7 @@ il suo numero e la lettera.
 | D6 | Fin dove arrivano chiave SSH e token API | trasporto SSH principale e Omada; paramiko e terminale rifiutano con un messaggio |
 | D7 | L'account dell'Active Directory | un tipo a sé, mai nelle tendine WinRM |
 | D8 | Eliminare o cambiare tipo a una voce in uso | rifiutato, con l'elenco degli usi |
-| D9 | Quando si toglie il vecchio | 14 giorni dopo la 2f, coi ripieghi a zero, con uno script e la tua conferma |
+| D9 | Quando si toglie il vecchio | ~~14 giorni dopo la 2f~~ **rivista il 16/10:** subito, coi segni chiusi e i ripieghi a zero dal rilascio della 2f, con uno script e la tua conferma |
 | D10 | Un binding che ha fallito la prova | saltato finché una prova non riesce |
 | D11 | Quale porta usa l'acquisizione | quella dell'apparato, come oggi (salvo SNMP e SSH di Proxmox) |
 | D12 | Si cambia l'indirizzo del DC dell'AD | la credenziale si scollega e va scelta di nuovo |
@@ -565,6 +569,28 @@ credenziali di controller e AD della spec §3.)
 giorni passano decine di giri di `ad_sync` (ogni 6 ore) e delle letture UniFi (ogni ora),
 e il registro dei ripieghi dura 30 giorni.
 *Ne dipendono:* T26, T27.
+
+**D9 rivista da Riccardo il 16/10** («non voglio attendere»). La condizione a tempo
+sparisce. Restano le altre:
+- i segni chiusi;
+- il registro dei ripieghi a zero per i casi di D9 **dal rilascio della 2f** (la data
+  scritta nel segno `credenziali_t2_integrazioni` del tenant), non negli ultimi 14 giorni;
+- i giri del giorno andati bene. Li controlla la sessione principale: il 16/10 alle 12:06
+  italiane controller e AD di hub e cliente A letti con le voci dell'archivio, MK-DTS2
+  riletto 8/8, nessun ripiego `cred_*`.
+
+**Lasciati accettati da Riccardo il 16/10.** Sull'hub il segno `credenziali_t2_apparati`
+vale `parziale:` per 2 apparati lasciati (uno SSH e uno WinRM: binding fallito verso la
+stessa voce della colonna). Riccardo li accetta così: dopo la 2g restano senza credenziale
+valida finché una Prova non riesce. Quindi un `parziale:` della 2e **non è più un blocco
+assoluto** quando gli apparati lasciati, ricalcolati al momento con la conversione a vuoto,
+coincidono esattamente con un elenco di id accettati passato a mano allo script
+(`--lasciati-accettati <tenant>:<id>,<id>`, per tenant perché gli id sono del DB di quel
+tenant). L'elenco non si deduce e non ha un valore di default. Le righe Omada lasciate dalla
+2f restano un blocco. Il motore della 2g non legge più colonne né inline: per quei due
+apparati la scelta diventa «nessuna», ed è voluto (effetto accettato, scritto nel CHANGELOG).
+La regola sta in `src/lib/credentials/condizioni-2g.ts` (`valutaCondizioni2g`), la usano lo
+script di misura del T26 e la pulizia del T27.
 
 **D10 — Un binding che ha fallito la prova.**
 - **(a)** Si salta finché una prova non riesce, come fa già oggi il motore per la
@@ -2095,19 +2121,25 @@ scrivere colonne e inline.
 
 ### Task 26 — Misura di convivenza e pulizia del codice
 
-- [ ] **Si comincia solo se:**
-  - sono passati i giorni di D9 dalla data scritta nel segno `credenziali_t2_integrazioni`
-    di hub e A;
-  - nel registro (`<DATA_DIR>/logs/ripieghi/`) di hub e A sono a 0, negli ultimi 14
-    giorni, i casi `cred_colonna_apparato`, `cred_binding_inline`,
-    `cred_catena_vecchia`, `cred_chiave_hub`, `cred_riga_integrazione` e
-    `cred_v3_vecchia`. `cred_public` non conta: con D5 = (a) resta per sempre. Si legge
-    per caso e firma, col conteggio;
-  - i quattro segni valgono `done:` (non `parziale:` né `errore:`) in ogni tenant con dati
-    (H1, H2, A). Un tenant mai aperto dopo la 2c, come il DEFAULT dell'hub (si apre solo
-    quando qualcuno ripiega sul facade), non ha segni: si dichiara per nome nel messaggio
-    a Riccardo e si esclude. Quando si aprirà farà tutte le conversioni in fila; la
-    pulizia dei dati lì non partirà mai da sola, perché è uno script (T27).
+- [ ] **Si comincia solo se** (D9 rivista e lasciati accettati, 16/10; lo misura sul server
+  la sessione principale con `scripts/credenziali/condizioni-2g.ts`, in sola lettura sulle
+  copie):
+  - ~~sono passati i giorni di D9 dalla data scritta nel segno `credenziali_t2_integrazioni`
+    di hub e A~~ (tolta il 16/10: niente attesa);
+  - nel registro (`<DATA_DIR>/logs/ripieghi/`) di hub e A sono a 0, **dal rilascio della
+    2f** (data del segno `credenziali_t2_integrazioni` del tenant), i casi
+    `cred_colonna_apparato`, `cred_binding_inline`, `cred_catena_vecchia`,
+    `cred_chiave_hub`, `cred_riga_integrazione` e `cred_v3_vecchia`. `cred_public` non
+    conta: con D5 = (a) resta per sempre. Si legge per caso e firma, col conteggio;
+  - i segni `credenziali_t2_tipi`, `…_catene` e `…_integrazioni` valgono `done:` in ogni
+    tenant con dati (H1, H2, A); `credenziali_t2_apparati` vale `done:`, oppure
+    `parziale:` coi lasciati ricalcolati adesso uguali all'elenco accettato
+    (`--lasciati-accettati`, sull'hub i 2 apparati di H1). Un tenant mai aperto dopo la 2c,
+    come il DEFAULT dell'hub (si apre solo quando qualcuno ripiega sul facade), non ha
+    segni: si dichiara per nome nel messaggio a Riccardo e si esclude. Quando si aprirà
+    farà tutte le conversioni in fila; la pulizia dei dati lì non partirà mai da sola,
+    perché è uno script (T27);
+  - i giri del giorno andati bene (sessione principale).
   - *(revisione della 2f)* un tenant con righe Omada lasciate dal T22 ha il segno della
     2f a `parziale:` per sempre: è un blocco esplicito, non un caso da aggirare. Il
     registro non lo vede (una riga Omada non arriva mai al client, quindi
@@ -2115,7 +2147,7 @@ scrivere colonne e inline.
     non si svuotano finché non esiste una voce (conversione a mano quando Omada avrà un
     formato, o riga tolta con l'ok di Riccardo); la pulizia del T27 le salta già, perché
     svuota solo dove `credential_id` non è NULL.
-- [ ] **File**
+- [x] **File**
   - modifica `resolve.ts`: via le fonti `device_inline`, `device_column*`, `legacy_chain`
     e `hub_default` (`snmp_ripiego` resta secondo D5);
   - via il ripiego sulle colonne di controller e AD: con `credential_id` NULL l'errore
@@ -2139,30 +2171,59 @@ scrivere colonne e inline.
     (`:61`); `table-registry.ts:11-12` le toglie dall'export;
   - modifica `scripts/credenziali/fotografia-scelte.ts` (e il suo modulo d'appoggio): via
     `getNetworkHostCredentialIds` e le catene vecchie, stesso formato.
-- [ ] **Prova prima del codice:**
+- [x] **Prova prima del codice:**
   - un bundle vecchio con catene vecchie si importa in un DB senza quelle tabelle e la
     lista della rete le contiene;
   - il motore non ha più le fonti tolte;
   - `resetConfiguration`, tutte e due le gemelle, su un DB **senza** le due tabelle
     riesce, e su un DB **con** le due tabelle piene le svuota (cascata).
+  Fatte in `via-il-vecchio.test.ts` (viste fallire il 16/10), più `condizioni-2g.test.ts`
+  e `condizioni-2g-script.test.ts` per le condizioni.
+- [x] **Fatto il 16/10, adattato al codice** (il perché in CHANGELOG):
+  - la conversione della 2e (T19) non può più calcolare la scelta «prima» col motore, che
+    non legge le fonti vecchie: la ricostruisce lei, passando al motore binding inline e
+    colonne con un innesto solo suo (`fontiVecchie`, fonte `fonte_vecchia`). Senza, un
+    bundle o un'appliance di prima della 2e avrebbe tutti gli apparati con le sole colonne
+    fra i lasciati, cioè senza accesso;
+  - `chiaviGlobaliHub` va in `converti-catene.ts` (la legge solo la 2d); il motore non ha
+    più l'opzione `globaliHub`;
+  - gli usi di una voce (`usi.ts`, D8) non contano più colonne dell'apparato, catene
+    vecchie e pin (stessa regola del motore);
+  - le rotte `/api/devices` e `/api/devices/[id]` tolgono le colonne vecchie dalla risposta
+    (`devices/colonne-vecchie.ts`) invece di mascherarle: una `SELECT *` le porta ancora;
+  - `ProvisionalDevice` porta `credential_id` / `snmp_credential_id` come voci scelte
+    (`voci_provvisorie` dell'apparato provvisorio, trattate come binding non provati);
+  - controller e AD perdono lo stato «forma vecchia» anche nell'interfaccia (finestra del
+    controller, pagina AD);
+  - l'import mette catene vecchie e pin del bundle in tabelle temporanee coi nomi di
+    sempre (`conCateneDelBundle`) e chiama la conversione della 2d; con la cancellazione
+    svuota anche le tabelle vecchie dove ci sono ancora; `EXCLUDED_TENANT_TABLES` le
+    elenca;
+  - la prova a vuoto (`appoggio-prova.ts`) ricostruisce la sequenza «prima» del codice di
+    prima su un tenant la cui 2d non è chiusa (lista, catene vecchie, chiave dell'hub),
+    così la proprietà della 2d resta misurabile col codice della 2g.
 - [ ] **Commit:** `refactor(credenziali): via le letture del vecchio`.
 
 ### Task 27 — Svuotamento dei dati vecchi e rilascio 2g
 
 La pulizia dei dati **non sta in `getTenantDb`**: su un'appliance che riceve `main` dopo
-la 2g, conversioni e pulizia girerebbero nella stessa apertura, senza i 14 giorni di D9,
-senza prova a vuoto e senza backup (`update.sh:109-136` fa build e riavvio). Diventa uno
-script, come `togli-chiavi-hub.ts`.
+la 2g, conversioni e pulizia girerebbero nella stessa apertura, senza prova a vuoto, senza
+backup e senza conferma (`update.sh:109-136` fa build e riavvio). Diventa uno script, come
+`togli-chiavi-hub.ts`.
 
-- [ ] **File**
+- [x] **File**
   - crea `src/lib/credentials/pulizia-t2.ts` (pura, con l'handle) e la sua prova, e
     `scripts/credenziali/pulizia-t2.ts` (riga di comando: guardia e ambiente come negli
     altri script quando gira su una copia). `--dry-run` di default: stampa per tenant
     cosa farebbe, coi nomi a terminale. `--applica` chiede la conferma scritta (si digita
     il codice del tenant) e lavora un tenant alla volta, a servizio fermo. Prima di
     scrivere:
-    - controlla le condizioni: i quattro segni `done:` (un `parziale:` o un `errore:`
-      blocca), e il segno della 2f vecchio di almeno i giorni di D9 (data nel segno);
+    - controlla le condizioni con `valutaCondizioni2g` (`condizioni-2g.ts`, decisioni del
+      16/10): i segni `done:`, la 2e anche `parziale:` coi lasciati ricalcolati uguali a
+      `--lasciati-accettati` (mai dedotto), nessuna riga Omada lasciata, ripieghi a zero
+      dal rilascio della 2f; ~~il segno della 2f vecchio di almeno i giorni di D9~~ (tolto
+      il 16/10). I 2 lasciati accettati dell'hub hanno un binding equivalente (fallito,
+      verso la stessa voce della colonna): le loro colonne si svuotano;
     - fa il backup `.bak-YYYYMMDD-HHMMSS` del DB con `db.backup()`, dopo aver controllato
       lo spazio con `statfs`, e stampa nome e ora;
 
@@ -2187,9 +2248,9 @@ script, come `togli-chiavi-hub.ts`.
     le 7 `integration_unifi_*` di hub.db di A, perché il segno `done` le ha rese inutili;
   - modifica `scripts/misura-topologia.ts:119` e `scripts/misura-mac-porta.ts:173`:
     l'utente del controller viene dalla voce.
-- [ ] **Prova prima del codice:**
-  - con un segno `parziale:` o `errore:`, o col segno della 2f troppo recente → nessun
-    effetto, motivo stampato;
+- [x] **Prova prima del codice:**
+  - con un segno `parziale:` (fuori dai lasciati accettati) o `errore:` → nessun effetto,
+    motivo stampato (il segno della 2f recente non blocca più: D9 rivista il 16/10);
   - `--dry-run` non scrive niente (mtime e conteggi uguali);
   - con `--applica` e tutte le condizioni: il `.bak` esiste prima della prima scrittura,
     colonne vuote e tabelle tolte; la seconda chiamata non ha effetti;
@@ -2197,10 +2258,40 @@ script, come `togli-chiavi-hub.ts`.
     tenant non si pulisce;
   - le due DROP in una transazione: se la seconda fallisce, la prima torna indietro;
   - lo script dell'hub a vuoto stampa solo i nomi delle chiavi.
+  Fatte il 16/10 e viste fallire prima del codice: `pulizia-t2.test.ts`, `pulizia-t2-script.test.ts`,
+  `togli-chiavi-hub.test.ts`, `guardia-scrittura.test.ts`, `controllers/__tests__/utente-voce.test.ts`, più i casi
+  nuovi di `condizioni-2g.test.ts` e `condizioni-2g-script.test.ts` (ripieghi da confermare).
+- [x] **Fatto il 16/10, adattato al codice** (il perché in CHANGELOG e nell'ADR 0017):
+  - «colonna piena fuori dall'elenco blocca» si legge alla lettera (nota della sessione principale del 16/10): si
+    svuotano solo gli apparati dell'elenco `--lasciati-accettati` che hanno già un binding equivalente; un
+    apparato con una colonna piena fuori dall'elenco blocca il tenant **anche** se ha un binding equivalente (dopo
+    la 2e le sue colonne dovevano essere già vuote: qualcosa non torna). Un binding inline blocca anche lui;
+  - «binding equivalente» è una funzione sola: il piano della conversione della 2e (`pianoApparato` in
+    `converti-apparati.ts`, estratto senza cambiarne il comportamento) e `vecchioRimastoApparatiDb` per la pulizia;
+  - ripieghi da confermare: il registro non scrive l'apparato, quindi con dei lasciati accettati i
+    `cred_colonna_apparato` dal rilascio della 2f non bloccano da soli (`daConfermare` di `valutaCondizioni2g`),
+    si stampano per firma col conteggio e la conferma scritta diventa `<tenant> <n>`. Lo script delle condizioni
+    del T26 li dice «DA CONFERMARE» con l'uscita 3;
+  - due modi dichiarati a mano, `--copia` o `--servizio <unità>`; sui dati veri «fermo» si legge da
+    `systemctl show` (LoadState e ActiveState, tre esiti) e deve essere fermo anche `<unità>-update.timer`
+    (`guardia-scrittura.ts`). Le copie si guardano come negli altri script;
+  - controller e AD senza voce con colonne piene restano com'erano e si elencano («senza voce, restano
+    com'erano»): oltre alle righe Omada (blocco), anche una voce tolta dopo la 2f lascia la riga così;
+  - `togli-chiavi-hub.ts`: le chiavi di D3 restano se c'è un solo tenant attivo e la sua 2d non è chiusa; le
+    `integration_unifi_*` restano se i tenant attivi sono al più uno e quello non ha il segno
+    `controllers_legacy_unifi` (con nessun tenant attivo, restano). Fa anche lui il backup di hub.db;
+  - lo schema dei tenant nuovi perde le due tabelle e l'indice (`db-tenant-schema.ts`, le righe sono cambiate dal
+    piano); le prove che le riempiono le creano con la definizione vecchia copiata
+    (`src/lib/__tests__/support/catene-vecchie.ts`). Lo schema del vecchio `ipam.db` (`db-schema.ts`, `db.ts`) non
+    si tocca: le sue migrazioni le leggono ancora;
+  - gli script di misura (`misura-topologia.ts`, `misura-mac-porta.ts`) leggono l'utente del controller con
+    `utenteVoceControllerDb` (solo l'utente: la password arriva da stdin);
+  - CONTEXT §6 lo aggiorna la sessione principale dopo la pulizia sul server (prima la tappa non è chiusa).
 - [ ] Procedura R completa per il codice (T26 e T27). Poi, a parte e con la conferma di
   Riccardo per ciascuno: `pulizia-t2.ts` a vuoto e con `--applica` su hub e A, e lo
   script dell'hub.
-- [ ] CONTEXT §6 (tappa 2 chiusa, trappole), CHANGELOG, ADR 0017 aggiornato.
+- [ ] CONTEXT §6 (tappa 2 chiusa, trappole), CHANGELOG, ADR 0017 aggiornato. *(CHANGELOG e ADR il 16/10; CONTEXT
+  dopo la pulizia sul server.)*
 - [ ] Fotografie sul server tolte (`rm -rf /var/tmp/credenziali-t2`) e **verificato**
   (`test ! -e /var/tmp/credenziali-t2` su hub e A).
 - [ ] **Commit:** `feat(credenziali): via colonne e tabelle vecchie, archivio unico completo`.

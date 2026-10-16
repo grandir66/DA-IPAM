@@ -45,14 +45,19 @@ function voceV3(nome: string, privProtocol: string): number {
   );
 }
 
+/** Dalla 2g la voce dell'apparato sta solo nell'archivio (binding SNMP), mai nelle colonne di network_devices. */
 function apparatoV3(credentialId: number | null): NetworkDevice {
   return withTenant(T, () => {
     const db = getTenantDb(T);
     const id = Number(
       db
-        .prepare("INSERT INTO network_devices (name, host, device_type, vendor, protocol, port, credential_id) VALUES ('R', '127.0.0.1', 'router', 'mikrotik', 'snmp_v3', 161, ?)")
-        .run(credentialId).lastInsertRowid
+        .prepare("INSERT INTO network_devices (name, host, device_type, vendor, protocol, port) VALUES ('R', '127.0.0.1', 'router', 'mikrotik', 'snmp_v3', 161)")
+        .run().lastInsertRowid
     );
+    if (credentialId !== null) {
+      db.prepare("INSERT INTO device_credential_bindings (device_id, credential_id, protocol_type, port, sort_order) VALUES (?, ?, 'snmp', 161, 0)")
+        .run(id, credentialId);
+    }
     return db.prepare("SELECT * FROM network_devices WHERE id = ?").get(id) as NetworkDevice;
   });
 }

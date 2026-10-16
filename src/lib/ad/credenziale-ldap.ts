@@ -7,19 +7,13 @@
  * vedeva. Il T22 l'ha portato in una voce «AD · <nome>» (`credential_id`);
  * qui lo si legge da lì, con `leggiSegretoDb` (tipo «Active Directory», D7):
  * - con la voce: il suo utente e la sua password, come sono stati salvati;
- * - senza voce, le colonne della riga valgono solo per le righe MAI
- *   convertite, cioè col segno `credenziali_t2_integrazioni` diverso da
- *   `done:` (un lasciato del T22, o una conversione fallita). Con `done:`
- *   ogni riga con l'account ha ricevuto la sua voce: un `credential_id` NULL
- *   è uno scollegamento voluto (DC cambiato, D12 = (a); `resetConfiguration`)
- *   e le colonne ancora piene non si leggono. È la stessa regola del
- *   controller (T23, `controllers/credenziale.ts`);
- * - senza niente da leggere: «Credenziale mancante», e nessun bind parte.
+ * - senza voce: «Credenziale mancante», e nessun bind parte. Fino alla 2g le
+ *   colonne della riga valevano per le righe mai convertite (segno della 2f
+ *   diverso da `done:`); dalla 2g (T26) non si leggono più, qualunque sia il
+ *   segno. È la stessa regola del controller (`controllers/credenziale.ts`).
  *
  * Chi usa l'account per entrare (bind LDAP, kinit, prova WinRM di Kerberos)
- * passa da `credenzialeLdapDi`, che registra il ripiego
- * `cred_riga_integrazione` quando legge le colonne; `credenzialeLdapDb` non
- * registra (le verifiche non registrano).
+ * passa da `credenzialeLdapDi`.
  *
  * WinRM del DHCP e sonda della salute: la voce Windows `winrm_credential_id`,
  * letta da `segreti.ts` (solo voci Windows, D7), con la porta della voce
@@ -30,19 +24,16 @@
  */
 import type Database from "better-sqlite3";
 import type { z } from "zod";
-import { safeDecrypt } from "@/lib/crypto";
 import { creaVoceDb } from "@/lib/credentials/archivio";
 import { leggiSegretoDb } from "@/lib/credentials/segreti";
 import { portaCredenziale } from "@/lib/credentials/porte";
-import { leggiSegno, SEGNO_INTEGRAZIONI } from "@/lib/credentials/segni-t2";
-import { registraRipiego } from "@/lib/db-maintenance/ripieghi";
-import { currentFacadeTenant, getDb, type AdIntegration } from "@/lib/db";
+import { getDb, type AdIntegration } from "@/lib/db";
 import type { CredentialSchema } from "@/lib/validators";
 import { nomeVoceAd, type StatoAccountLdap } from "./account-ldap";
 
 type DatiCredenziale = z.infer<typeof CredentialSchema>;
 
-/** Nessuna voce e nessuna colonna da leggere: non parte nessun bind. */
+/** Nessuna voce: non parte nessun bind. */
 export const CREDENZIALE_MANCANTE_AD =
   "Credenziale mancante: scegli l'account LDAP dall'archivio nella modifica dell'integrazione Active Directory";
 
@@ -60,59 +51,34 @@ export type RigaAccountLdap = Pick<AdIntegration, "encrypted_username" | "encryp
 /** L'account decifrato: resta in memoria, mai in una risposta. */
 export type CredenzialeLdap =
   | { ok: true; fonte: "voce"; credentialId: number; nome: string; username: string; password: string }
-  | { ok: true; fonte: "colonne"; credentialId: null; nome: null; username: string; password: string }
   /** `mancante`: non c'è niente da leggere (stato, non guasto). */
   | { ok: false; mancante: boolean; motivo: string };
 
-/** Vero se la conversione della 2f è chiusa con `done:`: allora le colonne non valgono più. */
-function convertitaDb(dbh: Database.Database): boolean {
-  const conSettings = dbh.prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'tenant_settings'`).get();
-  return !!conSettings && (leggiSegno(dbh, SEGNO_INTEGRAZIONI) ?? "").startsWith("done:");
-}
-
-function stato(riga: RigaAccountLdap, convertita: boolean): StatoAccountLdap {
-  if (riga.credential_id != null) return "voce";
-  if (!riga.encrypted_username && !riga.encrypted_password) return "mancante";
-  return convertita ? "mancante" : "forma_vecchia";
+function stato(riga: RigaAccountLdap): StatoAccountLdap {
+  return riga.credential_id != null ? "voce" : "mancante";
 }
 
 /** Con che cosa entra la riga, senza decifrare: per la pagina. */
-export function statoAccountLdapDb(dbh: Database.Database, riga: RigaAccountLdap): StatoAccountLdap {
-  return stato(riga, riga.credential_id == null && convertitaDb(dbh));
+export function statoAccountLdap(riga: RigaAccountLdap): StatoAccountLdap {
+  return stato(riga);
 }
 
 /**
- * L'account LDAP della riga: la sua voce; senza voce, le colonne di una riga
- * mai convertita; altrimenti «Credenziale mancante». Non lancia, non registra.
+ * L'account LDAP della riga: la sua voce; senza voce «Credenziale mancante»
+ * (dalla 2g le colonne della riga non si leggono più). Non lancia, non
+ * registra.
  */
 export function credenzialeLdapDb(dbh: Database.Database, riga: RigaAccountLdap): CredenzialeLdap {
-  if (riga.credential_id != null) {
-    const e = leggiSegretoDb(dbh, riga.credential_id, "ldap");
-    if (!e.ok) return { ok: false, mancante: false, motivo: e.motivo };
-    if (e.segreto.forma !== "utente") return { ok: false, mancante: false, motivo: `La credenziale «${e.nome}» non ha utente e password` };
-    return { ok: true, fonte: "voce", credentialId: riga.credential_id, nome: e.nome, username: e.segreto.username, password: e.segreto.password };
-  }
-  if (statoAccountLdapDb(dbh, riga) === "mancante") return { ok: false, mancante: true, motivo: CREDENZIALE_MANCANTE_AD };
-  // Come prima della 2f: utente e password dalle colonne, tutti e due decifrati.
-  const username = riga.encrypted_username ? safeDecrypt(riga.encrypted_username) : null;
-  const password = riga.encrypted_password ? safeDecrypt(riga.encrypted_password) : null;
-  if (!username || !password) return { ok: false, mancante: false, motivo: "Credenziali AD non decifrabili: verificare ENCRYPTION_KEY." };
-  return { ok: true, fonte: "colonne", credentialId: null, nome: null, username, password };
+  if (riga.credential_id == null) return { ok: false, mancante: true, motivo: CREDENZIALE_MANCANTE_AD };
+  const e = leggiSegretoDb(dbh, riga.credential_id, "ldap");
+  if (!e.ok) return { ok: false, mancante: false, motivo: e.motivo };
+  if (e.segreto.forma !== "utente") return { ok: false, mancante: false, motivo: `La credenziale «${e.nome}» non ha utente e password` };
+  return { ok: true, fonte: "voce", credentialId: riga.credential_id, nome: e.nome, username: e.segreto.username, password: e.segreto.password };
 }
 
-/** La lettura delle colonne di una riga mai convertita, nel registro dei ripieghi. */
-export function registraRipiegoRigaAd(): void {
-  registraRipiego("cred_riga_integrazione", currentFacadeTenant());
-}
-
-/**
- * L'account per entrare (bind LDAP, kinit, prova WinRM di Kerberos), dal DB
- * del facade. La lettura delle colonne si registra.
- */
+/** L'account per entrare (bind LDAP, kinit, prova WinRM di Kerberos), dal DB del facade. */
 export function credenzialeLdapDi(integrazione: RigaAccountLdap): CredenzialeLdap {
-  const c = credenzialeLdapDb(getDb(), integrazione);
-  if (c.ok && c.fonte === "colonne") registraRipiegoRigaAd();
-  return c;
+  return credenzialeLdapDb(getDb(), integrazione);
 }
 
 /** La voce scelta come account deve essere una voce «Active Directory» leggibile. */
@@ -185,7 +151,6 @@ export function vistaIntegrazioniAdDb(dbh: Database.Database, integrazioni: read
         .all() as Array<{ id: number; nome: string }>
     ).map((r) => [r.id, r.nome]),
   );
-  const convertita = convertitaDb(dbh);
   return integrazioni.map((i) => {
     const { encrypted_username: _u, encrypted_password: _p, ...resto } = i;
     void _u;
@@ -196,7 +161,7 @@ export function vistaIntegrazioniAdDb(dbh: Database.Database, integrazioni: read
       username: MASCHERA,
       password: MASCHERA,
       credential_name: i.credential_id != null ? (nomi.get(i.id) ?? null) : null,
-      account: stato(i, convertita),
+      account: stato(i),
     };
   });
 }

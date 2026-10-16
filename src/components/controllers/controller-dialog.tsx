@@ -37,7 +37,6 @@ import {
   SCHEDULE_OPTIONS,
   UDM_AUTH_OPTIONS,
   buildControllerPayload,
-  credenzialeFormaVecchia,
   describeProbe,
   emptyControllerForm,
   formFromController,
@@ -110,11 +109,10 @@ export function ControllerDialog({
   // Una voce che non vale per il tipo o l'accesso scelti non si manda: se ne sceglie un'altra.
   const scelta =
     form.credentialId !== null && (voci === null || ammesse.some((v) => v.id === form.credentialId)) ? form.credentialId : null;
-  // Riga di prima della 2f mai convertita: senza voce, con i segreti nelle colonne (stato del server).
-  const formaVecchia = editing && credenzialeFormaVecchia(controller);
+  // Dalla 2g (T26) senza voce non c'è una credenziale salvata: le colonne della riga non valgono più.
   const sent: ControllerForm = { ...form, credentialId: scelta };
-  const missing = formMissing(sent, { salvata: formaVecchia && !moved });
-  const sceltaDaRifare = moved && !form.nuova && scelta === null && (controller.credentialId !== null || formaVecchia);
+  const missing = formMissing(sent);
+  const sceltaDaRifare = moved && !form.nuova && scelta === null && controller.credentialId !== null;
 
   /** Un indirizzo diverso da quello salvato svuota la scelta; tornando a quello salvato torna la sua voce. */
   const setUrl = (url: string) => {
@@ -130,9 +128,7 @@ export function ControllerDialog({
       ? vociError
         ? "Voci dell'archivio non caricate"
         : "Caricamento delle voci…"
-      : formaVecchia && !moved
-        ? "Credenziale nella forma vecchia: resta finché non ne scegli una"
-        : ammesse.length === 0
+      : ammesse.length === 0
           ? "Nessuna voce adatta nell'archivio"
           : "Scegli una voce dell'archivio";
 

@@ -80,7 +80,7 @@ describe("vista per la pagina", () => {
       .run(nome, dc, u, p, voce);
   }
 
-  it("voce, forma vecchia o mancante; nome della voce; nessun segreto", () => {
+  it("voce o mancante (dalla 2g niente forma vecchia); nome della voce; nessun segreto", () => {
     const voce = Number(
       dbt()
         .prepare("INSERT INTO credentials (name, credential_type, encrypted_username, encrypted_password) VALUES ('AD · Uno', 'ad', ?, ?)")
@@ -99,7 +99,8 @@ describe("vista per la pagina", () => {
     const per = Object.fromEntries(vista.map((v) => [v.name, v]));
     assert.deepEqual(
       Object.fromEntries(vista.map((v) => [v.name, [v.account, v.credential_name]])),
-      { Uno: ["voce", "AD · Uno"], Due: ["forma_vecchia", null], Tre: ["mancante", null] },
+      // Dalla 2g (T26) la riga coi segreti nelle colonne e senza voce è «mancante», qualunque sia il segno.
+      { Uno: ["voce", "AD · Uno"], Due: ["mancante", null], Tre: ["mancante", null] },
     );
     for (const v of vista) {
       assert.equal("encrypted_username" in v && v.encrypted_username !== undefined, false);

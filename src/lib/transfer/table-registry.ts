@@ -8,8 +8,7 @@ export const TENANT_TABLES: TableSpec[] = [
   { table: "credentials", scope: "tenant", tier: "config" },
   { table: "network_credentials", scope: "tenant", tier: "config" },
   { table: "host_credentials", scope: "tenant", tier: "config" },
-  { table: "network_host_credentials", scope: "tenant", tier: "config" },
-  { table: "host_detect_credential", scope: "tenant", tier: "config" },
+  // network_host_credentials e host_detect_credential: in EXCLUDED_TENANT_TABLES dalla 2g (T26).
   { table: "device_credential_bindings", scope: "tenant", tier: "config" },
   { table: "network_devices", scope: "tenant", tier: "config", secretColumns: ["community_string", "api_token"] },
   { table: "mc_config", scope: "tenant", tier: "config", secretColumns: ["login_token_key_encrypted", "admin_pass_encrypted"] },
@@ -111,8 +110,12 @@ export const HUB_TABLES: TableSpec[] = [
   { table: "mac_product_map", scope: "hub-global", tier: "config", mergeKey: ["mac_prefix", "hostname_pattern"] },
 ];
 
-/** Tabelle tenant volutamente NON esportate (nessuna oggi: tutte classificate). */
-export const EXCLUDED_TENANT_TABLES: string[] = [];
+/**
+ * Tabelle tenant volutamente NON esportate: le catene vecchie e i pin (tappa 2g
+ * credenziali, T26). Non le legge né le scrive più nessuno, la pulizia della 2g
+ * le toglie, e l'import di un bundle di prima le converte in memoria.
+ */
+export const EXCLUDED_TENANT_TABLES: string[] = ["network_host_credentials", "host_detect_credential"];
 
 /** Tabelle hub install-level: identità/auth/setup, NON viaggiano col tenant. */
 export const EXCLUDED_HUB_TABLES: string[] = [

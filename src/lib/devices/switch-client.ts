@@ -29,12 +29,12 @@ type DeviceCreds = { username?: string; password?: string; privateKey?: string; 
 /** Le credenziali dell'acquisizione con l'utente della colonna come ripiego (com'era). */
 function credenzialiApparato(device: NetworkDevice): DeviceCreds {
   const creds = getDeviceCredentials(device);
-  return { ...(creds ?? {}), username: creds?.username ?? device.username ?? undefined };
+  return { ...(creds ?? {}), username: creds?.username ?? undefined };
 }
 
 /** Helper interno: esegue un comando SSH sul device usando il transport unico. */
 async function execDeviceCmd(device: NetworkDevice, creds: DeviceCreds, cmd: string, timeoutMs = 10000): Promise<string> {
-  const username = creds.username || device.username || undefined;
+  const username = creds.username || undefined;
   if (!username || !haSegretoSsh(creds)) {
     throw new Error(`Credenziali SSH mancanti per ${device.name} (${device.host})`);
   }
@@ -117,7 +117,7 @@ export async function createSwitchClient(device: NetworkDevice): Promise<SwitchC
         return snmpClient.getMacTable();
       }
 
-      if ((device.protocol === "snmp_v2" || device.protocol === "snmp_v3") && (haSegretoSsh(creds) || (device.encrypted_password && device.username))) {
+      if ((device.protocol === "snmp_v2" || device.protocol === "snmp_v3") && haSegretoSsh(creds)) {
         const sshClient = await createSshWithFallbackCommands(device, creds);
         return sshClient.getMacTable();
       }
@@ -462,7 +462,7 @@ async function createUbiquitiSwitchClient(device: NetworkDevice, creds: DeviceCr
     const opts = {
       host: device.host,
       port: device.port || 22,
-      username: creds.username ?? device.username ?? "",
+      username: creds.username ?? "",
       ...segretoSsh(creds),
       timeout: 15000,
     };

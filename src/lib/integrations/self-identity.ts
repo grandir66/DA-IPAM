@@ -14,7 +14,7 @@ import * as os from "node:os";
 import type { Database } from "better-sqlite3";
 import { getSetting, setSetting } from "../db-hub";
 import { safeDecrypt } from "../crypto";
-import { credenzialeLdapDb, registraRipiegoRigaAd, type CredenzialeLdap, type RigaAccountLdap } from "../ad/credenziale-ldap";
+import { credenzialeLdapDb, type CredenzialeLdap, type RigaAccountLdap } from "../ad/credenziale-ldap";
 import { normalizeAccount, normalizeIp, type SelfIdentity } from "./wazuh-alerts";
 
 const KEY_EXTRA_IPS = "wazuh_alerts_self_ips";
@@ -115,8 +115,7 @@ export function collectSelfIdentity(db: Database): SelfIdentity {
   };
 
   // L'account LDAP di ogni AD, com'è usato per entrare (tappa 2f, T24): la
-  // voce, o le colonne di una riga mai convertita (ripiego registrato). Le
-  // colonne di una riga col segno `done:` non le usa più nessuno: non si
+  // voce. Le colonne della riga non le usa più nessuno dalla 2g (T26): non si
   // contano. Un account che non si legge si scrive una volta, non sparisce.
   for (const r of tryAll<RigaAccountLdap & { id: number }>("SELECT * FROM ad_integrations")) {
     let c: CredenzialeLdap;
@@ -127,7 +126,6 @@ export function collectSelfIdentity(db: Database): SelfIdentity {
     }
     if (c.ok) {
       dbAccounts.push(c.username);
-      if (c.fonte === "colonne") registraRipiegoRigaAd();
     } else if (!c.mancante) {
       segnalaUnaVolta(r.id, c.motivo);
     }

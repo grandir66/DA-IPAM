@@ -22,8 +22,10 @@
  * - host: resolveCredentialsForDb e buildSnmpCommunitiesForHost; reti: le
  *   catene 2-4; anteprima edge: collectEdgeCredentialsForNetwork. Dalla 2b sono
  *   involucri del motore che registrano i ripieghi: qui si chiamano con
- *   `registra: false` (SENZA_REGISTRO). Cambiano nel T26, con lo stesso formato
- *   di riga.
+ *   `registra: false` (SENZA_REGISTRO). Dalla 2g (T26) il motore non legge più
+ *   catene vecchie né chiave dell'hub: le righe delle reti dicono sempre
+ *   `lettore_vecchio:catena` (prima `…:chiave_hub` per la voce che veniva
+ *   dall'hub), con lo stesso formato di riga.
  *
  * Un apparato snmp_v3 senza una v3 leggibile ha la riga snmp senza scelta: le
  * sessioni v3 non ripiegano sulla community (T4).
@@ -80,6 +82,20 @@ import type { SnmpV3CredentialRecord } from "../../src/lib/protocols/snmpv3";
 
 export { cartellaTenant, getHubDbPath };
 
+/**
+ * La riga di `network_devices` con le colonne vecchie delle credenziali, come
+ * la dà `SELECT *`: le ricostruzioni della 2a (misure-2a.ts) le leggono, ma il
+ * tipo `NetworkDevice` non le porta più dalla 2g (T26).
+ */
+export type RigaApparatoVecchia = NetworkDevice & {
+  credential_id: number | null;
+  snmp_credential_id: number | null;
+  username: string | null;
+  encrypted_password: string | null;
+  community_string: string | null;
+  api_token: string | null;
+};
+
 /** La fotografia è una verifica: i lettori di host, reti ed edge non scrivono ripieghi. */
 const SENZA_REGISTRO = { registra: false } as const;
 
@@ -127,13 +143,13 @@ function primoBinding(dbh: Database.Database, deviceId: number, protocollo: stri
   `).get(deviceId, protocollo) as DeviceCredentialBinding | undefined;
 }
 
-function colonneSnmpInOrdine(device: NetworkDevice): Array<number | null> {
+function colonneSnmpInOrdine(device: RigaApparatoVecchia): Array<number | null> {
   const isSnmpPrimary = device.protocol === "snmp_v2" || device.protocol === "snmp_v3";
   return isSnmpPrimary ? [device.credential_id, device.snmp_credential_id] : [device.snmp_credential_id, device.credential_id];
 }
 
 /** Provenienza di getDeviceCommunityString: binding → colonne → community_string → «public». */
-export function provenienzaCommunity(dbh: Database.Database, device: NetworkDevice): Provenienza {
+export function provenienzaCommunity(dbh: Database.Database, device: RigaApparatoVecchia): Provenienza {
   const b = primoBinding(dbh, device.id, "snmp");
   if (b) {
     if (b.credential_id) {
@@ -177,7 +193,7 @@ function chiaroRipulito(cifrato: string | null): string | null {
  * `encrypted_priv_key`, livello «v3_completa»); senza livello, con utente e
  * password, è il formato vecchio (livello «v3», come nel T1).
  */
-export function provenienzaV3(device: NetworkDevice): Provenienza {
+export function provenienzaV3(device: RigaApparatoVecchia): Provenienza {
   const isSnmpPrimary = device.protocol === "snmp_v2" || device.protocol === "snmp_v3";
   const ids = isSnmpPrimary ? [device.credential_id, device.snmp_credential_id] : [device.snmp_credential_id, device.credential_id];
   for (const id of ids) {
@@ -202,7 +218,7 @@ export function provenienzaV3(device: NetworkDevice): Provenienza {
 }
 
 /** «Ha SNMP?» come lo calcolava getDeviceInfo nella 2a (per misure-2a.ts; dalla 2b la fotografia usa haSnmpApparatoDb). */
-export function haSnmpOggi(dbh: Database.Database, device: NetworkDevice): boolean {
+export function haSnmpOggi(dbh: Database.Database, device: RigaApparatoVecchia): boolean {
   const v3 = v3ApparatoDb(dbh, device);
   const conBinding = !!dbh
     .prepare("SELECT 1 FROM device_credential_bindings WHERE device_id = ? AND protocol_type = 'snmp' LIMIT 1")
@@ -405,19 +421,15 @@ function fotografaDentro(code: string, encryptionKey: string): EsitoTenant {
   // ── Reti: catene 2-4; anteprima edge ──
   const reti = dbh.prepare("SELECT id, name FROM networks ORDER BY id").all() as Array<{ id: number; name: string }>;
   for (const n of reti) {
-    const nelMotore = (proto: "winrm" | "ssh") =>
-      new Set(resolveCredentialsForDb(dbh, { networkId: n.id }, proto).map((r) => r.credential_id));
-    const motoreWin = nelMotore("winrm");
     getOrderedDetectCredentialIds(n.id, "windows", SENZA_REGISTRO).forEach((id, i) => {
       righe.push({
         tenant: code,
         oggetto: "rete",
         chiave: `${n.id}:winrm:${i}`,
         nome: n.name,
-        scelta: { credential_id: id, port: null, fonte: fonte(motoreWin.has(id) ? "catena" : "chiave_hub"), impronta: improntaVoce(ctx, coppiaWindows(id)) },
+        scelta: { credential_id: id, port: null, fonte: fonte("catena"), impronta: improntaVoce(ctx, coppiaWindows(id)) },
       });
     });
-    const motoreSsh = nelMotore("ssh");
     getOrderedSshLinuxCredentialIds(n.id, SENZA_REGISTRO).forEach((id, i) => {
       const p = accessoSshCredenziale(id);
       righe.push({
@@ -428,7 +440,7 @@ function fotografaDentro(code: string, encryptionKey: string): EsitoTenant {
         scelta: {
           credential_id: id,
           port: p.ok ? (p.port ?? 22) : null,
-          fonte: fonte(motoreSsh.has(id) ? "catena" : "chiave_hub"),
+          fonte: fonte("catena"),
           impronta: improntaVoce(ctx, p.ok ? partiAccesso(p.accesso) : null),
         },
       });

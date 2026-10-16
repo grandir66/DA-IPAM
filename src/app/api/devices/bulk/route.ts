@@ -172,17 +172,9 @@ export async function POST(request: Request) {
         device_type: deviceType,
         vendor: deviceVendor,
         vendor_subtype: vendorSubtypeFromProductProfile(profileId),
-        // Nessuna colonna di credenziali (T20 e revisione della 2e, 16/10): né
-        // la community (prima copiata cifrata), né gli id delle voci, che il
-        // motore legge come livello 4 (device_column) e che riportavano la
-        // voce con il binding fallito o tolto. Le voci stanno nei binding qui sotto.
-        credential_id: null,
+        // Nessuna colonna di credenziali (T20, e dalla 2g il tipo non le ha più):
+        // le voci stanno nei binding qui sotto.
         protocol,
-        snmp_credential_id: null,
-        username: null,
-        encrypted_password: null,
-        community_string: null,
-        api_token: null,
         api_url: null,
         port: devicePort,
         enabled: 1,

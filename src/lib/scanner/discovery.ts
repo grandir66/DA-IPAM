@@ -72,7 +72,7 @@ import {
   recordCredentialSuccess,
   getCredentialById,
 } from "@/lib/db";
-import { chiaviGlobaliHub, resolveCredentialsFor, resolveCredentialsForDb } from "@/lib/credentials/resolve";
+import { resolveCredentialsFor, resolveCredentialsForDb } from "@/lib/credentials/resolve";
 import type { CredProtocol, ResolveTarget, ResolvedCredential } from "@/lib/credentials/resolve";
 import { normalizzaTipo, tipiPerProtocollo } from "@/lib/credentials/tipi";
 import { CredentialRunBudget } from "./credential-run-budget";
@@ -180,8 +180,8 @@ function autoBindCredentialToDevice(
  * Catena di un host per i rilevamenti `windows`, `ssh` e la fase 4 di
  * `ipam_full` (tappa 2 credenziali, T17, D2 = (a)): i candidati del motore per
  * l'host (righe validate, binding dell'apparato collegato, righe non validate,
- * lista della rete; catene vecchie e chiave dell'hub finché la 2d non le ha
- * convertite), con quelli in fermo compresi, perché il fermo e il tetto per
+ * lista della rete; dalla 2g niente catene vecchie né chiave dell'hub), con
+ * quelli in fermo compresi, perché il fermo e il tetto per
  * credenziale li applica `CredentialRunBudget` prima di ogni prova. Una voce
  * una volta sola, nella prima posizione.
  *
@@ -195,10 +195,7 @@ function autoBindCredentialToDevice(
  * credenziale» per ogni host invece di un giro fallito che dice perché.
  */
 function catenaHost(target: ResolveTarget, protocol: CredProtocol): { candidati: ResolvedCredential[]; ids: number[] } {
-  const candidati = resolveCredentialsForDb(getDb(), target, protocol, {
-    includeBackoff: true,
-    globaliHub: chiaviGlobaliHub(getSetting),
-  });
+  const candidati = resolveCredentialsForDb(getDb(), target, protocol, { includeBackoff: true });
   const ids: number[] = [];
   for (const c of candidati) if (c.credential_id != null && !ids.includes(c.credential_id)) ids.push(c.credential_id);
   return { candidati, ids };

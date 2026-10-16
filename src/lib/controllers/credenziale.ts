@@ -9,13 +9,11 @@
  *   «Controller Omada»), e la regola tipo ↔ metodo dell'ADR 0019: una console
  *   UniFi OS entra con la chiave API o con un utente locale, il self-hosted
  *   solo con utente e password;
- * - senza voce, le colonne della riga valgono solo per le righe MAI
- *   convertite, cioè col segno `credenziali_t2_integrazioni` diverso da
- *   `done:`. Con `done:` ogni riga col segreto ha ricevuto la sua voce: un
- *   `credential_id` NULL è uno scollegamento voluto (indirizzo cambiato, voce
- *   eliminata, `resetConfiguration`), non una riga da convertire, e le colonne
- *   ancora piene non si leggono. Il ripiego lo registra chi legge
- *   (`controllers/service.ts`), non questo modulo: le verifiche non registrano;
+ * - senza voce: «Credenziale mancante», e non parte nessuna connessione. Fino
+ *   alla 2g le colonne della riga valevano per le righe mai convertite (segno
+ *   della 2f diverso da `done:`); dalla 2g (T26) non si leggono più, qualunque
+ *   sia il segno. Una riga che la 2f ha lasciato (Omada) resta senza voce, ed
+ *   è un blocco esplicito della pulizia (`condizioni-2g.ts`);
  * - scrittura: segreti nuovi → voce «UniFi · <nome>» col CRUD dell'archivio
  *   (`creaVoceDb`, campi richiesti per tipo e metodo); col nome già preso,
  *   « (controller #id)» come nella conversione del T22.
@@ -25,9 +23,9 @@
 import type Database from "better-sqlite3";
 import type { z } from "zod";
 import type { CredentialSchema } from "@/lib/validators";
+import { safeDecrypt } from "@/lib/crypto";
 import { creaCredenzialeDb, creaVoceDb } from "@/lib/credentials/archivio";
 import { leggiSegretoDb } from "@/lib/credentials/segreti";
-import { leggiSegno, SEGNO_INTEGRAZIONI } from "@/lib/credentials/segni-t2";
 import { METODI_PER_TIPO, normalizzaTipo } from "@/lib/credentials/tipi";
 import {
   metodiVocePerController,
@@ -39,11 +37,8 @@ import {
 
 type DatiCredenziale = z.infer<typeof CredentialSchema>;
 
-/** Nessuna voce e nessuna colonna da leggere: non parte nessuna connessione. */
+/** Nessuna voce: non parte nessuna connessione. */
 export const CREDENZIALE_MANCANTE = "Credenziale mancante: scegli una voce dell'archivio nella modifica del controller";
-
-/** La riga è entrata con le colonne di prima della 2f: lo dice `last_message`. */
-export const FORMA_VECCHIA = "Credenziale ancora nella forma vecchia: sceglila dall'archivio nella modifica del controller";
 
 /** Una voce nuova che non passa le regole dell'archivio: le rotte rispondono 400. */
 export class CredenzialeControllerNonValida extends Error {
@@ -60,7 +55,6 @@ export type EsitoVoceController =
 
 export type CredenzialeController =
   | (Extract<EsitoVoceController, { ok: true }> & { fonte: "voce" })
-  | { ok: true; fonte: "colonne" }
   | { ok: false; motivo: string };
 
 const COME: Readonly<Record<MetodoVoceController, string>> = {
@@ -119,44 +113,46 @@ export function voceControllerDb(
 }
 
 /**
- * Vero se la conversione della 2f è chiusa con `done:`: ogni riga col segreto
- * ha ricevuto la sua voce, e le colonne rimaste piene non valgono più.
- */
-export function integrazioniConvertiteDb(dbh: Database.Database): boolean {
-  return (leggiSegno(dbh, SEGNO_INTEGRAZIONI) ?? "").startsWith("done:");
-}
-
-/**
  * Con che cosa entra la riga, senza decifrare: un criterio solo per il server
  * (`credenzialeControllerDb`) e per la vista della pagina, che così non si
- * contraddicono (revisione della 2f). `convertita` = `integrazioniConvertiteDb`.
+ * contraddicono (revisione della 2f). Dalla 2g (T26) senza voce è «mancante».
  */
-export function statoCredenzialeController(
-  row: Pick<NetworkControllerRow, "credential_id" | "password_enc" | "api_key_enc">,
-  convertita: boolean,
-): StatoCredenzialeController {
-  if (row.credential_id != null) return "voce";
-  if (!row.password_enc && !row.api_key_enc) return "mancante";
-  return convertita ? "mancante" : "forma_vecchia";
+export function statoCredenzialeController(row: Pick<NetworkControllerRow, "credential_id">): StatoCredenzialeController {
+  return row.credential_id != null ? "voce" : "mancante";
 }
 
 /**
- * Con che cosa entra la riga salvata: la sua voce; senza voce, le colonne
- * solo se la riga non è mai stata convertita (segno della 2f diverso da
- * `done:`) e se ci sono; altrimenti «Credenziale mancante». Non lancia, non
- * registra.
+ * Con che cosa entra la riga salvata: la sua voce; senza voce «Credenziale
+ * mancante» (dalla 2g le colonne della riga non si leggono più). Non lancia,
+ * non registra.
  */
 export function credenzialeControllerDb(
   dbh: Database.Database,
-  row: Pick<NetworkControllerRow, "kind" | "credential_id" | "password_enc" | "api_key_enc">,
+  row: Pick<NetworkControllerRow, "kind" | "credential_id">,
   metodo?: MetodoVoceController,
 ): CredenzialeController {
-  if (row.credential_id != null) {
-    const v = voceControllerDb(dbh, row.credential_id, row.kind, metodo);
-    return v.ok ? { ...v, fonte: "voce" } : v;
+  if (row.credential_id == null) return { ok: false, motivo: CREDENZIALE_MANCANTE };
+  const v = voceControllerDb(dbh, row.credential_id, row.kind, metodo);
+  return v.ok ? { ...v, fonte: "voce" } : v;
+}
+
+/**
+ * Il solo utente della voce di un controller, decifrato: per gli script di
+ * misura (`scripts/misura-topologia.ts`, `misura-mac-porta.ts`), a cui il
+ * segreto arriva da stdin perché la copia può avere un'altra ENCRYPTION_KEY.
+ * Dalla 2g la colonna `username` della riga è vuota. Senza voce, voce senza
+ * utente o che non si decifra: errore, mai un utente vuoto. Non lancia.
+ */
+export function utenteVoceControllerDb(dbh: Database.Database, credentialId: number | null): { ok: true; username: string } | { ok: false; motivo: string } {
+  if (credentialId == null) return { ok: false, motivo: "Il controller non ha una voce dell'archivio: l'utente non si sa (sceglila nella modifica del controller)" };
+  const r = dbh.prepare("SELECT name, encrypted_username FROM credentials WHERE id = ?").get(credentialId) as { name: string; encrypted_username: string | null } | undefined;
+  if (!r) return { ok: false, motivo: `La voce #${credentialId} del controller non c'è nell'archivio` };
+  if (!r.encrypted_username) return { ok: false, motivo: `La voce «${r.name}» non ha un utente (è a chiave API?)` };
+  const username = safeDecrypt(r.encrypted_username);
+  if (username == null || username.trim() === "") {
+    return { ok: false, motivo: `L'utente della voce «${r.name}» non si decifra: serve la ENCRYPTION_KEY del servizio da cui viene la copia` };
   }
-  if (statoCredenzialeController(row, integrazioniConvertiteDb(dbh)) === "mancante") return { ok: false, motivo: CREDENZIALE_MANCANTE };
-  return { ok: true, fonte: "colonne" };
+  return { ok: true, username };
 }
 
 /** Il controller per cui nasce una voce: il nome dà il nome della voce, l'id lo rende unico. */

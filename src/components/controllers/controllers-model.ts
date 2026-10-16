@@ -212,17 +212,6 @@ export function formFromController(c: NetworkControllerView): ControllerForm {
   };
 }
 
-/**
- * Riga di prima della 2f mai convertita: senza voce la credenziale salvata
- * sono le colonne, e vale finché non se ne sceglie una. Lo dice lo stato
- * calcolato dal server, non `passwordSet`/`apiKeySet`: con la 2f chiusa
- * (`done:`) le colonne rimaste piene non valgono più, e la finestra non deve
- * promettere una credenziale che il server rifiuta (revisione della 2f).
- */
-export function credenzialeFormaVecchia(c: Pick<NetworkControllerView, "credentialState">): boolean {
-  return c.credentialState === "forma_vecchia";
-}
-
 export function urlPlaceholder(kind: ControllerKind): string {
   return kind === "self_hosted" ? "https://192.168.1.10:8443" : "https://192.168.1.1";
 }

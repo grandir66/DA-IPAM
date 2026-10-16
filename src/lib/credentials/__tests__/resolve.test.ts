@@ -16,6 +16,7 @@ process.env.ENCRYPTION_KEY ||= "test-encryption-key-motore";
 
 import { encrypt } from "@/lib/crypto";
 import { TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL } from "@/lib/db-tenant-schema";
+import { creaCateneVecchie } from "@/lib/__tests__/support/catene-vecchie";
 import {
   resolveCredentialsForDb,
   resolveCredentialForDb,
@@ -60,6 +61,8 @@ beforeEach(() => {
   db.pragma("foreign_keys = ON");
   db.exec(TENANT_SCHEMA_SQL);
   db.exec(TENANT_INDEXES_SQL);
+  // Un DB di prima della pulizia della 2g (T27): le tabelle vecchie ci sono ancora, e il motore non le legge.
+  creaCateneVecchie(db);
   // Colonne aggiunte via ALTER in getTenantDb (non nel CREATE TABLE base): le
   // replichiamo qui come farebbe la migrazione, stesso pattern di recompute.test.ts.
   for (const c of ["fail_count INTEGER NOT NULL DEFAULT 0", "last_error TEXT", "last_attempt_at TEXT", "backoff_until TEXT"]) {
@@ -87,7 +90,7 @@ function seedCredential(id: number, type: "ssh" | "snmp" | "api" | "windows" | "
 }
 
 describe("resolveCredentialsForDb — ordine di precedenza completo", () => {
-  it("host validate → binding success → host non validate → binding untested → rete → legacy (pin poi lista)", () => {
+  it("host validate → binding success → host non validate → binding untested → rete; niente catene vecchie (2g, T26)", () => {
     seedNetwork(1, "10.1.0.0/24");
     seedHost(1, 1, "10.1.0.1");
     seedDevice(1, 1, "10.1.0.1");
@@ -107,9 +110,10 @@ describe("resolveCredentialsForDb — ordine di precedenza completo", () => {
     db.prepare(`INSERT INTO host_detect_credential (host_id, role, credential_id) VALUES (1, 'snmp', 70)`).run();
 
     const result = resolveCredentialsForDb(db, { hostId: 1, networkId: 1 }, "snmp");
-    assert.deepEqual(result.map((r) => r.credential_id), [10, 20, 30, 40, 50, 70, 60]);
+    // Pin (70) e catena vecchia (60) non si leggono più dalla 2g, anche senza il segno della 2d.
+    assert.deepEqual(result.map((r) => r.credential_id), [10, 20, 30, 40, 50]);
     assert.deepEqual(result.map((r) => r.source), [
-      "host_validated", "device_binding", "host_unvalidated", "device_binding", "network_chain", "legacy_chain", "legacy_chain",
+      "host_validated", "device_binding", "host_unvalidated", "device_binding", "network_chain",
     ]);
     assert.equal(result[0].validated, true);
     assert.equal(result[2].validated, false);
@@ -194,7 +198,7 @@ describe("resolveCredentialsForDb / resolveCredentialForDb — nessun risultato"
 // 2022) veniva proposta dalle catene sulla porta standard, quindi la prova
 // falliva sempre e la credenziale sembrava sbagliata.
 describe("resolveCredentialsForDb — porta propria della credenziale", () => {
-  it("catena di rete v2 e catene vecchie: la porta della credenziale, senza porta lo standard", () => {
+  it("catena di rete v2: la porta della credenziale, senza porta lo standard; le catene vecchie non entrano (2g)", () => {
     seedNetwork(6, "10.6.0.0/24");
     seedHost(6, 6, "10.6.0.1");
     seedCredential(601, "ssh");
@@ -211,8 +215,8 @@ describe("resolveCredentialsForDb — porta propria della credenziale", () => {
     const porta = new Map(result.map((r) => [r.credential_id, r.port]));
     assert.equal(porta.get(601), 2022, "catena di rete v2");
     assert.equal(porta.get(603), 22, "catena di rete v2 senza porta");
-    assert.equal(porta.get(602), 2022, "catena vecchia per rete");
-    assert.equal(porta.get(604), 22, "pin vecchio senza porta");
+    assert.equal(porta.has(602), false, "catena vecchia per rete: non letta dalla 2g");
+    assert.equal(porta.has(604), false, "pin vecchio: non letto dalla 2g");
   });
 
   it("SNMP su porta fuori standard dalla catena di rete", () => {
@@ -385,7 +389,7 @@ function contaCaso(caso: string): number {
 }
 
 describe("motore per un apparato — ordine D1 e fonti dichiarate", () => {
-  it("binding riusciti, non provati, inline, colonne, colonne inline, host validate, host non validate, rete, catene vecchie, chiave dell'hub", () => {
+  it("binding riusciti, non provati, host validate, host non validate, rete; niente inline, colonne, catene vecchie né chiave dell'hub (2g)", () => {
     seedNetwork(30, "10.30.0.0/24");
     seedHost(30, 30, "10.30.0.1");
     for (let id = 3001; id <= 3010; id++) voce(id, "ssh", { utente: `u${id}`, password: `p${id}` });
@@ -399,27 +403,21 @@ describe("motore per un apparato — ordine D1 e fonti dichiarate", () => {
     db.prepare(`INSERT INTO network_credentials (network_id, credential_id, sort_order) VALUES (30, 3008, 0)`).run();
     db.prepare(`INSERT INTO network_host_credentials (network_id, credential_id, role, sort_order) VALUES (30, 3009, 'linux', 0)`).run();
 
-    const r = credenzialiApparatoDb(db, 30, "ssh", { globaliHub: { windows: null, linux: 3005 } });
+    const r = credenzialiApparatoDb(db, 30, "ssh");
     assert.deepEqual(
       r.map((c) => [c.source, c.credential_id]),
       [
         ["device_binding", 3001],
         ["device_binding", 3002],
-        ["device_inline", null],
-        ["device_column", 3004],
-        ["device_column_inline", null],
         ["host_validated", 3006],
         ["host_unvalidated", 3007],
         ["network_chain", 3008],
-        ["legacy_chain", 3009],
-        ["hub_default", 3005],
       ]
     );
     assert.ok(!r.some((c) => c.credential_id === 3010), "il binding fallito è saltato (D10)");
     assert.ok(r.every((c) => c.device_id === 30 && c.protocol === "ssh"));
     assert.equal(r[0].validated, true, "binding riuscito = validato");
     assert.equal(r[1].validated, false);
-    assert.ok(r[2].binding_id != null, "il binding inline dice quale binding");
     assert.equal(r[0].tipo, "ssh");
   });
 
@@ -451,22 +449,21 @@ describe("motore per un apparato — ordine D1 e fonti dichiarate", () => {
     assert.deepEqual(perHost.map((c) => [c.source, c.credential_id]), [["host_validated", 3201], ["device_binding", 3202]]);
   });
 
-  it("binding inline → fonte device_inline, segreto letto dal binding", () => {
+  it("binding inline → non si legge più (2g): nessuna credenziale, col motivo", () => {
     apparato(33, null, "ssh");
-    const id = binding(33, "ssh", 22, "untested", { utente: "admin", password: "segreto" });
+    binding(33, "ssh", 22, "untested", { utente: "admin", password: "segreto" });
     const s = scegliSegretoApparatoDb(db, 33, "ssh", { registra: false });
-    assert.ok(s.ok, s.ok ? "" : s.motivo);
-    assert.equal(s.candidato.source, "device_inline");
-    assert.equal(s.candidato.credential_id, null);
-    assert.equal(s.candidato.binding_id, id);
-    assert.deepEqual(s.segreto, { forma: "utente", username: "admin", password: "segreto" });
+    assert.equal(s.ok, false);
+    assert.match(s.ok ? "" : s.motivo, /Nessuna credenziale SSH per l'apparato «apparato33»/);
   });
 
-  it("apparato snmp_v2 con porta 22, voce SNMP nella colonna, nessun binding → candidato sulla 161, fonte device_column (F3)", () => {
+  it("apparato snmp_v2 con porta 22 e un binding SNMP sulla 161 → candidato sulla 161, mai su device.port (F3); la sola colonna non conta (2g)", () => {
     voce(3401, "snmp", { password: "comunita" });
     apparato(34, null, "snmp_v2", { port: 22, credential_id: 3401 });
+    assert.deepEqual(credenzialiApparatoDb(db, 34, "snmp").map((c) => c.source), ["snmp_ripiego"], "la colonna non si legge più");
+    binding(34, "snmp", 161, "untested", 3401);
     const [c] = credenzialiApparatoDb(db, 34, "snmp");
-    assert.equal(c.source, "device_column");
+    assert.equal(c.source, "device_binding");
     assert.equal(c.credential_id, 3401);
     assert.equal(c.port, 161);
   });
@@ -480,12 +477,13 @@ describe("motore per un apparato — ordine D1 e fonti dichiarate", () => {
     assert.match(s.ok ? "" : s.motivo, /apparato35/);
   });
 
-  it("API con una voce SSH nella colonna → ammessa, sulla porta dell'apparato (F1, D11)", () => {
+  it("API con un binding verso una voce SSH → ammessa, sulla porta dell'apparato (F1, D11)", () => {
     voce(3601, "ssh", { utente: "root", password: "pve", port: 22 });
-    apparato(36, null, "api", { port: 8006, credential_id: 3601 });
+    apparato(36, null, "api", { port: 8006 });
+    binding(36, "api", 443, "untested", 3601);
     const s = scegliSegretoApparatoDb(db, 36, "api", { registra: false });
     assert.ok(s.ok, s.ok ? "" : s.motivo);
-    assert.equal(s.candidato.source, "device_column");
+    assert.equal(s.candidato.source, "device_binding");
     assert.equal(s.candidato.credential_id, 3601);
     assert.equal(s.candidato.port, 8006);
     assert.equal(s.candidato.tipo, "ssh");
@@ -522,7 +520,7 @@ describe("motore per un apparato — ordine D1 e fonti dichiarate", () => {
     voce(4201, "ssh", { utente: "u", password: "p" });
     db.prepare(`INSERT INTO network_credentials (network_id, credential_id, sort_order) VALUES (42, 4201, 0)`).run();
     apparato(42, null, "ssh");
-    assert.deepEqual(credenzialiApparatoDb(db, 42, "ssh", { globaliHub: { windows: null, linux: 4201 } }), []);
+    assert.deepEqual(credenzialiApparatoDb(db, 42, "ssh"), []);
     const snmp = credenzialiApparatoDb(db, 42, "snmp");
     assert.deepEqual(snmp.map((c) => c.source), ["snmp_ripiego"]);
   });
@@ -534,20 +532,21 @@ describe("motore per un apparato — ordine D1 e fonti dichiarate", () => {
     assert.match(s.ok ? "" : s.motivo, /987654/);
   });
 
-  it("FONTI_APPARATO sono i livelli 1-5, FONTI_ACQUISIZIONE in più il solo ripiego SNMP", () => {
-    assert.deepEqual([...FONTI_APPARATO], ["device_binding", "device_inline", "device_column", "device_column_inline"]);
+  it("FONTI_APPARATO sono i binding d'archivio (2g), FONTI_ACQUISIZIONE in più il solo ripiego SNMP", () => {
+    assert.deepEqual([...FONTI_APPARATO], ["device_binding"]);
     assert.deepEqual([...FONTI_ACQUISIZIONE], [...FONTI_APPARATO, "snmp_ripiego"]);
   });
 
   it("un apparato con una voce SNMPv3 non riceve «public» (D5)", () => {
     voce(4301, "snmp", { utente: "monitor", livello: "authNoPriv", authKey: "chiave-auth" });
-    apparato(43, null, "snmp_v3", { credential_id: 4301 });
+    apparato(43, null, "snmp_v3");
+    binding(43, "snmp", 161, "untested", 4301);
     const r = credenzialiApparatoDb(db, 43, "snmp", { fonti: FONTI_ACQUISIZIONE });
-    assert.deepEqual(r.map((c) => c.source), ["device_column"]);
+    assert.deepEqual(r.map((c) => c.source), ["device_binding"]);
   });
 });
 
-describe("motore — filtro di tipo su ogni livello, chiave dell'hub e ripiego AD", () => {
+describe("motore — filtro di tipo su ogni livello e ripiego AD", () => {
   it("righe host e catene vecchie con una voce del tipo sbagliato → saltate", () => {
     seedNetwork(45, "10.45.0.0/24");
     seedHost(45, 45, "10.45.0.1");
@@ -558,20 +557,10 @@ describe("motore — filtro di tipo su ogni livello, chiave dell'hub e ripiego A
     assert.deepEqual(resolveCredentialsForDb(db, { hostId: 45, networkId: 45 }, "ssh"), []);
   });
 
-  it("chiave dell'hub: voce inesistente o di altro tipo → niente; voce giusta → in coda, fonte hub_default", () => {
-    seedNetwork(44, "10.44.0.0/24");
-    voce(4401, "windows", { utente: "w", password: "w" });
-    voce(4402, "ssh", { utente: "s", password: "s" });
-    voce(4403, "windows", { utente: "rete", password: "r" });
-    db.prepare(`INSERT INTO network_credentials (network_id, credential_id, sort_order) VALUES (44, 4403, 0)`).run();
-    const t = { networkId: 44 };
-    assert.deepEqual(resolveCredentialsForDb(db, t, "winrm", { globaliHub: { windows: 999999, linux: null } }).map((c) => c.credential_id), [4403]);
-    assert.deepEqual(resolveCredentialsForDb(db, t, "winrm", { globaliHub: { windows: 4402, linux: null } }).map((c) => c.credential_id), [4403]);
-    const ok = resolveCredentialsForDb(db, t, "winrm", { globaliHub: { windows: 4401, linux: null } });
-    assert.deepEqual(ok.map((c) => [c.source, c.credential_id, c.port]), [["network_chain", 4403, 5985], ["hub_default", 4401, 5985]]);
-    // Solo per WinRM e SSH.
-    assert.deepEqual(resolveCredentialsForDb(db, t, "api", { globaliHub: { windows: null, linux: 4402 } }), []);
-  });
+  // La chiave «di default» dell'hub non si accoda più dalla 2g (T26): il motore
+  // non ha più l'opzione `globaliHub`. La copia nelle liste la fa la 2d
+  // (converti-catene.test.ts), e via-il-vecchio.test.ts prova che il motore
+  // non legge più le fonti vecchie.
 
   it("ripiego AD solo per WinRM, solo con l'opzione, ultimo, e mai con la sua riga in fermo sull'host (D4)", () => {
     seedNetwork(37, "10.37.0.0/24");
@@ -645,20 +634,22 @@ describe("motore — community SNMP e registro dei ripieghi", () => {
     assert.match(chi.firma, /resolve\.test\.ts/, "la firma è di chi chiama il motore, non del motore");
   });
 
-  it("colonne dell'apparato: registrate come cred_colonna_apparato; con registra:false il registro non riceve niente", () => {
+  it("community nella colonna: non si legge più (2g), resta il «public» dichiarato; cred_colonna_apparato non scatta più; registra:false non scrive", () => {
     apparato(47, null, "snmp_v2", { community: "dellacolonna" });
     const totale = riepilogoRipieghi(500).totale;
     const muto = scegliSegretoApparatoDb(db, 47, "snmp", { registra: false });
     assert.ok(muto.ok, muto.ok ? "" : muto.motivo);
-    assert.equal(muto.candidato.source, "device_column_inline");
-    assert.deepEqual(muto.segreto, { forma: "community", community: "dellacolonna" });
+    assert.equal(muto.candidato.source, "snmp_ripiego");
+    assert.deepEqual(muto.segreto, { forma: "community", community: "public" });
     assert.equal(riepilogoRipieghi(500).totale, totale, "registra:false non scrive");
     assert.equal(communitySnmpDb(db, { networkId: 47 }, null, { registra: false }).length, 2);
     assert.equal(riepilogoRipieghi(500).totale, totale, "registra:false non scrive nemmeno per le community");
 
-    const prima = contaCaso("cred_colonna_apparato");
+    const colonna = contaCaso("cred_colonna_apparato");
+    const pub = contaCaso("cred_public");
     scegliSegretoApparatoDb(db, 47, "snmp");
-    assert.equal(contaCaso("cred_colonna_apparato"), prima + 1);
+    assert.equal(contaCaso("cred_colonna_apparato"), colonna);
+    assert.equal(contaCaso("cred_public"), pub + 1);
   });
 });
 
@@ -759,6 +750,7 @@ describe("involucri del motore in db-tenant.ts e db.ts", () => {
     scriviHub("host_linux_credential_id", "3");
     withTenant(TG, () => {
       const d = getTenantDb(TG);
+      creaCateneVecchie(d);
       d.prepare(`INSERT INTO networks (id, cidr, name, snmp_community) VALUES (1, '10.77.0.0/24', 'g', 'dellarete')`).run();
       d.prepare(`INSERT INTO hosts (id, network_id, ip) VALUES (1, 1, '10.77.0.1')`).run();
       const ins = d.prepare(`INSERT INTO credentials (id, name, credential_type, encrypted_username, encrypted_password) VALUES (?, ?, ?, ?, ?)`);

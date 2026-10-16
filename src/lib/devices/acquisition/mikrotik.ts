@@ -18,7 +18,7 @@ async function sshExecMikrotik(
   command: string
 ): Promise<string> {
   const creds = getDeviceCredentials(device);
-  const username = creds?.username ?? device.username ?? undefined;
+  const username = creds?.username ?? undefined;
   // Password o chiave privata (tappa 2 credenziali, T14).
   if (!username || !creds || !haSegretoSsh(creds)) {
     throw new Error(`Credenziali SSH mancanti per Mikrotik ${device.name} (${device.host})`);

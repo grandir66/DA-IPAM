@@ -17,21 +17,21 @@
  * riga vuote, il segreto sarebbe perso e `unifi_sync` / `ad_sync` si
  * fermerebbero.
  *
- * Catene vecchie (`network_host_credentials`) e pin (`host_detect_credential`)
- * contano solo finché il motore li legge (`cateneVecchieAperte`): dopo la 2d
- * sono congelati fino alla 2g, e una voce tolta dalla lista, o saltata dalla
- * conversione per il tipo, resterebbe «in uso» per una rete o un host dove
- * nessuno la usa e dove la pagina non la mostra; con D8 non si potrebbe né
- * eliminare né cambiarle tipo, e «Togli prima questi usi» chiederebbe una cosa
- * impossibile (revisione della 2d, 16/10).
+ * Catene vecchie (`network_host_credentials`), pin (`host_detect_credential`)
+ * e colonne di `network_devices` (`credential_id`, `snmp_credential_id`) non
+ * contano: dalla 2g (T26) il motore non li legge più, e una voce rimasta solo
+ * lì risulterebbe «in uso» per una rete, un host o un apparato dove nessuno la
+ * usa e dove la pagina non la mostra; con D8 non si potrebbe né eliminare né
+ * cambiarle tipo, e «Togli prima questi usi» chiederebbe una cosa impossibile
+ * (revisione della 2d, 16/10). Le colonne hanno ON DELETE SET NULL: eliminare
+ * la voce le svuota.
  *
  * Modulo con l'handle del DB esplicito: non importa né `db.ts` né `db-tenant.ts`.
  */
 import type Database from "better-sqlite3";
-import { cateneVecchieAperte } from "./segni-t2";
 
 export interface UsiCredenziale {
-  apparati: Array<{ id: number; nome: string; come: "binding" | "colonna" }>;
+  apparati: Array<{ id: number; nome: string; come: "binding" }>;
   reti: Array<{ id: number; nome: string }>;
   /** Host con la voce fra le loro credenziali o come credenziale rilevata. */
   host: number;
@@ -43,36 +43,22 @@ export interface UsiCredenziale {
 }
 
 export function usiCredenzialeDb(dbh: Database.Database, id: number): UsiCredenziale {
-  const vecchie = cateneVecchieAperte(dbh);
   const apparati = dbh
     .prepare(
-      `SELECT d.id AS id, d.name AS nome, u.come AS come FROM (
-         SELECT device_id AS id, 'binding' AS come FROM device_credential_bindings WHERE credential_id = @id
-         UNION
-         SELECT id, 'colonna' FROM network_devices WHERE credential_id = @id OR snmp_credential_id = @id
-       ) u JOIN network_devices d ON d.id = u.id
-       ORDER BY d.id, u.come`,
+      `SELECT d.id AS id, d.name AS nome, 'binding' AS come FROM network_devices d
+       WHERE d.id IN (SELECT device_id FROM device_credential_bindings WHERE credential_id = ?)
+       ORDER BY d.id`,
     )
-    .all({ id }) as UsiCredenziale["apparati"];
+    .all(id) as UsiCredenziale["apparati"];
   const reti = dbh
     .prepare(
       `SELECT n.id AS id, n.name AS nome FROM networks n
-       WHERE n.id IN (
-         SELECT network_id FROM network_credentials WHERE credential_id = @id
-         ${vecchie ? "UNION SELECT network_id FROM network_host_credentials WHERE credential_id = @id" : ""}
-       )
+       WHERE n.id IN (SELECT network_id FROM network_credentials WHERE credential_id = ?)
        ORDER BY n.name, n.id`,
     )
-    .all({ id }) as UsiCredenziale["reti"];
+    .all(id) as UsiCredenziale["reti"];
   const host = (
-    dbh
-      .prepare(
-        `SELECT COUNT(*) AS n FROM (
-           SELECT host_id FROM host_credentials WHERE credential_id = @id
-           ${vecchie ? "UNION SELECT host_id FROM host_detect_credential WHERE credential_id = @id" : ""}
-         )`,
-      )
-      .get({ id }) as { n: number }
+    dbh.prepare(`SELECT COUNT(DISTINCT host_id) AS n FROM host_credentials WHERE credential_id = ?`).get(id) as { n: number }
   ).n;
   const controller = dbh
     .prepare(`SELECT id, name AS nome FROM network_controllers WHERE credential_id = ? ORDER BY name, id`)
@@ -100,28 +86,19 @@ export function totaleUsi(u: UsiCredenziale): number {
 /**
  * Il totale di `totaleUsi` per ogni voce usata, in una query sola (niente N+1
  * nell'elenco della pagina). Le chiavi sono quelle di `usiCredenzialeDb`: un
- * apparato conta una volta come binding e una come colonna, una rete e un
- * host una volta sola anche se la voce ci compare in due tabelle; binding e
- * reti orfani (apparato o rete che non c'è più) non contano, come là, e
- * catene vecchie e pin contano alle stesse condizioni (`cateneVecchieAperte`).
+ * apparato, una rete e un host contano una volta sola; binding e reti orfani
+ * (apparato o rete che non c'è più) non contano, come là.
  */
 export function usiTotaliDb(dbh: Database.Database): Map<number, number> {
-  const vecchie = cateneVecchieAperte(dbh);
   const righe = dbh
     .prepare(
       `SELECT credential_id AS id, COUNT(*) AS n FROM (
          SELECT 'ab:' || b.device_id AS chi, b.credential_id FROM device_credential_bindings b
            JOIN network_devices d ON d.id = b.device_id WHERE b.credential_id IS NOT NULL
          UNION
-         SELECT 'ac:' || id, credential_id FROM network_devices WHERE credential_id IS NOT NULL
-         UNION
-         SELECT 'ac:' || id, snmp_credential_id FROM network_devices WHERE snmp_credential_id IS NOT NULL
-         UNION
          SELECT 'r:' || nc.network_id, nc.credential_id FROM network_credentials nc JOIN networks n ON n.id = nc.network_id
-         ${vecchie ? "UNION SELECT 'r:' || nh.network_id, nh.credential_id FROM network_host_credentials nh JOIN networks n ON n.id = nh.network_id" : ""}
          UNION
          SELECT 'h:' || host_id, credential_id FROM host_credentials
-         ${vecchie ? "UNION SELECT 'h:' || host_id, credential_id FROM host_detect_credential" : ""}
          UNION
          SELECT 'ad:' || id, winrm_credential_id FROM ad_integrations WHERE winrm_credential_id IS NOT NULL
          UNION

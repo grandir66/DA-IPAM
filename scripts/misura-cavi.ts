@@ -146,7 +146,7 @@ async function main(): Promise<number> {
         interfacce: stp.parseInterfacce(F("mikrotik-mk2-testa.txt")), bridge: stp.parseBridge(F("mikrotik-mk3-testa.txt")),
         porteBridge: stp.parsePorteBridge(F("mikrotik-mk4-testa.txt")), monitorBridge: stp.parseMonitorBridge(F("mikrotik-mk5-testa.txt")),
         monitorPorte: stp.parseMonitorPorte(F("mikrotik-mk6-testa.txt")), fasci: stp.parseFasci(F("mikrotik-mk8a-testa.txt")),
-        monitorFasci: stp.parseMonitorFasci(F("mikrotik-mk8b-testa.txt")),
+        monitorFasci: stp.parseMonitorFasci(F("mikrotik-mk8b-testa.txt")), istanze: null, monitorIstanze: null,
       }));
       tenantDb.upsertNeighbors(id, parseMikrotikNeighbors(F("mikrotik-ip-neighbor-terse-ssh.txt")), "ssh");
       tenantDb.upsertNeighbors(id, parseMikrotikNeighbors(F("mikrotik-ip-neighbor-terse.txt")).map((n) => ({ ...n, localPortIndex: 1, remoteCaps: "bridge" })), "snmp");

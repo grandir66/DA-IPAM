@@ -12,9 +12,9 @@ export const NASCE_SPENTA = "Nasce spenta: si accende solo da qui, cliente per c
 export const DESCRIZIONE_LETTURE: Readonly<Record<Lettura, { titolo: string; legge: string; apparati: string; comandi: string }>> = {
   mikrotik: {
     titolo: "Spanning tree, bridge e fasci dei MikroTik",
-    legge: "Per ogni porta: nel bridge o instradata, ruolo e stato nello spanning tree, fascio e partner; i bridge e la radice; tutti i MAC dell'apparato. Sugli switch MikroTik anche i vicini.",
+    legge: "Per ogni porta: nel bridge o instradata, ruolo e stato nello spanning tree, fascio e partner; i bridge e la radice; sui bridge in MSTP la porta radice e le VLAN di ogni istanza; tutti i MAC dell'apparato. Sugli switch MikroTik anche i vicini.",
     apparati: "router e switch MikroTik letti via SSH",
-    comandi: "/interface bridge print · /interface bridge port print · /interface bridge monitor · /interface bridge port monitor · /interface bonding print e monitor; sugli switch anche /interface print e /ip neighbor print (sola lettura, una connessione per apparato)",
+    comandi: "/interface bridge print · /interface bridge port print · /interface bridge monitor · /interface bridge port monitor · /interface bonding print e monitor · /interface bridge msti print e monitor, solo sui bridge in MSTP; sugli switch anche /interface print e /ip neighbor print (sola lettura, una connessione per apparato)",
   },
   controller: {
     titolo: "Campi del controller",

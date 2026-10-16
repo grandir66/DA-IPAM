@@ -26,6 +26,7 @@ import {
   COMANDI_MK, TEMPO_COMANDO_MS, codiceTrasporto, interpretaUscita, leggiMikrotikTopologia, type ApriEsecutore,
 } from "@/lib/devices/mikrotik-letture";
 import { leggiEsiti, scriviInterruttore } from "@/lib/topology/letture/interruttori";
+import { DESCRIZIONE_LETTURE } from "@/lib/topology/letture/testi";
 
 const T = "TESTARPLETTUREMK";
 const db = () => getTenantDb(T);
@@ -269,4 +270,66 @@ test("I33 fuori dal giro: chi scrive i vicini di un router con la fonte di oggi 
     });
   }
   assert.deepEqual(scoperte, []);
+});
+
+// ── MK7 (Task 3b di T2): le istanze MSTP, solo dove un bridge è in MSTP ──────────────────────────────────────────────────────
+// Livello completo: due comandi nuovi sui router dei clienti, dietro lo stesso interruttore (già acceso sul cliente A). Le
+// uscite vere T2-a del router A; il suo `msti print` manca: quello di B ha la stessa forma e, nella stessa regione, la stessa
+// mappa delle VLAN. Gli altri comandi rispondono con le fixture di oggi (RSTP): conta che cosa si manda e che cosa si scrive.
+const MSTP: Record<string, () => Promise<string>> = {
+  [COMANDI_MK.bridge]: async () => F("mikrotik-mk3-mstp-a.txt"), [COMANDI_MK.monitorBridge]: async () => F("mikrotik-mk5-mstp-a.txt"),
+  [COMANDI_MK.msti]: async () => F("mikrotik-mk7-msti-b.txt"), [COMANDI_MK.monitorMsti]: async () => F("mikrotik-mk7-monitor-a.txt"),
+};
+const righeBridge = () => (db().prepare("SELECT device_id, instance, region_name, config_digest, vlans, root_port, regional_root_id FROM topology_bridge_facts ORDER BY device_id, instance")
+  .all() as Array<Record<string, unknown>>).map((r) => [r.device_id, r.instance, r.region_name, r.config_digest, r.vlans, r.root_port, r.regional_root_id]);
+
+test("MK7 con le fixture di oggi (RSTP): nessun comando `msti`, gli stessi comandi di prima", async () => {
+  accendi();
+  const s = spia();
+  await giro(s);
+  assert.deepEqual(s.chiamate.map((c) => [c.device, c.comandi.length]), [[1, 6], [2, 8]]);
+  assert.equal(s.chiamate.flatMap((c) => c.comandi).some((c) => c.includes("msti")), false);
+});
+
+test("MK7 con un bridge in MSTP: i due comandi `msti` in coda, sulla stessa connessione; una riga per istanza, l'albero comune intero", async () => {
+  accendi();
+  const s = spia(MSTP);
+  await giro(s);
+  assert.deepEqual(s.chiamate.map((c) => [c.device, c.comandi.length]), [[1, 8], [2, 10]], "una connessione per apparato, due comandi in più");
+  for (const c of s.chiamate) assert.deepEqual(c.comandi.slice(-2), [COMANDI_MK.msti, COMANDI_MK.monitorMsti]);
+  const comune = (d: number) => [d, 0, "RGX", "a4c123b1612dd272d1371c17149d4395", "1-76,78-4094", null, "8192.02:00:00:00:00:10"];
+  const istanza1 = (d: number) => [d, 1, null, null, "77", "eoip-tunnel-SEDA-SEDB", "4096.02:00:00:00:00:11"];
+  assert.deepEqual(righeBridge(), [comune(1), istanza1(1), comune(2), istanza1(2)], "la riga D (istanza 0) non sovrascrive l'albero comune");
+  const e = withTenant(T, () => leggiEsiti("mikrotik"));
+  assert.deepEqual([e["1"].comandi, e["1"].riusciti, e["1"].codice], [8, 8, null]);
+});
+
+test("MK7 che non risponde: nessuna riga d'istanza (le istanze restano «non lette»), l'albero comune c'è, l'esito ha il codice", async () => {
+  accendi();
+  await giro(spia({ ...MSTP, [COMANDI_MK.monitorMsti]: async () => { throw new ComandoScaduto(TEMPO_COMANDO_MS); } }));
+  assert.deepEqual(righeBridge().map((r) => [r[0], r[1], r[2]]), [[1, 0, "RGX"], [2, 0, "RGX"]]);
+  const e = withTenant(T, () => leggiEsiti("mikrotik"));
+  assert.deepEqual([e["1"].comandi, e["1"].riusciti, e["1"].codice], [8, 7, "TEMPO_SCADUTO"]);
+});
+
+test("MK7: `msti print` non riuscito → il monitor non parte (la sua uscita non si potrebbe attaccare a nessuna istanza)", async () => {
+  accendi();
+  const s = spia({ ...MSTP, [COMANDI_MK.msti]: async () => F("mikrotik-errore.txt") });
+  await giro(s);
+  assert.equal(s.chiamate[0].comandi.includes(COMANDI_MK.monitorMsti), false);
+  const e = withTenant(T, () => leggiEsiti("mikrotik"));
+  assert.deepEqual([e["1"].comandi, e["1"].riusciti, e["1"].codice], [7, 6, "NO_SUCH_ITEM"]);
+  assert.deepEqual(righeBridge().map((r) => [r[0], r[1], r[4]]), [[1, 0, null], [2, 0, null]]);
+});
+
+test("MK7: ogni comando ha il suo tempo massimo, anche i due nuovi (10 comandi con MSTP e vicini)", async () => {
+  const tempi: Array<[string, number]> = [];
+  await leggiMikrotikTopologia(async (cmd, tempoMs) => { tempi.push([cmd, tempoMs]); return MSTP[cmd] ? MSTP[cmd]() : USCITE[cmd]; }, { uscitaInterfacce: null, conVicini: true });
+  assert.equal(tempi.length, 10);
+  assert.ok(tempi.every(([, t]) => t === TEMPO_COMANDO_MS));
+});
+
+test("MK7: la scheda «Letture in più» dice anche i due comandi nuovi e quando partono (l'interruttore è già acceso dal cliente)", () => {
+  assert.ok(DESCRIZIONE_LETTURE.mikrotik.comandi.includes("/interface bridge msti print e monitor, solo sui bridge in MSTP"));
+  assert.ok(DESCRIZIONE_LETTURE.mikrotik.legge.includes("sui bridge in MSTP la porta radice e le VLAN di ogni istanza"));
 });

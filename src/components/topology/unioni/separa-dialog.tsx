@@ -71,6 +71,8 @@ function Corpo({ onOpenChange, oggetto, onFatto }: SeparaDialogProps) {
   }
 
   const separabili = stato ? stato.membri.filter((m) => m.separabile) : [];
+  // L'anteprima parla per id (`host:12`): a schermo si scrivono gli indirizzi, che sono quello che l'utente ha scelto.
+  const indirizzoDi = (id: string): string => stato?.membri.find((m) => m.id === id)?.ip ?? id;
 
   return (
     <>
@@ -96,14 +98,14 @@ function Corpo({ onOpenChange, oggetto, onFatto }: SeparaDialogProps) {
           <div className="space-y-3">
             <div>
               <p className="font-semibold">Resta in «{anteprima.resta.nodo === stato.nodo ? stato.nome : anteprima.resta.nome}»</p>
-              <p className="text-muted-foreground">{anteprima.resta.membri.length} indirizzi: {anteprima.resta.membri.join(", ")}</p>
+              <p className="text-muted-foreground">{anteprima.resta.membri.length} indirizzi: {anteprima.resta.membri.map(indirizzoDi).join(", ")}</p>
             </div>
             <div>
               <p className="font-semibold">Escono</p>
               <ul className="mt-1 border rounded-md divide-y">
                 {anteprima.escono.map((e) => (
                   <li key={e.nodo} className="px-3 py-1.5">
-                    <span className="font-medium">{e.nome}</span> <span className="text-muted-foreground">— {e.membri.join(", ")}</span>
+                    <span className="font-medium">{e.nome}</span> <span className="text-muted-foreground">— {e.membri.map(indirizzoDi).join(", ")}</span>
                   </li>
                 ))}
               </ul>

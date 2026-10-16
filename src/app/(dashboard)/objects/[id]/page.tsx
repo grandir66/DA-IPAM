@@ -473,7 +473,7 @@ function SullaMappa({ hostId, isAdmin }: { hostId: number; isAdmin: boolean }) {
                   <div key={m.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2">
                     {m.ip !== null && (qui || idHost === null
                       ? <span className="font-mono text-sm">{m.ip}</span>
-                      : <Link href={`/objects/${idHost}`} className="font-mono text-sm hover:underline text-primary">{m.ip}</Link>)}
+                      : <Link href={`/objects/${idHost}`} className="font-mono text-sm underline underline-offset-2">{m.ip}</Link>)}
                     <span className="text-sm">{m.nome}</span>
                     <span className="text-sm text-muted-foreground">· {parolaCome(m)}</span>
                     {qui && <span className="text-sm font-semibold">· qui</span>}
@@ -486,12 +486,12 @@ function SullaMappa({ hostId, isAdmin }: { hostId: number; isAdmin: boolean }) {
           {stato.mancanti.length > 0 && <p className="text-sm">Non ci sono più: {stato.mancanti.join(", ")}</p>}
           {isAdmin && (
             <div className="flex flex-wrap gap-2">
-              <Button variant="outline" size="sm" onClick={() => setUnisciOpen(true)}>
+              <Button variant="outline" size="sm" className="text-[13px]" onClick={() => setUnisciOpen(true)}>
                 <Merge className="h-3.5 w-3.5 mr-1.5" />
                 Unisci con…
               </Button>
               {stato.membri.some((m) => m.separabile) && (
-                <Button variant="outline" size="sm" onClick={() => setSeparaOpen(true)}>
+                <Button variant="outline" size="sm" className="text-[13px]" onClick={() => setSeparaOpen(true)}>
                   <Split className="h-3.5 w-3.5 mr-1.5" />
                   Separa…
                 </Button>

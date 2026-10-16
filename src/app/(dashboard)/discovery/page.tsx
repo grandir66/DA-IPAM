@@ -2045,7 +2045,7 @@ export default function DiscoveryPage() {
         <CardContent className="p-0">
           {/* ── Barra selezione ── */}
           {selectedIds.size > 0 && (
-            <div className="flex items-center gap-3 px-4 py-2 bg-primary/5 border-b">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2 bg-primary/5 border-b">
               <span className="text-sm font-medium">
                 {selectedIds.size} host selezionat{selectedIds.size === 1 ? "o" : "i"}
               </span>
@@ -2065,18 +2065,18 @@ export default function DiscoveryPage() {
               )}
               {adminUnioni && selectedIds.size === 1 && (
                 <>
-                  <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setUnisciOpen(true)}>
+                  <Button size="sm" variant="outline" className="gap-1.5 text-[13px]" onClick={() => setUnisciOpen(true)}>
                     <Merge className="h-3.5 w-3.5" />
                     Unisci con…
                   </Button>
-                  <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setSeparaOpen(true)}>
+                  <Button size="sm" variant="outline" className="gap-1.5 text-[13px]" onClick={() => setSeparaOpen(true)}>
                     <Split className="h-3.5 w-3.5" />
                     Separa…
                   </Button>
                 </>
               )}
               {adminUnioni && selectedIds.size >= 2 && (
-                <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setUnisciOpen(true)}>
+                <Button size="sm" variant="outline" className="gap-1.5 text-[13px]" onClick={() => setUnisciOpen(true)}>
                   <Merge className="h-3.5 w-3.5" />
                   Unisci ({selectedIds.size})…
                 </Button>

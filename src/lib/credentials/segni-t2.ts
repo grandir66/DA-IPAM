@@ -18,6 +18,7 @@
 import type Database from "better-sqlite3";
 
 export const SEGNO_TIPI = "credenziali_t2_tipi";
+export const SEGNO_CATENE = "credenziali_t2_catene";
 
 export function leggiSegno(dbh: Database.Database, chiave: string): string | null {
   const r = dbh.prepare("SELECT value FROM tenant_settings WHERE key = ?").get(chiave) as { value: string } | undefined;

@@ -7,7 +7,8 @@ import { tableSpec, TENANT_TABLES } from "./table-registry";
 import { writableColumns, rekeyColumns } from "./schema-introspect";
 import { encrypt } from "@/lib/crypto";
 import { descriviNormalizza, normalizzaTipiCredenziali, segnoTipi } from "@/lib/credentials/normalizza-tipi";
-import { scriviSegno, segnoErrore, SEGNO_TIPI } from "@/lib/credentials/segni-t2";
+import { scriviSegno, segnoErrore, SEGNO_CATENE, SEGNO_TIPI } from "@/lib/credentials/segni-t2";
+import { convertiCateneVecchie, descriviCatene, segnoCatene } from "@/lib/credentials/converti-catene";
 
 export interface ImportArgs {
   bundle: Buffer;
@@ -97,6 +98,30 @@ export function importTenant(args: ImportArgs): ImportResult {
       console.error(`[transfer] import: ${SEGNO_TIPI}, segno d'errore non scritto:`, e2);
     }
     result.conversioni[SEGNO_TIPI] = { segno, dettaglio: "normalizzazione dei tipi delle credenziali non eseguita" };
+  }
+
+  // Tappa 2d credenziali (T16): il bundle può portare catene vecchie e pin, e
+  // il segno della sorgente. Come sopra: la conversione si chiama direttamente,
+  // senza chiavi dell'hub (globali = null: sono id del DB di un tenant salvati
+  // nell'hub, e quelli di questa installazione non dicono niente sul bundle),
+  // e il segno si riscrive con l'esito, nella stessa transazione.
+  try {
+    const { esito, segno } = tenantDb.transaction(() => {
+      const esito = convertiCateneVecchie(tenantDb, null, { aVuoto: false });
+      const segno = segnoCatene(esito);
+      scriviSegno(tenantDb, SEGNO_CATENE, segno);
+      return { esito, segno };
+    })();
+    result.conversioni[SEGNO_CATENE] = { segno, dettaglio: descriviCatene(esito) };
+  } catch (e) {
+    console.error(`[transfer] import: ${SEGNO_CATENE} fallita, si riprova alla prossima apertura del tenant:`, e);
+    const segno = segnoErrore(e);
+    try {
+      scriviSegno(tenantDb, SEGNO_CATENE, segno);
+    } catch (e2) {
+      console.error(`[transfer] import: ${SEGNO_CATENE}, segno d'errore non scritto:`, e2);
+    }
+    result.conversioni[SEGNO_CATENE] = { segno, dettaglio: "conversione delle catene vecchie e dei pin non eseguita" };
   }
 
   // --- Import tabelle HUB (merge, non distruttivo) ---

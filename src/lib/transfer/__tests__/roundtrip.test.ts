@@ -212,3 +212,33 @@ test("import di un bundle di prima della 2c: linux → ssh, segno riscritto, esi
   assert.equal(res.conversioni.credenziali_t2_tipi?.segno, segno);
   assert.match(res.conversioni.credenziali_t2_tipi?.dettaglio ?? "", /linux → ssh 1/);
 });
+
+// Tappa 2d credenziali (T16): un bundle esportato prima della 2d porta le
+// catene vecchie per ruolo e il segno `credenziali_t2_catene` della sorgente.
+// Un import con cancellazione sostituisce tenant_settings, quindi il segno:
+// l'import converte le catene direttamente, senza chiavi dell'hub (gli id
+// dell'hub di destinazione non dicono niente sul bundle), e riscrive il segno
+// con l'esito, che va anche nella risposta.
+test("import di un bundle di prima della 2d: catena vecchia nella lista, segno riscritto, esito nella risposta", async () => {
+  process.env.ENCRYPTION_KEY = "A".repeat(64);
+  const { exportTenant } = await import("../export");
+  const { importTenant } = await import("../import");
+  const src = freshTenant();
+  const net = Number(src.prepare("INSERT INTO networks (cidr, name) VALUES ('10.9.0.0/24', 'LAN')").run().lastInsertRowid);
+  const cred = Number(src.prepare("INSERT INTO credentials (name, credential_type) VALUES ('Server', 'ssh')").run().lastInsertRowid);
+  src.prepare("INSERT INTO network_host_credentials (network_id, credential_id, role, sort_order) VALUES (?, ?, 'ssh', 0)").run(net, cred);
+  src.prepare("INSERT INTO tenant_settings (key, value) VALUES ('credenziali_t2_catene', 'done:2026-01-01T00:00:00.000Z:dal-bundle')").run();
+  const bundle = exportTenant({
+    tenantDb: src, hubDb: freshHub(),
+    options: { tenantCode: "DEFAULT", tiers: [], includeVault: false, passphrase: "trasporto-2d", exportedAt: "2026-10-16T10:00:00.000Z", appVersion: "test" },
+  });
+  const dst = freshTenant();
+  const res = importTenant({ bundle, tenantDb: dst, hubDb: freshHub(), options: { tenantCode: "DEFAULT", passphrase: "trasporto-2d", wipe: true } });
+
+  const lista = dst.prepare("SELECT credential_id FROM network_credentials WHERE network_id = ?").all(net) as Array<{ credential_id: number }>;
+  assert.deepEqual(lista.map((r) => r.credential_id), [cred]);
+  const segno = (dst.prepare("SELECT value FROM tenant_settings WHERE key = 'credenziali_t2_catene'").get() as { value: string }).value;
+  assert.match(segno, /^done:.*lista=1/);
+  assert.equal(res.conversioni.credenziali_t2_catene?.segno, segno);
+  assert.match(res.conversioni.credenziali_t2_catene?.dettaglio ?? "", /1 voci nella lista/);
+});

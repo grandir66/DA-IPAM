@@ -25,7 +25,8 @@ import { ipSortKey, sqlOrderByDhcpLeases, sqlOrderByNetworks, type SortDirection
 import { convertiCommunityInlineSnmp } from "./credentials/converti-community-inline";
 import { descriviRicostruzione, descriviStato, migraCredenzialiTipi, statoCredenziali } from "./credentials/migra-credenziali-tipi";
 import { descriviNormalizza, normalizzaTipiCredenziali, segnoTipi } from "./credentials/normalizza-tipi";
-import { conversioneChiusa, leggiSegno, scriviSegno, segnoErrore, SEGNO_TIPI } from "./credentials/segni-t2";
+import { conversioneChiusa, leggiSegno, scriviSegno, segnoErrore, SEGNO_CATENE, SEGNO_TIPI } from "./credentials/segni-t2";
+import { convertiCateneVecchie, descriviCatene, MOTIVO_DUE_TENANT, segnoCatene } from "./credentials/converti-catene";
 import { migraAppleMacos } from "./devices/migra-apple-macos";
 import { randomUUID } from "crypto";
 import { inferIpAssignment, resolveAdDhcpLeaseForHost, resolveDhcpLeaseForHost } from "./ip-assignment";
@@ -1889,6 +1890,35 @@ export function getTenantDb(tenantCode: string): Database.Database {
       scriviSegno(newDb, SEGNO_TIPI, segnoErrore(e));
     } catch (e2) {
       console.error(`[db-tenant] ${tenantCode}: ${SEGNO_TIPI}, segno d'errore non scritto:`, e2);
+    }
+  }
+
+  // Tappa 2d credenziali (T16): catene vecchie per ruolo e pin nella lista
+  // della rete e nelle righe dell'host; le chiavi «di default» dell'hub solo
+  // con un tenant attivo (D3 = (a)). Dopo la 2c. Conversione e segno nella
+  // stessa transazione; col segno done:/parziale: non si richiama più (le
+  // catene vecchie restano congelate fino alla 2g, e una voce tolta dalla
+  // lista tornerebbe). Se fallisce: ROLLBACK, segno errore:, il tenant si apre
+  // lo stesso e si riprova all'apertura dopo.
+  try {
+    if (!conversioneChiusa(leggiSegno(newDb, SEGNO_CATENE))) {
+      const globali = { ...chiaviGlobaliHub(getSetting), tenantAttivi: getActiveTenants().length };
+      const { esito, segno } = newDb.transaction(() => {
+        const esito = convertiCateneVecchie(newDb, globali, { aVuoto: false });
+        const segno = segnoCatene(esito);
+        scriviSegno(newDb, SEGNO_CATENE, segno);
+        return { esito, segno };
+      })();
+      const riga = `[db-tenant] ${tenantCode}: ${SEGNO_CATENE} ${segno}; ${descriviCatene(esito)}`;
+      if (esito.saltate.some((x) => x.motivo !== MOTIVO_DUE_TENANT)) console.warn(riga);
+      else console.info(riga);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: ${SEGNO_CATENE} fallita (ROLLBACK), si riprova alla prossima apertura:`, e);
+    try {
+      scriviSegno(newDb, SEGNO_CATENE, segnoErrore(e));
+    } catch (e2) {
+      console.error(`[db-tenant] ${tenantCode}: ${SEGNO_CATENE}, segno d'errore non scritto:`, e2);
     }
   }
 

@@ -13,13 +13,20 @@
  * Una misura legge, non scrive: righe e figli di `credentials`, violazioni
  * delle chiavi esterne, contatore, i segni `credenziali_t2_*` e le voci (id,
  * nome, tipo), che lo script stampa a terminale e mai su file.
+ *
+ * Dalla 2d (T16) anche le catene: righe della lista delle reti, delle righe
+ * host, delle catene vecchie e dei pin; la lista e le righe host per id; per
+ * ogni rete la sequenza del motore (voce:porta) per ssh, winrm e snmp, con le
+ * chiavi dell'hub della copia, senza registrare ripieghi. È la proprietà della
+ * 2d: la sequenza non cambia con la conversione.
  */
 import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
 import { cartellaTenant, closeAllTenantDbs, closeTenantDb, getTenantDb, withTenant } from "../../src/lib/db-tenant";
-import { closeHubDb, getHubDbPath } from "../../src/lib/db-hub";
+import { closeHubDb, getHubDbPath, getSetting } from "../../src/lib/db-hub";
 import { statoCredenziali, type StatoCredenziali } from "../../src/lib/credentials/migra-credenziali-tipi";
+import { chiaviGlobaliHub, resolveCredentialsForDb, type CredProtocol } from "../../src/lib/credentials/resolve";
 
 export { cartellaTenant, getHubDbPath };
 
@@ -39,10 +46,64 @@ export interface Voce {
   credential_type: string;
 }
 
+export const PROTOCOLLI_CATENE: readonly CredProtocol[] = ["ssh", "winrm", "snmp"];
+
+export interface MisuraCatene {
+  /** null se le tabelle non ci sono (schema di prima). */
+  righe: { lista: number; righeHost: number; catenaVecchia: number; pin: number } | null;
+  lista: Array<{ network_id: number; credential_id: number }>;
+  righeHost: Array<{ id: number; host_id: number; ip: string; credential_id: number; protocol_type: string; port: number }>;
+  reti: Record<string, string>;
+  /** `<network_id>:<protocollo>` → ["<voce>:<porta>", …] nell'ordine del motore. */
+  catene: Record<string, string[]>;
+  /** Il motore non si è potuto interrogare: il messaggio. */
+  errore: string | null;
+}
+
 export interface Misura {
   stato: StatoCredenziali;
   segni: Record<string, string>;
   voci: Voce[];
+  catene: MisuraCatene;
+}
+
+function haTabella(dbh: Database.Database, nome: string): boolean {
+  return !!dbh.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(nome);
+}
+
+function misuraCatene(dbh: Database.Database): MisuraCatene {
+  const out: MisuraCatene = { righe: null, lista: [], righeHost: [], reti: {}, catene: {}, errore: null };
+  const tabelle = ["networks", "hosts", "network_credentials", "host_credentials", "network_host_credentials", "host_detect_credential"];
+  if (!tabelle.every((t) => haTabella(dbh, t))) return out;
+  const conta = (t: string) => (dbh.prepare(`SELECT COUNT(*) AS n FROM ${t}`).get() as { n: number }).n;
+  out.righe = {
+    lista: conta("network_credentials"),
+    righeHost: conta("host_credentials"),
+    catenaVecchia: conta("network_host_credentials"),
+    pin: conta("host_detect_credential"),
+  };
+  out.lista = dbh.prepare("SELECT network_id, credential_id FROM network_credentials ORDER BY network_id, sort_order, id").all() as MisuraCatene["lista"];
+  out.righeHost = dbh
+    .prepare(
+      `SELECT hc.id, hc.host_id, COALESCE(h.ip, '?') AS ip, hc.credential_id, hc.protocol_type, hc.port
+       FROM host_credentials hc LEFT JOIN hosts h ON h.id = hc.host_id ORDER BY hc.id`
+    )
+    .all() as MisuraCatene["righeHost"];
+  const reti = dbh.prepare("SELECT id, name FROM networks ORDER BY id").all() as Array<{ id: number; name: string }>;
+  for (const r of reti) out.reti[String(r.id)] = r.name;
+  try {
+    const globaliHub = chiaviGlobaliHub(getSetting);
+    for (const r of reti) {
+      for (const p of PROTOCOLLI_CATENE) {
+        out.catene[`${r.id}:${p}`] = resolveCredentialsForDb(dbh, { networkId: r.id }, p, { globaliHub, registra: false }).map(
+          (c) => `${c.credential_id ?? "-"}:${c.port}`
+        );
+      }
+    }
+  } catch (e) {
+    out.errore = e instanceof Error ? e.message : String(e);
+  }
+  return out;
 }
 
 function misuraHandle(dbh: Database.Database): Misura {
@@ -58,6 +119,7 @@ function misuraHandle(dbh: Database.Database): Misura {
     stato: statoCredenziali(dbh, { violazioni: true }),
     segni,
     voci: dbh.prepare("SELECT id, name, credential_type FROM credentials ORDER BY id").all() as Voce[],
+    catene: misuraCatene(dbh),
   };
 }
 

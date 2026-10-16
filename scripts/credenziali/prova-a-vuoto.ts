@@ -11,6 +11,10 @@
  *   2. apre con getTenantDb (migrazioni);
  *   3. conta DOPO e stampa le differenze, coi nomi delle voci a terminale;
  *   4. chiude e riapre: la seconda apertura non deve cambiare niente.
+ * Dalla 2d (T16) anche le catene: righe della lista delle reti, delle righe
+ * host, delle catene vecchie e dei pin prima → dopo; le voci entrate nella
+ * lista e le righe host nuove, per nome; per ogni rete la sequenza del motore
+ * per ssh, winrm e snmp, che deve restare uguale (proprietà della 2d).
  *
  * Ordine obbligato (vincolo «Script sulle copie»): db-tenant e db-hub fissano i
  * percorsi quando si caricano, e l'ambiente del servizio punta ai dati veri.
@@ -25,7 +29,8 @@
  *   Senza DA_INVENT_DATA_DIR nell'ambiente (l'hub non ce l'ha) serve
  *   --dati-servizio con la cartella dati del servizio.
  *   Uscita: 0 tutto in regola, 1 da guardare (seconda apertura che cambia,
- *   segno errore: o parziale:, tenant che non si apre), 2 non partito.
+ *   segno errore: o parziale:, tenant che non si apre, catene del motore
+ *   diverse o non misurabili), 2 non partito.
  */
 import path from "node:path";
 import { cartelleServizio, controllaCopia } from "../../src/lib/credentials/guardia-copia";
@@ -62,7 +67,64 @@ function voci(prima: Misura, dopo: Misura): string[] {
   return out;
 }
 
-function stampaTenant(code: string, prima: Misura, dopo: Misura): void {
+function nomeVoce(prima: Misura, dopo: Misura, id: number | string): string {
+  const n = Number(id);
+  const v = dopo.voci.find((x) => x.id === n) ?? prima.voci.find((x) => x.id === n);
+  return `«${v?.name ?? "?"}» (#${id})`;
+}
+
+function nomeRete(prima: Misura, dopo: Misura, id: number | string): string {
+  return `rete «${dopo.catene.reti[String(id)] ?? prima.catene.reti[String(id)] ?? "?"}» (#${id})`;
+}
+
+/** Catene (2d): righe, voci entrate e uscite dalla lista, righe host nuove, catene del motore. Vero se c'è da guardare. */
+function stampaCatene(prima: Misura, dopo: Misura): boolean {
+  const c1 = prima.catene;
+  const c2 = dopo.catene;
+  const r = (m: Misura["catene"], k: "lista" | "righeHost" | "catenaVecchia" | "pin") => (m.righe ? String(m.righe[k]) : "-");
+  process.stdout.write(
+    `catene (2d): lista delle reti ${r(c1, "lista")} → ${r(c2, "lista")}, righe host ${r(c1, "righeHost")} → ${r(c2, "righeHost")}, ` +
+      `catene vecchie ${r(c1, "catenaVecchia")} → ${r(c2, "catenaVecchia")}, pin ${r(c1, "pin")} → ${r(c2, "pin")}\n`
+  );
+  const chiave = (x: { network_id: number; credential_id: number }) => `${x.network_id}:${x.credential_id}`;
+  const k1 = new Set(c1.lista.map(chiave));
+  const k2 = new Set(c2.lista.map(chiave));
+  const riga = (x: { network_id: number; credential_id: number }) =>
+    `  ${nomeRete(prima, dopo, x.network_id)}: ${nomeVoce(prima, dopo, x.credential_id)}`;
+  const entrate = c2.lista.filter((x) => !k1.has(chiave(x))).map(riga);
+  const uscite = c1.lista.filter((x) => !k2.has(chiave(x))).map(riga);
+  process.stdout.write(`voci entrate nella lista:\n${entrate.join("\n") || "  (nessuna)"}\n`);
+  if (uscite.length > 0) process.stdout.write(`voci USCITE dalla lista:\n${uscite.join("\n")}\n`);
+  const idHost = new Set(c1.righeHost.map((h) => h.id));
+  const nuove = c2.righeHost
+    .filter((h) => !idHost.has(h.id))
+    .map((h) => `  host ${h.ip} (#${h.host_id}): ${nomeVoce(prima, dopo, h.credential_id)} ${h.protocol_type}/${h.port}`);
+  process.stdout.write(`righe host nuove:\n${nuove.join("\n") || "  (nessuna)"}\n`);
+
+  if (c1.errore || c2.errore) {
+    process.stdout.write(`catene del motore non misurabili: prima ${c1.errore ?? "ok"}; dopo ${c2.errore ?? "ok"}\n`);
+    return true;
+  }
+  const chiaviCatene = [...new Set([...Object.keys(c1.catene), ...Object.keys(c2.catene)])].sort();
+  const diverse: string[] = [];
+  const leggibile = (xs: string[] | undefined) =>
+    xs === undefined ? "(rete assente)" : xs.map((x) => `${nomeVoce(prima, dopo, x.split(":")[0])}:${x.split(":")[1]}`).join(", ") || "(vuota)";
+  for (const k of chiaviCatene) {
+    const a = c1.catene[k];
+    const b = c2.catene[k];
+    if (JSON.stringify(a) === JSON.stringify(b)) continue;
+    const [rete, protocollo] = k.split(":");
+    diverse.push(`  ${nomeRete(prima, dopo, rete)} ${protocollo}: prima ${leggibile(a)} → dopo ${leggibile(b)}`);
+  }
+  if (diverse.length === 0) {
+    process.stdout.write("catene del motore (ssh, winrm, snmp): uguali prima e dopo\n");
+    return false;
+  }
+  process.stdout.write(`catene del motore (ssh, winrm, snmp): DIVERSE\n${diverse.join("\n")}\n`);
+  return true;
+}
+
+function stampaTenant(code: string, prima: Misura, dopo: Misura): boolean {
   const s1 = prima.stato;
   const s2 = dopo.stato;
   process.stdout.write(`== Tenant ${code}\n`);
@@ -74,6 +136,7 @@ function stampaTenant(code: string, prima: Misura, dopo: Misura): void {
   process.stdout.write(`segni:\n${segni.map((k) => `  ${k}: ${prima.segni[k] ?? "(assente)"} → ${dopo.segni[k] ?? "(assente)"}`).join("\n") || "  (nessuno)"}\n`);
   const v = voci(prima, dopo);
   process.stdout.write(`voci cambiate:\n${v.join("\n") || "  (nessuna)"}\n`);
+  return stampaCatene(prima, dopo);
 }
 
 async function main(): Promise<number> {
@@ -112,7 +175,10 @@ async function main(): Promise<number> {
       esito = 1;
       continue;
     }
-    stampaTenant(code, prima, dopo);
+    if (stampaTenant(code, prima, dopo)) {
+      process.stdout.write("DA GUARDARE: catene del motore diverse o non misurabili\n");
+      esito = 1;
+    }
     if (JSON.stringify(riapertura) === JSON.stringify(dopo)) {
       process.stdout.write("seconda apertura: nessun cambiamento\n");
     } else {

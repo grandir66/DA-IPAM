@@ -4,6 +4,32 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-16 · aggiornamento automatico: ritenta e non lascia l'app rotta
+
+Passo 1 del piano di solidità (1a + 1b). Perché: `auto-update.sh` confrontava origin con HEAD, e HEAD avanza col pull
+prima del build. Un build fallito lasciava HEAD = origin, il giro dopo diceva «già aggiornato» e non ritentava più;
+intanto il build era stato fatto sopra la cartella `.next` del processo acceso.
+
+### Cambiate
+
+- **Build in una cartella separata**: `update.sh` costruisce nella cartella libera fra `.next-a` e `.next-b` mentre
+  l'app continua a girare dall'altra (provato: 141 richieste su 141 a 200 durante un build). Il nome della cartella in
+  uso sta in `.next-attiva`, letto da `next.config.ts`; si cambia solo a build riuscita. Perché: Next scrive la
+  cartella dentro i file compilati, quindi una build non si può rinominare dopo.
+- **Controllo di salute dopo il riavvio**: fino a 90 s (`DA_INVENT_ATTESA_SALUTE`) per un 200 da `/api/health`; se non
+  arriva, torna al commit e alla cartella di prima (con `npm install` se è cambiato il lock) e riavvia.
+- **Stato su file** (`data/aggiornamento.json`, `scripts/stato-aggiornamento.mjs`): commit avviato, ultimo tentativo
+  con fase, esito, tentativi e avvisi. `auto-update.sh` confronta origin col commit avviato e ritenta un commit fallito
+  al massimo 3 volte (`DA_INVENT_MAX_TENTATIVI`), poi aspetta un commit nuovo; `DA_INVENT_FORZA_AGGIORNAMENTO=1` riprova
+  subito. Un giro morto a metà conta come «interrotto». Lo leggeranno la pagina Aggiornamenti e il segnale verso DA-Link
+  (passi 1c e 1d).
+- **Solo documentazione** resta senza build né riavvio, ma solo se la build accesa è quella di HEAD.
+
+### Invariato
+
+- Al primo giro senza stato si assume che HEAD giri, come prima. Le installazioni con la sola `.next` passano alle due
+  cartelle al primo aggiornamento riuscito.
+
 ## [Non rilasciato] — 2026-10-16 · topologia: unire e separare a mano gli oggetti della mappa
 
 Piano `docs/superpowers/plans/2026-10-16-apparati-multihomed-unisci.md`, decisione in ADR 0021. Perché: un apparato con

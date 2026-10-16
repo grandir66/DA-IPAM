@@ -4,6 +4,53 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-16 · topologia T3: la mappa per cavo, spenta per cliente
+
+Spec `docs/superpowers/specs/2026-10-14-topologia-collegamenti-reali-design.md` §13.11.4, piano
+`docs/superpowers/plans/2026-10-15-topologia-collegamenti-T3.md`, decisione in ADR 0020. Perché: la mappa di oggi
+disegna una linea per coppia e un albero dalle tabelle degli indirizzi; la mappa nuova disegna una linea per
+cavo e l'albero dallo spanning tree, ma due modelli che decidono lo stesso albero si accendono solo uno
+alla volta. **Con l'interruttore spento la mappa è identica a prima** (impronte uguali sulle copie dell'hub e
+del cliente A, dopo ogni correzione).
+
+### Aggiunte
+
+- **La mappa nuova, per cliente, spenta**: «Dati della mappa → Mappa nuova» (`topologia.mappa.cavi`, solo
+  gli admin accendono e spengono). Perché per cliente: si accende dove ogni differenza della traccia è
+  spiegata, e si spegne con un clic se qualcosa non torna (torna la mappa di prima, nessun dato perso).
+- **«Anomalie della rete»** in «Dati della mappa»: i casi in cui l'albero non regge (per esempio un core sotto un
+  accesso), per nome, con la porta. Perché: oggi si vedono solo guardando la mappa.
+- **«Candidati per porta»** nel pannello dell'oggetto: per ogni porta, gli apparati che la sentono e le prove (da
+  quale lettura, a che ora). Perché: scegliere il cavo giusto per una ★ senza indovinare.
+- **Ruoli «Core» e «Accesso»** nel menu del ruolo, accanto a «Apparato di rete», «Attaccato» e «Decide il
+  sistema». Perché: l'albero ha una testa e una gerarchia, e a volte la rete non la dice.
+- **Tipo «tunnel»** per i collegamenti a mano. Perché: un tunnel fra due sedi non è un cavo e non va confuso
+  con uno.
+- **Il nodo scelto evidenzia i suoi collegamenti** (ciano pieno, gli altri sbiaditi; lo spessore dice ancora la
+  velocità). Richiesta di Riccardo sulla bozza; solo con la mappa nuova.
+- **Istanze MSTP sui bridge MikroTik in MSTP**: 2 comandi in più in sola lettura (`/interface bridge msti
+  print` e il suo `monitor`), **solo su quei bridge**; sugli altri i comandi restano 6 (router) e 8 (switch).
+  Perché: un tunnel fra due bridge della stessa regione può essere bloccato nell'albero comune e attivo per
+  alcune VLAN; senza le istanze si vede solo «bloccato».
+- Una ★ vale **per collegamento**, non più per coppia; il segmento è un oggetto con le sue voci («Togli dal
+  segmento»); un fascio si ignora cavo per cavo. Perché: con due cavi fra due apparati la coppia non
+  dice quale.
+
+### Correzioni
+
+- **Un fatto vecchio non fa più «giù» un cavo visto oggi** (M5): un `running = 0` di 90 giorni fa, di una fonte
+  non più letta, diventava «giù» anche se il cavo era visto oggi da un'altra. La soglia usa l'orologio passato
+  alla funzione.
+- **`PUT /api/topology/settings/letture` ha le sue prove** (M6): prima nessuna prova ne fissava il comportamento
+  (corpo non valido, apparato non disponibile).
+- I quattro casi trovati misurando sui dati veri fanno parte del **modello nuovo**, non sono correzioni della
+  mappa di prima (che resta com'è): una porta che sente due apparati non dà un cavo; un bond è il suo fascio e
+  mai «instradato»; un router o firewall dentro una VM sta dentro il suo hypervisor; due porte con lo stesso
+  nome si distinguono per indice. I collegamenti «dalle VM» non principali stanno nei dettagli
+  dell'hypervisor («visto dalle VM anche su ‹porta›»). Perché: la misura sul cliente A ne ha trovati 2, tutti
+  verso lo stesso hypervisor, nessuno nella mappa attesa.
+- Nessuna migrazione: nessuna tabella o colonna nuova.
+
 ## [Non rilasciato] — 2026-10-16 · credenziali tappa 2e: le credenziali degli apparati nell'archivio
 
 Piano `docs/superpowers/plans/2026-10-15-tappa2-archivio-credenziali.md` (sotto-tappa 2e, zona rossa).

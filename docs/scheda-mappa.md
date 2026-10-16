@@ -4,7 +4,7 @@ tono: ok
 famiglia: 01-nucleo
 ordine: 10
 stato: cantiere
-prossimo: blocco 1 dell'analisi (CONTEXT §8): ordinamenti, filtri sulla sola pagina corrente, ricerche di Active Directory; mappa topologia fase 2b rilasciata il 14/10, da guardare sul dev «Aggiorna VM» e i collegati dei router
+prossimo: blocco 1 dell'analisi (CONTEXT §8): ordinamenti, filtri sulla sola pagina corrente, ricerche di Active Directory; mappa topologia T3 (mappa per cavo, ADR 0020) pronta il 16/10 sul ramo `topologia/collegamenti-t3`, rilascio con la mappa nuova spenta per cliente, poi accensione sull'hub e sul cliente A con l'ok di Riccardo
 applicazione: ipam
 ---
 IPAM e inventario per le appliance cliente (un'installazione = un cliente:

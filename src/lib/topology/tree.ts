@@ -3,6 +3,7 @@
  * deterministica: Prim con collegamenti freschi e di rango migliore per primi;
  * attaccati e client sono foglie (non fanno da ponte).
  */
+import { alberoDellaPagina } from "@/lib/topology/cavi/albero-pagina";
 import { nodeClass } from "@/lib/topology/identity";
 import { linkCost } from "@/lib/topology/link-attrs";
 import { LINK_SOURCE_RANK, type ClasseMappa, type MapLink, type MapNode, type TopologyModel } from "@/lib/topology/model-types";
@@ -46,6 +47,9 @@ function classeDi(model: Pick<TopologyModel, "classiMappa">, n: MapNode): Classe
 }
 
 export function buildTree(model: TopologyModel, visible: ReadonlySet<string>, roots: readonly string[]): TreeResult {
+  // Con la mappa nuova (T3, spec §13.8.3 a schermo, §13.7.7): lo stesso Prim del modello per cavo, con le contrazioni. Senza,
+  // l'albero di T1, com'era.
+  if (model.cavi) return alberoDellaPagina(model, visible, roots);
   const nodes = new Map(model.nodes.map((n) => [n.id, n]));
   const classe = (n: MapNode): ClasseMappa => classeDi(model, n);
   const adj = new Map<string, MapLink[]>();
@@ -163,6 +167,9 @@ export function autoVisible(model: TopologyModel): Set<string> {
  * pari, e vinceva l'id più basso, per caso); l'id solo per ultimo, perché stessi dati diano la stessa testa (I39).
  */
 export function proposeHead(model: TopologyModel): string | null {
+  // Con la mappa nuova (T3, §13.8.3 punto 7): la testa del modello per cavo, che ha già la testa confermata di una sede
+  // (`testaCavi`). Niente ripiego sulla regola di T1: schermo e traccia partono dalla stessa testa.
+  if (model.cavi) return model.cavi.testa;
   const confirmed = model.sites.find((s) => s.headNodeId !== null && !s.headProposed)?.headNodeId;
   if (confirmed) return confirmed;
   const fresh = new Map<string, string[]>();

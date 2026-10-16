@@ -285,6 +285,12 @@ export interface CavoLinea {
 export interface InfoCavi {
   /** nodo → id della linea scelta dalla porta radice o dall'uplink del controller (§13.8.3 punto 1). */
   scelto: Record<string, string>;
+  /**
+   * ★ (§13.9): nodo → id della linea scelta dall'admin, già risolta per collegamento, come la usa l'albero del modello. L'albero
+   * della pagina legge le ★ da qui, non da `primaryFor`: una linea ne porta uno solo, e due ★ sulla stessa linea (una per capo)
+   * davano un padre diverso dalla traccia (revisione del Task 7 di T3).
+   */
+  stelle: Record<string, string>;
   /** La testa del modello per cavo (§13.8.3 punto 7), con la scelta dell'admin della mappa automatica già applicata. */
   testa: string | null;
   /** «core che esce da uno switch di accesso» (§13.8.3 punto 8), sulla mappa automatica. */

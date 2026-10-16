@@ -40,8 +40,10 @@ jobs:
       - name: Type check
         run: npx tsc --noEmit
 
+      # Reporter «spec»: chiude il log con l'elenco dei test falliti, che col TAP
+      # finiscono a metà di 37k righe (illeggibili dal fondo del log).
       - name: Test (hub)
-        run: npm test
+        run: node --import tsx --test --test-reporter=spec "src/**/*.test.ts"
         env:
           ENCRYPTION_KEY: "0000000000000000000000000000000000000000000000000000000000000000"
           AUTH_SECRET: "0000000000000000000000000000000000000000000000000000000000000000"

@@ -15,7 +15,8 @@ Leggilo per primo, poi [CLAUDE.md](CLAUDE.md) (stack e schema; su «multi-tenant
 
 - **Hub raggiungibile anche diretto** (`ssh root@192.168.4.8`): il salto via `192.168.40.4` cade a metà dei comandi lunghi (16/10, due volte). I lavori lunghi sul server (copie, prove a vuoto) si lanciano in sottofondo con `nohup` e log su file, e si legge il log.
 - Branch: **`dev`** (unico pushabile). `main` avanza SOLO via promote (il pulsante dell'hub lascia l'app su `main`: si promuove da una copia del repo; v0.3.311 dal 16/10 pomeriggio, `dev` e `main` con gli stessi file); le appliance cliente pullano `main`. Ogni modifica: `npm run version:release` + `git push origin dev`.
-- L'hub (VM 533, `/opt/da-invent`) segue **`dev`**; dopo `git pull` sempre `npm run build`. **Mai `npm run build` senza riavviare subito**: il processo acceso carica i file a richiesta e si rompe.
+- L'hub (VM 533, `/opt/da-invent`) segue **`dev`**; dopo `git pull` sempre `npm run build`. **Mai `npm run build` senza riavviare subito**: il processo acceso carica i file a richiesta e si rompe. A mano: `scripts/update.sh --restart`.
+- **Aggiornamento a due cartelle (16/10)**: build in `.next-a`/`.next-b`, nome in `.next-attiva`, scambio solo a build riuscita e salute buona, se no si torna indietro; stato in `data/aggiornamento.json`, al massimo 3 tentativi per commit. Dettaglio: CHANGELOG. Un `npm run build` a mano scrive nella cartella attiva.
 - **ATTENZIONE: `dev` arriva anche all'appliance del cliente A** (`da-ipam-update.timer` ogni 15 minuti: pull + build + restart). Un push di codice su `dev` è un rilascio al cliente: su `dev` solo codice pronto. Un commit di soli `docs/` o `.md` non riavvia.
 - `/api/version` cambia col pull, **prima del riavvio**: «gira davvero» = `ActiveEnterTimestamp` o riga d'avvio nel journal.
 - `scheduler-defaults` spegne `fast_scan`/`ping_sweep` sotto i 720 minuti sulle reti ≥1024 indirizzi: riaccesi a mano, non reggono al riavvio.

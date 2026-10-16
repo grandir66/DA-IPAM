@@ -1,6 +1,8 @@
 #!/bin/bash
-# DA-INVENT — Aggiornamento via Git pull
-# Esegue: git pull, npm install, build, restart servizio
+# DA-INVENT — Aggiornamento via Git
+# Esegue: allineamento a origin, npm install, build in una cartella a parte,
+# scambio, restart e controllo di /api/health; se qualcosa fallisce torna alla
+# build e al commit di prima. Stato in scripts/stato-aggiornamento.mjs.
 # Uso: ./scripts/update.sh [--restart]
 
 set -e
@@ -85,14 +87,105 @@ if [ -n "$DIRTY" ]; then
   }
 fi
 
-# Pull
-echo ">>> git pull..."
-git pull origin "$BRANCH"
+# ── Stato dell'aggiornamento e ritorno indietro (16/10/2026) ─────────────────
+# Prima: pull → install → build sul posto, con `set -e`. Un build fallito usciva
+# senza riavvio lasciando il processo acceso su una .next a metà (CONTEXT §3:
+# «mai npm run build senza riavviare subito»), e auto-update.sh non ritentava
+# perché HEAD era già uguale a origin. Ora:
+#   - si costruisce nella cartella NON in uso (.next-a / .next-b, con
+#     DA_INVENT_BUILD_DIR) e solo a build riuscito la si dichiara in uso in
+#     `.next-attiva` (letto da next.config.ts): il processo acceso non perde
+#     file. Non si rinomina dopo il build: Next scrive il nome della cartella
+#     dentro le rotte compilate (provato il 16/10 su v0.3.311);
+#   - dopo il riavvio /api/health deve rispondere 200, altrimenti si torna
+#     indietro (build, codice e servizio di prima);
+#   - ogni fase e l'esito vanno in scripts/stato-aggiornamento.mjs, che
+#     auto-update.sh legge per ritentare e che l'app mostra.
+stato() { node "$APP_DIR/scripts/stato-aggiornamento.mjs" "$@" || true; }
+
+# La cartella in uso: quella scritta in .next-attiva, altrimenti la storica .next.
+BUILD_ATTIVA="$(cat .next-attiva 2>/dev/null || true)"
+case "$BUILD_ATTIVA" in
+  .next-a|.next-b) [ -d "$BUILD_ATTIVA" ] || { echo "AVVISO: .next-attiva indica $BUILD_ATTIVA, che non c'è: uso .next" >&2; rm -f .next-attiva; BUILD_ATTIVA=".next"; } ;;
+  *)
+    # Senza .next-attiva vale .next; se però .next è il collegamento a una delle
+    # due cartelle, quella è in uso e non va cancellata.
+    BUILD_ATTIVA=".next"
+    if [ -L .next ]; then
+      case "$(readlink .next)" in .next-a|.next-b) BUILD_ATTIVA="$(readlink .next)" ;; esac
+    fi
+    ;;
+esac
+if [ "$BUILD_ATTIVA" = ".next-a" ]; then BUILD_NUOVA=".next-b"; else BUILD_NUOVA=".next-a"; fi
+# Quella libera può contenere una build vecchia o a metà: si rifà da zero.
+rm -rf "$BUILD_NUOVA"
+
+dichiara_build() {
+  if [ "$1" = ".next" ]; then
+    rm -f .next-attiva
+  else
+    printf '%s\n' "$1" > .next-attiva.tmp && mv .next-attiva.tmp .next-attiva
+  fi
+}
+
+# Il commit che gira adesso: quello avviato con salute buona, altrimenti HEAD.
+PRIMA="$(node "$APP_DIR/scripts/stato-aggiornamento.mjs" leggi commit_avviato 2>/dev/null || true)"
+if [ -z "$PRIMA" ] || ! git cat-file -e "${PRIMA}^{commit}" 2>/dev/null; then
+  PRIMA="$(git rev-parse HEAD)"
+fi
+
+echo ">>> git fetch origin $BRANCH..."
+git fetch origin "$BRANCH"
+NUOVO="$(git rev-parse "origin/$BRANCH")"
+stato inizio "$NUOVO" "$PRIMA"
+
+FASE="pull"
+RIAVVIATO=false
+SCAMBIATA=false
+
+torna_indietro() {
+  echo ">>> ritorno a $(git rev-parse --short "$PRIMA") ..." >&2
+  if [ "$SCAMBIATA" = true ]; then dichiara_build "$BUILD_ATTIVA"; fi
+  rm -rf "$BUILD_NUOVA"
+  local lock_cambiato=false
+  if ! git diff --quiet "$PRIMA" HEAD -- package-lock.json 2>/dev/null; then lock_cambiato=true; fi
+  git reset --hard --quiet "$PRIMA" || echo "AVVISO: git reset a $PRIMA non riuscito" >&2
+  # node_modules torna al package-lock di prima se l'install nuovo l'ha toccato
+  # (anche a metà: un install fallito può lasciarlo incompleto).
+  if [ "$lock_cambiato" = true ] && [ "$FASE" != "pull" ]; then
+    npm install --include=dev >/dev/null 2>&1 || echo "AVVISO: npm install di ritorno non riuscito" >&2
+  fi
+  if [ "$RIAVVIATO" = true ]; then
+    restart_service || echo "AVVISO: riavvio con la build di prima non riuscito" >&2
+  fi
+}
+
+fallisci() {
+  local motivo="$1"
+  trap - ERR
+  set +e
+  echo "ERRORE: aggiornamento fallito nella fase «$FASE»: $motivo" >&2
+  torna_indietro
+  stato fine fallito "fase $FASE: $motivo"
+  echo "=== Aggiornamento NON completato: gira ancora $(git rev-parse --short HEAD) ===" >&2
+  exit 1
+}
+
+set -E
+trap 'fallisci "comando terminato con codice $?"' ERR
+
+# Pull: le appliance non hanno modifiche proprie (stash sopra), quindi si va su
+# origin anche quando la storia non è lineare (ritorno da un ramo diverso).
+echo ">>> allineo a origin/$BRANCH ($(git rev-parse --short "$NUOVO"))..."
+if ! git merge --ff-only --quiet "origin/$BRANCH" 2>/dev/null; then
+  git reset --hard --quiet "origin/$BRANCH"
+fi
 
 # npm install: --include=dev forza l'installazione delle devDependencies
 # anche con NODE_ENV=production (presente in .env.local del service). Servono
 # comunque al build successivo (TypeScript/tailwind) e a `patch-package`, che
 # gira come postinstall per patchare httpntlm.
+FASE="install"; stato fase install
 echo ">>> npm install --include=dev..."
 npm install --include=dev
 
@@ -101,13 +194,22 @@ if [ -f "$APP_DIR/scripts/setup-winrm-venv.sh" ]; then
   echo ">>> setup-winrm-venv..."
   # WinRM è una funzione facoltativa: un suo guasto non deve fermare l'aggiornamento.
   # Sul cliente A un venv senza pip ha bloccato build e restart per mesi (2026-10-12).
-  bash "$APP_DIR/scripts/setup-winrm-venv.sh" || \
+  bash "$APP_DIR/scripts/setup-winrm-venv.sh" || {
     echo "AVVISO: setup-winrm-venv fallito — WinRM non disponibile, l'aggiornamento prosegue." >&2
+    stato avviso "setup-winrm-venv fallito: WinRM non disponibile"
+  }
 fi
 
-# Build
-echo ">>> npm run build..."
-npm run build
+# Build nella cartella libera: quella in uso resta intatta per il processo acceso.
+FASE="build"; stato fase build
+echo ">>> npm run build (in $BUILD_NUOVA)..."
+DA_INVENT_BUILD_DIR="$BUILD_NUOVA" npm run build
+# tsconfig.json elenca già i tipi di .next-a e .next-b; se Next lo ritoccasse
+# comunque (versione nuova), si rimette com'era: è un file tracciato.
+git checkout --quiet -- tsconfig.json 2>/dev/null || true
+if [ ! -f "$BUILD_NUOVA/BUILD_ID" ]; then
+  fallisci "build senza BUILD_ID"
+fi
 
 # Nome del servizio: da-invent sulle installazioni classiche, da-ipam sulle
 # appliance consolidate. Prima si cercava solo da-invent: sul cliente A (da-ipam) il
@@ -130,37 +232,67 @@ restart_service() {
   fi
 }
 
-if [ "$RESTART" = true ]; then
-  if systemctl is-active --quiet "$SERVICE" 2>/dev/null; then
-    echo ">>> systemctl restart $SERVICE..."
-    restart_service
-    echo "    Servizio riavviato."
-  else
-    echo ">>> Servizio $SERVICE non attivo, skip restart."
+# Scambio: da qui un avvio dell'app usa la build nuova.
+FASE="scambio"; stato fase scambio
+SERVIZIO_ATTIVO=false
+if systemctl is-active --quiet "$SERVICE" 2>/dev/null; then SERVIZIO_ATTIVO=true; fi
+dichiara_build "$BUILD_NUOVA"
+SCAMBIATA=true
+
+PORT="$(grep -E '^PORT=' "$APP_DIR/.env.local" 2>/dev/null | cut -d= -f2- | tr -d '"' || true)"
+URL_SALUTE="http://127.0.0.1:${PORT:-3001}"
+
+if [ "$RESTART" = true ] && [ "$SERVIZIO_ATTIVO" = true ]; then
+  FASE="riavvio"; stato fase riavvio
+  echo ">>> systemctl restart $SERVICE..."
+  RIAVVIATO=true
+  restart_service
+  echo "    Servizio riavviato."
+
+  # Salute: il servizio appena riavviato impiega qualche secondo ad ascoltare.
+  # Serve un 200 da /api/health (DB e chiave di cifratura leggibili), http o https,
+  # entro DA_INVENT_ATTESA_SALUTE secondi (90 di default).
+  FASE="salute"; stato fase salute
+  echo ">>> attendo /api/health..."
+  SANO=false
+  ATTESA="${DA_INVENT_ATTESA_SALUTE:-90}"
+  for _ in $(seq 1 $(( (ATTESA + 1) / 2 ))); do
+    if curl -fs -o /dev/null --max-time 2 "$URL_SALUTE/api/health"; then SANO=true; break; fi
+    if curl -fsk -o /dev/null --max-time 2 "https://127.0.0.1:${PORT:-3001}/api/health"; then
+      SANO=true; URL_SALUTE="https://127.0.0.1:${PORT:-3001}"; break
+    fi
+    sleep 2
+  done
+  if [ "$SANO" != true ]; then
+    fallisci "/api/health non risponde 200 entro ${ATTESA} s dal riavvio"
   fi
+  echo "    /api/health: ok"
+elif [ "$RESTART" = true ]; then
+  echo ">>> Servizio $SERVICE non attivo, skip restart."
+  stato avviso "servizio $SERVICE non attivo: build pronta, non provata"
+else
+  echo "AVVISO: build sostituita senza riavvio: riavviare $SERVICE subito (il processo acceso carica i file a richiesta)." >&2
+  stato avviso "build sostituita senza riavvio"
 fi
+
+trap - ERR
+set +E
+# La build di prima non serve più. .next diventa un collegamento a quella in uso,
+# per chi controlla .next/BUILD_ID (api/system/update, script a mano).
+rm -rf "$BUILD_ATTIVA"
+ln -sfn "$BUILD_NUOVA" .next
 
 if [ -f "$APP_DIR/scripts/verify-install.sh" ]; then
   echo ">>> verify-install..."
   VERIFY_ARGS=()
-  if systemctl is-active --quiet "$SERVICE" 2>/dev/null; then
-    PORT="$(grep -E '^PORT=' "$APP_DIR/.env.local" 2>/dev/null | cut -d= -f2- | tr -d '"' || true)"
-    VERIFY_ARGS=(--url "http://127.0.0.1:${PORT:-3001}")
-    # Il servizio appena riavviato impiega qualche secondo ad ascoltare: senza
-    # attesa verify-install falliva sempre, con un avviso che rimandava a WinRM
-    # (cliente A, 2026-10-12). Si aspetta fino a 60 s una risposta qualsiasi, http o https.
-    for _ in $(seq 1 30); do
-      if curl -s -o /dev/null --max-time 2 "http://127.0.0.1:${PORT:-3001}/api/health" \
-        || curl -sk -o /dev/null --max-time 2 "https://127.0.0.1:${PORT:-3001}/api/health"; then
-        break
-      fi
-      sleep 2
-    done
-  fi
+  if [ "$RIAVVIATO" = true ]; then VERIFY_ARGS=(--url "$URL_SALUTE"); fi
   bash "$APP_DIR/scripts/verify-install.sh" "${VERIFY_ARGS[@]}" || {
     echo "AVVISO: verify-install fallito (dettagli sopra)" >&2
+    stato avviso "verify-install fallito"
   }
 fi
+
+stato fine riuscito
 
 # Mostra versione e commit (la versione è quella nel package.json dopo git pull = branch remoto)
 VERSION=$(node -e "console.log(require('./package.json').version)")

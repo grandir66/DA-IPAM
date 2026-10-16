@@ -5,7 +5,7 @@
  * lettori, e le capacità annunciate che dicono «radio» o «apparato di rete».
  */
 import type { Classe, Lettore } from "@/lib/topology/cavi/prove";
-import type { ModelDeviceRow } from "@/lib/topology/model-types";
+import type { LinkSource, ModelDeviceRow } from "@/lib/topology/model-types";
 
 /** La fonte con cui il controller scrive i vicini (device_neighbors.source). */
 export const FONTE_CONTROLLER = "unifi";
@@ -45,6 +45,17 @@ export function leggeViciniDiRete(fonte: string): boolean {
 export function classeDelProtocollo(protocollo: string): Extract<Classe, "annuncio_collegamento" | "annuncio_segmento"> {
   return protocollo === "mndp" ? "annuncio_segmento" : "annuncio_collegamento";
 }
+
+/**
+ * Le classi delle prove nelle fonti di oggi (piano di T3, «Scelte» 2), solo per i campi che la pagina di T1 legge già (`source`,
+ * `sources` di una linea della mappa nuova, cavi/mappa.ts): con la mappa nuova le parole vengono da `cavo.detti`. Il partner LACP
+ * vale come un annuncio di collegamento: non attraversa un apparato, come LLDP. Una fonte nuova in `LinkSource` cambierebbe
+ * `linksBySource` del modello di T1, che resta com'è. Sta qui perché le fonti di oggi nominano un prodotto (prova I37).
+ */
+export const FONTE_DELLA_CLASSE: Readonly<Record<Classe, LinkSource>> = {
+  annuncio_collegamento: "lldp", annuncio_segmento: "mndp", uplink: "unifi_uplink", spanning_tree: "lldp", fascio: "lldp",
+  tabella_mac: "mac_table", vm: "vm_mac", a_mano: "manual",
+};
 
 /** Il protocollo in parole, per le frasi (mai per le regole): «discovered_by» dice quale, quando c'è (T2). */
 export function dettoDelProtocollo(protocollo: string, discoveredBy: string | null): string {

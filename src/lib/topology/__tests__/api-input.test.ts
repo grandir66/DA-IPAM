@@ -296,3 +296,14 @@ test("T3: il tipo «tunnel» in creazione e in modifica (§13.9); il rifiuto lo 
   assert.deepEqual(m.parseLinkPatchBody({ medium: "tunnel" }), { ok: true, data: { medium: "tunnel" } });
   assert.deepEqual(m.parseLinkPatchBody({ medium: "rame" }), { ok: false, error: "Tipo non valido: «cavo», «fibra», «wireless» o «tunnel»" });
 });
+
+test("T3: «Candidati per porta» — la query vuole un nodo solo, valido, e nient'altro (Zod strict)", async () => {
+  const m = await import("@/lib/topology/api-input");
+  const q = (s: string) => m.parseCandidatiQuery(new URLSearchParams(s));
+  assert.deepEqual(q("nodo=dev:3"), { ok: true, data: "dev:3" });
+  assert.deepEqual(q("nodo=seg:114:15"), { ok: true, data: "seg:114:15" });
+  assert.deepEqual(q(""), { ok: false, error: "Manca il nodo: ?nodo=dev:N" });
+  assert.deepEqual(q("nodo=dev:3&nodo=dev:4"), { ok: false, error: "Il nodo si indica una volta sola" });
+  assert.deepEqual(q("nodo=dev:x"), { ok: false, error: "Nodo non valido" });
+  assert.deepEqual(q("nodo=dev:3&limite=5"), { ok: false, error: "Richiesta non valida" });
+});

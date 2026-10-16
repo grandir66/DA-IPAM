@@ -4,6 +4,31 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-16 · credenziali tappa 2c: archivio coi tipi per esteso
+
+Piano `docs/superpowers/plans/2026-10-15-tappa2-archivio-credenziali.md` (sotto-tappa 2c, zona rossa), ADR 0017.
+Perché: la spec chiede otto tipi per esteso e un archivio unico; il CHECK della tabella ne ammetteva cinque.
+
+### Modifiche
+
+- **La tabella `credentials` si ricostruisce una volta senza il CHECK sui tipi**, partendo dalla sua
+  definizione attuale, con figli, violazioni e contatore degli id controllati prima e dopo (se non tornano,
+  ROLLBACK). I tipi validi stanno in `src/lib/credentials/tipi.ts`.
+- **«Linux» confluisce in SSH** ovunque (sull'hub 1 voce convertita, stesso id e stesso segreto); le v3 vecchie
+  diventano del tipo SNMP v3. Un segno in `tenant_settings` impedisce di rifare la conversione.
+- **Chiave SSH** come metodo della voce SSH, nel trasporto principale (D6); paramiko e il terminale la
+  rifiutano con un messaggio. Una password SSH sbagliata ora dà subito «credenziali rifiutate» invece di un
+  timeout dopo 15 secondi (i fallimenti registrati passano da [connect_timeout] ad [auth_failed]).
+- **Pagina Credenziali e API sui tipi per esteso**: eliminare una voce in uso risponde 409 con l'elenco degli
+  usi (D8); una voce non si lega più a un protocollo per cui non vale (400); le API non restituiscono più le
+  colonne `encrypted_*` ma `ha_*`; la creazione rapida offre solo i tipi del protocollo.
+- **Finestra «Modifica Rete»**: salva rete e lista credenziali in un colpo solo e un errore si vede; una rete
+  senza gateway si salva; le catene vecchie nascoste non vengono più riscritte.
+- `PATCH /api/hosts/bulk-update` restituisce `credentials_failed`: prima l'errore si ingoiava.
+- **Attenzione all'export**: un bundle esportato da questa versione, importato in un'installazione di prima
+  della 2c, viene annullato per intero se contiene voci SNMP v3, UniFi, Omada o AD; le voci SSH a chiave vi
+  arrivano senza la chiave.
+
 ## [Non rilasciato] — 2026-10-16 · la porta segue il protocollo anche in modifica
 
 - **Nella finestra di modifica dell'apparato la porta segue il protocollo, e una porta di un altro protocollo

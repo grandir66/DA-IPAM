@@ -225,8 +225,8 @@ export interface MapNode {
   vendor: string | null;
   /** L'apparato ha la scansione Proxmox (revisione finale M-2); assente = no. */
   proxmoxScan?: boolean;
-  /** «Ruolo nella mappa» scelto a mano da un admin (T1b, spec §13.8.2); assente = decide il sistema. Solo per un apparato. */
-  ruolo?: "rete" | "attaccato";
+  /** «Ruolo nella mappa» scelto a mano da un admin (T1b, spec §13.8.2); assente = decide il sistema. Solo per un apparato. «core» e «accesso» (T3): il modello per cavo li passa, quello di T1 li legge «rete». */
+  ruolo?: "rete" | "attaccato" | "core" | "accesso";
   /** La via di lettura dell'apparato (per i traduttori, spec §13.6.1); assente per un host. */
   via?: string;
   /**

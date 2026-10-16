@@ -16,16 +16,18 @@ interface Props {
   detail: string;
   items: Array<MenuItem<EdgeMenuKey>>;
   onAction: (key: EdgeMenuKey) => void;
+  /** Il testo al posto di «Solo un amministratore…» quando un admin non ha voci (una contrazione). */
+  vuoto?: string;
 }
 
-export function EdgeMenuContent({ title, detail, items, onAction }: Props) {
+export function EdgeMenuContent({ title, detail, items, onAction, vuoto }: Props) {
   return (
     <>
       <ContextMenuLabel className="max-w-80 text-foreground">{title}</ContextMenuLabel>
       <ContextMenuLabel className="max-w-80 pt-0 [overflow-wrap:anywhere]">{detail}</ContextMenuLabel>
       <ContextMenuSeparator />
       {items.length === 0 ? (
-        <ContextMenuLabel>Solo un amministratore modifica i collegamenti.</ContextMenuLabel>
+        <ContextMenuLabel className="max-w-80 whitespace-normal">{vuoto ?? "Solo un amministratore modifica i collegamenti."}</ContextMenuLabel>
       ) : (
         items.map((it) => (
           <ContextMenuItem

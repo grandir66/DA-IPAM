@@ -45,7 +45,16 @@ export type MapEdgeData = {
   lati?: { da: Lato; a: Lato };
   /** Il nome di un oggetto, per le parole che lo nominano («la porta p di A è giù», «oltre ‹radio›»): T3, spec §13.10.3. */
   nomeDi?: (id: string) => string;
+  /**
+   * Il nodo scelto evidenzia i suoi collegamenti (T3, §13.10.3, Riccardo 16/10): «su» = ha il nodo scelto a un capo, colore del
+   * marchio a piena intensità; «giu» = tutti gli altri, opacità 0,25 con le loro parole. Tratteggio e spessore non cambiano.
+   * Assente = nessuna selezione, o mappa di prima: la linea è quella di sempre.
+   */
+  evidenza?: "su" | "giu";
 };
+
+/** Il fattore di opacità delle linee non evidenziate: forma e parole restano, ma quasi bianche (si distingue senza colore). */
+export const OPACITA_ATTENUATA = 0.25;
 
 const DOUBLE_GAP = 2.6;
 
@@ -59,12 +68,14 @@ export function MapEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition
   const punti = data?.lati ? percorsoDaPunti({ x: sourceX, y: sourceY }, data.lati.da, { x: targetX, y: targetY }, data.lati.a) : null;
   const path = punti ? pointsPath(punti) : smooth;
   if (!data) return <BaseEdge id={id} path={path} />;
-  if (!data.link) return <BaseEdge id={id} path={path} style={TREE_EDGE} />;
+  if (!data.link) return <BaseEdge id={id} path={path} style={stileAlbero(data.evidenza)} />;
   const look = edgeLook(data.link, { inTree: data.inTree, nomeDi: data.nomeDi });
   const d = look.wavy ? wavyPath(punti ?? pathPoints(path)) : path;
   const outer = look.double ? Math.max(look.width + DOUBLE_GAP, 4.2) : look.width;
   // Grigio solo per «non visto»; «cavo giù» è scuro pieno (look.nero), mai il grigio.
-  const stroke = look.grey && !look.nero ? "var(--muted-foreground)" : "var(--foreground)";
+  const stroke = data.evidenza === "su" ? "var(--primary)" : look.grey && !look.nero ? "var(--muted-foreground)" : "var(--foreground)";
+  const attenuata = data.evidenza === "giu";
+  const classeParole = attenuata ? "opacity-25 " : "";
   // Mappa nuova: un pezzo che non sta nello spazio della linea dell'albero si accorcia con «…» (I32), intero nel title.
   const pezzi = data.link.cavo && trunk ? look.tokens.map((t) => (t.startsWith("⚡") ? t : pezzoNelloSpazio(t, Math.floor((lrLabelMaxWidth(sourceX, targetX) - 8) / CHAR_W)))) : look.tokens;
   const dash = look.dash ?? undefined;
@@ -76,17 +87,20 @@ export function MapEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition
       : redundantAt(path, look.tokens, data.avoid, labelX, labelY, punti);
   return (
     <>
-      <BaseEdge id={id} path={d} interactionWidth={18} style={{ stroke, strokeWidth: outer, strokeDasharray: dash, strokeLinecap: cap, fill: "none" }} />
-      {look.double && (
-        // Il tratto interno color fondo divide la linea in due: due tracciati paralleli sottili.
-        <path d={d} style={{ stroke: "var(--card)", strokeWidth: outer - DOUBLE_GAP, strokeDasharray: dash, fill: "none", pointerEvents: "none" }} />
-      )}
+      {/* Attenuata come un gruppo solo: il tratto interno color fondo della doppia linea copre ancora l'esterno prima di sbiadire. */}
+      <g style={attenuata ? { opacity: OPACITA_ATTENUATA } : undefined}>
+        <BaseEdge id={id} path={d} interactionWidth={18} style={{ stroke, strokeWidth: outer, strokeDasharray: dash, strokeLinecap: cap, fill: "none" }} />
+        {look.double && (
+          // Il tratto interno color fondo divide la linea in due: due tracciati paralleli sottili.
+          <path d={d} style={{ stroke: "var(--card)", strokeWidth: outer - DOUBLE_GAP, strokeDasharray: dash, fill: "none", pointerEvents: "none" }} />
+        )}
+      </g>
       {look.centro && (
         <EdgeLabelRenderer>
           <div
             style={{ position: "absolute", transform: `translate(${mezzo(punti ?? pathPoints(path)).x}px, ${mezzo(punti ?? pathPoints(path)).y}px) translate(-50%, -50%)` }}
             title={look.tokens.join(" · ")}
-            className="nodrag nopan pointer-events-none rounded-sm bg-card px-1 text-[13px] leading-4 font-semibold text-foreground"
+            className={`${classeParole}nodrag nopan pointer-events-none rounded-sm bg-card px-1 text-[13px] leading-4 font-semibold text-foreground`}
           >
             {look.centro}
           </div>
@@ -98,7 +112,7 @@ export function MapEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition
             <div
               style={{ position: "absolute", transform: at, maxWidth: lrLabelMaxWidth(sourceX, targetX) }}
               title={look.tokens.join(" · ")}
-              className="nodrag nopan pointer-events-none w-max rounded-sm bg-card px-1 text-right text-[13px] leading-4 text-foreground"
+              className={`${classeParole}nodrag nopan pointer-events-none w-max rounded-sm bg-card px-1 text-right text-[13px] leading-4 text-foreground`}
             >
               {/* Va a capo solo fra una parola e l'altra: «⚡ 7 W» non si spezza. */}
               {pezzi.map((t, i) => {
@@ -111,7 +125,7 @@ export function MapEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition
             <div
               style={{ position: "absolute", transform: at }}
               title={look.tokens.join(" · ")}
-              className="nodrag nopan pointer-events-none rounded-sm bg-card px-1 text-[13px] leading-4 whitespace-nowrap text-foreground"
+              className={`${classeParole}nodrag nopan pointer-events-none rounded-sm bg-card px-1 text-[13px] leading-4 whitespace-nowrap text-foreground`}
             >
               {look.tokens.join(" · ")}
             </div>
@@ -120,6 +134,12 @@ export function MapEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition
       )}
     </>
   );
+}
+
+/** Lo stile del tratto dell'albero verso il gruppo degli AP (nessuna parola), con l'evidenza della selezione. */
+export function stileAlbero(evidenza: "su" | "giu" | undefined): { stroke: string; strokeWidth: number; opacity?: number } {
+  if (evidenza === "su") return { ...TREE_EDGE, stroke: "var(--primary)" };
+  return evidenza === "giu" ? { ...TREE_EDGE, opacity: OPACITA_ATTENUATA } : TREE_EDGE;
 }
 
 /** Il punto a metà della lunghezza di una spezzata: dove sta il «⋯» di una contrazione. */

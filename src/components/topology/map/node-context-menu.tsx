@@ -29,9 +29,11 @@ interface Props {
   /** Il ruolo nella mappa di un apparato; null per un host o una VM (T1b). */
   ruolo: RuoloMappa | null;
   onRole: (r: RuoloMappa) => void;
+  /** Mappa nuova (T3, §13.9): il menu del ruolo ha anche «Core» e «Accesso». */
+  conCavi?: boolean;
 }
 
-export function NodeMenuContent({ title, items, addable, onAction, onAddLinked, ruolo, onRole }: Props) {
+export function NodeMenuContent({ title, items, addable, onAction, onAddLinked, ruolo, onRole, conCavi = false }: Props) {
   return (
     <>
       <ContextMenuLabel className="max-w-72 truncate" title={title}>{title}</ContextMenuLabel>
@@ -40,7 +42,7 @@ export function NodeMenuContent({ title, items, addable, onAction, onAddLinked, 
         it.key === "addLinked" ? (
           <AddLinkedSub key={it.key} label={it.label} addable={addable} onAdd={onAddLinked} />
         ) : it.key === "role" && !it.disabled ? (
-          <RoleSub key={it.key} label={it.label} attuale={ruolo ?? ""} onRole={onRole} />
+          <RoleSub key={it.key} label={it.label} attuale={ruolo ?? ""} onRole={onRole} conCavi={conCavi} />
         ) : (
           <ContextMenuItem
             key={it.key}
@@ -56,13 +58,13 @@ export function NodeMenuContent({ title, items, addable, onAction, onAddLinked, 
   );
 }
 
-/** «Ruolo nella mappa ▸»: tre voci; quella di adesso è segnata e spenta (sceglierla non cambierebbe niente). */
-function RoleSub({ label, attuale, onRole }: { label: string; attuale: RuoloMappa; onRole: (r: RuoloMappa) => void }) {
+/** «Ruolo nella mappa ▸»: tre voci (cinque con la mappa nuova); quella di adesso è segnata e spenta (sceglierla non cambierebbe niente). */
+function RoleSub({ label, attuale, onRole, conCavi }: { label: string; attuale: RuoloMappa; onRole: (r: RuoloMappa) => void; conCavi: boolean }) {
   return (
     <ContextMenuSub>
       <ContextMenuSubTrigger>{label}</ContextMenuSubTrigger>
       <ContextMenuSubContent>
-        {ruoloVoci(attuale).map((v) => (
+        {ruoloVoci(attuale, conCavi).map((v) => (
           <ContextMenuItem key={v.value || "sistema"} disabled={v.value === attuale} onClick={() => onRole(v.value)}>{v.label}</ContextMenuItem>
         ))}
       </ContextMenuSubContent>

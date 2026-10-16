@@ -6,6 +6,7 @@ import {
   edgeMenuItems,
   findManualOverride,
   nodeMenuItems,
+  primaryPerNodo,
   primaryTarget,
   refreshVmDeviceIds,
   ruoloVoci,
@@ -185,4 +186,47 @@ test("T3: «Collega a…» verso un segmento si rifiuta in parole; la linea vers
   assert.equal(connectRefusal("seg:1:n-ether8", "host:2"), SEGMENTO_NON_COLLEGABILE);
   assert.equal(connectRefusal("vm:3:100", "seg:1:5"), VM_NON_COLLEGABILE, "la VM resta col suo motivo");
   assert.ok(keys(edgeMenuItems(link("dev:1", "seg:1:5"), true)).includes("primary"));
+});
+
+// T3 Task 10 (spec §13.9, «Testi che cambiano»): la parola del genere nella voce del tasto destro; senza `cavo` la voce di oggi.
+import type { CavoLinea, GenereLinea } from "@/lib/topology/model-types";
+const cavo = (genere: GenereLinea): CavoLinea => ({ genere, stato: "inoltra", fiducia: "certo", porteDaVerificare: false, detti: [], frasi: [] });
+
+test("la voce «Ignora» segue il genere della linea; senza `cavo` è quella di oggi", () => {
+  const voce = (g: GenereLinea | null) => edgeMenuItems(link("dev:1", "dev:2", "lldp", g ? { cavo: cavo(g) } : {}), true).find((x) => x.key === "ignore")?.label;
+  assert.equal(voce(null), "Ignora questo cavo…");
+  assert.equal(voce("cavo"), "Ignora questo cavo…");
+  assert.equal(voce("tunnel"), "Ignora questo tunnel…");
+  assert.equal(voce("radio"), "Ignora questo ponte radio…");
+  assert.equal(voce("fascio"), "Ignora questo fascio…");
+});
+
+test("su un segmento la voce è «Togli ‹A› dal segmento…» (A è il membro); su una contrazione non c'è nessuna voce", () => {
+  const nomi: Record<string, string> = { "dev:1": "router 1" };
+  const seg = link("dev:1", "seg:114:15", "lldp", { cavo: cavo("segmento") });
+  const items = edgeMenuItems(seg, true, (id) => nomi[id] ?? id);
+  assert.equal(items.find((x) => x.key === "ignore")?.label, "Togli router 1 dal segmento…");
+  // Il membro può stare dalla parte b.
+  assert.equal(edgeMenuItems(link("seg:114:15", "dev:1", "lldp", { cavo: cavo("segmento") }), true, (id) => nomi[id] ?? id).find((x) => x.key === "ignore")?.label, "Togli router 1 dal segmento…");
+  assert.deepEqual(edgeMenuItems(link("dev:1", "dev:2", "lldp", { cavo: { ...cavo("contrazione"), via: "segmento" } }), true), []);
+});
+
+test("un segmento non offre «Collega a…» né «Usa come testa» (la rotta li rifiuta)", () => {
+  assert.deepEqual(keys(nodeMenuItems(ctx({ isSegmento: true, isDevice: false, ruolo: null }))), ["details", "start", "remove"]);
+  assert.deepEqual(keys(nodeMenuItems(ctx({ mode: "auto", canEditMap: false, isSegmento: true, isDevice: false, ruolo: null }))), ["details"]);
+});
+
+test("il menu del ruolo: con la mappa nuova anche «Core» e «Accesso»; senza, le tre di oggi", () => {
+  assert.deepEqual(ruoloVoci("").map((v) => v.value), ["rete", "attaccato", ""]);
+  assert.deepEqual(ruoloVoci("", true).map((v) => v.value), ["rete", "core", "accesso", "attaccato", ""]);
+  const voci = ruoloVoci("core", true);
+  assert.equal(voci.find((v) => v.value === "core")!.label, "✓ Core");
+  assert.equal(voci.find((v) => v.value === "accesso")!.label, "Accesso");
+  assert.equal(voci.filter((v) => v.label.startsWith("✓")).length, 1);
+});
+
+test("«Scegli il cavo» per la ★ di prima: il corpo ha le porte della linea scelta, orientate dal nodo", () => {
+  const l = link("dev:1", "dev:2", "lldp", { aPort: "p5", bPort: "q6" });
+  assert.deepEqual(primaryPerNodo(l, "dev:2"), { node_id: "dev:2", other_node: "dev:1", node_port: "q6", other_port: "p5" });
+  assert.deepEqual(primaryPerNodo(l, "dev:1"), { node_id: "dev:1", other_node: "dev:2", node_port: "p5", other_port: "q6" });
 });

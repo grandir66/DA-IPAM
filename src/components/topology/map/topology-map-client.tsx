@@ -19,13 +19,14 @@ import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type
 import { useRouter } from "next/navigation";
 import { ReactFlowProvider, useReactFlow } from "@xyflow/react";
 import { toast } from "sonner";
-import { IGNORA_SI_ANNULLA, testiIgnoraCavo } from "@/lib/topology/ignored-links";
+import { IGNORA_SI_ANNULLA, testiIgnora } from "@/lib/topology/ignored-links";
 import { LoadError } from "@/components/shared/load-error";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { membroInParole, nomeDelGenere } from "@/lib/topology/cavi/pannello";
 import { nodeClass } from "@/lib/topology/identity";
 import {
-  addableLinked, connectRefusal, edgeMenuItems, findManualOverride, isUncensusedVmId, nodeMenuItems, primaryTarget, refreshVmDeviceIds, vmMenuItems,
+  addableLinked, connectRefusal, edgeMenuItems, findManualOverride, isUncensusedVmId, nodeMenuItems, primaryPerNodo, primaryTarget, refreshVmDeviceIds, vmMenuItems,
   type EdgeMenuKey, type NodeMenuKey,
 } from "@/lib/topology/map-menus";
 import { computeMapView } from "@/lib/topology/map-compute";
@@ -113,6 +114,8 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
   const [pendingDrop, setPendingDrop] = useState<{ view: string; nodeId: string; x: number; y: number } | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [ignoreAsk, setIgnoreAsk] = useState<MapLink | null>(null);
+  /** Fascio (T3, §13.9): i membri spuntati nel dialogo dell'«Ignora», per posto nell'elenco. */
+  const [fascioSel, setFascioSel] = useState<ReadonlySet<number>>(() => new Set());
   /** Hypervisor con le VM mostrate: stato della pagina, non salvato (spec §11.5). */
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
   /** «Collega a…» dal menu: il prossimo clic su un oggetto è l'arrivo. */
@@ -367,7 +370,11 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
     switch (key) {
       case "primary": await setPrimary(send, primaryTarget(link, d.tree)); return;
       case "unprimary": await clearPrimary(send, link.primaryFor ?? primaryTarget(link, d.tree).node_id); return;
-      case "ignore": setIgnoreAsk(link); return;
+      case "ignore":
+        // Un fascio: tutti i membri spuntati all'apertura; si toglie quello che si vuole tenere.
+        setFascioSel(new Set((link.cavo?.fascio?.membri ?? []).map((_, i) => i)));
+        setIgnoreAsk(link);
+        return;
       case "editPorts": await editPorts(link); return;
       case "remove": {
         const rows = await fetchLinkOverrides();
@@ -388,7 +395,8 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
         <EdgeMenuContent
           title={`${name(l.a)} ↔ ${name(l.b)}`}
           detail={[`${l.aPort || "?"} → ${l.bPort || "?"}`, l.sources.map((s) => FONTE[s]).join(" + "), visto(l)].join(" · ")}
-          items={edgeMenuItems(l, isAdmin)}
+          items={edgeMenuItems(l, isAdmin, name)}
+          vuoto={isAdmin && l.cavo?.genere === "contrazione" ? "Questa linea riassume un pezzo di rete che non è in questa mappa: si agisce sui cavi veri." : undefined}
           onAction={(k) => { close(); void onEdgeAction(l, k); }}
         />
       );
@@ -415,7 +423,7 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
       isDevice: n.kind === "device", hidden: n.hidden, isHypervisor: isHyper, vmCount: d.vmsOf.get(n.id)?.length ?? 0,
       expanded: expanded.has(n.id), canRefreshVms: isHyper && refreshVmDeviceIds(d.model.vms, n.id).length > 0,
       infraHost: n.kind === "host" && nodeClass(n) !== "client", addableCount: addable.length, isUncensusedVm: isUncensusedVmId(n.id),
-      ruolo: n.kind === "device" ? (n.ruolo ?? "") : null,
+      ruolo: n.kind === "device" ? (n.ruolo ?? "") : null, isSegmento: n.kind === "segmento",
     });
     return (
       <NodeMenuContent
@@ -425,6 +433,7 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
         onAction={(k) => { close(); onNodeAction(n.id, k); }}
         onAddLinked={(ids) => { close(); void addNodes(ids); }}
         ruolo={n.kind === "device" ? (n.ruolo ?? "") : null}
+        conCavi={!!d.model.cavi}
         onRole={(r) => { close(); void send("/api/topology/nodes/role", "PATCH", { node_id: n.id, role: r }); }}
       />
     );
@@ -479,10 +488,39 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
   }
 
   const panelShown = detailsOpen && (selected !== null || d.missing.length > 0);
-  // Il dialogo dell'«Ignora» dice quale cavo (le porte) e che gli altri cavi fra i due oggetti restano (spec §13.9).
-  const testiIgnora = ignoreAsk
-    ? testiIgnoraCavo(name(ignoreAsk.a), ignoreAsk.aPort, name(ignoreAsk.b), ignoreAsk.bPort, ignoreAsk.sources.map((s) => FONTE[s]).join(" + "))
+  // Il dialogo dell'«Ignora» dice quale cavo (le porte) e che gli altri cavi fra i due oggetti restano (spec §13.9); da T3 la parola
+  // segue il genere, un fascio elenca i membri e un segmento toglie il membro, non il segmento.
+  const genereIgnora = ignoreAsk?.cavo?.genere;
+  const membroDelSegmento = ignoreAsk && genereIgnora === "segmento" ? (ignoreAsk.a.startsWith("seg:") ? ignoreAsk.b : ignoreAsk.a) : null;
+  const fonti = ignoreAsk ? (ignoreAsk.cavo && ignoreAsk.cavo.detti.length > 0 ? ignoreAsk.cavo.detti.join(" + ") : ignoreAsk.sources.map((s) => FONTE[s]).join(" + ")) : "";
+  const testiIgnoraDialogo = ignoreAsk
+    ? membroDelSegmento
+      ? testiIgnora("segmento", name(membroDelSegmento), membroDelSegmento === ignoreAsk.a ? ignoreAsk.aPort : ignoreAsk.bPort, "", "", fonti)
+      : testiIgnora(genereIgnora, name(ignoreAsk.a), ignoreAsk.aPort, name(ignoreAsk.b), ignoreAsk.bPort, fonti)
     : null;
+  const membriFascio = ignoreAsk && genereIgnora === "fascio" ? (ignoreAsk.cavo?.fascio?.membri ?? []) : null;
+  /** Scrive le correzioni «ignora» del dialogo; true se il dialogo si può chiudere. */
+  async function confermaIgnora(l: MapLink): Promise<boolean> {
+    if (membroDelSegmento) {
+      const seg = membroDelSegmento === l.a ? l.b : l.a;
+      return (await ignoreLink(send, { action: "ignore", a_node: membroDelSegmento, a_port: membroDelSegmento === l.a ? l.aPort : l.bPort, b_node: seg, b_port: "" })).ok;
+    }
+    if (membriFascio) {
+      // Una correzione per membro spuntato, in fila: un errore ferma tutto e lo dice (nessuna rotta nuova, Scelta 7).
+      const scelti = membriFascio.flatMap((m, i) => (fascioSel.has(i) ? [m] : []));
+      let fatti = 0;
+      for (const m of scelti) {
+        if (!(await ignoreLink(send, { action: "ignore", a_node: l.a, a_port: m.aPort, b_node: l.b, b_port: m.bPort })).ok) {
+          toast.error(`Fermato: ${fatti} cavi ignorati su ${scelti.length}, gli altri no`);
+          return fatti > 0;
+        }
+        fatti++;
+      }
+      return true;
+    }
+    return (await ignoreLink(send, { action: "ignore", a_node: l.a, a_port: l.aPort, b_node: l.b, b_port: l.bPort })).ok;
+  }
+  const paroleIgnora = membroDelSegmento ? "Togli dal segmento" : membriFascio ? "Ignora i cavi scelti" : `Ignora questo ${nomeDelGenere(genereIgnora)}`;
   return (
     <div className="flex h-[calc(100dvh-9rem)] min-h-[560px] flex-col overflow-hidden rounded-lg border border-border bg-card">
       <TopologyIconDefs />
@@ -520,6 +558,7 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
         detailsOpen={detailsOpen}
         detailsAvailable={selected !== null || d.missing.length > 0}
         onToggleDetails={() => changeDetails(!detailsOpen)}
+        mappaErrore={data.model.mappaErrore ?? null}
       />
       <div className="flex min-h-0 flex-1">
         {listOpen && (
@@ -558,6 +597,10 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
             visible={d.visible}
             viewLinks={d.viewLinks}
             missing={d.missing}
+            isAdmin={isAdmin}
+            tree={d.tree}
+            savedRoots={d.savedRoots}
+            onScegliCavo={(nodo, l) => void setPrimary(send, primaryPerNodo(l, nodo))}
             onSelect={setSelected}
             onRemove={(id) => void removeNode(id)}
             onClose={() => changeDetails(false)}
@@ -586,20 +629,37 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
       />
       <Dialog open={ignoreAsk !== null} onOpenChange={(o) => { if (!o) setIgnoreAsk(null); }}>
         <DialogContent>
-          <DialogHeader><DialogTitle>{testiIgnora?.titolo ?? ""}</DialogTitle></DialogHeader>
-          <p className="text-[13px]">{testiIgnora?.testo ?? ""}</p>
+          <DialogHeader><DialogTitle>{testiIgnoraDialogo?.titolo ?? ""}</DialogTitle></DialogHeader>
+          <p className="text-[13px]">{testiIgnoraDialogo?.testo ?? ""}</p>
+          {membriFascio && (
+            <ul className="max-h-60 space-y-1 overflow-auto text-[13px]">
+              {membriFascio.map((m, i) => (
+                <li key={i}>
+                  <label className="flex cursor-pointer items-center gap-2">
+                    <input
+                      type="checkbox"
+                      className="size-4"
+                      checked={fascioSel.has(i)}
+                      onChange={(e) => setFascioSel((s) => { const n = new Set(s); if (e.target.checked) n.add(i); else n.delete(i); return n; })}
+                    />
+                    {membroInParole(m)}
+                  </label>
+                </li>
+              ))}
+            </ul>
+          )}
           <p className="text-[13px]">{IGNORA_SI_ANNULLA}</p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIgnoreAsk(null)}>Annulla</Button>
             <Button
               variant="destructive"
+              disabled={membriFascio !== null && fascioSel.size === 0}
               onClick={async () => {
                 const l = ignoreAsk;
-                if (!l) return;
-                if ((await ignoreLink(send, { action: "ignore", a_node: l.a, a_port: l.aPort, b_node: l.b, b_port: l.bPort })).ok) setIgnoreAsk(null);
+                if (l && (await confermaIgnora(l))) setIgnoreAsk(null);
               }}
             >
-              Ignora questo cavo
+              {paroleIgnora}
             </Button>
           </DialogFooter>
         </DialogContent>

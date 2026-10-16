@@ -63,6 +63,8 @@ interface Props {
   /** C'è qualcosa da mostrare (un oggetto scelto, oggetti spariti): solo allora il pulsante c'è. */
   detailsAvailable: boolean;
   onToggleDetails: () => void;
+  /** La mappa nuova è accesa ma non si è potuta calcolare: la rotta ha dato quella di prima e il messaggio (T3, caso 3 del piano). */
+  mappaErrore?: string | null;
 }
 
 type Asked = null | "new" | "rename" | "fromAuto" | "delete";
@@ -135,6 +137,10 @@ export function MapToolbar(p: Props) {
         </>
       )}
 
+      {p.mappaErrore && (
+        // Una riga breve accanto al nome della mappa, niente fascia (§13.10.3); il messaggio intero al passaggio del mouse.
+        <span role="status" className="font-medium" title={p.mappaErrore}>⚠ mappa di prima: la nuova non si è potuta calcolare</span>
+      )}
       <span className="ml-auto" />
       {p.refreshFailedAt !== null && (
         <span role="status" className="inline-flex items-center gap-1.5 rounded-md border border-destructive bg-destructive/10 px-2 py-0.5 font-medium text-destructive" title={p.refreshMessage ?? undefined}>

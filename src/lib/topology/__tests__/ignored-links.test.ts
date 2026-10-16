@@ -68,3 +68,25 @@ test("Scegli il cavo da ignorare…: la linea e gli altri cavi visti fra i due o
     { aPort: "ether2", bPort: "Port 16", parole: "altro cavo visto · LLDP", linea: false },
   ]);
 });
+
+// T3 Task 10 (spec §13.9): il dialogo segue il genere; senza genere è quello di oggi.
+import { testiIgnora } from "@/lib/topology/ignored-links";
+
+test("il dialogo dell'«Ignora» per genere; senza genere è quello di oggi (testiIgnoraCavo)", () => {
+  assert.deepEqual(testiIgnora(undefined, "A", "p1", "B", "p2", "LLDP"), testiIgnoraCavo("A", "p1", "B", "p2", "LLDP"));
+  assert.deepEqual(testiIgnora("cavo", "A", "p1", "B", "p2", "LLDP"), testiIgnoraCavo("A", "p1", "B", "p2", "LLDP"));
+  const t = testiIgnora("tunnel", "A", "t1", "B", "", "annuncio di rete");
+  assert.equal(t.titolo, "Ignorare il tunnel A · t1 ↔ B · porta non nota?");
+  assert.equal(t.testo, "Questo tunnel sparisce da tutte le mappe, anche se le letture continuano a vederlo (annuncio di rete). Gli altri cavi fra A e B, se ci sono, restano. I dati letti non si toccano.");
+  assert.equal(testiIgnora("radio", "A", "p1", "B", "p2", "x").titolo, "Ignorare il ponte radio A · p1 ↔ B · p2?");
+  // Un fascio non ha una porta sola: i membri stanno nell'elenco del dialogo, con una casella ciascuno.
+  const f = testiIgnora("fascio", "A", "p1", "B", "p2", "LLDP");
+  assert.equal(f.titolo, "Ignorare il fascio A ↔ B?");
+  assert.equal(f.testo, "Spunta i cavi da ignorare: spariscono da tutte le mappe, anche se le letture continuano a vederli (LLDP). Gli altri cavi fra A e B restano. I dati letti non si toccano.");
+});
+
+test("il dialogo del segmento: «Togliere ‹A› dal segmento?», A è il membro", () => {
+  const t = testiIgnora("segmento", "router 1", "p8", "segmento", "", "LLDP");
+  assert.equal(t.titolo, "Togliere router 1 dal segmento?");
+  assert.match(t.testo, /^router 1 \(p8\) non fa più parte del segmento in nessuna mappa, anche se le letture continuano a sentirlo \(LLDP\)\. Gli altri apparati del segmento restano\. I dati letti non si toccano\.$/);
+});

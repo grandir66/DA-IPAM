@@ -88,6 +88,19 @@ test("`applica: true`: tre righe con chi, il NAS un nodo nella mappa; lo stato d
   assert.equal(righe(t, "topology_unioni").length, 3);
 });
 
+test("un'ancora già unita: le righe del suo gruppo passano nel gruppo nuovo (le vecchie tolte da chi unisce), e la mappa ha il nodo", () => {
+  // Revisione finale: «Unisci» scrive sempre in un gruppo nuovo, che si applica per ultimo. Le righe tolte restano: chi e quando.
+  const t = nuovoTenant();
+  withTenant(t, () => rispostaUnione({ membri: ["host:11", "host:12"], applica: true }, "anna"));
+  const r = withTenant(t, () => rispostaUnione({ membri: ["host:12", "host:13"], applica: true }, "bruno"));
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.deepEqual(righe(t, "topology_unioni").map((x) => [x.gruppo, x.membro, x.creato_da, x.tolto_da ?? null]), [
+    [1, "host:11", "anna", "bruno"], [1, "host:12", "anna", "bruno"],
+    [2, "host:11", "bruno", null], [2, "host:12", "bruno", null], [2, "host:13", "bruno", null],
+  ]);
+  assert.deepEqual(modello(t).nodes.find((n) => n.id === "host:11")?.fusedHostIds, [12, 13]);
+});
+
 test("«Separa…»: l'anteprima non scrive; con `applica` l'indirizzo torna solo, la riga resta con `tolto_*`, le coppie con chi resta", () => {
   const t = nuovoTenant();
   withTenant(t, () => rispostaUnione({ ...NAS, applica: true }, "anna"));

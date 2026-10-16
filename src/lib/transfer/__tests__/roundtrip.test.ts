@@ -288,3 +288,82 @@ for (const segnoSorgente of ["done", "parziale"] as const) {
     assert.match(res.conversioni.credenziali_t2_catene?.dettaglio ?? "", /già nella sorgente del bundle/);
   });
 }
+
+// Tappa 2e credenziali (T19): un bundle esportato prima della 2e porta i
+// binding inline e le colonne di network_devices, e nessun segno
+// `credenziali_t2_apparati`. L'import converte direttamente e riscrive il
+// segno con l'esito, che va anche nella risposta.
+test("import di un bundle di prima della 2e: inline → voce, colonna → binding, segno riscritto, esito nella risposta", async () => {
+  process.env.ENCRYPTION_KEY = "A".repeat(64);
+  const { exportTenant } = await import("../export");
+  const { importTenant } = await import("../import");
+  const crypto = await import("@/lib/crypto");
+  const src = freshTenant();
+  const v = Number(src.prepare("INSERT INTO credentials (name, credential_type, encrypted_password) VALUES ('Community', 'snmp', ?)").run(crypto.encrypt("c-sede")).lastInsertRowid);
+  const sw = Number(
+    src.prepare("INSERT INTO network_devices (name, host, device_type, vendor, protocol, port, credential_id) VALUES ('Switch', '10.9.0.2', 'switch', 'hp', 'snmp_v2', 22, ?)").run(v).lastInsertRowid
+  );
+  const fw = Number(src.prepare("INSERT INTO network_devices (name, host, device_type, vendor, protocol, port) VALUES ('Firewall', '10.9.0.1', 'firewall', 'other', 'ssh', 22)").run().lastInsertRowid);
+  src
+    .prepare("INSERT INTO device_credential_bindings (device_id, protocol_type, port, inline_username, inline_encrypted_password, test_status) VALUES (?, 'ssh', 22, 'admin', ?, 'success')")
+    .run(fw, crypto.encrypt("pw-fw"));
+  const bundle = exportTenant({
+    tenantDb: src, hubDb: freshHub(),
+    options: { tenantCode: "DEFAULT", tiers: [], includeVault: false, passphrase: "trasporto-2e", exportedAt: "2026-10-16T10:00:00.000Z", appVersion: "test" },
+  });
+  const dst = freshTenant();
+  const res = importTenant({ bundle, tenantDb: dst, hubDb: freshHub(), options: { tenantCode: "DEFAULT", passphrase: "trasporto-2e", wipe: true } });
+
+  assert.deepEqual(dst.prepare("SELECT protocol_type, port, credential_id FROM device_credential_bindings WHERE device_id = ?").all(sw), [{ protocol_type: "snmp", port: 161, credential_id: v }]);
+  assert.equal((dst.prepare("SELECT credential_id FROM network_devices WHERE id = ?").get(sw) as { credential_id: number | null }).credential_id, null);
+  const b = dst.prepare("SELECT credential_id, inline_encrypted_password, test_status FROM device_credential_bindings WHERE device_id = ?").get(fw) as {
+    credential_id: number | null; inline_encrypted_password: string | null; test_status: string;
+  };
+  assert.notEqual(b.credential_id, null);
+  assert.equal(b.inline_encrypted_password, null);
+  assert.equal(b.test_status, "success");
+  const segno = (dst.prepare("SELECT value FROM tenant_settings WHERE key = 'credenziali_t2_apparati'").get() as { value: string }).value;
+  assert.match(segno, /^done:.*binding_colonne=1,voci_nuove=1/);
+  assert.equal(res.conversioni.credenziali_t2_apparati?.segno, segno);
+  assert.match(res.conversioni.credenziali_t2_apparati?.dettaglio ?? "", /1 binding dalle colonne/);
+});
+
+// Un bundle esportato DOPO la 2e porta il segno chiuso della sorgente. Con la
+// cancellazione il segno in tenant_settings è quello del bundle: chiuso → non
+// si converte (come all'apertura del tenant), il segno resta, e la risposta
+// lo dice. Altrimenti una colonna riscritta dal codice di prima riporterebbe
+// il binding che l'utente aveva tolto.
+for (const segnoSorgente of ["done", "parziale"] as const) {
+  test(`import con cancellazione di un bundle di dopo la 2e (segno ${segnoSorgente}:): il binding tolto non torna, il segno del bundle resta`, async () => {
+    process.env.ENCRYPTION_KEY = "A".repeat(64);
+    const { exportTenant } = await import("../export");
+    const { importTenant } = await import("../import");
+    const crypto = await import("@/lib/crypto");
+    const { convertiCredenzialiApparati, segnoApparati } = await import("@/lib/credentials/converti-apparati");
+    const src = freshTenant();
+    const v = Number(src.prepare("INSERT INTO credentials (name, credential_type, encrypted_password) VALUES ('Community', 'snmp', ?)").run(crypto.encrypt("c-sede")).lastInsertRowid);
+    const sw = Number(
+      src.prepare("INSERT INTO network_devices (name, host, device_type, vendor, protocol, port, credential_id) VALUES ('Switch', '10.9.0.2', 'switch', 'hp', 'snmp_v2', 22, ?)").run(v).lastInsertRowid
+    );
+    // La 2e all'apertura della sorgente: conversione e segno.
+    const esito = convertiCredenzialiApparati(src, { aVuoto: false });
+    const segnoBundle = segnoSorgente === "done" ? segnoApparati(esito) : "parziale:2026-10-16T08:00:00.000Z:binding_colonne=1,lasciati=1";
+    src.prepare("INSERT INTO tenant_settings (key, value) VALUES ('credenziali_t2_apparati', ?)").run(segnoBundle);
+    // L'utente toglie il binding; il codice di prima riscrive la colonna.
+    src.prepare("DELETE FROM device_credential_bindings WHERE device_id = ?").run(sw);
+    src.prepare("UPDATE network_devices SET credential_id = ? WHERE id = ?").run(v, sw);
+    const bundle = exportTenant({
+      tenantDb: src, hubDb: freshHub(),
+      options: { tenantCode: "DEFAULT", tiers: [], includeVault: false, passphrase: "trasporto-2e", exportedAt: "2026-10-20T10:00:00.000Z", appVersion: "test" },
+    });
+    const dst = freshTenant();
+    const res = importTenant({ bundle, tenantDb: dst, hubDb: freshHub(), options: { tenantCode: "DEFAULT", passphrase: "trasporto-2e", wipe: true } });
+
+    assert.deepEqual(dst.prepare("SELECT id FROM device_credential_bindings WHERE device_id = ?").all(sw), [], "il binding tolto è tornato");
+    assert.equal((dst.prepare("SELECT credential_id FROM network_devices WHERE id = ?").get(sw) as { credential_id: number | null }).credential_id, v);
+    const segno = (dst.prepare("SELECT value FROM tenant_settings WHERE key = 'credenziali_t2_apparati'").get() as { value: string }).value;
+    assert.equal(segno, segnoBundle);
+    assert.equal(res.conversioni.credenziali_t2_apparati?.segno, segnoBundle);
+    assert.match(res.conversioni.credenziali_t2_apparati?.dettaglio ?? "", /già nella sorgente del bundle/);
+  });
+}

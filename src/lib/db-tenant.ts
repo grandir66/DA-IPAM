@@ -25,8 +25,9 @@ import { ipSortKey, sqlOrderByDhcpLeases, sqlOrderByNetworks, type SortDirection
 import { convertiCommunityInlineSnmp } from "./credentials/converti-community-inline";
 import { descriviRicostruzione, descriviStato, migraCredenzialiTipi, statoCredenziali } from "./credentials/migra-credenziali-tipi";
 import { descriviNormalizza, normalizzaTipiCredenziali, segnoTipi } from "./credentials/normalizza-tipi";
-import { conversioneChiusa, leggiSegno, scriviSegno, segnoErrore, SEGNO_CATENE, SEGNO_TIPI } from "./credentials/segni-t2";
+import { conversioneChiusa, leggiSegno, scriviSegno, segnoErrore, SEGNO_APPARATI, SEGNO_CATENE, SEGNO_TIPI } from "./credentials/segni-t2";
 import { convertiCateneVecchie, descriviCatene, MOTIVO_DUE_TENANT, segnoCatene } from "./credentials/converti-catene";
+import { convertiCredenzialiApparati, descriviApparati, segnoApparati } from "./credentials/converti-apparati";
 import { migraAppleMacos } from "./devices/migra-apple-macos";
 import { randomUUID } from "crypto";
 import { inferIpAssignment, resolveAdDhcpLeaseForHost, resolveDhcpLeaseForHost } from "./ip-assignment";
@@ -1919,6 +1920,35 @@ export function getTenantDb(tenantCode: string): Database.Database {
       scriviSegno(newDb, SEGNO_CATENE, segnoErrore(e));
     } catch (e2) {
       console.error(`[db-tenant] ${tenantCode}: ${SEGNO_CATENE}, segno d'errore non scritto:`, e2);
+    }
+  }
+
+  // Tappa 2e credenziali (T19): binding inline e colonne di network_devices
+  // diventano voci e binding d'archivio, e le colonne si svuotano. Dopo la 2c
+  // (tipi per esteso) e la 2d. Conversione e segno nella stessa transazione;
+  // col segno done:/parziale: non si richiama più (un binding tolto tornerebbe
+  // da una colonna riscritta dal codice di prima). Il journal elenca per id
+  // binding nati, voci nuove, colonne svuotate e apparati lasciati col motivo.
+  // Se fallisce: ROLLBACK, segno errore:, il tenant si apre lo stesso e si
+  // riprova all'apertura dopo.
+  try {
+    if (!conversioneChiusa(leggiSegno(newDb, SEGNO_APPARATI))) {
+      const { esito, segno } = newDb.transaction(() => {
+        const esito = convertiCredenzialiApparati(newDb, { aVuoto: false });
+        const segno = segnoApparati(esito);
+        scriviSegno(newDb, SEGNO_APPARATI, segno);
+        return { esito, segno };
+      })();
+      const riga = `[db-tenant] ${tenantCode}: ${SEGNO_APPARATI} ${segno}; ${descriviApparati(esito)}`;
+      if (esito.lasciati.length > 0) console.warn(riga);
+      else console.info(riga);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: ${SEGNO_APPARATI} fallita (ROLLBACK), si riprova alla prossima apertura:`, e);
+    try {
+      scriviSegno(newDb, SEGNO_APPARATI, segnoErrore(e));
+    } catch (e2) {
+      console.error(`[db-tenant] ${tenantCode}: ${SEGNO_APPARATI}, segno d'errore non scritto:`, e2);
     }
   }
 

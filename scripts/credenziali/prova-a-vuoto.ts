@@ -15,6 +15,11 @@
  * host, delle catene vecchie e dei pin prima → dopo; le voci entrate nella
  * lista e le righe host nuove, per nome; per ogni rete la sequenza del motore
  * per ssh, winrm e snmp, che deve restare uguale (proprietà della 2d).
+ * Dalla 2e (T19) anche gli apparati: righe dei binding, inline e apparati con
+ * colonne piene prima → dopo; per nome i binding nati dalle colonne (protocollo
+ * e porta), le voci nuove, le community diventate voce, le colonne svuotate,
+ * gli inline rimasti e gli apparati lasciati col motivo. Le scelte (porta e
+ * segreto) le confronta la fotografia, sullo stesso istante.
  *
  * Ordine obbligato (vincolo «Script sulle copie»): db-tenant e db-hub fissano i
  * percorsi quando si caricano, e l'ambiente del servizio punta ai dati veri.
@@ -36,6 +41,9 @@ import path from "node:path";
 import { cartelleServizio, controllaCopia } from "../../src/lib/credentials/guardia-copia";
 
 type Misura = import("./appoggio-prova").Misura;
+type Lasciati = Array<{ device_id: number; motivo: string }>;
+
+const NOME_PROTOCOLLO: Record<string, string> = { ssh: "SSH", snmp: "SNMP", winrm: "WinRM", api: "API", redfish: "Redfish", onvif: "ONVIF" };
 
 function uso(msg?: string): number {
   if (msg) process.stderr.write(`${msg}\n`);
@@ -124,6 +132,84 @@ function stampaCatene(prima: Misura, dopo: Misura): boolean {
   return true;
 }
 
+/**
+ * Apparati (2e): binding nati dalle colonne, voci nuove, community diventate
+ * voce, colonne svuotate, inline rimasti, lasciati col motivo. Vero se c'è da
+ * guardare oltre al segno (che `parziale:` lo dice già): binding spariti,
+ * inline o colonne rimasti fuori dai lasciati, lasciati non misurabili.
+ */
+function stampaApparati(prima: Misura, dopo: Misura, lasciati: Lasciati | { errore: string }): boolean {
+  const a1 = prima.apparati;
+  const a2 = dopo.apparati;
+  const r = (m: Misura["apparati"], k: "binding" | "inline" | "conColonne") => (m.righe ? String(m.righe[k]) : "-");
+  process.stdout.write(
+    `apparati (2e): binding ${r(a1, "binding")} → ${r(a2, "binding")}, inline ${r(a1, "inline")} → ${r(a2, "inline")}, ` +
+      `apparati con colonne piene ${r(a1, "conColonne")} → ${r(a2, "conColonne")}\n`
+  );
+  let daGuardare = false;
+  const app = (id: number | string) => `apparato «${a2.apparati[String(id)]?.nome ?? a1.apparati[String(id)]?.nome ?? "?"}» (#${id})`;
+  const proto = (p: string) => NOME_PROTOCOLLO[p] ?? p;
+  const vociPrima = new Set(prima.voci.map((v) => v.id));
+  const bindingPrima = new Map(a1.binding.map((b) => [b.id, b]));
+  const bindingDopo = new Set(a2.binding.map((b) => b.id));
+
+  const nati = a2.binding.filter((b) => !bindingPrima.has(b.id));
+  const voceNuova = (id: number | null) => id != null && !vociPrima.has(id);
+  const righeNati = nati.map(
+    (b) => `  ${app(b.device_id)}: ${proto(b.protocol_type)}/${b.port} → ${nomeVoce(prima, dopo, b.credential_id ?? "-")}${voceNuova(b.credential_id) ? ", voce nuova" : ""}`
+  );
+  process.stdout.write(`binding nati dalle colonne:\n${righeNati.join("\n") || "  (nessuno)"}\n`);
+
+  const nuove = dopo.voci.filter((v) => !vociPrima.has(v.id));
+  const righeVoci = nuove.map((v) => {
+    const b = a2.binding.find((x) => x.credential_id === v.id);
+    if (!b) return `  «${v.name}» (#${v.id}): nessun binding la punta`;
+    const daInline = bindingPrima.get(b.id)?.credential_id === null;
+    return `  «${v.name}» (#${v.id}): ${app(b.device_id)}, ${daInline ? "da binding inline" : "da colonne"}`;
+  });
+  process.stdout.write(`voci nuove:\n${righeVoci.join("\n") || "  (nessuna)"}\n`);
+
+  const community = nati
+    .filter((b) => b.protocol_type === "snmp" && voceNuova(b.credential_id))
+    .map((b) => `  ${app(b.device_id)}: ${nomeVoce(prima, dopo, b.credential_id ?? "-")}`);
+  process.stdout.write(`community diventate voce:\n${community.join("\n") || "  (nessuna)"}\n`);
+
+  const svuotate: string[] = [];
+  for (const [id, x] of Object.entries(a1.apparati)) {
+    const restano = new Set(a2.apparati[id]?.colonne ?? []);
+    const via = x.colonne.filter((c) => !restano.has(c));
+    if (via.length > 0) svuotate.push(`  ${app(id)}: ${via.join(", ")}`);
+  }
+  process.stdout.write(`colonne svuotate:\n${svuotate.join("\n") || "  (nessuna)"}\n`);
+
+  const spariti = a1.binding.filter((b) => !bindingDopo.has(b.id));
+  if (spariti.length > 0) {
+    daGuardare = true;
+    process.stdout.write(`binding SPARITI:\n${spariti.map((b) => `  ${app(b.device_id)}: #${b.id} ${proto(b.protocol_type)}/${b.port}`).join("\n")}\n`);
+  }
+
+  const idLasciati = new Set("errore" in lasciati ? [] : lasciati.map((l) => String(l.device_id)));
+  const inline = a2.binding.filter((b) => b.credential_id == null);
+  process.stdout.write(`inline rimasti: ${inline.length}\n`);
+  for (const b of inline) {
+    process.stdout.write(`  ${app(b.device_id)}: #${b.id} ${proto(b.protocol_type)}/${b.port}\n`);
+    if (!idLasciati.has(String(b.device_id))) daGuardare = true;
+  }
+  for (const [id, x] of Object.entries(a2.apparati)) {
+    if (x.colonne.length > 0 && !idLasciati.has(id)) {
+      daGuardare = true;
+      process.stdout.write(`colonne ancora piene fuori dai lasciati: ${app(id)}: ${x.colonne.join(", ")}\n`);
+    }
+  }
+
+  if ("errore" in lasciati) {
+    process.stdout.write(`lasciati: non misurabili (${lasciati.errore})\n`);
+    return true;
+  }
+  process.stdout.write(`lasciati:\n${lasciati.map((l) => `  ${app(l.device_id)}: ${l.motivo}`).join("\n") || "  (nessuno)"}\n`);
+  return daGuardare;
+}
+
 function stampaTenant(code: string, prima: Misura, dopo: Misura): boolean {
   const s1 = prima.stato;
   const s2 = dopo.stato;
@@ -177,6 +263,16 @@ async function main(): Promise<number> {
     }
     if (stampaTenant(code, prima, dopo)) {
       process.stdout.write("DA GUARDARE: catene del motore diverse o non misurabili\n");
+      esito = 1;
+    }
+    let lasciati: Lasciati | { errore: string };
+    try {
+      lasciati = appoggio.lasciatiApparati(code);
+    } catch (e) {
+      lasciati = { errore: e instanceof Error ? e.message : String(e) };
+    }
+    if (stampaApparati(prima, dopo, lasciati)) {
+      process.stdout.write("DA GUARDARE: apparati con binding spariti, inline o colonne rimasti fuori dai lasciati, o lasciati non misurabili\n");
       esito = 1;
     }
     if (JSON.stringify(riapertura) === JSON.stringify(dopo)) {

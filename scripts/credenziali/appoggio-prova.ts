@@ -19,6 +19,14 @@
  * ogni rete la sequenza del motore (voce:porta) per ssh, winrm e snmp, con le
  * chiavi dell'hub della copia, senza registrare ripieghi. È la proprietà della
  * 2d: la sequenza non cambia con la conversione.
+ *
+ * Dalla 2e (T19) anche gli apparati: righe dei binding, binding inline e
+ * apparati con colonne di credenziali piene; per ogni apparato il nome e le
+ * colonne piene, e i binding per id (protocollo, porta, voce). Lo script ne
+ * ricava i binding nati, le voci nuove, le community diventate voce e le
+ * colonne svuotate. I lasciati col motivo vengono da `lasciatiApparati`, che
+ * rifà la conversione a vuoto sulla copia già convertita: i lasciati sono
+ * tornati com'erano, quindi il motivo è lo stesso.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -27,6 +35,7 @@ import { cartellaTenant, closeAllTenantDbs, closeTenantDb, getTenantDb, withTena
 import { closeHubDb, getHubDbPath, getSetting } from "../../src/lib/db-hub";
 import { statoCredenziali, type StatoCredenziali } from "../../src/lib/credentials/migra-credenziali-tipi";
 import { chiaviGlobaliHub, resolveCredentialsForDb, type CredProtocol } from "../../src/lib/credentials/resolve";
+import { COLONNE_APPARATO, convertiCredenzialiApparati, type EsitoApparati } from "../../src/lib/credentials/converti-apparati";
 
 export { cartellaTenant, getHubDbPath };
 
@@ -60,11 +69,20 @@ export interface MisuraCatene {
   errore: string | null;
 }
 
+export interface MisuraApparati {
+  /** null se le tabelle non ci sono (schema di prima). */
+  righe: { binding: number; inline: number; conColonne: number } | null;
+  /** id → nome e colonne di credenziali piene (non NULL). */
+  apparati: Record<string, { nome: string; colonne: string[] }>;
+  binding: Array<{ id: number; device_id: number; protocol_type: string; port: number; credential_id: number | null }>;
+}
+
 export interface Misura {
   stato: StatoCredenziali;
   segni: Record<string, string>;
   voci: Voce[];
   catene: MisuraCatene;
+  apparati: MisuraApparati;
 }
 
 function haTabella(dbh: Database.Database, nome: string): boolean {
@@ -106,6 +124,25 @@ function misuraCatene(dbh: Database.Database): MisuraCatene {
   return out;
 }
 
+function misuraApparati(dbh: Database.Database): MisuraApparati {
+  const out: MisuraApparati = { righe: null, apparati: {}, binding: [] };
+  if (!haTabella(dbh, "network_devices") || !haTabella(dbh, "device_credential_bindings")) return out;
+  const presenti = new Set((dbh.prepare("PRAGMA table_info(network_devices)").all() as Array<{ name: string }>).map((r) => r.name));
+  const colonne = COLONNE_APPARATO.filter((c) => presenti.has(c));
+  const righe = dbh.prepare(`SELECT id, name${colonne.map((c) => `, ${c}`).join("")} FROM network_devices ORDER BY id`).all() as Array<Record<string, unknown>>;
+  let conColonne = 0;
+  for (const r of righe) {
+    const piene = colonne.filter((c) => r[c] != null);
+    if (piene.length > 0) conColonne++;
+    out.apparati[String(r.id)] = { nome: String(r.name ?? "?"), colonne: piene };
+  }
+  out.binding = dbh
+    .prepare("SELECT id, device_id, protocol_type, port, credential_id FROM device_credential_bindings ORDER BY id")
+    .all() as MisuraApparati["binding"];
+  out.righe = { binding: out.binding.length, inline: out.binding.filter((b) => b.credential_id == null).length, conColonne };
+  return out;
+}
+
 function misuraHandle(dbh: Database.Database): Misura {
   const haSettings = dbh.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'tenant_settings'").get();
   const segni = haSettings
@@ -120,6 +157,7 @@ function misuraHandle(dbh: Database.Database): Misura {
     segni,
     voci: dbh.prepare("SELECT id, name, credential_type FROM credentials ORDER BY id").all() as Voce[],
     catene: misuraCatene(dbh),
+    apparati: misuraApparati(dbh),
   };
 }
 
@@ -138,6 +176,20 @@ export function apriEMisura(code: string): Misura {
   try {
     const dbh = withTenant(code, () => getTenantDb(code));
     return misuraHandle(dbh);
+  } finally {
+    closeTenantDb(code);
+  }
+}
+
+/**
+ * Gli apparati che la conversione della 2e lascia, col motivo: la conversione
+ * rifatta a vuoto sul tenant già aperto (e convertito) con getTenantDb. Non
+ * scrive: tutto si annulla.
+ */
+export function lasciatiApparati(code: string): EsitoApparati["lasciati"] {
+  try {
+    const dbh = withTenant(code, () => getTenantDb(code));
+    return convertiCredenzialiApparati(dbh, { aVuoto: true }).lasciati;
   } finally {
     closeTenantDb(code);
   }

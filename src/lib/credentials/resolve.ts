@@ -124,6 +124,16 @@ export const FONTI_APPARATO: readonly ResolvedCredentialSource[] = Object.freeze
  */
 export const FONTI_ACQUISIZIONE: readonly ResolvedCredentialSource[] = Object.freeze([...FONTI_APPARATO, "snmp_ripiego"] as const);
 
+/**
+ * Le fonti dell'acquisizione dopo la 2g: senza binding inline né colonne
+ * dell'apparato. La conversione della 2e (T19) calcola con queste la scelta
+ * «dopo»: così dimostra che togliere colonne e inline non cambia la scelta, e
+ * una colonna rimasta piena non la maschera.
+ */
+export const FONTI_ACQUISIZIONE_2G: readonly ResolvedCredentialSource[] = Object.freeze(
+  FONTI_ACQUISIZIONE.filter((f) => f !== "device_inline" && f !== "device_column" && f !== "device_column_inline")
+);
+
 export type SceltaSegreto =
   | { ok: true; candidato: ResolvedCredential; segreto: Segreto }
   | { ok: false; motivo: string };
@@ -928,16 +938,19 @@ const nonEsiste = (device: ApparatoInAcquisizione): { ok: false; motivo: string 
  *   all'API, regola della tappa 1): con la chiave l'SSH entra, l'API no, e
  *   chi chiama lo dice. Così una voce a chiave non prende mai il posto di una
  *   con password che oggi fa funzionare l'API.
+ *
+ * `fonti` (default FONTI_ACQUISIZIONE) serve solo ai controlli della 2e
+ * (FONTI_ACQUISIZIONE_2G): l'acquisizione non lo passa.
  */
 export function sceltaLoginApparatoDb(
   dbh: Database.Database,
   device: ApparatoInAcquisizione,
-  opts: Pick<OpzioniMotore, "registra"> = {}
+  opts: Pick<OpzioniMotore, "registra" | "fonti"> = {}
 ): SceltaSegreto {
   const app = apparatoDi(dbh, device);
   if (!app) return nonEsiste(device);
   const protocollo = protocolloLogin(app.protocol);
-  const motore: OpzioniMotore = { fonti: FONTI_ACQUISIZIONE, registra: opts.registra };
+  const motore: OpzioniMotore = { fonti: opts.fonti ?? FONTI_ACQUISIZIONE, registra: opts.registra };
   if (protocollo === "ssh") {
     return scegliPerApparato(dbh, app, "ssh", motore, (s) =>
       s.forma === "utente" || s.forma === "chiave_ssh" ? null : `l'apparato «${app.name}» accede con utente e password o con una chiave SSH`
@@ -969,16 +982,17 @@ export type SceltaSnmpApparato =
  * «Credenziale SNMPv3 assente o illeggibile», mai la community (T4). La porta
  * è quella del candidato (D11 = (a)): 161, o quella del binding o della voce.
  * Il record v3 esce ripulito dagli spazi, come lo dava getDeviceSnmpV3Credentials.
+ * `fonti` come in `sceltaLoginApparatoDb`: solo per i controlli della 2e.
  */
 export function credenzialeSnmpApparatoDb(
   dbh: Database.Database,
   device: ApparatoInAcquisizione,
-  opts: Pick<OpzioniMotore, "registra"> = {}
+  opts: Pick<OpzioniMotore, "registra" | "fonti"> = {}
 ): SceltaSnmpApparato {
   const app = apparatoDi(dbh, device);
   if (!app) return nonEsiste(device);
   const soloV3 = app.protocol === "snmp_v3";
-  const s = scegliPerApparato(dbh, app, "snmp", { fonti: FONTI_ACQUISIZIONE, registra: opts.registra }, (seg) => {
+  const s = scegliPerApparato(dbh, app, "snmp", { fonti: opts.fonti ?? FONTI_ACQUISIZIONE, registra: opts.registra }, (seg) => {
     if (seg.forma !== "community" && seg.forma !== "v3") return `l'apparato «${app.name}»: credenziale non SNMP`;
     return soloV3 && seg.forma !== "v3" ? `l'apparato «${app.name}» è SNMPv3: una community non vale` : null;
   });

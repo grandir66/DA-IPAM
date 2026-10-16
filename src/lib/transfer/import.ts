@@ -7,8 +7,9 @@ import { tableSpec, TENANT_TABLES } from "./table-registry";
 import { writableColumns, rekeyColumns } from "./schema-introspect";
 import { encrypt } from "@/lib/crypto";
 import { descriviNormalizza, normalizzaTipiCredenziali, segnoTipi } from "@/lib/credentials/normalizza-tipi";
-import { conversioneChiusa, leggiSegno, scriviSegno, segnoErrore, SEGNO_CATENE, SEGNO_TIPI } from "@/lib/credentials/segni-t2";
+import { conversioneChiusa, leggiSegno, scriviSegno, segnoErrore, SEGNO_APPARATI, SEGNO_CATENE, SEGNO_TIPI } from "@/lib/credentials/segni-t2";
 import { convertiCateneVecchie, descriviCatene, segnoCatene } from "@/lib/credentials/converti-catene";
+import { convertiCredenzialiApparati, descriviApparati, segnoApparati } from "@/lib/credentials/converti-apparati";
 
 export interface ImportArgs {
   bundle: Buffer;
@@ -136,6 +137,40 @@ export function importTenant(args: ImportArgs): ImportResult {
       console.error(`[transfer] import: ${SEGNO_CATENE}, segno d'errore non scritto:`, e2);
     }
     result.conversioni[SEGNO_CATENE] = { segno, dettaglio: "conversione delle catene vecchie e dei pin non eseguita" };
+  }
+
+  // Tappa 2e credenziali (T19): il bundle può portare binding inline e
+  // colonne di network_devices, e il segno della sorgente. Come per la 2d: la
+  // conversione si chiama direttamente e il segno si riscrive con l'esito,
+  // nella stessa transazione; con la cancellazione e il segno del bundle già
+  // chiuso (done:/parziale:) non si riconverte, perché una colonna riscritta
+  // dopo la conversione dal codice di prima riporterebbe il binding che
+  // l'utente aveva tolto. Con un'unione quello che nasce va nella risposta.
+  try {
+    const segnoBundle = options.wipe ? leggiSegno(tenantDb, SEGNO_APPARATI) : null;
+    if (segnoBundle != null && conversioneChiusa(segnoBundle)) {
+      result.conversioni[SEGNO_APPARATI] = {
+        segno: segnoBundle,
+        dettaglio: "già nella sorgente del bundle (qui non si riconvertono: i binding tolti non tornano)",
+      };
+    } else {
+      const { esito, segno } = tenantDb.transaction(() => {
+        const esito = convertiCredenzialiApparati(tenantDb, { aVuoto: false });
+        const segno = segnoApparati(esito);
+        scriviSegno(tenantDb, SEGNO_APPARATI, segno);
+        return { esito, segno };
+      })();
+      result.conversioni[SEGNO_APPARATI] = { segno, dettaglio: descriviApparati(esito) };
+    }
+  } catch (e) {
+    console.error(`[transfer] import: ${SEGNO_APPARATI} fallita, si riprova alla prossima apertura del tenant:`, e);
+    const segno = segnoErrore(e);
+    try {
+      scriviSegno(tenantDb, SEGNO_APPARATI, segno);
+    } catch (e2) {
+      console.error(`[transfer] import: ${SEGNO_APPARATI}, segno d'errore non scritto:`, e2);
+    }
+    result.conversioni[SEGNO_APPARATI] = { segno, dettaglio: "conversione delle credenziali degli apparati non eseguita" };
   }
 
   // --- Import tabelle HUB (merge, non distruttivo) ---

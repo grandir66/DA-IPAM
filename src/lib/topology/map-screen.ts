@@ -14,6 +14,24 @@ import type { MapLink, MapOrientation } from "@/lib/topology/model-types";
 import { ATT_INDENT, ATT_MAX, ATT_ROW } from "@/lib/topology/tree-layout-consts";
 import type { LayoutResult } from "@/lib/topology/tree-layout";
 
+/**
+ * Il livello (z-index) delle linee del nodo scelto (T3, §13.10.3) e delle loro parole. React Flow mette ogni linea in un suo
+ * strato: le parole senza livello finivano sotto le altre linee evidenziate («10G · r…ndanza», verifica a schermo di T3). Allo
+ * stesso livello vengono dopo le linee e prima dei riquadri. Le altre linee e parole restano senza livello, come prima.
+ */
+export const Z_EVIDENZA = 1;
+export function livelloEvidenza(e: "su" | "giu" | undefined): number | undefined {
+  return e === "su" ? Z_EVIDENZA : undefined;
+}
+
+/**
+ * Il pulsante di un'azione che toglie qualcosa, con la mappa nuova: il «Danger» del design system Domarc, rosso scuro pieno e
+ * testo bianco (9,0:1). Quello di shadcn qui è rosso #EF4444 su rosa pallido, 3,3:1 (verifica a schermo di T3: «Ignora i cavi
+ * scelti»); Riccardo è daltonico, l'azione si legge dal testo. La classe intera sta qui, scritta, perché Tailwind la trovi.
+ */
+export const PERICOLO = { fondo: "#8E1B20", testo: "#FFFFFF" } as const;
+export const CLASSE_PERICOLO = "bg-[#8E1B20] text-white hover:bg-[#8E1B20]/90 dark:bg-[#8E1B20] dark:hover:bg-[#8E1B20]/90";
+
 /** Orizzontale: entrata in alto, uscita in basso (gli id di prima della verticale). */
 export const HANDLE_IN = "su", HANDLE_OUT = "giu";
 /** Verticale: entrata a sinistra, uscita a destra. */

@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseLinkOverrideBody, parseSiteTopologyBody, parseDeviceLocationBody, parseStaleDaysBody } from "@/lib/topology/api-input";
+import {
+  parseLinkOverrideBody, parseLinkPatchBody, parseNodeRoleBody, parsePrimaryBody, parseSiteTopologyBody, parseDeviceLocationBody, parseStaleDaysBody,
+} from "@/lib/topology/api-input";
 
 test("correzione: nodi nella forma dev:N / host:N, azione nota, porte facoltative", () => {
   assert.deepEqual(parseLinkOverrideBody({ action: "add", a_node: "dev:1", b_node: "host:2" }), {
@@ -306,4 +308,24 @@ test("T3: «Candidati per porta» — la query vuole un nodo solo, valido, e nie
   assert.deepEqual(q("nodo=dev:3&nodo=dev:4"), { ok: false, error: "Il nodo si indica una volta sola" });
   assert.deepEqual(q("nodo=dev:x"), { ok: false, error: "Nodo non valido" });
   assert.deepEqual(q("nodo=dev:3&limite=5"), { ok: false, error: "Richiesta non valida" });
+});
+
+/**
+ * Revisione finale di T3 (M9): gli schemi delle scritture che T3 usa (correzioni, loro modifica, ★, ruolo) lasciavano passare un
+ * campo sconosciuto: «medio» al posto di «medium» salvava un collegamento a mano senza tipo, in silenzio. Ora un campo in più è
+ * rifiutato col suo nome. I corpi che la pagina manda oggi (mappa nuova accesa o spenta) passano come prima.
+ */
+test("M9: un campo sconosciuto (un nome sbagliato) è rifiutato col suo nome; i corpi della pagina passano", () => {
+  const add = { action: "add", a_node: "dev:1", a_port: "Port 1", b_node: "dev:2", b_port: "", medium: null, note: null };
+  assert.equal(parseLinkOverrideBody(add).ok, true, "il corpo di «Collega a…»");
+  assert.equal(parseLinkOverrideBody({ action: "ignore", a_node: "dev:1", a_port: "Port 1", b_node: "seg:3:15", b_port: "" }).ok, true, "«Ignora» e «Togli dal segmento»");
+  assert.deepEqual(parseLinkOverrideBody({ ...add, medium: undefined, medio: "tunnel" }), { ok: false, error: "Campo non previsto: «medio»" });
+  assert.equal(parseLinkPatchBody({ a_port: "Port 1", b_port: "", medium: "tunnel", note: null }).ok, true, "il corpo di «Modifica porte»");
+  assert.deepEqual(parseLinkPatchBody({ medio: "tunnel" }), { ok: false, error: "Campo non previsto: «medio»" });
+  assert.equal(parsePrimaryBody({ node_id: "dev:1", other_node: "dev:2", node_port: "", other_port: "" }).ok, true, "il corpo della ★");
+  assert.deepEqual(parsePrimaryBody({ node_id: "dev:1", other_node: "dev:2", nodo_porta: "Port 1" }), { ok: false, error: "Campo non previsto: «nodo_porta»" });
+  assert.equal(parseNodeRoleBody({ node_id: "dev:1", role: "core" }).ok, true, "il corpo del ruolo");
+  assert.deepEqual(parseNodeRoleBody({ node_id: "dev:1", role: "", ruolo: "core" }), { ok: false, error: "Campo non previsto: «ruolo»" });
+  // Un corpo che non è un oggetto resta «Corpo della richiesta non valido», come prima.
+  assert.deepEqual(parsePrimaryBody(null), { ok: false, error: "Corpo della richiesta non valido" });
 });

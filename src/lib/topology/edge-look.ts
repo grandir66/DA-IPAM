@@ -51,7 +51,7 @@ export const TRATTI = { nonVisto: "6 4", aMano: "1.5 4", giu: "10 4", tunnel: "8
 
 const NOME_DI_DEFAULT = (id: string): string => id;
 
-/** L'elenco di VLAN in parole: «VLAN 12 attiva», «VLAN 12, 40 attive». */
+/** L'elenco di VLAN in parole: «VLAN 12 attiva», «VLAN 12, 77 attive». */
 function vlanAttive(v: readonly number[] | undefined): string | null {
   if (!v || v.length === 0) return null;
   return `VLAN ${v.join(", ")} ${v.length === 1 ? "attiva" : "attive"}`;
@@ -81,6 +81,14 @@ export function parolaGenere(c: CavoLinea, forma: "corta" | "intera", nomeDi: (i
   if (c.genere === "senza_fili") return "≋ Wi-Fi";
   if (c.oltre) return corta ? `oltre ${nomeDi(c.oltre)}` : `dedotto: oltre ${nomeDi(c.oltre)}, salto non letto`;
   return null;
+}
+
+/**
+ * Le parole intere del genere e dello stato di un cavo, per i dettagli (verifica a schermo di T3, Task 14: «oltre 1…» si
+ * accorciava sulla linea e il testo intero non si leggeva da nessuna parte). Vuoto per un cavo che inoltra.
+ */
+export function paroleDelCavo(c: CavoLinea, nomeDi: (id: string) => string = NOME_DI_DEFAULT): string[] {
+  return [parolaGenere(c, "intera", nomeDi), parolaDelloStato(c, "intera", nomeDi)].filter((x): x is string => x !== null);
 }
 
 /** La parola dello stato del collegamento (solo lo stato), corta o intera; null se inoltra o non è noto. */

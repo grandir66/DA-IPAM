@@ -338,7 +338,7 @@ export function proveDaInput(ing: IngressoCavi, ctx: ContestoProve, t1: { links:
       }
     }
   }
-  // §13.6.1 passo 5, con l'esempio dell'hub (H12): «eth0 da una parte e un pezzo di MAC dall'altra» sono due nomi della stessa
+  // §13.6.1 passo 5, con l'esempio dell'hub (H12): «il nome della scheda da una parte e un pezzo di MAC dall'altra» sono due nomi della stessa
   // porta, dati dai due capi dello stesso collegamento. Conta quindi anche il nome che l'apparato senza elenco dà alla sua porta
   // nella SUA riga verso un apparato che a sua volta nomina la porta di lui: con due nomi diversi la porta annunciata è da
   // completare (passo 6) e i cavi si fondono, col nome della riga dell'apparato. Solo lì: i nomi che l'apparato dà alle sue porte

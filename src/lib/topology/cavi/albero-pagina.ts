@@ -6,8 +6,9 @@
  * oggetti visibili che lega: senza, due membri legati solo attraverso di lui sarebbero due radici (I40). Una contrazione non è un
  * cavo: quelle che l'albero non usa non si disegnano e non contano nel «⇄ N» (piano di T3, «Scelte» 9).
  *
- * Finisce nel pacchetto del browser (lo importa tree.ts, che usa la pagina): logica pura, nessun import di db-tenant né di
- * moduli di Node, come albero.ts, collegamenti.ts e prove.ts.
+ * Finisce nel pacchetto del browser anche a mappa spenta (lo importa tree.ts, che usa la pagina): logica pura, e del modello per
+ * cavo solo il Prim (`prim.ts`, che importa solo tipi). Un import di valore da albero.ts, collegamenti.ts o prove.ts si porterebbe
+ * dietro il resto del modello e links.ts (revisione finale di T3, M8: la prova sta in cavi-albero-pagina.test.ts).
  */
 import { parseDbDate } from "@/lib/db-date";
 import { nodeClass } from "@/lib/topology/identity";
@@ -21,7 +22,7 @@ import {
   type TopologyModel,
 } from "@/lib/topology/model-types";
 import type { TreeResult } from "@/lib/topology/tree";
-import { FIDUCIA, primCavi, type LineaAlbero } from "./albero";
+import { FIDUCIA, primCavi, type LineaAlbero } from "./prim";
 
 const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 /** La frase della contrazione; con una radio sola nella parte contratta la nomina (revisione del Task 7). */

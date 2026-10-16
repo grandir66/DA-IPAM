@@ -308,6 +308,35 @@ test("Caso 1 · un id «seg:» salvato in una mappa passo passo si risolve nel s
   assert.equal(quattro.mappa.canonical["seg:2:1"], "seg:1:5");
 });
 
+/**
+ * Caso 1, l'altro verso (revisione finale di T3, M6): entra nel segmento un apparato con l'id più piccolo, e l'id del segmento
+ * cambia. L'id di prima è quello di un membro che c'è ancora: una mappa salvata, una ★ e «Togli dal segmento» scritti con lui
+ * valgono per il segmento di oggi.
+ */
+function wanCon(piccolo: boolean, over: Partial<TopologyModelInput> = {}): IngressoCavi {
+  const r = (id: number) => dev(id, { name: `RTR-${id}`, device_type: "router", vendor: "mikrotik", via: "ssh" });
+  const t1 = baseInput({
+    devices: [dev(5, { name: "SW-5" }), r(6), r(7), ...(piccolo ? [r(2)] : [])], ports: porte(5, [[1, "Port 1", "1000 Mbps"], [15, "Port 15", "1000 Mbps"]]),
+    knownMacs: [2, 6, 7].map((id) => ({ device_id: id, mac: `02:00:e7:00:0${id}:01` })), ...over,
+  });
+  const sente = (id: number) => vic({ device_id: 5, local_port: "Port 15", remote_device_name: `RTR-${id}`, remote_mac: `02:00:e7:00:0${id}:01`, remote_port: "ether8" });
+  return ingresso(t1, { vicini: [sente(6), sente(7), ...(piccolo ? [sente(2)] : [])] });
+}
+
+test("Caso 1 · entra un apparato con l'id più piccolo: l'id del segmento cambia, e l'id di prima (mappa salvata, ★, «Togli dal segmento») vale per il segmento di oggi", () => {
+  assert.deepEqual(mod(wanCon(false)).m.segmenti.map((s) => s.id), ["seg:5:15"]);
+  const dopo = mod(wanCon(true));
+  assert.deepEqual(dopo.m.segmenti.map((s) => s.id), ["seg:2:n-ether8"], "il membro col numero più piccolo è entrato: l'id è cambiato");
+  const r = resolveMapView({ members: ["seg:5:15"], roots: ["seg:5:15"], head: null, tweaks: [] }, new Set(dopo.mappa.nodes.map((n) => n.id)), dopo.mappa.canonical);
+  assert.deepEqual([r.visible, r.missing, r.roots], [["seg:2:n-ether8"], [], ["seg:2:n-ether8"]], "la mappa salvata ritrova il segmento");
+  const stella = mod(wanCon(true, { primaries: [{ node_id: "seg:5:15", other_node: "dev:7", node_port: "", other_port: "" }] }));
+  assert.deepEqual(stella.m.albero.stelle.map((s) => [s.nodo, s.altro]), [["seg:2:n-ether8", "dev:7"]], "la ★ salvata con l'id di prima vale per il segmento di oggi");
+  const togli: LinkOverrideRow = { id: 4, action: "ignore", a_node: "dev:6", a_port: "ether8", b_node: "seg:5:15", b_port: "", medium: null, created_by: "tecnico", created_at: "2026-10-16 08:00:00" };
+  const tolto = mod(wanCon(true, { overrides: [togli] }));
+  assert.deepEqual(tolto.m.collegamenti.filter((c) => c.genere === "segmento").map((c) => c.a.nodo).sort(), ["dev:2", "dev:5", "dev:7"], "«Togli dal segmento» toglie RTR-6");
+  assert.deepEqual(tolto.m.correzioniOrfane, [], "e non è orfana");
+});
+
 test("Caso 2 · una ★ salvata prima di T3 (senza porte, o con porte che non indicano più un collegamento) vale per il migliore della coppia e i dettagli lo dicono; una ★ su un cavo bloccato vince", () => {
   const t1 = letturaA().t1;
   const con = (primaries: TopologyModelInput["primaries"]) => mod({ ...letturaA(), t1: { ...t1, primaries } }, N.R);

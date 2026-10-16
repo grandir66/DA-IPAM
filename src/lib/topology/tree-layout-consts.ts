@@ -15,6 +15,13 @@ export const ATT_SIDE = ATT_W + 10;
  */
 export const DNS_H = 16;
 
+/**
+ * La riga «+N apparati non gestiti» sotto la capsula di un segmento (T3, spec §13.10.3): 13 px su una riga alta 16, più il
+ * margine. In verticale la disposizione la tiene libera, così non copre le porte del riquadro che segue (verifica a schermo di
+ * T3, revisione finale M10). In orizzontale sta già nello spazio fra i livelli.
+ */
+export const SEGMENTO_SOTTO = 18;
+
 export function dnsLine(n: { dnsName?: string }): string | null {
   return n.dnsName ? `DNS: ${n.dnsName}` : null;
 }

@@ -533,3 +533,39 @@ test("spento = T1: senza `cavi` l'albero e la testa sono quelli di T1 (il cavo p
   assert.equal(t1.cavi, undefined);
   assert.deepEqual(contrazioni(t1, new Set(["dev:1"])), [], "senza `cavi` non c'è niente da contrarre");
 });
+
+/**
+ * Revisione finale di T3 (M8): la pagina importa tree.ts anche a mappa spenta, e tree.ts l'albero della pagina. Da albero.ts il
+ * Prim si portava dietro il resto del modello per cavo (collegamenti, prove, lettori, ignorati) e links.ts: tredici moduli in più
+ * nel pacchetto del browser. Gli import di valore di tree.ts, seguiti fino in fondo, non arrivano al modello per cavo né al
+ * modello di T1 (`import type` non conta: non entra nel pacchetto).
+ */
+function importDiValore(file: string, radice: string): string[] {
+  const testo = fs.readFileSync(file, "utf8");
+  const out: string[] = [];
+  for (const m of testo.matchAll(/(?:^|\n)\s*(?:import|export)\s+(type\s+)?([\s\S]*?)\s*from\s*["']([^"']+)["']/g)) {
+    if (m[1]) continue;
+    const g = /^\{([\s\S]*)\}$/.exec(m[2].trim());
+    if (g && g[1].split(",").map((x) => x.trim()).filter(Boolean).every((x) => x.startsWith("type "))) continue;
+    const spec = m[3];
+    const base = spec.startsWith("@/") ? path.join(radice, spec.slice(2)) : spec.startsWith(".") ? path.join(path.dirname(file), spec) : null;
+    if (!base) continue;
+    const f = [".ts", ".tsx", "/index.ts"].map((e) => base + e).find((x) => fs.existsSync(x));
+    if (f) out.push(f);
+  }
+  return out;
+}
+test("M8: tree.ts non porta nel pacchetto del browser il modello per cavo né links.ts: del modello per cavo solo il Prim (prim.ts) e le porte", () => {
+  const radice = path.join(__dirname, "..", "..", "..");
+  const visti = new Set<string>();
+  const coda = [path.join(radice, "lib", "topology", "tree.ts")];
+  while (coda.length > 0) {
+    const f = coda.pop()!;
+    if (visti.has(f)) continue;
+    visti.add(f);
+    coda.push(...importDiValore(f, radice));
+  }
+  const rel = [...visti].map((f) => path.relative(path.join(radice, "lib", "topology"), f)).sort();
+  assert.deepEqual(rel.filter((f) => f.startsWith("cavi/") || f.startsWith("lettori/") || f === "links.ts" || f === "model.ts" || f === "ignorati.ts"),
+    ["cavi/albero-pagina.ts", "cavi/porte.ts", "cavi/prim.ts"]);
+});

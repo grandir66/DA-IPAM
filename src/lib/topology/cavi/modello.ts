@@ -203,8 +203,8 @@ export function costruisciModelloCavi(ing: IngressoCavi, t1: TopologyModel, opz:
   const visibili = new Set([...nodi.values()].filter((n) => !n.hidden && n.classe !== "client" && n.classe !== "da_sistemare" && collegati.has(n.id)).map((n) => n.id));
   // Punto 1: la porta radice dai bridge letti (il controller non la dice), la radice; la porta di uplink del controller.
   // La porta radice è una porta come le altre (§13.6.1): il traduttore del lettore che l'ha scritta, poi la chiave con l'elenco
-  // delle porte del nodo. Un bridge letto via SNMP la scrive col nome dell'interfaccia («1/1/49», `snmp-topologia.ts:192`),
-  // mentre l'altro capo del cavo può annunciarla col numero («49», `lldpRemPortId`): il nome solo non trovava il cavo (G16, C).
+  // delle porte del nodo. Un bridge letto via SNMP la scrive col nome dell'interfaccia (`snmp-topologia.ts:192`), mentre
+  // l'altro capo del cavo può annunciarla col solo numero (`lldpRemPortId`): il nome solo non trovava il cavo (G16, C).
   const portaRadice = new Map<string, Pick<Porta, "chiave" | "nome"> | typeof RADICE>();
   const come = comeDi(ing.t1);
   for (const b of [...ing.fattiBridge].sort((x, y) => x.device_id - y.device_id || (x.bridge_name < y.bridge_name ? -1 : 1))) {

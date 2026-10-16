@@ -208,14 +208,14 @@ test("MK7 monitor: una colonna per istanza con l'identificatore; porta radice pe
   // La radice regionale dell'istanza 1 è scritta 0x1001.MAC: RouterOS somma il numero dell'istanza alla priorità (0x1000),
   // `bridge-id` e `priority` no. Si porta alla forma di `bridge-id`: così «radice regionale = questo bridge» si confronta.
   const a = [
-    { identificatore: 1, radiceRegionaleId: "4096.02:00:00:00:00:11", portaRadice: "eoip-tunnel-SEDA-SEDB" },
-    { identificatore: 0, radiceRegionaleId: "8192.02:00:00:00:00:10", portaRadice: null },
+    { identificatore: 1, mac: "02:00:00:00:00:10", radiceRegionaleId: "4096.02:00:00:00:00:11", portaRadice: "eoip-tunnel-SEDA-SEDB", portaRadiceNota: true },
+    { identificatore: 0, mac: "02:00:00:00:00:10", radiceRegionaleId: "8192.02:00:00:00:00:10", portaRadice: null, portaRadiceNota: true },
   ];
   assert.deepEqual(parseMonitorMsti(F("mikrotik-mk7-monitor-a.txt")), a);
   assert.deepEqual(parseMonitorMsti(CRLF(F("mikrotik-mk7-monitor-a.txt"))), a);
   assert.deepEqual(parseMonitorMsti(F("mikrotik-mk7-monitor-b.txt")), [
-    { identificatore: 1, radiceRegionaleId: "4096.02:00:00:00:00:11", portaRadice: null },
-    { identificatore: 0, radiceRegionaleId: "8192.02:00:00:00:00:10", portaRadice: "ether3" },
+    { identificatore: 1, mac: "02:00:00:00:00:11", radiceRegionaleId: "4096.02:00:00:00:00:11", portaRadice: null, portaRadiceNota: true },
+    { identificatore: 0, mac: "02:00:00:00:00:11", radiceRegionaleId: "8192.02:00:00:00:00:10", portaRadice: "ether3", portaRadiceNota: true },
   ]);
   // Le colonne per posizione: dove la prima cella riempie la sua larghezza la seconda comincia dopo UNO spazio solo.
   const t = tabellaMonitor(F("mikrotik-mk7-monitor-b.txt"));
@@ -250,6 +250,70 @@ test("i fatti con MSTP: senza il monitor, o con le colonne in un altro ordine, n
   // Un bridge che non è in MSTP non ha istanze, anche se `msti print` ne elencasse.
   const rstp = parseBridge(F("mikrotik-mk3-mstp-a.txt")).map((b) => ({ ...b, modo: "rstp" as const }));
   assert.deepEqual(righe(letturaA({ bridge: rstp })), [[0, null, null]]);
+});
+
+/**
+ * Revisione finale di T3 (M2): con due bridge in MSTP le colonne del monitor si attaccavano alle istanze solo per numero, e
+ * l'istanza 1 di un bridge prendeva la porta radice dell'istanza 1 dell'altro se il monitor le elencava in un altro ordine.
+ * Ogni colonna dice il MAC del suo bridge (`current-mac-address`): deve essere quello del bridge dell'istanza, altrimenti
+ * nessuna riga d'istanza («non so»), mai la porta radice di un altro bridge.
+ */
+const DUE_BRIDGE_MSTI = [
+  " 0   identifier=1 bridge=bridge priority=0x1000 vlan-mapping=77",
+  " 1   identifier=1 bridge=bridge2 priority=0x1000 vlan-mapping=88",
+  " 2 D identifier=0 bridge=bridge priority=0x8000 vlan-mapping=1-76,78-4094",
+  " 3 D identifier=0 bridge=bridge2 priority=0x8000 vlan-mapping=1-87,89-4094",
+].join("\r\n");
+/** Il monitor delle istanze per due bridge: una colonna per [mac, identificatore, porta radice], nell'ordine dato. */
+function monitorDueBridge(colonne: ReadonlyArray<readonly [string, number, string]>): string {
+  const riga = (etichetta: string, celle: string[]) => `${etichetta.padStart(25)}: ${celle.map((c) => c.padEnd(25)).join("")}`;
+  return [
+    riga("state", colonne.map(() => "enabled")),
+    riga("identifier", colonne.map(([, id]) => String(id))),
+    riga("current-mac-address", colonne.map(([mac]) => mac)),
+    riga("regional-root-bridge-id", colonne.map(([mac, id]) => `0x${(0x1000 + id).toString(16)}.${mac}`)),
+    riga("root-port", colonne.map(([, , rp]) => rp)),
+  ].join("\r\n");
+}
+const M1 = "02:00:00:00:00:10", M2 = "02:00:00:00:00:20";
+const dueBridge = (monitor: string): LetturaMk => {
+  const b = parseBridge(F("mikrotik-mk3-mstp-a.txt"))[0];
+  return {
+    interfacce: null, bridge: [b, { ...b, nome: "bridge2", mac: M2 }], porteBridge: null, monitorBridge: null, monitorPorte: null, fasci: null,
+    monitorFasci: null, istanze: parseMsti(DUE_BRIDGE_MSTI), monitorIstanze: parseMonitorMsti(monitor),
+  };
+};
+const righeDue = (l: LetturaMk) => fattiMikrotik(l).bridge.map((b) => [b.bridge_name, b.instance, b.vlans ?? null, b.root_port ?? null]);
+
+test("M2: due bridge in MSTP — le colonne del monitor nell'ordine di `msti print` danno una riga per istanza; in un altro ordine nessuna (non so)", () => {
+  const giusto = monitorDueBridge([[M1, 1, "ether3"], [M2, 1, "ether5"], [M1, 0, "none"], [M2, 0, "none"]]);
+  assert.deepEqual(parseMonitorMsti(giusto).map((m) => [m.identificatore, m.mac, m.portaRadice]),
+    [[1, M1, "ether3"], [1, M2, "ether5"], [0, M1, null], [0, M2, null]], "il MAC di ogni colonna si legge");
+  assert.deepEqual(righeDue(dueBridge(giusto)), [
+    ["bridge", 0, "1-76,78-4094", null], ["bridge2", 0, "1-87,89-4094", null], ["bridge", 1, "77", "ether3"], ["bridge2", 1, "88", "ether5"],
+  ]);
+  const scambiato = monitorDueBridge([[M2, 1, "ether5"], [M1, 1, "ether3"], [M1, 0, "none"], [M2, 0, "none"]]);
+  assert.deepEqual(righeDue(dueBridge(scambiato)), [["bridge", 0, "1-76,78-4094", null], ["bridge2", 0, "1-87,89-4094", null]],
+    "stessi numeri d'istanza, bridge diversi: nessuna riga d'istanza, mai la porta radice dell'altro bridge");
+  const senzaMac = giusto.replace(/^.*current-mac-address:.*\r\n/m, "");
+  assert.deepEqual(righeDue(dueBridge(senzaMac)).map((r) => r[1]), [0, 0], "senza il MAC delle colonne non si sa a chi sono: nessuna riga d'istanza");
+});
+
+/**
+ * Revisione finale di T3 (M5): una riga `root-port` mancante, o la cella vuota, scriveva `root_port` NULL, che vuol dire «questo
+ * bridge è la radice dell'istanza». Una porta radice non letta è un monitor non buono: nessuna riga d'istanza.
+ */
+test("M5: senza la riga `root-port` o con la sua cella vuota il monitor non basta: nessuna riga d'istanza (mai «radice» per una porta non letta)", () => {
+  const righe = (l: LetturaMk) => fattiMikrotik(l).bridge.map((b) => [b.instance, b.vlans ?? null, b.root_port ?? null]);
+  const senzaRiga = F("mikrotik-mk7-monitor-a.txt").replace(/^.*root-port:.*\n/m, "");
+  assert.equal(senzaRiga.includes("root-port"), false);
+  assert.deepEqual(righe(letturaA({ monitorIstanze: parseMonitorMsti(senzaRiga) })), [[0, "1-76,78-4094", null]]);
+  const cellaVuota = F("mikrotik-mk7-monitor-a.txt").replace("root-port: eoip-tunnel-SEDA-SEDB    none", "root-port:                          none");
+  assert.notEqual(cellaVuota, F("mikrotik-mk7-monitor-a.txt"));
+  assert.deepEqual(parseMonitorMsti(cellaVuota).map((m) => [m.identificatore, m.portaRadice, m.portaRadiceNota]), [[1, null, false], [0, null, true]]);
+  assert.deepEqual(righe(letturaA({ monitorIstanze: parseMonitorMsti(cellaVuota) })), [[0, "1-76,78-4094", null]]);
+  // «none» resta «nessuna porta radice» (il bridge è la radice dell'istanza): letta, e scritta NULL come prima.
+  assert.deepEqual(righe(letturaA()), [[0, "1-76,78-4094", null], [1, "77", "eoip-tunnel-SEDA-SEDB"]]);
 });
 
 // Il modello per cavo sui fatti di MK7 (piano di T3, «Quando arriva il Task 3b»): il tunnel fra A e B è bloccato nell'albero

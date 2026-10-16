@@ -246,7 +246,16 @@ export function parseMonitorPorte(out: string): MonitorPortaMk[] {
 // ── MK7: /interface bridge msti print terse without-paging e msti monitor [find] once ──
 
 export interface IstanzaMk { bridge: string; identificatore: number; vlan: string; priorita: number | null }
-export interface MonitorIstanzaMk { identificatore: number | null; radiceRegionaleId: string | null; portaRadice: string | null }
+export interface MonitorIstanzaMk {
+  identificatore: number | null;
+  /** `current-mac-address`: il MAC del bridge della colonna (null = riga assente o non un MAC). */
+  mac: string | null;
+  radiceRegionaleId: string | null;
+  /** null = `none` (il bridge è la radice dell'istanza), o porta non letta: lo dice `portaRadiceNota`. */
+  portaRadice: string | null;
+  /** false = la riga `root-port` manca o la cella è vuota: la porta radice non è letta, non è «radice». */
+  portaRadiceNota: boolean;
+}
 
 /** La mappa delle VLAN di un'istanza: «n» o «n-m» separati da virgole (`77`, `1-76,78-4094`). */
 const MAPPA_VLAN = /^\d{1,4}(-\d{1,4})?(,\d{1,4}(-\d{1,4})?)*$/;
@@ -270,9 +279,10 @@ export function parseMsti(out: string): IstanzaMk[] {
 }
 
 /**
- * Una colonna per istanza, nell'ordine di `msti print` (stesso `[find]`), con la riga `identifier` (una riga col bridge non
- * c'è). La radice regionale di un'istanza è scritta col numero dell'istanza sommato alla priorità (0x1001.MAC per priorità
- * 0x1000 nell'istanza 1), `bridge-id` e `priority` senza: si toglie, così tutte e tre dicono la stessa priorità.
+ * Una colonna per istanza, nell'ordine di `msti print` (stesso `[find]`), con la riga `identifier` (una riga col nome del bridge
+ * non c'è: il bridge lo dice `current-mac-address`, il suo MAC). La radice regionale di un'istanza è scritta col numero
+ * dell'istanza sommato alla priorità (0x1001.MAC per priorità 0x1000 nell'istanza 1), `bridge-id` e `priority` senza: si toglie,
+ * così tutte e tre dicono la stessa priorità. `root-port: none` = nessuna porta radice; riga assente o cella vuota = non letta.
  */
 export function parseMonitorMsti(out: string): MonitorIstanzaMk[] {
   const t = tabellaMonitor(out);
@@ -280,8 +290,9 @@ export function parseMonitorMsti(out: string): MonitorIstanzaMk[] {
     const id = intero(cella(t, "identifier", i));
     const rp = vuotoNull(cella(t, "root-port", i));
     return {
-      identificatore: id, radiceRegionaleId: senzaIstanza(bridgeIdNormale(cella(t, "regional-root-bridge-id", i)), id),
-      portaRadice: rp === null || rp === "none" ? null : rp,
+      identificatore: id, mac: macValido(cella(t, "current-mac-address", i)),
+      radiceRegionaleId: senzaIstanza(bridgeIdNormale(cella(t, "regional-root-bridge-id", i)), id),
+      portaRadice: rp === null || rp === "none" ? null : rp, portaRadiceNota: rp !== null,
     };
   });
 }
@@ -359,8 +370,10 @@ export interface LetturaMk {
  * MK7, solo per i bridge in MSTP: una riga per istanza (`instance` = identificatore, VLAN, porta radice, radice regionale).
  * L'istanza 0 è l'albero comune, già scritto da MK3 e MK5: non diventa una riga sua (avrebbe la stessa chiave, e la scrittura
  * dopo cancellerebbe regione e digest), gli dà solo le VLAN. Le righe d'istanza si scrivono solo col monitor letto e ogni
- * colonna dell'istanza che le sta accanto (stesso `identifier`); altrimenti nessuna, e il modello dice «istanze non lette»:
- * mai la porta radice di un'altra istanza, mai «radice» dove la porta non è letta (`root_port` NULL vuol dire radice).
+ * colonna dell'istanza che le sta accanto con lo stesso `identifier`, il MAC del suo bridge (`current-mac-address`: con due
+ * bridge in MSTP i numeri d'istanza si ripetono) e la porta radice letta; altrimenti nessuna, e il modello dice «istanze non
+ * lette»: mai la porta radice di un'altra istanza o di un altro bridge, mai «radice» dove la porta non è letta (`root_port` NULL
+ * vuol dire radice). Revisione finale di T3, M2 e M5.
  */
 export function fattiMikrotik(l: LetturaMk): FattiLettura {
   const chiave = (nome: string): string => `n:${normale(nome)}`;
@@ -390,7 +403,9 @@ export function fattiMikrotik(l: LetturaMk): FattiLettura {
   const istanze = (l.istanze ?? []).map((ist, i) => ({ ist, mon: l.monitorIstanze?.[i] })).filter((x) => inMstp.has(x.ist.bridge));
   const vlanComune = new Map(istanze.filter((x) => x.ist.identificatore === 0).map((x) => [x.ist.bridge, x.ist.vlan || null]));
   const altre = istanze.filter((x) => x.ist.identificatore > 0);
-  const monitorBuono = l.monitorIstanze !== null && altre.every((x) => x.mon?.identificatore === x.ist.identificatore);
+  const macDelBridge = new Map((l.bridge ?? []).map((b) => [b.nome, b.mac]));
+  const monitorBuono = l.monitorIstanze !== null && altre.every((x) => x.mon !== undefined && x.mon.identificatore === x.ist.identificatore
+    && x.mon.portaRadiceNota && x.mon.mac !== null && x.mon.mac === (macDelBridge.get(x.ist.bridge) ?? null));
   const bridge: FattoBridgeIn[] = (l.bridge ?? []).map((b, i) => {
     const mon = l.monitorBridge?.[i];
     return {

@@ -23,7 +23,7 @@
 import { Fragment } from "react";
 import { BaseEdge, EdgeLabelRenderer, getSmoothStepPath, type Edge, type EdgeProps } from "@xyflow/react";
 import { edgeLook, pathPoints, pezzoNelloSpazio, wavyPath, type Pt as Punto } from "@/lib/topology/edge-look";
-import { LR_TRUNK, lrLabelMaxWidth, percorsoDaPunti, redundantLabelAt, type Lato, type Pt, type Rect } from "@/lib/topology/map-screen";
+import { LR_TRUNK, livelloEvidenza, lrLabelMaxWidth, percorsoDaPunti, redundantLabelAt, type Lato, type Pt, type Rect } from "@/lib/topology/map-screen";
 import { pointsPath } from "@/lib/topology/print-draw";
 import { CHAR_W } from "@/lib/topology/tree-layout-consts";
 import type { MapLink, MapOrientation } from "@/lib/topology/model-types";
@@ -76,6 +76,10 @@ export function MapEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition
   const stroke = data.evidenza === "su" ? "var(--primary)" : look.grey && !look.nero ? "var(--muted-foreground)" : "var(--foreground)";
   const attenuata = data.evidenza === "giu";
   const classeParole = attenuata ? "opacity-25 " : "";
+  // Le parole di una linea evidenziata allo stesso livello della linea: sopra le altre linee, sotto i riquadri (Task 14).
+  const zParole = livelloEvidenza(data.evidenza);
+  // Mappa nuova: il testo intero al passaggio del mouse sulla linea (le parole hanno pointer-events-none, il loro title non si vede).
+  const intero = data.link.cavo ? look.tokens.join(" · ") : null;
   // Mappa nuova: un pezzo che non sta nello spazio della linea dell'albero si accorcia con «…» (I32), intero nel title.
   const pezzi = data.link.cavo && trunk ? look.tokens.map((t) => (t.startsWith("⚡") ? t : pezzoNelloSpazio(t, Math.floor((lrLabelMaxWidth(sourceX, targetX) - 8) / CHAR_W)))) : look.tokens;
   const dash = look.dash ?? undefined;
@@ -89,6 +93,7 @@ export function MapEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition
     <>
       {/* Attenuata come un gruppo solo: il tratto interno color fondo della doppia linea copre ancora l'esterno prima di sbiadire. */}
       <g style={attenuata ? { opacity: OPACITA_ATTENUATA } : undefined}>
+        {intero && <title>{intero}</title>}
         <BaseEdge id={id} path={d} interactionWidth={18} style={{ stroke, strokeWidth: outer, strokeDasharray: dash, strokeLinecap: cap, fill: "none" }} />
         {look.double && (
           // Il tratto interno color fondo divide la linea in due: due tracciati paralleli sottili.
@@ -98,7 +103,7 @@ export function MapEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition
       {look.centro && (
         <EdgeLabelRenderer>
           <div
-            style={{ position: "absolute", transform: `translate(${mezzo(punti ?? pathPoints(path)).x}px, ${mezzo(punti ?? pathPoints(path)).y}px) translate(-50%, -50%)` }}
+            style={{ position: "absolute", transform: `translate(${mezzo(punti ?? pathPoints(path)).x}px, ${mezzo(punti ?? pathPoints(path)).y}px) translate(-50%, -50%)`, zIndex: zParole }}
             title={look.tokens.join(" · ")}
             className={`${classeParole}nodrag nopan pointer-events-none rounded-sm bg-card px-1 text-[13px] leading-4 font-semibold text-foreground`}
           >
@@ -110,7 +115,7 @@ export function MapEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition
         <EdgeLabelRenderer>
           {trunk ? (
             <div
-              style={{ position: "absolute", transform: at, maxWidth: lrLabelMaxWidth(sourceX, targetX) }}
+              style={{ position: "absolute", transform: at, maxWidth: lrLabelMaxWidth(sourceX, targetX), zIndex: zParole }}
               title={look.tokens.join(" · ")}
               className={`${classeParole}nodrag nopan pointer-events-none w-max rounded-sm bg-card px-1 text-right text-[13px] leading-4 text-foreground`}
             >
@@ -123,7 +128,7 @@ export function MapEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition
             </div>
           ) : (
             <div
-              style={{ position: "absolute", transform: at }}
+              style={{ position: "absolute", transform: at, zIndex: zParole }}
               title={look.tokens.join(" · ")}
               className={`${classeParole}nodrag nopan pointer-events-none rounded-sm bg-card px-1 text-[13px] leading-4 whitespace-nowrap text-foreground`}
             >

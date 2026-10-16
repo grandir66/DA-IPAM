@@ -109,7 +109,7 @@ export interface RisultatoCavi {
   oltre: Array<{ porta: Porta; radio: string; apparati: string[] }>;
   /** Prove di bordo scartate perché la porta è il capo di un cavo (§13.7.2 passo 10, §13.9). */
   scartateBordo: Array<{ porta: Porta; verso: string; motivo: string }>;
-  /** Collegamenti «dalle VM» su una porta che l'host con `lldpd` non conferma (§13.5.5, I56). */
+  /** Collegamenti «dalle VM» su una porta che l'host, letto dal suo lato, non conferma (§13.5.5, I56). */
   scartateVm: Array<{ porta: Porta; ipervisore: string }>;
 }
 
@@ -151,15 +151,17 @@ function nomeNellId(nome: string): string {
 const idPorta = (p: Porta): string => (p.chiave?.startsWith("i:") ? p.chiave.slice(2) : `n-${nomeNellId(p.chiave ? p.chiave.slice(2) : normale(p.nome))}`);
 
 /**
- * Alias «seg:<apparato>:<porta>» di ogni membro gestito con la chiave → id di oggi del segmento (§13.7.3: un id salvato si
- * risolve nel segmento che contiene ancora quel membro; l'id cambia quando esce il membro con la chiave più piccola). Lo usa
- * anche la mappa per `canonical`. Un id che nessun segmento contiene non ha alias: l'oggetto è perso, e si conta (R2).
+ * Alias «seg:<apparato>:<porta>» di ogni membro gestito → id di oggi del segmento (§13.7.3: un id salvato si risolve nel segmento
+ * che contiene ancora quel membro; l'id cambia quando esce, o entra, il membro col numero più piccolo). Lo usa anche la mappa per
+ * `canonical`. Ogni membro che può dare l'id dà anche l'alias, con la stessa porta (`idPorta`, anche senza chiave): prima solo i
+ * membri con la chiave, e l'id dato da un membro senza chiave si perdeva (revisione finale di T3, M6). Un id che nessun segmento
+ * contiene non ha alias: l'oggetto è perso, e si conta (R2).
  */
 export function aliasDeiSegmenti(segmenti: readonly Segmento[]): Map<string, string> {
   const out = new Map<string, string>();
   for (const s of segmenti) {
     out.set(s.id, s.id);
-    for (const m of s.membri) if (m.nodo.startsWith("dev:") && m.chiave !== null) out.set(`seg:${m.nodo.slice(4)}:${idPorta(m)}`, s.id);
+    for (const m of s.membri) if (m.nodo.startsWith("dev:")) out.set(`seg:${m.nodo.slice(4)}:${idPorta(m)}`, s.id);
   }
   return out;
 }
@@ -187,6 +189,17 @@ function vlanDa(testo: string | null): number[] {
     for (let v = da; v <= a && out.length < 4096; v++) out.push(v);
   }
   return out;
+}
+
+/**
+ * La mappa delle VLAN dell'albero comune le dice tutte (1-4094): oltre a lui non c'è nessuna istanza, perché ogni VLAN sta in
+ * un'istanza sola. Una mappa non letta (null) o in un'altra forma non lo dice.
+ */
+function tutteLeVlan(testo: string | null): boolean {
+  if (testo === null) return false;
+  const v = new Set(vlanDa(testo));
+  for (let x = 1; x <= 4094; x++) if (!v.has(x)) return false;
+  return true;
 }
 
 export function costruisciCollegamenti(prove: readonly Prova[], correzioni: readonly LinkOverrideRow[], ctx: ContestoCavi): RisultatoCavi {
@@ -412,13 +425,13 @@ export function costruisciCollegamenti(prove: readonly Prova[], correzioni: read
   // I partner dei fasci: sono cavi, e prima del bordo (le loro porte sono capi).
   for (const p of normali) if (p.altro && p.classe === "fascio") aggiungi("cavo", p.da, p.altro, p, p.da.nodo);
 
-  // Il fascio ha un nome solo, comunque lo dica il lettore: «bond1», o «if:<indice>» tradotto col nome di quell'interfaccia.
+  // Il fascio ha un nome solo, comunque lo dica il lettore: il nome del fascio, o «if:<indice>» tradotto col nome di quell'interfaccia.
   const nomeFascio = (nodo: string, gruppo: string | null): string | null => {
     const i = indiceDelFascio(gruppo);
     return i === null ? gruppo : (ctx.porte.get(nodo)?.perIndice.get(i) ?? gruppo);
   };
   // §13.6.3 (criterio B della misura del 16/10): l'interfaccia del fascio (tipo letto «lag») è il fascio stesso. Sulla rete B la
-  // tabella MAC del router sulla porta `bond3` vedeva le schede del NAS, e ne venivano due linee in più accanto al fascio dei membri.
+  // tabella MAC del router sull'interfaccia del fascio vedeva le schede del NAS, e ne venivano due linee in più accanto al fascio dei membri.
   const interfacciaDelFascio = (p: Porta): boolean => !p.nodo.startsWith("seg:") && p.nome !== "" && ctx.fatti.porta(p.nodo, p).some((x) => x.if_kind === "lag");
   /** «nodo|fascio» di un membro (dal suo gruppo) o dell'interfaccia del fascio (dal suo nome); null fuori da un fascio. */
   const chiaveFascio = (p: Porta): string | null => {
@@ -445,7 +458,7 @@ export function costruisciCollegamenti(prove: readonly Prova[], correzioni: read
     const f = chiaveFascio(x);
     return [...(x.chiave !== null ? (capiDati.get(chiaveDi(x)) ?? []) : []), ...(f !== null ? (capiDati.get(`fascio:${f}`) ?? []) : [])].some((n) => n !== verso);
   };
-  // Le righe fresche della lettura dal lato dell'host (`lldpd`, §13.5.5), per hypervisor.
+  // Le righe fresche della lettura dal lato dell'host (§13.5.5), per hypervisor.
   const dallHost = new Map<string, Prova[]>();
   for (const q of normali) if (q.lettore === "host" && q.altro !== null && fresca(q)) dallHost.set(q.da.nodo, [...(dallHost.get(q.da.nodo) ?? []), q]);
   const scartateBordo: RisultatoCavi["scartateBordo"] = [];
@@ -463,7 +476,7 @@ export function costruisciCollegamenti(prove: readonly Prova[], correzioni: read
         continue;
       }
       if (p.classe === "vm") {
-        // Con `lldpd` sull'host (§13.5.5, §13.15 punto 4): un collegamento «dalle VM» su una porta che l'host non conferma si scarta.
+        // Con la lettura dal lato dell'host (§13.5.5, §13.15 punto 4): un collegamento «dalle VM» su una porta che l'host non conferma si scarta.
         const [h, sw] = ctx.ipervisori.has(p.da.nodo) ? [p.da, p.altro] : [p.altro, p.da];
         const host = dallHost.get(h.nodo) ?? [];
         if (host.length > 0 && !host.some((q) => q.altro!.nodo === sw.nodo && compatibili(q.altro!, sw))) {
@@ -530,7 +543,7 @@ export function costruisciCollegamenti(prove: readonly Prova[], correzioni: read
   }
 
   // I segmenti (§13.7.3): membri = la porta che sente e gli apparati sentiti con una porta nota; due segmenti con un membro in
-  // comune sono uno solo. Id: «seg:<id apparato>:<porta>» del membro gestito con la chiave più piccola.
+  // comune sono uno solo. Id: «seg:<id apparato>:<porta>» del membro gestito col numero (poi la porta) più piccolo.
   const gruppi: Array<{ chiavi: Set<string>; membri: Map<string, Porta>; prove: Prova[]; altri: Set<string> }> = [];
   for (const k of [...diSegmento].sort()) {
     const m = sentiti.get(k)!;
@@ -598,7 +611,7 @@ export function costruisciCollegamenti(prove: readonly Prova[], correzioni: read
     // i capi scambiati, e la chiave «a:‹nodo›» o «b:‹nodo›» di prima ne faceva due cavi. Ogni capo con un fascio letto dà la chiave
     // «nodo|nome del fascio»; due cavi della coppia che ne condividono una sono membri dello stesso fascio (anche coi fatti LAG
     // letti da un capo per un membro e dall'altro per un altro).
-    // Un cavo che sta sull'interfaccia del fascio (la tabella MAC della porta `bond3`, un vicino letto lì) non è un membro: è il
+    // Un cavo che sta sull'interfaccia del fascio (la tabella MAC di quell'interfaccia, un vicino letto lì) non è un membro: è il
     // fascio stesso, e le sue prove vanno al fascio dei suoi membri (§13.6.3, criterio B).
     const sulFascio = (z: Bozza): string[] => [z.a, z.b].filter(interfacciaDelFascio).map((p) => `${p.nodo}|${normale(p.nome)}`);
     const chiaviDi = new Map(cavi.map((z) => [z, new Set(sulFascio(z).length > 0 ? [] : [z.a, z.b].flatMap((p) => {
@@ -680,9 +693,11 @@ export function costruisciCollegamenti(prove: readonly Prova[], correzioni: read
           const ist = ctx.fatti.bridge(p.nodo).find((b) => b.instance > 0 && b.root_port !== null && normale(b.root_port) === normale(p.nome));
           if (ist) return { stato: "bloccato_comune", vlan: vlanDa(ist.vlans) };
         }
-        // §13.13.3 punto 8: la stessa regione e nessuna riga d'istanza su nessuno dei due: le istanze non sono lette (oggi senza
-        // T2-a), e il cavo bloccato nell'albero comune può portare altre VLAN.
-        if (![z.a.nodo, z.b.nodo].some((n) => ctx.fatti.bridge(n).some((b) => b.instance > 0))) return { stato: "bloccato", istanzeNonLette: true };
+        // §13.13.3 punto 8: la stessa regione e nessuna riga d'istanza su nessuno dei due: le istanze non sono lette, e il cavo
+        // bloccato nell'albero comune può portare altre VLAN. Tranne quando le istanze sono lette e c'è solo l'albero comune: le VLAN
+        // della sua riga sono tutte (revisione finale di T3, M4). Stessa regione, stessa mappa: basta un capo.
+        const soloComune = [ra, rb].some((b) => tutteLeVlan(b.vlans));
+        if (!soloComune && ![z.a.nodo, z.b.nodo].some((n) => ctx.fatti.bridge(n).some((b) => b.instance > 0))) return { stato: "bloccato", istanzeNonLette: true };
       }
       return { stato: "bloccato" };
     }

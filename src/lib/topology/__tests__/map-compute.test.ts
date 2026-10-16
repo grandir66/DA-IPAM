@@ -2,7 +2,7 @@
 // e la riga «DNS: …» che allunga il riquadro nei due orientamenti. Dati inventati con la forma vera.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { computeMapView } from "@/lib/topology/map-compute";
+import { VISTA_NUOVA_NON_DISEGNATA, computeMapView, computeMapViewProtetta, type MapComputeInput } from "@/lib/topology/map-compute";
 import { buildPrintView } from "@/lib/topology/print-view";
 import { drawingBoxes } from "@/lib/topology/print-draw";
 import { BOX_H, DNS_H, headHeight, layoutTree, nodeWidth, type LayoutResult } from "@/lib/topology/tree-layout";
@@ -117,4 +117,41 @@ test("riga «DNS:»: il riquadro è largo abbastanza anche per il nome DNS, se �
   const t: TreeResult = { roots: ["dev:3"], children: new Map([["dev:3", []]]), via: new Map(), links: [] };
   const w = layoutTree(lungo, t, [], new Set(), "lr").nodes.get("dev:3")!.w;
   assert.equal(w, nodeWidth("DNS: un-nome-dns-molto-lungo.dominio.locale"));
+});
+
+/**
+ * Revisione finale di T3 (M7): il calcolo della vista nel browser non aveva ripiego. Il server ripiega sulla mappa di prima se
+ * il modello per cavo cade (Caso 3), ma un errore nell'albero della pagina (`alberoDellaPagina`, solo con `cavi`) lasciava la
+ * pagina bianca. Con la mappa nuova, un errore ricalcola la vista senza `cavi` e senza `cavo` (l'albero di T1) e lo dice con la
+ * stessa scritta della barra; senza `cavi` il calcolo è quello di sempre, errori compresi.
+ */
+test("M7: con la mappa nuova un errore nel calcolo della vista ripiega sulla mappa di prima e lo dice; spenta, il calcolo di sempre", () => {
+  const inp: MapComputeInput = { auto: true, members: [], roots: [], head: "dev:1", tweaks: [], expanded: new Set(), orientation: "lr" };
+  const cavo = { genere: "cavo" as const, stato: null, fiducia: "certo" as const, porteDaVerificare: false, detti: [], frasi: [] };
+  const rotto: TopologyModel = { ...M, links: M.links.map((l) => ({ ...l, cavo })), cavi: { segmenti: null } as unknown as TopologyModel["cavi"] };
+  assert.throws(() => computeMapView(rotto, inp), "senza il ripiego la pagina cadeva");
+  const r = computeMapViewProtetta(rotto, inp);
+  assert.ok(r.errore?.startsWith(VISTA_NUOVA_NON_DISEGNATA), r.errore ?? "nessun errore");
+  assert.equal(r.vista.model.cavi, undefined);
+  assert.equal(r.vista.model.links.some((l) => l.cavo !== undefined), false);
+  assert.equal(ser(r.vista), ser(computeMapView(M, inp)), "la vista è quella del modello senza la mappa nuova");
+  const spenta = computeMapViewProtetta(M, inp);
+  assert.deepEqual([spenta.errore, ser(spenta.vista)], [null, ser(computeMapView(M, inp))]);
+  assert.throws(() => computeMapViewProtetta({ ...M, nodes: null } as unknown as TopologyModel, inp), "spenta, un errore esce come prima");
+});
+
+// Revisione mirata del giro finale (minore 1): il ripiego toglieva solo `cavi` e `cavo`, e i nodi segmento (che esistono solo
+// con la mappa nuova) e le loro linee restavano: la vista «di prima» aveva oggetti che la mappa di prima non ha.
+test("M7: il ripiego toglie anche i segmenti e le linee che li toccano", () => {
+  const inp: MapComputeInput = { auto: true, members: [], roots: [], head: "dev:1", tweaks: [], expanded: new Set(), orientation: "lr" };
+  const cavo = { genere: "cavo" as const, stato: null, fiducia: "certo" as const, porteDaVerificare: false, detti: [], frasi: [] };
+  const seg = { ...node("dev:1", "switch"), id: "seg:1:5", kind: "segmento" as MapNode["kind"], name: "segmento" };
+  const conSeg: TopologyModel = {
+    ...M, nodes: [...M.nodes, seg], links: [...M.links.map((l) => ({ ...l, cavo })), { ...link("s1", "dev:1", "seg:1:5"), cavo }],
+    cavi: { segmenti: null } as unknown as TopologyModel["cavi"],
+  };
+  const r = computeMapViewProtetta(conSeg, inp);
+  assert.ok(r.errore?.startsWith(VISTA_NUOVA_NON_DISEGNATA), r.errore ?? "nessun errore");
+  assert.equal(r.vista.model.nodes.some((n) => n.id.startsWith("seg:")), false, "nessun segmento nel ripiego");
+  assert.equal(r.vista.model.links.some((l) => l.a.startsWith("seg:") || l.b.startsWith("seg:")), false, "nessuna linea verso un segmento");
 });

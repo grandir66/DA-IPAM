@@ -312,17 +312,33 @@ export function proveDaInput(ing: IngressoCavi, ctx: ContestoProve, t1: { links:
 
   // La porta remota: la certamente fisica fra le righe; per un apparato senza elenco il nome vale solo se è l'unico visto (I46).
   const nomiVisti = new Map<string, Set<string>>();
+  /** «osservatore|apparato senza elenco»: l'osservatore dà un nome alla porta dell'apparato. */
+  const nominata = new Set<string>();
+  const vistoCome = (b: string, nome: string): void => {
+    const s = nomiVisti.get(b) ?? new Set<string>();
+    s.add(normale(nome));
+    nomiVisti.set(b, s);
+  };
   for (const g of gruppi.values()) {
     const b = g.b;
     if (!b || elenchi.has(b)) continue;
     for (const n of g.righe) {
       const l = traduciPorta(n.remote_port, "remoto", come(b, n.source, n.remote_platform));
       if (l.nome !== "" && l.fisica !== false) {
-        const s = nomiVisti.get(b) ?? new Set<string>();
-        s.add(normale(l.nome));
-        nomiVisti.set(b, s);
+        vistoCome(b, l.nome);
+        nominata.add(`${g.osservatore}|${b}`);
       }
     }
+  }
+  // §13.6.1 passo 5, con l'esempio dell'hub (H12): «eth0 da una parte e un pezzo di MAC dall'altra» sono due nomi della stessa
+  // porta, dati dai due capi dello stesso collegamento. Conta quindi anche il nome che l'apparato senza elenco dà alla sua porta
+  // nella SUA riga verso un apparato che a sua volta nomina la porta di lui: con due nomi diversi la porta annunciata è da
+  // completare (passo 6) e i cavi si fondono, col nome della riga dell'apparato. Solo lì: i nomi che l'apparato dà alle sue porte
+  // verso chi non lo vede, o non ne nomina la porta, non sono nomi «visti verso di lui» (un router senza elenco ha tante porte
+  // sue, e non per questo la porta che uno switch gli annuncia diventa non nota).
+  for (const g of gruppi.values()) {
+    if (!g.b || elenchi.has(g.osservatore) || !nominata.has(`${g.b}|${g.osservatore}`)) continue;
+    if (g.locale.nome !== "" && g.locale.fisica !== false) vistoCome(g.osservatore, g.locale.nome);
   }
   const ordine = (f: boolean | null): number => (f === true ? 0 : f === null ? 1 : 2);
   for (const g of gruppi.values()) {

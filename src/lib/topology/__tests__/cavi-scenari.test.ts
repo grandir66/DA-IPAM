@@ -200,9 +200,17 @@ test("H11 · il gateway del controller: la sua uplink è la WAN — «instradato
   assert.deepEqual(wan.map((c) => chiave(c, "dev:186")), ["i:12"], "la porta dell'uplink del gateway");
 });
 
-test("H12 · nessun access point con due linee verso lo stesso switch (porta annunciata come pezzo di MAC da un lato, «eth0» dall'altro)", { todo: "difetto del modello: sull'hub AP-2 e AP-4 hanno due linee verso SW-6 — la riga dell'AP (porta eth0, porta dello switch non nota) e la riga dello switch (Port N, porta dell'AP annunciata come pezzo di MAC): le chiavi n:eth0 e n:<pezzo> non si fondono (proveDaInput/combacia)" }, () => {
+// Il difetto che l'hub trovava (Task 12): la riga dell'AP (porta «eth0», porta dello switch non nota) e quella dello switch (Port N,
+// porta dell'AP annunciata come pezzo di MAC) davano due linee, perché il nome unico del §13.6.1 passo 5 (I46) contava solo i nomi
+// annunciati verso l'AP, non quello che l'AP dà alla sua porta nella sua riga verso lo stesso switch. Due nomi della stessa porta
+// letti dai due capi: la porta annunciata è da completare (passo 6) e i cavi si fondono, col nome che l'AP dà alla sua porta.
+test("H12 · nessun access point con due linee verso lo stesso switch (porta annunciata come pezzo di MAC da un lato, «eth0» dall'altro)", () => {
   const { m } = mod(ingresso(HUB()));
-  for (const ap of ["dev:187", "dev:191"]) assert.equal(fra(m, "dev:12", ap).length, 1, `${ap}: una linea sola verso lo switch`);
+  for (const [ap, porta] of [["dev:187", "i:2"], ["dev:191", "i:1"]] as const) {
+    const c = fra(m, "dev:12", ap);
+    assert.equal(c.length, 1, `${ap}: una linea sola verso lo switch`);
+    assert.deepEqual([chiave(c[0], "dev:12"), chiave(c[0], ap), c[0].fiducia], [porta, "n:eth0", "certo"], `${ap}: la porta dello switch dalla sua riga, quella dell'AP dalla riga dell'AP; visto dai due capi`);
+  }
 });
 
 test("H13 · l'hypervisor sul nome doppio dell'aggregazione sta sotto l'aggregazione, a 10G", () => {

@@ -50,6 +50,7 @@ import { LoadError } from "@/components/shared/load-error";
 import { useJobPolling } from "@/hooks/use-job-polling";
 import type { PassoPolling } from "@/lib/integrations/polling-job";
 import type { ModuleKey } from "@/lib/modules/registry";
+import { ETICHETTA_OPZIONE, OFFERTA_MODULO } from "@/lib/modules/offerta";
 import {
   UNINSTALL_COPY,
   isUninstallableFeature,
@@ -79,19 +80,33 @@ function formatDate(iso: string | null): string {
 function ModuleSection({
   id,
   moduleKey,
+  offertaDi,
   title,
   children,
 }: {
   id: string;
   moduleKey?: ModuleKey;
+  /** Voce del catalogo da cui leggere l'offerta (passo 4c), se diversa o senza import JSON. */
+  offertaDi?: ModuleKey;
   title: string;
   children: React.ReactNode;
 }) {
+  const chiave = offertaDi ?? moduleKey;
+  const opzione = chiave !== undefined && OFFERTA_MODULO[chiave] === "opzione";
   return (
     <section id={id} className="scroll-mt-24 space-y-2">
       <div className="flex items-center justify-between gap-3">
-        <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+        <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-2">
           {title}
+          {opzione && (
+            <Badge
+              variant="secondary"
+              className="normal-case tracking-normal"
+              title="Modulo opzionale, potenzialmente a pagamento"
+            >
+              {ETICHETTA_OPZIONE}
+            </Badge>
+          )}
         </h3>
         {moduleKey && <ModuleJsonImport presetModule={moduleKey} size="sm" />}
       </div>
@@ -397,6 +412,7 @@ export function ModulesTab({ isAdmin }: { isAdmin: boolean }) {
 
       <ModuleSection
         id="module-inventory_agent"
+        offertaDi="inventory_agent"
         title="Inventory Agent"
       >
         {featuresPlaceholder ?? (
@@ -415,6 +431,7 @@ export function ModulesTab({ isAdmin }: { isAdmin: boolean }) {
 
       <ModuleSection
         id="module-meshcentral"
+        offertaDi="meshcentral"
         title="MeshCentral — Controllo remoto"
       >
         {featuresPlaceholder ?? (

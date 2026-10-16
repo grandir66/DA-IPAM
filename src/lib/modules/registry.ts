@@ -30,6 +30,7 @@ import { getFeatureStatus } from "@/lib/patch/feature";
 import { getMeshConfig } from "@/lib/integrations/meshcentral/config";
 import { getTenantDb, getTenantSetting } from "@/lib/db-tenant";
 import { deriveEdgeUiBase } from "@/lib/integrations/edge-ui-url";
+import { OFFERTA_MODULO, type Offerta } from "./offerta";
 
 export type ModuleKey =
   | "edge"
@@ -57,6 +58,12 @@ export interface ModuleDescriptor {
   access: "native" | "external";
   /** Deep-link alla card di configurazione nel tab "moduli". */
   configHref: string;
+  /**
+   * Offerta commerciale (passo 4c, 16/10): `base` = compreso nel prodotto,
+   * `opzione` = modulo opzionale, potenzialmente a pagamento. Solo
+   * presentazione: oggi non blocca niente (vedi `offerta.ts`).
+   */
+  offerta: Offerta;
 }
 
 export interface ModuleState extends ModuleDescriptor {
@@ -111,6 +118,7 @@ export function findLaunchpadEntry(
 export const MODULE_DESCRIPTORS: ReadonlyArray<ModuleDescriptor> = [
   {
     key: "edge",
+    offerta: OFFERTA_MODULO.edge,
     label: "Scanner-Edge",
     category: "va",
     description:
@@ -121,6 +129,7 @@ export const MODULE_DESCRIPTORS: ReadonlyArray<ModuleDescriptor> = [
   },
   {
     key: "patch_management",
+    offerta: OFFERTA_MODULO.patch_management,
     label: "Patch Management",
     category: "patch",
     description:
@@ -131,6 +140,7 @@ export const MODULE_DESCRIPTORS: ReadonlyArray<ModuleDescriptor> = [
   },
   {
     key: "network_services",
+    offerta: OFFERTA_MODULO.network_services,
     label: "Network Services",
     category: "network",
     description:
@@ -141,6 +151,7 @@ export const MODULE_DESCRIPTORS: ReadonlyArray<ModuleDescriptor> = [
   },
   {
     key: "librenms",
+    offerta: OFFERTA_MODULO.librenms,
     label: "LibreNMS",
     category: "nms",
     description:
@@ -151,6 +162,7 @@ export const MODULE_DESCRIPTORS: ReadonlyArray<ModuleDescriptor> = [
   },
   {
     key: "graylog",
+    offerta: OFFERTA_MODULO.graylog,
     label: "Graylog",
     category: "logs",
     description: "Log management enterprise (OpenSearch + MongoDB).",
@@ -160,6 +172,7 @@ export const MODULE_DESCRIPTORS: ReadonlyArray<ModuleDescriptor> = [
   },
   {
     key: "wazuh",
+    offerta: OFFERTA_MODULO.wazuh,
     label: "Wazuh SIEM",
     category: "siem",
     description: "XDR/SIEM (Manager + Indexer + Dashboard).",
@@ -169,6 +182,7 @@ export const MODULE_DESCRIPTORS: ReadonlyArray<ModuleDescriptor> = [
   },
   {
     key: "meshcentral",
+    offerta: OFFERTA_MODULO.meshcentral,
     label: "MeshCentral (Controllo remoto)",
     category: "rmm",
     description:
@@ -179,6 +193,7 @@ export const MODULE_DESCRIPTORS: ReadonlyArray<ModuleDescriptor> = [
   },
   {
     key: "inventory_agent",
+    offerta: OFFERTA_MODULO.inventory_agent,
     label: "Inventory Agent (GLPI)",
     category: "inventory",
     description:
@@ -189,6 +204,7 @@ export const MODULE_DESCRIPTORS: ReadonlyArray<ModuleDescriptor> = [
   },
   {
     key: "nis2_inventory",
+    offerta: OFFERTA_MODULO.nis2_inventory,
     label: "Inventario NIS2",
     category: "inventory",
     description: "Servizi/asset NIS2 (anagrafica, criticità). Modulo nativo opzionale.",
@@ -201,6 +217,7 @@ export const MODULE_DESCRIPTORS: ReadonlyArray<ModuleDescriptor> = [
     // finiscono in DA-IPAM (apparati, porte, vicini LLDP). La console del
     // controller resta raggiungibile come interfaccia esterna.
     key: "unifi",
+    offerta: OFFERTA_MODULO.unifi,
     label: "Controller UniFi",
     category: "network",
     description:
@@ -215,6 +232,7 @@ export const MODULE_DESCRIPTORS: ReadonlyArray<ModuleDescriptor> = [
     // (cliente A 2026-07-28, PX-NAS 2026-07-30) senza che questa griglia desse
     // alcun segnale — questa voce esiste per non ripetere quell'incidente.
     key: "appliance",
+    offerta: OFFERTA_MODULO.appliance,
     label: "Sistema appliance",
     category: "sistema",
     description: "Salute della macchina che ospita DA-IPAM: spazio disco e demone Docker.",

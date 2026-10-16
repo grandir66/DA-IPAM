@@ -4,6 +4,28 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-16 · moduli opzionali: campo «offerta» ed etichetta «Opzione»
+
+Passo 4c del piano di solidità del 16/10. Perché: Riccardo ha deciso che MDM, Patch/Chocolatey, MeshCentral, Wazuh e
+Zabbix sono moduli opzionali, potenzialmente a pagamento, mentre LibreNMS è integrato. La fonte del diritto sarà la
+licenza consegnata da DA-Link, che non esiste ancora: si prepara solo il campo e la presentazione.
+
+### Aggiunte
+
+- **Campo `offerta: "base" | "opzione"`** nel descrittore dei moduli (`modules/registry.ts`), letto dalla tabella pura
+  `OFFERTA_MODULO` (`modules/offerta.ts`). Opzioni nel catalogo: Patch Management, MeshCentral, Wazuh. LibreNMS e gli
+  altri: base. **MDM e Zabbix non hanno una voce nel catalogo**: non se ne inventa una (l'MDM ha comunque l'etichetta
+  sulla sua scheda in Impostazioni → Sistema).
+- **Stato di presentazione** delle opzioni, funzione pura `statoOfferta`: non acquistato · acquistato da configurare ·
+  spento · attivo · guasto. L'ingresso `acquistato` oggi è sempre vero (`opzioneAcquistata`), col perché scritto nel codice.
+- **Etichetta «Opzione»** nella griglia della Launchpad (lo stato nel suggerimento), nelle sezioni del tab Moduli e
+  sulla scheda MDM.
+
+### Invariato
+
+- **Nessun blocco e nessun cambio di comportamento** su hub, cliente A e pilota: nessun modulo si spegne, nessuna sonda
+  di salute cambia, il segnale verso DA-Link è lo stesso.
+
 ## [Non rilasciato] — 2026-10-16 · salute dei moduli: «spento» non è «guasto»
 
 Passo 4 del piano di solidità del 16/10. Perché: su un'istanza appena installata ogni sonda di un modulo spento diceva

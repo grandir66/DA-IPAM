@@ -31,6 +31,12 @@ import type { ModuleState, ModuleKey } from "@/lib/modules/registry";
 import type { ModuleHealth, ModuleHealthStatus, ModuleHealthVerdict } from "@/lib/modules/health";
 import { isModuleLaunchable } from "@/lib/modules/launchable";
 import { externalUiText } from "@/lib/modules/external-ui";
+import {
+  ETICHETTA_OPZIONE,
+  ETICHETTA_STATO_OFFERTA,
+  opzioneAcquistata,
+  statoOfferta,
+} from "@/lib/modules/offerta";
 
 const ICONS: Record<string, LucideIcon> = {
   ShieldAlert,
@@ -211,6 +217,17 @@ function ModuleTile({
   const stateLabel = verdict ? VERDICT_LABEL[verdict] : (health?.message ?? STATUS_LABEL[status]);
   const lastSync = relativeTime(health?.lastSyncAt ?? null);
   const showRepair = !!verdict && verdict !== "ok" && !!health?.repairAction;
+  // Passo 4c: un modulo opzionale porta l'etichetta «Opzione»; lo stato
+  // commerciale sta nel suggerimento. Solo presentazione, nessun blocco.
+  const statoOpzione =
+    m.offerta === "opzione"
+      ? statoOfferta({
+          acquistato: opzioneAcquistata(m.key),
+          configured: m.configured,
+          enabled: m.enabled,
+          verdict,
+        })
+      : null;
 
   async function verify() {
     setVerifying(true);
@@ -281,6 +298,15 @@ function ModuleTile({
             <Badge variant="outline" className="text-[10px] uppercase shrink-0">
               {m.category}
             </Badge>
+            {statoOpzione && (
+              <Badge
+                variant="secondary"
+                className="text-[10px] shrink-0"
+                title={`Modulo opzionale · ${ETICHETTA_STATO_OFFERTA[statoOpzione]}`}
+              >
+                {ETICHETTA_OPZIONE}
+              </Badge>
+            )}
           </div>
           <div className="flex items-center gap-1.5 mt-1">
             <span className={`h-2 w-2 rounded-full shrink-0 ${dotClass}`} />

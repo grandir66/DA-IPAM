@@ -5,6 +5,7 @@
  * aggiungere, quali apparati rileggere per «Aggiorna VM». Logica pura: la
  * pagina disegna le voci, qui si decide quali e con che parole.
  */
+import { nomeDelGenere } from "@/lib/topology/cavi/pannello";
 import { nodeClass } from "@/lib/topology/identity";
 import type { LinkOverrideRow, MapLink, MapVm, TopologyModel } from "@/lib/topology/model-types";
 import { missingNeighbors, type TreeResult } from "@/lib/topology/tree";
@@ -36,6 +37,8 @@ export interface NodeMenuCtx {
   isUncensusedVm: boolean;
   /** Il ruolo nella mappa di un apparato ('' = decide il sistema); null per un host o una VM (T1b, spec §13.8.2). */
   ruolo: RuoloMappa | null;
+  /** Un segmento (T3, §13.7.3): non si collega a mano e non è una testa, la rotta lo rifiuta. Assente = no. */
+  isSegmento?: boolean;
 }
 
 /** Una VM non censita: un nodo della pagina, non un capo di collegamento del modello. */
@@ -70,10 +73,10 @@ export function nodeMenuItems(c: NodeMenuCtx): Array<MenuItem<NodeMenuKey>> {
   const passo = c.mode === "passo" && c.canEditMap;
   if (c.isHypervisor && c.vmCount > 0) out.push({ key: "toggleVms", label: c.expanded ? "Nascondi VM" : `Mostra VM (${c.vmCount})` });
   if (c.isAdmin && c.isHypervisor && c.canRefreshVms) out.push({ key: "refreshVms", label: "Aggiorna VM" });
-  if (c.isAdmin && !c.isUncensusedVm) out.push({ key: "connect", label: "Collega a…" });
+  if (c.isAdmin && !c.isUncensusedVm && !c.isSegmento) out.push({ key: "connect", label: "Collega a…" });
   if (passo && c.addableCount > 0) out.push({ key: "addLinked", label: `Aggiungi collegati (${c.addableCount})` });
   if (passo && c.inMap) out.push(c.isStart ? { key: "start", label: "▶ è una partenza", disabled: true } : { key: "start", label: "Usa come partenza" });
-  if (c.mode === "auto" && c.isAdmin) out.push(c.isHead ? { key: "head", label: "● è la testa", disabled: true } : { key: "head", label: "Usa come testa" });
+  if (c.mode === "auto" && c.isAdmin && !c.isSegmento) out.push(c.isHead ? { key: "head", label: "● è la testa", disabled: true } : { key: "head", label: "Usa come testa" });
   if (passo && c.inMap) out.push({ key: "remove", label: "Togli dalla mappa" });
   if (c.isAdmin && c.isDevice && c.ruolo !== null) out.push({ key: "role", label: "Ruolo nella mappa" });
   else if (c.isAdmin && c.infraHost) out.push({ key: "role", label: "Ruolo nella mappa: prima Promuovi ad apparato", disabled: true });
@@ -82,19 +85,26 @@ export function nodeMenuItems(c: NodeMenuCtx): Array<MenuItem<NodeMenuKey>> {
   return out;
 }
 
-export type RuoloMappa = "" | "rete" | "attaccato";
+export type RuoloMappa = "" | "rete" | "attaccato" | "core" | "accesso";
 
-/** Le voci di «Ruolo nella mappa ▸» nell'ordine della spec §13.8.2; quella di adesso porta «✓» (il segno è testo, non colore). */
-export function ruoloVoci(attuale: RuoloMappa): Array<{ value: RuoloMappa; label: string }> {
-  const voci: Array<[RuoloMappa, string]> = [["rete", "Apparato di rete"], ["attaccato", "Attaccato (server, PC)"], ["", "Decide il sistema"]];
+/**
+ * Le voci di «Ruolo nella mappa ▸» nell'ordine della spec §13.8.2; quella di adesso porta «✓» (il segno è testo, non colore).
+ * Con la mappa nuova (`conCavi`, §13.9) anche «Core» e «Accesso»: scegliere «Apparato di rete» le sovrascriverebbe.
+ */
+export function ruoloVoci(attuale: RuoloMappa, conCavi = false): Array<{ value: RuoloMappa; label: string }> {
+  const voci: Array<[RuoloMappa, string]> = conCavi
+    ? [["rete", "Apparato di rete"], ["core", "Core"], ["accesso", "Accesso"], ["attaccato", "Attaccato (server, PC)"], ["", "Decide il sistema"]]
+    : [["rete", "Apparato di rete"], ["attaccato", "Attaccato (server, PC)"], ["", "Decide il sistema"]];
   return voci.map(([value, label]) => ({ value, label: value === attuale ? `✓ ${label}` : label }));
 }
 
 export type EdgeMenuKey = "editPorts" | "primary" | "unprimary" | "remove" | "ignore";
 
-/** Le voci del tasto destro su una linea (solo admin: tutte scrivono). */
-export function edgeMenuItems(l: MapLink, isAdmin: boolean): Array<MenuItem<EdgeMenuKey>> {
+/** Le voci del tasto destro su una linea (solo admin: tutte scrivono). `nomeDi` serve a «Togli ‹A› dal segmento…». */
+export function edgeMenuItems(l: MapLink, isAdmin: boolean, nomeDi: (id: string) => string = (id) => id): Array<MenuItem<EdgeMenuKey>> {
   if (!isAdmin) return [];
+  // Una contrazione (T3, §13.7.7) riassume un pezzo di rete fuori mappa: non è un cavo, non c'è niente da scrivere.
+  if (l.cavo?.genere === "contrazione") return [];
   const manual = l.sources.includes("manual");
   const out: Array<MenuItem<EdgeMenuKey>> = [];
   if (manual) out.push({ key: "editPorts", label: "Modifica porte…" });
@@ -104,8 +114,11 @@ export function edgeMenuItems(l: MapLink, isAdmin: boolean): Array<MenuItem<Edge
     /* niente voce del principale */
   } else if (l.primary === "user") out.push({ key: "unprimary", label: "Togli la scelta del principale" });
   else out.push({ key: "primary", label: l.primary === "auto" ? "★ Fissa come principale" : "★ Rendi principale" });
-  // In T1 una linea è una coppia: «Ignora questo cavo…» per tutte (spec §13.9). Da T3 la parola segue il genere (cavo, tunnel, fascio…).
-  out.push(manual ? { key: "remove", label: "Rimuovi il collegamento a mano" } : { key: "ignore", label: "Ignora questo cavo…" });
+  // In T1 una linea è una coppia: «Ignora questo cavo…» per tutte (spec §13.9). Da T3 la parola segue il genere (cavo, tunnel,
+  // ponte radio, fascio); su un segmento si toglie il membro, non il segmento.
+  if (manual) out.push({ key: "remove", label: "Rimuovi il collegamento a mano" });
+  else if (l.cavo && (isSegmentoId(l.a) || isSegmentoId(l.b))) out.push({ key: "ignore", label: `Togli ${nomeDi(isSegmentoId(l.a) ? l.b : l.a)} dal segmento…` });
+  else out.push({ key: "ignore", label: `Ignora questo ${nomeDelGenere(l.cavo?.genere)}…` });
   return out;
 }
 
@@ -114,6 +127,13 @@ export interface PrimaryBody {
   other_node: string;
   node_port: string;
   other_port: string;
+}
+
+/** «Scegli il cavo» della ★ di prima (§13.9): la ★ di `nodo` sul cavo di questa linea, con le porte orientate da `nodo`. */
+export function primaryPerNodo(l: Pick<MapLink, "a" | "b" | "aPort" | "bPort">, nodo: string): PrimaryBody {
+  return nodo === l.a
+    ? { node_id: l.a, other_node: l.b, node_port: l.aPort, other_port: l.bPort }
+    : { node_id: l.b, other_node: l.a, node_port: l.bPort, other_port: l.aPort };
 }
 
 /**

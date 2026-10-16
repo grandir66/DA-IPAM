@@ -306,3 +306,20 @@ test("pulsante dell'elenco: «◂ Elenco» aperto, «Elenco ▸» chiuso; in pas
   assert.equal(pulsanteElenco(false, true).titolo, "Apre l'elenco per trascinare gli oggetti sulla mappa");
   assert.match(pulsanteElenco(true, true).titolo, /Chiude l'elenco/);
 });
+
+// T3 Task 10 (spec §13.10.3, aggiunta di Riccardo del 16/10): il nodo scelto evidenzia i suoi collegamenti.
+import { evidenzaDellaSelezione } from "@/lib/topology/map-screen";
+
+test("evidenzaDellaSelezione: i collegamenti con il nodo scelto a un capo, anche le ridondanze; vuoto senza selezione", () => {
+  const links = [
+    { id: "l1", a: "dev:1", b: "dev:2" },
+    { id: "l2", a: "dev:3", b: "dev:2" },
+    { id: "l3", a: "dev:3", b: "dev:4" },
+    { id: "l4", a: "dev:2", b: "dev:4" },
+  ];
+  assert.deepEqual([...evidenzaDellaSelezione(links, "dev:2")].sort(), ["l1", "l2", "l4"]);
+  assert.deepEqual([...evidenzaDellaSelezione(links, "dev:1")], ["l1"]);
+  assert.equal(evidenzaDellaSelezione(links, null).size, 0);
+  assert.equal(evidenzaDellaSelezione(links, "dev:9").size, 0);
+  assert.equal(evidenzaDellaSelezione([], "dev:2").size, 0);
+});

@@ -13,11 +13,14 @@ import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { FUSO_UTENTI, parseDbDate } from "@/lib/db-date";
 import { frasiPerche, type ParoleFrasi } from "@/lib/topology/cavi/frasi";
+import { stellaNonApplicabile, titoloPerche } from "@/lib/topology/cavi/pannello";
 import { SOURCE_WORDS, altriCaviDi, dettoInFrase, linkWords, seenWords, vmPortWords } from "@/lib/topology/edge-look";
 import { nodeClass } from "@/lib/topology/identity";
 import { LINK_SOURCE_RANK, type LinkSource, type MapLink, type MapNode, type MapVm } from "@/lib/topology/model-types";
 import { isRunning, vmSummary } from "@/lib/topology/vm-nodes";
+import type { TreeResult } from "@/lib/topology/tree";
 import type { TopologyStatus } from "@/lib/topology/types";
+import { CandidatiPerPorta, MembriDelFascio, SezioniCavi } from "./linked-panel-cavi";
 import { TopoIcon, typeLabel } from "./topology-icons";
 import type { ModelData } from "./use-topology-data";
 
@@ -62,6 +65,11 @@ interface Props {
   viewLinks: ReadonlyMap<string, MapLink>;
   /** Oggetti della mappa che non esistono più. */
   missing: string[];
+  /** Solo con la mappa nuova (T3): chi scrive la ★ («Scegli il cavo»), l'albero e le partenze salvate (partenza scartata, ★ non applicabile). */
+  isAdmin: boolean;
+  tree: TreeResult;
+  savedRoots: readonly string[];
+  onScegliCavo: (nodo: string, l: MapLink) => void;
   onSelect: (id: string) => void;
   onRemove: (id: string) => void;
   /** Chiude il pannello (la scelta si ricorda); l'oggetto resta scelto. */
@@ -155,6 +163,7 @@ function Detail(p: Props & { n: MapNode; byId: Map<string, MapNode> }) {
 
       {infraHost && <p className="mt-1.5">Host che è infrastruttura: si può promuovere ad apparato (tasto destro).</p>}
       <VmSections n={n} vms={model.vms} byId={byId} onSelect={p.onSelect} />
+      <SezioniCavi n={n} model={model} nomeDi={parole.nome} tree={p.tree} savedRoots={p.savedRoots} isAdmin={p.isAdmin} onScegliCavo={p.onScegliCavo} />
 
       <h3 className="mt-4 mb-1 font-semibold">Collegato a ({links.length})</h3>
       {links.length === 0 ? (
@@ -171,7 +180,12 @@ function Detail(p: Props & { n: MapNode; byId: Map<string, MapNode> }) {
             {links.slice(0, MAX).map((l) => {
               const o = byId.get(other(l));
               const vmWords = vmPortWords(l, (id) => byId.get(id)?.name ?? id);
-              const perche = frasiPerche(l, parole);
+              // Con la mappa nuova le frasi e le parole sono del cavo (`cavo.frasi`, `cavo.detti`); senza, quelle di T1.
+              const cavo = l.cavo;
+              const perche = cavo ? cavo.frasi : frasiPerche(l, parole);
+              const titolo = cavo ? titoloPerche(cavo.genere) : "Perché questo collegamento";
+              const fonti = cavo && cavo.detti.length > 0 ? cavo.detti.join(" + ") : l.sources.map((s) => FONTE[s]).join(" + ");
+              const stella = cavo ? stellaNonApplicabile(l, p.tree, parole.nome) : null;
               return (
                 <Fragment key={l.id}>
                   <tr className="border-t border-border align-top">
@@ -181,11 +195,14 @@ function Detail(p: Props & { n: MapNode; byId: Map<string, MapNode> }) {
                     </td>
                     <td className="py-1 pr-1 [overflow-wrap:anywhere]"><Porta s={mine(l)} /> → <Porta s={theirs(l)} /></td>
                     <td className="py-1 pr-1">
-                      {l.sources.map((s) => FONTE[s]).join(" + ")}
+                      {fonti}
                       <div className={l.stale ? "font-semibold" : "text-muted-foreground"}>{visto(l)}</div>
                       {vmWords && <div>{vmWords}</div>}
                       {linkWords(l).map((w) => <div key={w}>{w}</div>)}
-                      {l.altriCavi && l.altriCavi.length > 0 && (
+                      {cavo?.aManoDiverse && <div className="font-semibold">a mano su porte diverse da quelle viste</div>}
+                      {stella && <div className="font-semibold">{stella}</div>}
+                      <MembriDelFascio l={l} nodo={n.id} />
+                      {!cavo && l.altriCavi && l.altriCavi.length > 0 && (
                         <div className="mt-1">
                           <div className="font-semibold">Altri cavi visti fra questi due oggetti</div>
                           <ul>
@@ -206,9 +223,10 @@ function Detail(p: Props & { n: MapNode; byId: Map<string, MapNode> }) {
                     <tr className="align-top">
                       <td colSpan={4} className="pb-1.5">
                         <details>
-                          <summary className="cursor-pointer">Perché questo collegamento</summary>
+                          <summary className="cursor-pointer">{titolo}</summary>
                           <ul className="ml-4 list-disc">
-                            {perche.map((f, k) => <li key={k}>{f}</li>)}
+                            {/* La conclusione («→ certo, principale») in grassetto: è la risposta. */}
+                            {perche.map((f, k) => <li key={k} className={cavo && f.startsWith("→") ? "font-semibold" : undefined}>{f}</li>)}
                           </ul>
                         </details>
                       </td>
@@ -221,6 +239,7 @@ function Detail(p: Props & { n: MapNode; byId: Map<string, MapNode> }) {
         </table>
       )}
       {links.length > MAX && <p className="mt-1 text-muted-foreground">+ altri {links.length - MAX}</p>}
+      {model.cavi && n.kind === "device" && <CandidatiPerPorta nodo={n.id} nomeDi={parole.nome} ora={oraBreve} />}
       {rows.length > 0 && (
         <>
           <h3 className="mt-4 mb-1 font-semibold">Porte con dispositivi attaccati ({ports.length} porte, {rows.length} MAC)</h3>

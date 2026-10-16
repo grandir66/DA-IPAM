@@ -22,14 +22,14 @@ import { ConnectionMode, ReactFlow, useReactFlow, type Edge, type Node, type Nod
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { isUncensusedVmId } from "@/lib/topology/map-menus";
 import {
-  centerViewport, drawableLinks, labelBoxes, latiVicini, lineHandles, lineaAlbero, maniglieLati, moreAttachedAt, ostacoli, redundancyCounts, redundantEnds,
+  centerViewport, drawableLinks, evidenzaDellaSelezione, labelBoxes, latiVicini, lineHandles, lineaAlbero, maniglieLati, moreAttachedAt, ostacoli, redundancyCounts, redundantEnds,
   rettangoli, visibleEdges, type Rect,
 } from "@/lib/topology/map-screen";
 import type { LayoutResult } from "@/lib/topology/tree-layout";
 import type { MapLink } from "@/lib/topology/model-types";
 import type { TreeResult } from "@/lib/topology/tree";
 import { vmChipText } from "@/lib/topology/vm-nodes";
-import { MAP_EDGE_TYPES, TREE_EDGE, type MapEdgeData } from "./map-edge";
+import { MAP_EDGE_TYPES, stileAlbero, type MapEdgeData } from "./map-edge";
 import { HANDLE_ATT, HANDLE_IN_LR, MAP_NODE_TYPES } from "./map-node";
 import type { ModelData } from "./use-topology-data";
 
@@ -104,6 +104,14 @@ export function MapCanvas(p: Props) {
   }, [model.nodes]);
   const segmenti = useMemo(() => new Map((model.cavi?.segmenti ?? []).map((s) => [s.id, s])), [model.cavi]);
   const anomalie = useMemo(() => new Set((model.cavi?.anomalie ?? []).map((a) => a.nodo)), [model.cavi]);
+
+  // Il nodo scelto evidenzia i suoi collegamenti (§13.10.3, Riccardo 16/10): solo con la mappa nuova. Senza collegamenti da
+  // evidenziare (oggetto fuori dalla mappa, nessuna linea) non si attenua niente: tutte le linee a un quarto sarebbero un errore.
+  const evidenza = useMemo((): ReadonlySet<string> | null => {
+    if (!model.cavi || !p.selected) return null;
+    const s = evidenzaDellaSelezione(tree.links, p.selected);
+    return s.size > 0 ? s : null;
+  }, [model.cavi, tree, p.selected]);
 
   const baseNodes = useMemo((): Node[] => {
     const byId = new Map(model.nodes.map((n) => [n.id, n]));
@@ -188,6 +196,8 @@ export function MapCanvas(p: Props) {
     const apEdge = new Set<string>();
     // I riquadri su cui la parola di una linea non deve finire (Task 5): si calcolano alla prima linea che li chiede.
     let avoid: Rect[] | null = null;
+    const su = (ok: boolean): "su" | "giu" | undefined => (evidenza ? (ok ? "su" : "giu") : undefined);
+    const livello = (e: "su" | "giu" | undefined) => (e === "su" ? { zIndex: 1 } : {});
     for (const [child, link] of tree.via) {
       const ln = layout.nodes.get(child);
       if (!ln || !ln.parent || ln.role === "attached") continue;
@@ -195,10 +205,11 @@ export function MapCanvas(p: Props) {
         if (apEdge.has(ln.parent)) continue;
         apEdge.add(ln.parent);
         // In verticale anche questa passa dal tronco vicino al genitore, come le altre dei figli.
-        const apData: MapEdgeData = { link: null, inTree: true, labelSide: "left", orientation: o };
+        const ev = su(ln.parent === p.selected);
+        const apData: MapEdgeData = { link: null, inTree: true, labelSide: "left", orientation: o, evidenza: ev };
         out.push({
           id: `t:apg:${ln.parent}`, source: ln.parent, target: `apg:${ln.parent}`, sourceHandle: h.source, targetHandle: h.target,
-          ...(o === "lr" ? { type: "map", data: apData } : { type: "step", style: TREE_EDGE }), selectable: false, focusable: false,
+          ...(o === "lr" ? { type: "map", data: apData } : { type: "step", style: stileAlbero(ev) }), ...livello(ev), selectable: false, focusable: false,
         });
         continue;
       }
@@ -206,19 +217,21 @@ export function MapCanvas(p: Props) {
       const la = padre ? lineaAlbero(o, padre, ln, ostacoli(riquadri, [ln.parent, child])) : { tronco: true as const };
       if (la.tronco) {
         // L'etichetta della linea va dalla parte opposta alle porte scritte sopra il riquadro (a sinistra col «+N»).
-        const data: MapEdgeData = { link, inTree: true, labelSide: p.plus.has(child) ? "right" : "left", orientation: o, nomeDi };
+        const ev = su(evidenza?.has(link.id) ?? false);
+        const data: MapEdgeData = { link, inTree: true, labelSide: p.plus.has(child) ? "right" : "left", orientation: o, nomeDi, evidenza: ev };
         out.push({
           id: `t:${child}`, source: ln.parent, target: child, sourceHandle: h.source, targetHandle: h.target, type: "map",
-          selectable: false, focusable: false, data,
+          selectable: false, focusable: false, data, ...livello(ev),
         });
       } else {
         // Un figlio spostato a mano dall'altra parte (spec §13.10.1): sul lato più vicino, senza giri.
         const m = maniglieLati(la.lati);
         avoid ??= labelBoxes(layout.nodes.values(), layout.apGroups);
-        const data: MapEdgeData = { link, inTree: true, labelSide: "left", orientation: o, avoid, lati: la.lati, nomeDi };
+        const ev = su(evidenza?.has(link.id) ?? false);
+        const data: MapEdgeData = { link, inTree: true, labelSide: "left", orientation: o, avoid, lati: la.lati, nomeDi, evidenza: ev };
         out.push({
           id: `t:${child}`, source: ln.parent, target: child, sourceHandle: m.source, targetHandle: m.target, type: "map",
-          selectable: false, focusable: false, data,
+          selectable: false, focusable: false, data, ...livello(ev),
         });
       }
     }
@@ -240,11 +253,12 @@ export function MapCanvas(p: Props) {
       // dell'altro: fra due riquadri della stessa colonna la linea faceva il giro).
       const lati = latiVicini(layout.nodes.get(s)!, layout.nodes.get(t)!, o, ostacoli(riquadri, [s, t]));
       const m = maniglieLati(lati);
-      const data: MapEdgeData = { link: l, inTree: false, labelSide: "left", orientation: o, avoid, lati, nomeDi };
-      out.push({ id: `x:${l.id}`, source: s, target: t, sourceHandle: m.source, targetHandle: m.target, type: "map", selectable: false, focusable: false, data });
+      const ev = su(evidenza?.has(l.id) ?? false);
+      const data: MapEdgeData = { link: l, inTree: false, labelSide: "left", orientation: o, avoid, lati, nomeDi, evidenza: ev };
+      out.push({ id: `x:${l.id}`, source: s, target: t, sourceHandle: m.source, targetHandle: m.target, type: "map", selectable: false, focusable: false, data, ...livello(ev) });
     }
     return out;
-  }, [tree, layout, o, drawable, riquadri, nomeDi, p.showExtra, p.selected, p.plus]);
+  }, [tree, layout, o, drawable, riquadri, nomeDi, evidenza, p.showExtra, p.selected, p.plus]);
 
   // Centra (zoom 100 %) sulla testa o sulla prima partenza quando cambia modo o mappa.
   const { centerOn, centerKey } = p;

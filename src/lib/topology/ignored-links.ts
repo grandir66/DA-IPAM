@@ -4,8 +4,9 @@
  * /api/topology/links/[id]). Logica pura: quali righe, con che parole.
  */
 import { FUSO_UTENTI, parseDbDate } from "@/lib/db-date";
+import { nomeDelGenere } from "@/lib/topology/cavi/pannello";
 import { SOURCE_WORDS } from "@/lib/topology/edge-look";
-import type { MapLink, MapNode } from "@/lib/topology/model-types";
+import type { GenereLinea, MapLink, MapNode } from "@/lib/topology/model-types";
 
 /** Il dialogo di «Ignora» dice dove si annulla. */
 export const IGNORA_SI_ANNULLA = "Si annulla dalla pagina «Dati della mappa», elenco «Collegamenti ignorati», con «Ripristina».";
@@ -71,6 +72,33 @@ export function testiIgnoraCavo(a: string, aPort: string, b: string, bPort: stri
   return {
     titolo: `Ignorare il cavo ${a} · ${p(aPort)} ↔ ${b} · ${p(bPort)}?`,
     testo: `Questo cavo sparisce da tutte le mappe, anche se le letture continuano a vederlo (${fonti}). Gli altri cavi fra ${a} e ${b}, se ci sono, restano. I dati letti non si toccano.`,
+  };
+}
+
+/**
+ * Il dialogo dell'«Ignora» per genere (T3, spec §13.9): la parola del genere in titolo e testo; senza genere (T1) o per un
+ * genere senza parola sua, il dialogo di oggi. Per un segmento `a` è il membro e `aPort` la sua porta; `b` e `bPort` non servono.
+ */
+export function testiIgnora(genere: GenereLinea | undefined, a: string, aPort: string, b: string, bPort: string, fonti: string): { titolo: string; testo: string } {
+  if (genere === "segmento") {
+    const p = aPort.trim() ? `(${aPort.trim()})` : "(porta non nota)";
+    return {
+      titolo: `Togliere ${a} dal segmento?`,
+      testo: `${a} ${p} non fa più parte del segmento in nessuna mappa, anche se le letture continuano a sentirlo (${fonti}). Gli altri apparati del segmento restano. I dati letti non si toccano.`,
+    };
+  }
+  if (genere === "fascio") {
+    return {
+      titolo: `Ignorare il fascio ${a} ↔ ${b}?`,
+      testo: `Spunta i cavi da ignorare: spariscono da tutte le mappe, anche se le letture continuano a vederli (${fonti}). Gli altri cavi fra ${a} e ${b} restano. I dati letti non si toccano.`,
+    };
+  }
+  const parola = nomeDelGenere(genere);
+  if (parola === "cavo") return testiIgnoraCavo(a, aPort, b, bPort, fonti);
+  const p = (x: string) => x.trim() || "porta non nota";
+  return {
+    titolo: `Ignorare il ${parola} ${a} · ${p(aPort)} ↔ ${b} · ${p(bPort)}?`,
+    testo: `Questo ${parola} sparisce da tutte le mappe, anche se le letture continuano a vederlo (${fonti}). Gli altri cavi fra ${a} e ${b}, se ci sono, restano. I dati letti non si toccano.`,
   };
 }
 

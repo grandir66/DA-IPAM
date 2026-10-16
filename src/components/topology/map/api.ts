@@ -13,6 +13,7 @@
  * - PUT    /api/topology/primary        corpo PrimaryBody → { ok: true }
  * - DELETE /api/topology/primary        corpo { node_id } → { ok: true }
  * - GET    /api/topology/ports?node=ID  → PortsResponse (porte note; elenco vuoto se non se ne conoscono)
+ * - GET    /api/topology/candidati?nodo=ID  → { nodo, righe: CandidatoPorta[], altri } (T3, solo con la mappa nuova accesa; 409 altrimenti)
  * - POST   /api/devices/[id]/proxmox-scan  (c'è già) → rilegge VM e schede dell'hypervisor
  * - PUT    /api/topology/maps/[id]/nodes e POST /api/topology/maps: accettano anche «vm:<apparato>:<vmid>»
  * - PATCH  /api/topology/maps/[id|auto] corpo { orientation } (da solo, admin) → la riga della mappa (spec §12.2)
@@ -24,7 +25,7 @@
 import { fetchJson, type FetchJsonResult } from "@/lib/fetch-json";
 import type { KnownPort, LinkPatchBody, ManualLinkBody } from "@/lib/topology/connect-form";
 import type { PrimaryBody } from "@/lib/topology/map-menus";
-import type { MapOrientation } from "@/lib/topology/model-types";
+import type { CandidatoPorta, MapOrientation } from "@/lib/topology/model-types";
 
 // I corpi stanno con la logica pura che li costruisce (connect-form.ts, map-menus.ts): qui si ripetono i nomi.
 export type { KnownPort, LinkPatchBody, ManualLinkBody, PrimaryBody };
@@ -99,4 +100,9 @@ export function fetchLinkOverrides(signal?: AbortSignal) {
 
 export function fetchPorts(nodeId: string, signal?: AbortSignal) {
   return fetchJson<PortsResponse>(`/api/topology/ports?node=${encodeURIComponent(nodeId)}`, { cache: "no-store", signal });
+}
+
+/** «Candidati per porta» di un apparato (T3, spec §13.4.6): a richiesta, quando si aprono i dettagli. Un errore torna come errore. */
+export function fetchCandidati(nodo: string, signal?: AbortSignal) {
+  return fetchJson<{ righe: CandidatoPorta[]; altri: number }>(`/api/topology/candidati?nodo=${encodeURIComponent(nodo)}`, { cache: "no-store", signal });
 }

@@ -382,3 +382,14 @@ export function pulsanteElenco(aperto: boolean, passo: boolean): { etichetta: st
   if (aperto) return { etichetta: "◂ Elenco", titolo: "Chiude l'elenco degli oggetti: la mappa prende tutta la larghezza" };
   return { etichetta: "Elenco ▸", titolo: passo ? "Apre l'elenco per trascinare gli oggetti sulla mappa" : "Apre l'elenco degli oggetti a sinistra" };
 }
+
+/**
+ * Il nodo scelto evidenzia i suoi collegamenti (T3, spec §13.10.3, aggiunta di Riccardo del 16/10): gli id delle linee con
+ * `selected` a un capo, ridondanze comprese. Vuoto senza selezione. Solo a schermo: la stampa non ha selezione.
+ */
+export function evidenzaDellaSelezione(links: ReadonlyArray<Pick<MapLink, "id" | "a" | "b">>, selected: string | null): Set<string> {
+  const out = new Set<string>();
+  if (selected === null) return out;
+  for (const l of links) if (l.a === selected || l.b === selected) out.add(l.id);
+  return out;
+}

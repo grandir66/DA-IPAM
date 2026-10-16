@@ -14,7 +14,7 @@
  * direttamente; quelli dei tenant in sola lettura, per i segni), quindi
  * l'ambiente del servizio non sposta niente. I due modi sono quelli della
  * pulizia: `--copia` (guardia delle copie) o `--servizio <unità>` (dati veri,
- * servizio e timer dell'aggiornamento fermi).
+ * servizio, timer e servizio dell'aggiornamento fermi).
  *
  * Uso:  npx tsx scripts/credenziali/togli-chiavi-hub.ts --dati <cartella dati> (--copia | --servizio <unità>)
  *         [--dati-servizio <cartella>] [--applica]
@@ -67,10 +67,10 @@ async function main(): Promise<number> {
   const dati = path.resolve(datiArg);
   const hubDb = path.join(dati, "hub.db");
   const tenants = path.join(dati, "tenants");
-  const errori = copia
-    ? controllaCopia({ dati, hubDb, cartellaTenant: tenants, datiServizio: servizio.cartelle })
-    : controllaDatiVeri({ dati, unita: unita ?? "", cartelle: servizio.cartelle });
-  if (errori.length > 0) return uso(`Non parto:\n${errori.map((e) => `  - ${e}`).join("\n")}`);
+  const veri = copia ? null : controllaDatiVeri({ dati, unita: unita ?? "", cartelle: servizio.cartelle });
+  const errori = veri ? veri.errori : controllaCopia({ dati, hubDb, cartellaTenant: tenants, datiServizio: servizio.cartelle });
+  const guardate = veri && veri.controllate.length > 0 ? `\nunità guardate: ${veri.controllate.join("; ")}` : "";
+  if (errori.length > 0) return uso(`Non parto:\n${errori.map((e) => `  - ${e}`).join("\n")}${guardate}`);
 
   const hub = new Database(hubDb, { fileMustExist: true });
   try {
@@ -80,7 +80,7 @@ async function main(): Promise<number> {
       return { codice: r.codice, attivo: r.active === 1, segnoCatene: s === undefined ? undefined : s.catene, segnoUnifi: s === undefined ? undefined : s.unifi };
     });
     const attivi = tenant.filter((t) => t.attivo).map((t) => t.codice);
-    scrivi(copia ? `dati: copia in ${fs.realpathSync(dati)}` : `dati: quelli veri del servizio ${unita} (fermo), in ${fs.realpathSync(dati)}`);
+    scrivi(veri ? `dati: quelli veri, in ${fs.realpathSync(dati)}; unità guardate: ${veri.controllate.join("; ")}` : `dati: copia in ${fs.realpathSync(dati)}`);
     scrivi(`tenant attivi nell'hub: ${attivi.length}${attivi.length > 0 ? ` (${attivi.join(", ")})` : ""}`);
 
     const piano = pianoChiaviHub(chiaviPresentiDb(hub), tenant);

@@ -11,10 +11,13 @@
  *
  * Run: DA_INVENT_DATA_DIR="$(mktemp -d "${TMPDIR:-/tmp}/ipam.XXXXXX")" node --import tsx --test src/lib/credentials/__tests__/guardia-scrittura.test.ts
  */
-import { describe, it } from "node:test";
+import { describe, it, after } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
-import { leggiStatoSystemctl, nomeUnitaValido } from "@/lib/credentials/guardia-scrittura";
+import { controllaDatiVeri, leggiStatoSystemctl, nomeUnitaValido, type StatoUnita } from "@/lib/credentials/guardia-scrittura";
 
 const show = (load: string, active: string) => ({ status: 0, stdout: `LoadState=${load}\nActiveState=${active}\n` });
 
@@ -55,5 +58,69 @@ describe("nomeUnitaValido", () => {
   });
   it("niente opzioni, spazi o percorsi", () => {
     for (const n of ["", "--all", "da ipam", "../x", "a;b"]) assert.equal(nomeUnitaValido(n), false, n);
+  });
+});
+
+/**
+ * Revisione della 2g (16/10): il timer si ricavava come `${unità}-update.timer`
+ * e «assente» passava. Con `--servizio da-ipam.service` (come si scrive spesso
+ * con systemd) la guardia guardava `da-ipam.service-update.timer`, che non
+ * esiste, e lasciava scrivere col vero `da-ipam-update.timer` acceso: mentre
+ * lo script scrive, il timer lancia auto-update.sh (pull, npm install, build
+ * nella stessa cartella). E fermare il timer non ferma un aggiornamento già
+ * partito (`<app>-update.service`, oneshot, riavvia il servizio alla fine).
+ */
+describe("controllaDatiVeri: servizio, timer e aggiornamento", () => {
+  const dati = fs.mkdtempSync(path.join(os.tmpdir(), "guardia-scrittura-"));
+  fs.writeFileSync(path.join(dati, "hub.db"), "");
+  fs.mkdirSync(path.join(dati, "tenants"));
+  after(() => fs.rmSync(dati, { recursive: true, force: true }));
+
+  const FERMO: StatoUnita = { stato: "fermo" };
+  const ACCESO: StatoUnita = { stato: "attivo", dettaglio: "active" };
+  /** Un systemctl finto: le unità non elencate non esistono. */
+  const lettore = (unita: Record<string, StatoUnita>) => (nome: string): StatoUnita => unita[nome] ?? { stato: "assente" };
+  const esito = (servizio: string, unita: Record<string, StatoUnita>) => controllaDatiVeri({ dati, unita: servizio, cartelle: [dati] }, lettore(unita));
+  const controlla = (servizio: string, unita: Record<string, StatoUnita>) => esito(servizio, unita).errori;
+  const cliente = (timer: StatoUnita, aggiornamento: StatoUnita = FERMO) => ({
+    "da-ipam.service": FERMO,
+    "da-ipam-update.timer": timer,
+    "da-ipam-update.service": aggiornamento,
+  });
+
+  for (const nome of ["da-ipam", "da-ipam.service"]) {
+    it(`--servizio ${nome} col timer da-ipam-update.timer acceso → non scrive`, () => {
+      const errori = controlla(nome, cliente(ACCESO));
+      assert.ok(errori.some((e) => /il timer da-ipam-update\.timer è acceso/.test(e)), errori.join("\n"));
+    });
+  }
+
+  for (const nome of ["da-ipam", "da-ipam.service"]) {
+    it(`--servizio ${nome} con servizio, timer e aggiornamento fermi → si scrive, e si dice quale timer si è guardato`, () => {
+      const e = esito(nome, cliente(FERMO));
+      assert.deepEqual(e.errori, []);
+      assert.deepEqual(e.controllate, ["da-ipam.service: fermo", "da-ipam-update.timer: fermo", "da-ipam-update.service: fermo"]);
+    });
+  }
+
+  it("il timer non c'è ma l'aggiornamento sì → non scrive (il timer ha un altro nome: non si sa se è fermo)", () => {
+    const errori = controlla("da-ipam.service", { "da-ipam.service": FERMO, "da-ipam-update.service": FERMO });
+    assert.ok(errori.some((e) => /da-ipam-update\.timer non esiste/.test(e)), errori.join("\n"));
+  });
+
+  it("né timer né aggiornamento (nessun aggiornamento automatico) → si scrive", () => {
+    assert.deepEqual(controlla("da-ipam.service", { "da-ipam.service": FERMO }), []);
+  });
+
+  it("un aggiornamento in corso (da-ipam-update.service attivo) col timer fermo → non scrive", () => {
+    const errori = controlla("da-ipam.service", cliente(FERMO, { stato: "attivo", dettaglio: "activating" }));
+    assert.ok(errori.some((e) => /da-ipam-update\.service è in corso/.test(e)), errori.join("\n"));
+  });
+
+  it("un nome con un altro suffisso o un punto → non scrive, e non si indovina", () => {
+    for (const nome of ["da-ipam.timer", "da-ipam-update.timer", "da.ipam"]) {
+      const errori = controlla(nome, { [nome]: FERMO, "da-ipam.service": FERMO });
+      assert.ok(errori.some((e) => /non è il nome di un servizio/.test(e)), `${nome}: ${errori.join("\n")}`);
+    }
   });
 });

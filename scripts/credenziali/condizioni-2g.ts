@@ -14,7 +14,9 @@
  *     tenant (nessun elenco = nessun lasciato ammesso, e un `parziale:` blocca);
  *   - nessuna riga di controller e AD lasciata dalla 2f (Omada): blocco;
  *   - nel registro dei ripieghi nessun caso di D9 (tutti i `cred_*` tranne
- *     `cred_public`) dalla data del segno della 2f del tenant, o da `--dal`.
+ *     `cred_public`) dalla data del segno della 2f del tenant, e da nessun'altra
+ *     (niente `--dal`: poteva solo restringere la finestra; un'opzione
+ *     sconosciuta ferma lo script).
  * Niente più attesa di 14 giorni.
  *
  * Ordine obbligato (vincolo «Script sulle copie»): db-tenant e db-hub fissano i
@@ -29,7 +31,7 @@
  * ripieghi) si legge soltanto: è un file di log, non un DB.
  *
  * Uso:  npx tsx scripts/credenziali/condizioni-2g.ts --dati <copia> --registro <cartella del registro>
- *         [--dati-servizio <cartella>] [--lasciati-accettati <tenant>:<id>,<id>]… [--dal <data ISO>]
+ *         [--dati-servizio <cartella>] [--lasciati-accettati <tenant>:<id>,<id>]…
  *   Serve ENCRYPTION_KEY (ambiente del servizio, caricato senza stamparlo): le
  *   conversioni a vuoto decifrano in memoria per confrontare.
  *   Uscita: 0 in regola, 1 bloccato (il perché è a terminale), 2 non partito,
@@ -40,12 +42,13 @@
 import path from "node:path";
 import { cartelleServizio, controllaCopia } from "../../src/lib/credentials/guardia-copia";
 import { leggiLasciatiAccettati, leggiRegistroRipieghi, valutaCondizioni2g, type Registro } from "../../src/lib/credentials/condizioni-2g";
+import { opzioneSconosciuta } from "../../src/lib/credentials/guardia-scrittura";
 
 function uso(msg?: string): number {
   if (msg) process.stderr.write(`${msg}\n`);
   process.stderr.write(
     "Uso: npx tsx scripts/credenziali/condizioni-2g.ts --dati <copia dei dati> --registro <cartella del registro dei ripieghi> " +
-      "[--dati-servizio <cartella>] [--lasciati-accettati <tenant>:<id>,<id>]... [--dal <data ISO>]\n"
+      "[--dati-servizio <cartella>] [--lasciati-accettati <tenant>:<id>,<id>]...\n"
   );
   return 2;
 }
@@ -61,14 +64,14 @@ function valori(a: readonly string[], k: string): string[] {
 
 async function main(): Promise<number> {
   const a = process.argv.slice(2);
+  const ignota = opzioneSconosciuta(a, ["--dati", "--registro", "--dati-servizio", "--lasciati-accettati"], []);
+  if (ignota != null) return uso(`Opzione sconosciuta «${ignota}»: niente misurato (i ripieghi contano dalla data del segno della 2f, senza --dal)`);
   const val = (k: string): string | undefined => (a.indexOf(k) >= 0 ? (a[a.indexOf(k) + 1] ?? "") : undefined);
   const datiArg = val("--dati");
   if (!datiArg) return uso();
   const registroArg = val("--registro");
   if (!registroArg) return uso("Serve --registro con la cartella del registro dei ripieghi del servizio: senza, «nessun ripiego» non si può dire.");
   if (!process.env.ENCRYPTION_KEY?.trim()) return uso("ENCRYPTION_KEY assente: carica l'ambiente del servizio prima di lanciare la misura.");
-  const dal = val("--dal");
-  if (dal !== undefined && !/^\d{4}-\d{2}-\d{2}T[0-9:.]+Z$/.test(dal)) return uso(`--dal «${dal}»: serve una data ISO in UTC, per esempio 2026-10-16T08:00:00.000Z`);
 
   let accettati: Map<string, number[]>;
   try {
@@ -128,7 +131,7 @@ async function main(): Promise<number> {
     const righe = m.stato.lasciatiIntegrazioni.map((l) => `  ${l.tabella} #${l.id}: ${l.motivo}`);
     process.stdout.write(`righe di controller e AD lasciate dalla 2f:\n${righe.join("\n") || "  (nessuna)"}\n`);
 
-    const esito = valutaCondizioni2g(m.stato, registro, accettati.get(code) ?? null, dal);
+    const esito = valutaCondizioni2g(m.stato, registro, accettati.get(code) ?? null);
     const blocchi = [...m.nonMisurabili, ...esito.blocchi];
     for (const n of esito.note) process.stdout.write(`nota: ${n}\n`);
     if (esito.stato === "escluso") {

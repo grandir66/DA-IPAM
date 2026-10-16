@@ -43,6 +43,20 @@ conferma. Lo lancia la sessione principale sul server, a servizio fermo, con l'o
 - **Script di misura della topologia e dei MAC per porta**: l'utente del controller viene dalla voce (la colonna
   della riga, dopo la pulizia, è vuota); senza voce o se non si decifra, errore invece di un utente vuoto.
 
+### Correzioni della revisione
+
+- **`--servizio da-ipam.service` apriva il freno del timer.** La guardia ricavava il timer come
+  `<unità>-update.timer`, quindi guardava `da-ipam.service-update.timer`, che non esiste, e lasciava scrivere col vero
+  `da-ipam-update.timer` acceso (pull, npm install e build sotto lo script). Ora il nome si accetta con o senza
+  `.service` e timer e aggiornamento si ricavano dal nome dell'app; un altro suffisso o un punto nel nome è un errore.
+  Il timer che non c'è passa solo se non c'è nemmeno `<app>-update.service`; e deve essere fermo anche
+  `<app>-update.service`, perché fermare il timer non ferma un aggiornamento già partito, che alla fine riavvia il
+  servizio. Gli script stampano le tre unità guardate col loro stato.
+- **Via `--dal`** da `pulizia-t2.ts` e `condizioni-2g.ts`: sostituiva la data del segno della 2f anche con una data più
+  tarda, e un ripiego vero dopo il rilascio spariva dal conto (con `--applica` la pulizia partiva). I ripieghi contano
+  dalla data del segno, come dice il piano. I due script rifiutano le opzioni che non conoscono (uscita 2): ignorata,
+  un'opzione tolta o scritta male farebbe girare lo script senza quello che si credeva di chiedere.
+
 ### Effetto accettato
 
 - Dopo la pulizia i due apparati lasciati dell'hub non hanno più nemmeno le colonne: restano senza credenziale

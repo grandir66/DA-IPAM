@@ -171,10 +171,12 @@ function ripieghiDal(registro: Registro, tenant: string, dal: string | null, att
 /**
  * Si può togliere il vecchio da questo tenant? `accettati`: l'elenco degli
  * apparati lasciati accettati da Riccardo per QUESTO tenant, o null se non
- * passato. `dal`: da quando contano i ripieghi; senza, la data del segno della
- * 2f del tenant (e senza una data, tutto il registro).
+ * passato. I ripieghi contano dalla data del segno della 2f del tenant (senza
+ * una data, tutto il registro), e da nessun'altra: una data passata a mano
+ * (`--dal`, tolta nella revisione della 2g del 16/10) poteva solo restringere
+ * la finestra e nascondere ripieghi veri.
  */
-export function valutaCondizioni2g(t: StatoTenant2g, registro: Registro, accettati: readonly number[] | null, dal?: string): EsitoCondizioni {
+export function valutaCondizioni2g(t: StatoTenant2g, registro: Registro, accettati: readonly number[] | null): EsitoCondizioni {
   const blocchi: string[] = [];
   const note: string[] = [];
   const s = t.segni;
@@ -216,7 +218,7 @@ export function valutaCondizioni2g(t: StatoTenant2g, registro: Registro, accetta
   }
 
   // Registro dei ripieghi dal rilascio della 2f (D9 rivista: nessun periodo d'attesa).
-  const da = dal ?? dataDelSegno(s.integrazioni);
+  const da = dataDelSegno(s.integrazioni);
   if (da == null) note.push(`tenant ${t.tenant}: nessuna data della 2f: il registro si legge per intero`);
   const ripieghi = ripieghiDal(registro, t.tenant, da, (accettati?.length ?? 0) > 0);
   blocchi.push(...ripieghi.blocchi);

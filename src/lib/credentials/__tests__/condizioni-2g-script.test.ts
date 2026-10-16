@@ -179,6 +179,26 @@ describe("condizioni-2g.ts sulla copia", () => {
     }
   });
 
+  it("--dal non c'è più: un ripiego dopo la 2f non si nasconde spostando la finestra → non parte (2), mai «in regola»", () => {
+    // Revisione della 2g (16/10): `--dal` sostituiva la data del segno della 2f
+    // anche con una data più tarda. La finestra è quella del piano, la data del
+    // segno; un'opzione che lo script non conosce non si ignora.
+    const f = path.join(registro, "ripieghi-2026-10-16.jsonl");
+    const prima = fs.readFileSync(f, "utf8");
+    fs.appendFileSync(
+      f,
+      `${JSON.stringify({ ts: "2026-10-16T10:00:00.000Z", caso: "cred_catena_vecchia", tenant: T, firma: "vera @ src/z.ts:3:3", tipo: "conteggio", ora: "2026-10-16T10", n: 100 })}\n`,
+    );
+    try {
+      const r = lancia(["--dati", copia, "--registro", registro, "--lasciati-accettati", `${T}:${lasciato}`, "--dal", "2026-10-16T11:00:00.000Z"], servizio);
+      assert.equal(r.status, 2, `uscita ${r.status}\n${r.stdout}\n${r.stderr}`);
+      assert.match(r.stderr, /--dal/);
+      assert.doesNotMatch(r.stdout, /condizioni della 2g: in regola/);
+    } finally {
+      fs.writeFileSync(f, prima);
+    }
+  });
+
   it("--dati uguale alla cartella del servizio → esce con 2 senza aprire niente", () => {
     const primaServizio = stato(servizio);
     const r = lancia(["--dati", servizio, "--registro", registro], servizio);

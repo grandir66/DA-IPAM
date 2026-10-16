@@ -29,12 +29,15 @@
  * Due modi, sempre dichiarati:
  *   --copia                --dati è una copia (guardia delle copie, ordine di
  *                          caricamento come gli altri script della tappa 2);
- *   --servizio <unità>     --dati sono i dati veri di quell'unità, che deve
- *                          essere ferma (e ferma anche <unità>-update.timer).
+ *   --servizio <unità>     --dati sono i dati veri di quell'unità (da-ipam o
+ *                          da-ipam.service), che deve essere ferma, e fermi
+ *                          anche <app>-update.timer e <app>-update.service.
  *
  * Uso:  npx tsx scripts/credenziali/pulizia-t2.ts --dati <cartella dati> --registro <cartella del registro>
  *         (--copia | --servizio <unità>) [--dati-servizio <cartella>] [--tenant <codice>]...
- *         [--lasciati-accettati <tenant>:<id>,<id>]... [--dal <data ISO>] [--applica]
+ *         [--lasciati-accettati <tenant>:<id>,<id>]... [--applica]
+ *   I ripieghi contano dalla data del segno della 2f di ogni tenant, e da
+ *   nessun'altra (niente `--dal`); un'opzione sconosciuta ferma lo script.
  *   Serve ENCRYPTION_KEY (ambiente del servizio, caricato senza stamparlo).
  *   Uscita: 0 fatto (o niente da fare, o a vuoto senza blocchi), 1 qualche
  *   tenant bloccato, non confermato o in errore, 2 non partito.
@@ -42,13 +45,16 @@
 import fs from "node:fs";
 import path from "node:path";
 import { cartelleServizio, controllaCopia, dentro, percorsoReale } from "../../src/lib/credentials/guardia-copia";
-import { controllaDatiVeri, lettoreConferme, valoreOpzione, valoriOpzione } from "../../src/lib/credentials/guardia-scrittura";
+import { controllaDatiVeri, lettoreConferme, opzioneSconosciuta, valoreOpzione, valoriOpzione } from "../../src/lib/credentials/guardia-scrittura";
 import { leggiLasciatiAccettati, leggiRegistroRipieghi, valutaCondizioni2g, type Registro } from "../../src/lib/credentials/condizioni-2g";
 
 const USO =
   "Uso: npx tsx scripts/credenziali/pulizia-t2.ts --dati <cartella dati> --registro <cartella del registro dei ripieghi> " +
   "(--copia | --servizio <unità>) [--dati-servizio <cartella>] [--tenant <codice>]... " +
-  "[--lasciati-accettati <tenant>:<id>,<id>]... [--dal <data ISO>] [--applica]\n";
+  "[--lasciati-accettati <tenant>:<id>,<id>]... [--applica]\n";
+
+const CON_VALORE = ["--dati", "--registro", "--servizio", "--dati-servizio", "--tenant", "--lasciati-accettati"];
+const SENZA_VALORE = ["--copia", "--applica"];
 
 function uso(msg?: string): number {
   if (msg) process.stderr.write(`${msg}\n`);
@@ -78,7 +84,6 @@ function stampaPiano(p: import("./appoggio-pulizia").PianoPulizia): void {
 interface Opzioni {
   registro: Registro;
   accettati: Map<string, number[]>;
-  dal: string | undefined;
   applica: boolean;
   chiedi: (domanda: string) => Promise<string | null>;
 }
@@ -111,7 +116,7 @@ async function tenant(appoggio: Appoggio, code: string, o: Opzioni): Promise<boo
     );
     scrivi(`righe di controller e AD lasciate dalla 2f:\n${elenco(m.stato.lasciatiIntegrazioni.map((l) => `${l.tabella} #${l.id}: ${l.motivo}`), "(nessuna)")}`);
     const accettati = o.accettati.get(code) ?? null;
-    const esito = valutaCondizioni2g(m.stato, o.registro, accettati, o.dal);
+    const esito = valutaCondizioni2g(m.stato, o.registro, accettati);
     for (const n of esito.note) scrivi(`nota: ${n}`);
     if (esito.stato === "escluso") {
       scrivi("ESCLUSO (dirlo per nome a Riccardo): la pulizia qui non parte");
@@ -164,6 +169,8 @@ async function tenant(appoggio: Appoggio, code: string, o: Opzioni): Promise<boo
 
 async function main(): Promise<number> {
   const a = process.argv.slice(2);
+  const ignota = opzioneSconosciuta(a, CON_VALORE, SENZA_VALORE);
+  if (ignota != null) return uso(`Opzione sconosciuta «${ignota}»: niente fatto (i ripieghi contano dalla data del segno della 2f, senza --dal)`);
   const datiArg = valoreOpzione(a, "--dati");
   if (!datiArg) return uso();
   const registroArg = valoreOpzione(a, "--registro");
@@ -174,8 +181,6 @@ async function main(): Promise<number> {
     return uso("Dichiara i dati: --copia (la cartella è una copia) oppure --servizio <unità> (i dati veri di quell'unità, a servizio fermo).");
   }
   if (!process.env.ENCRYPTION_KEY?.trim()) return uso("ENCRYPTION_KEY assente: carica l'ambiente del servizio prima di lanciare la pulizia.");
-  const dal = valoreOpzione(a, "--dal");
-  if (dal !== undefined && !/^\d{4}-\d{2}-\d{2}T[0-9:.]+Z$/.test(dal)) return uso(`--dal «${dal}»: serve una data ISO in UTC, per esempio 2026-10-16T08:00:00.000Z`);
   const richiesti = valoriOpzione(a, "--tenant");
   if (richiesti.some((t) => !/^[A-Za-z0-9_-]{1,64}$/.test(t))) return uso("--tenant vuole il codice di un tenant");
 
@@ -193,8 +198,10 @@ async function main(): Promise<number> {
   if (!servizio.ok) return uso(`Non parto: ${servizio.motivo}`);
   const dati = path.resolve(datiArg);
   const attesi = { dati, hubDb: path.join(dati, "hub.db"), cartellaTenant: path.join(dati, "tenants"), datiServizio: servizio.cartelle };
-  const erroriPrima = copia ? controllaCopia(attesi) : controllaDatiVeri({ dati, unita: unita ?? "", cartelle: servizio.cartelle });
-  if (erroriPrima.length > 0) return uso(`Non parto:\n${erroriPrima.map((e) => `  - ${e}`).join("\n")}`);
+  const veri = copia ? null : controllaDatiVeri({ dati, unita: unita ?? "", cartelle: servizio.cartelle });
+  const erroriPrima = veri ? veri.errori : controllaCopia(attesi);
+  const guardate = veri && veri.controllate.length > 0 ? `\nunità guardate: ${veri.controllate.join("; ")}` : "";
+  if (erroriPrima.length > 0) return uso(`Non parto:\n${erroriPrima.map((e) => `  - ${e}`).join("\n")}${guardate}`);
 
   process.env.DA_INVENT_DATA_DIR = dati;
   process.env.DA_IPAM_HUB_DB_PATH = attesi.hubDb;
@@ -210,7 +217,7 @@ async function main(): Promise<number> {
   if (mancanti.length > 0) return uso(`Tenant che in --dati non ci sono: ${[...new Set(mancanti)].join(", ")} (tenant: ${tutti.join(", ") || "nessuno"})`);
   const tenantDaFare = richiesti.length > 0 ? [...new Set(richiesti)] : tutti;
 
-  scrivi(copia ? `dati: copia in ${reale}` : `dati: quelli veri del servizio ${unita} (fermo), in ${reale}`);
+  scrivi(veri ? `dati: quelli veri, in ${reale}; unità guardate: ${veri.controllate.join("; ")}` : `dati: copia in ${reale}`);
   scrivi(`registro dei ripieghi: ${registro.righe.length} righe lette${registro.illeggibili ? `, ${registro.illeggibili} illeggibili` : ""}`);
   scrivi(a.includes("--applica") ? "modo: --applica (conferma scritta per ogni tenant)" : "modo: a vuoto");
 
@@ -218,7 +225,6 @@ async function main(): Promise<number> {
   const o: Opzioni = {
     registro,
     accettati,
-    dal,
     applica: conferme != null,
     chiedi: conferme ? conferme.chiedi : async () => null,
   };

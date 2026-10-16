@@ -260,6 +260,24 @@ describe("pulizia-t2.ts sulla copia", () => {
     assert.match(r.stderr, /T2GNONCE/);
   });
 
+  it("--dal non c'è più: un ripiego dopo la 2f non si nasconde spostando la finestra → non parte (2), niente scritto", () => {
+    // Revisione della 2g (16/10): `--dal` sostituiva la data del segno della 2f
+    // anche con una data più tarda, e un ripiego vero dopo il rilascio spariva
+    // dal conto. La finestra è quella del piano, la data del segno; un'opzione
+    // che lo script non conosce non si ignora.
+    const s = scena();
+    fs.writeFileSync(
+      path.join(s.registro, "ripieghi-2026-10-16.jsonl"),
+      `${JSON.stringify({ ts: "2026-10-16T10:00:00.000Z", caso: "cred_catena_vecchia", tenant: T, firma: "vera @ src/z.ts:3:3", tipo: "conteggio", ora: "2026-10-16T10", n: 100 })}\n`,
+    );
+    const prima = contenuto(s.file);
+    const r = lancia(s, ["--copia", ...accettati(s), "--dal", "2026-10-16T11:00:00.000Z", "--applica"], `${T}\n`);
+    assert.equal(r.status, 2, esito(r));
+    assert.match(r.stderr, /--dal/);
+    assert.equal(contenuto(s.file), prima);
+    assert.deepEqual(bak(s), []);
+  });
+
   it("il segno della 2f di oggi non blocca (D9 rivista: niente attesa)", () => {
     const oggi = new Date().toISOString();
     const s = scena((d) => d.prepare("UPDATE tenant_settings SET value = ? WHERE key = 'credenziali_t2_integrazioni'").run(`done:${oggi}:controller=1`));

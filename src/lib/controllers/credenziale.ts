@@ -23,6 +23,7 @@
 import type Database from "better-sqlite3";
 import type { z } from "zod";
 import type { CredentialSchema } from "@/lib/validators";
+import { safeDecrypt } from "@/lib/crypto";
 import { creaCredenzialeDb, creaVoceDb } from "@/lib/credentials/archivio";
 import { leggiSegretoDb } from "@/lib/credentials/segreti";
 import { METODI_PER_TIPO, normalizzaTipo } from "@/lib/credentials/tipi";
@@ -133,6 +134,25 @@ export function credenzialeControllerDb(
   if (row.credential_id == null) return { ok: false, motivo: CREDENZIALE_MANCANTE };
   const v = voceControllerDb(dbh, row.credential_id, row.kind, metodo);
   return v.ok ? { ...v, fonte: "voce" } : v;
+}
+
+/**
+ * Il solo utente della voce di un controller, decifrato: per gli script di
+ * misura (`scripts/misura-topologia.ts`, `misura-mac-porta.ts`), a cui il
+ * segreto arriva da stdin perché la copia può avere un'altra ENCRYPTION_KEY.
+ * Dalla 2g la colonna `username` della riga è vuota. Senza voce, voce senza
+ * utente o che non si decifra: errore, mai un utente vuoto. Non lancia.
+ */
+export function utenteVoceControllerDb(dbh: Database.Database, credentialId: number | null): { ok: true; username: string } | { ok: false; motivo: string } {
+  if (credentialId == null) return { ok: false, motivo: "Il controller non ha una voce dell'archivio: l'utente non si sa (sceglila nella modifica del controller)" };
+  const r = dbh.prepare("SELECT name, encrypted_username FROM credentials WHERE id = ?").get(credentialId) as { name: string; encrypted_username: string | null } | undefined;
+  if (!r) return { ok: false, motivo: `La voce #${credentialId} del controller non c'è nell'archivio` };
+  if (!r.encrypted_username) return { ok: false, motivo: `La voce «${r.name}» non ha un utente (è a chiave API?)` };
+  const username = safeDecrypt(r.encrypted_username);
+  if (username == null || username.trim() === "") {
+    return { ok: false, motivo: `L'utente della voce «${r.name}» non si decifra: serve la ENCRYPTION_KEY del servizio da cui viene la copia` };
+  }
+  return { ok: true, username };
 }
 
 /** Il controller per cui nasce una voce: il nome dà il nome della voce, l'id lo rende unico. */

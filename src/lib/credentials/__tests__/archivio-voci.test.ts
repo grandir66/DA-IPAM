@@ -30,6 +30,7 @@ import { creaVoceDb, modificaVoceDb, eliminaVoceDb } from "../archivio";
 import { mascheraCredenziale } from "../maschera";
 import { usiCredenzialeDb, usiTotaliDb, totaleUsi } from "../usi";
 import type { Credential } from "@/types";
+import { creaCateneVecchie } from "@/lib/__tests__/support/catene-vecchie";
 
 const T = "TESTARCHIVIOVOCI";
 const dbt = () => getTenantDb(T);
@@ -330,6 +331,8 @@ describe("usi di una voce", () => {
     withTenant(T, () => {
       const id = voce("molto usata", "windows");
       const d = dbt();
+      // Un DB di prima della pulizia della 2g (T27): le tabelle vecchie ci sono ancora.
+      creaCateneVecchie(d);
       d.prepare("UPDATE network_devices SET credential_id = ? WHERE id = ?").run(id, apparatoId);
       d.prepare("INSERT INTO device_credential_bindings (device_id, credential_id, protocol_type, port) VALUES (?, ?, 'winrm', 5986)").run(apparatoId, id);
       d.prepare("INSERT INTO network_credentials (network_id, credential_id, sort_order) VALUES (?, ?, 70)").run(reteId, id);

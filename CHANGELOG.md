@@ -4,6 +4,52 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-16 · credenziali 2g (T27): via colonne e tabelle vecchie, archivio unico completo
+
+Piano `docs/superpowers/plans/2026-10-15-tappa2-archivio-credenziali.md`, sotto-tappa 2g, Task 27. Perché: dal T26
+nessuno legge più le fonti vecchie, ma i segreti sono ancora lì, fuori dall'archivio (colonne di `network_devices`,
+di `network_controllers` e di `ad_integrations`, catene vecchie). La pulizia dei dati è **uno script**, non una
+migrazione di `getTenantDb`: su un'appliance che riceve `main` girerebbe all'apertura, senza prova a vuoto, backup e
+conferma. Lo lancia la sessione principale sul server, a servizio fermo, con l'ok di Riccardo per ognuno.
+
+### Aggiunte
+
+- `scripts/credenziali/pulizia-t2.ts` (regole in `src/lib/credentials/pulizia-t2.ts`): a vuoto di base, coi nomi a
+  terminale; `--applica` chiede la conferma scritta (il codice del tenant), fa il backup `.bak-YYYYMMDD-HHMMSS`
+  accanto al DB (spazio controllato prima) e pulisce un tenant alla volta, in una transazione col segno
+  `credenziali_t2_pulizia`. Prima controlla le condizioni del T26 (segni chiusi, lasciati della 2e uguali a
+  `--lasciati-accettati`, nessuna riga Omada, registro dei ripieghi a zero dal rilascio della 2f: niente attesa di
+  giorni). Due modi sempre dichiarati: `--copia` (guardia delle copie) o `--servizio <unità>` (dati veri: servizio e
+  timer dell'aggiornamento devono essere fermi, letti da `systemctl show`, perché `is-active` di un'unità che non
+  esiste risponde «inactive» come un servizio fermo).
+- `scripts/credenziali/togli-chiavi-hub.ts`: toglie da hub.db le due chiavi «di default» (D3) e le
+  `integration_unifi_*`, solo quando nessuno le leggerà più (con un tenant attivo, la sua 2d e la sua migrazione
+  UniFi devono essere già fatte; altrimenti restano, col perché). A vuoto stampa solo i nomi, mai i valori.
+
+### Modifiche
+
+- **Cosa si svuota** (decisioni di Riccardo del 16/10): le colonne dei soli apparati lasciati accettati che hanno
+  già un binding equivalente (la definizione della 2e, ora una funzione sola usata da conversione e pulizia); un
+  apparato con una colonna piena fuori dall'elenco, uno accettato con una colonna senza equivalente o un binding
+  inline **bloccano il tenant**, elencati. Controller e AD si svuotano (`''`) solo dove c'è la voce: le righe senza
+  voce restano com'erano e si elencano. Le due tabelle delle catene vecchie si tolgono con due `DROP` nella stessa
+  transazione: se una fallisce torna indietro tutto. L'elenco dei lasciati accettati va nel segno.
+- **Ripieghi da confermare**: il registro scrive caso, tenant e firma, non l'apparato. Con dei lasciati accettati,
+  i `cred_colonna_apparato` dal rilascio della 2f possono venire proprio da loro: non bloccano da soli, si stampano
+  per firma col conteggio e si confermano nella stessa conferma scritta, col numero (`<tenant> <n>`). Lo script
+  delle condizioni del T26 li dice «DA CONFERMARE» (uscita 3), mai «in regola».
+- **Schema dei tenant nuovi senza le catene vecchie** (`network_host_credentials`, `host_detect_credential` e il loro
+  indice): un tenant nuovo nasce senza, la 2d non ha niente da convertire. Nei DB di prima le toglie la pulizia.
+- **Script di misura della topologia e dei MAC per porta**: l'utente del controller viene dalla voce (la colonna
+  della riga, dopo la pulizia, è vuota); senza voce o se non si decifra, errore invece di un utente vuoto.
+
+### Effetto accettato
+
+- Dopo la pulizia i due apparati lasciati dell'hub non hanno più nemmeno le colonne: restano senza credenziale
+  valida finché una Prova dalla scheda non riesce (il binding fallito resta, ed è la strada per tornare ad avere
+  accesso). Tornare indietro dalla pulizia vuol dire il `.bak` di quel tenant: si perde quello che è stato scritto
+  dopo l'ora del backup.
+
 ## [Non rilasciato] — 2026-10-16 · credenziali 2g (T26): il vecchio non si legge più
 
 Piano `docs/superpowers/plans/2026-10-15-tappa2-archivio-credenziali.md`, sotto-tappa 2g, Task 26. Perché:

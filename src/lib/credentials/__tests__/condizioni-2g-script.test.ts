@@ -161,6 +161,24 @@ describe("condizioni-2g.ts sulla copia", () => {
     }
   });
 
+  it("cred_colonna_apparato dopo la 2f con l'elenco → DA CONFERMARE col conteggio (uscita 3), mai «in regola»", () => {
+    const f = path.join(registro, "ripieghi-2026-10-16.jsonl");
+    const prima = fs.readFileSync(f, "utf8");
+    fs.appendFileSync(
+      f,
+      `${JSON.stringify({ ts: "2026-10-16T09:00:00.000Z", caso: "cred_colonna_apparato", tenant: T, firma: "lasciato @ src/w.ts:4:4", tipo: "conteggio", ora: "2026-10-16T09", n: 10 })}\n`,
+    );
+    try {
+      const r = lancia(["--dati", copia, "--registro", registro, "--lasciati-accettati", `${T}:${lasciato}`], servizio);
+      assert.equal(r.status, 3, `uscita ${r.status}\n${r.stdout}\n${r.stderr}`);
+      assert.match(r.stdout, /DA CONFERMARE/);
+      assert.match(r.stdout, /cred_colonna_apparato da lasciato @ src\/w\.ts:4:4: almeno 10/);
+      assert.doesNotMatch(r.stdout, /condizioni della 2g: in regola/);
+    } finally {
+      fs.writeFileSync(f, prima);
+    }
+  });
+
   it("--dati uguale alla cartella del servizio → esce con 2 senza aprire niente", () => {
     const primaServizio = stato(servizio);
     const r = lancia(["--dati", servizio, "--registro", registro], servizio);

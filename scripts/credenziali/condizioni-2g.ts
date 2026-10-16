@@ -32,7 +32,10 @@
  *         [--dati-servizio <cartella>] [--lasciati-accettati <tenant>:<id>,<id>]… [--dal <data ISO>]
  *   Serve ENCRYPTION_KEY (ambiente del servizio, caricato senza stamparlo): le
  *   conversioni a vuoto decifrano in memoria per confrontare.
- *   Uscita: 0 in regola, 1 bloccato (il perché è a terminale), 2 non partito.
+ *   Uscita: 0 in regola, 1 bloccato (il perché è a terminale), 2 non partito,
+ *   3 niente blocchi ma ripieghi `cred_colonna_apparato` da confermare (T27:
+ *   il registro non dice se vengono dai lasciati accettati; li conferma
+ *   Riccardo nella conferma scritta della pulizia, col numero stampato).
  */
 import path from "node:path";
 import { cartelleServizio, controllaCopia } from "../../src/lib/credentials/guardia-copia";
@@ -105,6 +108,7 @@ async function main(): Promise<number> {
   );
 
   let bloccato = false;
+  let daConfermare = false;
   for (const code of tenant) {
     process.stdout.write(`== Tenant ${code}\n`);
     let m: import("./appoggio-condizioni").MisuraTenant;
@@ -131,15 +135,31 @@ async function main(): Promise<number> {
       process.stdout.write("ESCLUSO (dirlo per nome a Riccardo)\n");
       continue;
     }
+    if (esito.daConfermare) {
+      process.stdout.write(
+        `ripieghi da confermare (${esito.daConfermare.conteggio}):\n${esito.daConfermare.righe.map((r) => `  - ${r}`).join("\n")}\n`
+      );
+    }
     if (blocchi.length > 0) {
       bloccato = true;
       process.stdout.write(`BLOCCATO:\n${blocchi.map((b) => `  - ${b}`).join("\n")}\n`);
+    } else if (esito.daConfermare) {
+      daConfermare = true;
+      process.stdout.write(`DA CONFERMARE: ${esito.daConfermare.conteggio} ripieghi ${esito.daConfermare.righe.length > 1 ? "elencati" : "elencato"} qui sopra\n`);
     } else {
       process.stdout.write("in regola\n");
     }
   }
-  process.stdout.write(bloccato ? "condizioni della 2g: BLOCCATO\n" : "condizioni della 2g: in regola\n");
-  return bloccato ? 1 : 0;
+  if (bloccato) {
+    process.stdout.write("condizioni della 2g: BLOCCATO\n");
+    return 1;
+  }
+  if (daConfermare) {
+    process.stdout.write("condizioni della 2g: DA CONFERMARE (ripieghi che solo Riccardo può attribuire ai lasciati accettati)\n");
+    return 3;
+  }
+  process.stdout.write("condizioni della 2g: in regola\n");
+  return 0;
 }
 
 function esci(codice: number): void {

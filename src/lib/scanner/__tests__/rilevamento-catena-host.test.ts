@@ -33,6 +33,7 @@ import { deleteTenantDatabase, getTenantDb, withTenant } from "@/lib/db-tenant";
 import { discoverNetwork } from "@/lib/scanner/discovery";
 import { serverSshProva, type ServerSshProva } from "@/lib/devices/__tests__/support/server-ssh-chiave";
 import { creaEsecutoreFinto, installaEsecutoreFinto, togliEsecutoreFinto } from "./support/esecutore-finto";
+import { creaCateneVecchie } from "@/lib/__tests__/support/catene-vecchie";
 
 process.env.DA_INVENT_SNMPWALK_CLI = "false";
 
@@ -48,6 +49,8 @@ interface Tenant {
 function tenant(code: string, porte: number[]): Tenant {
   return withTenant(code, () => {
     const d = getTenantDb(code);
+    // Un DB di prima della pulizia della 2g (T27): i pin vecchi ci sono ancora, e la discovery non li legge né li scrive.
+    creaCateneVecchie(d);
     const rete = Number(d.prepare("INSERT INTO networks (cidr, name) VALUES ('127.0.0.0/30', 'Loopback')").run().lastInsertRowid);
     const host = Number(
       d.prepare("INSERT INTO hosts (network_id, ip, status, open_ports) VALUES (?, ?, 'online', ?)")

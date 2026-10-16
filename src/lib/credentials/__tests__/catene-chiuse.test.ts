@@ -25,6 +25,7 @@ import Database from "better-sqlite3";
 
 import { encrypt } from "@/lib/crypto";
 import { TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL } from "@/lib/db-tenant-schema";
+import { creaCateneVecchie } from "@/lib/__tests__/support/catene-vecchie";
 import { deleteTenantDatabase, getTenantDb, withTenant, getHostById as hostTenant } from "@/lib/db-tenant";
 import { getHostById as hostFacciata } from "@/lib/db";
 import { closeHubDb, getSetting, setSetting } from "@/lib/db-hub";
@@ -50,6 +51,8 @@ function nuovoDb(): Database.Database {
     try { d.exec(`ALTER TABLE host_credentials ADD COLUMN ${c}`); } catch { /* già presente */ }
   }
   try { d.exec("ALTER TABLE network_devices ADD COLUMN host_id INTEGER REFERENCES hosts(id) ON DELETE SET NULL"); } catch { /* già presente */ }
+  // Un DB di prima della pulizia (T27): lo schema di oggi non crea più le catene vecchie.
+  creaCateneVecchie(d);
   return d;
 }
 
@@ -184,7 +187,8 @@ describe("anteprima edge dopo la conversione della 2d: la sequenza del codice di
   it("stessi slot, stesso ordine, stesse voci selezionate (chiave Windows dell'hub compresa, un tenant attivo)", () => {
     withTenant(TE, () => {
       const d = getTenantDb(TE);
-      // Uno stato di prima della 2d: il segno l'ha scritto l'apertura su un DB vuoto.
+      // Uno stato di prima della 2d: il segno l'ha scritto l'apertura su un DB vuoto, le tabelle vecchie come le aveva.
+      creaCateneVecchie(d);
       d.prepare("DELETE FROM tenant_settings WHERE key = ?").run(SEGNO_CATENE);
       const rete = Number(d.prepare("INSERT INTO networks (cidr, name) VALUES ('10.61.0.0/24', 'Rete edge')").run().lastInsertRowid);
       const ins = d.prepare("INSERT INTO credentials (name, credential_type, encrypted_username, encrypted_password) VALUES (?, ?, ?, ?)");

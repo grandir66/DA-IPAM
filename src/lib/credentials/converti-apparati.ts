@@ -422,11 +422,22 @@ interface Contesto {
   colonne: readonly ColonnaApparato[];
 }
 
+/** Il piano di un apparato, senza scrivere: le colonne da svuotare e i binding che nascerebbero dalle colonne. */
+interface PianoApparato {
+  inline: RigaBinding[];
+  svuota: Set<ColonnaApparato>;
+  /** Vuoto = ogni colonna piena ha già un binding equivalente («definizione della 2e»). */
+  nuovi: BindingDaColonna[];
+  login: CredProtocol;
+}
+
 /**
- * Converte un apparato dentro il suo SAVEPOINT. Una forma che non tratta, o
- * una scelta che cambierebbe, lancia `Lasciato`: chi chiama annulla.
+ * Il piano della conversione di un apparato, senza scrivere: è la
+ * definizione di «binding equivalente» della 2e, che usa anche la pulizia
+ * della 2g (`vecchioRimastoApparatiDb`). Una forma che non tratta lancia
+ * `Lasciato`.
  */
-function convertiApparato(db: Database.Database, app: Apparato, c: Contesto, nomiNuovi: Set<string>, out: EsitoApparati): void {
+function pianoApparato(db: Database.Database, app: Apparato, c: Pick<Contesto, "leggiBinding" | "leggiVoce">): PianoApparato {
   const principale = protocolloPrincipale(app.protocol);
   const login = protocolloLogin(app.protocol);
   const binding = c.leggiBinding.all(app.id) as RigaBinding[];
@@ -594,6 +605,16 @@ function convertiApparato(db: Database.Database, app: Apparato, c: Contesto, nom
     }
   }
   if (app.api_token != null) svuota.add("api_token");
+
+  return { inline, svuota, nuovi, login };
+}
+
+/**
+ * Converte un apparato dentro il suo SAVEPOINT. Una forma che non tratta, o
+ * una scelta che cambierebbe, lancia `Lasciato`: chi chiama annulla.
+ */
+function convertiApparato(db: Database.Database, app: Apparato, c: Contesto, nomiNuovi: Set<string>, out: EsitoApparati): void {
+  const { inline, svuota, nuovi, login } = pianoApparato(db, app, c);
 
   // ── La scelta prima ──
   const protocolli = new Set<CredProtocol>([login, "snmp"]);
@@ -838,4 +859,73 @@ export function descriviApparati(e: EsitoApparati): string {
     `colonne svuotate su ${e.colonneSvuotate.length} apparati${elenco(svuotate)}, inline rimasti ${e.inlineRimasti}, ` +
     `lasciati ${e.lasciati.length}${elenco(lasciati)}`
   );
+}
+
+// ── Per la pulizia della 2g (T27) ──────────────────────────────────────────
+
+/** Le fonti vecchie rimaste su un apparato: le guarda la pulizia della 2g prima di svuotarle. */
+export interface VecchioRimasto {
+  device_id: number;
+  nome: string;
+  /** Le colonne non NULL, nell'ordine di `COLONNE_APPARATO`. */
+  colonne: ColonnaApparato[];
+  /** I binding inline (segreto dentro il binding, senza voce) dell'apparato. */
+  inline: number[];
+  /**
+   * null: ogni colonna piena ha già un binding equivalente con la definizione
+   * della 2e (la conversione non creerebbe niente) e non ci sono binding
+   * inline. Altrimenti il perché, senza segreti.
+   */
+  senzaEquivalente: string | null;
+}
+
+/**
+ * Gli apparati con una colonna delle credenziali non NULL o un binding
+ * inline, e per ognuno se tutto ha già un binding equivalente. Non scrive.
+ * Con la chiave assente o sbagliata lancia (come la conversione): ogni
+ * segreto «non si decifrerebbe» e sembrerebbe senza equivalente.
+ */
+export function vecchioRimastoApparatiDb(db: Database.Database): VecchioRimasto[] {
+  const presenti = colonneDi(db, "network_devices");
+  const colonne = COLONNE_APPARATO.filter((col) => presenti.has(col));
+  const piene = colonne.map((col) => `${col} IS NOT NULL`).join(" OR ") || "0";
+  const apparati = (
+    db
+      .prepare(
+        `SELECT * FROM network_devices
+         WHERE ${piene} OR id IN (SELECT device_id FROM device_credential_bindings WHERE credential_id IS NULL)
+         ORDER BY id`
+      )
+      .all() as Riga[]
+  ).map(apparatoDa);
+  if (apparati.length === 0) return [];
+  controllaChiave(db, apparati);
+  const c = {
+    leggiBinding: db.prepare(
+      `SELECT id, credential_id, protocol_type, port, inline_username, inline_encrypted_password
+       FROM device_credential_bindings WHERE device_id = ? ORDER BY sort_order ASC, id ASC`
+    ),
+    leggiVoce: db.prepare("SELECT id, credential_type, port FROM credentials WHERE id = ?"),
+  };
+  const leggiInline = db.prepare("SELECT id FROM device_credential_bindings WHERE device_id = ? AND credential_id IS NULL ORDER BY id");
+  return apparati.map((app): VecchioRimasto => {
+    const inline = (leggiInline.all(app.id) as Array<{ id: number }>).map((r) => r.id);
+    let senzaEquivalente: string | null = null;
+    if (inline.length > 0) {
+      senzaEquivalente = `binding inline ${inline.map((id) => `#${id}`).join(", ")} senza voce: la pulizia non li tratta`;
+    } else {
+      try {
+        const piano = pianoApparato(db, app, c);
+        if (piano.nuovi.length > 0) {
+          senzaEquivalente = piano.nuovi
+            .map((n) => `${n.colonna} senza un binding equivalente (la 2e creerebbe un binding ${NOME_PROTOCOLLO[n.protocollo]} porta ${n.porta})`)
+            .join("; ");
+        }
+      } catch (e) {
+        if (!(e instanceof Lasciato)) throw e;
+        senzaEquivalente = e.motivo;
+      }
+    }
+    return { device_id: app.id, nome: app.name, colonne: colonne.filter((col) => app.riga[col] != null), inline, senzaEquivalente };
+  });
 }

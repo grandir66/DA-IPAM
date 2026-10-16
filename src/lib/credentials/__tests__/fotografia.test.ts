@@ -29,6 +29,7 @@ import { spawnSync } from "node:child_process";
 import { encrypt } from "@/lib/crypto";
 import { getHubDb, closeHubDb, setSetting } from "@/lib/db-hub";
 import { getTenantDb, closeTenantDb } from "@/lib/db-tenant";
+import { creaCateneVecchie } from "@/lib/__tests__/support/catene-vecchie";
 import {
   chiaroDaParti,
   confrontaFotografie,
@@ -199,6 +200,8 @@ describe("fotografia-scelte.ts sulla copia", () => {
   before(() => {
     getHubDb();
     const d = getTenantDb(T);
+    // La copia di un DB di prima della 2g: le catene vecchie c'erano (lo schema di oggi non le crea più, T27).
+    creaCateneVecchie(d);
     const insCred = d.prepare(
       "INSERT INTO credentials (name, credential_type, encrypted_username, encrypted_password) VALUES (?, ?, ?, ?)"
     );
@@ -476,6 +479,7 @@ describe("fotografia e misure della 2a sugli apparati snmp_v3", () => {
   before(() => {
     getHubDb();
     const d = getTenantDb(TV3);
+    creaCateneVecchie(d);
     const ins = d.prepare(
       `INSERT INTO credentials (name, credential_type, encrypted_username, encrypted_password, security_level, auth_protocol, encrypted_auth_key, priv_protocol, encrypted_priv_key)
        VALUES (?, 'snmp', ?, ?, ?, ?, ?, ?, ?)`

@@ -22,6 +22,16 @@
  * dell'hub) si esclude e si dice per nome: quando si aprirà farà tutte le
  * conversioni in fila, e la pulizia lì non parte da sola (è uno script).
  *
+ * Ripieghi da confermare (T27, 16/10): il registro scrive caso, tenant e
+ * firma del chiamante, non l'apparato. In un tenant con lasciati accettati un
+ * `cred_colonna_apparato` può venire proprio da loro (fino al codice della 2g
+ * il motore ripiegava sulla colonna dopo il binding fallito), e non c'è modo
+ * di dirlo dal registro. Allora non blocca da solo: si elenca per firma col
+ * conteggio (`daConfermare`) e lo conferma Riccardo nella conferma scritta
+ * della pulizia, con quel numero. Gli altri casi, le righe illeggibili e il
+ * tetto orario bloccano come sempre; senza lasciati accettati anche
+ * `cred_colonna_apparato` blocca.
+ *
  * Modulo puro (solo `node:fs` per leggere il registro): non importa né `db.ts`
  * né `db-tenant.ts`, e non apre nessun DB. I dati li raccoglie chi chiama.
  */
@@ -78,12 +88,25 @@ export interface Registro {
   illeggibili: number;
 }
 
+export interface DaConfermare {
+  /** Una riga per caso e firma, col conteggio: va a terminale e nella domanda della conferma. */
+  righe: string[];
+  /** La somma dei conteggi (per ora, il massimo scritto): è il numero che si conferma per iscritto. */
+  conteggio: number;
+}
+
 export interface EsitoCondizioni {
   tenant: string;
-  stato: "ok" | "bloccato" | "escluso";
+  /** `da_confermare`: nessun blocco, ma ripieghi che solo una conferma scritta può attribuire ai lasciati accettati. */
+  stato: "ok" | "bloccato" | "escluso" | "da_confermare";
   blocchi: string[];
   note: string[];
+  /** I ripieghi `cred_colonna_apparato` attribuibili ai lasciati accettati; null se non ce ne sono. */
+  daConfermare: DaConfermare | null;
 }
+
+/** Il caso che i lasciati accettati possono aver scritto (colonne di `network_devices`). */
+export const CASO_DEI_LASCIATI = "cred_colonna_apparato";
 
 /** La data ISO di un segno `done:<data>:…` o `parziale:<data>:…`; null per `errore:` o assente. */
 export function dataDelSegno(segno: string | null): string | null {
@@ -104,8 +127,12 @@ function stessiId(a: readonly number[], b: readonly number[]): boolean {
   return x.length === y.length && x.every((v, i) => v === y[i]);
 }
 
-/** I ripieghi dei casi di D9 del tenant (o senza tenant) dal momento `dal`, per caso e firma. */
-function ripieghiDal(registro: Registro, tenant: string, dal: string | null): string[] {
+/**
+ * I ripieghi dei casi di D9 del tenant (o senza tenant) dal momento `dal`, per
+ * caso e firma. Con `attribuibili` (il tenant ha lasciati accettati) quelli di
+ * `CASO_DEI_LASCIATI` non bloccano: vanno in `daConfermare`.
+ */
+function ripieghiDal(registro: Registro, tenant: string, dal: string | null, attribuibili: boolean): { blocchi: string[]; daConfermare: DaConfermare | null } {
   const gruppi = new Map<string, { caso: string; firma: string; perOra: Map<string, number>; ultimo: string }>();
   let limiti = 0;
   for (const r of registro.righe) {
@@ -124,14 +151,21 @@ function ripieghiDal(registro: Registro, tenant: string, dal: string | null): st
     if (r.ts > g.ultimo) g.ultimo = r.ts;
     gruppi.set(chiave, g);
   }
-  const out: string[] = [];
+  const blocchi: string[] = [];
+  const confermare: DaConfermare = { righe: [], conteggio: 0 };
   for (const g of gruppi.values()) {
     const n = [...g.perOra.values()].reduce((s, v) => s + v, 0);
-    out.push(`ripiego ${g.caso} da ${g.firma}: almeno ${n} (l'ultimo ${g.ultimo})`);
+    const riga = `ripiego ${g.caso} da ${g.firma}: almeno ${n} (l'ultimo ${g.ultimo})`;
+    if (attribuibili && g.caso === CASO_DEI_LASCIATI) {
+      confermare.righe.push(riga);
+      confermare.conteggio += n;
+    } else {
+      blocchi.push(riga);
+    }
   }
-  if (limiti > 0) out.push(`il registro ha raggiunto il tetto orario ${limiti} volte: alcune righe non sono state scritte`);
-  if (registro.illeggibili > 0) out.push(`${registro.illeggibili} righe del registro non si leggono`);
-  return out;
+  if (limiti > 0) blocchi.push(`il registro ha raggiunto il tetto orario ${limiti} volte: alcune righe non sono state scritte`);
+  if (registro.illeggibili > 0) blocchi.push(`${registro.illeggibili} righe del registro non si leggono`);
+  return { blocchi, daConfermare: confermare.righe.length > 0 ? confermare : null };
 }
 
 /**
@@ -146,7 +180,7 @@ export function valutaCondizioni2g(t: StatoTenant2g, registro: Registro, accetta
   const s = t.segni;
   if (s.tipi == null && s.catene == null && s.apparati == null && s.integrazioni == null) {
     note.push(`tenant ${t.tenant}: nessun segno della tappa 2 (mai aperto dopo la 2c): escluso, la pulizia lì non parte`);
-    return { tenant: t.tenant, stato: "escluso", blocchi, note };
+    return { tenant: t.tenant, stato: "escluso", blocchi, note, daConfermare: null };
   }
 
   for (const k of ["tipi", "catene", "integrazioni"] as const) {
@@ -184,9 +218,17 @@ export function valutaCondizioni2g(t: StatoTenant2g, registro: Registro, accetta
   // Registro dei ripieghi dal rilascio della 2f (D9 rivista: nessun periodo d'attesa).
   const da = dal ?? dataDelSegno(s.integrazioni);
   if (da == null) note.push(`tenant ${t.tenant}: nessuna data della 2f: il registro si legge per intero`);
-  blocchi.push(...ripieghiDal(registro, t.tenant, da));
+  const ripieghi = ripieghiDal(registro, t.tenant, da, (accettati?.length ?? 0) > 0);
+  blocchi.push(...ripieghi.blocchi);
+  if (ripieghi.daConfermare) {
+    note.push(
+      `tenant ${t.tenant}: ${ripieghi.daConfermare.conteggio} ripieghi ${CASO_DEI_LASCIATI} dal rilascio della 2f: il registro non scrive l'apparato, ` +
+        `quindi non si può dire se vengono dai lasciati accettati ${elencoId(accettati ?? [])}; si confermano per iscritto nella pulizia`
+    );
+  }
 
-  return { tenant: t.tenant, stato: blocchi.length > 0 ? "bloccato" : "ok", blocchi, note };
+  const stato = blocchi.length > 0 ? "bloccato" : ripieghi.daConfermare ? "da_confermare" : "ok";
+  return { tenant: t.tenant, stato, blocchi, note, daConfermare: ripieghi.daConfermare };
 }
 
 /**

@@ -8,6 +8,7 @@ import zlib from "node:zlib";
 import { rekeyColumns } from "../schema-introspect";
 import { tableSpec } from "../table-registry";
 import { decryptBuffer, deriveTransportKey, encryptBuffer, readContainer, writeContainer } from "../envelope";
+import { creaCateneVecchie } from "@/lib/__tests__/support/catene-vecchie";
 
 /**
  * Il bundle come lo scriveva l'export di prima della 2g (T26): l'export di
@@ -30,6 +31,13 @@ function freshTenant(): Database.Database {
   const d = new Database(":memory:");
   d.exec(TENANT_SCHEMA_SQL);
   d.exec(TENANT_INDEXES_SQL);
+  return d;
+}
+
+/** La sorgente di un bundle di prima della 2g: le catene vecchie c'erano (lo schema di oggi non le crea più, T27). */
+function tenantDiPrimaDellaPulizia(): Database.Database {
+  const d = freshTenant();
+  creaCateneVecchie(d);
   return d;
 }
 
@@ -244,7 +252,7 @@ for (const segnoSorgente of [null, "errore:UNIQUE constraint failed"] as const) 
     process.env.ENCRYPTION_KEY = "A".repeat(64);
     const { exportTenant } = await import("../export");
     const { importTenant } = await import("../import");
-    const src = freshTenant();
+    const src = tenantDiPrimaDellaPulizia();
     const net = Number(src.prepare("INSERT INTO networks (cidr, name) VALUES ('10.9.0.0/24', 'LAN')").run().lastInsertRowid);
     const cred = Number(src.prepare("INSERT INTO credentials (name, credential_type) VALUES ('Server', 'ssh')").run().lastInsertRowid);
     src.prepare("INSERT INTO network_host_credentials (network_id, credential_id, role, sort_order) VALUES (?, ?, 'ssh', 0)").run(net, cred);
@@ -278,7 +286,7 @@ for (const segnoSorgente of ["done", "parziale"] as const) {
     const { exportTenant } = await import("../export");
     const { importTenant } = await import("../import");
     const { convertiCateneVecchie, segnoCatene } = await import("@/lib/credentials/converti-catene");
-    const src = freshTenant();
+    const src = tenantDiPrimaDellaPulizia();
     const net = Number(src.prepare("INSERT INTO networks (cidr, name) VALUES ('10.9.0.0/24', 'LAN')").run().lastInsertRowid);
     const host = Number(src.prepare("INSERT INTO hosts (network_id, ip) VALUES (?, '10.9.0.5')").run(net).lastInsertRowid);
     const cred = Number(src.prepare("INSERT INTO credentials (name, credential_type) VALUES ('Server', 'ssh')").run().lastInsertRowid);

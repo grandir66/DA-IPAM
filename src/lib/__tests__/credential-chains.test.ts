@@ -37,6 +37,7 @@ import {
   getOrderedDetectCredentialIds,
   getOrderedSshLinuxCredentialIds,
 } from "@/lib/db-tenant";
+import { creaCateneVecchie } from "@/lib/__tests__/support/catene-vecchie";
 
 const T = "TESTCREDCHAINS";
 
@@ -62,6 +63,8 @@ function seedTypedCredential(id: number, type: "windows" | "ssh" | "linux") {
 
 before(() => {
   withTenant(T, () => {
+    // Un tenant di prima della 2d e della pulizia (T27): le tabelle vecchie come le aveva.
+    creaCateneVecchie(getTenantDb(T));
     getTenantDb(T).prepare(`DELETE FROM tenant_settings WHERE key = 'credenziali_t2_catene'`).run();
     seedNetwork(1, "10.50.0.0/24");
     seedHost(1, 1, "10.50.0.1");

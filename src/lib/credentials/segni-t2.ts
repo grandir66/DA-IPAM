@@ -23,6 +23,13 @@ export const SEGNO_TIPI = "credenziali_t2_tipi";
 export const SEGNO_CATENE = "credenziali_t2_catene";
 export const SEGNO_APPARATI = "credenziali_t2_apparati";
 export const SEGNO_INTEGRAZIONI = "credenziali_t2_integrazioni";
+/**
+ * Scritto solo dalla pulizia della 2g (`scripts/credenziali/pulizia-t2.ts`,
+ * T27), mai da getTenantDb: `done:<data ISO>:<conteggi>`, coi lasciati
+ * accettati da Riccardo e i ripieghi confermati. Con `done:` la pulizia non
+ * rifà niente.
+ */
+export const SEGNO_PULIZIA = "credenziali_t2_pulizia";
 
 export function leggiSegno(dbh: Database.Database, chiave: string): string | null {
   const r = dbh.prepare("SELECT value FROM tenant_settings WHERE key = ?").get(chiave) as { value: string } | undefined;

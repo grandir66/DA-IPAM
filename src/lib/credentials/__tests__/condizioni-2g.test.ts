@@ -166,6 +166,53 @@ describe("valutaCondizioni2g", () => {
       });
     }
 
+    // T27 (16/10, sessione principale): il registro scrive caso, tenant e firma, non l'apparato. Con
+    // lasciati accettati, un `cred_colonna_apparato` può venire da loro (il motore della 2f ripiegava
+    // sulla colonna dopo il binding fallito): non blocca da solo, si conta e si conferma per iscritto.
+    const parzialeAccettato = () =>
+      stato({
+        segni: { tipi: done(), catene: done(), apparati: `parziale:${DATA}:lasciati=2`, integrazioni: done() },
+        lasciatiApparati: [{ device_id: 22, motivo: "m" }, { device_id: 25, motivo: "m" }],
+      });
+
+    it("cred_colonna_apparato con lasciati accettati → da confermare, col conteggio e la firma, non blocco", () => {
+      const r: Registro = {
+        righe: [riga({ n: 10, ora: "2026-10-16T09" } as never), riga({ n: 1, ora: "2026-10-16T10", firma: "g @ src/y.ts:2:2" } as never)],
+        illeggibili: 0,
+      };
+      const e = valutaCondizioni2g(parzialeAccettato(), r, [22, 25]);
+      assert.equal(e.stato, "da_confermare", e.blocchi.join("; "));
+      assert.deepEqual(e.blocchi, []);
+      assert.ok(e.daConfermare, "manca il da confermare");
+      assert.equal(e.daConfermare.conteggio, 11);
+      assert.ok(e.daConfermare.righe.some((x) => /f @ src\/x\.ts:1:1/.test(x) && /10/.test(x)), e.daConfermare.righe.join("; "));
+      assert.ok(e.daConfermare.righe.some((x) => /g @ src\/y\.ts:2:2/.test(x)), e.daConfermare.righe.join("; "));
+    });
+
+    it("con lasciati accettati gli altri casi bloccano lo stesso, e il da confermare resta elencato", () => {
+      const r: Registro = { righe: [riga({}), riga({ caso: "cred_binding_inline", firma: "h @ src/z.ts:3:3" })], illeggibili: 0 };
+      const e = valutaCondizioni2g(parzialeAccettato(), r, [22, 25]);
+      assert.equal(e.stato, "bloccato");
+      assert.ok(e.blocchi.some((b) => /cred_binding_inline/.test(b)), e.blocchi.join("; "));
+      assert.ok(!e.blocchi.some((b) => /cred_colonna_apparato/.test(b)), e.blocchi.join("; "));
+      assert.equal(e.daConfermare?.conteggio, 1);
+    });
+
+    it("cred_colonna_apparato senza lasciati accettati (elenco assente o vuoto) → blocco come prima", () => {
+      const r: Registro = { righe: [riga({})], illeggibili: 0 };
+      for (const accettati of [null, []]) {
+        const e = valutaCondizioni2g(stato(), r, accettati);
+        assert.equal(e.stato, "bloccato");
+        assert.equal(e.daConfermare, null);
+      }
+    });
+
+    it("registro vuoto con lasciati accettati → ok, niente da confermare", () => {
+      const e = valutaCondizioni2g(parzialeAccettato(), vuoto, [22, 25]);
+      assert.equal(e.stato, "ok");
+      assert.equal(e.daConfermare, null);
+    });
+
     it("righe illeggibili o il tetto orario raggiunto → blocco: il registro non dice tutto", () => {
       assert.equal(valutaCondizioni2g(stato(), { righe: [], illeggibili: 1 }, null).stato, "bloccato");
       const limite: Registro = { righe: [{ ts: "2026-10-16T09:00:00.000Z", caso: "", tenant: null, firma: "", tipo: "limite" }], illeggibili: 0 };

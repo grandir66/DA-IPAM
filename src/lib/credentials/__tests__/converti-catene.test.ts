@@ -45,6 +45,7 @@ import { closeHubDb, getHubDb } from "@/lib/db-hub";
 import { catenaReteDb, resolveCredentialsForDb, type CredProtocol } from "@/lib/credentials/resolve";
 import { convertiCateneVecchie, descriviCatene, segnoCatene, type GlobaliHub } from "@/lib/credentials/converti-catene";
 import { righeConversioni } from "@/lib/transfer/esito-import";
+import { creaCateneVecchie } from "@/lib/__tests__/support/catene-vecchie";
 
 // ── Appoggio ────────────────────────────────────────────────────────────────
 
@@ -53,6 +54,8 @@ function nuovoDb(): Database.Database {
   d.pragma("foreign_keys = ON");
   d.exec(TENANT_SCHEMA_SQL);
   d.exec(TENANT_INDEXES_SQL);
+  // Un DB di prima della 2g: lo schema di oggi non crea più le catene vecchie (T27).
+  creaCateneVecchie(d);
   return d;
 }
 
@@ -364,7 +367,8 @@ describe("getTenantDb: conversione delle catene col segno credenziali_t2_catene"
   it("conversione fatta; l'utente toglie dalla lista la voce arrivata dalla catena vecchia; alla seconda apertura non torna", () => {
     let d = withTenant(CODE, () => getTenantDb(CODE));
     assert.match(segno(d) ?? "", /^done:/);
-    // Uno stato di prima della 2d: una catena vecchia, segno assente.
+    // Uno stato di prima della 2d: una catena vecchia, segno assente (le tabelle vecchie come le aveva quel DB).
+    creaCateneVecchie(d);
     d.prepare("DELETE FROM tenant_settings WHERE key = 'credenziali_t2_catene'").run();
     const n = rete(d, "10.77.0.0/24", "Rete prova 2d");
     const B = voce(d, "Server", "ssh");
@@ -412,6 +416,7 @@ describe("prova-a-vuoto.ts: la conversione delle catene sulla copia", () => {
     const d = new Database(path.join(copia, "tenants", `${TPAV}.db`));
     d.exec(TENANT_SCHEMA_SQL);
     d.exec(TENANT_INDEXES_SQL);
+    creaCateneVecchie(d);
     const n = rete(d, "10.88.0.0/24", "Rete della copia");
     const B = voce(d, "Server della copia", "ssh");
     vecchia(d, n, "ssh", B, 0);
@@ -440,6 +445,7 @@ describe("prova-a-vuoto.ts: la conversione delle catene sulla copia", () => {
     const d = new Database(path.join(altra, "tenants", `${TPAV}.db`));
     d.exec(TENANT_SCHEMA_SQL);
     d.exec(TENANT_INDEXES_SQL);
+    creaCateneVecchie(d);
     const n = rete(d, "10.89.0.0/24", "Rete che cambia");
     lista(d, n, [voce(d, "Voce che sparisce", "ssh")]);
     // Simula una conversione sbagliata: quando si scrive il segno, la lista si svuota.

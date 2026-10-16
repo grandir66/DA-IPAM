@@ -16,6 +16,7 @@ process.env.ENCRYPTION_KEY ||= "test-encryption-key-motore";
 
 import { encrypt } from "@/lib/crypto";
 import { TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL } from "@/lib/db-tenant-schema";
+import { creaCateneVecchie } from "@/lib/__tests__/support/catene-vecchie";
 import {
   resolveCredentialsForDb,
   resolveCredentialForDb,
@@ -60,6 +61,8 @@ beforeEach(() => {
   db.pragma("foreign_keys = ON");
   db.exec(TENANT_SCHEMA_SQL);
   db.exec(TENANT_INDEXES_SQL);
+  // Un DB di prima della pulizia della 2g (T27): le tabelle vecchie ci sono ancora, e il motore non le legge.
+  creaCateneVecchie(db);
   // Colonne aggiunte via ALTER in getTenantDb (non nel CREATE TABLE base): le
   // replichiamo qui come farebbe la migrazione, stesso pattern di recompute.test.ts.
   for (const c of ["fail_count INTEGER NOT NULL DEFAULT 0", "last_error TEXT", "last_attempt_at TEXT", "backoff_until TEXT"]) {
@@ -747,6 +750,7 @@ describe("involucri del motore in db-tenant.ts e db.ts", () => {
     scriviHub("host_linux_credential_id", "3");
     withTenant(TG, () => {
       const d = getTenantDb(TG);
+      creaCateneVecchie(d);
       d.prepare(`INSERT INTO networks (id, cidr, name, snmp_community) VALUES (1, '10.77.0.0/24', 'g', 'dellarete')`).run();
       d.prepare(`INSERT INTO hosts (id, network_id, ip) VALUES (1, 1, '10.77.0.1')`).run();
       const ins = d.prepare(`INSERT INTO credentials (id, name, credential_type, encrypted_username, encrypted_password) VALUES (?, ?, ?, ?, ?)`);

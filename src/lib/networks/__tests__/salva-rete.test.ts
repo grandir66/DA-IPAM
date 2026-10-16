@@ -31,6 +31,7 @@ import {
 } from "@/lib/db-tenant";
 import { NetworkUpdateSchema } from "@/lib/validators";
 import { aggiornaRete, creaRete, CredenzialiReteNonValide, AVVISO_CAMPI_VECCHI } from "../salva-rete";
+import { creaCateneVecchie } from "@/lib/__tests__/support/catene-vecchie";
 
 const T = "TESTSALVARETE";
 const SSH = 501;
@@ -56,6 +57,8 @@ const reteDaCidr = (cidr: string) => dbt().prepare(`SELECT id, name FROM network
 
 before(() => {
   withTenant(T, () => {
+    // Un DB di prima della pulizia della 2g (T27): le catene vecchie ci sono, e il salvataggio non le scrive.
+    creaCateneVecchie(dbt());
     voce(SSH, "ssh");
     voce(WIN, "windows");
     voce(SNMP, "snmp");

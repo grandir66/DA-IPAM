@@ -21,10 +21,7 @@ import path from "node:path";
 import Database from "better-sqlite3";
 import { cartellaTenant } from "../../src/lib/db-tenant";
 import { getHubDbPath } from "../../src/lib/db-hub";
-import { convertiCredenzialiApparati } from "../../src/lib/credentials/converti-apparati";
-import { convertiControllerEAd } from "../../src/lib/credentials/converti-integrazioni";
-import { leggiSegno, SEGNO_APPARATI, SEGNO_CATENE, SEGNO_INTEGRAZIONI, SEGNO_TIPI } from "../../src/lib/credentials/segni-t2";
-import type { SegniT2, StatoTenant2g } from "../../src/lib/credentials/condizioni-2g";
+import { misuraCondizioniDb, type MisuraCondizioni } from "../../src/lib/credentials/pulizia-t2";
 
 export { cartellaTenant, getHubDbPath };
 
@@ -38,55 +35,14 @@ export function elencaTenant(): string[] {
     .sort();
 }
 
-export interface MisuraTenant {
-  stato: StatoTenant2g;
-  /** Nomi degli apparati e delle righe lasciate, per il terminale. */
-  nomiApparati: Record<number, string>;
-  /** Le conversioni a vuoto che non sono riuscite (chiave assente, DB rotto…). */
-  nonMisurabili: string[];
-}
-
-function haTabella(dbh: Database.Database, nome: string): boolean {
-  return !!dbh.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(nome);
-}
-
-function segni(dbh: Database.Database): SegniT2 {
-  if (!haTabella(dbh, "tenant_settings")) return { tipi: null, catene: null, apparati: null, integrazioni: null };
-  return {
-    tipi: leggiSegno(dbh, SEGNO_TIPI),
-    catene: leggiSegno(dbh, SEGNO_CATENE),
-    apparati: leggiSegno(dbh, SEGNO_APPARATI),
-    integrazioni: leggiSegno(dbh, SEGNO_INTEGRAZIONI),
-  };
-}
-
-function messaggio(e: unknown): string {
-  return e instanceof Error ? e.message : String(e);
-}
+/** Segni, lasciati della 2e e della 2f rifatte a vuoto, coi nomi (la stessa misura della pulizia, T27). */
+export type MisuraTenant = MisuraCondizioni;
 
 /** Segni, lasciati della 2e e della 2f rifatte a vuoto, coi nomi. Non scrive (tutto si annulla). */
 export function misuraTenant(code: string): MisuraTenant {
   const dbh = new Database(path.join(cartellaTenant(), `${code}.db`), { fileMustExist: true });
   try {
-    const nonMisurabili: string[] = [];
-    const stato: StatoTenant2g = { tenant: code, segni: segni(dbh), lasciatiApparati: [], lasciatiIntegrazioni: [] };
-    try {
-      stato.lasciatiApparati = convertiCredenzialiApparati(dbh, { aVuoto: true }).lasciati;
-    } catch (e) {
-      nonMisurabili.push(`conversione degli apparati (2e) a vuoto non riuscita: ${messaggio(e)}`);
-    }
-    try {
-      stato.lasciatiIntegrazioni = convertiControllerEAd(dbh, { aVuoto: true }).lasciati;
-    } catch (e) {
-      nonMisurabili.push(`conversione di controller e AD (2f) a vuoto non riuscita: ${messaggio(e)}`);
-    }
-    const nomiApparati: Record<number, string> = {};
-    const nome = dbh.prepare("SELECT name FROM network_devices WHERE id = ?");
-    for (const l of stato.lasciatiApparati) {
-      const r = nome.get(l.device_id) as { name: string } | undefined;
-      nomiApparati[l.device_id] = r?.name ?? "?";
-    }
-    return { stato, nomiApparati, nonMisurabili };
+    return misuraCondizioniDb(dbh, code);
   } finally {
     dbh.close();
   }

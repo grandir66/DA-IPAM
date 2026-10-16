@@ -2211,7 +2211,7 @@ la 2g, conversioni e pulizia girerebbero nella stessa apertura, senza prova a vu
 backup e senza conferma (`update.sh:109-136` fa build e riavvio). Diventa uno script, come
 `togli-chiavi-hub.ts`.
 
-- [ ] **File**
+- [x] **File**
   - crea `src/lib/credentials/pulizia-t2.ts` (pura, con l'handle) e la sua prova, e
     `scripts/credenziali/pulizia-t2.ts` (riga di comando: guardia e ambiente come negli
     altri script quando gira su una copia). `--dry-run` di default: stampa per tenant
@@ -2248,7 +2248,7 @@ backup e senza conferma (`update.sh:109-136` fa build e riavvio). Diventa uno sc
     le 7 `integration_unifi_*` di hub.db di A, perché il segno `done` le ha rese inutili;
   - modifica `scripts/misura-topologia.ts:119` e `scripts/misura-mac-porta.ts:173`:
     l'utente del controller viene dalla voce.
-- [ ] **Prova prima del codice:**
+- [x] **Prova prima del codice:**
   - con un segno `parziale:` (fuori dai lasciati accettati) o `errore:` → nessun effetto,
     motivo stampato (il segno della 2f recente non blocca più: D9 rivista il 16/10);
   - `--dry-run` non scrive niente (mtime e conteggi uguali);
@@ -2258,10 +2258,40 @@ backup e senza conferma (`update.sh:109-136` fa build e riavvio). Diventa uno sc
     tenant non si pulisce;
   - le due DROP in una transazione: se la seconda fallisce, la prima torna indietro;
   - lo script dell'hub a vuoto stampa solo i nomi delle chiavi.
+  Fatte il 16/10 e viste fallire prima del codice: `pulizia-t2.test.ts`, `pulizia-t2-script.test.ts`,
+  `togli-chiavi-hub.test.ts`, `guardia-scrittura.test.ts`, `controllers/__tests__/utente-voce.test.ts`, più i casi
+  nuovi di `condizioni-2g.test.ts` e `condizioni-2g-script.test.ts` (ripieghi da confermare).
+- [x] **Fatto il 16/10, adattato al codice** (il perché in CHANGELOG e nell'ADR 0017):
+  - «colonna piena fuori dall'elenco blocca» si legge alla lettera (nota della sessione principale del 16/10): si
+    svuotano solo gli apparati dell'elenco `--lasciati-accettati` che hanno già un binding equivalente; un
+    apparato con una colonna piena fuori dall'elenco blocca il tenant **anche** se ha un binding equivalente (dopo
+    la 2e le sue colonne dovevano essere già vuote: qualcosa non torna). Un binding inline blocca anche lui;
+  - «binding equivalente» è una funzione sola: il piano della conversione della 2e (`pianoApparato` in
+    `converti-apparati.ts`, estratto senza cambiarne il comportamento) e `vecchioRimastoApparatiDb` per la pulizia;
+  - ripieghi da confermare: il registro non scrive l'apparato, quindi con dei lasciati accettati i
+    `cred_colonna_apparato` dal rilascio della 2f non bloccano da soli (`daConfermare` di `valutaCondizioni2g`),
+    si stampano per firma col conteggio e la conferma scritta diventa `<tenant> <n>`. Lo script delle condizioni
+    del T26 li dice «DA CONFERMARE» con l'uscita 3;
+  - due modi dichiarati a mano, `--copia` o `--servizio <unità>`; sui dati veri «fermo» si legge da
+    `systemctl show` (LoadState e ActiveState, tre esiti) e deve essere fermo anche `<unità>-update.timer`
+    (`guardia-scrittura.ts`). Le copie si guardano come negli altri script;
+  - controller e AD senza voce con colonne piene restano com'erano e si elencano («senza voce, restano
+    com'erano»): oltre alle righe Omada (blocco), anche una voce tolta dopo la 2f lascia la riga così;
+  - `togli-chiavi-hub.ts`: le chiavi di D3 restano se c'è un solo tenant attivo e la sua 2d non è chiusa; le
+    `integration_unifi_*` restano se i tenant attivi sono al più uno e quello non ha il segno
+    `controllers_legacy_unifi` (con nessun tenant attivo, restano). Fa anche lui il backup di hub.db;
+  - lo schema dei tenant nuovi perde le due tabelle e l'indice (`db-tenant-schema.ts`, le righe sono cambiate dal
+    piano); le prove che le riempiono le creano con la definizione vecchia copiata
+    (`src/lib/__tests__/support/catene-vecchie.ts`). Lo schema del vecchio `ipam.db` (`db-schema.ts`, `db.ts`) non
+    si tocca: le sue migrazioni le leggono ancora;
+  - gli script di misura (`misura-topologia.ts`, `misura-mac-porta.ts`) leggono l'utente del controller con
+    `utenteVoceControllerDb` (solo l'utente: la password arriva da stdin);
+  - CONTEXT §6 lo aggiorna la sessione principale dopo la pulizia sul server (prima la tappa non è chiusa).
 - [ ] Procedura R completa per il codice (T26 e T27). Poi, a parte e con la conferma di
   Riccardo per ciascuno: `pulizia-t2.ts` a vuoto e con `--applica` su hub e A, e lo
   script dell'hub.
-- [ ] CONTEXT §6 (tappa 2 chiusa, trappole), CHANGELOG, ADR 0017 aggiornato.
+- [ ] CONTEXT §6 (tappa 2 chiusa, trappole), CHANGELOG, ADR 0017 aggiornato. *(CHANGELOG e ADR il 16/10; CONTEXT
+  dopo la pulizia sul server.)*
 - [ ] Fotografie sul server tolte (`rm -rf /var/tmp/credenziali-t2`) e **verificato**
   (`test ! -e /var/tmp/credenziali-t2` su hub e A).
 - [ ] **Commit:** `feat(credenziali): via colonne e tabelle vecchie, archivio unico completo`.

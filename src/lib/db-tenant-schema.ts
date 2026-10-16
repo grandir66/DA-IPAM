@@ -416,24 +416,10 @@ CREATE TABLE IF NOT EXISTS mac_ip_history (
   changed_at TEXT DEFAULT (datetime('now'))
 );
 
--- Credenziali per subnet (LEGACY)
-CREATE TABLE IF NOT EXISTS network_host_credentials (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  network_id INTEGER NOT NULL REFERENCES networks(id) ON DELETE CASCADE,
-  credential_id INTEGER NOT NULL REFERENCES credentials(id) ON DELETE CASCADE,
-  role TEXT NOT NULL CHECK(role IN ('windows', 'linux', 'ssh', 'snmp')),
-  sort_order INTEGER NOT NULL DEFAULT 0,
-  UNIQUE(network_id, credential_id, role)
-);
-
--- Credenziale detect per host (LEGACY)
-CREATE TABLE IF NOT EXISTS host_detect_credential (
-  host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
-  role TEXT NOT NULL CHECK(role IN ('windows', 'linux', 'ssh', 'snmp')),
-  credential_id INTEGER NOT NULL REFERENCES credentials(id) ON DELETE CASCADE,
-  updated_at TEXT DEFAULT (datetime('now')),
-  PRIMARY KEY (host_id, role)
-);
+-- Le catene vecchie (network_host_credentials, host_detect_credential) non
+-- nascono più dalla 2g credenziali (T27): nei DB di prima le toglie
+-- scripts/credenziali/pulizia-t2.ts, con backup e conferma; un bundle di prima
+-- le porta in tabelle temporanee (converti-catene.ts, conCateneDelBundle).
 
 -- CREDENTIAL SYSTEM v2: subnet-first, lista unificata
 CREATE TABLE IF NOT EXISTS network_credentials (
@@ -1552,9 +1538,6 @@ CREATE INDEX IF NOT EXISTS idx_mac_ip_history_mac ON mac_ip_history(mac_normaliz
 
 -- Scheduled Jobs
 CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_enabled_next ON scheduled_jobs(enabled, next_run);
-
--- Network Host Credentials (legacy)
-CREATE INDEX IF NOT EXISTS idx_network_host_credentials_net_role ON network_host_credentials(network_id, role);
 
 -- Network Credentials v2
 CREATE INDEX IF NOT EXISTS idx_network_credentials_net ON network_credentials(network_id, sort_order);

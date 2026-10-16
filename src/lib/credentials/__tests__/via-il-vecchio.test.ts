@@ -61,6 +61,7 @@ import { importTenant } from "@/lib/transfer/import";
 import { deriveTransportKey, encryptBuffer, randomSalt, writeContainer } from "@/lib/transfer/envelope";
 import { BUNDLE_FORMAT, BUNDLE_FORMAT_VERSION } from "@/lib/transfer/types";
 import type { NetworkControllerRow } from "@/lib/controllers/types";
+import { creaCateneVecchie } from "@/lib/__tests__/support/catene-vecchie";
 
 void TEST_DATA_DIR;
 
@@ -75,6 +76,8 @@ function nuovoDb(): Database.Database {
     try { d.exec(`ALTER TABLE host_credentials ADD COLUMN ${c}`); } catch { /* già presente */ }
   }
   try { d.exec("ALTER TABLE network_devices ADD COLUMN host_id INTEGER REFERENCES hosts(id) ON DELETE SET NULL"); } catch { /* già presente */ }
+  // Un DB di prima della pulizia (T27): lo schema di oggi non crea più le catene vecchie.
+  creaCateneVecchie(d);
   return d;
 }
 
@@ -306,6 +309,7 @@ describe("resetConfiguration senza le tabelle vecchie e con le tabelle piene", (
   it("gemella del tenant: con le tabelle piene le svuota (cascata)", () => {
     withTenant(T1, () => {
       const d = getTenantDb(T1);
+      creaCateneVecchie(d);
       riempi(d, "tenant");
       resetTenant();
       assert.equal(conta(d, "network_host_credentials"), 0);
@@ -316,7 +320,8 @@ describe("resetConfiguration senza le tabelle vecchie e con le tabelle piene", (
   it("gemella del tenant: senza le due tabelle riesce", () => {
     withTenant(T2, () => {
       const d = getTenantDb(T2);
-      d.exec("DROP TABLE host_detect_credential; DROP TABLE network_host_credentials;");
+      // Dalla 2g (T27) un tenant nuovo nasce già senza: la DROP serve solo se lo schema le creasse ancora.
+      d.exec("DROP TABLE IF EXISTS host_detect_credential; DROP TABLE IF EXISTS network_host_credentials;");
       riempi2(d);
       assert.doesNotThrow(() => resetTenant());
       assert.equal(conta(d, "networks"), 0);

@@ -170,17 +170,25 @@ async function main(): Promise<number> {
   if (unifi !== undefined) {
     const { createUnifiClient } = await import("../src/lib/integrations/unifi-api");
     const { syncUnifiClientsForController } = await import("../src/lib/integrations/unifi-clients-sync");
-    const row = db.prepare("SELECT kind, url, site, username, cert_pin, enabled FROM network_controllers WHERE id = ?").get(Number(unifi)) as
-      | { kind: string; url: string; site: string; username: string; cert_pin: string | null; enabled: number }
+    const row = db.prepare("SELECT kind, url, site, credential_id, cert_pin, enabled FROM network_controllers WHERE id = ?").get(Number(unifi)) as
+      | { kind: string; url: string; site: string; credential_id: number | null; cert_pin: string | null; enabled: number }
       | undefined;
     if (!row) return uso(`Controller ${unifi} assente nella copia.`);
+    // Dalla 2g (T27) la colonna username della riga è vuota: l'utente viene dalla voce dell'archivio.
+    let utente = "";
+    if (row.kind !== "udm") {
+      const { utenteVoceControllerDb } = await import("../src/lib/controllers/credenziale");
+      const u = utenteVoceControllerDb(db, row.credential_id);
+      if (!u.ok) return uso(u.motivo);
+      utente = u.username;
+    }
     // Il segreto cifrato della copia non si decifra qui (altra ENCRYPTION_KEY):
     // si usa quello di stdin. L'impronta parte da quella della copia e resta in memoria.
     let pin = row.cert_pin;
     const store = { get: () => pin, set: (p: string) => { pin = p; }, clear: () => { pin = null; } };
     const cfg = row.kind === "udm"
       ? { url: row.url, kind: "udm" as const, site: row.site, apiToken: segreto }
-      : { url: row.url, kind: "self_hosted" as const, site: row.site, username: row.username, password: segreto };
+      : { url: row.url, kind: "self_hosted" as const, site: row.site, username: utente, password: segreto };
     const ts = Date.now();
     const r = await tenantDb.withTenant(tenant, () =>
       syncUnifiClientsForController(Number(unifi), "manual", { triggeredBy: "misura-mac-porta", source: createUnifiClient(cfg, store) }));

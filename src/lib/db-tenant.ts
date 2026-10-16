@@ -15,7 +15,7 @@ import { resolveDataDir } from "./data-dir";
 import { buildPatchFromHost, buildPatchFromDevice, buildSyncMerge, buildSourceLabel } from "./inventory/discovery-sync";
 import fs from "fs";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { DDL_TOPOLOGY_CAVI, TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL } from "./db-tenant-schema";
+import { DDL_TOPOLOGY_CAVI, DDL_TOPOLOGY_UNIONI, INDICI_TOPOLOGY_UNIONI, TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL } from "./db-tenant-schema";
 import { HYPERVISOR_SYNC_MINUTES, SCHEDULED_JOB_TYPES_CHECK_SQL } from "./scheduled-job-types";
 import { isProxmoxVeDevice } from "./devices/device-acquisition-resolve";
 import { macToHex, normalizeMac, normalizeMacForStorage } from "./utils";
@@ -73,6 +73,7 @@ import { parseProxmoxScan } from "./topology/vms";
 import { hypervisorNics, switchPortsToKnown, type SwitchPortRow } from "./topology/known-ports";
 import type { KnownPort } from "./topology/api-input";
 import type { LinkMedium, MapOrientation } from "./topology/model-types";
+import { TESTI_UNIONI, type PianoUnioni, type RigaSeparazione, type RigaUnione } from "./topology/unioni-tipi";
 
 import type {
   Network,
@@ -544,6 +545,42 @@ function verificaSchemaCavi(d: Database.Database): boolean {
   const tabelle = new Set((d.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>).map((r) => r.name));
   if (!DDL_TOPOLOGY_CAVI.every(([n]) => tabelle.has(n))) return false;
   return COLONNE_CAVI.every(([t, c]) => (d.prepare(`PRAGMA table_info(${t})`).all() as Array<{ name: string }>).some((x) => x.name === c));
+}
+
+/**
+ * Migrazione «unioni a mano» (piano 2026-10-16, Task 2; ADR 0021): le due tabelle delle unioni e delle separazioni e i loro tre
+ * indici sulle righe attive. Gemella di `migrateTopologyCavi`: additiva, idempotente, in UNA transazione (o tutto o niente),
+ * restituisce ciò che aggiunge. Le tabelle nascono anche dallo schema (stesse CREATE, `DDL_TOPOLOGY_UNIONI`), gli indici solo
+ * qui. Chiamata in fondo a `getTenantDb`. Esportata per le prove (`topology-unioni-migration.test.ts`).
+ */
+export function migrateTopologyUnioni(db: Database.Database): string[] {
+  const added: string[] = [];
+  const exists = (type: "table" | "index", name: string): boolean =>
+    !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = ? AND name = ?").get(type, name);
+  db.transaction(() => {
+    for (const [name, ddl] of DDL_TOPOLOGY_UNIONI) {
+      if (exists("table", name)) continue;
+      db.exec(ddl);
+      added.push(name);
+    }
+    for (const [name, ddl] of INDICI_TOPOLOGY_UNIONI) {
+      if (exists("index", name)) continue;
+      db.exec(ddl);
+      added.push(name);
+    }
+  })();
+  return added;
+}
+
+/** «Le tabelle delle unioni ci sono, con i loro indici», annotato all'apertura: senza, l'ingresso non ha righe e le rotte non scrivono. */
+const SCHEMA_UNIONI = new WeakMap<Database.Database, boolean>();
+const NOMI_SCHEMA_UNIONI = [...DDL_TOPOLOGY_UNIONI, ...INDICI_TOPOLOGY_UNIONI].map(([n]) => n);
+
+/** Tabelle e indici: l'indice unico dei membri è la regola «un membro attivo in un gruppo solo», senza non si scrive. */
+function verificaSchemaUnioni(d: Database.Database): boolean {
+  const c = d.prepare(`SELECT name FROM sqlite_master WHERE type IN ('table', 'index') AND name IN (${NOMI_SCHEMA_UNIONI.map(() => "?").join(", ")})`)
+    .all(...NOMI_SCHEMA_UNIONI);
+  return c.length === NOMI_SCHEMA_UNIONI.length;
 }
 
 /**
@@ -2033,6 +2070,24 @@ export function getTenantDb(tenantCode: string): Database.Database {
     SCHEMA_CAVI.set(newDb, verificaSchemaCavi(newDb));
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: verifica dello schema della topologia cavi (T2) fallita, si rifà alla prima scrittura:`, e);
+  }
+
+  // Unioni e separazioni a mano (piano 2026-10-16, ADR 0021): due tabelle e tre indici, solo cose nuove. Se la migrazione
+  // fallisce il tenant si apre lo stesso: l'annotazione dice «schema assente», l'ingresso del modello non ha righe (la mappa di
+  // oggi) e le rotte rispondono «non disponibili». La riga «topologia unioni, aggiunto …» nel journal è la prova del rilascio.
+  try {
+    const added = migrateTopologyUnioni(newDb);
+    if (added.length > 0) {
+      console.info(`[db-tenant] ${tenantCode}: topologia unioni, aggiunto ${added.join(", ")}`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione topologia unioni fallita, le unioni non sono disponibili:`, e);
+  }
+  // Come per i cavi: una verifica che fallisce non impedisce l'apertura; senza annotazione schemaUnioniPresente() la rifà.
+  try {
+    SCHEMA_UNIONI.set(newDb, verificaSchemaUnioni(newDb));
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: verifica dello schema delle unioni fallita, si rifà alla prima lettura:`, e);
   }
 
   tenantDbs.set(tenantCode, { db: newDb, lastUsed: Date.now() });
@@ -5316,6 +5371,91 @@ export function setUplinkCavi(deviceId: number, porta: number | null, origine: s
   if (!schemaCaviPresente()) return false;
   db().prepare("UPDATE network_devices SET uplink_local_port_idx = ?, uplink_source = ? WHERE id = ?").run(porta, origine, deviceId);
   return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TOPOLOGIA — unioni e separazioni a mano (piano 2026-10-16, ADR 0021)
+// Righe attive = `tolto_il IS NULL`; togliere = `tolto_da`/`tolto_il`, mai DELETE: la riga è la storia (chi e quando).
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Le tabelle delle unioni ci sono in questo tenant, con i loro indici (annotato all'apertura, `getTenantDb`). */
+export function schemaUnioniPresente(): boolean {
+  const d = db();
+  const v = SCHEMA_UNIONI.get(d);
+  if (v !== undefined) return v;
+  const ok = verificaSchemaUnioni(d);
+  SCHEMA_UNIONI.set(d, ok);
+  return ok;
+}
+
+/** Riguarda lo schema e aggiorna l'annotazione (per le prove, e per chi ha appena riparato un tenant a mano). */
+export function rileggiSchemaUnioni(): boolean {
+  const d = db();
+  const ok = verificaSchemaUnioni(d);
+  SCHEMA_UNIONI.set(d, ok);
+  return ok;
+}
+
+/** Le righe attive, in ordine (gruppo e membro; membro e altro). Schema assente → vuote: la mappa di oggi. */
+export function getRigheScelte(): { unioni: RigaUnione[]; separazioni: RigaSeparazione[] } {
+  if (!schemaUnioniPresente()) return { unioni: [], separazioni: [] };
+  const d = db();
+  return {
+    unioni: d.prepare(`SELECT id, gruppo, membro, creato_da, creato_il FROM topology_unioni
+      WHERE tolto_il IS NULL ORDER BY gruppo, membro`).all() as RigaUnione[],
+    separazioni: d.prepare(`SELECT id, membro, altro, creato_da, creato_il FROM topology_separazioni
+      WHERE tolto_il IS NULL ORDER BY membro, altro`).all() as RigaSeparazione[],
+  };
+}
+
+/** Una riga da togliere non è più attiva (un altro l'ha tolta nel frattempo, o non c'è): il piano non si scrive (409). */
+export class UnioniCambiate extends Error {
+  constructor(message: string = TESTI_UNIONI.cambiato) {
+    super(message);
+    this.name = "UnioniCambiate";
+  }
+}
+
+/** I membri come li scrivono le rotte (piano, «Dato»): id della mappa; in una separazione `membro` è sempre un host. */
+const MEMBRO_UNIONE = /^(host|dev):[1-9]\d{0,9}$/;
+const MEMBRO_SEPARAZIONE = /^host:[1-9]\d{0,9}$/;
+
+/**
+ * Scrive un piano delle rotte in UNA transazione: prima toglie (`tolto_da`/`tolto_il`, solo righe ancora attive: altrimenti
+ * `UnioniCambiate` e niente è scritto), poi aggiunge. Le righe «nuovo» prendono tutte lo stesso gruppo, `MAX(gruppo) + 1` su
+ * tutte le righe, tolte comprese: un numero di gruppo non torna. `adesso` (forma di datetime('now')) per le prove; senza, l'ora
+ * UTC del DB. Un membro scritto male è un errore di chi ha fatto il piano, e non si scrive.
+ */
+export function scriviPianoUnioni(piano: PianoUnioni, da: string, adesso?: string): void {
+  for (const m of [...piano.aggiungiUnioni.map((u) => u.membro), ...piano.aggiungiSeparazioni.map((s) => s.altro)]) {
+    if (!MEMBRO_UNIONE.test(m)) throw new Error(`Membro non valido: ${JSON.stringify(m)}`);
+  }
+  for (const s of piano.aggiungiSeparazioni) {
+    if (!MEMBRO_SEPARAZIONE.test(s.membro)) throw new Error(`Membro della separazione non valido: ${JSON.stringify(s.membro)}`);
+  }
+  // I gruppi negativi sono solo in memoria (la misura sulle copie): nel DB un gruppo è un intero positivo.
+  for (const u of piano.aggiungiUnioni) {
+    if (u.gruppo !== "nuovo" && !(Number.isInteger(u.gruppo) && u.gruppo > 0)) throw new Error(`Gruppo non valido: ${JSON.stringify(u.gruppo)}`);
+  }
+  const d = db();
+  d.transaction(() => {
+    const il = adesso ?? (d.prepare("SELECT datetime('now') AS ora").get() as { ora: string }).ora;
+    const togli = (tabella: "topology_unioni" | "topology_separazioni", ids: readonly number[]): void => {
+      const upd = d.prepare(`UPDATE ${tabella} SET tolto_da = ?, tolto_il = ? WHERE id = ? AND tolto_il IS NULL`);
+      for (const id of ids) {
+        if (upd.run(da, il, id).changes !== 1) throw new UnioniCambiate();
+      }
+    };
+    togli("topology_unioni", piano.togliUnioni);
+    togli("topology_separazioni", piano.togliSeparazioni);
+    const nuovo = piano.aggiungiUnioni.some((u) => u.gruppo === "nuovo")
+      ? (d.prepare("SELECT COALESCE(MAX(gruppo), 0) + 1 AS g FROM topology_unioni").get() as { g: number }).g
+      : null;
+    const insU = d.prepare("INSERT INTO topology_unioni (gruppo, membro, creato_da, creato_il) VALUES (?, ?, ?, ?)");
+    for (const u of piano.aggiungiUnioni) insU.run(u.gruppo === "nuovo" ? nuovo : u.gruppo, u.membro, da, il);
+    const insS = d.prepare("INSERT INTO topology_separazioni (membro, altro, creato_da, creato_il) VALUES (?, ?, ?, ?)");
+    for (const s of piano.aggiungiSeparazioni) insS.run(s.membro, s.altro, da, il);
+  })();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -9386,6 +9526,45 @@ export function attachOrphanUnifiJobs(controllerId: number): number {
 type ModelInput = import("@/lib/topology/model-types").TopologyModelInput;
 type Esito = { ok: true } | { ok: false; error: string };
 
+// Le tre letture dell'indice dei nodi, uguali per il modello e per l'ingresso leggero delle unioni (stesso testo SQL).
+function apparatiDelModello(d: Database.Database): ModelInput["devices"] {
+  return d.prepare(`
+      SELECT nd.id, nd.name, nd.host, nd.device_type, nd.vendor, nd.model, nd.enabled, nd.host_id, nd.physical_device_id,
+             nd.location_id, nd.controller_mac, nd.uplink_mac, nd.uplink_remote_port, nd.uplink_type, nd.uplink_seen_at, nd.topology_hidden,
+             nd.protocol AS via, nd.topology_role,
+             COALESCE(sp.n, 0) AS port_count,
+             CASE WHEN nd.scan_target = 'proxmox' OR COALESCE(nd.last_proxmox_scan_result, '') <> '' THEN 1 ELSE 0 END AS proxmox_scan
+        FROM network_devices nd
+        LEFT JOIN (SELECT device_id, COUNT(*) AS n FROM switch_ports GROUP BY device_id) sp ON sp.device_id = nd.id
+       ORDER BY nd.id`).all() as ModelInput["devices"];
+}
+function hostDelModello(d: Database.Database): ModelInput["hosts"] {
+  return d.prepare(`
+      SELECT id, network_id, ip, mac, hostname, custom_name, classification, status, physical_device_id
+        FROM hosts ORDER BY id`).all() as ModelInput["hosts"];
+}
+function viciniDelModello(d: Database.Database): ModelInput["neighbors"] {
+  return d.prepare(`
+      SELECT dn.device_id, dn.local_port, dn.remote_device_name, dn.remote_port, dn.protocol, dn.remote_ip, dn.remote_mac,
+             dn.remote_platform, dn.timestamp, dn.source
+        FROM device_neighbors dn
+       WHERE ${NEIGHBORS_MODEL_SOURCES_SQL}`).all() as ModelInput["neighbors"];
+}
+/** Le unioni e le separazioni attive per l'ingresso: ogni chiave SOLO se ha righe (senza, l'ingresso e le impronte di oggi). */
+function scelteDelModello(): Pick<ModelInput, "unioni" | "separazioni"> {
+  const r = getRigheScelte();
+  return {
+    ...(r.unioni.length > 0 ? { unioni: r.unioni.map(({ gruppo, membro }) => ({ gruppo, membro })) } : {}),
+    ...(r.separazioni.length > 0 ? { separazioni: r.separazioni.map(({ membro, altro }) => ({ membro, altro })) } : {}),
+  };
+}
+
+/** L'ingresso leggero dell'indice dei nodi (le rotte delle unioni): i quattro campi del modello e le sue righe, niente altro. */
+export function getIngressoNodi(): Pick<ModelInput, "devices" | "hosts" | "knownMacs" | "neighbors" | "unioni" | "separazioni"> {
+  const d = db();
+  return { devices: apparatiDelModello(d), hosts: hostDelModello(d), knownMacs: getNetworkDeviceKnownMacs(), neighbors: viciniDelModello(d), ...scelteDelModello() };
+}
+
 export function getTopologyModelInput(staleDays: number, nowMs: number = Date.now()): ModelInput {
   const d = db();
   // VM e host dei cluster dalle scansioni Proxmox già salvate (spec §11.5); un JSON rovinato = nessuna VM per quell'apparato.
@@ -9400,23 +9579,9 @@ export function getTopologyModelInput(staleDays: number, nowMs: number = Date.no
     scanHosts.push(...p.hosts);
   }
   return {
-    devices: d.prepare(`
-      SELECT nd.id, nd.name, nd.host, nd.device_type, nd.vendor, nd.model, nd.enabled, nd.host_id, nd.physical_device_id,
-             nd.location_id, nd.controller_mac, nd.uplink_mac, nd.uplink_remote_port, nd.uplink_type, nd.uplink_seen_at, nd.topology_hidden,
-             nd.protocol AS via, nd.topology_role,
-             COALESCE(sp.n, 0) AS port_count,
-             CASE WHEN nd.scan_target = 'proxmox' OR COALESCE(nd.last_proxmox_scan_result, '') <> '' THEN 1 ELSE 0 END AS proxmox_scan
-        FROM network_devices nd
-        LEFT JOIN (SELECT device_id, COUNT(*) AS n FROM switch_ports GROUP BY device_id) sp ON sp.device_id = nd.id
-       ORDER BY nd.id`).all() as ModelInput["devices"],
-    hosts: d.prepare(`
-      SELECT id, network_id, ip, mac, hostname, custom_name, classification, status, physical_device_id
-        FROM hosts ORDER BY id`).all() as ModelInput["hosts"],
-    neighbors: d.prepare(`
-      SELECT dn.device_id, dn.local_port, dn.remote_device_name, dn.remote_port, dn.protocol, dn.remote_ip, dn.remote_mac,
-             dn.remote_platform, dn.timestamp, dn.source
-        FROM device_neighbors dn
-       WHERE ${NEIGHBORS_MODEL_SOURCES_SQL}`).all() as ModelInput["neighbors"],
+    devices: apparatiDelModello(d),
+    hosts: hostDelModello(d),
+    neighbors: viciniDelModello(d),
     uplinkPorts: d.prepare(`
       SELECT device_id, port_index, port_name FROM switch_ports WHERE is_uplink = 1 ORDER BY device_id, port_index`).all() as ModelInput["uplinkPorts"],
     locations: d.prepare("SELECT id, name, parent_id, head_device_id FROM locations ORDER BY id").all() as ModelInput["locations"],
@@ -9439,6 +9604,8 @@ export function getTopologyModelInput(staleDays: number, nowMs: number = Date.no
     scanHosts,
     nowMs,
     staleDays,
+    // Unioni e separazioni a mano (ADR 0021): in fondo e solo se ci sono righe, così l'ordine delle chiavi di oggi resta.
+    ...scelteDelModello(),
   };
 }
 

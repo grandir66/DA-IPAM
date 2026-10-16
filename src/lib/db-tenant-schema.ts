@@ -72,6 +72,23 @@ export const DDL_TOPOLOGY_CAVI: ReadonlyArray<readonly [string, string]> = [
 )`],
 ];
 
+/** Unioni e separazioni a mano (ADR 0021): le scrivono solo le rotte /api/topology/unioni; mai cancellate (tolto_*: la storia).
+ *  Membri come id della mappa, senza chiavi esterne né CHECK. Indici solo nella migrazione. */
+export const DDL_TOPOLOGY_UNIONI: ReadonlyArray<readonly [string, string]> = [
+  ["topology_unioni", `CREATE TABLE IF NOT EXISTS topology_unioni (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, gruppo INTEGER NOT NULL, membro TEXT NOT NULL,
+  creato_da TEXT NOT NULL, creato_il TEXT NOT NULL DEFAULT (datetime('now')), tolto_da TEXT, tolto_il TEXT)`],
+  ["topology_separazioni", `CREATE TABLE IF NOT EXISTS topology_separazioni (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, membro TEXT NOT NULL, altro TEXT NOT NULL,
+  creato_da TEXT NOT NULL, creato_il TEXT NOT NULL DEFAULT (datetime('now')), tolto_da TEXT, tolto_il TEXT)`],
+];
+/** Sulle sole righe attive: un membro attivo in un gruppo solo, una coppia attiva una volta; le tolte restano accanto. */
+export const INDICI_TOPOLOGY_UNIONI: ReadonlyArray<readonly [string, string]> = [
+  ["idx_topology_unioni_membro_attivo", "CREATE UNIQUE INDEX idx_topology_unioni_membro_attivo ON topology_unioni(membro) WHERE tolto_il IS NULL"],
+  ["idx_topology_unioni_gruppo", "CREATE INDEX idx_topology_unioni_gruppo ON topology_unioni(gruppo) WHERE tolto_il IS NULL"],
+  ["idx_topology_separazioni_coppia_attiva", "CREATE UNIQUE INDEX idx_topology_separazioni_coppia_attiva ON topology_separazioni(membro, altro) WHERE tolto_il IS NULL"],
+];
+
 export const TENANT_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS networks (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1437,6 +1454,10 @@ CREATE TABLE IF NOT EXISTS topology_link_overrides (
   created_by TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Topologia: unioni e separazioni a mano (ADR 0021). Stesse CREATE della migrazione
+-- runtime (migrateTopologyUnioni in db-tenant.ts), che aggiunge gli indici.
+${DDL_TOPOLOGY_UNIONI.map(([, ddl]) => `${ddl};`).join("\n\n")}
 
 -- Controller di rete (UniFi, poi Omada): uno per riga, nel DB del cliente.
 -- Prima la configurazione era una sola, nelle impostazioni globali dell'hub

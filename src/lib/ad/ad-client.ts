@@ -3,8 +3,7 @@
  * Usa ldapts (client LDAP puro TypeScript, compatibile con Next.js).
  */
 
-import { Client, SearchOptions } from "ldapts";
-import { safeDecrypt } from "@/lib/crypto";
+import { Client, type ClientOptions, type SearchOptions } from "ldapts";
 import {
   getAdIntegrationById,
   updateAdIntegration,
@@ -19,6 +18,7 @@ import {
   type AdIntegration,
 } from "@/lib/db";
 import { apparatoDhcpDelDc } from "@/lib/ad/apparato-dhcp";
+import { accessoWinrmDelDc, credenzialeLdapDi } from "@/lib/ad/credenziale-ldap";
 import {
   isAccountEnabled,
   ldapStr,
@@ -63,21 +63,29 @@ function ouFromDn(dn: string): string | null {
   return match ? match[1] : null;
 }
 
+/** Crea il client LDAP: quello vero, o uno finto nelle prove (niente rete). */
+export type NuovoClientLdap = (opzioni: ClientOptions) => Client;
+
+const clientLdapVero: NuovoClientLdap = (opzioni) => new Client(opzioni);
+
 /**
  * Connette a LDAP e restituisce il client.
  * Esportato per AD Health extras (ldap-extras).
+ *
+ * L'account è la voce «Active Directory» dell'integrazione (tappa 2f, T24,
+ * `credenziale-ldap.ts`); le colonne della riga solo per una riga mai
+ * convertita. Senza account («Credenziale mancante») si lancia prima di
+ * creare il client: nessun bind parte verso il DC.
  */
-export async function connectLdap(integration: AdIntegration): Promise<Client> {
-  const username = safeDecrypt(integration.encrypted_username);
-  const password = safeDecrypt(integration.encrypted_password);
-  if (!username || !password) {
-    throw new Error("Credenziali AD non decifrabili: verificare ENCRYPTION_KEY.");
-  }
+export async function connectLdap(integration: AdIntegration, nuovoClient: NuovoClientLdap = clientLdapVero): Promise<Client> {
+  const account = credenzialeLdapDi(integration);
+  if (!account.ok) throw new Error(account.motivo);
+  const { username, password } = account;
 
   const protocol = integration.use_ssl ? "ldaps" : "ldap";
   const url = `${protocol}://${integration.dc_host}:${integration.port}`;
 
-  const client = new Client({
+  const client = nuovoClient({
     url,
     tlsOptions: integration.use_ssl
       ? { rejectUnauthorized: false }
@@ -426,19 +434,14 @@ export async function syncActiveDirectory(integrationId: number): Promise<AdSync
  */
 async function syncAdDhcpLeases(integration: AdIntegration): Promise<number> {
   const { runWinrmCommand } = await import("@/lib/devices/winrm-run");
-  const { getDb, getCredentialById } = await import("@/lib/db");
+  const { getDb } = await import("@/lib/db");
 
   if (!integration.winrm_credential_id) return 0;
-  const cred = getCredentialById(integration.winrm_credential_id);
-  if (!cred) throw new Error("Credenziale WinRM non trovata");
-
-  const username = cred.encrypted_username ? safeDecrypt(cred.encrypted_username) : null;
-  const password = cred.encrypted_password ? safeDecrypt(cred.encrypted_password) : null;
-  if (!username || !password) {
-    throw new Error("Credenziali WinRM non decifrabili: verificare ENCRYPTION_KEY.");
-  }
+  // La voce Windows dell'AD, con la sua porta (tappa 2f, T24): prima 5985 fissa.
+  const accesso = accessoWinrmDelDc(integration.winrm_credential_id);
+  if (!accesso.ok) throw new Error(accesso.motivo);
+  const { username, password, port } = accesso;
   const host = integration.dc_host;
-  const port = 5985;
   const realm = integration.domain || "";
 
   // v0.2.659: trova/crea un network_device "DHCP server" per il DC, così

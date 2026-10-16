@@ -44,6 +44,7 @@ import {
 import { LoadError } from "@/components/shared/load-error";
 import { CredentialFormDialog, caricaStatoModifica } from "@/components/credentials/credential-form-dialog";
 import { fetchJson } from "@/lib/fetch-json";
+import { nomeVoceAd } from "@/lib/ad/account-ldap";
 import { CRED_TYPE_OPTIONS } from "@/lib/credential-protocol-map";
 import { statoNuovo, type StatoModulo, type VoceArchivio } from "@/lib/credentials/modulo";
 import { PASSI_WIZARD, PASSO } from "@/lib/onboarding/passi";
@@ -383,8 +384,8 @@ export function OnboardingWizard() {
 
   const salvaAd = async (): Promise<number | null> => {
     if (adCreata) {
-      // L'account resta della pagina Active Directory (fino alla 2f); la WinRM
-      // collegata viene dall'archivio e si cambia anche da qui.
+      // L'account si cambia dalla pagina Active Directory; la WinRM collegata
+      // viene dall'archivio e si cambia anche da qui.
       if (adWinrm !== undefined && adWinrm !== adWinrmSalvata) {
         if (statoVoci.fase !== "pronto") throw new Error(ARCHIVIO_NON_PRONTO);
         const esito = await fetchJson<unknown>(`/api/ad/${adCreata.id}`, {
@@ -401,6 +402,9 @@ export function OnboardingWizard() {
     }
     if (!adEnabled) return null;
     if (statoVoci.fase !== "pronto") throw new Error(ARCHIVIO_NON_PRONTO);
+    // L'account scritto qui diventa la voce «AD · <nome>» dell'archivio (tappa
+    // 2f, T24): la crea il server nella stessa transazione dell'integrazione,
+    // così una voce non resta orfana se l'integrazione non si crea.
     if (!adForm.dc_host.trim() || !adForm.domain.trim() || !adForm.base_dn.trim() || !adForm.username.trim() || !adForm.password) {
       throw new Error("Compila tutti i campi obbligatori per Active Directory.");
     }
@@ -792,6 +796,9 @@ export function OnboardingWizard() {
                           value={adForm.password}
                           onChange={(e) => setAdForm((f) => ({ ...f, password: e.target.value }))}
                         />
+                        <p className="text-[13px] text-muted-foreground">
+                          L&apos;account si salva nell&apos;archivio come «{nomeVoceAd(adForm.name.trim() || "Active Directory")}».
+                        </p>
                         <div className="flex items-center gap-2">
                           <Checkbox id="adssl" checked={adForm.use_ssl} onCheckedChange={(c) => setAdForm((f) => ({ ...f, use_ssl: !!c, port: c ? 636 : 389 }))} />
                           <Label htmlFor="adssl">LDAPS (consigliato)</Label>

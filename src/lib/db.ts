@@ -6179,6 +6179,8 @@ export interface AdIntegration {
   port: number;
   enabled: number;
   winrm_credential_id: number | null;
+  /** Account LDAP: voce «Active Directory» dell'archivio (tappa 2f, T24). */
+  credential_id: number | null;
   dhcp_leases_count: number;
   last_sync_at: string | null;
   last_sync_status: string | null;
@@ -6285,10 +6287,11 @@ export function createAdIntegration(input: {
   port?: number;
   enabled?: number;
   winrm_credential_id?: number | null;
+  credential_id?: number | null;
 }): AdIntegration {
   const stmt = getDb().prepare(`INSERT INTO ad_integrations
-    (name, dc_host, domain, base_dn, encrypted_username, encrypted_password, use_ssl, port, enabled, winrm_credential_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    (name, dc_host, domain, base_dn, encrypted_username, encrypted_password, use_ssl, port, enabled, winrm_credential_id, credential_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
   const r = stmt.run(
     input.name,
     input.dc_host,
@@ -6299,7 +6302,8 @@ export function createAdIntegration(input: {
     input.use_ssl ?? 1,
     input.port ?? 636,
     input.enabled ?? 1,
-    input.winrm_credential_id ?? null
+    input.winrm_credential_id ?? null,
+    input.credential_id ?? null
   );
   return getAdIntegrationById(Number(r.lastInsertRowid))!;
 }
@@ -6315,6 +6319,7 @@ export function updateAdIntegration(id: number, input: Partial<{
   port: number;
   enabled: number;
   winrm_credential_id: number | null;
+  credential_id: number | null;
   dhcp_leases_count: number;
   last_sync_at: string | null;
   last_sync_status: string | null;

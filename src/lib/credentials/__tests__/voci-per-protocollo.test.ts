@@ -241,15 +241,17 @@ describe("una voce AD come riga host WinRM → rifiuto (400), niente scritto", (
 });
 
 describe("una voce AD come winrm_credential_id dell'AD → rifiuto (400), niente scritto", () => {
-  const datiAd = { name: "dominio", dc_host: "dc.esempio.local", domain: "esempio.local", base_dn: "DC=esempio,DC=local", encrypted_username: encrypt("u"), encrypted_password: encrypt("p") };
+  const datiAd = { name: "dominio", dc_host: "dc.esempio.local", domain: "esempio.local", base_dn: "DC=esempio,DC=local" };
+  // Dalla 2f (T24) l'account LDAP è una voce: qui uno nuovo, che diventa «AD · dominio».
+  const account = { nuovo: { username: "u", password: "p" } };
 
   it("creazione: AD rifiutata col messaggio, Windows scritta; modifica: AD rifiutata, valore com'era", () => {
     withTenant(T, () => {
       const prima = conta("SELECT COUNT(*) AS n FROM ad_integrations");
-      assert.throws(() => creaIntegrazioneAd({ ...datiAd, winrm_credential_id: AD }), rifiuto(MSG_AD_WINRM));
+      assert.throws(() => creaIntegrazioneAd({ ...datiAd, winrm_credential_id: AD }, account), rifiuto(MSG_AD_WINRM));
       assert.equal(conta("SELECT COUNT(*) AS n FROM ad_integrations"), prima);
 
-      const ad = creaIntegrazioneAd({ ...datiAd, winrm_credential_id: WIN });
+      const ad = creaIntegrazioneAd({ ...datiAd, winrm_credential_id: WIN }, account);
       assert.equal(ad.winrm_credential_id, WIN);
       const winrm = () => (dbt().prepare("SELECT winrm_credential_id AS w, name FROM ad_integrations WHERE id = ?").get(ad.id) as { w: number | null; name: string });
 

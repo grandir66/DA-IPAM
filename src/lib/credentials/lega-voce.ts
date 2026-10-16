@@ -1,7 +1,7 @@
 /**
  * Chi lega una voce d'archivio a un protocollo: binding dell'apparato, righe
- * dell'host, modifica in blocco degli host, WinRM dell'AD (tappa 2
- * credenziali, T13; revisione della 2c, 16/10).
+ * dell'host, modifica in blocco degli host, WinRM e account LDAP dell'AD
+ * (tappa 2 credenziali, T13 e T24; revisione della 2c, 16/10).
  *
  * Il controllo del tipo sta qui, insieme alla scrittura, per poterlo provare
  * eseguendolo: le rotte passano dalla sessione di NextAuth, che in una prova
@@ -13,7 +13,9 @@
  * Modello: `networks/salva-rete.ts` (usa il facade `db.ts`, come le rotte).
  */
 import {
+  getDb,
   getCredentialById,
+  getAdIntegrationById,
   addDeviceCredentialBinding,
   updateDeviceCredentialBinding,
   getDeviceCredentialBindings,
@@ -27,6 +29,8 @@ import {
   type AdIntegration,
 } from "@/lib/db";
 import type { AggiornamentoBinding } from "@/lib/devices/aggiornamenti-binding";
+import { stessoDc, type AccountLdap } from "@/lib/ad/account-ldap";
+import { controllaVoceAdDb, creaVoceAdDb } from "@/lib/ad/credenziale-ldap";
 import { erroreVocePerProtocollo } from "./tipi";
 
 /** La voce non vale per il protocollo, o non c'è: le rotte rispondono 400 col messaggio. */
@@ -125,14 +129,65 @@ export function assegnaCredenzialeAgliHost(
   return esito;
 }
 
-/** Crea un'integrazione AD. La voce WinRM/DHCP vale solo se è Windows (D7 = (a)). */
-export function creaIntegrazioneAd(input: Parameters<typeof createAdIntegration>[0]): AdIntegration {
+/** I campi dell'integrazione che il modulo manda: l'account va a parte, come voce. */
+type CampiAccount = "encrypted_username" | "encrypted_password" | "credential_id";
+export type DatiIntegrazioneAd = Omit<Parameters<typeof createAdIntegration>[0], CampiAccount>;
+export type ModificaIntegrazioneAd = Omit<NonNullable<Parameters<typeof updateAdIntegration>[1]>, CampiAccount>;
+
+/**
+ * Crea un'integrazione AD. La voce WinRM/DHCP vale solo se è Windows (D7 =
+ * (a)); l'account LDAP (T24) è una voce «Active Directory»: quella scelta,
+ * oppure una «AD · <nome>» creata dall'account scritto, nella stessa
+ * transazione della riga (il nome della voce, se è già preso, porta l'id
+ * dell'integrazione). Le colonne vecchie dell'account restano vuote. Un
+ * account che non vale lancia `AccountLdapNonValido` e non scrive niente.
+ */
+export function creaIntegrazioneAd(input: DatiIntegrazioneAd, account: AccountLdap): AdIntegration {
   if (input.winrm_credential_id) controlla(input.winrm_credential_id, "winrm");
-  return createAdIntegration(input);
+  const dbh = getDb();
+  if ("credential_id" in account) controllaVoceAdDb(dbh, account.credential_id);
+  const id = dbh.transaction(() => {
+    const ad = createAdIntegration({
+      ...input,
+      encrypted_username: "",
+      encrypted_password: "",
+      credential_id: "credential_id" in account ? account.credential_id : null,
+    });
+    if ("nuovo" in account) updateAdIntegration(ad.id, { credential_id: creaVoceAdDb(dbh, ad, account.nuovo).id });
+    return ad.id;
+  })();
+  return getAdIntegrationById(id) as AdIntegration;
 }
 
-/** Modifica un'integrazione AD. Null toglie la voce WinRM; una voce nuova vale solo se è Windows. */
-export function aggiornaIntegrazioneAd(id: number, modifica: Parameters<typeof updateAdIntegration>[1]): AdIntegration | undefined {
+/**
+ * Modifica un'integrazione AD. Null toglie la voce WinRM; una voce nuova vale
+ * solo se è Windows. L'account (T24): la voce scelta, o una voce nuova
+ * dall'account scritto; null = resta quello di adesso.
+ *
+ * D12 = (a): un Domain Controller diverso scollega la voce (`credential_id`
+ * NULL) e svuota le colonne vecchie dell'account, a meno che la stessa
+ * richiesta non scelga di nuovo la voce o porti un account nuovo. È la difesa
+ * che impedisce di mandare l'account di dominio, col bind LDAP, a un
+ * indirizzo che nessuno ha scelto (un errore di battitura, una sessione
+ * rubata): con le colonne piene il ripiego delle righe mai convertite le
+ * leggerebbe. Finché non si sceglie, l'AD dice «Credenziale mancante».
+ */
+export function aggiornaIntegrazioneAd(id: number, modifica: ModificaIntegrazioneAd, account: AccountLdap | null = null): AdIntegration | undefined {
   if (modifica.winrm_credential_id) controlla(modifica.winrm_credential_id, "winrm");
-  return updateAdIntegration(id, modifica);
+  const dbh = getDb();
+  if (account && "credential_id" in account) controllaVoceAdDb(dbh, account.credential_id);
+  const attuale = getAdIntegrationById(id);
+  if (!attuale) return undefined;
+  const spostato = modifica.dc_host !== undefined && !stessoDc(modifica.dc_host, attuale.dc_host);
+  return dbh.transaction(() => {
+    const campi: NonNullable<Parameters<typeof updateAdIntegration>[1]> = { ...modifica };
+    if (spostato) {
+      campi.credential_id = null;
+      campi.encrypted_username = "";
+      campi.encrypted_password = "";
+    }
+    if (account && "credential_id" in account) campi.credential_id = account.credential_id;
+    else if (account) campi.credential_id = creaVoceAdDb(dbh, { id, name: modifica.name ?? attuale.name }, account.nuovo).id;
+    return updateAdIntegration(id, campi);
+  })();
 }

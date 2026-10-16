@@ -3,8 +3,8 @@
  * Best-effort: never throws to caller — returns status unavailable/skipped.
  */
 
-import { decrypt } from "@/lib/crypto";
-import { getAdIntegrationById, getCredentialById } from "@/lib/db";
+import { getAdIntegrationById } from "@/lib/db";
+import { accessoWinrmDelDc } from "@/lib/ad/credenziale-ldap";
 import { runWinrmCommand } from "@/lib/devices/winrm-run";
 import { missingCriticalKbs as computeMissingKbs } from "./critical-kbs";
 import { auditGaps, parseAuditpolCsv } from "./audit-policy";
@@ -171,30 +171,30 @@ $hardening = @{
 @{ lastHotfixAt = $last; installedKbs = $kbs; osCaption = $os; auditpolCsv = $audit; cpasswordPaths = $cp; hardening = $hardening } | ConvertTo-Json -Compress -Depth 4
 `.trim();
 
-export async function collectWinrmProbe(integrationId: number): Promise<WinrmProbeResult> {
+/**
+ * La sonda WinRM sul DC con la voce Windows dell'integrazione, letta da
+ * `segreti.ts` (tappa 2f, T24): solo voci Windows (D7), con la porta della
+ * voce (5986 se la porta, altrimenti 5985; prima 5985 fissa). `esegui` è il
+ * comando WinRM: quello vero, o uno finto nelle prove.
+ */
+export async function collectWinrmProbe(
+  integrationId: number,
+  esegui: typeof runWinrmCommand = runWinrmCommand,
+): Promise<WinrmProbeResult> {
   const started = Date.now();
   const integration = getAdIntegrationById(integrationId);
   if (!integration) return skipped("integration missing");
   if (!integration.winrm_credential_id) return skipped();
 
-  const cred = getCredentialById(integration.winrm_credential_id);
-  if (!cred) return unavailable("WinRM credential not found", started);
-
-  let username: string;
-  let password: string;
-  try {
-    username = cred.encrypted_username ? decrypt(cred.encrypted_username) : "";
-    password = cred.encrypted_password ? decrypt(cred.encrypted_password) : "";
-  } catch {
-    return unavailable("Cannot decrypt WinRM credentials", started);
-  }
+  const accesso = accessoWinrmDelDc(integration.winrm_credential_id);
+  if (!accesso.ok) return unavailable(accesso.motivo, started);
 
   try {
-    const raw = await runWinrmCommand(
+    const raw = await esegui(
       integration.dc_host,
-      5985,
-      username,
-      password,
+      accesso.port,
+      accesso.username,
+      accesso.password,
       PROBE_PS,
       true,
       integration.domain || "",

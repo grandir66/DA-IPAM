@@ -39,6 +39,16 @@ import { Badge } from "@/components/ui/badge";
 import { Pagination } from "@/components/shared/pagination";
 import { SkeletonTable } from "@/components/shared/skeleton-table";
 import { ADSetupGuideDialog } from "@/components/shared/ad-setup-guide-dialog";
+import {
+  ACCOUNT_LDAP_VUOTO,
+  AccountLdapField,
+  accountLdapCompleto,
+  corpoAccountLdap,
+  type AccountLdapForm,
+} from "@/components/ad/account-ldap-field";
+import { parseVociArchivio, type VoceArchivio } from "@/components/controllers/controllers-model";
+import { stessoDc } from "@/lib/ad/account-ldap";
+import { fetchJson } from "@/lib/fetch-json";
 import { SEVERITY_STYLE } from "@/lib/severity-style";
 import type { AclExtras, AclObjectKind, InterestingAce } from "@/lib/ad/health/acl/types";
 import {
@@ -115,6 +125,11 @@ interface AdIntegration {
   port: number;
   enabled: number;
   winrm_credential_id: number | null;
+  /** Account LDAP: voce «Active Directory» dell'archivio (tappa 2f, T24). */
+  credential_id: number | null;
+  credential_name: string | null;
+  /** Con che cosa entra: la voce, le colonne di una riga mai convertita, niente. */
+  account: "voce" | "forma_vecchia" | "mancante";
   dhcp_leases_count: number;
   last_sync_at: string | null;
   last_sync_status: string | null;
@@ -170,11 +185,6 @@ interface AdDhcpLease {
   address_state: string | null;
 }
 
-interface WinrmCredential {
-  id: number;
-  name: string;
-}
-
 interface AdHealthRun {
   id: number;
   integrationId: number;
@@ -186,13 +196,14 @@ interface AdHealthRun {
   engineVersion: string;
 }
 
+type VociArchivio = VoceArchivio[] | null;
+
 const defaultForm = {
   name: "",
   dc_host: "",
   domain: "",
   base_dn: "",
-  username: "",
-  password: "",
+  account: ACCOUNT_LDAP_VUOTO as AccountLdapForm,
   use_ssl: true,
   port: 636,
   enabled: true,
@@ -245,7 +256,10 @@ export default function ActiveDirectoryPage() {
   const groupsQuery = useDebounced(groupsSearch);
   const dhcpQuery = useDebounced(dhcpSearch);
 
-  const [winrmCredentials, setWinrmCredentials] = useState<WinrmCredential[]>([]);
+  // Voci dell'archivio: Windows per WinRM/DHCP (D7), Active Directory per l'account LDAP (T24).
+  const [voci, setVoci] = useState<VociArchivio>(null);
+  const [vociErrore, setVociErrore] = useState<string | null>(null);
+  const winrmCredentials = useMemo(() => (voci ?? []).filter((c) => c.credential_type === "windows"), [voci]);
   const [dialogOpen, setDialogOpen] = useState(false);
   // v0.2.657: guida configurazione DC
   const [adGuideOpen, setAdGuideOpen] = useState(false);
@@ -253,7 +267,7 @@ export default function ActiveDirectoryPage() {
   const [saving, setSaving] = useState(false);
 
   const [editDialogOpen, setEditDialogOpen] = useState(false);
-  const [editForm, setEditForm] = useState({ ...defaultForm, username: "", password: "" });
+  const [editForm, setEditForm] = useState(defaultForm);
   const [editSaving, setEditSaving] = useState(false);
 
   const [healthRun, setHealthRun] = useState<AdHealthRun | null>(null);
@@ -319,13 +333,19 @@ export default function ActiveDirectoryPage() {
     }
   }, []);
 
-  const fetchWinrmCredentials = useCallback(async () => {
-    try {
-      const res = await fetch("/api/credentials");
-      if (!res.ok) return;
-      const data: Array<{ id: number; name: string; credential_type: string }> = await res.json();
-      setWinrmCredentials(data.filter((c) => c.credential_type === "windows").map((c) => ({ id: c.id, name: c.name })));
-    } catch { /* ignora */ }
+  const caricaVoci = useCallback(async () => {
+    const r = await fetchJson<unknown>("/api/credentials", { cache: "no-store" });
+    if (!r.ok) {
+      setVociErrore(r.message);
+      return;
+    }
+    const lista = parseVociArchivio(r.data);
+    if (!lista) {
+      setVociErrore("Risposta dell'archivio non leggibile");
+      return;
+    }
+    setVociErrore(null);
+    setVoci(lista);
   }, []);
 
   const fetchComputers = useCallback(async (signal?: AbortSignal) => {
@@ -448,7 +468,7 @@ export default function ActiveDirectoryPage() {
   }, [selectedIntegration]);
 
   useEffect(() => { fetchIntegrations(); }, [fetchIntegrations]);
-  useEffect(() => { fetchWinrmCredentials(); }, [fetchWinrmCredentials]);
+  useEffect(() => { void caricaVoci(); }, [caricaVoci]);
   useEffect(() => {
     const ac = new AbortController();
     void fetchComputers(ac.signal);
@@ -529,10 +549,11 @@ export default function ActiveDirectoryPage() {
   const handleCreate = async () => {
     setSaving(true);
     try {
+      const { account, ...campi } = form;
       const res = await fetch("/api/ad", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify({ ...campi, ...corpoAccountLdap(account) }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Errore creazione");
@@ -553,8 +574,7 @@ export default function ActiveDirectoryPage() {
       dc_host: integration.dc_host,
       domain: integration.domain,
       base_dn: integration.base_dn,
-      username: "",
-      password: "",
+      account: { ...ACCOUNT_LDAP_VUOTO, credentialId: integration.credential_id },
       use_ssl: !!integration.use_ssl,
       port: integration.port,
       enabled: !!integration.enabled,
@@ -563,11 +583,29 @@ export default function ActiveDirectoryPage() {
     setEditDialogOpen(true);
   };
 
+  /** Il DC del modulo è diverso da quello salvato: l'account va scelto di nuovo (D12 = (a)). */
+  const dcEditCambiato = !!selectedIntegration && !stessoDc(editForm.dc_host, selectedIntegration.dc_host);
+
+  /** Un DC diverso da quello salvato svuota la scelta; tornando a quello salvato torna la sua voce. */
+  const setEditDc = (dc_host: string) => {
+    setEditForm((f) => {
+      if (!selectedIntegration) return { ...f, dc_host };
+      const altrove = !stessoDc(dc_host, selectedIntegration.dc_host);
+      const eraAltrove = !stessoDc(f.dc_host, selectedIntegration.dc_host);
+      if (altrove && !eraAltrove) return { ...f, dc_host, account: { ...f.account, credentialId: null } };
+      if (!altrove && eraAltrove && f.account.credentialId === null) {
+        return { ...f, dc_host, account: { ...f.account, credentialId: selectedIntegration.credential_id } };
+      }
+      return { ...f, dc_host };
+    });
+  };
+
   const handleEdit = async () => {
     if (!selectedIntegration) return;
     setEditSaving(true);
     try {
-      // Invia solo i campi effettivamente compilati; username/password solo se non vuoti
+      // L'account: la voce scelta o un account nuovo; niente dei due = resta com'è
+      // (con un DC nuovo il salvataggio chiede prima di sceglierlo, D12).
       const payload: Record<string, unknown> = {
         name: editForm.name,
         dc_host: editForm.dc_host,
@@ -577,9 +615,11 @@ export default function ActiveDirectoryPage() {
         port: editForm.port,
         enabled: editForm.enabled,
         winrm_credential_id: editForm.winrm_credential_id,
+        // Solo se è cambiato: la voce salvata rimandata si ricontrollerebbe a ogni modifica.
+        ...(editForm.account.nuova || dcEditCambiato || editForm.account.credentialId !== selectedIntegration.credential_id
+          ? corpoAccountLdap(editForm.account)
+          : {}),
       };
-      if (editForm.username.trim()) payload.username = editForm.username;
-      if (editForm.password.trim()) payload.password = editForm.password;
 
       const res = await fetch(`/api/ad/${selectedIntegration.id}`, {
         method: "PUT",
@@ -795,24 +835,16 @@ export default function ActiveDirectoryPage() {
                   placeholder="Es. DC=example,DC=local"
                 />
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Username LDAP</label>
-                  <Input
-                    value={form.username}
-                    onChange={(e) => setForm({ ...form, username: e.target.value })}
-                    placeholder="Es. DOMAIN\\admin o admin@example.local"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Password LDAP</label>
-                  <Input
-                    type="password"
-                    value={form.password}
-                    onChange={(e) => setForm({ ...form, password: e.target.value })}
-                  />
-                </div>
-              </div>
+              <AccountLdapField
+                id="ad-account-nuova"
+                valore={form.account}
+                onChange={(patch) => setForm((f) => ({ ...f, account: { ...f.account, ...patch } }))}
+                voci={voci}
+                vociErrore={vociErrore}
+                onRiprova={() => void caricaVoci()}
+                nomeIntegrazione={form.name}
+                disabled={saving}
+              />
               <div className="space-y-2">
                 <label className="text-sm font-medium flex items-center gap-1">
                   <Wifi className="w-3.5 h-3.5" />
@@ -855,7 +887,7 @@ export default function ActiveDirectoryPage() {
             </div>
             <DialogFooter>
               <DialogClose render={<Button variant="outline">Annulla</Button>} />
-              <Button onClick={handleCreate} disabled={saving || !form.name || !form.dc_host || !form.base_dn || !form.username || !form.password}>
+              <Button onClick={handleCreate} disabled={saving || !form.name || !form.dc_host || !form.base_dn || !accountLdapCompleto(form.account)}>
                 {saving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                 Crea
               </Button>
@@ -898,7 +930,7 @@ export default function ActiveDirectoryPage() {
                 <label className="text-sm font-medium">Domain Controller</label>
                 <Input
                   value={editForm.dc_host}
-                  onChange={(e) => setEditForm({ ...editForm, dc_host: e.target.value })}
+                  onChange={(e) => setEditDc(e.target.value)}
                   placeholder="Es. dc01.example.local"
                 />
               </div>
@@ -919,30 +951,18 @@ export default function ActiveDirectoryPage() {
                 placeholder="Es. DC=example,DC=local"
               />
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Username LDAP</label>
-                <Input
-                  value={editForm.username}
-                  onChange={(e) => setEditForm({ ...editForm, username: e.target.value })}
-                  placeholder="Lascia vuoto per non modificare"
-                  autoComplete="off"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Password LDAP</label>
-                <Input
-                  type="password"
-                  value={editForm.password}
-                  onChange={(e) => setEditForm({ ...editForm, password: e.target.value })}
-                  placeholder="Lascia vuoto per non modificare"
-                  autoComplete="new-password"
-                />
-              </div>
-            </div>
-            <p className="text-xs text-muted-foreground -mt-2">
-              Lascia username e password vuoti per mantenere le credenziali esistenti.
-            </p>
+            <AccountLdapField
+              id="ad-account-modifica"
+              valore={editForm.account}
+              onChange={(patch) => setEditForm((f) => ({ ...f, account: { ...f.account, ...patch } }))}
+              voci={voci}
+              vociErrore={vociErrore}
+              onRiprova={() => void caricaVoci()}
+              nomeIntegrazione={editForm.name}
+              formaVecchia={selectedIntegration?.account === "forma_vecchia"}
+              dcCambiato={dcEditCambiato}
+              disabled={editSaving}
+            />
             <div className="space-y-2">
               <label className="text-sm font-medium flex items-center gap-1">
                 <Wifi className="w-3.5 h-3.5" />
@@ -982,7 +1002,17 @@ export default function ActiveDirectoryPage() {
           </div>
           <DialogFooter>
             <DialogClose render={<Button variant="outline">Annulla</Button>} />
-            <Button onClick={handleEdit} disabled={editSaving || !editForm.name || !editForm.dc_host || !editForm.base_dn}>
+            <Button
+              onClick={handleEdit}
+              disabled={
+                editSaving ||
+                !editForm.name ||
+                !editForm.dc_host ||
+                !editForm.base_dn ||
+                // Un account nuovo a metà, o un DC nuovo senza account scelto di nuovo (D12).
+                ((editForm.account.nuova || dcEditCambiato) && !accountLdapCompleto(editForm.account))
+              }
+            >
               {editSaving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               Salva
             </Button>

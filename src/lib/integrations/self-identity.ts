@@ -14,6 +14,7 @@ import * as os from "node:os";
 import type { Database } from "better-sqlite3";
 import { getSetting, setSetting } from "../db-hub";
 import { safeDecrypt } from "../crypto";
+import { credenzialeLdapDb, registraRipiegoRigaAd, type CredenzialeLdap, type RigaAccountLdap } from "../ad/credenziale-ldap";
 import { normalizeAccount, normalizeIp, type SelfIdentity } from "./wazuh-alerts";
 
 const KEY_EXTRA_IPS = "wazuh_alerts_self_ips";
@@ -74,6 +75,20 @@ function localIps(): string[] {
   return out;
 }
 
+/**
+ * Account LDAP che non si leggono, già scritti nel registro: uno per
+ * integrazione e motivo, una volta per processo. La raccolta gira a ogni
+ * giro di Wazuh: a ogni giro la stessa riga sarebbe rumore.
+ */
+const ldapGiaSegnalati = new Set<string>();
+
+function segnalaUnaVolta(id: number, motivo: string): void {
+  const chiave = `${id}:${motivo}`;
+  if (ldapGiaSegnalati.has(chiave)) return;
+  ldapGiaSegnalati.add(chiave);
+  console.warn(`[self-identity] AD #${id}: account LDAP non letto, i suoi accessi non si riconoscono come nostri nei log: ${motivo}`);
+}
+
 function hostOf(url: string): string | null {
   try {
     return new URL(url).hostname;
@@ -99,11 +114,23 @@ export function collectSelfIdentity(db: Database): SelfIdentity {
     }
   };
 
-  for (const r of tryAll<{ encrypted_username: string | null }>(
-    "SELECT encrypted_username FROM ad_integrations",
-  )) {
-    const u = r.encrypted_username ? safeDecrypt(r.encrypted_username) : null;
-    if (u) dbAccounts.push(u);
+  // L'account LDAP di ogni AD, com'è usato per entrare (tappa 2f, T24): la
+  // voce, o le colonne di una riga mai convertita (ripiego registrato). Le
+  // colonne di una riga col segno `done:` non le usa più nessuno: non si
+  // contano. Un account che non si legge si scrive una volta, non sparisce.
+  for (const r of tryAll<RigaAccountLdap & { id: number }>("SELECT * FROM ad_integrations")) {
+    let c: CredenzialeLdap;
+    try {
+      c = credenzialeLdapDb(db, r);
+    } catch (e) {
+      c = { ok: false, mancante: false, motivo: e instanceof Error ? e.message : String(e) };
+    }
+    if (c.ok) {
+      dbAccounts.push(c.username);
+      if (c.fonte === "colonne") registraRipiegoRigaAd();
+    } else if (!c.mancante) {
+      segnalaUnaVolta(r.id, c.motivo);
+    }
   }
   // Voci Windows e, dalla tappa 2 (2f), l'account LDAP dell'AD come voce `ad`.
   for (const r of tryAll<{ encrypted_username: string | null }>(

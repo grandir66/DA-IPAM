@@ -169,7 +169,10 @@ function anteprimaFra(
     return no(409, TESTI_UNIONI.cambiaAltra(nomeNodo(idx, nodoDi(idx, via) ?? via)));
   }
   const giaDentro = new Set(membriDi(prima, nodoDi(prima, nodo) ?? nodo));
-  const espliciti = [...ancore, ...dopo.unioni.map((u) => u.membro).filter((m) => !ancore.includes(m)).sort(perId)];
+  // Scritti da questa unione: le ancore e le righe del loro gruppo. Il membro di un'altra unione che arriva col suo gemello entra
+  // «insieme a» lui (revisione finale, 16/10).
+  const finali = new Set(dopo.unioni.filter((u) => ancore.includes(u.membro)).map((u) => u.gruppo));
+  const espliciti = [...ancore, ...dopo.unioni.filter((u) => finali.has(u.gruppo) && !ancore.includes(u.membro)).map((u) => u.membro).sort(perId)];
   const auto = indiceAutomatico(ing, dopo.separazioni);
   const perche = (id: string): string => {
     const come: ComeFuso = idx.come.get(Number(id.slice(5))) ?? "a_mano";

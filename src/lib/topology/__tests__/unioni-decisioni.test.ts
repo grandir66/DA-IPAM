@@ -160,6 +160,19 @@ test("decidiUnione: chi arriva col gemello (stesso MAC) entra «insieme a» lui,
   assert.deepEqual(app.dati.anteprima.entrano.map((e) => [e.id, e.perche]), [["host:12", A_MANO], ["host:14", "insieme a 10.71.2.20"]]);
 });
 
+test("decidiUnione: il gemello che è membro di un'altra unione entra «insieme a» lui; «unito a mano» vale per le righe di questa", () => {
+  // 41 e 42 hanno lo stesso MAC; il gruppo 1 lega 40 e 41, così il nodo «10.71.4.40» è {40, 41, 42}. «Unisci 42 con QWNAS-7»
+  // lascia il gruppo 1 com'è: il 41 arriva col 42, il suo gemello; il 40 per l'unione di prima. Revisione finale: i membri
+  // espliciti erano quelli di tutti i gruppi, e il 41 risultava «unito a mano».
+  const t = nas();
+  t.hosts.push(host(40, { network_id: 4, ip: "10.71.4.40", mac: "02:00:74:00:04:40" }),
+    host(41, { network_id: 4, ip: "10.71.4.41", mac: "02:00:75:00:04:41" }), host(42, { network_id: 4, ip: "10.71.4.42", mac: "02:00:75:00:04:41" }));
+  const d = decidiUnione(t, righe([{ gruppo: 1, membro: "host:40" }, { gruppo: 1, membro: "host:41" }]), ["host:42", "host:11"]);
+  assert.ok(d.ok, JSON.stringify(d));
+  assert.deepEqual(d.dati.piano.aggiungiUnioni, [{ gruppo: "nuovo", membro: "host:42" }, { gruppo: "nuovo", membro: "host:11" }], "il gruppo 1 resta com'è");
+  assert.deepEqual(d.dati.anteprima.entrano.map((e) => [e.id, e.perche]), [["host:40", A_MANO], ["host:41", "insieme a 10.71.4.42"], ["host:42", A_MANO]]);
+});
+
 test("Caso 5: «Unisci» dopo un «Separa» fra gli stessi oggetti toglie quella separazione (con la data) e lascia le altre", () => {
   const r = righe([], [{ membro: "host:12", altro: "dev:5" }, { membro: "host:13", altro: "dev:5" }]);
   const d = decidiUnione(nasPromosso(), r, ["host:12", "dev:5"]);

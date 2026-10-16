@@ -10,9 +10,12 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   si segnala.** Perché: sul pilota un MikroTik creato in SNMP e passato a SSH dalla modifica è rimasto con
   protocol=ssh, port=161 (la finestra non aveva il campo porta), e l'acquisizione SSH, che usa la porta
   dell'apparato, falliva: niente tabella MAC né vicini, col binding SSH sulla 22 provato con successo. Ora la
-  finestra mostra la porta e, cambiando protocollo, la porta passa allo standard del nuovo (SSH 22, SNMP 161,
-  WinRM 5985, API 443) o a quella propria della credenziale compatibile; una porta scritta a mano dopo il cambio
-  resta, e Proxmox tiene la porta dell'API. PUT e creazione restituiscono un avviso (non un rifiuto) se la porta
+  finestra mostra la porta e la manda nel PUT se cambiata; cambiando protocollo la porta passa a quella del primo
+  binding del nuovo protocollo (la stessa regola del motore: un binding SSH sulla 2222 dà 2222), poi a quella
+  propria della credenziale compatibile, poi allo standard (SSH 22, WinRM 5985, API 443). Verso SNMP la porta non
+  si tocca: per un apparato SNMP è quella del ripiego SSH della tabella MAC, e portarla a 161 lo rompeva.
+  Tornando al protocollo salvato torna la porta salvata, una porta scritta a mano dopo il cambio resta, e Proxmox
+  tiene la porta dell'API. PUT e creazione restituiscono un avviso (non un rifiuto) se la porta
   è lo standard di un altro protocollo: un rifiuto bloccherebbe anche il cambio del nome degli apparati già
   storti, e Proxmox tiene la porta dell'API anche in SSH.
 

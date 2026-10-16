@@ -29,6 +29,7 @@ import {
   tendineDaApparato,
   type StatoModificaInBlocco,
 } from "../modifica-in-blocco";
+import { portaAlCambioProtocollo } from "@/lib/devices/porta-protocollo";
 
 /** Lo stato con cui si apre la finestra in blocco: tutto su «Non modificare». */
 const STATO_INIZIALE_BLOCCO: StatoModificaInBlocco = {
@@ -156,6 +157,51 @@ describe("modifica del singolo apparato", () => {
       () => corpoModificaApparato(tendineDaApparato({}), { campi, credentialId: "7x", snmpCredentialId: null }),
       /Credenziale non valida/,
     );
+  });
+});
+
+/**
+ * La porta nel PUT della modifica (pilota, 16/10): un MikroTik creato in SNMP
+ * (161) e passato a SSH è rimasto con port=161 perché il corpo non portava la
+ * porta, e l'acquisizione SSH, che usa device.port, falliva.
+ */
+describe("modifica del singolo apparato: la porta", () => {
+  const campi = { name: "MikroTik 10G", vendor: "mikrotik", protocol: "snmp_v2", scan_target: null };
+  const ARCHIVIO = [{ id: 3, name: "Community", credential_type: "snmp", port: 161 }];
+  const apparato = { protocol: "snmp_v2", port: 161, credential_id: null, snmp_credential_id: 3 };
+  const iniziale = { ...tendineDaApparato(apparato), porta: apparato.port };
+
+  it("il caso del pilota: da protocol=snmp_v2/port=161 a ssh il corpo contiene port: 22", () => {
+    const porta = portaAlCambioProtocollo({
+      protocollo: "ssh",
+      credenziali: [null, "3"],
+      archivio: ARCHIVIO,
+      portaAttuale: apparato.port,
+      salvata: { protocollo: apparato.protocol, porta: apparato.port },
+    });
+    const corpo = corpoModificaApparato(iniziale, {
+      campi: { ...campi, protocol: "ssh" },
+      credentialId: null,
+      snmpCredentialId: "3",
+      porta: String(porta),
+    });
+    assert.equal(corpo.port, 22);
+  });
+
+  it("porta uguale a quella salvata, vuota o non passata: non si manda", () => {
+    for (const porta of ["161", "", " ", undefined]) {
+      const corpo = corpoModificaApparato(iniziale, { campi, credentialId: null, snmpCredentialId: "3", porta });
+      assert.ok(!("port" in corpo), `port non deve esserci con ${JSON.stringify(porta)}`);
+    }
+  });
+
+  it("una porta non valida è un errore, non un salvataggio", () => {
+    for (const porta of ["0", "65536", "22.5", "abc"]) {
+      assert.throws(
+        () => corpoModificaApparato(iniziale, { campi, credentialId: null, snmpCredentialId: "3", porta }),
+        /Porta non valida/,
+      );
+    }
   });
 });
 

@@ -41,6 +41,13 @@ export interface TendineCredenziali {
 export interface StatoModificaApparato extends TendineCredenziali {
   /** I campi che la finestra manda già (nome, IP, profilo, protocollo…), senza credenziali. */
   campi: Record<string, unknown>;
+  /** Il campo porta, se la finestra lo ha (16/10); vuoto o assente = non si manda. */
+  porta?: string;
+}
+
+/** Come parte la finestra del singolo: le due tendine e, se la finestra ha il campo, la porta salvata. */
+export interface StatoInizialeApparato extends TendineCredenziali {
+  porta?: number | null;
 }
 
 /** Campi che la rotta in blocco applica: senza almeno uno di questi non c'è niente da fare. */
@@ -103,9 +110,13 @@ export function tendineDaApparato(device: {
  * credenziali solo se cambiate rispetto a `statoIniziale`. Tendina vuota e
  * «Nessuna» valgono uguale (nessuna voce). Dalla 2e un `null` toglie i binding
  * di quel protocollo: un campo non toccato non deve partire.
+ *
+ * La porta (16/10) parte solo se diversa da quella salvata: sul pilota il PUT
+ * non la portava, e un apparato passato da SNMP a SSH restava sulla 161. Una
+ * porta non valida è un errore, non un salvataggio.
  */
 export function corpoModificaApparato(
-  statoIniziale: TendineCredenziali,
+  statoIniziale: StatoInizialeApparato,
   stato: StatoModificaApparato,
 ): Record<string, unknown> {
   const corpo: Record<string, unknown> = { ...stato.campi };
@@ -113,5 +124,13 @@ export function corpoModificaApparato(
   if (credenziale !== valoreTendina(statoIniziale.credentialId, "nessuna")) corpo.credential_id = credenziale;
   const snmp = valoreTendina(stato.snmpCredentialId, "nessuna");
   if (snmp !== valoreTendina(statoIniziale.snmpCredentialId, "nessuna")) corpo.snmp_credential_id = snmp;
+  const testoPorta = stato.porta?.trim();
+  if (testoPorta) {
+    const porta = Number(testoPorta);
+    if (!Number.isInteger(porta) || porta < 1 || porta > 65535) {
+      throw new Error(`Porta non valida: «${testoPorta}», serve un numero fra 1 e 65535`);
+    }
+    if (porta !== statoIniziale.porta) corpo.port = porta;
+  }
   return corpo;
 }

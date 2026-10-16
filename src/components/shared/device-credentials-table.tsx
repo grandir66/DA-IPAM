@@ -82,8 +82,18 @@ const STATUS_ICONS = {
   untested: <HelpCircle className="h-4 w-4 text-muted-foreground" />,
 };
 
-export function DeviceCredentialsTable({ deviceId }: { deviceId: number }) {
+export function DeviceCredentialsTable({
+  deviceId,
+  onBindingsChange,
+}: {
+  deviceId: number;
+  /** I binding a ogni caricamento: la finestra di modifica ne prende la porta SSH (16/10). */
+  onBindingsChange?: (bindings: CredentialBinding[]) => void;
+}) {
   const [bindings, setBindings] = useState<CredentialBinding[]>([]);
+  useEffect(() => {
+    onBindingsChange?.(bindings);
+  }, [bindings, onBindingsChange]);
   const [credentials, setCredentials] = useState<ArchiveCredential[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddDialog, setShowAddDialog] = useState(false);

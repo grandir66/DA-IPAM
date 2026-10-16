@@ -39,7 +39,7 @@ import { DeviceLocationField } from "@/components/topology/device-location-field
 import { toast } from "sonner";
 import type { NetworkDevice } from "@/types";
 import { corpoModificaApparato, tendineDaApparato } from "@/app/(dashboard)/devices/modifica-in-blocco";
-import { avvisoPortaProtocollo, portaAlCambioProtocollo } from "@/lib/devices/porta-protocollo";
+import { avvisoPortaProtocollo, portaAlCambioProtocollo, type BindingPorta } from "@/lib/devices/porta-protocollo";
 import type { CredenzialeArchivio, ProtocolloApparato } from "@/lib/devices/proposta-apparato";
 
 /** «auto» = la sceglie la discovery (v2c, poi v1); «1»/«2c» = fissata a mano. */
@@ -75,6 +75,8 @@ export function EditDeviceDialog({ device, open, onOpenChange, onSaved }: EditDe
     saveLocation.current = f;
   }, []);
   const [credentials, setCredentials] = useState<CredenzialeArchivio[]>([]);
+  // I binding della tabella qui sotto: la porta SSH dell'apparato sta lì (binding sulla 2222), non nelle colonne.
+  const [binding, setBinding] = useState<BindingPorta[]>([]);
 
   // Re-syncronizza lo state quando cambia il device (es. dopo onSaved)
   useEffect(() => {
@@ -103,9 +105,10 @@ export function EditDeviceDialog({ device, open, onOpenChange, onSaved }: EditDe
   }, [open]);
 
   /**
-   * Cambio di protocollo: la porta passa a quella del nuovo (la propria della
-   * credenziale compatibile, o lo standard); Proxmox tiene la porta dell'API.
-   * Una porta scritta a mano dopo il cambio resta: la sovrascrive solo un altro cambio.
+   * Cambio di protocollo: la porta passa a quella del nuovo (binding, voce
+   * compatibile, o lo standard); verso SNMP resta (è la porta del ripiego SSH);
+   * tornando al protocollo salvato torna la porta salvata; Proxmox tiene la porta
+   * dell'API. Una porta scritta a mano dopo il cambio resta: la sovrascrive solo un altro cambio.
    */
   function cambiaProtocollo(
     v: NetworkDevice["protocol"],
@@ -125,25 +128,22 @@ export function EditDeviceDialog({ device, open, onOpenChange, onSaved }: EditDe
       protocollo: v as ProtocolloApparato,
       credenziali: [editCredentialId, editSnmpCredentialId],
       archivio: credentials,
+      binding,
       proxmox,
-      portaAttuale: Number.isInteger(attuale) && attuale > 0 ? attuale : null,
+      portaAttuale: editPort.trim() !== "" && Number.isInteger(attuale) && attuale > 0 ? attuale : null,
+      salvata: { protocollo: device.protocol, porta: device.port },
     })));
   }
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const porta = Number(editPort);
-    if (editPort.trim() !== "" && !(Number.isInteger(porta) && porta >= 1 && porta <= 65535)) {
-      toast.error("Porta non valida: un numero fra 1 e 65535");
-      return;
-    }
     setEditSaving(true);
     const form = e.currentTarget;
     const formData = new FormData(form);
     // Le credenziali partono solo se cambiate rispetto all'apparato (dalla 2e un null toglie i binding).
     let body: Record<string, unknown>;
     try {
-      body = corpoModificaApparato(tendineDaApparato(device), {
+      body = corpoModificaApparato({ ...tendineDaApparato(device), porta: device.port }, {
         campi: {
           vendor: editVendor,
           protocol: editProtocol,
@@ -152,9 +152,10 @@ export function EditDeviceDialog({ device, open, onOpenChange, onSaved }: EditDe
         },
         credentialId: editCredentialId,
         snmpCredentialId: editSnmpCredentialId,
+        porta: editPort,
       });
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Credenziale non valida");
+      toast.error(err instanceof Error ? err.message : "Credenziale o porta non valida");
       setEditSaving(false);
       return;
     }
@@ -162,7 +163,6 @@ export function EditDeviceDialog({ device, open, onOpenChange, onSaved }: EditDe
     if (editClassification) body.classification = editClassification;
     body.use_for_arp_poll = editUseForArpPoll ? 1 : 0;
     if (editSnmpVersione !== sceltaVersioneSnmp(device)) body.snmp_version_scelta = editSnmpVersione;
-    if (editPort.trim() !== "" && porta !== device.port) body.port = porta;
     formData.forEach((val, key) => {
       if (key === "password" || key === "community_string") {
         if (val && String(val).trim()) body[key] = val;
@@ -356,7 +356,7 @@ export function EditDeviceDialog({ device, open, onOpenChange, onSaved }: EditDe
 
             <DeviceLocationField deviceId={device.id} onReady={registerLocationSave} />
 
-            <DeviceCredentialsTable deviceId={device.id} />
+            <DeviceCredentialsTable deviceId={device.id} onBindingsChange={setBinding} />
 
             <Button type="submit" className="w-full" disabled={editSaving}>
               {editSaving ? "Salvataggio..." : "Salva modifiche"}

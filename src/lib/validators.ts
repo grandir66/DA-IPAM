@@ -31,7 +31,11 @@ export const NetworkSchema = z.object({
   router_id: z.coerce.number().int().positive().optional().nullable(),
 });
 
-/** Creazione rete + eventuali catene credenziali (stessa semantica della modifica). */
+/**
+ * Creazione rete + lista credenziali (stessa semantica della modifica). I
+ * quattro campi per ruolo sono superati dalla 2d (T17): si accodano alla
+ * lista e la risposta porta un avviso.
+ */
 export const NetworkCreateSchema = NetworkSchema.extend({
   credential_ids: z.array(z.number().int().positive()).optional(),
   windows_credential_ids: z.array(z.number().int().positive()).optional(),
@@ -40,7 +44,7 @@ export const NetworkCreateSchema = NetworkSchema.extend({
   snmp_credential_ids: z.array(z.number().int().positive()).optional(),
 });
 
-/** Aggiornamento rete + credenziali detect (ordine = priorità tentativi, un solo accesso per credenziale in scan). */
+/** Aggiornamento rete + lista credenziali (ordine = priorità tentativi); i quattro campi per ruolo come nella creazione. */
 export const NetworkUpdateSchema = NetworkSchema.partial().extend({
   credential_ids: z.array(z.number().int().positive()).optional(),
   windows_credential_ids: z.array(z.number().int().positive()).optional(),
@@ -74,12 +78,13 @@ export const HostUpdateSchema = z.object({
   firmware: z.string().max(200).optional().nullable(),
   // v0.2.618: editing inline produttore nella lista discovery
   device_manufacturer: z.string().max(200).optional().nullable(),
-  /** Forza credenziali archivio per ruolo detect (null = rimuovi binding). */
+  /**
+   * Superato dalla 2d (T17): il pin per ruolo non lo legge più nessuno (la
+   * discovery prova la catena dell'host dal motore). Un 400 che lo dice, non
+   * un campo ignorato in silenzio.
+   */
   detect_credentials: z
-    .record(
-      z.enum(["windows", "linux", "ssh", "snmp"]),
-      z.union([z.number().int().positive(), z.null()])
-    )
+    .never({ error: "detect_credentials è un campo superato: le credenziali dell'host si gestiscono nella sua scheda (Credenziali)" })
     .optional(),
 });
 

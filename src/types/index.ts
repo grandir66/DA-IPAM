@@ -729,12 +729,6 @@ export interface NetworkWithStats extends Network {
   last_scan: string | null;
 }
 
-export interface HostDetectCredentialRow {
-  role: "windows" | "linux" | "ssh" | "snmp";
-  credential_id: number;
-  credential_name: string;
-}
-
 export interface HostDetail extends Host {
   network_cidr: string;
   network_name: string;
@@ -743,8 +737,6 @@ export interface HostDetail extends Host {
   recent_scans: ScanHistory[];
   /** Tipi di scansione già eseguiti su questo host (deduplicati). */
   scan_types_used?: string[];
-  /** Credenziali archivio usate con successo per acquisizione (per ruolo). [Legacy] */
-  detect_credentials?: HostDetectCredentialRow[];
   /** Credenziali validate per questo host (sistema v2 — multi-protocollo). */
   host_credentials?: Array<{
     id: number;

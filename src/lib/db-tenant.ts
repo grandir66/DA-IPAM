@@ -2693,7 +2693,6 @@ export function getHostById(id: number): HostDetail | undefined {
     ...host,
     recent_scans: recentScans,
     scan_types_used: scanTypesSeen,
-    detect_credentials: getHostDetectCredentialsEnriched(id),
     host_credentials: getHostCredentials(id),
     arp_source: arpSource || null,
     switch_port: switchPort || null,
@@ -4127,28 +4126,6 @@ export function setHostDetectCredential(hostId: number, role: HostDetectCredenti
     .run(hostId, role, credentialId);
 }
 
-export function deleteHostDetectCredential(hostId: number, role: HostDetectCredentialRole): void {
-  db().prepare(`DELETE FROM host_detect_credential WHERE host_id = ? AND role = ?`).run(hostId, role);
-}
-
-export function getHostDetectCredentialsEnriched(hostId: number): Array<{
-  role: HostDetectCredentialRole;
-  credential_id: number;
-  credential_name: string;
-}> {
-  const rows = db()
-    .prepare(`SELECT role, credential_id FROM host_detect_credential WHERE host_id = ? ORDER BY role`)
-    .all(hostId) as Array<{ role: HostDetectCredentialRole; credential_id: number }>;
-  return rows.map((r) => {
-    const c = getCredentialById(r.credential_id);
-    return {
-      role: r.role,
-      credential_id: r.credential_id,
-      credential_name: c?.name ?? `#${r.credential_id}`,
-    };
-  });
-}
-
 /** Le verifiche (fotografia, prova a vuoto) passano `registra: false`: i ripieghi non si scrivono. */
 type OpzioniRegistro = { registra?: boolean };
 
@@ -4157,8 +4134,10 @@ type OpzioniRegistro = { registra?: boolean };
  * (`catenaReteDb`, tappa 2 credenziali, T7). Voci della rete, catene vecchie
  * e chiave globale dell'hub, tutte col filtro di tipo: prima la chiave
  * dell'hub si accodava senza controllo, anche se puntava a una voce che nel
- * tenant non c'è o è di un altro tipo. `role="linux"` è il protocollo SSH.
- * `registra: false` (fotografia, prova a vuoto) non scrive i ripieghi.
+ * tenant non c'è o è di un altro tipo. Catene vecchie e chiave dell'hub solo
+ * finché la 2d non le ha convertite (T17, lo decide il motore col segno).
+ * `role="linux"` è il protocollo SSH. `registra: false` (fotografia, prova a
+ * vuoto) non scrive i ripieghi.
  */
 export function getOrderedDetectCredentialIds(networkId: number, role: "windows" | "linux", opts: OpzioniRegistro = {}): number[] {
   return catenaReteDb(db(), networkId, role === "windows" ? "winrm" : "ssh", { globaliHub: chiaviGlobaliHub(getSetting), registra: opts.registra });

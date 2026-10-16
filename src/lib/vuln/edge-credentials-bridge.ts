@@ -8,14 +8,14 @@ import {
   getCredentialById,
   getCredentialCommunityString,
   getCredentialLoginPair,
+  getDb,
   getNetworkById,
-  getNetworkCredentials,
-  getNetworkHostCredentialIds,
   getOrderedDetectCredentialIds,
   getOrderedSshLinuxCredentialIds,
   getSshLinuxCredentialPair,
   buildSnmpCommunitiesForNetwork,
 } from "@/lib/db";
+import { catenaReteDb } from "@/lib/credentials/resolve";
 import { normalizzaTipo } from "@/lib/credentials/tipi";
 
 export type EdgeCredentialSlot = "ssh" | "smb" | "snmp" | "ad";
@@ -54,21 +54,6 @@ function splitWindowsLogin(raw: string): { login: string; domain: string | null 
     return { login: (login || s).trim(), domain: (domain || "").trim() || null };
   }
   return { login: s, domain: null };
-}
-
-/** Slot dello scanner per tipo d'archivio (`linux` è `ssh`, la v3 va nello slot SNMP e lì si scarta). */
-function slotForType(credentialType: string): EdgeCredentialSlot | null {
-  switch (normalizzaTipo(credentialType)) {
-    case "ssh":
-      return "ssh";
-    case "windows":
-      return "smb";
-    case "snmp":
-    case "snmp_v3":
-      return "snmp";
-    default:
-      return null;
-  }
 }
 
 /**
@@ -145,7 +130,19 @@ function buildTransferFromCredential(
   return null;
 }
 
-/** Elenco credenziali subnet (preview UI + payload sync edge). `registra: false` per le verifiche (fotografia). */
+/**
+ * Elenco credenziali subnet (preview UI + payload sync edge). `registra: false`
+ * per le verifiche (fotografia).
+ *
+ * Gli slot si fanno dalla catena della rete del motore, un protocollo alla
+ * volta: SSH, poi Windows (SMB, e AD con le stesse voci), poi SNMP (tappa 2
+ * credenziali, T17). Prima si mettevano davanti le voci della lista della
+ * rete, in ordine di lista, e dopo le catene vecchie: le stesse voci, spostate
+ * dalla catena vecchia alla lista dalla conversione della 2d, uscivano in un
+ * altro ordine. Dentro ogni slot l'ordine è quello di prima (la lista viene
+ * per prima anche nel motore); le catene vecchie e la chiave dell'hub entrano
+ * solo finché la 2d non le ha convertite.
+ */
 export function collectEdgeCredentialsForNetwork(networkId: number, opts: { registra?: boolean } = {}): {
   preview: EdgeCredentialPreview[];
   transfer: EdgeCredentialTransfer[];
@@ -177,13 +174,6 @@ export function collectEdgeCredentialsForNetwork(networkId: number, opts: { regi
     if (spec) transfer.push(spec);
   };
 
-  // v2 — lista unificata subnet
-  for (const row of getNetworkCredentials(networkId)) {
-    const slot = slotForType(row.credential_type);
-    if (slot) pushCred(row.credential_id, slot);
-  }
-
-  // Legacy per ruolo (ordine tentativi scan IPAM)
   for (const credId of getOrderedSshLinuxCredentialIds(networkId, opts)) {
     pushCred(credId, "ssh");
   }
@@ -208,7 +198,7 @@ export function collectEdgeCredentialsForNetwork(networkId: number, opts: { regi
       });
     }
   }
-  for (const credId of getNetworkHostCredentialIds(networkId, "snmp")) {
+  for (const credId of catenaReteDb(getDb(), networkId, "snmp", { registra: opts.registra })) {
     pushCred(credId, "snmp");
   }
 

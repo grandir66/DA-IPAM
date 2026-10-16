@@ -9,6 +9,10 @@
  *   rifiutava una voce `ssh`, e la rotta rispondeva 400 dopo aver già creato
  *   o modificato la rete.
  *
+ * - dalla 2d (T17) le catene vecchie per ruolo non si scrivono più: i quattro
+ *   campi `windows/linux/ssh/snmp_credential_ids` si accodano alla lista della
+ *   rete, la risposta porta un avviso e la GET non li restituisce più.
+ *
  * Le rotte passano dalla sessione di NextAuth e non si chiamano in una
  * prova: qui si chiama la funzione che le rotte usano, con il facade del DB
  * dentro `withTenant`, come in una richiesta.
@@ -29,7 +33,7 @@ import {
 } from "@/lib/db-tenant";
 import { replaceNetworkHostCredentials as catenaFacciata, setHostDetectCredential as pinFacciata } from "@/lib/db";
 import { NetworkUpdateSchema } from "@/lib/validators";
-import { aggiornaRete, creaRete, CredenzialiReteNonValide } from "../salva-rete";
+import { aggiornaRete, creaRete, CredenzialiReteNonValide, AVVISO_CAMPI_VECCHI } from "../salva-rete";
 
 const T = "TESTSALVARETE";
 const SSH = 501;
@@ -94,6 +98,21 @@ describe("PUT della rete (aggiornaRete)", () => {
     });
   });
 
+  it("campi vecchi senza credential_ids (2d): accodati alla lista che c'è, con l'avviso; la risposta non ha più le catene vecchie", () => {
+    withTenant(T, () => {
+      const r = creaRete({ cidr: "10.71.6.0/24", name: "accoda", description: "", location: "", credential_ids: [SNMP, SSH] });
+      const salvata = aggiornaRete(r.id, { windows_credential_ids: [WIN], linux_credential_ids: [SSH] });
+      assert.ok(salvata, "rete non trovata");
+      assert.deepEqual(lista(r.id), [SNMP, SSH, WIN], "la voce già presente si sposta o manca quella nuova");
+      assert.deepEqual(salvata.credential_ids, [SNMP, SSH, WIN]);
+      assert.deepEqual(salvata.avvisi, [AVVISO_CAMPI_VECCHI]);
+      assert.deepEqual(catena(r.id, "windows"), [], "la catena vecchia si scrive ancora");
+      for (const campo of ["windows_credential_ids", "linux_credential_ids", "ssh_credential_ids", "snmp_credential_ids"]) {
+        assert.equal(campo in salvata, false, `${campo} ancora nella risposta`);
+      }
+    });
+  });
+
   it("senza credential_ids la lista resta com'è", () => {
     withTenant(T, () => {
       const r = creaRete({ cidr: "10.71.2.0/24", name: "rete lista", description: "", location: "", credential_ids: [SSH] });
@@ -126,11 +145,31 @@ describe("PUT della rete (aggiornaRete)", () => {
 });
 
 describe("POST della rete (creaRete)", () => {
-  it("il ruolo linux accetta una voce ssh: la rete nasce e la catena è applicata", () => {
+  it("il ruolo linux accetta una voce ssh: la rete nasce e la voce va nella lista, non nella catena vecchia", () => {
     withTenant(T, () => {
       const r = creaRete({ cidr: "10.72.1.0/24", name: "linux ssh", description: "", location: "", linux_credential_ids: [SSH] });
       assert.ok(r.id > 0);
-      assert.deepEqual(catena(r.id, "linux"), [SSH]);
+      assert.deepEqual(lista(r.id), [SSH]);
+      assert.deepEqual(catena(r.id, "linux"), [], "la catena vecchia si scrive ancora");
+    });
+  });
+
+  it("campi vecchi (2d): accodati alla lista dopo credential_ids, nell'ordine windows, ssh, linux, snmp, con l'avviso", () => {
+    withTenant(T, () => {
+      const r = creaRete({
+        cidr: "10.72.3.0/24", name: "campi vecchi", description: "", location: "",
+        credential_ids: [SNMP], linux_credential_ids: [SSH], ssh_credential_ids: [SSH], windows_credential_ids: [WIN], snmp_credential_ids: [SNMP_V3],
+      });
+      assert.deepEqual(lista(r.id), [SNMP, WIN, SSH, SNMP_V3]);
+      assert.deepEqual(r.avvisi, [AVVISO_CAMPI_VECCHI]);
+      for (const ruolo of ["windows", "linux", "ssh", "snmp"]) assert.deepEqual(catena(r.id, ruolo), [], `catena vecchia ${ruolo} scritta`);
+    });
+  });
+
+  it("senza campi vecchi: nessun avviso", () => {
+    withTenant(T, () => {
+      const r = creaRete({ cidr: "10.72.4.0/24", name: "senza campi vecchi", description: "", location: "", credential_ids: [SSH] });
+      assert.equal(r.avvisi, undefined);
     });
   });
 

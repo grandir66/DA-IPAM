@@ -4,7 +4,6 @@ import {
   deleteNetwork,
   getNetworkRouterId,
   getHostsByNetworkWithDevices,
-  getNetworkHostCredentialIds,
   getNetworkCredentials,
   getHostValidatedProtocolsByNetwork,
 } from "@/lib/db";
@@ -23,10 +22,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     }
     const hosts = getHostsByNetworkWithDevices(Number(id));
     const router_id = getNetworkRouterId(Number(id));
-    const windows_credential_ids = getNetworkHostCredentialIds(Number(id), "windows");
-    const linux_credential_ids = getNetworkHostCredentialIds(Number(id), "linux");
-    const ssh_credential_ids = getNetworkHostCredentialIds(Number(id), "ssh");
-    const snmp_credential_ids = getNetworkHostCredentialIds(Number(id), "snmp");
+    // Dalla 2d (T17) la rete ha una lista sola: le catene vecchie per ruolo non si restituiscono più.
     const network_credentials = getNetworkCredentials(Number(id));
     // Badge: protocolli validati per host (mappa host_id → protocol_type[])
     const validatedMap = getHostValidatedProtocolsByNetwork(Number(id));
@@ -38,10 +34,6 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       ...network,
       hosts,
       router_id,
-      windows_credential_ids,
-      linux_credential_ids,
-      ssh_credential_ids,
-      snmp_credential_ids,
       network_credentials,
       host_validated_protocols,
     });
@@ -64,8 +56,9 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     if (!parsed.success) {
       return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
     }
-    // Rete, router, lista credenziali (`credential_ids`) e catene vecchie in
-    // una transazione: una voce rifiutata è un 400 e non lascia scritto niente.
+    // Rete, router e lista credenziali (`credential_ids`) in una transazione:
+    // una voce rifiutata è un 400 e non lascia scritto niente. I campi delle
+    // catene vecchie si accodano alla lista, con `avvisi` nella risposta (T17).
     let salvata;
     try {
       salvata = aggiornaRete(networkId, parsed.data);

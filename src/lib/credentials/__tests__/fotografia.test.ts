@@ -250,6 +250,15 @@ describe("fotografia-scelte.ts sulla copia", () => {
     const insRete = d.prepare("INSERT INTO network_credentials (network_id, credential_id, sort_order) VALUES (?, ?, ?)");
     insRete.run(idRete, credBinding, 0);
     insRete.run(idRete, credSnmp, 1);
+    // Un tenant dove la 2d non si è chiusa (segno «errore:»): il motore legge
+    // ancora catene vecchie e chiave dell'hub (T17), ed è lo stato che la
+    // fotografia «prima» deve saper etichettare. L'apertura qui sopra ha scritto
+    // il segno su un DB vuoto; senza il trigger, l'apertura dello script
+    // convertirebbe e lo chiuderebbe.
+    d.prepare("DELETE FROM tenant_settings WHERE key = 'credenziali_t2_catene'").run();
+    d.exec(`CREATE TRIGGER prova_2d_non_chiusa BEFORE INSERT ON tenant_settings
+            WHEN NEW.key = 'credenziali_t2_catene' AND NEW.value NOT LIKE 'errore:%'
+            BEGIN SELECT RAISE(ABORT, 'conversione 2d fermata dalla prova'); END`);
     closeTenantDb(T);
     closeHubDb();
 

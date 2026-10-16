@@ -21,7 +21,8 @@
  *  10. chiave dell'hub (solo WinRM e SSH);    11. ripiego AD (solo WinRM, con l'opzione);
  *  12. per SNMP, «public» (`snmp_ripiego`, D5), mai a un apparato con una voce v3.
  * Un binding fallito si salta finché una prova non riesce (D10 = (a)). Un
- * apparato senza `host_id` non ha i livelli 6-11.
+ * apparato senza `host_id` non ha i livelli 6-11. I livelli 9 e 10 si leggono
+ * solo finché la 2d non li ha convertiti (segno `credenziali_t2_catene`, T17).
  *
  * Ordine per un host: quello di prima (righe validate, binding riusciti
  * dell'apparato collegato, righe non validate, binding non provati, rete,
@@ -45,6 +46,7 @@ import { V3_ASSENTE, type CredenzialeSnmp } from "@/lib/protocols/snmp-sessione"
 import type { NetworkDevice } from "@/types";
 import { DEFAULT_PORTS, portaCredenziale, type CredProtocol } from "./porte";
 import { leggiSegretoDb, leggiSegretoInline, opzioniSsh, type AccessoSsh, type Segreto, type UsoSegreto } from "./segreti";
+import { SEGNO_CATENE, conversioneChiusa, leggiSegno } from "./segni-t2";
 import { normalizzaTipo, portaVoceValePer, tipiPerProtocollo } from "./tipi";
 
 export { DEFAULT_PORTS, portaCredenziale };
@@ -437,8 +439,10 @@ function bridgeIds(
  *   3. righe host non validate;       4. binding non provati;
  *   5. catena della rete;             6. catene vecchie (pin, poi lista);
  *   7. chiave dell'hub;               8. ripiego AD (WinRM, con `conAdFallback`).
- * Tutti col filtro di tipo e col fermo. Non registra: è una lista, sceglie
- * chi la usa (`scegliSegretoHostDb`, o la discovery con la sua prova).
+ * Tutti col filtro di tipo e col fermo; 6 e 7 solo finché la 2d non li ha
+ * convertiti (`fontiVecchieAperte`). Non registra: è una lista, sceglie chi la
+ * usa (`scegliSegretoHostDb`, o la discovery, che dalla 2d prova questa
+ * catena per ogni host: D2 = (a)).
  */
 export function resolveCredentialsForDb(
   dbh: Database.Database,
@@ -479,6 +483,24 @@ export function resolveCredentialsForDb(
   return tronca(risultati, opts);
 }
 
+/**
+ * Catene vecchie e chiave dell'hub si leggono solo finché la 2d non le ha
+ * portate nella lista della rete e nelle righe dell'host (T16): col segno
+ * `credenziali_t2_catene` a `done:` o `parziale:` sono già lì. Le tabelle
+ * vecchie restano congelate fino alla 2g, e rileggerle riporterebbe una voce
+ * che l'utente ha tolto dalla lista; sull'hub (due tenant attivi, D3 = (a)) la
+ * chiave «di default» non si copia e smette di accodarsi. Le righe `saltate`
+ * della conversione hanno un tipo che il filtro scarterebbe comunque, o
+ * puntano a voci, reti o host che non ci sono. Con `errore:`, senza segno, o
+ * su una copia senza `tenant_settings` (nessun segno possibile) si leggono
+ * come prima. Una lettura per chiamata pubblica, e solo se le fonti lo chiedono.
+ */
+function fontiVecchieAperte(dbh: Database.Database, opts: OpzioniMotore): boolean {
+  if (opts.fonti && !opts.fonti.includes("legacy_chain") && !opts.fonti.includes("hub_default")) return false;
+  const conSettings = dbh.prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'tenant_settings'`).get();
+  return !conSettings || !conversioneChiusa(leggiSegno(dbh, SEGNO_CATENE));
+}
+
 /** Livelli dalla catena della rete in giù, uguali per host e apparati. */
 function livelliComuni(
   dbh: Database.Database,
@@ -500,9 +522,11 @@ function livelliComuni(
     conFermo: true,
   });
   if (c.networkId != null) for (const v of vociRete(dbh, c.networkId, c.tipi)) aggiungi(daVoce(v, "network_chain"));
-  for (const v of vociCatenaVecchia(dbh, c.hostId, c.networkId, c.protocol, c.tipi)) aggiungi(daVoce(v, "legacy_chain"));
-  const hub = voceHub(dbh, c.opts.globaliHub, c.protocol, c.tipi);
-  if (hub) aggiungi(daVoce(hub, "hub_default"));
+  if (fontiVecchieAperte(dbh, c.opts)) {
+    for (const v of vociCatenaVecchia(dbh, c.hostId, c.networkId, c.protocol, c.tipi)) aggiungi(daVoce(v, "legacy_chain"));
+    const hub = voceHub(dbh, c.opts.globaliHub, c.protocol, c.tipi);
+    if (hub) aggiungi(daVoce(hub, "hub_default"));
+  }
   if (c.opts.conAdFallback && c.protocol === "winrm") {
     const ad = voceAd(dbh, c.tipi);
     // Porta 5985 come il ripiego di oggi delle patch: 5986 vuole un certificato sul bersaglio.
@@ -1045,9 +1069,9 @@ export function communitySnmpDb(
 
 /**
  * Catena di una rete per la discovery e l'anteprima edge: gli id delle voci
- * del motore, senza doppioni, chiave dell'hub compresa (col filtro di tipo).
- * Registra le fonti vecchie che ci entrano (catene vecchie, chiave dell'hub):
- * la scelta la fa chi prova la catena.
+ * del motore, senza doppioni; catene vecchie e chiave dell'hub (col filtro di
+ * tipo) solo finché la 2d non le ha convertite. Registra le fonti vecchie che
+ * ci entrano: la scelta la fa chi prova la catena.
  */
 export function catenaReteDb(dbh: Database.Database, networkId: number, protocol: CredProtocol, opts: OpzioniMotore = {}): number[] {
   const ids: number[] = [];

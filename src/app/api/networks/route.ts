@@ -62,8 +62,9 @@ export async function POST(request: Request) {
     if (!parsed.success) {
       return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
     }
-    // Rete, router, lista credenziali e catene vecchie in una transazione: una
-    // voce rifiutata è un 400 e la rete non nasce (prima nasceva lo stesso).
+    // Rete, router e lista credenziali in una transazione: una voce rifiutata è
+    // un 400 e la rete non nasce (prima nasceva lo stesso). I campi delle catene
+    // vecchie si controllano prima e si accodano alla lista, con `avvisi` (T17).
     let network;
     try {
       network = creaRete(parsed.data);

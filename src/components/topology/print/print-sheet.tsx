@@ -77,7 +77,8 @@ export function Legend({ withVms, withCavi = false }: { withVms: boolean; withCa
         <Item sample={<LineSample over={{ speedMbps: 100 }} />}>«100M» e meno: tratto sottile</Item>
         <Item sample={<LineSample over={{ medium: "wireless" }} />}>ondulata «≋ Wi-Fi»: senza fili</Item>
         <Item sample={<LineSample over={{ medium: "fibra" }} />}>«fibra» scritto sulla linea</Item>
-        <Item sample={<LineSample over={{ stale: true }} />}>grigia tratteggiata: «non visto da N g» sulle porte</Item>
+        {/* Con la mappa nuova «N g» non va a capo fra il numero e la «g» (verifica a schermo di T3); spenta, la legenda di prima. */}
+        <Item sample={<LineSample over={{ stale: true }} />}>{withCavi ? "grigia tratteggiata: «non visto da N\u00a0g» sulle porte" : "grigia tratteggiata: «non visto da N g» sulle porte"}</Item>
         <Item sample={<LineSample over={{ manual: { confirmed: true } }} />}>«✎ ✓» a mano, le letture lo confermano</Item>
         <Item sample={<LineSample over={{ manual: { confirmed: false } }} />}>puntinata «✎ ?»: solo a mano, non confermato</Item>
         <Item sample={<span className="w-12 shrink-0 text-center">⚡</span>}>«⚡ N W»: PoE sulla porta</Item>

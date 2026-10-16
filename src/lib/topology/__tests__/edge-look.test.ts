@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { SOURCE_WORDS, TRATTI, altriCaviDi, edgeLook, linkWords, parolaStato, pathPoints, pezzoNelloSpazio, poeLabel, seenWords, speedLabel, speedWidth, wavyPath } from "@/lib/topology/edge-look";
+import { SOURCE_WORDS, TRATTI, altriCaviDi, edgeLook, linkWords, paroleDelCavo, parolaStato, pathPoints, pezzoNelloSpazio, poeLabel, seenWords, speedLabel, speedWidth, wavyPath } from "@/lib/topology/edge-look";
 import { LINK_ATTRS_DEFAULT, type CavoLinea, type MapLink } from "@/lib/topology/model-types";
 import { printStrokes } from "@/lib/topology/print-draw";
 import { lrLabelMaxWidth } from "@/lib/topology/map-screen";
@@ -284,4 +284,16 @@ test("I32: «instradato» sullo spazio minimo si accorcia, le parole corte da 8 
 test("senza `cavo` la linea è quella di oggi; un tunnel dichiarato a mano dà il pezzo «tunnel»", () => {
   assert.deepEqual(edgeLook(link({ speedMbps: 1000 }), { inTree: true }), { width: 2.4, dash: null, grey: false, wavy: false, double: false, tokens: ["1G"] });
   assert.deepEqual(edgeLook(link({ medium: "tunnel", speedMbps: 1000 }), { inTree: true }).tokens, ["1G", "tunnel"]);
+});
+
+/**
+ * Verifica a schermo di T3 (Task 14), minori: «oltre 1…» si accorciava sulla linea dell'albero, e il testo intero non stava né in
+ * un tooltip che si potesse vedere né nei dettagli. Nei dettagli («Collegato a») le parole intere del genere e dello stato.
+ */
+test("le parole intere di un cavo per i dettagli: genere e stato, senza i pezzi vuoti", () => {
+  assert.deepEqual(paroleDelCavo(cavo({ fiducia: "dedotto", oltre: "dev:9" }), nomeDi), ["dedotto: oltre ponte B, salto non letto"]);
+  assert.deepEqual(paroleDelCavo(cavo({ genere: "tunnel", stato: "bloccato_comune", attivoPerVlan: [12] }), nomeDi),
+    ["tunnel", "⊘ bloccato nell'albero comune · VLAN 12 attiva"]);
+  assert.deepEqual(paroleDelCavo(cavo({ stato: "instradato" }), nomeDi), ["instradato, fuori dal bridge"]);
+  assert.deepEqual(paroleDelCavo(cavo({ stato: "inoltra" }), nomeDi), [], "un cavo che inoltra non ha parole in più");
 });

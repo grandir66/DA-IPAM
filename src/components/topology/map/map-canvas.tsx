@@ -22,8 +22,8 @@ import { ConnectionMode, ReactFlow, useReactFlow, type Edge, type Node, type Nod
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { isUncensusedVmId } from "@/lib/topology/map-menus";
 import {
-  centerViewport, drawableLinks, evidenzaDellaSelezione, labelBoxes, latiVicini, lineHandles, lineaAlbero, maniglieLati, moreAttachedAt, ostacoli, redundancyCounts, redundantEnds,
-  rettangoli, visibleEdges, type Rect,
+  centerViewport, drawableLinks, evidenzaDellaSelezione, labelBoxes, latiVicini, lineHandles, lineaAlbero, livelloEvidenza, maniglieLati, moreAttachedAt, ostacoli,
+  redundancyCounts, redundantEnds, rettangoli, visibleEdges, type Rect,
 } from "@/lib/topology/map-screen";
 import type { LayoutResult } from "@/lib/topology/tree-layout";
 import type { MapLink } from "@/lib/topology/model-types";
@@ -197,7 +197,7 @@ export function MapCanvas(p: Props) {
     // I riquadri su cui la parola di una linea non deve finire (Task 5): si calcolano alla prima linea che li chiede.
     let avoid: Rect[] | null = null;
     const su = (ok: boolean): "su" | "giu" | undefined => (evidenza ? (ok ? "su" : "giu") : undefined);
-    const livello = (e: "su" | "giu" | undefined) => (e === "su" ? { zIndex: 1 } : {});
+    const livello = (e: "su" | "giu" | undefined) => { const z = livelloEvidenza(e); return z !== undefined ? { zIndex: z } : {}; };
     for (const [child, link] of tree.via) {
       const ln = layout.nodes.get(child);
       if (!ln || !ln.parent || ln.role === "attached") continue;

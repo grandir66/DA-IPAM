@@ -30,7 +30,7 @@ import {
   type EdgeMenuKey, type NodeMenuKey,
 } from "@/lib/topology/map-menus";
 import { computeMapViewProtetta } from "@/lib/topology/map-compute";
-import { ELENCO_KEY, elencoAperto, printHref, salvaElenco } from "@/lib/topology/map-screen";
+import { CLASSE_PERICOLO, ELENCO_KEY, elencoAperto, printHref, salvaElenco } from "@/lib/topology/map-screen";
 import type { MapLink, MapOrientation, MapVm } from "@/lib/topology/model-types";
 import { isRunning, vmSummary } from "@/lib/topology/vm-nodes";
 import { missingNeighbors } from "@/lib/topology/tree";
@@ -655,7 +655,9 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
           <DialogFooter>
             <Button variant="outline" onClick={() => setIgnoreAsk(null)}>Annulla</Button>
             <Button
-              variant="destructive"
+              // Mappa nuova: il «Danger» del design system (rosso scuro pieno, testo bianco); spenta, il pulsante di prima.
+              variant={ignoreAsk?.cavo ? "default" : "destructive"}
+              className={ignoreAsk?.cavo ? CLASSE_PERICOLO : undefined}
               disabled={membriFascio !== null && fascioSel.size === 0}
               onClick={async () => {
                 const l = ignoreAsk;

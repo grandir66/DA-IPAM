@@ -83,6 +83,14 @@ export function parolaGenere(c: CavoLinea, forma: "corta" | "intera", nomeDi: (i
   return null;
 }
 
+/**
+ * Le parole intere del genere e dello stato di un cavo, per i dettagli (verifica a schermo di T3, Task 14: «oltre 1…» si
+ * accorciava sulla linea e il testo intero non si leggeva da nessuna parte). Vuoto per un cavo che inoltra.
+ */
+export function paroleDelCavo(c: CavoLinea, nomeDi: (id: string) => string = NOME_DI_DEFAULT): string[] {
+  return [parolaGenere(c, "intera", nomeDi), parolaDelloStato(c, "intera", nomeDi)].filter((x): x is string => x !== null);
+}
+
 /** La parola dello stato del collegamento (solo lo stato), corta o intera; null se inoltra o non è noto. */
 function parolaDelloStato(c: CavoLinea, forma: "corta" | "intera", nomeDi: (id: string) => string): string | null {
   const corta = forma === "corta";

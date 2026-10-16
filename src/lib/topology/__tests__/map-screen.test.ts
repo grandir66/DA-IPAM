@@ -10,7 +10,7 @@ import {
   ELENCO_KEY, FIT_MAX, FIT_MIN, HANDLE_ATT, HANDLE_IN, HANDLE_IN_DX, HANDLE_IN_GIU, HANDLE_IN_LR, HANDLE_OUT, HANDLE_OUT_LR, HANDLE_OUT_SU, HANDLE_OUT_SX, LR_TRUNK,
   attraversa, candidatiLati, centerViewport, elencoAperto, fitWidthViewport, labelBoxes, latiVicini, lineHandles, lineaAlbero, lrLabelMaxWidth, maniglieLati,
   moreAttachedAt, ostacoli, percorso, printHref, pulsanteElenco, redundancyCounts, redundantEnds, redundantLabelAt, rettangoli, salvaElenco, siGuardano,
-  troncoPossibile, visibleEdges,
+  troncoPossibile, visibleEdges, CLASSE_PERICOLO, PERICOLO, Z_EVIDENZA, livelloEvidenza,
 } from "@/lib/topology/map-screen";
 import type { LayoutResult } from "@/lib/topology/tree-layout";
 import { ATT_INDENT, ATT_MAX, ATT_ROW } from "@/lib/topology/tree-layout-consts";
@@ -322,4 +322,29 @@ test("evidenzaDellaSelezione: i collegamenti con il nodo scelto a un capo, anche
   assert.equal(evidenzaDellaSelezione(links, null).size, 0);
   assert.equal(evidenzaDellaSelezione(links, "dev:9").size, 0);
   assert.equal(evidenzaDellaSelezione([], "dev:2").size, 0);
+});
+
+/**
+ * Verifica a schermo di T3 (Task 14), minori: col nodo scelto le parole delle linee evidenziate finivano sotto altre linee
+ * evidenziate («10G · r…ndanza»): React Flow alza le linee evidenziate (z-index 1) e le parole restavano allo stesso livello delle
+ * altre. Le parole di una linea evidenziata hanno il suo stesso livello: nello stesso strato vengono dopo le linee, prima dei
+ * riquadri. E il pulsante «Ignora i cavi scelti» era rosa pallido (rosso a 3,3:1 sul fondo): con la mappa nuova è il «Danger» del
+ * design system, rosso scuro pieno e testo bianco, sopra 4,5:1 (Riccardo è daltonico: l'azione si legge dal testo).
+ */
+test("evidenza: linee e parole evidenziate allo stesso livello, sopra le altre; le altre senza livello", () => {
+  assert.equal(livelloEvidenza("su"), Z_EVIDENZA);
+  assert.equal(Z_EVIDENZA > 0, true);
+  assert.equal(livelloEvidenza("giu"), undefined);
+  assert.equal(livelloEvidenza(undefined), undefined);
+});
+
+test("il pulsante di pericolo della mappa nuova si legge: contrasto del testo almeno 4,5:1, coi colori scritti nella classe", () => {
+  const lum = (hex: string) => {
+    const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+  };
+  const contrasto = (a: string, b: string) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
+  assert.ok(contrasto(PERICOLO.testo, PERICOLO.fondo) >= 4.5, String(contrasto(PERICOLO.testo, PERICOLO.fondo)));
+  assert.ok(contrasto("#EF4444", "#FFFFFF") < 4.5, "il rosso dei token, quello del pulsante di prima, non bastava");
+  assert.ok(CLASSE_PERICOLO.includes(`bg-[${PERICOLO.fondo}]`) && CLASSE_PERICOLO.includes("text-white"));
 });

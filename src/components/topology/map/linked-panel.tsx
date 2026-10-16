@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { FUSO_UTENTI, parseDbDate } from "@/lib/db-date";
 import { frasiPerche, type ParoleFrasi } from "@/lib/topology/cavi/frasi";
 import { stellaNonApplicabile, titoloPerche } from "@/lib/topology/cavi/pannello";
-import { SOURCE_WORDS, altriCaviDi, dettoInFrase, linkWords, seenWords, vmPortWords } from "@/lib/topology/edge-look";
+import { SOURCE_WORDS, altriCaviDi, dettoInFrase, linkWords, paroleDelCavo, seenWords, vmPortWords } from "@/lib/topology/edge-look";
 import { nodeClass } from "@/lib/topology/identity";
 import { LINK_SOURCE_RANK, type LinkSource, type MapLink, type MapNode, type MapVm } from "@/lib/topology/model-types";
 import { isRunning, vmSummary } from "@/lib/topology/vm-nodes";
@@ -198,6 +198,8 @@ function Detail(p: Props & { n: MapNode; byId: Map<string, MapNode> }) {
                       {fonti}
                       <div className={l.stale ? "font-semibold" : "text-muted-foreground"}>{visto(l)}</div>
                       {vmWords && <div>{vmWords}</div>}
+                      {/* Mappa nuova: genere e stato per intero («dedotto: oltre ‹radio›, salto non letto»), sulla linea accorciati. */}
+                      {cavo && paroleDelCavo(cavo, parole.nome).map((w) => <div key={w}>{w}</div>)}
                       {linkWords(l).map((w) => <div key={w}>{w}</div>)}
                       {cavo?.aManoDiverse && <div className="font-semibold">a mano su porte diverse da quelle viste</div>}
                       {stella && <div className="font-semibold">{stella}</div>}

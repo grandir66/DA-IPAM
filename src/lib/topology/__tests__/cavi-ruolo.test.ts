@@ -80,6 +80,11 @@ test("§13.8.2: le capacità «bridge, router» con il nome di sistema sono una 
   // l'LLDP del firmware delle schede annuncia senza nome (sull'hub «bridge, telephone, docsis-cable-device»)
   assert.equal(cavi(ing([riga(H, "", "ether6")])).classi.get("host:40"), "da_sistemare");
   assert.equal(cavi(ing([riga(H, H, "ether6")])).classi.get("host:40"), "da_sistemare", "un MAC al posto del nome non è un nome di sistema");
+  // revisione del Task 3: la riga col nome senza capacità e quella senza nome con «bridge» (il firmware della scheda) — il caso
+  // del PC registrato switch dell'hub, che §13.8.2 esclude
+  const misto = ing([{ ...riga(H, "sw-lab-40", "ether6"), remote_caps: null }, { ...riga(H, "", "ether6"), remote_caps: "bridge" }]);
+  assert.equal(proveCavi(misto).get("host:40"), undefined);
+  assert.equal(cavi(misto).classi.get("host:40"), "da_sistemare");
 });
 
 test("eReteDalleCapacita: bridge, router, AP, nel formato dei lettori; non le altre", () => {
@@ -127,10 +132,12 @@ test("classiCavi: un capo di un ponte radio non è mai «client» né «da siste
 // cavo legge e il modello di oggi no (SNMP, da T2): lo interroghiamo come apparato di rete. La lettura dal lato dell'host no:
 // è un hypervisor letto come host, e un server registrato switch tornerebbe nell'albero.
 test("§13.8.2: legge vicini anche con i lettori di T2 (SNMP); la lettura dal lato dell'host non è una prova", () => {
-  const t1 = baseInput({ devices: [dev(2, { name: "SW-2", vendor: "altro", via: "snmp_v2" }), dev(9, { name: "HV-9", device_type: "switch", vendor: "altro" })] });
+  const t1 = baseInput({ devices: [dev(2, { name: "SW-2", vendor: "altro", via: "snmp_v2" }), dev(9, { name: "HV-9", device_type: "switch", vendor: "altro" }), dev(10, { name: "SW-10", vendor: "altro" })] });
   const m = cavi(ingresso(t1, { vicini: [
     vic({ device_id: 2, local_port: "Gi1/0/1", local_port_index: 1, remote_device_name: "srv-a", remote_port: "eth0", source: "snmp" }),
     vic({ device_id: 9, local_port: "eno1", remote_device_name: "sw-b", remote_port: "Port 3", source: "host" }),
+    // revisione del Task 3: una fonte che nessuno ha ammesso non è una prova di ruolo finché non lo si decide
+    vic({ device_id: 10, local_port: "eth0", remote_device_name: "sw-c", remote_port: "Port 4", source: "lettore-nuovo" }),
   ] }));
-  assert.deepEqual([m.classi.get("dev:2"), m.classi.get("dev:9")], ["infra", "da_sistemare"]);
+  assert.deepEqual([m.classi.get("dev:2"), m.classi.get("dev:9"), m.classi.get("dev:10")], ["infra", "da_sistemare", "da_sistemare"]);
 });

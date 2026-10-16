@@ -27,6 +27,17 @@ export function lettoreDellaFonte(fonte: string): Lettore {
 }
 
 /**
+ * Le fonti dei vicini che dicono «lo interroghiamo come apparato di rete» (prova di ruolo «legge vicini», spec §13.8.2):
+ * l'apparato («device», e «ssh» del lettore che lo scrive via SSH), il controller («unifi», «controller») e SNMP. Non la
+ * lettura dal lato dell'host («host»: un hypervisor letto come host). Elenco chiuso: una fonte nuova non diventa una prova di
+ * ruolo senza una decisione (revisione del Task 3 di T3).
+ */
+const FONTI_DI_RETE: ReadonlySet<string> = new Set(["device", "ssh", FONTE_CONTROLLER, "controller", "snmp"]);
+export function leggeViciniDiRete(fonte: string): boolean {
+  return FONTI_DI_RETE.has(fonte);
+}
+
+/**
  * La classe di un annuncio (spec §13.5.2): LLDP e CDP scritti come tali non attraversano un apparato gestito; «mndp» (che il
  * lettore di un MikroTik scrive anche per il CDP che attraversa gli switch, e SNMP per il CDP fra marche diverse) sì. Un
  * valore sconosciuto vale come LLDP, come nel modello di oggi (`unknown`).

@@ -43,9 +43,12 @@ export interface Prova {
   visto: string | null;
   /** In italiano: «Perché questo collegamento». */
   frase: string;
-  /** Le capacità annunciate attive (T2): servono a riconoscere le due radio di un ponte (§13.7.6) e, col nome di sistema, il
-   * ruolo (§13.8.2). Quelle di un annuncio col nome di sistema, se c'è. */
+  /** Le capacità annunciate attive (T2): servono a riconoscere le due radio di un ponte (§13.7.6). Quelle di un annuncio col
+   * nome di sistema, se c'è; altrimenti di una riga qualunque. */
   capacita?: string | null;
+  /** Le capacità annunciate SOLO dalle righe col nome di sistema: le sole che valgono come prova di ruolo (§13.8.2). Una riga
+   * senza nome (l'LLDP del firmware delle schede) non le dà mai, anche se la riga col nome non ne ha (revisione del Task 3). */
+  capacitaConNome?: string | null;
   /** Almeno una riga del gruppo ha il nome di sistema (non vuoto, non un IP né un MAC scritto al posto del nome): solo così le
    * capacità annunciate sono una prova (§13.8.2). */
   conNome?: boolean;
@@ -229,20 +232,30 @@ function unisciPerNome(gruppi: Map<string, Gruppo>, diInterfaccia: (g: Gruppo) =
 }
 
 const IPV4 = /^\d{1,3}(?:\.\d{1,3}){3}$/;
+const MAC_SCRITTO = /^[0-9a-f]{2}([:-]?)[0-9a-f]{2}(?:\1[0-9a-f]{2}){4}$/i;
 
 /**
  * L'abbinamento del modello per cavo (spec §13.6.4, ultimo punto; T3.6, I15): prima il telaio (i MAC delle righe), poi il
  * nome, poi l'IP, e l'IP solo dalle righe con una porta remota fisica (o non nota). Una riga VRRP o di una VLAN porta l'IP di
  * un'altra interfaccia, che l'inventario può aver messo su un altro apparato: provato per primo, come fa il modello di oggi
- * (resolveNode), l'IP mandava la riga sul nodo sbagliato. Un IP scritto al posto del nome è un IP, con la stessa regola. Il
- * modello di oggi resta com'è: spento = T1 (piano di T3, «Scelte» 1).
+ * (resolveNode), l'IP mandava la riga sul nodo sbagliato. Il nome vale solo quando identifica (`identifiesByName`, I3): un
+ * nome di fabbrica, corto o solo esadecimale lo portano tanti apparati (revisione del Task 3 di T3). Un MAC scritto al posto
+ * del nome è un telaio; un IP scritto al posto del nome è un IP, con la stessa regola. Il modello di oggi resta com'è: spento
+ * = T1 (piano di T3, «Scelte» 1).
  */
 function abbina(g: Gruppo, idx: NodeIndex, come: ContestoProve["come"]): string | null {
   const fisica = (n: ViciniCaviRow): boolean => traduciPorta(n.remote_port, "remoto", come(null, n.source, n.remote_platform)).fisica !== false;
   const nomeIp = (n: ViciniCaviRow): string | null => (IPV4.test(n.remote_device_name.trim()) ? n.remote_device_name.trim() : null);
-  for (const n of g.righe) { const b = resolveNode(idx, { mac: n.remote_mac }); if (b) return b; }
   for (const n of g.righe) {
-    if (nomeIp(n)) continue;
+    const scritto = MAC_SCRITTO.test(n.remote_device_name.trim()) ? n.remote_device_name.trim() : null;
+    for (const mac of [n.remote_mac, scritto]) {
+      const b = mac ? resolveNode(idx, { mac }) : null;
+      if (b) return b;
+    }
+  }
+  for (const n of g.righe) {
+    const k = nameKey(n.remote_device_name);
+    if (!k || !identifiesByName(k)) continue;
     const b = resolveNode(idx, { name: n.remote_device_name });
     if (b) return b;
   }
@@ -332,10 +345,11 @@ export function proveDaInput(ing: IngressoCavi, ctx: ContestoProve, t1: { links:
     // Le capacità di un annuncio col nome di sistema, se c'è (§13.8.2): lo stesso telaio sulla stessa porta può arrivare anche
     // dall'LLDP del firmware della scheda, senza nome e con capacità senza senso, e le righe senza nome vengono prima.
     const conNome = (n: ViciniCaviRow): boolean => nameKey(n.remote_device_name) !== null;
-    const capacita = [...g.righe.filter(conNome), ...g.righe].map((n) => n.remote_caps).find((c): c is string => !!c) ?? null;
+    const prima = (righe: readonly ViciniCaviRow[]): string | null => righe.map((n) => n.remote_caps).find((c): c is string => !!c) ?? null;
+    const capacitaConNome = prima(g.righe.filter(conNome));
     prove.push({
       tipo, da: g.locale, altro: g.b ? (g.remota ?? portaVuota(g.b)) : null, telaio: g.telaio, classe, detto, lettore: lettoreDellaFonte(r0.source),
-      visto, capacita, conNome: g.righe.some(conNome), traduttoreLocale: haTraduttore(comeLocale),
+      visto, capacita: capacitaConNome ?? prima(g.righe), capacitaConNome, conNome: g.righe.some(conNome), traduttoreLocale: haTraduttore(comeLocale),
       annunciaSenzaFili,
       frase: `${nome(g.osservatore)} vede ${g.b ? nome(g.b) : (r0.remote_device_name || "un apparato non censito")} con ${detto} sulla porta ${g.locale.nome || "non nota"}${g.remota ? ` (porta remota ${g.remota.nome})` : ""}, letto il ${quando(visto)}.${g.righe.length > 1 ? ` Altre ${g.righe.length - 1} righe dello stesso apparato: contate una volta sola.` : ""}`,
     });

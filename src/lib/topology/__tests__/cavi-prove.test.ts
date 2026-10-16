@@ -129,3 +129,26 @@ test("§13.8.2: le capacità della prova vengono dall'annuncio col nome di siste
   ] }));
   assert.deepEqual(p.map((x) => [x.altro?.nodo, x.capacita, x.conNome]), [["dev:1", "bridge,router", true]]);
 });
+
+// Revisione del Task 3: il passo del nome usa il nome solo quando identifica (§13.6.4, `identifiesByName`, I3). Un nome di
+// fabbrica, corto o solo esadecimale lo portano tanti apparati: l'host che l'inventario chiama così non è per forza quello
+// che si annuncia, e la riga deve andare al nodo del suo IP.
+test("T3.6: il nome che non identifica (di fabbrica, corto) non abbina; decide l'IP della porta fisica", () => {
+  const t1 = dueRouter();
+  t1.hosts.push(host(70, { ip: "10.0.1.70", hostname: "MikroTik", classification: "router" }), host(71, { ip: "10.0.1.71", hostname: "sw1", classification: "switch" }));
+  const riga = (nome: string) => prove(ingresso(t1, { vicini: [vic({ device_id: 3, local_port: "Port 4", remote_device_name: nome, remote_ip: "10.0.0.1", remote_port: "ether1" })] }));
+  assert.equal(riga("MikroTik")[0].altro?.nodo, "dev:1", "un nome di fabbrica");
+  assert.equal(riga("sw1")[0].altro?.nodo, "dev:1", "un nome corto");
+  // un MAC scritto al posto del nome è un telaio: vale come il MAC della riga
+  assert.equal(sente({ remote_device_name: R1, remote_port: "vrrp1" })[0].altro?.nodo, "dev:1");
+});
+
+// Revisione del Task 3: le capacità che valgono per il ruolo vengono SOLO dalle righe col nome di sistema. Una riga col nome
+// senza capacità e una senza nome con «bridge» (l'LLDP del firmware della scheda) non danno capacità col nome.
+test("§13.8.2: le capacità col nome vengono solo dalle righe col nome; il ripiego su tutte le righe resta per le radio", () => {
+  const p = prove(ingresso(dueRouter(), { vicini: [
+    vic({ device_id: 3, local_port: "Port 4", remote_mac: R1, remote_port: "ether1", remote_caps: "bridge" }),
+    vic({ device_id: 3, local_port: "Port 4", remote_device_name: "rtr-uno", remote_mac: R1, remote_port: "ether1" }),
+  ] }));
+  assert.deepEqual(p.map((x) => [x.capacita, x.capacitaConNome, x.conNome]), [["bridge", null, true]]);
+});

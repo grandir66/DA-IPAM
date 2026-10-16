@@ -6,7 +6,7 @@
  * ne ha aggiunte sei e il ruolo a mano (14/10 sera). Logica pura, senza nomi di prodotto (prova I37).
  */
 import { nodeClass, ruoloLetto, type NodeClass } from "@/lib/topology/identity";
-import { eReteDalleCapacita, lettoreDellaFonte } from "@/lib/topology/lettori/fonti";
+import { eReteDalleCapacita, leggeViciniDiRete } from "@/lib/topology/lettori/fonti";
 import { righeUltimoGiro } from "@/lib/topology/links";
 import type { ClasseMappa, MapNode, MapVm, TopologyModelInput } from "@/lib/topology/model-types";
 import { canonical, nameKey, type NodeIndex } from "@/lib/topology/node-index";
@@ -131,9 +131,9 @@ export function proveDiRuoloCavi(ing: Pick<IngressoCavi, "fattiPorta" | "vicini"
     if (id) out.set(id, (out.get(id) ?? new Set<ProvaRuolo>()).add(p));
   };
   // Legge vicini (la prova di oggi, `device_neighbors.device_id`) anche coi lettori che solo il modello per cavo legge (SNMP, da
-  // T2): lo interroghiamo come apparato di rete. Non la lettura dal lato dell'host: è un hypervisor letto come host, e un
-  // server registrato switch tornerebbe nell'albero senza prove sue (decisione del Task 3 di T3).
-  for (const n of ing.vicini) if (lettoreDellaFonte(n.source) !== "host") metti(`dev:${n.device_id}`, "vicini");
+  // T2): lo interroghiamo come apparato di rete. Solo le fonti ammesse (lettori/fonti.ts): non la lettura dal lato dell'host,
+  // e una fonte nuova non diventa una prova senza una decisione (decisione e revisione del Task 3 di T3).
+  for (const n of ing.vicini) if (leggeViciniDiRete(n.source)) metti(`dev:${n.device_id}`, "vicini");
   // Le porte dell'apparato con uno stato di spanning tree attivo, su una porta accesa (I65: `disabled` e `broken` no).
   for (const f of ing.fattiPorta) {
     if (f.running === 0) continue;
@@ -155,7 +155,7 @@ export function proveDiRuoloCavi(ing: Pick<IngressoCavi, "fattiPorta" | "vicini"
     // Capacità annunciate: solo con il nome di sistema, mai per un server o un hypervisor noto (un server con un bridge e
     // l'inoltro acceso annuncia «bridge, router»; l'LLDP del firmware delle schede annuncia senza nome).
     const k = nominale(p.altro.nodo);
-    if (p.conNome === true && eReteDalleCapacita(p.capacita ?? null) && k !== "att" && k !== "hyper") metti(p.altro.nodo, "capacita");
+    if (eReteDalleCapacita(p.capacitaConNome ?? null) && k !== "att" && k !== "hyper") metti(p.altro.nodo, "capacita");
   }
   for (const id of capiRadio) metti(id, "radio");
   return new Map([...out].map(([k, v]) => [k, [...v].sort()]));

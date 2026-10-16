@@ -151,7 +151,9 @@ test("§13.7.2 passo 3: un capo LLDP più l'uplink del controller del figlio res
   const daAgg = vic({ device_id: 2, local_port: "SFP28 25", remote_device_name: "SW-1", remote_port: "SFP+ 1" });
   const c = fra(collega(ingresso(t1, { vicini: [daAgg] })).collegamenti, "dev:1", "dev:2");
   assert.deepEqual([c.length, c[0].fiducia, c[0].verso], [1, "probabile", "dev:1"]);
-  const daSw = vic({ device_id: 1, local_port: "SFP+ 1", remote_device_name: "AGG", remote_port: "SFP28 25" });
+  // La riga del controller porta il telaio (forma vera). Senza, dalla revisione del Task 3 di T3 il nome «AGG» (tre caratteri:
+  // non identifica, I3) non abbina più la riga, e il cavo resterebbe visto da un capo solo.
+  const daSw = vic({ device_id: 1, local_port: "SFP+ 1", remote_device_name: "AGG", remote_mac: "02:00:d0:00:02:00", remote_port: "SFP28 25" });
   assert.equal(fra(collega(ingresso(t1, { vicini: [daAgg, daSw] })).collegamenti, "dev:1", "dev:2")[0].fiducia, "certo", "dai due capi LLDP sì");
 });
 

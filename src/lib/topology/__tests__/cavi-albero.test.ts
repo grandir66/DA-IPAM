@@ -160,8 +160,10 @@ test("I22: il bridge designato conferma un cavo già provato da LLDP; non scegli
 test("lo schema assente si dice, e le parti non calcolate in T2 sono elencate", () => {
   const m = ombra({ ...ingresso(baseInput({ devices: [dev(2)] })), schema: false });
   assert.equal(m.schema, false);
-  // Sette in T2; il Task 3 di T3 ne toglie due (l'abbinamento «telaio, nome, IP» e le prove di ruolo coi fatti nuovi).
-  assert.ok(m.nonCalcolato.length >= 5);
+  // Sette in T2; il Task 3 di T3 ne toglie due (l'abbinamento «telaio, nome, IP» e le prove di ruolo coi fatti nuovi), che ora
+  // si calcolano. Il Task 4 riscrive la costante (NON_CALCOLATO).
+  assert.equal(m.nonCalcolato.length, 5);
+  assert.deepEqual(m.nonCalcolato.filter((x) => /abbinamento|prove di ruolo/.test(x)), []);
 });
 
 // ── Casi aggiunti dopo il piano (fatti emersi sulle letture vere del 15/10) ────────────────────────────────────────────────

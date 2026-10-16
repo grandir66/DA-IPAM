@@ -59,13 +59,15 @@ test("G16 · C non sa la porta designata: nei suoi fatti non c'è, e decide il r
   assert.deepEqual(mod(c).albero.padri, mod(letturaA()).albero.padri);
 });
 
-// Il difetto che la rete-campione di C trova: nell'ingresso vero (`snmp-topologia.ts:192`) la porta radice di un bridge è il NOME
-// dell'interfaccia («1/1/49»), mentre `lldpRemPortId` degli HP/Aruba è il numero («49»): la porta dell'altro capo di un cavo si
-// chiama «49» nel collegamento, e `suPorta` (cavi/albero.ts) confronta il nome o la chiave «n:», mai la chiave «i:49» che il nome
-// risolve. La porta radice «non ha un collegamento visto» e decide il ripiego; qui il ripiego dà lo stesso albero, su una rete
-// dove i cavi non sono pari non sarebbe così.
-test("G16 · C · la porta radice per nome si riconosce anche se l'altro capo del cavo la annuncia col numero", { todo: "difetto del modello: suPorta (cavi/albero.ts) non risolve il nome della porta radice («1/1/49») nella chiave «i:49» del cavo che l'altro capo chiama «49»" }, () => {
-  assert.deepEqual(mod(letturaC()).albero.avvisi, []);
+// Il difetto che la rete-campione di C trovava (Task 12): nell'ingresso vero (`snmp-topologia.ts:192`) la porta radice di un bridge
+// è il NOME dell'interfaccia («1/1/49»), mentre `lldpRemPortId` degli HP/Aruba è il numero («49»): la porta dell'altro capo di un
+// cavo si chiama «49» nel collegamento, e `suPorta` (cavi/albero.ts) confrontava il nome o la chiave «n:», mai la chiave «i:49»
+// che il nome risolve. La porta radice «non aveva un collegamento visto» su 3 apparati di C e decideva il ripiego (qui lo stesso
+// albero per caso). Ora la porta radice passa dal traduttore e dalla chiave della porta (§13.6.1), come ogni altra porta.
+test("G16 · C · la porta radice per nome si riconosce anche se l'altro capo del cavo la annuncia col numero", () => {
+  const c = mod(letturaC());
+  assert.deepEqual(c.albero.avvisi, [], "nessuna porta radice senza collegamento");
+  assert.deepEqual([...c.albero.scelto].sort(), [...mod(letturaA()).albero.scelto].sort(), "lo stesso collegamento scelto di A per ogni bridge");
 });
 
 test("G16 · D · l'hypervisor letto dal suo lato: gli stessi capi e lo stesso genere di A, e il cavo di riserva si scrive «riserva del bond»", () => {
@@ -89,15 +91,18 @@ test("G16 · D · i cavi dell'hypervisor da una lettura sola: senza le righe deg
   assert.deepEqual(d.collegamenti.filter((c) => c.a.nodo === N.H || c.b.nodo === N.H).map((c) => c.fiducia), ["probabile", "probabile"]);
 });
 
-// Il difetto che la lettura D trova: a pari velocità il principale dell'hypervisor lo spareggia l'id, e il cavo di riserva del bond non
-// conta. Con la riserva sul cavo che ha l'id più piccolo, l'hypervisor finisce sotto la riserva.
-test("G16 · D · a pari velocità l'hypervisor sta sotto il cavo attivo, mai sotto il membro di riserva del bond", { todo: "difetto del modello: primCavi (cavi/albero.ts, principale dell'hypervisor) e chiaveCavo ignorano stato «riserva_bond»; a pari velocità decide l'id" }, () => {
+// Il difetto che la lettura D trovava (Task 12): a pari velocità il principale dell'hypervisor lo spareggiava l'id, e il cavo di
+// riserva del bond non contava. Con la riserva sul cavo che ha l'id più piccolo, l'hypervisor finiva sotto la riserva (§13.3.2
+// riga 17: la riserva è una ridondanza «⇄», non il principale; §13.8.3 punto 6: dopo il non giù, il non di riserva).
+test("G16 · D · a pari velocità l'hypervisor sta sotto il cavo attivo, mai sotto il membro di riserva del bond", () => {
   const ing = letturaD();
   ing.t1.ports = ing.t1.ports!.map((p) => (p.device_id === 23 && p.port_index === 20 ? { ...p, speed: "10000 Mbps" } : p));
   // la riserva è ens1 (il cavo verso core 1, l'id più piccolo), l'attiva è ens2
   ing.fattiPorta = ing.fattiPorta.map((f) => (f.device_id === 31 && f.port_name === "ens1" ? { ...f, lag_state: "riserva" } : f.device_id === 31 && f.port_name === "ens2" ? { ...f, lag_state: "attivo" } : f));
   const m = mod(ing);
-  assert.equal(m.collegamenti.find((c) => c.a.nodo === N.C1 && c.b.nodo === N.H)?.stato, "riserva_bond");
+  // I capi in qualunque ordine: l'id del collegamento li ordina per chiave, non per chi è lo switch.
+  assert.deepEqual([fra(m, N.C1, N.H), fra(m, N.A3, N.H)].map((cs) => cs.map((c) => [c.stato, c.velocitaMbps])), [[["riserva_bond", 10000]], [["inoltra", 10000]]]);
+  assert.ok(fra(m, N.C1, N.H)[0].id < fra(m, N.A3, N.H)[0].id, "la riserva è il cavo con l'id più piccolo: senza la regola vincerebbe lei");
   assert.equal(m.albero.padri[N.H], N.A3);
 });
 

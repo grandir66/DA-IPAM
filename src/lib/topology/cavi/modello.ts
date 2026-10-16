@@ -10,15 +10,16 @@ import { parseDbDate } from "@/lib/db-date";
 import { nodeClass, ruoloLetto, ruoloRete } from "@/lib/topology/identity";
 import { macSullaPorta, parseSpeedMbps } from "@/lib/topology/link-attrs";
 import { ipervisoriLetti, lettoreDellaFonte } from "@/lib/topology/lettori/fonti";
+import { traduciPorta } from "@/lib/topology/lettori/traduci";
 import { comeDi, portaSalvata } from "@/lib/topology/links";
 import type { ClasseMappa, MapNode, TopologyModel } from "@/lib/topology/model-types";
 import { addNodeMacs, buildNodeIndex, canonical, type NodeIndex } from "@/lib/topology/node-index";
 import { isRunning } from "@/lib/topology/vm-nodes";
 import { resolveScanHosts } from "@/lib/topology/vms";
 import { normalizeMacForStorage } from "@/lib/utils";
-import { alberoCavi, type AlberoCavi, type NodoCavi } from "./albero";
+import { alberoCavi, RADICE, type AlberoCavi, type NodoCavi } from "./albero";
 import { aliasDeiSegmenti, costruisciCollegamenti, type Collegamento, type ContestoCavi, type RisultatoCavi, type Segmento } from "./collegamenti";
-import { chiavePorta, elenchiPorte, indiciInElenco, type ElencoPorte } from "./porte";
+import { chiavePorta, elenchiPorte, indiciInElenco, type ElencoPorte, type Porta } from "./porte";
 import { elenchiCavi, indiceFatti, proveDaInput, type IndiceFatti, type IngressoCavi, type Prova } from "./prove";
 import { classiCavi, proveDiRuolo, proveDiRuoloCavi, type ProvaRuolo } from "./ruolo";
 
@@ -192,12 +193,18 @@ export function costruisciModelloCavi(ing: IngressoCavi, t1: TopologyModel, opz:
   const collegati = new Set(collegamenti.flatMap((c) => [c.a.nodo, c.b.nodo]));
   const visibili = new Set([...nodi.values()].filter((n) => !n.hidden && n.classe !== "client" && n.classe !== "da_sistemare" && collegati.has(n.id)).map((n) => n.id));
   // Punto 1: la porta radice dai bridge letti (il controller non la dice), la radice; la porta di uplink del controller.
-  const portaRadice = new Map<string, string>();
+  // La porta radice è una porta come le altre (§13.6.1): il traduttore del lettore che l'ha scritta, poi la chiave con l'elenco
+  // delle porte del nodo. Un bridge letto via SNMP la scrive col nome dell'interfaccia («1/1/49», `snmp-topologia.ts:192`),
+  // mentre l'altro capo del cavo può annunciarla col numero («49», `lldpRemPortId`): il nome solo non trovava il cavo (G16, C).
+  const portaRadice = new Map<string, Pick<Porta, "chiave" | "nome"> | typeof RADICE>();
+  const come = comeDi(ing.t1);
   for (const b of [...ing.fattiBridge].sort((x, y) => x.device_id - y.device_id || (x.bridge_name < y.bridge_name ? -1 : 1))) {
     const nodo = `dev:${b.device_id}`;
     if (b.instance !== 0 || lettoreDellaFonte(b.source) === "controller" || b.root_id === null || portaRadice.has(nodo)) continue;
-    if (b.root_port !== null) portaRadice.set(nodo, b.root_port);
-    else if (b.bridge_id !== null && macDel(b.root_id) === macDel(b.bridge_id)) portaRadice.set(nodo, "radice");
+    if (b.root_port !== null) {
+      const letta = traduciPorta(b.root_port, "locale", come(nodo, b.source, null));
+      portaRadice.set(nodo, { nome: b.root_port, chiave: chiavePorta(nodo, letta, "locale", p.elenchi.get(nodo)).chiave });
+    } else if (b.bridge_id !== null && macDel(b.root_id) === macDel(b.bridge_id)) portaRadice.set(nodo, RADICE);
   }
   const portaUplink = new Map<string, { chiave: string | null; nome: string }>();
   const gateway = new Set<string>();

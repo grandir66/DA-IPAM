@@ -220,6 +220,36 @@ test("I46 · un access point sentito con due nomi di porta (eth0, eth1) da uno s
   assert.deepEqual([chiaviDi(c[0], "dev:1"), chiaviDi(c[0], "dev:2")], ["i:3", null], "la porta dell'AP non si sa: due nomi, nessuno vale come chiave");
 });
 
+// Correzione del Task 12 di T3 (H12 dell'hub, §13.6.1 passo 5): il nome che un apparato senza elenco dà alla sua porta nella sua
+// riga verso uno switch che ne nomina la porta conta fra i nomi visti; diverso da quello annunciato, la porta annunciata è da
+// completare e i cavi si fondono. Solo dove i due capi nominano la porta: i nomi che l'apparato dà alle sue porte verso chi non lo
+// vede, o verso chi lo vede senza nominarne la porta, non contano.
+test("I46 · i due capi danno due nomi alla porta di un apparato senza elenco («eth0» e un pezzo di MAC): un cavo solo, certo; i nomi verso chi non lo vede non contano", () => {
+  const t1 = baseInput({
+    devices: [dev(1, { name: "SW-NOMI", host: "10.30.0.1", ...uf }), dev(2, { name: "AP-NOMI-DUE", device_type: "access_point", host: "10.30.0.2", ...uf, port_count: 0 }),
+      dev(3, { name: "RT-SENZA-ELENCO", device_type: "router", host: "10.30.0.3", ...mk, port_count: 0 }), dev(4, { name: "SW-SENZA-NOME", host: "10.30.0.4", ...uf })],
+    hosts: [host(11, { ip: "10.30.0.11", mac: "02:00:c9:00:0b:01", hostname: "srv-nomi-1" }), host(12, { ip: "10.30.0.12", mac: "02:00:c9:00:0c:01", hostname: "srv-nomi-2" })],
+    ports: [...porte(1, [[3, "Port 3", "1000 Mbps"], [4, "Port 4", "1000 Mbps"]]), ...porte(4, [[1, "Port 1", "1000 Mbps"]])], networks: [lan], neighbors: [],
+  });
+  const m = mod(ingresso(t1, { vicini: [
+    // l'AP: la sua riga dice «eth0», lo switch lo sente con un pezzo di MAC
+    vic({ device_id: 1, local_port: "Port 4", remote_device_name: "AP-NOMI-DUE", remote_mac: "02:00:c9:00:02:00", remote_port: "c9:00:02", source: "unifi" }),
+    vic({ device_id: 2, local_port: "eth0", remote_device_name: "SW-NOMI", remote_mac: "02:00:c9:00:01:00", remote_port: "", source: "unifi" }),
+    // il router: lo switch lo sente su «ether1»; lui non sente lo switch, ma due server da altre porte, e un secondo switch su
+    // «ether4», che lo vede senza nominarne la porta
+    vic({ device_id: 1, local_port: "Port 3", remote_device_name: "RT-SENZA-ELENCO", remote_mac: "02:00:c9:00:03:00", remote_port: "bridge/ether1", remote_platform: "MikroTik", source: "unifi" }),
+    vic({ device_id: 3, local_port: "ether2", remote_device_name: "srv-nomi-1", remote_mac: "02:00:c9:00:0b:01", remote_port: "eno1", source: "device" }),
+    vic({ device_id: 3, local_port: "ether3", remote_device_name: "srv-nomi-2", remote_mac: "02:00:c9:00:0c:01", remote_port: "eno1", source: "device" }),
+    vic({ device_id: 3, local_port: "ether4", remote_device_name: "SW-SENZA-NOME", remote_mac: "02:00:c9:00:04:00", remote_port: "Port 1", source: "device" }),
+    vic({ device_id: 4, local_port: "Port 1", remote_device_name: "RT-SENZA-ELENCO", remote_mac: "02:00:c9:00:03:00", remote_port: "", source: "unifi" }),
+  ] }));
+  const ap = fra(m, "dev:1", "dev:2");
+  assert.deepEqual(ap.map((c) => [chiaviDi(c, "dev:1"), chiaviDi(c, "dev:2"), c.fiducia]), [["i:4", "n:eth0", "certo"]], "una linea sola, la porta dell'AP dalla sua riga, visto dai due capi");
+  const rt = fra(m, "dev:1", "dev:3");
+  assert.deepEqual(rt.map((c) => [chiaviDi(c, "dev:1"), chiaviDi(c, "dev:3")]), [["i:3", "n:ether1"]], "«ether2», «ether3» e «ether4» del router non sono nomi visti verso di lui: «ether1» resta la sua porta");
+  assert.deepEqual(fra(m, "dev:3", "dev:4").map((c) => [chiaviDi(c, "dev:3"), chiaviDi(c, "dev:4"), c.fiducia]), [["n:ether4", "i:1", "certo"]], "il cavo verso il secondo switch, visto dai due capi");
+});
+
 // ─── Gateway, cavo spostato, porta tolta dal bridge ──────────────────────────────────────────────────────────────────────────
 
 test("I45 · un uplink del controller con velocità diverse ai due capi accesi dà il verso, non le porte: un collegamento «porte da verificare»", () => {

@@ -7,7 +7,7 @@ import { buildTopologyModel } from "@/lib/topology/model";
 import { addNodeMacs, buildNodeIndex } from "@/lib/topology/node-index";
 import { comeDi } from "@/lib/topology/links";
 import { elenchiCavi, indiceFatti, proveDaInput, type IngressoCavi } from "@/lib/topology/cavi/prove";
-import { baseInput, dev } from "./support/righe";
+import { baseInput, dev, host } from "./support/righe";
 import { porte } from "./support/reti-campione";
 import { fp, ingresso, vic } from "./support/cavi";
 
@@ -81,4 +81,74 @@ test("I37: le prove dicono chi ha letto con le parole neutre, mai la marca", () 
   const t1 = baseInput({ devices: [dev(2), dev(3)] });
   const p = prove(ingresso(t1, { vicini: [vic({ device_id: 2, local_port: "Port 1", remote_device_name: "SW-3" })] }));
   assert.equal(p[0].lettore, "controller");
+});
+
+// ── T3.6: l'abbinamento «telaio, nome, IP» (spec §13.6.4, ultimo punto; I15) ─────────────────────────────────────────────
+// Due router inventati; l'indirizzo VRRP 10.1.0.1 (un host col MAC virtuale) l'inventario l'ha messo su RTR-2 con l'identità
+// fisica. Uno switch sente RTR-1 con una riga sola: il telaio è di RTR-1, l'IP è quello del VRRP. Il modello di oggi
+// (resolveNode, IP per primo) la dava a RTR-2; il modello di oggi resta così (spento = T1, piano di T3, «Scelte» 1).
+const R1 = "02:00:00:00:01:00";
+const dueRouter = () => baseInput({
+  devices: [
+    dev(1, { name: "RTR-1", device_type: "router", host: "10.0.0.1", ...mk }),
+    dev(2, { name: "RTR-2", device_type: "router", host: "10.0.0.2", physical_device_id: 7, ...mk }),
+    dev(3, { name: "SW-3" }),
+  ],
+  knownMacs: [{ device_id: 1, mac: R1 }],
+  hosts: [host(50, { ip: "10.1.0.1", mac: "00:00:5E:00:01:01", physical_device_id: 7, classification: "router" })],
+});
+const sente = (over: Partial<Parameters<typeof vic>[0]>) => prove(ingresso(dueRouter(), { vicini: [vic({ device_id: 3, local_port: "Port 4", ...over })] }));
+
+test("T3.6 (I15): il telaio prima dell'IP — una riga sola col MAC di RTR-1 e l'IP del VRRP messo su RTR-2 va a RTR-1", () => {
+  assert.equal(buildTopologyModel(dueRouter()).nodes.find((n) => n.addresses.some((a) => a.ip === "10.1.0.1"))?.id, "dev:2", "l'IP del VRRP sta su RTR-2");
+  // il nome LLDP è diverso da quello in inventario (§13.6.4): decide il telaio
+  const p = sente({ remote_device_name: "rtr-uno", remote_mac: R1, remote_ip: "10.1.0.1", remote_port: "ether1" });
+  assert.equal(p[0].altro?.nodo, "dev:1");
+});
+
+test("T3.6: l'IP solo dalle righe con una porta remota fisica; prima il nome, se identifica", () => {
+  assert.equal(sente({ remote_ip: "10.1.0.1", remote_port: "vrrp1" })[0].altro, null, "porta remota logica e solo l'IP: nessun abbinamento");
+  assert.equal(sente({ remote_device_name: "10.1.0.1", remote_port: "vrrp1" })[0].altro, null, "un IP al posto del nome è un IP: stessa regola");
+  assert.equal(sente({ remote_device_name: "RTR-1", remote_ip: "10.1.0.1", remote_port: "vrrp1" })[0].altro?.nodo, "dev:1", "il nome che identifica");
+  assert.equal(sente({ remote_ip: "10.0.0.1", remote_port: "ether1" })[0].altro?.nodo, "dev:1", "da una porta fisica l'IP vale ancora");
+});
+
+test("§13.8.2: la prova dice se l'annuncio ha il nome di sistema; un MAC al posto del nome non lo è", () => {
+  assert.equal(sente({ remote_device_name: "rtr-uno", remote_mac: R1, remote_port: "ether1" })[0].conNome, true);
+  assert.equal(sente({ remote_device_name: "", remote_mac: R1, remote_port: "ether1" })[0].conNome, false);
+  assert.equal(sente({ remote_device_name: R1, remote_mac: R1, remote_port: "ether1" })[0].conNome, false);
+});
+
+// Lo stesso telaio sulla stessa porta da due annunci: l'LLDP del firmware della scheda (senza nome, capacità senza senso) e
+// quello del sistema (col nome). Le righe sono in ordine di nome, e la riga senza nome viene prima: le capacità della prova
+// sono quelle dell'annuncio col nome (§13.8.2, «solo da un annuncio col nome di sistema»).
+test("§13.8.2: le capacità della prova vengono dall'annuncio col nome di sistema, se c'è", () => {
+  const p = prove(ingresso(dueRouter(), { vicini: [
+    vic({ device_id: 3, local_port: "Port 4", remote_mac: R1, remote_port: "ether1", remote_caps: "bridge,docsis,telephone" }),
+    vic({ device_id: 3, local_port: "Port 4", remote_device_name: "rtr-uno", remote_mac: R1, remote_port: "ether1", remote_caps: "bridge,router" }),
+  ] }));
+  assert.deepEqual(p.map((x) => [x.altro?.nodo, x.capacita, x.conNome]), [["dev:1", "bridge,router", true]]);
+});
+
+// Revisione del Task 3: il passo del nome usa il nome solo quando identifica (§13.6.4, `identifiesByName`, I3). Un nome di
+// fabbrica, corto o solo esadecimale lo portano tanti apparati: l'host che l'inventario chiama così non è per forza quello
+// che si annuncia, e la riga deve andare al nodo del suo IP.
+test("T3.6: il nome che non identifica (di fabbrica, corto) non abbina; decide l'IP della porta fisica", () => {
+  const t1 = dueRouter();
+  t1.hosts.push(host(70, { ip: "10.0.1.70", hostname: "MikroTik", classification: "router" }), host(71, { ip: "10.0.1.71", hostname: "sw1", classification: "switch" }));
+  const riga = (nome: string) => prove(ingresso(t1, { vicini: [vic({ device_id: 3, local_port: "Port 4", remote_device_name: nome, remote_ip: "10.0.0.1", remote_port: "ether1" })] }));
+  assert.equal(riga("MikroTik")[0].altro?.nodo, "dev:1", "un nome di fabbrica");
+  assert.equal(riga("sw1")[0].altro?.nodo, "dev:1", "un nome corto");
+  // un MAC scritto al posto del nome è un telaio: vale come il MAC della riga
+  assert.equal(sente({ remote_device_name: R1, remote_port: "vrrp1" })[0].altro?.nodo, "dev:1");
+});
+
+// Revisione del Task 3: le capacità che valgono per il ruolo vengono SOLO dalle righe col nome di sistema. Una riga col nome
+// senza capacità e una senza nome con «bridge» (l'LLDP del firmware della scheda) non danno capacità col nome.
+test("§13.8.2: le capacità col nome vengono solo dalle righe col nome; il ripiego su tutte le righe resta per le radio", () => {
+  const p = prove(ingresso(dueRouter(), { vicini: [
+    vic({ device_id: 3, local_port: "Port 4", remote_mac: R1, remote_port: "ether1", remote_caps: "bridge" }),
+    vic({ device_id: 3, local_port: "Port 4", remote_device_name: "rtr-uno", remote_mac: R1, remote_port: "ether1" }),
+  ] }));
+  assert.deepEqual(p.map((x) => [x.capacita, x.capacitaConNome, x.conNome]), [["bridge", null, true]]);
 });

@@ -13,7 +13,7 @@ import { ipervisoriLetti, lettoreDellaFonte } from "@/lib/topology/lettori/fonti
 import { traduciPorta } from "@/lib/topology/lettori/traduci";
 import { comeDi, portaSalvata } from "@/lib/topology/links";
 import type { ClasseMappa, MapNode, TopologyModel } from "@/lib/topology/model-types";
-import { addNodeMacs, buildNodeIndex, canonical, type NodeIndex } from "@/lib/topology/node-index";
+import { addNodeMacs, canonical, indiceDeiNodi, type NodeIndex } from "@/lib/topology/node-index";
 import { isRunning } from "@/lib/topology/vm-nodes";
 import { resolveScanHosts } from "@/lib/topology/vms";
 import { normalizeMacForStorage } from "@/lib/utils";
@@ -31,7 +31,8 @@ export interface PreparatoCavi {
 
 /** `testa`: la testa confermata. Se è una VM resta fuori dalla regola del §13.7.8 (§13.16 punto 3, scelta di Riccardo: come oggi). */
 export function preparaCavi(ing: IngressoCavi, t1: TopologyModel, opz: { testa?: string | null } = {}): PreparatoCavi {
-  const idx = buildNodeIndex(ing.t1.devices, ing.t1.hosts, ing.t1.knownMacs, ing.t1.neighbors);
+  // Lo stesso indice del modello di T1, unioni e separazioni comprese: lo schermo e la traccia vedono gli stessi nodi.
+  const idx = indiceDeiNodi(ing.t1);
   for (const { row, nodeId } of resolveScanHosts(ing.t1.scanHosts, idx)) if (nodeId) addNodeMacs(idx, nodeId, row.macs);
   const macApparati = new Map<string, Set<string>>();
   for (const m of ing.macApparati) {

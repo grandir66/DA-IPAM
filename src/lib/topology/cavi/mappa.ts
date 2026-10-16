@@ -276,6 +276,8 @@ export function modelloMappaCavi(t1: TopologyModel, m: ModelloCavi, ing: Ingress
     ...(t1.segmenti ? { segmenti: t1.segmenti } : {}),
     classiMappa, daSistemare,
     ...(t1.gatewayDi ? { gatewayDi: t1.gatewayDi } : {}),
+    // Unioni a mano (ADR 0021): quelle di T1, solo se l'ingresso ha righe (l'indice per cavo è lo stesso).
+    ...(t1.unioni ? { unioni: t1.unioni } : {}),
     cavi,
   };
 }

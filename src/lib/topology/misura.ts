@@ -16,7 +16,7 @@ import { nodeClass } from "@/lib/topology/identity";
 import { haTraduttore, traduciPorta, type ComeLetto } from "@/lib/topology/lettori/traduci";
 import { righeUltimoGiro } from "@/lib/topology/links";
 import type { MapLink, MapOrientation, MapVm, ModelDeviceRow, TopologyModel, TopologyModelInput } from "@/lib/topology/model-types";
-import { addNodeMacs, buildNodeIndex, resolveNode } from "@/lib/topology/node-index";
+import { addNodeMacs, indiceDeiNodi, resolveNode } from "@/lib/topology/node-index";
 import { stepPoints } from "@/lib/topology/print-draw";
 import { proposeHead, type TreeResult } from "@/lib/topology/tree";
 import { resolveScanHosts } from "@/lib/topology/vms";
@@ -36,7 +36,7 @@ export function chiaveMisura(nome: string): string {
  * controller la sa) o una correzione «aggiungi». La porta riempita dalle VM non è una prova delle due porte.
  */
 export function lineeCucite(input: TopologyModelInput, model: Pick<TopologyModel, "links" | "canonical">): MapLink[] {
-  const idx = buildNodeIndex(input.devices, input.hosts, input.knownMacs, input.neighbors);
+  const idx = indiceDeiNodi(input);
   // Gli stessi abbinamenti del modello (model.ts): i MAC delle schede di un hypervisor vengono dalla sua scansione. Senza, una
   // riga LLDP del firmware di una scheda (senza nome) non si abbinava qui, e la linea vera risultava «cucita» (famiglia 4 delle
   // reti-campione, 15/10).
@@ -189,7 +189,7 @@ export function applicaScenario(input: TopologyModelInput, s: Scenario): Topolog
         uplinkPorts: input.uplinkPorts.filter((p) => p.device_id !== s.apparato),
       };
     case "S4": { // caso peggiore di R6: lldp su tutte le righe fra router, dai due lati
-      const idx = buildNodeIndex(input.devices, input.hosts, input.knownMacs, input.neighbors);
+      const idx = indiceDeiNodi(input);
       const router = (id: string | null): boolean => !!id && ["router", "firewall"].includes(idx.nodes.get(id)?.type ?? "");
       return {
         ...input,
@@ -293,7 +293,7 @@ export function lineeDaNomeScelto(
  */
 export function vistiSoloViaLldp(input: TopologyModelInput, model: Pick<TopologyModel, "daSistemare">): string[] {
   const fuori = new Set((model.daSistemare ?? []).map((d) => d.id));
-  const idx = buildNodeIndex(input.devices, input.hosts, input.knownMacs, input.neighbors);
+  const idx = indiceDeiNodi(input);
   const visti = new Set<string>();
   for (const n of righeUltimoGiro(input)) {
     if (n.protocol !== "lldp") continue;
@@ -305,7 +305,7 @@ export function vistiSoloViaLldp(input: TopologyModelInput, model: Pick<Topology
 
 /** Gli oggetti di rete nell'albero tenuti SOLO da una prova aggiunta il 14/10 sera (da guardare a parte con Riccardo, §13.8.2). */
 export function soloProveAggiunte(input: TopologyModelInput, model: TopologyModel): string[] {
-  const idx = buildNodeIndex(input.devices, input.hosts, input.knownMacs, input.neighbors);
+  const idx = indiceDeiNodi(input);
   const prove = proveDiRuolo(input, idx, { vms: model.vms });
   return model.nodes
     .filter((n) => ["infra", "ap"].includes(model.classiMappa?.[n.id] ?? nodeClass(n)))

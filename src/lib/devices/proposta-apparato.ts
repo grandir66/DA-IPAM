@@ -260,15 +260,19 @@ export function riallineaAlProtocollo(
 ): PropostaApparato {
   const tipi = tipiCredenzialePerProtocollo(protocollo);
   const tipoDi = (id: string | null) => (id ? archivio.find((c) => c.id === Number(id))?.credential_type ?? null : null);
+  // Community e SNMP v3 con la regola unica: dalla 2c una v3 è `snmp_v3`, e il
+  // confronto con `=== "snmp"` la perdeva cambiando protocollo (revisione 2c).
+  const tipiSnmp = tipiCredenzialePerProtocollo("snmp");
+  const eVoceSnmp = (id: string | null) => tipiSnmp.includes(tipoDi(id) ?? "");
   let credentialId = p.credentialId;
   let snmpCredentialId = p.snmpCredentialId;
 
   if (eSnmp(protocollo)) {
-    if (!(tipoDi(credentialId) === "snmp")) credentialId = snmpCredentialId;
+    if (!eVoceSnmp(credentialId)) credentialId = snmpCredentialId;
     if (!credentialId) credentialId = credenzialeValidata(host, protocollo, archivio)?.id.toString() ?? null;
     snmpCredentialId = null;
   } else {
-    if (eSnmp(p.protocol) && tipoDi(credentialId) === "snmp" && !snmpCredentialId) snmpCredentialId = credentialId;
+    if (eSnmp(p.protocol) && eVoceSnmp(credentialId) && !snmpCredentialId) snmpCredentialId = credentialId;
     const tipo = tipoDi(credentialId);
     if (!tipo || !tipi.includes(tipo)) credentialId = credenzialeValidata(host, protocollo, archivio)?.id.toString() ?? null;
   }

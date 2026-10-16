@@ -244,4 +244,28 @@ describe("proponiApparato / riallineaAlProtocollo — credenziale e porta", () =
     assert.equal(q.snmpCredentialId, "3");
     assert.equal(q.port, 22);
   });
+
+  // Revisione della 2c (16/10): dalla 2c una SNMP v3 è di tipo `snmp_v3`, e i
+  // due confronti con `=== "snmp"` la perdevano cambiando protocollo, mentre
+  // la community restava. La tendina la offre: la regola unica la ammette.
+  const CON_V3: CredenzialeArchivio[] = [...ARCHIVIO, { id: 7, name: "utente v3", credential_type: "snmp_v3", port: null }];
+
+  it("SNMP v3 scelta a mano, protocollo da SNMP v2 a SNMP v3 → resta scelta", () => {
+    const p = proponiApparato(host({ classification: "switch", inferred_vendor: "mikrotik", inferred_protocol: "snmp_v2", inferred_device_type: "switch" }), CON_V3);
+    assert.equal(p.protocol, "snmp_v2");
+    const q = riallineaAlProtocollo({ ...p, credentialId: "7" }, "snmp_v3", CON_V3);
+    assert.equal(q.credentialId, "7");
+    assert.equal(q.snmpCredentialId, null);
+    assert.equal(q.port, 161);
+  });
+
+  it("SNMP v3 scelta a mano, protocollo da SNMP v3 a SSH → scende in «SNMP aggiuntivo», come la community", () => {
+    const p = proponiApparato(host({ classification: "switch", inferred_vendor: "mikrotik", inferred_protocol: "snmp_v3", inferred_device_type: "switch" }), CON_V3);
+    assert.equal(p.protocol, "snmp_v3");
+    const q = riallineaAlProtocollo({ ...p, credentialId: "7" }, "ssh", CON_V3);
+    assert.equal(q.snmpCredentialId, "7");
+    assert.equal(q.credentialId, null);
+    const c = riallineaAlProtocollo({ ...p, credentialId: "3" }, "ssh", CON_V3);
+    assert.equal(c.snmpCredentialId, "3", "la community, oggi");
+  });
 });

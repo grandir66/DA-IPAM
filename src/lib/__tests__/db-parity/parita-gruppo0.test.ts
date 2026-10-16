@@ -27,7 +27,10 @@ after(() => {
   fs.rmSync(TEST_DATA_DIR, { recursive: true, force: true });
 });
 
-const sqlOra = (msFa: number) => new Date(Date.now() - msFa).toISOString().replace("T", " ").slice(0, 19);
+// Un istante solo per tutte le fixture: il banco le scrive due volte (facciata e tenant), e
+// con Date.now() a ogni scrittura le due copie potevano cadere in secondi diversi.
+const ORA = Date.now();
+const sqlOra = (msFa: number) => new Date(ORA - msFa).toISOString().replace("T", " ").slice(0, 19);
 
 /** Reti, host e storico stati come li scrivono discovery e ping. */
 function storicoStati(db: Database.Database): void {

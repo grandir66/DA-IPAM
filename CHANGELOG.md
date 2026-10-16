@@ -4,6 +4,68 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-16 · pannello Zabbix in sola lettura (opzione)
+
+Passo 7.4-7.5 del piano di solidità. Perché: DA-IPAM sapeva solo se il proxy Zabbix gira sulla macchina; il pannello
+mostra cosa il centro sa degli apparati di questo cliente, dall'API di lettura per cliente di DA-Zabbix (design
+`docs/2026-10-16-api-lettura-per-cliente-design.md` in DA-Zabbix, ancora da approvare: decisioni provvisorie sotto).
+
+### Modifiche
+
+- **Pagina `/zabbix`** (voce «Zabbix» nel menu solo se acquistato, configurato e acceso) e scheda in Impostazioni →
+  Moduli, con l'etichetta «Opzione». Stati: non acquistato · da configurare · spento · guasto · attivo. **Senza
+  configurazione, spento o non acquistato: zero richieste al centro.**
+- **Configurazione nel DB del cliente** (tabelle nuove `zabbix_lettura_config`, `zabbix_abbinamenti` in
+  `db-tenant-schema.ts`, `CREATE TABLE IF NOT EXISTS`): indirizzo https del centro, chiave di lettura `zl1.<id>.<segreto>`
+  cifrata a riposo e mai restituita, impronta TLS facoltativa (`sha256//…` come DA-Link o SHA-256 del certificato),
+  codice cliente atteso (proposto da `/etc/dalink/oggetto.env` se c'è), nome del proxy della macchina (facoltativo:
+  altrimenti `Hostname=` del file del proxy). Un indirizzo nuovo vuole la chiave riscritta.
+- **Client** (`src/lib/zabbix-lettura/`): TLS sempre verificato, senza interruttore (catena e nome, oppure l'impronta,
+  controllata prima di mandare la chiave sullo stesso socket); 5 s per aprire, 15 s in tutto; attesa crescente dopo
+  i fallimenti (15 s, 30 s … fino a 5 minuti, persistente, `Retry-After` rispettato), «Riprova adesso» per un admin.
+  Ogni risposta deve portare il `codcli` di questa istanza: un altro codice è **«guasto: cliente errato»** e nessun
+  dato si mostra. Le risposte si validano con Zod; un campo strano diventa «non so» / «vecchio», mai «sì».
+- **Dati vecchi** (§6): con `vecchio: true` o `dati_affidabili: false` la disponibilità è «non so» (accanto l'ultimo
+  valore noto), i valori sono segnati vecchi, mai «tutto ok». Guasto: l'ora dell'ultima lettura buona e nessun dato.
+- **Abbinamento host ↔ DA-IPAM** (§5): hostid verificato tenuto; IP unico → «proposto» finché una persona non
+  conferma; IP condiviso (o doppio in DA-IPAM) → «ambiguo» coi candidati, niente salvato; verificato che cambia IP o
+  sparisce → «perso», mai riabbinato da solo. Si salvano solo le conferme.
+- **Proxy della macchina come componente locale**: se gira lo dice la macchina, se è in linea lo dice il centro.
+  DA-IPAM non lo avvia, non lo ferma e non lo riavvia, nemmeno quando si aggiorna (lo prova un test).
+- **Rotte**: `GET /api/zabbix/pannello` (sessione), `POST` stesso percorso = «Riprova adesso» (admin);
+  `GET|PUT|DELETE /api/zabbix/config` (admin); `POST|DELETE /api/zabbix/abbinamenti` (admin). Elenco host paginato a
+  50, misure chieste solo per la pagina (le sette chiavi della v1). `docs/auth-matrix.md` rigenerata.
+- `/api/modules` restituisce anche `pannelli.zabbix` (per il menu, nessuna rete). Il pannello non entra nel catalogo
+  dei moduli: il segnale verso DA-Link non cambia (il proxy lo conosce già come `zbx`).
+
+### Decisioni provvisorie (da confermare con Riccardo, domande del §8 del design)
+
+- Strada di rete: overlay NetBird; TLS per catena o per impronta.
+- Più sedi: si mostrano tutti gli host del cliente col loro proxy, segnando quelli di questa macchina (filtro «Solo
+  questa macchina»).
+- Misure: le sette chiavi della v1. Diritto: `opzioneAcquistata("zabbix")`, sempre vero fino alla licenza di DA-Link.
+
+### Installazioni esistenti
+
+Le due tabelle nascono vuote alla prima apertura del DB del cliente. Nessuna configurazione = pannello «da
+configurare», nessuna voce di menu, nessun traffico. Oggi l'API del centro non esiste ancora (spenta finché
+DA-Zabbix non la pubblica).
+
+## [Non rilasciato] — 2026-10-16 · LibreNMS «appliance» dall'import JSON
+
+Seguito del passo 5 del piano di solidità. Perché: Deploy-Appliance ora dichiara il LibreNMS che installa lui
+(`extra.mode = "appliance"` nell'import JSON dei moduli, `mode: "appliance"` nel PUT di ripiego), ma l'import
+scriveva sempre `external`, e la scheda proponeva «Converti» a ogni installazione nuova.
+
+### Modifiche
+
+- **Import JSON dei moduli** (`POST /api/modules/import`): per LibreNMS con `extra.mode` uguale a `"appliance"` scrive
+  il modo `appliance`; senza `extra.mode` (installatore vecchio), con un altro valore o per Graylog scrive `external`
+  come prima. Logica in `modules/import-integrazione.ts` (pura, provata in `import-integrazione.test.ts`).
+- Il PUT di ripiego (`/api/integrations/librenms`) accettava già `mode: "appliance"` dal passo 5: niente da cambiare.
+- **Installazioni esistenti**: nessuna migrazione. Una riga `external` resta tale finché un import nuovo con
+  `extra.mode` o «Converti» non la riscrive.
+
 ## [Non rilasciato] — 2026-10-16 · apertura delle interfacce dei moduli: «Verifica» dice perché non si aprono
 
 Passo 4b del piano di solidità del 16/10 (parte DA-IPAM; analisi `2026-10-16-catena-apertura-interfacce-moduli.md`).

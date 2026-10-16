@@ -8,9 +8,12 @@ import type { ModuleHealthVerdict } from "./health";
  * - `opzione`: modulo opzionale, potenzialmente a pagamento.
  *
  * Opzioni decise da Riccardo il 16/10: MDM, Patch/Chocolatey, MeshCentral, Wazuh,
- * Zabbix. MDM e Zabbix non hanno una voce nel catalogo dei moduli
- * (`MODULE_DESCRIPTORS`): non se ne inventa una qui; quando l'avranno, nasceranno
- * come `opzione`.
+ * Zabbix. MDM non ha una voce nel catalogo dei moduli (`MODULE_DESCRIPTORS`): non se
+ * ne inventa una qui; quando l'avrà, nascerà come `opzione`.
+ *
+ * Il pannello Zabbix in sola lettura (passo 7.4) è un'opzione **fuori dal catalogo**
+ * (`OFFERTA_PANNELLO_ZABBIX`): una voce nel catalogo entrerebbe nei moduli e nella
+ * salute del segnale verso DA-Link, che il proxy Zabbix lo conosce già come `zbx`.
  *
  * Pura e senza import lato server: la usano il registry, i componenti client
  * (griglia della Launchpad, tab «Moduli») e le prove.
@@ -31,6 +34,12 @@ export const OFFERTA_MODULO: Readonly<Record<ModuleKey, Offerta>> = {
   unifi: "base",
   appliance: "base",
 };
+
+/** Il pannello Zabbix in sola lettura: opzione, fuori dal catalogo dei moduli. */
+export const OFFERTA_PANNELLO_ZABBIX: Offerta = "opzione";
+
+/** Le opzioni che hanno un diritto: le voci del catalogo più il pannello Zabbix. */
+export type ChiaveOpzione = ModuleKey | "zabbix";
 
 /** Etichetta mostrata accanto al nome di un modulo opzionale. */
 export const ETICHETTA_OPZIONE = "Opzione";
@@ -57,7 +66,7 @@ export const ETICHETTA_STATO_OFFERTA: Readonly<Record<StatoOfferta, string>> = {
  * d'ambiente per «simulare» la licenza: un `false` per sbaglio spegnerebbe un
  * modulo in uso.
  */
-export function opzioneAcquistata(key: ModuleKey): boolean {
+export function opzioneAcquistata(key: ChiaveOpzione): boolean {
   void key;
   return true;
 }

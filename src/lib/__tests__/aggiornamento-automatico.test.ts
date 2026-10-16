@@ -125,6 +125,8 @@ function preparaAmbiente(): Ambiente {
     DA_INVENT_LOCK: path.join(radice, "lock"),
     DA_INVENT_STATO_AGGIORNAMENTO: statoFile,
     DA_INVENT_ATTESA_SALUTE: "4",
+    // Quella dell'ambiente di chi lancia le prove punterebbe fuori dal repo finto.
+    DA_INVENT_DATA_DIR: path.join(app, "data"),
   };
   return { radice, origin, app, log, statoFile, env };
 }

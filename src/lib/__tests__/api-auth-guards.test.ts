@@ -21,7 +21,7 @@ const ROOT = process.cwd();
 interface Contract {
   route: string; // path sotto src/app/api
   method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
-  guard: "requireAdmin" | "requireSuperAdmin";
+  guard: "requireAuth" | "requireAdmin" | "requireSuperAdmin";
 }
 
 // Nota: per `credentials/[id]` GET la guardia admin è condizionale (solo con
@@ -82,6 +82,16 @@ const CONTRACT: Contract[] = [
   // Passo 3 (16/10): la configurazione MDM porta credenziali e accende/toglie il job mdm_sync.
   { route: "mdm/config", method: "GET", guard: "requireAdmin" },
   { route: "mdm/config", method: "PUT", guard: "requireAdmin" },
+  // Passo 7.4 (16/10): pannello Zabbix in sola lettura. La configurazione porta la chiave di
+  // lettura del centro e decide verso dove parte; gli abbinamenti scrivono il DB del cliente;
+  // «Riprova adesso» (POST) ignora l'attesa crescente. Il pannello si legge con la sessione.
+  { route: "zabbix/config", method: "GET", guard: "requireAdmin" },
+  { route: "zabbix/config", method: "PUT", guard: "requireAdmin" },
+  { route: "zabbix/config", method: "DELETE", guard: "requireAdmin" },
+  { route: "zabbix/pannello", method: "GET", guard: "requireAuth" },
+  { route: "zabbix/pannello", method: "POST", guard: "requireAdmin" },
+  { route: "zabbix/abbinamenti", method: "POST", guard: "requireAdmin" },
+  { route: "zabbix/abbinamenti", method: "DELETE", guard: "requireAdmin" },
 ];
 
 /** Estrae il corpo di un metodo HTTP esportato (slice fino al prossimo export). */

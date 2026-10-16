@@ -4,10 +4,10 @@
 
 ## Riepilogo
 
-- File `route.ts`: **323** · gestori (metodo × rotta): **497**
-- Forme di export: funzione 481 · destrutturata 2 · rinomina 14
-- Guardie viste: `nessuna`=9 · `esterna`=2 · `token`=1 · `sessione`=51 · `auth-diretto`=3 · `auth`=135 · `admin-o-onboarding`=10 · `admin`=283 · `superadmin`=3
-- Esiti: ok **464** · eccezioni **33** · debiti **0** · scoperti **0**
+- File `route.ts`: **328** · gestori (metodo × rotta): **506**
+- Forme di export: funzione 490 · destrutturata 2 · rinomina 14
+- Guardie viste: `nessuna`=9 · `esterna`=2 · `token`=1 · `sessione`=51 · `auth-diretto`=3 · `auth`=137 · `admin-o-onboarding`=10 · `admin`=290 · `superadmin`=3
+- Esiti: ok **473** · eccezioni **33** · debiti **0** · scoperti **0**
 
 Livello atteso: GET/HEAD/OPTIONS → `auth`; scritture → `admin`; letture col nome sensibile → `admin`; i livelli dichiarati stanno in `ATTESI` di `src/lib/permessi/rotte.ts`. `withTenantFromSession` (`sessione`) chiede l'accesso ma non il ruolo: per una lettura vale quanto `auth`.
 
@@ -220,6 +220,7 @@ Livello atteso: GET/HEAD/OPTIONS → `auth`; scritture → `admin`; letture col 
 | `/api/integrations/inventory-agent/install/macos.sh` | GET | `nessuna` | `auth` | pubblica: script d'installazione scaricato dall'host del cliente, senza sessione |
 | `/api/integrations/inventory-agent/install/windows.ps1` | GET | `nessuna` | `auth` | pubblica: script d'installazione scaricato dall'host del cliente, senza sessione |
 | `/api/integrations/inventory-agent/token` | POST | `admin` | `admin` |  |
+| `/api/integrations/librenms/converti` | POST | `admin` | `admin` |  |
 | `/api/integrations/librenms/device` | GET | `auth` | `auth` |  |
 | `/api/integrations/librenms/device` | POST | `admin` | `admin` |  |
 | `/api/integrations/librenms/graph` | GET | `auth` | `auth` |  |
@@ -333,6 +334,7 @@ Livello atteso: GET/HEAD/OPTIONS → `auth`; scritture → `admin`; letture col 
 | `/api/mdm/config` | PUT | `admin` | `admin` |  |
 | `/api/mdm/sync` | POST | `admin` | `admin` |  |
 | `/api/modules` | GET | `auth` | `auth` |  |
+| `/api/modules/[key]/apertura` | GET | `auth` | `auth` |  |
 | `/api/modules/[key]/repair` | POST | `admin` | `admin` |  |
 | `/api/modules/health` | GET | `auth` | `auth` |  |
 | `/api/modules/health` | POST | `admin` | `admin` |  |
@@ -562,3 +564,10 @@ Livello atteso: GET/HEAD/OPTIONS → `auth`; scritture → `admin`; letture col 
 | `/api/vulnerabilities/[key]/hosts` | GET | `auth` | `auth` |  |
 | `/api/winrm-setup/manual` | GET | `auth` | `auth` |  |
 | `/api/winrm-setup/script` | GET | `auth` | `auth` |  |
+| `/api/zabbix/abbinamenti` | DELETE | `admin` | `admin` |  |
+| `/api/zabbix/abbinamenti` | POST | `admin` | `admin` |  |
+| `/api/zabbix/config` | DELETE | `admin` | `admin` |  |
+| `/api/zabbix/config` | GET | `admin` | `auth` |  |
+| `/api/zabbix/config` | PUT | `admin` | `admin` |  |
+| `/api/zabbix/pannello` | GET | `auth` | `auth` |  |
+| `/api/zabbix/pannello` | POST | `admin` | `admin` |  |

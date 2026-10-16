@@ -42,6 +42,7 @@ import { InventoryAgentCard } from "./inventory-agent-card";
 import { MeshCentralCard } from "./meshcentral-card";
 import { MeshCentralInstallDialog } from "./meshcentral-install-dialog";
 import { Nis2ToggleCard } from "./nis2-toggle-card";
+import { ZabbixLetturaCard } from "./zabbix-lettura-card";
 import { ModuleJsonImport } from "./module-json-import";
 import { IntegrationViewer } from "@/components/integrations/integration-viewer";
 import { VerificaModulo } from "@/components/integrations/apertura-browser";
@@ -51,7 +52,7 @@ import { LoadError } from "@/components/shared/load-error";
 import { useJobPolling } from "@/hooks/use-job-polling";
 import type { PassoPolling } from "@/lib/integrations/polling-job";
 import type { ModuleKey } from "@/lib/modules/registry";
-import { ETICHETTA_OPZIONE, OFFERTA_MODULO } from "@/lib/modules/offerta";
+import { ETICHETTA_OPZIONE, OFFERTA_MODULO, OFFERTA_PANNELLO_ZABBIX } from "@/lib/modules/offerta";
 import {
   UNINSTALL_COPY,
   isUninstallableFeature,
@@ -82,6 +83,7 @@ function ModuleSection({
   id,
   moduleKey,
   offertaDi,
+  opzioneFuoriCatalogo,
   title,
   children,
 }: {
@@ -89,11 +91,13 @@ function ModuleSection({
   moduleKey?: ModuleKey;
   /** Voce del catalogo da cui leggere l'offerta (passo 4c), se diversa o senza import JSON. */
   offertaDi?: ModuleKey;
+  /** Opzione che non sta nel catalogo dei moduli (pannello Zabbix, passo 7.4). */
+  opzioneFuoriCatalogo?: boolean;
   title: string;
   children: React.ReactNode;
 }) {
   const chiave = offertaDi ?? moduleKey;
-  const opzione = chiave !== undefined && OFFERTA_MODULO[chiave] === "opzione";
+  const opzione = opzioneFuoriCatalogo === true || (chiave !== undefined && OFFERTA_MODULO[chiave] === "opzione");
   return (
     <section id={id} className="scroll-mt-24 space-y-2">
       <div className="flex items-center justify-between gap-3">
@@ -461,6 +465,14 @@ export function ModulesTab({ isAdmin }: { isAdmin: boolean }) {
         title="Network Services — DNS / DHCP / AdGuard / Unbound"
       >
         <NetServicesConfigCard isAdmin={isAdmin} />
+      </ModuleSection>
+
+      <ModuleSection
+        id="module-zabbix"
+        title="Zabbix — pannello in sola lettura"
+        opzioneFuoriCatalogo={OFFERTA_PANNELLO_ZABBIX === "opzione"}
+      >
+        <ZabbixLetturaCard isAdmin={isAdmin} />
       </ModuleSection>
 
       <ModuleSection id="module-unifi" title="Controller di rete">

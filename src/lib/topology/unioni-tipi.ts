@@ -69,6 +69,9 @@ export const TESTI_UNIONI = {
   nonSeparabile: (come: "host_dell_apparato" | "stesso_ip"): string =>
     come === "host_dell_apparato" ? "È l'indirizzo dell'apparato: non si separa." : "Ha l'IP con cui si gestisce l'apparato: non si separa.",
   doppio: "Lo stesso oggetto è scelto due volte.",
+  /** Un'unione che sposterebbe membri di un'altra, o le ancore che non finirebbero insieme: `nome` è l'altra com'è sulla mappa. */
+  cambiaAltra: (nome: string): string =>
+    `Questa unione cambierebbe anche «${nome}», un'altra unione già fatta: separa prima i suoi indirizzi uniti a mano, poi riprova.`,
   schemaAssente: "Le unioni non sono disponibili su questo cliente: la migrazione non è riuscita (vedi il journal).",
   cambiato: "Nel frattempo le unioni sono cambiate: riapri il dialogo.",
 } as const;

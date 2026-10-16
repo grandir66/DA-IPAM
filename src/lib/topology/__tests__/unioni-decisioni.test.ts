@@ -1,16 +1,17 @@
 // Le decisioni delle rotte di «Unisci con…» e «Separa…» (piano 2026-10-16, Task 3; ADR 0021), pure: che cosa si scrive (il
 // piano per `scriviPianoUnioni`), che cosa si vedrà (l'anteprima, con lo stesso indice della mappa) e quando no (404/409 coi
 // testi di `TESTI_UNIONI`). Una prova per regola del piano: `ancoraDi` (che cosa si scrive: gli indirizzi, Scelte 3), `nodoDi`,
-// `decidiUnione` (doppi, mancanti, già insieme, due apparati anche attraverso i gruppi esistenti, il gruppo più basso, il
-// gemello che arriva «insieme a», Caso 5), `decidiSeparazione` (fuori dal nodo, l'apparato, i non separabili, le coppie, Caso 4
-// nelle sue due forme), `statoDelNodo`, `cercaCandidati`. Reti: il NAS di support/nas.ts e reti minime come nel Task 1.
+// `decidiUnione` (doppi, mancanti, già insieme, due apparati anche attraverso i gruppi esistenti, sempre un gruppo nuovo che si
+// applica per ultimo, un'altra unione che cambierebbe, il gemello che arriva «insieme a», Caso 5), `decidiSeparazione` (fuori dal
+// nodo, l'apparato, i non separabili, le coppie, Caso 4 nelle sue due forme), `statoDelNodo`, `cercaCandidati`. Reti: il NAS di
+// support/nas.ts e reti minime come nel Task 1.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildTopologyModel } from "@/lib/topology/model";
 import type { TopologyModelInput } from "@/lib/topology/model-types";
 import { indiceDeiNodi } from "@/lib/topology/node-index";
 import {
-  ancoraDi, cercaCandidati, conRighe, decidiSeparazione, decidiUnione, nodoDi, righeDopo, statoDelNodo, TESTO_OGGETTO_SOLO,
+  ancoraDi, anteprimaUnione, cercaCandidati, conRighe, decidiSeparazione, decidiUnione, nodoDi, righeDopo, statoDelNodo, TESTO_OGGETTO_SOLO,
   type RigheScelte,
 } from "@/lib/topology/unioni";
 import { PAROLA_COME, TESTI_UNIONI, type ModelSeparazioneRow, type ModelUnioneRow } from "@/lib/topology/unioni-tipi";
@@ -122,10 +123,13 @@ test("decidiUnione: due apparati no, anche quando il secondo arriva da un gruppo
   assert.deepEqual(decidiUnione(nasDueApparati(), righe([{ gruppo: 1, membro: "host:11" }, { gruppo: 1, membro: "host:12" }]), ["host:12", "host:13"]), dueApp);
 });
 
-test("decidiUnione: un'ancora già in un gruppo dà il gruppo; più gruppi si fondono nel più basso (le righe degli altri tolte e rimesse)", () => {
+test("decidiUnione: sempre un gruppo nuovo; le righe dei gruppi delle ancore si tolgono e si rimettono lì (l'unione si applica per ultima)", () => {
   const uno = decidiUnione(nas(), righe([{ gruppo: 3, membro: "host:11" }, { gruppo: 3, membro: "host:12" }]), ["host:12", "host:13"]);
   assert.ok(uno.ok, JSON.stringify(uno));
-  assert.deepEqual(uno.dati.piano, { togliUnioni: [], togliSeparazioni: [], aggiungiUnioni: [{ gruppo: 3, membro: "host:13" }], aggiungiSeparazioni: [] });
+  assert.deepEqual(uno.dati.piano, {
+    togliUnioni: [1, 2], togliSeparazioni: [], aggiungiSeparazioni: [],
+    aggiungiUnioni: [{ gruppo: "nuovo", membro: "host:11" }, { gruppo: "nuovo", membro: "host:12" }, { gruppo: "nuovo", membro: "host:13" }],
+  });
   assert.deepEqual(uno.dati.anteprima.entrano, [{ id: "host:13", nome: "10.71.3.20", perche: A_MANO }]);
 
   const t = nas();
@@ -134,8 +138,8 @@ test("decidiUnione: un'ancora già in un gruppo dà il gruppo; più gruppi si fo
   const due = decidiUnione(t, r, ["host:12", "host:13"]);
   assert.ok(due.ok, JSON.stringify(due));
   assert.deepEqual(due.dati.piano, {
-    togliUnioni: [3, 4], togliSeparazioni: [], aggiungiSeparazioni: [],
-    aggiungiUnioni: [{ gruppo: 3, membro: "host:13" }, { gruppo: 3, membro: "host:20" }],
+    togliUnioni: [1, 2, 3, 4], togliSeparazioni: [], aggiungiSeparazioni: [],
+    aggiungiUnioni: ["host:11", "host:12", "host:13", "host:20"].map((membro) => ({ gruppo: "nuovo" as const, membro })),
   });
   assert.deepEqual(due.dati.anteprima, {
     nodo: "host:11", nome: "QWNAS-7", separazioniTolte: [],
@@ -174,10 +178,80 @@ test("Caso 5: «Unisci» dopo un «Separa» fra gli stessi oggetti toglie quella
   const c = decidiUnione(catena(), sep, ["host:31", "host:20"]);
   assert.ok(c.ok, JSON.stringify(c));
   assert.deepEqual(c.dati.piano, {
-    togliUnioni: [], togliSeparazioni: [101, 102], aggiungiSeparazioni: [], aggiungiUnioni: [{ gruppo: 1, membro: "host:31" }],
+    togliUnioni: [1, 2], togliSeparazioni: [101, 102], aggiungiSeparazioni: [],
+    aggiungiUnioni: ["host:20", "host:30", "host:31"].map((membro) => ({ gruppo: "nuovo" as const, membro })),
   });
   assert.deepEqual(c.dati.anteprima.separazioniTolte.map((s) => s.altro), ["host:20", "host:30"]);
   assert.deepEqual(c.dati.anteprima.entrano.map((e) => e.id), ["host:31"]);
+});
+
+/**
+ * Revisione finale della tappa (16/10): il NAS promosso col gemello del 12 (il 14, stesso MAC) separato a mano dall'apparato, e
+ * il 30 e il 31 su un'altra rete. Col gruppo più basso un'unione nuova si applicava prima di una più recente, e nel ramo
+ * «apparato» l'indice tirava dentro l'intera radice automatica di un'ancora (il 14 resta legato al 12 nel union-find).
+ */
+const gemelloSeparato = (): TopologyModelInput => {
+  const t = conGemello(nasPromosso());
+  t.hosts.push(host(30, { network_id: 5, ip: "10.71.5.30", mac: "02:00:70:00:05:30" }), host(31, { network_id: 5, ip: "10.71.5.31", mac: "02:00:6f:00:05:31" }));
+  return t;
+};
+const SEPARATO_14: ModelSeparazioneRow[] = [{ membro: "host:14", altro: "dev:5" }];
+const nodiDopo = (t: TopologyModelInput, r: RigheScelte, d: ReturnType<typeof decidiUnione>, ids: string[]) => {
+  assert.ok(d.ok, JSON.stringify(d));
+  const idx = indiceDeiNodi(conRighe(t, righeDopo(r, d.dati.piano)));
+  return { nodi: ids.map((x) => nodoDi(idx, x)), nonApplicate: idx.nonApplicate };
+};
+
+test("Caso A: il gruppo 1 di soli host {30, 31} e il NAS nel 2; «Unisci 14 con 30» va in un gruppo nuovo (prima: «unione incoerente», 500)", () => {
+  const t = gemelloSeparato();
+  const r = righe([{ gruppo: 1, membro: "host:30" }, { gruppo: 1, membro: "host:31" }, { gruppo: 2, membro: "host:11" }, { gruppo: 2, membro: "host:12" }], SEPARATO_14);
+  const d = decidiUnione(t, r, ["host:14", "host:30"]);
+  assert.ok(d.ok, JSON.stringify(d));
+  assert.deepEqual(d.dati.piano, {
+    togliUnioni: [1, 2], togliSeparazioni: [], aggiungiSeparazioni: [],
+    aggiungiUnioni: ["host:30", "host:31", "host:14"].map((membro) => ({ gruppo: "nuovo" as const, membro })),
+  });
+  assert.deepEqual([d.dati.anteprima.nodo, d.dati.anteprima.entrano.map((e) => e.id)], ["host:14", ["host:30", "host:31"]]);
+  assert.deepEqual(nodiDopo(t, r, d, ["host:11", "host:12", "host:14", "host:30", "host:31"]), {
+    nodi: ["dev:5", "dev:5", "host:14", "host:14", "host:14"], nonApplicate: [],
+  });
+});
+
+test("Caso B: il gruppo 1 {SRV-SEI, 30} e il NAS nel 2; «Unisci 14 con 30» non porta via il 12 dal NAS (prima il NAS diventava «non applicata»)", () => {
+  const t = gemelloSeparato();
+  t.hosts.push(host(60, { network_id: 6, ip: "10.71.6.60", mac: "02:00:6e:00:06:60" }));
+  t.devices.push(dev(6, { name: "SRV-SEI", host: "10.71.6.60", device_type: "server", host_id: 60 }));
+  const r = righe([{ gruppo: 1, membro: "host:30" }, { gruppo: 1, membro: "host:60" }, { gruppo: 2, membro: "host:11" }, { gruppo: 2, membro: "host:12" }], SEPARATO_14);
+  const d = decidiUnione(t, r, ["host:14", "host:30"]);
+  assert.ok(d.ok, JSON.stringify(d));
+  assert.deepEqual(d.dati.piano, {
+    togliUnioni: [1, 2], togliSeparazioni: [], aggiungiSeparazioni: [],
+    aggiungiUnioni: ["host:30", "host:60", "host:14"].map((membro) => ({ gruppo: "nuovo" as const, membro })),
+  });
+  assert.deepEqual([d.dati.anteprima.nodo, d.dati.anteprima.entrano.map((e) => e.id)], ["dev:6", ["host:14"]]);
+  assert.deepEqual(nodiDopo(t, r, d, ["host:11", "host:12", "host:14", "host:30", "host:60"]), {
+    nodi: ["dev:5", "dev:5", "dev:6", "dev:6", "dev:6"], nonApplicate: [],
+  });
+});
+
+test("decidiUnione: un'unione che cambierebbe un'altra unione già fatta è 409, col nome di quella", () => {
+  // Il NAS nel gruppo 1 {11, 12}; il 14 separato dall'apparato e poi unito a mano col 30 (gruppo 2): il nodo «10.71.2.21» è
+  // {14, 30}, legato al 12 dal MAC del 14. «Unisci QWNAS-7 con 40» porta il gruppo 1 in fondo: il 2 si applica prima, e nel ramo
+  // «apparato» il 30 finirebbe nel NAS senza che nessuno l'abbia scelto.
+  const t = gemelloSeparato();
+  t.hosts.push(host(40, { network_id: 4, ip: "10.71.4.40", mac: "02:00:74:00:04:40" }));
+  const r = righe([{ gruppo: 1, membro: "host:11" }, { gruppo: 1, membro: "host:12" }, { gruppo: 2, membro: "host:14" }, { gruppo: 2, membro: "host:30" }], SEPARATO_14);
+  const prima = indiceDeiNodi(conRighe(t, r));
+  assert.deepEqual(["host:12", "host:14", "host:30"].map((x) => nodoDi(prima, x)), ["dev:5", "host:14", "host:14"], "la rete di partenza");
+  assert.deepEqual(decidiUnione(t, r, ["dev:5", "host:40"]), no(409, TESTI_UNIONI.cambiaAltra("10.71.2.21")));
+});
+
+test("anteprimaUnione: righe in cui le ancore non finiscono insieme danno 409, mai un'eccezione (prima: «unione incoerente»)", () => {
+  // Le righe del Caso A scritte col gruppo più basso, com'era prima: il NAS (gruppo 2) tira il 30 e il 31 nell'apparato.
+  const t = gemelloSeparato();
+  const r = righe([{ gruppo: 1, membro: "host:30" }, { gruppo: 1, membro: "host:31" }, { gruppo: 2, membro: "host:11" }, { gruppo: 2, membro: "host:12" }], SEPARATO_14);
+  const dopo = { unioni: [...r.unioni, { gruppo: 1, membro: "host:14" }], separazioni: SEPARATO_14 };
+  assert.deepEqual(anteprimaUnione(t, r, dopo, ["host:14", "host:30"], []), no(409, TESTI_UNIONI.cambiaAltra("QWNAS-7")));
 });
 
 test("decidiSeparazione: fuori dal nodo 409, l'apparato 409, i suoi indirizzi non si separano, un oggetto che non c'è 404", () => {

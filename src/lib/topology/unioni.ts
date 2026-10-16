@@ -151,14 +151,22 @@ export function anteprimaUnione(
   const prima = indiceDeiNodi(conRighe(ing, righe));
   const a = ancoreDi(ing, prima, scelti);
   if ("manca" in a) return no(404, TESTI_UNIONI.nonTrovato(a.manca));
-  const { ancore } = a;
-  const idx = indiceDeiNodi(conRighe(ing, dopo));
+  return anteprimaFra(ing, prima, indiceDeiNodi(conRighe(ing, dopo)), dopo, a.ancore, tolte);
+}
+
+/** `anteprimaUnione` dagli indici di prima e di dopo, con le ancore già trovate (`decidiUnione` gli indici li ha già). */
+function anteprimaFra(
+  ing: IngressoNodi, prima: NodeIndex, idx: NodeIndex, dopo: Readonly<SceltePerNodi>, ancore: readonly string[], tolte: readonly RigaSeparazione[],
+): Esito<Omit<AnteprimaUnione, "scritto">> {
   const nodo = nodoDi(idx, ancore[0]);
-  if (nodo === null || ancore.some((x) => nodoDi(idx, x) !== nodo)) {
-    // Mai un'unione a metà: se le ancore non finiscono insieme è perché il gruppo non si applica (due apparati), o è un difetto.
+  const fuori = ancore.find((x) => nodo === null || nodoDi(idx, x) !== nodo);
+  if (nodo === null || fuori !== undefined) {
+    // Mai un'unione a metà, e mai un'eccezione (sarebbe un 500): le ancore non finiscono insieme perché il gruppo non si applica
+    // (due apparati) o perché un'altra unione le tiene divise (righe scritte col gruppo più basso, prima della revisione finale).
     const na = idx.nonApplicate.find((n) => ancore.some((x) => n.membri.includes(x)));
     if (na) return no(409, dueApparati(idx, na.apparati));
-    throw new Error(`unione incoerente: ${ancore.join(", ")} non finiscono in un nodo solo`);
+    const via = fuori ?? ancore[0];
+    return no(409, TESTI_UNIONI.cambiaAltra(nomeNodo(idx, nodoDi(idx, via) ?? via)));
   }
   const giaDentro = new Set(membriDi(prima, nodoDi(prima, nodo) ?? nodo));
   const espliciti = [...ancore, ...dopo.unioni.map((u) => u.membro).filter((m) => !ancore.includes(m)).sort(perId)];
@@ -178,10 +186,30 @@ export function anteprimaUnione(
 }
 
 /**
- * «Unisci con…»: gli oggetti scelti diventano uno sulla mappa. Si scrivono le ancore; se alcune stanno già in gruppi attivi, il
- * gruppo è il più basso e le righe degli altri gruppi si tolgono e si rimettono sotto di lui; altrimenti un gruppo nuovo. Due
- * apparati fra i nodi che finiscono insieme (contando i gruppi delle ancore) no (Scelte 5). Le separazioni fra due nodi che si
- * uniscono si tolgono (Caso 5): l'unione a mano le contraddirebbe.
+ * Un'unione cambia solo i nodi che si uniscono (`insieme`, con le righe di prima): con le righe di dopo ogni host di quei nodi
+ * sta nel nodo finale, ogni altro host nel suo nodo di prima, e ogni altro gruppo attivo (`altriGruppi`) si applica come prima.
+ * Il nome, com'è sulla mappa, dell'oggetto che cambierebbe; null se non cambia niente.
+ */
+function altroCambia(prima: NodeIndex, dopo: NodeIndex, insieme: ReadonlySet<string>, finale: string, altriGruppi: ReadonlySet<number>): string | null {
+  for (const id of prima.hostById.keys()) {
+    const h = `host:${id}`;
+    const p = nodoDi(prima, h) ?? h, d = nodoDi(dopo, h) ?? h;
+    if (insieme.has(p) ? d !== finale : d !== p) return insieme.has(p) ? nomeNodo(dopo, d) : nomeNodo(prima, p);
+  }
+  const giaFuori = new Set(prima.nonApplicate.map((g) => g.gruppo));
+  const na = dopo.nonApplicate.find((g) => altriGruppi.has(g.gruppo) && !giaFuori.has(g.gruppo));
+  if (!na) return null;
+  const dove = na.membri.map((m) => nodoDi(prima, m)).find((x): x is string => x !== null);
+  return nomeNodo(prima, dove ?? na.membri[0]);
+}
+
+/**
+ * «Unisci con…»: gli oggetti scelti diventano uno sulla mappa. Si scrivono le ancore, sempre in un gruppo nuovo, e le righe dei
+ * gruppi attivi in cui stanno già si tolgono e si rimettono lì: l'indice applica i gruppi in ordine, e un'unione scritta in un
+ * gruppo più vecchio si applicherebbe prima di unioni più recenti, portandone via i membri (revisione finale, 16/10: Casi A e B
+ * delle prove). Due apparati fra i nodi che finiscono insieme (contando i gruppi delle ancore) no (Scelte 5). Le separazioni fra
+ * due nodi che si uniscono si tolgono (Caso 5): l'unione a mano le contraddirebbe. Se con le righe di dopo cambierebbe un altro
+ * nodo o un'altra unione (`altroCambia`), 409 e niente piano.
  */
 export function decidiUnione(ing: IngressoNodi, righe: RigheScelte, scelti: string[]): Esito<{ piano: PianoUnioni; anteprima: Omit<AnteprimaUnione, "scritto"> }> {
   if (new Set(scelti).size !== scelti.length) return no(409, TESTI_UNIONI.doppio);
@@ -193,8 +221,8 @@ export function decidiUnione(ing: IngressoNodi, righe: RigheScelte, scelti: stri
   if (nodiAncore.size < 2) return no(409, TESTI_UNIONI.giaStesso);
 
   const gruppoDi = new Map(righe.unioni.map((u) => [u.membro, u.gruppo]));
-  const gruppi = [...new Set(ancore.flatMap((x) => (gruppoDi.has(x) ? [gruppoDi.get(x)!] : [])))].sort((x, y) => x - y);
-  const righeGruppi = righe.unioni.filter((u) => gruppi.includes(u.gruppo));
+  const gruppi = new Set(ancore.flatMap((x) => (gruppoDi.has(x) ? [gruppoDi.get(x)!] : [])));
+  const righeGruppi = righe.unioni.filter((u) => gruppi.has(u.gruppo));
   const insieme = new Set(nodiAncore);
   for (const u of righeGruppi) {
     const n = nodoDi(idx, u.membro);
@@ -203,24 +231,24 @@ export function decidiUnione(ing: IngressoNodi, righe: RigheScelte, scelti: stri
   const apparati = [...insieme].filter((n) => n.startsWith("dev:")).sort();
   if (apparati.length >= 2) return no(409, dueApparati(idx, apparati));
 
-  const gruppo: number | "nuovo" = gruppi.length > 0 ? gruppi[0] : "nuovo";
-  const daSpostare = righeGruppi.filter((u) => u.gruppo !== gruppo);
-  const nelGruppo = new Set(righeGruppi.map((u) => u.membro));
+  const giaScritti = [...new Set(righeGruppi.map((u) => u.membro))];
   const tolte = righe.separazioni.filter((s) => {
     const x = nodoDi(idx, s.membro), y = nodoDi(idx, s.altro);
     return x !== null && y !== null && insieme.has(x) && insieme.has(y);
   });
   const piano: PianoUnioni = {
-    togliUnioni: daSpostare.map((u) => u.id),
+    togliUnioni: righeGruppi.map((u) => u.id),
     togliSeparazioni: tolte.map((s) => s.id),
-    aggiungiUnioni: [
-      ...daSpostare.map((u) => ({ gruppo, membro: u.membro })),
-      ...ancore.filter((x) => !nelGruppo.has(x)).map((x) => ({ gruppo, membro: x })),
-    ],
+    aggiungiUnioni: [...giaScritti, ...ancore.filter((x) => !giaScritti.includes(x))].map((membro) => ({ gruppo: "nuovo" as const, membro })),
     aggiungiSeparazioni: [],
   };
-  const anteprima = anteprimaUnione(ing, righe, righeDopo(righe, piano), scelti, tolte);
-  return anteprima.ok ? ok({ piano, anteprima: anteprima.dati }) : anteprima;
+  const dopo = righeDopo(righe, piano);
+  const idxDopo = indiceDeiNodi(conRighe(ing, dopo));
+  const anteprima = anteprimaFra(ing, idx, idxDopo, dopo, ancore, tolte);
+  if (!anteprima.ok) return anteprima;
+  const altri = new Set(righe.unioni.map((u) => u.gruppo).filter((g) => !gruppi.has(g)));
+  const cambia = altroCambia(idx, idxDopo, insieme, anteprima.dati.nodo, altri);
+  return cambia === null ? ok({ piano, anteprima: anteprima.dati }) : no(409, TESTI_UNIONI.cambiaAltra(cambia));
 }
 
 /**

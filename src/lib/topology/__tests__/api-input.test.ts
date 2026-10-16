@@ -105,7 +105,8 @@ test("collegamento a mano col tipo; il tipo non vale per «ignora»", async () =
     if (!r.ok) assert.doesNotMatch(r.error, /Invalid|expected|received/);
   }
   const ign = m.parseLinkOverrideBody({ action: "ignore", a_node: "dev:1", b_node: "dev:2", medium: "cavo" });
-  assert.deepEqual(ign, { ok: false, error: "Il tipo (cavo, fibra, wireless) si indica solo per un collegamento aggiunto a mano" });
+  // Da T3 il tipo può essere anche «tunnel» (le rotte lo accettano): il messaggio elenca tutti i tipi che la rotta accetta.
+  assert.deepEqual(ign, { ok: false, error: "Il tipo (cavo, fibra, wireless o tunnel) si indica solo per un collegamento aggiunto a mano" });
 });
 
 // Revisione finale I-1: il modello non ha nodi `vm:` nei collegamenti, quindi un collegamento a mano o un

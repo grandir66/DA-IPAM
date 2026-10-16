@@ -105,7 +105,7 @@ export function parseLinkOverrideBody(raw: unknown): Parsed<z.infer<typeof linkS
   if (!r.success) return { ok: false, error: first(r.error) };
   if (r.data.a_node === r.data.b_node) return { ok: false, error: "Un collegamento unisce due nodi diversi" };
   if (r.data.action === "ignore" && r.data.medium !== null) {
-    return { ok: false, error: "Il tipo (cavo, fibra, wireless) si indica solo per un collegamento aggiunto a mano" };
+    return { ok: false, error: "Il tipo (cavo, fibra, wireless o tunnel) si indica solo per un collegamento aggiunto a mano" };
   }
   return { ok: true, data: r.data };
 }

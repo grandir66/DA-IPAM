@@ -97,6 +97,14 @@ export function MapCanvas(p: Props) {
   const drawable = useMemo(() => drawableLinks(tree.links, layout.nodes), [tree, layout]);
   const redCount = useMemo(() => redundancyCounts(drawable), [drawable]);
 
+  // T3 (spec §13.10.3): il nome di un oggetto per le parole delle linee («la porta p di A è giù»), e i dati dei riquadri nuovi.
+  const nomeDi = useMemo(() => {
+    const nomi = new Map(model.nodes.map((n) => [n.id, n.name]));
+    return (id: string): string => nomi.get(id) ?? id;
+  }, [model.nodes]);
+  const segmenti = useMemo(() => new Map((model.cavi?.segmenti ?? []).map((s) => [s.id, s])), [model.cavi]);
+  const anomalie = useMemo(() => new Set((model.cavi?.anomalie ?? []).map((a) => a.nodo)), [model.cavi]);
+
   const baseNodes = useMemo((): Node[] => {
     const byId = new Map(model.nodes.map((n) => [n.id, n]));
     const out: Node[] = [];
@@ -133,13 +141,16 @@ export function MapCanvas(p: Props) {
           daysUnseen: via?.stale ? (via.daysUnseen ?? 0) : null,
           attached: (tree.children.get(ln.id) ?? []).some((k) => layout.nodes.get(k)?.role === "attached"),
           // Il pallino non c'è su una VM non censita: non si collega a mano (revisione finale I-1).
-          connectable: connectable && ln.role === "box" && !isUncensusedVmId(ln.id),
+          connectable: connectable && ln.role === "box" && !isUncensusedVmId(ln.id) && n.kind !== "segmento",
           vms: vmInfo.get(ln.id) ?? null,
           onToggleVms: vmInfo.has(ln.id) ? () => onToggleVms(ln.id) : null,
           orientation: o,
           redundant: redCount.get(ln.id) ?? 0,
           redundantShown: p.showExtra || p.selected === ln.id,
           daSistemare: model.classiMappa?.[ln.id] === "da_sistemare",
+          // Solo con la mappa nuova (model.cavi): il segmento ha il suo riquadro, l'anomalia il suo testo al posto della seconda riga.
+          ...(n.kind === "segmento" ? { segmento: { altri: segmenti.get(ln.id)?.altriApparati ?? 0 } } : {}),
+          ...(anomalie.has(ln.id) ? { anomalia: "⚠ core sotto accesso" } : {}),
         },
       });
     }
@@ -161,7 +172,7 @@ export function MapCanvas(p: Props) {
       });
     }
     return out;
-  }, [model, tree, layout, o, redCount, p.showExtra, p.selected, p.draggable, p.plus, p.starts, p.promoteIds, connectable, vmInfo, onToggleVms]);
+  }, [model, tree, layout, o, redCount, segmenti, anomalie, p.showExtra, p.selected, p.draggable, p.plus, p.starts, p.promoteIds, connectable, vmInfo, onToggleVms]);
 
   const nodes = useMemo(
     () => (drag ? baseNodes.map((n) => (n.id === drag.id ? { ...n, position: { x: drag.x, y: drag.y } } : n)) : baseNodes),
@@ -195,7 +206,7 @@ export function MapCanvas(p: Props) {
       const la = padre ? lineaAlbero(o, padre, ln, ostacoli(riquadri, [ln.parent, child])) : { tronco: true as const };
       if (la.tronco) {
         // L'etichetta della linea va dalla parte opposta alle porte scritte sopra il riquadro (a sinistra col «+N»).
-        const data: MapEdgeData = { link, inTree: true, labelSide: p.plus.has(child) ? "right" : "left", orientation: o };
+        const data: MapEdgeData = { link, inTree: true, labelSide: p.plus.has(child) ? "right" : "left", orientation: o, nomeDi };
         out.push({
           id: `t:${child}`, source: ln.parent, target: child, sourceHandle: h.source, targetHandle: h.target, type: "map",
           selectable: false, focusable: false, data,
@@ -204,7 +215,7 @@ export function MapCanvas(p: Props) {
         // Un figlio spostato a mano dall'altra parte (spec §13.10.1): sul lato più vicino, senza giri.
         const m = maniglieLati(la.lati);
         avoid ??= labelBoxes(layout.nodes.values(), layout.apGroups);
-        const data: MapEdgeData = { link, inTree: true, labelSide: "left", orientation: o, avoid, lati: la.lati };
+        const data: MapEdgeData = { link, inTree: true, labelSide: "left", orientation: o, avoid, lati: la.lati, nomeDi };
         out.push({
           id: `t:${child}`, source: ln.parent, target: child, sourceHandle: m.source, targetHandle: m.target, type: "map",
           selectable: false, focusable: false, data,
@@ -229,11 +240,11 @@ export function MapCanvas(p: Props) {
       // dell'altro: fra due riquadri della stessa colonna la linea faceva il giro).
       const lati = latiVicini(layout.nodes.get(s)!, layout.nodes.get(t)!, o, ostacoli(riquadri, [s, t]));
       const m = maniglieLati(lati);
-      const data: MapEdgeData = { link: l, inTree: false, labelSide: "left", orientation: o, avoid, lati };
+      const data: MapEdgeData = { link: l, inTree: false, labelSide: "left", orientation: o, avoid, lati, nomeDi };
       out.push({ id: `x:${l.id}`, source: s, target: t, sourceHandle: m.source, targetHandle: m.target, type: "map", selectable: false, focusable: false, data });
     }
     return out;
-  }, [tree, layout, o, drawable, riquadri, p.showExtra, p.selected, p.plus]);
+  }, [tree, layout, o, drawable, riquadri, nomeDi, p.showExtra, p.selected, p.plus]);
 
   // Centra (zoom 100 %) sulla testa o sulla prima partenza quando cambia modo o mappa.
   const { centerOn, centerKey } = p;

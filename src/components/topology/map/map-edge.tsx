@@ -22,7 +22,7 @@
  */
 import { Fragment } from "react";
 import { BaseEdge, EdgeLabelRenderer, getSmoothStepPath, type Edge, type EdgeProps } from "@xyflow/react";
-import { edgeLook, pathPoints, wavyPath } from "@/lib/topology/edge-look";
+import { edgeLook, pathPoints, pezzoNelloSpazio, wavyPath, type Pt as Punto } from "@/lib/topology/edge-look";
 import { LR_TRUNK, lrLabelMaxWidth, percorsoDaPunti, redundantLabelAt, type Lato, type Pt, type Rect } from "@/lib/topology/map-screen";
 import { pointsPath } from "@/lib/topology/print-draw";
 import { CHAR_W } from "@/lib/topology/tree-layout-consts";
@@ -43,6 +43,8 @@ export type MapEdgeData = {
   avoid?: readonly Rect[] | null;
   /** Il lato più vicino (spec §13.10.1): la linea esce dal lato `da` ed entra da `a`. Assente: le linee di oggi. */
   lati?: { da: Lato; a: Lato };
+  /** Il nome di un oggetto, per le parole che lo nominano («la porta p di A è giù», «oltre ‹radio›»): T3, spec §13.10.3. */
+  nomeDi?: (id: string) => string;
 };
 
 const DOUBLE_GAP = 2.6;
@@ -58,10 +60,13 @@ export function MapEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition
   const path = punti ? pointsPath(punti) : smooth;
   if (!data) return <BaseEdge id={id} path={path} />;
   if (!data.link) return <BaseEdge id={id} path={path} style={TREE_EDGE} />;
-  const look = edgeLook(data.link, { inTree: data.inTree });
+  const look = edgeLook(data.link, { inTree: data.inTree, nomeDi: data.nomeDi });
   const d = look.wavy ? wavyPath(punti ?? pathPoints(path)) : path;
   const outer = look.double ? Math.max(look.width + DOUBLE_GAP, 4.2) : look.width;
-  const stroke = look.grey ? "var(--muted-foreground)" : "var(--foreground)";
+  // Grigio solo per «non visto»; «cavo giù» è scuro pieno (look.nero), mai il grigio.
+  const stroke = look.grey && !look.nero ? "var(--muted-foreground)" : "var(--foreground)";
+  // Mappa nuova: un pezzo che non sta nello spazio della linea dell'albero si accorcia con «…» (I32), intero nel title.
+  const pezzi = data.link.cavo && trunk ? look.tokens.map((t) => (t.startsWith("⚡") ? t : pezzoNelloSpazio(t, Math.floor((lrLabelMaxWidth(sourceX, targetX) - 8) / CHAR_W)))) : look.tokens;
   const dash = look.dash ?? undefined;
   const cap = look.dash === "1.5 4" ? "round" : "butt";
   const at = trunk
@@ -76,6 +81,17 @@ export function MapEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition
         // Il tratto interno color fondo divide la linea in due: due tracciati paralleli sottili.
         <path d={d} style={{ stroke: "var(--card)", strokeWidth: outer - DOUBLE_GAP, strokeDasharray: dash, fill: "none", pointerEvents: "none" }} />
       )}
+      {look.centro && (
+        <EdgeLabelRenderer>
+          <div
+            style={{ position: "absolute", transform: `translate(${mezzo(punti ?? pathPoints(path)).x}px, ${mezzo(punti ?? pathPoints(path)).y}px) translate(-50%, -50%)` }}
+            title={look.tokens.join(" · ")}
+            className="nodrag nopan pointer-events-none rounded-sm bg-card px-1 text-[13px] leading-4 font-semibold text-foreground"
+          >
+            {look.centro}
+          </div>
+        </EdgeLabelRenderer>
+      )}
       {look.tokens.length > 0 && (
         <EdgeLabelRenderer>
           {trunk ? (
@@ -85,8 +101,8 @@ export function MapEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition
               className="nodrag nopan pointer-events-none w-max rounded-sm bg-card px-1 text-right text-[13px] leading-4 text-foreground"
             >
               {/* Va a capo solo fra una parola e l'altra: «⚡ 7 W» non si spezza. */}
-              {look.tokens.map((t, i) => {
-                const last = i === look.tokens.length - 1;
+              {pezzi.map((t, i) => {
+                const last = i === pezzi.length - 1;
                 // Lo spazio sta fuori dal pezzo che non si spezza: è lì che si può andare a capo.
                 return <Fragment key={i}><span className="whitespace-nowrap">{last ? t : `${t} ·`}</span>{last ? null : " "}</Fragment>;
               })}
@@ -104,6 +120,19 @@ export function MapEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition
       )}
     </>
   );
+}
+
+/** Il punto a metà della lunghezza di una spezzata: dove sta il «⋯» di una contrazione. */
+function mezzo(punti: readonly Punto[]): Punto {
+  let tot = 0;
+  for (let i = 1; i < punti.length; i++) tot += Math.hypot(punti[i].x - punti[i - 1].x, punti[i].y - punti[i - 1].y);
+  let resto = tot / 2;
+  for (let i = 1; i < punti.length; i++) {
+    const a = punti[i - 1], b = punti[i], len = Math.hypot(b.x - a.x, b.y - a.y);
+    if (len > 0 && resto <= len) return { x: a.x + ((b.x - a.x) * resto) / len, y: a.y + ((b.y - a.y) * resto) / len };
+    resto -= len;
+  }
+  return punti[punti.length - 1] ?? { x: 0, y: 0 };
 }
 
 /**

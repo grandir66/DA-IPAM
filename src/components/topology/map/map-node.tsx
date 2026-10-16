@@ -53,6 +53,10 @@ export type BoxData = {
   redundantShown: boolean;
   /** T1b (spec §13.8.2): senza prove di ruolo, «da sistemare» (resta in una mappa passo passo, come foglia). */
   daSistemare?: boolean;
+  /** T3 (spec §13.10.3): c'è solo per il riquadro di un segmento; `altri` = apparati non gestiti dietro il segmento. */
+  segmento?: { altri: number } | null;
+  /** T3: l'anomalia sul riquadro («⚠ core sotto accesso»), al posto della seconda riga; IP o tipo restano nel title. */
+  anomalia?: string | null;
 };
 export type VmData = { vm: MapVm; text: string; w: number; h: number; selected: boolean };
 export type AttachedData = { node: MapNode; port: string | null; selected: boolean };
@@ -87,16 +91,54 @@ const STATO: Record<TopologyStatus, string | null> = { ok: null, warning: "◆ a
 /** Lo stato in parole per il title (il «?» nel riquadro da solo non dice niente). */
 const STATO_PAROLE: Record<TopologyStatus, string> = { ok: "raggiungibile", warning: "avviso", fail: "giù", unknown: "sconosciuto (nessun segnale)" };
 
-function BoxNode({ data }: NodeProps<Node<BoxData, "box">>) {
+/**
+ * Il segmento (spec §13.10.3, Scelte 6): un riquadro a capsula con le misure di uno normale, bordo pieno sottile (mai
+ * tratteggiato: è «host da promuovere»), «⋯» e due righe; sotto, «+N apparati non gestiti». Nessuno stato del monitoraggio.
+ */
+function SegmentNode({ data }: NodeProps<Node<BoxData, "box">>) {
+  const { node: n, w, h } = data;
+  const altri = data.segmento?.altri ?? 0;
+  const parole = "modem o switch non gestito";
+  const title = [`segmento · ${parole}`, altri > 0 ? `+${altri} apparati non gestiti` : null].filter(Boolean).join(" · ");
+  return (
+    <div
+      title={title}
+      style={{ width: w, height: h }}
+      className={cn("group relative cursor-pointer rounded-full border border-foreground bg-card text-foreground", data.selected && "ring-[3px] ring-primary ring-offset-1")}
+    >
+      <Handles />
+      <div className="flex h-full items-center gap-1.5 pr-3 pl-3">
+        <span aria-hidden className="shrink-0 text-[20px] leading-none font-semibold">⋯</span>
+        <div className="min-w-0 flex-1 leading-4">
+          <div className="truncate text-[13px] font-semibold">segmento</div>
+          <div className="truncate text-[13px] text-muted-foreground">{fitLabel(parole, w - 12)}</div>
+        </div>
+      </div>
+      {altri > 0 && (
+        <span className="absolute top-full left-1 pt-px text-[13px] leading-4 whitespace-nowrap text-muted-foreground">+{altri} apparati non gestiti</span>
+      )}
+      <span className="sr-only">{n.name}</span>
+    </div>
+  );
+}
+
+function BoxNode(props: NodeProps<Node<BoxData, "box">>) {
+  if (props.data.node.kind === "segmento") return <SegmentNode {...props} />;
+  return <DeviceBox {...props} />;
+}
+
+function DeviceBox({ data }: NodeProps<Node<BoxData, "box">>) {
   const { node: n, w, h, status } = data;
   const giu = status === "fail";
-  const second = data.promote
+  const second = data.anomalia
+    ? fitLabel(data.anomalia, w)
+    : data.promote
     ? "host · da promuovere"
     : data.daSistemare
     ? "da sistemare"
     : [n.mgmtIp ?? typeLabel(n.type), data.clients ? `${data.clients} client` : null].filter(Boolean).join(" · ");
   const stato = STATO[status];
-  const title = [n.name, dnsLine(n), n.mgmtIp, typeLabel(n.type), `stato: ${STATO_PAROLE[status]}`].filter(Boolean).join(" · ");
+  const title = [n.name, dnsLine(n), n.mgmtIp, typeLabel(n.type), data.anomalia, `stato: ${STATO_PAROLE[status]}`].filter(Boolean).join(" · ");
   const lr = data.orientation === "lr";
   const red = data.redundant;
   return (

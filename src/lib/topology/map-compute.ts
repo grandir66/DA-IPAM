@@ -101,9 +101,13 @@ export function computeMapView<M extends TopologyModel>(base: M, inp: MapCompute
 /** Il messaggio intero (al passaggio del mouse sulla scritta della barra) quando la vista della mappa nuova cade nel browser. */
 export const VISTA_NUOVA_NON_DISEGNATA = "La mappa nuova non si è potuta disegnare in questa pagina: si vede quella di prima";
 
-/** Il modello senza le parti della mappa nuova (`cavi`, il `cavo` di ogni linea): `buildTree` torna all'albero di T1. */
+/**
+ * Il modello senza le parti della mappa nuova (`cavi`, il `cavo` di ogni linea, i nodi segmento e le linee che li toccano, che
+ * esistono solo con la mappa nuova): `buildTree` torna all'albero di T1 (revisione mirata del giro finale, minore 1).
+ */
 export function senzaCavi<M extends TopologyModel>(m: M): M {
-  const out: M = { ...m, links: m.links.map((l) => {
+  const seg = (id: string) => id.startsWith("seg:");
+  const out: M = { ...m, nodes: m.nodes.filter((n) => !seg(n.id)), links: m.links.filter((l) => !seg(l.a) && !seg(l.b)).map((l) => {
     const x = { ...l };
     delete x.cavo;
     return x;

@@ -139,3 +139,19 @@ test("M7: con la mappa nuova un errore nel calcolo della vista ripiega sulla map
   assert.deepEqual([spenta.errore, ser(spenta.vista)], [null, ser(computeMapView(M, inp))]);
   assert.throws(() => computeMapViewProtetta({ ...M, nodes: null } as unknown as TopologyModel, inp), "spenta, un errore esce come prima");
 });
+
+// Revisione mirata del giro finale (minore 1): il ripiego toglieva solo `cavi` e `cavo`, e i nodi segmento (che esistono solo
+// con la mappa nuova) e le loro linee restavano: la vista «di prima» aveva oggetti che la mappa di prima non ha.
+test("M7: il ripiego toglie anche i segmenti e le linee che li toccano", () => {
+  const inp: MapComputeInput = { auto: true, members: [], roots: [], head: "dev:1", tweaks: [], expanded: new Set(), orientation: "lr" };
+  const cavo = { genere: "cavo" as const, stato: null, fiducia: "certo" as const, porteDaVerificare: false, detti: [], frasi: [] };
+  const seg = { ...node("dev:1", "switch"), id: "seg:1:5", kind: "segmento" as MapNode["kind"], name: "segmento" };
+  const conSeg: TopologyModel = {
+    ...M, nodes: [...M.nodes, seg], links: [...M.links.map((l) => ({ ...l, cavo })), { ...link("s1", "dev:1", "seg:1:5"), cavo }],
+    cavi: { segmenti: null } as unknown as TopologyModel["cavi"],
+  };
+  const r = computeMapViewProtetta(conSeg, inp);
+  assert.ok(r.errore?.startsWith(VISTA_NUOVA_NON_DISEGNATA), r.errore ?? "nessun errore");
+  assert.equal(r.vista.model.nodes.some((n) => n.id.startsWith("seg:")), false, "nessun segmento nel ripiego");
+  assert.equal(r.vista.model.links.some((l) => l.a.startsWith("seg:") || l.b.startsWith("seg:")), false, "nessuna linea verso un segmento");
+});

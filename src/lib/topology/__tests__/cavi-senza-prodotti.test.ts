@@ -16,7 +16,7 @@ const PAROLE = ["mikrotik", "routeros", "unifi", "ubiquiti", "cisco", "aruba", "
 // Revisione finale di T3 (M1): anche i nomi di porta di uno switch a pile («1/1/49»), di Linux («eth0», «bond3») e il
 // programma LLDP di Linux stavano nei commenti di cavi/: nemmeno lì, le parole neutre bastano.
 const FORME: RegExp[] = [/\bhp\b/i, /ether(?:\d|\\d)/i, /sfp-sfpplus/i, /sfpplus/i, /sfp28/i, /SFP_/, /,bridge/i, /bridge\\?\//i, /wlan/i, /eoip/i, /["'`][^"'`\n]*\blocal\s/i,
-  /\d+\/\d+\/\d+/, /\beth\d/i, /\bbond\d/i, /lldpd/i];
+  /\b\d{1,2}\/\d{1,2}\/\d{1,3}\b/, /\beth\d/i, /\bbond\d/i, /lldpd/i];
 
 function formeDiProdotto(testo: string): string[] {
   const out: string[] = [];

@@ -11,7 +11,8 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { costruisciSegnale, type FattiIstanza, type Inventario } from "../segnale";
+import { aggiornamentoPerSegnale, costruisciSegnale, type FattiIstanza, type Inventario } from "../segnale";
+import { interpretaStatoAggiornamento, STATO_VUOTO } from "@/lib/aggiornamento-stato";
 
 const CFG = { codcli: "99999", nodo: "99999-ipam" };
 const FATTI: FattiIstanza = {
@@ -106,4 +107,44 @@ test("ultimo errore tagliato a 500, campi dell'inventario ai limiti del contratt
 test("a stato + inventario, numeri illeggibili → inventario null, non un ripiego a zero", () => {
   const corpo = costruisciSegnale(CFG, "stato_inventario", FATTI, () => null);
   assert.equal(corpo.inventario, null);
+});
+
+// --- Passo 1d (16/10): lo stato dell'aggiornamento nel segnale ---------------
+
+test("aggiornamento: assente se l'istanza non lo registra (contratto delle istanze vecchie)", () => {
+  const s = costruisciSegnale(CFG, null, { ...FATTI, aggiornamento: null }, () => INV);
+  assert.equal("aggiornamento" in s, false);
+  assert.equal(aggiornamentoPerSegnale(STATO_VUOTO, "dev"), null);
+});
+
+test("aggiornamento: solo stato, coi limiti di DA-Link, senza messaggi né avvisi", () => {
+  const stato = interpretaStatoAggiornamento({
+    commit_avviato: "a".repeat(40),
+    ultimo_tentativo: {
+      commit: "b".repeat(40),
+      iniziato_il: "2026-10-16T10:00:00.000Z",
+      finito_il: "2026-10-16T10:04:00.000Z",
+      fase: "salute",
+      esito: "fallito",
+      messaggio: "fase salute: /opt/da-ipam non risponde",
+      avvisi: ["un percorso del cliente"],
+      tentativi: 2,
+    },
+    ultimo_successo: { commit: "a".repeat(40), il: "2026-10-15T09:00:00.000Z" },
+  });
+  const a = aggiornamentoPerSegnale(stato, "dev");
+  assert.deepEqual(a, {
+    commit_avviato: "a".repeat(40),
+    ramo: "dev",
+    esito: "fallito",
+    fase: "salute",
+    commit_tentato: "b".repeat(40),
+    tentativi: 2,
+    tentativo_iniziato_il: "2026-10-16T10:00:00.000Z",
+    tentativo_finito_il: "2026-10-16T10:04:00.000Z",
+    ultimo_successo_il: "2026-10-15T09:00:00.000Z",
+  });
+  const s = costruisciSegnale(CFG, "solo_stato", { ...FATTI, aggiornamento: a }, () => INV);
+  assert.deepEqual(s.aggiornamento, a);
+  assert.doesNotMatch(JSON.stringify(s), /non risponde|percorso/, "messaggi e avvisi restano sull'istanza");
 });

@@ -220,3 +220,27 @@ test("il codice di DA-Link presente vince sul ripiego dell'appliance", async () 
   assert.equal(r.tenant, "71734");
   assert.equal(r.fatti.salute.cliente, "trovato");
 });
+
+test("stato dell'aggiornamento: passa nei fatti; se la lettura si rompe, null e il segnale parte lo stesso", async () => {
+  const porte = async () => ({ fonte: "firewall" as const, porte: [443], sorgentiRistrette: true, wt0Presente: true });
+  const stato = {
+    commit_avviato: "abc",
+    ramo: "dev",
+    esito: "riuscito" as const,
+    fase: "salute",
+    commit_tentato: "abc",
+    tentativi: 1,
+    tentativo_iniziato_il: null,
+    tentativo_finito_il: null,
+    ultimo_successo_il: null,
+  };
+  const ok = await fattiIstanza("99999", null, { porte, aggiornamento: () => stato });
+  assert.deepEqual(ok.fatti.aggiornamento, stato);
+  const rotto = await fattiIstanza("99999", null, {
+    porte,
+    aggiornamento: () => {
+      throw new Error("file illeggibile");
+    },
+  });
+  assert.equal(rotto.fatti.aggiornamento, null);
+});

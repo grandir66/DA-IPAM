@@ -4,6 +4,17 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-16 · lo stato dell'aggiornamento nel segnale verso DA-Link
+
+Passo 1d del piano di solidità (metà DA-IPAM; la metà DA-Link è in DA-Link, con le email ad allarmiDA@domarc.it).
+Perché: DA-Link vedeva versione e salute, ma non che un'appliance era ferma su un aggiornamento fallito.
+
+### Aggiunte
+
+- **Campo `aggiornamento` nel segnale**: commit avviato, ramo, esito, fase, commit tentato, tentativi e date, da
+  `data/aggiornamento.json`. Solo stato: messaggi e avvisi restano sull'istanza (possono contenere percorsi).
+  Assente se l'istanza non ha ancora uno stato; una lettura rotta non ferma il segnale.
+
 ## [Non rilasciato] — 2026-10-16 · «Aggiorna ora» passa dal servizio d'aggiornamento
 
 Passo 1c del piano di solidità. Perché: c'erano due strade d'aggiornamento. Il timer usava `update.sh` (ora con

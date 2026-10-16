@@ -4,13 +4,15 @@
  * Contratto (DA-Link `dalink/segnale.py`, classe `Segnale`): `codcli` (testo),
  * `nodo`, `livello` (`solo_stato` | `stato_inventario` | null), `versione`, `moduli`
  * ({testo: bool}), `salute` ({testo: testo}), `ultimo_errore` (≤500 o null),
- * `porte_netbird` ([int], ≤64), `inventario` (numeri o null).
+ * `porte_netbird` ([int], ≤64), `inventario` (numeri o null), `aggiornamento`
+ * (facoltativo, dal 16/10: stato dell'aggiornamento automatico, `AggiornamentoSegnale`).
  *
  * La scelta vale ALL'ORIGINE: con «solo stato», o senza scelta dichiarata, i numeri
  * dell'inventario non si leggono nemmeno (`leggiInventario` non viene chiamata). Anche
  * col livello più aperto escono solo numeri, mai l'inventario riga per riga.
  * Nessun segreto nel corpo: il token viaggia solo nell'intestazione.
  */
+import type { StatoAggiornamento } from "@/lib/aggiornamento-stato";
 import type { Livello } from "./stato";
 
 export interface FattiIstanza {
@@ -19,6 +21,25 @@ export interface FattiIstanza {
   salute: Record<string, string>;
   ultimoErrore: string | null;
   porte: number[];
+  /** Stato dell'aggiornamento automatico; null se l'istanza non lo registra ancora. */
+  aggiornamento?: AggiornamentoSegnale | null;
+}
+
+/**
+ * Lo stato dell'aggiornamento nel segnale (passo 1d del piano di solidità, 16/10):
+ * solo stato, mai log né messaggi d'errore, che possono contenere percorsi o nomi.
+ * Contratto: `Aggiornamento` in DA-Link (`dalink/aggiornamento.py`), tutto facoltativo.
+ */
+export interface AggiornamentoSegnale {
+  commit_avviato: string | null;
+  ramo: string | null;
+  esito: "riuscito" | "fallito" | "interrotto" | "in_corso" | null;
+  fase: string | null;
+  commit_tentato: string | null;
+  tentativi: number | null;
+  tentativo_iniziato_il: string | null;
+  tentativo_finito_il: string | null;
+  ultimo_successo_il: string | null;
 }
 
 export interface Inventario {
@@ -38,6 +59,8 @@ export interface CorpoSegnale {
   ultimo_errore: string | null;
   porte_netbird: number[];
   inventario: Inventario | null;
+  /** Assente (non null) quando non c'è: le istanze vecchie non lo mandano affatto. */
+  aggiornamento?: AggiornamentoSegnale;
 }
 
 /** Limiti del contratto di DA-Link: oltre, il segnale prende 422. */
@@ -47,6 +70,10 @@ export const LIMITI = {
   versione: 64,
   ultimaScansione: 32,
   esitoScansione: 64,
+  commit: 64,
+  ramo: 64,
+  fase: 32,
+  data: 40,
 } as const;
 
 function taglia(v: string | null, n: number): string | null {
@@ -60,6 +87,23 @@ function porteValide(porte: number[]): number[] {
 
 function numero(n: number): number {
   return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 0;
+}
+
+/** Dallo stato su file (`data/aggiornamento.json`) al campo del segnale; null se è vuoto. */
+export function aggiornamentoPerSegnale(stato: StatoAggiornamento, ramo: string | null): AggiornamentoSegnale | null {
+  const t = stato.ultimoTentativo;
+  if (!stato.commitAvviato && !t && !stato.ultimoSuccesso) return null;
+  return {
+    commit_avviato: taglia(stato.commitAvviato, LIMITI.commit),
+    ramo: taglia(ramo, LIMITI.ramo),
+    esito: t?.esito ?? null,
+    fase: taglia(t?.fase ?? null, LIMITI.fase),
+    commit_tentato: taglia(t?.commit ?? null, LIMITI.commit),
+    tentativi: t?.tentativi != null && t.tentativi >= 0 ? Math.floor(t.tentativi) : null,
+    tentativo_iniziato_il: taglia(t?.iniziatoIl ?? null, LIMITI.data),
+    tentativo_finito_il: taglia(t?.finitoIl ?? null, LIMITI.data),
+    ultimo_successo_il: taglia(stato.ultimoSuccesso?.il ?? null, LIMITI.data),
+  };
 }
 
 export function costruisciSegnale(
@@ -90,5 +134,6 @@ export function costruisciSegnale(
     ultimo_errore: taglia(fatti.ultimoErrore, LIMITI.ultimoErrore),
     porte_netbird: porteValide(fatti.porte),
     inventario,
+    ...(fatti.aggiornamento ? { aggiornamento: { ...fatti.aggiornamento } } : {}),
   };
 }

@@ -9,6 +9,8 @@
  *   proxy Zabbix della macchina, che non è un modulo del registro (`ok` se gira, `fail` se è
  *   installato e fermo, nessuna voce se non c'è, `non_so` se non si legge);
  * - porte su `wt0`: dal sistema vivo (`porte-wt0.ts`);
+ * - stato dell'aggiornamento automatico (passo 1d, 16/10): da `data/aggiornamento.json`
+ *   col ramo seguito; solo commit, esito, fase, tentativi e date, mai messaggi o avvisi;
  * - numeri dell'inventario (solo se il livello lo consente: li chiede il costruttore):
  *   righe di `hosts` e `networks`, ultima riga di `scan_history`.
  *
@@ -25,8 +27,10 @@ import { getTenantByCode, getTenants } from "@/lib/db-hub";
 import { getTenantDb, withTenant } from "@/lib/db-tenant";
 import { resolveModules } from "@/lib/modules/registry";
 import { getModulesHealth } from "@/lib/modules/health";
+import { leggiStatoAggiornamento } from "@/lib/aggiornamento-servizio";
+import { getConfiguredUpdateBranch } from "@/lib/update-branch";
 import { leggiPorteWt0, type PorteWt0 } from "./porte-wt0";
-import type { FattiIstanza, Inventario } from "./segnale";
+import { aggiornamentoPerSegnale, type AggiornamentoSegnale, type FattiIstanza, type Inventario } from "./segnale";
 
 /** Il proxy Zabbix lo installa la procedura guidata di DA-Zabbix, sulla macchina. */
 export const FILE_PROXY_ZABBIX = "/etc/zabbix/zabbix_proxy.conf";
@@ -64,6 +68,8 @@ export interface DipendenzeFatti {
   moduli: (codcli: string) => Promise<Record<string, boolean>>;
   salute: (codcli: string) => Promise<Record<string, string>>;
   proxyZabbix: () => "ok" | "fail" | null;
+  /** Stato dell'aggiornamento automatico (data/aggiornamento.json) col ramo seguito. */
+  aggiornamento: () => AggiornamentoSegnale | null;
 }
 
 let versioneLetta: string | null = null;
@@ -101,6 +107,7 @@ export const dipendenzeFattiReali: DipendenzeFatti = {
     return Object.fromEntries(sonde.map((h) => [h.key, h.verdict]));
   },
   proxyZabbix: saluteProxyZabbix,
+  aggiornamento: () => aggiornamentoPerSegnale(leggiStatoAggiornamento(), getConfiguredUpdateBranch()),
 };
 
 export async function fattiIstanza(
@@ -158,10 +165,17 @@ export async function fattiIstanza(
   salute.firewall_wt0 = saluteFirewall(porte);
   salute.interfaccia_wt0 = porte.wt0Presente ? "presente" : "assente";
 
+  let aggiornamento: AggiornamentoSegnale | null = null;
+  try {
+    aggiornamento = d.aggiornamento();
+  } catch {
+    aggiornamento = null; // un resoconto: non ferma il segnale
+  }
+
   return {
     clienteTrovato,
     tenant,
-    fatti: { versione: versioneIstanza(), moduli, salute, ultimoErrore, porte: porte.porte },
+    fatti: { versione: versioneIstanza(), moduli, salute, ultimoErrore, porte: porte.porte, aggiornamento },
   };
 }
 

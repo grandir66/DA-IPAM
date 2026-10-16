@@ -133,7 +133,21 @@ export function modelloMappaCavi(t1: TopologyModel, m: ModelloCavi, ing: Ingress
   });
   // Contratto del Task 10: con la mappa nuova il ruolo scritto «core» o «accesso» arriva alla pagina (il menu del ruolo lo segna).
   const ruoli = new Map<string, "core" | "accesso">(ing.t1.devices.flatMap((d) => { const r = ruoloRete(d.topology_role); return r ? [[`dev:${d.id}`, r] as const] : []; }));
-  const nodes = [...t1.nodes.map((n) => { const r = ruoli.get(n.id); return r ? { ...n, ruolo: r } : n; }), ...segmentiNodi]
+  // I capi dei collegamenti che il modello di oggi non ha (revisione del Task 7): un host che solo una prova di T3 nomina (la radio
+  // lontana trovata dal nome che annuncia). Senza, le sue linee non si disegnavano e lo schermo dava un padre diverso dalla
+  // traccia. Si prendono dall'indice del modello per cavo, con la sua classe. Un capo che il modello di oggi ha fuso in un altro
+  // oggetto (una chiave di `canonical`) è un disaccordo d'identità: mai un nodo in più (sarebbe un doppione), si conta e si dice.
+  const capiMancanti: MapNode[] = [];
+  let fusi = 0;
+  let senzaNodo = 0;
+  for (const id of [...new Set(m.collegamenti.flatMap((c) => [c.a.nodo, c.b.nodo]))].sort()) {
+    if (id.startsWith("seg:") || perId.has(id)) continue;
+    if (t1.canonical[id] !== undefined && t1.canonical[id] !== id) { fusi++; continue; }
+    const n = m.nodiIndice.get(id);
+    if (n) capiMancanti.push({ ...n, fusedHostIds: [...n.fusedHostIds], addresses: n.addresses.map((a) => ({ ...a })), aliases: [...n.aliases] });
+    else senzaNodo++;
+  }
+  const nodes = [...t1.nodes.map((n) => { const r = ruoli.get(n.id); return r ? { ...n, ruolo: r } : n; }), ...segmentiNodi, ...capiMancanti]
     .sort((a, b) => cmp(a.id, b.id));
 
   // Le classi del modello per cavo (§13.8.2); un nodo che è una VM sta dentro il suo hypervisor e non ha classe (come model.ts).
@@ -234,8 +248,18 @@ export function modelloMappaCavi(t1: TopologyModel, m: ModelloCavi, ing: Ingress
     const nodo = idDi(p.node_id), altro = idDi(p.other_node);
     if (nodo !== altro && !coppie.has(`${nodo}|${altro}`)) stelle.set(`${nodo}|${altro}`, { nodo, altro, linea: "" });
   }
+  const disaccordi = [
+    ...(fusi > 0 ? [fusi === 1
+      ? "1 capo di collegamento che il modello di oggi ha fuso con un altro oggetto: le sue linee non si disegnano"
+      : `${fusi} capi di collegamento che il modello di oggi ha fuso con altri oggetti: le loro linee non si disegnano`] : []),
+    ...(senzaNodo > 0 ? [senzaNodo === 1
+      ? "1 capo di collegamento senza un oggetto: le sue linee non si disegnano"
+      : `${senzaNodo} capi di collegamento senza un oggetto: le loro linee non si disegnano`] : []),
+  ];
   const cavi: InfoCavi = {
     scelto: Object.fromEntries(m.albero.scelto),
+    // Come l'albero del modello (`alberoCavi`): l'ultima ★ di un nodo vince.
+    stelle: Object.fromEntries(m.albero.stelle.map((s) => [s.nodo, s.linea])),
     testa: m.albero.testa,
     anomalie: m.albero.anomalie.map((a) => ({ ...a, altri: [...a.altri] })),
     avvisi: m.albero.avvisi.map((a) => ({ ...a })),
@@ -243,7 +267,7 @@ export function modelloMappaCavi(t1: TopologyModel, m: ModelloCavi, ing: Ingress
     ponti: [...m.ponti].sort(),
     stelleDiPrima: [...stelle.values()].sort((x, y) => cmp(x.nodo, y.nodo) || cmp(x.altro, y.altro)),
     dalleVm,
-    nonCalcolato: m.nonCalcolato,
+    nonCalcolato: [...m.nonCalcolato, ...disaccordi],
   };
   return {
     nodes, links, sites, promote, unmatched: t1.unmatched, isolated, suspicious, withoutSite, counts,

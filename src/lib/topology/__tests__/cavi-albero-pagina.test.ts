@@ -159,16 +159,32 @@ const hypervisor = (opz: { vendor: string; aMano?: boolean }) => {
  * §13.7.6 punto 4 (come in cavi-albero.test.ts): la radio vicina è registrata server; la lontana è un server (`lontanaHost`
  * false) o un host «workstation» (true). Sono foglie per la classe, fanno da ponte perché capi del salto.
  */
-const ponteCapiFoglia = (lontanaHost: boolean) => ingresso(baseInput({
+const ponteCapiFoglia = (lontanaHost: boolean, classificazione = "workstation") => ingresso(baseInput({
   devices: [dev(1, { name: "RTR-1", device_type: "router", ...mk }), dev(5, { name: "RADIO-V", device_type: "server", vendor: "mikrotik" }), dev(7, { name: "RTR-S2", device_type: "router", ...mk }),
     ...(lontanaHost ? [] : [dev(6, { name: "RADIO-L", device_type: "server", vendor: "mikrotik" })])],
-  hosts: lontanaHost ? [host(60, { ip: "10.1.0.60", hostname: "RADIO-L", classification: "workstation" })] : [],
+  hosts: lontanaHost ? [host(60, { ip: "10.1.0.60", hostname: "RADIO-L", classification: classificazione })] : [],
   networks: [lan(1)],
 }), { vicini: [
   vic({ device_id: 1, local_port: "ether3", remote_device_name: "RADIO-V", remote_port: "bridge/ether1", remote_caps: "bridge", source: "device", remote_platform: "MikroTik" }),
   vic({ device_id: 1, local_port: "ether3", remote_device_name: "RADIO-L", remote_port: "bridge/bond1/wlan60-1", remote_caps: "bridge", source: "device", remote_platform: "MikroTik" }),
   vic({ device_id: 7, local_port: "ether1", remote_device_name: "RADIO-L", remote_port: "bridge/ether2", remote_caps: "bridge", source: "device", remote_platform: "MikroTik" }),
 ] });
+
+/**
+ * Due ★ sulla stessa linea, una per capo (revisione del Task 7): RTR-1 ↔ SW-2 a 10G, RTR-1 ↔ SW-3 a 1G, SW-2 ↔ SW-3 sulla ether3
+ * con la ★ di SW-3 e poi quella di SW-2. Il modello le forza tutte e due; una linea ha un solo `primaryFor`.
+ */
+const dueStelle = () => ingresso(baseInput({
+  devices: [dev(1, { name: "RTR-1", device_type: "router", ...mk }), dev(2, { name: "SW-2", ...mk }), dev(3, { name: "SW-3", ...mk })],
+  neighbors: [...cavo(1, "ether1", 2, "ether1", "SW-2", "RTR-1"), ...cavo(1, "ether2", 3, "ether2", "SW-3", "RTR-1"), ...cavo(2, "ether3", 3, "ether3", "SW-3", "SW-2")],
+  ports: [...porte(1, [[1, "ether1", "10000 Mbps"], [2, "ether2", "1000 Mbps"]]), ...porte(2, [[1, "ether1", "10000 Mbps"], [3, "ether3", "1000 Mbps"]]),
+    ...porte(3, [[2, "ether2", "1000 Mbps"], [3, "ether3", "1000 Mbps"]])],
+  networks: [lan(1)],
+  primaries: [
+    { node_id: "dev:3", other_node: "dev:2", node_port: "ether3", other_port: "ether3" },
+    { node_id: "dev:2", other_node: "dev:3", node_port: "ether3", other_port: "ether3" },
+  ],
+}));
 
 // ── 1. Schermo = traccia ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -178,6 +194,8 @@ const RETI: ReadonlyArray<readonly [string, () => IngressoCavi]> = [
   ["famiglia 4 · con hypervisor", () => ingresso(conHypervisor())], ["tre cavi, due bloccati", () => treCavi()],
   ["★ sul cavo bloccato", () => treCavi([{ node_id: "dev:3", other_node: "dev:2", node_port: "ether4", other_port: "ether4" }])],
   ["ponte radio", () => ponteRadio(true)], ["ponte radio coi capi registrati server", () => ponteCapiFoglia(false)],
+  ["ponte radio con la radio lontana host", () => ponteCapiFoglia(true)], ["ponte radio con la radio lontana host «access_point»", () => ponteCapiFoglia(true, "access_point")],
+  ["due ★ sulla stessa linea", dueStelle],
   ["hypervisor proxmox, due cavi", () => hypervisor({ vendor: "proxmox" })], ["hypervisor solo per le sue VM", () => hypervisor({ vendor: "altro" })],
   ["hypervisor, cavo veloce anche a mano", () => hypervisor({ vendor: "altro", aMano: true })],
   ["fixture della rete B", () => ingresso(carica("topologia-domarc.json"))], ["fixture del cliente A", () => ingresso(carica("topologia-cliente-a.json"))],
@@ -208,16 +226,106 @@ for (const [nome, rete] of RETI) {
   });
 }
 
+// ── Revisione del Task 7: i capi che solo il modello per cavo conosce (cavi/mappa.ts) ─────────────────────────────────────────
+
 /**
- * Fatto trovato nel Task 7 (dal Task 6): un oggetto che solo il modello per cavo conosce, qui la radio lontana registrata come
- * host e trovata dal nome che annuncia, non è fra i nodi della pagina (`modelloMappaCavi` prende i nodi dal modello di T1, che
- * crea un host solo quando una sua riga lo usa). Le sue due linee non si disegnano (`buildTree` scarta i capi che non sono
- * nodi); la contrazione via radio tiene RTR-S2 nell'albero, sotto la radio vicina, ma la traccia lo mette sotto la lontana.
+ * Il buco trovato nel Task 7: la radio lontana registrata come host e trovata dal nome che annuncia è un capo di due collegamenti
+ * del modello per cavo, ma il modello di T1 (che crea un host solo quando una sua riga lo usa) non ce l'ha. La pagina prendeva i
+ * nodi da T1: le due linee non si disegnavano, e la contrazione via radio appendeva RTR-S2 alla radio vicina (traccia: alla
+ * lontana). Ora la mappa ha anche i capi che mancano, dall'indice del modello per cavo, con la sua classe.
  */
-test("schermo = traccia, ponte radio con la radio lontana host: la pagina non ha il nodo della radio lontana", { todo: "nodi della pagina dal modello per cavo: Task 6, da decidere nella sessione principale" }, () => {
-  const { m, mappa } = mappaDi(ponteCapiFoglia(true));
+test("revisione del Task 7: un capo che solo il modello per cavo conosce è un nodo della pagina, con la sua classe", () => {
+  const { t1, m, mappa } = mappaDi(ponteCapiFoglia(true));
+  assert.ok(!t1.nodes.some((n) => n.id === "host:60") && !("host:60" in t1.canonical), "il modello di T1 non ha la radio lontana");
+  const segmenti = mappa.nodes.filter((n) => n.kind === "segmento").map((n) => n.id);
+  assert.deepEqual(mappa.nodes.map((n) => n.id), [...t1.nodes.map((n) => n.id), ...segmenti, "host:60"].sort(), "T1 + segmenti + i capi che mancano");
+  const n = mappa.nodes.find((x) => x.id === "host:60")!;
+  assert.deepEqual([n.kind, n.name, n.type, n.mgmtIp, n.siteId, n.hidden], ["host", "RADIO-L", "workstation", "10.1.0.60", null, false]);
+  assert.equal(mappa.classiMappa?.["host:60"], "att", "capo di un ponte radio: attaccato, non client");
+  assert.ok(autoVisible(mappa).has("host:60"), "sta nella mappa automatica");
+  assert.ok(!(mappa.daSistemare ?? []).some((d) => d.id === "host:60") && !mappa.isolated.includes("host:60"));
+  assert.deepEqual(contratte(vista(mappa).tree.links), [], "nella mappa automatica non c'è niente da contrarre");
+  assert.deepEqual([mappa.counts.nodes, mappa.counts.promoteProposals, mappa.promote], [mappa.nodes.length, 0, []], "una workstation non è una proposta");
+  assert.deepEqual(mappa.cavi.nonCalcolato, m.nonCalcolato, "nessun disaccordo d'identità");
+  // Una mappa passo passo salvata con quell'id lo ritrova.
+  const p = vista(mappa, { members: ["dev:1", "host:60", "dev:7"], roots: ["dev:1"] });
+  assert.deepEqual([p.missing, p.tree.roots, padreSu(p.tree, "dev:7")], [[], ["dev:1"], "host:60"]);
+});
+
+test("revisione del Task 7: il capo aggiunto entra nelle proposte di promozione come in T1 (classificato «access_point»)", () => {
+  const { mappa } = mappaDi(ponteCapiFoglia(true, "access_point"));
+  assert.deepEqual(mappa.promote, [{ hostId: 60, name: "RADIO-L", ip: "10.1.0.60", classification: "access_point", links: 2 }]);
+  assert.equal(mappa.counts.promoteProposals, 1);
+});
+
+test("revisione del Task 7: un capo che il modello di oggi ha fuso in un altro oggetto non si aggiunge (niente doppioni): si conta", () => {
+  const ing = ponteCapiFoglia(true);
+  const t1 = buildTopologyModel(ing.t1);
+  const m = costruisciModelloCavi(ing, t1, { testaScelta: null });
+  // Il disaccordo d'identità, simulato: per il modello di oggi la radio lontana è la vicina (dev:5).
+  const mappa = modelloMappaCavi({ ...t1, canonical: { ...t1.canonical, "host:60": "dev:5" } }, m, ing);
+  assert.ok(!mappa.nodes.some((n) => n.id === "host:60"), "nessun nodo per l'id fuso");
+  assert.equal(mappa.nodes.filter((n) => n.id === "dev:5").length, 1);
+  assert.deepEqual(mappa.cavi.nonCalcolato.slice(m.nonCalcolato.length),
+    ["1 capo di collegamento che il modello di oggi ha fuso con un altro oggetto: le sue linee non si disegnano"]);
+});
+
+test("revisione del Task 7: due ★ sulla stessa linea, una per capo — `cavi.stelle` le porta tutte e due e la pagina sceglie come la traccia", () => {
+  const { m, mappa } = mappaDi(dueStelle());
+  const l = mappa.links.find((x) => (x.a === "dev:2" && x.b === "dev:3") || (x.a === "dev:3" && x.b === "dev:2"))!;
+  assert.deepEqual(mappa.cavi.stelle, { "dev:2": l.id, "dev:3": l.id });
+  assert.deepEqual(mappa.cavi.stelle, Object.fromEntries(m.albero.stelle.map((s) => [s.nodo, s.linea])));
   const v = vista(mappa);
-  assert.deepEqual(Object.fromEntries(Object.keys(m.albero.padri).map((k) => [k, padreSu(v.tree, k)])), m.albero.padri);
+  assert.deepEqual([padreSu(v.tree, "dev:2"), padreSu(v.tree, "dev:3")], [m.albero.padri["dev:2"], m.albero.padri["dev:3"]]);
+  assert.deepEqual([m.albero.padri["dev:2"], m.albero.padri["dev:3"]], ["dev:1", "dev:2"]);
+});
+
+test("revisione del Task 7 (I57): una contrazione con un tratto bloccato è «bloccato»; «giù» vince; instradato resta «inoltra»", () => {
+  const { mappa } = mappaDi(ingresso(reteWan()), "dev:1");
+  const a = mappa.links.find((l) => l.a === "dev:1" && l.b === SEG)!, b = mappa.links.find((l) => l.a === "dev:9" && l.b === SEG)!;
+  type S = NonNullable<MapLink["cavo"]>["stato"];
+  const stato = (sa: S, sb: S) => contrazioni({ ...mappa, links: mappa.links.map((l) => (l.id === a.id ? { ...a, cavo: { ...a.cavo!, stato: sa } }
+    : l.id === b.id ? { ...b, cavo: { ...b.cavo!, stato: sb } } : l)) }, new Set(["dev:1", "dev:9"]))[0].cavo?.stato;
+  assert.deepEqual([stato("bloccato", "inoltra"), stato("inoltra", "bloccato_comune"), stato("giu", "bloccato"), stato("instradato", "inoltra"), stato(null, "instradato")],
+    ["bloccato", "bloccato", "giu", "inoltra", "inoltra"]);
+});
+
+test("revisione del Task 7: un oggetto sul bordo con più linee verso la parte contratta usa la migliore (vista, non giù, fiducia, id)", () => {
+  const { mappa } = mappaDi(ingresso(reteWan()), "dev:1");
+  const buona0 = mappa.links.find((l) => l.a === "dev:1" && l.b === SEG)!;
+  const buona: MapLink = { ...buona0, cavo: { ...buona0.cavo!, stato: "inoltra", fiducia: "probabile" } };
+  // Un'altra linea di RTR-1 verso il segmento, con un id che viene prima: la visita in ampiezza la trovava per prima.
+  const altra = (over: Partial<MapLink>, cavo: Partial<NonNullable<MapLink["cavo"]>>): MapLink =>
+    ({ ...buona, id: `cavo:dev:1|n:ether0~${SEG}`, aPort: "ether0", ...over, cavo: { ...buona.cavo!, ...cavo } });
+  const porta = (x: MapLink) => contrazioni({ ...mappa, links: [x, ...mappa.links.map((l) => (l.id === buona.id ? buona : l))] }, new Set(["dev:1", "dev:9"]))[0].aPort;
+  assert.equal(porta(altra({ stale: true }, { fiducia: "certo" })), "ether8", "una linea non vista perde, anche certa");
+  assert.equal(porta(altra({}, { stato: "giu", fiducia: "certo" })), "ether8", "una linea giù perde");
+  assert.equal(porta(altra({}, { fiducia: "certo" })), "ether0", "fra due viste vince la fiducia migliore");
+  assert.equal(porta(altra({}, { fiducia: "dedotto" })), "ether8");
+  assert.equal(porta(altra({}, {})), "ether0", "a pari, l'id più piccolo");
+});
+
+test("revisione del Task 7: con una radio sola nella parte contratta la frase la nomina", () => {
+  const { mappa } = mappaDi(ponteRadio(), "dev:1");
+  const v = vista(mappa, { members: ["dev:1", "dev:8", "dev:2"], roots: ["dev:1"] });
+  const l = v.tree.via.get("dev:8")!;
+  assert.deepEqual([l.cavo?.genere, l.cavo?.via, l.cavo?.frasi], ["contrazione", "radio", ["via ponte radio: la radio RADIO-VICINA non è in questa mappa"]]);
+});
+
+/**
+ * Comportamento voluto e fissato (revisione del Task 7, TRAPPOLA): una radio nascosta nella mappa automatica non è fra gli oggetti
+ * visibili, e la pagina la contrae; il modello per cavo (la traccia) non la vede e ha due radici. `cavi.anomalie` viene dal
+ * modello: in questo caso può non combaciare con l'albero a schermo.
+ */
+test("revisione del Task 7: una radio nascosta nella mappa automatica si contrae (una radice); la traccia, che non la vede, ha due radici", () => {
+  const ing = ponteRadio();
+  ing.t1.devices = ing.t1.devices.map((d) => (d.id === 7 ? { ...d, topology_hidden: 1 } : d));
+  const { m, mappa } = mappaDi(ing, "dev:1");
+  const v = vista(mappa);
+  assert.deepEqual(v.tree.roots, ["dev:1"], "la pagina: una radice");
+  const l = v.tree.via.get("dev:8")!;
+  assert.deepEqual([l.cavo?.genere, l.cavo?.via, padreSu(v.tree, "dev:8"), padreSu(v.tree, "dev:2")], ["contrazione", "radio", "dev:1", "dev:8"]);
+  assert.equal(m.albero.radici.length, 2, "la traccia: due radici");
 });
 
 test("schermo = traccia: la ★ sul cavo bloccato vince (I20), e la linea scelta è «user»", () => {

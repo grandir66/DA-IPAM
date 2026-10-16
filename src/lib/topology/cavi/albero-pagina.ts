@@ -21,15 +21,20 @@ import {
   type TopologyModel,
 } from "@/lib/topology/model-types";
 import type { TreeResult } from "@/lib/topology/tree";
-import { primCavi, type LineaAlbero } from "./albero";
+import { FIDUCIA, primCavi, type LineaAlbero } from "./albero";
 
 const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
-/** L'ordine di `FIDUCIA` di albero.ts: la contrazione vale quanto il suo tratto meno sicuro. */
-const FIDUCIA_ORDINE: readonly Fiducia[] = ["certo", "probabile", "dedotto", "a_mano_confermato", "a_mano"];
-const FRASE: Readonly<Record<"segmento" | "radio", string>> = {
-  segmento: "via segmento non gestito: non è in questa mappa",
-  radio: "via ponte radio: le radio non sono in questa mappa",
-};
+/** La frase della contrazione; con una radio sola nella parte contratta la nomina (revisione del Task 7). */
+function frase(via: "segmento" | "radio", radioSola: string | null): string {
+  if (via === "segmento") return "via segmento non gestito: non è in questa mappa";
+  return radioSola !== null ? `via ponte radio: la radio ${radioSola} non è in questa mappa` : "via ponte radio: le radio non sono in questa mappa";
+}
+const fiduciaDi = (l: MapLink): Fiducia => l.cavo?.fiducia ?? "probabile";
+const giu = (l: MapLink): boolean => l.cavo?.stato === "giu";
+const ferma = (l: MapLink): boolean => l.cavo?.stato === "bloccato" || l.cavo?.stato === "bloccato_comune";
+/** Fra le linee di un oggetto del bordo verso la parte contratta, la migliore: vista, non giù, fiducia migliore, poi l'id. */
+const migliore = (x: MapLink, y: MapLink): number =>
+  Number(x.stale) - Number(y.stale) || Number(giu(x)) - Number(giu(y)) || FIDUCIA[fiduciaDi(x)] - FIDUCIA[fiduciaDi(y)] || cmp(x.id, y.id);
 
 /** La porta di `nodo` sulla linea. */
 const portaDi = (l: MapLink, nodo: string): string => (l.a === nodo ? l.aPort : l.bPort);
@@ -44,15 +49,15 @@ const massimo = (xs: ReadonlyArray<number | null>): number | null => {
 
 /**
  * La linea che contrae il tratto fra `x` e `y`: `lx` lega `x` alla parte contratta, `ly` lega `y`. Vale quanto il suo tratto
- * peggiore: la data più vecchia, la velocità più bassa, «non visto» o «giù» se uno dei due lo è, la fiducia peggiore. Le
- * porte sono quelle dei due oggetti visibili.
+ * peggiore: la data più vecchia, la velocità più bassa, «non visto» se uno dei due lo è, la fiducia peggiore; lo stato «giù» se
+ * un tratto è giù, poi «bloccato» se un tratto è fermo (I57: un bloccato fa da padre solo se non c'è altro), altrimenti
+ * «inoltra» (un tratto instradato verso un segmento non perde, §13.8.3 punto 3). Le porte sono quelle dei due oggetti visibili.
  */
-function contratta(id: string, x: string, lx: MapLink, y: string, ly: MapLink, via: "segmento" | "radio"): MapLink {
+function contratta(id: string, x: string, lx: MapLink, y: string, ly: MapLink, via: "segmento" | "radio", testo: string): MapLink {
   const sources = [...new Set([...lx.sources, ...ly.sources])].sort((p: LinkSource, q: LinkSource) => LINK_SOURCE_RANK[p] - LINK_SOURCE_RANK[q] || cmp(p, q));
   // Le date per istante, non per testo: un tratto può averla «AAAA-MM-GG HH:MM:SS» (UTC) e l'altro in ISO.
   const ms = (d: string): number => { const t = parseDbDate(d).getTime(); return Number.isFinite(t) ? t : Number.POSITIVE_INFINITY; };
   const date = [lx.lastSeen, ly.lastSeen].filter((d): d is string => d !== null).sort((p, q) => ms(p) - ms(q));
-  const fiducia = (l: MapLink): number => FIDUCIA_ORDINE.indexOf(l.cavo?.fiducia ?? "probabile");
   return {
     ...LINK_ATTRS_DEFAULT,
     id, a: x, aPort: portaDi(lx, x), b: y, bPort: portaDi(ly, y),
@@ -61,9 +66,9 @@ function contratta(id: string, x: string, lx: MapLink, y: string, ly: MapLink, v
     speedMbps: minimo([lx.speedMbps, ly.speedMbps]),
     cavo: {
       genere: "contrazione", via,
-      stato: lx.cavo?.stato === "giu" || ly.cavo?.stato === "giu" ? "giu" : "inoltra",
-      fiducia: FIDUCIA_ORDINE[Math.max(fiducia(lx), fiducia(ly))],
-      porteDaVerificare: false, detti: [], frasi: [FRASE[via]],
+      stato: giu(lx) || giu(ly) ? "giu" : ferma(lx) || ferma(ly) ? "bloccato" : "inoltra",
+      fiducia: FIDUCIA[fiduciaDi(lx)] >= FIDUCIA[fiduciaDi(ly)] ? fiduciaDi(lx) : fiduciaDi(ly),
+      porteDaVerificare: false, detti: [], frasi: [testo],
     },
   };
 }
@@ -88,12 +93,13 @@ export function contrazioni(model: TopologyModel, visible: ReadonlySet<string>):
       else adj.set(n, [l]);
     }
   }
+  const nomi = new Map(model.nodes.map((n) => [n.id, n.name]));
   const visti = new Set<string>();
   const out: MapLink[] = [];
   for (const inizio of [...passaggio].sort()) {
     if (visti.has(inizio)) continue;
     // La parte contratta (gli oggetti di passaggio non visibili legati fra loro) e gli oggetti visibili sul suo bordo, ciascuno
-    // con la prima linea (in ordine di id del modello) che lo lega alla parte.
+    // con la sua linea migliore verso la parte (non la prima trovata: revisione del Task 7).
     const parte = new Set([inizio]);
     const coda = [inizio];
     const bordo = new Map<string, MapLink>();
@@ -105,17 +111,20 @@ export function contrazioni(model: TopologyModel, visible: ReadonlySet<string>):
         if (passaggio.has(y)) {
           if (!parte.has(y)) { parte.add(y); coda.push(y); }
           if (y.startsWith("seg:")) via = "segmento";
-        } else if (visible.has(y) && !bordo.has(y)) {
-          bordo.set(y, l);
+        } else if (visible.has(y)) {
+          const prima = bordo.get(y);
+          if (!prima || migliore(l, prima) < 0) bordo.set(y, l);
         }
       }
     }
     for (const x of parte) visti.add(x);
     const capi = [...bordo.keys()].sort();
     const radice = [...parte].sort()[0];
+    const radioSola = via === "radio" && parte.size === 1 ? (nomi.get(radice) ?? radice) : null;
+    const testo = frase(via, radioSola);
     for (let i = 0; i < capi.length; i++) {
       for (let j = i + 1; j < capi.length; j++) {
-        out.push(contratta(`contr:${radice}:${capi[i]}~${capi[j]}`, capi[i], bordo.get(capi[i])!, capi[j], bordo.get(capi[j])!, via));
+        out.push(contratta(`contr:${radice}:${capi[i]}~${capi[j]}`, capi[i], bordo.get(capi[i])!, capi[j], bordo.get(capi[j])!, via, testo));
       }
     }
   }
@@ -153,9 +162,10 @@ export function alberoDellaPagina(model: TopologyModel, visible: ReadonlySet<str
   };
   const contratte = contrazioni(model, visible);
   const tutte = [...model.links, ...contratte];
-  // ★ (§13.9): la linea scelta dall'admin per il suo nodo, già risolta per collegamento dal modello (`primary: "user"`).
-  const stelle = new Map<string, string>();
-  for (const l of model.links) if (l.primary === "user" && l.primaryFor) stelle.set(l.primaryFor, l.id);
+  // ★ (§13.9): nodo → la linea scelta dall'admin, già risolta per collegamento dal modello (`cavi.stelle`). Non da `primaryFor`:
+  // una linea ne porta uno solo, e due ★ sulla stessa linea (una per capo) davano un padre diverso dalla traccia (revisione
+  // del Task 7).
+  const stelle = new Map(Object.entries(model.cavi?.stelle ?? {}));
   const ipervisori = new Set(model.nodes.filter((n) => classe(n.id) === "hyper").map((n) => n.id));
   for (const v of model.vms) if (v.hypervisorNodeId) ipervisori.add(v.hypervisorNodeId);
   // `scelto` può nominare un collegamento finito nei dettagli dell'hypervisor (`soloDettagli`): non è fra le linee, non conta.

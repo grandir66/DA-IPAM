@@ -90,7 +90,8 @@ export interface EsitoPrim { radici: string[]; padri: Record<string, string | nu
 export interface Stella { nodo: string; altro: string; linea: string; diPrima: boolean }
 
 const RADICE = "radice";
-const FIDUCIA: Readonly<Record<Fiducia, number>> = { certo: 0, probabile: 1, dedotto: 2, a_mano_confermato: 3, a_mano: 4 };
+/** L'ordine della fiducia nella chiave del punto 3 (vince il più piccolo); la pagina lo usa anche per le contrazioni. */
+export const FIDUCIA: Readonly<Record<Fiducia, number>> = { certo: 0, probabile: 1, dedotto: 2, a_mano_confermato: 3, a_mano: 4 };
 const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 const fermo = (c: { stato: StatoCollegamento }): boolean => c.stato === "bloccato" || c.stato === "bloccato_comune";
 const migliore = (cs: readonly Collegamento[]): Collegamento | undefined =>

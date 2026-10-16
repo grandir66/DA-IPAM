@@ -11,7 +11,7 @@ import { nodeClass, ruoloLetto, ruoloRete } from "@/lib/topology/identity";
 import { macSullaPorta, parseSpeedMbps } from "@/lib/topology/link-attrs";
 import { ipervisoriLetti, lettoreDellaFonte } from "@/lib/topology/lettori/fonti";
 import { comeDi, portaSalvata } from "@/lib/topology/links";
-import type { ClasseMappa, TopologyModel } from "@/lib/topology/model-types";
+import type { ClasseMappa, MapNode, TopologyModel } from "@/lib/topology/model-types";
 import { addNodeMacs, buildNodeIndex, canonical, type NodeIndex } from "@/lib/topology/node-index";
 import { isRunning } from "@/lib/topology/vm-nodes";
 import { resolveScanHosts } from "@/lib/topology/vms";
@@ -158,6 +158,12 @@ export interface ModelloCavi {
   /** Tutte le prove dall'ingresso, come le dà `proveDaInput` (prima delle regole): «Candidati per porta» (§13.4.6) le mostra porta
    * per porta, anche quelle che non diventano un collegamento né uno scarto (gli altri apparati sentiti sulla porta di un segmento). */
   prove: readonly Prova[];
+  /**
+   * I nodi dell'indice del modello per cavo, anche quelli che il modello di oggi non ha (un host che solo una prova di T3 nomina,
+   * come la radio lontana trovata dal nome che annuncia): la mappa ci prende i capi dei collegamenti che le mancano (revisione
+   * del Task 7 di T3).
+   */
+  nodiIndice: ReadonlyMap<string, MapNode>;
 }
 
 const macDel = (id: string | null): string | null => (id ? (id.split(".").pop() ?? "").toLowerCase() : null);
@@ -239,5 +245,6 @@ export function costruisciModelloCavi(ing: IngressoCavi, t1: TopologyModel, opz:
   return {
     collegamenti: disegnati, segmenti, albero, correzioniOrfane, schema: ing.schema, nonCalcolato: nonCalcolato(dalleVm), classi, ponti,
     stessaRete: r.stessaRete, oltre: r.oltre, scartateBordo: r.scartateBordo, scartateVm: r.scartateVm, soloDettagli, prove: p.prove,
+    nodiIndice: p.idx.nodes,
   };
 }

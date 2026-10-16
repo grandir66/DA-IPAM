@@ -9,9 +9,10 @@ import { FUSO_UTENTI, parseDbDate } from "@/lib/db-date";
 import { identifiesByName, isVirtualMac, realOui } from "@/lib/topology/identity";
 import { classeDelProtocollo, dettoDelProtocollo, FONTE_CONTROLLER, lettoreDellaFonte } from "@/lib/topology/lettori/fonti";
 import { eTunnelDiFabbrica, haTraduttore, haTraduttoreRemoto, macDelTelaio, traduciPorta } from "@/lib/topology/lettori/traduci";
+import { MEDIA } from "@/lib/topology/link-attrs";
 import { comeDi, portaLocale, righeUltimoGiro } from "@/lib/topology/links";
-import type { MapLink, ModelNeighborRow, TopologyModelInput } from "@/lib/topology/model-types";
-import { nameKey, resolveNode, type NodeIndex } from "@/lib/topology/node-index";
+import type { LinkMedium, MapLink, ModelNeighborRow, TopologyModelInput } from "@/lib/topology/model-types";
+import { canonical, nameKey, nodeFor, resolveNode, type NodeIndex } from "@/lib/topology/node-index";
 import { normalizeMacForStorage } from "@/lib/utils";
 import { chiavePorta, elencoDa, elenchiPorte, normale, type ElencoPorte, type Porta } from "./porte";
 
@@ -59,8 +60,11 @@ export interface Prova {
   /** Uplink del controller: il figlio è un gateway (la porta è la sua WAN, §13.8.3 punto 1); da dove il controller lo ricava. */
   gateway?: boolean;
   origine?: string | null;
-  /** Correzione a mano: confermata dai dati (come la verifica del modello di oggi). */
+  /** Correzione a mano: il MAC dell'altro oggetto visto sulla porta dichiarata (§13.9; il cavo con le stesse porte lo guarda
+   * collegamenti.ts). */
   confermato?: boolean;
+  /** Correzione a mano: il tipo dichiarato («tunnel» da T3), se è un tipo noto. */
+  medio?: LinkMedium | null;
   /** Prova dalle VM: quante VM accese passano dalla porta (§12.5, principale dell'hypervisor). */
   vm?: number;
 }
@@ -121,6 +125,11 @@ export function piuRecente(xs: ReadonlyArray<string | null>): string | null {
 function quando(utc: string | null): string {
   const t = tempo(utc);
   return t === null ? "in un momento non noto" : new Intl.DateTimeFormat("it-IT", { timeZone: FUSO_UTENTI, day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(t));
+}
+/** Il giorno italiano di una data del DB (UTC). */
+function giorno(utc: string): string | null {
+  const t = tempo(utc);
+  return t === null ? null : new Intl.DateTimeFormat("it-IT", { timeZone: FUSO_UTENTI, day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(t));
 }
 
 /** Una porta di cui si sa solo l'apparato. */
@@ -192,6 +201,9 @@ export interface ContestoProve {
   elenchi: ReadonlyMap<string, ElencoPorte>;
   come: ReturnType<typeof comeDi>;
   fatti: IndiceFatti;
+  /** Un MAC di `altro` visto non vecchio sulla porta `porta` di `nodo` (`macSullaPorta` di link-attrs.ts): la verifica a mano per
+   * cavo (§13.9). Senza, una correzione è confermata come la dice la linea del modello di oggi. */
+  macSullaPorta?: (nodo: string, porta: string, altro: string) => boolean;
 }
 
 interface Gruppo { osservatore: string; locale: Porta; righe: ViciniCaviRow[]; telaio: string; b: string | null; remota: Porta | null }
@@ -398,23 +410,60 @@ export function proveDaInput(ing: IngressoCavi, ctx: ContestoProve, t1: { links:
     });
   }
 
-  // Bordo (tabella MAC, ripiego del router, VM sulla porta) e correzioni a mano: le regole di oggi (§13.7.2 passo 10), dalle
-  // linee del modello di oggi, con le porte tradotte. Il bordo per porta arriva in T3 (T3.1).
+  // Bordo (tabella MAC, ripiego del router, VM sulla porta): le regole di oggi (§13.7.2 passo 10), dalle linee del modello di
+  // oggi, con le porte tradotte; il bordo per porta lo fa collegamenti.ts. Una linea di oggi che ha la tabella MAC e le VM sono
+  // due prove: il MAC dell'hypervisor sulla porta è un'altra lettura, e quel collegamento non è «solo dalle VM» (§13.15 punto 4).
   const locale = portaLocale(ing.t1);
+  const bordo = (n: string, porta: string, altro: string, classe: "vm" | "tabella_mac", visto: string | null, vm?: number): void => {
+    prove.push({
+      tipo: "bordo", da: (porta ? locale(n, porta) : null) ?? portaVuota(n), altro: portaVuota(altro), telaio: null, classe,
+      detto: classe === "vm" ? "VM sulla porta" : "tabella MAC", lettore: "apparato", visto, ...(vm ? { vm } : {}),
+      frase: `Dedotto: ${classe === "vm" ? "VM" : "MAC"} di ${nome(altro)} visto sulla porta ${porta || "non nota"} di ${nome(n)}.`,
+    });
+  };
   for (const l of t1.links) {
-    const pa = (l.aPort ? locale(l.a, l.aPort) : null) ?? portaVuota(l.a);
-    const pb = (l.bPort ? locale(l.b, l.bPort) : null) ?? portaVuota(l.b);
     if (l.sources.includes("manual")) {
-      prove.push({ tipo: "a_mano", da: pa, altro: pb, telaio: null, classe: "a_mano", detto: "a mano", lettore: "persona", visto: null,
-        confermato: l.manual?.confirmed === true, frase: `Collegato a mano; ${l.manual?.confirmed ? "confermato dai dati" : "non visto dai dati"}.` });
+      // La parte a mano sta sotto, una prova per correzione; le prove di bordo che vm-ports e la tabella MAC hanno messo sulla linea
+      // della coppia restano (revisione del Task 4: senza, T1 diceva «✎ ✓» e la mappa nuova «a mano, non visto»). Dalla linea coi
+      // passi del «Perché», che dicono apparato e porta; dagli altri cavi visti col lato che ha la porta (vm-ports lo scrive così).
+      for (const x of l.perche ?? []) {
+        if (x.tipo === "vm") bordo(x.da, x.porta, x.hypervisor, "vm", x.visto, x.vm);
+        else if (x.tipo === "tabella_mac") bordo(x.da, x.porta, x.altro, "tabella_mac", x.visto);
+      }
+      for (const c of l.altriCavi ?? []) {
+        const [n, porta, altro] = c.aPort ? [l.a, c.aPort, l.b] : [l.b, c.bPort, l.a];
+        if (c.sources.includes("vm_mac")) bordo(n, porta, altro, "vm", c.lastSeen);
+        if (c.sources.includes("mac_table")) bordo(n, porta, altro, "tabella_mac", c.lastSeen);
+      }
       continue;
     }
-    const vm = l.sources.includes("vm_mac");
-    if (!vm && !l.sources.includes("mac_table")) continue;
+    const vm = l.sources.includes("vm_mac"), mac = l.sources.includes("mac_table");
+    if (!vm && !mac) continue;
+    const pa = (l.aPort ? locale(l.a, l.aPort) : null) ?? portaVuota(l.a);
+    const pb = (l.bPort ? locale(l.b, l.bPort) : null) ?? portaVuota(l.b);
+    const base = { tipo: "bordo" as const, da: pa, altro: pb, telaio: null, lettore: "apparato" as const, visto: l.lastSeen };
+    const dove = `visto sulla porta ${l.aPort || "non nota"} di ${nome(l.a)}.`;
+    if (mac) prove.push({ ...base, classe: "tabella_mac", detto: "tabella MAC", frase: `Dedotto: MAC di ${nome(l.b)} ${dove}` });
+    if (vm) prove.push({ ...base, classe: "vm", detto: "VM sulla porta", ...(l.vmCount ? { vm: l.vmCount } : {}), frase: `Dedotto: VM di ${nome(l.b)} ${dove}` });
+  }
+
+  // Correzioni «aggiungi» (§13.9, «Verifica» da T3): una prova per riga, con le porte come le scrive l'apparato (come il candidato
+  // a mano di links.ts). Non dalla linea del modello di oggi, che è per coppia: una correzione senza porte vi prende le porte del
+  // cavo scelto, e di due correzioni fra la stessa coppia ne resta una. Il cavo con le stesse porte che la conferma lo guarda
+  // collegamenti.ts; qui il MAC dell'altro oggetto sulla porta dichiarata. Chi e quando nella frase; «confermato dai dati» o
+  // «non visto dai dati» lo dice la conclusione.
+  for (const o of [...ing.t1.overrides].sort((x, y) => x.id - y.id)) {
+    if (o.action !== "add") continue;
+    const a = nodeFor(idx, canonical(idx, o.a_node)), b = nodeFor(idx, canonical(idx, o.b_node));
+    if (!a || !b || a === b) continue;
+    const confermato = ctx.macSullaPorta
+      ? ctx.macSullaPorta(a, o.a_port, b) || ctx.macSullaPorta(b, o.b_port, a)
+      : t1.links.some((l) => l.sources.includes("manual") && ((l.a === a && l.b === b) || (l.a === b && l.b === a)) && l.manual?.confirmed === true);
+    const il = o.created_at ? giorno(o.created_at) : null;
     prove.push({
-      tipo: "bordo", da: pa, altro: pb, telaio: null, classe: vm ? "vm" : "tabella_mac", detto: vm ? "VM sulla porta" : "tabella MAC",
-      lettore: "apparato", visto: l.lastSeen, ...(l.vmCount ? { vm: l.vmCount } : {}),
-      frase: `Dedotto: ${vm ? "VM" : "MAC"} di ${nome(l.b)} visto sulla porta ${l.aPort || "non nota"} di ${nome(l.a)}.`,
+      tipo: "a_mano", da: locale(a, o.a_port) ?? portaVuota(a), altro: locale(b, o.b_port) ?? portaVuota(b), telaio: null, classe: "a_mano",
+      detto: "a mano", lettore: "persona", visto: null, confermato, medio: o.medium !== null && MEDIA.includes(o.medium) ? (o.medium as LinkMedium) : null,
+      frase: `Collegato a mano${o.created_by ? ` da ${o.created_by}` : ""}${il ? ` il ${il}` : ""}.`,
     });
   }
   return prove;

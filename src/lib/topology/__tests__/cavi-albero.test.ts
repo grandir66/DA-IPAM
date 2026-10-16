@@ -160,10 +160,14 @@ test("I22: il bridge designato conferma un cavo già provato da LLDP; non scegli
 test("lo schema assente si dice, e le parti non calcolate in T2 sono elencate", () => {
   const m = ombra({ ...ingresso(baseInput({ devices: [dev(2)] })), schema: false });
   assert.equal(m.schema, false);
-  // Sette in T2; il Task 3 di T3 ne toglie due (l'abbinamento «telaio, nome, IP» e le prove di ruolo coi fatti nuovi), che ora
-  // si calcolano. Il Task 4 riscrive la costante (NON_CALCOLATO).
-  assert.equal(m.nonCalcolato.length, 5);
-  assert.deepEqual(m.nonCalcolato.filter((x) => /abbinamento|prove di ruolo/.test(x)), []);
+  // Sette in T2; il Task 3 di T3 ne toglie due (l'abbinamento «telaio, nome, IP» e le prove di ruolo coi fatti nuovi), il Task 4
+  // altre tre («oltre» una radio, le VM dentro l'hypervisor, le mappe passo passo che fa il Task 7) e aggiunge la testa quando
+  // l'unico router è una VM (§13.16 punto 3). Con `DALLE_VM_SOLO_DETTAGLI` spenta resta la riga «dalle VM» (§13.15 punto 4).
+  assert.equal(m.nonCalcolato.length, 3);
+  assert.deepEqual(m.nonCalcolato.filter((x) => /abbinamento|prove di ruolo|oltre|passo passo/.test(x)), []);
+  assert.equal(m.nonCalcolato.filter((x) => x.includes("dalle VM")).length, 1);
+  assert.equal(costruisciModelloCavi({ ...ingresso(baseInput({ devices: [dev(2)] })), schema: false }, buildTopologyModel(baseInput({ devices: [dev(2)] })),
+    { testaScelta: null, dalleVmSoloDettagli: true }).nonCalcolato.filter((x) => x.includes("dalle VM")).length, 0, "con la regola accesa la riga non c'è");
 });
 
 // ── Casi aggiunti dopo il piano (fatti emersi sulle letture vere del 15/10) ────────────────────────────────────────────────

@@ -189,7 +189,7 @@ function Corpo({ onOpenChange, da, nomeDa, scelti, onFatto }: UnisciDialogProps)
         )}
       </DialogScrollableArea>
 
-      <DialogFooter className="px-4 py-3 border-t border-border/50">
+      <DialogFooter className="mx-0 mb-0 px-4 py-3 border-t border-border/50">
         <Button variant="outline" onClick={() => onOpenChange(false)} disabled={occupato}>Annulla</Button>
         {anteprima ? (
           <>

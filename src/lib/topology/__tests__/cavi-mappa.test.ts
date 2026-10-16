@@ -358,7 +358,8 @@ test("§13.4.6 Candidati per porta: la WAN con le prove dei membri e il segmento
   assert.deepEqual(wan.scartati, []);
 
   assert.deepEqual(lan1.scelto, { linea: fra(mappa, "dev:1", "dev:2")[0].id, verso: "SW-2", genere: "cavo" });
-  assert.deepEqual(lan1.prove.map((p) => p.chi).sort(), ["SW-2", "SW-2", "SW-5"], "i due capi del cavo e l'annuncio di rete");
+  // I due capi del cavo letti alla stessa ora dicono la stessa riga («SW-2 · LLDP · alle …»): una sola (revisione finale, M10).
+  assert.deepEqual(lan1.prove.map((p) => p.chi).sort(), ["SW-2", "SW-5"], "il cavo e l'annuncio di rete");
   assert.deepEqual(lan1.scartati, [{ chi: "SW-5", motivo: "sentito solo con un annuncio di rete: stessa rete" }]);
   assert.deepEqual([scelto.scelto, scelto.scartati], [null, [{ chi: "SW-5", motivo: "nome scelto: non si sa se è una porta fisica" }]]);
   assert.deepEqual([vlan.scelto, vlan.scartati], [null, [{ chi: "SW-5", motivo: "sentito da un'interfaccia logica (VLAN, VRRP, bridge): stessa rete" }]]);
@@ -383,6 +384,24 @@ test("§13.4.6 Candidati per porta (revisione del Task 6): dentro una riga al ma
   const { m, mappa } = mappaDi(ing);
   const r = candidatiPerPorta(m, "dev:1", nomiDellaMappa(mappa)).righe.find((x) => x.porta === "ether2")!;
   assert.deepEqual([r.prove.length, r.altreProve, r.scartati.length, r.altriScartati], [16, 4, 16, 4]);
+});
+
+/**
+ * Verifica a schermo di T3 (Task 14) e revisione finale (M10): «Prove» di Candidati per porta ripeteva righe uguali («SW-3 · LLDP ·
+ * alle 05:00» due volte): lo stesso cavo letto dai due capi alla stessa ora dà due prove con lo stesso «chi». Una riga per chi,
+ * protocollo e ora; con un'ora diversa restano due.
+ */
+test("§13.4.6 Candidati per porta: le prove uguali (chi, protocollo, ora) sono una riga sola", () => {
+  const t1 = baseInput({ devices: [dev(2, { name: "SW-2" }), dev(3, { name: "SW-3" })], ports: [...porte(2, [[1, "Port 1", "1000 Mbps"]]), ...porte(3, [[2, "Port 2", "1000 Mbps"]])] });
+  const prove = (quandoB: string) => {
+    const { m, mappa } = mappaDi(ingresso(t1, { vicini: [
+      vic({ device_id: 2, local_port: "Port 1", remote_device_name: "SW-3", remote_port: "Port 2", timestamp: ORA_T2 }),
+      vic({ device_id: 3, local_port: "Port 2", remote_device_name: "SW-2", remote_port: "Port 1", timestamp: quandoB }),
+    ] }));
+    return candidatiPerPorta(m, "dev:2", nomiDellaMappa(mappa)).righe.find((x) => x.porta === "Port 1")!.prove;
+  };
+  assert.deepEqual(prove(ORA_T2).map((p) => [p.chi, p.detto, p.quando]), [["SW-3", "LLDP", ORA_T2]], "i due capi alla stessa ora: una riga");
+  assert.equal(prove("2026-10-14 07:00:00").length, 2, "a ore diverse: due righe");
 });
 
 test("un collegamento senza prove è un difetto del modello: la mappa cade col numero, senza id né nomi di porta (revisione del Task 6)", () => {

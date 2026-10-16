@@ -356,9 +356,14 @@ export function candidatiPerPorta(m: ModelloCavi, nodo: string, nomeDi: (id: str
       : p.da.nodo === nodo ? { porta: p.da, daQui: true } : p.altro?.nodo === nodo ? { porta: p.altro, daQui: false } : null;
   const chiDi = (p: Prova): string => (p.da.nodo === nodo ? (p.altro ? nomeDi(p.altro.nodo) : nonCensito(p.telaio)) : nomeDi(p.da.nodo));
 
+  // Una riga per chi, protocollo e ora: lo stesso cavo letto dai due capi alla stessa ora dava due righe uguali («SW-3 · LLDP ·
+  // alle 05:00» due volte; verifica a schermo di T3, revisione finale M10).
   for (const p of m.prove) {
     const x = mia(p);
-    if (x) riga(x.porta, x.daQui).prove.push({ chi: chiDi(p), detto: p.detto, quando: p.visto });
+    if (!x) continue;
+    const r = riga(x.porta, x.daQui);
+    const prova = { chi: chiDi(p), detto: p.detto, quando: p.visto };
+    if (!r.prove.some((q) => q.chi === prova.chi && q.detto === prova.detto && q.quando === prova.quando)) r.prove.push(prova);
   }
   // Il collegamento scelto di ogni porta: prima quello che l'albero usa, poi per id. Un fascio occupa le porte dei suoi membri.
   const usati = new Set([...m.albero.via.values()].map((c) => c.id));

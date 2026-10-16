@@ -31,8 +31,10 @@ import { closeHubDb, getSetting, setSetting } from "@/lib/db-hub";
 import { catenaReteDb, credenzialiApparatoDb, resolveCredentialsForDb, type ResolvedCredentialSource } from "@/lib/credentials/resolve";
 import { convertiCateneVecchie, segnoCatene } from "@/lib/credentials/converti-catene";
 import { SEGNO_CATENE, scriviSegno } from "@/lib/credentials/segni-t2";
+import { totaleUsi, usiCredenzialeDb, usiTotaliDb } from "@/lib/credentials/usi";
+import { eliminaVoceDb, modificaVoceDb } from "@/lib/credentials/archivio";
 import { collectEdgeCredentialsForNetwork } from "@/lib/vuln/edge-credentials-bridge";
-import { HostUpdateSchema } from "@/lib/validators";
+import { CredentialSchema, HostUpdateSchema } from "@/lib/validators";
 
 void TEST_DATA_DIR;
 
@@ -129,6 +131,64 @@ describe("motore: catene vecchie e chiave dell'hub col segno credenziali_t2_cate
     const r = resolveCredentialsForDb(s.d, { networkId: s.rete }, "ssh", {});
     assert.deepEqual(fonti(r), [["network_chain", s.N], ["legacy_chain", s.V]]);
   });
+});
+
+// ── Usi di una voce (D8) col segno della 2d ─────────────────────────────────
+//
+// Revisione della 2d (16/10): il conteggio degli usi contava ancora le tabelle
+// congelate. Una voce tolta dalla lista della rete, o saltata dalla conversione
+// per il tipo, restava «in uso» per una rete o un host dove nessuno la usa e
+// dove la pagina non la mostra: non si poteva eliminare né cambiarle tipo fino
+// alla 2g, e il messaggio («Togli prima questi usi») chiedeva una cosa
+// impossibile. Gli usi seguono la regola del motore (`cateneVecchieAperte`).
+
+const corpoParziale = (b: Record<string, unknown>) => CredentialSchema.partial().parse(b);
+
+describe("usi di una voce: catene vecchie e pin contano solo finché il motore li legge", () => {
+  it("senza segno (2d non ancora girata): la voce della sola catena vecchia e quella del solo pin sono in uso", () => {
+    const s = scena();
+    assert.deepEqual(usiCredenzialeDb(s.d, s.V).reti, [{ id: s.rete, nome: "Rete" }]);
+    assert.equal(usiCredenzialeDb(s.d, s.P).host, 1);
+    const totali = usiTotaliDb(s.d);
+    assert.equal(totali.get(s.V), 1);
+    assert.equal(totali.get(s.P), 1);
+    const via = eliminaVoceDb(s.d, s.V);
+    assert.equal(via.ok, false);
+    if (!via.ok) assert.equal(via.stato, 409);
+  });
+
+  it("col segno errore: (conversione da rifare) contano ancora", () => {
+    const s = scena();
+    scriviSegno(s.d, SEGNO_CATENE, "errore:UNIQUE constraint failed");
+    assert.equal(totaleUsi(usiCredenzialeDb(s.d, s.V)), 1);
+    assert.equal(usiTotaliDb(s.d).get(s.P), 1);
+  });
+
+  for (const stato of ["done", "parziale"] as const) {
+    it(`col segno ${stato}: e le voci tolte dall'utente: nessun uso, DELETE e cambio di tipo ammessi`, () => {
+      const s = scena();
+      const esito = convertiCateneVecchie(s.d, null, { aVuoto: false });
+      scriviSegno(s.d, SEGNO_CATENE, stato === "done" ? segnoCatene(esito) : "parziale:2026-10-16T08:00:00.000Z:saltate=1");
+      // L'utente toglie V dalla lista della rete e la riga nata dal pin di P dall'host.
+      s.d.prepare("DELETE FROM network_credentials WHERE credential_id = ?").run(s.V);
+      s.d.prepare("DELETE FROM host_credentials WHERE credential_id = ?").run(s.P);
+      // Il motore non le dà più: restano solo nelle tabelle congelate.
+      assert.deepEqual(catenaReteDb(s.d, s.rete, "ssh", { registra: false }), [s.N]);
+      const totali = usiTotaliDb(s.d);
+      for (const id of [s.V, s.P]) {
+        assert.equal(totaleUsi(usiCredenzialeDb(s.d, id)), 0, `voce #${id} ancora in uso`);
+        assert.equal(totali.get(id) ?? 0, 0, `voce #${id} ancora in uso nell'elenco`);
+      }
+      // N è ancora nella lista: in uso come prima.
+      assert.deepEqual(usiCredenzialeDb(s.d, s.N).reti, [{ id: s.rete, nome: "Rete" }]);
+
+      const dati = { credential_type: "windows", username: "DOM\\op", password: "segreto" };
+      const cambio = modificaVoceDb(s.d, s.P, corpoParziale(dati), dati);
+      assert.ok(cambio.ok, cambio.ok ? "" : cambio.errore);
+      const via = eliminaVoceDb(s.d, s.V);
+      assert.ok(via.ok, via.ok ? "" : via.errore);
+    });
+  }
 });
 
 // ── Anteprima edge prima e dopo la conversione ──────────────────────────────

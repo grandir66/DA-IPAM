@@ -46,7 +46,7 @@ import { V3_ASSENTE, type CredenzialeSnmp } from "@/lib/protocols/snmp-sessione"
 import type { NetworkDevice } from "@/types";
 import { DEFAULT_PORTS, portaCredenziale, type CredProtocol } from "./porte";
 import { leggiSegretoDb, leggiSegretoInline, opzioniSsh, type AccessoSsh, type Segreto, type UsoSegreto } from "./segreti";
-import { SEGNO_CATENE, conversioneChiusa, leggiSegno } from "./segni-t2";
+import { cateneVecchieAperte } from "./segni-t2";
 import { normalizzaTipo, portaVoceValePer, tipiPerProtocollo } from "./tipi";
 
 export { DEFAULT_PORTS, portaCredenziale };
@@ -493,12 +493,12 @@ export function resolveCredentialsForDb(
  * della conversione hanno un tipo che il filtro scarterebbe comunque, o
  * puntano a voci, reti o host che non ci sono. Con `errore:`, senza segno, o
  * su una copia senza `tenant_settings` (nessun segno possibile) si leggono
- * come prima. Una lettura per chiamata pubblica, e solo se le fonti lo chiedono.
+ * come prima (`cateneVecchieAperte`, la stessa regola degli usi di una voce).
+ * Una lettura per chiamata pubblica, e solo se le fonti lo chiedono.
  */
 function fontiVecchieAperte(dbh: Database.Database, opts: OpzioniMotore): boolean {
   if (opts.fonti && !opts.fonti.includes("legacy_chain") && !opts.fonti.includes("hub_default")) return false;
-  const conSettings = dbh.prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'tenant_settings'`).get();
-  return !conSettings || !conversioneChiusa(leggiSegno(dbh, SEGNO_CATENE));
+  return cateneVecchieAperte(dbh);
 }
 
 /** Livelli dalla catena della rete in giù, uguali per host e apparati. */

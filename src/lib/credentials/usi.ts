@@ -14,9 +14,18 @@
  * le colonne `network_controllers.credential_id` e `ad_integrations.credential_id`
  * (una query che le nominasse oggi darebbe «no such column»).
  *
+ * Catene vecchie (`network_host_credentials`) e pin (`host_detect_credential`)
+ * contano solo finché il motore li legge (`cateneVecchieAperte`): dopo la 2d
+ * sono congelati fino alla 2g, e una voce tolta dalla lista, o saltata dalla
+ * conversione per il tipo, resterebbe «in uso» per una rete o un host dove
+ * nessuno la usa e dove la pagina non la mostra; con D8 non si potrebbe né
+ * eliminare né cambiarle tipo, e «Togli prima questi usi» chiederebbe una cosa
+ * impossibile (revisione della 2d, 16/10).
+ *
  * Modulo con l'handle del DB esplicito: non importa né `db.ts` né `db-tenant.ts`.
  */
 import type Database from "better-sqlite3";
+import { cateneVecchieAperte } from "./segni-t2";
 
 export interface UsiCredenziale {
   apparati: Array<{ id: number; nome: string; come: "binding" | "colonna" }>;
@@ -31,6 +40,7 @@ export interface UsiCredenziale {
 }
 
 export function usiCredenzialeDb(dbh: Database.Database, id: number): UsiCredenziale {
+  const vecchie = cateneVecchieAperte(dbh);
   const apparati = dbh
     .prepare(
       `SELECT d.id AS id, d.name AS nome, u.come AS come FROM (
@@ -46,8 +56,7 @@ export function usiCredenzialeDb(dbh: Database.Database, id: number): UsiCredenz
       `SELECT n.id AS id, n.name AS nome FROM networks n
        WHERE n.id IN (
          SELECT network_id FROM network_credentials WHERE credential_id = @id
-         UNION
-         SELECT network_id FROM network_host_credentials WHERE credential_id = @id
+         ${vecchie ? "UNION SELECT network_id FROM network_host_credentials WHERE credential_id = @id" : ""}
        )
        ORDER BY n.name, n.id`,
     )
@@ -57,8 +66,7 @@ export function usiCredenzialeDb(dbh: Database.Database, id: number): UsiCredenz
       .prepare(
         `SELECT COUNT(*) AS n FROM (
            SELECT host_id FROM host_credentials WHERE credential_id = @id
-           UNION
-           SELECT host_id FROM host_detect_credential WHERE credential_id = @id
+           ${vecchie ? "UNION SELECT host_id FROM host_detect_credential WHERE credential_id = @id" : ""}
          )`,
       )
       .get({ id }) as { n: number }
@@ -81,9 +89,11 @@ export function totaleUsi(u: UsiCredenziale): number {
  * nell'elenco della pagina). Le chiavi sono quelle di `usiCredenzialeDb`: un
  * apparato conta una volta come binding e una come colonna, una rete e un
  * host una volta sola anche se la voce ci compare in due tabelle; binding e
- * reti orfani (apparato o rete che non c'è più) non contano, come là.
+ * reti orfani (apparato o rete che non c'è più) non contano, come là, e
+ * catene vecchie e pin contano alle stesse condizioni (`cateneVecchieAperte`).
  */
 export function usiTotaliDb(dbh: Database.Database): Map<number, number> {
+  const vecchie = cateneVecchieAperte(dbh);
   const righe = dbh
     .prepare(
       `SELECT credential_id AS id, COUNT(*) AS n FROM (
@@ -95,12 +105,10 @@ export function usiTotaliDb(dbh: Database.Database): Map<number, number> {
          SELECT 'ac:' || id, snmp_credential_id FROM network_devices WHERE snmp_credential_id IS NOT NULL
          UNION
          SELECT 'r:' || nc.network_id, nc.credential_id FROM network_credentials nc JOIN networks n ON n.id = nc.network_id
-         UNION
-         SELECT 'r:' || nh.network_id, nh.credential_id FROM network_host_credentials nh JOIN networks n ON n.id = nh.network_id
+         ${vecchie ? "UNION SELECT 'r:' || nh.network_id, nh.credential_id FROM network_host_credentials nh JOIN networks n ON n.id = nh.network_id" : ""}
          UNION
          SELECT 'h:' || host_id, credential_id FROM host_credentials
-         UNION
-         SELECT 'h:' || host_id, credential_id FROM host_detect_credential
+         ${vecchie ? "UNION SELECT 'h:' || host_id, credential_id FROM host_detect_credential" : ""}
          UNION
          SELECT 'ad:' || id, winrm_credential_id FROM ad_integrations WHERE winrm_credential_id IS NOT NULL
          UNION

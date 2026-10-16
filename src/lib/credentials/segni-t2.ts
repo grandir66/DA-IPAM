@@ -39,6 +39,20 @@ export function conversioneChiusa(valore: string | null): boolean {
   return valore != null && (valore.startsWith("done:") || valore.startsWith("parziale:"));
 }
 
+/**
+ * Vero finché le catene vecchie (`network_host_credentials`) e i pin
+ * (`host_detect_credential`) contano: senza segno `credenziali_t2_catene`, con
+ * `errore:`, o su una copia senza `tenant_settings` (nessun segno possibile).
+ * Dopo la 2d (`done:`/`parziale:`) le tabelle restano congelate fino alla 2g e
+ * nessuno le legge: il motore non ne prende voci e gli usi di una voce (D8)
+ * non le contano, altrimenti una voce tolta dalla lista resterebbe «in uso»
+ * per una rete o un host dove non si vede (revisione della 2d, 16/10).
+ */
+export function cateneVecchieAperte(dbh: Database.Database): boolean {
+  const conSettings = dbh.prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'tenant_settings'`).get();
+  return !conSettings || !conversioneChiusa(leggiSegno(dbh, SEGNO_CATENE));
+}
+
 /** Segno d'errore: il messaggio su una riga, tagliato. */
 export function segnoErrore(e: unknown): string {
   const msg = (e instanceof Error ? e.message : String(e)).replace(/\s+/g, " ").trim();

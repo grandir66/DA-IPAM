@@ -8,14 +8,44 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { buildTopologyModel } from "@/lib/topology/model";
-import { costruisciModelloCavi } from "@/lib/topology/cavi/modello";
-import type { IngressoCavi } from "@/lib/topology/cavi/prove";
-import type { ModelDeviceRow, ModelNeighborRow, TopologyModelInput } from "@/lib/topology/model-types";
+import { lineaDi, primCavi, type IngressoPrim, type LineaAlbero } from "@/lib/topology/cavi/albero";
+import { costruisciModelloCavi, type ModelloCavi } from "@/lib/topology/cavi/modello";
+import type { FattoPorta, IngressoCavi } from "@/lib/topology/cavi/prove";
+import { nodeClass, ruoloLetto, ruoloRete } from "@/lib/topology/identity";
+import type { ClasseMappa, LinkOverrideRow, ModelDeviceRow, ModelNeighborRow, ModelPrimaryRow, TopologyModel, TopologyModelInput } from "@/lib/topology/model-types";
 import { baseInput, dev, host } from "./support/righe";
-import { porte } from "./support/reti-campione";
+import { altreMarcheSnmp, conHypervisor, mista, porte, soloMikrotik, soloUnifi } from "./support/reti-campione";
 import { fb, fp, ingresso, vic } from "./support/cavi";
 
-const ombra = (ing: IngressoCavi, testa: string | null = null) => costruisciModelloCavi(ing, buildTopologyModel(ing.t1), { testaScelta: testa });
+// Ogni rete di questo file prova anche l'invariante di `primCavi` (Task 5 di T3, `primUgualeAlModello` qui sotto).
+const ombra = (ing: IngressoCavi, testa: string | null = null) => {
+  const t1 = buildTopologyModel(ing.t1);
+  return primUgualeAlModello(costruisciModelloCavi(ing, t1, { testaScelta: testa }), t1);
+};
+/**
+ * L'invariante che il Task 7 di T3 usa per dire «schermo e traccia scelgono uguale»: `primCavi`, con le linee di `lineaDi` e i
+ * soli dati che avrà la pagina (linee, classe di ogni nodo, visibili, testa, scelte dello spanning tree, ★ già risolte, ponti
+ * radio, hypervisor), dà gli stessi padri, la stessa `via` (per id) e le stesse radici dell'albero del modello per cavo.
+ */
+function primUgualeAlModello(m: ModelloCavi, t1: TopologyModel): ModelloCavi {
+  const nodi = new Map(t1.nodes.map((n) => [n.id, n]));
+  const classe = (id: string): ClasseMappa | "segmento" | undefined => {
+    if (id.startsWith("seg:")) return "segmento";
+    const n = nodi.get(id);
+    return m.classi.get(id) ?? (n ? (t1.classiMappa?.[id] ?? nodeClass(n)) : undefined);
+  };
+  const visibili = new Set(Object.keys(m.albero.padri));
+  const ipervisori = new Set([...visibili].filter((id) => classe(id) === "hyper"));
+  for (const v of t1.vms) if (v.hypervisorNodeId) ipervisori.add(v.hypervisorNodeId);
+  const e = primCavi({
+    classe, ponti: m.ponti, visibili, linee: m.collegamenti.map(lineaDi), partenze: m.albero.testa ? [m.albero.testa] : [],
+    scelto: m.albero.scelto, stelle: new Map(m.albero.stelle.map((s) => [s.nodo, s.linea])), ipervisori,
+  });
+  assert.deepEqual(e.padri, m.albero.padri, "primCavi: gli stessi padri dell'albero del modello");
+  assert.deepEqual([...e.via].map(([n, l]) => [n, l.id]).sort(), [...m.albero.via].map(([n, c]) => [n, c.id]).sort(), "primCavi: la stessa via");
+  assert.deepEqual(e.radici, m.albero.radici, "primCavi: le stesse radici");
+  return m;
+}
 const mk = { vendor: "mikrotik", via: "ssh" } as const;
 const lan = (n: number) => ({ id: n, cidr: `10.${n}.0.0/24`, name: `rete ${n}`, gateway: `10.${n}.0.1`, location_id: null });
 /** Le righe dei due capi di un cavo fra due MikroTik letti via SSH, porte col nome di fabbrica. */
@@ -124,7 +154,7 @@ test("punto 8: «core che esce da uno switch di accesso» con cavi verso almeno 
   );
   const m = ombra(ingresso(t1, { fattiPorta: [fp(11, "n:ether8", "ether8", { source: "device", stp_state: "discarding" }), fp(11, "n:ether7", "ether7", { source: "device", stp_state: "discarding" })] }), "dev:1");
   assert.equal(m.albero.padri["dev:11"], "dev:23");
-  assert.deepEqual(m.albero.anomalie, [{ nodo: "dev:11", padre: "dev:23", altri: ["dev:21", "dev:22"] }]);
+  assert.deepEqual(m.albero.anomalie, [{ nodo: "dev:11", padre: "dev:23", porta: "ether9", altri: ["dev:21", "dev:22"] }]);
 });
 
 test("I63 e punto 7: a pari nodi raggiunti la testa è il gateway di più reti, mai l'id", () => {
@@ -435,8 +465,8 @@ for (const nome of ["topologia-cliente-a.json", "topologia-domarc.json"]) {
 // §13.7.6 punto 4 (T3, Task 3 e 5): le radio sono nodi sulla linea. Il router sente sulla stessa porta le due radio di un
 // ponte; la vicina è registrata server, la lontana è un host che la classificazione dice client; dall'altra parte il router
 // della sede 2 sente la lontana. Prima la vicina era una foglia e il router della sede 2 restava senza padre. Il Task 3 dà
-// la classe ai capi (`ponti`); passa quando il Task 5 mette `ponti` nel Prim.
-test("§13.7.6 punto 4: un capo di un ponte radio classificato server fa da ponte", { todo: "Task 5: ponti nel Prim" }, () => {
+// la classe ai capi (`ponti`); il Task 5 mette `ponti` nel Prim: la vicina (server) e la lontana (host) fanno da ponte.
+test("§13.7.6 punto 4: un capo di un ponte radio classificato server fa da ponte", () => {
   const t1 = rete(
     [dev(1, { name: "RTR-1", device_type: "router", ...mk }), dev(5, { name: "RADIO-V", device_type: "server", vendor: "mikrotik" }), dev(7, { name: "RTR-S2", device_type: "router", ...mk })],
     [],
@@ -448,4 +478,236 @@ test("§13.7.6 punto 4: un capo di un ponte radio classificato server fa da pont
     vic({ device_id: 7, local_port: "ether1", remote_device_name: "RADIO-L", remote_port: "bridge/ether2", remote_caps: "bridge", source: "device", remote_platform: "MikroTik" }),
   ] }), "dev:1");
   assert.deepEqual([m.albero.padri["dev:7"], m.albero.padri["host:60"], m.albero.padri["dev:5"]], ["host:60", "dev:5", "dev:1"]);
+});
+
+// ── T3, Task 5: la ★ per collegamento, i ruoli «Core» e «Accesso», il principale dell'hypervisor dai dati ─────────────────────
+
+/**
+ * Due cavi fra SW-2 (S) e SW-3 (X), sulle porte 1 e 2, tutti e due in inoltro; il 2 è più lento. Senza ★ il padre di X è il
+ * cavo 1 (più veloce). `stella`: la ★ salvata per X verso S (porte vuote se non dette).
+ */
+function dueCavi(stella: Partial<ModelPrimaryRow> | null, opz: { fatti?: FattoPorta[]; overrides?: LinkOverrideRow[]; soloCavo1?: boolean } = {}) {
+  const t1 = rete(
+    [dev(1, { name: "RTR-1", device_type: "router", ...mk }), dev(2, { name: "SW-2", ...mk }), dev(3, { name: "SW-3", ...mk })],
+    [...cavo(1, "ether9", 2, "ether9", "SW-2", "RTR-1"), ...cavo(2, "ether1", 3, "ether1", "SW-3", "SW-2"), ...(opz.soloCavo1 ? [] : cavo(2, "ether2", 3, "ether2", "SW-3", "SW-2"))],
+    {
+      ports: [...porte(1, [[9, "ether9", "1000 Mbps"]]), ...porte(2, [[1, "ether1", "1000 Mbps"], [2, "ether2", "100 Mbps"], [5, "ether5", "1000 Mbps"], [9, "ether9", "1000 Mbps"]]),
+        ...porte(3, [[1, "ether1", "1000 Mbps"], [2, "ether2", "100 Mbps"], [5, "ether5", "1000 Mbps"]])],
+      primaries: stella ? [{ node_id: "dev:3", other_node: "dev:2", node_port: "", other_port: "", ...stella }] : [],
+      overrides: opz.overrides ?? [],
+    },
+  );
+  const m = ombra(ingresso(t1, { fattiPorta: opz.fatti ?? [] }), "dev:1");
+  const cavoSu = (porta: string) => fra(m, "dev:2", "dev:3").find((c) => capoDi(c, "dev:3") === porta);
+  return { m, cavo1: cavoSu("i:1"), cavo2: cavoSu("i:2"), cavo5: cavoSu("i:5") };
+}
+
+// Spec §13.9 («★ Rendi principale» per collegamento, la ★ di prima) e I20. Fino a T2 la ★ valeva per la coppia (`migliore` dei
+// collegamenti fra i due): con due cavi fra gli stessi switch non si poteva scegliere il cavo lento, e con una linea a mano su
+// porte diverse da quelle viste la ★ cadeva sempre sul cavo visto. Da T3 vale il collegamento con quelle porte; una ★ di prima
+// (senza porte, o con porte che non indicano più un collegamento) vale per il migliore della coppia, e i dettagli lo dicono.
+test("§13.9 e I20: la ★ vale per il collegamento con quelle porte; senza porte, o con porte che non indicano un collegamento, per il migliore della coppia («di prima»)", () => {
+  const senza = dueCavi(null);
+  assert.ok(senza.cavo1 && senza.cavo2, "due cavi fra S e X");
+  assert.deepEqual([senza.cavo1.stato, senza.cavo2.stato], ["inoltra", "inoltra"]);
+  assert.equal(senza.m.albero.via.get("dev:3")?.id, senza.cavo1.id, "senza ★ vince il cavo più veloce");
+  assert.deepEqual(senza.m.albero.stelle, []);
+
+  const porte2 = dueCavi({ node_port: "ether2", other_port: "ether2" });
+  assert.equal(porte2.m.albero.via.get("dev:3")?.id, porte2.cavo2?.id, "la ★ con le porte del cavo 2 sceglie il cavo 2, anche se più lento");
+  assert.deepEqual(porte2.m.albero.stelle, [{ nodo: "dev:3", altro: "dev:2", linea: porte2.cavo2?.id, diPrima: false }]);
+
+  const vuota = dueCavi({});
+  assert.equal(vuota.m.albero.via.get("dev:3")?.id, vuota.cavo1?.id, "la ★ senza porte vale per il migliore della coppia");
+  assert.deepEqual(vuota.m.albero.stelle, [{ nodo: "dev:3", altro: "dev:2", linea: vuota.cavo1?.id, diPrima: true }]);
+
+  const rinominata = dueCavi({ node_port: "ether7", other_port: "ether7" });
+  assert.equal(rinominata.m.albero.via.get("dev:3")?.id, rinominata.cavo1?.id, "porte che non indicano nessun collegamento: il migliore");
+  assert.deepEqual(rinominata.m.albero.stelle, [{ nodo: "dev:3", altro: "dev:2", linea: rinominata.cavo1?.id, diPrima: true }]);
+
+  // Una porta sola detta (l'altra vuota) basta, se indica un collegamento.
+  const una = dueCavi({ node_port: "ether2" });
+  assert.deepEqual(una.m.albero.stelle.map((s) => [s.linea, s.diPrima]), [[una.cavo2?.id, false]]);
+});
+
+test("I20: la ★ su un cavo bloccato vince sul cavo che inoltra", () => {
+  const r = dueCavi({ node_port: "ether2", other_port: "ether2" }, { fatti: [fp(3, "i:2", "ether2", { source: "device", stp_state: "discarding", stp_role: "alternate" })] });
+  assert.equal(r.cavo2?.stato, "bloccato");
+  assert.equal(r.m.albero.via.get("dev:3")?.id, r.cavo2?.id);
+  assert.equal(r.m.albero.stelle[0]?.diPrima, false);
+});
+
+// Revisione del Task 4 di T3, punto 10: con una linea a mano su porte diverse da quelle viste ci sono due linee per la coppia, e
+// la ★ per coppia (il migliore) non cadeva mai su quella a mano. Per collegamento sì.
+test("§13.9: la ★ sulle porte di una linea a mano diversa dal cavo visto sceglie la linea a mano", () => {
+  const add: LinkOverrideRow = { id: 1, action: "add", a_node: "dev:2", a_port: "ether5", b_node: "dev:3", b_port: "ether5", medium: null, created_by: "tecnico", created_at: "2026-10-14 08:00:00" };
+  const senza = dueCavi(null, { overrides: [add], soloCavo1: true });
+  assert.deepEqual(fra(senza.m, "dev:2", "dev:3").map((c) => [capoDi(c, "dev:3"), c.fiducia, c.aManoDiverse ?? false]).sort(),
+    [["i:1", "certo", false], ["i:5", "a_mano", true]], "due linee: il cavo visto e quella a mano");
+  assert.equal(senza.m.albero.via.get("dev:3")?.id, senza.cavo1?.id);
+  const con = dueCavi({ node_port: "ether5", other_port: "ether5" }, { overrides: [add], soloCavo1: true });
+  assert.equal(con.m.albero.via.get("dev:3")?.id, con.cavo5?.id, "la ★ vale per la linea a mano");
+  assert.deepEqual(con.m.albero.stelle.map((s) => [s.linea, s.diPrima]), [[con.cavo5?.id, false]]);
+});
+
+// §13.7.3 (Caso 1 del piano): un id «seg:» salvato si risolve nel segmento che contiene ancora quel membro. Una ★ salvata per un
+// segmento col nome di un altro suo membro vale per il segmento di oggi.
+test("§13.7.3: la ★ salvata con l'id di un membro del segmento vale per il segmento di oggi", () => {
+  const t1 = (primaries: ModelPrimaryRow[]) => rete(
+    [dev(1, { name: "RTR-1", device_type: "router", ...mk }), dev(2, { name: "SW-2", ...mk }), dev(9, { name: "RTR-RIS", device_type: "router", ...mk })],
+    [
+      ...cavo(1, "ether1", 2, "ether1", "SW-2", "RTR-1"),
+      vic({ device_id: 1, local_port: "ether8", remote_device_name: "RTR-RIS", remote_port: "ether8", source: "device", remote_platform: "MikroTik" }),
+      vic({ device_id: 1, local_port: "ether8", remote_device_name: "MODEM", remote_port: "eth0", source: "device", remote_mac: "02:00:00:00:77:01" }),
+      vic({ device_id: 2, local_port: "ether8,bridge", remote_device_name: "RTR-1", remote_port: "ether8", source: "device", remote_platform: "MikroTik" }),
+      vic({ device_id: 2, local_port: "ether8,bridge", remote_device_name: "RTR-RIS", remote_port: "ether8", source: "device", remote_platform: "MikroTik" }),
+    ],
+    { ports: [...porte(1, [[1, "ether1", "1000 Mbps"], [8, "ether8", "1000 Mbps"]]), ...porte(2, [[1, "ether1", "1000 Mbps"], [8, "ether8", "1000 Mbps"]]), ...porte(9, [[8, "ether8", "1000 Mbps"]])], primaries },
+  );
+  const senza = ombra(ingresso(t1([])), "dev:1");
+  assert.equal(senza.albero.padri["seg:1:8"], "dev:1", "senza ★ il segmento sta sotto la testa");
+  const con = ombra(ingresso(t1([{ node_id: "seg:2:8", other_node: "dev:2", node_port: "", other_port: "" }])), "dev:1");
+  assert.equal(con.albero.padri["seg:1:8"], "dev:2", "la ★ salvata come «seg:2:8» vale per il segmento «seg:1:8»");
+});
+
+/** Le reti del punto 8: CORE-2 con padre ACC-C e cavi (bloccati) verso ACC-A e, con `accB`, ACC-B. `ruoli`: id → ruolo a mano. */
+function reteCore(accB: boolean, ruoli: Record<number, string> = {}) {
+  const r = (id: number, nome: string, over: Partial<ModelDeviceRow> = {}) => dev(id, { name: nome, ...mk, ...over, ...(ruoli[id] ? { topology_role: ruoli[id] } : {}) });
+  const t1 = rete(
+    [r(1, "RTR-1", { device_type: "router" }), r(10, "CORE-1"), r(21, "ACC-A"), ...(accB ? [r(22, "ACC-B")] : []), r(23, "ACC-C"), r(11, "CORE-2")],
+    [
+      ...cavo(1, "ether1", 10, "ether1", "CORE-1", "RTR-1"), ...cavo(10, "ether2", 21, "ether2", "ACC-A", "CORE-1"), ...cavo(10, "ether4", 23, "ether4", "ACC-C", "CORE-1"),
+      ...(accB ? cavo(10, "ether3", 22, "ether3", "ACC-B", "CORE-1") : []),
+      ...cavo(23, "ether9", 11, "ether9", "CORE-2", "ACC-C"), ...cavo(21, "ether8", 11, "ether8", "CORE-2", "ACC-A"),
+      ...(accB ? cavo(22, "ether7", 11, "ether7", "CORE-2", "ACC-B") : []),
+    ],
+  );
+  const fatti = [fp(11, "n:ether8", "ether8", { source: "device", stp_state: "discarding" }), ...(accB ? [fp(11, "n:ether7", "ether7", { source: "device", stp_state: "discarding" })] : [])];
+  return ombra(ingresso(t1, { fattiPorta: fatti }), "dev:1");
+}
+
+// Spec §13.8.3 punto 8 e §13.9 («Core · Accesso», solo per correggere l'anomalia), Scelta 8 del piano di T3: se un admin ha dato
+// i ruoli a mano vale il ruolo. Un «accesso» non ha mai l'anomalia; un «core» sotto un «accesso» ce l'ha anche dove la struttura
+// (almeno altri due switch allo stesso livello del padre) non basta; senza ruoli vale la regola dei due switch.
+test("§13.8.3 punto 8 con i ruoli a mano: «accesso» non ha mai l'anomalia; «core» sotto «accesso» ce l'ha anche con un solo altro switch", () => {
+  assert.equal(reteCore(true).albero.anomalie.length, 1, "la rete di T2 dà l'anomalia");
+  const accesso = reteCore(true, { 11: "accesso" });
+  assert.equal(accesso.albero.padri["dev:11"], "dev:23", "il ruolo non cambia l'albero");
+  assert.deepEqual(accesso.albero.anomalie, [], "un «accesso» a mano non ha mai l'anomalia");
+
+  assert.deepEqual(reteCore(false).albero.anomalie, [], "senza ruoli, un solo altro switch non basta");
+  assert.deepEqual(reteCore(false, { 11: "core" }).albero.anomalie, [], "«core» con un padre senza ruolo: vale la struttura");
+  assert.deepEqual(reteCore(false, { 11: "core", 23: "accesso" }).albero.anomalie,
+    [{ nodo: "dev:11", padre: "dev:23", porta: "ether9", altri: ["dev:21"] }], "«core» sotto «accesso»: l'anomalia, con la porta del padre");
+  assert.deepEqual(reteCore(false, { 11: "accesso", 23: "accesso" }).albero.anomalie, []);
+});
+
+// Spec §12.5 e §13.8.3 punto 6: il principale dell'hypervisor si sceglie «fra i collegamenti dai dati». Una linea a mano unita a
+// un cavo visto con le stesse porte (Task 4 di T3: «a mano, confermato») è un cavo dei dati; prima la regola la scartava come
+// una correzione, e l'hypervisor finiva sul cavo lento per la fiducia (come T1 la conta: fonti non solo «a mano»).
+test("§12.5: una linea a mano confermata da un cavo visto concorre al principale dell'hypervisor; una solo a mano no", () => {
+  const d = [dev(1, { name: "RTR-1", device_type: "router", ...mk }), dev(2, { name: "SW-2", ...mk }), dev(3, { name: "SW-3", ...mk }), dev(9, { name: "HV-1", device_type: "server", vendor: "proxmox", host: "10.0.0.9", port_count: 0 })];
+  const righe = [
+    ...cavo(1, "ether1", 2, "ether1", "SW-2", "RTR-1"), ...cavo(1, "ether2", 3, "ether2", "SW-3", "RTR-1"),
+    vic({ device_id: 2, local_port: "ether5,bridge", remote_device_name: "HV-1", remote_port: "eno1", source: "device" }),
+    vic({ device_id: 9, local_port: "eno1", remote_device_name: "SW-2", remote_port: "bridge/ether5", source: "device", remote_platform: "MikroTik" }),
+  ];
+  const veloce = vic({ device_id: 3, local_port: "ether5,bridge", remote_device_name: "HV-1", remote_port: "eno2", source: "device" });
+  const vm = { scannedDeviceId: 9, vmid: 100, name: "vm-100", node: "HV-1", status: "running", type: "qemu", macs: [], ips: [], scannedAt: "2026-10-13T06:00:00.000Z" };
+  const add: LinkOverrideRow = { id: 1, action: "add", a_node: "dev:3", a_port: "ether5", b_node: "dev:9", b_port: "eno2", medium: null, created_by: "tecnico", created_at: "2026-10-14 08:00:00" };
+  const albero = (conCavo: boolean) => ombra(ingresso(rete(d, [...righe, ...(conCavo ? [veloce] : [])], {
+    scanHosts: [{ scannedDeviceId: 9, hostname: "HV-1", ips: ["10.0.0.9"], macs: [] }], vms: [vm], overrides: [add],
+    ports: [...porte(2, [[5, "ether5", "1000 Mbps"]]), ...porte(3, [[5, "ether5", "10000 Mbps"]])],
+  })), "dev:1");
+  const con = albero(true);
+  assert.deepEqual(fra(con, "dev:3", "dev:9").map((c) => c.fiducia), ["a_mano_confermato"], "il cavo veloce è anche dichiarato a mano: una linea");
+  assert.equal(lineaDi(fra(con, "dev:3", "dev:9")[0]).aMano, false, "una linea con un cavo visto non è «solo a mano»");
+  assert.equal(con.albero.padri["dev:9"], "dev:3", "il cavo dei dati più veloce è il principale, anche se dichiarato a mano");
+  // Senza il cavo visto la linea è solo a mano: non concorre (le correzioni non scelgono il principale), decide Prim.
+  const soloMano = albero(false);
+  assert.deepEqual(fra(soloMano, "dev:3", "dev:9").map((c) => c.fiducia), ["a_mano"]);
+  assert.equal(lineaDi(fra(soloMano, "dev:3", "dev:9")[0]).aMano, true);
+  assert.equal(soloMano.albero.padri["dev:9"], "dev:2");
+});
+
+// ── T3, Task 5: `primCavi`, l'albero che userà anche la pagina (Task 7) ─────────────────────────────────────────────────────
+
+const linea = (id: string, a: string, b: string, over: Partial<LineaAlbero> = {}): LineaAlbero =>
+  ({ id, a, b, nonVisto: false, stato: "inoltra", fiducia: "probabile", verso: null, velocitaMbps: 1000, aMano: false, ...over });
+const prim = (linee: LineaAlbero[], classi: Record<string, ClasseMappa | "segmento">, over: Partial<IngressoPrim> = {}) => primCavi({
+  classe: (id) => classi[id], ponti: new Set(), visibili: new Set(Object.keys(classi)), linee, partenze: ["R"], scelto: new Map(), stelle: new Map(),
+  ipervisori: new Set(), ...over,
+});
+
+// Revisione del Task 4 di T3: `albero.scelto` può nominare un collegamento finito nei dettagli («dalle VM»), e la pagina (Task 7)
+// non ha tutte le linee del modello. Una scelta o una ★ su una linea che non c'è non diventa una linea; la ★ irraggiungibile non
+// toglie all'hypervisor la sua regola (§12.5), come prima: la ★ forzava solo se il collegamento era fra quelli visibili.
+test("primCavi: una scelta o una ★ che nominano una linea che non c'è non diventano una linea, e l'hypervisor tiene la sua regola", () => {
+  const linee = [linea("r1", "R", "S1"), linea("r2", "R", "S2"), linea("lento", "S1", "H", { fiducia: "certo", velocitaMbps: 100 }), linea("veloce", "S2", "H", { velocitaMbps: 10000 })];
+  const classi = { R: "infra", S1: "infra", S2: "infra", H: "hyper" } as const;
+  const e = prim(linee, classi, { ipervisori: new Set(["H"]), stelle: new Map([["H", "fantasma"]]), scelto: new Map([["H", "dettagli"], ["S1", "dettagli"]]) });
+  assert.equal(e.padri.H, "S2", "il principale dell'hypervisor è il cavo più veloce");
+  assert.equal(e.via.get("H")?.id, "veloce");
+  assert.ok([...e.via.values()].every((l) => linee.includes(l)), "ogni via è una delle linee date");
+  // Senza la regola dell'hypervisor decide la chiave: la fiducia prima della velocità.
+  assert.equal(prim(linee, classi).padri.H, "S1");
+});
+
+// §13.7.6 punto 4: il capo di un ponte radio fa da ponte anche se la classe dice foglia (eccezione a tree.ts).
+test("primCavi: un capo di un ponte radio classificato attaccato fa da ponte; senza, è una foglia", () => {
+  const linee = [linea("ra", "R", "A"), linea("ab", "A", "B")];
+  const classi = { R: "infra", A: "att", B: "infra" } as const;
+  assert.deepEqual(prim(linee, classi).padri, { R: null, A: "R", B: null });
+  assert.deepEqual(prim(linee, classi, { ponti: new Set(["A"]) }).padri, { R: null, A: "R", B: "A" });
+});
+
+// §13.9: «Core · Accesso» si scrivono in `topology_role` (nessuna migrazione); il modello di T1 li legge «rete» e non cambia.
+test("ruoloRete: «core» e «accesso» scritti a mano; ruoloLetto di T1 li legge ancora «rete»", () => {
+  assert.deepEqual(["core", " accesso ", "rete", "attaccato", "", null, undefined, "boh"].map(ruoloRete), ["core", "accesso", null, null, null, null, null, null]);
+  assert.deepEqual(["core", "accesso", "rete", "attaccato", ""].map(ruoloLetto), ["rete", "rete", "rete", "attaccato", null]);
+});
+
+test("l'invariante di primCavi sulle fixture anonime e sulle reti-campione: lo stesso albero del modello per cavo", () => {
+  const carica = (nome: string) => ({ macPorts: [], primaries: [], portInfo: [], vms: [], scanHosts: [], ...JSON.parse(fs.readFileSync(path.join(__dirname, "fixtures", nome), "utf8")) } as TopologyModelInput);
+  for (const t1 of [carica("topologia-cliente-a.json"), carica("topologia-domarc.json"), soloMikrotik(), soloUnifi(), altreMarcheSnmp(), conHypervisor(), mista()]) {
+    const mod = buildTopologyModel(t1);
+    primUgualeAlModello(costruisciModelloCavi(ingresso(t1), mod, { testaScelta: null }), mod);
+  }
+});
+
+// ── Revisione del Task 5 di T3 ─────────────────────────────────────────────────────────────────────────────────────────────
+
+// Importante 1: due linee parallele fra la stessa coppia con la stessa chiave si spareggiavano su «da|a» (uguale per tutte e due)
+// e vinceva la prima dell'elenco. Il modello dà le linee ordinate per id, la pagina (Task 7) no: stesse linee, stesso albero (I39).
+test("primCavi: due linee pari fra la stessa coppia, date in ordine diverso, danno la stessa scelta", () => {
+  const linee = [linea("r1", "R", "S"), linea("x1", "S", "X"), linea("x2", "S", "X")];
+  const classi = { R: "infra", S: "infra", X: "infra" } as const;
+  assert.equal(prim(linee, classi).via.get("X")?.id, "x1");
+  assert.equal(prim([...linee].reverse(), classi).via.get("X")?.id, "x1", "in ordine inverso, la stessa linea");
+});
+
+// Importante 2 (decisione della sessione principale, §13.9 e Scelta 10): una ★ con tutte e due le porte vuote risultava sempre
+// «di prima», anche messa in T3 sull'uplink senza fili di un AP in mesh, che porte non ne ha: «Scegli il cavo» riscriveva la
+// stessa ★ e il giro non si chiudeva. Come «Ignora» a porte vuote, vale per il collegamento senza porte della coppia; se la coppia
+// non ne ha, è una ★ di prima e vale per il migliore (la prova «senza porte» qui sopra).
+test("§13.9: la ★ a porte vuote vale per il collegamento senza porte della coppia (AP in mesh), e non è «di prima»", () => {
+  const u = { vendor: "ubiquiti", via: "api" } as const;
+  const mesh = (primaries: ModelPrimaryRow[]) => rete(
+    [dev(6, { name: "AP-6", device_type: "access_point", controller_mac: "02:00:e8:00:06:00", ...u }),
+      dev(5, { name: "AP-5", device_type: "access_point", controller_mac: "02:00:e8:00:05:00", uplink_mac: "02:00:e8:00:06:00", uplink_type: "wireless", uplink_seen_at: "2026-10-13 03:00:00", ...u })],
+    [], { primaries },
+  );
+  const m = ombra(ingresso(mesh([{ node_id: "dev:5", other_node: "dev:6", node_port: "", other_port: "" }])), "dev:6");
+  const sf = fra(m, "dev:5", "dev:6");
+  assert.deepEqual(sf.map((c) => [c.genere, c.a.nome, c.b.nome]), [["senza_fili", "", ""]], "l'uplink senza fili non ha porte");
+  assert.deepEqual(m.albero.stelle, [{ nodo: "dev:5", altro: "dev:6", linea: sf[0].id, diPrima: false }]);
+});
+
+test("§13.9: la ★ a porte vuote sceglie la linea senza porte della coppia anche se un cavo visto è migliore", () => {
+  const add: LinkOverrideRow = { id: 1, action: "add", a_node: "dev:2", a_port: "", b_node: "dev:3", b_port: "", medium: null, created_by: "tecnico", created_at: "2026-10-14 08:00:00" };
+  const r = dueCavi({}, { overrides: [add] });
+  const vuota = fra(r.m, "dev:2", "dev:3").find((c) => c.a.nome === "" && c.b.nome === "");
+  assert.ok(vuota && r.cavo1, "fra S e X ci sono i due cavi visti e la linea a mano senza porte");
+  assert.equal(r.m.albero.via.get("dev:3")?.id, vuota.id, "la ★ vale per la linea senza porte, non per il cavo migliore");
+  assert.deepEqual(r.m.albero.stelle.map((s) => [s.linea, s.diPrima]), [[vuota.id, false]]);
 });

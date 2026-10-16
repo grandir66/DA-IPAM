@@ -51,7 +51,7 @@ export const TRATTI = { nonVisto: "6 4", aMano: "1.5 4", giu: "10 4", tunnel: "8
 
 const NOME_DI_DEFAULT = (id: string): string => id;
 
-/** L'elenco di VLAN in parole: «VLAN 12 attiva», «VLAN 12, 40 attive». */
+/** L'elenco di VLAN in parole: «VLAN 12 attiva», «VLAN 12, 77 attive». */
 function vlanAttive(v: readonly number[] | undefined): string | null {
   if (!v || v.length === 0) return null;
   return `VLAN ${v.join(", ")} ${v.length === 1 ? "attiva" : "attive"}`;

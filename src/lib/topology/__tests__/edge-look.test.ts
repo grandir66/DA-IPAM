@@ -138,7 +138,7 @@ test("le parole degli stati, corte e intere, alla lettera del §13.10.3", () => 
   assert.equal(p(cavo({ stato: "bloccato" }), "intera"), "⊘ bloccato dallo spanning tree");
   assert.equal(p(cavo({ stato: "bloccato_comune", attivoPerVlan: [12] }), "corta"), "in parte");
   assert.equal(p(cavo({ stato: "bloccato_comune", attivoPerVlan: [12] }), "intera"), "⊘ bloccato nell'albero comune · VLAN 12 attiva");
-  assert.equal(p(cavo({ stato: "bloccato_comune", attivoPerVlan: [12, 40] }), "intera"), "⊘ bloccato nell'albero comune · VLAN 12, 40 attive");
+  assert.equal(p(cavo({ stato: "bloccato_comune", attivoPerVlan: [12, 77] }), "intera"), "⊘ bloccato nell'albero comune · VLAN 12, 77 attive");
   assert.equal(p(cavo({ stato: "bloccato_comune", istanzeNonLette: true }), "intera"), "⊘ bloccato nell'albero comune · può portare altre VLAN");
   assert.equal(p(cavo({ stato: "instradato" }), "corta"), "instradato");
   assert.equal(p(cavo({ stato: "instradato" }), "intera"), "instradato, fuori dal bridge");

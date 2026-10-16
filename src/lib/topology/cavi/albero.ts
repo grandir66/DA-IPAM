@@ -22,8 +22,12 @@ export interface IngressoAlbero {
   collegamenti: readonly Collegamento[];
   /** La testa confermata (della mappa automatica o della sede); null = la propone il sistema. */
   testaConfermata: string | null;
-  /** La porta radice dell'albero comune letta dal bridge del nodo («radice» = il nodo è la radice). */
-  portaRadice: ReadonlyMap<string, string>;
+  /**
+   * La porta radice dell'albero comune letta dal bridge del nodo («radice» = il nodo è la radice): il nome come lo scrive il
+   * bridge e la chiave che quel nome dà con l'elenco delle porte (§13.6.1, come ogni altra porta; null = il nome non dice una
+   * porta). Senza la chiave, «1/1/49» non trovava il cavo che l'altro capo chiama «49» (G16, lettura C).
+   */
+  portaRadice: ReadonlyMap<string, Pick<Porta, "chiave" | "nome"> | typeof RADICE>;
   /** La porta di uplink del controller per i suoi apparati. */
   portaUplink: ReadonlyMap<string, Pick<Porta, "chiave" | "nome">>;
   /** Gli apparati del controller che fanno da router: la loro uscita è la WAN, non scelgono il padre. */
@@ -89,7 +93,7 @@ export interface EsitoPrim { radici: string[]; padri: Record<string, string | nu
 /** Una ★ salvata, risolta: la linea per cui vale; `diPrima` = senza porte, o con porte che non indicano più un collegamento. */
 export interface Stella { nodo: string; altro: string; linea: string; diPrima: boolean }
 
-const RADICE = "radice";
+export const RADICE = "radice";
 /** L'ordine della fiducia nella chiave del punto 3 (vince il più piccolo); la pagina lo usa anche per le contrazioni. */
 export const FIDUCIA: Readonly<Record<Fiducia, number>> = { certo: 0, probabile: 1, dedotto: 2, a_mano_confermato: 3, a_mano: 4 };
 const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
@@ -97,12 +101,12 @@ const fermo = (c: { stato: StatoCollegamento }): boolean => c.stato === "bloccat
 const migliore = (cs: readonly Collegamento[]): Collegamento | undefined =>
   [...cs].sort((x, y) => Number(x.nonVisto) - Number(y.nonVisto) || FIDUCIA[x.fiducia] - FIDUCIA[y.fiducia] || cmp(x.id, y.id))[0];
 
-/** Il collegamento sta su quella porta del nodo: per nome, per chiave «n:», o perché è il fascio con quel nome. */
-function suPorta(c: Collegamento, nodo: string, nome: string): boolean {
+/** Il collegamento sta su quella porta del nodo: per chiave, per nome, per chiave «n:», o perché è il fascio con quel nome. */
+function suPorta(c: Collegamento, nodo: string, porta: Pick<Porta, "chiave" | "nome">): boolean {
   const p = capo(c, nodo);
-  const n = normale(nome);
+  const n = normale(porta.nome);
   const fascio = c.fascio ? (c.a.nodo === nodo ? c.fascio.a : c.fascio.b) : null;
-  return normale(p.nome) === n || p.chiave === `n:${n}` || (fascio !== null && normale(fascio) === n);
+  return (porta.chiave !== null && p.chiave === porta.chiave) || normale(p.nome) === n || p.chiave === `n:${n}` || (fascio !== null && normale(fascio) === n);
 }
 
 /** Punto 1: il collegamento scelto di ogni nodo. */

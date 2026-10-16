@@ -59,13 +59,15 @@ test("G16 · C non sa la porta designata: nei suoi fatti non c'è, e decide il r
   assert.deepEqual(mod(c).albero.padri, mod(letturaA()).albero.padri);
 });
 
-// Il difetto che la rete-campione di C trova: nell'ingresso vero (`snmp-topologia.ts:192`) la porta radice di un bridge è il NOME
-// dell'interfaccia («1/1/49»), mentre `lldpRemPortId` degli HP/Aruba è il numero («49»): la porta dell'altro capo di un cavo si
-// chiama «49» nel collegamento, e `suPorta` (cavi/albero.ts) confronta il nome o la chiave «n:», mai la chiave «i:49» che il nome
-// risolve. La porta radice «non ha un collegamento visto» e decide il ripiego; qui il ripiego dà lo stesso albero, su una rete
-// dove i cavi non sono pari non sarebbe così.
-test("G16 · C · la porta radice per nome si riconosce anche se l'altro capo del cavo la annuncia col numero", { todo: "difetto del modello: suPorta (cavi/albero.ts) non risolve il nome della porta radice («1/1/49») nella chiave «i:49» del cavo che l'altro capo chiama «49»" }, () => {
-  assert.deepEqual(mod(letturaC()).albero.avvisi, []);
+// Il difetto che la rete-campione di C trovava (Task 12): nell'ingresso vero (`snmp-topologia.ts:192`) la porta radice di un bridge
+// è il NOME dell'interfaccia («1/1/49»), mentre `lldpRemPortId` degli HP/Aruba è il numero («49»): la porta dell'altro capo di un
+// cavo si chiama «49» nel collegamento, e `suPorta` (cavi/albero.ts) confrontava il nome o la chiave «n:», mai la chiave «i:49»
+// che il nome risolve. La porta radice «non aveva un collegamento visto» su 3 apparati di C e decideva il ripiego (qui lo stesso
+// albero per caso). Ora la porta radice passa dal traduttore e dalla chiave della porta (§13.6.1), come ogni altra porta.
+test("G16 · C · la porta radice per nome si riconosce anche se l'altro capo del cavo la annuncia col numero", () => {
+  const c = mod(letturaC());
+  assert.deepEqual(c.albero.avvisi, [], "nessuna porta radice senza collegamento");
+  assert.deepEqual([...c.albero.scelto].sort(), [...mod(letturaA()).albero.scelto].sort(), "lo stesso collegamento scelto di A per ogni bridge");
 });
 
 test("G16 · D · l'hypervisor letto dal suo lato: gli stessi capi e lo stesso genere di A, e il cavo di riserva si scrive «riserva del bond»", () => {

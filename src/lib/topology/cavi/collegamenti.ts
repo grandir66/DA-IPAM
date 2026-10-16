@@ -278,16 +278,33 @@ export function costruisciCollegamenti(prove: readonly Prova[], correzioni: read
 
   // Passi 1, 3, 5, 6: i vicini. Il ritorno serve alla conferma per porta dei router e al salto radio.
   const vede = (x: string, y: string, porta: Porta): boolean => vicini.some((q) => q.da.nodo === x && q.altro?.nodo === y
-    && q.classe === "annuncio_collegamento" && (q.tipo === "cavo" || q.tipo === "senza_fili") && !diSegmento.has(chiaveDi(q.da))
+    && q.classe === "annuncio_collegamento" && (q.tipo === "cavo" || q.tipo === "senza_fili") && !diSegmento.has(chiaveDi(q.da)) && !fraRouterSuPiu(q)
     && porta.chiave !== null && q.altro.chiave === porta.chiave);
   const uplinkVerso = (figlio: string, padre: string, porta: Porta): boolean => normali.some((q) => q.classe === "uplink"
     && q.da.nodo === figlio && q.altro?.nodo === padre && porta.chiave !== null && q.altro.chiave === porta.chiave);
+  // Gli apparati che una porta sente con TUTTE le sue righe, annunci di rete compresi (§11.1, passo 5), contati per apparato come
+  // al passo 2 (§13.6.4, I60): il nodo abbinato (un hypervisor e le sue VM sono uno); una riga che non si abbina col suo telaio,
+  // che per i lettori che scrivono il MAC dell'interfaccia è il nome annunciato quando identifica (`unisciPerNome` in prove.ts).
+  // Misura del 16/10 (criterio A): contando solo i nodi abbinati, il router di riserva sentito con un annuncio di rete sulla porta
+  // 4 del router 3 non c'era, e le righe di quella porta davano un secondo cavo verso il router 1.
   const tuttiSu = new Map<string, Set<string>>();
-  for (const p of vicini) {
+  for (const p of normali) {
+    if ((p.classe !== "annuncio_collegamento" && p.classe !== "annuncio_segmento") || (p.tipo !== "cavo" && p.tipo !== "senza_fili" && p.tipo !== "stessa_rete")) continue;
+    if (p.altro?.nodo === p.da.nodo || (p.altro === null && p.telaio === null)) continue;
     const s = tuttiSu.get(chiaveDi(p.da)) ?? new Set<string>();
-    s.add(p.altro!.nodo);
+    s.add(apparato(p));
     tuttiSu.set(chiaveDi(p.da), s);
   }
+  /**
+   * I51, §13.7.1 passo 2: fra due router, una porta che sente due o più apparati (tutte le righe, per apparato) non dà il cavo
+   * e non lo conferma: in mezzo c'è un apparato che non si legge (sul cliente A il ponte radio trasparente fra router 1 e router
+   * 3, dove si sente anche il router di riserva). Il cavo resta quello visto dall'altro capo, se la sua porta sente solo lui.
+   */
+  const fraRouterSuPiu = (q: Prova): boolean => q.altro !== null && ctx.router.has(q.da.nodo) && ctx.router.has(q.altro.nodo)
+    && !ponti.has(chiaveDi(q.da)) && (tuttiSu.get(chiaveDi(q.da))?.size ?? 0) >= 2;
+  /** Il capo `b` di un cavo fra router sente più apparati: «probabile, attraverso apparati non letti», mai certo (C7). */
+  const attraversoVerso = (da: string, b: Porta): boolean => ctx.router.has(da) && ctx.router.has(b.nodo) && b.chiave !== null
+    && !ponti.has(chiaveDi(b)) && (tuttiSu.get(chiaveDi(b))?.size ?? 0) >= 2;
   const portaDelRouter = (p: Prova): boolean => p.da.senzaFili === true || (p.traduttoreLocale ? p.da.fisica === true : p.da.fisica !== false);
   for (const p of vicini) {
     const k = chiaveDi(p.da);
@@ -298,6 +315,7 @@ export function costruisciCollegamenti(prove: readonly Prova[], correzioni: read
     const collegamento = p.classe === "annuncio_collegamento";
     if (ctx.router.has(p.da.nodo)) {
       if (!portaDelRouter(p)) { stessaRete.push(p); continue; }             // un nome scelto non è una porta fisica (I58)
+      if (fraRouterSuPiu(p)) { stessaRete.push(p); continue; }              // I51: verso un router, da una porta con più apparati
       const confermato = vede(b.nodo, p.da.nodo, p.da) || uplinkVerso(b.nodo, p.da.nodo, p.da);
       if (!collegamento) {
         // Un annuncio di segmento non conferma mai (M-5): vale solo come unico vicino su una porta fisica, contando tutte le
@@ -309,6 +327,7 @@ export function costruisciCollegamenti(prove: readonly Prova[], correzioni: read
       const unico = (sentiti.get(k)?.size ?? 0) <= 1 || ponti.has(k);   // le due radio di un ponte contano come il cavo verso la vicina
       if (p.da.chiave === null && !confermato) { stessaRete.push(p); continue; }
       if (p.da.senzaFili === true ? !confermato : !(unico || confermato)) { stessaRete.push(p); continue; }
+      if (attraversoVerso(p.da.nodo, b)) { aggiungi("cavo", p.da, b, p, p.da.nodo).attraverso = true; continue; }
     } else if (!collegamento || p.tipo === "stessa_rete") {
       stessaRete.push(p);
       continue;
@@ -701,7 +720,8 @@ export function costruisciCollegamenti(prove: readonly Prova[], correzioni: read
     const n = visti.get(base) ?? 0;
     visti.set(base, n + 1);
     c.id = n === 0 ? base : `${base}#${n + 1}`;
-    c.frasi.push(`→ ${PAROLE_FIDUCIA[c.fiducia]}${c.stato && c.stato !== "inoltra" ? `, ${c.stato.replace("_", " ")}` : ""}`);
+    // «probabile, attraverso apparati non letti» (§13.4.5, I51): le parole della fiducia di un cavo fra router che passa da apparati non letti.
+    c.frasi.push(`→ ${PAROLE_FIDUCIA[c.fiducia]}${c.attraverso && c.fiducia === "probabile" ? ", attraverso apparati non letti" : ""}${c.stato && c.stato !== "inoltra" ? `, ${c.stato.replace("_", " ")}` : ""}`);
   }
   collegamenti.sort((x, y) => cmp(x.id, y.id) || FIDUCIA_ORDINE[x.fiducia] - FIDUCIA_ORDINE[y.fiducia]);
   return {

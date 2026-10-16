@@ -863,9 +863,9 @@ Scrittura nel DB dell'hub (produzione): con la sua conferma scritta, o la fa lui
 8. **Campi solo se servono** (`unioni`, `separazioni`, `model.unioni`, come `cavi?`): un campo vuoto cambierebbe impronte,
    ingresso esportato e fixture (Fatto 8).
 9. **La funzione per le scansioni resta** e i suoi dati non si convertono; nella scheda due sezioni con nomi diversi («Sulla
-   mappa», «IP collegati allo stesso device fisico»). **Fatto da confermare:** convivono due funzioni simili; riunirle è una
+   mappa», «IP collegati allo stesso device fisico»). **Confermato da Riccardo il 16/10:** convivono due funzioni simili; riunirle è una
    proposta per dopo.
-10. **Il terzo posto è la Discovery**, non «Asset» (Fatto 10); lì c'è già «Stesso device fisico». **Fatto da confermare.**
+10. **Il terzo posto è la Discovery**, non «Asset» (Fatto 10); lì c'è già «Stesso device fisico». **Confermato da Riccardo il 16/10.**
 11. **Anteprima obbligatoria** (`applica` esplicito, `false` non scrive, calcolata con lo stesso indice della mappa): il
     `--dry-run` di casa in forma di dialogo; è una POST, quindi resta a un admin.
 12. **Ricerca sul server**, sull'indice leggero (`getIngressoNodi`), 20 risultati e «+ altri N» (regola 9). «Candidati probabili»

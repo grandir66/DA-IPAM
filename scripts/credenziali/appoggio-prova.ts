@@ -27,6 +27,13 @@
  * colonne svuotate. I lasciati col motivo vengono da `lasciatiApparati`, che
  * rifà la conversione a vuoto sulla copia già convertita: i lasciati sono
  * tornati com'erano, quindi il motivo è lo stesso.
+ *
+ * Dalla 2f (T22) anche controller e AD: per riga nome, tipo, voce puntata
+ * (`credential_id`, null prima della 2f) e, per l'AD, la voce WinRM; per ogni
+ * riga con una voce il confronto decifrato fra colonne vecchie e voce
+ * («uguale» / «diverso», mai il segreto: lo calcola `confrontoIntegrazioni`
+ * in memoria con la ENCRYPTION_KEY dell'ambiente). I lasciati col motivo
+ * vengono da `lasciatiIntegrazioni`, come per gli apparati.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -36,6 +43,12 @@ import { closeHubDb, getHubDbPath, getSetting } from "../../src/lib/db-hub";
 import { statoCredenziali, type StatoCredenziali } from "../../src/lib/credentials/migra-credenziali-tipi";
 import { chiaviGlobaliHub, resolveCredentialsForDb, type CredProtocol } from "../../src/lib/credentials/resolve";
 import { COLONNE_APPARATO, convertiCredenzialiApparati, type EsitoApparati } from "../../src/lib/credentials/converti-apparati";
+import {
+  confrontoIntegrazioni,
+  convertiControllerEAd,
+  type ConfrontoRiga,
+  type EsitoIntegrazioni,
+} from "../../src/lib/credentials/converti-integrazioni";
 
 export { cartellaTenant, getHubDbPath };
 
@@ -77,12 +90,25 @@ export interface MisuraApparati {
   binding: Array<{ id: number; device_id: number; protocol_type: string; port: number; credential_id: number | null }>;
 }
 
+export interface MisuraIntegrazioni {
+  /** null se le tabelle non ci sono (schema di prima). */
+  righe: { controller: number; controllerConVoce: number; ad: number; adConVoce: number } | null;
+  /** id → nome, tipo, voce puntata (null prima della 2f o se scollegato) e il suo metodo. */
+  controller: Record<string, { nome: string; kind: string; voce: number | null; metodo: string | null }>;
+  /** id → nome, voce dell'account LDAP e voce WinRM. */
+  ad: Record<string, { nome: string; voce: number | null; winrm: number | null }>;
+  confronto: ConfrontoRiga[];
+  /** Il confronto non si è potuto fare: il messaggio. */
+  errore: string | null;
+}
+
 export interface Misura {
   stato: StatoCredenziali;
   segni: Record<string, string>;
   voci: Voce[];
   catene: MisuraCatene;
   apparati: MisuraApparati;
+  integrazioni: MisuraIntegrazioni;
 }
 
 function haTabella(dbh: Database.Database, nome: string): boolean {
@@ -143,6 +169,44 @@ function misuraApparati(dbh: Database.Database): MisuraApparati {
   return out;
 }
 
+function haColonna(dbh: Database.Database, tabella: string, colonna: string): boolean {
+  return (dbh.prepare(`PRAGMA table_info(${tabella})`).all() as Array<{ name: string }>).some((c) => c.name === colonna);
+}
+
+function misuraIntegrazioni(dbh: Database.Database): MisuraIntegrazioni {
+  const out: MisuraIntegrazioni = { righe: null, controller: {}, ad: {}, confronto: [], errore: null };
+  if (!haTabella(dbh, "network_controllers") || !haTabella(dbh, "ad_integrations")) return out;
+  const conVoceC = haColonna(dbh, "network_controllers", "credential_id");
+  const conMetodo = conVoceC && haColonna(dbh, "credentials", "auth_method");
+  const voceA = haColonna(dbh, "ad_integrations", "credential_id") ? "credential_id" : "NULL";
+  const controller = dbh
+    .prepare(
+      `SELECT c.id, c.name, c.kind, ${conVoceC ? "c.credential_id" : "NULL"} AS voce, ${conMetodo ? "v.auth_method" : "NULL"} AS metodo
+       FROM network_controllers c ${conVoceC ? "LEFT JOIN credentials v ON v.id = c.credential_id" : ""} ORDER BY c.id`
+    )
+    .all() as Array<{ id: number; name: string; kind: string; voce: number | null; metodo: string | null }>;
+  const ad = dbh.prepare(`SELECT id, name, ${voceA} AS voce, winrm_credential_id AS winrm FROM ad_integrations ORDER BY id`).all() as Array<{
+    id: number;
+    name: string;
+    voce: number | null;
+    winrm: number | null;
+  }>;
+  for (const c of controller) out.controller[String(c.id)] = { nome: c.name, kind: c.kind, voce: c.voce, metodo: c.metodo };
+  for (const a of ad) out.ad[String(a.id)] = { nome: a.name, voce: a.voce, winrm: a.winrm };
+  out.righe = {
+    controller: controller.length,
+    controllerConVoce: controller.filter((c) => c.voce != null).length,
+    ad: ad.length,
+    adConVoce: ad.filter((a) => a.voce != null).length,
+  };
+  try {
+    out.confronto = confrontoIntegrazioni(dbh);
+  } catch (e) {
+    out.errore = e instanceof Error ? e.message : String(e);
+  }
+  return out;
+}
+
 function misuraHandle(dbh: Database.Database): Misura {
   const haSettings = dbh.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'tenant_settings'").get();
   const segni = haSettings
@@ -158,6 +222,7 @@ function misuraHandle(dbh: Database.Database): Misura {
     voci: dbh.prepare("SELECT id, name, credential_type FROM credentials ORDER BY id").all() as Voce[],
     catene: misuraCatene(dbh),
     apparati: misuraApparati(dbh),
+    integrazioni: misuraIntegrazioni(dbh),
   };
 }
 
@@ -190,6 +255,20 @@ export function lasciatiApparati(code: string): EsitoApparati["lasciati"] {
   try {
     const dbh = withTenant(code, () => getTenantDb(code));
     return convertiCredenzialiApparati(dbh, { aVuoto: true }).lasciati;
+  } finally {
+    closeTenantDb(code);
+  }
+}
+
+/**
+ * Le righe di controller e AD che la conversione della 2f lascia, col motivo:
+ * la conversione rifatta a vuoto sul tenant già aperto (e convertito). Non
+ * scrive: tutto si annulla.
+ */
+export function lasciatiIntegrazioni(code: string): EsitoIntegrazioni["lasciati"] {
+  try {
+    const dbh = withTenant(code, () => getTenantDb(code));
+    return convertiControllerEAd(dbh, { aVuoto: true }).lasciati;
   } finally {
     closeTenantDb(code);
   }

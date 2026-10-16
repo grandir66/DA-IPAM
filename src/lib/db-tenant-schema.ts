@@ -720,6 +720,9 @@ CREATE TABLE IF NOT EXISTS ad_integrations (
   groups_count INTEGER DEFAULT 0,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now')),
+  -- Tappa 2f credenziali: l'account LDAP è una voce d'archivio (tipo «ad»).
+  -- In fondo, come la aggiunge l'ALTER di getTenantDb ai DB di prima.
+  credential_id INTEGER REFERENCES credentials(id) ON DELETE SET NULL,
   UNIQUE(dc_host, domain)
 );
 
@@ -1460,7 +1463,11 @@ CREATE TABLE IF NOT EXISTS network_controllers (
   last_neighbors INTEGER,
   origin TEXT NOT NULL DEFAULT 'manual',
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  -- Tappa 2f credenziali: i segreti sono una voce d'archivio (tipo «unifi»);
+  -- le colonne qui sopra restano piene fino alla 2g. In fondo, come la
+  -- aggiunge l'ALTER di getTenantDb ai DB di prima.
+  credential_id INTEGER REFERENCES credentials(id) ON DELETE SET NULL
 );
 
 -- Storico delle letture di un controller: le ultime 50 per controller

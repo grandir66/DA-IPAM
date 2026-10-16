@@ -20,6 +20,10 @@
  * e porta), le voci nuove, le community diventate voce, le colonne svuotate,
  * gli inline rimasti e gli apparati lasciati col motivo. Le scelte (porta e
  * segreto) le confronta la fotografia, sullo stesso istante.
+ * Dalla 2f (T22) anche controller e AD: righe con una voce prima → dopo; per
+ * nome le voci nuove, il confronto decifrato fra colonne vecchie e voce per
+ * ogni riga («uguale» / «diverso», mai il segreto), la voce WinRM dell'AD
+ * (deve restare quella) e le righe lasciate col motivo.
  *
  * Ordine obbligato (vincolo «Script sulle copie»): db-tenant e db-hub fissano i
  * percorsi quando si caricano, e l'ambiente del servizio punta ai dati veri.
@@ -42,6 +46,7 @@ import { cartelleServizio, controllaCopia } from "../../src/lib/credentials/guar
 
 type Misura = import("./appoggio-prova").Misura;
 type Lasciati = Array<{ device_id: number; motivo: string }>;
+type LasciatiIntegrazioni = Array<{ tabella: "network_controllers" | "ad_integrations"; id: number; motivo: string }>;
 
 const NOME_PROTOCOLLO: Record<string, string> = { ssh: "SSH", snmp: "SNMP", winrm: "WinRM", api: "API", redfish: "Redfish", onvif: "ONVIF" };
 
@@ -160,7 +165,11 @@ function stampaApparati(prima: Misura, dopo: Misura, lasciati: Lasciati | { erro
   );
   process.stdout.write(`binding nati dalle colonne:\n${righeNati.join("\n") || "  (nessuno)"}\n`);
 
-  const nuove = dopo.voci.filter((v) => !vociPrima.has(v.id));
+  // Le voci di controller e AD (2f) hanno la loro sezione: qui non le punta nessun binding.
+  const vociIntegrazioni = new Set(
+    [...Object.values(dopo.integrazioni.controller), ...Object.values(dopo.integrazioni.ad)].map((x) => x.voce).filter((v): v is number => v != null)
+  );
+  const nuove = dopo.voci.filter((v) => !vociPrima.has(v.id) && !vociIntegrazioni.has(v.id));
   const righeVoci = nuove.map((v) => {
     const b = a2.binding.find((x) => x.credential_id === v.id);
     if (!b) return `  «${v.name}» (#${v.id}): nessun binding la punta`;
@@ -207,6 +216,79 @@ function stampaApparati(prima: Misura, dopo: Misura, lasciati: Lasciati | { erro
     return true;
   }
   process.stdout.write(`lasciati:\n${lasciati.map((l) => `  ${app(l.device_id)}: ${l.motivo}`).join("\n") || "  (nessuno)"}\n`);
+  return daGuardare;
+}
+
+const NOME_METODO_UNIFI: Record<string, string> = { chiave: "UniFi con chiave", utente: "UniFi con utente" };
+
+/**
+ * Controller e AD (2f): righe con una voce, voci nuove, confronto decifrato
+ * per riga, voce WinRM dell'AD, lasciati col motivo. Vero se c'è da guardare
+ * oltre al segno: un confronto «diverso», una voce che cambia o sparisce su
+ * una riga che l'aveva, la voce WinRM cambiata, misure non riuscite.
+ */
+function stampaIntegrazioni(prima: Misura, dopo: Misura, lasciati: LasciatiIntegrazioni | { errore: string }): boolean {
+  const i1 = prima.integrazioni;
+  const i2 = dopo.integrazioni;
+  const r = (m: Misura["integrazioni"], k: "controller" | "controllerConVoce" | "ad" | "adConVoce") => (m.righe ? String(m.righe[k]) : "-");
+  process.stdout.write(
+    `controller e AD (2f): controller con voce ${r(i1, "controllerConVoce")} → ${r(i2, "controllerConVoce")} su ${r(i2, "controller")}, ` +
+      `AD con voce ${r(i1, "adConVoce")} → ${r(i2, "adConVoce")} su ${r(i2, "ad")}\n`
+  );
+  let daGuardare = false;
+  const nomeC = (id: number | string) => `controller «${i2.controller[String(id)]?.nome ?? i1.controller[String(id)]?.nome ?? "?"}» (#${id})`;
+  const nomeA = (id: number | string) => `AD «${i2.ad[String(id)]?.nome ?? i1.ad[String(id)]?.nome ?? "?"}» (#${id})`;
+  const nomeRiga = (t: string, id: number | string) => (t === "network_controllers" ? nomeC(id) : nomeA(id));
+  const vociPrima = new Set(prima.voci.map((v) => v.id));
+
+  const nuove: string[] = [];
+  const cambiate: string[] = [];
+  for (const [id, c] of Object.entries(i2.controller)) {
+    const era = i1.controller[id]?.voce ?? null;
+    if (c.voce != null && !vociPrima.has(c.voce)) {
+      nuove.push(`  ${nomeC(id)}: ${nomeVoce(prima, dopo, c.voce)}, ${NOME_METODO_UNIFI[c.metodo ?? ""] ?? `metodo ${c.metodo ?? "?"}`}`);
+    }
+    if (era != null && era !== c.voce) cambiate.push(`  ${nomeC(id)}: ${nomeVoce(prima, dopo, era)} → ${c.voce == null ? "nessuna" : nomeVoce(prima, dopo, c.voce)}`);
+  }
+  for (const [id, a] of Object.entries(i2.ad)) {
+    const era = i1.ad[id]?.voce ?? null;
+    if (a.voce != null && !vociPrima.has(a.voce)) nuove.push(`  ${nomeA(id)}: ${nomeVoce(prima, dopo, a.voce)}`);
+    if (era != null && era !== a.voce) cambiate.push(`  ${nomeA(id)}: ${nomeVoce(prima, dopo, era)} → ${a.voce == null ? "nessuna" : nomeVoce(prima, dopo, a.voce)}`);
+  }
+  process.stdout.write(`voci nuove (2f):\n${nuove.join("\n") || "  (nessuna)"}\n`);
+  if (cambiate.length > 0) {
+    daGuardare = true;
+    process.stdout.write(`voci CAMBIATE su righe che l'avevano già:\n${cambiate.join("\n")}\n`);
+  }
+
+  if (i2.errore) {
+    daGuardare = true;
+    process.stdout.write(`confronto decifrato non misurabile: ${i2.errore}\n`);
+  } else {
+    const righe = i2.confronto.map((c) => {
+      if (c.esito === "diverso") daGuardare = true;
+      return `  ${nomeRiga(c.tabella, c.id)}: ${c.esito}${c.esito === "diverso" ? "  (DIVERSO)" : ""}`;
+    });
+    process.stdout.write(`confronto decifrato (colonne e voce):\n${righe.join("\n") || "  (nessuna riga con una voce)"}\n`);
+  }
+
+  const winrm: string[] = [];
+  for (const [id, a] of Object.entries(i1.ad)) {
+    const dopoA = i2.ad[id];
+    if (!dopoA || dopoA.winrm !== a.winrm) winrm.push(`  ${nomeA(id)}: ${a.winrm ?? "nessuna"} → ${dopoA ? (dopoA.winrm ?? "nessuna") : "AD SPARITO"}`);
+  }
+  if (winrm.length > 0) {
+    daGuardare = true;
+    process.stdout.write(`WinRM dell'AD: CAMBIATO\n${winrm.join("\n")}\n`);
+  } else {
+    process.stdout.write("WinRM dell'AD: invariato\n");
+  }
+
+  if ("errore" in lasciati) {
+    process.stdout.write(`lasciati (2f): non misurabili (${lasciati.errore})\n`);
+    return true;
+  }
+  process.stdout.write(`lasciati (2f):\n${lasciati.map((l) => `  ${nomeRiga(l.tabella, l.id)}: ${l.motivo}`).join("\n") || "  (nessuno)"}\n`);
   return daGuardare;
 }
 
@@ -273,6 +355,16 @@ async function main(): Promise<number> {
     }
     if (stampaApparati(prima, dopo, lasciati)) {
       process.stdout.write("DA GUARDARE: apparati con binding spariti, inline o colonne rimasti fuori dai lasciati, o lasciati non misurabili\n");
+      esito = 1;
+    }
+    let lasciatiI: LasciatiIntegrazioni | { errore: string };
+    try {
+      lasciatiI = appoggio.lasciatiIntegrazioni(code);
+    } catch (e) {
+      lasciatiI = { errore: e instanceof Error ? e.message : String(e) };
+    }
+    if (stampaIntegrazioni(prima, dopo, lasciatiI)) {
+      process.stdout.write("DA GUARDARE: controller o AD con un confronto diverso, una voce cambiata, il WinRM cambiato, o misure non riuscite\n");
       esito = 1;
     }
     if (JSON.stringify(riapertura) === JSON.stringify(dopo)) {

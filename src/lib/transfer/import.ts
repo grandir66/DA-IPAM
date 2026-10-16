@@ -7,9 +7,10 @@ import { tableSpec, TENANT_TABLES } from "./table-registry";
 import { writableColumns, rekeyColumns } from "./schema-introspect";
 import { encrypt } from "@/lib/crypto";
 import { descriviNormalizza, normalizzaTipiCredenziali, segnoTipi } from "@/lib/credentials/normalizza-tipi";
-import { conversioneChiusa, leggiSegno, scriviSegno, segnoErrore, SEGNO_APPARATI, SEGNO_CATENE, SEGNO_TIPI } from "@/lib/credentials/segni-t2";
+import { conversioneChiusa, leggiSegno, scriviSegno, segnoErrore, SEGNO_APPARATI, SEGNO_CATENE, SEGNO_INTEGRAZIONI, SEGNO_TIPI } from "@/lib/credentials/segni-t2";
 import { convertiCateneVecchie, descriviCatene, segnoCatene } from "@/lib/credentials/converti-catene";
 import { convertiCredenzialiApparati, descriviApparati, segnoApparati } from "@/lib/credentials/converti-apparati";
+import { convertiControllerEAd, descriviIntegrazioni, segnoIntegrazioni } from "@/lib/credentials/converti-integrazioni";
 
 export interface ImportArgs {
   bundle: Buffer;
@@ -171,6 +172,41 @@ export function importTenant(args: ImportArgs): ImportResult {
       console.error(`[transfer] import: ${SEGNO_APPARATI}, segno d'errore non scritto:`, e2);
     }
     result.conversioni[SEGNO_APPARATI] = { segno, dettaglio: "conversione delle credenziali degli apparati non eseguita" };
+  }
+
+  // Tappa 2f credenziali (T22): il bundle può portare i segreti nelle righe
+  // di controller e AD, e il segno della sorgente. Come per la 2e: la
+  // conversione si chiama direttamente e il segno si riscrive con l'esito,
+  // nella stessa transazione; con la cancellazione e il segno del bundle già
+  // chiuso (done:/parziale:) non si riconverte, perché con le colonne ancora
+  // piene un controller spostato (voce scollegata) si ricollegherebbe a una
+  // voce ricreata senza che nessuno l'abbia scelta. Con un'unione quello che
+  // nasce va nella risposta.
+  try {
+    const segnoBundle = options.wipe ? leggiSegno(tenantDb, SEGNO_INTEGRAZIONI) : null;
+    if (segnoBundle != null && conversioneChiusa(segnoBundle)) {
+      result.conversioni[SEGNO_INTEGRAZIONI] = {
+        segno: segnoBundle,
+        dettaglio: "già nella sorgente del bundle (qui non si riconvertono: un controller o un AD scollegato non si ricollega da solo)",
+      };
+    } else {
+      const { esito, segno } = tenantDb.transaction(() => {
+        const esito = convertiControllerEAd(tenantDb, { aVuoto: false });
+        const segno = segnoIntegrazioni(esito);
+        scriviSegno(tenantDb, SEGNO_INTEGRAZIONI, segno);
+        return { esito, segno };
+      })();
+      result.conversioni[SEGNO_INTEGRAZIONI] = { segno, dettaglio: descriviIntegrazioni(esito) };
+    }
+  } catch (e) {
+    console.error(`[transfer] import: ${SEGNO_INTEGRAZIONI} fallita, si riprova alla prossima apertura del tenant:`, e);
+    const segno = segnoErrore(e);
+    try {
+      scriviSegno(tenantDb, SEGNO_INTEGRAZIONI, segno);
+    } catch (e2) {
+      console.error(`[transfer] import: ${SEGNO_INTEGRAZIONI}, segno d'errore non scritto:`, e2);
+    }
+    result.conversioni[SEGNO_INTEGRAZIONI] = { segno, dettaglio: "conversione delle credenziali di controller e AD non eseguita" };
   }
 
   // --- Import tabelle HUB (merge, non distruttivo) ---

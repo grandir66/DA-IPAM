@@ -25,7 +25,8 @@ import { ipSortKey, sqlOrderByDhcpLeases, sqlOrderByNetworks, type SortDirection
 import { convertiCommunityInlineSnmp } from "./credentials/converti-community-inline";
 import { descriviRicostruzione, descriviStato, migraCredenzialiTipi, statoCredenziali } from "./credentials/migra-credenziali-tipi";
 import { descriviNormalizza, normalizzaTipiCredenziali, segnoTipi } from "./credentials/normalizza-tipi";
-import { conversioneChiusa, leggiSegno, scriviSegno, segnoErrore, SEGNO_APPARATI, SEGNO_CATENE, SEGNO_TIPI } from "./credentials/segni-t2";
+import { conversioneChiusa, leggiSegno, scriviSegno, segnoErrore, SEGNO_APPARATI, SEGNO_CATENE, SEGNO_INTEGRAZIONI, SEGNO_TIPI } from "./credentials/segni-t2";
+import { convertiControllerEAd, descriviIntegrazioni, segnoIntegrazioni } from "./credentials/converti-integrazioni";
 import { convertiCateneVecchie, descriviCatene, MOTIVO_DUE_TENANT, segnoCatene } from "./credentials/converti-catene";
 import { convertiCredenzialiApparati, descriviApparati, segnoApparati } from "./credentials/converti-apparati";
 import { migraAppleMacos } from "./devices/migra-apple-macos";
@@ -1584,6 +1585,22 @@ export function getTenantDb(tenantCode: string): Database.Database {
     console.error(`[db-tenant] ${tenantCode}: migrazione physical_devices fallita:`, e);
   }
 
+  // Tappa 2f credenziali (T22): controller e AD puntano una voce d'archivio.
+  // Un ADD COLUMN con REFERENCES e default NULL è ammesso con le chiavi esterne
+  // attive. A sé, fuori dal blocco qui sopra: se fallisce, la conversione in
+  // fondo lo dice col segno errore: e si riprova all'apertura dopo.
+  try {
+    for (const tabella of ["network_controllers", "ad_integrations"]) {
+      const cols = newDb.prepare(`PRAGMA table_info(${tabella})`).all() as Array<{ name: string }>;
+      if (cols.length > 0 && !cols.some((c) => c.name === "credential_id")) {
+        newDb.exec(`ALTER TABLE ${tabella} ADD COLUMN credential_id INTEGER REFERENCES credentials(id) ON DELETE SET NULL`);
+        console.info(`[db-tenant] ${tenantCode}: ${tabella}.credential_id aggiunto`);
+      }
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: colonne credential_id di controller e AD (2f) non aggiunte:`, e);
+  }
+
   // v0.2.651: cleanup one-shot mac_port_entries all'apertura del DB tenant.
   // Topologia fase 2 (spec §10.5): la soglia è la stessa del job cleanup
   // (30 giorni), non più 24 ore — con le 24 ore ogni riavvio, o ogni riapertura
@@ -1951,6 +1968,37 @@ export function getTenantDb(tenantCode: string): Database.Database {
       scriviSegno(newDb, SEGNO_APPARATI, segnoErrore(e));
     } catch (e2) {
       console.error(`[db-tenant] ${tenantCode}: ${SEGNO_APPARATI}, segno d'errore non scritto:`, e2);
+    }
+  }
+
+  // Tappa 2f credenziali (T22): i segreti di controller e AD diventano voci
+  // d'archivio («UniFi · <nome>», «AD · <nome>») e la riga le punta con
+  // credential_id; le colonne vecchie restano piene fino alla 2g. Dopo la 2c
+  // (tipi per esteso) e la 2e. Conversione e segno nella stessa transazione;
+  // col segno done:/parziale: non si richiama più: con le colonne ancora
+  // piene ricreerebbe voci doppie, o ricollegherebbe a una voce un controller
+  // spostato senza che nessuno l'abbia scelta. Il journal elenca per id le
+  // righe convertite (confronto decifrato «uguale») e quelle lasciate col
+  // motivo. Se fallisce (anche per un confronto «diverso»): ROLLBACK, segno
+  // errore:, il tenant si apre lo stesso e si riprova all'apertura dopo.
+  try {
+    if (!conversioneChiusa(leggiSegno(newDb, SEGNO_INTEGRAZIONI))) {
+      const { esito, segno } = newDb.transaction(() => {
+        const esito = convertiControllerEAd(newDb, { aVuoto: false });
+        const segno = segnoIntegrazioni(esito);
+        scriviSegno(newDb, SEGNO_INTEGRAZIONI, segno);
+        return { esito, segno };
+      })();
+      const riga = `[db-tenant] ${tenantCode}: ${SEGNO_INTEGRAZIONI} ${segno}; ${descriviIntegrazioni(esito)}`;
+      if (esito.lasciati.length > 0) console.warn(riga);
+      else console.info(riga);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: ${SEGNO_INTEGRAZIONI} fallita (ROLLBACK), si riprova alla prossima apertura:`, e);
+    try {
+      scriviSegno(newDb, SEGNO_INTEGRAZIONI, segnoErrore(e));
+    } catch (e2) {
+      console.error(`[db-tenant] ${tenantCode}: ${SEGNO_INTEGRAZIONI}, segno d'errore non scritto:`, e2);
     }
   }
 

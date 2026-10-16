@@ -1334,6 +1334,8 @@ export function getDb(): Database.Database {
   // AD: nuove colonne e tabella DHCP leases
   try { _db.exec("ALTER TABLE ad_integrations ADD COLUMN winrm_credential_id INTEGER REFERENCES credentials(id) ON DELETE SET NULL"); } catch { /* already exists */ }
   try { _db.exec("ALTER TABLE ad_integrations ADD COLUMN dhcp_leases_count INTEGER DEFAULT 0"); } catch { /* already exists */ }
+  // Tappa 2f credenziali: l'account LDAP è una voce d'archivio (gemella dell'ALTER di getTenantDb).
+  try { _db.exec("ALTER TABLE ad_integrations ADD COLUMN credential_id INTEGER REFERENCES credentials(id) ON DELETE SET NULL"); } catch { /* already exists */ }
   try { _db.exec("ALTER TABLE ad_computers ADD COLUMN ip_address TEXT"); } catch { /* already exists */ }
   try { _db.exec("ALTER TABLE ad_computers ADD COLUMN ou TEXT"); } catch { /* already exists */ }
   try { _db.exec("ALTER TABLE ad_users ADD COLUMN phone TEXT"); } catch { /* already exists */ }

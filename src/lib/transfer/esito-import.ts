@@ -21,6 +21,7 @@ const NOMI: Readonly<Record<string, string>> = {
   credenziali_t2_tipi: "Tipi delle credenziali",
   credenziali_t2_catene: "Elenchi vecchi delle credenziali (reti e host)",
   credenziali_t2_apparati: "Colonne e binding inline degli apparati",
+  credenziali_t2_integrazioni: "Account di controller e Active Directory",
 };
 
 /** Tutti i conteggi del segno (`chiave=numero`) a zero: niente è cambiato. */

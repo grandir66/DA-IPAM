@@ -10,9 +10,12 @@
  * Le fonti sono le colonne con chiave esterna verso `credentials` nel DB di un
  * tenant. Le scansioni software si elencano ma non contano: sono storia, e
  * con la voce eliminata la loro colonna diventa NULL senza fermare niente.
- * Controller e account LDAP dell'AD restano vuoti fino al T22, che aggiunge
- * le colonne `network_controllers.credential_id` e `ad_integrations.credential_id`
- * (una query che le nominasse oggi darebbe «no such column»).
+ * Dalla 2f (T22) contano anche i controller (`network_controllers.credential_id`)
+ * e l'account LDAP dell'AD (`ad_integrations.credential_id`, `come: "ldap"`):
+ * senza, la voce «UniFi · <nome>» o «AD · <nome>» risulterebbe libera e si
+ * potrebbe eliminare (ON DELETE SET NULL); dopo la 2g, con le colonne della
+ * riga vuote, il segreto sarebbe perso e `unifi_sync` / `ad_sync` si
+ * fermerebbero.
  *
  * Catene vecchie (`network_host_credentials`) e pin (`host_detect_credential`)
  * contano solo finché il motore li legge (`cateneVecchieAperte`): dopo la 2d
@@ -71,12 +74,22 @@ export function usiCredenzialeDb(dbh: Database.Database, id: number): UsiCredenz
       )
       .get({ id }) as { n: number }
   ).n;
+  const controller = dbh
+    .prepare(`SELECT id, name AS nome FROM network_controllers WHERE credential_id = ? ORDER BY name, id`)
+    .all(id) as UsiCredenziale["controller"];
   const ad = dbh
-    .prepare(`SELECT id, name AS nome, 'winrm' AS come FROM ad_integrations WHERE winrm_credential_id = ? ORDER BY name, id`)
-    .all(id) as UsiCredenziale["ad"];
+    .prepare(
+      `SELECT id, name AS nome, come FROM (
+         SELECT id, name, 'ldap' AS come FROM ad_integrations WHERE credential_id = @id
+         UNION ALL
+         SELECT id, name, 'winrm' AS come FROM ad_integrations WHERE winrm_credential_id = @id
+       )
+       ORDER BY name, id, come`,
+    )
+    .all({ id }) as UsiCredenziale["ad"];
   const proxmox = (dbh.prepare(`SELECT COUNT(*) AS n FROM proxmox_hosts WHERE credential_id = ?`).get(id) as { n: number }).n;
   const scansioniSoftware = (dbh.prepare(`SELECT COUNT(*) AS n FROM software_scans WHERE credential_id = ?`).get(id) as { n: number }).n;
-  return { apparati, reti, host, controller: [], ad, proxmox, scansioniSoftware };
+  return { apparati, reti, host, controller, ad, proxmox, scansioniSoftware };
 }
 
 /** Usi che tengono ferma la voce: tutti tranne le scansioni software passate. */
@@ -111,6 +124,10 @@ export function usiTotaliDb(dbh: Database.Database): Map<number, number> {
          ${vecchie ? "UNION SELECT 'h:' || host_id, credential_id FROM host_detect_credential" : ""}
          UNION
          SELECT 'ad:' || id, winrm_credential_id FROM ad_integrations WHERE winrm_credential_id IS NOT NULL
+         UNION
+         SELECT 'adl:' || id, credential_id FROM ad_integrations WHERE credential_id IS NOT NULL
+         UNION
+         SELECT 'ct:' || id, credential_id FROM network_controllers WHERE credential_id IS NOT NULL
          UNION
          SELECT 'px:' || id, credential_id FROM proxmox_hosts WHERE credential_id IS NOT NULL
        )

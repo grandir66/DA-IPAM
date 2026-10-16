@@ -367,3 +367,77 @@ for (const segnoSorgente of ["done", "parziale"] as const) {
     assert.match(res.conversioni.credenziali_t2_apparati?.dettaglio ?? "", /già nella sorgente del bundle/);
   });
 }
+
+// Tappa 2f credenziali (T22): un bundle esportato prima della 2f porta i
+// segreti nelle righe di controller e AD, e nessun segno
+// `credenziali_t2_integrazioni`. L'import converte direttamente e riscrive il
+// segno con l'esito, che va anche nella risposta.
+test("import di un bundle di prima della 2f: controller e AD → voci d'archivio, segno riscritto, esito nella risposta", async () => {
+  process.env.ENCRYPTION_KEY = "A".repeat(64);
+  const { exportTenant } = await import("../export");
+  const { importTenant } = await import("../import");
+  const crypto = await import("@/lib/crypto");
+  const src = freshTenant();
+  src.prepare("INSERT INTO network_controllers (name, vendor, kind, url, api_key_enc) VALUES ('Sede', 'unifi', 'udm', 'https://10.9.0.1', ?)").run(crypto.encrypt("chiave-2f"));
+  src.prepare(
+    "INSERT INTO ad_integrations (name, dc_host, domain, base_dn, encrypted_username, encrypted_password) VALUES ('dominio', 'dc1', 'ad.local', 'DC=ad', ?, ?)"
+  ).run(crypto.encrypt("DOM\\ldap"), crypto.encrypt("pw-ldap"));
+  const bundle = exportTenant({
+    tenantDb: src, hubDb: freshHub(),
+    options: { tenantCode: "DEFAULT", tiers: [], includeVault: false, passphrase: "trasporto-2f", exportedAt: "2026-10-16T10:00:00.000Z", appVersion: "test" },
+  });
+  const dst = freshTenant();
+  const res = importTenant({ bundle, tenantDb: dst, hubDb: freshHub(), options: { tenantCode: "DEFAULT", passphrase: "trasporto-2f", wipe: true } });
+
+  const c = dst.prepare("SELECT credential_id FROM network_controllers").get() as { credential_id: number | null };
+  const a = dst.prepare("SELECT credential_id FROM ad_integrations").get() as { credential_id: number | null };
+  assert.notEqual(c.credential_id, null);
+  assert.notEqual(a.credential_id, null);
+  const vc = dst.prepare("SELECT name, credential_type, encrypted_password FROM credentials WHERE id = ?").get(c.credential_id) as { name: string; credential_type: string; encrypted_password: string };
+  assert.equal(vc.name, "UniFi · Sede");
+  assert.equal(vc.credential_type, "unifi");
+  assert.equal(crypto.decrypt(vc.encrypted_password), "chiave-2f");
+  const segno = (dst.prepare("SELECT value FROM tenant_settings WHERE key = 'credenziali_t2_integrazioni'").get() as { value: string }).value;
+  assert.match(segno, /^done:.*controller=1,chiave=1,utente=0,ad=1,lasciati=0/);
+  assert.equal(res.conversioni.credenziali_t2_integrazioni?.segno, segno);
+  assert.match(res.conversioni.credenziali_t2_integrazioni?.dettaglio ?? "", /controller #1 → voce #\d+ \(chiave, uguale\)/);
+});
+
+// Un bundle esportato DOPO la 2f porta il segno chiuso della sorgente. Con la
+// cancellazione il segno in tenant_settings è quello del bundle: chiuso → non
+// si converte (come all'apertura del tenant), il segno resta, e la risposta
+// lo dice. Altrimenti un controller scollegato (spostato) si ricollegherebbe a
+// una voce ricreata dalle colonne ancora piene, senza che nessuno l'abbia scelta.
+for (const segnoSorgente of ["done", "parziale"] as const) {
+  test(`import con cancellazione di un bundle di dopo la 2f (segno ${segnoSorgente}:): il controller scollegato resta scollegato, il segno del bundle resta`, async () => {
+    process.env.ENCRYPTION_KEY = "A".repeat(64);
+    const { exportTenant } = await import("../export");
+    const { importTenant } = await import("../import");
+    const crypto = await import("@/lib/crypto");
+    const { convertiControllerEAd, segnoIntegrazioni } = await import("@/lib/credentials/converti-integrazioni");
+    const src = freshTenant();
+    const ctrl = Number(
+      src.prepare("INSERT INTO network_controllers (name, vendor, kind, url, api_key_enc) VALUES ('Sede', 'unifi', 'udm', 'https://10.9.0.1', ?)").run(crypto.encrypt("chiave-2f")).lastInsertRowid
+    );
+    // La 2f all'apertura della sorgente: conversione e segno.
+    const esito = convertiControllerEAd(src, { aVuoto: false });
+    const segnoBundle = segnoSorgente === "done" ? segnoIntegrazioni(esito) : "parziale:2026-10-16T08:00:00.000Z:controller=1,chiave=1,utente=0,ad=0,lasciati=1";
+    src.prepare("INSERT INTO tenant_settings (key, value) VALUES ('credenziali_t2_integrazioni', ?)").run(segnoBundle);
+    // Il controller si sposta senza voce; le colonne (il caso peggiore) restano piene.
+    src.prepare("UPDATE network_controllers SET credential_id = NULL, url = 'https://10.9.9.9' WHERE id = ?").run(ctrl);
+    const voci = (src.prepare("SELECT COUNT(*) AS n FROM credentials").get() as { n: number }).n;
+    const bundle = exportTenant({
+      tenantDb: src, hubDb: freshHub(),
+      options: { tenantCode: "DEFAULT", tiers: [], includeVault: false, passphrase: "trasporto-2f", exportedAt: "2026-10-20T10:00:00.000Z", appVersion: "test" },
+    });
+    const dst = freshTenant();
+    const res = importTenant({ bundle, tenantDb: dst, hubDb: freshHub(), options: { tenantCode: "DEFAULT", passphrase: "trasporto-2f", wipe: true } });
+
+    assert.equal((dst.prepare("SELECT credential_id FROM network_controllers WHERE id = ?").get(ctrl) as { credential_id: number | null }).credential_id, null, "il controller spostato si è ricollegato");
+    assert.equal((dst.prepare("SELECT COUNT(*) AS n FROM credentials").get() as { n: number }).n, voci, "una voce è nata dalle colonne");
+    const segno = (dst.prepare("SELECT value FROM tenant_settings WHERE key = 'credenziali_t2_integrazioni'").get() as { value: string }).value;
+    assert.equal(segno, segnoBundle);
+    assert.equal(res.conversioni.credenziali_t2_integrazioni?.segno, segnoBundle);
+    assert.match(res.conversioni.credenziali_t2_integrazioni?.dettaglio ?? "", /già nella sorgente del bundle/);
+  });
+}

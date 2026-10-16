@@ -56,6 +56,29 @@ const ALTER_V3 = ["encrypted_auth_key", "auth_protocol", "encrypted_priv_key", "
 );
 const ALTER_PORTA = "ALTER TABLE credentials ADD COLUMN port INTEGER";
 
+/**
+ * Controller e AD come erano prima della 2f (T22), senza `credential_id`: la
+ * forma di H1 e A al rilascio della 2c, con 10 figlie. Dalla 2f lo schema di
+ * oggi le ha, e le figlie sono 12.
+ */
+const TABELLE_PRIMA_2F = [
+  `CREATE TABLE IF NOT EXISTS network_controllers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, vendor TEXT NOT NULL, kind TEXT NOT NULL, url TEXT NOT NULL,
+    site TEXT NOT NULL DEFAULT 'default', username TEXT NOT NULL DEFAULT '', password_enc TEXT NOT NULL DEFAULT '',
+    api_key_enc TEXT NOT NULL DEFAULT '', cert_pin TEXT, enabled INTEGER NOT NULL DEFAULT 1, last_run_at TEXT, last_ok INTEGER,
+    last_message TEXT, last_devices INTEGER, last_ports INTEGER, last_neighbors INTEGER, origin TEXT NOT NULL DEFAULT 'manual',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`,
+  `CREATE TABLE IF NOT EXISTS ad_integrations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, dc_host TEXT NOT NULL, domain TEXT NOT NULL, base_dn TEXT NOT NULL,
+    encrypted_username TEXT NOT NULL, encrypted_password TEXT NOT NULL, use_ssl INTEGER NOT NULL DEFAULT 1, port INTEGER NOT NULL DEFAULT 636,
+    enabled INTEGER NOT NULL DEFAULT 1, winrm_credential_id INTEGER REFERENCES credentials(id) ON DELETE SET NULL,
+    dhcp_leases_count INTEGER DEFAULT 0, last_sync_at TEXT, last_sync_status TEXT, computers_count INTEGER DEFAULT 0,
+    users_count INTEGER DEFAULT 0, groups_count INTEGER DEFAULT 0, created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')), UNIQUE(dc_host, domain)
+  )`,
+];
+
 /** Vecchio ipam.db, db.ts:273-286: nome senza virgolette, 3 tipi, v3 nella CREATE. */
 const DEF_IPAM_3 = `CREATE TABLE IF NOT EXISTS credentials (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -165,6 +188,7 @@ describe("migraCredenzialiTipi sulla definizione vecchia completa", () => {
     const db = dbVecchio((d) => {
       d.exec(DEF_TENANT_7);
       for (const a of [...ALTER_V3, ALTER_PORTA]) d.exec(a);
+      for (const t of TABELLE_PRIMA_2F) d.exec(t);
     });
     popola(db);
     assert.equal((db.prepare("PRAGMA table_info(credentials)").all() as unknown[]).length, 13, "13 colonne, porta in fondo");
@@ -202,14 +226,12 @@ describe("migraCredenzialiTipi sulla definizione vecchia completa", () => {
     assert.equal(conta(db, "network_credentials.credential_id"), 0);
   });
 
-  it("con le due colonne del T22 conta 12 figlie, ricavate dallo schema, e le ritrova tutte", () => {
+  it("con le due colonne del T22 (schema di oggi) conta 12 figlie, ricavate dallo schema, e le ritrova tutte", () => {
     const db = dbVecchio((d) => {
       d.exec(DEF_TENANT_7);
       for (const a of [...ALTER_V3, ALTER_PORTA]) d.exec(a);
     });
     popola(db);
-    db.exec("ALTER TABLE network_controllers ADD COLUMN credential_id INTEGER REFERENCES credentials(id) ON DELETE SET NULL");
-    db.exec("ALTER TABLE ad_integrations ADD COLUMN credential_id INTEGER REFERENCES credentials(id) ON DELETE SET NULL");
     db.prepare("INSERT INTO network_controllers (name, vendor, kind, url, credential_id) VALUES ('UniFi', 'ubiquiti', 'unifi', 'https://u', 1)").run();
     db.prepare("UPDATE ad_integrations SET credential_id = 1").run();
 

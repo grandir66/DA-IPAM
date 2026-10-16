@@ -25,7 +25,7 @@ export interface IngressoAlbero {
   /**
    * La porta radice dell'albero comune letta dal bridge del nodo («radice» = il nodo è la radice): il nome come lo scrive il
    * bridge e la chiave che quel nome dà con l'elenco delle porte (§13.6.1, come ogni altra porta; null = il nome non dice una
-   * porta). Senza la chiave, «1/1/49» non trovava il cavo che l'altro capo chiama «49» (G16, lettura C).
+   * porta). Senza la chiave, il nome d'interfaccia scritto dal bridge non trovava il cavo che l'altro capo chiama col solo numero (G16, lettura C).
    */
   portaRadice: ReadonlyMap<string, Pick<Porta, "chiave" | "nome"> | typeof RADICE>;
   /** La porta di uplink del controller per i suoi apparati. */

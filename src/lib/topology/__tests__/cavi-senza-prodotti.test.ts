@@ -13,7 +13,10 @@ const DIR = path.join(__dirname, "..", "cavi");
 const PAROLE = ["mikrotik", "routeros", "unifi", "ubiquiti", "cisco", "aruba", "proxmox", "mndp"];
 // Una forma di porta può stare anche dentro un'espressione regolare, con la barra rovesciata («ether\d», «bridge\/»):
 // la cifra o la barra possono essere scritte con l'escape (revisione del piano, 15/10: prima l'autoprova qui sotto era rossa).
-const FORME: RegExp[] = [/\bhp\b/i, /ether(?:\d|\\d)/i, /sfp-sfpplus/i, /sfpplus/i, /sfp28/i, /SFP_/, /,bridge/i, /bridge\\?\//i, /wlan/i, /eoip/i, /["'`][^"'`\n]*\blocal\s/i];
+// Revisione finale di T3 (M1): anche i nomi di porta di uno switch a pile («1/1/49»), di Linux («eth0», «bond3») e il
+// programma LLDP di Linux stavano nei commenti di cavi/: nemmeno lì, le parole neutre bastano.
+const FORME: RegExp[] = [/\bhp\b/i, /ether(?:\d|\\d)/i, /sfp-sfpplus/i, /sfpplus/i, /sfp28/i, /SFP_/, /,bridge/i, /bridge\\?\//i, /wlan/i, /eoip/i, /["'`][^"'`\n]*\blocal\s/i,
+  /\d+\/\d+\/\d+/, /\beth\d/i, /\bbond\d/i, /lldpd/i];
 
 function formeDiProdotto(testo: string): string[] {
   const out: string[] = [];
@@ -31,6 +34,10 @@ test("la prova trova davvero le forme di un prodotto", () => {
   assert.equal(formeDiProdotto("// lettura del router mndp").length > 0, true);
   assert.equal(formeDiProdotto('const l = "local Port 7";').length > 0, true);
   assert.deepEqual(formeDiProdotto('lato === "locale" ? "porta" : "remota"'), []);
+  for (const t of ["// la porta «1/1/49» di uno switch", "// «eth0» da una parte", "// la porta `bond3`", "// con `lldpd` sull'host"]) {
+    assert.equal(formeDiProdotto(t).length > 0, true, t);
+  }
+  assert.deepEqual(formeDiProdotto("// il fascio «bond» e la porta di un host, letta il 16/10"), []);
 });
 
 test("I37: nessun nome di prodotto né forma di porta di un prodotto in src/lib/topology/cavi/", () => {

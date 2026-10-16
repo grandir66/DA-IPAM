@@ -109,7 +109,7 @@ export interface RisultatoCavi {
   oltre: Array<{ porta: Porta; radio: string; apparati: string[] }>;
   /** Prove di bordo scartate perché la porta è il capo di un cavo (§13.7.2 passo 10, §13.9). */
   scartateBordo: Array<{ porta: Porta; verso: string; motivo: string }>;
-  /** Collegamenti «dalle VM» su una porta che l'host con `lldpd` non conferma (§13.5.5, I56). */
+  /** Collegamenti «dalle VM» su una porta che l'host, letto dal suo lato, non conferma (§13.5.5, I56). */
   scartateVm: Array<{ porta: Porta; ipervisore: string }>;
 }
 
@@ -412,13 +412,13 @@ export function costruisciCollegamenti(prove: readonly Prova[], correzioni: read
   // I partner dei fasci: sono cavi, e prima del bordo (le loro porte sono capi).
   for (const p of normali) if (p.altro && p.classe === "fascio") aggiungi("cavo", p.da, p.altro, p, p.da.nodo);
 
-  // Il fascio ha un nome solo, comunque lo dica il lettore: «bond1», o «if:<indice>» tradotto col nome di quell'interfaccia.
+  // Il fascio ha un nome solo, comunque lo dica il lettore: il nome del fascio, o «if:<indice>» tradotto col nome di quell'interfaccia.
   const nomeFascio = (nodo: string, gruppo: string | null): string | null => {
     const i = indiceDelFascio(gruppo);
     return i === null ? gruppo : (ctx.porte.get(nodo)?.perIndice.get(i) ?? gruppo);
   };
   // §13.6.3 (criterio B della misura del 16/10): l'interfaccia del fascio (tipo letto «lag») è il fascio stesso. Sulla rete B la
-  // tabella MAC del router sulla porta `bond3` vedeva le schede del NAS, e ne venivano due linee in più accanto al fascio dei membri.
+  // tabella MAC del router sull'interfaccia del fascio vedeva le schede del NAS, e ne venivano due linee in più accanto al fascio dei membri.
   const interfacciaDelFascio = (p: Porta): boolean => !p.nodo.startsWith("seg:") && p.nome !== "" && ctx.fatti.porta(p.nodo, p).some((x) => x.if_kind === "lag");
   /** «nodo|fascio» di un membro (dal suo gruppo) o dell'interfaccia del fascio (dal suo nome); null fuori da un fascio. */
   const chiaveFascio = (p: Porta): string | null => {
@@ -445,7 +445,7 @@ export function costruisciCollegamenti(prove: readonly Prova[], correzioni: read
     const f = chiaveFascio(x);
     return [...(x.chiave !== null ? (capiDati.get(chiaveDi(x)) ?? []) : []), ...(f !== null ? (capiDati.get(`fascio:${f}`) ?? []) : [])].some((n) => n !== verso);
   };
-  // Le righe fresche della lettura dal lato dell'host (`lldpd`, §13.5.5), per hypervisor.
+  // Le righe fresche della lettura dal lato dell'host (§13.5.5), per hypervisor.
   const dallHost = new Map<string, Prova[]>();
   for (const q of normali) if (q.lettore === "host" && q.altro !== null && fresca(q)) dallHost.set(q.da.nodo, [...(dallHost.get(q.da.nodo) ?? []), q]);
   const scartateBordo: RisultatoCavi["scartateBordo"] = [];
@@ -463,7 +463,7 @@ export function costruisciCollegamenti(prove: readonly Prova[], correzioni: read
         continue;
       }
       if (p.classe === "vm") {
-        // Con `lldpd` sull'host (§13.5.5, §13.15 punto 4): un collegamento «dalle VM» su una porta che l'host non conferma si scarta.
+        // Con la lettura dal lato dell'host (§13.5.5, §13.15 punto 4): un collegamento «dalle VM» su una porta che l'host non conferma si scarta.
         const [h, sw] = ctx.ipervisori.has(p.da.nodo) ? [p.da, p.altro] : [p.altro, p.da];
         const host = dallHost.get(h.nodo) ?? [];
         if (host.length > 0 && !host.some((q) => q.altro!.nodo === sw.nodo && compatibili(q.altro!, sw))) {
@@ -598,7 +598,7 @@ export function costruisciCollegamenti(prove: readonly Prova[], correzioni: read
     // i capi scambiati, e la chiave «a:‹nodo›» o «b:‹nodo›» di prima ne faceva due cavi. Ogni capo con un fascio letto dà la chiave
     // «nodo|nome del fascio»; due cavi della coppia che ne condividono una sono membri dello stesso fascio (anche coi fatti LAG
     // letti da un capo per un membro e dall'altro per un altro).
-    // Un cavo che sta sull'interfaccia del fascio (la tabella MAC della porta `bond3`, un vicino letto lì) non è un membro: è il
+    // Un cavo che sta sull'interfaccia del fascio (la tabella MAC di quell'interfaccia, un vicino letto lì) non è un membro: è il
     // fascio stesso, e le sue prove vanno al fascio dei suoi membri (§13.6.3, criterio B).
     const sulFascio = (z: Bozza): string[] => [z.a, z.b].filter(interfacciaDelFascio).map((p) => `${p.nodo}|${normale(p.nome)}`);
     const chiaviDi = new Map(cavi.map((z) => [z, new Set(sulFascio(z).length > 0 ? [] : [z.a, z.b].flatMap((p) => {

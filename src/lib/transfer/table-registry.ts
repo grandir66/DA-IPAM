@@ -34,6 +34,9 @@ export const TENANT_TABLES: TableSpec[] = [
   { table: "mdm_config", scope: "tenant", tier: "config", secretColumns: ["password_encrypted"] },
   { table: "edge_scan_schedules", scope: "tenant", tier: "config" },
   { table: "network_controllers", scope: "tenant", tier: "config", secretColumns: ["password_enc", "api_key_enc"] },
+  // Pannello Zabbix (passo 7.4): gli abbinamenti verificati da una persona viaggiano con gli host.
+  // La configurazione no (in EXCLUDED_TENANT_TABLES): la chiave di lettura vale per un'istanza sola.
+  { table: "zabbix_abbinamenti", scope: "tenant", tier: "config" },
   // --- asset (default ON) ---
   { table: "hosts", scope: "tenant", tier: "asset" },
   { table: "mobile_devices", scope: "tenant", tier: "asset" },
@@ -115,7 +118,13 @@ export const HUB_TABLES: TableSpec[] = [
  * credenziali, T26). Non le legge né le scrive più nessuno, la pulizia della 2g
  * le toglie, e l'import di un bundle di prima le converte in memoria.
  */
-export const EXCLUDED_TENANT_TABLES: string[] = ["network_host_credentials", "host_detect_credential"];
+export const EXCLUDED_TENANT_TABLES: string[] = [
+  "network_host_credentials",
+  "host_detect_credential",
+  // Chiave di lettura del centro Zabbix: una per cliente E per istanza (design dell'API, §2). Un'altra
+  // installazione riceve la sua dal kit di DA-Link; copiarla farebbe parlare due istanze con la stessa chiave.
+  "zabbix_lettura_config",
+];
 
 /** Tabelle hub install-level: identità/auth/setup, NON viaggiano col tenant. */
 export const EXCLUDED_HUB_TABLES: string[] = [

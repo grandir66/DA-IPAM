@@ -6,9 +6,10 @@ import { getModulesHealth, invalidateModulesHealth } from "@/lib/modules/health"
 import type { ModuleRepairAction } from "@/lib/modules/health";
 import type { ModuleKey } from "@/lib/modules/registry";
 
-// Moduli riparabili = quelli con un probe in modules/health.ts (compute()).
-// inventory_agent e nis2_inventory sono ESCLUSI di proposito: toggle locali
-// senza servizio esterno, getModulesHealth non li emette → repair = 404.
+// Moduli riparabili = quelli con un probe in modules/health.ts (compute()) e
+// qualcosa da riconfigurare. ESCLUSI di proposito: nis2_inventory (toggle
+// locale, nessuna sonda) e inventory_agent (la sonda legge l'età dell'ultimo
+// inventario: si «ripara» sui computer con l'agente, non qui).
 const VALID_KEYS: ModuleKey[] = [
   "edge",
   "librenms",
@@ -87,15 +88,23 @@ export async function POST(
       return NextResponse.json({ ok: false, error: "Modulo non trovato nello stato health" }, { status: 404 });
     }
 
+    // Passo 4 (16/10): un modulo spento non è guasto ma non è nemmeno «riparato»:
+    // la guida dice di accenderlo. Un modulo locale non verificato (Patch) non ha
+    // niente da riparare.
+    const daRiparare = health.verdict !== "ok" && health.verdict !== "unverified";
     return NextResponse.json({
-      ok: health.verdict === "ok",
+      ok: !daRiparare,
       key,
       verdict: health.verdict,
       reachable: health.reachable,
       authOk: health.authOk,
       detail: health.detail,
-      fix: health.verdict === "ok" ? null : fixHintFor(health.repairAction),
-      configHref: health.verdict === "ok" ? null : configHrefFor(key),
+      fix: !daRiparare
+        ? null
+        : health.verdict === "off"
+          ? "Il modulo è spento: accendilo o configuralo dalla sua pagina di configurazione."
+          : fixHintFor(health.repairAction),
+      configHref: daRiparare ? configHrefFor(key) : null,
     });
   });
 }

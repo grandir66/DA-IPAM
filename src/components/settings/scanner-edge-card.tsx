@@ -5,7 +5,6 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { CheckCircle2, Loader2, RefreshCw, ShieldCheck, ShieldAlert, Trash2, PlayCircle, Network, ExternalLink, Plug } from "lucide-react";
-import { deriveEdgeUiBase } from "@/lib/integrations/edge-ui-url";
 import { edgeRemovalConfirmText } from "@/lib/modules/uninstall-copy";
 
 interface ScannerRow {
@@ -21,6 +20,8 @@ interface ScannerRow {
   cert_fingerprint: string | null;
   consecutive_errors: number;
   auto_disabled_at: string | null;
+  /** URL dell'interfaccia edge per il browser, risolto dal server (passo 4b). */
+  ui_url?: string | null;
 }
 
 
@@ -30,7 +31,9 @@ interface ScannerRow {
  * NON modifica lo scanner-edge: solo navigazione. Quelle UI esistono già.
  */
 function EdgePanel({ scanner }: { scanner: ScannerRow }) {
-  const uiBase = deriveEdgeUiBase(scanner.base_url);
+  // Dal server: il nodo che serve la 6443 (nginx sul nodo di DA-IPAM), non l'host
+  // di base_url, che in consolidated è 127.0.0.1 e in full l'IP dell'edge.
+  const uiBase = scanner.ui_url ? scanner.ui_url.replace(/\/+$/, "") : null;
   const connected = scanner.enabled === 1 && !scanner.auto_disabled_at;
 
   return (
@@ -56,8 +59,9 @@ function EdgePanel({ scanner }: { scanner: ScannerRow }) {
           </a>
         ) : (
           <p className="text-xs text-muted-foreground italic">
-            Host non raggiungibile da browser (<code>{scanner.base_url}</code>). Apri la UI edge
-            sulla sua porta <code>6443</code> dalla LAN cliente.
+            Nessun URL per il browser: manca la voce dell&apos;edge nella Launchpad e l&apos;host
+            pubblico dell&apos;appliance. Apri la UI edge sulla porta <code>6443</code> del nodo
+            DA-IPAM dalla LAN cliente.
           </p>
         )}
       </div>

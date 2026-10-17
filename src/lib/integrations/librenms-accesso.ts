@@ -91,6 +91,8 @@ export interface DipendenzeProxyLibreNMS {
   inoltra(req: Request): Promise<Response>;
   /** Porta al browser i cookie dell'accesso automatico. */
   allegaCookie(resp: Response, cookie: string): Promise<Response>;
+  /** Svuota la cache delle sessioni: il prossimo `cookieAccessoAutomatico` rifà il login. */
+  svuotaCache?(): void;
 }
 
 const TESTO = { "content-type": "text/plain; charset=utf-8" };
@@ -122,13 +124,31 @@ export async function gestisciProxyLibreNMS(
   let resp = await deps.inoltra(inoltrata);
 
   // Pagina di login dopo l'accesso automatico → home del proxy coi cookie.
+  // Se è LibreNMS a rimandare al login, la sessione in cache non vale più
+  // (scaduta o invalidata a monte): si svuota la cache e si rientra una volta
+  // sola con un login nuovo (passo 4b, 16/10). Prima si riprovava col cookie
+  // vecchio e si restava sul login fino a 45 minuti.
   const percorso = new URL(req.url).pathname;
-  if (percorso.endsWith("/login") || resp.headers.get("location")?.includes("/login")) {
+  const rimandaAlLogin = resp.headers.get("location")?.includes("/login") ?? false;
+  if (percorso.endsWith("/login") || rimandaAlLogin) {
+    let valido = cookie;
+    if (rimandaAlLogin && deps.svuotaCache) {
+      deps.svuotaCache();
+      const nuovo = await deps.cookieAccessoAutomatico();
+      if (!nuovo) {
+        return new Response(
+          "Accesso automatico a LibreNMS rifiutato: la sessione è scaduta e il nuovo login non è riuscito. Verifica la password admin in Impostazioni → Moduli → LibreNMS",
+          { status: 502, headers: TESTO },
+        );
+      }
+      valido = nuovo;
+    }
     const home = new Request(new URL(`${LIBRENMS_PROXY_BASE}/`, req.url), {
       method: "GET",
-      headers: inoltrata.headers,
+      headers: richiestaConCookieLibreNMS(req, valido).headers,
     });
     resp = await deps.inoltra(home);
+    return deps.allegaCookie(resp, valido);
   }
 
   return deps.allegaCookie(resp, cookie);
@@ -139,6 +159,72 @@ export interface DipendenzeAccessoAutomaticoLibreNMS {
   cookieAccessoAutomatico(): Promise<string | null>;
   /** Intestazioni Set-Cookie per l'interfaccia diretta (Path=/). */
   setCookieDiretti(cookie: string): string[];
+  /**
+   * La sessione apre ancora LibreNMS (e non la pagina di login)? Assente = non
+   * si controlla (comportamento di prima).
+   */
+  sessioneValida?(cookie: string): Promise<boolean>;
+  /** Svuota la cache delle sessioni: il prossimo login è nuovo. */
+  svuotaCache?(): void;
+}
+
+export interface OpzioniAccessoAutomaticoLibreNMS {
+  /** Host (senza porta) con cui il browser ha aperto DA-IPAM: dove finiscono i cookie. */
+  hostRichiesta?: string | null;
+  /** Host serviti da nginx dell'appliance: lì LibreNMS risponde anche col nome di DA-IPAM. */
+  hostAllineabili?: string[];
+}
+
+export type AllineamentoHostLibreNMS =
+  | { ok: true; url: string; cambiato: boolean }
+  | { ok: false; url: string; hostDaIpam: string; hostLibreNMS: string };
+
+/**
+ * Il cookie impostato dalla risposta di DA-IPAM vale per il nome con cui il
+ * browser ha aperto DA-IPAM (i cookie non guardano la porta, guardano il nome).
+ * Il 302 deve quindi portare a LibreNMS sullo STESSO nome (passo 4b, 16/10):
+ *  - stesso nome già → l'URL resta;
+ *  - LibreNMS servito da nginx dell'appliance (uno degli `hostAllineabili`) →
+ *    si cambia solo il nome nel 302, porta e percorso restano;
+ *  - LibreNMS altrove → non si può: l'accesso automatico perderebbe il cookie in
+ *    silenzio, e lo si dice.
+ */
+export function allineaHostLibreNMS(
+  urlDiretto: string,
+  hostRichiesta: string | null | undefined,
+  hostAllineabili: string[] = [],
+): AllineamentoHostLibreNMS {
+  const richiesta = hostRichiesta?.trim().toLowerCase();
+  let target: URL;
+  try {
+    target = new URL(urlDiretto);
+  } catch {
+    return { ok: true, url: urlDiretto, cambiato: false };
+  }
+  if (!richiesta) return { ok: true, url: urlDiretto, cambiato: false };
+  const hostLibreNMS = target.hostname.toLowerCase();
+  if (hostLibreNMS === richiesta) return { ok: true, url: urlDiretto, cambiato: false };
+  const allineabili = hostAllineabili.map((h) => h.toLowerCase());
+  if (allineabili.includes(hostLibreNMS)) {
+    target.hostname = richiesta;
+    return { ok: true, url: target.toString(), cambiato: true };
+  }
+  return { ok: false, url: urlDiretto, hostDaIpam: richiesta, hostLibreNMS };
+}
+
+/** Host (senza porta) dalla richiesta: `X-Forwarded-Host` di nginx, poi `Host`. */
+export function hostDellaRichiesta(headers: Headers): string | null {
+  const grezzo = headers.get("x-forwarded-host")?.split(",")[0]?.trim() || headers.get("host")?.trim() || "";
+  if (!grezzo) return null;
+  try {
+    return new URL(`https://${grezzo}`).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 }
 
 /**
@@ -149,18 +235,45 @@ export async function gestisciAccessoAutomaticoLibreNMS(
   urlDiretto: string,
   ruolo: unknown,
   deps: DipendenzeAccessoAutomaticoLibreNMS,
+  opzioni: OpzioniAccessoAutomaticoLibreNMS = {},
 ): Promise<Response> {
   const rimanda = () => new Response(null, { status: 302, headers: { Location: urlDiretto } });
   if (!puoUsareAccessoAutomatico(ruolo) || !deps.accessoAutomaticoAttivo()) return rimanda();
 
-  const cookie = await deps.cookieAccessoAutomatico();
+  const host = allineaHostLibreNMS(urlDiretto, opzioni.hostRichiesta, opzioni.hostAllineabili);
+  if (!host.ok) {
+    const pagina =
+      `<!doctype html><meta charset="utf-8"><title>Accesso automatico a LibreNMS</title>` +
+      `<body style="font-family:sans-serif;max-width:40rem;margin:2rem auto;line-height:1.5">` +
+      `<h1 style="font-size:1.2rem">L'accesso automatico a LibreNMS non può funzionare da qui</h1>` +
+      `<p>DA-IPAM è aperto come <b>${escapeHtml(host.hostDaIpam)}</b>, LibreNMS sta su <b>${escapeHtml(host.hostLibreNMS)}</b>: ` +
+      `il cookie di sessione resterebbe sul primo nome e LibreNMS chiederebbe il login.</p>` +
+      `<p>Apri DA-IPAM come <b>${escapeHtml(host.hostLibreNMS)}</b>, oppure entra in LibreNMS col suo login: ` +
+      `<a href="${escapeHtml(urlDiretto)}">${escapeHtml(urlDiretto)}</a></p></body>`;
+    return new Response(pagina, { status: 409, headers: { "content-type": "text/html; charset=utf-8" } });
+  }
+
+  let cookie = await deps.cookieAccessoAutomatico();
+  // Sessione in cache che non apre più LibreNMS (scaduta, invalidata a monte):
+  // via dalla cache e un login nuovo, una volta (passo 4b, 16/10).
+  if (cookie && deps.sessioneValida && !(await deps.sessioneValida(cookie))) {
+    deps.svuotaCache?.();
+    cookie = await deps.cookieAccessoAutomatico();
+    if (cookie && !(await deps.sessioneValida(cookie))) {
+      deps.svuotaCache?.();
+      return new Response(
+        "Accesso automatico a LibreNMS: anche dopo un login nuovo LibreNMS apre la pagina di login. Verifica la password admin in Impostazioni → Moduli → LibreNMS",
+        { status: 502, headers: TESTO },
+      );
+    }
+  }
   if (!cookie) {
     return new Response(
       "Accesso automatico a LibreNMS non disponibile: verifica la password admin in Impostazioni → Moduli → LibreNMS",
       { status: 502, headers: TESTO },
     );
   }
-  const headers = new Headers({ Location: urlDiretto });
+  const headers = new Headers({ Location: host.url });
   for (const sc of deps.setCookieDiretti(cookie)) headers.append("Set-Cookie", sc);
   return new Response(null, { status: 302, headers });
 }

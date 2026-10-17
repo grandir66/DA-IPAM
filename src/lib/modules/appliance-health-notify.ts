@@ -25,7 +25,7 @@ import cron from "node-cron";
 import type { Database } from "better-sqlite3";
 import { getTenantDb, withTenant } from "@/lib/db-tenant";
 import { getActiveTenants } from "@/lib/db-hub";
-import { getModulesHealth } from "./health";
+import { getModulesHealth, isMeasuredVerdict } from "./health";
 import type { ModuleVerdict } from "./health";
 import {
   decideNotification,
@@ -138,6 +138,11 @@ export async function evaluateAndNotifyApplianceHealth(
     const rows = await getModulesHealth(tenantCode, { force: true, only: "appliance" });
     const health = rows[0];
     if (!health) return out;
+    // La sonda «appliance» misura sempre (disco, Docker). `off` e `unverified`
+    // non sono esiti di una misura: non c'è niente da notificare né da salvare,
+    // e uno stato «spento» non deve mai diventare un avviso di guasto.
+    const verdict = health.verdict;
+    if (!isMeasuredVerdict(verdict)) return out;
     const headline = health.detail ?? "nessun dettaglio";
 
     const prevRow = getHealthState(db, "appliance");
@@ -145,11 +150,11 @@ export async function evaluateAndNotifyApplianceHealth(
       ? { verdict: prevRow.verdict, lastNotifiedAtMs: parseSqliteDatetime(prevRow.last_notified_at) }
       : null;
 
-    const decision = decideNotification(precedente, health.verdict, Date.now());
+    const decision = decideNotification(precedente, verdict, Date.now());
 
     let notified = false;
     if (decision.notify) {
-      const message = buildApplianceHealthMessage(health.verdict, headline, tenantCode, decision.reason);
+      const message = buildApplianceHealthMessage(verdict, headline, tenantCode, decision.reason);
       const results = await dispatchNotification({
         kind: "immediate",
         message,
@@ -162,7 +167,7 @@ export async function evaluateAndNotifyApplianceHealth(
       if (notified) out.notified += 1;
     }
 
-    saveHealthState(db, "appliance", health.verdict, headline, prevRow?.verdict !== health.verdict, notified);
+    saveHealthState(db, "appliance", verdict, headline, prevRow?.verdict !== verdict, notified);
   } catch (e) {
     console.error(`[appliance-health] valutazione tenant ${tenantCode} fallita:`, e);
   }

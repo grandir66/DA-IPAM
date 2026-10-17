@@ -4,6 +4,9 @@
 !.env.example
 .git
 .next
+.next-a
+.next-b
+.next-attiva
 node_modules
 data
 *.db

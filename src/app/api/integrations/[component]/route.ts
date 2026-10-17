@@ -5,6 +5,7 @@ import { mascheraConfigIntegrazione, puoVedereSegreti } from "@/lib/permessi/pol
 import { getContainerStatus } from "@/lib/integrations/docker";
 import { librenmsDellAppliance } from "@/lib/integrations/librenms-appliance";
 import { resolveIntegrationBrowserUrl } from "@/lib/integrations/public-url-server";
+import { rifiutoModo } from "@/lib/integrations/librenms-modo";
 import type { IntegrationComponent } from "@/lib/integrations/types";
 import { z } from "zod";
 
@@ -58,7 +59,8 @@ export async function GET(
 }
 
 const ConfigSchema = z.object({
-  mode: z.enum(["managed", "external", "disabled"]).optional(),
+  // `appliance` (passo 5): solo LibreNMS, controllato sotto da rifiutoModo.
+  mode: z.enum(["managed", "appliance", "external", "disabled"]).optional(),
   url: z.string().optional(),
   apiToken: z.string().optional(),
   username: z.string().optional(),
@@ -90,6 +92,9 @@ export async function PUT(
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Dati non validi" }, { status: 400 });
   }
+
+  const rifiuto = rifiutoModo(component, parsed.data.mode);
+  if (rifiuto) return NextResponse.json({ error: rifiuto }, { status: 400 });
 
   setIntegrationConfig(component, parsed.data);
   return NextResponse.json({ ok: true });

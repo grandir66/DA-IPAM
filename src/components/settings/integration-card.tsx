@@ -8,11 +8,21 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Play, Square, RotateCcw, Trash2, CheckCircle2, XCircle, Loader2, ExternalLink, Wifi, WifiOff, RefreshCw, Eye, EyeOff, Terminal } from "lucide-react";
-import type { ContainerIntegrationComponent, IntegrationMode, ComponentConfig, InstallJob, ContainerStatus } from "@/lib/integrations/types";
+import { Play, Square, RotateCcw, Trash2, CheckCircle2, XCircle, Loader2, ExternalLink, Wifi, WifiOff, RefreshCw, Eye, EyeOff, Terminal, AlertTriangle } from "lucide-react";
+import type { ContainerIntegrationComponent, IntegrationMode, ComponentConfig, ContainerStatus } from "@/lib/integrations/types";
+import { fetchJson } from "@/lib/fetch-json";
+import { LoadError } from "@/components/shared/load-error";
+import { useJobPolling } from "@/hooks/use-job-polling";
+import type { PassoPolling } from "@/lib/integrations/polling-job";
 import { containerRemovalConfirmText } from "@/lib/modules/uninstall-copy";
 import type { ConfigIntegrazioneVista } from "@/lib/permessi/politica";
-import { vistaScheda } from "@/lib/integrations/scheda-integrazione";
+import {
+  ETICHETTA_APPLIANCE,
+  mostraConversione,
+  vistaScheda,
+  vociModalita,
+} from "@/lib/integrations/scheda-integrazione";
+import { CONFERMA_CONVERSIONE_LIBRENMS } from "@/lib/integrations/librenms-modo";
 
 interface Props {
   /** Solo i componenti installati come container: UniFi ha la sua pagina (Controller di rete). */
@@ -36,6 +46,7 @@ interface ApiState {
 export function IntegrationCard({ component, title, description, dockerAvailable, showSyncButton }: Props) {
   const [state, setState] = useState<ApiState | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [reachable, setReachable] = useState<boolean | null>(null);
@@ -56,78 +67,67 @@ export function IntegrationCard({ component, title, description, dockerAvailable
   const [containerLogs, setContainerLogs] = useState<string | null>(null);
   const [loadingLogs, setLoadingLogs] = useState(false);
   const logsRef = useRef<HTMLDivElement>(null);
-  const [activeJob, setActiveJob] = useState<InstallJob | null>(null);
   const [installing, setInstalling] = useState(false);
   const [browserUrl, setBrowserUrl] = useState("");
   const [syncing, setSyncing] = useState(false);
+  const [converting, setConverting] = useState(false);
   const [lastSyncResult, setLastSyncResult] = useState<string | null>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const load = async () => {
-    try {
-      const res = await fetch(`/api/integrations/${component}`);
-      if (!res.ok) return;
-      const data = (await res.json()) as ApiState;
-      setState(data);
-      setLocalConfig({
-        ...data.config,
-        uiUrl: data.config.uiUrl || data.config.browserUrl || data.browserUrl || "",
-      });
-      setBrowserUrl(data.config.browserUrl ?? data.browserUrl ?? "");
-    } catch {
-      // ignore
-    } finally {
-      setLoading(false);
+    const r = await fetchJson<ApiState>(`/api/integrations/${component}`);
+    setLoading(false);
+    if (!r.ok) {
+      // Mai la scheda «Disabilitato» al posto di un errore: si dice cosa non va.
+      setLoadError(r.message);
+      return;
     }
+    const data = r.data;
+    setLoadError(null);
+    setState(data);
+    setLocalConfig({
+      ...data.config,
+      uiUrl: data.config.uiUrl || data.config.browserUrl || data.browserUrl || "",
+    });
+    setBrowserUrl(data.config.browserUrl ?? data.browserUrl ?? "");
   };
 
   useEffect(() => {
-    load();
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+    void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const startJobPolling = (jobId: string) => {
-    if (pollRef.current) clearInterval(pollRef.current);
-    pollRef.current = setInterval(async () => {
-      try {
-        const res = await fetch(`/api/integrations/install-progress/${jobId}`);
-        if (!res.ok) return;
-        const job = (await res.json()) as InstallJob;
-        setActiveJob(job);
-        if (job.phase === "done" || job.phase === "error") {
-          clearInterval(pollRef.current!);
-          setInstalling(false);
-          if (job.phase === "done") {
-            toast.success(`${title} installato correttamente`);
-            await load();
-          } else {
-            toast.error(`Errore installazione: ${job.error ?? "sconosciuto"}`);
-          }
-        }
-      } catch {
-        // ignore
+  const onFineJob = (passo: PassoPolling) => {
+    setInstalling(false);
+    if (passo.esito === "finito" && passo.job) {
+      if (passo.job.phase === "done") {
+        toast.success(`${title} installato correttamente`);
+        void load();
+      } else {
+        toast.error(`Errore installazione: ${passo.job.error ?? "sconosciuto"}`);
       }
-    }, 1500);
+      return;
+    }
+    // Fermo senza esito: il messaggio resta anche accanto al log.
+    if (passo.messaggio) toast.error(passo.messaggio);
+    if (passo.esito === "esito_sconosciuto") void load();
   };
+  const { job: activeJob, avviso: jobAvviso, attivo: jobAttivo, avvia: startJobPolling } = useJobPolling(onFineJob);
 
   const handleInstall = async () => {
     if (!confirm(`Avviare l'installazione Docker di ${title}? Potrebbe richiedere alcuni minuti.`)) return;
     setInstalling(true);
-    setActiveJob(null);
     try {
-      const res = await fetch(`/api/integrations/${component}/install`, {
+      const r = await fetchJson<{ jobId?: string }>(`/api/integrations/${component}/install`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ adminPassword: installAdminPassword, serverUrl: installUrl || undefined }),
       });
-      const data = (await res.json()) as { jobId?: string; error?: string };
-      if (!res.ok || !data.jobId) {
-        toast.error(data.error ?? "Errore avvio installazione");
+      if (!r.ok || !r.data.jobId) {
+        toast.error(r.ok ? "Errore avvio installazione" : r.message);
         setInstalling(false);
         return;
       }
-      startJobPolling(data.jobId);
+      startJobPolling(r.data.jobId);
     } catch {
       toast.error("Errore di rete");
       setInstalling(false);
@@ -184,6 +184,31 @@ export function IntegrationCard({ component, title, description, dockerAvailable
       toast.error("Errore di rete");
     } finally {
       setSaving(false);
+    }
+  };
+
+  // Passo 5: «Istanza esterna» → «Installato dall'appliance», solo su richiesta
+  // esplicita e dopo la conferma; nessuna riga si converte da sola.
+  const handleConverti = async () => {
+    if (!confirm(CONFERMA_CONVERSIONE_LIBRENMS)) return;
+    setConverting(true);
+    try {
+      const res = await fetch("/api/integrations/librenms/converti", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conferma: true }),
+      });
+      const d = (await res.json().catch(() => null)) as { error?: string } | null;
+      if (res.ok) {
+        toast.success("LibreNMS convertito in «Installato dall'appliance»");
+        await load();
+      } else {
+        toast.error(`Conversione non riuscita: ${d?.error ?? `errore ${res.status}`}`);
+      }
+    } catch {
+      toast.error("Errore di rete");
+    } finally {
+      setConverting(false);
     }
   };
 
@@ -254,6 +279,9 @@ export function IntegrationCard({ component, title, description, dockerAvailable
   const apiTokenImpostato = !!localConfig.apiToken || !!state?.config.apiTokenSet;
   const adminPasswordImpostata = !!localConfig.adminPassword || !!state?.config.adminPasswordSet;
   const isExternal = localConfig.mode === "external";
+  const isAppliance = localConfig.mode === "appliance";
+  // URL e token si scrivono a mano per un'istanza esterna e per quella dell'appliance.
+  const tokenAMano = isExternal || isAppliance;
   const isDisabled = localConfig.mode === "disabled";
   const vista = vistaScheda({
     dallAppliance: state?.installatoDallAppliance === true,
@@ -262,6 +290,9 @@ export function IntegrationCard({ component, title, description, dockerAvailable
     installing,
     containerRunning,
   });
+  const modoSalvato = state?.config.mode ?? null;
+  const voci = vociModalita(component, modoSalvato, vista);
+  const proponiConversione = mostraConversione(component, modoSalvato);
 
   if (loading) {
     return (
@@ -269,6 +300,18 @@ export function IntegrationCard({ component, title, description, dockerAvailable
         <CardHeader><CardTitle>{title}</CardTitle></CardHeader>
         <CardContent><Loader2 className="h-4 w-4 animate-spin" /></CardContent>
       </Card>
+    );
+  }
+
+  if (loadError && !state) {
+    return (
+      <div id={`int-${component}`} data-integration-anchor={component} className="scroll-mt-20">
+        <LoadError
+          what={`la configurazione di ${title}`}
+          message={loadError}
+          onRetry={() => { setLoading(true); void load(); }}
+        />
+      </div>
     );
   }
 
@@ -297,6 +340,7 @@ export function IntegrationCard({ component, title, description, dockerAvailable
               <Badge variant="secondary">Fermo</Badge>
             )}
             {isExternal && <Badge variant="outline">{vista.badgeEsterno}</Badge>}
+            {isAppliance && <Badge variant="outline">{ETICHETTA_APPLIANCE}</Badge>}
             {isDisabled && <Badge variant="secondary">Disabilitato</Badge>}
           </div>
         </div>
@@ -309,17 +353,18 @@ export function IntegrationCard({ component, title, description, dockerAvailable
             <Label className="text-xs text-muted-foreground">Modalità</Label>
             <Select
               value={localConfig.mode}
+              items={voci.map((v) => ({ value: v.value, label: v.label }))}
               onValueChange={(v) => setLocalConfig((c) => ({ ...c, mode: v as IntegrationMode }))}
             >
               <SelectTrigger className="mt-1">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="disabled">Disabilitato</SelectItem>
-                <SelectItem value="managed" disabled={!vista.dockerLocaleSelezionabile}>
-                  Docker locale{vista.notaDockerLocale}
-                </SelectItem>
-                <SelectItem value="external">{vista.etichettaEsterna}</SelectItem>
+                {voci.map((v) => (
+                  <SelectItem key={v.value} value={v.value} disabled={v.disabled}>
+                    {v.label}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -361,8 +406,8 @@ export function IntegrationCard({ component, title, description, dockerAvailable
 
         {!isDisabled && (
           <>
-            {/* API Token — solo per modalità external; in managed è auto-configurato */}
-            {isExternal ? (
+            {/* API Token — external e appliance; in managed è auto-configurato */}
+            {tokenAMano ? (
               <div>
                 <Label className="text-xs text-muted-foreground">API Token</Label>
                 <Input
@@ -462,12 +507,45 @@ export function IntegrationCard({ component, title, description, dockerAvailable
           </>
         )}
 
+        {/* Ricaricamento fallito con dati vecchi a schermo: lo si dice. */}
+        {loadError && state && (
+          <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+            <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+            <span>Dati non aggiornati: {loadError}</span>
+          </div>
+        )}
+
+        {/* Avanzamento non leggibile o controllo fermo: mai una rotellina muta. */}
+        {jobAvviso && (
+          <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/20 px-3 py-2 text-xs text-amber-900 dark:text-amber-300">
+            <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+            <span>{jobAvviso}</span>
+          </div>
+        )}
+
+        {/* Passo 5: LibreNMS è solo locale; una riga «external» si converte solo da qui. */}
+        {proponiConversione && (
+          <div className="rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/20 px-3 py-2 text-sm text-amber-900 dark:text-amber-300 space-y-2">
+            <p>
+              Questa configurazione è «Istanza esterna», una modalità che per LibreNMS non si
+              sceglie più: LibreNMS è solo locale. Continua a funzionare com&apos;è; se è il
+              LibreNMS installato dall&apos;appliance, convertila.
+            </p>
+            <Button size="sm" variant="outline" onClick={() => void handleConverti()} disabled={converting}>
+              {converting ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : null}
+              Converti in «{ETICHETTA_APPLIANCE}»…
+            </Button>
+          </div>
+        )}
+
         {/* Log installazione */}
         {activeJob && (
           <div className="rounded-md bg-black/90 text-green-400 font-mono text-xs p-3 max-h-40 overflow-y-auto space-y-0.5">
             <div className="flex items-center gap-2 mb-2 text-white/60">
               {(activeJob.phase !== "done" && activeJob.phase !== "error") && (
-                <Loader2 className="h-3 w-3 animate-spin" />
+                jobAttivo
+                  ? <Loader2 className="h-3 w-3 animate-spin" />
+                  : <AlertTriangle className="h-3 w-3 text-amber-400" />
               )}
               {activeJob.phase === "done" && <CheckCircle2 className="h-3 w-3 text-green-400" />}
               {activeJob.phase === "error" && <XCircle className="h-3 w-3 text-red-400" />}

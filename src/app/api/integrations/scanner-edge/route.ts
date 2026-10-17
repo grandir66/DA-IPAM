@@ -19,6 +19,7 @@ import { encrypt } from "@/lib/crypto";
 import { validateBaseUrl } from "@/lib/vuln/scanner-edge-client";
 import { removeEdgeScanner } from "@/lib/vuln/edge-scanner-db";
 import { reloadTenantScheduler } from "@/lib/cron/scheduler";
+import { resolveEdgeBrowserUrl } from "@/lib/integrations/public-url-server";
 
 const PostSchema = z.object({
   name: z.string().min(1).max(120).default("Scanner-Edge"),
@@ -74,7 +75,12 @@ export async function GET() {
   const session = await requireAuth();
   if (session instanceof NextResponse) return session;
   return await withTenantFromSession(() => {
-    return NextResponse.json({ scanner: readScanner() });
+    const scanner = readScanner();
+    // URL dell'interfaccia dal nodo che serve davvero la 6443 (passo 4b), non
+    // ricavato da base_url nel browser.
+    return NextResponse.json({
+      scanner: scanner ? { ...scanner, ui_url: resolveEdgeBrowserUrl(scanner.base_url) } : null,
+    });
   });
 }
 

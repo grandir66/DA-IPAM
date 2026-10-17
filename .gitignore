@@ -15,6 +15,10 @@
 
 # next.js
 /.next/
+# le due cartelle di build di scripts/update.sh e il nome di quella in uso
+/.next-a/
+/.next-b/
+/.next-attiva
 /out/
 
 # production

@@ -6,7 +6,40 @@
  * risiedono solo nel DB centrale.
  */
 
+import type Database from "better-sqlite3";
 import { SCHEDULED_JOB_TYPES_CHECK_SQL } from "./scheduled-job-types";
+
+/**
+ * MDM (passo 3 del piano di solidità, 16/10): `last_attempt_at` = ultimo tentativo
+ * di sincronizzazione, riuscito o no; `last_success_at` = ultima riuscita.
+ * `last_sync_at` resta com'era (aggiornato a ogni tentativo) per chi lo legge già.
+ *
+ * Le colonne stanno anche nella CREATE di `mdm_config` qui sotto (DB nuovi); sui DB
+ * esistenti le aggiunge `assicuraColonneMdmConfig`, `ALTER TABLE ADD COLUMN`
+ * idempotente, solo additiva. La chiama `integrations/mdm-config.ts` all'apertura
+ * della connessione: così la migrazione non tocca `db-tenant.ts` (fermo fino alla
+ * pubblicazione di `tappa3b/nucleo`, dopo il 20/10).
+ */
+export const COLONNE_NUOVE_MDM_CONFIG: ReadonlyArray<readonly [string, string]> = [
+  ["last_attempt_at", "ALTER TABLE mdm_config ADD COLUMN last_attempt_at TEXT"],
+  ["last_success_at", "ALTER TABLE mdm_config ADD COLUMN last_success_at TEXT"],
+];
+
+/** Aggiunge a `mdm_config` le colonne che mancano; restituisce quelle aggiunte. Ripetibile. */
+export function assicuraColonneMdmConfig(db: Database.Database): string[] {
+  const colonne = new Set(
+    (db.prepare("PRAGMA table_info(mdm_config)").all() as Array<{ name: string }>).map((c) => c.name),
+  );
+  // Tabella assente (DB molto vecchio): la crea lo schema all'apertura, non questa funzione.
+  if (colonne.size === 0) return [];
+  const aggiunte: string[] = [];
+  for (const [nome, ddl] of COLONNE_NUOVE_MDM_CONFIG) {
+    if (colonne.has(nome)) continue;
+    db.exec(ddl);
+    aggiunte.push(nome);
+  }
+  return aggiunte;
+}
 
 /**
  * Topologia T2 (spec 2026-10-14 §13.5.7): i fatti delle letture in più, uno per lettore (la fonte sta nella chiave:
@@ -88,6 +121,55 @@ export const INDICI_TOPOLOGY_UNIONI: ReadonlyArray<readonly [string, string]> = 
   ["idx_topology_unioni_gruppo", "CREATE INDEX idx_topology_unioni_gruppo ON topology_unioni(gruppo) WHERE tolto_il IS NULL"],
   ["idx_topology_separazioni_coppia_attiva", "CREATE UNIQUE INDEX idx_topology_separazioni_coppia_attiva ON topology_separazioni(membro, altro) WHERE tolto_il IS NULL"],
 ];
+
+/**
+ * Pannello Zabbix in sola lettura (passo 7.4-7.5 del piano di solidità, 16/10; API del centro in DA-Zabbix,
+ * `docs/2026-10-16-api-lettura-per-cliente-design.md`). Dati del cliente → DB del tenant.
+ *
+ * - `zabbix_lettura_config`: riga unica. Indirizzo del centro, chiave di lettura cifrata (`zl1.<id>.<segreto>`:
+ *   `chiave_id` è la sola parte pubblica), impronta TLS facoltativa, codice cliente atteso nelle risposte, nome del
+ *   proxy della macchina (facoltativo: se vuoto si legge `Hostname=` dal file del proxy), interruttore, e lo stato
+ *   dei tentativi (fallimenti consecutivi, prossimo tentativo, ultimo errore, ultima lettura buona) che regge
+ *   l'attesa crescente anche dopo un riavvio.
+ * - `zabbix_abbinamenti`: solo gli abbinamenti **verificati** da una persona (§5 dell'API). `host_id` senza chiave
+ *   esterna: un host tolto da DA-IPAM lascia una riga orfana che la lettura ignora (JOIN), e una ricostruzione di
+ *   `hosts` non la cancella a cascata. Proposti, ambigui e persi si calcolano a ogni lettura e non si salvano.
+ *
+ * Tabelle nuove con `CREATE TABLE IF NOT EXISTS` dentro `TENANT_SCHEMA_SQL`, che gira a ogni apertura: sui DB
+ * esistenti nascono alla prima apertura dopo l'aggiornamento. `assicuraTabelleZabbixLettura` rifà le stesse CREATE
+ * (ripetibile) per chi apre un DB senza passare da `getTenantDb` (prove).
+ */
+export const DDL_ZABBIX_LETTURA: ReadonlyArray<readonly [string, string]> = [
+  ["zabbix_lettura_config", `CREATE TABLE IF NOT EXISTS zabbix_lettura_config (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  base_url TEXT NOT NULL,
+  chiave_enc TEXT NOT NULL,
+  chiave_id TEXT NOT NULL,
+  impronta TEXT,
+  codcli TEXT NOT NULL,
+  proxy_locale TEXT,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  fallimenti INTEGER NOT NULL DEFAULT 0,
+  prossimo_tentativo TEXT,
+  ultimo_errore TEXT,
+  ultima_lettura_ok TEXT,
+  aggiornato_il TEXT NOT NULL DEFAULT (datetime('now')),
+  aggiornato_da TEXT
+)`],
+  ["zabbix_abbinamenti", `CREATE TABLE IF NOT EXISTS zabbix_abbinamenti (
+  hostid TEXT PRIMARY KEY,
+  host_id INTEGER NOT NULL,
+  ip TEXT NOT NULL,
+  confermato_da TEXT NOT NULL,
+  confermato_il TEXT NOT NULL DEFAULT (datetime('now'))
+)`],
+  ["idx_zabbix_abbinamenti_host", "CREATE INDEX IF NOT EXISTS idx_zabbix_abbinamenti_host ON zabbix_abbinamenti(host_id)"],
+];
+
+/** Crea le tabelle del pannello Zabbix se mancano. Ripetibile, solo additiva. */
+export function assicuraTabelleZabbixLettura(db: Database.Database): void {
+  for (const [, ddl] of DDL_ZABBIX_LETTURA) db.exec(ddl);
+}
 
 export const TENANT_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS networks (
@@ -1260,7 +1342,9 @@ CREATE TABLE IF NOT EXISTS mdm_config (
   enabled INTEGER DEFAULT 0,
   last_sync_at TEXT,
   last_error TEXT,
-  consecutive_errors INTEGER DEFAULT 0
+  consecutive_errors INTEGER DEFAULT 0,
+  last_attempt_at TEXT,
+  last_success_at TEXT
 );
 CREATE TABLE IF NOT EXISTS mobile_devices (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1499,6 +1583,9 @@ CREATE TABLE IF NOT EXISTS network_controller_runs (
   offline_json TEXT NOT NULL DEFAULT '[]'
 );
 CREATE INDEX IF NOT EXISTS idx_controller_runs_controller ON network_controller_runs(controller_id, id);
+
+-- Pannello Zabbix in sola lettura (passo 7.4): vedi DDL_ZABBIX_LETTURA.
+${DDL_ZABBIX_LETTURA.map(([, ddl]) => `${ddl};`).join("\n\n")}
 `;
 
 export const TENANT_INDEXES_SQL = `

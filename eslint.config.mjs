@@ -38,6 +38,9 @@ const eslintConfig = defineConfig([
   globalIgnores([
     // Default ignores of eslint-config-next:
     ".next/**",
+    // Le due cartelle di build di scripts/update.sh (next.config.ts).
+    ".next-a/**",
+    ".next-b/**",
     "out/**",
     "build/**",
     "next-env.d.ts",

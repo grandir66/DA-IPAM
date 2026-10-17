@@ -6,10 +6,19 @@
 #      — se la working tree è su un altro branch, checkout
 #      — se ci sono modifiche locali su tracked files, reset --hard (appliance
 #        immutable: i file tracked non vanno modificati a mano)
-#   2. git fetch + confronto con origin/<branch>
-#   3. se HEAD locale == origin/<branch> → esci 0 (NESSUN build, NESSUN restart)
-#   4. altrimenti → delega a update.sh --restart (pull + npm install + build + restart)
+#   2. git fetch + confronto fra origin/<branch> e il commit AVVIATO con salute
+#      buona (scripts/stato-aggiornamento.mjs), non HEAD: HEAD avanza col pull
+#      prima del build, e un build fallito restava «già aggiornato» per sempre
+#      (16/10/2026). Senza stato (primo giro) vale HEAD, come prima.
+#   3. se coincidono → esci 0 (NESSUN build, NESSUN restart)
+#   4. se lo stesso commit è già fallito MAX_TENTATIVI volte → esci 0 e aspetta un
+#      commit nuovo (DA_INVENT_FORZA_AGGIORNAMENTO=1 per riprovare subito)
+#      — «Aggiorna ora» dell'interfaccia lascia data/aggiornamento-richiesto e
+#        avvia questo servizio: vale come la forzatura
+#   5. altrimenti → delega a update.sh --restart (pull + npm install + build + restart)
 #
+# Ogni giro lascia il suo esito in data/aggiornamento.json (ultimo_controllo),
+# che la pagina Aggiornamenti legge.
 # Lock con flock per evitare run sovrapposti. Output → journald (systemd).
 # Override branch con DA_INVENT_BRANCH; directory con DA_INVENT_DIR.
 
@@ -30,7 +39,7 @@ if [ ! -d .git ]; then
 fi
 
 # Lock: un solo auto-update per volta
-LOCK="/tmp/da-invent-auto-update.lock"
+LOCK="${DA_INVENT_LOCK:-/tmp/da-invent-auto-update.lock}"
 exec 9>"$LOCK"
 if ! flock -n 9; then
   echo "[auto-update] un altro update è già in corso: skip."
@@ -39,9 +48,35 @@ fi
 
 BRANCH="${DA_INVENT_BRANCH:-main}"
 CURRENT="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")"
+MAX_TENTATIVI="${DA_INVENT_MAX_TENTATIVI:-3}"
+
+stato() { node "$SCRIPT_DIR/stato-aggiornamento.mjs" "$@"; }
+
+# «Aggiorna ora» dell'interfaccia lascia questo file e avvia il servizio: vale come
+# DA_INVENT_FORZA_AGGIORNAMENTO=1, perché chi preme il pulsante vuole riprovare
+# subito anche un commit già fallito. Si consuma qui, col lucchetto preso.
+RICHIESTA="${DA_INVENT_DATA_DIR:-$APP_DIR/data}/aggiornamento-richiesto"
+ORIGINE=""
+if [ -f "$RICHIESTA" ]; then
+  rm -f "$RICHIESTA"
+  ORIGINE="interfaccia"
+  DA_INVENT_FORZA_AGGIORNAMENTO=1
+  echo "[auto-update] richiesto dall'interfaccia («Aggiorna ora»)."
+fi
+
+# Il commit che gira davvero: letto PRIMA del checkout, che sposta HEAD.
+AVVIATO="$(stato leggi commit_avviato 2>/dev/null || true)"
+if [ -z "$AVVIATO" ]; then
+  AVVIATO="$(git rev-parse HEAD)"
+  stato avviato "$AVVIATO" "primo giro con lo stato su file: si assume che HEAD giri" || true
+fi
 
 # Fetch sempre, così abbiamo origin/<branch> disponibile per checkout
-git fetch --quiet origin "$BRANCH" || { echo "[auto-update] git fetch fallito, riprovo al prossimo tick."; exit 0; }
+git fetch --quiet origin "$BRANCH" || {
+  stato controllo fetch_fallito $ORIGINE || true
+  echo "[auto-update] git fetch fallito, riprovo al prossimo tick."
+  exit 0
+}
 
 if [ "$CURRENT" != "$BRANCH" ]; then
   echo "[auto-update] branch corrente '$CURRENT' != target '$BRANCH': checkout in corso..."
@@ -59,21 +94,46 @@ echo "[auto-update] $(date -Is) — branch $BRANCH"
 LOCAL="$(git rev-parse HEAD)"
 REMOTE="$(git rev-parse "origin/$BRANCH")"
 
-if [ "$LOCAL" = "$REMOTE" ]; then
-  echo "[auto-update] già aggiornato ($(git rev-parse --short HEAD)). Nessun downtime."
+if [ "$AVVIATO" = "$REMOTE" ]; then
+  stato controllo gia_aggiornato $ORIGINE || true
+  echo "[auto-update] già aggiornato ($(git rev-parse --short "$AVVIATO")). Nessun downtime."
+  exit 0
+fi
+
+# Un tentativo rimasto «in_corso» col lucchetto libero è morto a metà (timeout
+# del servizio, riavvio della macchina): si registra come interrotto.
+if [ "$(stato leggi esito || true)" = "in_corso" ]; then
+  stato fine interrotto "il giro precedente si è fermato a metà (fase: $(stato leggi fase))" || true
+fi
+
+# Un commit che non si costruisce non si ritenta all'infinito: ogni giro è un
+# build di minuti sulla macchina del cliente. Si riprova al commit successivo.
+TENTATO="$(stato leggi commit_tentato || true)"
+ESITO="$(stato leggi esito || true)"
+TENTATIVI="$(stato leggi tentativi || true)"
+if [ "${DA_INVENT_FORZA_AGGIORNAMENTO:-0}" != "1" ] \
+  && [ "$TENTATO" = "$REMOTE" ] \
+  && { [ "$ESITO" = "fallito" ] || [ "$ESITO" = "interrotto" ]; } \
+  && [ "${TENTATIVI:-0}" -ge "$MAX_TENTATIVI" ]; then
+  stato controllo commit_fallito_attendo $ORIGINE || true
+  echo "[auto-update] $(git rev-parse --short "$REMOTE") è fallito $MAX_TENTATIVI volte (fase: $(stato leggi fase)): aspetto un commit nuovo. Gira ancora $(git rev-parse --short "$AVVIATO")."
   exit 0
 fi
 
 # Solo documentazione: si aggiornano i file senza build né riavvio. Ogni commit di
 # docs su dev riavviava l'appliance del cliente A e interrompeva il controllo host in corso (2026-10-12).
 # L'app legge i .md dal disco a ogni richiesta, quindi non serve la build.
-CAMBIATI="$(git diff --name-only "$LOCAL" "$REMOTE")"
-if [ -n "$CAMBIATI" ] && ! printf '%s\n' "$CAMBIATI" | grep -q -v -E '^docs/|\.md$'; then
+# Vale solo se la build accesa è quella di HEAD: dopo un build fallito si rifà tutto.
+CAMBIATI="$(git diff --name-only "$AVVIATO" "$REMOTE" 2>/dev/null || echo "?")"
+if [ "$LOCAL" = "$AVVIATO" ] && [ -n "$CAMBIATI" ] && ! printf '%s\n' "$CAMBIATI" | grep -q -v -E '^docs/|\.md$'; then
   if git merge --ff-only --quiet "origin/$BRANCH"; then
+    stato avviato "$REMOTE" "solo documentazione, nessun riavvio" || true
+    stato controllo solo_documentazione $ORIGINE || true
     echo "[auto-update] solo documentazione ($(git rev-parse --short HEAD)): file aggiornati, nessun riavvio."
     exit 0
   fi
 fi
 
 echo "[auto-update] nuovo commit su origin/$BRANCH ($(git rev-parse --short "$REMOTE")): aggiorno..."
+stato controllo aggiornamento_avviato $ORIGINE || true
 exec "$SCRIPT_DIR/update.sh" --restart

@@ -112,6 +112,7 @@ test("porte aperte: numeri e oggetti tcp, JSON rotto = nessuna porta", () => {
   assert.deepEqual(porteAperte(null), []);
   assert.deepEqual(protocolliDisponibili(JSON.stringify([3389, 5901])), { rdp: true, vnc: true });
   assert.deepEqual(protocolliDisponibili(JSON.stringify([22, 443])), { rdp: false, vnc: false });
+  assert.deepEqual(protocolliDisponibili(JSON.stringify([22]), "Windows"), { rdp: true, vnc: false });
 });
 
 test("URL: id nudo, token e cookie codificati, origine con la porta", () => {
@@ -165,17 +166,28 @@ test("VNC: cookie di relay sulla porta trovata, tipo Linux", async () => {
   });
 });
 
-test("porta chiusa o flag spento: niente chiamate a MeshCentral", async () => {
+test("porta non trovata dalla scansione: si usa quella standard", async () => {
   await withTenant(T, async () => {
     const id = host("10.0.0.23", [22]);
-    const chiusa = await prepareSessioneSenzaAgente({ hostId: id, protocollo: "rdp", operator: "x" }, deps);
-    assert.equal(chiusa.ok, false);
-    if (!chiusa.ok) assert.equal(chiusa.status, 409);
+    const rdp = await prepareSessioneSenzaAgente({ hostId: id, protocollo: "rdp", operator: "x" }, deps);
+    assert.equal(rdp.ok, true);
+    if (rdp.ok) assert.match(rdp.url, /&port=3389$/);
+    const vnc = await prepareSessioneSenzaAgente({ hostId: id, protocollo: "vnc", operator: "x" }, deps);
+    assert.equal(vnc.ok, true);
+    assert.ok(chiamate.some((c) => c.endsWith(":5900")), chiamate.join(","));
+  });
+});
 
+test("flag spento: niente chiamate a MeshCentral", async () => {
+  await withTenant(T, async () => {
+    const id = host("10.0.0.25", [3389]);
     attivo = false;
     const spento = await prepareSessioneSenzaAgente({ hostId: id, protocollo: "vnc", operator: "x" }, deps);
     assert.equal(spento.ok, false);
-    if (!spento.ok) assert.equal(spento.error, SENZA_AGENTE_SPENTO);
+    if (!spento.ok) {
+      assert.equal(spento.status, 409);
+      assert.equal(spento.error, SENZA_AGENTE_SPENTO);
+    }
     assert.deepEqual(chiamate, []);
   });
 });

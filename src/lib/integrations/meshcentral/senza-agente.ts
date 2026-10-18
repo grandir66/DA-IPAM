@@ -27,19 +27,14 @@ import { mintLoginToken as realMintLoginToken } from "./login-token";
 import { recordRemoteSession as realRecordRemoteSession } from "./remote-session-audit";
 import { meshAttivo as realMeshAttivo, MESH_DISATTIVATO } from "./feature";
 import { MeshControlClient, type MeshNode } from "./control-client";
+import { porteAperte, portaSessione, type ProtocolloRemoto } from "./senza-agente-porte";
+
+export { porteAperte, portaPer, portaSessione, protocolliDisponibili, type ProtocolloRemoto } from "./senza-agente-porte";
 
 export const GRUPPO_SENZA_AGENTE = "Domarc Senza Agente";
 
 export const SENZA_AGENTE_SPENTO =
   "Desktop remoto senza agente non attivo su questa appliance (MESHCENTRAL_SENZA_AGENTE)";
-
-export type ProtocolloRemoto = "rdp" | "vnc";
-
-/** Porte cercate fra quelle aperte dell'host, in ordine di preferenza. */
-const PORTE: Record<ProtocolloRemoto, readonly number[]> = {
-  rdp: [3389],
-  vnc: [5900, 5901, 5902],
-};
 
 /**
  * Viewmode scritti nell'audit mc_remote_session. 11/12/13 sono di MeshCentral
@@ -49,38 +44,6 @@ export const VIEWMODE_AUDIT: Record<ProtocolloRemoto, number> = { rdp: 21, vnc: 
 
 export function senzaAgenteAttivo(): boolean {
   return process.env.MESHCENTRAL_SENZA_AGENTE === "1";
-}
-
-/** open_ports è JSON: numeri o {port, protocol}. Illeggibile → nessuna porta. */
-export function porteAperte(openPortsJson: string | null): number[] {
-  if (!openPortsJson) return [];
-  let arr: unknown;
-  try {
-    arr = JSON.parse(openPortsJson);
-  } catch {
-    return [];
-  }
-  if (!Array.isArray(arr)) return [];
-  const out: number[] = [];
-  for (const p of arr) {
-    if (typeof p === "number") out.push(p);
-    else if (p && typeof p === "object") {
-      const o = p as { port?: unknown; protocol?: unknown };
-      if (typeof o.port === "number" && (o.protocol == null || o.protocol === "tcp")) out.push(o.port);
-    }
-  }
-  return out;
-}
-
-/** Prima porta aperta per il protocollo, o null. */
-export function portaPer(protocollo: ProtocolloRemoto, porte: number[]): number | null {
-  return PORTE[protocollo].find((p) => porte.includes(p)) ?? null;
-}
-
-/** Quali pulsanti mostrare per un host, dalle porte trovate dalla scansione. */
-export function protocolliDisponibili(openPortsJson: string | null): Record<ProtocolloRemoto, boolean> {
-  const porte = porteAperte(openPortsJson);
-  return { rdp: portaPer("rdp", porte) !== null, vnc: portaPer("vnc", porte) !== null };
 }
 
 /** Tipo device di 'addlocaldevice': 4 Windows · 6 Linux · 29 macOS (solo icona). */
@@ -196,11 +159,9 @@ export async function prepareSessioneSenzaAgente(
     .get(input.hostId) as HostRow | undefined;
   if (!host) return { ok: false, status: 404, error: "Host non trovato" };
 
-  const porta = portaPer(input.protocollo, porteAperte(host.open_ports));
-  if (porta === null) {
-    const nome = input.protocollo === "rdp" ? "RDP (3389)" : "VNC (5900-5902)";
-    return { ok: false, status: 409, error: `La scansione non ha trovato la porta ${nome} aperta su questo host` };
-  }
+  // Porta trovata dalla scansione, altrimenti quella standard: la scansione può
+  // non averla vista (veloce, vecchia), e se è chiusa lo dice MeshCentral.
+  const porta = portaSessione(input.protocollo, porteAperte(host.open_ports));
 
   const creds = deps.getMeshCreds();
   if (!creds) return { ok: false, status: 409, error: "MeshCentral non configurato per questo tenant" };

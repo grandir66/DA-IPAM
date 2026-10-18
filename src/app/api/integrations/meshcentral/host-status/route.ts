@@ -3,13 +3,15 @@
  * per renderizzare la mini-icona Mesh (e le altre) senza N+1.
  *
  * Input:  POST body { host_ids: number[] }  (cap difensivo ≤1000)
- * Output: { statuses: Record<host_id, EndpointAgentCapabilities | null> }
- *         null = nessun agente noto per quell'host.
+ * Output: { statuses: Record<host_id, EndpointAgentCapabilities | null>, senzaAgente: boolean }
+ *         null = nessun agente noto per quell'host. senzaAgente = la lista può offrire
+ *         RDP/VNC senza agente (modulo MeshCentral + MESHCENTRAL_SENZA_AGENTE).
  */
 import { NextResponse } from "next/server";
 import { requireAuth, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { meshAttivo } from "@/lib/integrations/meshcentral/feature";
+import { senzaAgenteAttivo } from "@/lib/integrations/meshcentral/senza-agente";
 import {
   getEndpointAgentsForHosts,
   type EndpointAgentCapabilities,
@@ -60,7 +62,8 @@ export async function POST(request: Request) {
     }
 
     const hostIds = parseHostIdsCapped((body as { host_ids?: unknown }).host_ids);
-    const statuses = statiPresenza(hostIds, getEndpointAgentsForHosts(hostIds), meshAttivo());
-    return NextResponse.json({ statuses });
+    const meshOn = meshAttivo();
+    const statuses = statiPresenza(hostIds, getEndpointAgentsForHosts(hostIds), meshOn);
+    return NextResponse.json({ statuses, senzaAgente: meshOn && senzaAgenteAttivo() });
   });
 }

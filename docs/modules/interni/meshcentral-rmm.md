@@ -91,9 +91,15 @@ binario e non contrattualizzato, riscriverlo si romperebbe a ogni update.
 Per le postazioni e i device dove l'agente non si installa. **Spento di default**:
 si accende con `MESHCENTRAL_SENZA_AGENTE=1` in `.env.local` (riavvio del servizio).
 
-- Nella scheda host, se l'host **non ha** un nodo MeshCentral e la scansione ha
-  trovato aperta la 3389 (RDP) o la 5900-5902 (VNC), la card «Controllo remoto»
-  mostra «Desktop remoto (RDP)» / «VNC» → `/rmm/[hostId]/senza-agente?p=rdp|vnc`.
+- Nella scheda host (tab Generale), se l'host **non ha** un nodo MeshCentral, la
+  card «Controllo remoto» mostra «Desktop remoto (RDP)» quando la scansione ha
+  trovato la 3389 o l'host è Windows, e «VNC» quando ha trovato la 5900-5902 →
+  `/rmm/[hostId]/senza-agente?p=rdp|vnc`.
+- In **Discovery** RDP e VNC sono anche nel menu dei tre puntini, e RDP e SSH fra
+  le icone della colonna Profilo (colorate se la scansione ha visto la porta,
+  grigie ma cliccabili altrimenti).
+- Se la scansione non ha visto la porta si usa quella standard (3389, 5900): la
+  scansione veloce può non vederla, e se è chiusa lo dice MeshCentral.
 - Al primo clic DA-IPAM crea in MeshCentral il gruppo **«Domarc Senza Agente»**
   (meshtype 3, «Local devices», **senza** relayid) e il device con l'IP dell'host
   (`addlocaldevice`). Nessuna sincronizzazione di massa; `mesh-sync` ignora questi

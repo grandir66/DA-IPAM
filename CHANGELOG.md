@@ -4,6 +4,18 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-18 · DA-Link: nodi delle sedi oltre la prima
+
+Un'appliance per sede per cliente (decisione del 18/10/2026): dalla seconda sede il nodo si chiama
+`<codice>-ipam-<n>`.
+
+### Correzioni
+
+- **`DALINK_NODO=<codice>-ipam-<n>` accettato** (n da 2 a 99, senza zeri davanti) in `src/lib/dalink/config.ts` e in
+  `scripts/dalink/prepara-netbird.sh`: prima solo `<codice>-ipam`, e un'appliance di seconda sede risultava «non
+  valida» (nessun segnale a DA-Link) e non poteva entrare in NetBird. Il codice cliente del nodo deve restare quello di
+  `DALINK_CODCLI`.
+
 ## [Non rilasciato] — 2026-10-16 · pannello Zabbix in sola lettura (opzione)
 
 Passo 7.4-7.5 del piano di solidità. Perché: DA-IPAM sapeva solo se il proxy Zabbix gira sulla macchina; il pannello

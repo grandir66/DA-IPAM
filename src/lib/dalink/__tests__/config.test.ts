@@ -91,6 +91,31 @@ test("nodo diverso da <codcli>-ipam → non_valida", () => {
   if (c.stato === "non_valida") assert.match(c.motivo, /nodo/);
 });
 
+/**
+ * Un'appliance per sede per cliente (decisione del 18/10/2026): la prima sede è
+ * `<codcli>-ipam`, dalla seconda `<codcli>-ipam-<n>` con n da 2 a 99, senza zeri
+ * davanti (lo stesso nome non deve poter esistere in due grafie).
+ */
+function conNodo(nome: string, nodo: string) {
+  return leggiConfigDalink(scrivi(nome, BUONO.map((r) => (r.startsWith("DALINK_NODO=") ? `DALINK_NODO=${nodo}` : r))));
+}
+
+for (const nodo of ["99999-ipam", "99999-ipam-2", "99999-ipam-9", "99999-ipam-10", "99999-ipam-99"]) {
+  test(`nodo di sede ${nodo} → pronta, nome conservato`, () => {
+    const c = conNodo(`sede-${nodo}.env`, nodo);
+    assert.equal(c.stato, "pronta", c.stato === "non_valida" ? c.motivo : "");
+    if (c.stato === "pronta") assert.equal(c.nodo, nodo);
+  });
+}
+
+for (const nodo of ["99999-ipam-1", "99999-ipam-0", "99999-ipam-02", "99999-ipam-100", "99999-ipam-", "99999-ipam-x", "88888-ipam", "88888-ipam-2", "999990-ipam-2", "99999-ipam-2-edge"]) {
+  test(`nodo ${nodo} → non_valida`, () => {
+    const c = conNodo(`no-${nodo}.env`, nodo);
+    assert.equal(c.stato, "non_valida");
+    if (c.stato === "non_valida") assert.match(c.motivo, /DALINK_NODO/);
+  });
+}
+
 test("impronta mancante o malformata → non_valida", () => {
   const righe = BUONO.map((r) => (r.startsWith("DALINK_IMPRONTA=") ? "DALINK_IMPRONTA=md5//abc" : r));
   assert.equal(leggiConfigDalink(scrivi("impronta.env", righe)).stato, "non_valida");

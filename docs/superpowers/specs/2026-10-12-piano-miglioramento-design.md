@@ -311,9 +311,16 @@ confrontata coi drawio già fatti a mano per il cliente A.
 ### Tappa 6 — Tutti i moduli nel catalogo, navigazione, dashboard
 
 - **Migrazione modulo per modulo**: Inventory Agent, Patch, LibreNMS, Graylog e
-  Loki, MeshCentral (versioni unificate con Deploy-Appliance, password generate
-  all'installazione); Wazuh e DNS/DHCP come *servizi esterni da collegare*, con
-  procedura guidata.
+  Loki, MeshCentral, **MDM** (aggiunto il 16/10), GLPI (versioni unificate con
+  Deploy-Appliance, password generate all'installazione); Wazuh (manca ancora la
+  dashboard) e DNS/DHCP come *servizi esterni da collegare*, con procedura guidata.
+- **«Verifica» per ogni modulo** (piano di solidità del 16/10, passi 4 e 4b,
+  `/mnt/project-files/Domarc/analisi/2026-10-16-piano-solidita-da-ipam.md`): spento
+  distinto da guasto, e la verifica dell'apertura dell'interfaccia per il browser
+  (certificato, login, iframe) accanto a quella delle API.
+- **Offerta** (16/10): MDM, Patch/Chocolatey, MeshCentral, Wazuh e Zabbix sono opzioni
+  potenzialmente a pagamento; LibreNMS è integrato. Il diritto viene dalla licenza di
+  DA-Link (ADR 0013): fino ad allora nessun blocco.
 - **Accesso unico** a tutte le interfacce esterne (MOD-21); credenziali dei moduli in
   un posto solo (MOD-22); sincronizzazioni che non cancellano dati buoni (MOD-3,
   MOD-8, MOD-10, MOD-11).
@@ -367,10 +374,15 @@ catalogo; aggiornamento di un modulo e di DA-IPAM senza interventi a mano.
 
 ### Tappa 9 — Console centrale Domarc (progetto separato, dopo)
 
-Elenco delle appliance con versione, salute, moduli e ultimo contatto; canale
-d'aggiornamento; creazione di un'appliance nuova dall'immagine. Punto di partenza:
-un segnale di vita da ogni appliance (l'hub DA-Vul-can li riceve già dagli edge).
-Spec propria quando ci si arriva; dove vive la console si decide lì.
+**Riscritta il 16/10** (piano di solidità, passo 6). L'elenco delle appliance con
+versione, salute, moduli, ultimo contatto e **stato dell'aggiornamento** lo fa
+**DA-Link** col segnale di vita (passo 1d), con l'email ad allarmiDA@domarc.it
+quando un'appliance tace o un aggiornamento fallisce. DA-Link si occupa di
+autorizzazione, chiavi NetBird e installazione, non di recuperare dati dai sistemi
+remoti, e **non manda comandi** alle appliance (decisioni 13/22 di DA-Link).
+Resta fuori da questa tappa qualsiasi comando verso le appliance: aggiornamento e
+canale restano locali (timer e «Aggiorna ora», passo 1c). Creazione di un'appliance
+nuova dall'immagine: con la tappa 8.
 
 ### Igiene, in coda alle tappe
 

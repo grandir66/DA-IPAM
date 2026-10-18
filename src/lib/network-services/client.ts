@@ -456,19 +456,27 @@ export async function probeBridge(
 }
 
 /**
- * Probe della raggiungibilità + auth del bridge con token (per setup wizard).
- * Chiama /api/v1/status con Authorization Bearer. Ritorna ok se HTTP 200.
+ * Probe della raggiungibilità + auth del bridge con token (setup wizard e sonda
+ * di salute). Chiama /api/v1/status con Authorization Bearer: ok se HTTP 200, e
+ * `corpo` è la risposta letta come JSON (null se non è JSON), da cui la sonda di
+ * salute ricava il verdetto per servizio (`network-services/salute.ts`).
  */
 export async function probeBridgeWithAuth(
   apiUrl: string,
   apiToken: string,
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<{ ok: true; corpo: unknown } | { ok: false; error: string }> {
   try {
     const url = `${apiUrl.replace(/\/$/, "")}/api/v1/status`;
     const res = await httpsRequest(url, { headers: { Authorization: `Bearer ${apiToken}` } });
     if (res.status === 401) return { ok: false, error: "Token non valido (HTTP 401)" };
     if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
-    return { ok: true };
+    let corpo: unknown = null;
+    try {
+      corpo = JSON.parse(res.body) as unknown;
+    } catch {
+      corpo = null;
+    }
+    return { ok: true, corpo };
   } catch (e) {
     return { ok: false, error: String(e) };
   }

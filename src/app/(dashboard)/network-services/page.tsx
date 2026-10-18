@@ -21,6 +21,8 @@ interface SetupState {
   configured: boolean;
   apiUrl: string;
   hasToken: boolean;
+  /** Da dove viene la configurazione (MOD-19); assente = risposta vecchia. */
+  source?: "database" | "env" | null;
 }
 
 export default function NetworkServicesPage() {
@@ -132,6 +134,7 @@ export default function NetworkServicesPage() {
   return (
     <NetworkServicesClient
       apiBase={setupState.apiUrl}
+      source={setupState.source ?? null}
       initialBridge={bridge}
       initialError={statusError}
       isAdmin={isAdmin}

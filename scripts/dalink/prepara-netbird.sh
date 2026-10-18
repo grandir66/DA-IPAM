@@ -72,10 +72,12 @@ fi
 # Il nome del nodo viene da oggetto.env (scritto da DA-Link): letto, mai eseguito.
 NODO=""
 if [ -f "$DALINK_DIR/oggetto.env" ]; then
-  NODO="$(sed -n 's/^[[:space:]]*DALINK_NODO=[[:space:]]*\([0-9]\{3,8\}-ipam\)[[:space:]]*$/\1/p' "$DALINK_DIR/oggetto.env" | tail -1)"
+  # <codice>-ipam per la prima sede, <codice>-ipam-<n> (n 2..99, senza zeri davanti)
+  # dalla seconda: un'appliance per sede (18/10/2026). Stessa forma di src/lib/dalink/config.ts.
+  NODO="$(sed -nE 's/^[[:space:]]*DALINK_NODO=[[:space:]]*([0-9]{3,8}-ipam(-([2-9]|[1-9][0-9]))?)[[:space:]]*$/\1/p' "$DALINK_DIR/oggetto.env" | tail -1)"
 fi
 if [ "$CHIAVE_STDIN" -eq 1 ] && [ -z "$NODO" ]; then
-  errore "manca $DALINK_DIR/oggetto.env con DALINK_NODO=<codice>-ipam: prima va scritto (DA-Link), poi la chiave"
+  errore "manca $DALINK_DIR/oggetto.env con DALINK_NODO=<codice>-ipam[-<n>]: prima va scritto (DA-Link), poi la chiave"
 fi
 
 # Configurazione del firewall: si genera e si valida con lo script vero, a vuoto.

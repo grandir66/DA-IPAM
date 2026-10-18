@@ -18,11 +18,12 @@ import type { NetworkControllerView } from "@/lib/controllers/types";
 export type UnifiHealthRepair = "reconfigure_unifi" | "check_unifi_cert" | null;
 
 export interface UnifiHealthReading {
-  /** false = nessun controller acceso: «Non configurato», non un errore. */
+  /** false = nessun controller acceso: «Non configurato» (`off`), non un errore. */
   configured: boolean;
   reachable: boolean;
   authOk: boolean;
-  verdict: "ok" | "degraded" | "fail";
+  /** `off` = nessun controller acceso (passo 4 del piano di solidità: spento ≠ guasto). */
+  verdict: "ok" | "degraded" | "fail" | "off";
   detail: string;
   repair: UnifiHealthRepair;
   /** Ultima lettura riuscita fra i controller accesi (UTC, formato SQLite). */
@@ -42,7 +43,7 @@ export function composeControllersHealth(controllers: readonly NetworkController
       .pop() ?? null;
   const off = { reachable: false, authOk: false, lastSyncAt };
   if (on.length === 0) {
-    return { configured: false, ...off, verdict: "fail", detail: "Non configurato", repair: null };
+    return { configured: false, ...off, verdict: "off", detail: "Non configurato", repair: null };
   }
   const failed = on.filter((c) => c.lastOk === false);
   if (failed.length > 0) {

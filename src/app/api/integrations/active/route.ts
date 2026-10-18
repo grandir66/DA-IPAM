@@ -3,9 +3,8 @@ import { requireAuth, isAuthError } from "@/lib/api-auth";
 import { getIntegrationConfig } from "@/lib/integrations/config";
 import { getWazuhConfig } from "@/lib/integrations/wazuh-config";
 import { isInternalIntegrationUrl, deriveDefaultIntegrationUiUrl } from "@/lib/integrations/public-url";
-import { resolveIntegrationBrowserUrl } from "@/lib/integrations/public-url-server";
+import { resolveIntegrationBrowserUrl, resolveWazuhBrowserUrl } from "@/lib/integrations/public-url-server";
 import { resolveLibreNMSOperatorUrl } from "@/lib/integrations/librenms-proxy-auth";
-import { listCredentials } from "@/lib/credentials-vault";
 import type { IntegrationComponent } from "@/lib/integrations/types";
 
 /**
@@ -22,22 +21,6 @@ function resolveLanUrl(kind: IntegrationComponent, fallback: string): string {
 
 function isInternalUrl(url: string | null | undefined): boolean {
   return isInternalIntegrationUrl(url);
-}
-
-/** Wazuh dashboard URL dal vault (kind wazuh, label Dashboard). */
-function resolveWazuhDashboardUrl(fallback: string): string {
-  try {
-    const match = listCredentials().find(
-      (c) =>
-        c.kind === "wazuh" &&
-        c.url &&
-        /dashboard/i.test(c.label) &&
-        !isInternalIntegrationUrl(c.url),
-    );
-    return match?.url?.replace(/\/+$/, "") ?? fallback;
-  } catch {
-    return fallback;
-  }
 }
 
 export interface ActiveIntegrationInfo {
@@ -126,19 +109,24 @@ export async function GET() {
   // Mostriamo una landing con shortcut diretti invece di tentare l'iframe.
   const wazuh = getWazuhConfig();
   if (wazuh.enabled && wazuh.url) {
-    let dashUrl = wazuh.url.replace(/:55000(\/.*)?$/, "");
-    if (!/^https?:\/\//.test(dashUrl)) dashUrl = `https://${dashUrl}`;
-    // Risolvi URL Dashboard LAN-accessible (es. https://192.168.99.51:8443/)
-    // dal launchpad. Il default dashUrl punta all'IP interno /28 (10.255.255.3)
-    // NON raggiungibile dal browser → shortcut rotti.
-    dashUrl = resolveWazuhDashboardUrl(dashUrl).replace(/\/$/, "");
+    // Stessa fonte della Launchpad (passo 4b, 16/10): la voce del vault, qualunque
+    // sia l'etichetta («Wazuh SIEM» dell'installatore compresa), poi nginx :8443.
+    // Prima si cercava solo «dashboard» e si ripiegava sull'host dell'API (IP
+    // interno /28, non raggiungibile dal browser → shortcut rotti).
+    let dashUrl = resolveWazuhBrowserUrl();
+    if (!dashUrl) {
+      let dallApi = wazuh.url.replace(/:55000(\/.*)?$/, "");
+      if (!/^https?:\/\//.test(dallApi)) dallApi = `https://${dallApi}`;
+      dashUrl = isInternalIntegrationUrl(dallApi) ? "" : dallApi;
+    }
+    dashUrl = dashUrl.replace(/\/$/, "");
     result.wazuh = {
       enabled: true,
       url: dashUrl,
       directUrl: dashUrl,
       label: "Wazuh",
       iframeSupported: false,
-      shortcuts: [
+      shortcuts: !dashUrl ? [] : [
         { label: "Dashboard Wazuh", url: dashUrl, description: "Home del dashboard SIEM/HIDS." },
         { label: "Agenti", url: `${dashUrl}/app/endpoints-summary`, description: "Lista agent Wazuh con stato e ultimo keep-alive." },
         { label: "Vulnerabilità (CVE)", url: `${dashUrl}/app/vulnerability-detection`, description: "Dashboard CVE su tutti gli agent." },

@@ -28,7 +28,7 @@ interface Ambiente {
   registro: string;
 }
 
-function ambiente(opz: { tailscale?: boolean; netbird?: boolean; oggetto?: boolean } = {}): Ambiente {
+function ambiente(opz: { tailscale?: boolean; netbird?: boolean; oggetto?: boolean; nodo?: string } = {}): Ambiente {
   const dir = fs.mkdtempSync(path.join(RADICE, "a-"));
   const bin = path.join(dir, "bin");
   const dalink = path.join(dir, "etc-dalink");
@@ -48,7 +48,7 @@ function ambiente(opz: { tailscale?: boolean; netbird?: boolean; oggetto?: boole
   }
   if (opz.oggetto !== false) {
     fs.mkdirSync(dalink, { mode: 0o700 });
-    fs.writeFileSync(path.join(dalink, "oggetto.env"), "DALINK_CODCLI=99999\nDALINK_NODO=99999-ipam\nDALINK_TOKEN=dlk_finto\n", { mode: 0o600 });
+    fs.writeFileSync(path.join(dalink, "oggetto.env"), `DALINK_CODCLI=99999\nDALINK_NODO=${opz.nodo ?? "99999-ipam"}\nDALINK_TOKEN=dlk_finto\n`, { mode: 0o600 });
     fs.chmodSync(path.join(dalink, "oggetto.env"), 0o600);
   }
   return { dir, dalink, systemd, registro };
@@ -115,6 +115,26 @@ test("senza oggetto.env e con la chiave: si ferma e non chiama netbird up", () =
   assert.doesNotMatch(r.comandi, /netbird up/);
   assert.ok(!r.out.includes(CHIAVE));
 });
+
+// Un'appliance per sede (18/10/2026): dalla seconda sede il nodo è <codice>-ipam-<n>.
+for (const nodo of ["99999-ipam-2", "99999-ipam-99"]) {
+  test(`nodo di sede ${nodo}: entra in NetBird con quel nome`, () => {
+    const a = ambiente({ nodo });
+    const r = lancia(a, ["--applica", "--edge", "no", "--chiave-da-stdin"], `${CHIAVE}\n`);
+    assert.equal(r.codice, 0, r.out);
+    assert.match(r.comandi, new RegExp(`netbird up .* --hostname ${nodo}\n`));
+  });
+}
+
+for (const nodo of ["99999-ipam-1", "99999-ipam-02", "99999-ipam-100", "99999-ipam-2;x"]) {
+  test(`nodo ${nodo} non ammesso: si ferma e non chiama netbird up`, () => {
+    const a = ambiente({ nodo });
+    const r = lancia(a, ["--applica", "--edge", "no", "--chiave-da-stdin"], `${CHIAVE}\n`);
+    assert.notEqual(r.codice, 0);
+    assert.doesNotMatch(r.comandi, /netbird up/);
+    assert.match(r.out, /<codice>-ipam\[-<n>\]/);
+  });
+}
 
 test("NetBird assente: si installa dal repository firmato", () => {
   const a = ambiente({ netbird: false });

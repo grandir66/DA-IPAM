@@ -24,6 +24,7 @@ import {
   edgeImportNeedsConfirm,
   replaceEdgeScannerFromImport,
 } from "@/lib/vuln/edge-scanner-db";
+import { configIntegrazioneDaImport } from "@/lib/modules/import-integrazione";
 import {
   ModuleImportSchema,
   type ModuleImportEntry,
@@ -135,21 +136,9 @@ function applyModuleConfig(
     }
     case "librenms":
     case "graylog": {
-      if (!e.url && !apiUrl) throw new Error(`${e.module} richiede url o api_url`);
-      const apiInternal = apiUrl || (e.url ?? "");
-      const browserUrl =
-        apiUrl && e.url && e.url !== apiUrl
-          ? e.url
-          : undefined;
-      setIntegrationConfig(e.module, {
-        mode: "external",
-        url: apiInternal,
-        uiUrl: browserUrl,
-        apiToken: e.api_key ?? "",
-        ...(e.module === "graylog"
-          ? { username: e.username ?? undefined, password: e.password ?? undefined }
-          : {}),
-      });
+      // `appliance` per LibreNMS con extra.mode = "appliance" (Deploy-Appliance),
+      // `external` per il resto: vedi import-integrazione.ts.
+      setIntegrationConfig(e.module, configIntegrazioneDaImport({ ...e, module: e.module }));
       return true;
     }
     case "wazuh": {

@@ -34,8 +34,25 @@ export interface OpzioniServer {
   risposta?: (comando: string) => string;
 }
 
+type OpzioniEd25519 = { passphrase: string; cipher: string; rounds: number };
+
+/**
+ * Una coppia ed25519 di ssh2 che ssh2 stesso sa rileggere. `utils.generateKeyPairSync`
+ * scrive male circa una chiave su 256: quando la pubblica comincia con un byte 0 lo
+ * toglie (31 byte invece di 32), e poi `parseKey` e `new Server` rifiutano la privata
+ * con «Malformed OpenSSH private key». Era la prova «instabile» `ssh-chiave` in CI
+ * (18/10): non il carico, la chiave. Si rigenera finché non è leggibile.
+ */
+export function ed25519Prova(cifra?: OpzioniEd25519): { private: string; public: string } {
+  for (let i = 0; i < 64; i++) {
+    const k = cifra ? utils.generateKeyPairSync("ed25519", cifra) : utils.generateKeyPairSync("ed25519");
+    if (!(utils.parseKey(k.private, cifra?.passphrase) instanceof Error) && !(utils.parseKey(k.public) instanceof Error)) return k;
+  }
+  throw new Error("ssh2 non ha prodotto una chiave ed25519 leggibile in 64 tentativi");
+}
+
 export async function serverSshProva(o: OpzioniServer): Promise<ServerSshProva> {
-  const chiaveHost = utils.generateKeyPairSync("ed25519");
+  const chiaveHost = ed25519Prova();
   const ammesse = (o.chiavi ?? []).map((riga) => {
     const k = utils.parseKey(riga);
     if (k instanceof Error) throw k;

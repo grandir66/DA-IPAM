@@ -27,7 +27,6 @@ import { removeTestHubDb } from "@/lib/integrations/__tests__/support/hub-isolat
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import type Database from "better-sqlite3";
-import { utils } from "ssh2";
 
 import { encrypt } from "@/lib/crypto";
 import { closeHubDb } from "@/lib/db-hub";
@@ -41,7 +40,7 @@ import { collectEdgeCredentialsForNetwork } from "@/lib/vuln/edge-credentials-br
 import { runSoftwareScan } from "@/lib/probes/software-runner";
 import * as patch from "@/lib/patch/credentials";
 import type { NetworkDevice } from "@/types";
-import { serverSshProva, type ServerSshProva } from "@/lib/devices/__tests__/support/server-ssh-chiave";
+import { ed25519Prova, serverSshProva, type ServerSshProva } from "@/lib/devices/__tests__/support/server-ssh-chiave";
 
 const T = "TESTCHIAVESSH";
 const { withTenant, getTenantDb, deleteTenantDatabase } = tenant;
@@ -61,8 +60,8 @@ type EsitoSshHost = { ok: true; creds: { host: string; port: number; username: s
 const caricaSshPerHost = (dbh: Database.Database, hostId: number, percorso: string): EsitoSshHost =>
   (patch as unknown as { caricaSshPerHost: (d: Database.Database, h: number, p: string) => EsitoSshHost }).caricaSshPerHost(dbh, hostId, percorso);
 
-const chiave = utils.generateKeyPairSync("ed25519");
-const chiaveCifrata = utils.generateKeyPairSync("ed25519", { passphrase: "frase", cipher: "aes256-cbc", rounds: 16 });
+const chiave = ed25519Prova();
+const chiaveCifrata = ed25519Prova({ passphrase: "frase", cipher: "aes256-cbc", rounds: 16 });
 const id: Record<string, number> = {};
 let srv: ServerSshProva;
 

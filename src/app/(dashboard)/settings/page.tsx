@@ -37,6 +37,7 @@ import {
 } from "@/components/ui/table";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
+import { ETICHETTA_OPZIONE } from "@/lib/modules/offerta";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Plus,
@@ -1257,9 +1258,13 @@ function SettingsPageInner() {
               <div className="flex items-center gap-2">
                 <Smartphone className="h-5 w-5 text-primary" />
                 <CardTitle className="text-base">MDM (Headwind)</CardTitle>
+                {/* Passo 4c: l'MDM è un modulo opzionale; non ha una voce nel catalogo dei moduli. */}
+                <Badge variant="secondary" title="Modulo opzionale, potenzialmente a pagamento">
+                  {ETICHETTA_OPZIONE}
+                </Badge>
               </div>
               <CardDescription>
-                Configura la connessione al server Headwind MDM per importare i dispositivi mobili (Android/iOS) come host e sincronizzarne l&apos;inventario.
+                Configura la connessione al server Headwind MDM per importare i dispositivi mobili Android come host e sincronizzarne l&apos;inventario.
               </CardDescription>
             </CardHeader>
             <CardContent>

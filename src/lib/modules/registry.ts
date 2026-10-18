@@ -19,7 +19,11 @@
  * connessione all'appliance è solo configurazione (tenant `vuln_scanners`).
  */
 import { listCredentials } from "@/lib/credentials-vault";
-import { resolveIntegrationBrowserUrl } from "@/lib/integrations/public-url-server";
+import {
+  resolveEdgeBrowserUrl,
+  resolveIntegrationBrowserUrl,
+  resolveWazuhBrowserUrl,
+} from "@/lib/integrations/public-url-server";
 import { resolveLibreNMSOperatorUrl } from "@/lib/integrations/librenms-proxy-auth";
 import { getIntegrationConfig } from "@/lib/integrations/config";
 import { listControllerViews } from "@/lib/controllers/service";
@@ -29,7 +33,7 @@ import { getNetServicesState } from "@/lib/network-services/feature";
 import { getFeatureStatus } from "@/lib/patch/feature";
 import { getMeshConfig } from "@/lib/integrations/meshcentral/config";
 import { getTenantDb, getTenantSetting } from "@/lib/db-tenant";
-import { deriveEdgeUiBase } from "@/lib/integrations/edge-ui-url";
+import { OFFERTA_MODULO, type Offerta } from "./offerta";
 
 export type ModuleKey =
   | "edge"
@@ -57,6 +61,12 @@ export interface ModuleDescriptor {
   access: "native" | "external";
   /** Deep-link alla card di configurazione nel tab "moduli". */
   configHref: string;
+  /**
+   * Offerta commerciale (passo 4c, 16/10): `base` = compreso nel prodotto,
+   * `opzione` = modulo opzionale, potenzialmente a pagamento. Solo
+   * presentazione: oggi non blocca niente (vedi `offerta.ts`).
+   */
+  offerta: Offerta;
 }
 
 export interface ModuleState extends ModuleDescriptor {
@@ -111,6 +121,7 @@ export function findLaunchpadEntry(
 export const MODULE_DESCRIPTORS: ReadonlyArray<ModuleDescriptor> = [
   {
     key: "edge",
+    offerta: OFFERTA_MODULO.edge,
     label: "Scanner-Edge",
     category: "va",
     description:
@@ -121,6 +132,7 @@ export const MODULE_DESCRIPTORS: ReadonlyArray<ModuleDescriptor> = [
   },
   {
     key: "patch_management",
+    offerta: OFFERTA_MODULO.patch_management,
     label: "Patch Management",
     category: "patch",
     description:
@@ -131,6 +143,7 @@ export const MODULE_DESCRIPTORS: ReadonlyArray<ModuleDescriptor> = [
   },
   {
     key: "network_services",
+    offerta: OFFERTA_MODULO.network_services,
     label: "Network Services",
     category: "network",
     description:
@@ -141,6 +154,7 @@ export const MODULE_DESCRIPTORS: ReadonlyArray<ModuleDescriptor> = [
   },
   {
     key: "librenms",
+    offerta: OFFERTA_MODULO.librenms,
     label: "LibreNMS",
     category: "nms",
     description:
@@ -151,6 +165,7 @@ export const MODULE_DESCRIPTORS: ReadonlyArray<ModuleDescriptor> = [
   },
   {
     key: "graylog",
+    offerta: OFFERTA_MODULO.graylog,
     label: "Graylog",
     category: "logs",
     description: "Log management enterprise (OpenSearch + MongoDB).",
@@ -160,6 +175,7 @@ export const MODULE_DESCRIPTORS: ReadonlyArray<ModuleDescriptor> = [
   },
   {
     key: "wazuh",
+    offerta: OFFERTA_MODULO.wazuh,
     label: "Wazuh SIEM",
     category: "siem",
     description: "XDR/SIEM (Manager + Indexer + Dashboard).",
@@ -169,6 +185,7 @@ export const MODULE_DESCRIPTORS: ReadonlyArray<ModuleDescriptor> = [
   },
   {
     key: "meshcentral",
+    offerta: OFFERTA_MODULO.meshcentral,
     label: "MeshCentral (Controllo remoto)",
     category: "rmm",
     description:
@@ -179,6 +196,7 @@ export const MODULE_DESCRIPTORS: ReadonlyArray<ModuleDescriptor> = [
   },
   {
     key: "inventory_agent",
+    offerta: OFFERTA_MODULO.inventory_agent,
     label: "Inventory Agent (GLPI)",
     category: "inventory",
     description:
@@ -189,6 +207,7 @@ export const MODULE_DESCRIPTORS: ReadonlyArray<ModuleDescriptor> = [
   },
   {
     key: "nis2_inventory",
+    offerta: OFFERTA_MODULO.nis2_inventory,
     label: "Inventario NIS2",
     category: "inventory",
     description: "Servizi/asset NIS2 (anagrafica, criticità). Modulo nativo opzionale.",
@@ -201,6 +220,7 @@ export const MODULE_DESCRIPTORS: ReadonlyArray<ModuleDescriptor> = [
     // finiscono in DA-IPAM (apparati, porte, vicini LLDP). La console del
     // controller resta raggiungibile come interfaccia esterna.
     key: "unifi",
+    offerta: OFFERTA_MODULO.unifi,
     label: "Controller UniFi",
     category: "network",
     description:
@@ -215,6 +235,7 @@ export const MODULE_DESCRIPTORS: ReadonlyArray<ModuleDescriptor> = [
     // (cliente A 2026-07-28, PX-NAS 2026-07-30) senza che questa griglia desse
     // alcun segnale — questa voce esiste per non ripetere quell'incidente.
     key: "appliance",
+    offerta: OFFERTA_MODULO.appliance,
     label: "Sistema appliance",
     category: "sistema",
     description: "Salute della macchina che ospita DA-IPAM: spazio disco e demone Docker.",
@@ -265,8 +286,9 @@ export async function resolveModules(tenantCode: string, ruolo: unknown): Promis
       uiUrl: "/vulnerabilities",
       uiIsInternal: true,
       // UI edge completa (Greenbone/scan/reti) su :6443, in aggiunta ai
-      // findings nativi in /vulnerabilities. null se host non browser-reachable.
-      externalUiUrl: scanner?.base_url ? deriveEdgeUiBase(scanner.base_url) : null,
+      // findings nativi in /vulnerabilities: dal nodo che serve davvero la 6443
+      // (nginx sul nodo di DA-IPAM), non dall'host di base_url (passo 4b).
+      externalUiUrl: scanner?.base_url ? resolveEdgeBrowserUrl(scanner.base_url) : null,
       note: installed
         ? undefined
         : "Scanner-Edge non configurato. Importa il JSON dell'installer o compila la card edge.",
@@ -329,6 +351,8 @@ export async function resolveModules(tenantCode: string, ruolo: unknown): Promis
   {
     const cfg = getIntegrationConfig("graylog");
     const entry = findLaunchpadEntry(creds, "graylog", "Graylog");
+    // Stessa fonte del viewer (`/api/integrations/active`): passo 4b, 16/10.
+    const browserUrl = resolveIntegrationBrowserUrl("graylog", cfg.url);
     const installed = cfg.mode !== "disabled" || !!entry;
     const configured = cfg.mode !== "disabled" && !!cfg.url;
     out.push({
@@ -336,7 +360,7 @@ export async function resolveModules(tenantCode: string, ruolo: unknown): Promis
       installed,
       configured,
       enabled: configured,
-      uiUrl: entry?.url ?? null,
+      uiUrl: browserUrl || entry?.url || null,
       uiIsInternal: false,
       note: installed ? undefined : "Non configurato. Importa il JSON dell'installer Graylog.",
     });
@@ -349,6 +373,8 @@ export async function resolveModules(tenantCode: string, ruolo: unknown): Promis
     const entry =
       findLaunchpadEntry(creds, "wazuh", "Dashboard") ??
       findLaunchpadEntry(creds, "wazuh", "Wazuh");
+    // Stessa fonte del viewer (`/api/integrations/active`): passo 4b, 16/10.
+    const browserUrl = resolveWazuhBrowserUrl();
     const configured = Boolean(cfg.enabled && cfg.url && cfg.username && cfg.password);
     const installed = cfg.enabled || !!entry;
     out.push({
@@ -356,7 +382,7 @@ export async function resolveModules(tenantCode: string, ruolo: unknown): Promis
       installed,
       configured,
       enabled: configured,
-      uiUrl: entry?.url ?? null,
+      uiUrl: browserUrl || null,
       uiIsInternal: false,
       note: installed ? undefined : "Non configurato. Importa il JSON dell'installer Wazuh.",
     });

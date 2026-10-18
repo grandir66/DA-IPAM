@@ -44,6 +44,31 @@ const APP_DIR = "/opt/meshcentral";
 const SERVICE_USER = "svc-daipam";
 const DEVICE_GROUP = "Domarc Endpoints";
 
+/**
+ * Certificato dell'appliance (nginx di DA-IPAM, lib/dashboard.sh di
+ * Deploy-Appliance). Se c'è, MeshCentral usa QUELLO invece di generarsene uno:
+ * il browser ricorda l'eccezione per indirizzo e certificato, non per porta, quindi
+ * chi ha accettato DA-IPAM non vede un secondo avviso sulla porta di MeshCentral.
+ * Senza, la sessione incorporata (RDP/VNC/controllo remoto) fallisce con una
+ * pagina d'errore muta: dentro un iframe Chrome non mostra «Procedi».
+ */
+export const APPLIANCE_CERT = {
+  crt: "/etc/da-appliance/cert/server.crt",
+  key: "/etc/da-appliance/cert/server.key",
+};
+
+/** true se entrambi i file del certificato dell'appliance esistono. */
+async function haCertificatoAppliance(): Promise<boolean> {
+  const fs = await import("fs/promises");
+  try {
+    await fs.stat(APPLIANCE_CERT.crt);
+    await fs.stat(APPLIANCE_CERT.key);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export interface MeshInstallOptions {
   /** Password del service account. Generata dal chiamante se assente. */
   adminPassword: string;
@@ -78,7 +103,11 @@ export function generateServicePassword(): string {
   return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join("");
 }
 
-function buildConfigJson(opts: MeshInstallOptions, loginTokenKey: string): string {
+export function buildConfigJson(
+  opts: MeshInstallOptions,
+  loginTokenKey: string,
+  certificatoAppliance = false,
+): string {
   return JSON.stringify(
     {
       settings: {
@@ -96,6 +125,9 @@ function buildConfigJson(opts: MeshInstallOptions, loginTokenKey: string): strin
         SelfUpdate: false,
         AgentPong: 300,
         TlsOffload: false,
+        // Col certificato dell'appliance montato: non rigenerarlo anche se il suo
+        // nome non coincide con Cert (es. appliance.local + IP nei SAN).
+        ...(certificatoAppliance ? { KeepCerts: true } : {}),
       },
       domains: {
         "": {
@@ -149,10 +181,16 @@ export async function installMeshCentral(jobId: string, opts: MeshInstallOptions
     const fs = await import("fs/promises");
     await fs.mkdir(`${APP_DIR}/meshcentral-data`, { recursive: true });
     await fs.mkdir(`${APP_DIR}/meshcentral-files`, { recursive: true });
+    const certificatoAppliance = await haCertificatoAppliance();
     await fs.writeFile(
       `${APP_DIR}/meshcentral-data/config.json`,
-      buildConfigJson(opts, loginTokenKey),
+      buildConfigJson(opts, loginTokenKey, certificatoAppliance),
       { mode: 0o600 },
+    );
+    log(
+      certificatoAppliance
+        ? `[config] Certificato: quello dell'appliance (${APPLIANCE_CERT.crt}), lo stesso di DA-IPAM.`
+        : `[config] Certificato dell'appliance assente: MeshCentral ne genera uno suo (il browser chiederà una conferma in più).`,
     );
 
     // ── CONTAINER ────────────────────────────────────────────────────────────
@@ -186,6 +224,16 @@ export async function installMeshCentral(jobId: string, opts: MeshInstallOptions
         `${APP_DIR}/meshcentral-data:/opt/meshcentral/meshcentral-data`,
         "-v",
         `${APP_DIR}/meshcentral-files:/opt/meshcentral/meshcentral-files`,
+        // Montati in sola lettura: il rinnovo del certificato dell'appliance
+        // arriva a MeshCentral al primo riavvio del container, senza copie.
+        ...(certificatoAppliance
+          ? [
+              "-v",
+              `${APPLIANCE_CERT.crt}:/opt/meshcentral/meshcentral-data/webserver-cert-public.crt:ro`,
+              "-v",
+              `${APPLIANCE_CERT.key}:/opt/meshcentral/meshcentral-data/webserver-cert-private.key:ro`,
+            ]
+          : []),
         MC_IMAGE,
       ],
       log,

@@ -999,6 +999,10 @@ export default function ObjectDetailPage() {
         {/* ═══════════════ TAB: GENERALE ═══════════════ */}
         <TabsContent value="generale" className="space-y-4">
 
+      {/* Controllo remoto (agente MeshCentral, RDP/VNC senza agente, SSH): in testa alla
+          scheda Generale, dove si guarda per primo. Si auto-nasconde se non c'è niente da offrire. */}
+      <HostMeshcentralCard hostId={host.id} hostLabel={displayName} />
+
       {/* Profilo MDM (Mobile): si auto-nasconde se l'host non ha dati MDM associati
           (l'endpoint by-host ritorna detail=null). Non gatiamo sulla classificazione
           perché os_family generata 'Android' ≠ inferred_os_family. */}
@@ -2556,8 +2560,6 @@ export default function ObjectDetailPage() {
       <Section icon={<HardDrive className="h-4 w-4" />} title="Software da GLPI Agent (push)">
         <HostInventoryAgentCard hostId={host.id} />
       </Section>
-
-      <HostMeshcentralCard hostId={host.id} />
 
 
       {/* ─── 4. Software inventory (solo se device + windows/linux) ─── */}

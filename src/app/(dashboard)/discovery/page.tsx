@@ -97,6 +97,7 @@ import { WazuhHostBadge, type WazuhHostStatus } from "@/components/integrations/
 import { InstallAgentsDialog } from "@/components/patch/install-agents-dialog";
 import { SshTerminalDialog } from "@/components/ssh-terminal/ssh-terminal-dialog";
 import { MeshCentralHostBadge } from "@/components/integrations/meshcentral-host-badge";
+import { porteAperte } from "@/lib/integrations/meshcentral/senza-agente-porte";
 import type { ClassPreset, IconName } from "./preset-types";
 import { PresetsDialog } from "@/components/devices/presets-dialog";
 
@@ -407,6 +408,8 @@ export default function DiscoveryPage() {
   const [wazuhMap, setWazuhMap] = useState<Map<number, WazuhHostStatus | null>>(new Map());
   type MeshPresence = { present: boolean; nodeId?: string; conn?: number; syncedAt?: string } | null;
   const [meshMap, setMeshMap] = useState<Map<number, MeshPresence>>(new Map());
+  // RDP/VNC senza agente disponibili su questa appliance (modulo Mesh + flag), dal batch host-status.
+  const [senzaAgenteOn, setSenzaAgenteOn] = useState(false);
   const [credentials, setCredentials] = useState<{ id: number; name: string; credential_type: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
@@ -753,7 +756,9 @@ export default function DiscoveryPage() {
             if (mr.ok) {
               const mj = (await mr.json()) as {
                 statuses: Record<string, { mesh: MeshPresence } | null>;
+                senzaAgente?: boolean;
               };
+              setSenzaAgenteOn(mj.senzaAgente === true);
               const mm = new Map<number, MeshPresence>();
               for (const id of ids) mm.set(id, mj.statuses?.[id]?.mesh ?? null);
               setMeshMap(mm);
@@ -1790,6 +1795,35 @@ export default function DiscoveryPage() {
               mode="icon"
             />
 
+            {/* Accesso rapido: desktop remoto senza agente (RDP via MeshCentral) e
+                terminale SSH di DA-IPAM. Colorati se la scansione ha visto la porta,
+                grigi ma cliccabili altrimenti (la scansione veloce può non vederla). */}
+            {senzaAgenteOn && (
+              <Link
+                href={`/rmm/${h.id}/senza-agente?p=rdp`}
+                title={porteAperte(h.open_ports ?? null).includes(3389)
+                  ? "Desktop remoto (RDP)"
+                  : "Desktop remoto (RDP) — la scansione non ha visto la porta 3389"}
+                className={porteAperte(h.open_ports ?? null).includes(3389)
+                  ? "inline-flex items-center text-primary hover:opacity-80"
+                  : "inline-flex items-center text-muted-foreground/40 hover:text-primary"}
+              >
+                <Monitor className="h-3.5 w-3.5" />
+              </Link>
+            )}
+            <button
+              type="button"
+              onClick={() => setSshTermRow(h)}
+              title={porteAperte(h.open_ports ?? null).includes(22)
+                ? "Terminale SSH"
+                : "Terminale SSH — la scansione non ha visto la porta 22"}
+              className={porteAperte(h.open_ports ?? null).includes(22)
+                ? "inline-flex items-center text-primary hover:opacity-80"
+                : "inline-flex items-center text-muted-foreground/40 hover:text-primary"}
+            >
+              <TerminalIcon className="h-3.5 w-3.5" />
+            </button>
+
             {/* Multihomed — host con più IP correlati allo stesso device fisico.
                 Icona Link2:
                 - colore cyan-600 + tag "P" se è il primary del gruppo (riceve gli scan)
@@ -2247,6 +2281,29 @@ export default function DiscoveryPage() {
                                     <TerminalIcon className="h-3.5 w-3.5" />
                                     Terminale SSH
                                   </DropdownMenuItem>
+
+                                  {/* Desktop remoto senza agente, aperto dal server MeshCentral
+                                      dell'appliance (solo con modulo e flag accesi). */}
+                                  {senzaAgenteOn && (
+                                    <>
+                                      <DropdownMenuItem
+                                        render={
+                                          <Link href={`/rmm/${h.id}/senza-agente?p=rdp`}>
+                                            <Monitor className="h-3.5 w-3.5" />
+                                            Desktop remoto (RDP)
+                                          </Link>
+                                        }
+                                      />
+                                      <DropdownMenuItem
+                                        render={
+                                          <Link href={`/rmm/${h.id}/senza-agente?p=vnc`}>
+                                            <Monitor className="h-3.5 w-3.5" />
+                                            VNC
+                                          </Link>
+                                        }
+                                      />
+                                    </>
+                                  )}
 
                                   {/* Apri un servizio web dell'host in una tab separata (porta/schema editabili) */}
                                   <DropdownMenuItem

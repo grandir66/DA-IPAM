@@ -24,6 +24,8 @@ function node(over: Partial<MeshNode> = {}): MeshNode {
     osdesc: "Windows 11",
     conn: 1,
     lastConnect: "2026-06-29T10:00:00.000Z",
+    host: null,
+    agentless: false,
     ...over,
   };
 }
@@ -160,5 +162,23 @@ test("stale node is pruned, but an EMPTY listNodes never wipes existing rows", (
     assert.equal(countRows(), 1, "empty result must not delete existing rows (false-zero safety)");
 
     deleteTenantDatabase(TS);
+  });
+});
+
+test("i device senza agente (gruppo tipo 3) restano fuori da mc_node", () => {
+  return withTenant(T, async () => {
+    applyMcSchemaMigrations(getTenantDb(T));
+    seedConfig();
+    _setControlClientFactory(() => ({
+      listNodes: async () => [
+        node({ nodeId: "node//N1" }),
+        node({ nodeId: "node//LOC1", meshId: "mesh//LOC", ip: null, macs: [], host: "10.9.9.5", agentless: true }),
+      ],
+      close() {},
+    }));
+    const r = await syncMeshForTenant();
+    assert.equal(r.totalNodes, 1);
+    const row = getTenantDb(T).prepare("SELECT 1 FROM mc_node WHERE node_id = ?").get("node//LOC1");
+    assert.equal(row, undefined);
   });
 });

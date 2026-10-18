@@ -124,21 +124,14 @@ export function UpdateChecker() {
         return;
       }
 
-      if (data.status === "completed") {
+      if (data.status === "started") {
+        // L'aggiornamento lo fa il servizio di systemd: la pagina Aggiornamenti
+        // ne segue fase ed esito, anche attraverso il riavvio.
         setUpdateStatus("completed");
-        setStatusMessage(data.message);
-        toast.success("Aggiornamento completato!");
-
-        if (data.restartScheduled) {
-          // Il riavvio l'ha già programmato il server: chiederne un secondo
-          // riavvierebbe il processo nuovo appena partito.
-          setRiavvioProgrammato(true);
-          attendiRiavvio();
-        } else if (data.requiresRestart) {
-          setTimeout(() => {
-            handleRestart();
-          }, 3000);
-        }
+        setStatusMessage(data.message ?? "Aggiornamento avviato.");
+        setRiavvioProgrammato(true);
+        toast.info("Aggiornamento avviato: segui l'avanzamento in Impostazioni → Aggiornamenti.");
+        window.location.href = "/settings?tab=aggiornamenti";
       }
     } catch (error) {
       setUpdateStatus("error");

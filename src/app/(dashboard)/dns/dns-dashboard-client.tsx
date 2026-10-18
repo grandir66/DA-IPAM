@@ -19,6 +19,7 @@ import {
   pct,
   resolverStat,
 } from "@/lib/network-services/dns-metrics";
+import { toggleServizio } from "@/lib/network-services/toggle-servizio";
 import { DnsChainFlow } from "@/components/dns/dns-chain-flow";
 import { DnsMetricGrid } from "@/components/dns/dns-metric-grid";
 import { DnsTopTable } from "@/components/dns/dns-top-table";
@@ -121,28 +122,12 @@ export function DnsDashboardClient({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function toggleService(svc: DnsServiceKey, enable: boolean) {
+  function toggleService(svc: DnsServiceKey, enable: boolean, label: string) {
     startTransition(async () => {
-      const r = await fetch(`/api/network-services/toggle/${svc}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enable }),
-      });
-      const data = (await r.json()) as {
-        ok?: boolean;
-        error?: string;
-        results?: Array<{ unit: string; out?: string }>;
-      };
-      if (!r.ok || data.ok === false) {
-        const detail =
-          data.error ||
-          data.results?.map((x) => `${x.unit}: ${x.out ?? "?"}`).join(" · ") ||
-          r.statusText;
-        toast.error(`Toggle servizio fallito: ${detail}`);
-        await refreshAll();
-        return;
-      }
-      toast.success(`Servizio ${enable ? "abilitato" : "disabilitato"}`);
+      // Non lancia mai; a schermo resta lo stato di prima finché la rilettura non lo cambia.
+      const esito = await toggleServizio(svc, enable, label);
+      if (esito.ok) toast.success(esito.messaggio);
+      else toast.error(esito.messaggio);
       await refreshAll();
     });
   }
@@ -216,7 +201,7 @@ export function DnsDashboardClient({
                   <Button
                     size="sm"
                     variant={active ? "destructive" : "default"}
-                    onClick={() => toggleService(key, !active)}
+                    onClick={() => toggleService(key, !active, label)}
                     disabled={pending}
                   >
                     <Power className="h-3.5 w-3.5 mr-1.5" />

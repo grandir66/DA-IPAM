@@ -65,3 +65,15 @@ Sotto `tsx` **`await import()` di `db-tenant` dà una SECONDA istanza** con `Asy
 - **`db.ts` e `db-tenant.ts` divergono**: guarda da quale importa il chiamante.
 - **Scansioni (ADR 0006)**: `last_run` = **fine** del giro; lucchetto **in memoria** (separare lo scheduler vuole prima un lucchetto sul DB); la scansione veloce **manda** offline: da decidere.
 - **Crescita del DB**: niente retention sugli storici; il più grosso è `mac_ip_history`.
+
+## Valutazione del 16/10
+
+Letto «Il punto su DA-IPAM» e confrontato con ADR 0004/0020, modello per cavo e script update; consultato anche CONTEXT di Deploy-Appliance. Solo lettura, nessuna prova sul live. Punto da valutare: `scripts/update.sh` tratta il fallimento di verify-install come AVVISO e stampa comunque «Aggiornamento completato». Prossimo passo proposto: distinguere esito deploy, salute reale e recupero; nessuna implementazione autorizzata.
+
+Approfondimento codice, stessa sessione: suite locale topologia su Node 22 e dati temporanei: 913 test, 911 pass, 0 fail, 1 skip, 1 todo (`/private/tmp/da-ipam-topology-review.log`). Rischio statico auto-update: pull prima della build; se build fallisce HEAD è già aggiornato e il timer successivo esce per SHA uguale; anche cambio branch con checkout a origin può saltare build/restart. Nessuna riproduzione sul live né fix. Topologia: fiducia, dati vecchi e fallback esplicito già implementati.
+
+Proposta richiesta il 16/10: `docs/proposte/2026-10-16-solidita-interfaccia-moduli-deploy.md` (da approvare, nessun codice modificato). MDM Headwind esiste ma manca da registry/sidebar; UI promette iOS senza connettore Apple verificato. Job integrazioni solo in memoria e polling ignora 404; probe Patch legge solo enabled. Suite mirata moduli/network-services/MDM: 50 pass, 0 fail. Nessuna QA browser né prova sui servizi reali. Prossimo passo: approvare il piano derivato dalla proposta.
+
+Vincoli utente del 16/10 aggiunti alla proposta: Zabbix fonte monitoraggio con proxy sulla stessa macchina di DA-IPAM; LibreNMS solo opzionale locale integrato, nessuna modalità esterna futura. Proposta A2: contratto filtrato per cliente via DA-Zabbix, mapping oggetti/hostid, timestamp/cache e qualità, senza accesso al DB proxy o token centrali admin. Solo proposta: connettore non implementato.
+
+Precisazione vincolante Riccardo (16/10): Zabbix è modulo opzionale commerciale, non dipendenza del prodotto base. DA-Zabbix già genera il profilo cliente e ne resta titolare; DA-IPAM deve riutilizzarlo, senza onboarding duplicato. Aggiornata proposta: nessuna chiamata/allarme/installazione senza opzione attiva; distinguere diritto, configurazione e salute; nessuna cancellazione automatica del profilo centrale.

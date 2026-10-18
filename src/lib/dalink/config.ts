@@ -51,6 +51,12 @@ export function normalizzaImpronta(v: string): string | null {
 
 const CODCLI = /^[0-9]{3,8}$/;
 const TOKEN = /^dlk_[A-Za-z0-9_-]{20,200}$/;
+/**
+ * Un'appliance per sede per cliente (decisione del 18/10/2026): la prima sede è
+ * `<codcli>-ipam`, dalla seconda `<codcli>-ipam-<n>` con n da 2 a 99, senza zeri
+ * davanti. Stessa forma in `scripts/dalink/prepara-netbird.sh`.
+ */
+const NODO_IPAM = /^([0-9]{3,8})-ipam(?:-([2-9]|[1-9][0-9]))?$/;
 
 function leggiRighe(testo: string): Map<string, string> {
   const valori = new Map<string, string>();
@@ -110,8 +116,12 @@ export function leggiConfigDalink(percorso: string = percorsoOggettoEnv()): Conf
   if (!CODCLI.test(codcli)) return { stato: "non_valida", motivo: "DALINK_CODCLI non è un codice cliente del gestionale (solo cifre)" };
 
   const nodo = (v.get("DALINK_NODO") ?? "").trim();
-  if (nodo !== `${codcli}-ipam`) {
-    return { stato: "non_valida", motivo: "DALINK_NODO non è il nodo di un'istanza IPAM di questo cliente (<codice>-ipam)" };
+  const m = NODO_IPAM.exec(nodo);
+  if (!m || m[1] !== codcli) {
+    return {
+      stato: "non_valida",
+      motivo: "DALINK_NODO non è il nodo di un'istanza IPAM di questo cliente (<codice>-ipam o <codice>-ipam-<n>)",
+    };
   }
 
   const token = (v.get("DALINK_TOKEN") ?? "").trim();

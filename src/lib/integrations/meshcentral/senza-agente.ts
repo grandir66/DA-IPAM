@@ -124,6 +124,9 @@ async function gruppo(client: ClientSenzaAgente): Promise<string> {
   return client.addLocalMesh(GRUPPO_SENZA_AGENTE);
 }
 
+/** Pausa fra i tentativi di ritrovare un device appena creato. */
+export const ATTESA_DEVICE_MS = 400;
+
 /** Device con questo IP nel gruppo; al primo uso lo crea. */
 async function device(
   client: ClientSenzaAgente,
@@ -136,9 +139,14 @@ async function device(
   if (trovato) return trovato;
   const nome = host.custom_name || host.hostname || host.ip;
   await client.addLocalDevice(meshId, nome, host.ip, tipoDevice(host.os_family));
-  const creato = await cerca();
-  if (!creato) throw new Error("device creato ma non ritrovato in MeshCentral");
-  return creato;
+  // Il server risponde 'ok' prima che la scrittura nel suo DB sia finita
+  // (db.Set non atteso in 'addlocaldevice'): qualche tentativo ravvicinato.
+  for (let tentativo = 0; tentativo < 5; tentativo++) {
+    const creato = await cerca();
+    if (creato) return creato;
+    await new Promise((r) => setTimeout(r, ATTESA_DEVICE_MS));
+  }
+  throw new Error("device creato ma non ritrovato in MeshCentral");
 }
 
 /**

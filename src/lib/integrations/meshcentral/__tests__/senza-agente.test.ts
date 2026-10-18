@@ -192,6 +192,30 @@ test("flag spento: niente chiamate a MeshCentral", async () => {
   });
 });
 
+test("device scritto in ritardo dal server: lo ritrova al tentativo dopo", async () => {
+  await withTenant(T, async () => {
+    const id = host("10.0.0.26", [3389], "Microsoft Windows 11");
+    let letture = 0;
+    let inAttesa: MeshNode | null = null;
+    const lento: SenzaAgenteDeps = {
+      ...deps,
+      client: () => ({
+        ...client,
+        async listNodes() {
+          letture++;
+          return inAttesa && letture > 2 ? [inAttesa] : [];
+        },
+        async addLocalDevice(meshId, deviceName, hostname) {
+          inAttesa = nodoLocale(meshId, hostname, deviceName);
+        },
+      }),
+    };
+    const res = await prepareSessioneSenzaAgente({ hostId: id, protocollo: "rdp", operator: "x" }, lento);
+    assert.equal(res.ok, true, res.ok ? "" : res.error);
+    assert.equal(letture, 3);
+  });
+});
+
 test("errore di MeshCentral: 502 e audit 'failed'", async () => {
   await withTenant(T, async () => {
     const id = host("10.0.0.24", [3389]);

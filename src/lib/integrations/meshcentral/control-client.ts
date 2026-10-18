@@ -410,11 +410,13 @@ export class MeshControlClient {
     const groups = resp.nodes;
     if (!groups || typeof groups !== "object") return [];
     const out: MeshNode[] = [];
-    for (const arr of Object.values(
+    // Il server raggruppa i nodi per gruppo e TOGLIE `meshid` da ciascuno
+    // (meshuser.js 'nodes', «Compress the meshid's»): il gruppo è la chiave.
+    for (const [meshid, arr] of Object.entries(
       groups as Record<string, RawNode[]>,
     )) {
       if (!Array.isArray(arr)) continue;
-      for (const raw of arr) out.push(rawToMeshNode(raw));
+      for (const raw of arr) out.push(rawToMeshNode({ ...raw, meshid: raw.meshid ?? meshid }));
     }
     return out;
   }

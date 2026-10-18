@@ -105,6 +105,27 @@ test("listNodes maps the meshes-keyed nodes payload to MeshNode[]", async () => 
   assert.equal(typeof n.lastConnect, "string");
 });
 
+test("listNodes: meshid tolto dal server, si prende dalla chiave del gruppo", async () => {
+  _setWsConnector(() =>
+    makeFake((msg) =>
+      msg.action === "nodes"
+        ? {
+            action: "nodes",
+            responseid: msg.responseid,
+            // Forma reale di MeshCentral 1.2.x: niente meshid nei nodi.
+            nodes: { "mesh//LOC": [{ _id: "node//L1", name: "pc", host: "10.0.0.9", mtype: 3 }] },
+          }
+        : null,
+    ),
+  );
+  const c = new MeshControlClient(creds);
+  const [n] = await c.listNodes();
+  c.close();
+  assert.equal(n.meshId, "mesh//LOC");
+  assert.equal(n.host, "10.0.0.9");
+  assert.equal(n.agentless, true);
+});
+
 test("listNodes returns [] when nodes payload empty", async () => {
   _setWsConnector(() =>
     makeFake((msg) =>

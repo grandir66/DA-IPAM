@@ -101,6 +101,8 @@ function nodo(): MeshNode {
     osdesc: "Windows 11",
     conn: 1,
     lastConnect: "2026-06-29T10:00:00.000Z",
+    host: null,
+    agentless: false,
   };
 }
 
@@ -214,6 +216,7 @@ const API = join(process.cwd(), "src", "app", "api");
 const AZIONI: Record<string, string> = {
   "integrations/meshcentral/host/[hostId]/run-command/route.ts": "guardiaMesh(",
   "integrations/meshcentral/host/[hostId]/remote-session/route.ts": "guardiaMesh(",
+  "integrations/meshcentral/host/[hostId]/senza-agente/route.ts": "guardiaMesh(",
   "integrations/meshcentral/bind/route.ts": "guardiaMesh(",
   "integrations/meshcentral/nodes/route.ts": "guardiaMesh(",
   "integrations/meshcentral/install-script/route.ts": "guardiaMesh(",

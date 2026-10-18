@@ -18,6 +18,8 @@ function mkNode(over: Partial<MeshNode> = {}): MeshNode {
     osdesc: "Windows 11",
     conn: 1,
     lastConnect: null,
+    host: null,
+    agentless: false,
     ...over,
   };
 }

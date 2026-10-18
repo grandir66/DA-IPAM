@@ -152,7 +152,7 @@ test("listMeshes maps meshes response", async () => {
   const c = new MeshControlClient(creds);
   const ms = await c.listMeshes();
   c.close();
-  assert.deepEqual(ms, [{ meshId: "mesh//AAA", name: "Endpoints" }]);
+  assert.deepEqual(ms, [{ meshId: "mesh//AAA", name: "Endpoints", mtype: 0 }]);
 });
 
 test("close() tears down the client without errors", () => {
@@ -346,4 +346,25 @@ test("isSelfHostResolved: loopback/IP locale non chiamano nemmeno il resolver", 
   const spy = async () => { called = true; return []; };
   assert.equal(await isSelfHostResolved("wss://127.0.0.1:4443/control.ashx", spy), true);
   assert.equal(called, false, "loopback risolto in sincrono, senza DNS");
+});
+
+test("senza agente: createmesh tipo 3, addlocaldevice rifiutato, getcookie", async () => {
+  const inviati: Record<string, unknown>[] = [];
+  _setWsConnector(() =>
+    makeFake((msg) => {
+      inviati.push(msg);
+      if (msg.action === "createmesh") return { action: "createmesh", responseid: msg.responseid, meshid: "mesh//LOC", result: "ok" };
+      // Sugli errori il server risponde con action 'changeDeviceMesh' e il motivo.
+      if (msg.action === "addlocaldevice") return { action: "changeDeviceMesh", responseid: msg.responseid, result: "Permission denied" };
+      if (msg.action === "getcookie") return { ...msg, cookie: "CK" };
+      return null;
+    }),
+  );
+  const c = new MeshControlClient(creds);
+  assert.equal(await c.addLocalMesh("Domarc Senza Agente"), "mesh//LOC");
+  assert.equal(inviati[0].meshtype, 3);
+  assert.equal("relayid" in inviati[0], false, "nessun agente ponte");
+  await assert.rejects(c.addLocalDevice("mesh//LOC", "pc", "10.0.0.5", 4), /Permission denied/);
+  assert.equal(await c.getRelayCookie("node//X", 5900), "CK");
+  c.close();
 });

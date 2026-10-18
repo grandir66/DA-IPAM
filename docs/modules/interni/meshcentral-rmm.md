@@ -86,6 +86,30 @@ binario e non contrattualizzato, riscriverlo si romperebbe a ogni update.
   (`Deploy-Appliance/modules/meshcentral.sh`) — deve restare allineato a
   `install.ts`.
 
+## Desktop remoto senza agente (RDP / VNC)
+
+Per le postazioni e i device dove l'agente non si installa. **Spento di default**:
+si accende con `MESHCENTRAL_SENZA_AGENTE=1` in `.env.local` (riavvio del servizio).
+
+- Nella scheda host, se l'host **non ha** un nodo MeshCentral e la scansione ha
+  trovato aperta la 3389 (RDP) o la 5900-5902 (VNC), la card «Controllo remoto»
+  mostra «Desktop remoto (RDP)» / «VNC» → `/rmm/[hostId]/senza-agente?p=rdp|vnc`.
+- Al primo clic DA-IPAM crea in MeshCentral il gruppo **«Domarc Senza Agente»**
+  (meshtype 3, «Local devices», **senza** relayid) e il device con l'IP dell'host
+  (`addlocaldevice`). Nessuna sincronizzazione di massa; `mesh-sync` ignora questi
+  nodi (`agentless`), così non figurano come agenti offline.
+- È il **server MeshCentral** a collegarsi all'IP (relay locale): sta
+  sull'appliance nella LAN del cliente, quindi niente agente ponte. Un host di
+  un'altra sede si raggiunge dall'appliance di quella sede.
+- RDP: `mstsc.html?login=<token monouso>&node=<id>&port=3389`. VNC: cookie da
+  `getcookie` + `novnc/vnc.html` su `localrelay.ashx`, come la console MeshCentral.
+- **Credenziali**: restano in DA-IPAM. MeshCentral non ha un'API per riceverle,
+  quindi la sessione le chiede. La casella «ricorda» di MeshCentral le salverebbe
+  sull'utenza di servizio, cioè per tutti gli operatori.
+- Audit in `mc_remote_session` con `viewmode` 21 (RDP) / 22 (VNC), `node_id` nullo.
+- Codice: `src/lib/integrations/meshcentral/senza-agente.ts`, rotta
+  `host/[hostId]/senza-agente`.
+
 ## File chiave
 
 - `src/lib/modules/registry.ts` — descrittore modulo `meshcentral`.

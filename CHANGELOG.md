@@ -4,6 +4,16 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-18 · MeshCentral: desktop remoto senza agente
+
+### Novità
+
+- **RDP e VNC senza agente** dalla scheda host (card «Controllo remoto»): per gli host senza agente MeshCentral con la
+  3389 o la 5900-5902 aperte. La sessione la apre il server MeshCentral dell'appliance, dentro DA-IPAM, senza
+  installare niente sulla postazione; le credenziali si inseriscono nella sessione. DA-IPAM crea alla bisogna il
+  gruppo «Domarc Senza Agente» e il device. **Spento di default** (`MESHCENTRAL_SENZA_AGENTE=1`), da provare sul
+  pilota. Dettagli in `docs/modules/interni/meshcentral-rmm.md`.
+
 ## [Non rilasciato] — 2026-10-18 · DA-Link: nodi delle sedi oltre la prima
 
 Un'appliance per sede per cliente (decisione del 18/10/2026): dalla seconda sede il nodo si chiama

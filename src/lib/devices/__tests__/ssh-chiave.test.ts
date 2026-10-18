@@ -22,11 +22,11 @@ import { generateKeyPairSync } from "node:crypto";
 import { utils } from "ssh2";
 import { sshExec, SshError } from "@/lib/devices/ssh-transport";
 import { extractProxmoxViaSsh, readLiveInterfaces, testProxmoxSsh } from "@/lib/proxmox/proxmox-ssh";
-import { rigaPubblicaDaPem, serverSshProva } from "./support/server-ssh-chiave";
+import { ed25519Prova, rigaPubblicaDaPem, serverSshProva } from "./support/server-ssh-chiave";
 
-const ed25519 = utils.generateKeyPairSync("ed25519");
-const ed25519Cifrata = utils.generateKeyPairSync("ed25519", { passphrase: "frase segreta", cipher: "aes256-cbc", rounds: 16 });
-const altra = utils.generateKeyPairSync("ed25519");
+const ed25519 = ed25519Prova();
+const ed25519Cifrata = ed25519Prova({ passphrase: "frase segreta", cipher: "aes256-cbc", rounds: 16 });
+const altra = ed25519Prova();
 
 function pem(alg: "rsa" | "ec" | "ed25519", tipo: "pkcs1" | "sec1" | "pkcs8", passphrase?: string): string {
   const cifra = passphrase ? { cipher: "aes-256-cbc", passphrase } : {};

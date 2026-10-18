@@ -15,6 +15,10 @@ Un'appliance per sede per cliente (decisione del 18/10/2026): dalla seconda sede
   `scripts/dalink/prepara-netbird.sh`: prima solo `<codice>-ipam`, e un'appliance di seconda sede risultava «non
   valida» (nessun segnale a DA-Link) e non poteva entrare in NetBird. Il codice cliente del nodo deve restare quello di
   `DALINK_CODCLI`.
+- **Prove SSH stabili** (`ssh-chiave`, `ssh-connessione-caduta`, `chiave-ssh-percorsi`): la causa non era il carico.
+  `utils.generateKeyPairSync("ed25519")` di ssh2 scrive male circa una chiave su 256 (toglie il byte 0 in testa alla
+  pubblica) e poi la rifiuta con «Malformed OpenSSH private key». Le prove ora prendono la chiave da `ed25519Prova()`,
+  che la rigenera finché ssh2 la rilegge. Solo codice di prova.
 
 ## [Non rilasciato] — 2026-10-16 · pannello Zabbix in sola lettura (opzione)
 

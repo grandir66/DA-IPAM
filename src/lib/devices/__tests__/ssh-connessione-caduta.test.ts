@@ -13,7 +13,7 @@ import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { Server, utils, type ServerChannel, type Connection } from "ssh2";
+import { Server, type ServerChannel, type Connection } from "ssh2";
 import type { AddressInfo } from "node:net";
 import type { Client as SshClient } from "ssh2";
 import { closeHubDb } from "@/lib/db-hub";
@@ -22,6 +22,7 @@ import { encrypt } from "@/lib/crypto";
 import { createRouterClient } from "@/lib/devices/router-client";
 import { CODICE_CONNESSIONE_CADUTA, execConTempo, sshExec } from "@/lib/devices/ssh-transport";
 import { COMANDI_MK, eseguiSuSsh, leggiMikrotikTopologia } from "@/lib/devices/mikrotik-letture";
+import { ed25519Prova } from "./support/server-ssh-chiave";
 import type { NetworkDevice } from "@/types";
 
 const FX = path.join(__dirname, "fixtures");
@@ -32,7 +33,7 @@ after(() => { deleteTenantDatabase(T); closeHubDb(); removeTestHubDb(); });
 type Risposta = (comando: string, canale: ServerChannel, client: Connection) => void;
 /** Un server ssh2 in memoria: ogni `exec` lo decide `risposta`. */
 async function serverSsh(risposta: Risposta): Promise<{ porta: number; chiudi: () => void }> {
-  const chiave = utils.generateKeyPairSync("ed25519");
+  const chiave = ed25519Prova();
   const srv = new Server({ hostKeys: [chiave.private] }, (client) => {
     client.on("authentication", (ctx) => ctx.accept());
     client.on("ready", () => {

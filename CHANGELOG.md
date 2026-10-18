@@ -13,6 +13,8 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   installare niente sulla postazione; le credenziali si inseriscono nella sessione. DA-IPAM crea alla bisogna il
   gruppo «Domarc Senza Agente» e il device. **Spento di default** (`MESHCENTRAL_SENZA_AGENTE=1`), da provare sul
   pilota. Dettagli in `docs/modules/interni/meshcentral-rmm.md`.
+- **Terminale SSH dalla scheda host**: con la porta 22 aperta la card «Controllo remoto» offre anche il terminale SSH
+  di DA-IPAM (prima solo dal menu di /discovery), con le credenziali salvate dell'host. Non dipende dal flag.
 
 ## [Non rilasciato] — 2026-10-18 · DA-Link: nodi delle sedi oltre la prima
 

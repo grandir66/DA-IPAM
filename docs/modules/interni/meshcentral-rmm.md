@@ -107,6 +107,9 @@ si accende con `MESHCENTRAL_SENZA_AGENTE=1` in `.env.local` (riavvio del servizi
   quindi la sessione le chiede. La casella «ricorda» di MeshCentral le salverebbe
   sull'utenza di servizio, cioè per tutti gli operatori.
 - Audit in `mc_remote_session` con `viewmode` 21 (RDP) / 22 (VNC), `node_id` nullo.
+- **SSH** non passa da MeshCentral: con la 22 aperta la stessa card apre il
+  terminale SSH di DA-IPAM (`components/ssh-terminal`), che usa le credenziali
+  salvate dell'host. Sempre attivo, senza flag.
 - Codice: `src/lib/integrations/meshcentral/senza-agente.ts`, rotta
   `host/[hostId]/senza-agente`.
 

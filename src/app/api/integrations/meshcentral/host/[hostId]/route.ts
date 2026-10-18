@@ -1,6 +1,7 @@
 /**
  * GET /api/integrations/meshcentral/host/[hostId]
- * Stato Mesh del singolo host (per la card "Controllo remoto"). Lettura → requireAuth.
+ * Stato Mesh del singolo host (per la card "Controllo remoto"), più quali
+ * pulsanti senza agente (RDP/VNC) e SSH mostrare. Lettura → requireAuth.
  */
 import { NextResponse } from "next/server";
 import { requireAuth, isAuthError } from "@/lib/api-auth";
@@ -9,6 +10,7 @@ import { getMeshStatusForHost } from "@/lib/integrations/meshcentral/db";
 import { getTenantDb, getCurrentTenantCode } from "@/lib/db-tenant";
 import { meshAttivo } from "@/lib/integrations/meshcentral/feature";
 import {
+  porteAperte,
   protocolliDisponibili,
   senzaAgenteAttivo,
 } from "@/lib/integrations/meshcentral/senza-agente";
@@ -33,6 +35,20 @@ function senzaAgente(hostId: number): { rdp: boolean; vnc: boolean } {
   return row ? protocolliDisponibili(row.open_ports) : no;
 }
 
+/**
+ * Porta 22 aperta: la card offre il terminale SSH di DA-IPAM
+ * (components/ssh-terminal, credenziali salvate dell'host). Non dipende da
+ * MeshCentral né dal flag senza agente.
+ */
+function sshAperto(hostId: number): boolean {
+  const code = getCurrentTenantCode();
+  if (!code) return false;
+  const row = getTenantDb(code)
+    .prepare("SELECT open_ports FROM hosts WHERE id = ?")
+    .get(hostId) as { open_ports: string | null } | undefined;
+  return row ? porteAperte(row.open_ports).includes(22) : false;
+}
+
 export async function GET(_req: Request, ctx: { params: Promise<{ hostId: string }> }) {
   const { hostId: hostIdRaw } = await ctx.params;
   const hostId = parseHostId(hostIdRaw);
@@ -42,6 +58,14 @@ export async function GET(_req: Request, ctx: { params: Promise<{ hostId: string
   return withTenantFromSession(async () => {
     const auth = await requireAuth();
     if (isAuthError(auth)) return auth;
-    return NextResponse.json({ mesh: getMeshStatusForHost(hostId), senzaAgente: senzaAgente(hostId) });
+    // Tabelle del modulo assenti (mai installato): nessun nodo, ma il pulsante
+    // SSH della card (terminale di DA-IPAM, non di MeshCentral) resta.
+    let mesh: ReturnType<typeof getMeshStatusForHost> = { present: false };
+    try {
+      mesh = getMeshStatusForHost(hostId);
+    } catch {
+      /* modulo mai installato */
+    }
+    return NextResponse.json({ mesh, senzaAgente: senzaAgente(hostId), ssh: sshAperto(hostId) });
   });
 }

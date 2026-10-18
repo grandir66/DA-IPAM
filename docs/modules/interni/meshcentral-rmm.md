@@ -57,10 +57,16 @@ binario e non contrattualizzato, riscriverlo si romperebbe a ogni update.
 
 ## Note operative importanti
 
-- **Certificato self-signed su :4443**: al primo controllo remoto il browser
-  dell'operatore blocca l'iframe finché non accetta una volta il certificato di
-  `https://<host>:4443`. La UI mostra un banner con il link per farlo. Fix
-  permanente: cert valido su :4443 (backlog).
+- **Certificato su :4443**: se esiste `/etc/da-appliance/cert/server.{crt,key}`
+  (il certificato di nginx/DA-IPAM), l'installazione lo monta in sola lettura come
+  certificato web di MeshCentral e scrive `KeepCerts: true` (altrimenti MeshCentral
+  lo scarta perché `Cert` = IP non è fra i suoi nomi DNS, e se ne rigenera uno).
+  Il browser ricorda l'eccezione per indirizzo e certificato, non per porta: chi ha
+  accettato DA-IPAM non vede un secondo avviso. Senza quel file MeshCentral usa un
+  certificato suo e dentro l'iframe Chrome mostra solo una pagina d'errore muta
+  (non può offrire «Procedi»): va accettato a mano su `https://<host>:4443`.
+  Su un'appliance già installata: reinstallare il modulo dalla UI. Fix
+  definitivo: nome e certificato veri per appliance (backlog).
 - **Immagine pinnata per digest** (mai `:latest`): MeshCentral cambia il codec
   del login-token fra versioni; un aggiornamento automatico romperebbe il
   launch-out. Aggiornare = cambiare il digest in `install.ts` **e** in

@@ -27,6 +27,14 @@ export interface MeshNode {
   osdesc: string | null;
   conn: number;
   lastConnect: string | null;
+  /**
+   * Indirizzo dei device SENZA agente (gruppo tipo 3, «Local devices»): è
+   * l'host:porta a cui si collega il server MeshCentral stesso. null per i nodi
+   * con agente.
+   */
+  host: string | null;
+  /** true se il nodo sta in un gruppo senza agente (mtype 3). */
+  agentless: boolean;
 }
 
 // ── Transport seam ────────────────────────────────────────────────────────────
@@ -179,6 +187,8 @@ interface RawNode {
   osdesc?: string;
   conn?: number;
   lastconnect?: number;
+  host?: string;
+  mtype?: number;
 }
 
 /** MeshCentral epoch-ms → ISO-8601, or null. */
@@ -208,6 +218,8 @@ function rawToMeshNode(r: RawNode): MeshNode {
     osdesc: r.osdesc ?? null,
     conn: typeof r.conn === "number" ? r.conn : 0,
     lastConnect: msToIso(r.lastconnect),
+    host: typeof r.host === "string" && r.host ? r.host : null,
+    agentless: r.mtype === 3,
   };
 }
 
@@ -421,14 +433,69 @@ export class MeshControlClient {
     return meshid;
   }
 
-  async listMeshes(): Promise<Array<{ meshId: string; name: string }>> {
+  async listMeshes(): Promise<Array<{ meshId: string; name: string; mtype: number }>> {
     const resp = await this.request("meshes");
     const arr = resp.meshes;
     if (!Array.isArray(arr)) return [];
-    return (arr as Array<{ _id?: string; name?: string }>).map((m) => ({
+    return (arr as Array<{ _id?: string; name?: string; mtype?: number }>).map((m) => ({
       meshId: m._id ?? "",
       name: m.name ?? "",
+      mtype: typeof m.mtype === "number" ? m.mtype : 0,
     }));
+  }
+
+  /**
+   * Crea un gruppo SENZA agente (meshtype 3, «Local devices»), senza relayid: è
+   * il server MeshCentral stesso a collegarsi ai device, perché sta sull'appliance
+   * nella LAN del cliente. Con relayid servirebbe un agente ponte, qui inutile.
+   * (meshuser.js 'createmesh': tipi 1 AMT · 2 agente · 3 locale · 4 IP-KVM.)
+   */
+  async addLocalMesh(name: string): Promise<string> {
+    const resp = await this.request("createmesh", { meshname: name, meshtype: 3 });
+    const meshid = resp.meshid;
+    if (typeof meshid !== "string" || !meshid) {
+      throw new Error(
+        `createmesh '${name}' (senza agente) returned no meshid (result=${String(resp.result ?? "?")})`,
+      );
+    }
+    return meshid;
+  }
+
+  /**
+   * Aggiunge un device senza agente a un gruppo tipo 3 (meshuser.js
+   * 'addlocaldevice'). type: 4 = Windows (RDP) · 6 = Linux · 29 = macOS — gli
+   * unici ammessi dal server. La risposta NON porta il nodeid: il chiamante lo
+   * ritrova con listNodes() cercando `host` nel gruppo.
+   */
+  async addLocalDevice(meshId: string, deviceName: string, hostname: string, type: 4 | 6 | 29): Promise<void> {
+    const resp = await this.request("addlocaldevice", {
+      meshid: meshId,
+      devicename: deviceName,
+      hostname,
+      type,
+    });
+    // Sugli errori di validazione il server risponde con action 'changeDeviceMesh'
+    // e il motivo in result; sul successo result = 'ok'.
+    if (resp.result !== "ok") {
+      throw new Error(`addlocaldevice: ${String(resp.result ?? "risposta inattesa")}`);
+    }
+  }
+
+  /**
+   * Cookie di relay per una connessione TCP del server verso il device (azione
+   * 'getcookie', la stessa che usa la console di MeshCentral per Web-VNC). Su un
+   * nodo senza agente il server ci aggiunge lc=1 (relay locale). Dura 60 minuti
+   * lato server; non va mai salvato né loggato.
+   */
+  async getRelayCookie(nodeId: string, tcpport: number): Promise<string> {
+    const resp = await this.request("getcookie", { nodeid: nodeId, tcpport });
+    const cookie = resp.cookie;
+    if (typeof cookie !== "string" || !cookie) {
+      // Diritti mancanti o nodo inesistente: il server non risponde affatto
+      // (scade il timeout) oppure risponde senza cookie.
+      throw new Error("getcookie: nessun cookie dal server");
+    }
+    return cookie;
   }
 
   /**

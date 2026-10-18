@@ -2557,7 +2557,7 @@ export default function ObjectDetailPage() {
         <HostInventoryAgentCard hostId={host.id} />
       </Section>
 
-      <HostMeshcentralCard hostId={host.id} />
+      <HostMeshcentralCard hostId={host.id} hostLabel={displayName} />
 
 
       {/* ─── 4. Software inventory (solo se device + windows/linux) ─── */}

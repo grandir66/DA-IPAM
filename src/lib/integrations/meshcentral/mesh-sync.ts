@@ -50,7 +50,11 @@ export async function syncMeshForTenant(): Promise<{ totalNodes: number; matched
 
   let nodes: MeshNode[];
   try {
-    nodes = await client.listNodes();
+    // I device SENZA agente (gruppo tipo 3, senza-agente.ts) non sono endpoint
+    // arruolati: li crea DA-IPAM stesso per l'RDP/VNC e ha già l'host. Associati
+    // per hostname figurerebbero come «agente offline» e aprirebbero la pagina
+    // del controllo remoto con agente. Fuori dalla sincronizzazione.
+    nodes = (await client.listNodes()).filter((n) => !n.agentless);
   } finally {
     client.close();
   }

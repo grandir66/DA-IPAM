@@ -23,16 +23,16 @@ function parseHostId(raw: string): number | null {
 
 /**
  * Pulsanti RDP/VNC senza agente (senza-agente.ts): solo con modulo e flag accesi,
- * e solo per le porte che la scansione ha trovato aperte.
+ * per le porte che la scansione ha trovato aperte (RDP anche per ogni host Windows).
  */
 function senzaAgente(hostId: number): { rdp: boolean; vnc: boolean } {
   const no = { rdp: false, vnc: false };
   const code = getCurrentTenantCode();
   if (!code || !senzaAgenteAttivo() || !meshAttivo(code)) return no;
   const row = getTenantDb(code)
-    .prepare("SELECT open_ports FROM hosts WHERE id = ?")
-    .get(hostId) as { open_ports: string | null } | undefined;
-  return row ? protocolliDisponibili(row.open_ports) : no;
+    .prepare("SELECT open_ports, os_family FROM hosts WHERE id = ?")
+    .get(hostId) as { open_ports: string | null; os_family: string | null } | undefined;
+  return row ? protocolliDisponibili(row.open_ports, row.os_family) : no;
 }
 
 /**

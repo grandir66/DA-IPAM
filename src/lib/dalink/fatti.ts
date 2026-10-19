@@ -33,6 +33,7 @@ import { leggiStatoAggiornamento } from "@/lib/aggiornamento-servizio";
 import { getConfiguredUpdateBranch } from "@/lib/update-branch";
 import { leggiPorteWt0, type PorteWt0 } from "./porte-wt0";
 import { aggiornamentoPerSegnale, type AggiornamentoSegnale, type FattiIstanza, type Inventario } from "./segnale";
+import { statiComponentiBase, type StatiComponenti } from "./stati-componenti";
 
 /** Il proxy Zabbix lo installa la procedura guidata di DA-Zabbix, sulla macchina. */
 export const FILE_PROXY_ZABBIX = "/etc/zabbix/zabbix_proxy.conf";
@@ -72,6 +73,8 @@ export interface DipendenzeFatti {
   proxyZabbix: () => "ok" | "fail" | null;
   /** Stato dell'aggiornamento automatico (data/aggiornamento.json) col ramo seguito. */
   aggiornamento: () => AggiornamentoSegnale | null;
+  /** Stati di IPAM/Edge sulle basi modulari di Deploy-Appliance; null altrove. */
+  statiComponenti: () => Promise<StatiComponenti | null>;
 }
 
 let versioneLetta: string | null = null;
@@ -124,6 +127,7 @@ export const dipendenzeFattiReali: DipendenzeFatti = {
   },
   proxyZabbix: saluteProxyZabbix,
   aggiornamento: () => aggiornamentoPerSegnale(leggiStatoAggiornamento(), getConfiguredUpdateBranch()),
+  statiComponenti: () => statiComponentiBase(),
 };
 
 export async function fattiIstanza(
@@ -191,10 +195,17 @@ export async function fattiIstanza(
     aggiornamento = null; // un resoconto: non ferma il segnale
   }
 
+  let statiComponenti: StatiComponenti | null = null;
+  try {
+    statiComponenti = await d.statiComponenti();
+  } catch {
+    statiComponenti = null; // campo omesso: DA-Link conserva l'ultima fotografia con la sua data
+  }
+
   return {
     clienteTrovato,
     tenant,
-    fatti: { versione: versioneIstanza(), moduli, salute, ultimoErrore, porte: porte.porte, aggiornamento },
+    fatti: { versione: versioneIstanza(), moduli, salute, ultimoErrore, porte: porte.porte, aggiornamento, statiComponenti },
   };
 }
 

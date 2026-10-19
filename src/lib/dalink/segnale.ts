@@ -14,6 +14,7 @@
  */
 import type { StatoAggiornamento } from "@/lib/aggiornamento-stato";
 import type { Livello } from "./stato";
+import type { StatiComponenti } from "./stati-componenti";
 
 export interface FattiIstanza {
   versione: string;
@@ -23,6 +24,8 @@ export interface FattiIstanza {
   porte: number[];
   /** Stato dell'aggiornamento automatico; null se l'istanza non lo registra ancora. */
   aggiornamento?: AggiornamentoSegnale | null;
+  /** Solo sulle basi modulari; null/assente = campo non mandato (DA-Link conserva). */
+  statiComponenti?: StatiComponenti | null;
 }
 
 /**
@@ -61,6 +64,8 @@ export interface CorpoSegnale {
   inventario: Inventario | null;
   /** Assente (non null) quando non c'è: le istanze vecchie non lo mandano affatto. */
   aggiornamento?: AggiornamentoSegnale;
+  /** Assente fuori dalle basi modulari di Deploy-Appliance. */
+  stati_componenti?: StatiComponenti;
 }
 
 /** Limiti del contratto di DA-Link: oltre, il segnale prende 422. */
@@ -135,5 +140,6 @@ export function costruisciSegnale(
     porte_netbird: porteValide(fatti.porte),
     inventario,
     ...(fatti.aggiornamento ? { aggiornamento: { ...fatti.aggiornamento } } : {}),
+    ...(fatti.statiComponenti ? { stati_componenti: { ...fatti.statiComponenti } } : {}),
   };
 }

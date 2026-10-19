@@ -4,6 +4,17 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-19 · Segnale verso DA-Link: stati dei moduli sulle basi modulari
+
+### Novità
+
+- **`stati_componenti` nel segnale verso DA-Link** sulle basi modulari di Deploy-Appliance
+  (file `/etc/da-appliance/modules/modular-v1`): IPAM `operativo`, Edge dal container
+  (`operativo` solo se healthy, Docker muto = omesso). Perché: sulla base trasmette un
+  mittente alla volta, e con IPAM acceso DA-Link mostrava ancora l'ultima fotografia della
+  base («ipam disattivato»), vista nel collaudo M5.1 sulla VM 900. Le appliance legacy non
+  mandano il campo.
+
 ## [Non rilasciato] — 2026-10-18 · MeshCentral: desktop remoto senza agente
 
 ### Novità

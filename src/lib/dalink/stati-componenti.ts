@@ -10,12 +10,15 @@
  * - solo sulle basi modulari (file `modular-v1`): le appliance legacy omettono il campo;
  * - `operativo` dell'Edge solo da container healthy, mai dal file-segno della fase;
  * - Docker che non risponde = edge omesso (non so), mai «spento» o «errore» inventato;
- * - IPAM è `operativo`: questo codice gira dentro il suo servizio.
+ * - IPAM è `operativo`: questo codice gira dentro il suo servizio;
+ * - MeshCentral (terzo modulo, 19/10): container `meshcentral`; senza healthcheck vale la
+ *   risposta vera della sua UI su 127.0.0.1:4443 (codice < 400), mai il file-segno.
  *
  * Contratto: DA-Link `docs/api-stato-sistema.md`.
  */
 import { execFile } from "node:child_process";
 import fs from "node:fs";
+import https from "node:https";
 import path from "node:path";
 
 export const MODULI_DIR = "/etc/da-appliance/modules";
@@ -40,6 +43,8 @@ export interface DipendenzeStati {
   esiste: (percorso: string) => boolean;
   leggi: (percorso: string) => string;
   docker: (argomenti: string[]) => Promise<EsitoComando>;
+  /** La UI di MeshCentral risponde in locale con un codice < 400 (come `curl -f`). */
+  risponde4443: () => Promise<boolean>;
 }
 
 export const dipendenzeStatiReali: DipendenzeStati = {
@@ -51,6 +56,19 @@ export const dipendenzeStatiReali: DipendenzeStati = {
         const codice = err ? (typeof err.code === "number" ? err.code : 124) : 0;
         resolve({ codice, stdout: String(stdout ?? ""), stderr: String(stderr ?? err?.message ?? "") });
       });
+    }),
+  // Prova locale senza dati: il certificato di MeshCentral è suo, autofirmato.
+  risponde4443: () =>
+    new Promise((resolve) => {
+      const req = https.get(
+        { host: "127.0.0.1", port: 4443, path: "/", rejectUnauthorized: false, timeout: 5000 },
+        (res) => {
+          res.resume();
+          resolve((res.statusCode ?? 500) < 400);
+        },
+      );
+      req.on("timeout", () => req.destroy());
+      req.on("error", () => resolve(false));
     }),
 };
 
@@ -82,6 +100,34 @@ export async function statoEdge(dip: DipendenzeStati): Promise<StatoComponente |
   return "errore";
 }
 
+/** Stato di MeshCentral, o null se non si sa o se il modulo non è mai stato predisposto. */
+export async function statoMeshcentral(dip: DipendenzeStati): Promise<StatoComponente | null> {
+  let fase: string | null = null;
+  try {
+    fase = dip.leggi(path.join(MODULI_DIR, "meshcentral.state")).trim();
+  } catch {
+    fase = null;
+  }
+  const r = await dip.docker([
+    "inspect",
+    "--format",
+    "{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{end}}",
+    "meshcentral",
+  ]);
+  if (r.codice !== 0 && !/no such/i.test(r.stderr)) return null;
+  const [statoC, saluteC] = (r.codice === 0 ? r.stdout.trim() : "").split("|");
+  if (statoC === "restarting") return "errore";
+  if (statoC === "running") {
+    if (saluteC) return saluteC === "healthy" ? "operativo" : saluteC === "unhealthy" ? "errore" : "inizializzazione";
+    if (await dip.risponde4443()) return "operativo";
+    return fase === "inizializzazione" || fase === null || fase === "" ? "inizializzazione" : "errore";
+  }
+  if (fase === "disattivato") return "disattivato";
+  if (fase === "inizializzazione" && !statoC) return "inizializzazione";
+  if (fase === null || fase === "") return null;
+  return "errore";
+}
+
 /** Null fuori dalle basi modulari: il campo non si manda e DA-Link conserva ciò che ha. */
 export async function statiComponentiBase(
   dip: DipendenzeStati = dipendenzeStatiReali,
@@ -99,6 +145,12 @@ export async function statiComponentiBase(
     if (edge) stati.edge = { stato: edge };
   } catch {
     // Un guasto nel leggere l'Edge non toglie il resto: l'Edge resta «non so».
+  }
+  try {
+    const mesh = await statoMeshcentral(dip);
+    if (mesh) stati.meshcentral = { stato: mesh };
+  } catch {
+    // Come per l'Edge: MeshCentral resta «non so».
   }
   return stati;
 }

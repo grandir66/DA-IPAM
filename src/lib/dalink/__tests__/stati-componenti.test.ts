@@ -8,18 +8,21 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { statiComponentiBase, statoEdge, type DipendenzeStati, type EsitoComando } from "../stati-componenti";
+import { statiComponentiBase, statoEdge, statoMeshcentral, type DipendenzeStati, type EsitoComando } from "../stati-componenti";
 import { costruisciSegnale, type FattiIstanza } from "../segnale";
 
-function dip(file: Record<string, string>, docker: EsitoComando | Error): DipendenzeStati {
+// Il doppio risponde per nome del container, come docker: quello di MeshCentral a parte.
+function dip(file: Record<string, string>, docker: EsitoComando | Error, ui = false, mesh?: EsitoComando): DipendenzeStati {
   return {
+    risponde4443: async () => ui,
     esiste: (p) => p in file,
     leggi: (p) => {
       if (p in file) return file[p];
       throw new Error("ENOENT");
     },
-    docker: async () => {
+    docker: async (argomenti) => {
       if (docker instanceof Error) throw docker;
+      if (argomenti.at(-1) === "meshcentral") return mesh ?? ASSENTE;
       return docker;
     },
   };
@@ -77,4 +80,21 @@ test("base modulare con Edge sano: ipam ed edge operativi nel corpo del segnale"
   assert.deepEqual(corpo.stati_componenti, stati);
   const senza = costruisciSegnale({ codcli: "70791", nodo: "70791-ipam" }, "solo_stato", { ...fatti, statiComponenti: null }, () => null);
   assert.equal("stati_componenti" in senza, false, "fuori dalle basi modulari il campo è assente, non null");
+});
+
+test("MeshCentral: operativo solo se gira e la UI risponde; mai dal file-segno", async () => {
+  const MESH = "/etc/da-appliance/modules/meshcentral.state";
+  const casi: Array<[string | null, EsitoComando, boolean, string | null]> = [
+    ["operativo", ASSENTE, false, "errore"],
+    ["operativo", acceso("running|"), false, "errore"], // gira ma la UI non risponde
+    ["inizializzazione", acceso("running|"), false, "inizializzazione"],
+    ["inizializzazione", acceso("running|"), true, "operativo"],
+    ["operativo", acceso("restarting|"), true, "errore"],
+    ["disattivato", acceso("exited|"), false, "disattivato"],
+    [null, ASSENTE, false, null],
+  ];
+  for (const [fase, docker, ui, atteso] of casi) {
+    const file: Record<string, string> = fase ? { [MESH]: `${fase}\n` } : {};
+    assert.equal(await statoMeshcentral(dip(file, ASSENTE, ui, docker)), atteso, `${fase} + ${docker.stdout || docker.stderr} + ui=${ui}`);
+  }
 });

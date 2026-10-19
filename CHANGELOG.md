@@ -8,6 +8,11 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ### Novità
 
+- **MeshCentral negli `stati_componenti`** (terzo modulo della base modulare di
+  Deploy-Appliance, 19/10): container `meshcentral`; `operativo` solo se gira e la sua UI su
+  127.0.0.1:4443 risponde con un codice < 400 (o col suo healthcheck), mai dal file-segno.
+  Senza, con IPAM acceso DA-Link non vedeva lo stato di MeshCentral (VM 900).
+
 - **`stati_componenti` nel segnale verso DA-Link** sulle basi modulari di Deploy-Appliance
   (file `/etc/da-appliance/modules/modular-v1`): IPAM `operativo`, Edge dal container
   (`operativo` solo se healthy, Docker muto = omesso). Perché: sulla base trasmette un

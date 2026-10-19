@@ -15,9 +15,11 @@ import {
   type StatoOfferta,
 } from "@/lib/modules/offerta";
 
-test("le opzioni del catalogo sono Patch, MeshCentral e Wazuh; LibreNMS è base", () => {
+// L'MDM era già un'opzione (passo 4c, etichetta nella sua scheda); dal 19/10 (F11) sta
+// anche nel catalogo.
+test("le opzioni del catalogo sono MDM, Patch, MeshCentral e Wazuh; LibreNMS è base", () => {
   const opzioni = MODULE_DESCRIPTORS.filter((d) => d.offerta === "opzione").map((d) => d.key).sort();
-  assert.deepEqual(opzioni, ["meshcentral", "patch_management", "wazuh"]);
+  assert.deepEqual(opzioni, ["mdm", "meshcentral", "patch_management", "wazuh"]);
   const librenms = MODULE_DESCRIPTORS.find((d) => d.key === "librenms");
   assert.equal(librenms?.offerta, "base");
 });

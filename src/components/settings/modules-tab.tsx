@@ -1,7 +1,7 @@
 "use client";
 import { parseDbDate } from "@/lib/db-date";
 
-import { useCallback, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -13,6 +13,7 @@ import {
   ServerCog,
   Trash2,
   Shield,
+  ArrowLeft,
 } from "lucide-react";
 import {
   Card,
@@ -26,7 +27,6 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
 import {
   Dialog,
   DialogContent,
@@ -46,6 +46,8 @@ import { ZabbixLetturaCard } from "./zabbix-lettura-card";
 import { ModuleJsonImport } from "./module-json-import";
 import { IntegrationViewer } from "@/components/integrations/integration-viewer";
 import { VerificaModulo } from "@/components/integrations/apertura-browser";
+import { ElencoModuli } from "@/components/settings/elenco-moduli";
+import { InterruttoreSenzaAgente } from "@/components/settings/interruttore-senza-agente";
 import { CredentialsVaultPanel } from "./credentials-vault-panel";
 import { fetchJson } from "@/lib/fetch-json";
 import { LoadError } from "@/components/shared/load-error";
@@ -78,6 +80,18 @@ function formatDate(iso: string | null): string {
   }
 }
 
+/**
+ * Analisi del 19/10 (F10, approvato da Riccardo): la scheda Moduli mostrava insieme
+ * configurazione, installazione, salute, certificati e vault di tutti i moduli (49
+ * pulsanti). Ora la scheda è un elenco (`ElencoModuli`) e ogni modulo ha la sua pagina
+ * `/settings/moduli/<chiave>`, che monta questo stesso componente con `solo`: ogni
+ * sezione si mostra solo nella pagina del suo modulo.
+ */
+const SoloModulo = createContext<string | undefined>(undefined);
+
+/** Le pagine con Docker in vista: le integrazioni a dashboard esterna. */
+const CON_DOCKER = new Set(["librenms", "graylog", "wazuh", "loki"]);
+
 /** Header di sezione modulo con anchor + mini import JSON dedicato. */
 function ModuleSection({
   id,
@@ -96,7 +110,9 @@ function ModuleSection({
   title: string;
   children: React.ReactNode;
 }) {
+  const solo = useContext(SoloModulo);
   const chiave = offertaDi ?? moduleKey;
+  if (solo !== id.replace(/^module-/, "")) return null;
   const opzione = opzioneFuoriCatalogo === true || (chiave !== undefined && OFFERTA_MODULO[chiave] === "opzione");
   return (
     <section id={id} className="scroll-mt-24 space-y-2">
@@ -120,30 +136,21 @@ function ModuleSection({
   );
 }
 
-export function ModulesTab({ isAdmin }: { isAdmin: boolean }) {
-  // ── Deep-link scroll (#module-<key> con fallback #int-<x>) ──────────
+export function ModulesTab({ isAdmin, solo }: { isAdmin: boolean; solo?: string }) {
+  const router = useRouter();
+  // I collegamenti di prima (`/settings?tab=moduli#module-<chiave>` o `#int-<chiave>`)
+  // portano alla pagina del modulo.
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const hash = window.location.hash;
-    if (!hash || (!hash.startsWith("#module-") && !hash.startsWith("#int-"))) return;
-    const targetId = hash.slice(1);
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        const el =
-          document.getElementById(targetId) ??
-          document.getElementById(targetId.replace(/^int-/, "module-")) ??
-          document.getElementById(targetId.replace(/^module-/, "int-"));
-        if (el) {
-          el.scrollIntoView({ behavior: "smooth", block: "start" });
-          el.classList.add("ring-2", "ring-primary", "ring-offset-2");
-          setTimeout(
-            () => el.classList.remove("ring-2", "ring-primary", "ring-offset-2"),
-            2200,
-          );
-        }
-      });
-    });
-  }, []);
+    if (solo || typeof window === "undefined") return;
+    const vai = () => {
+      const m = /^#(?:module|int)-([a-z0-9_]+)$/.exec(window.location.hash);
+      if (m) router.replace(`/settings/moduli/${m[1]}`);
+    };
+    vai();
+    // Anche quando cambia solo l'ancora, a pagina già aperta.
+    window.addEventListener("hashchange", vai);
+    return () => window.removeEventListener("hashchange", vai);
+  }, [solo, router]);
 
   // ── Docker availability (per le integrazioni Docker-managed) ───────
   const [dockerAvailable, setDockerAvailable] = useState<boolean | null>(null);
@@ -333,24 +340,34 @@ export function ModulesTab({ isAdmin }: { isAdmin: boolean }) {
   const meshBusy = busyKey === "meshcentral";
 
   return (
+    <SoloModulo.Provider value={solo}>
     <div className="space-y-8">
+      {!solo ? (
+        <>
       <div className="flex items-start justify-between gap-4">
-        <div>
-          <h2 className="text-lg font-semibold flex items-center gap-2">
-            <PackageOpen className="h-5 w-5" />
-            Moduli
-          </h2>
-          <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
-            Configurazione unica dei moduli dell&apos;appliance. Importa il JSON generato
-            dall&apos;installer di un modulo per configurarlo in un colpo solo, oppure usa
-            le form qui sotto. I moduli nativi (edge, patch, network) si gestiscono dentro
-            DA-IPAM; LibreNMS, Graylog e Wazuh aprono la dashboard esterna.
-          </p>
-        </div>
-        <div className="shrink-0">
-          <ModuleJsonImport />
-        </div>
-      </div>
+            <div>
+              <h2 className="text-lg font-semibold flex items-center gap-2">
+                <PackageOpen className="h-5 w-5" />
+                Moduli
+              </h2>
+              <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
+                Ogni modulo si configura e si verifica nella sua pagina («Apri»). Il JSON
+                dell&apos;installer di un modulo si importa qui a destra.
+              </p>
+            </div>
+            <div className="shrink-0">
+              <ModuleJsonImport />
+            </div>
+          </div>
+
+          <ElencoModuli />
+        </>
+      ) : (
+        <Link href="/settings?tab=moduli" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+          <ArrowLeft className="h-4 w-4" />
+          Tutti i moduli
+        </Link>
+      )}
 
       {/* ════ Moduli nativi ════ */}
       <ModuleSection id="module-edge" moduleKey="edge" title="Scanner-Edge — Vulnerability Assessment">
@@ -452,6 +469,7 @@ export function ModulesTab({ isAdmin }: { isAdmin: boolean }) {
           }
         />
         )}
+        <InterruttoreSenzaAgente isAdmin={isAdmin} />
         <VerificaModulo moduleKey="meshcentral" isAdmin={isAdmin} />
       </ModuleSection>
 
@@ -486,16 +504,9 @@ export function ModulesTab({ isAdmin }: { isAdmin: boolean }) {
         <VerificaModulo moduleKey="unifi" isAdmin={isAdmin} />
       </ModuleSection>
 
-      <Separator />
-
-      {/* ════ Integrazioni a dashboard esterna ════ */}
-      <div>
-        <h3 className="text-base font-semibold">Integrazioni esterne</h3>
-        <p className="text-xs text-muted-foreground mt-1">
-          Monitoring e log management con dashboard propria. Configura la connessione qui;
-          l&apos;accesso avviene dalla Launchpad.
-        </p>
-      </div>
+      {/* ════ Integrazioni a dashboard esterna: Docker solo nelle loro pagine ════ */}
+      {solo && CON_DOCKER.has(solo) && (
+      <>
 
       {dockerError && (
         <LoadError what="lo stato di Docker" message={dockerError} onRetry={() => void checkDocker()} />
@@ -559,6 +570,8 @@ export function ModulesTab({ isAdmin }: { isAdmin: boolean }) {
           <span>Docker disponibile — l&apos;installazione automatizzata è abilitata.</span>
         </div>
       )}
+      </>
+      )}
 
       <ModuleSection id="module-librenms" moduleKey="librenms" title="LibreNMS">
         <IntegrationCard
@@ -586,27 +599,20 @@ export function ModulesTab({ isAdmin }: { isAdmin: boolean }) {
         <VerificaModulo moduleKey="wazuh" isAdmin={isAdmin} />
       </ModuleSection>
 
-      <Separator />
+      {solo === "loki" && (
+        <section id="module-loki" className="scroll-mt-24">
+          <IntegrationCard
+            component="loki"
+            title="Grafana Loki"
+            description="Log management leggero (~512MB RAM). Raccolta syslog da device di rete e Linux."
+            dockerAvailable={dockerAvailable ?? false}
+          />
+        </section>
+      )}
 
-      {/* ════ Integrazioni secondarie ════ */}
-      <div>
-        <h3 className="text-sm font-semibold text-muted-foreground">
-          Integrazioni secondarie
-        </h3>
-      </div>
-      <section id="module-loki" className="scroll-mt-24">
-        <div id="int-loki" />
-        <IntegrationCard
-          component="loki"
-          title="Grafana Loki"
-          description="Log management leggero (~512MB RAM). Raccolta syslog da device di rete e Linux."
-          dockerAvailable={dockerAvailable ?? false}
-        />
-      </section>
+      {solo && CON_DOCKER.has(solo) && <IntegrationViewer solo={solo} />}
 
-      <IntegrationViewer />
-
-      <CredentialsVaultPanel isAdmin={isAdmin} />
+      {solo === "credenziali" && <CredentialsVaultPanel isAdmin={isAdmin} />}
 
       <Dialog
         open={uninstallDialog.open}
@@ -671,6 +677,7 @@ export function ModulesTab({ isAdmin }: { isAdmin: boolean }) {
         onInstalled={() => void fetchFeatures()}
       />
     </div>
+    </SoloModulo.Provider>
   );
 }
 

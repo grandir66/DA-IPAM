@@ -6,6 +6,7 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import { librenmsDevicePath } from "@/lib/integrations/public-url";
 import Link from "next/link";
 import { useEAdmin } from "@/hooks/use-e-admin";
+import { colonneDellaVista, contaPreset, etichettaPreset, GLOSSARIO, prendePreset, VISTE, type Vista } from "@/lib/discovery/viste-filtri";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -910,20 +911,11 @@ export default function DiscoveryPage() {
     return hosts.filter((h) => {
       if (statusFilter && h.status !== statusFilter) return false;
       if (classFilter) {
-        if (classFilter === "group:multihomed") {
-          // MH = host che appartengono a un gruppo multihomed (più IP correlati
-          // allo stesso device fisico via serial/sysName/hostname/AD).
-          if (!h.multihomed) return false;
-        } else if (classFilter === "group:other") {
-          // ALTRO = host la cui classificazione non rientra in nessun altro preset.
-          // Include anche unknown/null/"" così l'utente vede tutto ciò che resta fuori.
-          const claimed = new Set(
-            presets.filter((p) => p.filter !== "group:other" && p.filter !== "group:multihomed").flatMap((p) => p.match)
-          );
-          if (claimed.has(h.classification ?? "")) return false;
-        } else if (classFilter.startsWith("group:")) {
-          const preset = presets.find((p) => p.filter === classFilter);
-          if (preset && !preset.match.includes(h.classification ?? "")) return false;
+        // Una regola sola per tabella e conteggi delle chip (revisione del 19/10): i
+        // preset personali `user:<slug>` prima svuotavano la tabella.
+        const preset = presets.find((p) => p.filter === classFilter);
+        if (preset) {
+          if (!prendePreset(preset, h, presets)) return false;
         } else if (h.classification !== classFilter) {
           return false;
         }
@@ -1384,10 +1376,32 @@ export default function DiscoveryPage() {
     () => columnOrder.map((id) => COLUMNS.find((c) => c.id === id)).filter((c): c is typeof COLUMNS[number] => !!c),
     [columnOrder]
   );
+  // Viste per attività (analisi del 19/10, F09): filtrano le colonne mostrate senza
+  // toccare l'ordine salvato, che resta «Tutte». Ricordata per browser.
+  const [vista, setVistaStato] = useState<Vista>(() => {
+    try {
+      const v = typeof window !== "undefined" ? window.localStorage.getItem("discovery-vista") : null;
+      return v === "inventario" || v === "sicurezza" || v === "rete" ? v : "tutte";
+    } catch {
+      return "tutte";
+    }
+  });
+  const setVista = (v: Vista) => {
+    setVistaStato(v);
+    try { window.localStorage.setItem("discovery-vista", v); } catch { /* solo comodità */ }
+  };
+  const colonneMostrate = useMemo(
+    () => vista === "tutte"
+      ? orderedVisibleCols
+      : colonneDellaVista(vista, columnOrder).map((id) => COLUMNS.find((c) => c.id === id)).filter((c): c is typeof COLUMNS[number] => !!c),
+    [vista, orderedVisibleCols, columnOrder]
+  );
+  // Filtri rapidi a zero: da parte, dietro «Altre categorie».
+  const [mostraVuote, setMostraVuote] = useState(false);
 
   // ---------- CSV export ----------
   const exportCsv = () => {
-    const visibleDefs = orderedVisibleCols;
+    const visibleDefs = colonneMostrate;
     const header = joinCsvRow(visibleDefs.map((c) => c.label));
     const rows = sortedRows.map((h) => joinCsvRow(visibleDefs.map((c) => getCellText(h, c.id))));
     const csv = [header, ...rows].join("\n");
@@ -2013,7 +2027,7 @@ export default function DiscoveryPage() {
               </Select>
 
               {/* Column picker */}
-              <Button variant="outline" size="icon" title="Gestisci colonne (ordine + visibilità)" onClick={() => setColumnsDialogOpen(true)}>
+              <Button variant="outline" size="icon" title="Gestisci colonne (ordine + visibilità)" onClick={() => { setVista("tutte"); setColumnsDialogOpen(true); }}>
                 <Columns3 className="h-4 w-4" />
               </Button>
 
@@ -2032,6 +2046,22 @@ export default function DiscoveryPage() {
           {/* Preset chips: filtro rapido per macro-categoria. Cliccando una chip
               attiva imposta classFilter al preset; il dropdown "Classificazione"
               resta utilizzabile per scelte fini. */}
+          <div className="flex flex-wrap items-center gap-1.5 pt-1" role="group" aria-label="Vista delle colonne">
+            <span className="text-xs text-muted-foreground mr-1">Vista</span>
+            {(["tutte", "inventario", "sicurezza", "rete"] as const).map((v) => (
+              <Button
+                key={v}
+                variant={vista === v ? "default" : "outline"}
+                size="sm"
+                className="h-7 text-xs"
+                aria-pressed={vista === v}
+                onClick={() => setVista(v)}
+                title={v === "tutte" ? "Le colonne scelte da te" : `Solo le colonne per ${VISTE[v].etichetta.toLowerCase()}`}
+              >
+                {v === "tutte" ? "Tutte" : VISTE[v].etichetta}
+              </Button>
+            ))}
+          </div>
           <div className="flex flex-wrap gap-1.5 pt-1">
             <Button
               variant={classFilter === "" ? "default" : "outline"}
@@ -2041,24 +2071,39 @@ export default function DiscoveryPage() {
             >
               Tutti
             </Button>
-            {presets.map((preset) => {
-              const Icon = ICON_MAP[preset.iconName] ?? Boxes;
-              const active = classFilter === preset.filter;
-              const count = hosts.filter((h) => preset.match.includes(h.classification ?? "")).length;
+            {(() => {
+              const conConteggio = presets.map((preset) => ({ preset, count: contaPreset(preset, hosts, presets) }));
+              const piene = conConteggio.filter(({ preset, count }) => count > 0 || classFilter === preset.filter);
+              const vuote = conConteggio.filter(({ preset, count }) => count === 0 && classFilter !== preset.filter);
+              const chip = ({ preset, count }: { preset: ClassPreset; count: number }) => {
+                const Icon = ICON_MAP[preset.iconName] ?? Boxes;
+                const active = classFilter === preset.filter;
+                return (
+                  <Button
+                    key={preset.filter}
+                    variant={active ? "default" : "outline"}
+                    size="sm"
+                    className="h-7 text-xs gap-1.5"
+                    onClick={() => setClassFilter(active ? "" : preset.filter)}
+                  >
+                    <Icon className="h-3.5 w-3.5" />
+                    {etichettaPreset(preset)}
+                    <span className="text-muted-foreground/80">({count})</span>
+                  </Button>
+                );
+              };
               return (
-                <Button
-                  key={preset.filter}
-                  variant={active ? "default" : "outline"}
-                  size="sm"
-                  className="h-7 text-xs gap-1.5"
-                  onClick={() => setClassFilter(active ? "" : preset.filter)}
-                >
-                  <Icon className="h-3.5 w-3.5" />
-                  {preset.label}
-                  <span className="text-muted-foreground/80">({count})</span>
-                </Button>
+                <>
+                  {piene.map(chip)}
+                  {mostraVuote && vuote.map(chip)}
+                  {vuote.length > 0 && (
+                    <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground" onClick={() => setMostraVuote((v) => !v)}>
+                      {mostraVuote ? "Nascondi le categorie vuote" : `Altre categorie (${vuote.length}, vuote)`}
+                    </Button>
+                  )}
+                </>
               );
-            })}
+            })()}
             {/* v0.2.628: bottone per gestire i preset */}
             <Button
               variant="ghost"
@@ -2170,7 +2215,7 @@ export default function DiscoveryPage() {
                       />
                     </TableHead>
                     <TableHead className="w-10 whitespace-nowrap text-center">Azioni</TableHead>
-                    {orderedVisibleCols.map((col) => (
+                    {colonneMostrate.map((col) => (
                       <SortableTableHead
                         key={col.id}
                         columnId={col.id}
@@ -2179,7 +2224,9 @@ export default function DiscoveryPage() {
                         onSort={onSort}
                         className="whitespace-nowrap"
                       >
-                        {col.label}
+                        {GLOSSARIO[col.id] ? (
+                          <span title={GLOSSARIO[col.id]} className="underline decoration-dotted underline-offset-4 cursor-help">{col.label}</span>
+                        ) : col.label}
                       </SortableTableHead>
                     ))}
                   </TableRow>
@@ -2408,7 +2455,7 @@ export default function DiscoveryPage() {
                           );
                         })()}
                       </TableCell>
-                      {orderedVisibleCols.map((col) => (
+                      {colonneMostrate.map((col) => (
                         <TableCell key={col.id} className="py-2">
                           {renderCell(h, col.id)}
                         </TableCell>

@@ -26,7 +26,8 @@ export interface ActiveIntegrations {
   wazuh?: IntegrationInfo;
 }
 
-export function IntegrationViewer() {
+/** `solo`: nella pagina di un modulo (19/10) si mostra solo quella integrazione. */
+export function IntegrationViewer({ solo }: { solo?: string } = {}) {
   const [integrations, setIntegrations] = useState<ActiveIntegrations>({});
   const [selected, setSelected] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
@@ -35,12 +36,13 @@ export function IntegrationViewer() {
     fetch("/api/integrations/active")
       .then((r) => r.json())
       .then((d: ActiveIntegrations) => {
-        setIntegrations(d);
-        const first = Object.entries(d).find(([, v]) => v.enabled)?.[0] ?? null;
+        const scelte = solo ? (Object.fromEntries(Object.entries(d).filter(([k]) => k === solo)) as ActiveIntegrations) : d;
+        setIntegrations(scelte);
+        const first = Object.entries(scelte).find(([, v]) => v.enabled)?.[0] ?? null;
         setSelected(first);
       })
       .catch(() => {});
-  }, []);
+  }, [solo]);
 
   const activeList = Object.entries(integrations).filter(([, v]) => v?.enabled);
   const current = selected ? integrations[selected as keyof ActiveIntegrations] : null;

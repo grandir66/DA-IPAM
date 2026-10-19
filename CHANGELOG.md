@@ -4,6 +4,37 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-19 · Moduli, MDM e Discovery più leggibili (F09-F11)
+
+Proposta approvata da Riccardo il 19/10, oggetto per oggetto.
+
+### Cambiato
+
+- **Moduli: un elenco e una pagina per modulo** (F10). La scheda mostrava insieme
+  configurazione, installazione, salute, certificati e vault di tutti i moduli (49 pulsanti):
+  ora è una riga per modulo (nome, «Opzione», stato con fondo, bordo e simbolo, salute in
+  parole, «Apri») e ogni modulo ha `/settings/moduli/<chiave>`. I collegamenti di prima
+  (`#module-…`, `#int-…`) portano lì.
+- **Desktop remoto senza agente: interruttore nella pagina di MeshCentral** (F10). Stava solo in
+  `.env.local` e dall'interfaccia non si vedeva: sull'hub la voce RDP mancava per questo.
+  Ora è un'impostazione del tenant; `MESHCENTRAL_SENZA_AGENTE=1` resta e vince.
+- **MDM come gli altri moduli** (F11): nell'elenco, nella salute (dall'esito della
+  sincronizzazione, senza sonde di rete) e nel Launchpad solo con la console configurata.
+- **Un solo reset** in Impostazioni: «Reset lab» faceva la stessa cosa di «Reset per nuovo cliente».
+- **Discovery** (F09): viste per attività (Inventario, Sicurezza, Rete) che filtrano le colonne
+  senza toccare l'ordine salvato (l'ordine delle 19 colonne è una decisione di Riccardo, 23/05);
+  le sigle (Cred, Conf, CVE C/H/M, DHCP, AD, MH…) si spiegano passando sull'intestazione; i
+  filtri rapidi di serie in italiano, quelli a zero dietro «Altre categorie». «Più IP» e
+  «Altro» contavano sempre 0: ora contano con la loro regola.
+
+### Corretto
+
+- **Filtri rapidi personali di Discovery** (`user:<slug>`): cliccandoli la tabella si svuotava
+  (confrontava la classificazione con «user:…»). Ora tabella e conteggi usano una regola sola
+  (`prendePreset`); un filtro di serie rinominato dall'utente tiene il suo nome.
+- **verify-install verso l'host locale** non controlla più il nome del certificato (`-k` solo
+  per `https://127.0.0.1` e `https://localhost`): sull'hub ogni aggiornamento finiva «con avvisi».
+
 ## [Non rilasciato] — 2026-10-19 · Correzioni dell'analisi del 19/10 (F01-F04, F06-F08)
 
 ### Corretto

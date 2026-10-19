@@ -33,6 +33,7 @@ import { getNetServicesState } from "@/lib/network-services/feature";
 import { getFeatureStatus } from "@/lib/patch/feature";
 import { getMeshConfig } from "@/lib/integrations/meshcentral/config";
 import { getTenantDb, getTenantSetting } from "@/lib/db-tenant";
+import { getMdmConfig } from "@/lib/integrations/mdm-config";
 import { OFFERTA_MODULO, type Offerta } from "./offerta";
 
 export type ModuleKey =
@@ -46,6 +47,7 @@ export type ModuleKey =
   | "inventory_agent"
   | "nis2_inventory"
   | "unifi"
+  | "mdm"
   | "appliance";
 
 export type ModuleCategory = "va" | "patch" | "network" | "nms" | "logs" | "siem" | "rmm" | "inventory" | "sistema";
@@ -228,6 +230,19 @@ export const MODULE_DESCRIPTORS: ReadonlyArray<ModuleDescriptor> = [
     icon: "Network",
     access: "native",
     configHref: "/controllers",
+  },
+  {
+    // Analisi del 19/10 (F11, approvato da Riccardo): l'MDM stava solo in
+    // Impostazioni → Sistema, fuori da salute e Launchpad. I telefoni diventano
+    // host; la console è quella di Headwind (esterna).
+    key: "mdm",
+    offerta: OFFERTA_MODULO.mdm,
+    label: "MDM (Headwind)",
+    category: "inventory",
+    description: "Telefoni Android gestiti da Headwind MDM, importati come host con il loro inventario.",
+    icon: "Smartphone",
+    access: "external",
+    configHref: "/settings/mdm",
   },
   {
     // Non è un'integrazione ma la macchina che le ospita tutte: disco root e
@@ -439,6 +454,36 @@ export async function resolveModules(tenantCode: string, ruolo: unknown): Promis
       uiUrl: "/services",
       uiIsInternal: true,
       note: enabled ? undefined : "Disattivato. Attivalo da Impostazioni → Moduli.",
+    });
+  }
+
+  // ── mdm: Headwind, configurazione nel DB del tenant (mdm_config) — console esterna ──
+  {
+    let cfg: ReturnType<typeof getMdmConfig> | null = null;
+    let readError: string | null = null;
+    try {
+      cfg = withTenant(tenantCode, () => getMdmConfig());
+    } catch (e) {
+      readError = e instanceof Error ? e.message : String(e);
+    }
+    const configured = !!cfg?.base_url && !!cfg?.username;
+    out.push({
+      ...desc("mdm"),
+      installed: !!cfg?.base_url,
+      configured,
+      enabled: configured && !!cfg?.enabled,
+      // Nel Launchpad solo con la console configurata (Riccardo, 19/10).
+      uiUrl: configured ? cfg!.base_url : null,
+      uiIsInternal: false,
+      note: readError
+        ? `Configurazione MDM non leggibile: ${readError}`
+        : !configured
+          ? "Non configurato: indirizzo e utente della console Headwind in Impostazioni → Moduli → MDM."
+          : cfg?.auto_disabled
+            ? "Spento da solo dopo errori di sincronizzazione: controlla la configurazione."
+            : !cfg?.enabled
+              ? "Configurato ma spento."
+              : undefined,
     });
   }
 

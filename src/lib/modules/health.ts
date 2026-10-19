@@ -41,6 +41,8 @@ import { classifyDiskUsage } from "@/lib/integrations/wazuh-health-thresholds";
 import { getMeshCreds } from "@/lib/integrations/meshcentral/config";
 import { MeshControlClient } from "@/lib/integrations/meshcentral/control-client";
 import type { ModuleKey } from "./registry";
+import { saluteMdm } from "./salute-mdm";
+import { getMdmConfig } from "@/lib/integrations/mdm-config";
 import type { VerificaApertura } from "./apertura-browser";
 import { verificheAperturaDelModulo } from "./apertura-bersagli";
 
@@ -457,6 +459,18 @@ export function composeNetServicesHealth(
  * ciascuno, dettagli in `readUnifiHealth`. Nessun controller acceso =
  * «Non configurato» (`off`), non un errore.
  */
+// ── Probe: MDM (Headwind) — dall'esito di mdm_sync, nessuna rete (19/10, F11) ──
+async function probeMdm(probedAt: string): Promise<ModuleHealth> {
+  const s = saluteMdm(getMdmConfig());
+  return mk("mdm", probedAt, {
+    reachable: s.verdict === "ok" || s.verdict === "degraded",
+    authOk: s.verdict === "ok" || s.verdict === "degraded",
+    verdict: s.verdict,
+    detail: s.detail,
+    lastSyncAt: s.lastSyncAt,
+  });
+}
+
 async function probeUnifi(probedAt: string): Promise<ModuleHealth> {
   const r = readUnifiHealth();
   return mk("unifi", probedAt, {
@@ -660,6 +674,7 @@ export const PROBED_MODULE_KEYS: readonly ModuleKey[] = [
   "inventory_agent",
   "meshcentral",
   "unifi",
+  "mdm",
   "appliance",
 ];
 
@@ -679,6 +694,7 @@ async function compute(tenantCode: string, only?: ModuleKey): Promise<ModuleHeal
     ["inventory_agent", () => withTenant(tenantCode, () => probeInventoryAgent(tenantCode, probedAt))],
     ["meshcentral", () => withTenant(tenantCode, () => probeMeshcentral(tenantCode, probedAt))],
     ["unifi", () => withTenant(tenantCode, () => probeUnifi(probedAt))],
+    ["mdm", () => withTenant(tenantCode, () => probeMdm(probedAt))],
     ["appliance", () => probeAppliance(probedAt)],
   ];
   // `only`: parte SOLO la sonda chiesta. La notifica disco dell'appliance

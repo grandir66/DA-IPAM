@@ -73,9 +73,11 @@ F01 unione (vince la destinazione, decisione di Riccardo; id già presenti ferma
 (restano solo `TABELLE_TENUTE` di `lab-config-reset.ts`, decisione di Riccardo: impostazioni e utenti),
 F03 esito `pronto_non_avviato` (verso DA-Link «interrotto»; `DA_COMMIT` nella cartella della build),
 F04 «riuscito, con avvisi», F06 menu compatto da tastiera, F07 regola unica `eAdmin`/`useEAdmin`,
-F08 «non riesco a leggere» con Riprova. F05 chiuso: l'hub era già aggiornato. **Aperti**: F09-F11
-(Discovery, Moduli, MDM) solo come proposta, da approvare prima del codice; l'ordine delle colonne di
-Discovery è una decisione di Riccardo (v0.2.500, 23/05).
+F08 «non riesco a leggere» con Riprova. F05 chiuso: l'hub era già aggiornato. F09-F11 fatti dopo
+l'approvazione della proposta: Moduli = elenco + `/settings/moduli/<chiave>` (`ModulesTab solo=`),
+interruttore RDP senza agente nel tenant (`meshcentral.senza_agente`; la env vince), MDM nel catalogo,
+Discovery con viste/glossario/filtri (`lib/discovery/viste-filtri.ts`). L'ordine delle 19 colonne di
+Discovery è una decisione di Riccardo (v0.2.500, 23/05): le viste lo filtrano, non lo cambiano.
 
 - **Trappola**: le 9 prove «rosse per `flock`» del Mac erano `stato-aggiornamento.mjs` che non partiva
   da cartelle dietro symlink (`/var/folders`): ora `realpathSync`. Sul Mac serve comunque `flock` (brew).

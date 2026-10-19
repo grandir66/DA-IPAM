@@ -65,11 +65,16 @@ fi
 
 # ── HTTP health (opzionale) ───────────────────────────────────────────────────
 if [ -n "$BASE_URL" ]; then
+  # Verso l'host locale il nome del certificato non si controlla (-k): è intestato al
+  # nome dell'appliance, non a 127.0.0.1, e qui si prova che l'app risponda. Sull'hub
+  # ogni aggiornamento finiva «con avvisi» per questo (19/10). Altri indirizzi: verificati.
+  CURL_TLS=()
+  case "$BASE_URL" in https://127.0.0.1*|https://localhost*) CURL_TLS=(-k) ;; esac
   echo ">>> GET ${BASE_URL}/api/health"
   if [ -n "$DOCKER" ]; then
-    JSON="$(docker exec "$DOCKER" curl -fsS "${BASE_URL}/api/health")"
+    JSON="$(docker exec "$DOCKER" curl -fsS ${CURL_TLS[@]+"${CURL_TLS[@]}"} "${BASE_URL}/api/health")"
   else
-    JSON="$(curl -fsS "${BASE_URL}/api/health")"
+    JSON="$(curl -fsS ${CURL_TLS[@]+"${CURL_TLS[@]}"} "${BASE_URL}/api/health")"
   fi
   echo "$JSON" | python3 -c "
 import json, sys
@@ -83,7 +88,7 @@ print('health: ok')
 ver = d.get('version') or d.get('app_version')
 if ver: print('version:', ver)
 "
-  VER_JSON="$(curl -fsS "${BASE_URL}/api/version" 2>/dev/null || true)"
+  VER_JSON="$(curl -fsS ${CURL_TLS[@]+"${CURL_TLS[@]}"} "${BASE_URL}/api/version" 2>/dev/null || true)"
   if [ -n "$VER_JSON" ]; then
     echo ">>> GET ${BASE_URL}/api/version → $VER_JSON"
   fi

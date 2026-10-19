@@ -101,8 +101,10 @@ export function aggiornamentoPerSegnale(stato: StatoAggiornamento, ramo: string 
   return {
     commit_avviato: taglia(stato.commitAvviato, LIMITI.commit),
     ramo: taglia(ramo, LIMITI.ramo),
-    esito: t?.esito ?? null,
-    fase: taglia(t?.fase ?? null, LIMITI.fase),
+    // DA-Link conosce quattro esiti e scarta il campo intero se ne arriva un altro: la
+    // build pronta col servizio fermo, per lui, è un giro fermato prima dell'avvio (19/10, F03).
+    esito: t?.esito === "pronto_non_avviato" ? "interrotto" : (t?.esito ?? null),
+    fase: t?.esito === "pronto_non_avviato" ? "avvio" : taglia(t?.fase ?? null, LIMITI.fase),
     commit_tentato: taglia(t?.commit ?? null, LIMITI.commit),
     tentativi: t?.tentativi != null && t.tentativi >= 0 ? Math.floor(t.tentativi) : null,
     tentativo_iniziato_il: taglia(t?.iniziatoIl ?? null, LIMITI.data),

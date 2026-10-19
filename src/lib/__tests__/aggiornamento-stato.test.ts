@@ -35,7 +35,7 @@ function statoCon(parziale: Partial<StatoAggiornamento>): StatoAggiornamento {
   return { ...STATO_VUOTO, ...parziale };
 }
 
-function tentativo(esito: "in_corso" | "riuscito" | "fallito" | "interrotto", iniziatoIl: string, extra = {}) {
+function tentativo(esito: "in_corso" | "riuscito" | "fallito" | "interrotto" | "pronto_non_avviato", iniziatoIl: string, extra = {}) {
   return {
     commit: "a".repeat(40),
     daCommit: null,
@@ -224,5 +224,22 @@ describe("aggiornamento-servizio", () => {
     fs.writeFileSync(path.join(dir, ".next-attiva"), "../altrove\n");
     assert.equal(cartellaBuildAttiva(dir), path.join(dir, ".next"));
     fs.rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+// Analisi del 19/10, F03 e F04: l'esito si dice com'è, non «riuscito» e basta.
+describe("valutaAvanzamento: servizio fermo e avvisi", () => {
+  test("pronto_non_avviato: non è riuscito, e il messaggio dice di avviare il servizio", () => {
+    const v = valutaAvanzamento(statoCon({ ultimoTentativo: tentativo("pronto_non_avviato", DOPO) }), T0);
+    assert.equal(v.tipo, "fallito");
+    assert.match(v.tipo === "fallito" ? v.messaggio : "", /servizio/);
+  });
+  test("riuscito con avvisi: la nota li riporta", () => {
+    const v = valutaAvanzamento(statoCon({ ultimoTentativo: tentativo("riuscito", DOPO, { avvisi: ["verify-install fallito"] }) }), T0);
+    assert.deepEqual(v, { tipo: "riuscito", nota: "con avvisi: verify-install fallito" });
+  });
+  test("lo stato su file con pronto_non_avviato si legge", () => {
+    const s = interpretaStatoAggiornamento({ ultimo_tentativo: { commit: "abc", iniziato_il: T0, esito: "pronto_non_avviato", avvisi: [] } });
+    assert.equal(s.ultimoTentativo?.esito, "pronto_non_avviato");
   });
 });

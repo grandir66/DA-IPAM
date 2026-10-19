@@ -68,7 +68,7 @@ import type {
 } from "@/types";
 import { modelloEtichettaDiPorte, type FingerprintUserRule } from "./device-fingerprint-classification";
 import { registraRipiego } from "./db-maintenance/ripieghi";
-import { cleanOrphanedForeignKeys as cleanOrphanedForeignKeysSu, NEIGHBORS_LATEST_ROUND_SQL, NEIGHBORS_MODEL_SOURCES_SQL } from "./db-tenant";
+import { cleanOrphanedForeignKeys as cleanOrphanedForeignKeysSu, getCurrentTenantCode as tenantCorrente, NEIGHBORS_LATEST_ROUND_SQL, NEIGHBORS_MODEL_SOURCES_SQL, resetConfiguration as resetConfigurazioneTenant } from "./db-tenant";
 
 const DATA_DIR = resolveDataDir();
 /** Path effettivo del DB. `DA_IPAM_DB_PATH` serve solo a `scripts/generate-empty-db.ts` (template versionato). */
@@ -5826,6 +5826,13 @@ export function deleteUser(userId: number): boolean {
  * pulizia della 2g le ha tolte, una DELETE darebbe «no such table» e farebbe fallire l'intero reset.
  */
 export function resetConfiguration(): void {
+  // Analisi del 19/10 (F02): dentro un tenant il DB è quello del cliente, che non
+  // ha `users` né `settings` (stanno nell'hub): «no such table: users» e rollback.
+  // Lì vale la gemella del tenant, che lascia impostazioni e utenti (Riccardo, 19/10).
+  if (tenantCorrente()) {
+    resetConfigurazioneTenant();
+    return;
+  }
   const db = getDb();
   db.transaction(() => {
     db.exec(`

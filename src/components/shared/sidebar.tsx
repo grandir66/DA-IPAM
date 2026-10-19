@@ -188,6 +188,12 @@ function SubList({
  * Gruppo collassabile. Espanso: toggle inline con chevron.
  * Collassato (desktop): solo icona + flyout al hover con le sottovoci.
  * Su mobile resta sempre l'espansione inline (collapsed non si applica).
+ *
+ * Tastiera (analisi del 19/10, F06): da collassato il flyout dipendeva solo dal
+ * mouse; Invio cambiava `open`, ma il ramo inline è nascosto su desktop e le
+ * sottovoci restavano invisibili. Ora Invio/Spazio aprono e chiudono il flyout,
+ * Tab ci entra (sta subito dopo il pulsante), Escape lo chiude e torna al pulsante,
+ * e si chiude quando il fuoco esce dal gruppo.
  */
 function NavGroup({
   icon: Icon,
@@ -221,13 +227,37 @@ function NavGroup({
     setFlyout({ top: r.top, left: r.right });
   };
   const hideFlyout = () => setFlyout(null);
+  const flyoutDesktop = () => collapsed && typeof window !== "undefined" && window.innerWidth >= 768;
 
   return (
-    <div className="pt-1 relative" onMouseEnter={showFlyout} onMouseLeave={hideFlyout}>
+    <div
+      className="pt-1 relative"
+      onMouseEnter={showFlyout}
+      onMouseLeave={hideFlyout}
+      onKeyDown={(e) => {
+        if (e.key === "Escape" && flyout) {
+          e.stopPropagation();
+          hideFlyout();
+          btnRef.current?.focus();
+        }
+      }}
+      onBlur={(e) => {
+        if (flyout && !e.currentTarget.contains(e.relatedTarget as Node | null)) hideFlyout();
+      }}
+    >
       <button
         ref={btnRef}
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => {
+          if (flyoutDesktop()) {
+            if (flyout) hideFlyout();
+            else showFlyout();
+            return;
+          }
+          setOpen((o) => !o);
+        }}
+        aria-expanded={flyoutDesktop() ? flyout !== null : open}
+        aria-haspopup={collapsed ? "menu" : undefined}
         title={collapsed ? label : undefined}
         className={cn(
           ITEM_BASE,
@@ -265,7 +295,7 @@ function NavGroup({
             <p className="px-2.5 pt-1 pb-1.5 text-[10px] uppercase tracking-wider text-sidebar-foreground/40 font-semibold">
               {label}
             </p>
-            <SubList items={items} isActive={isActive} onNavigate={onNavigate} />
+            <SubList items={items} isActive={isActive} onNavigate={() => { hideFlyout(); onNavigate(); }} />
           </div>
         </div>
       )}

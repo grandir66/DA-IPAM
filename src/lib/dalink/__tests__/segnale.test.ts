@@ -148,3 +148,16 @@ test("aggiornamento: solo stato, coi limiti di DA-Link, senza messaggi né avvis
   assert.deepEqual(s.aggiornamento, a);
   assert.doesNotMatch(JSON.stringify(s), /non risponde|percorso/, "messaggi e avvisi restano sull'istanza");
 });
+
+// Analisi del 19/10, F03: DA-Link conosce quattro esiti e scarta il campo intero se
+// ne arriva un altro («stato dell'aggiornamento malformato»). Il servizio fermo con la
+// build pronta per lui è un giro fermato a metà: «interrotto», fase «avvio».
+test("aggiornamento: pronto_non_avviato arriva a DA-Link come interrotto, fase avvio", () => {
+  const stato = interpretaStatoAggiornamento({
+    commit_avviato: "a".repeat(40),
+    ultimo_tentativo: { commit: "b".repeat(40), iniziato_il: "2026-10-19T10:00:00.000Z", fase: "scambio", esito: "pronto_non_avviato", avvisi: [] },
+  });
+  const a = aggiornamentoPerSegnale(stato, "dev");
+  assert.equal(a?.esito, "interrotto");
+  assert.equal(a?.fase, "avvio");
+});

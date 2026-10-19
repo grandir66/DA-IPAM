@@ -128,8 +128,14 @@ dichiara_build() {
   fi
 }
 
-# Il commit che gira adesso: quello avviato con salute buona, altrimenti HEAD.
-PRIMA="$(node "$APP_DIR/scripts/stato-aggiornamento.mjs" leggi commit_avviato 2>/dev/null || true)"
+# Il commit a cui tornare: quello della build in uso (scritto in DA_COMMIT dopo ogni
+# build riuscita), poi quello avviato con salute buona, altrimenti HEAD. Revisione del
+# 19/10: dopo «pronto_non_avviato» il commit avviato è il vecchio, ma la build in uso è
+# già la nuova; tornare al vecchio lasciava sorgente e pagine di due commit diversi.
+PRIMA="$(head -n1 "$BUILD_ATTIVA/DA_COMMIT" 2>/dev/null || true)"
+if [ -z "$PRIMA" ] || ! git cat-file -e "${PRIMA}^{commit}" 2>/dev/null; then
+  PRIMA="$(node "$APP_DIR/scripts/stato-aggiornamento.mjs" leggi commit_avviato 2>/dev/null || true)"
+fi
 if [ -z "$PRIMA" ] || ! git cat-file -e "${PRIMA}^{commit}" 2>/dev/null; then
   PRIMA="$(git rev-parse HEAD)"
 fi
@@ -210,6 +216,8 @@ git checkout --quiet -- tsconfig.json 2>/dev/null || true
 if [ ! -f "$BUILD_NUOVA/BUILD_ID" ]; then
   fallisci "build senza BUILD_ID"
 fi
+# Il commit di questa build, per tornarci (vedi PRIMA).
+git rev-parse HEAD > "$BUILD_NUOVA/DA_COMMIT"
 
 # Nome del servizio: da-invent sulle installazioni classiche, da-ipam sulle
 # appliance consolidate. Prima si cercava solo da-invent: sul cliente A (da-ipam) il
@@ -292,7 +300,14 @@ if [ -f "$APP_DIR/scripts/verify-install.sh" ]; then
   }
 fi
 
-stato fine riuscito
+# Analisi del 19/10 (F03): «riuscito» segna il commit come avviato, e il controllo
+# dopo lo crede in esercizio. Senza riavvio (servizio fermo, o lanciato senza
+# --restart) né l'avvio né la salute sono provati: la build è pronta, non avviata.
+if [ "$RIAVVIATO" = true ]; then
+  stato fine riuscito
+else
+  stato fine pronto_non_avviato "servizio $SERVICE non riavviato: build pronta, non avviata"
+fi
 
 # Mostra versione e commit (la versione è quella nel package.json dopo git pull = branch remoto)
 VERSION=$(node -e "console.log(require('./package.json').version)")

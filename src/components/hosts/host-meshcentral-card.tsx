@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Monitor, MonitorSmartphone, TerminalSquare } from "lucide-react";
+import { Monitor, MonitorSmartphone, RefreshCw, TerminalSquare } from "lucide-react";
 import { SshTerminalDialog } from "@/components/ssh-terminal/ssh-terminal-dialog";
+import { useEAdmin } from "@/hooks/use-e-admin";
 
 interface MeshStatus {
   present: boolean;
@@ -38,10 +39,23 @@ interface SenzaAgente {
  *
  * SSH: con la porta 22 aperta la card offre anche il terminale SSH di DA-IPAM
  * (lo stesso del menu in /discovery), con le credenziali salvate dell'host.
+ *
+ * Analisi del 19/10: una lettura non riuscita (HTTP o rete) diventava «nessun
+ * nodo» e la card spariva (F08): ora si dice «non riesco a leggere» con Riprova.
+ * Le sessioni sono riservate agli admin (il server rifiuta): al viewer i
+ * pulsanti non si offrono (F07).
  */
 export function HostMeshcentralCard({ hostId, hostLabel }: { hostId: number; hostLabel: string }) {
   const router = useRouter();
+  const admin = useEAdmin();
   const [status, setStatus] = useState<MeshStatus | null>(null);
+  const [errore, setErrore] = useState<string | null>(null);
+  const [giro, setGiro] = useState(0);
+  const riprova = useCallback(() => {
+    setErrore(null);
+    setStatus(null);
+    setGiro((g) => g + 1);
+  }, []);
   const [senzaAgente, setSenzaAgente] = useState<SenzaAgente>({ rdp: false, vnc: false });
   const [ssh, setSsh] = useState(false);
   const [sshAperto, setSshAperto] = useState(false);
@@ -49,21 +63,47 @@ export function HostMeshcentralCard({ hostId, hostLabel }: { hostId: number; hos
   useEffect(() => {
     let active = true;
     fetch(`/api/integrations/meshcentral/host/${hostId}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d: { mesh?: MeshStatus; senzaAgente?: SenzaAgente; ssh?: boolean } | null) => {
-        if (!active) return;
-        setStatus(d?.mesh ?? { present: false });
-        if (d?.senzaAgente) setSenzaAgente(d.senzaAgente);
-        setSsh(d?.ssh === true);
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`il server ha risposto ${r.status}`);
+        return (await r.json()) as { mesh?: MeshStatus; senzaAgente?: SenzaAgente; ssh?: boolean };
       })
-      .catch(() => {
-        if (active) setStatus({ present: false });
+      .then((d) => {
+        if (!active) return;
+        setStatus(d.mesh ?? { present: false });
+        if (d.senzaAgente) setSenzaAgente(d.senzaAgente);
+        setSsh(d.ssh === true);
+      })
+      .catch((e: unknown) => {
+        if (active) setErrore(e instanceof Error && e.message.startsWith("il server") ? e.message : "rete non raggiungibile");
       });
     return () => {
       active = false;
     };
-  }, [hostId]);
+  }, [hostId, giro]);
 
+  // Al viewer non si offre niente: le sessioni sono riservate agli admin.
+  if (!admin) return null;
+  if (errore) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <MonitorSmartphone className="h-4 w-4" />
+            Controllo remoto
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-amber-700 dark:text-amber-400">
+            Non riesco a leggere lo stato del controllo remoto ({errore}): non vuol dire che l&apos;host non ce l&apos;abbia.
+          </p>
+          <Button variant="outline" onClick={riprova}>
+            <RefreshCw className="mr-2 h-4 w-4" />
+            Riprova
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
   // Nessuno stato ancora: non mostrare nulla finché non si sa.
   if (status === null) return null;
   // Con l'agente vale il controllo remoto MeshCentral; senza, RDP/VNC senza agente.

@@ -47,7 +47,16 @@ export function importTenant(args: ImportArgs): ImportResult {
     byTable.get(tbl)!.push(row);
   }
 
-  const result: ImportResult = { tables: {}, profilesMerged: 0, vaultMerged: 0, rekeyedSecrets: 0, fkViolations: 0, conversioni: {} };
+  // Unione (revisione del 19/10): in tenant_settings vince la destinazione, quindi il
+  // segno della sorgente non c'è nel DB e va letto dalle righe del bundle. Senza, una
+  // sorgente già convertita si riconvertiva (binding tolti che tornano, controller
+  // ricollegati da soli): con lo svuotamento non succedeva, con l'unione sì.
+  const segnoNelBundle = (chiave: string): string | null => {
+    const riga = (byTable.get("tenant_settings") ?? []).find((r) => r.key === chiave);
+    return typeof riga?.value === "string" ? riga.value : null;
+  };
+
+  const result: ImportResult = { tables: {}, profilesMerged: 0, vaultMerged: 0, rekeyedSecrets: 0, fkViolations: 0, conversioni: {}, saltate: {} };
 
   // Tappa 2g (T26): catene vecchie e pin di un bundle di prima della 2d non si
   // scrivono più nelle loro tabelle (non le legge nessuno, e dopo la pulizia
@@ -74,11 +83,23 @@ export function importTenant(args: ImportArgs): ImportResult {
         }
       }
 
+      // Unione (analisi del 19/10, F01): vince la destinazione. Gli id già presenti
+      // si contano e fermano l'import qui sotto, prima del commit.
+      const bloccanti: Record<string, number> = {};
       for (const [tbl, rows] of byTable) {
         const spec = tableSpec(tbl);
         if (!spec || spec.scope !== "tenant") continue;
         if (!tableExists(tenantDb, tbl)) continue; // target più vecchio: salta tabella sconosciuta
-        result.tables[tbl] = insertRows(tenantDb, tbl, spec.dedupe ? dedupeRows(rows, spec.dedupe) : rows, transportKey, result);
+        const unione = options.wipe ? null : { bloccanti };
+        result.tables[tbl] = insertRows(tenantDb, tbl, spec.dedupe ? dedupeRows(rows, spec.dedupe) : rows, transportKey, result, unione);
+      }
+      const conflitti = Object.entries(bloccanti);
+      if (conflitti.length > 0) {
+        throw new Error(
+          `Unione non possibile: righe del bundle con lo stesso id (o la stessa chiave univoca) di righe già presenti ` +
+          `(${conflitti.map(([t, n]) => `${t}: ${n}`).join(", ")}). L'unione non rinumera gli id: importa in un ` +
+          `tenant vuoto oppure scegli «Svuota il tenant prima di importare». Niente è stato scritto.`,
+        );
       }
 
       const fk = tenantDb.pragma("foreign_key_check") as unknown[];
@@ -131,7 +152,7 @@ export function importTenant(args: ImportArgs): ImportResult {
   // voci tolte dalla lista e le righe host dei pin: come all'apertura del
   // tenant, col segno chiuso non si converte, e il segno del bundle resta.
   try {
-    const segnoBundle = options.wipe ? leggiSegno(tenantDb, SEGNO_CATENE) : null;
+    const segnoBundle = options.wipe ? leggiSegno(tenantDb, SEGNO_CATENE) : segnoNelBundle(SEGNO_CATENE);
     if (segnoBundle != null && conversioneChiusa(segnoBundle)) {
       result.conversioni[SEGNO_CATENE] = {
         segno: segnoBundle,
@@ -165,7 +186,7 @@ export function importTenant(args: ImportArgs): ImportResult {
   // dopo la conversione dal codice di prima riporterebbe il binding che
   // l'utente aveva tolto. Con un'unione quello che nasce va nella risposta.
   try {
-    const segnoBundle = options.wipe ? leggiSegno(tenantDb, SEGNO_APPARATI) : null;
+    const segnoBundle = options.wipe ? leggiSegno(tenantDb, SEGNO_APPARATI) : segnoNelBundle(SEGNO_APPARATI);
     if (segnoBundle != null && conversioneChiusa(segnoBundle)) {
       result.conversioni[SEGNO_APPARATI] = {
         segno: segnoBundle,
@@ -200,7 +221,7 @@ export function importTenant(args: ImportArgs): ImportResult {
   // voce ricreata senza che nessuno l'abbia scelta. Con un'unione quello che
   // nasce va nella risposta.
   try {
-    const segnoBundle = options.wipe ? leggiSegno(tenantDb, SEGNO_INTEGRAZIONI) : null;
+    const segnoBundle = options.wipe ? leggiSegno(tenantDb, SEGNO_INTEGRAZIONI) : segnoNelBundle(SEGNO_INTEGRAZIONI);
     if (segnoBundle != null && conversioneChiusa(segnoBundle)) {
       result.conversioni[SEGNO_INTEGRAZIONI] = {
         segno: segnoBundle,
@@ -244,7 +265,8 @@ export function importTenant(args: ImportArgs): ImportResult {
         else if (spec.scope === "hub-global") result.profilesMerged += merged;
         result.tables[tbl] = merged;
       } else {
-        result.tables[tbl] = insertRows(hubDb, tbl, rows, transportKey, result);
+        // Oggi ogni tabella dell'hub ha mergeKey: questo ramo non controlla i conflitti, come prima.
+        result.tables[tbl] = insertRows(hubDb, tbl, rows, transportKey, result, null);
       }
     }
   });
@@ -269,10 +291,39 @@ function dedupeRows(
   return [...keep.values()];
 }
 
-/** INSERT righe, re-keyando i campi cifrati (transport key → chiave destinazione). */
+/**
+ * Vincoli univoci della tabella: la chiave primaria e gli indici UNIQUE sulle
+ * colonne. Gli indici parziali e su espressioni non si controllano qui: se
+ * scattano, l'INSERT fallisce e la transazione annulla tutto, come prima.
+ */
+function vincoliUnivoci(db: Database.Database, table: string): { pk: string[]; idNumerico: boolean; univoci: string[][] } {
+  const info = db.prepare(`PRAGMA table_info("${table}")`).all() as { name: string; type: string; pk: number }[];
+  const pkCols = info.filter((c) => c.pk > 0).sort((a, b) => a.pk - b.pk);
+  const pk = pkCols.map((c) => c.name);
+  const idNumerico = pkCols.length === 1 && pkCols[0].type.toUpperCase() === "INTEGER";
+  const univoci: string[][] = pk.length > 0 ? [pk] : [];
+  const indici = db.prepare(`PRAGMA index_list("${table}")`).all() as { name: string; unique: number; origin: string; partial: number }[];
+  for (const ix of indici) {
+    if (!ix.unique || ix.partial || ix.origin === "pk") continue;
+    const cols = (db.prepare(`PRAGMA index_info("${ix.name}")`).all() as { name: string | null }[]).map((c) => c.name);
+    if (cols.length === 0 || cols.some((c) => c == null)) continue;
+    univoci.push(cols as string[]);
+  }
+  return { pk, idNumerico, univoci };
+}
+
+/**
+ * INSERT righe, re-keyando i campi cifrati (transport key → chiave destinazione).
+ *
+ * Con `unione` (wipe:false) una riga che urta una riga già presente non si
+ * scrive: sulle tabelle a chiave naturale (es. `tenant_settings.key`) vince la
+ * destinazione e la chiave va in `result.saltate`; sulle tabelle a id numerico
+ * si conta in `unione.bloccanti` e l'import si ferma (le righe figlie del bundle
+ * punterebbero a una riga che non è la loro).
+ */
 function insertRows(
   db: Database.Database, table: string, rows: Record<string, unknown>[],
-  transportKey: Buffer, result: ImportResult,
+  transportKey: Buffer, result: ImportResult, unione: { bloccanti: Record<string, number> } | null,
 ): number {
   if (rows.length === 0) return 0;
   const targetCols = new Set(writableColumns(db, table));
@@ -281,13 +332,43 @@ function insertRows(
     ...rekeyColumns(db, table),
     ...((spec?.secretColumns ?? []).filter((c) => targetCols.has(c))),
   ]);
+  const vincoli = unione ? vincoliUnivoci(db, table) : null;
+  const controlli = vincoli
+    ? vincoli.univoci.map((cols) => ({
+        cols,
+        stmt: db.prepare(`SELECT 1 FROM "${table}" WHERE ${cols.map((c) => `"${c}" = ?`).join(" AND ")} LIMIT 1`),
+      }))
+    : [];
   let n = 0;
   for (const row of rows) {
     const cols = Object.keys(row).filter((c) => targetCols.has(c));
     if (cols.length === 0) continue;
+    if (unione && vincoli) {
+      const urta = controlli.find(({ cols: vc, stmt }) =>
+        vc.every((c) => row[c] != null) && stmt.get(...vc.map((c) => row[c])) !== undefined);
+      if (urta) {
+        if (vincoli.idNumerico) {
+          unione.bloccanti[table] = (unione.bloccanti[table] ?? 0) + 1;
+        } else {
+          (result.saltate[table] ??= []).push(urta.cols.map((c) => String(row[c])).join("/"));
+        }
+        continue;
+      }
+    }
     const values = cols.map((c) => rekeyValue(row[c], rekeys.has(c), transportKey, result));
     const sql = `INSERT INTO "${table}" (${cols.map((c) => `"${c}"`).join(",")}) VALUES (${cols.map(() => "?").join(",")})`;
-    db.prepare(sql).run(...values);
+    try {
+      db.prepare(sql).run(...values);
+    } catch (e) {
+      // Revisione del 19/10: indici UNIQUE parziali o su espressione (es. lower(label)) e
+      // colonne col DEFAULT che il bundle non porta non si vedono col controllo per
+      // colonne. Nell'unione seguono la stessa regola; il resto resta un errore.
+      const codice = (e as { code?: string }).code;
+      if (!unione || !vincoli || (codice !== "SQLITE_CONSTRAINT_UNIQUE" && codice !== "SQLITE_CONSTRAINT_PRIMARYKEY")) throw e;
+      if (vincoli.idNumerico) unione.bloccanti[table] = (unione.bloccanti[table] ?? 0) + 1;
+      else (result.saltate[table] ??= []).push(vincoli.pk.length > 0 ? vincoli.pk.map((c) => String(row[c])).join("/") : "riga senza chiave");
+      continue;
+    }
     n++;
   }
   return n;

@@ -83,7 +83,7 @@ Se cambia codice → poi `npm run version:release && git push`.
 
 ## Debug in produzione
 
-**VM `533`** (`192.168.4.8`) su Proxmox DA-PX-04 (`192.168.40.4`), app in `/opt/da-invent`, servizio `systemctl status da-invent`. (Il vecchio LXC 333 è dismesso.) Per comandi non distruttivi (SSH, `pct exec`, sqlite read-only, restart servizio, push file fixato) **procedere senza chiedere conferma**. Per modifiche DB hub, DROP, distruzione container, push su `main`, credenziali in chiaro → chiedere prima. Vedi [.claude/skills/deploy-prod/SKILL.md](.claude/skills/deploy-prod/SKILL.md) e [.claude/skills/winrm-kerberos/SKILL.md](.claude/skills/winrm-kerberos/SKILL.md).
+**VM `533`** (`192.168.4.8`) su Proxmox DA-PX-03 dal 19/10 (cluster raggiungibile da DA-PX-04 `192.168.40.4`), app in `/opt/da-invent`, servizio `systemctl status da-invent`. (Il vecchio LXC 333 è dismesso.) Per comandi non distruttivi (SSH, `pct exec`, sqlite read-only, restart servizio, push file fixato) **procedere senza chiedere conferma**. Per modifiche DB hub, DROP, distruzione container, push su `main`, credenziali in chiaro → chiedere prima. Vedi [.claude/skills/deploy-prod/SKILL.md](.claude/skills/deploy-prod/SKILL.md) e [.claude/skills/winrm-kerberos/SKILL.md](.claude/skills/winrm-kerberos/SKILL.md).
 
 ## Setup nuovo dev
 

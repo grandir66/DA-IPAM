@@ -28,6 +28,14 @@ function quando(iso: string | null | undefined): string {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString("it-IT");
 }
 
+/** L'esito del tentativo in parole: «riuscito» con avvisi non è un riuscito pulito (19/10, F04). */
+function etichettaEsito(t: { esito: string | null; fase: string | null; avvisi: string[] }): string {
+  if (t.esito === "in_corso") return `in corso: ${nomeFase(t.fase)}`;
+  if (t.esito === "pronto_non_avviato") return "build pronta, non avviata";
+  if (t.esito === "riuscito" && t.avvisi.length > 0) return "riuscito, con avvisi";
+  return t.esito ?? "sconosciuto";
+}
+
 function testoAvanzamento(a: Avanzamento): string {
   switch (a.tipo) {
     case "in_attesa":
@@ -39,7 +47,9 @@ function testoAvanzamento(a: Avanzamento): string {
     case "nessuna_novita":
       return "Nessuna novità sul canale: l'app è già aggiornata.";
     case "fallito":
-      return `Aggiornamento non riuscito: ${a.messaggio}. L'app è rimasta sulla versione di prima.`;
+      return a.nonAvviata
+        ? `Aggiornamento non avviato: ${a.messaggio}.`
+        : `Aggiornamento non riuscito: ${a.messaggio}. L'app è rimasta sulla versione di prima.`;
   }
 }
 
@@ -230,9 +240,9 @@ export function StatoAggiornamentoCard({
               <span className="text-xs text-muted-foreground uppercase tracking-wide">Ultimo tentativo</span>
               <span className="font-mono">{commitBreve(t.commit)}</span>
               <Badge
-                variant={t.esito === "fallito" || t.esito === "interrotto" ? "destructive" : "secondary"}
+                variant={t.esito === "fallito" || t.esito === "interrotto" || t.esito === "pronto_non_avviato" ? "destructive" : "secondary"}
               >
-                {t.esito === "in_corso" ? `in corso: ${nomeFase(t.fase)}` : (t.esito ?? "sconosciuto")}
+                {etichettaEsito(t)}
               </Badge>
               {t.tentativi && t.tentativi > 1 && (
                 <span className="text-xs text-muted-foreground">tentativo {t.tentativi}</span>

@@ -5,7 +5,7 @@ import { parseDbDate } from "@/lib/db-date";
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { librenmsDevicePath } from "@/lib/integrations/public-url";
 import Link from "next/link";
-import { useSession } from "next-auth/react";
+import { useEAdmin } from "@/hooks/use-e-admin";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -529,9 +529,9 @@ export default function DiscoveryPage() {
   const [addDevicesOpen, setAddDevicesOpen] = useState(false);
   const [linkSameDeviceOpen, setLinkSameDeviceOpen] = useState(false);
   // Unioni a mano sulla mappa (piano 2026-10-16, Task 6): solo admin; «Unisci…» / «Separa…» per gli host selezionati.
-  const { data: sessioneUnioni } = useSession();
-  const ruoloUnioni = (sessioneUnioni?.user as { role?: string } | undefined)?.role;
-  const adminUnioni = ruoloUnioni === "admin" || ruoloUnioni === "superadmin";
+  // Azioni riservate agli admin (unioni, terminale, desktop remoto, test, modifiche): al viewer
+  // non si offrono, il server le rifiuterebbe (analisi del 19/10, F07).
+  const admin = useEAdmin();
   const [unisciOpen, setUnisciOpen] = useState(false);
   const [separaOpen, setSeparaOpen] = useState(false);
   const [addDevicesSaving, setAddDevicesSaving] = useState(false);
@@ -1798,7 +1798,7 @@ export default function DiscoveryPage() {
             {/* Accesso rapido: desktop remoto senza agente (RDP via MeshCentral) e
                 terminale SSH di DA-IPAM. Colorati se la scansione ha visto la porta,
                 grigi ma cliccabili altrimenti (la scansione veloce può non vederla). */}
-            {senzaAgenteOn && (
+            {senzaAgenteOn && admin && (
               <Link
                 href={`/rmm/${h.id}/senza-agente?p=rdp`}
                 title={porteAperte(h.open_ports ?? null).includes(3389)
@@ -1811,18 +1811,20 @@ export default function DiscoveryPage() {
                 <Monitor className="h-3.5 w-3.5" />
               </Link>
             )}
-            <button
-              type="button"
-              onClick={() => setSshTermRow(h)}
-              title={porteAperte(h.open_ports ?? null).includes(22)
-                ? "Terminale SSH"
-                : "Terminale SSH — la scansione non ha visto la porta 22"}
-              className={porteAperte(h.open_ports ?? null).includes(22)
-                ? "inline-flex items-center text-primary hover:opacity-80"
-                : "inline-flex items-center text-muted-foreground/40 hover:text-primary"}
-            >
-              <TerminalIcon className="h-3.5 w-3.5" />
-            </button>
+            {admin && (
+              <button
+                type="button"
+                onClick={() => setSshTermRow(h)}
+                title={porteAperte(h.open_ports ?? null).includes(22)
+                  ? "Terminale SSH"
+                  : "Terminale SSH — la scansione non ha visto la porta 22"}
+                className={porteAperte(h.open_ports ?? null).includes(22)
+                  ? "inline-flex items-center text-primary hover:opacity-80"
+                  : "inline-flex items-center text-muted-foreground/40 hover:text-primary"}
+              >
+                <TerminalIcon className="h-3.5 w-3.5" />
+              </button>
+            )}
 
             {/* Multihomed — host con più IP correlati allo stesso device fisico.
                 Icona Link2:
@@ -2097,7 +2099,7 @@ export default function DiscoveryPage() {
                   Stesso device fisico
                 </Button>
               )}
-              {adminUnioni && selectedIds.size === 1 && (
+              {admin && selectedIds.size === 1 && (
                 <>
                   <Button size="sm" variant="outline" className="gap-1.5 text-[13px]" onClick={() => setUnisciOpen(true)}>
                     <Merge className="h-3.5 w-3.5" />
@@ -2109,7 +2111,7 @@ export default function DiscoveryPage() {
                   </Button>
                 </>
               )}
-              {adminUnioni && selectedIds.size >= 2 && (
+              {admin && selectedIds.size >= 2 && (
                 <Button size="sm" variant="outline" className="gap-1.5 text-[13px]" onClick={() => setUnisciOpen(true)}>
                   <Merge className="h-3.5 w-3.5" />
                   Unisci ({selectedIds.size})…
@@ -2234,13 +2236,13 @@ export default function DiscoveryPage() {
                                       Se !isDev (host non promosso) → ?promote=1 auto-apre PromoteHostDialog. */}
                                   <DropdownMenuItem
                                     render={
-                                      <Link href={`/objects/${h.id}${isDev ? "?edit=1" : "?promote=1"}`}>
+                                      <Link href={`/objects/${h.id}${!admin ? "" : isDev ? "?edit=1" : "?promote=1"}`}>
                                         <Pencil className="h-3.5 w-3.5" />
-                                        {isDev ? "Modifica dispositivo" : "Promuovi a dispositivo"}
+                                        {!admin ? "Apri la scheda" : isDev ? "Modifica dispositivo" : "Promuovi a dispositivo"}
                                       </Link>
                                     }
                                   />
-                                  {isDev && (
+                                  {isDev && admin && (
                                     <>
                                       <DropdownMenuItem
                                         disabled={busyHere || isMhSecondary}
@@ -2262,6 +2264,8 @@ export default function DiscoveryPage() {
                                       </DropdownMenuItem>
                                     </>
                                   )}
+                                  {admin && (
+                                  <>
                                   <DropdownMenuItem onClick={() => openTestForRow(h)}>
                                     <KeyRound className="h-3.5 w-3.5" />
                                     Test credenziali host
@@ -2305,6 +2309,9 @@ export default function DiscoveryPage() {
                                     </>
                                   )}
 
+                                  </>
+                                  )}
+
                                   {/* Apri un servizio web dell'host in una tab separata (porta/schema editabili) */}
                                   <DropdownMenuItem
                                     onClick={() => {
@@ -2339,7 +2346,7 @@ export default function DiscoveryPage() {
                                         In LibreNMS (URL non configurato)
                                       </DropdownMenuItem>
                                     )
-                                  ) : (
+                                  ) : admin ? (
                                     <DropdownMenuItem
                                       disabled={isAddingLnms}
                                       onClick={() => addHostToLibreNMS(h)}
@@ -2349,7 +2356,7 @@ export default function DiscoveryPage() {
                                         : <PlusCircle className="h-3.5 w-3.5" />}
                                       Aggiungi a LibreNMS
                                     </DropdownMenuItem>
-                                  )}
+                                  ) : null}
 
                                   {/* Wazuh: stato informativo nel menu kebab. L'azione (apri dashboard /
                                       enrollment) sta sull'icona Shield della colonna "Profilo" che apre
@@ -2375,9 +2382,9 @@ export default function DiscoveryPage() {
                                     );
                                   })()}
 
-                                  <DropdownMenuSeparator />
+                                  {admin && <DropdownMenuSeparator />}
 
-                                  {isDev ? (
+                                  {!admin ? null : isDev ? (
                                     <DropdownMenuItem
                                       variant="destructive"
                                       disabled={busyHere}

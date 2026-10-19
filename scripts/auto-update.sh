@@ -120,6 +120,18 @@ if [ "${DA_INVENT_FORZA_AGGIORNAMENTO:-0}" != "1" ] \
   exit 0
 fi
 
+# Servizio fermo con la build di questo commit già pronta (analisi del 19/10, F03):
+# rifarla ogni 15 minuti costa minuti di CPU e non cambia niente. Parte col servizio;
+# quando il servizio torna attivo, il giro dopo la ricostruisce e la avvia con la salute.
+if [ "${DA_INVENT_FORZA_AGGIORNAMENTO:-0}" != "1" ] \
+  && [ "$TENTATO" = "$REMOTE" ] && [ "$ESITO" = "pronto_non_avviato" ] \
+  && ! systemctl is-active --quiet da-invent 2>/dev/null \
+  && ! systemctl is-active --quiet da-ipam 2>/dev/null; then
+  stato controllo servizio_fermo $ORIGINE || true
+  echo "[auto-update] il servizio non è attivo: la build di $(git rev-parse --short "$REMOTE") è già pronta. Nessun rebuild."
+  exit 0
+fi
+
 # Solo documentazione: si aggiornano i file senza build né riavvio. Ogni commit di
 # docs su dev riavviava l'appliance del cliente A e interrompeva il controllo host in corso (2026-10-12).
 # L'app legge i .md dal disco a ogni richiesta, quindi non serve la build.

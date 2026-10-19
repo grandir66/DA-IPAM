@@ -387,8 +387,8 @@ function SettingsPageInner() {
   async function handleResetLabNetworkConfig() {
     if (
       !confirm(
-        "Azzerare reti, host, ARP, DHCP, credenziali di discovery, AD e inventario del tenant corrente?\n\n" +
-          "Restano intatti: integrazioni appliance (Edge, LibreNMS, Network Services), admin, Launchpad e moduli.\n\n" +
+        "Azzerare i dati del tenant corrente: reti, host, apparati, credenziali, controller, AD, telefoni, Wazuh, vulnerabilità, topologia, inventario e job?\n\n" +
+          "Restano: le impostazioni, la configurazione dei moduli dell'appliance (Edge, MeshCentral, MDM, Zabbix), le classificazioni personalizzate e gli utenti.\n\n" +
           "Verrai reindirizzato al wizard di pre-configurazione. Procedere?",
       )
     ) {
@@ -412,13 +412,13 @@ function SettingsPageInner() {
   }
 
   async function handleResetConfiguration() {
-    if (!confirm("Resettare tutta la configurazione? Verranno eliminati TUTTI i dati: reti, host, dispositivi, credenziali, integrazioni Active Directory (e dati sincronizzati), utenti e impostazioni. Resteranno solo il profilo Nmap e le regole fingerprint. Dovrai rifare il setup iniziale. Procedere?")) return;
+    if (!confirm("Resettare la configurazione per un nuovo cliente? Verranno eliminati reti, host, apparati, credenziali, controller, Active Directory, telefoni, Wazuh, vulnerabilità, topologia, inventario e job. Restano le impostazioni, la configurazione dei moduli dell'appliance e gli utenti. Ripartirai dal wizard di configurazione. Procedere?")) return;
     setResetting(true);
     try {
       const res = await fetch("/api/reset", { method: "POST" });
       if (res.ok) {
-        toast.success("Configurazione resettata. Reindirizzamento al setup iniziale...");
-        window.location.href = "/setup";
+        toast.success("Configurazione resettata. Reindirizzamento al wizard di configurazione...");
+        router.push("/onboarding");
       } else {
         const data = await res.json();
         toast.error(data.error || "Errore nel reset");
@@ -1232,10 +1232,9 @@ function SettingsPageInner() {
                   <CardTitle className="text-base">Reset lab / pre-consegna</CardTitle>
                 </div>
                 <CardDescription>
-                  Azzera <strong>solo i dati di rete e discovery</strong> (subnet, host, ARP, DHCP,
-                  credenziali scan, AD, inventario) per ripartire con il wizard e pre-configurare
-                  l&apos;appliance in lab prima del cliente. Integrazioni moduli, admin e Launchpad
-                  restano attivi.
+                  Azzera <strong>i dati del cliente</strong> (reti, host, apparati, credenziali, controller,
+                  AD, telefoni, Wazuh, vulnerabilità, topologia, inventario e job) per ripartire con il
+                  wizard. Restano le impostazioni, la configurazione dei moduli dell&apos;appliance e gli utenti.
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -1287,7 +1286,7 @@ function SettingsPageInner() {
                 <CardTitle className="text-base">Dati e manutenzione</CardTitle>
               </div>
               <CardDescription>
-                Esporta dati o resetta la configurazione per un nuovo cliente. Il reset cancella tutto (incluso Active Directory) tranne il profilo Nmap e le regole fingerprint.
+                Esporta dati o resetta la configurazione per un nuovo cliente. Il reset cancella i dati del cliente (reti, host, apparati, credenziali, AD, telefoni, Wazuh, vulnerabilità, topologia, inventario, job); restano le impostazioni, la configurazione dei moduli e gli utenti.
               </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-wrap gap-3">

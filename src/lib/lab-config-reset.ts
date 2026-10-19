@@ -1,33 +1,34 @@
 /**
- * Reset configurazione di rete/lab per demo o pre-consegna cliente.
- * Svuota dati operativi del tenant (reti, ARP, DHCP, host, AD, inventario…)
- * ma preserva integrazioni appliance (vuln_scanners, moduli hub) e utenti hub.
+ * Reset del tenant per demo, pre-consegna o nuovo cliente (anche POST /api/reset).
+ *
+ * Decisione di Riccardo (19/10, analisi F02): via dati di rete, credenziali,
+ * inventario e job; restano le impostazioni del cliente e gli utenti dell'hub.
+ *
+ * Revisione del 19/10: prima si cancellava un elenco scelto a mano, e restavano
+ * controller di rete (con le password), telefoni, agenti Wazuh, vulnerabilità,
+ * apparati fisici e topologia del cliente di prima. Ora la regola è capovolta:
+ * si dichiara cosa RESTA (`TABELLE_TENUTE`) e si svuota ogni altra tabella del
+ * DB del tenant, comprese quelle che nasceranno dopo.
  */
 import { setSetting, setTenantOnboardingCompleted } from "./db-hub";
-import { getTenantDb, resetConfiguration, withTenant } from "./db-tenant";
+import { getTenantDb, withTenant } from "./db-tenant";
 import { invalidateModulesHealth } from "./modules/health";
 import { chiaveProgresso } from "./onboarding/progresso";
-import type Database from "better-sqlite3";
 
-/** Tabelle tenant aggiuntive oltre a resetConfiguration() — DELETE IF EXISTS. */
-const EXTRA_TENANT_TABLES = [
-  "scan_jobs",
-  "scan_results",
-  "job_runs",
-  "snmp_profiles",
-  "excluded_ips",
-  "anomalies",
-  "analytics_events",
-  "services",
-  "service_asset_dependencies",
-  "software_inventory",
-  "host_software",
-  "vulnerability_findings",
-  "patch_deployments",
-  "patch_packages",
-  "dns_zones",
-  "dns_records",
-] as const;
+/**
+ * Le sole tabelle del tenant che il reset non tocca: impostazioni e configurazione
+ * dei moduli dell'appliance (lo scanner Edge, il server MeshCentral, il server MDM,
+ * la lettura Zabbix) e il catalogo delle classificazioni scritte a mano.
+ */
+export const TABELLE_TENUTE: readonly string[] = [
+  "tenant_settings",
+  "settings",
+  "vuln_scanners",
+  "mc_config",
+  "mdm_config",
+  "zabbix_lettura_config",
+  "device_classifications_custom",
+];
 
 export interface LabConfigResetResult {
   tenantCode: string;
@@ -35,43 +36,36 @@ export interface LabConfigResetResult {
   onboardingReset: true;
 }
 
-function tableExists(db: Database.Database, name: string): boolean {
-  return !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name);
-}
-
-function clearTableIfNonEmpty(db: Database.Database, table: string, cleared: string[]): void {
-  if (!tableExists(db, table)) return;
-  const n = (db.prepare(`SELECT COUNT(*) AS n FROM "${table}"`).get() as { n: number }).n;
-  if (n === 0) return;
-  db.prepare(`DELETE FROM "${table}"`).run();
-  cleared.push(`${table}(${n})`);
-}
-
-/**
- * Azzera config rete/discovery del tenant e riapre il wizard onboarding.
- * Preserva: vuln_scanners, integrazioni hub, admin, vault, nmap_profiles, fingerprint rules.
- */
+/** Svuota ogni tabella del tenant fuori da TABELLE_TENUTE e riapre il wizard di questo tenant. */
 export function resetLabNetworkConfig(tenantCode: string): LabConfigResetResult {
   const cleared: string[] = [];
 
   withTenant(tenantCode, () => {
-    resetConfiguration();
-    cleared.push("core_network_data");
-
     const db = getTenantDb(tenantCode);
-    for (const table of EXTRA_TENANT_TABLES) {
-      clearTableIfNonEmpty(db, table, cleared);
-    }
+    const tabelle = (
+      db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'").all() as { name: string }[]
+    ).map((r) => r.name).filter((t) => !TABELLE_TENUTE.includes(t));
 
-    if (tableExists(db, "settings")) {
-      db.prepare(
-        "INSERT INTO settings (key, value) VALUES ('onboarding_completed', '0') ON CONFLICT(key) DO UPDATE SET value='0'",
-      ).run();
+    // Le FK si spengono FUORI dalla transazione (dentro è un no-op): si svuota tutto,
+    // l'ordine fra padri e figli non conta.
+    db.pragma("foreign_keys = OFF");
+    try {
+      db.transaction(() => {
+        for (const t of tabelle) {
+          const n = (db.prepare(`SELECT COUNT(*) AS n FROM "${t}"`).get() as { n: number }).n;
+          if (n === 0) continue;
+          db.prepare(`DELETE FROM "${t}"`).run();
+          cleared.push(`${t}(${n})`);
+        }
+      })();
+    } finally {
+      db.pragma("foreign_keys = ON");
     }
   });
 
+  // Solo il flag di questo tenant: quello globale apre requireAdminOrOnboarding su
+  // tutta l'installazione (revisione del 19/10).
   setTenantOnboardingCompleted(tenantCode, false);
-  setSetting("onboarding_completed", "0");
   // Il punto raggiunto nel wizard: router, rete e credenziali non ci sono più,
   // e riaprendo si ripartiva dall'ultimo passo con niente dietro (revisione
   // della tappa 4 credenziali, 15/10).

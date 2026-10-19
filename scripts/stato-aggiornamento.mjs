@@ -19,25 +19,29 @@
 //                                 commit_avviato | esito | commit_tentato | tentativi | fase
 //   inizio <commit> <da_commit>   nuovo tentativo; conta i tentativi sullo stesso commit
 //   fase <nome>                   fase in corso (pull, install, build, scambio, riavvio, salute)
-//   fine <esito> [messaggio]      riuscito | fallito | interrotto; con «riuscito» il
-//                                 commit tentato diventa il commit avviato
+//   fine <esito> [messaggio]      riuscito | fallito | interrotto | pronto_non_avviato;
+//                                 solo con «riuscito» il commit tentato diventa il commit
+//                                 avviato. «pronto_non_avviato» (19/10, F03): build pronta,
+//                                 servizio fermo, nessun avvio né salute provati
 //   avviato <commit> [messaggio]  il commit gira già (solo documentazione, primo giro)
 //   avviso <testo>                aggiunge un avviso al tentativo in corso
 //   controllo <esito> [interfaccia]  com'è finito l'ultimo giro di auto-update.sh:
 //                                 gia_aggiornato | commit_fallito_attendo |
 //                                 solo_documentazione | aggiornamento_avviato |
-//                                 fetch_fallito; «interfaccia» se l'ha chiesto «Aggiorna ora»
+//                                 fetch_fallito | servizio_fermo; «interfaccia» se l'ha
+//                                 chiesto «Aggiorna ora»
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const ESITI = new Set(["riuscito", "fallito", "interrotto"]);
+const ESITI = new Set(["riuscito", "fallito", "interrotto", "pronto_non_avviato"]);
 const ESITI_CONTROLLO = new Set([
   "gia_aggiornato",
   "commit_fallito_attendo",
   "solo_documentazione",
   "aggiornamento_avviato",
   "fetch_fallito",
+  "servizio_fermo",
 ]);
 
 export function percorsoStato(env = process.env) {
@@ -147,7 +151,18 @@ function main(argv) {
   scriviStato(file, applica(leggiStato(file), comando, args));
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// Percorsi reali da tutti e due i lati: lanciato da una cartella con un collegamento
+// simbolico (su macOS /var/folders → /private/var/folders) il confronto falliva e il
+// file non faceva niente, in silenzio. Le 9 prove «cadute per flock» del 19/10 erano questo.
+function stessoFile(a, b) {
+  try {
+    return fs.realpathSync(a) === fs.realpathSync(b);
+  } catch {
+    return false;
+  }
+}
+
+if (process.argv[1] && stessoFile(process.argv[1], fileURLToPath(import.meta.url))) {
   try {
     main(process.argv.slice(2));
   } catch (e) {

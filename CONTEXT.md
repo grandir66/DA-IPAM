@@ -35,7 +35,7 @@ Leggilo per primo, poi [CLAUDE.md](CLAUDE.md) (stack e schema; su «multi-tenant
   - le policy NetBird verso le risorse hanno destinazione vuota: si leggono con `/api/networks`;
   - configurazione = `/etc/dalink/oggetto.env` (assente = niente rete; permessi ≠ 600 = rifiutata); nodo `<codcli>-ipam` per la prima sede, `<codcli>-ipam-<n>` (n 2..99, senza zeri) dalla seconda (un'appliance per sede, 18/10), stessa forma in `config.ts` e `prepara-netbird.sh`; il livello sta in `dalink_livello_registro` (hub), **non** in `settings`; la salute nel segnale conta solo i moduli accesi (dal 16/10 i moduli spenti dicono `off`; a DA-Link solo `ok`|`degraded`|`fail`, `verdettoPerDaLink`);
   - la tabella nft `inet dalink` sta sul **prerouting** (sull'input NetBird mette `iifname "wt0" accept` e la scavalca) e restringe soltanto: con UFW serve anche `ufw allow in on wt0` (tappa G1).
-- **Credenziali, promozione IP → apparato, wizard** (spec `specs/2026-10-15-credenziali-promozione-wizard-design.md`): tappe 1 e 1b il 15/10; 3-5 da fare (interfaccia proposta prima). **Tappa 2 chiusa il 16/10** (piano `plans/2026-10-15-tappa2-archivio-credenziali.md`, ADR 0017): 2a-2g su `dev` (v0.3.298-310); il motore legge solo l'archivio; colonne e tabelle vecchie svuotate (`scripts/credenziali/pulizia-t2.ts`) su hub, A e pilota il 16/10 (backup `.bak-20261016-14*`); i 2 lasciati accettati dell'hub senza credenziale finché una Prova non riesce; il DEFAULT dell'hub escluso. Aperti: import per **unione** rotto su `tenant_settings.key` (chi vince?); voce scelta già fallita: esclusa e detta, o «non provata»? (Riccardo); `/api/reset` in un tenant fallisce (c'era già). Punti unici: tipo ↔ protocollo `credential-protocol-map.ts`, proposta d'apparato `devices/proposta-apparato.ts`. Backup `.bak-2026101[56]-*` (hub ~2 GB l'uno): via dal 22/10 con l'ok di Riccardo. **Trappole**:
+- **Credenziali, promozione IP → apparato, wizard** (spec `specs/2026-10-15-credenziali-promozione-wizard-design.md`): tappe 1 e 1b il 15/10; 3-5 da fare (interfaccia proposta prima). **Tappa 2 chiusa il 16/10** (piano `plans/2026-10-15-tappa2-archivio-credenziali.md`, ADR 0017): 2a-2g su `dev` (v0.3.298-310); il motore legge solo l'archivio; colonne e tabelle vecchie svuotate (`scripts/credenziali/pulizia-t2.ts`) su hub, A e pilota il 16/10 (backup `.bak-20261016-14*`); i 2 lasciati accettati dell'hub senza credenziale finché una Prova non riesce; il DEFAULT dell'hub escluso. Aperto: voce scelta già fallita: esclusa e detta, o «non provata»? (Riccardo). Unione e reset corretti il 19/10 (§9). Punti unici: tipo ↔ protocollo `credential-protocol-map.ts`, proposta d'apparato `devices/proposta-apparato.ts`. Backup `.bak-2026101[56]-*` (hub ~2 GB l'uno): via dal 22/10 con l'ok di Riccardo. **Trappole**:
   - ricostruire `network_devices` partendo da `sqlite_master` (`devices/migra-apple-macos.ts`), in fondo a `getTenantDb`: le vecchie riscrivono un elenco fisso di colonne e perdono le altre;
   - un tenant più vecchio di `product_profile`/`physical_device_id` già non si apre (lo schema crea gli indici su quelle colonne prima delle migrazioni): non simularlo;
   - `credentials/resolve.ts` carica `db-tenant`: i componenti client usano `credentials/porte.ts`;
@@ -66,14 +66,22 @@ Sotto `tsx` **`await import()` di `db-tenant` dà una SECONDA istanza** con `Asy
 - **Scansioni (ADR 0006)**: `last_run` = **fine** del giro; lucchetto **in memoria** (separare lo scheduler vuole prima un lucchetto sul DB); la scansione veloce **manda** offline: da decidere.
 - **Crescita del DB**: niente retention sugli storici; il più grosso è `mac_ip_history`.
 
-## Valutazione del 16/10
+## 9. Analisi del 19/10 e correzioni (v0.3.322)
 
-Letto «Il punto su DA-IPAM» e confrontato con ADR 0004/0020, modello per cavo e script update; consultato anche CONTEXT di Deploy-Appliance. Solo lettura, nessuna prova sul live. Punto da valutare: `scripts/update.sh` tratta il fallimento di verify-install come AVVISO e stampa comunque «Aggiornamento completato». Prossimo passo proposto: distinguere esito deploy, salute reale e recupero; nessuna implementazione autorizzata.
+Analisi in `docs/revisione/2026-10-19-analisi.md` (F01-F11). **Corretti e provati** (CHANGELOG 19/10):
+F01 unione (vince la destinazione, decisione di Riccardo; id già presenti fermano l'import), F02 reset
+(restano solo `TABELLE_TENUTE` di `lab-config-reset.ts`, decisione di Riccardo: impostazioni e utenti),
+F03 esito `pronto_non_avviato` (verso DA-Link «interrotto»; `DA_COMMIT` nella cartella della build),
+F04 «riuscito, con avvisi», F06 menu compatto da tastiera, F07 regola unica `eAdmin`/`useEAdmin`,
+F08 «non riesco a leggere» con Riprova. F05 chiuso: l'hub era già aggiornato. **Aperti**: F09-F11
+(Discovery, Moduli, MDM) solo come proposta, da approvare prima del codice; l'ordine delle colonne di
+Discovery è una decisione di Riccardo (v0.2.500, 23/05).
 
-Approfondimento codice, stessa sessione: suite locale topologia su Node 22 e dati temporanei: 913 test, 911 pass, 0 fail, 1 skip, 1 todo (`/private/tmp/da-ipam-topology-review.log`). Rischio statico auto-update: pull prima della build; se build fallisce HEAD è già aggiornato e il timer successivo esce per SHA uguale; anche cambio branch con checkout a origin può saltare build/restart. Nessuna riproduzione sul live né fix. Topologia: fiducia, dati vecchi e fallback esplicito già implementati.
-
-Proposta richiesta il 16/10: `docs/proposte/2026-10-16-solidita-interfaccia-moduli-deploy.md` (da approvare, nessun codice modificato). MDM Headwind esiste ma manca da registry/sidebar; UI promette iOS senza connettore Apple verificato. Job integrazioni solo in memoria e polling ignora 404; probe Patch legge solo enabled. Suite mirata moduli/network-services/MDM: 50 pass, 0 fail. Nessuna QA browser né prova sui servizi reali. Prossimo passo: approvare il piano derivato dalla proposta.
-
-Vincoli utente del 16/10 aggiunti alla proposta: Zabbix fonte monitoraggio con proxy sulla stessa macchina di DA-IPAM; LibreNMS solo opzionale locale integrato, nessuna modalità esterna futura. Proposta A2: contratto filtrato per cliente via DA-Zabbix, mapping oggetti/hostid, timestamp/cache e qualità, senza accesso al DB proxy o token centrali admin. Solo proposta: connettore non implementato.
-
-Precisazione vincolante Riccardo (16/10): Zabbix è modulo opzionale commerciale, non dipendenza del prodotto base. DA-Zabbix già genera il profilo cliente e ne resta titolare; DA-IPAM deve riutilizzarlo, senza onboarding duplicato. Aggiornata proposta: nessuna chiamata/allarme/installazione senza opzione attiva; distinguere diritto, configurazione e salute; nessuna cancellazione automatica del profilo centrale.
+- **Trappola**: le 9 prove «rosse per `flock`» del Mac erano `stato-aggiornamento.mjs` che non partiva
+  da cartelle dietro symlink (`/var/folders`): ora `realpathSync`. Sul Mac serve comunque `flock` (brew).
+- **Hub (19/10)**: RDP senza agente acceso (`MESHCENTRAL_SENZA_AGENTE=1` in `.env.local`, backup
+  `.env.local.bak-20261019-160928`); entrato in DA-Link come `70791-ipam` (edge), snapshot
+  `pre-dalink-20261019` della VM 533, che **ora sta su DA-PX-03** (non PX-04).
+- **Vincoli di Riccardo del 16/10 (non riaprire)**: Zabbix è modulo opzionale commerciale; DA-Zabbix
+  genera il profilo cliente e ne resta titolare; DA-IPAM lo riusa, niente onboarding doppio; LibreNMS
+  solo locale integrato. Proposta: `docs/proposte/2026-10-16-solidita-interfaccia-moduli-deploy.md`.

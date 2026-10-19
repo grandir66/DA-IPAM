@@ -4,6 +4,48 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-19 · Correzioni dell'analisi del 19/10 (F01-F04, F06-F08)
+
+### Corretto
+
+- **Import per unione** (F01): falliva sempre su un'installazione vera («UNIQUE constraint
+  failed: tenant_settings.key», le migrazioni scrivono 4 chiavi anche su un tenant nuovo) e
+  annullava tutto. Decisione di Riccardo: **vince la destinazione**. Sulle tabelle a chiave
+  naturale la riga del bundle si salta e la pagina elenca le chiavi rimaste quelle di prima;
+  sulle tabelle a id numerico un id già presente ferma l'import prima di scrivere, con le
+  tabelle e i conteggi: l'unione non rinumera, e saltare la riga attaccherebbe le righe figlie
+  del bundle a quella sbagliata. Anche gli indici UNIQUE parziali o su espressione seguono la
+  regola, e il segno delle conversioni si legge dal bundle: una sorgente già convertita non si
+  riconverte, come con lo svuotamento.
+- **Reset per nuovo cliente** (F02): la rotta chiamava la gemella di `db.ts`, che dentro un
+  tenant cercava `users` nel DB del cliente («no such table: users»): non ha mai funzionato.
+  Decisione di Riccardo: **restano le impostazioni del cliente e gli utenti**. La rotta usa lo
+  stesso reset del laboratorio e riapre il wizard; la gemella di `db.ts` dentro un tenant passa
+  a quella del tenant. Il reset ora dichiara cosa **resta** (`TABELLE_TENUTE`: impostazioni,
+  configurazione dei moduli dell'appliance, classificazioni personalizzate) e svuota ogni altra
+  tabella del tenant: le due liste a mano lasciavano controller di rete con le password,
+  telefoni, Wazuh, vulnerabilità, apparati e topologia del cliente di prima. Non scrive più il
+  flag d'onboarding globale dell'hub (apriva `requireAdminOrOnboarding` a tutti i tenant).
+- **Aggiornamento con servizio fermo** (F03): `update.sh` chiudeva «riuscito» senza riavvio né
+  salute, e il commit risultava avviato. Ora l'esito è `pronto_non_avviato`, il commit avviato
+  resta quello di prima, `auto-update` non rifà la build ogni 15 minuti finché il servizio è
+  fermo, e verso DA-Link (che accetta quattro esiti) va come «interrotto», fase «avvio».
+  Ogni build scrive il suo commit in `DA_COMMIT`: un ritorno indietro torna al codice della
+  build in uso, non al commit avviato (dopo un «pronto_non_avviato» non coincidono).
+- **verify-install fallito** (F04): l'esito resta «riuscito» (salute buona), ma la scheda
+  Aggiornamenti dice «riuscito, con avvisi» e «Aggiorna ora» riporta l'avviso.
+- **`stato-aggiornamento.mjs` non partiva da una cartella dietro un collegamento simbolico**
+  (macOS `/var/folders`): le 9 prove «rosse per `flock`» del Mac erano questo. Si confrontano
+  i percorsi reali.
+- **Menu compatto da tastiera** (F06): Invio/Spazio aprono il flyout, Tab ci entra, Escape lo
+  chiude e torna al pulsante; `aria-expanded` e `aria-haspopup`.
+- **Azioni riservate al viewer** (F07): Discovery offriva al viewer terminale SSH, desktop
+  remoto, test credenziali, installazioni, LibreNMS ed eliminazioni, che il server poi
+  rifiutava. Regola unica `eAdmin` (`src/lib/permessi/ruolo.ts`, hook `useEAdmin`); per il
+  viewer «Apri la scheda».
+- **Controllo remoto che spariva su un errore** (F08): una lettura non riuscita diventava
+  «nessun nodo». Ora la scheda dice «non riesco a leggere» con il codice e un Riprova.
+
 ## [Non rilasciato] — 2026-10-19 · Segnale verso DA-Link: stati dei moduli sulle basi modulari
 
 ### Novità

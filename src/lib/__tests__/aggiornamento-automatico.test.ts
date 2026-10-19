@@ -356,6 +356,72 @@ describe("aggiornamento automatico", () => {
   });
 });
 
+// Analisi del 19/10, F03 e F04. Prima: col servizio fermo update.sh saltava riavvio e
+// salute e chiudeva «riuscito», che segna il commit come avviato; il controllo dopo lo
+// credeva in esercizio. E un verify-install fallito diventava un avviso dentro un
+// «riuscito» pulito.
+describe("aggiornamento con servizio fermo e controlli d'installazione", () => {
+  let a: Ambiente;
+  beforeEach(() => {
+    a = preparaAmbiente();
+  });
+  afterEach(() => {
+    fs.rmSync(a.radice, { recursive: true, force: true });
+  });
+
+  test("servizio fermo: build pronta ma non avviata, il commit non diventa avviato, niente rebuild finché resta fermo", () => {
+    giro(a);
+    const vecchio = head(a);
+    fs.rmSync(path.join(a.radice, "servizio-attivo"));
+    const nuovo = pubblica(a, { "app.ts": "export const v = 3;\n" });
+
+    const r1 = giro(a);
+    assert.equal(r1.codice, 0, r1.uscita);
+    assert.ok(!r1.chiamate.some((c) => c.startsWith("restart")), r1.chiamate.join("\n"));
+    assert.equal(stato(a).ultimo_tentativo?.esito, "pronto_non_avviato");
+    assert.equal(stato(a).commit_avviato, vecchio);
+
+    const r2 = giro(a);
+    assert.equal(r2.codice, 0, r2.uscita);
+    assert.ok(!r2.chiamate.includes("npm run build"), r2.chiamate.join("\n"));
+    assert.match(r2.uscita, /servizio .*non è attivo/);
+
+    fs.writeFileSync(path.join(a.radice, "servizio-attivo"), "");
+    const r3 = giro(a);
+    assert.equal(r3.codice, 0, r3.uscita);
+    assert.ok(r3.chiamate.some((c) => c.startsWith("restart da-invent")), r3.chiamate.join("\n"));
+    assert.equal(stato(a).ultimo_tentativo?.esito, "riuscito");
+    assert.equal(stato(a).commit_avviato, nuovo);
+  });
+
+  // Revisione del 19/10: dopo «pronto_non_avviato» il commit avviato resta il vecchio, ma la
+  // build in uso è già quella nuova e la vecchia è cancellata. Un fallimento dopo tornava al
+  // codice vecchio con la build nuova: sorgente (server.ts, migrazioni) e pagine diversi.
+  test("dopo pronto_non_avviato e un riavvio a mano, un build fallito torna al codice della build in uso", () => {
+    giro(a);
+    fs.rmSync(path.join(a.radice, "servizio-attivo"));
+    const x = pubblica(a, { "app.ts": "export const v = 3;\n" });
+    giro(a);
+    fs.writeFileSync(path.join(a.radice, "servizio-attivo"), ""); // riavviato a mano: gira x
+    pubblica(a, { "rompi-build": "1" });
+    const r = giro(a);
+    assert.equal(r.codice, 1, r.uscita);
+    assert.equal(stato(a).ultimo_tentativo?.esito, "fallito");
+    assert.equal(buildId(a), x);
+    assert.equal(head(a), x);
+  });
+
+  test("verify-install fallito: il commit gira con salute buona, esito riuscito ma con l'avviso scritto", () => {
+    giro(a);
+    const nuovo = pubblica(a, { "scripts/verify-install.sh": "#!/bin/bash\necho 'controllo X: no'\nexit 1\n" });
+    const r = giro(a);
+    assert.equal(r.codice, 0, r.uscita);
+    assert.equal(stato(a).commit_avviato, nuovo);
+    assert.equal(stato(a).ultimo_tentativo?.esito, "riuscito");
+    assert.ok((stato(a).ultimo_tentativo?.avvisi as string[]).some((x) => /verify-install fallito/.test(x)));
+  });
+});
+
 describe("stato-aggiornamento.mjs (funzioni pure)", () => {
   const ORA = "2026-10-16T17:00:00.000Z";
 
@@ -366,6 +432,14 @@ describe("stato-aggiornamento.mjs (funzioni pure)", () => {
     assert.equal(s.ultimo_tentativo.tentativi, 2);
     s = applica(s, "inizio", ["c2", "c0"], ORA);
     assert.equal(s.ultimo_tentativo.tentativi, 1);
+  });
+
+  test("«pronto_non_avviato» (servizio fermo) non sposta il commit avviato (19/10, F03)", () => {
+    let st = applica({}, "avviato", ["vecchio"], "t0");
+    st = applica(st, "inizio", ["nuovo", "vecchio"], "t1");
+    st = applica(st, "fine", ["pronto_non_avviato", "servizio fermo"], "t2");
+    assert.equal(st.commit_avviato, "vecchio");
+    assert.equal(st.ultimo_tentativo.esito, "pronto_non_avviato");
   });
 
   test("solo «riuscito» sposta il commit avviato", () => {

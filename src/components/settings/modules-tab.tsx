@@ -497,7 +497,7 @@ export function ModulesTab({ isAdmin, solo }: { isAdmin: boolean; solo?: string 
         <p className="text-sm text-muted-foreground">
           I controller si gestiscono in{" "}
           <Link href="/controllers" className="underline underline-offset-2 hover:text-foreground">
-            Rete → Controller di rete
+            Applicativi → Controller di rete
           </Link>
           .
         </p>

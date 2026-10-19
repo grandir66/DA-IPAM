@@ -1,8 +1,8 @@
 "use client";
 import { parseDbDate } from "@/lib/db-date";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useState, useCallback, useMemo } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import {
@@ -221,7 +221,25 @@ function useDebounced<T>(value: T, ms = 300): T {
   return v;
 }
 
+// La voce «Health Active Directory» del gruppo Sicurezza (19/10) apre ?tab=health:
+// useSearchParams vuole un Suspense attorno.
 export default function ActiveDirectoryPage() {
+  return (
+    <Suspense fallback={null}>
+      <PaginaActiveDirectory />
+    </Suspense>
+  );
+}
+
+const SCHEDE_AD = new Set(["computers", "users", "groups", "dhcp", "health"]);
+
+function PaginaActiveDirectory() {
+  const searchParams = useSearchParams();
+  const tabRichiesta = searchParams.get("tab");
+  const [scheda, setScheda] = useState(() => (tabRichiesta && SCHEDE_AD.has(tabRichiesta) ? tabRichiesta : "computers"));
+  useEffect(() => {
+    if (tabRichiesta && SCHEDE_AD.has(tabRichiesta)) setScheda(tabRichiesta);
+  }, [tabRichiesta]);
   const router = useRouter();
   const [integrations, setIntegrations] = useState<AdIntegration[]>([]);
   const [selectedIntegration, setSelectedIntegration] = useState<AdIntegration | null>(null);
@@ -1169,7 +1187,7 @@ export default function ActiveDirectoryPage() {
                 </Card>
               </div>
 
-              <Tabs defaultValue="computers" className="mt-6">
+              <Tabs value={scheda} onValueChange={(v) => setScheda(String(v))} className="mt-6">
                 <TabsList>
                   <TabsTrigger value="computers" className="flex items-center gap-2">
                     <Monitor className="w-4 h-4" />

@@ -33,7 +33,7 @@
 19. [Servizi NIS2](#19-servizi-nis2)
 20. [Network Services (DNS / DHCP / AdBlock)](#20-network-services-dns--dhcp--adblock)
 21. [Anomalie (Analytics)](#21-anomalie-analytics)
-22. [Launchpad e Integrazioni](#22-launchpad-e-integrazioni)
+22. [Applicativi e moduli](#22-applicativi-e-moduli)
 23. [Agenti remoti (Scanner-Edge)](#23-agenti-remoti-scanner-edge)
 24. [Scansioni — storico ed esecuzioni manuali](#24-scansioni--storico-ed-esecuzioni-manuali)
 25. [Impostazioni](#25-impostazioni)
@@ -55,7 +55,7 @@
 - **Vulnerability management**: CVE correlate agli host, raccolte da **Scanner-Edge** (Greenbone/OpenVAS) e dagli agenti **Wazuh** (§14)
 - **Inventario software** realmente installato sugli host (§15) e **Patch Management** Windows CVE-driven (§16)
 - **Network Services** gestiti: DNS, DHCP e filtraggio (AdBlock) tramite una VM dedicata (§20)
-- **Launchpad**: cruscotto unico dello stato di tutti i moduli e integrazioni (§22)
+- **Applicativi** (menu) e **Impostazioni → Moduli**: entrare nei moduli e vederne lo stato (§22)
 - **Agenti remoti**: appliance **Scanner-Edge** installate presso i clienti, registrate e monitorate dall'hub (§23)
 - **Multi-tenant** (un'installazione → più clienti separati, §28)
 
@@ -97,7 +97,7 @@ Inserire username e password. Dopo **5 tentativi errati in 15 minuti** per lo st
 ### Struttura sidebar (tenant attivo)
 
 ![Sidebar di navigazione di DA-IPAM con i gruppi Network, Inventario e Network Services](/manual/img/sidebar.png)
-*La sidebar reale (v0.3.116): voci di primo livello + tre gruppi collassabili (Network, Inventario, Network Services).*
+*La sidebar reale (v0.3.325, 19/10): voci di primo livello + gruppi collassabili (Network, Sicurezza, Inventario, Network Services, Applicativi).*
 
 ```
 ─────────────────────────
@@ -114,15 +114,22 @@ Inserire username e password. Dopo **5 tentativi errati in 15 minuti** per lo st
 ▾ Network
    Subnet
    Discovery               ← entry point principale
-   Vulnerabilità           ← CVE aggregate (§14)
+   Topologia
    Software                ← inventario installato (§15)
    Active Directory
+   ─── Credenziali ───
    Credenziali
+   Controller di rete
    ─── Diagnostica ───
    Tabella ARP
    Sorgenti DHCP
    Scansioni
    IP esclusi
+
+▾ Sicurezza
+   Vulnerabilità           ← CVE aggregate (§14)
+   Alert sicurezza         ← Wazuh
+   Health Active Directory ← scheda Health della pagina AD
 
 ▾ Inventario
    Asset
@@ -137,9 +144,13 @@ Inserire username e password. Dopo **5 tentativi errati in 15 minuti** per lo st
    DNS
    DHCP
 
-🔑 Launchpad               ← stato moduli + integrazioni (§22)
+▾ Applicativi               ← moduli opzionali e console esterne (§22)
+   ─── Patch Management ─── (se attivo, §16)
+   ─── Controllo remoto ─── (se attivo)
+   ─── Zabbix ───           (se attivo)
+   ─── Console esterne ───  Scanner-Edge, Wazuh, UniFi, LibreNMS, Graylog, MDM (si aprono in una scheda nuova)
+
 ⚠️  Anomalie  (badge rosso se non gestite)
-🛡️ Patch Management        ← solo se il modulo è attivo per il tenant (§16)
 📖 Manuale
 
 ──── Sistema ────
@@ -593,7 +604,7 @@ E può essere **inserita in catene** sulle subnet (vedi §5) per essere provata 
 
 ## 14. Vulnerabilità (CVE)
 
-`Network → Vulnerabilità` (`/vulnerabilities`, icona 🛡️ **ShieldAlert**) è la vista aggregata delle **CVE** che interessano gli host del tenant. I dati provengono da due sorgenti:
+`Applicativi → Vulnerabilità` (`/vulnerabilities`, icona 🛡️ **ShieldAlert**) è la vista aggregata delle **CVE** che interessano gli host del tenant. I dati provengono da due sorgenti:
 
 - **Scanner-Edge** (Greenbone/OpenVAS) — appliance di scansione installata presso il cliente (§23)
 - **Wazuh** — gli agenti endpoint riportano le vulnerabilità note dei pacchetti installati
@@ -627,7 +638,7 @@ E può essere **inserita in catene** sulle subnet (vedi §5) per essere provata 
 | ⏳ **Loader2** (spinner) | caricamento in corso |
 | ▸ / ▾ **Chevron** | espandi / comprimi gli host affetti |
 
-> La pagina è popolata solo se almeno una sorgente (Scanner-Edge o Wazuh) è configurata e ha completato una sincronizzazione. Lo stato delle integrazioni si vede nel **Launchpad** (§22).
+> La pagina è popolata solo se almeno una sorgente (Scanner-Edge o Wazuh) è configurata e ha completato una sincronizzazione. Lo stato delle integrazioni si vede in **Impostazioni → Moduli** (§22).
 
 ---
 
@@ -796,26 +807,26 @@ Job `anomaly_check` configurabile (default 15 min).
 
 ---
 
-## 22. Launchpad e Integrazioni
+## 22. Applicativi e moduli
 
-Il **Launchpad** (`/launchpad`, icona 🔑) è il **punto unico** da cui vedi lo stato di tutti i moduli/integrazioni e li apri o configuri. Ha assorbito le vecchie viste "Integrazioni" e "Catalogo appliance": le route `/integrations` e `/appliance` ora **reindirizzano** qui.
+Dal 19/10 il Launchpad a tessere non c'è più: era un doppione delle voci del menu. `/launchpad`,
+`/integrations` e `/appliance` portano a **Impostazioni → Moduli**.
 
-![Launchpad con le tile dei moduli e lo stato di salute](/manual/img/launchpad.png)
+### Il gruppo «Applicativi» del menu
 
-### Tile moduli
+Contiene i moduli opzionali accesi, ognuno con le sue pagine (**Patch Management**: Panoramica,
+CVE, Storico; **Controllo remoto**: Dispositivi e console MeshCentral; **Zabbix**: Pannello) e le
+**console esterne** dei prodotti configurati (Scanner-Edge, Wazuh, UniFi, LibreNMS, Graylog, MDM),
+che si aprono in una scheda nuova. Un modulo spento non compare. Vulnerabilità e Alert sicurezza
+stanno nel gruppo **Sicurezza**; i Controller di rete in **Network**, sotto Credenziali.
 
-Per ciascun modulo (es. **Wazuh**, **Vulnerabilità**, **Patch Management**, **Agenti remoti**, **Network Services**, **Graylog**) una tile mostra:
-- Icona + nome del modulo
-- **Stato di salute** (pallino): Attivo / Attenzione / Errore / Non configurato
-- Tempo relativo dell'ultimo health check (es. "1h fa")
-- Pulsanti **Apri** (URL esterno o route in-app) e **Configura** (deep-link a Impostazioni → Moduli)
-- **Verdict** L7 quando disponibile (ok / degradato / fail)
+### Impostazioni → Moduli
 
-L'health è in polling (≈60s). Le icone: 🛡️ ShieldAlert (Vulnerabilità), 📦 PackageCheck (Patch), 🖥️ ServerCog (Agenti), 📈 Activity (Monitoring), 📜 ScrollText (Graylog), 📡 Radar (Network Services), 🔧 Wrench (azione di ripristino).
-
-### Dove si configurano le integrazioni
-
-La configurazione vera e propria vive in **Impostazioni → Moduli**: LibreNMS, Wazuh, Scanner-Edge, Network Services, Graylog. Active Directory si configura invece da **Network → Active Directory** (§12). Il Launchpad è il cruscotto; le impostazioni sono il pannello di controllo.
+Un elenco con una riga per modulo: nome, «Opzione» per i moduli a pagamento, stato (Acceso ✓,
+Spento –, Da verificare ?, Attenzione !, Guasto ✕: fondo, bordo e simbolo diversi) e la salute
+in parole. **Apri** porta alla pagina del modulo (`/settings/moduli/<modulo>`), dove stanno
+configurazione, salute, verifica dell'apertura e, per MeshCentral, l'interruttore del desktop
+remoto senza agente. Active Directory si configura da **Network → Active Directory** (§12).
 
 ---
 
@@ -869,7 +880,7 @@ La gestione dei **job schedulati** (abilita/disabilita, interval, prossima esecu
 
 ### Moduli
 - Attivazione e configurazione di **LibreNMS, Wazuh, Scanner-Edge, Network Services, Graylog, Patch Management** (Active Directory sta in **Network → Active Directory**, §12)
-- Lo stato runtime di questi moduli si vede nel **Launchpad** (§22)
+- Lo stato runtime di questi moduli si vede in **Impostazioni → Moduli** (§22)
 
 ### Scansione periodica
 - Toggle global "Auto-scan subnet"

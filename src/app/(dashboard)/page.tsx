@@ -385,7 +385,7 @@ function KpiCard({ title, value, icon, color, href }: {
 
 const TITOLO_APRE: Record<DestinazioneRigaModulo["apre"], string> = {
   modulo: "Apri il modulo",
-  launchpad: "Apri dal Launchpad",
+  pagina_modulo: "Apri la pagina del modulo",
   configurazione: "Apri la configurazione del modulo",
 };
 

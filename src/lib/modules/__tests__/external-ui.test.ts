@@ -1,7 +1,5 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
 import { externalUiText } from "@/lib/modules/external-ui";
 
 /**
@@ -31,8 +29,3 @@ test("un modulo senza testo dedicato non si spaccia per l'edge", () => {
   assert.doesNotMatch(`${t.label} ${t.title}`, /edge|Greenbone/i);
 });
 
-test("la griglia dei moduli non scrive a mano il testo del pulsante esterno", () => {
-  const grid = fs.readFileSync(path.join(process.cwd(), "src/app/(dashboard)/launchpad/modules-grid.tsx"), "utf8");
-  assert.doesNotMatch(grid, /Interfaccia edge|Greenbone/, "testo fisso dell'edge nella griglia");
-  assert.match(grid, /externalUiText\(/, "la griglia deve chiedere il testo a externalUiText");
-});

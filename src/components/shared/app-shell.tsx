@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Sidebar } from "./sidebar";
 import { SidebarProvider, useSidebar } from "./sidebar-context";
@@ -72,7 +72,10 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-background">
         <UpdateChecker />
-        <Sidebar />
+        {/* Il menu legge ?tab= (voce «Health Active Directory», 19/10): useSearchParams vuole un Suspense. */}
+        <Suspense fallback={null}>
+          <Sidebar />
+        </Suspense>
         <main className={`${collapsed ? "md:ml-16" : "md:ml-64"} min-h-screen flex flex-col transition-[margin] duration-200`}>
           {/* Top bar */}
           <div className="sticky top-0 z-20 shrink-0 bg-background/80 backdrop-blur-sm border-b border-border">

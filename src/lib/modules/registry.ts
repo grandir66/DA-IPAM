@@ -508,9 +508,9 @@ export async function resolveModules(tenantCode: string, ruolo: unknown): Promis
       note: readError
         ? `Controller non leggibili dal database: ${readError}`
         : controllers.length === 0
-          ? "Nessun controller. Aggiungilo da Rete → Controller di rete."
+          ? "Nessun controller. Aggiungilo da Applicativi → Controller di rete."
           : on.length === 0
-            ? "Controller presenti ma spenti: accendili da Rete → Controller di rete."
+            ? "Controller presenti ma spenti: accendili da Applicativi → Controller di rete."
             : undefined,
     });
   }

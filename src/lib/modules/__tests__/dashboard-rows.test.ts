@@ -59,15 +59,15 @@ test("modulo nativo attivo e configurato: la riga apre la sua pagina", () => {
   assert.equal(moduleRowTarget(desc("patch_management"), p, salute("patch_management", "ok")).href, "/patch-management");
 });
 
-test("modulo con interfaccia esterna attivo: la riga apre il Launchpad, non l'URL esterno", () => {
+test("modulo con interfaccia esterna attivo: la riga apre la pagina del modulo, non l'URL esterno (il Launchpad non c'è più, 19/10)", () => {
   const s = stato("librenms", {
     access: "external",
     uiUrl: "https://192.0.2.10:8090/",
     uiIsInternal: false,
   });
   const t = moduleRowTarget(desc("librenms"), s, salute("librenms", "ok"));
-  assert.equal(t.href, "/launchpad");
-  assert.equal(t.apre, "launchpad");
+  assert.equal(t.href, "/settings/moduli/librenms");
+  assert.equal(t.apre, "pagina_modulo");
 });
 
 test("modulo non installato: apre la configurazione e dice che non è attivo (non «Mai eseguita»)", () => {
@@ -165,4 +165,12 @@ test("Patch Management acceso, «locale, non verificato»: apre la pagina e lo d
   assert.equal(t.href, "/patch-management");
   assert.equal(t.apre, "modulo");
   assert.equal(t.notaStato, "Locale, non verificato");
+});
+
+// Revisione del 19/10: l'MDM non ha una pagina in /settings/moduli; la riga portava a
+// «Modulo sconosciuto». Va alla sua pagina di configurazione.
+test("MDM attivo con console esterna: la riga va a /settings/mdm, non a una pagina che non c'è", () => {
+  const s = stato("mdm", { access: "external", uiUrl: "https://mdm.esempio.it", uiIsInternal: false, configHref: "/settings/mdm" });
+  const t = moduleRowTarget(desc("mdm"), s, salute("mdm", "ok"));
+  assert.equal(t.href, "/settings/mdm");
 });

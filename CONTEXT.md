@@ -77,7 +77,10 @@ F08 «non riesco a leggere» con Riprova. F05 chiuso: l'hub era già aggiornato.
 l'approvazione della proposta: Moduli = elenco + `/settings/moduli/<chiave>` (`ModulesTab solo=`),
 interruttore RDP senza agente nel tenant (`meshcentral.senza_agente`; la env vince), MDM nel catalogo,
 Discovery con viste/glossario/filtri (`lib/discovery/viste-filtri.ts`). L'ordine delle 19 colonne di
-Discovery è una decisione di Riccardo (v0.2.500, 23/05): le viste lo filtrano, non lo cambiano.
+Discovery è una decisione di Riccardo (v0.2.500, 23/05): le viste lo filtrano, non lo cambiano. Menu (19/10 sera, Riccardo): niente
+più Launchpad a tessere; gruppi **Sicurezza** (Vulnerabilità, Alert, Health AD `?tab=health`) e **Applicativi**
+(`lib/modules/voci-applicativi.ts`: moduli opzionali + console esterne); Controller di rete in Network sotto
+«Credenziali». Network Services resta un gruppo a sé (scelta di Riccardo).
 
 - **Trappola**: le 9 prove «rosse per `flock`» del Mac erano `stato-aggiornamento.mjs` che non partiva
   da cartelle dietro symlink (`/var/folders`): ora `realpathSync`. Sul Mac serve comunque `flock` (brew).

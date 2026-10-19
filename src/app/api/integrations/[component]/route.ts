@@ -18,7 +18,7 @@ const VALID_COMPONENTS: IntegrationComponent[] = ["librenms", "loki", "graylog"]
  */
 function unifiMoved(): NextResponse {
   return NextResponse.json(
-    { error: "I controller UniFi si gestiscono da Rete → Controller di rete (/api/controllers)" },
+    { error: "I controller UniFi si gestiscono da Applicativi → Controller di rete (/api/controllers)" },
     { status: 410 },
   );
 }

@@ -4,6 +4,29 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-19 · Menu: Applicativi e Sicurezza al posto del Launchpad
+
+Richiesta di Riccardo del 19/10 sera, proposta approvata prima del codice.
+
+### Cambiato
+
+- **Gruppo «Applicativi»** nel menu al posto del Launchpad a tessere e delle voci sparse dei
+  moduli (un doppione): Patch Management (Panoramica, CVE, Storico), Controllo remoto
+  (Dispositivi, console MeshCentral), Zabbix, e le console esterne (Scanner-Edge, Wazuh, UniFi,
+  LibreNMS, Graylog, MDM) in una scheda nuova. Solo i moduli accesi. `/launchpad`,
+  `/integrations` e `/appliance` portano a Impostazioni → Moduli; le righe dei moduli esterni
+  in dashboard alla pagina del modulo.
+- **Gruppo «Sicurezza»**: Vulnerabilità, Alert sicurezza e Health Active Directory (la pagina AD
+  si apre sulla scheda Health con `?tab=health`).
+- **Network**: «Credenziali» come sezione con Credenziali e Controller di rete.
+- Nel menu è evidenziata solo la voce più precisa (su CVE del Patch non anche «Panoramica»,
+  su Assegnatari non anche «Asset»).
+
+### Corretto
+
+- Riga MDM della dashboard verso `/settings/mdm` (andava a «Modulo sconosciuto»); messaggi
+  d'apertura che citavano «la Launchpad»; manuale (§22 riscritta, albero del menu).
+
 ## [Non rilasciato] — 2026-10-19 · Moduli, MDM e Discovery più leggibili (F09-F11)
 
 Proposta approvata da Riccardo il 19/10, oggetto per oggetto.

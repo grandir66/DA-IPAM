@@ -6,5 +6,5 @@ import { redirect } from "next/navigation";
  * funzionare.
  */
 export default function IntegrationsPage() {
-  redirect("/launchpad");
+  redirect("/settings?tab=moduli");
 }

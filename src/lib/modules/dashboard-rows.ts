@@ -24,15 +24,15 @@
 import type { ModuleDescriptor, ModuleState } from "./registry";
 import type { ModuleHealth } from "./health";
 import { isModuleLaunchable } from "./launchable";
+import { MODULI_CON_PAGINA } from "./elenco-righe";
 
 export const MODULI_CONFIG_HREF = "/settings?tab=moduli";
-export const LAUNCHPAD_HREF = "/launchpad";
 export const NOTA_NON_VERIFICATO = "Locale, non verificato";
 
 export interface DestinazioneRigaModulo {
   href: string;
   /** Cosa apre la riga: serve al titolo del link. */
-  apre: "modulo" | "launchpad" | "configurazione";
+  apre: "modulo" | "pagina_modulo" | "configurazione";
   /**
    * Testo per la colonna dell'ora quando il modulo non è attivo; null = il
    * modulo è attivo (o non ha stato nel registry) e la colonna mostra l'ora
@@ -75,7 +75,11 @@ export function moduleRowTarget(
 
   if (state.access === "external" || !state.uiIsInternal) {
     if (!isModuleLaunchable(state, health)) return { ...config, notaStato };
-    return { href: LAUNCHPAD_HREF, apre: "launchpad", notaStato, contaNegliErrori: true };
+    // Il Launchpad a tessere non c'è più (Riccardo, 19/10): si va alla pagina del
+    // modulo (stato, verifica dell'apertura, console), non all'indirizzo esterno.
+    // Revisione: l'MDM non ha una pagina in /settings/moduli, la sua è /settings/mdm.
+    const href = MODULI_CON_PAGINA.has(state.key) ? `/settings/moduli/${state.key}` : (desc?.configHref ?? MODULI_CONFIG_HREF);
+    return { href, apre: "pagina_modulo", notaStato, contaNegliErrori: true };
   }
   return { href: state.uiUrl, apre: "modulo", notaStato, contaNegliErrori: true };
 }

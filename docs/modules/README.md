@@ -23,11 +23,10 @@ Documentazione per modulo di DA-IPAM. La sorgente di verità è
 | Inventario NIS2 | `nis2_inventory` | `/services` | [interni/nis2-inventory.md](interni/nis2-inventory.md) |
 | MDM Mobile (Headwind) | — (feature nativa) | `/settings/mdm` | [interni/mdm-mobile.md](interni/mdm-mobile.md) |
 | Core IPAM (networks/hosts/discovery/software) | — (feature nativa) | `/networks`, `/hosts`, ... | [interni/core-ipam.md](interni/core-ipam.md) |
-| Agents Remoti / Bridge | — (feature nativa) | `/agents` | [interni/agents-remote-bridge.md](interni/agents-remote-bridge.md) |
 
 I moduli del registry con `access: "native"` sono `edge`, `patch_management`,
-`network_services`, `meshcentral`, `inventory_agent`, `nis2_inventory`. Core IPAM,
-Agents/Bridge e MDM non sono nel registry ma sono funzionalità native interne
+`network_services`, `meshcentral`, `inventory_agent`, `nis2_inventory`. Core IPAM
+e MDM non sono nel registry ma sono funzionalità native interne
 documentate qui.
 
 ## Esterni (sistemi terzi integrati)

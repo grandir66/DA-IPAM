@@ -42,7 +42,7 @@ Il menu laterale è organizzato in **gruppi collassabili** che riflettono il flu
 
 ### Solo superadmin
 - **Clienti** — gestione tenant
-- **Agenti remoti** — appliance edge installati presso i clienti
+- **URL dell'hub** — indirizzo pubblico dell'hub (l'elenco degli agenti remoti è tolto dal 20/10/2026)
 
 > **Nota:** i dispositivi di rete (router, switch, firewall) NON sono più voci di menu separate. L'entry point per loro è **Discovery** con i chip filtro (vedi §3).
 

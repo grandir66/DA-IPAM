@@ -12,7 +12,6 @@ testa a ogni file.
 ### Setup nuovi nodi
 - [DEPLOY-NEW-HUB.md](DEPLOY-NEW-HUB.md) — VM Ubuntu vuota → hub Domarc produzione
 - [DEPLOY-NEW-BRIDGE.md](DEPLOY-NEW-BRIDGE.md) — Proxmox template → bridge cliente
-- [DEPLOY-NEW-AGENT.md](DEPLOY-NEW-AGENT.md) — host esistente → agent DA-IPAM
 
 ### Manutenzione
 - [CHANGE-ENCRYPTION-KEY.md](CHANGE-ENCRYPTION-KEY.md) — rotazione chiave cifratura

@@ -7,7 +7,7 @@ Leggilo per primo, poi [CLAUDE.md](CLAUDE.md) (stack e schema; su «multi-tenant
 
 > **Decisione 2026-10-12 (Riccardo) — non riaprire: la logica multi-tenant è morta, un'installazione = un cliente.** Il codice resta a tenant (hub + un DB per tenant) e `withTenantFromSession` resta obbligatorio (§7). Il tenant **non è un confine di sicurezza**: dati di un cliente visibili a un altro non sono difetti.
 
-**DA-INVENT** (alias DA-IPAM): IPAM/inventario per appliance cliente + hub di moduli (`MODULE_DESCRIPTORS` in `src/lib/modules/registry.ts`, `access: native|external`). `agent/` = pacchetto Python, da togliere (C1b, §6).
+**DA-INVENT** (alias DA-IPAM): IPAM/inventario per appliance cliente + hub di moduli (`MODULE_DESCRIPTORS` in `src/lib/modules/registry.ts`, `access: native|external`). L'agente Python remoto `agent/` è tolto (20/10, C1b, §6).
 
 > **Regola di Riccardo (12/10) — non riaprire:** le appliance dei clienti **non** si integrano in DA-Auth: niente `DAAUTH_URL` né pulsante Domarc. L'accesso Domarc vale solo per l'hub. Codice di T3-29 annullato: `git revert fbca510` per rimetterlo.
 
@@ -32,8 +32,9 @@ Leggilo per primo, poi [CLAUDE.md](CLAUDE.md) (stack e schema; su «multi-tenant
 
 - **Rami su origin** (pulizia del 16/10): solo `dev`, `main` e `tappa3b/nucleo` (30 commit fuori da `dev`, rebase dal 20/10: non potare).
 - **Blocco `edge` del segnale** (20/10, ramo `sonde-integrate-20261020`, v0.3.332, non ancora in `dev`): stato della sonda locale da `/api/v1/health` a lista bianca (`lib/dalink/edge-segnale.ts`, `edge-sonda.ts`); DA-Link lo ignora finché non lo conosce (`extra="ignore"`). La pagina «Cosa esce» non lo mostra ancora.
-- **NetBird e DA-Link** (ADR 0011, 0013, 0014; spec e diario del 14/10 in `specs/`/`plans/`). Niente YubiKey (decisione 28). **C1** su `dev` dalla v0.3.282 (`plans/2026-10-15-tappa-c1-netbird.md`). Da fare: **C1b = togliere l'agente Python `agent/`** (decisione 26), dopo il pilota. **Trappole**:
-  - la VPN precedente è tolta da codice e documenti (20/10): niente doppio binario, `prepara-netbird.sh` prepara solo NetBird e il firewall di `wt0`; l'agente `agent/` 0.3.0 parte solo con `wt0` e vuole il nodo già in NetBird; l'indirizzo dell'hub viene solo da `public_hub_url`;
+- **NetBird e DA-Link** (ADR 0011, 0013, 0014; spec e diario del 14/10 in `specs/`/`plans/`). Niente YubiKey (decisione 28). **C1** su `dev` dalla v0.3.282 (`plans/2026-10-15-tappa-c1-netbird.md`). **C1b fatta il 20/10**: agente Python `agent/` tolto (decisione 26). **Trappole**:
+  - la VPN precedente è tolta da codice e documenti (20/10): niente doppio binario, `prepara-netbird.sh` prepara solo NetBird e il firewall di `wt0`; l'indirizzo dell'hub viene solo da `public_hub_url` (pagina `/agents` = «URL dell'hub»);
+  - agente remoto tolto (20/10): restano nel DB `tenant_agents` e `tenants.agent_*` senza uso, e per un giro le rotte ferme (410) e la pagina `/tenants/[id]/agent` (trappola di `update.sh` < v0.9.805, sotto); un cliente con `agent_mode='remote'` non scansiona (errore che lo dice) finché non torna `local`: si scrive sul DB dell'hub;
   - le policy NetBird verso le risorse hanno destinazione vuota: si leggono con `/api/networks`;
   - configurazione = `/etc/dalink/oggetto.env` (assente = niente rete; permessi ≠ 600 = rifiutata); nodo `<codcli>-ipam` per la prima sede, `<codcli>-ipam-<n>` (n 2..99, senza zeri) dalla seconda (un'appliance per sede, 18/10), stessa forma in `config.ts` e `prepara-netbird.sh`; il livello sta in `dalink_livello_registro` (hub), **non** in `settings`; la salute nel segnale conta solo i moduli accesi (dal 16/10 i moduli spenti dicono `off`; a DA-Link solo `ok`|`degraded`|`fail`, `verdettoPerDaLink`);
   - la tabella nft `inet dalink` sta sul **prerouting** (sull'input NetBird mette `iifname "wt0" accept` e la scavalca) e restringe soltanto: con UFW serve anche `ufw allow in on wt0` (tappa G1).

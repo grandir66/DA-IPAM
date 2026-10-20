@@ -5,7 +5,6 @@ o DA-Vul-can) **senza perdere accesso ai dati cifrati**.
 
 ⚠️ **Importante**: cambiare la chiave SENZA seguire questa procedura
 rende illeggibili tutti i ciphertext nel DB — tipicamente:
-- `tenant_agents.token_encrypted` (DA-IPAM)
 - `credentials.encrypted_password` / `encrypted_username` (DA-IPAM)
 - `openvas_servers.gmp_password_enc` / `ssh_password_enc` (DA-Vul-can)
 - `cri_reports.password_encrypted` (DA-Vul-can)
@@ -49,13 +48,12 @@ Cambi la chiave, ma **rigeneri / re-inserisci a mano** tutti i ciphertext.
    ```
 
 5. **Rigenera ciphertext**:
-   - Per ogni agent: UI `/agents` → riga → Configura → **Genera nuovo token**
    - Per ogni credenziale: UI Credenziali → Modifica → reinserisci password
    - Per ogni server OpenVAS: UI server → Modifica → reinserisci GMP password
    - Per ogni CRI report cifrato: UI → reinserisci password CRI
 
-**Costo**: tempo manuale proporzionale al numero di ciphertext. Per 5
-agent + 10 credential + 3 server è ~30 min. Per >50 entità diventa
+**Costo**: tempo manuale proporzionale al numero di ciphertext. Per 10
+credential + 3 server è ~30 min. Per >50 entità diventa
 inaccettabile, vai a Procedura B.
 
 **Vantaggio**: zero rischio di rovinare dati. Se sbagli, hai sempre
@@ -96,7 +94,6 @@ liste di colonne ciphertext per ogni progetto (vedi sezioni sotto).
 
 ### Colonne ciphertext DA-IPAM (da decifrare/ri-cifrare)
 
-- `tenant_agents.token_encrypted`
 - `credentials.encrypted_password`
 - `credentials.encrypted_username` (se valorizzata)
 - `credentials.encrypted_private_key` (se valorizzata)
@@ -163,6 +160,6 @@ Dopo ogni rotazione:
 - [ ] Procedura scelta in base al numero di ciphertext (A vs B vs C)
 - [ ] Service stoppato durante rotazione (no scritture concorrenti)
 - [ ] `.env.local` aggiornato con la nuova chiave
-- [ ] Verifica: login UI funziona, agent test verde, credenziali leggibili
+- [ ] Verifica: login UI funziona, credenziali leggibili
 - [ ] Keeper aggiornato con nuova chiave + archivio vecchia
 - [ ] Note nel changelog progetto se cambio è material

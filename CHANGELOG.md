@@ -17,21 +17,30 @@ L'overlay è solo NetBird, governato da DA-Link (ADR 0011).
   migrazione che cancella: una riga vecchia di un tipo tolto si legge ancora e l'interfaccia la mostra come
   «Altro» (prova `overlay-precedente.test.ts`).
 - **Nome dell'hub nella VPN precedente** come ripiego dell'indirizzo dell'hub (impostazione vuota sul live):
-  non si legge, non si scrive e non nasce più nei DB nuovi; `GET /api/settings/hub-url` e il wizard «Nuovo
-  agente» usano solo `public_hub_url`. La riga resta nei DB vecchi (niente DROP), nessuno la legge.
-- **Chiave d'ingresso della VPN precedente** dal wizard «Nuovo agente» e dalla pagina agente del cliente.
+  non si legge, non si scrive e non nasce più nei DB nuovi; `GET /api/settings/hub-url` usa solo
+  `public_hub_url`. La riga resta nei DB vecchi (niente DROP), nessuno la legge.
+- **Agente Python remoto** (`agent/`, decisione 26 della spec NetBird: «si toglie nella tappa C1»; nessuno lo
+  usava, una sola riga sull'hub mai collegata): via il pacchetto con installatore, unità, `openapi.json` e prove,
+  il job di CI, l'esecutore remoto, l'elenco e il wizard degli agenti, la pagina agente del cliente e il suo
+  pulsante, la scheda del modulo e il playbook. **Restano, ferme**, le rotte (`/api/agents`,
+  `/api/tenant-agents/**`, `/api/tenants/[id]/agent/**`, `/agent-install.sh`: 410) e la pagina
+  `/tenants/[id]/agent`, per un giro: chi aggiorna con un `update.sh` più vecchio della v0.9.805 legge ancora i
+  tipi della build attiva che le citano (trappola di `/api/search`). Nel DB restano, senza uso, la tabella
+  `tenant_agents` e le colonne `tenants.agent_*` (niente DROP). Un cliente rimasto con `agent_mode='remote'`
+  non ripiega in silenzio sull'hub (manderebbe offline host che da lì non si vedono): il giro di scansione
+  fallisce con un messaggio che dice di riportarlo in locale (prova `modalita-remota-tolta.test.ts`).
 - **Doppio binario in `prepara-netbird.sh`**: lo script prepara solo NetBird e il firewall di `wt0`.
 - **Policy ACL e playbook di migrazione della VPN precedente**: cancellati (la storia è in git).
 
 ### Modificato
 
-- **Agente Python 0.3.0 su NetBird**: fuori da `dev_mode` parte solo con l'interfaccia `wt0` (prima
-  rifiutava di partire senza quella della VPN precedente); `/healthz` dice `network.netbird` e
-  `network.netbird_ip`; l'installatore non installa più nessuna VPN: vuole il nodo già in NetBird (comando
-  di DA-Link), ne legge la rete dell'account da `netbird status` e la scrive come rete ammessa
-  (`cgnat_network`, spec NetBird rischio 9); `--rete-netbird` la stampa. `openapi.json` rigenerato.
-- **Playbook di oggi** (nuovo hub, nuovo agente, nuovo bridge, DR) riscritti su NetBird e DA-Link; manuale
-  utente e scheda del modulo agenti allineati. Nella storia (CHANGELOG, spec, piani, ADR) il nome è
+- **`/agents` è ora «URL dell'hub»** (stessa voce di menu, solo superadmin): resta solo il riquadro di
+  `public_hub_url`, che serve anche agli script dell'agente d'inventario e a cui rimanda il Launchpad.
+- **Launchpad**: aprire in modifica una credenziale di un tipo non più ammesso e salvarla rimandava il suo tipo
+  e prendeva 400; ora il tipo si manda solo se cambiato (`tipoDaInviare`). Gli schemi delle tre rotte delle
+  credenziali stanno in `credentials-vault-tipi.ts` e sono provati col tipo tolto.
+- **Playbook di oggi** (nuovo hub, nuovo bridge, DR, rotazione della chiave) riscritti su NetBird e DA-Link
+  senza l'agente remoto; manuale utente allineato. Nella storia (CHANGELOG, spec, piani, ADR) il nome è
   diventato «la VPN precedente», i fatti restano quelli.
 
 ## [Non rilasciato] — 2026-10-20 · Testata delle scansioni semplificata

@@ -62,9 +62,8 @@ Da rivedere e testare ogni 6 mesi.
    ```
 
    ⚠️ **CRITICO**: la `ENCRYPTION_KEY` DEVE essere identica a quella
-   del DB che stai ripristinando. Se cambi chiave, tutti i token agent
-   cifrati in `tenant_agents.token_encrypted` diventano `decrypt_failed`
-   e dovrai rigenerarli a mano dalla UI.
+   del DB che stai ripristinando. Se cambi chiave, tutti i segreti cifrati
+   (credenziali, caveau) diventano illeggibili e vanno reinseriti a mano.
 
 6. **Start service + verifica**:
    ```bash
@@ -83,9 +82,7 @@ Da rivedere e testare ogni 6 mesi.
 
 8. **Verifica E2E**:
    - `https://da-invent` login funziona
-   - `/agents` mostra agent ancora visibili (last_seen sarà vecchio finché
-     non li ritesti)
-   - "Testa tutti" → tutti verde (gli agent sui bridge continuano a girare)
+   - le credenziali si aprono (Credenziali → Prova su un apparato)
 
 ### Note
 
@@ -122,7 +119,7 @@ Da rivedere e testare ogni 6 mesi.
 
 ### Note
 
-- I token agent **non** vengono compromessi (sono ortogonali a NetBird).
+- Le credenziali nel DB **non** vengono compromesse (sono ortogonali a NetBird).
 - I DB sui server **non** vanno ripristinati.
 - Tempo totale: ~2-3 ore per cluster con 5-10 nodi.
 
@@ -230,7 +227,7 @@ Esecuzione consigliata: ogni gennaio + luglio.
 2. Spegni la VM lab
 3. Su una VM Ubuntu pulita, esegui Scenario A end-to-end usando
    l'ultimo backup nightly
-4. Verifica: UI accessibile, agent test verde, scansione test riuscita
+4. Verifica: UI accessibile, scansione test riuscita
 5. Documenta il tempo impiegato + eventuali sorprese
 6. Aggiorna questo playbook se serve
 

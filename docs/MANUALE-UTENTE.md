@@ -34,7 +34,7 @@
 20. [Network Services (DNS / DHCP / AdBlock)](#20-network-services-dns--dhcp--adblock)
 21. [Anomalie (Analytics)](#21-anomalie-analytics)
 22. [Applicativi e moduli](#22-applicativi-e-moduli)
-23. [Agenti remoti (Scanner-Edge)](#23-agenti-remoti-scanner-edge)
+23. [URL dell'hub](#23-url-dellhub)
 24. [Scansioni — storico ed esecuzioni manuali](#24-scansioni--storico-ed-esecuzioni-manuali)
 25. [Impostazioni](#25-impostazioni)
 26. [Ricerca](#26-ricerca)
@@ -56,7 +56,7 @@
 - **Inventario software** realmente installato sugli host (§15) e **Patch Management** Windows CVE-driven (§16)
 - **Network Services** gestiti: DNS, DHCP e filtraggio (AdBlock) tramite una VM dedicata (§20)
 - **Applicativi** (menu) e **Impostazioni → Moduli**: entrare nei moduli e vederne lo stato (§22)
-- **Agenti remoti**: appliance **Scanner-Edge** installate presso i clienti, registrate e monitorate dall'hub (§23)
+- **URL dell'hub**: l'indirizzo pubblico con cui le macchine dei clienti raggiungono l'hub (§23)
 - **Multi-tenant** (un'installazione → più clienti separati, §28)
 
 Differenze chiave rispetto ad altri IPAM:
@@ -107,7 +107,7 @@ Sull'hub c'è anche **«Accedi con l'account Domarc»** (entra.domarc.it): chi e
 ─────────────────────────
 (solo superadmin)
 🏢 Clienti
-🖥️ Agenti remoti
+🖥️ URL dell'hub
 ─── Tenant switcher ───
 ─── Dati cliente ───
 
@@ -161,7 +161,7 @@ Sull'hub c'è anche **«Accedi con l'account Domarc»** (entra.domarc.it): chi e
 
 Solo per **superadmin** appaiono in alto:
 - **Clienti** — gestione tenant (§28)
-- **Agenti remoti** — appliance Scanner-Edge installate presso i clienti (§23)
+- **URL dell'hub** — indirizzo pubblico dell'hub (§23)
 
 > Le voci **Patch Management** è condizionale: compare solo se la relativa *feature* è installata per il tenant attivo (Impostazioni → Moduli). La voce **Config Cliente** è presente ma disabilitata ("In arrivo").
 
@@ -836,25 +836,11 @@ remoto senza agente. Active Directory si configura da **Network → Active Direc
 
 ---
 
-## 23. Agenti remoti (Scanner-Edge)
+## 23. URL dell'hub
 
-`Agenti remoti` (`/agents`, **solo superadmin**, icona 🖥️ **ServerCog**) gestisce le appliance **Scanner-Edge** installate presso i clienti. Lo Scanner-Edge esegue le scansioni Greenbone/OpenVAS in loco e invia i findings all'hub (CVE → §14), raggiungibile via URL pubblico o **NetBird**.
+`URL dell'hub` (`/agents`, **solo superadmin**) imposta `public_hub_url`: l'indirizzo con cui le macchine dei clienti raggiungono questo hub (script d'installazione dell'agente d'inventario, §21). Vuoto: si usa l'indirizzo da cui è aperta la pagina.
 
-![Agenti remoti — tabella agenti e wizard di registrazione](/manual/img/agents.png)
-
-### Tabella agenti
-
-Colonne: Cliente, Sede/Label, Hostname:Porta, Versione, **Heartbeat**, Stato (badge verde con latenza / rosso con codice errore / outline se non testato). Azioni di riga: **Test** (PlugZap), **Configura** (Settings2), **Elimina** (Trash2). In alto: **Ricarica**, **Test All**, **Nuovo agente**.
-
-### Wizard "Nuovo agente" (3 step)
-
-1. **Tenant** — cliente esistente o nuovo (codice + ragione sociale)
-2. **Agent** — label, hostname (nome NetBird del nodo), porta, `subnet_match`
-3. **Token** — il token è mostrato **una sola volta** (⚠️ ShieldAlert): copialo subito; viene generato il **comando di installazione** (curl one-liner) da incollare sul nodo edge.
-
-### Hub URL
-
-Pannello di configurazione dell'**URL effettivo** dell'hub che gli agenti contattano: `public_hub_url` (URL pubblico). Se non configurato, il wizard avvisa che gli agenti non potranno fare heartbeat.
+Fino al 20/10/2026 qui c'era anche l'elenco degli **agenti Python remoti**: tolti (nessuno li usava). Le scansioni girano sull'istanza; un cliente rimasto in modalità remota non scansiona finché non torna in modalità locale. Le appliance **Scanner-Edge** dei clienti si governano da DA-Vul-can e DA-Link.
 
 ---
 
@@ -950,7 +936,7 @@ In sidebar, sotto il blocco superadmin, dropdown per cambiare tenant attivo. "Tu
 ### Voci solo per superadmin
 
 - **Clienti** — CRUD tenant
-- **Agenti remoti** — appliance Scanner-Edge installate presso i clienti (§23)
+- **URL dell'hub** — indirizzo pubblico dell'hub (§23)
 
 ### Isolamento dati
 

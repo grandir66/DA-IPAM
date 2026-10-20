@@ -1,7 +1,7 @@
 # Playbook — Deploy nuovo hub DA-IPAM (o DA-Vul-can) da Ubuntu vuoto
 
 Procedura per portare una VM Ubuntu 24.04 fresca a hub Domarc completamente
-funzionante (UI HTTPS + scheduler cron + agent connector + backup nightly).
+funzionante (UI HTTPS + scheduler cron + backup nightly).
 
 **Tempo stimato**: 25-40 minuti, di cui 15-20 min di build/npm ci.
 **Prerequisiti**: VM Ubuntu 24.04 (≥4GB RAM, ≥30GB disco), accesso SSH
@@ -44,7 +44,7 @@ apt-get install -y \
   libkrb5-dev krb5-config krb5-user libffi-dev \
   python3 python3-pip python3-venv
 
-# setcap su nmap (servirà se l'hub fa scan locali; per scan via agent non serve)
+# setcap su nmap (le scansioni girano sull'hub)
 setcap cap_net_raw,cap_net_admin,cap_net_bind_service=eip /usr/bin/nmap
 ```
 
@@ -58,7 +58,7 @@ useradd -r -m -s /bin/bash -d /opt/da-invent da-invent || true
 cd /opt
 git clone https://github.com/grandir66/DA-IPAM.git da-invent
 cd da-invent
-git checkout main   # o feature/remote-agents per branch in lavorazione
+git checkout main
 chown -R da-invent:da-invent /opt/da-invent
 
 # .env.local — generare segreti
@@ -76,8 +76,8 @@ chmod 600 /opt/da-invent/.env.local
 chown da-invent:da-invent /opt/da-invent/.env.local
 ```
 
-⚠️ **SALVA ENCRYPTION_KEY in Keeper SUBITO**. Se la perdi, tutti i token
-agent cifrati nel DB diventano inutilizzabili (`decrypt_failed`).
+⚠️ **SALVA ENCRYPTION_KEY in Keeper SUBITO**. Se la perdi, tutti i segreti
+cifrati nel DB diventano inutilizzabili (`decrypt_failed`).
 
 ## 5. Install npm deps + build (10 min)
 
@@ -108,7 +108,7 @@ RestartSec=5
 StandardOutput=journal
 StandardError=journal
 
-# Hardening minimo (non così aggressivo da rompere nmap/sudo come per l'agent)
+# Hardening minimo (non così aggressivo da rompere nmap/sudo)
 NoNewPrivileges=true
 ProtectSystem=full
 ProtectHome=true
@@ -177,11 +177,11 @@ Apri `https://<ip-netbird>` o `https://<lan-ip>` nel browser:
 
 ## 10. Configurazione PUBLIC_HUB_URL (1 min)
 
-Dalla UI: **Impostazioni** → **Hub URL pubblico**:
+Dalla UI (superadmin): menu **URL dell'hub**:
 - Settare **URL pubblico** = `https://<codice>-ipam.netbird.selfhosted` (o il nome LAN)
 - Salva
 
-Da ora il wizard `/agents` userà quell'indirizzo nel one-liner.
+Da ora gli script d'installazione dell'agente d'inventario useranno quell'indirizzo.
 
 ## 11. Verifica end-to-end
 

@@ -43,9 +43,9 @@ tenant.
 
 ## Architettura e integrazioni
 
-- DA-IPAM gira in **systemd**. Lo scan può girare **in-process locale**
-  (`LocalExecutor`) o, per tenant `agent_mode='remote'`, delegato a un
-  **agente remoto** (`RemoteExecutor`) — vedi modulo Agents/Bridge.
+- DA-IPAM gira in **systemd**. Lo scan gira **in-process locale**
+  (`LocalExecutor`). L'agente remoto è tolto (20/10/2026): un cliente rimasto
+  con `agent_mode='remote'` non scansiona finché non torna in modalità locale.
 - Scheduler `node-cron` (`src/lib/cron/jobs.ts`) dispatcha i job per rete.
 - Tutto il dato vive nel **DB tenant** (`data/tenants/<CODE>.db`); l'anagrafica
   clienti/agenti sull'hub.

@@ -1,15 +1,16 @@
 import { parseDbDate, FUSO_UTENTI } from "@/lib/db-date";
-import { getDashboardStats, getNetworks, getRecentActivity, getUserCount, getKnownHostStats, getOfflineKnownHosts } from "@/lib/db";
+import { getDashboardStats, getNetworks, getUserCount, getKnownHostStats, getOfflineKnownHosts } from "@/lib/db";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { Network, HelpCircle, Shield, Activity, PlugZap } from "lucide-react";
+import { Network, Shield, Activity, PlugZap } from "lucide-react";
 import { StatusOverTimeChart } from "@/components/shared/status-over-time-chart";
 import { StatusChangeFeed } from "@/components/shared/status-change-feed";
 import { getServerTenantCode } from "@/lib/api-tenant";
-import { withTenant } from "@/lib/db-tenant";
+import { getTenantDb, withTenant } from "@/lib/db-tenant";
+import { kpiSicurezza, type KpiSicurezza } from "@/lib/security/kpi-dashboard";
 import { getIntegrationsOverview, type IntegrationHealth } from "@/lib/integrations/dashboard-health";
 import { getModulesHealth } from "@/lib/modules/health";
 import { MODULE_DESCRIPTORS, resolveModules, type ModuleState } from "@/lib/modules/registry";
@@ -39,7 +40,6 @@ export default async function DashboardPage() {
   const tenantCode = await getServerTenantCode();
   const stats = withTenant(tenantCode, () => getDashboardStats());
   const networks = withTenant(tenantCode, () => getNetworks());
-  const recentActivity = withTenant(tenantCode, () => getRecentActivity(8));
   const monitorStats = withTenant(tenantCode, () => getKnownHostStats());
   const offlineKnown = withTenant(tenantCode, () => getOfflineKnownHosts());
   // Stato moduli (registry + health cachato 60s) + riga Active Directory separata
@@ -97,6 +97,18 @@ export default async function DashboardPage() {
   } catch (e) {
     console.error("[dashboard] pannello Zabbix non leggibile:", e);
   }
+  // KPI di sicurezza (Riccardo, 20/10): solo letture del DB del cliente.
+  let sicurezza: KpiSicurezza = { cve: null, accessi: null, healthAd: null };
+  try {
+    sicurezza = withTenant(tenantCode, () => kpiSicurezza(getTenantDb(tenantCode)));
+  } catch (e) {
+    console.error("[dashboard] KPI di sicurezza non leggibili:", e);
+  }
+  // Le tabelle esistono sempre (schema e job di pulizia): «non configurato» lo dice il
+  // catalogo dei moduli, non la presenza della tabella (revisione del 20/10).
+  const configurato = (k: string) => moduleStates.find((m) => m.key === k)?.configured === true;
+  if (!configurato("edge")) sicurezza = { ...sicurezza, cve: null };
+  if (!configurato("wazuh")) sicurezza = { ...sicurezza, accessi: null };
   const riquadri = completaRiquadri(
     integrations,
     MODULE_DESCRIPTORS.map((d) => ({ ...d, enabled: moduleStates.find((m) => m.key === d.key)?.enabled === true })),
@@ -133,6 +145,9 @@ export default async function DashboardPage() {
           <Indicatore titolo="Monitorati" valore={`${monitorStats.online}/${monitorStats.total}`} nota={monitorStats.avg_latency !== null ? `latenza media ${Math.round(monitorStats.avg_latency)} ms` : undefined} href="/monitoring/known-hosts" />
         )}
       </div>
+
+      {/* ── Riga 1b: sicurezza (Riccardo, 20/10) ─────────────────────── */}
+      <RigaSicurezza k={sicurezza} />
 
       {/* ── Riga 2: stato moduli a riquadri ───────────────────────────── */}
       <div className="shrink-0">
@@ -283,32 +298,105 @@ export default async function DashboardPage() {
           </Card>
           <Card size="sm" className="lg:flex-[2] lg:min-h-0 data-[size=sm]:gap-1">
             <CardHeader>
-              <CardTitle className="text-sm flex items-center gap-2">
-                <HelpCircle className="h-4 w-4 text-muted-foreground" />
-                Attività scan recente
+              <CardTitle className="text-sm flex items-center justify-between gap-2">
+                <span className="flex items-center gap-2">
+                  <Shield className="h-4 w-4 text-primary" />
+                  Accessi falliti, 14 giorni
+                </span>
+                <Link href="/security-alerts" className="text-xs font-normal text-primary hover:underline">Alert →</Link>
               </CardTitle>
             </CardHeader>
-            <CardContent className="p-0 lg:flex-1 lg:min-h-0 lg:overflow-auto">
-              {recentActivity.length === 0 ? (
-                <p className="text-sm text-muted-foreground px-4 py-2">Nessuna scansione recente.</p>
-              ) : (
-                <div className="divide-y divide-border">
-                  {recentActivity.map((activity) => (
-                    <div key={activity.id} className="flex items-center gap-2 px-3 py-1 text-sm">
-                      <Badge variant="outline" className="text-xs shrink-0">{activity.scan_type}</Badge>
-                      <span className="text-muted-foreground text-xs truncate">{activity.status}</span>
-                      <span className="ml-auto text-xs text-muted-foreground whitespace-nowrap" title={parseDbDate(activity.timestamp).toLocaleString("it-IT", { timeZone: FUSO_UTENTI })}>
-                        {tempoFa(activity.timestamp)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
+            <CardContent className="lg:flex-1 lg:min-h-0 flex flex-col">
+              <GraficoAccessi serie={sicurezza.accessi?.serie ?? null} />
             </CardContent>
           </Card>
         </div>
       </div>
     </div>
+  );
+}
+
+const numero = (n: number) => n.toLocaleString("it-IT");
+
+/** Un indicatore di sicurezza: tono dal valore, con simbolo (Riccardo è daltonico). */
+function ChipSicurezza({ tono, etichetta, valore, href, title }: { tono: ToniStato; etichetta: string; valore: string; href: string; title?: string }) {
+  const st = STILE_STATO[tono];
+  return (
+    <Link href={href} title={title} className={`inline-flex items-baseline gap-1.5 rounded-md border px-2 py-1 text-[13px] leading-tight hover:opacity-90 ${st.classi}`}>
+      <span aria-hidden className="font-bold">{st.segno}</span>
+      <span>{etichetta}</span>
+      <span className="font-bold">{valore}</span>
+    </Link>
+  );
+}
+
+/**
+ * Riga «Sicurezza» (Riccardo, 20/10): CVE dello Scanner-Edge, accessi falliti e account
+ * bloccati dagli alert di Wazuh, alert da gestire, Health di Active Directory. Una fonte
+ * non configurata è grigia, non «zero».
+ */
+function RigaSicurezza({ k }: { k: KpiSicurezza }) {
+  const a = k.accessi;
+  const freccia = a ? (a.falliti24h > a.falliti24hPrima ? " ↑" : a.falliti24h < a.falliti24hPrima ? " ↓" : "") : "";
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+      <span className="text-sm font-semibold mr-1 flex items-center gap-1.5">
+        <Shield className="h-4 w-4 text-primary" />
+        Sicurezza
+      </span>
+      {k.cve ? (
+        <>
+          <ChipSicurezza tono={k.cve.critiche.cve > 0 ? "guasto" : "ok"} etichetta="Vulnerabilità critiche" valore={`${k.cve.critiche.cve} · ${k.cve.critiche.host} host`} href="/vulnerabilities"
+            title={`Scanner-Edge: vulnerabilità distinte di gravità Critical (CVE, o NVT quando manca la CVE) e host colpiti${k.cve.ultimaScansione ? ` · ultima scansione ${parseDbDate(k.cve.ultimaScansione).toLocaleString("it-IT", { timeZone: FUSO_UTENTI })}` : ""}`} />
+          <ChipSicurezza tono={k.cve.alte.cve > 0 ? "attenzione" : "ok"} etichetta="Vulnerabilità alte" valore={`${k.cve.alte.cve} · ${k.cve.alte.host} host`} href="/vulnerabilities" title="Scanner-Edge: vulnerabilità distinte di gravità High e host colpiti" />
+        </>
+      ) : (
+        <ChipSicurezza tono="grigio" etichetta="Vulnerabilità" valore="Scanner-Edge non configurato" href="/settings/moduli/edge" />
+      )}
+      {a ? (
+        <>
+          <ChipSicurezza
+            tono={a.falliti24h === 0 ? "ok" : a.falliti24h > 100 && a.falliti24h > a.falliti24hPrima * 2 ? "guasto" : "attenzione"}
+            etichetta="Accessi falliti 24h" valore={`${numero(a.falliti24h)}${freccia}`} href="/security-alerts"
+            title={`Eventi 4625 da Wazuh nelle ultime 24 ore (le 24 prima: ${numero(a.falliti24hPrima)}). Approssimato: ogni gruppo d'allarme è ripartito sul periodo in cui è rimasto aperto.`} />
+          <ChipSicurezza tono={a.bloccati30g > 0 ? "attenzione" : "ok"} etichetta="Account bloccati 30g" valore={numero(a.bloccati30g)} href="/security-alerts" title="Eventi 4740 da Wazuh negli ultimi 30 giorni" />
+          <ChipSicurezza tono={a.daGestire > 0 ? "attenzione" : "ok"} etichetta="Alert da gestire" valore={numero(a.daGestire)} href="/security-alerts" title="Alert di Wazuh non ancora presi in carico" />
+        </>
+      ) : (
+        <ChipSicurezza tono="grigio" etichetta="Accessi e alert" valore="Wazuh non configurato" href="/settings/moduli/wazuh" />
+      )}
+      {k.healthAd ? (
+        <ChipSicurezza
+          tono={k.healthAd.critici > 0 ? "guasto" : k.healthAd.alti > 0 || k.healthAd.giorni > 7 || k.healthAd.ultimoFallito ? "attenzione" : "ok"}
+          etichetta="Health AD" valore={`${k.healthAd.critici} critici · ${k.healthAd.alti} alti · ${k.healthAd.giorni === 0 ? "oggi" : `${k.healthAd.giorni} g fa`}${k.healthAd.ultimoFallito ? " · ultimo tentativo fallito" : ""}`}
+          href="/active-directory?tab=health" title={`Ultima Health riuscita, punteggio globale ${k.healthAd.punteggio ?? "—"}. Oltre 7 giorni è da rifare.${k.healthAd.ultimoFallito ? " L'ultimo tentativo è fallito." : ""}`} />
+      ) : (
+        <ChipSicurezza tono="grigio" etichetta="Health AD" valore="mai eseguita" href="/active-directory?tab=health" />
+      )}
+    </div>
+  );
+}
+
+/** Barre per giorno degli accessi falliti, account bloccati segnati sopra la barra. */
+function GraficoAccessi({ serie }: { serie: { giorno: string; falliti: number; bloccati: number }[] | null }) {
+  if (!serie) return <p className="text-sm text-muted-foreground py-2">Wazuh non configurato: nessun dato sugli accessi.</p>;
+  const max = Math.max(1, ...serie.map((g) => g.falliti));
+  return (
+    <>
+      <div className="flex items-end gap-1 flex-1 min-h-[90px]">
+        {serie.map((g) => (
+          <div key={g.giorno} className="flex-1 flex flex-col items-center justify-end h-full gap-0.5"
+            title={`${g.giorno.slice(8, 10)}/${g.giorno.slice(5, 7)}: ${numero(g.falliti)} accessi falliti${g.bloccati ? `, ${g.bloccati} account bloccati` : ""}`}>
+            {g.bloccati > 0 && <span className="text-[10px] font-bold text-amber-700 leading-none">▲{g.bloccati}</span>}
+            <div className="w-full rounded-sm bg-red-700" style={{ height: `${Math.max(g.falliti > 0 ? 3 : 1, (g.falliti / max) * 100)}%`, opacity: g.falliti > 0 ? 1 : 0.25 }} />
+            <span className="text-[10px] text-muted-foreground leading-none">{g.giorno.slice(8, 10)}</span>
+          </div>
+        ))}
+      </div>
+      <p className="text-[11px] text-muted-foreground mt-1">
+        Massimo {numero(max)} in un giorno · ▲ account bloccati. Approssimato: ogni gruppo d&apos;allarme è ripartito sui giorni in cui è rimasto aperto.
+      </p>
+    </>
   );
 }
 

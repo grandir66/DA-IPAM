@@ -4,6 +4,24 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-20 · Dashboard: KPI di sicurezza
+
+Richiesta di Riccardo del 20/10, dati misurati sull'hub prima del codice.
+
+### Cambiato
+
+- **Riga «Sicurezza»** (`lib/security/kpi-dashboard.ts`): vulnerabilità critiche e alte dello
+  Scanner-Edge (contate come la pagina Vulnerabilità: CVE, o NVT quando la CVE manca; host
+  colpiti), accessi falliti nelle ultime 24 ore con la tendenza, account bloccati in 30
+  giorni, alert da gestire (dagli alert di Wazuh, diagnostici esclusi), Health AD (rilievi,
+  età, tentativo fallito). Una fonte non configurata è grigia, non «0».
+- **«Accessi falliti, 14 giorni»** al posto di «Attività scan recente»: barre per giorno
+  italiano, account bloccati segnati sopra.
+- Gli alert di Wazuh sono raggruppati e un gruppo resta aperto per mesi: ogni gruppo si
+  ripartisce sul periodo in cui è rimasto aperto. Contarlo tutto nel giorno dell'ultima
+  occorrenza dava 41.223 accessi falliti in 24 ore sull'hub contro circa 530 (revisione del
+  20/10). Resta un'approssimazione: niente contatore giornaliero (scelta di Riccardo).
+
 ## [Non rilasciato] — 2026-10-20 · Dashboard in una schermata, stato moduli a riquadri
 
 Richiesta di Riccardo del 20/10, proposta approvata prima del codice.

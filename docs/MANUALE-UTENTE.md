@@ -37,7 +37,7 @@
 23. [Agenti remoti (Scanner-Edge)](#23-agenti-remoti-scanner-edge)
 24. [Scansioni — storico ed esecuzioni manuali](#24-scansioni--storico-ed-esecuzioni-manuali)
 25. [Impostazioni](#25-impostazioni)
-26. [Ricerca globale](#26-ricerca-globale)
+26. [Ricerca](#26-ricerca)
 27. [Export e Backup](#27-export-e-backup)
 28. [Multi-tenant e Superadmin](#28-multi-tenant-e-superadmin)
 29. [Manuale in-app](#29-manuale-in-app)
@@ -171,9 +171,13 @@ Sotto il blocco superadmin, un selettore tenant ti permette di passare velocemen
 
 Su mobile la sidebar è collassata; aprila con il bottone hamburger in alto a sinistra. Tap fuori per chiuderla.
 
-### Ricerca globale
+### Tema e utente
 
-In cima alla pagina trovi una **search bar** che cerca in IP, MAC, hostname, network device name, classificazione, su tutti i tenant a cui hai accesso. Vedi §26.
+Non c'è più una barra in cima alla pagina (dal 20/10/2026): in fondo al menu a sinistra trovi **Tema scuro / Tema chiaro**, **Comprimi menu**, la riga col tuo **nome e ruolo** (un clic apre «Cambia password») ed **Esci**. Col menu compresso restano le icone; il nome compare passandoci sopra.
+
+### Ricerca
+
+Non c'è una ricerca generale: ogni tabella che ne ha bisogno ha il suo campo. Per IP, MAC e hostname si cerca in **Discovery**. Vedi §26.
 
 ---
 
@@ -898,15 +902,11 @@ La gestione dei **job schedulati** (abilita/disabilita, interval, prossima esecu
 
 ---
 
-## 26. Ricerca globale
+## 26. Ricerca
 
-La **search bar in cima** cerca cross-tenant (su tutti i tenant a cui hai accesso) in:
-- IP, MAC, hostname custom o rilevato
-- Network device name, vendor, sysname
-- Classificazione, OS, modello
-- Asset tag, codice asset
-
-Mostra fino a 50 risultati raggruppati per tipo (host / device / asset). Click → vai al dettaglio.
+Dal 20/10/2026 la ricerca generale in cima alla pagina non c'è più (Riccardo: lo spazio in alto serve alle pagine). Si cerca dove sta il dato:
+- **Discovery** per IP, MAC e hostname degli host;
+- il campo di ricerca della tabella su cui lavori (Subnet, Apparati, Inventario, Software, Vulnerabilità, Active Directory, ARP, Patch, ecc.).
 
 ---
 

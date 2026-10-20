@@ -2,9 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { Moon, Sun } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
-export function ThemeToggle() {
+/**
+ * Tema chiaro/scuro come voce in fondo al menu a sinistra (Riccardo, 20/10: via la barra in
+ * alto). La scritta dice dove si va, non dove si è: «Tema scuro» quando si è sul chiaro.
+ * È anche il punto che applica il tema salvato all'apertura: il menu c'è su ogni pagina.
+ */
+export function ThemeToggle({ compresso = false }: { compresso?: boolean }) {
   const [mounted, setMounted] = useState(false);
   const [dark, setDark] = useState(false);
 
@@ -29,14 +34,20 @@ export function ThemeToggle() {
     localStorage.setItem("theme", next ? "dark" : "light");
   }
 
-  // Render placeholder with same dimensions to avoid layout shift
-  if (!mounted) {
-    return <Button variant="ghost" size="icon" className="h-8 w-8" disabled />;
-  }
-
+  const etichetta = dark ? "Tema chiaro" : "Tema scuro";
   return (
-    <Button variant="ghost" size="icon" onClick={toggle} className="h-8 w-8">
-      {dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-    </Button>
+    <button
+      type="button"
+      onClick={toggle}
+      disabled={!mounted}
+      title={compresso ? etichetta : undefined}
+      className={cn(
+        "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors w-full",
+        compresso && "md:justify-center md:px-0",
+      )}
+    >
+      {dark ? <Sun className="h-4 w-4 shrink-0" /> : <Moon className="h-4 w-4 shrink-0" />}
+      <span className={cn(compresso && "md:hidden")}>{mounted ? etichetta : "Tema"}</span>
+    </button>
   );
 }

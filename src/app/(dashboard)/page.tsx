@@ -166,7 +166,7 @@ export default async function DashboardPage() {
   // Dashboard in una schermata, disposizione a tre colonne (Riccardo, 20/10): andamenti a
   // sinistra, operatività al centro, infrastruttura a destra. Le liste scorrono nel riquadro.
   return (
-    <div className="flex flex-col gap-2 lg:h-[calc(100dvh-5.5rem)]">
+    <div className="flex flex-col gap-2 lg:h-[calc(100dvh-1.5rem)]">
       {/* ── Riga 1: titolo e indicatori ───────────────────────────────── */}
       <div className="flex flex-wrap items-stretch gap-2 shrink-0">
         <h1 className="text-xl font-bold tracking-tight mr-2 self-center">Dashboard</h1>

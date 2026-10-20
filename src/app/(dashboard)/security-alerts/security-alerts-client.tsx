@@ -259,7 +259,7 @@ export function SecurityAlertsClient() {
   const statsAssenti = !stats?.stats;
   const motivoAssenti = statsError ?? stats?.unavailable ?? "statistiche dell'indexer non ancora lette";
   return (
-    <div className="flex flex-col gap-2 lg:h-[calc(100dvh-5.5rem)]">
+    <div className="flex flex-col gap-2 lg:h-[calc(100dvh-1.5rem)]">
       {/* ── Testata: titolo, stato di Wazuh, aggiornamento ───────────── */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 shrink-0">
         <h1

@@ -32,8 +32,15 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   chiaro con testo navy: il grigio pieno dei token stava a 6,2 dal verde «ok» (solo in DA-IPAM; per DA-Template resta
   una proposta). Colori in un posto solo: `--host-*` e `--alert-cat-*` in `globals.css`.
 
+- **Via la barra in alto** (Riccardo, 20/10): ogni pagina guadagna circa 53 px. Tema chiaro/scuro, riga utente (nome e
+  ruolo, il clic apre «Cambia password») ed «Esci» stanno in fondo al menu a sinistra; col menu compresso restano le
+  icone. **Tolta la ricerca generale** (e ⌘K, con la rotta `/api/search`): si cerca nelle tabelle che hanno il loro
+  campo, IP/MAC/hostname in Discovery.
+
 ### Corretto
 
+- Menu utente: il clic faceva cadere la pagina (Base UI vuole l'etichetta dentro un gruppo), quindi «Cambia password»
+  non si raggiungeva.
 - Alert sicurezza: senza indexer «Alert nel periodo», «Agent» e «Regole» dicevano 0 mentre la tabella mostrava gli
   eventi; ora dicono «—» col motivo.
 

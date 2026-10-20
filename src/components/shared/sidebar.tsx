@@ -51,6 +51,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useState, useEffect, useMemo, useRef } from "react";
+import { ThemeToggle } from "./theme-toggle";
+import { UserMenu } from "./user-menu";
 import { vociApplicativi, type IconaVoce, type ModuloPerMenu } from "@/lib/modules/voci-applicativi";
 import { Button } from "@/components/ui/button";
 
@@ -546,6 +548,8 @@ export function Sidebar() {
 
       {/* Footer: toggle collapse (desktop) + Logout */}
       <div className="shrink-0 p-3 border-t border-sidebar-border space-y-1">
+        {/* Tema e utente stanno qui dal 20/10 (Riccardo): la barra in alto non c'è più. */}
+        <ThemeToggle compresso={collapsed} />
         <button
           type="button"
           onClick={toggle}
@@ -558,6 +562,7 @@ export function Sidebar() {
           {collapsed ? <PanelLeftOpen className="h-4 w-4 shrink-0" /> : <PanelLeftClose className="h-4 w-4 shrink-0" />}
           <span className={cn(collapsed && "md:hidden")}>Comprimi menu</span>
         </button>
+        <UserMenu compresso={collapsed} />
         <button
           onClick={() => signOut({ callbackUrl: "/login" })}
           title={collapsed ? "Esci" : undefined}

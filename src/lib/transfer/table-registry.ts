@@ -39,6 +39,8 @@ export const TENANT_TABLES: TableSpec[] = [
   { table: "zabbix_abbinamenti", scope: "tenant", tier: "config" },
   // --- asset (default ON) ---
   { table: "hosts", scope: "tenant", tier: "asset" },
+  // Archivio della pulizia degli host (piano 2026-10-20): istantanee degli host tolti, viaggiano con gli host.
+  { table: "hosts_archivio", scope: "tenant", tier: "asset" },
   { table: "mobile_devices", scope: "tenant", tier: "asset" },
   { table: "inventory_assets", scope: "tenant", tier: "asset" },
   { table: "asset_assignees", scope: "tenant", tier: "asset" },

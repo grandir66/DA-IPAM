@@ -122,6 +122,31 @@ export const INDICI_TOPOLOGY_UNIONI: ReadonlyArray<readonly [string, string]> = 
   ["idx_topology_separazioni_coppia_attiva", "CREATE UNIQUE INDEX idx_topology_separazioni_coppia_attiva ON topology_separazioni(membro, altro) WHERE tolto_il IS NULL"],
 ];
 
+/** Archivio degli host tolti dalla pulizia (piano 2026-10-20, scelta A): l'istantanea JSON della riga di `hosts`, poi
+ *  l'host si cancella con un DELETE diretto. Le scrive solo `hosts/pulizia-archivio.ts`; via dopo 90 giorni (recuperate
+ *  comprese). Senza chiavi esterne: la riga deve sopravvivere all'host, e anche alla sua rete (il recupero lo dice).
+ *  Gemella delle unioni: la tabella nasce anche dallo schema, gli indici solo nella migrazione (`migrateHostsArchivio`). */
+export const DDL_HOSTS_ARCHIVIO: ReadonlyArray<readonly [string, string]> = [
+  ["hosts_archivio", `CREATE TABLE IF NOT EXISTS hosts_archivio (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  host_id_originale INTEGER NOT NULL,
+  network_id INTEGER NOT NULL,
+  ip TEXT NOT NULL,
+  mac_hex TEXT,
+  nome TEXT NOT NULL,
+  motivo TEXT NOT NULL CHECK(motivo IN ('assente', 'cambio_ip')),
+  dettaglio TEXT,
+  ultima_vista TEXT,
+  istantanea TEXT NOT NULL,
+  archiviato_il TEXT NOT NULL DEFAULT (datetime('now')),
+  archiviato_da TEXT NOT NULL,
+  recuperato_il TEXT, recuperato_da TEXT, nuovo_host_id INTEGER)`],
+];
+export const INDICI_HOSTS_ARCHIVIO: ReadonlyArray<readonly [string, string]> = [
+  ["idx_hosts_archivio_mac", "CREATE INDEX idx_hosts_archivio_mac ON hosts_archivio(mac_hex)"],
+  ["idx_hosts_archivio_il", "CREATE INDEX idx_hosts_archivio_il ON hosts_archivio(archiviato_il)"],
+];
+
 /**
  * Pannello Zabbix in sola lettura (passo 7.4-7.5 del piano di solidità, 16/10; API del centro in DA-Zabbix,
  * `docs/2026-10-16-api-lettura-per-cliente-design.md`). Dati del cliente → DB del tenant.
@@ -1528,6 +1553,10 @@ CREATE TABLE IF NOT EXISTS topology_link_overrides (
 -- Topologia: unioni e separazioni a mano (ADR 0021). Stesse CREATE della migrazione
 -- runtime (migrateTopologyUnioni in db-tenant.ts), che aggiunge gli indici.
 ${DDL_TOPOLOGY_UNIONI.map(([, ddl]) => `${ddl};`).join("\n\n")}
+
+-- Archivio degli host tolti dalla pulizia (piano 2026-10-20). Stessa CREATE della migrazione
+-- runtime (migrateHostsArchivio in db-tenant.ts), che aggiunge gli indici.
+${DDL_HOSTS_ARCHIVIO.map(([, ddl]) => `${ddl};`).join("\n\n")}
 
 -- Controller di rete (UniFi, poi Omada): uno per riga, nel DB del cliente.
 -- Prima la configurazione era una sola, nelle impostazioni globali dell'hub

@@ -16,7 +16,7 @@ import { resolveDataDir } from "./data-dir";
 import { buildPatchFromHost, buildPatchFromDevice, buildSyncMerge, buildSourceLabel } from "./inventory/discovery-sync";
 import fs from "fs";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { DDL_TOPOLOGY_CAVI, DDL_TOPOLOGY_UNIONI, INDICI_TOPOLOGY_UNIONI, TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL } from "./db-tenant-schema";
+import { DDL_HOSTS_ARCHIVIO, DDL_TOPOLOGY_CAVI, DDL_TOPOLOGY_UNIONI, INDICI_HOSTS_ARCHIVIO, INDICI_TOPOLOGY_UNIONI, TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL } from "./db-tenant-schema";
 import { HYPERVISOR_SYNC_MINUTES, SCHEDULED_JOB_TYPES_CHECK_SQL } from "./scheduled-job-types";
 import { isProxmoxVeDevice } from "./devices/device-acquisition-resolve";
 import { macToHex, normalizeMac, normalizeMacForStorage } from "./utils";
@@ -562,6 +562,30 @@ export function migrateTopologyUnioni(db: Database.Database): string[] {
       added.push(name);
     }
     for (const [name, ddl] of INDICI_TOPOLOGY_UNIONI) {
+      if (exists("index", name)) continue;
+      db.exec(ddl);
+      added.push(name);
+    }
+  })();
+  return added;
+}
+
+/**
+ * Migrazione dell'archivio degli host (pulizia degli host assenti, piano 2026-10-20, Task 1): la tabella `hosts_archivio`
+ * e i suoi due indici. Gemella di `migrateTopologyUnioni`: additiva, idempotente, in una transazione, restituisce ciò che
+ * aggiunge. Chiamata in fondo a `getTenantDb`.
+ */
+export function migrateHostsArchivio(db: Database.Database): string[] {
+  const added: string[] = [];
+  const exists = (type: "table" | "index", name: string): boolean =>
+    !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = ? AND name = ?").get(type, name);
+  db.transaction(() => {
+    for (const [name, ddl] of DDL_HOSTS_ARCHIVIO) {
+      if (exists("table", name)) continue;
+      db.exec(ddl);
+      added.push(name);
+    }
+    for (const [name, ddl] of INDICI_HOSTS_ARCHIVIO) {
       if (exists("index", name)) continue;
       db.exec(ddl);
       added.push(name);
@@ -2086,6 +2110,17 @@ export function getTenantDb(tenantCode: string): Database.Database {
     SCHEMA_UNIONI.set(newDb, verificaSchemaUnioni(newDb));
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: verifica dello schema delle unioni fallita, si rifà alla prima lettura:`, e);
+  }
+
+  // Archivio della pulizia degli host (piano 2026-10-20): una tabella e due indici, solo cose nuove. Se fallisce il tenant si
+  // apre lo stesso: archiviare e recuperare falliscono con l'errore di SQLite (tabella assente), niente si cancella senza istantanea.
+  try {
+    const added = migrateHostsArchivio(newDb);
+    if (added.length > 0) {
+      console.info(`[db-tenant] ${tenantCode}: archivio host, aggiunto ${added.join(", ")}`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione dell'archivio host fallita, la pulizia degli host non è disponibile:`, e);
   }
 
   tenantDbs.set(tenantCode, { db: newDb, lastUsed: Date.now() });

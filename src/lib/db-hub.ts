@@ -420,6 +420,23 @@ function initializeHubDb(db: Database.Database): void {
       db.exec("ALTER TABLE users ADD COLUMN email TEXT");
     }
   } catch { /* ignore */ }
+  // Verifica in due passaggi (Riccardo, 20/10; ADR 0023): richiesta dall'admin utente per
+  // utente, segreto TOTP cifrato con encrypt(), proposto (QR) a parte finché il primo codice
+  // giusto non lo conferma. Niente catch muto: senza queste colonne l'accesso non si legge.
+  {
+    const cols = new Set((db.prepare("PRAGMA table_info(users)").all() as { name: string }[]).map((c) => c.name));
+    const nuove: [string, string][] = [
+      ["totp_richiesta", "INTEGER NOT NULL DEFAULT 0"],
+      ["totp_segreto", "TEXT"],
+      ["totp_attivato_at", "TEXT"],
+      ["totp_ultimo_passo", "INTEGER"],
+      ["totp_proposto", "TEXT"],
+      ["totp_proposto_scade", "TEXT"],
+    ];
+    for (const [nome, tipo] of nuove) {
+      if (!cols.has(nome)) db.exec(`ALTER TABLE users ADD COLUMN ${nome} ${tipo}`);
+    }
+  }
   // Migrazione: aggiunge colonne agent_* a tenants se mancanti (architettura hub + agent remoti)
   try {
     const tcols = db.prepare("PRAGMA table_info(tenants)").all() as { name: string }[];
@@ -572,6 +589,16 @@ export interface HubUser {
   tenant_id: number | null;
   created_at: string;
   last_login: string | null;
+  /** Verifica in due passaggi (ADR 0023): 1 = richiesta dall'admin. */
+  totp_richiesta?: number;
+  /** Segreto confermato, cifrato con encrypt(); null = non ancora attivata. */
+  totp_segreto?: string | null;
+  totp_attivato_at?: string | null;
+  /** Ultimo passo TOTP usato: un codice uguale o più vecchio non vale. */
+  totp_ultimo_passo?: number | null;
+  /** Segreto proposto col QR, cifrato, valido fino a totp_proposto_scade. */
+  totp_proposto?: string | null;
+  totp_proposto_scade?: string | null;
 }
 
 export interface FingerprintClassificationMapRow {
@@ -935,6 +962,48 @@ export function createUser(
   );
   const result = stmt.run(username, passwordHash, email?.trim() || null, role, tenantId ?? null);
   return getHubDb().prepare("SELECT * FROM users WHERE id = ?").get(result.lastInsertRowid) as HubUser;
+}
+
+// ── Verifica in due passaggi (ADR 0023) ─────────────────────────────────
+// Le scritture sono condizionate: un codice già usato o un QR già confermato non passano
+// due volte, nemmeno con due accessi nello stesso istante (changes === 0 = rifiuto).
+
+export function salvaTotpProposto(userId: number, segretoCifrato: string, scadeIso: string): void {
+  getHubDb()
+    .prepare("UPDATE users SET totp_proposto = ?, totp_proposto_scade = ? WHERE id = ? AND totp_segreto IS NULL")
+    .run(segretoCifrato, scadeIso, userId);
+}
+
+/** Conferma il proposto: true solo se era ancora quello e la 2FA non era già attiva. */
+export function attivaTotp(userId: number, propostoCifrato: string, passo: number): boolean {
+  return (
+    getHubDb()
+      .prepare(
+        `UPDATE users SET totp_segreto = totp_proposto, totp_attivato_at = datetime('now'), totp_ultimo_passo = ?,
+           totp_proposto = NULL, totp_proposto_scade = NULL
+         WHERE id = ? AND totp_segreto IS NULL AND totp_proposto = ?`,
+      )
+      .run(passo, userId, propostoCifrato).changes === 1
+  );
+}
+
+/** Segna il passo usato: false se un accesso ha già usato quel passo o uno più nuovo. */
+export function usaPassoTotp(userId: number, passo: number): boolean {
+  return (
+    getHubDb()
+      .prepare("UPDATE users SET totp_ultimo_passo = ? WHERE id = ? AND (totp_ultimo_passo IS NULL OR totp_ultimo_passo < ?)")
+      .run(passo, userId, passo).changes === 1
+  );
+}
+
+/** Azione dell'admin: richiedi (accende), azzera (nuovo QR al prossimo accesso), togli (spegne e cancella). */
+export function impostaSecondaVerifica(userId: number, azione: "richiedi" | "azzera" | "togli"): boolean {
+  const pulisci = "totp_segreto = NULL, totp_attivato_at = NULL, totp_ultimo_passo = NULL, totp_proposto = NULL, totp_proposto_scade = NULL";
+  const sql =
+    azione === "richiedi" ? "UPDATE users SET totp_richiesta = 1 WHERE id = ?"
+      : azione === "azzera" ? `UPDATE users SET ${pulisci} WHERE id = ?`
+        : `UPDATE users SET totp_richiesta = 0, ${pulisci} WHERE id = ?`;
+  return getHubDb().prepare(sql).run(userId).changes === 1;
 }
 
 export function updateUserLastLogin(userId: number): void {

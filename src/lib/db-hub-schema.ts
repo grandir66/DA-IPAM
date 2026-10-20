@@ -33,7 +33,14 @@ CREATE TABLE IF NOT EXISTS users (
   role TEXT NOT NULL DEFAULT 'admin' CHECK(role IN ('superadmin', 'admin', 'viewer')),
   tenant_id INTEGER REFERENCES tenants(id) ON DELETE SET NULL,
   created_at TEXT DEFAULT (datetime('now')),
-  last_login TEXT
+  last_login TEXT,
+  -- Verifica in due passaggi (ADR 0023); sulle installazioni esistenti le aggiunge db-hub.ts.
+  totp_richiesta INTEGER NOT NULL DEFAULT 0,
+  totp_segreto TEXT,
+  totp_attivato_at TEXT,
+  totp_ultimo_passo INTEGER,
+  totp_proposto TEXT,
+  totp_proposto_scade TEXT
 );
 
 CREATE TABLE IF NOT EXISTS user_tenant_access (

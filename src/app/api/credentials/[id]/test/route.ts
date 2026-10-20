@@ -7,6 +7,7 @@ import { portaCredenziale, type CredProtocol } from "@/lib/credentials/porte";
 import { provaCredenzialeSnmpDb } from "@/lib/credentials/prova-snmp";
 import { tipiPerProtocollo } from "@/lib/credentials/tipi";
 import { accessoSshDb } from "@/lib/credentials/segreti";
+import { avviaChocoDopoCredenziali } from "@/lib/patch/choco-automatico";
 
 const TEST_TIMEOUT_MS = 25000;
 
@@ -22,6 +23,8 @@ function persistValidatedBinding(
     const host = getHostByIp(ip);
     if (!host?.id) return;
     setHostCredentialValidatedByKey(host.id, credentialId, protocolType, port, { auto_detected: false });
+    // WinRM verificato: Chocolatey si installa da solo, se serve (21/10).
+    if (protocolType === "winrm") avviaChocoDopoCredenziali([host.id]);
   } catch (e) {
     console.warn("[credentials/test] persistValidatedBinding failed:", e);
   }

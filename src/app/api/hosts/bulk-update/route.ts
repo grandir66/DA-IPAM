@@ -7,6 +7,7 @@ import {
 } from "@/lib/db-tenant";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
+import { avviaChocoDopoCredenziali } from "@/lib/patch/choco-automatico";
 import { z } from "zod";
 import { DEVICE_CLASSIFICATIONS } from "@/lib/device-classifications";
 
@@ -101,6 +102,8 @@ export async function PATCH(request: Request) {
           const esito = assegnaCredenzialeAgliHost(host_ids, credential_id, proto, port);
           credentialsAdded = esito.aggiunte;
           credentialsFailed = esito.falliti.length;
+          // WinRM assegnato in blocco: Chocolatey si installa da solo dove serve (21/10).
+          if (proto === "winrm") avviaChocoDopoCredenziali(host_ids.filter((h) => !esito.falliti.includes(h)));
         } catch (err) {
           if (err instanceof VoceNonValePerProtocollo) return NextResponse.json({ error: err.message }, { status: 400 });
           throw err;

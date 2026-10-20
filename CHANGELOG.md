@@ -4,6 +4,45 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-21 · Chocolatey si installa da solo sugli host Windows
+
+Decisione di Riccardo (21/10): fino a oggi Chocolatey si installava solo a mano, host per host, dal
+bootstrap della pagina del dispositivo (60-120 s, solo admin). Un host dimenticato restava senza patch e
+nessuno lo diceva. Ora, con il modulo Patch Management attivo, parte da solo.
+
+### Aggiunto
+
+- **Installazione automatica** (`lib/patch/choco-automatico.ts`) sugli host Windows (`os_family`) con una
+  credenziale WinRM secondo la regola del loader delle patch (`hostConCredenzialeWinrmDb`, compreso
+  l'account WinRM dell'integrazione AD): (1) subito, in sottofondo, quando una credenziale WinRM di un host
+  viene salvata (riga dell'host, modifica in blocco) o verificata con successo (prova della voce, prova del
+  binding dell'apparato, «validata» a mano); (2) ogni notte alle 02:00 (ora del server, cron in
+  `server.ts`) per chi non ha Chocolatey o ha un tentativo fallito. Ogni tentativo è un bootstrap vero
+  (`executeBootstrap`): riga in `patch_operations` con `user_id = 0`, che lo storico mostra come
+  «Automatico», con esito e motivo dell'errore (WinRM rifiutato, niente internet, timeout).
+- **Freni**: già installato (ultimo probe senza `CHOCO_MISSING` o ultimo bootstrap riuscito) → non si tocca;
+  un'operazione in coda o in corso sull'host, o un'installazione già avviata da questo processo → si salta
+  (mai due insieme sullo stesso host); al massimo **3 installazioni insieme** in tutto il processo; di notte
+  al massimo **3 tentativi automatici falliti**, poi l'host resta fermo finché un admin non lo riprova a
+  mano (un bootstrap con utente vero azzera il conto). Il salvataggio di una credenziale prova comunque una
+  volta: è un gesto di un admin.
+- **Interruttore «Installa Chocolatey automaticamente»** nella pagina del modulo Patch Management
+  (`/settings/moduli/patch_management`), **acceso di default**, impostazione del tenant
+  `patch.choco_automatico` («0» = spento); rotta `GET/PUT /api/patch/choco-automatico` (lettura con
+  sessione e modulo attivo, scrittura admin). La card dice quanti host Windows con WinRM sono installati,
+  da installare, da ritentare e fermi.
+- **Prove** `lib/patch/__tests__/choco-automatico.test.ts` (viste fallire togliendo ogni freno): credenziali
+  salvate → un solo bootstrap anche con due richieste insieme; Linux, senza WinRM, interruttore spento,
+  modulo spento, già installato, operazione in corso → niente; errore → storico col motivo e nuovo tentativo
+  fino a 3 notti, poi fermo e sbloccato da un admin; mai più di 3 installazioni insieme.
+
+### Da sapere
+
+- `dev` arriva da solo alle appliance su quel canale: con l'interruttore acceso di default, dopo il
+  rilascio Chocolatey parte sugli host Windows con credenziale WinRM delle appliance che hanno il modulo
+  Patch Management attivo (al primo salvataggio/verifica di una credenziale, e comunque la notte dopo).
+- Le credenziali WinRM trovate dalla discovery non fanno partire niente subito: le prende il giro notturno.
+
 ## [Non rilasciato] — 2026-10-21 · I link verso l'appliance usano l'host del browser
 
 Riccardo (21/10, «ok per 1»): l'installatore (Deploy-Appliance `connect_bootstrap_launchpad`) registra gli

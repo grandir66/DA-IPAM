@@ -48,6 +48,7 @@ import { IntegrationViewer } from "@/components/integrations/integration-viewer"
 import { VerificaModulo } from "@/components/integrations/apertura-browser";
 import { ElencoModuli } from "@/components/settings/elenco-moduli";
 import { InterruttoreSenzaAgente } from "@/components/settings/interruttore-senza-agente";
+import { InterruttoreChocoAutomatico } from "@/components/settings/interruttore-choco-automatico";
 import { CredentialsVaultPanel } from "./credentials-vault-panel";
 import { fetchJson } from "@/lib/fetch-json";
 import { LoadError } from "@/components/shared/load-error";
@@ -431,6 +432,7 @@ export function ModulesTab({ isAdmin, solo }: { isAdmin: boolean; solo?: string 
           )}
         </Card>
         )}
+        {patchInstalled && <InterruttoreChocoAutomatico isAdmin={isAdmin} />}
       </ModuleSection>
 
       <ModuleSection

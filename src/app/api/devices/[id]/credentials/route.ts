@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { avviaChocoDopoCredenziali } from "@/lib/patch/choco-automatico";
 import { z } from "zod";
 import { requireAdmin, requireAuth, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
@@ -207,6 +208,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
               binding.port,
               { auto_detected: false }
             );
+            // WinRM verificato: Chocolatey si installa da solo, se serve (21/10).
+            if (binding.protocol_type === "winrm") avviaChocoDopoCredenziali([h.id]);
           }
         } catch (e) {
           console.warn("[devices/credentials/test] persistValidatedBinding failed:", e);

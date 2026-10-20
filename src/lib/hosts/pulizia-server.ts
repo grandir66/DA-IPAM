@@ -12,6 +12,7 @@ import { GIORNI_ASSENZA_ARCHIVIO } from "@/lib/hosts/pulizia";
 import { candidatiPulizia } from "@/lib/hosts/pulizia-candidati";
 import {
   applicaPulizia,
+  archivioScaduto,
   ErroreApplica,
   ErroreConferma,
   GIORNI_ARCHIVIO_PRIMA_DI_CANCELLARE,
@@ -23,6 +24,22 @@ import {
 export interface RispostaRotta { status: number; body: unknown }
 
 const errore = (status: number, error: string): RispostaRotta => ({ status, body: { error } });
+
+/** Il nome dell'errore, per il journal: il testo può contenere nomi e IP degli host del cliente (niente PII nei log). */
+const nomeErrore = (e: unknown): string => (e instanceof Error ? e.name : "errore");
+
+/**
+ * L'involucro delle rotte GET (m3 della revisione finale): un errore diventa 500 col messaggio fisso, e nel journal
+ * va `[hosts] <contesto>` col solo nome dell'errore, come i POST.
+ */
+export function rispostaOGuasto(contesto: string, messaggio500: string, calcola: () => RispostaRotta): RispostaRotta {
+  try {
+    return calcola();
+  } catch (e) {
+    console.error(`[hosts] ${contesto}:`, nomeErrore(e));
+    return errore(500, messaggio500);
+  }
+}
 
 const CorpoApplica = z.object({
   ids: z.array(
@@ -38,18 +55,25 @@ const CorpoApplica = z.object({
   error: (iss) => (iss.code === "unrecognized_keys" ? "La richiesta contiene campi non previsti" : "Corpo della richiesta non valido: servono ids e conferma"),
 }).strict();
 
-/** GET /api/hosts/pulizia — anteprima: cosa si archivierebbe e chi resta fuori, col perché. Non scrive niente. */
+/**
+ * GET /api/hosts/pulizia — anteprima: cosa si archivierebbe, chi resta fuori col perché, e le righe d'archivio
+ * scadute che lo stesso «Applica» cancellerà per sempre (`scadute`, per nome: m7 della revisione finale). Non scrive niente.
+ */
 export function rispostaAnteprima(): RispostaRotta {
   const { candidati, esclusi } = candidatiPulizia();
   return {
     status: 200,
-    body: { candidati, esclusi, giorni: GIORNI_ASSENZA_ARCHIVIO, giorniArchivio: GIORNI_ARCHIVIO_PRIMA_DI_CANCELLARE },
+    body: {
+      candidati, esclusi, scadute: archivioScaduto(),
+      giorni: GIORNI_ASSENZA_ARCHIVIO, giorniArchivio: GIORNI_ARCHIVIO_PRIMA_DI_CANCELLARE,
+    },
   };
 }
 
 /**
  * POST /api/hosts/pulizia — `{ ids, conferma }`: archivia i candidati di adesso fra gli `ids`. 400 su corpo storto o
- * conferma sbagliata (niente scritto); 500 con l'elenco per nome se l'archiviazione si interrompe a metà.
+ * conferma sbagliata (niente scritto); 500 con l'elenco per nome se l'archiviazione si interrompe a metà. Nel 500 il
+ * messaggio è fisso (dove si è fermato, per nome); nel journal solo il nome dell'errore e l'id dell'host (m2).
  */
 export function rispostaApplica(corpo: unknown, da: string): RispostaRotta {
   const parsed = CorpoApplica.safeParse(corpo);
@@ -59,6 +83,9 @@ export function rispostaApplica(corpo: unknown, da: string): RispostaRotta {
   } catch (e) {
     if (e instanceof ErroreConferma) return errore(400, e.message);
     if (e instanceof ErroreApplica) {
+      console.error("[hosts] pulizia, applica interrotta:", nomeErrore(e.cause),
+        e.hostIdFallito !== null ? `all'host #${e.hostIdFallito}` : "alla cancellazione dell'archivio scaduto",
+        `(${e.archiviati.length} archiviati, ${e.nonArchiviati.length} ancora fra gli host)`);
       return {
         status: 500,
         body: { error: e.message, archiviati: e.archiviati, nonArchiviati: e.nonArchiviati, nonPiuCandidati: e.nonPiuCandidati },

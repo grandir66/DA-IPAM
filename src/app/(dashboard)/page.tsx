@@ -13,7 +13,7 @@ import { getTenantDb, withTenant } from "@/lib/db-tenant";
 import { kpiSicurezza, type KpiSicurezza } from "@/lib/security/kpi-dashboard";
 import { GraficoAccessi } from "@/components/dashboard/grafico-accessi";
 import { ASSENTE_DOPO_GIORNI, condizioneAssente } from "@/lib/hosts/assenti";
-import { contaArchiviati } from "@/lib/hosts/pulizia-archivio";
+import { contaArchiviatiOTrattino } from "@/lib/hosts/pulizia-archivio";
 import { getIntegrationsOverview, type IntegrationHealth } from "@/lib/integrations/dashboard-health";
 import { getModulesHealth } from "@/lib/modules/health";
 import { MODULE_DESCRIPTORS, resolveModules, type ModuleState } from "@/lib/modules/registry";
@@ -133,7 +133,8 @@ export default async function DashboardPage() {
       .prepare(`SELECT COALESCE(SUM(status = 'offline' AND NOT ${condizioneAssente()}), 0) AS recenti, COALESCE(SUM(${condizioneAssente()}), 0) AS assenti FROM hosts`)
       .get() as { recenti: number; assenti: number },
   );
-  const archiviati = withTenant(tenantCode, () => contaArchiviati());
+  // «—» se l'archivio non si legge: l'indicatore non fa cadere la dashboard (m11, revisione finale).
+  const archiviati = withTenant(tenantCode, () => contaArchiviatiOTrattino());
   const denom = stats.online_hosts + offlineSplit.recenti + stats.unknown_hosts;
   const healthPct = denom > 0 ? Math.round((stats.online_hosts / denom) * 100) : 0;
   const healthColor =

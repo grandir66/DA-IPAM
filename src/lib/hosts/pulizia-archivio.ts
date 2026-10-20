@@ -261,15 +261,32 @@ export function recuperaHost(archivioId: number, da: string): EsitoRecupero {
 }
 
 /**
- * Cancella per sempre le righe archiviate da più di 90 giorni (recuperate comprese). Una riga di registro per riga,
- * scritte tutte insieme con una scrittura sola dopo i DELETE e prima del COMMIT: o tutte o nessuna.
+ * Le righe archiviate da più di 90 giorni che si cancellano. Una riga recuperata no finché il suo host recuperato
+ * esiste: è il segno «recuperato a mano» che lo tiene fuori dalla pulizia (`pulizia-candidati.ts`, I1 della
+ * revisione finale, 20/10); se quell'host non c'è più, si cancella coi 90 giorni come le altre.
+ */
+function righeScadute(d: Database.Database): Array<{ id: number; ip: string; nome: string; mac_hex: string | null }> {
+  return d.prepare(`SELECT a.id, a.ip, a.nome, a.mac_hex FROM hosts_archivio a
+      WHERE a.archiviato_il < datetime('now', ?)
+        AND (a.recuperato_il IS NULL OR NOT EXISTS (SELECT 1 FROM hosts h WHERE h.id = a.nuovo_host_id))
+      ORDER BY a.id`)
+    .all(`-${GIORNI_ARCHIVIO_PRIMA_DI_CANCELLARE} days`) as Array<{ id: number; ip: string; nome: string; mac_hex: string | null }>;
+}
+
+/** Che cosa cancellerebbe adesso `cancellaArchivioScaduto`, senza scrivere: per la finestra di conferma di «Applica». */
+export function archivioScaduto(): Array<{ id: number; ip: string; nome: string }> {
+  return righeScadute(dbCorrente()).map(({ id, ip, nome }) => ({ id, ip, nome }));
+}
+
+/**
+ * Cancella per sempre le righe d'archivio scadute (`righeScadute`). Una riga di registro per riga, scritte tutte
+ * insieme con una scrittura sola dopo i DELETE e prima del COMMIT: o tutte o nessuna.
  */
 export function cancellaArchivioScaduto(): Array<{ id: number; ip: string; nome: string }> {
   const d = dbCorrente();
   const tenant = getCurrentTenantCode();
   return runInTenantTransaction(() => {
-    const scadute = d.prepare("SELECT id, ip, nome, mac_hex FROM hosts_archivio WHERE archiviato_il < datetime('now', ?) ORDER BY id")
-      .all(`-${GIORNI_ARCHIVIO_PRIMA_DI_CANCELLARE} days`) as Array<{ id: number; ip: string; nome: string; mac_hex: string | null }>;
+    const scadute = righeScadute(d);
     const togli = d.prepare("DELETE FROM hosts_archivio WHERE id = ?");
     const registro: RigaRegistroPulizia[] = [];
     for (const r of scadute) {
@@ -300,8 +317,23 @@ export function contaArchiviati(): number {
 }
 
 /**
+ * Per l'indicatore della dashboard (m11 della revisione finale): il numero, o «—» se non si legge. Un archivio
+ * illeggibile non deve far cadere tutta la dashboard; nel journal solo il nome dell'errore (il testo può avere IP).
+ */
+export function contaArchiviatiOTrattino(): number | "—" {
+  try {
+    return contaArchiviati();
+  } catch (error) {
+    console.error("[dashboard] conteggio degli archiviati:", error instanceof Error ? error.name : "errore");
+    return "—";
+  }
+}
+
+/**
  * Gli IP che il MAC dell'host ha avuto prima di quello attuale: dallo storico (`mac_ip_history`) e dall'archivio
  * (righe non recuperate dello stesso MAC). Un IP una volta sola, con la data più recente; più recente prima.
+ * Non sono «precedenti» gli IP che oggi stanno su un host (qualunque stato) con lo stesso MAC: un router o un
+ * firewall con un'interfaccia per VLAN ha più IP adesso, non IP di prima (m10 della revisione finale).
  * Host che non c'è o MAC non valido: elenco vuoto.
  */
 export function ipPrecedentiDi(hostId: number): Array<{ ip: string; fino_al: string; fonte: "storico" | "archivio" }> {
@@ -311,6 +343,11 @@ export function ipPrecedentiDi(hostId: number): Array<{ ip: string; fino_al: str
   if (!host || !macHex) return [];
   const archivio = d.prepare(`SELECT ip, COALESCE(ultima_vista, archiviato_il) AS fino_al FROM hosts_archivio
       WHERE mac_hex = ? AND recuperato_il IS NULL AND ip <> ?`).all(macHex, host.ip) as IpPrecedente[];
+  // Gli IP di oggi dello stesso MAC, in qualunque forma sia scritto (AA:BB:…, aa-bb-…, aabb.cc…): il filtro SQL
+  // sfronda, macHexValido decide.
+  const ipDiOggi = new Set((d.prepare(`SELECT ip, mac FROM hosts WHERE mac IS NOT NULL
+      AND UPPER(REPLACE(REPLACE(REPLACE(REPLACE(mac, ':', ''), '-', ''), '.', ''), ' ', '')) = ?`)
+    .all(macHex) as Array<{ ip: string; mac: string }>).filter((h) => macHexValido(h.mac) === macHex).map((h) => h.ip));
   const quando = (s: string): number => {
     const t = parseDbDate(s).getTime();
     return Number.isNaN(t) ? -Infinity : t;
@@ -321,6 +358,7 @@ export function ipPrecedentiDi(hostId: number): Array<{ ip: string; fino_al: str
     ...archivio.map((p) => ({ ...p, fonte: "archivio" as const })),
   ];
   for (const p of candidati) {
+    if (ipDiOggi.has(p.ip)) continue;
     const gia = perIp.get(p.ip);
     if (!gia || quando(p.fino_al) > quando(gia.fino_al)) perIp.set(p.ip, p);
   }
@@ -332,12 +370,17 @@ export function ipPrecedentiDi(hostId: number): Array<{ ip: string; fino_al: str
 // ═══════════════════════════════════════════════════════════════════════════
 
 type HostNominato = { id: number; ip: string; nome: string };
+/** Un host mandato e non archiviato, col perché quando non si legge già dal nome (es. «rete in scansione, riprova dopo»). */
+type HostNonArchiviato = HostNominato & { perche?: string };
+
+/** Il perché degli host che «Applica» rimanda perché la loro rete è in scansione (m4 della revisione finale). */
+export const PERCHE_RETE_IN_SCANSIONE = "rete in scansione, riprova dopo";
 
 export interface EsitoApplica {
   /** Id dell'host (quello mandato), non della riga d'archivio. */
   archiviati: HostNominato[];
-  /** Mandati ma non candidati adesso: tornati online, esclusi, troppo recenti, già archiviati, spariti. */
-  nonPiuCandidati: HostNominato[];
+  /** Mandati ma non candidati adesso: tornati online, esclusi, troppo recenti, già archiviati, spariti, rete in scansione. */
+  nonPiuCandidati: HostNonArchiviato[];
   /** Righe d'archivio (id della riga) oltre i 90 giorni, cancellate da questo «Applica». */
   cancellatiDallArchivio: HostNominato[];
 }
@@ -354,17 +397,28 @@ export class ErroreConferma extends Error {
  * Un'archiviazione è fallita a metà dell'elenco. Ogni host si archivia nella sua transazione: quelli prima del
  * guasto restano archiviati (e nel registro), quello che ha fallito e i seguenti restano in `hosts`. Il messaggio
  * li nomina tutti; l'archivio scaduto in questo caso non si cancella.
+ *
+ * Il messaggio va al client: dice dove si è fermato (nome e IP dell'host, o la cancellazione dell'archivio
+ * scaduto) con un testo fisso, mai il testo grezzo di SQLite (m2 della revisione finale). L'errore vero resta in
+ * `cause`, e chi scrive il journal ne usa solo il nome con `hostIdFallito`.
  */
 export class ErroreApplica extends Error {
+  readonly hostIdFallito: number | null;
   constructor(
     readonly archiviati: HostNominato[],
     readonly nonArchiviati: HostNominato[],
-    readonly nonPiuCandidati: HostNominato[],
-    causa: string,
+    readonly nonPiuCandidati: HostNonArchiviato[],
+    fallito: HostNominato | null,
+    causa: unknown,
   ) {
     const elenco = (h: HostNominato[]) => (h.length ? h.map((x) => `${x.nome} (${x.ip})`).join(", ") : "nessuno");
-    super(`Archiviazione interrotta: ${causa}. Archiviati: ${elenco(archiviati)}. Non archiviati, ancora fra gli host: ${elenco(nonArchiviati)}.`);
+    const dove = fallito
+      ? `errore del database su ${fallito.nome} (${fallito.ip})`
+      : `host archiviati, ma la cancellazione dell'archivio oltre i ${GIORNI_ARCHIVIO_PRIMA_DI_CANCELLARE} giorni non è riuscita`;
+    super(`Archiviazione interrotta: ${dove}; il dettaglio è nel journal del server. `
+      + `Archiviati: ${elenco(archiviati)}. Non archiviati, ancora fra gli host: ${elenco(nonArchiviati)}.`, { cause: causa });
     this.name = "ErroreApplica";
+    this.hostIdFallito = fallito?.id ?? null;
   }
 }
 
@@ -393,6 +447,8 @@ function nominaNonCandidati(d: Database.Database, ids: number[]): HostNominato[]
  * - si ricalcolano i candidati ADESSO e si archivia solo l'intersezione (motivo e dettaglio di adesso); gli altri id
  *   tornano per nome in `nonPiuCandidati` (caso 3: tornati online nel frattempo, o un id escluso in una richiesta
  *   scritta a mano);
+ * - un candidato di una rete che un giro di scansione tiene adesso si rimanda, come fa il job (`inScansione`): torna
+ *   fra i «non più candidati» col perché «rete in scansione, riprova dopo» (m4 della revisione finale);
  * - poi si cancella l'archivio scaduto (caso 5: a job spento nessun altro lo farebbe).
  * Un host per transazione (scelta del Task 4): un guasto a metà lascia archiviati i precedenti e lancia
  * `ErroreApplica`, che li nomina con quelli rimasti; un host che a metà non è più archiviabile va fra i «non più
@@ -409,18 +465,32 @@ export function applicaPulizia(ids: number[], conferma: number, da: string): Esi
 
   const d = dbCorrente();
   const candidati = new Map(candidatiPulizia().candidati.map((c) => [c.id, c]));
-  const daArchiviare = ids.filter((id) => candidati.has(id)).map((id) => candidati.get(id)!);
+  const scelti = ids.filter((id) => candidati.has(id)).map((id) => candidati.get(id)!);
   const nonPiuCandidati = nominaNonCandidati(d, ids.filter((id) => !candidati.has(id)));
+  const occupato = inScansione(d, scelti);
+  const daArchiviare = scelti.filter((c) => !occupato(c));
+  const rinviati: HostNonArchiviato[] = scelti.filter(occupato).map((c) => ({ ...nominato(c), perche: PERCHE_RETE_IN_SCANSIONE }));
 
   const g = archiviaElenco(d, daArchiviare, da);
   // Saltati a metà giro (non più offline, spariti): per chi ha premuto «Applica» sono «non più candidati».
-  const nonPiu = [...nonPiuCandidati, ...g.saltati];
-  if (!g.ok) {
-    if (g.fallito) throw new ErroreApplica(g.archiviati, g.nonArchiviati, nonPiu, `${g.fallito.nome} (${g.fallito.ip}): ${messaggio(g.errore)}`);
-    throw new ErroreApplica(g.archiviati, [], nonPiu,
-      `host archiviati, ma la cancellazione dell'archivio oltre i ${GIORNI_ARCHIVIO_PRIMA_DI_CANCELLARE} giorni non è riuscita (${messaggio(g.errore)})`);
-  }
+  const nonPiu = [...nonPiuCandidati, ...rinviati, ...g.saltati];
+  if (!g.ok) throw new ErroreApplica(g.archiviati, g.nonArchiviati, nonPiu, g.fallito, g.errore);
   return { archiviati: g.archiviati, nonPiuCandidati: nonPiu, cancellatiDallArchivio: g.cancellatiDallArchivio };
+}
+
+/**
+ * Chi fra i candidati sta su una rete che un giro di scansione tiene adesso (lucchetto in memoria,
+ * `network-scan-lock`): il giro sta per riscrivere quegli host, e uno tolto sotto i suoi piedi diventerebbe un host
+ * nuovo o un errore della scansione. Lo usano il job notturno e «Applica». Una lettura sola per le reti.
+ */
+function inScansione(d: Database.Database, candidati: Candidato[]): (c: Candidato) => boolean {
+  const tenant = getCurrentTenantCode();
+  const retePerHost = new Map((d.prepare("SELECT id, network_id FROM hosts WHERE id IN (SELECT value FROM json_each(?))")
+    .all(JSON.stringify(candidati.map((c) => c.id))) as Array<{ id: number; network_id: number }>).map((r) => [r.id, r.network_id]));
+  return (c) => {
+    const rete = retePerHost.get(c.id);
+    return tenant !== null && rete !== undefined && giroSullaRete(tenant, rete) !== undefined;
+  };
 }
 
 const messaggio = (e: unknown): string => (e instanceof Error ? e.message : String(e));
@@ -456,8 +526,15 @@ function archiviaElenco(d: Database.Database, daArchiviare: Candidato[], da: str
       const r = archiviaHost(c.id, c.motivo, c.dettaglio, da);
       archiviati.push({ id: c.id, ip: r.ip, nome: r.nome });
     } catch (errore) {
-      const ora = stato.get(c.id) as { status: string | null } | undefined;
-      if (!ora || ora.status !== "offline") {
+      // Se non si riesce nemmeno a rileggere lo stato, è un guasto: si ferma col primo errore, non con quello della
+      // rilettura, e chi ha premuto «Applica» riceve l'elenco per nome (m5 della revisione finale).
+      let ora: { status: string | null } | undefined | "illeggibile";
+      try {
+        ora = stato.get(c.id) as { status: string | null } | undefined;
+      } catch {
+        ora = "illeggibile";
+      }
+      if (ora !== "illeggibile" && (!ora || ora.status !== "offline")) {
         saltati.push(nominato(c));
         continue;
       }
@@ -499,15 +576,9 @@ export interface EsitoPuliziaNotturna {
  */
 export function runPuliziaHost(): EsitoPuliziaNotturna {
   const d = dbCorrente();
-  const tenant = getCurrentTenantCode();
   const { candidati } = candidatiPulizia();
-  const retePerHost = new Map((d.prepare("SELECT id, network_id FROM hosts WHERE id IN (SELECT value FROM json_each(?))")
-    .all(JSON.stringify(candidati.map((c) => c.id))) as Array<{ id: number; network_id: number }>).map((r) => [r.id, r.network_id]));
-  const inScansione = (c: Candidato): boolean => {
-    const rete = retePerHost.get(c.id);
-    return tenant !== null && rete !== undefined && giroSullaRete(tenant, rete) !== undefined;
-  };
-  const daArchiviare = candidati.filter((c) => !inScansione(c));
+  const occupato = inScansione(d, candidati);
+  const daArchiviare = candidati.filter((c) => !occupato(c));
   const rinviati = candidati.length - daArchiviare.length;
 
   const g = archiviaElenco(d, daArchiviare, "job");

@@ -15,6 +15,7 @@ import type Database from "better-sqlite3";
 import { closeTenantDb, deleteTenantDatabase, getTenantDb, withTenant } from "@/lib/db-tenant";
 import { closeHubDb } from "@/lib/db-hub";
 import { caricaHostPerPulizia, candidatiPulizia } from "@/lib/hosts/pulizia-candidati";
+import { archiviaHost, recuperaHost } from "@/lib/hosts/pulizia-archivio";
 
 const T = "PULIZIACAND2010";
 const T_VECCHIO = "PULIZIACAND2010V"; // tenant a parte: la prova delle tabelle mancanti le toglie
@@ -65,6 +66,12 @@ const LEGAMI: ReadonlyArray<readonly [string, (d: Database.Database, id: number,
   ["gruppo multihomed", (d, id) => {
     d.prepare("INSERT INTO multihomed_links (group_id, host_id, match_type, match_value) VALUES (?, ?, 'hostname', 'srv-file')").run(`mh-${id}`, id);
   }],
+  // Decisione del controllore del 20/10 (revisione finale), per prudenza: il vecchio cleanup proteggeva
+  // classification_manual, e i registri delle sessioni remote (MeshCentral) non si cancellano.
+  ["classificazione a mano", (d, id) => { d.prepare("UPDATE hosts SET classification = 'printer', classification_manual = 1 WHERE id = ?").run(id); }],
+  ["sessioni remote registrate", (d, id) => {
+    d.prepare("INSERT INTO mc_remote_session (host_id, operator, mesh_user, viewmode) VALUES (?, 'anna', 'anna@mesh', 11)").run(id);
+  }],
 ];
 
 for (const [perche, lega] of LEGAMI) {
@@ -86,6 +93,33 @@ for (const [perche, lega] of LEGAMI) {
     });
   });
 }
+
+test("comandi remoti registrati (mc_command_log, senza sessione): escluso «sessioni remote registrate»", () => {
+  withTenant(T, () => {
+    const d = getTenantDb(T);
+    const rete = nuovaRete(d);
+    const id = host(d, rete.id, `${rete.prefisso}.12`);
+    d.prepare("INSERT INTO mc_command_log (host_id, operator, command) VALUES (?, 'anna', 'ipconfig /all')").run(id);
+    const esito = candidatiPulizia();
+    assert.ok(!esito.candidati.some((c) => c.id === id), "non è fra i candidati");
+    assert.equal(esito.esclusi.find((e) => e.id === id)?.perche, "sessioni remote registrate");
+  });
+});
+
+test("I1: un host recuperato a mano dall'archivio non torna candidato al giro dopo («recuperato a mano»)", () => {
+  withTenant(T, () => {
+    const d = getTenantDb(T);
+    const rete = nuovaRete(d);
+    const id = host(d, rete.id, `${rete.prefisso}.14`);
+    const riga = archiviaHost(id, "assente", "assente da 100 giorni", "job");
+    const r = recuperaHost(riga.id, "anna");
+    assert.ok(r.ok);
+    // Torna offline con la last_seen di prima: per le sole regole dei giorni sarebbe di nuovo candidato.
+    const esito = candidatiPulizia();
+    assert.ok(!esito.candidati.some((c) => c.id === r.nuovoHostId), "il recuperato non è fra i candidati");
+    assert.equal(esito.esclusi.find((e) => e.id === r.nuovoHostId)?.perche, "recuperato a mano");
+  });
+});
 
 test("notes piena non esclude, un nome a mano di soli spazi nemmeno, un'unione tolta nemmeno", () => {
   withTenant(T, () => {
@@ -178,7 +212,7 @@ test("una tabella di legame che manca: errore che la nomina, non un «nessun leg
     host(d, rete.id, `${rete.prefisso}.10`);
     assert.ok(caricaHostPerPulizia().length > 0, "con tutte le tabelle il caricatore va");
     const tolte: string[] = [];
-    for (const tabella of ["multihomed_links", "topology_unioni", "host_credentials", "inventory_assets", "network_devices"]) {
+    for (const tabella of ["mc_command_log", "mc_remote_session", "hosts_archivio", "multihomed_links", "topology_unioni", "host_credentials", "inventory_assets", "network_devices"]) {
       d.exec(`DROP TABLE ${tabella}`);
       tolte.push(tabella);
       assert.throws(() => caricaHostPerPulizia(), (e: unknown) => {

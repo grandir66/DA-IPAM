@@ -17,8 +17,10 @@ import { closeTenantDb, deleteTenantDatabase, getTenantDb, migrateHostsArchivio,
 import { closeHubDb } from "@/lib/db-hub";
 import {
   archiviaHost,
+  archivioScaduto,
   cancellaArchivioScaduto,
   contaArchiviati,
+  contaArchiviatiOTrattino,
   ipPrecedentiDi,
   listaArchivio,
   recuperaHost,
@@ -186,25 +188,37 @@ test("recupero rifiutato: IP occupato, rete cancellata, già recuperato — ness
   });
 });
 
-test("cancellaArchivioScaduto toglie la riga a 91 giorni (anche recuperata) e lascia quella a 89", () => {
+test("cancellaArchivioScaduto toglie la riga a 91 giorni e lascia quella a 89; una recuperata resta finché c'è il suo host (I1)", () => {
   withTenant(T, () => {
     const d = getTenantDb(T);
     const rete = nuovaRete(d);
     const vecchia = archiviaHost(hostPieno(d, rete, `10.${80 + reti}.0.20`, null), "assente", "x", "job");
-    const vecchiaRecuperata = archiviaHost(hostPieno(d, rete, `10.${80 + reti}.0.21`, null), "assente", "x", "job");
-    assert.ok(recuperaHost(vecchiaRecuperata.id, "anna").ok);
+    // I1 (revisione finale, 20/10): la riga recuperata è il segno «recuperato a mano» che tiene l'host fuori dalla
+    // pulizia. Resta finché l'host recuperato esiste; se quell'host non c'è più si cancella coi 90 giorni.
+    const recuperataViva = archiviaHost(hostPieno(d, rete, `10.${80 + reti}.0.21`, null), "assente", "x", "job");
+    assert.ok(recuperaHost(recuperataViva.id, "anna").ok);
+    const recuperataSparita = archiviaHost(hostPieno(d, rete, `10.${80 + reti}.0.23`, null), "assente", "x", "job");
+    const r = recuperaHost(recuperataSparita.id, "anna");
+    assert.ok(r.ok);
+    d.prepare("DELETE FROM hosts WHERE id = ?").run(r.nuovoHostId);
     const recente = archiviaHost(hostPieno(d, rete, `10.${80 + reti}.0.22`, null), "assente", "x", "job");
     const indietro = d.prepare("UPDATE hosts_archivio SET archiviato_il = datetime('now', ?) WHERE id = ?");
     indietro.run("-91 days", vecchia.id);
-    indietro.run("-91 days", vecchiaRecuperata.id);
+    indietro.run("-200 days", recuperataViva.id);
+    indietro.run("-200 days", recuperataSparita.id);
     indietro.run("-89 days", recente.id);
 
-    const tolte = cancellaArchivioScaduto();
-    assert.deepEqual(tolte.map((t) => t.id).sort((x, y) => x - y), [vecchia.id, vecchiaRecuperata.id].sort((x, y) => x - y));
-    assert.ok(tolte.every((t) => t.nome === "pc-contabilita" && t.ip.startsWith(`10.${80 + reti}.0.`)));
+    const attese = [vecchia.id, recuperataSparita.id].sort((x, y) => x - y);
+    assert.deepEqual(archivioScaduto().map((t) => t.id), attese, "la lettura dice le stesse righe, senza cancellarle");
     const resta = (id: number) => !!d.prepare("SELECT 1 FROM hosts_archivio WHERE id = ?").get(id);
+    assert.ok(resta(vecchia.id) && resta(recuperataSparita.id), "archivioScaduto non scrive");
+
+    const tolte = cancellaArchivioScaduto();
+    assert.deepEqual(tolte.map((t) => t.id).sort((x, y) => x - y), attese);
+    assert.ok(tolte.every((t) => t.nome === "pc-contabilita" && t.ip.startsWith(`10.${80 + reti}.0.`)));
     assert.equal(resta(vecchia.id), false);
-    assert.equal(resta(vecchiaRecuperata.id), false);
+    assert.equal(resta(recuperataSparita.id), false);
+    assert.equal(resta(recuperataViva.id), true, "recuperata a 200 giorni col suo host vivo: resta");
     assert.equal(resta(recente.id), true);
     assert.deepEqual(cancellaArchivioScaduto(), [], "una seconda volta non c'è più niente");
   });
@@ -243,6 +257,8 @@ test("registro: una riga JSONL per operazione; registro non scrivibile → l'arc
     const r = recuperaHost(a.id, "marco");
     assert.ok(r.ok);
     d.prepare("UPDATE hosts_archivio SET archiviato_il = datetime('now', '-100 days') WHERE id = ?").run(a.id);
+    // I1: una riga recuperata si cancella coi 90 giorni solo quando il suo host recuperato non c'è più.
+    d.prepare("DELETE FROM hosts WHERE id = ?").run(r.nuovoHostId);
     cancellaArchivioScaduto();
 
     const mie = righeRegistro().filter((x) => x.archivioId === a.id);
@@ -338,6 +354,52 @@ test("ipPrecedentiDi: storico del MAC e archivio, un IP una volta, il più recen
     assert.equal(r.diNuovoInRete, `${base}30`);
     assert.equal(listaArchivio().righe.find((x) => x.id === a70.id)?.diNuovoInRete, `${base}30`);
     assert.deepEqual(ipPrecedentiDi(9_999_999), []);
+  });
+});
+
+test("m10: ipPrecedentiDi non elenca gli IP che oggi stanno su un host con lo stesso MAC (router con più VLAN)", () => {
+  withTenant(T, () => {
+    const d = getTenantDb(T);
+    const rete = nuovaRete(d);
+    const altra = nuovaRete(d);
+    const base = `10.${80 + reti - 1}.0.`;
+    const baseAltra = `10.${80 + reti}.0.`;
+    const hex = "AABBCC0011AA";
+    const router = hostPieno(d, rete, `${base}1`, "AA:BB:CC:00:11:AA", "online");
+    // Stesso MAC, altra VLAN, scritto in un'altra forma e offline: è ancora un IP dell'apparato, non un IP «precedente».
+    hostPieno(d, altra, `${baseAltra}1`, "aa-bb-cc-00-11-aa", "offline");
+    const storico = d.prepare("INSERT INTO mac_ip_history (mac_normalized, ip, source, changed_at) VALUES (?, ?, 'arp', datetime('now', ?))");
+    storico.run(hex, `${baseAltra}1`, "-3 days");
+    storico.run(hex, `${base}9`, "-30 days"); // questo sì: nessun host lo tiene oggi
+    // Archiviato e poi ritrovato dalla scansione come host nuovo, stesso IP e stesso MAC: in archivio c'è, ma oggi è suo.
+    archiviaHost(hostPieno(d, altra, `${baseAltra}2`, "AA:BB:CC:00:11:AA"), "assente", "assente da 100 giorni", "job");
+    hostPieno(d, altra, `${baseAltra}2`, "AABBCC0011AA", "unknown");
+
+    assert.deepEqual(ipPrecedentiDi(router).map((p) => p.ip), [`${base}9`]);
+  });
+});
+
+test("m11: contaArchiviatiOTrattino dà il numero, e «—» con il solo nome dell'errore nel journal se la lettura fallisce", () => {
+  withTenant(T, () => {
+    const d = getTenantDb(T);
+    assert.equal(typeof contaArchiviatiOTrattino(), "number");
+    const righe: unknown[][] = [];
+    const err = mock.method(console, "error", (...a: unknown[]) => { righe.push(a); });
+    const orig = d.prepare.bind(d);
+    const prep = mock.method(d, "prepare", (sql: string) => {
+      if (sql.includes("hosts_archivio")) throw new TypeError("no such table: hosts_archivio (10.0.0.1 pc-anna)");
+      return orig(sql);
+    });
+    try {
+      assert.equal(contaArchiviatiOTrattino(), "—");
+    } finally {
+      prep.mock.restore();
+      err.mock.restore();
+    }
+    assert.equal(righe.length, 1);
+    const testo = righe[0].map(String).join(" ");
+    assert.match(testo, /TypeError/);
+    assert.doesNotMatch(testo, /10\.0\.0\.1|pc-anna/);
   });
 });
 

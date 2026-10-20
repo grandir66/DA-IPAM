@@ -19,7 +19,7 @@ export async function GET() {
     try {
       return NextResponse.json(getPuliziaHostSchedule(), { headers: NO_STORE });
     } catch (error) {
-      console.error("[hosts] pulizia notturna, stato:", error);
+      console.error("[hosts] pulizia notturna, stato:", error instanceof Error ? error.name : "errore");
       return NextResponse.json({ error: "Errore nella lettura dello stato della pulizia notturna" }, { status: 500 });
     }
   });
@@ -39,7 +39,7 @@ export async function PUT(req: Request) {
     try {
       setPuliziaHostSchedule(parsed.data.enabled);
     } catch (error) {
-      console.error("[hosts] pulizia notturna, scrittura:", error);
+      console.error("[hosts] pulizia notturna, scrittura:", error instanceof Error ? error.name : "errore");
       return NextResponse.json({ error: "Errore nel salvataggio della pulizia notturna" }, { status: 500 });
     }
     const warning = reloadSchedulerForCurrentTenant();

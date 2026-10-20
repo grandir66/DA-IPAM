@@ -83,7 +83,13 @@ più Launchpad a tessere; gruppi **Sicurezza** (Vulnerabilità, Alert, Health AD
 (`lib/modules/voci-applicativi.ts`: moduli opzionali + console esterne); Controller di rete in Network sotto
 «Credenziali». Network Services resta un gruppo a sé (scelta di Riccardo). Tabelle (20/10): `<Table fissa>` /
 `ScorrimentoTabella` per le liste lunghe (intestazioni ferme, altezza dallo schermo); accese sulle pagine
-principali, le altre da fare quando si toccano. Testate di Discovery e dettaglio subnet compattate.
+principali, le altre da fare quando si toccano. Testate di Discovery e dettaglio subnet compattate. Dashboard (20/10): una
+schermata, riquadri dei moduli coi colori dei token (✓ #1F7A4D, ▲ #FFD400, ✕ #8E1B20, ● #5B6B77,
+`components/shared/stile-stato-modulo.ts`), riga Sicurezza (`lib/security/kpi-dashboard.ts`: alert Wazuh
+raggruppati ripartiti sulla durata). «Offline» = visti negli ultimi 7 giorni, «assenti» a parte
+(`lib/hosts/assenti.ts`); `markHostsOffline` scrive lo storico. **Aperto**: pulizia degli host assenti e
+dei cambi IP, decisa da Riccardo, spec `specs/2026-10-20-pulizia-host-assenti-design.md`, prompt
+`~/.claude/prompts/da-ipam-pulizia-host-assenti.md`.
 
 - **Trappola**: le 9 prove «rosse per `flock`» del Mac erano `stato-aggiornamento.mjs` che non partiva
   da cartelle dietro symlink (`/var/folders`): ora `realpathSync`. Sul Mac serve comunque `flock` (brew).

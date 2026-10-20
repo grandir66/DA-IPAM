@@ -8,7 +8,7 @@
  * Run: node --import tsx --test src/lib/hosts/__tests__/pulizia-archivio.test.ts
  */
 import { TEST_DATA_DIR } from "@/lib/__tests__/support/data-dir-isolata";
-import { test, after } from "node:test";
+import { test, after, mock } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -26,8 +26,11 @@ import {
 import { scriviRegistroPulizia } from "@/lib/hosts/registro-pulizia";
 
 const T = "PULIZIA2010";
+const T_FK = "PULIZIA2010FK"; // tenant a parte: la prova della chiave esterna altera hosts
 after(() => {
-  try { closeTenantDb(T); deleteTenantDatabase(T); } catch { /* già tolto */ }
+  for (const t of [T, T_FK]) {
+    try { closeTenantDb(t); deleteTenantDatabase(t); } catch { /* già tolto */ }
+  }
   closeHubDb();
 });
 
@@ -55,8 +58,7 @@ test("archivia e recupera: ogni campo torna com'era, status offline, id nuovo", 
   withTenant(T, () => {
     const d = getTenantDb(T);
     const rete = nuovaRete(d);
-    // online apposta: il recupero deve rimetterlo offline in ogni caso (lo stato vero lo dirà la scansione).
-    const id = hostPieno(d, rete, `10.${80 + reti}.0.10`, "AA:BB:CC:00:11:22", "online");
+    const id = hostPieno(d, rete, `10.${80 + reti}.0.10`, "AA:BB:CC:00:11:22");
     const prima = riga(d, id)!;
     const contatiPrima = contaArchiviati();
 
@@ -94,6 +96,20 @@ test("archivia e recupera: ogni campo torna com'era, status offline, id nuovo", 
     assert.equal(archivio.nuovo_host_id, esito.nuovoHostId);
     assert.equal(contaArchiviati(), contatiPrima, "una riga recuperata non conta fra gli archiviati");
     assert.ok(!listaArchivio().righe.some((r) => r.id === a.id), "né compare nell'elenco");
+  });
+});
+
+test("si archivia solo un host offline: online e unknown lanciano e restano dove sono", () => {
+  withTenant(T, () => {
+    const d = getTenantDb(T);
+    const rete = nuovaRete(d);
+    const archiviatiPrima = (d.prepare("SELECT COUNT(*) AS n FROM hosts_archivio").get() as { n: number }).n;
+    for (const [i, status] of (["online", "unknown"] as const).entries()) {
+      const id = hostPieno(d, rete, `10.${80 + reti}.0.${70 + i}`, null, status);
+      assert.throws(() => archiviaHost(id, "assente", "x", "anna"), new RegExp(`host #${id} non è offline \\(${status}\\)`));
+      assert.ok(riga(d, id), "l'host è ancora in hosts");
+    }
+    assert.equal((d.prepare("SELECT COUNT(*) AS n FROM hosts_archivio").get() as { n: number }).n, archiviatiPrima);
   });
 });
 
@@ -153,6 +169,18 @@ test("recupero rifiutato: IP occupato, rete cancellata, già recuperato — ness
     assert.ok(!dueVolte.ok && dueVolte.motivo.startsWith("già recuperato il "), JSON.stringify(dueVolte));
     assert.equal(contaHost(d), n);
 
+    // IP escluso a mano dopo l'archiviazione: il recupero non lo rimette in elenco
+    const rete4 = nuovaRete(d);
+    const ipEscluso = `10.${80 + reti}.0.15`;
+    const e = archiviaHost(hostPieno(d, rete4, ipEscluso, null), "assente", "assente da 70 giorni", "anna");
+    d.prepare("INSERT INTO excluded_ips (network_id, ip, reason, excluded_at) VALUES (?, ?, 'a mano', '2026-10-20 08:00:00')").run(rete4, ipEscluso);
+    n = contaHost(d);
+    const escluso = recuperaHost(e.id, "anna");
+    assert.equal(escluso.ok, false);
+    assert.ok(!escluso.ok && escluso.motivo.startsWith(`l'IP ${ipEscluso} è fra gli IP esclusi della rete`) && escluso.motivo.includes("20/10/26"), JSON.stringify(escluso));
+    assert.equal(contaHost(d), n);
+    assert.equal((d.prepare("SELECT recuperato_il FROM hosts_archivio WHERE id = ?").get(e.id) as { recuperato_il: string | null }).recuperato_il, null);
+
     // riga d'archivio che non c'è
     assert.equal(recuperaHost(999_999, "anna").ok, false);
   });
@@ -179,6 +207,24 @@ test("cancellaArchivioScaduto toglie la riga a 91 giorni (anche recuperata) e la
     assert.equal(resta(vecchiaRecuperata.id), false);
     assert.equal(resta(recente.id), true);
     assert.deepEqual(cancellaArchivioScaduto(), [], "una seconda volta non c'è più niente");
+  });
+});
+
+test("cancellaArchivioScaduto scrive il registro con una scrittura sola, dopo le cancellazioni", () => {
+  withTenant(T, () => {
+    const d = getTenantDb(T);
+    const rete = nuovaRete(d);
+    const ids = [0, 1, 2].map((i) => archiviaHost(hostPieno(d, rete, `10.${80 + reti}.0.${40 + i}`, null), "assente", "x", "job").id);
+    for (const id of ids) d.prepare("UPDATE hosts_archivio SET archiviato_il = datetime('now', '-95 days') WHERE id = ?").run(id);
+    const scritture = mock.method(fs, "appendFileSync");
+    try {
+      assert.deepEqual(cancellaArchivioScaduto().map((t) => t.id), ids);
+      assert.equal(scritture.mock.callCount(), 1);
+    } finally {
+      scritture.mock.restore();
+    }
+    const cancellate = righeRegistro().filter((x) => x.azione === "cancella" && ids.includes(x.archivioId as number));
+    assert.deepEqual(cancellate.map((x) => x.archivioId), ids);
   });
 });
 
@@ -212,18 +258,30 @@ test("registro: una riga JSONL per operazione; registro non scrivibile → l'arc
     assert.equal(mie[1].da, "marco");
     assert.equal(mie[1].hostId, r.ok ? r.nuovoHostId : -1);
 
-    // La cartella del registro diventa un file: l'archiviazione deve fallire senza toccare niente.
+    // La cartella del registro diventa un file: archiviare, recuperare e cancellare devono fallire senza toccare niente.
+    // Preparati PRIMA di rompere il registro (archiviare scrive il registro): uno da recuperare, uno scaduto.
+    const errFs = (e: NodeJS.ErrnoException) => e.code === "EEXIST" || e.code === "ENOTDIR";
     const dir = path.join(TEST_DATA_DIR, "audit");
     const accanto = `${dir}.vera`;
+    const daRecuperare = archiviaHost(hostPieno(d, rete, `10.${80 + reti}.0.32`, null), "assente", "x", "anna");
+    const scaduto = archiviaHost(hostPieno(d, rete, `10.${80 + reti}.0.33`, null), "assente", "x", "anna");
+    d.prepare("UPDATE hosts_archivio SET archiviato_il = datetime('now', '-100 days') WHERE id = ?").run(scaduto.id);
     fs.renameSync(dir, accanto);
     fs.writeFileSync(dir, "non sono una cartella");
     try {
       const id = hostPieno(d, rete, `10.${80 + reti}.0.31`, null);
       const archiviatiPrima = (d.prepare("SELECT COUNT(*) AS n FROM hosts_archivio").get() as { n: number }).n;
-      assert.throws(() => archiviaHost(id, "assente", "assente da 65 giorni", "anna"),
-        (e: NodeJS.ErrnoException) => e.code === "EEXIST" || e.code === "ENOTDIR");
+      assert.throws(() => archiviaHost(id, "assente", "assente da 65 giorni", "anna"), errFs);
       assert.ok(riga(d, id), "l'host è ancora in hosts");
       assert.equal((d.prepare("SELECT COUNT(*) AS n FROM hosts_archivio").get() as { n: number }).n, archiviatiPrima, "nessuna riga d'archivio");
+
+      const hostPrima = contaHost(d);
+      assert.throws(() => recuperaHost(daRecuperare.id, "anna"), errFs);
+      assert.equal(contaHost(d), hostPrima, "il recupero non ha rimesso niente in hosts");
+      assert.equal((d.prepare("SELECT recuperato_il FROM hosts_archivio WHERE id = ?").get(daRecuperare.id) as { recuperato_il: string | null }).recuperato_il, null);
+
+      assert.throws(() => cancellaArchivioScaduto(), errFs);
+      assert.ok(d.prepare("SELECT 1 FROM hosts_archivio WHERE id = ?").get(scaduto.id), "la riga scaduta è ancora in archivio");
     } finally {
       fs.rmSync(dir, { force: true });
       fs.renameSync(accanto, dir);
@@ -272,10 +330,13 @@ test("ipPrecedentiDi: storico del MAC e archivio, un IP una volta, il più recen
     assert.equal(precedenti[1].fino_al, giorni(10));
     assert.equal(precedenti[2].fino_al, giorni(30));
 
-    // P2: l'elenco dell'archivio dice dove è tornato il MAC.
+    // P2: l'elenco dell'archivio dice dove è tornato il MAC; archiviaHost no (l'host appena archiviato era offline).
+    const a70 = archiviaHost(hostPieno(d, rete, `${base}70`, mac), "cambio_ip", `ora ${base}30`, "job");
+    assert.equal(a70.diNuovoInRete, null);
     const r = listaArchivio().righe.find((x) => x.id === a40.id);
     assert.ok(r);
     assert.equal(r.diNuovoInRete, `${base}30`);
+    assert.equal(listaArchivio().righe.find((x) => x.id === a70.id)?.diNuovoInRete, `${base}30`);
     assert.deepEqual(ipPrecedentiDi(9_999_999), []);
   });
 });
@@ -300,6 +361,28 @@ test("MAC non valido → mac_hex NULL; apparato fisico sparito → il recupero l
     const r = recuperaHost(a.id, "anna");
     assert.ok(r.ok, JSON.stringify(r));
     assert.equal(riga(d, r.nuovoHostId)!.physical_device_id, null);
+    const voce = righeRegistro().find((x) => x.archivioId === a.id && x.azione === "recupera");
+    assert.ok(voce && String(voce.motivo).includes(`senza apparato fisico #${fisico}`), JSON.stringify(voce));
+  });
+});
+
+test("recupero: una chiave esterna che non è SET NULL verso una riga sparita → rifiuto, niente scritto", () => {
+  withTenant(T_FK, () => {
+    const d = getTenantDb(T_FK);
+    // Una colonna futura con chiave esterna senza ON DELETE (NO ACTION): non si vuota da sola.
+    d.exec("ALTER TABLE hosts ADD COLUMN location_prova_id INTEGER REFERENCES locations(id)");
+    const rete = Number(d.prepare("INSERT INTO networks (cidr, name) VALUES ('10.99.0.0/24', 'fk')").run().lastInsertRowid);
+    const luogo = Number(d.prepare("INSERT INTO locations (name) VALUES ('magazzino')").run().lastInsertRowid);
+    const id = hostPieno(d, rete, "10.99.0.5", null);
+    d.prepare("UPDATE hosts SET location_prova_id = ? WHERE id = ?").run(luogo, id);
+    const a = archiviaHost(id, "assente", "x", "job");
+    d.prepare("DELETE FROM locations WHERE id = ?").run(luogo);
+    const n = contaHost(d);
+    const esito = recuperaHost(a.id, "anna");
+    assert.equal(esito.ok, false);
+    assert.ok(!esito.ok && esito.motivo.includes(`location_prova_id`) && esito.motivo.includes(`#${luogo}`), JSON.stringify(esito));
+    assert.equal(contaHost(d), n);
+    assert.equal((d.prepare("SELECT recuperato_il FROM hosts_archivio WHERE id = ?").get(a.id) as { recuperato_il: string | null }).recuperato_il, null);
   });
 });
 

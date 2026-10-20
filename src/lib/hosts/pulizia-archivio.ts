@@ -19,7 +19,7 @@ import type Database from "better-sqlite3";
 import { getCurrentTenantCode, getTenantDb, runInTenantTransaction } from "@/lib/db-tenant";
 import { FUSO_UTENTI, parseDbDate } from "@/lib/db-date";
 import { macToHex, normalizeMacForStorage } from "@/lib/utils";
-import { scriviRegistroPulizia } from "@/lib/hosts/registro-pulizia";
+import { scriviRegistroPulizia, scriviRighePulizia, type RigaRegistroPulizia } from "@/lib/hosts/registro-pulizia";
 
 export const GIORNI_ARCHIVIO_PRIMA_DI_CANCELLARE = 90;
 
@@ -146,7 +146,8 @@ function dataOra(valore: string): string {
 
 /**
  * Fotografa l'host in `hosts_archivio` e lo toglie da `hosts`, in una transazione con la riga di registro.
- * Lancia se l'host non c'è o se il registro non si scrive (e allora non cambia niente).
+ * Lancia se l'host non c'è, se non è offline o se il registro non si scrive (e allora non cambia niente).
+ * `diNuovoInRete` è sempre null qui: l'host appena archiviato era offline, e il ritorno del MAC lo dice l'elenco.
  */
 export function archiviaHost(hostId: number, motivo: MotivoPulizia, dettaglio: string, da: string): RigaArchivio {
   const d = dbCorrente();
@@ -154,6 +155,8 @@ export function archiviaHost(hostId: number, motivo: MotivoPulizia, dettaglio: s
   return runInTenantTransaction(() => {
     const host = d.prepare("SELECT * FROM hosts WHERE id = ?").get(hostId) as Record<string, unknown> | undefined;
     if (!host) throw new Error(`host #${hostId} non trovato`);
+    // Freno anche qui, non solo nella scelta dei candidati: un host online o «unknown» non si archivia mai.
+    if (host.status !== "offline") throw new Error(`host #${hostId} non è offline (${String(host.status)}): non si archivia`);
     const { generate } = colonneHosts(d);
     const foto = Object.fromEntries(Object.entries(host).filter(([col]) => !generate.has(col)));
     const ip = String(host.ip);
@@ -174,9 +177,12 @@ export function archiviaHost(hostId: number, motivo: MotivoPulizia, dettaglio: s
     scriviRegistroPulizia({ azione: "archivia", tenant, archivioId, hostId, ip, mac: macHex, nome, motivo: `${motivo}: ${dettaglio}`, da });
 
     const r = d.prepare("SELECT * FROM hosts_archivio WHERE id = ?").get(archivioId) as RigaArchivioDb;
-    return versoRiga(r, ipOnlinePerMac(d, new Set(macHex ? [macHex] : [])));
+    return versoRiga(r, new Map());
   });
 }
+
+/** Come si chiamano a schermo e nel registro le tabelle a cui puntano le chiavi esterne di hosts. */
+const NOMI_COLLEGAMENTI: Readonly<Record<string, string>> = { physical_devices: "apparato fisico" };
 
 /** Valori che better-sqlite3 sa scrivere; l'istantanea viene da JSON, quindi altro non dovrebbe esserci. */
 function scrivibile(v: unknown): v is string | number | null {
@@ -185,7 +191,8 @@ function scrivibile(v: unknown): v is string | number | null {
 
 /**
  * Rimette in `hosts` l'host archiviato (id nuovo, offline). Rifiuta, senza scrivere niente, se la riga è già
- * recuperata, se la rete non c'è più o se `(network_id, ip)` è di nuovo occupato.
+ * recuperata, se la rete non c'è più, se l'IP è fra gli esclusi della rete, se `(network_id, ip)` è di nuovo
+ * occupato o se un collegamento (chiave esterna non SET NULL) punta a una riga che non c'è più.
  */
 export function recuperaHost(archivioId: number, da: string): EsitoRecupero {
   const d = dbCorrente();
@@ -205,6 +212,13 @@ export function recuperaHost(archivioId: number, da: string): EsitoRecupero {
     }
 
     if (!d.prepare("SELECT 1 FROM networks WHERE id = ?").get(a.network_id)) return { ok: false, motivo: "la rete non esiste più" };
+    // Escluso a mano dopo l'archiviazione (archiviare non scrive excluded_ips): quella scelta vince sul recupero.
+    const esclusione = d.prepare("SELECT excluded_at FROM excluded_ips WHERE network_id = ? AND ip = ?")
+      .get(a.network_id, a.ip) as { excluded_at: string | null } | undefined;
+    if (esclusione) {
+      const quando = esclusione.excluded_at ? ` (dal ${dataOra(esclusione.excluded_at)})` : "";
+      return { ok: false, motivo: `l'IP ${a.ip} è fra gli IP esclusi della rete${quando}` };
+    }
     const occupante = d.prepare("SELECT id, ip, custom_name, hostname, dns_reverse FROM hosts WHERE network_id = ? AND ip = ?")
       .get(a.network_id, a.ip) as (Record<string, unknown> & { id: number }) | undefined;
     if (occupante) return { ok: false, motivo: `l'IP ${a.ip} è di nuovo in uso da ${nomeDi(occupante)} (#${occupante.id})` };
@@ -220,13 +234,20 @@ export function recuperaHost(archivioId: number, da: string): EsitoRecupero {
     valori.set("network_id", a.network_id);
     valori.set("ip", a.ip);
     valori.set("status", "offline");
-    // Un riferimento a una riga sparita nel frattempo (es. physical_devices) si vuota: è ciò che ON DELETE SET NULL
-    // avrebbe fatto se l'host fosse rimasto. Senza, l'INSERT fallirebbe sulla chiave esterna. La rete è già controllata.
-    const chiavi = d.prepare("PRAGMA foreign_key_list(hosts)").all() as Array<{ table: string; from: string; to: string | null }>;
+    // Un riferimento a una riga sparita nel frattempo: se la chiave è ON DELETE SET NULL (oggi physical_device_id) si
+    // vuota, perché è ciò che sarebbe successo se l'host fosse rimasto, e si scrive nel registro; con ogni altra regola
+    // ci si rifiuta. Senza, l'INSERT cadrebbe sulla chiave esterna. La rete è già controllata sopra.
+    const chiavi = d.prepare("PRAGMA foreign_key_list(hosts)").all() as Array<{ table: string; from: string; to: string | null; on_delete: string }>;
+    const vuotati: string[] = [];
     for (const k of chiavi) {
       const v = valori.get(k.from);
       if (k.from === "network_id" || v === undefined || v === null) continue;
-      if (!d.prepare(`SELECT 1 FROM "${k.table}" WHERE "${k.to ?? "rowid"}" = ?`).get(v)) valori.set(k.from, null);
+      if (d.prepare(`SELECT 1 FROM "${k.table}" WHERE "${k.to ?? "rowid"}" = ?`).get(v)) continue;
+      if (k.on_delete.toUpperCase() !== "SET NULL") {
+        return { ok: false, motivo: `il collegamento ${k.from} punta a ${k.table} #${v}, che non esiste più` };
+      }
+      valori.set(k.from, null);
+      vuotati.push(`senza ${NOMI_COLLEGAMENTI[k.table] ?? k.table} #${v}`);
     }
 
     const colonne = [...valori.keys()];
@@ -235,12 +256,16 @@ export function recuperaHost(archivioId: number, da: string): EsitoRecupero {
     d.prepare("UPDATE hosts_archivio SET recuperato_il = datetime('now'), recuperato_da = ?, nuovo_host_id = ? WHERE id = ?")
       .run(da, nuovoHostId, archivioId);
 
-    scriviRegistroPulizia({ azione: "recupera", tenant, archivioId, hostId: nuovoHostId, ip: a.ip, mac: a.mac_hex, nome: a.nome, motivo: a.motivo, da });
+    const motivo = [a.motivo, ...vuotati].join("; ");
+    scriviRegistroPulizia({ azione: "recupera", tenant, archivioId, hostId: nuovoHostId, ip: a.ip, mac: a.mac_hex, nome: a.nome, motivo, da });
     return { ok: true, nuovoHostId };
   });
 }
 
-/** Cancella per sempre le righe archiviate da più di 90 giorni (recuperate comprese); una riga di registro per riga. */
+/**
+ * Cancella per sempre le righe archiviate da più di 90 giorni (recuperate comprese). Una riga di registro per riga,
+ * scritte tutte insieme con una scrittura sola dopo i DELETE e prima del COMMIT: o tutte o nessuna.
+ */
 export function cancellaArchivioScaduto(): Array<{ id: number; ip: string; nome: string }> {
   const d = dbCorrente();
   const tenant = getCurrentTenantCode();
@@ -248,13 +273,15 @@ export function cancellaArchivioScaduto(): Array<{ id: number; ip: string; nome:
     const scadute = d.prepare("SELECT id, ip, nome, mac_hex FROM hosts_archivio WHERE archiviato_il < datetime('now', ?) ORDER BY id")
       .all(`-${GIORNI_ARCHIVIO_PRIMA_DI_CANCELLARE} days`) as Array<{ id: number; ip: string; nome: string; mac_hex: string | null }>;
     const togli = d.prepare("DELETE FROM hosts_archivio WHERE id = ?");
+    const registro: RigaRegistroPulizia[] = [];
     for (const r of scadute) {
       togli.run(r.id);
-      scriviRegistroPulizia({
+      registro.push({
         azione: "cancella", tenant, archivioId: r.id, hostId: null, ip: r.ip, mac: r.mac_hex, nome: r.nome,
         motivo: `in archivio da più di ${GIORNI_ARCHIVIO_PRIMA_DI_CANCELLARE} giorni`, da: "sistema",
       });
     }
+    scriviRighePulizia(registro);
     return scadute.map(({ id, ip, nome }) => ({ id, ip, nome }));
   });
 }

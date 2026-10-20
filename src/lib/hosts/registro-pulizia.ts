@@ -45,10 +45,17 @@ function ultimaPulizia(): { giorno: string } {
 
 /** Scrive una riga; lancia se non ci riesce (cartella non creabile, disco pieno, permessi). */
 export function scriviRegistroPulizia(riga: RigaRegistroPulizia, adesso = new Date()): void {
+  scriviRighePulizia([riga], adesso);
+}
+
+/** Scrive più righe con una scrittura sola (stesso file, stesso formato); niente righe = niente scrittura. Lancia come sopra. */
+export function scriviRighePulizia(righe: readonly RigaRegistroPulizia[], adesso = new Date()): void {
+  if (righe.length === 0) return;
   const dir = dirRegistroPulizia();
   fs.mkdirSync(dir, { recursive: true });
   const giorno = adesso.toISOString().slice(0, 10);
-  fs.appendFileSync(path.join(dir, `pulizia-host-${giorno}.jsonl`), `${JSON.stringify({ il: adesso.toISOString(), ...riga })}\n`);
+  const il = adesso.toISOString();
+  fs.appendFileSync(path.join(dir, `pulizia-host-${giorno}.jsonl`), righe.map((r) => `${JSON.stringify({ il, ...r })}\n`).join(""));
   const s = ultimaPulizia();
   if (s.giorno !== giorno) {
     s.giorno = giorno;

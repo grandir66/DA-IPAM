@@ -19,6 +19,7 @@ Leggilo per primo, poi [CLAUDE.md](CLAUDE.md) (stack e schema; su «multi-tenant
 - **Aggiornamento a due cartelle (16/10)**: build in `.next-a`/`.next-b`, nome in `.next-attiva`, scambio solo a build riuscita e salute buona, se no si torna indietro; stato in `data/aggiornamento.json`, al massimo 3 tentativi per commit. Dettaglio: CHANGELOG. Un `npm run build` a mano scrive nella cartella attiva.
 - **ATTENZIONE: `dev` arriva anche all'appliance del cliente A** (`da-ipam-update.timer` ogni 15 minuti: pull + build + restart). Un push di codice su `dev` è un rilascio al cliente: su `dev` solo codice pronto. Un commit di soli `docs/` o `.md` non riavvia.
 - `/api/version` cambia col pull, **prima del riavvio**: «gira davvero» = `ActiveEnterTimestamp` o riga d'avvio nel journal.
+- «Aggiornato ma non vedo modifiche» (20/10): prima si controlla l'hub (commit, `DA_COMMIT` della build attiva, grep nei chunk); se il codice c'è, è la scheda del browser che tiene l'interfaccia vecchia → Cmd+Shift+R.
 - `scheduler-defaults` spegne `fast_scan`/`ping_sweep` sotto i 720 minuti sulle reti ≥1024 indirizzi: riaccesi a mano, non reggono al riavvio.
 
 ## 5. Tooling

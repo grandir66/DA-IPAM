@@ -4,6 +4,31 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-20 · Pagina d'accesso nuova e verifica in due passaggi
+
+### Aggiunto
+
+- **Verifica in due passaggi per utente** (Riccardo, 20/10; ADR 0023): un admin la chiede da Impostazioni → Utenti
+  (colonna «Due passaggi»: Richiedi, Azzera, Togli); al primo accesso dopo, l'utente inquadra un QR e la attiva con
+  un codice; poi entra con password e codice a 6 cifre. Chi entra con l'account Domarc (entra.domarc.it) non ha
+  bisogno di niente; l'utenza di servizio `domarc` resta com'è. Nessun accesso cambia finché un admin non la chiede a
+  qualcuno. Registro delle azioni in `data/audit/accessi-*.jsonl`; recupero dal server con
+  `scripts/seconda-verifica.ts`.
+
+### Modificato
+
+- **Pagina d'accesso in due metà**, come DA-Template: marchio su fondo navy a sinistra (testata sul telefono), modulo
+  bianco a destra; codice e QR nella stessa scheda; errori e blocco in avvisi col simbolo, il blocco con l'ora di
+  sblocco.
+
+### Sicurezza
+
+- Password dell'utenza di servizio `domarc` confrontata a tempo costante.
+- I tentativi d'accesso si contano prima di ogni attesa: in parallelo il blocco ora tiene (prima 60 richieste
+  insieme passavano tutte il controllo).
+- Un nome inesistente risponde nello stesso tempo di una password sbagliata (prima 0,1 ms contro 49 ms: si capiva
+  se il nome esisteva).
+
 ## [Non rilasciato] — 2026-10-20 · Dashboard e Alert sicurezza ridisegnate
 
 ### Modificato

@@ -92,7 +92,9 @@ L'account creato ha ruolo `admin` sul cliente appena creato. Il `superadmin`, ch
 
 URL: `https://<indirizzo-server>/login` (o `http://...:3001` in dev).
 
-Inserire username e password. Dopo **5 tentativi errati in 15 minuti** per lo stesso username scatta il rate-limit (HTTP 429).
+Sull'hub c'è anche **«Accedi con l'account Domarc»** (entra.domarc.it): chi entra così non deve fare altro. Altrimenti nome utente e password. Dopo **5 tentativi errati in 15 minuti** per lo stesso nome l'accesso si blocca per un po': la pagina dice per quanto e a che ora si sblocca.
+
+**Verifica in due passaggi** (dal 20/10/2026): se un amministratore l'ha chiesta per il tuo utente, dopo la password la pagina chiede il **codice a 6 cifre** dell'app di autenticazione sul telefono (Microsoft Authenticator, Google Authenticator…). La prima volta mostra invece un **QR** da inquadrare (o un codice da inserire a mano nell'app): scrivi il codice che compare e sei dentro; il QR vale 10 minuti. Telefono perso o cambiato: chiedi a un amministratore di fare **«Azzera»**, al prossimo accesso vedrai un QR nuovo.
 
 ### Struttura sidebar (tenant attivo)
 
@@ -873,6 +875,7 @@ La gestione dei **job schedulati** (abilita/disabilita, interval, prossima esecu
 - Ruoli: `superadmin`, `admin`, `user`
 - Reset password, cambio username
 - Multi-tenant access (quali tenant può vedere)
+- **Due passaggi** (verifica in due passaggi): «–» non richiesta → **Richiedi**; «▲ da attivare» (al prossimo accesso vedrà il QR) → **Togli**; «✓ attiva» → **Azzera** (telefono perso: QR nuovo al prossimo accesso) o **Togli**. Sul proprio utente si può chiedere e azzerare, non togliere. Ogni azione finisce nel registro `data/audit/accessi-*.jsonl`. Se l'unico amministratore ha perso il telefono, dal server: `npx tsx scripts/seconda-verifica.ts azzera <utente>`.
 
 ### Profilo Nmap
 - Elenco porte TCP (obbligatorio)

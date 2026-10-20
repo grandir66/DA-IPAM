@@ -4,7 +4,7 @@ tono: ok
 famiglia: 01-nucleo
 ordine: 10
 stato: cantiere
-prossimo: "dashboard e Alert sicurezza ridisegnate (20/10): guardarle sull'hub coi grafici dell'indexer; job della pulizia host spento (accenderlo lo decide Riccardo); poi blocco 1 dell'analisi (CONTEXT §8): ordinamenti, filtri sulla pagina corrente, ricerche di AD; poi gli aperti della mappa topologica T3 (ADR 0020-0021)"
+prossimo: "verifica in due passaggi pronta e spenta per tutti (ADR 0023): l'admin la chiede utente per utente; dashboard e Alert ridisegnate da guardare sull'hub coi grafici dell'indexer; job della pulizia host spento (accenderlo lo decide Riccardo); poi blocco 1 dell'analisi (CONTEXT §8): ordinamenti, filtri sulla pagina corrente, ricerche di AD; poi gli aperti della mappa topologica T3 (ADR 0020-0021)"
 applicazione: ipam
 ---
 IPAM e inventario per le appliance cliente (un'installazione = un cliente:

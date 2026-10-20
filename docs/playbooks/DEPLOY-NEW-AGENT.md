@@ -6,8 +6,8 @@ passare dal bridge template completo.
 
 **Tempo stimato**: 5-10 minuti.
 **Prerequisiti**: host Ubuntu 22.04+ o Debian 12+, accesso root, accesso
-internet (apt + GitHub + tailscale.com), Tailscale auth-key, accesso admin
-DA-IPAM per generare token.
+internet (apt + GitHub), host già entrato in NetBird col comando emesso da
+DA-Link, accesso admin DA-IPAM per generare token.
 
 ---
 
@@ -19,14 +19,14 @@ DA-IPAM per generare token.
 
 ## 1. Genera token e one-liner da UI DA-IPAM
 
-Sul tuo Mac/workstation, in tailnet:
+Sul tuo Mac/workstation, in NetBird:
 
 1. Apri `https://da-invent/agents`
 2. Click **"Nuovo agente"**
 3. **Step 1**: seleziona cliente esistente
 4. **Step 2**: 
    - **Label/Sede**: es. `Sede principale`, `Server DB`, `LAN ufficio`
-   - **Hostname**: nome MagicDNS che vuoi dare al nodo Tailscale (es. `agent-acme-srv01`)
+   - **Hostname**: nome NetBird completo del nodo (es. `<codice>-ipam.netbird.selfhosted`) o il suo IP NetBird
    - **Porta**: 8443 (default)
    - **Subnet match**: CIDR LAN che questo agent può scansionare (opzionale, riservato Phase 7)
 5. **Step 3**: copia l'intero one-liner `curl ... | bash`
@@ -42,9 +42,9 @@ Sull'host dove installerai l'agent:
 curl -fsSL https://da-invent/agent-install.sh | bash -s -- --precheck
 ```
 
-Output atteso: tutti verde o solo warning (es. "Tailscale non installato —
-sarà installato"). Se ci sono errori bloccanti (OS troppo vecchio,
-DNS rotto), risolvi prima di proseguire.
+Output atteso: tutti verde o solo warning. Se ci sono errori bloccanti (OS
+troppo vecchio, DNS rotto, NetBird non connesso), risolvi prima di proseguire:
+il nodo entra in NetBird col comando di DA-Link, l'installatore non lo fa.
 
 ## 3. Esegui l'one-liner
 
@@ -55,22 +55,22 @@ curl -fsSL https://da-invent/agent-install.sh \
     HUB_URL='https://da-invent' \
     AGENT_TOKEN='<plaintext-token>' \
     AGENT_PORT='8443' \
-    TAILSCALE_AUTH_KEY='tskey-auth-...' \
     bash
 ```
 
 Lo script (idempotente, ~3-5 min) fa:
 1. Verifica root + env vars obbligatorie
-2. Installa Tailscale se mancante (script ufficiale tailscale.com)
-3. `tailscale up` con auth-key (o interattivo se TAILSCALE_AUTH_KEY assente)
-4. APT deps: python3.12, nmap, snmp, ping, ssh, krb5 dev libs
-5. `setcap` su nmap (best-effort)
-6. Sudoers fragment NOPASSWD limitato a `/usr/bin/nmap` (per UDP scan)
-7. Crea utente `da-invent-agent`
-8. Clone DA-IPAM/agent in `/opt/da-invent-agent/src/`
-9. venv Python + `pip install -e .`
-10. `/etc/da-invent-agent/config.yml` con tenant_code + bcrypt hash token
-11. Systemd unit + enable + start
+2. Verifica che NetBird sia connesso (`netbird status`) e ne legge la rete
+   dell'account (es. `100.107.0.0/16`): se non è connesso si ferma
+3. APT deps: python3.12, nmap, snmp, ping, ssh, krb5 dev libs
+4. `setcap` su nmap (best-effort)
+5. Sudoers fragment NOPASSWD limitato a `/usr/bin/nmap` (per UDP scan)
+6. Crea utente `da-invent-agent`
+7. Clone DA-IPAM/agent in `/opt/da-invent-agent/src/`
+8. venv Python + `pip install -e .`
+9. `/etc/da-invent-agent/config.yml` con tenant_code, bcrypt hash token e rete
+   ammessa (`cgnat_network` = rete NetBird dell'account)
+10. Systemd unit + enable + start (l'agente parte solo se c'è `wt0`)
 
 ## 4. Verifica post-install
 
@@ -80,7 +80,7 @@ Sullo stesso host:
 curl -fsSL https://da-invent/agent-install.sh | bash -s -- --verify
 ```
 
-Output atteso: tutti verde su service, file config, sudoers, Tailscale,
+Output atteso: tutti verde su service, file config, sudoers, NetBird,
 porta in listen, /healthz.
 
 Alternativa più rapida:
@@ -88,7 +88,7 @@ Alternativa più rapida:
 ```bash
 systemctl status da-invent-agent
 curl http://localhost:8443/healthz
-tailscale ip -4
+netbird status | grep 'NetBird IP'
 ```
 
 ## 5. Verifica hub-side
@@ -133,10 +133,7 @@ sudo rm -f /etc/sudoers.d/da-invent-agent
 sudo userdel da-invent-agent 2>/dev/null
 sudo systemctl daemon-reload
 
-# Tailscale: lasciato (potrebbe servire ad altri servizi sull'host).
-# Per rimuovere anche Tailscale:
-sudo tailscale logout
-sudo apt-get remove -y tailscale
+# NetBird: lasciato (lo governa DA-Link; si revoca da lì).
 
 # Lato hub: UI /agents → Elimina (rimuove la registrazione,
 # l'host può continuare a girare ma /whoami fallirà auth)
@@ -144,12 +141,12 @@ sudo apt-get remove -y tailscale
 
 ## Troubleshooting
 
-### `curl: (35) SSL` durante install Tailscale
+### `curl: (35) SSL` durante l'install
 Cert store di sistema obsoleto. `apt-get install -y ca-certificates`.
 
-### `tailscale up` resta in attesa
-- Con auth-key: la key è scaduta o single-use già consumata. Rigenera.
-- Interattivo: clicca l'URL stampato dallo script, autentica, lo script prosegue.
+### «NetBird non connesso»
+Il nodo non è ancora entrato in NetBird: si emette il comando da DA-Link, lo si
+incolla sull'host, poi si rilancia l'one-liner.
 
 ### Service avviato ma /healthz da 503 `tool_missing`
 Apt ha installato pacchetti diversi (es. `nmap` mancante). Verifica con:

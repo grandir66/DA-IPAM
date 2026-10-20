@@ -65,7 +65,7 @@ Differenze chiave rispetto ad altri IPAM:
 - Stati granulari (Offline, Unreachable, Transient, Lost) per distinguere il transitorio dal dismesso.
 - Entry point unico: la pagina **Discovery** (§6) mostra ogni host di ogni subnet con filtri rapidi, badge CVE, e collegamento alle integrazioni (Wazuh, LibreNMS).
 
-**Architettura** (per i curiosi): Next.js 16 + TypeScript strict + SQLite (better-sqlite3, un DB per tenant) + NextAuth v5, architettura **hub + spoke**. Gli scanner remoti (Scanner-Edge) e i servizi di rete girano su VM/appliance separate e dialogano via HTTP/Tailscale. Vedi `MANUALE-SVILUPPATORE.md` per i dettagli.
+**Architettura** (per i curiosi): Next.js 16 + TypeScript strict + SQLite (better-sqlite3, un DB per tenant) + NextAuth v5, architettura **hub + spoke**. Gli scanner remoti (Scanner-Edge) e i servizi di rete girano su VM/appliance separate e dialogano via HTTP su NetBird. Vedi `MANUALE-SVILUPPATORE.md` per i dettagli.
 
 ---
 
@@ -838,7 +838,7 @@ remoto senza agente. Active Directory si configura da **Network → Active Direc
 
 ## 23. Agenti remoti (Scanner-Edge)
 
-`Agenti remoti` (`/agents`, **solo superadmin**, icona 🖥️ **ServerCog**) gestisce le appliance **Scanner-Edge** installate presso i clienti. Lo Scanner-Edge esegue le scansioni Greenbone/OpenVAS in loco e invia i findings all'hub (CVE → §14), raggiungibile via URL pubblico o **Tailscale**.
+`Agenti remoti` (`/agents`, **solo superadmin**, icona 🖥️ **ServerCog**) gestisce le appliance **Scanner-Edge** installate presso i clienti. Lo Scanner-Edge esegue le scansioni Greenbone/OpenVAS in loco e invia i findings all'hub (CVE → §14), raggiungibile via URL pubblico o **NetBird**.
 
 ![Agenti remoti — tabella agenti e wizard di registrazione](/manual/img/agents.png)
 
@@ -849,12 +849,12 @@ Colonne: Cliente, Sede/Label, Hostname:Porta, Versione, **Heartbeat**, Stato (ba
 ### Wizard "Nuovo agente" (3 step)
 
 1. **Tenant** — cliente esistente o nuovo (codice + ragione sociale)
-2. **Agent** — label, hostname (nome breve Tailscale), porta, `subnet_match`
-3. **Token** — il token è mostrato **una sola volta** (⚠️ ShieldAlert): copialo subito. Opzionale auth-key Tailscale; viene generato il **comando di installazione** (curl one-liner) da incollare sul nodo edge.
+2. **Agent** — label, hostname (nome NetBird del nodo), porta, `subnet_match`
+3. **Token** — il token è mostrato **una sola volta** (⚠️ ShieldAlert): copialo subito; viene generato il **comando di installazione** (curl one-liner) da incollare sul nodo edge.
 
 ### Hub URL
 
-Pannello di configurazione dell'**URL effettivo** dell'hub che gli agenti contattano: `public_hub_url` (URL pubblico) con fallback `hub_tailnet_hostname` (Tailscale). Se non configurato, il wizard avvisa che gli agenti non potranno fare heartbeat.
+Pannello di configurazione dell'**URL effettivo** dell'hub che gli agenti contattano: `public_hub_url` (URL pubblico). Se non configurato, il wizard avvisa che gli agenti non potranno fare heartbeat.
 
 ---
 

@@ -4,6 +4,36 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-20 · Via la VPN precedente: l'overlay è solo NetBird
+
+Riccardo (20/10 notte): la VPN precedente non esiste più su nessun dispositivo (verificato su Proxmox
+Domarc, hub, da-invent, DTS, DA-VA-OVH, Mac) e va tolta da codice e documenti, storia compresa.
+L'overlay è solo NetBird, governato da DA-Link (ADR 0011).
+
+### Rimosso
+
+- **Tipo di credenziale della VPN precedente** dalle API del caveau e dal pannello: un solo elenco dei tipi
+  ammessi per creazione, modifica e bootstrap (`credentials-vault-tipi.ts`). Sul live 0 righe; niente
+  migrazione che cancella: una riga vecchia di un tipo tolto si legge ancora e l'interfaccia la mostra come
+  «Altro» (prova `overlay-precedente.test.ts`).
+- **Nome dell'hub nella VPN precedente** come ripiego dell'indirizzo dell'hub (impostazione vuota sul live):
+  non si legge, non si scrive e non nasce più nei DB nuovi; `GET /api/settings/hub-url` e il wizard «Nuovo
+  agente» usano solo `public_hub_url`. La riga resta nei DB vecchi (niente DROP), nessuno la legge.
+- **Chiave d'ingresso della VPN precedente** dal wizard «Nuovo agente» e dalla pagina agente del cliente.
+- **Doppio binario in `prepara-netbird.sh`**: lo script prepara solo NetBird e il firewall di `wt0`.
+- **Policy ACL e playbook di migrazione della VPN precedente**: cancellati (la storia è in git).
+
+### Modificato
+
+- **Agente Python 0.3.0 su NetBird**: fuori da `dev_mode` parte solo con l'interfaccia `wt0` (prima
+  rifiutava di partire senza quella della VPN precedente); `/healthz` dice `network.netbird` e
+  `network.netbird_ip`; l'installatore non installa più nessuna VPN: vuole il nodo già in NetBird (comando
+  di DA-Link), ne legge la rete dell'account da `netbird status` e la scrive come rete ammessa
+  (`cgnat_network`, spec NetBird rischio 9); `--rete-netbird` la stampa. `openapi.json` rigenerato.
+- **Playbook di oggi** (nuovo hub, nuovo agente, nuovo bridge, DR) riscritti su NetBird e DA-Link; manuale
+  utente e scheda del modulo agenti allineati. Nella storia (CHANGELOG, spec, piani, ADR) il nome è
+  diventato «la VPN precedente», i fatti restano quelli.
+
 ## [Non rilasciato] — 2026-10-20 · Testata delle scansioni semplificata
 
 ### Modificato
@@ -1528,7 +1558,7 @@ l'istanza non chiama nessuno.
   centrali dichiarati; Wazuh mai. Restringe soltanto, non apre niente che UFW chiude.
   Perché: la policy NetBird è la prima barriera, questa è la seconda.
 - **Preparazione all'ingresso in NetBird** (`scripts/dalink/prepara-netbird.sh`,
-  `install.sh --netbird --edge=si|no`): client NetBird dal repository firmato, Tailscale
+  `install.sh --netbird --edge=si|no`): client NetBird dal repository firmato, la VPN precedente
   con `--netfilter-mode=off`, firewall; la chiave d'ingresso solo da stdin. Prova a vuoto
   di default.
 
@@ -2418,7 +2448,7 @@ router) e v0.3.280 (tutto il resto).
 
 ## [Unreleased] — branch `feature/remote-agents`
 
-Aggiunge l'architettura **hub + agenti remoti via Tailscale**: l'hub IPAM
+Aggiunge l'architettura **hub + agenti remoti via VPN precedente**: l'hub IPAM
 orchestra agenti Python installati presso i clienti, mantenendo invariato
 il flusso per i tenant gestiti localmente.
 
@@ -2440,14 +2470,14 @@ il flusso per i tenant gestiti localmente.
 - **Wizard "Nuovo agente"** (dialog 2-step + token):
   - Step 1: scelta cliente esistente (dropdown) o creazione cliente nuovo
     inline (codice + ragione sociale).
-  - Step 2: configurazione agente (label/sede, hostname Tailscale, porta,
+  - Step 2: configurazione agente (label/sede, hostname nella VPN precedente, porta,
     subnet_match opzionale). Imposta automaticamente `agent_mode='remote'`.
   - Step 3: mostra token plaintext (una sola volta) + campo opzionale
-    Tailscale auth-key + comando di install one-liner pre-popolato.
+    chiave d'ingresso della VPN precedente + comando di install one-liner pre-popolato.
 - **`Executor` abstraction** (`src/lib/executor/`):
   - `Executor` interface (`index.ts`): primitive ping/nmap/dns/macVendor.
   - `LocalExecutor` (`local.ts`): delega ai moduli `src/lib/scanner/*`.
-  - `RemoteExecutor` (`remote.ts`): client HTTP verso agent via Tailscale,
+  - `RemoteExecutor` (`remote.ts`): client HTTP verso agent via VPN precedente,
     timeout per metodo, error envelope strutturato (`RemoteExecutorError`).
   - `getExecutor(tenantCode)`: legge `tenants.agent_mode` e pesca il primo
     agente da `tenant_agents` per i tenant remote.
@@ -2473,8 +2503,8 @@ il flusso per i tenant gestiti localmente.
   fping, arping, Kerberos, build-essential), `setcap` su nmap, crea venv
   pywinrm in `/root/.da-invent-venv`. Da usare dopo migrazioni LXC→VM.
 - **Sidebar**: voce "Agenti remoti" (solo superadmin) con icona `ServerCog`.
-- **Validazione hostname Tailscale** lato API (`PUT /agent`): regex
-  MagicDNS short-name o FQDN, niente schemi `http://` o path.
+- **Validazione hostname nella VPN precedente** lato API (`PUT /agent`): regex
+  nome breve del suo DNS o FQDN, niente schemi `http://` o path.
 - **Frontend `Tenant` interface** allineata: campi `agent_*` opzionali nel
   tipo della pagina `/tenants`.
 
@@ -2502,7 +2532,7 @@ il flusso per i tenant gestiti localmente.
     con codes: `tool_missing`, `auth_invalid`, `scope_denied`, `invalid_input`,
     `target_unreachable`, `timeout`, `parse_error`, `internal`.
   - **`/healthz` esteso**: `tools` (nmap, snmpwalk, ping, ssh), `network`
-    (tailscale ok + tailscale_ip), cache 60s.
+    (stato e IP della VPN precedente), cache 60s.
   - **OpenAPI export**: `agent/scripts/dump_openapi.py` +
     `check_openapi_fresh.sh` + pre-commit hook locale.
 - **v0.2.1** — fix bug asyncssh: rimosso kwarg invalido `client_keys_load_path`,
@@ -2522,12 +2552,12 @@ il flusso per i tenant gestiti localmente.
     libpcap).
   - Installer scrive `/etc/sudoers.d/da-invent-agent` con NOPASSWD
     limitato a `/usr/bin/nmap`, validato con `visudo -cf`.
-- **v0.2.4** — installer one-liner ora gestisce Tailscale:
-  - `install.sh` installa Tailscale (script ufficiale `tailscale.com/install.sh`)
+- **v0.2.4** — installer one-liner ora gestisce la VPN precedente:
+  - `install.sh` installa la VPN precedente (script ufficiale del fornitore)
     se mancante.
-  - `tailscale up` con `TAILSCALE_AUTH_KEY` se fornito (fully automated)
+  - ingresso nella VPN precedente con la sua chiave, se fornita (fully automated)
     o interattivo (stampa URL da aprire nel browser).
-  - Variabile `TAILSCALE_HOSTNAME` opzionale.
+  - Variabile opzionale per il nome del nodo.
 
 ### Changed
 
@@ -2581,7 +2611,7 @@ il flusso per i tenant gestiti localmente.
 
 | Tag/Versione | Commit | Note |
 |---|---|---|
-| `agent-v0.2.4` | `7501732` | installer gestisce Tailscale |
+| `agent-v0.2.4` | `7501732` | installer gestisce la VPN precedente |
 | (hub) | `43d5380` | aggiunto `scripts/hub-install.sh` |
 | (hub v0.2.421) | `a9cb244` | skip isNmapAvailable locale per remote |
 | `agent-v0.2.3` | `9ec4130` | UDP scan attivo + sudo fallback |
@@ -2606,21 +2636,21 @@ contesto di sessione, decisioni del branch `feature/remote-agents` e gotchas.
 **DA-INVENT** (alias DA-IPAM) è un IPAM multi-tenant Next.js 16 + better-sqlite3
 con architettura **hub + spoke**: un DB SQLite per tenant (`data/tenants/<code>.db`)
 e un hub condiviso (`data/hub.db`). Da Phase 1 il sistema supporta anche
-**agenti Python remoti** installati presso i clienti, raggiunti via Tailscale,
+**agenti Python remoti** installati presso i clienti, raggiunti via VPN precedente,
 che eseguono le primitive di rete (ping/nmap/SNMP/SSH/WinRM) dentro la rete
 del cliente. L'hub orchestrazione resta uguale; l'`Executor` decide a runtime
 se eseguire localmente o tramite agent.
 
 Stato produzione (2026-05-12): hub su **VM 533** (Proxmox PX-04, IP interno
 `192.168.4.8`, accessibile da chi sta sulla 192.168.4.0/24 o via jump host
-`root@192.168.40.4`). Un agent live su `bridge-domarc-ovh` (Tailscale IP
+`root@192.168.40.4`). Un agent live su `bridge-domarc-ovh` (IP nella VPN precedente
 `100.89.234.89`) servente il tenant `70791a` (DOMARC-OVH).
 
 ## 2. Architettura agenti remoti — modello mentale
 
 ```
 ┌────────────────┐                         ┌─────────────────────┐
-│   DA-INVENT    │   HTTPS via Tailscale   │  da-invent-agent    │
+│   DA-INVENT    │   HTTPS via VPN precedente   │  da-invent-agent    │
 │  hub (Next.js) │ ──────────────────────▶ │  (Python/FastAPI)   │
 │   VM 533       │   Bearer token          │   N istanze per     │
 │                │                         │   tenant possibili  │
@@ -2649,7 +2679,7 @@ src/lib/executor/             ← astrazione (introdotta in questo branch)
   ├── types.ts                ← interfacce I/O (PingResult, NmapResult, …)
   ├── index.ts                ← Executor interface + getExecutor(tenantCode)
   ├── local.ts                ← LocalExecutor (wrap src/lib/scanner/*)
-  └── remote.ts               ← RemoteExecutor (HTTP → agent via Tailscale)
+  └── remote.ts               ← RemoteExecutor (HTTP → agent via VPN precedente)
 
 src/lib/db-hub-schema.ts      ← include `tenants` (con agent_* deprecati)
                                 e `tenant_agents` (autorità)
@@ -2690,7 +2720,7 @@ agent/
 │   ├── auth.py                 ← bearer token + origin CGNAT + require_scope()
 │   ├── scopes.py               ← Scope enum (exec:network|device, admin:update)
 │   ├── errors.py               ← AgentException + error envelope uniforme
-│   ├── system_probe.py         ← _which() + probe Tailscale, cache 60s
+│   ├── system_probe.py         ← _which() + probe della VPN precedente, cache 60s
 │   ├── models.py               ← pydantic models speculari a executor/types.ts
 │   └── exec/
 │       ├── ping.py             ← subprocess ping (cross-platform)
@@ -2702,7 +2732,7 @@ agent/
 │       ├── winrm.py            ← subprocess winrm_bridge.py, classify_error
 │       └── winrm_bridge.py     ← copia di src/lib/devices/winrm-bridge.py (hardenato)
 ├── scripts/
-│   ├── install.sh              ← installer one-liner (apt, Tailscale, venv, systemd)
+│   ├── install.sh              ← installer one-liner (apt, VPN precedente, venv, systemd)
 │   ├── da-invent-agent.service ← systemd unit (no NoNewPrivileges per sudo+caps)
 │   ├── dump_openapi.py         ← rigenera openapi.json
 │   └── check_openapi_fresh.sh  ← pre-commit drift check
@@ -2746,9 +2776,9 @@ ssh -J root@192.168.40.4 root@192.168.4.8 'cd /opt/da-invent && npm run build &&
 | Web app hub | `https://192.168.4.8` (login: admin / **DaInvent2026** — cambia al primo uso) |
 | SSH hub VM 533 | `ssh -J root@192.168.40.4 root@192.168.4.8` (chiave già autorizzata su entrambi) |
 | Proxmox host | `ssh root@192.168.40.4` (chiave già autorizzata) |
-| Agent OVH | `ssh root@100.89.234.89` (direct via Tailscale, chiave autorizzata) |
+| Agent OVH | `ssh root@100.89.234.89` (direct via VPN precedente, chiave autorizzata) |
 | Agent OVH (config) | `/etc/da-invent-agent/config.yml`, service `systemctl status da-invent-agent` |
-| Tailscale visibility | hub `100.124.2.70` (da-invent), agent `100.89.234.89` (bridge-domarc-ovh) |
+| Visibilità nella VPN precedente | hub `100.124.2.70` (da-invent), agent `100.89.234.89` (bridge-domarc-ovh) |
 
 ## 6. Lezioni dure imparate (memorie persistenti)
 
@@ -2771,13 +2801,13 @@ Tutte in `~/.claude/projects/-Users-riccardo-Progetti-DA-IPAM/memory/`:
 
 ## 7. Gotchas tecniche scoperte in questa sessione
 
-### Tailscale + agent
+### VPN precedente + agent
 - Agent **DEVE** girare con CGNAT origin check (100.64.0.0/10): il middleware
-  rifiuta richieste da fuori la tailnet.
-- Tailscale **MagicDNS short name** e FQDN entrambi accettati. La validazione
+  rifiuta richieste da fuori la rete della VPN precedente.
+- **Nome breve del DNS della VPN precedente** e FQDN entrambi accettati. La validazione
   hostname hub-side usa regex permissiva: niente schemi `http://`, niente path.
-- Tailscale `up` interattivo: stampa URL, lo script aspetta. Con
-  `TAILSCALE_AUTH_KEY` (reusable) → fully automated.
+- Ingresso interattivo nella VPN precedente: stampa URL, lo script aspetta. Con
+  la sua chiave (reusable) → fully automated.
 
 ### nmap + capabilities (Ubuntu 24.04)
 - **nmap 7.94 hard-checka `euid==0`** per `-sU`/`-sS` ANCHE con
@@ -2822,7 +2852,7 @@ Tutte in `~/.claude/projects/-Users-riccardo-Progetti-DA-IPAM/memory/`:
 |---|---|---|
 | **6** | Heartbeat + observability persistenti | Tabella `agent_heartbeats` su hub.db, agente fa POST a hub `/api/agents/heartbeat` ogni 60s. Per ora abbiamo solo on-demand test. |
 | **7** | Routing **subnet → agent** | Quando un tenant ha N agent con subnet diverse, decidere quale chiamare in base al target IP. Campo `subnet_match` (CSV CIDR) già nello schema. `getExecutor()` accetta optional targetIp param. |
-| **7+** | TLS end-to-end | Oggi HTTP plain via Tailscale (WireGuard cifra). Per compliance: Tailscale Serve con cert LetsEncrypt OR self-signed con TOFU pinning hub-side. |
+| **7+** | TLS end-to-end | Oggi HTTP plain via VPN precedente (WireGuard cifra). Per compliance: il servizio HTTPS della VPN precedente con cert LetsEncrypt OR self-signed con TOFU pinning hub-side. |
 | **8** | Auto-update agent dall'hub | Endpoint agent `/admin/update` (token-protetto, scope `admin:update`) scarica tarball + verifica SHA256 + atomic swap + systemctl restart. Tabella `agent_releases` hub-side. |
 | **9** | UI tenant per-tenant agents | Oggi `/tenants/[id]/agent` mostra solo il primo agent (back-compat). Trasformare in `/tenants/[id]/agents` con lista multi-agent. |
 | **dep** | Rimuovere campi `tenants.agent_*` | Sono deprecati dalla migrazione. Lasciati per back-compat di route esistenti. Dopo 1-2 release di stabilità si possono droppare. |

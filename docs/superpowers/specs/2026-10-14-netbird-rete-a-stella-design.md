@@ -33,7 +33,7 @@ Il server NetBird (`netbird.domarc.it`, self-hosted) è di **DA-Infra**
 ## 1. Cos'è e cosa non è
 
 **È** il passaggio del collegamento fra i sistemi centrali Domarc e gli oggetti installati
-presso i clienti da Tailscale a NetBird, con tre proprietà:
+presso i clienti dalla VPN precedente a NetBird, con tre proprietà:
 
 1. **A stella.** Un oggetto remoto parla solo col centrale del suo mestiere, e solo sulle
    porte di quel mestiere.
@@ -70,7 +70,7 @@ E fa nascere **DA-Link** nella sua prima forma, con quattro compiti:
   verso DA-Vul-can come servizio, con un ADR del CRM che lo decide. DA-Link non c'entra
   (decisione 10);
 - **DA-VA-OVH**: è nel cloud di Domarc e si raggiunge con la sua VPN diretta. Resta fuori da
-  NetBird; alla fine si verifica solo che da-vulcan lo raggiunga ancora senza Tailscale;
+  NetBird; alla fine si verifica solo che da-vulcan lo raggiunga ancora senza la VPN precedente;
 - **Wazuh**: resta isolato e non visibile, mai in NetBird (decisione 8);
 - il cambio della rete dei colleghi: NetBird per chi lavora da fuori resta com'è. Cambia solo
   quello che serve a tenere i remoti fuori dalle sue policy (§6.2).
@@ -82,7 +82,7 @@ E fa nascere **DA-Link** nella sua prima forma, con quattro compiti:
 | 1 | Da NetBird si raggiunge **solo l'oggetto remoto**. Scansioni, SNMP e inventario partono da lui. Nessuna rotta verso la LAN del cliente. | rotta LAN solo per gli admin; rotta LAN anche ai centrali |
 | 2 | **Chiave d'ingresso monouso per oggetto**, legata ai gruppi giusti, che non scade una volta dentro. In più resta il token applicativo di ciascun dialogo. | una chiave riusabile per cliente; chiave + controlli di postura |
 | 3 | **DA-Link crea gruppi, chiavi e policy via API**, sul modello di `zbximport/netbird.py` di DA-Zabbix, con regole di nome comuni a DA-Zabbix. | a mano dalla console; uno strumento provvisorio; la procedura guidata di DA-Zabbix estesa a tutto |
-| 4 | **Doppio binario cliente per cliente, pilota cliente A**: NetBird accanto a Tailscale, verifica, poi si toglie Tailscale. Si finisce coi centrali e si spegne la tailnet. | solo i nuovi su NetBird; taglio netto |
+| 4 | **Doppio binario cliente per cliente, pilota cliente A**: NetBird accanto alla VPN precedente, verifica, poi si toglie la VPN precedente. Si finisce coi centrali e si spegne la rete della VPN precedente. | solo i nuovi su NetBird; taglio netto |
 | 5 | **Gruppi per ruolo, più un gruppo per cliente.** Le policy sono poche e fisse e si scrivono per ruolo; il gruppo del cliente non apre niente: serve a sapere di chi è un nodo e a revocarlo. | una policy per oggetto; centrali come «risorse» dietro un nodo d'instradamento |
 | 6 | **DA-Link nasce subito, piccolo, come progetto separato** in `~/Progetti/Domarc/DA-Link`, installato solo in sede. È l'inizio della console centrale della tappa 9. | dentro DA-IPAM come modalità (finirebbe su ogni appliance col ramo `main`); dentro l'hub DA-Vul-can |
 | 7 | **Le istanze IPAM mandano i dati a DA-Link** (443), come gli edge con da-vulcan e i proxy con Zabbix. Sul remoto non si apre nessuna porta in ingresso, tranne quelle per i tecnici. | DA-Link che va a prendere; entrambi |
@@ -102,31 +102,30 @@ E fa nascere **DA-Link** nella sua prima forma, con quattro compiti:
 | 21 | *(i due livelli e le YubiKey superati dalla 28)* **Una CA interna rilascia un certificato a ogni installazione**, riconosciuto in automatico dagli applicativi: due radici sulle YubiKey in cassaforte, intermedia in DA-Link limitata ai nomi interni, motore `step-ca`, certificati di 4 settimane rinnovati col segreto. | certificati auto-firmati con pin al primo contatto (oggi); una CA a un livello sola in DA-Link; una CA scritta a mano |
 | 22 | **La flotta sopravvive a DA-Link.** Un rinnovo non accorcia mai la licenza in corso (una più restrittiva vale dalla fine di quella attuale); nessuna risposta di DA-Link cambia la configurazione dell'istanza; il firewall locale accetta solo i centrali; la verifica R1–R5 la fa anche DA-ZABBIX. | fiducia piena in DA-Link |
 | 23 | *(la custodia superata dalla 28)* **Chiave di emergenza sulle YubiKey**, più forte della firma di DA-Link: firma bollettini che ritirano la fiducia a un DA-Link compromesso, fanno lavorare la flotta in modalità autonoma fino a una data e presentano il DA-Link nuovo. Arrivano da un canale di riserva o a mano. La flotta si riconfigura senza reinstallarla. | reinstallare ogni oggetto dopo una compromissione; un DA-Link di riserva sempre acceso |
-| 24 | **Il nome stabile di da-vulcan è `da-vulcan.netbird.selfhosted`** (14/10, fase 0). Lo risolve NetBird su ogni peer, edge compresi, senza DNS in più; il client si installa con `--hostname da-vulcan`. Sostituisce il nome MagicDNS nei 193 file censiti (appendice A.5) prima della fase 4. | un nome nel DNS interno (`domarc.it` sui DC), che andrebbe distribuito anche ai remoti |
-| 25 | **La fase 3 è solo di laboratorio** (14/10). Cliente A è il pilota della fase 2 e l'unico cliente esterno su Tailscale; poi entra il PX-NAS di casa. L'istanza di sede resta in LAN, DA-VA-OVH va su VPN diretta (fase 4), i nodi superati escono dalla tailnet in fase 4. | DA-VA-OVH in NetBird |
+| 24 | **Il nome stabile di da-vulcan è `da-vulcan.netbird.selfhosted`** (14/10, fase 0). Lo risolve NetBird su ogni peer, edge compresi, senza DNS in più; il client si installa con `--hostname da-vulcan`. Sostituisce il nome DNS della VPN precedente nei 193 file censiti (appendice A.5) prima della fase 4. | un nome nel DNS interno (`domarc.it` sui DC), che andrebbe distribuito anche ai remoti |
+| 25 | **La fase 3 è solo di laboratorio** (14/10). Cliente A è il pilota della fase 2 e l'unico cliente esterno sulla VPN precedente; poi entra il PX-NAS di casa. L'istanza di sede resta in LAN, DA-VA-OVH va su VPN diretta (fase 4), i nodi superati escono dalla rete della VPN precedente in fase 4. | DA-VA-OVH in NetBird |
 | 26 | **L'agente Python remoto di DA-IPAM si toglie nella tappa C1** (14/10). Nessuno lo usa: una sola riga sull'hub, mai collegata (appendice A.3). | portarlo su NetBird (rischio 9) |
 | 27 | **Il tenant `70791a` (DOMARC-OVH) si fonde in `70791`** nella tappa che porta DA-IPAM in DA-Link, con un backup prima; la sua rete diventa una rete del tenant Domarc. | cancellarlo; tenerlo separato con un campo `codcli` a parte |
 | 28 | **Niente YubiKey per ora** (Riccardo, 14/10 sera: «anche meno sicuro»). Supera in parte la 20, la 21 e la 23. **La CA ha un livello solo**: la sua chiave vive nel portachiavi di DA-Link. Le chiavi che non devono stare in DA-Link sono la chiave di recupero dei dati, la chiave di emergenza e la copia della chiave della CA. Stanno in **file cifrati con `age` e una frase lunga**, in **due copie**: una nel vault delle credenziali, una su una chiavetta USB in cassaforte. La frase la conoscono due persone. ADR 0014. | due YubiKey in cassaforte (rimandate); solo il vault; tutto dentro DA-Link; CA a due livelli |
 
 ## 3. Da dove si parte (verificato nel codice il 2026-10-14)
 
-La tailnet Tailscale di oggi è intestata all'account **personale**
-`riccardo.grandi@gmail.com`. La policy versionata sta in
-[`infra/tailscale/policy.json`](../../../infra/tailscale/policy.json): tag `da-hub`,
+La VPN precedente di oggi è intestata all'account **personale**
+`riccardo.grandi@gmail.com`. La policy versionata sta nel repo (cartella della VPN precedente, tolta il 20/10): tag `da-hub`,
 `da-bridge`, `da-admin`. I bridge già non si parlano fra loro.
 
-Tailscale è cablato in questi punti:
+La VPN precedente è cablata in questi punti:
 
 | Dove | Cosa fa | File |
 |---|---|---|
-| DA-IPAM, procedura guidata agenti | chiede «Hostname Tailscale (MagicDNS short)» e un'auth-key `tskey-auth-…`, che finisce nel comando d'installazione | `src/app/(dashboard)/agents/page.tsx`, `src/app/(dashboard)/tenants/[id]/agent/page.tsx` |
-| DA-IPAM, credenziali di sistema | tipo `tailscale` fra le credenziali | `src/app/api/system-credentials/**` |
-| DA-IPAM, URL dell'hub | ripiego `https://<hostname>` MagicDNS | `src/app/api/settings/hub-url/route.ts` |
+| DA-IPAM, procedura guidata agenti | chiede il nome breve del nodo nella VPN precedente e la sua chiave d'ingresso, che finisce nel comando d'installazione | `src/app/(dashboard)/agents/page.tsx`, `src/app/(dashboard)/tenants/[id]/agent/page.tsx` |
+| DA-IPAM, credenziali di sistema | tipo della VPN precedente fra le credenziali | `src/app/api/system-credentials/**` |
+| DA-IPAM, URL dell'hub | ripiego `https://<hostname>` col DNS della VPN precedente | `src/app/api/settings/hub-url/route.ts` |
 | Agente Python di DA-IPAM | accetta solo chiamate dalla fascia `100.64.0.0/10`, porta 8443 | `agent/da_invent_agent/auth.py`, `agent/scripts/install.sh` |
-| Scanner-Edge, heartbeat | manda `tailscale_ip` letto da `tailscale ip -4` | `DA-Vul-can/infra/scanner-edge/app/scanner_edge/services/heartbeat.py` |
-| Scanner-Edge, primo avvio | `tailscale up --advertise-tags=tag:da-bridge`, `ufw allow in on tailscale0` | `…/firstboot/scanner-edge-firstboot.sh`, `…/scripts/install.sh`, `harden.sh` |
-| Bridge-node (Ansible) | ruolo `tailscale`, SSH a regime solo dalla fascia Tailscale | `DA-Vul-can/infra/bridge-node/**` |
-| Nomi | DA-Vul-can si raggiunge «sempre per nome `da-vulcan`», risolto da MagicDNS; DA-VA-OVH su `100.89.234.89` | `Domarc/README.md`, `DA-Vul-can/CONTEXT.md` |
+| Scanner-Edge, heartbeat | manda l'IP della VPN precedente, letto dal suo client | `DA-Vul-can/infra/scanner-edge/app/scanner_edge/services/heartbeat.py` |
+| Scanner-Edge, primo avvio | ingresso nella VPN precedente col tag `da-bridge`, UFW aperto su tutta la sua interfaccia | `…/firstboot/scanner-edge-firstboot.sh`, `…/scripts/install.sh`, `harden.sh` |
+| Bridge-node (Ansible) | ruolo della VPN precedente, SSH a regime solo dalla sua fascia | `DA-Vul-can/infra/bridge-node/**` |
+| Nomi | DA-Vul-can si raggiunge «sempre per nome `da-vulcan`», risolto da DNS della VPN precedente; DA-VA-OVH su `100.89.234.89` | `Domarc/README.md`, `DA-Vul-can/CONTEXT.md` |
 
 NetBird invece c'è già:
 
@@ -373,7 +372,7 @@ primo cliente entra. Prima di qualunque oggetto remoto:
 ### 6.3 Si vede nell'interfaccia
 
 - **DA-Link**: un elenco degli oggetti remoti per cliente.
-  - Per ogni oggetto: tipo e moduli, rete (NetBird / Tailscale / nessuna), nome e IP NetBird,
+  - Per ogni oggetto: tipo e moduli, rete (NetBird / VPN precedente / nessuna), nome e IP NetBird,
     connesso o no, ultimo contatto NetBird, ultimo segnale di vita, livello di privacy scelto dall'istanza, numeri dell'inventario se
     condivisi.
   - In cima: esito della verifica R1–R5, con data e fonte della lettura, e l'ultimo
@@ -789,18 +788,18 @@ Ogni fase si chiude da sola. Ci si può fermare dopo qualunque fase senza lascia
 
 **Fase 0 — Preparazione. Niente codice, niente clienti.**
 
-- Censimento dei nodi Tailscale (`tailscale status` da un centrale): quali clienti, quale tipo
+- Censimento dei nodi della VPN precedente (il suo stato letto da un centrale): quali clienti, quale tipo
   di oggetto, quale macchina. L'elenco diventa la lista della fase 3 e il primo contenuto di
   DA-Link.
 - Verifica che il codice tenant delle istanze DA-IPAM sia il `codcli` del gestionale
   (decisione 12), istanza per istanza.
-- **Prova di convivenza su una VM di prova** con Tailscale e NetBird accesi insieme (§11,
+- **Prova di convivenza su una VM di prova** con la VPN precedente e NetBird accesi insieme (§11,
   rischio 1). Se non passa, si decide il rimedio prima di toccare cliente A.
 - Versione del server NetBird; comportamento di scadenza dei nodi entrati con setup key;
   quali permessi servono all'utente di servizio.
 - §6.2: `All` fuori dalle policy dei colleghi, `Default` spenta.
 - da-vulcan e DA-ZABBIX entrano in NetBird nei gruppi `centro-*`, **senza lasciare
-  Tailscale**.
+  la VPN precedente**.
 - Il nome stabile per da-vulcan (§11, rischio 3).
 - ~~La cerimonia delle chiavi con le YubiKey~~ (decisione 28): la **sessione delle chiavi**
   si fa nella tappa B, quando c'è la macchina di DA-Link. Nascono la chiave di recupero e la
@@ -819,7 +818,7 @@ colleghi raggiungono ciò che raggiungevano prima.
 - Portachiavi con sblocco all'avvio (§9.2), `step-ca` con la radice (§8.4), licenze e
   segreti (§8).
 - Sugli oggetti l'arresto per licenza nasce **col freno**: segnala soltanto (§8.2).
-- Nei repo esistenti, le modifiche del §12, con Tailscale ancora supportato accanto.
+- Nei repo esistenti, le modifiche del §12, con la VPN precedente ancora supportata accanto.
 
 Esce quando:
 - i cancelli dei repo sono verdi;
@@ -838,7 +837,7 @@ Esce quando:
 
 **Fase 2 — Pilota cliente A**: istanza IPAM `10.0.0.2`, edge `10.0.1.141`, `proxy-cliente-a`.
 
-1. NetBird accanto a Tailscale sulle macchine del cliente A, con chiavi emesse da DA-Link. Il proxy,
+1. NetBird accanto alla VPN precedente sulle macchine del cliente A, con chiavi emesse da DA-Link. Il proxy,
    se vive da solo, passa dalla procedura guidata di DA-Zabbix.
 2. Gli indirizzi con cui centrali e cliente A si cercano passano ai nomi NetBird.
 3. Si verifica **dal di fuori**, flusso per flusso, come lo usa chi lo usa:
@@ -850,7 +849,7 @@ Esce quando:
    - da un nodo cliente A non si raggiunge nessun altro remoto, né un centrale fuori dalle porte
      previste;
    - le porte Wazuh non rispondono dall'interfaccia NetBird.
-5. Una settimana a doppio binario, poi si toglie Tailscale dal cliente A.
+5. Una settimana a doppio binario, poi si toglie la VPN precedente dal cliente A.
 
 Cliente A è un cliente in esercizio: ogni passo su quelle macchine chiede conferma.
 
@@ -860,41 +859,41 @@ finestra per cliente.
 
 **Fase 4 — Spegnimento.**
 
-- Tailscale si toglie dai centrali.
+- La VPN precedente si toglie dai centrali.
 - Si verifica che da-vulcan raggiunga DA-VA-OVH sulla VPN diretta.
-- Tutti i riferimenti a `da-vulcan` risolto da MagicDNS e all'IP Tailscale di DA-VA passano
+- Tutti i riferimenti a `da-vulcan` risolto dal DNS della VPN precedente e all'IP di DA-VA in quella VPN passano
   al nome nuovo (§11, rischio 3).
-- Si toglie il codice Tailscale: campi della procedura guidata, tipo di credenziale,
-  `tailscale_ip` nell'heartbeat, ruolo Ansible, `infra/tailscale/`.
-- La tailnet personale si cancella.
+- Si toglie il codice della VPN precedente: campi della procedura guidata, tipo di credenziale,
+  il suo IP nell'heartbeat, ruolo Ansible, la cartella della sua policy.
+- L'account personale della VPN precedente si cancella.
 
 ## 11. Rischi e trappole note in anticipo
 
-1. **Tailscale e NetBird nella stessa fascia di indirizzi.** Entrambi usano `100.64.0.0/10`.
-   Sui nodi Linux Tailscale mette una regola firewall che scarta il traffico da quella fascia
+1. **La VPN precedente e NetBird nella stessa fascia di indirizzi.** Entrambi usano `100.64.0.0/10`.
+   Sui nodi Linux la VPN precedente mette una regola firewall che scarta il traffico da quella fascia
    non arrivato dalla propria interfaccia: a doppio binario potrebbe scartare proprio il
    traffico NetBird. Si prova in fase 0. Rimedi possibili, da scegliere dopo la prova:
-   - Tailscale con le regole firewall disattivate sui remoti durante il doppio binario;
+   - La VPN precedente con le regole firewall disattivate sui remoti durante il doppio binario;
    - una fascia NetBird diversa nelle impostazioni dell'account.
 
-   **Misurato il 14/10** su una VM di prova (Ubuntu 24.04 sul PX-NAS di casa, Tailscale
+   **Misurato il 14/10** su una VM di prova (Ubuntu 24.04 sul PX-NAS di casa, VPN precedente
    1.104.1 e NetBird 0.80.0, poi cancellata). Esito:
-   - Se NetBird parte dopo Tailscale, il traffico passa: la sua regola di accettazione sta
+   - Se NetBird parte dopo la VPN precedente, il traffico passa: la sua regola di accettazione sta
      in testa alla catena `INPUT`.
-   - **Basta riavviare `tailscaled` perché `ts-input` torni in testa.** La regola
-     `-s 100.64.0.0/10 ! -i tailscale0 -j DROP` scarta allora il traffico NetBird: ssh in
+   - **Basta riavviare il servizio della VPN precedente perché `ts-input` torni in testa.** La regola
+     `-s 100.64.0.0/10 ! -i <interfaccia della VPN precedente> -j DROP` scarta allora il traffico NetBird: ssh in
      timeout, 27 pacchetti scartati.
-   - Con **`tailscale set --netfilter-mode=off`** passano tutti e due. La prova è stata
-     fatta dopo il riavvio di `tailscaled` e dopo il riavvio della VM: ssh via NetBird per
-     nome, ssh da da-vulcan via Tailscale, `tailscale ping`.
+   - Con **il firewall della VPN precedente spento (`netfilter-mode=off`)** passano tutti e due. La prova è stata
+     fatta dopo il riavvio del suo servizio e dopo il riavvio della VM: ssh via NetBird per
+     nome, ssh da da-vulcan via VPN precedente, il suo ping.
 
    **Rimedio scelto: `--netfilter-mode=off` su ogni nodo Linux a doppio binario**, da
-   mettere prima di installare NetBird. Senza le regole di Tailscale l'unica barriera locale
-   è il firewall della macchina. Sull'edge oggi c'è `ufw allow in on tailscale0`, e la
+   mettere prima di installare NetBird. Senza le regole della VPN precedente l'unica barriera locale
+   è il firewall della macchina. Sull'edge oggi UFW accetta tutto dall'interfaccia della VPN precedente, e la
    barriera vera resta la policy (rischio 10). La fascia NetBird diversa non serve.
 2. **Spegnere `Default` o togliere `All` taglia i colleghi** se le loro policy non esistono
    già a parte. Per questo §6.2 viene prima di tutto, con la fotografia per tornare indietro.
-3. **Il nome `da-vulcan` lo risolve Tailscale**, ed è scritto in documenti, script e regole
+3. **Il nome `da-vulcan` lo risolve la VPN precedente**, ed è scritto in documenti, script e regole
    («sempre per nome»). Serve un nome stabile che non dipenda dalla rete:
    `da-vulcan.netbird.selfhosted` o un nome nel DNS interno. Si sceglie in fase 0 e si
    sostituisce prima della fase 4, con una grep che deve tornare vuota.
@@ -922,14 +921,14 @@ finestra per cliente.
    controllo passa ancora ma non distingue più nulla. Se l'agente resta (§15), la fonte
    ammessa diventa la rete NetBird dell'account letta all'installazione, più bearer e scope
    come oggi.
-10. **Il firewall dell'edge si fida di tutta l'interfaccia Tailscale** (`ufw allow in on tailscale0`).
+10. **Il firewall dell'edge si fida di tutta l'interfaccia della VPN precedente** (UFW la accetta intera).
     Su NetBird si aprono solo le porte delle policy: 6443 e 22 sull'edge, 22 e 443
     sull'istanza IPAM. La barriera vera è la policy, e il firewall è la seconda linea.
 11. **Il certificato dell'edge** contiene oggi nome DNS e IP della LAN. Si aggiunge il nome
     NetBird ai SAN (`tls_extra_sans`) e si verifica in fase 2 che da-vulcan lo accetti.
 12. **Il firewall del cliente in uscita.** NetBird prova la via diretta in UDP e ripiega sul
     relay in 443 TCP. Su un cliente che chiude tutto in uscita si verifica che il relay passi,
-    prima di togliere Tailscale.
+    prima di togliere la VPN precedente.
 13. **DA-Link bloccato dopo un riavvio** (§9.2). Gli oggetti reggono sei settimane, ma un
     riavvio non notato durante le ferie si somma alla tolleranza che sta finendo. Per questo
     DA-ZABBIX lo segnala subito e la frase di sblocco la conoscono più persone.
@@ -989,17 +988,17 @@ finestra per cliente.
 - Certificato della CA interna per l'interfaccia; radice nell'archivio di fiducia, al posto
   del pin SPKI verso l'edge (§8.4).
 - Firewall sull'interfaccia NetBird: solo 22 e 443, più 6443 se l'istanza contiene l'edge.
-- Tailscale tolto da procedura guidata e credenziali nella fase 4. Prima si decide che fine
+- La VPN precedente tolta da procedura guidata e credenziali nella fase 4. Prima si decide che fine
   fa l'agente remoto (§15).
 
 **DA-Vul-can / Scanner-Edge**
 
-- Heartbeat: campi `overlay` (`netbird`/`tailscale`/`nessuno`), `overlay_ip`,
-  `overlay_name`; `tailscale_ip` resta fino alla fase 4.
+- Heartbeat: campi `overlay` (`netbird`/VPN precedente/`nessuno`), `overlay_ip`,
+  `overlay_name`; il campo IP della VPN precedente resta fino alla fase 4.
 - Hub: salva e mostra la rete dell'heartbeat (D15).
 - Primo avvio, `install.sh`, `harden.sh`: setup key NetBird; firewall per porta su `wt0`;
   nome NetBird nei SAN.
-- Bridge-node Ansible: ruolo `netbird` accanto a `tailscale`, poi al suo posto.
+- Bridge-node Ansible: ruolo `netbird` accanto a quello della VPN precedente, poi al suo posto.
 - Edge: rinnovo di licenza, segreto e certificato, con P7; arresto per licenza col freno
   (§8.2); `tls_cert.py` usa il certificato della CA e tiene l'auto-firmato solo come
   ripiego (§8.4).
@@ -1023,7 +1022,7 @@ finestra per cliente.
 **Deploy-Appliance**
 
 - Parametro setup key NetBird e token di DA-Link nell'installatore, al posto dell'auth-key
-  Tailscale.
+  della VPN precedente.
 - La VM Wazuh non riceve mai NetBird.
 - La due radici della CA vanno nell'immagine e nell'installatore.
 
@@ -1041,7 +1040,7 @@ l'utente di servizio di DA-Link e le regole «`All` mai» e «Wazuh mai».
 - **Tappa 7** (edge guidato da DA-IPAM): non si tocca il contratto con l'hub; si cambia la
   rete sotto. La migrazione edge per edge (7e) e la fase 3 si fanno insieme dove coincidono.
 - **Tappa 8** (installazione dall'immagine): il `/setup` del primo avvio chiede setup key e
-  token di DA-Link, non l'auth-key Tailscale. Se la tappa 8 parte prima, nasce già così.
+  token di DA-Link, non l'auth-key della VPN precedente. Se la tappa 8 parte prima, nasce già così.
 - Questo lavoro non dipende dalle tappe 1–6, e quelle non dipendono da lui.
 
 ## 14. Come si verifica che funziona
@@ -1116,7 +1115,7 @@ l'utente di servizio di DA-Link e le regole «`All` mai» e «Wazuh mai».
   scadono prima della riconfigurazione.
 - ~~Il nome stabile per da-vulcan (rischio 3).~~ Chiuso il 14/10: decisione 24.
 - ~~Il rimedio alla convivenza in `100.64.0.0/10`~~ chiuso il 14/10: `--netfilter-mode=off` (rischio 1, misurato).
-- ~~**L'agente Python remoto di DA-IPAM**~~ chiuso il 14/10, decisione 26 (`agent/`, raggiunto oggi via Tailscale dalla VM 533).
+- ~~**L'agente Python remoto di DA-IPAM**~~ chiuso il 14/10, decisione 26 (`agent/`, raggiunto oggi via VPN precedente dalla VM 533).
   Con un'istanza IPAM per cliente forse non serve più. Si decide se toglierlo o portarlo su
   NetBird, contando prima chi lo usa davvero.
 - Il nome dei due livelli come lo legge il cliente (oggi «solo stato» e «stato + inventario»).
@@ -1125,16 +1124,16 @@ l'utente di servizio di DA-Link e le regole «`All` mai» e «Wazuh mai».
 
 ## Appendice A — Censimento fase 0 (2026-10-14, fonti)
 
-Fonti, tutte in sola lettura il 14/10: `tailscale status --json` da da-vulcan; API di
+Fonti, tutte in sola lettura il 14/10: lo stato JSON della VPN precedente da da-vulcan; API di
 `netbird.domarc.it` (gruppi, policy, reti e risorse, rotte, nameserver, peer, utenti, chiavi;
 nomi soltanto); `edge_bridges` di da-vulcan; `tenants` e `tenant_agents` dell'hub DA-IPAM
 (VM 533) e dell'istanza cliente A; `anagrafiche_gestionale` del CRM; porte provate da da-vulcan
-attraverso Tailscale. Le date sono giorni (gli orari delle fonti sono UTC).
+attraverso la VPN precedente. Le date sono giorni (gli orari delle fonti sono UTC).
 
-### A.1 Nodi Tailscale
+### A.1 Nodi della VPN precedente
 
-È la vista di da-vulcan: un nodo che la policy Tailscale nasconde a da-vulcan non compare.
-La tailnet ha 10 nodi, offline compresi.
+È la vista di da-vulcan: un nodo che la policy della VPN precedente nasconde a da-vulcan non compare.
+La VPN precedente ha 10 nodi, offline compresi.
 
 | Nodo | Oggetto (dedotto) | Cliente | Online | Ultimo contatto |
 |---|---|---|---|---|
@@ -1148,7 +1147,7 @@ La tailnet ha 10 nodi, offline compresi.
 | `da-va` | VA vecchia, sostituita da DA-VA-OVH | 70791 | no | 19/07 |
 | `MacBook Pro`, `S25 Ultra di riccardo` | dispositivi di Riccardo | — | no | 02/09 |
 
-**Per la fase 3 l'elenco è corto.** L'unico cliente esterno su Tailscale è **cliente A (71734)**, che
+**Per la fase 3 l'elenco è corto.** L'unico cliente esterno sulla VPN precedente è **cliente A (71734)**, che
 è anche il pilota della fase 2. Tutto il resto appartiene a Domarc (70791): l'istanza di sede,
 DA-VA-OVH e i laboratori. I proxy Zabbix dei clienti sono già in NetBird (A.2).
 
@@ -1205,19 +1204,19 @@ Simone Annovi e Luca Aguzzoli sono anche gli unici utenti senza gruppi automatic
 | `70791a` | tenant dell'hub «DOMARC-OVH» | — (non è un `codcli`) | **da correggere** |
 
 Nessun tenant `DEFAULT` è registrato. Il `public_hostname` dell'edge 5, `da-va-ovh`, non
-risolve da da-vulcan: il nome Tailscale vero è `bridge-domarc-ovh`.
+risolve da da-vulcan: il nome vero nella VPN precedente è `bridge-domarc-ovh`.
 
 **Agente Python di DA-IPAM (`tenant_agents`).** Sull'hub ce n'è uno solo: tenant `70791a`,
 `bridge-domarc-ovh:8443`, **mai visto** (`last_seen_at` vuoto). Sull'istanza cliente A non ce n'è
 nessuno. In pratica non lo usa nessuno.
 
-### A.4 Porte degli edge (provate da da-vulcan via Tailscale)
+### A.4 Porte degli edge (provate da da-vulcan via VPN precedente)
 
 | Edge | Nodo | 6443 | 8443 | Altre |
 |---|---|---|---|---|
 | Cliente A (2) | `cliente-a-appliance` | aperta | chiusa | 22 |
 | DA-VA-OVH (5) | `bridge-domarc-ovh` | aperta | aperta | 22 |
-| DOMARC (1) | `da-invent` | chiusa | chiusa | 22 e 443. Un `uvicorn` ascolta su `0.0.0.0:8443` ma via Tailscale non risponde: l'interfaccia dell'edge di sede si raggiunge in LAN |
+| DOMARC (1) | `da-invent` | chiusa | chiusa | 22 e 443. Un `uvicorn` ascolta su `0.0.0.0:8443` ma via VPN precedente non risponde: l'interfaccia dell'edge di sede si raggiunge in LAN |
 | PX-NAS (3) | `appliance-pxnas-domarc` | chiusa | chiusa | 22. L'ultimo contatto dell'edge è dell'08/09: è fermo |
 
 Per P3 basta quindi **6443**. Fa eccezione DA-VA-OVH, che risponde anche su 8443; resta in

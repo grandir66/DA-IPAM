@@ -1,4 +1,4 @@
-# ADR 0011 — NetBird al posto di Tailscale, a stella, con DA-Link che fa entrare gli oggetti da solo
+# ADR 0011 — NetBird al posto della VPN precedente, a stella, con DA-Link che fa entrare gli oggetti da solo
 
 **Stato:** Proposed (diventa Accepted con l'ok di Riccardo al documento di progetto)
 **Data:** 2026-10-14
@@ -18,8 +18,8 @@ dei clienti.
 - un'istanza DA-IPAM, che può contenere edge, proxy, LibreNMS e altri applicativi;
 - Wazuh, che resta isolato.
 
-Oggi edge e bridge si collegano via Tailscale, con una tailnet intestata a un account
-personale. Tailscale è cablato nell'installazione dell'edge, nell'agente Python e nella
+Oggi edge e bridge si collegano con la VPN precedente, intestata a un account
+personale. La VPN precedente è cablata nell'installazione dell'edge, nell'agente Python e nella
 procedura guidata di DA-IPAM.
 
 Domarc ha già NetBird self-hosted (`netbird.domarc.it`), che usano i colleghi e su cui
@@ -76,7 +76,7 @@ che vive solo in sede, non nel codice che va a ogni cliente.
   lo blocca**: la privacy del cliente dipenderebbe da Domarc invece che da lui.
 - **OSINT del CRM attraverso DA-Link**: DA-Link si allargherebbe oltre la rete e diventerebbe
   necessario anche per l'OSINT.
-- **Restare su Tailscale passando a una tailnet aziendale**: due reti da tenere invece di una.
+- **Restare sulla VPN precedente passando a un suo account aziendale**: due reti da tenere invece di una.
 
 ## Conseguenze
 

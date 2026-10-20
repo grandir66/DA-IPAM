@@ -1,7 +1,7 @@
 # Wazuh Agent — Playbook unificato (install + upgrade)
 
 > **Versione target:** `4.14.5`
-> **Manager Domarc:** `da-wazuh.domarc.it` (Tailscale: stesso FQDN, IP storico `192.168.4.19`)
+> **Manager Domarc:** `da-wazuh.domarc.it` (IP storico `192.168.4.19`)
 > **Manager cliente (esempio):** `172.16.1.10` (`srv-wazuh` — LAN privata 172.16.0.0/16)
 >
 > Per ogni cliente / sito sostituire `da-wazuh.domarc.it` con l'IP/FQDN del manager target.

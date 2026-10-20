@@ -460,7 +460,8 @@ export function Sidebar() {
         {isSuperadmin && (
           <>
             <NavItem href="/tenants" icon={Building2} label="Clienti" active={isActive("/tenants")} collapsed={collapsed} onNavigate={closeMobile} />
-            <NavItem href="/agents" icon={ServerCog} label="Agenti remoti" active={isActive("/agents")} collapsed={collapsed} onNavigate={closeMobile} />
+            {/* L'elenco degli agenti remoti è tolto (20/10/2026): all'indirizzo resta l'URL pubblico dell'hub. */}
+            <NavItem href="/agents" icon={ServerCog} label="URL dell'hub" active={isActive("/agents")} collapsed={collapsed} onNavigate={closeMobile} />
           </>
         )}
 

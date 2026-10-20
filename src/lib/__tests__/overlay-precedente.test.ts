@@ -16,7 +16,14 @@ import { test, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { closeHubDb, getHubDb, setSetting } from "@/lib/db-hub";
 import { getCredential, listCredentials } from "@/lib/credentials-vault";
-import { TIPI_CREDENZIALE, TipoCredenzialeSchema } from "@/lib/credentials-vault-tipi";
+import {
+  AggiornaCredenzialeSchema,
+  CreaCredenzialeSchema,
+  TIPI_CREDENZIALE,
+  TipoCredenzialeSchema,
+  VoceBootstrapSchema,
+  tipoDaInviare,
+} from "@/lib/credentials-vault-tipi";
 import { resolvePublicHubOrigin, urlHubConfigurato } from "@/lib/inventory-agent/public-url";
 
 const ENV = ["DA_IPAM_PUBLIC_URL", "DA_INVENT_PUBLIC_HOST", "APPLIANCE_PUBLIC_HOST", "APPLIANCE_LAN_IP", "APPLIANCE_HOST", "NEXTAUTH_URL"];
@@ -72,4 +79,27 @@ test("l'indirizzo dell'hub viene solo da public_hub_url: nessun'altra impostazio
     effective_url: "https://ipam.esempio.invalid",
     source: "public_hub_url",
   });
+});
+
+// Rilievo 6 della revisione (20/10): sono gli schemi che le tre rotte usano davvero
+// (POST /api/system-credentials, PUT /api/system-credentials/[id], POST …/bootstrap).
+// La rotta intera non si chiama da qui: la guardia admin vuole la sessione di next-auth
+// e `mock.module` non gira sotto Node 22 con tsx (stessa scelta di pulizia-applica).
+test("le tre rotte delle credenziali rifiutano un tipo tolto o mai ammesso", () => {
+  for (const kind of ["vpn-precedente", "master", "tipo-tolto"]) {
+    assert.equal(CreaCredenzialeSchema.safeParse({ kind, label: "x" }).success, false, `POST ${kind}`);
+    assert.equal(AggiornaCredenzialeSchema.safeParse({ kind }).success, false, `PUT ${kind}`);
+    assert.equal(VoceBootstrapSchema.safeParse({ kind, label: "x" }).success, false, `bootstrap ${kind}`);
+  }
+  assert.equal(CreaCredenzialeSchema.safeParse({ kind: "pve", label: "x" }).success, true);
+  assert.equal(AggiornaCredenzialeSchema.safeParse({ label: "x" }).success, true, "PUT senza kind");
+});
+
+// Rilievo 1: aprire in modifica una credenziale di un tipo non più ammesso e salvarla
+// rimandava il suo `kind` e prendeva 400. Il tipo si manda solo se è cambiato.
+test("modifica: il tipo si manda solo se cambiato; in creazione sempre", () => {
+  assert.equal(tipoDaInviare({ originale: "tipo-tolto", scelto: "tipo-tolto" }), undefined);
+  assert.equal(tipoDaInviare({ originale: "wazuh", scelto: "wazuh" }), undefined);
+  assert.equal(tipoDaInviare({ originale: "tipo-tolto", scelto: "other" }), "other");
+  assert.equal(tipoDaInviare({ originale: undefined, scelto: "pve" }), "pve");
 });

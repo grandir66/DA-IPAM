@@ -192,6 +192,8 @@ CREATE TABLE IF NOT EXISTS mac_product_map (
   UNIQUE(mac_prefix, hostname_pattern)
 );
 
+-- Agente Python remoto tolto il 20/10/2026 (decisione 26 della spec NetBird): la tabella
+-- resta, senza uso (niente DROP), come le colonne tenants.agent_*.
 CREATE TABLE IF NOT EXISTS tenant_agents (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   tenant_id INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,

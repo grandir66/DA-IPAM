@@ -1,38 +1,19 @@
 import { NextResponse } from "next/server";
-import fs from "fs";
-import path from "path";
+import { MESSAGGIO_AGENTE_TOLTO } from "@/lib/agente-remoto-tolto";
 
 /**
- * Serve l'installer dell'agent (`agent/scripts/install.sh`) al volo.
- *
- * Pensato per essere consumato come `curl -fsSL <hub>/agent-install.sh | bash`
- * con le variabili d'ambiente passate dal lato chiamante (TENANT_CODE,
- * HUB_URL, AGENT_TOKEN, AGENT_PORT). Vedi l'header dello script per le
- * istruzioni complete.
- *
- * Route pubblica: lo script di per sé non contiene segreti, e il chiamante
- * fornisce comunque il token plaintext via env nel proprio shell.
+ * Installatore dell'agente Python remoto, tolto il 20/10/2026 (decisione 26 della spec
+ * NetBird). Rotta pubblica e ferma (410) per un giro, come le altre dell'agente (perché in
+ * `lib/agente-remoto-tolto.ts`): chi la usa ancora con `curl … | bash` riceve uno script
+ * che dice cosa è successo ed esce con errore, invece di un JSON che bash non capisce.
  */
 export async function GET() {
-  try {
-    const scriptPath = path.join(process.cwd(), "agent", "scripts", "install.sh");
-    if (!fs.existsSync(scriptPath)) {
-      return NextResponse.json(
-        { error: "agent/scripts/install.sh non disponibile in questa installazione hub." },
-        { status: 404 },
-      );
-    }
-    const body = fs.readFileSync(scriptPath, "utf-8");
-    return new NextResponse(body, {
-      status: 200,
-      headers: {
-        "Content-Type": "text/x-shellscript; charset=utf-8",
-        "Cache-Control": "no-cache, no-store, must-revalidate",
-        "Content-Disposition": 'inline; filename="install.sh"',
-      },
-    });
-  } catch (e) {
-    console.error("Errore serving install.sh:", e);
-    return NextResponse.json({ error: "Errore nel servire lo script" }, { status: 500 });
-  }
+  const corpo = `#!/bin/sh\necho "${MESSAGGIO_AGENTE_TOLTO}" >&2\nexit 1\n`;
+  return new NextResponse(corpo, {
+    status: 410,
+    headers: {
+      "Content-Type": "text/x-shellscript; charset=utf-8",
+      "Cache-Control": "no-cache, no-store, must-revalidate",
+    },
+  });
 }

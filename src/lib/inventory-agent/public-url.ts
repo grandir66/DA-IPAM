@@ -137,9 +137,9 @@ export function resolvePublicHubOrigin(request: Request): {
 }
 
 /**
- * Indirizzo dell'hub configurato a mano (GET /api/settings/hub-url): quello che il
- * wizard «Nuovo agente» mette nel comando d'installazione. `effective_url` null = il
- * chiamante ricade sull'origin del browser, con l'avviso.
+ * Indirizzo dell'hub configurato a mano (GET /api/settings/hub-url), mostrato e
+ * modificato nella pagina «URL dell'hub» (`/agents`). `effective_url` null = il
+ * chiamante ricade sull'origin del browser.
  */
 export function urlHubConfigurato(): {
   public_hub_url: string;

@@ -48,12 +48,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { CredentialKind, SystemCredential } from "@/lib/credentials-vault";
+import { tipoDaInviare } from "@/lib/credentials-vault-tipi";
 
 /**
  * Mappa kind+label → URL della pagina di configurazione corrispondente.
  * Le integrazioni Docker (Wazuh, LibreNMS, Graylog, Scanner-Edge, Loki) vivono
  * tutte sotto /settings?tab=moduli#module-<anchor>. Il Hub URL pubblico
- * (usato per enrollment agenti) vive invece in /agents#hub-url-config.
+ * vive invece in /agents#hub-url-config (pagina «URL dell'hub»).
  *
  * Ritorna l'URL completo (deep-link diretto) oppure null se la entry vault è
  * "stand-alone" (nessuna pagina di config dedicata — usato come hint testuale
@@ -122,6 +123,8 @@ interface RevealedSecrets {
 interface EditFormState {
   id?: number;
   kind: CredentialKind;
+  /** Tipo della riga aperta in modifica: si rimanda solo se cambiato (può essere un tipo tolto). */
+  kindOriginale?: string;
   label: string;
   url: string;
   api_url: string;
@@ -246,6 +249,7 @@ export function LaunchpadClient({ initialItems, embedded = false }: LaunchpadCli
     setForm({
       id: item.id,
       kind: item.kind,
+      kindOriginale: item.kind,
       label: item.label,
       url: item.url ?? "",
       api_url: item.api_url ?? "",
@@ -265,13 +269,14 @@ export function LaunchpadClient({ initialItems, embedded = false }: LaunchpadCli
     setBusy(true);
     try {
       const payload: Record<string, unknown> = {
-        kind: form.kind,
         label: form.label.trim(),
         url: form.url.trim() || null,
         api_url: form.api_url.trim() || null,
         username: form.username.trim() || null,
         notes: form.notes.trim() || null,
       };
+      const kind = tipoDaInviare({ originale: form.kindOriginale, scelto: form.kind });
+      if (kind !== undefined) payload.kind = kind;
       // Secret: invia solo se l'admin ha digitato qualcosa. Stringa vuota = NON cambiare.
       if (form.password.trim()) payload.password = form.password;
       if (form.api_token.trim()) payload.api_token = form.api_token;
@@ -583,9 +588,9 @@ export function LaunchpadClient({ initialItems, embedded = false }: LaunchpadCli
                     if (href) {
                       const incomplete = isCredentialIncomplete(item);
                       // Label dinamico: "Impostazioni" per /settings,
-                      // "wizard agenti" per /agents (Hub URL config sta lì).
+                      // "URL dell'hub" per /agents (Hub URL config sta lì).
                       const destinationLabel = href.startsWith("/agents")
-                        ? "wizard agenti"
+                        ? "URL dell'hub"
                         : "Impostazioni";
                       if (incomplete) {
                         return (
@@ -602,7 +607,7 @@ export function LaunchpadClient({ initialItems, embedded = false }: LaunchpadCli
                         );
                       }
                       const linkLabel = href.startsWith("/agents")
-                        ? "Hub URL & enrollment →"
+                        ? "URL dell'hub →"
                         : "Configura integrazione →";
                       return (
                         <a

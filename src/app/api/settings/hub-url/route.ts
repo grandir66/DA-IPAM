@@ -5,7 +5,7 @@ import { urlHubConfigurato } from "@/lib/inventory-agent/public-url";
 /**
  * GET /api/settings/hub-url
  *
- * Restituisce l'URL pubblico dell'hub usato dai consumer (wizard install agent,
+ * Restituisce l'URL pubblico dell'hub usato dai consumer (pagina «URL dell'hub»,
  * callback URL futuri, email templates) per riferirsi a questo hub da fuori la
  * rete dove risiede.
  *

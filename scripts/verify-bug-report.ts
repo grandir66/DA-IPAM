@@ -181,8 +181,9 @@ function verifyH10() {
 // H11: nmap target injection in agent
 function verifyH11() {
   const p = "agent/da_invent_agent/exec/nmap.py";
+  // Agente Python remoto tolto il 20/10/2026 (decisione 26 della spec NetBird): senza il file il problema non c'è più.
   if (!fs.existsSync(p)) {
-    record("H11", "Nmap flag injection via target arg", "INCONCLUSIVE", { reason: "nmap.py not found" });
+    record("H11", "Nmap flag injection via target arg", "REJECTED", { reason: "agente remoto tolto (agent/ non c'è più)" });
     return;
   }
   const src = readSrc(p);

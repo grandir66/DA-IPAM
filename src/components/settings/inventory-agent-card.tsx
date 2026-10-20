@@ -374,7 +374,7 @@ export function InventoryAgentCard({
               <p className="text-xs text-amber-700 dark:text-amber-400 rounded-md border border-amber-300/60 bg-amber-50 dark:bg-amber-950/30 px-3 py-2">
                 L&apos;URL rilevato dal server era interno ({state.ingestUrl}). In UI usiamo{" "}
                 <code>{displayIngestUrl}</code>. Per script/API permanenti imposta{" "}
-                <strong>URL pubblico hub</strong> in Agenti remoti oppure env{" "}
+                <strong>URL pubblico hub</strong> in «URL dell&apos;hub» oppure env{" "}
                 <code>APPLIANCE_LAN_IP</code> / <code>DA_IPAM_PUBLIC_URL</code>.
               </p>
             )}

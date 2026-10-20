@@ -83,8 +83,9 @@ export const authConfig: NextAuthConfig = {
       const pathname = nextUrl.pathname;
 
       // Allow auth API, setup, login, e installer agent.
-      // `/agent-install.sh` deve essere raggiungibile da macchine senza
-      // sessione (l'host del cliente che fa `curl|bash` per provisioning).
+      // `/agent-install.sh`: l'agente remoto è tolto (20/10/2026), la rotta
+      // resta ferma e pubblica per un giro: risponde 410 con uno script che
+      // lo dice, anche a chi fa `curl|bash` senza sessione.
       // NB: `/api/test-snmp` e `/api/test-arp` RIMOSSI dall'allowlist (erano
       // debug leftover): ora richiedono admin nell'handler (audit SEC-9).
       if (

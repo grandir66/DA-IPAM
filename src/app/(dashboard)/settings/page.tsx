@@ -160,6 +160,9 @@ interface UserWithAccess {
   role: string;
   created_at: string;
   last_login: string | null;
+  /** Verifica in due passaggi (ADR 0023): 1 = richiesta dall'admin; totp_attiva 1 = QR confermato. */
+  totp_richiesta?: number;
+  totp_attiva?: number;
   tenant_access?: { tenant_id: number; codice_cliente: string; ragione_sociale: string; role: string }[];
 }
 
@@ -482,6 +485,39 @@ function SettingsPageInner() {
         toast.error(data.error || "Errore nell'eliminazione");
       }
     } catch { toast.error("Errore di rete"); }
+  }
+
+  /** Verifica in due passaggi: richiedi, azzera, togli (Riccardo, 20/10; ADR 0023). */
+  async function handleSecondaVerifica(user: UserWithAccess, azione: "richiedi" | "azzera" | "togli") {
+    const sestesso = user.username === sessionUsername;
+    const domanda =
+      azione === "azzera"
+        ? `Azzerare la verifica in due passaggi di "${user.username}"? Al prossimo accesso dovrà inquadrare un QR nuovo (telefono perso o cambiato).${sestesso ? " È il tuo utente: ti servirà il telefono nuovo al prossimo accesso." : ""}`
+        : azione === "togli"
+          ? `Togliere la verifica in due passaggi a "${user.username}"? Entrerà con la sola password.`
+          : null;
+    if (domanda && !confirm(domanda)) return;
+    try {
+      const res = await fetch(`/api/users/${user.id}/seconda-verifica`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ azione }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data.error || "Errore nella verifica in due passaggi");
+        return;
+      }
+      toast.success(data.message || "Fatto");
+      setUsers((prev) =>
+        prev.map((u) =>
+          u.id !== user.id ? u
+            : { ...u, totp_richiesta: azione === "togli" ? 0 : 1, totp_attiva: 0 },
+        ),
+      );
+    } catch {
+      toast.error("Errore di rete");
+    }
   }
 
   function openResetPassword(user: UserWithAccess) {
@@ -849,6 +885,7 @@ function SettingsPageInner() {
                   <TableHead>Cliente</TableHead>
                   <TableHead>Creato il</TableHead>
                   <TableHead>Ultimo accesso</TableHead>
+                  <TableHead title="Verifica in due passaggi: codice dall'app di autenticazione oltre alla password. Chi entra con l'account Domarc non ne ha bisogno.">Due passaggi</TableHead>
                   <TableHead className="w-[140px]">Azioni</TableHead>
                 </TableRow>
               </TableHeader>
@@ -879,6 +916,9 @@ function SettingsPageInner() {
                     </TableCell>
                     <TableCell>{parseDbDate(user.created_at).toLocaleDateString("it-IT")}</TableCell>
                     <TableCell>{user.last_login ? parseDbDate(user.last_login).toLocaleString("it-IT") : "Mai"}</TableCell>
+                    <TableCell>
+                      <CellaDuePassaggi user={user} sestesso={user.username === sessionUsername} onAzione={(a) => void handleSecondaVerifica(user, a)} />
+                    </TableCell>
                     <TableCell>
                       <div className="flex gap-1">
                         <Button
@@ -1275,5 +1315,51 @@ function SettingsPageInner() {
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Stato della verifica in due passaggi di un utente con l'azione che serve (Riccardo, 20/10;
+ * ADR 0023): «–» non richiesta → Richiedi; «▲ da attivare» (vedrà il QR) → Togli;
+ * «✓ attiva» → Azzera (telefono perso) e Togli. Simbolo e parola, non solo colore.
+ */
+function CellaDuePassaggi({ user, sestesso, onAzione }: { user: UserWithAccess; sestesso: boolean; onAzione: (a: "richiedi" | "azzera" | "togli") => void }) {
+  const azione = (a: "richiedi" | "azzera" | "togli", testo: string, titolo: string) => {
+    // Togliersela da soli no (decideSecondaVerifica): spento, col perché.
+    const spento = sestesso && a === "togli";
+    return (
+      <button
+        type="button"
+        disabled={spento}
+        onClick={() => onAzione(a)}
+        title={spento ? "Non puoi toglierti la verifica in due passaggi: chiedilo a un altro amministratore" : titolo}
+        className="text-[13px] text-[#006C96] hover:underline disabled:text-muted-foreground disabled:no-underline disabled:cursor-not-allowed dark:text-[#3FBBF0]"
+      >
+        {testo}
+      </button>
+    );
+  };
+  if (user.totp_richiesta !== 1) {
+    return (
+      <span className="flex items-center gap-2 text-[13px]">
+        <span className="text-muted-foreground" title="Non richiesta: entra con la sola password">–</span>
+        {azione("richiedi", "Richiedi", "Al prossimo accesso dovrà inquadrare un QR con l'app di autenticazione")}
+      </span>
+    );
+  }
+  if (user.totp_attiva !== 1) {
+    return (
+      <span className="flex flex-wrap items-center gap-2 text-[13px]">
+        <span className="rounded border border-[#C9A800] bg-[#FFD400] px-1.5 text-[#0D2537]" title="Richiesta: al prossimo accesso vedrà il QR">▲ da attivare</span>
+        {azione("togli", "Togli", "Torna alla sola password")}
+      </span>
+    );
+  }
+  return (
+    <span className="flex flex-wrap items-center gap-2 text-[13px]">
+      <span className="rounded border border-[#1F7A4D] bg-[#1F7A4D] px-1.5 text-white" title="Attiva: entra con password e codice">✓ attiva</span>
+      {azione("azzera", "Azzera", "Telefono perso o cambiato: al prossimo accesso un QR nuovo")}
+      {azione("togli", "Togli", "Torna alla sola password")}
+    </span>
   );
 }

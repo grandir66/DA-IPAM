@@ -1014,8 +1014,15 @@ export function updateUserPassword(userId: number, passwordHash: string): void {
   getHubDb().prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(passwordHash, userId);
 }
 
-export function getUsers(): Omit<HubUser, "password_hash">[] {
-  return getHubDb().prepare("SELECT id, username, email, role, tenant_id, created_at, last_login FROM users ORDER BY username").all() as Omit<HubUser, "password_hash">[];
+/** Elenco utenti senza hash né segreti: della verifica in due passaggi solo se è richiesta e se è attiva. */
+export function getUsers(): Array<Omit<HubUser, "password_hash" | "totp_segreto" | "totp_proposto" | "totp_proposto_scade" | "totp_ultimo_passo"> & { totp_attiva: number }> {
+  return getHubDb()
+    .prepare(
+      `SELECT id, username, email, role, tenant_id, created_at, last_login, totp_richiesta, totp_attivato_at,
+         (totp_segreto IS NOT NULL) AS totp_attiva
+       FROM users ORDER BY username`,
+    )
+    .all() as Array<Omit<HubUser, "password_hash" | "totp_segreto" | "totp_proposto" | "totp_proposto_scade" | "totp_ultimo_passo"> & { totp_attiva: number }>;
 }
 
 export function updateUserEmail(userId: number, email: string | null): boolean {

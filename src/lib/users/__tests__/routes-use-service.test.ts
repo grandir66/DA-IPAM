@@ -34,6 +34,7 @@ const EXPECTED: Record<string, Record<string, string>> = {
   "route.ts": { GET: "listUsersAs", POST: "createUserAs" },
   "[id]/route.ts": { PUT: "updateUserAs", DELETE: "deleteUserAs" },
   "[id]/reset-password/route.ts": { POST: "resetPasswordAs" },
+  "[id]/seconda-verifica/route.ts": { POST: "secondaVerificaAs" },
 };
 
 /** L'unica forma ammessa per un `export` in queste rotte. */

@@ -26,6 +26,8 @@ export interface KpiSicurezza {
     daGestire: number;
     /** Ultimi 14 giorni (ora italiana), dal più vecchio a oggi. */
     serie: { giorno: string; falliti: number; bloccati: number }[];
+    /** Ultime 24 ore, ora per ora (ora italiana «HH»), dalla più vecchia all'ora in corso. */
+    serie24h: { ora: string; falliti: number; bloccati: number }[];
   } | null;
   healthAd: { critici: number; alti: number; punteggio: number | null; giorni: number; ultimoFallito: boolean } | null;
 }
@@ -89,6 +91,13 @@ export function kpiSicurezza(db: Database.Database, ora: Date = new Date()): Kpi
       falliti24hPrima: somma("4625", adesso - 48 * ORA_MS, adesso - 24 * ORA_MS),
       bloccati30g: somma("4740", adesso - 30 * 24 * ORA_MS, adesso + 1),
       daGestire: (db.prepare("SELECT COUNT(*) AS n FROM wazuh_alert_event WHERE acknowledged = 0 AND diagnostic = 0").get() as { n: number }).n,
+      serie24h: Array.from({ length: 24 }, (_, i) => {
+        // Ore piene: l'ultima è quella in corso, fino ad adesso.
+        const fine = i === 23 ? adesso + 1 : Math.floor(adesso / ORA_MS) * ORA_MS - (22 - i) * ORA_MS;
+        const inizio = Math.floor(adesso / ORA_MS) * ORA_MS - (23 - i) * ORA_MS;
+        const ora = new Intl.DateTimeFormat("en-GB", { timeZone: FUSO_UTENTI, hour: "2-digit", hourCycle: "h23" }).format(inizio);
+        return { ora, falliti: somma("4625", inizio, fine), bloccati: somma("4740", inizio, fine) };
+      }),
       serie: giorni.map((g) => {
         const inizio = mezzanotteItaliana(g);
         const fine = g === oggi ? adesso + 1 : inizio + 24 * ORA_MS;

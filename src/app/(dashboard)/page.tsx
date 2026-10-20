@@ -11,6 +11,7 @@ import { StatusChangeFeed } from "@/components/shared/status-change-feed";
 import { getServerTenantCode } from "@/lib/api-tenant";
 import { getTenantDb, withTenant } from "@/lib/db-tenant";
 import { kpiSicurezza, type KpiSicurezza } from "@/lib/security/kpi-dashboard";
+import { GraficoAccessi } from "@/components/dashboard/grafico-accessi";
 import { getIntegrationsOverview, type IntegrationHealth } from "@/lib/integrations/dashboard-health";
 import { getModulesHealth } from "@/lib/modules/health";
 import { MODULE_DESCRIPTORS, resolveModules, type ModuleState } from "@/lib/modules/registry";
@@ -155,10 +156,10 @@ export default async function DashboardPage() {
           <PlugZap className="h-4 w-4 text-primary" />
           <span className="text-sm font-semibold">Stato moduli</span>
           {integrationErrors > 0 && (
-            <Badge variant="destructive" className="text-xs">{integrationErrors} in errore</Badge>
+            <Badge variant="outline" className={`text-xs ${STILE_STATO.guasto.classi}`}>{integrationErrors} in errore</Badge>
           )}
           {integrationErrors === 0 && integrationWarnings > 0 && (
-            <Badge variant="outline" className="text-xs border-amber-600 bg-amber-100 text-amber-950">{integrationWarnings} da verificare</Badge>
+            <Badge variant="outline" className={`text-xs ${STILE_STATO.attenzione.classi}`}>{integrationWarnings} da verificare</Badge>
           )}
         </div>
         <div className="grid gap-1.5 grid-cols-[repeat(auto-fill,minmax(150px,1fr))]">
@@ -201,7 +202,7 @@ export default async function DashboardPage() {
               <Shield className="h-4 w-4 text-primary" />
               Host conosciuti offline
               {monitorStats.offline > 0 && (
-                <Badge variant="destructive" className="text-xs">{monitorStats.offline}</Badge>
+                <Badge variant="outline" className={`text-xs ${STILE_STATO.guasto.classi}`}>{monitorStats.offline}</Badge>
               )}
             </CardTitle>
           </CardHeader>
@@ -301,13 +302,13 @@ export default async function DashboardPage() {
               <CardTitle className="text-sm flex items-center justify-between gap-2">
                 <span className="flex items-center gap-2">
                   <Shield className="h-4 w-4 text-primary" />
-                  Accessi falliti, 14 giorni
+                  Accessi falliti
                 </span>
                 <Link href="/security-alerts" className="text-xs font-normal text-primary hover:underline">Alert →</Link>
               </CardTitle>
             </CardHeader>
             <CardContent className="lg:flex-1 lg:min-h-0 flex flex-col">
-              <GraficoAccessi serie={sicurezza.accessi?.serie ?? null} />
+              <GraficoAccessi ore={sicurezza.accessi?.serie24h ?? null} giorni={sicurezza.accessi?.serie ?? null} />
             </CardContent>
           </Card>
         </div>
@@ -374,29 +375,6 @@ function RigaSicurezza({ k }: { k: KpiSicurezza }) {
         <ChipSicurezza tono="grigio" etichetta="Health AD" valore="mai eseguita" href="/active-directory?tab=health" />
       )}
     </div>
-  );
-}
-
-/** Barre per giorno degli accessi falliti, account bloccati segnati sopra la barra. */
-function GraficoAccessi({ serie }: { serie: { giorno: string; falliti: number; bloccati: number }[] | null }) {
-  if (!serie) return <p className="text-sm text-muted-foreground py-2">Wazuh non configurato: nessun dato sugli accessi.</p>;
-  const max = Math.max(1, ...serie.map((g) => g.falliti));
-  return (
-    <>
-      <div className="flex items-end gap-1 flex-1 min-h-[90px]">
-        {serie.map((g) => (
-          <div key={g.giorno} className="flex-1 flex flex-col items-center justify-end h-full gap-0.5"
-            title={`${g.giorno.slice(8, 10)}/${g.giorno.slice(5, 7)}: ${numero(g.falliti)} accessi falliti${g.bloccati ? `, ${g.bloccati} account bloccati` : ""}`}>
-            {g.bloccati > 0 && <span className="text-[10px] font-bold text-amber-700 leading-none">▲{g.bloccati}</span>}
-            <div className="w-full rounded-sm bg-red-700" style={{ height: `${Math.max(g.falliti > 0 ? 3 : 1, (g.falliti / max) * 100)}%`, opacity: g.falliti > 0 ? 1 : 0.25 }} />
-            <span className="text-[10px] text-muted-foreground leading-none">{g.giorno.slice(8, 10)}</span>
-          </div>
-        ))}
-      </div>
-      <p className="text-[11px] text-muted-foreground mt-1">
-        Massimo {numero(max)} in un giorno · ▲ account bloccati. Approssimato: ogni gruppo d&apos;allarme è ripartito sui giorni in cui è rimasto aperto.
-      </p>
-    </>
   );
 }
 

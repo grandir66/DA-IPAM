@@ -89,3 +89,19 @@ test("Health AD: ultima riuscita, rilievi, età; segnala un tentativo fallito pi
   d.prepare("INSERT INTO ad_health_runs (id, started_at, status, score_global) VALUES (2, '2026-10-01T10:00:00.000Z', 'error', null)").run();
   assert.equal(kpiSicurezza(d, ORA).healthAd?.ultimoFallito, true);
 });
+
+// Riccardo, 20/10: «per gli accessi falliti è utile avere le ultime 24 ore».
+test("serie delle ultime 24 ore, ora per ora in ora italiana, l'ultima è quella in corso", () => {
+  const d = db();
+  alert(d, "4625", 60, 2.5, 1.5); // un'ora fra le 09:30 e le 10:30 italiane
+  alert(d, "4625", 5, 0.2, 0.2);  // 11:48 italiane, nell'ora in corso
+  const s = kpiSicurezza(d, ORA).accessi!.serie24h;
+  assert.equal(s.length, 24);
+  assert.equal(s.at(-1)?.ora, "12");
+  assert.equal(s.at(-1)?.falliti, 0);
+  assert.equal(s.at(-2)?.ora, "11");
+  assert.equal(s.at(-2)?.falliti, 5);
+  assert.equal(s.at(-3)?.falliti, 30); // 10:00-10:30 della finestra 09:30-10:30
+  assert.equal(s.at(-4)?.falliti, 30);
+  assert.equal(s.reduce((n, x) => n + x.falliti, 0), 65);
+});

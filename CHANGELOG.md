@@ -4,6 +4,19 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-20 · Colori ufficiali degli stati, accessi falliti nelle 24 ore
+
+### Cambiato
+
+- **Colori degli stati dai token di DA-Template** (design system Domarc): ✓ verde pieno
+  `#1F7A4D` = funziona, ▲ giallo `#FFD400` = attenzione, ✕ rosso pieno `#8E1B20` = guasto,
+  ● grigio pieno `#5B6B77` = da verificare, – grigio tratteggiato = non configurato; valori
+  scuri dei token in modalità scura. Prima il verde era `green-800`, più scuro, e attenzione
+  un ambra pallido («il verde deve essere un verde», Riccardo). Valgono per riquadri, riga
+  Sicurezza, etichette della dashboard ed elenco di Impostazioni → Moduli.
+- **Accessi falliti**: il grafico parte dalle ultime 24 ore, ora per ora in ora italiana, con
+  l'interruttore per i 14 giorni (Riccardo: «è utile avere le ultime 24 ore»).
+
 ## [Non rilasciato] — 2026-10-20 · Dashboard: KPI di sicurezza
 
 Richiesta di Riccardo del 20/10, dati misurati sull'hub prima del codice.

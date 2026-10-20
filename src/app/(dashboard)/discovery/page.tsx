@@ -2024,6 +2024,9 @@ export default function DiscoveryPage() {
               attiva imposta classFilter al preset; il dropdown "Classificazione"
               resta utilizzabile per scelte fini. */}
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+          {/* Riga «Vista» a tutta larghezza con la paginazione a destra (Riccardo, 20/10): sotto
+              la scheda la paginazione occupava ~100 px, nella riga del titolo mandava a capo i filtri. */}
+          <div className="flex w-full flex-wrap items-center gap-1.5">
           <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Vista delle colonne">
             <span className="text-xs text-muted-foreground mr-1">Vista</span>
             {(["tutte", "inventario", "sicurezza", "rete"] as const).map((v) => (
@@ -2040,7 +2043,20 @@ export default function DiscoveryPage() {
               </Button>
             ))}
           </div>
-          <div className="flex flex-wrap items-center gap-1.5 border-l pl-3">
+            <div className="ml-auto">
+              <Pagination
+                inTesta
+                page={safeP}
+                totalPages={totalPages}
+                onPageChange={setPage}
+                pageSize={pageSize}
+                onPageSizeChange={handlePageSizeChange}
+                pageSizeOptions={PAGE_SIZE_OPTIONS}
+                total={sortedRows.length}
+              />
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
             <Button
               variant={classFilter === "" ? "default" : "outline"}
               size="sm"
@@ -2184,7 +2200,7 @@ export default function DiscoveryPage() {
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <Table fissa riserva={104}>
+              <Table fissa riserva={40}>
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-10">
@@ -2447,16 +2463,6 @@ export default function DiscoveryPage() {
           )}
         </CardContent>
       </Card>
-
-      <Pagination
-        page={safeP}
-        totalPages={totalPages}
-        onPageChange={setPage}
-        pageSize={pageSize}
-        onPageSizeChange={handlePageSizeChange}
-        pageSizeOptions={PAGE_SIZE_OPTIONS}
-        total={sortedRows.length}
-      />
 
       {/* ════════════════ DIALOG MODIFICA MULTIPLA HOST ════════════════ */}
       <Dialog open={bulkEditOpen} onOpenChange={setBulkEditOpen}>

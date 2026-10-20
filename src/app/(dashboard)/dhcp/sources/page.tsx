@@ -345,7 +345,11 @@ export default function DhcpPage() {
       {/* Filtri */}
       <Card>
         <CardHeader className="py-3">
-          <CardTitle className="text-base">Lease DHCP</CardTitle>
+          <CardTitle className="text-base flex flex-wrap items-center justify-between gap-2">
+            Lease DHCP
+            {/* Paginazione nella riga del titolo (Riccardo, 20/10). */}
+            <Pagination inTesta page={page} totalPages={totalPages} onPageChange={setPage} />
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSearch} className="flex flex-col sm:flex-row gap-4 mb-4">
@@ -552,15 +556,6 @@ export default function DhcpPage() {
                 </Table>
               </div>
 
-              {totalPages > 1 && (
-                <div className="mt-4">
-                  <Pagination
-                    page={page}
-                    totalPages={totalPages}
-                    onPageChange={setPage}
-                  />
-                </div>
-              )}
             </>
           )}
         </CardContent>

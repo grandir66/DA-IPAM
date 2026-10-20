@@ -11,7 +11,8 @@ const ALTEZZA_MINIMA = 320;
  * filtri e intestazioni restano dove sono (Riccardo, 20/10; regola del kit di
  * DA-Template, `.tab-corpo`). Si ricalcola quando cambia la finestra o la pagina
  * sopra la tabella (filtri aperti, barra della selezione, chip che vanno a capo).
- * `riserva`: spazio da lasciare sotto (paginazione, margini).
+ * `riserva`: spazio da lasciare sotto: 40 px per il margine della scheda e della pagina. Prima
+ * erano 72 per la paginazione sotto la tabella, ora nella riga del titolo (Riccardo, 20/10).
  *
  * Revisione del 20/10: la posizione si misura sulla pagina vera, sommando lo scorrimento
  * della finestra e di ogni antenato (a scorrere è la finestra, non il contenitore della
@@ -19,7 +20,7 @@ const ALTEZZA_MINIMA = 320;
  * comparsa sopra la tabella non faceva ricalcolare niente. useLayoutEffect: niente
  * primo disegno a piena lunghezza.
  */
-export function useAltezzaDisponibile(ref: RefObject<HTMLElement | null>, attivo: boolean, riserva = 72): number | null {
+export function useAltezzaDisponibile(ref: RefObject<HTMLElement | null>, attivo: boolean, riserva = 40): number | null {
   const [altezza, setAltezza] = useState<number | null>(null);
   useLayoutEffect(() => {
     const el = ref.current;

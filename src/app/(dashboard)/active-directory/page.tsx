@@ -1233,6 +1233,10 @@ function PaginaActiveDirectory() {
                     {computersActiveOnly && (
                       <span className="text-xs text-muted-foreground">Solo logon negli ultimi 90 giorni: {computersTotal} di {selectedIntegration.computers_count}</span>
                     )}
+                    {/* Paginazione in cima, accanto alla ricerca (Riccardo, 20/10). */}
+                    <div className="ml-auto">
+                      <Pagination inTesta page={computersPage} totalPages={Math.ceil(computersTotal / pageSize)} onPageChange={setComputersPage} pageSize={pageSize} total={computersTotal} />
+                    </div>
                   </div>
                   <ScorrimentoTabella className="border rounded-lg">
                     <table className="w-full text-sm">
@@ -1287,13 +1291,6 @@ function PaginaActiveDirectory() {
                       </tbody>
                     </table>
                   </ScorrimentoTabella>
-                  <div className="mt-4">
-                    <Pagination
-                      page={computersPage}
-                      totalPages={Math.ceil(computersTotal / pageSize)}
-                      onPageChange={setComputersPage}
-                    />
-                  </div>
                 </TabsContent>
 
                 <TabsContent value="users" className="mt-4">
@@ -1317,6 +1314,10 @@ function PaginaActiveDirectory() {
                     {usersActiveOnly && (
                       <span className="text-xs text-muted-foreground">Solo logon negli ultimi 90 giorni: {usersTotal} di {selectedIntegration.users_count}</span>
                     )}
+                    {/* Paginazione in cima, accanto alla ricerca (Riccardo, 20/10). */}
+                    <div className="ml-auto">
+                      <Pagination inTesta page={usersPage} totalPages={Math.ceil(usersTotal / pageSize)} onPageChange={setUsersPage} pageSize={pageSize} total={usersTotal} />
+                    </div>
                   </div>
                   <ScorrimentoTabella className="border rounded-lg">
                     <table className="w-full text-sm">
@@ -1365,13 +1366,6 @@ function PaginaActiveDirectory() {
                       </tbody>
                     </table>
                   </ScorrimentoTabella>
-                  <div className="mt-4">
-                    <Pagination
-                      page={usersPage}
-                      totalPages={Math.ceil(usersTotal / pageSize)}
-                      onPageChange={setUsersPage}
-                    />
-                  </div>
                 </TabsContent>
 
                 <TabsContent value="groups" className="mt-4">
@@ -1385,6 +1379,10 @@ function PaginaActiveDirectory() {
                       }}
                       className="max-w-sm"
                     />
+                    {/* Paginazione in cima, accanto alla ricerca (Riccardo, 20/10). */}
+                    <div className="ml-auto">
+                      <Pagination inTesta page={groupsPage} totalPages={Math.ceil(groupsTotal / pageSize)} onPageChange={setGroupsPage} pageSize={pageSize} total={groupsTotal} />
+                    </div>
                   </div>
                   <ScorrimentoTabella className="border rounded-lg">
                     <table className="w-full text-sm">
@@ -1419,13 +1417,6 @@ function PaginaActiveDirectory() {
                       </tbody>
                     </table>
                   </ScorrimentoTabella>
-                  <div className="mt-4">
-                    <Pagination
-                      page={groupsPage}
-                      totalPages={Math.ceil(groupsTotal / pageSize)}
-                      onPageChange={setGroupsPage}
-                    />
-                  </div>
                 </TabsContent>
 
                 <TabsContent value="dhcp" className="mt-4">
@@ -1452,6 +1443,10 @@ function PaginaActiveDirectory() {
                           }}
                           className="max-w-sm"
                         />
+                        {/* Paginazione in cima, accanto alla ricerca (Riccardo, 20/10). */}
+                        <div className="ml-auto">
+                          <Pagination inTesta page={dhcpPage} totalPages={Math.ceil(dhcpTotal / pageSize)} onPageChange={setDhcpPage} pageSize={pageSize} total={dhcpTotal} />
+                        </div>
                       </div>
                       <ScorrimentoTabella className="border rounded-lg">
                         <table className="w-full text-sm">
@@ -1493,13 +1488,6 @@ function PaginaActiveDirectory() {
                           </tbody>
                         </table>
                       </ScorrimentoTabella>
-                      <div className="mt-4">
-                        <Pagination
-                          page={dhcpPage}
-                          totalPages={Math.ceil(dhcpTotal / pageSize)}
-                          onPageChange={setDhcpPage}
-                        />
-                      </div>
                     </>
                   )}
                 </TabsContent>

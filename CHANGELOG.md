@@ -37,6 +37,12 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   icone. **Tolta la ricerca generale** (e ⌘K, con la rotta `/api/search`): si cerca nelle tabelle che hanno il loro
   campo, IP/MAC/hostname in Discovery.
 
+- **Paginazione in alto** (Riccardo, 20/10: «perché tutto quello spazio inutilmente utilizzato in basso?»): sotto le
+  tabelle la riga «Righe per pagina… Pagina 1 di 7» e i suoi margini toglievano ~100 px. Ora è compatta
+  («[50] 1–50 di 348 « ‹ 1/7 › »») nella riga del titolo (Discovery: a destra della riga «Vista»; Active Directory:
+  accanto alla ricerca di ogni linguetta), su tutte le 9 pagine che la usano; lo spazio riservato sotto le tabelle
+  scende da 72 a 40 px. Discovery a 1920×1080: 18 righe visibili invece di 13.
+
 ### Corretto
 
 - **Aggiornamento bloccato da una rotta tolta**: la v0.9.804 non si è installata sull'hub (tornato da solo alla

@@ -571,7 +571,11 @@ export function NetworksListClient({ initialNetworks, routers: initialRouters }:
 
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold tracking-tight">Subnet</h1>
+          <div className="flex flex-wrap items-center gap-x-3">
+            <h1 className="text-xl font-bold tracking-tight">Subnet</h1>
+            {/* Paginazione nella riga del titolo (Riccardo, 20/10). */}
+            <Pagination inTesta page={page} totalPages={totalPages} onPageChange={handlePageChange} />
+          </div>
           <p className="text-muted-foreground text-sm mt-0.5">Gestisci le subnet monitorate</p>
         </div>
         <div className="flex items-center gap-2 flex-1 max-w-sm">
@@ -886,7 +890,6 @@ export function NetworksListClient({ initialNetworks, routers: initialRouters }:
         </Card>
       )}
 
-      <Pagination page={page} totalPages={totalPages} onPageChange={handlePageChange} />
     </div>
   );
 }

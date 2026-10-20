@@ -53,6 +53,7 @@ import {
 import { useState, useEffect, useMemo, useRef } from "react";
 import { ThemeToggle } from "./theme-toggle";
 import { UserMenu } from "./user-menu";
+import { useUrlPerBrowser } from "./url-per-browser";
 import { vociApplicativi, type IconaVoce, type ModuloPerMenu } from "@/lib/modules/voci-applicativi";
 import { Button } from "@/components/ui/button";
 
@@ -182,6 +183,7 @@ function SubList({
   const migliore = items
     .filter((i) => !i.esterno && isActive(i.href))
     .sort((a, b) => b.href.length - a.href.length)[0]?.href;
+  const perBrowser = useUrlPerBrowser();
   return (
     <>
       {items.map((item) => (
@@ -195,7 +197,7 @@ function SubList({
           )}
           {item.esterno ? (
             <a
-              href={item.href}
+              href={perBrowser(item.href)}
               target="_blank"
               rel="noopener noreferrer"
               onClick={onNavigate}

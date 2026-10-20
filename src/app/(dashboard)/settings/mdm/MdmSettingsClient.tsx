@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import { Smartphone, Save, RefreshCw, ExternalLink, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { useUrlPerBrowser } from "@/components/shared/url-per-browser";
 
 interface MdmConfig {
   base_url: string | null;
@@ -61,6 +62,7 @@ export function MdmSettingsClient({
   intervalloMinuti: number;
 }) {
   const router = useRouter();
+  const perBrowser = useUrlPerBrowser();
 
   const [baseUrl, setBaseUrl] = useState(config.base_url ?? "");
   const [username, setUsername] = useState(config.username ?? "");
@@ -239,7 +241,7 @@ export function MdmSettingsClient({
             </Button>
             {baseUrl.trim() && (
               <a
-                href={baseUrl}
+                href={perBrowser(baseUrl.trim())}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1.5 text-sm text-[#00A7E7] hover:underline"

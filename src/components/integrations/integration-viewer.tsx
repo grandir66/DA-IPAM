@@ -7,6 +7,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { ExternalLink, Monitor, ShieldAlert, ChevronDown, ChevronRight } from "lucide-react";
+import { useUrlPerBrowser } from "@/components/shared/url-per-browser";
 
 export interface IntegrationInfo {
   enabled: boolean;
@@ -45,7 +46,17 @@ export function IntegrationViewer({ solo }: { solo?: string } = {}) {
   }, [solo]);
 
   const activeList = Object.entries(integrations).filter(([, v]) => v?.enabled);
-  const current = selected ? integrations[selected as keyof ActiveIntegrations] : null;
+  // URL dell'appliance con l'host del browser (21/10): riquadro, «Apri» e scorciatoie.
+  const perBrowser = useUrlPerBrowser();
+  const grezzo = selected ? integrations[selected as keyof ActiveIntegrations] : null;
+  const current = grezzo
+    ? {
+        ...grezzo,
+        url: perBrowser(grezzo.url),
+        directUrl: perBrowser(grezzo.directUrl),
+        shortcuts: grezzo.shortcuts?.map((s) => ({ ...s, url: perBrowser(s.url) })),
+      }
+    : null;
 
   if (activeList.length === 0) return null;
 

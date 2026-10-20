@@ -13,6 +13,7 @@ import { fetchJson } from "@/lib/fetch-json";
 import type { AperturaModulo, ModuleHealth, ModuleHealthVerdict } from "@/lib/modules/health";
 import type { EsitoApertura, VerificaApertura } from "@/lib/modules/apertura-browser";
 import type { ModuleKey } from "@/lib/modules/registry";
+import { useUrlPerBrowser } from "@/components/shared/url-per-browser";
 
 // Copia client-safe di ETICHETTA_ESITO / ESITI_CERTIFICATO (il motore importa node:tls).
 const ETICHETTA: Record<EsitoApertura, string> = {
@@ -45,6 +46,8 @@ function classeEsito(e: EsitoApertura): string {
 
 /** Elenco degli esiti di apertura: riusato dalla pagina del modulo e dalla sessione RMM. */
 export function EsitiApertura({ verifiche }: { verifiche: VerificaApertura[] }) {
+  // Il certificato da accettare è quello del nome che il browser aprirà (21/10).
+  const perBrowser = useUrlPerBrowser();
   return (
     <ul className="space-y-3">
       {verifiche.map((v) => (
@@ -83,7 +86,7 @@ export function EsitiApertura({ verifiche }: { verifiche: VerificaApertura[] }) 
           {v.istruzioneCertificato ? (
             <div className="space-y-1.5">
               <p className="text-xs">{v.istruzioneCertificato}</p>
-              <a href={v.url} target="_blank" rel="noopener noreferrer">
+              <a href={perBrowser(v.url)} target="_blank" rel="noopener noreferrer">
                 <Button size="sm" variant="outline">
                   <ExternalLink className="mr-2 h-3.5 w-3.5" /> Apri e accetta il certificato
                 </Button>

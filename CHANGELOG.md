@@ -4,6 +4,35 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-21 · I link verso l'appliance usano l'host del browser
+
+Riccardo (21/10, «ok per 1»): l'installatore (Deploy-Appliance `connect_bootstrap_launchpad`) registra gli
+URL dei servizi con l'IP LAN dell'appliance (`https://192.168.99.61:6443`). Chi apre DA-IPAM da un nome DNS o
+da NetBird finiva, coi pulsanti, su un indirizzo irraggiungibile o con un certificato che non corrisponde.
+
+### Cambiato
+
+- **Regola unica `urlPerIlBrowser`** (`lib/integrations/url-per-browser.ts`, prove in
+  `url-per-browser.test.ts`): un URL il cui host è l'appliance stessa si apre con l'host del browser
+  (`window.location.hostname`), con porta, percorso e schema salvati; un URL di un'altra macchina (Proxmox,
+  Wazuh o LibreNMS in una VM loro, servizi del cliente) resta com'è. Lo schema non si forza a https: gli URL
+  dell'installatore lo sono già, e un `http://` salvato a mano che funzionava continua a funzionare. **Nel
+  database resta l'URL vero**: cambia solo cosa si apre.
+- **Chi è «l'appliance stessa»** (`host-appliance-server.ts`): loopback, nome della macchina, indirizzi delle
+  interfacce vere (non Docker, non link-local: l'IP LAN c'è anche se `APPLIANCE_LAN_IP` manca dall'ambiente
+  del servizio), variabili dell'host pubblico e di `NEXTAUTH_URL`/`AUTH_URL`/`DA_IPAM_PUBLIC_URL`, voce
+  «DA-IPAM (this)» del vault. Il layout le passa al client con l'Host della richiesta
+  (`components/shared/url-per-browser.tsx`, `useUrlPerBrowser`); dopo l'idratazione vale `window.location`.
+  La stessa lista serve ora all'accesso automatico di LibreNMS (`librenmsHostAllineabili`), che prima leggeva
+  solo le variabili d'ambiente.
+- **Dove si applica**: console esterne del menu Applicativi, riquadri dei moduli in dashboard, «Apri» delle
+  credenziali di sistema, card delle integrazioni e di Wazuh, Scanner-Edge, viewer delle dashboard (riquadro,
+  «Apri in nuova scheda», scorciatoie), link a LibreNMS da Discovery e dalla scheda dell'oggetto, Wazuh dal
+  badge dell'host, MeshCentral (console, riquadro della sessione, «Apri»), MDM, «Apri e accetta il
+  certificato» della verifica di apertura.
+- Fuori: gli script di installazione dell'agente d'inventario (li usano altre macchine, non il browser) e il
+  «Apri servizio web» di Discovery (URL scritto a mano dall'operatore).
+
 ## [Non rilasciato] — 2026-10-20 · Via le rotte ferme dell'agente remoto
 
 ### Rimosso

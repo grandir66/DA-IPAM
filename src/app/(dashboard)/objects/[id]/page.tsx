@@ -85,6 +85,7 @@ import {
 import { runDeviceAcquisitionScan } from "@/lib/devices/device-scan-client";
 import { toast } from "sonner";
 import type { HostDetail, HostSnmpData, InventoryAsset, NetworkDevice, ArpEntry, MacPortEntry, SwitchPort } from "@/types";
+import { useUrlPerBrowser } from "@/components/shared/url-per-browser";
 
 /** Dati addizionali ritornati da GET /api/devices/[id] oltre al NetworkDevice base. */
 interface DeviceExtras {
@@ -561,6 +562,7 @@ function IpPrecedenti({ hostId }: { hostId: number }) {
 // ─── Page ───────────────────────────────────────────────────────────
 
 export default function ObjectDetailPage() {
+  const perBrowser = useUrlPerBrowser();
   const params = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -1307,7 +1309,7 @@ export default function ObjectDetailPage() {
               {librenms.librenmsUrl && librenms.librenmsDeviceId && (
                 <div className="mt-3">
                   <a
-                    href={`${librenms.librenmsUrl}/device/device=${librenms.librenmsDeviceId}`}
+                    href={`${perBrowser(librenms.librenmsUrl)}/device/device=${librenms.librenmsDeviceId}`}
                     target="_blank"
                     rel="noreferrer"
                     className="text-xs text-primary hover:underline inline-flex items-center gap-1"

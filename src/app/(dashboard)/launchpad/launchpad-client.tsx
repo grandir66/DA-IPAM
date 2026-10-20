@@ -49,6 +49,7 @@ import {
 } from "@/components/ui/select";
 import type { CredentialKind, SystemCredential } from "@/lib/credentials-vault";
 import { tipoDaInviare } from "@/lib/credentials-vault-tipi";
+import { useUrlPerBrowser } from "@/components/shared/url-per-browser";
 
 /**
  * Mappa kind+label → URL della pagina di configurazione corrispondente.
@@ -160,6 +161,7 @@ export function LaunchpadClient({ initialItems, embedded = false }: LaunchpadCli
     ((session?.user as { role?: string } | undefined)?.role ?? ""),
   );
 
+  const perBrowser = useUrlPerBrowser();
   const [items, setItems] = useState<SystemCredential[]>(initialItems);
   const [editOpen, setEditOpen] = useState(false);
   const [form, setForm] = useState<EditFormState>(EMPTY_FORM);
@@ -637,7 +639,7 @@ export function LaunchpadClient({ initialItems, embedded = false }: LaunchpadCli
                         variant="outline"
                         size="sm"
                         className="flex-1"
-                        onClick={() => window.open(item.open_url ?? item.url!, "_blank", "noopener,noreferrer")}
+                        onClick={() => window.open(perBrowser(item.open_url ?? item.url!), "_blank", "noopener,noreferrer")}
                       >
                         <ExternalLink className="h-3 w-3 mr-1" />
                         Apri

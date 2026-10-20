@@ -224,7 +224,8 @@ test("vault: «Apri» usa l'URL scelto col ruolo, il vault resta con l'URL diret
   assert.match(get, /resolveLibreNMSOperatorUrl\(\s*[\w.]+,\s*\w+\.user\.role\s*\)/);
   assert.match(get, /open_url/);
   const client = leggi("src/app/(dashboard)/launchpad/launchpad-client.tsx");
-  assert.match(client, /window\.open\(\s*item\.open_url\s*\?\?\s*item\.url/);
+  // L'URL passa da `perBrowser` (host del browser per l'appliance stessa, 21/10).
+  assert.match(client, /window\.open\(\s*perBrowser\(\s*item\.open_url\s*\?\?\s*item\.url/);
 });
 
 // --- vault su hub temporaneo -----------------------------------------------

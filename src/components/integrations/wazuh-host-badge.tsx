@@ -27,6 +27,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DIALOG_PANEL_COMPACT_
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
+import { useUrlPerBrowser } from "@/components/shared/url-per-browser";
 
 export interface WazuhHostStatus {
   agent_id: string;
@@ -109,6 +110,8 @@ export function WazuhHostBadge({ hostId, hostName, hostIp, prefetched, mode = "i
   const [dialogOpen, setDialogOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [runtime, setRuntime] = useState<WazuhRuntimeInfo>({ managerHost: null, dashboardUrl: null });
+  const perBrowser = useUrlPerBrowser();
+  const dashboardUrl = perBrowser(runtime.dashboardUrl);
 
   useEffect(() => {
     void loadRuntimeInfo().then(setRuntime);
@@ -207,10 +210,10 @@ export function WazuhHostBadge({ hostId, hostName, hostIp, prefetched, mode = "i
                 </p>
                 <div className="flex flex-wrap justify-end gap-2 pt-3 border-t border-border/60">
                   <Button variant="outline" onClick={() => setDialogOpen(false)}>Chiudi</Button>
-                  {runtime.dashboardUrl ? (
+                  {dashboardUrl ? (
                     <>
                       <a
-                        href={`${runtime.dashboardUrl}/app/vulnerability-detection`}
+                        href={`${dashboardUrl}/app/vulnerability-detection`}
                         target="_blank"
                         rel="noopener noreferrer"
                         title={`Vulnerabilità Wazuh — filtra agent.id=${status.agent_id} a mano dalla search bar`}
@@ -219,7 +222,7 @@ export function WazuhHostBadge({ hostId, hostName, hostIp, prefetched, mode = "i
                         CVE <ExternalLink className="h-3.5 w-3.5" />
                       </a>
                       <a
-                        href={`${runtime.dashboardUrl}/app/endpoints-summary`}
+                        href={`${dashboardUrl}/app/endpoints-summary`}
                         target="_blank"
                         rel="noopener noreferrer"
                         title={`Lista agent Wazuh — cerca ${status.agent_id} in tabella`}
@@ -228,7 +231,7 @@ export function WazuhHostBadge({ hostId, hostName, hostIp, prefetched, mode = "i
                         Agent <ExternalLink className="h-3.5 w-3.5" />
                       </a>
                       <a
-                        href={runtime.dashboardUrl}
+                        href={dashboardUrl}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="inline-flex items-center gap-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 px-3 py-1.5 text-sm font-medium"

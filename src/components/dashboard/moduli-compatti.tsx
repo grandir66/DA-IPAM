@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { LinkPerBrowser } from "@/components/shared/url-per-browser";
 import { parseDbDate, FUSO_UTENTI } from "@/lib/db-date";
 import { STILE_STATO, type ToniStato } from "@/components/shared/stile-stato-modulo";
 import type { DestinazioneRigaModulo } from "@/lib/modules/dashboard-rows";
@@ -53,12 +54,12 @@ function RiquadroModulo({ item }: { item: RiquadroDashboard }) {
   const dettaglio = [item.label, item.contaNegliErrori !== false ? item.message : null, item.lastSync ? `Ultimo aggiornamento: ${parseDbDate(item.lastSync).toLocaleString("it-IT", { timeZone: FUSO_UTENTI })}` : null, item.apre ? TITOLO_APRE[item.apre] : null]
     .filter(Boolean).join("\n");
   return (
-    <Link href={item.href} title={dettaglio} className={`min-w-0 rounded-md border px-2 py-1 leading-tight hover:opacity-90 transition-opacity ${st.classi}`}>
+    <LinkPerBrowser href={item.href} title={dettaglio} className={`min-w-0 rounded-md border px-2 py-1 leading-tight hover:opacity-90 transition-opacity ${st.classi}`}>
       <span className="flex items-center gap-1 text-[13px] font-semibold">
         <span aria-hidden className="font-bold">{st.segno}</span>
         <span className="truncate">{item.label}</span>
       </span>
       <span className="block text-[13px] opacity-90 truncate">{quando}</span>
-    </Link>
+    </LinkPerBrowser>
   );
 }

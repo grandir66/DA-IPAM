@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { CheckCircle2, Loader2, RefreshCw, Shield, Trash2, BookOpen, Copy, ChevronDown, ChevronRight, AlertTriangle, ExternalLink, Download } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useUrlPerBrowser } from "@/components/shared/url-per-browser";
 
 interface WazuhConfig {
   enabled: boolean;
@@ -55,6 +56,7 @@ interface TestResult {
 }
 
 export function WazuhCard() {
+  const perBrowser = useUrlPerBrowser();
   const [cfg, setCfg] = useState<WazuhConfig | null>(null);
   const [status, setStatus] = useState<WazuhStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -413,7 +415,7 @@ export function WazuhCard() {
             </Button>
             {cfg!.url && (
               <a
-                href={cfg!.url.replace(/:55000(\/.*)?$/, "")}
+                href={perBrowser(cfg!.url.replace(/:55000(\/.*)?$/, ""))}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1 rounded-md border px-3 py-1 text-sm hover:bg-accent"

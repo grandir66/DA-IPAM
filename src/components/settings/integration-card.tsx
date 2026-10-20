@@ -23,6 +23,7 @@ import {
   vociModalita,
 } from "@/lib/integrations/scheda-integrazione";
 import { CONFERMA_CONVERSIONE_LIBRENMS } from "@/lib/integrations/librenms-modo";
+import { useUrlPerBrowser } from "@/components/shared/url-per-browser";
 
 interface Props {
   /** Solo i componenti installati come container: UniFi ha la sua pagina (Controller di rete). */
@@ -44,6 +45,7 @@ interface ApiState {
 }
 
 export function IntegrationCard({ component, title, description, dockerAvailable, showSyncButton }: Props) {
+  const perBrowser = useUrlPerBrowser();
   const [state, setState] = useState<ApiState | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -672,7 +674,7 @@ export function IntegrationCard({ component, title, description, dockerAvailable
 
           {!isDisabled && (browserUrl || localConfig.uiUrl) && (
             <a
-              href={localConfig.uiUrl || browserUrl}
+              href={perBrowser(localConfig.uiUrl || browserUrl)}
               target="_blank"
               rel="noopener noreferrer"
               className="ml-auto inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"

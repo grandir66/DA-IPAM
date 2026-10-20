@@ -101,6 +101,7 @@ import { MeshCentralHostBadge } from "@/components/integrations/meshcentral-host
 import { porteAperte } from "@/lib/integrations/meshcentral/senza-agente-porte";
 import type { ClassPreset, IconName } from "./preset-types";
 import { PresetsDialog } from "@/components/devices/presets-dialog";
+import { useUrlPerBrowser } from "@/components/shared/url-per-browser";
 
 const SORTED_CLASSIFICATIONS = sortClassificationsByDisplayLabel(DEVICE_CLASSIFICATIONS_ORDERED);
 
@@ -557,7 +558,10 @@ export default function DiscoveryPage() {
   };
 
   // ─── LibreNMS: URL base e aggiunta singolo host ─────────
-  const [librenmsUrl, setLibrenmsUrl] = useState("");
+  const [librenmsUrlSalvato, setLibrenmsUrl] = useState("");
+  // LibreNMS dell'appliance con l'host del browser (21/10).
+  const perBrowser = useUrlPerBrowser();
+  const librenmsUrl = perBrowser(librenmsUrlSalvato);
   const [librenmsAdding, setLibrenmsAdding] = useState<Set<number>>(new Set());
 
   async function addHostToLibreNMS(h: EnrichedHost) {

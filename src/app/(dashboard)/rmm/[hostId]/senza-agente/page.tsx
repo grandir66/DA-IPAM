@@ -13,6 +13,7 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, ExternalLink, Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useUrlPerBrowser } from "@/components/shared/url-per-browser";
 
 type Protocollo = "rdp" | "vnc";
 
@@ -28,7 +29,10 @@ function SessioneSenzaAgente() {
   const hostId = Number(params?.hostId);
   const protocollo: Protocollo = search?.get("p") === "vnc" ? "vnc" : "rdp";
 
-  const [url, setUrl] = useState<string | null>(null);
+  const [urlSessione, setUrl] = useState<string | null>(null);
+  // MeshCentral dell'appliance con l'host del browser (21/10): riquadro e «Apri».
+  const perBrowser = useUrlPerBrowser();
+  const url = perBrowser(urlSessione);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Iframe che non carica dopo qualche secondo: quasi sempre il certificato
@@ -96,7 +100,7 @@ function SessioneSenzaAgente() {
                 // L'URL nell'iframe è già usato (token monouso): ne serve uno nuovo.
                 void chiediUrl()
                   .then((u) => {
-                    if (u) window.open(u, "_blank", "noopener,noreferrer");
+                    if (u) window.open(perBrowser(u), "_blank", "noopener,noreferrer");
                   })
                   .catch(() => undefined);
               }}

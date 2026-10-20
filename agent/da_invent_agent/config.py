@@ -90,7 +90,10 @@ class Settings(BaseSettings):
     host: str = Field(default="0.0.0.0")
     dev_mode: bool = Field(default=False)
     log_level: str = Field(default="INFO")
-    cgnat_network: str = Field(default="100.64.0.0/10")
+    cgnat_network: str = Field(
+        default="100.64.0.0/10",
+        description="Rete da cui si accettano richieste: la rete NetBird dell'account (scritta dall'installatore).",
+    )
 
     @field_validator("tokens", mode="before")
     @classmethod

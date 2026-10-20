@@ -31,7 +31,7 @@ export function CredentialsVaultPanel({ isAdmin }: { isAdmin: boolean }) {
           Credenziali di sistema (vault)
         </h3>
         <p className="text-xs text-muted-foreground mt-1 max-w-2xl">
-          Accessi alla stack security (Wazuh, Graylog, Tailscale, API token, …).
+          Accessi alla stack security (Wazuh, Graylog, LibreNMS, Proxmox, API token, …).
           Cifrate AES-GCM; reveal loggato in audit.
         </p>
       </div>

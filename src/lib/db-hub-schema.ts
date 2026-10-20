@@ -65,7 +65,6 @@ INSERT OR IGNORE INTO settings (key, value) VALUES ('onboarding_completed', '0')
 -- Hub URL pubblico (consumato da chi installa l'agent o riceve callback).
 -- Lasciare vuoti per usare l'origin del browser come fallback.
 INSERT OR IGNORE INTO settings (key, value) VALUES ('public_hub_url', '');
-INSERT OR IGNORE INTO settings (key, value) VALUES ('hub_tailnet_hostname', '');
 
 -- Integration settings (LibreNMS)
 INSERT OR IGNORE INTO settings (key, value) VALUES ('integration_librenms_mode', 'disabled');
@@ -225,7 +224,7 @@ CREATE TABLE IF NOT EXISTS tenant_features (
 
 -- Vault credenziali unificato per accesso ai sistemi della stack security.
 -- AES-GCM encrypted via lib/crypto.ts (ENCRYPTION_KEY). Risorse: Wazuh,
--- Graylog, LibreNMS, Scanner-Edge, DA-Vul-can hub, PVE Tailscale, ecc.
+-- Graylog, LibreNMS, Scanner-Edge, DA-Vul-can hub, Proxmox, ecc.
 -- Diverso dalle settings.integration_* (legacy, plain text per librenms/loki/graylog).
 CREATE TABLE IF NOT EXISTS system_credentials (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -1,7 +1,7 @@
 # DA-INVENT Remote Agent
 
 Agente Python/FastAPI installato presso ogni cliente. L'hub DA-INVENT lo
-contatta via Tailscale per eseguire le operazioni di scansione e
+contatta via NetBird per eseguire le operazioni di scansione e
 device-interrogation (ping, nmap, DNS, SNMP, SSH, WinRM) sulla rete locale
 del cliente.
 
@@ -25,7 +25,7 @@ del cliente.
 ┌─────────────┐                         ┌──────────────────┐
 │             │   HTTPS bearer token    │                  │
 │  DA-IPAM    │ ────────────────────▶   │  da-invent-agent │
-│    hub      │   sopra Tailscale       │  (questa repo)   │
+│    hub      │   sopra NetBird         │  (questa repo)   │
 │             │                         │                  │
 └─────────────┘                         └────────┬─────────┘
                                                  │
@@ -81,7 +81,7 @@ pytest tests/test_arp_parser.py     # solo parser MAC ARP
 
 | Method | Path | Note |
 |--------|------|------|
-| GET | `/healthz` | Liveness + presenza tool + stato Tailscale. |
+| GET | `/healthz` | Liveness + presenza tool + stato NetBird (`wt0`, IP). |
 | GET | `/version` | Versione corrente dell'agente. |
 
 ### Autenticati
@@ -171,7 +171,7 @@ Codici / status HTTP:
 
 | code                 | HTTP | retriable | quando lo emettiamo |
 |----------------------|------|-----------|--------------------|
-| `auth_invalid`       | 401  | no  | bearer mancante/errato/origin fuori da Tailscale |
+| `auth_invalid`       | 401  | no  | bearer mancante/errato/origin fuori dalla rete NetBird ammessa |
 | `scope_denied`       | 403  | no  | token autenticato ma senza lo scope dell'endpoint |
 | `invalid_input`      | 400  | no  | body non valido (Zod/Pydantic) o argomento non supportato |
 | `tool_missing`       | 503  | no  | `snmpwalk`/`nmap`/etc non presente sul sistema |
@@ -188,7 +188,7 @@ servizio systemd. La unit è in `agent/scripts/da-invent-agent.service`.
 Requisiti host:
 
 - Ubuntu 22.04+ con `python3.11+` (testato fino a 3.14)
-- Tailscale installato e autenticato (`tailscale up` manuale al primo install)
+- Nodo già in NetBird (comando emesso da DA-Link): l'installatore lo verifica e non lo fa entrare
 - `nmap`, `iputils-ping`, `snmp` (net-snmp client), `openssh-client`
 - Per Kerberos WinRM: `krb5-user`, `libkrb5-dev`, `krb5-config`
   (vedi `.claude/skills/winrm-kerberos/` lato hub per i gotchas).

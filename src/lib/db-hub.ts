@@ -773,7 +773,7 @@ export function deleteTenant(id: number): boolean {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Tenant agent (architettura hub + agenti remoti via Tailscale)
+// Tenant agent (architettura hub + agenti remoti via NetBird)
 // ═══════════════════════════════════════════════════════════════════════════
 
 export interface TenantAgentConfigInput {

@@ -2,8 +2,8 @@
 # DA-INVENT — Installer per LXC/Proxmox e Debian/Ubuntu
 # Uso: ./scripts/install.sh [--systemd] [--netbird --edge=si|no]
 #   --netbird --edge=si|no  prepara anche l'ingresso in NetBird (DA-Link, tappa C1):
-#                           client NetBird, Tailscale con --netfilter-mode=off, firewall
-#                           su wt0. La chiave d'ingresso NON passa da qui: si incolla il
+#                           client NetBird e firewall su wt0. La chiave d'ingresso NON
+#                           passa da qui: si incolla il
 #                           comando emesso da DA-Link, o scripts/dalink/prepara-netbird.sh
 #                           --chiave-da-stdin.
 #
@@ -314,7 +314,7 @@ fi
 
 if [ "$PREPARA_NETBIRD" = true ]; then
   echo ""
-  echo ">>> NetBird / DA-Link: preparazione dell'ingresso (client, Tailscale, firewall wt0)..."
+  echo ">>> NetBird / DA-Link: preparazione dell'ingresso (client NetBird, firewall wt0)..."
   if ! bash "$APP_DIR/scripts/dalink/prepara-netbird.sh" --applica --edge "$NETBIRD_EDGE"; then
     echo "    ERRORE: preparazione NetBird non riuscita — vedi i messaggi sopra" >&2
     exit 1

@@ -6,7 +6,7 @@
  *   - test e ambienti in cui non c'è (ancora) un agente remoto
  *
  * In Phase 3 verrà affiancato da `RemoteExecutor` con la stessa interfaccia ma
- * invocazioni HTTP verso un agente Python via Tailscale.
+ * invocazioni HTTP verso un agente Python via NetBird.
  */
 
 import fs from "fs";

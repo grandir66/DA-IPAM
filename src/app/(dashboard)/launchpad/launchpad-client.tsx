@@ -17,7 +17,6 @@ import {
   Activity,
   Radar,
   Cloud,
-  Wifi,
   RefreshCw,
   HardDrive,
   CheckCircle2,
@@ -77,14 +76,12 @@ function getIntegrationConfigHref(item: SystemCredential): string | null {
 }
 
 /**
- * Per i kind senza pagina di config (Tailscale, Proxmox, TrueNAS, "other" non-Loki)
+ * Per i kind senza pagina di config (Proxmox, TrueNAS, "other" non-Loki)
  * ritorna una breve descrizione di dove la credenziale viene usata in DA-IPAM.
  * Aiuta l'utente a capire cosa farà la credenziale prima di salvarla.
  */
 function getCredentialUsageHint(item: SystemCredential): string | null {
   switch (item.kind) {
-    case "tailscale":
-      return "Tailscale auth key — usato dal wizard nuovo agente per join automatico VPN. Nessuna pagina config: la credenziale viene letta solo al momento dell'enrollment.";
     case "pve":
       return "Proxmox API — letto da /devices durante match per-device (Proxmox-targets). Nessuna pagina config centralizzata.";
     case "truenas":
@@ -112,7 +109,6 @@ const KIND_META: Record<CredentialKind, { icon: typeof Shield; label: string; co
   truenas: { icon: HardDrive, label: "TrueNAS (backup)", color: "text-rose-600" },
   edge: { icon: Radar, label: "Scanner-Edge", color: "text-purple-600" },
   hub: { icon: Cloud, label: "DA-Vul-can Hub", color: "text-cyan-600" },
-  tailscale: { icon: Wifi, label: "Tailscale", color: "text-indigo-600" },
   pve: { icon: Server, label: "Proxmox", color: "text-orange-600" },
   other: { icon: KeyRound, label: "Altro", color: "text-gray-600" },
 };

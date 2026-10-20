@@ -19,7 +19,7 @@ from pathlib import Path
 
 def main(argv: list[str]) -> int:
     # Forziamo una config "vuota" e dev_mode per evitare che la creazione
-    # dell'app (lifespan) richieda token/Tailscale.
+    # dell'app (lifespan) richieda token o l'interfaccia NetBird.
     os.environ.setdefault("DA_INVENT_AGENT_DEV_MODE", "true")
     os.environ.setdefault("DA_INVENT_AGENT_TOKENS", "[]")
     os.environ.setdefault("DA_INVENT_AGENT_CONFIG", os.devnull)

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { TipoCredenzialeSchema } from "@/lib/credentials-vault-tipi";
 import { requireAuth, requireAdmin } from "@/lib/api-auth";
 import {
   listCredentials,
@@ -8,17 +9,7 @@ import {
 } from "@/lib/credentials-vault";
 import { resolveLibreNMSOperatorUrl } from "@/lib/integrations/librenms-proxy-auth";
 
-const KindEnum = z.enum([
-  "wazuh",
-  "graylog",
-  "librenms",
-  "truenas",
-  "edge",
-  "hub",
-  "tailscale",
-  "pve",
-  "other",
-]);
+const KindEnum = TipoCredenzialeSchema;
 const LaunchModeEnum = z.enum(["copy", "sso_form", "sso_token"]);
 
 const CreateSchema = z.object({

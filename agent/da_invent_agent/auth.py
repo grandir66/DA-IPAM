@@ -1,7 +1,9 @@
 """Autenticazione, ammissione di rete e scope enforcement.
 
 Tre livelli:
-    1. **Origine**: il client DEVE essere in CGNAT Tailscale 100.64.0.0/10.
+    1. **Origine**: il client DEVE stare nella rete ammessa ``cgnat_network``:
+       la rete NetBird dell'account, che l'installatore legge da ``netbird
+       status`` (spec NetBird, rischio 9); senza, tutta 100.64.0.0/10.
        In ``dev_mode`` accettiamo anche ``127.0.0.1``/``::1``/``testclient``.
     2. **Bearer**: confronto bcrypt costante-time contro la lista di
        token configurati. Identifica il chiamante per label.

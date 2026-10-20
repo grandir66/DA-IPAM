@@ -60,7 +60,6 @@ export default function TenantAgentPage() {
   const [importToken, setImportToken] = useState("");
   const [importing, setImporting] = useState(false);
   const [tenantInfo, setTenantInfo] = useState<TenantInfo | null>(null);
-  const [tailscaleAuthKey, setTailscaleAuthKey] = useState("");
 
   const loadConfig = useCallback(async () => {
     if (!tenantId) return;
@@ -261,7 +260,7 @@ export default function TenantAgentPage() {
           <CardDescription>
             Modalità di esecuzione delle operazioni di rete per questo cliente. In modalità{" "}
             <code>local</code> tutto gira sull&apos;hub. In modalità <code>remote</code> le richieste vengono
-            inoltrate a un agente Python installato presso il cliente, raggiunto via Tailscale.
+            inoltrate a un agente Python installato presso il cliente, raggiunto via NetBird.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -280,13 +279,13 @@ export default function TenantAgentPage() {
                 onClick={() => setMode("remote")}
                 disabled={!canEdit}
               >
-                Remote (agente Tailscale)
+                Remote (agente via NetBird)
               </Button>
             </div>
             {mode === "remote" && (
               <p className="text-xs text-muted-foreground">
                 Le scansioni di rete (ping, nmap discover, nmap port-scan TCP+UDP) verranno
-                instradate via Tailscale all&apos;agente Python del cliente. Salva la
+                instradate via NetBird all&apos;agente Python del cliente. Salva la
                 configurazione, poi premi <em>Testa connessione</em> per verificare.
               </p>
             )}
@@ -294,16 +293,16 @@ export default function TenantAgentPage() {
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="md:col-span-2 space-y-2">
-              <Label htmlFor="hostname">Hostname Tailscale (MagicDNS)</Label>
+              <Label htmlFor="hostname">Nome NetBird del nodo (o IP NetBird)</Label>
               <Input
                 id="hostname"
-                placeholder="es. agent-cliente-001"
+                placeholder="es. <codice>-ipam.netbird.selfhosted"
                 value={hostname}
                 onChange={(e) => setHostname(e.target.value)}
                 disabled={!canEdit}
               />
               <p className="text-xs text-muted-foreground">
-                Nome breve del nodo Tailscale dove gira l&apos;agente. Solo MagicDNS short name, senza dominio.
+                Nome NetBird completo del nodo dove gira l&apos;agente (il nodo entra in NetBird col comando di DA-Link).
               </p>
             </div>
             <div className="space-y-2">
@@ -332,7 +331,7 @@ export default function TenantAgentPage() {
                     ? "Manca il token bearer"
                     : !hostname.trim()
                       ? "Manca l'hostname"
-                      : "Esegue GET /whoami sull'agente via Tailscale"
+                      : "Esegue GET /whoami sull'agente via NetBird"
               }
             >
               <PlugZap className="h-4 w-4 mr-1.5" />
@@ -491,30 +490,11 @@ export default function TenantAgentPage() {
             <CardDescription>
               Esegui questo one-liner come <code>root</code> (o con <code>sudo</code>) sull&apos;host
               Ubuntu/Debian dove vive (o vivrà) l&apos;agent. Lo script installa <strong>tutto</strong>:
-              dipendenze APT, Python venv, Tailscale (se mancante), agent Python,
-              systemd unit, sudoers. Idempotente — rieseguibile per upgrade/rotazione token.
+              dipendenze APT, Python venv, agent Python, systemd unit, sudoers. Il nodo
+              dev&apos;essere già in NetBird (comando di DA-Link). Idempotente — rieseguibile per upgrade/rotazione token.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="tskey" className="text-sm">
-                Auth-key Tailscale (opzionale — per install fully-automated)
-              </Label>
-              <Input
-                id="tskey"
-                type="password"
-                placeholder="tskey-auth-... (lascia vuoto per login interattivo)"
-                value={tailscaleAuthKey}
-                onChange={(e) => setTailscaleAuthKey(e.target.value)}
-                className="font-mono text-xs"
-              />
-              <p className="text-xs text-muted-foreground">
-                Genera una reusable auth-key dalla console Tailscale. Senza, lo script
-                stamperà un URL durante l&apos;install e ti chiederà di autenticare il nodo
-                manualmente dal browser.
-              </p>
-            </div>
-
             <div>
               <Label className="text-sm">One-liner da copiare</Label>
               <pre className="bg-muted p-3 rounded text-xs overflow-x-auto whitespace-pre-wrap break-all mt-2">
@@ -522,7 +502,7 @@ export default function TenantAgentPage() {
   | TENANT_CODE='${tenantInfo.codice_cliente}' \\
     HUB_URL='${typeof window !== "undefined" ? window.location.origin : "<HUB_URL>"}' \\
     AGENT_TOKEN='${newToken}' \\
-    AGENT_PORT='${port}' \\${tailscaleAuthKey ? `\n    TAILSCALE_AUTH_KEY='${tailscaleAuthKey}' \\` : ""}
+    AGENT_PORT='${port}' \\
     bash`}
               </pre>
               <p className="text-xs text-muted-foreground mt-2">

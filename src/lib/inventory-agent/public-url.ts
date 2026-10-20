@@ -7,7 +7,6 @@ import { getSetting } from "@/lib/db-hub";
 export type PublicHubUrlSource =
   | "da_ipam_public_url"
   | "public_hub_url"
-  | "tailnet_hostname"
   | "env_host"
   | "nextauth_url"
   | "forwarded"
@@ -100,12 +99,6 @@ export function resolvePublicHubOrigin(request: Request): {
     return { origin: stripTrailingSlash(publicHubUrl), source: "public_hub_url" };
   }
 
-  const tailnet = (getSetting("hub_tailnet_hostname") ?? "").trim();
-  if (tailnet) {
-    const host = tailnet.replace(/^https?:\/\//i, "").replace(/\/+$/, "");
-    return { origin: `https://${host}`, source: "tailnet_hostname" };
-  }
-
   const envHost = publicHostFromEnv();
   if (envHost) {
     return { origin: `https://${envHost}`, source: "env_host" };
@@ -141,6 +134,24 @@ export function resolvePublicHubOrigin(request: Request): {
   }
 
   return { origin: "", source: "none" };
+}
+
+/**
+ * Indirizzo dell'hub configurato a mano (GET /api/settings/hub-url): quello che il
+ * wizard «Nuovo agente» mette nel comando d'installazione. `effective_url` null = il
+ * chiamante ricade sull'origin del browser, con l'avviso.
+ */
+export function urlHubConfigurato(): {
+  public_hub_url: string;
+  effective_url: string | null;
+  source: "public_hub_url" | "none";
+} {
+  // Solo l'URL pubblico: il nome dell'hub nell'overlay precedente non conta più (20/10/2026).
+  const publicHubUrl = (getSetting("public_hub_url") ?? "").trim();
+  if (publicHubUrl) {
+    return { public_hub_url: publicHubUrl, effective_url: stripTrailingSlash(publicHubUrl), source: "public_hub_url" };
+  }
+  return { public_hub_url: publicHubUrl, effective_url: null, source: "none" };
 }
 
 /** URL POST ingest per GLPI Agent push. */

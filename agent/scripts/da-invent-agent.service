@@ -1,6 +1,6 @@
 [Unit]
 Description=DA-INVENT Remote Agent
-After=network-online.target tailscaled.service
+After=network-online.target netbird.service
 Wants=network-online.target
 
 [Service]

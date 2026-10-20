@@ -3,7 +3,7 @@
  *
  * L'Executor è la frontiera tra hub orchestratore e nodo che esegue I/O di rete.
  * In Phase 1 esiste solo `LocalExecutor` (esecuzione in-process). In Phase 3
- * verrà aggiunto `RemoteExecutor` che invocherà un agente Python via Tailscale.
+ * verrà aggiunto `RemoteExecutor` che invocherà un agente Python via NetBird.
  *
  * Le firme dei metodi sono pensate per essere serializzabili JSON: callback
  * opzionali (progress/log) sono utili solo lato `local` e verranno ignorati

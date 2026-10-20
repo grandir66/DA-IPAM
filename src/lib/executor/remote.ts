@@ -1,9 +1,9 @@
 /**
  * RemoteExecutor — implementazione dell'``Executor`` che parla con l'agente
- * Python via HTTP sopra Tailscale.
+ * Python via HTTP sopra NetBird.
  *
  * Decisioni:
- *   - HTTP plain: Tailscale fornisce già cifratura WireGuard. TLS end-to-end
+ *   - HTTP plain: NetBird fornisce già cifratura WireGuard. TLS end-to-end
  *     è rinviato a Phase 4+ (vedi piano agenti remoti).
  *   - I metodi che lato Local accettano callback (onProgress/onLog) qui li
  *     ignorano in modo silenzioso: non sono serializzabili HTTP. La logica

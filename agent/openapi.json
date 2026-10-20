@@ -338,11 +338,11 @@
       },
       "NetworkStatus": {
         "properties": {
-          "tailscale": {
-            "title": "Tailscale",
+          "netbird": {
+            "title": "Netbird",
             "type": "boolean"
           },
-          "tailscale_ip": {
+          "netbird_ip": {
             "anyOf": [
               {
                 "type": "string"
@@ -351,11 +351,11 @@
                 "type": "null"
               }
             ],
-            "title": "Tailscale Ip"
+            "title": "Netbird Ip"
           }
         },
         "required": [
-          "tailscale"
+          "netbird"
         ],
         "title": "NetworkStatus",
         "type": "object"
@@ -1162,7 +1162,7 @@
   },
   "info": {
     "title": "DA-INVENT Agent",
-    "version": "0.2.4"
+    "version": "0.3.0"
   },
   "openapi": "3.1.0",
   "paths": {

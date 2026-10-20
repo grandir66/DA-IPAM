@@ -8,9 +8,9 @@ In produzione viene avviato da systemd via ``uvicorn`` (vedi
         DA_INVENT_AGENT_TOKENS='[{"label":"dev","token_hash":"$2b$10$...","scopes":["exec:network","exec:device","admin:update"]}]' \\
         uvicorn da_invent_agent.main:app --reload --port 8443
 
-Lo startup verifica la presenza di ``tailscale0`` quando ``dev_mode`` è
-disattivato: rifiutarsi di partire è preferibile al binding accidentale su
-una NIC pubblica. Logghiamo un warning se uno dei tool di sistema attesi
+Lo startup verifica la presenza dell'interfaccia NetBird ``wt0`` quando
+``dev_mode`` è disattivato: rifiutarsi di partire è preferibile al binding
+accidentale su una NIC pubblica. Logghiamo un warning se uno dei tool di sistema attesi
 (nmap, snmpwalk, ssh) manca, ma non blocchiamo l'avvio.
 """
 
@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -68,14 +67,18 @@ from .models import (
     reveal_winrm_auth,
 )
 from .scopes import Scope
-from .system_probe import probe_network, probe_tools
+from .system_probe import NETBIRD_IFACE, netbird_iface_present, probe_network, probe_tools
 
 
 log = logging.getLogger(__name__)
 
 
-def _tailscale_available() -> bool:
-    return Path("/sys/class/net/tailscale0").exists()
+def controlla_interfaccia(settings: Settings) -> None:
+    """Fuori da ``dev_mode`` senza l'interfaccia NetBird l'agente non parte."""
+
+    if not settings.dev_mode and not netbird_iface_present():
+        log.error("%s (NetBird) non disponibile e dev_mode=false — rifiuto avvio.", NETBIRD_IFACE)
+        raise SystemExit(2)
 
 
 @asynccontextmanager
@@ -83,9 +86,7 @@ async def lifespan(app: FastAPI):  # noqa: ARG001
     settings = get_settings()
     logging.basicConfig(level=settings.log_level.upper())
 
-    if not settings.dev_mode and not _tailscale_available():
-        log.error("tailscale0 non disponibile e dev_mode=false — rifiuto avvio.")
-        raise SystemExit(2)
+    controlla_interfaccia(settings)
 
     if not settings.tokens:
         log.warning("Nessun token configurato in DA_INVENT_AGENT_TOKENS — le route protette risponderanno 401.")
@@ -148,7 +149,7 @@ async def healthz() -> HealthCheckResult:
         version=__version__,
         mode="remote",
         tools=ToolsAvailability(nmap=tools.nmap, snmpwalk=tools.snmpwalk, ping=tools.ping, ssh=tools.ssh),
-        network=NetworkStatus(tailscale=network.tailscale, tailscale_ip=network.tailscale_ip),
+        network=NetworkStatus(netbird=network.netbird, netbird_ip=network.netbird_ip),
     )
 
 

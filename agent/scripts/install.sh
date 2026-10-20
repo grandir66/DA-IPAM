@@ -19,14 +19,12 @@
 #   AGENT_PORT          porta bind (default 8443)
 #   AGENT_VERSION       ref git da clonare (default: feature/remote-agents)
 #   AGENT_REPO          URL del repo (default: github grandir66/DA-IPAM)
-#   TAILSCALE_AUTH_KEY  reusable auth-key Tailscale (se assente: login interattivo)
-#   TAILSCALE_HOSTNAME  hostname Tailscale del nodo (default: $(hostname))
 #
 # Vincoli:
 #   - Idempotente: rieseguilo per upgrade o rotazione token.
-#   - Installa anche Tailscale se mancante (script ufficiale tailscale.com).
-#   - Senza TAILSCALE_AUTH_KEY il primo `tailscale up` è interattivo:
-#     stampa un URL da aprire nel browser per autenticare il nodo.
+#   - Il nodo deve essere GIÀ in NetBird (comando emesso da DA-Link): l'installatore
+#     non lo fa entrare. Legge da `netbird status` la rete NetBird dell'account e la
+#     scrive come rete ammessa dell'agente (`cgnat_network`).
 #   - Ubuntu 22.04+ / Debian 12+ con apt.
 
 set -euo pipefail
@@ -37,6 +35,7 @@ set -euo pipefail
 #   bash install.sh --precheck    # verifica sistema, niente install niente env
 #   bash install.sh --verify      # post-install: service attivo, /whoami risponde
 #   bash install.sh --help        # this
+#   bash install.sh --rete-netbird  # stampa la rete NetBird dell'account (es. 100.107.0.0/16)
 
 _c_red()    { printf '\033[1;31m%s\033[0m\n' "$*"; }
 _c_green()  { printf '\033[1;32m%s\033[0m\n' "$*"; }
@@ -49,6 +48,26 @@ _fail()     { printf '  \033[1;31m✗\033[0m %s\n' "$*"; }
 show_help() {
     sed -n '2,30p' "${BASH_SOURCE[0]}" | sed 's/^# \?//'
     exit 0
+}
+
+# IP NetBird «a.b.c.d/nn» se il client è connesso alla gestione, vuoto altrimenti.
+# Forma testo di `netbird status` (righe «Management: Connected» e «NetBird IP: …»).
+netbird_ip_prefisso() {
+    local stato
+    stato="$(netbird status 2>/dev/null)" || return 0
+    printf '%s\n' "$stato" | grep -q '^Management: Connected' || return 0
+    printf '%s\n' "$stato" | sed -nE 's#^NetBird IP:[[:space:]]*([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+).*$#\1#p' | head -1
+}
+
+# Rete NetBird dell'account (es. 100.107.0.0/16) su stdout; esce 1 se NetBird non è connesso.
+rete_netbird() {
+    local ipp
+    ipp="$(netbird_ip_prefisso)"
+    if [ -z "$ipp" ]; then
+        echo "NetBird non connesso: il nodo entra in NetBird col comando di DA-Link, poi si rilancia l'installatore." >&2
+        return 1
+    fi
+    python3 -c 'import ipaddress, sys; print(ipaddress.ip_interface(sys.argv[1]).network)' "$ipp"
 }
 
 run_precheck() {
@@ -103,11 +122,6 @@ run_precheck() {
         else
             _warn "HTTPS verso github.com non risponde — clone repo potrebbe fallire"; warnings=$((warnings+1))
         fi
-        if curl -fsS --max-time 5 -o /dev/null https://tailscale.com 2>/dev/null; then
-            _ok "HTTPS verso tailscale.com raggiungibile (per installer ufficiale)"
-        else
-            _warn "tailscale.com non risponde — install Tailscale offline non supportato"; warnings=$((warnings+1))
-        fi
     else
         _warn "curl mancante — sarà installato"; warnings=$((warnings+1))
     fi
@@ -117,22 +131,22 @@ run_precheck() {
         if curl -fsS -k --max-time 5 -o /dev/null "$HUB_URL" 2>/dev/null; then
             _ok "HUB_URL=$HUB_URL raggiungibile"
         else
-            _warn "HUB_URL=$HUB_URL non risponde — verifica connettività hub (potrebbe essere in tailnet, in tal caso ok dopo tailscale up)"; warnings=$((warnings+1))
+            _warn "HUB_URL=$HUB_URL non risponde — verifica connettività hub (via NetBird: nodo già entrato col comando di DA-Link?)"; warnings=$((warnings+1))
         fi
     else
         _warn "HUB_URL non impostato (env var) — sarà obbligatoria all'install"; warnings=$((warnings+1))
     fi
 
-    # Stato Tailscale (informativo)
-    if command -v tailscale >/dev/null 2>&1; then
-        if tailscale status --json 2>/dev/null | grep -q '"BackendState":"Running"'; then
-            local ts_ip; ts_ip="$(tailscale ip -4 2>/dev/null | head -1)"
-            _ok "Tailscale già connesso (IP ${ts_ip:-?})"
+    # NetBird: l'installatore non fa entrare il nodo, lo vuole già dentro
+    if command -v netbird >/dev/null 2>&1; then
+        local nb_ip; nb_ip="$(netbird_ip_prefisso)"
+        if [ -n "$nb_ip" ]; then
+            _ok "NetBird connesso (IP ${nb_ip})"
         else
-            _warn "Tailscale installato ma non running — installer eseguirà tailscale up"; warnings=$((warnings+1))
+            _fail "NetBird installato ma non connesso — prima il comando di DA-Link"; errors=$((errors+1))
         fi
     else
-        _warn "Tailscale non installato — installer lo installerà da tailscale.com"; warnings=$((warnings+1))
+        _fail "NetBird non installato — il nodo entra in NetBird col comando di DA-Link"; errors=$((errors+1))
     fi
 
     # Strumenti già presenti vs da installare
@@ -209,12 +223,12 @@ run_verify() {
         _warn "manca /etc/sudoers.d/da-invent-agent (UDP scan potrebbe fallire)"; warnings=$((warnings+1))
     fi
 
-    # Tailscale
-    if command -v tailscale >/dev/null 2>&1 && tailscale status --json 2>/dev/null | grep -q '"BackendState":"Running"'; then
-        local ts_ip; ts_ip="$(tailscale ip -4 2>/dev/null | head -1)"
-        _ok "Tailscale connesso (IP ${ts_ip:-?})"
+    # NetBird
+    local nb_ip; nb_ip="$(netbird_ip_prefisso)"
+    if [ -n "$nb_ip" ]; then
+        _ok "NetBird connesso (IP ${nb_ip})"
     else
-        _fail "Tailscale non running"; errors=$((errors+1))
+        _fail "NetBird non connesso (netbird status)"; errors=$((errors+1))
     fi
 
     # Porta agent in listen
@@ -261,6 +275,7 @@ case "${1:-}" in
     --help|-h)  show_help ;;
     --precheck) run_precheck; exit $? ;;
     --verify)   run_verify;   exit $? ;;
+    --rete-netbird) rete_netbird; exit $? ;;
     "")         : ;;  # flow normale install
     *)          _c_red "Argomento non riconosciuto: $1"; echo "Usa --help"; exit 2 ;;
 esac
@@ -295,47 +310,21 @@ trap cleanup EXIT
 log() { printf '\n\033[1;34m[install]\033[0m %s\n' "$*"; }
 ok()  { printf '  ✓ %s\n' "$*"; }
 
-# ─── Verifica Tailscale ──────────────────────────────────────────────────────
+# ─── Verifica NetBird ────────────────────────────────────────────────────────
 
-log "Tailscale: install + up (idempotente)"
-if ! command -v tailscale >/dev/null 2>&1; then
-    ok "Tailscale assente, installo (script ufficiale tailscale.com)"
-    curl -fsSL https://tailscale.com/install.sh | sh >/dev/null 2>&1 || {
-        echo "ERROR: install Tailscale fallito. Verifica connessione internet o installa manualmente." >&2
-        exit 2
-    }
-else
-    ok "Tailscale già installato ($(tailscale version | head -1))"
-fi
-
-systemctl enable --now tailscaled >/dev/null 2>&1 || true
-
-if ! tailscale status >/dev/null 2>&1; then
-    TS_HOSTNAME="${TAILSCALE_HOSTNAME:-$(hostname)}"
-    if [ -n "${TAILSCALE_AUTH_KEY:-}" ]; then
-        ok "tailscale up con auth-key"
-        tailscale up --authkey="$TAILSCALE_AUTH_KEY" --hostname="$TS_HOSTNAME" >/dev/null 2>&1 || {
-            echo "ERROR: tailscale up con auth-key fallito (key scaduta o revocata?)" >&2
-            exit 2
-        }
-    else
-        echo ""
-        echo "  >>> AUTENTICAZIONE TAILSCALE — APRI L'URL CHE APPARE QUI SOTTO <<<"
-        echo "  >>> dopo l'auth lo script proseguirà automaticamente            <<<"
-        echo ""
-        tailscale up --hostname="$TS_HOSTNAME" || {
-            echo "ERROR: tailscale up interattivo fallito o annullato." >&2
-            exit 2
-        }
-    fi
-fi
-
-TS_IP="$(tailscale ip -4 2>/dev/null | head -1)"
-if [ -z "$TS_IP" ]; then
-    echo "ERROR: Tailscale up ma nessun IP IPv4 assegnato (?)" >&2
+log "NetBird: il nodo dev'essere già dentro (comando di DA-Link)"
+if ! command -v netbird >/dev/null 2>&1; then
+    echo "ERROR: NetBird non installato. Il nodo entra in NetBird col comando di DA-Link, poi si rilancia." >&2
     exit 2
 fi
-ok "Tailscale OK — IP: $TS_IP"
+NB_IP_PREFISSO="$(netbird_ip_prefisso)"
+if [ -z "$NB_IP_PREFISSO" ]; then
+    echo "ERROR: NetBird non connesso (netbird status). Prima il comando di DA-Link, poi si rilancia." >&2
+    exit 2
+fi
+NB_IP="${NB_IP_PREFISSO%/*}"
+RETE_AMMESSA="$(rete_netbird)" || exit 2
+ok "NetBird OK — IP: $NB_IP, rete ammessa: $RETE_AMMESSA"
 
 # ─── Dipendenze sistema ──────────────────────────────────────────────────────
 
@@ -419,6 +408,7 @@ ok "Pip install OK — agent v$INSTALLED_VERSION"
 log "Scrivi $CONFIG_FILE"
 sudo -u "$AGENT_USER" AGENT_TOKEN_PLAIN="$AGENT_TOKEN" \
     TENANT_CODE="$TENANT_CODE" HUB_URL="$HUB_URL" AGENT_PORT="$AGENT_PORT" CONFIG_FILE="$CONFIG_FILE" \
+    RETE_AMMESSA="$RETE_AMMESSA" \
     "$VENV_DIR/bin/python" - <<'PY'
 import os, bcrypt, yaml
 plain = os.environ["AGENT_TOKEN_PLAIN"]
@@ -430,6 +420,8 @@ cfg = {
     "host": "0.0.0.0",
     "dev_mode": False,
     "log_level": "INFO",
+    # Spec NetBird, rischio 9: la fonte ammessa è la rete NetBird dell'account.
+    "cgnat_network": os.environ["RETE_AMMESSA"],
     "tokens": [
         {
             "label": "hub-prod",
@@ -467,7 +459,7 @@ if curl -fsS --max-time 5 "http://127.0.0.1:${AGENT_PORT}/healthz" > /tmp/agent-
     ok "/healthz risponde"
 else
     echo "WARNING: /healthz non risponde via 127.0.0.1 (dev_mode=false, il check resta su CGNAT)." >&2
-    echo "         Test via Tailscale dal hub: curl http://${TS_IP}:${AGENT_PORT}/healthz" >&2
+    echo "         Test via NetBird dall'hub: curl http://${NB_IP}:${AGENT_PORT}/healthz" >&2
 fi
 
 # ─── Riepilogo ───────────────────────────────────────────────────────────────
@@ -479,7 +471,7 @@ cat <<INFO
 ╠══════════════════════════════════════════════════════════════╣
 ║  Versione agent:  v${INSTALLED_VERSION}
 ║  Tenant code:     ${TENANT_CODE}
-║  Tailscale IP:    ${TS_IP}
+║  NetBird IP:      ${NB_IP} (ammessa ${RETE_AMMESSA})
 ║  Porta:           ${AGENT_PORT}
 ║  Config file:     ${CONFIG_FILE} (chmod 600)
 ║  Log:             journalctl -u da-invent-agent -f

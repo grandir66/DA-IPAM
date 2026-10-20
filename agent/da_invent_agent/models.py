@@ -24,8 +24,8 @@ class ToolsAvailability(BaseModel):
 
 
 class NetworkStatus(BaseModel):
-    tailscale: bool
-    tailscale_ip: str | None = None
+    netbird: bool
+    netbird_ip: str | None = None
 
 
 class HealthCheckResult(BaseModel):

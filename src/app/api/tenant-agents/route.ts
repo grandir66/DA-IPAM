@@ -15,7 +15,7 @@ const CreateAgentSchema = z.object({
   tenant_id: z.number().int().positive(),
   label: z.string().trim().min(1).max(64),
   hostname: z.string().trim().refine((v) => HOSTNAME_RE.test(v), {
-    message: "Hostname non valido (short MagicDNS o IP, niente schemi).",
+    message: "Hostname non valido (nome NetBird, es. 70791-ipam.netbird.selfhosted, o IP; niente schemi).",
   }),
   port: z.number().int().min(1).max(65535).default(8443),
   subnet_match: z.string().trim().nullable().optional(),

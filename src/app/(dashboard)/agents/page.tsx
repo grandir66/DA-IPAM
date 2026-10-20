@@ -107,18 +107,16 @@ export default function AgentsOverviewPage() {
   const [createdAgentId, setCreatedAgentId] = useState<number | null>(null);
   const [createdTenant, setCreatedTenant] = useState<TenantBrief | null>(null);
   const [createdToken, setCreatedToken] = useState<string | null>(null);
-  const [tailscaleAuthKey, setTailscaleAuthKey] = useState("");
 
   // Hub URL pubblico — letto da /api/settings/hub-url. Usato per costruire
   // il one-liner di install. `source === 'none'` significa che gli admin non
   // hanno configurato un URL pubblico: ricadiamo su window.location.origin con
   // warning visivo, perché potrebbe essere un IP interno irraggiungibile dal
   // cliente che esegue il curl.
-  const [hubUrlInfo, setHubUrlInfo] = useState<{ effective_url: string | null; source: "public_hub_url" | "tailnet_hostname" | "none" }>({ effective_url: null, source: "none" });
+  const [hubUrlInfo, setHubUrlInfo] = useState<{ effective_url: string | null; source: "public_hub_url" | "none" }>({ effective_url: null, source: "none" });
 
   // Hub URL configuration (spostata qui da /settings perché serve solo a questo wizard).
   const [publicHubUrl, setPublicHubUrl] = useState("");
-  const [hubTailnetHostname, setHubTailnetHostname] = useState("");
   const [savingHubUrl, setSavingHubUrl] = useState(false);
 
   const load = useCallback(async () => {
@@ -136,13 +134,12 @@ export default function AgentsOverviewPage() {
         setTenants(tlist.filter((t) => (t.active ?? 1) === 1));
       }
       if (hubUrlRes.ok) {
-        const info = (await hubUrlRes.json()) as { effective_url: string | null; source: "public_hub_url" | "tailnet_hostname" | "none" };
+        const info = (await hubUrlRes.json()) as { effective_url: string | null; source: "public_hub_url" | "none" };
         setHubUrlInfo(info);
       }
       if (settingsRes.ok) {
         const settings = (await settingsRes.json()) as Record<string, string>;
         if (settings.public_hub_url !== undefined) setPublicHubUrl(settings.public_hub_url || "");
-        if (settings.hub_tailnet_hostname !== undefined) setHubTailnetHostname(settings.hub_tailnet_hostname || "");
       }
       setRowState({});
     } catch (e) {
@@ -182,10 +179,9 @@ export default function AgentsOverviewPage() {
     try {
       const [hubUrlRes, settingsRes] = await Promise.all([fetch("/api/settings/hub-url"), fetch("/api/settings")]);
       if (!hubUrlRes.ok || !settingsRes.ok) throw new Error(`HTTP ${hubUrlRes.status}/${settingsRes.status}`);
-      setHubUrlInfo((await hubUrlRes.json()) as { effective_url: string | null; source: "public_hub_url" | "tailnet_hostname" | "none" });
+      setHubUrlInfo((await hubUrlRes.json()) as { effective_url: string | null; source: "public_hub_url" | "none" });
       const settings = (await settingsRes.json()) as Record<string, string>;
       if (settings.public_hub_url !== undefined) setPublicHubUrl(settings.public_hub_url || "");
-      if (settings.hub_tailnet_hostname !== undefined) setHubTailnetHostname(settings.hub_tailnet_hostname || "");
     } catch {
       toast.error("Hub URL non riletto: il comando di install usa ancora il valore di prima");
     }
@@ -242,13 +238,8 @@ export default function AgentsOverviewPage() {
 
   const handleSaveHubUrl = async () => {
     const url = publicHubUrl.trim();
-    const host = hubTailnetHostname.trim();
     if (url && !/^https?:\/\/[^\s]+$/i.test(url)) {
       toast.error("URL pubblico non valido (atteso https://host[:port])");
-      return;
-    }
-    if (host && !/^[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?$/.test(host)) {
-      toast.error("Hostname Tailscale non valido (solo short MagicDNS, niente schemi né punti)");
       return;
     }
     setSavingHubUrl(true);
@@ -258,16 +249,11 @@ export default function AgentsOverviewPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ key: "public_hub_url", value: url }),
       });
-      const r2 = await fetch("/api/settings", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key: "hub_tailnet_hostname", value: host }),
-      });
-      if (r1.ok && r2.ok) {
+      if (r1.ok) {
         toast.success("Hub URL salvato. Useranno il nuovo valore i prossimi one-liner di install.");
         const hubUrlRes = await fetch("/api/settings/hub-url");
         if (hubUrlRes.ok) {
-          const info = (await hubUrlRes.json()) as { effective_url: string | null; source: "public_hub_url" | "tailnet_hostname" | "none" };
+          const info = (await hubUrlRes.json()) as { effective_url: string | null; source: "public_hub_url" | "none" };
           setHubUrlInfo(info);
         }
       } else {
@@ -291,7 +277,6 @@ export default function AgentsOverviewPage() {
     setCreatedAgentId(null);
     setCreatedTenant(null);
     setCreatedToken(null);
-    setTailscaleAuthKey("");
     setWizardOpen(true);
   };
 
@@ -337,7 +322,7 @@ export default function AgentsOverviewPage() {
     if (!createdTenant) return;
     const hostname = agentHostname.trim();
     const label = agentLabel.trim() || "Sede principale";
-    if (!hostname) { toast.error("Inserisci hostname Tailscale"); return; }
+    if (!hostname) { toast.error("Inserisci il nome NetBird dell'agente"); return; }
     setWizSaving(true);
     try {
       const res = await fetch("/api/tenant-agents", {
@@ -381,14 +366,13 @@ export default function AgentsOverviewPage() {
     if (!createdToken || !createdTenant) return "";
     const browserOrigin = typeof window !== "undefined" ? window.location.origin : "<HUB_URL>";
     const hubOrigin = hubUrlInfo.effective_url ?? browserOrigin;
-    const tsLine = tailscaleAuthKey.trim() ? `\n    TAILSCALE_AUTH_KEY='${tailscaleAuthKey.trim()}' \\` : "";
     return `curl -fsSL ${hubOrigin}/agent-install.sh \\
   | TENANT_CODE='${createdTenant.codice_cliente}' \\
     HUB_URL='${hubOrigin}' \\
     AGENT_TOKEN='${createdToken}' \\
-    AGENT_PORT='${agentPort}' \\${tsLine}
+    AGENT_PORT='${agentPort}' \\
     bash`;
-  }, [createdToken, createdTenant, agentPort, tailscaleAuthKey, hubUrlInfo.effective_url]);
+  }, [createdToken, createdTenant, agentPort, hubUrlInfo.effective_url]);
 
   const copyInstall = async () => {
     if (!installCommand) return;
@@ -427,7 +411,7 @@ export default function AgentsOverviewPage() {
           </h1>
           <p className="text-sm text-muted-foreground">
             Un cliente può avere più agenti (es. sedi diverse). Ogni agente è un nodo
-            Python via Tailscale.
+            Python raggiunto via NetBird.
           </p>
         </div>
         <div className="flex gap-2">
@@ -458,9 +442,7 @@ export default function AgentsOverviewPage() {
                     {hubUrlInfo.effective_url ?? "—"}
                   </code>
                   {hubUrlInfo.source !== "none" && (
-                    <span className="ml-1 uppercase tracking-wide text-[10px]">
-                      ({hubUrlInfo.source === "public_hub_url" ? "pubblico" : "tailnet"})
-                    </span>
+                    <span className="ml-1 uppercase tracking-wide text-[10px]">(pubblico)</span>
                   )}
                 </span>
               </summary>
@@ -471,27 +453,15 @@ export default function AgentsOverviewPage() {
               </CardDescription>
               <div className="space-y-3 max-w-2xl mt-4">
                 <div className="space-y-2">
-                  <Label htmlFor="public-hub-url">URL pubblico (preferito)</Label>
+                  <Label htmlFor="public-hub-url">URL pubblico</Label>
                   <Input
                     id="public-hub-url"
-                    placeholder="es. https://da-invent.tailc091fb.ts.net"
+                    placeholder="es. https://<nodo>.netbird.selfhosted"
                     value={publicHubUrl}
                     onChange={(e) => setPublicHubUrl(e.target.value)}
                   />
                   <p className="text-xs text-muted-foreground">
                     Schema + host + (eventuale porta). Funziona da qualunque rete raggiunga l&apos;URL.
-                  </p>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="hub-tailnet-host">Hostname Tailscale (fallback)</Label>
-                  <Input
-                    id="hub-tailnet-host"
-                    placeholder="es. da-invent"
-                    value={hubTailnetHostname}
-                    onChange={(e) => setHubTailnetHostname(e.target.value)}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    MagicDNS short. Se l&apos;URL pubblico è vuoto, viene usato come <code className="font-mono">https://&lt;hostname&gt;</code>.
                   </p>
                 </div>
                 <Button onClick={handleSaveHubUrl} disabled={savingHubUrl}>
@@ -509,7 +479,7 @@ export default function AgentsOverviewPage() {
           <CardTitle>Agenti registrati</CardTitle>
           <CardDescription>
             Una riga per agente. Il bottone <em>Test</em> esegue GET <code>/whoami</code>
-            sull&apos;agent via Tailscale.
+            sull&apos;agent via NetBird.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -596,7 +566,7 @@ export default function AgentsOverviewPage() {
             </DialogTitle>
             <DialogDescription>
               {wizardStep === "tenant" && "Scegli un cliente esistente o crea un nuovo cliente per cui registrare l'agente."}
-              {wizardStep === "agent" && "Configura i parametri dell'agente Tailscale."}
+              {wizardStep === "agent" && "Configura i parametri dell'agente (nodo NetBird)."}
               {wizardStep === "token" && "Copia il comando d'install: contiene il token plaintext, visibile solo una volta."}
             </DialogDescription>
           </DialogHeader>
@@ -676,9 +646,9 @@ export default function AgentsOverviewPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="ag-hostname">Hostname Tailscale (MagicDNS short)</Label>
-                <Input id="ag-hostname" placeholder="es. agent-acme-mi" value={agentHostname} onChange={(e) => setAgentHostname(e.target.value)} />
-                <p className="text-xs text-muted-foreground">Nome breve del nodo Tailscale dove vive (o vivrà) l&apos;agent. Solo MagicDNS short.</p>
+                <Label htmlFor="ag-hostname">Nome NetBird del nodo (o IP NetBird)</Label>
+                <Input id="ag-hostname" placeholder="es. <codice>-ipam.netbird.selfhosted" value={agentHostname} onChange={(e) => setAgentHostname(e.target.value)} />
+                <p className="text-xs text-muted-foreground">Nome NetBird completo del nodo dove vive (o vivrà) l&apos;agent: il nodo entra in NetBird col comando di DA-Link.</p>
               </div>
 
               <div className="space-y-2">
@@ -705,12 +675,6 @@ export default function AgentsOverviewPage() {
                 <Input readOnly value={createdToken} className="font-mono text-xs" onFocus={(e) => e.currentTarget.select()} />
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="ts-key">Auth-key Tailscale (opzionale, per install fully-automated)</Label>
-                <Input id="ts-key" type="password" placeholder="tskey-auth-... (lascia vuoto per login interattivo)" value={tailscaleAuthKey} onChange={(e) => setTailscaleAuthKey(e.target.value)} className="font-mono text-xs" />
-                <p className="text-xs text-muted-foreground">Senza auth-key, lo script stamperà un URL durante l&apos;install che dovrai aprire dal browser per autenticare il nodo Tailscale.</p>
-              </div>
-
               {hubUrlInfo.source === "none" && (
                 <div className="rounded border border-orange-500/40 bg-orange-50 dark:bg-orange-950/30 p-3 text-xs text-orange-800 dark:text-orange-200">
                   <p className="font-medium mb-1">⚠️ Hub URL non configurato</p>
@@ -718,21 +682,21 @@ export default function AgentsOverviewPage() {
                     Il comando sotto usa <code className="font-mono">{typeof window !== "undefined" ? window.location.origin : "?"}</code>
                     {" "}come HUB_URL. Se stai accedendo a questa UI da rete interna, il cliente
                     non riuscirà a raggiungerlo. Prima di eseguire l&apos;install imposta{" "}
-                    <em>Hub URL pubblico</em> o <em>Hostname Tailscale</em> nel riquadro{" "}
+                    <em>Hub URL pubblico</em> nel riquadro{" "}
                     {/* In un'altra scheda: chiudere questa finestra butterebbe il token, che
                         non si rigenera (UI-24). Al ritorno refreshHubUrl aggiorna il comando. */}
                     <a href="/agents#hub-url-config" target="_blank" rel="noopener noreferrer" className="underline">
                       Hub URL pubblico
                     </a>{" "}
                     (si apre in una nuova scheda: questa finestra resta aperta col token e, quando
-                    torni qui, il comando sotto si aggiorna), oppure apri questa UI via MagicDNS tailnet.
+                    torni qui, il comando sotto si aggiorna), oppure apri questa UI dal nome NetBird dell&apos;hub.
                   </p>
                 </div>
               )}
               {hubUrlInfo.source !== "none" && hubUrlInfo.effective_url && (
                 <p className="text-xs text-muted-foreground">
                   Hub URL: <span className="font-mono">{hubUrlInfo.effective_url}</span>
-                  {" "}<span className="text-[10px] uppercase tracking-wide">({hubUrlInfo.source === "public_hub_url" ? "pubblico" : "tailnet"})</span>
+                  {" "}<span className="text-[10px] uppercase tracking-wide">(pubblico)</span>
                 </p>
               )}
               <div>
@@ -745,7 +709,7 @@ export default function AgentsOverviewPage() {
                 </div>
                 <p className="text-xs text-muted-foreground mt-2">
                   <Terminal className="h-3 w-3 inline mr-1" />
-                  Lo script installa Tailscale (se manca), apt deps, Python venv, agent, systemd unit.
+                  Il nodo dev&apos;essere già in NetBird (comando di DA-Link); lo script installa apt deps, Python venv, agent, systemd unit.
                 </p>
               </div>
 

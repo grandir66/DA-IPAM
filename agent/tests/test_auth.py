@@ -16,7 +16,7 @@ def test_healthz_pubblico_senza_auth(client: TestClient) -> None:
     assert "tools" in body
     assert {"nmap", "snmpwalk", "ping", "ssh"} <= set(body["tools"].keys())
     assert "network" in body
-    assert "tailscale" in body["network"]
+    assert "netbird" in body["network"]
 
 
 def test_version_pubblico_senza_auth(client: TestClient) -> None:

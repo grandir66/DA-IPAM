@@ -16,7 +16,7 @@ const AgentConfigSchema = z.object({
   agent_mode: z.enum(["local", "remote"]).optional(),
   agent_hostname: z.string().trim().nullable().optional().refine(
     (v) => v === null || v === undefined || v === "" || HOSTNAME_RE.test(v),
-    { message: "Hostname non valido (short MagicDNS o IP, niente 'http://' o path)" },
+    { message: "Hostname non valido (nome NetBird o IP, niente 'http://' o path)" },
   ),
   agent_port: z.number().int().min(1).max(65535).optional(),
 });

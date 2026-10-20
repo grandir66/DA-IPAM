@@ -13,7 +13,7 @@ const TIMEOUT_MS = 5_000;
 /**
  * POST /api/tenant-agents/[id]/test
  * Decrypta il token salvato per l'agente specifico e chiama /whoami sul
- * remoto via Tailscale. Ritorna risultato strutturato (ok/error_code/latency).
+ * remoto via NetBird. Ritorna risultato strutturato (ok/error_code/latency).
  */
 export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {

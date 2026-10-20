@@ -1,12 +1,14 @@
-"""Sonda runtime per tooling esterno e stato Tailscale.
+"""Sonda runtime per tooling esterno e stato di NetBird (interfaccia ``wt0``).
 
 Esposto in ``/healthz`` per:
     - Diagnosi rapida senza SSH sul cliente.
     - Decidere se rifiutare endpoint che richiedono un tool mancante
       (``snmp-walk`` senza ``snmpwalk`` -> ``tool_missing``).
 
-I check sono cached 60 s per non scaricare i probe a ogni request: Tailscale
+I check sono cached 60 s per non scaricare i probe a ogni request: l'hub
 o healthchecks esterni possono pollare /healthz frequentemente.
+
+Dal 20/10/2026 l'overlay è solo NetBird.
 """
 
 from __future__ import annotations
@@ -15,9 +17,14 @@ import shutil
 import subprocess
 import time
 from dataclasses import dataclass
+from pathlib import Path
 
 
 _CACHE_TTL_S = 60.0
+
+# Interfaccia del client NetBird; la cartella si sposta solo nelle prove.
+NETBIRD_IFACE = "wt0"
+SYS_CLASS_NET = Path("/sys/class/net")
 
 
 @dataclass(frozen=True)
@@ -30,8 +37,8 @@ class ToolsProbe:
 
 @dataclass(frozen=True)
 class NetworkProbe:
-    tailscale: bool
-    tailscale_ip: str | None
+    netbird: bool
+    netbird_ip: str | None
 
 
 # Stato cache module-level (sufficiente: il process è lungo-vivo).
@@ -71,26 +78,23 @@ def probe_tools(use_cache: bool = True) -> ToolsProbe:
     return result
 
 
-def _tailscale_iface_present() -> bool:
-    # /sys/class/net/tailscale0 esiste se il daemon è attivo (Linux only).
-    from pathlib import Path
+def netbird_iface_present() -> bool:
+    """``/sys/class/net/wt0`` esiste se il client NetBird è su (Linux only)."""
 
-    return Path("/sys/class/net/tailscale0").exists()
+    return (SYS_CLASS_NET / NETBIRD_IFACE).exists()
 
 
-def _tailscale_ip() -> str | None:
-    """Restituisce il primo IPv4 in CGNAT del nodo Tailscale, o ``None``.
+def _netbird_ip() -> str | None:
+    """Primo IPv4 di ``wt0`` (``ip -4 -o addr show dev wt0``), o ``None``.
 
-    Usa ``tailscale ip -4`` con timeout corto. In assenza del binary
-    ``tailscale`` non solleva: l'interfaccia ``tailscale0`` può esistere
-    anche con il CLI non installato (improbabile, ma robusto).
+    Timeout corto; senza ``ip`` o con un errore non solleva.
     """
 
-    if not shutil.which("tailscale"):
+    if not shutil.which("ip"):
         return None
     try:
         proc = subprocess.run(
-            ["tailscale", "ip", "-4"],
+            ["ip", "-4", "-o", "addr", "show", "dev", NETBIRD_IFACE],
             capture_output=True,
             text=True,
             timeout=1.0,
@@ -101,9 +105,11 @@ def _tailscale_ip() -> str | None:
     if proc.returncode != 0:
         return None
     for line in proc.stdout.splitlines():
-        ip = line.strip()
-        if ip:
-            return ip
+        parts = line.split()
+        if "inet" in parts:
+            i = parts.index("inet")
+            if i + 1 < len(parts):
+                return parts[i + 1].split("/")[0]
     return None
 
 
@@ -112,9 +118,9 @@ def probe_network(use_cache: bool = True) -> NetworkProbe:
         cached = _cached("network")
         if isinstance(cached, NetworkProbe):
             return cached
-    tailscale = _tailscale_iface_present()
-    ip = _tailscale_ip() if tailscale else None
-    result = NetworkProbe(tailscale=tailscale, tailscale_ip=ip)
+    netbird = netbird_iface_present()
+    ip = _netbird_ip() if netbird else None
+    result = NetworkProbe(netbird=netbird, netbird_ip=ip)
     _store("network", result)
     return result
 

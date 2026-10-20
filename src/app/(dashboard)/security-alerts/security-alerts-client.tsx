@@ -101,6 +101,8 @@ export function SecurityAlertsClient() {
   const [data, setData] = useState<AlertsResponse | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [stats, setStats] = useState<StatsResponse | null>(null);
+  // Le statistiche che non arrivano si dicono, non si lasciano a «non ancora lette» (revisione del 20/10).
+  const [statsError, setStatsError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [category, setCategory] = useState<string | null>(null);
@@ -142,7 +144,13 @@ export function SecurityAlertsClient() {
         if (!listRes.ok) throw new Error(`HTTP ${listRes.status}`);
         setData((await listRes.json()) as AlertsResponse);
         setLoadError(null);
-        if (statsRes.ok) setStats((await statsRes.json()) as StatsResponse);
+        if (statsRes.ok) {
+          setStats((await statsRes.json()) as StatsResponse);
+          setStatsError(null);
+        } else {
+          setStats(null);
+          setStatsError(`errore HTTP ${statsRes.status} nel leggere le statistiche`);
+        }
         setLastRefresh(new Date());
       } catch (e) {
         if ((e as Error).name !== "AbortError" && !opts?.silent) {
@@ -249,7 +257,7 @@ export function SecurityAlertsClient() {
   // Una schermata a 1920 (Riccardo, 20/10): testata e filtri in alto, la coda degli eventi
   // da prendere in carico a sinistra, l'analisi a destra. Le spiegazioni stanno nei `title`.
   const statsAssenti = !stats?.stats;
-  const motivoAssenti = stats?.unavailable ?? "statistiche dell'indexer non ancora lette";
+  const motivoAssenti = statsError ?? stats?.unavailable ?? "statistiche dell'indexer non ancora lette";
   return (
     <div className="flex flex-col gap-2 lg:h-[calc(100dvh-5.5rem)]">
       {/* ── Testata: titolo, stato di Wazuh, aggiornamento ───────────── */}
@@ -445,13 +453,12 @@ export function SecurityAlertsClient() {
           </Card>
           <Card size="sm" className="lg:flex-1 lg:min-h-0 data-[size=sm]:gap-1">
             <CardHeader>
-              <div className="inline-flex w-fit rounded-md border text-[13px]" role="tablist" aria-label="Classifiche">
+              <div className="inline-flex w-fit rounded-md border text-[13px]" role="group" aria-label="Classifiche">
                 {CLASSIFICHE.map((c) => (
                   <button
                     key={c.id}
                     type="button"
-                    role="tab"
-                    aria-selected={classifica === c.id}
+                    aria-pressed={classifica === c.id}
                     title={c.spiegazione}
                     onClick={() => setClassifica(c.id)}
                     className={`px-2.5 py-1 ${classifica === c.id ? "bg-[#0D2537] text-white dark:bg-[#A9BECC] dark:text-[#0D2537]" : "text-muted-foreground hover:text-foreground"}`}

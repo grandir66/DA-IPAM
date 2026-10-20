@@ -38,6 +38,15 @@ test("le 24 ore prima: dalla 47ª alla 24ª ora indietro, escluse le altre", () 
   assert.equal(r.totale24hPrima, 6);
 });
 
+test("tendenza su blocchi di 24 ore piene: l'ora in corso non la fa pendere verso «giù»", () => {
+  // 10 all'ora costanti per 49 ore: l'ora in corso (parziale) ne ha solo 2.
+  const righe = Array.from({ length: 49 }, (_, k) => b(new Date(Date.parse("2026-10-20T10:00:00.000Z") - (k + 1) * 3_600_000).toISOString(), 10));
+  righe.push(b("2026-10-20T10:00:00.000Z", 2));
+  assert.equal(accessiDaSerie(righe, ORA).tendenza, "pari");
+  righe.push(b("2026-10-19T12:00:00.000Z", 5)); // 22 ore fa: un picco nelle ultime 24 piene
+  assert.equal(accessiDaSerie(righe, ORA).tendenza, "su");
+});
+
 test("14 giorni in ora italiana: le 23:00 UTC del 19 sono l'1:00 del 20", () => {
   const r = accessiDaSerie([b("2026-10-19T23:00:00.000Z", 8), b("2026-10-19T21:00:00.000Z", 2), b("2026-10-06T22:00:00.000Z", 50)], ORA);
   assert.equal(r.giorni.length, 14);

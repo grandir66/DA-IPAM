@@ -55,7 +55,7 @@ export function StatusOverTimeChart({ altezza = 280 }: { altezza?: number } = {}
             <button
               key={p}
               onClick={() => setPeriod(p)}
-              className={`px-3 py-1 text-xs rounded-md transition-colors ${
+              className={`px-3 py-1 text-[13px] rounded-md transition-colors ${
                 period === p
                   ? "bg-primary text-primary-foreground"
                   : "bg-muted text-muted-foreground hover:bg-muted/80"
@@ -66,7 +66,7 @@ export function StatusOverTimeChart({ altezza = 280 }: { altezza?: number } = {}
           ))}
         </div>
         {latest && (
-          <div className="flex items-center gap-3 text-xs">
+          <div className="flex items-center gap-3 text-[13px]">
             <span className="inline-flex items-center gap-1">
               <span className="h-2 w-2 rounded-full bg-success" />
               <span className="text-muted-foreground">Online</span>
@@ -121,14 +121,14 @@ export function StatusOverTimeChart({ altezza = 280 }: { altezza?: number } = {}
                   : d.toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit" });
               }}
               stroke="var(--muted-foreground)"
-              fontSize={11}
+              fontSize={13}
             />
-            <YAxis yAxisId="counts" stroke="var(--muted-foreground)" fontSize={11} allowDecimals={false} />
+            <YAxis yAxisId="counts" stroke="var(--muted-foreground)" fontSize={13} allowDecimals={false} />
             <YAxis
               yAxisId="pct"
               orientation="right"
               stroke="var(--primary)"
-              fontSize={11}
+              fontSize={13}
               domain={[0, 100]}
               tickFormatter={(v: number) => `${v}%`}
               width={36}
@@ -138,7 +138,7 @@ export function StatusOverTimeChart({ altezza = 280 }: { altezza?: number } = {}
                 backgroundColor: "var(--card)",
                 border: "1px solid var(--border)",
                 borderRadius: "8px",
-                fontSize: "12px",
+                fontSize: "13px",
               }}
               labelFormatter={(t) => (typeof t === "string" ? parseDbDate(t).toLocaleString("it-IT") : String(t ?? ""))}
               formatter={(v, name) => {
@@ -146,7 +146,7 @@ export function StatusOverTimeChart({ altezza = 280 }: { altezza?: number } = {}
                 return name === "Uptime %" ? [`${val}%`, name as string] : [val, name as string];
               }}
             />
-            <Legend wrapperStyle={{ fontSize: "11px", paddingTop: "8px" }} iconSize={10} />
+            <Legend wrapperStyle={{ fontSize: "13px", paddingTop: "8px" }} iconSize={10} />
             <Area
               yAxisId="counts"
               type="monotone"

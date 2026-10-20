@@ -24,11 +24,24 @@ export interface SerieAccessi {
   giorni: { giorno: string; falliti: number }[];
   totale24h: number;
   totale24hPrima: number;
+  /** Le 24 ore piene più recenti contro le 24 prima (l'ora in corso è parziale e resta fuori). */
+  tendenza: "su" | "giu" | "pari";
+  /** Con la stima: perché l'indexer non è stato usato. */
+  motivo?: string;
+}
+
+/** Esito della lettura: la serie, oppure perché non c'è (si mostra accanto alla stima). */
+export interface LetturaAccessi {
+  serie: SerieAccessi | null;
+  motivo: string | null;
 }
 
 const ORA_MS = 3_600_000;
 const CATEGORIA = "auth_failure";
 const DURATA_CACHE_MS = 5 * 60_000;
+/** Un indexer spento non deve fermare la dashboard a ogni caricamento (revisione del 20/10). */
+const DURATA_CACHE_ERRORE_MS = 2 * 60_000;
+const ATTESA_MAX_MS = 5_000;
 
 const oraItaliana = new Intl.DateTimeFormat("en-GB", { timeZone: FUSO_UTENTI, hour: "2-digit", hourCycle: "h23" });
 const giornoItaliano = new Intl.DateTimeFormat("sv-SE", { timeZone: FUSO_UTENTI, year: "numeric", month: "2-digit", day: "2-digit" });
@@ -50,6 +63,12 @@ export function accessiDaSerie(serie: SeriesRow[], ora: Date): Omit<SerieAccessi
   });
   let totale24hPrima = 0;
   for (let k = 24; k < 48; k++) totale24hPrima += quante(inizioOra - k * ORA_MS);
+  // Tendenza su blocchi uguali: con l'ora in corso dentro, la freccia pendeva verso «giù».
+  let piene = 0;
+  let pienePrima = 0;
+  for (let k = 1; k <= 24; k++) piene += quante(inizioOra - k * ORA_MS);
+  for (let k = 25; k <= 48; k++) pienePrima += quante(inizioOra - k * ORA_MS);
+  const tendenza = piene > pienePrima ? "su" : piene < pienePrima ? "giu" : "pari";
 
   const perGiorno = new Map<string, number>();
   for (const [t, n] of perOra) {
@@ -66,44 +85,55 @@ export function accessiDaSerie(serie: SeriesRow[], ora: Date): Omit<SerieAccessi
     return { giorno: g, falliti: perGiorno.get(g) ?? 0 };
   });
 
-  return { ore, giorni, totale24h: ore.reduce((s, o) => s + o.falliti, 0), totale24hPrima };
+  return { ore, giorni, totale24h: ore.reduce((s, o) => s + o.falliti, 0), totale24hPrima, tendenza };
 }
 
-const cache = new Map<string, { quando: number; valore: SerieAccessi }>();
+const cache = new Map<string, { quando: number; valore: LetturaAccessi }>();
 
 /**
- * Serie degli accessi falliti dall'indexer del tenant, 5 minuti in memoria.
- * `null` = indexer non configurato o non raggiungibile: la dashboard usa la stima.
+ * Serie degli accessi falliti dall'indexer del tenant, 5 minuti in memoria (un errore 2
+ * minuti). `serie: null` = indexer non configurato o non raggiungibile, col motivo: la
+ * dashboard usa la stima e lo dice. Oltre 5 secondi d'attesa si rinuncia.
  */
-export async function leggiAccessiIndexer(tenantCode: string): Promise<SerieAccessi | null> {
+export async function leggiAccessiIndexer(tenantCode: string): Promise<LetturaAccessi> {
   const inCache = cache.get(tenantCode);
-  if (inCache && Date.now() - inCache.quando < DURATA_CACHE_MS) return inCache.valore;
+  if (inCache && Date.now() - inCache.quando < (inCache.valore.serie ? DURATA_CACHE_MS : DURATA_CACHE_ERRORE_MS)) {
+    return inCache.valore;
+  }
+  const ricorda = (valore: LetturaAccessi) => {
+    cache.set(tenantCode, { quando: Date.now(), valore });
+    return valore;
+  };
   try {
     const { cfg, self } = withTenant(tenantCode, () => ({
       cfg: getWazuhConfig(),
       self: collectSelfIdentity(tenantDb()),
     }));
-    if (!cfg.enabled || !cfg.indexerUrl) return null;
+    if (!cfg.enabled || !cfg.indexerUrl) return ricorda({ serie: null, motivo: "indexer di Wazuh non configurato" });
     const client = createWazuhIndexerClient({
       url: cfg.indexerUrl,
       username: cfg.indexerUsername,
       password: cfg.indexerPassword,
       verifyTls: cfg.verifyTls,
     });
-    if (!client) return null;
+    if (!client) return ricorda({ serie: null, motivo: "indexer di Wazuh non configurato" });
     const ora = new Date();
-    const stats = await client.alertStats({
-      since: new Date(ora.getTime() - 15 * 24 * ORA_MS).toISOString(),
-      interval: "1h",
-      excludeAccounts: self.accounts,
-      excludeIps: self.ips,
-      extraRuleIds: cfg.deviceRuleIds,
-    });
-    const valore: SerieAccessi = { fonte: "indexer", ...accessiDaSerie(stats.series, ora) };
-    cache.set(tenantCode, { quando: Date.now(), valore });
-    return valore;
+    let scaduto: ReturnType<typeof setTimeout> | undefined;
+    const stats = await Promise.race([
+      client.alertStats({
+        since: new Date(ora.getTime() - 15 * 24 * ORA_MS).toISOString(),
+        interval: "1h",
+        excludeAccounts: self.accounts,
+        excludeIps: self.ips,
+        extraRuleIds: cfg.deviceRuleIds,
+      }),
+      new Promise<never>((_, rifiuta) => {
+        scaduto = setTimeout(() => rifiuta(new Error("attesa oltre 5 secondi")), ATTESA_MAX_MS);
+      }),
+    ]).finally(() => clearTimeout(scaduto));
+    return ricorda({ serie: { fonte: "indexer", ...accessiDaSerie(stats.series, ora) }, motivo: null });
   } catch (e) {
     console.warn(`[dashboard] indexer non leggibile, uso la stima: ${(e as Error).name}`);
-    return null;
+    return ricorda({ serie: null, motivo: "indexer di Wazuh non raggiungibile" });
   }
 }

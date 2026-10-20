@@ -28,7 +28,6 @@ export function BarreSubnet({ reti }: { reti: NetworkWithStats[] }) {
               {net.online_count > 0 && <span className="bg-[#1F7A4D] dark:bg-[#5ED3A0]" style={{ width: `${quota(net.online_count)}%` }} />}
               {net.offline_count > 0 && <span style={{ width: `${quota(net.offline_count)}%`, background: TRAMA_OFFLINE }} />}
               {net.unknown_count > 0 && <span className="bg-muted-foreground/30" style={{ width: `${quota(net.unknown_count)}%` }} />}
-              {net.total_hosts === 0 && <span className="w-full bg-muted" />}
             </span>
             <span className="font-mono tabular-nums text-right whitespace-nowrap">
               {net.online_count}

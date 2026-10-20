@@ -131,14 +131,18 @@ export default async function DashboardPage() {
 
 
   // Accessi falliti (Riccardo, 20/10): i conteggi veri dell'indexer; senza indexer la stima.
-  const dallIndexer = sicurezza.accessi ? await leggiAccessiIndexer(tenantCode) : null;
-  const accessi: SerieAccessi | null = dallIndexer ?? (sicurezza.accessi
+  const lettura = sicurezza.accessi ? await leggiAccessiIndexer(tenantCode) : null;
+  const stimati = sicurezza.accessi;
+  const accessi: SerieAccessi | null = lettura?.serie ?? (stimati
     ? {
         fonte: "stima",
-        ore: sicurezza.accessi.serie24h.map((o) => ({ ora: o.ora, falliti: o.falliti })),
-        giorni: sicurezza.accessi.serie.map((g) => ({ giorno: g.giorno, falliti: g.falliti })),
-        totale24h: sicurezza.accessi.falliti24h,
-        totale24hPrima: sicurezza.accessi.falliti24hPrima,
+        motivo: lettura?.motivo ?? undefined,
+        ore: stimati.serie24h.map((o) => ({ ora: o.ora, falliti: o.falliti })),
+        giorni: stimati.serie.map((g) => ({ giorno: g.giorno, falliti: g.falliti })),
+        // Lo stesso totale del grafico (le 24 ore ora per ora), non un secondo calcolo.
+        totale24h: stimati.serie24h.reduce((n, o) => n + o.falliti, 0),
+        totale24hPrima: stimati.falliti24hPrima,
+        tendenza: stimati.falliti24h > stimati.falliti24hPrima ? "su" : stimati.falliti24h < stimati.falliti24hPrima ? "giu" : "pari",
       }
     : null);
 
@@ -197,7 +201,7 @@ export default async function DashboardPage() {
           <Card size="sm" className="lg:flex-1 lg:min-h-0 data-[size=sm]:gap-1">
             <CardHeader>
               <CardTitle className="text-sm flex items-center justify-between gap-2">
-                <span className="flex items-center gap-2" title="Fallimenti di autenticazione da tutte le sorgenti di Wazuh (Windows, Microsoft 365, Linux, apparati), esclusi i nostri account e le nostre reti.">
+                <span className="flex items-center gap-2" title="Fallimenti di autenticazione di Windows e Linux raccolti da Wazuh, esclusi i nostri account e le nostre reti. Microsoft 365 e apparati di rete stanno nella pagina Alert.">
                   <Shield className="h-4 w-4 text-primary" />
                   Accessi falliti
                 </span>
@@ -205,7 +209,7 @@ export default async function DashboardPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="lg:flex-1 lg:min-h-0 flex flex-col">
-              <IstogrammaAccessi ore={accessi?.ore ?? null} giorni={accessi?.giorni ?? null} fonte={accessi?.fonte ?? "stima"} />
+              <IstogrammaAccessi ore={accessi?.ore ?? null} giorni={accessi?.giorni ?? null} fonte={accessi?.fonte ?? "stima"} motivo={accessi?.motivo} />
             </CardContent>
           </Card>
         </div>
@@ -329,7 +333,7 @@ function RigaSicurezza({ k, accessi }: { k: KpiSicurezza; accessi: SerieAccessi 
   const a = k.accessi;
   const falliti = accessi?.totale24h ?? 0;
   const prima = accessi?.totale24hPrima ?? 0;
-  const freccia = falliti > prima ? " ↑" : falliti < prima ? " ↓" : "";
+  const freccia = accessi?.tendenza === "su" ? " ↑" : accessi?.tendenza === "giu" ? " ↓" : "";
   return (
     <div className="grid gap-2 grid-cols-2 md:grid-cols-3 xl:grid-cols-6 shrink-0">
       {k.cve ? (
@@ -347,8 +351,8 @@ function RigaSicurezza({ k, accessi }: { k: KpiSicurezza; accessi: SerieAccessi 
             tono={falliti === 0 ? "ok" : falliti > 100 && falliti > prima * 2 ? "guasto" : "attenzione"}
             titolo="Accessi falliti 24h" valore={`${numero(falliti)}${freccia}`} nota={`le 24 ore prima: ${numero(prima)}${accessi.fonte === "stima" ? " · stima" : ""}`} href="/security-alerts"
             title={accessi.fonte === "indexer"
-              ? "Fallimenti di autenticazione dall'indexer di Wazuh nelle ultime 24 ore, tutte le sorgenti, esclusi i nostri account e le nostre reti."
-              : "Indexer non raggiungibile: eventi 4625 stimati, ogni gruppo d'allarme è ripartito sul periodo in cui è rimasto aperto."} />
+              ? "Fallimenti di autenticazione di Windows e Linux dall'indexer di Wazuh nelle ultime 24 ore, esclusi i nostri account e le nostre reti. La freccia confronta le 24 ore piene con le 24 prima."
+              : `${accessi.motivo ? `${accessi.motivo[0].toUpperCase()}${accessi.motivo.slice(1)}: ` : ""}eventi 4625 stimati, ogni gruppo d'allarme è ripartito sul periodo in cui è rimasto aperto.`} />
           <CardSicurezza tono={a.bloccati30g > 0 ? "attenzione" : "ok"} titolo="Account bloccati 30g" valore={numero(a.bloccati30g)} href="/security-alerts" title="Eventi 4740 da Wazuh negli ultimi 30 giorni" />
           <CardSicurezza tono={a.daGestire > 0 ? "attenzione" : "ok"} titolo="Alert da gestire" valore={numero(a.daGestire)} href="/security-alerts" title="Alert di Wazuh non ancora presi in carico" />
         </>

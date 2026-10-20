@@ -114,7 +114,7 @@ function ChartTooltip({
   if (rows.length === 0) return null;
   const total = rows.reduce((s, p) => s + (p.value ?? 0), 0);
   return (
-    <div className="rounded-md border bg-[var(--chart-surface)] px-3 py-2 text-xs shadow-md">
+    <div className="rounded-md border bg-[var(--chart-surface)] px-3 py-2 text-[13px] shadow-md">
       <div className="mb-1 font-medium text-foreground">
         {formatBucket(String(label), interval)}
       </div>
@@ -168,12 +168,12 @@ export function AlertsOverTime({
         <XAxis
           dataKey="bucket"
           tickFormatter={(v: string) => formatBucket(v, interval)}
-          tick={{ fontSize: 11, fill: "var(--chart-ink-muted)" }}
+          tick={{ fontSize: 13, fill: "var(--chart-ink-muted)" }}
           stroke="var(--chart-grid)"
           minTickGap={24}
         />
         <YAxis
-          tick={{ fontSize: 11, fill: "var(--chart-ink-muted)" }}
+          tick={{ fontSize: 13, fill: "var(--chart-ink-muted)" }}
           stroke="var(--chart-grid)"
           width={44}
           tickFormatter={compact}
@@ -183,7 +183,7 @@ export function AlertsOverTime({
           content={<ChartTooltip interval={interval} labels={labels} />}
         />
         <Legend
-          wrapperStyle={{ fontSize: 12, paddingTop: 8 }}
+          wrapperStyle={{ fontSize: 13, paddingTop: 8 }}
           formatter={(v: string) => (
             <span style={{ color: "var(--chart-ink-muted)" }}>{labels[v] ?? v}</span>
           )}
@@ -263,7 +263,7 @@ export function AlertsComposition({
                     textAnchor={props.textAnchor}
                     dominantBaseline="central"
                     fill="var(--chart-ink-muted)"
-                    fontSize={12}
+                    fontSize={13}
                   >
                     {`${Math.round((props.percent ?? 0) * 100)}%`}
                   </text>
@@ -285,7 +285,7 @@ export function AlertsComposition({
                 if (!active || !payload?.length) return null;
                 const d = payload[0]!.payload as CategorySlice;
                 return (
-                  <div className="rounded-md border bg-[var(--chart-surface)] px-3 py-2 text-xs shadow-md">
+                  <div className="rounded-md border bg-[var(--chart-surface)] px-3 py-2 text-[13px] shadow-md">
                     <div className="font-medium text-foreground">{d.labelIt}</div>
                     <div className="text-muted-foreground">
                       {d.count} alert · {((d.count / total) * 100).toFixed(1)}%
@@ -301,7 +301,7 @@ export function AlertsComposition({
             Volutamente misurato — il numero di testa resta quello dei KPI. */}
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
           <span className="text-xl font-semibold leading-none">{compact(total)}</span>
-          <span className="mt-1 text-[11px] text-muted-foreground">alert</span>
+          <span className="mt-1 text-[13px] text-muted-foreground">alert</span>
         </div>
       </div>
 
@@ -327,7 +327,7 @@ export function AlertsComposition({
             <span className="ml-auto shrink-0 font-medium tabular-nums">
               {compact(c.count)}
             </span>
-            <span className="w-12 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
+            <span className="w-12 shrink-0 text-right text-[13px] tabular-nums text-muted-foreground">
               {((c.count / total) * 100).toFixed(1)}%
             </span>
           </li>
@@ -374,11 +374,11 @@ export function StatTile({
 }) {
   return (
     <div className="rounded-lg border bg-[var(--chart-surface)] p-4">
-      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="text-[13px] text-muted-foreground">{label}</div>
       <div className="mt-1 text-2xl font-semibold">
         {typeof value === "number" ? compact(value) : value}
       </div>
-      {hint ? <div className="mt-0.5 text-xs text-muted-foreground">{hint}</div> : null}
+      {hint ? <div className="mt-0.5 text-[13px] text-muted-foreground">{hint}</div> : null}
     </div>
   );
 }
@@ -440,7 +440,7 @@ export function TargetedAccounts({ accounts }: { accounts: TargetedAccount[] }) 
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
-          <tr className="text-left text-xs text-muted-foreground">
+          <tr className="text-left text-[13px] text-muted-foreground">
             <th className="pb-2 font-normal">Account bersagliato</th>
             <th className="pb-2 font-normal">Sistema</th>
             <th className="pb-2 font-normal">Tentativi falliti</th>
@@ -455,12 +455,12 @@ export function TargetedAccounts({ accounts }: { accounts: TargetedAccount[] }) 
               <td className="py-2 pr-3">
                 <span className="font-medium">{a.account}</span>
                 {a.kind === "computer" ? (
-                  <span className="ml-2 rounded border px-1 py-0.5 text-[10px] uppercase text-muted-foreground">
+                  <span className="ml-2 rounded border px-1 py-0.5 text-[13px] uppercase text-muted-foreground">
                     account computer
                   </span>
                 ) : null}
               </td>
-              <td className="py-2 pr-3 text-xs text-muted-foreground">
+              <td className="py-2 pr-3 text-[13px] text-muted-foreground">
                 {SYSTEM_LABEL[a.system]}
               </td>
               <td className="w-1/2 py-2 pr-3">
@@ -476,13 +476,13 @@ export function TargetedAccounts({ accounts }: { accounts: TargetedAccount[] }) 
                   <span className="shrink-0 tabular-nums">{compact(a.count)}</span>
                 </div>
               </td>
-              <td className="py-2 pr-3 text-xs text-muted-foreground">
+              <td className="py-2 pr-3 text-[13px] text-muted-foreground">
                 {originLabel(a)}
               </td>
-              <td className="py-2 pr-3 text-xs text-muted-foreground">
+              <td className="py-2 pr-3 text-[13px] text-muted-foreground">
                 {a.detectedBy ?? "—"}
               </td>
-              <td className="py-2 text-right text-xs tabular-nums text-muted-foreground">
+              <td className="py-2 text-right text-[13px] tabular-nums text-muted-foreground">
                 {a.lastSeenAt
                   ? parseDbDate(a.lastSeenAt).toLocaleString("it-IT", {
                       day: "2-digit",
@@ -498,7 +498,7 @@ export function TargetedAccounts({ accounts }: { accounts: TargetedAccount[] }) 
       </table>
 
       {pages > 1 ? (
-        <div className="mt-3 flex items-center gap-3 text-xs text-muted-foreground">
+        <div className="mt-3 flex items-center gap-3 text-[13px] text-muted-foreground">
           <span>
             {accounts.length} account con tentativi falliti · pagina {current + 1} di {pages}
           </span>
@@ -564,7 +564,7 @@ export function RankedTable({
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
-          <tr className="text-left text-xs text-muted-foreground">
+          <tr className="text-left text-[13px] text-muted-foreground">
             <th className="pb-2 font-normal">{keyHeader}</th>
             <th className="pb-2 font-normal">Tentativi falliti</th>
             <th className="pb-2 font-normal">{detailHeader}</th>
@@ -588,8 +588,8 @@ export function RankedTable({
                   <span className="shrink-0 tabular-nums">{compact(e.count)}</span>
                 </div>
               </td>
-              <td className="py-2 pr-3 text-xs text-muted-foreground">{e.detail ?? "—"}</td>
-              <td className="py-2 text-right text-xs tabular-nums text-muted-foreground">
+              <td className="py-2 pr-3 text-[13px] text-muted-foreground">{e.detail ?? "—"}</td>
+              <td className="py-2 text-right text-[13px] tabular-nums text-muted-foreground">
                 {e.lastSeenAt
                   ? parseDbDate(e.lastSeenAt).toLocaleString("it-IT", {
                       day: "2-digit",
@@ -604,7 +604,7 @@ export function RankedTable({
         </tbody>
       </table>
       {pages > 1 ? (
-        <div className="mt-3 flex items-center gap-3 text-xs text-muted-foreground">
+        <div className="mt-3 flex items-center gap-3 text-[13px] text-muted-foreground">
           <span>
             {entries.length} voci · pagina {current + 1} di {pages}
           </span>

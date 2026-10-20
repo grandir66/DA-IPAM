@@ -10,10 +10,12 @@ import { useState } from "react";
  */
 const numero = (n: number) => Math.round(n).toLocaleString("it-IT");
 
-export function IstogrammaAccessi({ ore, giorni, fonte }: {
+export function IstogrammaAccessi({ ore, giorni, fonte, motivo }: {
   ore: { ora: string; falliti: number }[] | null;
   giorni: { giorno: string; falliti: number }[] | null;
   fonte: "indexer" | "stima";
+  /** Perché si usa la stima (indexer non configurato o non raggiungibile). */
+  motivo?: string;
 }) {
   const [vista, setVista] = useState<"24h" | "14g">("24h");
   if (!ore || !giorni) return <p className="text-[13px] text-muted-foreground py-2">Wazuh non configurato: nessun dato sugli accessi.</p>;
@@ -32,7 +34,7 @@ export function IstogrammaAccessi({ ore, giorni, fonte }: {
         <span className="text-[13px] text-muted-foreground">
           {numero(totale)} in {vista === "24h" ? "24 ore" : "14 giorni"}
           {fonte === "stima" && (
-            <span className="ml-1 rounded border border-dashed px-1" title="Indexer non raggiungibile: ogni gruppo d'allarme è ripartito sul periodo in cui è rimasto aperto, i picchi non si vedono.">stima</span>
+            <span className="ml-1 rounded border border-dashed px-1" title={`${motivo ? `${motivo[0].toUpperCase()}${motivo.slice(1)}: ` : ""}ogni gruppo d'allarme è ripartito sul periodo in cui è rimasto aperto, i picchi non si vedono.`}>stima</span>
           )}
         </span>
         <div className="inline-flex rounded-md border text-[13px]" role="group" aria-label="Periodo">

@@ -79,6 +79,12 @@ export function WazuhHealthBand({ refreshKey, compatta = false }: WazuhHealthBan
   if (compatta) {
     return (
       <div className="flex flex-wrap items-center gap-1.5" aria-label="Stato di Wazuh">
+        {blocks === null && (
+          <span className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[13px] leading-tight ${STILE_STATO.grigio.classi}`}>
+            <span aria-hidden className="font-bold">{STILE_STATO.grigio.segno}</span>
+            Stato Wazuh non letto
+          </span>
+        )}
         {(blocks ?? []).map((b) => {
           const st = STILE_STATO[b.configured ? TONO_VERDETTO[b.verdict] : "grigio"];
           const titolo = [`${BLOCK_LABEL[b.key]}: ${b.headline}`, ...(b.configured ? b.detail ?? [] : ["Configura nelle impostazioni"])].join("\n");

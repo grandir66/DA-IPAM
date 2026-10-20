@@ -1,13 +1,13 @@
 # Matrice auth API — DA-IPAM
 
-> Generato da `scripts/audit-api-auth.ts` · 2026-10-16 · rilevatore e censimento di `src/lib/permessi/` (gli stessi della prova `rotte-censite.test.ts`).
+> Generato da `scripts/audit-api-auth.ts` · 2026-10-20 · rilevatore e censimento di `src/lib/permessi/` (gli stessi della prova `rotte-censite.test.ts`).
 
 ## Riepilogo
 
-- File `route.ts`: **328** · gestori (metodo × rotta): **506**
-- Forme di export: funzione 490 · destrutturata 2 · rinomina 14
-- Guardie viste: `nessuna`=9 · `esterna`=2 · `token`=1 · `sessione`=51 · `auth-diretto`=3 · `auth`=137 · `admin-o-onboarding`=10 · `admin`=290 · `superadmin`=3
-- Esiti: ok **473** · eccezioni **33** · debiti **0** · scoperti **0**
+- File `route.ts`: **327** · gestori (metodo × rotta): **504**
+- Forme di export: funzione 488 · destrutturata 2 · rinomina 14
+- Guardie viste: `nessuna`=10 · `esterna`=2 · `token`=1 · `sessione`=50 · `auth-diretto`=3 · `auth`=138 · `admin-o-onboarding`=10 · `admin`=287 · `superadmin`=3
+- Esiti: ok **470** · eccezioni **34** · debiti **0** · scoperti **0**
 
 Livello atteso: GET/HEAD/OPTIONS → `auth`; scritture → `admin`; letture col nome sensibile → `admin`; i livelli dichiarati stanno in `ATTESI` di `src/lib/permessi/rotte.ts`. `withTenantFromSession` (`sessione`) chiede l'accesso ma non il ruolo: per una lettura vale quanto `auth`.
 
@@ -32,6 +32,7 @@ Livello atteso: GET/HEAD/OPTIONS → `auth`; scritture → `admin`; letture col 
 | `/api/auth/[...nextauth]` | POST | `esterna` | `admin` | pubblica: gestori di NextAuth: accesso e uscita |
 | `/api/auth/change-password` | POST | `auth-diretto` | `admin` | motivata: ogni utente cambia la propria password |
 | `/api/auth/lock-state` | GET | `nessuna` | `auth` | pubblica: la pagina di accesso la interroga prima che esista una sessione |
+| `/api/auth/passo-uno` | POST | `nessuna` | `admin` | pubblica: passo 1 della pagina d'accesso, prima che esista una sessione; protetta dallo stesso blocco dei tentativi del login (ADR 0023) |
 | `/api/auth/select-tenant` | POST | `auth-diretto` | `admin` | motivata: sceglie il cliente della propria sessione |
 | `/api/credentials/[id]` | GET | `sessione` | `admin` | mascherata: campi cifrati sostituiti dalla maschera |
 | `/api/credentials` | GET | `sessione` | `admin` | mascherata: campi cifrati sostituiti dalla maschera |
@@ -84,7 +85,6 @@ Livello atteso: GET/HEAD/OPTIONS → `auth`; scritture → `admin`; letture col 
 | `/api/ad/kerberos` | GET | `sessione` | `auth` |  |
 | `/api/ad/kerberos` | POST | `admin` | `admin` |  |
 | `/api/admin/backup-now` | POST | `admin` | `admin` |  |
-| `/api/agents` | GET | `admin` | `auth` |  |
 | `/api/analytics/anomalies` | GET | `auth` | `auth` |  |
 | `/api/analytics/anomalies` | POST | `admin` | `admin` |  |
 | `/api/analytics/anomalies/[id]` | DELETE | `admin` | `admin` |  |
@@ -103,6 +103,7 @@ Livello atteso: GET/HEAD/OPTIONS → `auth`; scritture → `admin`; letture col 
 | `/api/auth/[...nextauth]` | POST | `esterna` | `admin` | pubblica: gestori di NextAuth: accesso e uscita |
 | `/api/auth/change-password` | POST | `auth-diretto` | `admin` | motivata: ogni utente cambia la propria password |
 | `/api/auth/lock-state` | GET | `nessuna` | `auth` | pubblica: la pagina di accesso la interroga prima che esista una sessione |
+| `/api/auth/passo-uno` | POST | `nessuna` | `admin` | pubblica: passo 1 della pagina d'accesso, prima che esista una sessione; protetta dallo stesso blocco dei tentativi del login (ADR 0023) |
 | `/api/auth/select-tenant` | POST | `auth-diretto` | `admin` | motivata: sceglie il cliente della propria sessione |
 | `/api/backup` | GET | `admin` | `auth` |  |
 | `/api/classifications/custom` | GET | `auth` | `auth` |  |
@@ -192,6 +193,7 @@ Livello atteso: GET/HEAD/OPTIONS → `auth`; scritture → `admin`; letture col 
 | `/api/hosts/[id]/credentials` | PUT | `admin` | `admin` |  |
 | `/api/hosts/[id]/fingerprint-explanation` | GET | `auth` | `auth` |  |
 | `/api/hosts/[id]/inventory-agent` | GET | `auth` | `auth` |  |
+| `/api/hosts/[id]/ip-precedenti` | GET | `auth` | `auth` |  |
 | `/api/hosts/[id]/latency` | GET | `sessione` | `auth` |  |
 | `/api/hosts/[id]/librenms` | GET | `auth` | `auth` |  |
 | `/api/hosts/[id]/link-candidates` | GET | `auth` | `auth` |  |
@@ -200,10 +202,16 @@ Livello atteso: GET/HEAD/OPTIONS → `auth`; scritture → `admin`; letture col 
 | `/api/hosts/[id]/software-scans` | GET | `auth` | `auth` |  |
 | `/api/hosts/[id]/status-history` | GET | `sessione` | `auth` |  |
 | `/api/hosts/[id]/vulnerabilities` | GET | `auth` | `auth` |  |
+| `/api/hosts/archivio` | GET | `admin` | `admin` |  |
+| `/api/hosts/archivio/[id]/recupera` | POST | `admin` | `admin` |  |
 | `/api/hosts/bulk` | DELETE | `admin` | `admin` |  |
 | `/api/hosts/bulk` | PATCH | `admin` | `admin` |  |
 | `/api/hosts/bulk-update` | PATCH | `admin` | `admin` |  |
 | `/api/hosts/discovery` | GET | `auth` | `auth` |  |
+| `/api/hosts/pulizia` | GET | `admin` | `admin` |  |
+| `/api/hosts/pulizia` | POST | `admin` | `admin` |  |
+| `/api/hosts/pulizia/notturna` | GET | `auth` | `auth` |  |
+| `/api/hosts/pulizia/notturna` | PUT | `admin` | `admin` |  |
 | `/api/integrations/[component]` | GET | `auth` | `admin` | mascherata: token e password vuoti con i flag «impostato» per chi non è admin (SEC-5) |
 | `/api/integrations/[component]` | PUT | `admin` | `admin` |  |
 | `/api/integrations/[component]/action` | POST | `admin` | `admin` |  |
@@ -237,10 +245,13 @@ Livello atteso: GET/HEAD/OPTIONS → `auth`; scritture → `admin`; letture col 
 | `/api/integrations/meshcentral/host/[hostId]` | GET | `auth` | `auth` |  |
 | `/api/integrations/meshcentral/host/[hostId]/remote-session` | POST | `admin` | `admin` |  |
 | `/api/integrations/meshcentral/host/[hostId]/run-command` | POST | `admin` | `admin` |  |
+| `/api/integrations/meshcentral/host/[hostId]/senza-agente` | POST | `admin` | `admin` |  |
 | `/api/integrations/meshcentral/install` | POST | `admin` | `admin` |  |
 | `/api/integrations/meshcentral/install-script` | POST | `admin` | `admin` |  |
 | `/api/integrations/meshcentral/nodes` | GET | `auth` | `auth` |  |
 | `/api/integrations/meshcentral/nodes` | POST | `admin` | `admin` |  |
+| `/api/integrations/meshcentral/senza-agente` | GET | `auth` | `auth` |  |
+| `/api/integrations/meshcentral/senza-agente` | PUT | `admin` | `admin` |  |
 | `/api/integrations/proxy/librenms/[[...path]]` | DELETE | `auth` | `admin` | motivata: proxy verso LibreNMS: l'accesso automatico solo per chi è admin; per gli altri, con l'accesso automatico acceso, inoltra senza i cookie di LibreNMS, che chiede il suo login (SEC-6) |
 | `/api/integrations/proxy/librenms/[[...path]]` | GET | `auth` | `auth` |  |
 | `/api/integrations/proxy/librenms/[[...path]]` | HEAD | `auth` | `auth` |  |
@@ -444,7 +455,7 @@ Livello atteso: GET/HEAD/OPTIONS → `auth`; scritture → `admin`; letture col 
 | `/api/scans/history` | GET | `sessione` | `auth` |  |
 | `/api/scans/progress/[jobId]` | GET | `auth` | `auth` |  |
 | `/api/scans/trigger` | POST | `admin` | `admin` |  |
-| `/api/search` | GET | `sessione` | `auth` |  |
+| `/api/search` | GET | `auth` | `auth` |  |
 | `/api/services` | GET | `auth` | `auth` |  |
 | `/api/services` | POST | `admin` | `admin` |  |
 | `/api/services/[id]` | DELETE | `admin` | `admin` |  |
@@ -496,14 +507,6 @@ Livello atteso: GET/HEAD/OPTIONS → `auth`; scritture → `admin`; letture col 
 | `/api/system/update` | POST | `admin` | `admin` |  |
 | `/api/system/update-channel` | GET | `auth` | `auth` |  |
 | `/api/system/update-channel` | PUT | `admin` | `admin` |  |
-| `/api/tenant-agents` | GET | `auth` | `auth` |  |
-| `/api/tenant-agents` | POST | `admin` | `admin` |  |
-| `/api/tenant-agents/[id]` | DELETE | `admin` | `admin` |  |
-| `/api/tenant-agents/[id]` | GET | `auth` | `auth` |  |
-| `/api/tenant-agents/[id]` | PUT | `admin` | `admin` |  |
-| `/api/tenant-agents/[id]/test` | POST | `admin` | `admin` |  |
-| `/api/tenant-agents/[id]/token` | POST | `admin` | `admin` |  |
-| `/api/tenant-agents/[id]/token/import` | POST | `admin` | `admin` |  |
 | `/api/tenant/export` | POST | `admin` | `admin` |  |
 | `/api/tenant/import` | POST | `admin` | `admin` |  |
 | `/api/tenants` | GET | `auth` | `auth` |  |
@@ -511,11 +514,6 @@ Livello atteso: GET/HEAD/OPTIONS → `auth`; scritture → `admin`; letture col 
 | `/api/tenants/[id]` | DELETE | `superadmin` | `admin` |  |
 | `/api/tenants/[id]` | GET | `auth` | `auth` |  |
 | `/api/tenants/[id]` | PUT | `superadmin` | `admin` |  |
-| `/api/tenants/[id]/agent` | GET | `auth` | `auth` |  |
-| `/api/tenants/[id]/agent` | PUT | `admin` | `admin` |  |
-| `/api/tenants/[id]/agent/test` | POST | `admin` | `admin` |  |
-| `/api/tenants/[id]/agent/token` | POST | `admin` | `admin` |  |
-| `/api/tenants/[id]/agent/token/import` | POST | `admin` | `admin` |  |
 | `/api/test-arp` | GET | `admin` | `admin` |  |
 | `/api/test-snmp` | GET | `admin` | `admin` |  |
 | `/api/tls` | GET | `admin-o-onboarding` | `auth` |  |
@@ -559,6 +557,7 @@ Livello atteso: GET/HEAD/OPTIONS → `auth`; scritture → `admin`; letture col 
 | `/api/users/[id]` | DELETE | `admin` | `admin` |  |
 | `/api/users/[id]` | PUT | `admin` | `admin` |  |
 | `/api/users/[id]/reset-password` | POST | `admin` | `admin` |  |
+| `/api/users/[id]/seconda-verifica` | POST | `admin` | `admin` |  |
 | `/api/version` | GET | `nessuna` | `auth` | pubblica: versione installata, letta dall'aggiornamento |
 | `/api/vulnerabilities` | GET | `auth` | `auth` |  |
 | `/api/vulnerabilities/[key]/hosts` | GET | `auth` | `auth` |  |

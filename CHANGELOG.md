@@ -4,6 +4,20 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-20 · Via le rotte ferme dell'agente remoto
+
+### Rimosso
+
+- **Rotte dell'agente Python remoto** (`/api/agents`, `/api/tenant-agents/**`, `/api/tenants/[id]/agent/**`),
+  **`/agent-install.sh`** (con la sua voce fra i percorsi pubblici di `auth.config.ts`), la **pagina
+  `/tenants/[id]/agent`** e l'helper `lib/agente-remoto-tolto.ts`. Con la v0.9.810 erano rimaste ferme (410)
+  per un giro, perché un `update.sh` più vecchio della v0.9.805 legge i tipi della build in uso che le citano e
+  la build nuova sarebbe caduta (trappola di `/api/search`). La condizione è verificata il 20/10 sera, in sola
+  lettura: da-invent 0.9.808, DTS 0.9.810, PX-NAS 0.9.810, tutte con lo script nuovo. La prova
+  `rotte-agente-tolte.test.ts` impedisce che tornino; `/agents` («URL dell'hub») resta. Nel DB restano, senza
+  uso, `tenant_agents` e `tenants.agent_*` (niente DROP). Matrice delle guardie (`docs/auth-matrix.md`)
+  rigenerata.
+
 ## [Non rilasciato] — 2026-10-20 · Via la VPN precedente: l'overlay è solo NetBird
 
 Riccardo (20/10 notte): la VPN precedente non esiste più su nessun dispositivo (verificato su Proxmox

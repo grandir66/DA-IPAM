@@ -82,10 +82,8 @@ export const authConfig: NextAuthConfig = {
       const isLoggedIn = !!auth?.user;
       const pathname = nextUrl.pathname;
 
-      // Allow auth API, setup, login, e installer agent.
-      // `/agent-install.sh`: l'agente remoto è tolto (20/10/2026), la rotta
-      // resta ferma e pubblica per un giro: risponde 410 con uno script che
-      // lo dice, anche a chi fa `curl|bash` senza sessione.
+      // Allow auth API, setup, login, e installer dell'agente d'inventario.
+      // (L'installatore dell'agente Python remoto non c'è più dalla v0.9.811.)
       // NB: `/api/test-snmp` e `/api/test-arp` RIMOSSI dall'allowlist (erano
       // debug leftover): ora richiedono admin nell'handler (audit SEC-9).
       if (
@@ -95,8 +93,7 @@ export const authConfig: NextAuthConfig = {
         pathname === "/api/health" ||
         pathname === "/api/version" ||
         pathname === "/api/inventory/ingest" ||
-        pathname.startsWith("/api/integrations/inventory-agent/install/") ||
-        pathname === "/agent-install.sh"
+        pathname.startsWith("/api/integrations/inventory-agent/install/")
       ) {
         return true;
       }

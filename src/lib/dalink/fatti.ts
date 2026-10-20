@@ -13,6 +13,9 @@
  * - porte su `wt0`: dal sistema vivo (`porte-wt0.ts`);
  * - stato dell'aggiornamento automatico (passo 1d, 16/10): da `data/aggiornamento.json`
  *   col ramo seguito; solo commit, esito, fase, tentativi e date, mai messaggi o avvisi;
+ * - stato dichiarato dalla sonda locale (sonde integrate, 20/10): `/api/v1/health` della
+ *   sonda del cliente (`edge-sonda.ts`), solo se il modulo edge è configurato; la lettura
+ *   parte insieme alle sonde dei moduli e ha un timeout suo, breve;
  * - numeri dell'inventario (solo se il livello lo consente: li chiede il costruttore):
  *   righe di `hosts` e `networks`, ultima riga di `scan_history`.
  *
@@ -34,6 +37,8 @@ import { getConfiguredUpdateBranch } from "@/lib/update-branch";
 import { leggiPorteWt0, type PorteWt0 } from "./porte-wt0";
 import { aggiornamentoPerSegnale, type AggiornamentoSegnale, type FattiIstanza, type Inventario } from "./segnale";
 import { statiComponentiBase, type StatiComponenti } from "./stati-componenti";
+import { leggiEdgeSonda } from "./edge-sonda";
+import type { LetturaEdge } from "./edge-segnale";
 
 /** Il proxy Zabbix lo installa la procedura guidata di DA-Zabbix, sulla macchina. */
 export const FILE_PROXY_ZABBIX = "/etc/zabbix/zabbix_proxy.conf";
@@ -75,6 +80,8 @@ export interface DipendenzeFatti {
   aggiornamento: () => AggiornamentoSegnale | null;
   /** Stati di IPAM/Edge sulle basi modulari di Deploy-Appliance; null altrove. */
   statiComponenti: () => Promise<StatiComponenti | null>;
+  /** `/api/v1/health` della sonda del cliente; null se il modulo edge non è configurato. */
+  edge: (tenant: string) => Promise<LetturaEdge | null>;
 }
 
 let versioneLetta: string | null = null;
@@ -128,6 +135,7 @@ export const dipendenzeFattiReali: DipendenzeFatti = {
   proxyZabbix: saluteProxyZabbix,
   aggiornamento: () => aggiornamentoPerSegnale(leggiStatoAggiornamento(), getConfiguredUpdateBranch()),
   statiComponenti: () => statiComponentiBase(),
+  edge: (tenant) => leggiEdgeSonda(tenant),
 };
 
 export async function fattiIstanza(
@@ -154,6 +162,14 @@ export async function fattiIstanza(
     regola = "non_trovato";
   }
   const clienteTrovato = tenant !== null;
+
+  // La sonda locale si legge in parallelo al resto (ha il suo timeout): non allunga il giro.
+  // Mai per un cliente che l'istanza non ha (rischio 8): niente blocco.
+  let edgeInCorso: Promise<LetturaEdge | null> = Promise.resolve(null);
+  if (tenant !== null) {
+    const t = tenant;
+    edgeInCorso = (async () => d.edge(t))().catch(() => null);
+  }
 
   let moduli: Record<string, boolean> = {};
   const salute: Record<string, string> = {};
@@ -202,10 +218,12 @@ export async function fattiIstanza(
     statiComponenti = null; // campo omesso: DA-Link conserva l'ultima fotografia con la sua data
   }
 
+  const edge = await edgeInCorso;
+
   return {
     clienteTrovato,
     tenant,
-    fatti: { versione: versioneIstanza(), moduli, salute, ultimoErrore, porte: porte.porte, aggiornamento, statiComponenti },
+    fatti: { versione: versioneIstanza(), moduli, salute, ultimoErrore, porte: porte.porte, aggiornamento, statiComponenti, edge },
   };
 }
 

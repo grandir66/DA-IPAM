@@ -73,6 +73,7 @@ test("cliente non trovato: moduli e salute non si chiedono, la salute lo dice", 
 test("cliente trovato: moduli accesi e solo i verdetti della salute", async () => {
   const r = await fattiIstanza("99999", "segnale precedente: x", {
     clienteEsiste: () => true,
+    edge: async () => null,
     porte: async () => ({ fonte: "ascolto", porte: [22, 80], sorgentiRistrette: false, wt0Presente: false }),
     moduli: async () => ({ edge: true, wazuh: true }),
     salute: async () => ({ edge: "ok", wazuh: "degraded" }),
@@ -95,6 +96,7 @@ test("la salute riguarda solo i moduli accesi (più il sistema): un modulo spent
   // «fail», e il segnale avrebbe detto a Domarc nove moduli in errore.
   const r = await fattiIstanza("99999", null, {
     clienteEsiste: () => true,
+    edge: async () => null,
     porte: async () => ({ fonte: "non_so", porte: [], sorgentiRistrette: false, wt0Presente: false }),
     moduli: async () => ({ edge: true, wazuh: false, librenms: false, appliance: false }),
     salute: async () => ({ edge: "ok", wazuh: "fail", librenms: "fail", appliance: "degraded" }),
@@ -119,6 +121,7 @@ test("verdettoPerDaLink: tabella dei casi", () => {
 test("segnale dopo il passo 4: solo moduli accesi, e solo ok | degraded | fail", async () => {
   const r = await fattiIstanza("99999", null, {
     clienteEsiste: () => true,
+    edge: async () => null,
     porte: async () => ({ fonte: "non_so", porte: [], sorgentiRistrette: false, wt0Presente: false }),
     proxyZabbix: () => null,
     moduli: async () => ({
@@ -157,6 +160,7 @@ test("segnale dopo il passo 4: solo moduli accesi, e solo ok | degraded | fail",
 test("una sonda che fallisce non ferma il segnale: la salute dice non_so", async () => {
   const r = await fattiIstanza("99999", null, {
     clienteEsiste: () => true,
+    edge: async () => null,
     porte: async () => ({ fonte: "non_so", porte: [], sorgentiRistrette: false, wt0Presente: false }),
     moduli: async () => {
       throw new Error("x");
@@ -218,6 +222,7 @@ test("appliance a cliente singolo: si leggono moduli e salute di DEFAULT, client
   const r = await fattiIstanza("70175", null, {
     clienteEsiste: () => false,
     unicoClienteAppliance: () => true,
+    edge: async () => null,
     porte: PORTE_OK,
     proxyZabbix: () => null,
     moduli: async (c) => {
@@ -260,6 +265,7 @@ test("più clienti o cliente diverso da DEFAULT: niente ripiego, cliente = non_t
 test("il codice di DA-Link presente vince sul ripiego dell'appliance", async () => {
   const r = await fattiIstanza("71734", null, {
     clienteEsiste: () => true,
+    edge: async () => null,
     unicoClienteAppliance: () => true,
     porte: PORTE_OK,
     proxyZabbix: () => null,
@@ -292,4 +298,84 @@ test("stato dell'aggiornamento: passa nei fatti; se la lettura si rompe, null e 
     },
   });
   assert.equal(rotto.fatti.aggiornamento, null);
+});
+
+// Sonde integrate con DA-Link (spec DA-Vul-can 2026-10-20, §8.2): la lettura della sonda
+// locale entra nei fatti col cliente da cui si legge, mai per un codice sconosciuto
+// (rischio 8), e un suo guasto non ferma il segnale.
+test("sonda edge: si legge col cliente dell'istanza e passa nei fatti", async () => {
+  const chiesti: string[] = [];
+  const lettura = { raggiungibile: true as const, health: { ok: true, versione_vera: "0.8.121" } };
+  const r = await fattiIstanza("70175", null, {
+    clienteEsiste: () => false,
+    unicoClienteAppliance: () => true,
+    porte: PORTE_OK,
+    proxyZabbix: () => null,
+    moduli: async () => ({ edge: true }),
+    salute: async () => ({ edge: "ok" }),
+    edge: async (c) => {
+      chiesti.push(c);
+      return lettura;
+    },
+  });
+  assert.deepEqual(chiesti, ["DEFAULT"]);
+  assert.deepEqual(r.fatti.edge, lettura);
+});
+
+test("sonda edge: cliente non trovato → non si chiede niente, nessun blocco", async () => {
+  let chiesto = false;
+  const r = await fattiIstanza("70175", null, {
+    clienteEsiste: () => false,
+    unicoClienteAppliance: () => false,
+    porte: PORTE_OK,
+    proxyZabbix: () => null,
+    edge: async () => {
+      chiesto = true;
+      return { raggiungibile: false };
+    },
+  });
+  assert.equal(chiesto, false);
+  assert.equal(r.fatti.edge ?? null, null);
+});
+
+test("sonda edge: una lettura che si rompe dà null, il resto del segnale c'è", async () => {
+  const r = await fattiIstanza("99999", null, {
+    clienteEsiste: () => true,
+    porte: PORTE_OK,
+    proxyZabbix: () => null,
+    moduli: async () => ({ edge: true }),
+    salute: async () => ({ edge: "ok" }),
+    edge: async () => {
+      throw new Error("imprevisto");
+    },
+  });
+  assert.equal(r.fatti.edge, null);
+  assert.equal(r.fatti.salute.edge, "ok");
+});
+
+// Tutte e due le letture aspettano: se il codice le facesse in fila (in qualunque ordine),
+// una finirebbe prima che l'altra parta e la prova diventa rossa (revisione del 20/10).
+test("sonda edge: la lettura parte insieme alle sonde dei moduli, non in fila", async () => {
+  const ordine: string[] = [];
+  const aspetta = () => new Promise((r) => setTimeout(r, 30));
+  await fattiIstanza("99999", null, {
+    clienteEsiste: () => true,
+    porte: PORTE_OK,
+    proxyZabbix: () => null,
+    moduli: async () => ({ edge: true }),
+    salute: async () => {
+      ordine.push("salute partita");
+      await aspetta();
+      ordine.push("salute finita");
+      return { edge: "ok" };
+    },
+    edge: async () => {
+      ordine.push("edge partita");
+      await aspetta();
+      ordine.push("edge finita");
+      return { raggiungibile: false };
+    },
+  });
+  const primaFine = Math.min(ordine.indexOf("salute finita"), ordine.indexOf("edge finita"));
+  assert.ok(ordine.indexOf("salute partita") < primaFine && ordine.indexOf("edge partita") < primaFine, ordine.join(" → "));
 });

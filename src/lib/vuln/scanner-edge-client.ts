@@ -41,8 +41,13 @@ export function probePinTls(
   port: number,
   expectedPin: string | null,
   timeoutMs: number,
+  signal?: AbortSignal,
 ): Promise<{ pin: string; certRaw: Buffer }> {
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new EdgeClientError(0, "TLS probe annullata"));
+      return;
+    }
     const sock = tlsConnect({
       host: hostname,
       port,
@@ -54,6 +59,14 @@ export function probePinTls(
       sock.destroy();
       reject(new EdgeClientError(0, "TLS probe timeout"));
     }, timeoutMs);
+    // Facoltativo (lettura per il segnale verso DA-Link, 20/10): chi chiama può chiudere prima.
+    const annulla = () => {
+      clearTimeout(timer);
+      sock.destroy();
+      reject(new EdgeClientError(0, "TLS probe annullata"));
+    };
+    signal?.addEventListener("abort", annulla, { once: true });
+    sock.once("close", () => signal?.removeEventListener("abort", annulla));
     sock.once("secureConnect", () => {
       clearTimeout(timer);
       const cert = sock.getPeerCertificate(true);
@@ -199,6 +212,10 @@ export function spkiPinFromDer(rawDer: Buffer): string {
  *   "primo contatto"). Usato per `/api/v1/cert/info` e `Test connessione`.
  * - HTTPS con `expectedPin`: verifica SPKI sha256 del cert presentato.
  *   Mismatch → reject. Niente CA chain validation.
+ * - Facoltativi (20/10, lettura dello stato della sonda per DA-Link): `signal` chiude
+ *   davvero la connessione quando chi chiama smette di aspettare (il timeout di
+ *   `setTimeout` qui è di inattività: una risposta a goccia lo rinnova), `maxBytes` è il
+ *   tetto del corpo (oltre → reject). Senza, il comportamento è quello di sempre.
  */
 async function rawRequest(
   url: string,
@@ -208,6 +225,8 @@ async function rawRequest(
     body?: string;
     timeoutMs?: number;
     expectedPin?: string | null;
+    signal?: AbortSignal;
+    maxBytes?: number;
   },
 ): Promise<{ status: number; statusText: string; body: string }> {
   // Probe TLS preliminare: se HTTPS, verifica pin SUBITO con tls.connect.
@@ -223,7 +242,7 @@ async function rawRequest(
     }
     if (parsed.protocol === "https:") {
       const port = parsed.port ? Number(parsed.port) : 443;
-      await probePinTls(parsed.hostname, port, opts.expectedPin ?? null, opts.timeoutMs ?? 8000);
+      await probePinTls(parsed.hostname, port, opts.expectedPin ?? null, opts.timeoutMs ?? 8000, opts.signal);
     }
   }
 
@@ -262,9 +281,22 @@ async function rawRequest(
       (reqOpts as { rejectUnauthorized?: boolean }).rejectUnauthorized = false;
     }
 
+    if (opts.signal?.aborted) {
+      reject(new EdgeClientError(0, "richiesta annullata"));
+      return;
+    }
     const req = requestFn(reqOpts, (res) => {
       const chunks: Buffer[] = [];
-      res.on("data", (c: Buffer) => chunks.push(c));
+      let letti = 0;
+      res.on("data", (c: Buffer) => {
+        letti += c.length;
+        if (opts.maxBytes !== undefined && letti > opts.maxBytes) {
+          reject(new EdgeClientError(0, "risposta oltre il tetto"));
+          req.destroy();
+          return;
+        }
+        chunks.push(c);
+      });
       res.on("end", () => {
         const body = Buffer.concat(chunks).toString("utf-8");
         resolve({
@@ -279,6 +311,15 @@ async function rawRequest(
     req.setTimeout(opts.timeoutMs ?? 15000, () => {
       req.destroy(new Error("timeout"));
     });
+    if (opts.signal) {
+      const signal = opts.signal;
+      const annulla = () => {
+        reject(new EdgeClientError(0, "richiesta annullata"));
+        req.destroy();
+      };
+      signal.addEventListener("abort", annulla, { once: true });
+      req.once("close", () => signal.removeEventListener("abort", annulla));
+    }
     if (opts.body) req.write(opts.body);
     req.end();
   });
@@ -288,7 +329,7 @@ async function edgeFetch<T>(
   scanner: Pick<VulnScannerRow, "base_url" | "token_encrypted" | "cert_pin">,
   path: string,
   init: { method?: string; headers?: Record<string, string>; body?: string } = {},
-  opts: { skipAuth?: boolean; timeoutMs?: number } = {},
+  opts: { skipAuth?: boolean; timeoutMs?: number; signal?: AbortSignal; maxBytes?: number } = {},
 ): Promise<T> {
   const headers: Record<string, string> = { ...(init.headers ?? {}) };
   if (!opts.skipAuth) {
@@ -301,6 +342,8 @@ async function edgeFetch<T>(
     body: init.body,
     timeoutMs: opts.timeoutMs,
     expectedPin: scanner.cert_pin ?? null,
+    signal: opts.signal,
+    maxBytes: opts.maxBytes,
   });
   if (res.status < 200 || res.status >= 300) {
     const detail = edgeErrorDetail(res.body);
@@ -344,6 +387,30 @@ export async function fetchCertInfo(baseUrl: string): Promise<EdgeCertInfo> {
     "/api/v1/cert/info",
     {},
     { skipAuth: true, timeoutMs: 8000 },
+  );
+}
+
+/**
+ * GET /api/v1/health così com'è, per il blocco `edge` del segnale verso DA-Link
+ * (sonde integrate, 20/10; la lista bianca sta in `dalink/edge-segnale.ts`). Stessa
+ * fiducia TLS di ogni altra chiamata alla sonda: pin SPKI di `cert_pin` via
+ * `rawRequest`. Niente token: la rotta è pubblica, e qui non serve verificarlo.
+ * `signal` chiude davvero la connessione allo scadere; corpo al massimo
+ * `TETTO_SALUTE_EDGE` byte (lo stato della sonda è di qualche centinaio).
+ */
+export const TETTO_SALUTE_EDGE = 64 * 1024;
+
+export async function leggiSaluteEdge(
+  baseUrl: string,
+  certPin: string | null,
+  timeoutMs: number,
+  signal?: AbortSignal,
+): Promise<unknown> {
+  return edgeFetch<unknown>(
+    { base_url: baseUrl, token_encrypted: "", cert_pin: certPin },
+    "/api/v1/health",
+    {},
+    { skipAuth: true, timeoutMs, signal, maxBytes: TETTO_SALUTE_EDGE },
   );
 }
 

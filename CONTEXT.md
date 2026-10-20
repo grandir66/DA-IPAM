@@ -31,6 +31,7 @@ Leggilo per primo, poi [CLAUDE.md](CLAUDE.md) (stack e schema; su «multi-tenant
 ## 6. Stato e trappole per area (2026-10-15)
 
 - **Rami su origin** (pulizia del 16/10): solo `dev`, `main` e `tappa3b/nucleo` (30 commit fuori da `dev`, rebase dal 20/10: non potare).
+- **Blocco `edge` del segnale** (20/10, ramo `sonde-integrate-20261020`, v0.3.332, non ancora in `dev`): stato della sonda locale da `/api/v1/health` a lista bianca (`lib/dalink/edge-segnale.ts`, `edge-sonda.ts`); DA-Link lo ignora finché non lo conosce (`extra="ignore"`). La pagina «Cosa esce» non lo mostra ancora.
 - **NetBird e DA-Link** (ADR 0011, 0013, 0014; spec e diario del 14/10 in `specs/`/`plans/`). Niente YubiKey (decisione 28). **C1** su `dev` dalla v0.3.282 (`plans/2026-10-15-tappa-c1-netbird.md`). Da fare: **C1b = togliere l'agente Python `agent/`** (decisione 26), dopo il pilota. **Trappole**:
   - Tailscale col firewall acceso scarta NetBird appena `tailscaled` riparte: nodi a doppio binario con `tailscale set --netfilter-mode=off`;
   - le policy NetBird verso le risorse hanno destinazione vuota: si leggono con `/api/networks`;

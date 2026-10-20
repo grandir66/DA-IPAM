@@ -161,3 +161,36 @@ test("aggiornamento: pronto_non_avviato arriva a DA-Link come interrotto, fase a
   assert.equal(a?.esito, "interrotto");
   assert.equal(a?.fase, "avvio");
 });
+
+// Sonde integrate con DA-Link (spec DA-Vul-can 2026-10-20, §8.2): il blocco `edge` è
+// additivo. Senza modulo edge non c'è proprio (le chiavi restano quelle di prima); con la
+// sonda esce passato dalla lista bianca, mai la risposta della sonda così com'è.
+test("edge: assente se il modulo edge non è configurato", () => {
+  const corpo = costruisciSegnale(CFG, "solo_stato", { ...FATTI, edge: null }, () => INV);
+  assert.ok(!("edge" in corpo));
+  assert.deepEqual(Object.keys(corpo).sort(), CHIAVI_CONTRATTO);
+});
+
+test("edge: la risposta della sonda esce solo coi campi del contratto", () => {
+  const health = {
+    ok: true,
+    version: "0.8.121",
+    scanner_id: "70791-cliente-edge",
+    versione_vera: "0.8.121",
+    hub: { esito: "errore", motivo: "dns", messaggio: "getaddrinfo da-vulcan.domarc.it" },
+    aggiornamento: null,
+    disco: { total_gb: 77, free_gb: 1.2 },
+  };
+  const corpo = costruisciSegnale(CFG, "solo_stato", { ...FATTI, edge: { raggiungibile: true, health } }, () => INV);
+  assert.equal(corpo.edge?.raggiungibile, true);
+  assert.equal(corpo.edge?.versione_vera, "0.8.121");
+  assert.equal(corpo.edge?.hub?.motivo, "dns");
+  assert.deepEqual(corpo.edge?.disco, { total_gb: 77, free_gb: 1.2 });
+  const testo = JSON.stringify(corpo);
+  assert.ok(!testo.includes("scanner_id") && !testo.includes("getaddrinfo"));
+});
+
+test("edge: sonda che non risponde → raggiungibile false e gli altri campi null", () => {
+  const corpo = costruisciSegnale(CFG, "solo_stato", { ...FATTI, edge: { raggiungibile: false } }, () => INV);
+  assert.deepEqual(corpo.edge, { raggiungibile: false, versione_vera: null, hub: null, aggiornamento: null, disco: null });
+});

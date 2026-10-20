@@ -9,6 +9,7 @@
  * Functions that reference hub settings (getSetting) import from db-hub.ts.
  */
 
+import { condizioneAssente } from "@/lib/hosts/assenti";
 import Database from "better-sqlite3";
 import path from "path";
 import { resolveDataDir } from "./data-dir";
@@ -3501,15 +3502,23 @@ export function markHostsOffline(
   const d = db();
   return d.transaction((): number => {
     const ids = candidatiOffline(networkId, onlineIps, scannedIps, startedAt).map((r) => r.id);
+    // 20/10: il passaggio a offline va anche nello storico, come i controlli degli host
+    // noti; senza, grafico e transizioni non vedevano chi andava offline per una scansione.
+    const storico = d.prepare("INSERT INTO status_history (host_id, status, response_time_ms) VALUES (?, 'offline', NULL)");
     let cambiati = 0;
     for (let i = 0; i < ids.length; i += 500) {
       const blocco = ids.slice(i, i + 500);
+      const segnaposti = blocco.map(() => "?").join(",");
+      const daCambiare = (d
+        .prepare(`SELECT id FROM hosts WHERE id IN (${segnaposti}) AND ${WHERE_OFFLINE}`)
+        .all(...blocco, networkId, startedAt) as { id: number }[]).map((r) => r.id);
       cambiati += d
         .prepare(
           `UPDATE hosts SET status = 'offline', updated_at = datetime('now')
-           WHERE id IN (${blocco.map(() => "?").join(",")}) AND ${WHERE_OFFLINE}`,
+           WHERE id IN (${segnaposti}) AND ${WHERE_OFFLINE}`,
         )
         .run(...blocco, networkId, startedAt).changes;
+      for (const id of daCambiare) storico.run(id);
     }
     return cambiati;
   })();
@@ -5931,7 +5940,10 @@ export function getStatusOverTime(
   const startMs = statusWindowStartMs(hours, nowMs);
   const toSql = (ms: number) => new Date(ms).toISOString().replace("T", " ").slice(0, 19);
   const bucketFmt = hours <= 48 ? "%Y-%m-%dT%H:00:00" : "%Y-%m-%dT00:00:00";
-  const totalRow = db().prepare("SELECT COUNT(*) as c FROM hosts").get() as { c: number };
+  // Gli host assenti (offline, non visti da oltre 7 giorni) restano fuori dal grafico,
+  // come dalla salute in alto (Riccardo, 20/10).
+  const totalRow = db().prepare(`SELECT COUNT(*) as c FROM hosts WHERE NOT ${condizioneAssente()}`).get() as { c: number };
+  const fuori = `host_id NOT IN (SELECT id FROM hosts WHERE ${condizioneAssente()})`;
   // Per ogni host: l'ultimo controllo di ciascun periodo della finestra, più
   // l'ultimo prima della finestra (entro STALE_HOURS) come stato di partenza.
   const observations = db().prepare(`
@@ -5939,13 +5951,13 @@ export function getStatusOverTime(
       SELECT host_id, status, checked_at,
         ROW_NUMBER() OVER (PARTITION BY strftime(?, checked_at), host_id ORDER BY checked_at DESC, id DESC) AS rn
       FROM status_history
-      WHERE checked_at >= ?
+      WHERE checked_at >= ? AND ${fuori}
     ),
     prima AS (
       SELECT host_id, status, checked_at,
         ROW_NUMBER() OVER (PARTITION BY host_id ORDER BY checked_at DESC, id DESC) AS rn
       FROM status_history
-      WHERE checked_at >= ? AND checked_at < ?
+      WHERE checked_at >= ? AND checked_at < ? AND ${fuori}
     )
     SELECT host_id, status, checked_at FROM dentro WHERE rn = 1
     UNION ALL

@@ -12,6 +12,7 @@ import { getServerTenantCode } from "@/lib/api-tenant";
 import { getTenantDb, withTenant } from "@/lib/db-tenant";
 import { kpiSicurezza, type KpiSicurezza } from "@/lib/security/kpi-dashboard";
 import { GraficoAccessi } from "@/components/dashboard/grafico-accessi";
+import { ASSENTE_DOPO_GIORNI, condizioneAssente } from "@/lib/hosts/assenti";
 import { getIntegrationsOverview, type IntegrationHealth } from "@/lib/integrations/dashboard-health";
 import { getModulesHealth } from "@/lib/modules/health";
 import { MODULE_DESCRIPTORS, resolveModules, type ModuleState } from "@/lib/modules/registry";
@@ -124,7 +125,14 @@ export default async function DashboardPage() {
   ).length;
 
   // KPI hero: Health%, totali, subnet, monitorati offline come allerta
-  const denom = stats.online_hosts + stats.offline_hosts + stats.unknown_hosts;
+  // Offline = visti negli ultimi 7 giorni; gli «assenti» a parte, fuori dalla salute, come
+  // nel grafico (Riccardo, 20/10: in alto 51%, nel grafico 98%).
+  const offlineSplit = withTenant(tenantCode, () =>
+    getTenantDb(tenantCode)
+      .prepare(`SELECT COALESCE(SUM(status = 'offline' AND NOT ${condizioneAssente()}), 0) AS recenti, COALESCE(SUM(${condizioneAssente()}), 0) AS assenti FROM hosts`)
+      .get() as { recenti: number; assenti: number },
+  );
+  const denom = stats.online_hosts + offlineSplit.recenti + stats.unknown_hosts;
   const healthPct = denom > 0 ? Math.round((stats.online_hosts / denom) * 100) : 0;
   const healthColor =
     healthPct >= 90 ? "text-success" :
@@ -141,7 +149,8 @@ export default async function DashboardPage() {
         <Indicatore titolo="Health" valore={`${healthPct}%`} colore={healthColor} nota={`${stats.online_hosts}/${denom} host online`} />
         <Indicatore titolo="Subnet" valore={stats.total_networks} href="/networks" />
         <Indicatore titolo="Host" valore={stats.total_hosts} href="/discovery" />
-        <Indicatore titolo="Offline" valore={stats.offline_hosts} colore="text-destructive" href="/discovery?status=offline" />
+        <Indicatore titolo="Offline" valore={offlineSplit.recenti} colore="text-destructive" href="/discovery?status=offline" nota={`Offline visti negli ultimi ${ASSENTE_DOPO_GIORNI} giorni`} />
+        <Indicatore titolo={`Assenti > ${ASSENTE_DOPO_GIORNI} g`} valore={offlineSplit.assenti} colore="text-muted-foreground" href="/discovery?status=offline" nota={`Offline e non visti da oltre ${ASSENTE_DOPO_GIORNI} giorni: fuori dalla salute`} />
         {monitorStats.total > 0 && (
           <Indicatore titolo="Monitorati" valore={`${monitorStats.online}/${monitorStats.total}`} nota={monitorStats.avg_latency !== null ? `latenza media ${Math.round(monitorStats.avg_latency)} ms` : undefined} href="/monitoring/known-hosts" />
         )}

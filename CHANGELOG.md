@@ -4,6 +4,20 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-20 · Salute coerente e passaggi a offline nello storico
+
+### Corretto
+
+- **Passaggio a offline delle scansioni nello storico** (`markHostsOffline`): cambiava lo
+  stato senza scrivere `status_history`, quindi grafico e «Transizioni recenti» non vedevano
+  chi andava offline per una scansione (sull'hub 34 host «online» nello storico e offline
+  nello stato attuale). Vale da ora in avanti.
+- **Salute in alto e grafico dicevano due cose** (51% contro 98% sull'hub): la riga in alto
+  contava tutti gli offline, il grafico solo chi aveva controlli recenti. Decisione di
+  Riccardo: «offline» = visto negli ultimi 7 giorni; gli host offline non visti da più di 7
+  giorni sono «assenti» (`lib/hosts/assenti.ts`), un indicatore a parte, fuori dalla salute
+  e dal grafico.
+
 ## [Non rilasciato] — 2026-10-20 · Colori ufficiali degli stati, accessi falliti nelle 24 ore
 
 ### Cambiato

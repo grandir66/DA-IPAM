@@ -34,11 +34,12 @@ if (comando === "stato") {
   process.exit(0);
 }
 const azione = comando as "azzera" | "togli";
-if (!impostaSecondaVerifica(utente.id, azione)) esci(`Nessuna riga aggiornata per «${nome}».`);
+// Prima il registro: se non si scrive, l'azione non si fa (niente modifiche senza traccia).
 scriviRegistroAccessi({
   azione: `seconda_verifica_${azione}`,
   utente: utente.username,
   utenteId: utente.id,
   da: `riga di comando (${os.userInfo().username})`,
 });
+if (!impostaSecondaVerifica(utente.id, azione)) esci(`Nessuna riga aggiornata per «${nome}».`);
 console.log(`${utente.username}: ${stato(getUserByUsername(nome)!)}`);

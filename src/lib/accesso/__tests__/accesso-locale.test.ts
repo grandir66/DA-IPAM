@@ -163,10 +163,18 @@ test("revisione 20/10: codici in parallelo non scavalcano il blocco (al più 6 t
   assert.ok(esiti.some((e) => e.esito === "bloccato"));
 });
 
-test("revisione 20/10: un nome inesistente costa quanto una password sbagliata (bcrypt anche lì)", async () => {
-  const t0 = performance.now();
-  await A.verificaAccessoLocale({ username: "non-esiste-davvero", password: "x" }, { fase: "passo_uno" });
-  assert.ok(performance.now() - t0 >= 15, "senza bcrypt la risposta tradiva che il nome non esiste");
+test("revisione 20/10: un nome inesistente costa quanto una password sbagliata (bcrypt al costo vero, 12)", async () => {
+  // Gli utenti veri hanno hash a costo 12 (setup, creazione, reimposta, cambia password).
+  const vero = H.createUser(`costo12-${++n}`, await bcrypt.hash("giusta", 12), "admin", null);
+  await A.verificaAccessoLocale({ username: "riscaldamento", password: "x" }, { fase: "passo_uno" }); // calcola l'hash finto
+  const misura = async (username: string) => {
+    const t0 = performance.now();
+    await A.verificaAccessoLocale({ username, password: "sbagliata" }, { fase: "passo_uno" });
+    return performance.now() - t0;
+  };
+  const tVero = await misura(vero.username);
+  const tFinto = await misura("non-esiste-davvero");
+  assert.ok(tFinto >= tVero * 0.6, `nome inesistente ${tFinto.toFixed(0)} ms contro esistente ${tVero.toFixed(0)} ms`);
 });
 
 test("revisione 20/10: due passi 1 insieme a QR scaduto danno lo stesso QR", async () => {

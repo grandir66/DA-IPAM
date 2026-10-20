@@ -133,6 +133,7 @@ export const ECCEZIONI: Eccezione[] = [
   // --- pubbliche: coincidono con l'elenco consentito di src/lib/auth.config.ts
   { rotta: "/api/auth/[...nextauth]", metodi: ["GET", "POST"], tipo: "pubblica", guardia: "esterna", motivo: "gestori di NextAuth: accesso e uscita" },
   { rotta: "/api/auth/lock-state", metodi: ["GET"], tipo: "pubblica", guardia: "nessuna", motivo: "la pagina di accesso la interroga prima che esista una sessione" },
+  { rotta: "/api/auth/passo-uno", metodi: ["POST"], tipo: "pubblica", guardia: "nessuna", motivo: "passo 1 della pagina d'accesso, prima che esista una sessione; protetta dallo stesso blocco dei tentativi del login (ADR 0023)" },
   { rotta: "/api/health", metodi: ["GET"], tipo: "pubblica", guardia: "nessuna", motivo: "controllo di salute per il monitoraggio" },
   { rotta: "/api/version", metodi: ["GET"], tipo: "pubblica", guardia: "nessuna", motivo: "versione installata, letta dall'aggiornamento" },
   { rotta: "/api/setup", metodi: ["GET", "POST"], tipo: "pubblica", guardia: "nessuna", motivo: "prima configurazione, prima che esista un utente" },

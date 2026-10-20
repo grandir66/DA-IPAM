@@ -170,13 +170,6 @@ export function decideDelete(actor: UserManager, target: ManagedUser): Decision 
 }
 
 /**
- * Reimpostazione della password. L'admin solo per i suoi utenti, mai per un
- * superadmin, e mai per sé stesso: «Cambia password» nel menu utente chiede la
- * password attuale, questa rotta no. Una sessione rubata o lasciata aperta
- * diventerebbe una credenziale che sopravvive alla scadenza della sessione.
- * Il superadmin resta com'era.
- */
-/**
  * Verifica in due passaggi (Riccardo, 20/10; ADR 0023): come «Reimposta password», ma su se
  * stessi si può chiederla e azzerarla (telefono cambiato); toglierla a se stessi no, per
  * nessun ruolo: abbassa la propria protezione, lo fa un altro admin o lo script da server.
@@ -193,6 +186,13 @@ export function decideSecondaVerifica(actor: UserManager, target: ManagedUser, a
   return { ok: true };
 }
 
+/**
+ * Reimpostazione della password. L'admin solo per i suoi utenti, mai per un
+ * superadmin, e mai per sé stesso: «Cambia password» nel menu utente chiede la
+ * password attuale, questa rotta no. Una sessione rubata o lasciata aperta
+ * diventerebbe una credenziale che sopravvive alla scadenza della sessione.
+ * Il superadmin resta com'era.
+ */
 export function decideResetPassword(actor: UserManager, target: ManagedUser): Decision {
   if (actor.role === "admin" && isSelf(actor, target)) {
     return deny(400, "Per la tua password usa «Cambia password» nel menu utente");

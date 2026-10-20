@@ -41,7 +41,9 @@ const DURATA_PROPOSTA_MS = 10 * 60_000;
 let hashFinto: string | null = null;
 async function confrontoFinto(password: string): Promise<void> {
   const bcrypt = await import("bcrypt");
-  hashFinto ??= await bcrypt.hash("nessuno-ha-questa-password", 10);
+  // Costo 12 come gli utenti veri (setup, creazione, reimposta e cambia password): a 10 il nome
+  // inesistente rispondeva in 50 ms contro 198 (seconda revisione del 20/10).
+  hashFinto ??= await bcrypt.hash("nessuno-ha-questa-password", 12);
   await bcrypt.compare(password, hashFinto);
 }
 
@@ -55,6 +57,22 @@ export async function verificaAccessoLocale(
   input: { username: string; password: string; codice?: string },
   opzioni: { fase: "passo_uno" | "accesso"; ora?: number },
 ): Promise<EsitoAccesso> {
+  const prenotazione: { chiave: string | null; segno: number } = { chiave: null, segno: 0 };
+  try {
+    return await verifica(input, opzioni, prenotazione);
+  } catch (e) {
+    // Un guasto nel passo 1 (QR, database occupato) non deve lasciare contato un tentativo
+    // fatto magari con la password giusta (seconda revisione del 20/10).
+    if (opzioni.fase === "passo_uno" && prenotazione.chiave) annullaTentativo(prenotazione.chiave, prenotazione.segno);
+    throw e;
+  }
+}
+
+async function verifica(
+  input: { username: string; password: string; codice?: string },
+  opzioni: { fase: "passo_uno" | "accesso"; ora?: number },
+  prenotazione: { chiave: string | null; segno: number },
+): Promise<EsitoAccesso> {
   const ora = opzioni.ora ?? Date.now();
   const username = (input.username ?? "").trim();
   const password = input.password ?? "";
@@ -67,6 +85,8 @@ export async function verificaAccessoLocale(
   // (revisione del 20/10). Un rifiuto lo lascia contato; un passo 1 buono lo annulla;
   // l'accesso completo azzera tutto.
   const segno = prenotaTentativo(chiave);
+  prenotazione.chiave = chiave;
+  prenotazione.segno = segno;
   const rifiuta = (): EsitoAccesso => ({ esito: "rifiuta" });
   const buono = <E extends EsitoAccesso>(e: E): E => {
     if (opzioni.fase === "passo_uno") annullaTentativo(chiave, segno);

@@ -100,8 +100,12 @@ export function recordFailedAttempt(key: string): void {
  * tentativo risulta buono e non deve contare (passo 1 della pagina d'accesso riuscito).
  */
 export function prenotaTentativo(key: string): number {
+  // Lo stesso istante nel contatore e nel segno: con due letture dell'orologio, a cavallo del
+  // millisecondo l'annullamento non trovava il segno (5 casi su 300.000, seconda revisione 20/10).
   const t = Date.now();
-  recordFailedAttempt(key);
+  const entry = store.get(key) || { timestamps: [] };
+  entry.timestamps.push(t);
+  store.set(key, entry);
   return t;
 }
 

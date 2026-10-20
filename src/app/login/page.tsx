@@ -148,7 +148,8 @@ export default function LoginPage() {
     return false;
   }
 
-  async function entra(conCodice?: string) {
+  /** Accesso vero (NextAuth). «ok» = si va alla dashboard; altrimenti il motivo, già mostrato. */
+  async function entra(conCodice?: string): Promise<"ok" | "bloccato" | "rifiuta"> {
     const result = await signIn("credentials", {
       username,
       password,
@@ -156,13 +157,28 @@ export default function LoginPage() {
       redirect: false,
     });
     if (result?.error || result?.ok === false) {
-      if (await leggiBlocco(username)) return false;
+      if (await leggiBlocco(username)) return "bloccato";
       setError(conCodice ? "Codice non valido o già usato: scrivi quello nuovo che mostra l'app." : "Nome o password non validi.");
-      return false;
+      return "rifiuta";
     }
     // Navigazione completa: i cookie di sessione arrivano al middleware (evita il giro sul login).
     window.location.assign("/");
-    return true;
+    return "ok";
+  }
+
+  /** Passo 1 sul server: password giusta → serve il codice, il QR, o si entra. */
+  async function chiediPassoUno() {
+    const r = await fetch("/api/auth/passo-uno", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ username, password }),
+    });
+    return (await r.json().catch(() => null)) as
+      | { esito: "entra" | "serve_codice" | "rifiuta" }
+      | { esito: "serve_attivazione"; segreto: string; qr: string }
+      | { esito: "bloccato"; secondi: number }
+      | null;
   }
 
   async function passoUno(e: React.FormEvent<HTMLFormElement>) {
@@ -170,17 +186,7 @@ export default function LoginPage() {
     setError("");
     setLoading(true);
     try {
-      const r = await fetch("/api/auth/passo-uno", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "same-origin",
-        body: JSON.stringify({ username, password }),
-      });
-      const d = (await r.json().catch(() => null)) as
-        | { esito: "entra" | "serve_codice" | "rifiuta" }
-        | { esito: "serve_attivazione"; segreto: string; qr: string }
-        | { esito: "bloccato"; secondi: number }
-        | null;
+      const d = await chiediPassoUno();
       if (!d) {
         setError("Accesso non riuscito: il server non ha risposto come doveva.");
       } else if (d.esito === "entra") {
@@ -193,7 +199,8 @@ export default function LoginPage() {
         setFase({ tipo: "attivazione", segreto: d.segreto, qr: d.qr });
       } else if (d.esito === "bloccato") {
         blocca(d.secondi);
-      } else {
+      } else if (!(await leggiBlocco(username))) {
+        // Il blocco si dice subito, col conto alla rovescia (incidenti 99.50 e cliente A).
         setError("Nome o password non validi.");
       }
     } catch {
@@ -208,8 +215,19 @@ export default function LoginPage() {
     setError("");
     setLoading(true);
     try {
-      const ok = await entra(codice);
-      if (!ok) setCodice("");
+      const esito = await entra(codice);
+      if (esito === "ok") return;
+      setCodice("");
+      // In attivazione il QR scade dopo 10 minuti (il tempo di scaricare l'app): se il codice
+      // non va, si richiede il passo 1 e, se il QR è cambiato, si mostra quello nuovo invece di
+      // far sbagliare fino al blocco (seconda revisione del 20/10).
+      if (esito === "rifiuta" && fase.tipo === "attivazione") {
+        const d = await chiediPassoUno();
+        if (d?.esito === "serve_attivazione" && d.segreto !== fase.segreto) {
+          setFase({ tipo: "attivazione", segreto: d.segreto, qr: d.qr });
+          setError("Il QR era scaduto: inquadra questo nuovo QR (quello di prima nell'app non vale più) e scrivi il codice.");
+        }
+      }
     } catch {
       setError("Errore di connessione durante l'accesso.");
     } finally {

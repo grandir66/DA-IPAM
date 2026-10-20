@@ -338,8 +338,6 @@ export function deleteUserAs(session: SessionLike, rawId: string): UsersResult {
   return { status: 200, body: { success: true, message: "Utente eliminato" } };
 }
 
-// ─── POST /api/users/[id]/reset-password ───
-
 // ─── POST /api/users/[id]/seconda-verifica ───
 
 const AZIONI_SECONDA_VERIFICA = ["richiedi", "azzera", "togli"] as const;
@@ -376,15 +374,19 @@ export async function secondaVerificaAs(session: SessionLike, rawId: string, req
   const decision = decideSecondaVerifica(who.actor, managedUser(user), a);
   if (!decision.ok) return fromDenial(decision);
 
-  impostaSecondaVerifica(userId, a);
+  // Prima il registro, poi la modifica: un registro non scrivibile ferma l'azione invece di
+  // lasciarla fatta senza traccia (seconda revisione del 20/10).
   scriviRegistroAccessi({
     azione: `seconda_verifica_${a}`,
     utente: user.username,
     utenteId: user.id,
     da: session.user?.name ?? "?",
   });
+  impostaSecondaVerifica(userId, a);
   return { status: 200, body: { success: true, message: `«${user.username}»: ${ESITO_SECONDA_VERIFICA[a]}` } };
 }
+
+// ─── POST /api/users/[id]/reset-password ───
 
 export async function resetPasswordAs(session: SessionLike, rawId: string, request: Request): Promise<UsersResult> {
   const who = resolveUserManager(session);

@@ -84,9 +84,10 @@ più Launchpad a tessere; gruppi **Sicurezza** (Vulnerabilità, Alert, Health AD
 
 - **Trappola**: le 9 prove «rosse per `flock`» del Mac erano `stato-aggiornamento.mjs` che non partiva
   da cartelle dietro symlink (`/var/folders`): ora `realpathSync`. Sul Mac serve comunque `flock` (brew).
-- **Hub (19/10)**: RDP senza agente acceso (`MESHCENTRAL_SENZA_AGENTE=1` in `.env.local`, backup
-  `.env.local.bak-20261019-160928`); entrato in DA-Link come `70791-ipam` (edge), snapshot
-  `pre-dalink-20261019` della VM 533, che **ora sta su DA-PX-03** (non PX-04).
+- **Hub (19/10)**: RDP senza agente acceso dall'interruttore del tenant (`meshcentral.senza_agente=1`
+  in 70791 e 70791a); la riga `MESHCENTRAL_SENZA_AGENTE` tolta da `.env.local` (backup
+  `.env.local.bak-20261019-180952`). Entrato in DA-Link come `70791-ipam` (edge); snapshot
+  `pre-dalink-20261019` della VM 533 (da togliere con l'ok di Riccardo), che **ora sta su DA-PX-03**.
 - **Vincoli di Riccardo del 16/10 (non riaprire)**: Zabbix è modulo opzionale commerciale; DA-Zabbix
   genera il profilo cliente e ne resta titolare; DA-IPAM lo riusa, niente onboarding doppio; LibreNMS
   solo locale integrato. Proposta: `docs/proposte/2026-10-16-solidita-interfaccia-moduli-deploy.md`.

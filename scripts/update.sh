@@ -208,6 +208,10 @@ fi
 
 # Build nella cartella libera: quella in uso resta intatta per il processo acceso.
 FASE="build"; stato fase build
+# I tipi generati dalla build in uso non servono al processo acceso, ma tsconfig.json li
+# include: citano le rotte di allora e una rotta tolta fa fallire il controllo dei tipi
+# della build nuova (v0.9.804, /api/search, 20/10). Si svuotano prima di costruire.
+rm -rf "$BUILD_ATTIVA/types" "$BUILD_ATTIVA/dev/types"
 echo ">>> npm run build (in $BUILD_NUOVA)..."
 DA_INVENT_BUILD_DIR="$BUILD_NUOVA" npm run build
 # tsconfig.json elenca già i tipi di .next-a e .next-b; se Next lo ritoccasse

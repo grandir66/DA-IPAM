@@ -39,6 +39,10 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ### Corretto
 
+- **Aggiornamento bloccato da una rotta tolta**: la v0.9.804 non si è installata sull'hub (tornato da solo alla
+  v0.9.803). La build nuova controllava anche i tipi generati dalla build in uso, che citavano `/api/search` appena
+  tolta. `update.sh` ora li svuota prima di costruire; `/api/search` resta come rotta ferma (risponde 410) finché
+  tutte le installazioni non hanno lo script nuovo, perché chi aggiorna esegue ancora quello vecchio.
 - Menu utente: il clic faceva cadere la pagina (Base UI vuole l'etichetta dentro un gruppo), quindi «Cambia password»
   non si raggiungeva.
 - Alert sicurezza: senza indexer «Alert nel periodo», «Agent» e «Regole» dicevano 0 mentre la tabella mostrava gli

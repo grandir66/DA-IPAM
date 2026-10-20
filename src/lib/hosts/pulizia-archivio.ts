@@ -21,6 +21,7 @@ import { dbCorrente } from "@/lib/hosts/db-corrente";
 import { FUSO_UTENTI, parseDbDate } from "@/lib/db-date";
 import { macToHex, normalizeMacForStorage } from "@/lib/utils";
 import { scriviRegistroPulizia, scriviRighePulizia, type RigaRegistroPulizia } from "@/lib/hosts/registro-pulizia";
+import { candidatiPulizia } from "@/lib/hosts/pulizia-candidati";
 
 export const GIORNI_ARCHIVIO_PRIMA_DI_CANCELLARE = 90;
 
@@ -322,4 +323,109 @@ export function ipPrecedentiDi(hostId: number): Array<{ ip: string; fino_al: str
     if (!gia || quando(p.fino_al) > quando(gia.fino_al)) perIp.set(p.ip, p);
   }
   return [...perIp.values()].sort((x, y) => quando(y.fino_al) - quando(x.fino_al));
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// «Applica» (piano 2026-10-20, Task 4; casi 3 e 5)
+// ═══════════════════════════════════════════════════════════════════════════
+
+type HostNominato = { id: number; ip: string; nome: string };
+
+export interface EsitoApplica {
+  /** Id dell'host (quello mandato), non della riga d'archivio. */
+  archiviati: HostNominato[];
+  /** Mandati ma non candidati adesso: tornati online, esclusi, troppo recenti, già archiviati, spariti. */
+  nonPiuCandidati: HostNominato[];
+  /** Righe d'archivio (id della riga) oltre i 90 giorni, cancellate da questo «Applica». */
+  cancellatiDallArchivio: HostNominato[];
+}
+
+/** La richiesta non è quella che l'utente ha confermato (numero diverso, elenco vuoto o storto): non si tocca niente. */
+export class ErroreConferma extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ErroreConferma";
+  }
+}
+
+/**
+ * Un'archiviazione è fallita a metà dell'elenco. Ogni host si archivia nella sua transazione: quelli prima del
+ * guasto restano archiviati (e nel registro), quello che ha fallito e i seguenti restano in `hosts`. Il messaggio
+ * li nomina tutti; l'archivio scaduto in questo caso non si cancella.
+ */
+export class ErroreApplica extends Error {
+  constructor(
+    readonly archiviati: HostNominato[],
+    readonly nonArchiviati: HostNominato[],
+    readonly nonPiuCandidati: HostNominato[],
+    causa: string,
+  ) {
+    const elenco = (h: HostNominato[]) => (h.length ? h.map((x) => `${x.nome} (${x.ip})`).join(", ") : "nessuno");
+    super(`Archiviazione interrotta: ${causa}. Archiviati: ${elenco(archiviati)}. Non archiviati, ancora fra gli host: ${elenco(nonArchiviati)}.`);
+    this.name = "ErroreApplica";
+  }
+}
+
+/** Nome e IP degli id mandati che non sono candidati: da `hosts`, se no dall'archivio, se no «non c'è più». Due letture, non una per id. */
+function nominaNonCandidati(d: Database.Database, ids: number[]): HostNominato[] {
+  if (ids.length === 0) return [];
+  const elenco = JSON.stringify(ids);
+  const vivi = new Map((d.prepare(`SELECT id, ip,
+        COALESCE(NULLIF(TRIM(custom_name), ''), NULLIF(TRIM(hostname), ''), NULLIF(TRIM(dns_reverse), ''), ip) AS nome
+      FROM hosts WHERE id IN (SELECT value FROM json_each(?))`).all(elenco) as HostNominato[]).map((h) => [h.id, h]));
+  const archiviati = new Map((d.prepare(`SELECT host_id_originale AS id, ip, nome FROM hosts_archivio
+      WHERE recuperato_il IS NULL AND host_id_originale IN (SELECT value FROM json_each(?)) ORDER BY id`).all(elenco) as HostNominato[])
+    .map((h) => [h.id, h]));
+  return ids.map((id) => {
+    const vivo = vivi.get(id);
+    if (vivo) return vivo;
+    const a = archiviati.get(id);
+    if (a) return { id, ip: a.ip, nome: `${a.nome} (già in archivio)` };
+    return { id, ip: "", nome: `host #${id} (non c'è più)` };
+  });
+}
+
+/**
+ * «Applica» dell'anteprima: `ids` sono gli host che l'utente ha visto, `conferma` il numero che ha scritto.
+ * - `conferma !== ids.length`, elenco vuoto, id ripetuti o non interi positivi → `ErroreConferma`, nessuna scrittura;
+ * - si ricalcolano i candidati ADESSO e si archivia solo l'intersezione (motivo e dettaglio di adesso); gli altri id
+ *   tornano per nome in `nonPiuCandidati` (caso 3: tornati online nel frattempo, o un id escluso in una richiesta
+ *   scritta a mano);
+ * - poi si cancella l'archivio scaduto (caso 5: a job spento nessun altro lo farebbe).
+ * Un host per transazione (scelta del Task 4): un guasto a metà lascia archiviati i precedenti e lancia
+ * `ErroreApplica`, che li nomina con quelli rimasti. Tutto sincrono: fra la lettura dei candidati e l'ultima
+ * archiviazione nessun `await`, quindi la scansione dello stesso processo non si infila in mezzo.
+ */
+export function applicaPulizia(ids: number[], conferma: number, da: string): EsitoApplica {
+  if (ids.length === 0) throw new ErroreConferma("Nessun host da archiviare nell'elenco");
+  if (!ids.every((id) => Number.isInteger(id) && id > 0)) throw new ErroreConferma("L'elenco contiene id di host non validi");
+  if (new Set(ids).size !== ids.length) throw new ErroreConferma("L'elenco contiene lo stesso host più di una volta");
+  if (conferma !== ids.length) {
+    throw new ErroreConferma(`Il numero confermato (${conferma}) non è quello degli host nell'elenco (${ids.length}): non si archivia niente`);
+  }
+
+  const d = dbCorrente();
+  const candidati = new Map(candidatiPulizia().candidati.map((c) => [c.id, c]));
+  const daArchiviare = ids.filter((id) => candidati.has(id)).map((id) => candidati.get(id)!);
+  const nonPiuCandidati = nominaNonCandidati(d, ids.filter((id) => !candidati.has(id)));
+
+  const archiviati: HostNominato[] = [];
+  for (const [i, c] of daArchiviare.entries()) {
+    try {
+      const r = archiviaHost(c.id, c.motivo, c.dettaglio, da);
+      archiviati.push({ id: c.id, ip: r.ip, nome: r.nome });
+    } catch (e) {
+      const causa = `${c.nome} (${c.ip}): ${e instanceof Error ? e.message : String(e)}`;
+      throw new ErroreApplica(archiviati, daArchiviare.slice(i).map(({ id, ip, nome }) => ({ id, ip, nome })), nonPiuCandidati, causa);
+    }
+  }
+
+  let cancellatiDallArchivio: HostNominato[];
+  try {
+    cancellatiDallArchivio = cancellaArchivioScaduto();
+  } catch (e) {
+    throw new ErroreApplica(archiviati, [], nonPiuCandidati,
+      `host archiviati, ma la cancellazione dell'archivio oltre i ${GIORNI_ARCHIVIO_PRIMA_DI_CANCELLARE} giorni non è riuscita (${e instanceof Error ? e.message : String(e)})`);
+  }
+  return { archiviati, nonPiuCandidati, cancellatiDallArchivio };
 }

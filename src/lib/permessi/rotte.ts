@@ -110,6 +110,19 @@ export const ATTESI: Atteso[] = [
     livello: "admin",
     motivo: "«Cosa cambierebbe con la mappa nuova»: un calcolo per chi decide quando accendere la mappa nuova (spec topologia §13.11.3)",
   },
+  // Pulizia degli host assenti (piano 2026-10-20, Task 4): letture admin per scelta.
+  {
+    rotta: "/api/hosts/pulizia",
+    metodi: ["GET"],
+    livello: "admin",
+    motivo: "anteprima della pulizia: l'elenco degli host del cliente che verrebbero tolti, per chi può premere «Applica»",
+  },
+  {
+    rotta: "/api/hosts/archivio",
+    metodi: ["GET"],
+    livello: "admin",
+    motivo: "archivio degli host tolti al cliente, con chi li ha tolti: lo legge chi può recuperarli",
+  },
 ];
 
 const PROVA_MASCHERATE = "src/lib/permessi/__tests__/letture-mascherate.test.ts";

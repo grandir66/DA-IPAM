@@ -17,6 +17,9 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   WinRM, poi SSH, ferma alla prima fase in errore); **Attribuzione** (apre l'anteprima, col conteggio a livello 2 sul
   pulsante). «Applica diretto» è diventato «Applica tutto senza rivedere» dentro l'anteprima; VA Scan resta a destra.
   Nessuna funzione tolta: ogni comando di prima è a uno o due clic.
+- **La scansione periodica entra nella stessa barra** (Riccardo, 20/10): era una riga pieghevole sotto, alta
+  quanto la barra; ora è il pulsante «Scansione periodica · ogni 15 minuti» (o «· sospesa») che apre gli stessi
+  controlli in una finestra.
 
 ## [Non rilasciato] — 2026-10-20 · Pagina d'accesso nuova e verifica in due passaggi
 

@@ -1252,13 +1252,14 @@ export function NetworkDetailClient({
               )}
             </Button>
 
+            <SubnetScheduleCard networkId={network.id} />
+
             {/* VA Scan a parte: scansione invasiva dall'edge, con la sua pianificazione */}
             <div className="ml-auto">
               <SubnetEdgeScanPanel networkId={network.id} disabled={busy} hosts={hosts} cidr={network.cidr} networkName={network.name} />
             </div>
           </div>
 
-          <SubnetScheduleCard networkId={network.id} />
 
           {/* Barra unica: azioni bulk a sinistra, refresh live a destra (niente toolbar dedicata sotto) */}
           <div

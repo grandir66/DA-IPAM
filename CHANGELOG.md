@@ -30,6 +30,23 @@ DA-VA-OVH perché aveva il disco pieno; la sonda lo sapeva, Domarc no.
 - `LIMITI` del segnale in `lib/dalink/segnale-limiti.ts` (riesportati da `segnale.ts`), per
   usarli anche nel blocco della sonda senza import circolari.
 
+### Corretto (revisione del 20/10, stesso ramo)
+
+- **Stesse forme di DA-Link** (`dalink/sonde/forma.py` del suo ramo sonde): versioni e
+  commit `^[0-9A-Za-z][0-9A-Za-z.+_-]{0,31}$` **senza tagliare** (prima si tagliavano a 64:
+  una versione tagliata è un'altra versione, e DA-Link l'avrebbe scartata), interi fino a un
+  miliardo, disco solo con tutti e due i numeri validi, totale > 0 e liberi ≤ totale, motivo
+  del contatto con l'hub solo con esito «errore». Così nessun valore cambia significato
+  attraversando il confine.
+- **Modulo edge spento per scelta** (`enabled=0` senza `auto_disabled_at`): il blocco non
+  esce, come chiede il contratto («assente se il modulo edge non c'è»). Resta quando lo ha
+  spento la sequenza di errori: lì serve sapere se la sonda risponde.
+- **Allo scadere dei 3 secondi la connessione si chiude davvero** (`AbortSignal` fino al
+  socket) e il corpo ha un tetto di 64 KB: il timeout del socket di `rawRequest` è di
+  inattività, e una sonda che risponde a goccia lo rinnovava all'infinito, lasciando la
+  richiesta appesa dietro al segnale. `signal` e `maxBytes` sono facoltativi: le altre
+  chiamate alla sonda restano come prima.
+
 ## [Non rilasciato] — 2026-10-20 · Salute coerente e passaggi a offline nello storico
 
 ### Corretto

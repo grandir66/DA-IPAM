@@ -8,8 +8,12 @@
  *   il nome dell'istanza, che può contenere il nome del cliente);
  * - i valori a elenco chiuso fuori elenco diventano null: mai un testo libero, che può
  *   portare percorsi, nomi o indirizzi della rete del cliente;
- * - versioni e commit solo coi caratteri di una versione, tagliati come in `LIMITI`;
- *   date solo nella forma ISO, tagliate a `LIMITI.data`;
+ * - le stesse forme di DA-Link (`dalink/sonde/forma.py`, revisione del 20/10), così nessun
+ *   valore cambia significato attraversando il confine: versioni e commit
+ *   `^[0-9A-Za-z][0-9A-Za-z.+_-]{0,31}$` MAI tagliati (una versione tagliata è un'altra
+ *   versione: troppo lunga → null), interi da 0 a un miliardo, disco solo con tutti e due i
+ *   numeri validi, totale > 0 e liberi ≤ totale, motivo del contatto solo con esito
+ *   «errore»; date solo nella forma ISO, al massimo `LIMITI.data` caratteri;
  * - la sonda vecchia (solo `ok`/`version`) risponde ma non dichiara niente: `version` NON
  *   diventa `versione_vera` (è il pyproject: PX-NAS dichiarava 0.1.0, diagnosi del 19/10);
  * - sonda muta o risposta che non è un oggetto JSON: `raggiungibile: false` e tutto il
@@ -69,8 +73,8 @@ export interface AggiornamentoEdge {
 }
 
 export interface DiscoEdge {
-  total_gb: number | null;
-  free_gb: number | null;
+  total_gb: number;
+  free_gb: number;
 }
 
 export interface EdgeSegnale {
@@ -85,10 +89,11 @@ const NON_RAGGIUNGIBILE: EdgeSegnale = { raggiungibile: false, versione_vera: nu
 
 /** La forma delle date della sonda (`2026-10-20T08:00:00Z`), con frazioni e fuso facoltativi. */
 const DATA_ISO = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(\.\d{1,6})?(Z|[+-]\d{2}:?\d{2})?$/;
-/** I caratteri di una versione o di un commit (gli stessi che la sonda accetta per le sue). */
-const VERSIONE = /^[A-Za-z0-9.+_-]+$/;
-/** Oltre un milione di GB non è un disco: è un numero storto. */
-const MAX_GB = 1_000_000;
+/** Una versione o un commit dichiarati: la regola di DA-Link (`forma.py`, `_RE_VERSIONE`). */
+const VERSIONE = /^[0-9A-Za-z][0-9A-Za-z.+_-]{0,31}$/;
+/** I tetti di DA-Link (`forma.py`: `intero`, `numero`). */
+const MAX_INTERO = 1_000_000_000;
+const MAX_GB = 10_000_000;
 
 function oggetto(v: unknown): Record<string, unknown> | null {
   return v !== null && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
@@ -98,10 +103,8 @@ function inElenco<T extends readonly string[]>(elenco: T, v: unknown): Di<T> | n
   return typeof v === "string" && (elenco as readonly string[]).includes(v) ? (v as Di<T>) : null;
 }
 
-function versione(v: unknown, n: number): string | null {
-  if (typeof v !== "string") return null;
-  const t = v.slice(0, n);
-  return t && VERSIONE.test(t) ? t : null;
+function versione(v: unknown): string | null {
+  return typeof v === "string" && VERSIONE.test(v) ? v : null;
 }
 
 function data(v: unknown): string | null {
@@ -109,7 +112,7 @@ function data(v: unknown): string | null {
 }
 
 function intero(v: unknown): number | null {
-  return typeof v === "number" && Number.isInteger(v) && v >= 0 ? v : null;
+  return typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= MAX_INTERO ? v : null;
 }
 
 function gb(v: unknown): number | null {
@@ -119,9 +122,11 @@ function gb(v: unknown): number | null {
 function hubPerSegnale(v: unknown): HubEdge | null {
   const h = oggetto(v);
   if (!h) return null;
+  const esito = inElenco(ESITI_HUB_EDGE, h.esito);
   return {
-    esito: inElenco(ESITI_HUB_EDGE, h.esito),
-    motivo: inElenco(MOTIVI_EDGE, h.motivo),
+    esito,
+    // Il motivo dice perché il contatto è fallito: senza «errore» non vuol dire niente.
+    motivo: esito === "errore" ? inElenco(MOTIVI_EDGE, h.motivo) : null,
     ultimo_battito_il: data(h.ultimo_battito_il),
     ultimo_ok_il: data(h.ultimo_ok_il),
     ultimo_errore_il: data(h.ultimo_errore_il),
@@ -136,8 +141,8 @@ function aggiornamentoEdgePerSegnale(v: unknown): AggiornamentoEdge | null {
   return {
     esito: inElenco(ESITI_AGGIORNAMENTO_EDGE, a.esito),
     fase: inElenco(FASI_EDGE, a.fase),
-    commit_avviato: versione(a.commit_avviato, LIMITI.commit),
-    commit_tentato: versione(a.commit_tentato, LIMITI.commit),
+    commit_avviato: versione(a.commit_avviato),
+    commit_tentato: versione(a.commit_tentato),
     tentativi: intero(a.tentativi),
     tentativo_iniziato_il: data(a.tentativo_iniziato_il),
     tentativo_finito_il: data(a.tentativo_finito_il),
@@ -152,9 +157,11 @@ function aggiornamentoEdgePerSegnale(v: unknown): AggiornamentoEdge | null {
 function discoPerSegnale(v: unknown): DiscoEdge | null {
   const d = oggetto(v);
   if (!d) return null;
-  const disco = { total_gb: gb(d.total_gb), free_gb: gb(d.free_gb) };
-  // Nessun numero valido: null, mai zeri inventati.
-  return disco.total_gb === null && disco.free_gb === null ? null : disco;
+  const total = gb(d.total_gb);
+  const free = gb(d.free_gb);
+  // Un numero solo, un totale nullo o più liberi che totali: non è un disco (né zeri inventati).
+  if (total === null || free === null || total <= 0 || free > total) return null;
+  return { total_gb: total, free_gb: free };
 }
 
 /** Dalla lettura della sonda al blocco `edge` del segnale. */
@@ -165,7 +172,7 @@ export function edgePerSegnale(l: LetturaEdge): EdgeSegnale {
   if (!h) return { ...NON_RAGGIUNGIBILE };
   return {
     raggiungibile: true,
-    versione_vera: versione(h.versione_vera, LIMITI.versione),
+    versione_vera: versione(h.versione_vera),
     hub: hubPerSegnale(h.hub),
     aggiornamento: aggiornamentoEdgePerSegnale(h.aggiornamento),
     disco: discoPerSegnale(h.disco),

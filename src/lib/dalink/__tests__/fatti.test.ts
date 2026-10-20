@@ -353,22 +353,29 @@ test("sonda edge: una lettura che si rompe dà null, il resto del segnale c'è",
   assert.equal(r.fatti.salute.edge, "ok");
 });
 
-test("sonda edge: la lettura parte insieme alle sonde dei moduli, non dopo", async () => {
+// Tutte e due le letture aspettano: se il codice le facesse in fila (in qualunque ordine),
+// una finirebbe prima che l'altra parta e la prova diventa rossa (revisione del 20/10).
+test("sonda edge: la lettura parte insieme alle sonde dei moduli, non in fila", async () => {
   const ordine: string[] = [];
+  const aspetta = () => new Promise((r) => setTimeout(r, 30));
   await fattiIstanza("99999", null, {
     clienteEsiste: () => true,
     porte: PORTE_OK,
     proxyZabbix: () => null,
     moduli: async () => ({ edge: true }),
     salute: async () => {
-      await new Promise((r) => setTimeout(r, 30));
+      ordine.push("salute partita");
+      await aspetta();
       ordine.push("salute finita");
       return { edge: "ok" };
     },
     edge: async () => {
       ordine.push("edge partita");
+      await aspetta();
+      ordine.push("edge finita");
       return { raggiungibile: false };
     },
   });
-  assert.deepEqual(ordine, ["edge partita", "salute finita"]);
+  const primaFine = Math.min(ordine.indexOf("salute finita"), ordine.indexOf("edge finita"));
+  assert.ok(ordine.indexOf("salute partita") < primaFine && ordine.indexOf("edge partita") < primaFine, ordine.join(" → "));
 });

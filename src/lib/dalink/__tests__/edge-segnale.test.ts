@@ -179,15 +179,27 @@ test("ogni valore degli elenchi della §8.1 passa", () => {
   assert.equal(edgePerSegnale({ raggiungibile: true, health: { hub: { esito: "ok" } } }).hub?.esito, "ok");
 });
 
-test("stringhe ai limiti di DA-Link: versioni a 64, date a 40", () => {
-  const lunga = "1".repeat(200);
-  const e = edgePerSegnale({
+// DA-Link (`dalink/sonde/forma.py`, ramo sonde-integrate) accetta una versione solo se è
+// `^[0-9A-Za-z][0-9A-Za-z.+_-]{0,31}$`: una versione tagliata sarebbe un'altra versione.
+// Stessa regola qui, senza tagliare: troppo lunga o forma storta → null (revisione del 20/10).
+test("versioni e commit con la regola di DA-Link: fino a 32 caratteri, mai tagliati", () => {
+  const giusta = "1".repeat(32);
+  const ok = edgePerSegnale({
     raggiungibile: true,
-    health: { versione_vera: lunga, aggiornamento: { commit_avviato: lunga, commit_tentato: lunga } },
+    health: { versione_vera: giusta, aggiornamento: { commit_avviato: "0.8.121+build_2-a", commit_tentato: giusta } },
   });
-  assert.equal(e.versione_vera?.length, 64);
-  assert.equal(e.aggiornamento?.commit_avviato?.length, 64);
-  assert.equal(e.aggiornamento?.commit_tentato?.length, 64);
+  assert.equal(ok.versione_vera, giusta);
+  assert.equal(ok.aggiornamento?.commit_avviato, "0.8.121+build_2-a");
+  assert.equal(ok.aggiornamento?.commit_tentato, giusta);
+  for (const storta of ["1".repeat(33), "1".repeat(200), ".8.121", "-0.8.121", "+1", "_x", ""]) {
+    const e = edgePerSegnale({
+      raggiungibile: true,
+      health: { versione_vera: storta, aggiornamento: { commit_avviato: storta, commit_tentato: storta } },
+    });
+    assert.equal(e.versione_vera, null, `versione_vera ${JSON.stringify(storta)}`);
+    assert.equal(e.aggiornamento?.commit_avviato, null, `commit_avviato ${JSON.stringify(storta)}`);
+    assert.equal(e.aggiornamento?.commit_tentato, null, `commit_tentato ${JSON.stringify(storta)}`);
+  }
   const data = edgePerSegnale({ raggiungibile: true, health: { hub: { ultimo_ok_il: "2026-10-20T08:00:00.123456+02:00" } } });
   assert.equal(data.hub?.ultimo_ok_il, "2026-10-20T08:00:00.123456+02:00");
 });
@@ -220,12 +232,45 @@ test("risposta che non è un oggetto JSON: non è la sonda, raggiungibile false"
   }
 });
 
-test("blocchi annidati che non sono oggetti → null; disco parziale tiene il numero valido", () => {
+test("blocchi annidati che non sono oggetti → null", () => {
   const e = edgePerSegnale({
     raggiungibile: true,
-    health: { hub: "errore dns", aggiornamento: ["riuscito"], disco: { total_gb: 77, free_gb: Number.NaN } },
+    health: { hub: "errore dns", aggiornamento: ["riuscito"], disco: "77 GB" },
   });
   assert.equal(e.hub, null);
   assert.equal(e.aggiornamento, null);
-  assert.deepEqual(e.disco, { total_gb: 77, free_gb: null });
+  assert.equal(e.disco, null);
+});
+
+// Stesse regole di DA-Link (`forma.py`: `disco`, `intero`, `contatto_hub`), così nessun
+// valore cambia significato attraversando il confine (revisione del 20/10).
+test("disco come in DA-Link: tutti e due i numeri validi, totale > 0, liberi ≤ totale", () => {
+  const d = (disco: unknown) => edgePerSegnale({ raggiungibile: true, health: { disco } }).disco;
+  assert.deepEqual(d({ total_gb: 77, free_gb: 37.2 }), { total_gb: 77, free_gb: 37.2 });
+  assert.deepEqual(d({ total_gb: 77, free_gb: 0 }), { total_gb: 77, free_gb: 0 }, "disco pieno: è proprio il caso da avvisare");
+  assert.deepEqual(d({ total_gb: 77, free_gb: 77 }), { total_gb: 77, free_gb: 77 });
+  assert.equal(d({ total_gb: 77, free_gb: Number.NaN }), null);
+  assert.equal(d({ total_gb: 77 }), null);
+  assert.equal(d({ total_gb: 0, free_gb: 0 }), null);
+  assert.equal(d({ total_gb: 10, free_gb: 11 }), null);
+  assert.equal(d({ total_gb: 2e7, free_gb: 1 }), null, "oltre 10 milioni di GB non è un disco");
+  assert.equal(d({ total_gb: true, free_gb: 1 }), null);
+});
+
+test("interi come in DA-Link: da 0 a un miliardo", () => {
+  const e = (n: unknown) =>
+    edgePerSegnale({ raggiungibile: true, health: { hub: { errori_consecutivi: n }, aggiornamento: { tentativi: n } } });
+  assert.equal(e(1e9).hub?.errori_consecutivi, 1e9);
+  assert.equal(e(1e9).aggiornamento?.tentativi, 1e9);
+  assert.equal(e(1e9 + 1).hub?.errori_consecutivi, null);
+  assert.equal(e(1e9 + 1).aggiornamento?.tentativi, null);
+  assert.equal(e(true).hub?.errori_consecutivi, null);
+});
+
+test("motivo del contatto con l'hub solo se l'esito è «errore», come in DA-Link", () => {
+  const h = (hub: unknown) => edgePerSegnale({ raggiungibile: true, health: { hub } }).hub;
+  assert.equal(h({ esito: "errore", motivo: "tls" })?.motivo, "tls");
+  assert.equal(h({ esito: "ok", motivo: "tls" })?.motivo, null);
+  assert.equal(h({ esito: null, motivo: "tls" })?.motivo, null);
+  assert.equal(h({ esito: "ok", ultimo_errore_motivo: "tls" })?.ultimo_errore_motivo, "tls", "la storia dell'ultimo errore resta");
 });

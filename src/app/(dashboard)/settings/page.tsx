@@ -68,6 +68,7 @@ import { ScanConfigTab } from "@/components/settings/scan-config-tab";
 import { DeviceIdentificationTab } from "@/components/settings/device-identification-tab";
 import { ModulesTab } from "@/components/settings/modules-tab";
 import { UpdatesTab } from "@/components/settings/updates-tab";
+import { PuliziaHostCard } from "@/components/settings/pulizia-host-card";
 import { NotificationsTab } from "@/components/settings/notifications-tab";
 import { SecurityAlertsTab } from "@/components/settings/security-alerts-tab";
 
@@ -1025,11 +1026,14 @@ function SettingsPageInner() {
                   const shortInterval = job.interval_minutes < 720;
                   const riskyCpu = isHeavy && isLargeNet && shortInterval && !!job.enabled;
                   const isRunning = runningJobId === job.id;
+                  // pulizia_host si gestisce solo dalla sua scheda: qui non si accende, non si lancia, non si cancella.
+                  const soloLettura = job.job_type === "pulizia_host";
                   return (
                     <TableRow key={job.id}>
                       <TableCell>
                         <Switch
                           checked={!!job.enabled}
+                          disabled={soloLettura}
                           onCheckedChange={(checked) => toggleJobEnabled(job.id, checked)}
                         />
                       </TableCell>
@@ -1042,6 +1046,11 @@ function SettingsPageInner() {
                             </Badge>
                           )}
                         </div>
+                        {soloLettura && (
+                          <p className="mt-1 text-[13px] text-muted-foreground">
+                            Si gestisce da Impostazioni → Sistema → Pulizia degli host assenti
+                          </p>
+                        )}
                       </TableCell>
                       <TableCell>{network ? `${network.name} (${network.cidr})` : "Tutte"}</TableCell>
                       <TableCell>
@@ -1054,29 +1063,31 @@ function SettingsPageInner() {
                         {job.next_run ? parseDbDate(job.next_run).toLocaleString("it-IT") : "—"}
                       </TableCell>
                       <TableCell>
-                        <div className="flex items-center gap-1">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                            disabled={isRunning}
-                            onClick={() => runJobNow(job.id)}
-                            title="Esegui ora"
-                          >
-                            {isRunning
-                              ? <RefreshCw className="h-4 w-4 animate-spin" />
-                              : <Play className="h-4 w-4" />}
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-destructive/60 hover:text-destructive"
-                            onClick={() => deleteJob(job.id)}
-                            title="Elimina job"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
+                        {!soloLettura && (
+                          <div className="flex items-center gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              disabled={isRunning}
+                              onClick={() => runJobNow(job.id)}
+                              title="Esegui ora"
+                            >
+                              {isRunning
+                                ? <RefreshCw className="h-4 w-4 animate-spin" />
+                                : <Play className="h-4 w-4" />}
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-destructive/60 hover:text-destructive"
+                              onClick={() => deleteJob(job.id)}
+                              title="Elimina job"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        )}
                       </TableCell>
                     </TableRow>
                   );
@@ -1196,6 +1207,8 @@ function SettingsPageInner() {
               </CardContent>
             </Card>
           )}
+
+          {isAdmin && <PuliziaHostCard />}
 
           <Card>
             <CardHeader>

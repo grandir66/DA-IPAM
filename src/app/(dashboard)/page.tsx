@@ -13,6 +13,7 @@ import { getTenantDb, withTenant } from "@/lib/db-tenant";
 import { kpiSicurezza, type KpiSicurezza } from "@/lib/security/kpi-dashboard";
 import { GraficoAccessi } from "@/components/dashboard/grafico-accessi";
 import { ASSENTE_DOPO_GIORNI, condizioneAssente } from "@/lib/hosts/assenti";
+import { contaArchiviati } from "@/lib/hosts/pulizia-archivio";
 import { getIntegrationsOverview, type IntegrationHealth } from "@/lib/integrations/dashboard-health";
 import { getModulesHealth } from "@/lib/modules/health";
 import { MODULE_DESCRIPTORS, resolveModules, type ModuleState } from "@/lib/modules/registry";
@@ -132,6 +133,7 @@ export default async function DashboardPage() {
       .prepare(`SELECT COALESCE(SUM(status = 'offline' AND NOT ${condizioneAssente()}), 0) AS recenti, COALESCE(SUM(${condizioneAssente()}), 0) AS assenti FROM hosts`)
       .get() as { recenti: number; assenti: number },
   );
+  const archiviati = withTenant(tenantCode, () => contaArchiviati());
   const denom = stats.online_hosts + offlineSplit.recenti + stats.unknown_hosts;
   const healthPct = denom > 0 ? Math.round((stats.online_hosts / denom) * 100) : 0;
   const healthColor =
@@ -151,6 +153,7 @@ export default async function DashboardPage() {
         <Indicatore titolo="Host" valore={stats.total_hosts} href="/discovery" />
         <Indicatore titolo="Offline" valore={offlineSplit.recenti} colore="text-destructive" href="/discovery?status=offline" nota={`Offline visti negli ultimi ${ASSENTE_DOPO_GIORNI} giorni`} />
         <Indicatore titolo={`Assenti > ${ASSENTE_DOPO_GIORNI} g`} valore={offlineSplit.assenti} colore="text-muted-foreground" href="/discovery?status=offline" nota={`Offline e non visti da oltre ${ASSENTE_DOPO_GIORNI} giorni: fuori dalla salute`} />
+        <Indicatore titolo="Archiviati" valore={archiviati} colore="text-muted-foreground" href="/settings?tab=sistema#pulizia-host" nota="Archiviati dalla pulizia: si recuperano per 90 giorni" />
         {monitorStats.total > 0 && (
           <Indicatore titolo="Monitorati" valore={`${monitorStats.online}/${monitorStats.total}`} nota={monitorStats.avg_latency !== null ? `latenza media ${Math.round(monitorStats.avg_latency)} ms` : undefined} href="/monitoring/known-hosts" />
         )}

@@ -38,6 +38,9 @@ const EditDeviceDialog = dynamic(() => import("@/components/devices/edit-device-
 const UnisciDialog = dynamic(() => import("@/components/topology/unioni/unisci-dialog").then((m) => ({ default: m.UnisciDialog })), { ssr: false });
 const SeparaDialog = dynamic(() => import("@/components/topology/unioni/separa-dialog").then((m) => ({ default: m.SeparaDialog })), { ssr: false });
 import { LoadError } from "@/components/shared/load-error";
+import { fetchJson } from "@/lib/fetch-json";
+import { dataIpPrecedente, soloData } from "@/lib/hosts/pulizia-testi";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { caricaStato } from "@/components/topology/unioni/api";
 import { parolaCome } from "@/lib/topology/unioni-testi";
 import { TESTI_UNIONI, type StatoDelNodo } from "@/lib/topology/unioni-tipi";
@@ -77,6 +80,7 @@ import {
   Merge,
   Split,
   Workflow,
+  History as IconaStorico,
 } from "lucide-react";
 import { runDeviceAcquisitionScan } from "@/lib/devices/device-scan-client";
 import { toast } from "sonner";
@@ -504,6 +508,52 @@ function SullaMappa({ hostId, isAdmin }: { hostId: number; isAdmin: boolean }) {
         <UnisciDialog open onOpenChange={setUnisciOpen} da={oggetto} nomeDa={stato?.nome ?? oggetto} onFatto={ricarica} />
       )}
       {separaOpen && <SeparaDialog open onOpenChange={setSeparaOpen} oggetto={oggetto} onFatto={ricarica} />}
+    </Section>
+  );
+}
+
+/**
+ * «IP precedenti» (pulizia degli host, piano 2026-10-20, Task 6): gli indirizzi che il MAC di questo host ha avuto
+ * prima, dallo storico e dall'archivio. Non compare se non ce ne sono. Nello storico la data è l'ARRIVO del MAC su
+ * quell'IP, non la partenza: per questo la colonna si chiama «Ultima data» e ogni riga dice cosa significa.
+ */
+function IpPrecedenti({ hostId }: { hostId: number }) {
+  const [righe, setRighe] = useState<Array<{ ip: string; fino_al: string; fonte: "storico" | "archivio" }> | null>(null);
+  const [errore, setErrore] = useState<string | null>(null);
+  const [tentativo, setTentativo] = useState(0);
+
+  useEffect(() => {
+    let vivo = true;
+    fetchJson<{ righe: Array<{ ip: string; fino_al: string; fonte: "storico" | "archivio" }> }>(`/api/hosts/${hostId}/ip-precedenti`)
+      .then((r) => {
+        if (!vivo) return;
+        if (r.ok) { setRighe(r.data.righe); setErrore(null); } else setErrore(r.message);
+      })
+      .catch(() => { if (vivo) setErrore("Server non raggiungibile"); });
+    return () => { vivo = false; };
+  }, [hostId, tentativo]);
+
+  if (errore === null && (righe === null || righe.length === 0)) return null;
+  return (
+    <Section icon={<IconaStorico className="h-4 w-4" />} title="IP precedenti">
+      {errore !== null ? (
+        <LoadError what="gli IP precedenti" message={errore} onRetry={() => setTentativo((t) => t + 1)} />
+      ) : (
+        <Table>
+          <TableHeader>
+            <TableRow><TableHead>IP</TableHead><TableHead>Ultima data</TableHead><TableHead>Da dove</TableHead></TableRow>
+          </TableHeader>
+          <TableBody>
+            {(righe ?? []).map((r) => (
+              <TableRow key={r.ip}>
+                <TableCell className="font-mono text-[13px]">{r.ip}</TableCell>
+                <TableCell className="text-[13px]">{dataIpPrecedente(r.fonte, soloData(r.fino_al))}</TableCell>
+                <TableCell className="text-[13px]">{r.fonte}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
     </Section>
   );
 }
@@ -1231,6 +1281,8 @@ export default function ObjectDetailPage() {
           );
         })()}
       </Section>
+
+      {Number.isFinite(hostId) && hostId > 0 && <IpPrecedenti hostId={hostId} />}
 
       {/* ─── LibreNMS (se configurato) ─── */}
       {librenms?.configured && (

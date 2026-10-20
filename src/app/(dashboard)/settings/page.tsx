@@ -79,7 +79,7 @@ const JOB_TYPE_LABELS: Record<string, string> = {
   arp_poll: "ARP Poll",
   dns_resolve: "DNS Resolve",
   known_host_check: "Monitoraggio host registrati (ICMP)",
-  cleanup: "Pulizia Host",
+  cleanup: "Pulizia tabelle MAC",
   anomaly_check: "Rilevamento anomalie",
   librenms_sync: "Sincronizzazione LibreNMS",
   vuln_sync: "Sincronizzazione vulnerability scanner",
@@ -954,7 +954,7 @@ function SettingsPageInner() {
                         <SelectItem value="arp_poll">ARP Poll (passivo via SNMP switch)</SelectItem>
                         <SelectItem value="snmp_scan">SNMP Scan</SelectItem>
                         <SelectItem value="dns_resolve">DNS Resolve</SelectItem>
-                        <SelectItem value="cleanup">Pulizia Host</SelectItem>
+                        <SelectItem value="cleanup">Pulizia tabelle MAC</SelectItem>
                         <SelectItem value="ping_sweep">Ping Sweep (scan completo subnet)</SelectItem>
                         <SelectItem value="fast_scan">Scoperta veloce subnet</SelectItem>
                         <SelectItem value="nmap_scan">Nmap Scan</SelectItem>

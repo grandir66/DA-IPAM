@@ -6111,26 +6111,6 @@ export function getRecentActivity(limit: number = 10): ScanHistory[] {
   ).all(limit) as ScanHistory[];
 }
 
-export function cleanupStaleHosts(daysUntilStale: number, daysUntilDelete: number): { flagged: number; deleted: number } {
-  // Fix C2 (fase 4): un host classificato a mano (classification_manual=1) non
-  // deve mai essere sovrascritto automaticamente — nemmeno col sentinel 'stale'.
-  // Senza questo filtro, un host bloccato dall'utente che va offline perde il
-  // valore scelto E resta con classification_manual=1 (nessuno lo ripara più,
-  // perché quel flag è pensato per proteggerlo, non per segnalare un problema).
-  const flagged = db().prepare(
-    `UPDATE hosts SET classification = 'stale', updated_at = datetime('now')
-     WHERE status = 'offline' AND last_seen < datetime('now', '-' || ? || ' days')
-     AND classification != 'stale' AND classification_manual = 0`
-  ).run(daysUntilStale);
-
-  const deleted = db().prepare(
-    `DELETE FROM hosts
-     WHERE classification = 'stale' AND last_seen < datetime('now', '-' || ? || ' days')`
-  ).run(daysUntilDelete);
-
-  return { flagged: flagged.changes, deleted: deleted.changes };
-}
-
 export function globalSearch(query: string, limit: number = 20): {
   hosts: Host[];
   networks: Network[];

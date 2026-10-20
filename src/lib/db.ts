@@ -5505,29 +5505,6 @@ export function getRecentActivity(limit: number = 10): ScanHistory[] {
 }
 
 // ========================
-// Cleanup
-// ========================
-
-export function cleanupStaleHosts(daysUntilStale: number, daysUntilDelete: number): { flagged: number; deleted: number } {
-  // Fix C2 (fase 4): un host classificato a mano (classification_manual=1) non
-  // deve mai essere sovrascritto automaticamente — nemmeno col sentinel 'stale'.
-  // Vedi db-tenant.ts::cleanupStaleHosts per la spiegazione completa (regola 12:
-  // questa è la facade, stessa logica).
-  const flagged = getDb().prepare(
-    `UPDATE hosts SET classification = 'stale', updated_at = datetime('now')
-     WHERE status = 'offline' AND last_seen < datetime('now', '-' || ? || ' days')
-     AND classification != 'stale' AND classification_manual = 0`
-  ).run(daysUntilStale);
-
-  const deleted = getDb().prepare(
-    `DELETE FROM hosts
-     WHERE classification = 'stale' AND last_seen < datetime('now', '-' || ? || ' days')`
-  ).run(daysUntilDelete);
-
-  return { flagged: flagged.changes, deleted: deleted.changes };
-}
-
-// ========================
 // Status History Aggregation (for charts)
 // ========================
 

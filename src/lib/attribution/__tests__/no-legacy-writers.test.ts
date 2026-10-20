@@ -50,7 +50,7 @@ const ALLOWED_FILES: Record<string, string> = {
     "corrente. Tutti gli altri writer di questo file sono stati ritirati nel Task 2.",
 
   "src/lib/db-tenant.ts":
-    "Tre scritture dirette, tutte legittime e NON automatiche/di scan, distinte " +
+    "Due scritture dirette, tutte legittime e NON automatiche/di scan, distinte " +
     "dal motore v2: " +
     "(1) upsertHost — pass-through generico: se il CHIAMANTE fornisce esplicitamente " +
     "input.classification (es. mdm-sync.ts per device MDM riconosciuti come " +
@@ -60,13 +60,10 @@ const ALLOWED_FILES: Record<string, string> = {
     "(2) updateHost — correzione manuale dell'utente (scheda host): imposta anche " +
     "classification_manual=1, è la funzione che rende un host immune a future " +
     "proiezioni automatiche (invariante sacro del piano). " +
-    "(3) cleanupStaleHosts — scrive il sentinel 'stale' in classification per host " +
-    "offline da tempo: non è una classificazione di tipo device, è un marcatore di " +
-    "ciclo di vita per la pipeline di pulizia/cancellazione, semanticamente estraneo " +
-    "all'attribuzione.",
+    "(La terza, cleanupStaleHosts, è stata tolta il 20/10: P1 del piano di pulizia.)",
 
   "src/lib/db.ts":
-    "Facade di db-tenant.ts (fallback DEFAULT tenant): stesse tre scritture " +
+    "Facade di db-tenant.ts (fallback DEFAULT tenant): stesse due scritture " +
     "legittime e per lo stesso motivo — vedi src/lib/db-tenant.ts.",
 
   "src/lib/classification/persist.ts":

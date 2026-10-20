@@ -5,7 +5,6 @@ import {
   getNetworkDevices,
   getNetworkRouterId,
   getNetworkDeviceById,
-  cleanupStaleHosts,
   getHostsByNetwork,
   getKnownHosts,
   recordHostHeartbeat,
@@ -1363,23 +1362,23 @@ export async function runDnsResolve(
 }
 
 async function runCleanup(configStr: string): Promise<void> {
-  let config: { days_until_stale?: number; days_until_delete?: number; mac_port_retention_days?: number };
+  // days_until_stale / days_until_delete possono restare nelle config vecchie: si ignorano.
+  let config: { mac_port_retention_days?: number };
   try {
     config = JSON.parse(configStr || "{}");
   } catch {
     console.error("[Cleanup] Configurazione JSON non valida, uso valori predefiniti:", configStr);
     config = {};
   }
-  const daysUntilStale = config.days_until_stale || 30;
-  const daysUntilDelete = config.days_until_delete || 90;
+  // P1 del piano 2026-10-20 (Riccardo): questo job NON tocca più gli host. Prima li
+  // marcava 'stale' a 30 giorni e li cancellava a 90, senza le esclusioni della nuova
+  // pulizia (src/lib/hosts/pulizia-*), che è l'unica a gestirli. Le soglie
+  // days_until_stale / days_until_delete nelle config già salvate non hanno più effetto.
   // Retention mac_port_entries in giorni (topologia fase 2, spec §10.5). Fino
   // alla v0.2.651 erano 24 ore perché ogni giro riscriveva l'intera MAC table;
   // ora le righe sono una per (apparato, MAC, porta), aggiornate a ogni giro:
   // il volume non cresce coi giri, e una riga vecchia dice «visto l'ultima volta».
   const macPortRetentionDays = config.mac_port_retention_days ?? MAC_PORT_RETENTION_DAYS;
-
-  const result = cleanupStaleHosts(daysUntilStale, daysUntilDelete);
-  console.info(`[Cleanup] ${result.flagged} host segnalati stale, ${result.deleted} eliminati`);
 
   try {
     const deleted = cleanupOldMacPortEntries(macPortRetentionDays);

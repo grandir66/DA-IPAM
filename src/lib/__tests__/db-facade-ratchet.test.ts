@@ -27,7 +27,7 @@ import ts from "typescript";
  * 267 dalla 2d credenziali (T17): via getHostDetectCredentialsEnriched e
  * deleteHostDetectCredential, rimaste senza chiamanti.
  */
-const SOGLIA = 263; // 2g (T26): via le quattro funzioni delle catene vecchie
+const SOGLIA = 262; // P1 (20/10): via cleanupStaleHosts (prima 263). 2g (T26): via le quattro funzioni delle catene vecchie
 
 /** Funzioni che vivono in db-tenant.ts: db.ts le riesporta e basta. */
 const SPOSTATE = [

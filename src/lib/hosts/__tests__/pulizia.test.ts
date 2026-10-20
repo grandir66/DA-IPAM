@@ -23,7 +23,7 @@ let prossimo = 0;
 function h(campi: Partial<HostPerPulizia> & { ip: string }): HostPerPulizia {
   prossimo += 1;
   return {
-    id: prossimo, networkId: 1, mac: null, nome: campi.ip, status: "offline",
+    id: prossimo, networkId: 1, mac: null, nome: campi.nomeVero ?? campi.ip, nomeVero: null, status: "offline",
     lastSeen: null, firstSeen: null, createdAt: null, escluso: null, ...campi,
   };
 }
@@ -177,6 +177,74 @@ test("cambio IP con una data mancante (dell'offline o dell'online): non si archi
   assert.deepEqual(idCandidati([
     h({ ip: "10.0.15.2", mac: mac2, status: "online", lastSeen: null }),
     h({ ip: "10.0.15.1", mac: mac2, lastSeen: fa(2) }),
+  ]), []);
+});
+
+/**
+ * Riccardo, 20/10, dopo la prova a vuoto sull'hub (tenant 70791): il MAC 82:FA:6F:7D:6D:54 stava su 14 host
+ * della stessa /24; l'unico online era un router MikroTik che risponde in proxy ARP, gli offline macchine
+ * diverse (VEEAM-PX-02, VEEAM-PX-03, una NVIDIA…). La regola 3 ne archiviava 11 subito «ora 192.168.15.155».
+ */
+test("router in proxy ARP: 14 host con lo stesso MAC nella rete, nessun cambio IP; oltre 60 giorni solo «assente»", () => {
+  const mac = "82:FA:6F:7D:6D:54";
+  const router = h({ ip: "192.168.15.155", mac, nomeVero: "MikroTik", status: "online", lastSeen: fa(0) });
+  const nomi = ["VEEAM-PX-02", "VEEAM-PX-03", "nvidia-jetson", null, null, null, null, null, null, null, null, null, null];
+  const offline = nomi.map((nomeVero, i) => h({
+    ip: `192.168.15.${20 + i}`, mac: i % 2 === 0 ? mac : "82-fa-6f-7d-6d-54", nomeVero, lastSeen: fa(i < 4 ? 100 : 5),
+  }));
+  const esito = selezionaCandidati([router, ...offline], ADESSO);
+  assert.deepEqual(esito.candidati.filter((c) => c.motivo === "cambio_ip"), [], "nessun «ora 192.168.15.155»");
+  assert.deepEqual(esito.candidati.map((c) => [c.ip, c.motivo]), offline.slice(0, 4).map((x) => [x.ip, "assente"]));
+  assert.deepEqual(esito.esclusi, [], "cadono alla regola dei 60 giorni, non sono esclusi");
+});
+
+test("coppia vera, caso (a): due «MLAG-SW-SLAVE» nella stessa rete, l'offline più vecchio → cambio IP", () => {
+  const mac = "AA:BB:CC:00:C0:01";
+  const online = h({ ip: "10.0.30.12", mac, nomeVero: "MLAG-SW-SLAVE", status: "online", lastSeen: fa(0) });
+  const vecchio = h({ ip: "10.0.30.11", mac, nomeVero: "MLAG-SW-SLAVE", lastSeen: fa(3) });
+  assert.deepEqual(selezionaCandidati([online, vecchio], ADESSO).candidati.map((c) => [c.id, c.motivo, c.nome, c.dettaglio]),
+    [[vecchio.id, "cambio_ip", "MLAG-SW-SLAVE", "ora 10.0.30.12"]]);
+  // lo stesso nome scritto con maiuscole e spazi diversi è lo stesso nome
+  const online2 = h({ ip: "10.0.31.12", mac: "AA:BB:CC:00:C0:02", nomeVero: "MLAG-SW-SLAVE", status: "online", lastSeen: fa(0) });
+  const vecchio2 = h({ ip: "10.0.31.11", mac: "AA:BB:CC:00:C0:02", nomeVero: " mlag-sw-slave ", lastSeen: fa(3) });
+  assert.deepEqual(idCandidati([online2, vecchio2]), [vecchio2.id]);
+});
+
+test("coppia vera, caso (b): l'offline senza nome (vale l'IP), l'online «monitor.domarc.it» → cambio IP", () => {
+  const mac = "AA:BB:CC:00:C0:03";
+  const online = h({ ip: "10.0.32.40", mac, nomeVero: "monitor.domarc.it", status: "online", lastSeen: fa(0) });
+  const vecchio = h({ ip: "10.0.32.39", mac, lastSeen: fa(3) });
+  assert.equal(vecchio.nome, "10.0.32.39");
+  assert.deepEqual(selezionaCandidati([online, vecchio], ADESSO).candidati.map((c) => [c.id, c.motivo, c.nome]),
+    [[vecchio.id, "cambio_ip", "10.0.32.39"]]);
+});
+
+test("coppia con due nomi veri diversi: non è un cambio IP, resta ai 60 giorni (e non è un escluso)", () => {
+  const mac = "AA:BB:CC:00:C0:04";
+  const online = h({ ip: "10.0.33.1", mac, nomeVero: "MikroTik", status: "online", lastSeen: fa(0) });
+  const recente = h({ ip: "10.0.33.2", mac, nomeVero: "VEEAM-PX-02", lastSeen: fa(3) });
+  assert.deepEqual(selezionaCandidati([online, recente], ADESSO), { candidati: [], esclusi: [] });
+  const mac2 = "AA:BB:CC:00:C0:05";
+  const online2 = h({ ip: "10.0.34.1", mac: mac2, nomeVero: "MikroTik", status: "online", lastSeen: fa(0) });
+  const vecchio = h({ ip: "10.0.34.2", mac: mac2, nomeVero: "VEEAM-PX-02", lastSeen: fa(100) });
+  assert.deepEqual(selezionaCandidati([online2, vecchio], ADESSO).candidati.map((c) => [c.id, c.motivo]), [[vecchio.id, "assente"]]);
+});
+
+test("tre host con lo stesso MAC nella rete (uno online, due offline con lo stesso nome): niente cambio IP", () => {
+  const mac = "AA:BB:CC:00:C0:06";
+  assert.deepEqual(idCandidati([
+    h({ ip: "10.0.35.3", mac, nomeVero: "nas-backup", status: "online", lastSeen: fa(0) }),
+    h({ ip: "10.0.35.1", mac, nomeVero: "nas-backup", lastSeen: fa(3) }),
+    h({ ip: "10.0.35.2", mac, nomeVero: "nas-backup", lastSeen: fa(4) }),
+  ]), []);
+});
+
+test("coppia online + unknown, o due offline: non è la coppia della regola 3", () => {
+  const mac = "AA:BB:CC:00:C0:07";
+  assert.deepEqual(idCandidati([
+    h({ ip: "10.0.36.2", mac, status: "online", lastSeen: fa(0) }),
+    h({ ip: "10.0.36.1", mac, status: "unknown", lastSeen: fa(3) }),
+    h({ ip: "10.0.36.3", mac, lastSeen: fa(3) }),
   ]), []);
 });
 

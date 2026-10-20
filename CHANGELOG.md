@@ -10,8 +10,9 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 - **Pulizia degli host assenti** (Impostazioni → Sistema, solo admin; ADR 0022). Richiesta di Riccardo: sull'hub 178
   host offline, molti non visti da mesi, gonfiavano liste e conteggi. Si archiviano gli host offline da oltre 60
-  giorni e, subito, il vecchio IP di un MAC che ha cambiato indirizzo nella stessa rete; dopo 90 giorni d'archivio si
-  cancellano. Esclusi: apparati, host monitorati, nome scritto a mano, classificazione a mano, asset, credenziali,
+  giorni e, subito, il vecchio IP di un MAC che ha cambiato indirizzo nella stessa rete, solo se il MAC sta su due host
+  esatti con nomi coerenti (sull'hub un router in proxy ARP aveva lo stesso MAC di 13 macchine diverse); dopo 90 giorni
+  d'archivio si cancellano. Esclusi: apparati, host monitorati, nome scritto a mano, classificazione a mano, asset, credenziali,
   unioni a mano, multihomed, sessioni remote registrate, host recuperati a mano, MAC su più host online. Anteprima coi
   nomi e il motivo, «Applica» col numero scritto, recupero con un clic (torna l'identità, non lo storico), registro
   JSONL di ogni operazione (`data/audit/pulizia-host-*.jsonl`, 400 giorni).

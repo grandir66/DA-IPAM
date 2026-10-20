@@ -52,7 +52,7 @@ interface RigaHost {
   network_id: number;
   ip: string;
   mac: string | null;
-  nome: string;
+  nome_vero: string | null;
   status: HostPerPulizia["status"];
   last_seen: string | null;
   first_seen: string | null;
@@ -65,7 +65,7 @@ export function caricaHostPerPulizia(): HostPerPulizia[] {
   controllaTabelle(d);
   const righe = d.prepare(`
     SELECT h.id, h.network_id, h.ip, h.mac,
-      COALESCE(NULLIF(TRIM(h.custom_name), ''), NULLIF(TRIM(h.hostname), ''), NULLIF(TRIM(h.dns_reverse), ''), h.ip) AS nome,
+      COALESCE(NULLIF(TRIM(h.custom_name), ''), NULLIF(TRIM(h.hostname), ''), NULLIF(TRIM(h.dns_reverse), '')) AS nome_vero,
       COALESCE(h.status, 'unknown') AS status,
       h.last_seen, h.first_seen, h.created_at,
       CASE
@@ -85,7 +85,7 @@ export function caricaHostPerPulizia(): HostPerPulizia[] {
     FROM hosts h
   `).all() as RigaHost[];
   return righe.map((r) => ({
-    id: r.id, networkId: r.network_id, ip: r.ip, mac: r.mac, nome: r.nome, status: r.status,
+    id: r.id, networkId: r.network_id, ip: r.ip, mac: r.mac, nome: r.nome_vero ?? r.ip, nomeVero: r.nome_vero, status: r.status,
     lastSeen: r.last_seen, firstSeen: r.first_seen, createdAt: r.created_at, escluso: r.escluso,
   }));
 }

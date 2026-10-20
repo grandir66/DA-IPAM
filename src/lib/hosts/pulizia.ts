@@ -12,6 +12,15 @@
  *    stesso MAC c'è UN solo host online, visto dopo l'ultima volta del vecchio. Con due o più online (router,
  *    firewall, multihomed che rispondono per più IP) il gruppo non si tocca.
  *
+ * Decisione di Riccardo del 20/10, dopo la prova a vuoto sull'hub (tenant 70791): il MAC 82:FA:6F:7D:6D:54 stava
+ * su 14 host della stessa /24; l'unico online era un router MikroTik che risponde in proxy ARP, gli offline
+ * macchine diverse (VEEAM-PX-02, VEEAM-PX-03, una NVIDIA…), e la regola 3 ne archiviava 11 subito «ora
+ * 192.168.15.155». Da allora la regola 3 vale solo per una COPPIA: nel gruppo (rete, MAC) esattamente due host,
+ * uno online e uno offline più vecchio, con nomi coerenti. Il nome è quello vero (`nomeVero`: custom_name, poi
+ * hostname, poi dns_reverse; mai l'IP di ripiego); due nomi sono diversi solo se ci sono tutti e due e non
+ * coincidono a meno di spazi e maiuscole. Un gruppo che non è una coppia così torna alla regola 1 (60 giorni):
+ * non è un escluso. Il blocco del MAC su più host online, qui sotto, resta com'è.
+ *
  * Due strette del controllore (revisione del 20/10, prudenza sui gateway con un'interfaccia per VLAN: uno
  * switch L3 o un router usa lo stesso MAC su tutte le sue reti):
  * - un MAC presente su due o più host online, in tutto il tenant, blocca l'intero gruppo: nessun suo host
@@ -35,7 +44,10 @@ export interface HostPerPulizia {
   networkId: number;
   ip: string;
   mac: string | null;
+  /** Il nome da mostrare: il nome vero, o l'IP se non ce n'è. */
   nome: string;
+  /** Il nome vero (custom_name, hostname, dns_reverse), null se l'host non ne ha: l'IP di `nome` non conta. */
+  nomeVero: string | null;
   status: "online" | "offline" | "unknown";
   lastSeen: string | null;
   firstSeen: string | null;
@@ -112,9 +124,16 @@ function macSuPiuOnline(host: HostPerPulizia[]): Set<number> {
   return bloccati;
 }
 
+/** Due nomi veri diversi: tutti e due presenti e diversi a meno di spazi e maiuscole. */
+function nomiDiversi(a: string | null, b: string | null): boolean {
+  const pulito = (n: string | null) => (n === null ? "" : n.trim().toLowerCase());
+  return pulito(a) !== "" && pulito(b) !== "" && pulito(a) !== pulito(b);
+}
+
 /**
- * Regola 3, dentro la stessa rete: per ogni offline del gruppo (rete, MAC), l'IP dell'unico online se il vecchio
- * è stato visto prima di lui. I gruppi bloccati da `macSuPiuOnline` li scarta il chiamante.
+ * Regola 3, dentro la stessa rete e solo per una coppia (decisione di Riccardo del 20/10): nel gruppo (rete, MAC)
+ * esattamente due host, uno online e uno offline visto prima di lui, senza nomi veri diversi → l'IP dell'online.
+ * I gruppi bloccati da `macSuPiuOnline` li scarta il chiamante.
  */
 function cambiIp(host: HostPerPulizia[]): Map<number, string> {
   const esito = new Map<number, string>();
@@ -123,16 +142,13 @@ function cambiIp(host: HostPerPulizia[]): Map<number, string> {
     return k === null ? null : `${x.networkId}/${k}`;
   });
   for (const g of gruppi.values()) {
-    const online = g.filter((x) => x.status === "online");
-    if (online.length !== 1) continue;
-    const nuovo = online[0];
+    if (g.length !== 2) continue;
+    const nuovo = g.find((x) => x.status === "online");
+    const vecchio = g.find((x) => x.status === "offline");
+    if (!nuovo || !vecchio || nomiDiversi(nuovo.nomeVero, vecchio.nomeVero)) continue;
     const vistoNuovo = istante(nuovo.lastSeen);
-    if (vistoNuovo === null) continue;
-    for (const vecchio of g) {
-      if (vecchio.status !== "offline") continue;
-      const vistoVecchio = istante(vecchio.lastSeen);
-      if (vistoVecchio !== null && vistoVecchio < vistoNuovo) esito.set(vecchio.id, nuovo.ip);
-    }
+    const vistoVecchio = istante(vecchio.lastSeen);
+    if (vistoNuovo !== null && vistoVecchio !== null && vistoVecchio < vistoNuovo) esito.set(vecchio.id, nuovo.ip);
   }
   return esito;
 }

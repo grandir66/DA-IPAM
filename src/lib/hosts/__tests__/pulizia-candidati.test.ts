@@ -163,21 +163,22 @@ test("il caricatore: nome da hostname, poi IP; date e stato come stanno nel DB",
     const grezzo = d.prepare("SELECT last_seen, first_seen, created_at FROM hosts WHERE id = ?").get(conNome) as
       { last_seen: string; first_seen: string; created_at: string };
     assert.deepEqual(a, {
-      id: conNome, networkId: rete.id, ip: `${rete.prefisso}.40`, mac: "AA:BB:CC:00:11:22", nome: "pc-contabilita", status: "offline",
+      id: conNome, networkId: rete.id, ip: `${rete.prefisso}.40`, mac: "AA:BB:CC:00:11:22", nome: "pc-contabilita", nomeVero: "pc-contabilita", status: "offline",
       lastSeen: grezzo.last_seen, firstSeen: grezzo.first_seen, createdAt: grezzo.created_at, escluso: null,
     });
     const b = tutti.find((x) => x.id === senzaNome)!;
     assert.equal(b.nome, `${rete.prefisso}.41`);
+    assert.equal(b.nomeVero, null, "l'IP di ripiego non è un nome vero");
     assert.equal(b.status, "unknown");
   });
 });
 
-test("cambio IP sul DB: MAC scritti AA:BB:… e aa-bb-…, il vecchio IP candidato a 2 giorni", () => {
+test("cambio IP sul DB: MAC scritti AA:BB:… e aa-bb-…, il vecchio IP senza nome candidato a 2 giorni", () => {
   withTenant(T, () => {
     const d = getTenantDb(T);
     const rete = nuovaRete(d);
-    const nuovo = host(d, rete.id, `${rete.prefisso}.51`, { status: "online", giorni: 0, mac: "AA:BB:CC:00:66:0F" });
-    const vecchio = host(d, rete.id, `${rete.prefisso}.50`, { giorni: 2, mac: "aa-bb-cc-00-66-0f" });
+    const nuovo = host(d, rete.id, `${rete.prefisso}.51`, { status: "online", giorni: 0, mac: "AA:BB:CC:00:66:0F", hostname: "monitor.domarc.it" });
+    const vecchio = host(d, rete.id, `${rete.prefisso}.50`, { giorni: 2, mac: "aa-bb-cc-00-66-0f", hostname: null });
     const esito = candidatiPulizia();
     const c = esito.candidati.find((x) => x.id === vecchio);
     assert.ok(c, "il vecchio IP è candidato");
@@ -187,11 +188,23 @@ test("cambio IP sul DB: MAC scritti AA:BB:… e aa-bb-…, il vecchio IP candida
   });
 });
 
+test("cambio IP sul DB: due hostname diversi con lo stesso MAC (router in proxy ARP) → nessun cambio IP", () => {
+  withTenant(T, () => {
+    const d = getTenantDb(T);
+    const rete = nuovaRete(d);
+    host(d, rete.id, `${rete.prefisso}.155`, { status: "online", giorni: 0, mac: "82:FA:6F:7D:6D:54", hostname: "MikroTik" });
+    const veeam = host(d, rete.id, `${rete.prefisso}.20`, { giorni: 2, mac: "82-fa-6f-7d-6d-54", hostname: "VEEAM-PX-02" });
+    const esito = candidatiPulizia();
+    assert.ok(!esito.candidati.some((x) => x.id === veeam), "non sparisce «ora .155»");
+    assert.ok(!esito.esclusi.some((x) => x.id === veeam));
+  });
+});
+
 test("cambio IP di un vecchio IP con credenziali: fra gli esclusi, non fra i candidati", () => {
   withTenant(T, () => {
     const d = getTenantDb(T);
     const rete = nuovaRete(d);
-    host(d, rete.id, `${rete.prefisso}.61`, { status: "online", giorni: 0, mac: "AA:BB:CC:00:77:1A" });
+    host(d, rete.id, `${rete.prefisso}.61`, { status: "online", giorni: 0, mac: "AA:BB:CC:00:77:1A", hostname: "pc-60" });
     const vecchioIp = `${rete.prefisso}.60`;
     const vecchio = host(d, rete.id, vecchioIp, { giorni: 2, mac: "aa-bb-cc-00-77-1a" });
     LEGAMI.find(([p]) => p === "credenziali")![1](d, vecchio, vecchioIp);

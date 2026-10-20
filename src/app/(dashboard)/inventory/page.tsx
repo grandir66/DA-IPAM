@@ -498,7 +498,7 @@ export default function InventoryPage() {
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <Table>
+              <Table fissa>
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-10">

@@ -36,6 +36,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
+import { ScorrimentoTabella } from "@/components/ui/table";
 import { Pagination } from "@/components/shared/pagination";
 import { SkeletonTable } from "@/components/shared/skeleton-table";
 import { ADSetupGuideDialog } from "@/components/shared/ad-setup-guide-dialog";
@@ -1233,7 +1234,7 @@ function PaginaActiveDirectory() {
                       <span className="text-xs text-muted-foreground">Solo logon negli ultimi 90 giorni: {computersTotal} di {selectedIntegration.computers_count}</span>
                     )}
                   </div>
-                  <div className="border rounded-lg overflow-hidden">
+                  <ScorrimentoTabella className="border rounded-lg">
                     <table className="w-full text-sm">
                       <thead className="bg-muted/50">
                         <tr>
@@ -1285,7 +1286,7 @@ function PaginaActiveDirectory() {
                         )}
                       </tbody>
                     </table>
-                  </div>
+                  </ScorrimentoTabella>
                   <div className="mt-4">
                     <Pagination
                       page={computersPage}
@@ -1317,7 +1318,7 @@ function PaginaActiveDirectory() {
                       <span className="text-xs text-muted-foreground">Solo logon negli ultimi 90 giorni: {usersTotal} di {selectedIntegration.users_count}</span>
                     )}
                   </div>
-                  <div className="border rounded-lg overflow-hidden">
+                  <ScorrimentoTabella className="border rounded-lg">
                     <table className="w-full text-sm">
                       <thead className="bg-muted/50">
                         <tr>
@@ -1363,7 +1364,7 @@ function PaginaActiveDirectory() {
                         )}
                       </tbody>
                     </table>
-                  </div>
+                  </ScorrimentoTabella>
                   <div className="mt-4">
                     <Pagination
                       page={usersPage}
@@ -1385,7 +1386,7 @@ function PaginaActiveDirectory() {
                       className="max-w-sm"
                     />
                   </div>
-                  <div className="border rounded-lg overflow-hidden">
+                  <ScorrimentoTabella className="border rounded-lg">
                     <table className="w-full text-sm">
                       <thead className="bg-muted/50">
                         <tr>
@@ -1417,7 +1418,7 @@ function PaginaActiveDirectory() {
                         )}
                       </tbody>
                     </table>
-                  </div>
+                  </ScorrimentoTabella>
                   <div className="mt-4">
                     <Pagination
                       page={groupsPage}
@@ -1452,7 +1453,7 @@ function PaginaActiveDirectory() {
                           className="max-w-sm"
                         />
                       </div>
-                      <div className="border rounded-lg overflow-hidden">
+                      <ScorrimentoTabella className="border rounded-lg">
                         <table className="w-full text-sm">
                           <thead className="bg-muted/50">
                             <tr>
@@ -1491,7 +1492,7 @@ function PaginaActiveDirectory() {
                             )}
                           </tbody>
                         </table>
-                      </div>
+                      </ScorrimentoTabella>
                       <div className="mt-4">
                         <Pagination
                           page={dhcpPage}

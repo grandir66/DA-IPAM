@@ -41,17 +41,19 @@ import { ScanProgress } from "@/components/shared/scan-progress";
 import { SubnetScheduleCard } from "@/components/networks/subnet-schedule-card";
 import { SubnetEdgeScanPanel } from "@/components/networks/subnet-edge-scan-panel";
 import { AttributionPreviewDialog } from "@/components/networks/attribution-preview-dialog";
-import { ArrowLeft, Scan, Download, LayoutGrid, List, Pencil, RefreshCw, CheckCircle2, Cpu, ExternalLink, X, Plus, Server, Sparkles, Trash2, UserCheck, UserX, Key, PlusCircle, Loader2, Activity, Radar, Layers, Tags } from "lucide-react";
+import { ArrowLeft, Scan, Download, LayoutGrid, List, Pencil, RefreshCw, CheckCircle2, Cpu, ExternalLink, X, Plus, Server, Sparkles, Trash2, UserCheck, UserX, Key, PlusCircle, Loader2, Activity, Radar, Layers, Tags, Clock } from "lucide-react";
 import { toast } from "sonner";
 import type { Network, Host, NetworkDevice, ScanProgress as ScanProgressType } from "@/types";
 import { cn, hostOpenPortsToFullLabel } from "@/lib/utils";
 
 /** Altezza uniforme per tutti i pulsanti della toolbar azioni subnet. */
 const ACTION_BTN = "h-8 min-h-8 px-2.5 text-xs font-medium shrink-0";
+// Testata compatta (Riccardo, 20/10): i gruppi d'azione stanno in linea, etichetta a
+// sinistra e pulsanti a fianco; prima erano quattro riquadri alti ~280 px sopra la tabella.
 const ACTION_PANEL =
-  "rounded-lg border-2 border-primary/45 bg-primary/5 px-2.5 pt-1.5 pb-1.5 min-w-[min(100%,14rem)] flex-1 sm:flex-none shadow-sm flex flex-col";
+  "rounded-md border border-primary/45 bg-primary/5 px-2 py-1 flex items-center gap-1.5 flex-wrap";
 const ACTION_PANEL_TITLE =
-  "text-[11px] font-bold uppercase tracking-wide text-primary leading-tight mb-1.5";
+  "text-[11px] font-bold uppercase tracking-wide text-primary leading-tight whitespace-nowrap mr-0.5";
 import {
   DEVICE_CLASSIFICATIONS_ORDERED,
   getClassificationLabel,
@@ -125,18 +127,17 @@ function formatPhaseLastRun(iso: string): string {
 
 /** Riga di stato sotto ciascun pulsante fase (§6.2): "mai eseguita" / "il DD/MM HH:mm" [+ badge "obsoleta"]. */
 function PhaseStatusLine({ phase }: { phase: ScanPhasesResponse["phases"][number] | null }) {
-  if (!phase?.last_run) {
-    return <p className="text-[10px] text-muted-foreground leading-snug px-0.5">mai eseguita</p>;
-  }
+  // Testata compatta (20/10): la data dell'ultima esecuzione nel suggerimento, «obsoleta» resta a vista.
+  const quando = phase?.last_run ? `Ultima esecuzione: ${formatPhaseLastRun(phase.last_run)}` : "Mai eseguita";
   return (
-    <p className="text-[10px] text-muted-foreground leading-snug px-0.5 flex items-center gap-1">
-      {formatPhaseLastRun(phase.last_run)}
-      {phase.stale && (
+    <span className="inline-flex items-center gap-0.5 text-muted-foreground" title={quando} aria-label={quando}>
+      <Clock className={cn("h-3 w-3", !phase?.last_run && "opacity-40")} />
+      {phase?.stale && (
         <Badge variant="outline" className="text-[9px] leading-none py-0 px-1 h-3.5">
           obsoleta
         </Badge>
       )}
-    </p>
+    </span>
   );
 }
 
@@ -1018,6 +1019,18 @@ export function NetworkDetailClient({
             <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-lg font-bold tracking-tight leading-tight">{network.name}</h1>
               <Badge variant="secondary" className="font-mono text-xs py-0">{network.cidr}</Badge>
+              {/* Contatori accanto al titolo (testata compatta, 20/10) */}
+              <span className="text-xs text-muted-foreground">
+                <span className="font-semibold text-foreground">{hosts.length}</span> host
+                {" · "}<span className="font-semibold text-success">● {onlineCount}</span> online
+                {" · "}<span className="font-semibold text-destructive">○ {offlineCount}</span> offline
+                {" · "}GW <span className="font-mono font-semibold text-foreground">{network.gateway || "—"}</span>
+                {[
+                  routerId && `Router ${routers.find((r) => r.id === routerId)?.name ?? routerId}`,
+                  network.snmp_community && `SNMP ${network.snmp_community}`,
+                  network.dns_server && `DNS ${network.dns_server}`,
+                ].filter(Boolean).map((t) => ` · ${t}`).join("")}
+              </span>
             </div>
             {network.description && (
               <p className="text-muted-foreground text-xs leading-snug line-clamp-1 mt-0.5" title={network.description}>
@@ -1130,22 +1143,18 @@ export function NetworkDetailClient({
               {scanPhases.phases.filter((p) => p.last_run).length}/{scanPhases.phases.length} fasi eseguite
             </p>
           )}
-          <div className="rounded-xl border-2 border-primary/20 bg-card/95 shadow-md ring-1 ring-primary/10 p-3">
-            <p className="text-xs font-semibold text-foreground mb-1.5 flex items-center gap-2">
-              <span className="rounded bg-primary/15 text-primary px-1.5 py-0.5 text-[10px] uppercase tracking-wide">Azioni</span>
-              Scansione e acquisizione dati
-            </p>
-            <div className="flex flex-wrap gap-2 items-stretch content-start">
+          <div className="rounded-lg border bg-card p-1.5">
+            <div className="flex flex-wrap gap-1.5 items-center">
 
             {/* ─── ACQUISIZIONE — intera subnet (§6.2 Blocco A) ────────── */}
-            <div className={`${ACTION_PANEL} min-w-[min(100%,26rem)]`}>
+            <div className={ACTION_PANEL}>
               <p className={ACTION_PANEL_TITLE}>Acquisizione</p>
-              <div className="flex flex-col gap-1.5 flex-1 justify-end">
+              <div className="flex items-center gap-1.5 flex-wrap">
                 <div className="flex flex-nowrap gap-1.5">
                   <Button
                     size="default"
                     variant="default"
-                    className={cn(ACTION_BTN, "flex-1")}
+                    className={ACTION_BTN}
                     onClick={() => void runInitialScan()}
                     disabled={!!scanning || enriching}
                     title="Scoperta host attivi: Naabu se disponibile (Impostazioni → Scansione), altrimenti ICMP + Nmap quick. Percorso scelto automaticamente."
@@ -1168,12 +1177,12 @@ export function NetworkDetailClient({
                     Esegui tutte le fasi
                   </Button>
                 </div>
-                <div className="flex flex-nowrap gap-2 overflow-x-auto pb-0.5">
-                  <div className="flex flex-col gap-0.5 min-w-[8rem]">
+                <div className="flex flex-nowrap gap-1.5">
+                  <div className="flex items-center gap-0.5">
                     <Button
                       size="default"
                       variant="outline"
-                      className={cn(ACTION_BTN, "bg-background/90 w-full")}
+                      className={cn(ACTION_BTN, "bg-background/90")}
                       onClick={() => triggerScan("scan_nmap_base")}
                       disabled={!!scanning || enriching}
                       title={phaseNmapDeep?.adds ?? "Nmap -sV: banner e versioni dei servizi, OS fingerprint approfondito"}
@@ -1183,11 +1192,11 @@ export function NetworkDetailClient({
                     </Button>
                     <PhaseStatusLine phase={phaseNmapDeep} />
                   </div>
-                  <div className="flex flex-col gap-0.5 min-w-[6rem]">
+                  <div className="flex items-center gap-0.5">
                     <Button
                       size="default"
                       variant="outline"
-                      className={cn(ACTION_BTN, "bg-background/90 w-full")}
+                      className={cn(ACTION_BTN, "bg-background/90")}
                       onClick={() => triggerScan("scan_snmp_verify")}
                       disabled={!!scanning || enriching}
                       title={phaseSnmp?.adds ?? "SNMP → sysObjectID, LLDP: distingue AP da switch"}
@@ -1197,11 +1206,11 @@ export function NetworkDetailClient({
                     </Button>
                     <PhaseStatusLine phase={phaseSnmp} />
                   </div>
-                  <div className="flex flex-col gap-0.5 min-w-[7rem]">
+                  <div className="flex items-center gap-0.5">
                     <Button
                       size="default"
                       variant="outline"
-                      className={cn(ACTION_BTN, "bg-background/90 w-full")}
+                      className={cn(ACTION_BTN, "bg-background/90")}
                       onClick={() => void triggerEnrich(true)}
                       disabled={!!scanning || enriching}
                       title={phaseEnrich?.adds ?? "ARP/DHCP/AD: hostname, MAC/vendor, collegamento a computer Active Directory"}
@@ -1211,11 +1220,11 @@ export function NetworkDetailClient({
                     </Button>
                     <PhaseStatusLine phase={phaseEnrich} />
                   </div>
-                  <div className="flex flex-col gap-0.5 min-w-[8rem]">
+                  <div className="flex items-center gap-0.5">
                     <Button
                       size="default"
                       variant="outline"
-                      className={cn(ACTION_BTN, "bg-background/90 w-full")}
+                      className={cn(ACTION_BTN, "bg-background/90")}
                       onClick={() => triggerScan("credential_validate")}
                       disabled={!!scanning || enriching || networkCredentialIds.length === 0 || selectedHostIds.size === 0}
                       title={
@@ -1238,7 +1247,7 @@ export function NetworkDetailClient({
             {/* ─── DETECT — host selezionati ─────────────────────────── */}
             <div className={ACTION_PANEL}>
               <p className={ACTION_PANEL_TITLE}>Detect — host selezionati</p>
-              <div className="flex flex-nowrap gap-1.5 overflow-x-auto pb-0.5 flex-1 items-end">
+              <div className="flex flex-nowrap gap-1.5 items-center">
                 <Button
                   size="default"
                   variant="default"
@@ -1276,15 +1285,15 @@ export function NetworkDetailClient({
             </div>
 
             {/* ─── ATTRIBUZIONE (§6.2 Blocco B) — Test credenziali assorbito nella fase Credenziali sopra ─── */}
-            <div className="rounded-lg border border-dashed border-border bg-muted/25 px-2.5 pt-1.5 pb-1.5 min-w-[min(100%,14rem)] flex-1 sm:flex-none flex flex-col">
-              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide leading-tight mb-1.5">
+            <div className="rounded-md border border-dashed border-border bg-muted/25 px-2 py-1 flex items-center gap-1.5">
+              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide leading-tight whitespace-nowrap mr-0.5">
                 Attribuzione
               </p>
-              <div className="flex flex-col gap-1.5 mt-auto">
+              <div className="flex items-center gap-1.5">
                 <Button
                   size="default"
                   variant="default"
-                  className={cn(ACTION_BTN, "w-full")}
+                  className={ACTION_BTN}
                   onClick={() => setAttributionPreviewOpen(true)}
                   title="Anteprima: mostra i cambi di vendor/categoria/OS proposti dalle evidenze già salvate, prima di applicarli. Funziona anche durante uno scan."
                 >
@@ -1294,7 +1303,7 @@ export function NetworkDetailClient({
                 <Button
                   size="default"
                   variant="outline"
-                  className={cn(ACTION_BTN, "w-full")}
+                  className={ACTION_BTN}
                   onClick={() => void applyAttributionDirect()}
                   disabled={applyingAttribution}
                   title="Ricalcola e applica direttamente l'attribuzione su tutta la subnet, senza anteprima."
@@ -1308,8 +1317,8 @@ export function NetworkDetailClient({
             </div>
 
             {/* ─── VA SCAN — vulnerability assessment (ultimo) ─────────── */}
-            <div className="rounded-lg border-2 border-purple-500/45 bg-purple-500/5 px-2.5 pt-1.5 pb-1.5 min-w-[min(100%,14rem)] flex-1 sm:flex-none shadow-sm flex flex-col sm:max-w-[16rem]">
-              <p className="text-[11px] font-bold uppercase tracking-wide text-purple-800 dark:text-purple-300 leading-tight mb-1.5">
+            <div className="rounded-md border border-purple-500/45 bg-purple-500/5 px-2 py-1 flex items-center gap-1.5">
+              <p className="text-[11px] font-bold uppercase tracking-wide text-purple-800 dark:text-purple-300 leading-tight whitespace-nowrap mr-0.5">
                 VA Scan
               </p>
               <div className="mt-auto">
@@ -1332,17 +1341,98 @@ export function NetworkDetailClient({
             )}
           >
             <div className="flex flex-wrap items-center gap-x-3 gap-y-2 min-w-0 flex-1">
+              {/* Vista: nella stessa barra (testata compatta, 20/10) */}
+              <div className="flex items-center gap-1" role="group" aria-label="Visualizzazione">
+                <Button variant={view === "grid" ? "secondary" : "outline"} size="sm" aria-pressed={view === "grid"} onClick={() => setView("grid")}>
+                  <LayoutGrid className="h-4 w-4 mr-1" />
+                  Griglia IP
+                </Button>
+                <Button variant={view === "list" ? "secondary" : "outline"} size="sm" aria-pressed={view === "list"} onClick={() => setView("list")}>
+                  <List className="h-4 w-4 mr-1" />
+                  Lista
+                </Button>
+              </div>
+              {/* Filtri della lista nella stessa barra (testata compatta, 20/10) */}
+              {view === "list" && (
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-2">
+                <Label className="text-xs text-muted-foreground">Stato</Label>
+                <select
+                  value={filterStatus}
+                  onChange={(e) => setFilterStatus(e.target.value)}
+                  className="h-8 rounded-md border border-input bg-background px-2 text-sm min-w-[100px]"
+                >
+                  <option value="">Tutti</option>
+                  <option value="online">Online</option>
+                  <option value="offline">Offline</option>
+                  <option value="unknown">Sconosciuto</option>
+                </select>
+              </div>
+              <div className="flex items-center gap-2">
+                <Label className="text-xs text-muted-foreground">Classificazione</Label>
+                <select
+                  value={filterClassification}
+                  onChange={(e) => setFilterClassification(e.target.value)}
+                  className="h-8 rounded-md border border-input bg-background px-2 text-sm min-w-[140px]"
+                >
+                  <option value="">Tutte</option>
+                  <option value="__empty__">— Senza classificazione</option>
+                  {sortClassificationsByDisplayLabel(DEVICE_CLASSIFICATIONS_ORDERED).map((c) => (
+                    <option key={c} value={c}>{getClassificationLabel(c)}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="filter-known"
+                  checked={filterKnownOnly}
+                  onCheckedChange={setFilterKnownOnly}
+                />
+                <Label htmlFor="filter-known" className="text-xs text-muted-foreground">Solo conosciuti</Label>
+              </div>
+              {(filterStatus || filterClassification || filterKnownOnly) && (
+                <Button variant="ghost" size="sm" onClick={() => { setFilterStatus(""); setFilterClassification(""); setFilterKnownOnly(false); }}>
+                  Cancella filtri
+                </Button>
+              )}
+            </div>
+              )}
               {view === "list" ? (
                 <>
-                  <div className="min-w-0 shrink">
-                    <p className="text-[11px] font-semibold text-foreground leading-tight">
-                      Selezione in lista
-                    </p>
-                    <p className="text-[10px] text-muted-foreground leading-snug">
-                      {selectedHostIds.size === 0
-                        ? "Spunta gli host nella tabella per le azioni a sinistra."
-                        : `${selectedHostIds.size} host selezionati`}
-                    </p>
+                  <p className="text-[11px] text-muted-foreground whitespace-nowrap" title="Spunta gli host nella tabella per le azioni qui a fianco.">
+                    {selectedHostIds.size === 0 ? "Nessun host selezionato" : `${selectedHostIds.size} host selezionati`}
+                  </p>
+                  {/* Aggiunge alla selezione, non filtra: sta col gruppo della selezione (revisione 20/10). */}
+                  <div className="flex items-center gap-1">
+                    <Label className="text-xs text-muted-foreground">Seleziona per tipo:</Label>
+                    <select
+                      className="h-8 rounded-md border border-input bg-background px-2 text-sm min-w-[140px]"
+                      value=""
+                      onChange={(e) => {
+                        const c = e.target.value;
+                        e.target.value = "";
+                        if (!c) return;
+                        const toSelect = c === "__empty__"
+                          ? filteredHosts.filter((h) => !h.classification)
+                          : filteredHosts.filter((h) => h.classification === c);
+                        if (toSelect.length === 0) {
+                          toast.info(c === "__empty__" ? "Nessun host senza classificazione" : `Nessun host con classificazione "${getClassificationLabel(c)}"`);
+                          return;
+                        }
+                        setSelectedHostIds((prev) => {
+                          const next = new Set(prev);
+                          for (const h of toSelect) next.add(h.id);
+                          return next;
+                        });
+                        toast.success(`${toSelect.length} host selezionati`);
+                      }}
+                    >
+                      <option value="">—</option>
+                      <option value="__empty__">— Senza classificazione</option>
+                      {sortClassificationsByDisplayLabel(DEVICE_CLASSIFICATIONS_ORDERED).map((c) => (
+                        <option key={c} value={c}>{getClassificationLabel(c)}</option>
+                      ))}
+                    </select>
                   </div>
                   <div className="flex flex-wrap gap-1.5 items-center">
                     <Button
@@ -1424,44 +1514,6 @@ export function NetworkDetailClient({
             </div>
           </div>
         </div>
-      </div>
-
-      {/* Vista: subito dopo le azioni principali (prima di statistiche e auto-refresh) */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-xs font-medium text-muted-foreground mr-1">Visualizzazione</span>
-        <Button
-          variant={view === "grid" ? "secondary" : "outline"}
-          size="default"
-          onClick={() => setView("grid")}
-        >
-          <LayoutGrid className="h-4 w-4 mr-1.5" />
-          Griglia IP
-        </Button>
-        <Button
-          variant={view === "list" ? "secondary" : "outline"}
-          size="default"
-          onClick={() => setView("list")}
-        >
-          <List className="h-4 w-4 mr-1.5" />
-          Lista
-        </Button>
-      </div>
-
-      {/* Stats - minimali */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5 text-xs">
-        <span className="text-muted-foreground">Host Totali <span className="font-semibold text-foreground">{hosts.length}</span></span>
-        <span className="text-muted-foreground">Online <span className="font-semibold text-success">{onlineCount}</span></span>
-        <span className="text-muted-foreground">Offline <span className="font-semibold text-destructive">{offlineCount}</span></span>
-        <span className="text-muted-foreground">Gateway <span className="font-mono font-semibold text-foreground">{network.gateway || "—"}</span></span>
-        {(routerId || network.snmp_community || network.dns_server) && (
-          <span className="text-muted-foreground">
-            {[
-              routerId && `Router: ${routers.find((r) => r.id === routerId)?.name ?? routerId}`,
-              network.snmp_community && `SNMP: ${network.snmp_community}`,
-              network.dns_server && `DNS: ${network.dns_server}`,
-            ].filter(Boolean).join(" · ")}
-          </span>
-        )}
       </div>
 
       {/* Scan Progress */}
@@ -1674,81 +1726,8 @@ export function NetworkDetailClient({
       </Dialog>
 
       {view === "list" && (
-        <Card className="overflow-hidden">
-          <div className="flex flex-wrap items-center gap-2 p-2 border-b">
-            <div className="flex items-center gap-2">
-              <Label className="text-xs text-muted-foreground">Stato</Label>
-              <select
-                value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
-                className="h-8 rounded-md border border-input bg-background px-2 text-sm min-w-[100px]"
-              >
-                <option value="">Tutti</option>
-                <option value="online">Online</option>
-                <option value="offline">Offline</option>
-                <option value="unknown">Sconosciuto</option>
-              </select>
-            </div>
-            <div className="flex items-center gap-2">
-              <Label className="text-xs text-muted-foreground">Classificazione</Label>
-              <select
-                value={filterClassification}
-                onChange={(e) => setFilterClassification(e.target.value)}
-                className="h-8 rounded-md border border-input bg-background px-2 text-sm min-w-[140px]"
-              >
-                <option value="">Tutte</option>
-                <option value="__empty__">— Senza classificazione</option>
-                {sortClassificationsByDisplayLabel(DEVICE_CLASSIFICATIONS_ORDERED).map((c) => (
-                  <option key={c} value={c}>{getClassificationLabel(c)}</option>
-                ))}
-              </select>
-            </div>
-            <div className="flex items-center gap-2">
-              <Switch
-                id="filter-known"
-                checked={filterKnownOnly}
-                onCheckedChange={setFilterKnownOnly}
-              />
-              <Label htmlFor="filter-known" className="text-xs text-muted-foreground">Solo conosciuti</Label>
-            </div>
-            {(filterStatus || filterClassification || filterKnownOnly) && (
-              <Button variant="ghost" size="sm" onClick={() => { setFilterStatus(""); setFilterClassification(""); setFilterKnownOnly(false); }}>
-                Cancella filtri
-              </Button>
-            )}
-            <div className="flex items-center gap-1 ml-auto">
-              <Label className="text-xs text-muted-foreground">Seleziona per tipo:</Label>
-              <select
-                className="h-8 rounded-md border border-input bg-background px-2 text-sm min-w-[140px]"
-                value=""
-                onChange={(e) => {
-                  const c = e.target.value;
-                  e.target.value = "";
-                  if (!c) return;
-                  const toSelect = c === "__empty__"
-                    ? filteredHosts.filter((h) => !h.classification)
-                    : filteredHosts.filter((h) => h.classification === c);
-                  if (toSelect.length === 0) {
-                    toast.info(c === "__empty__" ? "Nessun host senza classificazione" : `Nessun host con classificazione "${getClassificationLabel(c)}"`);
-                    return;
-                  }
-                  setSelectedHostIds((prev) => {
-                    const next = new Set(prev);
-                    for (const h of toSelect) next.add(h.id);
-                    return next;
-                  });
-                  toast.success(`${toSelect.length} host selezionati`);
-                }}
-              >
-                <option value="">—</option>
-                <option value="__empty__">— Senza classificazione</option>
-                {sortClassificationsByDisplayLabel(DEVICE_CLASSIFICATIONS_ORDERED).map((c) => (
-                  <option key={c} value={c}>{getClassificationLabel(c)}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-          <Table>
+        <Card className="overflow-hidden py-0 gap-0">
+          <Table fissa>
             <TableHeader>
               <TableRow>
                 <TableHead className="w-10">

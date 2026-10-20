@@ -80,7 +80,9 @@ Discovery con viste/glossario/filtri (`lib/discovery/viste-filtri.ts`). L'ordine
 Discovery è una decisione di Riccardo (v0.2.500, 23/05): le viste lo filtrano, non lo cambiano. Menu (19/10 sera, Riccardo): niente
 più Launchpad a tessere; gruppi **Sicurezza** (Vulnerabilità, Alert, Health AD `?tab=health`) e **Applicativi**
 (`lib/modules/voci-applicativi.ts`: moduli opzionali + console esterne); Controller di rete in Network sotto
-«Credenziali». Network Services resta un gruppo a sé (scelta di Riccardo).
+«Credenziali». Network Services resta un gruppo a sé (scelta di Riccardo). Tabelle (20/10): `<Table fissa>` /
+`ScorrimentoTabella` per le liste lunghe (intestazioni ferme, altezza dallo schermo); accese sulle pagine
+principali, le altre da fare quando si toccano. Testate di Discovery e dettaglio subnet compattate.
 
 - **Trappola**: le 9 prove «rosse per `flock`» del Mac erano `stato-aggiornamento.mjs` che non partiva
   da cartelle dietro symlink (`/var/folders`): ora `realpathSync`. Sul Mac serve comunque `flock` (brew).

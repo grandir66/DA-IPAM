@@ -257,7 +257,7 @@ export default function CredentialsPage() {
           ) : credentials.length === 0 ? (
             <p className="text-muted-foreground">Nessuna credenziale. Clicca &quot;Nuova credenziale&quot; per aggiungerne una.</p>
           ) : (
-            <Table>
+            <Table fissa>
               <TableHeader>
                 <TableRow>
                   <TableHead>Nome</TableHead>

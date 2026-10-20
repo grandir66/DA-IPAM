@@ -4,6 +4,27 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-20 · Tabelle con le intestazioni ferme, testate più basse
+
+Richiesta di Riccardo del 20/10 («le intestazioni sono enormi; intestazioni e colonne
+scorrono col contenuto»), proposta approvata prima del codice.
+
+### Cambiato
+
+- **Intestazioni delle colonne ferme**: `ScorrimentoTabella` e `<Table fissa>`
+  (`components/ui/table.tsx`, hook `use-altezza-disponibile.ts`), la regola del kit di
+  DA-Template: la tabella è alta quanto lo spazio che resta sullo schermo e scorre lei;
+  titolo, filtri e paginazione restano dove sono. Accese su Discovery, dettaglio subnet,
+  Credenziali, Inventario, Controller, Software, Vulnerabilità, Alert sicurezza e le quattro
+  liste di Active Directory. Le sottotabelle delle righe espanse non si incollano.
+- **Discovery**: titolo, contatori e filtri su una riga; vista e categorie su una riga. La
+  tabella parte a ~180 px invece di ~410 (a 1920).
+- **Dettaglio subnet**: contatori, gateway e router accanto al titolo; i quattro riquadri
+  «Azioni» diventano gruppi in linea (data dell'ultima esecuzione nel suggerimento,
+  «obsoleta» a vista); vista e filtri della lista nella barra della selezione; «Seleziona
+  per tipo» accanto al conteggio della selezione (aggiunge, non filtra). La tabella parte a
+  ~380 px invece di ~600.
+
 ## [Non rilasciato] — 2026-10-19 · Menu: Applicativi e Sicurezza al posto del Launchpad
 
 Richiesta di Riccardo del 19/10 sera, proposta approvata prima del codice.

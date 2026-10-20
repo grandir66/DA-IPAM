@@ -7,7 +7,7 @@ import { librenmsDevicePath } from "@/lib/integrations/public-url";
 import Link from "next/link";
 import { useEAdmin } from "@/hooks/use-e-admin";
 import { colonneDellaVista, contaPreset, etichettaPreset, GLOSSARIO, prendePreset, VISTE, type Vista } from "@/lib/discovery/viste-filtri";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -49,7 +49,7 @@ import {
 } from "@/lib/device-classifications";
 import { parseDetectedDeviceFromDetectionJson } from "@/lib/device-fingerprint-classification";
 import {
-  Search, RefreshCw, Columns3, Download, Radar, ExternalLink,
+  Search, RefreshCw, Columns3, Download, ExternalLink,
   Pencil, X, Loader2, Save, PlusCircle, Sparkles, Activity, PackagePlus, Server,
   Wrench, Package, Boxes, Router as RouterIcon, Cable, Shield, ShieldAlert, HardDrive, Monitor,
   Terminal as TerminalIcon, Globe,
@@ -1921,46 +1921,20 @@ export default function DiscoveryPage() {
   const pageAllSelected = pagedRows.length > 0 && pagedRows.every((h) => selectedIds.has(h.id));
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Discovery</h1>
-        <p className="text-muted-foreground mt-1">
-          Vista unificata di tutti gli host rilevati nelle subnet, arricchiti con dati di scansione.
-        </p>
-      </div>
-
-      {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <Card className="py-3 px-4">
-          <p className="text-xs text-muted-foreground uppercase tracking-wider">Totale</p>
-          <p className="text-2xl font-bold">{filtered.length}</p>
-        </Card>
-        <Card className="py-3 px-4">
-          <p className="text-xs text-muted-foreground uppercase tracking-wider">Online</p>
-          <p className="text-2xl font-bold text-success">{online}</p>
-        </Card>
-        <Card className="py-3 px-4">
-          <p className="text-xs text-muted-foreground uppercase tracking-wider">Offline</p>
-          <p className="text-2xl font-bold text-destructive">{offline}</p>
-        </Card>
-        <Card className="py-3 px-4">
-          <p className="text-xs text-muted-foreground uppercase tracking-wider">Sconosciuto</p>
-          <p className="text-2xl font-bold text-muted-foreground">{unknown}</p>
-        </Card>
-      </div>
-
-      {/* Main table card */}
-      <Card>
-        <CardHeader>
-          <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
-              <Radar className="h-5 w-5" />
-              Host rilevati
-              <span className="text-sm font-normal text-muted-foreground ml-1">
-                ({filtered.length}{filtered.length !== hosts.length ? ` / ${hosts.length}` : ""})
-              </span>
-            </CardTitle>
+    <div className="space-y-3">
+      {/* Testata compatta (Riccardo, 20/10): titolo, contatori e filtri su una riga; la frase
+          descrittiva e i quattro riquadri di conteggio occupavano ~260 px sopra la tabella. */}
+      <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
+          <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+            <h1 className="text-2xl font-bold tracking-tight">Discovery</h1>
+            <span className="text-sm text-muted-foreground">
+              <span className="font-semibold text-foreground">{filtered.length}</span> host
+              {filtered.length !== hosts.length ? ` di ${hosts.length}` : ""}
+              {" · "}<span className="font-semibold text-success">● {online}</span> online
+              {" · "}<span className="font-semibold text-destructive">○ {offline}</span> offline
+              {" · "}<span className="font-semibold">{unknown}</span> sconosciuti
+            </span>
+          </div>
 
             <div className="flex flex-wrap gap-2 items-center">
               {/* Search */}
@@ -2041,12 +2015,16 @@ export default function DiscoveryPage() {
                 <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
               </Button>
             </div>
-          </div>
+      </div>
 
+      {/* Main table card */}
+      <Card>
+        <CardHeader className="pb-2">
           {/* Preset chips: filtro rapido per macro-categoria. Cliccando una chip
               attiva imposta classFilter al preset; il dropdown "Classificazione"
               resta utilizzabile per scelte fini. */}
-          <div className="flex flex-wrap items-center gap-1.5 pt-1" role="group" aria-label="Vista delle colonne">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+          <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Vista delle colonne">
             <span className="text-xs text-muted-foreground mr-1">Vista</span>
             {(["tutte", "inventario", "sicurezza", "rete"] as const).map((v) => (
               <Button
@@ -2062,7 +2040,7 @@ export default function DiscoveryPage() {
               </Button>
             ))}
           </div>
-          <div className="flex flex-wrap gap-1.5 pt-1">
+          <div className="flex flex-wrap items-center gap-1.5 border-l pl-3">
             <Button
               variant={classFilter === "" ? "default" : "outline"}
               size="sm"
@@ -2120,6 +2098,7 @@ export default function DiscoveryPage() {
               <Pencil className="h-3.5 w-3.5 mr-1" />
               Classification
             </Link>
+          </div>
           </div>
         </CardHeader>
 
@@ -2205,7 +2184,7 @@ export default function DiscoveryPage() {
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <Table>
+              <Table fissa riserva={104}>
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-10">

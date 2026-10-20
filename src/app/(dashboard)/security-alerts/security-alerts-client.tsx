@@ -509,7 +509,7 @@ export function SecurityAlertsClient() {
             </p>
           ) : (
             <div className="overflow-x-auto">
-              <Table>
+              <Table fissa>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Liv.</TableHead>

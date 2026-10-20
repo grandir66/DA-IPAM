@@ -337,7 +337,7 @@ export function SoftwareListClient() {
         <CardContent className="pt-4">
           {error && <div className="p-4 text-sm text-destructive">{error}</div>}
           <div className="overflow-x-auto">
-            <Table>
+            <Table fissa>
               <TableHeader>
                 <TableRow>
                   <SortableTableHead columnId="" sortColumn={sortBy} sortDirection={sortDir} onSort={() => {}} className="w-8">{""}</SortableTableHead>

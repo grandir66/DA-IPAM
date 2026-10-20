@@ -41,19 +41,21 @@ import { ScanProgress } from "@/components/shared/scan-progress";
 import { SubnetScheduleCard } from "@/components/networks/subnet-schedule-card";
 import { SubnetEdgeScanPanel } from "@/components/networks/subnet-edge-scan-panel";
 import { AttributionPreviewDialog } from "@/components/networks/attribution-preview-dialog";
-import { ArrowLeft, Scan, Download, LayoutGrid, List, Pencil, RefreshCw, CheckCircle2, Cpu, ExternalLink, X, Plus, Server, Sparkles, Trash2, UserCheck, UserX, Key, PlusCircle, Loader2, Activity, Radar, Layers, Tags, Clock } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { ArrowLeft, Scan, Download, LayoutGrid, List, Pencil, RefreshCw, CheckCircle2, ExternalLink, X, Plus, Server, Trash2, UserCheck, UserX, Key, PlusCircle, Loader2, Activity, Radar, Tags, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import type { Network, Host, NetworkDevice, ScanProgress as ScanProgressType } from "@/types";
 import { cn, hostOpenPortsToFullLabel } from "@/lib/utils";
 
 /** Altezza uniforme per tutti i pulsanti della toolbar azioni subnet. */
 const ACTION_BTN = "h-8 min-h-8 px-2.5 text-xs font-medium shrink-0";
-// Testata compatta (Riccardo, 20/10): i gruppi d'azione stanno in linea, etichetta a
-// sinistra e pulsanti a fianco; prima erano quattro riquadri alti ~280 px sopra la tabella.
-const ACTION_PANEL =
-  "rounded-md border border-primary/45 bg-primary/5 px-2 py-1 flex items-center gap-1.5 flex-wrap";
-const ACTION_PANEL_TITLE =
-  "text-[11px] font-bold uppercase tracking-wide text-primary leading-tight whitespace-nowrap mr-0.5";
 import {
   DEVICE_CLASSIFICATIONS_ORDERED,
   getClassificationLabel,
@@ -125,19 +127,26 @@ function formatPhaseLastRun(iso: string): string {
   return `il ${dd}/${mm} ${hh}:${mi}`;
 }
 
-/** Riga di stato sotto ciascun pulsante fase (§6.2): "mai eseguita" / "il DD/MM HH:mm" [+ badge "obsoleta"]. */
-function PhaseStatusLine({ phase }: { phase: ScanPhasesResponse["phases"][number] | null }) {
-  // Testata compatta (20/10): la data dell'ultima esecuzione nel suggerimento, «obsoleta» resta a vista.
-  const quando = phase?.last_run ? `Ultima esecuzione: ${formatPhaseLastRun(phase.last_run)}` : "Mai eseguita";
+/** «Ultima esecuzione: il DD/MM HH:mm» / «Mai eseguita» [+ «, obsoleta»], per suggerimenti e menu. */
+function phaseWhen(phase: ScanPhasesResponse["phases"][number] | null): string {
+  if (!phase?.last_run) return "Mai eseguita";
+  return `Ultima esecuzione: ${formatPhaseLastRun(phase.last_run)}${phase.stale ? ", obsoleta" : ""}`;
+}
+
+/** Voce di menu di una fase della subnet: nome a sinistra, ultima esecuzione a destra. */
+function PhaseMenuItem({ label, phase, onClick }: { label: string; phase: ScanPhasesResponse["phases"][number] | null; onClick: () => void }) {
   return (
-    <span className="inline-flex items-center gap-0.5 text-muted-foreground" title={quando} aria-label={quando}>
-      <Clock className={cn("h-3 w-3", !phase?.last_run && "opacity-40")} />
-      {phase?.stale && (
-        <Badge variant="outline" className="text-[9px] leading-none py-0 px-1 h-3.5">
-          obsoleta
-        </Badge>
-      )}
-    </span>
+    <DropdownMenuItem onClick={onClick} title={phase?.adds}>
+      {label}
+      <span className="ml-auto pl-4 text-xs text-muted-foreground inline-flex items-center gap-1">
+        {phase?.last_run ? formatPhaseLastRun(phase.last_run) : "mai"}
+        {phase?.stale && (
+          <Badge variant="outline" className="text-[10px] leading-none py-0 px-1 h-4">
+            obsoleta
+          </Badge>
+        )}
+      </span>
+    </DropdownMenuItem>
   );
 }
 
@@ -184,7 +193,6 @@ export function NetworkDetailClient({
   // Stato fasi di scansione + completezza attribuzione (§6.2/6.3, fase 3b)
   const [scanPhases, setScanPhases] = useState<ScanPhasesResponse | null>(null);
   const [scanPhasesRefreshKey, setScanPhasesRefreshKey] = useState(0);
-  const [applyingAttribution, setApplyingAttribution] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [view, setView] = useState<"grid" | "list">("list");
@@ -939,67 +947,67 @@ export function NetworkDetailClient({
     }
   }
 
-  /** Blocco B — "Applica diretto": ricalcola e applica l'attribuzione senza anteprima. */
-  async function applyAttributionDirect() {
-    if (applyingAttribution) return;
-    setApplyingAttribution(true);
-    try {
-      const res = await fetch("/api/attribution/recompute", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ network_id: network.id }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        toast.error((data as { error?: string }).error || "Errore nel ricalcolo dell'attribuzione");
-        return;
-      }
-      toast.success((data as { message?: string }).message || "Attribuzione ricalcolata");
-      await refreshHosts();
-      router.refresh();
-      setScanPhasesRefreshKey((k) => k + 1);
-    } catch {
-      toast.error("Errore di rete");
-    } finally {
-      setApplyingAttribution(false);
+  /**
+   * «Avanzata» (testata semplificata, 20/10). Senza selezione: la sequenza della
+   * subnet lato server (scan_full: ping → Nmap -sV → SNMP → Enrich), un giro solo che
+   * sopravvive alla chiusura della pagina. Con host selezionati: Nmap profilo completo
+   * poi SNMP deep su quegli host (ex «Nmap adv» + «SNMP deep»).
+   */
+  async function runAdvanced() {
+    if (!hostScope) {
+      await runScanJob("scan_full");
+      return;
     }
+    const nmap = await runScanJob("nmap", { showStartToast: false });
+    if (!nmap.ok) {
+      toast.error("Porte e servizi terminata con errori: SNMP non avviato");
+      setScanning(null);
+      return;
+    }
+    const snmp = await runScanJob("snmp", { showStartToast: false });
+    if (snmp.ok) toast.success(`Avanzata completata su ${selectedHostIds.size} host (porte e servizi + SNMP)`);
+    setScanning(null);
   }
 
-  async function triggerAdvancedDetection() {
-    if (selectedHostIds.size === 0) {
-      toast.error("Seleziona uno o più host nella vista lista (azioni manuali solo sugli IP selezionati)");
+  /**
+   * «Accesso agli host» (testata semplificata, 20/10): un comando solo al posto di
+   * «Credenziali» e «Rilevamento OS». Verifica le credenziali della rete (se ce ne
+   * sono), poi WinRM, poi SSH, sugli host selezionati. Solo selezione: ogni
+   * tentativo è un logon reale (allarmi MDR/XDR, lockout AD); ogni fase ha il suo
+   * freno CredentialRunBudget lato server.
+   */
+  async function runHostAccess() {
+    if (!hostScope) {
+      toast.error("Seleziona gli host nella vista lista: l'accesso fa tentativi di login reali");
       return;
     }
-    toast.info("Rilevamento avanzato — fase 1/2: WinRM (Windows)…");
-    const phase1 = await runScanJob("windows", { showStartToast: false, refreshOnComplete: true });
-    if (!phase1.ok) {
-      toast.error(
-        phase1.lastProgress?.status === "failed"
-          ? "Fase WinRM terminata con errori"
-          : "Impossibile completare la fase WinRM"
-      );
-      setScanning(null);
-      return;
+    const steps: Array<{ type: ScanJobType; label: string }> = [
+      ...(networkCredentialIds.length > 0 ? [{ type: "credential_validate" as const, label: "verifica credenziali" }] : []),
+      { type: "windows", label: "WinRM (Windows)" },
+      { type: "ssh", label: "SSH (Linux)" },
+    ];
+    for (const [i, step] of steps.entries()) {
+      toast.info(`Accesso agli host — fase ${i + 1}/${steps.length}: ${step.label}…`);
+      const r = await runScanJob(step.type, { showStartToast: false });
+      if (!r.ok) {
+        toast.error(`Accesso agli host: fase ${step.label} terminata con errori, le successive non sono partite`);
+        setScanning(null);
+        return;
+      }
     }
-    toast.info("Rilevamento avanzato — fase 2/2: SSH (Linux)…");
-    const phase2 = await runScanJob("ssh", { showStartToast: false, refreshOnComplete: true });
-    if (!phase2.ok) {
-      toast.error(
-        phase2.lastProgress?.status === "failed"
-          ? "Fase SSH terminata con errori"
-          : "Impossibile completare la fase SSH"
-      );
-      setScanning(null);
-      return;
-    }
-    toast.success("Rilevamento avanzato completato (WinRM + SSH)");
+    toast.success(`Accesso agli host completato (${steps.map((s) => s.label).join(" + ")})`);
     setScanning(null);
   }
 
   const onlineCount = hosts.filter((h) => h.status === "online").length;
   const offlineCount = hosts.filter((h) => h.status === "offline").length;
 
+  // Portata dei comandi: host selezionati nella lista, altrimenti tutta la subnet.
+  const hostScope = view === "list" && selectedHostIds.size > 0;
+  const busy = !!scanning || enriching;
+
   // Stato delle fasi successive alla "Scansione iniziale" (§6.2 Blocco A)
+  const phaseInitial = scanPhases?.phases.find((p) => p.key === "initial") ?? null;
   const phaseNmapDeep = scanPhases?.phases.find((p) => p.key === "nmap_deep") ?? null;
   const phaseSnmp = scanPhases?.phases.find((p) => p.key === "snmp") ?? null;
   const phaseEnrich = scanPhases?.phases.find((p) => p.key === "enrich") ?? null;
@@ -1132,200 +1140,121 @@ export function NetworkDetailClient({
           </div>
         </div>
 
-        {/* Toolbar a fasi: area principale in evidenza rispetto ad auto-refresh sotto */}
+        {/* Testata delle scansioni (semplificata il 20/10): quattro comandi invece di dodici.
+            La portata la decide la selezione — nessun host selezionato = subnet, altrimenti
+            gli host selezionati — e le ore dell'ultima esecuzione stanno nei menu. */}
         <div className="space-y-2">
-          {/* Riga di completezza attribuzione (§6.3) — nessuna riga se scan-phases non ancora caricato */}
-          {scanPhases && (
-            <p className="text-xs text-muted-foreground px-1">
-              Attribuzione: {scanPhases.attribution.level2}/{scanPhases.attribution.total} a livello 2 · {scanPhases.attribution.level1} a livello 1 · {scanPhases.attribution.none} senza
-              {scanPhases.attribution.suggestion ? ` — ${scanPhases.attribution.suggestion}` : ""}
-              {" · "}
-              {scanPhases.phases.filter((p) => p.last_run).length}/{scanPhases.phases.length} fasi eseguite
-            </p>
-          )}
-          <div className="rounded-lg border bg-card p-1.5">
-            <div className="flex flex-wrap gap-1.5 items-center">
+          <div className="rounded-lg border bg-card p-1.5 flex flex-wrap items-center gap-1.5">
+            <Button
+              size="default"
+              variant="default"
+              className={ACTION_BTN}
+              onClick={() => void runInitialScan()}
+              disabled={busy}
+              title={`Trova gli host attivi su tutta la subnet: Naabu se disponibile (Impostazioni → Scansione), altrimenti ICMP + Nmap quick. ${phaseWhen(phaseInitial)}`}
+            >
+              {scanning ? (
+                <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin shrink-0" />
+              ) : (
+                <Radar className="h-3.5 w-3.5 mr-1 shrink-0" />
+              )}
+              Scoperta host
+            </Button>
 
-            {/* ─── ACQUISIZIONE — intera subnet (§6.2 Blocco A) ────────── */}
-            <div className={ACTION_PANEL}>
-              <p className={ACTION_PANEL_TITLE}>Acquisizione</p>
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <div className="flex flex-nowrap gap-1.5">
-                  <Button
-                    size="default"
-                    variant="default"
-                    className={ACTION_BTN}
-                    onClick={() => void runInitialScan()}
-                    disabled={!!scanning || enriching}
-                    title="Scoperta host attivi: Naabu se disponibile (Impostazioni → Scansione), altrimenti ICMP + Nmap quick. Percorso scelto automaticamente."
-                  >
-                    {scanning ? (
-                      <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin shrink-0" />
-                    ) : (
-                      <Radar className="h-3.5 w-3.5 mr-1 shrink-0" />
-                    )}
-                    Scansione iniziale
-                  </Button>
-                  <Button
-                    size="default"
-                    variant="outline"
-                    className={cn(ACTION_BTN, "bg-background/90")}
-                    onClick={() => triggerScan("scan_full")}
-                    disabled={!!scanning || enriching}
-                    title="Esegue in sequenza tutte le fasi di acquisizione (ICMP/Naabu → Nmap -sV → SNMP → Enrich)"
-                  >
-                    Esegui tutte le fasi
-                  </Button>
-                </div>
-                <div className="flex flex-nowrap gap-1.5">
-                  <div className="flex items-center gap-0.5">
+            <div className="flex items-center">
+              <Button
+                size="default"
+                variant="outline"
+                className={cn(ACTION_BTN, "bg-background/90 rounded-r-none")}
+                onClick={() => void runAdvanced()}
+                disabled={busy}
+                title={
+                  hostScope
+                    ? `Porte e servizi (Nmap profilo completo) poi SNMP deep sui ${selectedHostIds.size} host selezionati`
+                    : "Tutte le fasi avanzate sulla subnet: ping, porte e servizi (Nmap -sV), SNMP, Enrich (ARP/DHCP/AD)"
+                }
+              >
+                <Scan className="h-3.5 w-3.5 mr-1 shrink-0" />
+                {hostScope ? `Avanzata · ${selectedHostIds.size} host` : "Avanzata"}
+              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
                     <Button
                       size="default"
                       variant="outline"
-                      className={cn(ACTION_BTN, "bg-background/90")}
-                      onClick={() => triggerScan("scan_nmap_base")}
-                      disabled={!!scanning || enriching}
-                      title={phaseNmapDeep?.adds ?? "Nmap -sV: banner e versioni dei servizi, OS fingerprint approfondito"}
+                      className={cn(ACTION_BTN, "bg-background/90 rounded-l-none border-l-0 px-1.5")}
+                      disabled={busy}
+                      aria-label="Fasi singole della scansione avanzata"
                     >
-                      <Scan className="h-3.5 w-3.5 mr-1 shrink-0" />
-                      Porte approfondite
+                      <ChevronDown className="h-3.5 w-3.5" />
                     </Button>
-                    <PhaseStatusLine phase={phaseNmapDeep} />
-                  </div>
-                  <div className="flex items-center gap-0.5">
-                    <Button
-                      size="default"
-                      variant="outline"
-                      className={cn(ACTION_BTN, "bg-background/90")}
-                      onClick={() => triggerScan("scan_snmp_verify")}
-                      disabled={!!scanning || enriching}
-                      title={phaseSnmp?.adds ?? "SNMP → sysObjectID, LLDP: distingue AP da switch"}
-                    >
-                      <Cpu className="h-3.5 w-3.5 mr-1 shrink-0" />
-                      SNMP
-                    </Button>
-                    <PhaseStatusLine phase={phaseSnmp} />
-                  </div>
-                  <div className="flex items-center gap-0.5">
-                    <Button
-                      size="default"
-                      variant="outline"
-                      className={cn(ACTION_BTN, "bg-background/90")}
-                      onClick={() => void triggerEnrich(true)}
-                      disabled={!!scanning || enriching}
-                      title={phaseEnrich?.adds ?? "ARP/DHCP/AD: hostname, MAC/vendor, collegamento a computer Active Directory"}
-                    >
-                      <Layers className="h-3.5 w-3.5 mr-1 shrink-0" />
-                      {enriching ? "Enrich…" : "Enrich"}
-                    </Button>
-                    <PhaseStatusLine phase={phaseEnrich} />
-                  </div>
-                  <div className="flex items-center gap-0.5">
-                    <Button
-                      size="default"
-                      variant="outline"
-                      className={cn(ACTION_BTN, "bg-background/90")}
-                      onClick={() => triggerScan("credential_validate")}
-                      disabled={!!scanning || enriching || networkCredentialIds.length === 0 || selectedHostIds.size === 0}
-                      title={
-                        networkCredentialIds.length === 0
-                          ? "Configura credenziali nella modifica rete"
-                          : selectedHostIds.size === 0
-                            ? "Seleziona gli host nella vista lista: la validazione genera tentativi di login reali (allarmi MDR/XDR, rischio lockout AD)"
-                            : `Valida le credenziali sugli ${selectedHostIds.size} host selezionati`
-                      }
-                    >
-                      <Key className="h-3.5 w-3.5 mr-1 shrink-0" />
-                      Credenziali
-                    </Button>
-                    <PhaseStatusLine phase={phaseCredentials} />
-                  </div>
-                </div>
-              </div>
+                  }
+                />
+                <DropdownMenuContent align="start" className="w-auto min-w-64">
+                  {hostScope ? (
+                    <DropdownMenuGroup>
+                      <DropdownMenuLabel>Sui {selectedHostIds.size} host selezionati</DropdownMenuLabel>
+                      <DropdownMenuItem onClick={() => void triggerScan("nmap")}>
+                        Porte e servizi
+                        <span className="ml-auto pl-4 text-xs text-muted-foreground">Nmap profilo completo</span>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => void triggerScan("snmp")}>
+                        SNMP deep
+                        <span className="ml-auto pl-4 text-xs text-muted-foreground">modello, firmware, seriale</span>
+                      </DropdownMenuItem>
+                    </DropdownMenuGroup>
+                  ) : (
+                    <DropdownMenuGroup>
+                      <DropdownMenuLabel>Su tutta la subnet</DropdownMenuLabel>
+                      <PhaseMenuItem label="Porte e servizi" phase={phaseNmapDeep} onClick={() => void triggerScan("scan_nmap_base")} />
+                      <PhaseMenuItem label="SNMP" phase={phaseSnmp} onClick={() => void triggerScan("scan_snmp_verify")} />
+                      <PhaseMenuItem label="Enrich (ARP/DHCP/AD)" phase={phaseEnrich} onClick={() => void triggerEnrich(true)} />
+                    </DropdownMenuGroup>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
 
-            {/* ─── DETECT — host selezionati ─────────────────────────── */}
-            <div className={ACTION_PANEL}>
-              <p className={ACTION_PANEL_TITLE}>Detect — host selezionati</p>
-              <div className="flex flex-nowrap gap-1.5 items-center">
-                <Button
-                  size="default"
-                  variant="default"
-                  className={ACTION_BTN}
-                  onClick={() => triggerScan("nmap")}
-                  disabled={!!scanning || view !== "list" || selectedHostIds.size === 0}
-                  title="Nmap profilo completo: port scan TCP/UDP esteso + SNMP unificato"
-                >
-                  <Scan className="h-3.5 w-3.5 mr-1 shrink-0" />
-                  Nmap adv
-                </Button>
-                <Button
-                  size="default"
-                  variant="outline"
-                  className={cn(ACTION_BTN, "bg-background/90")}
-                  onClick={() => triggerScan("snmp")}
-                  disabled={!!scanning || view !== "list" || selectedHostIds.size === 0}
-                  title="SNMP deep walk: produttore, modello, firmware, seriale, ARP table, OID fingerprint"
-                >
-                  <Cpu className="h-3.5 w-3.5 mr-1 shrink-0" />
-                  SNMP deep
-                </Button>
-                <Button
-                  size="default"
-                  variant="outline"
-                  className={cn(ACTION_BTN, "bg-background/90")}
-                  onClick={() => void triggerAdvancedDetection()}
-                  disabled={!!scanning || view !== "list" || selectedHostIds.size === 0}
-                  title="WinRM (Windows) + SSH (Linux) in sequenza"
-                >
-                  <Sparkles className="h-3.5 w-3.5 mr-1 shrink-0" />
-                  Rilevamento OS
-                </Button>
-              </div>
-            </div>
+            <Button
+              size="default"
+              variant="outline"
+              className={cn(ACTION_BTN, "bg-background/90")}
+              onClick={() => void runHostAccess()}
+              disabled={busy || !hostScope}
+              title={
+                hostScope
+                  ? `Login sui ${selectedHostIds.size} host selezionati: ${networkCredentialIds.length > 0 ? "verifica credenziali, poi " : ""}WinRM (Windows) e SSH (Linux). ${phaseWhen(phaseCredentials)}`
+                  : "Seleziona gli host nella vista lista: l'accesso fa tentativi di login reali (allarmi MDR/XDR, rischio lockout AD)"
+              }
+            >
+              <Key className="h-3.5 w-3.5 mr-1 shrink-0" />
+              {hostScope ? `Accedi a ${selectedHostIds.size} host` : "Accesso agli host"}
+            </Button>
 
-            {/* ─── ATTRIBUZIONE (§6.2 Blocco B) — Test credenziali assorbito nella fase Credenziali sopra ─── */}
-            <div className="rounded-md border border-dashed border-border bg-muted/25 px-2 py-1 flex items-center gap-1.5">
-              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide leading-tight whitespace-nowrap mr-0.5">
-                Attribuzione
-              </p>
-              <div className="flex items-center gap-1.5">
-                <Button
-                  size="default"
-                  variant="default"
-                  className={ACTION_BTN}
-                  onClick={() => setAttributionPreviewOpen(true)}
-                  title="Anteprima: mostra i cambi di vendor/categoria/OS proposti dalle evidenze già salvate, prima di applicarli. Funziona anche durante uno scan."
-                >
-                  <Tags className="h-3.5 w-3.5 mr-1 shrink-0" />
-                  Ricalcola attribuzione
-                </Button>
-                <Button
-                  size="default"
-                  variant="outline"
-                  className={ACTION_BTN}
-                  onClick={() => void applyAttributionDirect()}
-                  disabled={applyingAttribution}
-                  title="Ricalcola e applica direttamente l'attribuzione su tutta la subnet, senza anteprima."
-                >
-                  {applyingAttribution ? (
-                    <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin shrink-0" />
-                  ) : null}
-                  Applica diretto
-                </Button>
-              </div>
-            </div>
+            <Button
+              size="default"
+              variant="outline"
+              className={cn(ACTION_BTN, "bg-background/90")}
+              onClick={() => setAttributionPreviewOpen(true)}
+              title={
+                scanPhases
+                  ? `Anteprima dei cambi di vendor/categoria/OS proposti dalle evidenze. Oggi: ${scanPhases.attribution.level2} host a livello 2, ${scanPhases.attribution.level1} a livello 1, ${scanPhases.attribution.none} senza su ${scanPhases.attribution.total}.${scanPhases.attribution.suggestion ? ` ${scanPhases.attribution.suggestion}` : ""}`
+                  : "Anteprima dei cambi di vendor/categoria/OS proposti dalle evidenze"
+              }
+            >
+              <Tags className="h-3.5 w-3.5 mr-1 shrink-0" />
+              Attribuzione
+              {scanPhases && (
+                <span className="ml-1.5 tabular-nums text-muted-foreground">
+                  {scanPhases.attribution.level2}/{scanPhases.attribution.total}
+                </span>
+              )}
+            </Button>
 
-            {/* ─── VA SCAN — vulnerability assessment (ultimo) ─────────── */}
-            <div className="rounded-md border border-purple-500/45 bg-purple-500/5 px-2 py-1 flex items-center gap-1.5">
-              <p className="text-[11px] font-bold uppercase tracking-wide text-purple-800 dark:text-purple-300 leading-tight whitespace-nowrap mr-0.5">
-                VA Scan
-              </p>
-              <div className="mt-auto">
-                <SubnetEdgeScanPanel networkId={network.id} disabled={!!scanning || enriching} hosts={hosts} cidr={network.cidr} networkName={network.name} />
-              </div>
-            </div>
-
+            {/* VA Scan a parte: scansione invasiva dall'edge, con la sua pianificazione */}
+            <div className="ml-auto">
+              <SubnetEdgeScanPanel networkId={network.id} disabled={busy} hosts={hosts} cidr={network.cidr} networkName={network.name} />
             </div>
           </div>
 

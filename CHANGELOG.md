@@ -4,6 +4,20 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-20 · Testata delle scansioni semplificata
+
+### Modificato
+
+- **Pagina della rete: quattro comandi di scansione invece di dodici** (Riccardo, 20/10: «troppe voci»). Gli stessi
+  strumenti comparivano due volte, una per la subnet e una per gli host selezionati (Nmap, SNMP), e «Credenziali»
+  stava nel gruppo «intera subnet» pur lavorando solo sugli host selezionati. Ora la portata la decide la selezione
+  nella lista: **Scoperta host** (sempre sulla subnet); **Avanzata** (subnet: ping → Nmap -sV → SNMP → Enrich in un
+  giro solo lato server; host selezionati: Nmap profilo completo poi SNMP deep), con le fasi singole e la loro ultima
+  esecuzione nel menu a fianco; **Accesso agli host** (solo selezione: verifica credenziali se la rete ne ha, poi
+  WinRM, poi SSH, ferma alla prima fase in errore); **Attribuzione** (apre l'anteprima, col conteggio a livello 2 sul
+  pulsante). «Applica diretto» è diventato «Applica tutto senza rivedere» dentro l'anteprima; VA Scan resta a destra.
+  Nessuna funzione tolta: ogni comando di prima è a uno o due clic.
+
 ## [Non rilasciato] — 2026-10-20 · Pagina d'accesso nuova e verifica in due passaggi
 
 ### Aggiunto

@@ -134,6 +134,33 @@ export function AttributionPreviewDialog({ open, onOpenChange, networkId, onAppl
     }
   }
 
+  /**
+   * Ex pulsante «Applica diretto» della testata (semplificata il 20/10): ricalcola e
+   * applica su tutta la subnet senza aspettare l'anteprima, utile quando è lenta.
+   */
+  async function applyAllWithoutReview() {
+    setApplying(true);
+    try {
+      const res = await fetch("/api/attribution/recompute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ network_id: networkId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error((data as { error?: string }).error || "Errore nel ricalcolo dell'attribuzione");
+        return;
+      }
+      toast.success((data as { message?: string }).message || "Attribuzione ricalcolata");
+      onApplied?.();
+      onOpenChange(false);
+    } catch {
+      toast.error("Errore di rete");
+    } finally {
+      setApplying(false);
+    }
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className={DIALOG_PANEL_WIDE_CLASS}>
@@ -219,6 +246,15 @@ export function AttributionPreviewDialog({ open, onOpenChange, networkId, onAppl
           )}
         </DialogScrollableArea>
         <div className="shrink-0 border-t border-border/50 px-4 py-3 flex justify-end gap-2">
+          <Button
+            variant="outline"
+            className="mr-auto"
+            onClick={() => void applyAllWithoutReview()}
+            disabled={applying}
+            title="Ricalcola e applica l'attribuzione su tutta la subnet, senza aspettare né rivedere l'anteprima."
+          >
+            Applica tutto senza rivedere
+          </Button>
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={applying}>
             Annulla
           </Button>

@@ -4,6 +4,23 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-20 · Intestazioni ferme anche sulle pagine secondarie
+
+### Cambiato
+
+- `<Table fissa>` sulle liste principali delle altre pagine: Subnet, Tabella ARP, Scansioni,
+  Agenti remoti, IP esclusi, Anomalie, Clienti, Dispositivi (e la lista per classificazione),
+  Ubicazioni, Licenze, Assegnatari, Servizi NIS2, Sorgenti DHCP, Host conosciuti, Patch
+  (dispositivi e software), CVE del Patch, Storico Patch, Classificazioni, e nelle Impostazioni
+  le tabelle di MAC→prodotto, identificazione dispositivi e sysObjectID. Restano come prima le
+  pagine di dettaglio con più tabelle e le tabelle nei dialoghi.
+- Le intestazioni ferme valgono anche per un `thead` scritto con celle normali (Anomalie).
+
+### Corretto
+
+- Menu: sulla Health di Active Directory non si accende anche «Active Directory» in Network,
+  e il gruppo Sicurezza si apre da solo.
+
 ## [Non rilasciato] — 2026-10-20 · Tabelle con le intestazioni ferme, testate più basse
 
 Richiesta di Riccardo del 20/10 («le intestazioni sono enormi; intestazioni e colonne

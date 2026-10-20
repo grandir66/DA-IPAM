@@ -186,7 +186,7 @@ export default function ClassificationsPage() {
               (es. <code>server_postgres</code> figlio di <code>server</code>).
             </p>
           ) : (
-            <Table>
+            <Table fissa>
               <TableHeader>
                 <TableRow>
                   <TableHead>Label</TableHead>

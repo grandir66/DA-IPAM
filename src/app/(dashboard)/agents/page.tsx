@@ -520,7 +520,7 @@ export default function AgentsOverviewPage() {
               Nessun agente registrato. Clicca <em>Nuovo agente</em> per crearne uno.
             </p>
           ) : (
-            <Table>
+            <Table fissa>
               <TableHeader>
                 <TableRow>
                   <TableHead>Cliente</TableHead>

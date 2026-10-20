@@ -71,7 +71,7 @@ export default function ScansPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0">
-            <Table>
+            <Table fissa>
               <TableHeader>
                 <TableRow>
                   <TableHead>Tipo</TableHead>

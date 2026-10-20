@@ -803,7 +803,7 @@ export function NetworksListClient({ initialNetworks, routers: initialRouters }:
         </Card>
       ) : (
         <Card size="sm" className="overflow-hidden">
-          <Table>
+          <Table fissa>
             <TableHeader>
               <TableRow>
                 <TableHead className="w-10">

@@ -516,7 +516,7 @@ export default function DevicesUnifiedPage() {
           </CardContent>
         ) : (
           <TooltipProvider>
-            <Table>
+            <Table fissa>
               <TableHeader>
                 <TableRow>
                   <TableHead 

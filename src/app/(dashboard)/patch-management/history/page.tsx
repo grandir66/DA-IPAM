@@ -643,7 +643,7 @@ export default function PatchHistoryPage() {
         !moduleMissing &&
         filteredItems.length > 0 && (
           <Card>
-            <Table>
+            <Table fissa>
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-44">Data</TableHead>

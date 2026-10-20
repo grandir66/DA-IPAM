@@ -10,7 +10,8 @@ import { useAltezzaDisponibile } from "@/hooks/use-altezza-disponibile"
 const INTESTAZIONI_FERME =
   // Solo la tabella diretta: le sottotabelle delle righe espanse (Software, Vulnerabilità)
   // non devono incollarsi in cima sopra le intestazioni principali.
-  "[&>table>thead_th]:sticky [&>table>thead_th]:top-0 [&>table>thead_th]:z-10 [&>table>thead_th]:bg-card [&>table>thead_th]:shadow-[inset_0_-1px_0_var(--border)]"
+  // Anche `td` nel thead: alcune pagine (Anomalie) scrivono l'intestazione con TableCell.
+  "[&>table>thead_:is(th,td)]:sticky [&>table>thead_:is(th,td)]:top-0 [&>table>thead_:is(th,td)]:z-10 [&>table>thead_:is(th,td)]:bg-card [&>table>thead_:is(th,td)]:shadow-[inset_0_-1px_0_var(--border)]"
 
 /**
  * Contenitore che scorre per una tabella con le intestazioni ferme (20/10, Riccardo;

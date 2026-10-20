@@ -431,7 +431,7 @@ export default function TenantsPage() {
             </p>
           ) : (
             <div className="overflow-x-auto">
-              <Table>
+              <Table fissa>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Codice</TableHead>

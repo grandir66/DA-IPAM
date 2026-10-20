@@ -328,7 +328,7 @@ export default function PatchManagementPage() {
       {/* Tabella */}
       {!loading && !error && !moduleMissing && filteredItems.length > 0 && (
         <Card>
-          <Table>
+          <Table fissa>
             <TableHeader>
               <TableRow>
                 <TableHead className="w-24">CVSS</TableHead>

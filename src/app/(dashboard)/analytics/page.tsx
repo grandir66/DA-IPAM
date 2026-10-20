@@ -263,7 +263,7 @@ export default function AnalyticsPage() {
           <CardTitle className="text-sm font-medium">Eventi anomalia</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
-          <Table>
+          <Table fissa>
             <TableHeader>
               <TableRow>
                 <TableCell className="font-medium text-xs text-muted-foreground w-28">Tipo</TableCell>

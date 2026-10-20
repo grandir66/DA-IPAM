@@ -302,7 +302,7 @@ export default function DhcpPage() {
             <CardDescription>Router configurati per acquisizione lease DHCP</CardDescription>
           </CardHeader>
           <CardContent className="p-0">
-            <Table>
+            <Table fissa>
               <TableHeader>
                 <TableRow>
                   <TableHead>Nome</TableHead>

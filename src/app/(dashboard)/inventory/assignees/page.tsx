@@ -140,7 +140,7 @@ export default function AssetAssigneesPage() {
           {assignees.length === 0 ? (
             <p className="text-muted-foreground py-8 text-center">Nessun assegnatario. Clicca &quot;Nuovo assegnatario&quot; per aggiungerne.</p>
           ) : (
-            <Table>
+            <Table fissa>
               <TableHeader>
                 <TableRow>
                   <TableHead>Nome</TableHead>

@@ -989,7 +989,7 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
         )}
         <TooltipProvider>
         <Card>
-          <Table>
+          <Table fissa>
             <TableHeader>
               <TableRow>
                 <TableHead className="w-10">

@@ -360,7 +360,8 @@ export function Sidebar() {
     networkSubItems.some((d) => pathname.startsWith(d.href))
   );
   const [sicurezzaOpen, setSicurezzaOpen] = useState(() =>
-    ["/vulnerabilities", "/security-alerts"].some((h) => pathname.startsWith(h))
+    ["/vulnerabilities", "/security-alerts"].some((h) => pathname.startsWith(h)) ||
+      (pathname === "/active-directory" && searchParams.get("tab") === "health")
   );
   const [inventoryOpen, setInventoryOpen] = useState(() =>
     inventorySubItems.some((d) => pathname.startsWith(d.href))
@@ -416,13 +417,16 @@ export function Sidebar() {
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, []);
 
+  // Una voce con la query (es. /active-directory?tab=health) vale solo con quella query.
+  const attivaConQuery = (href: string) => {
+    const [p, q] = href.split("?");
+    return pathname === p && new URLSearchParams(q).get("tab") === searchParams.get("tab");
+  };
   const isActive = (href: string) => {
     if (href === "/") return pathname === "/";
-    // Una voce con la query (es. /active-directory?tab=health) vale solo con quella query.
-    if (href.includes("?")) {
-      const [p, q] = href.split("?");
-      return pathname === p && new URLSearchParams(q).get("tab") === searchParams.get("tab");
-    }
+    if (href.includes("?")) return attivaConQuery(href);
+    // Sulla Health di AD non si accende anche «Active Directory» in Network (20/10).
+    if (sicurezzaSubItems.some((v) => v.href.includes("?") && v.href.split("?")[0] === href && attivaConQuery(v.href))) return false;
     return pathname.startsWith(href);
   };
   const closeMobile = () => setMobileOpen(false);

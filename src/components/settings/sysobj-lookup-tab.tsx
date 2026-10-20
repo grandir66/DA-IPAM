@@ -244,7 +244,7 @@ export function SysObjLookupTab() {
 
           {/* Table */}
           <div className="border rounded-md overflow-auto max-h-[600px]">
-            <Table>
+            <Table fissa>
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[56px]">On</TableHead>

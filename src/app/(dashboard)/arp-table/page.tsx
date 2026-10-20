@@ -254,7 +254,7 @@ export default function ArpTablePage() {
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <Table>
+              <Table fissa>
                 <TableHeader>
                   <TableRow>
                     <SortableTableHead columnId="mac_display" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort}>

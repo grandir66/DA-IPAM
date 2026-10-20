@@ -144,10 +144,12 @@ export function AlertsOverTime({
   categories,
   interval,
   emptyNote,
+  altezza = 280,
 }: {
   series: SeriesRow[];
   categories: CategorySlice[];
   interval: string;
+  altezza?: number;
   /** Perche' il grafico e' vuoto, quando del traffico c'e' ma non e' ostile. */
   emptyNote?: string;
 }) {
@@ -160,7 +162,7 @@ export function AlertsOverTime({
   }
   const labels = Object.fromEntries(categories.map((c) => [c.id, c.labelIt]));
   return (
-    <ResponsiveContainer width="100%" height={280}>
+    <ResponsiveContainer width="100%" height={altezza}>
       <BarChart data={series} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
         <CartesianGrid stroke="var(--chart-grid)" vertical={false} />
         <XAxis

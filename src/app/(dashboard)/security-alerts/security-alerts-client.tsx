@@ -4,7 +4,6 @@ import { LoadError } from "@/components/shared/load-error";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -17,15 +16,14 @@ import {
 } from "@/components/ui/table";
 import { RefreshCw, Check, Siren, Pause, Play } from "lucide-react";
 import { WazuhHealthBand } from "@/components/integrations/wazuh-health-band";
+import { STILE_STATO, type ToniStato } from "@/components/shared/stile-stato-modulo";
 import { splitCategories } from "@/lib/integrations/wazuh-alerts-stats";
 import {
-  AlertsComposition,
   AlertsOverTime,
   DiagnosticStrip,
   RankedTable,
   SYSTEM_CHOICES,
   WINDOW_CHOICES,
-  StatTile,
   TargetedAccounts,
   seriesColor,
   type CategorySlice,
@@ -94,12 +92,6 @@ interface StatsResponse {
   } | null;
 }
 
-function levelBadgeClass(level: number): string {
-  if (level >= 12) return "bg-red-100 text-red-800 border-red-200";
-  if (level >= 10) return "bg-orange-100 text-orange-800 border-orange-200";
-  return "bg-amber-100 text-amber-800 border-amber-200";
-}
-
 function formatDate(iso: string): string {
   const d = parseDbDate(iso);
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString("it-IT");
@@ -116,6 +108,7 @@ export function SecurityAlertsClient() {
   const [windowId, setWindowId] = useState("24h");
   const [system, setSystem] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const [classifica, setClassifica] = useState<Classifica>("account");
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
   // Contatore per <WazuhHealthBand>: incrementato dallo stesso ciclo di
   // aggiornamento a 60s usato per gli alert, nessun setInterval aggiuntivo.
@@ -253,80 +246,25 @@ export function SecurityAlertsClient() {
   const bySource = stats?.stats?.bySource ?? [];
   const systems = SYSTEM_CHOICES;
 
+  // Una schermata a 1920 (Riccardo, 20/10): testata e filtri in alto, la coda degli eventi
+  // da prendere in carico a sinistra, l'analisi a destra. Le spiegazioni stanno nei `title`.
+  const statsAssenti = !stats?.stats;
+  const motivoAssenti = stats?.unavailable ?? "statistiche dell'indexer non ancora lette";
   return (
-    <div className="space-y-6 p-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="flex items-center gap-2 text-2xl font-semibold">
-            <Siren className="h-6 w-6" />
-            Alert sicurezza
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Selezione curata degli alert Wazuh. Alert ripetuti dallo stesso agent
-            sulla stessa regola sono raggruppati in un unico evento.
-          </p>
-        </div>
-        <Button onClick={handleSync} disabled={syncing}>
-          <RefreshCw className={`mr-2 h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
-          {syncing ? "Aggiornamento…" : "Aggiorna ora"}
-        </Button>
-      </div>
-
-      <WazuhHealthBand refreshKey={refreshTick} />
-
-      {stats?.unavailable ? (
-        <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          Grafici non disponibili: {stats.unavailable}. La tabella degli eventi resta
-          consultabile.
-        </div>
-      ) : null}
-      {stats?.syncState.lastError ? (
-        <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-          Ultimo poll fallito: {stats.syncState.lastError}
-        </div>
-      ) : null}
-
-      {/* Controlli in una riga sola, sopra i grafici */}
-      <div className="flex flex-wrap items-center gap-2">
-        {windows.map((w) => (
-          <Button
-            key={w.id}
-            variant={windowId === w.id ? "default" : "outline"}
-            size="sm"
-            onClick={() => setWindowId(w.id)}
-          >
-            {w.labelIt}
-          </Button>
-        ))}
-        <span className="mx-1 h-5 w-px bg-border" aria-hidden />
-        <Button
-          variant={system === null ? "default" : "outline"}
-          size="sm"
-          onClick={() => setSystem(null)}
+    <div className="flex flex-col gap-2 lg:h-[calc(100dvh-5.5rem)]">
+      {/* ── Testata: titolo, stato di Wazuh, aggiornamento ───────────── */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 shrink-0">
+        <h1
+          className="flex items-center gap-2 text-xl font-bold tracking-tight mr-1"
+          title="Selezione curata degli alert Wazuh. Alert ripetuti dallo stesso agent sulla stessa regola sono raggruppati in un unico evento."
         >
-          Tutti i sistemi
-        </Button>
-        {systems.map((sy) => (
-          <Button
-            key={sy.id}
-            variant={system === sy.id ? "default" : "outline"}
-            size="sm"
-            onClick={() => setSystem(sy.id)}
-          >
-            {sy.labelIt}
-          </Button>
-        ))}
-        <span className="mx-1 h-5 w-px bg-border" aria-hidden />
-        <Button
-          variant={onlyOpen ? "default" : "outline"}
-          size="sm"
-          onClick={() => setOnlyOpen((v) => !v)}
-        >
-          {onlyOpen ? "Solo aperti" : "Tutti gli stati"}
-        </Button>
+          <Siren className="h-5 w-5" />
+          Alert sicurezza
+        </h1>
+        <WazuhHealthBand refreshKey={refreshTick} compatta />
         <div className="ml-auto flex items-center gap-2">
           {lastRefresh ? (
-            <span className="text-xs text-muted-foreground">
+            <span className="text-[13px] text-muted-foreground">
               aggiornato {lastRefresh.toLocaleTimeString("it-IT")}
             </span>
           ) : null}
@@ -334,185 +272,103 @@ export function SecurityAlertsClient() {
             variant="outline"
             size="sm"
             onClick={() => setAutoRefresh((v) => !v)}
-            title={
-              autoRefresh
-                ? "Aggiornamento automatico attivo (ogni minuto)"
-                : "Aggiornamento automatico in pausa"
-            }
+            title={autoRefresh ? "Aggiornamento automatico attivo (ogni minuto)" : "Aggiornamento automatico in pausa"}
           >
-            {autoRefresh ? (
-              <>
-                <Pause className="mr-1 h-3 w-3" /> Auto
-              </>
-            ) : (
-              <>
-                <Play className="mr-1 h-3 w-3" /> Auto
-              </>
-            )}
+            {autoRefresh ? <Pause className="mr-1 h-3 w-3" /> : <Play className="mr-1 h-3 w-3" />}
+            Auto
+          </Button>
+          <Button size="sm" onClick={handleSync} disabled={syncing}>
+            <RefreshCw className={`mr-2 h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
+            {syncing ? "Aggiornamento…" : "Aggiorna ora"}
           </Button>
         </div>
       </div>
 
-      {/* KPI: i numeri di testa, non un grafico a una barra */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <StatTile
-          label="Alert nel periodo"
-          value={split.attackTotal}
-          hint={
-            split.diagnosticTotal > 0
-              ? `${windows.find((w) => w.id === windowId)?.labelIt} · ${split.diagnosticTotal} non ostili esclusi`
-              : windows.find((w) => w.id === windowId)?.labelIt
-          }
-        />
-        <StatTile
-          label="Eventi aperti"
-          value={stats?.openTotal ?? 0}
-          hint="da prendere in carico"
-        />
-        <StatTile label="Agent coinvolti" value={totals?.agents ?? 0} />
-        <StatTile label="Regole distinte" value={totals?.rules ?? 0} />
+      {/* ── Filtri in una riga: periodo, sistema, categoria, stato ────── */}
+      <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+        {windows.map((w) => (
+          <Button key={w.id} variant={windowId === w.id ? "default" : "outline"} size="sm" onClick={() => setWindowId(w.id)}>
+            {w.labelIt}
+          </Button>
+        ))}
+        <span className="mx-1 h-5 w-px bg-border" aria-hidden />
+        <Button variant={system === null ? "default" : "outline"} size="sm" onClick={() => setSystem(null)}>
+          Tutti i sistemi
+        </Button>
+        {systems.map((sy) => (
+          <Button key={sy.id} variant={system === sy.id ? "default" : "outline"} size="sm" onClick={() => setSystem(sy.id)}>
+            {sy.labelIt}
+          </Button>
+        ))}
+        <span className="mx-1 h-5 w-px bg-border" aria-hidden />
+        <Button variant={onlyOpen ? "default" : "outline"} size="sm" onClick={() => setOnlyOpen((v) => !v)}>
+          {onlyOpen ? "Solo aperti" : "Tutti gli stati"}
+        </Button>
       </div>
-
-      <div className="grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle className="text-base">Distribuzione nel tempo</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <AlertsOverTime
-              series={series}
-              categories={split.attacks}
-              interval={stats?.interval ?? "1h"}
-              emptyNote={noAttacksNote}
-            />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Composizione</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <AlertsComposition categories={split.attacks} emptyNote={noAttacksNote} />
-          </CardContent>
-        </Card>
-      </div>
-
-      <DiagnosticStrip categories={split.diagnostic} />
-
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Dove avviene</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="mb-3 text-xs text-muted-foreground">
-              Host su cui il tentativo fallito viene registrato: la destinazione
-              della violazione.
-            </p>
-            <RankedTable
-              entries={byTarget}
-              keyHeader="Destinazione"
-              detailHeader="Account più colpito"
-              emptyLabel="Nessuna destinazione da segnalare. L'attività originata dalle reti e dagli account dichiarati come nostri è esclusa da questa classifica."
-            />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Da dove parte</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="mb-3 text-xs text-muted-foreground">
-              Origine della richiesta: IP pubblici o interni e postazioni di
-              provenienza.
-            </p>
-            <RankedTable
-              entries={bySource}
-              keyHeader="Origine della richiesta"
-              detailHeader="Account provato"
-              emptyLabel="Nessuna origine da segnalare. L'attività originata dalle reti e dagli account dichiarati come nostri è esclusa da questa classifica."
-            />
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Account bersagliati</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="mb-3 text-xs text-muted-foreground">
-            Chi subisce i tentativi di accesso falliti e da dove partono, su tutte
-            le sorgenti che Wazuh raccoglie: Windows, Microsoft 365 e Linux. Gli
-            account che finiscono con &quot;$&quot; sono account computer, non persone.
-            I nostri account di servizio sono esclusi.
-          </p>
-          <TargetedAccounts accounts={topAccounts} />
-        </CardContent>
-      </Card>
-
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          variant={category === null ? "default" : "outline"}
-          size="sm"
-          onClick={() => setCategory(null)}
-        >
-          Tutte
+      <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+        <Button variant={category === null ? "default" : "outline"} size="sm" onClick={() => setCategory(null)}>
+          Tutte le categorie
         </Button>
         {categories.map((c) => (
-          <Button
-            key={c.id}
-            variant={category === c.id ? "default" : "outline"}
-            size="sm"
-            onClick={() => setCategory(c.id)}
-          >
-            <span
-              className="mr-2 inline-block h-2 w-2 rounded-sm"
-              style={{ background: seriesColor(c.id) }}
-              aria-hidden
-            />
+          <Button key={c.id} variant={category === c.id ? "default" : "outline"} size="sm" onClick={() => setCategory(c.id)}>
+            <span className="mr-1.5 inline-block h-2.5 w-2.5 rounded-sm" style={{ background: seriesColor(c.id) }} aria-hidden />
             {c.labelIt}
-            {openCounts[c.id] ? (
-              <Badge className="ml-2 bg-slate-200 text-slate-800">{openCounts[c.id]}</Badge>
-            ) : null}
+            {openCounts[c.id] ? <span className="ml-1.5 font-bold tabular-nums">{openCounts[c.id]}</span> : null}
           </Button>
         ))}
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">
-            {loading ? "Caricamento…" : truncated ? `Primi ${ALERTS_LIMIT} eventi` : `${events.length} eventi`}
-            {!loading && (
-              <span className="ml-2 text-sm font-normal text-muted-foreground">
-                visti in: {windowLabel.toLowerCase()}
-                {systemLabel ? ` · ${systemLabel}` : ""}
-                {onlyOpen && openTotal > events.length ? ` · ${openTotal} aperti in tutto` : ""}
-              </span>
-            )}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {!loading && truncated && (
-            <p className="pb-3 text-sm text-amber-700 dark:text-amber-400">
-              Sono mostrati i {ALERTS_LIMIT} eventi più recenti: scegli una categoria per vedere gli altri.
-            </p>
-          )}
-          {!loading && loadError && !data ? (
-            <LoadError what="gli allarmi di sicurezza" message={loadError} onRetry={() => void load()} />
-          ) : !loading && events.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">
-              Nessun evento in questo periodo. Se l&apos;integrazione Wazuh è appena stata
-              configurata, usa &quot;Aggiorna ora&quot; per il primo poll.
-            </p>
-          ) : (
-            <div className="overflow-x-auto">
-              <Table fissa>
+      {/* ── Numeri di testa e avvisi, in una riga ─────────────────────── */}
+      <div className="flex flex-wrap items-stretch gap-2 shrink-0">
+        <Numero
+          titolo="Alert nel periodo"
+          valore={statsAssenti ? "—" : numero(split.attackTotal)}
+          title={statsAssenti ? `Non disponibile: ${motivoAssenti}` : split.diagnosticTotal > 0 ? `${windowLabel} · ${split.diagnosticTotal} non ostili esclusi` : windowLabel}
+        />
+        <Numero titolo="Eventi aperti" valore={stats ? numero(stats.openTotal) : "—"} title="Da prendere in carico" />
+        <Numero titolo="Agent coinvolti" valore={statsAssenti ? "—" : numero(totals?.agents ?? 0)} title={statsAssenti ? `Non disponibile: ${motivoAssenti}` : undefined} />
+        <Numero titolo="Regole distinte" valore={statsAssenti ? "—" : numero(totals?.rules ?? 0)} title={statsAssenti ? `Non disponibile: ${motivoAssenti}` : undefined} />
+        {stats?.unavailable ? (
+          <span className={`self-center rounded-md border px-2 py-1 text-[13px] ${STILE_STATO.attenzione.classi}`}>
+            {STILE_STATO.attenzione.segno} Grafici non disponibili: {stats.unavailable}
+          </span>
+        ) : null}
+        {stats?.syncState.lastError ? (
+          <span className={`self-center rounded-md border px-2 py-1 text-[13px] ${STILE_STATO.guasto.classi}`}>
+            {STILE_STATO.guasto.segno} Ultimo poll fallito: {stats.syncState.lastError}
+          </span>
+        ) : null}
+      </div>
+
+      {/* ── Corpo: coda a sinistra, analisi a destra ──────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)] gap-2 lg:flex-1 lg:min-h-0">
+        <Card size="sm" className="lg:min-h-0 data-[size=sm]:gap-1">
+          <CardHeader>
+            <CardTitle className="text-sm">
+              {loading ? "Caricamento…" : truncated ? `Primi ${ALERTS_LIMIT} eventi` : `${events.length} eventi`}
+              {!loading && (
+                <span className="ml-2 text-[13px] font-normal text-muted-foreground">
+                  visti in: {windowLabel.toLowerCase()}
+                  {systemLabel ? ` · ${systemLabel}` : ""}
+                  {onlyOpen && openTotal > events.length ? ` · ${openTotal} aperti in tutto` : ""}
+                  {truncated ? " · i più recenti: scegli una categoria per gli altri" : ""}
+                </span>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="lg:flex-1 lg:min-h-0">
+            {!loading && loadError && !data ? (
+              <LoadError what="gli allarmi di sicurezza" message={loadError} onRetry={() => void load()} />
+            ) : !loading && events.length === 0 ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                Nessun evento in questo periodo. Se l&apos;integrazione Wazuh è appena stata
+                configurata, usa &quot;Aggiorna ora&quot; per il primo poll.
+              </p>
+            ) : (
+              <Table fissa riserva={16}>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Liv.</TableHead>
+                    <TableHead title="Livello della regola Wazuh: ✕ 12 e oltre, ▲ 10-11, ● sotto 10">Liv.</TableHead>
                     <TableHead>Regola</TableHead>
                     <TableHead>Agent</TableHead>
                     <TableHead>Dettagli</TableHead>
@@ -522,60 +378,155 @@ export function SecurityAlertsClient() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {events.map((e) => (
-                    <TableRow key={e.id} className={e.acknowledged ? "opacity-60" : ""}>
-                      <TableCell>
-                        <Badge className={levelBadgeClass(e.rule_level)}>
-                          {e.rule_level}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="max-w-sm">
-                        <div className="flex items-center gap-2 font-medium">
-                          <span
-                            className="inline-block h-2 w-2 shrink-0 rounded-sm"
-                            style={{ background: seriesColor(e.category) }}
-                            aria-hidden
-                          />
-                          {e.rule_description ?? "—"}
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          {categories.find((c) => c.id === e.category)?.labelIt ??
-                            e.category}
-                          {e.diagnostic ? " · diagnostica" : ""}
-                          {e.rule_id ? ` · rule ${e.rule_id}` : ""}
-                        </div>
-                      </TableCell>
-                      <TableCell>{e.agent_name ?? "—"}</TableCell>
-                      <TableCell className="text-xs">
-                        {e.event_id ? <div>Event ID {e.event_id}</div> : null}
-                        {e.target_user ? <div>Utente: {e.target_user}</div> : null}
-                        {e.source_ip ? <div>IP: {e.source_ip}</div> : null}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {e.occurrence_count}
-                      </TableCell>
-                      <TableCell className="text-xs">{formatDate(e.last_seen_at)}</TableCell>
-                      <TableCell className="text-right">
-                        {e.acknowledged ? (
-                          <span className="text-xs text-muted-foreground">
-                            preso in carico
-                            {e.acknowledged_by ? ` da ${e.acknowledged_by}` : ""}
+                  {events.map((e) => {
+                    const lv = STILE_STATO[tonoLivello(e.rule_level)];
+                    return (
+                      <TableRow key={e.id} className={e.acknowledged ? "opacity-60" : ""}>
+                        <TableCell>
+                          <span className={`inline-flex items-center gap-0.5 rounded border px-1.5 text-[13px] font-semibold tabular-nums ${lv.classi}`}>
+                            <span aria-hidden>{lv.segno}</span>
+                            {e.rule_level}
                           </span>
-                        ) : (
-                          <Button size="sm" variant="outline" onClick={() => handleAck(e.id)}>
-                            <Check className="mr-1 h-3 w-3" />
-                            Prendi in carico
-                          </Button>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                        </TableCell>
+                        <TableCell className="max-w-sm whitespace-normal">
+                          <div className="flex items-center gap-2 font-medium">
+                            <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: seriesColor(e.category) }} aria-hidden />
+                            {e.rule_description ?? "—"}
+                          </div>
+                          <div className="text-[13px] text-muted-foreground">
+                            {categories.find((c) => c.id === e.category)?.labelIt ?? e.category}
+                            {e.diagnostic ? " · diagnostica" : ""}
+                            {e.rule_id ? ` · rule ${e.rule_id}` : ""}
+                          </div>
+                        </TableCell>
+                        <TableCell>{e.agent_name ?? "—"}</TableCell>
+                        <TableCell className="text-[13px] whitespace-normal">
+                          {e.event_id ? <div>Event ID {e.event_id}</div> : null}
+                          {e.target_user ? <div>Utente: {e.target_user}</div> : null}
+                          {e.source_ip ? <div>IP: {e.source_ip}</div> : null}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">{numero(e.occurrence_count)}</TableCell>
+                        <TableCell className="text-[13px]">{formatDate(e.last_seen_at)}</TableCell>
+                        <TableCell className="text-right">
+                          {e.acknowledged ? (
+                            <span className="text-[13px] text-muted-foreground">
+                              preso in carico{e.acknowledged_by ? ` da ${e.acknowledged_by}` : ""}
+                            </span>
+                          ) : (
+                            <Button size="sm" variant="outline" onClick={() => handleAck(e.id)}>
+                              <Check className="mr-1 h-3 w-3" />
+                              Prendi in carico
+                            </Button>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+            )}
+          </CardContent>
+        </Card>
+
+        <div className="flex flex-col gap-2 lg:min-h-0">
+          <Card size="sm" className="shrink-0 data-[size=sm]:gap-1">
+            <CardHeader>
+              <CardTitle className="text-sm" title="Alert ostili per categoria nel periodo scelto. Le nostre sonde e la salute della raccolta restano fuori: sono elencate in fondo alla colonna.">
+                Nel tempo
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {statsAssenti ? (
+                <p className="py-6 text-center text-[13px] text-muted-foreground">Non disponibile: {motivoAssenti}.</p>
+              ) : (
+                <AlertsOverTime series={series} categories={split.attacks} interval={stats?.interval ?? "1h"} emptyNote={noAttacksNote} altezza={230} />
+              )}
+            </CardContent>
+          </Card>
+          <Card size="sm" className="lg:flex-1 lg:min-h-0 data-[size=sm]:gap-1">
+            <CardHeader>
+              <div className="inline-flex w-fit rounded-md border text-[13px]" role="tablist" aria-label="Classifiche">
+                {CLASSIFICHE.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={classifica === c.id}
+                    title={c.spiegazione}
+                    onClick={() => setClassifica(c.id)}
+                    className={`px-2.5 py-1 ${classifica === c.id ? "bg-[#0D2537] text-white dark:bg-[#A9BECC] dark:text-[#0D2537]" : "text-muted-foreground hover:text-foreground"}`}
+                  >
+                    {c.etichetta}
+                  </button>
+                ))}
+              </div>
+            </CardHeader>
+            <CardContent className="lg:flex-1 lg:min-h-0 lg:overflow-auto">
+              {statsAssenti ? (
+                <p className="py-6 text-center text-[13px] text-muted-foreground">Non disponibile: {motivoAssenti}.</p>
+              ) : classifica === "account" ? (
+                <TargetedAccounts accounts={topAccounts} />
+              ) : classifica === "destinazioni" ? (
+                <RankedTable
+                  entries={byTarget}
+                  keyHeader="Destinazione"
+                  detailHeader="Account più colpito"
+                  emptyLabel="Nessuna destinazione da segnalare. L'attività originata dalle reti e dagli account dichiarati come nostri è esclusa da questa classifica."
+                />
+              ) : (
+                <RankedTable
+                  entries={bySource}
+                  keyHeader="Origine della richiesta"
+                  detailHeader="Account provato"
+                  emptyLabel="Nessuna origine da segnalare. L'attività originata dalle reti e dagli account dichiarati come nostri è esclusa da questa classifica."
+                />
+              )}
+            </CardContent>
+          </Card>
+          <div className="shrink-0">
+            <DiagnosticStrip categories={split.diagnostic} />
+          </div>
+        </div>
+      </div>
     </div>
+  );
+}
+
+const numero = (n: number) => n.toLocaleString("it-IT");
+
+/** Livello della regola Wazuh nei toni dei token (niente pastello, Riccardo è daltonico). */
+function tonoLivello(level: number): ToniStato {
+  if (level >= 12) return "guasto";
+  if (level >= 10) return "attenzione";
+  return "da_verificare";
+}
+
+type Classifica = "account" | "destinazioni" | "origini";
+
+const CLASSIFICHE: { id: Classifica; etichetta: string; spiegazione: string }[] = [
+  {
+    id: "account",
+    etichetta: "Account bersagliati",
+    spiegazione: "Chi subisce i tentativi di accesso falliti e da dove partono, su tutte le sorgenti di Wazuh: Windows, Microsoft 365 e Linux. Gli account che finiscono con \"$\" sono account computer, non persone. I nostri account di servizio sono esclusi.",
+  },
+  {
+    id: "destinazioni",
+    etichetta: "Dove avviene",
+    spiegazione: "Host su cui il tentativo fallito viene registrato: la destinazione della violazione.",
+  },
+  {
+    id: "origini",
+    etichetta: "Da dove parte",
+    spiegazione: "Origine della richiesta: IP pubblici o interni e postazioni di provenienza.",
+  },
+];
+
+/** Numero di testa: card bassa come gli indicatori della dashboard. */
+function Numero({ titolo, valore, title }: { titolo: string; valore: string; title?: string }) {
+  return (
+    <span className="flex flex-col justify-center rounded-md border bg-card px-3 py-1 leading-tight" title={title}>
+      <span className="text-[13px] text-muted-foreground">{titolo}</span>
+      <span className="text-xl font-bold leading-none tabular-nums">{valore}</span>
+    </span>
   );
 }

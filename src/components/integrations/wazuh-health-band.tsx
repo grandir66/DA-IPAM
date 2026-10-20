@@ -8,6 +8,7 @@
  * dal genitore (contatore agganciato al ciclo di aggiornamento già presente
  * nella pagina). `AbortController` con cleanup nell'`useEffect`.
  */
+import { STILE_STATO, type ToniStato } from "@/components/shared/stile-stato-modulo";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ChevronDown, ChevronRight, Settings2 } from "lucide-react";
@@ -38,9 +39,14 @@ const WAZUH_SETTINGS_HREF = "/settings?tab=moduli#module-wazuh";
 
 interface WazuhHealthBandProps {
   refreshKey: number;
+  /** Una riga di pastiglie sulla testata (Alert sicurezza, 20/10): il dettaglio sta nel `title`. */
+  compatta?: boolean;
 }
 
-export function WazuhHealthBand({ refreshKey }: WazuhHealthBandProps) {
+/** Tono dei token per le pastiglie compatte: simbolo e luminanza, non solo colore. */
+const TONO_VERDETTO: Record<HealthVerdict, ToniStato> = { ok: "ok", degraded: "attenzione", fail: "guasto" };
+
+export function WazuhHealthBand({ refreshKey, compatta = false }: WazuhHealthBandProps) {
   const [blocks, setBlocks] = useState<BlockHealth[] | null>(null);
   const [expanded, setExpanded] = useState<Set<BlockHealth["key"]>>(new Set());
   const abortRef = useRef<AbortController | null>(null);
@@ -68,6 +74,24 @@ export function WazuhHealthBand({ refreshKey }: WazuhHealthBandProps) {
       else next.add(key);
       return next;
     });
+  }
+
+  if (compatta) {
+    return (
+      <div className="flex flex-wrap items-center gap-1.5" aria-label="Stato di Wazuh">
+        {(blocks ?? []).map((b) => {
+          const st = STILE_STATO[b.configured ? TONO_VERDETTO[b.verdict] : "grigio"];
+          const titolo = [`${BLOCK_LABEL[b.key]}: ${b.headline}`, ...(b.configured ? b.detail ?? [] : ["Configura nelle impostazioni"])].join("\n");
+          const corpo = (
+            <span className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[13px] leading-tight ${st.classi}`} title={titolo}>
+              <span aria-hidden className="font-bold">{st.segno}</span>
+              {BLOCK_LABEL[b.key]}
+            </span>
+          );
+          return b.configured ? <span key={b.key}>{corpo}</span> : <Link key={b.key} href={WAZUH_SETTINGS_HREF}>{corpo}</Link>;
+        })}
+      </div>
+    );
   }
 
   return (

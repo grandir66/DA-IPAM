@@ -2,13 +2,13 @@
  * Tipi di job schedulato (`scheduled_jobs.job_type`): l'UNICO elenco.
  *
  * Da qui derivano il CHECK dello schema tenant (`db-tenant-schema.ts`), quello
- * delle ultime ricostruzioni della tabella (`migrateScheduledJobsV8` e
- * `migrateScheduledJobsV9` in `db-tenant.ts`) e il tipo TypeScript (`ScheduledJob["job_type"]` in
+ * delle ultime ricostruzioni della tabella (`migrateScheduledJobsV8`, `V9` e
+ * `V10` in `db-tenant.ts`) e il tipo TypeScript (`ScheduledJob["job_type"]` in
  * `@/types`). Prima erano tre elenchi scritti a mano, più uno per ognuna delle
  * ricostruzioni v2…v7: se lo schema e la migrazione divergono, un DB nuovo e
  * uno aggiornato accettano job diversi.
  *
- * Aggiungere un tipo: in coda qui, poi una nuova ricostruzione (v10…) in
+ * Aggiungere un tipo: in coda qui, poi una nuova ricostruzione (v11…) in
  * `getTenantDb` con la guardia sul nuovo valore. Togliere un tipo no: le righe
  * esistenti non passerebbero il CHECK della copia.
  *
@@ -37,12 +37,30 @@ export const SCHEDULED_JOB_TYPES = [
   // v9 (topologia fase 2b): lettura giornaliera degli hypervisor (VM e schede
   // vive). Uno per tenant, spento di default: lo accende un amministratore.
   "hypervisor_sync",
+  // v10 (pulizia degli host assenti, piano 2026-10-20): archivia ogni notte gli
+  // host assenti e cancella l'archivio oltre i 90 giorni. Uno per tenant,
+  // spento di default: lo accende solo l'interruttore della pagina della pulizia.
+  "pulizia_host",
 ] as const;
 
 export type ScheduledJobType = (typeof SCHEDULED_JOB_TYPES)[number];
 
 /** Il job hypervisor_sync gira una volta al giorno (lo scheduler lo mette alle 03:00). */
 export const HYPERVISOR_SYNC_MINUTES = 1440;
+
+/** Il job pulizia_host gira una volta al giorno, alle 04:00 (`oraDelGiroGiornaliero`). */
+export const PULIZIA_HOST_MINUTES = 1440;
+
+/**
+ * L'ora (del server) a cui lo scheduler fa partire un job di un giorno o più.
+ * Tutti alle 03:00, tranne pulizia_host alle 04:00: dopo il backup notturno
+ * (`backup/scheduler.ts`, predefinito alle 03:00) e dopo le letture
+ * giornaliere: il giro che toglie host trova il DB già salvato e non parte
+ * insieme a loro.
+ */
+export function oraDelGiroGiornaliero(jobType: string | undefined): number {
+  return jobType === "pulizia_host" ? 4 : 3;
+}
 
 /** Il vincolo SQL, così com'è dentro `job_type TEXT NOT NULL CHECK(…)`. */
 export const SCHEDULED_JOB_TYPES_CHECK_SQL = `job_type IN (${SCHEDULED_JOB_TYPES.map((t) => `'${t}'`).join(", ")})`;

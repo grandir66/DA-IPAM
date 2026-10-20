@@ -3,6 +3,7 @@ import { currentFacadeTenant, getEnabledJobs, updateJobLastRun } from "@/lib/db"
 import { getActiveTenants } from "@/lib/db-hub";
 import { withTenant } from "@/lib/db-tenant";
 import { runJob, type OpzioniRunJob } from "./jobs";
+import { oraDelGiroGiornaliero } from "@/lib/scheduled-job-types";
 import {
   createFailureState,
   findTenantOutages,
@@ -118,7 +119,7 @@ export function initializeScheduler(): void {
       const jobs = getEnabledJobs();
       for (const job of jobs) {
         const key = `${tenant.codice_cliente}:${job.id}`;
-        scheduleJob(key, job.id, job.interval_minutes, tenant.codice_cliente);
+        scheduleJob(key, job.id, job.interval_minutes, tenant.codice_cliente, job.job_type);
         totalJobs++;
       }
       if (jobs.length > 0) {
@@ -130,7 +131,12 @@ export function initializeScheduler(): void {
   console.info(`[Scheduler] ${totalJobs} job attivi caricati da ${tenants.length} tenant`);
 }
 
-function intervalToCron(minutes: number): string {
+/**
+ * L'espressione cron di un job: dall'intervallo e, per i job di un giorno o più,
+ * dall'ora del tipo (`oraDelGiroGiornaliero`: pulizia_host alle 04:00, gli altri
+ * alle 03:00). Senza tipo, le 03:00 di sempre. Esportata per le prove.
+ */
+export function intervalToCron(minutes: number, jobType?: string): string {
   // Fix B1 2026-06-23: la vecchia versione collassava ogni intervallo ≥1440min
   // (3 giorni, settimana) in "0 0 * * *" = GIORNALIERO → VA scan 7× troppo
   // frequenti; e `*/N` per N che non divide il campo dava cadenza irregolare.
@@ -148,9 +154,10 @@ function intervalToCron(minutes: number): string {
   // ≥ 1 giorno: esegui ogni N giorni (N≥1). cron `*/d` sul campo day-of-month
   // approssima "ogni d giorni" (reset a inizio mese, ma niente più 7× al giorno).
   const days = Math.max(1, Math.round(minutes / 1440));
-  if (days === 1) return `0 3 * * *`;       // giornaliero alle 03:00
-  if (days >= 7) return `0 3 * * 1`;        // settimanale: lunedì 03:00
-  return `0 3 */${days} * *`;               // ogni N giorni alle 03:00
+  const ora = oraDelGiroGiornaliero(jobType);
+  if (days === 1) return `0 ${ora} * * *`;       // giornaliero (03:00; pulizia_host 04:00)
+  if (days >= 7) return `0 ${ora} * * 1`;        // settimanale: lunedì
+  return `0 ${ora} */${days} * *`;               // ogni N giorni
 }
 
 export function scheduleJob(
@@ -158,11 +165,13 @@ export function scheduleJob(
   jobId: number,
   intervalMinutes: number,
   tenantCode: string,
+  /** Il tipo del job: decide l'ora dei giornalieri (`intervalToCron`). */
+  jobType?: string,
 ): void {
   // Stop existing task if any
   stopJob(key);
 
-  const cronExpr = intervalToCron(intervalMinutes);
+  const cronExpr = intervalToCron(intervalMinutes, jobType);
 
   const task = cron.schedule(cronExpr, async () => {
     await eseguiJobProgrammato(key, jobId, tenantCode);
@@ -259,7 +268,7 @@ export function reloadTenantScheduler(tenantCode: string): void {
     const jobs = getEnabledJobs();
     for (const job of jobs) {
       const key = `${tenantCode}:${job.id}`;
-      scheduleJob(key, job.id, job.interval_minutes, tenantCode);
+      scheduleJob(key, job.id, job.interval_minutes, tenantCode, job.job_type);
     }
     console.info(`[Scheduler] Tenant ${tenantCode}: ${jobs.length} job ricaricati`);
   });

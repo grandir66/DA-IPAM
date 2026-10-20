@@ -87,6 +87,7 @@ const JOB_TYPE_LABELS: Record<string, string> = {
   ad_sync: "Sincronizzazione Active Directory",
   unifi_sync: "Sincronizzazione controller UniFi",
   hypervisor_sync: "Lettura hypervisor (VM e schede)",
+  pulizia_host: "Pulizia host assenti (notte)",
 };
 
 const HEAVY_JOB_TYPES = new Set(["fast_scan", "ping_sweep"]);

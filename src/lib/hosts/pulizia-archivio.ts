@@ -22,6 +22,8 @@ import { FUSO_UTENTI, parseDbDate } from "@/lib/db-date";
 import { macToHex, normalizeMacForStorage } from "@/lib/utils";
 import { scriviRegistroPulizia, scriviRighePulizia, type RigaRegistroPulizia } from "@/lib/hosts/registro-pulizia";
 import { candidatiPulizia } from "@/lib/hosts/pulizia-candidati";
+import type { Candidato } from "@/lib/hosts/pulizia";
+import { giroSullaRete } from "@/lib/scanner/network-scan-lock";
 
 export const GIORNI_ARCHIVIO_PRIMA_DI_CANCELLARE = 90;
 
@@ -393,8 +395,9 @@ function nominaNonCandidati(d: Database.Database, ids: number[]): HostNominato[]
  *   scritta a mano);
  * - poi si cancella l'archivio scaduto (caso 5: a job spento nessun altro lo farebbe).
  * Un host per transazione (scelta del Task 4): un guasto a metà lascia archiviati i precedenti e lancia
- * `ErroreApplica`, che li nomina con quelli rimasti. Tutto sincrono: fra la lettura dei candidati e l'ultima
- * archiviazione nessun `await`, quindi la scansione dello stesso processo non si infila in mezzo.
+ * `ErroreApplica`, che li nomina con quelli rimasti; un host che a metà non è più archiviabile va fra i «non più
+ * candidati» (`archiviaElenco`, lo stesso giro del job notturno). Tutto sincrono: fra la lettura dei candidati e
+ * l'ultima archiviazione nessun `await`, quindi la scansione dello stesso processo non si infila in mezzo.
  */
 export function applicaPulizia(ids: number[], conferma: number, da: string): EsitoApplica {
   if (ids.length === 0) throw new ErroreConferma("Nessun host da archiviare nell'elenco");
@@ -409,23 +412,118 @@ export function applicaPulizia(ids: number[], conferma: number, da: string): Esi
   const daArchiviare = ids.filter((id) => candidati.has(id)).map((id) => candidati.get(id)!);
   const nonPiuCandidati = nominaNonCandidati(d, ids.filter((id) => !candidati.has(id)));
 
+  const g = archiviaElenco(d, daArchiviare, da);
+  // Saltati a metà giro (non più offline, spariti): per chi ha premuto «Applica» sono «non più candidati».
+  const nonPiu = [...nonPiuCandidati, ...g.saltati];
+  if (!g.ok) {
+    if (g.fallito) throw new ErroreApplica(g.archiviati, g.nonArchiviati, nonPiu, `${g.fallito.nome} (${g.fallito.ip}): ${messaggio(g.errore)}`);
+    throw new ErroreApplica(g.archiviati, [], nonPiu,
+      `host archiviati, ma la cancellazione dell'archivio oltre i ${GIORNI_ARCHIVIO_PRIMA_DI_CANCELLARE} giorni non è riuscita (${messaggio(g.errore)})`);
+  }
+  return { archiviati: g.archiviati, nonPiuCandidati: nonPiu, cancellatiDallArchivio: g.cancellatiDallArchivio };
+}
+
+const messaggio = (e: unknown): string => (e instanceof Error ? e.message : String(e));
+const nominato = ({ id, ip, nome }: HostNominato): HostNominato => ({ id, ip, nome });
+
+/** Esito di `archiviaElenco`. */
+type EsitoElenco =
+  | { ok: true; archiviati: HostNominato[]; saltati: HostNominato[]; cancellatiDallArchivio: HostNominato[] }
+  | {
+    ok: false; archiviati: HostNominato[]; saltati: HostNominato[]; nonArchiviati: HostNominato[];
+    /** L'host su cui si è fermato; null se è fallita la cancellazione dell'archivio scaduto. */
+    fallito: HostNominato | null;
+    errore: unknown;
+  };
+
+/**
+ * Il giro comune a «Applica» e al job notturno: archivia i candidati già scelti, uno per transazione, poi cancella
+ * l'archivio scaduto. Chi chiama decide come dire un guasto (ErroreApplica per nome a chi ha premuto, solo numeri e id
+ * per il journal).
+ * - Un host che `archiviaHost` rifiuta perché nel frattempo non è più archiviabile (sparito, non più offline: il freno
+ *   di `archiviaHost`) si salta e torna in `saltati`: è il caso 3, non un guasto. Lo si decide rileggendo lo stato
+ *   dell'host dopo il rifiuto, non dal testo dell'errore.
+ * - Ogni altro errore ferma il giro: i già archiviati restano (ognuno ha la sua transazione col registro), quello che
+ *   ha fallito e i seguenti restano in `hosts`, l'archivio scaduto non si cancella.
+ * Tutto sincrono: fra la lettura dei candidati di chi chiama e l'ultima archiviazione nessun `await`.
+ */
+function archiviaElenco(d: Database.Database, daArchiviare: Candidato[], da: string): EsitoElenco {
   const archiviati: HostNominato[] = [];
+  const saltati: HostNominato[] = [];
+  const stato = d.prepare("SELECT status FROM hosts WHERE id = ?");
   for (const [i, c] of daArchiviare.entries()) {
     try {
       const r = archiviaHost(c.id, c.motivo, c.dettaglio, da);
       archiviati.push({ id: c.id, ip: r.ip, nome: r.nome });
-    } catch (e) {
-      const causa = `${c.nome} (${c.ip}): ${e instanceof Error ? e.message : String(e)}`;
-      throw new ErroreApplica(archiviati, daArchiviare.slice(i).map(({ id, ip, nome }) => ({ id, ip, nome })), nonPiuCandidati, causa);
+    } catch (errore) {
+      const ora = stato.get(c.id) as { status: string | null } | undefined;
+      if (!ora || ora.status !== "offline") {
+        saltati.push(nominato(c));
+        continue;
+      }
+      return { ok: false, archiviati, saltati, nonArchiviati: daArchiviare.slice(i).map(nominato), fallito: nominato(c), errore };
     }
   }
-
-  let cancellatiDallArchivio: HostNominato[];
   try {
-    cancellatiDallArchivio = cancellaArchivioScaduto();
-  } catch (e) {
-    throw new ErroreApplica(archiviati, [], nonPiuCandidati,
-      `host archiviati, ma la cancellazione dell'archivio oltre i ${GIORNI_ARCHIVIO_PRIMA_DI_CANCELLARE} giorni non è riuscita (${e instanceof Error ? e.message : String(e)})`);
+    return { ok: true, archiviati, saltati, cancellatiDallArchivio: cancellaArchivioScaduto() };
+  } catch (errore) {
+    return { ok: false, archiviati, saltati, nonArchiviati: [], fallito: null, errore };
   }
-  return { archiviati, nonPiuCandidati, cancellatiDallArchivio };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Job notturno `pulizia_host` (piano 2026-10-20, Task 5)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Resoconto del giro notturno: solo numeri (i nomi e gli IP stanno nel registro JSONL). */
+export interface EsitoPuliziaNotturna {
+  archiviati: number;
+  /** Candidati che a metà giro non erano più archiviabili (tornati online, spariti). */
+  nonPiuArchiviabili: number;
+  /** Candidati di una rete in scansione proprio adesso: la notte dopo. */
+  rinviati: number;
+  cancellatiDallArchivio: number;
+}
+
+/**
+ * Il giro del job `pulizia_host` (acceso solo dall'interruttore, decisione 4): i candidati di adesso
+ * (`candidatiPulizia`, con tutte le esclusioni), archiviati da «job», poi l'archivio oltre i 90 giorni.
+ * - Un candidato su una rete che un giro di scansione tiene adesso (lucchetto in memoria, `network-scan-lock`) si
+ *   rinvia alla notte dopo: il giro sta per riscrivere quegli host, e uno tolto sotto i suoi piedi diventerebbe un host
+ *   nuovo o un errore della scansione. Un host assente da 60 giorni può aspettare un giorno.
+ * - Un candidato che a metà giro non si può più archiviare si salta e si conta (`archiviaElenco`).
+ * - Ogni altro errore ferma il giro e lancia, così lo scheduler lo conta fra i falliti e non scrive `last_run`. Il
+ *   messaggio porta l'id dell'host e i numeri, mai nomi o IP: finisce nel journal.
+ * Nel journal una riga di soli numeri; i nomi vanno solo nel registro JSONL (scritto da `archiviaHost` e
+ * `cancellaArchivioScaduto`). Senza contesto tenant lancia (`dbCorrente`).
+ */
+export function runPuliziaHost(): EsitoPuliziaNotturna {
+  const d = dbCorrente();
+  const tenant = getCurrentTenantCode();
+  const { candidati } = candidatiPulizia();
+  const retePerHost = new Map((d.prepare("SELECT id, network_id FROM hosts WHERE id IN (SELECT value FROM json_each(?))")
+    .all(JSON.stringify(candidati.map((c) => c.id))) as Array<{ id: number; network_id: number }>).map((r) => [r.id, r.network_id]));
+  const inScansione = (c: Candidato): boolean => {
+    const rete = retePerHost.get(c.id);
+    return tenant !== null && rete !== undefined && giroSullaRete(tenant, rete) !== undefined;
+  };
+  const daArchiviare = candidati.filter((c) => !inScansione(c));
+  const rinviati = candidati.length - daArchiviare.length;
+
+  const g = archiviaElenco(d, daArchiviare, "job");
+  if (!g.ok) {
+    const dove = g.fallito ? `all'host #${g.fallito.id}` : "alla cancellazione dell'archivio scaduto";
+    throw new Error(`Pulizia notturna degli host interrotta ${dove}: ${messaggio(g.errore)} `
+      + `(${g.archiviati.length} archiviati prima del guasto, ${g.nonArchiviati.length} ancora fra gli host)`, { cause: g.errore });
+  }
+  const esito: EsitoPuliziaNotturna = {
+    archiviati: g.archiviati.length,
+    nonPiuArchiviabili: g.saltati.length,
+    rinviati,
+    cancellatiDallArchivio: g.cancellatiDallArchivio.length,
+  };
+  console.info(`[Scheduler] pulizia_host: ${esito.archiviati} archiviati, ${esito.cancellatiDallArchivio} cancellati dall'archivio`
+    + (esito.nonPiuArchiviabili ? `, ${esito.nonPiuArchiviabili} non più archiviabili` : "")
+    + (rinviati ? `, ${rinviati} rinviati (rete in scansione)` : ""));
+  return esito;
 }

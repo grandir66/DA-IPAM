@@ -17,7 +17,7 @@ import { buildPatchFromHost, buildPatchFromDevice, buildSyncMerge, buildSourceLa
 import fs from "fs";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { DDL_HOSTS_ARCHIVIO, DDL_TOPOLOGY_CAVI, DDL_TOPOLOGY_UNIONI, INDICI_HOSTS_ARCHIVIO, INDICI_TOPOLOGY_UNIONI, TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL } from "./db-tenant-schema";
-import { HYPERVISOR_SYNC_MINUTES, SCHEDULED_JOB_TYPES_CHECK_SQL } from "./scheduled-job-types";
+import { HYPERVISOR_SYNC_MINUTES, PULIZIA_HOST_MINUTES, SCHEDULED_JOB_TYPES_CHECK_SQL } from "./scheduled-job-types";
 import { isProxmoxVeDevice } from "./devices/device-acquisition-resolve";
 import { macToHex, normalizeMac, normalizeMacForStorage } from "./utils";
 import { lookupVendorSync } from "./scanner/mac-vendor";
@@ -279,6 +279,66 @@ export function migrateScheduledJobsV9(db: Database.Database): boolean {
       }
       db.exec("DROP TABLE scheduled_jobs");
       db.exec("ALTER TABLE scheduled_jobs_v9 RENAME TO scheduled_jobs");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_enabled_next ON scheduled_jobs(enabled, next_run)");
+    })();
+  } finally {
+    db.pragma("foreign_keys = ON");
+  }
+  return true;
+}
+
+/**
+ * Migrazione runtime v10 di `scheduled_jobs` (pulizia degli host assenti, piano
+ * 2026-10-20): il CHECK di `job_type` accetta `'pulizia_host'`. Copia esatta della
+ * v9 (CHECK dalla stessa costante dello schema, colonne copiate per nome,
+ * contatore AUTOINCREMENT conservato, indice ricreato subito, tutto in una
+ * transazione); cambia solo la guardia. Su un DB più vecchio della v9 la v8 o la
+ * v9 scrivono già il CHECK con `pulizia_host` e qui non resta niente da fare.
+ * Non crea nessun job: il job lo crea solo l'interruttore (`setPuliziaHostSchedule`).
+ *
+ * Restituisce true se ha ricostruito, false se non c'era niente da fare.
+ * Esportata per le prove (`hosts/__tests__/pulizia-job.test.ts`).
+ */
+export function migrateScheduledJobsV10(db: Database.Database): boolean {
+  const row = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='scheduled_jobs'").get() as
+    | { sql?: string }
+    | undefined;
+  if (!row?.sql || row.sql.includes("'pulizia_host'")) return false;
+
+  const present = new Set(
+    (db.prepare("PRAGMA table_info(scheduled_jobs)").all() as Array<{ name: string }>).map((c) => c.name),
+  );
+  const cols = SCHEDULED_JOBS_COLUMNS.filter((c) => present.has(c)).join(", ");
+
+  // PRAGMA foreign_keys non ha effetto dentro una transazione: si spegne prima.
+  db.pragma("foreign_keys = OFF");
+  try {
+    db.transaction(() => {
+      const seq = db.prepare("SELECT seq FROM sqlite_sequence WHERE name = 'scheduled_jobs'").get() as
+        | { seq: number }
+        | undefined;
+      db.exec("DROP TABLE IF EXISTS scheduled_jobs_v10");
+      db.exec(`CREATE TABLE scheduled_jobs_v10 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        network_id INTEGER REFERENCES networks(id) ON DELETE CASCADE,
+        job_type TEXT NOT NULL CHECK(${SCHEDULED_JOB_TYPES_CHECK_SQL}),
+        interval_minutes INTEGER NOT NULL DEFAULT 60,
+        last_run TEXT,
+        next_run TEXT,
+        enabled INTEGER DEFAULT 1,
+        config TEXT DEFAULT '{}',
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      )`);
+      db.exec(`INSERT INTO scheduled_jobs_v10 (${cols}) SELECT ${cols} FROM scheduled_jobs`);
+      if (seq) {
+        const upd = db.prepare("UPDATE sqlite_sequence SET seq = MAX(seq, ?) WHERE name = 'scheduled_jobs_v10'").run(seq.seq);
+        if (upd.changes === 0) {
+          db.prepare("INSERT INTO sqlite_sequence (name, seq) VALUES ('scheduled_jobs_v10', ?)").run(seq.seq);
+        }
+      }
+      db.exec("DROP TABLE scheduled_jobs");
+      db.exec("ALTER TABLE scheduled_jobs_v10 RENAME TO scheduled_jobs");
       db.exec("CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_enabled_next ON scheduled_jobs(enabled, next_run)");
     })();
   } finally {
@@ -1069,6 +1129,16 @@ export function getTenantDb(tenantCode: string): Database.Database {
     }
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: migrazione hypervisor_sync fallita:`, e);
+  }
+
+  // Migrazione runtime v10: scheduled_jobs.job_type CHECK include 'pulizia_host'
+  // (pulizia notturna degli host assenti, piano 2026-10-20). Dopo la v9.
+  try {
+    if (migrateScheduledJobsV10(newDb)) {
+      console.info(`[db-tenant] ${tenantCode}: scheduled_jobs CHECK aggiornato con 'pulizia_host' (v10)`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione pulizia_host fallita:`, e);
   }
 
   // Migrazione runtime: vuln_scanners.{cert_pin,cert_fingerprint} per
@@ -9441,6 +9511,50 @@ export function setHypervisorSyncSchedule(on: boolean): void {
       d.prepare(
         "INSERT INTO scheduled_jobs (network_id, job_type, interval_minutes, enabled, config) VALUES (NULL, 'hypervisor_sync', ?, 1, '{}')",
       ).run(HYPERVISOR_SYNC_MINUTES);
+    }
+  });
+}
+
+export interface PuliziaHostState {
+  /** Il job c'è ed è acceso. */
+  enabled: boolean;
+  jobId: number | null;
+  /** Fine dell'ultimo giro del job (UTC del DB), null se non è mai girato. */
+  lastRun: string | null;
+}
+
+/** La pulizia notturna degli host assenti (piano 2026-10-20, Task 5): il job pulizia_host del tenant. */
+export function getPuliziaHostSchedule(): PuliziaHostState {
+  const job = db()
+    .prepare("SELECT id, enabled, last_run FROM scheduled_jobs WHERE job_type = 'pulizia_host' ORDER BY id LIMIT 1")
+    .get() as { id: number; enabled: number; last_run: string | null } | undefined;
+  return { enabled: !!job && job.enabled === 1, jobId: job?.id ?? null, lastRun: job?.last_run ?? null };
+}
+
+/**
+ * Accende o spegne la pulizia notturna degli host assenti: `on` = un job
+ * pulizia_host (creato se manca, uno solo, ogni giorno, config `{}`), `!on` =
+ * cancellato (non resta un job spento che si riaccende dalla pagina dei job
+ * senza vedere cosa fa). È l'unica strada che crea il job: nessuna migrazione e
+ * nessun tenant nuovo lo hanno (decisione 4). Copia di `setHypervisorSyncSchedule`.
+ * Chi chiama ricarica lo scheduler del tenant.
+ */
+export function setPuliziaHostSchedule(on: boolean): void {
+  runInTenantTransaction(() => {
+    const d = db();
+    const existing = d.prepare("SELECT id FROM scheduled_jobs WHERE job_type = 'pulizia_host' ORDER BY id").all() as Array<{ id: number }>;
+    const [keep, ...extra] = existing;
+    for (const j of on ? extra : existing) d.prepare("DELETE FROM scheduled_jobs WHERE id = ?").run(j.id);
+    if (!on) return;
+    if (keep) {
+      d.prepare("UPDATE scheduled_jobs SET interval_minutes = ?, enabled = 1, updated_at = datetime('now') WHERE id = ?").run(
+        PULIZIA_HOST_MINUTES,
+        keep.id,
+      );
+    } else {
+      d.prepare(
+        "INSERT INTO scheduled_jobs (network_id, job_type, interval_minutes, enabled, config) VALUES (NULL, 'pulizia_host', ?, 1, '{}')",
+      ).run(PULIZIA_HOST_MINUTES);
     }
   });
 }

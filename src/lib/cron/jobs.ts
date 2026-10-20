@@ -78,6 +78,8 @@ import { fattiMikrotik } from "@/lib/devices/mikrotik-stp";
 import { conCadenza, riassuntoLetture, type EsitoGiro } from "@/lib/topology/letture/cadenza";
 import { letturaAccesa, oraUtc, senzaCampiCavi } from "@/lib/topology/letture/interruttori";
 import { leggiHost } from "@/lib/proxmox/lldp-host";
+// Statico: pulizia-archivio importa db-tenant (ADR 0002).
+import { runPuliziaHost } from "@/lib/hosts/pulizia-archivio";
 import type { NetworkDevice } from "@/types";
 import { syncNetworkToLibreNMS, syncAllNetworksToLibreNMS } from "@/lib/integrations/librenms-sync";
 // Import statico (come LibreNMS, non dinamico come Wazuh): unifi-sync importa
@@ -396,6 +398,19 @@ export async function runJob(jobId: number, opzioni?: OpzioniRunJob): Promise<Es
       const motivo = motivoHypervisorSync(r);
       if (motivo) return { esito: "eseguito", motivo };
       break;
+    }
+    case "pulizia_host": {
+      // Pulizia notturna degli host assenti (piano 2026-10-20, Task 5). Un guasto lancia (fra i falliti, niente
+      // last_run); il resoconto è di soli numeri, i nomi stanno nel registro JSONL della pulizia.
+      const r = runPuliziaHost();
+      const dettagli = [
+        r.nonPiuArchiviabili ? `${r.nonPiuArchiviabili} non più archiviabili` : "",
+        r.rinviati ? `${r.rinviati} rinviati perché la loro rete era in scansione` : "",
+      ].filter(Boolean);
+      return {
+        esito: "eseguito",
+        motivo: `${r.archiviati} host archiviati, ${r.cancellatiDallArchivio} cancellati dall'archivio${dettagli.length ? `; ${dettagli.join(", ")}` : ""}`,
+      };
     }
   }
   return ESEGUITO;

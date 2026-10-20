@@ -4,6 +4,27 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-20 · Pulizia degli host assenti e dei cambi di IP (spenta)
+
+### Aggiunto
+
+- **Pulizia degli host assenti** (Impostazioni → Sistema, solo admin; ADR 0022). Richiesta di Riccardo: sull'hub 178
+  host offline, molti non visti da mesi, gonfiavano liste e conteggi. Si archiviano gli host offline da oltre 60
+  giorni e, subito, il vecchio IP di un MAC che ha cambiato indirizzo nella stessa rete; dopo 90 giorni d'archivio si
+  cancellano. Esclusi: apparati, host monitorati, nome scritto a mano, classificazione a mano, asset, credenziali,
+  unioni a mano, multihomed, sessioni remote registrate, host recuperati a mano, MAC su più host online. Anteprima coi
+  nomi e il motivo, «Applica» col numero scritto, recupero con un clic (torna l'identità, non lo storico), registro
+  JSONL di ogni operazione (`data/audit/pulizia-host-*.jsonl`, 400 giorni).
+- **Job notturno `pulizia_host`** alle 04:00, **spento**: si accende solo dall'interruttore della pulizia, con
+  conferma; nella pagina dei job è in sola lettura e le sue rotte lo rifiutano. Gli host di una rete in scansione si
+  rimandano.
+- **«Archiviati»** in dashboard accanto ad «Assenti», **«IP precedenti»** nella scheda dell'oggetto.
+
+### Cambiato
+
+- **Il job `cleanup` («Pulizia tabelle MAC») non tocca più gli host**: dopo 30 giorni sovrascriveva la
+  classificazione con `stale` e dopo 90 cancellava senza nessuna esclusione (apparati, credenziali, asset). Resta la
+  pulizia di `mac_port_entries`; le soglie vecchie nelle config si ignorano.
 ## [Non rilasciato] — 2026-10-20 · Stato della sonda locale nel segnale verso DA-Link
 
 Parte DA-IPAM delle «sonde integrate con DA-Link» (spec DA-Vul-can

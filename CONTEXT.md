@@ -88,9 +88,13 @@ principali, le altre da fare quando si toccano. Testate di Discovery e dettaglio
 schermata, riquadri dei moduli coi colori dei token (✓ #1F7A4D, ▲ #FFD400, ✕ #8E1B20, ● #5B6B77,
 `components/shared/stile-stato-modulo.ts`), riga Sicurezza (`lib/security/kpi-dashboard.ts`: alert Wazuh
 raggruppati ripartiti sulla durata). «Offline» = visti negli ultimi 7 giorni, «assenti» a parte
-(`lib/hosts/assenti.ts`); `markHostsOffline` scrive lo storico. **Aperto**: pulizia degli host assenti e
-dei cambi IP, decisa da Riccardo, spec `specs/2026-10-20-pulizia-host-assenti-design.md`, prompt
-`~/.claude/prompts/da-ipam-pulizia-host-assenti.md`.
+(`lib/hosts/assenti.ts`); `markHostsOffline` scrive lo storico. **Pulizia degli host assenti** (20/10,
+ADR 0022, piano `plans/2026-10-20-pulizia-host-assenti.md`): archivio `hosts_archivio` (istantanea + `DELETE`
+diretto, niente `excluded_ips`), regole in `lib/hosts/pulizia*.ts`, registro `data/audit/pulizia-host-*.jsonl`;
+job `pulizia_host` spento, si accende **solo** dall'interruttore in Impostazioni → Sistema; il vecchio `cleanup`
+non tocca più gli host. **Trappole**: una scansione con il lucchetto bloccato rimanda per sempre gli host della sua
+rete (si vede solo nel motivo del job, «N rinviati»); ARP e UniFi scrivono host senza lucchetto; un'esclusione nuova
+va nel `CASE` di `pulizia-candidati.ts` e fra le tabelle che controlla.
 
 - **Trappola**: le 9 prove «rosse per `flock`» del Mac erano `stato-aggiornamento.mjs` che non partiva
   da cartelle dietro symlink (`/var/folders`): ora `realpathSync`. Sul Mac serve comunque `flock` (brew).

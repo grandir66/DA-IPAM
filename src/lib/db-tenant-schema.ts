@@ -123,8 +123,8 @@ export const INDICI_TOPOLOGY_UNIONI: ReadonlyArray<readonly [string, string]> = 
 ];
 
 /** Archivio degli host tolti dalla pulizia (piano 2026-10-20, scelta A): l'istantanea JSON della riga di `hosts`, poi
- *  l'host si cancella con un DELETE diretto. Le scrive solo `hosts/pulizia-archivio.ts`; via dopo 90 giorni (recuperate
- *  comprese). Senza chiavi esterne: la riga deve sopravvivere all'host, e anche alla sua rete (il recupero lo dice).
+ *  l'host si cancella con un DELETE diretto. Le scrive solo `hosts/pulizia-archivio.ts`; via dopo 90 giorni; una riga
+ *  recuperata resta finché esiste il suo host (lo protegge dalla pulizia), poi segue i 90 giorni. Senza chiavi esterne: la riga deve sopravvivere all'host, e anche alla sua rete (il recupero lo dice).
  *  Gemella delle unioni: la tabella nasce anche dallo schema, gli indici solo nella migrazione (`migrateHostsArchivio`). */
 export const DDL_HOSTS_ARCHIVIO: ReadonlyArray<readonly [string, string]> = [
   ["hosts_archivio", `CREATE TABLE IF NOT EXISTS hosts_archivio (

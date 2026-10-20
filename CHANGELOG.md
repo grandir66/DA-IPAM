@@ -4,6 +4,31 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-20 · Dashboard e Alert sicurezza ridisegnate
+
+### Modificato
+
+- **Dashboard a tre colonne** (mockup e scelta di Riccardo, 20/10): indicatori in card basse con l'anello della
+  Health; Sicurezza in card bianche con la striscia a tinta piena del token e il simbolo (niente pastello: Riccardo è
+  daltonico); a sinistra stato host e accessi falliti, al centro host offline (alta quanto la lista) e transizioni, a
+  destra subnet e moduli. I moduli non configurati stanno in una riga sola invece di due file di riquadri grigi.
+- **Barre delle subnet proporzionali**: una rete da 6 host non è più lunga come una da 100; l'offline ha la trama
+  diagonale oltre al colore (verde e rosso hanno quasi la stessa luminanza).
+- **Accessi falliti**: istogramma snello con media e picco. I conteggi orari vengono dall'indexer di Wazuh (gli stessi
+  della pagina Alert, 5 minuti in memoria): la stima di prima ripartiva ogni gruppo d'allarme sulla sua durata e dava
+  24 barre quasi uguali (massimo 13 in un'ora sull'hub). Se l'indexer non risponde si torna alla stima e c'è scritto.
+- **«Uptime 24 h»** al posto di «Health» nel grafico dello stato host: conta gli host controllati nelle ultime 24 ore,
+  mentre la Health in alto conta anche gli offline visti negli ultimi 7 giorni (74% contro 94% sull'hub).
+- **Alert sicurezza in una schermata**: lo stato di Wazuh in quattro pastiglie sulla testata, tutti i filtri in alto,
+  la coda degli eventi a sinistra (scorre con le intestazioni ferme), grafico nel tempo e classifiche in linguette a
+  destra. Prima il lavoro da fare stava in fondo a tre schermate. Via la torta (ripeteva i conteggi delle categorie)
+  e le frasi di spiegazione (ora nei `title`). Livelli coi token pieni al posto del pastello.
+
+### Corretto
+
+- Alert sicurezza: senza indexer «Alert nel periodo», «Agent» e «Regole» dicevano 0 mentre la tabella mostrava gli
+  eventi; ora dicono «—» col motivo.
+
 ## [Non rilasciato] — 2026-10-20 · Pulizia degli host assenti e dei cambi di IP (spenta)
 
 Da questo rilascio la numerazione passa da 0.3.x a **0.9.801** (Riccardo, 20/10: «siamo a uno stato quasi

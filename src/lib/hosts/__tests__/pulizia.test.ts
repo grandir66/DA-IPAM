@@ -23,7 +23,7 @@ let prossimo = 0;
 function h(campi: Partial<HostPerPulizia> & { ip: string }): HostPerPulizia {
   prossimo += 1;
   return {
-    id: prossimo, mac: null, nome: campi.ip, status: "offline",
+    id: prossimo, networkId: 1, mac: null, nome: campi.ip, status: "offline",
     lastSeen: null, firstSeen: null, createdAt: null, escluso: null, ...campi,
   };
 }
@@ -100,13 +100,31 @@ test("cambio IP: l'offline visto DOPO l'online non si tocca", () => {
   assert.deepEqual(idCandidati([online, offline]), []);
 });
 
-test("gruppo con due online (router, firewall, multihomed): nessuno, nemmeno l'offline", () => {
+test("gruppo con due online (router, firewall, multihomed): niente cambio IP per l'offline recente", () => {
   const mac = "AA:BB:CC:00:33:01";
-  assert.deepEqual(idCandidati([
+  const esito = selezionaCandidati([
     h({ ip: "10.0.6.1", mac, status: "online", lastSeen: fa(0) }),
-    h({ ip: "10.0.7.1", mac, status: "online", lastSeen: fa(0) }),
-    h({ ip: "10.0.8.1", mac, lastSeen: fa(5) }),
-  ]), []);
+    h({ ip: "10.0.6.2", mac, status: "online", lastSeen: fa(0) }),
+    h({ ip: "10.0.6.3", mac, lastSeen: fa(5) }),
+  ], ADESSO);
+  assert.deepEqual(esito.candidati, []);
+  assert.deepEqual(esito.esclusi, [], "nessuna regola l'avrebbe preso: non è un escluso");
+});
+
+test("MAC su più host online (anche su reti diverse): il gruppo non si tocca, nemmeno a 100 giorni", () => {
+  const mac = "AA:BB:CC:00:33:02";
+  const vecchio = h({ ip: "10.0.6.20", networkId: 1, mac, lastSeen: fa(100) });
+  const vecchioApparato = h({ ip: "10.0.6.21", networkId: 1, mac, lastSeen: fa(100), escluso: "apparato" });
+  const esito = selezionaCandidati([
+    h({ ip: "10.0.6.10", networkId: 1, mac, status: "online", lastSeen: fa(0) }),
+    h({ ip: "10.0.7.10", networkId: 2, mac: "aa-bb-cc-00-33-02", status: "online", lastSeen: fa(0) }),
+    vecchio, vecchioApparato,
+  ], ADESSO);
+  assert.deepEqual(esito.candidati, []);
+  assert.deepEqual(esito.esclusi, [
+    { id: vecchio.id, ip: "10.0.6.20", nome: "10.0.6.20", perche: "MAC su più host online" },
+    { id: vecchioApparato.id, ip: "10.0.6.21", nome: "10.0.6.21", perche: "apparato" },
+  ]);
 });
 
 test("gruppo tutto offline: vale solo la regola dei 60 giorni", () => {
@@ -139,11 +157,14 @@ test("MAC scritti aa-bb-… e AA:BB:… sono lo stesso gruppo", () => {
   assert.deepEqual(idCandidati([online, offline]), [offline.id]);
 });
 
-test("stesso MAC e stesso IP (un'altra rete): non è un cambio IP, resta alla regola dei 60 giorni", () => {
+test("stesso MAC su un'altra rete (gateway con un'interfaccia per VLAN): non è un cambio IP, resta ai 60 giorni", () => {
   const mac = "AA:BB:CC:00:77:01";
-  const online = h({ ip: "10.0.13.1", mac, status: "online", lastSeen: fa(0) });
-  const doppione = h({ ip: "10.0.13.1", mac, lastSeen: fa(2) });
-  assert.deepEqual(idCandidati([online, doppione]), []);
+  const online = h({ ip: "10.0.13.1", networkId: 1, mac, status: "online", lastSeen: fa(0) });
+  const recente = h({ ip: "10.0.14.1", networkId: 2, mac, lastSeen: fa(2) });
+  const doppione = h({ ip: "10.0.13.1", networkId: 3, mac, lastSeen: fa(2) });
+  const vecchio = h({ ip: "10.0.15.1", networkId: 4, mac, lastSeen: fa(100) });
+  const esito = selezionaCandidati([online, recente, doppione, vecchio], ADESSO);
+  assert.deepEqual(esito.candidati.map((c) => [c.id, c.motivo, c.dettaglio]), [[vecchio.id, "assente", "assente da 100 giorni"]]);
 });
 
 test("cambio IP con una data mancante (dell'offline o dell'online): non si archivia subito", () => {

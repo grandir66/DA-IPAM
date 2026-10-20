@@ -129,7 +129,7 @@ test("il caricatore: nome da hostname, poi IP; date e stato come stanno nel DB",
     const grezzo = d.prepare("SELECT last_seen, first_seen, created_at FROM hosts WHERE id = ?").get(conNome) as
       { last_seen: string; first_seen: string; created_at: string };
     assert.deepEqual(a, {
-      id: conNome, ip: `${rete.prefisso}.40`, mac: "AA:BB:CC:00:11:22", nome: "pc-contabilita", status: "offline",
+      id: conNome, networkId: rete.id, ip: `${rete.prefisso}.40`, mac: "AA:BB:CC:00:11:22", nome: "pc-contabilita", status: "offline",
       lastSeen: grezzo.last_seen, firstSeen: grezzo.first_seen, createdAt: grezzo.created_at, escluso: null,
     });
     const b = tutti.find((x) => x.id === senzaNome)!;
@@ -150,6 +150,20 @@ test("cambio IP sul DB: MAC scritti AA:BB:… e aa-bb-…, il vecchio IP candida
     assert.equal(c.motivo, "cambio_ip");
     assert.equal(c.dettaglio, `ora ${rete.prefisso}.51`);
     assert.ok(!esito.candidati.some((x) => x.id === nuovo), "l'online resta");
+  });
+});
+
+test("cambio IP di un vecchio IP con credenziali: fra gli esclusi, non fra i candidati", () => {
+  withTenant(T, () => {
+    const d = getTenantDb(T);
+    const rete = nuovaRete(d);
+    host(d, rete.id, `${rete.prefisso}.61`, { status: "online", giorni: 0, mac: "AA:BB:CC:00:77:1A" });
+    const vecchioIp = `${rete.prefisso}.60`;
+    const vecchio = host(d, rete.id, vecchioIp, { giorni: 2, mac: "aa-bb-cc-00-77-1a" });
+    LEGAMI.find(([p]) => p === "credenziali")![1](d, vecchio, vecchioIp);
+    const esito = candidatiPulizia();
+    assert.ok(!esito.candidati.some((c) => c.id === vecchio), "non è fra i candidati");
+    assert.deepEqual(esito.esclusi.find((e) => e.id === vecchio), { id: vecchio, ip: vecchioIp, nome: "pc-60", perche: "credenziali" });
   });
 });
 

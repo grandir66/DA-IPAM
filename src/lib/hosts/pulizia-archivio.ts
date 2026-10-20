@@ -16,7 +16,8 @@
  * Lavora sul DB del tenant del contesto (`withTenant`); senza contesto lancia, mai ripieghi su DEFAULT.
  */
 import type Database from "better-sqlite3";
-import { getCurrentTenantCode, getTenantDb, runInTenantTransaction } from "@/lib/db-tenant";
+import { getCurrentTenantCode, runInTenantTransaction } from "@/lib/db-tenant";
+import { dbCorrente } from "@/lib/hosts/db-corrente";
 import { FUSO_UTENTI, parseDbDate } from "@/lib/db-date";
 import { macToHex, normalizeMacForStorage } from "@/lib/utils";
 import { scriviRegistroPulizia, scriviRighePulizia, type RigaRegistroPulizia } from "@/lib/hosts/registro-pulizia";
@@ -64,12 +65,6 @@ interface RigaArchivioDb {
 }
 
 type IpPrecedente = { ip: string; fino_al: string };
-
-function dbCorrente(): Database.Database {
-  const code = getCurrentTenantCode();
-  if (!code) throw new Error("Nessun contesto tenant: la pulizia degli host lavora solo dentro withTenant()");
-  return getTenantDb(code);
-}
 
 /**
  * Il MAC come chiave (12 cifre esadecimali, la forma di `mac_ip_history.mac_normalized`), o null.

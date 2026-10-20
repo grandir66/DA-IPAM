@@ -13,21 +13,15 @@
  * prima della lettura e si lancia un errore che la nomina. Un host del cliente cancellato perché la tabella
  * che lo proteggeva non c'era non si vede da nessuna parte.
  *
- * Lavora sul DB del tenant del contesto (`withTenant`); senza contesto lancia, mai ripieghi su DEFAULT.
+ * Lavora sul DB del tenant del contesto (`dbCorrente`, `withTenant`); senza contesto lancia, mai ripieghi su DEFAULT.
  * Non importa `pulizia-archivio.ts` (è lui a importare questo modulo, per «Applica» e per il job).
  */
 import type Database from "better-sqlite3";
-import { getCurrentTenantCode, getTenantDb } from "@/lib/db-tenant";
+import { dbCorrente } from "@/lib/hosts/db-corrente";
 import { selezionaCandidati, type EsitoSelezione, type HostPerPulizia } from "@/lib/hosts/pulizia";
 
 /** Le tabelle che servono alle esclusioni (oltre a `hosts`). */
 const TABELLE_DI_LEGAME = ["network_devices", "inventory_assets", "host_credentials", "topology_unioni", "multihomed_links"] as const;
-
-function dbCorrente(): Database.Database {
-  const code = getCurrentTenantCode();
-  if (!code) throw new Error("Nessun contesto tenant: la pulizia degli host lavora solo dentro withTenant()");
-  return getTenantDb(code);
-}
 
 function controllaTabelle(d: Database.Database): void {
   const presenti = new Set(
@@ -43,6 +37,7 @@ function controllaTabelle(d: Database.Database): void {
 
 interface RigaHost {
   id: number;
+  network_id: number;
   ip: string;
   mac: string | null;
   nome: string;
@@ -57,7 +52,7 @@ export function caricaHostPerPulizia(): HostPerPulizia[] {
   const d = dbCorrente();
   controllaTabelle(d);
   const righe = d.prepare(`
-    SELECT h.id, h.ip, h.mac,
+    SELECT h.id, h.network_id, h.ip, h.mac,
       COALESCE(NULLIF(TRIM(h.custom_name), ''), NULLIF(TRIM(h.hostname), ''), NULLIF(TRIM(h.dns_reverse), ''), h.ip) AS nome,
       COALESCE(h.status, 'unknown') AS status,
       h.last_seen, h.first_seen, h.created_at,
@@ -74,7 +69,7 @@ export function caricaHostPerPulizia(): HostPerPulizia[] {
     FROM hosts h
   `).all() as RigaHost[];
   return righe.map((r) => ({
-    id: r.id, ip: r.ip, mac: r.mac, nome: r.nome, status: r.status,
+    id: r.id, networkId: r.network_id, ip: r.ip, mac: r.mac, nome: r.nome, status: r.status,
     lastSeen: r.last_seen, firstSeen: r.first_seen, createdAt: r.created_at, escluso: r.escluso,
   }));
 }

@@ -150,3 +150,40 @@ test("utenza di servizio Domarc: entra con la sua password, senza codice; sbagli
   assert.equal((await A.verificaAccessoLocale({ username: "domarc", password: "servizio-segreto" }, { fase: "accesso" })).esito, "servizio");
   assert.equal((await A.verificaAccessoLocale({ username: "domarc", password: "servizio-segretX" }, { fase: "accesso" })).esito, "rifiuta");
 });
+
+test("revisione 20/10: codici in parallelo non scavalcano il blocco (al più 6 tentativi passano)", async () => {
+  const u = await utente(true);
+  const ora = Date.now();
+  await attiva(u.username, ora);
+  const esiti = await Promise.all(
+    Array.from({ length: 40 }, () => A.verificaAccessoLocale({ username: u.username, password: "giusta", codice: "000000" }, { fase: "accesso", ora })),
+  );
+  const provati = esiti.filter((e) => e.esito === "rifiuta").length;
+  assert.ok(provati <= 6, `codici provati in parallelo: ${provati}`);
+  assert.ok(esiti.some((e) => e.esito === "bloccato"));
+});
+
+test("revisione 20/10: un nome inesistente costa quanto una password sbagliata (bcrypt anche lì)", async () => {
+  const t0 = performance.now();
+  await A.verificaAccessoLocale({ username: "non-esiste-davvero", password: "x" }, { fase: "passo_uno" });
+  assert.ok(performance.now() - t0 >= 15, "senza bcrypt la risposta tradiva che il nome non esiste");
+});
+
+test("revisione 20/10: due passi 1 insieme a QR scaduto danno lo stesso QR", async () => {
+  const u = await utente(true);
+  const ora = Date.parse("2026-10-20T14:00:00Z");
+  const [a, b] = await Promise.all([
+    A.verificaAccessoLocale({ username: u.username, password: "giusta" }, { fase: "passo_uno", ora }),
+    A.verificaAccessoLocale({ username: u.username, password: "giusta" }, { fase: "passo_uno", ora }),
+  ]);
+  if (a.esito !== "serve_attivazione" || b.esito !== "serve_attivazione") throw new Error("atteso il QR");
+  assert.equal(a.segreto, b.segreto);
+});
+
+test("il passo 1 riuscito non consuma tentativi: 10 rientri di fila non bloccano", async () => {
+  const u = await utente(true);
+  for (let i = 0; i < 10; i++) {
+    const e = await A.verificaAccessoLocale({ username: u.username, password: "giusta" }, { fase: "passo_uno" });
+    assert.equal(e.esito, "serve_attivazione", `giro ${i}`);
+  }
+});

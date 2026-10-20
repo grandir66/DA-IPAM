@@ -14,7 +14,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import QRCode from "qrcode";
 import { encrypt, safeDecrypt } from "@/lib/crypto";
-import { clearRateLimit, loginLockState, recordFailedAttempt } from "@/lib/rate-limit";
+import { annullaTentativo, clearRateLimit, loginLockState, prenotaTentativo } from "@/lib/rate-limit";
 import {
   attivaTotp,
   getUserByUsername,
@@ -34,6 +34,17 @@ export type EsitoAccesso =
 
 const DURATA_PROPOSTA_MS = 10 * 60_000;
 
+/**
+ * Hash fittizio per i nomi che non esistono: bcrypt si fa comunque, così il tempo di risposta
+ * non dice se il nome c'è (revisione del 20/10: 0,1 ms contro 49 ms). Calcolato una volta.
+ */
+let hashFinto: string | null = null;
+async function confrontoFinto(password: string): Promise<void> {
+  const bcrypt = await import("bcrypt");
+  hashFinto ??= await bcrypt.hash("nessuno-ha-questa-password", 10);
+  await bcrypt.compare(password, hashFinto);
+}
+
 function uguali(a: string, b: string): boolean {
   const ha = createHash("sha256").update(a).digest();
   const hb = createHash("sha256").update(b).digest();
@@ -52,9 +63,15 @@ export async function verificaAccessoLocale(
   const chiave = `login:${username}`;
   const blocco = loginLockState(chiave);
   if (blocco.locked) return { esito: "bloccato", secondi: blocco.retryAfterSec };
-  const rifiuta = (): EsitoAccesso => {
-    recordFailedAttempt(chiave);
-    return { esito: "rifiuta" };
+  // Il tentativo si prenota SUBITO, prima di ogni attesa: in parallelo il blocco tiene
+  // (revisione del 20/10). Un rifiuto lo lascia contato; un passo 1 buono lo annulla;
+  // l'accesso completo azzera tutto.
+  const segno = prenotaTentativo(chiave);
+  const rifiuta = (): EsitoAccesso => ({ esito: "rifiuta" });
+  const buono = <E extends EsitoAccesso>(e: E): E => {
+    if (opzioni.fase === "passo_uno") annullaTentativo(chiave, segno);
+    else clearRateLimit(chiave);
+    return e;
   };
 
   // Utenza di servizio Domarc: com'era, senza codice; confronto a tempo costante.
@@ -62,27 +79,24 @@ export async function verificaAccessoLocale(
   const passServizio = process.env.DOMARC_PASSWORD;
   if (passServizio && username === servizio) {
     if (!uguali(password, passServizio)) return rifiuta();
-    if (opzioni.fase === "accesso") clearRateLimit(chiave);
-    return { esito: "servizio", username: servizio };
+    return buono({ esito: "servizio", username: servizio });
   }
 
   const utente = getUserByUsername(username);
-  if (!utente) return rifiuta();
+  if (!utente) {
+    await confrontoFinto(password);
+    return rifiuta();
+  }
   const bcrypt = await import("bcrypt");
   if (!(await bcrypt.compare(password, utente.password_hash))) return rifiuta();
 
-  const entra = (): EsitoAccesso => {
-    clearRateLimit(chiave);
-    return { esito: "entra", utente };
-  };
+  const entra = (): EsitoAccesso => buono({ esito: "entra", utente });
 
-  if (utente.totp_richiesta !== 1) {
-    return opzioni.fase === "accesso" ? entra() : { esito: "entra", utente };
-  }
+  if (utente.totp_richiesta !== 1) return entra();
 
   // ── 2FA attiva: serve il codice ─────────────────────────────────────────
   if (utente.totp_segreto) {
-    if (opzioni.fase === "passo_uno") return { esito: "serve_codice" };
+    if (opzioni.fase === "passo_uno") return buono({ esito: "serve_codice" });
     if (!input.codice) return rifiuta();
     const segreto = safeDecrypt(utente.totp_segreto);
     if (!segreto) {
@@ -103,11 +117,18 @@ export async function verificaAccessoLocale(
   if (opzioni.fase === "passo_uno") {
     let segreto = propostoValido ? safeDecrypt(propostoValido) : null;
     if (!segreto) {
-      segreto = nuovoSegreto();
-      salvaTotpProposto(utente.id, encrypt(segreto), new Date(ora + DURATA_PROPOSTA_MS).toISOString());
+      const nuovo = nuovoSegreto();
+      if (salvaTotpProposto(utente.id, encrypt(nuovo), new Date(ora + DURATA_PROPOSTA_MS).toISOString(), utente.totp_proposto ?? null)) {
+        segreto = nuovo;
+      } else {
+        // Un altro passo 1 ha scritto prima: si usa il suo QR, non uno diverso.
+        const attuale = getUserByUsername(username)?.totp_proposto;
+        segreto = attuale ? safeDecrypt(attuale) : null;
+      }
     }
+    if (!segreto) return rifiuta();
     const qr = await QRCode.toDataURL(uriOtpauth(segreto, utente.username), { margin: 1, width: 220 });
-    return { esito: "serve_attivazione", segreto, qr };
+    return buono({ esito: "serve_attivazione", segreto, qr });
   }
 
   if (!propostoValido || !input.codice) return rifiuta();

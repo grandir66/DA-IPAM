@@ -968,10 +968,17 @@ export function createUser(
 // Le scritture sono condizionate: un codice già usato o un QR già confermato non passano
 // due volte, nemmeno con due accessi nello stesso istante (changes === 0 = rifiuto).
 
-export function salvaTotpProposto(userId: number, segretoCifrato: string, scadeIso: string): void {
-  getHubDb()
-    .prepare("UPDATE users SET totp_proposto = ?, totp_proposto_scade = ? WHERE id = ? AND totp_segreto IS NULL")
-    .run(segretoCifrato, scadeIso, userId);
+/**
+ * Salva il QR proposto solo se nel frattempo nessuno l'ha cambiato (`precedente` = quello letto):
+ * due passi 1 insieme non lasciano due QR diversi (revisione del 20/10). false = un altro ha
+ * scritto prima: si rilegge il suo.
+ */
+export function salvaTotpProposto(userId: number, segretoCifrato: string, scadeIso: string, precedente: string | null): boolean {
+  return (
+    getHubDb()
+      .prepare("UPDATE users SET totp_proposto = ?, totp_proposto_scade = ? WHERE id = ? AND totp_segreto IS NULL AND totp_proposto IS ?")
+      .run(segretoCifrato, scadeIso, userId, precedente).changes === 1
+  );
 }
 
 /** Conferma il proposto: true solo se era ancora quello e la 2FA non era già attiva. */

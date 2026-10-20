@@ -94,7 +94,15 @@ diretto, niente `excluded_ips`), regole in `lib/hosts/pulizia*.ts`, registro `da
 job `pulizia_host` spento, si accende **solo** dall'interruttore in Impostazioni → Sistema; il vecchio `cleanup`
 non tocca più gli host. **Trappole**: una scansione con il lucchetto bloccato rimanda per sempre gli host della sua
 rete (si vede solo nel motivo del job, «N rinviati»); ARP e UniFi scrivono host senza lucchetto; un'esclusione nuova
-va nel `CASE` di `pulizia-candidati.ts` e fra le tabelle che controlla.
+va nel `CASE` di `pulizia-candidati.ts` e fra le tabelle che controlla. **Hub 70791, 20/10**: primo «Applica»
+di Riccardo dall'interfaccia, 19 archiviati (5 alle 13:01, 14 rimandati dalle scansioni delle 13:00 e archiviati alle
+13:08), backup `data/tenants/70791.db.bak-20261020-105852` (via con l'ok di Riccardo), job notturno spento,
+recupero non provato sul vero (scelta di Riccardo). Cambio IP solo su **coppie** (rete, MAC) con nomi coerenti: il
+MAC di un MikroTik in proxy ARP stava su 14 host diversi. **Trappole dell'aggiornamento dell'hub** (20/10, tre build
+cadute con `ENOENT …/_buildManifest.js.tmp`): «Aggiorna ora» dell'interfaccia e `scripts/update.sh` lanciato a mano
+costruiscono nella stessa cartella e si rompono a vicenda (lo script non ha un lucchetto): prima di lanciarlo,
+`ps -eo pid,args | grep -E "[u]pdate\.sh|[n]ext build"` in una chiamata ssh a parte (nella stessa riga si trova da
+sé). Uno script `tsx` fuori dal servizio non vede i lucchetti di scansione (in memoria): «Applica» si fa dal pulsante.
 
 - **Trappola**: le 9 prove «rosse per `flock`» del Mac erano `stato-aggiornamento.mjs` che non partiva
   da cartelle dietro symlink (`/var/folders`): ora `realpathSync`. Sul Mac serve comunque `flock` (brew).

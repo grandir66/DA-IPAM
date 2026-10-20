@@ -4,6 +4,32 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-20 · Stato della sonda locale nel segnale verso DA-Link
+
+Parte DA-IPAM delle «sonde integrate con DA-Link» (spec DA-Vul-can
+`docs/superpowers/specs/2026-10-20-sonde-integrate-dalink-design.md`, §8.2), approvata da
+Riccardo il 20/10. Perché: il 19/10 PX-NAS taceva perché non risolveva il nome dell'hub e
+DA-VA-OVH perché aveva il disco pieno; la sonda lo sapeva, Domarc no.
+
+### Aggiunto
+
+- **Blocco `edge` nel segnale di vita** (`lib/dalink/edge-segnale.ts`, `edge-sonda.ts`):
+  `{ raggiungibile, versione_vera, hub, aggiornamento, disco }` letto da `/api/v1/health`
+  della sonda del cliente, copiato a lista bianca coi campi e gli elenchi chiusi della §8.1
+  (valori fuori elenco → null, versioni e date solo nella loro forma, mai messaggi liberi né
+  il nome dell'istanza). `raggiungibile: false` e il resto null quando la sonda non risponde,
+  risponde con un errore, con qualcosa che non è JSON, o con un certificato diverso dal pin:
+  un errore di trasporto non è un «ok». Sonda vecchia (solo `ok`/`version`): raggiungibile,
+  il resto null, e `version` non diventa `versione_vera` (è il pyproject).
+- Il blocco **non esce** se il modulo edge non è configurato (nessuna riga in
+  `vuln_scanners`) o se l'istanza non ha il cliente di DA-Link. Stessa fiducia TLS delle
+  altre chiamate alla sonda (pin SPKI di `cert_pin`, `leggiSaluteEdge`), timeout totale di
+  3 secondi, lettura in parallelo alle sonde dei moduli: il segnale non rallenta e non
+  fallisce per la sonda. DA-Link oggi ignora i campi che non conosce (`Segnale`,
+  `extra="ignore"`): il segnale non prende 422; verificato col modello di `origin/main`.
+- `LIMITI` del segnale in `lib/dalink/segnale-limiti.ts` (riesportati da `segnale.ts`), per
+  usarli anche nel blocco della sonda senza import circolari.
+
 ## [Non rilasciato] — 2026-10-20 · Salute coerente e passaggi a offline nello storico
 
 ### Corretto

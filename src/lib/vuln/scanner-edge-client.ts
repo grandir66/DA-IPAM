@@ -347,6 +347,25 @@ export async function fetchCertInfo(baseUrl: string): Promise<EdgeCertInfo> {
   );
 }
 
+/**
+ * GET /api/v1/health così com'è, per il blocco `edge` del segnale verso DA-Link
+ * (sonde integrate, 20/10; la lista bianca sta in `dalink/edge-segnale.ts`). Stessa
+ * fiducia TLS di ogni altra chiamata alla sonda: pin SPKI di `cert_pin` via
+ * `rawRequest`. Niente token: la rotta è pubblica, e qui non serve verificarlo.
+ */
+export async function leggiSaluteEdge(
+  baseUrl: string,
+  certPin: string | null,
+  timeoutMs: number,
+): Promise<unknown> {
+  return edgeFetch<unknown>(
+    { base_url: baseUrl, token_encrypted: "", cert_pin: certPin },
+    "/api/v1/health",
+    {},
+    { skipAuth: true, timeoutMs },
+  );
+}
+
 /** GET /api/v1/health — pubblico, nessuna auth. */
 export async function pingEdge(
   baseUrl: string,

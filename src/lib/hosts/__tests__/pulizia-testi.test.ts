@@ -49,3 +49,14 @@ test("motivo leggibile come nella scheda approvata", async () => {
   assert.equal(motivoLeggibile("cambio_ip", "ora 10.0.1.81"), "IP cambiato: ora 10.0.1.81");
   assert.equal(motivoLeggibile("assente", null), "Assente");
 });
+
+test("m4: il perché di un non più candidato (rete in scansione) arriva all'interfaccia", () => {
+  const r = leggiRispostaApplica(200, {
+    archiviati: [], cancellatiDallArchivio: [],
+    nonPiuCandidati: [{ ...h(3, "PC-C"), perche: "rete in scansione, riprova dopo" }, h(4, "PC-D")],
+  });
+  assert.equal(r.tipo, "ok");
+  if (r.tipo === "ok") {
+    assert.deepEqual(r.nonPiuCandidati, [{ ...h(3, "PC-C"), perche: "rete in scansione, riprova dopo" }, h(4, "PC-D")]);
+  }
+});

@@ -4,7 +4,8 @@
  */
 import { FUSO_UTENTI, parseDbDate } from "@/lib/db-date";
 
-export interface HostNominato { id: number; ip: string; nome: string }
+/** `perche` solo quando il nome non lo dice già (es. «rete in scansione, riprova dopo»). */
+export interface HostNominato { id: number; ip: string; nome: string; perche?: string }
 
 export type RispostaApplica =
   | { tipo: "ok"; archiviati: HostNominato[]; nonPiuCandidati: HostNominato[]; cancellatiDallArchivio: HostNominato[] }
@@ -23,7 +24,8 @@ function elencoHost(v: unknown): HostNominato[] | null {
   const out: HostNominato[] = [];
   for (const x of v) {
     if (!eObj(x) || typeof x.id !== "number" || typeof x.ip !== "string" || typeof x.nome !== "string") return null;
-    out.push({ id: x.id, ip: x.ip, nome: x.nome });
+    if (x.perche !== undefined && typeof x.perche !== "string") return null;
+    out.push({ id: x.id, ip: x.ip, nome: x.nome, ...(typeof x.perche === "string" ? { perche: x.perche } : {}) });
   }
   return out;
 }

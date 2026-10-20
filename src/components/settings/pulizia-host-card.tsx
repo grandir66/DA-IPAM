@@ -22,6 +22,8 @@ import {
 interface Anteprima {
   candidati: Candidato[];
   esclusi: Array<{ id: number; ip: string; nome: string; perche: string }>;
+  /** Righe d'archivio oltre i 90 giorni che lo stesso «Applica» cancella per sempre. */
+  scadute: Array<{ id: number; ip: string; nome: string }>;
   giorni: number;
   giorniArchivio: number;
 }
@@ -36,7 +38,12 @@ function ElencoNomi({ titolo, host }: { titolo: string; host: HostNominato[] }) 
     <div>
       <p className="text-sm font-medium">{titolo} ({host.length})</p>
       <ul className="text-sm text-muted-foreground list-disc pl-5">
-        {host.map((h) => <li key={h.id}><span className="font-mono">{h.ip || "—"}</span> {h.nome}</li>)}
+        {host.map((h) => (
+          <li key={h.id}>
+            <span className="font-mono">{h.ip || "—"}</span> {h.nome}
+            {h.perche && <span className="font-medium text-foreground"> — {h.perche}</span>}
+          </li>
+        ))}
       </ul>
     </div>
   );
@@ -97,6 +104,8 @@ export function PuliziaHostCard() {
   }, []);
   const mostraAnteprima = useCallback(async () => {
     setCaricaAnteprima(true);
+    // L'esito dell'ultimo «Archivia» non resta sopra un'anteprima nuova, che lo smentirebbe.
+    setEsito(null);
     const r = await fetchJson<Anteprima>("/api/hosts/pulizia");
     if (r.ok) { setAnteprima(r.data); setErroreAnteprima(null); } else setErroreAnteprima(r.message);
     setCaricaAnteprima(false);
@@ -110,6 +119,16 @@ export function PuliziaHostCard() {
     if (window.location.hash === "#pulizia-host") document.getElementById("pulizia-host")?.scrollIntoView({ block: "start" });
   }, [caricaNotturna, caricaArchivio]);
 
+  // Accendere chiede conferma col numero di adesso (m8): da lì in poi si archivia ogni notte senza anteprima.
+  const [confermaNotturna, setConfermaNotturna] = useState<number | null>(null);
+  async function chiediAccensione() {
+    setSalvandoNotturna(true);
+    const r = await fetchJson<Anteprima>("/api/hosts/pulizia");
+    setSalvandoNotturna(false);
+    if (!r.ok) { toast.error(`Non riesco a contare i candidati, la pulizia notturna resta spenta: ${r.message}`); return; }
+    setConfermaNotturna(r.data.candidati.length);
+  }
+
   async function cambiaNotturna(acceso: boolean) {
     setSalvandoNotturna(true);
     try {
@@ -119,6 +138,7 @@ export function PuliziaHostCard() {
       const body = (await res.json().catch(() => null)) as (Notturna & { error?: string; warning?: string }) | null;
       if (!res.ok || !body) { toast.error(body?.error ?? "Non sono riuscito a salvare la pulizia notturna"); return; }
       setNotturna({ enabled: body.enabled, lastRun: body.lastRun });
+      setConfermaNotturna(null);
       if (body.warning) toast.warning(body.warning);
     } catch {
       toast.error("Server non raggiungibile: la pulizia notturna non è cambiata");
@@ -177,6 +197,8 @@ export function PuliziaHostCard() {
 
   const giorniArchivio = anteprima?.giorniArchivio ?? GIORNI_ARCHIVIO_DEFAULT;
   const n = candidati.length;
+  const scadute = anteprima?.scadute ?? [];
+  const k = scadute.length;
 
   return (
     <Card id="pulizia-host">
@@ -198,7 +220,7 @@ export function PuliziaHostCard() {
             <Switch
               checked={notturna?.enabled ?? false}
               disabled={notturna === null || salvandoNotturna}
-              onCheckedChange={(v) => void cambiaNotturna(v)}
+              onCheckedChange={(v) => void (v ? chiediAccensione() : cambiaNotturna(false))}
               aria-label="Pulizia ogni notte alle 04:00"
             />
             <span className="text-sm">
@@ -323,11 +345,23 @@ export function PuliziaHostCard() {
       <Dialog open={confermaAperta} onOpenChange={(o) => { if (!inCorso) setConfermaAperta(o); }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Archivia {n} host</DialogTitle>
+            <DialogTitle>
+              Archivia {n} host{k > 0 && ` e cancella per sempre ${k === 1 ? "1 riga d'archivio scaduta" : `${k} righe d'archivio scadute`}`}
+            </DialogTitle>
             <DialogDescription>
               Spariscono da liste, conteggi e mappa. Per {giorniArchivio} giorni li puoi recuperare dall&apos;archivio.
             </DialogDescription>
           </DialogHeader>
+          {k > 0 && (
+            <div className="space-y-1">
+              <p className="text-sm font-medium">
+                In archivio da oltre {giorniArchivio} giorni, si cancellano e non si recuperano più:
+              </p>
+              <ul className="text-sm text-muted-foreground list-disc pl-5 max-h-40 overflow-y-auto">
+                {scadute.map((r) => <li key={r.id}><span className="font-mono">{r.ip}</span> {r.nome}</li>)}
+              </ul>
+            </div>
+          )}
           <div className="space-y-2">
             <label htmlFor="pulizia-conferma" className="text-sm font-medium">Scrivi {n} per confermare</label>
             <Input id="pulizia-conferma" inputMode="numeric" autoComplete="off" value={numero} onChange={(e) => setNumero(e.target.value.trim())} />
@@ -336,6 +370,26 @@ export function PuliziaHostCard() {
             <Button type="button" variant="outline" onClick={() => setConfermaAperta(false)} disabled={inCorso}>Annulla</Button>
             <Button type="button" onClick={() => void archivia()} disabled={inCorso || numero !== String(n)}>
               {inCorso ? "Archiviazione…" : "Archivia"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={confermaNotturna !== null} onOpenChange={(o) => { if (!o && !salvandoNotturna) setConfermaNotturna(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Accendi la pulizia notturna</DialogTitle>
+            <DialogDescription>
+              {confermaNotturna === 0
+                ? "Oggi non c'è nessun host da archiviare. Ogni notte alle 04:00 si archivieranno senza anteprima quelli che lo diventano."
+                : `Ogni notte alle 04:00 si archivieranno senza anteprima gli host come questi ${confermaNotturna ?? ""}.`}
+              {" "}Le righe d&apos;archivio oltre i {giorniArchivio} giorni si cancellano per sempre.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setConfermaNotturna(null)} disabled={salvandoNotturna}>Annulla</Button>
+            <Button type="button" onClick={() => void cambiaNotturna(true)} disabled={salvandoNotturna}>
+              {salvandoNotturna ? "Accensione…" : "Accendi"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -4,6 +4,23 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-20 · Dashboard in una schermata, stato moduli a riquadri
+
+Richiesta di Riccardo del 20/10, proposta approvata prima del codice.
+
+### Cambiato
+
+- **Dashboard senza scorrere** (1920×1080, 1366×768, 1280×720): titolo e indicatori su una
+  riga; «Stato moduli» a riquadri; sotto tre colonne a tutta altezza (grafico e transizioni,
+  host conosciuti offline, subnet e scansioni) con le liste che scorrono dentro il riquadro.
+- **Stato moduli a riquadri piccoli**, uno per applicativo: nome, ultimo aggiornamento in
+  forma breve (ora esatta e dettaglio al passaggio), stato dal colore con simbolo e
+  luminanza (✓ verde pieno, ! ambra, ✕ rosso pieno, ? bianco, – grigio tratteggiato). Tutti
+  i moduli possibili: i non configurati o spenti in grigio, anche Inventario NIS2, Zabbix e
+  Active Directory se assenti. Zabbix prende lo stato dall'esito delle letture.
+- Colori degli stati in un file solo (`components/shared/stile-stato-modulo.ts`), lo stesso
+  dell'elenco in Impostazioni → Moduli.
+
 ## [Non rilasciato] — 2026-10-20 · Intestazioni ferme anche sulle pagine secondarie
 
 ### Cambiato

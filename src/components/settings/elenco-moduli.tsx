@@ -8,6 +8,7 @@ import { fetchJson } from "@/lib/fetch-json";
 import { LoadError } from "@/components/shared/load-error";
 import { ETICHETTA_OPZIONE } from "@/lib/modules/offerta";
 import { rigaModulo, type RigaModulo, type StatoRiga } from "@/lib/modules/elenco-righe";
+import { STILE_STATO } from "@/components/shared/stile-stato-modulo";
 
 /**
  * Elenco dei moduli (analisi del 19/10, F10, approvato da Riccardo): una riga per
@@ -31,13 +32,13 @@ interface SaluteApi {
   detail: string | null;
 }
 
-/** Stato a doppio segnale (fondo e bordo) e un simbolo: si distingue anche senza colori. */
+/** Testo dello stato; colori e simbolo dal file condiviso con la dashboard. */
 const STILE: Record<StatoRiga, { testo: string; segno: string; classi: string }> = {
-  guasto: { testo: "Guasto", segno: "✕", classi: "bg-red-700 text-white border-red-900" },
-  attenzione: { testo: "Attenzione", segno: "!", classi: "bg-amber-100 text-amber-950 border-amber-600" },
-  acceso: { testo: "Acceso", segno: "✓", classi: "bg-green-800 text-white border-green-950" },
-  da_verificare: { testo: "Da verificare", segno: "?", classi: "bg-white text-slate-800 border-slate-500 dark:bg-slate-900 dark:text-slate-100" },
-  spento: { testo: "Spento", segno: "–", classi: "bg-transparent text-muted-foreground border-dashed border-slate-400" },
+  guasto: { testo: "Guasto", ...STILE_STATO.guasto },
+  attenzione: { testo: "Attenzione", ...STILE_STATO.attenzione },
+  acceso: { testo: "Acceso", ...STILE_STATO.ok },
+  da_verificare: { testo: "Da verificare", ...STILE_STATO.da_verificare },
+  spento: { testo: "Spento", ...STILE_STATO.grigio },
 };
 
 export function ElencoModuli() {

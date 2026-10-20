@@ -29,7 +29,8 @@ type Period = "24h" | "7d" | "30d";
  * Stato host nel tempo: stacked area online/offline/unknown + linea Health%.
  * Health% usa un asse Y secondario (destra) per non collassare contro i conteggi.
  */
-export function StatusOverTimeChart() {
+/** `altezza`: la dashboard in una schermata (20/10) lo vuole più basso; di default 280. */
+export function StatusOverTimeChart({ altezza = 280 }: { altezza?: number } = {}) {
   const [data, setData] = useState<Point[]>([]);
   const [period, setPeriod] = useState<Period>("24h");
   const [loading, setLoading] = useState(true);
@@ -94,7 +95,7 @@ export function StatusOverTimeChart() {
           {loading ? "Caricamento…" : "Nessun dato disponibile. I dati appariranno dopo le prime scansioni."}
         </div>
       ) : (
-        <ResponsiveContainer width="100%" height={280}>
+        <ResponsiveContainer width="100%" height={altezza}>
           <ComposedChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
             <defs>
               <linearGradient id="gOnline" x1="0" y1="0" x2="0" y2="1">

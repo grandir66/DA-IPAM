@@ -82,8 +82,8 @@ export function StatusOverTimeChart({ altezza = 280 }: { altezza?: number } = {}
               <span className="text-muted-foreground">Sconosciuti</span>
               <span className="font-mono font-semibold">{latest.unknown}</span>
             </span>
-            <span className="inline-flex items-center gap-1 ml-2 pl-2 border-l border-border">
-              <span className="text-muted-foreground">Health</span>
+            <span className="inline-flex items-center gap-1 ml-2 pl-2 border-l border-border" title="Host controllati nelle ultime 24 ore. La Health in alto conta anche gli offline visti negli ultimi 7 giorni.">
+              <span className="text-muted-foreground">Uptime 24 h</span>
               <span className="font-mono font-semibold text-primary">{latest.health_pct === null ? "—" : `${latest.health_pct}%`}</span>
             </span>
           </div>
@@ -143,7 +143,7 @@ export function StatusOverTimeChart({ altezza = 280 }: { altezza?: number } = {}
               labelFormatter={(t) => (typeof t === "string" ? parseDbDate(t).toLocaleString("it-IT") : String(t ?? ""))}
               formatter={(v, name) => {
                 const val = typeof v === "number" ? v : Number(v ?? 0);
-                return name === "Health %" ? [`${val}%`, name as string] : [val, name as string];
+                return name === "Uptime %" ? [`${val}%`, name as string] : [val, name as string];
               }}
             />
             <Legend wrapperStyle={{ fontSize: "11px", paddingTop: "8px" }} iconSize={10} />
@@ -181,7 +181,7 @@ export function StatusOverTimeChart({ altezza = 280 }: { altezza?: number } = {}
               yAxisId="pct"
               type="monotone"
               dataKey="health_pct"
-              name="Health %"
+              name="Uptime %"
               stroke="var(--primary)"
               strokeWidth={2}
               dot={false}

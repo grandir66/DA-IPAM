@@ -44,7 +44,7 @@ job passano tutti da `src/lib/hosts/pulizia-archivio.ts`. Nessuna delle 252 quer
   `parita-gruppo0`, `ssh-connessione-caduta`, `ssh-chiave`, `chiave-ssh-percorsi`.
 - Ogni prova nuova si **vede fallire** prima del codice; l'output rosso va nel resoconto del task.
 
-## Due punti fuori dalla specifica (da confermare con l'approvazione del piano)
+## Due punti fuori dalla specifica — P1 e P2 approvati da Riccardo il 20/10 come proposti
 
 - **P1. Il vecchio job `cleanup`** («Pulizia Host» nella pagina dei job) chiama
   `cleanupStaleHosts(30, 90)` in `db-tenant.ts:6079`: dopo 30 giorni di offline sovrascrive

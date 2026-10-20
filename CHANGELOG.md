@@ -6,6 +6,9 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ## [Non rilasciato] — 2026-10-20 · Pulizia degli host assenti e dei cambi di IP (spenta)
 
+Da questo rilascio la numerazione passa da 0.3.x a **0.9.801** (Riccardo, 20/10: «siamo a uno stato quasi
+definitivo»). Il numero si mostra soltanto: gli aggiornamenti decidono sul commit, non sulla versione.
+
 ### Aggiunto
 
 - **Pulizia degli host assenti** (Impostazioni → Sistema, solo admin; ADR 0022). Richiesta di Riccardo: sull'hub 178

@@ -56,19 +56,19 @@ export const SYSTEM_CHOICES = [
   { id: "vpn", labelIt: "VPN / apparati" },
 ] as const;
 
-const SERIES_SLOT: Record<string, number> = {
-  ransomware: 1,
-  auth_failure: 2,
-  privileged_change: 3,
-  log_tampering: 4,
-  agent_health: 5,
-  network_auth_failure: 6,
-  self_probe: 7,
+/**
+ * Colore fisso per categoria (Riccardo, 20/10: «i colori devono essere ben distinguibili»).
+ * Sei tinte non si separano per un daltonico (la coppia peggiore stava a 3,2): tre colori
+ * misurati per le categorie che contano, le altre in grigio chiaro e per nome nel tooltip.
+ */
+const COLORE_CATEGORIA: Record<string, string> = {
+  auth_failure: "var(--alert-cat-1)",
+  privileged_change: "var(--alert-cat-2)",
+  ransomware: "var(--alert-cat-3)",
 };
 
 export function seriesColor(categoryId: string): string {
-  const slot = SERIES_SLOT[categoryId] ?? 6;
-  return `var(--series-${slot})`;
+  return COLORE_CATEGORIA[categoryId] ?? "var(--alert-cat-altre)";
 }
 
 function compact(n: number): string {
@@ -469,7 +469,7 @@ export function TargetedAccounts({ accounts }: { accounts: TargetedAccount[] }) 
                     className="h-3 rounded-r-sm"
                     style={{
                       width: `${Math.max(2, (a.count / max) * 100)}%`,
-                      background: "var(--series-1)",
+                      background: "var(--alert-cat-1)",
                     }}
                     aria-hidden
                   />
@@ -581,7 +581,7 @@ export function RankedTable({
                     className="h-3 rounded-r-sm"
                     style={{
                       width: `${Math.max(2, (e.count / max) * 100)}%`,
-                      background: "var(--series-1)",
+                      background: "var(--alert-cat-1)",
                     }}
                     aria-hidden
                   />

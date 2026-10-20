@@ -25,6 +25,9 @@ interface Point {
 
 type Period = "24h" | "7d" | "30d";
 
+
+/** Offline a righe (Riccardo, 20/10): stessa trama delle barre delle subnet. */
+const TRAMA_OFFLINE = "repeating-linear-gradient(135deg, var(--host-offline) 0 2px, transparent 2px 4px)";
 /**
  * Stato host nel tempo: stacked area online/offline/unknown + linea Health%.
  * Health% usa un asse Y secondario (destra) per non collassare contro i conteggi.
@@ -68,17 +71,17 @@ export function StatusOverTimeChart({ altezza = 280 }: { altezza?: number } = {}
         {latest && (
           <div className="flex items-center gap-3 text-[13px]">
             <span className="inline-flex items-center gap-1">
-              <span className="h-2 w-2 rounded-full bg-success" />
+              <span className="h-2.5 w-2.5 rounded-sm bg-[var(--host-online)]" />
               <span className="text-muted-foreground">Online</span>
               <span className="font-mono font-semibold">{latest.online}</span>
             </span>
             <span className="inline-flex items-center gap-1">
-              <span className="h-2 w-2 rounded-full bg-destructive" />
+              <span className="h-2.5 w-2.5 rounded-sm" style={{ background: TRAMA_OFFLINE }} />
               <span className="text-muted-foreground">Offline</span>
               <span className="font-mono font-semibold">{latest.offline}</span>
             </span>
             <span className="inline-flex items-center gap-1">
-              <span className="h-2 w-2 rounded-full bg-muted-foreground/40" />
+              <span className="h-2.5 w-2.5 rounded-sm bg-[var(--host-sconosciuto)]" />
               <span className="text-muted-foreground">Sconosciuti</span>
               <span className="font-mono font-semibold">{latest.unknown}</span>
             </span>
@@ -99,16 +102,17 @@ export function StatusOverTimeChart({ altezza = 280 }: { altezza?: number } = {}
           <ComposedChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
             <defs>
               <linearGradient id="gOnline" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="var(--success)" stopOpacity={0.55} />
-                <stop offset="95%" stopColor="var(--success)" stopOpacity={0.1} />
+                <stop offset="5%" stopColor="var(--host-online)" stopOpacity={0.7} />
+                <stop offset="95%" stopColor="var(--host-online)" stopOpacity={0.45} />
               </linearGradient>
-              <linearGradient id="gOffline" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="var(--destructive)" stopOpacity={0.55} />
-                <stop offset="95%" stopColor="var(--destructive)" stopOpacity={0.1} />
-              </linearGradient>
+              {/* Offline a righe diagonali: si riconosce dalla forma, non solo dal colore. */}
+              <pattern id="gOffline" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+                <rect width="6" height="6" fill="var(--card)" />
+                <rect width="3" height="6" fill="var(--host-offline)" />
+              </pattern>
               <linearGradient id="gUnknown" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="var(--muted-foreground)" stopOpacity={0.35} />
-                <stop offset="95%" stopColor="var(--muted-foreground)" stopOpacity={0.05} />
+                <stop offset="5%" stopColor="var(--host-sconosciuto)" stopOpacity={0.9} />
+                <stop offset="95%" stopColor="var(--host-sconosciuto)" stopOpacity={0.6} />
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
@@ -146,14 +150,20 @@ export function StatusOverTimeChart({ altezza = 280 }: { altezza?: number } = {}
                 return name === "Uptime %" ? [`${val}%`, name as string] : [val, name as string];
               }}
             />
-            <Legend wrapperStyle={{ fontSize: "13px", paddingTop: "8px" }} iconSize={10} />
+            {/* Scritte della legenda nel colore del testo, non della serie: «Sconosciuti» in grigio
+                chiaro su bianco non si leggeva (Riccardo, 20/10). */}
+            <Legend
+              wrapperStyle={{ fontSize: "13px", paddingTop: "8px" }}
+              iconSize={10}
+              formatter={(v) => <span style={{ color: "var(--foreground)" }}>{String(v)}</span>}
+            />
             <Area
               yAxisId="counts"
               type="monotone"
               dataKey="online"
               name="Online"
               stackId="1"
-              stroke="var(--success)"
+              stroke="var(--host-online)"
               fill="url(#gOnline)"
               strokeWidth={1.5}
             />
@@ -163,7 +173,7 @@ export function StatusOverTimeChart({ altezza = 280 }: { altezza?: number } = {}
               dataKey="offline"
               name="Offline"
               stackId="1"
-              stroke="var(--destructive)"
+              stroke="var(--host-offline)"
               fill="url(#gOffline)"
               strokeWidth={1.5}
             />
@@ -173,7 +183,7 @@ export function StatusOverTimeChart({ altezza = 280 }: { altezza?: number } = {}
               dataKey="unknown"
               name="Sconosciuti"
               stackId="1"
-              stroke="var(--muted-foreground)"
+              stroke="var(--host-sconosciuto)"
               fill="url(#gUnknown)"
               strokeWidth={1}
             />

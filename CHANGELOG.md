@@ -24,6 +24,14 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
   destra. Prima il lavoro da fare stava in fondo a tre schermate. Via la torta (ripeteva i conteggi delle categorie)
   e le frasi di spiegazione (ora nei `title`). Livelli coi token pieni al posto del pastello.
 
+- **Colori ben distinguibili** (Riccardo, 20/10), misurati col validatore per daltonici della skill dataviz.
+  Stato degli host (grafico, barre delle subnet, transizioni): online verde scuro pieno, offline **arancio a righe**,
+  sconosciuti grigio chiaro (distanza minima 18,6; prima verde/rosso 7,4). Transizioni con la pastiglia ▲ online /
+  ▼ offline. Categorie degli alert: tre colori fissi (accessi falliti navy, account privilegiati arancio, ransomware
+  blu) e le altre grigio chiaro (prima sei tinte, coppia peggiore 3,2). Il «● da verificare» dei moduli diventa grigio
+  chiaro con testo navy: il grigio pieno dei token stava a 6,2 dal verde «ok» (solo in DA-IPAM; per DA-Template resta
+  una proposta). Colori in un posto solo: `--host-*` e `--alert-cat-*` in `globals.css`.
+
 ### Corretto
 
 - Alert sicurezza: senza indexer «Alert nel periodo», «Agent» e «Regole» dicevano 0 mentre la tabella mostrava gli

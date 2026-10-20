@@ -4,11 +4,11 @@ import type { NetworkWithStats } from "@/types";
 
 /**
  * Subnet della dashboard (Riccardo, 20/10): la barra è lunga quanto la rete rispetto alla
- * più grande (una rete da 6 host non è lunga come una da 100). Online pieno, offline con
- * la trama diagonale, sconosciuti grigio chiaro: il verde e il rosso hanno quasi la stessa
- * luminanza e Riccardo è daltonico, quindi l'offline si riconosce anche dalla trama.
+ * più grande (una rete da 6 host non è lunga come una da 100). Online verde scuro pieno,
+ * offline arancio a righe, sconosciuti grigio chiaro (`--host-*` in globals.css): Riccardo è
+ * daltonico, si separano per luminanza e forma (prima verde/rosso: 7,4 di distanza).
  */
-const TRAMA_OFFLINE = "repeating-linear-gradient(135deg, #8E1B20 0 3px, #E8A3A6 3px 5px)";
+const TRAMA_OFFLINE = "repeating-linear-gradient(135deg, var(--host-offline) 0 3px, var(--card) 3px 5px)";
 
 export function BarreSubnet({ reti }: { reti: NetworkWithStats[] }) {
   const max = Math.max(1, ...reti.map((r) => r.total_hosts));
@@ -25,9 +25,9 @@ export function BarreSubnet({ reti }: { reti: NetworkWithStats[] }) {
           >
             <span className="font-medium truncate group-hover:text-primary">{net.name}</span>
             <span className="flex h-3 rounded-sm overflow-hidden" aria-hidden>
-              {net.online_count > 0 && <span className="bg-[#1F7A4D] dark:bg-[#5ED3A0]" style={{ width: `${quota(net.online_count)}%` }} />}
+              {net.online_count > 0 && <span className="bg-[var(--host-online)]" style={{ width: `${quota(net.online_count)}%` }} />}
               {net.offline_count > 0 && <span style={{ width: `${quota(net.offline_count)}%`, background: TRAMA_OFFLINE }} />}
-              {net.unknown_count > 0 && <span className="bg-muted-foreground/30" style={{ width: `${quota(net.unknown_count)}%` }} />}
+              {net.unknown_count > 0 && <span className="bg-[var(--host-sconosciuto)]" style={{ width: `${quota(net.unknown_count)}%` }} />}
             </span>
             <span className="font-mono tabular-nums text-right whitespace-nowrap">
               {net.online_count}
@@ -46,9 +46,9 @@ export function BarreSubnet({ reti }: { reti: NetworkWithStats[] }) {
 export function LegendaSubnet() {
   return (
     <div className="flex items-center gap-3 px-3 pt-1 text-[13px] text-muted-foreground">
-      <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-3 rounded-sm bg-[#1F7A4D] dark:bg-[#5ED3A0]" aria-hidden />online</span>
+      <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-3 rounded-sm bg-[var(--host-online)]" aria-hidden />online</span>
       <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-3 rounded-sm" style={{ background: TRAMA_OFFLINE }} aria-hidden />offline</span>
-      <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-3 rounded-sm bg-muted-foreground/30" aria-hidden />sconosciuti</span>
+      <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-3 rounded-sm bg-[var(--host-sconosciuto)]" aria-hidden />sconosciuti</span>
       <span className="ml-auto">online / offline (totale)</span>
     </div>
   );

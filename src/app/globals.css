@@ -184,6 +184,18 @@
   --series-4: #eda100;
   --series-5: #e87ba4;
   --series-6: #008300;
+  /* Stato degli host e categorie degli alert (Riccardo, 20/10: «i colori devono essere ben
+     distinguibili»). Si separano per luminanza e forma, misurati col validatore della skill
+     dataviz: online verde scuro pieno, offline arancio a righe, sconosciuti grigio chiaro
+     (distanza minima per daltonici 18,6; prima verde/rosso 7,4). */
+  --host-online: #1F7A4D;
+  --host-offline: #E69F00;
+  --host-sconosciuto: #D0D8DC;
+  /* Categorie degli alert: tre colori fissi e «altre» grigio chiaro (prima sei tinte, 3,2). */
+  --alert-cat-1: #0D2537;
+  --alert-cat-2: #E69F00;
+  --alert-cat-3: #0072B2;
+  --alert-cat-altre: #D0D8DC;
 }
 
 .dark {
@@ -196,4 +208,11 @@
   --series-4: #c98500;
   --series-5: #d55181;
   --series-6: #008300;
+  --host-online: #5ED3A0;
+  --host-offline: #E69F00;
+  --host-sconosciuto: #4A6070;
+  --alert-cat-1: #E6EEF4;
+  --alert-cat-2: #E69F00;
+  --alert-cat-3: #56B4E9;
+  --alert-cat-altre: #4A6070;
 }

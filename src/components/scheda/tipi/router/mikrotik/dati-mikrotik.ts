@@ -46,6 +46,7 @@ export function useUtentiMikrotik(deviceId: number | undefined, admin: boolean):
   useEffect(() => {
     if (!deviceId || !admin) return;
     let vivo = true;
+    setStato({ fase: "carico" }); // cambio d'apparato: mai gli utenti del router di prima mentre arrivano i nuovi
     fetchJson<{ utenti: RigaUtenteMk[]; letto_il: string | null }>(`/api/devices/${deviceId}/mikrotik-utenti`)
       .then((r) => { if (vivo) setStato(r.ok ? { fase: "ok", dati: r.data } : { fase: "errore", messaggio: r.message }); })
       .catch(() => { if (vivo) setStato({ fase: "errore", messaggio: "Richiesta annullata" }); });

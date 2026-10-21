@@ -245,8 +245,11 @@ export interface RispostaSchedaMikrotik {
   letture: { topologia: { acceso: boolean; il: string | null }; scheda: LetturaSchedaMk };
 }
 
-/** Stato della lettura «VLAN, DNS e utenti»: `il` = ultimo tentativo, `dati_il` = età dei dati (UTC), `codice` = errore dell'ultimo tentativo. */
-export interface LetturaSchedaMk { acceso: boolean; il: string | null; dati_il: string | null; codice: string | null }
+/**
+ * Stato della lettura «VLAN, DNS e utenti»: `il` = ultimo tentativo, `codice` = suo errore; `vlan_il` e `dns_il` = età dei
+ * dati di ogni sezione (UTC). Gli utenti hanno la loro (`letto_il` della rotta solo admin).
+ */
+export interface LetturaSchedaMk { acceso: boolean; il: string | null; codice: string | null; vlan_il: string | null; dns_il: string | null }
 
 /** «22/10, 08:00» in ora italiana da un'ora del DB (UTC). */
 function oraItaliana(s: string): string {
@@ -255,14 +258,15 @@ function oraItaliana(s: string): string {
 }
 
 /**
- * Voce della riga delle fonti per la lettura «VLAN, DNS e utenti» (revisione del Task 10): l'ora è quella dei DATI mostrati,
- * mai quella di un tentativo fallito; un tentativo andato male dice il suo codice, una lettura spenta con dati vecchi lo dice.
+ * Voce della riga delle fonti per una sezione della lettura «VLAN, DNS e utenti» (revisione dei Task 10 e 11): l'ora è quella
+ * dei DATI di quella sezione (`datiIl`), mai quella di un tentativo fallito; un tentativo andato male dice il suo codice, una
+ * lettura spenta con dati vecchi lo dice.
  */
-export function fonteLetturaScheda(nome: string, s: LetturaSchedaMk): Fonte {
+export function fonteLetturaScheda(nome: string, s: LetturaSchedaMk, datiIl: string | null): Fonte {
   const prova = s.il && s.codice ? `ultima prova ${oraItaliana(s.il)}: ${s.codice}` : null;
-  if (s.dati_il) {
+  if (datiIl) {
     const coda = !s.acceso ? " · lettura spenta" : prova ? ` · ${prova}` : "";
-    return { nome, esito: "ok", quando: oraItaliana(s.dati_il) + coda };
+    return { nome, esito: "ok", quando: oraItaliana(datiIl) + coda };
   }
   if (!s.acceso) return { nome, esito: "assente", nota: "lettura spenta" };
   if (prova) return { nome, esito: "assente", nota: prova };

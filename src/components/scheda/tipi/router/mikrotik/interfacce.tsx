@@ -188,7 +188,7 @@ export function InterfacceMikrotik({ ctx }: { ctx: ContestoScheda }) {
           );
         })}
         {/* Id e madre delle VLAN vengono dalla lettura «VLAN, DNS e utenti»: se non ci sono, si dice perché. */}
-        {conVlan && scheda.fase === "ok" && !vlanLette && <RigaFonti fonti={[fonteLetturaScheda("VLAN: id e interfaccia madre", scheda.dati.letture.scheda)]} />}
+        {conVlan && scheda.fase === "ok" && !vlanLette && <RigaFonti fonti={[fonteLetturaScheda("VLAN: id e interfaccia madre", scheda.dati.letture.scheda, scheda.dati.letture.scheda.vlan_il)]} />}
       </>
     );
   }

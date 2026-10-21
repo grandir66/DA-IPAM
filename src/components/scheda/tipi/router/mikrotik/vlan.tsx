@@ -111,7 +111,7 @@ export function VlanMikrotik({ ctx }: { ctx: ContestoScheda }) {
       ? { nome: "Bridge e porte", esito: "assente", nota: "lettura «Spanning tree, bridge e fasci» spenta" }
       : s.letto_il ? { nome: "Topologia", esito: "ok", quando: oraMk(s.letto_il) } : { nome: "Bridge e porte", esito: "assente", nota: "mai lette" },
     // Ora dei DATI (non dell'ultimo tentativo, che può essere fallito) o il codice dell'errore: revisione del Task 10.
-    fonteLetturaScheda("VLAN dei bridge", s.letture.scheda),
+    fonteLetturaScheda("VLAN dei bridge", s.letture.scheda, s.letture.scheda.vlan_il),
   ];
 
   return (

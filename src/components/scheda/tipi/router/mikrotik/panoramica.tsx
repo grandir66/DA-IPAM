@@ -48,9 +48,14 @@ const contatoriVisti = (haBridge: boolean): { chiave: keyof ContatoriMikrotik; e
   { chiave: "utenti", etichetta: "Utenti", tab: "configurazione" },
 ];
 
+/**
+ * Server mostrati: la colonna è stretta (due badge per riga a 1440), con otto la Panoramica scorreva (999 px, prova del
+ * 22/10). Quattro = due righe; gli altri in «+N altri», col loro elenco nel title.
+ */
+const MAX_SERVER = 4;
 const badgeServer = "inline-flex h-6 items-center rounded border border-[#B8C4CC] bg-muted px-1.5 font-mono text-[13px] font-semibold";
 
-/** Riquadro DNS (M4): server statici (e dinamici, col bordo tratteggiato), richieste remote, cache, max query. */
+/** Riquadro DNS (M4): server statici (bordo pieno) e dinamici (bordo tratteggiato: forma, non colore), richieste remote, cache, max query. */
 function RiquadroDns({ dns }: { dns: RigaDnsMk }) {
   const cache = cacheDnsMk(dns.cache_used, dns.cache_size);
   const server = [...dns.servers.map((x) => ({ x, din: false })), ...dns.dynamic_servers.map((x) => ({ x, din: true }))];
@@ -60,9 +65,12 @@ function RiquadroDns({ dns }: { dns: RigaDnsMk }) {
         <Riga etichetta="Server">
           {server.length === 0 ? <span className="text-muted-foreground">nessuno</span> : (
             <span className="flex flex-wrap gap-1.5">
-              {server.map(({ x, din }) => (
-                <span key={x} className={`${badgeServer} ${din ? "border-dashed" : ""}`} title={din ? "server dinamico (da DHCP o PPP)" : undefined}>{x}{din ? " · din." : ""}</span>
+              {server.slice(0, MAX_SERVER).map(({ x, din }) => (
+                <span key={`${din}:${x}`} className={`${badgeServer} ${din ? "border-dashed" : ""}`} title={din ? "server dinamico (da DHCP o PPP)" : undefined}>{x}{din && <span className="sr-only"> (dinamico)</span>}</span>
               ))}
+              {server.length > MAX_SERVER && (
+                <span className={`${badgeServer} font-sans`} title={server.slice(MAX_SERVER).map((v) => v.x).join(", ")}>+{server.length - MAX_SERVER} altri</span>
+              )}
             </span>
           )}
         </Riga>
@@ -175,7 +183,9 @@ export function PanoramicaMikrotik({ ctx }: { ctx: ContestoScheda }) {
       ? { nome: "Bridge e porte", esito: "assente", nota: "lettura «Spanning tree, bridge e fasci» spenta" }
       : scheda.letto_il ? { nome: "Topologia", esito: "ok", quando: ora(scheda.letto_il) } : { nome: "Bridge e porte", esito: "assente", nota: "mai lette" });
   }
-  if (scheda) fonti.push(fonteLetturaScheda(isAdmin ? "DNS e utenti" : "DNS", scheda.letture.scheda));
+  // Una data per sezione: il DNS la sua, gli utenti (solo admin) quella della loro rotta.
+  if (scheda) fonti.push(fonteLetturaScheda("DNS", scheda.letture.scheda, scheda.letture.scheda.dns_il));
+  if (scheda && ut?.fase === "ok") fonti.push(fonteLetturaScheda("Utenti", scheda.letture.scheda, ut.dati.letto_il));
   if (di?.scanned_at && !risorse && !hardware) fonti.push({ nome: "Risorse e hardware", esito: "assente", nota: "si leggono con «Aggiorna»" });
 
   return (

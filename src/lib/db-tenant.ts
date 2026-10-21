@@ -5750,19 +5750,19 @@ export function leggiSchedaMikrotik(deviceId: number): {
 }
 
 /**
- * Data dei DATI della lettura «VLAN, DNS e utenti» di un apparato (revisione del Task 10): il `seen_at` più recente fra le
- * quattro tabelle del livello 3, non l'ora dell'ultimo tentativo (che può essere fallito e non aver scritto niente).
- * null = nessuna riga, o schema sotto il livello 3.
+ * Data dei DATI della lettura «VLAN, DNS e utenti», una per sezione (revisione dei Task 10 e 11): VLAN = il `seen_at` più
+ * recente di `mikrotik_bridge_vlan` e `mikrotik_vlan`; DNS = quello di `mikrotik_dns`. Mai l'ora dell'ultimo tentativo (può
+ * essere fallito e non aver scritto niente) e mai la data di `mikrotik_user` (dato del solo admin: ha la sua, nella sua rotta).
+ * null = schema sotto il livello 3.
  */
-export function dataSchedaMikrotikV3(deviceId: number): string | null {
+export function dateSchedaMikrotikV3(deviceId: number): { vlan_il: string | null; dns_il: string | null } | null {
   const d = db();
   if (livelloSchemaSchedaMk(d) < 3) return null;
-  const r = d.prepare(`SELECT MAX(il) AS il FROM (
-      SELECT MAX(seen_at) AS il FROM mikrotik_bridge_vlan WHERE device_id = ?
-      UNION ALL SELECT MAX(seen_at) FROM mikrotik_vlan WHERE device_id = ?
-      UNION ALL SELECT MAX(seen_at) FROM mikrotik_dns WHERE device_id = ?
-      UNION ALL SELECT MAX(seen_at) FROM mikrotik_user WHERE device_id = ?)`).get(deviceId, deviceId, deviceId, deviceId) as { il: string | null };
-  return r.il ?? null;
+  const r = d.prepare(`SELECT
+      (SELECT MAX(il) FROM (SELECT MAX(seen_at) AS il FROM mikrotik_bridge_vlan WHERE device_id = ?
+        UNION ALL SELECT MAX(seen_at) FROM mikrotik_vlan WHERE device_id = ?)) AS vlan_il,
+      (SELECT MAX(seen_at) FROM mikrotik_dns WHERE device_id = ?) AS dns_il`).get(deviceId, deviceId, deviceId) as { vlan_il: string | null; dns_il: string | null };
+  return { vlan_il: r.vlan_il ?? null, dns_il: r.dns_il ?? null };
 }
 
 /** Quanti bridge ha l'ultima fotografia (una COUNT, per le tab di `GET /api/devices/[id]`); null = schema sotto il livello 2. */

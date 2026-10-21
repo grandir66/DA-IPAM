@@ -408,22 +408,22 @@ describe("vlanConMadre (Interfacce, gruppo VLAN)", () => {
   });
 });
 
-describe("fonteLetturaScheda («DNS e utenti», «VLAN dei bridge»)", () => {
-  const s = (x: Partial<{ acceso: boolean; il: string | null; dati_il: string | null; codice: string | null }>) =>
-    ({ acceso: true, il: null, dati_il: null, codice: null, ...x });
+describe("fonteLetturaScheda («DNS», «Utenti», «VLAN dei bridge»: una data per sezione)", () => {
+  const s = (x: Partial<{ acceso: boolean; il: string | null; codice: string | null }>) =>
+    ({ acceso: true, il: null, codice: null, vlan_il: null, dns_il: null, ...x });
   it("spenta / mai letta", () => {
-    assert.deepEqual(fonteLetturaScheda("DNS e utenti", s({ acceso: false })), { nome: "DNS e utenti", esito: "assente", nota: "lettura spenta" });
-    assert.deepEqual(fonteLetturaScheda("DNS e utenti", s({})), { nome: "DNS e utenti", esito: "assente", nota: "mai letta" });
+    assert.deepEqual(fonteLetturaScheda("DNS", s({ acceso: false }), null), { nome: "DNS", esito: "assente", nota: "lettura spenta" });
+    assert.deepEqual(fonteLetturaScheda("DNS", s({}), null), { nome: "DNS", esito: "assente", nota: "mai letta" });
   });
-  it("l'ora è quella dei DATI, non dell'ultimo tentativo; un tentativo fallito dice il codice", () => {
-    const f = fonteLetturaScheda("DNS e utenti", s({ il: "2026-10-22 09:00:00", dati_il: "2026-10-22 06:00:00", codice: "TEMPO_SCADUTO" }));
+  it("l'ora è quella dei dati della SEZIONE, non dell'ultimo tentativo; un tentativo fallito dice il codice", () => {
+    const f = fonteLetturaScheda("VLAN dei bridge", s({ il: "2026-10-22 09:00:00", codice: "TEMPO_SCADUTO" }), "2026-10-22 06:00:00");
     assert.equal(f.esito, "ok");
     assert.equal(f.quando, "22/10, 08:00 · ultima prova 22/10, 11:00: TEMPO_SCADUTO");
-    assert.equal(fonteLetturaScheda("x", s({ il: "2026-10-22 09:00:00", dati_il: "2026-10-22 09:00:00" })).quando, "22/10, 11:00");
+    assert.equal(fonteLetturaScheda("x", s({ il: "2026-10-22 09:00:00" }), "2026-10-22 09:00:00").quando, "22/10, 11:00");
   });
   it("niente dati: il codice dell'ultima prova; spenta con dati vecchi: lo dice", () => {
-    assert.deepEqual(fonteLetturaScheda("x", s({ il: "2026-10-22 09:00:00", codice: "SCHEMA_SCHEDA" })), { nome: "x", esito: "assente", nota: "ultima prova 22/10, 11:00: SCHEMA_SCHEDA" });
-    assert.equal(fonteLetturaScheda("x", s({ acceso: false, dati_il: "2026-10-20 06:00:00" })).quando, "20/10, 08:00 · lettura spenta");
+    assert.deepEqual(fonteLetturaScheda("x", s({ il: "2026-10-22 09:00:00", codice: "SCHEMA_SCHEDA" }), null), { nome: "x", esito: "assente", nota: "ultima prova 22/10, 11:00: SCHEMA_SCHEDA" });
+    assert.equal(fonteLetturaScheda("x", s({ acceso: false }), "2026-10-20 06:00:00").quando, "20/10, 08:00 · lettura spenta");
   });
 });
 

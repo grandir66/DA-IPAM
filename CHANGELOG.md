@@ -4,6 +4,17 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — collector VMware ESXi via vSphere (solo locale)
+
+- Profilo `vmware-esxi` API diretta con stesso JSON/CLI/adapter: hardware, rete
+  fisica/virtuale, VMkernel, datastore/LUN/multipath, VM/vNIC/dischi/snapshot e sensori.
+  Riferimenti e byte esatti preservati; IP dei Tools distinti da una scansione.
+- HTTPS con CA oppure impronta esplicita prima delle credenziali; sessione limitata,
+  proprietà selezionate, paginazione e logout. Endpoint vCenter rifiutati.
+- Corretta la collisione XML tra type del ManagedObjectReference e xsi:type,
+  con regressioni per singleton, route/pNIC, byte grandi, TLS e risposte parziali.
+  Nessuna persistenza, modifica dell’host, attivazione UI o pubblicazione.
+
 ## [Non rilasciato] — inventario modulare e Comware IRF (solo locale)
 
 - ProCurve 5406R zl2: inventario ENTITY e moduli nativi, mantenendo le porte senza

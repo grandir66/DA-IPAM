@@ -10,7 +10,7 @@ export const QSS_COMMANDS = ["show system-information", "show interfaces status"
 export const PROCURVE_COMMANDS = ["show system", "show version", "show interfaces brief", "show vlans", "show vlans ports all detail", "show mac-address", "show trunks", "show lldp info remote-device detail", "show power-over-ethernet brief", "show spanning-tree", "show system fans", "show modules"] as const;
 export const COMWARE_COMMANDS = ["display version", "display interface brief", "display vlan all", "display lldp neighbor-information verbose", "display mac-address", "display link-aggregation verbose", "display stp brief", "display stp", "display cpu-usage", "display memory", "display environment", "display fan", "display power", "display device", "display poe interface"] as const;
 type ConsoleProfile = AcquisitionInput['collector'];
-const commandSets = { "qnap-switch": QSS_COMMANDS, "hp-procurve": PROCURVE_COMMANDS, "hp-comware": COMWARE_COMMANDS };
+const commandSets = { "vmware-esxi": [] as readonly string[], "qnap-switch": QSS_COMMANDS, "hp-procurve": PROCURVE_COMMANDS, "hp-comware": COMWARE_COMMANDS };
 const fail = <T>(data: T, code: string): ReadResult<T> => ({ status: "error", data, warnings: [code] });
 export function assertCommands(commands: readonly string[], profile: ConsoleProfile = 'qnap-switch'): void {
     const allowed: readonly string[] = commandSets[profile];

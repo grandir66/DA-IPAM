@@ -4,6 +4,7 @@ import { Geist_Mono } from "next/font/google";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider } from "@/components/providers/auth-provider";
+import { Agentation } from "agentation";
 import "./globals.css";
 
 const signika = Signika({
@@ -47,6 +48,8 @@ export default function RootLayout({
           </TooltipProvider>
         </AuthProvider>
         <Toaster />
+        {/* Note visive per gli agenti (agentation): solo in sviluppo, mai nella build */}
+        {process.env.NODE_ENV === "development" && <Agentation endpoint="http://localhost:4747" />}
       </body>
     </html>
   );

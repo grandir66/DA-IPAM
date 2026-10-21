@@ -7,7 +7,7 @@ Nessuna integrazione automatica con scheduler, database o interfaccia; nessun ri
 
 Richiede Node 22 e le dipendenze già installate di DA-IPAM, non il server Next.js.
 Il file di input JSON vive **fuori dal repository**, appartiene all'utente corrente e
-ha permessi `0600`. Contiene `host`, `collector: "qnap-switch"` (default), e almeno uno tra:
+ha permessi `0600`. Contiene `host`, `collector` (`"qnap-switch"` di default oppure `"hp-procurve"`), e almeno uno tra:
 
 - `ssh`: `username`, `password` oppure `privateKey` PEM, eventuale `passphrase`, `port` (default 22).
 - `snmp`: `community`, `version` (`"2c"` di default oppure `"1"`), `port` (default 161).
@@ -45,7 +45,9 @@ L'istante della sezione indica la sua composizione; le letture non sono atomiche
 contatori, MAC e vicini possono cambiare durante il giro.
 
 Sezioni: `identity`, `interfaces`, `vlans`, `forwarding`, `neighbors`, `spanning_tree`,
-`aggregation`, `sensors`, `network`, `poe`.
+`aggregation`, `sensors`, `network`, `poe`. Estensioni additive opzionali: `resources`
+(CPU e memoria), `environment` (stato ventole e budget PoE), `identity.part_number`
+e `identity.boot_rom`. Gli snapshot QNAP 1.0 precedenti restano validi.
 
 - `null` = sconosciuto. Non convertire in 0, false o assenza autorevole.
 - `ok` = formato riconosciuto e lettura conclusa per quella sezione, non garanzia
@@ -108,6 +110,57 @@ nessun endpoint API investigato o usato; nessuna scoperta automatica delle capab
 non misurate. SSH eredita la policy di connessione del trasporto esistente, senza
 aggiungere un archivio di pin host-key. Non vengono riutilizzati comandi NAS QTS.
 
+## Collector hp-procurve
+
+Collaudato con utente operator su **Aruba JL357A 2540-48G-PoE+-4SFP+**, firmware
+**YC.16.11.0020**, ROM YC.16.01.0003. È ProCurve / ArubaOS-Switch: non ArubaOS-CX
+né Comware. La famiglia si verifica sul sysDescr e sulla firma delle revisioni;
+senza SNMP, una firma classica della revisione SSH consente una identità parziale,
+con modello ignoto. Non si inventa il modello dal nome scelto per lo switch.
+
+La CLI usa `collector: "hp-procurve"` nel file privato e gli stessi argomenti del QNAP.
+Raccolta manuale read-only, senza nuove route, DB o job automatici. I trasporti e i
+parser QNAP mantengono il loro comportamento; l'allowlist dei comandi è per profilo.
+
+L'allowlist HP comprende: `show system`, `show version`, `show interfaces brief`,
+`show vlans`, `show vlans ports all detail`, `show mac-address`, `show trunks`,
+`show lldp info remote-device detail`, `show power-over-ethernet brief`,
+`show spanning-tree`, `show system fans`. Nessuna promozione a manager, comando
+`enable`, configurazione o esportazione di running-config.
+
+Sul banco sono stati letti:
+
+- 52 porte fisiche (48 rame PoE + 4 SFP+), più interfacce logiche SNMP. `49-Trk3`
+  identifica la porta fisica 49, non un nuovo nome di porta. `ifName` univoco lega
+  i record SSH e SNMP, senza dedurre ifIndex dal numero stampato. Contatori HC,
+  MAC, MTU, alias e PVID arrivano dalle tabelle SNMP quando disponibili.
+- VLAN con membership esplicita Tagged/Untagged, tramite dettaglio per porta o
+  Q-BRIDGE-MIB; due trunk con membri e protocollo, senza indovinare lo stato
+  operativo dai soli membri configurati.
+- LLDP dettagliato: chassis ID anche non MAC, port ID testuale, nome, descrizione,
+  capability e indirizzi di gestione. TTL non esposto resta null.
+- Tabella MAC con VLAN esplicita e porta; STP globale e stati/ruolo root del CIST.
+  **Le singole istanze MST non sono acquisite**: non estendere questi stati a ogni
+  VLAN. L'avviso `CIST_ONLY_MST_INSTANCES_NOT_COLLECTED` resta nel JSON.
+- 48 porte PoE: `power_watts` è **PD Pwr Draw**, non PSE Reserved. Budget globale
+  disponibile/usato/rimanente separato in environment.
+- CPU percentuale, memoria totale/libera in byte; tre ventole con stato e conteggio
+  guasti, non RPM inventati. Sensori numerici di temperatura/RPM non implementati
+  (`sensors.status=skipped`); il comando temperatura provato sul banco è rifiutato.
+- Indirizzi IPv4 e tabella ARP, tramite SNMP standard.
+
+Il banco è raggiunto con timeout di lettura 10 s e termine totale 180 s, impostati
+nel file privato: le letture SNMP a 4 s erano parziali. Limiti di righe e byte restano
+attivi; il collector conserva eventuali parziali anche con credenziali corrette.
+
+Il pager HP scrive Enter oppure Return e può incollare il footer alla prima riga
+successiva. Entrambi i casi sono normalizzati e coperti da regressioni; una perdita
+avveniva anche nella prima riga PoE della pagina. I conteggi di porte, PoE, FDB, VLAN
+e LLDP sono confrontati con le righe candidate: formato nuovo → risultato parziale,
+non successo con righe perse. Il prompt operator `>` ridisegnato con ANSI e il
+banner «Press any key» sono gestiti con gli stessi limiti temporali della console.
+Altri modelli/revisioni e trunk dinamici non sono dichiarati collaudati.
+
 ## Estendere una famiglia
 
 Aggiungere un collector che implementi lo stesso contratto, estendere l'unione di
@@ -115,7 +168,7 @@ input validati e il registry statico in `index.ts`, introdurre parser puri e fix
 anonimizzate da risposte reali. Riutilizzare i trasporti o introdurne uno con limiti
 identici. Non accettare comandi liberi dall'input. Non inferire capacità dai soli nomi
 vendor; dichiarare modelli, firmware e prove realmente eseguite. Prossime famiglie
-previste: ProCurve, ArubaOS, Comware, da sviluppare su campioni autorizzati.
+previste: ArubaOS-CX e Comware, da sviluppare su campioni autorizzati.
 
 ## Prove
 

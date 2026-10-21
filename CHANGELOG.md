@@ -4,6 +4,17 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — collector ProCurve / ArubaOS-Switch (solo locale)
+
+- Profilo `hp-procurve` nel registry e nella stessa CLI del QNAP: collaudo Aruba
+  2540 JL357A con operator, letture SSH/SNMP senza promozione di privilegi o DB.
+- Porte fisiche e LAG distinti, membership VLAN/PVID espliciti, LLDP dettagliato,
+  FDB, STP CIST, PoE assorbito dai dispositivi, CPU/memoria e salute delle ventole.
+  Risorse/ambiente e part-number/ROM sono estensioni opzionali compatibili con JSON 1.0.
+- Corretto il footer del pager HP incollato alle righe: Enter/Return non causano più
+  perdita silenziosa di porte o MAC. Allowlist per famiglia, prompt operator e
+  conteggi verificati; test e snapshot QNAP precedenti restano validi. Nessun rilascio.
+
 ## [Non rilasciato] — collector modulari QNAP (solo locale)
 
 - Collector `qnap-switch` richiamabile da CLI e adapter senza DB, per acquisire lo

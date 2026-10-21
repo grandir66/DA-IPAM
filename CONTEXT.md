@@ -32,7 +32,7 @@ Leggilo per primo, poi [CLAUDE.md](CLAUDE.md) (stack e schema; su «multi-tenant
 
 ## 6. Stato e trappole per area (2026-10-21)
 
-- **Collector QNAP (21/10, solo locale, ADR 0024)**: `lib/acquisition/`, CLI `scripts/acquire-device.ts`, adapter senza DB. Manuale `docs/modules/acquisition.md`, piano e TASKS. Collaudato QSS: 32 prove, lint/typecheck/build verdi; credenziali/snapshot nel vault `collectors/`. IP/ARP in errore, PVID ignoti, PoE saltato. Nessun push/deploy o automatismo. Prossimo, da approvare: integrazione persistente. Trappole: QSS solo shell e timeout di inattività; STP spento ≠ cavo bloccato; DDM zero ≠ ottica presente.
+- **Collector modulari (21/10, solo locale, ADR 0024)**: QNAP QSS e HP ProCurve/ArubaOS-Switch in `lib/acquisition/`, CLI `scripts/acquire-device.ts`, adapter senza DB. Collaudati QSW-M3216R e Aruba 2540 JL357A YC.16.11; 47 test, lint/typecheck/build verdi, JSON QNAP precedente compatibile. Manuale `docs/modules/acquisition.md`, piani e TASKS; vault `collectors/` per input/output. Nessun push/deploy o automatismo; integrazione persistente da approvare. Trappole: QSS solo shell, timeout di inattività più totale; pager HP Enter/Return incolla righe; 49-Trk3 resta porta 49; PoE = PD Draw; stato ventola ≠ RPM. HP: STP solo CIST, sensori numerici saltati. QNAP: IP/ARP in errore, PVID ignoti, PoE saltato.
 
 - **Rami su origin**: `dev`, `main`, `tappa3b/nucleo` (non potare), `sonde-integrate-20261020` (già in `dev` col merge `8c00134e`: si può togliere).
 - **NetBird e DA-Link** (ADR 0011, 0013, 0014; `plans/2026-10-15-tappa-c1-netbird.md`). Blocco `edge` del segnale in `dev` (`lib/dalink/edge-segnale.ts`, `edge-sonda.ts`; il quadro di «Cosa esce» ha `altri_flussi.edge`). **Trappole**:

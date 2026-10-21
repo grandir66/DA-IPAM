@@ -63,3 +63,21 @@ Piano: docs/superpowers/plans/2026-10-21-collector-modulari-qnap.md
 - [x] Commit locali selettivi e verifiche conclusi; nessun push/deploy.
 - [ ] Rinviato: aggancio persistente/UI in DA-IPAM, altri firmware, LLDP esteso, PoE, API e SNMPv3; non approvati in questa tappa.
 - [x] Trappola rilevata e gestita: SSH solo shell, SNMP per tabella; timeout di inattività + termine totale per output lungo.
+
+## 2026-10-21 — Collector HP ProCurve / ArubaOS-Switch
+
+Estensione richiesta da Riccardo, stesso contratto e perimetro locale della tappa QNAP.
+Piano: docs/superpowers/plans/2026-10-21-collector-procurve.md
+
+- [x] Lettura contesto e stato: working tree pulito; SNMP identifica Aruba 2540 JL357A.
+- [x] Campioni read-only acquisiti con operator: porte/VLAN/LLDP dettagliati, STP, LAG, PoE e ventole.
+- [x] Parser ProCurve e profilo console con regressioni QNAP; 46 prove verdi.
+- [x] Collector hp-procurve, registry e adapter comuni; risorse/ambiente opzionali compatibili con QNAP.
+- [x] Collaudo reale con 52 porte fisiche, 48 PoE, 24 VLAN e LLDP dettagliato; nessun segreto nell’output.
+- [x] 47 test, lint senza errori e typecheck/build verdi; documentazione aggiornata.
+- [ ] Commit locali selettivi e verifica finale; nessun push/deploy.
+- [ ] Rinviato: singole istanze MST, sensori numerici temperatura/RPM e altri modelli/firmware, non collaudati.
+
+- [x] Difetto scoperto nel pager HP: “next line: Enter” incollato alla riga seguente perdeva una porta PoE e altre righe. Fix e prova vista rossa→verde; controllo dei conteggi per FDB/VLAN/LLDP.
+
+- [ ] Seguito richiesto: secondo ProCurve modulare, stesse credenziali; identificazione e collaudo di slot/porte dopo chiusura del 2540.

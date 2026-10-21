@@ -124,12 +124,18 @@ export interface RisultatoMk {
   riusciti: number;
   /** Il primo errore, col solo codice (resoconto ed esito). */
   codice: string | null;
+  /**
+   * Le uscite grezze di MK3, MK4 e MK8 lette davvero (esito «letto», anche vuote): la scheda le rilegge coi suoi lettori
+   * (Task 8, ADR 0027) senza comandi nuovi. Una chiave assente = non riuscito o «non so».
+   */
+  uscite: Partial<Record<"bridge" | "porteBridge" | "fasci", string>>;
 }
 
 export async function leggiMikrotikTopologia(esegui: Esegui, opz: { uscitaInterfacce: string | null; conVicini: boolean }): Promise<RisultatoMk> {
   let comandi = 0, riusciti = 0;
   let codice: string | null = null;
-  const prova = async <T>(cmd: string, leggi: (out: string) => T[]): Promise<T[] | null> => {
+  const uscite: RisultatoMk["uscite"] = {};
+  const prova = async <T>(cmd: string, leggi: (out: string) => T[], tieni?: keyof RisultatoMk["uscite"]): Promise<T[] | null> => {
     comandi++;
     let out: string;
     try {
@@ -146,17 +152,18 @@ export async function leggiMikrotikTopologia(esegui: Esegui, opz: { uscitaInterf
       return null;
     }
     riusciti++;
+    if (tieni) uscite[tieni] = out;
     return r.valore;
   };
   // MK2 già letto dal giro dei router: vale se si capisce; altrimenti si rilegge qui (errore dal testo o uscita strana).
   const daGiro = opz.uscitaInterfacce !== null ? interpretaUscita(opz.uscitaInterfacce, parseInterfacce) : null;
   const interfacce = daGiro !== null && "valore" in daGiro ? daGiro.valore : await prova(COMANDI_MK.interfacce, parseInterfacce);
   const vicini = opz.conVicini ? await prova(COMANDI_MK.vicini, parseMikrotikNeighbors) : null;
-  const bridge = await prova(COMANDI_MK.bridge, parseBridge);
-  const porteBridge = await prova(COMANDI_MK.porteBridge, parsePorteBridge);
+  const bridge = await prova(COMANDI_MK.bridge, parseBridge, "bridge");
+  const porteBridge = await prova(COMANDI_MK.porteBridge, parsePorteBridge, "porteBridge");
   const monitorBridge = await prova(COMANDI_MK.monitorBridge, parseMonitorBridge);
   const monitorPorte = await prova(COMANDI_MK.monitorPorte, parseMonitorPorte);
-  const fasci = await prova(COMANDI_MK.fasci, parseFasci);
+  const fasci = await prova(COMANDI_MK.fasci, parseFasci, "fasci");
   const monitorFasci = await prova(COMANDI_MK.monitorFasci, parseMonitorFasci);
   // MK7 (spec §13.5.2): solo se un bridge è in MSTP, lo decide il codice fra un comando e l'altro (MK3 non letto: non si sa,
   // non si manda). Il monitor si attacca alle righe di `msti print`: senza quelle non servirebbe, e non parte.
@@ -165,6 +172,6 @@ export async function leggiMikrotikTopologia(esegui: Esegui, opz: { uscitaInterf
   const monitorIstanze = istanze !== null ? await prova(COMANDI_MK.monitorMsti, parseMonitorMsti) : null;
   return {
     lettura: { interfacce, bridge, porteBridge, monitorBridge, monitorPorte, fasci, monitorFasci, istanze, monitorIstanze },
-    vicini, comandi, riusciti, codice,
+    vicini, comandi, riusciti, codice, uscite,
   };
 }

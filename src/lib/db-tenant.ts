@@ -16,7 +16,7 @@ import { resolveDataDir } from "./data-dir";
 import { buildPatchFromHost, buildPatchFromDevice, buildSyncMerge, buildSourceLabel } from "./inventory/discovery-sync";
 import fs from "fs";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { COLONNE_SCHEDA_MK_V1, DDL_HOSTS_ARCHIVIO, DDL_TOPOLOGY_CAVI, DDL_TOPOLOGY_UNIONI, INDICI_HOSTS_ARCHIVIO, INDICI_TOPOLOGY_UNIONI, TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL, SEGNO_SCHEDA_MK, VERSIONE_SCHEDA_MK } from "./db-tenant-schema";
+import { COLONNE_SCHEDA_MK_V1, DDL_HOSTS_ARCHIVIO, DDL_SCHEDA_MK_V2, DDL_TOPOLOGY_CAVI, DDL_TOPOLOGY_UNIONI, INDICI_HOSTS_ARCHIVIO, INDICI_TOPOLOGY_UNIONI, TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL, SEGNO_SCHEDA_MK, VERSIONE_SCHEDA_MK } from "./db-tenant-schema";
 import { HYPERVISOR_SYNC_MINUTES, PULIZIA_HOST_MINUTES, SCHEDULED_JOB_TYPES_CHECK_SQL } from "./scheduled-job-types";
 import { isProxmoxVeDevice } from "./devices/device-acquisition-resolve";
 import { macToHex, normalizeMac, normalizeMacForStorage } from "./utils";
@@ -74,6 +74,7 @@ import { modelloEtichettaDiPorte } from "./device-fingerprint-classification";
 import { parseProxmoxScan } from "./topology/vms";
 import { hypervisorNics, switchPortsToKnown, type SwitchPortRow } from "./topology/known-ports";
 import type { IngressoDispositivi } from "./scheda/dispositivi-router";
+import type { RigaBondMk, RigaBridgeMk, RigaPortaBridgeMk } from "./devices/mikrotik-scheda";
 import type { KnownPort } from "./topology/api-input";
 import type { LinkMedium, MapOrientation } from "./topology/model-types";
 import { TESTI_UNIONI, type PianoUnioni, type RigaSeparazione, type RigaUnione } from "./topology/unioni-tipi";
@@ -687,12 +688,21 @@ function colonneSchedaMkMancanti(db: Database.Database, voci: ReadonlyArray<read
 /** Versione completa dello schema della scheda MikroTik presente, annotata all'apertura (0 = niente), come SCHEMA_CAVI. */
 const SCHEMA_SCHEDA_MK = new WeakMap<Database.Database, number>();
 
+/** Le tabelle di un livello della scheda MikroTik che mancano (sqlite_master: una vista con lo stesso nome non conta). */
+function tabelleSchedaMkMancanti(db: Database.Database, voci: ReadonlyArray<readonly [string, string]>): Array<readonly [string, string]> {
+  const c = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?");
+  return voci.filter(([n]) => !c.get(n));
+}
+
 function misuraLivelloSchedaMk(d: Database.Database): number {
-  // I livelli si sommano: il 2 e il 3 aggiungeranno le loro colonne a questa lista di liste.
-  const livelli = [COLONNE_SCHEDA_MK_V1];
+  // I livelli si sommano: ognuno vale solo se c'è tutto il precedente (il 3 aggiungerà il suo controllo qui).
+  const livelli: Array<() => boolean> = [
+    () => colonneSchedaMkMancanti(d, COLONNE_SCHEDA_MK_V1).length === 0,
+    () => tabelleSchedaMkMancanti(d, DDL_SCHEDA_MK_V2).length === 0,
+  ];
   let n = 0;
-  for (const voci of livelli) {
-    if (colonneSchedaMkMancanti(d, voci).length > 0) break;
+  for (const completo of livelli) {
+    if (!completo()) break;
     n++;
   }
   return n;
@@ -705,6 +715,14 @@ function misuraLivelloSchedaMk(d: Database.Database): number {
 export function livelloSchemaSchedaMk(d: Database.Database): number {
   const v = SCHEMA_SCHEDA_MK.get(d);
   if (v !== undefined && v >= VERSIONE_SCHEDA_MK) return v;
+  const n = misuraLivelloSchedaMk(d);
+  SCHEMA_SCHEDA_MK.set(d, n);
+  return n;
+}
+
+/** Rimisura il livello dello schema della scheda del tenant corrente (prove; dopo una correzione a mano dello schema). */
+export function rileggiSchemaSchedaMk(): number {
+  const d = db();
   const n = misuraLivelloSchedaMk(d);
   SCHEMA_SCHEDA_MK.set(d, n);
   return n;
@@ -729,8 +747,9 @@ export function chiudiMigrazioneSchedaMkFallita(db: Database.Database, tenantCod
 }
 
 /**
- * Migrazione della scheda MikroTik (piano 2026-10-21, Task 3): le colonne di COLONNE_SCHEDA_MK_V1, solo se mancano
- * (`PRAGMA table_info`). Additiva, idempotente, in UNA transazione; restituisce «tabella.colonna» di ciò che aggiunge. Poi
+ * Migrazione della scheda MikroTik (piano 2026-10-21): livello 1 (Task 3), le colonne di COLONNE_SCHEDA_MK_V1 solo se
+ * mancano (`PRAGMA table_info`); livello 2 (Task 8, ADR 0027), le tre tabelle di DDL_SCHEDA_MK_V2 solo se mancano.
+ * Additiva, idempotente, in UNA transazione; restituisce «tabella.colonna» o il nome della tabella di ciò che aggiunge. Poi
  * scrive il segno `done:<data>:v<versione>` (dice fin dove è arrivato lo schema; la migrazione non lo consulta).
  */
 export function migrateSchedaMikrotik(db: Database.Database): string[] {
@@ -739,6 +758,10 @@ export function migrateSchedaMikrotik(db: Database.Database): string[] {
     for (const [t, c, ddl] of colonneSchedaMkMancanti(db, COLONNE_SCHEDA_MK_V1)) {
       db.exec(`ALTER TABLE ${t} ADD COLUMN ${c} ${ddl}`);
       added.push(`${t}.${c}`);
+    }
+    for (const [n, ddl] of tabelleSchedaMkMancanti(db, DDL_SCHEDA_MK_V2)) {
+      db.exec(ddl);
+      added.push(n);
     }
     // Il segno si scrive una volta per versione: a una seconda apertura non cambia (né valore né updated_at).
     const chiusa = `:v${VERSIONE_SCHEDA_MK}`;
@@ -2325,8 +2348,9 @@ export function getTenantDb(tenantCode: string): Database.Database {
     console.error(`[db-tenant] ${tenantCode}: migrazione dell'archivio host fallita, la pulizia degli host non è disponibile:`, e);
   }
 
-  // Scheda MikroTik (piano 2026-10-21): cinque colonne nuove su tabelle che esistono già. Se fallisce il tenant si apre lo
-  // stesso: livelloSchemaSchedaMk() dice 0 e le letture scrivono come prima. La riga del journal è la prova del rilascio.
+  // Scheda MikroTik (piano 2026-10-21): cinque colonne nuove su tabelle che esistono già (v1) e le tabelle di bridge, porte e
+  // bond (v2). Se fallisce il tenant si apre lo stesso: livelloSchemaSchedaMk() dice il livello che c'è e le letture scrivono
+  // solo fin lì. La riga del journal è la prova del rilascio.
   try {
     const added = migrateSchedaMikrotik(newDb);
     if (added.length > 0) {
@@ -5512,6 +5536,52 @@ export function rileggiSchemaCavi(): boolean {
   const ok = verificaSchemaCavi(d);
   SCHEMA_CAVI.set(d, ok);
   return ok;
+}
+
+/** Bridge, porte e bond di un MikroTik per la scheda (Task 8, ADR 0027). Una parte null = non letta: la sua tabella non si tocca. */
+export interface SchedaMkTopologia { bridge: RigaBridgeMk[] | null; porte: RigaPortaBridgeMk[] | null; bond: RigaBondMk[] | null }
+
+const COLONNE_MK_BRIDGE = ["name", "mac_address", "mtu", "actual_mtu", "l2mtu", "arp", "arp_timeout", "protocol_mode", "priority",
+  "fast_forward", "igmp_snooping", "dhcp_snooping", "vlan_filtering", "pvid", "frame_types", "ingress_filtering", "ether_type",
+  "ageing_time", "forward_delay", "max_message_age", "comment", "running", "disabled"] as const satisfies ReadonlyArray<keyof RigaBridgeMk>;
+const COLONNE_MK_PORTA = ["interface", "bridge", "pvid", "priority", "path_cost", "internal_path_cost", "edge", "point_to_point", "horizon",
+  "hw", "hw_offload", "frame_types", "ingress_filtering", "bpdu_guard", "trusted", "inactive", "disabled", "dynamic", "comment",
+] as const satisfies ReadonlyArray<keyof RigaPortaBridgeMk>;
+const COLONNE_MK_BOND = ["name", "mode", "slaves", "transmit_hash_policy", "mlag_id", "link_monitoring", "mii_interval", "lacp_rate",
+  "mtu", "comment", "running", "disabled"] as const satisfies ReadonlyArray<keyof RigaBondMk>;
+
+/** Un valore di una riga della scheda per SQLite: boolean → 0/1, lista (slaves) → testo con le virgole. */
+function valoreMk(v: unknown): string | number | null {
+  if (v === null || v === undefined) return null;
+  if (typeof v === "boolean") return v ? 1 : 0;
+  if (Array.isArray(v)) return v.join(",");
+  return v as string | number;
+}
+
+/**
+ * Bridge, porte e bond di un MikroTik nelle tabelle della scheda: una fotografia per apparato, non la storia. Per ogni parte
+ * letta (anche vuota) si cancellano le righe dell'apparato e si scrivono quelle lette con lo stesso `seen_at`; una parte null
+ * (comando non riuscito, «non so») non tocca la sua tabella e le righe dell'ultima lettura buona restano con la loro età. Una
+ * transazione per le tre tabelle: o tutto o niente. null = schema sotto il livello 2 (migrazione non fatta o fallita).
+ */
+export function scriviSchedaMikrotikTopologia(deviceId: number, s: SchedaMkTopologia, adesso: Date = new Date()):
+  { bridge: number; porte: number; bond: number } | null {
+  const d = db();
+  if (livelloSchemaSchedaMk(d) < 2) return null;
+  const ora = adesso.toISOString().slice(0, 19).replace("T", " ");
+  const out = { bridge: 0, porte: 0, bond: 0 };
+  const sostituisci = <R extends object>(tabella: string, colonne: ReadonlyArray<keyof R & string>, righe: R[]): number => {
+    d.prepare(`DELETE FROM ${tabella} WHERE device_id = ?`).run(deviceId);
+    const ins = d.prepare(`INSERT OR REPLACE INTO ${tabella} (device_id, ${colonne.join(", ")}, seen_at) VALUES (?, ${colonne.map(() => "?, ").join("")}?)`);
+    for (const r of righe) ins.run(deviceId, ...colonne.map((c) => valoreMk(r[c])), ora);
+    return righe.length;
+  };
+  d.transaction(() => {
+    if (s.bridge) out.bridge = sostituisci("mikrotik_bridge", COLONNE_MK_BRIDGE, s.bridge);
+    if (s.porte) out.porte = sostituisci("mikrotik_bridge_port", COLONNE_MK_PORTA, s.porte);
+    if (s.bond) out.bond = sostituisci("mikrotik_bond", COLONNE_MK_BOND, s.bond);
+  })();
+  return out;
 }
 
 /** Chi ha letto i fatti (spec §13.5.7): il lettore, mai la marca. */

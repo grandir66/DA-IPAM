@@ -69,6 +69,7 @@ function clientFinto(): RouterClient {
 
 beforeEach(() => {
   db().exec(`DELETE FROM topology_port_facts; DELETE FROM topology_bridge_facts; DELETE FROM topology_device_macs;
+    DELETE FROM mikrotik_bridge; DELETE FROM mikrotik_bridge_port; DELETE FROM mikrotik_bond;
     DELETE FROM device_neighbors; DELETE FROM mac_port_entries; DELETE FROM network_devices; DELETE FROM networks;
     DELETE FROM tenant_settings WHERE key LIKE 'topologia.lettura.%';`);
   db().exec("INSERT INTO networks (id, cidr, name) VALUES (1, '192.0.2.0/24', 'LAN prova')");
@@ -374,4 +375,39 @@ test("scheda MikroTik: un errore va in console.warn col solo codice e il giro co
   assert.ok(avvisi.some((a) => a.includes("apparato #1: interfacce non scritte")), avvisi.join("|"));
   assert.ok(!avvisi.some((a) => a.includes("bond1") || a.includes("cavo-a")), "niente nomi né commenti nel log");
   assert.equal(conta("SELECT COUNT(*) AS n FROM device_neighbors WHERE device_id = 1"), 9, "il giro è andato avanti");
+});
+
+// ── Task 8 (scheda MikroTik, P3): bridge, porte e bond nelle tabelle della scheda, dalle stesse uscite ──────────────
+
+const righeScheda = (id: number): number[] => ["mikrotik_bridge", "mikrotik_bridge_port", "mikrotik_bond"]
+  .map((t) => conta(`SELECT COUNT(*) AS n FROM ${t} WHERE device_id = ${id}`));
+
+test("scheda: lettura accesa → le tre tabelle del router con le righe delle fixture; lo switch non le scrive; nessun comando in più", async () => {
+  accendi();
+  const s = spia();
+  await giro(s);
+  assert.deepEqual(righeScheda(1), [1, 10, 3]);
+  assert.deepEqual(righeScheda(2), [0, 0, 0], "ramo degli switch: niente scheda");
+  assert.deepEqual(s.chiamate.map((c) => [c.device, c.comandi.length]), [[1, 6], [2, 8]]);
+  assert.equal(conta("SELECT COUNT(*) AS n FROM mikrotik_bridge_port WHERE device_id = 1 AND interface = 'sfp-sfpplus5' AND inactive = 1"), 1);
+});
+
+test("scheda: lettura spenta → nessuna riga e nessun comando", async () => {
+  const s = spia();
+  await giro(s);
+  assert.deepEqual(s.chiamate, []);
+  assert.deepEqual(righeScheda(1), [0, 0, 0]);
+});
+
+test("scheda: un «non so» non scrive una lista vuota, le righe dell'ultima lettura buona restano", async () => {
+  accendi();
+  await giro(spia());
+  // Un'ora e mezza dopo: il bridge in errore dal testo, le porte senza risposta, i fasci letti e vuoti.
+  await giro(spia({
+    [COMANDI_MK.bridge]: async () => F("mikrotik-errore.txt"),
+    [COMANDI_MK.porteBridge]: async () => { throw new ComandoScaduto(20_000); },
+    [COMANDI_MK.fasci]: async () => "",
+  }), ora(9, 30));
+  assert.deepEqual(righeScheda(1), [1, 10, 0]);
+  assert.equal(conta("SELECT COUNT(*) AS n FROM mikrotik_bridge WHERE device_id = 1 AND seen_at = '2026-10-15 08:00:00'"), 1, "il bridge resta con la sua età");
 });

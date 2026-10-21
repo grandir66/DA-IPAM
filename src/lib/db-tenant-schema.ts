@@ -117,10 +117,48 @@ export const COLONNE_SCHEDA_MK_V1: ReadonlyArray<readonly [tabella: string, colo
   ["arp_entries", "dynamic", "INTEGER"],
   ["device_neighbors", "remote_version", "TEXT"],
 ];
+/**
+ * Livello 2 (Task 8, ADR 0027): bridge, porte dei bridge e bond di un MikroTik, gli attributi che la lettura della topologia
+ * riceve già (MK3, MK4, MK8). Una fotografia per apparato (l'ultima lettura buona), separata dalle tabelle `topology_*`: la
+ * mappa legge quelle, la scheda queste. Nessun CHECK, nessun indice in più (la chiave primaria comincia da device_id). Le
+ * CREATE stanno SOLO nella migrazione (`migrateSchedaMikrotik`), non in TENANT_SCHEMA_SQL: lo schema gira prima e le
+ * creerebbe fuori dalla transazione, senza riga nel journal; così il journal dice quando sono nate. Senza `IF NOT EXISTS`:
+ * la migrazione le crea solo dopo averle cercate, e un oggetto con lo stesso nome (una vista) deve far fallire, non passare muto.
+ */
+export const DDL_SCHEDA_MK_V2: ReadonlyArray<readonly [string, string]> = [
+  ["mikrotik_bridge", `CREATE TABLE mikrotik_bridge (
+  device_id INTEGER NOT NULL REFERENCES network_devices(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  mac_address TEXT, mtu TEXT, actual_mtu INTEGER, l2mtu INTEGER, arp TEXT, arp_timeout TEXT,
+  protocol_mode TEXT, priority TEXT, fast_forward INTEGER, igmp_snooping INTEGER, dhcp_snooping INTEGER,
+  vlan_filtering INTEGER, pvid INTEGER, frame_types TEXT, ingress_filtering INTEGER, ether_type TEXT,
+  ageing_time TEXT, forward_delay TEXT, max_message_age TEXT, comment TEXT, running INTEGER, disabled INTEGER,
+  seen_at TEXT NOT NULL,
+  PRIMARY KEY (device_id, name)
+)`],
+  ["mikrotik_bridge_port", `CREATE TABLE mikrotik_bridge_port (
+  device_id INTEGER NOT NULL REFERENCES network_devices(id) ON DELETE CASCADE,
+  interface TEXT NOT NULL,
+  bridge TEXT NOT NULL,
+  pvid INTEGER, priority TEXT, path_cost INTEGER, internal_path_cost INTEGER,
+  edge TEXT, point_to_point TEXT, horizon TEXT, hw INTEGER, hw_offload INTEGER, frame_types TEXT, ingress_filtering INTEGER,
+  bpdu_guard INTEGER, trusted INTEGER, inactive INTEGER, disabled INTEGER, dynamic INTEGER, comment TEXT,
+  seen_at TEXT NOT NULL,
+  PRIMARY KEY (device_id, interface)
+)`],
+  ["mikrotik_bond", `CREATE TABLE mikrotik_bond (
+  device_id INTEGER NOT NULL REFERENCES network_devices(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  mode TEXT, slaves TEXT, transmit_hash_policy TEXT, mlag_id TEXT, link_monitoring TEXT,
+  mii_interval TEXT, lacp_rate TEXT, mtu INTEGER, comment TEXT, running INTEGER, disabled INTEGER,
+  seen_at TEXT NOT NULL,
+  PRIMARY KEY (device_id, name)
+)`],
+];
 /** Segno in `tenant_settings`: dice fin dove è arrivato lo schema (`done:<data>:v<versione>`); la migrazione non lo consulta. */
 export const SEGNO_SCHEDA_MK = "scheda_mikrotik_v21";
-/** Versione dello schema della scheda: 1 = COLONNE_SCHEDA_MK_V1 (2 nel Task 8, 3 nel Task 10). */
-export const VERSIONE_SCHEDA_MK = 1;
+/** Versione dello schema della scheda: 1 = COLONNE_SCHEDA_MK_V1, 2 = DDL_SCHEDA_MK_V2 (3 nel Task 10). */
+export const VERSIONE_SCHEDA_MK = 2;
 
 /** Unioni e separazioni a mano (ADR 0021): le scrivono solo le rotte /api/topology/unioni; mai cancellate (tolto_*: la storia).
  *  Membri come id della mappa, senza chiavi esterne né CHECK. Indici solo nella migrazione. */

@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { byteRouterOs, parseRisorse, parseRouterboard } from "../mikrotik-scheda";
+import { byteRouterOs, parseBondScheda, parseBridgeScheda, parsePorteBridgeScheda, parseRisorse, parseRouterboard } from "../mikrotik-scheda";
 import { parseMikrotikArp } from "../router-client";
 
 const fx = (n: string) => readFileSync(join(__dirname, "fixtures", n), "utf8");
@@ -89,5 +89,68 @@ describe("parseMikrotikArp (stato e dinamico)", () => {
   it("ogni stato presente nella fixture è uno dei sei di RouterOS", () => {
     const stati = new Set(arp.map((e) => e.status));
     for (const s of stati) assert.ok(["reachable", "stale", "delay", "failed", "incomplete", "permanent"].includes(String(s)), String(s));
+  });
+});
+
+// Task 8 (P3): attributi di bridge, porte e bond per le tabelle della scheda, dalle uscite che la lettura della topologia
+// riceve già (MK3, MK4, MK8). Fixture vere anonimizzate (rete B 14/10 e router dell'hub 21/10).
+describe("parseBridgeScheda", () => {
+  it("testa: vlan_filtering sì, priority com'è scritta, segno R", () => {
+    const [b] = parseBridgeScheda(fx("mikrotik-mk3-testa.txt"));
+    assert.deepEqual(b, {
+      name: "BR_RP", mac_address: "02:00:A0:10:0E:02", mtu: "auto", actual_mtu: 1500, l2mtu: 1592, arp: "enabled", arp_timeout: "auto",
+      protocol_mode: "rstp", priority: "0x0000", fast_forward: true, igmp_snooping: false, dhcp_snooping: false, vlan_filtering: true,
+      pvid: 1, frame_types: "admit-all", ingress_filtering: true, ether_type: "0x8100", ageing_time: "5m", forward_delay: "15s",
+      max_message_age: "20s", comment: null, running: true, disabled: false,
+    });
+  });
+  it("frontiera: due bridge, il secondo senza vlan filtering e senza pvid", () => {
+    const r = parseBridgeScheda(fx("mikrotik-mk3-frontiera.txt"));
+    assert.deepEqual(r.map((b) => [b.name, b.priority, b.vlan_filtering, b.pvid, b.ether_type]),
+      [["BR_RP", "0x8000", true, 1, "0x8100"], ["BR_ZQ_77K", "0x8000", false, null, null]]);
+  });
+  it("router dell'hub: un bridge; X = spento, commento con spazi", () => {
+    assert.equal(parseBridgeScheda(fx("mikrotik-bridge-terse.txt")).length, 1);
+    const [b] = parseBridgeScheda(" 0 X comment=ponte di prova name=br-prova mtu=1500 protocol-mode=none");
+    assert.deepEqual([b.name, b.comment, b.running, b.disabled, b.mtu, b.actual_mtu], ["br-prova", "ponte di prova", false, true, "1500", null]);
+  });
+});
+
+describe("parsePorteBridgeScheda", () => {
+  it("testa: pvid 214, hw sì, inactive sulle righe I, path cost dove c'è", () => {
+    const r = parsePorteBridgeScheda(fx("mikrotik-mk4-testa.txt"));
+    assert.equal(r.length, 10);
+    assert.deepEqual(r[0], {
+      interface: "sfp-sfpplus1", bridge: "BR_RP", pvid: 214, priority: "0x80", path_cost: 10, internal_path_cost: 10, edge: "auto",
+      point_to_point: "auto", horizon: "none", hw: true, hw_offload: false, frame_types: "admit-all", ingress_filtering: true,
+      bpdu_guard: false, trusted: false, inactive: false, disabled: false, dynamic: false, comment: null,
+    });
+    assert.deepEqual(r.filter((p) => p.inactive).map((p) => p.interface), ["sfp-sfpplus5"]);
+    assert.deepEqual([r[6].interface, r[6].pvid, r[6].path_cost], ["bond1", 1, null]);
+  });
+  it("frontiera: due porte inattive su due bridge", () => {
+    const r = parsePorteBridgeScheda(fx("mikrotik-mk4-frontiera.txt"));
+    assert.deepEqual(r.map((p) => [p.interface, p.bridge, p.inactive]),
+      [["sfp-sfpplus12", "BR_RP", false], ["bonding1", "BR_RP", true], ["sfp-sfpplus8", "BR_ZQ_77K", true]]);
+  });
+  it("segni D, H, X: dinamica, offload in hardware, spenta", () => {
+    const r = parsePorteBridgeScheda(" 0 DH interface=ether2 bridge=br hw=yes\n 1 X interface=ether3 bridge=br");
+    assert.deepEqual(r.map((p) => [p.dynamic, p.hw_offload, p.disabled, p.hw]), [[true, true, false, true], [false, false, true, null]]);
+  });
+});
+
+describe("parseBondScheda", () => {
+  it("testa: slaves di bond1, transmit hash policy, mlag_id assente = null, commento", () => {
+    const r = parseBondScheda(fx("mikrotik-mk8a-testa.txt"));
+    assert.equal(r.length, 3);
+    assert.deepEqual(r[0], {
+      name: "bond1", mode: "802.3ad", slaves: ["sfp28-2", "sfp28-1"], transmit_hash_policy: "layer-3-and-4", mlag_id: null,
+      link_monitoring: "mii", mii_interval: "100ms", lacp_rate: "30secs", mtu: 1500, comment: "cavo-a", running: true, disabled: false,
+    });
+    assert.equal(r[2].transmit_hash_policy, "layer-2");
+  });
+  it("frontiera: senza R il fascio non è attivo", () => {
+    const [b] = parseBondScheda(fx("mikrotik-mk8a-frontiera.txt"));
+    assert.deepEqual([b.name, b.running, b.disabled, b.slaves], ["bonding1", false, false, ["sfp28-1", "sfp28-2"]]);
   });
 });

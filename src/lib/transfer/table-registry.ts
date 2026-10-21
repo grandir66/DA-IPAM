@@ -72,6 +72,10 @@ export const TENANT_TABLES: TableSpec[] = [
   { table: "topology_port_facts", scope: "tenant", tier: "history" },
   { table: "topology_bridge_facts", scope: "tenant", tier: "history" },
   { table: "topology_device_macs", scope: "tenant", tier: "history" },
+  // Scheda MikroTik (ADR 0027): fotografia di bridge, porte e bond dell'ultima lettura, riscritta a ogni giro.
+  { table: "mikrotik_bridge", scope: "tenant", tier: "history" },
+  { table: "mikrotik_bridge_port", scope: "tenant", tier: "history" },
+  { table: "mikrotik_bond", scope: "tenant", tier: "history" },
   { table: "mobile_inventory_history", scope: "tenant", tier: "history" },
   { table: "mc_remote_session", scope: "tenant", tier: "history" }, // sessioni remote effimere
   { table: "mc_command_log", scope: "tenant", tier: "history" },    // audit comandi RMM

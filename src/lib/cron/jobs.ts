@@ -68,12 +68,14 @@ import {
   MAC_PORT_RETENTION_DAYS,
   listHypervisorScanDevices,
   scriviFattiTopologia,
+  scriviSchedaMikrotikTopologia,
 } from "@/lib/db-tenant";
 import { HYPERVISOR_SYNC_MINUTES, unifiJobKind } from "@/lib/scheduled-job-types";
 // Statico: run-proxmox-device-scan importa il facade db, che risolve db-tenant (ADR 0002).
 import { runProxmoxDeviceScan } from "@/lib/proxmox/run-proxmox-device-scan";
 import { codiceErrore, leggiMacPorteRouter } from "@/lib/devices/mikrotik-porte";
-import { apriEsecutoreSsh, codiceTrasporto, interpretaUscita, leggiMikrotikTopologia, type ApriEsecutore } from "@/lib/devices/mikrotik-letture";
+import { apriEsecutoreSsh, codiceTrasporto, interpretaUscita, leggiMikrotikTopologia, type ApriEsecutore, type RisultatoMk } from "@/lib/devices/mikrotik-letture";
+import { parseBondScheda, parseBridgeScheda, parsePorteBridgeScheda } from "@/lib/devices/mikrotik-scheda";
 import { parseInterfacce } from "@/lib/devices/mikrotik-stp";
 import { aggiornaInterfacceRouterOs } from "@/lib/devices/physical-device-db";
 import { fattiMikrotik } from "@/lib/devices/mikrotik-stp";
@@ -686,6 +688,28 @@ export function salvaMacPorta(
   }
 }
 
+/**
+ * Bridge, porte e bond di un router MikroTik nelle tabelle della scheda (Task 8, ADR 0027), dalle uscite grezze che la
+ * lettura della topologia ha letto davvero. Un'uscita assente (non riuscita, «non so») o che il lettore della scheda non
+ * capisce resta null: la tabella non si tocca, mai una lista vuota. Un errore va nel log col solo codice e non cambia
+ * l'esito della lettura della topologia.
+ */
+function salvaSchedaMikrotik(deviceId: number, uscite: RisultatoMk["uscite"], adesso: Date): void {
+  const leggi = <T>(out: string | undefined, lettore: (o: string) => T[]): T[] | null => {
+    if (out === undefined) return null;
+    const r = interpretaUscita(out, lettore);
+    return "valore" in r ? r.valore : null;
+  };
+  try {
+    scriviSchedaMikrotikTopologia(deviceId, {
+      bridge: leggi(uscite.bridge, parseBridgeScheda), porte: leggi(uscite.porteBridge, parsePorteBridgeScheda), bond: leggi(uscite.fasci, parseBondScheda),
+    }, adesso);
+  } catch (err) {
+    const code = (err as { code?: unknown } | null)?.code;
+    console.warn(`[MikroTik] apparato #${deviceId}: scheda (bridge, porte, bond) non scritta (${typeof code === "string" ? code : err instanceof Error ? err.name : "errore"})`);
+  }
+}
+
 export type RunArpPollOptions = {
   /** Se impostato, aggiorna solo questi IP (nessun nuovo host da voci ARP fuori elenco). */
   onlyEnrichIps?: string[];
@@ -711,7 +735,10 @@ export type RunArpPollOptions = {
 async function letturaMikrotik(device: NetworkDevice, uscitaInterfacce: string | null, conVicini: boolean, options?: RunArpPollOptions): Promise<EsitoGiro<unknown>> {
   return conCadenza("mikrotik", device.id, async () => {
     const r = await (options?.apriEsecutore ?? apriEsecutoreSsh)(device, (esegui) => leggiMikrotikTopologia(esegui, { uscitaInterfacce, conVicini }));
-    const scritti = scriviFattiTopologia(device.id, "device", fattiMikrotik(r.lettura), options?.adesso?.() ?? new Date());
+    const adesso = options?.adesso?.() ?? new Date();
+    const scritti = scriviFattiTopologia(device.id, "device", fattiMikrotik(r.lettura), adesso);
+    // Scheda MikroTik (Task 8, ADR 0027): solo i router (il ramo degli switch legge coi vicini), dalle stesse uscite.
+    if (!conVicini) salvaSchedaMikrotik(device.id, r.uscite, adesso);
     if (r.vicini && r.vicini.length > 0) upsertNeighbors(device.id, r.vicini, "ssh");
     return { valore: scritti, conteggio: { comandi: r.comandi, riusciti: r.riusciti, codice: r.codice } };
   }, options?.adesso);

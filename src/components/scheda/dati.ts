@@ -17,8 +17,8 @@ export interface DeviceExtras {
   device_info?: DeviceInfoJson | null;
   /** stp_info è già oggetto, non stringa. */
   stp_info?: StpInfo | null;
-  /** Solo MikroTik letto via SSH (lo riempie GET /api/devices/[id], Task 9): bridge dell'ultima lettura e data della lettura. */
-  mikrotik?: { bridge: number; letto_il: string | null } | null;
+  /** Solo MikroTik letto via SSH (lo riempie GET /api/devices/[id], Task 9): bridge dell'ultima lettura, sua data, lettura della topologia accesa. */
+  mikrotik?: { bridge: number; letto_il: string | null; topologia_accesa: boolean } | null;
   arp_entries?: Array<ArpEntry & { hostname?: string | null; host_ip?: string | null; host_name?: string | null }>;
   mac_port_entries?: Array<MacPortEntry & { host_ip?: string | null; host_name?: string | null }>;
   switch_ports?: SwitchPort[];

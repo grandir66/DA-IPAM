@@ -251,10 +251,15 @@ test("scriviSchedaMikrotikTopologia: una riga che fallisce non lascia niente a m
 test("scriviSchedaMikrotikTopologia: schema sotto il livello 2 → null, niente scritto", () => {
   const d = getTenantDb(T);
   d.exec("ALTER TABLE mikrotik_bond RENAME TO mikrotik_bond_via");
+  const avvisi = mock.method(console, "warn", () => {});
   try {
     assert.equal(withTenant(T, () => rileggiSchemaSchedaMk()), 1);
     assert.equal(withTenant(T, () => scriviSchedaMikrotikTopologia(93, { bridge: [], porte: null, bond: null })), null);
+    assert.equal(withTenant(T, () => scriviSchedaMikrotikTopologia(93, { bridge: [], porte: null, bond: null })), null);
+    assert.equal(avvisi.mock.callCount(), 1, "un avviso per connessione, non a ogni scrittura");
+    assert.match(String(avvisi.mock.calls[0].arguments[0]), /livello 1/);
   } finally {
+    avvisi.mock.restore();
     d.exec("ALTER TABLE mikrotik_bond_via RENAME TO mikrotik_bond");
     assert.equal(withTenant(T, () => rileggiSchemaSchedaMk()), 2);
   }

@@ -7,7 +7,7 @@
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { tipoScheda, tabDelTipo, bloccoReteGestione, TAB_COMUNI, type InputTipoScheda } from "../tipo-scheda";
+import { mikrotikPerTab, tipoScheda, tabDelTipo, bloccoReteGestione, TAB_COMUNI, type InputTipoScheda } from "../tipo-scheda";
 
 const base: InputTipoScheda = { gestito: true, classification: null, device_type: null, vendor: null, scan_target: null };
 const t = (o: Partial<InputTipoScheda>) => tipoScheda({ ...base, ...o });
@@ -140,5 +140,18 @@ describe("bloccoReteGestione", () => {
     assert.deepEqual(bloccoReteGestione("server_linux"), { snmp: false, ipMappa: true });
     assert.deepEqual(bloccoReteGestione("generico"), { snmp: false, ipMappa: false }, "stanno in Dettagli");
     assert.deepEqual(bloccoReteGestione("host"), { snmp: true, ipMappa: true });
+  });
+});
+
+describe("mikrotikPerTab (caso 5 del piano)", () => {
+  const base = { vendor: "mikrotik", protocol: "ssh" };
+  it("VLAN e Bridge solo con la lettura della topologia accesa E almeno un bridge", () => {
+    assert.deepEqual(mikrotikPerTab({ ...base, mikrotik: { bridge: 1, letto_il: "x", topologia_accesa: true } }), { haBridge: true });
+    assert.deepEqual(mikrotikPerTab({ ...base, mikrotik: { bridge: 1, letto_il: "x", topologia_accesa: false } }), { haBridge: false }, "righe rimaste da prima dello spegnimento");
+    assert.deepEqual(mikrotikPerTab({ ...base, mikrotik: { bridge: 0, letto_il: null, topologia_accesa: true } }), { haBridge: false });
+    assert.deepEqual(mikrotikPerTab({ ...base, mikrotik: null }), { haBridge: false });
+    assert.equal(mikrotikPerTab({ vendor: "mikrotik", protocol: "snmp_v2", mikrotik: null }), null);
+    const tabs = tabDelTipo("router", { ruoli: [], haAd: false, haDipendenze: false, mikrotik: mikrotikPerTab({ ...base, mikrotik: { bridge: 1, letto_il: "x", topologia_accesa: false } }) });
+    assert.equal(tabs.includes("vlan") || tabs.includes("bridge"), false);
   });
 });

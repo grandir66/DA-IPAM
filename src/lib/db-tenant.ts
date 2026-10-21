@@ -5540,6 +5540,9 @@ export function rileggiSchemaCavi(): boolean {
   return ok;
 }
 
+/** Connessioni su cui il rifiuto per schema sotto il livello 2 è già stato detto (una riga sola, non una per apparato e giro). */
+const AVVISATO_SCHEMA_MK = new WeakSet<Database.Database>();
+
 /** Bridge, porte e bond di un MikroTik per la scheda (Task 8, ADR 0027). Una parte null = non letta: la sua tabella non si tocca. */
 export interface SchedaMkTopologia { bridge: RigaBridgeMk[] | null; porte: RigaPortaBridgeMk[] | null; bond: RigaBondMk[] | null }
 
@@ -5569,7 +5572,15 @@ function valoreMk(v: unknown): string | number | null {
 export function scriviSchedaMikrotikTopologia(deviceId: number, s: SchedaMkTopologia, adesso: Date = new Date()):
   { bridge: number; porte: number; bond: number } | null {
   const d = db();
-  if (livelloSchemaSchedaMk(d) < 2) return null;
+  const livello = livelloSchemaSchedaMk(d);
+  if (livello < 2) {
+    // Rifiuto muto no (revisione del Task 9): si dice una volta per connessione, senza nomi.
+    if (!AVVISATO_SCHEMA_MK.has(d)) {
+      AVVISATO_SCHEMA_MK.add(d);
+      console.warn(`[db-tenant] scheda mikrotik: schema al livello ${livello}, sotto il 2: bridge, porte e bond non si scrivono`);
+    }
+    return null;
+  }
   const ora = adesso.toISOString().slice(0, 19).replace("T", " ");
   const out = { bridge: 0, porte: 0, bond: 0 };
   const sostituisci = <R extends object>(tabella: string, colonne: ReadonlyArray<keyof R & string>, righe: R[]): number => {

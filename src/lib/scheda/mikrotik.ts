@@ -316,6 +316,16 @@ export function matriceVlan(i: {
     }
   }
   for (const pvid of [i.bridge.pvid, ...porte.map((p) => p.pvid)]) if (pvid != null) colonna(pvid, String(pvid));
+  // Un intervallo rimasto una colonna sola («2-4094») vale anche per le colonne numeriche che contiene: chi è tagged su
+  // 2-4094 è tagged anche sulla 100 del PVID di un'altra porta (revisione del Task 9).
+  for (const largo of [...membri.entries()].filter(([, m]) => m.id === null)) {
+    const [a, b] = largo[0].split("-").map(Number);
+    for (const m of membri.values()) {
+      if (m.id === null || m.id < a || m.id > b) continue;
+      for (const p of largo[1].u) m.u.add(p);
+      for (const p of largo[1].t) m.t.add(p);
+    }
+  }
 
   const nomeDi = (id: number | null): string | null =>
     id == null ? null : (i.vlan ?? []).find((v) => v.vlan_id === id && v.interface === br)?.name ?? null;

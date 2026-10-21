@@ -19,7 +19,7 @@ import { withTenantFromSession } from "@/lib/api-tenant";
 import { networkDeviceUsesArpPoll } from "@/lib/network-device-arp";
 import { senzaColonneVecchie } from "@/lib/devices/colonne-vecchie";
 import { avvisoPortaProtocollo } from "@/lib/devices/porta-protocollo";
-import { contaBridgeMikrotik } from "@/lib/db-tenant";
+import { riassuntoMikrotik } from "@/lib/devices/scheda-mikrotik-rotta";
 
 const NO_CACHE_HEADERS = { "Cache-Control": "no-store, no-cache, must-revalidate" };
 
@@ -112,9 +112,9 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     }
 
     const proxmox_data = isHypervisor ? parseProxmoxSummary(device.last_proxmox_scan_result) : null;
-    // Scheda MikroTik (Task 9): quanti bridge ha l'ultima fotografia, una COUNT, solo per i MikroTik letti in SSH. Da qui la
-    // pagina decide se mostrare le tab VLAN e Bridge; null = schema della scheda sotto il livello 2.
-    const mikrotik = device.vendor === "mikrotik" && device.protocol === "ssh" ? contaBridgeMikrotik(Number(id)) : null;
+    // Scheda MikroTik (Task 9): bridge dell'ultima fotografia (una COUNT) e lettura della topologia accesa, solo per i
+    // MikroTik in SSH. Da qui la pagina decide le tab VLAN e Bridge; null = schema della scheda sotto il livello 2.
+    const mikrotik = device.vendor === "mikrotik" && device.protocol === "ssh" ? riassuntoMikrotik(Number(id)) : null;
 
     return NextResponse.json(
       {

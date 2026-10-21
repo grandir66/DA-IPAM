@@ -300,15 +300,15 @@ describe("matriceVlan", () => {
 
   it("intervallo 100-110 espanso in 11 colonne; 2-4094 resta una colonna con l'etichetta", () => {
     const m = matriceVlan({
-      bridge: bridgeMk({ pvid: null }), porte: [portaMk("ether2", null)], bond: [],
-      vlanBridge: [vbMk("100-110", { tagged: ["ether2"] }), vbMk("2-4094", { untagged: ["ether2"] })],
+      bridge: bridgeMk({ pvid: null }), porte: [portaMk("ether2", null), portaMk("ether3", null)], bond: [],
+      vlanBridge: [vbMk("100-110", { tagged: ["ether2"] }), vbMk("2-4094", { untagged: ["ether3"] })],
       vlan: null, statoPorta: attiva,
     });
     assert.equal(m.colonne.filter((c) => c.id !== null).length, 11);
     const larga = m.colonne.at(-1);
     assert.deepEqual(larga, { id: null, etichetta: "2-4094", nome: null }, "in fondo, dopo le colonne numerate");
-    assert.equal(m.righe[0].celle.at(-1), "U");
-    assert.equal(m.righe[0].celle[0], "T");
+    assert.deepEqual([m.righe[0].celle[0], m.righe[0].celle.at(-1)], ["T", null]);
+    assert.deepEqual([m.righe[1].celle[0], m.righe[1].celle.at(-1)], ["U", "U"], "l'intervallo largo vale anche sulla 100");
   });
 
   it("senza righe bridge vlan: colonne dai PVID di porte e bridge, solo la regola del PVID, completa=false", () => {
@@ -337,5 +337,16 @@ describe("statoPortaBridge e descriviBond", () => {
   it("modo · slave · hash, solo quelli che ci sono", () => {
     assert.equal(descriviBond(bondMk("bond1")), "802.3ad · ether7, ether8 · layer-2-and-3");
     assert.equal(descriviBond({ ...bondMk("b"), slaves: [], transmit_hash_policy: null }), "802.3ad");
+  });
+});
+
+describe("matriceVlan: intervallo non espanso", () => {
+  it("una colonna numerica conta anche le righe con un intervallo largo che la contiene (2-4094 tagged → T sulla 100)", () => {
+    const m = matriceVlan({
+      bridge: bridgeMk({ pvid: null }), porte: [portaMk("ether1", null), portaMk("ether2", 100)], bond: [],
+      vlanBridge: [vbMk("2-4094", { tagged: ["ether1"] })], vlan: null, statoPorta: attiva,
+    });
+    assert.deepEqual(m.colonne.map((c) => c.etichetta), ["100", "2-4094"]);
+    assert.deepEqual(m.righe.map((r) => [r.porta, r.celle]), [["ether1", ["T", "T"]], ["ether2", ["U", null]]]);
   });
 });

@@ -23,7 +23,7 @@ import { getClassificationLabel, DEVICE_CLASSIFICATIONS_ORDERED } from "@/lib/de
 import { isMacOsHost } from "@/lib/host-platform-detect";
 import { runDeviceAcquisitionScan } from "@/lib/devices/device-scan-client";
 import { porteDaJson, tabDaQuery } from "@/lib/scheda/panoramica";
-import { tabDelTipo, tipoScheda, type TabId } from "@/lib/scheda/tipo-scheda";
+import { mikrotikPerTab, tabDelTipo, tipoScheda, type TabId } from "@/lib/scheda/tipo-scheda";
 import { AzioniScheda } from "@/components/scheda/azioni-scheda";
 import type { ContestoScheda, LibreNmsStato, MembroCluster } from "@/components/scheda/contesto";
 import type { DeviceFull } from "@/components/scheda/dati";
@@ -419,8 +419,8 @@ export default function ObjectDetailPage() {
   const ruoli: string[] = ad?.dc && !ruoliDichiarati.includes("dc") ? [...ruoliDichiarati, "dc"] : ruoliDichiarati;
   const haAd = !!ad && (ad.computer !== null || ad.rilievi !== null);
   const haDipendenze = (dipendenze?.servizi.length ?? 0) > 0;
-  // Stessa condizione di `eMikrotikSsh` (scheda): VLAN e Bridge compaiono se l'ultima lettura ha almeno un bridge.
-  const mikrotik = device?.vendor === "mikrotik" && device?.protocol === "ssh" ? { haBridge: (device?.mikrotik?.bridge ?? 0) > 0 } : null;
+  // Stessa condizione di `eMikrotikSsh` (scheda); VLAN e Bridge con la lettura della topologia accesa e almeno un bridge.
+  const mikrotik = mikrotikPerTab(device);
   const tabs = tabDelTipo(tipo, { ruoli, haAd, haDipendenze, mikrotik });
   const dalUrl = tabDaQuery(tabDaUrl, tabs);
   const attiva: TabId = tabScelta && tabs.includes(tabScelta) ? tabScelta : dalUrl.tab;

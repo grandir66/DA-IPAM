@@ -15,7 +15,7 @@ process.env.ENCRYPTION_KEY ||= "test-encryption-key-scheda-mikrotik-rotta";
 import { withTenant, deleteTenantDatabase, createNetworkDevice, scriviSchedaMikrotikTopologia } from "@/lib/db-tenant";
 import { parseBondScheda, parseBridgeScheda, parsePorteBridgeScheda } from "../mikrotik-scheda";
 import { scriviEsito, scriviInterruttore } from "@/lib/topology/letture/interruttori";
-import { rispostaSchedaMikrotik } from "../scheda-mikrotik-rotta";
+import { riassuntoMikrotik, rispostaSchedaMikrotik } from "../scheda-mikrotik-rotta";
 
 const T = "TESTSCHEDAMKROTTA";
 after(() => deleteTenantDatabase(T));
@@ -53,6 +53,19 @@ describe("rispostaSchedaMikrotik", () => {
       const r2 = rispostaSchedaMikrotik(d.id);
       assert.equal(r2.status, 200);
       if (r2.status === 200) assert.deepEqual(r2.body.letture.topologia, { acceso: true, il: "2026-10-21 09:15:00" });
+    });
+  });
+});
+
+describe("riassuntoMikrotik (GET /api/devices/[id], campo mikrotik)", () => {
+  it("righe presenti: la lettura accesa o spenta viaggia col conteggio", () => {
+    withTenant(T, () => {
+      const d = nuovo("rtr-r", "10.70.0.5", "mikrotik");
+      scriviSchedaMikrotikTopologia(d.id, { bridge: parseBridgeScheda(F("mikrotik-mk3-testa.txt")), porte: null, bond: null }, new Date(Date.UTC(2026, 9, 21, 8, 0)));
+      scriviInterruttore("mikrotik", true, "prova");
+      assert.deepEqual(riassuntoMikrotik(d.id), { bridge: 1, letto_il: "2026-10-21 08:00:00", topologia_accesa: true });
+      scriviInterruttore("mikrotik", false, "prova");
+      assert.deepEqual(riassuntoMikrotik(d.id), { bridge: 1, letto_il: "2026-10-21 08:00:00", topologia_accesa: false });
     });
   });
 });

@@ -31,13 +31,15 @@ const dentro = (figlio: string, padre: string): boolean => {
 function controlla(cartella: string, copia: string, hub: string): string[] {
   const e: string[] = [];
   const scratch = percorsoReale(cartella);
-  const repo = percorsoReale(process.cwd());
+  // Il repo dalla posizione dello script, non dalla cartella da cui lo si lancia.
+  const repo = percorsoReale(path.resolve(__dirname, ".."));
   if (!fs.existsSync(scratch) || !fs.statSync(scratch).isDirectory()) e.push("la cartella di lavoro non esiste");
   if (![os.tmpdir(), "/tmp", "/private/tmp"].map(percorsoReale).some((r) => dentro(scratch, r))) e.push("la cartella di lavoro non sta in una cartella temporanea");
   if (scratch === repo || dentro(scratch, repo)) e.push("la cartella di lavoro sta dentro il repo");
   if (!dentro(percorsoReale(copia), scratch)) e.push("la copia è fuori dalla cartella di lavoro");
   if (!dentro(percorsoReale(hub), scratch)) e.push("l'hub è fuori dalla cartella di lavoro");
   if (!fs.existsSync(copia) || !fs.statSync(copia).isFile()) e.push("la copia non esiste");
+  else if (fs.statSync(copia).nlink > 1) e.push("la copia ha altri collegamenti fisici (potrebbe essere il DB vero)");
   if (path.basename(path.dirname(copia)) !== "tenants") e.push("la copia deve stare in <dati>/tenants/<codice>.db");
   return e;
 }
@@ -71,7 +73,7 @@ async function main(): Promise<number> {
   // Import dopo aver fissato l'ambiente: il modulo legge DA_INVENT_DATA_DIR al caricamento (come estrai-fixture-topologia).
   const { withTenant, getTenantDb, getNetworkDeviceById, livelloSchemaSchedaMk, scriviSchedaMikrotikTopologia } = await import("../src/lib/db-tenant");
   const { parseBridgeScheda, parsePorteBridgeScheda, parseBondScheda } = await import("../src/lib/devices/mikrotik-scheda");
-  const fx = (n: string) => fs.readFileSync(path.join(process.cwd(), "src/lib/devices/__tests__/fixtures", n), "utf8");
+  const fx = (n: string) => fs.readFileSync(path.join(__dirname, "..", "src/lib/devices/__tests__/fixtures", n), "utf8");
 
   return withTenant(tenant, () => {
     const d = getNetworkDeviceById(device);

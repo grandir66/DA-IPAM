@@ -3,9 +3,18 @@
  * più lo stato delle due letture che li riempiono. Fuori dal file della rotta per provarlo senza sessione; la rotta mette
  * davanti `requireAuth()` e `withTenantFromSession`. Va chiamato dentro il tenant.
  */
-import { getNetworkDeviceById, leggiSchedaMikrotik } from "@/lib/db-tenant";
+import { contaBridgeMikrotik, getNetworkDeviceById, leggiSchedaMikrotik } from "@/lib/db-tenant";
 import { leggiEsiti, leggiInterruttore } from "@/lib/topology/letture/interruttori";
 import type { RispostaSchedaMikrotik } from "@/lib/scheda/mikrotik";
+
+/**
+ * Campo `mikrotik` di GET /api/devices/[id]: bridge dell'ultima fotografia (una COUNT) e stato della lettura della topologia,
+ * da cui la pagina decide le tab (caso 5: spenta → niente VLAN e Bridge anche con righe di prima). null = schema < 2.
+ */
+export function riassuntoMikrotik(deviceId: number): { bridge: number; letto_il: string | null; topologia_accesa: boolean } | null {
+  const c = contaBridgeMikrotik(deviceId);
+  return c ? { ...c, topologia_accesa: leggiInterruttore("mikrotik").acceso } : null;
+}
 
 export function rispostaSchedaMikrotik(deviceId: number): { status: 200; body: RispostaSchedaMikrotik } | { status: 400 | 404; body: { error: string } } {
   const device = getNetworkDeviceById(deviceId);

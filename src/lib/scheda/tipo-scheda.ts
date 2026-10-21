@@ -88,6 +88,17 @@ export interface OpzioniTab {
   mikrotik: { haBridge: boolean } | null;
 }
 
+/**
+ * `OpzioniTab.mikrotik` dai dati dell'apparato (GET /api/devices/[id]): solo i MikroTik in SSH; VLAN e Bridge solo con la
+ * lettura della topologia ACCESA e almeno un bridge (caso 5 del piano): righe rimaste da prima dello spegnimento non contano.
+ */
+export function mikrotikPerTab(d: {
+  vendor?: string | null; protocol?: string | null; mikrotik?: { bridge: number; letto_il?: string | null; topologia_accesa: boolean } | null;
+} | null | undefined): { haBridge: boolean } | null {
+  if (d?.vendor !== "mikrotik" || d?.protocol !== "ssh") return null;
+  return { haBridge: d.mikrotik?.topologia_accesa === true && d.mikrotik.bridge > 0 };
+}
+
 export const TAB_COMUNI: TabId[] = ["sicurezza", "gestione", "storico"];
 
 /**

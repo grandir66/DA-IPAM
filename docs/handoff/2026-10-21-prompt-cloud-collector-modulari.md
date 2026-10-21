@@ -35,9 +35,12 @@ queste, riassunte:
 2. Il piano: `docs/superpowers/plans/2026-10-21-recupero-dadude3-mknet.md` (v2, decisioni in §7).
 3. La consegna dei collector: `docs/handoff/2026-10-21-acquisizione-infrastruttura-da-ipam.md`,
    ADR 0024-0026, manuale `docs/modules/acquisition.md`.
-4. Donatori, solo da consultare (mai copiati interi): `github.com/grandir66/dadude-native` (DADude3) e
-   `github.com/grandir66/DA-MKNET` (privato). Le righe citate nel piano valgono per i commit `569b416` e
-   `812b1ad`; il codice su `origin/main` è lo stesso.
+4. Donatori, solo da consultare (mai copiati interi): `github.com/grandir66/dadude-native` (DADude3,
+   pubblico) e `github.com/grandir66/DA-MKNET` (**privato**: Riccardo dà accesso all'app GitHub di Claude).
+   Le righe citate nel piano valgono per i commit `569b416` e `812b1ad`; il codice su `origin/main` è lo
+   stesso. **Al primo passo** si prova a clonarli fuori dal repo (es. `/tmp/donatori/`); se DA-MKNET non è
+   leggibile ci si ferma e lo si dice a Riccardo, senza aggirare il problema. La storia di DA-MKNET contiene
+   una password vera negli `OLDSCRIPT` (righe `password = …`): non va copiata, citata o messa in fixture.
 
 ## Ambiente
 

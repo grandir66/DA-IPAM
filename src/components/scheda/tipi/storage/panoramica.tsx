@@ -71,7 +71,7 @@ export function PanoramicaStorage({ ctx }: { ctx: ContestoScheda }) {
           <Riquadro
             titolo="Servizi"
             vuoto={servizi.length === 0}
-            azione={<button type="button" onClick={() => apriTab("servizi_nas")} className={lnk}>tutti ›</button>}
+            azione={<button type="button" onClick={() => apriTab("servizi_nas")} className={lnk}>tutti ({servizi.length}) ›</button>}
           >
             <ElencoServizi servizi={servizi} max={5} />
           </Riquadro>

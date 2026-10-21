@@ -47,7 +47,7 @@ export function InfoRow({ label, value, mono }: InfoRowProps) {
   const empty = value == null || value === "" || value === "—";
   return (
     <div className="min-w-0">
-      <dt className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">{label}</dt>
+      <dt className="text-[13px] uppercase tracking-wider text-muted-foreground font-medium">{label}</dt>
       <dd className={`text-sm mt-0.5 ${mono ? "font-mono" : ""} ${empty ? "text-muted-foreground/50" : ""}`}>
         {empty ? "—" : value}
       </dd>

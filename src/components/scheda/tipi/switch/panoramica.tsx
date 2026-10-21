@@ -166,7 +166,7 @@ export function PanoramicaSwitch({ ctx }: { ctx: ContestoScheda }) {
           </Riquadro>
 
           <Riquadro titolo={`Vicini (${vicini.length})`} vuoto={vicini.length === 0}
-            azione={<button type="button" onClick={() => apriTab("vicini")} className="text-[13px] font-semibold text-[#006C96] hover:underline dark:text-sky-300">tutti ›</button>}>
+            azione={<button type="button" onClick={() => apriTab("vicini")} className="text-[13px] font-semibold text-[#006C96] hover:underline dark:text-sky-300">tutti ({vicini.length}) ›</button>}>
             <ul className="space-y-1 text-[13px]">
               {vicini.slice(0, 4).map((v) => (
                 <li key={v.chiave} className="flex gap-2"><span className="w-14 shrink-0 font-mono font-semibold">{v.portaLocale.replace(/^\D+/, "") || v.portaLocale}</span><span className="min-w-0 truncate">{v.nome}{v.portaRemota ? ` · porta ${v.portaRemota}` : ""} <span className="text-muted-foreground">· {v.protocollo.toUpperCase()}</span></span></li>

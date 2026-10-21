@@ -29,7 +29,7 @@ export function PanoramicaRouter({ ctx }: { ctx: ContestoScheda }) {
   const regole = regoleDi(ctx);
   const di = device?.device_info ?? null;
   const { stato: ifc, riprova: riprovaIfc } = useInterfacce(device?.id);
-  const { stato: pool, riprova: riprovaPool } = useUsoPool(ctx, mk);
+  const { stato: pool, riprova: riprovaPool } = useUsoPool(ctx, mk, false);
 
   const interfacce = ifc.fase === "ok" ? ifc.dati.interfacce : null;
   const poolNoti = pool.fase === "ok" ? pool.dati : [];
@@ -57,7 +57,7 @@ export function PanoramicaRouter({ ctx }: { ctx: ContestoScheda }) {
     : { nome: "Rotte", esito: "assente", nota: "non lette" });
   if (!regole) fonti.push({ nome: "Regole firewall", esito: "assente", nota: mk ? "conteggi mai raccolti" : "non raccolte per questo produttore" });
   if (mk) {
-    fonti.push(pool.fase === "ok" ? (poolNoti.length > 0 ? { nome: "Pool DHCP (SSH)", esito: "ok" } : { nome: "Pool DHCP (SSH)", esito: "assente", nota: "nessun server DHCP attivo letto dal router" }) : pool.fase === "errore" ? { nome: "Pool DHCP (SSH)", esito: "assente", nota: "router non raggiungibile" } : { nome: "Pool DHCP (SSH)", esito: "assente", nota: "lettura in corso" });
+    fonti.push(pool.fase === "ok" ? (poolNoti.length > 0 ? { nome: "Pool DHCP (SSH)", esito: "ok" } : { nome: "Pool DHCP (SSH)", esito: "assente", nota: "si leggono dal router aprendo la tab DHCP" }) : pool.fase === "errore" ? { nome: "Pool DHCP (SSH)", esito: "assente", nota: "router non raggiungibile" } : { nome: "Pool DHCP (SSH)", esito: "assente", nota: "lettura in corso" });
   }
   if (librenms?.configured) {
     fonti.push(librenms.mapped
@@ -76,7 +76,7 @@ export function PanoramicaRouter({ ctx }: { ctx: ContestoScheda }) {
           <Riquadro
             titolo={`Interfacce${interfacce ? ` (${interfacce.length})` : ""}`}
             vuoto={visibili.length === 0}
-            azione={<button type="button" onClick={() => apriTab("interfacce")} className={lnk}>tutte ›</button>}
+            azione={<button type="button" onClick={() => apriTab("interfacce")} className={lnk}>tutte ({interfacce?.length ?? visibili.length}) ›</button>}
           >
             <div className="-m-4 overflow-x-auto">
               <table className="w-full text-[13px]">
@@ -127,7 +127,7 @@ export function PanoramicaRouter({ ctx }: { ctx: ContestoScheda }) {
           <Riquadro
             titolo="Instradamento"
             vuoto={statiche.length === 0}
-            azione={<button type="button" onClick={() => apriTab("routing")} className={lnk}>tutte ›</button>}
+            azione={<button type="button" onClick={() => apriTab("routing")} className={lnk}>tutte ({rotte.length}) ›</button>}
           >
             <ul className="space-y-1.5 text-[13px]">
               {statiche.map((r, n) => (

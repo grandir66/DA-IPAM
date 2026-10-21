@@ -22,6 +22,9 @@ da Riccardo il 21/10.
 - **Un solo punto che decide il tipo**: `tipoScheda()` (`lib/scheda/tipo-scheda.ts`) legge classificazione e
   piattaforma, mai `device_type`; `tabDelTipo()` elenca le tab. Il punto di innesto per i tipi nuovi è
   `components/scheda/tab-scheda.tsx`.
+- **Gestione anche per l'host non gestito**: classificazione, seriale, inventario, note e asset NIS2 si modificano dalla
+  scheda dell'host (Discovery) senza «Rendi apparato». In Gestione, il riquadro «Rete e SNMP» riporta SNMP, IP collegati
+  e «Sulla mappa» per i tipi le cui tab non li mostrano (NAS, server, host, switch e hypervisor solo SNMP).
 - **Nuove letture** in sola lettura, tutte dietro login: `GET /api/devices/[id]/interfacce`,
   `GET /api/devices/[id]/proxmox-match` (il POST, che scrive, resta solo admin), `GET /api/hosts/[id]/proxmox-vm`,
   `/api/hosts/[id]/ad`, `/api/hosts/[id]/dipendenze`.

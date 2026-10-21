@@ -50,6 +50,12 @@ export function tipoScheda(i: InputTipoScheda): TipoScheda {
       case "nas": return "storage";
       case "hypervisor": return "hypervisor";
       case "server": case "vm": return daServer(vendor, scanTarget);
+      // Slug «di sistema» non canonici (DA-VEEAM: classificazione `windows`): è un server, non una stampante.
+      // Una postazione (`workstation`) col vendor windows resta generico: non passa di qui.
+      case "windows": case "linux": {
+        const r = daServer(vendor, scanTarget);
+        return r !== "generico" ? r : classificazione === "windows" ? "server_windows" : "server_linux";
+      }
       default: return "generico";
     }
   }
@@ -80,7 +86,8 @@ export const TAB_COMUNI: TabId[] = ["sicurezza", "gestione", "storico"];
  * solo se qualche servizio poggia sull'host (`haDipendenze`). Solo il tipo `generico` tiene «Dettagli» (non ha tab sue).
  */
 export function tabDelTipo(t: TipoScheda, o: { ruoli: string[]; haAd: boolean; haDipendenze: boolean }): TabId[] {
-  if (t === "host") return ["panoramica", "sicurezza", "storico"];
+  // Host non gestito: «Gestione» ridotta (classificazione, inventario, note, asset NIS2), senza credenziali.
+  if (t === "host") return ["panoramica", "sicurezza", "gestione", "storico"];
   if (t === "switch") return ["panoramica", "porte", "vlan", "vicini", ...TAB_COMUNI];
   if (t === "router" || t === "firewall") return ["panoramica", "interfacce", "routing", "dhcp", "configurazione", ...TAB_COMUNI];
   if (t === "storage") return ["panoramica", "dischi", "volumi", "servizi_nas", ...TAB_COMUNI];
@@ -101,4 +108,19 @@ export function tabDelTipo(t: TipoScheda, o: { ruoli: string[]; haAd: boolean; h
     ];
   }
   return ["panoramica", "dettagli", ...TAB_COMUNI];
+}
+
+/**
+ * Riquadro «Rete e SNMP» della tab Gestione: mostra solo ciò che le tab del tipo non mostrano già.
+ * SNMP: in Configurazione (router/firewall), in Sistema (server), in Dettagli (generico). IP collegati e «Sulla
+ * mappa»: in Vicini e MAC (switch), Interfacce (router/firewall), Rete (hypervisor), Dettagli (generico).
+ */
+export function bloccoReteGestione(t: TipoScheda): { snmp: boolean; ipMappa: boolean } {
+  switch (t) {
+    case "switch": return { snmp: true, ipMappa: false };
+    case "router": case "firewall": case "generico": return { snmp: false, ipMappa: false };
+    case "hypervisor": return { snmp: true, ipMappa: false };
+    case "server_windows": case "server_linux": return { snmp: false, ipMappa: true };
+    default: return { snmp: true, ipMappa: true }; // storage, host
+  }
 }

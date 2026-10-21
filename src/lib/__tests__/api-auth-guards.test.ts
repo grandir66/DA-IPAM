@@ -49,6 +49,10 @@ const CONTRACT: Contract[] = [
   // scheda dei server (21/10): dipendenze NIS2 e Active Directory di un host, sola lettura con la sessione.
   { route: "hosts/[id]/dipendenze", method: "GET", guard: "requireAuth" },
   { route: "hosts/[id]/ad", method: "GET", guard: "requireAuth" },
+  { route: "hosts/[id]/proxmox-vm", method: "GET", guard: "requireAuth" },
+  { route: "hosts/[id]/zabbix", method: "GET", guard: "requireAuth" },
+  { route: "devices/[id]/proxmox-match", method: "GET", guard: "requireAuth" },
+  { route: "devices/[id]/proxmox-match", method: "POST", guard: "requireAdmin" },
   { route: "devices/[id]/mikrotik", method: "POST", guard: "requireAdmin" },
   // Controller di rete (ADR 0007): la sync scrive nel tenant; le prove mandano
   // le credenziali al controller e al primo uso fissano l'impronta del

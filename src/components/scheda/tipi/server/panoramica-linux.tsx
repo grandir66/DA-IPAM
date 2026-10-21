@@ -60,16 +60,16 @@ export function PanoramicaLinux({ ctx }: { ctx: ContestoScheda }) {
         </div>
 
         <div className="min-w-0 space-y-4">
-          <Riquadro titolo="Servizi principali" vuoto={servizi.length === 0} azione={<button type="button" onClick={() => apriTab("servizi")} className={lnk}>tutti {servizi.length} ›</button>}>
+          <Riquadro titolo="Servizi principali" vuoto={servizi.length === 0} azione={<button type="button" onClick={() => apriTab("servizi")} className={lnk}>tutti ({servizi.length}) ›</button>}>
             {falliti.length > 0 && <div className="mb-3 border-b pb-3"><ElencoServizi servizi={falliti} max={4} senzaAvvio /></div>}
             {inAscolto.length > 0
               ? <ServiziDelRuolo servizi={inAscolto.slice(0, 8)} />
               : falliti.length === 0 && <p className="text-[13px]"><span aria-hidden>✓ </span>Nessun servizio fallito. {porte.length > 0 && !porte.some((p) => p.process) ? "Le porte in ascolto non dicono il processo: i servizi non si abbinano." : ""}</p>}
           </Riquadro>
-          <Riquadro titolo={`In ascolto (${raggruppaPorte(porte).length})`} vuoto={porte.length === 0} azione={<button type="button" onClick={() => apriTab("servizi")} className={lnk}>tutte ›</button>}>
+          <Riquadro titolo={`In ascolto (${raggruppaPorte(porte).length})`} vuoto={porte.length === 0} azione={<button type="button" onClick={() => apriTab("servizi")} className={lnk}>tutte ({raggruppaPorte(porte).length}) ›</button>}>
             <TabellaPorte porte={porte} max={3} />
           </Riquadro>
-          <Riquadro titolo={`Pianificazioni (${cron.length})`} vuoto={cron.length === 0} azione={<button type="button" onClick={() => apriTab("servizi")} className={lnk}>tutte ›</button>}>
+          <Riquadro titolo={`Pianificazioni (${cron.length})`} vuoto={cron.length === 0} azione={<button type="button" onClick={() => apriTab("servizi")} className={lnk}>tutte ({cron.length}) ›</button>}>
             <ul className="space-y-1 text-[13px]">
               {cron.slice(0, 2).map((c, i) => (
                 <li key={i} className="flex items-baseline gap-3">

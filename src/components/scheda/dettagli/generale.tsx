@@ -6,7 +6,8 @@
  * intestazione e Panoramica; Rete e Hardware in Panoramica; IP precedenti in Storico. Restano il profilo MDM,
  * i dati d'identità che non sono in Gestione e LibreNMS con i grafici. Si svuota tipo per tipo.
  */
-import { Badge } from "@/components/ui/badge";
+import { STILE_STATO } from "@/components/shared/stile-stato-modulo";
+import { BadgeNeutro } from "@/components/devices/rendi-apparato-esito";
 import { Button } from "@/components/ui/button";
 import { Activity } from "lucide-react";
 import { toast } from "sonner";
@@ -50,8 +51,8 @@ export function SezioneLibreNms({ ctx }: { ctx: ContestoScheda }) {
       <Section icon={<Activity className="h-4 w-4" />} title="LibreNMS"
         badge={
           librenms.mapped
-            ? <Badge variant="outline" className="ml-2 text-[10px] border-emerald-400 text-emerald-700 bg-emerald-50">mappato</Badge>
-            : <Badge variant="outline" className="ml-2 text-[10px] text-muted-foreground">non mappato</Badge>
+            ? <span className={`ml-2 inline-flex min-h-[26px] items-center gap-1.5 rounded-md border-2 px-2.5 py-0.5 text-[13px] font-semibold leading-tight ${STILE_STATO.ok.classi}`}>✓ mappato</span>
+            : <BadgeNeutro className="ml-2">non mappato</BadgeNeutro>
         }>
         {librenms.mapped && librenms.device ? (
           <>

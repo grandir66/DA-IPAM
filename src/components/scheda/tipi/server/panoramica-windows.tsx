@@ -86,7 +86,7 @@ export function PanoramicaWindows({ ctx }: { ctx: ContestoScheda }) {
         </div>
 
         <div className="min-w-0 space-y-4">
-          <Riquadro titolo="Servizi da guardare" vuoto={servizi.length === 0} azione={<button type="button" onClick={() => apriTab("servizi")} className={lnk}>tutti {servizi.length} ›</button>}>
+          <Riquadro titolo="Servizi da guardare" vuoto={servizi.length === 0} azione={<button type="button" onClick={() => apriTab("servizi")} className={lnk}>tutti ({servizi.length}) ›</button>}>
             {delRuolo.length > 0 && <div className="mb-3 border-b pb-3"><ServiziDelRuolo servizi={delRuolo} /></div>}
             {daGuardare.length === 0
               ? <p className="text-[13px]"><span aria-hidden>✓ </span>Tutti gli automatici sono attivi.</p>

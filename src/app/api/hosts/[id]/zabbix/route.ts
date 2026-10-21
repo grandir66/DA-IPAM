@@ -6,7 +6,6 @@ import { NextResponse } from "next/server";
 import { requireAuth, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { opzioneAcquistata } from "@/lib/modules/offerta";
-import { assicuraTabelleZabbixLettura } from "@/lib/db-tenant-schema";
 import { leggiConfigLettura } from "@/lib/zabbix-lettura/config";
 import { dipendenzeReali } from "@/lib/zabbix-lettura/reale";
 
@@ -20,7 +19,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     if (!opzioneAcquistata("zabbix")) return NextResponse.json({ configurato: false, abbinato: false });
     const { db } = dipendenzeReali();
     if (!leggiConfigLettura(db)) return NextResponse.json({ configurato: false, abbinato: false });
-    assicuraTabelleZabbixLettura(db);
+    // Un GET legge: se la tabella non c'è ancora (nessun abbinamento mai fatto) l'host è «non abbinato», senza creare niente.
+    if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name = 'zabbix_abbinamenti'").get()) {
+      return NextResponse.json({ configurato: true, abbinato: false });
+    }
     const riga = db.prepare("SELECT hostid FROM zabbix_abbinamenti WHERE host_id = ? ORDER BY CAST(hostid AS INTEGER) LIMIT 1").get(hostId) as
       | { hostid: string }
       | undefined;

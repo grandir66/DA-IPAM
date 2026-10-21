@@ -57,21 +57,35 @@ export function useInterfacce(deviceId: number | undefined): { stato: Caricament
   return { stato: deviceId ? stato : { fase: "ok", dati: { interfacce: [], fonte: "device_interfaces", aggiornato: null, collegato: false } }, riprova };
 }
 
-/** Uso dei pool DHCP: server + pool letti dal router (SSH) e lease dal DB. Solo se `attivo` (MikroTik SSH). */
-export function useUsoPool(ctx: ContestoScheda, attivo: boolean): { stato: Caricamento<UsoPool[]>; riprova: () => void } {
+/** Ultima lettura SSH dei pool per apparato, tenuta nel browser: la Panoramica la mostra se c'è, senza aprire una sessione sul router. */
+const cachePool = new Map<number, { servers: ServerDhcp[]; pools: PoolDhcp[] }>();
+
+/**
+ * Uso dei pool DHCP: server + pool letti dal router (SSH) e lease dal DB. Solo se `attivo` (MikroTik SSH).
+ * `leggiDalRouter = false` (Panoramica): niente SSH ad ogni apertura della scheda, si usa l'ultima lettura fatta
+ * aprendo la tab DHCP in questa sessione del browser; se non c'è, nessun dato (il riquadro non si rende).
+ */
+export function useUsoPool(ctx: ContestoScheda, attivo: boolean, leggiDalRouter = true): { stato: Caricamento<UsoPool[]>; riprova: () => void } {
   const deviceId = ctx.device?.id;
   const [stato, setStato] = useState<Caricamento<{ servers: ServerDhcp[]; pools: PoolDhcp[] }>>({ fase: "carico" });
   const [n, setN] = useState(0);
   useEffect(() => {
-    if (!attivo || !deviceId) return;
+    if (!attivo || !deviceId || !leggiDalRouter) return;
     let vivo = true;
     fetchJson<{ servers: ServerDhcp[]; pools: PoolDhcp[] }>(`/api/devices/${deviceId}/mikrotik?action=dhcp-pool`)
-      .then((r) => { if (vivo) setStato(r.ok ? { fase: "ok", dati: r.data } : { fase: "errore", messaggio: r.message }); })
+      .then((r) => {
+        if (r.ok) cachePool.set(deviceId, r.data);
+        if (vivo) setStato(r.ok ? { fase: "ok", dati: r.data } : { fase: "errore", messaggio: r.message });
+      })
       .catch(() => { if (vivo) setStato({ fase: "errore", messaggio: "Richiesta annullata" }); });
     return () => { vivo = false; };
-  }, [attivo, deviceId, n]);
+  }, [attivo, deviceId, n, leggiDalRouter]);
   const riprova = useCallback(() => { setStato({ fase: "carico" }); setN((x) => x + 1); }, []);
   if (!attivo) return { stato: { fase: "ok", dati: [] }, riprova };
+  const dati = leggiDalRouter ? (stato.fase === "ok" ? stato.dati : null) : (deviceId ? cachePool.get(deviceId) ?? null : null);
+  if (!leggiDalRouter) {
+    return { stato: { fase: "ok", dati: dati ? poolDhcp(dati.servers ?? [], dati.pools ?? [], leasePerServer(ctx)) : [] }, riprova };
+  }
   if (stato.fase !== "ok") return { stato, riprova };
   return { stato: { fase: "ok", dati: poolDhcp(stato.dati.servers ?? [], stato.dati.pools ?? [], leasePerServer(ctx)) }, riprova };
 }

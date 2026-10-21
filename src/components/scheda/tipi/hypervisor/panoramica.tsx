@@ -48,12 +48,12 @@ export function PanoramicaHypervisor({ ctx }: { ctx: ContestoScheda }) {
           <Riquadro titolo={`Nodi (${nodi.length})`} vuoto={nodi.length === 0} azione={<button type="button" onClick={() => apriTab("nodi")} className={lnk}>dettaglio ›</button>}>
             <RigheNodi ctx={ctx} nodi={nodi} ab={ab} />
           </Riquadro>
-          <Riquadro titolo="Storage" vuoto={pool.length === 0} azione={<button type="button" onClick={() => apriTab("storage_px")} className={lnk}>tutti ›</button>}>
+          <Riquadro titolo="Storage" vuoto={pool.length === 0} azione={<button type="button" onClick={() => apriTab("storage_px")} className={lnk}>tutti ({pool.length}) ›</button>}>
             <ElencoPool pool={pool} max={4} />
           </Riquadro>
         </div>
         <div className="min-w-0">
-          <Riquadro titolo={`VM e container accesi (${accese.length} di ${numeroVm(px)})`} vuoto={vms.length === 0} azione={<button type="button" onClick={() => apriTab("vm")} className={lnk}>tutte ›</button>}>
+          <Riquadro titolo={`VM e container accesi (${accese.length} di ${numeroVm(px)})`} vuoto={vms.length === 0} azione={<button type="button" onClick={() => apriTab("vm")} className={lnk}>tutte ({numeroVm(px)}) ›</button>}>
             <TabellaVm vms={accese.slice(0, VM_IN_PANORAMICA)} ab={ab} compatta />
             {accese.length > VM_IN_PANORAMICA && (
               <p className="mt-2 text-[13px] text-muted-foreground">… altre {accese.length - VM_IN_PANORAMICA} · cerca per nome, IP o VLAN nella tab «VM e container»</p>

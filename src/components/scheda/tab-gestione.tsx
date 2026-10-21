@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PackagePlus } from "lucide-react";
 import { ClassificationEvidencePanel } from "@/components/shared/classification-evidence-panel";
 import { ClassificazioneApparato, CredenzialiAssegnate } from "@/components/devices/credenziali-assegnate";
@@ -25,7 +26,10 @@ import { getClassificationLabel } from "@/lib/device-classifications";
 import { ruoliDaJson } from "@/lib/classification/canonico";
 import { etichettaVersioneSnmp } from "@/lib/protocols/snmp-sessione";
 import { BadgeNeutro } from "@/components/devices/rendi-apparato-esito";
+import { bloccoReteGestione } from "@/lib/scheda/tipo-scheda";
 import { Campo } from "./blocchi";
+import { IpCollegati, SullaMappa } from "./dettagli/rete";
+import { SezioneSnmp } from "./dettagli/sistema";
 import { Riquadro } from "./riquadro";
 import type { ContestoScheda } from "./contesto";
 
@@ -112,7 +116,121 @@ function CollegamentiEsterni({ ctx }: { ctx: ContestoScheda }) {
   );
 }
 
+/** «Rete e SNMP»: SNMP, IP collegati e «Sulla mappa» per i tipi le cui tab non li mostrano (vedi `bloccoReteGestione`). */
+function ReteESnmp({ ctx }: { ctx: ContestoScheda }) {
+  const { snmp, ipMappa } = bloccoReteGestione(ctx.tipo);
+  const { host, device, hostId, isAdmin } = ctx;
+  // SezioneSnmp non si rende da sola senza dati (né apparato di rete): lo stesso test, per non lasciare il titolo orfano.
+  const reteGear = device?.device_type === "router" || device?.device_type === "switch" || device?.device_type === "firewall";
+  const mostraSnmp = snmp && (!!host.snmp_data || reteGear);
+  const mostraMappa = ipMappa && Number.isFinite(hostId) && hostId > 0;
+  if (!mostraSnmp && !ipMappa) return null;
+  return (
+    <section className="space-y-4" aria-label="Rete e SNMP">
+      <h3 className="text-sm font-semibold">Rete e SNMP</h3>
+      {mostraSnmp && <SezioneSnmp ctx={ctx} />}
+      {mostraMappa && <SullaMappa hostId={hostId} isAdmin={isAdmin} />}
+      {ipMappa && <IpCollegati ctx={ctx} />}
+    </section>
+  );
+}
+
+/** Host non gestito (Discovery): classificazione, inventario e note, asset NIS2 e collegamenti. Niente credenziali né accesso. */
+function GestioneHost({ ctx }: { ctx: ContestoScheda }) {
+  const { host, isAsset, asset, slugsClassificazione, etichettaClassificazione, ricarica, salvaCampoHost, creaAsset } = ctx;
+  const [classe, setClasse] = useState(host.classification && host.classification !== "unknown" ? host.classification : "unknown");
+  const [seriale, setSeriale] = useState(host.serial_number ?? "");
+  const [inventario, setInventario] = useState(host.inventory_code ?? "");
+  const [note, setNote] = useState(host.notes ?? "");
+  useEffect(() => { setClasse(host.classification && host.classification !== "unknown" ? host.classification : "unknown"); }, [host.classification]);
+  useEffect(() => { setSeriale(host.serial_number ?? ""); }, [host.serial_number]);
+  useEffect(() => { setInventario(host.inventory_code ?? ""); }, [host.inventory_code]);
+  useEffect(() => { setNote(host.notes ?? ""); }, [host.notes]);
+  const dns = [host.hostname, host.dns_reverse, host.dns_forward].filter((v, i, a): v is string => !!v && a.indexOf(v) === i);
+  const slugs = slugsClassificazione.filter((c) => c !== "unknown")
+    .sort((a, b) => etichettaClassificazione(a).localeCompare(etichettaClassificazione(b), "it", { sensitivity: "base" }));
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Riquadro titolo="Cos'è">
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label htmlFor="ed-classification" className="text-[13px] font-semibold text-muted-foreground">Classificazione</Label>
+              <Select value={classe} onValueChange={(v) => {
+                const next = v ?? "unknown";
+                setClasse(next);
+                void salvaCampoHost({ classification: next }).then(() => ricarica());
+              }}>
+                <SelectTrigger id="ed-classification" className="text-sm"><SelectValue placeholder="Seleziona…" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="unknown">— Sconosciuta —</SelectItem>
+                  {slugs.map((c) => <SelectItem key={c} value={c}>{etichettaClassificazione(c)}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <ClassificationEvidencePanel
+              reason={host.classification_reason ?? null}
+              confidence={host.inferred_confidence ?? null}
+              classificationJson={host.classification_json ?? null}
+            />
+          </div>
+        </Riquadro>
+        <Riquadro titolo="Identità e inventario">
+          <dl className="space-y-3">
+            <Campo label="MAC" value={host.mac} mono />
+            <Campo label="Hostname · DNS" value={dns.length > 0 ? dns.join(" · ") : null} />
+            <Campo label="Modello" value={host.model} />
+            <Campo label="Firmware" value={host.firmware} />
+          </dl>
+          <div className="mt-3 space-y-3">
+            <div className="space-y-1">
+              <Label htmlFor="ed-serial" className="text-[13px] font-semibold text-muted-foreground">Seriale</Label>
+              <Input id="ed-serial" value={seriale} onChange={(e) => setSeriale(e.target.value)}
+                onBlur={() => void salvaCampoHost({ serial_number: seriale || null })}
+                placeholder="Inserisci a mano se non rilevato" className="font-mono text-sm" />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="inv-code" className="text-[13px] font-semibold text-muted-foreground">N. inventario</Label>
+              <Input id="inv-code" value={inventario} onChange={(e) => setInventario(e.target.value)}
+                onBlur={() => void salvaCampoHost({ inventory_code: inventario || null })}
+                placeholder="Es: INV-2026-001" className="font-mono text-sm" />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="inv-notes" className="text-[13px] font-semibold text-muted-foreground">Note</Label>
+              <Textarea id="inv-notes" value={note} onChange={(e) => setNote(e.target.value)}
+                onBlur={() => void salvaCampoHost({ notes: note })}
+                placeholder="Annotazioni libere su questo host…" rows={2} className="max-h-40 overflow-y-auto text-sm" />
+            </div>
+          </div>
+        </Riquadro>
+        <div className="space-y-4">
+          {isAsset && asset ? (
+            <Riquadro titolo="Asset NIS2" azione={<span className="font-mono text-[13px]">{asset.asset_tag ?? `#${asset.id}`}</span>}>
+              <Button variant="link" size="sm" nativeButton={false} render={<Link href={`/inventory/${asset.id}`} />}>Apri l&apos;asset completo ›</Button>
+            </Riquadro>
+          ) : (
+            <Riquadro titolo="Asset NIS2">
+              <p className="mb-3 text-sm text-muted-foreground">Questo host non è ancora nell&apos;inventario NIS2.</p>
+              <Button type="button" variant="outline" onClick={() => void creaAsset()}>
+                <PackagePlus className="mr-2 h-4 w-4" />
+                Crea asset NIS2
+              </Button>
+            </Riquadro>
+          )}
+          <CollegamentiEsterni ctx={ctx} />
+        </div>
+      </div>
+      <ReteESnmp ctx={ctx} />
+    </div>
+  );
+}
+
 export function TabGestione({ ctx }: { ctx: ContestoScheda }) {
+  if (ctx.tipo === "host") return <GestioneHost ctx={ctx} />;
+  return <GestioneApparato ctx={ctx} />;
+}
+
+function GestioneApparato({ ctx }: { ctx: ContestoScheda }) {
   const { host, device, asset, isAsset, runtimeSummary, slugsClassificazione, etichettaClassificazione, versioneBinding, alCambioBinding, ricarica, salvaCampoHost, creaAsset } = ctx;
 
   // Campi editabili: stato locale, riletto quando la pagina ricarica l'host.
@@ -267,6 +385,7 @@ export function TabGestione({ ctx }: { ctx: ContestoScheda }) {
           <CollegamentiEsterni ctx={ctx} />
         </div>
       </div>
+      <ReteESnmp ctx={ctx} />
     </div>
   );
 }

@@ -7,7 +7,7 @@
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { tipoScheda, tabDelTipo, TAB_COMUNI, type InputTipoScheda } from "../tipo-scheda";
+import { tipoScheda, tabDelTipo, bloccoReteGestione, TAB_COMUNI, type InputTipoScheda } from "../tipo-scheda";
 
 const base: InputTipoScheda = { gestito: true, classification: null, device_type: null, vendor: null, scan_target: null };
 const t = (o: Partial<InputTipoScheda>) => tipoScheda({ ...base, ...o });
@@ -28,6 +28,13 @@ describe("tipoScheda", () => {
   });
   it("classificazione sconosciuta -> generico", () => {
     assert.equal(t({ classification: "pippo_custom", device_type: "switch", vendor: "cisco" }), "generico");
+  });
+  it("DA-VEEAM: classificazione «windows»/«linux» (slug non canonico) col vendor -> server; la postazione resta generico", () => {
+    assert.equal(t({ classification: "windows", device_type: "switch", vendor: "windows" }), "server_windows");
+    assert.equal(t({ classification: "windows", device_type: "server", vendor: "windows" }), "server_windows");
+    assert.equal(t({ classification: "linux", device_type: "switch", vendor: "linux" }), "server_linux");
+    assert.equal(t({ classification: "windows", device_type: "switch" }), "server_windows", "senza vendor: lo dice lo slug");
+    assert.equal(t({ classification: "workstation", device_type: "switch", vendor: "windows" }), "generico");
   });
   it("host non gestito -> host", () => {
     assert.equal(t({ gestito: false, classification: "switch" }), "host");
@@ -69,8 +76,8 @@ describe("tipoScheda", () => {
 
 describe("tabDelTipo", () => {
   it("TAB_COMUNI", () => assert.deepEqual(TAB_COMUNI, ["sicurezza", "gestione", "storico"]));
-  it("host: solo panoramica, sicurezza, storico", () => {
-    assert.deepEqual(tabDelTipo("host", NO), ["panoramica", "sicurezza", "storico"]);
+  it("host non gestito: panoramica + sicurezza, gestione, storico (classificare e annotare dalla scheda)", () => {
+    assert.deepEqual(tabDelTipo("host", NO), ["panoramica", "sicurezza", "gestione", "storico"]);
   });
   it("switch: panoramica, porte, vlan, vicini + comuni, senza dettagli (T3)", () => {
     assert.deepEqual(tabDelTipo("switch", NO), ["panoramica", "porte", "vlan", "vicini", "sicurezza", "gestione", "storico"]);
@@ -108,5 +115,19 @@ describe("tabDelTipo", () => {
   });
   it("generico: ancora panoramica, dettagli + comuni", () => {
     assert.deepEqual(tabDelTipo("generico", NO), ["panoramica", "dettagli", "sicurezza", "gestione", "storico"]);
+  });
+});
+
+describe("bloccoReteGestione", () => {
+  it("mostra in Gestione solo ciò che le tab del tipo non mostrano già", () => {
+    assert.deepEqual(bloccoReteGestione("switch"), { snmp: true, ipMappa: false }, "IP e mappa stanno in Vicini e MAC");
+    assert.deepEqual(bloccoReteGestione("router"), { snmp: false, ipMappa: false }, "in Interfacce e Configurazione");
+    assert.deepEqual(bloccoReteGestione("firewall"), { snmp: false, ipMappa: false });
+    assert.deepEqual(bloccoReteGestione("hypervisor"), { snmp: true, ipMappa: false }, "IP e mappa stanno in Rete");
+    assert.deepEqual(bloccoReteGestione("storage"), { snmp: true, ipMappa: true });
+    assert.deepEqual(bloccoReteGestione("server_windows"), { snmp: false, ipMappa: true }, "SNMP sta in Sistema");
+    assert.deepEqual(bloccoReteGestione("server_linux"), { snmp: false, ipMappa: true });
+    assert.deepEqual(bloccoReteGestione("generico"), { snmp: false, ipMappa: false }, "stanno in Dettagli");
+    assert.deepEqual(bloccoReteGestione("host"), { snmp: true, ipMappa: true });
   });
 });

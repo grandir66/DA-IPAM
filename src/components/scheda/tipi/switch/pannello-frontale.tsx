@@ -60,7 +60,7 @@ export function PannelloFrontale({ porte, scelta, onScegli }: { porte: SwitchPor
         <li className="flex items-center gap-1.5"><span aria-hidden className="inline-block h-4 w-5 rounded-sm border-2 border-[#0D2537] bg-[#0D2537] dark:border-slate-200 dark:bg-slate-200" />su</li>
         <li className="flex items-center gap-1.5"><span aria-hidden className="inline-block h-4 w-5 rounded-sm border-2 border-[#C5CED4] bg-white dark:bg-transparent" />giù</li>
         <li className="flex items-center gap-1.5"><span aria-hidden className="inline-block h-4 w-5 rounded-sm border-[3px] border-[#00A7E7] bg-[#0D2537] dark:bg-slate-200" />trunk / uplink (bordo spesso)</li>
-        <li className="flex items-center gap-1.5"><span aria-hidden className="inline-flex h-4 w-5 items-center justify-center rounded-sm border-2 border-[#5E1014] bg-[#8E1B20] text-[10px] text-white">✕</span>errori</li>
+        <li className="flex items-center gap-1.5"><span aria-hidden className="inline-flex h-4 w-5 items-center justify-center rounded-sm border-2 border-[#5E1014] bg-[#8E1B20] text-[13px] text-white">✕</span>errori</li>
         <li className="flex items-center gap-1.5"><span aria-hidden className="inline-block h-3 w-3 rounded-full border-2 border-[#0D2537] bg-[#FFD400]" />PoE attivo</li>
       </ul>
     </div>

@@ -39,12 +39,16 @@ describe("righeAssegnate", () => {
 });
 
 describe("senzaCredenzialeProvata", () => {
-  it("nessun binding, o solo non provati / falliti: sì", () => {
-    assert.equal(senzaCredenzialeProvata([]), true);
-    assert.equal(senzaCredenzialeProvata([b(1, 1, "ssh", "untested"), b(2, 2, "snmp", "failed")]), true);
+  it("con l'host: conta solo le credenziali validate sull'host (la stessa regola delle liste)", () => {
+    assert.equal(senzaCredenzialeProvata(0), true);
+    assert.equal(senzaCredenzialeProvata(2), false);
+    // un binding riuscito ma mai promosso sull'host NON basta: card e liste devono dire la stessa cosa
+    assert.equal(senzaCredenzialeProvata(0, [b(1, 1, "snmp", "success")]), true);
   });
-  it("basta un binding riuscito: no", () => {
-    assert.equal(senzaCredenzialeProvata([b(1, 1, "ssh", "failed"), b(2, 2, "snmp", "success")]), false);
+  it("senza host (apparato creato a mano, nessun'altra fonte): vale la prova dei binding", () => {
+    assert.equal(senzaCredenzialeProvata(null, []), true);
+    assert.equal(senzaCredenzialeProvata(undefined, [b(1, 1, "ssh", "untested"), b(2, 2, "snmp", "failed")]), true);
+    assert.equal(senzaCredenzialeProvata(null, [b(1, 1, "ssh", "failed"), b(2, 2, "snmp", "success")]), false);
   });
 });
 

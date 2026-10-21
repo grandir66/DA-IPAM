@@ -787,6 +787,11 @@ function DeviceDetailPage() {
     }
     void fetchDevice();
   }, [fetchDevice]);
+  // Identità stabile: la tabella lo mette fra le dipendenze di un effetto (un'arrow nuova a ogni render lo rifarebbe in ciclo).
+  const alCambioBinding = useCallback(() => {
+    setVersioneBinding((v) => v + 1);
+    ricaricaUsataAdesso();
+  }, [ricaricaUsataAdesso]);
   const primaryCredLabels = useMemo(() => getPrimaryCredentialLabels(editProtocol), [editProtocol]);
 
   async function handleEdit(e: React.FormEvent<HTMLFormElement>) {
@@ -1925,10 +1930,7 @@ function DeviceDetailPage() {
       <div ref={tabellaCredenzialiRef}>
         <DeviceCredentialsTable
           deviceId={device.id}
-          onBindingsChange={() => {
-            setVersioneBinding((v) => v + 1);
-            ricaricaUsataAdesso();
-          }}
+          onBindingsChange={alCambioBinding}
         />
       </div>
 

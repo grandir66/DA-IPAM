@@ -473,3 +473,18 @@ test("migrazione: tabella e due indici all'apertura del tenant, una seconda volt
   assert.deepEqual(nomi, ["hosts_archivio", "idx_hosts_archivio_il", "idx_hosts_archivio_mac"]);
   assert.deepEqual(migrateHostsArchivio(d), []);
 });
+
+test("recupero: uno slug vecchio nell'istantanea rientra canonico, col ruolo del server", () => {
+  withTenant(T, () => {
+    const d = getTenantDb(T);
+    const rete = nuovaRete(d);
+    const id = hostPieno(d, rete, `10.${80 + reti}.0.77`, null);
+    d.prepare("UPDATE hosts SET classification = 'dns_server', classification_manual = 0, server_roles = NULL WHERE id = ?").run(id);
+    const a = archiviaHost(id, "assente", "prova", "anna");
+    const esito = recuperaHost(a.id, "marco");
+    assert.ok(esito.ok, JSON.stringify(esito));
+    const dopo = riga(d, esito.nuovoHostId)!;
+    assert.equal(dopo.classification, "server");
+    assert.equal(dopo.server_roles, JSON.stringify(["dns"]));
+  });
+});

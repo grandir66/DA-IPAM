@@ -72,3 +72,14 @@ export function unisciRuoli(attuali: string | null, nuovo: RuoloServer | null): 
   }
   return JSON.stringify([...new Set([...lista, nuovo])].sort());
 }
+
+/** Ruoli del server dalla colonna JSON `server_roles` (nulla o illeggibile = nessuno; solo i ruoli del catalogo). */
+export function ruoliDaJson(json: string | null | undefined): RuoloServer[] {
+  if (!json) return [];
+  try {
+    const p = JSON.parse(json) as unknown;
+    return Array.isArray(p) ? p.map(String).filter((r): r is RuoloServer => (RUOLI_SERVER as readonly string[]).includes(r)) : [];
+  } catch {
+    return [];
+  }
+}

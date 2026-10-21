@@ -18,7 +18,7 @@ import {
   getCredentialById,
   getDb,
 } from "@/lib/db";
-import { scriviClassificazione } from "@/lib/classification/scrivi";
+import { scriviSeCambiata } from "@/lib/classification/scrivi";
 import { RUOLI_SERVER, type RuoloServer } from "@/lib/classification/canonico";
 import { NetworkDeviceSchema } from "@/lib/validators";
 import {
@@ -135,8 +135,10 @@ export function creaApparato(body: unknown): EsitoCreaApparato {
 
   const host = getHostByIp(data.host);
   if (host) {
-    // Punto unico: scrive la classificazione sull'host (e, già uguale, sull'apparato) come scelta a mano.
-    scriviClassificazione(getDb(), { hostId: host.id }, deviceClassification, { manuale: true, ruoli: ruoliDalCorpo(body) });
+    // Punto unico. È «a mano» solo se l'utente ha cambiato la classificazione proposta dall'host
+    // (revisione finale, n. 1): una proposta accettata così com'è resta automatica.
+    const ruoli = body && typeof body === "object" && Array.isArray((body as { server_roles?: unknown }).server_roles) ? ruoliDalCorpo(body) : undefined;
+    scriviSeCambiata(getDb(), { hostId: host.id }, deviceClassification, { classification: host.classification ?? null, server_roles: (host as { server_roles?: string | null }).server_roles ?? null }, { ruoli });
     try {
       linkInvAgentEndpointToHost(host.id);
     } catch {

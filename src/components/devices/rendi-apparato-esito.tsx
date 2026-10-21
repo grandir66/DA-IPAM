@@ -21,6 +21,13 @@ export interface EsitoCredenziale {
   nome?: string | null;
   /** Tentativi veri fatti (per «Fermata: 3 tentativi»). */
   tentativi?: number;
+  /** Fermata perché si è raggiunto il tetto dei tentativi (solo allora si dice «tetto di 3»). */
+  tetto?: boolean;
+}
+
+/** Il motivo di un tentativo «fermata» dice che è il tetto di tentativi su Windows? */
+export function eMotivoTetto(motivo: string | null | undefined): boolean {
+  return /^Tetto di \d+ tentativi/.test(motivo ?? "");
 }
 
 const TONO: Record<StatoEsito, ToniStato> = {
@@ -47,7 +54,10 @@ export function testoEsito(e: EsitoCredenziale): string {
       return `✕ ${e.nome ? `«${e.nome}» ` : ""}esclusa: rifiutata${d ? ` il ${d}` : ""}`;
     }
     case "fermata":
-      return e.tentativi ? `▲ Fermata: ${e.tentativi} tentativi` : "▲ Fermata (tetto di 3)";
+      if (e.tetto) return e.tentativi ? `▲ Fermata: ${e.tentativi} tentativi` : "▲ Fermata (tetto di 3)";
+      if (/non raggiungibile/i.test(e.dettaglio ?? "")) return "▲ Fermata: host non raggiungibile";
+      if (/già rifiutato/i.test(e.dettaglio ?? "")) return "▲ Fermata: account già rifiutato";
+      return "▲ Fermata";
     case "in_corso":
       return "In corso…";
     default:

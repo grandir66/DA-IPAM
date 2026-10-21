@@ -1010,6 +1010,8 @@ export default function DiscoveryPage() {
 
   /** «Rendi apparato» sugli host scelti: la finestra unica propone, prova le credenziali e crea (tappa 3). */
   function openAddDevices() {
+    // La finestra lavora su 50 host per volta: si dice, gli altri restano selezionati (revisione finale, n. 12).
+    if (selectedIds.size > 50) toast.warning(`Ne propongo 50 su ${selectedIds.size}: gli altri restano selezionati per il giro dopo`);
     setAddDevicesOpen(true);
   }
 
@@ -2043,7 +2045,7 @@ export default function DiscoveryPage() {
               </Button>
               <Button size="sm" variant="outline" className="gap-1.5" onClick={openAddDevices}>
                 <PackagePlus className="h-3.5 w-3.5" />
-                Rendi apparato
+                {selectedIds.size > 50 ? `Rendi apparato (50 su ${selectedIds.size})` : "Rendi apparato"}
               </Button>
               {selectedIds.size >= 2 && (
                 <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setLinkSameDeviceOpen(true)}>
@@ -2805,7 +2807,12 @@ export default function DiscoveryPage() {
           hosts={hosts.filter((h) => selectedIds.has(h.id)).slice(0, 50)}
           open={addDevicesOpen}
           onOpenChange={setAddDevicesOpen}
-          onCreated={() => { setSelectedIds(new Set()); fetchData(); }}
+          // Si tolgono dalla selezione solo gli host proposti, non quelli oltre i 50.
+          onCreated={() => {
+            const proposti = new Set(hosts.filter((h) => selectedIds.has(h.id)).slice(0, 50).map((h) => h.id));
+            setSelectedIds((prec) => new Set([...prec].filter((id) => !proposti.has(id))));
+            fetchData();
+          }}
         />
       )}
 

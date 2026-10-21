@@ -42,7 +42,8 @@ describe("corpoCreazione", () => {
     assert.equal(corpoCreazione({ ...base, classificazione: "router", piattaforma: "mikrotik" }, riga).use_for_arp_poll, 1);
     const p = corpoCreazione({ ...base, classificazione: "server", piattaforma: "proxmox", variante: "proxmox_ve", protocollo: "api", porta: 8006 }, riga);
     assert.equal(p.scan_target, "proxmox");
-    assert.equal(p.device_type, "server");
+    // Server + variante Proxmox VE è un hypervisor (la topologia filtra per device_type; revisione finale n. 6).
+    assert.equal(p.device_type, "hypervisor");
   });
   it("ruoli solo per il server", () => {
     assert.deepEqual(corpoCreazione({ ...base, classificazione: "server", piattaforma: "windows", ruoli: ["dc", "dns"] }, riga).server_roles, ["dc", "dns"]);

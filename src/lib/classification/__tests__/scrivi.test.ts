@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 
 process.env.ENCRYPTION_KEY ||= "test-encryption-key-scrivi-classificazione";
 
-import { scriviClassificazione, tornaAutomatica } from "../scrivi";
+import { scriviClassificazione, tornaAutomatica, scriviSeCambiata } from "../scrivi";
 import { withTenant, getTenantDb, deleteTenantDatabase, syncNetworkDeviceFromHostScan } from "@/lib/db-tenant";
 
 const T = "TESTSCRIVICLASS";
@@ -92,5 +92,59 @@ describe("scriviClassificazione / tornaAutomatica", () => {
     assert.equal(riga("hosts", 1).classification, "server");
     assert.equal(riga("hosts", 1).classification_manual, 0);
     assert.equal(riga("network_devices", 1).classification_manual, 0);
+  });
+  it("ruoli: con `ruoli` definito il valore SOSTITUISCE (si può togliere un ruolo, anche l'ultimo)", () => {
+    scriviClassificazione(getTenantDb(T), { hostId: 1 }, "server", { manuale: true, ruoli: ["dns", "dhcp"] });
+    scriviClassificazione(getTenantDb(T), { hostId: 1 }, "server", { manuale: true, ruoli: ["dhcp"] });
+    for (const [tab, id] of [["hosts", 1], ["network_devices", 1]] as const) {
+      assert.equal(riga(tab, id).server_roles, JSON.stringify(["dhcp"]), tab);
+    }
+    scriviClassificazione(getTenantDb(T), { hostId: 1 }, "server", { manuale: true, ruoli: [] });
+    for (const [tab, id] of [["hosts", 1], ["network_devices", 1]] as const) {
+      assert.equal(riga(tab, id).server_roles, null, tab);
+    }
+  });
+
+  it("ruoli: senza `ruoli` (scrittura automatica) i ruoli esistenti si uniscono, non si perdono", () => {
+    scriviClassificazione(getTenantDb(T), { hostId: 1 }, "server", { manuale: true, ruoli: ["dhcp"] });
+    scriviClassificazione(getTenantDb(T), { hostId: 1 }, "dns_server", { manuale: false });
+    assert.equal(JSON.parse(String(riga("hosts", 1).server_roles)).sort().join(","), "dhcp,dns");
+  });
+
+  it("una classificazione diversa da «server» svuota i ruoli", () => {
+    scriviClassificazione(getTenantDb(T), { hostId: 1 }, "server", { manuale: true, ruoli: ["dns"] });
+    scriviClassificazione(getTenantDb(T), { hostId: 1 }, "workstation", { manuale: true });
+    assert.equal(riga("hosts", 1).server_roles, null);
+    assert.equal(riga("network_devices", 1).server_roles, null);
+  });
+
+  it("«unknown» dall'host non tocca l'apparato abbinato né fissa il flag", () => {
+    scriviClassificazione(getTenantDb(T), { deviceId: 1 }, "router", { manuale: false });
+    scriviClassificazione(getTenantDb(T), { hostId: 1 }, "unknown", { manuale: true });
+    assert.equal(riga("hosts", 1).classification, "unknown");
+    assert.equal(riga("hosts", 1).classification_manual, 0);
+    assert.equal(riga("network_devices", 1).classification, "router");
+    assert.equal(riga("network_devices", 1).classification_manual, 0);
+  });
+
+  it("scriviSeCambiata: lo stesso valore non fissa «a mano»; un valore nuovo sì", () => {
+    const db = getTenantDb(T);
+    const esistente = { classification: "switch", server_roles: null };
+    assert.equal(scriviSeCambiata(db, { deviceId: 1 }, "switch", esistente), "nulla");
+    assert.equal(riga("network_devices", 1).classification_manual ?? 0, 0);
+    assert.equal(riga("hosts", 1).classification_manual, 0);
+    assert.equal(scriviSeCambiata(db, { deviceId: 1 }, "firewall", esistente), "classificazione");
+    assert.equal(riga("network_devices", 1).classification_manual, 1);
+    assert.equal(riga("hosts", 1).classification_manual, 1);
+  });
+
+  it("scriviSeCambiata: solo ruoli diversi li scrive senza fissare la classificazione", () => {
+    const db = getTenantDb(T);
+    scriviClassificazione(db, { hostId: 1 }, "server", { manuale: false, ruoli: ["dns"] });
+    const esistente = { classification: "server", server_roles: JSON.stringify(["dns"]) };
+    assert.equal(scriviSeCambiata(db, { deviceId: 1 }, "server", esistente, { ruoli: ["dns"] }), "nulla");
+    assert.equal(scriviSeCambiata(db, { deviceId: 1 }, "server", esistente, { ruoli: [] }), "ruoli");
+    assert.equal(riga("hosts", 1).server_roles, null);
+    assert.equal(riga("hosts", 1).classification_manual, 0);
   });
 });

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getDb } from "@/lib/db";
 import { requireAdmin, requireAuth, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
+import { avviaChocoDopoCredenziali } from "@/lib/patch/choco-automatico";
 import { candidatiPerHost, provaCredenzialeSuHost, trovaCredenziale, type EsitoRicerca } from "@/lib/credentials/trova";
 
 /**
@@ -19,6 +20,8 @@ const corpoPost = z.object({
   host_ids: z.array(z.number().int().positive()).min(1, "Indica almeno un host").max(50, "Al più 50 host per volta"),
   protocollo: z.enum(PROTOCOLLI),
   porta,
+  /** Credenziali già rifiutate 3 volte in questo giro su altri host (conta il client, solo Windows). */
+  escludi_credenziali: z.array(z.number().int().positive()).max(200).optional(),
 });
 
 const queryGet = z.object({
@@ -60,9 +63,14 @@ export async function POST(req: Request) {
           await trovaCredenziale(dbh, hostId, p.data.protocollo, p.data.porta, async (credentialId) => {
             const e = await provaCredenzialeSuHost(dbh, credentialId, host.ip, p.data.porta);
             // un segreto mancante o un tipo non provabile non è un rifiuto dell'host: non lascia traccia
-            return { ok: e.ok, errore: e.ok ? undefined : e.errore, nonProvata: !e.registra };
-          }),
+            return { ok: e.ok, errore: e.ok ? undefined : e.errore, nonProvata: !e.registra, trasporto: e.trasporto };
+          }, { escludi: p.data.escludi_credenziali }),
         );
+      }
+      // WinRM verificato: Chocolatey si installa da solo, se serve (come dopo la «Prova» a mano, 21/10).
+      if (p.data.protocollo === "winrm") {
+        const trovati = esiti.filter((e) => e.trovata).map((e) => e.hostId);
+        if (trovati.length > 0) avviaChocoDopoCredenziali(trovati);
       }
       return NextResponse.json(esiti, { headers: NO_STORE });
     } catch (error) {

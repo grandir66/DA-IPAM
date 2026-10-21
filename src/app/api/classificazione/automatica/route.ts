@@ -22,7 +22,7 @@ export async function POST(request: Request) {
     try {
       const adminCheck = await requireAdmin();
       if (isAuthError(adminCheck)) return adminCheck;
-      const parsed = Schema.safeParse(await request.json());
+      const parsed = Schema.safeParse(await request.json().catch(() => null));
       if (!parsed.success) {
         return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Dati non validi" }, { status: 400 });
       }

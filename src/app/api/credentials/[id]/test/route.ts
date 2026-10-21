@@ -11,7 +11,7 @@ import { avviaChocoDopoCredenziali } from "@/lib/patch/choco-automatico";
  * lasciava traccia). Best-effort: se l'host non esiste in DB (test estemporaneo) o la scrittura fallisce, ignora.
  */
 function registraSuHost(ip: string, credentialId: number, esito: Awaited<ReturnType<typeof provaCredenzialeSuHost>>): void {
-  if (!esito.registra || !esito.protocollo || esito.porta == null) return;
+  if (!esito.registra || esito.trasporto || !esito.protocollo || esito.porta == null) return;
   try {
     const host = getHostByIp(ip);
     if (!host?.id) return;

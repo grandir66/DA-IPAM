@@ -12,7 +12,7 @@
  * Riceve l'handle del database (come `scrittura.ts`): niente import di db.
  */
 import type Database from "better-sqlite3";
-import { canonicalizza, unisciRuoli, type RuoloServer } from "./canonico";
+import { canonicalizza, type RuoloServer } from "./canonico";
 import { aggiungiRuoloServer, impostaVendorSeVuoto } from "./scrittura";
 import { resolveDeviceTypeForCreate, type ProductProfileId } from "@/lib/device-product-profiles";
 import type { NetworkDevice } from "@/types";
@@ -50,12 +50,43 @@ function abbina(db: Database.Database, b: Bersaglio): Abbinati {
   return { hostId: null, deviceId: null };
 }
 
+/** Ruoli come elenco JSON ordinato e senza doppioni; vuoto → null. */
+function ruoliComeJson(ruoli: Iterable<string>): string | null {
+  const lista = [...new Set(ruoli)].sort();
+  return lista.length > 0 ? JSON.stringify(lista) : null;
+}
+
+/** Elenco di ruoli da una colonna `server_roles`; JSON rotto = vuoto. */
+function leggiRuoli(grezzo: string | null | undefined): string[] {
+  if (!grezzo) return [];
+  try {
+    const p = JSON.parse(grezzo) as unknown;
+    return Array.isArray(p) ? p.map(String) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Imposta `server_roles` di host e apparato abbinati: il valore SOSTITUISCE (vuoto = nessun ruolo). */
+function sostituisciRuoli(db: Database.Database, hostId: number | null, deviceId: number | null, ruoli: RuoloServer[], extra: RuoloServer | null): void {
+  const json = ruoliComeJson([...ruoli, ...(extra ? [extra] : [])]);
+  for (const [tab, id] of [["hosts", hostId], ["network_devices", deviceId]] as const) {
+    if (id != null) db.prepare(`UPDATE ${tab} SET server_roles = ? WHERE id = ?`).run(json, id);
+  }
+}
+
 /**
  * Scrive `valore` (canonicalizzato) su host e apparato abbinati. `manuale = true`
  * (scelta dell'utente) mette `classification_manual = 1` su entrambi; `false`
- * scrive il valore senza fissarlo. `ruoli` (solo per i server) entrano in
- * `server_roles` di entrambi, insieme al ruolo che il valore stesso porta.
- * Il `device_type` dell'apparato si ricalcola dalla classificazione.
+ * scrive il valore senza fissarlo. `ruoli`, se dato (anche vuoto), SOSTITUISCE
+ * `server_roles` (più il ruolo che il valore stesso porta): è la scelta dell'utente,
+ * deve poter togliere. Senza `ruoli` (scritture automatiche) i ruoli si uniscono.
+ * Una classificazione diversa da `server` svuota i ruoli.
+ * Il `device_type` dell'apparato si ricalcola da classificazione e profilo.
+ *
+ * «Non classificato» (`unknown`) non è una classificazione da imporre: vale «lascia
+ * decidere all'automatico» e tocca solo il lato nominato in `b`, senza fissare nulla
+ * e senza sovrascrivere l'altro (un router non diventa «Non classificato»).
  */
 export function scriviClassificazione(
   db: Database.Database,
@@ -65,6 +96,18 @@ export function scriviClassificazione(
 ): { hostId: number | null; deviceId: number | null } {
   const { hostId, deviceId } = abbina(db, b);
   const c = canonicalizza(valore);
+
+  if (c.classificazione === "unknown") {
+    db.transaction(() => {
+      if (b.hostId != null && hostId != null) {
+        db.prepare(`UPDATE hosts SET classification = 'unknown', classification_manual = 0, updated_at = datetime('now') WHERE id = ?`).run(hostId);
+      } else if (b.deviceId != null && deviceId != null) {
+        db.prepare(`UPDATE network_devices SET classification = 'unknown', classification_manual = 0, updated_at = datetime('now') WHERE id = ?`).run(deviceId);
+      }
+    })();
+    return { hostId, deviceId };
+  }
+
   const manuale = opts.manuale ? 1 : null;
 
   db.transaction(() => {
@@ -90,17 +133,44 @@ export function scriviClassificazione(
       aggiungiRuoloServer(db, "network_devices", deviceId, c);
       impostaVendorSeVuoto(db, deviceId, c);
     }
-    for (const ruolo of opts.ruoli ?? []) {
-      for (const [tab, id] of [["hosts", hostId], ["network_devices", deviceId]] as const) {
-        if (id == null) continue;
-        const r = db.prepare(`SELECT server_roles FROM ${tab} WHERE id = ?`).get(id) as { server_roles: string | null };
-        const nuovo = unisciRuoli(r.server_roles, ruolo);
-        if (nuovo !== r.server_roles) db.prepare(`UPDATE ${tab} SET server_roles = ? WHERE id = ?`).run(nuovo, id);
-      }
+    if (c.classificazione !== "server") {
+      sostituisciRuoli(db, hostId, deviceId, [], null);
+    } else if (opts.ruoli) {
+      sostituisciRuoli(db, hostId, deviceId, opts.ruoli, c.ruolo);
     }
   })();
 
   return { hostId, deviceId };
+}
+
+/**
+ * Salva la scelta dell'utente solo se è davvero una scelta (revisione finale, n. 1): la finestra «Modifica»
+ * rimanda sempre la classificazione corrente, e un salvataggio del solo nome non deve fissarla «a mano».
+ * `esistente` è la riga com'era prima del salvataggio. Ritorna cosa è stato scritto.
+ */
+export function scriviSeCambiata(
+  db: Database.Database,
+  b: Bersaglio,
+  valore: string,
+  esistente: { classification: string | null; server_roles: string | null },
+  opts: { ruoli?: RuoloServer[] | null } = {},
+): "classificazione" | "ruoli" | "nulla" {
+  const c = canonicalizza(valore);
+  const prima = canonicalizza(esistente.classification);
+  if (c.classificazione !== prima.classificazione) {
+    scriviClassificazione(db, b, valore, { manuale: true, ruoli: opts.ruoli });
+    return "classificazione";
+  }
+  if (opts.ruoli && c.classificazione === "server") {
+    const nuovi = ruoliComeJson([...opts.ruoli, ...(c.ruolo ? [c.ruolo] : [])]);
+    const attuali = ruoliComeJson([...leggiRuoli(esistente.server_roles), ...(prima.ruolo ? [prima.ruolo] : [])]);
+    if (nuovi !== attuali) {
+      const { hostId, deviceId } = abbina(db, b);
+      db.transaction(() => sostituisciRuoli(db, hostId, deviceId, opts.ruoli!, c.ruolo))();
+      return "ruoli";
+    }
+  }
+  return "nulla";
 }
 
 /** «Torna automatica»: `classification_manual = 0` su host e apparato abbinati. Il valore resta, la prossima scansione può cambiarlo. */

@@ -69,7 +69,9 @@ export function CredenzialiAssegnate({
   usate,
   versione,
   versioneSnmp,
+  validateSulHost,
   onSenzaProva,
+  onProvata,
   onCambia,
 }: {
   deviceId: number;
@@ -78,7 +80,11 @@ export function CredenzialiAssegnate({
   versione: number;
   /** «v2c» se l'apparato parla SNMP a community e la versione è nota. */
   versioneSnmp?: string | null;
+  /** Credenziali validate sull'host (`host_credentials`): la fonte unica di «senza credenziale provata». Assente = apparato senza host. */
+  validateSulHost?: number | null;
   onSenzaProva?: (senza: boolean) => void;
+  /** Dopo una «Prova adesso»: chi ha l'host lo rilegge (la prova riuscita lo valida sull'host). */
+  onProvata?: () => void;
   onCambia?: () => void;
 }) {
   const [bindings, setBindings] = useState<BindingPerEsito[] | null>(null);
@@ -93,8 +99,8 @@ export function CredenzialiAssegnate({
     }
     setErrore(null);
     setBindings(r.data);
-    onSenzaProva?.(senzaCredenzialeProvata(r.data));
-  }, [deviceId, onSenzaProva]);
+    onSenzaProva?.(senzaCredenzialeProvata(validateSulHost, r.data));
+  }, [deviceId, onSenzaProva, validateSulHost]);
 
   useEffect(() => {
     void carica();
@@ -112,13 +118,14 @@ export function CredenzialiAssegnate({
     else if (r.data.success) toast.success(r.data.message ?? "Prova riuscita");
     else toast.error(r.data.message ?? "Prova non riuscita", r.data.hint ? { description: r.data.hint } : undefined);
     await carica();
+    onProvata?.();
   }
 
   if (errore) return <LoadError what="le credenziali assegnate" message={errore} onRetry={() => void carica()} />;
   if (!bindings) return <p className="text-sm text-muted-foreground">Carico le credenziali…</p>;
 
   const righe = righeAssegnate(usate, bindings, nomeFonteUsata, versioneSnmp);
-  const senza = senzaCredenzialeProvata(bindings);
+  const senza = senzaCredenzialeProvata(validateSulHost, bindings);
 
   return (
     <div className="space-y-2">

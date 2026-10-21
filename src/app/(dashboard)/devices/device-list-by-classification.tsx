@@ -350,6 +350,8 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
 
   function handleBulkAddFromHosts() {
     if (selectedHostItems.length === 0) return;
+    // La finestra lavora su 50 host per volta: si dice, gli altri restano selezionati (revisione finale, n. 12).
+    if (selectedHostItems.length > 50) toast.warning(`Ne propongo 50 su ${selectedHostItems.length}: gli altri restano selezionati per il giro dopo`);
     setHostDaRendere(selectedHostItems.slice(0, 50).map(hostPerFinestra));
   }
 
@@ -886,7 +888,7 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
                 title="Rendi apparati gli host selezionati: scegli cosa sono, come ci si arriva e quale credenziale usare"
               >
                 <Plus className="h-4 w-4" />
-                {`Rendi apparato (${selectedHostItems.length})`}
+                {selectedHostItems.length > 50 ? `Rendi apparato (50 su ${selectedHostItems.length})` : `Rendi apparato (${selectedHostItems.length})`}
               </Button>
             )}
             <Button size="sm" variant="secondary" onClick={() => setBulkDialogOpen(true)} className="gap-2">
@@ -1583,7 +1585,12 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
           hosts={hostDaRendere}
           open
           onOpenChange={(o) => { if (!o) setHostDaRendere(null); }}
-          onCreated={() => { setSelectedIds(new Set()); fetchDevices(); }}
+          // Si tolgono dalla selezione solo gli host proposti, non quelli oltre i 50.
+          onCreated={() => {
+            const proposti = new Set(hostDaRendere.map((h) => `host-${h.id}`));
+            setSelectedIds((prec) => new Set([...prec].filter((k) => !proposti.has(k))));
+            fetchDevices();
+          }}
         />
       )}
     </div>

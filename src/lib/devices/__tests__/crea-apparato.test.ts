@@ -167,4 +167,35 @@ describe("creaApparato", () => {
     if (!esito.ok) assert.equal(esito.status, 400);
     assert.equal(d.prepare(`SELECT id FROM network_devices WHERE host = '10.40.0.42'`).get(), undefined);
   });
+  it("Server + Proxmox VE → device_type hypervisor (resta nella topologia)", () => {
+    getTenantDb(T).prepare(`INSERT INTO hosts (id, network_id, ip, classification) VALUES (9, 1, '10.40.0.19', 'unknown')`).run();
+    const esito = withTenant(T, () =>
+      creaApparato({ name: "pve", host: "10.40.0.19", device_type: "server", classification: "server", vendor: "proxmox", product_profile: "proxmox_ve", protocol: "api" })
+    );
+    assert.ok(esito.ok, esito.ok ? "" : esito.error);
+    assert.equal(esito.device.device_type, "hypervisor");
+    const n = getTenantDb(T).prepare(`SELECT device_type FROM network_devices WHERE id = ?`).get(esito.device.id) as { device_type: string };
+    assert.equal(n.device_type, "hypervisor");
+  });
+
+  it("classificazione già uguale a quella dell'host: l'apparato nasce senza «scelta a mano»", () => {
+    const d = getTenantDb(T);
+    d.prepare(`INSERT INTO hosts (id, network_id, ip, classification, classification_manual) VALUES (10, 1, '10.40.0.20', 'stampante', 0)`).run();
+    const esito = withTenant(T, () =>
+      creaApparato({ name: "stampa", host: "10.40.0.20", device_type: "server", classification: "stampante", vendor: "other", protocol: "snmp_v2" })
+    );
+    assert.ok(esito.ok, esito.ok ? "" : esito.error);
+    assert.equal((d.prepare(`SELECT classification_manual m FROM hosts WHERE id = 10`).get() as { m: number }).m, 0);
+    assert.notEqual((d.prepare(`SELECT classification_manual m FROM network_devices WHERE id = ?`).get(esito.device.id) as { m: number | null }).m, 1);
+  });
+
+  it("classificazione diversa da quella dell'host: scelta a mano", () => {
+    const d = getTenantDb(T);
+    d.prepare(`INSERT INTO hosts (id, network_id, ip, classification, classification_manual) VALUES (11, 1, '10.40.0.21', 'unknown', 0)`).run();
+    const esito = withTenant(T, () =>
+      creaApparato({ name: "r", host: "10.40.0.21", device_type: "router", classification: "router", vendor: "mikrotik", protocol: "ssh" })
+    );
+    assert.ok(esito.ok, esito.ok ? "" : esito.error);
+    assert.equal((d.prepare(`SELECT classification_manual m FROM hosts WHERE id = 11`).get() as { m: number }).m, 1);
+  });
 });

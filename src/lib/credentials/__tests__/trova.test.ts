@@ -11,7 +11,7 @@ import assert from "node:assert/strict";
 
 process.env.ENCRYPTION_KEY ||= "test-encryption-key-trova";
 
-import { candidatiPerHost, trovaCredenziale, registraProva, TETTO_WINDOWS } from "../trova";
+import { candidatiPerHost, trovaCredenziale, registraProva, eErroreDiTrasporto, TETTO_WINDOWS } from "../trova";
 import { withTenant, getTenantDb, deleteTenantDatabase } from "@/lib/db-tenant";
 
 const T = "TESTTROVACRED";
@@ -150,5 +150,50 @@ describe("trovaCredenziale", () => {
     const n = withTenant(T, () => q<{ last_error: string | null }>(`SELECT last_error FROM host_credentials WHERE credential_id = 16`));
     assert.deepEqual(n.map((x) => x.last_error), [null]); // solo la riga di partenza, nessun fallimento scritto
     withTenant(T, () => getTenantDb(T).prepare(`DELETE FROM credentials WHERE id = 16`).run());
+  });
+  it("host non raggiungibile: la ricerca si ferma subito, niente rifiutata né traccia sull'host", async () => {
+    const chiamate: number[] = [];
+    const r = await withTenant(T, () =>
+      trovaCredenziale(getTenantDb(T), 1, "ssh", 22, async (id) => {
+        chiamate.push(id);
+        return { ok: false, errore: "connect ETIMEDOUT", trasporto: true };
+      }),
+    );
+    assert.equal(chiamate.length, 1, "una sola prova, poi stop");
+    assert.deepEqual(r.tentativi.map((t) => t.esito), ["fermata"]);
+    assert.match(r.tentativi[0].motivo!, /host non raggiungibile/i);
+    assert.equal(r.trovata, null);
+    const righe = withTenant(T, () => q<{ last_error: string | null }>(`SELECT last_error FROM host_credentials WHERE last_error IS NOT NULL`));
+    assert.deepEqual(righe, [], "nessun fallimento registrato: nessuna credenziale esclusa");
+  });
+
+  it("escludi: le credenziali già rifiutate 3 volte nel giro sono «fermate» su questo host, senza prova", async () => {
+    const chiamate: number[] = [];
+    const r = await withTenant(T, () =>
+      trovaCredenziale(
+        getTenantDb(T), 1, "winrm", 5985,
+        async (id) => {
+          chiamate.push(id);
+          return { ok: false, errore: "no" };
+        },
+        { escludi: [11, 12] },
+      ),
+    );
+    assert.deepEqual(chiamate, [13, 14, 15]);
+    const f = r.tentativi.filter((t) => t.credentialId === 11 || t.credentialId === 12);
+    assert.deepEqual(f.map((t) => t.esito), ["fermata", "fermata"]);
+    assert.match(f[0].motivo!, /già rifiutato 3 volte in questo giro/);
+  });
+
+  it("eErroreDiTrasporto: timeout/rifiuto/irraggiungibile sì, password sbagliata no; SNMP: il timeout è ambiguo", () => {
+    assert.equal(eErroreDiTrasporto("ssh", "x", "connect_timeout"), true);
+    assert.equal(eErroreDiTrasporto("ssh", "x", "connect_refused"), true);
+    assert.equal(eErroreDiTrasporto("ssh", "x", "unreachable"), true);
+    assert.equal(eErroreDiTrasporto("ssh", "Autenticazione fallita", "auth_failed"), false);
+    assert.equal(eErroreDiTrasporto("winrm", "Timeout: nessuna risposta entro 25 secondi"), true);
+    assert.equal(eErroreDiTrasporto("winrm", "connect EHOSTUNREACH 10.0.0.1:5985"), true);
+    assert.equal(eErroreDiTrasporto("winrm", "401 Unauthorized: credentials were rejected"), false);
+    assert.equal(eErroreDiTrasporto("snmp", "Connessione SNMP fallita (Request timed out)"), false);
+    assert.equal(eErroreDiTrasporto("snmp", "Connessione SNMP fallita (connect EHOSTUNREACH)"), true);
   });
 });

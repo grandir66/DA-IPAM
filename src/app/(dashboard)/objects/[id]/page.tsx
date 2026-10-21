@@ -13,7 +13,7 @@ import { parseDbDate } from "@/lib/db-date";
  *   Identità · Rete · Vulnerabilità · Software · Asset NIS2 · Credenziali · Discovery · Cronologia
  */
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import dynamic from "next/dynamic";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
@@ -28,7 +28,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { ClassificationEvidencePanel } from "@/components/shared/classification-evidence-panel";
-import { BadgeAMano, BadgeSenzaProva } from "@/components/devices/credenziali-assegnate";
+import { BadgeAMano, BadgeSenzaProva, ClassificazioneApparato, CredenzialiAssegnate } from "@/components/devices/credenziali-assegnate";
+import { DeviceCredentialsTable } from "@/components/shared/device-credentials-table";
+import { senzaCredenzialeProvata } from "@/lib/devices/credenziali-assegnate";
+import type { UsataAdesso } from "@/lib/devices/usata-adesso";
+import { ruoliDaJson } from "@/lib/classification/canonico";
+import { etichettaVersioneSnmp } from "@/lib/protocols/snmp-sessione";
 // v0.2.646 audit perf UI9: i dialog modali (Promote/LinkIps/EditDevice) e i
 // componenti grafici pesanti (LatencyChart/UptimeTimeline/LibreNMSGraphs) sono
 // caricati on-demand. Prima erano nel bundle iniziale anche se l'utente non li
@@ -90,6 +95,8 @@ import { useUrlPerBrowser } from "@/components/shared/url-per-browser";
 
 /** Dati addizionali ritornati da GET /api/devices/[id] oltre al NetworkDevice base. */
 interface DeviceExtras {
+  /** Credenziale che il motore usa davvero per ogni protocollo (tappa 5): la scheda «Credenziali assegnate». */
+  usata_adesso?: UsataAdesso[];
   /** L'API ritorna già parsato (campo proxmox_data); last_proxmox_scan_result viene nullificato. */
   proxmox_data?: ProxmoxScanViewModel | null;
   /** L'API ritorna già parsato (campo device_info); last_device_info_json viene rimosso. */
@@ -722,6 +729,24 @@ export default function ObjectDetailPage() {
 
   // v0.2.607: runtime summary memoizzato. DEVE stare prima di qualsiasi early
   // return (loading / !host) per non violare le rules of hooks (React #310).
+  // Credenziali assegnate (tappa 5): le prove si rileggono quando la tabella dei binding cambia.
+  const [versioneBinding, setVersioneBinding] = useState(0);
+  const tabellaCredenzialiRef = useRef<HTMLDivElement>(null);
+  // «Usata adesso» si ricalcola quando i binding cambiano nella tabella (non al primo caricamento).
+  const bindingCaricati = useRef(false);
+  const ricaricaUsataAdesso = useCallback(() => {
+    if (!bindingCaricati.current) {
+      bindingCaricati.current = true;
+      return;
+    }
+    void fetchAll();
+  }, [fetchAll]);
+  // Identità stabile: la tabella lo mette fra le dipendenze di un effetto, e un'arrow nuova a ogni render lo rifarebbe in ciclo.
+  const alCambioBinding = useCallback(() => {
+    setVersioneBinding((v) => v + 1);
+    ricaricaUsataAdesso();
+  }, [ricaricaUsataAdesso]);
+
   const runtimeSummary = useMemo(() => {
     let tcpPorts: number[] = [];
     let udpPorts: number[] = [];
@@ -957,7 +982,7 @@ export default function ObjectDetailPage() {
                   <Separator orientation="vertical" className="h-3.5" />
                   <Badge variant="outline" className="text-[10px]">{classificationLabel}</Badge>
                   {host.classification_manual === 1 && <BadgeAMano piccolo />}
-                  {isManaged && runtimeSummary.validatedCreds.length === 0 && <BadgeSenzaProva corto />}
+                  {isManaged && senzaCredenzialeProvata(runtimeSummary.validatedCreds.length) && <BadgeSenzaProva corto />}
                 </>
               )}
               {host.network_name && (
@@ -2684,7 +2709,7 @@ export default function ObjectDetailPage() {
           badge={
             <>
               <Badge variant="outline" className="ml-2 text-[10px]">{device.protocol}</Badge>
-              {runtimeSummary.validatedCreds.length === 0 && <span className="ml-2"><BadgeSenzaProva /></span>}
+              {senzaCredenzialeProvata(runtimeSummary.validatedCreds.length) && <span className="ml-2"><BadgeSenzaProva /></span>}
             </>
           }>
           <dl className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-3">
@@ -2712,10 +2737,32 @@ export default function ObjectDetailPage() {
               </div>
             </>
           )}
-          <div className="mt-3">
-            <Button variant="link" size="sm" nativeButton={false} render={<Link href={`/devices/${device.id}`} />}>
-              Apri dettaglio device completo →
-            </Button>
+          {/* Tappa 5: classificazione (scelta a mano, ruoli) e credenziali che il motore usa davvero. */}
+          <div className="mt-4 space-y-5 border-t border-border pt-4">
+            <ClassificazioneApparato
+              deviceId={device.id}
+              classificazione={device.classification ?? ""}
+              etichetta={getClassificationLabel(device.classification ?? "") || device.device_type}
+              aMano={device.classification_manual === 1}
+              ruoli={ruoliDaJson(device.server_roles)}
+              eServer={device.classification === "server"}
+              onCambiata={() => void fetchAll()}
+            />
+            <CredenzialiAssegnate
+              deviceId={device.id}
+              usate={device.usata_adesso ?? []}
+              versione={versioneBinding}
+              versioneSnmp={device.snmp_version && device.protocol !== "snmp_v3" ? etichettaVersioneSnmp(device.snmp_version) : null}
+              validateSulHost={runtimeSummary.validatedCreds.length}
+              onProvata={() => void fetchAll()}
+              onCambia={() => tabellaCredenzialiRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
+            />
+          </div>
+          <div ref={tabellaCredenzialiRef} className="mt-4">
+            <DeviceCredentialsTable
+              deviceId={device.id}
+              onBindingsChange={alCambioBinding}
+            />
           </div>
         </Section>
       )}

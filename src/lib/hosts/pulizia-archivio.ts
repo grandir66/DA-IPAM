@@ -18,6 +18,7 @@
 import type Database from "better-sqlite3";
 import { getCurrentTenantCode, runInTenantTransaction } from "@/lib/db-tenant";
 import { dbCorrente } from "@/lib/hosts/db-corrente";
+import { canonicalizza, unisciRuoli } from "@/lib/classification/canonico";
 import { FUSO_UTENTI, parseDbDate } from "@/lib/db-date";
 import { macToHex, normalizeMacForStorage } from "@/lib/utils";
 import { scriviRegistroPulizia, scriviRighePulizia, type RigaRegistroPulizia } from "@/lib/hosts/registro-pulizia";
@@ -228,6 +229,16 @@ export function recuperaHost(archivioId: number, da: string): EsitoRecupero {
       const v = host[col];
       if (!scrivibile(v)) return { ok: false, motivo: `istantanea della riga d'archivio #${archivioId}: valore non valido in ${col}` };
       valori.set(col, v);
+    }
+    // L'istantanea può portare uno slug vecchio (server_windows, dns_server...): rientra già canonico, col ruolo.
+    const cl = valori.get("classification");
+    if (typeof cl === "string" && cl !== "") {
+      const c = canonicalizza(cl);
+      valori.set("classification", c.classificazione);
+      if (c.ruolo && valori.has("server_roles")) {
+        const r = valori.get("server_roles");
+        valori.set("server_roles", unisciRuoli(typeof r === "string" ? r : null, c.ruolo));
+      }
     }
     valori.set("network_id", a.network_id);
     valori.set("ip", a.ip);

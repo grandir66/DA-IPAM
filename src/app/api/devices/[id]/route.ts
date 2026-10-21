@@ -7,10 +7,11 @@ import {
   applyProductProfileScanDefaults,
   type ProductProfileId,
 } from "@/lib/device-product-profiles";
-import { scriviClassificazione } from "@/lib/classification/scrivi";
+import { scriviSeCambiata } from "@/lib/classification/scrivi";
 import { RUOLI_SERVER, type RuoloServer } from "@/lib/classification/canonico";
 import { coerceProtocolForVendor } from "@/lib/vendor-device-profile";
 import { applicaCorpoApparatoDb, avvisoFalliti, RifiutoCredenziali, usataAdessoDb, type EsitoScelte } from "@/lib/credentials/apparato-archivio";
+import { classificazioneCanonicaEnum } from "@/lib/validators";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { parseJsonSafe } from "@/lib/json-safe";
 import { withTenantFromSession } from "@/lib/api-tenant";
@@ -139,7 +140,16 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     if (!existing) {
       return NextResponse.json({ error: "Dispositivo non trovato" }, { status: 404 });
     }
-    const body = await request.json();
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return NextResponse.json({ error: "Corpo della richiesta non valido" }, { status: 400 });
+    }
+    // La classificazione finisce anche sull'host abbinato: deve essere una voce dell'elenco (n. 10).
+    if (body.classification !== undefined && body.classification !== null && body.classification !== "") {
+      const c = classificazioneCanonicaEnum().safeParse(body.classification);
+      if (!c.success) return NextResponse.json({ error: "Classificazione non valida: scegline una dall'elenco" }, { status: 400 });
+      body.classification = c.data;
+    }
 
     const updates: Record<string, unknown> = {};
     if (body.name !== undefined) updates.name = body.name;
@@ -229,12 +239,13 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     const dbh = getDb();
     const { device, credenziali } = dbh.transaction(() => {
       const aggiornato = updateNetworkDevice(Number(id), updates as Partial<import("@/types").NetworkDevice>);
-      // Classificazione dal punto unico: ricalcola device_type e scrive anche sull'host abbinato.
+      // Classificazione dal punto unico: solo se è cambiata (o cambiano i ruoli). La finestra «Modifica» la
+      // rimanda a ogni salvataggio: non deve fissarla «a mano» (revisione finale, n. 1).
       if (aggiornato && typeof body.classification === "string" && body.classification) {
         const ruoli = Array.isArray(body.server_roles)
           ? (body.server_roles as unknown[]).filter((r): r is RuoloServer => (RUOLI_SERVER as readonly string[]).includes(String(r)))
           : undefined;
-        scriviClassificazione(dbh, { deviceId: Number(id) }, body.classification, { manuale: true, ruoli });
+        scriviSeCambiata(dbh, { deviceId: Number(id) }, body.classification, { classification: existing.classification ?? null, server_roles: existing.server_roles ?? null }, { ruoli });
       }
       const esito: EsitoScelte | null = aggiornato
         ? applicaCorpoApparatoDb(dbh, Number(id), body as Record<string, unknown>, { conferma: body.conferma_rimozione === true })

@@ -25,6 +25,7 @@ import { accessoSshDb } from "./segreti";
 import { shouldAttemptCredential } from "@/lib/scanner/credential-anti-lockout";
 import { recordCredentialFailure, recordCredentialSuccess } from "@/lib/db-tenant";
 import type { ProtocolloApparato } from "@/lib/devices/proposta-apparato";
+import { classifyWinrmError } from "@/lib/devices/winrm-errors";
 
 export const TETTO_WINDOWS = 3;
 const TEST_TIMEOUT_MS = 25000;
@@ -67,6 +68,11 @@ export interface EsitoProvaSuHost {
   porta: number | null;
   /** true solo se c'è stato un tentativo vero verso l'host (non un segreto mancante o un tipo non provabile). */
   registra: boolean;
+  /**
+   * true se l'host non ha risposto (timeout, connessione rifiutata, nessuna strada): non è un rifiuto della
+   * credenziale. Chi chiama non registra il fallimento e non esclude nulla.
+   */
+  trasporto: boolean;
   /** Corpo JSON della rotta test (stessa forma di prima). */
   risposta: Record<string, unknown>;
 }
@@ -80,7 +86,39 @@ function conTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
 }
 
 function nonProvata(errore: string): EsitoProvaSuHost {
-  return { ok: false, errore, protocollo: null, porta: null, registra: false, risposta: { success: false, error: errore } };
+  return { ok: false, errore, protocollo: null, porta: null, registra: false, trasporto: false, risposta: { success: false, error: errore } };
+}
+
+const SSH_TRASPORTO = new Set(["connect_refused", "connect_timeout", "unreachable"]);
+const WINRM_TRASPORTO = new Set(["TCP_CLOSED", "TCP_TIMEOUT", "BRIDGE_TIMEOUT"]);
+
+/**
+ * L'errore dice che l'host non ha risposto, non che la credenziale è sbagliata? Un errore di trasporto non è
+ * una risposta (regola 5): né rifiutata né esclusa. SNMP: il timeout NON conta, perché una community sbagliata
+ * non riceve risposta e si manifesta proprio come un timeout; contano solo le strade che mancano.
+ */
+export function eErroreDiTrasporto(protocollo: CredProtocol, errore: string, kind?: string | null): boolean {
+  const testo = errore || "";
+  if (/EHOSTUNREACH|ENETUNREACH|no route to host|host is unreachable/i.test(testo)) return true;
+  if (protocollo === "snmp") return false;
+  if (/^Timeout: nessuna risposta/i.test(testo) || /ECONNREFUSED|ETIMEDOUT/i.test(testo)) return true;
+  if (protocollo === "ssh") return kind != null && SSH_TRASPORTO.has(kind);
+  if (protocollo === "winrm") return WINRM_TRASPORTO.has(classifyWinrmError(testo).code);
+  return false;
+}
+
+/** Esito di fallimento con la marca del trasporto; il messaggio della rotta lo dice. */
+function fallita(protocollo: CredProtocol, porta: number | null, errore: string, risposta: Record<string, unknown>, kind?: string | null): EsitoProvaSuHost {
+  const trasporto = eErroreDiTrasporto(protocollo, errore, kind);
+  return {
+    ok: false,
+    errore,
+    protocollo,
+    porta,
+    registra: true,
+    trasporto,
+    risposta: trasporto ? { ...risposta, error: `Host non raggiungibile: ${errore}`, trasporto: true } : risposta,
+  };
 }
 
 /** Prova UNA credenziale su UN host (indirizzo). Mai scrive: l'esito lo registra chi chiama. */
@@ -106,18 +144,19 @@ export async function provaCredenzialeSuHost(
         TEST_TIMEOUT_MS,
       );
       if (!esito.success) {
-        return { ok: false, errore: esito.error, protocollo: "snmp", porta: porta("snmp"), registra: true, risposta: { success: false, error: esito.error } };
+        return fallita("snmp", porta("snmp"), esito.error, { success: false, error: esito.error });
       }
       return {
         ok: true,
         protocollo: "snmp",
         porta: esito.port,
         registra: true,
+        trasporto: false,
         risposta: { success: true, message: esito.message, ...(esito.snmp_version ? { snmp_version: esito.snmp_version } : {}) },
       };
     } catch (e) {
       const errore = e instanceof Error ? e.message : "Connessione SNMP fallita";
-      return { ok: false, errore, protocollo: "snmp", porta: porta("snmp"), registra: true, risposta: { success: false, error: errore } };
+      return fallita("snmp", porta("snmp"), errore, { success: false, error: errore });
     }
   }
 
@@ -133,20 +172,19 @@ export async function provaCredenzialeSuHost(
         TEST_TIMEOUT_MS,
       );
       if (result.ok) {
-        return { ok: true, protocollo: "ssh", porta: port, registra: true, risposta: { success: true, message: "Connessione SSH riuscita" } };
+        return { ok: true, protocollo: "ssh", porta: port, registra: true, trasporto: false, risposta: { success: true, message: "Connessione SSH riuscita" } };
       }
       const err = result.error;
-      return {
-        ok: false,
-        errore: err.message,
-        protocollo: "ssh",
-        porta: port,
-        registra: true,
-        risposta: { success: false, error: err.message, hint: err.hint, kind: err.kind, methodsOffered: err.methodsOffered, methodsTried: err.methodsTried },
-      };
+      return fallita(
+        "ssh",
+        port,
+        err.message,
+        { success: false, error: err.message, hint: err.hint, kind: err.kind, methodsOffered: err.methodsOffered, methodsTried: err.methodsTried },
+        err.kind,
+      );
     } catch (e) {
       const errore = e instanceof Error ? e.message : "Connessione SSH fallita";
-      return { ok: false, errore, protocollo: "ssh", porta: port, registra: true, risposta: { success: false, error: errore } };
+      return fallita("ssh", port, errore, { success: false, error: errore });
     }
   }
 
@@ -160,10 +198,10 @@ export async function provaCredenzialeSuHost(
       const { runWinrmCommand } = await import("@/lib/devices/winrm-run");
       const ad = dbh.prepare(`SELECT domain FROM ad_integrations WHERE enabled = 1 ORDER BY id LIMIT 1`).get() as { domain: string } | undefined;
       await conTimeout(runWinrmCommand(host, port, username, password, "echo test", false, ad?.domain || ""), TEST_TIMEOUT_MS);
-      return { ok: true, protocollo: "winrm", porta: port, registra: true, risposta: { success: true, message: "Connessione WinRM riuscita" } };
+      return { ok: true, protocollo: "winrm", porta: port, registra: true, trasporto: false, risposta: { success: true, message: "Connessione WinRM riuscita" } };
     } catch (e) {
       const errore = e instanceof Error ? e.message : "Connessione WinRM fallita.";
-      return { ok: false, errore, protocollo: "winrm", porta: port, registra: true, risposta: { success: false, error: errore } };
+      return fallita("winrm", port, errore, { success: false, error: errore });
     }
   }
 
@@ -256,7 +294,15 @@ export function candidatiPerHost(
 // ---------------------------------------------------------------- ricerca
 
 /** `nonProvata`: non si è arrivati a tentare l'host (segreto mancante, tipo non provabile): niente traccia, niente tetto. */
-export type EsitoProva = { ok: boolean; errore?: string; nonProvata?: boolean };
+export type EsitoProva = { ok: boolean; errore?: string; nonProvata?: boolean; trasporto?: boolean };
+
+export interface OpzioniRicerca {
+  /**
+   * Credenziali già rifiutate 3 volte in questo giro su altri host (lo conta chi lancia il giro): qui
+   * si fermano senza prova, per non far bloccare un account di dominio con password scaduta.
+   */
+  escludi?: number[];
+}
 
 export async function trovaCredenziale(
   dbh: Database.Database,
@@ -264,7 +310,9 @@ export async function trovaCredenziale(
   protocollo: ProtocolloApparato,
   porta: number,
   prova: (credentialId: number) => Promise<EsitoProva>,
+  opzioni: OpzioniRicerca = {},
 ): Promise<EsitoRicerca> {
+  const daEscludere = new Set(opzioni.escludi ?? []);
   const proto = protocolloCredenziale(protocollo);
   const candidati = candidatiPerHost(dbh, hostId, protocollo, porta);
   const conTetto = proto === "winrm";
@@ -294,6 +342,16 @@ export async function trovaCredenziale(
         esito: "esclusa",
         motivo: `Già fallita su questo apparato${data}: ${c.esclusa.errore}. Si rimette in gioco con «Prova».`,
         quando: c.esclusa.dal || ora(),
+      });
+      continue;
+    }
+    if (daEscludere.has(c.credentialId)) {
+      tentativi.push({
+        credentialId: c.credentialId,
+        nome: c.nome,
+        esito: "fermata",
+        motivo: `Account già rifiutato ${TETTO_WINDOWS} volte in questo giro: non si riprova su altri host per non bloccarlo.`,
+        quando: ora(),
       });
       continue;
     }
@@ -330,6 +388,17 @@ export async function trovaCredenziale(
     if (esito.nonProvata && !esito.ok) {
       tentativi.push({ credentialId: c.credentialId, nome: c.nome, esito: "fermata", motivo: esito.errore || "Non provabile", quando: ora() });
       continue;
+    }
+    if (esito.trasporto && !esito.ok) {
+      // L'host non risponde: nessuna traccia sulla credenziale, e inutile provare le altre.
+      tentativi.push({
+        credentialId: c.credentialId,
+        nome: c.nome,
+        esito: "fermata",
+        motivo: `Host non raggiungibile: ${esito.errore || "nessuna risposta"}. La ricerca su questo host si ferma.`,
+        quando: ora(),
+      });
+      break;
     }
     veri++;
     registraProva(hostId, c.credentialId, proto, porta, esito);

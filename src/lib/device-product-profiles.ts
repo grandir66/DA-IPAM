@@ -245,7 +245,9 @@ export function resolveDeviceTypeForCreate(input: {
     input.classification === "server_linux" ||
     input.classification === "server_windows"
   ) {
-    return "server";
+    // La variante vince sulla classificazione generica: «Server» + Proxmox VE/PBS o vSphere è un hypervisor
+    // (la topologia filtra per device_type; revisione finale 21/10, n. 6).
+    return suggestDeviceTypeFromProductProfile(input.product_profile) === "hypervisor" ? "hypervisor" : "server";
   }
   if (input.device_type) return input.device_type;
   return suggestDeviceTypeFromProductProfile(input.product_profile);

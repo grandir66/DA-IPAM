@@ -12,7 +12,7 @@
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { variantiPer, PRODUCT_PROFILE_IDS, PRODUCT_PROFILES_BY_VENDOR } from "@/lib/device-product-profiles";
+import { variantiPer, resolveDeviceTypeForCreate, PRODUCT_PROFILE_IDS, PRODUCT_PROFILES_BY_VENDOR } from "@/lib/device-product-profiles";
 
 describe("variantiPer", () => {
   it("MikroTik switch: una sola variante, il campo si nasconde", () => {
@@ -55,5 +55,20 @@ describe("variantiPer", () => {
         }
       }
     }
+  });
+});
+
+describe("device_type dalla variante (revisione finale, n. 6)", () => {
+  it("Server + Proxmox VE o PBS → hypervisor, non server", () => {
+    assert.equal(resolveDeviceTypeForCreate({ product_profile: "proxmox_ve", classification: "server" }), "hypervisor");
+    assert.equal(resolveDeviceTypeForCreate({ product_profile: "proxmox_pbs", classification: "server" }), "hypervisor");
+  });
+  it("Server + vSphere → hypervisor; Server + Windows/Linux/iLO restano server", () => {
+    assert.equal(resolveDeviceTypeForCreate({ product_profile: "vmware_vsphere", classification: "server" }), "hypervisor");
+    assert.equal(resolveDeviceTypeForCreate({ product_profile: "windows_server", classification: "server" }), "server");
+    assert.equal(resolveDeviceTypeForCreate({ product_profile: "hp_server_ilo", classification: "server" }), "server");
+  });
+  it("HPE switch → switch", () => {
+    assert.equal(resolveDeviceTypeForCreate({ product_profile: "hp_switch_comware", classification: "switch" }), "switch");
   });
 });

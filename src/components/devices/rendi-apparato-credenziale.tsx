@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { opzioniCreazioneRapida, tipoCreazioneRapida, tipiCredenzialePerProtocollo } from "@/lib/credential-protocol-map";
 import { dataBreve } from "@/lib/devices/rendi-apparato";
 import type { CredenzialeArchivio, ProtocolloApparato } from "@/lib/devices/proposta-apparato";
-import { BadgeEsito, type EsitoCredenziale } from "./rendi-apparato-esito";
+import { BadgeEsito, eMotivoTetto, type EsitoCredenziale } from "./rendi-apparato-esito";
 import { tentativiFatti, type AzioniCredenziale, type EscluseHost, type RigaApparato } from "./rendi-apparato-tipi";
 
 export interface NuovaCredenziale {
@@ -165,7 +165,7 @@ export function RendiApparatoCredenziale({ riga, archivio, protocollo, escluse, 
         <ul className="space-y-1 text-[13px]" aria-label="Tentativi dell'ultima ricerca">
           {riga.tentativi.map((t, i) => (
             <li key={`${t.credentialId}-${i}`} className="flex flex-wrap items-center gap-2">
-              <BadgeEsito esito={{ stato: t.esito, quando: t.quando, nome: t.nome, dettaglio: t.motivo }} />
+              <BadgeEsito esito={{ stato: t.esito, quando: t.quando, nome: t.nome, dettaglio: t.motivo, tetto: t.esito === "fermata" && eMotivoTetto(t.motivo) }} />
               {t.esito !== "esclusa" && <span className="text-muted-foreground">{t.nome}</span>}
               {t.motivo && t.esito === "rifiutata" && <span className="text-muted-foreground">— {t.motivo}</span>}
             </li>

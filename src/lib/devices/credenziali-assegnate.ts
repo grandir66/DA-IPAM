@@ -57,12 +57,20 @@ export function righeAssegnate(usate: readonly UsataAdesso[], bindings: readonly
   });
 }
 
-/** Vero se l'apparato non ha nessun binding con prova riuscita: la scheda e le liste lo segnalano. */
-export function senzaCredenzialeProvata(bindings: readonly Pick<BindingPerEsito, "test_status">[]): boolean {
+/**
+ * UNICA definizione di «senza credenziale provata» (revisione finale, n. 11): nessuna credenziale validata
+ * sull'host (`host_credentials.validated = 1`). Vale per scheda, testata e liste, che non hanno i binding e
+ * non possono permetterseli. Solo un apparato senza host (creato a mano: nessun'altra fonte) ricade sui binding.
+ */
+export function senzaCredenzialeProvata(
+  validateSulHost: number | null | undefined,
+  bindings: readonly Pick<BindingPerEsito, "test_status">[] = [],
+): boolean {
+  if (validateSulHost != null) return validateSulHost === 0;
   return !bindings.some((b) => b.test_status === "success");
 }
 
 /** Per le liste, che non hanno i binding: apparato (ha `device_id`) senza nessun protocollo validato sull'host. */
 export function hostGestitoSenzaProva(deviceId: number | null | undefined, protocolliValidati: readonly string[] | null | undefined): boolean {
-  return deviceId != null && (protocolliValidati?.length ?? 0) === 0;
+  return deviceId != null && senzaCredenzialeProvata(protocolliValidati?.length ?? 0);
 }

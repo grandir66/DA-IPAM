@@ -5,6 +5,8 @@ import { requireAdmin, requireAuth, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { versioneApparato } from "@/lib/protocols/snmp-sessione";
 import { provaBinding } from "@/lib/devices/prova-binding";
+import { eErroreDiTrasporto, registraProva } from "@/lib/credentials/trova";
+import type { CredProtocol } from "@/lib/credentials/porte";
 import {
   getNetworkDeviceById,
   getDeviceCredentialBindings,
@@ -193,26 +195,30 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       // Per API/Redfish/ONVIF una prova non c'è: il binding non si marca fallito
       // (il motore delle credenziali scarterebbe un binding buono).
       if (testResult.nonDisponibile) return NextResponse.json(testResult);
+      const proto = binding.protocol_type as CredProtocol;
+      // L'host non risponde (timeout, connessione rifiutata, nessuna strada): non è un rifiuto della credenziale.
+      // Niente stato «fallita» sul binding e niente esclusione sull'host (regola «errore di trasporto non è risposta»).
+      if (!testResult.success && eErroreDiTrasporto(proto, testResult.message, testResult.kind)) {
+        return NextResponse.json({ ...testResult, message: `Host non raggiungibile: ${testResult.message}`, trasporto: true });
+      }
       updateBindingTestStatus(data.binding_id, testResult.success ? "success" : "failed", testResult.message);
-      // Promuovi il binding validato anche su host_credentials dell'host con stesso IP,
-      // così la credenziale resta associata anche se il device viene rimosso/ricreato.
-      if (testResult.success && binding.credential_id) {
+      // Come la «Prova» a mano e la ricerca (T3): l'esito passa da `registraProva`, quindi un successo azzera
+      // fallimenti e backoff dell'host e riabilita una credenziale esclusa; un rifiuto la esclude.
+      if (binding.credential_id) {
         try {
           const { getHostByIp, setHostCredentialValidatedByKey } = await import("@/lib/db");
           const h = getHostByIp(device.host);
           if (h?.id) {
-            setHostCredentialValidatedByKey(
-              h.id,
-              binding.credential_id,
-              binding.protocol_type as "ssh" | "snmp" | "winrm" | "api" | "redfish" | "onvif",
-              binding.port,
-              { auto_detected: false }
-            );
+            if (proto === "ssh" || proto === "snmp" || proto === "winrm") {
+              registraProva(h.id, binding.credential_id, proto, binding.port, { ok: testResult.success, errore: testResult.message });
+            } else if (testResult.success) {
+              setHostCredentialValidatedByKey(h.id, binding.credential_id, proto, binding.port, { auto_detected: false });
+            }
             // WinRM verificato: Chocolatey si installa da solo, se serve (21/10).
-            if (binding.protocol_type === "winrm") avviaChocoDopoCredenziali([h.id]);
+            if (testResult.success && proto === "winrm") avviaChocoDopoCredenziali([h.id]);
           }
         } catch (e) {
-          console.warn("[devices/credentials/test] persistValidatedBinding failed:", e);
+          console.warn("[devices/credentials/test] registraProva failed:", e);
         }
       }
       return NextResponse.json(testResult);

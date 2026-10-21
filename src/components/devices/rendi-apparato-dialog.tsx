@@ -57,7 +57,7 @@ import {
   type ScelteComuni,
 } from "@/lib/devices/rendi-apparato";
 import type { HostDetail, NetworkDevice } from "@/types";
-import { BadgeAvviso, BadgeNeutro, type EsitoCredenziale } from "./rendi-apparato-esito";
+import { BadgeAvviso, BadgeNeutro, eMotivoTetto, type EsitoCredenziale } from "./rendi-apparato-esito";
 import { RendiApparatoCredenziale, type NuovaCredenziale } from "./rendi-apparato-credenziale";
 import { RendiApparatoTabella } from "./rendi-apparato-tabella";
 import { esitoVisibile, type AzioniCredenziale, type EscluseHost, type RigaApparato, type TentativoVista } from "./rendi-apparato-tipi";
@@ -82,6 +82,8 @@ const PROTOCOLLI: Array<{ value: ProtocolloApparato; label: string }> = [
 const CLASSIFICAZIONI = sortClassificationsByDisplayLabel(DEVICE_CLASSIFICATIONS_ORDERED.filter((c) => c !== "unknown"));
 const PIATTAFORME = getDefaultNetworkDeviceVendorOptions();
 const JSON_HEADERS = { "Content-Type": "application/json" };
+/** Rifiuti dello stesso account Windows, su host diversi nello stesso giro, oltre i quali non si riprova (decisione 21/10). */
+const TETTO_ACCOUNT_GIRO = 3;
 
 /** Titolo: l'IP per un host, «N host» per più host. */
 function titolo(hosts: HostPerRendiApparato[]): string {
@@ -325,7 +327,7 @@ function CorpoRendiApparato({
 
   async function provaCredenziale(hostId: number, ip: string, credentialId: string, porta: number) {
     occupaHost(hostId, true);
-    const r = await fetchJson<{ success?: boolean; error?: string }>(`/api/credentials/${credentialId}/test`, {
+    const r = await fetchJson<{ success?: boolean; error?: string; trasporto?: boolean }>(`/api/credentials/${credentialId}/test`, {
       method: "POST",
       headers: JSON_HEADERS,
       body: JSON.stringify({ host: ip, port: porta }),
@@ -337,6 +339,11 @@ function CorpoRendiApparato({
       return;
     }
     const quando = new Date().toISOString();
+    // Host che non risponde: non è un rifiuto della credenziale (e il server non l'ha registrato).
+    if (r.data.trasporto && !r.data.success) {
+      aggiornaRiga(hostId, (x) => ({ ...x, esito: { stato: "fermata", quando, dettaglio: r.data.error ?? "Host non raggiungibile", credentialId } }));
+      return;
+    }
     const esito: RigaApparato["esito"] = r.data.success
       ? { stato: "riuscita", quando, credentialId }
       : { stato: "rifiutata", quando, dettaglio: r.data.error ?? "Credenziale rifiutata", credentialId };
@@ -348,6 +355,8 @@ function CorpoRendiApparato({
     if (ricercaAttiva || ids.length === 0) return;
     fermaRicerca.current = false;
     setRicercaAttiva(true);
+    // Su Windows un account di dominio rifiutato 3 volte (su host diversi) non si riprova sugli altri host del giro.
+    const rifiutiPerAccount = new Map<number, number>();
     for (let i = 0; i < ids.length; i++) {
       if (fermaRicerca.current) break;
       const riga = righe.find((r) => r.host.id === ids[i]);
@@ -356,7 +365,15 @@ function CorpoRendiApparato({
       occupaHost(riga.host.id, true);
       const r = await fetchJson<Array<{ hostId: number; trovata: { credentialId: number; nome: string } | null; tentativi: TentativoVista[] }>>(
         "/api/hosts/trova-credenziale",
-        { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ host_ids: [riga.host.id], protocollo: comuni.protocollo, porta: comuni.porta }) },
+        { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({
+            host_ids: [riga.host.id],
+            protocollo: comuni.protocollo,
+            porta: comuni.porta,
+            ...(comuni.protocollo === "winrm"
+              ? { escludi_credenziali: [...rifiutiPerAccount].filter(([, n]) => n >= TETTO_ACCOUNT_GIRO).map(([id]) => id) }
+              : {}),
+          }),
+        },
       );
       occupaHost(riga.host.id, false);
       if (!r.ok) {
@@ -366,16 +383,26 @@ function CorpoRendiApparato({
       }
       const e = r.data[0];
       const tentativi = e?.tentativi ?? [];
+      for (const t of tentativi) if (t.esito === "rifiutata") rifiutiPerAccount.set(t.credentialId, (rifiutiPerAccount.get(t.credentialId) ?? 0) + 1);
       if (e?.trovata) {
         const riuscita = [...tentativi].reverse().find((t) => t.esito === "riuscita");
         const cid = String(e.trovata.credentialId);
         aggiornaRiga(riga.host.id, (x) => ({ ...x, credentialId: cid, tentativi, esito: { stato: "riuscita", quando: riuscita?.quando ?? new Date().toISOString(), credentialId: cid } }));
       } else {
-        const fermata = tentativi.some((t) => t.esito === "fermata");
+        const ferme = tentativi.filter((t) => t.esito === "fermata");
+        const fermata = ferme.length > 0;
+        // Con la ricerca interrotta (host spento, account già rifiutato) il dettaglio è il motivo vero, non «nessuna ha funzionato».
+        const motivo = ferme.find((t) => /non raggiungibile|già rifiutato/i.test(t.motivo ?? ""))?.motivo ?? ferme[0]?.motivo ?? null;
         aggiornaRiga(riga.host.id, (x) => ({
           ...x,
           tentativi,
-          esito: { stato: fermata ? "fermata" : "rifiutata", quando: new Date().toISOString(), dettaglio: "Nessuna credenziale ha funzionato", credentialId: x.credentialId },
+          esito: {
+            stato: fermata ? "fermata" : "rifiutata",
+            quando: new Date().toISOString(),
+            dettaglio: fermata && motivo ? motivo : "Nessuna credenziale ha funzionato",
+            tetto: ferme.some((t) => eMotivoTetto(t.motivo)),
+            credentialId: x.credentialId,
+          },
         }));
       }
       setVersioneEscluse((v) => v + 1);

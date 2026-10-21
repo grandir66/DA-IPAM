@@ -17,28 +17,42 @@ export interface RispostaInterfacce {
 
 interface RigaInterfaccia {
   id: number; ifname: string; mac: string | null; status: string | null; speed_mbps: number | null;
-  type: string | null; alias: string | null; updated_at: string | null;
+  type: string | null; alias: string | null; mtu: number | null; disabled: number | null; updated_at: string | null;
 }
 interface RigaIndirizzo { interface_id: number; ip: string; prefix: number | null; family: number }
 
-/** null = apparato inesistente (la rotta risponde 404). */
-export function interfacceDellApparato(deviceId: number): RispostaInterfacce | null {
+/** Finestra dell'«ultima lettura»: righe aggiornate al più 5 minuti prima della più recente dello stesso apparato fisico. */
+const FINESTRA = "-5 minutes";
+
+/**
+ * null = apparato inesistente (la rotta risponde 404).
+ * `soloUltimaLettura`: una riga che il router non elenca più non viene cancellata, resta con il suo `updated_at` vecchio;
+ * le liste MikroTik la escludono. Interfacce e indirizzi hanno due finestre separate: gli indirizzi si aggiornano con
+ * «Aggiorna», le interfacce a ogni giro ARP.
+ */
+export function interfacceDellApparato(deviceId: number, opz?: { soloUltimaLettura?: boolean }): RispostaInterfacce | null {
   const dev = getNetworkDeviceById(deviceId);
   if (!dev) return null;
   const pd = dev.physical_device_id ?? null;
   if (pd == null) return { interfacce: [], fonte: "device_interfaces", aggiornato: null, collegato: false };
 
   const db = getDb();
+  const ultima = opz?.soloUltimaLettura === true;
   const righe = db
-    .prepare("SELECT id, ifname, mac, status, speed_mbps, type, alias, updated_at FROM device_interfaces WHERE physical_device_id = ? ORDER BY ifindex, ifname")
-    .all(pd) as RigaInterfaccia[];
+    .prepare(
+      `SELECT id, ifname, mac, status, speed_mbps, type, alias, mtu, disabled, updated_at FROM device_interfaces
+        WHERE physical_device_id = @pd${ultima ? ` AND datetime(updated_at) >= (SELECT datetime(MAX(updated_at), '${FINESTRA}') FROM device_interfaces WHERE physical_device_id = @pd)` : ""}
+        ORDER BY ifindex, ifname`,
+    )
+    .all({ pd }) as RigaInterfaccia[];
   const indirizzi = db
     .prepare(
       `SELECT a.interface_id, a.ip, a.prefix, a.family
          FROM device_interface_addresses a JOIN device_interfaces i ON i.id = a.interface_id
-        WHERE i.physical_device_id = ? ORDER BY a.family, a.ip`,
+        WHERE i.physical_device_id = @pd${ultima ? ` AND datetime(a.updated_at) >= (SELECT datetime(MAX(a2.updated_at), '${FINESTRA}') FROM device_interface_addresses a2 JOIN device_interfaces i2 ON i2.id = a2.interface_id WHERE i2.physical_device_id = @pd)` : ""}
+        ORDER BY a.family, a.ip`,
     )
-    .all(pd) as RigaIndirizzo[];
+    .all({ pd }) as RigaIndirizzo[];
 
   const perInterfaccia = new Map<number, InterfacciaScheda["indirizzi"]>();
   for (const a of indirizzi) {
@@ -56,6 +70,9 @@ export function interfacceDellApparato(deviceId: number): RispostaInterfacce | n
       stato: r.status === "up" || r.status === "down" ? r.status : "unknown",
       velocita_mbps: r.speed_mbps,
       tipo: r.type,
+      mtu: r.mtu,
+      disabilitata: r.disabled == null ? null : r.disabled === 1,
+      aggiornato: r.updated_at,
       mac: r.mac,
       indirizzi: perInterfaccia.get(r.id) ?? [],
     };

@@ -17,6 +17,7 @@ import { withTenant, deleteTenantDatabase, createNetworkDevice } from "@/lib/db-
 import {
   createPhysicalDevice, upsertDeviceInterface, upsertInterfaceAddress, setNetworkDevicePhysicalDevice,
 } from "@/lib/devices/physical-device-db";
+import { getDb } from "@/lib/db";
 import { interfacceDellApparato } from "../interfacce-scheda";
 
 const T = "TESTINTERFACCESCHEDA";
@@ -68,6 +69,33 @@ describe("interfacceDellApparato", () => {
       const r = interfacceDellApparato(d.id);
       assert.equal(r?.collegato, true);
       assert.deepEqual(r?.interfacce, []);
+    });
+  });
+
+  it("soloUltimaLettura: la riga vecchia di un'ora è esclusa, MTU e disabilitata passano; gli indirizzi hanno la loro finestra", () => {
+    withTenant(T, () => {
+      const d = nuovo("rtr4", "10.60.0.4");
+      const pd = createPhysicalDevice({ identity_confidence: 1, identity_anchor: "test" });
+      setNetworkDevicePhysicalDevice(d.id, pd.id);
+      const nuova = upsertDeviceInterface(pd.id, { ifname: "ether1", ifindex: 1, status: "up", type: "ether", mtu: 1500, disabled: false });
+      upsertDeviceInterface(pd.id, { ifname: "ether2", ifindex: 2, status: "down", type: "ether", disabled: true });
+      const vecchia = upsertDeviceInterface(pd.id, { ifname: "vlan-vecchia", ifindex: 3, status: "up", type: "vlan" });
+      const a1 = upsertInterfaceAddress(nuova.id, { ip: "10.60.4.1", prefix: 24, family: 4 });
+      const a2 = upsertInterfaceAddress(vecchia.id, { ip: "10.60.9.1", prefix: 24, family: 4 });
+      const db = getDb();
+      db.prepare("UPDATE device_interfaces SET updated_at = datetime('now', '-1 hour') WHERE id = ?").run(vecchia.id);
+      db.prepare("UPDATE device_interface_addresses SET updated_at = datetime('now', '-1 hour') WHERE id = ?").run(a2.id);
+
+      const tutte = interfacceDellApparato(d.id);
+      assert.deepEqual(tutte?.interfacce.map((i) => i.ifname), ["ether1", "ether2", "vlan-vecchia"], "senza opzione risponde come prima");
+      const r = interfacceDellApparato(d.id, { soloUltimaLettura: true });
+      assert.deepEqual(r?.interfacce.map((i) => i.ifname), ["ether1", "ether2"]);
+      assert.equal(r?.interfacce[0].mtu, 1500);
+      assert.equal(r?.interfacce[0].disabilitata, false);
+      assert.equal(r?.interfacce[1].disabilitata, true);
+      assert.equal(r?.interfacce[1].mtu, null);
+      assert.deepEqual(r?.interfacce[0].indirizzi.map((x) => x.ip), ["10.60.4.1"]);
+      void a1;
     });
   });
 

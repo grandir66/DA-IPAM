@@ -72,7 +72,7 @@ describe("pool DHCP", () => {
 });
 
 const ifc = (ifname: string, stato: "up" | "down" | "unknown", ip?: string, prefisso = 24, extra: Partial<InterfacciaScheda> = {}): InterfacciaScheda => ({
-  ifname, alias: null, stato, velocita_mbps: null, tipo: null, mac: null,
+  ifname, alias: null, stato, velocita_mbps: null, tipo: null, mtu: null, disabilitata: null, aggiornato: null, mac: null,
   indirizzi: ip ? [{ ip, prefisso, famiglia: 4 }] : [], ...extra,
 });
 

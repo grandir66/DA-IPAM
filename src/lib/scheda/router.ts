@@ -12,6 +12,11 @@ export interface InterfacciaScheda {
   stato: "up" | "down" | "unknown";
   velocita_mbps: number | null;
   tipo: string | null;
+  mtu: number | null;
+  /** Segno X di RouterOS; null = non noto (letture che non lo danno). */
+  disabilitata: boolean | null;
+  /** Ultimo `updated_at` della riga. */
+  aggiornato: string | null;
   mac: string | null;
   indirizzi: { ip: string; prefisso: number | null; famiglia: 4 | 6 }[];
 }

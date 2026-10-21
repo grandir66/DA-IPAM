@@ -41,18 +41,19 @@ export type Caricamento<T> =
   | { fase: "ok"; dati: T }
   | { fase: "errore"; messaggio: string };
 
-/** Interfacce dell'apparato; `riprova` rilegge. Un apparato non abbinato risponde `collegato: false`, non un errore. */
-export function useInterfacce(deviceId: number | undefined): { stato: Caricamento<RispostaInterfacce>; riprova: () => void } {
+/** Interfacce dell'apparato; `riprova` rilegge. `ultima`: solo l'ultima lettura (liste MikroTik, `?ultima=1`). Un apparato non abbinato risponde `collegato: false`, non un errore. */
+export function useInterfacce(deviceId: number | undefined, opz?: { ultima?: boolean }): { stato: Caricamento<RispostaInterfacce>; riprova: () => void } {
+  const ultima = opz?.ultima === true;
   const [stato, setStato] = useState<Caricamento<RispostaInterfacce>>({ fase: "carico" });
   const [n, setN] = useState(0);
   useEffect(() => {
     if (!deviceId) return;
     let vivo = true;
-    fetchJson<RispostaInterfacce>(`/api/devices/${deviceId}/interfacce`)
+    fetchJson<RispostaInterfacce>(`/api/devices/${deviceId}/interfacce${ultima ? "?ultima=1" : ""}`)
       .then((r) => { if (vivo) setStato(r.ok ? { fase: "ok", dati: r.data } : { fase: "errore", messaggio: r.message }); })
       .catch(() => { if (vivo) setStato({ fase: "errore", messaggio: "Richiesta annullata" }); });
     return () => { vivo = false; };
-  }, [deviceId, n]);
+  }, [deviceId, n, ultima]);
   const riprova = useCallback(() => { setStato({ fase: "carico" }); setN((x) => x + 1); }, []);
   return { stato: deviceId ? stato : { fase: "ok", dati: { interfacce: [], fonte: "device_interfaces", aggiornato: null, collegato: false } }, riprova };
 }

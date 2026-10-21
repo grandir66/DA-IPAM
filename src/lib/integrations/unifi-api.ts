@@ -415,6 +415,7 @@ function sendOverSocket(
   port: number,
   fullPath: string,
   req: UnifiHttpRequest,
+  maxBodyBytes = MAX_BODY_BYTES,
 ): Promise<UnifiHttpResponse> {
   return new Promise((resolve, reject) => {
     const headers: Record<string, string> = {
@@ -440,10 +441,10 @@ function sendOverSocket(
         res.on("data", (c: Buffer) => {
           if (aborted) return;
           total += c.length;
-          if (total > MAX_BODY_BYTES) {
+          if (total > maxBodyBytes) {
             aborted = true;
             r.destroy();
-            reject(new UnifiApiError("server", "Risposta del controller oltre 64 MB: lettura interrotta"));
+            reject(new UnifiApiError("server", "Risposta del controller oltre il limite: lettura interrotta"));
             return;
           }
           chunks.push(c);
@@ -467,15 +468,21 @@ function sendOverSocket(
 }
 
 /** Trasporto vero: una connessione TLS verificata per richiesta. */
-export const pinnedTransportFactory: UnifiTransportFactory = (base, pins) => {
+export const pinnedTransportFactory: UnifiTransportFactory = (base, pins) => boundedPinnedTransportFactory(MAX_BODY_BYTES)(base, pins);
+
+/** A caller may impose a smaller response limit without changing the legacy default. */
+export function boundedPinnedTransportFactory(maxBodyBytes: number): UnifiTransportFactory {
+ if (!Number.isSafeInteger(maxBodyBytes) || maxBodyBytes < 1 || maxBodyBytes > MAX_BODY_BYTES) throw new Error("INVALID_BODY_LIMIT");
+ return (base, pins) => {
   const host = hostOf(base);
   const port = base.port ? Number(base.port) : 443;
   const prefix = base.pathname.replace(/\/+$/, "");
   return async (req) => {
     const sock = await openPinnedSocket(host, port, pins, req.timeoutMs);
-    return sendOverSocket(sock, host, port, prefix + req.path, req);
+    return sendOverSocket(sock, host, port, prefix + req.path, req, maxBodyBytes);
   };
-};
+ };
+}
 
 function readOnly(t: UnifiTransport): UnifiTransport {
   return (req) => {

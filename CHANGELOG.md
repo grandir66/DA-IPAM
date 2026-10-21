@@ -4,7 +4,9 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
-## [Non rilasciato] — ONTAP/MetroCluster e consegna del modello (solo locale)
+## [Non rilasciato] — collector modulari e consegna del modello (solo locale)
+
+- Collector locale UniFi via API key nella CLI comune: conserva offline e topologia per apparato, senza DB; copertura parziale esplicita (radio/client rinviati).
 
 - Collector `netapp-ontap`, REST GET con CA/pin, paginazione vincolata e stato per
   collezione: cluster/nodi/DR, SVM/LIF, aggregati, volumi/LUN e mapping, dischi/shelf

@@ -1,7 +1,7 @@
 import type { AcquisitionInput, AcquisitionSnapshot } from "./schema";
 /** Redacts echoed secrets from free text, not protocol enums or numeric counters. Raw errors are never propagated. */
 export function redactSnapshot(snapshot: AcquisitionSnapshot, input: AcquisitionInput): AcquisitionSnapshot {
-    const secrets = [input.api?.password, input.snmp?.community, input.ssh?.password, input.ssh?.privateKey, input.ssh?.passphrase].filter((s): s is string => !!s).sort((a, b) => b.length - a.length);
+    const secrets = [input.unifi?.api_token, input.api?.password, input.snmp?.community, input.ssh?.password, input.ssh?.privateKey, input.ssh?.passphrase].filter((s): s is string => !!s).sort((a, b) => b.length - a.length);
     const fixed = new Set(['schema_version', 'collector', 'collector_version', 'status', 'kind', 'unit', 'sources', 'warnings', 'counters', 'scope', 'configuration_scope', 'vlan_mode']);
     function visit(value: unknown, key = ''): unknown {
         if (fixed.has(key))

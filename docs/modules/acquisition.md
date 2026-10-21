@@ -388,3 +388,14 @@ npx tsc --noEmit
 I test includono parser QSS, console con paginazione e timeout, troncamenti, STP
 spento, contatori a 64 bit, bridge/PVID, mW/mA, redazione segreti, adapter senza DB,
 CLI reale su agente UDP locale, permessi file e invariante sessioni SNMP centralizzate.
+
+### UniFi controller — prima tappa (2026-10-22)
+
+Profilo `unifi-controller` per console UniFi OS, accesso locale tramite API key.
+Input aggiuntivo: `unifi: {api_token, site?: "default", port?: 443, tls_pin?}`; credenziali esclusive, file 0600 esterno al repo. Stessa CLI `scripts/acquire-device.ts`.
+
+La GET consentita legge `/proxy/network/api/s/<site>/stat/device`; nessun login con password o modifica. Riuso di `integrations/unifi-api.ts` e dei parser puri esistenti. `controller_inventory` contiene apparati, porte, LLDP e uplink per apparato; le sezioni del singolo chassis restano skipped. Offline resta inventariato. Identità da correlare per MAC/seriale e contesto controller/sito, non solo IP o nome. Nessuna persistenza DB.
+
+Limiti di risposta, righe e timeout applicati; errori non diventano inventari vuoti autorevoli. Primo uso TLS TOFU: il pin restituito va conservato nell’input `unifi.tls_pin` per le letture successive. Pin verificato prima dell’invio della chiave. Due controller verificati via CLI: 17 e 11 apparati. I campioni e gli accessi restano nel vault.
+
+Stato globale partial per copertura incompleta: radio, client, VLAN e configurazione gateway non ancora raccolti. Le porte nella sezione controller conservano velocità in Mbit/s come nel parser di origine. Il profilo non rappresenta ancora l’acquisizione diretta SSH/SNMP dei device e non copre l’API pubblica Site Manager/cloud.

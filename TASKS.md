@@ -137,3 +137,21 @@ Piano: `docs/superpowers/plans/2026-10-21-collector-netapp-ontap.md`; stesso per
 - [ ] Rinviato: profilo vCenter di prodotto, schema/anteprima/UI/importazioni dev, cluster ONTAP remoto diretto, mapping VMFS→LUN e rete fisica. Nessuna attivazione implicita.
 
 - [x] Pacchetto `~/Documents/DA-IPAM-collector-e-modello-20261021.tar.gz`: 35 file, manifest con hash/commit, codice/test/manuale/consegna; nessun inventario o credenziale. Verificati hash e contenuto. Vista aggregata Canvas con typecheck verde.
+
+## 2026-10-21 — Collector dedicati NAS e Proxmox (seguito multivendor)
+
+Livello Base, sola lettura e sviluppo locale; accessi NAS confermati da Riccardo, Proxmox da vault locale. Niente push/deploy o DB.
+
+- [ ] Identificare i quattro NAS e un target Proxmox documentato, salvando gli accessi solo nel vault.
+- [ ] Estrarre letture/parser riusabili da nas-acquisition e Proxreporter/Proxmox, senza DB, cron o installazioni remote.
+- [ ] Aggiungere collector Synology DSM, QNAP NAS e Proxmox VE nello stesso contratto/CLI; aggiornare manuale e consegna.
+- [ ] Una verifica finale: prove disponibili, lint/typecheck/build, campioni reali e controllo segreti; commit locali.
+- [ ] MikroTik: router e switch RouterOS indicati da Riccardo, accessi SSH/SNMP confermati uguali ai NAS; acquisizione dedicata da eseguire. Riferimenti e credenziali solo nel vault.
+- [ ] Ubiquiti: controller UniFi indicato da Riccardo gestito tramite cloud, API key dei due controller verificate; apparati singoli disponibili via SSH admin e password NAS, SNMP confermata da Riccardo; accessi solo nel vault. Correlare viste controller/device senza duplicati; offline non equivale a rimosso.
+
+## 2026-10-22 — UniFi controller, prima tappa multivendor
+
+- [x] Collector `unifi-controller` integrato nel contratto/registry/CLI; riuso del client read-only e parser senza DB.
+- [x] 90 prove verdi, typecheck verde; CLI su entrambi i controller, 17 e 11 apparati, pin conservati negli input del vault e segreti assenti dai JSON.
+- [x] Lint (0 errori/69 avvisi preesistenti), typecheck, build e 24 regressioni del client UniFi verdi; commit selettivo locale, nessun push/deploy.
+- [ ] Proseguire NAS/Proxmox/MikroTik e Ubiquiti diretti già autorizzati: questa tappa copre solo il controller, radio/client da estendere.

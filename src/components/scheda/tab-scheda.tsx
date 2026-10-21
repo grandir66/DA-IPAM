@@ -20,6 +20,10 @@ import { TabDettagli } from "./tab-dettagli";
 import { TabGestione } from "./tab-gestione";
 import { TabSicurezza } from "./tab-sicurezza";
 import { TabStorico } from "./tab-storico";
+import { PanoramicaSwitch } from "./tipi/switch/panoramica";
+import { PorteSwitch } from "./tipi/switch/porte";
+import { VlanSwitch } from "./tipi/switch/vlan";
+import { ViciniSwitch } from "./tipi/switch/vicini";
 
 export interface VoceTab {
   /** Solo se il nome cambia per questo tipo. */
@@ -28,7 +32,14 @@ export interface VoceTab {
 }
 
 /** Tab proprie di ogni tipo: qui T3-T7 aggiungono la loro riga (vedi il commento in testa). */
-export const TAB_DEL_TIPO: Partial<Record<TipoScheda, Partial<Record<TabId, VoceTab>>>> = {};
+export const TAB_DEL_TIPO: Partial<Record<TipoScheda, Partial<Record<TabId, VoceTab>>>> = {
+  switch: {
+    panoramica: { render: (c) => <PanoramicaSwitch ctx={c} /> },
+    porte: { render: (c) => <PorteSwitch ctx={c} /> },
+    vlan: { render: (c) => <VlanSwitch ctx={c} /> },
+    vicini: { render: (c) => <ViciniSwitch ctx={c} /> },
+  },
+};
 
 /** Registro base: vale per ogni tipo che non ha una voce sua. */
 const TAB_BASE: Partial<Record<TabId, VoceTab>> = {

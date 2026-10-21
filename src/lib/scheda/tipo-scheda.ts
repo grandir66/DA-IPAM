@@ -79,5 +79,6 @@ export const TAB_COMUNI: TabId[] = ["sicurezza", "gestione", "storico"];
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- le opzioni servono ai task di tipo T3-T7
 export function tabDelTipo(t: TipoScheda, _o: { ruoli: string[]; haAd: boolean; haDipendenze: boolean }): TabId[] {
   if (t === "host") return ["panoramica", "sicurezza", "storico"];
+  if (t === "switch") return ["panoramica", "porte", "vlan", "vicini", ...TAB_COMUNI];
   return ["panoramica", "dettagli", ...TAB_COMUNI];
 }

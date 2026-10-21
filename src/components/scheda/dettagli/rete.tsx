@@ -27,7 +27,7 @@ const SeparaDialog = dynamic(() => import("@/components/topology/unioni/separa-d
  * «Sulla mappa» (unioni a mano, piano 2026-10-16, Task 6): con quali altri indirizzi questo host è un oggetto solo
  * nella topologia, e i pulsanti per unire o separare (solo admin). Legge lo stato dalla rotta, non dai file del repo.
  */
-function SullaMappa({ hostId, isAdmin }: { hostId: number; isAdmin: boolean }) {
+export function SullaMappa({ hostId, isAdmin }: { hostId: number; isAdmin: boolean }) {
   const oggetto = `host:${hostId}`;
   const [stato, setStato] = useState<StatoDelNodo | null>(null);
   const [errore, setErrore] = useState<string | null>(null);
@@ -101,8 +101,78 @@ function SullaMappa({ hostId, isAdmin }: { hostId: number; isAdmin: boolean }) {
   );
 }
 
+/** Cluster fisico: gli altri IP dello stesso apparato. Esportato: la scheda switch lo riusa in «Vicini e MAC». */
+export function IpCollegati({ ctx }: { ctx: ContestoScheda }) {
+  const { host, clusterMembers, unlinkingHostId, scollegaIp, apriCollegaIp } = ctx;
+  return (
+    <Section icon={<Link2 className="h-4 w-4" />} title="IP collegati allo stesso device fisico">
+      <div className="space-y-3">
+        {host?.physical_device_id && clusterMembers.length > 0 ? (
+          <>
+            <div className="text-xs text-muted-foreground">
+              Cluster fisico <span className="font-mono">#{host.physical_device_id}</span> · {clusterMembers.length} {clusterMembers.length === 1 ? "IP" : "IP"} aggregati
+            </div>
+            <div className="border rounded-md divide-y">
+              {clusterMembers.map((m) => {
+                const isCurrent = m.id === host?.id;
+                return (
+                  <div key={m.id} className="flex items-center gap-3 px-3 py-2 hover:bg-muted/30">
+                    <div className="flex-1 min-w-0 flex items-center gap-2">
+                      {isCurrent ? (
+                        <span className="font-mono text-sm">{m.ip}</span>
+                      ) : (
+                        <Link href={`/objects/${m.id}`} className="font-mono text-sm hover:underline text-primary">{m.ip}</Link>
+                      )}
+                      {m.hostname && <span className="text-sm text-muted-foreground truncate">{m.hostname}</span>}
+                      <span className="text-[10px] text-muted-foreground">· {m.network_name}</span>
+                      {isCurrent && <Badge variant="secondary" className="text-[10px]">qui</Badge>}
+                      <StatusBadge status={m.status} />
+                    </div>
+                    {!isCurrent && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => scollegaIp(m.id)}
+                        disabled={unlinkingHostId === m.id}
+                        title="Scollega questo IP dal device fisico"
+                      >
+                        <Unlink className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            Nessun altro IP aggregato. Se questo device ha più indirizzi (es. NIC su VLAN diverse, gateway multipli), collegali manualmente.
+          </p>
+        )}
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => apriCollegaIp()} disabled={!host}>
+            <Link2 className="h-3.5 w-3.5 mr-1.5" />
+            Collega altro IP
+          </Button>
+          {host?.physical_device_id && clusterMembers.length > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => host?.id && scollegaIp(host.id)}
+              disabled={unlinkingHostId === host?.id}
+            >
+              <Unlink className="h-3.5 w-3.5 mr-1.5" />
+              Esci dal cluster
+            </Button>
+          )}
+        </div>
+      </div>
+    </Section>
+  );
+}
+
 export function DettagliRete({ ctx }: { ctx: ContestoScheda }) {
-  const { host, hostId, device, isAdmin, clusterMembers, unlinkingHostId, scollegaIp, apriCollegaIp } = ctx;
+  const { hostId, device, isAdmin } = ctx;
   return (
     <div className="space-y-4">
       {/* ─── 3.0 IP collegati (cluster fisico) ─────────────────────────
@@ -113,69 +183,7 @@ export function DettagliRete({ ctx }: { ctx: ContestoScheda }) {
       */}
       {Number.isFinite(hostId) && hostId > 0 && <SullaMappa hostId={hostId} isAdmin={isAdmin} />}
 
-      <Section icon={<Link2 className="h-4 w-4" />} title="IP collegati allo stesso device fisico">
-        <div className="space-y-3">
-          {host?.physical_device_id && clusterMembers.length > 0 ? (
-            <>
-              <div className="text-xs text-muted-foreground">
-                Cluster fisico <span className="font-mono">#{host.physical_device_id}</span> · {clusterMembers.length} {clusterMembers.length === 1 ? "IP" : "IP"} aggregati
-              </div>
-              <div className="border rounded-md divide-y">
-                {clusterMembers.map((m) => {
-                  const isCurrent = m.id === host?.id;
-                  return (
-                    <div key={m.id} className="flex items-center gap-3 px-3 py-2 hover:bg-muted/30">
-                      <div className="flex-1 min-w-0 flex items-center gap-2">
-                        {isCurrent ? (
-                          <span className="font-mono text-sm">{m.ip}</span>
-                        ) : (
-                          <Link href={`/objects/${m.id}`} className="font-mono text-sm hover:underline text-primary">{m.ip}</Link>
-                        )}
-                        {m.hostname && <span className="text-sm text-muted-foreground truncate">{m.hostname}</span>}
-                        <span className="text-[10px] text-muted-foreground">· {m.network_name}</span>
-                        {isCurrent && <Badge variant="secondary" className="text-[10px]">qui</Badge>}
-                        <StatusBadge status={m.status} />
-                      </div>
-                      {!isCurrent && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => scollegaIp(m.id)}
-                          disabled={unlinkingHostId === m.id}
-                          title="Scollega questo IP dal device fisico"
-                        >
-                          <Unlink className="h-3.5 w-3.5" />
-                        </Button>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              Nessun altro IP aggregato. Se questo device ha più indirizzi (es. NIC su VLAN diverse, gateway multipli), collegali manualmente.
-            </p>
-          )}
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => apriCollegaIp()} disabled={!host}>
-              <Link2 className="h-3.5 w-3.5 mr-1.5" />
-              Collega altro IP
-            </Button>
-            {host?.physical_device_id && clusterMembers.length > 0 && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => host?.id && scollegaIp(host.id)}
-                disabled={unlinkingHostId === host?.id}
-              >
-                <Unlink className="h-3.5 w-3.5 mr-1.5" />
-                Esci dal cluster
-              </Button>
-            )}
-          </div>
-        </div>
-      </Section>
+      <IpCollegati ctx={ctx} />
 
       {/* ─── 3a. Proxmox (host + VM + subscription) ─── */}
       {(() => {

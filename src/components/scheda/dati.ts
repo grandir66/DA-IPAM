@@ -26,6 +26,13 @@ export interface DeviceExtras {
     neighbor_platform?: string | null;
     neighbor_address?: string | null;
     protocol?: string | null;
+    // Le colonne vere di `device_neighbors` (la rotta le restituisce così): le usa la scheda switch.
+    local_port?: string | null;
+    remote_device_name?: string | null;
+    remote_port?: string | null;
+    remote_ip?: string | null;
+    remote_mac?: string | null;
+    remote_platform?: string | null;
   }>;
   routes?: Array<{
     id?: number;

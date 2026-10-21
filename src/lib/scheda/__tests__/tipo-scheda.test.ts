@@ -72,8 +72,11 @@ describe("tabDelTipo", () => {
   it("host: solo panoramica, sicurezza, storico", () => {
     assert.deepEqual(tabDelTipo("host", NO), ["panoramica", "sicurezza", "storico"]);
   });
+  it("switch: panoramica, porte, vlan, vicini + comuni, senza dettagli (T3)", () => {
+    assert.deepEqual(tabDelTipo("switch", NO), ["panoramica", "porte", "vlan", "vicini", "sicurezza", "gestione", "storico"]);
+  });
   it("gli altri tipi: panoramica, dettagli + comuni", () => {
-    for (const x of ["switch", "router", "firewall", "storage", "hypervisor", "server_windows", "server_linux", "generico"] as const) {
+    for (const x of ["router", "firewall", "storage", "hypervisor", "server_windows", "server_linux", "generico"] as const) {
       assert.deepEqual(tabDelTipo(x, NO), ["panoramica", "dettagli", "sicurezza", "gestione", "storico"], x);
     }
   });

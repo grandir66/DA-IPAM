@@ -4,7 +4,7 @@ tono: ok
 famiglia: 01-nucleo
 ordine: 10
 stato: cantiere
-prossimo: "approvare le proposte d'interfaccia delle tappe 3-5 (docs/proposte/2026-10-21-tappe-3-5-interfaccia.md), poi scriverle; il primo avvio dell'immagine deve chiamare prepara-netbird.sh"
+prossimo: "provare «Rendi apparato» e la ricerca delle credenziali sul vero (hub, DTS); export AD: diagnostic esplicito e gravità del punteggio di dominio"
 applicazione: ipam
 ---
 IPAM e inventario per le appliance cliente (un'installazione = un cliente:

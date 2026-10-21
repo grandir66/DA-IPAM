@@ -4,6 +4,46 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-21 · «Rendi apparato», classificazione unica, voci senza doppioni (v0.9.815-820)
+
+Riccardo, creando apparati, trovava la finestra caotica (stesse domande ripetute, credenziale scelta alla
+cieca) e la classificazione da correggere dopo. Piano `docs/superpowers/plans/2026-10-21-tappe-3-5-rendi-apparato.md`,
+decisioni nella proposta `docs/proposte/2026-10-21-tappe-3-5-interfaccia.md`.
+
+### Aggiunto
+
+- **Finestra unica «Rendi apparato»** (`components/devices/rendi-apparato-*.tsx`) da scheda oggetto, Discovery,
+  pagina della rete e lista per classificazione, per uno o più host (fino a 50): cos'è (classificazione,
+  piattaforma, variante solo se la piattaforma ne ha più d'una, ruoli per i server), come ci arrivo (porta con
+  segno standard/non standard), credenziale con «Prova», «nuova nell'archivio», «SNMP aggiuntivo» e «Trova in
+  automatico». Tipo dispositivo, scan target e sottotipo non si chiedono più: si deducono (la variante decide il
+  tipo: Proxmox VE → hypervisor). Si crea anche senza credenziale provata, con l'avviso.
+- **Ricerca della credenziale** (`lib/credentials/trova.ts`, `POST/GET /api/hosts/trova-credenziale`): prima le
+  validate sull'host, poi la lista della rete, poi l'archivio; una credenziale già rifiutata su quell'host è
+  **esclusa e detta** (si riabilita con «Prova»); su WinRM **al massimo 3 tentativi per host** e, nel giro su più
+  host, un account rifiutato 3 volte non si prova più; host che non risponde = la ricerca si ferma senza
+  escludere niente. Ogni prova (anche il pulsante «Prova») registra successo e fallimento.
+- **Ruoli dei server** (`server_roles` su host e apparati): DC, DNS, DHCP, posta, web, database, backup, NFS.
+- **Scelta a mano anche sugli apparati** (`network_devices.classification_manual`) e un solo punto di scrittura
+  (`lib/classification/scrivi.ts`) che scrive host e apparato insieme; «Torna automatica»
+  (`POST /api/classificazione/automatica`). Le scansioni non toccano una scelta a mano.
+- In scheda (linguetta «Asset & Credenziali»): classificazione con ruoli, «Credenziali assegnate» con ultimo
+  esito, badge «▲ senza credenziale provata» e «a mano» anche nelle liste.
+
+### Cambiato
+
+- **Catalogo delle classificazioni senza doppioni** (`lib/classification/canonico.ts`): «Server Windows/Linux» →
+  Server + piattaforma; «NAS Synology/QNAP» e «Storage» → «NAS / Storage»; i tre controller → «Controller di
+  rete»; fotocopiatrice → «Stampante multifunzione»; ONT → «Modem / ONT»; i server DNS/DHCP/posta/web/database/
+  backup/NFS → Server + ruolo. Le scritture convertono da sole gli slug vecchi che i classificatori emettono
+  ancora; conversione una tantum dei dati (segno `classificazioni_v21`: sull'hub 47 host e 13 apparati il 21/10).
+  «unknown» si legge «Non classificato», etichette con maiuscole e sigle giuste.
+- Salvare un apparato fissa la classificazione «a mano» solo se cambia.
+
+### Tolto
+
+- `components/devices/promote-host-dialog.tsx` e i moduli di creazione propri di Discovery, rete e lista.
+
 ## [Non rilasciato] — 2026-10-21 · Chocolatey si installa da solo sugli host Windows
 
 Decisione di Riccardo (21/10): fino a oggi Chocolatey si installava solo a mano, host per host, dal

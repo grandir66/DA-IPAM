@@ -102,6 +102,8 @@ Analisi del 20/10: canvas Cursor `progetti-fermi-DADude3-DA-MKNET-MKHA` (50 sche
 - [x] S1: l'export MikroTik solo admin **era già in `dev`** (sessione della scheda router, `9232b22d`: `mikrotik-guardia.ts`, contratto in `api-auth-guards`). Riletto come revisore: il 403 arrivava dopo la ricerca dell'apparato (un non admin poteva distinguere 404 da 403) e la lista degli admin era duplicata. Corretto (prova vista rossa, poi verde): guardia prima della ricerca, `eAdmin` unico.
 - [ ] S1, in locale: GET `?action=config` con un viewer → 403, con un admin → 200 su un router vero; `scripts/verifica-permessi.sh` (serve l'app accesa e il DB hub).
 - [ ] S1, nota: per un non admin `action=all` esegue comunque `getConfig` (l'export viene letto sul router e scartato). Non cambiato: serve `systemInfo` alla scheda; da separare in C3 (`mikrotik-routeros`).
+- [x] S2: firmware QNAP nel percorso storico. Prova vista rossa (3 casi su codice di oggi: firmware = uname, SSH nullo che cancella l'SNMP), poi `devices/nas/qnap-versione.ts` (`getsysinfo firmver`, `/etc/version`, build), `identitaNasDaShell` ed `unisciInfoSsh` estratti puri. `kernel` resta in `nas_inventory.ssh.kernel`.
+- [ ] S2, in locale: su un QNAP QTS vero leggere `getsysinfo firmver`, `/etc/version` e la build, e confrontare col firmware mostrato (formato `X.Y.Z build AAAAMMGG` ipotizzato dal donatore `qnap.py:193`, non visto su apparato).
 - [ ] Dopo l'ok: tavola grafica degli oggetti d'interfaccia prima di scrivere schermate.
 
 ## 2026-10-21 — cose aperte dopo la notte del 20→21/10

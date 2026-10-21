@@ -364,3 +364,41 @@ export function mapUnifiPorts(d: UnifiDevice, index: UnifiMacIndex): UnifiSwitch
     };
   });
 }
+
+const nomePortaNorm = (n: string | null | undefined): string => (n ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+
+/**
+ * Il controller non dà la VLAN della porta (la legge lo scan SNMP, `dot1qPvid`) né lo stato STP, ma
+ * `upsertSwitchPorts` sostituisce tutte le porte dell'apparato: senza questo passaggio la sincronizzazione
+ * notturna le cancellava. Si tengono i valori già nel DB per le colonne che il controller non fornisce;
+ * un valore che il controller dà vince sempre.
+ *
+ * Abbinamento porta del controller ↔ riga esistente: prima per nome normalizzato («Port 1» = «port1»),
+ * poi per `port_index` (SNMP ifIndex = `port_idx` del controller sui UniFi), ma solo se il nome della
+ * riga esistente non è quello di un'altra porta del controller: così una VLAN non finisce mai su una porta sbagliata.
+ */
+export function conservaColonneNonDelController(
+  rows: UnifiSwitchPortRow[],
+  existing: ReadonlyArray<{ port_index: number; port_name: string; vlan: number | null; stp_state?: string | null }>,
+): UnifiSwitchPortRow[] {
+  const nomiController = new Map<string, number>();
+  for (const r of rows) nomiController.set(nomePortaNorm(r.port_name), r.port_index);
+  const perNome = new Map<string, (typeof existing)[number]>();
+  const perIndice = new Map<number, (typeof existing)[number]>();
+  for (const e of existing) {
+    perNome.set(nomePortaNorm(e.port_name), e);
+    perIndice.set(e.port_index, e);
+  }
+  return rows.map((r) => {
+    let e = perNome.get(nomePortaNorm(r.port_name));
+    if (!e) {
+      const c = perIndice.get(r.port_index);
+      if (c) {
+        const altra = nomiController.get(nomePortaNorm(c.port_name));
+        if (altra === undefined || altra === r.port_index) e = c;
+      }
+    }
+    if (!e) return r;
+    return { ...r, vlan: r.vlan ?? e.vlan ?? null, stp_state: r.stp_state ?? e.stp_state ?? null };
+  });
+}

@@ -4,6 +4,12 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-21 · VLAN delle porte UniFi
+
+### Corretto
+- Le porte degli switch Ubiquiti restavano senza VLAN: la sincronizzazione notturna del controller UniFi sostituiva tutte le porte dell'apparato e cancellava VLAN e stato STP letti via SNMP (il controller non li dà). Ora si conservano i valori già nel DB per le colonne che il controller non fornisce (abbinamento per nome di porta, poi per indice); un valore del controller vince sempre.
+- Lo scan SNMP scartava la VLAN sugli agenti con `dot1dBasePortIfIndex` vuota ma `dot1qPvid` piena (SW-ING-ProMax-239): in quel caso l'indice del PVID vale come ifIndex.
+
 ## [Non rilasciato] — 2026-10-21 · La scheda dell'apparato cambia secondo il tipo (v0.9.822-829)
 
 La scheda `/objects/[id]` aveva sette tab uguali per ogni apparato: uno switch trovava «Software» con la frase

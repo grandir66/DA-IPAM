@@ -6,7 +6,7 @@ import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import Database from "better-sqlite3";
 import { closeHubDb } from "@/lib/db-hub";
-import { deleteTenantDatabase, getTenantDb, livelloSchemaSchedaMk, migrateSchedaMikrotik, upsertArpEntries as upsertArpTenant, upsertNeighbors, withTenant } from "@/lib/db-tenant";
+import { deleteTenantDatabase, getTenantDb, livelloSchemaSchedaMk, migrateSchedaMikrotik, chiudiMigrazioneSchedaMkFallita, upsertArpEntries as upsertArpTenant, upsertNeighbors, withTenant } from "@/lib/db-tenant";
 import { upsertArpEntries as upsertArpFacciata } from "@/lib/db";
 import { aggiornaInterfacceRouterOs, createPhysicalDevice, upsertDeviceInterface } from "@/lib/devices/physical-device-db";
 import { parseInterfacce } from "@/lib/devices/mikrotik-stp";
@@ -127,4 +127,46 @@ test("vicini: la versione del vicino si scrive a parte; un giro che non la legge
   assert.equal(versione("SW-ACC-A").v, null);
   withTenant(T, () => upsertNeighbors(92, vicini.map(({ remoteVersion: _v, ...resto }) => resto), "ssh"));
   assert.equal(versione("RTR-1").v, "7.21.3 (stable) 2026-03-02 09:15:00", "senza versione nel giro, quella di prima resta");
+});
+
+test("alias di RouterOS: autorevole. Il commento tolto sparisce, e un vecchio «ether» (tipo scritto in alias da prima) non resta", () => {
+  const d = getTenantDb(T);
+  withTenant(T, () => {
+    const pd = createPhysicalDevice({ vendor: "mikrotik", identity_confidence: 1, identity_anchor: "alias" });
+    const alias = () => (d.prepare("SELECT alias FROM device_interfaces WHERE physical_device_id = ? AND ifname = 'ether1'").get(pd.id) as { alias: string | null }).alias;
+    upsertDeviceInterface(pd.id, { ifname: "ether1", alias: "ether" }); // come lo scriveva il probe di prima
+    aggiornaInterfacceRouterOs(pd.id, parseInterfacce(" 0 R name=ether1 type=ether mtu=1500 mac-address=02:00:A0:10:07:01"));
+    assert.equal(alias(), null, "RouterOS senza commento: alias NULL");
+    aggiornaInterfacceRouterOs(pd.id, parseInterfacce(" 0 R comment=verso il core name=ether1 type=ether mtu=1500"));
+    assert.equal(alias(), "verso il core");
+    aggiornaInterfacceRouterOs(pd.id, parseInterfacce(" 0 R name=ether1 type=ether mtu=1500"));
+    assert.equal(alias(), null, "commento tolto sul router: sparisce");
+    // SNMP (non autorevole) senza alias non cancella
+    upsertDeviceInterface(pd.id, { ifname: "ether1", alias: "uplink" });
+    upsertDeviceInterface(pd.id, { ifname: "ether1", status: "up" });
+    assert.equal(alias(), "uplink");
+  });
+});
+
+test("aggiornaInterfacceRouterOs è una transazione sola: se una riga fallisce non resta niente a metà", () => {
+  const d = getTenantDb(T);
+  withTenant(T, () => {
+    const pd = createPhysicalDevice({ vendor: "mikrotik", identity_confidence: 1, identity_anchor: "tx" });
+    const righe = parseInterfacce(" 0 R name=a1 type=ether mtu=1500\n 1 R name=a2 type=ether mtu=1500");
+    righe[1] = { ...righe[1], nome: null as unknown as string }; // ifname NOT NULL: la seconda riga lancia
+    assert.throws(() => aggiornaInterfacceRouterOs(pd.id, righe));
+    assert.equal((d.prepare("SELECT COUNT(*) AS n FROM device_interfaces WHERE physical_device_id = ?").get(pd.id) as { n: number }).n, 0);
+  });
+});
+
+test("migrazione fallita ma schema completo (un altro processo ha vinto la corsa): il segno resta done, non errore", () => {
+  const completo = new Database(":memory:");
+  completo.exec(TENANT_SCHEMA_SQL);
+  migrateSchedaMikrotik(completo);
+  completo.prepare("DELETE FROM tenant_settings WHERE key = ?").run(SEGNO_SCHEDA_MK);
+  chiudiMigrazioneSchedaMkFallita(completo, "X", new Error("duplicate column name: mtu"));
+  assert.match(String(leggiSegno(completo, SEGNO_SCHEDA_MK)), /^done:.*:v1$/);
+  const incompleto = vecchio();
+  chiudiMigrazioneSchedaMkFallita(incompleto, "X", new Error("disco pieno"));
+  assert.match(String(leggiSegno(incompleto, SEGNO_SCHEDA_MK)), /^errore:disco pieno/);
 });

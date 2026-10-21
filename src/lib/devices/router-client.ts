@@ -1020,19 +1020,18 @@ function parseMikrotikDhcpLeases(output: string): DhcpLeaseEntry[] {
 export function parseMikrotikDhcpServers(output: string): DhcpServerInfo[] {
   const entries: DhcpServerInfo[] = [];
   for (const line of output.split("\n")) {
-    const nameMatch = line.match(/name=(\S+)/);
-    const ifMatch = line.match(/interface=(\S+)/);
-    const poolMatch = line.match(/address-pool=(\S+)/);
-    const disabledMatch = line.match(/disabled=(yes|no)/);
+    // campiTerse: un valore con spazi (nome di un pool, di un server) si legge intero, non fino al primo spazio.
+    const c = campiTerse(line.trim());
+    const name = c.get("name");
     // `print terse` segna i server spenti col flag «X» fra l'indice e il primo campo (« 1 X name=…»), non con `disabled=`.
     const spentoDalSegno = segni(line.trim()).includes("X");
 
-    if (nameMatch) {
+    if (name) {
       entries.push({
-        name: nameMatch[1].replace(/"/g, ""),
-        interface: ifMatch?.[1] || "",
-        addressPool: poolMatch?.[1] || "",
-        disabled: disabledMatch?.[1] === "yes" || spentoDalSegno,
+        name: name.replace(/"/g, ""),
+        interface: c.get("interface") || "",
+        addressPool: c.get("address-pool") || "",
+        disabled: c.get("disabled") === "yes" || spentoDalSegno,
       });
     }
   }
@@ -1042,15 +1041,14 @@ export function parseMikrotikDhcpServers(output: string): DhcpServerInfo[] {
 export function parseMikrotikDhcpPools(output: string): DhcpPoolInfo[] {
   const entries: DhcpPoolInfo[] = [];
   for (const line of output.split("\n")) {
-    const nameMatch = line.match(/name=(\S+)/);
-    const rangesMatch = line.match(/ranges=(\S+)/);
-    const nextPoolMatch = line.match(/next-pool=(\S+)/);
+    const c = campiTerse(line.trim());
+    const name = c.get("name");
 
-    if (nameMatch) {
+    if (name) {
       entries.push({
-        name: nameMatch[1].replace(/"/g, ""),
-        ranges: rangesMatch?.[1] || "",
-        nextPool: nextPoolMatch?.[1],
+        name: name.replace(/"/g, ""),
+        ranges: c.get("ranges") || "",
+        nextPool: c.get("next-pool") || undefined,
       });
     }
   }

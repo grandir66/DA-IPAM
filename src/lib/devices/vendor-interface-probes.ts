@@ -129,6 +129,7 @@ export async function probeMikrotikInterfaces(device: NetworkDevice): Promise<In
       status: meta.accesa ? "up" : "down", // segno R (running)
       speed_mbps: null,
       alias: meta.commento, // come ifAlias di SNMP: su RouterOS è il commento
+      aliasAutorevole: true,
       type: meta.tipo,
       mtu: meta.mtu,
       disabled: meta.spenta,

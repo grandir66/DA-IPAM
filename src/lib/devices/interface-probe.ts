@@ -53,6 +53,8 @@ export interface InterfaceProbeResult {
   type?: string | null;
   mtu?: number | null;
   disabled?: boolean | null;
+  /** `alias` è autorevole (RouterOS: il commento, anche assente): si scrive com'è. */
+  aliasAutorevole?: boolean;
   addresses: InterfaceProbeAddress[];
 }
 

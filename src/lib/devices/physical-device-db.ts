@@ -152,11 +152,14 @@ export interface UpsertInterfaceInput {
   /** Scheda MikroTik: MTU e interfaccia spenta a mano. Si scrivono solo se lo schema ha le colonne (`livelloSchemaSchedaMk`). */
   mtu?: number | null;
   disabled?: boolean | null;
+  /** La fonte è la sola a sapere l'alias (RouterOS: il commento): si scrive com'è, anche null (commento tolto). Senza: COALESCE. */
+  aliasAutorevole?: boolean;
 }
 
 export function upsertDeviceInterface(physicalDeviceId: number, input: UpsertInterfaceInput): DeviceInterface {
   const mac = normalizeMac(input.mac ?? null);
   const isVirtual = isVirtualMac(mac) ? 1 : 0;
+  const aliasSet = input.aliasAutorevole ? "excluded.alias" : "COALESCE(excluded.alias, device_interfaces.alias)";
   if (livelloSchemaSchedaMk(getDb()) >= 1) {
     // COALESCE come per le altre colonne: una lettura che non conosce MTU o stato (SNMP) non cancella quella di RouterOS.
     getDb()
@@ -171,7 +174,7 @@ export function upsertDeviceInterface(physicalDeviceId: number, input: UpsertInt
            speed_mbps = COALESCE(excluded.speed_mbps, device_interfaces.speed_mbps),
            type = COALESCE(excluded.type, device_interfaces.type),
            is_virtual_mac = excluded.is_virtual_mac,
-           alias = COALESCE(excluded.alias, device_interfaces.alias),
+           alias = ${aliasSet},
            mtu = COALESCE(excluded.mtu, device_interfaces.mtu),
            disabled = COALESCE(excluded.disabled, device_interfaces.disabled),
            updated_at = datetime('now')`
@@ -197,7 +200,7 @@ export function upsertDeviceInterface(physicalDeviceId: number, input: UpsertInt
          speed_mbps = COALESCE(excluded.speed_mbps, device_interfaces.speed_mbps),
          type = COALESCE(excluded.type, device_interfaces.type),
          is_virtual_mac = excluded.is_virtual_mac,
-         alias = COALESCE(excluded.alias, device_interfaces.alias),
+         alias = ${aliasSet},
          updated_at = datetime('now')`
     )
     .run(
@@ -222,14 +225,16 @@ export function upsertDeviceInterface(physicalDeviceId: number, input: UpsertInt
  * RouterOS, `status` dal segno R, `disabled` dal segno X. Restituisce le righe scritte.
  */
 export function aggiornaInterfacceRouterOs(physicalDeviceId: number, righe: InterfacciaMk[]): number {
-  let n = 0;
-  for (const r of righe) {
-    upsertDeviceInterface(physicalDeviceId, {
-      ifname: r.nome, mac: r.mac, status: r.accesa ? "up" : "down", type: r.tipo, alias: r.commento, mtu: r.mtu, disabled: r.spenta,
-    });
-    n++;
-  }
-  return n;
+  // Una transazione sola: il giro o c'è tutto o non c'è (e un solo fsync invece di uno per interfaccia).
+  getDb().transaction(() => {
+    for (const r of righe) {
+      upsertDeviceInterface(physicalDeviceId, {
+        ifname: r.nome, mac: r.mac, status: r.accesa ? "up" : "down", type: r.tipo, alias: r.commento, aliasAutorevole: true,
+        mtu: r.mtu, disabled: r.spenta,
+      });
+    }
+  })();
+  return righe.length;
 }
 
 export function listDeviceInterfaces(physicalDeviceId: number): DeviceInterface[] {

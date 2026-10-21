@@ -710,6 +710,24 @@ export function livelloSchemaSchedaMk(d: Database.Database): number {
 }
 
 /**
+ * Dopo una migrazione fallita: se lo schema è comunque completo (un altro processo ha vinto la corsa e ha aggiunto le
+ * colonne mentre noi fallivamo su «duplicate column») il segno resta `done`, non `errore:…`; altrimenti si scrive l'errore.
+ */
+export function chiudiMigrazioneSchedaMkFallita(db: Database.Database, tenantCode: string, e: unknown): void {
+  try {
+    if (misuraLivelloSchedaMk(db) >= VERSIONE_SCHEDA_MK) {
+      SCHEMA_SCHEDA_MK.set(db, VERSIONE_SCHEDA_MK);
+      const attuale = leggiSegno(db, SEGNO_SCHEDA_MK);
+      if (!attuale?.startsWith("done:")) scriviSegno(db, SEGNO_SCHEDA_MK, `done:${new Date().toISOString().slice(0, 10)}:v${VERSIONE_SCHEDA_MK}`);
+    } else {
+      scriviSegno(db, SEGNO_SCHEDA_MK, segnoErrore(e));
+    }
+  } catch (e2) {
+    console.error(`[db-tenant] ${tenantCode}: ${SEGNO_SCHEDA_MK}, segno non scritto:`, e2);
+  }
+}
+
+/**
  * Migrazione della scheda MikroTik (piano 2026-10-21, Task 3): le colonne di COLONNE_SCHEDA_MK_V1, solo se mancano
  * (`PRAGMA table_info`). Additiva, idempotente, in UNA transazione; restituisce «tabella.colonna» di ciò che aggiunge. Poi
  * scrive il segno `done:<data>:v<versione>` (dice fin dove è arrivato lo schema; la migrazione non lo consulta).
@@ -2315,11 +2333,7 @@ export function getTenantDb(tenantCode: string): Database.Database {
     }
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: migrazione scheda mikrotik fallita (ROLLBACK), le colonne nuove non si scrivono:`, e);
-    try {
-      scriviSegno(newDb, SEGNO_SCHEDA_MK, segnoErrore(e));
-    } catch (e2) {
-      console.error(`[db-tenant] ${tenantCode}: ${SEGNO_SCHEDA_MK}, segno d'errore non scritto:`, e2);
-    }
+    chiudiMigrazioneSchedaMkFallita(newDb, tenantCode, e);
   }
 
   tenantDbs.set(tenantCode, { db: newDb, lastUsed: Date.now() });

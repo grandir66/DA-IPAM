@@ -55,3 +55,15 @@ describe("dall'uscita del router alla percentuale", () => {
     assert.equal(s5?.percento, 51);
   });
 });
+
+describe("valori con spazi (campiTerse)", () => {
+  it("il nome del pool con uno spazio si legge intero, in server e pool", () => {
+    const [srv] = parseMikrotikDhcpServers(" 0 name=SRV uffici interface=VL_5 address-pool=pool uffici lease-time=8h");
+    assert.equal(srv.name, "SRV uffici");
+    assert.equal(srv.addressPool, "pool uffici");
+    assert.equal(srv.interface, "VL_5");
+    const [p] = parseMikrotikDhcpPools(" 0 name=pool uffici ranges=10.0.0.10-10.0.0.19 next-pool=altro pool");
+    assert.deepEqual(p, { name: "pool uffici", ranges: "10.0.0.10-10.0.0.19", nextPool: "altro pool" });
+    assert.equal(poolDhcp([srv], [p], { "SRV uffici": 5 })[0].totale, 10);
+  });
+});

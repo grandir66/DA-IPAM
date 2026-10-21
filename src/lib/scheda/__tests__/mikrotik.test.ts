@@ -10,7 +10,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { parseBridgeScheda, parsePorteBridgeScheda, parseVlanBridge, parseVlanInterfacce } from "@/lib/devices/mikrotik-scheda";
 import { accessoMk, cacheDnsMk, fonteLetturaScheda, vlanConMadre, descriviBond, espandiVlanIds, matriceVlan, statoPortaBridge, caselleMikrotik, nomeFileExport, ripulisciExport, statoArp, contatoriMikrotik, gruppoInterfaccia, perTipo, raggruppaInterfacce, statoInterfaccia, usoPercento } from "../mikrotik";
-import type { InterfacciaScheda } from "../router";
+import type { InterfacciaScheda, UsoPool } from "../router";
 import type { HardwareMikrotik, RigaBondMk, RigaBridgeMk, RigaPortaBridgeMk, RigaVlanBridgeMk, RigaVlanMk, RisorseMikrotik } from "@/lib/devices/mikrotik-scheda";
 
 const ifc = (ifname: string, tipo: string | null, stato: "up" | "down" | "unknown" = "up", extra: Partial<InterfacciaScheda> = {}): InterfacciaScheda => ({
@@ -100,11 +100,10 @@ describe("caselleMikrotik", () => {
   const scan = "2026-10-21 07:40:00";
   const tutto = { risorse: risorse(), hardware: hw("7.19.4", "7.19.4"), scansione: scan, interfacce: [ifc("e1", "ether"), ifc("e2", "ether", "down"), ifc("e3", "ether", "up", { disabilitata: true }), ifc("v", "vlan")], vlan: null };
 
-  it("firmware uguale: nessuna attenzione e testo «Firmware»", () => {
+  it("firmware uguale: nessuna casella Firmware (la versione sta nel riquadro Hardware)", () => {
     const c = caselleMikrotik(tutto);
     assert.equal(c.some((x) => x.attenzione), false);
-    const f = c.find((x) => x.etichetta === "Firmware");
-    assert.equal(f?.valore, "7.19.4");
+    assert.equal(c.some((x) => x.etichetta.startsWith("Firmware")), false);
   });
   it("firmware aggiornabile diverso: attenzione, valore della versione nuova, sotto «installato»", () => {
     const c = caselleMikrotik({ ...tutto, hardware: hw("7.19.4", "7.24.4") });
@@ -116,6 +115,32 @@ describe("caselleMikrotik", () => {
   it("sei caselle al massimo, nell'ordine della tavola", () => {
     const c = caselleMikrotik({ ...tutto, hardware: hw("7.19.4", "7.24.4"), vlan: { numero: 1, bridge: 1 } });
     assert.deepEqual(c.map((x) => x.etichetta), ["CPU", "Memoria usata", "Acceso da", "Interfacce su", "VLAN", "Firmware aggiornabile"]);
+  });
+  describe("striscia: Firmware aggiornabile e Pool DHCP più pieno si dividono l'ultima casella", () => {
+    const uso = (server: string, usati: number, totale: number): UsoPool => ({ server, interfaccia: "vlan10", usati, totale, percento: Math.round((usati / totale) * 100) });
+    const etichette = (i: Parameters<typeof caselleMikrotik>[0]) => caselleMikrotik(i).map((x) => x.etichetta);
+    const conVlan = { ...tutto, vlan: { numero: 1, bridge: 1 } };
+    it("solo aggiornamento (pool assente o sotto 85%): resta «Acceso da» e il pool non c'è", () => {
+      const agg = { ...conVlan, hardware: hw("7.19.4", "7.24.4") };
+      assert.deepEqual(etichette(agg), ["CPU", "Memoria usata", "Acceso da", "Interfacce su", "VLAN", "Firmware aggiornabile"]);
+      assert.deepEqual(etichette({ ...agg, pool: [uso("dhcp1", 84, 100)] }), etichette(agg), "84% non è attenzione");
+    });
+    it("solo pool ≥85%: prende il posto del firmware, con percentuale, conteggio e server", () => {
+      const c = caselleMikrotik({ ...conVlan, pool: [uso("dhcp1", 92, 100), uso("dhcp2", 10, 100)] });
+      assert.deepEqual(c.map((x) => x.etichetta), ["CPU", "Memoria usata", "Acceso da", "Interfacce su", "VLAN", "Pool DHCP più pieno"]);
+      const p = c[c.length - 1];
+      assert.deepEqual([p.valore, p.sotto, p.attenzione, p.tab], ["92%", "92 / 100 · dhcp1", true, "dhcp"]);
+    });
+    it("a 85% esatto è attenzione", () => {
+      assert.equal(etichette({ ...conVlan, pool: [uso("d", 85, 100)] }).includes("Pool DHCP più pieno"), true);
+    });
+    it("entrambi: «Acceso da» esce, restano sei caselle", () => {
+      const c = etichette({ ...conVlan, hardware: hw("7.19.4", "7.24.4"), pool: [uso("dhcp1", 90, 100)] });
+      assert.deepEqual(c, ["CPU", "Memoria usata", "Interfacce su", "VLAN", "Firmware aggiornabile", "Pool DHCP più pieno"]);
+    });
+    it("pool non letto (null): come se non ci fosse", () => {
+      assert.equal(etichette({ ...conVlan, pool: null }).includes("Pool DHCP più pieno"), false);
+    });
   });
   it("CPU: carico, sotto «n core · MHz»; da 85 in attenzione", () => {
     assert.equal(caselleMikrotik(tutto)[0].valore, "18%");

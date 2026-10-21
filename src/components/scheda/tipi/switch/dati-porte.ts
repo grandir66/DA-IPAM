@@ -16,6 +16,7 @@ export interface Vicino {
   portaRemota: string | null;
   protocollo: string;
   ip: string | null;
+  mac: string | null;
   piattaforma: string | null;
 }
 
@@ -36,6 +37,7 @@ export function viciniDi(ctx: ContestoScheda): Vicino[] {
       portaRemota: n.remote_port || null,
       protocollo: (n.protocol ?? "").toLowerCase(),
       ip: n.remote_ip ?? null,
+      mac: n.remote_mac ?? null,
       piattaforma: n.remote_platform ?? null,
     });
   }

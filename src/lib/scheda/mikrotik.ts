@@ -8,7 +8,7 @@ import type { Fonte } from "@/components/scheda/riga-fonti";
 import type {
   HardwareMikrotik, RigaBondMk, RigaBridgeMk, RigaDnsMk, RigaPortaBridgeMk, RigaPortaSchedaMk, RigaVlanBridgeMk, RigaVlanMk, RisorseMikrotik,
 } from "@/lib/devices/mikrotik-scheda";
-import type { InterfacciaScheda } from "./router";
+import { SOGLIA_POOL, type InterfacciaScheda, type UsoPool } from "./router";
 
 export type GruppoInterfaccia = "ethernet" | "vlan" | "bond" | "bridge" | "vpn_tunnel" | "altro";
 
@@ -121,6 +121,15 @@ function dataLettura(s: string): Date | null {
 
 const SOGLIA_CPU = 85;
 
+/** «41 g» e «riavvio 12/09» (data in ora italiana, dalla data della lettura); null senza uptime. Usato dalla striscia e dal riquadro Risorse. */
+export function accesoDaMk(r: RisorseMikrotik | null, scansione: string | null): { valore: string; sotto?: string } | null {
+  if (r?.uptime_s == null) return null;
+  const giorni = Math.floor(r.uptime_s / 86400);
+  const letta = scansione ? dataLettura(scansione) : null;
+  const riavvio = letta ? new Date(letta.getTime() - r.uptime_s * 1000).toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit", timeZone: "Europe/Rome" }) : null;
+  return { valore: `${giorni} g`, ...(riavvio ? { sotto: `riavvio ${riavvio}` } : {}) };
+}
+
 /** Striscia della Panoramica MikroTik: al massimo sei caselle, solo quelle di cui c'è il dato (ordine della tavola). */
 export function caselleMikrotik(i: {
   risorse: RisorseMikrotik | null;
@@ -130,6 +139,11 @@ export function caselleMikrotik(i: {
   vlan: { numero: number; bridge: number | null } | null;
   /** Interfacce VLAN lette da `/interface vlan`: se ci sono, il numero è il loro (vince sul conto dal tipo). */
   vlanLette?: RigaVlanMk[] | null;
+  /**
+   * Uso dei pool DHCP dall'ultima lettura già in cache (la tab DHCP); null = mai letto, e la Panoramica non apre SSH
+   * per questo. Conta solo il più pieno, e solo da `SOGLIA_POOL`.
+   */
+  pool?: UsoPool[] | null;
 }): Casella[] {
   const c: Casella[] = [];
   const r = i.risorse;
@@ -141,12 +155,12 @@ export function caselleMikrotik(i: {
   if (r && mem != null && r.memoria_totale_b != null && r.memoria_libera_b != null) {
     c.push({ etichetta: "Memoria usata", valore: `${mem}%`, sotto: `${quantitaBinaria(r.memoria_libera_b)} liberi su ${quantitaBinaria(r.memoria_totale_b)}`, ...(mem >= SOGLIA_CPU ? { attenzione: true } : {}) });
   }
-  if (r?.uptime_s != null) {
-    const giorni = Math.floor(r.uptime_s / 86400);
-    const letta = i.scansione ? dataLettura(i.scansione) : null;
-    const riavvio = letta ? new Date(letta.getTime() - r.uptime_s * 1000).toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit", timeZone: "Europe/Rome" }) : null;
-    c.push({ etichetta: "Acceso da", valore: `${giorni} g`, ...(riavvio ? { sotto: `riavvio ${riavvio}` } : {}) });
-  }
+  // «Acceso da» cede il posto solo quando firmware aggiornabile e pool pieno si presentano insieme (sei caselle al massimo).
+  const h = i.hardware;
+  const aggiornabile = !!h?.firmware_corrente && !!h.firmware_aggiornabile && h.firmware_aggiornabile !== h.firmware_corrente;
+  const piena = i.pool?.filter((p) => p.percento >= SOGLIA_POOL).sort((a, b) => b.percento - a.percento)[0] ?? null;
+  const acceso = accesoDaMk(r, i.scansione);
+  if (acceso && !(aggiornabile && piena)) c.push({ etichetta: "Acceso da", valore: acceso.valore, ...(acceso.sotto ? { sotto: acceso.sotto } : {}) });
   if (i.interfacce && i.interfacce.length > 0) {
     const su = i.interfacce.filter((x) => statoInterfaccia(x) === "attiva").length;
     const spente = i.interfacce.filter((x) => x.disabilitata === true).length;
@@ -157,13 +171,12 @@ export function caselleMikrotik(i: {
     // Con almeno un bridge c'è la tab VLAN (Task 9) e la casella apre quella; senza, le VLAN stanno nelle Interfacce.
     c.push({ etichetta: "VLAN", valore: String(nVlan), ...(i.vlan?.bridge != null ? { sotto: `su ${i.vlan.bridge} bridge` } : {}), tab: (i.vlan?.bridge ?? 0) > 0 ? "vlan" : "interfacce" });
   }
-  const h = i.hardware;
-  if (h?.firmware_corrente) {
-    if (h.firmware_aggiornabile && h.firmware_aggiornabile !== h.firmware_corrente) {
-      c.push({ etichetta: "Firmware aggiornabile", valore: h.firmware_aggiornabile, sotto: `installato ${h.firmware_corrente}`, attenzione: true });
-    } else {
-      c.push({ etichetta: "Firmware", valore: h.firmware_corrente });
-    }
+  // Firmware: la casella c'è solo quando un aggiornamento esiste; la versione installata sta nel riquadro Hardware.
+  if (aggiornabile && h?.firmware_aggiornabile) {
+    c.push({ etichetta: "Firmware aggiornabile", valore: h.firmware_aggiornabile, sotto: `installato ${h.firmware_corrente}`, attenzione: true });
+  }
+  if (piena) {
+    c.push({ etichetta: "Pool DHCP più pieno", valore: `${piena.percento}%`, sotto: `${piena.usati} / ${piena.totale} · ${piena.server}`, attenzione: true, tab: "dhcp" });
   }
   return c.slice(0, 6);
 }

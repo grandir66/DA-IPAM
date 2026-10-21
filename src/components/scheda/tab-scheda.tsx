@@ -13,6 +13,7 @@
  */
 import type { ReactNode } from "react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { conteggioTab } from "@/lib/scheda/conteggi-tab";
 import { TAB_COMUNI, type TabId, type TipoScheda } from "@/lib/scheda/tipo-scheda";
 import type { ContestoScheda } from "./contesto";
 import { PanoramicaGenerica } from "./panoramica-generica";
@@ -163,6 +164,10 @@ function voce(tipo: TipoScheda, tab: TabId): VoceTab | undefined {
   return TAB_DEL_TIPO[tipo]?.[tab] ?? TAB_BASE[tab];
 }
 
+/** Il numero accanto al nome (`conteggioTab`): solo per le tab proprie del tipo, e solo se i dati della pagina lo danno. */
+const conteggio = (ctx: ContestoScheda, t: TabId): string | null =>
+  TAB_COMUNI.includes(t) ? null : conteggioTab(ctx.tipo, t, { device: ctx.device, dipendenze: ctx.dipendenze });
+
 const COMUNI: ReadonlySet<TabId> = new Set(TAB_COMUNI);
 
 /** Barra delle tab (quelle del tipo, un separatore, poi le comuni) e contenuto della tab attiva. */
@@ -172,6 +177,7 @@ export function TabScheda({ ctx, tabs, attiva, onCambia }: { ctx: ContestoScheda
   const trigger = (t: TabId) => (
     <TabsTrigger key={t} value={t} className="px-3 py-1.5 text-sm">
       {voce(ctx.tipo, t)?.etichetta ?? ETICHETTE_TAB[t]}
+      {conteggio(ctx, t) && <span className="ml-1.5 text-[13px] font-normal opacity-80">{conteggio(ctx, t)}</span>}
     </TabsTrigger>
   );
   const corrente = voce(ctx.tipo, attiva);

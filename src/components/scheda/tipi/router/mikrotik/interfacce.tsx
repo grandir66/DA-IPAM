@@ -19,6 +19,7 @@ import { RigaFonti } from "../../../riga-fonti";
 import { SezioneLibreNms } from "../../../dettagli/generale";
 import { IpCollegati, SullaMappa } from "../../../dettagli/rete";
 import type { ContestoScheda } from "../../../contesto";
+import { NomeVicino, useViciniIpam } from "../../../nome-vicino";
 import { IndirizziCella } from "../celle";
 import { useInterfacceMikrotik, useSchedaMikrotik } from "./dati-mikrotik";
 
@@ -80,6 +81,7 @@ export function InterfacceMikrotik({ ctx }: { ctx: ContestoScheda }) {
   const vlanLette = scheda.fase === "ok" ? scheda.dati.vlan : null;
   const [filtro, setFiltro] = useState<Filtro>("tutte");
   const vicini = device?.neighbors ?? [];
+  const mappaVicini = useViciniIpam(device?.id);
 
   let corpo;
   if (stato.fase === "carico") {
@@ -211,7 +213,11 @@ export function InterfacceMikrotik({ ctx }: { ctx: ContestoScheda }) {
               {vicini.map((v, k) => (
                 <tr key={v.id ?? k} className="border-b">
                   <td className="px-3 py-1.5 font-mono font-semibold">{v.local_port ?? v.interface_name ?? "—"}</td>
-                  <td className="px-3 py-1.5">{v.remote_device_name ?? v.neighbor_name ?? v.remote_mac ?? "—"}</td>
+                  <td className="px-3 py-1.5">
+                    {(v.remote_device_name ?? v.neighbor_name ?? v.remote_mac)
+                      ? <NomeVicino nome={(v.remote_device_name ?? v.neighbor_name ?? v.remote_mac) as string} ip={v.remote_ip ?? v.neighbor_address} mac={v.remote_mac} mappa={mappaVicini} />
+                      : "—"}
+                  </td>
                   <td className="px-3 py-1.5 font-mono">{v.remote_port ?? v.neighbor_port ?? "—"}</td>
                   <td className="px-3 py-1.5 uppercase">{v.protocol ?? "—"}</td>
                   <td className="px-3 py-1.5 font-mono">{v.remote_ip ?? v.neighbor_address ?? "—"}</td>

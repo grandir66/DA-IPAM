@@ -6,6 +6,8 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ## [Non rilasciato] — 2026-10-22 · La scheda MikroTik copiata dal Manager (v0.9.832-842)
 
+- **Ritocchi alla scheda apparato** (22/10): numeri accanto al nome delle tab (porte, VLAN, vicini e MAC, rotte e ARP, bridge, VM, nodi, dischi, volumi…) solo dai dati già caricati; nei vicini LLDP/CDP/MNDP (MikroTik e switch) «· non in IPAM» o il link all'host (IP, poi MAC, stessa restrizione di «Dispositivi»); striscia MikroTik: il firmware compare solo se aggiornabile e il suo posto lo prende il pool DHCP più pieno (≥85%, solo dalla cache della tab DHCP), «Acceso da» passa nel riquadro Risorse.
+
 La pagina del router MikroTik del Manager mostrava più cose della scheda di DA-IPAM, che per i router non aveva
 risorse, hardware, bridge, VLAN né stato delle interfacce. Si porta quello che il Manager mostra, ma i dati li legge
 DA-IPAM dal router (nessun collegamento col Manager). Piano `docs/superpowers/plans/2026-10-21-scheda-mikrotik-dal-manager.md`,

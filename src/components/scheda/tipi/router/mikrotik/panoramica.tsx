@@ -10,7 +10,7 @@
 import type { ReactNode } from "react";
 import { LoadError } from "@/components/shared/load-error";
 import {
-  accessoMk, cacheDnsMk, caselleMikrotik, contatoriMikrotik, fonteLetturaScheda, gruppoInterfaccia, perTipo, usoPercento, type ContatoriMikrotik,
+  accesoDaMk, accessoMk, cacheDnsMk, caselleMikrotik, contatoriMikrotik, fonteLetturaScheda, gruppoInterfaccia, perTipo, usoPercento, type ContatoriMikrotik,
 } from "@/lib/scheda/mikrotik";
 import type { RigaDnsMk, RigaUtenteMk } from "@/lib/devices/mikrotik-scheda";
 import type { TabId } from "@/lib/scheda/tipo-scheda";
@@ -20,7 +20,7 @@ import { Riquadro } from "../../../riquadro";
 import { RigaFonti, type Fonte } from "../../../riga-fonti";
 import { StrisciaNumeri } from "../../../striscia-numeri";
 import type { ContestoScheda } from "../../../contesto";
-import { rotteDi } from "../dati-router";
+import { rotteDi, useUsoPool } from "../dati-router";
 import { hardwareDi, risorseDi, useInterfacceMikrotik, useSchedaMikrotik, useUtentiMikrotik } from "./dati-mikrotik";
 
 const ora = (iso: string): string =>
@@ -148,7 +148,10 @@ export function PanoramicaMikrotik({ ctx }: { ctx: ContestoScheda }) {
   const ut = useUtentiMikrotik(device?.id, isAdmin);
   const utenti = ut?.fase === "ok" ? ut.dati.utenti : null;
 
+  // Pool DHCP: solo l'ultima lettura fatta aprendo la tab DHCP in questa sessione del browser, mai SSH dalla Panoramica.
+  const pool = useUsoPool(ctx, true, false).stato;
   const caselle = caselleMikrotik({
+    pool: pool.fase === "ok" && pool.dati.length > 0 ? pool.dati : null,
     risorse, hardware, scansione: di?.scanned_at ?? null, interfacce,
     vlan: foto && nVlanIfc != null ? { numero: nVlanIfc, bridge: foto.bridge.length } : null,
     vlanLette: scheda?.vlan ?? null,
@@ -164,9 +167,10 @@ export function PanoramicaMikrotik({ ctx }: { ctx: ContestoScheda }) {
   const mem = risorse ? usoPercento(risorse.memoria_totale_b, risorse.memoria_libera_b) : null;
   const disco = risorse ? usoPercento(risorse.disco_totale_b, risorse.disco_libero_b) : null;
   const processore = risorse?.cpu_core != null ? `${risorse.cpu_core} core${risorse.cpu_mhz != null ? ` · ${risorse.cpu_mhz} MHz` : ""}` : null;
+  const acceso = accesoDaMk(risorse, di?.scanned_at ?? null);
   const architettura = [risorse?.architettura, risorse?.cpu].filter(Boolean).join(" · ");
   const aggiornabile = hardware?.firmware_aggiornabile && hardware.firmware_aggiornabile !== hardware.firmware_corrente ? hardware.firmware_aggiornabile : null;
-  const haRisorse = cpu != null || mem != null || disco != null || processore != null || architettura !== "";
+  const haRisorse = acceso != null || cpu != null || mem != null || disco != null || processore != null || architettura !== "";
   const haHardware = !!hardware && !!(hardware.modello || hardware.seriale || hardware.firmware_corrente || hardware.firmware_factory);
 
   const fonti: Fonte[] = [];
@@ -200,6 +204,7 @@ export function PanoramicaMikrotik({ ctx }: { ctx: ContestoScheda }) {
             {cpu != null && <Riga etichetta="CPU"><BarraUso percento={cpu} etichetta={`${cpu}%`} /></Riga>}
             {mem != null && <Riga etichetta="Memoria"><BarraUso percento={mem} etichetta={`${mem}%`} /></Riga>}
             {disco != null && <Riga etichetta="Storage"><BarraUso percento={disco} etichetta={`${disco}%`} /></Riga>}
+            {acceso && <Riga etichetta="Acceso da">{acceso.valore}{acceso.sotto && <span className="text-muted-foreground"> · {acceso.sotto}</span>}</Riga>}
             {processore && <Riga etichetta="Processore">{processore}</Riga>}
             {architettura !== "" && <Riga etichetta="Architettura">{architettura}</Riga>}
           </div>

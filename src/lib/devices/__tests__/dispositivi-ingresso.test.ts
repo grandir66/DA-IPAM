@@ -12,7 +12,7 @@ import assert from "node:assert/strict";
 process.env.ENCRYPTION_KEY ||= "test-encryption-key-dispositivi-ingresso";
 
 import { withTenant, deleteTenantDatabase, createNetworkDevice, upsertDhcpLease } from "@/lib/db-tenant";
-import { ingressoDispositivi } from "@/lib/db-tenant";
+import { ingressoDispositivi, viciniConHost } from "@/lib/db-tenant";
 import { getDb } from "@/lib/db";
 import { unisciDispositivi } from "@/lib/scheda/dispositivi-router";
 
@@ -93,6 +93,43 @@ describe("ingressoDispositivi", () => {
       d.prepare("UPDATE dhcp_leases SET last_synced = datetime('now', '-3 days') WHERE source_device_id = ? AND ip_address = '10.73.1.1'").run(c.id);
       d.prepare("UPDATE dhcp_leases SET last_synced = datetime('now', '-2 hours') WHERE source_device_id = ? AND ip_address = '10.73.1.2'").run(c.id);
       assert.deepEqual(ingressoDispositivi(c.id).lease.map((l) => l.ip_address).sort(), ["10.73.1.2", "10.73.1.3"]);
+    });
+  });
+});
+
+// 22/10: i vicini «non in IPAM» usano la stessa restrizione della tab Dispositivi (reti servite, o chiave unica nel tenant),
+// per IP e per MAC.
+describe("viciniConHost", () => {
+  it("IP e MAC dei vicini → host; l'altra sede e le chiavi ambigue non si collegano", () => {
+    withTenant(T, () => {
+      const a = nuovo("rtr-vicini", "10.72.0.1");
+      const senzaReti = nuovo("rtr-vicini-senza-reti", "10.72.0.2");
+      const d = getDb();
+      d.prepare("INSERT INTO networks (cidr, name) VALUES ('10.72.1.0/24', 'sede-a2')").run();
+      d.prepare("INSERT INTO networks (cidr, name) VALUES ('10.72.0.0/16', 'sede-b2')").run();
+      const netA = (d.prepare("SELECT id FROM networks WHERE cidr='10.72.1.0/24'").get() as { id: number }).id;
+      const netB = (d.prepare("SELECT id FROM networks WHERE cidr='10.72.0.0/16'").get() as { id: number }).id;
+      d.prepare("INSERT INTO network_router (network_id, router_id) VALUES (?, ?)").run(netA, a.id);
+      const host = (net: number, ip: string, mac: string | null) =>
+        (d.prepare("INSERT INTO hosts (network_id, ip, mac, status) VALUES (?, ?, ?, 'online')").run(net, ip, mac).lastInsertRowid as number);
+      const hIp = host(netA, "10.72.1.10", null);
+      const hMac = host(netA, "10.72.1.11", "aa-bb-cc-00-00-02"); // MAC scritto con i trattini
+      host(netB, "10.72.1.12", null);                              // stesso IP solo nell'altra sede
+      for (const r of [a, senzaReti]) {
+        const n = d.prepare("INSERT INTO device_neighbors (device_id, local_port, remote_device_name, protocol, remote_ip, remote_mac, source) VALUES (?, ?, ?, 'lldp', ?, ?, 'device')");
+        n.run(r.id, "ether1", "con-ip", "10.72.1.10", null);
+        n.run(r.id, "ether2", "con-mac", null, "AA:BB:CC:00:00:02");
+        n.run(r.id, "ether3", "altra-sede", "10.72.1.12", null);
+        n.run(r.id, "ether4", "sconosciuto", "10.72.9.9", "AA:BB:CC:00:00:99");
+      }
+      const v = viciniConHost(a.id);
+      assert.deepEqual(v.ip, { "10.72.1.10": hIp });
+      assert.deepEqual(v.mac, { AABBCC000002: hMac });
+      // Senza reti servite vale una chiave unica nel tenant: qui l'IP .12 sta in un solo host, quindi si collega.
+      const s = viciniConHost(senzaReti.id);
+      assert.equal(s.ip["10.72.1.10"], hIp);
+      assert.ok(s.ip["10.72.1.12"] > 0);
+      assert.equal(s.ip["10.72.9.9"], undefined);
     });
   });
 });

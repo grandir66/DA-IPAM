@@ -5178,6 +5178,56 @@ export function getArpEntriesByDevice(deviceId: number): (ArpEntry & { host_ip?:
 }
 
 /**
+ * Reti servite dal router: quelle collegate in network_router e quelle dei suoi lease. Un host con lo stesso IP in
+ * un'altra sede non deve prestare nome né tenere in vita un'ARP «failed» (revisione finale, 22/10).
+ */
+function reteServiteDa(d: ReturnType<typeof db>, deviceId: number): Set<number> {
+  return new Set((d.prepare(
+    `SELECT network_id FROM network_router WHERE router_id = ?
+     UNION SELECT network_id FROM dhcp_leases WHERE source_device_id = ? AND network_id IS NOT NULL`,
+  ).all(deviceId, deviceId) as { network_id: number }[]).map((r) => r.network_id));
+}
+
+/**
+ * Quali host si possono collegare a ciò che vede un router: con reti servite note vale solo un host di quelle; senza,
+ * solo una chiave (IP o MAC) che nel tenant ha un host solo. In entrambi i casi una chiave rimasta con più host non
+ * si collega. Unica regola per «Dispositivi» e per i vicini «non in IPAM».
+ */
+function hostDelRouter<T extends { network_id: number | null }>(candidati: T[], servite: Set<number>, chiave: (h: T) => string): T[] {
+  const tenuti = servite.size > 0 ? candidati.filter((h) => h.network_id != null && servite.has(h.network_id)) : candidati;
+  const quanti = new Map<string, number>();
+  for (const h of tenuti) quanti.set(chiave(h), (quanti.get(chiave(h)) ?? 0) + 1);
+  return tenuti.filter((h) => quanti.get(chiave(h)) === 1);
+}
+
+/**
+ * Host di IPAM per i vicini LLDP/CDP/MNDP dell'ultimo giro di un apparato (stesse righe di `getNeighborsByDevice`):
+ * per IP e per MAC (12 cifre esadecimali maiuscole), con la stessa restrizione della tab «Dispositivi».
+ */
+export function viciniConHost(deviceId: number): { ip: Record<string, number>; mac: Record<string, number> } {
+  const d = db();
+  const righe = d.prepare(
+    `SELECT dn.remote_ip, dn.remote_mac FROM device_neighbors dn WHERE dn.device_id = ? AND ${NEIGHBORS_LATEST_ROUND_SQL}`,
+  ).all(deviceId) as { remote_ip: string | null; remote_mac: string | null }[];
+  const ips = [...new Set(righe.map((r) => (r.remote_ip ?? "").trim()).filter((x) => x !== ""))];
+  const macs = [...new Set(righe.map((r) => (r.remote_mac ?? "").replace(/[^0-9a-fA-F]/g, "").toUpperCase()).filter((x) => x.length === 12))];
+  const servite = reteServiteDa(d, deviceId);
+  type Cand = { id: number; chiave: string; network_id: number | null };
+  const perIp: Cand[] = [];
+  const perMac: Cand[] = [];
+  for (let k = 0; k < ips.length; k += 500) {
+    const pezzo = ips.slice(k, k + 500);
+    perIp.push(...(d.prepare(`SELECT id, ip AS chiave, network_id FROM hosts WHERE ip IN (${pezzo.map(() => "?").join(",")})`).all(...pezzo) as Cand[]));
+  }
+  for (let k = 0; k < macs.length; k += 500) {
+    const pezzo = macs.slice(k, k + 500);
+    perMac.push(...(d.prepare(`SELECT id, ${MAC_HEX("mac")} AS chiave, network_id FROM hosts WHERE ${MAC_HEX("mac")} IN (${pezzo.map(() => "?").join(",")})`).all(...pezzo) as Cand[]));
+  }
+  const mappa = (c: Cand[]): Record<string, number> => Object.fromEntries(hostDelRouter(c, servite, (h) => h.chiave).map((h) => [h.chiave, h.id]));
+  return { ip: mappa(perIp), mac: mappa(perMac) };
+}
+
+/**
  * Le quattro letture della tab «Dispositivi» di un router MikroTik (ARP, lease DHCP, vicini dell'ultimo giro, host IPAM
  * con quegli IP). Niente N+1: gli host si cercano in blocco per `ip IN (...)`. L'unione e le precedenze stanno in
  * `src/lib/scheda/dispositivi-router.ts` (puro).
@@ -5200,12 +5250,7 @@ export function ingressoDispositivi(deviceId: number): IngressoDispositivi {
      FROM device_neighbors dn WHERE dn.device_id = ? AND ${NEIGHBORS_LATEST_ROUND_SQL}`,
   ).all(deviceId) as IngressoDispositivi["vicini"];
   const ips = [...new Set([...arp.map((a) => a.ip), ...lease.map((l) => l.ip_address), ...vicini.map((v) => v.remote_ip)].filter((x): x is string => !!x))];
-  // Reti servite dal router: quelle collegate in network_router e quelle dei suoi lease. Un host con lo stesso IP in
-  // un'altra sede non deve prestare nome né tenere in vita un'ARP «failed» (revisione finale, 22/10).
-  const servite = new Set((d.prepare(
-    `SELECT network_id FROM network_router WHERE router_id = ?
-     UNION SELECT network_id FROM dhcp_leases WHERE source_device_id = ? AND network_id IS NOT NULL`,
-  ).all(deviceId, deviceId) as { network_id: number }[]).map((r) => r.network_id));
+  const servite = reteServiteDa(d, deviceId);
   const candidati: (IngressoDispositivi["host"][number] & { network_id: number | null })[] = [];
   // 500 per volta: sotto il limite delle variabili di SQLite anche con router da migliaia di righe.
   for (let k = 0; k < ips.length; k += 500) {
@@ -5214,13 +5259,7 @@ export function ingressoDispositivi(deviceId: number): IngressoDispositivi {
       `SELECT id, ip, COALESCE(custom_name, hostname, dns_reverse) AS nome_dns, status, network_id FROM hosts WHERE ip IN (${pezzo.map(() => "?").join(",")})`,
     ).all(...pezzo) as (IngressoDispositivi["host"][number] & { network_id: number | null })[]));
   }
-  // Con reti servite note vale solo un host di quelle; senza, solo un IP che nel tenant ha un host solo.
-  // In entrambi i casi un IP rimasto con più host non si collega.
-  const tenuti = servite.size > 0 ? candidati.filter((h) => h.network_id != null && servite.has(h.network_id)) : candidati;
-  const quanti = new Map<string, number>();
-  for (const h of tenuti) quanti.set(h.ip, (quanti.get(h.ip) ?? 0) + 1);
-  const host: IngressoDispositivi["host"] = tenuti
-    .filter((h) => quanti.get(h.ip) === 1)
+  const host: IngressoDispositivi["host"] = hostDelRouter(candidati, servite, (h) => h.ip)
     .map(({ id, ip, nome_dns, status }) => ({ id, ip, nome_dns, status }));
   return { arp, lease, vicini, host };
 }

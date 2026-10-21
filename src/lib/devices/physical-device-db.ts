@@ -18,31 +18,10 @@ import type {
   DeviceInterfaceAddress,
 } from "@/types";
 
-/** Pattern MAC virtuali noti: VRRP/HSRP (`00:00:5E:00:01:xx`), CARP, OLD-VRRP. */
-const VIRTUAL_MAC_PATTERNS = [
-  /^00:00:5e:00:01:/i, // VRRPv2/v3 IPv4
-  /^00:00:5e:00:02:/i, // VRRPv3 IPv6
-  /^00:05:73:a0:/i,    // HSRP IPv6
-  /^00:00:0c:07:ac:/i, // HSRP IPv4
-  /^00:00:0c:9f:f/i,   // HSRP v2
-];
+import { isVirtualMac, normalizeMac } from "@/lib/devices/mac-virtuali";
 
-/** Normalizza un MAC a `aa:bb:cc:dd:ee:ff` lowercase. Tollera trattini, punti Cisco (`aabb.ccdd.eeff`), uppercase. */
-export function normalizeMac(mac: string | null | undefined): string | null {
-  if (!mac) return null;
-  const cleaned = mac.replace(/[^0-9a-fA-F]/g, "").toLowerCase();
-  if (cleaned.length !== 12) return null;
-  return cleaned.match(/.{2}/g)!.join(":");
-}
-
-export function isVirtualMac(mac: string | null | undefined): boolean {
-  const n = normalizeMac(mac);
-  if (!n) return false;
-  if (VIRTUAL_MAC_PATTERNS.some((rx) => rx.test(n))) return true;
-  // Bit locally-administered (secondo byte: bit 1 == 1) → spesso randomized/VM.
-  // NB: non lo marchiamo "virtual" perché molte cloud usano LA per default su NIC reali.
-  return false;
-}
+/** Elenco unico dei MAC virtuali e normalizzazione in `mac-virtuali.ts` (S3, 21/10); qui restano per i chiamanti di sempre. */
+export { isVirtualMac, normalizeMac };
 
 // ──────────────────────────────────────────────────────────────────
 // physical_devices

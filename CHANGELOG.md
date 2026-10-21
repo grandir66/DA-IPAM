@@ -4,6 +4,16 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-22 · Topologia: il cavo a mano vince
+
+- **Il collegamento tracciato a mano vince sempre** (Riccardo, 22/10) su quelli solo letti o dedotti, dopo la ★: un
+  server o un hypervisor collegato a mano a uno switch sta sotto quello switch anche se un altro lo vede nella tabella
+  MAC. Prima la fiducia «a mano» era l'ultima della chiave del Prim e il cavo finiva fra le ridondanze.
+- **Una partenza che è un oggetto finale** (hypervisor, server, client) si appende al suo switch: trascinato in una
+  mappa «passo passo» prima di collegarlo diventava partenza, e il Prim partiva da lui senza poter crescere. Ora fa da
+  radice solo se nessuno lo raggiunge.
+- **La mappa occupa tutta l'altezza**: i 9rem tolti erano della barra in alto, rimossa il 20/10 (~80 px vuoti in fondo).
+
 ## [Non rilasciato] — 2026-10-22 · La scheda MikroTik copiata dal Manager (v0.9.832-842)
 
 - **Ritocchi alla scheda apparato** (22/10): numeri accanto al nome delle tab (porte, VLAN, vicini e MAC, rotte e ARP, bridge, VM, nodi, dischi, volumi…) solo dai dati già caricati; nei vicini LLDP/CDP/MNDP (MikroTik e switch) «· non in IPAM» o il link all'host (IP, poi MAC, stessa restrizione di «Dispositivi»); striscia MikroTik: il firmware compare solo se aggiornabile e il suo posto lo prende il pool DHCP più pieno (≥85%, solo dalla cache della tab DHCP), «Acceso da» passa nel riquadro Risorse.

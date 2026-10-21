@@ -16,9 +16,14 @@ Analisi del 20/10: canvas Cursor `progetti-fermi-DADude3-DA-MKNET-MKHA` (50 sche
 - [x] Scoperto: `DA-MKNET/backend/database.sqlite` è vuoto (0 byte): nei cloni non c'è storico da importare.
 - [x] Piano scritto: classificazione delle 50 schede, blocchi B1-B6, task con donatori e destinatari, prove, livelli di controllo, decisioni.
 - [x] Riccardo (21/10): niente in uso (DADude3, The Dude, QuTS hero, Docker, SCCM, DATIA: fuori); collaudi HP su una sede con Comware, ProCurve e ArubaOS, all'installazione di IPAM nei prossimi giorni. Piano aggiornato (§6).
-- [ ] Riccardo: approvare piano e livelli; rispondere a D1, D2, D4-D7, D9; dire se «ArubaOS» è ArubaOS-Switch o AOS-CX; dove collaudare MikroTik, QNAP, Hyper-V/Windows/Linux.
-- [ ] T1.1 (MAC virtuali) aspetta il commit della sessione delle tappe 3-5, che modifica `topology/identity.ts`.
-- [ ] Dopo l'ok: tavola grafica degli oggetti d'interfaccia (B2-B5) prima di scrivere schermate.
+- [x] Riccardo (21/10 sera): collector modulari come fonte nuova e principale, famiglie aggiunte nel tempo nello stesso JSON. Lette consegna, pacchetto (identico al codice nel `dev` locale), canvas del modello, ADR 0024-0026, manuale; 79 prove dei collector verdi (exit 0).
+- [x] Scoperto: i collector `hp-procurve`/`hp-comware` coprono già M1, M2, M3 ed E02; resta l'aggancio all'app (unico chiamante oggi: la CLI).
+- [x] Scoperto: `dev` locale (41 commit dei collector) e `origin/dev` (14 commit altrui) sono divergenti; la consegna vieta il push → niente push di `dev` da qui finché non si decide D1.
+- [x] Scoperto: tre meccanismi di acquisizione convivono (client storici, `devices/acquisition/registry.ts`, `src/lib/acquisition/`); elenco dei collector ripetuto in tre punti; versione unica `1.0.0`; niente SNMPv3 né WinRM nei trasporti dei collector.
+- [x] Piano riscritto in v2 attorno ai collector: blocchi S, C0-C6, decisioni D1-D9 più la domanda su ArubaOS.
+- [ ] Riccardo: approvare il piano v2 e rispondere alle decisioni del §7.
+- [ ] S3 (MAC virtuali) aspetta il commit della sessione delle tappe 3-5, che modifica `topology/identity.ts`.
+- [ ] Dopo l'ok: tavola grafica degli oggetti d'interfaccia prima di scrivere schermate.
 
 ## 2026-10-21 — cose aperte dopo la notte del 20→21/10
 

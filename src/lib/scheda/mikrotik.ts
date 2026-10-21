@@ -155,12 +155,12 @@ export function caselleMikrotik(i: {
   if (r && mem != null && r.memoria_totale_b != null && r.memoria_libera_b != null) {
     c.push({ etichetta: "Memoria usata", valore: `${mem}%`, sotto: `${quantitaBinaria(r.memoria_libera_b)} liberi su ${quantitaBinaria(r.memoria_totale_b)}`, ...(mem >= SOGLIA_CPU ? { attenzione: true } : {}) });
   }
-  // «Acceso da» cede il posto solo quando firmware aggiornabile e pool pieno si presentano insieme (sei caselle al massimo).
+  // «Acceso da» cede il posto al pool DHCP pieno (sei caselle al massimo); l'uptime resta nel riquadro Risorse.
   const h = i.hardware;
   const aggiornabile = !!h?.firmware_corrente && !!h.firmware_aggiornabile && h.firmware_aggiornabile !== h.firmware_corrente;
   const piena = i.pool?.filter((p) => p.percento >= SOGLIA_POOL).sort((a, b) => b.percento - a.percento)[0] ?? null;
   const acceso = accesoDaMk(r, i.scansione);
-  if (acceso && !(aggiornabile && piena)) c.push({ etichetta: "Acceso da", valore: acceso.valore, ...(acceso.sotto ? { sotto: acceso.sotto } : {}) });
+  if (acceso && !piena) c.push({ etichetta: "Acceso da", valore: acceso.valore, ...(acceso.sotto ? { sotto: acceso.sotto } : {}) });
   if (i.interfacce && i.interfacce.length > 0) {
     const su = i.interfacce.filter((x) => statoInterfaccia(x) === "attiva").length;
     const spente = i.interfacce.filter((x) => x.disabilitata === true).length;
@@ -171,9 +171,12 @@ export function caselleMikrotik(i: {
     // Con almeno un bridge c'è la tab VLAN (Task 9) e la casella apre quella; senza, le VLAN stanno nelle Interfacce.
     c.push({ etichetta: "VLAN", valore: String(nVlan), ...(i.vlan?.bridge != null ? { sotto: `su ${i.vlan.bridge} bridge` } : {}), tab: (i.vlan?.bridge ?? 0) > 0 ? "vlan" : "interfacce" });
   }
-  // Firmware: la casella c'è solo quando un aggiornamento esiste; la versione installata sta nel riquadro Hardware.
-  if (aggiornabile && h?.firmware_aggiornabile) {
-    c.push({ etichetta: "Firmware aggiornabile", valore: h.firmware_aggiornabile, sotto: `installato ${h.firmware_corrente}`, attenzione: true });
+  // Firmware: c'è sempre, col valore installato (Riccardo, 22/10: «il firmware installato è importante»);
+  // con un aggiornamento disponibile va in attenzione e lo dice sotto.
+  if (h?.firmware_corrente) {
+    c.push(aggiornabile && h.firmware_aggiornabile
+      ? { etichetta: "Firmware", valore: h.firmware_corrente, sotto: `▲ aggiornabile a ${h.firmware_aggiornabile}`, attenzione: true }
+      : { etichetta: "Firmware", valore: h.firmware_corrente, sotto: "nessun aggiornamento" });
   }
   if (piena) {
     c.push({ etichetta: "Pool DHCP più pieno", valore: `${piena.percento}%`, sotto: `${piena.usati} / ${piena.totale} · ${piena.server}`, attenzione: true, tab: "dhcp" });

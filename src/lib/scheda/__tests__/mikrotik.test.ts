@@ -100,43 +100,44 @@ describe("caselleMikrotik", () => {
   const scan = "2026-10-21 07:40:00";
   const tutto = { risorse: risorse(), hardware: hw("7.19.4", "7.19.4"), scansione: scan, interfacce: [ifc("e1", "ether"), ifc("e2", "ether", "down"), ifc("e3", "ether", "up", { disabilitata: true }), ifc("v", "vlan")], vlan: null };
 
-  it("firmware uguale: nessuna casella Firmware (la versione sta nel riquadro Hardware)", () => {
+  it("firmware uguale: la casella c'è col valore installato, senza attenzione", () => {
     const c = caselleMikrotik(tutto);
     assert.equal(c.some((x) => x.attenzione), false);
-    assert.equal(c.some((x) => x.etichetta.startsWith("Firmware")), false);
+    const f = c.find((x) => x.etichetta === "Firmware");
+    assert.deepEqual([f?.valore, f?.sotto], ["7.19.4", "nessun aggiornamento"]);
   });
-  it("firmware aggiornabile diverso: attenzione, valore della versione nuova, sotto «installato»", () => {
+  it("firmware aggiornabile diverso: valore installato, attenzione, sotto «▲ aggiornabile a»", () => {
     const c = caselleMikrotik({ ...tutto, hardware: hw("7.19.4", "7.24.4") });
-    const f = c.find((x) => x.etichetta === "Firmware aggiornabile");
-    assert.equal(f?.valore, "7.24.4");
-    assert.equal(f?.sotto, "installato 7.19.4");
+    const f = c.find((x) => x.etichetta === "Firmware");
+    assert.equal(f?.valore, "7.19.4");
+    assert.equal(f?.sotto, "▲ aggiornabile a 7.24.4");
     assert.equal(f?.attenzione, true);
   });
   it("sei caselle al massimo, nell'ordine della tavola", () => {
     const c = caselleMikrotik({ ...tutto, hardware: hw("7.19.4", "7.24.4"), vlan: { numero: 1, bridge: 1 } });
-    assert.deepEqual(c.map((x) => x.etichetta), ["CPU", "Memoria usata", "Acceso da", "Interfacce su", "VLAN", "Firmware aggiornabile"]);
+    assert.deepEqual(c.map((x) => x.etichetta), ["CPU", "Memoria usata", "Acceso da", "Interfacce su", "VLAN", "Firmware"]);
   });
-  describe("striscia: Firmware aggiornabile e Pool DHCP più pieno si dividono l'ultima casella", () => {
+  describe("striscia: il Firmware resta sempre, il Pool DHCP più pieno prende il posto di «Acceso da»", () => {
     const uso = (server: string, usati: number, totale: number): UsoPool => ({ server, interfaccia: "vlan10", usati, totale, percento: Math.round((usati / totale) * 100) });
     const etichette = (i: Parameters<typeof caselleMikrotik>[0]) => caselleMikrotik(i).map((x) => x.etichetta);
     const conVlan = { ...tutto, vlan: { numero: 1, bridge: 1 } };
-    it("solo aggiornamento (pool assente o sotto 85%): resta «Acceso da» e il pool non c'è", () => {
+    it("pool assente o sotto 85%: resta «Acceso da» e il pool non c'è", () => {
       const agg = { ...conVlan, hardware: hw("7.19.4", "7.24.4") };
-      assert.deepEqual(etichette(agg), ["CPU", "Memoria usata", "Acceso da", "Interfacce su", "VLAN", "Firmware aggiornabile"]);
+      assert.deepEqual(etichette(agg), ["CPU", "Memoria usata", "Acceso da", "Interfacce su", "VLAN", "Firmware"]);
       assert.deepEqual(etichette({ ...agg, pool: [uso("dhcp1", 84, 100)] }), etichette(agg), "84% non è attenzione");
     });
-    it("solo pool ≥85%: prende il posto del firmware, con percentuale, conteggio e server", () => {
+    it("pool ≥85%: «Acceso da» esce, il Firmware resta, il pool chiude con percentuale, conteggio e server", () => {
       const c = caselleMikrotik({ ...conVlan, pool: [uso("dhcp1", 92, 100), uso("dhcp2", 10, 100)] });
-      assert.deepEqual(c.map((x) => x.etichetta), ["CPU", "Memoria usata", "Acceso da", "Interfacce su", "VLAN", "Pool DHCP più pieno"]);
+      assert.deepEqual(c.map((x) => x.etichetta), ["CPU", "Memoria usata", "Interfacce su", "VLAN", "Firmware", "Pool DHCP più pieno"]);
       const p = c[c.length - 1];
       assert.deepEqual([p.valore, p.sotto, p.attenzione, p.tab], ["92%", "92 / 100 · dhcp1", true, "dhcp"]);
     });
     it("a 85% esatto è attenzione", () => {
       assert.equal(etichette({ ...conVlan, pool: [uso("d", 85, 100)] }).includes("Pool DHCP più pieno"), true);
     });
-    it("entrambi: «Acceso da» esce, restano sei caselle", () => {
+    it("aggiornamento e pool pieno insieme: sei caselle, Firmware in attenzione", () => {
       const c = etichette({ ...conVlan, hardware: hw("7.19.4", "7.24.4"), pool: [uso("dhcp1", 90, 100)] });
-      assert.deepEqual(c, ["CPU", "Memoria usata", "Interfacce su", "VLAN", "Firmware aggiornabile", "Pool DHCP più pieno"]);
+      assert.deepEqual(c, ["CPU", "Memoria usata", "Interfacce su", "VLAN", "Firmware", "Pool DHCP più pieno"]);
     });
     it("pool non letto (null): come se non ci fosse", () => {
       assert.equal(etichette({ ...conVlan, pool: null }).includes("Pool DHCP più pieno"), false);

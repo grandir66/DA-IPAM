@@ -102,6 +102,22 @@ test("toHubExport maps findings with DA-* nvt_oid and source_kind", () => {
   const ds = exp.findings.find((f) => f.nvt_oid === "DA-A-DomainScore")!;
   assert.equal(ds.source_kind, "risk_indicator");
   assert.equal(ds.cvss_score, 3.5); // global/10
+  // Gravità e CVSS dicono la stessa cosa (DA-Vul-can 21/10: usciva «Critical» con CVSS 3.5).
+  assert.equal(ds.severity, "Low");
+  assert.equal((JSON.parse(ds.raw_json) as Record<string, unknown>).diagnostic, undefined);
+});
+
+test("il punteggio di dominio prende la gravità dalle fasce CVSS", () => {
+  const conPunteggio = (global: number) =>
+    toHubExport({
+      domainFqdn: "contoso.local",
+      score: { ...SCORE, global },
+      findings: [{ ruleId: "DA-A-DomainScore", axis: "anomaly", points: global, severity: "Critical", title: "Domain score", description: "", objectCount: 0, sampleDns: [] }],
+    }).findings[0]!;
+  assert.equal(conPunteggio(95).severity, "Critical"); // 9.5
+  assert.equal(conPunteggio(70).severity, "High"); // 7.0
+  assert.equal(conPunteggio(40).severity, "Medium"); // 4.0
+  assert.equal(conPunteggio(30).severity, "Low"); // 3.0
 });
 
 test("diagnostic findings reach the hub as indicators, not vulnerabilities", () => {
@@ -126,4 +142,6 @@ test("diagnostic findings reach the hub as indicators, not vulnerabilities", () 
   const f = exp.findings[0]!;
   assert.equal(f.source_kind, "risk_indicator");
   assert.equal(f.cvss_score, 0);
+  // L'hub non deve più dedurlo da source_kind: lo dice il rilievo (DA-Vul-can 21/10).
+  assert.equal((JSON.parse(f.raw_json) as Record<string, unknown>).diagnostic, true);
 });

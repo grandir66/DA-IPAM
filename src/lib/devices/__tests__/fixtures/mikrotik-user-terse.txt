@@ -1,0 +1,4 @@
+0 comment=commento 01 name=utente01 group=full inactivity-timeout=10m inactivity-policy=none address= last-logged-in=2026-09-30 15:10:51
+1 name=utente02 group=full inactivity-timeout=10m inactivity-policy=none address= last-logged-in=2026-10-21 22:46:44
+2 comment=commento 02 name=utente03 group=gruppo01 inactivity-timeout=10m inactivity-policy=none address=10.20.10.254/32 last-logged-in=2026-10-21 19:06:44
+3 comment=commento 03 name=utente04 group=gruppo02 inactivity-timeout=10m inactivity-policy=none address=10.20.11.0/16,10.20.12.0/8,10.20.13.0/12,198.51.100.1/10 last-logged-in=2026-10-21 00:35:02

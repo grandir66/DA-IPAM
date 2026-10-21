@@ -1,0 +1,9 @@
+       routerboard: yes               
+             model: CCR2004-1G-12S+2XS
+     serial-number: A0A0A0A0A0A0
+     firmware-type: al64              
+  minimum-firmware: 6.47.4            
+  current-firmware: 7.10.2            
+  upgrade-firmware: 7.24.5            
+
+

@@ -5,12 +5,12 @@ import type { ClientChannel } from "ssh2";
 import { apriSessioneCommunity } from "../protocols/snmp-sessione";
 import { withSshClient } from "../devices/ssh-transport";
 import { cleanConsole } from "./parsers";
+import { QSS_COMMANDS, PROCURVE_COMMANDS, COMWARE_COMMANDS } from "./comandi";
+import { CATALOGO } from "./catalogo";
 import type { AcquisitionInput, AcquisitionTransports, ReadResult, SnmpRow } from "./schema";
-export const QSS_COMMANDS = ["show system-information", "show interfaces status", "show interfaces", "show vlan", "show lldp neighbors", "show spanning-tree ports-summary", "show etherchannel summary", "show system temperature", "show interfaces ddm", "show mac-address-table"] as const;
-export const PROCURVE_COMMANDS = ["show system", "show version", "show interfaces brief", "show vlans", "show vlans ports all detail", "show mac-address", "show trunks", "show lldp info remote-device detail", "show power-over-ethernet brief", "show spanning-tree", "show system fans", "show modules"] as const;
-export const COMWARE_COMMANDS = ["display version", "display interface brief", "display vlan all", "display lldp neighbor-information verbose", "display mac-address", "display link-aggregation verbose", "display stp brief", "display stp", "display cpu-usage", "display memory", "display environment", "display fan", "display power", "display device", "display poe interface"] as const;
+export { QSS_COMMANDS, PROCURVE_COMMANDS, COMWARE_COMMANDS } from "./comandi";
 type ConsoleProfile = AcquisitionInput['collector'];
-const commandSets = { "netapp-ontap":[] as readonly string[], "vmware-esxi": [] as readonly string[], "qnap-switch": QSS_COMMANDS, "hp-procurve": PROCURVE_COMMANDS, "hp-comware": COMWARE_COMMANDS };
+const commandSets: Record<ConsoleProfile, readonly string[]> = Object.fromEntries(CATALOGO.map(d => [d.id, d.comandi ?? []])) as unknown as Record<ConsoleProfile, readonly string[]>;
 const fail = <T>(data: T, code: string): ReadResult<T> => ({ status: "error", data, warnings: [code] });
 export function assertCommands(commands: readonly string[], profile: ConsoleProfile = 'qnap-switch'): void {
     const allowed: readonly string[] = commandSets[profile];

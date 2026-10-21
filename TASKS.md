@@ -104,6 +104,7 @@ Analisi del 20/10: canvas Cursor `progetti-fermi-DADude3-DA-MKNET-MKHA` (50 sche
 - [ ] S1, nota: per un non admin `action=all` esegue comunque `getConfig` (l'export viene letto sul router e scartato). Non cambiato: serve `systemInfo` alla scheda; da separare in C3 (`mikrotik-routeros`).
 - [x] S2: firmware QNAP nel percorso storico. Prova vista rossa (3 casi su codice di oggi: firmware = uname, SSH nullo che cancella l'SNMP), poi `devices/nas/qnap-versione.ts` (`getsysinfo firmver`, `/etc/version`, build), `identitaNasDaShell` ed `unisciInfoSsh` estratti puri. `kernel` resta in `nas_inventory.ssh.kernel`.
 - [ ] S2, in locale: su un QNAP QTS vero leggere `getsysinfo firmver`, `/etc/version` e la build, e confrontare col firmware mostrato (formato `X.Y.Z build AAAAMMGG` ipotizzato dal donatore `qnap.py:193`, non visto su apparato).
+- [x] C0.1-2: `acquisition/catalogo.ts` è l'elenco unico (id, versione, descrittore con credenziali, sezioni, allowlist, modelli collaudati); enum dell'input, enum dello snapshot, `COLLECTORS` e allowlist dei trasporti ne derivano; `collector_version` ora per collector (semver). `comandi.ts` foglia con le tre allowlist. 85 prove del modulo verdi (79 + 6 nuove, una vista rossa).
 - [ ] Dopo l'ok: tavola grafica degli oggetti d'interfaccia prima di scrivere schermate.
 
 ## 2026-10-21 — cose aperte dopo la notte del 20→21/10

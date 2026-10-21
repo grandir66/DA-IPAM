@@ -1,4 +1,5 @@
 import { redactSnapshot } from "./redact";
+import { versioneCollector } from './catalogo';
 import { acquisitionInputSchema, snapshotSchema } from "./schema";
 import type { AcquisitionRequest, AcquisitionSnapshot, AcquisitionTransports, ReadResult, SnmpRow, DeviceInterface } from "./schema";
 import { createTransports, QSS_COMMANDS } from "./transports";
@@ -46,7 +47,7 @@ export async function collectQnapSwitch(request: AcquisitionRequest, transports?
         const ticks = Number(value(SYSTEM[2]));
         identity.uptime_seconds = Number.isFinite(ticks) && ticks >= 0 ? ticks / 100 : null;
     }
-    const snapshot: AcquisitionSnapshot = { schema_version: '1.0', collector: 'qnap-switch', collector_version: '1.0.0', target: input.host, collected_at: new Date(start).toISOString(), duration_ms: 0, status: 'error', network: section({ ipv4_addresses: [], arp: [] }), identity: section(qnap ? identity : null, qnap ? (identity.model && identity.firmware ? 'ok' : 'partial') : 'error', [...(input.snmp ? ['snmp:system'] : []), ...(input.ssh ? ['ssh:show system-information'] : [])], qnap ? (identity.model ? [] : ['MODEL_NOT_AVAILABLE_VIA_SNMP']) : ['DEVICE_NOT_IDENTIFIED_AS_QNAP_SWITCH']), interfaces: section([]), vlans: section([]), forwarding: section([]), neighbors: section([]), spanning_tree: section({ enabled: null, protocol: null, ports: [] }), aggregation: section([]), poe: section([], 'skipped', [], ['POE_NOT_IMPLEMENTED_FOR_THIS_PROFILE']), sensors: section([]) };
+    const snapshot: AcquisitionSnapshot = { schema_version: '1.0', collector: 'qnap-switch', collector_version: versioneCollector('qnap-switch'), target: input.host, collected_at: new Date(start).toISOString(), duration_ms: 0, status: 'error', network: section({ ipv4_addresses: [], arp: [] }), identity: section(qnap ? identity : null, qnap ? (identity.model && identity.firmware ? 'ok' : 'partial') : 'error', [...(input.snmp ? ['snmp:system'] : []), ...(input.ssh ? ['ssh:show system-information'] : [])], qnap ? (identity.model ? [] : ['MODEL_NOT_AVAILABLE_VIA_SNMP']) : ['DEVICE_NOT_IDENTIFIED_AS_QNAP_SWITCH']), interfaces: section([]), vlans: section([]), forwarding: section([]), neighbors: section([]), spanning_tree: section({ enabled: null, protocol: null, ports: [] }), aggregation: section([]), poe: section([], 'skipped', [], ['POE_NOT_IMPLEMENTED_FOR_THIS_PROFILE']), sensors: section([]) };
     if (input.ssh && identRead.status !== 'ok') snapshot.identity.warnings.push(...identRead.warnings);
     if (input.snmp && sys.status !== 'ok') snapshot.identity.warnings.push(...sys.warnings);
     if (!qnap) {

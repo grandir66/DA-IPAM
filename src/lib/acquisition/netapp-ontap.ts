@@ -1,4 +1,5 @@
 import { acquisitionInputSchema, snapshotSchema } from './schema';
+import { versioneCollector } from './catalogo';
 import type { AcquisitionRequest, AcquisitionSnapshot, DeviceInterface } from './schema';
 import { acquireOntap } from './ontap-transport';
 import { parseOntapInventory } from './ontap-parsers';
@@ -10,7 +11,7 @@ export async function collectNetappOntap(request: AcquisitionRequest, acquire: t
     if (input.collector !== 'netapp-ontap')
         throw Error('COLLECTOR_MISMATCH');
     const start = Date.now();
-    const s: AcquisitionSnapshot = { schema_version: '1.0', collector: 'netapp-ontap', collector_version: '1.0.0', target: input.host, collected_at: new Date(start).toISOString(), duration_ms: 0, status: 'error', identity: section(null, 'error'), interfaces: section([]), vlans: section([]), forwarding: section([], 'skipped', [], ['NOT_COLLECTED_BY_STORAGE_API']), neighbors: section([], 'skipped', [], ['NOT_COLLECTED_BY_STORAGE_API']), spanning_tree: section({ enabled: null, protocol: null, ports: [] }, 'unsupported', [], ['NOT_APPLICABLE']), aggregation: section([], 'skipped', [], ['STORAGE_LAG_MEMBERSHIP_IN_STORAGE_SECTION']), poe: section([], 'unsupported', [], ['NOT_APPLICABLE']), sensors: section([], 'skipped', [], ['NUMERIC_SENSORS_NOT_COLLECTED']), network: section({ ipv4_addresses: [], arp: [] }) };
+    const s: AcquisitionSnapshot = { schema_version: '1.0', collector: 'netapp-ontap', collector_version: versioneCollector('netapp-ontap'), target: input.host, collected_at: new Date(start).toISOString(), duration_ms: 0, status: 'error', identity: section(null, 'error'), interfaces: section([]), vlans: section([]), forwarding: section([], 'skipped', [], ['NOT_COLLECTED_BY_STORAGE_API']), neighbors: section([], 'skipped', [], ['NOT_COLLECTED_BY_STORAGE_API']), spanning_tree: section({ enabled: null, protocol: null, ports: [] }, 'unsupported', [], ['NOT_APPLICABLE']), aggregation: section([], 'skipped', [], ['STORAGE_LAG_MEMBERSHIP_IN_STORAGE_SECTION']), poe: section([], 'unsupported', [], ['NOT_APPLICABLE']), sensors: section([], 'skipped', [], ['NUMERIC_SENSORS_NOT_COLLECTED']), network: section({ ipv4_addresses: [], arp: [] }) };
     const finish = () => { s.duration_ms = Date.now() - start; return snapshotSchema.parse(redactSnapshot(s, input)); };
     let raw;
     try {

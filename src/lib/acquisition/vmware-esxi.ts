@@ -1,4 +1,5 @@
 import { acquisitionInputSchema, snapshotSchema } from './schema';
+import { versioneCollector } from './catalogo';
 import type { AcquisitionRequest, AcquisitionSnapshot, DeviceInterface, Sensor } from './schema';
 import { acquireVsphere, object, array, text } from './vsphere-transport';
 import type { VsphereInventory } from './vsphere-transport';
@@ -18,7 +19,7 @@ export async function collectVmwareEsxi(request: AcquisitionRequest, acquire: ty
     if (input.collector !== 'vmware-esxi')
         throw Error('COLLECTOR_MISMATCH');
     const start = Date.now();
-    const snapshot: AcquisitionSnapshot = { schema_version: '1.0', collector: 'vmware-esxi', collector_version: '1.0.0', target: input.host, collected_at: new Date(start).toISOString(), duration_ms: 0, status: 'error', identity: part(null, 'error'), interfaces: part([]), vlans: part([]), forwarding: part([], 'skipped', [], ['NOT_COLLECTED_BY_HOST_API']), neighbors: part([], 'skipped', [], ['LLDP_CDP_NOT_COLLECTED']), spanning_tree: part({ enabled: null, protocol: null, ports: [] }, 'skipped', [], ['NOT_COLLECTED_BY_HOST_API']), aggregation: part([], 'skipped', [], ['TEAMING_IS_IN_VIRTUALIZATION_NOT_LACP_INVENTORY']), poe: part([], 'unsupported', [], ['NOT_APPLICABLE']), sensors: part([]), network: part({ ipv4_addresses: [], arp: [] }) };
+    const snapshot: AcquisitionSnapshot = { schema_version: '1.0', collector: 'vmware-esxi', collector_version: versioneCollector('vmware-esxi'), target: input.host, collected_at: new Date(start).toISOString(), duration_ms: 0, status: 'error', identity: part(null, 'error'), interfaces: part([]), vlans: part([]), forwarding: part([], 'skipped', [], ['NOT_COLLECTED_BY_HOST_API']), neighbors: part([], 'skipped', [], ['LLDP_CDP_NOT_COLLECTED']), spanning_tree: part({ enabled: null, protocol: null, ports: [] }, 'skipped', [], ['NOT_COLLECTED_BY_HOST_API']), aggregation: part([], 'skipped', [], ['TEAMING_IS_IN_VIRTUALIZATION_NOT_LACP_INVENTORY']), poe: part([], 'unsupported', [], ['NOT_APPLICABLE']), sensors: part([]), network: part({ ipv4_addresses: [], arp: [] }) };
     const finish = () => { snapshot.duration_ms = Date.now() - start; return snapshotSchema.parse(redactSnapshot(snapshot, input)); };
     let raw: VsphereInventory;
     try {

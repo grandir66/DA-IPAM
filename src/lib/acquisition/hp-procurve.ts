@@ -1,4 +1,5 @@
 import { acquisitionInputSchema, snapshotSchema } from './schema';
+import { versioneCollector } from './catalogo';
 import type { AcquisitionRequest, AcquisitionSnapshot, AcquisitionTransports, ReadResult, SnmpRow, DeviceInterface } from './schema';
 import { createTransports, PROCURVE_COMMANDS } from './transports';
 import { parseProcurveIdentity, parseProcurvePorts, parseProcurveVlans, parseProcurveLldp, parseProcurveTrunks, parseProcurvePoe, parseProcurveStp, parseProcurveFdb, parseProcurveResources, parseProcurveEnvironment, parseProcurveHardware, parseProcurveModules, cleanProcurveConsole } from './procurve-parsers';
@@ -52,7 +53,7 @@ export async function collectHpProcurve(request: AcquisitionRequest, transports?
         const ticks = Number(value(oids[2]));
         identity.uptime_seconds = value(oids[2]) !== null && Number.isFinite(ticks) && ticks >= 0 ? ticks / 100 : null;
     }
-    const snapshot: AcquisitionSnapshot = { schema_version: '1.0', collector: 'hp-procurve', collector_version: '1.0.0', target: input.host, collected_at: new Date(start).toISOString(), duration_ms: 0, status: 'error', identity: section(identity, identity ? (identity.model ? 'ok' : 'partial') : 'error', [...(input.snmp ? ['snmp:system'] : []), ...(input.ssh ? ['ssh:show system', 'ssh:show version'] : [])], [...(identity ? [] : ['DEVICE_NOT_IDENTIFIED_AS_PROCURVE']), ...(input.snmp ? sys.warnings : []), ...(input.ssh ? identityRead.warnings : [])]), interfaces: section([]), vlans: section([]), forwarding: section([]), neighbors: section([]), spanning_tree: section({ enabled: null, protocol: null, ports: [] }), aggregation: section([]), poe: section([]), sensors: section([], 'skipped', [], ['NUMERIC_SENSORS_NOT_IMPLEMENTED']), network: section({ ipv4_addresses: [], arp: [] }) };
+    const snapshot: AcquisitionSnapshot = { schema_version: '1.0', collector: 'hp-procurve', collector_version: versioneCollector('hp-procurve'), target: input.host, collected_at: new Date(start).toISOString(), duration_ms: 0, status: 'error', identity: section(identity, identity ? (identity.model ? 'ok' : 'partial') : 'error', [...(input.snmp ? ['snmp:system'] : []), ...(input.ssh ? ['ssh:show system', 'ssh:show version'] : [])], [...(identity ? [] : ['DEVICE_NOT_IDENTIFIED_AS_PROCURVE']), ...(input.snmp ? sys.warnings : []), ...(input.ssh ? identityRead.warnings : [])]), interfaces: section([]), vlans: section([]), forwarding: section([]), neighbors: section([]), spanning_tree: section({ enabled: null, protocol: null, ports: [] }), aggregation: section([]), poe: section([]), sensors: section([], 'skipped', [], ['NUMERIC_SENSORS_NOT_IMPLEMENTED']), network: section({ ipv4_addresses: [], arp: [] }) };
     const finish = () => { snapshot.duration_ms = Date.now() - start; return snapshotSchema.parse(redactSnapshot(snapshot, input)); };
     if (!identity)
         return finish();

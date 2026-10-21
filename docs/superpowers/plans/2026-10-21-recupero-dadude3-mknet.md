@@ -1,7 +1,7 @@
 # Collector modulari e recupero da DADude3 / DA-MKNET — piano
 
 **Versione 2, 21/10 sera** (la v1 del mattino è in git, `bcce0b69` + `65568a82`).
-**Stato:** proposta parcheggiata da Riccardo («per ora teniamo solo il piano»): niente codice prima dell'ok.
+**Stato:** approvato il 21/10 sera (decisioni in §7); si esegue nel cloud sul ramo `collector-modulari`.
 **Checklist:** `TASKS.md`, sezione «2026-10-21 — recupero da DADude3 e DA-MKNET». Bacheca:
 `lavori recupero-dadude3-mknet`.
 
@@ -38,7 +38,7 @@ anteprima dell'arricchimento, applicazione esplicita.
 - Nessuna scrittura sugli apparati, nessun lookup esterno con dati dei clienti, nessun automatismo acceso
   per impostazione predefinita, nessuna regola di dominio cambiata senza prova e decisione.
 - Il repo è pubblico: fixture solo anonimizzate. Schermate: tavola grafica prima di scriverle.
-- **Niente push di `dev` finché non si decide D1** (§7): vedi §2.1.
+- **Niente push dei collector su `dev`**: vivono sul ramo `collector-modulari` finché C0 non riallinea (§2.1, D1).
 
 ## 2. Stato verificato il 21/10
 
@@ -49,10 +49,11 @@ anteprima dell'arricchimento, applicazione esplicita.
   `vmware-esxi` (API diretta dell'host), `netapp-ontap` (REST GET). CLI `scripts/acquire-device.ts`.
 - **79 prove verdi oggi** (`node --import tsx --test src/lib/acquisition/__tests__/*.test.ts`, exit 0).
 - Nessun aggancio all'app: l'unico chiamante è la CLI. Niente route, tabelle, job o schermate.
-- **Git:** i commit dei collector stanno solo nel `dev` locale. Il `dev` locale ha 41 commit che
-  `origin/dev` non ha, e `origin/dev` ne ha 14 che il locale non ha (tra cui la «scheda MikroTik» della
-  sessione nel worktree `da-ipam-mk`). La consegna chiede di non pubblicare: un push su `dev` arriva
-  all'appliance del cliente A col timer. Il piano v1 è già su origin (commit del mattino).
+- **Git:** i commit dei collector stavano solo nel `dev` locale: 15 commit che `origin/dev` non ha
+  (collector e piano), mentre `origin/dev` ne ha 41 che il locale non ha (altre sessioni, tra cui la
+  «scheda MikroTik» del worktree `da-ipam-mk`). La consegna chiede di non pubblicare su `dev`: un push lì
+  arriva all'appliance del cliente A col timer. **D1 (21/10):** pubblicati sul ramo `collector-modulari`
+  (`6cca5a8a`), che il timer non segue; `origin/dev` non è stato toccato.
 
 ### 2.2 Oggi convivono tre meccanismi di acquisizione
 
@@ -312,21 +313,32 @@ tocca mai l'ultima valida, job spento. Richiede S1.
   con trattini e punti; versioni mai troncate, EdgeOS mai «UniFi OS»; colonne lette per nome, non per
   posizione; niente `Win32_Product`; nessun campo SFP senza lettura; nessun «inviato» senza ricevuta.
 
-## 7. Decisioni (una domanda sola)
+## 7. Decisioni
 
-1. **D1 Pubblicazione dei collector.** Il `dev` locale (collector, 41 commit) e `origin/dev` (14 commit
-   altrui) sono divergenti, e la consegna vieta il push. Proposta: pubblicarli su un **ramo a parte**
-   (`collector-modulari`), che il timer dell'appliance non segue; il riallineamento di `dev` col rebase
-   lo fa la sessione che apre C0, con l'albero libero dalle altre sessioni.
-2. **D2** Il piano v2 (S → C0 → C1 → C2, poi C3 a richiesta, C4-C6 dopo) e i livelli di controllo: ok?
-3. **D3** Export MikroTik solo admin subito (S1)?
-4. **D4** Destinazioni della tabella in §3: in particolare la fonte nuova `collector` per vicini e fatti T3,
-   e le VLAN tagged che restano nello snapshot finché una schermata non le usa.
-5. **D5** Archivio degli snapshot: nel DB del tenant come JSON compresso; retention proposta di 20 snapshot
-   per apparato più il primo e l'ultimo `ok`.
-6. **D6** Ordine dei collector nuovi in C3 e se `vmware-vcenter` sale prima degli altri.
-7. **D7** Storico configurazioni: retention (ultime 30 versioni diverse, l'ultima valida sempre), HP nella
-   prima tappa insieme al MikroTik, evento «configurazione cambiata» negli eventi esistenti.
-8. **D8** MAC virtuali unificati con GLBP, misurati prima (S3)?
-9. **D9** Esecuzione: sessione nuova col prompt pronto, con o senza subagent.
-10. Sulla sede nuova: «ArubaOS» è ArubaOS-Switch (basta `hp-procurve`) o AOS-CX (serve `aruba-cx`)?
+**Prese da Riccardo il 21/10 sera: «accetto le tue proposte».** Dove avevo dato una proposta vale quella;
+dove la domanda era aperta, sotto è scritto cosa si applica.
+
+1. **D1** Collector pubblicati sul ramo `collector-modulari` (fatto, `6cca5a8a`). Il riallineamento con
+   `origin/dev` (rebase dei 15 commit sui 41 nuovi) lo fa la sessione che apre C0, con l'albero libero; poi
+   il primo push su `dev` porta codice inerte (nessuna rotta, job o schermata accesa).
+2. **D2** Piano v2 approvato: S → C0 → C1 → C2, poi C3 a richiesta, C4-C6 dopo; livelli come in §5.
+3. **D3** Export MikroTik solo admin subito (S1).
+4. **D4** Destinazioni come nella tabella di §3: fonte nuova `collector` per vicini e fatti T3, letta solo dal
+   modello per cavo; VLAN tagged solo nello snapshot finché una schermata non le usa.
+5. **D5** Snapshot nel DB del tenant come JSON compresso; si tengono gli ultimi 20 per apparato più il primo e
+   l'ultimo `ok`.
+6. **D6** Collector nuovi nell'ordine di C3 (`aruba-cx` solo se serve, poi `qnap-nas`, `mikrotik-routeros`,
+   `windows`, `linux`, `synology-nas`, `vmware-vcenter`).
+7. **D7** Storico configurazioni: ultime 30 versioni diverse per apparato, l'ultima valida sempre; HP nella
+   prima tappa insieme al MikroTik; evento «configurazione cambiata» negli eventi esistenti
+   (`analytics/anomaly-db.ts`), **spento** come le altre notifiche nuove.
+8. **D8** MAC virtuali unificati con GLBP, misurati prima (S3).
+9. **D9** Esecuzione **nel cloud** (Riccardo, 21/10 sera: «sviluppo sul cloud finché non serve unirlo
+   localmente»), sessione Claude Code aperta sul ramo `collector-modulari` col prompt
+   `docs/handoff/2026-10-21-prompt-cloud-collector-modulari.md`. Si pubblica solo su quel ramo; l'unione in
+   `dev` la fa Riccardo in locale. Controlli ridotti: una revisione alla fine per i blocchi leggeri, una per
+   task nei blocchi completi (S1, S3, C1, C2, C4-C6). Restano locali le misure sul DB dell'hub, i collaudi
+   sugli apparati e la resa coi dati veri.
+
+**Ancora aperta:** nella sede nuova «ArubaOS» è ArubaOS-Switch (basta `hp-procurve`) o AOS-CX (serve
+`aruba-cx`)? Si vede al collaudo: il `sysDescr` lo dice.

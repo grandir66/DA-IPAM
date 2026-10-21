@@ -65,7 +65,7 @@ Ruoli (`RUOLI_SERVER`): `dns` «DNS», `dhcp` «DHCP», `mail` «Posta», `web` 
 
 ---
 
-## T1 — Catalogo canonico, ruoli dei server, migrazione
+## Task 1 — Catalogo canonico, ruoli dei server, migrazione
 
 - [ ] fatto
 
@@ -117,7 +117,7 @@ export function unisciRuoli(attuali: string | null, nuovo: RuoloServer | null): 
 `ont` → `server`+vendor windows, `server`+ruolo dns, `nas`+qnap, `modem`; seconda apertura non rifà nulla.
 **Commit** `feat(classificazione): catalogo canonico, ruoli dei server, conversione delle voci doppie`
 
-## T2 — Classificazione scritta in un punto, nei due versi (tappa 5)
+## Task 2 — Classificazione scritta in un punto, nei due versi (tappa 5)
 
 - [ ] fatto
 
@@ -146,7 +146,7 @@ Le scritture automatiche (scansioni, attribution) restano dove sono e rispettano
 automatica» azzera entrambi; ruoli scritti su entrambi. lint/tsc.
 **Commit** `feat(classificazione): un solo punto scrive su host e apparato, scelta a mano rispettata`
 
-## T3 — Prova e ricerca della credenziale (motore)
+## Task 3 — Prova e ricerca della credenziale (motore)
 
 - [ ] fatto
 
@@ -183,7 +183,7 @@ Rotta POST `/api/hosts/trova-credenziale` body `{ host_ids: number[] (1..50), pr
 candidati (3 rifiutate + 2 fermate); stop alla prima riuscita; fallimento registrato. lint/tsc.
 **Commit** `feat(credenziali): ricerca in sequenza con esclusione delle fallite e tetto di 3 su Windows`
 
-## T4 — Finestra «Rendi apparato» (un host e più host) — tappa 3
+## Task 4 — Finestra «Rendi apparato» (un host e più host) — tappa 3
 
 - [ ] fatto
 
@@ -222,7 +222,7 @@ dell'hub come da CONTEXT §6 «Interfaccia»): finestra su un host e su 5 host d
 scratchpad. Prova unitaria di `variantiPer` (MikroTik switch → nascosta; HPE switch → 3; Proxmox → 2).
 **Commit** `feat(apparati): finestra unica «Rendi apparato» con prova e ricerca della credenziale`; poi release + push (fine tappa 3).
 
-## T5 — Scheda apparato, liste e wizard
+## Task 5 — Scheda apparato, liste e wizard
 
 - [ ] fatto
 
@@ -241,7 +241,7 @@ liste Discovery e host della rete (colonna classificazione), `src/app/onboarding
 **Verifica** lint/tsc/build; una verifica resa a 1440 di scheda apparato e lista Discovery. **Commit**
 `feat(apparati): credenziali assegnate e scelta a mano visibili in scheda e liste`; release + push.
 
-## T6 — Chiusura
+## Task 6 — Chiusura
 
 - [ ] fatto
 

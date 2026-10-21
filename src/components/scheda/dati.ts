@@ -35,6 +35,8 @@ export interface DeviceExtras {
     remote_ip?: string | null;
     remote_mac?: string | null;
     remote_platform?: string | null;
+    /** Scheda MikroTik: `version=` annunciata dal vicino (MNDP). */
+    remote_version?: string | null;
   }>;
   routes?: Array<{
     id?: number;

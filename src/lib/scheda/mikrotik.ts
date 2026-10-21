@@ -25,6 +25,25 @@ export function gruppoInterfaccia(tipo: string | null): GruppoInterfaccia {
   return TUNNEL.has(t) ? "vpn_tunnel" : "altro";
 }
 
+const TITOLI_GRUPPO: { gruppo: GruppoInterfaccia; titolo: string }[] = [
+  { gruppo: "ethernet", titolo: "Ethernet" }, { gruppo: "vlan", titolo: "VLAN" }, { gruppo: "bond", titolo: "Bond" },
+  { gruppo: "bridge", titolo: "Bridge" }, { gruppo: "vpn_tunnel", titolo: "VPN e tunnel" }, { gruppo: "altro", titolo: "Altro" },
+];
+
+/**
+ * Interfacce della tab, un gruppo per tipo nell'ordine della tavola; i gruppi vuoti non ci sono. `tipi` = i tipi RouterOS
+ * presenti nel gruppo (minuscolo, in ordine alfabetico, per la testata); dentro il gruppo resta l'ordine di lettura.
+ */
+export function raggruppaInterfacce(l: InterfacciaScheda[]): { gruppo: GruppoInterfaccia; titolo: string; tipi: string; righe: InterfacciaScheda[] }[] {
+  return TITOLI_GRUPPO
+    .map(({ gruppo, titolo }) => {
+      const righe = l.filter((i) => gruppoInterfaccia(i.tipo) === gruppo);
+      const tipi = [...new Set(righe.map((i) => (i.tipo ?? "").trim().toLowerCase()).filter(Boolean))].sort().join(", ");
+      return { gruppo, titolo, tipi, righe };
+    })
+    .filter((g) => g.righe.length > 0);
+}
+
 /** `disabilitata` (segno X) vince su tutto: un'interfaccia spenta da configurazione non è «giù» per un guasto. */
 export function statoInterfaccia(i: { stato: "up" | "down" | "unknown"; disabilitata: boolean | null }): "attiva" | "inattiva" | "disabilitata" {
   if (i.disabilitata === true) return "disabilitata";

@@ -27,6 +27,7 @@ import { ViciniSwitch } from "./tipi/switch/vicini";
 import { PanoramicaRouter } from "./tipi/router/panoramica";
 import { PanoramicaMikrotik } from "./tipi/router/mikrotik/panoramica";
 import { eMikrotikSsh } from "./tipi/router/dati-router";
+import { InterfacceMikrotik } from "./tipi/router/mikrotik/interfacce";
 import { InterfacceRouter } from "./tipi/router/interfacce";
 import { RoutingRouter } from "./tipi/router/routing";
 import { DhcpRouter } from "./tipi/router/dhcp";
@@ -59,7 +60,7 @@ export interface VoceTab {
 /** Router e firewall hanno le stesse tab e gli stessi componenti. */
 const TAB_ROUTER: Partial<Record<TabId, VoceTab>> = {
   panoramica: { render: (c) => (eMikrotikSsh(c) ? <PanoramicaMikrotik ctx={c} /> : <PanoramicaRouter ctx={c} />) },
-  interfacce: { render: (c) => <InterfacceRouter ctx={c} /> },
+  interfacce: { render: (c) => (eMikrotikSsh(c) ? <InterfacceMikrotik ctx={c} /> : <InterfacceRouter ctx={c} />) },
   routing: { render: (c) => <RoutingRouter ctx={c} /> },
   dhcp: { render: (c) => <DhcpRouter ctx={c} /> },
   configurazione: { render: (c) => <ConfigurazioneRouter ctx={c} /> },

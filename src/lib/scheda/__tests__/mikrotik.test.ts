@@ -6,7 +6,7 @@
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { caselleMikrotik, contatoriMikrotik, gruppoInterfaccia, perTipo, statoInterfaccia, usoPercento } from "../mikrotik";
+import { caselleMikrotik, contatoriMikrotik, gruppoInterfaccia, perTipo, raggruppaInterfacce, statoInterfaccia, usoPercento } from "../mikrotik";
 import type { InterfacciaScheda } from "../router";
 import type { HardwareMikrotik, RisorseMikrotik } from "@/lib/devices/mikrotik-scheda";
 
@@ -129,5 +129,22 @@ describe("caselleMikrotik", () => {
   });
   it("senza dati: nessuna casella inventata", () => {
     assert.deepEqual(caselleMikrotik({ risorse: null, hardware: null, scansione: null, interfacce: null, vlan: null }), []);
+  });
+});
+
+describe("raggruppaInterfacce", () => {
+  it("ordine ethernet, vlan, bond, bridge, vpn_tunnel, altro; gruppi vuoti tolti; tipo mancante in Altro", () => {
+    const l = [ifc("lo", "loopback"), ifc("wg1", "wg"), ifc("br", "bridge"), ifc("v10", "vlan"), ifc("e1", "ether"), ifc("e2", "ethernet"), ifc("x", null), ifc("b1", "bond")];
+    const g = raggruppaInterfacce(l);
+    assert.deepEqual(g.map((x) => x.gruppo), ["ethernet", "vlan", "bond", "bridge", "vpn_tunnel", "altro"]);
+    assert.deepEqual(g.map((x) => x.titolo), ["Ethernet", "VLAN", "Bond", "Bridge", "VPN e tunnel", "Altro"]);
+    assert.deepEqual(g[0].righe.map((r) => r.ifname), ["e1", "e2"]);
+    assert.equal(g[0].tipi, "ether, ethernet");
+    assert.deepEqual(g[5].righe.map((r) => r.ifname), ["lo", "x"]);
+    assert.equal(g[5].tipi, "loopback");
+  });
+  it("senza interfacce di un gruppo, quel gruppo non c'è; lista vuota = nessun gruppo", () => {
+    assert.deepEqual(raggruppaInterfacce([ifc("e1", "ether")]).map((x) => x.gruppo), ["ethernet"]);
+    assert.deepEqual(raggruppaInterfacce([]), []);
   });
 });

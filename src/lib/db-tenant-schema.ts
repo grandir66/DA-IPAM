@@ -155,10 +155,42 @@ export const DDL_SCHEDA_MK_V2: ReadonlyArray<readonly [string, string]> = [
   PRIMARY KEY (device_id, name)
 )`],
 ];
+/**
+ * Livello 3 (Task 10, ADR 0027): VLAN dei bridge, interfacce VLAN, DNS e utenti di un MikroTik, dalla lettura
+ * `mikrotik_scheda` (spenta di default, quattro comandi in sola lettura). Una fotografia per apparato come il livello 2; liste
+ * (tagged, server DNS…) come testo con le virgole. `mikrotik_bridge_vlan` non ha un nome: `pos` = ordine di lettura.
+ * `mikrotik_user` la legge solo l'admin (GET /api/devices/[id]/mikrotik-utenti); nessuna password. Stesse regole del
+ * livello 2: solo nella migrazione, senza `IF NOT EXISTS`.
+ */
+export const DDL_SCHEDA_MK_V3: ReadonlyArray<readonly [string, string]> = [
+  ["mikrotik_bridge_vlan", `CREATE TABLE mikrotik_bridge_vlan (
+  device_id INTEGER NOT NULL REFERENCES network_devices(id) ON DELETE CASCADE,
+  pos INTEGER NOT NULL, bridge TEXT NOT NULL, vlan_ids TEXT NOT NULL, tagged TEXT, untagged TEXT, current_tagged TEXT,
+  current_untagged TEXT, dynamic INTEGER, disabled INTEGER, comment TEXT, seen_at TEXT NOT NULL,
+  PRIMARY KEY (device_id, pos)
+)`],
+  ["mikrotik_vlan", `CREATE TABLE mikrotik_vlan (
+  device_id INTEGER NOT NULL REFERENCES network_devices(id) ON DELETE CASCADE,
+  name TEXT NOT NULL, vlan_id INTEGER, interface TEXT, mtu INTEGER, mac_address TEXT, running INTEGER, disabled INTEGER,
+  comment TEXT, seen_at TEXT NOT NULL,
+  PRIMARY KEY (device_id, name)
+)`],
+  ["mikrotik_dns", `CREATE TABLE mikrotik_dns (
+  device_id INTEGER PRIMARY KEY REFERENCES network_devices(id) ON DELETE CASCADE,
+  servers TEXT, dynamic_servers TEXT, allow_remote_requests INTEGER, cache_size TEXT, cache_used TEXT,
+  max_concurrent_queries INTEGER, use_doh_server TEXT, seen_at TEXT NOT NULL
+)`],
+  ["mikrotik_user", `CREATE TABLE mikrotik_user (
+  device_id INTEGER NOT NULL REFERENCES network_devices(id) ON DELETE CASCADE,
+  name TEXT NOT NULL, grp TEXT, address TEXT, last_logged_in TEXT, disabled INTEGER, comment TEXT,
+  seen_at TEXT NOT NULL,
+  PRIMARY KEY (device_id, name)
+)`],
+];
 /** Segno in `tenant_settings`: dice fin dove è arrivato lo schema (`done:<data>:v<versione>`); la migrazione non lo consulta. */
 export const SEGNO_SCHEDA_MK = "scheda_mikrotik_v21";
-/** Versione dello schema della scheda: 1 = COLONNE_SCHEDA_MK_V1, 2 = DDL_SCHEDA_MK_V2 (3 nel Task 10). */
-export const VERSIONE_SCHEDA_MK = 2;
+/** Versione dello schema della scheda: 1 = COLONNE_SCHEDA_MK_V1, 2 = DDL_SCHEDA_MK_V2, 3 = DDL_SCHEDA_MK_V3. */
+export const VERSIONE_SCHEDA_MK = 3;
 
 /** Unioni e separazioni a mano (ADR 0021): le scrivono solo le rotte /api/topology/unioni; mai cancellate (tolto_*: la storia).
  *  Membri come id della mappa, senza chiavi esterne né CHECK. Indici solo nella migrazione. */

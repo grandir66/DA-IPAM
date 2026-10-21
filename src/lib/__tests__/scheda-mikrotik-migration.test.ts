@@ -6,7 +6,7 @@ import { test, after, mock } from "node:test";
 import assert from "node:assert/strict";
 import Database from "better-sqlite3";
 import { closeHubDb } from "@/lib/db-hub";
-import { contaBridgeMikrotik, deleteTenantDatabase, getTenantDb, leggiSchedaMikrotik, livelloSchemaSchedaMk, migrateSchedaMikrotik, chiudiMigrazioneSchedaMkFallita, rileggiSchemaSchedaMk, scriviSchedaMikrotikTopologia, upsertArpEntries as upsertArpTenant, upsertNeighbors, withTenant } from "@/lib/db-tenant";
+import { contaBridgeMikrotik, deleteTenantDatabase, getTenantDb, leggiSchedaMikrotik, leggiUtentiMikrotik, scriviSchedaMikrotikLettura, livelloSchemaSchedaMk, migrateSchedaMikrotik, chiudiMigrazioneSchedaMkFallita, rileggiSchemaSchedaMk, scriviSchedaMikrotikTopologia, upsertArpEntries as upsertArpTenant, upsertNeighbors, withTenant } from "@/lib/db-tenant";
 import { upsertArpEntries as upsertArpFacciata } from "@/lib/db";
 import { aggiornaInterfacceRouterOs, createPhysicalDevice, upsertDeviceInterface } from "@/lib/devices/physical-device-db";
 import { parseInterfacce } from "@/lib/devices/mikrotik-stp";
@@ -14,8 +14,8 @@ import { parseMikrotikNeighbors } from "@/lib/devices/mikrotik-vicini";
 import { parseMikrotikArp } from "@/lib/devices/router-client";
 import fs from "node:fs";
 import path from "node:path";
-import { COLONNE_SCHEDA_MK_V1, DDL_SCHEDA_MK_V2, SEGNO_SCHEDA_MK, TENANT_SCHEMA_SQL, VERSIONE_SCHEDA_MK } from "@/lib/db-tenant-schema";
-import { parseBondScheda, parseBridgeScheda, parsePorteBridgeScheda } from "@/lib/devices/mikrotik-scheda";
+import { COLONNE_SCHEDA_MK_V1, DDL_SCHEDA_MK_V2, DDL_SCHEDA_MK_V3, SEGNO_SCHEDA_MK, TENANT_SCHEMA_SQL, VERSIONE_SCHEDA_MK } from "@/lib/db-tenant-schema";
+import { parseBondScheda, parseBridgeScheda, parseDns, parsePorteBridgeScheda, parseUtenti, parseVlanBridge, parseVlanInterfacce } from "@/lib/devices/mikrotik-scheda";
 import { leggiSegno } from "@/lib/credentials/segni-t2";
 
 const T = "TESTSCHEDAMKMIG";
@@ -46,13 +46,13 @@ test("aggiunge le cinque colonne e le tre tabelle; la seconda volta niente; le r
   const prima = db.prepare(sel).all();
   assert.deepEqual([...migrateSchedaMikrotik(db)].sort(), [
     "arp_entries.dynamic", "arp_entries.status", "device_interfaces.disabled", "device_interfaces.mtu", "device_neighbors.remote_version",
-    "mikrotik_bond", "mikrotik_bridge", "mikrotik_bridge_port",
+    "mikrotik_bond", "mikrotik_bridge", "mikrotik_bridge_port", "mikrotik_bridge_vlan", "mikrotik_dns", "mikrotik_user", "mikrotik_vlan",
   ]);
   assert.deepEqual(migrateSchedaMikrotik(db), [], "seconda chiamata: niente");
   assert.equal(livelloSchemaSchedaMk(db), VERSIONE_SCHEDA_MK);
   assert.deepEqual(db.prepare(sel).all(), prima);
   const segno = db.prepare("SELECT value, updated_at FROM tenant_settings WHERE key = ?").get(SEGNO_SCHEDA_MK);
-  assert.match((segno as { value: string }).value, /^done:\d{4}-\d{2}-\d{2}:v2$/);
+  assert.match((segno as { value: string }).value, /^done:\d{4}-\d{2}-\d{2}:v3$/);
   migrateSchedaMikrotik(db);
   assert.deepEqual(db.prepare("SELECT value, updated_at FROM tenant_settings WHERE key = ?").get(SEGNO_SCHEDA_MK), segno, "il segno non si riscrive");
   assert.deepEqual(db.pragma("integrity_check"), [{ integrity_check: "ok" }]);
@@ -76,12 +76,12 @@ test("in transazione: se un passo fallisce non resta niente a metà", () => {
   assert.equal(livelloSchemaSchedaMk(db), 0);
 });
 
-test("all'apertura del tenant: colonne e tabelle presenti, segno done:…:v2, riaprendo niente cambia", () => {
+test("all'apertura del tenant: colonne e tabelle presenti, segno done:…:v3, riaprendo niente cambia", () => {
   const d = getTenantDb(T);
   for (const [t, c] of COLONNE_SCHEDA_MK_V1) assert.ok(colonne(d, t).includes(c), `${t}.${c}`);
-  for (const [n] of DDL_SCHEDA_MK_V2) assert.ok(tabella(d, n), n);
-  assert.match(String(leggiSegno(d, SEGNO_SCHEDA_MK)), /^done:\d{4}-\d{2}-\d{2}:v2$/);
-  assert.equal(livelloSchemaSchedaMk(d), 2);
+  for (const [n] of [...DDL_SCHEDA_MK_V2, ...DDL_SCHEDA_MK_V3]) assert.ok(tabella(d, n), n);
+  assert.match(String(leggiSegno(d, SEGNO_SCHEDA_MK)), /^done:\d{4}-\d{2}-\d{2}:v3$/);
+  assert.equal(livelloSchemaSchedaMk(d), 3);
   assert.deepEqual(migrateSchedaMikrotik(d), []);
 });
 
@@ -170,7 +170,7 @@ test("migrazione fallita ma schema completo (un altro processo ha vinto la corsa
   migrateSchedaMikrotik(completo);
   completo.prepare("DELETE FROM tenant_settings WHERE key = ?").run(SEGNO_SCHEDA_MK);
   chiudiMigrazioneSchedaMkFallita(completo, "X", new Error("duplicate column name: mtu"));
-  assert.match(String(leggiSegno(completo, SEGNO_SCHEDA_MK)), /^done:.*:v2$/);
+  assert.match(String(leggiSegno(completo, SEGNO_SCHEDA_MK)), /^done:.*:v3$/);
   const incompleto = vecchio();
   chiudiMigrazioneSchedaMkFallita(incompleto, "X", new Error("disco pieno"));
   assert.match(String(leggiSegno(incompleto, SEGNO_SCHEDA_MK)), /^errore:disco pieno/);
@@ -187,12 +187,12 @@ function livello1(): Database.Database {
   return db;
 }
 
-test("v2 su un DB al livello 1: tre tabelle, segno v2, seconda volta niente, integrità ok", () => {
+test("v2 su un DB al livello 1: tre tabelle (e le quattro del livello 3), segno v3, seconda volta niente, integrità ok", () => {
   const db = livello1();
   assert.equal(livelloSchemaSchedaMk(db), 1);
-  assert.deepEqual([...migrateSchedaMikrotik(db)].sort(), ["mikrotik_bond", "mikrotik_bridge", "mikrotik_bridge_port"]);
-  assert.equal(livelloSchemaSchedaMk(db), 2);
-  assert.match(String(leggiSegno(db, SEGNO_SCHEDA_MK)), /^done:\d{4}-\d{2}-\d{2}:v2$/);
+  assert.deepEqual([...migrateSchedaMikrotik(db)].sort(), ["mikrotik_bond", "mikrotik_bridge", "mikrotik_bridge_port", "mikrotik_bridge_vlan", "mikrotik_dns", "mikrotik_user", "mikrotik_vlan"]);
+  assert.equal(livelloSchemaSchedaMk(db), 3);
+  assert.match(String(leggiSegno(db, SEGNO_SCHEDA_MK)), /^done:\d{4}-\d{2}-\d{2}:v3$/);
   assert.deepEqual(migrateSchedaMikrotik(db), []);
   assert.deepEqual(colonne(db, "mikrotik_bridge_port").slice(0, 3), ["device_id", "interface", "bridge"]);
   assert.deepEqual(db.pragma("integrity_check"), [{ integrity_check: "ok" }]);
@@ -261,7 +261,7 @@ test("scriviSchedaMikrotikTopologia: schema sotto il livello 2 → null, niente 
   } finally {
     avvisi.mock.restore();
     d.exec("ALTER TABLE mikrotik_bond_via RENAME TO mikrotik_bond");
-    assert.equal(withTenant(T, () => rileggiSchemaSchedaMk()), 2);
+    assert.equal(withTenant(T, () => rileggiSchemaSchedaMk()), VERSIONE_SCHEDA_MK);
   }
 });
 
@@ -316,7 +316,7 @@ test("leggiSchedaMikrotik: fotografia con ruolo STP dall'ultima lettura della to
   const b1 = s.bond.find((b) => b.name === "bond1");
   assert.deepEqual([b1?.slaves, b1?.running, b1?.mlag_id], [["sfp28-2", "sfp28-1"], true, null], "liste e boolean riletti");
   assert.deepEqual(s.bridge.map((b) => [b.vlan_filtering, b.disabled]).sort(), [[false, false], [true, false]]);
-  assert.deepEqual([s.vlanBridge, s.vlan, s.dns], [null, null, null], "fino al Task 10");
+  assert.deepEqual([s.vlanBridge, s.vlan, s.dns], [null, null, null], "VLAN e DNS mai letti: null, non vuoti");
 
   assert.deepEqual(withTenant(T, () => leggiSchedaMikrotik(98)), { bridge: [], porte: [], bond: [], letto_il: null, vlanBridge: null, vlan: null, dns: null });
 });
@@ -332,6 +332,96 @@ test("contaBridgeMikrotik: una COUNT dell'ultima fotografia; zero bridge → 0; 
     assert.deepEqual(withTenant(T, () => leggiSchedaMikrotik(97)), { bridge: [], porte: [], bond: [], letto_il: null, vlanBridge: null, vlan: null, dns: null });
   } finally {
     d.exec("ALTER TABLE mikrotik_bond_via RENAME TO mikrotik_bond");
-    assert.equal(withTenant(T, () => rileggiSchemaSchedaMk()), 2);
+    assert.equal(withTenant(T, () => rileggiSchemaSchedaMk()), VERSIONE_SCHEDA_MK);
   }
+});
+
+// ── Task 10: livello 3, VLAN dei bridge, interfacce VLAN, DNS, utenti ──────────────
+
+/** Un tenant al livello 2 (dopo il rilascio del Task 8): tabelle di bridge, porte e bond, segno v2, niente del livello 3. */
+function livello2(): Database.Database {
+  const db = livello1();
+  for (const [, ddl] of DDL_SCHEDA_MK_V2) db.exec(ddl);
+  db.prepare("UPDATE tenant_settings SET value = 'done:2026-10-21:v2' WHERE key = ?").run(SEGNO_SCHEDA_MK);
+  for (const [n] of DDL_SCHEDA_MK_V3) assert.equal(tabella(db, n), false, `${n} non deve esserci prima`);
+  return db;
+}
+
+test("v3 su un DB al livello 2: quattro tabelle, segno v3, seconda volta niente, integrità ok", () => {
+  const db = livello2();
+  assert.equal(livelloSchemaSchedaMk(db), 2);
+  assert.deepEqual([...migrateSchedaMikrotik(db)].sort(), ["mikrotik_bridge_vlan", "mikrotik_dns", "mikrotik_user", "mikrotik_vlan"]);
+  assert.equal(livelloSchemaSchedaMk(db), 3);
+  assert.match(String(leggiSegno(db, SEGNO_SCHEDA_MK)), /^done:\d{4}-\d{2}-\d{2}:v3$/);
+  assert.deepEqual(migrateSchedaMikrotik(db), []);
+  assert.deepEqual(colonne(db, "mikrotik_user"), ["device_id", "name", "grp", "address", "last_logged_in", "disabled", "comment", "seen_at"]);
+  assert.deepEqual(db.pragma("integrity_check"), [{ integrity_check: "ok" }]);
+  assert.deepEqual(db.pragma("foreign_key_check"), []);
+});
+
+test("v3 in transazione: una tabella che non si crea → niente a metà, livello 2 e segno v2", () => {
+  const db = livello2();
+  db.exec("CREATE VIEW mikrotik_user AS SELECT 1 AS x");
+  assert.throws(() => migrateSchedaMikrotik(db));
+  for (const n of ["mikrotik_bridge_vlan", "mikrotik_vlan", "mikrotik_dns"]) assert.equal(tabella(db, n), false, n);
+  assert.equal(String(leggiSegno(db, SEGNO_SCHEDA_MK)), "done:2026-10-21:v2");
+  assert.equal(livelloSchemaSchedaMk(db), 2, "bridge, porte e bond restano scrivibili");
+});
+
+const LETTURA_INTERA = () => ({
+  vlanBridge: parseVlanBridge(F("mikrotik-bridge-vlan-terse.txt")), vlan: parseVlanInterfacce(F("mikrotik-vlan-terse.txt")),
+  dns: parseDns(F("mikrotik-dns.txt")), utenti: parseUtenti(F("mikrotik-user-terse.txt")), comandi: 4, riusciti: 4, codice: null,
+});
+
+test("scriviSchedaMikrotikLettura: fotografia per tabella; null non tocca; liste rilette; utenti solo da leggiUtentiMikrotik", () => {
+  const d = getTenantDb(T);
+  d.exec("INSERT OR IGNORE INTO network_devices (id, name, host, device_type, vendor, protocol, enabled) VALUES (101, 'RTR-101', '192.0.2.101', 'router', 'mikrotik', 'ssh', 1), (102, 'RTR-102', '192.0.2.102', 'router', 'mikrotik', 'ssh', 1)");
+  const t1 = new Date(Date.UTC(2026, 9, 22, 8, 0));
+  const t2 = new Date(Date.UTC(2026, 9, 22, 9, 0));
+  assert.equal(withTenant(T, () => scriviSchedaMikrotikLettura(101, LETTURA_INTERA(), t1)), true);
+  withTenant(T, () => scriviSchedaMikrotikLettura(102, LETTURA_INTERA(), t1));
+  assert.deepEqual([nDi(d, "mikrotik_bridge_vlan", 101), nDi(d, "mikrotik_vlan", 101), nDi(d, "mikrotik_dns", 101), nDi(d, "mikrotik_user", 101)], [12, 11, 1, 4]);
+  // pos = ordine di lettura (le righe di bridge vlan non hanno un nome)
+  assert.deepEqual(d.prepare("SELECT pos, vlan_ids FROM mikrotik_bridge_vlan WHERE device_id = 101 AND pos IN (0, 11) ORDER BY pos").all(), [{ pos: 0, vlan_ids: "2" }, { pos: 11, vlan_ids: "1" }]);
+  assert.equal((d.prepare("SELECT servers FROM mikrotik_dns WHERE device_id = 101").get() as { servers: string }).servers, "10.20.1.1,10.20.1.2");
+
+  const s = withTenant(T, () => leggiSchedaMikrotik(101));
+  assert.deepEqual(s.vlanBridge, LETTURA_INTERA().vlanBridge, "liste e boolean riletti come li dà il lettore");
+  assert.deepEqual(s.vlan, LETTURA_INTERA().vlan);
+  assert.deepEqual(s.dns, LETTURA_INTERA().dns);
+  assert.equal(JSON.stringify(s).includes("utente0"), false, "la scheda per tutti non porta gli utenti");
+  assert.deepEqual(withTenant(T, () => leggiUtentiMikrotik(101)), { utenti: LETTURA_INTERA().utenti, letto_il: "2026-10-22 08:00:00" });
+
+  // Seconda lettura: VLAN in errore (null), utenti letti e vuoti, DNS non capito (null), bridge vlan una riga.
+  const r2 = { ...LETTURA_INTERA(), vlanBridge: parseVlanBridge(" 0 bridge=BR_LAN vlan-ids=9 tagged=ether1"), vlan: null, dns: null, utenti: [] };
+  withTenant(T, () => scriviSchedaMikrotikLettura(101, r2, t2));
+  assert.deepEqual([nDi(d, "mikrotik_bridge_vlan", 101), nDi(d, "mikrotik_vlan", 101), nDi(d, "mikrotik_dns", 101), nDi(d, "mikrotik_user", 101)], [1, 11, 1, 0]);
+  assert.equal((d.prepare("SELECT DISTINCT seen_at AS s FROM mikrotik_vlan WHERE device_id = 101").get() as { s: string }).s, "2026-10-22 08:00:00", "non letta: l'età di prima");
+  assert.deepEqual(withTenant(T, () => leggiUtentiMikrotik(101)), { utenti: [], letto_il: null });
+  assert.deepEqual([nDi(d, "mikrotik_bridge_vlan", 102), nDi(d, "mikrotik_user", 102)], [12, 4], "l'altro apparato non si tocca");
+});
+
+test("scriviSchedaMikrotikLettura: schema sotto il livello 3 → false, niente scritto; leggiUtentiMikrotik → null", () => {
+  const d = getTenantDb(T);
+  d.exec("ALTER TABLE mikrotik_user RENAME TO mikrotik_user_via");
+  const avvisi = mock.method(console, "warn", () => {});
+  try {
+    assert.equal(withTenant(T, () => rileggiSchemaSchedaMk()), 2);
+    assert.equal(withTenant(T, () => scriviSchedaMikrotikLettura(102, { ...LETTURA_INTERA(), utenti: null }, new Date())), false);
+    assert.equal(withTenant(T, () => leggiUtentiMikrotik(102)), null);
+    assert.equal(withTenant(T, () => leggiSchedaMikrotik(102)).vlanBridge, null, "sotto il 3 la scheda non legge le tabelle nuove");
+    assert.equal(nDi(d, "mikrotik_bridge_vlan", 102), 12);
+  } finally {
+    avvisi.mock.restore();
+    d.exec("ALTER TABLE mikrotik_user_via RENAME TO mikrotik_user");
+    assert.equal(withTenant(T, () => rileggiSchemaSchedaMk()), 3);
+  }
+});
+
+test("scriviSchedaMikrotikLettura: una riga storta → ROLLBACK di tutte e quattro le tabelle", () => {
+  const d = getTenantDb(T);
+  const storti = parseUtenti(F("mikrotik-user-terse.txt"));
+  storti[1] = { ...storti[1], name: null as unknown as string };
+  assert.throws(() => withTenant(T, () => scriviSchedaMikrotikLettura(102, { ...LETTURA_INTERA(), vlanBridge: [], utenti: storti })));
+  assert.deepEqual([nDi(d, "mikrotik_bridge_vlan", 102), nDi(d, "mikrotik_user", 102)], [12, 4]);
 });

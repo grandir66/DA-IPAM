@@ -34,6 +34,12 @@ export const DESCRIZIONE_LETTURE: Readonly<Record<Lettura, { titolo: string; leg
     apparati: "i nodi hypervisor letti dalla lettura notturna",
     comandi: "command -v lldpcli · lldpcli -f json0 show neighbors details · ip -d -j link show (sola lettura, nella lettura notturna degli hypervisor)",
   },
+  mikrotik_scheda: {
+    titolo: "VLAN, DNS e utenti dei MikroTik",
+    legge: "Le VLAN dei bridge (tagged e untagged per porta), le interfacce VLAN col loro id e la loro interfaccia madre, la configurazione DNS, gli utenti del router (nome, gruppo, ultimo accesso; nessuna password).",
+    apparati: "router MikroTik letti via SSH",
+    comandi: "/interface bridge vlan print · /interface vlan print · /ip dns print · /user print (sola lettura, una connessione per apparato, al più una volta l'ora)",
+  },
 };
 
 export function quandoItaliano(utc: string | null): string {
@@ -82,5 +88,8 @@ export function testoDialogo(l: Lettura, accendi: boolean, c: { router: { minuti
       return `Accendere le letture SNMP per la mappa sugli switch che non sono del controller? Il giro degli switch parte ${frequenza(c.switch, false)}: le letture in più partono al più una volta l'ora per switch, 16 letture in sola lettura. ${CHIUSA}`;
     case "host":
       return `Accendere la lettura LLDP degli hypervisor? Si legge con la lettura notturna degli hypervisor, tre comandi in sola lettura per nodo. ${CHIUSA}`;
+    case "mikrotik_scheda":
+      // Non serve alla mappa (riempie la scheda del router): niente frase sulla mappa nuova.
+      return `Accendere la lettura di VLAN, DNS e utenti sui MikroTik di questo cliente? Il router si legge ${frequenza(c.router.minuti, c.router.daScansioni)}: questa lettura parte al più una volta l'ora, 4 comandi in sola lettura sul router, su una connessione sua. Riempie la matrice VLAN e il DNS della scheda del router; gli utenti del router (nessuna password) li vede solo un amministratore. Si spegne da qui.`;
   }
 }

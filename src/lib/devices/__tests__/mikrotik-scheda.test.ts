@@ -9,7 +9,12 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { byteRouterOs, parseBondScheda, parseBridgeScheda, parsePorteBridgeScheda, parseRisorse, parseRouterboard } from "../mikrotik-scheda";
+import {
+  byteRouterOs, parseBondScheda, parseBridgeScheda, parseDns, parsePorteBridgeScheda, parseRisorse, parseRouterboard, parseUtenti, parseVlanBridge,
+  parseVlanInterfacce,
+} from "../mikrotik-scheda";
+import { COMANDI_MK_SCHEDA, TEMPO_COMANDO_MS, leggiMikrotikScheda } from "../mikrotik-letture";
+import { ComandoScaduto } from "../ssh-transport";
 import { parseMikrotikArp } from "../router-client";
 
 const fx = (n: string) => readFileSync(join(__dirname, "fixtures", n), "utf8");
@@ -152,5 +157,116 @@ describe("parseBondScheda", () => {
   it("frontiera: senza R il fascio non è attivo", () => {
     const [b] = parseBondScheda(fx("mikrotik-mk8a-frontiera.txt"));
     assert.deepEqual([b.name, b.running, b.disabled, b.slaves], ["bonding1", false, false, ["sfp28-1", "sfp28-2"]]);
+  });
+});
+
+// ── Task 10: VLAN dei bridge, interfacce VLAN, DNS, utenti (lettura «mikrotik_scheda», spenta di default) ─────────────
+
+describe("parseVlanBridge", () => {
+  it("fixture vera: 12 righe, liste tagged/untagged, commento intero con lo spazio, riga senza commento", () => {
+    const r = parseVlanBridge(fx("mikrotik-bridge-vlan-terse.txt"));
+    assert.equal(r.length, 12);
+    assert.deepEqual(r[0], {
+      bridge: "BR_LAN", vlan_ids: "2",
+      tagged: ["BR_LAN", "sfp-sfpplus1", "sfp-sfpplus2", "sfp-sfpplus3", "sfp-sfpplus4", "sfp-sfpplus5", "sfp-sfpplus6", "bond1", "bond2"],
+      untagged: [], current_tagged: ["BR_LAN", "sfp-sfpplus1", "sfp-sfpplus2", "sfp-sfpplus3", "sfp-sfpplus4", "bond2", "bond1", "sfp-sfpplus6"],
+      current_untagged: [], dynamic: false, disabled: false, comment: "VLAN ZONA01",
+    });
+    const ultima = r[11];
+    assert.deepEqual([ultima.vlan_ids, ultima.comment, ultima.tagged, ultima.untagged], ["1", null, ["bond2"], ["BR_LAN", "sfp-sfpplus6", "bond1", "bond3"]]);
+    assert.deepEqual(r.map((x) => x.vlan_ids), ["2", "4", "5", "6", "7", "15", "16", "20", "40", "133", "666", "1"]);
+  });
+  it("segni D e X; vlan-ids con elenco e intervallo restano com'è scritto (riga costruita: la fixture vera non ne ha)", () => {
+    const r = parseVlanBridge(" 0 D bridge=br1 vlan-ids=100-110,200 tagged=ether1 untagged= current-tagged=ether1 current-untagged=\n 1 X bridge=br1 vlan-ids=7 tagged= untagged=ether2");
+    assert.deepEqual(r.map((x) => [x.vlan_ids, x.dynamic, x.disabled, x.untagged]), [["100-110,200", true, false, []], ["7", false, true, ["ether2"]]]);
+  });
+  it("una riga senza bridge o senza vlan-ids non si legge", () => {
+    assert.deepEqual(parseVlanBridge(" 0 bridge=br1 tagged=ether1\n 1 vlan-ids=3"), []);
+  });
+});
+
+describe("parseVlanInterfacce", () => {
+  it("fixture vera: 11 VLAN sul bridge, id, MTU, MAC, attive", () => {
+    const r = parseVlanInterfacce(fx("mikrotik-vlan-terse.txt"));
+    assert.equal(r.length, 11);
+    assert.deepEqual(r[0], { name: "VL_2_ZONA07", vlan_id: 2, interface: "BR_LAN", mtu: 1500, mac_address: "02:00:A0:10:00:11", running: true, disabled: false, comment: null });
+    assert.ok(r.every((v) => v.interface === "BR_LAN" && v.running));
+    assert.equal(r[10].vlan_id, 666);
+  });
+  it("segno X e commento", () => {
+    const [v] = parseVlanInterfacce(" 0 X name=vl9 mtu=1500 vlan-id=9 interface=ether1 comment=ufficio due");
+    assert.deepEqual([v.name, v.disabled, v.running, v.comment], ["vl9", true, false, "ufficio due"]);
+  });
+});
+
+describe("parseDns", () => {
+  it("fixture vera: due server su due righe, nessun server dinamico, cache e richieste remote", () => {
+    assert.deepEqual(parseDns(fx("mikrotik-dns.txt")), {
+      servers: ["10.20.1.1", "10.20.1.2"], dynamic_servers: [], allow_remote_requests: true, cache_size: "2048KiB",
+      cache_used: "48KiB", max_concurrent_queries: 100, use_doh_server: null,
+    });
+  });
+  it("server separati da virgola e IPv6 sulla riga dopo (non sono chiavi)", () => {
+    const d = parseDns("  servers: 1.1.1.1,8.8.8.8\n           2001:db8::53\n  dynamic-servers: 192.0.2.1\n  allow-remote-requests: no\n");
+    assert.deepEqual([d?.servers, d?.dynamic_servers, d?.allow_remote_requests], [["1.1.1.1", "8.8.8.8", "2001:db8::53"], ["192.0.2.1"], false]);
+  });
+  it("nessuna chiave nota → null (non «DNS vuoto»)", () => {
+    assert.equal(parseDns("qualcosa di inatteso"), null);
+    assert.equal(parseDns(""), null);
+  });
+});
+
+describe("parseUtenti", () => {
+  it("fixture vera: quattro utenti, gruppo, indirizzi, ultimo accesso con l'ora, commento", () => {
+    const r = parseUtenti(fx("mikrotik-user-terse.txt"));
+    assert.equal(r.length, 4);
+    assert.deepEqual(r[0], { name: "utente01", group: "full", address: null, last_logged_in: "2026-09-30 15:10:51", disabled: false, comment: "commento 01" });
+    assert.equal(r[1].comment, null);
+    assert.equal(r[3].address, "10.20.11.0/16,10.20.12.0/8,10.20.13.0/12,198.51.100.1/10");
+    assert.deepEqual(r.map((u) => u.group), ["full", "full", "gruppo01", "gruppo02"]);
+  });
+  it("nessuna password, anche se l'uscita avesse un campo così; segno X", () => {
+    const [u] = parseUtenti("0 X name=u1 group=read password=segreto last-logged-in=");
+    assert.deepEqual(Object.keys(u).sort(), ["address", "comment", "disabled", "group", "last_logged_in", "name"]);
+    assert.equal(JSON.stringify(u).includes("segreto"), false);
+    assert.deepEqual([u.disabled, u.last_logged_in], [true, null]);
+  });
+});
+
+describe("leggiMikrotikScheda", () => {
+  const USCITE: Record<string, string> = {
+    [COMANDI_MK_SCHEDA.vlanBridge]: fx("mikrotik-bridge-vlan-terse.txt"), [COMANDI_MK_SCHEDA.vlan]: fx("mikrotik-vlan-terse.txt"),
+    [COMANDI_MK_SCHEDA.dns]: fx("mikrotik-dns.txt"), [COMANDI_MK_SCHEDA.utenti]: fx("mikrotik-user-terse.txt"),
+  };
+  const finto = (diverse: Record<string, () => Promise<string>> = {}) => {
+    const mandati: Array<[string, number]> = [];
+    return {
+      mandati,
+      esegui: async (cmd: string, tempo: number) => {
+        mandati.push([cmd, tempo]);
+        return diverse[cmd] ? diverse[cmd]() : USCITE[cmd];
+      },
+    };
+  };
+  it("i quattro comandi, in sola lettura, ognuno col suo tempo; tutto letto", async () => {
+    const f = finto();
+    const r = await leggiMikrotikScheda(f.esegui);
+    assert.deepEqual(f.mandati, Object.values(COMANDI_MK_SCHEDA).map((c) => [c, TEMPO_COMANDO_MS]));
+    assert.ok(f.mandati.every(([c]) => / print( |$)/.test(c)), "solo print");
+    assert.deepEqual([r.vlanBridge?.length, r.vlan?.length, r.dns?.servers.length, r.utenti?.length, r.comandi, r.riusciti, r.codice], [12, 11, 2, 4, 4, 4, null]);
+  });
+  it("un comando in errore RouterOS → quella parte null e il codice; le altre lette", async () => {
+    const r = await leggiMikrotikScheda(finto({ [COMANDI_MK_SCHEDA.vlan]: async () => "bad command name vlan (line 1 column 12)" }).esegui);
+    assert.deepEqual([r.vlan, r.vlanBridge?.length, r.dns === null, r.utenti?.length, r.comandi, r.riusciti, r.codice], [null, 12, false, 4, 4, 3, "BAD_COMMAND"]);
+  });
+  it("uscita non capita → null, mai []; tempo scaduto → null; letto e vuoto → []", async () => {
+    const r = await leggiMikrotikScheda(finto({
+      [COMANDI_MK_SCHEDA.vlanBridge]: async () => "Flags: qualcosa che non si legge",
+      [COMANDI_MK_SCHEDA.dns]: async () => "uscita senza chiavi",
+      [COMANDI_MK_SCHEDA.utenti]: async () => { throw new ComandoScaduto(20_000); },
+      [COMANDI_MK_SCHEDA.vlan]: async () => "",
+    }).esegui);
+    assert.deepEqual([r.vlanBridge, r.dns, r.utenti, r.vlan], [null, null, null, []]);
+    assert.deepEqual([r.comandi, r.riusciti, r.codice], [4, 1, "USCITA_NON_CAPITA"]);
   });
 });

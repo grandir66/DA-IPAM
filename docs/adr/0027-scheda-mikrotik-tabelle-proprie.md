@@ -42,3 +42,27 @@ valori com'è scritti da RouterOS, e ogni colonna nuova lì peserebbe sulle lett
   bridge (e le tab VLAN e Bridge non compaiono).
 - Un campo nuovo di RouterOS che la scheda vuole mostrare chiede una colonna nuova (un livello nuovo della migrazione),
   non solo un lettore.
+
+## Aggiunta del 2026-10-22: lettura «VLAN, DNS e utenti dei MikroTik» (Task 10, P4)
+
+La matrice VLAN completa, le VLAN con la loro interfaccia madre, il DNS e gli utenti del router chiedono **comandi nuovi**
+(zona rossa: sui router dei clienti), che la lettura della topologia non manda.
+
+1. **Una lettura in più propria**, `mikrotik_scheda` (interruttore `topologia.lettura.mikrotik_scheda`, schema di ADR 0018):
+   **nasce spenta** su ogni cliente, si accende dalla card «Letture in più» di «Dati della mappa» (solo admin), al più una
+   volta l'ora per apparato (`conCadenza`), esito per apparato con numeri e codici. Spenta, il giro manda esattamente i
+   comandi di prima (prova con la spia sull'esecutore).
+2. **Quattro comandi in sola lettura** su una connessione sua (`COMANDI_MK_SCHEDA`): `/interface bridge vlan print terse`,
+   `/interface vlan print terse`, `/ip dns print`, `/user print terse` (la forma `terse` al posto della tabella: commenti e
+   ore con lo spazio rompono le colonne). Solo nel ramo dei router. Tre esiti per comando come la topologia: un'uscita non
+   capita o un tempo scaduto danno null, mai una lista vuota.
+3. **Livello 3 dello schema** (`done:<data>:v3`): `mikrotik_bridge_vlan` (chiave `(device_id, pos)`, `pos` = ordine di
+   lettura: le righe non hanno un nome), `mikrotik_vlan`, `mikrotik_dns` (una riga per apparato), `mikrotik_user`; stessa
+   fotografia per tabella del punto 2. Schema sotto il 3 → la lettura dà errore `SCHEMA_SCHEDA` senza aprire la connessione.
+4. **Gli utenti del router sono un dato riservato**: nessuna password (RouterOS non la mostra e il lettore legge solo nome,
+   gruppo, indirizzi, ultimo accesso, commento); la scheda per tutti (`GET …/mikrotik-scheda`) non li porta, li dà solo
+   `GET /api/devices/[id]/mikrotik-utenti` con `requireAdmin()`; nei log e nei resoconti solo numeri e codici.
+
+Cosa diventa difficile: una seconda connessione SSH per router quando topologia e scheda sono accese insieme (6 + 4
+comandi, due esiti separati); una tabella senza righe non distingue «mai letta» da «letta e vuota»: la rotta lo decide
+dall'esito dell'ultima lettura (completa → vuoto vero).

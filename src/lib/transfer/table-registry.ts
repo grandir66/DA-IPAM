@@ -76,6 +76,11 @@ export const TENANT_TABLES: TableSpec[] = [
   { table: "mikrotik_bridge", scope: "tenant", tier: "history" },
   { table: "mikrotik_bridge_port", scope: "tenant", tier: "history" },
   { table: "mikrotik_bond", scope: "tenant", tier: "history" },
+  // Livello 3 (Task 10): VLAN dei bridge, interfacce VLAN, DNS e utenti del router (questi solo admin, come l'esportazione).
+  { table: "mikrotik_bridge_vlan", scope: "tenant", tier: "history" },
+  { table: "mikrotik_vlan", scope: "tenant", tier: "history" },
+  { table: "mikrotik_dns", scope: "tenant", tier: "history" },
+  { table: "mikrotik_user", scope: "tenant", tier: "history" },
   { table: "mobile_inventory_history", scope: "tenant", tier: "history" },
   { table: "mc_remote_session", scope: "tenant", tier: "history" }, // sessioni remote effimere
   { table: "mc_command_log", scope: "tenant", tier: "history" },    // audit comandi RMM

@@ -9,6 +9,7 @@ import {
   LETTURE, LETTURE_DISPONIBILI, chiaveEsito, chiaveLettura, leggiEsiti, leggiInterruttore, letturaAccesa, scriviEsito, scriviInterruttore, senzaCampiCavi,
 } from "@/lib/topology/letture/interruttori";
 import { COMANDI_HOST } from "@/lib/proxmox/lldp-host";
+import { COMANDI_MK_SCHEDA } from "@/lib/devices/mikrotik-letture";
 import { DESCRIZIONE_LETTURE } from "@/lib/topology/letture/testi";
 
 const T = "TESTLETTUREINT";
@@ -54,9 +55,16 @@ test("senzaCampiCavi toglie solo le colonne nuove dei vicini", () => {
   assert.deepEqual(senzaCampiCavi(n), { localPort: "ether2", remoteDevice: "SW", remotePort: "Port 3", protocol: "lldp" });
 });
 
-test("tutte e quattro le letture sono disponibili (`host` col Task 7 di T2): la pagina non dice più «non disponibile» e la PUT le accetta; spente finché un admin non le accende", () => {
+// Cinque dal Task 10 della scheda MikroTik: `mikrotik_scheda` (VLAN, DNS e utenti) è una lettura in più come le altre, con il
+// suo interruttore nella card «Letture in più» e la sua cadenza; nasce spenta come tutte.
+test("tutte e cinque le letture sono disponibili (`host` col Task 7 di T2, `mikrotik_scheda` col Task 10 della scheda): la PUT le accetta; spente finché un admin non le accende", () => {
+  assert.deepEqual([...LETTURE], ["mikrotik", "controller", "snmp", "host", "mikrotik_scheda"]);
   assert.deepEqual([...LETTURE].filter((l) => !LETTURE_DISPONIBILI.has(l)), []);
   withTenant(T, () => assert.equal(letturaAccesa("host"), false));
+  withTenant(T, () => assert.equal(letturaAccesa("mikrotik_scheda"), false));
+  assert.equal(chiaveLettura("mikrotik_scheda"), "topologia.lettura.mikrotik_scheda");
+  // I comandi che la riga della pagina elenca sono quelli che la lettura manda (senza le opzioni di stampa).
+  for (const c of Object.values(COMANDI_MK_SCHEDA)) assert.ok(DESCRIZIONE_LETTURE.mikrotik_scheda.comandi.includes(c.replace(/ terse| without-paging/g, "")), c);
   // La riga della pagina elenca i comandi che la lettura manda davvero, uno per uno.
   assert.equal(DESCRIZIONE_LETTURE.host.comandi.startsWith(Object.values(COMANDI_HOST).join(" · ")), true);
 });

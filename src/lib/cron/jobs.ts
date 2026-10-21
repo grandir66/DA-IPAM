@@ -69,12 +69,14 @@ import {
   listHypervisorScanDevices,
   scriviFattiTopologia,
   scriviSchedaMikrotikTopologia,
+  scriviSchedaMikrotikLettura,
+  livelloSchedaMkCorrente,
 } from "@/lib/db-tenant";
 import { HYPERVISOR_SYNC_MINUTES, unifiJobKind } from "@/lib/scheduled-job-types";
 // Statico: run-proxmox-device-scan importa il facade db, che risolve db-tenant (ADR 0002).
 import { runProxmoxDeviceScan } from "@/lib/proxmox/run-proxmox-device-scan";
 import { codiceErrore, leggiMacPorteRouter } from "@/lib/devices/mikrotik-porte";
-import { apriEsecutoreSsh, codiceTrasporto, interpretaUscita, leggiMikrotikTopologia, type ApriEsecutore, type RisultatoMk } from "@/lib/devices/mikrotik-letture";
+import { apriEsecutoreSsh, codiceTrasporto, interpretaUscita, leggiMikrotikScheda, leggiMikrotikTopologia, type ApriEsecutore, type RisultatoMk } from "@/lib/devices/mikrotik-letture";
 import { parseBondScheda, parseBridgeScheda, parsePorteBridgeScheda } from "@/lib/devices/mikrotik-scheda";
 import { parseInterfacce } from "@/lib/devices/mikrotik-stp";
 import { aggiornaInterfacceRouterOs } from "@/lib/devices/physical-device-db";
@@ -745,6 +747,24 @@ async function letturaMikrotik(device: NetworkDevice, uscitaInterfacce: string |
 }
 
 /**
+ * VLAN dei bridge, interfacce VLAN, DNS e utenti di un router MikroTik (scheda MikroTik, Task 10, ADR 0027), dietro
+ * `topologia.lettura.mikrotik_scheda` (spenta di default), al più una volta l'ora per apparato: quattro comandi in sola
+ * lettura su una connessione sua. Schema della scheda sotto il livello 3 → errore `SCHEMA_SCHEDA` prima di aprire la
+ * connessione (nessun comando). Una parte non letta (null) non tocca la sua tabella. Esito e resoconto: numeri e codici, mai
+ * nomi (gli utenti del router sono dati riservati).
+ */
+async function letturaSchedaMikrotik(device: NetworkDevice, options?: RunArpPollOptions): Promise<EsitoGiro<unknown>> {
+  return conCadenza("mikrotik_scheda", device.id, async () => {
+    if (livelloSchedaMkCorrente() < 3) {
+      throw Object.assign(new Error("Schema della scheda MikroTik sotto il livello 3"), { code: "SCHEMA_SCHEDA" });
+    }
+    const r = await (options?.apriEsecutore ?? apriEsecutoreSsh)(device, (esegui) => leggiMikrotikScheda(esegui));
+    const scritto = scriviSchedaMikrotikLettura(device.id, r, options?.adesso?.() ?? new Date());
+    return { valore: scritto, conteggio: { comandi: r.comandi, riusciti: r.riusciti, codice: r.codice } };
+  }, options?.adesso);
+}
+
+/**
  * Le letture SNMP in più (spec topologia §13.5.4, SN2-SN9) di uno switch che non è del controller e non è un MikroTik letto
  * via SSH, dietro `topologia.lettura.snmp`, al più una volta l'ora. Chi legge «della marca che consuma il CDP»: il
  * fornitore dell'apparato o la sua descrizione SNMP (SN9). Sedici letture, ognuna con la sua sessione e TEMPO_WALK_MS.
@@ -1044,6 +1064,8 @@ export async function runArpPoll(
         if (device.vendor === "mikrotik" && device.protocol === "ssh") {
           mkProvata = true;
           esitiLetture.push(await letturaMikrotik(device, client.ultimaUscitaInterfacce?.() ?? null, false, options));
+          // Scheda MikroTik (Task 10): VLAN, DNS e utenti, spenta di default; solo i router.
+          esitiLetture.push(await letturaSchedaMikrotik(device, options));
         }
       } else {
         // Letture in più (T2, spenta di default) per prime: una tabella MAC che fallisce non deve toglierle.

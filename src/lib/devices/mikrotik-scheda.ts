@@ -131,8 +131,8 @@ export type RigaBondMk = {
 /** Una porta di bridge con il ruolo e lo stato STP dell'ultima lettura della topologia (`topology_port_facts`, fonte device). */
 export type RigaPortaSchedaMk = RigaPortaBridgeMk & { stp_ruolo: string | null; stp_stato: string | null };
 
-// Le righe delle letture di VLAN dei bridge, interfacce VLAN e DNS (Task 10): la forma è dichiarata qui dal Task 9 perché la
-// scheda la usa già (matrice, nomi delle colonne); finché il Task 10 non le legge la rotta le dà null.
+// Le righe della lettura «VLAN, DNS e utenti dei MikroTik» (Task 10, spenta di default): la forma l'ha dichiarata il Task 9
+// perché la scheda la usa già (matrice, nomi delle colonne); i lettori sono in fondo al file.
 export type RigaVlanBridgeMk = {
   bridge: string; vlan_ids: string; tagged: string[]; untagged: string[]; current_tagged: string[]; current_untagged: string[];
   dynamic: boolean; disabled: boolean; comment: string | null;
@@ -144,6 +144,10 @@ export type RigaVlanMk = {
 export type RigaDnsMk = {
   servers: string[]; dynamic_servers: string[]; allow_remote_requests: boolean | null; cache_size: string | null;
   cache_used: string | null; max_concurrent_queries: number | null; use_doh_server: string | null;
+};
+/** Un utente del router: nessuna password (`/user print` non la mostra, e il lettore non ha il campo). Dato solo per l'admin. */
+export type RigaUtenteMk = {
+  name: string; group: string | null; address: string | null; last_logged_in: string | null; disabled: boolean; comment: string | null;
 };
 
 const testo = (c: Map<string, string>, k: string): string | null => {
@@ -212,6 +216,101 @@ export function parseBondScheda(out: string): RigaBondMk[] {
       transmit_hash_policy: testo(c, "transmit-hash-policy"), mlag_id: testo(c, "mlag-id"), link_monitoring: testo(c, "link-monitoring"),
       mii_interval: testo(c, "mii-interval"), lacp_rate: testo(c, "lacp-rate"), mtu: numero(c, "mtu"), comment: testo(c, "comment"),
       running: s.includes("R"), disabled: s.includes("X"),
+    });
+  }
+  return r;
+}
+
+// ── VLAN dei bridge, interfacce VLAN, DNS, utenti (Task 10, ADR 0027) ─────────
+
+/** Un elenco RouterOS separato da virgole («ether1,ether2», vuoto = nessuno). */
+const elenco = (v: string | undefined): string[] => (v ?? "").split(",").map((x) => x.trim()).filter((x) => x !== "");
+
+/**
+ * `/interface bridge vlan print terse without-paging`. Segni: D dinamica (le crea RouterOS per i PVID), X spenta.
+ * `vlan-ids` com'è scritto («2», «100-110,200»): la scheda lo espande (`espandiVlanIds`). Senza bridge o vlan-ids la riga
+ * non si legge.
+ */
+export function parseVlanBridge(out: string): RigaVlanBridgeMk[] {
+  const r: RigaVlanBridgeMk[] = [];
+  for (const riga of righeDiUscita(out)) {
+    const c = campiTerse(riga);
+    const bridge = testo(c, "bridge"), vlanIds = testo(c, "vlan-ids");
+    if (!bridge || !vlanIds) continue;
+    const s = segni(riga);
+    r.push({
+      bridge, vlan_ids: vlanIds, tagged: elenco(c.get("tagged")), untagged: elenco(c.get("untagged")),
+      current_tagged: elenco(c.get("current-tagged")), current_untagged: elenco(c.get("current-untagged")),
+      dynamic: s.includes("D"), disabled: s.includes("X"), comment: testo(c, "comment"),
+    });
+  }
+  return r;
+}
+
+/** `/interface vlan print terse without-paging`. Segni: R attiva, X spenta. `interface` = l'interfaccia madre (spesso il bridge). */
+export function parseVlanInterfacce(out: string): RigaVlanMk[] {
+  const r: RigaVlanMk[] = [];
+  for (const riga of righeDiUscita(out)) {
+    const c = campiTerse(riga);
+    const name = testo(c, "name");
+    if (!name) continue;
+    const s = segni(riga);
+    r.push({
+      name, vlan_id: numero(c, "vlan-id"), interface: testo(c, "interface"), mtu: numero(c, "mtu"), mac_address: testo(c, "mac-address"),
+      running: s.includes("R"), disabled: s.includes("X"), comment: testo(c, "comment"),
+    });
+  }
+  return r;
+}
+
+/** Una chiave di `print` non tabellare: una parola che comincia con una lettera, poi «:» e spazio o fine riga (un IPv6 no). */
+const CHIAVE_DNS = /^\s*([a-z][a-z0-9-]*):(?:\s+(.*))?$/;
+const CHIAVI_DNS = ["servers", "dynamic-servers", "allow-remote-requests", "cache-size", "cache-used", "max-concurrent-queries", "use-doh-server"];
+
+/**
+ * `/ip dns print`: `chiave: valore`, una per riga; un elenco (i server) continua sulle righe dopo, rientrate e senza chiave,
+ * o sta sulla stessa riga separato da virgole. Nessuna delle chiavi note → null («non capita», mai «DNS vuoto»).
+ */
+export function parseDns(out: string): RigaDnsMk | null {
+  const valori = new Map<string, string[]>();
+  let ultima: string | null = null;
+  for (const riga of out.split(/\r?\n/)) {
+    if (riga.trim() === "") continue;
+    const m = CHIAVE_DNS.exec(riga);
+    if (m) {
+      ultima = m[1];
+      if (!valori.has(ultima)) valori.set(ultima, elenco((m[2] ?? "").trim()));
+      else ultima = null; // chiave ripetuta: vince la prima, la continuazione non si attacca
+    } else if (ultima !== null && /^\s{3,}\S/.test(riga)) {
+      valori.get(ultima)!.push(...elenco(riga.trim()));
+    }
+  }
+  if (!CHIAVI_DNS.some((k) => valori.has(k))) return null;
+  const uno = (k: string): string | null => valori.get(k)?.join(",") || null;
+  const ar = uno("allow-remote-requests");
+  const mcq = uno("max-concurrent-queries");
+  return {
+    servers: valori.get("servers") ?? [], dynamic_servers: valori.get("dynamic-servers") ?? [],
+    allow_remote_requests: ar === "yes" ? true : ar === "no" ? false : null,
+    cache_size: uno("cache-size"), cache_used: uno("cache-used"),
+    max_concurrent_queries: mcq !== null && /^\d+$/.test(mcq) ? Number(mcq) : null, use_doh_server: uno("use-doh-server"),
+  };
+}
+
+/**
+ * `/user print terse without-paging` (la forma `terse` al posto della tabella: un commento o un'ora con lo spazio rompono le
+ * colonne). Segno X spento. Si leggono SOLO nome, gruppo, indirizzi ammessi, ultimo accesso, commento: un campo in più
+ * dell'uscita (nemmeno una password, se un RouterOS la mostrasse) non entra nella riga.
+ */
+export function parseUtenti(out: string): RigaUtenteMk[] {
+  const r: RigaUtenteMk[] = [];
+  for (const riga of righeDiUscita(out)) {
+    const c = campiTerse(riga);
+    const name = testo(c, "name");
+    if (!name) continue;
+    r.push({
+      name, group: testo(c, "group"), address: testo(c, "address"), last_logged_in: testo(c, "last-logged-in"),
+      disabled: segni(riga).includes("X"), comment: testo(c, "comment"),
     });
   }
   return r;

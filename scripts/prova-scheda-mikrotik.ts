@@ -5,10 +5,12 @@
  *
  * Scrive SOLO nella copia indicata, che deve stare in `<dati>/tenants/<codice>.db` dentro la cartella di lavoro (temporanea,
  * fuori dal repo): stesse guardie di `scripts/estrai-fixture-topologia.ts`. Livello 2: bridge (mk3), porte (mk4), bond (mk8a)
- * con `scriviSchedaMikrotikTopologia`, cioè lo stesso codice della lettura vera. Il livello 3 arriva col Task 10.
+ * con `scriviSchedaMikrotikTopologia`, cioè lo stesso codice della lettura vera. Livello 3 (Task 10): in più VLAN dei bridge,
+ * interfacce VLAN, DNS e utenti (fixture del Task 1) con `scriviSchedaMikrotikLettura`; il bridge delle due fixture VLAN
+ * (BR_LAN) si chiama come quello seminato da mk3 (BR_RP), perché la matrice li leghi per nome.
  * Stampa solo conteggi (i registri dell'app hanno nomi e indirizzi).
  *
- * Uso:  npx tsx scripts/prova-scheda-mikrotik.ts <copia.db> --cartella <scratchpad> --device <id> [--livello 2]
+ * Uso:  npx tsx scripts/prova-scheda-mikrotik.ts <copia.db> --cartella <scratchpad> --device <id> [--livello 2|3]
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -18,7 +20,7 @@ import { percorsoReale } from "../src/lib/scanner/__tests__/support/percorsi-pro
 
 function uso(msg?: string): number {
   if (msg) process.stderr.write(`${msg}\n`);
-  process.stderr.write("Uso: npx tsx scripts/prova-scheda-mikrotik.ts <copia.db> --cartella <scratchpad> --device <id> [--livello 2]\n");
+  process.stderr.write("Uso: npx tsx scripts/prova-scheda-mikrotik.ts <copia.db> --cartella <scratchpad> --device <id> [--livello 2|3]\n");
   return 2;
 }
 
@@ -53,8 +55,7 @@ async function main(): Promise<number> {
   const device = Number(val("--device"));
   const livello = Number(val("--livello") ?? "2");
   if (!cartella || liberi.length !== 1 || !Number.isInteger(device) || device <= 0) return uso();
-  if (livello === 3) return uso("Il livello 3 (VLAN dei bridge, interfacce VLAN, DNS) arriva col Task 10.");
-  if (livello !== 2) return uso("Livello non valido.");
+  if (livello !== 2 && livello !== 3) return uso("Livello non valido.");
 
   const copia = path.resolve(liberi[0]);
   const tenant = path.basename(copia).replace(/\.db$/i, "");
@@ -71,15 +72,15 @@ async function main(): Promise<number> {
   for (const k of ["log", "info", "warn", "debug", "error"] as const) console[k] = () => {};
 
   // Import dopo aver fissato l'ambiente: il modulo legge DA_INVENT_DATA_DIR al caricamento (come estrai-fixture-topologia).
-  const { withTenant, getTenantDb, getNetworkDeviceById, livelloSchemaSchedaMk, scriviSchedaMikrotikTopologia } = await import("../src/lib/db-tenant");
-  const { parseBridgeScheda, parsePorteBridgeScheda, parseBondScheda } = await import("../src/lib/devices/mikrotik-scheda");
+  const { withTenant, getTenantDb, getNetworkDeviceById, livelloSchemaSchedaMk, scriviSchedaMikrotikLettura, scriviSchedaMikrotikTopologia } = await import("../src/lib/db-tenant");
+  const { parseBridgeScheda, parsePorteBridgeScheda, parseBondScheda, parseDns, parseUtenti, parseVlanBridge, parseVlanInterfacce } = await import("../src/lib/devices/mikrotik-scheda");
   const fx = (n: string) => fs.readFileSync(path.join(__dirname, "..", "src/lib/devices/__tests__/fixtures", n), "utf8");
 
   return withTenant(tenant, () => {
     const d = getNetworkDeviceById(device);
     if (!d) return uso("Apparato assente nella copia.");
     if (d.vendor !== "mikrotik") return uso("L'apparato non è un MikroTik.");
-    if (livelloSchemaSchedaMk(getTenantDb(tenant)) < 2) return uso("Schema della scheda sotto il livello 2: tabelle assenti nella copia.");
+    if (livelloSchemaSchedaMk(getTenantDb(tenant)) < livello) return uso(`Schema della scheda sotto il livello ${livello}: tabelle assenti nella copia.`);
     const r = scriviSchedaMikrotikTopologia(device, {
       bridge: parseBridgeScheda(fx("mikrotik-mk3-testa.txt")),
       porte: parsePorteBridgeScheda(fx("mikrotik-mk4-testa.txt")),
@@ -87,6 +88,16 @@ async function main(): Promise<number> {
     });
     if (!r) return uso("Scrittura rifiutata (schema).");
     scrivi(`scritte nella copia: bridge ${r.bridge}, porte ${r.porte}, bond ${r.bond}\n`);
+    if (livello === 3) {
+      const nomeBridge = parseBridgeScheda(fx("mikrotik-mk3-testa.txt"))[0]?.name ?? "BR_LAN";
+      const ponte = (x: string) => fx(x).replace(/\bBR_LAN\b/g, nomeBridge);
+      const l = {
+        vlanBridge: parseVlanBridge(ponte("mikrotik-bridge-vlan-terse.txt")), vlan: parseVlanInterfacce(ponte("mikrotik-vlan-terse.txt")),
+        dns: parseDns(fx("mikrotik-dns.txt")), utenti: parseUtenti(fx("mikrotik-user-terse.txt")), comandi: 4, riusciti: 4, codice: null,
+      };
+      if (!scriviSchedaMikrotikLettura(device, l)) return uso("Scrittura del livello 3 rifiutata (schema).");
+      scrivi(`livello 3: vlan dei bridge ${l.vlanBridge.length}, interfacce vlan ${l.vlan.length}, dns ${l.dns ? 1 : 0}, utenti ${l.utenti.length}\n`);
+    }
     return 0;
   });
 }

@@ -16,7 +16,7 @@ import { resolveDataDir } from "./data-dir";
 import { buildPatchFromHost, buildPatchFromDevice, buildSyncMerge, buildSourceLabel } from "./inventory/discovery-sync";
 import fs from "fs";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { COLONNE_SCHEDA_MK_V1, DDL_HOSTS_ARCHIVIO, DDL_SCHEDA_MK_V2, DDL_TOPOLOGY_CAVI, DDL_TOPOLOGY_UNIONI, INDICI_HOSTS_ARCHIVIO, INDICI_TOPOLOGY_UNIONI, TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL, SEGNO_SCHEDA_MK, VERSIONE_SCHEDA_MK } from "./db-tenant-schema";
+import { COLONNE_SCHEDA_MK_V1, DDL_HOSTS_ARCHIVIO, DDL_SCHEDA_MK_V2, DDL_SCHEDA_MK_V3, DDL_TOPOLOGY_CAVI, DDL_TOPOLOGY_UNIONI, INDICI_HOSTS_ARCHIVIO, INDICI_TOPOLOGY_UNIONI, TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL, SEGNO_SCHEDA_MK, VERSIONE_SCHEDA_MK } from "./db-tenant-schema";
 import { HYPERVISOR_SYNC_MINUTES, PULIZIA_HOST_MINUTES, SCHEDULED_JOB_TYPES_CHECK_SQL } from "./scheduled-job-types";
 import { isProxmoxVeDevice } from "./devices/device-acquisition-resolve";
 import { macToHex, normalizeMac, normalizeMacForStorage } from "./utils";
@@ -74,7 +74,8 @@ import { modelloEtichettaDiPorte } from "./device-fingerprint-classification";
 import { parseProxmoxScan } from "./topology/vms";
 import { hypervisorNics, switchPortsToKnown, type SwitchPortRow } from "./topology/known-ports";
 import type { IngressoDispositivi } from "./scheda/dispositivi-router";
-import type { RigaBondMk, RigaBridgeMk, RigaDnsMk, RigaPortaBridgeMk, RigaPortaSchedaMk, RigaVlanBridgeMk, RigaVlanMk } from "./devices/mikrotik-scheda";
+import type { RigaBondMk, RigaBridgeMk, RigaDnsMk, RigaPortaBridgeMk, RigaPortaSchedaMk, RigaUtenteMk, RigaVlanBridgeMk, RigaVlanMk } from "./devices/mikrotik-scheda";
+import type { RisultatoMkScheda } from "./devices/mikrotik-letture";
 import type { KnownPort } from "./topology/api-input";
 import type { LinkMedium, MapOrientation } from "./topology/model-types";
 import { TESTI_UNIONI, type PianoUnioni, type RigaSeparazione, type RigaUnione } from "./topology/unioni-tipi";
@@ -695,10 +696,11 @@ function tabelleSchedaMkMancanti(db: Database.Database, voci: ReadonlyArray<read
 }
 
 function misuraLivelloSchedaMk(d: Database.Database): number {
-  // I livelli si sommano: ognuno vale solo se c'è tutto il precedente (il 3 aggiungerà il suo controllo qui).
+  // I livelli si sommano: ognuno vale solo se c'è tutto il precedente.
   const livelli: Array<() => boolean> = [
     () => colonneSchedaMkMancanti(d, COLONNE_SCHEDA_MK_V1).length === 0,
     () => tabelleSchedaMkMancanti(d, DDL_SCHEDA_MK_V2).length === 0,
+    () => tabelleSchedaMkMancanti(d, DDL_SCHEDA_MK_V3).length === 0,
   ];
   let n = 0;
   for (const completo of livelli) {
@@ -720,6 +722,11 @@ export function livelloSchemaSchedaMk(d: Database.Database): number {
   const n = misuraLivelloSchedaMk(d);
   SCHEMA_SCHEDA_MK.set(d, n);
   return n;
+}
+
+/** Il livello dello schema della scheda del tenant corrente (annotato, come livelloSchemaSchedaMk). */
+export function livelloSchedaMkCorrente(): number {
+  return livelloSchemaSchedaMk(db());
 }
 
 /** Rimisura il livello dello schema della scheda del tenant corrente (prove; dopo una correzione a mano dello schema). */
@@ -750,7 +757,8 @@ export function chiudiMigrazioneSchedaMkFallita(db: Database.Database, tenantCod
 
 /**
  * Migrazione della scheda MikroTik (piano 2026-10-21): livello 1 (Task 3), le colonne di COLONNE_SCHEDA_MK_V1 solo se
- * mancano (`PRAGMA table_info`); livello 2 (Task 8, ADR 0027), le tre tabelle di DDL_SCHEDA_MK_V2 solo se mancano.
+ * mancano (`PRAGMA table_info`); livello 2 (Task 8, ADR 0027), le tre tabelle di DDL_SCHEDA_MK_V2 solo se mancano; livello 3
+ * (Task 10), le quattro di DDL_SCHEDA_MK_V3 (VLAN dei bridge, interfacce VLAN, DNS, utenti) solo se mancano.
  * Additiva, idempotente, in UNA transazione; restituisce «tabella.colonna» o il nome della tabella di ciò che aggiunge. Poi
  * scrive il segno `done:<data>:v<versione>` (dice fin dove è arrivato lo schema; la migrazione non lo consulta).
  */
@@ -761,7 +769,7 @@ export function migrateSchedaMikrotik(db: Database.Database): string[] {
       db.exec(`ALTER TABLE ${t} ADD COLUMN ${c} ${ddl}`);
       added.push(`${t}.${c}`);
     }
-    for (const [n, ddl] of tabelleSchedaMkMancanti(db, DDL_SCHEDA_MK_V2)) {
+    for (const [n, ddl] of [...tabelleSchedaMkMancanti(db, DDL_SCHEDA_MK_V2), ...tabelleSchedaMkMancanti(db, DDL_SCHEDA_MK_V3)]) {
       db.exec(ddl);
       added.push(n);
     }
@@ -2350,8 +2358,8 @@ export function getTenantDb(tenantCode: string): Database.Database {
     console.error(`[db-tenant] ${tenantCode}: migrazione dell'archivio host fallita, la pulizia degli host non è disponibile:`, e);
   }
 
-  // Scheda MikroTik (piano 2026-10-21): cinque colonne nuove su tabelle che esistono già (v1) e le tabelle di bridge, porte e
-  // bond (v2). Se fallisce il tenant si apre lo stesso: livelloSchemaSchedaMk() dice il livello che c'è e le letture scrivono
+  // Scheda MikroTik (piano 2026-10-21): cinque colonne nuove su tabelle che esistono già (v1), le tabelle di bridge, porte e
+  // bond (v2) e quelle di VLAN dei bridge, interfacce VLAN, DNS e utenti (v3). Se fallisce il tenant si apre lo stesso: livelloSchemaSchedaMk() dice il livello che c'è e le letture scrivono
   // solo fin lì. La riga del journal è la prova del rilascio.
   try {
     const added = migrateSchedaMikrotik(newDb);
@@ -5620,10 +5628,95 @@ function rigaMk<R>(r: Record<string, unknown>): R {
 
 const SCHEDA_MK_VUOTA = { bridge: [], porte: [], bond: [], letto_il: null, vlanBridge: null, vlan: null, dns: null };
 
+// ── Livello 3 (Task 10): VLAN dei bridge, interfacce VLAN, DNS, utenti ───────
+
+const COLONNE_MK_VLAN_BRIDGE = ["bridge", "vlan_ids", "tagged", "untagged", "current_tagged", "current_untagged", "dynamic", "disabled",
+  "comment"] as const satisfies ReadonlyArray<keyof RigaVlanBridgeMk>;
+const COLONNE_MK_VLAN = ["name", "vlan_id", "interface", "mtu", "mac_address", "running", "disabled", "comment"] as const satisfies ReadonlyArray<keyof RigaVlanMk>;
+const COLONNE_MK_DNS = ["servers", "dynamic_servers", "allow_remote_requests", "cache_size", "cache_used", "max_concurrent_queries",
+  "use_doh_server"] as const satisfies ReadonlyArray<keyof RigaDnsMk>;
+/** La colonna `grp` è `group` della riga (parola riservata in SQL). */
+const COLONNE_MK_UTENTE = [["name", "name"], ["grp", "group"], ["address", "address"], ["last_logged_in", "last_logged_in"], ["disabled", "disabled"],
+  ["comment", "comment"]] as const satisfies ReadonlyArray<readonly [string, keyof RigaUtenteMk]>;
+/** Liste e 0/1 delle tabelle del livello 3, rilette come le dà il lettore. `dynamic`, `running`, `disabled` vengono dai segni: mai null. */
+const LISTE_MK_V3 = new Set(["tagged", "untagged", "current_tagged", "current_untagged", "servers", "dynamic_servers"]);
+const SEGNI_MK_V3 = new Set(["dynamic", "running", "disabled"]);
+
+function rigaMkV3<R>(r: Record<string, unknown>, togli: ReadonlyArray<string> = []): R {
+  const o: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(r)) {
+    if (k === "device_id" || k === "seen_at" || togli.includes(k)) continue;
+    if (LISTE_MK_V3.has(k)) o[k] = typeof v === "string" && v !== "" ? v.split(",") : [];
+    else if (SEGNI_MK_V3.has(k)) o[k] = v === 1;
+    else if (k === "allow_remote_requests") o[k] = v === null || v === undefined ? null : v === 1;
+    else o[k] = v;
+  }
+  return o as R;
+}
+
+/** Connessioni su cui il rifiuto per schema sotto il livello 3 è già stato detto. */
+const AVVISATO_SCHEMA_MK_V3 = new WeakSet<Database.Database>();
+
+/**
+ * VLAN dei bridge, interfacce VLAN, DNS e utenti di un MikroTik (lettura `mikrotik_scheda`, Task 10): una fotografia per
+ * tabella come `scriviSchedaMikrotikTopologia`. Parte null (non letta, «non so») → la tabella resta com'era; letta (anche
+ * vuota) → DELETE dell'apparato e righe nuove con lo stesso `seen_at`. Una transazione per le quattro tabelle. false =
+ * schema sotto il livello 3 (niente scritto, un avviso per connessione). Niente nomi nel log: gli utenti sono dati riservati.
+ */
+export function scriviSchedaMikrotikLettura(deviceId: number, r: RisultatoMkScheda, adesso: Date = new Date()): boolean {
+  const d = db();
+  const livello = livelloSchemaSchedaMk(d);
+  if (livello < 3) {
+    if (!AVVISATO_SCHEMA_MK_V3.has(d)) {
+      AVVISATO_SCHEMA_MK_V3.add(d);
+      console.warn(`[db-tenant] scheda mikrotik: schema al livello ${livello}, sotto il 3: VLAN, DNS e utenti non si scrivono`);
+    }
+    return false;
+  }
+  const ora = adesso.toISOString().slice(0, 19).replace("T", " ");
+  const sostituisci = (tabella: string, colonne: ReadonlyArray<string>, righe: ReadonlyArray<ReadonlyArray<unknown>>): void => {
+    d.prepare(`DELETE FROM ${tabella} WHERE device_id = ?`).run(deviceId);
+    const ins = d.prepare(`INSERT OR REPLACE INTO ${tabella} (device_id, ${colonne.join(", ")}, seen_at) VALUES (?, ${colonne.map(() => "?, ").join("")}?)`);
+    for (const valori of righe) ins.run(deviceId, ...valori.map(valoreMk), ora);
+    const scritte = (d.prepare(`SELECT COUNT(*) AS n FROM ${tabella} WHERE device_id = ?`).get(deviceId) as { n: number }).n;
+    if (scritte < righe.length) {
+      console.warn(`[db-tenant] scheda mikrotik: ${tabella} apparato ${deviceId}, righe lette ${righe.length}, scritte ${scritte} (chiavi doppie)`);
+    }
+  };
+  d.transaction(() => {
+    if (r.vlanBridge) {
+      sostituisci("mikrotik_bridge_vlan", ["pos", ...COLONNE_MK_VLAN_BRIDGE], r.vlanBridge.map((v, i) => [i, ...COLONNE_MK_VLAN_BRIDGE.map((c) => v[c])]));
+    }
+    if (r.vlan) sostituisci("mikrotik_vlan", COLONNE_MK_VLAN, r.vlan.map((v) => COLONNE_MK_VLAN.map((c) => v[c])));
+    if (r.dns) sostituisci("mikrotik_dns", COLONNE_MK_DNS, [COLONNE_MK_DNS.map((c) => r.dns![c])]);
+    if (r.utenti) sostituisci("mikrotik_user", COLONNE_MK_UTENTE.map(([c]) => c), r.utenti.map((u) => COLONNE_MK_UTENTE.map(([, k]) => u[k])));
+  })();
+  return true;
+}
+
+/**
+ * Gli utenti di un MikroTik dall'ultima lettura buona: SOLO per GET /api/devices/[id]/mikrotik-utenti (admin). La scheda per
+ * tutti (`leggiSchedaMikrotik`) non li porta. null = schema sotto il livello 3.
+ */
+export function leggiUtentiMikrotik(deviceId: number): { utenti: RigaUtenteMk[]; letto_il: string | null } | null {
+  const d = db();
+  if (livelloSchemaSchedaMk(d) < 3) return null;
+  const righe = d.prepare("SELECT * FROM mikrotik_user WHERE device_id = ? ORDER BY name").all(deviceId) as Record<string, unknown>[];
+  const date = righe.map((r) => r.seen_at).filter((s): s is string => typeof s === "string");
+  return {
+    utenti: righe.map((r) => {
+      const u = rigaMkV3<Record<string, unknown>>(r);
+      return Object.fromEntries(COLONNE_MK_UTENTE.map(([c, k]) => [k, u[c] ?? (k === "disabled" ? false : null)])) as RigaUtenteMk;
+    }),
+    letto_il: date.length > 0 ? date.reduce((a, b) => (b > a ? b : a)) : null,
+  };
+}
+
 /**
  * Bridge, porte e bond dell'ultima fotografia di un MikroTik per la scheda (Task 9). Le porte portano ruolo e stato STP
  * dell'ultima lettura della topologia (`topology_port_facts`, fonte `device`, stessa porta), nella stessa query.
- * `vlanBridge`, `vlan`, `dns`: null fino al Task 10. Schema sotto il livello 2 → tutto vuoto, `letto_il` null.
+ * `vlanBridge`, `vlan`, `dns` (Task 10): le righe dell'ultima lettura buona, null se non ce n'è nessuna (mai letti, o schema
+ * sotto il livello 3); gli utenti no (solo `leggiUtentiMikrotik`, per l'admin). Schema sotto il livello 2 → tutto vuoto.
  */
 export function leggiSchedaMikrotik(deviceId: number): {
   bridge: RigaBridgeMk[]; porte: RigaPortaSchedaMk[]; bond: RigaBondMk[]; letto_il: string | null;
@@ -5641,14 +5734,18 @@ export function leggiSchedaMikrotik(deviceId: number): {
         WHERE p.device_id = ? ORDER BY p.rowid`).all(deviceId)
     : d.prepare("SELECT *, NULL AS stp_ruolo, NULL AS stp_stato FROM mikrotik_bridge_port WHERE device_id = ? ORDER BY rowid").all(deviceId)) as Record<string, unknown>[];
   const date = [...bridge, ...porte, ...bond].map((r) => r.seen_at).filter((s): s is string => typeof s === "string");
+  const v3 = livelloSchemaSchedaMk(d) >= 3;
+  const vlanBridge = v3 ? d.prepare("SELECT * FROM mikrotik_bridge_vlan WHERE device_id = ? ORDER BY pos").all(deviceId) as Record<string, unknown>[] : [];
+  const vlan = v3 ? d.prepare("SELECT * FROM mikrotik_vlan WHERE device_id = ? ORDER BY vlan_id, name").all(deviceId) as Record<string, unknown>[] : [];
+  const dns = v3 ? d.prepare("SELECT * FROM mikrotik_dns WHERE device_id = ?").get(deviceId) as Record<string, unknown> | undefined : undefined;
   return {
     bridge: bridge.map((r) => rigaMk<RigaBridgeMk>(r)),
     porte: porte.map((r) => rigaMk<RigaPortaSchedaMk>(r)),
     bond: bond.map((r) => rigaMk<RigaBondMk>(r)),
     letto_il: date.length > 0 ? date.reduce((a, b) => (b > a ? b : a)) : null,
-    vlanBridge: null,
-    vlan: null,
-    dns: null,
+    vlanBridge: vlanBridge.length > 0 ? vlanBridge.map((r) => rigaMkV3<RigaVlanBridgeMk>(r, ["pos"])) : null,
+    vlan: vlan.length > 0 ? vlan.map((r) => rigaMkV3<RigaVlanMk>(r)) : null,
+    dns: dns ? rigaMkV3<RigaDnsMk>(dns) : null,
   };
 }
 

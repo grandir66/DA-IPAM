@@ -425,7 +425,25 @@ Cancello di ogni task: `npm run lint && npx tsc --noEmit` più le prove mirate; 
 (`npm test` con `DA_INVENT_DATA_DIR` temporanea, `npm run build`) una volta per blocco, esito letto dal
 codice di uscita con log nello scratchpad.
 
-## 6. Decisioni da prendere (D1-D9)
+## 6. Risposte di Riccardo (21/10) e cosa cambiano
+
+- **D8 — «non c'è nulla in uso».** Nessun DADude3, The Dude o storico da importare: E31 ed E36
+  passano a **Escludere**. Senza QuTS hero, Docker, SCCM o questionario in uso: D2 (T6.2), E13, E10 ed
+  E38 escono dal piano finché non nasce un bisogno.
+- **D3 — collaudi HP.** Si fanno su una rete con **HP Comware, ProCurve e ArubaOS**, quando IPAM sarà
+  installato in quella sede (nei prossimi giorni). Le fixture di T0.1 si raccolgono dall'appliance di
+  quella sede, coi comandi in sola lettura di §5. Conseguenze sull'ordine:
+  - **subito, senza apparati:** T1.4 (export solo admin, se D2 = sì), T2.2 (scrittura delle porte per
+    campo, provata con dati finti nella forma di `switch_ports`), T1.1 (MAC virtuali) **dopo** il commit
+    della sessione delle tappe 3-5, che sta modificando `topology/identity.ts`;
+  - **all'arrivo della sede:** T0.1 per gli HP, poi T1.3 → T2.1 → T2.3 → T3.1 → T3.2;
+  - T2.4 (Aruba CX) dipende da cosa sia «ArubaOS» in quella sede: ArubaOS-Switch (2530/2930) usa la
+    stessa riga di comando dei ProCurve e i loro parser; AOS-CX (6100/6300) richiede il sottotipo nuovo.
+- **Restano senza apparato di collaudo dichiarato:** MikroTik con PoE (T2.5-T2.7), QNAP (T1.2),
+  Synology (T6.1), Hyper-V/Windows/Linux (B4). Si possono scrivere su uscite di documentazione, ma non
+  si dichiarano finiti senza una prova sull'apparato.
+
+## 7. Decisioni da prendere (D1-D9)
 
 1. **D1.** Piano, ordine B0→B6 e livelli di controllo come in §3: approvati?
 2. **D2.** Export MikroTik (`?action=config|all`) riservato all'admin subito (T1.4)?

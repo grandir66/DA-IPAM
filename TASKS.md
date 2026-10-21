@@ -15,7 +15,9 @@ Analisi del 20/10: canvas Cursor `progetti-fermi-DADude3-DA-MKNET-MKHA` (50 sche
 - [x] Scoperto: la GET `/api/devices/[id]/mikrotik?action=config` (export completo) non chiama `requireAuth`/`requireAdmin`: basta la sessione.
 - [x] Scoperto: `DA-MKNET/backend/database.sqlite` è vuoto (0 byte): nei cloni non c'è storico da importare.
 - [x] Piano scritto: classificazione delle 50 schede, blocchi B1-B6, task con donatori e destinatari, prove, livelli di controllo, decisioni.
-- [ ] Riccardo: approvare piano e livelli, rispondere alle decisioni D1-D9 del piano.
+- [x] Riccardo (21/10): niente in uso (DADude3, The Dude, QuTS hero, Docker, SCCM, DATIA: fuori); collaudi HP su una sede con Comware, ProCurve e ArubaOS, all'installazione di IPAM nei prossimi giorni. Piano aggiornato (§6).
+- [ ] Riccardo: approvare piano e livelli; rispondere a D1, D2, D4-D7, D9; dire se «ArubaOS» è ArubaOS-Switch o AOS-CX; dove collaudare MikroTik, QNAP, Hyper-V/Windows/Linux.
+- [ ] T1.1 (MAC virtuali) aspetta il commit della sessione delle tappe 3-5, che modifica `topology/identity.ts`.
 - [ ] Dopo l'ok: tavola grafica degli oggetti d'interfaccia (B2-B5) prima di scrivere schermate.
 
 ## 2026-10-21 — cose aperte dopo la notte del 20→21/10

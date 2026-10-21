@@ -81,8 +81,12 @@ Niente oggetti nuovi in pagina, solo comportamento, più un segno:
 3. Cambiando classificazione, piattaforma/protocollo/tipologia si **propongono** (non si sovrascrivono
    se già scelti a mano).
 
-## Domande per Riccardo
+## Decisioni di Riccardo (21/10)
 
-- Il tetto di 3 tentativi per host su Windows/AD va bene, o lo legge dal criterio di blocco del dominio?
-- Voce scelta già fallita (aperto dalla tappa 2): esclusa e detta, o «non provata»?
-- Punto 9: creare senza credenziale provata è ammesso o lo blocchiamo?
+- **Windows/AD: tetto fisso di 3 tentativi per host**, poi «▲ Fermata» col motivo (oggetto 7).
+- **Credenziale già fallita su quell'host: esclusa e detta** («✕ admin-win esclusa: rifiutata il 20/10»);
+  «Prova» a mano la rimette in gioco. Chiude la domanda aperta dalla tappa 2.
+- **Senza credenziale provata si crea lo stesso**, con «▲ senza credenziale provata» in finestra e nella
+  scheda finché una prova non riesce (oggetto 9).
+
+Resta da approvare la forma della finestra, oggetto per oggetto (gli schemi qui sopra).

@@ -6,7 +6,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { fetchJson } from "@/lib/fetch-json";
-import type { HardwareMikrotik, RisorseMikrotik } from "@/lib/devices/mikrotik-scheda";
+import type { HardwareMikrotik, RigaUtenteMk, RisorseMikrotik } from "@/lib/devices/mikrotik-scheda";
 import { statoInterfaccia, type RispostaSchedaMikrotik, type StatoPortaMk } from "@/lib/scheda/mikrotik";
 import type { InterfacciaScheda } from "@/lib/scheda/router";
 import type { ContestoScheda } from "../../../contesto";
@@ -35,6 +35,23 @@ export function useSchedaMikrotik(deviceId: number | undefined): { stato: Carica
   }, [deviceId, n]);
   const riprova = useCallback(() => { setStato({ fase: "carico" }); setN((x) => x + 1); }, []);
   return { stato, riprova };
+}
+
+/**
+ * Utenti del router (GET /api/devices/[id]/mikrotik-utenti, solo admin). Da viewer la richiesta NON parte: niente 403 nella
+ * rete del browser e niente dato che arriva per sbaglio. `null` = non admin.
+ */
+export function useUtentiMikrotik(deviceId: number | undefined, admin: boolean): Caricamento<{ utenti: RigaUtenteMk[]; letto_il: string | null }> | null {
+  const [stato, setStato] = useState<Caricamento<{ utenti: RigaUtenteMk[]; letto_il: string | null }>>({ fase: "carico" });
+  useEffect(() => {
+    if (!deviceId || !admin) return;
+    let vivo = true;
+    fetchJson<{ utenti: RigaUtenteMk[]; letto_il: string | null }>(`/api/devices/${deviceId}/mikrotik-utenti`)
+      .then((r) => { if (vivo) setStato(r.ok ? { fase: "ok", dati: r.data } : { fase: "errore", messaggio: r.message }); })
+      .catch(() => { if (vivo) setStato({ fase: "errore", messaggio: "Richiesta annullata" }); });
+    return () => { vivo = false; };
+  }, [deviceId, admin]);
+  return admin ? stato : null;
 }
 
 /** Stato di una porta nella matrice VLAN (censimento §1.8): porta del bridge spenta (X) → disabilitata; poi l'interfaccia letta; non letta = attiva, come il Manager. */

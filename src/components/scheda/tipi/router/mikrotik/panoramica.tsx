@@ -2,13 +2,17 @@
 
 /**
  * Panoramica dei router MikroTik raggiungibili in SSH (artboard MkPanoramica, M1-M7): striscia dei numeri, poi in
- * griglia a tre colonne Risorse · Hardware · Contatori e Interfacce per tipo. Un riquadro senza dato non si rende;
- * cosa manca lo dice la riga delle fonti. Porte bridge e bond dall'ultima fotografia della topologia (Task 9). I riquadri DNS
- * e Utenti arrivano col Task 11. Deve stare in 1440×900.
+ * griglia a tre colonne Risorse · Hardware · Contatori / DNS · Utenti del router · Interfacce per tipo. Un riquadro senza
+ * dato non si rende; cosa manca lo dice la riga delle fonti. Porte bridge e bond dall'ultima fotografia della topologia (Task 9);
+ * DNS, VLAN lette e utenti dalla lettura «VLAN, DNS e utenti» (Task 11). Gli utenti SOLO per l'admin: da viewer il riquadro
+ * non c'è e la richiesta non parte (il suo posto lo prende Interfacce per tipo). Deve stare in 1440×900.
  */
 import type { ReactNode } from "react";
 import { LoadError } from "@/components/shared/load-error";
-import { caselleMikrotik, contatoriMikrotik, gruppoInterfaccia, perTipo, usoPercento, type ContatoriMikrotik } from "@/lib/scheda/mikrotik";
+import {
+  accessoMk, cacheDnsMk, caselleMikrotik, contatoriMikrotik, fonteLetturaScheda, gruppoInterfaccia, perTipo, usoPercento, type ContatoriMikrotik,
+} from "@/lib/scheda/mikrotik";
+import type { RigaDnsMk, RigaUtenteMk } from "@/lib/devices/mikrotik-scheda";
 import type { TabId } from "@/lib/scheda/tipo-scheda";
 import { parseUtcDate } from "../../../blocchi";
 import { BarraUso } from "../../../barra-uso";
@@ -17,7 +21,7 @@ import { RigaFonti, type Fonte } from "../../../riga-fonti";
 import { StrisciaNumeri } from "../../../striscia-numeri";
 import type { ContestoScheda } from "../../../contesto";
 import { rotteDi } from "../dati-router";
-import { hardwareDi, risorseDi, useInterfacceMikrotik, useSchedaMikrotik } from "./dati-mikrotik";
+import { hardwareDi, risorseDi, useInterfacceMikrotik, useSchedaMikrotik, useUtentiMikrotik } from "./dati-mikrotik";
 
 const ora = (iso: string): string =>
   parseUtcDate(iso).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Rome" });
@@ -44,8 +48,82 @@ const contatoriVisti = (haBridge: boolean): { chiave: keyof ContatoriMikrotik; e
   { chiave: "utenti", etichetta: "Utenti", tab: "configurazione" },
 ];
 
+const badgeServer = "inline-flex h-6 items-center rounded border border-[#B8C4CC] bg-muted px-1.5 font-mono text-[13px] font-semibold";
+
+/** Riquadro DNS (M4): server statici (e dinamici, col bordo tratteggiato), richieste remote, cache, max query. */
+function RiquadroDns({ dns }: { dns: RigaDnsMk }) {
+  const cache = cacheDnsMk(dns.cache_used, dns.cache_size);
+  const server = [...dns.servers.map((x) => ({ x, din: false })), ...dns.dynamic_servers.map((x) => ({ x, din: true }))];
+  return (
+    <Riquadro titolo="DNS">
+      <div className="space-y-2">
+        <Riga etichetta="Server">
+          {server.length === 0 ? <span className="text-muted-foreground">nessuno</span> : (
+            <span className="flex flex-wrap gap-1.5">
+              {server.map(({ x, din }) => (
+                <span key={x} className={`${badgeServer} ${din ? "border-dashed" : ""}`} title={din ? "server dinamico (da DHCP o PPP)" : undefined}>{x}{din ? " · din." : ""}</span>
+              ))}
+            </span>
+          )}
+        </Riga>
+        {dns.allow_remote_requests !== null && (
+          <Riga etichetta="Richieste remote">
+            {dns.allow_remote_requests ? <span className="font-semibold">● accese</span> : <span className="text-muted-foreground">○ spente</span>}
+          </Riga>
+        )}
+        {cache && <Riga etichetta="Cache">{cache}</Riga>}
+        {dns.max_concurrent_queries != null && <Riga etichetta="Max query">{dns.max_concurrent_queries}</Riga>}
+      </div>
+    </Riquadro>
+  );
+}
+
+/** Gruppo dell'utente: full pieno scuro, write pieno medio, read chiaro col bordo, gli altri gruppi chiari tratteggiati. */
+function Gruppo({ g }: { g: string | null }) {
+  if (!g) return <span className="text-muted-foreground">—</span>;
+  const k = g.toLowerCase();
+  const stile = k === "full" ? "border-[#0D2537] bg-[#0D2537] text-white dark:border-sky-100 dark:bg-sky-100 dark:text-[#0D2537]"
+    : k === "write" ? "border-[#3D4A53] bg-[#5B6B77] text-white"
+      : k === "read" ? "border-[#8696A0] bg-white text-[#0D2537] dark:bg-transparent dark:text-foreground"
+        : "border-dashed border-[#8696A0] bg-white text-[#4A6070] dark:bg-transparent dark:text-muted-foreground";
+  return <span className={`inline-flex h-[22px] items-center rounded-md border-2 px-2 text-[13px] font-semibold ${stile}`}>{g}</span>;
+}
+
+/** Riquadro «Utenti del router» (M5), solo admin: nome, gruppo, ultimo accesso (orologio del router) o «mai». Scorre dentro. */
+function RiquadroUtenti({ utenti }: { utenti: RigaUtenteMk[] }) {
+  return (
+    <Riquadro titolo="Utenti del router" azione={<span className="inline-flex h-[22px] items-center rounded-md bg-[#0D2537] px-2 text-[13px] font-semibold normal-case tracking-normal text-white dark:bg-sky-100 dark:text-[#0D2537]">solo admin</span>}>
+      <div className="-m-4 max-h-[172px] overflow-y-auto">
+        <table className="w-full text-[13px]">
+          <thead className="sticky top-0 border-b bg-card">
+            <tr>
+              <th className="px-3 py-1.5 text-left font-semibold text-muted-foreground">Nome</th>
+              <th className="px-3 py-1.5 text-left font-semibold text-muted-foreground">Gruppo</th>
+              <th className="px-3 py-1.5 text-left font-semibold text-muted-foreground">Ultimo accesso</th>
+            </tr>
+          </thead>
+          <tbody>
+            {utenti.map((u) => {
+              const quando = accessoMk(u.last_logged_in);
+              return (
+                <tr key={u.name} className={`border-b last:border-b-0 ${u.disabled ? "bg-muted/30 text-muted-foreground" : ""}`}>
+                  <td className="truncate px-3 py-1 font-semibold" title={u.comment ?? undefined}>
+                    {u.name}{u.disabled && <span className="ml-1.5 font-normal text-[#8E1B20] dark:text-[#E8625A]">✕ disabilitato</span>}
+                  </td>
+                  <td className="px-3 py-1"><Gruppo g={u.group} /></td>
+                  <td className={`whitespace-nowrap px-3 py-1 ${quando === "mai" ? "text-muted-foreground" : ""}`}>{quando}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </Riquadro>
+  );
+}
+
 export function PanoramicaMikrotik({ ctx }: { ctx: ContestoScheda }) {
-  const { device, apriTab } = ctx;
+  const { device, apriTab, isAdmin } = ctx;
   const di = device?.device_info ?? null;
   const risorse = risorseDi(ctx);
   const hardware = hardwareDi(ctx);
@@ -58,13 +136,18 @@ export function PanoramicaMikrotik({ ctx }: { ctx: ContestoScheda }) {
   const foto = scheda?.letto_il ? scheda : null;
   const haBridge = (device?.mikrotik?.bridge ?? 0) > 0;
   const nVlanIfc = interfacce ? interfacce.filter((x) => gruppoInterfaccia(x.tipo) === "vlan").length : null;
+  // Utenti: la richiesta parte solo da admin (null da viewer).
+  const ut = useUtentiMikrotik(device?.id, isAdmin);
+  const utenti = ut?.fase === "ok" ? ut.dati.utenti : null;
 
   const caselle = caselleMikrotik({
     risorse, hardware, scansione: di?.scanned_at ?? null, interfacce,
     vlan: foto && nVlanIfc != null ? { numero: nVlanIfc, bridge: foto.bridge.length } : null,
+    vlanLette: scheda?.vlan ?? null,
   });
   const contatori = contatoriMikrotik({
-    interfacce, rotte: rotte.length, porteBridge: foto ? foto.porte.length || null : null, bond: foto ? foto.bond.length || null : null, vlan: null, utenti: null,
+    interfacce, rotte: rotte.length, porteBridge: foto ? foto.porte.length || null : null, bond: foto ? foto.bond.length || null : null,
+    vlanLette: scheda?.vlan ?? null, utenti: utenti?.length ?? null, admin: isAdmin,
   });
   const visibiliContatori = contatoriVisti(haBridge).filter((c) => contatori[c.chiave] != null);
   const tipi = interfacce ? perTipo(interfacce) : [];
@@ -92,6 +175,7 @@ export function PanoramicaMikrotik({ ctx }: { ctx: ContestoScheda }) {
       ? { nome: "Bridge e porte", esito: "assente", nota: "lettura «Spanning tree, bridge e fasci» spenta" }
       : scheda.letto_il ? { nome: "Topologia", esito: "ok", quando: ora(scheda.letto_il) } : { nome: "Bridge e porte", esito: "assente", nota: "mai lette" });
   }
+  if (scheda) fonti.push(fonteLetturaScheda(isAdmin ? "DNS e utenti" : "DNS", scheda.letture.scheda));
   if (di?.scanned_at && !risorse && !hardware) fonti.push({ nome: "Risorse e hardware", esito: "assente", nota: "si leggono con «Aggiorna»" });
 
   return (
@@ -137,6 +221,10 @@ export function PanoramicaMikrotik({ ctx }: { ctx: ContestoScheda }) {
           </div>
           <p className="mt-2 text-[13px] text-muted-foreground">Contati sull&apos;ultima lettura; ognuno apre la sua tab.</p>
         </Riquadro>
+
+        {scheda?.dns && <RiquadroDns dns={scheda.dns} />}
+        {ut?.fase === "errore" && <Riquadro titolo="Utenti del router"><p className="text-sm text-muted-foreground">Non caricati: {ut.messaggio}</p></Riquadro>}
+        {utenti && utenti.length > 0 && <RiquadroUtenti utenti={utenti} />}
 
         <Riquadro
           titolo="Interfacce per tipo"

@@ -4,6 +4,7 @@
  * un dato che manca non produce una casella con un «—».
  */
 import type { Casella } from "@/components/scheda/striscia-numeri";
+import type { Fonte } from "@/components/scheda/riga-fonti";
 import type {
   HardwareMikrotik, RigaBondMk, RigaBridgeMk, RigaDnsMk, RigaPortaBridgeMk, RigaPortaSchedaMk, RigaVlanBridgeMk, RigaVlanMk, RisorseMikrotik,
 } from "@/lib/devices/mikrotik-scheda";
@@ -64,10 +65,14 @@ export interface ContatoriMikrotik {
 
 /**
  * I sei contatori del riquadro: ognuno c'è solo se il dato c'è. VLAN e bond, se nessun altro li dà, si contano dal tipo
- * delle interfacce; le porte dei bridge e gli utenti arrivano dalle letture dei task successivi.
+ * delle interfacce; le VLAN lette dal router vincono sul tipo; gli utenti solo per l'admin (Task 11).
  */
 export function contatoriMikrotik(i: {
-  interfacce: InterfacciaScheda[] | null; rotte: number; porteBridge: number | null; bond: number | null; vlan: number | null; utenti: number | null;
+  interfacce: InterfacciaScheda[] | null; rotte: number; porteBridge: number | null; bond: number | null;
+  /** Interfacce VLAN lette da `/interface vlan` (Task 10): se ci sono vincono sul conto dal tipo. null = mai lette. */
+  vlanLette: RigaVlanMk[] | null;
+  /** Utenti del router: il numero c'è solo se chi guarda è admin (`admin` false → null comunque). */
+  utenti: number | null; admin: boolean;
 }): ContatoriMikrotik {
   const l = i.interfacce;
   // Il tipo delle righe lette prima del Task 3 è null: «0 VLAN» sarebbe un dato inventato, e zero non si mostra.
@@ -78,11 +83,11 @@ export function contatoriMikrotik(i: {
   };
   return {
     indirizzi: l ? l.reduce((n, x) => n + x.indirizzi.length, 0) : null,
-    vlan: i.vlan ?? dalTipo("vlan"),
+    vlan: i.vlanLette ? (i.vlanLette.length > 0 ? i.vlanLette.length : null) : dalTipo("vlan"),
     porteBridge: i.porteBridge,
     bond: i.bond ?? dalTipo("bond"),
     rotte: i.rotte > 0 ? i.rotte : null,
-    utenti: i.utenti,
+    utenti: i.admin && i.utenti != null && i.utenti > 0 ? i.utenti : null,
   };
 }
 
@@ -123,6 +128,8 @@ export function caselleMikrotik(i: {
   scansione: string | null;
   interfacce: InterfacciaScheda[] | null;
   vlan: { numero: number; bridge: number | null } | null;
+  /** Interfacce VLAN lette da `/interface vlan`: se ci sono, il numero è il loro (vince sul conto dal tipo). */
+  vlanLette?: RigaVlanMk[] | null;
 }): Casella[] {
   const c: Casella[] = [];
   const r = i.risorse;
@@ -145,7 +152,7 @@ export function caselleMikrotik(i: {
     const spente = i.interfacce.filter((x) => x.disabilitata === true).length;
     c.push({ etichetta: "Interfacce su", valore: `${su} / ${i.interfacce.length}`, ...(spente > 0 ? { sotto: `${spente} disabilitat${spente === 1 ? "a" : "e"}` } : {}), tab: "interfacce" });
   }
-  const nVlan = i.vlan?.numero ?? (i.interfacce ? i.interfacce.filter((x) => gruppoInterfaccia(x.tipo) === "vlan").length : null);
+  const nVlan = i.vlanLette ? i.vlanLette.length : i.vlan?.numero ?? (i.interfacce ? i.interfacce.filter((x) => gruppoInterfaccia(x.tipo) === "vlan").length : null);
   if (nVlan != null && nVlan > 0) {
     // Con almeno un bridge c'è la tab VLAN (Task 9) e la casella apre quella; senza, le VLAN stanno nelle Interfacce.
     c.push({ etichetta: "VLAN", valore: String(nVlan), ...(i.vlan?.bridge != null ? { sotto: `su ${i.vlan.bridge} bridge` } : {}), tab: (i.vlan?.bridge ?? 0) > 0 ? "vlan" : "interfacce" });
@@ -235,7 +242,63 @@ export interface RispostaSchedaMikrotik {
   vlanBridge: RigaVlanBridgeMk[] | null;
   vlan: RigaVlanMk[] | null;
   dns: RigaDnsMk | null;
-  letture: { topologia: { acceso: boolean; il: string | null }; scheda: { acceso: boolean; il: string | null } };
+  letture: { topologia: { acceso: boolean; il: string | null }; scheda: LetturaSchedaMk };
+}
+
+/** Stato della lettura «VLAN, DNS e utenti»: `il` = ultimo tentativo, `dati_il` = età dei dati (UTC), `codice` = errore dell'ultimo tentativo. */
+export interface LetturaSchedaMk { acceso: boolean; il: string | null; dati_il: string | null; codice: string | null }
+
+/** «22/10, 08:00» in ora italiana da un'ora del DB (UTC). */
+function oraItaliana(s: string): string {
+  const d = dataLettura(s);
+  return d ? d.toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Rome" }) : s;
+}
+
+/**
+ * Voce della riga delle fonti per la lettura «VLAN, DNS e utenti» (revisione del Task 10): l'ora è quella dei DATI mostrati,
+ * mai quella di un tentativo fallito; un tentativo andato male dice il suo codice, una lettura spenta con dati vecchi lo dice.
+ */
+export function fonteLetturaScheda(nome: string, s: LetturaSchedaMk): Fonte {
+  const prova = s.il && s.codice ? `ultima prova ${oraItaliana(s.il)}: ${s.codice}` : null;
+  if (s.dati_il) {
+    const coda = !s.acceso ? " · lettura spenta" : prova ? ` · ${prova}` : "";
+    return { nome, esito: "ok", quando: oraItaliana(s.dati_il) + coda };
+  }
+  if (!s.acceso) return { nome, esito: "assente", nota: "lettura spenta" };
+  if (prova) return { nome, esito: "assente", nota: prova };
+  return s.il ? { nome, esito: "ok", quando: oraItaliana(s.il) } : { nome, esito: "assente", nota: "mai letta" };
+}
+
+/** Interfaccia VLAN → id, madre e tipo della madre (dalle interfacce lette); null senza lettura o VLAN non trovata. */
+export function vlanConMadre(nome: string, vlan: RigaVlanMk[] | null, interfacce: InterfacciaScheda[]): { id: number | null; madre: string | null; tipoMadre: string | null } | null {
+  const v = vlan?.find((x) => x.name === nome);
+  if (!v) return null;
+  const tipo = v.interface ? interfacce.find((i) => i.ifname === v.interface)?.tipo?.trim().toLowerCase() : null;
+  return { id: v.vlan_id, madre: v.interface, tipoMadre: tipo || null };
+}
+
+const MESI = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+
+/**
+ * `last-logged-in` di `/user print` → «21/10 22:46». È l'orologio del router (ora locale del router, per i nostri in Italia),
+ * non UTC: si mostra com'è, senza conversioni. Due forme (7.x «2026-10-21 22:46:44», 6.x «oct/21/2026 22:46:44»); altro com'è.
+ */
+export function accessoMk(s: string | null): string {
+  const t = (s ?? "").trim();
+  if (t === "") return "mai";
+  const iso = t.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
+  if (iso) return `${iso[3]}/${iso[2]} ${iso[4]}:${iso[5]}`;
+  const v6 = t.match(/^([a-z]{3})\/(\d{2})\/(\d{4}) (\d{2}):(\d{2})/i);
+  const mese = v6 ? MESI.indexOf(v6[1].toLowerCase()) : -1;
+  if (v6 && mese >= 0) return `${v6[2]}/${String(mese + 1).padStart(2, "0")} ${v6[4]}:${v6[5]}`;
+  return t;
+}
+
+/** Cache del DNS «usata / totale», con lo spazio prima dell'unità («48 KiB / 2048 KiB»); null se mancano tutte e due. */
+export function cacheDnsMk(usata: string | null, totale: string | null): string | null {
+  if (!usata && !totale) return null;
+  const f = (x: string | null) => (x ? x.trim().replace(/^(\d+(?:[.,]\d+)?)\s*([A-Za-z]+)$/, "$1 $2") : "—");
+  return `${f(usata)} / ${f(totale)}`;
 }
 
 /** Stato di una porta nella tab Bridge, dai segni della riga (censimento §1.9): X → disabilitata, I → inattiva, altrimenti attiva. */

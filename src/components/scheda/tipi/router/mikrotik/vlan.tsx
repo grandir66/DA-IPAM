@@ -7,7 +7,7 @@
  */
 import type { ReactNode } from "react";
 import { LoadError } from "@/components/shared/load-error";
-import { descriviBond, matriceVlan, type CellaVlan, type MatriceVlan } from "@/lib/scheda/mikrotik";
+import { descriviBond, fonteLetturaScheda, matriceVlan, type CellaVlan, type MatriceVlan } from "@/lib/scheda/mikrotik";
 import type { RigaBridgeMk } from "@/lib/devices/mikrotik-scheda";
 import { Riquadro } from "../../../riquadro";
 import { RigaFonti, type Fonte } from "../../../riga-fonti";
@@ -110,8 +110,8 @@ export function VlanMikrotik({ ctx }: { ctx: ContestoScheda }) {
     !s.letture.topologia.acceso
       ? { nome: "Bridge e porte", esito: "assente", nota: "lettura «Spanning tree, bridge e fasci» spenta" }
       : s.letto_il ? { nome: "Topologia", esito: "ok", quando: oraMk(s.letto_il) } : { nome: "Bridge e porte", esito: "assente", nota: "mai lette" },
-    s.vlanBridge ? { nome: "VLAN dei bridge", esito: "ok", ...(s.letture.scheda.il ? { quando: oraMk(s.letture.scheda.il) } : {}) }
-      : { nome: "VLAN dei bridge", esito: "assente", nota: s.letture.scheda.acceso ? "mai lette" : "lettura spenta" },
+    // Ora dei DATI (non dell'ultimo tentativo, che può essere fallito) o il codice dell'errore: revisione del Task 10.
+    fonteLetturaScheda("VLAN dei bridge", s.letture.scheda),
   ];
 
   return (

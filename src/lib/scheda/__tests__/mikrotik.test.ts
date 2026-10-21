@@ -6,7 +6,10 @@
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { descriviBond, espandiVlanIds, matriceVlan, statoPortaBridge, caselleMikrotik, nomeFileExport, ripulisciExport, statoArp, contatoriMikrotik, gruppoInterfaccia, perTipo, raggruppaInterfacce, statoInterfaccia, usoPercento } from "../mikrotik";
+import fs from "node:fs";
+import path from "node:path";
+import { parseBridgeScheda, parsePorteBridgeScheda, parseVlanBridge, parseVlanInterfacce } from "@/lib/devices/mikrotik-scheda";
+import { accessoMk, cacheDnsMk, fonteLetturaScheda, vlanConMadre, descriviBond, espandiVlanIds, matriceVlan, statoPortaBridge, caselleMikrotik, nomeFileExport, ripulisciExport, statoArp, contatoriMikrotik, gruppoInterfaccia, perTipo, raggruppaInterfacce, statoInterfaccia, usoPercento } from "../mikrotik";
 import type { InterfacciaScheda } from "../router";
 import type { HardwareMikrotik, RigaBondMk, RigaBridgeMk, RigaPortaBridgeMk, RigaVlanBridgeMk, RigaVlanMk, RisorseMikrotik } from "@/lib/devices/mikrotik-scheda";
 
@@ -61,7 +64,7 @@ describe("perTipo", () => {
 });
 
 describe("contatoriMikrotik", () => {
-  const base = { interfacce: null, rotte: 0, porteBridge: null, bond: null, vlan: null, utenti: null };
+  const base = { interfacce: null, rotte: 0, porteBridge: null, bond: null, vlanLette: null, utenti: null, admin: true };
   it("indirizzi dalle interfacce, VLAN e bond dal tipo se non li dà altro", () => {
     const l = [ifc("v1", "vlan", "up", { indirizzi: [{ ip: "10.0.0.1", prefisso: 24, famiglia: 4 }, { ip: "fe80::1", prefisso: 64, famiglia: 6 }] }), ifc("b", "bond")];
     assert.deepEqual(contatoriMikrotik({ ...base, interfacce: l, rotte: 3 }), { indirizzi: 2, vlan: 1, porteBridge: null, bond: 1, rotte: 3, utenti: null });
@@ -73,8 +76,16 @@ describe("contatoriMikrotik", () => {
     assert.equal(contatoriMikrotik({ ...base, interfacce: [ifc("a", null), ifc("b", null)] }).vlan, null);
     assert.equal(contatoriMikrotik({ ...base, interfacce: [ifc("a", "ether")] }).bond, null);
   });
-  it("il dato esplicito vince sul conto dal tipo", () => {
-    assert.equal(contatoriMikrotik({ ...base, interfacce: [ifc("v", "vlan")], vlan: 9 }).vlan, 9);
+  it("VLAN dalla lettura (/interface vlan) vince sul conto dal tipo delle interfacce; letta e vuota = nessun «0»", () => {
+    const tre = [ifc("v1", "vlan"), ifc("v2", "vlan"), ifc("v3", "vlan")];
+    assert.equal(contatoriMikrotik({ ...base, interfacce: tre, vlanLette: [vlanMk("A", 10), vlanMk("B", 20)] }).vlan, 2);
+    assert.equal(contatoriMikrotik({ ...base, interfacce: tre, vlanLette: null }).vlan, 3, "mai letta: dal tipo");
+    assert.equal(contatoriMikrotik({ ...base, interfacce: tre, vlanLette: [] }).vlan, null);
+  });
+  it("utenti solo per l'admin: da viewer null anche se il numero c'è", () => {
+    assert.equal(contatoriMikrotik({ ...base, utenti: 6 }).utenti, 6);
+    assert.equal(contatoriMikrotik({ ...base, utenti: 6, admin: false }).utenti, null);
+    assert.equal(contatoriMikrotik({ ...base, utenti: 0 }).utenti, null, "zero non si mostra");
   });
 });
 
@@ -129,6 +140,11 @@ describe("caselleMikrotik", () => {
     const conBridge = caselleMikrotik({ ...tutto, vlan: { numero: 9, bridge: 1 } }).find((x) => x.etichetta === "VLAN");
     assert.deepEqual([conBridge?.sotto, conBridge?.tab], ["su 1 bridge", "vlan"]);
     assert.equal(caselleMikrotik({ ...tutto, vlan: { numero: 9, bridge: 0 } }).find((x) => x.etichetta === "VLAN")?.tab, "interfacce", "zero bridge: la tab VLAN non c'è");
+  });
+  it("VLAN: il numero delle interfacce VLAN lette dal router vince sul conto dal tipo", () => {
+    const c = caselleMikrotik({ ...tutto, vlan: { numero: 1, bridge: 1 }, vlanLette: [vlanMk("A", 10), vlanMk("B", 20), vlanMk("C", 30)] });
+    assert.equal(c.find((x) => x.etichetta === "VLAN")?.valore, "3");
+    assert.equal(caselleMikrotik({ ...tutto, vlanLette: [] }).find((x) => x.etichetta === "VLAN"), undefined, "letta e vuota: niente casella");
   });
   it("senza dati: nessuna casella inventata", () => {
     assert.deepEqual(caselleMikrotik({ risorse: null, hardware: null, scansione: null, interfacce: null, vlan: null }), []);
@@ -348,5 +364,79 @@ describe("matriceVlan: intervallo non espanso", () => {
     });
     assert.deepEqual(m.colonne.map((c) => c.etichetta), ["100", "2-4094"]);
     assert.deepEqual(m.righe.map((r) => [r.porta, r.celle]), [["ether1", ["T", "T"]], ["ether2", ["U", null]]]);
+  });
+});
+
+const F = (n: string): string => fs.readFileSync(path.join(__dirname, "../../devices/__tests__/fixtures", n), "utf8");
+
+describe("matriceVlan completa sulle fixture vere (Task 1)", () => {
+  // Il bridge delle fixture VLAN (BR_LAN) e quello di mk3 (BR_RP) vengono da due router: si legano per nome come fa lo script.
+  const bridge = parseBridgeScheda(F("mikrotik-mk3-testa.txt"))[0];
+  const ponte = (x: string) => F(x).replace(/\bBR_LAN\b/g, bridge.name);
+  const m = matriceVlan({
+    bridge, porte: parsePorteBridgeScheda(F("mikrotik-mk4-testa.txt")), bond: [],
+    vlanBridge: parseVlanBridge(ponte("mikrotik-bridge-vlan-terse.txt")), vlan: parseVlanInterfacce(ponte("mikrotik-vlan-terse.txt")), statoPorta: attiva,
+  });
+  const cella = (porta: string, vlan: string) => m.righe.find((r) => r.porta === porta)?.celle[m.colonne.findIndex((c) => c.etichetta === vlan)];
+  it("completa, colonne dalle righe bridge vlan più i PVID, col nome dell'interfaccia VLAN", () => {
+    assert.equal(m.completa, true);
+    for (const id of ["1", "2", "40", "666", "22", "214"]) assert.ok(m.colonne.some((c) => c.etichetta === id), id);
+    assert.equal(m.colonne.find((c) => c.etichetta === "2")?.nome, "VL_2_ZONA07");
+    assert.equal(m.colonne.find((c) => c.etichetta === "214")?.nome, null, "PVID senza interfaccia VLAN: nessun nome");
+  });
+  it("T dai tagged, U dagli untagged, U implicito dal PVID", () => {
+    assert.equal(cella("sfp-sfpplus1", "2"), "T");
+    assert.equal(cella("bond2", "40"), "U");
+    assert.equal(cella("bond3", "40"), "T");
+    assert.equal(cella("sfp-sfpplus1", "666"), "U");
+    assert.equal(cella("bond2", "1"), "T");
+    assert.equal(cella("bond2", "22"), "U", "PVID 22, nessuna riga bridge vlan");
+    assert.equal(cella("sfp-sfpplus7", "2"), null);
+  });
+});
+
+describe("vlanConMadre (Interfacce, gruppo VLAN)", () => {
+  const l = [vlanMk("vlan10", 10, "bridge1"), vlanMk("vlan20", 20, "ether9")];
+  const ifcs = [ifc("bridge1", "bridge"), ifc("vlan10", "vlan")];
+  it("id, madre e tipo della madre dalle interfacce lette", () => {
+    assert.deepEqual(vlanConMadre("vlan10", l, ifcs), { id: 10, madre: "bridge1", tipoMadre: "bridge" });
+    assert.deepEqual(vlanConMadre("vlan20", l, ifcs), { id: 20, madre: "ether9", tipoMadre: null }, "madre non letta: tipo ignoto");
+  });
+  it("senza lettura o VLAN non trovata: null (la riga resta vuota)", () => {
+    assert.equal(vlanConMadre("vlan10", null, ifcs), null);
+    assert.equal(vlanConMadre("vlan99", l, ifcs), null);
+  });
+});
+
+describe("fonteLetturaScheda («DNS e utenti», «VLAN dei bridge»)", () => {
+  const s = (x: Partial<{ acceso: boolean; il: string | null; dati_il: string | null; codice: string | null }>) =>
+    ({ acceso: true, il: null, dati_il: null, codice: null, ...x });
+  it("spenta / mai letta", () => {
+    assert.deepEqual(fonteLetturaScheda("DNS e utenti", s({ acceso: false })), { nome: "DNS e utenti", esito: "assente", nota: "lettura spenta" });
+    assert.deepEqual(fonteLetturaScheda("DNS e utenti", s({})), { nome: "DNS e utenti", esito: "assente", nota: "mai letta" });
+  });
+  it("l'ora è quella dei DATI, non dell'ultimo tentativo; un tentativo fallito dice il codice", () => {
+    const f = fonteLetturaScheda("DNS e utenti", s({ il: "2026-10-22 09:00:00", dati_il: "2026-10-22 06:00:00", codice: "TEMPO_SCADUTO" }));
+    assert.equal(f.esito, "ok");
+    assert.equal(f.quando, "22/10, 08:00 · ultima prova 22/10, 11:00: TEMPO_SCADUTO");
+    assert.equal(fonteLetturaScheda("x", s({ il: "2026-10-22 09:00:00", dati_il: "2026-10-22 09:00:00" })).quando, "22/10, 11:00");
+  });
+  it("niente dati: il codice dell'ultima prova; spenta con dati vecchi: lo dice", () => {
+    assert.deepEqual(fonteLetturaScheda("x", s({ il: "2026-10-22 09:00:00", codice: "SCHEMA_SCHEDA" })), { nome: "x", esito: "assente", nota: "ultima prova 22/10, 11:00: SCHEMA_SCHEDA" });
+    assert.equal(fonteLetturaScheda("x", s({ acceso: false, dati_il: "2026-10-20 06:00:00" })).quando, "20/10, 08:00 · lettura spenta");
+  });
+});
+
+describe("accessoMk e cacheDnsMk", () => {
+  it("ultimo accesso com'è sul router (orologio del router), «mai» se manca", () => {
+    assert.equal(accessoMk("2026-10-21 22:46:44"), "21/10 22:46");
+    assert.equal(accessoMk("oct/20/2026 19:20:11"), "20/10 19:20");
+    assert.equal(accessoMk(null), "mai");
+    assert.equal(accessoMk("strano"), "strano");
+  });
+  it("cache «usata / totale» con lo spazio prima dell'unità", () => {
+    assert.equal(cacheDnsMk("48KiB", "2048KiB"), "48 KiB / 2048 KiB");
+    assert.equal(cacheDnsMk(null, "2048KiB"), "— / 2048 KiB");
+    assert.equal(cacheDnsMk(null, null), null);
   });
 });

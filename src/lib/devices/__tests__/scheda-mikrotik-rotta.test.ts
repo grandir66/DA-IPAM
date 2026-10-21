@@ -44,7 +44,7 @@ describe("rispostaSchedaMikrotik", () => {
       if (r.status !== 200) return;
       assert.deepEqual([r.body.bridge.length, r.body.porte.length, r.body.bond.length], [1, 10, 3]);
       assert.equal(r.body.letto_il, "2026-10-21 08:00:00");
-      assert.deepEqual(r.body.letture, { topologia: { acceso: false, il: null }, scheda: { acceso: false, il: null } });
+      assert.deepEqual(r.body.letture, { topologia: { acceso: false, il: null }, scheda: { acceso: false, il: null, dati_il: null, codice: null } });
       assert.equal(r.body.vlanBridge, null);
 
       scriviInterruttore("mikrotik", true, "prova");
@@ -81,14 +81,14 @@ describe("Task 10: VLAN, DNS e utenti", () => {
       const d = nuovo("rtr-v", "10.70.0.6", "mikrotik");
       const r0 = rispostaSchedaMikrotik(d.id);
       assert.ok(r0.status === 200 && r0.body.vlanBridge === null && r0.body.dns === null, "mai letta: null");
-      if (r0.status === 200) assert.deepEqual(r0.body.letture.scheda, { acceso: false, il: null });
+      if (r0.status === 200) assert.deepEqual(r0.body.letture.scheda, { acceso: false, il: null, dati_il: null, codice: null });
       scriviSchedaMikrotikLettura(d.id, lettura(), new Date(Date.UTC(2026, 9, 22, 8, 0)));
       scriviInterruttore("mikrotik_scheda", true, "prova");
       scriviEsito("mikrotik_scheda", d.id, { il: "2026-10-22 08:00:00", comandi: 4, riusciti: 4, codice: null });
       const r = rispostaSchedaMikrotik(d.id);
       assert.equal(r.status, 200);
       if (r.status !== 200) return;
-      assert.deepEqual(r.body.letture.scheda, { acceso: true, il: "2026-10-22 08:00:00" });
+      assert.deepEqual(r.body.letture.scheda, { acceso: true, il: "2026-10-22 08:00:00", dati_il: "2026-10-22 08:00:00", codice: null });
       assert.deepEqual([r.body.vlanBridge?.length, r.body.vlan?.length, r.body.dns?.servers], [12, 11, ["10.20.1.1", "10.20.1.2"]]);
       const testo = JSON.stringify(r.body);
       assert.equal(testo.includes("utente01") || testo.includes("utenti") || testo.includes("last_logged_in"), false, "la scheda per tutti non porta gli utenti");
@@ -105,6 +105,22 @@ describe("Task 10: VLAN, DNS e utenti", () => {
       scriviEsito("mikrotik_scheda", d.id, { il: "2026-10-22 09:00:00", comandi: 4, riusciti: 4, codice: null });
       const r = rispostaSchedaMikrotik(d.id);
       if (r.status === 200) assert.deepEqual([r.body.vlanBridge, r.body.vlan], [[], []]);
+    });
+  });
+
+  it("letture.scheda: dati_il = la data dei DATI (MAX seen_at delle quattro tabelle), non l'ora dell'ultimo tentativo fallito", () => {
+    withTenant(T, () => {
+      const d = nuovo("rtr-d", "10.70.0.11", "mikrotik");
+      scriviSchedaMikrotikLettura(d.id, lettura(), new Date(Date.UTC(2026, 9, 22, 6, 0)));
+      // seconda lettura: solo il DNS letto (le altre parti null restano con la loro età), poi un tentativo fallito
+      scriviSchedaMikrotikLettura(d.id, { ...lettura(), vlanBridge: null, vlan: null, utenti: null }, new Date(Date.UTC(2026, 9, 22, 7, 0)));
+      scriviEsito("mikrotik_scheda", d.id, { il: "2026-10-22 09:00:00", comandi: 4, riusciti: 0, codice: "TEMPO_SCADUTO" });
+      scriviInterruttore("mikrotik_scheda", true, "prova");
+      const altro = nuovo("rtr-d2", "10.70.0.12", "mikrotik");
+      scriviSchedaMikrotikLettura(altro.id, lettura(), new Date(Date.UTC(2026, 9, 22, 10, 0)));
+      const r = rispostaSchedaMikrotik(d.id);
+      assert.equal(r.status, 200);
+      if (r.status === 200) assert.deepEqual(r.body.letture.scheda, { acceso: true, il: "2026-10-22 09:00:00", dati_il: "2026-10-22 07:00:00", codice: "TEMPO_SCADUTO" });
     });
   });
 

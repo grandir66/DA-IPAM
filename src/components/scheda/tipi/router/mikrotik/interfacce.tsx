@@ -5,15 +5,17 @@
  * per tipo di interfaccia (Ethernet · VLAN · Bond · Bridge · VPN e tunnel · Altro), poi i vicini con la versione che
  * annunciano e, come prima, LibreNMS, «Sulla mappa» e gli IP collegati. Le colonne vuote per tutto il gruppo non si
  * rendono. «Dettagli»: dei bond (modo, slave, hash, MLAG, controllo link) e dei bridge (VLAN filter) dall'ultima fotografia della
- * topologia (Task 9); il genitore delle VLAN arriva col Task 11.
+ * topologia (Task 9); delle VLAN «VLAN <id> ↳ <madre> (<tipo>)» dalla lettura «VLAN, DNS e utenti» (Task 11): senza, la colonna
+ * non c'è e la riga delle fonti lo dice.
  */
 import { Fragment, useState } from "react";
 import type { RigaBondMk, RigaBridgeMk } from "@/lib/devices/mikrotik-scheda";
 import { LoadError } from "@/components/shared/load-error";
 import { parseDbDate } from "@/lib/db-date";
-import { raggruppaInterfacce, statoInterfaccia } from "@/lib/scheda/mikrotik";
+import { fonteLetturaScheda, gruppoInterfaccia, raggruppaInterfacce, statoInterfaccia, vlanConMadre } from "@/lib/scheda/mikrotik";
 import type { InterfacciaScheda } from "@/lib/scheda/router";
 import { Riquadro } from "../../../riquadro";
+import { RigaFonti } from "../../../riga-fonti";
 import { SezioneLibreNms } from "../../../dettagli/generale";
 import { IpCollegati, SullaMappa } from "../../../dettagli/rete";
 import type { ContestoScheda } from "../../../contesto";
@@ -55,6 +57,16 @@ function FiltroVlan({ b }: { b: RigaBridgeMk }) {
   return <span>VLAN filter <b>{b.vlan_filtering ? "✓ sì" : "✕ no"}</b></span>;
 }
 
+/** Dettagli di un'interfaccia VLAN (M9): «VLAN 10 ↳ bridge1 (bridge)». */
+function DettagliVlan({ v }: { v: NonNullable<ReturnType<typeof vlanConMadre>> }) {
+  return (
+    <span>
+      {v.id != null && <b>VLAN {v.id}</b>}
+      {v.madre && <span className="ml-1.5"><span className="text-muted-foreground" aria-hidden>↳ </span><span className="font-mono">{v.madre}</span>{v.tipoMadre && <span className="text-muted-foreground"> ({v.tipoMadre})</span>}</span>}
+    </span>
+  );
+}
+
 /** «7.15.3 (stable)» → «7.15.3»: il testo intero resta nel title. */
 const primoPezzo = (v: string): string => v.trim().split(/\s+/)[0] ?? v;
 
@@ -65,6 +77,7 @@ export function InterfacceMikrotik({ ctx }: { ctx: ContestoScheda }) {
   const { stato: scheda } = useSchedaMikrotik(device?.id);
   const bondPer = new Map((scheda.fase === "ok" ? scheda.dati.bond : []).map((b) => [b.name, b]));
   const bridgePer = new Map((scheda.fase === "ok" ? scheda.dati.bridge : []).map((b) => [b.name, b]));
+  const vlanLette = scheda.fase === "ok" ? scheda.dati.vlan : null;
   const [filtro, setFiltro] = useState<Filtro>("tutte");
   const vicini = device?.neighbors ?? [];
 
@@ -86,6 +99,7 @@ export function InterfacceMikrotik({ ctx }: { ctx: ContestoScheda }) {
     const su = tutte.filter((i) => statoInterfaccia(i) === "attiva").length;
     const visibili = tutte.filter((i) => filtro === "tutte" || (filtro === "su") === (statoInterfaccia(i) === "attiva"));
     const gruppi = raggruppaInterfacce(visibili);
+    const conVlan = tutte.some((i) => gruppoInterfaccia(i.tipo) === "vlan");
     const chip = (id: Filtro, testo: string, n: number) => (
       <button
         key={id}
@@ -117,8 +131,9 @@ export function InterfacceMikrotik({ ctx }: { ctx: ContestoScheda }) {
             mac: g.righe.some((i) => !!i.mac),
             commento: g.righe.some((i) => !!i.alias),
             filtro: g.gruppo === "bridge" && g.righe.some((i) => bridgePer.has(i.ifname)),
+            vlan: g.gruppo === "vlan" && g.righe.some((i) => vlanConMadre(i.ifname, vlanLette, tutte)),
           };
-          const nCol = 3 + [col.tipo, col.mtu, col.mac, col.commento, col.filtro].filter(Boolean).length;
+          const nCol = 3 + [col.tipo, col.mtu, col.mac, col.commento, col.filtro, col.vlan].filter(Boolean).length;
           return (
             <Riquadro
               key={g.gruppo}
@@ -136,13 +151,14 @@ export function InterfacceMikrotik({ ctx }: { ctx: ContestoScheda }) {
                       {col.mac && <th className={th}>MAC</th>}
                       <th className={th}>Indirizzi IP</th>
                       {col.commento && <th className={th}>Commento</th>}
-                      {col.filtro && <th className={th}>Dettagli</th>}
+                      {(col.filtro || col.vlan) && <th className={th}>Dettagli</th>}
                     </tr>
                   </thead>
                   <tbody>
                     {g.righe.map((i) => {
                       const bond = g.gruppo === "bond" ? bondPer.get(i.ifname) : undefined;
                       const br = bridgePer.get(i.ifname);
+                      const vm = g.gruppo === "vlan" ? vlanConMadre(i.ifname, vlanLette, tutte) : null;
                       const spenta = statoInterfaccia(i) === "attiva" ? "" : "bg-muted/30 text-muted-foreground";
                       return (
                         <Fragment key={i.ifname}>
@@ -155,6 +171,7 @@ export function InterfacceMikrotik({ ctx }: { ctx: ContestoScheda }) {
                             <td className="px-3 py-1.5"><IndirizziCella i={i} /></td>
                             {col.commento && <td className="px-3 py-1.5">{i.alias ?? "—"}</td>}
                             {col.filtro && <td className="whitespace-nowrap px-3 py-1.5">{br ? <FiltroVlan b={br} /> : "—"}</td>}
+                            {col.vlan && <td className="whitespace-nowrap px-3 py-1.5">{vm ? <DettagliVlan v={vm} /> : "—"}</td>}
                           </tr>
                           {bond && (
                             <tr className={`border-b ${spenta}`}>
@@ -170,6 +187,8 @@ export function InterfacceMikrotik({ ctx }: { ctx: ContestoScheda }) {
             </Riquadro>
           );
         })}
+        {/* Id e madre delle VLAN vengono dalla lettura «VLAN, DNS e utenti»: se non ci sono, si dice perché. */}
+        {conVlan && scheda.fase === "ok" && !vlanLette && <RigaFonti fonti={[fonteLetturaScheda("VLAN: id e interfaccia madre", scheda.dati.letture.scheda)]} />}
       </>
     );
   }

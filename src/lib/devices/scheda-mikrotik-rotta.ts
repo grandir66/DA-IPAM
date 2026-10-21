@@ -4,7 +4,7 @@
  * li dà solo `rispostaUtentiMikrotik`, dietro `requireAdmin()`. Fuori dal file della rotta per provarlo senza sessione; la rotta mette
  * davanti `requireAuth()` e `withTenantFromSession`. Va chiamato dentro il tenant.
  */
-import { contaBridgeMikrotik, getNetworkDeviceById, leggiSchedaMikrotik, leggiUtentiMikrotik } from "@/lib/db-tenant";
+import { contaBridgeMikrotik, dataSchedaMikrotikV3, getNetworkDeviceById, leggiSchedaMikrotik, leggiUtentiMikrotik } from "@/lib/db-tenant";
 import type { RigaUtenteMk } from "@/lib/devices/mikrotik-scheda";
 import { leggiEsiti, leggiInterruttore } from "@/lib/topology/letture/interruttori";
 import type { RispostaSchedaMikrotik } from "@/lib/scheda/mikrotik";
@@ -36,7 +36,11 @@ export function rispostaSchedaMikrotik(deviceId: number): { status: 200; body: R
       vlan: s.vlan ?? (completa ? [] : null),
       letture: {
         topologia: { acceso: topologia.acceso, il: leggiEsiti("mikrotik")[String(deviceId)]?.il ?? null },
-        scheda: { acceso: leggiInterruttore("mikrotik_scheda").acceso, il: esitoScheda?.il ?? null },
+        // `il` = ultimo tentativo, `dati_il` = età dei dati mostrati, `codice` = perché l'ultimo tentativo non è andato.
+        scheda: {
+          acceso: leggiInterruttore("mikrotik_scheda").acceso, il: esitoScheda?.il ?? null,
+          dati_il: dataSchedaMikrotikV3(deviceId), codice: esitoScheda?.codice ?? null,
+        },
       },
     },
   };

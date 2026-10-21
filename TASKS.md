@@ -114,10 +114,10 @@ Analisi del 20/10: canvas Cursor `progetti-fermi-DADude3-DA-MKNET-MKHA` (50 sche
 - [x] C0.7: censimento di `devices/acquisition/registry.ts` in `docs/proposte/2026-10-22-censimento-registry-acquisizione.md`: nessun chiamante, `mikrotik.ts` mai caricato, codice morto di 282 righe; proposta di ritirarlo. **Nessun cambio**: aspetta la decisione di Riccardo.
 - [ ] Decisione di Riccardo: ritirare `src/lib/devices/acquisition/` (C0.7)? Allineare `interfaces` a `partial` sui formati ignoti HP?
 - [x] C1, solo proposta: tavola grafica `docs/proposte/2026-10-22-collector-interfaccia.html` (15 oggetti numerati, 5 stati distinti per segno e luminanza, resa verificata con Chromium a 1280 e 390 px, senza scroll orizzontale) e schema fisico `docs/proposte/2026-10-22-collector-snapshot-schema.md` (`acquisition_sources`, `acquisition_snapshots`, chiave `acquisizione_modulare.attiva`, rotte e prove previste). Nessuna rotta, tabella o schermata scritta.
-- [ ] Riccardo: approvare o correggere gli oggetti 1-15 e le 5 domande in fondo alla tavola; poi C1 si scrive (rotte, tabelle, schermata).
+- [x] Riccardo (22/10): tavola C1 approvata con correzioni (piano §7): acquisizione normale con un altro formato, i dati popolano l'apparato (C1+C2 insieme, niente «Applica»), fonte automatica, 5 righe, «anteprima» finché C2 non è chiuso. Tavola pubblicata: https://claude.ai/artifact/RNgNG1UYmXfk1WfXFTSwZE
 - [x] Cancello di fine perimetro (22/10, cloud): `npm run lint` exit 0, `npx tsc --noEmit` exit 0, `npm run build` exit 0, prove del modulo 117/117. `npm test` exit 1 con 4956 pass e **1 fallita non nostra**: `db-facade-ratchet.test.ts` («db.ts definisce 265 funzioni, la soglia è 262»); `src/lib/db.ts` è identico a `origin/dev`, quindi la fallita arriva da `dev` (sessione MikroTik/scheda): serve alzare la soglia o spostare le funzioni in `db-tenant.ts`.
 - [ ] Da fare in locale (Riccardo): decisioni sulla tavola C1 e sul censimento C0.7; prova S1 con viewer/admin su un router; prova S2 su un QNAP QTS; SNMPv3 e WinRM veri; la fallita del ratchet `db.ts`; unione in `dev` e rilascio (qui non c'è stato `version:release`: lo bumpa chi unisce).
-- [ ] Prossimo in cloud dopo l'ok sulla tavola: C1 (tabelle, rotte, schermata), poi C2.
+- [ ] Giro cloud 2: C1 + C2 insieme (prompt, sezione «Giro 2»).
 - [ ] Dopo l'ok: tavola grafica degli oggetti d'interfaccia prima di scrivere schermate.
 
 ## 2026-10-21 — cose aperte dopo la notte del 20→21/10

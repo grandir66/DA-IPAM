@@ -73,6 +73,41 @@ Ci si ferma e si chiede solo per: un cambio di scope, un'azione distruttiva non 
 merge che tocca lavoro altrui in modo non ovvio. A fine di ogni blocco: commit e push su
 `collector-modulari`, `TASKS.md` aggiornato, una riga a Riccardo su cosa è pronto da provare in locale.
 
+## Giro 2 (22/10): C1 e C2 insieme
+
+Il giro 1 ha chiuso merge, S1, S2, C0 e la tavola C1. Riccardo ha risposto alle 5 domande della tavola: leggi
+il §7 del piano, paragrafo «Tavola C1». In breve: **è l'acquisizione normale con un altro formato**, la fonte
+si ricava da sola, **i dati popolano l'apparato**.
+
+0. Merge di `origin/dev` in `collector-modulari` (come nel giro 1). Se la prova `db-facade-ratchet` è
+   ancora rossa per funzioni arrivate da `dev`, non è tua: annotalo e vai avanti; le funzioni DB nuove le
+   metti in `db-tenant.ts`, non in `db.ts`.
+1. **Schema** (controllo completo): `acquisition_snapshots` (e la fonte, se serve ancora come tabella) da
+   `docs/proposte/2026-10-22-collector-snapshot-schema.md`, adattato alla decisione 4: la fonte è
+   ricavata, si salva solo la scelta fatta nel caso dubbio. Migrazioni inline idempotenti; retention D5.
+2. **Aggancio all'acquisizione esistente**: trova il flusso che parte dal pulsante d'acquisizione della
+   scheda (rotta e `network-device-acquisition.ts` o equivalente). Con l'interruttore
+   `acquisizione_modulare.attiva` acceso e un collector del catalogo adatto al prodotto, l'acquisizione usa
+   il collector: credenziali risolte nel backend dall'archivio (anti-lockout, exit 2 non prova altre
+   credenziali), snapshot salvato. Senza collector o con l'interruttore spento il percorso di oggi resta
+   **bit per bit** (prova che lo dimostra).
+3. **Proiezioni** (C2, controllo completo): funzioni pure snapshot → modifiche, una per destinazione
+   della tabella del §3 del piano; poi applicazione in transazione. `switch_ports` scritta **per campo**
+   (scoperta 5 del piano: campo assente = resta, `null` = letto e vuoto, porta tolta solo da sezione `ok`),
+   senza cambiare il comportamento dei percorsi UniFi e SNMP. Vicini e fatti T3 con fonte nuova
+   `collector`, letta solo dal modello per cavo (T1 bit per bit). Il manuale vince sempre. Ogni modifica
+   registrata con fonte e snapshot, per mostrarla.
+4. **Schermata** secondo la tavola, con le correzioni del §7: riquadro sotto «Credenziali» con l'ultimo
+   snapshot, tabella delle sezioni, prime 5 righe, ultime acquisizioni, **cosa è cambiato nell'apparato**;
+   finestra solo per il caso dubbio; interruttore in Impostazioni → Sistema, spento. Resa guardata con
+   Playwright a 1280 e 1920 con dati finti.
+5. Prove: contesto tenant, guardie (`permessi/rotte.ts`), nessun segreto in snapshot/risposte, `partial`
+   che non cancella, manuale che vince, percorso vecchio invariato con interruttore spento, crash a metà
+   con sessioni chiuse. Revisione rileggendo il diff dopo ogni task (controllo completo).
+
+Fermati a fine C2. A fine giro: cancello completo, TASKS aggiornato con cosa provare in locale
+(acquisizione vera di un HP della sede nuova, misura delle differenze sulla copia del DB dell'hub).
+
 ## Da lasciare a Riccardo in locale
 
 - Misure su copia del DB dell'hub (S3; differenze dell'anteprima in C2).

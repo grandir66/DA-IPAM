@@ -340,5 +340,20 @@ dove la domanda era aperta, sotto è scritto cosa si applica.
    task nei blocchi completi (S1, S3, C1, C2, C4-C6). Restano locali le misure sul DB dell'hub, i collaudi
    sugli apparati e la resa coi dati veri.
 
+**Tavola C1 (Riccardo, 22/10)** — `docs/proposte/2026-10-22-collector-interfaccia.html`:
+
+1. Il riquadro va in «Gestione» sotto «Credenziali». **È l'acquisizione normale dell'apparato con un altro
+   formato**: niente funzione separata; il pulsante è quello dell'acquisizione di oggi, che per le famiglie
+   con un collector legge il JSON 1.0.
+2. «Scarica JSON» solo admin. **I dati letti devono popolare l'apparato** (identità, porte, VLAN, vicini…):
+   C1 e C2 si fanno nello stesso giro. L'acquisizione premuta dall'admin è l'atto esplicito: niente secondo
+   pulsante «Applica». Regole invariate: un `partial` non cancella, il manuale vince, ogni valore porta la fonte;
+   nel riquadro si vede cosa è cambiato.
+3. Prime 5 righe lette nell'anteprima: sì.
+4. **Fonte automatica (b)**: collector dal prodotto riconosciuto, credenziali già assegnate all'apparato; si
+   chiede solo se c'è un dubbio (due collector possibili, nessuna credenziale compatibile). Nessuna finestra
+   «Scegli la fonte» obbligatoria (l'oggetto 15 diventa la finestra del caso dubbio).
+5. Etichetta «anteprima» nel titolo finché C2 non è chiuso: sì.
+
 **Ancora aperta:** nella sede nuova «ArubaOS» è ArubaOS-Switch (basta `hp-procurve`) o AOS-CX (serve
 `aruba-cx`)? Si vede al collaudo: il `sysDescr` lo dice.

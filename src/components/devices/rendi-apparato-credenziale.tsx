@@ -10,7 +10,7 @@ import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { opzioniCreazioneRapida, tipoCreazioneRapida, tipiCredenzialePerProtocollo } from "@/lib/credential-protocol-map";
+import { vociSnmpAggiuntive, opzioniCreazioneRapida, tipoCreazioneRapida, tipiCredenzialePerProtocollo } from "@/lib/credential-protocol-map";
 import { dataBreve } from "@/lib/devices/rendi-apparato";
 import type { CredenzialeArchivio, ProtocolloApparato } from "@/lib/devices/proposta-apparato";
 import { BadgeEsito, eMotivoTetto, type EsitoCredenziale } from "./rendi-apparato-esito";
@@ -47,6 +47,7 @@ export function RendiApparatoCredenziale({ riga, archivio, protocollo, escluse, 
 
   const tipi = tipiCredenzialePerProtocollo(protocollo);
   const voci = archivio.filter((c) => tipi.includes(c.credential_type));
+  const vociSnmp = vociSnmpAggiuntive(archivio);
   const tipoCorrente = opzioniTipo.some((o) => o.value === nuova.tipo) ? nuova.tipo : tipoCreazioneRapida(protocollo);
   const eCommunity = tipoCorrente === "snmp";
   const escludeHost = escluse[riga.host.id] ?? {};
@@ -97,6 +98,26 @@ export function RendiApparatoCredenziale({ riga, archivio, protocollo, escluse, 
         {modo === "archivio" && <BadgeEsito esito={esito} />}
         {modo === "archivio" && esito.stato === "rifiutata" && esito.dettaglio && <span className="text-[13px] text-muted-foreground">{esito.dettaglio}</span>}
       </div>
+      {!protocollo.startsWith("snmp") && vociSnmp.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3 pl-6">
+          <span className="text-[13px] font-semibold text-muted-foreground">SNMP aggiuntivo</span>
+          <Select value={riga.snmpCredentialId ?? "none"} onValueChange={(v) => azioni.onScegliSnmp(riga.host.id, !v || v === "none" ? null : v)} disabled={occupato}>
+            <SelectTrigger className="h-9 min-w-56 text-sm" aria-label="Credenziale SNMP aggiuntiva">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Nessuna</SelectItem>
+              {vociSnmp.map((c) => (
+                <SelectItem key={c.id} value={String(c.id)}>
+                  {c.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <span className="text-[13px] text-muted-foreground">per leggere porte, LLDP e ARP accanto all&apos;accesso principale</span>
+        </div>
+      )}
+
       {voci.length === 0 && modo === "archivio" && (
         <p className="text-[13px] text-muted-foreground">Nell&apos;archivio non c&apos;è nessuna credenziale adatta a questo protocollo: salvane una nuova qui sotto.</p>
       )}

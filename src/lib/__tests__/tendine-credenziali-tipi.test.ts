@@ -89,8 +89,9 @@ const leggi = (rel: string) => readFileSync(join(RADICE, rel), "utf8");
 
 const TENDINE_SNMP = [
   "src/components/shared/credential-assignment-fields.tsx",
-  "src/app/(dashboard)/networks/[id]/network-detail-client.tsx",
-  "src/app/(dashboard)/discovery/page.tsx",
+  // Dal 21/10 Discovery e la pagina della rete creano gli apparati con la finestra unica
+  // «Rendi apparato»: la tendina «SNMP aggiuntivo» sta lì (la v0.9.818 l'aveva persa).
+  "src/components/devices/rendi-apparato-credenziale.tsx",
 ];
 
 describe("i componenti usano la regola, non il codice grezzo", () => {

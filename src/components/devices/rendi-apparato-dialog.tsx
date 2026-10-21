@@ -440,6 +440,9 @@ function CorpoRendiApparato({
         if (p !== comuni.porta) setComuni((c) => ({ ...c, porta: p }));
       }
     },
+    onScegliSnmp: (hostId, credentialId) => {
+      aggiornaRiga(hostId, (r) => ({ ...r, snmpCredentialId: credentialId }));
+    },
     onProva: (hostId) => {
       const riga = righe.find((r) => r.host.id === hostId);
       if (riga?.credentialId) void provaCredenziale(hostId, riga.host.ip, riga.credentialId, comuni.porta);

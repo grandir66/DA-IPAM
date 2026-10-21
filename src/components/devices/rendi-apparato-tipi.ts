@@ -38,6 +38,8 @@ export interface RigaApparato {
 
 export interface AzioniCredenziale {
   onScegli: (hostId: number, credentialId: string | null) => void;
+  /** Credenziale SNMP in più (lettura SNMP accanto a SSH/API/WinRM): router, switch, firewall. */
+  onScegliSnmp: (hostId: number, credentialId: string | null) => void;
   onProva: (hostId: number) => void;
   onNome: (hostId: number, nome: string) => void;
   onTrova: (hostIds: number[]) => void;

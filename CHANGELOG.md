@@ -49,6 +49,9 @@ da Riccardo il 21/10.
 
 - Il conteggio delle VM Proxmox usava un'espressione con un errore di precedenza (`?? … > 0`): ora è `numeroVm()`,
   con prova.
+- L'export della configurazione MikroTik (`GET /api/devices/[id]/mikrotik`, anche per l'admin) esce già senza
+  `/system script` e `/system scheduler`, ripulito sul server: sui router con lo script di backup del Manager lì c'è
+  la password SFTP, e la vecchia pagina `/devices/[id]` la mostrava e la scaricava così com'era.
 
 ### Tolto
 

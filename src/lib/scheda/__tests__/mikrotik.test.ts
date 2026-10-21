@@ -203,6 +203,11 @@ describe("ripulisciExport", () => {
     const r = ripulisciExport(t);
     assert.equal(r.testo, "/system script-extra\nadd x=1\n");
   });
+  it("una riga tenuta che finisce con «\\» prima di un'intestazione tolta non lascia la «\\» appesa", () => {
+    const t = "/ip dns\nset servers=1.1.1.1 \\\n/system script\nadd name=x\n/ip service\nset a=1\n";
+    assert.equal(ripulisciExport(t).testo, "/ip dns\nset servers=1.1.1.1\n/ip service\nset a=1\n");
+    assert.equal(ripulisciExport("set a=1\\\r\n/system scheduler\r\nadd x=1\r\n").testo, "set a=1\r\n");
+  });
   it("fine riga CRLF e testo vuoto", () => {
     assert.equal(ripulisciExport("").testo, "");
     assert.equal(ripulisciExport("/system script\r\nadd a=1\r\n/ip dns\r\nset x=1\r\n").testo, "/ip dns\r\nset x=1\r\n");

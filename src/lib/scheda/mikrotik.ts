@@ -184,6 +184,10 @@ export function ripulisciExport(testo: string): { testo: string; tolte: string[]
     const nuda = riga.replace(/\r?\n$/, "");
     if (nuda.startsWith("/")) {
       const nome = nuda.trim();
+      // un'intestazione chiude la continuazione: una «\» rimasta sull'ultima riga tenuta (la sezione che seguiva è
+      // stata tolta, o l'export era troncato) si toglie, il terminatore di riga resta
+      const prec = tenute.length - 1;
+      if (prec >= 0) tenute[prec] = tenute[prec].replace(/[ \t]*\\(\r?\n)$/, "$1");
       inSezioneTolta = SEZIONI_DA_TOGLIERE.has(nome);
       if (inSezioneTolta && !tolte.includes(nome)) tolte.push(nome);
     }

@@ -5187,22 +5187,41 @@ export function ingressoDispositivi(deviceId: number): IngressoDispositivi {
   // `status` esiste solo dallo schema della scheda MikroTik (livello 1): prima, lo stato dell'ARP è ignoto.
   const conStato = livelloSchemaSchedaMk(d) >= 1;
   const arp = d.prepare(`SELECT ip, mac, interface_name, ${conStato ? "status" : "NULL AS status"}, timestamp FROM arp_entries WHERE device_id = ?`).all(deviceId) as IngressoDispositivi["arp"];
+  // I lease non si cancellano mai (upsert): si tengono quelli riscritti entro un giorno dall'ultima lettura
+  // dell'apparato. Non la finestra stretta dei vicini: molte letture riscrivono solo una parte dei lease (la discovery
+  // passa gli IP online, il recupero DHCP una rete sola) e una finestra di minuti nasconderebbe il resto.
   const lease = d.prepare(
-    `SELECT ip_address, mac_address, hostname, dynamic_lease, description, last_seen FROM dhcp_leases WHERE source_device_id = ?`,
+    `SELECT ip_address, mac_address, hostname, dynamic_lease, description, last_seen FROM dhcp_leases dl
+     WHERE dl.source_device_id = ?
+       AND datetime(dl.last_synced) >= (SELECT datetime(MAX(l2.last_synced), '-1 day') FROM dhcp_leases l2 WHERE l2.source_device_id = dl.source_device_id)`,
   ).all(deviceId) as IngressoDispositivi["lease"];
   const vicini = d.prepare(
     `SELECT dn.remote_ip, dn.remote_mac, dn.remote_device_name, dn.local_port, dn.timestamp
      FROM device_neighbors dn WHERE dn.device_id = ? AND ${NEIGHBORS_LATEST_ROUND_SQL}`,
   ).all(deviceId) as IngressoDispositivi["vicini"];
   const ips = [...new Set([...arp.map((a) => a.ip), ...lease.map((l) => l.ip_address), ...vicini.map((v) => v.remote_ip)].filter((x): x is string => !!x))];
-  const host: IngressoDispositivi["host"] = [];
+  // Reti servite dal router: quelle collegate in network_router e quelle dei suoi lease. Un host con lo stesso IP in
+  // un'altra sede non deve prestare nome né tenere in vita un'ARP «failed» (revisione finale, 22/10).
+  const servite = new Set((d.prepare(
+    `SELECT network_id FROM network_router WHERE router_id = ?
+     UNION SELECT network_id FROM dhcp_leases WHERE source_device_id = ? AND network_id IS NOT NULL`,
+  ).all(deviceId, deviceId) as { network_id: number }[]).map((r) => r.network_id));
+  const candidati: (IngressoDispositivi["host"][number] & { network_id: number | null })[] = [];
   // 500 per volta: sotto il limite delle variabili di SQLite anche con router da migliaia di righe.
   for (let k = 0; k < ips.length; k += 500) {
     const pezzo = ips.slice(k, k + 500);
-    host.push(...(d.prepare(
-      `SELECT id, ip, COALESCE(custom_name, hostname, dns_reverse) AS nome_dns, status FROM hosts WHERE ip IN (${pezzo.map(() => "?").join(",")})`,
-    ).all(...pezzo) as IngressoDispositivi["host"]));
+    candidati.push(...(d.prepare(
+      `SELECT id, ip, COALESCE(custom_name, hostname, dns_reverse) AS nome_dns, status, network_id FROM hosts WHERE ip IN (${pezzo.map(() => "?").join(",")})`,
+    ).all(...pezzo) as (IngressoDispositivi["host"][number] & { network_id: number | null })[]));
   }
+  // Con reti servite note vale solo un host di quelle; senza, solo un IP che nel tenant ha un host solo.
+  // In entrambi i casi un IP rimasto con più host non si collega.
+  const tenuti = servite.size > 0 ? candidati.filter((h) => h.network_id != null && servite.has(h.network_id)) : candidati;
+  const quanti = new Map<string, number>();
+  for (const h of tenuti) quanti.set(h.ip, (quanti.get(h.ip) ?? 0) + 1);
+  const host: IngressoDispositivi["host"] = tenuti
+    .filter((h) => quanti.get(h.ip) === 1)
+    .map(({ id, ip, nome_dns, status }) => ({ id, ip, nome_dns, status }));
   return { arp, lease, vicini, host };
 }
 

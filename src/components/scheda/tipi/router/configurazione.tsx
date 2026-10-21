@@ -21,6 +21,8 @@ import { eMikrotikSsh, regoleDi } from "./dati-router";
 
 interface ConfigMikrotik {
   exportFull: string;
+  /** sezioni tolte dal server (nome senza «/»): la ripulitura vera avviene lì, qui si ripassa per sicurezza */
+  exportTolte?: string[];
   systemInfo?: { identity?: string; version?: string; boardName?: string; serialNumber?: string; uptime?: string };
 }
 
@@ -46,8 +48,14 @@ export function ConfigurazioneRouter({ ctx }: { ctx: ContestoScheda }) {
   const [leggo, setLeggo] = useState(false);
   const [mostra, setMostra] = useState(false);
   const [letto, setLetto] = useState<Date | null>(null);
-  // l'export passa dalla ripulitura prima di essere mostrato o scaricato (script e scheduler portano la password SFTP)
-  const pulito = useMemo(() => (cfg?.exportFull ? ripulisciExport(cfg.exportFull) : null), [cfg]);
+  // l'export arriva già ripulito dal server (script e scheduler portano la password SFTP); il secondo passaggio qui
+  // non toglie nulla in condizioni normali, le sezioni tolte si leggono da `exportTolte`
+  const pulito = useMemo(() => {
+    if (!cfg?.exportFull) return null;
+    const r = ripulisciExport(cfg.exportFull);
+    const dalServer = (cfg.exportTolte ?? []).map((t) => `/${t}`);
+    return { ...r, tolte: [...new Set([...dalServer, ...r.tolte])] };
+  }, [cfg]);
   const nomeFile = cfg ? nomeFileExport(cfg.systemInfo?.identity ?? displayName, letto ?? new Date()) : "";
 
   async function carica() {

@@ -52,4 +52,47 @@ describe("ingressoDispositivi", () => {
       assert.equal(righe[1].fonteNome, "lldp");
     });
   });
+
+  // 22/10, revisione finale: l'host si cercava in tutto il tenant per IP. Un host di un'altra sede con lo stesso IP
+  // (e online) teneva in vita un'ARP «failed» di questo router e gli prestava il nome DNS.
+  it("stesso IP in due reti: vale l'host della rete servita dal router; senza reti servite, IP ambiguo = nessun host", () => {
+    withTenant(T, () => {
+      const a = nuovo("rtr-sede-a", "10.71.0.1");
+      const b = nuovo("rtr-senza-reti", "10.71.0.2");
+      const d = getDb();
+      d.prepare("INSERT INTO networks (cidr, name) VALUES ('10.71.1.0/24', 'sede-a')").run();
+      d.prepare("INSERT INTO networks (cidr, name) VALUES ('10.71.0.0/16', 'sede-b')").run();
+      const netA = (d.prepare("SELECT id FROM networks WHERE cidr='10.71.1.0/24'").get() as { id: number }).id;
+      const netB = (d.prepare("SELECT id FROM networks WHERE cidr='10.71.0.0/16'").get() as { id: number }).id;
+      d.prepare("INSERT INTO network_router (network_id, router_id) VALUES (?, ?)").run(netA, a.id);
+      d.prepare("INSERT INTO hosts (network_id, ip, status, hostname) VALUES (?, '10.71.1.7', 'offline', 'qui.lan')").run(netA);
+      d.prepare("INSERT INTO hosts (network_id, ip, status, hostname) VALUES (?, '10.71.1.7', 'online', 'altra-sede.lan')").run(netB);
+      for (const r of [a, b]) {
+        d.prepare("INSERT INTO arp_entries (device_id, mac, ip, interface_name, status) VALUES (?, '00:11:22:33:44:77', '10.71.1.7', 'vlan10', 'failed')").run(r.id);
+      }
+
+      const ia = ingressoDispositivi(a.id);
+      assert.deepEqual(ia.host.map((h) => h.nome_dns), ["qui.lan"], "solo l'host della rete servita");
+      assert.deepEqual(unisciDispositivi(ia, () => null).map((r) => r.ip), [], "l'ARP fallita non la conferma l'altra sede");
+
+      const ib = ingressoDispositivi(b.id);
+      assert.deepEqual(ib.host, [], "due host con lo stesso IP e nessuna rete servita: non si collega");
+      assert.deepEqual(unisciDispositivi(ib, () => null).map((r) => r.ip), []);
+    });
+  });
+
+  // 22/10, revisione finale: i lease non si cancellano mai (upsert), quindi un lease sparito dal router restava
+  // nella tab per sempre. Si tengono quelli riscritti entro un giorno dall'ultima lettura dell'apparato.
+  it("lease: solo quelli della finestra dell'ultima lettura dell'apparato", () => {
+    withTenant(T, () => {
+      const c = nuovo("rtr-lease", "10.73.0.1");
+      const d = getDb();
+      for (const ip of ["10.73.1.1", "10.73.1.2", "10.73.1.3"]) {
+        upsertDhcpLease({ source_type: "mikrotik", source_device_id: c.id, ip_address: ip, mac_address: "00:11:22:33:44:88", hostname: ip });
+      }
+      d.prepare("UPDATE dhcp_leases SET last_synced = datetime('now', '-3 days') WHERE source_device_id = ? AND ip_address = '10.73.1.1'").run(c.id);
+      d.prepare("UPDATE dhcp_leases SET last_synced = datetime('now', '-2 hours') WHERE source_device_id = ? AND ip_address = '10.73.1.2'").run(c.id);
+      assert.deepEqual(ingressoDispositivi(c.id).lease.map((l) => l.ip_address).sort(), ["10.73.1.2", "10.73.1.3"]);
+    });
+  });
 });

@@ -7,8 +7,8 @@
  *   1. scrivere i componenti in `src/components/scheda/tipi/<tipo>/` (ricevono `{ ctx: ContestoScheda }`);
  *   2. aggiungere qui sotto, in `TAB_DEL_TIPO`, UNA riga per tab: `<tipo>: { <tabId>: { render: (c) => <… ctx={c} /> } }`
  *      (`etichetta` solo se il nome della tab cambia per quel tipo, es. «Servizi e processi»);
- *   3. in `src/lib/scheda/tipo-scheda.ts` (`tabDelTipo`) elencare le tab del tipo e togliere `dettagli`.
- * Quello che il tipo non registra ricade sul registro base (`TAB_BASE`): Panoramica generica, Dettagli e le
+ *   3. in `src/lib/scheda/tipo-scheda.ts` (`tabDelTipo`) elencare le tab del tipo (senza `dettagli`: lo tiene solo `generico`).
+ * Quello che il tipo non registra ricade sul registro base (`TAB_BASE`): Panoramica generica, Dettagli (solo `generico`) e le
  * tab comuni Sicurezza · Gestione · Storico, che valgono per tutti.
  */
 import type { ReactNode } from "react";

@@ -1,10 +1,10 @@
 "use client";
 
 /**
- * Tab «Dettagli» provvisoria: ciò che la vecchia pagina mostrava in Generale, Sistema, Rete e Software, così
- * com'era, per i tipi di apparato che non hanno ancora le loro tab. Un tipo la perde quando il suo task è chiuso
- * (si toglie "dettagli" dalla sua riga in `tabDelTipo`). Vulnerabilità, Asset e credenziali, Storico e la
- * Panoramica sono usciti da qui: stanno nelle tab comuni.
+ * Tab «Dettagli»: ciò che la vecchia pagina mostrava in Generale, Sistema, Rete e Software. Dopo la scheda per
+ * tipo la tiene solo il tipo `generico` (stampanti, access point, UPS, postazioni…), che non ha tab sue e la cui
+ * Panoramica non mostra inventario base, informazioni SNMP, IP collegati né software. Gli altri tipi hanno i
+ * blocchi nelle loro tab (un blocco di `/objects` va nella tab del tipo, non qui).
  */
 import { useState } from "react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";

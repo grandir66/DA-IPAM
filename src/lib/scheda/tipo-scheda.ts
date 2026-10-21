@@ -77,7 +77,7 @@ export const TAB_COMUNI: TabId[] = ["sicurezza", "gestione", "storico"];
 
 /**
  * Tab del tipo. `Active Directory` solo per un server Windows con ruolo DC **e** dati AD (`haAd`); `Dipendenze`
- * solo se qualche servizio poggia sull'host (`haDipendenze`). Il tipo `generico` tiene ancora «Dettagli».
+ * solo se qualche servizio poggia sull'host (`haDipendenze`). Solo il tipo `generico` tiene «Dettagli» (non ha tab sue).
  */
 export function tabDelTipo(t: TipoScheda, o: { ruoli: string[]; haAd: boolean; haDipendenze: boolean }): TabId[] {
   if (t === "host") return ["panoramica", "sicurezza", "storico"];

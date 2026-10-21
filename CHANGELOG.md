@@ -4,6 +4,49 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-21 · La scheda dell'apparato cambia secondo il tipo (v0.9.822-829)
+
+La scheda `/objects/[id]` aveva sette tab uguali per ogni apparato: uno switch trovava «Software» con la frase
+«non applicabile», un NAS i dischi sotto «Sistema», una VM Proxmox sotto «Network», e le cose più utili
+(porte, interfacce, servizi, controller di dominio) erano persi, nascosti o rimasti nella pagina `/devices/[id]`
+che nessuno apre. Piano `docs/superpowers/plans/2026-10-21-scheda-apparato-per-tipo.md`, tavola grafica approvata
+da Riccardo il 21/10.
+
+### Aggiunto
+
+- **Tab per tipo** (`components/scheda/tipi/<tipo>/`): switch (pannello frontale, porte da guardare, VLAN, vicini e MAC),
+  router e firewall (interfacce, routing e ARP, DHCP, configurazione), storage (dischi e RAID, volumi, servizi),
+  hypervisor (VM e container abbinate agli host, nodi, storage, rete), server Windows e Linux (sistema, servizi,
+  aggiornamenti, software, utenti, Active Directory per i DC, dipendenze). In comune a tutti: intestazione in una
+  riga, striscia di numeri, Panoramica che entra in una schermata, Sicurezza · Gestione · Storico.
+- **Un solo punto che decide il tipo**: `tipoScheda()` (`lib/scheda/tipo-scheda.ts`) legge classificazione e
+  piattaforma, mai `device_type`; `tabDelTipo()` elenca le tab. Il punto di innesto per i tipi nuovi è
+  `components/scheda/tab-scheda.tsx`.
+- **Nuove letture** in sola lettura, tutte dietro login: `GET /api/devices/[id]/interfacce`,
+  `GET /api/devices/[id]/proxmox-match` (il POST, che scrive, resta solo admin), `GET /api/hosts/[id]/proxmox-vm`,
+  `/api/hosts/[id]/ad`, `/api/hosts/[id]/dipendenze`.
+
+### Cambiato
+
+- **`device_type` dei server vecchi**: lo schema d'origine non ammetteva `server`, quindi i server Windows e Linux
+  erano salvati come `switch` e le query dell'API sceglievano il ramo sbagliato. Conversione una tantum
+  (`lib/devices/migra-device-type-v21.ts`, segno `device_type_v21`, elenco per nome nel log prima di scrivere);
+  gli apparati senza classificazione non si toccano.
+- **Export della configurazione MikroTik** (`GET /api/devices/[id]/mikrotik?action=config`): ora solo admin. Prima
+  bastava una sessione qualunque per scaricare l'intera configurazione del router.
+- La scheda `/objects/[id]` è passata da 2889 righe a poco più di 500: i blocchi sono stati spostati nei componenti, non riscritti.
+
+### Corretto
+
+- Il conteggio delle VM Proxmox usava un'espressione con un errore di precedenza (`?? … > 0`): ora è `numeroVm()`,
+  con prova.
+
+### Tolto
+
+- La tab «Dettagli» per switch, router, firewall, storage, hypervisor e server: i loro blocchi stanno nelle tab del
+  tipo. Resta solo per il tipo `generico` (stampanti, access point, UPS, postazioni), che non ha tab sue.
+- Il testo «Aggiungi a dispositivi da Discovery» (per promuovere un host c'è la finestra «Rendi apparato»).
+
 ## [Non rilasciato] — 2026-10-21 · «Rendi apparato», classificazione unica, voci senza doppioni (v0.9.815-820)
 
 Riccardo, creando apparati, trovava la finestra caotica (stesse domande ripetute, credenziale scelta alla

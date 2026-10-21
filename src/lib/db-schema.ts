@@ -100,6 +100,7 @@ CREATE TABLE IF NOT EXISTS network_devices (
   enabled INTEGER DEFAULT 1,
   classification TEXT,
   server_roles TEXT,
+  classification_manual INTEGER NOT NULL DEFAULT 0,
   sysname TEXT,
   sysdescr TEXT,
   model TEXT,

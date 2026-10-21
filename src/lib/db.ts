@@ -771,6 +771,8 @@ export function getDb(): Database.Database {
   ensureNetworkDevicesColumn(_db, "snmp_version_fissata", "ALTER TABLE network_devices ADD COLUMN snmp_version_fissata INTEGER NOT NULL DEFAULT 0");
   // Ruoli dei server (catalogo canonico 21/10): JSON array, colonna nuova su hosts e network_devices.
   ensureNetworkDevicesColumn(_db, "server_roles", "ALTER TABLE network_devices ADD COLUMN server_roles TEXT");
+  // Classificazione scelta a mano sull'apparato (tappa 5, 21/10): la scansione non la sovrascrive.
+  ensureNetworkDevicesColumn(_db, "classification_manual", "ALTER TABLE network_devices ADD COLUMN classification_manual INTEGER NOT NULL DEFAULT 0");
   try {
     if (!tableHasColumn(_db, "hosts", "server_roles")) _db.exec("ALTER TABLE hosts ADD COLUMN server_roles TEXT");
   } catch (e) {
@@ -6095,7 +6097,8 @@ export function syncNetworkDeviceFromHostScan(ip: string, hostOpenPorts: Array<{
     const classCanonica = canonicalizza(hostClassification).classificazione;
     const deviceClassification = canonicalizza(device.classification ?? device.device_type).classificazione;
     const isInfra = ["router", "switch", "hypervisor"].includes(device.device_type);
-    if (isInfra && deviceClassification !== classCanonica) {
+    // Scelta a mano sull'apparato (tappa 5): la scansione non la riscrive.
+    if (isInfra && device.classification_manual !== 1 && deviceClassification !== classCanonica) {
       const infraSpecific = ["router", "switch", "hypervisor", "firewall", "access_point", "load_balancer", "vpn_gateway", "server", "nas"];
       if (infraSpecific.includes(classCanonica)) {
         updates.classification = hostClassification;

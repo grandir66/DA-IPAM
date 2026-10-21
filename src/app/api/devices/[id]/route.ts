@@ -7,6 +7,8 @@ import {
   applyProductProfileScanDefaults,
   type ProductProfileId,
 } from "@/lib/device-product-profiles";
+import { scriviClassificazione } from "@/lib/classification/scrivi";
+import { RUOLI_SERVER, type RuoloServer } from "@/lib/classification/canonico";
 import { coerceProtocolForVendor } from "@/lib/vendor-device-profile";
 import { applicaCorpoApparatoDb, avvisoFalliti, RifiutoCredenziali, usataAdessoDb, type EsitoScelte } from "@/lib/credentials/apparato-archivio";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
@@ -143,7 +145,6 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     if (body.name !== undefined) updates.name = body.name;
     if (body.host !== undefined) updates.host = body.host;
     if (body.device_type !== undefined) updates.device_type = body.device_type;
-    if (body.classification !== undefined) updates.classification = body.classification;
     if (body.vendor !== undefined) updates.vendor = body.vendor;
     if (body.vendor_subtype !== undefined) updates.vendor_subtype = body.vendor_subtype;
     if (body.protocol !== undefined) updates.protocol = body.protocol;
@@ -228,6 +229,13 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     const dbh = getDb();
     const { device, credenziali } = dbh.transaction(() => {
       const aggiornato = updateNetworkDevice(Number(id), updates as Partial<import("@/types").NetworkDevice>);
+      // Classificazione dal punto unico: ricalcola device_type e scrive anche sull'host abbinato.
+      if (aggiornato && typeof body.classification === "string" && body.classification) {
+        const ruoli = Array.isArray(body.server_roles)
+          ? (body.server_roles as unknown[]).filter((r): r is RuoloServer => (RUOLI_SERVER as readonly string[]).includes(String(r)))
+          : undefined;
+        scriviClassificazione(dbh, { deviceId: Number(id) }, body.classification, { manuale: true, ruoli });
+      }
       const esito: EsitoScelte | null = aggiornato
         ? applicaCorpoApparatoDb(dbh, Number(id), body as Record<string, unknown>, { conferma: body.conferma_rimozione === true })
         : null;

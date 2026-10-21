@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { getHostById, updateHost, deleteHost } from "@/lib/db";
+import { getHostById, updateHost, deleteHost, getDb } from "@/lib/db";
+import { scriviClassificazione } from "@/lib/classification/scrivi";
 import { HostUpdateSchema } from "@/lib/validators";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
@@ -33,9 +34,14 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     if (!parsed.success) {
       return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
     }
-    const host = updateHost(hostId, parsed.data);
+    // La classificazione passa dal punto unico (scrive anche sull'apparato abbinato); il resto da updateHost.
+    const { classification, ...resto } = parsed.data;
+    const host = updateHost(hostId, resto);
     if (!host) {
       return NextResponse.json({ error: "Host non trovato" }, { status: 404 });
+    }
+    if (classification !== undefined && classification !== "") {
+      scriviClassificazione(getDb(), { hostId }, classification, { manuale: true });
     }
     const full = getHostById(hostId);
     return NextResponse.json(full ?? host);

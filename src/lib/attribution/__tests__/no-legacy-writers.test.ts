@@ -72,6 +72,12 @@ const ALLOWED_FILES: Record<string, string> = {
     "lo stesso valore in forma canonica, anche sugli host con classification_manual=1 (e lascia " +
     "classification_manual com'è), e aggiunge il ruolo/vendor che lo slug vecchio conteneva.",
 
+  "src/lib/classification/scrivi.ts":
+    "Punto unico della scelta dell'utente (tappa 5, 21/10): le rotte (scheda host, scheda apparato, " +
+    "modifiche in blocco, creazione apparato) scrivono la classificazione su host e apparato abbinati " +
+    "da qui, con classification_manual=1. Non è un writer automatico: non lo chiamano scansioni, " +
+    "attribution né cron. `tornaAutomatica` azzera il flag.",
+
   "src/lib/classification/persist.ts":
     "Motore di classificazione legacy SEPARATO e preesistente (applyClassificationDecision). " +
     "CORREZIONE fix C1 (review finale fase 4): l'allowlist giustificava questa voce dicendo " +

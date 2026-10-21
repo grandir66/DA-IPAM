@@ -7,7 +7,6 @@ import {
   getNetworkDeviceByHost,
   getNetworkDeviceById,
   getDb,
-  updateHost,
   updateNetworkDevice,
   ensureInventoryAssetForNetworkDevice,
   addDeviceCredentialBinding,
@@ -29,6 +28,7 @@ import {
   type ProductProfileId,
 } from "@/lib/device-product-profiles";
 import { linkInvAgentEndpointToHost } from "@/lib/inventory-agent/db";
+import { scriviClassificazione } from "@/lib/classification/scrivi";
 import { portaCredenziale } from "@/lib/credentials/porte";
 import { tipiCredenzialePerProtocollo } from "@/lib/credential-protocol-map";
 import { isMacOsHost } from "@/lib/host-platform-detect";
@@ -219,7 +219,7 @@ export async function POST(request: Request) {
         } catch { /* ignore */ }
       }
 
-      updateHost(host.id, { classification });
+      scriviClassificazione(getDb(), { hostId: host.id }, classification, { manuale: true });
       try {
         linkInvAgentEndpointToHost(host.id);
       } catch {
@@ -290,17 +290,18 @@ export async function PATCH(request: Request) {
         if (!device) continue;
         esistenti.push(id);
         const updates: Record<string, unknown> = {};
-        if (classification !== undefined) updates.classification = classification;
         if (protocol !== undefined) updates.protocol = protocol;
         if (deviceVendor !== undefined) updates.vendor = deviceVendor;
         if (vendor_subtype !== undefined) updates.vendor_subtype = vendor_subtype;
         if (Object.keys(updates).length > 0) updateNetworkDevice(id, updates as Parameters<typeof updateNetworkDevice>[1]);
-        if (Object.keys(updates).length > 0 || conCredenziali) aggiornati++;
+        // Classificazione dal punto unico: ricalcola device_type e scrive anche sull'host abbinato.
+        if (classification !== undefined) scriviClassificazione(dbh, { deviceId: id }, classification, { manuale: true });
+        if (Object.keys(updates).length > 0 || classification !== undefined || conCredenziali) aggiornati++;
       }
       for (const id of host_ids) {
         if (!getHostBasic(id)) continue;
         if (classification !== undefined) {
-          updateHost(id, { classification });
+          scriviClassificazione(dbh, { hostId: id }, classification, { manuale: true });
           host++;
         }
       }

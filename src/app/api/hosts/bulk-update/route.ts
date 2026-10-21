@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { updateHost } from "@/lib/db";
+import { updateHost, getDb } from "@/lib/db";
+import { scriviClassificazione } from "@/lib/classification/scrivi";
 import { assegnaCredenzialeAgliHost, VoceNonValePerProtocollo } from "@/lib/credentials/lega-voce";
 import {
   bulkUpdateNetworkDeviceByHostId,
@@ -127,7 +128,6 @@ export async function PATCH(request: Request) {
       for (const id of host_ids) {
         // Aggiorna campi host
         const update: Record<string, unknown> = {};
-        if (classification !== undefined) update.classification = classification;
         if (known_host !== undefined) update.known_host = known_host;
         if (notes !== undefined) update.notes = notes;
         if (device_manufacturer !== undefined) update.device_manufacturer = device_manufacturer;
@@ -136,6 +136,11 @@ export async function PATCH(request: Request) {
         if (Object.keys(update).length > 0) {
           const result = updateHost(id, update as Parameters<typeof updateHost>[1]);
           if (result) updated++;
+        }
+        // Classificazione dal punto unico: scrive anche sull'apparato abbinato.
+        if (classification !== undefined) {
+          const r = scriviClassificazione(getDb(), { hostId: id }, classification, { manuale: true });
+          if (r.hostId != null && Object.keys(update).length === 0) updated++;
         }
 
         // Aggiorna network_devices linkati via IP (se ci sono campi device da aggiornare)

@@ -258,6 +258,8 @@ export interface NetworkDevice {
   snmp_version?: "1" | "2c" | null;
   /** 1 = versione scelta a mano: la discovery non la sovrascrive. */
   snmp_version_fissata?: number;
+  /** 1 = classificazione scelta a mano: la scansione non la riscrive (tappa 5). */
+  classification_manual?: number;
   api_url: string | null;
   port: number;
   enabled: number;

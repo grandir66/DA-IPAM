@@ -13,12 +13,12 @@
 import {
   createNetworkDevice,
   getHostByIp,
-  updateHost,
   ensureInventoryAssetForNetworkDevice,
   addDeviceCredentialBinding,
   getCredentialById,
   getDb,
 } from "@/lib/db";
+import { scriviClassificazione } from "@/lib/classification/scrivi";
 import { NetworkDeviceSchema } from "@/lib/validators";
 import {
   suggestProductProfileForClassification,
@@ -127,7 +127,8 @@ export function creaApparato(body: unknown): EsitoCreaApparato {
 
   const host = getHostByIp(data.host);
   if (host) {
-    updateHost(host.id, { classification: deviceClassification });
+    // Punto unico: scrive la classificazione sull'host (e, già uguale, sull'apparato) come scelta a mano.
+    scriviClassificazione(getDb(), { hostId: host.id }, deviceClassification, { manuale: true });
     try {
       linkInvAgentEndpointToHost(host.id);
     } catch {

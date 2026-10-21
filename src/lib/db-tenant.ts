@@ -555,6 +555,17 @@ export function migrateSnmpVersione(db: Database.Database): string[] {
 }
 
 /**
+ * Classificazione scelta a mano anche sull'apparato (tappa 5, 21/10): `classification_manual` (1 = la scansione non
+ * la riscrive), come già sugli host. Solo colonna nuova, idempotente. Esportata per le prove.
+ */
+export function migrateClassificazioneManualeApparato(db: Database.Database): string[] {
+  const has = (db.prepare("PRAGMA table_info(network_devices)").all() as Array<{ name: string }>).some((c) => c.name === "classification_manual");
+  if (has) return [];
+  db.exec("ALTER TABLE network_devices ADD COLUMN classification_manual INTEGER NOT NULL DEFAULT 0");
+  return ["network_devices.classification_manual"];
+}
+
+/**
  * Migrazione «topologia cavi» (spec 2026-10-14 §13.5.7, tappa T2): le colonne nuove dei vicini e degli apparati e le tre
  * tabelle dei fatti delle letture in più, con l'indice sui MAC. Additiva, idempotente, in UNA transazione (o tutto o
  * niente); restituisce ciò che aggiunge. Le tabelle nascono anche dallo schema (stesse CREATE, `DDL_TOPOLOGY_CAVI`): qui
@@ -2001,6 +2012,13 @@ export function getTenantDb(tenantCode: string): Database.Database {
     }
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: migrazione versione SNMP fallita:`, e);
+  }
+
+  try {
+    const added = migrateClassificazioneManualeApparato(newDb);
+    if (added.length > 0) console.info(`[db-tenant] ${tenantCode}: classificazione a mano, aggiunto ${added.join(", ")}`);
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione classificazione a mano fallita:`, e);
   }
 
   // Catalogo canonico (21/10): colonna server_roles e conversione una tantum degli slug doppi. Prima della
@@ -4301,7 +4319,8 @@ export function syncNetworkDeviceFromHostScan(ip: string, hostOpenPorts: Array<{
     const classCanonica = canonicalizza(hostClassification).classificazione;
     const deviceClassification = canonicalizza(device.classification ?? device.device_type).classificazione;
     const isInfra = ["router", "switch", "hypervisor"].includes(device.device_type);
-    if (isInfra && deviceClassification !== classCanonica) {
+    // Scelta a mano sull'apparato (tappa 5): la scansione non la riscrive.
+    if (isInfra && device.classification_manual !== 1 && deviceClassification !== classCanonica) {
       const infraSpecific = ["router", "switch", "hypervisor", "firewall", "access_point", "load_balancer", "vpn_gateway", "server", "nas"];
       if (infraSpecific.includes(classCanonica)) {
         updates.classification = hostClassification;

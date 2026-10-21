@@ -3,7 +3,7 @@
 Approvato da Riccardo il 21/10/2026, controllo completo. Moduli TypeScript invocabili dalla CLI e da DA-IPAM, nessun database richiesto. Prima famiglia: switch QNAP QSS, non NAS QTS.
 
 ## Contratto
-JSON schema_version 1, collector/version, target, collected_at, duration_ms, stato globale e sezioni identity, interfaces, vlans, forwarding, neighbors, spanning_tree, aggregation, poe, sensors. Ogni sezione espone stato ok/partial/unsupported/error/skipped, dati tipizzati, fonti e avvisi con codici stabili. Null significa sconosciuto, array vuoti autorevoli solo a raccolta conclusa. Counter64 in stringa decimale, velocità in bit/s, tempo in secondi, VLAN e ifIndex numerici. Nessuna credenziale nel JSON.
+JSON schema_version 1, collector/version, target, collected_at, duration_ms, stato globale e sezioni identity, interfaces, vlans, forwarding, neighbors, spanning_tree, aggregation, poe, sensors, network (IPv4/ARP). Ogni sezione espone stato ok/partial/unsupported/error/skipped, dati tipizzati, fonti e avvisi con codici stabili. Null significa sconosciuto, array vuoti autorevoli solo a raccolta conclusa. Counter64 in stringa decimale, velocità in bit/s, tempo in secondi, VLAN e ifIndex numerici. Nessuna credenziale nel JSON.
 
 ## Architettura
 Core senza Next/DB: schema Zod, registry, transport iniettabili, parser puri e collector qnap-switch. SNMP sessioni tramite protocols/snmp-sessione; SSH tramite ssh-transport esistente, console interattiva con timeout e paginazione. CLI accetta un file locale 0600 fuori dal repo, stdout solo JSON, exit 0 completo/2 parziale/1 errore/64 input. Adapter restituisce snapshot e mapping DeviceInfo senza scrivere.

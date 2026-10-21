@@ -60,6 +60,6 @@ Piano: docs/superpowers/plans/2026-10-21-collector-modulari-qnap.md
 - [x] Collaudo reale: identità/porte/VLAN/FDB/LLDP/STP/LAG/sensori; IP/ARP errori espliciti e PVID non osservato.
 - [x] 32 prove mirate/SNMP verdi, lint senza errori e typecheck/build verdi; manuale e ADR 0024.
 - [x] Difetti scoperti e corretti: timeout durante output lungo, STP ruolo/stato scambiati, errore IP escluso dal risultato globale, fonti SNMP attribuite senza credenziali.
-- [ ] Chiudere commit locali selettivi e verifica finale, senza push/deploy.
+- [x] Commit locali selettivi e verifiche conclusi; nessun push/deploy.
 - [ ] Rinviato: aggancio persistente/UI in DA-IPAM, altri firmware, LLDP esteso, PoE, API e SNMPv3; non approvati in questa tappa.
 - [x] Trappola rilevata e gestita: SSH solo shell, SNMP per tabella; timeout di inattività + termine totale per output lungo.

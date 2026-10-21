@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Collector modulari — proposta d'interfaccia C1</title>
+<style>
+  :root {
+    --navy: #0D2537;
+    --cian: #00A7E7;
+    --oro: #FFD400;
+    --fondo: #EDEDED;
+    --carta: #FFFFFF;
+    --testo: #0D2537;
+    --testo-2: #4A6070;
+    --linea: #C9D2D8;
+    --ok: #1F7A4D;
+    --guasto: #8E1B20;
+    --chiaro: #C5CED4;
+    --marker: #0D2537;
+    --marker-testo: #FFFFFF;
+    --marker-bordo: #FFD400;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --fondo: #0A1A27;
+      --carta: #11293B;
+      --testo: #E6EEF4;
+      --testo-2: #A9BECC;
+      --linea: #24405A;
+      --ok: #5ED3A0;
+      --guasto: #E8625A;
+      --chiaro: #A9BECC;
+      --marker: #FFD400;
+      --marker-testo: #0D2537;
+      --marker-bordo: #0D2537;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--fondo);
+    color: var(--testo);
+    font-family: "Signika", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 16px;
+    line-height: 1.45;
+  }
+  .pagina { max-width: 1180px; margin: 0 auto; padding: 24px 16px 64px; }
+  header.testata { background: var(--navy); color: #fff; border-radius: 10px; padding: 20px 24px; border-bottom: 6px solid var(--cian); }
+  header.testata h1 { margin: 0 0 4px; font-size: 26px; font-weight: 600; }
+  header.testata p { margin: 0; color: #C3D3DF; font-size: 15px; }
+  header.testata .meta { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 8px; }
+  .etichetta-meta { background: var(--oro); color: var(--navy); border-radius: 4px; padding: 2px 8px; font-size: 13px; font-weight: 600; }
+  h2 { font-size: 20px; margin: 36px 0 6px; font-weight: 600; }
+  h2 .tav { display: inline-block; background: var(--navy); color: #fff; border-radius: 4px; padding: 0 8px; margin-right: 8px; font-size: 14px; vertical-align: 2px; }
+  p.nota { margin: 0 0 12px; color: var(--testo-2); font-size: 15px; max-width: 80ch; }
+
+  /* — tavola: finestra dell'app resa, non uno schema — */
+  .tavola { background: var(--carta); border: 1px solid var(--linea); border-radius: 10px; padding: 16px; }
+  .scheda-testa { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: baseline; border-bottom: 1px solid var(--linea); padding-bottom: 10px; margin-bottom: 12px; }
+  .scheda-testa b { font-size: 18px; }
+  .schede { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 14px; }
+  .scheda-tab { padding: 5px 12px; border-radius: 6px; font-size: 14px; color: var(--testo-2); border: 1px solid transparent; }
+  .scheda-tab.attiva { background: var(--navy); color: #fff; }
+  .griglia { display: grid; gap: 14px; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
+  .griglia > div, .quattro > div { min-width: 0; }
+  @media (max-width: 820px) { .griglia { grid-template-columns: minmax(0, 1fr); } }
+  .riquadro { border: 1px solid var(--linea); border-radius: 8px; background: var(--carta); position: relative; }
+  .riquadro > .titolo { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 9px 14px; border-bottom: 1px solid var(--linea); font-weight: 600; font-size: 15px; }
+  .riquadro > .corpo { padding: 12px 14px; }
+  .riquadro.tenue { opacity: .85; }
+  .riquadro.nuovo { border: 2px solid var(--cian); }
+  .riquadro.nuovo > .titolo { background: color-mix(in srgb, var(--cian) 12%, var(--carta)); }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
+  .tenue-testo { color: var(--testo-2); }
+  .riga { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; margin: 6px 0; }
+  .dl { display: grid; grid-template-columns: minmax(90px, 150px) 1fr; gap: 6px 12px; margin: 0; font-size: 14px; }
+  .dl dt { color: var(--testo-2); }
+  .dl dd { margin: 0; }
+
+  /* — stati: tinta piena + segno + luminanza diversa (palette di stile-stato-modulo.ts) — */
+  .stato { display: inline-flex; align-items: center; gap: 5px; border-radius: 4px; border: 1px solid; padding: 1px 8px 1px 6px; font-size: 13px; font-weight: 600; white-space: nowrap; }
+  .stato .seg { font-size: 12px; }
+  .s-ok { background: var(--ok); border-color: var(--ok); color: #fff; }
+  .s-parziale { background: #FFD400; border-color: #C9A800; color: #0D2537; }
+  .s-errore { background: var(--guasto); border-color: var(--guasto); color: #fff; }
+  .s-saltata { background: var(--chiaro); border-color: #9AA8B2; color: #0D2537; }
+  .s-nonsup { background: transparent; border: 1px dashed #7A8B97; color: var(--testo-2); }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .s-ok, :root:not([data-theme="light"]) .s-errore { color: #0D2537; }
+  }
+  .grigi .stato { filter: grayscale(1); }
+  .collaudo { font-size: 13px; border-radius: 4px; padding: 1px 8px; border: 1px solid var(--linea); }
+  .collaudo.si { border-color: var(--ok); }
+  .collaudo.no { border-style: dashed; color: var(--testo-2); }
+
+  /* — bottoni — */
+  .btn { display: inline-block; border: 1px solid var(--navy); background: var(--navy); color: #fff; border-radius: 6px; padding: 5px 14px; font: inherit; font-size: 14px; font-weight: 600; }
+  .btn.sec { background: transparent; color: var(--testo); border-color: var(--linea); }
+  .btn.off { opacity: .45; }
+  .btn.piccolo { padding: 2px 10px; font-size: 13px; }
+
+  /* — tabella — */
+  table.t { width: 100%; border-collapse: collapse; font-size: 14px; display: block; overflow-x: auto; max-width: 100%; }
+  table.t th { text-align: left; font-weight: 600; color: var(--testo-2); font-size: 13px; padding: 4px 8px; border-bottom: 1px solid var(--linea); }
+  table.t td { padding: 5px 8px; border-bottom: 1px solid var(--linea); vertical-align: top; }
+  table.t tr.aperta td { background: color-mix(in srgb, var(--cian) 9%, var(--carta)); }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .avviso-chip { display: inline-block; border: 1px solid var(--linea); border-radius: 4px; padding: 0 6px; font-size: 12px; }
+  .espanso { background: color-mix(in srgb, var(--cian) 7%, var(--carta)); border: 1px solid var(--linea); border-radius: 6px; padding: 10px 12px; margin: 4px 0 8px; font-size: 14px; }
+  .espanso ul { margin: 4px 0 8px 18px; padding: 0; }
+
+  .banda { border-radius: 6px; padding: 8px 12px; font-size: 14px; border: 1px solid var(--linea); display: flex; gap: 8px; align-items: flex-start; }
+  .banda.info { background: color-mix(in srgb, var(--cian) 10%, var(--carta)); border-color: var(--cian); }
+  .banda.att { background: color-mix(in srgb, #FFD400 22%, var(--carta)); border-color: #C9A800; }
+  .interruttore { display: inline-flex; align-items: center; gap: 8px; }
+  .manopola { width: 44px; height: 24px; border-radius: 12px; border: 2px solid var(--navy); position: relative; background: transparent; }
+  .manopola::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--navy); }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .manopola { border-color: #A9BECC; } :root:not([data-theme="light"]) .manopola::after { background: #A9BECC; } }
+
+  /* — numeri degli oggetti — */
+  .mk { position: absolute; top: -11px; left: -11px; width: 24px; height: 24px; border-radius: 50%; background: var(--marker); color: var(--marker-testo); border: 2px solid var(--marker-bordo); font-weight: 700; font-size: 13px; display: grid; place-items: center; z-index: 2; box-shadow: 0 1px 3px rgba(0,0,0,.35); }
+  .mk.dx { left: auto; right: -11px; }
+  .mk.in { position: static; display: inline-grid; margin-right: 6px; vertical-align: middle; box-shadow: none; }
+  .rel { position: relative; }
+  .pila { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); }
+
+  .quattro { display: grid; gap: 22px 14px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 8px; }
+  @media (max-width: 820px) { .quattro { grid-template-columns: minmax(0, 1fr); } }
+
+  /* — elenco oggetti — */
+  table.oggetti { width: 100%; display: block; overflow-x: auto; border-collapse: collapse; background: var(--carta); border: 1px solid var(--linea); border-radius: 8px; font-size: 14px; }
+  table.oggetti th { text-align: left; background: var(--navy); color: #fff; padding: 7px 10px; font-weight: 600; font-size: 13px; }
+  table.oggetti td { padding: 8px 10px; border-bottom: 1px solid var(--linea); vertical-align: top; }
+  table.oggetti td:first-child { width: 44px; }
+  table.oggetti .mk { position: static; box-shadow: none; }
+  .domande li { margin-bottom: 6px; }
+  .non-c-e { columns: 2; column-gap: 24px; }
+  @media (max-width: 820px) { .non-c-e { columns: 1; } }
+  .leggenda { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin: 8px 0; }
+  .leggenda .gr { display: flex; gap: 8px; align-items: center; }
+  footer { margin-top: 40px; color: var(--testo-2); font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="pagina">
+
+<header class="testata">
+  <h1>Collector modulari — proposta d'interfaccia (C1)</h1>
+  <p>Aggancio manuale in sviluppo: l'apparato ha una fonte di raccolta, un admin lancia l'acquisizione, la scheda mostra l'ultimo snapshot. Niente viene applicato all'inventario.</p>
+  <div class="meta">
+    <span class="etichetta-meta">PROPOSTA — nessuna rotta, tabella o schermata scritta</span>
+    <span class="etichetta-meta">22/10/2026</span>
+    <span class="etichetta-meta">dati inventati (192.0.2.0/24)</span>
+  </div>
+</header>
+
+<h2><span class="tav">Tavola 0</span>Come si leggono gli stati</h2>
+<p class="nota">Cinque stati di una sezione dello snapshot. Ognuno ha un segno diverso <em>e</em> una luminanza diversa (dal più scuro al più chiaro: errore, ok, parziale, saltata); «non supportata» è solo un contorno tratteggiato. Nella riga sotto la stessa legenda senza colori: si distingue lo stesso.</p>
+<div class="tavola">
+  <div class="leggenda">
+    <span class="stato s-ok"><span class="seg">✓</span>Letta</span>
+    <span class="stato s-parziale"><span class="seg">▲</span>Parziale</span>
+    <span class="stato s-errore"><span class="seg">✕</span>Errore</span>
+    <span class="stato s-saltata"><span class="seg">●</span>Saltata</span>
+    <span class="stato s-nonsup"><span class="seg">–</span>Non supportata</span>
+  </div>
+  <div class="leggenda grigi">
+    <span class="stato s-ok"><span class="seg">✓</span>Letta</span>
+    <span class="stato s-parziale"><span class="seg">▲</span>Parziale</span>
+    <span class="stato s-errore"><span class="seg">✕</span>Errore</span>
+    <span class="stato s-saltata"><span class="seg">●</span>Saltata</span>
+    <span class="stato s-nonsup"><span class="seg">–</span>Non supportata</span>
+  </div>
+  <p class="nota" style="margin:6px 0 0">Corrispondenza con lo snapshot: <span class="mono">ok</span> → Letta · <span class="mono">partial</span> → Parziale · <span class="mono">error</span> → Errore · <span class="mono">skipped</span> → Saltata (non richiesta o credenziale assente) · <span class="mono">unsupported</span> → Non supportata (l'apparato non ha quella parte). Segni e tinte sono quelli già usati da <span class="mono">stile-stato-modulo.ts</span>.</p>
+</div>
+
+<h2><span class="tav">Tavola 1</span>Scheda dell'apparato → tab «Gestione» → nuovo riquadro</h2>
+<p class="nota">Dove sta: sotto «Credenziali», nella stessa tab, stesso componente <span class="mono">Riquadro</span> delle altre. Si vede con la sessione; i pulsanti di scrittura solo all'admin. Esempio: uno switch di laboratorio con un'acquisizione parziale.</p>
+<div class="tavola">
+  <div class="scheda-testa"><b>sw-lab-01</b><span class="mono tenue-testo">192.0.2.10</span><span class="tenue-testo">Switch · HPE/Aruba ProCurve</span></div>
+  <div class="schede"><span class="scheda-tab">Scheda</span><span class="scheda-tab">Dettagli</span><span class="scheda-tab attiva">Gestione</span><span class="scheda-tab">Sicurezza</span><span class="scheda-tab">Storico</span></div>
+  <div class="griglia">
+    <div class="pila">
+      <div class="riquadro tenue"><div class="titolo">Credenziali</div><div class="corpo tenue-testo" style="font-size:14px">… tabella credenziali com'è oggi …</div></div>
+
+      <div class="riquadro nuovo rel">
+        <span class="mk">1</span>
+        <div class="titolo">
+          <span>Acquisizione modulare <span class="tenue-testo" style="font-weight:400">(anteprima)</span></span>
+          <span class="rel"><span class="mk dx" style="top:-20px;right:-6px">5</span><span class="btn">Acquisisci ora</span></span>
+        </div>
+        <div class="corpo">
+          <div class="riga rel">
+            <span class="mk in">2</span>
+            <span class="stato s-parziale"><span class="seg">▲</span>Parziale</span>
+            <span>22/10/2026 09:41 · 6,2 s</span>
+            <span class="tenue-testo">richiesta da <b>r.admin</b></span>
+          </div>
+          <dl class="dl" style="margin-top:10px">
+            <dt><span class="mk in">3</span>Collector</dt>
+            <dd><span class="mono">hp-procurve 1.0.0</span> <span class="collaudo si">✓ collaudato su Aruba 2540 e 5406R zl2</span></dd>
+            <dt><span class="mk in">4</span>Credenziali</dt>
+            <dd>SSH «lettura-switch» · SNMP «community-rete» <span class="tenue-testo">— dall'archivio, sola lettura</span></dd>
+          </dl>
+          <div class="banda info rel" style="margin:12px 0">
+            <span class="mk in">6</span>
+            <span>Solo lettura: nessuna scrittura sull'apparato e <b>nessun dato è stato applicato all'inventario</b>. Questa tappa mostra soltanto ciò che il collector ha letto.</span>
+          </div>
+
+          <div class="rel">
+            <span class="mk">7</span>
+            <table class="t" style="margin-top:6px">
+              <thead><tr><th>Sezione</th><th>Stato</th><th class="num">Righe</th><th>Fonti</th><th>Avvisi</th></tr></thead>
+              <tbody>
+                <tr><td>Identità</td><td><span class="stato s-ok"><span class="seg">✓</span>Letta</span></td><td class="num">1</td><td class="mono">snmp · ssh</td><td class="tenue-testo">—</td></tr>
+                <tr><td>Interfacce</td><td><span class="stato s-ok"><span class="seg">✓</span>Letta</span></td><td class="num">52</td><td class="mono">ssh</td><td class="tenue-testo">—</td></tr>
+                <tr><td>VLAN</td><td><span class="stato s-ok"><span class="seg">✓</span>Letta</span></td><td class="num">12</td><td class="mono">ssh</td><td class="tenue-testo">—</td></tr>
+                <tr class="aperta"><td>Tabella MAC</td><td><span class="stato s-parziale"><span class="seg">▲</span>Parziale</span></td><td class="num">4 096</td><td class="mono">ssh</td><td><span class="avviso-chip">1 avviso ▾</span></td></tr>
+              </tbody>
+            </table>
+            <div class="espanso rel">
+              <span class="mk">8</span>
+              <b>Avvisi di «Tabella MAC»</b>
+              <ul>
+                <li>Letta solo in parte: raggiunto il limite di righe. <span class="mono tenue-testo">ROW_OR_BYTE_LIMIT</span></li>
+              </ul>
+              <b>Prime righe lette</b> <span class="tenue-testo">(sola lettura, 5 di 4 096)</span>
+              <table class="t" style="margin-top:4px">
+                <thead><tr><th>MAC</th><th>VLAN</th><th>Porta</th></tr></thead>
+                <tbody>
+                  <tr><td class="mono">02:00:00:00:00:01</td><td>40</td><td class="mono">49</td></tr>
+                  <tr><td class="mono">02:00:00:00:00:02</td><td>40</td><td class="mono">12</td></tr>
+                  <tr><td class="mono">02:00:00:00:00:03</td><td>17</td><td class="mono">7</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <table class="t">
+              <tbody>
+                <tr><td>Vicini (LLDP)</td><td><span class="stato s-ok"><span class="seg">✓</span>Letta</span></td><td class="num">3</td><td class="mono">ssh</td><td class="tenue-testo">—</td></tr>
+                <tr><td>Spanning tree</td><td><span class="stato s-ok"><span class="seg">✓</span>Letta</span></td><td class="num">52</td><td class="mono">ssh</td><td><span class="avviso-chip">solo CIST</span></td></tr>
+                <tr><td>PoE</td><td><span class="stato s-parziale"><span class="seg">▲</span>Parziale</span></td><td class="num">48</td><td class="mono">ssh</td><td><span class="avviso-chip">1 avviso ▸</span></td></tr>
+                <tr><td>Sensori</td><td><span class="stato s-saltata"><span class="seg">●</span>Saltata</span></td><td class="num">0</td><td class="mono">—</td><td><span class="avviso-chip">comando non previsto</span></td></tr>
+                <tr><td>Moduli</td><td><span class="stato s-nonsup"><span class="seg">–</span>Non supportata</span></td><td class="num">0</td><td class="mono">—</td><td class="tenue-testo">—</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="rel" style="margin-top:14px">
+            <span class="mk">9</span>
+            <b style="font-size:14px">Ultime acquisizioni</b> <span class="tenue-testo" style="font-size:13px">(si tengono le ultime 20, più la prima e l'ultima riuscita)</span>
+            <table class="t" style="margin-top:4px">
+              <thead><tr><th>Quando</th><th>Esito</th><th class="num">Durata</th><th class="num">Peso</th><th>Impronta</th><th></th></tr></thead>
+              <tbody>
+                <tr><td>22/10 09:41</td><td><span class="stato s-parziale"><span class="seg">▲</span>Parziale</span></td><td class="num">6,2 s</td><td class="num">184 KB</td><td class="mono">a3f9c2</td><td><span class="btn sec piccolo">In vista</span></td></tr>
+                <tr><td>21/10 18:05</td><td><span class="stato s-ok"><span class="seg">✓</span>Letta</span></td><td class="num">5,9 s</td><td class="num">181 KB</td><td class="mono">7be104</td><td><span class="btn sec piccolo">Vedi</span> <span class="btn sec piccolo">Scarica JSON</span></td></tr>
+                <tr><td>21/10 17:58</td><td><span class="stato s-errore"><span class="seg">✕</span>Errore</span></td><td class="num">1,1 s</td><td class="num">2 KB</td><td class="mono">0c5d77</td><td><span class="btn sec piccolo">Vedi</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pila" style="align-content:start">
+      <div class="riquadro tenue"><div class="titolo">Come ci arrivo</div><div class="corpo tenue-testo" style="font-size:14px">… com'è oggi …</div></div>
+      <div class="riquadro tenue"><div class="titolo">Asset NIS2</div><div class="corpo tenue-testo" style="font-size:14px">… com'è oggi …</div></div>
+    </div>
+  </div>
+</div>
+
+<h2><span class="tav">Tavola 2</span>Il riquadro quando non c'è uno snapshot da mostrare</h2>
+<p class="nota">Quattro stati vuoti, ognuno con la frase che dice che cosa fare. Il pulsante «Acquisisci ora» si spegne e dice perché.</p>
+<div class="quattro">
+  <div class="riquadro nuovo rel">
+    <span class="mk">10</span>
+    <div class="titolo"><span>Acquisizione modulare</span><span class="btn">Acquisisci ora</span></div>
+    <div class="corpo">
+      <div class="riga"><span class="stato s-saltata"><span class="seg">●</span>Mai acquisito</span></div>
+      <p class="tenue-testo" style="margin:6px 0 0;font-size:14px">Collector proposto: <span class="mono">hp-procurve</span> (dal prodotto riconosciuto). Premi «Acquisisci ora» per la prima lettura, in sola lettura.</p>
+    </div>
+  </div>
+
+  <div class="riquadro nuovo rel">
+    <span class="mk">11</span>
+    <div class="titolo"><span>Acquisizione modulare</span><span class="btn off">Acquisisci ora</span></div>
+    <div class="corpo">
+      <div class="banda att"><span>▲</span><span>L'acquisizione modulare è <b>spenta</b> per questa installazione. Un amministratore la accende in Impostazioni → Sistema.</span></div>
+    </div>
+  </div>
+
+  <div class="riquadro nuovo rel">
+    <span class="mk">12</span>
+    <div class="titolo"><span>Acquisizione modulare</span><span class="btn off">Acquisisci ora</span></div>
+    <div class="corpo">
+      <div class="riga"><span class="stato s-nonsup"><span class="seg">–</span>Nessun collector</span></div>
+      <p class="tenue-testo" style="margin:6px 0 0;font-size:14px">Per «Stampante · Brother» non esiste un collector. Quelli disponibili sono: QNAP QSS, HP ProCurve, HP Comware, VMware ESXi, NetApp ONTAP.</p>
+    </div>
+  </div>
+
+  <div class="riquadro nuovo rel">
+    <span class="mk">13</span>
+    <div class="titolo"><span>Acquisizione modulare</span><span class="btn">Acquisisci ora</span></div>
+    <div class="corpo">
+      <div class="riga"><span class="stato s-errore"><span class="seg">✕</span>Errore</span><span>22/10/2026 09:41 · 1,1 s</span></div>
+      <div class="banda att" style="margin-top:8px"><span>▲</span><span>SSH: credenziale «lettura-switch» <b>rifiutata</b>. Non ne provo altre da solo: scegli o correggi la credenziale nella tabella qui sopra e riprova.</span></div>
+    </div>
+  </div>
+</div>
+
+<h2><span class="tav">Tavola 3</span>Interruttore e scelta della fonte</h2>
+<p class="nota">L'interruttore è per installazione (impostazione del tenant), <b>spento</b> all'inizio, come le altre funzioni nuove. La fonte (collector + credenziali) si sceglie una volta per apparato; il collector è proposto dal prodotto riconosciuto, non cercato a tappeto.</p>
+<div class="quattro">
+  <div class="riquadro rel">
+    <span class="mk">14</span>
+    <div class="titolo">Impostazioni → Sistema</div>
+    <div class="corpo">
+      <b style="font-size:15px">Acquisizione modulare (anteprima)</b>
+      <p class="tenue-testo" style="margin:4px 0 10px;font-size:14px">Permette agli amministratori di lanciare a mano la lettura di un apparato con un collector e di vedere cosa ha letto. Non modifica l'inventario e non parte da sola.</p>
+      <div class="interruttore"><span class="manopola"></span><b>Spento</b> <span class="tenue-testo">— un solo clic per accenderlo, un admin</span></div>
+    </div>
+  </div>
+
+  <div class="riquadro rel">
+    <span class="mk">15</span>
+    <div class="titolo">Scegli la fonte — sw-lab-01</div>
+    <div class="corpo">
+      <dl class="dl" style="grid-template-columns:120px 1fr">
+        <dt>Collector</dt><dd><span class="mono">hp-procurve 1.0.0</span> <span class="tenue-testo">proposto dal prodotto riconosciuto</span> <span class="collaudo si">✓ collaudato</span></dd>
+        <dt>SSH</dt><dd>«lettura-switch» ▾ <span class="tenue-testo">(archivio)</span></dd>
+        <dt>SNMP</dt><dd>«community-rete» ▾ <span class="tenue-testo">(archivio)</span></dd>
+      </dl>
+      <p class="tenue-testo" style="font-size:13px;margin:8px 0">Si propongono solo le credenziali già assegnate all'apparato. Nessuna credenziale nuova, nessuna ricerca.</p>
+      <div class="riga"><span class="btn sec">Annulla</span><span class="btn">Salva la fonte</span></div>
+    </div>
+  </div>
+</div>
+
+<h2>Gli oggetti, numerati</h2>
+<table class="oggetti">
+  <thead><tr><th>N.</th><th>Oggetto</th><th>Cosa mostra e da dove lo prende</th><th>Chi</th></tr></thead>
+  <tbody>
+    <tr><td><span class="mk">1</span></td><td>Riquadro «Acquisizione modulare (anteprima)»</td><td>Nella tab Gestione, sotto «Credenziali», bordo cian per dire che è nuovo. Legge solo da <span class="mono">acquisition_snapshots</span> e dalla fonte dell'apparato.</td><td>vede: sessione</td></tr>
+    <tr><td><span class="mk">2</span></td><td>Stato dell'ultimo snapshot</td><td>Segno + testo + ora italiana + durata + chi l'ha richiesta. Lo stato complessivo è quello dello snapshot (<span class="mono">ok</span>, <span class="mono">partial</span>, <span class="mono">error</span>).</td><td>sessione</td></tr>
+    <tr><td><span class="mk">3</span></td><td>Collector e collaudo</td><td>Id e versione dal catalogo; «collaudato su …» dai modelli e firmware del descrittore, oppure «non collaudato» tratteggiato.</td><td>sessione</td></tr>
+    <tr><td><span class="mk">4</span></td><td>Credenziali usate</td><td>Nomi delle voci dell'archivio, per protocollo; mai segreti. Link alla tabella «Credenziali» sopra.</td><td>sessione</td></tr>
+    <tr><td><span class="mk">5</span></td><td>Pulsante «Acquisisci ora»</td><td>POST. Si spegne con l'interruttore spento, senza collector o senza fonte, dicendo perché. Una sola acquisizione per apparato alla volta.</td><td>solo admin</td></tr>
+    <tr><td><span class="mk">6</span></td><td>Riga «Solo lettura, nulla applicato»</td><td>Fissa in C1; sparisce quando in C2 arrivano anteprima e applicazione.</td><td>sessione</td></tr>
+    <tr><td><span class="mk">7</span></td><td>Tabella delle sezioni</td><td>Una riga per sezione dello snapshot: stato, numero di righe, fonti (<span class="mono">snmp</span>, <span class="mono">ssh</span>, <span class="mono">api</span>), avvisi. Sezioni opzionali assenti non compaiono.</td><td>sessione</td></tr>
+    <tr><td><span class="mk">8</span></td><td>Riga aperta di una sezione</td><td>Avvisi con il testo in italiano e il codice in piccolo; le prime 5 righe lette, sola lettura. Niente modifica, niente «applica».</td><td>sessione</td></tr>
+    <tr><td><span class="mk">9</span></td><td>Ultime acquisizioni</td><td>Elenco paginato (ultime 20 + prima e ultima riuscita, D5): quando, esito, durata, peso, impronta corta. «Vedi» porta quello snapshot nel riquadro; «Scarica JSON» solo admin.</td><td>vede: sessione · scarica: admin</td></tr>
+    <tr><td><span class="mk">10</span></td><td>Stato «Mai acquisito»</td><td>Propone il collector dal prodotto riconosciuto.</td><td>sessione</td></tr>
+    <tr><td><span class="mk">11</span></td><td>Stato «Spenta»</td><td>Frase che rimanda a Impostazioni → Sistema.</td><td>sessione</td></tr>
+    <tr><td><span class="mk">12</span></td><td>Stato «Nessun collector»</td><td>Elenca i collector che esistono; non propone di cercarne altri.</td><td>sessione</td></tr>
+    <tr><td><span class="mk">13</span></td><td>Stato «Errore» con credenziale rifiutata</td><td>Dice che non provo altre credenziali (budget anti-lockout; uscita parziale non autorizza altre prove).</td><td>sessione</td></tr>
+    <tr><td><span class="mk">14</span></td><td>Interruttore in Impostazioni → Sistema</td><td>Impostazione del tenant, assente = spento. Stessa forma di «Chocolatey automatico».</td><td>solo admin</td></tr>
+    <tr><td><span class="mk">15</span></td><td>Finestra «Scegli la fonte»</td><td>Collector proposto dal descrittore e dal prodotto, credenziali tra quelle già assegnate all'apparato.</td><td>solo admin</td></tr>
+  </tbody>
+</table>
+
+<h2>Cosa in questa tappa non c'è</h2>
+<ul class="non-c-e">
+  <li>Nessun pulsante «Applica» né anteprima delle differenze (arrivano in C2).</li>
+  <li>Nessuna esecuzione pianificata né in blocco su più apparati.</li>
+  <li>Nessuna credenziale nuova creata da qui, nessuna ricerca di credenziali.</li>
+  <li>Nessun segreto nello snapshot, nel JSON scaricato, nell'audit o nelle risposte.</li>
+  <li>Nessuna tabella «Dati» nuova nelle altre schede: il riquadro è l'unico punto.</li>
+  <li>Nessun collector nuovo: vale per i cinque del catalogo.</li>
+</ul>
+
+<h2>Da decidere</h2>
+<ol class="domande">
+  <li><b>Posizione.</b> Va bene nella tab «Gestione» sotto «Credenziali» (proposta), o lo vuoi in «Dettagli»?</li>
+  <li><b>Scarica JSON</b> solo admin (proposta) o anche chi ha la sessione? Lo snapshot non contiene segreti ma contiene l'inventario dell'apparato.</li>
+  <li><b>Anteprima dei dati letti</b> (oggetto 8): bastano le prime 5 righe, o preferisci aprire lo snapshot completo in una pagina a parte?</li>
+  <li><b>Fonte</b> (oggetto 15): una finestra a parte (proposta) oppure scelta direttamente al primo «Acquisisci ora»?</li>
+  <li><b>Etichetta «anteprima»</b> nel titolo finché non c'è l'applicazione in C2: la teniamo?</li>
+</ol>
+
+<footer>
+  Schema fisico proposto per l'archivio degli snapshot e per la fonte: <span class="mono">docs/proposte/2026-10-22-collector-snapshot-schema.md</span>. Dati d'esempio inventati; stati e tinte come in <span class="mono">src/components/shared/stile-stato-modulo.ts</span>.
+</footer>
+
+</div>
+</body>
+</html>

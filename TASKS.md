@@ -113,6 +113,8 @@ Analisi del 20/10: canvas Cursor `progetti-fermi-DADude3-DA-MKNET-MKHA` (50 sche
 - [x] C0.6: guida «Aggiungere una famiglia» in `docs/modules/acquisition.md` (file da creare, descrittore, fixture anonimizzate, prove, modelli/firmware collaudati, trasporti).
 - [x] C0.7: censimento di `devices/acquisition/registry.ts` in `docs/proposte/2026-10-22-censimento-registry-acquisizione.md`: nessun chiamante, `mikrotik.ts` mai caricato, codice morto di 282 righe; proposta di ritirarlo. **Nessun cambio**: aspetta la decisione di Riccardo.
 - [ ] Decisione di Riccardo: ritirare `src/lib/devices/acquisition/` (C0.7)? Allineare `interfaces` a `partial` sui formati ignoti HP?
+- [x] C1, solo proposta: tavola grafica `docs/proposte/2026-10-22-collector-interfaccia.html` (15 oggetti numerati, 5 stati distinti per segno e luminanza, resa verificata con Chromium a 1280 e 390 px, senza scroll orizzontale) e schema fisico `docs/proposte/2026-10-22-collector-snapshot-schema.md` (`acquisition_sources`, `acquisition_snapshots`, chiave `acquisizione_modulare.attiva`, rotte e prove previste). Nessuna rotta, tabella o schermata scritta.
+- [ ] Riccardo: approvare o correggere gli oggetti 1-15 e le 5 domande in fondo alla tavola; poi C1 si scrive (rotte, tabelle, schermata).
 - [ ] Dopo l'ok: tavola grafica degli oggetti d'interfaccia prima di scrivere schermate.
 
 ## 2026-10-21 — cose aperte dopo la notte del 20→21/10

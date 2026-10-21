@@ -46,6 +46,7 @@ const CONTRACT: Contract[] = [
   // la condizione è provata da src/lib/devices/__tests__/mikrotik-guardia.test.ts).
   { route: "devices/[id]/interfacce", method: "GET", guard: "requireAuth" },
   { route: "devices/[id]/mikrotik", method: "GET", guard: "requireAuth" },
+  { route: "devices/[id]/dispositivi", method: "GET", guard: "requireAuth" },
   // scheda dei server (21/10): dipendenze NIS2 e Active Directory di un host, sola lettura con la sessione.
   { route: "hosts/[id]/dipendenze", method: "GET", guard: "requireAuth" },
   { route: "hosts/[id]/ad", method: "GET", guard: "requireAuth" },

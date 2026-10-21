@@ -13,7 +13,7 @@ export type TabId =
   | "panoramica" | "porte" | "vlan" | "vicini" | "interfacce" | "routing" | "dhcp"
   | "configurazione" | "dischi" | "volumi" | "servizi_nas" | "vm" | "nodi" | "storage_px"
   | "rete_px" | "sistema" | "servizi" | "aggiornamenti" | "software" | "utenti" | "ad"
-  | "dipendenze" | "dettagli" | "sicurezza" | "gestione" | "storico";
+  | "dipendenze" | "dettagli" | "sicurezza" | "gestione" | "storico" | "bridge" | "dispositivi";
 
 export interface InputTipoScheda {
   gestito: boolean;
@@ -79,16 +79,29 @@ export function tipoScheda(i: InputTipoScheda): TipoScheda {
   }
 }
 
+/** Cosa serve a `tabDelTipo` oltre al tipo. */
+export interface OpzioniTab {
+  ruoli: string[];
+  haAd: boolean;
+  haDipendenze: boolean;
+  /** Router o firewall MikroTik letto via SSH; null per ogni altro apparato. `haBridge` = almeno un bridge nell'ultima lettura. */
+  mikrotik: { haBridge: boolean } | null;
+}
+
 export const TAB_COMUNI: TabId[] = ["sicurezza", "gestione", "storico"];
 
 /**
  * Tab del tipo. `Active Directory` solo per un server Windows con ruolo DC **e** dati AD (`haAd`); `Dipendenze`
  * solo se qualche servizio poggia sull'host (`haDipendenze`). Solo il tipo `generico` tiene «Dettagli» (non ha tab sue).
  */
-export function tabDelTipo(t: TipoScheda, o: { ruoli: string[]; haAd: boolean; haDipendenze: boolean }): TabId[] {
+export function tabDelTipo(t: TipoScheda, o: OpzioniTab): TabId[] {
   // Host non gestito: «Gestione» ridotta (classificazione, inventario, note, asset NIS2), senza credenziali.
   if (t === "host") return ["panoramica", "sicurezza", "gestione", "storico"];
   if (t === "switch") return ["panoramica", "porte", "vlan", "vicini", ...TAB_COMUNI];
+  if ((t === "router" || t === "firewall") && o.mikrotik) {
+    // MikroTik via SSH: VLAN e Bridge solo se l'ultima lettura ha almeno un bridge; Dispositivi (ARP + DHCP + vicini) sempre.
+    return ["panoramica", "interfacce", ...(o.mikrotik.haBridge ? (["vlan", "bridge"] as TabId[]) : []), "routing", "dhcp", "dispositivi", "configurazione", ...TAB_COMUNI];
+  }
   if (t === "router" || t === "firewall") return ["panoramica", "interfacce", "routing", "dhcp", "configurazione", ...TAB_COMUNI];
   if (t === "storage") return ["panoramica", "dischi", "volumi", "servizi_nas", ...TAB_COMUNI];
   if (t === "hypervisor") return ["panoramica", "vm", "nodi", "storage_px", "rete_px", ...TAB_COMUNI];

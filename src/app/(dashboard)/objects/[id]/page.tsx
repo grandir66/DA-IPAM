@@ -419,7 +419,9 @@ export default function ObjectDetailPage() {
   const ruoli: string[] = ad?.dc && !ruoliDichiarati.includes("dc") ? [...ruoliDichiarati, "dc"] : ruoliDichiarati;
   const haAd = !!ad && (ad.computer !== null || ad.rilievi !== null);
   const haDipendenze = (dipendenze?.servizi.length ?? 0) > 0;
-  const tabs = tabDelTipo(tipo, { ruoli, haAd, haDipendenze });
+  // Stessa condizione di `eMikrotikSsh` (scheda): VLAN e Bridge compaiono se l'ultima lettura ha almeno un bridge.
+  const mikrotik = device?.vendor === "mikrotik" && device?.protocol === "ssh" ? { haBridge: (device?.mikrotik?.bridge ?? 0) > 0 } : null;
+  const tabs = tabDelTipo(tipo, { ruoli, haAd, haDipendenze, mikrotik });
   const dalUrl = tabDaQuery(tabDaUrl, tabs);
   const attiva: TabId = tabScelta && tabs.includes(tabScelta) ? tabScelta : dalUrl.tab;
 

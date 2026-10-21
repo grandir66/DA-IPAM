@@ -28,6 +28,7 @@ import { PanoramicaRouter } from "./tipi/router/panoramica";
 import { PanoramicaMikrotik } from "./tipi/router/mikrotik/panoramica";
 import { eMikrotikSsh } from "./tipi/router/dati-router";
 import { InterfacceMikrotik } from "./tipi/router/mikrotik/interfacce";
+import { DispositiviMikrotik } from "./tipi/router/mikrotik/dispositivi";
 import { InterfacceRouter } from "./tipi/router/interfacce";
 import { RoutingRouter } from "./tipi/router/routing";
 import { DhcpRouter } from "./tipi/router/dhcp";
@@ -63,6 +64,7 @@ const TAB_ROUTER: Partial<Record<TabId, VoceTab>> = {
   interfacce: { render: (c) => (eMikrotikSsh(c) ? <InterfacceMikrotik ctx={c} /> : <InterfacceRouter ctx={c} />) },
   routing: { render: (c) => <RoutingRouter ctx={c} /> },
   dhcp: { render: (c) => <DhcpRouter ctx={c} /> },
+  dispositivi: { render: (c) => <DispositiviMikrotik ctx={c} /> },
   configurazione: { render: (c) => <ConfigurazioneRouter ctx={c} /> },
 };
 
@@ -148,6 +150,8 @@ export const ETICHETTE_TAB: Record<TabId, string> = {
   sicurezza: "Sicurezza",
   gestione: "Gestione",
   storico: "Storico",
+  bridge: "Bridge",
+  dispositivi: "Dispositivi",
 };
 
 function voce(tipo: TipoScheda, tab: TabId): VoceTab | undefined {

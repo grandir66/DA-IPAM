@@ -85,7 +85,7 @@ const ALTERNATIVE: Record<string, TabId> = { software: "aggiornamenti", network:
 const TUTTI: ReadonlySet<string> = new Set<TabId>([
   "panoramica", "porte", "vlan", "vicini", "interfacce", "routing", "dhcp", "configurazione", "dischi", "volumi",
   "servizi_nas", "vm", "nodi", "storage_px", "rete_px", "sistema", "servizi", "aggiornamenti", "software", "utenti",
-  "ad", "dipendenze", "dettagli", "sicurezza", "gestione", "storico",
+  "ad", "dipendenze", "dettagli", "sicurezza", "gestione", "storico", "bridge", "dispositivi",
 ]);
 
 /** Tab da aprire per `?tab=`: un nome nuovo se il tipo lo ha, un vecchio nome tradotto, altrimenti la prima tab. */

@@ -73,6 +73,7 @@ import { libreStatusFrom } from "./topology/status-map";
 import { modelloEtichettaDiPorte } from "./device-fingerprint-classification";
 import { parseProxmoxScan } from "./topology/vms";
 import { hypervisorNics, switchPortsToKnown, type SwitchPortRow } from "./topology/known-ports";
+import type { IngressoDispositivi } from "./scheda/dispositivi-router";
 import type { KnownPort } from "./topology/api-input";
 import type { LinkMedium, MapOrientation } from "./topology/model-types";
 import { TESTI_UNIONI, type PianoUnioni, type RigaSeparazione, type RigaUnione } from "./topology/unioni-tipi";
@@ -5140,6 +5141,35 @@ export function getArpEntriesByDevice(deviceId: number): (ArpEntry & { host_ip?:
     WHERE ae.device_id = ?
     ORDER BY ae.ip
   `).all(deviceId) as (ArpEntry & { host_ip?: string; host_name?: string })[];
+}
+
+/**
+ * Le quattro letture della tab «Dispositivi» di un router MikroTik (ARP, lease DHCP, vicini dell'ultimo giro, host IPAM
+ * con quegli IP). Niente N+1: gli host si cercano in blocco per `ip IN (...)`. L'unione e le precedenze stanno in
+ * `src/lib/scheda/dispositivi-router.ts` (puro).
+ */
+export function ingressoDispositivi(deviceId: number): IngressoDispositivi {
+  const d = db();
+  // `status` esiste solo dallo schema della scheda MikroTik (livello 1): prima, lo stato dell'ARP è ignoto.
+  const conStato = livelloSchemaSchedaMk(d) >= 1;
+  const arp = d.prepare(`SELECT ip, mac, interface_name, ${conStato ? "status" : "NULL AS status"}, timestamp FROM arp_entries WHERE device_id = ?`).all(deviceId) as IngressoDispositivi["arp"];
+  const lease = d.prepare(
+    `SELECT ip_address, mac_address, hostname, dynamic_lease, description, last_seen FROM dhcp_leases WHERE source_device_id = ?`,
+  ).all(deviceId) as IngressoDispositivi["lease"];
+  const vicini = d.prepare(
+    `SELECT dn.remote_ip, dn.remote_mac, dn.remote_device_name, dn.local_port, dn.timestamp
+     FROM device_neighbors dn WHERE dn.device_id = ? AND ${NEIGHBORS_LATEST_ROUND_SQL}`,
+  ).all(deviceId) as IngressoDispositivi["vicini"];
+  const ips = [...new Set([...arp.map((a) => a.ip), ...lease.map((l) => l.ip_address), ...vicini.map((v) => v.remote_ip)].filter((x): x is string => !!x))];
+  const host: IngressoDispositivi["host"] = [];
+  // 500 per volta: sotto il limite delle variabili di SQLite anche con router da migliaia di righe.
+  for (let k = 0; k < ips.length; k += 500) {
+    const pezzo = ips.slice(k, k + 500);
+    host.push(...(d.prepare(
+      `SELECT id, ip, COALESCE(custom_name, hostname, dns_reverse) AS nome_dns, status FROM hosts WHERE ip IN (${pezzo.map(() => "?").join(",")})`,
+    ).all(...pezzo) as IngressoDispositivi["host"]));
+  }
+  return { arp, lease, vicini, host };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

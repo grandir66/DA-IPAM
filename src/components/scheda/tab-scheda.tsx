@@ -38,6 +38,15 @@ import { VmHypervisor } from "./tipi/hypervisor/vm";
 import { NodiHypervisor } from "./tipi/hypervisor/nodi";
 import { StorageHypervisor } from "./tipi/hypervisor/storage";
 import { ReteHypervisor } from "./tipi/hypervisor/rete";
+import { PanoramicaWindows } from "./tipi/server/panoramica-windows";
+import { PanoramicaLinux } from "./tipi/server/panoramica-linux";
+import { SistemaServer } from "./tipi/server/sistema";
+import { ServiziServer } from "./tipi/server/servizi";
+import { AggiornamentiServer } from "./tipi/server/aggiornamenti";
+import { SoftwareServer } from "./tipi/server/software";
+import { UtentiServer } from "./tipi/server/utenti";
+import { ActiveDirectoryServer } from "./tipi/server/active-directory";
+import { DipendenzeServer } from "./tipi/server/dipendenze";
 
 export interface VoceTab {
   /** Solo se il nome cambia per questo tipo. */
@@ -52,6 +61,15 @@ const TAB_ROUTER: Partial<Record<TabId, VoceTab>> = {
   routing: { render: (c) => <RoutingRouter ctx={c} /> },
   dhcp: { render: (c) => <DhcpRouter ctx={c} /> },
   configurazione: { render: (c) => <ConfigurazioneRouter ctx={c} /> },
+};
+
+/** Tab dei server Windows e Linux che hanno lo stesso componente (cambia la Panoramica e qualche nome). */
+const TAB_SERVER: Partial<Record<TabId, VoceTab>> = {
+  sistema: { render: (c) => <SistemaServer ctx={c} /> },
+  servizi: { render: (c) => <ServiziServer ctx={c} /> },
+  aggiornamenti: { render: (c) => <AggiornamentiServer ctx={c} /> },
+  utenti: { render: (c) => <UtentiServer ctx={c} /> },
+  dipendenze: { render: (c) => <DipendenzeServer ctx={c} /> },
 };
 
 /** Tab proprie di ogni tipo: qui T3-T7 aggiungono la loro riga (vedi il commento in testa). */
@@ -76,6 +94,18 @@ export const TAB_DEL_TIPO: Partial<Record<TipoScheda, Partial<Record<TabId, Voce
     nodi: { render: (c) => <NodiHypervisor ctx={c} /> },
     storage_px: { render: (c) => <StorageHypervisor ctx={c} /> },
     rete_px: { render: (c) => <ReteHypervisor ctx={c} /> },
+  },
+  server_windows: {
+    ...TAB_SERVER,
+    panoramica: { render: (c) => <PanoramicaWindows ctx={c} /> },
+    software: { render: (c) => <SoftwareServer ctx={c} /> },
+    ad: { render: (c) => <ActiveDirectoryServer ctx={c} /> },
+  },
+  server_linux: {
+    ...TAB_SERVER,
+    panoramica: { render: (c) => <PanoramicaLinux ctx={c} /> },
+    servizi: { etichetta: "Servizi e processi", render: (c) => <ServiziServer ctx={c} /> },
+    aggiornamenti: { etichetta: "Pacchetti", render: (c) => <AggiornamentiServer ctx={c} /> },
   },
 };
 

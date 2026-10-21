@@ -29,6 +29,7 @@ import type { ContestoScheda, LibreNmsStato, MembroCluster } from "@/components/
 import type { DeviceFull } from "@/components/scheda/dati";
 import { IntestazioneScheda, type VmSu } from "@/components/scheda/intestazione-scheda";
 import type { VmSuNodo } from "@/lib/scheda/abbinamento-proxmox";
+import type { RispostaAd, RispostaDipendenze } from "@/lib/devices/server-scheda";
 import { TabScheda } from "@/components/scheda/tab-scheda";
 import type { HostDetail, InventoryAsset } from "@/types";
 // v0.2.646 audit perf UI9: i dialog modali (Promote/LinkIps/EditDevice) sono caricati on-demand
@@ -178,6 +179,27 @@ export default function ObjectDetailPage() {
       .catch(() => { if (vivo) setVmSu(null); });
     return () => { vivo = false; };
   }, [hostId]);
+
+  // Server Windows e Linux: dipendenze NIS2 e Active Directory decidono se compaiono le tab «Dipendenze» e
+  // «Active Directory» (e i rilievi della Panoramica). Due GET leggere, solo per i server; un errore non è un «no»:
+  // la tab semplicemente non compare.
+  const [dipendenze, setDipendenze] = useState<RispostaDipendenze | null>(null);
+  const [ad, setAd] = useState<RispostaAd | null>(null);
+  const eServer = device?.vendor === "windows" || device?.vendor === "linux";
+  useEffect(() => {
+    setDipendenze(null);
+    setAd(null);
+    if (!eServer || !Number.isFinite(hostId) || hostId <= 0) return;
+    let vivo = true;
+    const leggi = <T,>(url: string, metti: (d: T | null) => void) =>
+      fetch(url, { cache: "no-store" })
+        .then((r) => (r.ok ? (r.json() as Promise<T>) : null))
+        .then((d) => { if (vivo) metti(d); })
+        .catch(() => { if (vivo) metti(null); });
+    void leggi<RispostaDipendenze>(`/api/hosts/${hostId}/dipendenze`, setDipendenze);
+    if (device?.vendor === "windows") void leggi<RispostaAd>(`/api/hosts/${hostId}/ad`, setAd);
+    return () => { vivo = false; };
+  }, [hostId, eServer, device?.vendor]);
 
   // v0.2.607: runtime summary memoizzato. DEVE stare prima di qualsiasi early
   // return (loading / !host) per non violare le rules of hooks (React #310).
@@ -392,9 +414,12 @@ export default function ObjectDetailPage() {
     vendor: device?.vendor ?? null,
     scan_target: device?.scan_target ?? null,
   });
-  const ruoli: string[] = ruoliDaJson(device?.server_roles);
-  // haAd / haDipendenze li accende il task dei server (T7), quando i dati ci sono.
-  const tabs = tabDelTipo(tipo, { ruoli, haAd: false, haDipendenze: false });
+  // Il ruolo DC si riconosce anche dall'OU in AD o dalla scansione (server_roles può essere vuoto).
+  const ruoliDichiarati: string[] = ruoliDaJson(device?.server_roles);
+  const ruoli: string[] = ad?.dc && !ruoliDichiarati.includes("dc") ? [...ruoliDichiarati, "dc"] : ruoliDichiarati;
+  const haAd = !!ad && (ad.computer !== null || ad.rilievi !== null);
+  const haDipendenze = (dipendenze?.servizi.length ?? 0) > 0;
+  const tabs = tabDelTipo(tipo, { ruoli, haAd, haDipendenze });
   const dalUrl = tabDaQuery(tabDaUrl, tabs);
   const attiva: TabId = tabScelta && tabs.includes(tabScelta) ? tabScelta : dalUrl.tab;
 
@@ -415,6 +440,9 @@ export default function ObjectDetailPage() {
     classificationLabel,
     runtimeSummary,
     clusterMembers,
+    vmSu,
+    ad,
+    dipendenze,
     unlinkingHostId,
     versioneBinding,
     alCambioBinding,

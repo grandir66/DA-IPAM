@@ -36,6 +36,9 @@ const PASTIGLIA = "inline-flex min-h-[26px] items-center gap-1.5 whitespace-nowr
 /** «VM 105 su DA-PX-01» quando l'abbinamento con Proxmox c'è (lo fornisce la scheda dell'hypervisor, T6). */
 export interface VmSu { vmid: number; nodo: string; href?: string }
 
+/** Nomi brevi dei ruoli per l'intestazione (artboard: «DC · DNS · DHCP»): lasciano posto al nome dell'apparato. L'intero sta nel title. */
+const RUOLO_BREVE: Partial<Record<RuoloServer, string>> = { dc: "DC" };
+
 const maiuscolaIniziale = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
 
 export function IntestazioneScheda({
@@ -69,7 +72,7 @@ export function IntestazioneScheda({
   return (
     <div className="sticky top-0 z-20 -mx-4 border-b bg-background/95 px-4 py-3 backdrop-blur md:-mx-6 md:px-6">
       {/* Una riga da lg in su: nome e marca/modello si accorciano, pastiglie e azioni no. */}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 lg:flex-nowrap">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-2 lg:flex-nowrap">
         <Button variant="ghost" size="sm" onClick={() => router.back()} className="shrink-0" aria-label="Indietro" title="Indietro">
           <ArrowLeft className="h-4 w-4" />
         </Button>
@@ -77,14 +80,15 @@ export function IntestazioneScheda({
         <span className="shrink-0 font-mono text-sm text-muted-foreground">{host.ip}</span>
         <span className={cn(PASTIGLIA, "shrink-0 border-[#0D2537] bg-[#0D2537] text-white dark:border-[#E6EEF4] dark:bg-[#E6EEF4] dark:text-[#0D2537]")}>{ETICHETTA_TIPO[tipo]}</span>
         {ruoliNoti.map((r) => (
-          <span key={r} className={cn(PASTIGLIA, "shrink-0 border-[#0D2537] bg-white text-[#0D2537] dark:border-[#E6EEF4] dark:bg-transparent dark:text-[#E6EEF4]")}>{ETICHETTE_RUOLI[r]}</span>
+          <span key={r} title={ETICHETTE_RUOLI[r]} className={cn(PASTIGLIA, "shrink-0 border-[#0D2537] bg-white text-[#0D2537] dark:border-[#E6EEF4] dark:bg-transparent dark:text-[#E6EEF4]")}>{RUOLO_BREVE[r] ?? ETICHETTE_RUOLI[r]}</span>
         ))}
         <span className={cn(PASTIGLIA, "shrink-0", stato.classi)}>
           {stato.segno} {testoStato}
           {host.last_response_time_ms != null && host.status === "online" ? ` · ${host.last_response_time_ms} ms` : ""}
         </span>
         {vmSu ? (
-          <span className="shrink-0 whitespace-nowrap text-sm text-muted-foreground">
+          // Il testo secondario si accorcia per primo: il nome dell'apparato resta leggibile a 1440.
+          <span className="min-w-0 flex-1 truncate whitespace-nowrap text-sm text-muted-foreground" title={`VM ${vmSu.vmid} su ${vmSu.nodo}`}>
             {vmSu.href ? <Link href={vmSu.href} className="underline underline-offset-2">VM {vmSu.vmid} su {vmSu.nodo}</Link> : `VM ${vmSu.vmid} su ${vmSu.nodo}`}
           </span>
         ) : identita ? (

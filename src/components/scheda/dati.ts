@@ -134,18 +134,25 @@ export interface DeviceInfoJson {
   firewall_nat_count?: number | null;
   firewall_mangle_count?: number | null;
   // Aggiornamenti
-  installed_hotfixes?: Array<{ id?: string; installed_on?: string }>;
+  installed_hotfixes?: Array<{ id?: string; description?: string; installed_on?: string }>;
   pending_updates_count?: number;
   // Servizi & ruoli
   server_roles?: string[];
   important_services?: Array<{ name?: string; display_name?: string; state?: string; start_mode?: string }>;
   // Linux processi
-  listening_ports?: Array<{ protocol?: string; port?: number; process?: string }>;
+  listening_ports?: Array<{ protocol?: string; port?: number; process?: string; bind_address?: string }>;
   cron_jobs?: Array<{ user?: string; schedule?: string; command?: string }>;
   // Utenti
   local_users?: Array<{ name?: string; full_name?: string; disabled?: boolean }>;
   logged_on_users?: Array<{ username?: string; session_type?: string; logon_time?: string }>;
+  /** Ultimo utente che ha fatto il login (registro Windows) e profili sul sistema, con i dati AD se il server è nel dominio. */
+  last_logged_on_user?: string | null;
+  user_profiles?: Array<{
+    username?: string; sid?: string; profile_path?: string; loaded?: boolean; last_use?: string;
+    ad_display_name?: string; ad_email?: string; ad_department?: string; ad_title?: string; ad_enabled?: boolean; ad_last_logon?: string;
+  }>;
   // Software
+  key_software?: Array<{ name?: string; version?: string; publisher?: string }>;
   installed_software_count?: number;
   packages_count?: number;
   // Snapshot NAS Synology/QNAP (scan SNMP/SSH): il tipo è quello che lo scrive l'acquisizione

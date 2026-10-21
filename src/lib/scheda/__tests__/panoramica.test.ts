@@ -71,6 +71,14 @@ describe("tabDaQuery", () => {
     assert.deepEqual(tabDaQuery("gestione", ["panoramica", "sicurezza", "storico"]), { tab: "panoramica" });
     assert.deepEqual(tabDaQuery("software", ["panoramica", "sicurezza", "storico"]), { tab: "panoramica" });
   });
+  it("server: ?tab=software e ?tab=network non perdono la strada senza «Dettagli»", () => {
+    const linux: Parameters<typeof tabDaQuery>[1] = ["panoramica", "sistema", "servizi", "aggiornamenti", "utenti", "sicurezza", "gestione", "storico"];
+    const windows: Parameters<typeof tabDaQuery>[1] = ["panoramica", "sistema", "servizi", "aggiornamenti", "software", "utenti", "sicurezza", "gestione", "storico"];
+    assert.deepEqual(tabDaQuery("software", linux), { tab: "aggiornamenti" }, "Linux: i pacchetti");
+    assert.deepEqual(tabDaQuery("software", windows), { tab: "software" }, "Windows ha la sua");
+    assert.deepEqual(tabDaQuery("network", linux), { tab: "sistema" });
+    assert.deepEqual(tabDaQuery("sistema", windows), { tab: "sistema" });
+  });
   it("assente o sconosciuta: la prima", () => {
     assert.deepEqual(tabDaQuery(null, dettagli), { tab: "panoramica" });
     assert.deepEqual(tabDaQuery("boh", dettagli), { tab: "panoramica" });

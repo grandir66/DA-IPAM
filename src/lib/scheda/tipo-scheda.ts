@@ -75,13 +75,30 @@ export function tipoScheda(i: InputTipoScheda): TipoScheda {
 
 export const TAB_COMUNI: TabId[] = ["sicurezza", "gestione", "storico"];
 
-/** Tab del tipo. Ogni task di tipo (T3-T7) sostituisce la sua riga; per ora: panoramica + dettagli + comuni. */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars -- le opzioni servono ai task di tipo T3-T7
-export function tabDelTipo(t: TipoScheda, _o: { ruoli: string[]; haAd: boolean; haDipendenze: boolean }): TabId[] {
+/**
+ * Tab del tipo. `Active Directory` solo per un server Windows con ruolo DC **e** dati AD (`haAd`); `Dipendenze`
+ * solo se qualche servizio poggia sull'host (`haDipendenze`). Il tipo `generico` tiene ancora «Dettagli».
+ */
+export function tabDelTipo(t: TipoScheda, o: { ruoli: string[]; haAd: boolean; haDipendenze: boolean }): TabId[] {
   if (t === "host") return ["panoramica", "sicurezza", "storico"];
   if (t === "switch") return ["panoramica", "porte", "vlan", "vicini", ...TAB_COMUNI];
   if (t === "router" || t === "firewall") return ["panoramica", "interfacce", "routing", "dhcp", "configurazione", ...TAB_COMUNI];
   if (t === "storage") return ["panoramica", "dischi", "volumi", "servizi_nas", ...TAB_COMUNI];
   if (t === "hypervisor") return ["panoramica", "vm", "nodi", "storage_px", "rete_px", ...TAB_COMUNI];
+  if (t === "server_windows") {
+    return [
+      "panoramica", "sistema", "servizi", "aggiornamenti", "software", "utenti",
+      ...(o.ruoli.includes("dc") && o.haAd ? (["ad"] as TabId[]) : []),
+      ...(o.haDipendenze ? (["dipendenze"] as TabId[]) : []),
+      ...TAB_COMUNI,
+    ];
+  }
+  if (t === "server_linux") {
+    return [
+      "panoramica", "sistema", "servizi", "aggiornamenti", "utenti",
+      ...(o.haDipendenze ? (["dipendenze"] as TabId[]) : []),
+      ...TAB_COMUNI,
+    ];
+  }
   return ["panoramica", "dettagli", ...TAB_COMUNI];
 }

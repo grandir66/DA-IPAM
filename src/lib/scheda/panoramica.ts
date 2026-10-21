@@ -80,6 +80,8 @@ const VECCHI: Record<string, { tab: TabId; sotto?: string }> = {
   storico: { tab: "storico" },
 };
 
+const ALTERNATIVE: Record<string, TabId> = { software: "aggiornamenti", network: "sistema" };
+
 const TUTTI: ReadonlySet<string> = new Set<TabId>([
   "panoramica", "porte", "vlan", "vicini", "interfacce", "routing", "dhcp", "configurazione", "dischi", "volumi",
   "servizi_nas", "vm", "nodi", "storage_px", "rete_px", "sistema", "servizi", "aggiornamenti", "software", "utenti",
@@ -94,5 +96,8 @@ export function tabDaQuery(q: string | null | undefined, tabs: readonly TabId[])
   if (TUTTI.has(q) && tabs.includes(q as TabId)) return { tab: q as TabId };
   const v = VECCHI[q];
   if (v && tabs.includes(v.tab)) return v;
+  // Server: «Dettagli» non c'è più. ?tab=software su Linux (i pacchetti stanno in «Aggiornamenti») e ?tab=network (la rete sta in «Sistema»).
+  const alt = ALTERNATIVE[q];
+  if (alt && tabs.includes(alt)) return { tab: alt };
   return prima;
 }

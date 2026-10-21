@@ -4,7 +4,9 @@
  */
 import type { HostDetail, InventoryAsset } from "@/types";
 import type { TipoScheda, TabId } from "@/lib/scheda/tipo-scheda";
+import type { RispostaAd, RispostaDipendenze } from "@/lib/devices/server-scheda";
 import type { DeviceFull } from "./dati";
+import type { VmSu } from "./intestazione-scheda";
 
 /** Risposta di GET /api/hosts/[id]/librenms. */
 export interface LibreNmsStato {
@@ -58,6 +60,12 @@ export interface ContestoScheda {
     validatedCreds: NonNullable<HostDetail["host_credentials"]>;
   };
   clusterMembers: MembroCluster[];
+  /** «VM n su <nodo>» se l'host è una VM delle scansioni Proxmox salvate. */
+  vmSu: VmSu | null;
+  /** Server: il computer in Active Directory e i rilievi (solo se DC). null = non letto o non è un server. */
+  ad: RispostaAd | null;
+  /** Server: i servizi NIS2 che poggiano su questo host. null = non letto o non è un server. */
+  dipendenze: RispostaDipendenze | null;
   unlinkingHostId: number | null;
   /** Cambia quando la tabella dei binding è stata modificata: «Credenziali assegnate» rilegge le prove. */
   versioneBinding: number;

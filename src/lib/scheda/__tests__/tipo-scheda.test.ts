@@ -86,9 +86,27 @@ describe("tabDelTipo", () => {
   it("hypervisor: panoramica, vm, nodi, storage_px, rete_px + comuni, senza dettagli (T6)", () => {
     assert.deepEqual(tabDelTipo("hypervisor", NO), ["panoramica", "vm", "nodi", "storage_px", "rete_px", "sicurezza", "gestione", "storico"]);
   });
-  it("gli altri tipi: panoramica, dettagli + comuni", () => {
-    for (const x of ["server_windows", "server_linux", "generico"] as const) {
-      assert.deepEqual(tabDelTipo(x, NO), ["panoramica", "dettagli", "sicurezza", "gestione", "storico"], x);
-    }
+  it("server Windows: sistema, servizi, aggiornamenti, software, utenti + comuni, senza dettagli (T7)", () => {
+    assert.deepEqual(tabDelTipo("server_windows", NO), ["panoramica", "sistema", "servizi", "aggiornamenti", "software", "utenti", "sicurezza", "gestione", "storico"]);
+  });
+  it("server Windows: «Active Directory» solo se DC E l'integrazione ha dati", () => {
+    const base = ["panoramica", "sistema", "servizi", "aggiornamenti", "software", "utenti"];
+    const comuni = ["sicurezza", "gestione", "storico"];
+    assert.deepEqual(tabDelTipo("server_windows", { ruoli: ["dc", "dns"], haAd: true, haDipendenze: false }), [...base, "ad", ...comuni], "DC con dati AD");
+    assert.deepEqual(tabDelTipo("server_windows", { ruoli: ["dc"], haAd: false, haDipendenze: false }), [...base, ...comuni], "DC senza dati AD");
+    assert.deepEqual(tabDelTipo("server_windows", { ruoli: ["database"], haAd: true, haDipendenze: false }), [...base, ...comuni], "dati AD ma non DC");
+  });
+  it("server: «Dipendenze» solo se ce ne sono, dopo Utenti/AD e prima delle comuni", () => {
+    assert.deepEqual(tabDelTipo("server_windows", { ruoli: ["dc"], haAd: true, haDipendenze: true }),
+      ["panoramica", "sistema", "servizi", "aggiornamenti", "software", "utenti", "ad", "dipendenze", "sicurezza", "gestione", "storico"]);
+    assert.deepEqual(tabDelTipo("server_linux", { ruoli: [], haAd: false, haDipendenze: true }),
+      ["panoramica", "sistema", "servizi", "aggiornamenti", "utenti", "dipendenze", "sicurezza", "gestione", "storico"]);
+  });
+  it("server Linux: sistema, servizi, aggiornamenti (pacchetti), utenti + comuni; mai «ad» né «software»", () => {
+    assert.deepEqual(tabDelTipo("server_linux", NO), ["panoramica", "sistema", "servizi", "aggiornamenti", "utenti", "sicurezza", "gestione", "storico"]);
+    assert.ok(!tabDelTipo("server_linux", { ruoli: ["dc"], haAd: true, haDipendenze: false }).includes("ad"));
+  });
+  it("generico: ancora panoramica, dettagli + comuni", () => {
+    assert.deepEqual(tabDelTipo("generico", NO), ["panoramica", "dettagli", "sicurezza", "gestione", "storico"]);
   });
 });

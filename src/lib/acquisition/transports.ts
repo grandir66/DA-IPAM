@@ -6,15 +6,20 @@ import { withSshClient } from "../devices/ssh-transport";
 import { cleanConsole } from "./parsers";
 import type { AcquisitionInput, AcquisitionTransports, ReadResult, SnmpRow } from "./schema";
 export const QSS_COMMANDS = ["show system-information", "show interfaces status", "show interfaces", "show vlan", "show lldp neighbors", "show spanning-tree ports-summary", "show etherchannel summary", "show system temperature", "show interfaces ddm", "show mac-address-table"] as const;
+export const PROCURVE_COMMANDS = ["show system", "show version", "show interfaces brief", "show vlans", "show vlans ports all detail", "show mac-address", "show trunks", "show lldp info remote-device detail", "show power-over-ethernet brief", "show spanning-tree", "show system fans"] as const;
+type ConsoleProfile = AcquisitionInput['collector'];
+const commandSets = { "qnap-switch": QSS_COMMANDS, "hp-procurve": PROCURVE_COMMANDS };
 const fail = <T>(data: T, code: string): ReadResult<T> => ({ status: "error", data, warnings: [code] });
-export function assertCommands(commands: readonly string[]): void { if (commands.length > QSS_COMMANDS.length || commands.some(c => !(QSS_COMMANDS as readonly string[]).includes(c)))
-    throw Error("COMMAND_NOT_ALLOWED"); }
+export function assertCommands(commands: readonly string[], profile: ConsoleProfile = 'qnap-switch'): void {
+    const allowed: readonly string[] = commandSets[profile];
+    if (!allowed || commands.length > allowed.length || commands.some(c => !allowed.includes(c))) throw Error('COMMAND_NOT_ALLOWED');
+}
 /** Exported for byte-level timeout/pagination tests; never sends configuration commands. */
-export function readConsole(stream: Pick<ClientChannel, "on" | "write" | "end">, commands: readonly string[], limits: AcquisitionInput['limits'], deadline: number): Promise<Record<string, ReadResult<string>>> {
-    assertCommands(commands);
+export function readConsole(stream: Pick<ClientChannel, "on" | "write" | "end">, commands: readonly string[], limits: AcquisitionInput['limits'], deadline: number, profile: ConsoleProfile = 'qnap-switch'): Promise<Record<string, ReadResult<string>>> {
+    assertCommands(commands, profile);
     return new Promise(resolve => {
         const result: Record<string, ReadResult<string>> = {};
-        let buffer = '', index = -1, bytes = 0, pages = 0, prompt = '', ended = false;
+        let buffer = '', index = -1, bytes = 0, pages = 0, prompt = '', ended = false, keySent = false;
         let timer: ReturnType<typeof setTimeout>;
         const finish = (reason?: string) => { if (ended)
             return; ended = true; clearTimeout(timer); if (reason) {
@@ -39,6 +44,9 @@ export function readConsole(stream: Pick<ClientChannel, "on" | "write" | "end">,
                 return;
             }
             buffer += chunk.toString('utf8');
+            if (profile === 'hp-procurve' && index === -1 && !keySent && /Press any key to continue/i.test(cleanConsole(buffer))) {
+                keySent = true; buffer = ''; stream.write(' '); return;
+            }
             if (/--\s*More\s*--/i.test(buffer)) {
                 buffer = buffer.replace(/--\s*More\s*--/gi, '');
                 if (++pages > 512) {
@@ -50,14 +58,14 @@ export function readConsole(stream: Pick<ClientChannel, "on" | "write" | "end">,
             }
             const text = cleanConsole(buffer), last = text.split('\n').at(-1)?.trim() ?? '';
             if (index === -1) {
-                if (!/^[\w.:-]+[>#]$/.test(last))
-                    return;
-                prompt = last;
+                const candidate = profile === 'hp-procurve' ? text.match(/([\w.:-]+[>#])\s*$/)?.[1] : last;
+                if (!candidate || !/^[\w.:-]+[>#]$/.test(candidate)) return;
+                prompt = candidate;
             }
-            else if (last !== prompt)
+            else if (profile === 'hp-procurve' ? !text.trimEnd().endsWith(prompt) : last !== prompt)
                 return;
             if (index >= 0) {
-                const unsupported = /%\s*(?:Invalid input|Incomplete command|Unrecognized command|Unknown command)/i.test(text);
+                const unsupported = (profile === 'hp-procurve' ? /(?:%\s*)?(?:Invalid input|Incomplete command|Unrecognized command|Unknown command)/i : /%\s*(?:Invalid input|Incomplete command|Unrecognized command|Unknown command)/i).test(text);
                 const denied = /(?:permission denied|not authorized|authorization failed)/i.test(text);
                 result[commands[index]] = { status: denied ? 'error' : unsupported ? 'unsupported' : 'ok', data: denied || unsupported ? '' : text, warnings: denied ? ['SSH_PERMISSION_DENIED'] : unsupported ? ['COMMAND_UNSUPPORTED'] : [] };
             }
@@ -69,7 +77,7 @@ export function readConsole(stream: Pick<ClientChannel, "on" | "write" | "end">,
             }
             arm();
             if (!ended)
-                stream.write(commands[index] + '\n');
+                stream.write(commands[index] + (profile === 'hp-procurve' ? '\r' : '\n'));
         });
         stream.on('close', () => finish('SSH_CLOSED_BEFORE_PROMPT'));
         stream.on('error', () => finish('SSH_CHANNEL_ERROR'));
@@ -134,7 +142,7 @@ export function createTransports(input: AcquisitionInput): AcquisitionTransports
         });
     }
     return { get: oids => query(oids, false), walk: oid => query([oid], true), shell: async (commands) => {
-            assertCommands(commands);
+            assertCommands(commands, input.collector);
             if (!input.ssh || Date.now() >= deadline)
                 return Object.fromEntries(commands.map(c => [c, fail('', input.ssh ? 'TOTAL_TIMEOUT' : 'NO_SSH_CREDENTIAL')]));
             try {
@@ -142,13 +150,13 @@ export function createTransports(input: AcquisitionInput): AcquisitionTransports
                     let opened = false;
                     const timer = setTimeout(() => { if (opened)
                         return; opened = true; conn.end(); resolve(Object.fromEntries(commands.map(c => [c, fail('', 'SSH_OPEN_TIMEOUT')]))); }, Math.max(1, Math.min(input.limits.timeout_ms, deadline - Date.now())));
-                    conn.shell((err, stream) => { if (opened) {
+                    conn.shell(input.collector === 'hp-procurve' ? {term:'vt100',cols:160,rows:48} : {}, (err, stream) => { if (opened) {
                         stream?.end();
                         return;
                     } opened = true; clearTimeout(timer); if (err) {
                         resolve(Object.fromEntries(commands.map(c => [c, fail('', 'SSH_SHELL_UNAVAILABLE')])));
                         return;
-                    } resolve(readConsole(stream, commands, input.limits, deadline)); });
+                    } resolve(readConsole(stream, commands, input.limits, deadline, input.collector)); });
                 }));
             }
             catch {

@@ -2,7 +2,7 @@ import { z } from "zod";
 const port = z.number().int().min(1).max(65535);
 const secret = z.string().min(1).max(16384);
 export const acquisitionInputSchema = z.object({
-    collector: z.literal("qnap-switch").default("qnap-switch"),
+    collector: z.enum(["qnap-switch", "hp-procurve"]).default("qnap-switch"),
     host: z.string().min(1).max(253).regex(/^[a-zA-Z0-9.:_-]+$/),
     snmp: z.object({ community: secret, version: z.enum(["1", "2c"]).default("2c"), port: port.default(161) }).strict().optional(),
     ssh: z.object({ username: z.string().min(1).max(128), password: secret.optional(), privateKey: secret.optional(), passphrase: secret.optional(), port: port.default(22) }).strict().refine(v => !!(v.password || v.privateKey), "Manca il segreto SSH").optional(),
@@ -12,7 +12,7 @@ export type AcquisitionInput = z.infer<typeof acquisitionInputSchema>;
 export type AcquisitionRequest = z.input<typeof acquisitionInputSchema>;
 const nullableString = z.string().nullable();
 const nullableNumber = z.number().finite().nullable();
-export const identitySchema = z.object({ manufacturer: nullableString, model: nullableString, firmware: nullableString, serial_number: nullableString, hostname: nullableString, mac: nullableString, sys_object_id: nullableString, uptime_seconds: nullableNumber });
+export const identitySchema = z.object({ part_number: nullableString.optional(), boot_rom: nullableString.optional(), manufacturer: nullableString, model: nullableString, firmware: nullableString, serial_number: nullableString, hostname: nullableString, mac: nullableString, sys_object_id: nullableString, uptime_seconds: nullableNumber });
 export const interfaceSchema = z.object({ name: z.string(), if_index: z.number().int().nullable(), description: nullableString, kind: z.enum(["physical", "aggregate", "other"]), admin_status: nullableString, oper_status: nullableString, speed_bps: nullableNumber, reported_speed_bps: nullableNumber, duplex: nullableString, mtu: nullableNumber, mac: nullableString, counters: z.record(z.string(), z.string().regex(/^\d+$/)), pvid: z.number().int().nullable() });
 export const vlanSchema = z.object({ id: z.number().int().min(1).max(4094), name: nullableString, tagged_ports: z.array(z.string()), untagged_ports: z.array(z.string()), forbidden_ports: z.array(z.string()) });
 export const neighborSchema = z.object({ local_port: z.string(), remote_chassis: z.string(), remote_port: z.string(), system_name: nullableString, system_description: nullableString, management_addresses: z.array(z.string()), capabilities: z.array(z.string()), ttl_seconds: nullableNumber });
@@ -24,7 +24,9 @@ export const poeSchema = z.object({ port: z.string(), enabled: z.boolean().nulla
 export const sectionStatus = z.enum(["ok", "partial", "unsupported", "error", "skipped"]);
 function section<T extends z.ZodType>(data: T) { return z.object({ status: sectionStatus, collected_at: z.string().datetime(), sources: z.array(z.string()), warnings: z.array(z.string()), data: data }); }
 export const snapshotSchema = z.object({
-    schema_version: z.literal("1.0"), collector: z.literal("qnap-switch"), collector_version: z.literal("1.0.0"), target: z.string(), collected_at: z.string().datetime(), duration_ms: z.number().nonnegative(), status: z.enum(["ok", "partial", "error"]),
+    schema_version: z.literal("1.0"), collector: z.enum(["qnap-switch", "hp-procurve"]), collector_version: z.literal("1.0.0"), target: z.string(), collected_at: z.string().datetime(), duration_ms: z.number().nonnegative(), status: z.enum(["ok", "partial", "error"]),
+    resources: section(z.object({cpu_percent:nullableNumber, memory_total_bytes:nullableNumber, memory_free_bytes:nullableNumber})).optional(),
+    environment: section(z.object({fans:z.array(z.object({name:z.string(),status:z.enum(["ok","fault","unknown"]),failures:nullableNumber})),poe_budget_watts:z.object({available:nullableNumber,used:nullableNumber,remaining:nullableNumber})})).optional(),
     network: section(z.object({ ipv4_addresses: z.array(z.object({ address: z.string(), netmask: nullableString, if_index: z.number().int().nullable() })), arp: z.array(z.object({ address: z.string(), mac: nullableString, if_index: z.number().int().nullable(), type: nullableString })) })),
     identity: section(identitySchema.nullable()), interfaces: section(z.array(interfaceSchema)), vlans: section(z.array(vlanSchema)), forwarding: section(z.array(fdbSchema)), neighbors: section(z.array(neighborSchema)), spanning_tree: section(z.object({ enabled: z.boolean().nullable(), protocol: nullableString, ports: z.array(stpSchema) })), aggregation: section(z.array(lagSchema)), poe: section(z.array(poeSchema)), sensors: section(z.array(sensorSchema)),
 });

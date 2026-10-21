@@ -4,8 +4,10 @@
  */
 
 import { DEVICE_CLASSIFICATIONS } from "./device-classifications";
+import type { SlugVecchio } from "./classification/canonico";
 
-export type DeviceClassification = (typeof DEVICE_CLASSIFICATIONS)[number];
+/** I classificatori possono ancora emettere gli slug vecchi: la scrittura li canonicalizza (catalogo 21/10). */
+export type DeviceClassification = (typeof DEVICE_CLASSIFICATIONS)[number] | SlugVecchio;
 
 export type ClassifierInput = {
   /** sysDescr SNMP (1.3.6.1.2.1.1.1.0) */

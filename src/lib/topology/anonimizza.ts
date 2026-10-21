@@ -13,6 +13,7 @@ import { normalizeName } from "@/lib/topology/match";
 import { identifiesByName, isVirtualMac, realOui } from "@/lib/topology/identity";
 import { normalizeMacForStorage } from "@/lib/utils";
 import { DEVICE_CLASSIFICATIONS } from "@/lib/device-classifications";
+import { SLUG_VECCHI } from "@/lib/classification/canonico";
 
 const IPV4 = /^\d{1,3}(\.\d{1,3}){3}$/;
 const MAC = /^[0-9a-f]{2}([:-]?)[0-9a-f]{2}(\1[0-9a-f]{2}){4}$/i;
@@ -121,7 +122,7 @@ const contains = (o: Cidr, ip: number): boolean => ip >= o.base && ip < o.base +
 export const VOCABOLARIO = {
   vendor: ["mikrotik", "ubiquiti", "hp", "cisco", "omada", "stormshield", "proxmox", "vmware", "linux", "windows", "synology", "qnap", "other"],
   device_type: ["router", "switch", "firewall", "hypervisor", "access_point", "nas", "server"],
-  classification: [...DEVICE_CLASSIFICATIONS, "windows"] as string[],
+  classification: [...DEVICE_CLASSIFICATIONS, ...SLUG_VECCHI, "windows"] as string[],
   status: ["online", "offline", "unknown"],
   protocol: ["lldp", "cdp", "mndp", "unknown"],
   source: ["device", "unifi"],

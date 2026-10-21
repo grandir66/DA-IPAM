@@ -4,6 +4,7 @@
  * degli host non si usa (spec §10.1: 40 seriali su 81 condivisi sulla copia
  * di un cliente).
  */
+import { canonicalizza } from "@/lib/classification/canonico";
 import type { MapNode, ModelHostRow, ModelNeighborRow } from "@/lib/topology/model-types";
 
 const VIRTUALI = [/^00:00:5e:00:0[12]:/i, /^00:00:0c:07:ac:/i];
@@ -39,7 +40,7 @@ export function realOui(mac: string | null | undefined): string | null {
 }
 
 export const IDENTITY_TYPES: readonly string[] = [
-  "router", "firewall", "switch", "access_point", "server", "server_linux", "server_windows", "hypervisor", "nas", "storage",
+  "router", "firewall", "switch", "access_point", "server", "hypervisor", "nas",
 ];
 
 export type NodeClass = "infra" | "ap" | "hyper" | "att" | "client";
@@ -73,7 +74,7 @@ export function nodeClass(n: Pick<MapNode, "type"> & { vendor?: string | null; p
   if (n.type === "router" || n.type === "firewall" || n.type === "switch") return "infra";
   if (n.type === "access_point") return "ap";
   if (n.type === "hypervisor") return "hyper";
-  if (["server", "server_linux", "server_windows", "hypervisor", "nas", "storage"].includes(n.type)) {
+  if (["server", "hypervisor", "nas"].includes(canonicalizza(n.type).classificazione)) {
     return n.proxmoxScan === true || /^(proxmox|vmware)/i.test(n.vendor?.trim() ?? "") ? "hyper" : "att";
   }
   return "client";

@@ -6,22 +6,22 @@
  * 20 px: l'L3 ha il riquadro giallo «L3» in basso a destra, che cambia la sagoma.
  */
 import type { CSSProperties } from "react";
+import { getClassificationLabel } from "@/lib/device-classifications";
 
 export type TopoIconId =
   | "router" | "switch" | "switch3" | "firewall" | "ap" | "server" | "hyper"
   | "nas" | "phone" | "printer" | "cam" | "cloud" | "client";
 
 const BY_TYPE: Readonly<Record<string, TopoIconId>> = {
-  router: "router", vpn_gateway: "router", modem: "router", ont: "router",
+  router: "router", vpn_gateway: "router", modem: "router",
   switch: "switch", switch_l3: "switch3", l3_switch: "switch3", core_switch: "switch3",
   firewall: "firewall", proxy: "firewall", load_balancer: "firewall",
   access_point: "ap",
-  server: "server", server_linux: "server", server_windows: "server", vm: "server", web_server: "server",
-  mail_server: "server", dns_server: "server", dhcp_server: "server", database_server: "server", nfs_server: "server",
+  server: "server", vm: "server",
   hypervisor: "hyper",
-  nas: "nas", storage: "nas",
+  nas: "nas",
   voip: "phone",
-  stampante: "printer", multifunzione: "printer", fotocopiatrice: "printer", scanner: "printer",
+  stampante: "printer", multifunzione: "printer", scanner: "printer",
   telecamera: "cam",
   internet: "cloud", wan: "cloud",
 };
@@ -30,17 +30,14 @@ export function iconFor(type: string): TopoIconId {
   return BY_TYPE[type] ?? "client";
 }
 
-const TIPO: Readonly<Record<string, string>> = {
-  router: "router", switch: "switch", switch_l3: "switch L3", l3_switch: "switch L3", core_switch: "switch L3",
-  firewall: "firewall", access_point: "access point", hypervisor: "hypervisor", server: "server",
-  server_linux: "server Linux", server_windows: "server Windows", nas: "NAS", storage: "storage", vm: "macchina virtuale",
-  workstation: "PC", notebook: "portatile", voip: "telefono IP", stampante: "stampante", multifunzione: "multifunzione",
-  telecamera: "telecamera", unknown: "sconosciuto", ups: "UPS",
+/** Tipi propri della mappa, che non sono classificazioni. Gli altri hanno l'etichetta del catalogo canonico. */
+const TIPO_MAPPA: Readonly<Record<string, string>> = {
+  switch_l3: "Switch L3", l3_switch: "Switch L3", core_switch: "Switch L3", internet: "Internet", wan: "WAN",
 };
 
 /** Il tipo in parole, per le righe e il pannello. */
 export function typeLabel(type: string): string {
-  return TIPO[type] ?? type.replace(/_/g, " ");
+  return TIPO_MAPPA[type] ?? getClassificationLabel(type);
 }
 
 // Colori dai token del tema (globals.css): navy = testo, bianco = superficie, cian = primario, giallo = accento.

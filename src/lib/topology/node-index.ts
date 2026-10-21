@@ -4,6 +4,7 @@
  * nome. Una chiave contesa fra due oggetti diversi vale null: non si abbina a
  * caso (un MAC VRRP, due apparati con lo stesso nome). Logica pura.
  */
+import { canonicalizza } from "@/lib/classification/canonico";
 import type { MapNode, ModelDeviceRow, ModelHostRow, ModelKnownMacRow, ModelNeighborRow, TopologyModelInput } from "@/lib/topology/model-types";
 import type { ComeFuso, ModelSeparazioneRow, ModelUnioneRow } from "@/lib/topology/unioni-tipi";
 import { normalizeName } from "@/lib/topology/match";
@@ -184,7 +185,7 @@ export function buildNodeIndex(devices: ModelDeviceRow[], hosts: ModelHostRow[],
   for (const d of devices) { const k = identityKey(d.name); if (k) claim(k, `dev:${d.id}`); }
   for (const [hostId, devId] of absorbedBy) { const h = idx.hostById.get(hostId); if (h) for (const k of namesOf(h)) claim(k, devId); }
   for (const h of sortedHosts) {
-    if (absorbedBy.has(h.id) || !IDENTITY_TYPES.includes(h.classification ?? "")) continue;
+    if (absorbedBy.has(h.id) || !IDENTITY_TYPES.includes(canonicalizza(h.classification).classificazione)) continue;
     const m = normalizeMacForStorage(h.mac);
     const owners = m && !isVirtualMac(m) ? macOwners.get(m) : undefined; // MAC vero di un altro apparato = contraddizione
     const devId = namesOf(h).map((k) => aliasOwner.get(k)).find((v): v is string => typeof v === "string");
@@ -235,7 +236,7 @@ export function buildNodeIndex(devices: ModelDeviceRow[], hosts: ModelHostRow[],
   const compatible = (a: number, b: number): boolean => new Set([...(ouis.get(find(a)) ?? []), ...(ouis.get(find(b)) ?? [])]).size <= 1;
   const byName = new Map<string, number[]>();
   for (const h of sortedHosts) {
-    if (absorbedBy.has(h.id) || !IDENTITY_TYPES.includes(h.classification ?? "")) continue;
+    if (absorbedBy.has(h.id) || !IDENTITY_TYPES.includes(canonicalizza(h.classification).classificazione)) continue;
     for (const k of namesOf(h)) {
       const seen = byName.get(k) ?? [];
       const other = seen.find((x) => find(x) !== find(h.id) && compatible(x, h.id) && puo(x, h.id));

@@ -2639,7 +2639,7 @@ export default function ObjectDetailPage() {
           </p>
         </Section>
       )}
-      {!isManaged && (host.classification === "server_windows" || host.classification === "server_linux" || host.classification === "workstation") && (
+      {!isManaged && (host.classification === "server" || host.classification === "workstation") && (
         <Section icon={<HardDrive className="h-4 w-4" />} title="Software installato">
           <p className="text-sm text-muted-foreground">
             Per scansionare il software, promuovi prima questo host a device gestito da Discovery

@@ -66,6 +66,12 @@ const ALLOWED_FILES: Record<string, string> = {
     "Facade di db-tenant.ts (fallback DEFAULT tenant): stesse due scritture " +
     "legittime e per lo stesso motivo — vedi src/lib/db-tenant.ts.",
 
+  "src/lib/classification/migrazione-v21.ts":
+    "Conversione una tantum (segno classificazioni_v21 in tenant_settings, 21/10) degli slug doppi " +
+    "(server_windows, dns_server, nas_qnap...) nello slug canonico. Non classifica niente: riscrive " +
+    "lo stesso valore in forma canonica, anche sugli host con classification_manual=1 (e lascia " +
+    "classification_manual com'è), e aggiunge il ruolo/vendor che lo slug vecchio conteneva.",
+
   "src/lib/classification/persist.ts":
     "Motore di classificazione legacy SEPARATO e preesistente (applyClassificationDecision). " +
     "CORREZIONE fix C1 (review finale fase 4): l'allowlist giustificava questa voce dicendo " +

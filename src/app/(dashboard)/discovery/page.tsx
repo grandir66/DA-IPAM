@@ -60,7 +60,7 @@ import {
 
 /**
  * Preset rapidi per filtrare per macro-categoria di device.
- * - "group:<key>" copre più classificazioni (Server raggruppa server/server_linux/server_windows).
+ * - "group:<key>" copre più classificazioni (Server raggruppa i server).
  * - I singoletti (router/switch/firewall/hypervisor) usano direttamente la classificazione,
  *   così la chip e l'opzione del dropdown classFilter restano allineate.
  */
@@ -74,21 +74,21 @@ const ICON_MAP: Record<IconName, typeof Server> = {
 };
 
 const DEFAULT_CLASS_PRESETS: ClassPreset[] = [
-  { filter: "group:server",   label: "Server",     iconName: "Server",    match: ["server", "server_linux", "server_windows"], builtin: true },
+  { filter: "group:server",   label: "Server",     iconName: "Server",    match: ["server"], builtin: true },
   { filter: "group:client",   label: "Client",     iconName: "Monitor",   match: ["workstation", "notebook"], builtin: true },
   { filter: "hypervisor",     label: "Hypervisor", iconName: "HardDrive", match: ["hypervisor"], builtin: true },
   { filter: "router",         label: "Router",     iconName: "RouterIcon",match: ["router"], builtin: true },
   { filter: "switch",         label: "Switch",     iconName: "Cable",     match: ["switch"], builtin: true },
   { filter: "access_point",   label: "AP",         iconName: "Wifi",      match: ["access_point"], builtin: true },
   { filter: "firewall",       label: "Firewall",   iconName: "Shield",    match: ["firewall"], builtin: true },
-  { filter: "group:net",      label: "NET",        iconName: "Network",   match: ["bridge", "repeater", "modem", "ont", "load_balancer", "vpn_gateway", "proxy", "rete_ot", "controller_wifi", "network_controller"], builtin: true },
+  { filter: "group:net",      label: "NET",        iconName: "Network",   match: ["bridge", "repeater", "modem", "load_balancer", "vpn_gateway", "proxy", "rete_ot", "network_controller"], builtin: true },
   { filter: "ups",            label: "UPS",        iconName: "BatteryCharging", match: ["ups"], builtin: true },
   { filter: "group:tel",      label: "TEL",        iconName: "Phone",     match: ["voip"], builtin: true },
-  { filter: "group:print",    label: "PRINT",      iconName: "Printer",   match: ["stampante", "scanner", "fotocopiatrice", "multifunzione"], builtin: true },
+  { filter: "group:print",    label: "PRINT",      iconName: "Printer",   match: ["stampante", "scanner", "multifunzione"], builtin: true },
   { filter: "group:cam",      label: "CAM",        iconName: "Camera",    match: ["telecamera"], builtin: true },
-  { filter: "group:iot",      label: "IOT",        iconName: "Cpu",       match: ["iot", "domotica", "smart_tv", "console", "sensore", "plc", "hmi", "controller"], builtin: true },
+  { filter: "group:iot",      label: "IOT",        iconName: "Cpu",       match: ["iot", "domotica", "smart_tv", "console", "sensore", "plc", "hmi"], builtin: true },
   { filter: "group:mobile",   label: "MOBILE",     iconName: "Smartphone",match: ["tablet", "smartphone"], builtin: true },
-  { filter: "group:storage",  label: "STORAGE",    iconName: "Database",  match: ["storage", "nas", "nas_synology", "nas_qnap"], builtin: true },
+  { filter: "group:storage",  label: "STORAGE",    iconName: "Database",  match: ["nas"], builtin: true },
   { filter: "group:multihomed", label: "MH",       iconName: "Link2",     match: [] /* speciale: h.multihomed != null */, builtin: true },
   { filter: "group:other",    label: "ALTRO",      iconName: "Boxes",     match: [] /* catchall */, builtin: true },
 ];

@@ -9,9 +9,9 @@ import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { avviaChocoDopoCredenziali } from "@/lib/patch/choco-automatico";
 import { z } from "zod";
-import { DEVICE_CLASSIFICATIONS } from "@/lib/device-classifications";
+import { classificazioneCanonicaEnum } from "@/lib/validators";
 
-const classificationSchema = z.enum(DEVICE_CLASSIFICATIONS as unknown as [string, ...string[]]);
+const classificationSchema = classificazioneCanonicaEnum();
 const deviceTypeSchema = z.enum(["router", "switch", "firewall", "hypervisor"]);
 const vendorSchema = z.enum([
   "mikrotik","ubiquiti","hp","cisco","omada","stormshield","proxmox","vmware",

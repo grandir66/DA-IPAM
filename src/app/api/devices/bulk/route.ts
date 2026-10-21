@@ -15,7 +15,7 @@ import {
   getCredentialById,
 } from "@/lib/db";
 import { z } from "zod";
-import { DEVICE_CLASSIFICATIONS } from "@/lib/device-classifications";
+import { classificazioneCanonicaEnum } from "@/lib/validators";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { inferNetworkDeviceVendorFromHostHint } from "@/lib/device-vendor-infer";
 import type { NetworkDevice } from "@/types";
@@ -36,7 +36,7 @@ import { applicaVociApparatiDb, avvisoFalliti, RifiutoCredenziali, type SceltaVo
 
 const productProfileEnum = z.enum(PRODUCT_PROFILE_IDS as unknown as [string, ...string[]]);
 
-const classificationSchema = z.enum(DEVICE_CLASSIFICATIONS as unknown as [string, ...string[]]);
+const classificationSchema = classificazioneCanonicaEnum();
 
 const BulkUpdateSchema = z.object({
   device_ids: z.array(z.coerce.number().int().positive()).optional(),

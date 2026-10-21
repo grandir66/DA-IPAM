@@ -6,7 +6,7 @@
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { caselleMikrotik, contatoriMikrotik, gruppoInterfaccia, perTipo, raggruppaInterfacce, statoInterfaccia, usoPercento } from "../mikrotik";
+import { caselleMikrotik, nomeFileExport, ripulisciExport, statoArp, contatoriMikrotik, gruppoInterfaccia, perTipo, raggruppaInterfacce, statoInterfaccia, usoPercento } from "../mikrotik";
 import type { InterfacciaScheda } from "../router";
 import type { HardwareMikrotik, RisorseMikrotik } from "@/lib/devices/mikrotik-scheda";
 
@@ -146,5 +146,66 @@ describe("raggruppaInterfacce", () => {
   it("senza interfacce di un gruppo, quel gruppo non c'è; lista vuota = nessun gruppo", () => {
     assert.deepEqual(raggruppaInterfacce([ifc("e1", "ether")]).map((x) => x.gruppo), ["ethernet"]);
     assert.deepEqual(raggruppaInterfacce([]), []);
+  });
+});
+
+describe("ripulisciExport", () => {
+  const ESPORTATO = [
+    "# 2026-10-21 10:00:00 by RouterOS 7.15",
+    "/interface bridge",
+    "add name=bridge1 comment=\\",
+    "    \"LAN\"",
+    "/system scheduler",
+    "add interval=1d name=backup on-event=mikrotik_backup",
+    "/system script",
+    "add name=mikrotik_backup source=\"/tool fetch url=sftp://u:SEGRETO@h\"",
+    "/system identity",
+    "set name=RT1",
+    "",
+  ].join("\n");
+
+  it("toglie script e scheduler, unisce le continuazioni, il resto resta identico", () => {
+    const r = ripulisciExport(ESPORTATO);
+    assert.deepEqual(r.tolte, ["/system scheduler", "/system script"]);
+    assert.ok(!r.testo.includes("SEGRETO") && !r.testo.includes("/system script") && !r.testo.includes("/system scheduler"));
+    assert.ok(r.testo.includes("add name=bridge1 comment=\"LAN\""), "continuazione unita");
+    assert.ok(r.testo.includes("/system identity\nset name=RT1"));
+    assert.ok(r.testo.startsWith("# 2026-10-21 10:00:00 by RouterOS 7.15\n/interface bridge\n"));
+    assert.equal(r.righe, r.testo.replace(/\n$/, "").split("\n").length);
+  });
+  it("senza sezioni da togliere né continuazioni il testo è byte per byte lo stesso", () => {
+    const t = "/ip address\nadd address=10.0.0.1/24 interface=bridge1\n/system identity\nset name=RT1\n";
+    const r = ripulisciExport(t);
+    assert.equal(r.testo, t);
+    assert.deepEqual(r.tolte, []);
+  });
+  it("«/system scripts»-simili non si toccano: serve la sezione esatta", () => {
+    const t = "/system script\nadd name=a\n/system script-extra\nadd x=1\n";
+    const r = ripulisciExport(t);
+    assert.equal(r.testo, "/system script-extra\nadd x=1\n");
+  });
+  it("fine riga CRLF e testo vuoto", () => {
+    assert.equal(ripulisciExport("").testo, "");
+    assert.equal(ripulisciExport("/system script\r\nadd a=1\r\n/ip dns\r\nset x=1\r\n").testo, "/ip dns\r\nset x=1\r\n");
+  });
+});
+
+describe("nomeFileExport", () => {
+  it("identity_AAAA-MM-GG_HHMM.rsc, senza caratteri strani", () => {
+    assert.equal(nomeFileExport("RT 1/x", new Date("2026-10-21T08:05:00Z")), "RT_1_x_2026-10-21_1005.rsc");
+    assert.equal(nomeFileExport(null, new Date("2026-10-21T08:05:00Z")), "mikrotik_2026-10-21_1005.rsc");
+  });
+});
+
+describe("statoArp", () => {
+  it("segno + parola per ogni stato; sconosciuto → null", () => {
+    assert.deepEqual(statoArp("reachable"), { segno: "✓", parola: "raggiungibile", forte: true });
+    assert.deepEqual(statoArp("permanent"), { segno: "✓", parola: "permanente", forte: true });
+    assert.equal(statoArp("stale")?.segno, "●");
+    assert.equal(statoArp("delay")?.segno, "●");
+    assert.equal(statoArp("incomplete")?.segno, "●");
+    assert.equal(statoArp("failed")?.segno, "✕");
+    assert.equal(statoArp(null), null);
+    assert.equal(statoArp(""), null);
   });
 });

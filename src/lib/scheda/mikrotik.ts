@@ -157,3 +157,64 @@ export function caselleMikrotik(i: {
   }
   return c.slice(0, 6);
 }
+
+// ── Configurazione: export ripulito come nel Manager (21/10) ─────────────────────────────────────────────────────
+// Le sezioni «/system script» e «/system scheduler» dell'export contengono lo script di backup col suo accesso SFTP:
+// non si mostrano né si scaricano. Il resto del testo resta byte per byte com'è, salvo le continuazioni di riga «\».
+
+const SEZIONI_DA_TOGLIERE = new Set(["/system script", "/system scheduler"]);
+
+export function ripulisciExport(testo: string): { testo: string; tolte: string[]; righe: number } {
+  if (testo === "") return { testo: "", tolte: [], righe: 0 };
+  const righe = testo.split(/(?<=\n)/); // ogni riga col suo terminatore, così \r\n e \n restano come sono
+  const tolte: string[] = [];
+  const tenute: string[] = [];
+  let inSezioneTolta = false;
+  for (const riga of righe) {
+    const nuda = riga.replace(/\r?\n$/, "");
+    if (nuda.startsWith("/")) {
+      const nome = nuda.trim();
+      inSezioneTolta = SEZIONI_DA_TOGLIERE.has(nome);
+      if (inSezioneTolta && !tolte.includes(nome)) tolte.push(nome);
+    }
+    if (inSezioneTolta) continue;
+    // continuazione: la riga precedente finiva con «\» → si unisce togliendo «\» e il rientro di questa
+    const ultima = tenute.length - 1;
+    if (ultima >= 0 && /\\\r?\n$/.test(tenute[ultima]) && !nuda.startsWith("/")) {
+      tenute[ultima] = tenute[ultima].replace(/\\\r?\n$/, "") + riga.replace(/^[ \t]+/, "");
+    } else {
+      tenute.push(riga);
+    }
+  }
+  const out = tenute.join("");
+  return { testo: out, tolte, righe: out === "" ? 0 : out.replace(/\r?\n$/, "").split("\n").length };
+}
+
+/** «<identity>_<AAAA-MM-GG>_<HHMM>.rsc» in ora italiana; l'identity senza caratteri che un file non regge. */
+export function nomeFileExport(identity: string | null | undefined, quando: Date): string {
+  const p = Object.fromEntries(
+    new Intl.DateTimeFormat("it-IT", { timeZone: "Europe/Rome", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
+      .formatToParts(quando).map((x) => [x.type, x.value]),
+  );
+  const base = (identity ?? "").trim().replace(/[^A-Za-z0-9._-]+/g, "_").replace(/^_+|_+$/g, "") || "mikrotik";
+  return `${base}_${p.year}-${p.month}-${p.day}_${p.hour}${p.minute}.rsc`;
+}
+
+// ── Tabella ARP: stato della voce ────────────────────────────────────────────────────────────────────────────────
+
+export interface StatoArpVista { segno: string; parola: string; forte: boolean }
+
+/** Stato ARP di RouterOS → segno + parola (✓ forte per le voci buone, ● attenzione, ✕ fallita); null se non letto. */
+export function statoArp(stato: string | null | undefined): StatoArpVista | null {
+  switch ((stato ?? "").trim().toLowerCase()) {
+    case "reachable": return { segno: "✓", parola: "raggiungibile", forte: true };
+    case "permanent": return { segno: "✓", parola: "permanente", forte: true };
+    case "stale": return { segno: "●", parola: "non recente", forte: false };
+    case "delay": return { segno: "●", parola: "in attesa", forte: false };
+    case "probe": return { segno: "●", parola: "in verifica", forte: false };
+    case "incomplete": return { segno: "●", parola: "incompleta", forte: false };
+    case "failed": return { segno: "✕", parola: "fallita", forte: false };
+    case "": return null;
+    default: return { segno: "●", parola: (stato ?? "").trim().toLowerCase(), forte: false };
+  }
+}

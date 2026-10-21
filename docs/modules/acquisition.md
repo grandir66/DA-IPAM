@@ -223,6 +223,92 @@ abilitato non implementato (restituisce parziale), niente ottiche DOM, IPv6/ND,
 route, ACL o configurazione. Le tabelle sono fotografie successive, non una
 transazione atomica sullo stack. Dati ed errori sono restituiti senza scrivere nel DB.
 
+## Collector vmware-esxi: API diretta dell’host
+
+Decisione: ADR 0025. Il profilo `vmware-esxi` usa vSphere Web Services SOAP su HTTPS `/sdk`, senza SSH
+né accesso al vCenter. Il banco è **HPE ProLiant DL380 Gen11**, **ESXi 8.0.3 build
+24677879**, API 8.0.3.0, gestito da vCenter. Riconosce `HostAgent` prima del login:
+un endpoint `VirtualCenter` viene rifiutato, non attraversato per scoprire altri host.
+
+Nel file privato indicare `collector`, `host` (IP di gestione diretto) e `api` con
+`username`, `password`, `port` (default 443). Senza `api.tls_sha256` viene verificata
+la catena CA. Per un certificato autofirmato serve l’impronta SHA256 esplicita
+(32 coppie esadecimali separate da `:`): viene confrontata **prima di inviare il
+payload o le credenziali**. Sul banco l’impronta è stata rilevata con preflight
+senza autenticazione e salvata nel vault; non equivale a una certificazione CA.
+Non esiste un flag generale per ignorare TLS. Password/cookie non sono restituiti.
+
+CLI identica agli switch, per esempio dalla radice del progetto:
+
+```bash
+node --import tsx scripts/acquire-device.ts --credentials-file /percorso/privato/esxi.json --output /percorso/privato/esxi-snapshot.json
+```
+
+Allowlist API: RetrieveServiceContent, Login, FindByIp, RetrievePropertiesEx,
+ContinueRetrievePropertiesEx, CancelRetrievePropertiesEx, Logout. Una sessione,
+un tentativo di login, paginazione e richieste a gruppi di 100 oggetti. Timeout
+assoluto per richiesta, limite totale/oggetti/byte/pagine; logout anche su errore
+(con breve budget di chiusura). Nessun metodo di configurazione o power operation.
+Le proprietà sono selezionate esplicitamente: niente `all=true`, configurazione
+completa, extraConfig VM o parametri di autenticazione iSCSI.
+
+La sezione opzionale **`virtualization`** conserva:
+
+- Scope host, versione API, riferimento VMware dell’host e indirizzo del vCenter
+  che lo gestisce; hardware fisico con UUID/seriale/BIOS, CPU, RAM e dispositivi PCI.
+- Stato di connessione, manutenzione, accensione, boot/uptime e quick stats.
+- vSwitch standard, pNIC risolte tramite la chiave VMware (anche i riferimenti
+  originali restano), port group, ordine NIC active/standby quando esposto.
+  VLAN 0 = senza tag; 1–4094 = access; 4095 = trunk, mai VLAN access 4095.
+- VMkernel con MAC, MTU, IPv4/netmask, IPv6, DHCP e backing distributed se presente;
+  DNS, gateway configurato e tabelle di routing IPv4/IPv6. Le righe di configurazione
+  e quelle di tabella non rappresentano una nuova rete scoperta per ciascuna riga.
+- Proxy switch distributed limitati alla configurazione visibile sull’host,
+  senza dichiarare le policy complete dei distributed port group del vCenter.
+- LUN/dischi e multipath con capacità/stato/adapter; datastore con riferimenti,
+  spazio disponibile/capacità/uncommitted, accessibilità, condivisione, extents VMFS
+  o sorgente NFS. Non sommare lo stesso datastore condiviso una volta per host.
+- VM con riferimenti, UUID e instance UUID distinti, stato/runtime, CPU/RAM/template,
+  guest OS e VMware Tools; vNIC con MAC/backing standard o distributed, connessione
+  e indirizzi guest; dischi con capacità, controller/unità, datastore, backing e thin
+  provisioning; snapshot con relazione padre/figlio. Il nome rete guest è un nome,
+  non un ManagedObjectReference. Capacità intere in byte come stringhe decimali.
+- Tutti i sensori numerici di salute con lettura, unità e modificatore originali;
+  temperature e RPM riconosciuti sono anche normalizzati nella sezione comune.
+
+**Collaudo del 21/10:** 4 pNIC, 2 vSwitch, 12 port group, 2 VMkernel, 18 VM,
+8 datastore, 30 vNIC, 32 dischi virtuali, 4 snapshot e 59 sensori di salute
+(25 temperature/RPM normalizzati). Conteggi delle VM/datastore confrontati con i
+riferimenti dell’host; nessuna proprietà negata o mancante segnalata dal server.
+Il JSON di virtualizzazione è `ok`; lo snapshot complessivo è **parziale**:
+ARP non raccolto, membership VLAN fisica non deducibile dai port group.
+I MoRef sono locali all’endpoint (usare target+tipo+MoRef per una futura importazione),
+non chiavi globali da confrontare fra host.
+FDB, LLDP/CDP, STP e LACP non raccolti; PoE non applicabile. I dati non osservati
+non costituiscono elenchi autorevoli da usare per cancellazioni.
+
+Gli IP guest provengono dai **VMware Tools**, non da scansioni di rete: quando i
+Tools non girano possono essere assenti o vecchi. Il JSON lo segnala per VM.
+Non si interroga il filesystem delle VM. Nessuna scrittura su DB/configurazione,
+nessuna enumerazione degli altri host del cluster, nessuna somma implicita di RAM
+assegnata/usata o spazio virtuale/fisico.
+
+Regressioni specifiche: attributi `type` e `xsi:type` distinti (altrimenti si perdono
+VM/datastore); LogoutResponse vuoto valido; liste singleton/array; route come array
+diretto; pNIC unite per chiave; capacità oltre Number.MAX_SAFE_INTEGER; zero/false
+preservati; fault XML/proprietà negata non diventano liste vuote; limiti, TLS pin,
+paginazione/logout e segreti riecheggiati. XML con DTD/ENTITY viene rifiutato.
+
+Limiti: solo ESXi 8.0.3 collaudato; altre versioni e configurazioni vDS/NSX da
+verificare; discovery LLDP/CDP, ruoli VMkernel, HBA dettagliati, allarmi/eventi,
+performance storiche e policy cluster/vCenter non implementati. Il collector è
+invocato esplicitamente da CLI o adapter: il modulo storico `vmware_vsphere`
+nell’interfaccia non viene attivato o sostituito da questo lavoro.
+
+Riferimenti: [PropertyCollector](https://developer.broadcom.com/xapis/vsphere-web-services-api/latest/vmodl.query.PropertyCollector.html),
+[HostSystem](https://developer.broadcom.com/xapis/vsphere-web-services-api/latest/vim.HostSystem.html),
+[VirtualMachine](https://developer.broadcom.com/xapis/vsphere-web-services-api/latest/vim.VirtualMachine.html).
+
 ## Estendere una famiglia
 
 Aggiungere un collector che implementi lo stesso contratto, estendere l'unione di

@@ -15,8 +15,15 @@ Piano: [`docs/superpowers/plans/2026-10-21-scheda-mikrotik-dal-manager.md`](docs
 - [x] T9 tab Bridge e VLAN (matrice dai PVID), dettagli bond/bridge (P3) — v0.9.839; matrice dai PVID (le T arrivano col T10); tab VLAN e Bridge solo con la lettura topologia accesa e ≥1 bridge; revisione completa: 1 importante + 3 minori corretti
 - [x] T10 lettura `mikrotik_scheda` spenta: bridge vlan, vlan, dns, utenti; migrazione v3 (P4) — v0.9.840; lettura `mikrotik_scheda` nata spenta (nessun comando nuovo ai router finché non la accende un admin); migrazione v3 sulla copia dell hub 22 ms, integrity ok, segno v3; copia del cliente A non misurata; revisione completa: approvato
 - [x] T11 matrice VLAN completa, VLAN con la madre, DNS e utenti (solo admin) (P4) — v0.9.841; utenti del router solo admin (provato via HTTP: admin 200 senza password, viewer 403); data per sezione; revisione completa: approvato, 1 importante + 3 minori corretti
-- [ ] T12 documenti e verifica sull'hub
-- [ ] Aperti dopo il piano: conteggi nelle etichette delle tab; link «non in IPAM» dei vicini; accensione di `mikrotik_scheda` sull'hub (decide Riccardo)
+- [x] T12 documenti (CHANGELOG, CONTEXT §6, scheda-mappa) — documenti fatti; verifica sull'hub: vedi sotto
+- [ ] T12 verifica sull'hub (versione, segno `scheda_mikrotik_v21` v3, `/objects/227` con `prova-claude`, tab nell'ordine, VLAN/Bridge solo con topologia accesa e bridge, Utenti assenti per il viewer): la fa il controllore
+- [ ] Aperti dopo il piano:
+  - [ ] accendere la lettura `mikrotik_scheda` sull'hub (decide Riccardo; nata spenta, nessun comando nuovo ai router finché non la accende un admin)
+  - [ ] sesta casella della striscia «pool DHCP più pieno»: la striscia ha già 6 caselle su 6 colonne, va scelta quale casella cede il posto
+  - [ ] conteggi nelle etichette delle tab; link «non in IPAM» dei vicini
+  - [ ] «Dettagli» della riga del bridge non visto a schermo (nome del bridge dei dati di prova diverso dal reale)
+  - [ ] migrazioni v1-v3 misurate solo sulla copia dell'hub: la copia del cliente A non era accessibile, la prima apertura vera lì è anche la prima misura
+  - [ ] «Aggiorna» su MK-RTR-CORE sull'hub, altrimenti risorse e hardware non compaiono
 
 ## 2026-10-21 — scheda apparato per tipo (proposta grafica)
 

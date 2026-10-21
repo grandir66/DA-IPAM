@@ -4,6 +4,35 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-22 · La scheda MikroTik copiata dal Manager (v0.9.832-842)
+
+La pagina del router MikroTik del Manager mostrava più cose della scheda di DA-IPAM, che per i router non aveva
+risorse, hardware, bridge, VLAN né stato delle interfacce. Si porta quello che il Manager mostra, ma i dati li legge
+DA-IPAM dal router (nessun collegamento col Manager). Piano `docs/superpowers/plans/2026-10-21-scheda-mikrotik-dal-manager.md`,
+ADR 0027. Non si portano: IP Scan del router, backup binari, generatore di script, archivio delle configurazioni.
+
+### Aggiunto
+
+- **Scheda del router MikroTik** (`components/scheda/tipi/router/mikrotik/`, `lib/devices/mikrotik-scheda.ts`):
+  Panoramica con risorse, hardware e firmware aggiornabile, interfacce raggruppate per tipo con stato, MTU e commento,
+  dispositivi visti dal router, ARP con stato, tab Bridge e VLAN (matrice dai PVID, VLAN con la madre), DNS, utenti
+  del router (solo admin) e Configurazione. Tabelle `mikrotik_*` per apparato, migrazione `scheda_mikrotik_v21` (v3).
+- **Lettura `mikrotik_scheda`, nata spenta**: bridge vlan, vlan, DNS e utenti con comandi in più sul router solo se
+  un admin la accende. Perché: nessun comando nuovo ai router dei clienti senza un ok esplicito.
+
+### Corretto
+
+- **Server DHCP disabilitati letti come attivi**: il flag `X` in testa alla riga non veniva letto (solo `disabled=`),
+  quindi i pool di un server spento contavano.
+- **Export della configurazione ripulito sul server**: `GET /api/devices/[id]/mikrotik` (`config` e `all`, solo
+  admin) esce già senza `/system script` e `/system scheduler`: sui router con lo script di backup del Manager lì c'è
+  la password SFTP, e la vecchia pagina `/devices/[id]` la mostrava e la scaricava così com'era.
+- **Host IPAM abbinati per IP**: con lo stesso IP in due reti, un host di un'altra sede teneva in vita l'ARP «failed»
+  e prestava il nome. Ora vale solo un host delle reti servite dal router.
+- **Lease nella vista Dispositivi**: si tengono quelli con `last_synced` entro 1 giorno dall'ultima lettura, e non
+  restano per sempre.
+- **Seriale e part number letti via SNMP** non vengono più cancellati dalla lettura SSH quando il routerboard è vuoto (CHR).
+
 ## [Non rilasciato] — 2026-10-21 · VLAN delle porte UniFi
 
 ### Corretto
@@ -49,9 +78,6 @@ da Riccardo il 21/10.
 
 - Il conteggio delle VM Proxmox usava un'espressione con un errore di precedenza (`?? … > 0`): ora è `numeroVm()`,
   con prova.
-- L'export della configurazione MikroTik (`GET /api/devices/[id]/mikrotik`, anche per l'admin) esce già senza
-  `/system script` e `/system scheduler`, ripulito sul server: sui router con lo script di backup del Manager lì c'è
-  la password SFTP, e la vecchia pagina `/devices/[id]` la mostrava e la scaricava così com'era.
 
 ### Tolto
 

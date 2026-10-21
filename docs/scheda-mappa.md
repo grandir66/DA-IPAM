@@ -4,7 +4,7 @@ tono: ok
 famiglia: 01-nucleo
 ordine: 10
 stato: cantiere
-prossimo: "provare «Rendi apparato» e la ricerca delle credenziali sul vero (hub, DTS); export AD: diagnostic esplicito e gravità del punteggio di dominio"
+prossimo: "provare «Rendi apparato» e la ricerca delle credenziali sul vero (hub, DTS); scheda MikroTik: verifica sull'hub e accensione della lettura `mikrotik_scheda` (decide Riccardo); export AD: diagnostic esplicito e gravità del punteggio di dominio"
 applicazione: ipam
 ---
 IPAM e inventario per le appliance cliente (un'installazione = un cliente:

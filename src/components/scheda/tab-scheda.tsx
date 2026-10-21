@@ -24,12 +24,26 @@ import { PanoramicaSwitch } from "./tipi/switch/panoramica";
 import { PorteSwitch } from "./tipi/switch/porte";
 import { VlanSwitch } from "./tipi/switch/vlan";
 import { ViciniSwitch } from "./tipi/switch/vicini";
+import { PanoramicaRouter } from "./tipi/router/panoramica";
+import { InterfacceRouter } from "./tipi/router/interfacce";
+import { RoutingRouter } from "./tipi/router/routing";
+import { DhcpRouter } from "./tipi/router/dhcp";
+import { ConfigurazioneRouter } from "./tipi/router/configurazione";
 
 export interface VoceTab {
   /** Solo se il nome cambia per questo tipo. */
   etichetta?: string;
   render: (ctx: ContestoScheda) => ReactNode;
 }
+
+/** Router e firewall hanno le stesse tab e gli stessi componenti. */
+const TAB_ROUTER: Partial<Record<TabId, VoceTab>> = {
+  panoramica: { render: (c) => <PanoramicaRouter ctx={c} /> },
+  interfacce: { render: (c) => <InterfacceRouter ctx={c} /> },
+  routing: { render: (c) => <RoutingRouter ctx={c} /> },
+  dhcp: { render: (c) => <DhcpRouter ctx={c} /> },
+  configurazione: { render: (c) => <ConfigurazioneRouter ctx={c} /> },
+};
 
 /** Tab proprie di ogni tipo: qui T3-T7 aggiungono la loro riga (vedi il commento in testa). */
 export const TAB_DEL_TIPO: Partial<Record<TipoScheda, Partial<Record<TabId, VoceTab>>>> = {
@@ -39,6 +53,8 @@ export const TAB_DEL_TIPO: Partial<Record<TipoScheda, Partial<Record<TabId, Voce
     vlan: { render: (c) => <VlanSwitch ctx={c} /> },
     vicini: { render: (c) => <ViciniSwitch ctx={c} /> },
   },
+  router: TAB_ROUTER,
+  firewall: TAB_ROUTER,
 };
 
 /** Registro base: vale per ogni tipo che non ha una voce sua. */

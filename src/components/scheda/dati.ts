@@ -41,6 +41,10 @@ export interface DeviceExtras {
     interface_name?: string | null;
     distance?: number | null;
     protocol?: string | null;
+    /** Colonne vere di `routing_table`: 1 = attiva. */
+    active?: number | null;
+    metric?: number | null;
+    timestamp?: string | null;
   }>;
   dhcp_leases?: Array<{
     id?: number;
@@ -52,6 +56,14 @@ export interface DeviceExtras {
     expires_at?: string | null;
     lease_type?: string | null;
     updated_at?: string | null;
+    // Le colonne vere di `dhcp_leases` (la rotta restituisce la riga così): le usa la scheda router e firewall.
+    ip_address?: string;
+    mac_address?: string;
+    server_name?: string | null;
+    lease_expires?: string | null;
+    dynamic_lease?: number | null;
+    description?: string | null;
+    last_seen?: string | null;
   }>;
 }
 
@@ -116,6 +128,10 @@ export interface DeviceInfoJson {
   firewall_active?: boolean;
   firewall_type?: string;
   firewall_rules_count?: number;
+  /** MikroTik: conteggi delle regole per tabella (letti dalla scansione SSH). */
+  firewall_filter_count?: number | null;
+  firewall_nat_count?: number | null;
+  firewall_mangle_count?: number | null;
   // Aggiornamenti
   installed_hotfixes?: Array<{ id?: string; installed_on?: string }>;
   pending_updates_count?: number;

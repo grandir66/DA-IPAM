@@ -80,5 +80,6 @@ export const TAB_COMUNI: TabId[] = ["sicurezza", "gestione", "storico"];
 export function tabDelTipo(t: TipoScheda, _o: { ruoli: string[]; haAd: boolean; haDipendenze: boolean }): TabId[] {
   if (t === "host") return ["panoramica", "sicurezza", "storico"];
   if (t === "switch") return ["panoramica", "porte", "vlan", "vicini", ...TAB_COMUNI];
+  if (t === "router" || t === "firewall") return ["panoramica", "interfacce", "routing", "dhcp", "configurazione", ...TAB_COMUNI];
   return ["panoramica", "dettagli", ...TAB_COMUNI];
 }

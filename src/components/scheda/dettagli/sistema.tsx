@@ -52,40 +52,7 @@ export function DettagliSistema({ ctx }: { ctx: ContestoScheda }) {
         })()}
       </Section>
 
-      {/* ─── F5.B: Network device facts (SNMP) ───
-          Visibile per router/switch/firewall (network gear) e per qualsiasi host
-          con snmp_data popolato. Mostra i campi SNMP che il discovery cattura ma
-          che oggi finivano solo nel raw JSON. Per Mikrotik/UniFi/HP/Cisco/Stormshield
-          questo era il "buco principale" del tab Sistema. */}
-      {(() => {
-        let snmp: HostSnmpData | null = null;
-        try { if (host.snmp_data) snmp = JSON.parse(host.snmp_data) as HostSnmpData; } catch { /* skip */ }
-        const isNetworkGear = device?.device_type === "router" || device?.device_type === "switch" || device?.device_type === "firewall";
-        if (!isNetworkGear && !snmp) return null;
-        return (
-          <Section icon={<Network className="h-4 w-4" />} title="Informazioni di rete (SNMP)">
-            <dl className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-2">
-              <InfoRow label="Sysname (SNMP)" value={device?.sysname ?? snmp?.sysName ?? null} />
-              <InfoRow label="Sysdescr" value={device?.sysdescr ?? snmp?.sysDescr ?? null} />
-              <InfoRow label="sysObjectID" value={snmp?.sysObjectID ?? null} mono />
-              <InfoRow label="Uptime SNMP" value={snmp?.sysUpTime ?? null} />
-              <InfoRow label="ARP entries" value={snmp?.arpEntryCount != null ? String(snmp.arpEntryCount) : null} />
-              <InfoRow label="SNMP port" value={snmp?.port ? String(snmp.port) : null} />
-              <InfoRow label="Part number" value={device?.part_number ?? snmp?.partNumber ?? null} />
-              <InfoRow label="Ultima query device" value={device?.last_info_update ? parseUtcDate(device.last_info_update).toLocaleString("it-IT") : null} />
-            </dl>
-            {/* Hints vendor-specifici che il discovery cattura via OID custom */}
-            {(snmp?.mikrotikIdentity || snmp?.unifiSummary || snmp?.ifDescrSummary || snmp?.hostResourcesSummary) && (
-              <div className="mt-3 space-y-1.5 text-xs text-muted-foreground border-t border-border/50 pt-2">
-                {snmp?.mikrotikIdentity && <p><span className="font-medium text-foreground">MikroTik:</span> {snmp.mikrotikIdentity}</p>}
-                {snmp?.unifiSummary && <p><span className="font-medium text-foreground">UniFi:</span> {snmp.unifiSummary}</p>}
-                {snmp?.ifDescrSummary && <p><span className="font-medium text-foreground">Interfacce:</span> {snmp.ifDescrSummary}</p>}
-                {snmp?.hostResourcesSummary && <p><span className="font-medium text-foreground">Risorse:</span> {snmp.hostResourcesSummary}</p>}
-              </div>
-            )}
-          </Section>
-        );
-      })()}
+      <SezioneSnmp ctx={ctx} />
 
       {/* ─── F5.D: Storage NAS (Synology/QNAP) ───
           nas_inventory è popolato da scan SNMP + (opzionale) SSH. Mostra dischi
@@ -655,5 +622,37 @@ export function DettagliSistema({ ctx }: { ctx: ContestoScheda }) {
         );
       })()}
     </div>
+  );
+}
+
+/** Informazioni di rete (SNMP). Esportata: la scheda router e firewall la porta in «Configurazione», senza «Dettagli». */
+export function SezioneSnmp({ ctx }: { ctx: ContestoScheda }) {
+  const { host, device } = ctx;
+  let snmp: HostSnmpData | null = null;
+  try { if (host.snmp_data) snmp = JSON.parse(host.snmp_data) as HostSnmpData; } catch { /* skip */ }
+  const isNetworkGear = device?.device_type === "router" || device?.device_type === "switch" || device?.device_type === "firewall";
+  if (!isNetworkGear && !snmp) return null;
+  return (
+    <Section icon={<Network className="h-4 w-4" />} title="Informazioni di rete (SNMP)">
+      <dl className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-2">
+        <InfoRow label="Sysname (SNMP)" value={device?.sysname ?? snmp?.sysName ?? null} />
+        <InfoRow label="Sysdescr" value={device?.sysdescr ?? snmp?.sysDescr ?? null} />
+        <InfoRow label="sysObjectID" value={snmp?.sysObjectID ?? null} mono />
+        <InfoRow label="Uptime SNMP" value={snmp?.sysUpTime ?? null} />
+        <InfoRow label="ARP entries" value={snmp?.arpEntryCount != null ? String(snmp.arpEntryCount) : null} />
+        <InfoRow label="SNMP port" value={snmp?.port ? String(snmp.port) : null} />
+        <InfoRow label="Part number" value={device?.part_number ?? snmp?.partNumber ?? null} />
+        <InfoRow label="Ultima query device" value={device?.last_info_update ? parseUtcDate(device.last_info_update).toLocaleString("it-IT") : null} />
+      </dl>
+      {/* Hints vendor-specifici che il discovery cattura via OID custom */}
+      {(snmp?.mikrotikIdentity || snmp?.unifiSummary || snmp?.ifDescrSummary || snmp?.hostResourcesSummary) && (
+        <div className="mt-3 space-y-1.5 text-xs text-muted-foreground border-t border-border/50 pt-2">
+          {snmp?.mikrotikIdentity && <p><span className="font-medium text-foreground">MikroTik:</span> {snmp.mikrotikIdentity}</p>}
+          {snmp?.unifiSummary && <p><span className="font-medium text-foreground">UniFi:</span> {snmp.unifiSummary}</p>}
+          {snmp?.ifDescrSummary && <p><span className="font-medium text-foreground">Interfacce:</span> {snmp.ifDescrSummary}</p>}
+          {snmp?.hostResourcesSummary && <p><span className="font-medium text-foreground">Risorse:</span> {snmp.hostResourcesSummary}</p>}
+        </div>
+      )}
+    </Section>
   );
 }

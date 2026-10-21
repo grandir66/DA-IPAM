@@ -6,9 +6,9 @@
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { caselleMikrotik, nomeFileExport, ripulisciExport, statoArp, contatoriMikrotik, gruppoInterfaccia, perTipo, raggruppaInterfacce, statoInterfaccia, usoPercento } from "../mikrotik";
+import { descriviBond, espandiVlanIds, matriceVlan, statoPortaBridge, caselleMikrotik, nomeFileExport, ripulisciExport, statoArp, contatoriMikrotik, gruppoInterfaccia, perTipo, raggruppaInterfacce, statoInterfaccia, usoPercento } from "../mikrotik";
 import type { InterfacciaScheda } from "../router";
-import type { HardwareMikrotik, RisorseMikrotik } from "@/lib/devices/mikrotik-scheda";
+import type { HardwareMikrotik, RigaBondMk, RigaBridgeMk, RigaPortaBridgeMk, RigaVlanBridgeMk, RigaVlanMk, RisorseMikrotik } from "@/lib/devices/mikrotik-scheda";
 
 const ifc = (ifname: string, tipo: string | null, stato: "up" | "down" | "unknown" = "up", extra: Partial<InterfacciaScheda> = {}): InterfacciaScheda => ({
   ifname, alias: null, stato, velocita_mbps: null, tipo, mtu: null, disabilitata: null, aggiornato: null, mac: null, indirizzi: [], ...extra,
@@ -123,9 +123,12 @@ describe("caselleMikrotik", () => {
     assert.equal(i?.sotto, "1 disabilitata");
     assert.equal(i?.tab, "interfacce");
   });
-  it("VLAN: sotto «su n bridge» solo se noto; la tab è interfacce finché la tab VLAN non c'è", () => {
+  it("VLAN: sotto «su n bridge» solo se noto; con almeno un bridge apre la tab VLAN, altrimenti Interfacce", () => {
     assert.equal(caselleMikrotik(tutto).find((x) => x.etichetta === "VLAN")?.sotto, undefined);
-    assert.equal(caselleMikrotik({ ...tutto, vlan: { numero: 9, bridge: 1 } }).find((x) => x.etichetta === "VLAN")?.sotto, "su 1 bridge");
+    assert.equal(caselleMikrotik(tutto).find((x) => x.etichetta === "VLAN")?.tab, "interfacce");
+    const conBridge = caselleMikrotik({ ...tutto, vlan: { numero: 9, bridge: 1 } }).find((x) => x.etichetta === "VLAN");
+    assert.deepEqual([conBridge?.sotto, conBridge?.tab], ["su 1 bridge", "vlan"]);
+    assert.equal(caselleMikrotik({ ...tutto, vlan: { numero: 9, bridge: 0 } }).find((x) => x.etichetta === "VLAN")?.tab, "interfacce", "zero bridge: la tab VLAN non c'è");
   });
   it("senza dati: nessuna casella inventata", () => {
     assert.deepEqual(caselleMikrotik({ risorse: null, hardware: null, scansione: null, interfacce: null, vlan: null }), []);
@@ -207,5 +210,132 @@ describe("statoArp", () => {
     assert.equal(statoArp("failed")?.segno, "✕");
     assert.equal(statoArp(null), null);
     assert.equal(statoArp(""), null);
+  });
+});
+
+// ── Task 9: matrice porte × VLAN (regola U/T del Manager, censimento §1.8) e vlan-ids (caso 4 del piano) ──────────────
+
+describe("espandiVlanIds", () => {
+  it("numero, elenco, intervallo piccolo espanso", () => {
+    assert.deepEqual(espandiVlanIds("10"), [{ id: 10, etichetta: "10" }]);
+    assert.deepEqual(espandiVlanIds("10,20").map((c) => c.id), [10, 20]);
+    const r = espandiVlanIds("100-110");
+    assert.equal(r.length, 11);
+    assert.deepEqual([r[0], r[10]], [{ id: 100, etichetta: "100" }, { id: 110, etichetta: "110" }]);
+    assert.deepEqual(espandiVlanIds("5, 100-102").map((c) => c.id), [5, 100, 101, 102]);
+  });
+  it("oltre il massimo: una colonna sola con l'etichetta dell'intervallo", () => {
+    assert.deepEqual(espandiVlanIds("2-4094"), [{ id: null, etichetta: "2-4094" }]);
+    assert.equal(espandiVlanIds("1-64").length, 64, "64 numeri si espandono ancora");
+    assert.deepEqual(espandiVlanIds("1-65"), [{ id: null, etichetta: "1-65" }]);
+    assert.deepEqual(espandiVlanIds("1-10", 5), [{ id: null, etichetta: "1-10" }]);
+  });
+  it("vuoto, pezzi illeggibili e fuori 1-4094 non danno colonne inventate", () => {
+    assert.deepEqual(espandiVlanIds(""), []);
+    assert.deepEqual(espandiVlanIds("abc,0,5000,7").map((c) => c.id), [7]);
+    assert.deepEqual(espandiVlanIds("20-10"), [], "intervallo rovesciato");
+  });
+});
+
+const bridgeMk = (extra: Partial<RigaBridgeMk> = {}): RigaBridgeMk => ({
+  name: "bridge", mac_address: null, mtu: null, actual_mtu: null, l2mtu: null, arp: null, arp_timeout: null, protocol_mode: null, priority: null,
+  fast_forward: null, igmp_snooping: null, dhcp_snooping: null, vlan_filtering: true, pvid: 1, frame_types: null, ingress_filtering: null,
+  ether_type: null, ageing_time: null, forward_delay: null, max_message_age: null, comment: null, running: true, disabled: false, ...extra,
+});
+const portaMk = (iface: string, pvid: number | null, extra: Partial<RigaPortaBridgeMk> = {}): RigaPortaBridgeMk => ({
+  interface: iface, bridge: "bridge", pvid, priority: null, path_cost: null, internal_path_cost: null, edge: null, point_to_point: null,
+  horizon: null, hw: null, hw_offload: false, frame_types: null, ingress_filtering: null, bpdu_guard: null, trusted: null, inactive: false,
+  disabled: false, dynamic: false, comment: null, ...extra,
+});
+const vbMk = (vlan_ids: string, extra: Partial<RigaVlanBridgeMk> = {}): RigaVlanBridgeMk => ({
+  bridge: "bridge", vlan_ids, tagged: [], untagged: [], current_tagged: [], current_untagged: [], dynamic: false, disabled: false, comment: null, ...extra,
+});
+const vlanMk = (name: string, vlan_id: number, iface = "bridge"): RigaVlanMk => ({
+  name, vlan_id, interface: iface, mtu: null, mac_address: null, running: true, disabled: false, comment: null,
+});
+const bondMk = (name: string): RigaBondMk => ({
+  name, mode: "802.3ad", slaves: ["ether7", "ether8"], transmit_hash_policy: "layer-2-and-3", mlag_id: null, link_monitoring: "mii",
+  mii_interval: "100ms", lacp_rate: null, mtu: 1500, comment: null, running: true, disabled: false,
+});
+const attiva = () => "attiva" as const;
+
+describe("matriceVlan", () => {
+  const porte = [portaMk("ether2", 1), portaMk("ether3", 30), portaMk("bond1", 1), portaMk("ether9", 5, { bridge: "altro" })];
+  const celle = (m: ReturnType<typeof matriceVlan>, porta: string) => {
+    const r = m.righe.find((x) => x.porta === porta);
+    assert.ok(r, porta);
+    return Object.fromEntries(m.colonne.map((c, k) => [c.etichetta, r.celle[k]]));
+  };
+
+  it("porta negli untagged → U; nei tagged → T; solo PVID → U; niente → vuota", () => {
+    const m = matriceVlan({
+      bridge: bridgeMk(), porte, bond: [bondMk("bond1")],
+      vlanBridge: [
+        vbMk("10", { tagged: ["bridge", "bond1"], untagged: ["ether2"] }),
+        vbMk("20", { current_tagged: ["ether2"], current_untagged: ["ether3"] }),
+      ],
+      vlan: [vlanMk("UFFICI", 10), vlanMk("VOIP", 20), vlanMk("ALTRA", 10, "altro")],
+      statoPorta: attiva,
+    });
+    assert.equal(m.completa, true);
+    assert.deepEqual(m.colonne.map((c) => c.id), [1, 10, 20, 30], "ordinate per id, PVID compresi");
+    assert.deepEqual(m.colonne.map((c) => c.nome), [null, "UFFICI", "VOIP", null], "nome dalla VLAN su questo bridge");
+    assert.deepEqual(m.righe.map((r) => r.porta), ["ether2", "ether3", "bond1"], "solo le porte di questo bridge");
+    assert.deepEqual(celle(m, "ether2"), { 1: "U", 10: "U", 20: "T", 30: null });
+    assert.deepEqual(celle(m, "ether3"), { 1: null, 10: null, 20: "U", 30: "U" });
+    assert.deepEqual(celle(m, "bond1"), { 1: "U", 10: "T", 20: null, 30: null });
+    assert.equal(m.righe[2].bond?.name, "bond1");
+    assert.equal(m.righe[0].bond, null);
+  });
+
+  it("untagged vince su tagged e sul PVID; la riga disabilitata non conta", () => {
+    const m = matriceVlan({
+      bridge: bridgeMk(), porte: [portaMk("ether2", 10)], bond: [],
+      vlanBridge: [vbMk("10", { tagged: ["ether2"], untagged: ["ether2"] }), vbMk("40", { tagged: ["ether2"], disabled: true })],
+      vlan: null, statoPorta: attiva,
+    });
+    assert.deepEqual(m.colonne.map((c) => c.id), [1, 10]);
+    assert.deepEqual(m.righe[0].celle, [null, "U"]);
+  });
+
+  it("intervallo 100-110 espanso in 11 colonne; 2-4094 resta una colonna con l'etichetta", () => {
+    const m = matriceVlan({
+      bridge: bridgeMk({ pvid: null }), porte: [portaMk("ether2", null)], bond: [],
+      vlanBridge: [vbMk("100-110", { tagged: ["ether2"] }), vbMk("2-4094", { untagged: ["ether2"] })],
+      vlan: null, statoPorta: attiva,
+    });
+    assert.equal(m.colonne.filter((c) => c.id !== null).length, 11);
+    const larga = m.colonne.at(-1);
+    assert.deepEqual(larga, { id: null, etichetta: "2-4094", nome: null }, "in fondo, dopo le colonne numerate");
+    assert.equal(m.righe[0].celle.at(-1), "U");
+    assert.equal(m.righe[0].celle[0], "T");
+  });
+
+  it("senza righe bridge vlan: colonne dai PVID di porte e bridge, solo la regola del PVID, completa=false", () => {
+    const m = matriceVlan({ bridge: bridgeMk({ pvid: 1 }), porte, bond: [], vlanBridge: null, vlan: null, statoPorta: attiva });
+    assert.equal(m.completa, false);
+    assert.deepEqual(m.colonne.map((c) => c.id), [1, 30]);
+    assert.deepEqual(celle(m, "ether2"), { 1: "U", 30: null });
+    assert.deepEqual(celle(m, "ether3"), { 1: null, 30: "U" });
+  });
+
+  it("lo stato viene da chi chiama; PVID null → nessuna U implicita", () => {
+    const m = matriceVlan({
+      bridge: bridgeMk(), porte: [portaMk("ether2", null), portaMk("ether3", 1)], bond: [], vlanBridge: null, vlan: null,
+      statoPorta: (n) => (n === "ether2" ? "disabilitata" : "inattiva"),
+    });
+    assert.deepEqual(m.righe.map((r) => [r.porta, r.stato, r.pvid, r.celle]), [["ether2", "disabilitata", null, [null]], ["ether3", "inattiva", 1, ["U"]]]);
+  });
+});
+
+describe("statoPortaBridge e descriviBond", () => {
+  it("X → disabilitata (vince), I → inattiva, altrimenti attiva", () => {
+    assert.equal(statoPortaBridge({ disabled: true, inactive: true }), "disabilitata");
+    assert.equal(statoPortaBridge({ disabled: false, inactive: true }), "inattiva");
+    assert.equal(statoPortaBridge({ disabled: false, inactive: false }), "attiva");
+  });
+  it("modo · slave · hash, solo quelli che ci sono", () => {
+    assert.equal(descriviBond(bondMk("bond1")), "802.3ad · ether7, ether8 · layer-2-and-3");
+    assert.equal(descriviBond({ ...bondMk("b"), slaves: [], transmit_hash_policy: null }), "802.3ad");
   });
 });

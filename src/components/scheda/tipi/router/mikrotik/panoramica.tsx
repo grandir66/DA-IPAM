@@ -3,11 +3,12 @@
 /**
  * Panoramica dei router MikroTik raggiungibili in SSH (artboard MkPanoramica, M1-M7): striscia dei numeri, poi in
  * griglia a tre colonne Risorse · Hardware · Contatori e Interfacce per tipo. Un riquadro senza dato non si rende;
- * cosa manca lo dice la riga delle fonti. I riquadri DNS e Utenti arrivano col Task 11. Deve stare in 1440×900.
+ * cosa manca lo dice la riga delle fonti. Porte bridge e bond dall'ultima fotografia della topologia (Task 9). I riquadri DNS
+ * e Utenti arrivano col Task 11. Deve stare in 1440×900.
  */
 import type { ReactNode } from "react";
 import { LoadError } from "@/components/shared/load-error";
-import { caselleMikrotik, contatoriMikrotik, perTipo, usoPercento, type ContatoriMikrotik } from "@/lib/scheda/mikrotik";
+import { caselleMikrotik, contatoriMikrotik, gruppoInterfaccia, perTipo, usoPercento, type ContatoriMikrotik } from "@/lib/scheda/mikrotik";
 import type { TabId } from "@/lib/scheda/tipo-scheda";
 import { parseUtcDate } from "../../../blocchi";
 import { BarraUso } from "../../../barra-uso";
@@ -16,7 +17,7 @@ import { RigaFonti, type Fonte } from "../../../riga-fonti";
 import { StrisciaNumeri } from "../../../striscia-numeri";
 import type { ContestoScheda } from "../../../contesto";
 import { rotteDi } from "../dati-router";
-import { hardwareDi, risorseDi, useInterfacceMikrotik } from "./dati-mikrotik";
+import { hardwareDi, risorseDi, useInterfacceMikrotik, useSchedaMikrotik } from "./dati-mikrotik";
 
 const ora = (iso: string): string =>
   parseUtcDate(iso).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Rome" });
@@ -33,12 +34,12 @@ function Riga({ etichetta, children }: { etichetta: string; children: ReactNode 
   );
 }
 
-/** I contatori in ordine di tavola, ognuno con la tab che apre (VLAN, bridge e bond stanno in Interfacce finché non ci sono le loro tab). */
-const CONTATORI: { chiave: keyof ContatoriMikrotik; etichetta: string; tab: TabId }[] = [
+/** I contatori in ordine di tavola, ognuno con la tab che apre: VLAN, porte e bond vanno nelle loro tab se il router ha un bridge. */
+const contatoriVisti = (haBridge: boolean): { chiave: keyof ContatoriMikrotik; etichetta: string; tab: TabId }[] => [
   { chiave: "indirizzi", etichetta: "Indirizzi IP", tab: "interfacce" },
-  { chiave: "vlan", etichetta: "VLAN", tab: "interfacce" },
-  { chiave: "porteBridge", etichetta: "Porte bridge", tab: "interfacce" },
-  { chiave: "bond", etichetta: "Bond", tab: "interfacce" },
+  { chiave: "vlan", etichetta: "VLAN", tab: haBridge ? "vlan" : "interfacce" },
+  { chiave: "porteBridge", etichetta: "Porte bridge", tab: haBridge ? "bridge" : "interfacce" },
+  { chiave: "bond", etichetta: "Bond", tab: haBridge ? "bridge" : "interfacce" },
   { chiave: "rotte", etichetta: "Rotte", tab: "routing" },
   { chiave: "utenti", etichetta: "Utenti", tab: "configurazione" },
 ];
@@ -51,10 +52,21 @@ export function PanoramicaMikrotik({ ctx }: { ctx: ContestoScheda }) {
   const rotte = rotteDi(ctx);
   const { stato: ifc, riprova } = useInterfacceMikrotik(device?.id);
   const interfacce = ifc.fase === "ok" ? ifc.dati.interfacce : null;
+  // Bridge, porte e bond: solo dall'ultima fotografia della topologia (mai letta → i contatori non si mostrano).
+  const { stato: sc } = useSchedaMikrotik(device?.id);
+  const scheda = sc.fase === "ok" ? sc.dati : null;
+  const foto = scheda?.letto_il ? scheda : null;
+  const haBridge = (device?.mikrotik?.bridge ?? 0) > 0;
+  const nVlanIfc = interfacce ? interfacce.filter((x) => gruppoInterfaccia(x.tipo) === "vlan").length : null;
 
-  const caselle = caselleMikrotik({ risorse, hardware, scansione: di?.scanned_at ?? null, interfacce, vlan: null });
-  const contatori = contatoriMikrotik({ interfacce, rotte: rotte.length, porteBridge: null, bond: null, vlan: null, utenti: null });
-  const visibiliContatori = CONTATORI.filter((c) => contatori[c.chiave] != null);
+  const caselle = caselleMikrotik({
+    risorse, hardware, scansione: di?.scanned_at ?? null, interfacce,
+    vlan: foto && nVlanIfc != null ? { numero: nVlanIfc, bridge: foto.bridge.length } : null,
+  });
+  const contatori = contatoriMikrotik({
+    interfacce, rotte: rotte.length, porteBridge: foto ? foto.porte.length || null : null, bond: foto ? foto.bond.length || null : null, vlan: null, utenti: null,
+  });
+  const visibiliContatori = contatoriVisti(haBridge).filter((c) => contatori[c.chiave] != null);
   const tipi = interfacce ? perTipo(interfacce) : [];
 
   const cpu = risorse?.cpu_carico ?? null;
@@ -74,6 +86,11 @@ export function PanoramicaMikrotik({ ctx }: { ctx: ContestoScheda }) {
       : ifc.dati.interfacce.length === 0
         ? { nome: "Interfacce", esito: "assente", nota: "nessuna letta" }
         : { nome: "Interfacce", esito: "ok", ...(ifc.dati.aggiornato ? { quando: ora(ifc.dati.aggiornato) } : {}) });
+  }
+  if (scheda) {
+    fonti.push(!scheda.letture.topologia.acceso
+      ? { nome: "Bridge e porte", esito: "assente", nota: "lettura «Spanning tree, bridge e fasci» spenta" }
+      : scheda.letto_il ? { nome: "Topologia", esito: "ok", quando: ora(scheda.letto_il) } : { nome: "Bridge e porte", esito: "assente", nota: "mai lette" });
   }
   if (di?.scanned_at && !risorse && !hardware) fonti.push({ nome: "Risorse e hardware", esito: "assente", nota: "si leggono con «Aggiorna»" });
 

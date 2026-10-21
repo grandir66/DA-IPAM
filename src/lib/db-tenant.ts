@@ -74,7 +74,7 @@ import { modelloEtichettaDiPorte } from "./device-fingerprint-classification";
 import { parseProxmoxScan } from "./topology/vms";
 import { hypervisorNics, switchPortsToKnown, type SwitchPortRow } from "./topology/known-ports";
 import type { IngressoDispositivi } from "./scheda/dispositivi-router";
-import type { RigaBondMk, RigaBridgeMk, RigaPortaBridgeMk } from "./devices/mikrotik-scheda";
+import type { RigaBondMk, RigaBridgeMk, RigaDnsMk, RigaPortaBridgeMk, RigaPortaSchedaMk, RigaVlanBridgeMk, RigaVlanMk } from "./devices/mikrotik-scheda";
 import type { KnownPort } from "./topology/api-input";
 import type { LinkMedium, MapOrientation } from "./topology/model-types";
 import { TESTI_UNIONI, type PianoUnioni, type RigaSeparazione, type RigaUnione } from "./topology/unioni-tipi";
@@ -713,8 +713,10 @@ function misuraLivelloSchedaMk(d: Database.Database): number {
  * prima (`>= 1`), così su un tenant la cui migrazione è fallita le scritture di oggi restano quelle di oggi.
  */
 export function livelloSchemaSchedaMk(d: Database.Database): number {
+  // Annotato anche sotto il bersaglio (rilievo della revisione del Task 8): una v2 fallita non deve costare le query di
+  // schema a ogni chiamata. Si rimisura solo con la migrazione o con rileggiSchemaSchedaMk().
   const v = SCHEMA_SCHEDA_MK.get(d);
-  if (v !== undefined && v >= VERSIONE_SCHEDA_MK) return v;
+  if (v !== undefined) return v;
   const n = misuraLivelloSchedaMk(d);
   SCHEMA_SCHEDA_MK.set(d, n);
   return n;
@@ -5574,7 +5576,12 @@ export function scriviSchedaMikrotikTopologia(deviceId: number, s: SchedaMkTopol
     d.prepare(`DELETE FROM ${tabella} WHERE device_id = ?`).run(deviceId);
     const ins = d.prepare(`INSERT OR REPLACE INTO ${tabella} (device_id, ${colonne.join(", ")}, seen_at) VALUES (?, ${colonne.map(() => "?, ").join("")}?)`);
     for (const r of righe) ins.run(deviceId, ...colonne.map((c) => valoreMk(r[c])), ora);
-    return righe.length;
+    // Due righe con la stessa chiave nella stessa uscita: vince l'ultima, ma si dice (solo i numeri: niente nomi nel log).
+    const scritte = (d.prepare(`SELECT COUNT(*) AS n FROM ${tabella} WHERE device_id = ?`).get(deviceId) as { n: number }).n;
+    if (scritte < righe.length) {
+      console.warn(`[db-tenant] scheda mikrotik: ${tabella} apparato ${deviceId}, righe lette ${righe.length}, scritte ${scritte} (chiavi doppie)`);
+    }
+    return scritte;
   };
   d.transaction(() => {
     if (s.bridge) out.bridge = sostituisci("mikrotik_bridge", COLONNE_MK_BRIDGE, s.bridge);
@@ -5582,6 +5589,64 @@ export function scriviSchedaMikrotikTopologia(deviceId: number, s: SchedaMkTopol
     if (s.bond) out.bond = sostituisci("mikrotik_bond", COLONNE_MK_BOND, s.bond);
   })();
   return out;
+}
+
+/** Le colonne 0/1 delle tre tabelle della scheda, rilette come boolean (le altre restano come sono; `slaves` torna lista). */
+const BOOL_MK = new Set(["fast_forward", "igmp_snooping", "dhcp_snooping", "vlan_filtering", "ingress_filtering", "running", "disabled", "hw",
+  "hw_offload", "bpdu_guard", "trusted", "inactive", "dynamic"]);
+const BOOL_MK_SEMPRE = new Set(["running", "disabled", "hw_offload", "inactive", "dynamic"]); // dai segni: mai null
+
+function rigaMk<R>(r: Record<string, unknown>): R {
+  const o: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(r)) {
+    if (k === "device_id" || k === "seen_at") continue;
+    if (BOOL_MK.has(k)) o[k] = v === null || v === undefined ? (BOOL_MK_SEMPRE.has(k) ? false : null) : v === 1;
+    else if (k === "slaves") o[k] = typeof v === "string" && v !== "" ? v.split(",") : [];
+    else o[k] = v;
+  }
+  return o as R;
+}
+
+const SCHEDA_MK_VUOTA = { bridge: [], porte: [], bond: [], letto_il: null, vlanBridge: null, vlan: null, dns: null };
+
+/**
+ * Bridge, porte e bond dell'ultima fotografia di un MikroTik per la scheda (Task 9). Le porte portano ruolo e stato STP
+ * dell'ultima lettura della topologia (`topology_port_facts`, fonte `device`, stessa porta), nella stessa query.
+ * `vlanBridge`, `vlan`, `dns`: null fino al Task 10. Schema sotto il livello 2 → tutto vuoto, `letto_il` null.
+ */
+export function leggiSchedaMikrotik(deviceId: number): {
+  bridge: RigaBridgeMk[]; porte: RigaPortaSchedaMk[]; bond: RigaBondMk[]; letto_il: string | null;
+  vlanBridge: RigaVlanBridgeMk[] | null; vlan: RigaVlanMk[] | null; dns: RigaDnsMk | null;
+} {
+  const d = db();
+  if (livelloSchemaSchedaMk(d) < 2) return { ...SCHEDA_MK_VUOTA };
+  const bridge = (d.prepare("SELECT * FROM mikrotik_bridge WHERE device_id = ? ORDER BY name").all(deviceId) as Record<string, unknown>[]);
+  const bond = (d.prepare("SELECT * FROM mikrotik_bond WHERE device_id = ? ORDER BY name").all(deviceId) as Record<string, unknown>[]);
+  // Senza lo schema delle letture in più la tabella dei fatti non c'è: il ruolo STP resta null.
+  const porte = (schemaCaviPresente()
+    ? d.prepare(`SELECT p.*, f.stp_role AS stp_ruolo, f.stp_state AS stp_stato FROM mikrotik_bridge_port p
+        LEFT JOIN topology_port_facts f ON f.device_id = p.device_id AND f.source = 'device' AND f.port_name = p.interface
+          AND f.seen_at = (SELECT MAX(seen_at) FROM topology_port_facts WHERE device_id = p.device_id AND source = 'device')
+        WHERE p.device_id = ? ORDER BY p.rowid`).all(deviceId)
+    : d.prepare("SELECT *, NULL AS stp_ruolo, NULL AS stp_stato FROM mikrotik_bridge_port WHERE device_id = ? ORDER BY rowid").all(deviceId)) as Record<string, unknown>[];
+  const date = [...bridge, ...porte, ...bond].map((r) => r.seen_at).filter((s): s is string => typeof s === "string");
+  return {
+    bridge: bridge.map((r) => rigaMk<RigaBridgeMk>(r)),
+    porte: porte.map((r) => rigaMk<RigaPortaSchedaMk>(r)),
+    bond: bond.map((r) => rigaMk<RigaBondMk>(r)),
+    letto_il: date.length > 0 ? date.reduce((a, b) => (b > a ? b : a)) : null,
+    vlanBridge: null,
+    vlan: null,
+    dns: null,
+  };
+}
+
+/** Quanti bridge ha l'ultima fotografia (una COUNT, per le tab di `GET /api/devices/[id]`); null = schema sotto il livello 2. */
+export function contaBridgeMikrotik(deviceId: number): { bridge: number; letto_il: string | null } | null {
+  const d = db();
+  if (livelloSchemaSchedaMk(d) < 2) return null;
+  const r = d.prepare("SELECT COUNT(*) AS n, MAX(seen_at) AS il FROM mikrotik_bridge WHERE device_id = ?").get(deviceId) as { n: number; il: string | null };
+  return { bridge: r.n, letto_il: r.il };
 }
 
 /** Chi ha letto i fatti (spec §13.5.7): il lettore, mai la marca. */

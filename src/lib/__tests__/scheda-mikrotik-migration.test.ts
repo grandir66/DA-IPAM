@@ -2,11 +2,11 @@
 // (device_interfaces.mtu/disabled, arp_entries.status/dynamic, device_neighbors.remote_version). Additiva, idempotente, in
 // UNA transazione; il segno `scheda_mikrotik_v21` dice fin dove è arrivato lo schema (`done:<data>:v1`).
 import { removeTestHubDb } from "@/lib/integrations/__tests__/support/hub-isolato";
-import { test, after } from "node:test";
+import { test, after, mock } from "node:test";
 import assert from "node:assert/strict";
 import Database from "better-sqlite3";
 import { closeHubDb } from "@/lib/db-hub";
-import { deleteTenantDatabase, getTenantDb, livelloSchemaSchedaMk, migrateSchedaMikrotik, chiudiMigrazioneSchedaMkFallita, rileggiSchemaSchedaMk, scriviSchedaMikrotikTopologia, upsertArpEntries as upsertArpTenant, upsertNeighbors, withTenant } from "@/lib/db-tenant";
+import { contaBridgeMikrotik, deleteTenantDatabase, getTenantDb, leggiSchedaMikrotik, livelloSchemaSchedaMk, migrateSchedaMikrotik, chiudiMigrazioneSchedaMkFallita, rileggiSchemaSchedaMk, scriviSchedaMikrotikTopologia, upsertArpEntries as upsertArpTenant, upsertNeighbors, withTenant } from "@/lib/db-tenant";
 import { upsertArpEntries as upsertArpFacciata } from "@/lib/db";
 import { aggiornaInterfacceRouterOs, createPhysicalDevice, upsertDeviceInterface } from "@/lib/devices/physical-device-db";
 import { parseInterfacce } from "@/lib/devices/mikrotik-stp";
@@ -254,6 +254,77 @@ test("scriviSchedaMikrotikTopologia: schema sotto il livello 2 → null, niente 
   try {
     assert.equal(withTenant(T, () => rileggiSchemaSchedaMk()), 1);
     assert.equal(withTenant(T, () => scriviSchedaMikrotikTopologia(93, { bridge: [], porte: null, bond: null })), null);
+  } finally {
+    d.exec("ALTER TABLE mikrotik_bond_via RENAME TO mikrotik_bond");
+    assert.equal(withTenant(T, () => rileggiSchemaSchedaMk()), 2);
+  }
+});
+
+// ── Task 9: lettura per la scheda, conteggio dei bridge, rilievi della revisione del Task 8 ──────────────
+
+test("livello sotto il bersaglio: resta annotato (niente sei query di schema a ogni chiamata), si rimisura solo a richiesta", () => {
+  const db = livello1();
+  assert.equal(livelloSchemaSchedaMk(db), 1);
+  for (const [, ddl] of DDL_SCHEDA_MK_V2) db.exec(ddl); // le tabelle arrivano alle sue spalle (un altro processo, un ripristino)
+  assert.equal(livelloSchemaSchedaMk(db), 1, "il livello annotato non si rimisura da solo");
+});
+
+test("scriviSchedaMikrotikTopologia: due righe con la stessa chiave → un avviso coi numeri, senza nomi", () => {
+  const d = getTenantDb(T);
+  d.exec("INSERT OR IGNORE INTO network_devices (id, name, host, device_type, vendor, protocol, enabled) VALUES (96, 'RTR-96', '192.0.2.96', 'router', 'mikrotik', 'ssh', 1)");
+  const porte = parsePorteBridgeScheda(F("mikrotik-mk4-testa.txt"));
+  const avvisi = mock.method(console, "warn", () => {});
+  try {
+    const r = withTenant(T, () => scriviSchedaMikrotikTopologia(96, { bridge: null, porte: [...porte, porte[0]], bond: null }));
+    assert.equal(r?.porte, porte.length, "scritte = righe distinte");
+    assert.equal(avvisi.mock.callCount(), 1);
+    const testo = avvisi.mock.calls[0].arguments.map(String).join(" ");
+    assert.match(testo, new RegExp(`mikrotik_bridge_port.*${porte.length + 1}.*${porte.length}`));
+    assert.doesNotMatch(testo, new RegExp(porte[0].interface), "nessun nome nel log");
+    avvisi.mock.resetCalls();
+    withTenant(T, () => scriviSchedaMikrotikTopologia(96, { bridge: null, porte, bond: null }));
+    assert.equal(avvisi.mock.callCount(), 0, "senza doppioni nessun avviso");
+  } finally {
+    avvisi.mock.restore();
+  }
+});
+
+test("leggiSchedaMikrotik: fotografia con ruolo STP dall'ultima lettura della topologia; apparato senza righe → vuoto", () => {
+  const d = getTenantDb(T);
+  d.exec("INSERT OR IGNORE INTO network_devices (id, name, host, device_type, vendor, protocol, enabled) VALUES (97, 'RTR-97', '192.0.2.97', 'router', 'mikrotik', 'ssh', 1), (98, 'RTR-98', '192.0.2.98', 'router', 'mikrotik', 'ssh', 1)");
+  withTenant(T, () => scriviSchedaMikrotikTopologia(97, {
+    bridge: parseBridgeScheda(F("mikrotik-mk3-frontiera.txt")), porte: parsePorteBridgeScheda(F("mikrotik-mk4-testa.txt")), bond: parseBondScheda(F("mikrotik-mk8a-testa.txt")),
+  }, new Date(Date.UTC(2026, 9, 21, 8, 0))));
+  // Due letture della topologia: vale solo l'ultima (la vecchia diceva «alternate» per sfp-sfpplus1).
+  const ins = d.prepare("INSERT INTO topology_port_facts (device_id, source, port_key, port_name, stp_role, stp_state, seen_at) VALUES (97, ?, ?, ?, ?, ?, ?)");
+  ins.run("device", "n:sfp-sfpplus1", "sfp-sfpplus1", "root", "forwarding", "2026-10-21 08:00:00");
+  ins.run("device", "n:sfp-sfpplus2", "sfp-sfpplus2", "alternate", "discarding", "2026-10-21 07:00:00");
+  ins.run("snmp", "n:sfp-sfpplus3", "sfp-sfpplus3", "designated", "forwarding", "2026-10-21 08:00:00");
+
+  const s = withTenant(T, () => leggiSchedaMikrotik(97));
+  assert.deepEqual([s.bridge.length, s.porte.length, s.bond.length], [2, 10, 3]);
+  assert.equal(s.letto_il, "2026-10-21 08:00:00");
+  const p1 = s.porte.find((p) => p.interface === "sfp-sfpplus1");
+  assert.deepEqual([p1?.stp_ruolo, p1?.stp_stato, p1?.pvid, p1?.hw, p1?.inactive], ["root", "forwarding", 214, true, false]);
+  assert.deepEqual([s.porte.find((p) => p.interface === "sfp-sfpplus2")?.stp_ruolo, s.porte.find((p) => p.interface === "sfp-sfpplus3")?.stp_ruolo], [null, null], "lettura vecchia e altra fonte: niente");
+  assert.equal(s.porte.find((p) => p.interface === "sfp-sfpplus5")?.inactive, true);
+  const b1 = s.bond.find((b) => b.name === "bond1");
+  assert.deepEqual([b1?.slaves, b1?.running, b1?.mlag_id], [["sfp28-2", "sfp28-1"], true, null], "liste e boolean riletti");
+  assert.deepEqual(s.bridge.map((b) => [b.vlan_filtering, b.disabled]).sort(), [[false, false], [true, false]]);
+  assert.deepEqual([s.vlanBridge, s.vlan, s.dns], [null, null, null], "fino al Task 10");
+
+  assert.deepEqual(withTenant(T, () => leggiSchedaMikrotik(98)), { bridge: [], porte: [], bond: [], letto_il: null, vlanBridge: null, vlan: null, dns: null });
+});
+
+test("contaBridgeMikrotik: una COUNT dell'ultima fotografia; zero bridge → 0; schema sotto il livello 2 → null", () => {
+  assert.deepEqual(withTenant(T, () => contaBridgeMikrotik(97)), { bridge: 2, letto_il: "2026-10-21 08:00:00" });
+  assert.deepEqual(withTenant(T, () => contaBridgeMikrotik(98)), { bridge: 0, letto_il: null });
+  const d = getTenantDb(T);
+  d.exec("ALTER TABLE mikrotik_bond RENAME TO mikrotik_bond_via");
+  try {
+    assert.equal(withTenant(T, () => rileggiSchemaSchedaMk()), 1);
+    assert.equal(withTenant(T, () => contaBridgeMikrotik(97)), null);
+    assert.deepEqual(withTenant(T, () => leggiSchedaMikrotik(97)), { bridge: [], porte: [], bond: [], letto_il: null, vlanBridge: null, vlan: null, dns: null });
   } finally {
     d.exec("ALTER TABLE mikrotik_bond_via RENAME TO mikrotik_bond");
     assert.equal(withTenant(T, () => rileggiSchemaSchedaMk()), 2);

@@ -1,10 +1,12 @@
 /**
  * Pezzi puri della scheda MikroTik (21/10, piano «Scheda MikroTik copiata dal Manager»): gruppo e stato delle
- * interfacce, uso in percentuale, contatori e caselle della Panoramica. Modulo puro (niente DB, niente React):
+ * interfacce, uso in percentuale, contatori e caselle della Panoramica, matrice porte × VLAN. Modulo puro (niente DB, niente React):
  * un dato che manca non produce una casella con un «—».
  */
 import type { Casella } from "@/components/scheda/striscia-numeri";
-import type { HardwareMikrotik, RisorseMikrotik } from "@/lib/devices/mikrotik-scheda";
+import type {
+  HardwareMikrotik, RigaBondMk, RigaBridgeMk, RigaDnsMk, RigaPortaBridgeMk, RigaPortaSchedaMk, RigaVlanBridgeMk, RigaVlanMk, RisorseMikrotik,
+} from "@/lib/devices/mikrotik-scheda";
 import type { InterfacciaScheda } from "./router";
 
 export type GruppoInterfaccia = "ethernet" | "vlan" | "bond" | "bridge" | "vpn_tunnel" | "altro";
@@ -145,7 +147,8 @@ export function caselleMikrotik(i: {
   }
   const nVlan = i.vlan?.numero ?? (i.interfacce ? i.interfacce.filter((x) => gruppoInterfaccia(x.tipo) === "vlan").length : null);
   if (nVlan != null && nVlan > 0) {
-    c.push({ etichetta: "VLAN", valore: String(nVlan), ...(i.vlan?.bridge != null ? { sotto: `su ${i.vlan.bridge} bridge` } : {}), tab: "interfacce" });
+    // Con almeno un bridge c'è la tab VLAN (Task 9) e la casella apre quella; senza, le VLAN stanno nelle Interfacce.
+    c.push({ etichetta: "VLAN", valore: String(nVlan), ...(i.vlan?.bridge != null ? { sotto: `su ${i.vlan.bridge} bridge` } : {}), tab: (i.vlan?.bridge ?? 0) > 0 ? "vlan" : "interfacce" });
   }
   const h = i.hardware;
   if (h?.firmware_corrente) {
@@ -217,4 +220,121 @@ export function statoArp(stato: string | null | undefined): StatoArpVista | null
     case "": return null;
     default: return { segno: "●", parola: (stato ?? "").trim().toLowerCase(), forte: false };
   }
+}
+
+// ── Bridge e VLAN (Task 9): risposta della rotta, vlan-ids, matrice porte × VLAN ────────────────────────────────
+
+
+/** GET /api/devices/[id]/mikrotik-scheda. `vlanBridge`, `vlan`, `dns`: null finché la lettura del Task 10 non li scrive. */
+export interface RispostaSchedaMikrotik {
+  bridge: RigaBridgeMk[];
+  porte: RigaPortaSchedaMk[];
+  bond: RigaBondMk[];
+  /** seen_at della fotografia (UTC, come nel DB); null = mai letta o schema sotto il livello 2. */
+  letto_il: string | null;
+  vlanBridge: RigaVlanBridgeMk[] | null;
+  vlan: RigaVlanMk[] | null;
+  dns: RigaDnsMk | null;
+  letture: { topologia: { acceso: boolean; il: string | null }; scheda: { acceso: boolean; il: string | null } };
+}
+
+/** Stato di una porta nella tab Bridge, dai segni della riga (censimento §1.9): X → disabilitata, I → inattiva, altrimenti attiva. */
+export function statoPortaBridge(p: { disabled: boolean; inactive: boolean }): "attiva" | "inattiva" | "disabilitata" {
+  return p.disabled ? "disabilitata" : p.inactive ? "inattiva" : "attiva";
+}
+
+/** «802.3ad · ether7, ether8 · layer-2-and-3»: modo, slave e hash di un bond, quelli che ci sono. */
+export function descriviBond(b: RigaBondMk): string {
+  return [b.mode, b.slaves.length > 0 ? b.slaves.join(", ") : null, b.transmit_hash_policy].filter(Boolean).join(" · ");
+}
+
+const VLAN_MIN = 1;
+const VLAN_MAX = 4094;
+
+/**
+ * `vlan-ids` di `/interface bridge vlan` → colonne: «10,20» due colonne, «100-110» undici. Un intervallo più largo di `max`
+ * resta UNA colonna con l'etichetta dell'intervallo (id null): 4093 colonne non si leggono (caso 4 del piano). Un pezzo
+ * illeggibile o fuori 1-4094 non diventa una colonna.
+ */
+export function espandiVlanIds(s: string, max = 64): { id: number | null; etichetta: string }[] {
+  const out: { id: number | null; etichetta: string }[] = [];
+  const valido = (n: number) => Number.isInteger(n) && n >= VLAN_MIN && n <= VLAN_MAX;
+  for (const pezzo of s.split(",").map((x) => x.trim()).filter(Boolean)) {
+    const intervallo = pezzo.match(/^(\d+)\s*-\s*(\d+)$/);
+    if (intervallo) {
+      const a = Number(intervallo[1]), b = Number(intervallo[2]);
+      if (!valido(a) || !valido(b) || b < a) continue;
+      if (b - a + 1 > max) out.push({ id: null, etichetta: `${a}-${b}` });
+      else for (let n = a; n <= b; n++) out.push({ id: n, etichetta: String(n) });
+    } else if (/^\d+$/.test(pezzo) && valido(Number(pezzo))) {
+      out.push({ id: Number(pezzo), etichetta: pezzo });
+    }
+  }
+  return out;
+}
+
+export type CellaVlan = "U" | "T" | null;
+/** id null = intervallo non espanso («100-200»). */
+export interface ColonnaVlan { id: number | null; etichetta: string; nome: string | null }
+export type StatoPortaMk = "attiva" | "inattiva" | "disabilitata";
+export interface MatriceVlan {
+  bridge: string;
+  /** Ordinate per id; gli intervalli non espansi in fondo. */
+  colonne: ColonnaVlan[];
+  righe: { porta: string; stato: StatoPortaMk; pvid: number | null; bond: RigaBondMk | null; celle: CellaVlan[] }[];
+  /** false = senza `/interface bridge vlan` (solo PVID): le T non si possono sapere. */
+  completa: boolean;
+}
+
+/**
+ * Matrice porte × VLAN di un bridge, con la regola del Manager (censimento §1.8) per ogni cella (porta, VLAN):
+ * 1) la porta è negli untagged della riga `bridge vlan` (unione di `untagged` e `current_untagged`) → U;
+ * 2) è nei tagged (unione di `tagged` e `current_tagged`) → T; 3) il suo PVID è quella VLAN → U implicito; 4) vuota.
+ * Colonne: le VLAN delle righe `bridge vlan` del bridge (non disabilitate) più i PVID delle porte e del bridge, così ogni
+ * porta mostra almeno la sua U. Senza righe `bridge vlan` (`vlanBridge` null) restano solo i PVID e la regola 3.
+ * Lo stato della porta lo dà chi chiama (dalle interfacce lette; una porta che non risulta conta come attiva).
+ */
+export function matriceVlan(i: {
+  bridge: RigaBridgeMk; porte: RigaPortaBridgeMk[]; bond: RigaBondMk[]; vlanBridge: RigaVlanBridgeMk[] | null; vlan: RigaVlanMk[] | null;
+  statoPorta: (nome: string) => StatoPortaMk;
+}): MatriceVlan {
+  const br = i.bridge.name;
+  const porte = i.porte.filter((p) => p.bridge === br);
+  const righeVb = (i.vlanBridge ?? []).filter((v) => v.bridge === br && !v.disabled);
+  // Per ogni colonna (chiave = etichetta) gli insiemi delle porte untagged e tagged, uniti su tutte le righe che la coprono.
+  const membri = new Map<string, { id: number | null; u: Set<string>; t: Set<string> }>();
+  const colonna = (id: number | null, etichetta: string) => {
+    let m = membri.get(etichetta);
+    if (!m) membri.set(etichetta, (m = { id, u: new Set(), t: new Set() }));
+    return m;
+  };
+  for (const v of righeVb) {
+    for (const c of espandiVlanIds(v.vlan_ids)) {
+      const m = colonna(c.id, c.etichetta);
+      for (const p of [...v.untagged, ...v.current_untagged]) m.u.add(p);
+      for (const p of [...v.tagged, ...v.current_tagged]) m.t.add(p);
+    }
+  }
+  for (const pvid of [i.bridge.pvid, ...porte.map((p) => p.pvid)]) if (pvid != null) colonna(pvid, String(pvid));
+
+  const nomeDi = (id: number | null): string | null =>
+    id == null ? null : (i.vlan ?? []).find((v) => v.vlan_id === id && v.interface === br)?.name ?? null;
+  const ordinate = [...membri.entries()].sort(([ea, a], [eb, b]) =>
+    a.id != null && b.id != null ? a.id - b.id : a.id != null ? -1 : b.id != null ? 1 : ea.localeCompare(eb));
+  const colonne: ColonnaVlan[] = ordinate.map(([etichetta, m]) => ({ id: m.id, etichetta, nome: nomeDi(m.id) }));
+  const bondPer = new Map(i.bond.map((b) => [b.name, b]));
+
+  return {
+    bridge: br,
+    colonne,
+    righe: porte.map((p) => ({
+      porta: p.interface,
+      stato: i.statoPorta(p.interface),
+      pvid: p.pvid,
+      bond: bondPer.get(p.interface) ?? null,
+      celle: ordinate.map(([, m]): CellaVlan =>
+        m.u.has(p.interface) ? "U" : m.t.has(p.interface) ? "T" : m.id != null && p.pvid === m.id ? "U" : null),
+    })),
+    completa: i.vlanBridge !== null,
+  };
 }

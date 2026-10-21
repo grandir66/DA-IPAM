@@ -4,9 +4,11 @@
  * Tab «Interfacce» dei router MikroTik raggiungibili in SSH (artboard MkInterfacce, M8-M14): chip di filtro, un riquadro
  * per tipo di interfaccia (Ethernet · VLAN · Bond · Bridge · VPN e tunnel · Altro), poi i vicini con la versione che
  * annunciano e, come prima, LibreNMS, «Sulla mappa» e gli IP collegati. Le colonne vuote per tutto il gruppo non si
- * rendono. «Dettagli» (genitore delle VLAN, slave dei bond, VLAN filter dei bridge) arriva coi Task 9 e 11.
+ * rendono. «Dettagli»: dei bond (modo, slave, hash, MLAG, controllo link) e dei bridge (VLAN filter) dall'ultima fotografia della
+ * topologia (Task 9); il genitore delle VLAN arriva col Task 11.
  */
-import { useState } from "react";
+import { Fragment, useState } from "react";
+import type { RigaBondMk, RigaBridgeMk } from "@/lib/devices/mikrotik-scheda";
 import { LoadError } from "@/components/shared/load-error";
 import { parseDbDate } from "@/lib/db-date";
 import { raggruppaInterfacce, statoInterfaccia } from "@/lib/scheda/mikrotik";
@@ -16,7 +18,7 @@ import { SezioneLibreNms } from "../../../dettagli/generale";
 import { IpCollegati, SullaMappa } from "../../../dettagli/rete";
 import type { ContestoScheda } from "../../../contesto";
 import { IndirizziCella } from "../celle";
-import { useInterfacceMikrotik } from "./dati-mikrotik";
+import { useInterfacceMikrotik, useSchedaMikrotik } from "./dati-mikrotik";
 
 type Filtro = "tutte" | "su" | "non_attive";
 
@@ -30,12 +32,39 @@ function StatoMikrotik({ i }: { i: InterfacciaScheda }) {
   return <span className="text-muted-foreground">● inattiva</span>;
 }
 
+/** Riga «Dettagli» di un bond (M10): modo · slave · hash · MLAG · controllo link. */
+function DettagliBond({ b }: { b: RigaBondMk }) {
+  const link = b.link_monitoring ? [b.link_monitoring, b.link_monitoring === "mii" ? b.mii_interval : null].filter(Boolean).join(" ") : null;
+  const voci: [string, string | null][] = [
+    ["modo", b.mode], ["slave", b.slaves.length > 0 ? b.slaves.join(", ") : null], ["hash", b.transmit_hash_policy], ["MLAG", b.mlag_id ?? "—"],
+    ["controllo link", link],
+  ];
+  return (
+    <span className="text-[13px]">
+      <span className="mr-2 font-semibold text-muted-foreground">Dettagli</span>
+      {voci.filter(([, v]) => v).map(([k, v], n) => (
+        <Fragment key={k}>{n > 0 && <span className="text-muted-foreground"> · </span>}{k} <b>{v}</b></Fragment>
+      ))}
+    </span>
+  );
+}
+
+/** VLAN filter di un bridge (M11): ✓ sì / ✕ no, segno e parola. */
+function FiltroVlan({ b }: { b: RigaBridgeMk }) {
+  if (b.vlan_filtering === null) return <span className="text-muted-foreground">—</span>;
+  return <span>VLAN filter <b>{b.vlan_filtering ? "✓ sì" : "✕ no"}</b></span>;
+}
+
 /** «7.15.3 (stable)» → «7.15.3»: il testo intero resta nel title. */
 const primoPezzo = (v: string): string => v.trim().split(/\s+/)[0] ?? v;
 
 export function InterfacceMikrotik({ ctx }: { ctx: ContestoScheda }) {
   const { device, hostId, isAdmin } = ctx;
   const { stato, riprova } = useInterfacceMikrotik(device?.id);
+  // Dettagli di bond e bridge: se la fotografia non c'è (o non si carica) la colonna e la riga semplicemente non compaiono.
+  const { stato: scheda } = useSchedaMikrotik(device?.id);
+  const bondPer = new Map((scheda.fase === "ok" ? scheda.dati.bond : []).map((b) => [b.name, b]));
+  const bridgePer = new Map((scheda.fase === "ok" ? scheda.dati.bridge : []).map((b) => [b.name, b]));
   const [filtro, setFiltro] = useState<Filtro>("tutte");
   const vicini = device?.neighbors ?? [];
 
@@ -87,7 +116,9 @@ export function InterfacceMikrotik({ ctx }: { ctx: ContestoScheda }) {
             mtu: g.righe.some((i) => i.mtu != null),
             mac: g.righe.some((i) => !!i.mac),
             commento: g.righe.some((i) => !!i.alias),
+            filtro: g.gruppo === "bridge" && g.righe.some((i) => bridgePer.has(i.ifname)),
           };
+          const nCol = 3 + [col.tipo, col.mtu, col.mac, col.commento, col.filtro].filter(Boolean).length;
           return (
             <Riquadro
               key={g.gruppo}
@@ -105,20 +136,34 @@ export function InterfacceMikrotik({ ctx }: { ctx: ContestoScheda }) {
                       {col.mac && <th className={th}>MAC</th>}
                       <th className={th}>Indirizzi IP</th>
                       {col.commento && <th className={th}>Commento</th>}
+                      {col.filtro && <th className={th}>Dettagli</th>}
                     </tr>
                   </thead>
                   <tbody>
-                    {g.righe.map((i) => (
-                      <tr key={i.ifname} className={`border-b align-top ${statoInterfaccia(i) === "attiva" ? "" : "bg-muted/30 text-muted-foreground"}`}>
-                        <td className="whitespace-nowrap px-3 py-1.5 font-mono font-semibold">{i.ifname}</td>
-                        {col.tipo && <td className="whitespace-nowrap px-3 py-1.5">{i.tipo ?? "—"}</td>}
-                        <td className="whitespace-nowrap px-3 py-1.5"><StatoMikrotik i={i} /></td>
-                        {col.mtu && <td className="whitespace-nowrap px-3 py-1.5">{i.mtu ?? "—"}</td>}
-                        {col.mac && <td className="whitespace-nowrap px-3 py-1.5 font-mono">{i.mac ?? "—"}</td>}
-                        <td className="px-3 py-1.5"><IndirizziCella i={i} /></td>
-                        {col.commento && <td className="px-3 py-1.5">{i.alias ?? "—"}</td>}
-                      </tr>
-                    ))}
+                    {g.righe.map((i) => {
+                      const bond = g.gruppo === "bond" ? bondPer.get(i.ifname) : undefined;
+                      const br = bridgePer.get(i.ifname);
+                      const spenta = statoInterfaccia(i) === "attiva" ? "" : "bg-muted/30 text-muted-foreground";
+                      return (
+                        <Fragment key={i.ifname}>
+                          <tr className={`align-top ${bond ? "" : "border-b"} ${spenta}`}>
+                            <td className="whitespace-nowrap px-3 py-1.5 font-mono font-semibold">{i.ifname}</td>
+                            {col.tipo && <td className="whitespace-nowrap px-3 py-1.5">{i.tipo ?? "—"}</td>}
+                            <td className="whitespace-nowrap px-3 py-1.5"><StatoMikrotik i={i} /></td>
+                            {col.mtu && <td className="whitespace-nowrap px-3 py-1.5">{i.mtu ?? "—"}</td>}
+                            {col.mac && <td className="whitespace-nowrap px-3 py-1.5 font-mono">{i.mac ?? "—"}</td>}
+                            <td className="px-3 py-1.5"><IndirizziCella i={i} /></td>
+                            {col.commento && <td className="px-3 py-1.5">{i.alias ?? "—"}</td>}
+                            {col.filtro && <td className="whitespace-nowrap px-3 py-1.5">{br ? <FiltroVlan b={br} /> : "—"}</td>}
+                          </tr>
+                          {bond && (
+                            <tr className={`border-b ${spenta}`}>
+                              <td colSpan={nCol} className="px-3 pb-1.5 pt-0"><DettagliBond b={bond} /></td>
+                            </tr>
+                          )}
+                        </Fragment>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

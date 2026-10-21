@@ -128,6 +128,24 @@ export type RigaBondMk = {
   running: boolean; disabled: boolean;
 };
 
+/** Una porta di bridge con il ruolo e lo stato STP dell'ultima lettura della topologia (`topology_port_facts`, fonte device). */
+export type RigaPortaSchedaMk = RigaPortaBridgeMk & { stp_ruolo: string | null; stp_stato: string | null };
+
+// Le righe delle letture di VLAN dei bridge, interfacce VLAN e DNS (Task 10): la forma è dichiarata qui dal Task 9 perché la
+// scheda la usa già (matrice, nomi delle colonne); finché il Task 10 non le legge la rotta le dà null.
+export type RigaVlanBridgeMk = {
+  bridge: string; vlan_ids: string; tagged: string[]; untagged: string[]; current_tagged: string[]; current_untagged: string[];
+  dynamic: boolean; disabled: boolean; comment: string | null;
+};
+export type RigaVlanMk = {
+  name: string; vlan_id: number | null; interface: string | null; mtu: number | null; mac_address: string | null;
+  running: boolean; disabled: boolean; comment: string | null;
+};
+export type RigaDnsMk = {
+  servers: string[]; dynamic_servers: string[]; allow_remote_requests: boolean | null; cache_size: string | null;
+  cache_used: string | null; max_concurrent_queries: number | null; use_doh_server: string | null;
+};
+
 const testo = (c: Map<string, string>, k: string): string | null => {
   const v = c.get(k)?.trim();
   return v ? v : null;

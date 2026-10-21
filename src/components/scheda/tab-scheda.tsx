@@ -29,6 +29,8 @@ import { PanoramicaMikrotik } from "./tipi/router/mikrotik/panoramica";
 import { eMikrotikSsh } from "./tipi/router/dati-router";
 import { InterfacceMikrotik } from "./tipi/router/mikrotik/interfacce";
 import { DispositiviMikrotik } from "./tipi/router/mikrotik/dispositivi";
+import { VlanMikrotik } from "./tipi/router/mikrotik/vlan";
+import { BridgeMikrotik } from "./tipi/router/mikrotik/bridge";
 import { InterfacceRouter } from "./tipi/router/interfacce";
 import { RoutingRouter } from "./tipi/router/routing";
 import { DhcpRouter } from "./tipi/router/dhcp";
@@ -62,6 +64,9 @@ export interface VoceTab {
 const TAB_ROUTER: Partial<Record<TabId, VoceTab>> = {
   panoramica: { render: (c) => (eMikrotikSsh(c) ? <PanoramicaMikrotik ctx={c} /> : <PanoramicaRouter ctx={c} />) },
   interfacce: { render: (c) => (eMikrotikSsh(c) ? <InterfacceMikrotik ctx={c} /> : <InterfacceRouter ctx={c} />) },
+  // VLAN e Bridge: `tabDelTipo` le dà solo ai MikroTik in SSH con almeno un bridge, quindi nessun altro router le vede.
+  vlan: { render: (c) => <VlanMikrotik ctx={c} /> },
+  bridge: { render: (c) => <BridgeMikrotik ctx={c} /> },
   routing: { render: (c) => <RoutingRouter ctx={c} /> },
   dhcp: { render: (c) => <DhcpRouter ctx={c} /> },
   dispositivi: { render: (c) => <DispositiviMikrotik ctx={c} /> },

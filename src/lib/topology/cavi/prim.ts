@@ -43,6 +43,11 @@ const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 /** Bloccato dallo spanning tree, nell'albero comune o del tutto. */
 export const fermo = (c: { stato: StatoCollegamento }): boolean => c.stato === "bloccato" || c.stato === "bloccato_comune";
 /**
+ * Tracciato a mano (con o senza prove dei dati): vince su ogni collegamento solo dedotto o letto, dopo la ★ (Riccardo, 22/10:
+ * «il collegamento manuale deve sempre vincere»; prima la fiducia «a mano» era l'ultima e il cavo finiva fra le ridondanze).
+ */
+export const tracciatoAMano = (c: { fiducia: Fiducia }): boolean => c.fiducia === "a_mano" || c.fiducia === "a_mano_confermato";
+/**
  * Il membro di riserva di un bond (§13.5.5): non porta traffico finché l'altra scheda è su, come una porta bloccata, ma non lo
  * ferma lo spanning tree. Nell'albero vale come un bloccato (§13.8.3 punto 4: padre solo se non c'è altro); resta fuori da
  * `fermo`, che dice «bloccato dallo spanning tree» (la testa e l'uplink del controller).
@@ -54,6 +59,7 @@ export function chiaveCavo(c: LineaAlbero, da: string, to: string, ctx: { scelto
   const versoSegmento = to.startsWith("seg:") || da.startsWith("seg:");
   return [
     ctx.stella(c, to) ? 0 : 1,
+    tracciatoAMano(c) ? 0 : 1,
     ctx.scelto.get(to) === c.id ? 0 : 1,
     c.nonVisto ? 1 : 0,
     c.stato === "giu" ? 1 : 0,
@@ -105,6 +111,16 @@ export function primCavi(ing: IngressoPrim): EsitoPrim {
   // vale. Il padre può essere diverso fra traccia e schermo; con `DALLE_VM_SOLO_DETTAGLI` spenta non succede (accesa dal 16/10).
   const forzati = new Map<string, string>();
   for (const [nodo, id] of ing.stelle) if ((adj.get(nodo) ?? []).some((c) => c.id === id)) forzati.set(nodo, id);
+  // Il cavo tracciato a mano di un oggetto finale (server, hypervisor, attaccato, client) verso chi può fargli da padre: è il suo
+  // principale anche se un altro switch lo vede prima nella tabella MAC (22/10). Fra due apparati di rete basta la chiave: forzare
+  // tutti e due i capi li farebbe aspettare l'uno l'altro.
+  const ordine = (x: LineaAlbero, y: LineaAlbero): number => Number(x.nonVisto) - Number(y.nonVisto) || Number(x.stato === "giu") - Number(y.stato === "giu")
+    || Number(diRiserva(x)) - Number(diRiserva(y)) || (y.velocitaMbps ?? 0) - (x.velocitaMbps ?? 0) || (y.vm ?? 0) - (x.vm ?? 0) || cmp(x.id, y.id);
+  for (const id of [...adj.keys()].sort()) {
+    if (forzati.has(id) || !foglia(id)) continue;
+    const cs = (adj.get(id) ?? []).filter((c) => tracciatoAMano(c) && !foglia(altro(c, id)));
+    if (cs.length > 0) forzati.set(id, [...cs].sort(ordine)[0].id);
+  }
   // Punto 6: il principale dell'hypervisor (§12.5): prima il non vecchio, poi il non giù, poi il non di riserva del bond (§13.3.2
   // riga 17: gli altri membri del bond sono ridondanze «⇄»; prima, a pari velocità, l'id sceglieva la riserva: G16, lettura D),
   // poi il più veloce, poi più VM.
@@ -112,8 +128,7 @@ export function primCavi(ing: IngressoPrim): EsitoPrim {
     if (forzati.has(id)) continue;
     const cs = (adj.get(id) ?? []).filter((c) => !c.aMano && !foglia(altro(c, id)));
     if (cs.length < 2) continue;
-    forzati.set(id, [...cs].sort((x, y) => Number(x.nonVisto) - Number(y.nonVisto) || Number(x.stato === "giu") - Number(y.stato === "giu")
-      || Number(diRiserva(x)) - Number(diRiserva(y)) || (y.velocitaMbps ?? 0) - (x.velocitaMbps ?? 0) || (y.vm ?? 0) - (x.vm ?? 0) || cmp(x.id, y.id))[0].id);
+    forzati.set(id, [...cs].sort(ordine)[0].id);
   }
   const stella = (c: LineaAlbero, to: string): boolean => ing.stelle.get(to) === c.id;
   const profondita = new Map<string, number>();
@@ -151,7 +166,10 @@ export function primCavi(ing: IngressoPrim): EsitoPrim {
       via.set(b.to, b.c);
     }
   };
-  for (const r of ing.partenze) if (ing.visibili.has(r) && ing.classe(r) !== undefined && !preso.has(r)) cresci(r);
+  // Una partenza che è un oggetto finale non cresce niente: se parte per prima resta sola, e il cavo verso il suo switch (anche
+  // tracciato a mano) finisce fra le ridondanze (PX-NAS, 22/10: trascinato in una mappa prima di collegarlo). Fa da radice solo
+  // se nessuno la raggiunge, col resto.
+  for (const r of ing.partenze) if (ing.visibili.has(r) && ing.classe(r) !== undefined && !foglia(r) && !preso.has(r)) cresci(r);
   const resto = [...ing.visibili].filter((x) => !preso.has(x) && ing.classe(x) !== undefined).sort((a, b) =>
     Number(ing.classe(a) !== "infra") - Number(ing.classe(b) !== "infra") || (adj.get(b)?.length ?? 0) - (adj.get(a)?.length ?? 0) || cmp(a, b));
   for (const r of resto) if (!preso.has(r)) cresci(r);

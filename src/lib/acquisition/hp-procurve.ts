@@ -1,7 +1,7 @@
 import { acquisitionInputSchema, snapshotSchema } from './schema';
 import type { AcquisitionRequest, AcquisitionSnapshot, AcquisitionTransports, ReadResult, SnmpRow, DeviceInterface } from './schema';
 import { createTransports, PROCURVE_COMMANDS } from './transports';
-import { parseProcurveIdentity, parseProcurvePorts, parseProcurveVlans, parseProcurveLldp, parseProcurveTrunks, parseProcurvePoe, parseProcurveStp, parseProcurveFdb, parseProcurveResources, parseProcurveEnvironment, cleanProcurveConsole } from './procurve-parsers';
+import { parseProcurveIdentity, parseProcurvePorts, parseProcurveVlans, parseProcurveLldp, parseProcurveTrunks, parseProcurvePoe, parseProcurveStp, parseProcurveFdb, parseProcurveResources, parseProcurveEnvironment, parseProcurveHardware, parseProcurveModules, cleanProcurveConsole } from './procurve-parsers';
 import { textValue, parseSnmpInterfaces, parseBridgeMap, applyPvid, parseSnmpVlans, parseFdb, parseIpNetwork } from './parsers';
 import { redactSnapshot } from './redact';
 type Section<T> = {
@@ -18,18 +18,22 @@ export async function collectHpProcurve(request: AcquisitionRequest, transports?
     if (input.collector !== 'hp-procurve')
         throw Error('COLLECTOR_MISMATCH');
     const start = Date.now(), io = transports ?? createTransports(input);
-    async function safe<T>(op: () => Promise<ReadResult<T>>, empty: T): Promise<ReadResult<T>> { try {
-        return await op();
+    async function safe<T>(op: () => Promise<ReadResult<T>>, empty: T): Promise<ReadResult<T>> {
+        try {
+            return await op();
+        }
+        catch {
+            return { status: 'error', data: empty, warnings: ['TRANSPORT_EXCEPTION'] };
+        }
     }
-    catch {
-        return { status: 'error', data: empty, warnings: ['TRANSPORT_EXCEPTION'] };
-    } }
-    async function shell(commands: readonly string[]) { try {
-        return await io.shell(commands);
+    async function shell(commands: readonly string[]) {
+        try {
+            return await io.shell(commands);
+        }
+        catch {
+            return Object.fromEntries(commands.map(c => [c, { status: 'error' as const, data: '', warnings: ['SSH_TRANSPORT_EXCEPTION'] }]));
+        }
     }
-    catch {
-        return Object.fromEntries(commands.map(c => [c, { status: 'error' as const, data: '', warnings: ['SSH_TRANSPORT_EXCEPTION'] }]));
-    } }
     const oids = ['1.3.6.1.2.1.1.1.0', '1.3.6.1.2.1.1.2.0', '1.3.6.1.2.1.1.3.0', '1.3.6.1.2.1.1.5.0'];
     const [sys, ident] = await Promise.all([input.snmp ? safe(() => io.get(oids), []) : emptyRead<SnmpRow[]>([]), input.ssh ? shell(['show system', 'show version']) : {} as Record<string, ReadResult<string>>]);
     const identityRead = ident['show system'] ?? emptyRead(''), versionRead = ident['show version'] ?? emptyRead(''), value = (oid: string) => textValue(sys.data.find(r => r.oid === oid)?.value);
@@ -53,17 +57,27 @@ export async function collectHpProcurve(request: AcquisitionRequest, transports?
     if (!identity)
         return finish();
     // A failed login is never retried: the next shell is only a continuation after successful identity commands.
-    const sshPromise = input.ssh && identityRead.status === 'ok' && versionRead.status === 'ok' ? shell(PROCURVE_COMMANDS.slice(2)) : Promise.resolve({} as Record<string, ReadResult<string>>);
+    const modular = /540[0-9]|820[0-9]|zl2/i.test(identity.model ?? '');
+    const sshPromise = input.ssh && identityRead.status === 'ok' && versionRead.status === 'ok' ? shell(PROCURVE_COMMANDS.slice(2).filter(c => c !== 'show modules' || modular)) : Promise.resolve({} as Record<string, ReadResult<string>>);
     const walks: Record<string, ReadResult<SnmpRow[]>> = {};
-    const snmpPromise = (async () => { if (!input.snmp || sys.status === 'error')
-        return; for (const [name, oid] of Object.entries({ interfaces: '1.3.6.1.2.1.2.2.1', extended: '1.3.6.1.2.1.31.1.1.1', bridge: '1.3.6.1.2.1.17.1.4.1', vlans: '1.3.6.1.2.1.17.7.1.4.3.1', pvid: '1.3.6.1.2.1.17.7.1.4.5.1.1', fdb: '1.3.6.1.2.1.17.7.1.2.2.1', ip: '1.3.6.1.2.1.4.20.1', arp: '1.3.6.1.2.1.4.22.1' }))
-        walks[name] = await safe(() => io.walk(oid), []); })();
+    const snmpPromise = (async () => {
+        if (!input.snmp || sys.status === 'error')
+            return;
+        for (const [name, oid] of Object.entries({ interfaces: '1.3.6.1.2.1.2.2.1', extended: '1.3.6.1.2.1.31.1.1.1', bridge: '1.3.6.1.2.1.17.1.4.1', vlans: '1.3.6.1.2.1.17.7.1.4.3.1', pvid: '1.3.6.1.2.1.17.7.1.4.5.1.1', fdb: '1.3.6.1.2.1.17.7.1.2.2.1', ip: '1.3.6.1.2.1.4.20.1', arp: '1.3.6.1.2.1.4.22.1', hardware: '1.3.6.1.2.1.47.1.1.1.1' }))
+            walks[name] = await safe(() => io.walk(oid), []);
+    })();
     const ssh = await sshPromise;
     await snmpPromise;
     const read = (command: string) => ssh[command] ?? emptyRead(''), walk = (name: string) => walks[name] ?? emptyRead<SnmpRow[]>([]);
-    function parsed<T>(command: string, parser: (text: string) => T, empty: T, valid: (data: T) => boolean): Section<T> { const r = read(command); if (!input.ssh)
-        return section(empty, 'skipped', [], ['SSH_CREDENTIAL_NOT_PROVIDED']); if (r.status === 'error' || r.status === 'unsupported')
-        return section(empty, r.status, ['ssh:' + command], r.warnings); const data = parser(r.data); return section(data, valid(data) && r.status === 'ok' ? 'ok' : 'partial', ['ssh:' + command], [...r.warnings, ...(valid(data) ? [] : ['FORMAT_UNRECOGNIZED_OR_EMPTY'])]); }
+    function parsed<T>(command: string, parser: (text: string) => T, empty: T, valid: (data: T) => boolean): Section<T> {
+        const r = read(command);
+        if (!input.ssh)
+            return section(empty, 'skipped', [], ['SSH_CREDENTIAL_NOT_PROVIDED']);
+        if (r.status === 'error' || r.status === 'unsupported')
+            return section(empty, r.status, ['ssh:' + command], r.warnings);
+        const data = parser(r.data);
+        return section(data, valid(data) && r.status === 'ok' ? 'ok' : 'partial', ['ssh:' + command], [...r.warnings, ...(valid(data) ? [] : ['FORMAT_UNRECOGNIZED_OR_EMPTY'])]);
+    }
     const ports = parseSnmpInterfaces(walk('interfaces').data, walk('extended').data);
     const consolePorts = parsed('show interfaces brief', parseProcurvePorts, [], p => p.length > 0);
     const portCandidates = (cleanProcurveConsole(read('show interfaces brief').data).match(/^\s*[A-Z]?\d+(?:-Trk\d+)?\s+[^|\n]*\|/gmi) || []).length;
@@ -163,7 +177,39 @@ export async function collectHpProcurve(request: AcquisitionRequest, transports?
     }
     const ipReads = [walk('ip'), walk('arp')], net = parseIpNetwork(walk('ip').data, walk('arp').data);
     snapshot.network = input.snmp ? section(net, ipReads.every(r => r.status === 'ok') ? (net.ipv4_addresses.length || net.arp.length ? 'ok' : 'partial') : ipReads.some(r => r.status === 'ok' || r.status === 'partial') ? 'partial' : 'error', ['snmp:ipAddrTable', 'snmp:ipNetToMediaTable'], ipReads.flatMap(r => r.warnings)) : section(net, 'skipped', [], ['SNMP_CREDENTIAL_NOT_PROVIDED']);
-    const all = [snapshot.identity, snapshot.interfaces, snapshot.vlans, snapshot.forwarding, snapshot.neighbors, snapshot.spanning_tree, snapshot.aggregation, snapshot.poe, snapshot.resources, snapshot.environment, snapshot.network].filter(s => s.status !== 'skipped');
+    const hardware = parseProcurveHardware(walk('hardware').data);
+    snapshot.hardware = input.snmp ? section(hardware, walk('hardware').status === 'ok' && !hardware.length ? 'partial' : walk('hardware').status, ['snmp:entPhysicalTable'], walk('hardware').warnings) : section(hardware, 'skipped', [], ['SNMP_CREDENTIAL_NOT_PROVIDED']);
+    const indexes = new Set(hardware.map(h => h.entity_index));
+    if (hardware.some(h => h.parent_index !== null && h.parent_index !== 0 && !indexes.has(h.parent_index))) {
+        snapshot.hardware.status = 'partial';
+        snapshot.hardware.warnings.push('ENTITY_PARENT_NOT_OBSERVED');
+    }
+    if (modular) {
+        snapshot.modules = parsed('show modules', parseProcurveModules, [], rows => rows.length > 0);
+        const candidates = (cleanProcurveConsole(read('show modules').data).match(/^\s*(?:MM\d+|[A-Z])\s+/gm) || []).length;
+        if (snapshot.modules.status === 'ok' && candidates !== snapshot.modules.data.length) {
+            snapshot.modules.status = 'partial';
+            snapshot.modules.warnings.push('MODULE_ROWS_UNRECOGNIZED');
+        }
+        if (snapshot.modules.status === 'ok') {
+            const slots = new Set(snapshot.modules.data.map(m => m.slot));
+            for (const port of snapshot.interfaces.data) {
+                const slot = port.name.match(/^([A-Z])\d+$/)?.[1];
+                if (slot) {
+                    port.slot = slot;
+                    port.module_observed = slots.has(slot);
+                }
+            }
+            for (const port of snapshot.poe.data) {
+                port.module_observed = snapshot.interfaces.data.find(i => i.name === port.port)?.module_observed ?? null;
+            }
+            if (snapshot.interfaces.data.some(p => p.module_observed === false))
+                snapshot.interfaces.warnings.push('INTERFACES_WITHOUT_OBSERVED_MODULE');
+            if (snapshot.poe.data.some(p => p.module_observed === false))
+                snapshot.poe.warnings.push('POE_PORTS_WITHOUT_OBSERVED_MODULE');
+        }
+    }
+    const all = [...(snapshot.modules ? [snapshot.modules] : []), snapshot.hardware, snapshot.identity, snapshot.interfaces, snapshot.vlans, snapshot.forwarding, snapshot.neighbors, snapshot.spanning_tree, snapshot.aggregation, snapshot.poe, snapshot.resources, snapshot.environment, snapshot.network].filter(s => s.status !== 'skipped');
     snapshot.status = all.every(s => s.status === 'ok') ? 'ok' : all.some(s => s.status === 'ok' || s.status === 'partial') ? 'partial' : 'error';
     return finish();
 }

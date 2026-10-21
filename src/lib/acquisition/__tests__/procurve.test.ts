@@ -69,3 +69,28 @@ test('pager ProCurve Enter/Return incollato alla riga seguente non perde porte o
         assert.deepEqual(vlan[0].untagged_ports, ['40']);
     }
 });
+test('ENTITY fisica: parent e posizione slot dalla MIB, non dal nome della porta', async () => {
+    const { parseProcurveHardware } = await import('../procurve-parsers');
+    const base = '1.3.6.1.2.1.47.1.1.1.1';
+    const h = parseProcurveHardware([{ oid: base + '.2.1001', value: 'LAB chassis' }, { oid: base + '.3.1001', value: 0 }, { oid: base + '.5.1001', value: 3 }, { oid: base + '.7.1001', value: 'Chassis' }, { oid: base + '.2.2001', value: 'LAB line card' }, { oid: base + '.3.2001', value: 1001 }, { oid: base + '.5.2001', value: 9 }, { oid: base + '.6.2001', value: 2 }, { oid: base + '.7.2001', value: 'Slot B' }, { oid: base + '.13.2001', value: 'LAB-CARD' }, { oid: base + '.16.2001', value: 1 }]);
+    assert.equal(h.length, 2);
+    assert.equal(h[1].parent_index, 1001);
+    assert.equal(h[1].position, 2);
+    assert.equal(h[1].name, 'Slot B');
+    assert.equal(h[1].replaceable, true);
+    assert.equal(h[0].parent_index, 0);
+});
+test('slot modulari: moduli installati separati da porte predisposte della configurazione', async () => {
+    const { parseProcurveModules } = await import('../procurve-parsers');
+    const m = parseProcurveModules('MM1   HP J9827A Management Module   LAB001   Active   YES 1\nA     HP J9548A 20p GT Module        LAB002   Up       YES 2\nF     HP J9546A 8p 10G Module        LAB003   Up       YES 2');
+    assert.equal(m.length, 3);
+    assert.equal(m[1].slot, 'A');
+    assert.equal(m[1].status, 'Up');
+    assert.equal(m.some(x => x.slot === 'E'), false);
+});
+test('descrizione modulo troncata a colonna piena: basta un solo spazio prima del seriale', async () => {
+    const { parseProcurveModules } = await import('../procurve-parsers');
+    const m = parseProcurveModules('B     HP J9637A 12p GT PoE+/12p SFP v2 zl... LABB001     Up       YES 2');
+    assert.equal(m.length, 1);
+    assert.equal(m[0].slot, 'B');
+});

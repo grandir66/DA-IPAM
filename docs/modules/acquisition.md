@@ -161,6 +161,68 @@ non successo con righe perse. Il prompt operator `>` ridisegnato con ANSI e il
 banner «Press any key» sono gestiti con gli stessi limiti temporali della console.
 Altri modelli/revisioni e trunk dinamici non sono dichiarati collaudati.
 
+## ProCurve modulare: 5406R zl2
+
+Collaudato anche **HP J9850A 5406R zl2**, KB.16.09.0003. La raccolta aggiunge
+`show modules` e ENTITY-MIB: 6 moduli osservati (management più cinque schede),
+132 entità fisiche. `hardware` mantiene parent, classe MIB, posizione relativa al
+parent, revisioni e identificativi. La posizione non è un numero di slot assoluto.
+
+`modules` conserva slot, modello, descrizione, seriale e stato. Le porte A/B/…
+sono associate soltanto agli slot osservati. Il banco espone anche interfacce E
+ed elementi PoE per cui `show modules` non mostra una scheda: restano nel JSON con
+`module_observed=false`. Questo significa **non osservato nella lettura**, non
+prova di assenza fisica e non autorizzazione alla cancellazione. Se l'elenco dei
+moduli è incompleto, il flag non viene assegnato. Una descrizione troncata che
+arriva fino al seriale con uno spazio solo è coperta da regressione.
+
+## Collector hp-comware
+
+Collaudato su **HPE FlexFabric 5700**, Comware **7.1.045 Release 2432P06**, in
+**IRF a quattro membri**, con due varianti di schede/apparati. Usa
+`collector: "hp-comware"` nel file privato e lo stesso contratto JSON/CLI/adapter.
+Non richiede installazione di un agente sullo switch.
+
+Letture permesse: `display version`, `display interface brief`, `display vlan all`,
+`display lldp neighbor-information verbose`, `display mac-address`,
+`display link-aggregation verbose`, `display stp brief`, `display stp`,
+`display cpu-usage`, `display memory`, `display environment`, `display fan`,
+`display power`, `display device`, `display poe interface`. Nessun cambio di
+configurazione, privilege escalation o lettura della configurazione completa.
+
+Comware usa SSH exec, una connessione per comando: canale chiuso su timeout,
+limiti di byte/pagine/tempo totale e stop del batch su guasti del trasporto.
+Un canale senza exit status esplicito è parziale. Comandi rifiutati sono distinti
+da guasti di connessione. Sul banco: limite di lettura 15 s e totale 300 s;
+SNMP v2c usa blocchi da 50 varbind richiesti, conservando i limiti di righe/byte.
+Un timeout di tabella lascia i dati ricevuti e rende visibile il risultato parziale.
+Il collaudo finale resta **parziale** su ifTable/ifXTable/ENTITY (307 entità
+parziali entro 15 s): i blocchi da 50 non hanno risolto il limite misurato.
+Non presentare questi dati come inventario hardware o contatori completi.
+
+Dati normalizzati:
+
+- Nomi locali GE/XGE/FGE/HGE/BAGG/RAGG, porte fisiche/logiche distinte, 40G,
+  down diverso da shutdown, PVID esplicito, join con ifName SNMP univoco.
+- VLAN tagged/untagged con nome e descrizione; MAC con VLAN realmente stampata;
+  LLDP multiplo sulla stessa porta, chassis anche non MAC, PortID remoto conservato,
+  TTL e indirizzi di gestione. Range VLAN con sintassi `to` sono dichiarati parziali.
+- LAG con membri Local, selezione S/U/I e flag; nessuna confusione con il tavolo
+  Remote. STP con ID istanza effettivo: non si inventa una mappatura MST-VLAN.
+- Moduli/membri IRF e inventario ENTITY con relazioni fisiche; la seriale di un
+  membro non viene attribuita come seriale dell'intero IRF logico.
+- CPU (finestra di 5 secondi) e memoria in byte **per membro**. I campi scalari
+  restano null in presenza di più membri: nessuna media/somma implicita.
+- Temperature per slot con soglie, inclusi zero e NA; salute/direzione delle
+  ventole; stato degli alimentatori e consumo in ingresso per membro. Non sono
+  RPM o budget PoE. Il banco risponde «PoE is disabled»: `poe.enabled=false`,
+  sezione vuota valida, senza dedurre che ogni apparato Comware sia privo di PoE.
+
+Limiti: altre release, Comware 5 e altre famiglie non collaudate; formato PoE
+abilitato non implementato (restituisce parziale), niente ottiche DOM, IPv6/ND,
+route, ACL o configurazione. Le tabelle sono fotografie successive, non una
+transazione atomica sullo stack. Dati ed errori sono restituiti senza scrivere nel DB.
+
 ## Estendere una famiglia
 
 Aggiungere un collector che implementi lo stesso contratto, estendere l'unione di
@@ -168,7 +230,7 @@ input validati e il registry statico in `index.ts`, introdurre parser puri e fix
 anonimizzate da risposte reali. Riutilizzare i trasporti o introdurne uno con limiti
 identici. Non accettare comandi liberi dall'input. Non inferire capacità dai soli nomi
 vendor; dichiarare modelli, firmware e prove realmente eseguite. Prossime famiglie
-previste: ArubaOS-CX e Comware, da sviluppare su campioni autorizzati.
+prevista: ArubaOS-CX, da sviluppare su campioni autorizzati.
 
 ## Prove
 

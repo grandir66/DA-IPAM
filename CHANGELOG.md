@@ -4,6 +4,16 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — inventario modulare e Comware IRF (solo locale)
+
+- ProCurve 5406R zl2: inventario ENTITY e moduli nativi, mantenendo le porte senza
+  modulo osservato anziché confonderle con porte installate o cancellarle.
+- Collector `hp-comware`: profilo SSH exec separato e limitato; VLAN, porte, LLDP,
+  MAC, LAG/STP e inventario IRF nello stesso JSON/CLI. CPU e memoria per membro,
+  temperature, ventole e alimentatori distinti dalla potenza PoE.
+- Campi opzionali compatibili con i JSON QNAP precedenti; errori e letture parziali
+  espliciti. Nessuna persistenza, scheduler, nuova rotta o pubblicazione automatica.
+
 ## [Non rilasciato] — collector ProCurve / ArubaOS-Switch (solo locale)
 
 - Profilo `hp-procurve` nel registry e nella stessa CLI del QNAP: collaudo Aruba

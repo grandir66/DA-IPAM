@@ -33,8 +33,11 @@ export function parseProcurvePorts(raw: string): DeviceInterface[] {
 }
 export function parseProcurveVlans(summary: string, detail: string): Vlan[] {
     const out = new Map<number, Vlan>();
-    const ensure = (id: number, name: string) => { if (!out.has(id))
-        out.set(id, { id, name: name.trim() || null, tagged_ports: [], untagged_ports: [], forbidden_ports: [] }); return out.get(id)!; };
+    const ensure = (id: number, name: string) => {
+        if (!out.has(id))
+            out.set(id, { id, name: name.trim() || null, tagged_ports: [], untagged_ports: [], forbidden_ports: [] });
+        return out.get(id)!;
+    };
     for (const l of hpText(summary).split('\n')) {
         const m = l.match(/^\s*(\d+)\s+([^|]+)\|\s*Port-based/i);
         if (m && +m[1] <= 4094)
@@ -95,3 +98,7 @@ export function parseProcurveFdb(raw: string): Forwarding[] { return hpText(raw)
 export function parseProcurveResources(raw: string) { const text = hpText(raw), numeric = (r: RegExp) => { const m = text.match(r)?.[1]; return m === undefined ? null : Number(m.replace(/,/g, '')); }; return { cpu_percent: numeric(/CPU Util \(%\)\s*:\s*([\d.]+)/i), memory_total_bytes: numeric(/Memory\s*-\s*Total\s*:\s*([\d,]+)/i), memory_free_bytes: numeric(/CPU Util[^\n]*Free\s*:\s*([\d,]+)/i) }; }
 export function parseProcurveEnvironment(fans: string, poe: string) { const text = hpText(poe), watts = (key: string) => { const m = text.match(new RegExp(key + ':\\s*([\\d.]+)\\s*W', 'i')); return m ? +m[1] : null; }; return { fans: hpText(fans).split('\n').flatMap(l => { const m = l.match(/^\s*(Fan-\d+)\s*\|\s*([^|]+)\|\s*(\d+)\s*\|/i); return m ? [{ name: m[1], status: /Fan OK/i.test(m[2]) ? 'ok' as const : /fail|fault/i.test(m[2]) ? 'fault' as const : 'unknown' as const, failures: +m[3] }] : []; }), poe_budget_watts: { available: watts('Available'), used: watts('Used'), remaining: watts('Remaining') } }; }
 export { hpText as cleanProcurveConsole };
+export { parseEntityHardware as parseProcurveHardware } from './parsers';
+export function parseProcurveModules(raw: string): NonNullable<AcquisitionSnapshot['modules']>['data'] {
+    return hpText(raw).split('\n').flatMap(line => { const m = line.match(/^\s*(MM\d+|[A-Z])\s+(.+?)\s+(\S+)\s+(Active|Standby|Up|Down|Failed|Fault|Initializing)\b/i); return m ? [{ slot: m[1], description: m[2].trim(), model: m[2].match(/\b(J[A-Z0-9]{4,6})\b/)?.[1] ?? null, serial_number: m[3], status: m[4] }] : []; });
+}

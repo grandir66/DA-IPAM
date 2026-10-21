@@ -309,6 +309,65 @@ Riferimenti: [PropertyCollector](https://developer.broadcom.com/xapis/vsphere-we
 [HostSystem](https://developer.broadcom.com/xapis/vsphere-web-services-api/latest/vim.HostSystem.html),
 [VirtualMachine](https://developer.broadcom.com/xapis/vsphere-web-services-api/latest/vim.VirtualMachine.html).
 
+## Collector netapp-ontap: cluster e MetroCluster
+
+Profilo REST GET su HTTPS, CA oppure pin SHA256 esplicito prima di Basic auth;
+input `api` e CLI come ESXi. Credenziali fuori repo, nessun fallback SSH.
+Decisione ADR 0026. Collaudato su **ONTAP 9.16.1P11**, **AFF A70**, MetroCluster IP.
+
+Endpoint permessi: cluster/nodes, cluster/metrocluster e nodes/interconnects;
+storage/aggregates, volumes, luns, disks, shelves; svm/svms;
+network/ethernet/ports, network/ip/interfaces, network/fc/ports;
+snapmirror/relationships e protocols/san/lun-maps. Solo GET, nessuna API di sicurezza,
+configurazione completa, passthrough CLI, check/repair/switchover o failover.
+
+Ogni endpoint ha stato/fonti/avvisi/tempo nel ramo **storage**. Controllo conteggio
+records per pagina, next link solo stesso endpoint/origine, niente redirect,
+cicli/righe/byte/tempo limitati. 401 ferma il batch; 403 e 404 restano distinti
+(error/unsupported) dalle liste vuote ok. Capacità >2^53 conservate come stringhe
+prima della conversione numerica grazie al source token del reviver Node 22.
+
+Dati: identità/versione del cluster; nodi con modello/seriale/HA; configurazione
+MetroCluster locale/remota, partner HA/DR/ausiliario, stato mirroring/operazione e
+interconnessioni; aggregati e spazio fisico/logico; SVM, volumi e junction/export
+policy; LUN e mapping/igroup; dischi/shelf/FRU; Ethernet fisiche/VLAN/LAG, LIF con
+SVM/IPspace e home/current node/port; porte FC e relazioni SnapMirror.
+
+Il banco restituisce 2 nodi locali, 4 nodi MetroCluster noti, 12 interconnessioni,
+2 aggregati, 52 volumi, 10 LUN/10 mapping, 9 SVM, 72 dischi (**36 locali, 36 remoti**),
+2 shelf, 34 porte Ethernet (18 fisiche, 12 VLAN, 4 LAG) e 28 LIF. FC e SnapMirror:
+zero record validi; questo non dimostra assenza di capacità hardware FC e non
+nega il mirroring MetroCluster, che è un’altra relazione. Stato riportato da
+MetroCluster: ip_fabric, local/remote normal/configured; non è un test di failover.
+
+Il cluster non ha una seriale/modello chassis inventati: sono attributi dei nodi.
+Il partner remoto non è stato interrogato direttamente. Root aggregati e risorse
+non visibili al REST non sono dichiarati assenti. Nessun totale globale ottenuto
+sommando capacità specchiate, logical/physical o datastore montati su più host.
+
+Storage acquisito ok; globale partial perché ARP e membership fisica VLAN non
+sono raccolti. Sensori numerici non implementati; FRU mantengono stato, part number,
+firmware e installazione, senza trasformarli in temperature/RPM inventati.
+Altre release e privilegi diversi restano da collaudare.
+
+### Analisi vCenter e consegna allo sviluppo
+
+Il vCenter è stato acquisito con **prova locale separata**, non con un nuovo profilo
+di prodotto: 1 datacenter, 5 cluster, 13 host, 431 VM, 38 datastore, 2 DVS/21 DV port
+group. Correlazione NFS: 8 join univoci su 25 datastore NFS/NFS4.1 tramite IP della
+LIF + SVM + junction path; 17 non correlati nello scope. 13 datastore VMFS non
+associati a LUN senza prova NAA/WWID. I dati del caso rimangono nel dossier privato.
+
+Logica, file e istruzioni per l’agente: `docs/handoff/2026-10-21-acquisizione-infrastruttura-da-ipam.md`.
+Questo documento distingue i collector pronti, la prova vCenter e ciò che deve
+ancora essere installato/integrato in sviluppo. Nessun modello DB/UI/scheduler
+attivato. SOAP aggiornato per risposte grandi: DTD/ENTITY rifiutati, entità standard
+/numeriche decodificate una volta senza espansione automatica. NFS4.1 conserva
+anche la lista dei remote_hosts.
+
+Riferimenti: [MetroCluster nodes](https://docs.netapp.com/us-en/ontap-restapi/get-cluster-metrocluster-nodes.html),
+[ONTAP API reference](https://github.com/NetAppDocs/ontap-automation/blob/main/reference/api_reference.adoc).
+
 ## Estendere una famiglia
 
 Aggiungere un collector che implementi lo stesso contratto, estendere l'unione di

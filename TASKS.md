@@ -11,6 +11,14 @@ Tavola: https://claude.ai/artifact/7ezwy7nkAAzUWSn1wJCNKv (oggi, scheletro comun
 - [x] Causa del `device_type = switch` sui server: lo schema vecchio non ammetteva `server` (workaround citato in `db-tenant.ts:6338`); le creazioni nuove passano da `resolveDeviceTypeForCreate` e sono giuste, restano le righe vecchie.
 - [x] Riccardo (21/10): livello **leggero per tutto**. Piano: [`docs/superpowers/plans/2026-10-21-scheda-apparato-per-tipo.md`](docs/superpowers/plans/2026-10-21-scheda-apparato-per-tipo.md), 8 task. Le modifiche delle tappe 3-5 alla pagina sono già in `dev` (v0.9.821): niente da aspettare.
 - [ ] Eseguire il piano (T1-T8).
+  - [ ] T1 tipo di scheda e conversione di `device_type`
+  - [ ] T2 mattoni comuni, scheletro, tab Gestione/Sicurezza/Storico
+  - [ ] T3 switch
+  - [ ] T4 router e firewall
+  - [ ] T5 storage e NAS
+  - [ ] T6 hypervisor
+  - [ ] T7 server Windows, Linux e ruoli
+  - [ ] T8 chiusura
 - [ ] Coordinare col piano DADude3/MKNET: B2 (porte HP/MikroTik), B4 (Hyper-V, Windows, Linux), B5 (archivio configurazioni) riempiono i riquadri «dato da raccogliere» della tavola.
 
 ## 2026-10-21 — recupero da DADude3 e DA-MKNET (fase di piano)

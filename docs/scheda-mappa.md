@@ -4,7 +4,7 @@ tono: ok
 famiglia: 01-nucleo
 ordine: 10
 stato: cantiere
-prossimo: "guardare sull'hub dashboard e Alert ridisegnate, poi blocco 1 dell'analisi (CONTEXT §8); pulizia host e verifica in due passaggi restano spente"
+prossimo: "approvare le proposte d'interfaccia delle tappe 3-5 (docs/proposte/2026-10-21-tappe-3-5-interfaccia.md), poi scriverle; il primo avvio dell'immagine deve chiamare prepara-netbird.sh"
 applicazione: ipam
 ---
 IPAM e inventario per le appliance cliente (un'installazione = un cliente:

@@ -14,7 +14,10 @@ Prompt: `~/.claude/prompts/da-ipam-sonde-e-aperti-2026-10-21.md`.
 - [x] 2b. Riccardo: riaccendere anche la 151. Accesa alle 09:46, agente QEMU risponde su 150 e 151; in DA-Link `70175-ipam` (oggetto 1) è connesso, segnale delle 09:44. DA-Link non le associa una sonda dell'hub: il bridge 7 di DA-Vul-can resta da guardare.
 - [x] 3. Annotato: da-invent (192.168.4.8) scarica male da internet (dettaglio in `DA-Vul-can/TASKS.md`).
 - [x] 4. Ramo `sonde-integrate-20261020`: **già in `dev`** (merge `8c00134e`, il ramo non ha commit fuori da `origin/dev`); il quadro di «Cosa esce» ha `altri_flussi.edge`. Resta da guardarlo reso a schermo.
-- [ ] 5. Credenziali/promozione/wizard, tappe 3-5: prima la proposta d'interfaccia oggetto per oggetto.
-- [ ] 6. Sfoltire `CONTEXT.md` (19 617 caratteri, limite ~10k) spostando la storia nel diario.
-- [ ] 7. Etichetta DTS «LAN BASE 172.16.0.0/18» → /17: scrittura su dato vero, aspetta la conferma.
-- [ ] 8. Dati di sicurezza AD verso DA-Vul-can: da valutare con Riccardo. Il ramo `feat/ad-health-ingest` **non c'è** in DA-IPAM (né locale né su origin): resta solo la specifica.
+- [x] 5. Proposta d'interfaccia delle tappe 3-5 scritta: `docs/proposte/2026-10-21-tappe-3-5-interfaccia.md` (10 oggetti per la finestra, 4 per il wizard, 3 per la classificazione, 3 domande).
+- [ ] 5b. Riccardo approva oggetto per oggetto → piano → codice.
+- [x] 6. `CONTEXT.md` da 19 617 a ~10,5k caratteri; il testo integrale del 21/10 mattina in `docs/storia/CONTEXT-diario-ottobre-2026.md`. Il vecchio §9 è confluito nel §8 e nel diario (nessun file lo citava).
+- [x] 7. Etichetta DTS: sull'appliance DTS (`ssh dts`, tenant 71734) la rete 1 è **già** «LAN BASE 172.16.0.0/17», aggiornata il 20/10 alle 20:13 italiane. Niente da scrivere in DA-IPAM. Il /18 sta nei **report storici di DA-Vul-can** (`reports.edge_scan_label` fissato all'upload, luglio-ottobre; `edge_scan_cidr` è sempre /17).
+- [ ] 7b. In DA-Vul-can: i documenti usino `edge_scan_cidr` (o il nome attuale) invece dell'etichetta storica, oppure si riscrive lo storico (scrittura sul live: conferma). Da proporre a Riccardo.
+- [x] 8. Valutazione scritta: `docs/proposte/2026-10-21-dati-ad-verso-vulcan.md`. L'export `domarc-ad-health` esiste già in DA-IPAM, manca il lettore in DA-Vul-can; il ramo `feat/ad-health-ingest` non esiste in nessuno dei due repo. Consiglio: prima caricamento a mano + lettore, poi consegna via edge.
+- [ ] 8b. Decidere con Riccardo strada e cliente pilota.

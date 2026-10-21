@@ -15,10 +15,21 @@ export function text(v: unknown): string | null {
     return typeof t === 'string' ? t : null;
 }
 export function escapeXml(value: string): string { return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;'); }
+function decodeXmlTree(value: unknown): unknown {
+    if (typeof value === 'string')
+        return value.replace(/&(?:amp|lt|gt|quot|apos|#\d+|#x[\da-f]+);/gi, entity => { const named: Record<string, string> = { '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&apos;': "'" }; if (named[entity])
+            return named[entity]; const hex = /^&#x/i.test(entity), n = Number.parseInt(entity.slice(hex ? 3 : 2, -1), hex ? 16 : 10); if (!Number.isInteger(n) || n <= 0 || n > 0x10ffff || (n >= 0xd800 && n <= 0xdfff))
+            throw Error('API_XML_INVALID'); return String.fromCodePoint(n); });
+    if (Array.isArray(value))
+        return value.map(decodeXmlTree);
+    if (value && typeof value === 'object')
+        return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, decodeXmlTree(v)]));
+    return value;
+}
 export function parseSoap(raw: string, method: string): XmlObject {
     if (/<!DOCTYPE|<!ENTITY/i.test(raw) || XMLValidator.validate(raw) !== true)
         throw Error('API_XML_INVALID');
-    const x: unknown = new XMLParser({ ignoreAttributes: false, transformTagName: (name: string) => name.split(':').at(-1)!, parseTagValue: false, parseAttributeValue: false }).parse(raw);
+    const x: unknown = decodeXmlTree(new XMLParser({ processEntities: false, ignoreAttributes: false, transformTagName: (name: string) => name.split(':').at(-1)!, parseTagValue: false, parseAttributeValue: false }).parse(raw));
     const body = object(object(object(x).Envelope).Body);
     if (body.Fault)
         throw Error('API_SOAP_FAULT');

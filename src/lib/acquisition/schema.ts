@@ -1,15 +1,16 @@
 import { z } from "zod";
+import {ontapStorageSchema} from "./ontap-schema";
 import { virtualizationSchema } from "./vmware-schema";
 const port = z.number().int().min(1).max(65535);
 const secret = z.string().min(1).max(16384);
 export const acquisitionInputSchema = z.object({
-    collector: z.enum(["qnap-switch", "hp-procurve", "hp-comware", "vmware-esxi"]).default("qnap-switch"),
+    collector: z.enum(["qnap-switch", "hp-procurve", "hp-comware", "vmware-esxi", "netapp-ontap"]).default("qnap-switch"),
     host: z.string().min(1).max(253).regex(/^[a-zA-Z0-9.:_-]+$/),
     snmp: z.object({ community: secret, version: z.enum(["1", "2c"]).default("2c"), port: port.default(161) }).strict().optional(),
     ssh: z.object({ username: z.string().min(1).max(128), password: secret.optional(), privateKey: secret.optional(), passphrase: secret.optional(), port: port.default(22) }).strict().refine(v => !!(v.password || v.privateKey), "Manca il segreto SSH").optional(),
     api: z.object({username:z.string().min(1).max(128),password:secret,port:port.default(443),tls_sha256:z.string().regex(/^(?:[a-fA-F0-9]{2}:){31}[a-fA-F0-9]{2}$/).optional()}).strict().optional(),
     limits: z.object({ timeout_ms: z.number().int().min(500).max(15000).default(4000), max_rows: z.number().int().min(32).max(20000).default(4096), max_output_bytes: z.number().int().min(4096).max(4194304).default(1048576), total_timeout_ms: z.number().int().min(5000).max(300000).default(90000) }).strict().default({ timeout_ms: 4000, max_rows: 4096, max_output_bytes: 1048576, total_timeout_ms: 90000 }),
-}).strict().refine(v => v.collector === "vmware-esxi" ? !!v.api && !v.ssh && !v.snmp : !v.api && !!(v.snmp || v.ssh), "Credenziali non compatibili con il collector");
+}).strict().refine(v => ["vmware-esxi","netapp-ontap"].includes(v.collector) ? !!v.api && !v.ssh && !v.snmp : !v.api && !!(v.snmp || v.ssh), "Credenziali non compatibili con il collector");
 export type AcquisitionInput = z.infer<typeof acquisitionInputSchema>;
 export type AcquisitionRequest = z.input<typeof acquisitionInputSchema>;
 const nullableString = z.string().nullable();
@@ -26,7 +27,8 @@ export const poeSchema = z.object({ port: z.string(), enabled: z.boolean().nulla
 export const sectionStatus = z.enum(["ok", "partial", "unsupported", "error", "skipped"]);
 function section<T extends z.ZodType>(data: T) { return z.object({ status: sectionStatus, collected_at: z.string().datetime(), sources: z.array(z.string()), warnings: z.array(z.string()), data: data }); }
 export const snapshotSchema = z.object({
-    schema_version: z.literal("1.0"), collector: z.enum(["qnap-switch", "hp-procurve", "hp-comware", "vmware-esxi"]), collector_version: z.literal("1.0.0"), target: z.string(), collected_at: z.string().datetime(), duration_ms: z.number().nonnegative(), status: z.enum(["ok", "partial", "error"]),
+    schema_version: z.literal("1.0"), collector: z.enum(["qnap-switch", "hp-procurve", "hp-comware", "vmware-esxi", "netapp-ontap"]), collector_version: z.literal("1.0.0"), target: z.string(), collected_at: z.string().datetime(), duration_ms: z.number().nonnegative(), status: z.enum(["ok", "partial", "error"]),
+    storage: section(ontapStorageSchema).optional(),
     virtualization: section(virtualizationSchema).optional(),
     modules: section(z.array(z.object({ slot: z.string(), description: nullableString, model: nullableString, serial_number: nullableString, status: nullableString, software_revision: nullableString.optional(), subslot: nullableNumber.optional() }))).optional(),
     hardware: section(z.array(z.object({ entity_index: z.number().int(), parent_index: nullableNumber, position: nullableNumber, class_code: nullableNumber, name: nullableString, description: nullableString, model: nullableString, serial_number: nullableString, manufacturer: nullableString, hardware_revision: nullableString, firmware_revision: nullableString, software_revision: nullableString, alias: nullableString, asset_tag: nullableString, replaceable: z.boolean().nullable() }))).optional(),

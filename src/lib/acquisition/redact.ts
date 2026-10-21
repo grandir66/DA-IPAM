@@ -7,7 +7,7 @@ export function redactSnapshot(snapshot: AcquisitionSnapshot, input: Acquisition
         if (fixed.has(key))
             return value;
         if (typeof value === 'string') {
-            if (['capacity_bytes','memory_bytes','free_bytes','uncommitted_bytes'].includes(key) && /^\d+$/.test(value)) return value;
+            if (['capacity_bytes','memory_bytes','free_bytes','uncommitted_bytes','size_bytes','used_bytes','available_bytes','logical_used_bytes','physical_size_bytes','usable_size_bytes'].includes(key) && /^\d+$/.test(value)) return value;
             for (const s of secrets)
                 value = (value as string).split(s).join('[REDACTED]');
             return value;

@@ -4,6 +4,17 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — ONTAP/MetroCluster e consegna del modello (solo locale)
+
+- Collector `netapp-ontap`, REST GET con CA/pin, paginazione vincolata e stato per
+  collezione: cluster/nodi/DR, SVM/LIF, aggregati, volumi/LUN e mapping, dischi/shelf
+  e rete. Cluster logico distinto dai controller, nessuna operazione di gestione.
+- Capacità JSON grandi preservate dal token originale; zero/false e località dei
+  dischi mantenuti. Prove su conteggi, TLS, next link, 401/403/404 e dati parziali.
+- SOAP: risposte grandi con entità standard gestite senza espansione DTD; NFS4.1
+  conserva tutti i server. Consegna per lo sviluppo con logica di osservazioni,
+  identità scoped, relazioni e prove; vCenter resta una prova locale, non profilo UI.
+
 ## [Non rilasciato] — collector VMware ESXi via vSphere (solo locale)
 
 - Profilo `vmware-esxi` API diretta con stesso JSON/CLI/adapter: hardware, rete

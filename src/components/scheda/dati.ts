@@ -4,6 +4,7 @@
  */
 import type { UsataAdesso } from "@/lib/devices/usata-adesso";
 import type { NasInventorySnapshot } from "@/lib/devices/device-info";
+import type { HardwareMikrotik, RisorseMikrotik } from "@/lib/devices/mikrotik-scheda";
 import type { NetworkDevice, ArpEntry, MacPortEntry, SwitchPort } from "@/types";
 
 /** Dati addizionali ritornati da GET /api/devices/[id] oltre al NetworkDevice base. */
@@ -75,6 +76,8 @@ export type DeviceFull = NetworkDevice & DeviceExtras;
  * Campi rilevati da audit Windows + Linux server (chiavi del DB reale).
  */
 export interface DeviceInfoJson {
+  mikrotik_risorse?: RisorseMikrotik;
+  mikrotik_hardware?: HardwareMikrotik;
   // OS / Identità
   hostname?: string;
   domain?: string;

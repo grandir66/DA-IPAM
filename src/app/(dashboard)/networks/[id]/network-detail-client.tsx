@@ -4,7 +4,7 @@ import { parseDbDate } from "@/lib/db-date";
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -64,20 +64,8 @@ import {
 import { parseDetectedDeviceFromDetectionJson } from "@/lib/device-fingerprint-classification";
 import { NetworkCredentialsTable } from "@/components/shared/network-credentials-table";
 import { ProtocolBadges } from "@/components/shared/protocol-badges";
-import { AddableSelect } from "@/components/shared/addable-select";
-import { opzioniCreazioneRapida, tipiCredenzialePerProtocollo, tipoCreazioneRapida, vociSnmpAggiuntive } from "@/lib/credential-protocol-map";
-import { etichettaTipo } from "@/lib/credentials/tipi";
-import { profiloPerClassificazione, proponiApparato, riallineaAlProtocollo, type CredenzialeArchivio, type ProtocolloApparato } from "@/lib/devices/proposta-apparato";
+import { RendiApparatoDialog } from "@/components/devices/rendi-apparato-dialog";
 import { HostCredentialsDialog } from "@/components/shared/host-credentials-dialog";
-import {
-  getDefaultNetworkDeviceVendorOptions,
-  type NetworkDeviceVendorSelectOption,
-} from "@/lib/network-device-vendor-options";
-import { DeviceFormFields } from "@/components/shared/device-form-fields";
-import {
-  coerceProtocolForVendor,
-  coerceScanTargetForVendor,
-} from "@/lib/vendor-device-profile";
 import { ipAssignmentShortLabel } from "@/lib/ip-assignment";
 import { SortableTableHead } from "@/components/shared/sortable-table-head";
 import { compareUnknown, type SortDirection } from "@/lib/table-sort";
@@ -217,22 +205,6 @@ export function NetworkDetailClient({
   const [addDeviceCredentials, setAddDeviceCredentials] = useState<{ id: number; name: string; credential_type: string; port?: number | null }[]>([]);
   const [selectedHostIds, setSelectedHostIds] = useState<Set<number>>(new Set());
   const [bulkAddOpen, setBulkAddOpen] = useState(false);
-  // Valori veri li mette apriAggiungiDispositivi dalla proposta sugli host scelti (tappa 1).
-  const [bulkAddClassification, setBulkAddClassification] = useState("");
-  const [bulkAddProtocol, setBulkAddProtocol] = useState("ssh");
-  const [bulkAddVendor, setBulkAddVendor] = useState("other");
-  const [bulkAddHostDiversi, setBulkAddHostDiversi] = useState(false);
-  const [bulkAddCredentialId, setBulkAddCredentialId] = useState<string | null>(null);
-  const [bulkAddSnmpCredentialId, setBulkAddSnmpCredentialId] = useState<string | null>(null);
-  const [bulkAddVendorSubtype, setBulkAddVendorSubtype] = useState<string | null>(null);
-  const [bulkAddScanTarget, setBulkAddScanTarget] = useState<string | null>(null);
-  const [bulkAddProductProfile, setBulkAddProductProfile] = useState<string | null>(null);
-  const [bulkVendorOptions, setBulkVendorOptions] = useState<NetworkDeviceVendorSelectOption[]>(() =>
-    getDefaultNetworkDeviceVendorOptions()
-  );
-  const [bulkAddSaving, setBulkAddSaving] = useState(false);
-  const [bulkTestResult, setBulkTestResult] = useState<{ ok: boolean; message: string } | null>(null);
-  const [bulkTesting, setBulkTesting] = useState(false);
   const [bulkHostBusy, setBulkHostBusy] = useState(false);
   // Lista unica delle credenziali della rete. Le quattro catene vecchie non si
   // leggono né si rimandano più (tappa 2 credenziali, T12): restano nel DB,
@@ -313,20 +285,6 @@ export function NetworkDetailClient({
       .then((r) => (r.ok ? r.json() : []))
       .then(setAddDeviceCredentials)
       .catch(() => setAddDeviceCredentials([]));
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/device-vendor-options")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data: { options?: NetworkDeviceVendorSelectOption[] } | null) => {
-        if (cancelled || !data?.options?.length) return;
-        setBulkVendorOptions(data.options);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
   }, []);
 
   const refreshCredentialsList = useCallback(async () => {
@@ -519,86 +477,9 @@ export function NetworkDetailClient({
 
   const clearHostSelection = () => setSelectedHostIds(new Set());
 
-  const archivioCredenziali = (): CredenzialeArchivio[] =>
-    addDeviceCredentials.map((c) => ({ id: c.id, name: c.name, credential_type: c.credential_type, port: c.port ?? null }));
-
-  /**
-   * Apre «Aggiungi dispositivi» coi valori proposti dagli host scelti (tappa 1):
-   * prima partiva sempre da «server + Altro + UPS + SNMP v2». Se gli host
-   * danno proposte diverse, la classificazione resta da scegliere.
-   */
+  /** «Rendi apparato» sugli host scelti: la finestra unica propone, prova le credenziali e crea (tappa 3). */
   function apriAggiungiDispositivi() {
-    const archivio = archivioCredenziali();
-    const proposte = hosts.filter((h) => selectedHostIds.has(h.id)).map((h) => proponiApparato(h, archivio));
-    const prima = proposte[0];
-    const uguali = !!prima && proposte.every(
-      (p) => p.vendor === prima.vendor && p.protocol === prima.protocol && p.classification === prima.classification
-    );
-    setBulkAddVendor(prima?.vendor ?? "other");
-    setBulkAddVendorSubtype(null);
-    setBulkAddProtocol(prima?.protocol ?? "ssh");
-    setBulkAddClassification(uguali ? prima.classification : "");
-    setBulkAddProductProfile(uguali ? prima.productProfile : null);
-    setBulkAddScanTarget(prima?.scanTarget ?? null);
-    setBulkAddCredentialId(uguali ? prima.credentialId : null);
-    setBulkAddSnmpCredentialId(uguali ? prima.snmpCredentialId : null);
-    setBulkAddHostDiversi(proposte.length > 1 && !uguali);
-    setBulkTestResult(null);
     setBulkAddOpen(true);
-  }
-
-  /** Cambio di protocollo: credenziale incompatibile azzerata, con SNMP la principale è la SNMP. */
-  function cambiaProtocolloAggiunta(v: string) {
-    const q = riallineaAlProtocollo(
-      {
-        name: "", vendor: bulkAddVendor, protocol: bulkAddProtocol as ProtocolloApparato,
-        classification: bulkAddClassification, productProfile: bulkAddProductProfile, scanTarget: bulkAddScanTarget,
-        port: 0, credentialId: bulkAddCredentialId, snmpCredentialId: bulkAddSnmpCredentialId, useForArpPoll: false,
-      },
-      v as ProtocolloApparato,
-      archivioCredenziali(),
-    );
-    setBulkAddProtocol(v);
-    setBulkAddCredentialId(q.credentialId);
-    setBulkAddSnmpCredentialId(q.snmpCredentialId);
-  }
-
-  async function handleBulkAdd() {
-    if (selectedHostIds.size === 0 || !bulkAddClassification) return;
-    const hasCred = bulkAddCredentialId && bulkAddCredentialId !== "none";
-    const hasSnmpCred = bulkAddSnmpCredentialId && bulkAddSnmpCredentialId !== "none";
-    setBulkAddSaving(true);
-    try {
-      const body: Record<string, unknown> = {
-        host_ids: Array.from(selectedHostIds),
-        classification: bulkAddClassification,
-        protocol: bulkAddProtocol,
-        vendor: bulkAddVendor,
-        scan_target: bulkAddScanTarget,
-      };
-      if (bulkAddProductProfile) body.product_profile = bulkAddProductProfile;
-      if (hasCred) body.credential_id = Number(bulkAddCredentialId);
-      if (hasSnmpCred) body.snmp_credential_id = Number(bulkAddSnmpCredentialId);
-      body.inherit_host_credentials = true;
-      const res = await fetch("/api/devices/bulk", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        toast.success(data.message);
-        setBulkAddOpen(false);
-        clearHostSelection();
-        await refreshHosts();
-        router.refresh();
-      } else {
-        toast.error(data.error || "Errore nell'aggiunta");
-      }
-    } catch {
-      toast.error("Errore nell'aggiunta");
-    }
-    setBulkAddSaving(false);
   }
 
   async function handleBulkKnown(known: 0 | 1) {
@@ -1373,7 +1254,7 @@ export function NetworkDetailClient({
                       disabled={selectedHostIds.size === 0 || bulkHostBusy}
                     >
                       <Plus className="h-4 w-4 mr-1.5 shrink-0" />
-                      Aggiungi dispositivo
+                      Rendi apparato
                     </Button>
                     <Button
                       variant="secondary"
@@ -1468,192 +1349,14 @@ export function NetworkDetailClient({
         </Card>
       )}
 
-      <Dialog open={bulkAddOpen} onOpenChange={(open) => { setBulkAddOpen(open); if (!open) setBulkTestResult(null); }}>
-        <DialogContent className={DIALOG_PANEL_WIDE_CLASS}>
-          <DialogHeader className="shrink-0 border-b border-border/50 px-4 pt-4 pb-3">
-            <DialogTitle>Aggiungi {selectedHostIds.size} dispositivo{selectedHostIds.size !== 1 ? "i" : ""}</DialogTitle>
-            <CardDescription>
-              Configura profilo, protocollo e credenziali. Usa <strong>Prova connessione</strong> per testare le credenziali su uno degli host selezionati prima di salvare.
-            </CardDescription>
-          </DialogHeader>
-          <DialogScrollableArea className="px-4 py-3">
-          <div className="space-y-4">
-            <DeviceFormFields
-              mode="bulk"
-              credentials={addDeviceCredentials}
-              idPrefix="network-bulk-add"
-              showIdentificazione={false}
-              showProfilo={true}
-              showCredenziali={false}
-              classification={bulkAddClassification}
-              vendor={bulkAddVendor}
-              vendorSubtype={bulkAddVendorSubtype}
-              protocol={bulkAddProtocol}
-              scanTarget={bulkAddScanTarget}
-              productProfile={bulkAddProductProfile}
-              onProductProfileChange={setBulkAddProductProfile}
-              credentialId={bulkAddCredentialId}
-              snmpCredentialId={bulkAddSnmpCredentialId}
-              onClassificationChange={(v) => {
-                setBulkAddClassification(v);
-                if (v) setBulkAddProductProfile(profiloPerClassificazione(bulkAddVendor, v));
-              }}
-              creazioneInBlocco
-              onVendorChange={(v) => {
-                setBulkAddVendor(v);
-                if (v !== "hp") setBulkAddVendorSubtype(null);
-                const nextP = coerceProtocolForVendor(v, bulkAddProtocol);
-                if (nextP !== bulkAddProtocol) cambiaProtocolloAggiunta(nextP);
-                const nextS = coerceScanTargetForVendor(v, bulkAddScanTarget);
-                if (nextS !== bulkAddScanTarget) setBulkAddScanTarget(nextS);
-              }}
-              onVendorSubtypeChange={(v) => setBulkAddVendorSubtype(v)}
-              onProtocolChange={(v) => { if (v !== bulkAddProtocol) cambiaProtocolloAggiunta(v); }}
-              onScanTargetChange={(v) => setBulkAddScanTarget(v)}
-              onCredentialIdChange={(v) => setBulkAddCredentialId(v)}
-              onSnmpCredentialIdChange={(v) => setBulkAddSnmpCredentialId(v)}
-              vendorOptions={bulkVendorOptions}
-              defaultClassification=""
-              defaultVendor={bulkAddVendor}
-              defaultProtocol={bulkAddProtocol}
-            />
-            {bulkAddHostDiversi && (
-              <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-800 dark:text-amber-200/90">
-                Gli host selezionati non sono dello stesso tipo: scegli classificazione, marca e protocollo validi per tutti.
-              </p>
-            )}
-
-            {/* Credenziali: scelta esplicita + creazione inline ─ con badge eredità automatica */}
-            {(() => {
-              const tipiPrincipale = tipiCredenzialePerProtocollo(bulkAddProtocol);
-              const primaryOpts = addDeviceCredentials.filter((c) => tipiPrincipale.includes(c.credential_type));
-              const snmpOpts = vociSnmpAggiuntive(addDeviceCredentials);
-              // Con SNMP come protocollo la principale è già la SNMP: la seconda tendina non serve.
-              const protocolloSnmp = bulkAddProtocol === "snmp_v2" || bulkAddProtocol === "snmp_v3";
-              const protos = new Set<string>();
-              for (const hid of selectedHostIds) {
-                for (const p of (hostValidatedProtocols[hid] || [])) protos.add(p);
-              }
-              return (
-                <div className="rounded-lg border border-border/60 bg-muted/20 p-3 space-y-3">
-                  <div className="flex items-center gap-2">
-                    <Key className="h-4 w-4 text-primary" />
-                    <span className="text-sm font-medium">Credenziali</span>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div className="space-y-1.5">
-                      <Label className="text-xs">Credenziale principale</Label>
-                      <AddableSelect
-                        value={bulkAddCredentialId && bulkAddCredentialId !== "none" ? Number(bulkAddCredentialId) : null}
-                        onChange={(v) => setBulkAddCredentialId(v != null ? String(v) : null)}
-                        options={primaryOpts.map((c) => ({ id: c.id, label: c.name, extra: etichettaTipo(c.credential_type) }))}
-                        entityLabel="credenziale"
-                        createApiUrl="/api/credentials"
-                        extraFields={[
-                          { key: "credential_type", label: "Tipo", type: "select", required: true, defaultValue: tipoCreazioneRapida(bulkAddProtocol), options: opzioniCreazioneRapida(bulkAddProtocol) },
-                          { key: "username", label: "Username", placeholder: "admin" },
-                          { key: "password", label: "Password / Community", type: "password", required: true },
-                        ]}
-                        onCreated={refreshCredentialsList}
-                      />
-                    </div>
-                    {!protocolloSnmp && (
-                    <div className="space-y-1.5">
-                      <Label className="text-xs">Credenziale SNMP (opzionale)</Label>
-                      <AddableSelect
-                        value={bulkAddSnmpCredentialId && bulkAddSnmpCredentialId !== "none" ? Number(bulkAddSnmpCredentialId) : null}
-                        onChange={(v) => setBulkAddSnmpCredentialId(v != null ? String(v) : null)}
-                        options={snmpOpts.map((c) => ({ id: c.id, label: c.name, extra: etichettaTipo(c.credential_type) }))}
-                        entityLabel="credenziale SNMP"
-                        createApiUrl="/api/credentials"
-                        extraFields={[
-                          { key: "credential_type", label: "Tipo", type: "select", required: true, defaultValue: "snmp", options: [{ value: "snmp", label: "SNMP" }] },
-                          { key: "password", label: "Community string", type: "password", required: true, placeholder: "public" },
-                        ]}
-                        onCreated={refreshCredentialsList}
-                      />
-                    </div>
-                    )}
-                  </div>
-                  <div className="text-xs text-muted-foreground border-t border-border/60 pt-2">
-                    {protos.size > 0 ? (
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span>Protocolli già validati sugli host:</span>
-                        <ProtocolBadges protocols={[...protos]} />
-                        <span className="text-[11px] opacity-75">(verranno ereditati come fallback se non assegni qui sopra)</span>
-                      </div>
-                    ) : (
-                      <span className="text-amber-600 dark:text-amber-400">Nessuna credenziale validata sugli host: assegnane una qui sopra.</span>
-                    )}
-                  </div>
-                </div>
-              );
-            })()}
-            {bulkTestResult && (
-              <div className={cn("text-sm px-3 py-2 rounded border", bulkTestResult.ok ? "border-green-500 bg-green-50 text-green-700" : "border-red-500 bg-red-50 text-red-700")}>
-                {bulkTestResult.message}
-              </div>
-            )}
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                onClick={async () => {
-                  if (selectedHostIds.size === 0) return;
-                  setBulkTesting(true);
-                  setBulkTestResult(null);
-                  try {
-                    const firstHostId = Array.from(selectedHostIds)[0];
-                    const firstHost = hosts.find((h) => h.id === firstHostId);
-                    if (!firstHost) {
-                      setBulkTestResult({ ok: false, message: "Host non trovato" });
-                      setBulkTesting(false);
-                      return;
-                    }
-                    const res = await fetch("/api/devices/test-provisional", {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({
-                        host: firstHost.ip,
-                        vendor: bulkAddVendor,
-                        protocol: bulkAddProtocol,
-                        scan_target: bulkAddScanTarget,
-                        product_profile: bulkAddProductProfile,
-                        credential_id: bulkAddCredentialId && bulkAddCredentialId !== "none" ? Number(bulkAddCredentialId) : null,
-                        snmp_credential_id: bulkAddSnmpCredentialId && bulkAddSnmpCredentialId !== "none" ? Number(bulkAddSnmpCredentialId) : null,
-                        // La stessa porta che userà la creazione: quella propria della credenziale, se c'è.
-                        port: addDeviceCredentials.find((c) => String(c.id) === bulkAddCredentialId)?.port ?? undefined,
-                      }),
-                    });
-                    const data = await res.json();
-                    // Si prova sul primo host scelto: lo si dice, con più host l'esito non vale per tutti.
-                    const suChi = selectedHostIds.size > 1 ? `Provato su ${firstHost.ip} (il primo dei ${selectedHostIds.size} scelti)` : `Provato su ${firstHost.ip}`;
-                    if (res.ok && data.success) {
-                      setBulkTestResult({ ok: true, message: `${suChi}: ${data.message || "connessione riuscita"}` });
-                    } else {
-                      setBulkTestResult({ ok: false, message: `${suChi}: ${data.error || "connessione fallita"}` });
-                    }
-                  } catch {
-                    setBulkTestResult({ ok: false, message: "Errore di rete" });
-                  } finally {
-                    setBulkTesting(false);
-                  }
-                }}
-                disabled={bulkTesting || bulkAddSaving}
-                className="flex-1"
-              >
-                {bulkTesting ? "Test in corso..." : "Prova connessione"}
-              </Button>
-              <Button onClick={handleBulkAdd} disabled={bulkAddSaving || !bulkAddClassification} className="flex-1">
-                {bulkAddSaving ? "Aggiunta in corso..." : "Aggiungi dispositivi"}
-              </Button>
-            </div>
-            {!bulkAddClassification && (
-              <p className="text-right text-sm text-amber-800 dark:text-amber-200">Scegli la classificazione</p>
-            )}
-          </div>
-          </DialogScrollableArea>
-        </DialogContent>
-      </Dialog>
+      {bulkAddOpen && selectedHostIds.size > 0 && (
+        <RendiApparatoDialog
+          hosts={hosts.filter((h) => selectedHostIds.has(h.id)).slice(0, 50)}
+          open={bulkAddOpen}
+          onOpenChange={setBulkAddOpen}
+          onCreated={() => { clearHostSelection(); void refreshHosts(); router.refresh(); }}
+        />
+      )}
 
       {view === "list" && (
         <Card className="overflow-hidden py-0 gap-0">

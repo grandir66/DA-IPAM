@@ -42,6 +42,20 @@ describe("creaApparato", () => {
     assert.equal(host.classification, "server");
   });
 
+  // Finestra «Rendi apparato» (tappa 3): i ruoli scelti per un server arrivano nel corpo.
+  it("server con ruoli → ruoli sull'host e sull'apparato, quelli fuori catalogo ignorati", () => {
+    const d = getTenantDb(T);
+    d.prepare(`INSERT INTO hosts (id, network_id, ip, classification) VALUES (2, 1, '10.40.0.6', 'unknown')`).run();
+    const esito = withTenant(T, () =>
+      creaApparato({ name: "dc", host: "10.40.0.6", device_type: "server", classification: "server", vendor: "windows", protocol: "winrm", server_roles: ["dc", "dns", "inventato"] })
+    );
+    assert.ok(esito.ok, esito.ok ? "" : esito.error);
+    const h = d.prepare(`SELECT server_roles FROM hosts WHERE id = 2`).get() as { server_roles: string };
+    const a = d.prepare(`SELECT server_roles FROM network_devices WHERE id = ?`).get(esito.device.id) as { server_roles: string };
+    assert.deepEqual([...JSON.parse(h.server_roles)].sort(), ["dc", "dns"]);
+    assert.deepEqual([...JSON.parse(a.server_roles)].sort(), ["dc", "dns"]);
+  });
+
   it("classificazione fuori elenco («printer») → 400 con messaggio in italiano", () => {
     const esito = withTenant(T, () =>
       creaApparato({ name: "stampa", host: "10.40.0.9", device_type: "server", vendor: "other", protocol: "snmp_v2", classification: "printer" })

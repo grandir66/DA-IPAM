@@ -72,10 +72,10 @@ import {
   vendorSubtypeFromProductProfile,
   type ProductProfileId,
 } from "@/lib/device-product-profiles";
-import type { HostDetail, NetworkDevice } from "@/types";
+import type { NetworkDevice } from "@/types";
 import { getDefaultNetworkDeviceVendorOptions } from "@/lib/network-device-vendor-options";
-import { proponiApparato, type CredenzialeArchivio, type PropostaApparato } from "@/lib/devices/proposta-apparato";
-import { fetchJson } from "@/lib/fetch-json";
+import { RendiApparatoDialog } from "@/components/devices/rendi-apparato-dialog";
+import type { HostPerRendiApparato } from "@/lib/devices/rendi-apparato";
 
 const BULK_PROTOCOL_SELECT_OPTIONS = [
   { value: "ssh", label: "SSH" },
@@ -187,8 +187,8 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
   const [credentialTestResults, setCredentialTestResults] = useState<Map<number, { ok: boolean; error?: string }>>(new Map());
   const [editTesting, setEditTesting] = useState(false);
   const [rowTesting, setRowTesting] = useState<number | null>(null);
-  const [hostToAdd, setHostToAdd] = useState<{ name: string; host: string } | null>(null);
-  const [bulkAddingFromHosts, setBulkAddingFromHosts] = useState(false);
+  // Host da rendere apparati con la finestra unica (tappa 3): la finestra rilegge la scheda di ciascuno.
+  const [hostDaRendere, setHostDaRendere] = useState<HostPerRendiApparato[] | null>(null);
   const [dhcpSyncing, setDhcpSyncing] = useState<number | null>(null);
 
   const primaryBulkCredLabels = useMemo(
@@ -340,52 +340,17 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
     .map((k) => Number(k.replace("device-", "")));
   const selectedHostItems = devices.filter((d) => isHostItem(d) && selectedIds.has(getSelectionKey(d))) as Extract<DeviceOrHost, { source: "host" }>[];
 
-  async function handleBulkAddFromHosts() {
+  /** Riga minima di un host della lista: la finestra «Rendi apparato» ne legge la scheda completa. */
+  function hostPerFinestra(h: { host_id: number; host: string; name: string }): HostPerRendiApparato {
+    return {
+      id: h.host_id, ip: h.host, hostname: h.name, custom_name: null, classification: effectiveClassification,
+      device_manufacturer: null, os_info: null, model: null, vendor: null, snmp_data: null,
+    };
+  }
+
+  function handleBulkAddFromHosts() {
     if (selectedHostItems.length === 0) return;
-    setBulkAddingFromHosts(true);
-    // Tipo dispositivo dalla classificazione della pagina (prima «switch» per tutto).
-    const deviceTypeDaPagina =
-      ["router", "switch", "firewall", "access_point", "hypervisor"].includes(effectiveClassification)
-        ? effectiveClassification
-        : effectiveClassification === "storage" || effectiveClassification === "nas" ? "nas" : "server";
-    let ok = 0;
-    let fail = 0;
-    for (const host of selectedHostItems) {
-      try {
-        // Proposta per host (tappa 1): piattaforma dal suo SO, credenziale validata e porta.
-        const p = await propostaPerHost(host.host_id);
-        if (!p) {
-          fail++;
-          continue;
-        }
-        const res = await fetch("/api/devices", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: host.name,
-            host: host.host,
-            device_type: deviceTypeDaPagina,
-            classification: effectiveClassification,
-            vendor: p.vendor,
-            protocol: p.protocol,
-            port: p.port,
-            product_profile: p.productProfile || undefined,
-            scan_target: p.scanTarget || undefined,
-            credential_id: p.credentialId ? Number(p.credentialId) : undefined,
-            snmp_credential_id: p.snmpCredentialId ? Number(p.snmpCredentialId) : undefined,
-          }),
-        });
-        if (res.ok) ok++;
-        else fail++;
-      } catch {
-        fail++;
-      }
-    }
-    setBulkAddingFromHosts(false);
-    setSelectedIds(new Set());
-    fetchDevices();
-    if (ok > 0) toast.success(`${ok} dispositivo${ok !== 1 ? "i" : ""} aggiunt${ok !== 1 ? "i" : "o"}. ${fail > 0 ? ` ${fail} fallit${fail !== 1 ? "i" : "o"}.` : ""} Assegna le credenziali e usa Test/Scansiona.`);
-    else if (fail > 0) toast.error(`Errore nell'aggiunta di ${fail} dispositivi`);
+    setHostDaRendere(selectedHostItems.slice(0, 50).map(hostPerFinestra));
   }
 
   async function handleEditTest() {
@@ -662,7 +627,6 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
    * e il profilo scelti per un host restavano proposti per il successivo.
    */
   function azzeraNuovo() {
-    setHostToAdd(null);
     setCreateVendor(vendorDiPartenza);
     setCreateProtocol(protocolloDiPartenza);
     setCreatePort(null);
@@ -673,34 +637,8 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
     setCreateUseForArpPoll(effectiveClassification === "router" || effectiveClassification === "firewall");
   }
 
-  /**
-   * Proposta d'apparato dalla scheda dell'host (tappa 1): la riga della lista
-   * non porta famiglia SO né credenziali validate. Un errore si dice, non si
-   * trasforma in «hp + SNMP».
-   */
-  async function propostaPerHost(hostId: number): Promise<PropostaApparato | null> {
-    const r = await fetchJson<HostDetail>(`/api/hosts/${hostId}`, { cache: "no-store" });
-    if (!r.ok) {
-      toast.error(`Scheda dell'host non letta (${r.message})`);
-      return null;
-    }
-    const archivio: CredenzialeArchivio[] = credentials.map((c) => ({ id: c.id, name: c.name, credential_type: c.credential_type, port: c.port ?? null }));
-    return proponiApparato(r.data, archivio);
-  }
-
-  async function configuraDaHost(dev: { name: string; host: string; host_id: number }) {
-    const p = await propostaPerHost(dev.host_id);
-    if (!p) return;
-    setHostToAdd({ name: dev.name, host: dev.host });
-    setCreateVendor(p.vendor);
-    setCreateVendorSubtype(null);
-    setCreateProtocol(p.protocol);
-    setCreatePort(p.port);
-    setCreateCredentialId(p.credentialId);
-    setCreateSnmpCredentialId(p.snmpCredentialId);
-    setCreateProductProfile(p.productProfile);
-    setCreateUseForArpPoll(effectiveClassification === "router" || effectiveClassification === "firewall");
-    setDialogOpen(true);
+  function configuraDaHost(dev: { name: string; host: string; host_id: number }) {
+    setHostDaRendere([hostPerFinestra(dev)]);
   }
 
   async function handleQuery(id: number) {
@@ -879,7 +817,7 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
                 )}
               </DialogHeader>
               <DialogScrollableArea className="px-4 py-3">
-              <form key={hostToAdd ? `from-host-${hostToAdd.host}` : "new"} onSubmit={handleCreate} className="space-y-4">
+              <form onSubmit={handleCreate} className="space-y-4">
                 <DeviceFormFields
                   mode="create"
                   credentials={credentials}
@@ -887,8 +825,8 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
                   showIdentificazione
                   showProfilo
                   showCredenziali
-                  name={hostToAdd?.name ?? ""}
-                  host={hostToAdd?.host ?? ""}
+                  name=""
+                  host=""
                   defaultClassification={effectiveClassification}
                   defaultVendor={effectiveClassification === "hypervisor" ? "proxmox" : effectiveClassification === "server" || effectiveClassification === "workstation" || effectiveClassification === "notebook" ? "windows" : effectiveClassification === "storage" ? "synology" : effectiveClassification === "router" ? "mikrotik" : effectiveClassification === "access_point" ? "ubiquiti" : effectiveClassification === "firewall" ? "stormshield" : effectiveClassification === "stampante" ? "hp" : "other"}
                   defaultProtocol={effectiveClassification === "hypervisor" ? "ssh" : effectiveClassification === "server" || effectiveClassification === "workstation" || effectiveClassification === "notebook" ? "winrm" : effectiveClassification === "storage" ? "ssh" : effectiveClassification === "access_point" || effectiveClassification === "firewall" ? "ssh" : effectiveClassification === "stampante" || effectiveClassification === "telecamera" || effectiveClassification === "voip" || effectiveClassification === "iot" ? "snmp_v2" : "ssh"}
@@ -944,12 +882,11 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
                 size="sm"
                 variant="default"
                 onClick={handleBulkAddFromHosts}
-                disabled={bulkAddingFromHosts}
                 className="gap-2"
-                title="Aggiungi gli host selezionati come dispositivi per abilitare Test credenziali e Scansiona"
+                title="Rendi apparati gli host selezionati: scegli cosa sono, come ci si arriva e quale credenziale usare"
               >
-                <Plus className={`h-4 w-4 ${bulkAddingFromHosts ? "animate-pulse" : ""}`} />
-                {bulkAddingFromHosts ? "Aggiunta…" : `Aggiungi come dispositivi (${selectedHostItems.length})`}
+                <Plus className="h-4 w-4" />
+                {`Rendi apparato (${selectedHostItems.length})`}
               </Button>
             )}
             <Button size="sm" variant="secondary" onClick={() => setBulkDialogOpen(true)} className="gap-2">
@@ -1162,9 +1099,9 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
                               className="h-8 text-xs gap-1"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                void configuraDaHost(dev);
+                                configuraDaHost(dev);
                               }}
-                              title="Aggiungi come dispositivo per configurare credenziali e scansione"
+                              title="Rendi apparato: scegli cosa è, come ci si arriva e quale credenziale usare"
                             >
                               <Plus className="h-3.5 w-3.5" />
                               Configura
@@ -1639,6 +1576,15 @@ export function DeviceListByClassification({ classification }: DeviceListByClass
             </DialogScrollableArea>
           </DialogContent>
         </Dialog>
+      )}
+
+      {hostDaRendere && (
+        <RendiApparatoDialog
+          hosts={hostDaRendere}
+          open
+          onOpenChange={(o) => { if (!o) setHostDaRendere(null); }}
+          onCreated={() => { setSelectedIds(new Set()); fetchDevices(); }}
+        />
       )}
     </div>
   );

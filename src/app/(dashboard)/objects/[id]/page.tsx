@@ -32,7 +32,7 @@ import { ClassificationEvidencePanel } from "@/components/shared/classification-
 // componenti grafici pesanti (LatencyChart/UptimeTimeline/LibreNMSGraphs) sono
 // caricati on-demand. Prima erano nel bundle iniziale anche se l'utente non li
 // apriva mai → ~100-300KB JS evitati al mount.
-const PromoteHostDialog = dynamic(() => import("@/components/devices/promote-host-dialog").then((m) => ({ default: m.PromoteHostDialog })), { ssr: false });
+const RendiApparatoDialog = dynamic(() => import("@/components/devices/rendi-apparato-dialog").then((m) => ({ default: m.RendiApparatoDialog })), { ssr: false });
 const LinkIpsDialog = dynamic(() => import("@/components/devices/link-ips-dialog").then((m) => ({ default: m.LinkIpsDialog })), { ssr: false });
 const EditDeviceDialog = dynamic(() => import("@/components/devices/edit-device-dialog").then((m) => ({ default: m.EditDeviceDialog })), { ssr: false });
 const UnisciDialog = dynamic(() => import("@/components/topology/unioni/unisci-dialog").then((m) => ({ default: m.UnisciDialog })), { ssr: false });
@@ -578,7 +578,7 @@ export default function ObjectDetailPage() {
 
   const [host, setHost] = useState<HostDetail | null>(null);
   const [device, setDevice] = useState<DeviceFull | null>(null);
-  // F3.3: modale di promozione inline (no più redirect a /hosts/[id]?promote=1)
+  // F3.3: finestra «Rendi apparato» inline (no più redirect a /hosts/[id]?promote=1)
   const [promoteOpen, setPromoteOpen] = useState(false);
   // v0.2.599: modale edit device inline (no più redirect a /devices/[id], che era senza tab)
   const [editDeviceOpen, setEditDeviceOpen] = useState(false);
@@ -746,7 +746,7 @@ export default function ObjectDetailPage() {
 
   // v0.2.601: deep-link da menù tre-puntini / link esterni:
   //   ?edit=1     → auto-apri EditDeviceDialog (richiede device gestito)
-  //   ?promote=1  → auto-apri PromoteHostDialog (richiede host non gestito)
+  //   ?promote=1  → auto-apri RendiApparatoDialog (richiede host non gestito)
   // Pulisce la query subito dopo per non rifarlo a ogni re-render.
   useEffect(() => {
     if (!host) return;
@@ -997,7 +997,7 @@ export default function ObjectDetailPage() {
               </Button>
             )}
             {/* F3.3: bottone contestuale.
-                - Host non gestito → "Promuovi a dispositivo" apre il <PromoteHostDialog> in-page
+                - Host non gestito → "Promuovi a dispositivo" apre il <RendiApparatoDialog> in-page
                   (modale inline, no più redirect a /hosts/[id]?promote=1).
                 - Device gestito → "Modifica device" punta a /devices/[deviceId] dove esiste già
                   l'editor completo (credenziali/vendor/protocollo/scan_target). */}
@@ -1009,7 +1009,7 @@ export default function ObjectDetailPage() {
             ) : (
               <Button variant="outline" onClick={() => setPromoteOpen(true)}>
                 <PackagePlus className="h-4 w-4 mr-2" />
-                Promuovi a dispositivo
+                Rendi apparato
               </Button>
             )}
           </div>
@@ -2798,8 +2798,8 @@ export default function ObjectDetailPage() {
 
       {/* F3.3: modale promozione inline — niente più redirect cross-pagina. */}
       {host && !isManaged && (
-        <PromoteHostDialog
-          host={host as HostDetail}
+        <RendiApparatoDialog
+          hosts={[host as HostDetail]}
           open={promoteOpen}
           onOpenChange={setPromoteOpen}
           onCreated={() => { setPromoteOpen(false); fetchAll(); }}

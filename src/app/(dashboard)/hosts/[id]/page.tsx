@@ -9,7 +9,7 @@
  *   - deep-link query param (?promote=1, ?edit=1) preservati al redirect
  *
  * Tutta la logica precedente (modale promozione, edit form, fetch host, ecc.)
- * è stata spostata su `/objects/[id]` (PromoteHostDialog, EditDeviceDialog,
+ * è stata spostata su `/objects/[id]` (RendiApparatoDialog, EditDeviceDialog,
  * card Inventario base, ecc.).
  */
 

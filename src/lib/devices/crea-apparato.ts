@@ -19,6 +19,7 @@ import {
   getDb,
 } from "@/lib/db";
 import { scriviClassificazione } from "@/lib/classification/scrivi";
+import { RUOLI_SERVER, type RuoloServer } from "@/lib/classification/canonico";
 import { NetworkDeviceSchema } from "@/lib/validators";
 import {
   suggestProductProfileForClassification,
@@ -37,6 +38,13 @@ import type { NetworkDevice } from "@/types";
 export type EsitoCreaApparato =
   | { ok: true; device: NetworkDevice }
   | { ok: false; status: 400; error: string };
+
+/** Ruoli del server dal corpo della richiesta: solo quelli del catalogo, il resto si ignora. */
+export function ruoliDalCorpo(body: unknown): RuoloServer[] {
+  const grezzi = body && typeof body === "object" ? (body as { server_roles?: unknown }).server_roles : undefined;
+  if (!Array.isArray(grezzi)) return [];
+  return grezzi.filter((r): r is RuoloServer => (RUOLI_SERVER as readonly string[]).includes(String(r)));
+}
 
 export function creaApparato(body: unknown): EsitoCreaApparato {
   const parsed = NetworkDeviceSchema.safeParse(body);
@@ -128,7 +136,7 @@ export function creaApparato(body: unknown): EsitoCreaApparato {
   const host = getHostByIp(data.host);
   if (host) {
     // Punto unico: scrive la classificazione sull'host (e, già uguale, sull'apparato) come scelta a mano.
-    scriviClassificazione(getDb(), { hostId: host.id }, deviceClassification, { manuale: true });
+    scriviClassificazione(getDb(), { hostId: host.id }, deviceClassification, { manuale: true, ruoli: ruoliDalCorpo(body) });
     try {
       linkInvAgentEndpointToHost(host.id);
     } catch {

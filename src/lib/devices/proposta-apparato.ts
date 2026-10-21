@@ -47,7 +47,7 @@ export interface HostPerProposta {
   model: string | null;
   vendor: string | null;
   snmp_data: string | null;
-  host_credentials?: Array<{ credential_id: number; protocol_type: string; port: number; validated: number }>;
+  host_credentials?: Array<{ credential_id: number; protocol_type: string; port: number; validated: number; validated_at?: string | null }>;
 }
 
 export interface CredenzialeArchivio {
@@ -120,7 +120,7 @@ function eMac(host: HostPerProposta): boolean {
 }
 
 /** Ruoli del server dell'host: la colonna e l'eventuale vecchio slug `*_server` non ancora convertito. */
-function ruoliDaHost(host: HostPerProposta): string[] {
+export function ruoliDaHost(host: HostPerProposta): string[] {
   const r = canonicalizza(host.classification).ruolo;
   let lista: string[] = [];
   if (host.server_roles) {

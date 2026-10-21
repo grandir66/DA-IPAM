@@ -29,6 +29,7 @@ import {
 } from "@/lib/device-product-profiles";
 import { linkInvAgentEndpointToHost } from "@/lib/inventory-agent/db";
 import { scriviClassificazione } from "@/lib/classification/scrivi";
+import { ruoliDalCorpo } from "@/lib/devices/crea-apparato";
 import { portaCredenziale } from "@/lib/credentials/porte";
 import { tipiCredenzialePerProtocollo } from "@/lib/credential-protocol-map";
 import { isMacOsHost } from "@/lib/host-platform-detect";
@@ -219,7 +220,7 @@ export async function POST(request: Request) {
         } catch { /* ignore */ }
       }
 
-      scriviClassificazione(getDb(), { hostId: host.id }, classification, { manuale: true });
+      scriviClassificazione(getDb(), { hostId: host.id }, classification, { manuale: true, ruoli: ruoliDalCorpo(body) });
       try {
         linkInvAgentEndpointToHost(host.id);
       } catch {

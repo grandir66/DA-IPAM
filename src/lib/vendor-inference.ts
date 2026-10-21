@@ -6,7 +6,7 @@
  * `src/lib/devices/auto-classify.ts` (rule-based completa, popola hosts.inferred_*).
  *
  * Mantenuto qui per riusabilità tra `hosts/[id]/page.tsx` e
- * `<PromoteHostDialog>`. Niente JSX, niente dipendenze framework.
+ * `<RendiApparatoDialog>`. Niente JSX, niente dipendenze framework.
  */
 
 export const VENDOR_FROM_MANUFACTURER: Record<string, string> = {

@@ -31,15 +31,13 @@ import {
 import { StatusBadge } from "@/components/shared/status-badge";
 import { FingerprintConfidenceBadge } from "@/components/shared/fingerprint-confidence-badge";
 import { ProtocolBadges } from "@/components/shared/protocol-badges";
-import { DeviceFormFields } from "@/components/shared/device-form-fields";
 import { LinkIpsDialog } from "@/components/devices/link-ips-dialog";
+import { RendiApparatoDialog } from "@/components/devices/rendi-apparato-dialog";
 import { SeparaDialog } from "@/components/topology/unioni/separa-dialog";
 import { UnisciDialog } from "@/components/topology/unioni/unisci-dialog";
 import { InlineEditCell } from "@/components/shared/inline-edit-cell";
-import { AddableSelect } from "@/components/shared/addable-select";
-import { opzioniCreazioneRapida, tipiCredenzialePerProtocollo, tipoCreazioneRapida, vociDAccesso, vociSnmpAggiuntive } from "@/lib/credential-protocol-map";
+import { vociDAccesso } from "@/lib/credential-protocol-map";
 import { etichettaTipo, normalizzaTipo } from "@/lib/credentials/tipi";
-import { profiloPerClassificazione, proponiApparato, riallineaAlProtocollo, type ProtocolloApparato } from "@/lib/devices/proposta-apparato";
 import { CreateFingerprintRuleDialog } from "@/components/shared/create-fingerprint-rule-dialog";
 import { SortableTableHead } from "@/components/shared/sortable-table-head";
 import { Pagination } from "@/components/shared/pagination";
@@ -536,27 +534,6 @@ export default function DiscoveryPage() {
   const admin = useEAdmin();
   const [unisciOpen, setUnisciOpen] = useState(false);
   const [separaOpen, setSeparaOpen] = useState(false);
-  const [addDevicesSaving, setAddDevicesSaving] = useState(false);
-  // Valori veri li mette openAddDevices dalla proposta sugli host scelti (tappa 1).
-  const [addClassification, setAddClassification] = useState<string>("");
-  const [addHostDiversi, setAddHostDiversi] = useState(false);
-  const [addVendor, setAddVendor] = useState<string>("other");
-  const [addProtocol, setAddProtocol] = useState<string>("ssh");
-  const [addVendorSubtype, setAddVendorSubtype] = useState<string | null>(null);
-  const [addProductProfile, setAddProductProfile] = useState<string | null>(null);
-  const [addScanTarget, setAddScanTarget] = useState<string | null>(null);
-  const [addCredentialId, setAddCredentialId] = useState<string | null>(null);
-  const [addSnmpCredentialId, setAddSnmpCredentialId] = useState<string | null>(null);
-  const [addUseForArpPoll, setAddUseForArpPoll] = useState<boolean>(false);
-  const [addCredentials, setAddCredentials] = useState<Array<{ id: number; name: string; credential_type: string; port?: number | null }>>([]);
-
-  const refreshCredentials = async () => {
-    try {
-      const r = await fetch("/api/credentials", { cache: "no-store" });
-      if (r.ok) setAddCredentials(await r.json());
-    } catch { /* ignore */ }
-  };
-
   // ─── LibreNMS: URL base e aggiunta singolo host ─────────
   const [librenmsUrlSalvato, setLibrenmsUrl] = useState("");
   // LibreNMS dell'appliance con l'host del browser (21/10).
@@ -862,7 +839,6 @@ export default function DiscoveryPage() {
   // Carica credenziali per il dialog bulk + URL LibreNMS
   useEffect(() => {
     fetch("/api/credentials").then((r) => r.json()).then((data: { id: number; name: string; credential_type: string }[]) => {
-      setAddCredentials(data);
       if (Array.isArray(data)) setCredentials(data);
     }).catch(() => {});
     fetch("/api/integrations/active").then((r) => r.json()).then((data: Record<string, { enabled: boolean; directUrl?: string; url: string }>) => {
@@ -1028,88 +1004,9 @@ export default function DiscoveryPage() {
     }
   }
 
-  const archivioCredenziali = () =>
-    addCredentials.map((c) => ({ id: c.id, name: c.name, credential_type: c.credential_type, port: c.port ?? null }));
-
-  // Tappa 1 (15/10): valori iniziali dalla proposta unica sugli host scelti
-  // (piattaforma dal SO, classificazione valida). Tutti gli stati si
-  // reimpostano a ogni apertura: prima restavano quelli dell'apertura
-  // precedente, e «printer» o «microsoft» arrivavano al server.
+  /** «Rendi apparato» sugli host scelti: la finestra unica propone, prova le credenziali e crea (tappa 3). */
   function openAddDevices() {
-    const archivio = archivioCredenziali();
-    const proposte = hosts.filter((h) => selectedIds.has(h.id)).map((h) => proponiApparato(h, archivio));
-    const prima = proposte[0];
-    const uguali = !!prima && proposte.every(
-      (p) => p.vendor === prima.vendor && p.protocol === prima.protocol && p.classification === prima.classification
-    );
-    setAddVendor(prima?.vendor ?? "other");
-    setAddVendorSubtype(null);
-    setAddProtocol(prima?.protocol ?? "ssh");
-    setAddClassification(uguali ? prima.classification : "");
-    setAddProductProfile(uguali ? prima.productProfile : null);
-    setAddScanTarget(prima?.scanTarget ?? null);
-    setAddCredentialId(uguali ? prima.credentialId : null);
-    setAddSnmpCredentialId(uguali ? prima.snmpCredentialId : null);
-    setAddUseForArpPoll(uguali ? prima.useForArpPoll : false);
-    setAddHostDiversi(proposte.length > 1 && !uguali);
     setAddDevicesOpen(true);
-  }
-
-  /** Cambio di protocollo: credenziale incompatibile azzerata, con SNMP la principale è la SNMP. */
-  function cambiaProtocolloAggiunta(v: string) {
-    const q = riallineaAlProtocollo(
-      {
-        name: "", vendor: addVendor, protocol: addProtocol as ProtocolloApparato,
-        classification: addClassification, productProfile: addProductProfile, scanTarget: addScanTarget,
-        port: 0, credentialId: addCredentialId, snmpCredentialId: addSnmpCredentialId, useForArpPoll: addUseForArpPoll,
-      },
-      v as ProtocolloApparato,
-      archivioCredenziali(),
-    );
-    setAddProtocol(v);
-    setAddCredentialId(q.credentialId);
-    setAddSnmpCredentialId(q.snmpCredentialId);
-  }
-
-  // ---------- bulk edit ----------
-  async function handleBulkAddToDevices() {
-    if (selectedIds.size === 0 || !addClassification) return;
-    setAddDevicesSaving(true);
-    try {
-      const body: Record<string, unknown> = {
-        host_ids: Array.from(selectedIds),
-        classification: addClassification,
-        vendor: addVendor,
-        protocol: addProtocol,
-        scan_target: addScanTarget,
-        inherit_host_credentials: true,
-      };
-      if (addProductProfile) body.product_profile = addProductProfile;
-      if (addVendorSubtype) body.vendor_subtype = addVendorSubtype;
-      // Solo 1: in modalità «bulk» la spunta non si vede, quindi assente = il
-      // server decide dalla classificazione finale (router e firewall accesi).
-      if (addUseForArpPoll) body.use_for_arp_poll = 1;
-      if (addCredentialId && addCredentialId !== "none") body.credential_id = Number(addCredentialId);
-      if (addSnmpCredentialId && addSnmpCredentialId !== "none") body.snmp_credential_id = Number(addSnmpCredentialId);
-      const res = await fetch("/api/devices/bulk", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        toast.success(data.message ?? `${selectedIds.size} dispositivi creati`);
-        setAddDevicesOpen(false);
-        setSelectedIds(new Set());
-        fetchData();
-      } else {
-        toast.error(data.error || "Errore nella creazione dispositivi");
-      }
-    } catch {
-      toast.error("Errore di rete");
-    } finally {
-      setAddDevicesSaving(false);
-    }
   }
 
   function openBulkEdit() {
@@ -2135,7 +2032,7 @@ export default function DiscoveryPage() {
               </Button>
               <Button size="sm" variant="outline" className="gap-1.5" onClick={openAddDevices}>
                 <PackagePlus className="h-3.5 w-3.5" />
-                Aggiungi a dispositivi
+                Rendi apparato
               </Button>
               {selectedIds.size >= 2 && (
                 <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setLinkSameDeviceOpen(true)}>
@@ -2279,7 +2176,7 @@ export default function DiscoveryPage() {
                                 <DropdownMenuContent align="end" className="w-56">
                                   {/* v0.2.601: dal menu sempre alla scheda asset unica /objects/[id].
                                       Se isDev → ?edit=1 auto-apre EditDeviceDialog.
-                                      Se !isDev (host non promosso) → ?promote=1 auto-apre PromoteHostDialog. */}
+                                      Se !isDev (host non promosso) → ?promote=1 auto-apre RendiApparatoDialog. */}
                                   <DropdownMenuItem
                                     render={
                                       <Link href={`/objects/${h.id}${!admin ? "" : isDev ? "?edit=1" : "?promote=1"}`}>
@@ -2891,125 +2788,15 @@ export default function DiscoveryPage() {
         </DialogContent>
       </Dialog>
 
-      {/* ════════════════ DIALOG AGGIUNGI A DISPOSITIVI ════════════════ */}
-      <Dialog open={addDevicesOpen} onOpenChange={setAddDevicesOpen}>
-        <DialogContent className={DIALOG_PANEL_WIDE_CLASS}>
-          <DialogHeader className="shrink-0 border-b border-border/50 px-4 pt-4 pb-3">
-            <DialogTitle className="flex items-center gap-2">
-              <PackagePlus className="h-5 w-5" />
-              Aggiungi {selectedIds.size} host a dispositivi
-            </DialogTitle>
-            <p className="text-xs text-muted-foreground mt-1">
-              Promuove gli host selezionati a network device. Imposta profilo, vendor, protocollo e credenziali.
-              Le credenziali già validate sull&apos;host verranno comunque ereditate.
-            </p>
-          </DialogHeader>
-          <DialogScrollableArea className="px-4 py-3">
-            <div className="space-y-4">
-              <DeviceFormFields
-                mode="bulk"
-                credentials={addCredentials}
-                idPrefix="discovery-add-devices"
-                showIdentificazione={false}
-                showProfilo={true}
-                showCredenziali={false}
-                classification={addClassification}
-                vendor={addVendor}
-                vendorSubtype={addVendorSubtype}
-                protocol={addProtocol}
-                scanTarget={addScanTarget}
-                productProfile={addProductProfile}
-                credentialId={addCredentialId}
-                snmpCredentialId={addSnmpCredentialId}
-                useForArpPoll={addUseForArpPoll}
-                onClassificationChange={(v) => {
-                  setAddClassification(v);
-                  if (v) setAddProductProfile(profiloPerClassificazione(addVendor, v));
-                }}
-                creazioneInBlocco
-                onVendorChange={(v) => { setAddVendor(v); if (v !== "hp") setAddVendorSubtype(null); }}
-                onVendorSubtypeChange={setAddVendorSubtype}
-                onProtocolChange={(v) => { if (v !== addProtocol) cambiaProtocolloAggiunta(v); }}
-                onScanTargetChange={setAddScanTarget}
-                onCredentialIdChange={setAddCredentialId}
-                onSnmpCredentialIdChange={setAddSnmpCredentialId}
-                onProductProfileChange={(v) => setAddProductProfile(v)}
-                onUseForArpPollChange={setAddUseForArpPoll}
-                defaultClassification=""
-                defaultVendor={addVendor}
-                defaultProtocol={addProtocol}
-              />
-              {addHostDiversi && (
-                <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-800 dark:text-amber-200/90">
-                  Gli host selezionati non sono dello stesso tipo: scegli classificazione, marca e protocollo validi per tutti.
-                </p>
-              )}
-
-              {(() => {
-                const tipiPrincipale = tipiCredenzialePerProtocollo(addProtocol);
-                const primaryOpts = addCredentials.filter((c) => tipiPrincipale.includes(c.credential_type));
-                const snmpOpts = vociSnmpAggiuntive(addCredentials);
-                // Con SNMP come protocollo la principale è già la SNMP: la seconda tendina non serve.
-                const protocolloSnmp = addProtocol === "snmp_v2" || addProtocol === "snmp_v3";
-                return (
-                  <div className="rounded-lg border border-border/60 bg-muted/20 p-3 space-y-3">
-                    <div className="text-sm font-medium">Credenziali</div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      <div className="space-y-1.5">
-                        <Label className="text-xs">Credenziale principale</Label>
-                        <AddableSelect
-                          value={addCredentialId && addCredentialId !== "none" ? Number(addCredentialId) : null}
-                          onChange={(v) => setAddCredentialId(v != null ? String(v) : null)}
-                          options={primaryOpts.map((c) => ({ id: c.id, label: c.name, extra: etichettaTipo(c.credential_type) }))}
-                          entityLabel="credenziale"
-                          createApiUrl="/api/credentials"
-                          extraFields={[
-                            { key: "credential_type", label: "Tipo", type: "select", required: true, defaultValue: tipoCreazioneRapida(addProtocol), options: opzioniCreazioneRapida(addProtocol) },
-                            { key: "username", label: "Username", placeholder: "admin" },
-                            { key: "password", label: "Password / Community", type: "password", required: true },
-                          ]}
-                          onCreated={refreshCredentials}
-                        />
-                      </div>
-                      {!protocolloSnmp && (
-                      <div className="space-y-1.5">
-                        <Label className="text-xs">Credenziale SNMP (opzionale)</Label>
-                        <AddableSelect
-                          value={addSnmpCredentialId && addSnmpCredentialId !== "none" ? Number(addSnmpCredentialId) : null}
-                          onChange={(v) => setAddSnmpCredentialId(v != null ? String(v) : null)}
-                          options={snmpOpts.map((c) => ({ id: c.id, label: c.name, extra: etichettaTipo(c.credential_type) }))}
-                          entityLabel="credenziale SNMP"
-                          createApiUrl="/api/credentials"
-                          extraFields={[
-                            { key: "credential_type", label: "Tipo", type: "select", required: true, defaultValue: "snmp", options: [{ value: "snmp", label: "SNMP" }] },
-                            { key: "password", label: "Community string", type: "password", required: true, placeholder: "public" },
-                          ]}
-                          onCreated={refreshCredentials}
-                        />
-                      </div>
-                      )}
-                    </div>
-                    <p className="text-xs text-muted-foreground border-t border-border/60 pt-2">
-                      Le credenziali validate sugli host saranno ereditate come fallback. Imposta qui per forzare credenziali specifiche.
-                    </p>
-                  </div>
-                );
-              })()}
-            </div>
-          </DialogScrollableArea>
-          <DialogFooter className="border-t border-border/50 px-4 py-3 items-center">
-            {!addClassification && (
-              <span className="mr-auto text-sm text-amber-800 dark:text-amber-200">Scegli la classificazione</span>
-            )}
-            <Button variant="ghost" onClick={() => setAddDevicesOpen(false)} disabled={addDevicesSaving}>
-              Annulla
-            </Button>
-            <Button onClick={handleBulkAddToDevices} disabled={addDevicesSaving || selectedIds.size === 0 || !addClassification}>
-              {addDevicesSaving ? <><Loader2 className="h-4 w-4 mr-1.5 animate-spin" />Creazione...</> : <><Server className="h-4 w-4 mr-1.5" />Crea {selectedIds.size} dispositivi</>}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* ════════════════ FINESTRA RENDI APPARATO ════════════════ */}
+      {addDevicesOpen && selectedIds.size > 0 && (
+        <RendiApparatoDialog
+          hosts={hosts.filter((h) => selectedIds.has(h.id)).slice(0, 50)}
+          open={addDevicesOpen}
+          onOpenChange={setAddDevicesOpen}
+          onCreated={() => { setSelectedIds(new Set()); fetchData(); }}
+        />
+      )}
 
       {/* ════════════════ DIALOG CREA REGOLA FINGERPRINT ════════════════ */}
       {ruleHost && getRuleFingerprint() && (

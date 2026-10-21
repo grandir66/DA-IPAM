@@ -7,10 +7,11 @@ Nessuna integrazione automatica con scheduler, database o interfaccia; nessun ri
 
 Richiede Node 22 e le dipendenze già installate di DA-IPAM, non il server Next.js.
 Il file di input JSON vive **fuori dal repository**, appartiene all'utente corrente e
-ha permessi `0600`. Contiene `host`, `collector` (`"qnap-switch"` di default oppure `"hp-procurve"`), e almeno uno tra:
+ha permessi `0600`. Contiene `host`, `collector` (uno dell'elenco in `--list`; `"qnap-switch"` di default), e le credenziali che quel collector accetta (`catalogo.ts`):
 
 - `ssh`: `username`, `password` oppure `privateKey` PEM, eventuale `passphrase`, `port` (default 22).
-- `snmp`: `community`, `version` (`"2c"` di default oppure `"1"`), `port` (default 161).
+- `snmp`: `community`, `version` (`"2c"` di default oppure `"1"`), `port` (default 161); oppure SNMPv3: `version: "3"`, `username`, `level`, `authProtocol`/`authKey`, `privProtocol`/`privKey`.
+- `api` (ESXi, ONTAP) e `winrm` (famiglie Windows, quando ci saranno): `username`, `password`, `port`.
 
 I segreti non sono accettati come argomenti della riga di comando. I limiti opzionali
 stanno in `limits`: `timeout_ms` (4000, inattività console / singola lettura SNMP),
@@ -368,14 +369,51 @@ anche la lista dei remote_hosts.
 Riferimenti: [MetroCluster nodes](https://docs.netapp.com/us-en/ontap-restapi/get-cluster-metrocluster-nodes.html),
 [ONTAP API reference](https://github.com/NetAppDocs/ontap-automation/blob/main/reference/api_reference.adoc).
 
-## Estendere una famiglia
+## Aggiungere una famiglia
 
-Aggiungere un collector che implementi lo stesso contratto, estendere l'unione di
-input validati e il registry statico in `index.ts`, introdurre parser puri e fixture
-anonimizzate da risposte reali. Riutilizzare i trasporti o introdurne uno con limiti
-identici. Non accettare comandi liberi dall'input. Non inferire capacità dai soli nomi
-vendor; dichiarare modelli, firmware e prove realmente eseguite. Prossime famiglie
-prevista: ArubaOS-CX, da sviluppare su campioni autorizzati.
+Una famiglia è un collector con lo stesso contratto JSON 1.0. Il catalogo è l'**unico elenco**: l'enum
+dell'input, l'enum dello snapshot, il registry statico e le allowlist dei trasporti ne derivano. Non si
+carica codice a runtime e nessun comando arriva dall'input.
+
+File da creare o toccare, in quest'ordine:
+
+1. **`catalogo.ts`**: una voce nuova con `id`, `versione` (semver, parte da `0.1.0` finché non è collaudato),
+   `famiglia`, `prodotti`, `credenziali` (`ammesse` e `una_di`), `sezioni` che popola davvero, `comandi`
+   (allowlist; `null` se non usa console) o `script_winrm` (script PowerShell fissi, per id), `collaudo`
+   (`non_collaudato` finché nessun apparato vero l'ha letto) e `collaudati` (modelli e firmware realmente
+   visti: vuoto finché non collaudato). `verificaCatalogo` rifiuta le voci incoerenti.
+2. **`comandi.ts`** se serve una nuova allowlist di console (solo comandi di lettura, nessuna
+   configurazione, nessun `sudo` libero).
+3. **Parser puri** (`<famiglia>-parsers.ts`): testo o JSON in, dati tipizzati fuori, nessuna rete. Colonne
+   lette per nome, mai per posizione; capacità e conteggi oltre 2^53 come stringhe decimali; `null` = ignoto,
+   zero e `false` sono dati.
+4. **Il collector** (`<famiglia>.ts`): una funzione `collect…(request, trasporti?)` che costruisce lo
+   snapshot con una `section` per ogni parte (`status`, fonti, avvisi, ora), passa da `redactSnapshot` e
+   `snapshotSchema.parse`, usa `versioneCollector('<id>')` per `collector_version`. Una lettura mancata è
+   `error`/`unsupported`/`skipped` con un codice, mai una lista vuota dichiarata `ok`. Una sezione che la
+   famiglia non può avere è `unsupported` o `skipped`, non assente.
+5. **`index.ts`**: la funzione in `IMPLEMENTAZIONI` (il tipo `Record<CollectorId, …>` fa fallire `tsc` se
+   manca).
+6. **Sezioni nuove** solo se servono: opzionali nello snapshot (`system`, `host_storage`, `software`,
+   `services`, `security` esistono già in `sistema-schema.ts`), così gli snapshot già prodotti restano validi;
+   `schema_version` resta `1.0` finché le aggiunte sono opzionali.
+7. **Fixture** in `__tests__/contratto-fixture.ts`: una voce `FIXTURE[<id>]` con uscite della forma vera e dati
+   inventati (IP di documentazione `192.0.2.0/24`, `198.51.100.0/24`; MAC `02:00:00:…`; nessun nome di
+   cliente, seriale o hostname veri). Il repository è pubblico. Metti il segreto di prova dentro un campo di
+   testo libero (nome host) perché la prova veda la redazione.
+8. **Prove minime**: la suite `contratto.test.ts` le dà gratis (fixture → snapshot valido, versione dal
+   catalogo, formato ignoto → mai `ok`, trasporto assente → `skipped`, trasporto guasto → `error` senza
+   segreti e senza secondo tentativo); servono in più i test dei parser con uscite vere anonimizzate.
+9. **Manuale**: una sezione in questo file con modelli e firmware collaudati, limiti dichiarati e prove
+   eseguite. Non inferire capacità dai soli nomi del produttore. Una famiglia resta «non collaudata» finché
+   non l'ha letta un apparato vero.
+
+Trasporti disponibili: SSH (console o `exec`), SNMP v1/v2c a community **e v3** (`snmp.version: "3"`, aperta
+solo da `protocols/snmp-sessione.ts`; opzioni incoerenti = errore prima della rete), HTTPS per vSphere e
+ONTAP, **WinRM** (`winrm` nell'input, `createWinrmReader` sopra `devices/winrm-run.ts`: solo script a id
+fisso del descrittore, solo codici d'errore). Nell'app le credenziali non si scrivono nell'input: la
+richiesta si costruisce nel backend da `credentials/resolve.ts`, col budget anti-lockout; un'uscita parziale
+(exit 2) non autorizza a provare altre credenziali.
 
 ## Prove
 

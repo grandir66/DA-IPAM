@@ -107,6 +107,7 @@ export function parseMikrotikNeighbors(output: string): NeighborEntry[] {
       remotePlatform: platform || undefined,
       ...(elenco(c.get("discovered-by")) ? { discoveredBy: elenco(c.get("discovered-by")) } : {}),
       ...(elenco(c.get("system-caps-enabled")) ? { remoteCaps: elenco(c.get("system-caps-enabled")) } : {}),
+      ...(c.get("version") ? { remoteVersion: c.get("version") } : {}),
     });
   }
   return entries;

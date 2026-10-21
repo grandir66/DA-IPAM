@@ -49,6 +49,10 @@ export interface InterfaceProbeResult {
   status: "up" | "down" | "unknown";
   speed_mbps: number | null;
   alias: string | null;
+  /** Scheda MikroTik (probe CLI di RouterOS): tipo, MTU e interfaccia spenta; assenti per gli altri probe. */
+  type?: string | null;
+  mtu?: number | null;
+  disabled?: boolean | null;
   addresses: InterfaceProbeAddress[];
 }
 

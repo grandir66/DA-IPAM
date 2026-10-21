@@ -16,7 +16,7 @@ import { resolveDataDir } from "./data-dir";
 import { buildPatchFromHost, buildPatchFromDevice, buildSyncMerge, buildSourceLabel } from "./inventory/discovery-sync";
 import fs from "fs";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { DDL_HOSTS_ARCHIVIO, DDL_TOPOLOGY_CAVI, DDL_TOPOLOGY_UNIONI, INDICI_HOSTS_ARCHIVIO, INDICI_TOPOLOGY_UNIONI, TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL } from "./db-tenant-schema";
+import { COLONNE_SCHEDA_MK_V1, DDL_HOSTS_ARCHIVIO, DDL_TOPOLOGY_CAVI, DDL_TOPOLOGY_UNIONI, INDICI_HOSTS_ARCHIVIO, INDICI_TOPOLOGY_UNIONI, TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL, SEGNO_SCHEDA_MK, VERSIONE_SCHEDA_MK } from "./db-tenant-schema";
 import { HYPERVISOR_SYNC_MINUTES, PULIZIA_HOST_MINUTES, SCHEDULED_JOB_TYPES_CHECK_SQL } from "./scheduled-job-types";
 import { isProxmoxVeDevice } from "./devices/device-acquisition-resolve";
 import { macToHex, normalizeMac, normalizeMacForStorage } from "./utils";
@@ -666,6 +666,69 @@ export function migrateHostsArchivio(db: Database.Database): string[] {
       added.push(name);
     }
   })();
+  return added;
+}
+
+/** Le colonne di un livello della scheda MikroTik che mancano (PRAGMA: costa niente). */
+function colonneSchedaMkMancanti(db: Database.Database, voci: ReadonlyArray<readonly [string, string, string]>): Array<readonly [string, string, string]> {
+  const presenti = new Map<string, Set<string>>();
+  const di = (t: string): Set<string> => {
+    let s = presenti.get(t);
+    if (!s) {
+      s = new Set((db.prepare(`PRAGMA table_info(${t})`).all() as Array<{ name: string }>).map((c) => c.name));
+      presenti.set(t, s);
+    }
+    return s;
+  };
+  return voci.filter(([t, c]) => !di(t).has(c));
+}
+
+/** Versione completa dello schema della scheda MikroTik presente, annotata all'apertura (0 = niente), come SCHEMA_CAVI. */
+const SCHEMA_SCHEDA_MK = new WeakMap<Database.Database, number>();
+
+function misuraLivelloSchedaMk(d: Database.Database): number {
+  // I livelli si sommano: il 2 e il 3 aggiungeranno le loro colonne a questa lista di liste.
+  const livelli = [COLONNE_SCHEDA_MK_V1];
+  let n = 0;
+  for (const voci of livelli) {
+    if (colonneSchedaMkMancanti(d, voci).length > 0) break;
+    n++;
+  }
+  return n;
+}
+
+/**
+ * Livello dello schema della scheda MikroTik presente nel database (0 = nessuno): chi scrive le colonne nuove lo chiede
+ * prima (`>= 1`), così su un tenant la cui migrazione è fallita le scritture di oggi restano quelle di oggi.
+ */
+export function livelloSchemaSchedaMk(d: Database.Database): number {
+  const v = SCHEMA_SCHEDA_MK.get(d);
+  if (v !== undefined && v >= VERSIONE_SCHEDA_MK) return v;
+  const n = misuraLivelloSchedaMk(d);
+  SCHEMA_SCHEDA_MK.set(d, n);
+  return n;
+}
+
+/**
+ * Migrazione della scheda MikroTik (piano 2026-10-21, Task 3): le colonne di COLONNE_SCHEDA_MK_V1, solo se mancano
+ * (`PRAGMA table_info`). Additiva, idempotente, in UNA transazione; restituisce «tabella.colonna» di ciò che aggiunge. Poi
+ * scrive il segno `done:<data>:v<versione>` (dice fin dove è arrivato lo schema; la migrazione non lo consulta).
+ */
+export function migrateSchedaMikrotik(db: Database.Database): string[] {
+  const added: string[] = [];
+  db.transaction(() => {
+    for (const [t, c, ddl] of colonneSchedaMkMancanti(db, COLONNE_SCHEDA_MK_V1)) {
+      db.exec(`ALTER TABLE ${t} ADD COLUMN ${c} ${ddl}`);
+      added.push(`${t}.${c}`);
+    }
+    // Il segno si scrive una volta per versione: a una seconda apertura non cambia (né valore né updated_at).
+    const chiusa = `:v${VERSIONE_SCHEDA_MK}`;
+    const attuale = leggiSegno(db, SEGNO_SCHEDA_MK);
+    if (!(attuale?.startsWith("done:") && attuale.endsWith(chiusa))) {
+      scriviSegno(db, SEGNO_SCHEDA_MK, `done:${new Date().toISOString().slice(0, 10)}${chiusa}`);
+    }
+  })();
+  SCHEMA_SCHEDA_MK.set(db, misuraLivelloSchedaMk(db));
   return added;
 }
 
@@ -2241,6 +2304,22 @@ export function getTenantDb(tenantCode: string): Database.Database {
     }
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: migrazione dell'archivio host fallita, la pulizia degli host non è disponibile:`, e);
+  }
+
+  // Scheda MikroTik (piano 2026-10-21): cinque colonne nuove su tabelle che esistono già. Se fallisce il tenant si apre lo
+  // stesso: livelloSchemaSchedaMk() dice 0 e le letture scrivono come prima. La riga del journal è la prova del rilascio.
+  try {
+    const added = migrateSchedaMikrotik(newDb);
+    if (added.length > 0) {
+      console.info(`[db-tenant] ${tenantCode}: scheda mikrotik, aggiunto ${added.join(", ")}`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione scheda mikrotik fallita (ROLLBACK), le colonne nuove non si scrivono:`, e);
+    try {
+      scriviSegno(newDb, SEGNO_SCHEDA_MK, segnoErrore(e));
+    } catch (e2) {
+      console.error(`[db-tenant] ${tenantCode}: ${SEGNO_SCHEDA_MK}, segno d'errore non scritto:`, e2);
+    }
   }
 
   tenantDbs.set(tenantCode, { db: newDb, lastUsed: Date.now() });
@@ -4842,22 +4921,34 @@ export function getDeviceCredentials(device: ApparatoInAcquisizione): AccessoSsh
 
 export function upsertArpEntries(
   deviceId: number,
-  entries: { mac: string; ip: string | null; interface_name: string | null }[],
+  entries: { mac: string; ip: string | null; interface_name: string | null; status?: string | null; dynamic?: boolean | null }[],
   getNetworkIdForIp?: (ip: string) => number | null
 ): void {
   const d = db();
 
-  const stmt = d.prepare(
-    `INSERT INTO arp_entries (device_id, host_id, mac, ip, interface_name)
-     VALUES (?, (SELECT id FROM hosts WHERE ${MAC_HEX("mac")} = ? LIMIT 1), ?, ?, ?)`
-  );
+  // Scheda MikroTik: stato e «dinamica» solo se lo schema ha le colonne; altrimenti l'INSERT di oggi.
+  const conStato = livelloSchemaSchedaMk(d) >= 1;
+  const stmt = conStato
+    ? d.prepare(
+      `INSERT INTO arp_entries (device_id, host_id, mac, ip, interface_name, status, dynamic)
+       VALUES (?, (SELECT id FROM hosts WHERE ${MAC_HEX("mac")} = ? LIMIT 1), ?, ?, ?, ?, ?)`
+    )
+    : d.prepare(
+      `INSERT INTO arp_entries (device_id, host_id, mac, ip, interface_name)
+       VALUES (?, (SELECT id FROM hosts WHERE ${MAC_HEX("mac")} = ? LIMIT 1), ?, ?, ?)`
+    );
 
   const replaceAll = d.transaction((items: typeof entries) => {
     d.prepare("DELETE FROM arp_entries WHERE device_id = ?").run(deviceId);
 
     for (const entry of items) {
       const hex = macToHex(entry.mac);
-      stmt.run(deviceId, hex, entry.mac, entry.ip, entry.interface_name);
+      if (conStato) {
+        stmt.run(deviceId, hex, entry.mac, entry.ip, entry.interface_name, entry.status ?? null,
+          entry.dynamic == null ? null : entry.dynamic ? 1 : 0);
+      } else {
+        stmt.run(deviceId, hex, entry.mac, entry.ip, entry.interface_name);
+      }
       if (entry.ip && entry.mac) {
         const networkId = getNetworkIdForIp?.(entry.ip) ?? null;
         // Propaga il MAC all'host ESISTENTE per quell'IP (by-IP, non by-MAC):
@@ -5188,6 +5279,8 @@ export interface DbNeighborEntry {
   remote_ip: string | null;
   remote_mac: string | null;
   remote_platform: string | null;
+  /** Scheda MikroTik: `version=` annunciata dal vicino; null = non la annuncia o schema senza colonna. */
+  remote_version?: string | null;
   timestamp: string;
 }
 
@@ -5252,6 +5345,8 @@ export function upsertNeighbors(
     remoteIp?: string;
     remoteMac?: string;
     remotePlatform?: string;
+    /** Scheda MikroTik: `version=` del vicino. Non è un dato della topologia: `senzaCampiCavi` non lo toglie. */
+    remoteVersion?: string;
   } & CampiViciniCavi>,
   source: NeighborSource = "device",
 ): void {
@@ -5308,6 +5403,21 @@ export function upsertNeighbors(
       })();
     } catch (e) {
       console.error(`[db-tenant] apparato #${deviceId}: colonne nuove dei vicini non scritte (${e instanceof Error ? e.message : "errore"})`);
+    }
+  }
+
+  // Scheda MikroTik: la versione annunciata dal vicino, con un'istruzione a parte (come le colonne dei cavi) e solo se lo schema
+  // ha la colonna. COALESCE: un giro che non la legge non cancella quella di prima.
+  const conVersione = neighbors.filter((n) => n.remoteVersion);
+  if (conVersione.length > 0 && livelloSchemaSchedaMk(d) >= 1) {
+    try {
+      const up = d.prepare(`UPDATE device_neighbors SET remote_version = ?
+        WHERE device_id = ? AND local_port = ? AND remote_device_name = ? AND remote_port = ?`);
+      d.transaction(() => {
+        for (const n of conVersione) up.run(n.remoteVersion, deviceId, n.localPort, n.remoteDevice, n.remotePort);
+      })();
+    } catch (e) {
+      console.error(`[db-tenant] apparato #${deviceId}: versione dei vicini non scritta (${e instanceof Error ? e.message : "errore"})`);
     }
   }
 

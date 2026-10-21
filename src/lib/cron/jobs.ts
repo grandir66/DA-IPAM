@@ -73,7 +73,9 @@ import { HYPERVISOR_SYNC_MINUTES, unifiJobKind } from "@/lib/scheduled-job-types
 // Statico: run-proxmox-device-scan importa il facade db, che risolve db-tenant (ADR 0002).
 import { runProxmoxDeviceScan } from "@/lib/proxmox/run-proxmox-device-scan";
 import { codiceErrore, leggiMacPorteRouter } from "@/lib/devices/mikrotik-porte";
-import { apriEsecutoreSsh, codiceTrasporto, leggiMikrotikTopologia, type ApriEsecutore } from "@/lib/devices/mikrotik-letture";
+import { apriEsecutoreSsh, codiceTrasporto, interpretaUscita, leggiMikrotikTopologia, type ApriEsecutore } from "@/lib/devices/mikrotik-letture";
+import { parseInterfacce } from "@/lib/devices/mikrotik-stp";
+import { aggiornaInterfacceRouterOs } from "@/lib/devices/physical-device-db";
 import { fattiMikrotik } from "@/lib/devices/mikrotik-stp";
 import { conCadenza, riassuntoLetture, type EsitoGiro } from "@/lib/topology/letture/cadenza";
 import { letturaAccesa, oraUtc, senzaCampiCavi } from "@/lib/topology/letture/interruttori";
@@ -968,6 +970,22 @@ export async function runArpPoll(
         } else if (porte.errore) {
           console.warn(`[ARP Poll] apparato #${device.id}: porte fisiche non lette (${porte.errore})`);
           porteNonLette.push(`${device.name} (${porte.errore})`);
+        }
+
+        // Scheda MikroTik (Task 3): `/interface print terse` è già stato letto qui sopra (getInterfaceTypes); da quella stessa
+        // uscita escono stato, MTU, commento e tipo delle interfacce, sulle righe dell'apparato fisico. Nessun comando nuovo.
+        // Un errore non ferma il giro: va in console col solo codice (niente nomi né commenti del cliente).
+        if (device.vendor === "mikrotik" && device.protocol === "ssh" && device.physical_device_id != null) {
+          const uscita = client.ultimaUscitaInterfacce?.() ?? null;
+          if (uscita !== null) {
+            try {
+              const lette = interpretaUscita(uscita, parseInterfacce);
+              if ("valore" in lette) aggiornaInterfacceRouterOs(device.physical_device_id, lette.valore);
+              else console.warn(`[ARP Poll] apparato #${device.id}: interfacce non lette (${lette.codice})`);
+            } catch (err) {
+              console.warn(`[ARP Poll] apparato #${device.id}: interfacce non scritte (${err instanceof Error ? err.name : "errore"})`);
+            }
+          }
         }
 
         // Neighbors LLDP/CDP/MNDP

@@ -320,6 +320,9 @@ export interface DeviceInterface {
   /** MAC virtuale (VRRP/HSRP/CARP/bond) → ESCLUSO dal matching identità. */
   is_virtual_mac: number;
   alias: string | null;
+  /** Scheda MikroTik (RouterOS, `/interface print`): MTU e interfaccia spenta a mano (1/0); null = non letti o schema vecchio. */
+  mtu?: number | null;
+  disabled?: number | null;
   updated_at: string;
 }
 
@@ -340,6 +343,9 @@ export interface ArpEntry {
   mac: string;
   ip: string | null;
   interface_name: string | null;
+  /** Scheda MikroTik: stato della voce (reachable, stale, …) e voce dinamica (1/0); null = non letti (SNMP) o schema vecchio. */
+  status?: string | null;
+  dynamic?: number | null;
   timestamp: string;
 }
 

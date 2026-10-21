@@ -3,7 +3,8 @@ import { apriSessioneSnmp, versioneApparato } from "@/lib/protocols/snmp-session
 import { credenzialeSnmpApparato, getDeviceCredentials, haSnmpApparato, tokenApiApparato } from "@/lib/db";
 import type { MacTableEntry, PortInfo } from "./switch-client";
 import { parseMikrotikInterfaceTypes, parseMikrotikMacTable } from "./mikrotik-porte";
-import { parseMikrotikNeighbors } from "./mikrotik-vicini";
+import { campiTerse, parseMikrotikNeighbors } from "./mikrotik-vicini";
+import { segni } from "./mikrotik-stp";
 import { getSnmpPortSchema } from "./snmp-port-schema";
 import { haSegretoSsh, segretoSsh, sshExec as transportSshExec, type SshResult } from "./ssh-transport";
 import type { SshOptions } from "./ssh-transport";
@@ -12,6 +13,10 @@ export interface ArpTableEntry {
   mac: string;
   ip: string | null;
   interface_name: string | null;
+  /** Stato della voce (RouterOS: reachable, stale, delay, failed, incomplete, permanent); SNMP non lo ha. */
+  status?: string | null;
+  /** Voce dinamica (segno «D»); null = non si sa. */
+  dynamic?: boolean | null;
 }
 
 /** Lease DHCP da MikroTik: IP, MAC, hostname inviato dal client */
@@ -60,6 +65,8 @@ export interface NeighborEntry {
    */
   discoveredBy?: string;
   remoteCaps?: string;
+  /** Scheda MikroTik: `version=` del vicino («7.21.3 (stable) 2026-03-02 09:15:00»); assente se il vicino non lo annuncia. */
+  remoteVersion?: string;
 }
 
 /** Riga della tabella di routing */
@@ -1010,27 +1017,29 @@ function parseMikrotikDhcpLeases(output: string): DhcpLeaseEntry[] {
   return entries;
 }
 
-function parseMikrotikDhcpServers(output: string): DhcpServerInfo[] {
+export function parseMikrotikDhcpServers(output: string): DhcpServerInfo[] {
   const entries: DhcpServerInfo[] = [];
   for (const line of output.split("\n")) {
     const nameMatch = line.match(/name=(\S+)/);
     const ifMatch = line.match(/interface=(\S+)/);
     const poolMatch = line.match(/address-pool=(\S+)/);
     const disabledMatch = line.match(/disabled=(yes|no)/);
+    // `print terse` segna i server spenti col flag «X» fra l'indice e il primo campo (« 1 X name=…»), non con `disabled=`.
+    const spentoDalSegno = segni(line.trim()).includes("X");
 
     if (nameMatch) {
       entries.push({
         name: nameMatch[1].replace(/"/g, ""),
         interface: ifMatch?.[1] || "",
         addressPool: poolMatch?.[1] || "",
-        disabled: disabledMatch?.[1] === "yes",
+        disabled: disabledMatch?.[1] === "yes" || spentoDalSegno,
       });
     }
   }
   return entries;
 }
 
-function parseMikrotikDhcpPools(output: string): DhcpPoolInfo[] {
+export function parseMikrotikDhcpPools(output: string): DhcpPoolInfo[] {
   const entries: DhcpPoolInfo[] = [];
   for (const line of output.split("\n")) {
     const nameMatch = line.match(/name=(\S+)/);
@@ -1049,7 +1058,7 @@ function parseMikrotikDhcpPools(output: string): DhcpPoolInfo[] {
 }
 
 // ARP output parsers
-function parseMikrotikArp(output: string): ArpTableEntry[] {
+export function parseMikrotikArp(output: string): ArpTableEntry[] {
   const entries: ArpTableEntry[] = [];
   for (const line of output.split("\n")) {
     // MikroTik terse format: .id=*1 interface=ether1 address=192.168.1.1 mac-address=AA:BB:CC:DD:EE:FF
@@ -1058,10 +1067,15 @@ function parseMikrotikArp(output: string): ArpTableEntry[] {
     const ifMatch = line.match(/interface=(\S+)/);
 
     if (ipMatch && macMatch) {
+      // Scheda MikroTik: `status=` (reachable, stale, delay, failed, incomplete, permanent) e il segno «D» (voce dinamica) fra
+      // l'indice e il primo campo; senza indice in testa (formato `.id=…`) il segno non c'è e `dynamic` resta null.
+      const riga = line.trim();
       entries.push({
         ip: ipMatch[1],
         mac: macMatch[1].toUpperCase(),
         interface_name: ifMatch?.[1] || null,
+        status: campiTerse(riga).get("status") || null,
+        dynamic: /^\d+\s/.test(riga) ? segni(riga).includes("D") : null,
       });
     }
   }

@@ -10,6 +10,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { byteRouterOs, parseRisorse, parseRouterboard } from "../mikrotik-scheda";
+import { parseMikrotikArp } from "../router-client";
 
 const fx = (n: string) => readFileSync(join(__dirname, "fixtures", n), "utf8");
 
@@ -70,5 +71,23 @@ describe("parseRouterboard", () => {
     assert.equal(h.seriale, null);
     assert.equal(h.firmware_corrente, null);
     assert.equal(h.firmware_aggiornabile, null);
+  });
+});
+
+describe("parseMikrotikArp (stato e dinamico)", () => {
+  const arp = parseMikrotikArp(fx("mikrotik-arp-terse.txt"));
+  it("status= e flag D dalla fixture vera", () => {
+    assert.deepEqual(arp[0], { ip: "10.20.1.178", mac: "02:00:A0:10:00:01", interface_name: "VL_4_ZONA01", status: "permanent", dynamic: false });
+    assert.deepEqual(arp[1], { ip: "10.20.2.45", mac: "02:00:A0:10:00:02", interface_name: "VL_40_ZONA02", status: "incomplete", dynamic: true });
+    assert.equal(arp[2].status, "reachable");
+    assert.equal(arp[2].dynamic, true, "DC: dinamica e connessa");
+  });
+  it("le righe senza MAC (incomplete/failed) non entrano, come prima", () => {
+    assert.ok(arp.every((e) => e.mac !== ""));
+    assert.equal(arp.find((e) => e.ip === "10.20.1.35"), undefined);
+  });
+  it("ogni stato presente nella fixture è uno dei sei di RouterOS", () => {
+    const stati = new Set(arp.map((e) => e.status));
+    for (const s of stati) assert.ok(["reachable", "stale", "delay", "failed", "incomplete", "permanent"].includes(String(s)), String(s));
   });
 });

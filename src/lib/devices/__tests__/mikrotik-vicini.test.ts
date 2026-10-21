@@ -17,6 +17,10 @@ test("valori interi: i valori con gli spazi senza virgolette finiscono alla chia
     localPort: "ether1-2.5", remoteDevice: "SW-ACC-A", remotePort: "Port 47", protocol: "lldp",
     remoteIp: undefined, remoteMac: "02:00:00:00:A1:01", remotePlatform: "UBNT", discoveredBy: "lldp", remoteCaps: "bridge,router",
   });
+  // Task 3 della scheda MikroTik: `version=` intero (con gli spazi), assente se vuoto (SW-ACC-A scrive «version= unpack=none»).
+  assert.equal("remoteVersion" in v[0], false);
+  assert.equal(v[1].remoteDevice, "RTR-1");
+  assert.equal(v[1].remoteVersion, "7.21.3 (stable) 2026-03-02 09:15:00");
   assert.equal(v[4].remotePort, "Port 15 - WAN sede");
   assert.equal(v[6].remotePort, "Uplink verso il router");
   assert.equal(v[4].remotePlatform, "US-8-60W,");

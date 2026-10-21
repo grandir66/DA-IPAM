@@ -34,6 +34,7 @@ import { migraAppleMacos } from "./devices/migra-apple-macos";
 import { canonicalizza, type Canonica } from "./classification/canonico";
 import { aggiungiRuoloServer, impostaVendorSeVuoto } from "./classification/scrittura";
 import { convertiClassificazioniV21, migrateServerRoles, SEGNO_CLASSIFICAZIONI_V21 } from "./classification/migrazione-v21";
+import { convertiDeviceTypeV21, SEGNO_DEVICE_TYPE_V21 } from "./devices/migra-device-type-v21";
 import { randomUUID } from "crypto";
 import { inferIpAssignment, resolveAdDhcpLeaseForHost, resolveDhcpLeaseForHost } from "./ip-assignment";
 import { getActiveTenants, getHubDbPath, getSetting, getTenantByCode } from "./db-hub";
@@ -2037,6 +2038,16 @@ export function getTenantDb(tenantCode: string): Database.Database {
     }
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: ${SEGNO_CLASSIFICAZIONI_V21} fallita (ROLLBACK), si riprova alla prossima apertura:`, e);
+  }
+  // device_type corretto sulle righe vecchie (21/10, scheda per tipo): `switch` era il workaround di schema per
+  // server/NAS/firewall. Dopo la conversione delle classificazioni; elenco per nome nel log prima di scrivere.
+  try {
+    const esito = convertiDeviceTypeV21(newDb, (riga) => console.info(`[db-tenant] ${tenantCode}: ${riga}`));
+    if (esito.eseguita) {
+      console.info(`[db-tenant] ${tenantCode}: ${SEGNO_DEVICE_TYPE_V21}, corretti ${esito.convertiti} apparati`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: ${SEGNO_DEVICE_TYPE_V21} fallita (ROLLBACK), si riprova alla prossima apertura:`, e);
   }
 
   // Apple e macOS nella tabella degli apparati (tappa 1b, 15/10). In fondo, dopo

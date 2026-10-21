@@ -90,3 +90,22 @@ Niente oggetti nuovi in pagina, solo comportamento, più un segno:
   scheda finché una prova non riesce (oggetto 9).
 
 Resta da approvare la forma della finestra, oggetto per oggetto (gli schemi qui sopra).
+
+## Revisione del 21/10: tavola grafica e controllo delle voci
+
+Tavola grafica (oggi, proposta, più host, wizard, scheda, controllo delle voci):
+https://claude.ai/artifact/Bau7xtUrykchk2EsNQLPXZ — impostazione approvata da Riccardo il 21/10.
+
+Controllo delle liste sul codice (`device-classifications.ts`, `network-device-vendor-options.ts`,
+`device-product-profiles.ts`, `credential-protocol-map.ts`, `types/index.ts`):
+
+- **V1 doppioni nella finestra**: Tipo dispositivo = Classificazione; Scan target = Piattaforma (stesse
+  5 voci); Sottotipo HP = Variante. Nella finestra nuova si chiedono solo Classificazione, Piattaforma e,
+  se serve, Variante; il resto si deduce.
+- **V2 profilo**: 8 etichette uguali fra piattaforme; il profilo dice qualcosa in più solo per HPE switch,
+  Ubiquiti switch, Proxmox, HPE iLO, Mac, VMware. «Variante» compare solo con più di una scelta.
+- **V3 classificazioni tipo+marca**: `server_windows`/`server_linux`, `nas_synology`/`nas_qnap`,
+  `controller`/`controller_wifi`/`network_controller`. Da unire (migrazione a parte, zona rossa).
+- **V4 ruoli come tipi**: dns/dhcp/mail/web/database/backup/nfs server. Da decidere: classificazioni o ruoli.
+- **V5 voci vicine**: stampante/multifunzione/fotocopiatrice/scanner; storage/nas; router/modem/ont/vpn gateway.
+- **V6 nomi**: `unknown` in inglese a schermo; maiuscole incoerenti; `snmp_v2` contro «SNMP v1/v2c».

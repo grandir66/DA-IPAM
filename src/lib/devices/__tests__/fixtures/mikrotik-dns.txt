@@ -1,0 +1,22 @@
+                      servers: 10.20.1.1
+                               10.20.1.2
+              dynamic-servers:            
+               use-doh-server:            
+              verify-doh-cert: no         
+   doh-max-server-connections: 5          
+   doh-max-concurrent-queries: 50         
+                  doh-timeout: 5s         
+        allow-remote-requests: yes        
+          max-udp-packet-size: 4096       
+         query-server-timeout: 2s         
+          query-total-timeout: 10s        
+       max-concurrent-queries: 100        
+  max-concurrent-tcp-sessions: 20         
+                   cache-size: 2048KiB    
+                cache-max-ttl: 1w         
+      address-list-extra-time: 0s         
+                          vrf: main       
+           mdns-repeat-ifaces:            
+                   cache-used: 48KiB      
+
+

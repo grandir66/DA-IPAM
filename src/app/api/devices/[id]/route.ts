@@ -8,6 +8,7 @@ import {
   type ProductProfileId,
 } from "@/lib/device-product-profiles";
 import { scriviSeCambiata } from "@/lib/classification/scrivi";
+import { tipoScheda } from "@/lib/scheda/tipo-scheda";
 import { RUOLI_SERVER, type RuoloServer } from "@/lib/classification/canonico";
 import { coerceProtocolForVendor } from "@/lib/vendor-device-profile";
 import { applicaCorpoApparatoDb, avvisoFalliti, RifiutoCredenziali, usataAdessoDb, type EsitoScelte } from "@/lib/credentials/apparato-archivio";
@@ -64,10 +65,18 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: "Dispositivo non trovato" }, { status: 404 });
     }
 
-    const isHypervisor = device.device_type === "hypervisor" || device.scan_target === "proxmox";
+    // Le scelte seguono il tipo di scheda (classificazione), non device_type: per i server era `switch`.
+    const tipo = tipoScheda({
+      gestito: true,
+      classification: device.classification,
+      device_type: device.device_type,
+      vendor: device.vendor,
+      scan_target: device.scan_target,
+    });
+    const isHypervisor = tipo === "hypervisor" || device.scan_target === "proxmox";
     const arpCapable = networkDeviceUsesArpPoll(device);
     const arpEntries = arpCapable ? getArpEntriesByDevice(Number(id)) : [];
-    const macPortEntries = device.device_type === "switch" ? getMacPortEntriesByDevice(Number(id)) : [];
+    const macPortEntries = tipo === "switch" ? getMacPortEntriesByDevice(Number(id)) : [];
     const switchPorts = isHypervisor ? [] : getSwitchPortsByDevice(Number(id));
     const neighbors = getNeighborsByDevice(Number(id));
     const routes = arpCapable ? getRoutesByDevice(Number(id)) : [];

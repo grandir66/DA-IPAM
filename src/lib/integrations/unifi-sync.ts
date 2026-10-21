@@ -60,6 +60,7 @@ import {
   getNetworkDevices,
   getPhysicalDeviceAnchors,
   getPortAndNeighborCountsByDevice,
+  getSwitchPortsByDevice,
   linkNetworkDeviceToPhysicalDevice,
   runInTenantTransaction,
   schemaCaviPresente,
@@ -81,6 +82,7 @@ import {
   mapUnifiFattiCavi,
   mapUnifiLldp,
   mapUnifiLldpConIndici,
+  conservaColonneNonDelController,
   mapUnifiPorts,
   mapUnifiUplink,
   type UnifiMacIndex,
@@ -339,7 +341,7 @@ function writeDevice(
   // Offline: il controller dà solo la parte statica, l'ultimo stato buono vale di più.
   const connected = d.state === 1;
 
-  const ports = mapUnifiPorts(d, ctx.index);
+  const ports = conservaColonneNonDelController(mapUnifiPorts(d, ctx.index), before.ports > 0 ? getSwitchPortsByDevice(nd.id) : []);
   let portsWritten = 0;
   if (!connected && before.ports > 0) {
     // porte dell'ultima sync: l'apparato è in `offline[]`

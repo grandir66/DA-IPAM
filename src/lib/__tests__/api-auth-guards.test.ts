@@ -42,6 +42,18 @@ const CONTRACT: Contract[] = [
   { route: "credentials/[id]", method: "PUT", guard: "requireAdmin" },
   { route: "credentials/[id]", method: "DELETE", guard: "requireAdmin" },
   { route: "client-config/export", method: "GET", guard: "requireAdmin" },
+  // scheda router e firewall (21/10): interfacce con la sessione; l'export RouterOS solo admin (esitoAzioneMikrotik,
+  // la condizione è provata da src/lib/devices/__tests__/mikrotik-guardia.test.ts).
+  { route: "devices/[id]/interfacce", method: "GET", guard: "requireAuth" },
+  { route: "devices/[id]/mikrotik", method: "GET", guard: "requireAuth" },
+  // scheda dei server (21/10): dipendenze NIS2 e Active Directory di un host, sola lettura con la sessione.
+  { route: "hosts/[id]/dipendenze", method: "GET", guard: "requireAuth" },
+  { route: "hosts/[id]/ad", method: "GET", guard: "requireAuth" },
+  { route: "hosts/[id]/proxmox-vm", method: "GET", guard: "requireAuth" },
+  { route: "hosts/[id]/zabbix", method: "GET", guard: "requireAuth" },
+  { route: "devices/[id]/proxmox-match", method: "GET", guard: "requireAuth" },
+  { route: "devices/[id]/proxmox-match", method: "POST", guard: "requireAdmin" },
+  { route: "devices/[id]/mikrotik", method: "POST", guard: "requireAdmin" },
   // Controller di rete (ADR 0007): la sync scrive nel tenant; le prove mandano
   // le credenziali al controller e al primo uso fissano l'impronta del
   // certificato; aggiungere, modificare e togliere salvano credenziali → admin.

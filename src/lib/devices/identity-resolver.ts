@@ -242,6 +242,10 @@ export function resolvePhysicalDevice(device: NetworkDevice, probe: DeviceProbeO
       status: probeIface.status,
       speed_mbps: probeIface.speed_mbps,
       alias: probeIface.alias,
+      aliasAutorevole: probeIface.aliasAutorevole,
+      type: probeIface.type,
+      mtu: probeIface.mtu,
+      disabled: probeIface.disabled,
     });
     interfacesUpserted++;
     for (const addr of probeIface.addresses) {

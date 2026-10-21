@@ -10,6 +10,7 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Key } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { LoadError } from "@/components/shared/load-error";
 import { STILE_STATO } from "@/components/shared/stile-stato-modulo";
 import { BadgeAvviso, BadgeEsito, type StatoEsito } from "@/components/devices/rendi-apparato-esito";
@@ -206,6 +207,7 @@ export function ClassificazioneApparato({
   aMano,
   ruoli,
   eServer,
+  scelte,
   onCambiata,
 }: {
   deviceId: number;
@@ -214,9 +216,29 @@ export function ClassificazioneApparato({
   aMano: boolean;
   ruoli: RuoloServer[];
   eServer: boolean;
+  /** Voci della classificazione: se c'è, al posto dell'etichetta c'è la scelta (scheda apparato, tab Gestione: unico editor). */
+  scelte?: ReadonlyArray<{ slug: string; label: string }>;
   onCambiata: () => void;
 }) {
   const [occupato, setOccupato] = useState(false);
+
+  async function scegli(slug: string) {
+    if (slug === classificazione) return;
+    setOccupato(true);
+    // Stessa rotta dei ruoli: scrive apparato e host insieme (punto unico) e la segna «scelta a mano».
+    const r = await fetchJson<unknown>(`/api/devices/${deviceId}`, {
+      method: "PUT",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ classification: slug }),
+    });
+    setOccupato(false);
+    if (!r.ok) {
+      toast.error(`Errore: ${r.message}`);
+      return;
+    }
+    toast.success("Classificazione salvata", { duration: 1500 });
+    onCambiata();
+  }
 
   async function tornaAutomatica() {
     setOccupato(true);
@@ -255,7 +277,20 @@ export function ClassificazioneApparato({
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-[13px] font-semibold uppercase tracking-wider text-muted-foreground">Classificazione</span>
-        <span className="text-sm font-semibold">{etichetta}</span>
+        {scelte ? (
+          <Select value={classificazione || "unknown"} disabled={occupato} onValueChange={(v) => void scegli(String(v ?? "unknown"))}>
+            <SelectTrigger aria-label="Classificazione" className="min-w-44 text-sm font-semibold">
+              <SelectValue placeholder="Seleziona…" />
+            </SelectTrigger>
+            <SelectContent>
+              {scelte.map((c) => (
+                <SelectItem key={c.slug} value={c.slug}>{c.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : (
+          <span className="text-sm font-semibold">{etichetta}</span>
+        )}
         {aMano && <BadgeAMano />}
         {aMano && (
           <Button type="button" size="sm" variant="outline" disabled={occupato} onClick={() => void tornaAutomatica()}>

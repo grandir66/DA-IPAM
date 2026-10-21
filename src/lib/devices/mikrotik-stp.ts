@@ -45,7 +45,11 @@ export function segni(riga: string): string {
 
 // ── MK2: /interface print terse ──────────────────────────────────────────────
 
-export interface InterfacciaMk { nome: string; tipo: string | null; mac: string | null; accesa: boolean; spenta: boolean }
+export interface InterfacciaMk {
+  nome: string; tipo: string | null; mac: string | null; accesa: boolean; spenta: boolean;
+  /** `mtu=` (intero; «auto» o assente = null), `comment=` (intero, anche con spazi) e `default-name=` (il nome di fabbrica). */
+  mtu: number | null; commento: string | null; predefinito: string | null;
+}
 
 export function parseInterfacce(out: string): InterfacciaMk[] {
   const r: InterfacciaMk[] = [];
@@ -54,7 +58,8 @@ export function parseInterfacce(out: string): InterfacciaMk[] {
     const nome = c.get("name");
     if (!nome) continue;
     const s = segni(riga);
-    r.push({ nome, tipo: c.get("type")?.toLowerCase() || null, mac: macValido(c.get("mac-address")), accesa: s.includes("R"), spenta: s.includes("X") });
+    r.push({ nome, tipo: c.get("type")?.toLowerCase() || null, mac: macValido(c.get("mac-address")), accesa: s.includes("R"), spenta: s.includes("X"),
+      mtu: intero(c.get("mtu")), commento: vuotoNull(c.get("comment")), predefinito: vuotoNull(c.get("default-name")) });
   }
   return r;
 }

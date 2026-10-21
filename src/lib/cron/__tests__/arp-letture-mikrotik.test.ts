@@ -333,3 +333,45 @@ test("MK7: la scheda «Letture in più» dice anche i due comandi nuovi e quando
   assert.ok(DESCRIZIONE_LETTURE.mikrotik.comandi.includes("/interface bridge msti print e monitor (2 in più dove un bridge è in MSTP)"));
   assert.ok(DESCRIZIONE_LETTURE.mikrotik.legge.includes("sui bridge in MSTP la porta radice e le VLAN di ogni istanza"));
 });
+
+// ── Scheda MikroTik (Task 3): interfacce dall'uscita già letta dal giro ──────
+
+const righeInterfacce = (): number => conta("SELECT COUNT(*) AS n FROM device_interfaces");
+function collegaFisico(): number {
+  const r = db().prepare("INSERT INTO physical_devices (vendor, identity_confidence, identity_anchor) VALUES ('mikrotik', 1, 'prova')").run();
+  const id = Number(r.lastInsertRowid);
+  db().prepare("UPDATE network_devices SET physical_device_id = ? WHERE id = 1").run(id);
+  db().exec("DELETE FROM device_interfaces");
+  return id;
+}
+
+test("scheda MikroTik: con l'apparato fisico le interfacce si scrivono (tipo, MTU, commento, stato)", async () => {
+  const pd = collegaFisico();
+  await giro(spia());
+  assert.equal(righeInterfacce(), 24);
+  assert.deepEqual(db().prepare("SELECT type, mtu, alias, status, disabled FROM device_interfaces WHERE physical_device_id = ? AND ifname = 'bond1'").get(pd),
+    { type: "bond", mtu: 1500, alias: "cavo-a", status: "up", disabled: 0 });
+});
+
+test("scheda MikroTik: senza apparato fisico non si scrive niente", async () => {
+  db().exec("DELETE FROM device_interfaces");
+  await giro(spia());
+  assert.equal(righeInterfacce(), 0);
+});
+
+test("scheda MikroTik: un errore va in console.warn col solo codice e il giro continua (vicini scritti)", async () => {
+  const avvisi: string[] = [];
+  const originale = console.warn;
+  console.warn = (...a: unknown[]) => { avvisi.push(a.map(String).join(" ")); };
+  try {
+    collegaFisico();
+    db().exec("CREATE TRIGGER prova_scrittura_rifiutata BEFORE INSERT ON device_interfaces BEGIN SELECT RAISE(ABORT, 'rifiutata per prova'); END");
+    await giro(spia());
+  } finally {
+    console.warn = originale;
+    db().exec("DROP TRIGGER IF EXISTS prova_scrittura_rifiutata");
+  }
+  assert.ok(avvisi.some((a) => a.includes("apparato #1: interfacce non scritte")), avvisi.join("|"));
+  assert.ok(!avvisi.some((a) => a.includes("bond1") || a.includes("cavo-a")), "niente nomi né commenti nel log");
+  assert.equal(conta("SELECT COUNT(*) AS n FROM device_neighbors WHERE device_id = 1"), 9, "il giro è andato avanti");
+});

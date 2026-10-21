@@ -105,6 +105,23 @@ export const DDL_TOPOLOGY_CAVI: ReadonlyArray<readonly [string, string]> = [
 )`],
 ];
 
+/**
+ * Scheda MikroTik (piano 2026-10-21, Task 3): colonne nuove su tabelle che esistono già, scritte dalle letture che girano
+ * già (interfacce, ARP, vicini). Solo `ALTER TABLE … ADD COLUMN` (`migrateSchedaMikrotik`, db-tenant.ts): nessuna
+ * ricostruzione, nessun CHECK. Una voce per colonna: [tabella, colonna, tipo]. I Task 8 e 10 aggiungono un livello ciascuno.
+ */
+export const COLONNE_SCHEDA_MK_V1: ReadonlyArray<readonly [tabella: string, colonna: string, ddl: string]> = [
+  ["device_interfaces", "mtu", "INTEGER"],
+  ["device_interfaces", "disabled", "INTEGER"],
+  ["arp_entries", "status", "TEXT"],
+  ["arp_entries", "dynamic", "INTEGER"],
+  ["device_neighbors", "remote_version", "TEXT"],
+];
+/** Segno in `tenant_settings`: dice fin dove è arrivato lo schema (`done:<data>:v<versione>`); la migrazione non lo consulta. */
+export const SEGNO_SCHEDA_MK = "scheda_mikrotik_v21";
+/** Versione dello schema della scheda: 1 = COLONNE_SCHEDA_MK_V1 (2 nel Task 8, 3 nel Task 10). */
+export const VERSIONE_SCHEDA_MK = 1;
+
 /** Unioni e separazioni a mano (ADR 0021): le scrivono solo le rotte /api/topology/unioni; mai cancellate (tolto_*: la storia).
  *  Membri come id della mappa, senza chiavi esterne né CHECK. Indici solo nella migrazione. */
 export const DDL_TOPOLOGY_UNIONI: ReadonlyArray<readonly [string, string]> = [

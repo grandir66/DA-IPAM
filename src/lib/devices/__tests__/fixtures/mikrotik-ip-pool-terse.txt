@@ -1,0 +1,8 @@
+0 name=dhcp_pool05 ranges=10.20.3.121-10.20.3.189
+1 name=dhcp_pool01 ranges=10.20.4.101-10.20.4.199
+2 name=dhcp_pool02 ranges=10.20.7.101-10.20.7.199
+3 name=dhcp_pool03 ranges=10.20.1.171-10.20.1.199
+4 name=dhcp_pool04 ranges=10.20.8.101-10.20.8.199
+5 name=dhcp_pool06 ranges=10.20.9.101-10.20.9.199
+6 name=dhcp_pool08 ranges=10.20.5.101-10.20.5.199
+7 name=dhcp_pool07 ranges=10.20.2.101-10.20.2.199

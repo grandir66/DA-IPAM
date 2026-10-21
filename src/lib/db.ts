@@ -70,7 +70,7 @@ import type {
 } from "@/types";
 import { modelloEtichettaDiPorte, type FingerprintUserRule } from "./device-fingerprint-classification";
 import { registraRipiego } from "./db-maintenance/ripieghi";
-import { cleanOrphanedForeignKeys as cleanOrphanedForeignKeysSu, getCurrentTenantCode as tenantCorrente, NEIGHBORS_LATEST_ROUND_SQL, NEIGHBORS_MODEL_SOURCES_SQL, resetConfiguration as resetConfigurazioneTenant } from "./db-tenant";
+import { cleanOrphanedForeignKeys as cleanOrphanedForeignKeysSu, getCurrentTenantCode as tenantCorrente, livelloSchemaSchedaMk, NEIGHBORS_LATEST_ROUND_SQL, NEIGHBORS_MODEL_SOURCES_SQL, resetConfiguration as resetConfigurazioneTenant } from "./db-tenant";
 
 const DATA_DIR = resolveDataDir();
 /** Path effettivo del DB. `DA_IPAM_DB_PATH` serve solo a `scripts/generate-empty-db.ts` (template versionato). */
@@ -2747,6 +2747,30 @@ export function getHostByIp(ip: string): Host | undefined {
   return getDb().prepare("SELECT * FROM hosts WHERE ip = ? LIMIT 1").get(ip) as Host | undefined;
 }
 
+/** Host di IPAM per l'abbinamento con Proxmox (scheda hypervisor): id, ip, nome e stato, senza il resto della riga. */
+export function getHostNotoPerIp(ip: string): { id: number; ip: string; hostname: string | null; status: string | null } | undefined {
+  return getDb().prepare("SELECT id, ip, COALESCE(hostname, custom_name) AS hostname, status FROM hosts WHERE ip = ? LIMIT 1")
+    .get(ip) as { id: number; ip: string; hostname: string | null; status: string | null } | undefined;
+}
+
+/** Il nodo Proxmox «DA-PX-01» è l'host di IPAM «DA-PX-01» o «DA-PX-01.dominio» (hostname o nome personalizzato). */
+export function getHostNotoPerNomeNodo(nome: string): { id: number; ip: string; hostname: string | null; status: string | null } | undefined {
+  const n = nome.trim().toLowerCase();
+  if (n === "") return undefined;
+  return getDb().prepare(
+    `SELECT id, ip, COALESCE(hostname, custom_name) AS hostname, status FROM hosts
+      WHERE lower(hostname) = ?1 OR substr(lower(hostname), 1, length(?1) + 1) = ?1 || '.' OR lower(custom_name) = ?1
+      ORDER BY id LIMIT 1`,
+  ).get(n) as { id: number; ip: string; hostname: string | null; status: string | null } | undefined;
+}
+
+/** Le scansioni Proxmox salvate sugli apparati (JSON grezzo): da lì si risale alla VM di un host. */
+export function getScansioniProxmoxSalvate(): Array<{ id: number; raw: string }> {
+  return getDb()
+    .prepare("SELECT id, last_proxmox_scan_result AS raw FROM network_devices WHERE last_proxmox_scan_result IS NOT NULL AND last_proxmox_scan_result <> '' ORDER BY id")
+    .all() as Array<{ id: number; raw: string }>;
+}
+
 export function getHostById(id: number): HostDetail | undefined {
   const host = getDb().prepare(`
     SELECT h.*, n.cidr as network_cidr, n.name as network_name
@@ -4294,17 +4318,24 @@ export function deleteNetworkDevice(id: number): boolean {
 
 export function upsertArpEntries(
   deviceId: number,
-  entries: { mac: string; ip: string | null; interface_name: string | null }[],
+  entries: { mac: string; ip: string | null; interface_name: string | null; status?: string | null; dynamic?: boolean | null }[],
   getNetworkIdForIp?: (ip: string) => number | null
 ): void {
   // Sul database che la facciata ha risolto (tenant, DEFAULT o legacy), come prima.
   cleanOrphanedForeignKeysSu(getDb());
   const db = getDb();
 
-  const stmt = db.prepare(
-    `INSERT INTO arp_entries (device_id, host_id, mac, ip, interface_name)
-     VALUES (?, (SELECT id FROM hosts WHERE ${MAC_HEX("mac")} = ? LIMIT 1), ?, ?, ?)`
-  );
+  // Scheda MikroTik (stessa regola della gemella in db-tenant.ts): stato e «dinamica» solo se lo schema ha le colonne.
+  const conStato = livelloSchemaSchedaMk(db) >= 1;
+  const stmt = conStato
+    ? db.prepare(
+      `INSERT INTO arp_entries (device_id, host_id, mac, ip, interface_name, status, dynamic)
+       VALUES (?, (SELECT id FROM hosts WHERE ${MAC_HEX("mac")} = ? LIMIT 1), ?, ?, ?, ?, ?)`
+    )
+    : db.prepare(
+      `INSERT INTO arp_entries (device_id, host_id, mac, ip, interface_name)
+       VALUES (?, (SELECT id FROM hosts WHERE ${MAC_HEX("mac")} = ? LIMIT 1), ?, ?, ?)`
+    );
 
   const replaceAll = db.transaction((items: typeof entries) => {
     // DELETE dentro la transazione per garantire atomicità
@@ -4312,7 +4343,12 @@ export function upsertArpEntries(
 
     for (const entry of items) {
       const hex = macToHex(entry.mac);
-      stmt.run(deviceId, hex, entry.mac, entry.ip, entry.interface_name);
+      if (conStato) {
+        stmt.run(deviceId, hex, entry.mac, entry.ip, entry.interface_name, entry.status ?? null,
+          entry.dynamic == null ? null : entry.dynamic ? 1 : 0);
+      } else {
+        stmt.run(deviceId, hex, entry.mac, entry.ip, entry.interface_name);
+      }
       if (entry.ip && entry.mac) {
         const networkId = getNetworkIdForIp?.(entry.ip) ?? null;
         upsertMacIpMapping({

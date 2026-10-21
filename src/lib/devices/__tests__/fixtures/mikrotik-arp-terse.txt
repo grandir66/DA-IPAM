@@ -1,0 +1,75 @@
+   0  C address=10.20.1.178 mac-address=02:00:A0:10:00:01 interface=VL_4_ZONA01 published=no status=permanent vrf=main
+   1 D  address=10.20.2.45 mac-address=02:00:A0:10:00:02 interface=VL_40_ZONA02 published=no status=incomplete vrf=main
+   2 DC address=10.20.3.130 mac-address=02:00:A0:10:00:03 interface=BR_LAN published=no status=reachable vrf=main
+   3 D  address=10.20.1.35 interface=VL_4_ZONA01 published=no status=incomplete vrf=main
+   4 D  address=10.20.2.110 interface=VL_40_ZONA02 published=no status=failed vrf=main
+   5 D  address=10.20.4.201 interface=VL_5_ZONA03 published=no status=failed vrf=main
+   6 D  address=10.20.1.96 interface=VL_4_ZONA01 published=no status=failed vrf=main
+   7 D  address=10.20.2.232 interface=VL_40_ZONA02 published=no status=failed vrf=main
+   8 D  address=10.20.4.87 interface=VL_5_ZONA03 published=no status=failed vrf=main
+   9 D  address=10.20.3.65 interface=BR_LAN published=no status=failed vrf=main
+  10 D  address=10.20.1.238 interface=VL_4_ZONA01 published=no status=failed vrf=main
+  11 D  address=10.20.4.148 mac-address=02:00:A0:10:00:04 interface=VL_5_ZONA03 published=no status=failed vrf=main
+  12 D  address=10.20.3.142 mac-address=02:00:A0:10:00:05 interface=BR_LAN published=no status=failed vrf=main
+  37 D  address=10.20.1.55 interface=VL_4_ZONA01 published=no status=failed vrf=main
+  62 D  address=10.20.2.118 interface=VL_40_ZONA02 published=no status=incomplete vrf=main
+  87 D  address=10.20.1.142 interface=VL_4_ZONA01 published=no status=failed vrf=main
+ 112 D  address=10.20.4.123 mac-address=02:00:A0:10:00:06 interface=VL_5_ZONA03 published=no status=failed vrf=main
+ 137 D  address=10.20.2.213 interface=VL_40_ZONA02 published=no status=failed vrf=main
+ 162 D  address=10.20.3.66 interface=BR_LAN published=no status=incomplete vrf=main
+ 187 DC address=10.20.1.40 mac-address=02:00:A0:10:00:07 interface=VL_4_ZONA01 published=no status=reachable vrf=main
+ 212 D  address=10.20.4.100 interface=VL_5_ZONA03 published=no status=incomplete vrf=main
+ 237 DC address=10.20.4.173 mac-address=02:00:A0:10:00:08 interface=VL_5_ZONA03 published=no status=reachable vrf=main
+ 262 D  address=10.20.2.68 mac-address=02:00:A0:10:00:09 interface=VL_40_ZONA02 published=no status=incomplete vrf=main
+ 287 D  address=10.20.3.179 interface=BR_LAN published=no status=failed vrf=main
+ 312 D  address=10.20.2.80 interface=VL_40_ZONA02 published=no status=failed vrf=main
+ 337 D  address=10.20.5.57 interface=VL_16_ZONA04 published=no status=failed vrf=main
+ 362 D  address=10.20.5.49 interface=VL_16_ZONA04 published=no status=failed vrf=main
+ 387 D  address=10.20.3.30 interface=BR_LAN published=no status=incomplete vrf=main
+ 412 D  address=10.20.3.164 interface=BR_LAN published=no status=incomplete vrf=main
+ 437 D  address=10.20.4.48 interface=VL_5_ZONA03 published=no status=failed vrf=main
+ 462 D  address=10.20.1.209 interface=VL_4_ZONA01 published=no status=failed vrf=main
+ 487 D  address=10.20.3.249 interface=BR_LAN published=no status=failed vrf=main
+ 512 D  address=10.20.5.249 interface=VL_16_ZONA04 published=no status=incomplete vrf=main
+ 537 D  address=10.20.1.119 interface=VL_4_ZONA01 published=no status=failed vrf=main
+ 562 DC address=10.20.1.127 mac-address=02:00:A0:10:00:0A interface=VL_4_ZONA01 published=no status=reachable vrf=main
+ 587 D  address=10.20.4.171 mac-address=02:00:A0:10:00:0B interface=VL_5_ZONA03 published=no status=incomplete vrf=main
+ 612 DC address=10.20.1.11 mac-address=02:00:A0:10:00:0C interface=VL_4_ZONA01 published=no status=stale vrf=main
+ 637 D  address=10.20.3.51 interface=BR_LAN published=no status=failed vrf=main
+ 662 D  address=10.20.4.79 interface=VL_5_ZONA03 published=no status=incomplete vrf=main
+ 687 D  address=10.20.5.120 interface=VL_16_ZONA04 published=no status=failed vrf=main
+ 712 D  address=10.20.1.105 interface=VL_4_ZONA01 published=no status=failed vrf=main
+ 737 D  address=10.20.3.135 mac-address=02:00:A0:10:00:05 interface=BR_LAN published=no status=failed vrf=main
+ 762 D  address=10.20.5.163 interface=VL_16_ZONA04 published=no status=failed vrf=main
+ 787 D  address=10.20.5.209 interface=VL_16_ZONA04 published=no status=failed vrf=main
+ 812 D  address=10.20.2.220 interface=VL_40_ZONA02 published=no status=failed vrf=main
+ 837 D  address=10.20.4.46 interface=VL_5_ZONA03 published=no status=failed vrf=main
+ 862 D  address=10.20.1.23 interface=VL_4_ZONA01 published=no status=incomplete vrf=main
+ 887 D  address=10.20.5.46 interface=VL_16_ZONA04 published=no status=incomplete vrf=main
+ 912 D  address=10.20.1.26 interface=VL_4_ZONA01 published=no status=failed vrf=main
+ 937 D  address=10.20.5.86 interface=VL_16_ZONA04 published=no status=failed vrf=main
+ 962 D  address=10.20.1.45 interface=VL_4_ZONA01 published=no status=failed vrf=main
+ 987 D  address=10.20.4.126 mac-address=02:00:A0:10:00:0D interface=VL_5_ZONA03 published=no status=failed vrf=main
+1012 D  address=10.20.1.141 interface=VL_4_ZONA01 published=no status=failed vrf=main
+1037 D  address=10.20.2.82 interface=VL_40_ZONA02 published=no status=failed vrf=main
+1062 D  address=10.20.5.189 interface=VL_16_ZONA04 published=no status=incomplete vrf=main
+1087 D  address=10.20.5.21 mac-address=02:00:A0:10:00:0E interface=VL_16_ZONA04 published=no status=incomplete vrf=main
+1112 D  address=10.20.3.229 interface=BR_LAN published=no status=failed vrf=main
+1137 D  address=10.20.2.79 interface=VL_40_ZONA02 published=no status=failed vrf=main
+1162 D  address=10.20.5.28 interface=VL_16_ZONA04 published=no status=failed vrf=main
+1187 D  address=10.20.3.214 interface=BR_LAN published=no status=failed vrf=main
+1212 D  address=10.20.3.232 interface=BR_LAN published=no status=failed vrf=main
+1237 D  address=10.20.4.247 interface=VL_5_ZONA03 published=no status=failed vrf=main
+1262 D  address=10.20.1.252 interface=VL_4_ZONA01 published=no status=failed vrf=main
+1287 D  address=10.20.6.162 interface=VL_133_ZONA05 published=no status=failed vrf=main
+1312 D  address=10.20.6.238 interface=VL_133_ZONA05 published=no status=failed vrf=main
+1337 D  address=10.20.6.25 interface=VL_133_ZONA05 published=no status=failed vrf=main
+1362 D  address=10.20.6.69 interface=VL_133_ZONA05 published=no status=failed vrf=main
+1387 D  address=10.20.6.94 interface=VL_133_ZONA05 published=no status=failed vrf=main
+1412 D  address=10.20.6.137 interface=VL_133_ZONA05 published=no status=failed vrf=main
+1437 D  address=10.20.6.52 interface=VL_133_ZONA05 published=no status=failed vrf=main
+1462 D  address=10.20.6.103 interface=VL_133_ZONA05 published=no status=failed vrf=main
+1487 D  address=10.20.6.146 interface=VL_133_ZONA05 published=no status=failed vrf=main
+1512 D  address=10.20.6.221 interface=VL_133_ZONA05 published=no status=failed vrf=main
+  46 DC address=10.20.3.146 mac-address=02:00:A0:10:00:0F interface=BR_LAN published=no status=stale vrf=main
+ 100 DC address=10.20.1.8 mac-address=02:00:A0:10:00:10 interface=VL_4_ZONA01 published=no status=delay vrf=main

@@ -174,7 +174,8 @@ export async function getSnmpPortSchema(snmpWalk: SnmpWalkFn): Promise<PortInfo[
     const speed = ifSpeedMap.get(ifIndex) || null;
     const duplex = duplexMap.get(ifIndex) || null;
     const bridgePort = bridgePortMap.get(ifIndex);
-    const vlan = bridgePort ? (pvidMap.get(bridgePort) ?? null) : null;
+    // Alcuni agenti (UniFi ProMax) hanno `dot1dBasePortIfIndex` vuoto ma `dot1qPvid` pieno: l'indice è già l'ifIndex.
+    const vlan = bridgePort ? (pvidMap.get(bridgePort) ?? null) : bridgePortMap.size === 0 ? (pvidMap.get(ifIndex) ?? null) : null;
 
     const poeKey = bridgePort ? `1.${bridgePort}` : null;
     const poe_status = poeKey ? (poeStatusMap.get(poeKey) ?? null) : null;

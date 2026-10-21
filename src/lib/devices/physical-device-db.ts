@@ -10,6 +10,8 @@
  */
 
 import { getDb } from "@/lib/db";
+import { livelloSchemaSchedaMk } from "@/lib/db-tenant";
+import type { InterfacciaMk } from "@/lib/devices/mikrotik-stp";
 import type {
   PhysicalDevice,
   DeviceInterface,
@@ -147,11 +149,45 @@ export interface UpsertInterfaceInput {
   speed_mbps?: number | null;
   type?: string | null;
   alias?: string | null;
+  /** Scheda MikroTik: MTU e interfaccia spenta a mano. Si scrivono solo se lo schema ha le colonne (`livelloSchemaSchedaMk`). */
+  mtu?: number | null;
+  disabled?: boolean | null;
+  /** La fonte è la sola a sapere l'alias (RouterOS: il commento): si scrive com'è, anche null (commento tolto). Senza: COALESCE. */
+  aliasAutorevole?: boolean;
 }
 
 export function upsertDeviceInterface(physicalDeviceId: number, input: UpsertInterfaceInput): DeviceInterface {
   const mac = normalizeMac(input.mac ?? null);
   const isVirtual = isVirtualMac(mac) ? 1 : 0;
+  const aliasSet = input.aliasAutorevole ? "excluded.alias" : "COALESCE(excluded.alias, device_interfaces.alias)";
+  if (livelloSchemaSchedaMk(getDb()) >= 1) {
+    // COALESCE come per le altre colonne: una lettura che non conosce MTU o stato (SNMP) non cancella quella di RouterOS.
+    getDb()
+      .prepare(
+        `INSERT INTO device_interfaces
+          (physical_device_id, ifname, ifindex, mac, status, speed_mbps, type, is_virtual_mac, alias, mtu, disabled)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(physical_device_id, ifname) DO UPDATE SET
+           ifindex = COALESCE(excluded.ifindex, device_interfaces.ifindex),
+           mac = COALESCE(excluded.mac, device_interfaces.mac),
+           status = excluded.status,
+           speed_mbps = COALESCE(excluded.speed_mbps, device_interfaces.speed_mbps),
+           type = COALESCE(excluded.type, device_interfaces.type),
+           is_virtual_mac = excluded.is_virtual_mac,
+           alias = ${aliasSet},
+           mtu = COALESCE(excluded.mtu, device_interfaces.mtu),
+           disabled = COALESCE(excluded.disabled, device_interfaces.disabled),
+           updated_at = datetime('now')`
+      )
+      .run(
+        physicalDeviceId, input.ifname, input.ifindex ?? null, mac, input.status ?? "unknown", input.speed_mbps ?? null,
+        input.type ?? null, isVirtual, input.alias ?? null, input.mtu ?? null,
+        input.disabled == null ? null : input.disabled ? 1 : 0,
+      );
+    return getDb()
+      .prepare("SELECT * FROM device_interfaces WHERE physical_device_id = ? AND ifname = ?")
+      .get(physicalDeviceId, input.ifname) as DeviceInterface;
+  }
   getDb()
     .prepare(
       `INSERT INTO device_interfaces
@@ -164,7 +200,7 @@ export function upsertDeviceInterface(physicalDeviceId: number, input: UpsertInt
          speed_mbps = COALESCE(excluded.speed_mbps, device_interfaces.speed_mbps),
          type = COALESCE(excluded.type, device_interfaces.type),
          is_virtual_mac = excluded.is_virtual_mac,
-         alias = COALESCE(excluded.alias, device_interfaces.alias),
+         alias = ${aliasSet},
          updated_at = datetime('now')`
     )
     .run(
@@ -181,6 +217,24 @@ export function upsertDeviceInterface(physicalDeviceId: number, input: UpsertInt
   return getDb()
     .prepare("SELECT * FROM device_interfaces WHERE physical_device_id = ? AND ifname = ?")
     .get(physicalDeviceId, input.ifname) as DeviceInterface;
+}
+
+/**
+ * Scheda MikroTik: le interfacce lette da `/interface print terse` (già in mano al giro ARP) sulle righe di
+ * `device_interfaces` dell'apparato fisico. `alias` = commento (su RouterOS è ciò che SNMP chiama `ifAlias`), `type` = tipo di
+ * RouterOS, `status` dal segno R, `disabled` dal segno X. Restituisce le righe scritte.
+ */
+export function aggiornaInterfacceRouterOs(physicalDeviceId: number, righe: InterfacciaMk[]): number {
+  // Una transazione sola: il giro o c'è tutto o non c'è (e un solo fsync invece di uno per interfaccia).
+  getDb().transaction(() => {
+    for (const r of righe) {
+      upsertDeviceInterface(physicalDeviceId, {
+        ifname: r.nome, mac: r.mac, status: r.accesa ? "up" : "down", type: r.tipo, alias: r.commento, aliasAutorevole: true,
+        mtu: r.mtu, disabled: r.spenta,
+      });
+    }
+  })();
+  return righe.length;
 }
 
 export function listDeviceInterfaces(physicalDeviceId: number): DeviceInterface[] {

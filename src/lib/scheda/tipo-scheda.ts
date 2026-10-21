@@ -82,5 +82,6 @@ export function tabDelTipo(t: TipoScheda, _o: { ruoli: string[]; haAd: boolean; 
   if (t === "switch") return ["panoramica", "porte", "vlan", "vicini", ...TAB_COMUNI];
   if (t === "router" || t === "firewall") return ["panoramica", "interfacce", "routing", "dhcp", "configurazione", ...TAB_COMUNI];
   if (t === "storage") return ["panoramica", "dischi", "volumi", "servizi_nas", ...TAB_COMUNI];
+  if (t === "hypervisor") return ["panoramica", "vm", "nodi", "storage_px", "rete_px", ...TAB_COMUNI];
   return ["panoramica", "dettagli", ...TAB_COMUNI];
 }

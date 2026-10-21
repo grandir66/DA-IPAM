@@ -83,8 +83,11 @@ describe("tabDelTipo", () => {
   it("storage: panoramica, dischi, volumi, servizi_nas + comuni, senza dettagli (T5)", () => {
     assert.deepEqual(tabDelTipo("storage", NO), ["panoramica", "dischi", "volumi", "servizi_nas", "sicurezza", "gestione", "storico"]);
   });
+  it("hypervisor: panoramica, vm, nodi, storage_px, rete_px + comuni, senza dettagli (T6)", () => {
+    assert.deepEqual(tabDelTipo("hypervisor", NO), ["panoramica", "vm", "nodi", "storage_px", "rete_px", "sicurezza", "gestione", "storico"]);
+  });
   it("gli altri tipi: panoramica, dettagli + comuni", () => {
-    for (const x of ["hypervisor", "server_windows", "server_linux", "generico"] as const) {
+    for (const x of ["server_windows", "server_linux", "generico"] as const) {
       assert.deepEqual(tabDelTipo(x, NO), ["panoramica", "dettagli", "sicurezza", "gestione", "storico"], x);
     }
   });

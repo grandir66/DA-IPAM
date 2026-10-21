@@ -33,6 +33,11 @@ import { PanoramicaStorage } from "./tipi/storage/panoramica";
 import { DischiNas } from "./tipi/storage/dischi";
 import { VolumiNas } from "./tipi/storage/volumi";
 import { ServiziNas } from "./tipi/storage/servizi";
+import { PanoramicaHypervisor } from "./tipi/hypervisor/panoramica";
+import { VmHypervisor } from "./tipi/hypervisor/vm";
+import { NodiHypervisor } from "./tipi/hypervisor/nodi";
+import { StorageHypervisor } from "./tipi/hypervisor/storage";
+import { ReteHypervisor } from "./tipi/hypervisor/rete";
 
 export interface VoceTab {
   /** Solo se il nome cambia per questo tipo. */
@@ -64,6 +69,13 @@ export const TAB_DEL_TIPO: Partial<Record<TipoScheda, Partial<Record<TabId, Voce
     dischi: { render: (c) => <DischiNas ctx={c} /> },
     volumi: { render: (c) => <VolumiNas ctx={c} /> },
     servizi_nas: { render: (c) => <ServiziNas ctx={c} /> },
+  },
+  hypervisor: {
+    panoramica: { render: (c) => <PanoramicaHypervisor ctx={c} /> },
+    vm: { render: (c) => <VmHypervisor ctx={c} /> },
+    nodi: { render: (c) => <NodiHypervisor ctx={c} /> },
+    storage_px: { render: (c) => <StorageHypervisor ctx={c} /> },
+    rete_px: { render: (c) => <ReteHypervisor ctx={c} /> },
   },
 };
 

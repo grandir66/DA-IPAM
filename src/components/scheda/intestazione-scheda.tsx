@@ -84,7 +84,7 @@ export function IntestazioneScheda({
           {host.last_response_time_ms != null && host.status === "online" ? ` · ${host.last_response_time_ms} ms` : ""}
         </span>
         {vmSu ? (
-          <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
+          <span className="shrink-0 whitespace-nowrap text-sm text-muted-foreground">
             {vmSu.href ? <Link href={vmSu.href} className="underline underline-offset-2">VM {vmSu.vmid} su {vmSu.nodo}</Link> : `VM ${vmSu.vmid} su ${vmSu.nodo}`}
           </span>
         ) : identita ? (

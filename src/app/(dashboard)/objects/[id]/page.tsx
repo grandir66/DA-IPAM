@@ -27,7 +27,8 @@ import { tabDelTipo, tipoScheda, type TabId } from "@/lib/scheda/tipo-scheda";
 import { AzioniScheda } from "@/components/scheda/azioni-scheda";
 import type { ContestoScheda, LibreNmsStato, MembroCluster } from "@/components/scheda/contesto";
 import type { DeviceFull } from "@/components/scheda/dati";
-import { IntestazioneScheda } from "@/components/scheda/intestazione-scheda";
+import { IntestazioneScheda, type VmSu } from "@/components/scheda/intestazione-scheda";
+import type { VmSuNodo } from "@/lib/scheda/abbinamento-proxmox";
 import { TabScheda } from "@/components/scheda/tab-scheda";
 import type { HostDetail, InventoryAsset } from "@/types";
 // v0.2.646 audit perf UI9: i dialog modali (Promote/LinkIps/EditDevice) sono caricati on-demand
@@ -161,6 +162,22 @@ export default function ObjectDetailPage() {
   }, [host?.physical_device_id]);
 
   useEffect(() => { void fetchClusterMembers(); }, [fetchClusterMembers]);
+
+  // «VM n su <nodo>» in intestazione: se l'IP dell'host sta in una VM delle scansioni Proxmox salvate.
+  // Un errore non è un «no»: la riga semplicemente non compare.
+  const [vmSu, setVmSu] = useState<VmSu | null>(null);
+  useEffect(() => {
+    if (!Number.isFinite(hostId) || hostId <= 0) return;
+    let vivo = true;
+    fetch(`/api/hosts/${hostId}/proxmox-vm`, { cache: "no-store" })
+      .then((r) => (r.ok ? (r.json() as Promise<{ vm: VmSuNodo | null }>) : null))
+      .then((d) => {
+        if (!vivo) return;
+        setVmSu(d?.vm ? { vmid: d.vm.vmid, nodo: d.vm.nodo, ...(d.vm.nodoHostId != null && d.vm.nodoHostId !== hostId ? { href: `/objects/${d.vm.nodoHostId}` } : {}) } : null);
+      })
+      .catch(() => { if (vivo) setVmSu(null); });
+    return () => { vivo = false; };
+  }, [hostId]);
 
   // v0.2.607: runtime summary memoizzato. DEVE stare prima di qualsiasi early
   // return (loading / !host) per non violare le rules of hooks (React #310).
@@ -419,6 +436,7 @@ export default function ObjectDetailPage() {
         device={device}
         tipo={tipo}
         ruoli={ruoli}
+        vmSu={vmSu}
         azioni={
           <AzioniScheda
             gestito={isManaged}

@@ -1,5 +1,23 @@
 # TASKS — DA-IPAM
 
+## 2026-10-21 — scheda MikroTik copiata dal Manager
+
+Piano: [`docs/superpowers/plans/2026-10-21-scheda-mikrotik-dal-manager.md`](docs/superpowers/plans/2026-10-21-scheda-mikrotik-dal-manager.md) (blocchi P1-P4; P5 fuori). Tavole `Mk*` approvate il 21/10 nel canvas https://claude.ai/artifact/7ezwy7nkAAzUWSn1wJCNKv. Livello: P1-P2 leggero, P3-P4 completo.
+
+- [ ] T1 uscite vere del router dell'hub (script una tantum, fixture anonime); annotare: bridge su DA-RT-CORE, `topologia.lettura.mikrotik` sull'hub, `physical_device_id` dell'apparato 1, sospetto del caso pool DHCP (P1)
+- [ ] T2 risorse, hardware, firmware aggiornabile, seriale da routerboard (P1) — poi Riccardo preme «Aggiorna» su MK-RTR-CORE sull'hub
+- [ ] T3 interfacce con stato/MTU/commento dal giro ARP, stato ARP, versione dei vicini; migrazione `scheda_mikrotik_v21` v1 (P1)
+- [ ] T4 Panoramica MikroTik (P2)
+- [ ] T5 Interfacce raggruppate per tipo (P2)
+- [ ] T6 Dispositivi visti dal router + `tabDelTipo(t, OpzioniTab)` (P2)
+- [ ] T7 Routing e ARP con lo stato, export ripulito (P2)
+- [ ] T8 tabelle `mikrotik_bridge`, `mikrotik_bridge_port`, `mikrotik_bond` + ADR 0024, migrazione v2, misura sulle copie (P3)
+- [ ] T9 tab Bridge e VLAN (matrice dai PVID), dettagli bond/bridge (P3)
+- [ ] T10 lettura `mikrotik_scheda` spenta: bridge vlan, vlan, dns, utenti; migrazione v3 (P4)
+- [ ] T11 matrice VLAN completa, VLAN con la madre, DNS e utenti (solo admin) (P4)
+- [ ] T12 documenti e verifica sull'hub
+- [ ] Aperti dopo il piano: conteggi nelle etichette delle tab; link «non in IPAM» dei vicini; accensione di `mikrotik_scheda` sull'hub (decide Riccardo)
+
 ## 2026-10-21 — scheda apparato per tipo (proposta grafica)
 
 Tavola: https://claude.ai/artifact/7ezwy7nkAAzUWSn1wJCNKv (oggi, scheletro comune, tab Gestione, switch, router/firewall, storage, hypervisor, Windows, Linux, application server). Riguarda `objects/[id]/page.tsx` (la scheda unica: `/devices/[id]` e `/hosts/[id]` ci rimandano).

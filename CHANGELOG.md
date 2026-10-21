@@ -4,6 +4,16 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — collector modulari QNAP (solo locale)
+
+- Collector `qnap-switch` richiamabile da CLI e adapter senza DB, per acquisire lo
+  stesso JSON versionato dal banco e dall'app senza duplicare i parser. Trasporti
+  SNMP centralizzati e console SSH QSS con timeout, paginazione e allowlist read-only.
+- Sezioni e errori espliciti per identità, porte, VLAN, FDB, LLDP, STP, LAG, sensori
+  e IP/ARP; risultati parziali non diventano liste vuote autorevoli. Credenziali solo
+  da file privato fuori git, output reale fuori repo; nessuno scheduler o rilascio.
+- Motivazione, limiti e prove: ADR 0024 e `docs/modules/acquisition.md`.
+
 ## [Non rilasciato] — 2026-10-21 · «Rendi apparato», classificazione unica, voci senza doppioni (v0.9.815-820)
 
 Riccardo, creando apparati, trovava la finestra caotica (stesse domande ripetute, credenziale scelta alla

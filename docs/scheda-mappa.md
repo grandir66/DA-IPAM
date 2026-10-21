@@ -14,3 +14,5 @@ LibreNMS, Graylog, Wazuh, MeshCentral, NIS2…). Next.js App Router, SQLite.
 nota: nessun framework di migrazioni — gli schemi si evolvono con `ALTER TABLE` idempotenti inline. Il push su `main` chiede sempre conferma esplicita.
 
 Trappola corrente: le righe MAC dei router vengono solo dalla bridge host (non dall'ARP) e i router si leggono con un job `arp_poll` senza rete, perché l'avvio dello scheduler spegne la scansione veloce sulle reti da /22 in su (ADR 0010).
+
+Collector QNAP switch disponibile per collaudo locale da CLI e adapter senza DB; manuale `docs/modules/acquisition.md`. Nessuna acquisizione automatica o integrazione persistente attivata.

@@ -32,6 +32,8 @@ Leggilo per primo, poi [CLAUDE.md](CLAUDE.md) (stack e schema; su «multi-tenant
 
 ## 6. Stato e trappole per area (2026-10-21)
 
+- **Collector QNAP (21/10, solo locale, ADR 0024)**: `lib/acquisition/`, CLI `scripts/acquire-device.ts`, adapter senza DB. Manuale `docs/modules/acquisition.md`, piano e TASKS. Collaudato QSS: 32 prove, lint/typecheck/build verdi; credenziali/snapshot nel vault `collectors/`. IP/ARP in errore, PVID ignoti, PoE saltato. Nessun push/deploy o automatismo. Prossimo, da approvare: integrazione persistente. Trappole: QSS solo shell e timeout di inattività; STP spento ≠ cavo bloccato; DDM zero ≠ ottica presente.
+
 - **Rami su origin**: `dev`, `main`, `tappa3b/nucleo` (non potare), `sonde-integrate-20261020` (già in `dev` col merge `8c00134e`: si può togliere).
 - **NetBird e DA-Link** (ADR 0011, 0013, 0014; `plans/2026-10-15-tappa-c1-netbird.md`). Blocco `edge` del segnale in `dev` (`lib/dalink/edge-segnale.ts`, `edge-sonda.ts`; il quadro di «Cosa esce» ha `altri_flussi.edge`). **Trappole**:
   - configurazione = `/etc/dalink/oggetto.env` (assente = niente rete; permessi ≠ 600 = rifiutata); nodo `<codcli>-ipam`, poi `<codcli>-ipam-<n>` (2..99) per sede, stessa forma in `config.ts` e `prepara-netbird.sh`; livello in `dalink_livello_registro` (hub), non in `settings`; a DA-Link solo `ok`|`degraded`|`fail` dei moduli accesi;

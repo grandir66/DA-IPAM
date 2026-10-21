@@ -2,16 +2,22 @@ import { z } from "zod";
 import {ontapStorageSchema} from "./ontap-schema";
 import { virtualizationSchema } from "./vmware-schema";
 import { COLLECTOR_IDS, descrittore } from "./catalogo";
+import { SNMP_V3_AUTH_PROTOCOLS, SNMP_V3_PRIV_PROTOCOLS, SNMP_V3_SECURITY_LEVELS } from "../protocols/snmp-sessione";
+import { systemSchema, hostStorageSchema, softwareSchema, servicesSchema, securitySchema } from "./sistema-schema";
 const port = z.number().int().min(1).max(65535);
 const secret = z.string().min(1).max(16384);
 export const acquisitionInputSchema = z.object({
     collector: z.enum(COLLECTOR_IDS).default("qnap-switch"),
     host: z.string().min(1).max(253).regex(/^[a-zA-Z0-9.:_-]+$/),
-    snmp: z.object({ community: secret, version: z.enum(["1", "2c"]).default("2c"), port: port.default(161) }).strict().optional(),
+    snmp: z.union([
+        z.object({ community: secret, version: z.enum(["1", "2c"]).default("2c"), port: port.default(161) }).strict(),
+        z.object({ version: z.literal("3"), username: z.string().min(1).max(128), level: z.enum(SNMP_V3_SECURITY_LEVELS), authProtocol: z.enum(SNMP_V3_AUTH_PROTOCOLS).optional(), authKey: secret.optional(), privProtocol: z.enum(SNMP_V3_PRIV_PROTOCOLS).optional(), privKey: secret.optional(), port: port.default(161) }).strict(),
+    ]).optional(),
     ssh: z.object({ username: z.string().min(1).max(128), password: secret.optional(), privateKey: secret.optional(), passphrase: secret.optional(), port: port.default(22) }).strict().refine(v => !!(v.password || v.privateKey), "Manca il segreto SSH").optional(),
+    winrm: z.object({ username: z.string().min(1).max(256), password: secret, port: port.default(5985), realm: z.string().min(1).max(253).regex(/^[a-zA-Z0-9.-]+$/).optional() }).strict().optional(),
     api: z.object({username:z.string().min(1).max(128),password:secret,port:port.default(443),tls_sha256:z.string().regex(/^(?:[a-fA-F0-9]{2}:){31}[a-fA-F0-9]{2}$/).optional()}).strict().optional(),
     limits: z.object({ timeout_ms: z.number().int().min(500).max(15000).default(4000), max_rows: z.number().int().min(32).max(20000).default(4096), max_output_bytes: z.number().int().min(4096).max(4194304).default(1048576), total_timeout_ms: z.number().int().min(5000).max(300000).default(90000) }).strict().default({ timeout_ms: 4000, max_rows: 4096, max_output_bytes: 1048576, total_timeout_ms: 90000 }),
-}).strict().refine(v => { const c = descrittore(v.collector).credenziali, date = (["snmp", "ssh", "api"] as const).filter(p => !!v[p]); return date.every(p => (c.ammesse as readonly string[]).includes(p)) && c.una_di.some(p => p !== "winrm" && !!v[p]); }, "Credenziali non compatibili con il collector");
+}).strict().refine(v => { const c = descrittore(v.collector).credenziali, date = (["snmp", "ssh", "api", "winrm"] as const).filter(p => !!v[p]); return date.every(p => (c.ammesse as readonly string[]).includes(p)) && c.una_di.some(p => !!v[p]); }, "Credenziali non compatibili con il collector");
 export type AcquisitionInput = z.infer<typeof acquisitionInputSchema>;
 export type AcquisitionRequest = z.input<typeof acquisitionInputSchema>;
 const nullableString = z.string().nullable();
@@ -31,6 +37,11 @@ export const snapshotSchema = z.object({
     schema_version: z.literal("1.0"), collector: z.enum(COLLECTOR_IDS), collector_version: z.string().regex(/^\d+\.\d+\.\d+$/), target: z.string(), collected_at: z.string().datetime(), duration_ms: z.number().nonnegative(), status: z.enum(["ok", "partial", "error"]),
     storage: section(ontapStorageSchema).optional(),
     virtualization: section(virtualizationSchema).optional(),
+    system: section(systemSchema).optional(),
+    host_storage: section(hostStorageSchema).optional(),
+    software: section(softwareSchema).optional(),
+    services: section(servicesSchema).optional(),
+    security: section(securitySchema).optional(),
     modules: section(z.array(z.object({ slot: z.string(), description: nullableString, model: nullableString, serial_number: nullableString, status: nullableString, software_revision: nullableString.optional(), subslot: nullableNumber.optional() }))).optional(),
     hardware: section(z.array(z.object({ entity_index: z.number().int(), parent_index: nullableNumber, position: nullableNumber, class_code: nullableNumber, name: nullableString, description: nullableString, model: nullableString, serial_number: nullableString, manufacturer: nullableString, hardware_revision: nullableString, firmware_revision: nullableString, software_revision: nullableString, alias: nullableString, asset_tag: nullableString, replaceable: z.boolean().nullable() }))).optional(),
     resources: section(z.object({ cpu_percent: nullableNumber, memory_total_bytes: nullableNumber, memory_free_bytes: nullableNumber, instances: z.array(z.object({ slot: z.string(), cpu_percent: nullableNumber, memory_total_bytes: nullableNumber, memory_free_bytes: nullableNumber })).optional() })).optional(),
@@ -62,4 +73,6 @@ export interface AcquisitionTransports {
     get(oids: string[]): Promise<ReadResult<SnmpRow[]>>;
     walk(oid: string): Promise<ReadResult<SnmpRow[]>>;
     shell(commands: readonly string[]): Promise<Record<string, ReadResult<string>>>;
+    /** Script PowerShell dell'allowlist del collector, per id (WinRM). Assente = trasporto non disponibile. */
+    winrm?(scripts: readonly string[]): Promise<Record<string, ReadResult<string>>>;
 }

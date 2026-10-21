@@ -24,6 +24,8 @@ export interface DescrittoreCollector {
     sezioni: readonly string[];
     /** Allowlist dei comandi di console; `null` se il collector non usa comandi liberi (API, script fissi). */
     comandi: readonly string[] | null;
+    /** Script PowerShell fissi per WinRM, per id (mai testo dall'input). Assente = il collector non usa WinRM. */
+    script_winrm?: Readonly<Record<string, string>>;
     collaudo: StatoCollaudo;
     /** Modelli e firmware visti su un apparato vero; vuoto finché `collaudo` è `non_collaudato`. */
     collaudati: readonly { modello: string; firmware: string; nota?: string }[];

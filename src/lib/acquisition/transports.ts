@@ -2,11 +2,12 @@ import { readExec } from "./exec-reader";
 import type { EventEmitter } from "node:events";
 import * as snmp from "net-snmp";
 import type { ClientChannel } from "ssh2";
-import { apriSessioneCommunity } from "../protocols/snmp-sessione";
+import { apriSessioneSnmp } from "../protocols/snmp-sessione";
+import type { CredenzialeSnmp } from "../protocols/snmp-sessione";
+import { runWinrmCommand, WinrmError } from "../devices/winrm-run";
 import { withSshClient } from "../devices/ssh-transport";
 import { cleanConsole } from "./parsers";
-import { QSS_COMMANDS, PROCURVE_COMMANDS, COMWARE_COMMANDS } from "./comandi";
-import { CATALOGO } from "./catalogo";
+import { CATALOGO, descrittore } from "./catalogo";
 import type { AcquisitionInput, AcquisitionTransports, ReadResult, SnmpRow } from "./schema";
 export { QSS_COMMANDS, PROCURVE_COMMANDS, COMWARE_COMMANDS } from "./comandi";
 type ConsoleProfile = AcquisitionInput['collector'];
@@ -102,7 +103,52 @@ export function readConsole(stream: Pick<ClientChannel, "on" | "write" | "end">,
         stream.on('error', () => finish('SSH_CHANNEL_ERROR'));
     });
 }
-export function createTransports(input: AcquisitionInput): AcquisitionTransports {
+/** Moduli sostituibili nei test; in produzione i veri `net-snmp` e `runWinrmCommand`. */
+export interface TransportDeps { snmp?: typeof snmp }
+type WinrmRunner = typeof runWinrmCommand;
+const WINRM_BATCH_STOP = ['WINRM_TCP_CLOSED', 'WINRM_TCP_TIMEOUT', 'WINRM_AUTH_REJECTED', 'WINRM_TIMEOUT', 'WINRM_FAILED'];
+/**
+ * Lettore WinRM: esegue solo script a id fisso dell'allowlist (`scripts`), uno alla volta. Gli errori del bridge
+ * diventano il solo codice (`WINRM_<CODE>`), mai il messaggio grezzo; dopo un errore di rete o di autenticazione
+ * gli script successivi non partono. `graceMs` (test) accorcia l'attesa oltre la scadenza totale.
+ */
+export function createWinrmReader(input: Pick<AcquisitionInput, 'host' | 'winrm' | 'limits'>, scripts: Readonly<Record<string, string>>, run: WinrmRunner = runWinrmCommand, totalMs?: number) {
+    const deadline = Date.now() + (totalMs ?? input.limits.total_timeout_ms);
+    return async (ids: readonly string[]): Promise<Record<string, ReadResult<string>>> => {
+        if (ids.some(id => !Object.prototype.hasOwnProperty.call(scripts, id)))
+            throw Error('COMMAND_NOT_ALLOWED');
+        const w = input.winrm;
+        if (!w)
+            return Object.fromEntries(ids.map(id => [id, fail('', 'NO_WINRM_CREDENTIAL')]));
+        const result: Record<string, ReadResult<string>> = {};
+        let aborted = false;
+        for (const id of ids) {
+            const remaining = deadline - Date.now();
+            if (aborted || remaining <= 0) {
+                result[id] = fail('', aborted ? 'WINRM_BATCH_ABORTED' : 'TOTAL_TIMEOUT');
+                continue;
+            }
+            let timer: ReturnType<typeof setTimeout> | undefined;
+            try {
+                const text = await Promise.race([
+                    run(input.host, w.port, w.username, w.password, scripts[id], true, w.realm),
+                    new Promise<never>((_, reject) => { timer = setTimeout(() => reject(Error('WINRM_TIMEOUT')), remaining); }),
+                ]);
+                result[id] = Buffer.byteLength(text) > input.limits.max_output_bytes ? fail('', 'OUTPUT_LIMIT') : { status: 'ok', data: text, warnings: [] };
+            }
+            catch (e) {
+                result[id] = fail('', e instanceof WinrmError ? 'WINRM_' + e.code : e instanceof Error && e.message === 'WINRM_TIMEOUT' ? 'WINRM_TIMEOUT' : 'WINRM_FAILED');
+            }
+            finally {
+                clearTimeout(timer);
+            }
+            aborted = result[id].warnings.some(c => WINRM_BATCH_STOP.includes(c));
+        }
+        return result;
+    };
+}
+export function createTransports(input: AcquisitionInput, deps: TransportDeps = {}): AcquisitionTransports {
+    const snmpModule = deps.snmp ?? snmp;
     const deadline = Date.now() + input.limits.total_timeout_ms;
     async function query(oids: string[], walk: boolean): Promise<ReadResult<SnmpRow[]>> {
         if (!input.snmp)
@@ -110,7 +156,7 @@ export function createTransports(input: AcquisitionInput): AcquisitionTransports
         if (Date.now() >= deadline)
             return fail([], 'TOTAL_TIMEOUT');
         return new Promise(resolve => {
-            let session: ReturnType<typeof apriSessioneCommunity>;
+            let session: import("net-snmp").Session | undefined;
             const rows: SnmpRow[] = [];
             let done = false, exceptions = false, bytes = 0;
             const timer = setTimeout(() => finish('SNMP_TIMEOUT'), Math.max(1, Math.min(input.limits.timeout_ms, deadline - Date.now())));
@@ -129,7 +175,7 @@ export function createTransports(input: AcquisitionInput): AcquisitionTransports
                 if (done)
                     return true;
                 for (const v of varbinds) {
-                    if (snmp.isVarbindError(v)) {
+                    if (snmpModule.isVarbindError(v)) {
                         exceptions = true;
                         continue;
                     }
@@ -149,7 +195,14 @@ export function createTransports(input: AcquisitionInput): AcquisitionTransports
                 return false;
             }
             try {
-                session = apriSessioneCommunity(snmp, input.host, input.snmp!.community, { versione: input.snmp!.version, port: input.snmp!.port, timeout: input.limits.timeout_ms, retries: 0 });
+                const cfg = input.snmp!, v3 = !('community' in cfg);
+                const cred: CredenzialeSnmp = 'community' in cfg ? { forma: 'community', community: cfg.community } : { forma: 'v3', record: { username: cfg.username, securityLevel: cfg.level, authProtocol: cfg.authProtocol ?? null, authKey: cfg.authKey ?? null, privProtocol: cfg.privProtocol ?? null, privKey: cfg.privKey ?? null } };
+                const opened = apriSessioneSnmp(snmpModule, input.host, cred, { versione: 'community' in cfg ? cfg.version : null, port: cfg.port, timeout: input.limits.timeout_ms, retries: 0 });
+                if (!opened.ok) {
+                    finish(v3 && !opened.motivo.startsWith('Sessione SNMP non aperta') ? 'SNMP_V3_OPTIONS_INVALID' : 'SNMP_OPEN_FAILED');
+                    return;
+                }
+                session = opened.session;
                 (session as typeof session & Pick<EventEmitter, 'on'>).on('error', () => finish('SNMP_TRANSPORT_ERROR'));
                 if (walk)
                     session.subtree(oids[0], input.collector === 'hp-comware' ? 50 : 10, feed, e => finish(e ? 'SNMP_READ_FAILED' : undefined));
@@ -218,5 +271,5 @@ export function createTransports(input: AcquisitionInput): AcquisitionTransports
             catch {
                 return Object.fromEntries(commands.map(c => [c, fail('', 'SSH_CONNECT_FAILED')]));
             }
-        } };
+        }, winrm: ids => createWinrmReader(input, descrittore(input.collector).script_winrm ?? {}, runWinrmCommand, Math.max(0, deadline - Date.now()))(ids) };
 }

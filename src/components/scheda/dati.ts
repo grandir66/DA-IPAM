@@ -3,6 +3,7 @@
  * `objects/[id]/page.tsx`, 21/10): serve alla pagina che li carica e a tutti i componenti di `scheda/`.
  */
 import type { UsataAdesso } from "@/lib/devices/usata-adesso";
+import type { NasInventorySnapshot } from "@/lib/devices/device-info";
 import type { NetworkDevice, ArpEntry, MacPortEntry, SwitchPort } from "@/types";
 
 /** Dati addizionali ritornati da GET /api/devices/[id] oltre al NetworkDevice base. */
@@ -147,30 +148,8 @@ export interface DeviceInfoJson {
   // Software
   installed_software_count?: number;
   packages_count?: number;
-  // F5.D: snapshot NAS Synology/QNAP (popolato da scan SNMP/SSH)
-  nas_inventory?: {
-    vendor: "synology" | "qnap";
-    sources?: string[];
-    snmp?: {
-      temperature_c?: number | null;
-      cpu_temperature_c?: number | null;
-      system_status?: string | null;
-      disks?: Array<{ slot?: string; model?: string; status?: string; smart_health?: string; capacity_gb?: number | null; temperature_c?: number | null; serial?: string }>;
-      raids?: Array<{ name?: string; status?: string; free_gb?: number | null; total_gb?: number | null }>;
-      volumes_snmp?: Array<{ name?: string; size_gb?: number | null; free_gb?: number | null; status?: string | null; raid_type?: string | null }>;
-      storage_pools?: Array<{ name?: string; status?: string | null; total_gb?: number | null; used_gb?: number | null }>;
-      ups?: { status?: string | null; battery_pct?: string | null };
-      services?: Array<{ name?: string; state?: string | null }>;
-    };
-    ssh?: {
-      cpu_model?: string | null;
-      kernel?: string | null;
-      mdstat_summary?: string;
-      synology_shares_preview?: string;
-      synology_packages_count?: number | null;
-      qnap_qpkg_preview?: string;
-    };
-  };
+  // Snapshot NAS Synology/QNAP (scan SNMP/SSH): il tipo è quello che lo scrive l'acquisizione
+  nas_inventory?: NasInventorySnapshot;
   // Metadata
   scanned_at?: string;
 }

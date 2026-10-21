@@ -29,6 +29,10 @@ import { InterfacceRouter } from "./tipi/router/interfacce";
 import { RoutingRouter } from "./tipi/router/routing";
 import { DhcpRouter } from "./tipi/router/dhcp";
 import { ConfigurazioneRouter } from "./tipi/router/configurazione";
+import { PanoramicaStorage } from "./tipi/storage/panoramica";
+import { DischiNas } from "./tipi/storage/dischi";
+import { VolumiNas } from "./tipi/storage/volumi";
+import { ServiziNas } from "./tipi/storage/servizi";
 
 export interface VoceTab {
   /** Solo se il nome cambia per questo tipo. */
@@ -55,6 +59,12 @@ export const TAB_DEL_TIPO: Partial<Record<TipoScheda, Partial<Record<TabId, Voce
   },
   router: TAB_ROUTER,
   firewall: TAB_ROUTER,
+  storage: {
+    panoramica: { render: (c) => <PanoramicaStorage ctx={c} /> },
+    dischi: { render: (c) => <DischiNas ctx={c} /> },
+    volumi: { render: (c) => <VolumiNas ctx={c} /> },
+    servizi_nas: { render: (c) => <ServiziNas ctx={c} /> },
+  },
 };
 
 /** Registro base: vale per ogni tipo che non ha una voce sua. */

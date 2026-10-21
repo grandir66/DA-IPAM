@@ -16,7 +16,7 @@ import {
 } from "@/lib/device-product-profiles";
 import { coerceScanTargetForVendor } from "@/lib/vendor-device-profile";
 import { DEFAULT_PORTS } from "@/lib/credentials/porte";
-import { profiloPerClassificazione, type HostPerProposta, type ProtocolloApparato } from "@/lib/devices/proposta-apparato";
+import { profiloPerClassificazione, type HostPerProposta, type PropostaApparato, type ProtocolloApparato } from "@/lib/devices/proposta-apparato";
 import type { RuoloServer } from "@/lib/classification/canonico";
 import type { NetworkDevice } from "@/types";
 import { FUSO_UTENTI, parseDbDate } from "@/lib/db-date";
@@ -71,6 +71,43 @@ export function profiloEffettivo(s: Pick<ScelteComuni, "classificazione" | "piat
   const ammesse = variantiPer(s.piattaforma, s.classificazione);
   if (ammesse.length > 1 && s.variante && (ammesse as string[]).includes(s.variante)) return s.variante as ProductProfileId;
   return profiloPerClassificazione(s.piattaforma, s.classificazione, s.ruoli) as ProductProfileId;
+}
+
+/** Parte della proposta di un host che conta per le scelte comuni. */
+export type PropostaPerComuni = Pick<PropostaApparato, "vendor" | "protocol" | "classification" | "port">;
+
+/**
+ * Scelte comuni a più host (22/10: fix A). Dove le proposte degli host sono tutte uguali si parte da
+ * quella; dove differiscono il campo resta **da scegliere** (non si indovina per tutti: prima
+ * Piattaforma e Protocollo venivano dal primo host, e quattro host misti ricevevano tutti WinRM 5985).
+ * `comuni` porta comunque un valore interno valido (quello del primo host) perché il resto della
+ * finestra lavora su valori veri; `daScegliere` dice quali campi la schermata deve mostrare vuoti
+ * e quali bloccano «Rendi apparato» finché non si scelgono.
+ */
+export function scelteComuniDaProposte(proposte: PropostaPerComuni[]): {
+  comuni: Pick<ScelteComuni, "classificazione" | "piattaforma" | "protocollo" | "porta">;
+  daScegliere: { classificazione: boolean; piattaforma: boolean; protocollo: boolean };
+} {
+  const prima = proposte[0];
+  const tutte = (f: (p: PropostaPerComuni) => unknown) => proposte.every((p) => f(p) === f(prima));
+  const classificazioneUguale = tutte((p) => p.classification);
+  const piattaformaUguale = tutte((p) => p.vendor);
+  const protocolloUguale = tutte((p) => p.protocol);
+  const daScegliere = {
+    // Una classificazione vuota è già «da scegliere» anche per un host solo.
+    classificazione: !classificazioneUguale || !prima.classification,
+    piattaforma: !piattaformaUguale,
+    protocollo: !protocolloUguale,
+  };
+  return {
+    comuni: {
+      classificazione: classificazioneUguale ? prima.classification : "",
+      piattaforma: prima.vendor,
+      protocollo: prima.protocol,
+      porta: prima.port,
+    },
+    daScegliere,
+  };
 }
 
 export interface RigaPerCreazione {

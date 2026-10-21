@@ -50,6 +50,7 @@ import {
 import {
   corpoCreazione,
   fonteProposta,
+  scelteComuniDaProposte,
   portaStandard,
   profiloEffettivo,
   type HostPerRendiApparato,
@@ -164,17 +165,14 @@ export function RendiApparatoDialog({ hosts, open, onOpenChange, onCreated }: Re
 
 function inizializza(hosts: HostPerRendiApparato[], archivio: CredenzialeArchivio[]) {
   const proposte = hosts.map((h) => proponiApparato(h, archivio));
-  const prima = proposte[0];
-  // Proposte diverse fra gli host: la classificazione resta da scegliere (non si indovina per tutti).
-  const uguali = proposte.every((p) => p.vendor === prima.vendor && p.protocol === prima.protocol && p.classification === prima.classification);
+  // Proposte diverse fra gli host: classificazione, piattaforma e protocollo restano da scegliere (non si indovina per tutti).
+  const { comuni: base, daScegliere } = scelteComuniDaProposte(proposte);
+  const uguali = !daScegliere.classificazione && !daScegliere.piattaforma && !daScegliere.protocollo;
   const ruoli = RUOLI_SERVER.filter((r) => hosts.some((h) => ruoliDaHost(h).includes(r)));
   const comuni: ScelteComuni = {
-    classificazione: uguali ? prima.classification : "",
-    piattaforma: prima.vendor,
+    ...base,
     variante: null,
-    ruoli: uguali && prima.classification === "server" ? [...ruoli] : [],
-    protocollo: prima.protocol,
-    porta: prima.port,
+    ruoli: !daScegliere.classificazione && base.classificazione === "server" ? [...ruoli] : [],
   };
   const righe: RigaApparato[] = hosts.map((h, i) => ({
     host: h,
@@ -185,7 +183,7 @@ function inizializza(hosts: HostPerRendiApparato[], archivio: CredenzialeArchivi
     tentativi: [],
     creazione: null,
   }));
-  return { comuni, righe, uguali, ruoliIniziali: [...ruoli] as RuoloServer[] };
+  return { comuni, righe, uguali, daScegliere, ruoliIniziali: [...ruoli] as RuoloServer[] };
 }
 
 function CorpoRendiApparato({
@@ -205,6 +203,8 @@ function CorpoRendiApparato({
   const [archivio, setArchivio] = useState(archivioIniziale);
   const [comuni, setComuni] = useState<ScelteComuni>(iniziale.comuni);
   const [righe, setRighe] = useState<RigaApparato[]>(iniziale.righe);
+  // Piattaforma e protocollo: con host dalle proposte diverse restano «Scegli…» finché non li scegli tu.
+  const [daScegliere, setDaScegliere] = useState({ piattaforma: iniziale.daScegliere.piattaforma, protocollo: iniziale.daScegliere.protocollo });
   const [escluse, setEscluse] = useState<EscluseHost>({});
   const [erroreEscluse, setErroreEscluse] = useState<string | null>(null);
   const [versioneEscluse, setVersioneEscluse] = useState(0);
@@ -281,6 +281,13 @@ function CorpoRendiApparato({
 
   /** Una scelta comune cambia: variante, ruoli, piattaforma e protocollo restano coerenti fra loro e con le credenziali. */
   function cambiaScelte(p: Partial<ScelteComuni>) {
+    if (p.piattaforma !== undefined || p.protocollo !== undefined) {
+      setDaScegliere((d) => ({
+        piattaforma: p.piattaforma !== undefined ? false : d.piattaforma,
+        // Scegliere la piattaforma può cambiare il protocollo da sola (coerceProtocolForVendor): resta da confermare a mano.
+        protocollo: p.protocollo !== undefined ? false : d.protocollo,
+      }));
+    }
     const next: ScelteComuni = { ...comuni, ...p };
     if (p.classificazione !== undefined && p.classificazione !== comuni.classificazione) {
       next.variante = null;
@@ -422,11 +429,12 @@ function CorpoRendiApparato({
 
   const daCreare = righe.filter((r) => r.creazione?.stato !== "creato");
   const senzaProva = daCreare.filter((r) => esitoVisibile(r, comuni.protocollo, escluse, archivio).stato !== "riuscita").length;
+  const manca = !comuni.classificazione || daScegliere.piattaforma || daScegliere.protocollo;
   const nomiOk = daCreare.every((r) => r.nome.trim() !== "");
   const occupato = inCorso.size > 0 || ricercaAttiva || creando;
 
   async function rendiApparato() {
-    if (!comuni.classificazione || daCreare.length === 0) return;
+    if (manca || daCreare.length === 0) return;
     setCreando(true);
     setErroreCreazione(null);
     let creati = 0;
@@ -485,9 +493,9 @@ function CorpoRendiApparato({
   );
   const campoPiattaforma = (
     <Campo etichetta="Piattaforma">
-      <Select value={comuni.piattaforma} onValueChange={(v) => v && cambiaScelte({ piattaforma: v })}>
+      <Select value={daScegliere.piattaforma ? null : comuni.piattaforma} onValueChange={(v) => v && cambiaScelte({ piattaforma: v })}>
         <SelectTrigger className="h-9 w-full text-sm" aria-label="Piattaforma">
-          <SelectValue />
+          <SelectValue placeholder="Scegli…" />
         </SelectTrigger>
         <SelectContent>
           {PIATTAFORME.map((p) => (
@@ -519,9 +527,9 @@ function CorpoRendiApparato({
     ) : null;
   const campoProtocollo = (
     <Campo etichetta="Protocollo">
-      <Select value={comuni.protocollo} onValueChange={(v) => v && cambiaScelte({ protocollo: v as ProtocolloApparato })}>
+      <Select value={daScegliere.protocollo ? null : comuni.protocollo} onValueChange={(v) => v && cambiaScelte({ protocollo: v as ProtocolloApparato })}>
         <SelectTrigger className="h-9 w-full text-sm" aria-label="Protocollo">
-          <SelectValue />
+          <SelectValue placeholder="Scegli…" />
         </SelectTrigger>
         <SelectContent>
           {PROTOCOLLI.map((p) => (
@@ -595,7 +603,7 @@ function CorpoRendiApparato({
           {multi ? (
             <Sezione numero="1–2" titolo="Valgono per tutti">
               {!iniziale.uguali && (
-                <p className="text-[13px] text-muted-foreground">Gli host scelti hanno proposte diverse: scegli tu la classificazione.</p>
+                <p className="text-[13px] text-muted-foreground">Gli host scelti hanno proposte diverse: scegli tu classificazione, piattaforma e protocollo dove sono vuoti.</p>
               )}
               <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
                 {campoClassificazione}
@@ -659,18 +667,20 @@ function CorpoRendiApparato({
         </div>
       </DialogScrollableArea>
 
-      <DialogFooter className="shrink-0 items-center border-t border-border/50 px-4 py-3">
+      <DialogFooter className="mx-0 mb-0 shrink-0 items-center border-t border-border/50 px-4 py-3">
         <div className="mr-auto flex flex-wrap items-center gap-2">
           {senzaProva > 0 && (
             <BadgeAvviso>{multi ? `${senzaProva} su ${daCreare.length} senza credenziale provata` : "senza credenziale provata"}</BadgeAvviso>
           )}
           {!comuni.classificazione && <BadgeAvviso>scegli la classificazione</BadgeAvviso>}
+          {daScegliere.piattaforma && <BadgeAvviso>scegli la piattaforma</BadgeAvviso>}
+          {daScegliere.protocollo && <BadgeAvviso>scegli il protocollo</BadgeAvviso>}
           {erroreCreazione && <span className="text-[13px] font-semibold text-[#8E1B20] dark:text-[#E8625A]">✕ {erroreCreazione}</span>}
         </div>
         <Button type="button" variant="outline" onClick={onClose} disabled={creando}>
           Annulla
         </Button>
-        <Button type="button" onClick={() => void rendiApparato()} disabled={!comuni.classificazione || !nomiOk || occupato || daCreare.length === 0}>
+        <Button type="button" onClick={() => void rendiApparato()} disabled={manca || !nomiOk || occupato || daCreare.length === 0}>
           {creando ? "Creazione…" : multi ? `Rendi apparato (${daCreare.length})` : "Rendi apparato"}
         </Button>
       </DialogFooter>

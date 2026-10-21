@@ -260,6 +260,8 @@ export interface NetworkDevice {
   snmp_version_fissata?: number;
   /** 1 = classificazione scelta a mano: la scansione non la riscrive (tappa 5). */
   classification_manual?: number;
+  /** JSON array dei ruoli del server (`["dns","backup"]`). */
+  server_roles?: string | null;
   api_url: string | null;
   port: number;
   enabled: number;

@@ -7,7 +7,7 @@
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { corpoCreazione, dataBreve, fonteProposta, portaStandard, profiloEffettivo, quandoBreve, type HostPerRendiApparato, type ScelteComuni } from "@/lib/devices/rendi-apparato";
+import { corpoCreazione, scelteComuniDaProposte, dataBreve, fonteProposta, portaStandard, profiloEffettivo, quandoBreve, type HostPerRendiApparato, type ScelteComuni } from "@/lib/devices/rendi-apparato";
 
 const base: ScelteComuni = { classificazione: "switch", piattaforma: "hp", variante: null, ruoli: [], protocollo: "ssh", porta: 22 };
 const riga = { nome: " sw-core ", ip: "10.0.0.2", credentialId: "7", snmpCredentialId: null };
@@ -72,5 +72,32 @@ describe("porta, fonte e date", () => {
     assert.equal(quandoBreve("2026-10-20T08:00:00.000Z", adesso), "20/10");
     assert.equal(dataBreve("2026-10-20 22:30:00"), "21/10");
     assert.equal(quandoBreve(null), "");
+  });
+});
+
+describe("scelteComuniDaProposte (più host con proposte diverse)", () => {
+  const win = { vendor: "windows", protocol: "winrm" as const, classification: "server", port: 5985 };
+  const lin = { vendor: "linux", protocol: "ssh" as const, classification: "server", port: 22 };
+
+  it("host uguali: si parte dalla proposta, niente da scegliere", () => {
+    const r = scelteComuniDaProposte([lin, { ...lin }]);
+    assert.deepEqual(r.daScegliere, { classificazione: false, piattaforma: false, protocollo: false });
+    assert.equal(r.comuni.piattaforma, "linux");
+    assert.equal(r.comuni.porta, 22);
+  });
+  it("1 Windows + 3 Linux: piattaforma e protocollo restano da scegliere (prima venivano dal primo host)", () => {
+    const r = scelteComuniDaProposte([win, lin, lin, lin]);
+    assert.equal(r.daScegliere.piattaforma, true);
+    assert.equal(r.daScegliere.protocollo, true);
+    assert.equal(r.daScegliere.classificazione, false);
+  });
+  it("stessa piattaforma ma protocolli diversi: solo il protocollo è da scegliere", () => {
+    const r = scelteComuniDaProposte([lin, { ...lin, protocol: "snmp_v2", port: 161 }]);
+    assert.deepEqual(r.daScegliere, { classificazione: false, piattaforma: false, protocollo: true });
+  });
+  it("classificazione diversa o vuota: da scegliere, e il valore comune è vuoto", () => {
+    assert.equal(scelteComuniDaProposte([lin, { ...lin, classification: "nas" }]).comuni.classificazione, "");
+    const v = scelteComuniDaProposte([{ ...lin, classification: "" }]);
+    assert.equal(v.daScegliere.classificazione, true);
   });
 });

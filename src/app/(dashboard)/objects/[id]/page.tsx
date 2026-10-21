@@ -28,6 +28,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { ClassificationEvidencePanel } from "@/components/shared/classification-evidence-panel";
+import { BadgeAMano, BadgeSenzaProva } from "@/components/devices/credenziali-assegnate";
 // v0.2.646 audit perf UI9: i dialog modali (Promote/LinkIps/EditDevice) e i
 // componenti grafici pesanti (LatencyChart/UptimeTimeline/LibreNMSGraphs) sono
 // caricati on-demand. Prima erano nel bundle iniziale anche se l'utente non li
@@ -955,6 +956,8 @@ export default function ObjectDetailPage() {
                 <>
                   <Separator orientation="vertical" className="h-3.5" />
                   <Badge variant="outline" className="text-[10px]">{classificationLabel}</Badge>
+                  {host.classification_manual === 1 && <BadgeAMano piccolo />}
+                  {isManaged && runtimeSummary.validatedCreds.length === 0 && <BadgeSenzaProva corto />}
                 </>
               )}
               {host.network_name && (
@@ -2678,7 +2681,12 @@ export default function ObjectDetailPage() {
       {/* ─── 6. Credenziali e gestione (solo se host promosso a device) ─── */}
       {isManaged && device && (
         <Section icon={<KeyRound className="h-4 w-4" />} title="Credenziali e gestione"
-          badge={<Badge variant="outline" className="ml-2 text-[10px]">{device.protocol}</Badge>}>
+          badge={
+            <>
+              <Badge variant="outline" className="ml-2 text-[10px]">{device.protocol}</Badge>
+              {runtimeSummary.validatedCreds.length === 0 && <span className="ml-2"><BadgeSenzaProva /></span>}
+            </>
+          }>
           <dl className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-3">
             <InfoRow label="Device name" value={device.name} />
             <InfoRow label="Vendor" value={device.vendor} />

@@ -98,6 +98,8 @@ import { SshTerminalDialog } from "@/components/ssh-terminal/ssh-terminal-dialog
 import { MeshCentralHostBadge } from "@/components/integrations/meshcentral-host-badge";
 import { porteAperte } from "@/lib/integrations/meshcentral/senza-agente-porte";
 import type { ClassPreset, IconName } from "./preset-types";
+import { BadgeAMano, BadgeSenzaProva } from "@/components/devices/credenziali-assegnate";
+import { hostGestitoSenzaProva } from "@/lib/devices/credenziali-assegnate";
 import { PresetsDialog } from "@/components/devices/presets-dialog";
 import { useUrlPerBrowser } from "@/components/shared/url-per-browser";
 
@@ -120,6 +122,8 @@ type EnrichedHost = Host & {
   switch_device_name?: string;
   ad_dns_host_name?: string | null;
   validated_protocols?: string[];
+  /** 1 = classificazione scelta a mano (la scansione non la cambia). */
+  classification_manual?: number;
   multihomed?: {
     group_id: string;
     match_type: string;
@@ -1441,7 +1445,12 @@ export default function DiscoveryPage() {
             selectOptions={opts}
             onSave={(v) => saveHostFieldInline(h.id, { classification: v || "unknown" })}
             display={h.classification && h.classification !== "unknown"
-              ? <Badge variant="outline" className="text-xs">{effectiveLabel(h.classification) || h.classification}</Badge>
+              ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Badge variant="outline" className="text-xs">{effectiveLabel(h.classification) || h.classification}</Badge>
+                  {h.classification_manual === 1 && <BadgeAMano piccolo />}
+                </span>
+              )
               : <span className="text-muted-foreground text-xs">—</span>}
             title="Clicca per cambiare classificazione"
           />
@@ -1560,7 +1569,9 @@ export default function DiscoveryPage() {
           : <span className="text-muted-foreground text-xs">—</span>;
       }
       case "validated_creds":
-        return <ProtocolBadges protocols={h.validated_protocols || []} />;
+        return hostGestitoSenzaProva(h.device_id, h.validated_protocols)
+          ? <BadgeSenzaProva corto />
+          : <ProtocolBadges protocols={h.validated_protocols || []} />;
       case "detected": {
         const det = parseDetectedDeviceFromDetectionJson(h.detection_json);
         if (!det) return <span className="text-muted-foreground text-xs">—</span>;

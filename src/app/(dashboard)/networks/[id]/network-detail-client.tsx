@@ -65,6 +65,8 @@ import { parseDetectedDeviceFromDetectionJson } from "@/lib/device-fingerprint-c
 import { NetworkCredentialsTable } from "@/components/shared/network-credentials-table";
 import { ProtocolBadges } from "@/components/shared/protocol-badges";
 import { RendiApparatoDialog } from "@/components/devices/rendi-apparato-dialog";
+import { BadgeAMano, BadgeSenzaProva } from "@/components/devices/credenziali-assegnate";
+import { hostGestitoSenzaProva } from "@/lib/devices/credenziali-assegnate";
 import { HostCredentialsDialog } from "@/components/shared/host-credentials-dialog";
 import { ipAssignmentShortLabel } from "@/lib/ip-assignment";
 import { SortableTableHead } from "@/components/shared/sortable-table-head";
@@ -1449,6 +1451,7 @@ export function NetworkDetailClient({
                       )}
                     </TableCell>
                     <TableCell onClick={(e) => e.stopPropagation()}>
+                      {hostGestitoSenzaProva((host as HostWithDevice).device_id, hostValidatedProtocols[host.id]) && <BadgeSenzaProva corto />}
                       <ProtocolBadges
                         protocols={hostValidatedProtocols[host.id] || []}
                         onClick={() => setCredDialogHost({ id: host.id, ip: host.ip })}
@@ -1539,7 +1542,7 @@ export function NetworkDetailClient({
                         // Mostriamo il valore impostato a mano + eventuale suggerimento v2 non applicato.
                         <div className="flex flex-col gap-0.5 leading-tight">
                           <div className="flex items-center gap-1 flex-wrap">
-                            <Badge variant="outline" className="text-[10px] py-0">Manuale</Badge>
+                            <BadgeAMano piccolo />
                             <Badge variant="outline">{host.classification ? getClassificationLabel(host.classification) : "—"}</Badge>
                           </div>
                           {host.attr_category ? (

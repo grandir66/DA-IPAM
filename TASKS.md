@@ -35,7 +35,10 @@ Diagnosi in sola lettura sull'appliance 70151 (VM 104 su PX01, `qm guest exec`; 
 - [x] Profilo HP dal sysDescr alla lettura delle informazioni (`profiloHpDaSysDescr`, solo profili switch HP; AOS-CX escluso) — 3 prove viste fallire poi verdi
 - [ ] Lettura SNMP generale dei Comware: `TEMPO_SCADUTO` su 1-3 walk su 16 (IRF lento, già noto dal collector): da guardare dopo la VLAN
 - [x] Canale di aggiornamento di 70151 su `dev` (ok di Riccardo 22/10): `DA_INVENT_BRANCH=dev` in `.env.local`, backup `.env.local.bak-20261022-164828`, aggiornamento avviato
-- [ ] Verifica VLAN dei Comware sul dato vero dopo l'aggiornamento a v0.9.879
+- [x] Verifica VLAN dei Comware sul dato vero dopo l'aggiornamento a v0.9.879 — **non basta**: letture 19:02-19:06 ancora `SNMP_STATO_1` 2/7. Prova vera su HP5700-Core (22/10 19:57): *tooBig* anche con UNA riga (v1 GETNEXT e v2c a 1) sulle liste di porte (Static/Current Egress); i nomi arrivano tutti (29 VLAN) e il walk cade solo alla riga dopo l'ultimo nome (la prima lista di porte); PVID 91 righe ok. La riprova a blocchi piccoli resta valida per altri agenti ma qui la causa è la riga singola più grande del pacchetto massimo dello switch
+- [ ] Comware: tenere i nomi delle VLAN quando il walk dei nomi cade per *tooBig* dopo righe lette (un nome non supera mai il pacchetto), matrice dai PVID segnata «dedotta» come per la ProMax
+- [ ] Comware: porte taggate via SSH (`display vlan all` / link-type, collector `hp-comware`) — serve la credenziale SSH degli switch (decisione 4 di Riccardo)
+- [ ] Comware: in alternativa sullo switch `snmp-agent packet max-size` più grande (scrittura sull'apparato del cliente: decide Riccardo)
 - Prompt per il resto del giro: [`docs/handoff/2026-10-22-prompt-switch-librenms.md`](docs/handoff/2026-10-22-prompt-switch-librenms.md) (Riccardo: ok a farlo in una sessione nuova)
 - [ ] Proposta di aggiunta switch/router: SSH principale + SNMP (oggi con SNMP principale non propone mai l'SSH: `proposta-apparato.ts`)
 - [ ] LibreNMS: candidati all'aggiunta automatica = tutti gli oggetti con SNMP verificato; esclusione per oggetto «Non aggiungere a LibreNMS»; esito visibile

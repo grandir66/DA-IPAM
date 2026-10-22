@@ -203,6 +203,35 @@ function perExecLinux(): FixtureCollector {
     return { ...base, normale: () => esegui(c => linuxUscite[c] ?? "") };
 }
 
+// Synology DSM 7 (forme dalla documentazione DSM e da DADude3 synology.py; dati inventati). synoshare senza root: errore.
+const synologyUscite: Record<string, string> = {
+    "cat /etc.defaults/VERSION": 'majorversion="7"\nminorversion="2"\nproductversion="7.2.1"\nbuildnumber="69057"\nsmallfixnumber="5"\n',
+    "cat /etc/synoinfo.conf": 'upnpmodelname="DS-LAB"\nunique="synology_lab_dslab"\n', "cat /proc/sys/kernel/syno_hw_version": "DS-LAB\n",
+    "cat /proc/sys/kernel/syno_serial": "LABS0001\n", "hostname": `syn-${SEGRETO}\n`, "uname -srm": "Linux 4.4.302+ x86_64\n", "cat /proc/uptime": "1000.00 2000.00\n",
+    "cat /proc/meminfo": "MemTotal:        4000000 kB\nMemAvailable:    2000000 kB\n",
+    "ip -o link show": "2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc mq state UP mode DEFAULT group default qlen 1000\\    link/ether 02:00:00:00:70:01 brd ff:ff:ff:ff:ff:ff\n",
+    "ip -o -4 addr show": "2: eth0    inet 192.0.2.70/24 brd 192.0.2.255 scope global eth0\\       valid_lft forever preferred_lft forever\n",
+    "df -P -k": "Filesystem         1024-blocks       Used  Available Capacity Mounted on\n/dev/mapper/cachedev_0 7000000000 1000000000 6000000000      15% /volume1\n",
+    "df -P -i": "Filesystem            Inodes IUsed IFree IUse% Mounted on\n/dev/mapper/cachedev_0      0     0     0     - /volume1\n",
+    "cat /etc/samba/smb.share.conf": "[Dati]\npath=/volume1/Dati\ncomment=Prova\n",
+    "cat /etc/exports": "/volume1/Dati\t192.0.2.0/24(rw,async,no_wdelay,crossmnt,insecure,all_squash,insecure_locks,sec=sys,anonuid=1025,anongid=100)\n",
+    "cat /var/packages/*/INFO": 'package="HyperBackup"\nversion="4.1.0-3718"\nmaintainer="Synology Inc."\npackage="SynologyPhotos"\nversion="1.6.2-0720"\nmaintainer="Synology Inc."\n',
+};
+const synologyReq: AcquisitionRequest = { collector: "synology-nas", host: "192.0.2.70", ssh: { username: "lab", password: SEGRETO } };
+export const SYNOLOGY_USCITE = synologyUscite;
+function perExecSynology(): FixtureCollector {
+    const base = perExec(synologyReq, c => synologyUscite[c] ?? "", ["cat /etc.defaults/VERSION"]);
+    const esegui = async (): Promise<Esito> => {
+        let chiamate = 0;
+        const t: AcquisitionTransports = {
+            get: async () => { throw Error(SEGRETO); }, walk: async () => { throw Error(SEGRETO); },
+            shell: async comandi => { chiamate++; return Object.fromEntries(comandi.map(c => [c, c.startsWith("synoshare") ? { status: "error" as const, data: "", warnings: ["SSH_COMMAND_FAILED"] } : ok(synologyUscite[c] ?? "")])); },
+        };
+        return { snapshot: await collectDevice(synologyReq, t), chiamateShell: chiamate };
+    };
+    return { ...base, normale: esegui };
+}
+
 export const FIXTURE: Record<CollectorId, FixtureCollector> = {
     "qnap-switch": conGarbage(perShell(qnapReq, consola({ identita: { "show system-information": qnapIdent } }, qnapNormale)), { "show system-information": qnapIdent }, undefined),
     "hp-procurve": conGarbage(perShell(procurveReq, consola({ identita: procurveIdent, snmp: procurveSnmp }, procurveNormale)), procurveIdent, procurveSnmp),
@@ -216,6 +245,7 @@ export const FIXTURE: Record<CollectorId, FixtureCollector> = {
     "mikrotik-routeros": perExec(mikrotikReq, c => mikrotikUscite[c] ?? "", ["/system resource print", "/system routerboard print"]),
     "windows": perWinrm(windowsReq, id => windowsUscite[id] ?? ""),
     "linux": perExecLinux(),
+    "synology-nas": perExecSynology(),
     "netapp-ontap": {
         richiesta: ontapReq,
         normale: async () => ({ snapshot: await collectNetappOntap(ontapReq, async () => ontapRaw()), chiamateShell: 0 }),

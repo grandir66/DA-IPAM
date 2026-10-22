@@ -9,6 +9,7 @@ import { collectQnapNas } from "./qnap-nas";
 import { collectMikrotikRouteros } from "./mikrotik-routeros";
 import { collectWindows } from "./windows";
 import { collectLinux } from "./linux";
+import { collectSynologyNas } from "./synology-nas";
 import { CATALOGO, versioneCollector } from "./catalogo";
 import type { CollectorId } from "./catalogo";
 type Collect = (request: AcquisitionInput, transports?: AcquisitionTransports) => Promise<AcquisitionSnapshot>;
@@ -23,6 +24,7 @@ const IMPLEMENTAZIONI: Record<CollectorId, Collect> = {
     "mikrotik-routeros": collectMikrotikRouteros,
     "windows": collectWindows,
     "linux": collectLinux,
+    "synology-nas": collectSynologyNas,
 };
 /** Registry statico derivato dal catalogo: nessun codice caricato a runtime. Una famiglia nuova: vedi `catalogo.ts`. */
 export const COLLECTORS = Object.freeze(Object.fromEntries(CATALOGO.map(d => [d.id, { version: versioneCollector(d.id), collect: IMPLEMENTAZIONI[d.id] }])) as Record<CollectorId, { version: string; collect: Collect }>);

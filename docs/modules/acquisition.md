@@ -469,6 +469,21 @@ Server Linux via **SSH exec** con un utente **senza `sudo`**, un login, allowlis
 - **Non collaudato** (repertorio da DADude3 `linux.py:432,794`) e non nel riconoscimento del prodotto. Da verificare al
   collaudo: `systemctl show '*.service'` sulle versioni di systemd in uso, LVM senza root, `df -T` con BusyBox.
 
+## Collector synology-nas (non collaudato)
+
+Synology DSM 7 via **SSH exec**, un login, allowlist `SYNOLOGY_NAS_COMMANDS`, nessun `sudo`.
+
+- **identity**: firmware intero da `/etc.defaults/VERSION` («DSM 7.2.1-69057 Update 5»: versione, build, update; mai
+  troncato), modello da `/proc/sys/kernel/syno_hw_version` (poi `upnpmodelname` di `synoinfo.conf`), seriale da
+  `/proc/sys/kernel/syno_serial`.
+- **system**, **resources**, **interfaces**, **network**, **host_storage** (solo filesystem da `df -P`; dischi e RAID
+  non letti) coi parser comuni Linux.
+- **shares** da `/etc/samba/smb.share.conf` più `/etc/exports`; i nomi di `synoshare` si aggiungono se l'utente può
+  leggerli. `synoshare` è in allowlist nelle due forme (`--enum ALL`, `-enum ALL`): quale vale è da verificare sulla
+  DSM vera; senza root di solito non risponde (avviso `SYNOSHARE_NOT_READ`).
+- **software** da tutti gli `INFO` di `/var/packages`, **senza limiti** (il donatore ne teneva 50 in silenzio).
+- **Non collaudato** (DADude3 `synology.py:798,810`) e non nel riconoscimento del prodotto.
+
 ## Aggiungere una famiglia
 
 Una famiglia è un collector con lo stesso contratto JSON 1.0. Il catalogo è l'**unico elenco**: l'enum

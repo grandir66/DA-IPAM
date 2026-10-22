@@ -6,7 +6,7 @@
  * (la fixture): la prova di contratto fallisce se manca uno dei tre. Guida: docs/modules/acquisition.md.
  */
 import { SCRIPT_WINDOWS } from "./windows-script";
-import { QSS_COMMANDS, PROCURVE_COMMANDS, COMWARE_COMMANDS, QNAP_NAS_COMMANDS, MIKROTIK_ROUTEROS_COMMANDS, LINUX_COMMANDS } from "./comandi";
+import { QSS_COMMANDS, PROCURVE_COMMANDS, COMWARE_COMMANDS, QNAP_NAS_COMMANDS, MIKROTIK_ROUTEROS_COMMANDS, LINUX_COMMANDS, SYNOLOGY_NAS_COMMANDS } from "./comandi";
 
 export type ProtocolloCollector = "snmp" | "ssh" | "api" | "winrm";
 export type StatoCollaudo = "collaudato" | "non_collaudato";
@@ -94,6 +94,13 @@ export const CATALOGO = [
         id: "linux", versione: "0.1.0", famiglia: "server", prodotti: ["Linux (Debian, Ubuntu, RHEL e derivate; utente senza sudo)"],
         credenziali: { ammesse: ["ssh"], una_di: ["ssh"] },
         sezioni: ["identity", "system", "interfaces", "network", "resources", "host_storage", "software", "services"], comandi: LINUX_COMMANDS, ssh_modo: "exec",
+        collaudo: "non_collaudato", collaudati: [],
+    },
+    {
+        // Non collaudato: uscite dalla documentazione DSM e da DADude3 synology.py; `-enum`/`--enum` da verificare sulla DSM vera.
+        id: "synology-nas", versione: "0.1.0", famiglia: "nas", prodotti: ["Synology NAS (DSM 7)"],
+        credenziali: { ammesse: ["ssh"], una_di: ["ssh"] },
+        sezioni: ["identity", "system", "interfaces", "network", "resources", "host_storage", "shares", "software"], comandi: SYNOLOGY_NAS_COMMANDS, ssh_modo: "exec",
         collaudo: "non_collaudato", collaudati: [],
     },
 ] as const satisfies readonly DescrittoreCollector[];

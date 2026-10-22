@@ -413,6 +413,26 @@ QNAP NAS con QTS o QuTS hero, letto via **SSH exec** (`ssh_modo: "exec"`: un log
   riconoscimento del prodotto (`riconosci.ts`): si usa dalla CLI finché un QNAP vero non l'ha letto. Da verificare
   al collaudo: percorso di `smb.conf` e `qpkg.conf` sul firmware vero, `ip` e `df -i` di BusyBox.
 
+## Collector mikrotik-routeros (non collaudato)
+
+MikroTik RouterOS 7 (router e switch CRS) via **SSH exec su una connessione sola** (`ssh_modo: "exec"`, come la
+scheda MikroTik dell'app), allowlist `MIKROTIK_ROUTEROS_COMMANDS`: solo `print` e `monitor … once`, mai `/export`.
+
+- Coordinato con la scheda MikroTik: interfacce, bridge, porte, monitor delle porte, bonding, vicini, risorse,
+  routerboard, VLAN del bridge e tabella MAC si leggono coi parser di `devices/mikrotik-*` (uscite vere anonime nel
+  repo). `parseRouterOsDurationSeconds` è passata in `devices/routeros-durata.ts` (foglia senza DB; `router-client`
+  la riesporta) perché il core dei collector non importi il DB: lo controlla una prova.
+- Nuovi (`mikrotik-routeros-parsers.ts`): velocità e duplex da `/interface ethernet monitor` letto **per colonne**
+  (`tabellaMonitor`), PoE da `/interface ethernet poe monitor` con la potenza **solo** da `poe-out-power` (la
+  tensione non è mai potenza: difetto di DA-MKNET `mikrotik.service.ts:1862`), `vlan-ids` con intervalli ed elenchi
+  (`:1738`), indirizzi e ARP.
+- Un errore di RouterOS scritto su stdout con exit 0 (`bad command name`, `not enough permissions`) non è un'uscita
+  buona: comando sconosciuto = `unsupported`, permessi = `error`.
+- Spanning tree solo CIST (le MSTI non si leggono, avviso `MSTI_NOT_COLLECTED`); sensori (`/system health`) non letti.
+- **Non collaudato** e non nel riconoscimento del prodotto: i giri di oggi continuano a leggere i MikroTik col
+  percorso storico. Da verificare al collaudo: monitor ethernet e PoE su un modello con PoE, `bridge host` con molte
+  voci, tempi su un CCR con molte interfacce.
+
 ## Aggiungere una famiglia
 
 Una famiglia è un collector con lo stesso contratto JSON 1.0. Il catalogo è l'**unico elenco**: l'enum

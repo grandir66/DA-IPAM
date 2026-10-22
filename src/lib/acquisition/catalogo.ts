@@ -5,7 +5,7 @@
  * Una famiglia nuova si aggiunge qui, in `index.ts` (la funzione `collect`) e in `__tests__/contratto-fixture.ts`
  * (la fixture): la prova di contratto fallisce se manca uno dei tre. Guida: docs/modules/acquisition.md.
  */
-import { QSS_COMMANDS, PROCURVE_COMMANDS, COMWARE_COMMANDS, QNAP_NAS_COMMANDS } from "./comandi";
+import { QSS_COMMANDS, PROCURVE_COMMANDS, COMWARE_COMMANDS, QNAP_NAS_COMMANDS, MIKROTIK_ROUTEROS_COMMANDS } from "./comandi";
 
 export type ProtocolloCollector = "snmp" | "ssh" | "api" | "winrm";
 export type StatoCollaudo = "collaudato" | "non_collaudato";
@@ -72,6 +72,13 @@ export const CATALOGO = [
         id: "qnap-nas", versione: "0.1.0", famiglia: "nas", prodotti: ["QNAP NAS (QTS, QuTS hero)"],
         credenziali: { ammesse: ["ssh"], una_di: ["ssh"] },
         sezioni: ["identity", "system", "interfaces", "network", "resources", "host_storage", "shares", "software"], comandi: QNAP_NAS_COMMANDS, ssh_modo: "exec",
+        collaudo: "non_collaudato", collaudati: [],
+    },
+    {
+        // Non collaudato: parser della scheda MikroTik (uscite vere anonime nel repo) più monitor ethernet/PoE dalla documentazione.
+        id: "mikrotik-routeros", versione: "0.1.0", famiglia: "router", prodotti: ["MikroTik RouterOS 7 (router e switch CRS)"],
+        credenziali: { ammesse: ["ssh"], una_di: ["ssh"] },
+        sezioni: ["identity", "interfaces", "vlans", "forwarding", "neighbors", "spanning_tree", "aggregation", "poe", "network", "resources"], comandi: MIKROTIK_ROUTEROS_COMMANDS, ssh_modo: "exec",
         collaudo: "non_collaudato", collaudati: [],
     },
 ] as const satisfies readonly DescrittoreCollector[];

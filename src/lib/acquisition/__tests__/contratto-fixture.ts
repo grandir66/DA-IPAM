@@ -118,6 +118,29 @@ const qnapNasUscite: Record<string, string> = {
 const qnapNasReq: AcquisitionRequest = { collector: "qnap-nas", host: "192.0.2.40", ssh: { username: "lab", password: SEGRETO } };
 export const QNAP_NAS_USCITE = qnapNasUscite;
 
+
+// MikroTik RouterOS 7 (forme delle uscite vere della scheda MikroTik, devices/__tests__/fixtures; monitor ethernet e PoE dalla
+// documentazione RouterOS 7; dati inventati).
+const mikrotikUscite: Record<string, string> = {
+    "/system resource print": "                   uptime: 2w20m57s\n                  version: 7.24.5 (stable)\n             total-memory: 1024.0MiB\n              free-memory: 512.0MiB\n                 cpu-load: 3%\n               board-name: CRS-LAB-8P\n",
+    "/system routerboard print": "       routerboard: yes\n             model: CRS-LAB-8P\n     serial-number: LABMK0001\n  current-firmware: 7.24.5\n",
+    "/system identity print": `  name: rt-${SEGRETO}\n`,
+    "/interface print terse": " 0 RS name=ether1 default-name=ether1 type=ether mtu=1500 mac-address=02:00:00:00:20:01\n 1  S name=ether2 default-name=ether2 type=ether mtu=1500 mac-address=02:00:00:00:20:02\n 2 R  name=bond1 type=bond mtu=1500 mac-address=02:00:00:00:20:03\n 3 R  name=bridge type=bridge mtu=auto mac-address=02:00:00:00:20:04\n",
+    "/interface ethernet monitor [find] once": "                      name: ether1    ether2\n                    status: link-ok   no-link\n          auto-negotiation: done      done\n                      rate: 1Gbps\n               full-duplex: yes\n",
+    "/interface ethernet poe monitor [find] once": "                name: ether1     ether2\n             poe-out: auto-on    off\n      poe-out-status: powered-on disabled\n     poe-out-voltage: 24.1V\n     poe-out-current: 120mA\n       poe-out-power: 2.9W\n",
+    "/interface bridge print terse without-paging": " 0 R name=bridge mtu=auto mac-address=02:00:00:00:20:04 protocol-mode=rstp priority=0x8000 vlan-filtering=yes\n",
+    "/interface bridge port print terse without-paging": " 0   interface=ether1 bridge=bridge pvid=10\n 1   interface=bond1 bridge=bridge pvid=1\n",
+    "/interface bridge port monitor [find] once": "               interface: ether1             bond1\n                  status: in-bridge          in-bridge\n                    role: designated-port    root-port\n              forwarding: yes                yes\n                learning: yes                yes\n",
+    "/interface bridge vlan print terse without-paging": " 0   bridge=bridge vlan-ids=10 tagged=bridge,bond1 untagged=ether1 current-tagged=bridge,bond1 current-untagged=ether1\n 1   bridge=bridge vlan-ids=100-102,200 tagged=bridge,bond1 untagged= current-tagged= current-untagged=\n",
+    "/interface bridge host print terse without-paging": " 0  D mac-address=02:00:00:00:30:01 vid=10 on-interface=ether1 bridge=bridge\n",
+    "/interface bonding print terse without-paging": " 0 R name=bond1 mtu=1500 slaves=ether3,ether4 mode=802.3ad\n",
+    "/ip neighbor print terse": " 0 interface=bond1 address=192.0.2.1 address4=192.0.2.1 mac-address=02:00:00:00:40:01 identity=sw-core platform=MikroTik version=7.24.5 (stable) interface-name=sfp1 system-caps-enabled=bridge,router discovered-by=lldp\n",
+    "/ip address print terse without-paging": " 0   address=192.0.2.2/24 network=192.0.2.0 interface=bridge actual-interface=bridge\n",
+    "/ip arp print terse without-paging": "   0 DC address=192.0.2.50 mac-address=02:00:00:00:30:01 interface=bridge published=no status=reachable\n",
+};
+const mikrotikReq: AcquisitionRequest = { collector: "mikrotik-routeros", host: "192.0.2.2", ssh: { username: "lab", password: SEGRETO } };
+export const MIKROTIK_USCITE = mikrotikUscite;
+
 export const FIXTURE: Record<CollectorId, FixtureCollector> = {
     "qnap-switch": conGarbage(perShell(qnapReq, consola({ identita: { "show system-information": qnapIdent } }, qnapNormale)), { "show system-information": qnapIdent }, undefined),
     "hp-procurve": conGarbage(perShell(procurveReq, consola({ identita: procurveIdent, snmp: procurveSnmp }, procurveNormale)), procurveIdent, procurveSnmp),
@@ -128,6 +151,7 @@ export const FIXTURE: Record<CollectorId, FixtureCollector> = {
         trasportoGuasto: async () => ({ snapshot: await collectVmwareEsxi(esxiReq, async () => { throw Error(SEGRETO); }), chiamateShell: 0 }),
     },
     "qnap-nas": perExec(qnapNasReq, c => qnapNasUscite[c] ?? "", ["getsysinfo model", "getsysinfo firmver", "cat /etc/version", "cat /etc/default_config/WEBAPP.build"]),
+    "mikrotik-routeros": perExec(mikrotikReq, c => mikrotikUscite[c] ?? "", ["/system resource print", "/system routerboard print"]),
     "netapp-ontap": {
         richiesta: ontapReq,
         normale: async () => ({ snapshot: await collectNetappOntap(ontapReq, async () => ontapRaw()), chiamateShell: 0 }),

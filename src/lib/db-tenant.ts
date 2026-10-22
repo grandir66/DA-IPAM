@@ -5098,6 +5098,30 @@ export function tokenApiApparato(device: ApparatoInAcquisizione): SceltaTokenApi
   return tokenApiApparatoDb(db(), device);
 }
 
+/** Host di IPAM per l'abbinamento con Proxmox (scheda hypervisor): id, ip, nome e stato, senza il resto della riga. */
+export function getHostNotoPerIp(ip: string): { id: number; ip: string; hostname: string | null; status: string | null } | undefined {
+  return db().prepare("SELECT id, ip, COALESCE(hostname, custom_name) AS hostname, status FROM hosts WHERE ip = ? LIMIT 1")
+    .get(ip) as { id: number; ip: string; hostname: string | null; status: string | null } | undefined;
+}
+
+/** Il nodo Proxmox «DA-PX-01» è l'host di IPAM «DA-PX-01» o «DA-PX-01.dominio» (hostname o nome personalizzato). */
+export function getHostNotoPerNomeNodo(nome: string): { id: number; ip: string; hostname: string | null; status: string | null } | undefined {
+  const n = nome.trim().toLowerCase();
+  if (n === "") return undefined;
+  return db().prepare(
+    `SELECT id, ip, COALESCE(hostname, custom_name) AS hostname, status FROM hosts
+      WHERE lower(hostname) = ?1 OR substr(lower(hostname), 1, length(?1) + 1) = ?1 || '.' OR lower(custom_name) = ?1
+      ORDER BY id LIMIT 1`,
+  ).get(n) as { id: number; ip: string; hostname: string | null; status: string | null } | undefined;
+}
+
+/** Le scansioni Proxmox salvate sugli apparati (JSON grezzo): da lì si risale alla VM di un host. */
+export function getScansioniProxmoxSalvate(): Array<{ id: number; raw: string }> {
+  return db()
+    .prepare("SELECT id, last_proxmox_scan_result AS raw FROM network_devices WHERE last_proxmox_scan_result IS NOT NULL AND last_proxmox_scan_result <> '' ORDER BY id")
+    .all() as Array<{ id: number; raw: string }>;
+}
+
 /** Vero solo con una fonte SNMP dell'apparato (livelli 1-5), mai con la catena della rete o «public». */
 export function haSnmpApparato(device: ApparatoInAcquisizione): boolean {
   return haSnmpApparatoDb(db(), device);

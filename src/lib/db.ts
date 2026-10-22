@@ -2748,30 +2748,6 @@ export function getHostByIp(ip: string): Host | undefined {
   return getDb().prepare("SELECT * FROM hosts WHERE ip = ? LIMIT 1").get(ip) as Host | undefined;
 }
 
-/** Host di IPAM per l'abbinamento con Proxmox (scheda hypervisor): id, ip, nome e stato, senza il resto della riga. */
-export function getHostNotoPerIp(ip: string): { id: number; ip: string; hostname: string | null; status: string | null } | undefined {
-  return getDb().prepare("SELECT id, ip, COALESCE(hostname, custom_name) AS hostname, status FROM hosts WHERE ip = ? LIMIT 1")
-    .get(ip) as { id: number; ip: string; hostname: string | null; status: string | null } | undefined;
-}
-
-/** Il nodo Proxmox «DA-PX-01» è l'host di IPAM «DA-PX-01» o «DA-PX-01.dominio» (hostname o nome personalizzato). */
-export function getHostNotoPerNomeNodo(nome: string): { id: number; ip: string; hostname: string | null; status: string | null } | undefined {
-  const n = nome.trim().toLowerCase();
-  if (n === "") return undefined;
-  return getDb().prepare(
-    `SELECT id, ip, COALESCE(hostname, custom_name) AS hostname, status FROM hosts
-      WHERE lower(hostname) = ?1 OR substr(lower(hostname), 1, length(?1) + 1) = ?1 || '.' OR lower(custom_name) = ?1
-      ORDER BY id LIMIT 1`,
-  ).get(n) as { id: number; ip: string; hostname: string | null; status: string | null } | undefined;
-}
-
-/** Le scansioni Proxmox salvate sugli apparati (JSON grezzo): da lì si risale alla VM di un host. */
-export function getScansioniProxmoxSalvate(): Array<{ id: number; raw: string }> {
-  return getDb()
-    .prepare("SELECT id, last_proxmox_scan_result AS raw FROM network_devices WHERE last_proxmox_scan_result IS NOT NULL AND last_proxmox_scan_result <> '' ORDER BY id")
-    .all() as Array<{ id: number; raw: string }>;
-}
-
 export function getHostById(id: number): HostDetail | undefined {
   const host = getDb().prepare(`
     SELECT h.*, n.cidr as network_cidr, n.name as network_name
@@ -7437,4 +7413,8 @@ export {
   registraVersioneSnmpRilevata,
   // Token API dell'apparato dall'archivio (credenziali 2e, T20): una sola copia
   tokenApiApparato,
+  // Abbinamento Proxmox della scheda hypervisor: una sola copia
+  getHostNotoPerIp,
+  getHostNotoPerNomeNodo,
+  getScansioniProxmoxSalvate,
 } from "./db-tenant";

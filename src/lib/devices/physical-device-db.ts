@@ -480,6 +480,10 @@ export function unlinkHostFromPhysicalDevice(hostId: number): { previous_physica
   if (prevId === null) return { previous_physical_device_id: null, orphaned: false };
 
   db.prepare("UPDATE hosts SET physical_device_id = NULL, updated_at = datetime('now') WHERE id = ?").run(hostId);
+  // Il principale scelto a mano che esce dal cluster non resta come scelta (piano 2026-10-22 accorpamento): vale la regola.
+  // Senza la colonna (migrazione cluster_principale_v21 fallita) non c'è niente da azzerare.
+  const haPrincipale = (db.prepare("PRAGMA table_info(physical_devices)").all() as Array<{ name: string }>).some((c) => c.name === "primary_host_id");
+  if (haPrincipale) db.prepare("UPDATE physical_devices SET primary_host_id = NULL WHERE id = ? AND primary_host_id = ?").run(prevId, hostId);
 
   // Verifica se il cluster è rimasto vuoto
   const remaining = db.prepare("SELECT COUNT(*) AS n FROM hosts WHERE physical_device_id = ?").get(prevId) as { n: number };

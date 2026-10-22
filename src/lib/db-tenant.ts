@@ -17,7 +17,7 @@ import { resolveDataDir } from "./data-dir";
 import { buildPatchFromHost, buildPatchFromDevice, buildSyncMerge, buildSourceLabel } from "./inventory/discovery-sync";
 import fs from "fs";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { COLONNE_SCHEDA_MK_V1, DDL_HOSTS_ARCHIVIO, DDL_SCHEDA_MK_V2, DDL_SCHEDA_MK_V3, DDL_TOPOLOGY_CAVI, DDL_TOPOLOGY_UNIONI, INDICI_HOSTS_ARCHIVIO, INDICI_TOPOLOGY_UNIONI, TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL, SEGNO_SCHEDA_MK, VERSIONE_SCHEDA_MK } from "./db-tenant-schema";
+import { COLONNA_CLUSTER_PRINCIPALE, INDICE_CLUSTER_PRINCIPALE, SEGNO_CLUSTER_PRINCIPALE, VERSIONE_CLUSTER_PRINCIPALE, COLONNE_SCHEDA_MK_V1, DDL_HOSTS_ARCHIVIO, DDL_SCHEDA_MK_V2, DDL_SCHEDA_MK_V3, DDL_TOPOLOGY_CAVI, DDL_TOPOLOGY_UNIONI, INDICI_HOSTS_ARCHIVIO, INDICI_TOPOLOGY_UNIONI, TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL, SEGNO_SCHEDA_MK, VERSIONE_SCHEDA_MK } from "./db-tenant-schema";
 import { HYPERVISOR_SYNC_MINUTES, PULIZIA_HOST_MINUTES, SCHEDULED_JOB_TYPES_CHECK_SQL } from "./scheduled-job-types";
 import { isProxmoxVeDevice } from "./devices/device-acquisition-resolve";
 import { macToHex, normalizeMac, normalizeMacForStorage } from "./utils";
@@ -783,6 +783,55 @@ export function migrateSchedaMikrotik(db: Database.Database): string[] {
   })();
   SCHEMA_SCHEDA_MK.set(db, misuraLivelloSchedaMk(db));
   return added;
+}
+
+/** Colonna e indice del principale del cluster presenti (PRAGMA e sqlite_master: costano niente). */
+function schemaClusterPrincipaleCompleto(db: Database.Database): boolean {
+  const [t, c] = COLONNA_CLUSTER_PRINCIPALE;
+  const col = (db.prepare(`PRAGMA table_info(${t})`).all() as Array<{ name: string }>).some((r) => r.name === c);
+  return col && !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?").get(INDICE_CLUSTER_PRINCIPALE[0]);
+}
+
+/**
+ * Principale del cluster fisico (piano 2026-10-22 accorpamento, Task 3): `physical_devices.primary_host_id` e il suo indice,
+ * solo se mancano. Additiva, idempotente, in UNA transazione; restituisce «tabella.colonna» e il nome dell'indice di ciò che
+ * aggiunge, poi scrive il segno `done:<data>:v1` una volta sola (la migrazione non lo consulta).
+ */
+export function migrateClusterPrincipale(db: Database.Database): string[] {
+  const added: string[] = [];
+  const [t, c, ddl] = COLONNA_CLUSTER_PRINCIPALE;
+  const [nomeIndice, ddlIndice] = INDICE_CLUSTER_PRINCIPALE;
+  db.transaction(() => {
+    const presenti = (db.prepare(`PRAGMA table_info(${t})`).all() as Array<{ name: string }>).map((r) => r.name);
+    if (!presenti.includes(c)) {
+      db.exec(`ALTER TABLE ${t} ADD COLUMN ${c} ${ddl}`);
+      added.push(`${t}.${c}`);
+    }
+    if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?").get(nomeIndice)) {
+      db.exec(ddlIndice);
+      added.push(nomeIndice);
+    }
+    const chiusa = `:v${VERSIONE_CLUSTER_PRINCIPALE}`;
+    const attuale = leggiSegno(db, SEGNO_CLUSTER_PRINCIPALE);
+    if (!(attuale?.startsWith("done:") && attuale.endsWith(chiusa))) {
+      scriviSegno(db, SEGNO_CLUSTER_PRINCIPALE, `done:${new Date().toISOString().slice(0, 10)}${chiusa}`);
+    }
+  })();
+  return added;
+}
+
+/** Dopo una migrazione fallita: schema completo (un altro processo ha vinto la corsa) → segno `done`, altrimenti `errore:…`. */
+export function chiudiMigrazioneClusterPrincipaleFallita(db: Database.Database, tenantCode: string, e: unknown): void {
+  try {
+    if (schemaClusterPrincipaleCompleto(db)) {
+      const attuale = leggiSegno(db, SEGNO_CLUSTER_PRINCIPALE);
+      if (!attuale?.startsWith("done:")) scriviSegno(db, SEGNO_CLUSTER_PRINCIPALE, `done:${new Date().toISOString().slice(0, 10)}:v${VERSIONE_CLUSTER_PRINCIPALE}`);
+    } else {
+      scriviSegno(db, SEGNO_CLUSTER_PRINCIPALE, segnoErrore(e));
+    }
+  } catch (e2) {
+    console.error(`[db-tenant] ${tenantCode}: ${SEGNO_CLUSTER_PRINCIPALE}, segno non scritto:`, e2);
+  }
 }
 
 /** «Le tabelle delle unioni ci sono, con i loro indici», annotato all'apertura: senza, l'ingresso non ha righe e le rotte non scrivono. */
@@ -2370,6 +2419,18 @@ export function getTenantDb(tenantCode: string): Database.Database {
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: migrazione scheda mikrotik fallita (ROLLBACK), le colonne nuove non si scrivono:`, e);
     chiudiMigrazioneSchedaMkFallita(newDb, tenantCode, e);
+  }
+
+  // Principale del cluster fisico (piano 2026-10-22 accorpamento): una colonna e un indice su physical_devices. Se fallisce il
+  // tenant si apre lo stesso: Discovery usa la regola senza la scelta a mano (cluster-discovery.ts guarda se la colonna c'è).
+  try {
+    const added = migrateClusterPrincipale(newDb);
+    if (added.length > 0) {
+      console.info(`[db-tenant] ${tenantCode}: principale del cluster, aggiunto ${added.join(", ")}`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione principale del cluster fallita (ROLLBACK), la scelta a mano non si salva:`, e);
+    chiudiMigrazioneClusterPrincipaleFallita(newDb, tenantCode, e);
   }
 
   tenantDbs.set(tenantCode, { db: newDb, lastUsed: Date.now() });

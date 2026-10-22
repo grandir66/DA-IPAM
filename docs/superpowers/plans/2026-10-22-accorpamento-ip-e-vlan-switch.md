@@ -464,6 +464,8 @@ Annullato in questo giro: la lista bianca di `unifi-api` (`isUnifiRequestAllowed
 
 ## Registro
 
+- 2026-10-22 · Task 3 · misura sulla copia del DB dell'hub (tenant 70791, 350 host): 7 cluster con 2+ IP, 0 ambigui, 17 righe nascoste, tutti e 7 i principali portano un apparato. `leggiClusterDiscovery` 0,1 ms, `getAllHostsEnriched(10000)` 15,1 ms (mediana di 5); piano della query su `idx_hosts_physical_device_id`. Migrazione `cluster_principale_v21` su una copia: 1,7 ms, seconda 0,1 ms senza cambi, segno `done:2026-10-22:v1` invariato a due aperture di `getTenantDb`, `integrity_check` ok (28,9 s), riga del journal vista. Due cluster (10, 11, ancora serial_number, conf. 100) mescolano un MAC HPE e due di un altro OUI: probabilmente iLO + schede del server stesso, da confermare. Elenco per nome in `.superpowers/sdd/2026-10-22-accorpamento-ip-e-vlan-switch/righe-nascoste.md` (fuori dal repo pubblico: non si committa).
+
 ## Consuntivo
 ### Fatto
 ### Mancante

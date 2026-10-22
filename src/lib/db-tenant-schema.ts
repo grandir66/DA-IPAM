@@ -192,6 +192,19 @@ export const SEGNO_SCHEDA_MK = "scheda_mikrotik_v21";
 /** Versione dello schema della scheda: 1 = COLONNE_SCHEDA_MK_V1, 2 = DDL_SCHEDA_MK_V2, 3 = DDL_SCHEDA_MK_V3. */
 export const VERSIONE_SCHEDA_MK = 3;
 
+/**
+ * Principale del cluster fisico scelto a mano (piano 2026-10-22 accorpamento, Task 3): in Discovery un apparato fisico ha
+ * una riga sola. NULL = vale la regola (apparato gestito, poi IP più basso, `devices/cluster-discovery.ts`); torna NULL se
+ * l'host esce dal cluster o è cancellato. Come le colonne della scheda MikroTik non sta in `physical_devices` qui sotto: la
+ * crea solo la migrazione (`migrateClusterPrincipale`), così tenant nuovi e vecchi passano dalla stessa strada.
+ */
+export const COLONNA_CLUSTER_PRINCIPALE = ["physical_devices", "primary_host_id", "INTEGER REFERENCES hosts(id) ON DELETE SET NULL"] as const;
+/** L'indice serve all'ON DELETE SET NULL: senza, ogni host cancellato scorre tutta `physical_devices`. */
+export const INDICE_CLUSTER_PRINCIPALE = ["idx_physical_devices_primary_host", "CREATE INDEX IF NOT EXISTS idx_physical_devices_primary_host ON physical_devices(primary_host_id)"] as const;
+/** Segno in `tenant_settings` (`done:<data>:v<versione>`); la migrazione non lo consulta. */
+export const SEGNO_CLUSTER_PRINCIPALE = "cluster_principale_v21";
+export const VERSIONE_CLUSTER_PRINCIPALE = 1;
+
 /** Unioni e separazioni a mano (ADR 0021): le scrivono solo le rotte /api/topology/unioni; mai cancellate (tolto_*: la storia).
  *  Membri come id della mappa, senza chiavi esterne né CHECK. Indici solo nella migrazione. */
 export const DDL_TOPOLOGY_UNIONI: ReadonlyArray<readonly [string, string]> = [

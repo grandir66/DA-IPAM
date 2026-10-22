@@ -14,6 +14,7 @@ import { rifiutoJobRiservato } from "@/lib/cron/job-riservati";
  * suo id; il giro continua in background e `last_run` si scrive alla fine.
  * Gli altri job si aspettano e rispondono 200 con la durata, come prima.
  * Rete già in scansione (T3-18): 409 con il giro in corso, `last_run` invariato.
+ * `apparati_scelti`: 202 subito, il giro in sottofondo con la guardia del cron; già in giro → 409 «giro già in corso».
  * `pulizia_host` (si gestisce dalla sua scheda): 409, non parte.
  */
 export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -35,6 +36,13 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
       if (riservato) return NextResponse.json(riservato.body, { status: riservato.status });
 
       const esito = await eseguiJobOra(jobId);
+      if (esito.modo === "in_corso") {
+        return NextResponse.json({ error: "giro già in corso" }, { status: 409 });
+      }
+      if (esito.modo === "in_background") {
+        // apparati_scelti: il giro continua in sottofondo con la guardia del cron; gli esiti si leggono dal dettaglio.
+        return NextResponse.json({ success: true, job_id: jobId, job_type: job.job_type }, { status: 202 });
+      }
       if (esito.modo === "saltato") {
         return NextResponse.json(corpoScanInCorso(esito.giroInCorso), { status: 409 });
       }

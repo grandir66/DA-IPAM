@@ -102,6 +102,7 @@ import { syncMeshForTenant } from "@/lib/integrations/meshcentral/mesh-sync";
 import { meshAttivo } from "@/lib/integrations/meshcentral/feature";
 // Statico (ADR 0002): il giro importa db-tenant. Ciclo con questo file voluto: giro.ts usa le letture di qui solo a giro avviato.
 import { motivoGiroApparati, runApparatiScelti, type OpzioniGiro } from "@/lib/apparati-scelti/giro";
+import { chiaveJob, statoScheduler } from "./stato-scheduler";
 
 /** Job che lanciano giri di discovery: durano quanto il giro (fino a ~49 minuti misurati). */
 export const JOB_DI_SCANSIONE: ReadonlySet<string> = new Set(["ping_sweep", "fast_scan", "snmp_scan", "nmap_scan"]);
@@ -451,12 +452,18 @@ export type EsitoEseguiOra =
   /** `motivo`: il job è finito senza fare tutto (es. client UniFi fuori dalle 7-20): la pagina lo mostra. */
   | { modo: "eseguito"; durationMs: number; motivo?: string }
   /** Rete già in scansione (T3-18): niente giro, niente `last_run`. */
-  | { modo: "saltato"; motivo: string; giroInCorso?: GiroOccupante };
+  | { modo: "saltato"; motivo: string; giroInCorso?: GiroOccupante }
+  /** `apparati_scelti`: il giro continua in sottofondo; `fine` si risolve a giro chiuso (solo per le prove). */
+  | { modo: "in_background"; fine: Promise<void> }
+  /** `apparati_scelti` già in giro (un altro «Esegui ora» o il cron): non parte. */
+  | { modo: "in_corso" };
 
-export async function eseguiJobOra(jobId: number, opzioni?: Pick<OpzioniRunJob, "adesso">): Promise<EsitoEseguiOra> {
+export async function eseguiJobOra(jobId: number, opzioni?: Pick<OpzioniRunJob, "adesso" | "apparatiScelti">): Promise<EsitoEseguiOra> {
   const job = getScheduledJobById(jobId);
   if (!job) throw new Error(`Job #${jobId} non trovato`);
   const inizio = Date.now();
+
+  if (job.job_type === "apparati_scelti") return giroApparatiInSottofondo(jobId, opzioni);
 
   if (!JOB_DI_SCANSIONE.has(job.job_type)) {
     const e = await runJob(jobId, opzioni);
@@ -501,6 +508,32 @@ export async function eseguiJobOra(jobId: number, opzioni?: Pick<OpzioniRunJob, 
       },
     );
   });
+}
+
+/**
+ * «Esegui ora» di un `apparati_scelti` (revisione finale 22/10): il giro dura fino a 5 minuti per apparato, quindi non si
+ * aspetta (la rotta risponde 202) e prende la guardia del cron (`runningJobs`, chiave `<tenant>:<id>`): il tick
+ * programmato dello stesso job non si accavalla, e un secondo «Esegui ora» è «in_corso». Esito come lo scheduler:
+ * `last_run` solo se «eseguito»; un giro che lancia resta nel journal (gli esiti per apparato sono già scritti).
+ */
+function giroApparatiInSottofondo(jobId: number, opzioni?: Pick<OpzioniRunJob, "apparatiScelti">): EsitoEseguiOra {
+  const tenant = getCurrentTenantCode();
+  if (!tenant) throw new Error("Contesto tenant assente");
+  const chiave = chiaveJob(tenant, jobId);
+  const { runningJobs } = statoScheduler();
+  if (runningJobs.has(chiave)) return { modo: "in_corso" };
+  runningJobs.add(chiave);
+  const fine = (async () => {
+    try {
+      const e = await runJob(jobId, opzioni);
+      if (e.esito === "eseguito") updateJobLastRun(jobId);
+    } catch (error) {
+      console.error(`[Jobs] Esecuzione manuale del job #${jobId} fallita: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      runningJobs.delete(chiave);
+    }
+  })();
+  return { modo: "in_background", fine };
 }
 
 /**

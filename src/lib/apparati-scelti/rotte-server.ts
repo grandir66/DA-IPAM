@@ -23,6 +23,7 @@ import {
 import {
   etichettaFrequenza,
   frequenzaDaJob,
+  interruttoreVlan,
   intervalloDaFrequenza,
   JobApparatiScelti,
   leggiConfig,
@@ -137,13 +138,17 @@ interface Valutazione {
   link?: Link;
   credenziale: "provata" | "non_provata" | "nessuna";
   letture_valide: Lettura[];
+  /** La VLAN per questo apparato: accesa/spenta dal suo interruttore, null se non vale per il tipo. */
+  vlan_accesa: boolean | null;
 }
 
 function valuta(s: StatoApparato): Valutazione {
   const v = valutaApparato(s);
+  const interruttore = s.device_id != null ? interruttoreVlan(s.tipo) : null;
   const base = {
     credenziale: statoCredenziale(s),
     letture_valide: s.device_id != null ? lettureValide(s.tipo) : [],
+    vlan_accesa: interruttore ? letturaAccesa(interruttore) : null,
   };
   if (v.incluso) return { incluso: true, ...base };
   const link = linkPer(v.motivo, s.host_id);
@@ -151,7 +156,7 @@ function valuta(s: StatoApparato): Valutazione {
 }
 
 const TOLTO: Valutazione = {
-  incluso: false, motivo: "TOLTO", testo_motivo: TESTO_MOTIVO.TOLTO, credenziale: "nessuna", letture_valide: [],
+  incluso: false, motivo: "TOLTO", testo_motivo: TESTO_MOTIVO.TOLTO, credenziale: "nessuna", letture_valide: [], vlan_accesa: null,
 };
 
 interface RigaHost extends Valutazione {
@@ -269,7 +274,9 @@ export function rispostaLeggiJob(raw: string): RispostaRotta {
 
 /**
  * PUT /api/jobs/apparati-scelti/[id] `{ nome?, device_ids?, frequenza?, cosa? }`: gli apparati si possono solo
- * togliere (decisione 15); config e intervallo insieme. La rotta ricarica lo scheduler.
+ * togliere (decisione 15); config e intervallo insieme. La rotta ricarica lo scheduler. Un apparato escluso ora resta
+ * se lo si manda: l'idoneità si ricontrolla al giro (decisione 13), qui solo «non se ne aggiungono». `cosa` si salva
+ * com'è scelta, anche con la VLAN spenta adesso: il giro la salta e il dettaglio dice «spenta».
  */
 export function rispostaModifica(raw: string, body: unknown): RispostaRotta {
   const j = jobApparati(raw);

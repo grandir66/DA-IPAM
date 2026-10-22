@@ -254,14 +254,14 @@ export default function ObjectDetailPage() {
   useEffect(() => {
     if (!device?.id) { setScansioneAutomatica(null); return; }
     let attiva = true;
-    void fetchJson<{ jobs: Array<{ id: number; frequenza: string; attivo: boolean; ultima: string | null; prossima: string | null }> }>(
+    void fetchJson<{ jobs: Array<{ id: number; frequenza: string; attivo: boolean; prossima: string | null; esito: ScansioneAutomatica["esito"] }> }>(
       `/api/devices/${device.id}/scansione-automatica`,
     ).then((r) => {
       if (!attiva) return;
       const jobs = r.ok ? r.data.jobs : [];
       // Il job che conta è il primo attivo (altrimenti il primo): gli altri si contano nel «+N».
       const primo = jobs.find((j) => j.attivo) ?? jobs[0];
-      setScansioneAutomatica(primo ? { jobId: primo.id, frequenza: primo.frequenza, attivo: primo.attivo, ultima: primo.ultima, prossima: primo.prossima, altri: jobs.length - 1 } : null);
+      setScansioneAutomatica(primo ? { jobId: primo.id, frequenza: primo.frequenza, attivo: primo.attivo, esito: primo.esito, prossima: primo.prossima, altri: jobs.length - 1 } : null);
     }).catch(() => { /* richiesta annullata */ });
     return () => { attiva = false; };
   }, [device?.id]);

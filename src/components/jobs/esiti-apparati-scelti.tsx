@@ -10,11 +10,14 @@ import Link from "next/link";
 import { LoadError } from "@/components/shared/load-error";
 import { fetchJson } from "@/lib/fetch-json";
 import { parseDbDate, FUSO_UTENTI } from "@/lib/db-date";
+import { TESTO_MOTIVO } from "@/lib/apparati-scelti/regole";
 import { PastigliaStato } from "./pastiglia-stato";
 
 interface EsitoLettura { stato: string; codice?: string }
 interface RigaEsito {
   device_id: number;
+  /** L'host dell'apparato: la scheda è /objects/<host_id>; null = apparato senza host o tolto. */
+  host_id: number | null;
   nome: string | null;
   stato: "ok" | "parziale" | "errore" | "escluso" | "saltato";
   letture: Record<string, EsitoLettura>;
@@ -28,6 +31,13 @@ const STATO: Record<RigaEsito["stato"], { tono: "ok" | "attenzione" | "guasto" |
   errore: { tono: "guasto", testo: "errore" },
   escluso: { tono: "da_verificare", testo: "escluso" },
   saltato: { tono: "da_verificare", testo: "saltato" },
+};
+
+/** Il motivo scritto dal giro in parole: quelli d'esclusione da `regole.ts`, i salti qui; un codice di trasporto resta com'è. */
+const MOTIVO_GIRO: Record<string, string> = {
+  ...TESTO_MOTIVO,
+  OCCUPATO: "già in lettura, saltato",
+  NIENTE_DA_LEGGERE: "niente da leggere",
 };
 
 const NOME_LETTURA: Record<string, string> = { info: "Informazioni", porte_mac: "Porte e MAC", vlan: "VLAN" };
@@ -65,13 +75,15 @@ export function EsitiApparatiScelti({ jobId }: { jobId: number }) {
         {dati.righe.map((r) => (
           <li key={r.device_id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-sm">
             <span className="min-w-[10rem] font-medium">
-              {r.nome ? <Link href={`/devices/${r.device_id}`} className="underline-offset-2 hover:underline">{r.nome}</Link> : `apparato #${r.device_id} (tolto)`}
+              {r.nome && r.host_id != null
+                ? <Link href={`/objects/${r.host_id}`} className="underline-offset-2 hover:underline">{r.nome}</Link>
+                : r.nome ?? `apparato #${r.device_id} (tolto)`}
             </span>
             <PastigliaStato tono={STATO[r.stato].tono}>{STATO[r.stato].testo}</PastigliaStato>
             {Object.entries(r.letture).map(([k, e]) => (
               <span key={k} className="text-[13px] text-muted-foreground">{NOME_LETTURA[k] ?? k} {testoLettura(e)}</span>
             ))}
-            {r.motivo && <span className="text-[13px] text-muted-foreground">{r.motivo}</span>}
+            {r.motivo && <span className="text-[13px] text-muted-foreground" title={r.motivo}>{MOTIVO_GIRO[r.motivo] ?? r.motivo}</span>}
           </li>
         ))}
       </ul>

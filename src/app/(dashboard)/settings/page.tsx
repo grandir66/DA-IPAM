@@ -2,9 +2,10 @@
 import { parseDbDate } from "@/lib/db-date";
 import { scheduledJobLabel } from "@/lib/scheduled-job-types";
 import { fetchJson } from "@/lib/fetch-json";
+import { cn } from "@/lib/utils";
 import { LoadError } from "@/components/shared/load-error";
 
-import { Fragment, useEffect, useState, useMemo, useCallback, Suspense } from "react";
+import { Fragment, useEffect, useRef, useState, useMemo, useCallback, Suspense } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -102,8 +103,23 @@ interface DatiApparatiScelti {
   apparati?: number;
   frequenza?: string;
   prossima?: string | null;
-  riassunto?: { letti: number; totale: number; esclusi: number; giro_il: string } | null;
+  riassunto?: { letti: number; parziali: number; totale: number; esclusi: number; giro_il: string } | null;
 }
+
+type Riassunto = NonNullable<DatiApparatiScelti["riassunto"]>;
+
+/** La pastiglia del riassunto (J3): «✓ 3/3», «✓ 2/3 · ▲ 1 parziale», «✕ 0/3 · 2 esclusi»; il tono dal caso peggiore. */
+function pastigliaRiassunto(r: Riassunto): { tono: "ok" | "attenzione" | "guasto"; testo: string } {
+  const tono = r.letti === r.totale ? "ok" : r.letti + r.parziali === 0 ? "guasto" : "attenzione";
+  const parti = [`${tono === "guasto" ? "✕" : "✓"} ${r.letti}/${r.totale}`];
+  if (r.parziali > 0) parti.push(`▲ ${r.parziali} parzial${r.parziali === 1 ? "e" : "i"}`);
+  if (r.esclusi > 0) parti.push(`${r.esclusi} esclus${r.esclusi === 1 ? "o" : "i"}`);
+  return { tono, testo: parti.join(" · ") };
+}
+
+/** Ogni quanto si guarda se il giro lanciato da «Esegui ora» è finito, e fin quando (il giro sta sotto 5 minuti per apparato). */
+const ATTESA_GIRO_MS = 5_000;
+const ATTESA_GIRO_MAX_MS = 30 * 60_000;
 
 const dataItaliana = (d: Date): string => d.toLocaleString("it-IT", { timeZone: FUSO_UTENTI });
 
@@ -365,6 +381,14 @@ function SettingsPageInner() {
   // Scansione automatica (J3): job in modifica e righe con il dettaglio per apparato aperto.
   const [jobInModifica, setJobInModifica] = useState<number | null>(null);
   const [dettagliAperti, setDettagliAperti] = useState<Set<number>>(new Set());
+  // «Esegui ora» di un apparati_scelti risponde 202: si guarda il giro_il degli esiti finché cambia, poi si ricarica.
+  const [giriInCorso, setGiriInCorso] = useState<Set<number>>(new Set());
+  const [versioneEsiti, setVersioneEsiti] = useState<Record<number, number>>({});
+  const attesaGiri = useRef(new Map<number, ReturnType<typeof setInterval>>());
+  useEffect(() => {
+    const timer = attesaGiri.current;
+    return () => { for (const t of timer.values()) clearInterval(t); timer.clear(); };
+  }, []);
 
   useEffect(() => {
     fetch("/api/jobs").then((r) => r.json()).then(setJobs).catch(() => {});
@@ -651,6 +675,32 @@ function SettingsPageInner() {
       body: JSON.stringify({ id, enabled }),
     });
     setJobs((prev) => prev.map((j) => (j.id === id ? { ...j, enabled: enabled ? 1 : 0 } : j)));
+    // «Prossima» e «sospeso» li calcola il server (apparati_scelti): si rilegge l'elenco.
+    void ricaricaJobs();
+  }
+
+  /** Il giro di un apparati_scelti lanciato a mano: si guarda `giro_il` finché cambia, poi elenco e dettaglio si ricaricano. */
+  function seguiGiro(id: number, giroPrima: string | null) {
+    const timer = attesaGiri.current;
+    if (timer.has(id)) clearInterval(timer.get(id));
+    setGiriInCorso((p) => new Set(p).add(id));
+    const fine = (finito: boolean) => {
+      clearInterval(timer.get(id));
+      timer.delete(id);
+      setGiriInCorso((p) => { const n = new Set(p); n.delete(id); return n; });
+      if (!finito) return;
+      setVersioneEsiti((v) => ({ ...v, [id]: (v[id] ?? 0) + 1 }));
+      void ricaricaJobs();
+      toast.success("Giro finito: esiti aggiornati");
+    };
+    const scadenza = Date.now() + ATTESA_GIRO_MAX_MS;
+    timer.set(id, setInterval(() => {
+      if (Date.now() > scadenza) { fine(false); return; }
+      void fetchJson<{ giro_il: string | null }>(`/api/jobs/apparati-scelti/${id}/esiti`).then((r) => {
+        if (!timer.has(id)) return;
+        if (r.ok && r.data.giro_il && r.data.giro_il !== giroPrima) fine(true);
+      });
+    }, ATTESA_GIRO_MS));
   }
 
   async function runJobNow(id: number) {
@@ -658,7 +708,12 @@ function SettingsPageInner() {
     try {
       const res = await fetch(`/api/jobs/${id}/run`, { method: "POST" });
       const data = await res.json().catch(() => ({}));
-      if (res.status === 202) {
+      if (res.status === 202 && data.job_type === "apparati_scelti") {
+        // Lettura apparati: il giro continua in sottofondo; a giro finito il dettaglio aperto si ricarica da solo.
+        toast.success("Giro avviato: il dettaglio si aggiorna a fine giro");
+        const prima = (jobs.find((j) => j.id === id) as (ScheduledJob & DatiApparatiScelti) | undefined)?.riassunto?.giro_il ?? null;
+        seguiGiro(id, prima);
+      } else if (res.status === 202) {
         // Job di scansione: il giro continua in background, «Ultima esecuzione» si aggiorna a fine giro.
         toast.success("Scansione avviata: l'ultima esecuzione si aggiorna a fine giro");
         const updated = await fetch("/api/jobs").then((r) => r.json());
@@ -1096,7 +1151,7 @@ function SettingsPageInner() {
                   const isLargeNet = networkIsLarge(network?.cidr);
                   const shortInterval = job.interval_minutes < 720;
                   const riskyCpu = isHeavy && isLargeNet && shortInterval && !!job.enabled;
-                  const isRunning = runningJobId === job.id;
+                  const isRunning = runningJobId === job.id || giriInCorso.has(job.id);
                   // pulizia_host si gestisce solo dalla sua scheda: qui non si accende, non si lancia, non si cancella.
                   const soloLettura = job.job_type === "pulizia_host";
                   // Scansione automatica (J3): la crea e la gestisce solo un admin.
@@ -1144,9 +1199,10 @@ function SettingsPageInner() {
                           ? (ds.frequenza ?? `${job.interval_minutes} min`)
                           : INTERVAL_OPTIONS.find((o) => o.value === String(job.interval_minutes))?.label || `${job.interval_minutes} min`}
                       </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
+                      <TableCell className={cn("text-muted-foreground", scelti ? "text-[13px]" : "text-xs")}>
                         <div className="flex flex-wrap items-center gap-2">
-                          <span>{job.last_run ? (scelti ? dataItaliana(parseDbDate(job.last_run)) : parseDbDate(job.last_run).toLocaleString("it-IT")) : "Mai"}</span>
+                          {/* apparati_scelti: l'ora dell'ultimo giro dagli esiti (c'è anche quando il giro non ha letto niente). */}
+                          <span>{scelti && rs ? dataItaliana(parseDbDate(rs.giro_il)) : job.last_run ? (scelti ? dataItaliana(parseDbDate(job.last_run)) : parseDbDate(job.last_run).toLocaleString("it-IT")) : "Mai"}</span>
                           {scelti && rs && (
                             <button
                               type="button"
@@ -1154,14 +1210,12 @@ function SettingsPageInner() {
                               aria-expanded={aperto}
                               title="Mostra l'esito per apparato"
                             >
-                              <PastigliaStato tono={rs.letti === rs.totale ? "ok" : rs.letti === 0 ? "guasto" : "attenzione"}>
-                                {rs.letti}/{rs.totale}{rs.letti !== rs.totale && rs.esclusi > 0 ? ` · ${rs.esclusi} escluso` : ""}
-                              </PastigliaStato>
+                              <PastigliaStato tono={pastigliaRiassunto(rs).tono} senzaSegno>{pastigliaRiassunto(rs).testo}</PastigliaStato>
                             </button>
                           )}
                         </div>
                       </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
+                      <TableCell className={cn("text-muted-foreground", scelti ? "text-[13px]" : "text-xs")}>
                         {scelti
                           ? (ds.prossima ? dataItaliana(new Date(ds.prossima)) : "sospeso")
                           : job.next_run ? parseDbDate(job.next_run).toLocaleString("it-IT") : "—"}
@@ -1201,7 +1255,7 @@ function SettingsPageInner() {
                     </TableRow>
                     {scelti && aperto && (
                       <TableRow>
-                        <TableCell colSpan={7} className="bg-muted/30 p-0"><EsitiApparatiScelti jobId={job.id} /></TableCell>
+                        <TableCell colSpan={7} className="bg-muted/30 p-0"><EsitiApparatiScelti key={versioneEsiti[job.id] ?? 0} jobId={job.id} /></TableCell>
                       </TableRow>
                     )}
                     </Fragment>

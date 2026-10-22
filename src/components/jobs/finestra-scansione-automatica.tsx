@@ -40,6 +40,8 @@ interface Riga {
   testo_motivo?: string;
   link?: LinkRiga;
   letture_valide: Lettura[];
+  /** La VLAN per questo apparato, decisa dal server dal suo interruttore: null = non vale per il tipo. */
+  vlan_accesa: boolean | null;
   /** Due host dello stesso apparato: il secondo non conta. */
   doppione: boolean;
 }
@@ -111,7 +113,6 @@ export function FinestraScansioneAutomatica(props: ProprietaFinestraScansione) {
   const { open, onOpenChange, onFatto } = props;
   const router = useRouter();
   const [righe, setRighe] = useState<Riga[]>([]);
-  const [interruttori, setInterruttori] = useState<Interruttori>({ switch_vlan: true, mikrotik_scheda: true });
   const [caricamento, setCaricamento] = useState(true);
   const [erroreCaricamento, setErroreCaricamento] = useState<string | null>(null);
   const [frequenza, setFrequenza] = useState<"ora" | "4ore" | "giorno">("4ore");
@@ -132,7 +133,6 @@ export function FinestraScansioneAutomatica(props: ProprietaFinestraScansione) {
       if (!r.ok) { setErroreCaricamento(r.message); setCaricamento(false); return; }
       const d = r.data;
       setRighe(d.apparati.map((a) => ({ ...a, chiave: `d${a.device_id}`, ip: null, tipo_scheda: null, doppione: false })));
-      setInterruttori(d.interruttori);
       setNome(d.nome);
       setCosa(d.cosa);
       if (d.frequenza) {
@@ -148,7 +148,6 @@ export function FinestraScansioneAutomatica(props: ProprietaFinestraScansione) {
       });
       if (!r.ok) { setErroreCaricamento(r.message); setCaricamento(false); return; }
       setRighe(r.data.righe.map((x) => ({ ...x, chiave: `h${x.host_id}`, doppione: x.stesso_apparato_di != null })));
-      setInterruttori(r.data.interruttori);
     }
     setCaricamento(false);
   }, [idModifica, hostIdsChiave]);
@@ -157,27 +156,36 @@ export function FinestraScansioneAutomatica(props: ProprietaFinestraScansione) {
     if (open) void carica();
   }, [open, carica]);
 
+  const modifica = props.modo === "modifica";
+  const eTolto = (r: Riga): boolean => r.device_id != null && tolti.has(r.device_id);
   // Gli inclusi che restano: nel modo modifica si possono togliere, un doppione non conta.
   const attive = useMemo(
     () => righe.filter((r) => r.incluso && !r.doppione && !(r.device_id != null && tolti.has(r.device_id))),
     [righe, tolti],
   );
-  const esclusi = righe.filter((r) => !r.incluso).length;
+  // In modifica restano nel job TUTTI gli apparati tranne quelli tolti a mano: un escluso ora (credenziale persa) si
+  // ricontrolla al giro, non sparisce perché si è cambiata la frequenza (revisione finale 22/10).
+  const tenuti = useMemo(
+    () => (modifica ? righe.filter((r) => r.device_id != null && !tolti.has(r.device_id)) : attive),
+    [modifica, righe, tolti, attive],
+  );
+  const esclusi = righe.filter((r) => !r.incluso && !eTolto(r)).length;
 
-  /** Per ogni lettura, gli apparati a cui vale (e il cui interruttore è acceso). */
+  /** Per ogni lettura, gli apparati a cui vale per tipo; la VLAN spenta si dice, la scelta resta (il giro la salta). */
   const applicabili = useMemo(() => {
-    const per = (l: Lettura): Riga[] => attive.filter((r) => r.letture_valide.includes(l));
-    const vlanAcceso = (r: Riga): boolean => (r.tipo_scheda === "switch" ? interruttori.switch_vlan : interruttori.mikrotik_scheda);
-    const vlanTutte = per("vlan");
+    const per = (l: Lettura): Riga[] => tenuti.filter((r) => r.letture_valide.includes(l));
+    const vlan = per("vlan");
     return {
       info: per("info"),
       porte_mac: per("porte_mac"),
-      vlan: vlanTutte.filter(vlanAcceso),
-      vlanSpenta: vlanTutte.length > 0 && vlanTutte.every((r) => !vlanAcceso(r)),
+      vlan,
+      vlanSpente: vlan.filter((r) => r.vlan_accesa === false).length,
     };
-  }, [attive, interruttori]);
+  }, [tenuti]);
 
-  const cosaEffettiva: Cosa = {
+  // In creazione si mandano le letture che valgono per i tipi scelti; in modifica la scelta com'è (anche quelle che
+  // per gli apparati rimasti non valgono): niente sparisce in silenzio salvando.
+  const cosaEffettiva: Cosa = modifica ? cosa : {
     info: cosa.info && applicabili.info.length > 0,
     porte_mac: cosa.porte_mac && applicabili.porte_mac.length > 0,
     vlan: cosa.vlan && applicabili.vlan.length > 0,
@@ -189,7 +197,8 @@ export function FinestraScansioneAutomatica(props: ProprietaFinestraScansione) {
   const prossima = frequenza !== "giorno" || oraValida ? oraItaliana(prossimaEsecuzione(f, new Date())) : null;
 
   const nInclusi = attive.length;
-  const puoSalvare = nInclusi > 0 && !nessunaLettura && (frequenza !== "giorno" || oraValida) && !invio;
+  // In modifica si salva anche con tutti esclusi adesso (il giro li riprova); basta che ne resti uno nel job.
+  const puoSalvare = (modifica ? tenuti.length > 0 : nInclusi > 0) && !nessunaLettura && (frequenza !== "giorno" || oraValida) && !invio;
 
   async function salva() {
     setInvio(true);
@@ -207,7 +216,7 @@ export function FinestraScansioneAutomatica(props: ProprietaFinestraScansione) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           nome,
-          device_ids: attive.map((x) => x.device_id),
+          device_ids: tenuti.map((x) => x.device_id),
           frequenza: frequenzaCorpo,
           cosa: cosaEffettiva,
         }),
@@ -325,24 +334,28 @@ export function FinestraScansioneAutomatica(props: ProprietaFinestraScansione) {
                 <div className="space-y-1.5">
                   {LETTURE.map(({ chiave, titolo: t }) => {
                     const chi = applicabili[chiave];
-                    const spenta = chiave === "vlan" && applicabili.vlanSpenta;
-                    if (chi.length === 0 && !spenta) return null;
+                    if (chi.length === 0) return null;
+                    // VLAN spenta in Impostazioni: la casella resta com'è scelta, il giro la salta finché non si riaccende.
+                    const spente = chiave === "vlan" ? applicabili.vlanSpente : 0;
                     return (
-                      <label key={chiave} className={cn("flex items-start gap-2 text-sm", spenta ? "opacity-70" : "cursor-pointer")}>
+                      <label key={chiave} className="flex cursor-pointer items-start gap-2 text-sm">
                         <Checkbox
-                          className="mt-0.5" disabled={spenta}
-                          checked={!spenta && cosa[chiave]}
+                          className="mt-0.5"
+                          checked={cosa[chiave]}
                           onCheckedChange={(v) => setCosa((prec) => ({ ...prec, [chiave]: v === true }))}
                         />
                         <span>
                           <span className="font-medium">{t}</span>
                           <span className="text-muted-foreground">
-                            {spenta
-                              ? " · lettura VLAN spenta in Impostazioni"
-                              : chi.length === nInclusi && nInclusi > 2
-                                ? ` · tutti e ${nInclusi}`
-                                : ` · ${elencoNomi(chi.map((x) => x.nome ?? "apparato"))}`}
+                            {chi.length === tenuti.length && tenuti.length > 2
+                              ? ` · tutti e ${tenuti.length}`
+                              : ` · ${elencoNomi(chi.map((x) => x.nome ?? "apparato"))}`}
                           </span>
+                          {spente > 0 && (
+                            <span className="font-medium">
+                              {spente === chi.length ? " — spenta in Impostazioni: il giro la salta finché non si riaccende" : ` — spenta per ${spente} di ${chi.length}`}
+                            </span>
+                          )}
                         </span>
                       </label>
                     );
@@ -365,9 +378,11 @@ export function FinestraScansioneAutomatica(props: ProprietaFinestraScansione) {
           </span>
           <div className="flex flex-wrap items-center gap-2">
             {!caricamento && !erroreCaricamento && nInclusi === 0 && (
-              <span className="text-[13px] font-medium">▲ nessun apparato con credenziale provata</span>
+              <span className="text-[13px] font-medium">
+                {modifica && tenuti.length > 0 ? "▲ nessuno leggibile adesso: il giro li riprova" : "▲ nessun apparato con credenziale provata"}
+              </span>
             )}
-            {!caricamento && !erroreCaricamento && nInclusi > 0 && nessunaLettura && (
+            {!caricamento && !erroreCaricamento && tenuti.length > 0 && nessunaLettura && (
               <span className="text-[13px] font-medium">▲ scegli almeno una lettura</span>
             )}
             <Button variant="outline" onClick={() => onOpenChange(false)}>Annulla</Button>

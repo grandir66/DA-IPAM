@@ -194,6 +194,16 @@ export function lettureValide(t: StatoApparato["tipo"]): Lettura[] {
   return out;
 }
 
+/**
+ * L'interruttore che regge la lettura VLAN di un tipo (ADR 0018), come la sceglie il giro: lo switch della lettura
+ * `switch_vlan`, altrimenti la scheda MikroTik; null se la VLAN non vale per il tipo. Lo decide il server: la finestra
+ * J2 non ha il tipo (revisione finale 22/10, in modifica lo ricalcolava da un `tipo_scheda` null).
+ */
+export function interruttoreVlan(t: StatoApparato["tipo"]): "switch_vlan" | "mikrotik_scheda" | null {
+  if (!lettureValide(t).includes("vlan")) return null;
+  return t.vlan_switch ? "switch_vlan" : "mikrotik_scheda";
+}
+
 // ── Esiti per apparato (decisione 11) ─────────────────────────────────────
 
 /** Stato di una riga di `job_apparati_esiti`: validato nel codice (la tabella non ha CHECK). */

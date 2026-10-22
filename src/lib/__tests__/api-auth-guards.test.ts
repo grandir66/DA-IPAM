@@ -31,6 +31,8 @@ interface Contract {
 // positivi su route già protette (documentano l'intento e catturano rimozioni).
 const CONTRACT: Contract[] = [
   { route: "devices/test-provisional", method: "POST", guard: "requireAdmin" },
+  // scelta del principale del cluster fisico (22/10): scrittura, solo admin
+  { route: "physical-devices/[id]/principale", method: "PUT", guard: "requireAdmin" },
   { route: "analytics/anomalies/[id]", method: "PATCH", guard: "requireAdmin" },
   { route: "analytics/anomalies/[id]", method: "DELETE", guard: "requireAdmin" },
   // probe diagnostici verso host/credenziali arbitrari (audit SEC-9)
@@ -48,6 +50,7 @@ const CONTRACT: Contract[] = [
   { route: "devices/[id]/mikrotik", method: "GET", guard: "requireAuth" },
   { route: "devices/[id]/dispositivi", method: "GET", guard: "requireAuth" },
   { route: "devices/[id]/mikrotik-scheda", method: "GET", guard: "requireAuth" },
+  { route: "devices/[id]/vlan-switch", method: "GET", guard: "requireAuth" },
   // Utenti del router MikroTik (Task 10): dato riservato, solo l'admin (la scheda per tutti non li porta).
   { route: "devices/[id]/mikrotik-utenti", method: "GET", guard: "requireAdmin" },
   // scheda dei server (21/10): dipendenze NIS2 e Active Directory di un host, sola lettura con la sessione.

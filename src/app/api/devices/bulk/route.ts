@@ -4,7 +4,6 @@ import {
   createNetworkDevice,
   getHostBasic,
   getHostById,
-  getNetworkDeviceByHost,
   getNetworkDeviceById,
   getDb,
   updateNetworkDevice,
@@ -28,6 +27,7 @@ import {
   type ProductProfileId,
 } from "@/lib/device-product-profiles";
 import { linkInvAgentEndpointToHost } from "@/lib/inventory-agent/db";
+import { apparatoGiaPresente, messaggioIpDiApparato } from "@/lib/devices/apparato-del-cluster";
 import { scriviClassificazione } from "@/lib/classification/scrivi";
 import { ruoliDalCorpo } from "@/lib/devices/crea-apparato";
 import { portaCredenziale } from "@/lib/credentials/porte";
@@ -148,8 +148,10 @@ export async function POST(request: Request) {
         continue;
       }
 
-      if (getNetworkDeviceByHost(host.ip)) {
-        skipped.push({ host: host.ip, reason: "Già presente come dispositivo" });
+      // Anche un altro IP dello stesso device fisico (cluster) conta come già presente.
+      const gia = apparatoGiaPresente(getDb(), host.ip);
+      if (gia) {
+        skipped.push({ host: host.ip, reason: messaggioIpDiApparato(gia.nome, gia.ip !== host.ip) });
         continue;
       }
 

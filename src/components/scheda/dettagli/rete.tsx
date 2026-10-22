@@ -101,7 +101,13 @@ export function SullaMappa({ hostId, isAdmin }: { hostId: number; isAdmin: boole
 
 /** Cluster fisico: gli altri IP dello stesso apparato. Esportato: la scheda switch lo riusa in «Vicini e MAC». */
 export function IpCollegati({ ctx }: { ctx: ContestoScheda }) {
-  const { host, clusterMembers, unlinkingHostId, scollegaIp, apriCollegaIp } = ctx;
+  const { host, clusterMembers, unlinkingHostId, scollegaIp, apriCollegaIp, clusterPrincipaleHostId, clusterHaApparato, scegliPrincipale, isAdmin } = ctx;
+  const [inCambio, setInCambio] = useState<number | null>(null);
+  const nApparati = clusterMembers.filter((m) => m.ha_apparato).length;
+  async function scegli(id: number) {
+    setInCambio(id);
+    try { await scegliPrincipale(id); } finally { setInCambio(null); }
+  }
   return (
     <Section icon={<Link2 className="h-4 w-4" />} title="IP collegati allo stesso device fisico">
       <div className="space-y-3">
@@ -110,6 +116,14 @@ export function IpCollegati({ ctx }: { ctx: ContestoScheda }) {
             <div className="text-xs text-muted-foreground">
               Cluster fisico <span className="font-mono">#{host.physical_device_id}</span> · {clusterMembers.length} {clusterMembers.length === 1 ? "IP" : "IP"} aggregati
             </div>
+            {clusterHaApparato && (
+              <p className="text-[13px] text-muted-foreground">
+                {nApparati > 1
+                  // Due apparati nello stesso cluster: Discovery non lo accorpa (cluster-discovery.ts), non c'è un principale.
+                  ? `Il cluster ha ${nApparati === 2 ? "due" : nApparati} apparati: il gruppo non si accorpa.`
+                  : "Il cluster ha un apparato gestito: il suo IP è il principale e non si cambia."}
+              </p>
+            )}
             <div className="border rounded-md divide-y">
               {clusterMembers.map((m) => {
                 const isCurrent = m.id === host?.id;
@@ -126,6 +140,25 @@ export function IpCollegati({ ctx }: { ctx: ContestoScheda }) {
                       {isCurrent && <Badge variant="secondary" className="text-[10px]">qui</Badge>}
                       <StatusBadge status={m.status} />
                     </div>
+                    {m.id === clusterPrincipaleHostId ? (
+                      <span
+                        className="inline-flex min-h-[26px] items-center rounded-md border-2 border-[#0D2537] bg-[#0D2537] px-2.5 text-[13px] font-semibold text-white"
+                        title="È l'IP che porta la riga in Discovery"
+                      >
+                        {m.ha_apparato ? "★ principale: IP dell'apparato" : "★ principale"}
+                      </span>
+                    ) : isAdmin && clusterPrincipaleHostId !== null && !clusterHaApparato && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-[13px]"
+                        onClick={() => void scegli(m.id)}
+                        disabled={inCambio === m.id}
+                        title="Questo IP porta la riga in Discovery; gli altri restano sotto «+N IP»"
+                      >
+                        {inCambio === m.id ? "…" : "Scegli come principale"}
+                      </Button>
+                    )}
                     {!isCurrent && (
                       <Button
                         variant="ghost"

@@ -13,6 +13,8 @@ import { NextResponse } from "next/server";
 import { requireAuth, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { getLinkCandidatesForHost } from "@/lib/devices/physical-device-db";
+import { getDb } from "@/lib/db";
+import { hostConApparato } from "@/lib/devices/apparato-del-cluster";
 
 const NO_CACHE_HEADERS = { "Cache-Control": "no-store, no-cache, must-revalidate" };
 
@@ -34,6 +36,8 @@ export async function GET(
     const limit = Math.min(100, Math.max(1, Number(url.searchParams.get("limit") || "20")));
 
     const candidates = getLinkCandidatesForHost(hostId, limit);
-    return NextResponse.json({ candidates }, { headers: NO_CACHE_HEADERS });
+    // Un candidato che è già un apparato gestito rende il cluster «con apparato»: il principale non si sceglie (Task 6).
+    const apparati = hostConApparato(getDb(), candidates.map((c) => c.id));
+    return NextResponse.json({ candidates: candidates.map((c) => ({ ...c, ha_apparato: apparati.has(c.id) })) }, { headers: NO_CACHE_HEADERS });
   });
 }

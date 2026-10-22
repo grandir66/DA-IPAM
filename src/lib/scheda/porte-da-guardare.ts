@@ -114,6 +114,8 @@ export function casellePanoramicaSwitch(i: {
   vicini: number;
   protocolliVicini: string[];
   acceso: string | null;
+  /** Le VLAN già calcolate (lettura Q-BRIDGE, stessa unione della tab); assente = quelle dei PVID di `porte`. */
+  vlan?: Array<{ vlan: number }>;
 }): Casella[] {
   const c: Casella[] = [];
   const su = i.porte.filter((p) => p.status === "up").length;
@@ -129,7 +131,7 @@ export function casellePanoramicaSwitch(i: {
     ...(guarda.length > 0 ? { attenzione: true } : {}),
     tab: "porte",
   });
-  const vlan = vlanDistinte(i.porte);
+  const vlan = i.vlan ?? vlanDistinte(i.porte);
   if (vlan.length > 0) {
     c.push({ etichetta: "VLAN", valore: String(vlan.length), sotto: vlan.slice(0, 4).map((v) => v.vlan).join(" · ") + (vlan.length > 4 ? " …" : ""), tab: "vlan" });
   }

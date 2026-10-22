@@ -8,6 +8,7 @@ import type { Fonte } from "@/components/scheda/riga-fonti";
 import type {
   HardwareMikrotik, RigaBondMk, RigaBridgeMk, RigaDnsMk, RigaPortaBridgeMk, RigaPortaSchedaMk, RigaVlanBridgeMk, RigaVlanMk, RisorseMikrotik,
 } from "@/lib/devices/mikrotik-scheda";
+import { espandiVlanIds, type CellaVlan, type ColonnaVlan, type MatriceVlanBase, type RigaMatrice, type StatoPortaMatrice } from "./matrice-vlan";
 import { SOGLIA_POOL, type InterfacciaScheda, type UsoPool } from "./router";
 
 export type GruppoInterfaccia = "ethernet" | "vlan" | "bond" | "bridge" | "vpn_tunnel" | "altro";
@@ -272,7 +273,7 @@ export interface RispostaSchedaMikrotik {
 export interface LetturaSchedaMk { acceso: boolean; il: string | null; codice: string | null; vlan_il: string | null; dns_il: string | null }
 
 /** «22/10, 08:00» in ora italiana da un'ora del DB (UTC). */
-function oraItaliana(s: string): string {
+export function oraItaliana(s: string): string {
   const d = dataLettura(s);
   return d ? d.toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Rome" }) : s;
 }
@@ -335,40 +336,14 @@ export function descriviBond(b: RigaBondMk): string {
   return [b.mode, b.slaves.length > 0 ? b.slaves.join(", ") : null, b.transmit_hash_policy].filter(Boolean).join(" · ");
 }
 
-const VLAN_MIN = 1;
-const VLAN_MAX = 4094;
-
-/**
- * `vlan-ids` di `/interface bridge vlan` → colonne: «10,20» due colonne, «100-110» undici. Un intervallo più largo di `max`
- * resta UNA colonna con l'etichetta dell'intervallo (id null): 4093 colonne non si leggono (caso 4 del piano). Un pezzo
- * illeggibile o fuori 1-4094 non diventa una colonna.
- */
-export function espandiVlanIds(s: string, max = 64): { id: number | null; etichetta: string }[] {
-  const out: { id: number | null; etichetta: string }[] = [];
-  const valido = (n: number) => Number.isInteger(n) && n >= VLAN_MIN && n <= VLAN_MAX;
-  for (const pezzo of s.split(",").map((x) => x.trim()).filter(Boolean)) {
-    const intervallo = pezzo.match(/^(\d+)\s*-\s*(\d+)$/);
-    if (intervallo) {
-      const a = Number(intervallo[1]), b = Number(intervallo[2]);
-      if (!valido(a) || !valido(b) || b < a) continue;
-      if (b - a + 1 > max) out.push({ id: null, etichetta: `${a}-${b}` });
-      else for (let n = a; n <= b; n++) out.push({ id: n, etichetta: String(n) });
-    } else if (/^\d+$/.test(pezzo) && valido(Number(pezzo))) {
-      out.push({ id: Number(pezzo), etichetta: pezzo });
-    }
-  }
-  return out;
-}
-
-export type CellaVlan = "U" | "T" | null;
-/** id null = intervallo non espanso («100-200»). */
-export interface ColonnaVlan { id: number | null; etichetta: string; nome: string | null }
-export type StatoPortaMk = "attiva" | "inattiva" | "disabilitata";
-export interface MatriceVlan {
+// Modello e `espandiVlanIds` stanno in `matrice-vlan.ts` (condiviso con gli switch, Task 10): qui si riesportano.
+export { espandiVlanIds };
+export type { CellaVlan, ColonnaVlan };
+export type StatoPortaMk = StatoPortaMatrice;
+export interface MatriceVlan extends MatriceVlanBase {
   bridge: string;
-  /** Ordinate per id; gli intervalli non espansi in fondo. */
-  colonne: ColonnaVlan[];
-  righe: { porta: string; stato: StatoPortaMk; pvid: number | null; bond: RigaBondMk | null; celle: CellaVlan[] }[];
+  /** Per i MikroTik la `nota` di riga è `descriviBond(bond)`; il bond resta anche intero per chi lo usa. */
+  righe: (RigaMatrice & { bond: RigaBondMk | null })[];
   /** false = senza `/interface bridge vlan` (solo PVID): le T non si possono sapere. */
   completa: boolean;
 }
@@ -429,6 +404,7 @@ export function matriceVlan(i: {
       stato: i.statoPorta(p.interface),
       pvid: p.pvid,
       bond: bondPer.get(p.interface) ?? null,
+      nota: bondPer.has(p.interface) ? descriviBond(bondPer.get(p.interface)!) : null,
       celle: ordinate.map(([, m]): CellaVlan =>
         m.u.has(p.interface) ? "U" : m.t.has(p.interface) ? "T" : m.id != null && p.pvid === m.id ? "U" : null),
     })),

@@ -192,6 +192,53 @@ export const SEGNO_SCHEDA_MK = "scheda_mikrotik_v21";
 /** Versione dello schema della scheda: 1 = COLONNE_SCHEDA_MK_V1, 2 = DDL_SCHEDA_MK_V2, 3 = DDL_SCHEDA_MK_V3. */
 export const VERSIONE_SCHEDA_MK = 3;
 
+/**
+ * Principale del cluster fisico scelto a mano (piano 2026-10-22 accorpamento, Task 3): in Discovery un apparato fisico ha
+ * una riga sola. NULL = vale la regola (apparato gestito, poi IP più basso, `devices/cluster-discovery.ts`); torna NULL se
+ * l'host esce dal cluster o è cancellato. Come le colonne della scheda MikroTik non sta in `physical_devices` qui sotto: la
+ * crea solo la migrazione (`migrateClusterPrincipale`), così tenant nuovi e vecchi passano dalla stessa strada.
+ */
+export const COLONNA_CLUSTER_PRINCIPALE = ["physical_devices", "primary_host_id", "INTEGER REFERENCES hosts(id) ON DELETE SET NULL"] as const;
+/** L'indice serve all'ON DELETE SET NULL: senza, ogni host cancellato scorre tutta `physical_devices`. */
+export const INDICE_CLUSTER_PRINCIPALE = ["idx_physical_devices_primary_host", "CREATE INDEX IF NOT EXISTS idx_physical_devices_primary_host ON physical_devices(primary_host_id)"] as const;
+/** Segno in `tenant_settings` (`done:<data>:v<versione>`); la migrazione non lo consulta. */
+export const SEGNO_CLUSTER_PRINCIPALE = "cluster_principale_v21";
+export const VERSIONE_CLUSTER_PRINCIPALE = 1;
+
+/**
+ * VLAN degli switch via SNMP (piano 2026-10-22 accorpamento, Task 8, ADR 0029): VLAN con il nome, porte di ogni VLAN (egress,
+ * untagged; untagged NULL = lo switch non lo dichiara e la U si deduce dal PVID), PVID di ogni porta, e come è andata l'ultima
+ * lettura buona. Una fotografia per apparato, separata da `switch_ports.vlan` (il giro ARP la scrive, la mappa la legge): la
+ * scheda dello switch legge queste. Porte per ifIndex, come le dà `devices/snmp-vlan.ts`. Come la scheda MikroTik: le CREATE
+ * stanno SOLO nella migrazione (`migrateSwitchVlan`), senza `IF NOT EXISTS`, nessun CHECK, nessun indice in più.
+ * `ordine_bit` e `porte_senza_mappa` (Task 7, «Correzioni») dicono alla tab VLAN quando la matrice è dedotta.
+ */
+export const DDL_SWITCH_VLAN_V1: ReadonlyArray<readonly [string, string]> = [
+  ["switch_vlan", `CREATE TABLE switch_vlan (
+  device_id INTEGER NOT NULL REFERENCES network_devices(id) ON DELETE CASCADE,
+  vlan_id INTEGER NOT NULL, nome TEXT,
+  PRIMARY KEY (device_id, vlan_id)
+)`],
+  ["switch_vlan_porte", `CREATE TABLE switch_vlan_porte (
+  device_id INTEGER NOT NULL REFERENCES network_devices(id) ON DELETE CASCADE,
+  vlan_id INTEGER NOT NULL, if_index INTEGER NOT NULL, egress INTEGER NOT NULL, untagged INTEGER,
+  PRIMARY KEY (device_id, vlan_id, if_index)
+)`],
+  ["switch_porta_pvid", `CREATE TABLE switch_porta_pvid (
+  device_id INTEGER NOT NULL REFERENCES network_devices(id) ON DELETE CASCADE,
+  if_index INTEGER NOT NULL, pvid INTEGER NOT NULL,
+  PRIMARY KEY (device_id, if_index)
+)`],
+  ["switch_vlan_lettura", `CREATE TABLE switch_vlan_lettura (
+  device_id INTEGER PRIMARY KEY REFERENCES network_devices(id) ON DELETE CASCADE,
+  letto_il TEXT NOT NULL, tabella TEXT NOT NULL, mappa_porte TEXT NOT NULL, n_vlan INTEGER NOT NULL,
+  ordine_bit TEXT NOT NULL, porte_senza_mappa INTEGER NOT NULL
+)`],
+];
+/** Segno in `tenant_settings` (`done:<data>:v<versione>`); la migrazione non lo consulta. */
+export const SEGNO_SWITCH_VLAN = "switch_vlan_v21";
+export const VERSIONE_SWITCH_VLAN = 1;
+
 /** Unioni e separazioni a mano (ADR 0021): le scrivono solo le rotte /api/topology/unioni; mai cancellate (tolto_*: la storia).
  *  Membri come id della mappa, senza chiavi esterne né CHECK. Indici solo nella migrazione. */
 export const DDL_TOPOLOGY_UNIONI: ReadonlyArray<readonly [string, string]> = [

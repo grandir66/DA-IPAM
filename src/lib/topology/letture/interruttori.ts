@@ -6,12 +6,13 @@
  */
 import { getTenantSetting, runInTenantTransaction, setTenantSetting, type CampiViciniCavi } from "@/lib/db-tenant";
 
-/** `mikrotik_scheda` (scheda MikroTik, Task 10, ADR 0027): VLAN, DNS e utenti dei router, per la scheda e non per la mappa. */
-export const LETTURE = ["mikrotik", "controller", "snmp", "host", "mikrotik_scheda"] as const;
+/** `mikrotik_scheda` (scheda MikroTik, Task 10, ADR 0027): VLAN, DNS e utenti dei router, per la scheda e non per la mappa.
+ *  `switch_vlan` (accorpamento e VLAN, Task 9, ADR 0029): le VLAN degli switch via SNMP, per la scheda e non per la mappa. */
+export const LETTURE = ["mikrotik", "controller", "snmp", "host", "mikrotik_scheda", "switch_vlan"] as const;
 export type Lettura = (typeof LETTURE)[number];
 
 /** Le letture che questa versione sa fare. `host` è arrivata col Task 7 del piano di T2, scritta sull'uscita vera T2-b. */
-export const LETTURE_DISPONIBILI: ReadonlySet<Lettura> = new Set<Lettura>(["mikrotik", "controller", "snmp", "host", "mikrotik_scheda"]);
+export const LETTURE_DISPONIBILI: ReadonlySet<Lettura> = new Set<Lettura>(["mikrotik", "controller", "snmp", "host", "mikrotik_scheda", "switch_vlan"]);
 
 export function eLettura(x: unknown): x is Lettura {
   return typeof x === "string" && (LETTURE as readonly string[]).includes(x);

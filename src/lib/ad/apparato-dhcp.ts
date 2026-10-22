@@ -10,12 +10,24 @@
  */
 import { createNetworkDevice, getDb, getNetworkDeviceByHost, type AdIntegration } from "@/lib/db";
 import { applicaVociApparatiDb } from "@/lib/credentials/apparato-archivio";
+import { apparatoGiaPresente } from "@/lib/devices/apparato-del-cluster";
 
-/** L'id dell'apparato del DC: quello che c'è a quell'indirizzo, o uno nuovo col binding WinRM. */
-export function apparatoDhcpDelDc(integration: Pick<AdIntegration, "name" | "dc_host" | "winrm_credential_id">): number {
+/**
+ * L'id dell'apparato del DC: quello che c'è a quell'indirizzo, o uno nuovo col binding WinRM. null se l'IP del DC è
+ * un altro IP di un apparato gestito (stesso device fisico, revisione finale 22/10): un secondo apparato sullo
+ * stesso device è proprio ciò che «Rendi apparato» blocca; i lease restano in `ad_dhcp_leases`.
+ */
+export function apparatoDhcpDelDc(integration: Pick<AdIntegration, "name" | "dc_host" | "winrm_credential_id">): number | null {
   const esistente = getNetworkDeviceByHost(integration.dc_host);
   if (esistente) return esistente.id;
   const dbh = getDb();
+  const gia = apparatoGiaPresente(dbh, integration.dc_host);
+  if (gia) {
+    if (gia.ip === integration.dc_host) return gia.network_device_id;
+    // Niente nomi né IP nel log (regola 10).
+    console.warn("[ad-client] l'IP del DC è un IP secondario di un apparato gestito: non si crea l'apparato DHCP");
+    return null;
+  }
   return dbh.transaction((): number => {
     const nuovo = createNetworkDevice({
       name: `${integration.name} — Windows DHCP`,

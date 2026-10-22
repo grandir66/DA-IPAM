@@ -82,6 +82,8 @@ export default function ObjectDetailPage() {
   // Multi-IP link manuale (v0.2.594+)
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [clusterMembers, setClusterMembers] = useState<MembroCluster[]>([]);
+  const [clusterPrincipaleHostId, setClusterPrincipaleHostId] = useState<number | null>(null);
+  const [clusterHaApparato, setClusterHaApparato] = useState(false);
   const [unlinkingHostId, setUnlinkingHostId] = useState<number | null>(null);
   const [asset, setAsset] = useState<InventoryAsset | null>(null);
   const [librenms, setLibrenms] = useState<LibreNmsStato | null>(null);
@@ -113,12 +115,13 @@ export default function ObjectDetailPage() {
       const h = (await hRes.json()) as HostDetail;
       setHost(h);
       // Apparato tolto (o mai esistito): la scheda torna a quella dell'host non gestito.
-      if (!h.network_device?.id) setDevice(null);
+      const idApparato = h.network_device?.id ?? h.apparato_cluster?.network_device_id;
+      if (!idApparato) setDevice(null);
       // v0.2.635 audit perf: i 3 fetch ausiliari (device + asset + librenms) sono
       // indipendenti tra loro e dall'host principale. Parallelizzo con allSettled
       // per ridurre la latency complessiva e tollerare fallimenti parziali.
       const auxResults = await Promise.allSettled([
-        h.network_device?.id ? fetch(`/api/devices/${h.network_device.id}`) : Promise.resolve(null),
+        idApparato ? fetch(`/api/devices/${idApparato}`) : Promise.resolve(null),
         fetch(`/api/inventory?host_id=${hostId}`),
         fetch(`/api/hosts/${hostId}/librenms`),
       ]);
@@ -152,12 +155,14 @@ export default function ObjectDetailPage() {
 
   // Carica gli host del cluster fisico (se esistono) — usato dalla sezione "IP collegati"
   const fetchClusterMembers = useCallback(async () => {
-    if (!host?.physical_device_id) { setClusterMembers([]); return; }
+    if (!host?.physical_device_id) { setClusterMembers([]); setClusterPrincipaleHostId(null); setClusterHaApparato(false); return; }
     try {
       const r = await fetch(`/api/physical-devices/${host.physical_device_id}/hosts`, { cache: "no-store" });
       if (r.ok) {
-        const data = await r.json() as { hosts: MembroCluster[] };
+        const data = await r.json() as { hosts: MembroCluster[]; principale_host_id?: number | null; cluster_ha_apparato?: boolean };
         setClusterMembers(data.hosts ?? []);
+        setClusterPrincipaleHostId(data.principale_host_id ?? null);
+        setClusterHaApparato(data.cluster_ha_apparato ?? false);
       }
     } catch { /* non critico */ }
   }, [host?.physical_device_id]);
@@ -265,8 +270,24 @@ export default function ObjectDetailPage() {
     }
   }
 
+  async function handleScegliPrincipale(targetHostId: number) {
+    if (!host?.physical_device_id) return;
+    const r = await fetch(`/api/physical-devices/${host.physical_device_id}/principale`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host_id: targetHostId }),
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      toast.error(typeof err.error === "string" ? err.error : "Non sono riuscito a cambiare il principale");
+      return;
+    }
+    toast.success("Principale cambiato: Discovery mostra questo IP");
+    void fetchClusterMembers();
+  }
+
   async function handleUpdateAll() {
-    if (!host?.network_device?.id || !device) {
+    if (!device) {
       toast.error("Promuovi prima l'host a device per eseguire 'Aggiorna tutto'");
       return;
     }
@@ -442,6 +463,9 @@ export default function ObjectDetailPage() {
     classificationLabel,
     runtimeSummary,
     clusterMembers,
+    clusterPrincipaleHostId,
+    clusterHaApparato,
+    scegliPrincipale: handleScegliPrincipale,
     vmSu,
     ad,
     dipendenze,
@@ -467,6 +491,7 @@ export default function ObjectDetailPage() {
         tipo={tipo}
         ruoli={ruoli}
         vmSu={vmSu}
+        apparatoCluster={host.apparato_cluster ?? null}
         azioni={
           <AzioniScheda
             gestito={isManaged}
@@ -509,6 +534,10 @@ export default function ObjectDetailPage() {
           onOpenChange={setLinkDialogOpen}
           anchorHostId={host.id}
           anchorHostLabel={host.hostname || host.ip}
+          anchorIp={host.ip}
+          anchorMembri={clusterMembers.map((m) => ({ id: m.id, ip: m.ip }))}
+          anchorHaApparato={clusterHaApparato || !!device}
+          anchorPrincipaleHostId={clusterPrincipaleHostId}
           onLinked={() => { void fetchAll(); void fetchClusterMembers(); }}
         />
       )}

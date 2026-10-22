@@ -53,6 +53,19 @@ test("VLAN, DNS e utenti dei MikroTik: titolo, che cosa legge (nessuna password)
   assert.ok(testoDialogo("mikrotik_scheda", false, HUB).startsWith("Spegnere la lettura «VLAN, DNS e utenti dei MikroTik»?"));
 });
 
+test("VLAN degli switch via SNMP (Task 9, ADR 0029): titolo, che cosa legge, apparati, comandi; il dialogo dice sette letture, l'ora e «Interroga»", () => {
+  const d = DESCRIZIONE_LETTURE.switch_vlan;
+  assert.equal(d.titolo, "VLAN degli switch via SNMP");
+  assert.equal(d.legge, "Per ogni switch: le VLAN con il nome, le porte tagged e untagged di ognuna, il PVID di ogni porta.");
+  assert.equal(d.apparati, "gli switch con credenziale SNMP, anche quelli del controller; non i MikroTik letti via SSH");
+  assert.equal(d.comandi, "7 letture in sola lettura: Q-BRIDGE-MIB (dot1qVlanStatic, dot1qVlanCurrent, dot1qPvid) e BRIDGE-MIB (dot1dBasePortIfIndex)");
+  const t = testoDialogo("switch_vlan", true, CLIENTE_A);
+  assert.ok(t.includes("7 letture SNMP in sola lettura") && t.includes("al più una volta l'ora per switch") && t.includes("Il giro degli switch parte ogni ora"), t);
+  assert.ok(t.includes("«Interroga»"), "anche la lettura a mano, finché è accesa");
+  assert.ok(!t.includes("La mappa non cambia"), "questa lettura non serve alla mappa: riempie la scheda");
+  assert.ok(testoDialogo("switch_vlan", false, HUB).startsWith("Spegnere la lettura «VLAN degli switch via SNMP»?"));
+});
+
 test("frequenza in parole", () => {
   assert.equal(frequenza(15, true), "ogni 15 minuti dalle scansioni veloci");
   assert.equal(frequenza(60, false), "ogni ora");

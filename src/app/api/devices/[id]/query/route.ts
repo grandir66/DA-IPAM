@@ -21,6 +21,7 @@ import { getScanProgress } from "@/lib/scanner/discovery";
 import type { ScanProgress } from "@/types";
 import { apriSessioneSnmp, versioneApparato } from "@/lib/protocols/snmp-sessione";
 import { walkConSessioneSua, type SessioneWalk } from "@/lib/devices/snmp-walk";
+import { letturaVlanSwitch, vlanSwitchDaLeggere } from "@/lib/cron/jobs";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Progress tracking (stessa map globale usata da discovery.ts)
@@ -430,6 +431,25 @@ async function runSwitchQuery(deviceId: number, device: Parameters<typeof create
       }
     }
   } catch { /* STP opzionale */ }
+
+  // VLAN degli switch (Task 9, ADR 0029): solo con la lettura accesa (spenta, «Interroga» non manda niente di nuovo allo
+  // switch), senza aspettare l'ora; lucchetto ed esito come nel giro. Interruttore guardato per primo. Un errore del DB
+  // (interruttore, esito, scrittura) si dice nel progresso e non fa fallire tutto «Interroga» (revisione del Task 9).
+  try {
+    if (letturaAccesa("switch_vlan") && vlanSwitchDaLeggere(device)) {
+      p.phase = "Acquisizione VLAN (SNMP)...";
+      const v = await letturaVlanSwitch(device, undefined, { ignoraCadenza: true });
+      if (v.stato === "letto") plog(p, `✓ VLAN: ${v.valore}`);
+      else if (v.stato === "errore") plog(p, `— VLAN non lette: ${v.esito.codice ?? "errore"}`);
+      else if (v.motivo === "lucchetto") plog(p, "— VLAN: lettura già in corso");
+      else if (v.motivo === "schema") plog(p, "— VLAN: schema non aggiornato");
+    }
+  } catch (e) {
+    // Nel journal il messaggio dell'errore con l'id dell'apparato (niente nome; un IP nel messaggio si toglie); nel progresso il codice.
+    const msg = (e instanceof Error ? e.message : String(e)).replace(/\b\d{1,3}(?:\.\d{1,3}){3}\b/g, "<ip>");
+    console.error(`[query] VLAN switch apparato ${deviceId}: ${msg}`);
+    plog(p, `— VLAN non lette: ${String((e as { code?: unknown })?.code ?? "errore")}`);
+  }
 
   finishProgress(p, "completed", `Completata: ${entries.length} MAC, ${portInfos.length} porte`);
 }

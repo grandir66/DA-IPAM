@@ -34,6 +34,28 @@ export interface RigaApparato {
   /** Tentativi dell'ultima ricerca automatica su questo host. */
   tentativi: TentativoVista[];
   creazione: { stato: "creato" | "errore"; messaggio?: string } | null;
+  /** L'IP è già di un apparato (lo stesso host o un altro IP del suo device fisico): niente creazione, solo il rimando. */
+  bloccata: ApparatoBloccante | null;
+}
+
+/** L'apparato che possiede già l'IP; `host_id` è la scheda a cui rimandare (`/objects/<host_id>`). */
+export interface ApparatoBloccante {
+  nome: string;
+  host_id: number;
+}
+
+/** Il blocco letto dalla scheda dell'host: apparato proprio oppure unico apparato del cluster fisico. */
+export function bloccoDaHost(h: HostPerRendiApparato): ApparatoBloccante | null {
+  if (h.network_device) return { nome: h.network_device.name, host_id: h.id };
+  if (h.apparato_cluster) return { nome: h.apparato_cluster.nome, host_id: h.apparato_cluster.host_id };
+  return null;
+}
+
+/** Il blocco letto dal 409 del server (`{ codice: "IP_DI_APPARATO", apparato }`), o null per ogni altro errore. */
+export function bloccoDa409(body: unknown): ApparatoBloccante | null {
+  const a = body && typeof body === "object" ? (body as { codice?: unknown; apparato?: { nome?: unknown; host_id?: unknown } }) : null;
+  if (a?.codice !== "IP_DI_APPARATO" || typeof a.apparato?.nome !== "string" || typeof a.apparato.host_id !== "number") return null;
+  return { nome: a.apparato.nome, host_id: a.apparato.host_id };
 }
 
 export interface AzioniCredenziale {

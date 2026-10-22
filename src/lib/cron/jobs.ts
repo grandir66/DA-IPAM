@@ -38,6 +38,7 @@ import { tcpConnect, FALLBACK_TCP_PORTS } from "@/lib/scanner/tcp-check";
 import { createRouterClient, routerOsDurationToIsoTimestamp } from "@/lib/devices/router-client";
 import { createSwitchClient, creaWalkSnmp, deviceHasSnmpSession } from "@/lib/devices/switch-client";
 import { leggiSnmpTopologia } from "@/lib/devices/snmp-topologia";
+import { leggiVlanSwitch } from "@/lib/devices/snmp-vlan";
 import { TEMPO_WALK_MS } from "@/lib/devices/snmp-walk";
 import { lookupVendor } from "@/lib/scanner/mac-vendor";
 import { isIpInCidr, normalizePortNameForMatch } from "@/lib/utils";
@@ -71,6 +72,8 @@ import {
   scriviSchedaMikrotikTopologia,
   scriviSchedaMikrotikLettura,
   livelloSchedaMkCorrente,
+  scriviVlanSwitch,
+  schemaSwitchVlanCorrente,
 } from "@/lib/db-tenant";
 import { HYPERVISOR_SYNC_MINUTES, unifiJobKind } from "@/lib/scheduled-job-types";
 // Statico: run-proxmox-device-scan importa il facade db, che risolve db-tenant (ADR 0002).
@@ -781,6 +784,41 @@ async function letturaSnmp(device: NetworkDevice, options?: RunArpPollOptions): 
   }, options?.adesso);
 }
 
+/**
+ * Gli apparati della lettura `switch_vlan`: gli switch con una sessione SNMP, anche quelli del controller (la ProMax dell'hub
+ * risponde via SNMP; le tabelle sono della scheda, non toccano i vicini della mappa), non i MikroTik letti via SSH (hanno le
+ * loro letture). AP, NAS, server e router no. Chi chiama guarda PRIMA l'interruttore: spenta, nemmeno la credenziale si cerca.
+ */
+export function vlanSwitchDaLeggere(device: NetworkDevice): boolean {
+  return device.device_type === "switch" && !(device.vendor === "mikrotik" && device.protocol === "ssh") && deviceHasSnmpSession(device);
+}
+
+/**
+ * Le VLAN di uno switch via SNMP (piano 2026-10-22 accorpamento, Task 9, ADR 0029), dietro `topologia.lettura.switch_vlan`
+ * (spenta di default, ADR 0018): sette walk in sola lettura (Q-BRIDGE-MIB e BRIDGE-MIB), ognuna con la sua sessione e
+ * TEMPO_WALK_MS; al più una volta l'ora per apparato nel giro, subito con `ignoraCadenza` («Interroga»). Schema assente →
+ * errore `SCHEMA_SWITCH_VLAN` prima di aprire la sessione. Solo «letto» scrive (una fotografia); «non so» e «non riuscito»
+ * sono un errore col codice: niente scrittura, le righe di prima restano con la loro data, il resoconto le conta fra le non
+ * riuscite. Il valore è il numero di VLAN scritte. Esito e resoconto: numeri e codici, mai nomi o IP.
+ */
+export async function letturaVlanSwitch(device: NetworkDevice, options?: Pick<RunArpPollOptions, "creaWalkSnmp" | "adesso">,
+  opzioni: { ignoraCadenza?: boolean } = {}): Promise<EsitoGiro<number>> {
+  return conCadenza("switch_vlan", device.id, async () => {
+    if (!schemaSwitchVlanCorrente()) {
+      throw Object.assign(new Error("Schema delle VLAN degli switch assente"), { code: "SCHEMA_SWITCH_VLAN" });
+    }
+    const walk = await (options?.creaWalkSnmp ?? creaWalkSnmp)(device, TEMPO_WALK_MS);
+    const l = await leggiVlanSwitch(walk);
+    if (l.esito !== "letto") {
+      throw Object.assign(new Error(`VLAN dello switch: esito ${l.esito}`), { code: l.codice ?? (l.esito === "non_so" ? "NON_SO" : "NESSUNA_LETTURA") });
+    }
+    if (!scriviVlanSwitch(device.id, l, options?.adesso?.() ?? new Date())) {
+      throw Object.assign(new Error("Schema delle VLAN degli switch assente"), { code: "SCHEMA_SWITCH_VLAN" });
+    }
+    return { valore: l.vlan.length, conteggio: { comandi: l.letture, riusciti: l.riuscite, codice: l.codice } };
+  }, options?.adesso, opzioni);
+}
+
 export async function runArpPoll(
   networkId?: number | null,
   options?: RunArpPollOptions
@@ -1080,6 +1118,11 @@ export async function runArpPoll(
         if (device.device_type === "switch" && !delController && !(device.vendor === "mikrotik" && device.protocol === "ssh")
           && letturaAccesa("snmp") && deviceHasSnmpSession(device)) {
           esitiLetture.push(await letturaSnmp(device, options));
+        }
+        // VLAN degli switch (Task 9, ADR 0029), spenta di default: interruttore per primo, come sopra. Prima della tabella MAC,
+        // che può fallire e fermare il ramo.
+        if (letturaAccesa("switch_vlan") && vlanSwitchDaLeggere(device)) {
+          esitiLetture.push(await letturaVlanSwitch(device, options));
         }
         const client = await (options?.creaClientSwitch ?? createSwitchClient)(device);
         const entries = await client.getMacTable();

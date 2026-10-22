@@ -27,12 +27,9 @@ export function SiNo({ v }: { v: boolean | null }) {
   return v ? <span className="font-semibold">● sì</span> : <span className="text-muted-foreground">○ no</span>;
 }
 
-/** Stato della porta: segno + parola, come nelle Interfacce. */
-export function StatoPorta({ s }: { s: "attiva" | "inattiva" | "disabilitata" }) {
-  if (s === "attiva") return <span className="font-semibold">✓ attiva</span>;
-  if (s === "disabilitata") return <span className="font-semibold text-[#8E1B20] dark:text-[#E8625A]">✕ disabilitata</span>;
-  return <span className="text-muted-foreground">● inattiva</span>;
-}
+// Spostato in `scheda/matrice-vlan.tsx` (Task 10), riesportato per chi lo importa da qui.
+import { StatoPorta } from "../../../matrice-vlan";
+export { StatoPorta };
 
 /** «yes»/«no» di RouterOS in italiano; «auto» e gli altri valori come sono. */
 const parola = (v: string | null): string => (v === "yes" ? "sì" : v === "no" ? "no" : v ?? "—");

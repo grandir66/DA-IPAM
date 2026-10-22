@@ -9,6 +9,8 @@
  * Functions that reference hub settings (getSetting) import from db-hub.ts.
  */
 
+import { apparatoDelCluster } from "@/lib/devices/apparato-del-cluster";
+import { leggiClusterDiscovery, type InfoClusterDiscovery } from "@/lib/devices/cluster-discovery";
 import { condizioneAssente } from "@/lib/hosts/assenti";
 import Database from "better-sqlite3";
 import path from "path";
@@ -16,7 +18,8 @@ import { resolveDataDir } from "./data-dir";
 import { buildPatchFromHost, buildPatchFromDevice, buildSyncMerge, buildSourceLabel } from "./inventory/discovery-sync";
 import fs from "fs";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { COLONNE_SCHEDA_MK_V1, DDL_HOSTS_ARCHIVIO, DDL_SCHEDA_MK_V2, DDL_SCHEDA_MK_V3, DDL_TOPOLOGY_CAVI, DDL_TOPOLOGY_UNIONI, INDICI_HOSTS_ARCHIVIO, INDICI_TOPOLOGY_UNIONI, TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL, SEGNO_SCHEDA_MK, VERSIONE_SCHEDA_MK } from "./db-tenant-schema";
+import type { LetturaVlanSwitch } from "./devices/snmp-vlan";
+import { DDL_SWITCH_VLAN_V1, SEGNO_SWITCH_VLAN, VERSIONE_SWITCH_VLAN, COLONNA_CLUSTER_PRINCIPALE, INDICE_CLUSTER_PRINCIPALE, SEGNO_CLUSTER_PRINCIPALE, VERSIONE_CLUSTER_PRINCIPALE, COLONNE_SCHEDA_MK_V1, DDL_HOSTS_ARCHIVIO, DDL_SCHEDA_MK_V2, DDL_SCHEDA_MK_V3, DDL_TOPOLOGY_CAVI, DDL_TOPOLOGY_UNIONI, INDICI_HOSTS_ARCHIVIO, INDICI_TOPOLOGY_UNIONI, TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL, SEGNO_SCHEDA_MK, VERSIONE_SCHEDA_MK } from "./db-tenant-schema";
 import { HYPERVISOR_SYNC_MINUTES, PULIZIA_HOST_MINUTES, SCHEDULED_JOB_TYPES_CHECK_SQL } from "./scheduled-job-types";
 import { isProxmoxVeDevice } from "./devices/device-acquisition-resolve";
 import { macToHex, normalizeMac, normalizeMacForStorage } from "./utils";
@@ -783,6 +786,118 @@ export function migrateSchedaMikrotik(db: Database.Database): string[] {
   })();
   SCHEMA_SCHEDA_MK.set(db, misuraLivelloSchedaMk(db));
   return added;
+}
+
+/** Colonna e indice del principale del cluster presenti (PRAGMA e sqlite_master: costano niente). */
+function schemaClusterPrincipaleCompleto(db: Database.Database): boolean {
+  const [t, c] = COLONNA_CLUSTER_PRINCIPALE;
+  const col = (db.prepare(`PRAGMA table_info(${t})`).all() as Array<{ name: string }>).some((r) => r.name === c);
+  return col && !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?").get(INDICE_CLUSTER_PRINCIPALE[0]);
+}
+
+/**
+ * Principale del cluster fisico (piano 2026-10-22 accorpamento, Task 3): `physical_devices.primary_host_id` e il suo indice,
+ * solo se mancano. Additiva, idempotente, in UNA transazione; restituisce «tabella.colonna» e il nome dell'indice di ciò che
+ * aggiunge, poi scrive il segno `done:<data>:v1` una volta sola (la migrazione non lo consulta).
+ */
+export function migrateClusterPrincipale(db: Database.Database): string[] {
+  const added: string[] = [];
+  const [t, c, ddl] = COLONNA_CLUSTER_PRINCIPALE;
+  const [nomeIndice, ddlIndice] = INDICE_CLUSTER_PRINCIPALE;
+  db.transaction(() => {
+    const presenti = (db.prepare(`PRAGMA table_info(${t})`).all() as Array<{ name: string }>).map((r) => r.name);
+    if (!presenti.includes(c)) {
+      db.exec(`ALTER TABLE ${t} ADD COLUMN ${c} ${ddl}`);
+      added.push(`${t}.${c}`);
+    }
+    if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?").get(nomeIndice)) {
+      db.exec(ddlIndice);
+      added.push(nomeIndice);
+    }
+    const chiusa = `:v${VERSIONE_CLUSTER_PRINCIPALE}`;
+    const attuale = leggiSegno(db, SEGNO_CLUSTER_PRINCIPALE);
+    if (!(attuale?.startsWith("done:") && attuale.endsWith(chiusa))) {
+      scriviSegno(db, SEGNO_CLUSTER_PRINCIPALE, `done:${new Date().toISOString().slice(0, 10)}${chiusa}`);
+    }
+  })();
+  return added;
+}
+
+/** Dopo una migrazione fallita: schema completo (un altro processo ha vinto la corsa) → segno `done`, altrimenti `errore:…`. */
+export function chiudiMigrazioneClusterPrincipaleFallita(db: Database.Database, tenantCode: string, e: unknown): void {
+  try {
+    if (schemaClusterPrincipaleCompleto(db)) {
+      const attuale = leggiSegno(db, SEGNO_CLUSTER_PRINCIPALE);
+      if (!attuale?.startsWith("done:")) scriviSegno(db, SEGNO_CLUSTER_PRINCIPALE, `done:${new Date().toISOString().slice(0, 10)}:v${VERSIONE_CLUSTER_PRINCIPALE}`);
+    } else {
+      scriviSegno(db, SEGNO_CLUSTER_PRINCIPALE, segnoErrore(e));
+    }
+  } catch (e2) {
+    console.error(`[db-tenant] ${tenantCode}: ${SEGNO_CLUSTER_PRINCIPALE}, segno non scritto:`, e2);
+  }
+}
+
+/** «Le quattro tabelle delle VLAN degli switch ci sono», annotato all'apertura come SCHEMA_SCHEDA_MK (niente query di schema a ogni scrittura). */
+const SCHEMA_SWITCH_VLAN = new WeakMap<Database.Database, boolean>();
+
+/** Schema delle VLAN degli switch presente (annotato; si rimisura solo con la migrazione o con rileggiSchemaSwitchVlan()). */
+export function schemaSwitchVlanPresente(d: Database.Database): boolean {
+  const v = SCHEMA_SWITCH_VLAN.get(d);
+  if (v !== undefined) return v;
+  const n = tabelleSchedaMkMancanti(d, DDL_SWITCH_VLAN_V1).length === 0;
+  SCHEMA_SWITCH_VLAN.set(d, n);
+  return n;
+}
+
+/** Schema delle VLAN degli switch del tenant corrente (la lettura `switch_vlan` lo chiede prima di aprire la sessione SNMP). */
+export function schemaSwitchVlanCorrente(): boolean {
+  return schemaSwitchVlanPresente(db());
+}
+
+/** Rimisura lo schema delle VLAN degli switch del tenant corrente (prove; dopo una correzione a mano dello schema). */
+export function rileggiSchemaSwitchVlan(): boolean {
+  const d = db();
+  const n = tabelleSchedaMkMancanti(d, DDL_SWITCH_VLAN_V1).length === 0;
+  SCHEMA_SWITCH_VLAN.set(d, n);
+  return n;
+}
+
+/**
+ * VLAN degli switch (piano 2026-10-22 accorpamento, Task 8, ADR 0029): le quattro tabelle di DDL_SWITCH_VLAN_V1 solo se
+ * mancano (sqlite_master: una vista con lo stesso nome fa fallire, non passa muta). Additiva, idempotente, in UNA transazione;
+ * restituisce i nomi delle tabelle che aggiunge, poi scrive il segno `done:<data>:v1` una volta sola (la migrazione non lo consulta).
+ */
+export function migrateSwitchVlan(db: Database.Database): string[] {
+  const added: string[] = [];
+  db.transaction(() => {
+    for (const [n, ddl] of tabelleSchedaMkMancanti(db, DDL_SWITCH_VLAN_V1)) {
+      db.exec(ddl);
+      added.push(n);
+    }
+    const chiusa = `:v${VERSIONE_SWITCH_VLAN}`;
+    const attuale = leggiSegno(db, SEGNO_SWITCH_VLAN);
+    if (!(attuale?.startsWith("done:") && attuale.endsWith(chiusa))) {
+      scriviSegno(db, SEGNO_SWITCH_VLAN, `done:${new Date().toISOString().slice(0, 10)}${chiusa}`);
+    }
+  })();
+  SCHEMA_SWITCH_VLAN.set(db, tabelleSchedaMkMancanti(db, DDL_SWITCH_VLAN_V1).length === 0);
+  return added;
+}
+
+/** Dopo una migrazione fallita: schema completo (un altro processo ha vinto la corsa) → segno `done`, altrimenti `errore:…`. */
+export function chiudiMigrazioneSwitchVlanFallita(db: Database.Database, tenantCode: string, e: unknown): void {
+  try {
+    const completo = tabelleSchedaMkMancanti(db, DDL_SWITCH_VLAN_V1).length === 0;
+    SCHEMA_SWITCH_VLAN.set(db, completo);
+    if (completo) {
+      const attuale = leggiSegno(db, SEGNO_SWITCH_VLAN);
+      if (!attuale?.startsWith("done:")) scriviSegno(db, SEGNO_SWITCH_VLAN, `done:${new Date().toISOString().slice(0, 10)}:v${VERSIONE_SWITCH_VLAN}`);
+    } else {
+      scriviSegno(db, SEGNO_SWITCH_VLAN, segnoErrore(e));
+    }
+  } catch (e2) {
+    console.error(`[db-tenant] ${tenantCode}: ${SEGNO_SWITCH_VLAN}, segno non scritto:`, e2);
+  }
 }
 
 /** «Le tabelle delle unioni ci sono, con i loro indici», annotato all'apertura: senza, l'ingresso non ha righe e le rotte non scrivono. */
@@ -2372,6 +2487,30 @@ export function getTenantDb(tenantCode: string): Database.Database {
     chiudiMigrazioneSchedaMkFallita(newDb, tenantCode, e);
   }
 
+  // Principale del cluster fisico (piano 2026-10-22 accorpamento): una colonna e un indice su physical_devices. Se fallisce il
+  // tenant si apre lo stesso: Discovery usa la regola senza la scelta a mano (cluster-discovery.ts guarda se la colonna c'è).
+  try {
+    const added = migrateClusterPrincipale(newDb);
+    if (added.length > 0) {
+      console.info(`[db-tenant] ${tenantCode}: principale del cluster, aggiunto ${added.join(", ")}`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione principale del cluster fallita (ROLLBACK), la scelta a mano non si salva:`, e);
+    chiudiMigrazioneClusterPrincipaleFallita(newDb, tenantCode, e);
+  }
+
+  // VLAN degli switch (piano 2026-10-22 accorpamento, ADR 0029): quattro tabelle nuove, solo se mancano. Se fallisce il tenant
+  // si apre lo stesso: schemaSwitchVlanPresente() dice false, la lettura non scrive e la scheda mostra «mai lette».
+  try {
+    const added = migrateSwitchVlan(newDb);
+    if (added.length > 0) {
+      console.info(`[db-tenant] ${tenantCode}: switch vlan, aggiunto ${added.join(", ")}`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione switch vlan fallita (ROLLBACK), le VLAN degli switch non si scrivono:`, e);
+    chiudiMigrazioneSwitchVlanFallita(newDb, tenantCode, e);
+  }
+
   tenantDbs.set(tenantCode, { db: newDb, lastUsed: Date.now() });
   return newDb;
 }
@@ -3083,6 +3222,10 @@ export function getHostById(id: number): HostDetail | undefined {
   // v0.2.603: include multihomed group info (peers + is_primary). Prima era
   // popolato solo dalla list discovery, /objects/[id] non lo riceveva → simbolo
   // multihomed sempre nascosto anche dopo manual link manualLinkHostsToPhysicalDevice.
+  // Un apparato, una scheda da qualunque suo IP (specchio di db.ts).
+  const cluster = networkDevice ? null : apparatoDelCluster(db(), host.id);
+  const apparatoCluster = cluster?.esito === "cluster" ? cluster.apparato : null;
+
   const mhLink = db().prepare(
     "SELECT group_id, match_type, is_primary FROM multihomed_links WHERE host_id = ? LIMIT 1"
   ).get(id) as { group_id: string; match_type: string; is_primary: number } | undefined;
@@ -3127,6 +3270,7 @@ export function getHostById(id: number): HostDetail | undefined {
     arp_source: arpSource || null,
     switch_port: switchPort || null,
     network_device: networkDevice ? { id: networkDevice.id, name: networkDevice.name, sysname: networkDevice.sysname, vendor: networkDevice.vendor, protocol: networkDevice.protocol } : null,
+    apparato_cluster: apparatoCluster,
     multihomed,
   };
 }
@@ -4697,6 +4841,11 @@ export function getAllHostValidatedProtocols(): Map<number, string[]> {
   return map;
 }
 
+/** Cluster fisici accorpati per la pagina Discovery (una query sola): host_id → principale/secondario e gli altri IP. */
+export function getClusterDiscovery(): Map<number, InfoClusterDiscovery> {
+  return leggiClusterDiscovery(db());
+}
+
 /** Tutti i link multihomed con i peer, per la pagina Discovery. */
 export function getAllMultihomedLinks(): Map<number, { group_id: string; match_type: string; is_primary: boolean; primary_host_id: number | null; primary_ip: string | null; peers: Array<{ ip: string; network_name: string; host_id: number; is_primary: boolean }> }> {
   const rows = db().prepare(
@@ -4948,6 +5097,30 @@ export function credenzialeSnmpApparato(device: ApparatoInAcquisizione): SceltaS
 /** Token dell'API dell'apparato (client Omada): voce `api` a token legata all'apparato; fino alla 2g la colonna (T20). */
 export function tokenApiApparato(device: ApparatoInAcquisizione): SceltaTokenApi {
   return tokenApiApparatoDb(db(), device);
+}
+
+/** Host di IPAM per l'abbinamento con Proxmox (scheda hypervisor): id, ip, nome e stato, senza il resto della riga. */
+export function getHostNotoPerIp(ip: string): { id: number; ip: string; hostname: string | null; status: string | null } | undefined {
+  return db().prepare("SELECT id, ip, COALESCE(hostname, custom_name) AS hostname, status FROM hosts WHERE ip = ? LIMIT 1")
+    .get(ip) as { id: number; ip: string; hostname: string | null; status: string | null } | undefined;
+}
+
+/** Il nodo Proxmox «DA-PX-01» è l'host di IPAM «DA-PX-01» o «DA-PX-01.dominio» (hostname o nome personalizzato). */
+export function getHostNotoPerNomeNodo(nome: string): { id: number; ip: string; hostname: string | null; status: string | null } | undefined {
+  const n = nome.trim().toLowerCase();
+  if (n === "") return undefined;
+  return db().prepare(
+    `SELECT id, ip, COALESCE(hostname, custom_name) AS hostname, status FROM hosts
+      WHERE lower(hostname) = ?1 OR substr(lower(hostname), 1, length(?1) + 1) = ?1 || '.' OR lower(custom_name) = ?1
+      ORDER BY id LIMIT 1`,
+  ).get(n) as { id: number; ip: string; hostname: string | null; status: string | null } | undefined;
+}
+
+/** Le scansioni Proxmox salvate sugli apparati (JSON grezzo): da lì si risale alla VM di un host. */
+export function getScansioniProxmoxSalvate(): Array<{ id: number; raw: string }> {
+  return db()
+    .prepare("SELECT id, last_proxmox_scan_result AS raw FROM network_devices WHERE last_proxmox_scan_result IS NOT NULL AND last_proxmox_scan_result <> '' ORDER BY id")
+    .all() as Array<{ id: number; raw: string }>;
 }
 
 /** Vero solo con una fonte SNMP dell'apparato (livelli 1-5), mai con la catena della rete o «public». */
@@ -5823,6 +5996,95 @@ export function dateSchedaMikrotikV3(deviceId: number): { vlan_il: string | null
         UNION ALL SELECT MAX(seen_at) FROM mikrotik_vlan WHERE device_id = ?)) AS vlan_il,
       (SELECT MAX(seen_at) FROM mikrotik_dns WHERE device_id = ?) AS dns_il`).get(deviceId, deviceId, deviceId) as { vlan_il: string | null; dns_il: string | null };
   return { vlan_il: r.vlan_il ?? null, dns_il: r.dns_il ?? null };
+}
+
+// ── VLAN degli switch via SNMP (piano 2026-10-22 accorpamento, Task 8, ADR 0029) ──
+
+export interface VlanSwitchDb {
+  vlan: Array<{ vlan_id: number; nome: string | null }>;
+  porte: Array<{ vlan_id: number; if_index: number; egress: boolean; untagged: boolean | null }>;
+  pvid: Array<{ if_index: number; pvid: number }>;
+  lettura: {
+    letto_il: string; tabella: LetturaVlanSwitch["tabella"]; mappa_porte: LetturaVlanSwitch["mappa_porte"]; n_vlan: number;
+    ordine_bit: LetturaVlanSwitch["ordine_bit"]; porte_senza_mappa: number;
+  } | null;
+}
+
+/** Connessioni su cui il rifiuto per schema assente è già stato detto. */
+const AVVISATO_SCHEMA_SWITCH_VLAN = new WeakSet<Database.Database>();
+
+/**
+ * Le VLAN di uno switch nelle quattro tabelle: una fotografia per apparato, l'ultima lettura buona. DELETE delle righe
+ * dell'apparato e INSERT di quelle lette, in UNA transazione (o tutto o niente). Solo con esito «letto» (anche vuoto): un
+ * «non riuscito» o un «non so» LANCIA, così la regola «non so non scrive» non dipende da chi chiama e le righe di prima
+ * restano con la loro data. false = schema assente (migrazione fallita): niente scritto, un avviso per connessione.
+ */
+export function scriviVlanSwitch(deviceId: number, l: LetturaVlanSwitch, adesso: Date = new Date()): boolean {
+  if (l.esito !== "letto") {
+    throw new Error(`scriviVlanSwitch: esito «${l.esito}», si scrive solo una lettura riuscita`);
+  }
+  const d = db();
+  if (!schemaSwitchVlanPresente(d)) {
+    if (!AVVISATO_SCHEMA_SWITCH_VLAN.has(d)) {
+      AVVISATO_SCHEMA_SWITCH_VLAN.add(d);
+      console.warn("[db-tenant] switch vlan: schema assente, le VLAN degli switch non si scrivono");
+    }
+    return false;
+  }
+  const ora = adesso.toISOString().slice(0, 19).replace("T", " ");
+  const bool = (v: boolean | null): number | null => (v === null ? null : v ? 1 : 0);
+  d.transaction(() => {
+    for (const t of ["switch_vlan", "switch_vlan_porte", "switch_porta_pvid", "switch_vlan_lettura"]) {
+      d.prepare(`DELETE FROM ${t} WHERE device_id = ?`).run(deviceId);
+    }
+    // OR REPLACE: due righe con la stessa chiave nella stessa lettura non devono costare tutta la fotografia (vince l'ultima),
+    // ma si dice, come in `sostituisci` della scheda MikroTik (solo i numeri: niente nomi nel log).
+    const scrivi = <R>(tabella: string, sql: string, righeLette: ReadonlyArray<R>, valori: (r: R) => Array<string | number | null>): number => {
+      const ins = d.prepare(sql);
+      for (const r of righeLette) ins.run(deviceId, ...valori(r));
+      const scritte = (d.prepare(`SELECT COUNT(*) AS n FROM ${tabella} WHERE device_id = ?`).get(deviceId) as { n: number }).n;
+      if (scritte < righeLette.length) {
+        console.warn(`[db-tenant] switch vlan: ${tabella} apparato ${deviceId}, righe lette ${righeLette.length}, scritte ${scritte} (chiavi doppie)`);
+      }
+      return scritte;
+    };
+    const nVlan = scrivi("switch_vlan", "INSERT OR REPLACE INTO switch_vlan (device_id, vlan_id, nome) VALUES (?, ?, ?)", l.vlan,
+      (v) => [v.vlan_id, v.nome]);
+    scrivi("switch_vlan_porte", "INSERT OR REPLACE INTO switch_vlan_porte (device_id, vlan_id, if_index, egress, untagged) VALUES (?, ?, ?, ?, ?)", l.porte,
+      (p) => [p.vlan_id, p.if_index, p.egress ? 1 : 0, bool(p.untagged)]);
+    scrivi("switch_porta_pvid", "INSERT OR REPLACE INTO switch_porta_pvid (device_id, if_index, pvid) VALUES (?, ?, ?)", l.pvid,
+      (p) => [p.if_index, p.pvid]);
+    d.prepare(`INSERT INTO switch_vlan_lettura (device_id, letto_il, tabella, mappa_porte, n_vlan, ordine_bit, porte_senza_mappa)
+      VALUES (?, ?, ?, ?, ?, ?, ?)`).run(deviceId, ora, l.tabella, l.mappa_porte, nVlan, l.ordine_bit, l.porte_senza_mappa);
+  })();
+  return true;
+}
+
+/** L'ultima fotografia delle VLAN di uno switch (ordinata per VLAN e porta). Mai letta o schema assente → liste vuote, lettura null. */
+export function leggiVlanSwitchDb(deviceId: number): VlanSwitchDb {
+  const d = db();
+  if (!schemaSwitchVlanPresente(d)) return { vlan: [], porte: [], pvid: [], lettura: null };
+  const vlan = d.prepare("SELECT vlan_id, nome FROM switch_vlan WHERE device_id = ? ORDER BY vlan_id").all(deviceId) as VlanSwitchDb["vlan"];
+  const porte = (d.prepare("SELECT vlan_id, if_index, egress, untagged FROM switch_vlan_porte WHERE device_id = ? ORDER BY vlan_id, if_index")
+    .all(deviceId) as Array<{ vlan_id: number; if_index: number; egress: number; untagged: number | null }>)
+    .map((r) => ({ vlan_id: r.vlan_id, if_index: r.if_index, egress: r.egress === 1, untagged: r.untagged === null ? null : r.untagged === 1 }));
+  const pvid = d.prepare("SELECT if_index, pvid FROM switch_porta_pvid WHERE device_id = ? ORDER BY if_index").all(deviceId) as VlanSwitchDb["pvid"];
+  const lettura = d.prepare(`SELECT letto_il, tabella, mappa_porte, n_vlan, ordine_bit, porte_senza_mappa
+    FROM switch_vlan_lettura WHERE device_id = ?`).get(deviceId) as VlanSwitchDb["lettura"] | undefined;
+  return { vlan, porte, pvid, lettura: lettura ?? null };
+}
+
+/**
+ * Quante colonne ha la matrice VLAN dello switch (numero della tab VLAN): la stessa unione di `matriceVlanSwitch` — VLAN lette,
+ * VLAN delle porte, PVID — in una query. 0 = nessuna o schema assente.
+ */
+export function contaVlanSwitch(deviceId: number): number {
+  const d = db();
+  if (!schemaSwitchVlanPresente(d)) return 0;
+  return (d.prepare(`SELECT COUNT(*) AS n FROM (
+      SELECT vlan_id AS v FROM switch_vlan WHERE device_id = ?
+      UNION SELECT vlan_id FROM switch_vlan_porte WHERE device_id = ?
+      UNION SELECT pvid FROM switch_porta_pvid WHERE device_id = ?)`).get(deviceId, deviceId, deviceId) as { n: number }).n;
 }
 
 /** Quanti bridge ha l'ultima fotografia (una COUNT, per le tab di `GET /api/devices/[id]`); null = schema sotto il livello 2. */

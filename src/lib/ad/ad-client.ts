@@ -456,7 +456,7 @@ export async function syncAdDhcpLeases(integration: AdIntegration, esegui?: type
   try {
     const esisteva = getNetworkDeviceByHost(integration.dc_host) != null;
     windowsDhcpDeviceId = apparatoDhcpDelDc(integration);
-    if (!esisteva) console.info(`[ad-client] creato l'apparato #${windowsDhcpDeviceId} per il DHCP Windows di «${integration.name}»`);
+    if (!esisteva && windowsDhcpDeviceId != null) console.info(`[ad-client] creato l'apparato #${windowsDhcpDeviceId} per il DHCP Windows di «${integration.name}»`);
   } catch (e) {
     console.warn(`[ad-client] impossibile trovare/creare network_device DHCP: ${(e as Error).message}`);
   }

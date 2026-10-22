@@ -4,8 +4,40 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-22 · Un apparato, una riga; matrice VLAN degli switch
+
+Piano `docs/superpowers/plans/2026-10-22-accorpamento-ip-e-vlan-switch.md` (decisioni di Riccardo del 22/10).
+
+### Aggiunto
+
+- **Discovery: un apparato fisico, una riga.** Gli IP dello stesso cluster fisico si accorpano sotto la riga
+  principale (l'IP dell'apparato gestito, altrimenti quello scelto con «Scegli come principale», altrimenti il più
+  basso) con «+N IP» che apre gli altri. Perché: un router con sette IP occupava sette righe, ognuna con la sua
+  scheda, e contatori e filtri contavano sette apparati. Con due apparati nello stesso cluster non si accorpa niente.
+- **Ogni filtro guarda anche gli IP accorpati** (stato, classificazione, CVE, ricerca su IP, nome e MAC): la riga
+  principale compare con «↳ corrisponde <IP> (IP secondario)». Perché: nella prima stesura i filtri scartavano le
+  righe prima dell'accorpamento, e un problema solo su un IP secondario (CVE critiche, un IP giù) spariva dalla lista.
+  Il CSV ha in fondo la colonna «Altri IP» (ip · rete), che senza righe proprie altrimenti si perdevano.
+- **Matrice porte × VLAN degli switch** (Q-BRIDGE-MIB via SNMP, qualunque marca): tabelle `switch_vlan*` per
+  apparato, lettura `switch_vlan` nata **spenta** (ADR 0018), tab VLAN della scheda switch con la striscia
+  (VLAN, trunk, access, senza VLAN) e la stessa matrice dei MikroTik, estratta in un componente condiviso. Perché:
+  per gli switch si vedeva solo il PVID per porta, non quali VLAN passano taggate. Il completamento dal controller
+  UniFi resta fuori (serve allargare la lista bianca delle chiamate).
+
+### Corretto
+
+- **«Rendi apparato» non fa due apparati dello stesso device**: un IP che è già di un apparato, o un altro IP del suo
+  cluster fisico, risponde 409 «Questo IP è già dell'apparato X» (singolo e in blocco); per un IP del gruppo il
+  messaggio dice di toglierlo prima dal gruppo nella scheda di X. Lo stesso blocco vale ora per la modifica dell'IP di
+  un apparato e per l'apparato DHCP che la sincronizzazione AD crea per il DC. Perché: il 21/10 sull'hub è nato così
+  un secondo apparato per il router di sede.
+- **«È un apparato» vuol dire la stessa cosa ovunque** (`sqlApparatoDellHost`): legato all'host, o con l'IP scritto
+  se è un apparato vecchio senza legame. Prima Discovery contava solo il legame e il blocco anche l'IP, così un
+  apparato vecchio era principale per uno e non per l'altro.
+
 ## [Non rilasciato] — 2026-10-22 · Topologia: il cavo a mano vince
 
+- **Un apparato, una scheda, da qualunque suo IP** (Riccardo, 22/10): aprendo `/objects/<host>` di un IP che appartiene a un apparato fisico il cui cluster ha UN solo apparato gestito, si vede la scheda di quell'apparato (stesso tipo, tab, dati); l'intestazione mostra l'IP aperto e «stesso apparato di <nome> · N indirizzi» col link. Con due apparati nel cluster o con nessuno non cambia nulla. Prima gli altri IP del router si aprivano come host semplici con una scheda diversa. `lib/devices/apparato-del-cluster.ts`.
 - **Il collegamento tracciato a mano vince sempre** (Riccardo, 22/10) su quelli solo letti o dedotti, dopo la ★: un
   server o un hypervisor collegato a mano a uno switch sta sotto quello switch anche se un altro lo vede nella tabella
   MAC. Prima la fiducia «a mano» era l'ultima della chiave del Prim e il cavo finiva fra le ridondanze.

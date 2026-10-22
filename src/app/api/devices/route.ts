@@ -131,6 +131,9 @@ export async function POST(request: Request) {
     const body = await request.json();
     const esito = creaApparato(body);
     if (!esito.ok) {
+      if (esito.status === 409) {
+        return NextResponse.json({ error: esito.error, codice: esito.codice, apparato: esito.apparato }, { status: 409 });
+      }
       return NextResponse.json({ error: esito.error }, { status: esito.status });
     }
     const device = esito.device;

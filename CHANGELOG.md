@@ -12,6 +12,7 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ### Corretto
 
+- **SSH verso firmware vecchi.** HP5700-Storage (Comware 7.1.045 R2422P02, 70151) offre solo cifrature CBC: il client dell'app proponeva solo GCM/CTR/ChaCha e l'SSH falliva con la credenziale giusta. AES-CBC ora sta in fondo all'elenco delle cifrature (si usa solo se l'apparato non offre altro); 3DES e DES restano fuori.
 - **Comware: l'acquisizione dall'app con i tempi del collaudo.** L'app chiedeva al collector 4 s per comando e 90 s in tutto (valori di serie); su uno stack IRF `display interface brief` supera i 4 s, il giro si fermava lì e `display vlan all` non partiva (70151, 22/10). Il descrittore del collector porta ora i suoi limiti: Comware 15 s per comando, 240 s in tutto (sotto i 5 minuti del lucchetto del job sugli apparati scelti).
 - **La lettura SNMP oraria non cancella più le VLAN del collector.** Sui Comware la lettura riusciva solo per PVID e mappa del bridge e scriveva una fotografia con zero VLAN: ora una lettura senza tabelle VLAN lascia la fotografia del collector; una lettura con le tabelle vere la sostituisce come prima.
 

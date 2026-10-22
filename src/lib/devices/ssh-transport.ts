@@ -54,6 +54,22 @@ const DEFAULT_HOSTKEY_ALGORITHMS = [
   "ssh-dss",
 ];
 
+/**
+ * Cifrature: quelle di serie di ssh2 (GCM, CTR, ChaCha20) e in fondo AES-CBC, che si usano solo se l'apparato non offre
+ * altro. HP5700-Storage (Comware 7.1.045 R2422P02, 70151 22/10) offre solo CBC: senza, «no matching cipher» con la
+ * credenziale giusta. 3DES e DES restano fuori.
+ */
+const DEFAULT_CIPHER_ALGORITHMS = [
+  "aes128-gcm@openssh.com",
+  "aes256-gcm@openssh.com",
+  "aes128-ctr",
+  "aes192-ctr",
+  "aes256-ctr",
+  "chacha20-poly1305@openssh.com",
+  "aes128-cbc",
+  "aes256-cbc",
+];
+
 export interface SshOptions {
   host: string;
   port?: number;
@@ -202,6 +218,7 @@ function buildConnectConfig(opts: SshOptions, state: SshAuthState, chiave: Parse
   // i nostri sono nomi IETF standard — `as` per non duplicare l'enum.
   type KexList = NonNullable<ConnectConfig["algorithms"]>["kex"];
   type HostKeyList = NonNullable<ConnectConfig["algorithms"]>["serverHostKey"];
+  type CipherList = NonNullable<ConnectConfig["algorithms"]>["cipher"];
   return {
     host: opts.host,
     port: opts.port ?? 22,
@@ -210,6 +227,7 @@ function buildConnectConfig(opts: SshOptions, state: SshAuthState, chiave: Parse
     algorithms: {
       kex: (opts.kexAlgorithms ?? DEFAULT_KEX_ALGORITHMS) as unknown as KexList,
       serverHostKey: DEFAULT_HOSTKEY_ALGORITHMS as unknown as HostKeyList,
+      cipher: DEFAULT_CIPHER_ALGORITHMS as unknown as CipherList,
     },
     tryKeyboard: !!opts.password,
     authHandler: ((methodsLeft, _partial, cb): void => {

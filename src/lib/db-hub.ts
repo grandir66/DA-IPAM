@@ -236,10 +236,9 @@ function seedBuiltinSnmpVendorProfiles(db: Database.Database): void {
       } },
     { id: "qnap", name: "QNAP QTS", cat: "storage", oids: ["1.3.6.1.4.1.24681"], conf: 0.98,
       fields: {
-        model: "1.3.6.1.4.1.24681.1.2.1.0",
-        firmware: "1.3.6.1.4.1.24681.1.2.2.0",
-        serial: "1.3.6.1.4.1.24681.1.2.3.0",
-        temperature: "1.3.6.1.4.1.24681.1.2.7.0",
+        model: ["1.3.6.1.4.1.24681.1.4.1.1.1.1.1.2.1.3.1", "1.3.6.1.4.1.55062.1.12.3.0"],
+        serial: "1.3.6.1.4.1.24681.1.4.1.1.1.1.1.2.1.4.1",
+        temperature: "1.3.6.1.4.1.24681.1.4.1.1.1.1.1.2.1.7.1",
       } },
     { id: "truenas", name: "TrueNAS", cat: "storage", oids: [] as string[], sysDescr: "truenas|freenas", conf: 0.94, fields: { os: "1.3.6.1.2.1.1.1.0" } },
     { id: "netapp", name: "NetApp ONTAP", cat: "storage", oids: ["1.3.6.1.4.1.789"], conf: 0.97,
@@ -320,6 +319,22 @@ function seedBuiltinSnmpVendorProfiles(db: Database.Database): void {
       t();
     }
   }
+}
+
+/**
+ * Profilo SNMP `qnap` (builtin): gli OID `…24681.1.2.1/.2/.3` sono CPU %, memoria totale e libera, non
+ * modello/firmware/seriale (collaudo QNAP 22/10/2026: firmware = «15979.0 MB»). Riscrive solo le righe builtin
+ * che hanno ancora quegli OID; le modifiche dell'utente non si toccano. Idempotente.
+ */
+export function correggiOidProfiloQnap(db: Database.Database): void {
+  const riga = db.prepare("SELECT fields FROM snmp_vendor_profiles WHERE profile_id = 'qnap' AND builtin = 1").get() as { fields: string } | undefined;
+  if (!riga || !/24681\.1\.2\.[123]\.0/.test(riga.fields)) return;
+  const fields = JSON.stringify({
+    model: ["1.3.6.1.4.1.24681.1.4.1.1.1.1.1.2.1.3.1", "1.3.6.1.4.1.55062.1.12.3.0"],
+    serial: "1.3.6.1.4.1.24681.1.4.1.1.1.1.1.2.1.4.1",
+    temperature: "1.3.6.1.4.1.24681.1.4.1.1.1.1.1.2.1.7.1",
+  });
+  db.prepare("UPDATE snmp_vendor_profiles SET fields = ?, updated_at = datetime('now') WHERE profile_id = 'qnap' AND builtin = 1").run(fields);
 }
 
 function seedBuiltinSysObjLookup(db: Database.Database): void {
@@ -474,6 +489,7 @@ function initializeHubDb(db: Database.Database): void {
     `);
   } catch { /* ignore */ }
   seedHubDefaults(db);
+  correggiOidProfiloQnap(db);
   try {
     backfillAllIntegrationUiUrls();
   } catch (e) {

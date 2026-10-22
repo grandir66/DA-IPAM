@@ -75,10 +75,34 @@ test("parser: smb.conf senza sezioni speciali, exports con e senza virgolette, q
     assert.equal(parseQpkgConf("[X]\nVersion = 1\n")?.[0].name, "X");
 });
 
-test("qnap-nas: solo SNMP (collaudo .24) – modello, firmware e seriale dagli OID enterprise QNAP", async () => {
+test("qnap-nas: solo SNMP (collaudo .24, QGD-1602P) – modello, seriale, nome, temperatura e ventole dagli OID giusti; firmware assente", async () => {
+    // forma del walk del 22/10: 24681.1.2.1/.2/.3 sono CPU %, memoria totale e libera, NON identità
     const valori: Record<string, string> = {
-        "1.3.6.1.4.1.24681.1.2.1.0": "TS-LAB", "1.3.6.1.4.1.24681.1.2.2.0": "5.1.3", "1.3.6.1.4.1.24681.1.2.3.0": "Q000LAB01",
+        "1.3.6.1.4.1.24681.1.2.1.0": "12 %", "1.3.6.1.4.1.24681.1.2.2.0": "15979.0 MB", "1.3.6.1.4.1.24681.1.2.3.0": "9876.5 MB",
+        "1.3.6.1.4.1.24681.1.4.1.1.1.1.1.2.1.3.1": "QGD-1602P", "1.3.6.1.4.1.24681.1.4.1.1.1.1.1.2.1.4.1": "Q000LAB01",
+        "1.3.6.1.4.1.24681.1.4.1.1.1.1.1.2.1.6.1": "nas-prova", "1.3.6.1.4.1.24681.1.4.1.1.1.1.1.2.1.7.1": "41",
         "1.3.6.1.2.1.1.5.0": "nas-prova",
+    };
+    const ventole = [
+        { oid: "1.3.6.1.4.1.55062.1.12.9.1.2.1", value: "Ventola 1" }, { oid: "1.3.6.1.4.1.55062.1.12.9.1.3.1", value: "2100" },
+    ];
+    const t: AcquisitionTransports = {
+        get: async oids => ({ status: "ok", data: oids.filter(o => o in valori).map(o => ({ oid: o, value: valori[o] })) as never, warnings: [] }),
+        walk: async oid => ({ status: "ok", data: (oid === "1.3.6.1.4.1.55062.1.12.9.1" ? ventole : []) as never, warnings: [] }),
+        shell: async () => { throw Error("nessuna shell senza SSH"); },
+    };
+    const s = await collectDevice({ collector: "qnap-nas", host: "192.0.2.40", snmp: { community: "lab" } }, t);
+    assert.deepEqual([s.identity.data?.model, s.identity.data?.firmware, s.identity.data?.serial_number], ["QGD-1602P", null, "Q000LAB01"]);
+    for (const v of [s.identity.data?.model, s.identity.data?.firmware, s.identity.data?.serial_number]) assert.ok(!/MB|%/.test(String(v ?? "")), "mai una misura come identità");
+    const sens = s.sensors?.data ?? [];
+    assert.deepEqual(sens.filter(x => x.kind === "temperature").map(x => x.value), [41]);
+    assert.deepEqual(sens.filter(x => x.kind === "fan").map(x => [x.name, x.value, x.unit]), [["Ventola 1", 2100, "rpm"]]);
+});
+
+test("qnap-nas: un OID che risponde con una misura (MB, %) non diventa mai modello, firmware o seriale", async () => {
+    const valori: Record<string, string> = {
+        "1.3.6.1.4.1.24681.1.4.1.1.1.1.1.2.1.3.1": "12 %", "1.3.6.1.4.1.24681.1.4.1.1.1.1.1.2.1.4.1": "15979.0 MB",
+        "1.3.6.1.4.1.55062.1.12.3.0": "8 GB",
     };
     const t: AcquisitionTransports = {
         get: async oids => ({ status: "ok", data: oids.filter(o => o in valori).map(o => ({ oid: o, value: valori[o] })) as never, warnings: [] }),
@@ -86,9 +110,5 @@ test("qnap-nas: solo SNMP (collaudo .24) – modello, firmware e seriale dagli O
         shell: async () => { throw Error("nessuna shell senza SSH"); },
     };
     const s = await collectDevice({ collector: "qnap-nas", host: "192.0.2.40", snmp: { community: "lab" } }, t);
-    assert.deepEqual([s.identity.data?.model, s.identity.data?.firmware, s.identity.data?.serial_number], ["TS-LAB", "5.1.3", "Q000LAB01"]);
-    // valori che non sono un nome (percentuale di CPU, numero) non diventano modello né firmware
-    valori["1.3.6.1.4.1.24681.1.2.1.0"] = "12 %"; valori["1.3.6.1.4.1.24681.1.2.2.0"] = "";
-    const s2 = await collectDevice({ collector: "qnap-nas", host: "192.0.2.40", snmp: { community: "lab" } }, t);
-    assert.deepEqual([s2.identity.data?.model, s2.identity.data?.firmware], [null, null]);
+    assert.deepEqual([s.identity.data?.model, s.identity.data?.firmware, s.identity.data?.serial_number], [null, null, null]);
 });

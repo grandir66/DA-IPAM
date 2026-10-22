@@ -24,12 +24,12 @@ after(() => {
 
 // ── Traduzione della credenziale (pura) ─────────────────────────────────────
 
-const community = (c: string, port = 161): SceltaSnmpApparato => ({ ok: true, cred: { forma: "community", community: c }, port, fonte: "binding", credential_id: 1 });
+const community = (c: string, port = 161): SceltaSnmpApparato => ({ ok: true, cred: { forma: "community", community: c }, port, fonte: "device_binding", credential_id: 1 });
 const v3 = (r: { securityLevel: string; authProtocol?: string | null; authKey?: string | null; privProtocol?: string | null; privKey?: string | null }): SceltaSnmpApparato => ({
   ok: true,
   cred: { forma: "v3", record: { username: "monitor", authProtocol: null, authKey: null, privProtocol: null, privKey: null, ...r } },
   port: 1161,
-  fonte: "binding",
+  fonte: "device_binding",
   credential_id: 2,
 });
 

@@ -19,7 +19,7 @@ import { buildPatchFromHost, buildPatchFromDevice, buildSyncMerge, buildSourceLa
 import fs from "fs";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { LetturaVlanSwitch } from "./devices/snmp-vlan";
-import { DDL_VULCAN, INDICI_VULCAN, SEGNO_VULCAN, VERSIONE_VULCAN, DDL_JOB_APPARATI_ESITI, INDICI_JOB_APPARATI_ESITI, SEGNO_APPARATI_SCELTI, VERSIONE_APPARATI_SCELTI, DDL_SWITCH_VLAN_NATIVA, SEGNO_SWITCH_VLAN_NATIVA, VERSIONE_SWITCH_VLAN_NATIVA, DDL_SWITCH_VLAN_V1, SEGNO_SWITCH_VLAN, VERSIONE_SWITCH_VLAN, COLONNA_CLUSTER_PRINCIPALE, INDICE_CLUSTER_PRINCIPALE, SEGNO_CLUSTER_PRINCIPALE, VERSIONE_CLUSTER_PRINCIPALE, COLONNE_SCHEDA_MK_V1, DDL_HOSTS_ARCHIVIO, DDL_SCHEDA_MK_V2, DDL_SCHEDA_MK_V3, DDL_TOPOLOGY_CAVI, DDL_TOPOLOGY_UNIONI, INDICI_HOSTS_ARCHIVIO, INDICI_TOPOLOGY_UNIONI, TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL, SEGNO_SCHEDA_MK, VERSIONE_SCHEDA_MK } from "./db-tenant-schema";
+import { DDL_VULCAN, INDICI_VULCAN, SEGNO_VULCAN, VERSIONE_VULCAN, DDL_LIBRENMS_FONTE_V1, INDICI_LIBRENMS_FONTE_V1, SEGNO_LIBRENMS_FONTE, VERSIONE_LIBRENMS_FONTE, DDL_JOB_APPARATI_ESITI, INDICI_JOB_APPARATI_ESITI, SEGNO_APPARATI_SCELTI, VERSIONE_APPARATI_SCELTI, DDL_SWITCH_VLAN_NATIVA, SEGNO_SWITCH_VLAN_NATIVA, VERSIONE_SWITCH_VLAN_NATIVA, DDL_SWITCH_VLAN_V1, SEGNO_SWITCH_VLAN, VERSIONE_SWITCH_VLAN, COLONNA_CLUSTER_PRINCIPALE, INDICE_CLUSTER_PRINCIPALE, SEGNO_CLUSTER_PRINCIPALE, VERSIONE_CLUSTER_PRINCIPALE, COLONNE_SCHEDA_MK_V1, DDL_HOSTS_ARCHIVIO, DDL_SCHEDA_MK_V2, DDL_SCHEDA_MK_V3, DDL_TOPOLOGY_CAVI, DDL_TOPOLOGY_UNIONI, INDICI_HOSTS_ARCHIVIO, INDICI_TOPOLOGY_UNIONI, TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL, SEGNO_SCHEDA_MK, VERSIONE_SCHEDA_MK } from "./db-tenant-schema";
 import { HYPERVISOR_SYNC_MINUTES, PULIZIA_HOST_MINUTES, SCHEDULED_JOB_TYPES_CHECK_SQL } from "./scheduled-job-types";
 import { isProxmoxVeDevice, resolveDeviceAcquisition } from "./devices/device-acquisition-resolve";
 import { networkDeviceUsesArpPoll } from "./network-device-arp";
@@ -1033,6 +1033,73 @@ export function migrateSwitchVlanNativa(db: Database.Database): string[] {
   })();
   SCHEMA_SWITCH_VLAN_NATIVA.set(db, tabelleSchedaMkMancanti(db, DDL_SWITCH_VLAN_NATIVA).length === 0);
   return added;
+}
+
+/** Livello dello schema di LibreNMS come fonte (0 = assente, 1 = le tabelle della v1 con i loro indici), annotato all'apertura. */
+const LIVELLO_LIBRENMS = new WeakMap<Database.Database, number>();
+
+function misuraLivelloLibrenms(d: Database.Database): number {
+  if (tabelleSchedaMkMancanti(d, DDL_LIBRENMS_FONTE_V1).length > 0) return 0;
+  const c = d.prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?");
+  return INDICI_LIBRENMS_FONTE_V1.every(([n]) => !!c.get(n)) ? 1 : 0;
+}
+
+/** Livello dello schema di LibreNMS di un DB (annotato; si rimisura solo con la migrazione). */
+export function livelloSchemaLibrenmsDb(d: Database.Database): number {
+  const v = LIVELLO_LIBRENMS.get(d);
+  if (v !== undefined) return v;
+  const n = misuraLivelloLibrenms(d);
+  LIVELLO_LIBRENMS.set(d, n);
+  return n;
+}
+
+/** Livello dello schema di LibreNMS del tenant corrente: sotto 1 la lettura e i rifiuti non si scrivono. */
+export function livelloSchemaLibrenms(): number {
+  return livelloSchemaLibrenmsDb(db());
+}
+
+/**
+ * LibreNMS come fonte di dati (piano 2026-10-22 LibreNMS, task 2): le tabelle di DDL_LIBRENMS_FONTE_V1 e i loro indici,
+ * solo se mancano (sqlite_master: un oggetto con lo stesso nome fa fallire, non passa muto). Additiva, idempotente, in
+ * UNA transazione; restituisce i nomi di ciò che aggiunge, poi scrive il segno `done:<data>:v1` una volta sola.
+ */
+export function migrateLibrenmsFonte(db: Database.Database): string[] {
+  const added: string[] = [];
+  db.transaction(() => {
+    for (const [n, ddl] of tabelleSchedaMkMancanti(db, DDL_LIBRENMS_FONTE_V1)) {
+      db.exec(ddl);
+      added.push(n);
+    }
+    const c = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?");
+    for (const [n, ddl] of INDICI_LIBRENMS_FONTE_V1) {
+      if (c.get(n)) continue;
+      db.exec(ddl);
+      added.push(n);
+    }
+    const chiusa = `:v${VERSIONE_LIBRENMS_FONTE}`;
+    const attuale = leggiSegno(db, SEGNO_LIBRENMS_FONTE);
+    if (!(attuale?.startsWith("done:") && attuale.endsWith(chiusa))) {
+      scriviSegno(db, SEGNO_LIBRENMS_FONTE, `done:${new Date().toISOString().slice(0, 10)}${chiusa}`);
+    }
+  })();
+  LIVELLO_LIBRENMS.set(db, misuraLivelloLibrenms(db));
+  return added;
+}
+
+/** Dopo una migrazione fallita: schema completo (un altro processo ha vinto la corsa) → segno `done`, altrimenti `errore:…`. */
+export function chiudiMigrazioneLibrenmsFonteFallita(db: Database.Database, tenantCode: string, e: unknown): void {
+  try {
+    const livello = misuraLivelloLibrenms(db);
+    LIVELLO_LIBRENMS.set(db, livello);
+    if (livello >= VERSIONE_LIBRENMS_FONTE) {
+      const attuale = leggiSegno(db, SEGNO_LIBRENMS_FONTE);
+      if (!attuale?.startsWith("done:")) scriviSegno(db, SEGNO_LIBRENMS_FONTE, `done:${new Date().toISOString().slice(0, 10)}:v${VERSIONE_LIBRENMS_FONTE}`);
+    } else {
+      scriviSegno(db, SEGNO_LIBRENMS_FONTE, segnoErrore(e));
+    }
+  } catch (e2) {
+    console.error(`[db-tenant] ${tenantCode}: ${SEGNO_LIBRENMS_FONTE}, segno non scritto:`, e2);
+  }
 }
 
 /** «La coda verso DA-Vul-can c'è, col suo indice», annotato all'apertura come le altre (niente query di schema a ogni accodamento). */
@@ -2738,6 +2805,18 @@ export function getTenantDb(tenantCode: string): Database.Database {
     } catch (e2) {
       console.error(`[db-tenant] ${tenantCode}: ${SEGNO_SWITCH_VLAN_NATIVA}, segno non scritto:`, e2);
     }
+  }
+
+  // LibreNMS come fonte di dati (piano 2026-10-22 LibreNMS, task 2): dieci tabelle nuove e due indici, solo se mancano. Se
+  // fallisce il tenant si apre lo stesso: livelloSchemaLibrenms() dice 0, la lettura non scrive e la scheda non ha dati.
+  try {
+    const added = migrateLibrenmsFonte(newDb);
+    if (added.length > 0) {
+      console.info(`[db-tenant] ${tenantCode}: librenms fonte, aggiunto ${added.join(", ")}`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione librenms fonte fallita (ROLLBACK), i dati di LibreNMS non si scrivono:`, e);
+    chiudiMigrazioneLibrenmsFonteFallita(newDb, tenantCode, e);
   }
 
   // Coda verso DA-Vul-can (piano 2026-10-22 invio AD e inventario): due tabelle e un indice nuovi, solo se mancano. Se

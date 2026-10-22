@@ -7,18 +7,45 @@
  * - Fallback: community dalla rete (snmp_community)
  * - Gli host senza SNMP vengono ignorati (non aggiunti, non rimossi)
  * - Gli host rimossi dall'inventario locale vengono rimossi anche da LibreNMS
+ * - Mai `force_add` (piano 2026-10-22 LibreNMS, task 1): LibreNMS prova l'SNMP (o il ping) e rifiuta chi non risponde; il
+ *   rifiuto si scrive col motivo (`scriviRifiutoLibrenms`) e non lascia una riga di mappa nuova
  */
 import { credenzialeSnmpApparato, getHostsByNetwork, getNetworkById, getHostById, getNetworkDeviceById, getNetworks, haSnmpApparato } from "../db-tenant";
 import { getIntegrationConfig } from "./config";
-import { createLibreNMSClient } from "./librenms-api";
+import { createLibreNMSClient, LibreNMSApiError, type CampiAggiuntaLibreNms } from "./librenms-api";
 import {
   upsertLibreNMSMap,
   getLibreNMSMapByIp,
   getLibreNMSMapByDeviceIp,
   getLibreNMSMapForNetwork,
   deleteLibreNMSMap,
+  scriviRifiutoLibrenms,
+  togliRifiutoLibrenms,
+  type CodiceRifiuto,
 } from "./librenms-db";
+import type { SceltaSnmpApparato } from "@/lib/credentials/resolve";
 import type { LibreNMSSyncResult, HostSnmpData, NetworkDevice } from "@/types";
+
+/** Esito di un'aggiunta (o aggiornamento) di un oggetto in LibreNMS. */
+export type EsitoAggiunta =
+  | { ok: true; librenms_device_id: number; aggiunto: boolean }
+  | { ok: false; codice: CodiceRifiuto; messaggio: string };
+
+/**
+ * Un errore di LibreNMS in un esito. LibreNMS rifiuta un'aggiunta con HTTP 500 (o 422) e un messaggio: «Could not connect
+ * to …, please check the snmp details and snmp reachability» → `snmp_non_risponde`; «Already have device …» →
+ * `gia_presente`; ogni altro rifiuto (anche «Could not ping …» di un oggetto ping-only) → `rifiutato`. Senza risposta
+ * HTTP (rete, timeout) → `rete`.
+ */
+export function esitoDaErroreLibreNms(err: unknown): { ok: false; codice: CodiceRifiuto; messaggio: string } {
+  if (err instanceof LibreNMSApiError && err.status > 0) {
+    const m = err.messaggioLibrenms ?? `HTTP ${err.status}`;
+    if (/already (have|exists)|duplicate/i.test(m)) return { ok: false, codice: "gia_presente", messaggio: m };
+    if (/snmp/i.test(m)) return { ok: false, codice: "snmp_non_risponde", messaggio: m };
+    return { ok: false, codice: "rifiutato", messaggio: m };
+  }
+  return { ok: false, codice: "rete", messaggio: err instanceof Error ? err.message : String(err) };
+}
 
 /**
  * LibreNMS usa "hostname" come indirizzo di polling SNMP/ICMP.
@@ -54,6 +81,7 @@ function resolveSnmpParams(
   snmpData: HostSnmpData | null,
   networkCommunity: string | null | undefined
 ): { community: string; snmpver: "v2c"; port: number } | null {
+  // Per gli host senza apparato non c'è altra informazione sulla versione: v2c (piano 2026-10-22 LibreNMS, task 1).
   // Se non c'è snmp_data, non abbiamo conferma che SNMP sia attivo su questo host
   if (!snmpData) return null;
 
@@ -174,15 +202,22 @@ export async function syncNetworkToLibreNMS(networkId: number): Promise<LibreNMS
             ...(host.serial_number ? { serial: host.serial_number } : {}),
           });
         } else {
-          deviceId = await client.addDevice({
-            hostname,
-            ...snmpParams,          // community, snmpver, port
-            snmp_disable: false,
-            force_add: true,
-            sysName:  sysName              ?? undefined,
-            hardware: host.model           ?? undefined,
-            serial:   host.serial_number   ?? undefined,
-          });
+          try {
+            deviceId = await client.addDevice({
+              hostname,
+              ...snmpParams,          // community, snmpver, port
+              snmp_disable: false,
+              sysName:  sysName              ?? undefined,
+              hardware: host.model           ?? undefined,
+              serial:   host.serial_number   ?? undefined,
+            });
+          } catch (err) {
+            // Rifiutato da LibreNMS (SNMP che non risponde, …): il motivo si scrive, nessuna riga di mappa nuova.
+            const e = esitoDaErroreLibreNms(err);
+            if (e.codice !== "rete") scriviRifiutoLibrenms(host.ip, { hostId: host.id, codice: e.codice, motivo: e.messaggio });
+            throw err;
+          }
+          togliRifiutoLibrenms(host.ip);
         }
 
         upsertLibreNMSMap(networkId, host.ip, deviceId, hostname, host.status ?? null);
@@ -214,14 +249,18 @@ export async function syncNetworkToLibreNMS(networkId: number): Promise<LibreNMS
   return result;
 }
 
+/** I campi di un'aggiunta o di un aggiornamento senza `motivo` (che resta a DA-IPAM: a LibreNMS parte solo `snmp_disable`). */
+function campiDaInviare(c: CampiSnmpLibreNms): Omit<CampiAggiuntaLibreNms, "hostname"> {
+  if (c.snmp_disable) return { snmp_disable: true };
+  return c;
+}
+
 /**
- * Aggiunge o aggiorna un singolo host in LibreNMS.
- * Ritorna il device_id LibreNMS assegnato.
- * Lancia eccezione in caso di errore (SNMP non disponibile, LibreNMS non raggiungibile, ecc.).
+ * Aggiunge o aggiorna un singolo host in LibreNMS. Senza SNMP l'host va in ping-only (`snmp_disable: true`), come prima,
+ * ma senza `force_add`: un oggetto che non risponde LibreNMS lo rifiuta, e il rifiuto torna come esito col motivo (scritto
+ * in `librenms_rifiuto`), non come eccezione. Lancia solo per un errore di DA-IPAM (host assente, LibreNMS non configurato).
  */
-export async function addSingleHostToLibreNMS(
-  hostId: number
-): Promise<{ librenms_device_id: number; added: boolean }> {
+export async function addSingleHostToLibreNMS(hostId: number): Promise<EsitoAggiunta> {
   const cfg = getIntegrationConfig("librenms");
   if (cfg.mode === "disabled" || !cfg.url || !cfg.apiToken) {
     throw new Error("LibreNMS non configurato o disabilitato");
@@ -240,81 +279,119 @@ export async function addSingleHostToLibreNMS(
   const client = createLibreNMSClient(cfg.url, cfg.apiToken);
   // v0.2.638 audit B6: messaggio chiaro al caller (UI) invece di generico.
   const probe = await client.probe();
-  if (!probe.ok) throw new Error(`LibreNMS ${cfg.url}: ${probe.message}`);
+  if (!probe.ok) return { ok: false, codice: "rete", messaggio: `LibreNMS ${cfg.url}: ${probe.message}` };
 
   const hostname = pickHostname(host.ip);
   const sysName  = pickSysName(host.hostname, host.custom_name);
   const existing = getLibreNMSMapByIp(host.network_id, host.ip);
 
   // Campi SNMP da aggiornare/inviare (vuoto se ping-only)
-  const snmpFields: Record<string, unknown> = snmpParams
+  const snmpFields: Omit<CampiAggiuntaLibreNms, "hostname"> = snmpParams
     ? { community: snmpParams.community, snmpver: snmpParams.snmpver, port: snmpParams.port, snmp_disable: false }
     : { snmp_disable: true };
+  const metadati = {
+    ...(sysName            ? { sysName }                        : {}),
+    ...(host.model         ? { hardware: host.model }           : {}),
+    ...(host.serial_number ? { serial: host.serial_number }     : {}),
+  };
 
-  if (existing) {
-    await client.updateDevice(existing.librenms_device_id, {
-      ...snmpFields,
-      ...(sysName            ? { sysName }                        : {}),
-      ...(host.model         ? { hardware: host.model }           : {}),
-      ...(host.serial_number ? { serial: host.serial_number }     : {}),
-    });
-    upsertLibreNMSMap(host.network_id, host.ip, existing.librenms_device_id, hostname, host.status ?? null);
-    return { librenms_device_id: existing.librenms_device_id, added: false };
+  try {
+    if (existing) {
+      await client.updateDevice(existing.librenms_device_id, { ...snmpFields, ...metadati });
+      upsertLibreNMSMap(host.network_id, host.ip, existing.librenms_device_id, hostname, host.status ?? null);
+      return { ok: true, librenms_device_id: existing.librenms_device_id, aggiunto: false };
+    }
+
+    // Controlla se il device è già in LibreNMS per IP
+    const existingDevice = await client.getDeviceByHostname(host.ip);
+    let deviceId: number;
+    if (existingDevice) {
+      deviceId = existingDevice.device_id;
+      await client.updateDevice(deviceId, { ...snmpFields, ...metadati });
+    } else {
+      deviceId = await client.addDevice({ hostname, ...snmpFields, ...metadati });
+      togliRifiutoLibrenms(host.ip);
+    }
+
+    upsertLibreNMSMap(host.network_id, host.ip, deviceId, hostname, host.status ?? null);
+    return { ok: true, librenms_device_id: deviceId, aggiunto: !existingDevice };
+  } catch (err) {
+    const e = esitoDaErroreLibreNms(err);
+    if (e.codice !== "rete") scriviRifiutoLibrenms(host.ip, { hostId: host.id, codice: e.codice, motivo: e.messaggio });
+    return e;
   }
+}
 
-  // Controlla se il device è già in LibreNMS per IP
-  const existingDevice = await client.getDeviceByHostname(host.ip);
-  let deviceId: number;
-  if (existingDevice) {
-    deviceId = existingDevice.device_id;
-    await client.updateDevice(deviceId, {
-      ...snmpFields,
-      ...(sysName            ? { sysName }                        : {}),
-      ...(host.model         ? { hardware: host.model }           : {}),
-      ...(host.serial_number ? { serial: host.serial_number }     : {}),
-    });
-  } else {
-    deviceId = await client.addDevice({
-      hostname,
-      ...(snmpParams ?? {}),        // community, snmpver, port se disponibili
-      snmp_disable: !snmpParams,    // true = ping-only se senza SNMP
-      force_add:    true,
-      sysName:      sysName            ?? undefined,
-      hardware:     host.model         ?? undefined,
-      serial:       host.serial_number ?? undefined,
-    });
+/** I campi SNMP di un apparato per LibreNMS, o perché non si mandano (`motivo`, resta a DA-IPAM). */
+export type CampiSnmpLibreNms =
+  | { snmpver: "v1" | "v2c"; community: string; port: number; snmp_disable: false }
+  | {
+      snmpver: "v3"; authlevel: "noAuthNoPriv" | "authNoPriv" | "authPriv"; authname: string;
+      authpass?: string; authalgo?: string; cryptopass?: string; cryptoalgo?: string; port: number; snmp_disable: false;
+    }
+  | { snmp_disable: true; motivo: string };
+
+/**
+ * Algoritmi SNMPv3 di DA-IPAM (`SNMP_V3_AUTH_PROTOCOLS`, `SNMP_V3_PRIV_PROTOCOLS` in `protocols/snmp-sessione.ts`) nei
+ * valori che LibreNMS accetta. AES256C (AES-256 di Reeder, «Cisco») non c'è: LibreNMS non lo dichiara, e un valore fuori
+ * tabella non si manda (piano 2026-10-22 LibreNMS, task 1, caso 5).
+ */
+const AUTH_LIBRENMS: Readonly<Record<string, string>> = {
+  MD5: "MD5", SHA: "SHA", SHA224: "SHA-224", SHA256: "SHA-256", SHA384: "SHA-384", SHA512: "SHA-512",
+};
+const PRIV_LIBRENMS: Readonly<Record<string, string>> = { DES: "DES", AES: "AES", AES192: "AES-192", AES256: "AES-256" };
+
+/**
+ * Traduzione pura della credenziale SNMP di un apparato (`credenzialeSnmpApparato`) nei campi di LibreNMS. La versione
+ * viene dalla credenziale: una community è v1 se l'apparato è `snmp_version = '1'` (gli airFiber), altrimenti v2c; una v3
+ * parte come v3 con utente, livello e algoritmi. Una scelta non riuscita, la «public» di ripiego, un livello o un algoritmo
+ * che LibreNMS non accetta, una chiave mancante → `snmp_disable` col motivo.
+ */
+export function campiSnmpDaScelta(scelta: SceltaSnmpApparato, snmpVersion: string | null | undefined): CampiSnmpLibreNms {
+  if (!scelta.ok) return { snmp_disable: true, motivo: scelta.motivo };
+  if (scelta.fonte === "snmp_ripiego") return { snmp_disable: true, motivo: "solo la community «public» di ripiego" };
+  const port = scelta.port;
+  if (scelta.cred.forma === "community") {
+    return { snmpver: snmpVersion === "1" ? "v1" : "v2c", community: scelta.cred.community, port, snmp_disable: false };
   }
-
-  upsertLibreNMSMap(host.network_id, host.ip, deviceId, hostname, host.status ?? null);
-  return { librenms_device_id: deviceId, added: !existingDevice };
+  const r = scelta.cred.record;
+  const livello = r.securityLevel;
+  if (livello !== "noAuthNoPriv" && livello !== "authNoPriv" && livello !== "authPriv") {
+    return { snmp_disable: true, motivo: `livello SNMPv3 «${livello}» non accettato da LibreNMS` };
+  }
+  if (!r.username) return { snmp_disable: true, motivo: "utente SNMPv3 vuoto" };
+  const out: CampiSnmpLibreNms = { snmpver: "v3", authlevel: livello, authname: r.username, port, snmp_disable: false };
+  if (livello === "noAuthNoPriv") return out;
+  const authalgo = AUTH_LIBRENMS[(r.authProtocol ?? "").toUpperCase()];
+  if (!authalgo) return { snmp_disable: true, motivo: `algoritmo di autenticazione «${r.authProtocol ?? ""}» non accettato da LibreNMS` };
+  if (!r.authKey) return { snmp_disable: true, motivo: "chiave di autenticazione SNMPv3 assente" };
+  out.authalgo = authalgo;
+  out.authpass = r.authKey;
+  if (livello === "authNoPriv") return out;
+  const cryptoalgo = PRIV_LIBRENMS[(r.privProtocol ?? "").toUpperCase()];
+  if (!cryptoalgo) return { snmp_disable: true, motivo: `algoritmo di cifratura «${r.privProtocol ?? ""}» non accettato da LibreNMS` };
+  if (!r.privKey) return { snmp_disable: true, motivo: "chiave di cifratura SNMPv3 assente" };
+  out.cryptoalgo = cryptoalgo;
+  out.cryptopass = r.privKey;
+  return out;
 }
 
 /**
- * Campi SNMP di un apparato per LibreNMS (aggiunta e aggiornamento), dal motore
- * unico (tappa 2 credenziali, T8). Prima partiva `device.community_string` com'è
- * nel DB, cioè il testo cifrato, e la community di un binding o di una voce
- * d'archivio non partiva mai. La community decifrata parte solo se l'apparato
- * ha una fonte SNMP sua e la scelta non è «public» di ripiego; altrimenti
- * `snmp_disable: true` (ping-only), come prima per un apparato senza community.
- * Una v3 non si manda: LibreNMS la riceverebbe come v2c.
+ * Campi SNMP di un apparato per LibreNMS (aggiunta e aggiornamento), dal motore unico (tappa 2 credenziali, T8): la
+ * credenziale decifrata parte solo se l'apparato ha una fonte SNMP sua e la scelta non è «public» di ripiego; altrimenti
+ * `snmp_disable: true` (ping-only) col motivo. Dal 22/10 anche v1 e v3 (prima tutto partiva come v2c e una v3 non partiva).
  */
-export function campiSnmpPerLibreNms(
-  device: NetworkDevice,
-): { community: string; snmpver: "v2c"; port: number; snmp_disable: false } | { snmp_disable: true } {
-  if (!haSnmpApparato(device)) return { snmp_disable: true };
-  const c = credenzialeSnmpApparato(device);
-  if (!c.ok || c.fonte === "snmp_ripiego" || c.cred.forma !== "community") return { snmp_disable: true };
-  return { community: c.cred.community, snmpver: "v2c", port: c.port, snmp_disable: false };
+export function campiSnmpPerLibreNms(device: NetworkDevice): CampiSnmpLibreNms {
+  if (!haSnmpApparato(device)) return { snmp_disable: true, motivo: "nessuna credenziale SNMP dell'apparato" };
+  return campiSnmpDaScelta(credenzialeSnmpApparato(device), device.snmp_version);
 }
 
 /**
  * Aggiunge o aggiorna un singolo NetworkDevice (router/switch) in LibreNMS.
- * Usa network_id = 0 come sentinella nella mappa locale.
- * Funziona anche senza SNMP (aggiunge in modalità ping-only).
+ * Usa network_id = 0 come sentinella nella mappa locale. Senza SNMP va in ping-only, senza `force_add`: un rifiuto torna
+ * come esito col motivo (scritto in `librenms_rifiuto`).
  */
-export async function addSingleNetworkDeviceToLibreNMS(
-  deviceId: number
-): Promise<{ librenms_device_id: number; added: boolean }> {
+export async function addSingleNetworkDeviceToLibreNMS(deviceId: number): Promise<EsitoAggiunta> {
   const cfg = getIntegrationConfig("librenms");
   if (cfg.mode === "disabled" || !cfg.url || !cfg.apiToken) {
     throw new Error("LibreNMS non configurato o disabilitato");
@@ -326,51 +403,46 @@ export async function addSingleNetworkDeviceToLibreNMS(
   const client = createLibreNMSClient(cfg.url, cfg.apiToken);
   // v0.2.638 audit B6: messaggio chiaro al caller (UI) invece di generico.
   const probe = await client.probe();
-  if (!probe.ok) throw new Error(`LibreNMS ${cfg.url}: ${probe.message}`);
+  if (!probe.ok) return { ok: false, codice: "rete", messaggio: `LibreNMS ${cfg.url}: ${probe.message}` };
 
   const hostname = device.host; // IP come hostname per polling affidabile
   const sysName  = device.sysname || device.name || undefined;
 
   // Parametri SNMP se disponibili (gli stessi per aggiornamento e aggiunta)
-  const snmpFields = campiSnmpPerLibreNms(device);
+  const snmpFields = campiDaInviare(campiSnmpPerLibreNms(device));
+  const metadati = {
+    ...(sysName              ? { sysName }                       : {}),
+    ...(device.model         ? { hardware: device.model }        : {}),
+    ...(device.serial_number ? { serial: device.serial_number }  : {}),
+  };
 
   const existing = getLibreNMSMapByDeviceIp(device.host);
 
-  if (existing) {
-    await client.updateDevice(existing.librenms_device_id, {
-      ...snmpFields,
-      ...(sysName         ? { sysName }                        : {}),
-      ...(device.model    ? { hardware: device.model }         : {}),
-      ...(device.serial_number ? { serial: device.serial_number } : {}),
-    });
-    upsertLibreNMSMap(0, device.host, existing.librenms_device_id, hostname, null);
-    return { librenms_device_id: existing.librenms_device_id, added: false };
-  }
+  try {
+    if (existing) {
+      await client.updateDevice(existing.librenms_device_id, { ...snmpFields, ...metadati });
+      upsertLibreNMSMap(0, device.host, existing.librenms_device_id, hostname, null);
+      return { ok: true, librenms_device_id: existing.librenms_device_id, aggiunto: false };
+    }
 
-  // Controlla se il device è già in LibreNMS per IP
-  const existingDevice = await client.getDeviceByHostname(device.host);
-  let librenmsId: number;
-  if (existingDevice) {
-    librenmsId = existingDevice.device_id;
-    await client.updateDevice(librenmsId, {
-      ...snmpFields,
-      ...(sysName         ? { sysName }                        : {}),
-      ...(device.model    ? { hardware: device.model }         : {}),
-      ...(device.serial_number ? { serial: device.serial_number } : {}),
-    });
-  } else {
-    librenmsId = await client.addDevice({
-      hostname,
-      ...snmpFields,
-      force_add: true,
-      sysName:  sysName                  ?? undefined,
-      hardware: device.model             ?? undefined,
-      serial:   device.serial_number     ?? undefined,
-    });
-  }
+    // Controlla se il device è già in LibreNMS per IP
+    const existingDevice = await client.getDeviceByHostname(device.host);
+    let librenmsId: number;
+    if (existingDevice) {
+      librenmsId = existingDevice.device_id;
+      await client.updateDevice(librenmsId, { ...snmpFields, ...metadati });
+    } else {
+      librenmsId = await client.addDevice({ hostname, ...snmpFields, ...metadati });
+      togliRifiutoLibrenms(device.host);
+    }
 
-  upsertLibreNMSMap(0, device.host, librenmsId, hostname, null);
-  return { librenms_device_id: librenmsId, added: !existingDevice };
+    upsertLibreNMSMap(0, device.host, librenmsId, hostname, null);
+    return { ok: true, librenms_device_id: librenmsId, aggiunto: !existingDevice };
+  } catch (err) {
+    const e = esitoDaErroreLibreNms(err);
+    if (e.codice !== "rete") scriviRifiutoLibrenms(device.host, { networkDeviceId: device.id, codice: e.codice, motivo: e.messaggio });
+    return e;
+  }
 }
 
 /**

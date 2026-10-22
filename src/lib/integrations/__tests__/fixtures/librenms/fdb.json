@@ -1,0 +1,230 @@
+{
+ "status": "ok",
+ "ports_fdb": [
+  {
+   "ports_fdb_id": 1,
+   "port_id": 4,
+   "mac_address": "020000000005",
+   "vlan_id": 0,
+   "device_id": 1,
+   "created_at": "created_at-211",
+   "updated_at": "updated_at-212"
+  },
+  {
+   "ports_fdb_id": 2,
+   "port_id": 5,
+   "mac_address": "020000000006",
+   "vlan_id": 0,
+   "device_id": 1,
+   "created_at": "created_at-211",
+   "updated_at": "updated_at-212"
+  },
+  {
+   "ports_fdb_id": 3,
+   "port_id": 6,
+   "mac_address": "020000000007",
+   "vlan_id": 0,
+   "device_id": 1,
+   "created_at": "created_at-211",
+   "updated_at": "updated_at-212"
+  },
+  {
+   "ports_fdb_id": 4,
+   "port_id": 7,
+   "mac_address": "020000000008",
+   "vlan_id": 0,
+   "device_id": 1,
+   "created_at": "created_at-211",
+   "updated_at": "updated_at-212"
+  },
+  {
+   "ports_fdb_id": 5,
+   "port_id": 8,
+   "mac_address": "020000000009",
+   "vlan_id": 0,
+   "device_id": 1,
+   "created_at": "created_at-211",
+   "updated_at": "updated_at-212"
+  },
+  {
+   "ports_fdb_id": 6,
+   "port_id": 32,
+   "mac_address": "02000000000b",
+   "vlan_id": 0,
+   "device_id": 1,
+   "created_at": "created_at-211",
+   "updated_at": "updated_at-212"
+  },
+  {
+   "ports_fdb_id": 7,
+   "port_id": 30,
+   "mac_address": "02000000000d",
+   "vlan_id": 0,
+   "device_id": 1,
+   "created_at": "created_at-211",
+   "updated_at": "updated_at-212"
+  },
+  {
+   "ports_fdb_id": 8,
+   "port_id": 29,
+   "mac_address": "02000000000f",
+   "vlan_id": 0,
+   "device_id": 1,
+   "created_at": "created_at-211",
+   "updated_at": "updated_at-212"
+  },
+  {
+   "ports_fdb_id": 9,
+   "port_id": 29,
+   "mac_address": "020000000012",
+   "vlan_id": 0,
+   "device_id": 1,
+   "created_at": "created_at-211",
+   "updated_at": "updated_at-213"
+  },
+  {
+   "ports_fdb_id": 10,
+   "port_id": 29,
+   "mac_address": "020000000013",
+   "vlan_id": 0,
+   "device_id": 1,
+   "created_at": "created_at-211",
+   "updated_at": "updated_at-214"
+  },
+  {
+   "ports_fdb_id": 11,
+   "port_id": 29,
+   "mac_address": "020000000014",
+   "vlan_id": 0,
+   "device_id": 1,
+   "created_at": "created_at-211",
+   "updated_at": "updated_at-212"
+  },
+  {
+   "ports_fdb_id": 13,
+   "port_id": 29,
+   "mac_address": "020000000015",
+   "vlan_id": 0,
+   "device_id": 1,
+   "created_at": "created_at-211",
+   "updated_at": "updated_at-212"
+  },
+  {
+   "ports_fdb_id": 14,
+   "port_id": 29,
+   "mac_address": "020000000016",
+   "vlan_id": 0,
+   "device_id": 1,
+   "created_at": "created_at-211",
+   "updated_at": "updated_at-212"
+  },
+  {
+   "ports_fdb_id": 15,
+   "port_id": 29,
+   "mac_address": "020000000017",
+   "vlan_id": 0,
+   "device_id": 1,
+   "created_at": "created_at-211",
+   "updated_at": "updated_at-212"
+  },
+  {
+   "ports_fdb_id": 16,
+   "port_id": 29,
+   "mac_address": "020000000018",
+   "vlan_id": 0,
+   "device_id": 1,
+   "created_at": "created_at-211",
+   "updated_at": "updated_at-212"
+  },
+  {
+   "ports_fdb_id": 17,
+   "port_id": 29,
+   "mac_address": "020000000019",
+   "vlan_id": 0,
+   "device_id": 1,
+   "created_at": "created_at-211",
+   "updated_at": "updated_at-212"
+  },
+  {
+   "ports_fdb_id": 18,
+   "port_id": 29,
+   "mac_address": "02000000001a",
+   "vlan_id": 0,
+   "device_id": 1,
+   "created_at": "created_at-211",
+   "updated_at": "updated_at-212"
+  },
+  {
+   "ports_fdb_id": 19,
+   "port_id": 29,
+   "mac_address": "02000000001b",
+   "vlan_id": 0,
+   "device_id": 1,
+   "created_at": "created_at-211",
+   "updated_at": "updated_at-212"
+  },
+  {
+   "ports_fdb_id": 20,
+   "port_id": 29,
+   "mac_address": "02000000001c",
+   "vlan_id": 0,
+   "device_id": 1,
+   "created_at": "created_at-211",
+   "updated_at": "updated_at-212"
+  },
+  {
+   "ports_fdb_id": 21,
+   "port_id": 29,
+   "mac_address": "02000000001d",
+   "vlan_id": 0,
+   "device_id": 1,
+   "created_at": "created_at-211",
+   "updated_at": "updated_at-212"
+  },
+  {
+   "ports_fdb_id": 22,
+   "port_id": 29,
+   "mac_address": "02000000001e",
+   "vlan_id": 0,
+   "device_id": 1,
+   "created_at": "created_at-211",
+   "updated_at": "updated_at-212"
+  },
+  {
+   "ports_fdb_id": 25,
+   "port_id": 29,
+   "mac_address": "02000000001f",
+   "vlan_id": 0,
+   "device_id": 1,
+   "created_at": "created_at-211",
+   "updated_at": "updated_at-212"
+  },
+  {
+   "ports_fdb_id": 27,
+   "port_id": 32,
+   "mac_address": "020000000020",
+   "vlan_id": 0,
+   "device_id": 1,
+   "created_at": "created_at-211",
+   "updated_at": "updated_at-212"
+  },
+  {
+   "ports_fdb_id": 28,
+   "port_id": 30,
+   "mac_address": "020000000021",
+   "vlan_id": 0,
+   "device_id": 1,
+   "created_at": "created_at-211",
+   "updated_at": "updated_at-212"
+  },
+  {
+   "ports_fdb_id": 29,
+   "port_id": 29,
+   "mac_address": "020000000022",
+   "vlan_id": 0,
+   "device_id": 1,
+   "created_at": "created_at-211",
+   "updated_at": "updated_at-212"
+  }
+ ]
+}

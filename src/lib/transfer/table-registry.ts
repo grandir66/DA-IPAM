@@ -90,6 +90,17 @@ export const TENANT_TABLES: TableSpec[] = [
   { table: "switch_vlan_nativa", scope: "tenant", tier: "history" },
   // Ultimo esito per apparato dei job apparati_scelti (piano 2026-10-22): riscritto a ogni giro, segue i job.
   { table: "job_apparati_esiti", scope: "tenant", tier: "history" },
+  // LibreNMS come fonte di dati (piano 2026-10-22): fotografia dell'ultima lettura buona per parte, riscritta a ogni giro.
+  { table: "librenms_apparato", scope: "tenant", tier: "history" },
+  { table: "librenms_porta", scope: "tenant", tier: "history" },
+  { table: "librenms_vicino", scope: "tenant", tier: "history" },
+  { table: "librenms_vlan", scope: "tenant", tier: "history" },
+  { table: "librenms_mac_porta", scope: "tenant", tier: "history" },
+  { table: "librenms_arp", scope: "tenant", tier: "history" },
+  { table: "librenms_sensore", scope: "tenant", tier: "history" },
+  { table: "librenms_inventario", scope: "tenant", tier: "history" },
+  { table: "librenms_lettura", scope: "tenant", tier: "history" },
+  { table: "librenms_rifiuto", scope: "tenant", tier: "history" },
   { table: "mobile_inventory_history", scope: "tenant", tier: "history" },
   { table: "mc_remote_session", scope: "tenant", tier: "history" }, // sessioni remote effimere
   { table: "mc_command_log", scope: "tenant", tier: "history" },    // audit comandi RMM

@@ -24,6 +24,7 @@ import { getClassificationLabel, DEVICE_CLASSIFICATIONS_ORDERED } from "@/lib/de
 import { isMacOsHost } from "@/lib/host-platform-detect";
 import { runDeviceAcquisitionScan } from "@/lib/devices/device-scan-client";
 import { porteDaJson, tabDaQuery } from "@/lib/scheda/panoramica";
+import { datiAttivi, type DatiLibrenmsScheda } from "@/lib/scheda/librenms-vista";
 import { mikrotikPerTab, tabDelTipo, tipoScheda, type TabId } from "@/lib/scheda/tipo-scheda";
 import { AzioniScheda } from "@/components/scheda/azioni-scheda";
 import type { ContestoScheda, LibreNmsStato, MembroCluster } from "@/components/scheda/contesto";
@@ -90,6 +91,8 @@ export default function ObjectDetailPage() {
   const [unlinkingHostId, setUnlinkingHostId] = useState<number | null>(null);
   const [asset, setAsset] = useState<InventoryAsset | null>(null);
   const [librenms, setLibrenms] = useState<LibreNmsStato | null>(null);
+  // I dati di LibreNMS dell'oggetto (tabelle `librenms_*`, piano 2026-10-22 LibreNMS): null = non letti o rotta in errore.
+  const [librenmsDati, setLibrenmsDati] = useState<DatiLibrenmsScheda | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -127,9 +130,10 @@ export default function ObjectDetailPage() {
         idApparato ? fetch(`/api/devices/${idApparato}`) : Promise.resolve(null),
         fetch(`/api/inventory?host_id=${hostId}`),
         fetch(`/api/hosts/${hostId}/librenms`),
+        fetch(`/api/hosts/${hostId}/librenms/dati`),
       ]);
 
-      const [dRes, aRes, lnmsRes] = auxResults;
+      const [dRes, aRes, lnmsRes, datiRes] = auxResults;
 
       if (dRes.status === "fulfilled" && dRes.value && dRes.value.ok) {
         try { setDevice((await dRes.value.json()) as DeviceFull); } catch { /* non critico */ }
@@ -145,6 +149,11 @@ export default function ObjectDetailPage() {
           const data = await lnmsRes.value.json();
           if (data) setLibrenms(data);
         } catch { /* non critico */ }
+      }
+      if (datiRes.status === "fulfilled" && datiRes.value.ok) {
+        try { setLibrenmsDati((await datiRes.value.json()) as DatiLibrenmsScheda); } catch { setLibrenmsDati(null); }
+      } else {
+        setLibrenmsDati(null);
       }
     } catch (e) {
       // Catch difensivo per qualunque throw inaspettato lungo la catena.
@@ -460,7 +469,8 @@ export default function ObjectDetailPage() {
   const haDipendenze = (dipendenze?.servizi.length ?? 0) > 0;
   // Stessa condizione di `eMikrotikSsh` (scheda); VLAN e Bridge con la lettura della topologia accesa e almeno un bridge.
   const mikrotik = mikrotikPerTab(device);
-  const tabs = tabDelTipo(tipo, { ruoli, haAd, haDipendenze, mikrotik });
+  const haSensori = (datiAttivi(librenmsDati)?.sensori.length ?? 0) > 0;
+  const tabs = tabDelTipo(tipo, { ruoli, haAd, haDipendenze, mikrotik, haSensori });
   const dalUrl = tabDaQuery(tabDaUrl, tabs);
   const attiva: TabId = tabScelta && tabs.includes(tabScelta) ? tabScelta : dalUrl.tab;
 
@@ -470,6 +480,7 @@ export default function ObjectDetailPage() {
     device,
     asset,
     librenms,
+    librenmsDati,
     tipo,
     ruoli,
     isAdmin,

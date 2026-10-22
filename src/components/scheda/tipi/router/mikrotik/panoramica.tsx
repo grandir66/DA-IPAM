@@ -17,7 +17,7 @@ import type { TabId } from "@/lib/scheda/tipo-scheda";
 import { parseUtcDate } from "../../../blocchi";
 import { BarraUso } from "../../../barra-uso";
 import { Riquadro } from "../../../riquadro";
-import { RigaFonti, type Fonte } from "../../../riga-fonti";
+import { RigaFontiScheda, type Fonte } from "../../../riga-fonti";
 import { StrisciaNumeri } from "../../../striscia-numeri";
 import type { ContestoScheda } from "../../../contesto";
 import { rotteDi, useUsoPool } from "../dati-router";
@@ -257,7 +257,7 @@ export function PanoramicaMikrotik({ ctx }: { ctx: ContestoScheda }) {
         </Riquadro>
       </div>
 
-      <RigaFonti fonti={fonti} />
+      <RigaFontiScheda ctx={ctx} fonti={fonti} />
     </div>
   );
 }

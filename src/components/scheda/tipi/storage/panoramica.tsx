@@ -10,7 +10,7 @@ import { accesoDa } from "@/lib/scheda/panoramica";
 import { alloggiamenti, caselleStorage, gruppiRaidNas, poolNas, volumiNas } from "@/lib/scheda/nas";
 import { parseUtcDate } from "../../blocchi";
 import { Riquadro } from "../../riquadro";
-import { RigaFonti, type Fonte } from "../../riga-fonti";
+import { RigaFontiScheda, type Fonte } from "../../riga-fonti";
 import { StrisciaNumeri } from "../../striscia-numeri";
 import { PanoramicaGenerica } from "../../panoramica-generica";
 import type { ContestoScheda } from "../../contesto";
@@ -78,7 +78,7 @@ export function PanoramicaStorage({ ctx }: { ctx: ContestoScheda }) {
         </div>
       </div>
 
-      <RigaFonti fonti={fonti} />
+      <RigaFontiScheda ctx={ctx} fonti={fonti} />
     </div>
   );
 }

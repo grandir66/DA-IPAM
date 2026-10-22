@@ -64,6 +64,7 @@ import {
   getScanHistory,
   getCurrentTenantCode,
   getTenantSetting,
+  setTenantSetting,
   upsertMacPortEntries,
   cleanupOldMacPortEntries,
   MAC_PORT_RETENTION_DAYS,
@@ -87,12 +88,13 @@ import { parseInterfacce } from "@/lib/devices/mikrotik-stp";
 import { aggiornaInterfacceRouterOs } from "@/lib/devices/physical-device-db";
 import { fattiMikrotik } from "@/lib/devices/mikrotik-stp";
 import { conCadenza, riassuntoLetture, type EsitoGiro } from "@/lib/topology/letture/cadenza";
-import { letturaAccesa, oraUtc, senzaCampiCavi } from "@/lib/topology/letture/interruttori";
+import { chiaveEsito, letturaAccesa, oraUtc, senzaCampiCavi } from "@/lib/topology/letture/interruttori";
 import { leggiHost } from "@/lib/proxmox/lldp-host";
 // Statico: pulizia-archivio importa db-tenant (ADR 0002).
 import { runPuliziaHost } from "@/lib/hosts/pulizia-archivio";
 import type { NetworkDevice } from "@/types";
 import { syncNetworkToLibreNMS, syncAllNetworksToLibreNMS } from "@/lib/integrations/librenms-sync";
+import { giroLibrenms } from "@/lib/integrations/librenms-fonte";
 // Import statico (come LibreNMS, non dinamico come Wazuh): unifi-sync importa
 // db-tenant, che sotto tsx non va mai caricato con `await import()` (ADR 0002).
 import { syncController } from "@/lib/controllers/service";
@@ -319,6 +321,17 @@ export async function runJob(jobId: number, opzioni?: OpzioniRunJob): Promise<Es
         await syncNetworkToLibreNMS(job.network_id);
       } else {
         await syncAllNetworksToLibreNMS();
+        // LibreNMS come fonte di dati (piano 2026-10-22 LibreNMS, task 4): dopo il push, la lettura dei dati di LibreNMS,
+        // solo nel giro globale e solo con l'interruttore `librenms` acceso (spento: nessuna chiamata). Un errore della
+        // lettura non fa fallire il push: si scrive nell'esito.
+        try {
+          await giroLibrenms();
+        } catch (e) {
+          console.error("[Scheduler] librenms_sync: lettura dei dati di LibreNMS non riuscita:", e instanceof Error ? e.name : "errore");
+          try {
+            setTenantSetting(chiaveEsito("librenms"), JSON.stringify({ il: oraUtc(new Date()), errore: e instanceof Error ? e.name : "errore" }));
+          } catch { /* l'esito non si scrive: resta il log */ }
+        }
       }
       break;
     case "vuln_sync": {

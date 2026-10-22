@@ -62,6 +62,10 @@ describe("casellePanoramicaGenerica", () => {
 
 describe("tabDaQuery", () => {
   const dettagli: Parameters<typeof tabDaQuery>[1] = ["panoramica", "dettagli", "sicurezza", "gestione", "storico"];
+  it("?tab=sensori si apre se il tipo ha la tab, altrimenti la prima", () => {
+    assert.deepEqual(tabDaQuery("sensori", ["panoramica", "sensori", "sicurezza"]), { tab: "sensori" });
+    assert.deepEqual(tabDaQuery("sensori", dettagli), { tab: "panoramica" });
+  });
   it("nome nuovo valido", () => assert.deepEqual(tabDaQuery("gestione", dettagli), { tab: "gestione" }));
   it("?tab=software porta a Dettagli > Software", () => assert.deepEqual(tabDaQuery("software", dettagli), { tab: "dettagli", sotto: "software" }));
   it("?tab=vulnerabilita porta a Sicurezza", () => assert.deepEqual(tabDaQuery("vulnerabilita", dettagli), { tab: "sicurezza" }));

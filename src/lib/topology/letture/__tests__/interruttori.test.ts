@@ -20,7 +20,14 @@ after(() => { deleteTenantDatabase(T); closeHubDb(); removeTestHubDb(); });
 // ADR 0031 (22/10, 70151: le VLAN del router non arrivavano perché la lettura nasceva spenta): accese di serie.
 test("accese di serie: chiave assente o valore rovinato → accesa; si spegne solo con acceso:false", () => {
   withTenant(T, () => {
-    for (const l of LETTURE) assert.deepEqual(leggiInterruttore(l), { acceso: true, da: null, il: null }, l);
+    for (const l of LETTURE) assert.deepEqual(leggiInterruttore(l), { acceso: l !== "librenms", da: null, il: null }, l);
+    // librenms scrive in LibreNMS (aggiunge apparati): spenta di serie e accesa solo da un `acceso: true` scritto (22/10).
+    for (const v of ["{", "true", '{"acceso":"si"}', '{"acceso":1}', "[]"]) {
+      setTenantSetting(chiaveLettura("librenms"), v);
+      assert.equal(letturaAccesa("librenms"), false, `librenms ${v}`);
+    }
+    setTenantSetting(chiaveLettura("librenms"), '{"acceso":true}');
+    assert.equal(letturaAccesa("librenms"), true, "librenms accesa scritta");
     for (const v of ["{", "true", '{"acceso":"si"}', '{"acceso":1}', "[]"]) {
       setTenantSetting(chiaveLettura("mikrotik"), v);
       assert.equal(letturaAccesa("mikrotik"), true, v);
@@ -60,12 +67,14 @@ test("senzaCampiCavi toglie solo le colonne nuove dei vicini", () => {
 });
 
 // Cinque dal Task 10 della scheda MikroTik: `mikrotik_scheda` (VLAN, DNS e utenti) è una lettura in più come le altre, con il
-// suo interruttore nella card «Letture in più» e la sua cadenza; accesa di serie come tutte (ADR 0031).
-test("tutte e cinque le letture sono disponibili (`host` col Task 7 di T2, `mikrotik_scheda` col Task 10 della scheda): la PUT le accetta; accese di serie", () => {
-  assert.deepEqual([...LETTURE], ["mikrotik", "controller", "snmp", "host", "mikrotik_scheda", "switch_vlan"]);
+// suo interruttore nella card «Letture in più» e la sua cadenza; accesa di serie come tutte (ADR 0031). Eccezione: `librenms`
+// (piano 2026-10-22 LibreNMS) resta spenta di serie perché aggiunge apparati a LibreNMS, cioè scrive (unione del 22/10).
+test("tutte e cinque le letture sono disponibili (`host` col Task 7 di T2, `mikrotik_scheda` col Task 10 della scheda): la PUT le accetta; accese di serie, tranne librenms", () => {
+  assert.deepEqual([...LETTURE], ["mikrotik", "controller", "snmp", "host", "mikrotik_scheda", "switch_vlan", "librenms"]);
   assert.deepEqual([...LETTURE].filter((l) => !LETTURE_DISPONIBILI.has(l)), []);
   withTenant(T, () => assert.equal(letturaAccesa("host"), true));
   withTenant(T, () => assert.equal(letturaAccesa("mikrotik_scheda"), true));
+  withTenant(T, () => assert.equal(letturaAccesa("librenms"), false));
   assert.equal(chiaveLettura("mikrotik_scheda"), "topologia.lettura.mikrotik_scheda");
   // I comandi che la riga della pagina elenca sono quelli che la lettura manda (senza le opzioni di stampa).
   for (const c of Object.values(COMANDI_MK_SCHEDA)) assert.ok(DESCRIZIONE_LETTURE.mikrotik_scheda.comandi.includes(c.replace(/ terse| without-paging/g, "")), c);

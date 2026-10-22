@@ -5,6 +5,7 @@
 import type { HostDetail, InventoryAsset } from "@/types";
 import type { TipoScheda, TabId } from "@/lib/scheda/tipo-scheda";
 import type { RispostaAd, RispostaDipendenze } from "@/lib/devices/server-scheda";
+import type { DatiLibrenmsScheda } from "@/lib/scheda/librenms-vista";
 import type { DeviceFull } from "./dati";
 import type { VmSu } from "./intestazione-scheda";
 
@@ -46,6 +47,8 @@ export interface ContestoScheda {
   device: DeviceFull | null;
   asset: InventoryAsset | null;
   librenms: LibreNmsStato | null;
+  /** Dati di LibreNMS dell'oggetto dalle tabelle `librenms_*` (GET /api/hosts/[id]/librenms/dati); null = non letti. */
+  librenmsDati: DatiLibrenmsScheda | null;
   tipo: TipoScheda;
   ruoli: string[];
   isAdmin: boolean;

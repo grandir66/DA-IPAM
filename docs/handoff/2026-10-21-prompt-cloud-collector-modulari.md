@@ -221,6 +221,29 @@ merge di `origin/dev`.
 Non alzare la versione sul ramo (`version:release` lo fa chi unisce in `dev`: il giro 5 ha creato un `v0.9.871` che
 su `dev` esiste già). Fermati a fine punto 4, cancello completo.
 
+## Giro 7 (22/10 sera): Proxmox completo e agganciato, Opzioni, controller UniFi
+
+Fatto nuovo: il 22/10 sera `collector-modulari`, `s3-mac-virtuali` e `librenms-fonte` sono **uniti in `dev`**
+(v0.9.876) e l'hub li esegue; sull'hub sono accesi l'acquisizione col collector e la lettura LibreNMS. Questo ramo
+riparte da `dev` (merge già fatto all'avvio del giro). Riccardo (22/10): **«procediamo con tutto e agganciamo tutto»**.
+Livello **leggero**. Collaudo del giro 6 in TASKS.md («collaudi del giro 6»).
+
+1. **Proxmox completo**: modello, seriale e produttore hardware dei nodi (vuoti su tutti e 4 nel collaudo: la scansione
+   li prende dall'API `/nodes/{n}/report` o `dmidecode` come root, scegli la lettura in allowlist che li dà) e IP dei
+   guest dall'agent QEMU (`pvesh get /nodes/{n}/qemu/{vmid}/agent/network-get-interfaces`, solo per i guest con agent
+   attivo e accesi; nel collaudo 24 su 52 con agent su 44). Poi **aggancio al pulsante** come gli altri: con
+   l'interruttore acceso «Aggiorna» su un Proxmox usa il collector; la proiezione scrive l'inventario come
+   `syncInventoryFromDevice` (VM come host dell'hypervisor). Spento = scansione di oggi identica (prova).
+2. **Opzioni**: l'interruttore `acquisizione_modulare.attiva` compare nella pagina Opzioni (`lib/opzioni/catalogo.ts`,
+   ADR 0032) come le altre funzioni, spento di serie; la levetta in Impostazioni → Sistema diventa un rimando, come
+   fanno le altre pagine dopo l'ADR 0032.
+3. **Controller UniFi** (decisione 1 di fine giro 4): il collector `unifi-controller` arricchisce la sincronizzazione
+   UniFi che esiste già (più dati per apparato: porte, LLDP, uplink), non il pulsante dell'apparato. Dietro lo stesso
+   interruttore; spento = sincronizzazione di oggi identica (prova).
+
+Non alzare la versione (`version:release` lo fa chi unisce in `dev`). Fermati a fine punto 3, cancello completo, TASKS
+aggiornato con cosa provare sull'hub (Proxmox DA-PX-04 con root e chiave; un controller UniFi).
+
 ## Da lasciare a Riccardo in locale
 
 - Misure su copia del DB dell'hub (S3; differenze dell'anteprima in C2).

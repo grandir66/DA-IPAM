@@ -10,7 +10,7 @@ lettura e scrittura che esistono; due rotte (`GET /api/opzioni`, `PUT /api/opzio
 rimandi nelle pagine vecchie lo usano; il seme dei job sta in `applyTenantSchedulerDefaults`.
 **Spec:** `docs/superpowers/specs/2026-10-22-pagina-opzioni-design.md` · **Tavola:** https://claude.ai/artifact/MFg8HqVhyS4dEzwiDoo1LX
 **Livello di controllo:** leggero (deciso da Riccardo il 22/10/2026).
-**Stato:** approvato · **Ultimo aggiornamento:** 2026-10-22 16:20 (aggiunti i Task 8 e 9 su richiesta di Riccardo)
+**Stato:** in esecuzione (sessione del 22/10 sera, worktree `.worktrees/da-ipam-opzioni`) · **Ultimo aggiornamento:** 2026-10-22 16:20 (aggiunti i Task 8 e 9 su richiesta di Riccardo)
 
 ## Vincoli globali
 
@@ -34,7 +34,7 @@ rimandi nelle pagine vecchie lo usano; il seme dei job sta in `applyTenantSchedu
 4. `leggi` che lancia: riga «✕ stato illeggibile (codice)», la pagina regge → Task 1 e Task 3.
 5. Utente non admin: GET sì, PUT 403, pagina con levette ferme → Task 3 e Task 4.
 
-### [ ] Task 1 — Catalogo delle opzioni e prova di completezza
+### [~] Task 1 — Catalogo delle opzioni e prova di completezza
 
 **File:** crea `src/lib/opzioni/tipi.ts`, `src/lib/opzioni/catalogo.ts`, `src/lib/opzioni/fuori-catalogo.ts`;
 prova `src/lib/opzioni/__tests__/catalogo.test.ts`.
@@ -57,7 +57,7 @@ d'errore e non lancia; (d) su un tenant vuoto le sei letture risultano accese di
 **Verifica:** `node --import tsx --test src/lib/opzioni/__tests__/catalogo.test.ts` → tutte verdi (viste fallire prima).
 **Commit:** «Opzioni: catalogo unico degli interruttori».
 
-### [ ] Task 2 — Job di serie con lapide
+### [x] Task 2 — Job di serie con lapide
 
 **File:** crea `src/lib/opzioni/job-di-serie.ts`; modifica `src/lib/db-tenant.ts` (`applyTenantSchedulerDefaults`,
 riga ~7028: nuovo passo (3) dopo il seme di `known_host_check`); modifica `DELETE /api/jobs` in
@@ -73,6 +73,10 @@ come `known_host_check`; `hypervisor_sync` passando da `setHypervisorSyncSchedul
 spegne i `fast_scan` a 720.
 **Verifica:** `node --import tsx --test src/lib/opzioni/__tests__/job-di-serie.test.ts` → verdi; `npm test` intero verde.
 **Commit:** «Opzioni: quattro job di serie, con la lapide per chi li spegne».
+**Fatto (22/10 sera):** `node --import tsx --test src/lib/opzioni/__tests__/job-di-serie.test.ts` → 7/7 (vista fallire: modulo assente).
+Scostamento: il seme si chiama da `applySchedulerBootMigration` (`cron/scheduler-defaults.ts`) e non da dentro
+`applyTenantSchedulerDefaults`, perché `db-tenant.ts` non può importare `opzioni/job-di-serie.ts` (ciclo d'import, lo
+stesso motivo per cui esiste `scheduler-defaults.ts`). Fatto prima del Task 1, che ne usa la lapide.
 
 ### [ ] Task 3 — Rotte `GET /api/opzioni` e `PUT /api/opzioni/[id]`
 

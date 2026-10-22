@@ -8,10 +8,13 @@
  *
  * Eseguita all'avvio del server PRIMA dello scheduler. La logica per-tenant è
  * dentro db-tenant.ts (applyTenantSchedulerDefaults) per evitare cicli import.
+ * Dopo, il seme dei quattro job di serie (pagina Opzioni, 22/10): qui e non dentro
+ * db-tenant.ts per lo stesso motivo, perché `opzioni/job-di-serie.ts` importa db-tenant.
  */
 
 import { withTenant, applyTenantSchedulerDefaults } from "@/lib/db-tenant";
 import { getActiveTenants } from "@/lib/db-hub";
+import { seminaJobDiSerie } from "@/lib/opzioni/job-di-serie";
 
 export function applySchedulerBootMigration(): { tenantsProcessed: number; jobsDisabled: number; jobsSeeded: number } {
   const summary = { tenantsProcessed: 0, jobsDisabled: 0, jobsSeeded: 0 };
@@ -22,7 +25,7 @@ export function applySchedulerBootMigration(): { tenantsProcessed: number; jobsD
       withTenant(tenant.codice_cliente, () => {
         const r = applyTenantSchedulerDefaults();
         summary.jobsDisabled += r.jobsDisabled;
-        summary.jobsSeeded += r.jobsSeeded;
+        summary.jobsSeeded += r.jobsSeeded + seminaJobDiSerie().creati;
         summary.tenantsProcessed++;
       });
     } catch (err) {
@@ -36,7 +39,7 @@ export function applySchedulerBootMigration(): { tenantsProcessed: number; jobsD
   console.info(
     `[scheduler-defaults] boot migration: ${summary.tenantsProcessed} tenant, ` +
       `${summary.jobsDisabled} fast_scan/ping_sweep disabilitati, ` +
-      `${summary.jobsSeeded} known_host_check seedati`,
+      `${summary.jobsSeeded} job creati (known_host_check e job di serie)`,
   );
   return summary;
 }

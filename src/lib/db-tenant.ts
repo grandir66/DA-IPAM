@@ -6946,6 +6946,25 @@ export function updateScheduledJobInterval(id: number, intervalMinutes: number):
   ).run(intervalMinutes, intervalMinutes, id);
 }
 
+/**
+ * Un job nato dal seme dei job di serie (`opzioni/job-di-serie.ts`): acceso, con il primo giro fra `offsetMinuti`
+ * (spalmato come known_host_check, così le reti non partono tutte insieme).
+ */
+export function insertSeededJob(jobType: ScheduledJob["job_type"], networkId: number | null, intervalMinutes: number, offsetMinuti: number): number {
+  const res = db()
+    .prepare(
+      `INSERT INTO scheduled_jobs (network_id, job_type, interval_minutes, enabled, config, next_run)
+       VALUES (?, ?, ?, 1, '{}', datetime('now', '+' || ? || ' minutes'))`,
+    )
+    .run(networkId, jobType, intervalMinutes, offsetMinuti);
+  return Number(res.lastInsertRowid);
+}
+
+/** Gli id delle reti del cliente, senza le statistiche di `getNetworks`. */
+export function listNetworkIds(): number[] {
+  return (db().prepare("SELECT id FROM networks ORDER BY id").all() as Array<{ id: number }>).map((r) => r.id);
+}
+
 /** Toglie il job e, nella stessa transazione, gli esiti per apparato (`job_apparati_esiti` non ha FK: la v11 ricostruisce la tabella). */
 export function deleteScheduledJob(id: number): boolean {
   const d = db();
@@ -8761,6 +8780,10 @@ export function setTenantSetting(key: string, value: string): void {
        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')`
     )
     .run(key, value);
+}
+
+export function deleteTenantSetting(key: string): void {
+  db().prepare("DELETE FROM tenant_settings WHERE key = ?").run(key);
 }
 
 export function getAllTenantSettings(): Record<string, string> {

@@ -48,3 +48,16 @@ Fermati a S6. Cancello completo (`npm run lint`, `npx tsc --noEmit`, `npm test` 
 Commit in italiano terminati da `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`, push su `librenms-fonte`.
 Rapporto finale in italiano semplice: commit, fatto e verificato (comandi ed exit code), non fatto e perché,
 cosa deve provare o decidere Riccardo.
+
+## Giro 2 (22/10): le schermate S7 e S8
+
+La tavola S6 è approvata con le risposte nel Registro del piano («tavola S6 approvata»). Le prove locali S2 (copia del DB
+vero) e S4 (a vuoto con l'API vera) sono verdi: numeri nel Registro. Prima di tutto merge di `origin/dev`.
+
+1. **S7** scheda dell'oggetto: tab «Sensori» (L1, gruppi per classe, stato dai limiti di avviso di LibreNMS dove ci sono,
+   altrimenti 10% dal limite), colonna «Fonte» e «Alias» (solo se presente) nelle Porte (L2), vicini con le due fonti e il
+   disaccordo su due righe (L3), voce LibreNMS nella riga «Dati da:» (L4). Componenti esistenti di `src/components/scheda/`.
+2. **S8** pagina del modulo: sezione «Apparati e lettura dei dati» nella pagina del modulo LibreNMS (L5).
+3. Resa con Playwright e dati finti a 1440 e 1920, nessuno scorrimento orizzontale; interruttore spento = schede come oggi.
+
+Fermati a fine S8 (S9 mappa e S10 accensione restano fuori). Cancello completo, TASKS e piano aggiornati.

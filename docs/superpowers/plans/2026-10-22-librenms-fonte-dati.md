@@ -312,6 +312,17 @@ collegamenti nuovi e di quelli cambiati portato a Riccardo; accensione sull'hub 
 
 ## Registro
 
+- **22/10, tavola S6 approvata** (Riccardo: «ok» ai consigli): L1 «vicino al limite» dai limiti di avviso di LibreNMS dove
+  ci sono, altrimenti il 10% dal limite; L2 colonna «Alias» solo se almeno una porta ce l'ha; L3 disaccordo su due righe
+  col ▲; L5 sezione dentro la pagina del modulo LibreNMS, non pagina a sé.
+- **22/10, prove locali (sessione Claude sul Mac):** copia coerente (`sqlite3 .backup`, sola lettura) di `70791.db` (2,0 GB)
+  dell'hub nello scratchpad, cancellata dall'hub subito dopo.
+  - **S2**: aprendo la copia la migrazione scrive `librenms_fonte_v21 = done:2026-10-22:v1`, 11 tabelle `librenms_*`;
+    `PRAGMA integrity_check` = ok (23 s); apertura + lettura in ~3 s.
+  - **S4 a vuoto con l'API vera** (LibreNMS **26.10.2**, token decifrato sull'hub e passato in pipe, mai stampato), exit 0
+    letto in bash: 51 apparati, 1086 porte, 109 vicini, 76 VLAN, 3280 MAC per porta, 3055 ARP, 1160 sensori, inventario
+    20 apparati per giro (8 poi 15 apparati con inventario); 14 apparati con vicini; 5 non interrogati, 0 rifiutati,
+    10 vicini da aggiungere; tempo ~2 s. In linea con la spec §2.
 - **22/10, esecuzione:** in parallelo ai collector, nel cloud sul ramo `librenms-fonte` (prompt
   `docs/handoff/2026-10-22-prompt-cloud-librenms.md`). Le uscite vere per S3 sono raccolte sull'hub in sola lettura e
   anonimizzate a chiusura (`src/lib/integrations/__tests__/fixtures/librenms/LEGGIMI.md`): `ports_vlans` dà 404.

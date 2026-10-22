@@ -13,14 +13,14 @@ Spec [`docs/superpowers/specs/2026-10-22-librenms-fonte-dati-design.md`](docs/su
 - [x] T1 aggiunta senza force_add, v1/v2c/v3 — rifiuto in `librenms_rifiuto` (tabella in più rispetto al piano) e nel `last_status` di una riga di mappa che c'era; AES256C non accettato (fuori tabella); `probe()` ora riconosce 401/403
 - [ ] T1 sull'hub (locale, dopo l'unione in `dev`): «Aggiungi a LibreNMS» su un IP senza SNMP scelto da Riccardo → rifiuto visibile, `/api/v0/devices` stesso numero
 - [x] T2 migrazione librenms_fonte_v21 — 10 tabelle + 2 indici; provata su DB nuovo e su DB con lo schema di oggi (< 50 ms in memoria)
-- [ ] T2 sulla copia dell'hub (locale): `sqlite3 .backup` di `70791.db`, apertura del tenant, tempo, `PRAGMA integrity_check`, riga nel journal
+- [x] T2 sulla copia dell'hub (22/10, locale): `70791.db` 2,0 GB, segno `done:2026-10-22:v1`, 11 tabelle, `integrity_check` ok, apertura+lettura ~3 s
 - [x] T3 client e lettori con uscite vere anonimizzate — una forma sconosciuta per parte (`fixtures/librenms/forma-sconosciuta/`); il `vlan_id` dell'FDB è l'id di riga delle VLAN (si traduce); VLAN per porta assente (404)
 - [x] T4 scrittura e giro nel job librenms_sync — interruttore `librenms` spento; vicini non interrogati aggiunti da soli (5 per giro, rifiutati riprovati dopo 24 h); `scripts/prova-librenms-fonte.ts` provato contro un LibreNMS finto
-- [ ] T4 prova a vuoto con l'API vera sulla copia dell'hub (locale): `printf '%s' "$TOKEN" | npx tsx scripts/prova-librenms-fonte.ts <copia> --cartella <scratch> --url http://127.0.0.1:8090` (con un tunnel); numeri contro spec §2, versione di LibreNMS; poi decidere se tenere l'aggiunta automatica accesa al primo giro sull'hub
+- [x] T4 prova a vuoto con l'API vera (22/10, locale, LibreNMS 26.10.2, exit 0): 51/1086/109/76/3280/3055/1160, inventario 20 per giro, 5 non interrogati, 10 vicini da aggiungere, ~2 s. Era: prova a vuoto con l'API vera sulla copia dell'hub (locale): `printf '%s' "$TOKEN" | npx tsx scripts/prova-librenms-fonte.ts <copia> --cartella <scratch> --url http://127.0.0.1:8090` (con un tunnel); numeri contro spec §2, versione di LibreNMS; poi decidere se tenere l'aggiunta automatica accesa al primo giro sull'hub
 - [ ] T4 i 5 server mai interrogati: prova SNMP con la credenziale dell'apparato (locale, traffico verso gli apparati), poi proporli per la rimozione
 - [x] T5 rotte API — `GET /api/hosts/[id]/librenms/dati`, `GET`/`POST /api/integrations/librenms/candidati`; guardie predefinite, `rotte-censite` verde
 - [ ] T5 `bash scripts/verifica-permessi.sh` con l'app accesa (locale)
-- [ ] T6 tavola grafica approvata — `docs/proposte/2026-10-22-librenms-interfaccia.html` (L1-L5 e 4 domande in fondo), in attesa di Riccardo
+- [x] T6 tavola grafica approvata (22/10: L1 limiti di avviso di LibreNMS o 10%, L2 Alias solo se presente, L3 due righe, L5 nella pagina del modulo) — era: tavola grafica approvata — `docs/proposte/2026-10-22-librenms-interfaccia.html` (L1-L5 e 4 domande in fondo), in attesa di Riccardo
 - [ ] T7 scheda: Sensori, Porte e Vicini con fonte
 - [ ] T8 pagina del modulo: non interrogati, rifiutati, candidati — nota: la card «Letture in più» mostra «Nessuna lettura ancora» per LibreNMS (gli esiti sono per parte, non per apparato): l'esito per parte va in L5
 - [ ] T9 vicini nella mappa (zona rossa, misura prima/dopo)

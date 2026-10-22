@@ -48,6 +48,7 @@ export function IntestazioneScheda({
   ruoli,
   azioni,
   vmSu,
+  apparatoCluster,
 }: {
   host: HostDetail;
   device: DeviceFull | null;
@@ -55,6 +56,8 @@ export function IntestazioneScheda({
   ruoli: string[];
   azioni: ReactNode;
   vmSu?: VmSu | null;
+  /** Host aperto = un altro IP dello stesso apparato: la scheda è quella dell'apparato, l'IP in testa è quello aperto. */
+  apparatoCluster?: HostDetail["apparato_cluster"];
 }) {
   const router = useRouter();
   const nome = host.custom_name || host.hostname || host.dns_reverse || host.ip;
@@ -99,6 +102,13 @@ export function IntestazioneScheda({
           : <span className={cn(PASTIGLIA, "shrink-0", STILE_STATO.ok.classi)}>{STILE_STATO.ok.segno} credenziale provata</span>)}
         <div className="ml-auto flex shrink-0 items-center gap-2">{azioni}</div>
       </div>
+      {apparatoCluster && (
+        <p className="mt-1.5 pl-1 text-sm text-muted-foreground">
+          stesso apparato di{" "}
+          <Link href={`/objects/${apparatoCluster.host_id}`} className="font-semibold text-[#006C96] underline underline-offset-2 dark:text-sky-300">{apparatoCluster.nome}</Link>
+          {" "}· {apparatoCluster.n_indirizzi} indirizzi
+        </p>
+      )}
     </div>
   );
 }

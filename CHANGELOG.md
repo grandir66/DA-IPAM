@@ -6,6 +6,7 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ## [Non rilasciato] — 2026-10-22 · Topologia: il cavo a mano vince
 
+- **Un apparato, una scheda, da qualunque suo IP** (Riccardo, 22/10): aprendo `/objects/<host>` di un IP che appartiene a un apparato fisico il cui cluster ha UN solo apparato gestito, si vede la scheda di quell'apparato (stesso tipo, tab, dati); l'intestazione mostra l'IP aperto e «stesso apparato di <nome> · N indirizzi» col link. Con due apparati nel cluster o con nessuno non cambia nulla. Prima gli altri IP del router si aprivano come host semplici con una scheda diversa. `lib/devices/apparato-del-cluster.ts`.
 - **Il collegamento tracciato a mano vince sempre** (Riccardo, 22/10) su quelli solo letti o dedotti, dopo la ★: un
   server o un hypervisor collegato a mano a uno switch sta sotto quello switch anche se un altro lo vede nella tabella
   MAC. Prima la fiducia «a mano» era l'ultima della chiave del Prim e il cavo finiva fra le ridondanze.

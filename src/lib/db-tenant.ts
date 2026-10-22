@@ -9,6 +9,7 @@
  * Functions that reference hub settings (getSetting) import from db-hub.ts.
  */
 
+import { apparatoDelCluster } from "@/lib/devices/apparato-del-cluster";
 import { condizioneAssente } from "@/lib/hosts/assenti";
 import Database from "better-sqlite3";
 import path from "path";
@@ -3082,6 +3083,10 @@ export function getHostById(id: number): HostDetail | undefined {
   // v0.2.603: include multihomed group info (peers + is_primary). Prima era
   // popolato solo dalla list discovery, /objects/[id] non lo riceveva → simbolo
   // multihomed sempre nascosto anche dopo manual link manualLinkHostsToPhysicalDevice.
+  // Un apparato, una scheda da qualunque suo IP (specchio di db.ts).
+  const cluster = networkDevice ? null : apparatoDelCluster(db(), host.id);
+  const apparatoCluster = cluster?.esito === "cluster" ? cluster.apparato : null;
+
   const mhLink = db().prepare(
     "SELECT group_id, match_type, is_primary FROM multihomed_links WHERE host_id = ? LIMIT 1"
   ).get(id) as { group_id: string; match_type: string; is_primary: number } | undefined;
@@ -3126,6 +3131,7 @@ export function getHostById(id: number): HostDetail | undefined {
     arp_source: arpSource || null,
     switch_port: switchPort || null,
     network_device: networkDevice ? { id: networkDevice.id, name: networkDevice.name, sysname: networkDevice.sysname, vendor: networkDevice.vendor, protocol: networkDevice.protocol } : null,
+    apparato_cluster: apparatoCluster,
     multihomed,
   };
 }

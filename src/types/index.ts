@@ -795,6 +795,8 @@ export interface HostDetail extends Host {
     vendor: string;
     protocol: string;
   } | null;
+  /** Host senza apparato proprio ma nel cluster fisico di UN solo apparato gestito: la scheda è quella dell'apparato. */
+  apparato_cluster?: { network_device_id: number; nome: string; host_id: number; ip: string; n_indirizzi: number } | null;
   /** v0.2.603: aggregazione multi-IP (multihomed). Popolato da getHostById tramite
    *  JOIN su multihomed_links. Bridge con physical_device_id da v0.2.596. */
   multihomed?: {

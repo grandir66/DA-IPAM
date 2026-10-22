@@ -16,6 +16,7 @@
  *
  * Per capire l'architettura: leggere CLAUDE.md sezione "Architettura Multi-Tenant"
  */
+import { apparatoDelCluster } from "@/lib/devices/apparato-del-cluster";
 import Database from "better-sqlite3";
 import path from "path";
 import { resolveDataDir } from "./data-dir";
@@ -2811,6 +2812,10 @@ export function getHostById(id: number): HostDetail | undefined {
 
   const scanTypesSeen = [...new Set(recentScans.map((s) => s.scan_type))];
 
+  // Un apparato, una scheda da qualunque suo IP: host senza apparato proprio nel cluster di uno solo.
+  const cluster = networkDevice ? null : apparatoDelCluster(getDb(), host.id);
+  const apparatoCluster = cluster?.esito === "cluster" ? cluster.apparato : null;
+
   // v0.2.603: include multihomed group info (mirror di db-tenant.ts).
   const mhLink = getDb().prepare(
     "SELECT group_id, match_type, is_primary FROM multihomed_links WHERE host_id = ? LIMIT 1"
@@ -2849,6 +2854,7 @@ export function getHostById(id: number): HostDetail | undefined {
     arp_source: arpSource || null,
     switch_port: switchPort || null,
     network_device: networkDevice ? { id: networkDevice.id, name: networkDevice.name, sysname: networkDevice.sysname, vendor: networkDevice.vendor, protocol: networkDevice.protocol } : null,
+    apparato_cluster: apparatoCluster,
     multihomed,
   };
 }

@@ -113,12 +113,13 @@ export default function ObjectDetailPage() {
       const h = (await hRes.json()) as HostDetail;
       setHost(h);
       // Apparato tolto (o mai esistito): la scheda torna a quella dell'host non gestito.
-      if (!h.network_device?.id) setDevice(null);
+      const idApparato = h.network_device?.id ?? h.apparato_cluster?.network_device_id;
+      if (!idApparato) setDevice(null);
       // v0.2.635 audit perf: i 3 fetch ausiliari (device + asset + librenms) sono
       // indipendenti tra loro e dall'host principale. Parallelizzo con allSettled
       // per ridurre la latency complessiva e tollerare fallimenti parziali.
       const auxResults = await Promise.allSettled([
-        h.network_device?.id ? fetch(`/api/devices/${h.network_device.id}`) : Promise.resolve(null),
+        idApparato ? fetch(`/api/devices/${idApparato}`) : Promise.resolve(null),
         fetch(`/api/inventory?host_id=${hostId}`),
         fetch(`/api/hosts/${hostId}/librenms`),
       ]);
@@ -266,7 +267,7 @@ export default function ObjectDetailPage() {
   }
 
   async function handleUpdateAll() {
-    if (!host?.network_device?.id || !device) {
+    if (!device) {
       toast.error("Promuovi prima l'host a device per eseguire 'Aggiorna tutto'");
       return;
     }
@@ -467,6 +468,7 @@ export default function ObjectDetailPage() {
         tipo={tipo}
         ruoli={ruoli}
         vmSu={vmSu}
+        apparatoCluster={host.apparato_cluster ?? null}
         azioni={
           <AzioniScheda
             gestito={isManaged}

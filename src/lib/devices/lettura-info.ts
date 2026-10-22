@@ -23,6 +23,7 @@ import { isProxmoxDevice } from "@/lib/devices/device-connection-test";
 import { probeDeviceInterfaces } from "@/lib/devices/interface-probe";
 import { resolvePhysicalDevice } from "@/lib/devices/identity-resolver";
 import { codiceTrasporto } from "@/lib/devices/mikrotik-letture";
+import { entroTempoApparato, TEMPO_APPARATO_MS } from "@/lib/devices/lucchetto-apparato";
 import { getSnmpStpInfo } from "@/lib/devices/snmp-stp-info";
 import { walkConSessioneSua, type SessioneWalk } from "@/lib/devices/snmp-walk";
 import { createSwitchClient, type SwitchClient } from "@/lib/devices/switch-client";
@@ -65,10 +66,10 @@ export function tipoLetturaApparato(device: NetworkDevice): { tipo: TipoLettura;
  * Le informazioni di router e switch (sysname, modello, firmware, seriale…) sull'apparato, sull'host e sull'asset. Non
  * lancia: un errore è «— Device info non disponibile», come prima.
  */
-export async function salvaInfoApparato(device: NetworkDevice, log: Log = muto): Promise<EsitoInfo> {
+export async function salvaInfoApparato(device: NetworkDevice, log: Log = muto, leggiDati: typeof getDeviceInfo = getDeviceInfo): Promise<EsitoInfo> {
   const deviceId = device.id;
   try {
-    const info = await getDeviceInfo(device);
+    const info = await leggiDati(device);
     const now = new Date().toISOString();
     const hasInfo = info.sysname || info.sysdescr || info.model || info.firmware || info.serial_number || info.part_number;
     if (hasInfo) {
@@ -112,9 +113,10 @@ export async function salvaInfoApparato(device: NetworkDevice, log: Log = muto):
  * Le informazioni di un computer o di un apparato SNMP-info (Windows, Linux/SSH, NAS, stampanti…). null = nessun dato
  * (niente scritto). Un errore di `getDeviceInfo` arriva a chi chiama, come prima.
  */
-export async function leggiInfoComputer(device: NetworkDevice, etichetta: string, log: Log = muto): Promise<string[] | null> {
+export async function leggiInfoComputer(device: NetworkDevice, etichetta: string, log: Log = muto,
+  leggiDati: typeof getDeviceInfo = getDeviceInfo): Promise<string[] | null> {
   const deviceId = device.id;
-  const info = await getDeviceInfo(device);
+  const info = await leggiDati(device);
   const now = new Date().toISOString();
   const hasInfo = info.sysname || info.sysdescr || info.model || info.firmware ||
     info.serial_number || info.part_number || info.os_name || info.hostname ||
@@ -233,9 +235,19 @@ export async function leggiProxmox(deviceId: number, log: Log = muto): Promise<{
  * «Informazioni apparato» del job `apparati_scelti`: la parte informazioni di «Interroga», col ramo di
  * `tipoLetturaApparato`. Router: info + STP via SNMP + sonda delle interfacce; switch: info + STP dal client; computer e
  * SNMP-info: info + sonda; Proxmox: la scansione. Non lancia: «vuoto» = l'apparato non ha detto niente (niente scritto),
- * «errore» col codice (mai nomi o IP). La parte ARP/MAC non c'è: è «Porte e MAC» (`leggiApparatoArp`).
+ * «errore» col codice (mai nomi o IP). La parte ARP/MAC non c'è: è «Porte e MAC» (`leggiApparatoArp`). Al più
+ * TEMPO_APPARATO_MS: oltre, «errore» `TEMPO_SCADUTO` (revisione del Task 4). `opzioni` solo per le prove.
  */
-export async function leggiInfoApparato(device: NetworkDevice, log: Log = muto): Promise<EsitoInfo> {
+export async function leggiInfoApparato(device: NetworkDevice, log: Log = muto,
+  opzioni: { tempoMs?: number; leggiDati?: typeof getDeviceInfo } = {}): Promise<EsitoInfo> {
+  try {
+    return await entroTempoApparato(corpoInfoApparato(device, log, opzioni.leggiDati ?? getDeviceInfo), opzioni.tempoMs ?? TEMPO_APPARATO_MS);
+  } catch (err) {
+    return { stato: "errore", codice: codiceTrasporto(err) };
+  }
+}
+
+async function corpoInfoApparato(device: NetworkDevice, log: Log, leggiDati: typeof getDeviceInfo): Promise<EsitoInfo> {
   try {
     const { tipo, etichetta } = tipoLetturaApparato(device);
     switch (tipo) {
@@ -246,19 +258,19 @@ export async function leggiInfoApparato(device: NetworkDevice, log: Log = muto):
       case "windows":
       case "ssh":
       case "snmp": {
-        const campi = await leggiInfoComputer(device, etichetta, log);
+        const campi = await leggiInfoComputer(device, etichetta, log, leggiDati);
         if (!campi) return { stato: "vuoto" };
         await sondaInterfacce(device.id, log);
         return { stato: "letto", campi: campi.length };
       }
       case "arp_poll": {
-        const e = await salvaInfoApparato(device, log);
+        const e = await salvaInfoApparato(device, log, leggiDati);
         await leggiStpSnmp(device, log);
         await sondaInterfacce(device.id, log);
         return e;
       }
       case "switch": {
-        const e = await salvaInfoApparato(device, log);
+        const e = await salvaInfoApparato(device, log, leggiDati);
         try {
           await leggiStpSwitch(device.id, await createSwitchClient(device), log);
         } catch { /* STP opzionale: il client che non si crea non toglie le informazioni lette */ }

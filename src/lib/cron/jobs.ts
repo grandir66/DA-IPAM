@@ -80,7 +80,7 @@ import { HYPERVISOR_SYNC_MINUTES, unifiJobKind } from "@/lib/scheduled-job-types
 import { runProxmoxDeviceScan } from "@/lib/proxmox/run-proxmox-device-scan";
 import { codiceErrore, leggiMacPorteRouter } from "@/lib/devices/mikrotik-porte";
 import { SshError } from "@/lib/devices/ssh-transport";
-import { conLucchettoApparato } from "@/lib/devices/lucchetto-apparato";
+import { conLucchettoApparato, entroTempoApparato, TEMPO_APPARATO_MS } from "@/lib/devices/lucchetto-apparato";
 import { apriEsecutoreSsh, codiceTrasporto, interpretaUscita, leggiMikrotikScheda, leggiMikrotikTopologia, type ApriEsecutore, type RisultatoMk } from "@/lib/devices/mikrotik-letture";
 import { parseBondScheda, parseBridgeScheda, parsePorteBridgeScheda } from "@/lib/devices/mikrotik-scheda";
 import { parseInterfacce } from "@/lib/devices/mikrotik-stp";
@@ -832,17 +832,23 @@ export interface ContestoArp {
 }
 
 const IP_NEL_TESTO = /\b\d{1,3}(?:\.\d{1,3}){3}\b/g;
+/** IPv6 (anche abbreviati, `::1`) e MAC: gruppi esadecimali separati da «:». Copre anche un orario «10:20:30»: va bene. */
+const IPV6_O_MAC_NEL_TESTO = /(?:[0-9a-f]{0,4}:){2,7}[0-9a-f]{0,4}/gi;
+/** Nomi di dominio (FQDN, `sw1.cliente.local`): due o più parti separate da punti, dopo gli IP già tolti. */
+const DOMINIO_NEL_TESTO = /\b[a-z0-9-]+(?:\.[a-z0-9-]+)+\b/gi;
 
 /**
- * Un errore per il journal (piano 2026-10-22 scansione automatica, decisione 14): il codice e il messaggio senza IP, nome
- * o host dell'apparato (la maschera degli IP di «Interroga»). Un `SshError` porta anche l'utente: solo il codice.
+ * Un errore per il journal (piano 2026-10-22 scansione automatica, decisione 14): il codice e il messaggio senza IP (v4 e
+ * v6), MAC, nome, host o altri nomi di dominio (la maschera degli IP di «Interroga», allargata nella revisione del Task 4).
+ * Un `SshError` porta anche l'utente: solo il codice.
  */
 export function erroreSenzaNomi(err: unknown, device: Pick<NetworkDevice, "name" | "host">): string {
   const codice = codiceTrasporto(err);
   if (err instanceof SshError) return codice;
   let msg = err instanceof Error ? err.message : String(err);
   for (const s of [device.name, device.host]) if (s) msg = msg.split(s).join("<apparato>");
-  return `${codice}: ${msg.replace(IP_NEL_TESTO, "<ip>")}`;
+  msg = msg.replace(IP_NEL_TESTO, "<ip>").replace(IPV6_O_MAC_NEL_TESTO, "<ip>").replace(DOMINIO_NEL_TESTO, "<host>");
+  return `${codice}: ${msg}`;
 }
 
 /**
@@ -853,8 +859,21 @@ export function erroreSenzaNomi(err: unknown, device: Pick<NetworkDevice, "name"
  * scelta). Un errore va nel journal (id e codice) e arriva a chi chiama, come prima fermava il corpo del ciclo.
  */
 export async function leggiApparatoArp(device: NetworkDevice, ctx: ContestoArp,
-  opzioni?: RunArpPollOptions & { vlan?: "come_il_giro" | "no" }): Promise<void> {
+  opzioni?: RunArpPollOptions & { vlan?: "come_il_giro" | "no"; tempoMs?: number }): Promise<void> {
   if (device.device_type === "hypervisor") return;
+  // Al più TEMPO_APPARATO_MS (revisione del Task 4): una lettura che non torna non tiene il lucchetto per sempre.
+  try {
+    await entroTempoApparato(corpoApparatoArp(device, ctx, opzioni), opzioni?.tempoMs ?? TEMPO_APPARATO_MS);
+  } catch (error) {
+    if ((error as { code?: unknown } | null)?.code === "TEMPO_SCADUTO") {
+      console.error(`[ARP Poll] apparato #${device.id}: errore (${erroreSenzaNomi(error, device)})`);
+    }
+    throw error;
+  }
+}
+
+async function corpoApparatoArp(device: NetworkDevice, ctx: ContestoArp,
+  opzioni?: RunArpPollOptions & { vlan?: "come_il_giro" | "no" }): Promise<void> {
   const options = opzioni;
   const { networks, enrichSet, porteNonLette, esitiLetture } = ctx;
   const conVlan = opzioni?.vlan !== "no";

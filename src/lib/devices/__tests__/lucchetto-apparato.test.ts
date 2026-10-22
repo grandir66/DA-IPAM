@@ -6,8 +6,9 @@
 // Run: DA_INVENT_DATA_DIR=$(mktemp -d) node --import tsx --test src/lib/devices/__tests__/lucchetto-apparato.test.ts
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { createRequire } from "node:module";
 import { withTenant } from "@/lib/db-tenant";
-import { apparatoOccupato, avviaConLucchetto, conLucchettoApparato, MESSAGGIO_OCCUPATO } from "../lucchetto-apparato";
+import { apparatoOccupato, avviaConLucchetto, conLucchettoApparato, entroTempoApparato, MESSAGGIO_OCCUPATO, TEMPO_APPARATO_MS } from "../lucchetto-apparato";
 
 /** Una lettura che resta in corso finché la prova non la chiude. */
 function inSospeso<T>(valore: T) {
@@ -77,4 +78,31 @@ test("«Interroga» (avviaConLucchetto): con una lettura in corso è «occupato�
   lettura.chiudi();
   assert.equal(await avvio, "fatto");
   assert.equal(withTenant("CLIENTEA", () => apparatoOccupato(40)), false);
+});
+
+test("due copie del modulo (scheduler sotto tsx e bundle della rotta) vedono lo stesso lucchetto", async () => {
+  // Una seconda istanza del modulo (tolto dalla cache di require e ricaricato), come fra server.ts e il bundle di Next.
+  // Il query string su `import()` sotto tsx dà la stessa istanza: non prova niente.
+  const req = createRequire(__filename);
+  const percorso = req.resolve("../lucchetto-apparato");
+  const prima = req.cache[percorso];
+  delete req.cache[percorso];
+  const copia = req("../lucchetto-apparato") as typeof import("../lucchetto-apparato");
+  if (prima) req.cache[percorso] = prima;
+  assert.notEqual(copia.conLucchettoApparato, conLucchettoApparato, "è davvero un'altra istanza");
+  const a = inSospeso(undefined);
+  const p = withTenant("CLIENTEA", () => conLucchettoApparato(50, a.fn));
+  assert.equal(withTenant("CLIENTEA", () => copia.apparatoOccupato(50)), true);
+  assert.deepEqual(await withTenant("CLIENTEA", () => copia.conLucchettoApparato(50, async () => "altra")), { stato: "occupato" });
+  a.chiudi();
+  await p;
+  assert.equal(withTenant("CLIENTEA", () => copia.apparatoOccupato(50)), false);
+});
+
+test("entroTempoApparato: una lettura che non torna scade con TEMPO_SCADUTO; sotto il lucchetto, il lucchetto si libera", async () => {
+  const mai = new Promise<never>(() => {});
+  await assert.rejects(conLucchettoApparato(60, () => entroTempoApparato(mai, 30)), (e: unknown) => (e as { code?: string }).code === "TEMPO_SCADUTO");
+  assert.equal(apparatoOccupato(60), false);
+  assert.equal(await entroTempoApparato(Promise.resolve(3), 30), 3);
+  assert.equal(TEMPO_APPARATO_MS, 5 * 60_000);
 });

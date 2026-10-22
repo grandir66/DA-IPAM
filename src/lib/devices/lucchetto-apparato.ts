@@ -9,12 +9,19 @@ import { getCurrentTenantCode, withTenant } from "@/lib/db-tenant";
 
 export const MESSAGGIO_OCCUPATO = "Lettura già in corso su questo apparato";
 
-const occupati = new Set<string>();
+// Sul processo, non sul modulo (ADR 0006, punto 2, come `network-scan-lock.ts`): lo scheduler (server.ts sotto tsx) e il
+// bundle delle rotte di Next caricano due copie di questo file; con un Set del modulo il giro e «Interroga» non si
+// vedrebbero mai (revisione del Task 4).
+const CHIAVE_STATO = Symbol.for("da-ipam.devices.lucchetto-apparato");
+function occupatiDelProcesso(): Set<string> {
+  const g = globalThis as unknown as Record<symbol, Set<string> | undefined>;
+  return (g[CHIAVE_STATO] ??= new Set<string>());
+}
 
 const chiave = (deviceId: number): string => `${getCurrentTenantCode() ?? ""}|${deviceId}`;
 
 export function apparatoOccupato(deviceId: number): boolean {
-  return occupati.has(chiave(deviceId));
+  return occupatiDelProcesso().has(chiave(deviceId));
 }
 
 /**
@@ -22,6 +29,7 @@ export function apparatoOccupato(deviceId: number): boolean {
  * un altro chiamante). Un errore di `fn` arriva a chi chiama, col lucchetto già libero.
  */
 export async function conLucchettoApparato<T>(deviceId: number, fn: () => Promise<T>): Promise<{ stato: "fatto"; valore: T } | { stato: "occupato" }> {
+  const occupati = occupatiDelProcesso();
   const k = chiave(deviceId);
   if (occupati.has(k)) return { stato: "occupato" };
   occupati.add(k);
@@ -40,4 +48,24 @@ export async function conLucchettoApparato<T>(deviceId: number, fn: () => Promis
 export function avviaConLucchetto(deviceId: number, tenantCode: string | null, fn: () => Promise<void>): Promise<"fatto" | "occupato"> {
   const corri = () => conLucchettoApparato(deviceId, fn).then((r) => r.stato);
   return tenantCode ? withTenant(tenantCode, corri) : corri();
+}
+
+/** Il tempo massimo di una lettura per apparato (decisione 10d del piano: ≈1 min misurato nei casi peggiori). */
+export const TEMPO_APPARATO_MS = 5 * 60_000;
+
+/**
+ * La lettura, oppure un errore `TEMPO_SCADUTO` dopo `ms`: chi la chiama sotto il lucchetto lo libera e passa oltre,
+ * invece di tenerlo per sempre su un apparato che non risponde più. La lettura rimasta appesa non si ferma (le sue
+ * sessioni hanno i loro tempi); un suo errore tardivo non resta senza gestore.
+ */
+export async function entroTempoApparato<T>(p: Promise<T>, ms: number = TEMPO_APPARATO_MS): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const scadenza = new Promise<never>((_, rifiuta) => {
+    timer = setTimeout(() => rifiuta(Object.assign(new Error("Lettura dell'apparato oltre il tempo massimo"), { code: "TEMPO_SCADUTO" })), Math.max(0, ms));
+  });
+  try {
+    return await Promise.race([p, scadenza]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }

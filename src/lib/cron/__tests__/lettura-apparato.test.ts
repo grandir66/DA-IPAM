@@ -11,9 +11,9 @@ import { test, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { closeHubDb } from "@/lib/db-hub";
 import { deleteTenantDatabase, getTenantDb, rileggiSchemaCavi, rileggiSchemaSwitchVlan, withTenant } from "@/lib/db-tenant";
-import { leggiApparatoArp, runArpPoll, type ContestoArp } from "@/lib/cron/jobs";
-import { conLucchettoApparato } from "@/lib/devices/lucchetto-apparato";
-import { tipoLetturaApparato } from "@/lib/devices/lettura-info";
+import { erroreSenzaNomi, leggiApparatoArp, runArpPoll, type ContestoArp } from "@/lib/cron/jobs";
+import { apparatoOccupato, conLucchettoApparato } from "@/lib/devices/lucchetto-apparato";
+import { leggiInfoApparato, tipoLetturaApparato } from "@/lib/devices/lettura-info";
 import type { RouterClient } from "@/lib/devices/router-client";
 import type { SwitchClient } from "@/lib/devices/switch-client";
 import type { LettoreSnmp, VoceSnmp } from "@/lib/devices/snmp-walk";
@@ -141,4 +141,35 @@ test("tipoLetturaApparato: il ramo di «Interroga», scelta unica con il job", (
   assert.deepEqual(withTenant(T, () => tipoLetturaApparato({ ...apparato(1), classification: "firewall" } as NetworkDevice)), { tipo: "arp_poll", etichetta: "Router" });
   assert.deepEqual(tipo({ device_type: "access_point", classification: "access_point" }), { tipo: "snmp", etichetta: "SNMP" });
   assert.deepEqual(tipo({}), { tipo: "switch", etichetta: "Switch" });
+});
+
+test("erroreSenzaNomi: niente IPv4, IPv6, MAC, nome, host né altri nomi di dominio; il codice resta", () => {
+  const dev = { name: "SW-SEGRETO", host: "sw1.cliente-segreto.local" };
+  const testo = erroreSenzaNomi(Object.assign(new Error(
+    "connect ETIMEDOUT 192.0.2.5 fe80::1ff:fe23:4567:890a 2001:db8::5 [::1] 02:00:00:00:00:05 su SW-SEGRETO sw1.cliente-segreto.local "
+    + "via core.cliente-segreto.it"), { code: "ETIMEDOUT" }), dev);
+  assert.ok(testo.startsWith("ETIMEDOUT"), testo);
+  for (const vietato of ["192.0.2.5", "fe80", "2001:db8", "::1", "02:00:00", "SEGRETO", "segreto", "cliente"]) {
+    assert.ok(!testo.includes(vietato), `${vietato} in: ${testo}`);
+  }
+});
+
+test("una lettura che non torna: leggiApparatoArp e leggiInfoApparato scadono con TEMPO_SCADUTO e il lucchetto si libera", async () => {
+  const mai = () => new Promise<never>(() => {});
+  const switchMuto = async (): Promise<SwitchClient> => ({ getMacTable: mai, getPortSchema: mai, async testConnection() { return true; } });
+  const errori: string[] = [];
+  const prima = console.error;
+  console.error = (...a: unknown[]) => { errori.push(a.map(String).join(" ")); };
+  try {
+    await assert.rejects(
+      withTenant(T, () => conLucchettoApparato(5, () => leggiApparatoArp(apparato(5), contesto(), { creaClientSwitch: switchMuto, vlan: "no", tempoMs: 30 }))),
+      (e: unknown) => (e as { code?: string }).code === "TEMPO_SCADUTO",
+    );
+  } finally {
+    console.error = prima;
+  }
+  assert.ok(errori.some((r) => r.includes("apparato #5") && r.includes("TEMPO_SCADUTO")), errori.join("\n"));
+  assert.equal(withTenant(T, () => apparatoOccupato(5)), false);
+  const info = await withTenant(T, () => leggiInfoApparato(apparato(5), undefined, { leggiDati: mai, tempoMs: 30 }));
+  assert.deepEqual(info, { stato: "errore", codice: "TEMPO_SCADUTO" });
 });

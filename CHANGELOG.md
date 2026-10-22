@@ -4,6 +4,25 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-22 · Pagina Opzioni e job di serie
+
+Piano `docs/superpowers/plans/2026-10-22-pagina-opzioni.md`, ADR 0032.
+
+### Aggiunto
+
+- **Pagina `/settings/opzioni`**: ogni funzione che si accende o si spegne in un posto solo, con stato, valore di serie, chi
+  l'ha cambiata, esito e ritmo. Perché: il 22/10 c'erano 34 interruttori in 13 pagine con valori di serie opposti, e su
+  70151 i dati mancavano senza che nessuna pagina lo dicesse.
+- **Quattro job di serie** (giro ARP 30 min, hypervisor ogni notte, DNS ogni giorno, scansione veloce ogni 12 ore per
+  rete) creati all'avvio se mancano; uno spento o cancellato da un admin lascia la lapide e non rinasce. Perché: su 70151
+  nessun job leggeva gli apparati, si creavano a mano.
+
+### Cambiato
+
+- Le levette delle altre pagine sono diventate rimandi a Opzioni; restano nelle schede i dati da inserire. Installa e
+  disinstalla dei moduli in `lib/modules/installa.ts`, usato dalla rotta e da Opzioni. MeshCentral si installa ancora solo
+  dalla sua scheda (l'assistente crea il server).
+
 ## [Non rilasciato] — 2026-10-22 · Letture degli apparati accese di serie
 
 ### Cambiato

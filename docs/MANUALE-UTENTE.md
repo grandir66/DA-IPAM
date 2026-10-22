@@ -487,7 +487,8 @@ Per `network_discovery` viene aggiunto anche:
 Da **Network → Scansioni** vedi i job attivi e lo storico esecuzioni.
 
 **Best practice produzione (Domarc):**
-- `fast_scan` a 15 min su tutte le subnet → stato Offline reale in <15 min, Unreachable in 1h
+- `fast_scan` ogni 12 ore su ogni subnet: nasce da solo (job di serie, §25 Opzioni); più spesso solo sulle reti piccole,
+  perché all'avvio il freno spegne quelli sotto le 12 ore sulle reti /22 e più grandi
 - `vuln_sync` a 30 min se hai uno Scanner-Edge collegato
 - Niente `ping_sweep` separato (il fast_scan è sufficiente)
 
@@ -853,6 +854,23 @@ La gestione dei **job schedulati** (abilita/disabilita, interval, prossima esecu
 ---
 
 ## 25. Impostazioni
+
+### Opzioni — tutto quello che si accende o si spegne
+
+`Opzioni` (sotto `Impostazioni` nel menu) è il posto unico dove si vede e si cambia ogni funzione che si accende o si
+spegne (dal 22/10/2026). Sei gruppi: letture degli apparati, job pianificati, moduli, automatismi, notifiche e uscite,
+voci da file dell'appliance. Per ogni riga: lo stato (**ACCESA** scuro pieno, **SPENTA** chiaro col bordo, **○ DA
+CONFIGURARE** bordo tratteggiato, **DA FILE** col lucchetto), per chi vale (questo cliente o tutti), il valore di serie o
+«spenta da … il …», cosa è successo (✓ ok · ▲ guarda · ✕ errore · ● niente) e il ritmo o il link alla scheda dove si
+inseriscono i dati.
+
+- Spegnere chiede conferma e dice cosa si ferma e cosa resta; la pulizia degli host chiede conferma anche ad accendere.
+- Quattro job nascono da soli su ogni appliance: **giro ARP ogni 30 minuti**, **lettura degli hypervisor ogni notte**,
+  **nomi DNS ogni giorno**, **scansione veloce di ogni rete ogni 12 ore**. Spenti da qui (o cancellati dalla pagina dei
+  job) restano spenti anche dopo gli aggiornamenti.
+- Chi non è amministratore vede tutto con le levette ferme.
+- Le altre pagine (Dati della mappa, schede dei moduli, notifiche, job, pulizia, scansione, MDM, Cosa esce, controller, rete)
+  mostrano lo stato con «cambia da Opzioni ›», che porta alla riga giusta.
 
 `Impostazioni` (in basso sidebar) è la pagina globale per:
 

@@ -20,6 +20,76 @@ modo testuale); interruttori dell'hub (per tutti i clienti) mescolati a quelli p
 (`offline_guard_mode`, `networks.probes_enabled`, `attribution_probes_enabled`). Dei job nasce da solo solo
 `known_host_check`.
 
+### Il censimento (22/10, `origin/dev` 672fe9d2)
+
+Aggiunto il 22/10 sera durante l'esecuzione: la spec lo citava ma non lo conteneva; è il resoconto del subagent della
+sessione di progettazione. Le righe di file sono di quel commit. Il catalogo e la sua prova (`catalogo.test.ts`,
+`CENSIMENTO`) lo seguono voce per voce.
+
+#### Interruttori
+
+| nome in parole | chiave/meccanismo | dove vive | di serie | dove si cambia oggi | file:riga |
+|---|---|---|---|---|---|
+| Lettura topologia: router MikroTik | `topologia.lettura.mikrotik` (JSON `{acceso,da,il}`) | tenant | acceso (chiave assente = acceso, ADR 0031) | `/topology/dati`, scheda Letture | src/lib/topology/letture/interruttori.ts:62 |
+| Lettura topologia: controller | `topologia.lettura.controller` | tenant | acceso | `/topology/dati` | interruttori.ts:11 |
+| Lettura topologia: SNMP | `topologia.lettura.snmp` | tenant | acceso | `/topology/dati` | interruttori.ts:11 |
+| Lettura topologia: host | `topologia.lettura.host` | tenant | acceso | `/topology/dati` | interruttori.ts:11 |
+| Lettura topologia: scheda MikroTik (VLAN/DNS/utenti) | `topologia.lettura.mikrotik_scheda` | tenant | acceso | `/topology/dati` | interruttori.ts:11 |
+| Lettura topologia: VLAN degli switch | `topologia.lettura.switch_vlan` | tenant | acceso | `/topology/dati` | interruttori.ts:11 |
+| Mappa nuova con i cavi | `topologia.mappa.cavi` | tenant | spento | `/topology/dati`, scheda Mappa | src/lib/topology/letture/mappa.ts:9 |
+| Chocolatey automatico (alle credenziali WinRM e ogni notte alle 02:00) | `patch.choco_automatico` (solo "0" = spento) | tenant | acceso (agisce solo se il modulo Patch è installato) | `/settings/moduli/patch_management` o `/settings?tab=moduli` | src/lib/patch/choco-automatico.ts:41 |
+| Freno sul passaggio a offline (registra/applica) | `offline_guard_mode` | tenant | "registra", cioè freno non attivo | solo DB: nessuna rotta né pagina | src/lib/scanner/offline-guard.ts:52 |
+| MeshCentral senza agente | `meshcentral.senza_agente` più l'ambiente `MESHCENTRAL_SENZA_AGENTE=1`, che vince | tenant + env | spento | `/settings?tab=moduli`, scheda MeshCentral | src/lib/integrations/meshcentral/senza-agente.ts:42, :56 |
+| Modulo Inventario NIS2 (`/services`) | `nis2_inventory_enabled` | tenant | acceso (assente = acceso) | `/settings?tab=moduli`, scheda NIS2 | src/lib/modules/registry.ts:447 |
+| Wazuh SIEM | `integration_wazuh_enabled` | hub (vale per tutti i clienti) | spento | `/settings?tab=moduli`, scheda Wazuh: diventa 1 al salvataggio, si azzera con DELETE (nessuna levetta propria) | src/lib/integrations/wazuh-config.ts:60 |
+| Sonde di attribuzione (tutte le reti) | `attribution_probes_enabled` (solo "0"/"false" = spento) | hub | acceso | solo `PUT /api/settings` generica, nessuna pagina | src/lib/scanner/probes/run-probes.ts:108 |
+| Sonde di attribuzione per singola rete | colonna `networks.probes_enabled` | tenant (per rete) | acceso | solo DB | src/lib/db-tenant-schema.ts:436 |
+| Naabu prima di Nmap | `port_discovery` ("nmap" o "naabu+nmap") | hub | spento (solo nmap) | `/settings?tab=scansione` | src/lib/scanner/discovery.ts:594 |
+| Notifiche attive | `notify_enabled` | hub | spento | `/settings?tab=notifiche` | src/lib/notifications/config.ts:36 |
+| Canale email | `notify_smtp_enabled` | hub | spento | `/settings?tab=notifiche` | src/lib/notifications/config.ts:37 |
+| Canale webhook | `notify_webhook_enabled` | hub | spento | `/settings?tab=notifiche` | src/lib/notifications/config.ts:45 |
+| LibreNMS / Graylog | `integration_<c>_mode` (disabled/external/appliance) | hub | disabled | scheda modulo in `/settings?tab=moduli`, oppure import del JSON | src/lib/integrations/config.ts:190 |
+| Modulo Patch Management | riga `tenant_features` `patch_management` | hub per cliente | spento (non installato) | `/settings?tab=moduli`, Installa/Disinstalla | src/lib/patch/feature.ts:180 |
+| Modulo Inventory Agent | `tenant_features` `inventory_agent` | hub per cliente | spento | `/settings?tab=moduli` | src/lib/inventory-agent/feature.ts:112 |
+| Modulo MeshCentral | `tenant_features` `meshcentral` | hub per cliente | spento | `/settings?tab=moduli` | src/lib/integrations/meshcentral/feature.ts:44 |
+| Modulo Network Services | `tenant_features` `network_services` | hub per cliente | spento | `/settings?tab=moduli`, setup/DELETE | src/lib/network-services/feature.ts:163 |
+| Scanner-Edge | `vuln_scanners.enabled` più `auto_disabled_at` | tenant | assente finché non configurato | `/settings?tab=moduli` o import | src/lib/modules/registry.ts:282 |
+| MDM Headwind (e il suo job) | `mdm_config.enabled` più spegnimento automatico | tenant | spento | `/settings/mdm` (casella) | src/lib/integrations/mdm-config.ts:95 |
+| Pannello Zabbix in sola lettura | `zabbix_lettura.enabled` | tenant | spento | `/settings?tab=moduli`, scheda Zabbix | src/lib/zabbix-lettura/config.ts:169 |
+| Controller UniFi attivo | `controllers.enabled` | tenant (per controller) | a scelta alla creazione | `/controllers`, finestra del controller | src/components/controllers/controller-dialog.tsx:453 |
+| Lettura dei client UniFi ogni ora (7–20) | crea o cancella un job `unifi_sync` con `cosa=client` | tenant / job | spento | `/controllers`, dettaglio (casella) | src/lib/db-tenant.ts:472 |
+| Lettura degli apparati UniFi | crea o cancella un job `unifi_sync` (minuti oppure nulla) | tenant / job | spento | `/controllers` | src/lib/db-tenant.ts:504 |
+| Lettura giornaliera degli hypervisor | crea o cancella il job `hypervisor_sync` (03:00) | tenant / job | spento, nessuno lo crea da solo | `/topology/dati`, scheda Hypervisor (casella) | src/lib/db-tenant.ts:576 |
+| Pulizia notturna degli host assenti | crea o cancella il job `pulizia_host` (04:00); job riservato | tenant / job | spento | `/settings?tab=sistema`, scheda Pulizia (solo admin) | src/lib/db-tenant.ts:619; src/lib/cron/job-riservati.ts |
+| Livello di ciò che esce verso DA-Link | `solo_stato` / `stato_inventario` (tabella hub propria) | hub | solo_stato | `/settings/cosa-esce` | src/app/api/dalink/livello/route.ts:14 |
+| Cliente attivo | `tenants.active` | hub | acceso | `/tenants` | src/app/(dashboard)/tenants/page.tsx:386 |
+| Ogni job pianificato | `scheduled_jobs.enabled` | tenant / job | vedi elenco (b) | `/settings?tab=jobs` (una levetta per riga; pulizia_host in sola lettura) | src/app/(dashboard)/settings/page.tsx:1166 |
+
+#### Interruttori da ambiente (solo file o env, nessuna pagina)
+
+| nome in parole | chiave/meccanismo | dove vive | di serie | dove si cambia oggi | file:riga |
+|---|---|---|---|---|---|
+| Invio a DA-Vul-can (coda ogni minuto, battito ogni 15 minuti, inventario alle 03:00) | presenza di `VULCAN_TOKEN` in `/etc/dalink/oggetto.env` | file env | spento | solo file (si vede in `/settings/cosa-esce`) | src/lib/vulcan/config.ts:47; server.ts:166 |
+| Segnale di vita verso DA-Link (ogni 5 minuti) | esistenza e validità di `oggetto.env` (percorso cambiabile con `DALINK_OGGETTO_ENV`) | file env | spento | solo file | src/lib/dalink/config.ts:22; segnale-job.ts:15 |
+| Riconoscimento degli apparati | `DA_INVENT_FINGERPRINT` ("false" = spento) | env | acceso | solo env | src/lib/scanner/discovery.ts:2770 |
+| Sonde attive del riconoscimento | `DA_INVENT_FINGERPRINT_PROBES` | env | acceso | solo env | discovery.ts:2826; device-fingerprint.ts:297 |
+| snmpwalk da riga di comando | `DA_INVENT_SNMPWALK_CLI` | env | acceso | solo env | src/lib/scanner/snmp-query.ts:99 |
+| DNS: rilettura forzata | `DA_INVENT_DNS_ALWAYS_REFRESH` | env | spento | solo env | discovery.ts:2795 |
+| DNS: aggiorna i nomi salvati nel job | `DA_INVENT_DNS_CRON_REFRESH_STORED` | env | spento | solo env | src/lib/cron/jobs.ts:1578 |
+| DNS: log dettagliato | `DA_INVENT_DNS_VERBOSE` | env | spento | solo env | src/lib/scanner/dns.ts:67 |
+| MeshCentral: TLS senza verifica | `MESHCENTRAL_TLS_INSECURE=1` | env | spento | solo env | src/lib/integrations/meshcentral/tls-fetch.ts:28 |
+| Redirect da HTTP a HTTPS | `TLS_REDIRECT=true` | env | spento | solo env | server.ts:49 |
+| Fidarsi dell'host (auth) | `AUTH_TRUST_HOST` ("false" = spento) | env | acceso | solo env | src/lib/auth.ts:11 |
+
+#### Automatismi sempre accesi (nessun interruttore, partono da `server.ts`)
+
+| nome in parole | meccanismo | dove vive | di serie | dove si cambia oggi | file:riga |
+|---|---|---|---|---|---|
+| Backup notturno di hub e clienti | node-cron alle 03:00 (orario cambiabile con `DA_INVENT_BACKUP_CRON`) | processo | acceso | solo env (orario) | src/lib/backup/scheduler.ts:25 |
+| Allarme salute dell'appliance (disco, Docker) | ogni 30 minuti | processo | acceso | — | src/lib/modules/appliance-health-notify.ts:182 |
+| Allarme sui job fermi | ogni 30 minuti | processo | acceso | — | src/lib/health/scheduler-health-notify.ts:209 |
+| Correzioni dei job all'avvio | spegne `fast_scan`/`ping_sweep` sotto le 12 ore su reti /22 o più grandi; crea `known_host_check` | processo | acceso | — | src/lib/db-tenant.ts:7028 |
+
 ## 2. Decisioni prese (22/10, non riaprire)
 
 | Decisione | Scelta di Riccardo |

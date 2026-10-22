@@ -158,7 +158,7 @@ con i rimandi e nessuna levetta (`[role=switch]` = 0). Scelte fatte strada facen
   contro il catalogo in `ancore.test.ts`);
 - `Cosa esce`: la scelta del livello diventa il rimando, le due descrizioni restano.
 
-### [~] Task 6 — Documenti
+### [x] Task 6 — Documenti
 
 **File:** crea `docs/adr/0032-pagina-opzioni-e-job-di-serie.md` (contesto 70151, decisioni della spec §2, cosa
 diventa difficile); modifica `docs/MANUALE-UTENTE.md` (sezione «Opzioni»), `CHANGELOG.md` (il perché), `CONTEXT.md`
@@ -166,6 +166,10 @@ diventa difficile); modifica `docs/MANUALE-UTENTE.md` (sezione «Opzioni»), `CH
 se cambia lo stato.
 **Verifica:** rilettura; nessun «spenta di default» residuo per le letture nei documenti (`rg -n "spenta di default"`).
 **Commit:** «Opzioni: ADR 0032, manuale, changelog».
+**Fatto (22/10 sera):** riletti; `rg -n "spenta di default" docs/MANUALE-* CONTEXT.md` → nessuna riga (restano solo negli
+ADR 0029 e 0031, che sono storia). In più: il censimento del §1 messo nella spec (mancava); nel manuale corretto il
+consiglio «fast_scan a 15 min su tutte le subnet», che contraddiceva freno /22 e job di serie. `scheda-mappa` invariata
+(lo stato del progetto non cambia).
 
 ### [ ] Task 7 — Cancello, rilascio su dev, verifica su 70151
 
@@ -178,7 +182,7 @@ conferma.
 **Verifica:** esiti scritti qui sotto nel Registro.
 **Commit:** la release.
 
-### [ ] Task 8 — L'aggiornamento non torna mai indietro, e l'installatore dichiara il ramo giusto
+### [~] Task 8 — L'aggiornamento non torna mai indietro, e l'installatore dichiara il ramo giusto
 
 Incidente del 22/10 (70151): l'installatore aveva messo il commit `f2207f44` di `dev` (v0.9.813) chiamando «main» il
 ramo locale; il primo giro di `da-ipam-update` puntava a `origin/main`, allora fermo a v0.3.322, e stava

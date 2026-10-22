@@ -126,7 +126,7 @@ corsa: «dopo gli aggiornamenti» ripetuto due volte nel dialogo dei job di seri
 il nome del cliente e il componente legge `GET /api/opzioni` (la vista aggregata «tutti i clienti» la risolve la rotta);
 dopo un cambio rilegge l'elenco invece di `router.refresh()`, che non rileggerebbe i dati del client.
 
-### [~] Task 5 — Rimandi nelle pagine vecchie
+### [x] Task 5 — Rimandi nelle pagine vecchie
 
 **File:** crea `src/components/opzioni/riga-rimando.tsx` (`{ id: string; nome: string; stato: StatoOpzione }` → riga
 dell'oggetto 11); modifica le pagine della spec §3.5: `src/app/(dashboard)/topology/dati/letture-card.tsx`,
@@ -139,8 +139,26 @@ che cliccavano quelle levette passano alle rotte di Opzioni o vengono tolte col 
 **Verifica:** `npm test` verde; Playwright su `/topology/dati` e `/settings?tab=moduli` a 1920: rimandi resi, link
 che porta alla riga giusta.
 **Commit:** «Opzioni: le pagine vecchie rimandano qui».
+**Fatto (22/10 sera):** `npm test` intero (DA_INVENT_DATA_DIR nello scratchpad) → 5393 passate, 0 fallite, exit 0.
+Playwright a 1920: `/topology/dati` 8 rimandi (6 letture, mappa, hypervisor), il clic porta a
+`/settings/opzioni#job.hypervisor_sync` con la riga evidenziata; `/settings/moduli/{patch_management,nis2_inventory,meshcentral}`
+con i rimandi e nessuna levetta (`[role=switch]` = 0). Scelte fatte strada facendo:
+- `GET /api/opzioni?ids=a,b` e `RigheRimando({ ids })`: ogni scheda legge solo le sue righe;
+- moduli: «Installa» di Patch e Inventory porta a Opzioni; l'**assistente di MeshCentral resta** nella scheda (crea il server:
+  accendere il solo flag, come faceva la vecchia rotta, lasciava il modulo inservibile) e da Opzioni MeshCentral si disinstalla
+  ma non si installa (409 col motivo); «Disinstalla…» delle schede diventa «Disinstalla e cancella i dati…» (casella già
+  spuntata): la disinstallazione semplice sta in Opzioni, cancellare i dati è un'operazione sui dati;
+- la pulizia degli host chiede conferma anche ad **accendere** (campo `accendendo` del catalogo), come faceva la sua scheda;
+- notifiche, MDM, Zabbix: i salvataggi dei moduli non toccano più l'acceso/spento (notifiche) o lo conservano com'è letto
+  (MDM, Zabbix configurati; alla prima configurazione la casella resta);
+- `/networks/[id]`: tolta la levetta acceso/sospeso della scansione periodica (vale per tutte le reti, da Opzioni); restano
+  intervallo, crea e cancella della singola rete, che sono dati della rete; la frequenza degli apparati UniFi resta nella
+  finestra del controller (è un campo del controller alla creazione);
+- tabella dei job: la levetta di riga diventa lo stato con il link alla riga di Opzioni (`lib/opzioni/ancore.ts`, provato
+  contro il catalogo in `ancore.test.ts`);
+- `Cosa esce`: la scelta del livello diventa il rimando, le due descrizioni restano.
 
-### [ ] Task 6 — Documenti
+### [~] Task 6 — Documenti
 
 **File:** crea `docs/adr/0032-pagina-opzioni-e-job-di-serie.md` (contesto 70151, decisioni della spec §2, cosa
 diventa difficile); modifica `docs/MANUALE-UTENTE.md` (sezione «Opzioni»), `CHANGELOG.md` (il perché), `CONTEXT.md`

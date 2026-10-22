@@ -74,6 +74,7 @@ export function PaginaOpzioni({ cliente }: { cliente: string }) {
   const [cerca, setCerca] = useState("");
   const [inCorso, setInCorso] = useState<string | null>(null);
   const [daSpegnere, setDaSpegnere] = useState<VoceOpzione | null>(null);
+  const [daAccendere, setDaAccendere] = useState<VoceOpzione | null>(null);
   const [dove, setDove] = useState<string | null>(null);
   const [evidenziata, setEvidenziata] = useState<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -227,7 +228,8 @@ export function PaginaOpzioni({ cliente }: { cliente: string }) {
                         puoCambiare={!!dati.puoCambiare}
                         inCorso={inCorso === v.id}
                         onCambia={(acceso) => {
-                          if (acceso) void cambia(v, { acceso: true });
+                          if (acceso && v.accendendo) setDaAccendere(v);
+                          else if (acceso) void cambia(v, { acceso: true });
                           else setDaSpegnere(v);
                         }}
                       />
@@ -296,6 +298,17 @@ export function PaginaOpzioni({ cliente }: { cliente: string }) {
           const v = daSpegnere;
           setDaSpegnere(null);
           if (v) void cambia(v, { acceso: false });
+        }}
+      />
+      <DialogoSpegni
+        voce={daAccendere}
+        cliente={cliente}
+        accendi
+        onAnnulla={() => setDaAccendere(null)}
+        onConferma={() => {
+          const v = daAccendere;
+          setDaAccendere(null);
+          if (v) void cambia(v, { acceso: true });
         }}
       />
     </div>

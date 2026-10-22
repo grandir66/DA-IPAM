@@ -1,10 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { toast } from "sonner";
 import { Package } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
-import { Switch } from "@/components/ui/switch";
+import { RigheRimando } from "@/components/opzioni/riga-rimando";
 import { fetchJson } from "@/lib/fetch-json";
 import { LoadError } from "@/components/shared/load-error";
 
@@ -22,10 +21,9 @@ const URL_STATO = "/api/patch/choco-automatico";
  * credenziale WinRM, al salvataggio o alla verifica della credenziale e ogni
  * notte; l'esito di ogni tentativo sta nello storico delle patch.
  */
-export function InterruttoreChocoAutomatico({ isAdmin }: { isAdmin: boolean }) {
+export function InterruttoreChocoAutomatico() {
   const [stato, setStato] = useState<StatoChoco | null>(null);
   const [errore, setErrore] = useState<string | null>(null);
-  const [salvo, setSalvo] = useState(false);
 
   const carica = useCallback(async () => {
     const r = await fetchJson<StatoChoco>(URL_STATO, { cache: "no-store" });
@@ -40,22 +38,6 @@ export function InterruttoreChocoAutomatico({ isAdmin }: { isAdmin: boolean }) {
   useEffect(() => {
     void carica();
   }, [carica]);
-
-  const cambia = async (acceso: boolean) => {
-    setSalvo(true);
-    const r = await fetchJson<StatoChoco>(URL_STATO, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ acceso }),
-    });
-    setSalvo(false);
-    if (!r.ok) {
-      toast.error(r.message);
-      return;
-    }
-    setStato(r.data);
-    toast.success(acceso ? "Installazione automatica di Chocolatey accesa" : "Installazione automatica di Chocolatey spenta");
-  };
 
   if (errore) return <LoadError what="l'installazione automatica di Chocolatey" message={errore} onRetry={() => void carica()} />;
   if (!stato) return null;
@@ -79,13 +61,8 @@ export function InterruttoreChocoAutomatico({ isAdmin }: { isAdmin: boolean }) {
             <strong className="text-foreground">{r.falliti}</strong> · fermi{" "}
             <strong className="text-foreground">{r.fermi}</strong>
           </p>
+          <RigheRimando ids={["automatismo.choco_automatico"]} mostraEsito={false} />
         </div>
-        <Switch
-          checked={stato.acceso}
-          disabled={!isAdmin || salvo}
-          onCheckedChange={(v: boolean) => void cambia(v)}
-          aria-label="Installa Chocolatey automaticamente"
-        />
       </CardContent>
     </Card>
   );

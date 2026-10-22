@@ -1,6 +1,9 @@
 "use client";
+
+import Link from "next/link";
 import { parseDbDate } from "@/lib/db-date";
 import { ETICHETTE_JOB, scheduledJobLabel } from "@/lib/scheduled-job-types";
+import { idOpzioneDelJob } from "@/lib/opzioni/ancore";
 import { fetchJson } from "@/lib/fetch-json";
 import { cn } from "@/lib/utils";
 import { LoadError } from "@/components/shared/load-error";
@@ -36,7 +39,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { ETICHETTA_OPZIONE } from "@/lib/modules/offerta";
 import { Textarea } from "@/components/ui/textarea";
@@ -650,17 +652,6 @@ function SettingsPageInner() {
     }
   }
 
-  async function toggleJobEnabled(id: number, enabled: boolean) {
-    await fetch("/api/jobs", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, enabled }),
-    });
-    setJobs((prev) => prev.map((j) => (j.id === id ? { ...j, enabled: enabled ? 1 : 0 } : j)));
-    // «Prossima» e «sospeso» li calcola il server (apparati_scelti): si rilegge l'elenco.
-    void ricaricaJobs();
-  }
-
   /** Il giro di un apparati_scelti lanciato a mano: si guarda `giro_il` finché cambia, poi elenco e dettaglio si ricaricano. */
   function seguiGiro(id: number, giroPrima: string | null) {
     const timer = attesaGiri.current;
@@ -1145,11 +1136,14 @@ function SettingsPageInner() {
                     <Fragment key={job.id}>
                     <TableRow id={`job-${job.id}`}>
                       <TableCell>
-                        <Switch
-                          checked={!!job.enabled}
-                          disabled={soloLettura || (scelti && !isAdmin)}
-                          onCheckedChange={(checked) => toggleJobEnabled(job.id, checked)}
-                        />
+                        {/* Accendere e spegnere si fa da Opzioni (22/10): qui lo stato e il rimando alla riga. */}
+                        <Link
+                          href={`/settings/opzioni#${idOpzioneDelJob(job)}`}
+                          title="Cambia da Opzioni"
+                          className={`inline-flex rounded-full border-2 px-2 py-px text-[13px] font-bold ${job.enabled ? "border-[#0D2537] bg-[#0D2537] text-white dark:border-[#E6EEF4] dark:bg-[#E6EEF4] dark:text-[#0D2537]" : "border-[#5B6B77] text-[#0D2537] dark:text-[#E6EEF4]"}`}
+                        >
+                          {job.enabled ? "ACCESO" : "SPENTO"}
+                        </Link>
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2 flex-wrap">

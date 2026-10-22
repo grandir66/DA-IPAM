@@ -15,6 +15,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { RigheRimando } from "@/components/opzioni/riga-rimando";
 import { LoadError } from "@/components/shared/load-error";
 import { fetchJson } from "@/lib/fetch-json";
 import { parseDbDate } from "@/lib/db-date";
@@ -185,10 +186,15 @@ export function ZabbixLetturaCard({ isAdmin }: { isAdmin: boolean }) {
               onChange={(e) => setProxy(e.target.value)}
             />
           </div>
-          <div className="flex items-center gap-3 pt-6">
-            <Switch checked={acceso} onCheckedChange={setAcceso} />
-            <span className="text-sm">{acceso ? "Acceso" : "Spento (nessuna richiesta)"}</span>
-          </div>
+          {c ? (
+            // Configurato: si accende e si spegne da Opzioni (22/10); il salvataggio qui conserva lo stato letto.
+            <div className="pt-6"><RigheRimando ids={["modulo.zabbix"]} mostraEsito={false} /></div>
+          ) : (
+            <div className="flex items-center gap-3 pt-6">
+              <Switch checked={acceso} onCheckedChange={setAcceso} />
+              <span className="text-sm">{acceso ? "Acceso" : "Spento (nessuna richiesta)"}</span>
+            </div>
+          )}
         </div>
         {c && (
           <div className="text-xs text-muted-foreground space-y-0.5">

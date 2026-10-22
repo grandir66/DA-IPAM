@@ -1,5 +1,6 @@
 "use client";
 
+import { RigheRimando } from "@/components/opzioni/riga-rimando";
 import { useEffect, useState, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,7 +9,6 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Radar, Zap, Terminal, Save, ChevronDown, ChevronRight } from "lucide-react";
-import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { buildTcpScanArgs, buildUdpScanArgs } from "@/lib/scanner/ports";
 
@@ -152,7 +152,6 @@ export function ScanConfigTab() {
   const [savingQuickPorts, setSavingQuickPorts] = useState(false);
 
   // --- Naabu / port discovery ---
-  const [portDiscovery, setPortDiscovery] = useState<PortDiscoveryMode>("nmap");
   const [naabuBinPath, setNaabuBinPath] = useState("");
   const [naabuAvailable, setNaabuAvailable] = useState<boolean | null>(null);
   const [naabuDirty, setNaabuDirty] = useState(false);
@@ -224,10 +223,6 @@ export function ScanConfigTab() {
           savedSettings.quick_scan_tcp_ports || sc.quickScan.tcpPorts
         );
 
-        const modeFromApi = sc.portDiscovery === "naabu+nmap" ? "naabu+nmap" : "nmap";
-        const modeFromSettings =
-          savedSettings.port_discovery === "naabu+nmap" ? "naabu+nmap" : "nmap";
-        setPortDiscovery(sc.portDiscovery ? modeFromApi : modeFromSettings);
         setNaabuBinPath(
           (sc.naabuBinPath ?? savedSettings.naabu_bin_path ?? "").trim()
         );
@@ -353,7 +348,6 @@ export function ScanConfigTab() {
     setSavingNaabu(true);
     try {
       const entries: [string, string][] = [
-        ["port_discovery", portDiscovery],
         ["naabu_bin_path", naabuBinPath.trim()],
       ];
       for (const [key, value] of entries) {
@@ -611,15 +605,8 @@ export function ScanConfigTab() {
               <p className="text-xs text-muted-foreground">
                 Off = solo Nmap (default). On = Naabu TCP poi Nmap -sV sulle porte trovate + porte sempre utili.
               </p>
+              <RigheRimando ids={["automatismo.naabu"]} mostraEsito={false} />
             </div>
-            <Switch
-              id="port-discovery-naabu"
-              checked={portDiscovery === "naabu+nmap"}
-              onCheckedChange={(on) => {
-                setPortDiscovery(on ? "naabu+nmap" : "nmap");
-                setNaabuDirty(true);
-              }}
-            />
           </div>
 
           <div className="space-y-2">

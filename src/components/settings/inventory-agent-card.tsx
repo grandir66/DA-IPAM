@@ -135,13 +135,11 @@ function DownloadList({ items }: { items: GlpiDownloadEntry[] }) {
 export function InventoryAgentCard({
   isAdmin,
   installed,
-  onInstall,
   onUninstall,
   installBusy,
 }: {
   isAdmin: boolean;
   installed: boolean;
-  onInstall: () => Promise<void>;
   onUninstall: () => void;
   installBusy: boolean;
 }) {
@@ -305,14 +303,14 @@ export function InventoryAgentCard({
                     {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                   </Button>
                   <Button variant="outline" disabled={installBusy} onClick={onUninstall}>
-                    Disinstalla…
+                    Disinstalla e cancella i dati…
                   </Button>
                 </>
               ) : (
-                <Button disabled={installBusy || !isAdmin} onClick={() => void onInstall()}>
-                  {installBusy && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-                  Installa modulo
-                </Button>
+                // Si installa da Opzioni (22/10): qui il rimando.
+                <Link href="/settings/opzioni#modulo.inventory_agent" className="text-[14px] text-[#006C96] underline hover:text-[#0D2537] dark:text-[#3FBBF0]">
+                  Installa da Opzioni ›
+                </Link>
               )}
             </div>
           </div>

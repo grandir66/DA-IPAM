@@ -249,46 +249,6 @@ export function ModulesTab({ isAdmin, solo }: { isAdmin: boolean; solo?: string 
     </div>
   ) : null;
 
-  const handleInstallPatch = async () => {
-    setBusyKey("patch_management");
-    try {
-      const r = await fetch("/api/features/patch_management/install", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
-      if (!r.ok) {
-        const err = (await r.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(err?.error ?? `HTTP ${r.status}`);
-      }
-      toast.success("Modulo Patch Management installato");
-      await fetchFeatures();
-    } catch (e) {
-      toast.error(`Installazione fallita: ${e instanceof Error ? e.message : "errore"}`);
-    } finally {
-      setBusyKey(null);
-    }
-  };
-
-  const handleInstallInventoryAgent = async () => {
-    setBusyKey("inventory_agent");
-    try {
-      const r = await fetch("/api/features/inventory_agent/install", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
-      if (!r.ok) {
-        const err = (await r.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(err?.error ?? `HTTP ${r.status}`);
-      }
-      toast.success("Modulo Inventory Agent installato");
-      await fetchFeatures();
-    } catch (e) {
-      toast.error(`Installazione fallita: ${e instanceof Error ? e.message : "errore"}`);
-    } finally {
-      setBusyKey(null);
-    }
-  };
-
   // Apre il wizard che provisiona DAVVERO MeshCentral (container + utenza +
   // gruppo + config). Prima qui si chiamava /api/features/meshcentral/install,
   // che accendeva solo il flag: il modulo risultava "installato" ma inservibile,
@@ -409,17 +369,17 @@ export function ModulesTab({ isAdmin, solo }: { isAdmin: boolean; solo?: string 
                     disabled={patchBusy}
                     onClick={() =>
                       patch &&
-                      setUninstallDialog({ open: true, feature: patch, dropData: false })
+                      setUninstallDialog({ open: true, feature: patch, dropData: true })
                     }
                   >
                     {patchBusy && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-                    Disinstalla…
+                    Disinstalla e cancella i dati…
                   </Button>
                 ) : (
-                  <Button disabled={patchBusy || !isAdmin} onClick={handleInstallPatch}>
-                    {patchBusy && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-                    Installa modulo
-                  </Button>
+                  // Si installa da Opzioni (22/10): qui il rimando.
+                  <Link href="/settings/opzioni#modulo.patch_management" className="text-[14px] text-[#006C96] underline hover:text-[#0D2537] dark:text-[#3FBBF0]">
+                    Installa da Opzioni ›
+                  </Link>
                 )}
               </div>
             </div>
@@ -432,7 +392,7 @@ export function ModulesTab({ isAdmin, solo }: { isAdmin: boolean; solo?: string 
           )}
         </Card>
         )}
-        {patchInstalled && <InterruttoreChocoAutomatico isAdmin={isAdmin} />}
+        {patchInstalled && <InterruttoreChocoAutomatico />}
       </ModuleSection>
 
       <ModuleSection
@@ -445,10 +405,9 @@ export function ModulesTab({ isAdmin, solo }: { isAdmin: boolean; solo?: string 
           isAdmin={isAdmin}
           installed={inventoryInstalled}
           installBusy={inventoryBusy}
-          onInstall={handleInstallInventoryAgent}
           onUninstall={() =>
             inventoryAgent &&
-            setUninstallDialog({ open: true, feature: inventoryAgent, dropData: false })
+            setUninstallDialog({ open: true, feature: inventoryAgent, dropData: true })
           }
         />
         )}
@@ -467,16 +426,16 @@ export function ModulesTab({ isAdmin, solo }: { isAdmin: boolean; solo?: string 
           onInstall={handleInstallMesh}
           onUninstall={() =>
             meshcentral &&
-            setUninstallDialog({ open: true, feature: meshcentral, dropData: false })
+            setUninstallDialog({ open: true, feature: meshcentral, dropData: true })
           }
         />
         )}
-        <InterruttoreSenzaAgente isAdmin={isAdmin} />
+        <InterruttoreSenzaAgente />
         <VerificaModulo moduleKey="meshcentral" isAdmin={isAdmin} />
       </ModuleSection>
 
       <ModuleSection id="module-nis2_inventory" title="Inventario NIS2">
-        <Nis2ToggleCard isAdmin={isAdmin} />
+        <Nis2ToggleCard />
       </ModuleSection>
 
       <ModuleSection

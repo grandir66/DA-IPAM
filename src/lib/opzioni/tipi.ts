@@ -47,6 +47,8 @@ export interface Opzione {
   configura?: { href: string; etichetta: string };
   /** Il dialogo di spegnimento (oggetto 10 della tavola). */
   spegnendo?: { siFerma: string; resta: string };
+  /** Se c'è, anche accendere chiede conferma con questo testo (la pulizia degli host cancella righe). */
+  accendendo?: string;
   /** Le voci da file: dove si cambiano (oggetto 12). */
   dove?: string;
   /** Il cambio tocca i job: la rotta ricarica lo scheduler del cliente. */
@@ -85,6 +87,7 @@ export interface VoceOpzione {
   scelte?: ReadonlyArray<Scelta>;
   configura?: { href: string; etichetta: string };
   spegnendo?: { siFerma: string; resta: string };
+  accendendo?: string;
   dove?: string;
   /** Si cambia da Opzioni (c'è `cambia`). */
   cambiabile: boolean;

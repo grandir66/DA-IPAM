@@ -1,5 +1,6 @@
 "use client";
 
+import { RigheRimando } from "@/components/opzioni/riga-rimando";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -72,9 +73,8 @@ export function NotificationsTab() {
       const res = await fetch("/api/notifications/config", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        // Accendere e spegnere le notifiche e i canali si fa da Opzioni (22/10): il salvataggio qui non li tocca.
         body: JSON.stringify({
-          enabled: cfg.enabled,
-          smtpEnabled: cfg.smtpEnabled,
           smtpHost: cfg.smtpHost,
           smtpPort: Number(cfg.smtpPort),
           smtpSecure: cfg.smtpSecure,
@@ -82,7 +82,6 @@ export function NotificationsTab() {
           smtpPassword: cfg.smtpPassword,
           smtpFrom: cfg.smtpFrom,
           smtpTo: cfg.smtpTo,
-          webhookEnabled: cfg.webhookEnabled,
           webhookUrl: cfg.webhookUrl,
           webhookAuthHeader: cfg.webhookAuthHeader,
           immediateCategories: cfg.policy.immediateCategories,
@@ -144,13 +143,8 @@ export function NotificationsTab() {
         <CardHeader>
           <CardTitle className="text-base">Stato</CardTitle>
         </CardHeader>
-        <CardContent className="flex items-center gap-3">
-          <Switch
-            id="enabled"
-            checked={cfg.enabled}
-            onCheckedChange={(v: boolean) => patch({ enabled: v })}
-          />
-          <Label htmlFor="enabled">Notifiche attive</Label>
+        <CardContent>
+          <RigheRimando ids={["notifiche.attive"]} />
         </CardContent>
       </Card>
 
@@ -161,14 +155,7 @@ export function NotificationsTab() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex items-center gap-3">
-            <Switch
-              id="smtpEnabled"
-              checked={cfg.smtpEnabled}
-              onCheckedChange={(v: boolean) => patch({ smtpEnabled: v })}
-            />
-            <Label htmlFor="smtpEnabled">Canale email abilitato</Label>
-          </div>
+          <RigheRimando ids={["notifiche.email"]} mostraEsito={false} />
           <div className="grid gap-4 md:grid-cols-2">
             <div>
               <Label htmlFor="smtpHost">Server SMTP</Label>
@@ -244,14 +231,7 @@ export function NotificationsTab() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex items-center gap-3">
-            <Switch
-              id="webhookEnabled"
-              checked={cfg.webhookEnabled}
-              onCheckedChange={(v: boolean) => patch({ webhookEnabled: v })}
-            />
-            <Label htmlFor="webhookEnabled">Canale webhook abilitato</Label>
-          </div>
+          <RigheRimando ids={["notifiche.webhook"]} mostraEsito={false} />
           <div>
             <Label htmlFor="webhookUrl">URL</Label>
             <Input

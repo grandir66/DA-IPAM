@@ -116,11 +116,11 @@ export function DatiClient({ isAdmin }: { isAdmin: boolean }) {
         </CardContent>
       </Card>
 
-      <HypervisorSyncCard isAdmin={isAdmin} />
+      <HypervisorSyncCard />
 
-      <LettureCard isAdmin={isAdmin} />
+      <LettureCard />
 
-      <MappaCard isAdmin={isAdmin} onChanged={() => void load()} />
+      <MappaCard />
 
       {m.cavi && <AnomalieCard cavi={m.cavi} nomeDi={nn} />}
 

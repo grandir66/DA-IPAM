@@ -20,6 +20,7 @@ export function voce(o: Opzione, stato: StatoOpzione): VoceOpzione {
     ...(o.scelte ? { scelte: o.scelte } : {}),
     ...(o.configura ? { configura: o.configura } : {}),
     ...(o.spegnendo ? { spegnendo: o.spegnendo } : {}),
+    ...(o.accendendo ? { accendendo: o.accendendo } : {}),
     ...(o.dove ? { dove: o.dove } : {}),
     cambiabile: o.forma !== "file" && typeof o.cambia === "function",
     stato,

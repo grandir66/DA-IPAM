@@ -1,4 +1,5 @@
 "use client";
+import { RigheRimando } from "@/components/opzioni/riga-rimando";
 import { parseDbDate } from "@/lib/db-date";
 
 import { useState } from "react";
@@ -210,15 +211,20 @@ export function MdmSettingsClient({
 
           <div className="space-y-2">
             <Label>Stato</Label>
-            <label className="flex items-center gap-3 text-sm cursor-pointer hover:text-foreground text-muted-foreground pl-1">
-              <Checkbox
-                checked={enabled}
-                onCheckedChange={(checked) => setEnabled(checked === true)}
-              />
-              <span className={enabled ? "text-foreground font-medium" : ""}>
-                Integrazione MDM attiva (sincronizzazione automatica ogni {intervalloMinuti} minuti)
-              </span>
-            </label>
+            {config.base_url ? (
+              // Configurato: si accende e si spegne da Opzioni (22/10); «Salva» qui conserva lo stato letto.
+              <RigheRimando ids={["modulo.mdm"]} mostraEsito={false} />
+            ) : (
+              <label className="flex items-center gap-3 text-sm cursor-pointer hover:text-foreground text-muted-foreground pl-1">
+                <Checkbox
+                  checked={enabled}
+                  onCheckedChange={(checked) => setEnabled(checked === true)}
+                />
+                <span className={enabled ? "text-foreground font-medium" : ""}>
+                  Integrazione MDM attiva (sincronizzazione automatica ogni {intervalloMinuti} minuti)
+                </span>
+              </label>
+            )}
             <p className="text-xs text-muted-foreground pl-1">
               Accesa, crea il job pianificato «mdm_sync»; spenta, lo toglie. Dopo {maxErrori} errori
               consecutivi la sincronizzazione si spegne da sola: riattivarla azzera il contatore.

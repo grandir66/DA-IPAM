@@ -155,16 +155,17 @@ const AGGREGATI: ReadonlyArray<{
   scelte?: Scelta[];
   ritmoFisso?: string;
   siFerma: string;
+  accendendo?: string;
 }> = [
   { tipo: "arp_poll", nome: "Giro ARP di router e switch", cosa: "tabelle ARP e MAC, e dentro le letture degli apparati qui sopra", diSerie: "acceso, ogni 30 minuti", scelte: ritmi(15, 30, 60, 120), siFerma: "la lettura di ARP e MAC, e con lei le letture di VLAN, bridge e spanning tree dei MikroTik e degli switch." },
   { tipo: "hypervisor_sync", nome: "Lettura degli hypervisor", cosa: "VM e nodi di Proxmox, VMware, Hyper-V", diSerie: "accesa, ogni notte", ritmoFisso: "ogni notte, 03:00", siFerma: "la lettura notturna di VM e nodi degli hypervisor, e con lei LLDP e bond degli host." },
   { tipo: "dns_resolve", nome: "Nomi DNS degli host", cosa: "rilegge i nomi degli host conosciuti", diSerie: "accesa, ogni giorno", scelte: ritmi(360, 720, 1440), siFerma: "la rilettura dei nomi DNS degli host." },
   { tipo: "fast_scan", nome: "Scansione veloce delle reti", cosa: "una per rete; manda offline gli host che non rispondono", diSerie: "accesa, ogni 12 ore", scelte: ritmi(720, 1440), siFerma: "la scansione veloce di ogni rete: host nuovi e host spariti si vedono solo con una scansione a mano." },
   { tipo: "known_host_check", nome: "Controllo degli host conosciuti", cosa: "uno per rete; avvisa quando un host conosciuto sparisce", diSerie: "acceso, uno per rete", siFerma: "il controllo degli host conosciuti: nessun avviso se un host sparisce." },
-  { tipo: "pulizia_host", nome: "Pulizia notturna degli host assenti", cosa: "toglie gli host non visti da tempo (cancella righe)", diSerie: "spenta", ritmoFisso: "ogni notte, 04:00", siFerma: "la pulizia notturna: gli host assenti restano nell'elenco." },
+  { tipo: "pulizia_host", nome: "Pulizia notturna degli host assenti", cosa: "toglie gli host non visti da tempo (cancella righe)", diSerie: "spenta", ritmoFisso: "ogni notte, 04:00", siFerma: "la pulizia notturna: gli host assenti restano nell'elenco.", accendendo: "Ogni notte alle 04:00 si archiviano, senza anteprima, gli host offline da tempo e i vecchi IP di un MAC che ha cambiato indirizzo; le righe d'archivio oltre i 90 giorni si cancellano per sempre. L'anteprima di oggi è nella scheda Pulizia degli host assenti (Impostazioni › Sistema)." },
 ];
 
-const TIPI_AGGREGATI = new Set<string>(AGGREGATI.map((a) => a.tipo));
+const TIPI_AGGREGATI = new Set<string>(AGGREGATI.map((a) => a.tipo)); // = TIPI_PER_TIPO di ancore.ts (lo prova ancore.test.ts)
 
 function esitoGiro(jobs: ScheduledJob[], perRete: boolean): StatoOpzione["esito"] {
   const ultima = jobs.map((j) => j.last_run).filter((x): x is string => !!x).sort().at(-1) ?? null;
@@ -185,6 +186,7 @@ function opzioneAggregata(a: (typeof AGGREGATI)[number]): Opzione {
     forma: "levetta",
     diSerie: a.diSerie,
     scelte: a.scelte,
+    accendendo: a.accendendo,
     tocchiJob: true,
     spegnendo: {
       siFerma: a.siFerma,
@@ -380,7 +382,7 @@ function opzioneModuloInstallabile(key: UninstallableFeature, nome: string, cosa
     valePer: "cliente",
     forma: "modulo",
     diSerie: "non installato",
-    configura: { href: `/settings/moduli/${key}`, etichetta: "Scheda ›" },
+    configura: { href: `/settings/moduli/${key}`, etichetta: key === "meshcentral" ? "Installa ›" : "Scheda ›" },
     spegnendo: { siFerma: copia.effetto, resta: copia.senzaCasella },
     async leggi() {
       const installato = key === "meshcentral" ? getMeshState().installed : (await getFeatureStatus(tenant(), key)).enabled;
@@ -389,6 +391,8 @@ function opzioneModuloInstallabile(key: UninstallableFeature, nome: string, cosa
     cambia(r) {
       const acceso = soloAcceso(r);
       // Da qui si disinstalla senza cancellare i dati: per cancellarli c'è la scheda del modulo.
+      // MeshCentral si installa solo dalla sua scheda: l'assistente crea il server; il solo flag lo lascerebbe inservibile.
+      if (acceso && key === "meshcentral") throw new ErroreOpzione("MeshCentral si installa dalla sua scheda: l'assistente crea il server sull'appliance");
       if (acceso) installaModulo(key, tenant(), null);
       else disinstallaModulo(key, tenant(), false);
     },

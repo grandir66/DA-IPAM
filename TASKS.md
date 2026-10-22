@@ -1,5 +1,23 @@
 # TASKS — DA-IPAM
 
+## 2026-10-22 — LibreNMS come fonte di dati degli apparati SNMP
+
+Spec [`docs/superpowers/specs/2026-10-22-librenms-fonte-dati-design.md`](docs/superpowers/specs/2026-10-22-librenms-fonte-dati-design.md), piano [`docs/superpowers/plans/2026-10-22-librenms-fonte-dati.md`](docs/superpowers/plans/2026-10-22-librenms-fonte-dati.md) (10 task; completo per aggiunta, migrazione, giro e mappa, leggero per rotte e interfaccia; stato: bozza da approvare). Prova in sola lettura sull'hub il 22/10: LibreNMS ha 3-4 volte porte, vicini e MAC dei nostri motori, più 1160 sensori.
+
+- [x] Prova in sola lettura sull'API di LibreNMS dell'hub e confronto con il DB 70791 (spec §2)
+- [x] Spec e piano scritti
+- [ ] Piano approvato da Riccardo (livelli compresi)
+- [ ] T1 aggiunta senza force_add, v1/v2c/v3
+- [ ] T2 migrazione librenms_fonte_v21
+- [ ] T3 client e lettori con uscite vere anonimizzate
+- [ ] T4 scrittura e giro nel job librenms_sync (prova a vuoto sulla copia dell'hub)
+- [ ] T5 rotte API
+- [ ] T6 tavola grafica approvata
+- [ ] T7 scheda: Sensori, Porte e Vicini con fonte
+- [ ] T8 pagina del modulo: non interrogati, rifiutati, candidati
+- [ ] T9 vicini nella mappa (zona rossa, misura prima/dopo)
+- [ ] T10 accensione sull'hub, ADR, documenti
+
 ## 2026-10-22 — scansione automatica dei device scelti
 
 Piano: [`docs/superpowers/plans/2026-10-22-scansione-automatica-da-discovery.md`](docs/superpowers/plans/2026-10-22-scansione-automatica-da-discovery.md) (10 task; giro e migrazione livello completo, interfaccia leggero; stato: bozza da approvare). Tavola approvata il 22/10: artboard `ScansioneAutomatica` (J1-J4) del canvas https://claude.ai/artifact/7ezwy7nkAAzUWSn1wJCNKv. Risponde anche al punto (a) qui sotto (job `arp_poll` sull'hub).

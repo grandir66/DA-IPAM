@@ -54,4 +54,20 @@ describe("apparato DHCP del DC", () => {
     const id = withTenant(T, () => apparatoDhcpDelDc({ name: "Altro", dc_host: "10.80.0.11", winrm_credential_id: null }));
     assert.equal((d.prepare(`SELECT COUNT(*) AS n FROM device_credential_bindings WHERE device_id = ?`).get(id) as { n: number }).n, 0);
   });
+
+  // Revisione finale 22/10: il DC che è un IP secondario di un apparato gestito non diventa un secondo apparato.
+  it("DC su un IP secondario di un apparato gestito: niente apparato nuovo, null", () => {
+    const d = getTenantDb(T);
+    d.prepare(`INSERT INTO networks (id, cidr, name) VALUES (90, '10.90.0.0/24', 'r90')`).run();
+    d.prepare(`INSERT INTO physical_devices (id, identity_confidence, identity_anchor) VALUES (90, 1, 'dc1')`).run();
+    d.prepare(`INSERT INTO hosts (id, network_id, ip, physical_device_id) VALUES (901, 90, '10.90.0.1', 90)`).run();
+    d.prepare(`INSERT INTO hosts (id, network_id, ip, physical_device_id) VALUES (902, 90, '10.90.0.2', 90)`).run();
+    d.prepare(`INSERT INTO network_devices (id, name, host, host_id, device_type, vendor, protocol, port, enabled) VALUES (990, 'SRV', '10.90.0.1', 901, 'server', 'windows', 'winrm', 5985, 1)`).run();
+    const conta = () => (d.prepare(`SELECT COUNT(*) n FROM network_devices`).get() as { n: number }).n;
+    const prima = conta();
+    const id = withTenant(T, () => apparatoDhcpDelDc({ name: "Dominio", dc_host: "10.90.0.2", winrm_credential_id: 5 }));
+    assert.equal(id, null);
+    assert.equal(conta(), prima);
+  });
 });
+

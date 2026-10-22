@@ -13,6 +13,7 @@ import { getDb } from "@/lib/db";
 import { livelloSchemaSchedaMk } from "@/lib/db-tenant";
 import type { InterfacciaMk } from "@/lib/devices/mikrotik-stp";
 import { haColonnaPrincipale } from "@/lib/devices/cluster-discovery";
+import { hostConApparato } from "@/lib/devices/apparato-del-cluster";
 import type {
   PhysicalDevice,
   DeviceInterface,
@@ -408,8 +409,7 @@ export function manualLinkHostsToPhysicalDevice(
     }
     if (!membri.has(principale_host_id)) throw new Error("Il principale scelto non è fra gli IP del cluster");
     const ids = [...membri];
-    const apparati = db.prepare(`SELECT COUNT(*) AS n FROM network_devices WHERE host_id IN (${ids.map(() => "?").join(",")})`).get(...ids) as { n: number };
-    if (apparati.n > 0) throw new Error("Il cluster ha un apparato gestito: il principale è il suo IP e non si sceglie");
+    if (hostConApparato(db, ids).size > 0) throw new Error("Il cluster ha un apparato gestito: il principale è il suo IP e non si sceglie");
     if (!haColonnaPrincipale(db)) throw new Error("Scelta del principale non disponibile su questo database");
   }
 
@@ -681,8 +681,7 @@ export function scegliPrincipale(physicalDeviceId: number, hostId: number): Esit
   if (!getPhysicalDeviceById(physicalDeviceId)) return { ok: false, status: 404, error: "Cluster fisico non trovato" };
   const membri = listHostsByPhysicalDevice(physicalDeviceId).map((h) => h.id);
   if (!membri.includes(hostId)) return { ok: false, status: 400, error: "L'host non fa parte di questo cluster" };
-  const apparati = db.prepare(`SELECT COUNT(*) AS n FROM network_devices WHERE host_id IN (${membri.map(() => "?").join(",")})`).get(...membri) as { n: number };
-  if (apparati.n > 0) return { ok: false, status: 409, error: "Il cluster ha un apparato gestito: il principale è il suo IP e non si sceglie" };
+  if (hostConApparato(db, membri).size > 0) return { ok: false, status: 409, error: "Il cluster ha un apparato gestito: il principale è il suo IP e non si sceglie" };
   if (!haColonnaPrincipale(db)) return { ok: false, status: 409, error: "Scelta del principale non disponibile su questo database" };
   db.prepare("UPDATE physical_devices SET primary_host_id = ? WHERE id = ?").run(hostId, physicalDeviceId);
   return { ok: true };

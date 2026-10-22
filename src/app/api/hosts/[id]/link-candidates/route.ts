@@ -14,6 +14,7 @@ import { requireAuth, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { getLinkCandidatesForHost } from "@/lib/devices/physical-device-db";
 import { getDb } from "@/lib/db";
+import { hostConApparato } from "@/lib/devices/apparato-del-cluster";
 
 const NO_CACHE_HEADERS = { "Cache-Control": "no-store, no-cache, must-revalidate" };
 
@@ -36,10 +37,7 @@ export async function GET(
 
     const candidates = getLinkCandidatesForHost(hostId, limit);
     // Un candidato che è già un apparato gestito rende il cluster «con apparato»: il principale non si sceglie (Task 6).
-    const ids = candidates.map((c) => c.id);
-    const apparati = ids.length === 0 ? new Set<number>() : new Set(
-      (getDb().prepare(`SELECT host_id FROM network_devices WHERE host_id IN (${ids.map(() => "?").join(",")})`).all(...ids) as Array<{ host_id: number }>).map((r) => r.host_id),
-    );
+    const apparati = hostConApparato(getDb(), candidates.map((c) => c.id));
     return NextResponse.json({ candidates: candidates.map((c) => ({ ...c, ha_apparato: apparati.has(c.id) })) }, { headers: NO_CACHE_HEADERS });
   });
 }

@@ -11,7 +11,8 @@ import { cn } from "@/lib/utils";
 import { STILE_STATO } from "@/components/shared/stile-stato-modulo";
 import type { InfoClusterDiscovery } from "@/lib/devices/cluster-discovery";
 
-const STATO: Record<string, string> = { online: "✓ su", offline: "● giù" };
+// Stessi segni e parole della testata di Discovery.
+const STATO: Record<string, string> = { online: "● online", offline: "○ offline" };
 
 export function BadgeAltriIp({ cluster, nome }: { cluster: InfoClusterDiscovery; nome: string }) {
   const [aperto, setAperto] = useState(false);

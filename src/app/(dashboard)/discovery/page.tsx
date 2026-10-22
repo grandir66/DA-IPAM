@@ -103,7 +103,7 @@ import { hostGestitoSenzaProva } from "@/lib/devices/credenziali-assegnate";
 import { PresetsDialog } from "@/components/devices/presets-dialog";
 import type { InfoClusterDiscovery } from "@/lib/devices/cluster-discovery";
 import { useUrlPerBrowser } from "@/components/shared/url-per-browser";
-import { contatoriDiscovery, vistaRiga } from "./filtro-cluster";
+import { altriIpCsv, contatoriDiscovery, vistaRigaConCriteri } from "./filtro-cluster";
 import { BadgeAltriIp } from "./cluster-ip";
 
 const SORTED_CLASSIFICATIONS = sortClassificationsByDisplayLabel(DEVICE_CLASSIFICATIONS_ORDERED);
@@ -895,29 +895,34 @@ export default function DiscoveryPage() {
   // v0.2.646 audit perf UI3: usa qDebounced (250ms) per il filter, non `q`.
   // L'input rimane reattivo (controlled component), ma il filter su 1000+ host
   // gira al massimo 1 volta ogni 250ms invece di a ogni keystroke.
-  // Un apparato fisico = una riga (cluster.principale): i secondari sono nascosti, la ricerca li trova comunque.
+  // Un apparato fisico = una riga (cluster.principale): i secondari sono nascosti, ma ogni filtro (stato,
+  // classificazione, CVE, ricerca) guarda anche loro, così un problema solo su un IP secondario non sparisce
+  // (revisione finale 22/10, regola in filtro-cluster.ts). Tabella, CSV e contatori leggono `filtered`.
   const { filtered, comeSecondario } = useMemo(() => {
     const lower = qDebounced.toLowerCase().trim();
-    const trovati = new Map<number, string>();
+    const perId = new Map(hosts.map((h) => [h.id, h]));
+    const prendi = (id: number, f: (h: EnrichedHost) => boolean) => { const h = perId.get(id); return h ? f(h) : false; };
+    const criteri: Array<(id: number) => boolean> = [];
+    if (statusFilter) criteri.push((id) => prendi(id, (h) => h.status === statusFilter));
+    if (classFilter) {
+      // Una regola sola per tabella e conteggi delle chip (revisione del 19/10): i
+      // preset personali `user:<slug>` prima svuotavano la tabella.
+      const preset = presets.find((p) => p.filter === classFilter);
+      criteri.push((id) => prendi(id, (h) => (preset ? prendePreset(preset, h, presets) : h.classification === classFilter)));
+    }
+    if (vulnFilter === "critical_high") criteri.push((id) => prendi(id, (h) => !!h.vuln && (h.vuln.critical > 0 || h.vuln.high > 0)));
+    if (vulnFilter === "critical") criteri.push((id) => prendi(id, (h) => !!h.vuln && h.vuln.critical > 0));
+    if (vulnFilter === "with_findings") criteri.push((id) => prendi(id, (h) => !!h.vuln && h.vuln.total > 0));
+    if (lower) {
+      criteri.push((id) => prendi(id, (h) =>
+        [h.ip, h.mac, displayName(h), h.vendor, h.network_name, h.network_cidr, h.notes, h.os_info, h.device_manufacturer]
+          .filter(Boolean).join(" ").toLowerCase().includes(lower)));
+    }
+    const trovati = new Map<number, string[]>();
     const righe = hosts.filter((h) => {
-      if (statusFilter && h.status !== statusFilter) return false;
-      if (classFilter) {
-        // Una regola sola per tabella e conteggi delle chip (revisione del 19/10): i
-        // preset personali `user:<slug>` prima svuotavano la tabella.
-        const preset = presets.find((p) => p.filter === classFilter);
-        if (preset) {
-          if (!prendePreset(preset, h, presets)) return false;
-        } else if (h.classification !== classFilter) {
-          return false;
-        }
-      }
-      if (vulnFilter === "critical_high" && !(h.vuln && (h.vuln.critical > 0 || h.vuln.high > 0))) return false;
-      if (vulnFilter === "critical" && !(h.vuln && h.vuln.critical > 0)) return false;
-      if (vulnFilter === "with_findings" && !(h.vuln && h.vuln.total > 0)) return false;
-      const testoRiga = lower ? [h.ip, h.mac, displayName(h), h.vendor, h.network_name, h.network_cidr, h.notes, h.os_info, h.device_manufacturer].filter(Boolean).join(" ").toLowerCase() : "";
-      const v = vistaRiga({ id: h.id, network_id: h.network_id, cluster: h.cluster, testoRiga }, { testo: lower, reteId: networkFilter || null }, (t) => t.toLowerCase().includes(lower));
+      const v = vistaRigaConCriteri(h, networkFilter || null, criteri);
       if (!v.visibile) return false;
-      if (v.trovataComeSecondario) trovati.set(h.id, v.trovataComeSecondario);
+      if (v.corrispondeSecondario.length > 0) trovati.set(h.id, v.corrispondeSecondario);
       return true;
     });
     return { filtered: righe, comeSecondario: trovati };
@@ -1320,8 +1325,9 @@ export default function DiscoveryPage() {
   // ---------- CSV export ----------
   const exportCsv = () => {
     const visibleDefs = colonneMostrate;
-    const header = joinCsvRow(visibleDefs.map((c) => c.label));
-    const rows = sortedRows.map((h) => joinCsvRow(visibleDefs.map((c) => getCellText(h, c.id))));
+    // «Altri IP» in fondo (l'ordine delle colonne è di Riccardo): gli IP accorpati non hanno riga propria.
+    const header = joinCsvRow([...visibleDefs.map((c) => c.label), "Altri IP"]);
+    const rows = sortedRows.map((h) => joinCsvRow([...visibleDefs.map((c) => getCellText(h, c.id)), altriIpCsv(h.cluster)]));
     const csv = [header, ...rows].join("\n");
     const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -1419,7 +1425,7 @@ export default function DiscoveryPage() {
             </span>
             {comeSecondario.has(h.id) && (
               <span className="inline-flex items-center gap-1 rounded-md border-2 px-1.5 text-[13px] font-semibold leading-tight bg-[#FFD400] text-[#0D2537] border-[#C9A800]">
-                ↳ trovato come IP secondario <span className="font-mono">{comeSecondario.get(h.id)}</span>
+                ↳ corrisponde <span className="font-mono">{comeSecondario.get(h.id)!.join(", ")}</span> (IP secondario)
               </span>
             )}
             {h.cluster && !h.cluster.principale && (

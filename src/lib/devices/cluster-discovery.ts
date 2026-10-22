@@ -1,6 +1,7 @@
 /**
  * Un apparato, una riga in Discovery (Riccardo, 22/10): gli IP dello stesso cluster fisico (`hosts.physical_device_id`)
- * si accorpano sotto una riga principale. Principale = l'IP dell'apparato gestito se il cluster ne ha uno; con due
+ * si accorpano sotto una riga principale. Principale = l'IP dell'apparato gestito se il cluster ne ha uno («è un
+ * apparato» = `sqlApparatoDellHost`, la stessa nozione del blocco di «Rendi apparato»); con due
  * apparati il cluster è ambiguo e non si accorpa (tutte le righe restano visibili perché qualcuno lo sistemi); senza
  * apparato vale la scelta a mano (`physical_devices.primary_host_id`), poi l'IP numericamente più basso. Sola lettura.
  * Lo stato non entra nella scelta: se il principale è assente/offline e i secondari sono vivi, resta lui (la riga
@@ -9,6 +10,7 @@
  */
 import type Database from "better-sqlite3";
 import { ipToLong } from "@/lib/utils";
+import { sqlApparatoDellHost } from "./apparato-del-cluster";
 
 export interface MembroCluster { host_id: number; ip: string; network_id: number; network_name: string; status: string; ha_apparato: boolean }
 
@@ -45,7 +47,7 @@ export function leggiClusterDiscovery(db: Database.Database): Map<number, InfoCl
   const scelto = haColonnaPrincipale(db) ? "pd.primary_host_id" : "NULL";
   const righe = db.prepare(
     `SELECT h.id, h.ip, h.network_id, n.name AS network_name, h.status, h.physical_device_id AS pd, ${scelto} AS scelto,
-            (SELECT 1 FROM network_devices nd WHERE nd.host_id = h.id LIMIT 1) AS ha_apparato
+            (SELECT 1 FROM network_devices nd WHERE ${sqlApparatoDellHost("nd", "h")} LIMIT 1) AS ha_apparato
        FROM hosts h
        JOIN networks n ON n.id = h.network_id
        JOIN physical_devices pd ON pd.id = h.physical_device_id

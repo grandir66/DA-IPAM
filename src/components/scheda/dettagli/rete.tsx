@@ -103,6 +103,7 @@ export function SullaMappa({ hostId, isAdmin }: { hostId: number; isAdmin: boole
 export function IpCollegati({ ctx }: { ctx: ContestoScheda }) {
   const { host, clusterMembers, unlinkingHostId, scollegaIp, apriCollegaIp, clusterPrincipaleHostId, clusterHaApparato, scegliPrincipale, isAdmin } = ctx;
   const [inCambio, setInCambio] = useState<number | null>(null);
+  const nApparati = clusterMembers.filter((m) => m.ha_apparato).length;
   async function scegli(id: number) {
     setInCambio(id);
     try { await scegliPrincipale(id); } finally { setInCambio(null); }
@@ -117,7 +118,10 @@ export function IpCollegati({ ctx }: { ctx: ContestoScheda }) {
             </div>
             {clusterHaApparato && (
               <p className="text-[13px] text-muted-foreground">
-                Il cluster ha un apparato gestito: il suo IP è il principale e non si cambia.
+                {nApparati > 1
+                  // Due apparati nello stesso cluster: Discovery non lo accorpa (cluster-discovery.ts), non c'è un principale.
+                  ? `Il cluster ha ${nApparati === 2 ? "due" : nApparati} apparati: il gruppo non si accorpa.`
+                  : "Il cluster ha un apparato gestito: il suo IP è il principale e non si cambia."}
               </p>
             )}
             <div className="border rounded-md divide-y">

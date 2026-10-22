@@ -21,6 +21,7 @@ import { senzaColonneVecchie } from "@/lib/devices/colonne-vecchie";
 import { avvisoPortaProtocollo } from "@/lib/devices/porta-protocollo";
 import { riassuntoMikrotik } from "@/lib/devices/scheda-mikrotik-rotta";
 import { contaVlanSwitch } from "@/lib/db-tenant";
+import { bloccoCambioHost } from "@/lib/devices/apparato-del-cluster";
 
 const NO_CACHE_HEADERS = { "Cache-Control": "no-store, no-cache, must-revalidate" };
 
@@ -171,7 +172,13 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
 
     const updates: Record<string, unknown> = {};
     if (body.name !== undefined) updates.name = body.name;
-    if (body.host !== undefined) updates.host = body.host;
+    if (body.host !== undefined) {
+      // Stesso blocco di «Rendi apparato» (revisione finale 22/10): spostare un apparato sull'IP di un altro apparato,
+      // o su un altro IP del suo device fisico, ne farebbe due. L'apparato stesso non conta.
+      const blocco = bloccoCambioHost(getDb(), existing, body.host);
+      if (blocco) return NextResponse.json(blocco, { status: 409 });
+      updates.host = body.host;
+    }
     if (body.device_type !== undefined) updates.device_type = body.device_type;
     if (body.vendor !== undefined) updates.vendor = body.vendor;
     if (body.vendor_subtype !== undefined) updates.vendor_subtype = body.vendor_subtype;

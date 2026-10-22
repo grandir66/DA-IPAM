@@ -151,7 +151,7 @@ export async function POST(request: Request) {
       // Anche un altro IP dello stesso device fisico (cluster) conta come già presente.
       const gia = apparatoGiaPresente(getDb(), host.ip);
       if (gia) {
-        skipped.push({ host: host.ip, reason: messaggioIpDiApparato(gia.nome) });
+        skipped.push({ host: host.ip, reason: messaggioIpDiApparato(gia.nome, gia.ip !== host.ip) });
         continue;
       }
 

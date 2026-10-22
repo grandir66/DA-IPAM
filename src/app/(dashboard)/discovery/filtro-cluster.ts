@@ -3,37 +3,51 @@
  * dalle chip e dai contatori. L'API marca ogni riga (`cluster`); qui il client decide solo cosa nascondere.
  * - riga secondaria di un cluster: nascosta, tranne col filtro «Rete» impostato sulla sua rete (nella vista per rete
  *   ogni IP resta nella sua subnet);
- * - la ricerca guarda anche gli IP secondari: se la principale corrisponde solo per uno di loro, la riga compare
- *   e dice quale;
+ * - ogni filtro (ricerca compresa, su IP, nome e MAC dei secondari) guarda anche i membri: se la principale
+ *   corrisponde solo grazie a uno di loro, la riga compare e dice quale;
  * - `cluster` assente/null (host solo o cluster ambiguo): invariato, tutte le righe restano.
  */
 import type { InfoClusterDiscovery } from "@/lib/devices/cluster-discovery";
 
-export type VistaRiga = { visibile: false } | { visibile: true; trovataComeSecondario: string | null };
+/** `corrispondeSecondario`: IP dei membri che hanno fatto corrispondere la riga al posto della principale. */
+export type VistaRiga = { visibile: false } | { visibile: true; corrispondeSecondario: string[] };
 
 export interface RigaCluster {
   id: number;
   network_id: number;
   cluster?: InfoClusterDiscovery | null;
-  /** Testo su cui la ricerca confronta la riga stessa (IP, MAC, nome, rete…). */
-  testoRiga: string;
 }
 
-export function vistaRiga(
-  h: RigaCluster,
-  filtro: { testo: string; reteId: string | null },
-  corrisponde: (testo: string) => boolean,
-): VistaRiga {
+/** Un filtro attivo (stato, classificazione, CVE, ricerca) valutato su un host qualsiasi, per id. */
+export type Criterio = (hostId: number) => boolean;
+
+/**
+ * Regola unica per tabella, CSV e contatori (revisione finale 22/10). Prima stato/classificazione/CVE si applicavano
+ * riga per riga PRIMA di nascondere i secondari: un problema solo su un IP secondario spariva dalla lista.
+ * - riga principale di un cluster: ogni criterio è soddisfatto se lo soddisfa la principale O uno dei membri
+ *   (anche membri diversi per criteri diversi); la riga dice quali membri hanno fatto corrispondere;
+ * - col filtro «Rete» ogni IP è una riga a sé nella sua rete e i criteri si valutano solo su di lui;
+ * - host solo o cluster ambiguo (`cluster` null): decide solo la riga.
+ */
+export function vistaRigaConCriteri(h: RigaCluster, reteId: string | null, criteri: readonly Criterio[]): VistaRiga {
   const c = h.cluster ?? null;
-  if (filtro.reteId && String(h.network_id) !== filtro.reteId) return { visibile: false };
-  if (c && !c.principale && !filtro.reteId) return { visibile: false };
-  if (!filtro.testo) return { visibile: true, trovataComeSecondario: null };
-  if (corrisponde(h.testoRiga)) return { visibile: true, trovataComeSecondario: null };
-  if (c?.principale) {
-    const trovato = c.altri.find((a) => corrisponde(a.ip));
-    if (trovato) return { visibile: true, trovataComeSecondario: trovato.ip };
+  if (reteId && String(h.network_id) !== reteId) return { visibile: false };
+  if (c && !c.principale && !reteId) return { visibile: false };
+  const membri = c?.principale && !reteId ? c.altri : [];
+  const usati: string[] = [];
+  for (const ok of criteri) {
+    if (ok(h.id)) continue;
+    const m = membri.find((a) => ok(a.host_id));
+    if (!m) return { visibile: false };
+    if (!usati.includes(m.ip)) usati.push(m.ip);
   }
-  return { visibile: false };
+  return { visibile: true, corrispondeSecondario: usati };
+}
+
+/** Colonna CSV «Altri IP»: gli IP accorpati nella riga principale, «ip · rete; ip · rete». Vuota altrove. */
+export function altriIpCsv(c: InfoClusterDiscovery | null | undefined): string {
+  if (!c?.principale) return "";
+  return c.altri.map((a) => `${a.ip} · ${a.network_name}`).join("; ");
 }
 
 export interface ContatoriDiscovery {

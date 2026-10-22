@@ -57,7 +57,7 @@ export function creaApparato(body: unknown): EsitoCreaApparato {
   const data = parsed.data;
   // Un IP già di un apparato (anche di un altro IP dello stesso device fisico) non diventa un secondo apparato.
   const gia = apparatoGiaPresente(getDb(), data.host);
-  if (gia) return { ok: false, status: 409, error: messaggioIpDiApparato(gia.nome), codice: "IP_DI_APPARATO", apparato: gia };
+  if (gia) return { ok: false, status: 409, error: messaggioIpDiApparato(gia.nome, gia.ip !== data.host), codice: "IP_DI_APPARATO", apparato: gia };
   // Senza classificazione vale il tipo dispositivo (è un valore ammesso anche
   // fra le classificazioni). Prima il ripiego era «hypervisor» per tutto ciò
   // che non era router o switch: un server diventava hypervisor, anche sull'host.

@@ -8,7 +8,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import type { InfoClusterDiscovery } from "@/lib/devices/cluster-discovery";
-import { contatoriDiscovery, vistaRiga } from "../filtro-cluster";
+import { altriIpCsv, contatoriDiscovery, vistaRigaConCriteri } from "../filtro-cluster";
 
 const altro = (host_id: number, ip: string, network_id: number) => ({ host_id, ip, network_id, network_name: `rete-${network_id}`, status: "online" });
 const principale: InfoClusterDiscovery = {
@@ -17,46 +17,6 @@ const principale: InfoClusterDiscovery = {
 };
 const secondario: InfoClusterDiscovery = { physical_device_id: 1, principale: false, principale_host_id: 10, altri: [] };
 
-const senzaFiltri = { testo: "", reteId: null };
-const contiene = (q: string) => (t: string) => t.toLowerCase().includes(q.toLowerCase());
-const riga = (id: number, network_id: number, cluster: InfoClusterDiscovery | null | undefined, testoRiga = `host-${id}`) => ({ id, network_id, cluster, testoRiga });
-
-describe("vistaRiga", () => {
-  it("host senza cluster: invariato, con e senza filtri", () => {
-    assert.deepEqual(vistaRiga(riga(1, 1, null), senzaFiltri, contiene("")), { visibile: true, trovataComeSecondario: null });
-    assert.deepEqual(vistaRiga(riga(1, 1, undefined), senzaFiltri, contiene("")), { visibile: true, trovataComeSecondario: null });
-    assert.equal(vistaRiga(riga(1, 1, null), { testo: "zzz", reteId: null }, contiene("zzz")).visibile, false);
-    assert.equal(vistaRiga(riga(1, 1, null), { testo: "", reteId: "2" }, contiene("")).visibile, false);
-  });
-  it("la riga principale resta, la secondaria è nascosta", () => {
-    assert.deepEqual(vistaRiga(riga(10, 1, principale), senzaFiltri, contiene("")), { visibile: true, trovataComeSecondario: null });
-    assert.deepEqual(vistaRiga(riga(11, 2, secondario), senzaFiltri, contiene("")), { visibile: false });
-  });
-  it("col filtro della sua rete la secondaria compare; col filtro di un'altra no", () => {
-    assert.equal(vistaRiga(riga(11, 2, secondario), { testo: "", reteId: "2" }, contiene("")).visibile, true);
-    assert.equal(vistaRiga(riga(11, 2, secondario), { testo: "", reteId: "1" }, contiene("")).visibile, false);
-  });
-  it("la principale non compare nel filtro di una rete che non è la sua", () => {
-    assert.equal(vistaRiga(riga(10, 1, principale), { testo: "", reteId: "2" }, contiene("")).visibile, false);
-  });
-  it("ricerca di un IP secondario: compare la principale con l'IP trovato", () => {
-    const q = "198.51.100.254";
-    const v = vistaRiga(riga(10, 1, principale, "192.0.2.1 core"), { testo: q, reteId: null }, contiene(q));
-    assert.deepEqual(v, { visibile: true, trovataComeSecondario: "198.51.100.254" });
-    assert.deepEqual(vistaRiga(riga(12, 3, secondario, "198.51.100.254"), { testo: q, reteId: null }, contiene(q)), { visibile: false });
-  });
-  it("se la principale corrisponde da sola, niente scritta", () => {
-    const v = vistaRiga(riga(10, 1, principale, "192.0.2.1 core"), { testo: "core", reteId: null }, contiene("core"));
-    assert.deepEqual(v, { visibile: true, trovataComeSecondario: null });
-  });
-  it("ricerca che non corrisponde a nessun IP: nascosta", () => {
-    assert.equal(vistaRiga(riga(10, 1, principale, "core"), { testo: "nulla", reteId: null }, contiene("nulla")).visibile, false);
-  });
-  it("cluster ambiguo (cluster null): tutte le righe restano", () => {
-    assert.equal(vistaRiga(riga(20, 1, null), senzaFiltri, contiene("")).visibile, true);
-    assert.equal(vistaRiga(riga(21, 2, null), senzaFiltri, contiene("")).visibile, true);
-  });
-});
 
 describe("contatoriDiscovery", () => {
   const host = [
@@ -80,5 +40,73 @@ describe("contatoriDiscovery", () => {
   });
   it("principale non mostrata: nessun accorpato", () => {
     assert.equal(contatoriDiscovery(host, [host[1]]).accorpati, 0);
+  });
+});
+
+/**
+ * Revisione finale (22/10): stato, classificazione e vulnerabilità si applicavano riga per riga PRIMA di nascondere i
+ * secondari, così un problema solo su un IP secondario spariva dalla lista. Regola: la riga del cluster corrisponde a
+ * un filtro se lo soddisfa la principale O uno qualsiasi dei membri, e dice quale membro.
+ */
+describe("vistaRigaConCriteri (filtri sugli attributi)", () => {
+  type H = { id: number; network_id: number; status: string; critiche: number; nome: string; mac: string; ip: string };
+  const host: Record<number, H> = {
+    10: { id: 10, network_id: 1, status: "offline", critiche: 0, nome: "core", mac: "aa:aa", ip: "192.0.2.1" },
+    11: { id: 11, network_id: 2, status: "online", critiche: 3, nome: "core-wan", mac: "bb:bb", ip: "192.0.2.254" },
+    12: { id: 12, network_id: 3, status: "offline", critiche: 0, nome: "mgmt-x", mac: "cc:cc", ip: "198.51.100.254" },
+  };
+  const critiche = (id: number) => host[id].critiche > 0;
+  const online = (id: number) => host[id].status === "online";
+  const testo = (q: string) => (id: number) => [host[id].ip, host[id].nome, host[id].mac].join(" ").includes(q);
+  const r10 = { id: 10, network_id: 1, cluster: principale };
+
+  it("CVE critiche solo sul secondario: la principale compare e dice quale IP", () => {
+    assert.deepEqual(vistaRigaConCriteri(r10, null, [critiche]), { visibile: true, corrispondeSecondario: ["192.0.2.254"] });
+  });
+  it("filtro online con principale offline e secondario online: compare col suggerimento", () => {
+    assert.deepEqual(vistaRigaConCriteri(r10, null, [online]), { visibile: true, corrispondeSecondario: ["192.0.2.254"] });
+  });
+  it("la principale soddisfa da sola: niente suggerimento", () => {
+    const offline = (id: number) => host[id].status === "offline";
+    assert.deepEqual(vistaRigaConCriteri(r10, null, [offline]), { visibile: true, corrispondeSecondario: [] });
+  });
+  it("nessun membro soddisfa: nascosta", () => {
+    assert.deepEqual(vistaRigaConCriteri(r10, null, [() => false]), { visibile: false });
+  });
+  it("il secondario resta nascosto senza filtro rete anche se corrisponde", () => {
+    assert.deepEqual(vistaRigaConCriteri({ id: 11, network_id: 2, cluster: secondario }, null, [critiche]), { visibile: false });
+  });
+  it("ricerca sul nome e sul MAC del secondario (non solo l'IP)", () => {
+    assert.deepEqual(vistaRigaConCriteri(r10, null, [testo("mgmt-x")]), { visibile: true, corrispondeSecondario: ["198.51.100.254"] });
+    assert.deepEqual(vistaRigaConCriteri(r10, null, [testo("cc:cc")]), { visibile: true, corrispondeSecondario: ["198.51.100.254"] });
+  });
+  it("ogni filtro può essere soddisfatto da un membro diverso: si dicono tutti, senza doppioni", () => {
+    const v = vistaRigaConCriteri(r10, null, [online, critiche, testo("mgmt-x")]);
+    assert.deepEqual(v, { visibile: true, corrispondeSecondario: ["192.0.2.254", "198.51.100.254"] });
+  });
+  it("host senza cluster o cluster ambiguo (null): invariato, decide solo la riga", () => {
+    assert.deepEqual(vistaRigaConCriteri({ id: 30, network_id: 1, cluster: null }, null, []), { visibile: true, corrispondeSecondario: [] });
+    assert.deepEqual(vistaRigaConCriteri({ id: 30, network_id: 1, cluster: undefined }, null, [() => false]), { visibile: false });
+    assert.deepEqual(vistaRigaConCriteri({ id: 30, network_id: 1, cluster: null }, "2", []), { visibile: false });
+  });
+  it("senza filtri: la principale resta, la secondaria è nascosta", () => {
+    assert.deepEqual(vistaRigaConCriteri(r10, null, []), { visibile: true, corrispondeSecondario: [] });
+    assert.deepEqual(vistaRigaConCriteri({ id: 11, network_id: 2, cluster: secondario }, null, []), { visibile: false });
+  });
+  it("col filtro rete ogni IP è una riga a sé: i membri non contano", () => {
+    assert.deepEqual(vistaRigaConCriteri({ id: 11, network_id: 2, cluster: secondario }, "1", []), { visibile: false });
+    assert.deepEqual(vistaRigaConCriteri(r10, "1", [critiche]), { visibile: false });
+    assert.deepEqual(vistaRigaConCriteri({ id: 11, network_id: 2, cluster: secondario }, "2", [critiche]), { visibile: true, corrispondeSecondario: [] });
+  });
+});
+
+describe("altriIpCsv", () => {
+  it("elenca ip · rete separati da punto e virgola", () => {
+    assert.equal(altriIpCsv(principale), "192.0.2.254 · rete-2; 198.51.100.254 · rete-3");
+  });
+  it("vuoto per il secondario, per l'host solo e per il cluster ambiguo", () => {
+    assert.equal(altriIpCsv(secondario), "");
+    assert.equal(altriIpCsv(null), "");
+    assert.equal(altriIpCsv(undefined), "");
   });
 });

@@ -133,6 +133,33 @@ describe("leggiClusterDiscovery", () => {
   });
 });
 
+describe("«è un apparato»: stessa nozione di apparatoGiaPresente (revisione finale 22/10)", () => {
+  it("apparato vecchio senza host_id (IP scritto sull'apparato): è il principale", () => {
+    withTenant(T, () => {
+      const pd = createPhysicalDevice({ identity_confidence: 1, identity_anchor: "c4" }).id;
+      const r = rete();
+      const a = host(`192.0.${seq}.1`, r, pd);
+      const b = host(`192.0.${seq}.200`, r, pd);
+      const nd = createNetworkDevice({ name: "RTR-VECCHIO", host: `192.0.${seq}.200`, device_type: "router", vendor: "mikrotik", protocol: "ssh", api_url: null, port: 22, enabled: 1, classification: "router", host_id: b } as never).id;
+      getDb().prepare("UPDATE network_devices SET host_id = NULL WHERE id = ?").run(nd);
+      assert.equal(leggiClusterDiscovery(getDb()).get(a)?.principale_host_id, b);
+    });
+  });
+  it("stesso IP in un'altra rete, apparato legato a quell'altra riga: qui non è un apparato", () => {
+    withTenant(T, () => {
+      const pd = createPhysicalDevice({ identity_confidence: 1, identity_anchor: "c5" }).id;
+      const r = rete();
+      const altra = rete();
+      const a = host(`192.0.${seq}.1`, r, pd);
+      const b = host("203.0.113.50", r, pd);
+      const fuori = host("203.0.113.50", altra, null);
+      createNetworkDevice({ name: "ALTRO", host: "203.0.113.50", device_type: "router", vendor: "mikrotik", protocol: "ssh", api_url: null, port: 22, enabled: 1, classification: "router", host_id: fuori } as never);
+      // Nessun apparato nel cluster: vale l'IP più basso (192.0.x.1), non 203.0.113.50.
+      assert.equal(leggiClusterDiscovery(getDb()).get(b)?.principale_host_id, a);
+    });
+  });
+});
+
 // ── Migrazione cluster_principale_v21 ──────────────────────────────────────
 
 const colonne = (db: Database.Database, t: string): string[] =>

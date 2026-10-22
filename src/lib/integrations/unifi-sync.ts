@@ -310,6 +310,9 @@ function writeDevice(
     }
     nd = updateNetworkDevice(match.device.id, patch);
   } else {
+    // TODO (revisione finale accorpamento, 22/10): manca il blocco di «Rendi apparato» (`apparatoGiaPresente`): un
+    // IP secondario di un apparato gestito diventerebbe un secondo apparato. La sincronizzazione è spenta; da
+    // aggiungere (con un avviso in `warnings`, senza nomi né IP nel log) prima di riaccenderla.
     const base = createNetworkDevice({
       name: m.name,
       host: m.host,

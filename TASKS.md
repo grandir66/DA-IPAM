@@ -419,3 +419,16 @@ Livello Base, sola lettura e sviluppo locale; accessi NAS confermati da Riccardo
   - **Non fatto**: VLAN MikroTik configurata+attiva distinte (decisione 4 del fine giro 4; il motore legge ancora solo la membership corrente).
   - **Da ricollaudare in locale**: Linux `da-ftp` (dischi, pacchetti, servizi, interfacce dopo la correzione del lotto), MikroTik `192.168.15.254` (velocità/duplex, PoE «non presente»), QNAP `.24` (modello e firmware via SNMP), Synology `.22` (nome host senza il messaggio, interfacce da SNMP senza errori `ip -j`), Proxmox da CLI (guest, storage, nodi; serve un utente che legga `/etc/pve`); poi premere «Aggiorna» su un Windows e su un Linux con interruttore acceso.
   - **Decisioni per Riccardo**: (1) Proxmox: si vuole la parità (IP VM, dati nodo, scrittura inventario) o il collector resta solo-lettura accanto alla scansione? (2) VLAN MikroTik configurata+attiva nel prossimo giro? (3) Servono gli OID QTS5 di QNAP: uno snmpwalk di `.24`.
+
+## 2026-10-22 — ricollaudi del giro 5 (sessione locale, codice `9ef16c64`)
+
+- [x] **Linux `da-ftp`**: lotto corretto, ora completo salvo LVM (permesso negato senza sudo, dichiarato): 3 dischi, 9 filesystem, 811 pacchetti, 64 servizi, 2 interfacce, Ubuntu 24.04.2.
+- [x] **MikroTik `DA-RT-CORE` 192.168.15.254**: velocità e duplex su 12 porte su 33 (le collegate); PoE `unsupported` con `POE_NOT_PRESENT`. VLAN configurate e attive distinte (Riccardo, 22/10: «configurate e attive», entrambe).
+- [x] **Synology `.22`**: nome host pulito («DA-FILES»).
+- [x] **QNAP `.24` (solo SNMP): errore nuovo** — `firmware = "15979.0 MB"` (è la memoria). Gli OID `…24681.1.2.1/.2/.3` presi dal profilo storico qui sono CPU %, memoria totale, memoria libera, non modello/firmware/seriale. Walk limitato del 22/10 (QGD-1602P, valori corti, seriale mascherato):
+  - modello: `1.3.6.1.4.1.24681.1.4.1.1.1.1.1.2.1.3.1` («QGD-1602P») e `1.3.6.1.4.1.55062.1.12.3.0`;
+  - seriale: `…24681.1.4.1.1.1.1.1.2.1.4.1`; nome: `….2.1.6.1`; temperatura: `….2.1.7.1`;
+  - ventole: tabella `1.3.6.1.4.1.55062.1.12.9.1` (indice `.1`, nome `.2`, giri `.3`);
+  - firmware: **non trovato via SNMP** su questo modello → resta `null`, mai un valore preso da un altro OID.
+- [ ] Giro 6: identità QNAP via SNMP dagli OID sopra (con prova che un valore «… MB» o «… %» non diventa mai firmware/modello); stessa verifica sul **profilo storico** `scanner/snmp-vendor-profiles.ts` (`id: "qnap"`), che usa gli stessi OID sbagliati e oggi, su `dev`, può scrivere la memoria come firmware: correzione da portare anche su `dev`.
+- [ ] Giro 6: Proxmox fino alla parità (dati hardware del nodo, IP delle VM dall'agent, VM nell'inventario come fa la scansione), poi decisione di Riccardo sull'aggancio.

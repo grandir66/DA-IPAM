@@ -122,7 +122,7 @@ export function ApparatiLibrenmsCard({ isAdmin }: { isAdmin: boolean }) {
                   <tr key={p} className="border-b">
                     <td className={td}>{ETICHETTA_PARTE[p]}</td>
                     <td className={td}><Pastiglia tono={s.tono} segno={s.segno}>{s.testo}</Pastiglia></td>
-                    <td className={`${td} text-right font-mono tabular-nums`}>{l.righe ?? "—"}</td>
+                    <td className={`${td} text-right font-mono tabular-nums`}>{l.righe === null ? "—" : l.righe.toLocaleString("it-IT")}</td>
                     <td className={`${td} whitespace-nowrap`}>{oraBreve(l.letto_il)}</td>
                     <td className={`${td} whitespace-nowrap`}>{oraBreve(l.tentato_il)}</td>
                   </tr>

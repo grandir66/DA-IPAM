@@ -41,8 +41,8 @@ mappa accesa sul cliente A); leggero per 3, 5, 6, 7, 8 (proposto il 22/10, da co
 | S4 | [~] codice e prove con API finta (22/10, cloud); manca la prova a vuoto con l'API vera | Scrittura e giro nel job `librenms_sync` | implementer | S2, S3 | prova a vuoto sulla copia dell'hub con l'API vera | numeri contro la tabella della spec §2 |
 | S5 | [~] rotte e prove (22/10, cloud); manca `verifica-permessi.sh` con l'app accesa | Rotte API (dati per oggetto, candidati, aggiunta) | implementer | S4 | rotte in `rotte.ts`, `verifica-permessi.sh` verde | prove rotte |
 | S6 | [~] tavola in `docs/proposte/2026-10-22-librenms-interfaccia.html`, attende l'ok | Tavola grafica, approvazione di Riccardo | orchestratore | S5 | Riccardo dice ok | — |
-| S7 | [ ] | Scheda: Sensori, Porte e Vicini con fonte, «Dati da:» | implementer | S6 | resa 1440/1920 vista | Playwright |
-| S8 | [ ] | Pagina del modulo: non interrogati, rifiutati, candidati | implementer | S6 | resa 1440/1920 vista | Playwright |
+| S7 | [x] (22/10, cloud giro 2; resa vista 1440 e 1920, interruttore spento = come prima) | Scheda: Sensori, Porte e Vicini con fonte, «Dati da:» | implementer | S6 | resa 1440/1920 vista | Playwright |
+| S8 | [x] (22/10, cloud giro 2; resa vista 1440 e 1920) | Pagina del modulo: non interrogati, rifiutati, candidati | implementer | S6 | resa 1440/1920 vista | Playwright |
 | S9 | [ ] | Vicini di LibreNMS nella mappa (zona rossa) | orchestratore | S4 | misura prima/dopo, spento = bit per bit | `scripts/misura-cavi.ts` |
 | S10 | [ ] | Accensione sull'hub, ADR, documenti | orchestratore | S1-S8 (S9 a parte) | numeri sull'hub come la prova a vuoto | `/api/hosts/...` + scheda resa |
 
@@ -352,6 +352,18 @@ collegamenti nuovi e di quelli cambiati portato a Riccardo; accensione sull'hub 
   6. Niente `npm run version:release` sul ramo: il rilascio si fa all'unione in `dev`.
   7. La card «Letture in più» mostra l'interruttore `librenms` ma non i suoi esiti (sono per parte, non per
      apparato): l'esito per parte va nella pagina del modulo (L5, task 8).
+
+- **22/10, giro cloud 2 (S7-S8), scostamenti dal piano:**
+  1. La rotta dei dati dell'oggetto porta anche `acceso` (interruttore `librenms`): spento, la scheda ignora i dati e resta
+     com'era (tab Sensori assente, nessuna colonna Fonte/Alias, «Dati da:» di prima).
+  2. `lettureLibrenms()` porta ora anche `righe`; la rotta dei candidati porta `interruttore` (acceso, da, il).
+  3. Stato dei sensori: la lettura non salva i limiti di avviso di LibreNMS (`sensor_limit_warn`), quindi vale sempre il
+     10% (sull'ampiezza fra i due limiti se ci sono entrambi, sul limite se ce n'è uno). Se Riccardo vuole i limiti di
+     avviso serve una colonna nuova in `librenms_sensore` (migrazione).
+  4. Sensori «stato» (classe `state`): LibreNMS dà un numero senza testo; si mostra il numero, stato «senza limiti». Le
+     ottiche sono righe per sensore (ricezione e trasmissione non sono unite sulla stessa riga della porta).
+  5. Bug trovato dalla resa: `?tab=sensori` non apriva la tab (mancava in `tabDaQuery`); corretto con prova.
+  6. «Aggiungi a LibreNMS» (L4) resta il pulsante di prima nella tab Gestione; non è stato duplicato nella riga «Dati da:».
 
 ## Consuntivo
 ### Fatto

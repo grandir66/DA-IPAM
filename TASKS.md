@@ -21,8 +21,9 @@ Spec [`docs/superpowers/specs/2026-10-22-librenms-fonte-dati-design.md`](docs/su
 - [x] T5 rotte API — `GET /api/hosts/[id]/librenms/dati`, `GET`/`POST /api/integrations/librenms/candidati`; guardie predefinite, `rotte-censite` verde
 - [ ] T5 `bash scripts/verifica-permessi.sh` con l'app accesa (locale)
 - [x] T6 tavola grafica approvata (22/10: L1 limiti di avviso di LibreNMS o 10%, L2 Alias solo se presente, L3 due righe, L5 nella pagina del modulo) — era: tavola grafica approvata — `docs/proposte/2026-10-22-librenms-interfaccia.html` (L1-L5 e 4 domande in fondo), in attesa di Riccardo
-- [ ] T7 scheda: Sensori, Porte e Vicini con fonte
-- [ ] T8 pagina del modulo: non interrogati, rifiutati, candidati — nota: la card «Letture in più» mostra «Nessuna lettura ancora» per LibreNMS (gli esiti sono per parte, non per apparato): l'esito per parte va in L5
+- [x] T7 scheda: Sensori, Porte e Vicini con fonte (cloud 22/10 giro 2; resa vista a 1440 e 1920 con dati finti)
+- [ ] T7 resta: provare la scheda con dati veri dopo l'accensione sull'hub (T10); limiti di avviso di LibreNMS non letti (solo il 10%)
+- [x] T8 pagina del modulo (cloud 22/10 giro 2; resa vista a 1440 e 1920): non interrogati, rifiutati, candidati — nota: la card «Letture in più» mostra «Nessuna lettura ancora» per LibreNMS (gli esiti sono per parte, non per apparato): l'esito per parte va in L5
 - [ ] T9 vicini nella mappa (zona rossa, misura prima/dopo)
 - [ ] T10 accensione sull'hub, ADR, documenti
 

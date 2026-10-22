@@ -304,3 +304,28 @@ test("elenco dei job: riassunto, nome, frequenza e prossima solo sulle righe app
   assert.equal(out[1].prossima, "2026-10-22T10:00:00.000Z");
   assert.deepEqual(out[1].riassunto, { letti: 1, totale: 2, esclusi: 1, giro_il: "2026-10-22 08:00:00" });
 }));
+
+test("nome: tagliato, vuoto → «Apparati scelti» in creazione e in modifica, oltre 80 → errore che nomina «nome»", () => withTenant(T, () => {
+  const id = creaJob({ nome: "  Switch del CED  " });
+  assert.equal((rispostaLeggiJob(String(id)).body as { nome: string }).nome, "Switch del CED");
+  const vuoto = creaJob({ nome: "   " });
+  assert.equal((rispostaLeggiJob(String(vuoto)).body as { nome: string }).nome, "Apparati scelti");
+  assert.equal(rispostaModifica(String(id), { nome: "   " }).status, 200);
+  assert.equal((rispostaLeggiJob(String(id)).body as { nome: string }).nome, "Apparati scelti");
+  assert.equal(rispostaModifica(String(id), { nome: "  Nuovo " }).status, 200);
+  assert.equal((rispostaLeggiJob(String(id)).body as { nome: string }).nome, "Nuovo");
+  for (const r of [rispostaCrea(corpoCrea([F.hostSw], { nome: "x".repeat(81) })), rispostaModifica(String(id), { nome: "x".repeat(81) })]) {
+    assert.equal(r.status, 400);
+    const msg = (r.body as { error: string }).error;
+    assert.ok(msg.includes("nome") && !msg.includes("config"), msg);
+  }
+}));
+
+test("testata J4: last_run illeggibile → ultima null, la risposta non lancia", () => withTenant(T, () => {
+  const id = creaJob({ nome: "Data guasta" });
+  getTenantDb(T).prepare("UPDATE scheduled_jobs SET last_run = 'non-una-data' WHERE id = ?").run(id);
+  const r = rispostaScansioneApparato(String(F.sw), new Date("2026-10-22T08:30:00Z"));
+  assert.equal(r.status, 200);
+  const mio = (r.body as { jobs: Array<Record<string, unknown>> }).jobs.find((j) => j.id === id)!;
+  assert.equal(mio.ultima, null);
+}));

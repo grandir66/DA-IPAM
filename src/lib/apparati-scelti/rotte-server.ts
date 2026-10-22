@@ -87,8 +87,12 @@ const Cosa = z.object({ info: z.boolean(), porte_mac: z.boolean(), vlan: z.boole
 
 const AnteprimaBody = z.object({ host_ids: HostIds });
 
+/** Il nome del job: tagliato, al più 80; vuoto vale il nome predefinito (l'errore dice «nome», non «config.nome»). */
+const NOME_PREDEFINITO = "Apparati scelti";
+const NomeBody = z.string().trim().max(80);
+
 const CreaBody = z.object({
-  nome: z.string().optional(),
+  nome: NomeBody.optional(),
   host_ids: HostIds,
   frequenza: FrequenzaBody,
   cosa: Cosa,
@@ -96,7 +100,7 @@ const CreaBody = z.object({
 
 const ModificaBody = z
   .object({
-    nome: z.string().optional(),
+    nome: NomeBody.optional(),
     device_ids: z.array(z.number().int().positive()).optional(),
     frequenza: FrequenzaBody.optional(),
     cosa: Cosa.optional(),
@@ -209,7 +213,7 @@ export function rispostaCrea(body: unknown): RispostaRotta {
   if (!p.success) return errore400(p.error.issues);
   const { righe, deviceIds } = valutaHost(p.data.host_ids);
   if (deviceIds.length === 0) return errore(400, NESSUN_INCLUSO);
-  const nome = p.data.nome?.trim() ? p.data.nome : "Apparati scelti";
+  const nome = p.data.nome || NOME_PREDEFINITO;
   const job = JobApparatiScelti.safeParse({
     interval_minutes: intervalloDaFrequenza(p.data.frequenza),
     config: configDa(nome, deviceIds, p.data.cosa, p.data.frequenza),
@@ -282,7 +286,7 @@ export function rispostaModifica(raw: string, body: unknown): RispostaRotta {
   if (!f) return errore(400, "Scegli la frequenza: ogni ora, ogni 4 ore o ogni giorno a un'ora scelta");
   const nuovo = JobApparatiScelti.safeParse({
     interval_minutes: intervalloDaFrequenza(f),
-    config: configDa(p.data.nome ?? cfg.nome, deviceIds, p.data.cosa ?? cfg.cosa, f),
+    config: configDa(p.data.nome === undefined ? cfg.nome : p.data.nome || NOME_PREDEFINITO, deviceIds, p.data.cosa ?? cfg.cosa, f),
   });
   if (!nuovo.success) return errore400(nuovo.error.issues);
   if (!aggiornaJobApparatiScelti(j.job.id, nuovo.data.interval_minutes, nuovo.data.config)) return errore(404, NON_TROVATO);
@@ -301,6 +305,13 @@ function etichettaJob(intervalMinutes: number, cfg: ConfigApparatiScelti | null)
   return { f, testo: f ? etichettaFrequenza(f) : `ogni ${intervalMinutes} minuti` };
 }
 
+/** `last_run` come ISO; una data illeggibile vale «mai» (toISOString su una data invalida lancerebbe). */
+function ultimaIso(lastRun: string | null): string | null {
+  if (!lastRun) return null;
+  const d = parseDbDate(lastRun);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
 /**
  * GET /api/devices/[id]/scansione-automatica (testata J4, chiunque abbia la sessione): i job che contengono
  * l'apparato. Solo id, nome del job, frequenza, ore ed esito di QUESTO apparato: niente IP né nomi d'altri apparati.
@@ -317,7 +328,7 @@ export function rispostaScansioneApparato(raw: string, adesso: Date = new Date()
       nome: j.nome,
       frequenza: testo,
       attivo: j.enabled,
-      ultima: j.last_run ? parseDbDate(j.last_run).toISOString() : null,
+      ultima: ultimaIso(j.last_run),
       prossima: j.enabled && f ? prossimaEsecuzione(f, adesso).toISOString() : null,
       esito: esiti.get(j.id) ?? null,
     };

@@ -429,7 +429,7 @@ comando sconosciuto = `unsupported`, permessi = `error`. Famiglia `router`: rice
 point radio non collaudati. Differenza nota col collector del giro 3: le VLAN usano la membership corrente
 (`current-*`); quella configurata resta nelle tabelle d'inventario.
 
-## Collector windows (non collaudato)
+## Collector windows (collaudato il 22/10)
 
 Windows e Windows Server via **WinRM** con i soli script a id fisso del descrittore (`script_winrm` =
 `SCRIPT_WINDOWS` in `windows-script.ts`): `identita`, `rete`, `dischi`, `software`, `servizi`, `ruoli`,
@@ -445,11 +445,12 @@ Windows e Windows Server via **WinRM** con i soli script a id fisso del descritt
 - Hyper-V da `root/virtualization/v2` (`Msvm_ComputerSystem`, `Caption='Virtual Machine'`): nuova sezione opzionale
   **`guests`** con il GUID della VM come id (mai il nome), stato da `EnabledState`.
 - Le sezioni da switch sono `unsupported`; NTP e CPU non letti (avvisi).
-- **Non collaudato** (donatori DADude3 `hyperv.py:58,94,112`, `windows_server.py:372,453`; nessun server vero letto) e
-  non nel riconoscimento del prodotto. Da verificare al collaudo: gli script su PowerShell 5.1 di un Server 2016/2019,
-  i tempi (ogni script è un giro di `pywinrm`), la forma vera degli array.
+- **Collaudato** il 22/10 su Windows Server 2022 Standard (build 20348), WinRM 5985, in 15 s: 42 programmi, 239 servizi,
+  1 disco, antivirus, 3 profili firewall, memoria, 2 IPv4, 1 scheda. Non letti (dichiarati): CPU, NTP, ARP, duplex. Il
+  server non ha il ruolo Hyper-V: la sezione `guests` da collaudare su un host che lo ha. Agganciato al pulsante
+  (vendor `windows`). Donatori: DADude3 `hyperv.py:58,94,112`, `windows_server.py:372,453`.
 
-## Collector linux (non collaudato)
+## Collector linux (collaudato il 22/10, lotto da ricollaudare)
 
 Server Linux via **SSH exec** con un utente **senza `sudo`**, un login, allowlist `LINUX_COMMANDS`.
 
@@ -462,8 +463,12 @@ Server Linux via **SSH exec** con un utente **senza `sudo`**, un login, allowlis
 - **software** da `dpkg-query` o `rpm` (formato `nome<TAB>versione` scelto da noi), **services** da `systemctl show`
   per chiave (`Id`, `Description`, `ActiveState`, `UnitFileState`), non dalle colonne di `list-units`.
 - Un comando assente su quella distribuzione (exit 127) è `unsupported`, mai una lista vuota `ok`.
-- **Non collaudato** (repertorio da DADude3 `linux.py:432,794`) e non nel riconoscimento del prodotto. Da verificare al
-  collaudo: `systemctl show '*.service'` sulle versioni di systemd in uso, LVM senza root, `df -T` con BusyBox.
+- **Collaudato** il 22/10 su Ubuntu 24.04.2 (VM QEMU): identità, sistema e memoria letti; poi il lotto si fermava per un
+  comando fallito (`SSH_BATCH_ABORTED`). Corretto: un comando che esce con stato ≠ 0, non esiste, non ha il permesso o
+  riempie il limite di byte ha la sua lettura e il lotto continua; si ferma solo per canale caduto, connessione
+  fallita, tempo totale finito o due comandi scaduti di fila (`leggiLotto` in `transports.ts`, vale per tutti i
+  collector del motore d'inventario). Da ricollaudare su `da-ftp`: dischi, pacchetti, servizi, interfacce. Agganciato
+  al pulsante (vendor `linux`, tranne i nodi Proxmox). Repertorio da DADude3 `linux.py:432,794`.
 
 ## Collector synology-dsm (collaudato in locale; aggiunte non ancora provate)
 
@@ -484,9 +489,36 @@ seriale da `/proc/sys/kernel/syno_*` dove l'SNMP non li dà.
 | `netapp-ontap` | storage | no | collaudato | sì (dal sysDescr) |
 | `qnap-nas`, `synology-dsm` | nas | no | collaudato (base); firmware QNAP, condivisioni, pacchetti da provare | sì |
 | `ubiquiti-device` | ap | no | collaudato solo via SNMP (SSH rifiutata) | sì (access point e switch gestiti) |
-| `proxmox-ve` | hypervisor | no | collaudato | sì, solo con credenziali `ssh` dell'archivio (`local_ssh` è per la CLI) |
+| `proxmox-ve` | hypervisor | no | collaudato (nodi e risorse); VM, container, storage, nodi da provare | **no**: finché non ha la parità con la scansione Proxmox (tabella sotto) |
 | `unifi-controller` | controller | no | collaudato (due console) | **no**: si legge dalla CLI, nessuna regola chiara per il pulsante di un apparato |
-| `windows`, `linux` | server | no | non collaudato | no |
+| `windows`, `linux` | server | no | collaudato (Windows Server 2022; Ubuntu 24.04, lotto da ricollaudare) | sì |
+
+### Proxmox: scansione di oggi e collector, campo per campo
+
+La scansione Proxmox (`proxmox/run-proxmox-device-scan.ts`: API :8006 + SSH + schede vive) resta l'unica che il pulsante
+usa per Proxmox. Il collector `proxmox-ve` legge via SSH `pvesh` e i file di `/etc/pve`; la tabella dice cosa manca
+prima di poterlo agganciare.
+
+| Dato | Scansione di oggi | Collector `proxmox-ve` |
+|---|---|---|
+| Nodo: nome, stato, uptime, memoria | sì | sì (`cluster_nodes`) |
+| Nodo: modello CPU, MHz, socket, core, versione kernel, disco root | sì | **no** |
+| Nodo: seriale, produttore, modello hardware, abbonamento | sì (API) | **no** |
+| Versione Proxmox | sì | sì (`pveversion`, in identità) |
+| Schede di rete del nodo e schede vive | sì (config + `ip` vive) | sì (`ip -d -j`, interfacce virtuali conservate) |
+| VM e CT: nome, id, nodo, stato | sì | sì (`guests`) |
+| VM e CT: CPU, memoria, disco massimo | sì | sì |
+| VM: dischi (id, storage, dimensione) | sì | sì (da `qemu-server/*.conf`) |
+| CT: dischi | no (elenco vuoto) | sì (`rootfs`, `mp`) |
+| VM e CT: reti (modello, MAC, bridge, VLAN) | sì | sì (CT: anche `ip=`) |
+| VM: BIOS, machine, agent | sì | sì |
+| VM: indirizzi IP dall'agent QEMU | sì | **no** (serve un percorso per VM, fuori dall'allowlist) |
+| Storage: nome, tipo, stato, capacità, contenuto | sì | sì (`storage_pools`, uno per nodo) |
+| Inventario dell'apparato e sincronizzazione (VM come host, mappa topologia) | sì (`syncInventoryFromDevice`) | **no**: il collector non scrive VM nell'inventario |
+| Credenziale | utente `…@pam` con password per l'API, SSH password o chiave | solo SSH (password o chiave); `/etc/pve` richiede root o un utente che lo legga |
+
+Parità non raggiunta: mancano i dati hardware del nodo, gli IP delle VM e soprattutto la scrittura dell'inventario. Per
+questo l'aggancio al pulsante torna solo con una decisione di Riccardo.
 
 Le porte «da switch» (`switch_ports`, fatti di porta) si proiettano solo per le famiglie `switch` e `router`
 (`FAMIGLIE_CON_PORTE` nel catalogo). Il motore d'inventario si dichiara nel descrittore con `motore: "inventario"`:

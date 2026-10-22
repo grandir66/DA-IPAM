@@ -26,3 +26,5 @@ export const securitySchema = z.object({
 });
 /** Cartelle condivise di un NAS o di un server (SMB, NFS...). `path` è il percorso sul sistema, non un URL. */
 export const sharesSchema = z.array(z.object({ name: z.string(), path: s, protocols: z.array(z.enum(["smb", "nfs", "afp", "ftp", "other"])), comment: s, public: b }));
+/** Macchine virtuali viste da un host (Hyper-V): l'id è quello del prodotto (GUID della VM), mai il nome. */
+export const guestsSchema = z.array(z.object({ id: z.string(), name: s, power_state: z.enum(["running", "off", "paused", "saved", "other"]).nullable(), platform: s }));

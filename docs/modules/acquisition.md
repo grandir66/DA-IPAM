@@ -433,6 +433,26 @@ scheda MikroTik dell'app), allowlist `MIKROTIK_ROUTEROS_COMMANDS`: solo `print` 
   percorso storico. Da verificare al collaudo: monitor ethernet e PoE su un modello con PoE, `bridge host` con molte
   voci, tempi su un CCR con molte interfacce.
 
+## Collector windows (non collaudato)
+
+Windows e Windows Server via **WinRM** con i soli script a id fisso del descrittore (`script_winrm` =
+`SCRIPT_WINDOWS` in `windows-script.ts`): `identita`, `rete`, `dischi`, `software`, `servizi`, `ruoli`,
+`sicurezza`, `hyperv`. Uno alla volta, un tentativo; dopo un errore di rete o d'autenticazione gli altri non partono.
+
+- Ogni script risponde con una busta JSON su una riga (`{"ok":true,"data":…}` o `{"ok":false,"code":…}`): un cmdlet
+  assente (Hyper-V su un client, `Get-WindowsFeature` fuori da Server) è `unsupported`, mai una lista vuota `ok`.
+  I parser accettano le tre forme degli array di PowerShell 5.1 (array, oggetto solo, `{ value, Count }`).
+- **Software dal registro** (Uninstall a 64 e 32 bit), **mai `Win32_Product`**; i ruoli installati entrano nella
+  stessa lista con fonte `windows-feature`.
+- Defender (`Get-MpComputerStatus`) e profili firewall (`Get-NetFirewallProfile`) per nome, **senza riassunti**:
+  `signatures_up_to_date` resta `null` (l'età delle firme non diventa un giudizio).
+- Hyper-V da `root/virtualization/v2` (`Msvm_ComputerSystem`, `Caption='Virtual Machine'`): nuova sezione opzionale
+  **`guests`** con il GUID della VM come id (mai il nome), stato da `EnabledState`.
+- Le sezioni da switch sono `unsupported`; NTP e CPU non letti (avvisi).
+- **Non collaudato** (donatori DADude3 `hyperv.py:58,94,112`, `windows_server.py:372,453`; nessun server vero letto) e
+  non nel riconoscimento del prodotto. Da verificare al collaudo: gli script su PowerShell 5.1 di un Server 2016/2019,
+  i tempi (ogni script è un giro di `pywinrm`), la forma vera degli array.
+
 ## Aggiungere una famiglia
 
 Una famiglia è un collector con lo stesso contratto JSON 1.0. Il catalogo è l'**unico elenco**: l'enum

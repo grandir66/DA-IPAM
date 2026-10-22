@@ -5,6 +5,7 @@
  * Una famiglia nuova si aggiunge qui, in `index.ts` (la funzione `collect`) e in `__tests__/contratto-fixture.ts`
  * (la fixture): la prova di contratto fallisce se manca uno dei tre. Guida: docs/modules/acquisition.md.
  */
+import { SCRIPT_WINDOWS } from "./windows-script";
 import { QSS_COMMANDS, PROCURVE_COMMANDS, COMWARE_COMMANDS, QNAP_NAS_COMMANDS, MIKROTIK_ROUTEROS_COMMANDS } from "./comandi";
 
 export type ProtocolloCollector = "snmp" | "ssh" | "api" | "winrm";
@@ -79,6 +80,13 @@ export const CATALOGO = [
         id: "mikrotik-routeros", versione: "0.1.0", famiglia: "router", prodotti: ["MikroTik RouterOS 7 (router e switch CRS)"],
         credenziali: { ammesse: ["ssh"], una_di: ["ssh"] },
         sezioni: ["identity", "interfaces", "vlans", "forwarding", "neighbors", "spanning_tree", "aggregation", "poe", "network", "resources"], comandi: MIKROTIK_ROUTEROS_COMMANDS, ssh_modo: "exec",
+        collaudo: "non_collaudato", collaudati: [],
+    },
+    {
+        // Non collaudato: script PowerShell fissi (allowlist WinRM), busta JSON dalla forma documentata dei cmdlet.
+        id: "windows", versione: "0.1.0", famiglia: "server", prodotti: ["Microsoft Windows e Windows Server (WinRM), anche Hyper-V"],
+        credenziali: { ammesse: ["winrm"], una_di: ["winrm"] },
+        sezioni: ["identity", "system", "interfaces", "network", "resources", "host_storage", "software", "services", "security", "guests"], comandi: null, script_winrm: SCRIPT_WINDOWS,
         collaudo: "non_collaudato", collaudati: [],
     },
 ] as const satisfies readonly DescrittoreCollector[];

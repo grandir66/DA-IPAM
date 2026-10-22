@@ -8,7 +8,7 @@ import { acquisitionInputSchema, snapshotSchema } from "../schema";
 test("un elenco solo: input, snapshot e registry derivano dal catalogo", () => {
     assert.deepEqual([...COLLECTOR_IDS].sort(), Object.keys(COLLECTORS).sort());
     for (const d of CATALOGO) {
-        const cred = d.credenziali.una_di[0] === "api" ? { api: { username: "u", password: "p" } } : { ssh: { username: "u", password: "p" } };
+        const cred = { [d.credenziali.una_di[0]]: d.credenziali.una_di[0] === "snmp" ? { community: "c" } : { username: "u", password: "p" } };
         assert.equal(acquisitionInputSchema.safeParse({ collector: d.id, host: "192.0.2.1", ...cred }).success, true, d.id);
     }
     assert.equal(acquisitionInputSchema.safeParse({ collector: "sconosciuto", host: "192.0.2.1", ssh: { username: "u", password: "p" } }).success, false);

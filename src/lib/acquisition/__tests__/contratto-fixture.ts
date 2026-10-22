@@ -141,6 +141,33 @@ const mikrotikUscite: Record<string, string> = {
 const mikrotikReq: AcquisitionRequest = { collector: "mikrotik-routeros", host: "192.0.2.2", ssh: { username: "lab", password: SEGRETO } };
 export const MIKROTIK_USCITE = mikrotikUscite;
 
+// Windows via WinRM: la busta JSON degli script (windows-script.ts) con dati inventati.
+const winBusta = (data: unknown) => JSON.stringify({ ok: true, data });
+const windowsUscite: Record<string, string> = {
+    identita: winBusta({ manufacturer: "Lab", model: "LabServer 1", hostname: `srv-${SEGRETO}`, domain: "lab.example", part_of_domain: true, serial: "LABW0001", bios: "LAB 1.0", os_caption: "Microsoft Windows Server 2022 Standard", os_version: "10.0.20348", os_build: "20348", architecture: "64 bit", boot_time: "2026-10-01T06:00:00.0000000Z", timezone: "W. Europe Standard Time", memory_total_bytes: "34359738368", memory_free_bytes: "17179869184" }),
+    rete: winBusta({ adapters: [{ name: "Ethernet0", if_index: 4, description: "Lab NIC", mac: "02-00-00-00-50-01", status: "Up", speed_bps: "10000000000", mtu: 1500, virtual: false }], addresses: [{ address: "192.0.2.60", prefix_length: 24, if_index: 4 }] }),
+    dischi: winBusta({ disks: [{ name: "\\\\.\\PHYSICALDRIVE0", model: "LAB DISK", serial: "LABD1", size_bytes: "1000204886016", interface: "SCSI", media: "Fixed hard disk media" }], volumes: { value: [{ device: "C:", file_system: "NTFS", size_bytes: "500000000000", free_bytes: "200000000000" }], Count: 1 } }),
+    software: winBusta([{ name: "Lab Agent", version: "1.2.3", publisher: "Lab", install_date: "20260101" }]),
+    servizi: winBusta([{ name: "W32Time", display_name: "Ora di Windows", state: "Running", start_mode: "Auto", account: "NT AUTHORITY\\LocalService" }]),
+    ruoli: winBusta([{ name: "Hyper-V", display_name: "Hyper-V", type: "Role" }]),
+    sicurezza: winBusta({ defender: { enabled: true, real_time: true, signature_age_days: 0 }, firewall: [{ name: "Domain", enabled: "True", inbound: "Block", outbound: "Allow" }] }),
+    hyperv: winBusta([{ id: "0E3B3A3C-1111-2222-3333-444455556666", name: "vm-lab", enabled_state: 2 }]),
+};
+const windowsReq: AcquisitionRequest = { collector: "windows", host: "192.0.2.60", winrm: { username: "lab", password: SEGRETO } };
+export const WINDOWS_USCITE = windowsUscite;
+function perWinrm(richiesta: AcquisitionRequest, uscita: (id: string) => string): FixtureCollector {
+    const esegui = async (risposta: (id: string) => string, guasto = false): Promise<Esito> => {
+        let chiamate = 0;
+        const t: AcquisitionTransports = {
+            get: async () => { throw Error(SEGRETO); }, walk: async () => { throw Error(SEGRETO); }, shell: async () => { throw Error(SEGRETO); },
+            winrm: async ids => { chiamate++; if (guasto) throw Error(SEGRETO); return Object.fromEntries(ids.map(id => [id, ok(risposta(id))])); },
+        };
+        const snapshot = await collectDevice(richiesta, t);
+        return { snapshot, chiamateShell: chiamate };
+    };
+    return { richiesta, normale: () => esegui(uscita), formatoIgnoto: () => esegui(id => (id === "identita" ? uscita(id) : GARBAGE(id))), trasportoGuasto: () => esegui(uscita, true) };
+}
+
 export const FIXTURE: Record<CollectorId, FixtureCollector> = {
     "qnap-switch": conGarbage(perShell(qnapReq, consola({ identita: { "show system-information": qnapIdent } }, qnapNormale)), { "show system-information": qnapIdent }, undefined),
     "hp-procurve": conGarbage(perShell(procurveReq, consola({ identita: procurveIdent, snmp: procurveSnmp }, procurveNormale)), procurveIdent, procurveSnmp),
@@ -152,6 +179,7 @@ export const FIXTURE: Record<CollectorId, FixtureCollector> = {
     },
     "qnap-nas": perExec(qnapNasReq, c => qnapNasUscite[c] ?? "", ["getsysinfo model", "getsysinfo firmver", "cat /etc/version", "cat /etc/default_config/WEBAPP.build"]),
     "mikrotik-routeros": perExec(mikrotikReq, c => mikrotikUscite[c] ?? "", ["/system resource print", "/system routerboard print"]),
+    "windows": perWinrm(windowsReq, id => windowsUscite[id] ?? ""),
     "netapp-ontap": {
         richiesta: ontapReq,
         normale: async () => ({ snapshot: await collectNetappOntap(ontapReq, async () => ontapRaw()), chiamateShell: 0 }),

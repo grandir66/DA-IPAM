@@ -66,9 +66,9 @@ for (const id of ids) {
     }
 
     if (!usaSsh(id)) {
-        test(`${id}: credenziali di un altro tipo (ssh/snmp al posto dell'API) respinte dallo schema`, () => {
-            const { api: _api, ...resto } = FIXTURE[id].richiesta as Record<string, unknown>;
-            void _api;
+        test(`${id}: credenziali di un altro tipo (ssh al posto della sua) respinte dallo schema`, () => {
+            // Senza le credenziali che il collector ammette (api, winrm...) la richiesta non passa, e nemmeno con SSH al loro posto.
+            const resto = Object.fromEntries(Object.entries(FIXTURE[id].richiesta as Record<string, unknown>).filter(([k]) => !(d.credenziali.ammesse as readonly string[]).includes(k)));
             assert.equal(acquisitionInputSchema.safeParse({ ...resto, ssh: { username: "u", password: "p" } }).success, false);
             assert.equal(acquisitionInputSchema.safeParse(resto).success, false);
         });

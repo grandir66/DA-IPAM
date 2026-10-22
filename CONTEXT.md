@@ -64,6 +64,14 @@ Leggilo per primo, poi [CLAUDE.md](CLAUDE.md) (stack e schema; su «multi-tenant
 - **Aggiornamento che non retrocede** (22/10, v0.9.874): `scripts/lib/guardia-versione.sh` prima del checkout di
   `auto-update.sh`; esito `retrocessione_rifiutata`. Il ramo `DA_INVENT_BRANCH` lo scrive l'installatore di
   Deploy-Appliance dal ramo dei sorgenti posati (e9a1fda).
+- **LibreNMS dell'hub in HTTPS** (22/10 sera, chiesto da Riccardo): contenitore `da-librenms-tls` (nginx in rete host,
+  `/opt/da-librenms-tls/nginx.conf`, stesso blocco :7443 delle appliance) sulla **7443** col certificato di DA-IPAM
+  (`data/certs`, `*.domarc.it` fino al 19/02/2027: **rinnovato il certificato, `docker restart da-librenms-tls`**), verso
+  `127.0.0.1:8090`. In LibreNMS `/data/.env` ha `APP_TRUSTED_PROXIES=127.0.0.1,172.18.0.1` (gateway di `da-librenms-net`;
+  copia `/data/.env.bak-20261022-151055`): senza, i link uscivano in `http`. `integration_librenms_ui_url` e le voci 1 e 4
+  del vault = `https://da-ipam.domarc.it:7443` (valori di prima in `/opt/da-librenms-tls/prima-*.txt`); l'URL API resta
+  `http://192.168.4.8:8090`. **Trappola**: un link `http://` da una pagina `https` il browser lo porta in `https` sulla
+  stessa porta («pagina inaccessibile» sulla 8090).
 - **DB dell'hub**: `systemctl stop` lascia `failed` (normale); niente `.recover` sul sqlite3 di Ubuntu; snapshot `pre-dalink-20261019` (VM 533) e `data/tenants/.db` di 0 byte: via solo con l'ok.
 - **da-invent scarica male** (21/10): se `update.sh`/`npm ci` si piantano sull'hub, può essere la rete.
 

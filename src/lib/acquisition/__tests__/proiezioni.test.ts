@@ -7,7 +7,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { snapshotSchema, type AcquisitionSnapshot, type DeviceInterface } from "../schema";
-import { proiettaFatti, proiettaIdentita, proiettaPorte, proiettaVicini, proietta, type PortaAttuale } from "../proiezioni";
+import { campiDelCollectorPerPorta, proiettaFatti, proiettaIdentita, proiettaPorte, proiettaVicini, proietta, type PortaAttuale } from "../proiezioni";
+import { ricevePorteDaSwitch } from "../catalogo";
 
 const AT = "2026-10-22T08:00:00.000Z";
 type Stato = "ok" | "partial" | "unsupported" | "error" | "skipped";
@@ -150,5 +151,36 @@ describe("vicini e fatti", () => {
   it("sezioni non usate si dicono", () => {
     const p = proietta(snap({ neighbors: sez([], "unsupported"), poe: sez([], "skipped") }), { identita: { apparato: { sysname: null, model: null, firmware: null, serial_number: null, part_number: null }, host: null }, porte: [] });
     assert.deepEqual(p.ignorate.map((x) => x.sezione).sort(), ["neighbors", "poe"]);
+  });
+});
+
+describe("porte solo per switch e router", () => {
+  const conIfaceEFatti = (collector: string) => snap({
+    collector,
+    interfaces: sez([iface("eth0", { if_index: 2 }), iface("bond0", { kind: "aggregate", if_index: 3 })]),
+    spanning_tree: sez({ enabled: true, protocol: "rstp", ports: [{ port: "eth0", instance: "CIST", state: "forwarding", role: "root" }] }),
+  });
+
+  it("switch e router ricevono porte e fatti di porta", () => {
+    for (const c of ["hp-procurve", "hp-comware", "qnap-switch", "mikrotik-routeros"]) {
+      const s = conIfaceEFatti(c);
+      assert.equal(proiettaPorte(s, []).aggiungi.length, 2, c);
+      assert.notEqual(proiettaFatti(s), null, c);
+      assert.ok(campiDelCollectorPerPorta(s).size > 0, c);
+    }
+  });
+
+  it("NAS, server, hypervisor, access point, controller e storage non ricevono porte «da switch» nemmeno con interfacce ok", () => {
+    for (const c of ["qnap-nas", "synology-dsm", "linux", "windows", "proxmox-ve", "ubiquiti-device", "unifi-controller", "vmware-esxi", "netapp-ontap"]) {
+      const s = conIfaceEFatti(c);
+      const p = proietta(s, { identita: { apparato: { sysname: null, model: null, firmware: null, serial_number: null, part_number: null }, host: null }, porte: [porta(1, "eth0")] });
+      assert.deepEqual(p.porte, { aggiorna: [], aggiungi: [], togli: [] }, `${c}: le porte che ci sono già non si toccano e non se ne aggiungono`);
+      assert.equal(p.fatti, null, c);
+      assert.equal(campiDelCollectorPerPorta(s).size, 0, `${c}: i giri pianificati non lasciano da parte colonne che nessuno scrive`);
+    }
+  });
+
+  it("un id di collector sconosciuto non scrive porte", () => {
+    assert.equal(ricevePorteDaSwitch("collector-tolto"), false);
   });
 });

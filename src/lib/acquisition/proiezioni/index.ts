@@ -13,7 +13,12 @@
  * `interfaces`, `vlans` (PVID), `poe`, `spanning_tree`, `neighbors` → `switch_ports` per campo; `neighbors` → vicini
  * con fonte `collector`; `spanning_tree` (solo CIST) e `aggregation` → fatti di porta con fonte `collector`.
  * `forwarding`, `network`, VLAN tagged e il resto restano nello snapshot.
+ *
+ * Le porte «da switch» (`switch_ports`, fatti di porta) si proiettano solo per le famiglie switch e router del catalogo
+ * (`ricevePorteDaSwitch`): le interfacce di un NAS, di un server, di un hypervisor, di un controller o di un access point
+ * restano nello snapshot e non diventano porte di uno switch.
  */
+import { ricevePorteDaSwitch } from "../catalogo";
 import type { AcquisitionSnapshot, DeviceInterface } from "../schema";
 
 export type StatoSezione = "ok" | "partial" | "unsupported" | "error" | "skipped";
@@ -136,7 +141,7 @@ function valoriPerPorta(snapshot: AcquisitionSnapshot, i: DeviceInterface): Valo
 
 export function proiettaPorte(snapshot: AcquisitionSnapshot, attuali: readonly PortaAttuale[]): ModifichePorte {
   const out: ModifichePorte = { aggiorna: [], aggiungi: [], togli: [] };
-  if (!usabile(snapshot.interfaces)) return out;
+  if (!ricevePorteDaSwitch(snapshot.collector) || !usabile(snapshot.interfaces)) return out;
   const tutte = snapshot.interfaces.data;
   // Abbinamento in due passate. Prima il nome: il percorso SSH di sempre numera le porte per posizione nell'uscita, mentre
   // il collector porta l'ifIndex SNMP, quindi lo stesso numero può essere un'altra porta. Poi l'indice, solo fra righe e
@@ -193,7 +198,7 @@ export function proiettaPorte(snapshot: AcquisitionSnapshot, attuali: readonly P
  */
 export function campiDelCollectorPerPorta(snapshot: AcquisitionSnapshot): Map<string, CampoPorta[]> {
   const out = new Map<string, CampoPorta[]>();
-  if (!usabile(snapshot.interfaces)) return out;
+  if (!ricevePorteDaSwitch(snapshot.collector) || !usabile(snapshot.interfaces)) return out;
   for (const i of snapshot.interfaces.data) {
     if (i.kind === "other") continue;
     const v = valoriPerPorta(snapshot, i);
@@ -254,7 +259,7 @@ const STATI: Record<string, string> = { forwarding: "forwarding", discarding: "d
 /** null = né spanning tree né aggregazioni usabili. Ogni riga porta tutte le colonne (null dove non si sa), come vuole il contratto dei lettori. */
 export function proiettaFatti(snapshot: AcquisitionSnapshot): FattoPortaProiettato[] | null {
   const stp = usabile(snapshot.spanning_tree), lag = usabile(snapshot.aggregation);
-  if (!stp && !lag || !usabile(snapshot.interfaces)) return null;
+  if (!ricevePorteDaSwitch(snapshot.collector) || !stp && !lag || !usabile(snapshot.interfaces)) return null;
   const gruppo = new Map<string, string>();
   if (lag) for (const a of snapshot.aggregation.data) for (const m of a.members) gruppo.set(nomePorta(m), a.name);
   return snapshot.interfaces.data.filter((i) => i.kind !== "other").map((i) => {

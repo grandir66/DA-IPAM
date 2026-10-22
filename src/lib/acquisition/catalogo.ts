@@ -133,7 +133,11 @@ export const CATALOGO = [
 
 /** Famiglie con porte da switch: solo loro ricevono la proiezione su `switch_ports` (NAS, server, hypervisor, controller e AP no). */
 export const FAMIGLIE_CON_PORTE: ReadonlySet<string> = new Set(["switch", "router"]);
-export function ricevePorteDaSwitch(id: CollectorId): boolean { return FAMIGLIE_CON_PORTE.has(descrittore(id).famiglia); }
+/** Un id sconosciuto (snapshot di un collector tolto dal catalogo) non riceve porte: meglio non scrivere che scrivere a caso. */
+export function ricevePorteDaSwitch(id: string): boolean {
+    const d = CATALOGO.find(c => c.id === id);
+    return !!d && FAMIGLIE_CON_PORTE.has(d.famiglia);
+}
 
 export type CollectorId = (typeof CATALOGO)[number]["id"];
 

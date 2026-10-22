@@ -1,5 +1,24 @@
 # TASKS — DA-IPAM
 
+## 2026-10-22 — accorpamento IP e matrice VLAN degli switch
+
+Piano: [`docs/superpowers/plans/2026-10-22-accorpamento-ip-e-vlan-switch.md`](docs/superpowers/plans/2026-10-22-accorpamento-ip-e-vlan-switch.md) (12 task + 1 rimandato; A leggero, B leggero con misura sulla copia dell'hub, C completo; stato: bozza da approvare). Grafica: artboard `Discovery` e `SwitchVlan` del canvas https://claude.ai/artifact/7ezwy7nkAAzUWSn1wJCNKv.
+
+- [ ] Piano approvato da Riccardo (e i quattro dubbi in fondo al piano)
+- [ ] T1 blocco di «Rendi apparato» sul server (`apparatoGiaPresente`, 409, anche `/api/devices/bulk`)
+- [ ] T2 blocco nella finestra, singolo e in blocco, con link all'apparato
+- [ ] T3 principale del cluster (`physical_devices.primary_host_id`, segno `cluster_principale_v21`) + elenco per nome delle righe nascoste sulla copia dell'hub
+- [ ] T4 API di Discovery con il cluster, tempo misurato sulla copia (soglia +10 % o +50 ms)
+- [ ] T5 Discovery: secondari nascosti, «+N IP», ricerca sugli IP secondari, contatori spiegati
+- [ ] T6 «Scegli come principale» e scelta nel «Collega altro IP»
+- [ ] T7 lettore Q-BRIDGE con le uscite vere di SW-CED-48POE-242, SW-CED-16XG-241, SW-ING-ProMax-239
+- [ ] T8 tabelle `switch_vlan*` (segno `switch_vlan_v21`), ADR 0029, prova a vuoto su copia hub e cliente A
+- [ ] T9 lettura `switch_vlan` spenta di default, nel giro ARP (una volta l'ora) e in «Interroga»
+- [ ] T10 matrice VLAN condivisa estratta dalla scheda MikroTik (aspetto invariato)
+- [ ] T11 tab VLAN dello switch: striscia VLAN/trunk/access/senza VLAN + matrice
+- [ ] T12 accensione sull'hub (con conferma) e verifica sul dato vero; CONTEXT, CHANGELOG, scheda-mappa
+- [ ] (rimandato) T13 completamento dal controller UniFi: serve l'ok ad ammettere `GET rest/networkconf` nella lista bianca di `unifi-api`
+
 ## 2026-10-22 — invio AD e inventario a DA-Vul-can (A-IPAM)
 
 Piano: [`docs/superpowers/plans/2026-10-22-invio-ad-inventario-a-vulcan.md`](docs/superpowers/plans/2026-10-22-invio-ad-inventario-a-vulcan.md) (9 task, livello completo, stato: bozza da approvare). Oggi l'AD arriva all'hub solo a mano (download qui, «Carica» là): il piano aggiunge l'invio automatico, inventario e battito; spento senza `VULCAN_TOKEN`.

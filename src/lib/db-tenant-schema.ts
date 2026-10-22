@@ -329,7 +329,8 @@ export const VERSIONE_APPARATI_SCELTI = 1;
  * come stringhe con `datetime('now')`. `vulcan_stato` è la riga unica del flusso: battito, ping, sospensione per
  * l'impronta di un gettone (mai il gettone). Tutto nasce SOLO nella migrazione (`migrateVulcanCoda`), senza
  * `IF NOT EXISTS`: un oggetto omonimo fa fallire la migrazione invece di passare muto. Fuori dal trasferimento
- * (EXCLUDED_TENANT_TABLES): la coda e la sospensione valgono per questa istanza e il suo gettone.
+ * (EXCLUDED_TENANT_TABLES): la coda e la sospensione valgono per questa istanza e il suo gettone, e la coda
+ * contiene i dati del cliente non ancora inviati.
  */
 export const DDL_VULCAN: ReadonlyArray<readonly [string, string]> = [
   ["vulcan_coda", `CREATE TABLE vulcan_coda (

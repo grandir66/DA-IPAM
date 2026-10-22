@@ -244,3 +244,61 @@ test("coda senza schema (migrazione fallita): accoda lo dice, non scrive a vuoto
   db.exec(TENANT_SCHEMA_SQL);
   assert.throws(() => accoda(db, { tipo: "ad-health", rif: "8", json: "{}", oggetti: null }), /vulcan_coda_v21/);
 });
+
+test("revisione: un inventario superato mentre era in invio non torna in attesa né scartato", () => {
+  const db = nuovoDb();
+  const a = accodaA(db, '{"inv":"A"}', "inventario", null);
+  assert.equal(prendiProssimi(db, 5, T0).length, 1);
+  accoda(db, { tipo: "inventario", rif: null, json: '{"inv":"B"}', oggetti: 1 });
+  assert.equal(segnaRitento(db, a.id, "http 503", "hub spento", T0), "superato");
+  assert.equal(riga(db, a.id).stato, "superato");
+  assert.equal(riga(db, a.id).tentativi, 0);
+  segnaScartato(db, a.id, "http 404", "rotta assente", T0);
+  assert.equal(riga(db, a.id).stato, "superato");
+  assert.equal(riga(db, a.id).corpo, 0);
+});
+
+test("revisione: un superato che l'hub ha comunque ricevuto si segna inviato (è arrivato davvero)", () => {
+  const db = nuovoDb();
+  const a = accodaA(db, '{"inv":"A"}', "inventario", null);
+  accoda(db, { tipo: "inventario", rif: null, json: '{"inv":"B"}', oggetti: 1 });
+  segnaInviato(db, a.id, "inv-1", T0);
+  assert.equal(riga(db, a.id).stato, "inviato");
+  assert.deepEqual(ultimoInviato(db, "inventario")?.risposta_id, "inv-1");
+});
+
+test("revisione: segnaInviato su una riga fallita o scartata non la cambia", () => {
+  const db = nuovoDb();
+  const s = accodaA(db, '{"s":1}');
+  segnaScartato(db, s.id, "http 422", "corpo rifiutato", T0);
+  segnaInviato(db, s.id, "x", T0);
+  assert.equal(riga(db, s.id).stato, "scartato");
+});
+
+test("revisione: lo stesso JSON di una riga scartata si riaccoda (la riga rinasce in attesa, col corpo)", () => {
+  const db = nuovoDb();
+  const json = '{"run_id":8}';
+  const a = accodaA(db, json);
+  segnaScartato(db, a.id, "http 422", "corpo rifiutato", T0);
+  const b = accoda(db, { tipo: "ad-health", rif: "8", json, oggetti: 3 });
+  assert.deepEqual(b, { id: a.id, nuovo: true });
+  const r = db.prepare("SELECT stato, tentativi, corpo_gz, ultimo_errore FROM vulcan_coda WHERE id = ?").get(a.id) as {
+    stato: string; tentativi: number; corpo_gz: Buffer; ultimo_errore: string | null;
+  };
+  assert.equal(r.stato, "in_attesa");
+  assert.equal(r.tentativi, 0);
+  assert.equal(r.ultimo_errore, null);
+  assert.equal(zlib.gunzipSync(r.corpo_gz).toString("utf8"), json);
+  // Inviato o in attesa: resta doppione.
+  segnaInviato(db, a.id, "272", T0);
+  assert.deepEqual(accoda(db, { tipo: "ad-health", rif: "8", json, oggetti: 3 }), { id: a.id, nuovo: false });
+});
+
+test("revisione: scriviStatoVulcan ignora le chiavi con valore undefined", () => {
+  const db = nuovoDb();
+  scriviStatoVulcan(db, { battito_esito: "ok", ping_esito: "ok" });
+  scriviStatoVulcan(db, { battito_esito: undefined, ping_esito: "http 503" });
+  const s = leggiStatoVulcan(db);
+  assert.equal(s.battito_esito, "ok");
+  assert.equal(s.ping_esito, "http 503");
+});

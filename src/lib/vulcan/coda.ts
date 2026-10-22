@@ -94,13 +94,27 @@ export function accoda(
   const corpo = zlib.gzipSync(Buffer.from(v.json, "utf8"));
   const byte = Buffer.byteLength(v.json, "utf8");
   return db.transaction(() => {
-    const c = db.prepare("SELECT id FROM vulcan_coda WHERE tipo = ? AND sha256 = ?").get(v.tipo, sha256) as { id: number } | undefined;
-    if (c) return { id: c.id, nuovo: false };
+    // Doppione cercato su tutte le righe (la chiave UNIQUE è (tipo, sha256)): in attesa, inviate, fallite («Invia ora» le
+    // rimette) e superate non si riaccodano. Le scartate sì: un run AD rifiutato (es. 422 prima di una correzione sull'hub)
+    // si deve poter rimandare identico senza aspettare i 90 giorni della pulizia; la riga rinasce in attesa, col corpo.
+    const c = db.prepare("SELECT id, stato FROM vulcan_coda WHERE tipo = ? AND sha256 = ?").get(v.tipo, sha256) as
+      | { id: number; stato: StatoCoda }
+      | undefined;
+    if (c && c.stato !== "scartato") return { id: c.id, nuovo: false };
     if (v.tipo === "inventario") {
       db.prepare(
         `UPDATE vulcan_coda SET stato = 'superato', corpo_gz = zeroblob(0), preso_fino = NULL, esito_il = datetime('now')
          WHERE tipo = 'inventario' AND stato = 'in_attesa'`,
       ).run();
+    }
+    if (c) {
+      db.prepare(
+        `UPDATE vulcan_coda SET stato = 'in_attesa', rif = ?, corpo_gz = ?, byte_json = ?, oggetti = ?, tentativi = 0,
+           prossimo_tentativo = datetime('now'), preso_fino = NULL, ultimo_esito = NULL, ultimo_errore = NULL,
+           esito_il = NULL, risposta_id = NULL, creato_il = datetime('now'), inviato_il = NULL
+         WHERE id = ?`,
+      ).run(v.rif, corpo, byte, v.oggetti, c.id);
+      return { id: c.id, nuovo: true };
     }
     const r = db
       .prepare("INSERT INTO vulcan_coda (tipo, rif, corpo_gz, byte_json, oggetti, sha256) VALUES (?, ?, ?, ?, ?, ?)")
@@ -130,27 +144,33 @@ export function prendiProssimi(db: Database.Database, max: number, adesso: Date)
   })();
 }
 
+/**
+ * L'hub ha risposto 200/201. Vale anche per una riga `superato` nel frattempo (un inventario più nuovo è arrivato
+ * mentre questa era in invio): l'hub l'ha ricevuta davvero, e «ultimo invio» deve dirlo. Mai su fallito/scartato.
+ */
 export function segnaInviato(db: Database.Database, id: number, rispostaId: string | null, adesso: Date): void {
   const ora = dataSqlite(adesso);
   db.prepare(
     `UPDATE vulcan_coda SET stato = 'inviato', corpo_gz = zeroblob(0), preso_fino = NULL, ultimo_esito = 'inviato',
        ultimo_errore = NULL, esito_il = ?, inviato_il = ?, risposta_id = ?
-     WHERE id = ?`,
+     WHERE id = ? AND stato IN ('in_attesa', 'superato')`,
   ).run(ora, ora, rispostaId, id);
 }
 
 /** Un tentativo andato male che vale la pena ritentare (503, 5xx, rete, tempo): backoff, al 12° `fallito`. */
-export function segnaRitento(db: Database.Database, id: number, esito: string, errore: string, adesso: Date): "in_attesa" | "fallito" {
-  return db.transaction(() => {
-    const r = db.prepare("SELECT tentativi FROM vulcan_coda WHERE id = ?").get(id) as { tentativi: number } | undefined;
+/** Solo su una riga ancora in attesa: una superata nel frattempo resta superata (si rende lo stato che ha). */
+export function segnaRitento(db: Database.Database, id: number, esito: string, errore: string, adesso: Date): StatoCoda {
+  return db.transaction((): StatoCoda => {
+    const r = db.prepare("SELECT tentativi, stato FROM vulcan_coda WHERE id = ?").get(id) as { tentativi: number; stato: StatoCoda } | undefined;
     if (!r) throw new Error(`riga ${id} della coda verso DA-Vul-can inesistente`);
+    if (r.stato !== "in_attesa") return r.stato;
     const tentativi = r.tentativi + 1;
     const stato = tentativi >= MAX_TENTATIVI ? "fallito" : "in_attesa";
     const attesa = BACKOFF_S[Math.min(tentativi, BACKOFF_S.length) - 1];
     db.prepare(
       `UPDATE vulcan_coda SET tentativi = ?, stato = ?, prossimo_tentativo = ?, preso_fino = NULL,
          ultimo_esito = ?, ultimo_errore = ?, esito_il = ?
-       WHERE id = ?`,
+       WHERE id = ? AND stato = 'in_attesa'`,
     ).run(tentativi, stato, piuSecondi(adesso, attesa), esito, errore, dataSqlite(adesso), id);
     return stato;
   })();
@@ -161,7 +181,7 @@ export function segnaScartato(db: Database.Database, id: number, esito: string, 
   db.prepare(
     `UPDATE vulcan_coda SET stato = 'scartato', corpo_gz = zeroblob(0), preso_fino = NULL,
        ultimo_esito = ?, ultimo_errore = ?, esito_il = ?
-     WHERE id = ?`,
+     WHERE id = ? AND stato = 'in_attesa'`,
   ).run(esito, errore, dataSqlite(adesso), id);
 }
 
@@ -240,7 +260,8 @@ export function leggiStatoVulcan(db: Database.Database): StatoVulcanRiga {
 
 /** Scrittura parziale della riga unica: le chiavi sono nomi di colonna fissi, mai composti da fuori. */
 export function scriviStatoVulcan(db: Database.Database, parz: Partial<Omit<StatoVulcanRiga, "aggiornato_il">>): void {
-  const chiavi = Object.keys(parz);
+  // Una chiave con valore undefined non si scrive (null sì: cancella).
+  const chiavi = Object.keys(parz).filter((k) => parz[k as ColonnaStato] !== undefined);
   for (const k of chiavi) {
     if (!(COLONNE_STATO as readonly string[]).includes(k)) throw new Error(`stato DA-Vul-can: «${k}» non è una colonna`);
   }

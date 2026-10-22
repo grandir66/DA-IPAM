@@ -19,6 +19,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { leggiConfigVulcan, tenantPerVulcan, type ConfigVulcan } from "../config";
+import { controllaFileOggetto } from "@/lib/dalink/config";
 
 const DIR = fs.mkdtempSync(path.join(os.tmpdir(), "vulcan-config-"));
 after(() => fs.rmSync(DIR, { recursive: true, force: true }));
@@ -183,4 +184,20 @@ test("tenantPerVulcan: un errore nel registro dei clienti → null, mai un tenan
     throw new Error("hub illeggibile");
   };
   assert.equal(tenantPerVulcan("99999", { clienteEsiste: rotto, unicoClienteAppliance: () => true }), null);
+});
+
+test("revisione: un collegamento simbolico al posto del file → non_valida (anche se punta a un file buono)", () => {
+  const vero = scrivi("vero.env", [...DALINK, ...VULCAN]);
+  const link = path.join(DIR, "link.env");
+  fs.symlinkSync(vero, link);
+  nonValida(leggi(link), /collegamento/);
+});
+
+test("revisione: proprietario né root né l'utente del servizio → non_valida", () => {
+  const p = scrivi("altrui.env", [...DALINK, ...VULCAN]);
+  const f = controllaFileOggetto(p, [123456]);
+  assert.equal(f.esito, "non_valido");
+  if (f.esito === "non_valido") assert.match(f.motivo, /proprietario/);
+  // Proprietario predefinito: root o l'utente che fa girare DA-IPAM (qui chi esegue la prova).
+  assert.equal(controllaFileOggetto(p).esito, "letto");
 });

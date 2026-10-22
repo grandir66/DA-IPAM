@@ -485,3 +485,11 @@ Livello Base, sola lettura e sviluppo locale; accessi NAS confermati da Riccardo
 - [x] **QNAP `.24`** (solo SNMP): **corretto** — modello QGD-1602P, seriale letto, firmware `null` (non più la memoria), 6 sensori, 19 interfacce.
 - [x] **Proxmox DA-PX-04** 192.168.40.4, root con la chiave di Riccardo (ingresso temporaneo cancellato): 76 s, parziale. Cluster visibile intero: 4 nodi (CPU, socket, core, kernel, disco root, abbonamento attivo), 52 guest (stato, risorse, dischi, reti; agent su 44), 28 storage, 34 interfacce.
 - [ ] **Proxmox, mancano per la parità**: modello/seriale/produttore hardware dei nodi vuoti su tutti e 4 (la scansione li prende dall'API); IP dei guest su 24 di 52 con agent attivo su 44 (`GUEST_IP_ADDRESSES_PARTIAL`). Da completare prima dell'aggancio al pulsante.
+
+## 2026-10-22 sera — unione in `dev` e accensione sull'hub
+
+- [x] `librenms-fonte` unito in `dev` (v0.9.875): con l'ADR 0031 le letture sono accese di serie, `librenms` resta l'eccezione spenta (aggiunge apparati a LibreNMS, cioè scrive); vale solo `acceso: true` scritto. Riga nel catalogo delle opzioni. Cancello verde (5464 prove).
+- [x] `collector-modulari` e `s3-mac-virtuali` uniti in `dev` (v0.9.876). Cancello verde (5784 prove). Acquisizione col collector spenta di serie (vale solo «1»).
+- [x] Hub aggiornato a v0.9.876 (17:36 italiane), salute 200; migrazione `librenms_fonte_v21` fatta sul tenant 70791.
+- [x] Sull'hub accesi (tenant 70791): `topologia.lettura.librenms` (17:31) e `acquisizione_modulare.attiva` (17:37). Prima sincronizzazione LibreNMS alle 18:00 italiane.
+- [ ] Giro cloud 7 (leggero): Proxmox completo e agganciato, interruttore dell'acquisizione in Opzioni, controller UniFi che arricchisce la sincronizzazione (prompt, «Giro 7»).

@@ -8,9 +8,11 @@ Livello leggero, approvato da Riccardo il 22/10 dopo 70151 (VLAN del router manc
 - [x] Testi della pagina «Dati della mappa» («accesa di serie»)
 - [x] Prove: 49 che davano per scontata la partenza spenta ora la dichiarano; prova nuova sul valore di serie
 - [x] ADR 0031, CHANGELOG
-- [ ] Cancello (lint, tsc, prove, build), release, push su dev
-- [ ] Aggiornamento dell'appliance di 70151 e verifica delle VLAN sul router 172.20.40.102
-- [ ] Pagina unica delle opzioni (richiesta di Riccardo, 22/10): censimento degli interruttori e proposta grafica prima di scriverla
+- [x] Cancello (lint 0, tsc 0, prove 5366/0 fallite, build 0), release v0.9.873, push su dev
+- [x] Appliance di 70151 aggiornata a 0.9.873 (14:20 italiane, health 200)
+- [x] Scoperto: su 70151 nessun job legge gli apparati (niente `arp_poll` né scansioni): creato `arp_poll` ogni 30 min (job 4, ok di Riccardo)
+- [x] Verifica sul router 172.20.40.102: primo giro 15:00 italiane, letture 6/6 e 4/4 comandi, 19 VLAN, 26 VLAN di bridge, 1 bridge
+- [ ] Pagina unica delle opzioni + job di serie all'installazione (Riccardo, 22/10): censimento di interruttori e job, proposta grafica prima di scriverla
 
 ## 2026-10-22 — LibreNMS come fonte di dati degli apparati SNMP
 

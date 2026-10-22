@@ -19,7 +19,7 @@ import { buildPatchFromHost, buildPatchFromDevice, buildSyncMerge, buildSourceLa
 import fs from "fs";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { LetturaVlanSwitch } from "./devices/snmp-vlan";
-import { DDL_VULCAN, INDICI_VULCAN, SEGNO_VULCAN, VERSIONE_VULCAN, DDL_LIBRENMS_FONTE_V1, INDICI_LIBRENMS_FONTE_V1, SEGNO_LIBRENMS_FONTE, VERSIONE_LIBRENMS_FONTE, DDL_JOB_APPARATI_ESITI, INDICI_JOB_APPARATI_ESITI, SEGNO_APPARATI_SCELTI, VERSIONE_APPARATI_SCELTI, DDL_SWITCH_VLAN_NATIVA, SEGNO_SWITCH_VLAN_NATIVA, VERSIONE_SWITCH_VLAN_NATIVA, DDL_SWITCH_VLAN_V1, SEGNO_SWITCH_VLAN, VERSIONE_SWITCH_VLAN, COLONNA_CLUSTER_PRINCIPALE, INDICE_CLUSTER_PRINCIPALE, SEGNO_CLUSTER_PRINCIPALE, VERSIONE_CLUSTER_PRINCIPALE, COLONNE_SCHEDA_MK_V1, DDL_HOSTS_ARCHIVIO, DDL_SCHEDA_MK_V2, DDL_SCHEDA_MK_V3, DDL_TOPOLOGY_CAVI, DDL_TOPOLOGY_UNIONI, INDICI_HOSTS_ARCHIVIO, INDICI_TOPOLOGY_UNIONI, TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL, SEGNO_SCHEDA_MK, VERSIONE_SCHEDA_MK } from "./db-tenant-schema";
+import { DDL_VULCAN, INDICI_VULCAN, SEGNO_VULCAN, VERSIONE_VULCAN, DDL_LIBRENMS_FONTE_V1, INDICI_LIBRENMS_FONTE_V1, SEGNO_LIBRENMS_FONTE, VERSIONE_LIBRENMS_FONTE, DDL_LIBRENMS_ESCLUSIONE, SEGNO_LIBRENMS_ESCLUSIONE, VERSIONE_LIBRENMS_ESCLUSIONE, DDL_JOB_APPARATI_ESITI, INDICI_JOB_APPARATI_ESITI, SEGNO_APPARATI_SCELTI, VERSIONE_APPARATI_SCELTI, DDL_SWITCH_VLAN_NATIVA, SEGNO_SWITCH_VLAN_NATIVA, VERSIONE_SWITCH_VLAN_NATIVA, DDL_SWITCH_VLAN_V1, SEGNO_SWITCH_VLAN, VERSIONE_SWITCH_VLAN, COLONNA_CLUSTER_PRINCIPALE, INDICE_CLUSTER_PRINCIPALE, SEGNO_CLUSTER_PRINCIPALE, VERSIONE_CLUSTER_PRINCIPALE, COLONNE_SCHEDA_MK_V1, DDL_HOSTS_ARCHIVIO, DDL_SCHEDA_MK_V2, DDL_SCHEDA_MK_V3, DDL_TOPOLOGY_CAVI, DDL_TOPOLOGY_UNIONI, INDICI_HOSTS_ARCHIVIO, INDICI_TOPOLOGY_UNIONI, TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL, SEGNO_SCHEDA_MK, VERSIONE_SCHEDA_MK } from "./db-tenant-schema";
 import { HYPERVISOR_SYNC_MINUTES, PULIZIA_HOST_MINUTES, SCHEDULED_JOB_TYPES_CHECK_SQL } from "./scheduled-job-types";
 import { isProxmoxVeDevice, resolveDeviceAcquisition } from "./devices/device-acquisition-resolve";
 import { networkDeviceUsesArpPoll } from "./network-device-arp";
@@ -1101,6 +1101,42 @@ export function chiudiMigrazioneLibrenmsFonteFallita(db: Database.Database, tena
   } catch (e2) {
     console.error(`[db-tenant] ${tenantCode}: ${SEGNO_LIBRENMS_FONTE}, segno non scritto:`, e2);
   }
+}
+
+/** «La tabella delle esclusioni da LibreNMS c'è», annotato all'apertura come le altre. */
+const SCHEMA_LIBRENMS_ESCLUSIONE = new WeakMap<Database.Database, boolean>();
+
+/** Esclusioni da LibreNMS presenti (annotato; si rimisura solo con la migrazione). Senza, il giro non aggiunge oggetti SNMP. */
+export function schemaEsclusioneLibrenms(d: Database.Database = db()): boolean {
+  const v = SCHEMA_LIBRENMS_ESCLUSIONE.get(d);
+  if (v !== undefined) return v;
+  const n = tabelleSchedaMkMancanti(d, DDL_LIBRENMS_ESCLUSIONE).length === 0;
+  SCHEMA_LIBRENMS_ESCLUSIONE.set(d, n);
+  return n;
+}
+
+/**
+ * Tabella delle esclusioni da LibreNMS (giro del 22/10, punto 2): solo se manca, in UNA transazione, poi il segno
+ * `done:<data>:v1` una volta sola. Restituisce i nomi di ciò che aggiunge.
+ */
+export function migrateLibrenmsEsclusione(db: Database.Database): string[] {
+  const added: string[] = [];
+  try {
+    db.transaction(() => {
+      for (const [n, ddl] of tabelleSchedaMkMancanti(db, DDL_LIBRENMS_ESCLUSIONE)) {
+        db.exec(ddl);
+        added.push(n);
+      }
+      const chiusa = `:v${VERSIONE_LIBRENMS_ESCLUSIONE}`;
+      const attuale = leggiSegno(db, SEGNO_LIBRENMS_ESCLUSIONE);
+      if (!(attuale?.startsWith("done:") && attuale.endsWith(chiusa))) {
+        scriviSegno(db, SEGNO_LIBRENMS_ESCLUSIONE, `done:${new Date().toISOString().slice(0, 10)}${chiusa}`);
+      }
+    })();
+  } finally {
+    SCHEMA_LIBRENMS_ESCLUSIONE.set(db, tabelleSchedaMkMancanti(db, DDL_LIBRENMS_ESCLUSIONE).length === 0);
+  }
+  return added;
 }
 
 /** «La coda verso DA-Vul-can c'è, col suo indice», annotato all'apertura come le altre (niente query di schema a ogni accodamento). */
@@ -2818,6 +2854,27 @@ export function getTenantDb(tenantCode: string): Database.Database {
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: migrazione librenms fonte fallita (ROLLBACK), i dati di LibreNMS non si scrivono:`, e);
     chiudiMigrazioneLibrenmsFonteFallita(newDb, tenantCode, e);
+  }
+
+  // Esclusioni da LibreNMS (giro del 22/10): una tabella nuova, solo se manca. Se fallisce il tenant si apre lo stesso:
+  // schemaEsclusioneLibrenms() dice false e il giro non aggiunge da solo gli oggetti SNMP.
+  try {
+    const added = migrateLibrenmsEsclusione(newDb);
+    if (added.length > 0) {
+      console.info(`[db-tenant] ${tenantCode}: librenms esclusioni, aggiunto ${added.join(", ")}`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione librenms esclusioni fallita (ROLLBACK), il giro non aggiunge oggetti SNMP:`, e);
+    try {
+      if (schemaEsclusioneLibrenms(newDb)) {
+        const attuale = leggiSegno(newDb, SEGNO_LIBRENMS_ESCLUSIONE);
+        if (!attuale?.startsWith("done:")) scriviSegno(newDb, SEGNO_LIBRENMS_ESCLUSIONE, `done:${new Date().toISOString().slice(0, 10)}:v${VERSIONE_LIBRENMS_ESCLUSIONE}`);
+      } else {
+        scriviSegno(newDb, SEGNO_LIBRENMS_ESCLUSIONE, segnoErrore(e));
+      }
+    } catch (e2) {
+      console.error(`[db-tenant] ${tenantCode}: ${SEGNO_LIBRENMS_ESCLUSIONE}, segno non scritto:`, e2);
+    }
   }
 
   // Coda verso DA-Vul-can (piano 2026-10-22 invio AD e inventario): due tabelle e un indice nuovi, solo se mancano. Se

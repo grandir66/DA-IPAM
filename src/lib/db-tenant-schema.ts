@@ -316,6 +316,22 @@ export const INDICI_LIBRENMS_FONTE_V1: ReadonlyArray<readonly [string, string]> 
 export const SEGNO_LIBRENMS_FONTE = "librenms_fonte_v21";
 export const VERSIONE_LIBRENMS_FONTE = 1;
 
+/**
+ * Oggetti esclusi dall'aggiunta automatica in LibreNMS (Riccardo 22/10: candidati tutti gli oggetti con SNMP verificato,
+ * con un'esclusione per oggetto «Non aggiungere a LibreNMS»). Chiave l'IP come `librenms_rifiuto`: è quello che va in
+ * LibreNMS, per un host e per il suo apparato. Vale solo per il giro automatico: un'aggiunta chiesta a mano passa. Nasce
+ * SOLO nella migrazione (`migrateLibrenmsEsclusione`), senza `IF NOT EXISTS`; se manca il giro non aggiunge da solo
+ * nessun oggetto SNMP (non può sapere chi è escluso) e lo dice nell'esito.
+ */
+export const DDL_LIBRENMS_ESCLUSIONE: ReadonlyArray<readonly [string, string]> = [
+  ["librenms_esclusione", `CREATE TABLE librenms_esclusione (
+  ip TEXT PRIMARY KEY, host_id INTEGER, network_device_id INTEGER, il TEXT NOT NULL
+)`],
+];
+/** Segno in `tenant_settings` (`done:<data>:v<versione>`); la migrazione non lo consulta. */
+export const SEGNO_LIBRENMS_ESCLUSIONE = "librenms_esclusione_v21";
+export const VERSIONE_LIBRENMS_ESCLUSIONE = 1;
+
 /** Unioni e separazioni a mano (ADR 0021): le scrivono solo le rotte /api/topology/unioni; mai cancellate (tolto_*: la storia).
  *  Membri come id della mappa, senza chiavi esterne né CHECK. Indici solo nella migrazione. */
 export const DDL_TOPOLOGY_UNIONI: ReadonlyArray<readonly [string, string]> = [

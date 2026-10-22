@@ -10,7 +10,7 @@
  * - Mai `force_add` (piano 2026-10-22 LibreNMS, task 1): LibreNMS prova l'SNMP (o il ping) e rifiuta chi non risponde; il
  *   rifiuto si scrive col motivo (`scriviRifiutoLibrenms`) e non lascia una riga di mappa nuova
  */
-import { credenzialeSnmpApparato, getHostsByNetwork, getNetworkById, getHostById, getNetworkDeviceById, getNetworks, haSnmpApparato } from "../db-tenant";
+import { credenzialeSnmpApparato, getCurrentTenantCode, getTenantDb, getHostsByNetwork, getNetworkById, getHostById, getNetworkDeviceById, getNetworks, haSnmpApparato } from "../db-tenant";
 import { getIntegrationConfig } from "./config";
 import { createLibreNMSClient, LibreNMSApiError, type CampiAggiuntaLibreNms } from "./librenms-api";
 import {
@@ -24,6 +24,7 @@ import {
   type CodiceRifiuto,
 } from "./librenms-db";
 import type { SceltaSnmpApparato } from "@/lib/credentials/resolve";
+import { leggiSegretoDb } from "@/lib/credentials/segreti";
 import type { LibreNMSSyncResult, HostSnmpData, NetworkDevice } from "@/types";
 
 /** Esito di un'aggiunta (o aggiornamento) di un oggetto in LibreNMS. */
@@ -276,7 +277,10 @@ export async function addSingleHostToLibreNMS(hostId: number): Promise<EsitoAggi
 
   const snmpData   = parseSnmpData(host.snmp_data ?? null);
   const snmpParams = resolveSnmpParams(snmpData, networkCommunity);
-  if (!snmpParams && !getLibreNMSMapByIp(host.network_id, host.ip)) {
+  // Senza community nei dati SNMP dell'host vale la credenziale SNMP validata sull'host (22/10: l'aggiunta automatica
+  // prende tutti gli oggetti con SNMP verificato, e 60 host su 76 della sede di prova l'avevano solo lì).
+  const validata = snmpParams ? null : campiSnmpHostValidato(host.id);
+  if (!snmpParams && !validata && !getLibreNMSMapByIp(host.network_id, host.ip)) {
     const messaggio = "Nessuna credenziale SNMP per questo oggetto: in LibreNMS si aggiunge solo chi ha l'SNMP (niente «solo ping»).";
     scriviRifiutoLibrenms(host.ip, { hostId: host.id, codice: "senza_snmp", motivo: messaggio });
     return { ok: false, codice: "senza_snmp", messaggio };
@@ -294,7 +298,7 @@ export async function addSingleHostToLibreNMS(hostId: number): Promise<EsitoAggi
   // Campi SNMP da aggiornare/inviare (vuoto se ping-only)
   const snmpFields: Omit<CampiAggiuntaLibreNms, "hostname"> = snmpParams
     ? { community: snmpParams.community, snmpver: snmpParams.snmpver, port: snmpParams.port, snmp_disable: false }
-    : { snmp_disable: true };
+    : validata ?? { snmp_disable: true };
   const metadati = {
     ...(sysName            ? { sysName }                        : {}),
     ...(host.model         ? { hardware: host.model }           : {}),
@@ -326,6 +330,29 @@ export async function addSingleHostToLibreNMS(hostId: number): Promise<EsitoAggi
     if (e.codice !== "rete") scriviRifiutoLibrenms(host.ip, { hostId: host.id, codice: e.codice, motivo: e.messaggio });
     return e;
   }
+}
+
+/**
+ * I campi SNMP della prima credenziale SNMP validata sull'host (la più recente) che si legge e che LibreNMS accetta; null se
+ * nessuna. Community come v2c (per un host senza apparato non c'è altra informazione sulla versione), v3 com'è.
+ */
+export function campiSnmpHostValidato(hostId: number): Exclude<CampiSnmpLibreNms, { snmp_disable: true }> | null {
+  const code = getCurrentTenantCode();
+  if (!code) throw new Error("Nessun contesto tenant attivo");
+  const d = getTenantDb(code);
+  const righe = d.prepare(
+    `SELECT credential_id, port FROM host_credentials
+      WHERE host_id = ? AND protocol_type = 'snmp' AND validated = 1
+      ORDER BY validated_at DESC, sort_order, id`,
+  ).all(hostId) as Array<{ credential_id: number; port: number }>;
+  for (const r of righe) {
+    const s = leggiSegretoDb(d, r.credential_id, "snmp");
+    if (!s.ok || (s.segreto.forma !== "community" && s.segreto.forma !== "v3")) continue;
+    const cred = s.segreto.forma === "community" ? { forma: "community" as const, community: s.segreto.community } : { forma: "v3" as const, record: s.segreto.record };
+    const c = campiSnmpDaScelta({ ok: true, cred, port: r.port || 161, fonte: "host_validated", credential_id: r.credential_id }, null);
+    if (!c.snmp_disable) return c;
+  }
+  return null;
 }
 
 /** I campi SNMP di un apparato per LibreNMS, o perché non si mandano (`motivo`, resta a DA-IPAM). */

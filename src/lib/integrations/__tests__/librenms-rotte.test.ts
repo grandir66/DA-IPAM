@@ -12,7 +12,7 @@ import { deleteTenantDatabase, getTenantDb, withTenant } from "@/lib/db-tenant";
 import { leggiApparati, leggiPorte, leggiSensori } from "../librenms-lettori";
 import { scriviParteLibrenms } from "../librenms-fonte";
 import { scriviInterruttore } from "../../topology/letture/interruttori";
-import { rispostaAggiungiCandidato, rispostaCandidati, rispostaDatiHost } from "../librenms-rotte";
+import { rispostaAggiungiCandidato, rispostaCandidati, rispostaDatiHost, rispostaEsclusione } from "../librenms-rotte";
 
 const T = "TESTLIBRENMSROTTE";
 after(() => {
@@ -83,5 +83,22 @@ test("aggiunta di un candidato: corpo non valido 400, host assente 404, rifiuto 
     assert.deepEqual(no, { status: 422, corpo: { error: "LibreNMS ha rifiutato l'aggiunta: Could not connect", codice: "snmp_non_risponde" } });
     const si = await rispostaAggiungiCandidato({ host_id: H.nudo }, async () => ({ ok: true, librenms_device_id: 60, aggiunto: true }));
     assert.deepEqual(si, { status: 200, corpo: { librenms_device_id: 60, added: true } });
+  });
+});
+
+test("esclusione: 400, 404, poi escluso e tolto; lo stato dell'aggiunta lo dice nei dati dell'host", () => {
+  withTenant(T, () => {
+    assert.equal(rispostaEsclusione("x", true).status, 400);
+    assert.equal(rispostaEsclusione("99999", true).status, 404);
+    const si = rispostaEsclusione(String(H.nudo), true);
+    assert.equal(si.status, 200);
+    const stato = (rispostaDatiHost(String(H.nudo)).corpo as { aggiunta: { escluso_il: string | null; esclusioni: boolean; snmp_verificato: boolean } }).aggiunta;
+    assert.match(stato.escluso_il ?? "", /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
+    assert.equal(stato.esclusioni, true);
+    assert.equal(stato.snmp_verificato, false);
+    const c = rispostaCandidati().corpo as { esclusi: Array<{ host_id: number }> };
+    assert.deepEqual(c.esclusi.map((e) => e.host_id), [H.nudo]);
+    assert.equal(rispostaEsclusione(String(H.nudo), false).status, 200);
+    assert.equal((rispostaDatiHost(String(H.nudo)).corpo as { aggiunta: { escluso_il: string | null } }).aggiunta.escluso_il, null);
   });
 });

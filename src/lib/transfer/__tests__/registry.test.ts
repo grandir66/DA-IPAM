@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import Database from "better-sqlite3";
 import { TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL } from "../../db-tenant-schema";
 import { HUB_SCHEMA_SQL } from "../../db-hub-schema";
-import { migrateLibrenmsFonte, migrateSchedaMikrotik, migrateSwitchVlan, migrateSwitchVlanNativa, migrateVulcanCoda, migrateTopologyPhase1, migrateTopologyPhase2 } from "../../db-tenant";
+import { migrateLibrenmsEsclusione, migrateLibrenmsFonte, migrateSchedaMikrotik, migrateSwitchVlan, migrateSwitchVlanNativa, migrateVulcanCoda, migrateTopologyPhase1, migrateTopologyPhase2 } from "../../db-tenant";
 import {
   TENANT_TABLES,
   HUB_TABLES,
@@ -23,6 +23,7 @@ function realTables(...sqlParts: string[]): string[] {
     migrateSwitchVlan(db); // e quelle delle VLAN degli switch (ADR 0029)
     migrateSwitchVlanNativa(db); // e le VLAN native dal controller UniFi (Task 13)
     migrateLibrenmsFonte(db); // e le fotografie di LibreNMS (piano 2026-10-22 LibreNMS)
+    migrateLibrenmsEsclusione(db); // e le esclusioni dall'aggiunta automatica in LibreNMS (22/10)
     migrateVulcanCoda(db); // e la coda degli invii verso DA-Vul-can (piano 2026-10-22)
   }
   const rows = db

@@ -46,11 +46,14 @@ Diagnosi in sola lettura sull'appliance 70151 (VM 104 su PX01, `qm guest exec`; 
 - [x] Comware: porte taggate via SSH — **scelta di Riccardo (22/10, strada 2)**. Il collector `hp-comware` legge già `display vlan all` con taggate/non taggate; manca la proiezione delle VLAN del collector in `switch_vlan*` (porta per nome → ifIndex) con precedenza sulla lettura SNMP che non riesce. Su 70151: credenziale SSH «HP-SW» (id 2) già legata e provata su 18 e 19; da legare e provare su 20, 21, 22 (porta 22 aperta su tutti); `acquisizione_modulare.attiva` assente (spenta); profilo Comware dal job delle 02:00 o da «Interroga». Scritture su 70151 con conferma di Riccardo
 - [ ] Comware: in alternativa sullo switch `snmp-agent packet max-size` più grande (scrittura sull'apparato del cliente: decide Riccardo)
 - Prompt per il resto del giro: [`docs/handoff/2026-10-22-prompt-switch-librenms.md`](docs/handoff/2026-10-22-prompt-switch-librenms.md) (Riccardo: ok a farlo in una sessione nuova)
-- [ ] Proposta di aggiunta switch/router: SSH principale + SNMP (oggi con SNMP principale non propone mai l'SSH: `proposta-apparato.ts`)
-- [ ] LibreNMS: candidati all'aggiunta automatica = tutti gli oggetti con SNMP verificato; esclusione per oggetto «Non aggiungere a LibreNMS»; esito visibile
+- [x] Proposta di aggiunta switch/router: SSH principale + SNMP (oggi con SNMP principale non propone mai l'SSH: `proposta-apparato.ts`) — 23/10: solo piattaforme col protocollo predefinito SSH (Ubiquiti resta SNMP); 3 prove viste fallire, poi verdi
+- [x] LibreNMS, lato server: candidati = apparati con binding SNMP riuscito o SNMP validata sull'host + host con SNMP validata (misura 70151: binding riusciti 4 su 16, SNMP validata su 76 host); tabella `librenms_esclusione` (`_v21`), rotta `/api/hosts/[id]/librenms/esclusione`; host aggiunto con la sua SNMP validata — prove viste fallire (giro, aggiunta), migrazione e rotta verdi
+- [ ] LibreNMS, interfaccia: esclusione e stato sulla scheda, liste «SNMP verificati» ed «Esclusi» nella pagina del modulo — tavola da approvare
+- [ ] LibreNMS: migrazione `_v21` misurata su una copia del DB di 70151 (PX01 non raggiungibile il 23/10 notte: ssh timeout)
 - [ ] LibreNMS: aggiunta in blocco dalla Discovery
-- [ ] Matrice VLAN: colonne e intestazione fisse, altezza limitata (barra orizzontale oggi in fondo a una tabella di ~2500 px)
+- [x] Matrice VLAN: colonne e intestazione fisse, altezza limitata (barra orizzontale oggi in fondo a una tabella di ~2500 px) — 23/10: resa con Chrome a 1280 e 1920, 24 VLAN × 50 porte finte, scorrimento verticale e orizzontale
 - [ ] MikroTik CORE1/CORE2 (6 switch SNMP) senza VLAN: RouterOS non espone Q-BRIDGE via SNMP; servono SSH (`/interface bridge vlan`) o il collector
+  - 23/10, letto nel codice: dare l'SSH non basta. Uno switch MikroTik usa la scheda degli switch (tabelle `switch_vlan`); in SSH la lettura SNMP degli switch è saltata (`jobs.ts`, ramo switch), la lettura delle VLAN di bridge (`letturaSchedaMikrotik`) parte solo nel ramo dei router e scrive le tabelle della scheda MikroTik, e la sezione VLAN del collector `mikrotik-routeros` esce sempre `partial` e senza ifIndex, quindi `proiettaVlan` non la scrive. Strada da scegliere con Riccardo
 
 ## 2026-10-21 — S3, un elenco solo dei MAC virtuali (ramo `s3-mac-virtuali`)
 

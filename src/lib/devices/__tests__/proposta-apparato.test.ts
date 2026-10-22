@@ -201,6 +201,50 @@ describe("proponiApparato / riallineaAlProtocollo — credenziale e porta", () =
     assert.equal(p.snmpCredentialId, null);
   });
 
+  // Riccardo 22/10 (sede 70151): switch e router con le due acquisizioni
+  // sommate, SSH principale quando c'è. Con SNMP principale la proposta non
+  // offriva mai l'SSH, e sei MikroTik CORE restavano senza VLAN (RouterOS non
+  // le dà via SNMP).
+  it("switch letto in SNMP con una SSH validata → SSH principale, SNMP accanto", () => {
+    const p = proponiApparato(host({
+      classification: "switch", inferred_vendor: "mikrotik", inferred_os_family: "network-os",
+      inferred_protocol: "snmp_v2", inferred_device_type: "switch",
+      host_credentials: [
+        { credential_id: 3, protocol_type: "snmp", port: 161, validated: 1 },
+        { credential_id: 4, protocol_type: "ssh", port: 2022, validated: 1 },
+      ],
+    }), ARCHIVIO);
+    assert.equal(p.protocol, "ssh");
+    assert.equal(p.credentialId, "4");
+    assert.equal(p.port, 2022);
+    assert.equal(p.snmpCredentialId, "3");
+  });
+
+  it("router HP letto in SNMP con una SSH validata → SSH principale", () => {
+    const p = proponiApparato(host({
+      classification: "router", inferred_vendor: "hp", inferred_os_family: "network-os",
+      inferred_protocol: "snmp_v2", inferred_device_type: "router",
+      host_credentials: [
+        { credential_id: 3, protocol_type: "snmp", port: 161, validated: 1 },
+        { credential_id: 4, protocol_type: "ssh", port: 22, validated: 1 },
+      ],
+    }), ARCHIVIO);
+    assert.equal(p.protocol, "ssh");
+    assert.equal(p.snmpCredentialId, "3");
+  });
+
+  it("SSH non validata, o non switch/router, o piattaforma solo SNMP → resta SNMP", () => {
+    const cred = (sshValidata: number) => [
+      { credential_id: 3, protocol_type: "snmp", port: 161, validated: 1 },
+      { credential_id: 4, protocol_type: "ssh", port: 22, validated: sshValidata },
+    ];
+    const switchMikrotik = { classification: "switch", inferred_vendor: "mikrotik", inferred_os_family: "network-os", inferred_protocol: "snmp_v2", inferred_device_type: "switch" };
+    assert.equal(proponiApparato(host({ ...switchMikrotik, host_credentials: cred(0) }), ARCHIVIO).protocol, "snmp_v2");
+    assert.equal(proponiApparato(host({ ...switchMikrotik, classification: "access_point", inferred_device_type: "access_point", host_credentials: cred(1) }), ARCHIVIO).protocol, "snmp_v2");
+    // Ubiquiti: SSH ammesso ma la piattaforma si legge meglio in SNMP (protocollo predefinito).
+    assert.equal(proponiApparato(host({ ...switchMikrotik, inferred_vendor: "ubiquiti", host_credentials: cred(1) }), ARCHIVIO).protocol, "snmp_v2");
+  });
+
   it("protocollo SSH: la SNMP validata va nella seconda tendina", () => {
     const p = proponiApparato(host({
       classification: "switch", inferred_vendor: "mikrotik", inferred_os_family: "network-os",

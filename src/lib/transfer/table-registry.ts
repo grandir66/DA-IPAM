@@ -103,6 +103,7 @@ export const TENANT_TABLES: TableSpec[] = [
   { table: "librenms_inventario", scope: "tenant", tier: "history" },
   { table: "librenms_lettura", scope: "tenant", tier: "history" },
   { table: "librenms_rifiuto", scope: "tenant", tier: "history" },
+  { table: "librenms_esclusione", scope: "tenant", tier: "config" }, // scelta dell'utente, non una fotografia
   { table: "mobile_inventory_history", scope: "tenant", tier: "history" },
   { table: "mc_remote_session", scope: "tenant", tier: "history" }, // sessioni remote effimere
   { table: "mc_command_log", scope: "tenant", tier: "history" },    // audit comandi RMM

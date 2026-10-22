@@ -4,6 +4,22 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-23 · Switch e router con SSH e SNMP, LibreNMS su tutti gli oggetti SNMP, matrice VLAN leggibile
+
+### Aggiunto
+
+- **LibreNMS: aggiunta automatica estesa a tutti gli oggetti con SNMP verificato** (Riccardo, 22/10). Prima i candidati erano solo i vicini LLDP che LibreNMS vede ma non interroga: sulla sede 70151 nessuno, mentre 76 oggetti avevano una SNMP validata. Ora il giro (5 per giro, rifiutati riprovati dopo 24 ore, mai `force_add`, senza SNMP mai) prende anche gli apparati con un binding SNMP riuscito o con la SNMP validata sul loro host, e gli host senza apparato con la SNMP validata. «SNMP verificato» comprende la credenziale validata sull'host perché sulla stessa sede solo 4 apparati su 16 avevano il binding «riuscito»: gli altri erano «non provati» ma letti in SNMP ogni ora. Gli oggetti SNMP si aggiungono solo se la fotografia degli apparati di LibreNMS è stata letta in quel giro (senza, non si sa chi c'è già e si aggiungerebbero doppi).
+- **Esclusione per oggetto «Non aggiungere a LibreNMS»**: tabella `librenms_esclusione` (migrazione `librenms_esclusione_v21`, additiva) e rotta `POST/DELETE /api/hosts/[id]/librenms/esclusione` (admin). Vale solo per il giro automatico. L'elenco degli esclusi e dei candidati SNMP è nella risposta dei candidati; lo stato (SNMP verificato, escluso, ultimo rifiuto) nei dati LibreNMS della scheda. L'interfaccia arriva dopo l'ok sulla tavola.
+
+### Cambiato
+
+- **Proposta di un apparato: switch e router con SSH principale e SNMP accanto** (Riccardo, 22/10: «somma le due acquisizioni; SSH principale se c'è ed è meglio»). Con l'SNMP dedotto come protocollo la finestra non proponeva mai l'SSH, anche con una credenziale SSH validata. Ora, per switch e router di piattaforme che si leggono di preferenza in SSH (MikroTik, HP, Cisco, Omada, Stormshield), una SSH validata diventa la credenziale principale e la SNMP validata va in «SNMP aggiuntivo». Ubiquiti resta SNMP. Gli apparati già creati non cambiano.
+- **LibreNMS: un host senza community nei dati SNMP usa la credenziale SNMP validata sull'host** (anche v3) invece di finire in «senza SNMP».
+
+### Corretto
+
+- **Matrice VLAN: intestazione e colonne Porta/Stato/PVID fisse, altezza limitata.** Con 24 VLAN e 50 porte la tabella era alta ~2500 px e la barra orizzontale stava in fondo, fuori vista: le colonne a destra sembravano tagliate. Ora la tabella scorre in un riquadro alto al più il 70% dello schermo, con la barra in vista. Resa verificata a 1280 e 1920 con dati finti.
+
 ## [Non rilasciato] — 2026-10-22 · Comware: VLAN e porte taggate dal collector via SSH
 
 ### Aggiunto

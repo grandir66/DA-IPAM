@@ -234,3 +234,66 @@ test("candidati: non interrogati, rifiutati col motivo, vicini risolti a un host
   assert.ok("parti" in e2);
   assert.ok(aggiunte.includes(h2));
 });
+
+// Riccardo 22/10 sera: l'aggiunta automatica prende tutti gli oggetti con l'SNMP verificato, non solo i vicini LLDP. Sulla
+// sede di prova i candidati dai vicini erano zero e 76 oggetti avevano una SNMP validata (16 apparati, 60 host); dei 16
+// apparati solo 4 col binding «riuscito», gli altri «non provati» ma letti in SNMP ogni ora.
+test("candidati SNMP verificati: apparati (binding riuscito o SNMP validata sull'host) e host; esclusi, già dentro e chi non ha SNMP restano fuori", async () => {
+  orologio = new Date("2026-10-24T09:00:00Z");
+  const d = getTenantDb(T);
+  d.prepare("DELETE FROM librenms_rifiuto").run();
+  const cred = Number(d.prepare("INSERT INTO credentials (name, credential_type) VALUES ('community', 'snmp')").run().lastInsertRowid);
+  const validaSnmp = (hostId: number) =>
+    d.prepare("INSERT INTO host_credentials (host_id, credential_id, protocol_type, port, validated) VALUES (?, ?, 'snmp', 161, 1)").run(hostId, cred);
+  const apparato = (ip: string, nome: string, hostId: number | null) =>
+    Number(d.prepare("INSERT INTO network_devices (name, host, device_type, vendor, protocol, host_id) VALUES (?, ?, 'switch', 'mikrotik', 'snmp_v2', ?)").run(nome, ip, hostId).lastInsertRowid);
+
+  const hSw = withTenant(T, () => preparaHost("192.0.2.31", "sw-validato"));
+  validaSnmp(hSw);
+  const swValidato = apparato("192.0.2.31", "sw-validato", hSw);
+  const swBinding = apparato("192.0.2.32", "sw-binding", null);
+  d.prepare("INSERT INTO device_credential_bindings (device_id, credential_id, protocol_type, port, test_status) VALUES (?, ?, 'snmp', 161, 'success')").run(swBinding, cred);
+  apparato("192.0.2.33", "sw-non-provato", null); // binding assente e host senza SNMP validata: fuori
+  const hStampante = withTenant(T, () => preparaHost("192.0.2.34", "stampante"));
+  validaSnmp(hStampante);
+  const hEscluso = withTenant(T, () => preparaHost("192.0.2.35", "escluso"));
+  validaSnmp(hEscluso);
+  d.prepare("INSERT INTO librenms_esclusione (ip, host_id, il) VALUES ('192.0.2.35', ?, '2026-10-24 08:00:00')").run(hEscluso);
+  const hDentro = withTenant(T, () => preparaHost("192.0.2.36", "gia-dentro"));
+  validaSnmp(hDentro);
+  d.prepare("INSERT INTO librenms_host_map (network_id, host_ip, librenms_device_id) VALUES (1, '192.0.2.36', 77)").run();
+
+  const c = withTenant(T, () => candidatiLibrenms());
+  const snmp = c.snmp_verificati.filter((x) => x.ip.startsWith("192.0.2.3"));
+  assert.deepEqual(snmp.map((x) => [x.tipo, x.ip]), [
+    ["apparato", "192.0.2.31"], ["apparato", "192.0.2.32"], ["host", "192.0.2.34"],
+  ], "prima gli apparati; fuori il non provato, l'escluso e chi è già in LibreNMS");
+  assert.deepEqual(c.esclusi.map((x) => [x.host_id, x.ip]), [[hEscluso, "192.0.2.35"]]);
+
+  const apparatiAggiunti: number[] = [];
+  const e = await withTenant(T, () => giroLibrenms({
+    ignoraCadenza: true,
+    dip: { ...dip(), aggiungiApparato: async (id) => { apparatiAggiunti.push(id); return { ok: true, librenms_device_id: 500 + id, aggiunto: true }; } },
+  }));
+  assert.ok("parti" in e);
+  assert.deepEqual(apparatiAggiunti, [swValidato, swBinding]);
+  assert.ok(aggiunte.includes(hStampante), "l'host senza apparato passa dall'aggiunta di un host");
+  assert.ok(!aggiunte.includes(hEscluso) && !aggiunte.includes(hDentro));
+  assert.ok(e.candidati.provati <= 5);
+});
+
+test("candidati SNMP: senza la fotografia degli apparati (LibreNMS non risponde) nessun oggetto SNMP si aggiunge", async () => {
+  orologio = new Date("2026-10-25T09:00:00Z");
+  sostituisci["/devices"] = () => ({ status: 500, corpo: {} });
+  const apparatiAggiunti: number[] = [];
+  const e = await withTenant(T, () => giroLibrenms({
+    ignoraCadenza: true,
+    dip: { ...dip(), aggiungiApparato: async (id) => { apparatiAggiunti.push(id); return { ok: true, librenms_device_id: 1, aggiunto: true }; } },
+  }));
+  assert.ok("parti" in e);
+  assert.equal(e.parti.apparati.esito, "non_so");
+  assert.deepEqual(apparatiAggiunti, []);
+  const ipSnmp = new Set(["192.0.2.31", "192.0.2.32", "192.0.2.34"]);
+  const hostSnmp = (getTenantDb(T).prepare("SELECT id, ip FROM hosts").all() as Array<{ id: number; ip: string }>).filter((h) => ipSnmp.has(h.ip)).map((h) => h.id);
+  assert.ok(aggiunte.every((id) => !hostSnmp.includes(id)));
+});

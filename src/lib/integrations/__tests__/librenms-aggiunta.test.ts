@@ -7,6 +7,7 @@ import { removeTestHubDb } from "./support/hub-isolato";
 import { test, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { closeHubDb } from "@/lib/db-hub";
+import { encrypt } from "@/lib/crypto";
 import { deleteTenantDatabase, getTenantDb, withTenant } from "@/lib/db-tenant";
 import type { SceltaSnmpApparato } from "@/lib/credentials/resolve";
 import { setIntegrationConfig } from "../config";
@@ -183,4 +184,22 @@ test("host senza SNMP: niente aggiunta «solo ping», nessuna chiamata a LibreNM
   assert.equal(chiamate.some((x) => x.metodo === "POST"), false, "nessuna aggiunta mandata a LibreNMS");
   const r = getTenantDb(T).prepare("SELECT codice FROM librenms_rifiuto WHERE ip = '192.0.2.99'").get();
   assert.deepEqual(r, { codice: "senza_snmp" });
+});
+
+test("host senza community nei dati SNMP ma con una SNMP validata sull'host: si aggiunge con quella credenziale", async () => {
+  // 22/10 sera: candidati automatici = tutti gli oggetti con SNMP verificato; sulla sede di prova 60 host avevano la
+  // SNMP validata solo in host_credentials, e senza questo ripiego sarebbero finiti tutti in «senza_snmp».
+  setIntegrationConfig("librenms", { mode: "external", url: "http://192.0.2.200:8090", apiToken: "token-finto" });
+  rispostaPost = () => Response.json({ status: "ok", id: [92] });
+  const d = getTenantDb(T);
+  const id = withTenant(T, () => Number(d.prepare("INSERT INTO hosts (network_id, ip, status) VALUES (1, '192.0.2.98', 'online')").run().lastInsertRowid));
+  const cred = Number(d.prepare("INSERT INTO credentials (name, credential_type, encrypted_password) VALUES ('comm-validata', 'snmp', ?)").run(encrypt("comm-validata")).lastInsertRowid);
+  d.prepare("INSERT INTO host_credentials (host_id, credential_id, protocol_type, port, validated, validated_at) VALUES (?, ?, 'snmp', 1161, 1, '2026-10-22 10:00:00')").run(id, cred);
+  const esito = await withTenant(T, () => addSingleHostToLibreNMS(id));
+  assert.deepEqual(esito, { ok: true, librenms_device_id: 92, aggiunto: true });
+  const post = chiamate.find((x) => x.metodo === "POST");
+  assert.equal(post?.corpo?.community, "comm-validata");
+  assert.equal(post?.corpo?.snmpver, "v2c");
+  assert.equal(post?.corpo?.port, 1161);
+  assert.equal(post?.corpo?.snmp_disable, false);
 });

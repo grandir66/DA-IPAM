@@ -6,7 +6,8 @@
 import { z } from "zod";
 import { leggiInterruttore, letturaAccesa } from "../topology/letture/interruttori";
 import { getHostById } from "../db-tenant";
-import { candidatiLibrenms, datiLibrenmsHost, lettureLibrenms, ultimoGiroLibrenms } from "./librenms-fonte";
+import { candidatiLibrenms, datiLibrenmsHost, lettureLibrenms, statoAggiuntaLibrenms, ultimoGiroLibrenms } from "./librenms-fonte";
+import { escludiDaLibrenms, includiInLibrenms } from "./librenms-db";
 import { addSingleHostToLibreNMS, type EsitoAggiunta } from "./librenms-sync";
 
 export interface Risposta { status: number; corpo: unknown }
@@ -19,7 +20,21 @@ export function rispostaDatiHost(idTesto: string): Risposta {
   const id = Number(idTesto);
   if (!Number.isInteger(id) || id <= 0) return { status: 400, corpo: { error: "Id dell'host non valido" } };
   if (!getHostById(id)) return { status: 404, corpo: { error: "Host non trovato" } };
-  return { status: 200, corpo: { ...datiLibrenmsHost(id), acceso: letturaAccesa("librenms") } };
+  return { status: 200, corpo: { ...datiLibrenmsHost(id), aggiunta: statoAggiuntaLibrenms(id), acceso: letturaAccesa("librenms") } };
+}
+
+/**
+ * POST (escludi) e DELETE (togli l'esclusione) /api/hosts/[id]/librenms/esclusione: «Non aggiungere a LibreNMS» per il
+ * giro automatico (22/10). 503 se la tabella manca (migrazione non riuscita): la scelta non si scrive e lo si dice.
+ */
+export function rispostaEsclusione(idTesto: string, escludi: boolean): Risposta {
+  const id = Number(idTesto);
+  if (!Number.isInteger(id) || id <= 0) return { status: 400, corpo: { error: "Id dell'host non valido" } };
+  const host = getHostById(id);
+  if (!host) return { status: 404, corpo: { error: "Host non trovato" } };
+  const fatto = escludi ? escludiDaLibrenms(host.ip, { hostId: id }) : includiInLibrenms(host.ip);
+  if (!fatto) return { status: 503, corpo: { error: "Esclusioni da LibreNMS non disponibili: la migrazione dello schema non è riuscita" } };
+  return { status: 200, corpo: { aggiunta: statoAggiuntaLibrenms(id) } };
 }
 
 /** GET /api/integrations/librenms/candidati: le tre liste, lo stato della lettura per parte, l'esito dell'ultimo giro e l'interruttore (acceso, da chi, quando). */

@@ -5,15 +5,16 @@
  *   `scriviParteLibrenms` su un esito diverso da `letto` aggiorna solo `librenms_lettura` e lancia.
  * - Giro: `giroLibrenms`, nel job `librenms_sync` già esistente, dietro l'interruttore `topologia.lettura.librenms`
  *   spento di default; spento = nemmeno il client si crea. Al più ogni 15 minuti. Solo l'API di LibreNMS locale (spec
- *   §4.1): nessun traffico nuovo verso gli apparati. Dopo i vicini, quelli che LibreNMS vede ma non interroga e che
- *   corrispondono a un host di DA-IPAM si aggiungono a LibreNMS da soli (Registro del piano, 22/10: «se l'SNMP risponde»,
- *   cioè senza `force_add`), al più 5 per giro.
+ *   §4.1): nessun traffico nuovo verso gli apparati. Dopo la lettura si aggiungono a LibreNMS da soli, al più 5 per giro
+ *   e senza `force_add` (Registro del piano, 22/10: «se l'SNMP risponde»): i vicini che LibreNMS vede ma non interroga e
+ *   che corrispondono a un host di DA-IPAM, poi (Riccardo 22/10 sera: «a tutti gli oggetti SNMP verificati») gli apparati
+ *   e gli host con l'SNMP verificato, tranne gli esclusi a mano («Non aggiungere a LibreNMS», `librenms_esclusione`).
  * - Letture per le rotte: i dati di un oggetto (`datiLibrenmsHost`) e i candidati del modulo (`candidatiLibrenms`).
  *
  * La mappa non legge queste tabelle (spec §4.3). Esiti e log con soli numeri e codici: nessun IP, nome o MAC (spec §4.5).
  */
 import type Database from "better-sqlite3";
-import { getCurrentTenantCode, getTenantDb, getTenantSetting, livelloSchemaLibrenms, setTenantSetting } from "../db-tenant";
+import { getCurrentTenantCode, getTenantDb, getTenantSetting, livelloSchemaLibrenms, schemaEsclusioneLibrenms, setTenantSetting } from "../db-tenant";
 import { normalizeName, resolveRemote } from "@/lib/topology/match";
 import { haColonnaPrincipale } from "@/lib/devices/cluster-discovery";
 import { chiaveEsito, letturaAccesa, oraUtc } from "@/lib/topology/letture/interruttori";
@@ -38,7 +39,7 @@ import {
   type RigaSensore,
   type RigaVicino,
 } from "./librenms-lettori";
-import { addSingleHostToLibreNMS, type EsitoAggiunta } from "./librenms-sync";
+import { addSingleHostToLibreNMS, addSingleNetworkDeviceToLibreNMS, type EsitoAggiunta } from "./librenms-sync";
 
 export type Parte = "apparati" | "porte" | "vicini" | "vlan" | "mac_porta" | "arp" | "sensori" | "inventario";
 export const PARTI: readonly Parte[] = ["apparati", "porte", "vicini", "vlan", "mac_porta", "arp", "sensori", "inventario"];
@@ -147,6 +148,8 @@ export interface DipendenzeGiro {
   adesso?: () => Date;
   /** L'aggiunta di un candidato (prove); senza, `addSingleHostToLibreNMS`. */
   aggiungiHost?: (hostId: number) => Promise<EsitoAggiunta>;
+  /** L'aggiunta di un apparato con l'SNMP verificato (prove); senza, `addSingleNetworkDeviceToLibreNMS`. */
+  aggiungiApparato?: (deviceId: number) => Promise<EsitoAggiunta>;
 }
 
 export interface OpzioniGiro {
@@ -162,7 +165,8 @@ export type EsitoGiro =
   | {
       parti: Record<Parte, EsitoParte>;
       inventario: { apparati: number; letti: number; non_so: number };
-      candidati: { provati: number; aggiunti: number; rifiutati: number };
+      /** `senza_esclusioni`: la tabella delle esclusioni manca, gli oggetti SNMP non si sono aggiunti (solo i vicini). */
+      candidati: { provati: number; aggiunti: number; rifiutati: number; senza_esclusioni?: true };
       ms: number;
     };
 
@@ -237,18 +241,41 @@ export async function giroLibrenms(opts: OpzioniGiro = {}): Promise<EsitoGiro> {
   const inventario = await giroInventario(d, client, adesso);
   parti.inventario = inventario.esito;
 
-  const candidati = { provati: 0, aggiunti: 0, rifiutati: 0 };
-  if (opts.aggiungiCandidati !== false && parti.vicini.esito === "letto") {
-    const aggiungi = dip.aggiungiHost ?? addSingleHostToLibreNMS;
+  const candidati: { provati: number; aggiunti: number; rifiutati: number; senza_esclusioni?: true } = { provati: 0, aggiunti: 0, rifiutati: 0 };
+  if (opts.aggiungiCandidati !== false) {
+    const aggiungiHost = dip.aggiungiHost ?? addSingleHostToLibreNMS;
+    const aggiungiApparato = dip.aggiungiApparato ?? addSingleNetworkDeviceToLibreNMS;
     const limite = oraUtc(new Date(ora().getTime() - RIPROVA_RIFIUTO_ORE * 3_600_000));
-    for (const c of candidatiDaiVicini(d).filter((c) => c.rifiutato_il === null || c.rifiutato_il < limite).slice(0, CANDIDATI_PER_GIRO)) {
+    const daProvare = (r: string | null) => r === null || r < limite;
+    // Senza la tabella delle esclusioni non si sa chi è escluso: gli oggetti SNMP restano fuori, i vicini no (come prima).
+    const conEsclusioni = schemaEsclusioneLibrenms(d);
+    if (!conEsclusioni) candidati.senza_esclusioni = true;
+    const esclusi = new Set(conEsclusioni ? (d.prepare("SELECT ip FROM librenms_esclusione").all() as Array<{ ip: string }>).map((r) => r.ip) : []);
+    const turno: Array<{ tipo: "host" | "apparato"; id: number; ip: string }> = [];
+    const visti = new Set<string>();
+    if (parti.vicini.esito === "letto") {
+      for (const c of candidatiDaiVicini(d)) {
+        if (esclusi.has(c.ip) || !daProvare(c.rifiutato_il) || visti.has(c.ip)) continue;
+        visti.add(c.ip);
+        turno.push({ tipo: "host", id: c.host_id, ip: c.ip });
+      }
+    }
+    // Chi è già in LibreNMS si sa solo dalla fotografia degli apparati: senza, nessun oggetto SNMP (si aggiungerebbero doppi).
+    if (conEsclusioni && parti.apparati.esito === "letto") {
+      for (const c of candidatiSnmpVerificati(d)) {
+        if (!daProvare(c.rifiutato_il) || visti.has(c.ip)) continue;
+        visti.add(c.ip);
+        turno.push({ tipo: c.tipo, id: c.id, ip: c.ip });
+      }
+    }
+    for (const c of turno.slice(0, CANDIDATI_PER_GIRO)) {
       candidati.provati++;
       try {
-        const e = await aggiungi(c.host_id);
+        const e = c.tipo === "apparato" ? await aggiungiApparato(c.id) : await aggiungiHost(c.id);
         if (e.ok) candidati.aggiunti++;
         else candidati.rifiutati++;
       } catch {
-        candidati.rifiutati++; // host sparito o LibreNMS non configurato: si riprova al giro dopo
+        candidati.rifiutati++; // oggetto sparito o LibreNMS non configurato: si riprova al giro dopo
       }
     }
   }
@@ -435,10 +462,81 @@ function candidatiDaiVicini(d: Database.Database): CandidatoVicino[] {
   return out;
 }
 
+export interface CandidatoSnmp {
+  tipo: "host" | "apparato";
+  /** `hosts.id` o `network_devices.id`, secondo il tipo. */
+  id: number;
+  host_id: number | null;
+  nome: string;
+  ip: string;
+  rifiutato_il: string | null;
+}
+
+/**
+ * Gli oggetti con l'SNMP verificato non ancora in LibreNMS (per IP in `librenms_apparato` o in `librenms_host_map`) e non
+ * esclusi (Riccardo 22/10). Verificato = per un apparato un binding SNMP riuscito o la credenziale SNMP validata sul suo
+ * host (sulla sede di prova i binding «riusciti» erano 4 su 16, gli altri «non provati» ma letti ogni ora); per un host
+ * senza apparato la credenziale SNMP validata. Prima gli apparati. Senza la tabella delle esclusioni: lista vuota.
+ */
+export function candidatiSnmpVerificati(d: Database.Database): CandidatoSnmp[] {
+  if (!schemaEsclusioneLibrenms(d)) return [];
+  return d.prepare(
+    `WITH dentro AS (SELECT ip FROM librenms_apparato WHERE ip IS NOT NULL UNION SELECT host_ip FROM librenms_host_map
+                     UNION SELECT ip FROM librenms_esclusione)
+     SELECT * FROM (
+       SELECT 'apparato' AS tipo, nd.id, nd.host_id, nd.host AS ip, COALESCE(NULLIF(nd.name, ''), nd.host) AS nome, r.il AS rifiutato_il, 0 AS ordine
+         FROM network_devices nd LEFT JOIN librenms_rifiuto r ON r.ip = nd.host
+        WHERE nd.host NOT IN (SELECT ip FROM dentro)
+          AND (EXISTS (SELECT 1 FROM device_credential_bindings b
+                        WHERE b.device_id = nd.id AND b.protocol_type = 'snmp' AND b.test_status = 'success')
+               OR EXISTS (SELECT 1 FROM host_credentials hc JOIN hosts h ON h.id = hc.host_id
+                           WHERE (h.id = nd.host_id OR h.ip = nd.host) AND hc.protocol_type = 'snmp' AND hc.validated = 1))
+       UNION ALL
+       SELECT 'host', h.id, h.id, h.ip, COALESCE(NULLIF(h.custom_name, ''), NULLIF(h.hostname, ''), h.ip), r.il, 1
+         FROM hosts h LEFT JOIN librenms_rifiuto r ON r.ip = h.ip
+        WHERE h.ip NOT IN (SELECT ip FROM dentro)
+          AND EXISTS (SELECT 1 FROM host_credentials hc WHERE hc.host_id = h.id AND hc.protocol_type = 'snmp' AND hc.validated = 1)
+          AND NOT EXISTS (SELECT 1 FROM network_devices nd WHERE nd.host_id = h.id OR nd.host = h.ip)
+     ) ORDER BY ordine, id LIMIT ?`,
+  ).all(LIMITE_LISTE) as CandidatoSnmp[];
+}
+
+/** Lo stato dell'aggiunta automatica di un oggetto, per la scheda (null senza schema di LibreNMS). */
+export interface StatoAggiuntaLibrenms {
+  /** SNMP verificato con lo stesso criterio dei candidati: apparato con binding riuscito o host con SNMP validata. */
+  snmp_verificato: boolean;
+  escluso_il: string | null;
+  rifiuto: { codice: string; motivo: string; il: string } | null;
+  /** Le esclusioni si possono scrivere (migrazione `librenms_esclusione_v21` riuscita). */
+  esclusioni: boolean;
+}
+
+export function statoAggiuntaLibrenms(hostId: number): StatoAggiuntaLibrenms | null {
+  if (livelloSchemaLibrenms() < 1) return null;
+  const d = db();
+  const h = d.prepare("SELECT ip FROM hosts WHERE id = ?").get(hostId) as { ip: string } | undefined;
+  if (!h) return null;
+  const verificato = !!d.prepare(
+    `SELECT 1 FROM host_credentials WHERE host_id = ? AND protocol_type = 'snmp' AND validated = 1
+     UNION ALL
+     SELECT 1 FROM network_devices nd JOIN device_credential_bindings b ON b.device_id = nd.id
+      WHERE (nd.host_id = ? OR nd.host = ?) AND b.protocol_type = 'snmp' AND b.test_status = 'success'
+     LIMIT 1`,
+  ).get(hostId, hostId, h.ip);
+  const esclusioni = schemaEsclusioneLibrenms(d);
+  const escluso = esclusioni ? (d.prepare("SELECT il FROM librenms_esclusione WHERE ip = ?").get(h.ip) as { il: string } | undefined) : undefined;
+  const rifiuto = d.prepare("SELECT codice, motivo, il FROM librenms_rifiuto WHERE ip = ?").get(h.ip) as { codice: string; motivo: string; il: string } | undefined;
+  return { snmp_verificato: verificato, escluso_il: escluso?.il ?? null, rifiuto: rifiuto ?? null, esclusioni };
+}
+
 export interface CandidatiLibrenms {
   non_interrogati: Array<{ host_id: number | null; nome: string; ip: string; dal: string | null }>;
   rifiutati: Array<{ host_id: number | null; nome: string; ip: string; codice: string; motivo: string; il: string }>;
   dai_vicini: Array<{ host_id: number; nome: string; ip: string; visto_da: string; porta: string }>;
+  /** Oggetti con l'SNMP verificato in attesa dell'aggiunta automatica (5 per giro). */
+  snmp_verificati: Array<{ tipo: "host" | "apparato"; host_id: number | null; nome: string; ip: string; rifiutato_il: string | null }>;
+  /** Esclusi a mano dall'aggiunta automatica. */
+  esclusi: Array<{ host_id: number | null; nome: string; ip: string; il: string }>;
 }
 
 /**
@@ -446,7 +544,7 @@ export interface CandidatiLibrenms {
  * (`last_polled` nullo, mai tolti da soli: spec §3.A), aggiunte rifiutate col motivo, vicini da aggiungere. LIMIT 500.
  */
 export function candidatiLibrenms(): CandidatiLibrenms {
-  if (livelloSchemaLibrenms() < 1) return { non_interrogati: [], rifiutati: [], dai_vicini: [] };
+  if (livelloSchemaLibrenms() < 1) return { non_interrogati: [], rifiutati: [], dai_vicini: [], snmp_verificati: [], esclusi: [] };
   const d = db();
   const nonInterrogati = d.prepare(
     `SELECT a.ip, COALESCE(a.sysname, a.hostname, a.ip) AS nome_librenms, a.last_discovered AS dal,
@@ -462,10 +560,22 @@ export function candidatiLibrenms(): CandidatiLibrenms {
        LEFT JOIN hosts h ON h.id = COALESCE(r.host_id, nd.host_id)
       ORDER BY r.il DESC LIMIT ?`,
   ).all(LIMITE_LISTE) as Array<{ ip: string; codice: string; motivo: string; il: string; host_id: number | null; nome: string }>;
+  const esclusi = schemaEsclusioneLibrenms(d)
+    ? d.prepare(
+      `SELECT e.ip, e.il, COALESCE(e.host_id, nd.host_id) AS host_id,
+              COALESCE(NULLIF(h.custom_name, ''), NULLIF(h.hostname, ''), nd.name, e.ip) AS nome
+         FROM librenms_esclusione e
+         LEFT JOIN network_devices nd ON nd.id = e.network_device_id
+         LEFT JOIN hosts h ON h.id = COALESCE(e.host_id, nd.host_id)
+        ORDER BY e.il DESC LIMIT ?`,
+    ).all(LIMITE_LISTE) as Array<{ ip: string; il: string; host_id: number | null; nome: string }>
+    : [];
   return {
     non_interrogati: nonInterrogati.map((r) => ({ host_id: r.host_id, nome: r.nome_host ?? r.nome_librenms ?? r.ip ?? "?", ip: r.ip ?? "", dal: r.dal })),
     rifiutati,
     dai_vicini: candidatiDaiVicini(d).map((c) => ({ host_id: c.host_id, nome: c.nome, ip: c.ip, visto_da: c.visto_da, porta: c.porta })),
+    snmp_verificati: candidatiSnmpVerificati(d).map((c) => ({ tipo: c.tipo, host_id: c.host_id, nome: c.nome, ip: c.ip, rifiutato_il: c.rifiutato_il })),
+    esclusi,
   };
 }
 

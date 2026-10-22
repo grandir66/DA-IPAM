@@ -21,7 +21,7 @@
  */
 import { DEVICE_CLASSIFICATIONS } from "@/lib/device-classifications";
 import { canonicalizza } from "@/lib/classification/canonico";
-import { coerceProtocolForVendor, coerceScanTargetForVendor } from "@/lib/vendor-device-profile";
+import { coerceProtocolForVendor, coerceScanTargetForVendor, getVendorDeviceProfile } from "@/lib/vendor-device-profile";
 import { inferVendorFromManufacturer } from "@/lib/vendor-inference";
 import { isMacOsHost, suggestEndpointClassification } from "@/lib/host-platform-detect";
 import { getDefaultProductProfileForVendor, PRODUCT_PROFILES_BY_VENDOR } from "@/lib/device-product-profiles";
@@ -248,10 +248,27 @@ function protocolloPer(host: HostPerProposta, piattaforma: string): ProtocolloAp
   return coerceProtocolForVendor(piattaforma, dedotto ?? undefined) as ProtocolloApparato;
 }
 
+/**
+ * Switch e router: le due acquisizioni si sommano, SSH principale quando c'è
+ * una credenziale SSH validata e la piattaforma si legge di preferenza in SSH
+ * (Riccardo 22/10). Gli apparati già creati non si toccano: è solo la proposta.
+ */
+function protocolloConSshSePossibile(
+  host: HostPerProposta,
+  piattaforma: string,
+  classificazione: string,
+  protocollo: ProtocolloApparato,
+  archivio: CredenzialeArchivio[],
+): ProtocolloApparato {
+  if (!eSnmp(protocollo) || (classificazione !== "switch" && classificazione !== "router")) return protocollo;
+  if (getVendorDeviceProfile(piattaforma).defaultProtocol !== "ssh") return protocollo;
+  return credenzialeValidata(host, "ssh", archivio) ? "ssh" : protocollo;
+}
+
 export function proponiApparato(host: HostPerProposta, archivio: CredenzialeArchivio[]): PropostaApparato {
   const classification = classificazioneDaHost(host);
   const vendor = piattaformaConClassificazione(host, classification);
-  const protocol = protocolloPer(host, vendor);
+  const protocol = protocolloConSshSePossibile(host, vendor, classification, protocolloPer(host, vendor), archivio);
   const principale = credenzialeValidata(host, protocol, archivio);
   const snmp = eSnmp(protocol) ? null : credenzialeValidata(host, "snmp_v2", archivio);
   const credentialId = principale ? String(principale.id) : null;

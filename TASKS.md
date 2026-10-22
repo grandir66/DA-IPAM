@@ -99,7 +99,7 @@ Piano: [`docs/superpowers/plans/2026-10-22-invio-ad-inventario-a-vulcan.md`](doc
 - [x] T7 timer in `server.ts` (nessuna chiamata senza gettone) — senza gettone solo la lettura della config, timer una volta per processo, inventario alle 03:00 italiane + recupero oltre 26 h
 - [x] T8 riquadro in «Cosa esce», «Invia ora», riga nella pagina AD — riquadro in «Cosa esce» (oggi «Spento: manca VULCAN_TOKEN»), «Invia ora» solo admin, riga nella pagina AD; revisione completa: approvato
 - [x] T9 collaudo contro DA-Vul-can di sviluppo, documenti, copie cancellate — 22/10, DA-Vul-can origin/HEAD in locale (DB vuoto, CA di prova solo per il collaudo): spento 503 → in coda; acceso AD 201, battito 200, inventario 201 (351 oggetti), doppione 200 senza seconda riga, 401 e 403 → «sospeso»; worktree, CA e copie rimossi; CHANGELOG, CONTEXT §6, consuntivo nel piano
-- [ ] Rilascio su `dev` e verifica sul live (hub e cliente A «Spento», nessuna riga `[vulcan]` nel journal) — al controllore
+- [x] Rilascio su `dev` e verifica sul live (hub e cliente A «Spento», nessuna riga `[vulcan]` nel journal) — al controllore → hub v0.9.872 (22/10 13:16 ora italiana): migrazione vulcan_coda_v21 fatta, coda vuota, nessuna riga [vulcan] nel journal. Cliente A: arriva col suo aggiornamento da dev, non verificato da qui.
 - [ ] Fuori piano, da seguire: A-Link (`tipo:"ipam"`, chiavi in `oggetto.env`, policy P9 con conferma), A3 sull'hub (rotta inventario, nessun piano su origin al 22/10), nome `da-vulcan.domarc.it` fissato sull'appliance
 
 ## 2026-10-22 — topologia: spazio in basso, cavi a mano, server non agganciati
@@ -111,7 +111,7 @@ Livello leggero. Worktree `.worktrees/da-ipam-topologia` da `origin/dev` (il `de
 - [x] il cavo a mano vince sempre (decisione di Riccardo, 22/10): chiave del Prim e principale forzato degli oggetti finali; aggiornate 2 prove di `cavi-albero` che fissavano la regola vecchia
 - [ ] server/hypervisor non agganciati dalla tabella MAC: da misurare sull'appliance 192.168.99.51 (l'impronta ssh è cambiata e il vault non la riporta: serve la conferma di Riccardo prima di fidarsi); la copia locale dei dati è di luglio
 - [x] rilascio v0.9.845 su dev, hub aggiornato (01:59 ora italiana, salute ok); resa a 1920×1080 con `prova-claude`: la mappa finisce a 12 px dal fondo
-- [ ] `db-facade-ratchet` rosso già su origin/dev (265 funzioni in db.ts, soglia 262): non è di questo lavoro, l'ha lasciato la scheda MikroTik
+- [x] `db-facade-ratchet` rosso già su origin/dev (265 funzioni in db.ts, soglia 262): non è di questo lavoro, l'ha lasciato la scheda MikroTik → sistemato il 22/10 (df2e7dc3: tre funzioni spostate in db-tenant, soglia 262 rispettata).
 
 ## 2026-10-21 — scheda MikroTik copiata dal Manager
 
@@ -161,7 +161,7 @@ Tavola: https://claude.ai/artifact/7ezwy7nkAAzUWSn1wJCNKv (oggi, scheletro comun
   - [x] Router DA-RT-CORE, tab DHCP: «il router non ha restituito server DHCP attivi con un pool leggibile», ma i lease (320, server DHCP_DEF) ci sono: capire perché `dhcp-pool` non legge i pool. → risolto (v0.9.833): i server spenti hanno il flag `X` e il parser li dava accesi.
   - [ ] DA-DC01: la casella «Active Directory» sta su una riga a sé sopra la striscia (la striscia va in due righe); «VM 401 s…» troncato in intestazione.
   - [x] VLAN degli switch UniFi cancellate ogni notte: la sincronizzazione del controller (03:00) riscriveva le porte con `vlan` vuota; ora conserva `vlan` e `stp_state` letti via SNMP (v0.9.830, hub aggiornato il 21/10 alle 19:18). Anche il ProMax senza `dot1dBasePortIfIndex` ora lega la VLAN alla porta.
-  - [ ] Verificare il 22/10: dopo un «Aggiorna» di SW-CED-48POE-242 le porte hanno la VLAN, e dopo il giro UniFi delle 03:00 ce l hanno ancora (`select count(*) from switch_ports where device_id=7 and vlan is not null`). Se i nomi SNMP e quelli del controller non combaciano e gli indici sono sfalsati, la VLAN non si conserva (mai su una porta sbagliata).
+  - [x] Verificare il 22/10: dopo un «Aggiorna» di SW-CED-48POE-242 le porte hanno la VLAN, e dopo il giro UniFi delle 03:00 ce l hanno ancora (`select count(*) from switch_ports where device_id=7 and vlan is not null`). Se i nomi SNMP e quelli del controller non combaciano e gli indici sono sfalsati, la VLAN non si conserva (mai su una porta sbagliata). → 22/10: 52 porte su 52 con la VLAN dopo il giro UniFi delle 03:00.
   - [x] Switch sull hub: un `ERR_TOO_MANY_RETRIES` + eccezione `Event` in console (probabile flusso SSE che si riconnette): da capire. → 22/10: 5 caricamenti di fila delle schede switch (con le tab) senza errori; le tre volte viste erano subito dopo un riavvio dell'hub (pezzi della pagina non scaricati mentre il servizio ripartiva), non un difetto della scheda.
   - [x] Da guardare sull hub, a schermo: router MK-RTR-CORE (barre DHCP: compaiono in Panoramica solo dopo aver aperto la tab DHCP, niente SSH a ogni apertura), export solo admin, una pagina per tipo. → fatto il 22/10 con `prova-claude` (pagine per tipo, Panoramica e Interfacce del router).
   - [x] Conversione `device_type`: i 14 server non sono più «switch» → non hanno più la riga SNMP forzata in «credenziali usate» né l attribuzione della porta switch per MAC (`db.ts:2802`); la lettura SNMP extra del cron (`jobs.ts:1013`, spenta di default) non parte più per loro. Decidere se serve. → Riccardo (22/10): va bene così.

@@ -54,7 +54,8 @@ function Matrice({ m, letturaScheda }: { m: MatriceVlan; letturaScheda: { acceso
               <th rowSpan={2} className={thFisso}>PVID</th>
               {m.colonne.map((c) => (
                 <th key={c.etichetta} className="border-l px-1 pt-1.5 text-center align-bottom text-[13px] font-semibold">
-                  <span className="block max-w-[6.5rem] truncate" title={c.nome ?? undefined}>{c.nome ?? "·"}</span>
+                  {/* Nome in verticale come nel Manager: la colonna resta larga quanto la cella U/T, e 12+ VLAN entrano a 1440. */}
+                  <span className="mx-auto block max-h-[8rem] overflow-hidden text-ellipsis whitespace-nowrap [writing-mode:vertical-rl] rotate-180" title={c.nome ?? undefined}>{c.nome ?? "·"}</span>
                 </th>
               ))}
             </tr>

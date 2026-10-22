@@ -8,10 +8,10 @@
  * cade a metà non resta nulla da pulire: lo snapshot si scrive solo a lettura finita e le sessioni le chiude il
  * trasporto del collector (`withSshClient`, `session.close`).
  */
-import { acquisitionInputSchema, collectDevice, type AcquisitionRequest, type AcquisitionSnapshot, type CollectorId } from "@/lib/acquisition";
+import { acquisitionInputSchema, collectDevice, snapshotSchema, type AcquisitionRequest, type AcquisitionSnapshot, type CollectorId } from "@/lib/acquisition";
 import { redactSnapshot } from "@/lib/acquisition/redact";
 import { getCurrentTenantCode } from "@/lib/db-tenant";
-import { salvaSnapshot, type CredenzialiUsate } from "./archivio";
+import { contieneSegreto, salvaSnapshot, type CredenzialiUsate } from "./archivio";
 import { applicaSnapshot, type EsitoApplicazione } from "./applica";
 import { costruisciRichiesta, type ApparatoPerRichiesta, type LettoreSegreto } from "./richiesta";
 import { snapshotDiErrore } from "./snapshot-errore";
@@ -103,6 +103,17 @@ export async function eseguiAcquisizioneModulare(p: ParametriEsecuzione, deps: D
           snapshot = snapshotDiErrore(p.collector, p.device.host, errore, inizio, deps.adesso().getTime() - inizio.getTime());
         }
       }
+    }
+    // Ultime due guardie prima del DB: uno snapshot fuori schema o con un segreto in un testo non si salva com'è, ma
+    // diventa un errore col solo codice, così la scheda lo mostra invece di non mostrare niente.
+    if (!snapshotSchema.safeParse(snapshot).success) {
+      errore = "SNAPSHOT_INVALID";
+      log("✗ Il collector ha prodotto uno snapshot fuori dallo schema 1.0: salvato come errore");
+      snapshot = snapshotDiErrore(p.collector, p.device.host, errore, inizio, snapshot.duration_ms ?? 0);
+    } else if (contieneSegreto(snapshot, segreti)) {
+      errore = "SNAPSHOT_SECRET";
+      log("✗ Lo snapshot conteneva una credenziale: non salvato, al suo posto un errore");
+      snapshot = snapshotDiErrore(p.collector, p.device.host, errore, inizio, snapshot.duration_ms ?? 0);
     }
     const snapshotId = salvaSnapshot(p.deviceId, snapshot, { credenziali: usate(p.credenziali), utente: p.utente, segreti });
     const sezioni = Object.fromEntries(Object.entries(snapshot).filter(([, v]) => v && typeof v === "object" && "status" in (v as object))

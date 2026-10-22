@@ -10873,15 +10873,6 @@ export function modificheSnapshotAcquisizione(snapshotId: number, limit: number)
   return { righe, totale };
 }
 
-/** L'ultimo valore che un collector ha scritto in un campo dell'apparato (per riconoscere un valore messo a mano). */
-export function ultimiValoriScrittiDaCollector(deviceId: number, destinazione: string): Map<string, string | null> {
-  const righe = db().prepare(
-    `SELECT campo, dopo FROM acquisition_changes WHERE id IN (
-       SELECT MAX(id) FROM acquisition_changes WHERE device_id = ? AND destinazione = ? AND esito = 'scritto' GROUP BY campo)`,
-  ).all(deviceId, destinazione) as Array<{ campo: string; dopo: string | null }>;
-  return new Map(righe.map((r) => [r.campo, r.dopo]));
-}
-
 /** Le porte dell'apparato con i soli campi che la proiezione dei collector conosce (`acquisition/proiezioni`). */
 export function portePerProiezione(deviceId: number): PortaAttuale[] {
   return db().prepare(`SELECT port_index, port_name, ${CAMPI_PORTA.join(", ")} FROM switch_ports WHERE device_id = ? ORDER BY port_index`)

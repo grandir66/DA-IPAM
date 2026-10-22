@@ -90,6 +90,22 @@ describe("porte per campo", () => {
     assert.deepEqual(m.togli, []);
   });
 
+  it("il nome vince sull'indice: righe numerate per posizione (SSH di sempre) e ifIndex SNMP del collector non si mescolano", () => {
+    // Revisione del 22/10: GE1/0/1 con ifIndex 3 finiva sulla riga 3 («GE1/0/3») e la riga vera veniva tolta.
+    const attuali = [porta(1, "GE1/0/1"), porta(2, "GE1/0/2"), porta(3, "GE1/0/3"), porta(4, "GE1/0/4")];
+    const s = snap({ interfaces: sez([iface("GE1/0/1", { if_index: 3, speed_bps: 1e8 }), iface("GE1/0/2", { if_index: 4, speed_bps: 1e8 }), iface("GE1/0/3", { if_index: 5 }), iface("GE1/0/4", { if_index: 6 })]) });
+    const m = proiettaPorte(s, attuali);
+    assert.deepEqual(m.togli, []);
+    assert.deepEqual(m.aggiungi, []);
+    assert.deepEqual(m.aggiorna.map((u) => [u.port_name, u.campi.speed]), [["GE1/0/1", "100 Mbps"], ["GE1/0/2", "100 Mbps"]]);
+  });
+
+  it("senza nome uguale si ritrova per indice, ma solo una riga che nessun nome ha già preso", () => {
+    const m = proiettaPorte(snap({ interfaces: sez([iface("XGE1/0/1", { if_index: 7, speed_bps: 1e8 })]) }), [porta(7, "Ten-GigabitEthernet1/0/1")]);
+    assert.deepEqual(m.aggiorna.map((u) => u.port_name), ["Ten-GigabitEthernet1/0/1"]);
+    assert.deepEqual(m.togli, []);
+  });
+
   it("le porte nuove prendono l'indice letto, il numero del nome, o il primo libero, senza scontri", () => {
     const s = snap({ interfaces: sez([iface("5"), iface("Trk1"), iface("XGE1/0/9", { if_index: 9 })]) });
     const m = proiettaPorte(s, [porta(5, "porta-5-di-un-altro-nome")]);

@@ -36,6 +36,8 @@ const AVVISI: Readonly<Record<string, string>> = {
   CREDENTIAL_UNREADABLE: "Credenziale illeggibile: nessuna lettura fatta, nessun'altra credenziale provata.",
   CREDENTIAL_FORM_UNSUPPORTED: "La credenziale non ha la forma che il collector chiede.",
   REQUEST_INVALID: "Richiesta non valida per il collector.",
+  SNAPSHOT_INVALID: "Il collector ha prodotto dati fuori dallo schema 1.0: non usati.",
+  SNAPSHOT_SECRET: "Lo snapshot conteneva una credenziale: scartato, nessun dato salvato.",
   DEVICE_NOT_IDENTIFIED_AS_PROCURVE: "L'apparato non si è riconosciuto come ProCurve.",
 };
 

@@ -16,7 +16,7 @@ import { collectDevice, type AcquisitionRequest, type AcquisitionTransports } fr
 import type { ReadResult } from "@/lib/acquisition/schema";
 import { dipendenzeDb, valutaFonte } from "@/lib/acquisizione-modulare/fonte";
 import { lettoreDb } from "@/lib/acquisizione-modulare/richiesta";
-import { eseguiAcquisizioneModulare, prendiLucchetto, acquisizioneInCorso, type DipendenzeEsecuzione } from "@/lib/acquisizione-modulare/esegui";
+import { eseguiAcquisizioneModulare, prendiLucchetto, lasciaLucchetto, acquisizioneInCorso, type DipendenzeEsecuzione } from "@/lib/acquisizione-modulare/esegui";
 
 const T = "TESTACQESEGUI";
 const SEGRETO = "Segreto-Di-Prova-Mai-Nel-DB";
@@ -141,10 +141,26 @@ describe("eseguiAcquisizioneModulare", () => {
     });
   });
 
+  it("uno snapshot fuori schema si salva come errore SNAPSHOT_INVALID, non sparisce", async () => {
+    await withTenant(T, async () => {
+      const { d, v } = fontePronta();
+      assert.ok(prendiLucchetto(dev));
+      const base = deps({ collect: 0, shell: 0, sessioniAperte: 0 });
+      const e = await eseguiAcquisizioneModulare({ deviceId: dev, device: d, collector: v.collector, credenziali: v.credenziali, utente: null }, {
+        ...base,
+        collect: async (r) => ({ ...(await base.collect(r)), status: "inventato" } as never),
+      });
+      assert.equal(e.errore, "SNAPSHOT_INVALID");
+      assert.ok(payloadDi(e.snapshotId).includes("SNAPSHOT_INVALID"));
+      assert.equal(acquisizioneInCorso(dev), false);
+    });
+  });
+
   it("una sola acquisizione per apparato alla volta", () => {
     withTenant(T, () => {
       assert.equal(prendiLucchetto(dev), true);
       assert.equal(prendiLucchetto(dev), false, "la seconda richiesta trova il lucchetto");
+      lasciaLucchetto(dev);
     });
   });
 
@@ -157,6 +173,18 @@ describe("eseguiAcquisizioneModulare", () => {
       assert.ok(n("SELECT COUNT(*) AS n FROM acquisition_changes c JOIN acquisition_snapshots s ON s.id = c.snapshot_id") > 0);
       const json = JSON.stringify(d.prepare("SELECT * FROM acquisition_changes").all());
       assert.ok(!json.includes(SEGRETO) && !json.includes(COMMUNITY), "nessun segreto nelle modifiche");
+    });
+  });
+  it("un segreto fatto di cifre non fa cadere la lettura perché compare in un numero", async () => {
+    await withTenant(T, async () => {
+      getTenantDb(T).prepare("UPDATE credentials SET encrypted_password = ? WHERE id = ?").run(encrypt("1000"), credSsh);
+      try {
+        const e = await esegui({ collect: 0, shell: 0, sessioniAperte: 0 });
+        assert.equal(e.errore, null, "speed_bps 1000000000 non è un segreto");
+        assert.notEqual(e.status, "error");
+      } finally {
+        getTenantDb(T).prepare("UPDATE credentials SET encrypted_password = ? WHERE id = ?").run(encrypt(SEGRETO), credSsh);
+      }
     });
   });
 });

@@ -138,14 +138,27 @@ export function proiettaPorte(snapshot: AcquisitionSnapshot, attuali: readonly P
   const out: ModifichePorte = { aggiorna: [], aggiungi: [], togli: [] };
   if (!usabile(snapshot.interfaces)) return out;
   const tutte = snapshot.interfaces.data;
-  const perIndice = new Map(attuali.map((p) => [p.port_index, p]));
+  // Abbinamento in due passate. Prima il nome: il percorso SSH di sempre numera le porte per posizione nell'uscita, mentre
+  // il collector porta l'ifIndex SNMP, quindi lo stesso numero può essere un'altra porta. Poi l'indice, solo fra righe e
+  // interfacce che nessun nome ha abbinato (stessa porta scritta dall'SNMP con un nome diverso, «Ten-GigabitEthernet1/0/1»
+  // contro «XGE1/0/1»).
   const perNome = new Map(attuali.map((p) => [nomePorta(p.port_name), p]));
+  const abbinate = new Map<DeviceInterface, PortaAttuale>();
   const trovate = new Set<number>();
+  for (const i of tutte) {
+    const p = perNome.get(nomePorta(i.name));
+    if (p && !trovate.has(p.port_index)) { abbinate.set(i, p); trovate.add(p.port_index); }
+  }
+  const perIndice = new Map(attuali.filter((p) => !trovate.has(p.port_index)).map((p) => [p.port_index, p]));
+  for (const i of tutte) {
+    if (abbinate.has(i) || i.if_index === null) continue;
+    const p = perIndice.get(i.if_index);
+    if (p && !trovate.has(p.port_index)) { abbinate.set(i, p); trovate.add(p.port_index); }
+  }
   const usati = new Set(attuali.map((p) => p.port_index));
   let prossimo = Math.max(0, ...attuali.map((p) => p.port_index), ...tutte.map((i) => i.if_index ?? 0)) + 1;
   for (const i of tutte) {
-    const esistente = (i.if_index !== null ? perIndice.get(i.if_index) : undefined) ?? perNome.get(nomePorta(i.name));
-    if (esistente) trovate.add(esistente.port_index);
+    const esistente = abbinate.get(i);
     if (i.kind === "other") continue;
     const campi = valoriPerPorta(snapshot, i);
     if (esistente) {

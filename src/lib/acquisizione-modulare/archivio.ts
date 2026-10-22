@@ -23,10 +23,25 @@ const SEZIONI_CON_STATO = (s: AcquisitionSnapshot): Record<string, string> =>
   Object.fromEntries(Object.entries(s).filter(([, v]) => v && typeof v === "object" && "status" in (v as object))
     .map(([k, v]) => [k, (v as { status: string }).status]));
 
+/** Chiavi che la redazione lascia com'è (enum, codici, contatori): non portano testo dell'apparato (`acquisition/redact.ts`). */
+const CHIAVI_FISSE = new Set(["schema_version", "collector", "collector_version", "status", "kind", "unit", "sources", "warnings", "counters", "scope", "configuration_scope", "vlan_mode"]);
+
+/**
+ * Un segreto compare in un testo dello snapshot? Solo le stringhe fuori dalle chiavi fisse: un numero (velocità, byte)
+ * non è un'eco dell'apparato, e una password di sole cifre come «1000» lo troverebbe in `speed_bps` a ogni lettura.
+ */
+export function contieneSegreto(valore: unknown, segreti: readonly string[], chiave = ""): boolean {
+  if (CHIAVI_FISSE.has(chiave)) return false;
+  if (typeof valore === "string") return segreti.some((s) => s.length > 0 && valore.includes(s));
+  if (Array.isArray(valore)) return valore.some((v) => contieneSegreto(v, segreti, chiave));
+  if (valore && typeof valore === "object") return Object.entries(valore).some(([k, v]) => contieneSegreto(v, segreti, k));
+  return false;
+}
+
 export function salvaSnapshot(deviceId: number, snapshot: AcquisitionSnapshot, o: OpzioniSalvataggio): number {
   const valido = snapshotSchema.parse(snapshot);
+  if (contieneSegreto(valido, o.segreti ?? [])) throw new Error("SNAPSHOT_CON_SEGRETO");
   const json = JSON.stringify(valido);
-  for (const s of o.segreti ?? []) if (s && json.includes(s)) throw new Error("SNAPSHOT_CON_SEGRETO");
   const payload = gzipSync(Buffer.from(json, "utf8"));
   const sezioni = Object.entries(valido).filter(([, v]) => v && typeof v === "object" && "warnings" in (v as object));
   const avvisi = sezioni.reduce((n, [, v]) => n + ((v as { warnings: string[] }).warnings.length), 0);

@@ -119,7 +119,7 @@ export const CATALOGO = [
         // Collaudato in locale (22/10): un cluster Proxmox VE di 4 nodi (88 risorse). Nell'app solo credenziali `ssh` dell'archivio; `local_ssh` è per la CLI.
         id: "proxmox-ve", versione: "1.0.0", famiglia: "hypervisor", motore: "inventario", prodotti: ["Proxmox VE (nodo e cluster visibile)"],
         credenziali: { ammesse: ["ssh"], una_di: ["ssh"] },
-        sezioni: ["identity", "interfaces", "network", "resources", "inventory"], comandi: PROXMOX_VE_COMMANDS, ssh_modo: "exec",
+        sezioni: ["identity", "interfaces", "network", "resources", "inventory", "guests", "storage_pools", "cluster_nodes"], comandi: PROXMOX_VE_COMMANDS, ssh_modo: "exec",
         collaudo: "collaudato", collaudati: [{ modello: "Proxmox VE, cluster di 4 nodi visibili e 88 risorse", firmware: "versione non registrata nel repo" }],
     },
     {

@@ -14,6 +14,7 @@ import { daLettura, sez } from "./costruzione";
 import type { StatoSezione } from "./costruzione";
 import { parseExports, parseQpkgConf, parseSmbConf, unisciCondivisioni } from "./qnap-nas-parsers";
 import { parseInfoPacchetti, parseSynoshareEnum } from "./synology-nas-parsers";
+import { parseConfigurazioniGuest, parseRisorseCluster } from "./proxmox-parsers";
 import { parseArp, parseIndirizzi, parseMonitorEthernet, parseMonitorPoe } from "./mikrotik-routeros-parsers";
 import type { AcquisitionSnapshot, ReadResult } from "./schema";
 
@@ -148,4 +149,41 @@ export function estendiMikrotik(s: AcquisitionSnapshot, leggi: Lettore): void {
         ports: pmV.dati.filter(p => p.attiva).map(p => ({ port: p.porta, instance: "CIST", state: p.stato, role: p.ruolo })),
     }, brV.capita && pmV.capita ? (brV.dati.length === 0 || pmV.dati.length > 0 ? "ok" : "partial") : brV.capita || pmV.capita ? "partial" : statoLettura(br, false),
         [fonte("/interface bridge print terse without-paging"), fonte("/interface bridge port monitor [find] once")], [...br.warnings, ...pm.warnings, ...ignoto(br, brV.capita), ...ignoto(pm, pmV.capita), "MSTI_NOT_COLLECTED"]);
+}
+
+const fonte = (c: string) => "ssh:" + c;
+const CMD_RISORSE = "pvesh get /cluster/resources --output-format json";
+const CMD_QEMU = 'grep -H "" /etc/pve/nodes/*/qemu-server/*.conf';
+const CMD_LXC = 'grep -H "" /etc/pve/nodes/*/lxc/*.conf';
+
+/**
+ * Proxmox: VM e container (stato, risorse, dischi, reti), storage e nodi, per avvicinarsi alla scansione Proxmox di oggi.
+ * Stato e risorse vengono dal cluster (`pvesh get /cluster/resources`), dischi e reti dai file di configurazione di ogni guest.
+ * Gli indirizzi IP della VM (agent QEMU) non si leggono: richiedono un percorso per VM, fuori dall'allowlist.
+ */
+export function estendiProxmox(s: AcquisitionSnapshot, leggi: Lettore): void {
+    const ris = leggi(CMD_RISORSE), parsed = ris.status === "ok" || ris.status === "partial" ? parseRisorseCluster(ris.data) : null;
+    const f = [fonte(CMD_RISORSE)];
+    if (!parsed) {
+        const stato: StatoSezione = ris.status === "ok" ? "partial" : ris.status === "partial" ? "partial" : ris.status;
+        const avvisi = [...ris.warnings, ...(ris.status === "ok" ? ["FORMAT_UNRECOGNIZED_OR_EMPTY"] : [])];
+        s.guests = sez([], stato, f, avvisi);
+        s.storage_pools = sez([], stato, f, avvisi);
+        s.cluster_nodes = sez([], stato, f, avvisi);
+        return;
+    }
+    const stato: StatoSezione = ris.status === "ok" ? "ok" : "partial";
+    s.storage_pools = sez(parsed.pools, stato, f, ris.warnings);
+    s.cluster_nodes = sez(parsed.nodes, stato, f, ris.warnings);
+
+    const qemu = leggi(CMD_QEMU), lxc = leggi(CMD_LXC);
+    const conf = new Map([...parseConfigurazioniGuest(qemu.status === "ok" ? qemu.data : "", false), ...parseConfigurazioniGuest(lxc.status === "ok" ? lxc.data : "", true)]);
+    for (const g of parsed.guests) {
+        const c = conf.get(`${g.node}/${g.vmid}`);
+        if (c) Object.assign(g, c);
+    }
+    // Una lettura di configurazione mancata (permesso, comando) non svuota i guest: restano senza dischi e reti, dichiarato.
+    const avvisiConf = [qemu, lxc].flatMap((x, i) => x.status === "ok" ? [] : [(i === 0 ? "QEMU" : "LXC") + "_CONFIG_NOT_READ"]);
+    const conGuest = parsed.guests.length > 0;
+    s.guests = sez(parsed.guests, stato === "ok" && (avvisiConf.length === 0 || !conGuest) ? "ok" : "partial", [...f, fonte(CMD_QEMU), fonte(CMD_LXC)], [...ris.warnings, ...avvisiConf, "GUEST_IP_ADDRESSES_NOT_COLLECTED"]);
 }

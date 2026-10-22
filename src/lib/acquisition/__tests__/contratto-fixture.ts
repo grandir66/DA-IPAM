@@ -240,11 +240,27 @@ const ubiquitiUscite: Record<string, string> = {
     "ip -j neighbor show": '[{"dst":"192.0.2.1","dev":"eth0","lladdr":"02:00:00:00:80:02","state":["REACHABLE"]}]',
 };
 const ubiquitiReq: AcquisitionRequest = { collector: "ubiquiti-device", host: "192.0.2.80", ssh: { username: "lab", password: SEGRETO } };
-const proxmoxUscite: Record<string, string> = {
+export const PROXMOX_USCITE: Record<string, string> = {
     "pveversion": "pve-manager/8.2.4/faa83925c9641325 (running kernel: 6.8.8-2-pve)\n", "hostname": `pve-${SEGRETO}\n`,
     "pvesh get /nodes --output-format json": '[{"node":"pve-lab","status":"online","cpu":0.1,"maxcpu":8,"mem":1000,"maxmem":8000,"disk":1,"maxdisk":100,"uptime":1000,"id":"node/pve-lab","type":"node"}]',
     "pvesh get /cluster/status --output-format json": '[{"type":"node","name":"pve-lab","online":1,"local":1,"ip":"192.0.2.90","id":"node/pve-lab","nodeid":1}]',
-    "pvesh get /cluster/resources --output-format json": '[{"id":"qemu/100","type":"qemu","node":"pve-lab","vmid":100,"name":"guest-lab","status":"running","maxmem":1000,"token":"non-esportare"}]',
+    "pvesh get /cluster/resources --output-format json": JSON.stringify([
+        { id: "qemu/100", type: "qemu", node: "pve-lab", vmid: 100, name: "guest-lab", status: "running", maxcpu: 4, maxmem: 8589934592, maxdisk: 34359738368, uptime: 3600, token: "non-esportare" },
+        { id: "qemu/101", type: "qemu", node: "pve-lab", vmid: 101, name: "guest-spenta", status: "stopped", maxcpu: 2, maxmem: 2147483648, maxdisk: 10737418240 },
+        { id: "lxc/200", type: "lxc", node: "pve-lab", vmid: 200, name: "ct-lab", status: "running", maxcpu: 1, maxmem: 536870912, maxdisk: 8589934592 },
+        { id: "storage/pve-lab/local-lvm", type: "storage", node: "pve-lab", storage: "local-lvm", plugintype: "lvmthin", status: "available", content: "rootdir,images", shared: 0, maxdisk: 100000000000, disk: 25000000000 },
+        { id: "node/pve-lab", type: "node", node: "pve-lab", status: "online", uptime: 86400, maxcpu: 8, cpu: 0.05, maxmem: 34359738368, mem: 8589934592 },
+    ]),
+    'grep -H "" /etc/pve/nodes/*/qemu-server/*.conf': [
+        "/etc/pve/nodes/pve-lab/qemu-server/100.conf:bios: ovmf", "/etc/pve/nodes/pve-lab/qemu-server/100.conf:machine: q35", "/etc/pve/nodes/pve-lab/qemu-server/100.conf:agent: 1",
+        "/etc/pve/nodes/pve-lab/qemu-server/100.conf:scsi0: local-lvm:vm-100-disk-0,size=32G", "/etc/pve/nodes/pve-lab/qemu-server/100.conf:ide2: local:iso/lab.iso,media=cdrom,size=1G",
+        "/etc/pve/nodes/pve-lab/qemu-server/100.conf:net0: virtio=02:00:00:00:90:10,bridge=vmbr0,tag=20",
+        "/etc/pve/nodes/pve-lab/qemu-server/100.conf:[prima]", "/etc/pve/nodes/pve-lab/qemu-server/100.conf:scsi1: local-lvm:vm-100-disk-9,size=999G",
+        "/etc/pve/nodes/pve-lab/qemu-server/101.conf:scsi0: local-lvm:vm-101-disk-0,size=10G", "",
+    ].join("\n"),
+    'grep -H "" /etc/pve/nodes/*/lxc/*.conf': [
+        "/etc/pve/nodes/pve-lab/lxc/200.conf:rootfs: local-lvm:vm-200-disk-0,size=8G", "/etc/pve/nodes/pve-lab/lxc/200.conf:net0: name=eth0,bridge=vmbr0,hwaddr=02:00:00:00:90:20,ip=192.0.2.200/24,tag=30", "",
+    ].join("\n"),
     "ip -d -j link show": linkJson("vmbr0", "02:00:00:00:90:01"), "ip -j address show": addrJson("vmbr0", "192.0.2.90"), "cat /proc/meminfo": "MemTotal:        8000000 kB\nMemFree:         1000000 kB\n",
     "lsblk -b -J -o NAME,TYPE,SIZE,MODEL,SERIAL,ROTA": '{"blockdevices":[]}',
 };
@@ -276,7 +292,7 @@ export const FIXTURE: Record<CollectorId, FixtureCollector> = {
     "linux": perExecLinux(),
     "synology-dsm": perExecSynology(),
     "ubiquiti-device": perExec(ubiquitiReq, c => ubiquitiUscite[c] ?? "", ["hostname", "cat /etc/version"]),
-    "proxmox-ve": perExec(proxmoxReq, c => proxmoxUscite[c] ?? "", ["pveversion", "hostname"]),
+    "proxmox-ve": perExec(proxmoxReq, c => PROXMOX_USCITE[c] ?? "", ["pveversion", "hostname"]),
     "unifi-controller": unifiFixture(),
     "netapp-ontap": {
         richiesta: ontapReq,

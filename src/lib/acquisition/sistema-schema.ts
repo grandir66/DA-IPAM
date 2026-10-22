@@ -27,4 +27,15 @@ export const securitySchema = z.object({
 /** Cartelle condivise di un NAS o di un server (SMB, NFS...). `path` è il percorso sul sistema, non un URL. */
 export const sharesSchema = z.array(z.object({ name: z.string(), path: s, protocols: z.array(z.enum(["smb", "nfs", "afp", "ftp", "other"])), comment: s, public: b }));
 /** Macchine virtuali viste da un host (Hyper-V): l'id è quello del prodotto (GUID della VM), mai il nome. */
-export const guestsSchema = z.array(z.object({ id: z.string(), name: s, power_state: z.enum(["running", "off", "paused", "saved", "other"]).nullable(), platform: s }));
+export const guestsSchema = z.array(z.object({
+    id: z.string(), name: s, power_state: z.enum(["running", "off", "paused", "saved", "other"]).nullable(), platform: s,
+    // Dettagli dei guest Proxmox (opzionali: Hyper-V non li dà e gli snapshot di prima restano validi).
+    node: s.optional(), vmid: n.optional(), cpu_count: n.optional(), memory_bytes: count.optional(), disk_bytes: count.optional(), uptime_seconds: n.optional(),
+    disks: z.array(z.object({ id: z.string(), storage: s, size: s })).optional(),
+    networks: z.array(z.object({ id: z.string(), model: s, mac: s, bridge: s, vlan: s, ip: s })).optional(),
+    bios: s.optional(), machine: s.optional(), agent: s.optional(),
+}));
+/** Storage di un hypervisor (Proxmox: un elemento per nodo e storage, come li riporta il cluster). */
+export const storagePoolsSchema = z.array(z.object({ name: z.string(), node: s, type: s, status: s, total_bytes: count, used_bytes: count, available_bytes: count, content: z.array(z.string()), shared: b }));
+/** Nodi di un cluster di hypervisor. */
+export const clusterNodesSchema = z.array(z.object({ name: z.string(), status: s, uptime_seconds: n, cpu_count: n, cpu_fraction: n, memory_total_bytes: count, memory_used_bytes: count }));

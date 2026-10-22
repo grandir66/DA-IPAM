@@ -432,3 +432,5 @@ Livello Base, sola lettura e sviluppo locale; accessi NAS confermati da Riccardo
   - firmware: **non trovato via SNMP** su questo modello → resta `null`, mai un valore preso da un altro OID.
 - [ ] Giro 6: identità QNAP via SNMP dagli OID sopra (con prova che un valore «… MB» o «… %» non diventa mai firmware/modello); stessa verifica sul **profilo storico** `scanner/snmp-vendor-profiles.ts` (`id: "qnap"`), che usa gli stessi OID sbagliati e oggi, su `dev`, può scrivere la memoria come firmware: correzione da portare anche su `dev`.
 - [ ] Giro 6: Proxmox fino alla parità (dati hardware del nodo, IP delle VM dall'agent, VM nell'inventario come fa la scansione), poi decisione di Riccardo sull'aggancio.
+- [x] Riccardo (22/10): giro 6 sì; il profilo storico QNAP si corregge sul ramo e arriva su `dev` con l'unione.
+- [ ] Giro cloud 6 (leggero): QNAP via SNMP con gli OID giusti (collector e profilo storico), Proxmox fino alla parità (prompt, «Giro 6»).

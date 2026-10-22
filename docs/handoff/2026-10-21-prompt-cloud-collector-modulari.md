@@ -194,6 +194,33 @@ Livello **leggero**. Esiti dei collaudi veri in TASKS.md (sezione «giro 4 dei c
 Fermati a fine punto 6. Cancello completo, TASKS aggiornato con cosa ricollaudare in locale (Linux `da-ftp`, MikroTik
 `192.168.15.254`, QNAP `.24`, Synology `.22`).
 
+## Giro 6 (22/10): QNAP via SNMP con gli OID giusti, Proxmox fino alla parità
+
+Livello **leggero**. Ricollaudi del giro 5 e walk QNAP in TASKS.md, sezione «ricollaudi del giro 5». Prima di tutto
+merge di `origin/dev`.
+
+1. **QNAP via SNMP (collector `qnap-nas`)**: gli OID `…24681.1.2.1/.2/.3` sono CPU %, memoria totale, memoria libera,
+   non modello/firmware/seriale (collaudo: firmware = «15979.0 MB»). Usa quelli del walk: modello
+   `1.3.6.1.4.1.24681.1.4.1.1.1.1.1.2.1.3.1` (o `1.3.6.1.4.1.55062.1.12.3.0`), seriale `….2.1.4.1`, nome `….2.1.6.1`,
+   temperatura `….2.1.7.1`, ventole dalla tabella `1.3.6.1.4.1.55062.1.12.9.1` (nome `.2`, giri `.3`). Firmware via SNMP
+   non trovato: `null`, mai un valore di un altro OID. Prova vista rossa: un valore con «MB» o «%» non diventa mai
+   modello, firmware o seriale.
+2. **Profilo storico** `scanner/snmp-vendor-profiles.ts` (`id: "qnap"`): stessi OID sbagliati, oggi in esercizio su
+   `dev`. Correggilo **su questo ramo** con gli OID giusti e la stessa prova (Riccardo, 22/10: arriva su `dev` con
+   l'unione). Controlla chi altro legge quei campi del profilo (`device-info.ts`, scansioni) e che un valore assente
+   resti assente.
+3. **Proxmox fino alla parità** con la scansione di oggi (tabella nel manuale): dati hardware del nodo (CPU, socket,
+   core, kernel, disco root, seriale/produttore/modello, abbonamento) e IP delle VM dall'agent QEMU, con comandi in
+   allowlist (`pvesh get` sui percorsi per nodo/VM, mai comandi liberi); poi la proiezione verso l'inventario come fa
+   la scansione (`syncInventoryFromDevice`: VM come host collegati all'hypervisor), dietro l'interruttore e solo per il
+   collector. Il collector **resta fuori dal pulsante**: l'aggancio lo decide Riccardo dopo la tabella aggiornata.
+   Prova: con l'interruttore spento la scansione Proxmox di oggi è identica.
+4. Tabella Proxmox del manuale aggiornata riga per riga; TASKS con cosa ricollaudare (QNAP `.24`; Proxmox da CLI con
+   un utente che legga `/etc/pve`).
+
+Non alzare la versione sul ramo (`version:release` lo fa chi unisce in `dev`: il giro 5 ha creato un `v0.9.871` che
+su `dev` esiste già). Fermati a fine punto 4, cancello completo.
+
 ## Da lasciare a Riccardo in locale
 
 - Misure su copia del DB dell'hub (S3; differenze dell'anteprima in C2).

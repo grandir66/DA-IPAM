@@ -21,7 +21,7 @@ DA-IPAM: tutto è push, e nessuna risposta cambia la configurazione.
 (il codice dell'hub vince sul testo).
 **Livello di controllo:** completo (gettoni, dati del cliente che escono, chiamate verso l'esterno;
 prompt di Riccardo del 22/10).
-**Stato:** bozza · **Ultimo aggiornamento:** 2026-10-22
+**Stato:** eseguito (rilascio al controllore) · **Ultimo aggiornamento:** 2026-10-22
 
 ## Come viaggia l'AD oggi (verificato il 22/10 su `origin/dev` di DA-IPAM e `origin/HEAD` di DA-Vul-can)
 
@@ -103,15 +103,15 @@ il gettone sono **uno solo** per AD, inventario e battito.
 
 | ID | Stato | Passo | Agente | Dipende da | Fatto quando | Verifica |
 | --- | --- | --- | --- | --- | --- | --- |
-| S1 | [ ] | Chiavi VULCAN e cliente dell'invio | implementer | — | `leggiConfigVulcan` e `tenantPerVulcan` provati | `node --import tsx --test src/lib/vulcan/__tests__/config.test.ts` |
-| S2 | [ ] | Coda nel DB del cliente, migrazione col segno | implementer | S1 | tabelle, segno, funzioni di coda provate; misura sulla copia 70791 | prova `coda.test.ts` + misura |
-| S3 | [ ] | Invio automatico AD Health a fine run (riusa `toHubExport`) | implementer | S2 | corpo deterministico, accodamento solo se acceso | prova `corpo-ad.test.ts` |
-| S4 | [ ] | Corpo inventario a lista bianca + misura | implementer | S2 | prova dei campi «Mai» verde; byte misurati su 70791 | prova `corpo-inventario.test.ts` + script |
-| S5 | [ ] | Trasporto HTTPS gzip | implementer | S1 | hub finto TLS: intestazioni, gzip, cert rifiutato | prova `trasporto.test.ts` |
-| S6 | [ ] | Giro: svuota coda, battito, ping, audit | implementer | S2-S5 | matrice degli esiti verde | prova `giro.test.ts` |
-| S7 | [ ] | Timer in `server.ts` | implementer | S6 | nessuna chiamata senza gettone | prova `job.test.ts` |
-| S8 | [ ] | Riquadro in «Cosa esce», «Invia ora», riga in AD | implementer | S6, S7 | pagina resa a 1280/1920 | Playwright + `verifica-permessi.sh` |
-| S9 | [ ] | Collaudo contro DA-Vul-can di sviluppo, documenti, rilascio spento | sessione | S1-S8 | push su `dev`, hub e cliente A «Spento» | cancello + journal |
+| S1 | [x] | Chiavi VULCAN e cliente dell'invio | implementer | — | `leggiConfigVulcan` e `tenantPerVulcan` provati | `node --import tsx --test src/lib/vulcan/__tests__/config.test.ts` — config.test.ts verde (18 prove), gettone mai in log (22/10) |
+| S2 | [x] | Coda nel DB del cliente, migrazione col segno | implementer | S1 | tabelle, segno, funzioni di coda provate; misura sulla copia 70791 | prova `coda.test.ts` + misura — coda.test.ts verde; migrazione sulla copia 70791 7 ms, integrity ok (22/10) |
+| S3 | [x] | Invio automatico AD Health a fine run (riusa `toHubExport`) | implementer | S2 | corpo deterministico, accodamento solo se acceso | prova `corpo-ad.test.ts` — corpo-ad.test.ts verde; 8 esecuzioni della copia nello schema dell'hub (22/10) |
+| S4 | [x] | Corpo inventario a lista bianca + misura | implementer | S2 | prova dei campi «Mai» verde; byte misurati su 70791 | prova `corpo-inventario.test.ts` + script — corpo-inventario.test.ts verde; copia 70791 351 oggetti, 226 KB, 19 KB gzip (22/10) |
+| S5 | [x] | Trasporto HTTPS gzip | implementer | S1 | hub finto TLS: intestazioni, gzip, cert rifiutato | prova `trasporto.test.ts` — trasporto.test.ts verde; prove rosse togliendo la verifica TLS (22/10) |
+| S6 | [x] | Giro: svuota coda, battito, ping, audit | implementer | S2-S5 | matrice degli esiti verde | prova `giro.test.ts` — giro.test.ts verde; revisione: invii doppi con hub lento corretti (22/10) |
+| S7 | [x] | Timer in `server.ts` | implementer | S6 | nessuna chiamata senza gettone | prova `job.test.ts` — job.test.ts verde; senza gettone solo la lettura della config (22/10) |
+| S8 | [x] | Riquadro in «Cosa esce», «Invia ora», riga in AD | implementer | S6, S7 | pagina resa a 1280/1920 | Playwright + `verifica-permessi.sh` — quadro.test.ts verde, cancello 580/580; foto 1440 «Spento» (22/10) |
+| S9 | [~] | Collaudo contro DA-Vul-can di sviluppo, documenti, rilascio spento | sessione | S1-S8 | push su `dev`, hub e cliente A «Spento» | collaudo locale 22/10: ping/503/201/200 doppione/401/403 come atteso, inventario 201 (351 oggetti); documenti fatti; rilascio e verifica sul live al controllore |
 
 ## Casi da non dimenticare
 
@@ -128,7 +128,7 @@ il gettone sono **uno solo** per AD, inventario e battito.
 
 ---
 
-### [ ] Task 1 — Chiavi VULCAN e cliente dell'invio
+### [x] Task 1 — Chiavi VULCAN e cliente dell'invio
 
 **File:** modifica `src/lib/dalink/config.ts` (esporta `leggiRighe`, `CODCLI`, `NODO_IPAM`, e la
 funzione nuova `controllaFileOggetto(percorso)` estratta dalle righe 82-99: stat + permessi + lettura,
@@ -166,7 +166,7 @@ codcli assente → null.
 **Verifica:** `node --import tsx --test src/lib/vulcan/__tests__/config.test.ts src/lib/dalink/__tests__/config.test.ts` → tutte verdi.
 **Commit:** `vulcan: chiavi VULCAN_URL/VULCAN_TOKEN da oggetto.env e cliente dell'invio`.
 
-### [ ] Task 2 — Coda nel DB del cliente, migrazione col segno
+### [x] Task 2 — Coda nel DB del cliente, migrazione col segno
 
 **File:** modifica `src/lib/db-tenant-schema.ts` (`DDL_VULCAN`, `SEGNO_VULCAN = "vulcan_coda_v21"`,
 `VERSIONE_VULCAN = 1`); modifica `src/lib/db-tenant.ts` (`migrateVulcanCoda(db)` chiamata all'apertura
@@ -248,7 +248,7 @@ scritto. A fine piano la copia si cancella (scratchpad e `/root` della VM): sono
 **Verifica:** `node --import tsx --test src/lib/vulcan/__tests__/coda.test.ts src/lib/vulcan/__tests__/migrazione.test.ts` → verdi; misura scritta in `TASKS.md`.
 **Commit:** `vulcan: coda degli invii nel DB del cliente (vulcan_coda_v21)`.
 
-### [ ] Task 3 — Invio automatico di AD Health a fine esecuzione (oggi solo a mano)
+### [x] Task 3 — Invio automatico di AD Health a fine esecuzione (oggi solo a mano)
 
 L'export esiste e l'hub lo riceve già a mano (sezione «Come viaggia l'AD oggi»): qui si aggiunge
 solo il passo che oggi fa una persona. `toHubExport()` non si tocca; il download resta come ripiego.
@@ -287,7 +287,7 @@ con `rif` = run id; una seconda chiamata → `doppione`; un errore finto di `get
 **Verifica:** le due prove + `node --import tsx --test src/lib/ad/health/__tests__/*.test.ts` verdi.
 **Commit:** `vulcan: export AD Health in coda a fine esecuzione riuscita (il download resta)`.
 
-### [ ] Task 4 — Corpo dell'inventario a lista bianca e misura sui dati veri
+### [x] Task 4 — Corpo dell'inventario a lista bianca e misura sui dati veri
 
 **File:** crea `src/lib/vulcan/dati-inventario.ts` (lettura dal DB), `src/lib/vulcan/corpo-inventario.ts`
 (pura); modifica `src/lib/ad/health/obsolete-os.ts` (funzione nuova, `isObsoleteOs` invariata); crea
@@ -355,7 +355,7 @@ Task 6.
 **Verifica:** le prove verdi; script eseguito sulla copia, numeri in `TASKS.md`.
 **Commit:** `vulcan: fotografia dell'inventario a lista bianca (schema_versione 1)`.
 
-### [ ] Task 5 — Trasporto HTTPS verso l'hub
+### [x] Task 5 — Trasporto HTTPS verso l'hub
 
 **File:** crea `src/lib/vulcan/trasporto.ts`; prova `src/lib/vulcan/__tests__/trasporto.test.ts` (hub
 finto HTTPS su 127.0.0.1 con `certificatoDiProva()` di `src/lib/dalink/__tests__/support/certificato.ts`).
@@ -388,7 +388,7 @@ mai stato chiamato; porta chiusa → `rete`; hub che non risponde → `tempo` en
 **Verifica:** `node --import tsx --test src/lib/vulcan/__tests__/trasporto.test.ts` → verde.
 **Commit:** `vulcan: trasporto HTTPS gzip verso l'hub con verifica TLS normale`.
 
-### [ ] Task 6 — Il giro: coda, ping, battito, audit
+### [x] Task 6 — Il giro: coda, ping, battito, audit
 
 **File:** crea `src/lib/vulcan/giro.ts`, `src/lib/vulcan/registro.ts`; prove
 `src/lib/vulcan/__tests__/giro.test.ts`, `src/lib/vulcan/__tests__/registro.test.ts`.
@@ -439,7 +439,7 @@ in parallelo → ogni riga inviata una volta; nessuna riga di audit contiene il 
 **Verifica:** `node --import tsx --test src/lib/vulcan/__tests__/*.test.ts` → verdi.
 **Commit:** `vulcan: giro della coda, ping e battito verso l'hub`.
 
-### [ ] Task 7 — Timer in `server.ts`
+### [x] Task 7 — Timer in `server.ts`
 
 **File:** crea `src/lib/vulcan/job.ts`; modifica `server.ts` (blocco accanto a `avviaSegnaleDalink`,
 riga ~152); prova `src/lib/vulcan/__tests__/job.test.ts`.
@@ -469,7 +469,7 @@ nessuno; due `inviaOraVulcan` insieme → un giro solo.
 d'avvio e **nessuna** riga `[vulcan]` per 20 minuti.
 **Commit:** `vulcan: timer della coda, del battito e dell'inventario giornaliero`.
 
-### [ ] Task 8 — Riquadro in «Cosa esce», «Invia ora», riga nella pagina AD
+### [x] Task 8 — Riquadro in «Cosa esce», «Invia ora», riga nella pagina AD
 
 **File:** modifica `src/lib/dalink/quadro.ts` (campo nuovo `vulcan: QuadroVulcan`), `src/components/settings/cosa-esce.tsx`
 (scheda nuova prima di «Altri flussi verso Domarc»); crea `src/lib/vulcan/quadro.ts`,
@@ -513,7 +513,7 @@ aprire il DB; con righe finte → conteggi e ultimi giusti; nessun campo contien
 Task 5 avviato a mano → toast e righe aggiornate; un utente non admin → 403.
 **Commit:** `vulcan: stato dell'invio in Cosa esce e pulsante Invia ora`.
 
-### [ ] Task 9 — Collaudo contro DA-Vul-can di sviluppo, documenti, rilascio spento
+### [~] Task 9 — Collaudo contro DA-Vul-can di sviluppo, documenti, rilascio spento
 
 1. **Dal di fuori (lezione 13), oggi possibile per tre rotte su quattro:** DA-Vul-can in locale
    (`npm run dev` nel suo worktree, `ipam.ingest = 'on'` **nel DB di sviluppo**, fonte creata con
@@ -578,8 +578,39 @@ Task 5 avviato a mano → toast e righe aggiornate; un utente non admin → 403.
 
 ### Fatto
 
+- T1-T8 in `src/lib/vulcan/` (v0.9.869-871): chiavi da `oggetto.env`, coda `vulcan_coda` col segno, invio AD a fine
+  run, inventario a lista bianca, trasporto HTTPS gzip con TLS normale, giro con ping/battito/audit, timer in
+  `server.ts`, riquadro in «Cosa esce» e riga AD. Una revisione per task, rilievi corretti.
+- T9 collaudo (22/10) dal di fuori contro DA-Vul-can `origin/HEAD` in locale (worktree usa e getta, DB vuoto nello
+  scratchpad, fonte creata con `POST /api/edge-bridges/kit` e una chiave di kit di prova, HTTPS da un proxy locale con
+  una CA di prova passata col solo `NODE_EXTRA_CA_CERTS` al processo di collaudo; la verifica TLS di DA-IPAM non è
+  stata toccata). Copia del DB 70791 fatta con `.backup`. Esiti:
+  - `ipam.ingest` spento: invio AD → 503, riga in attesa con 1 tentativo; battito → «ricezione spenta sull'hub»;
+  - acceso: AD → 201 (`report_id` 1, una riga in `ipam_invii`, run 9); battito → 200, `ultimo_battito_json` scritto,
+    versione 0.9.871 sulla fonte; inventario → 201, 351 oggetti in `ipam_inventario_oggetti`, codcli 70791;
+  - stesso run riaccodato da capo → 200 doppione, stesso `report_id`, sempre 1 riga sull'hub e 1 report AD;
+  - gettone sbagliato → 401 al ping, «sospeso» salvato; gettone giusto → «sospensione tolta», battito 200;
+  - fonte revocata col kit → 403, «sospeso» col motivo della revoca;
+  - audit: 4 righe, nessun gettone, host o URL; nessun gettone nel log dell'hub.
+  Fermati hub e proxy, rimossi worktree, CA, chiave del kit, `oggetto.env` di prova e copie.
+- Documenti: CHANGELOG («[Non rilasciato]»), CONTEXT §6, TASKS.
+
 ### Mancante
+
+- Rilascio e verifica sul live (punti 5-6 del Task 9): al controllore.
+- Fuori piano: A-Link (chiavi in `oggetto.env` scritte da DA-Link), policy NetBird P9 con conferma di Riccardo,
+  `da-vulcan.domarc.it` fissato sull'appliance, accensione di `ipam.ingest` sul live.
+- ADR 0028 e `docs/scheda-mappa.md` del punto 4: non chiesti in questo giro.
 
 ### Scostamenti dal piano
 
+- L'inventario si è provato contro l'hub vero in locale (201), non solo contro l'hub finto: la rotta
+  `/api/ipam/inventario` esiste su `origin/HEAD` di DA-Vul-can dal 22/10.
+- Prima prova del doppione rimettendo «in attesa» una riga già inviata: scartata «senza corpo», perché il corpo si
+  svuota dopo l'invio (voluto). Rifatta riaccodando il run da capo.
+
 ### Consigli di sviluppo
+
+- `tentativi` resta 0 per una riga inviata al primo colpo (conta solo i ritentativi): da dire nella pagina se serve.
+- Un comando di collaudo (`scripts/collaudo-vulcan.ts` con `DALINK_OGGETTO_ENV` e `NODE_EXTRA_CA_CERTS`) renderebbe
+  ripetibile questo giro quando arriva A-Link.

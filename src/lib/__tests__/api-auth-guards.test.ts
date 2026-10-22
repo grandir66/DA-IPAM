@@ -122,6 +122,8 @@ const CONTRACT: Contract[] = [
   { route: "jobs", method: "PUT", guard: "requireAdmin" },
   { route: "jobs", method: "DELETE", guard: "requireAdmin" },
   { route: "devices/[id]/scansione-automatica", method: "GET", guard: "requireAuth" },
+  // «Invia ora» verso DA-Vul-can (A-IPAM, 22/10): fa uscire dati del cliente, solo admin
+  { route: "dalink/vulcan/invia", method: "POST", guard: "requireAdmin" },
 ];
 
 /** Estrae il corpo di un metodo HTTP esportato (slice fino al prossimo export). */

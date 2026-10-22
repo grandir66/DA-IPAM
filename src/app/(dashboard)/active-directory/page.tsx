@@ -50,6 +50,7 @@ import {
 import { parseVociArchivio, type VoceArchivio } from "@/components/controllers/controllers-model";
 import { stessoDc } from "@/lib/ad/account-ldap";
 import { fetchJson } from "@/lib/fetch-json";
+import type { StatoInvioAd } from "@/lib/vulcan/quadro";
 import { SEVERITY_STYLE } from "@/lib/severity-style";
 import type { AclExtras, AclObjectKind, InterestingAce } from "@/lib/ad/health/acl/types";
 import {
@@ -290,6 +291,7 @@ function PaginaActiveDirectory() {
   const [editSaving, setEditSaving] = useState(false);
 
   const [healthRun, setHealthRun] = useState<AdHealthRun | null>(null);
+  const [healthVulcan, setHealthVulcan] = useState<StatoInvioAd | { stato: "illeggibile" } | null>(null);
   const [healthScore, setHealthScore] = useState<HealthScore | null>(null);
   const [healthFindings, setHealthFindings] = useState<HealthFinding[]>([]);
   const [privilegeMatrix, setPrivilegeMatrix] = useState<PrivilegeMatrix | null>(null);
@@ -448,6 +450,7 @@ function PaginaActiveDirectory() {
   const fetchHealth = useCallback(async () => {
     if (!selectedIntegration) {
       setHealthRun(null);
+      setHealthVulcan(null);
       setHealthScore(null);
       setHealthFindings([]);
       setPrivilegeMatrix(null);
@@ -464,6 +467,7 @@ function PaginaActiveDirectory() {
       if (!res.ok) throw new Error("Errore caricamento AD Health");
       const data = await res.json();
       setHealthRun(data.run ?? null);
+      setHealthVulcan(data.vulcan ?? null);
       setHealthScore(data.score ?? null);
       setHealthFindings(Array.isArray(data.findings) ? data.findings : []);
       setPrivilegeMatrix(data.privilegeMatrix ?? null);
@@ -474,6 +478,7 @@ function PaginaActiveDirectory() {
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Errore");
       setHealthRun(null);
+      setHealthVulcan(null);
       setHealthScore(null);
       setHealthFindings([]);
       setPrivilegeMatrix(null);
@@ -1544,6 +1549,21 @@ function PaginaActiveDirectory() {
                     )}
                   </div>
 
+                  {healthRun && (
+                    <p className="text-[13px] text-muted-foreground">
+                      Invio a DA-Vul-can dell&apos;ultimo run ok:{" "}
+                      {healthVulcan === null && "mai accodato"}
+                      {healthVulcan?.stato === "spento" && "spento (nessun gettone dell'hub su questa istanza)"}
+                      {healthVulcan?.stato === "altro_cliente" && "non parte: questo non è il cliente dell'invio su questa istanza"}
+                      {healthVulcan?.stato === "in_coda" &&
+                        `in coda${healthVulcan.motivo ? ` — ultimo tentativo: ${healthVulcan.motivo}` : ""}`}
+                      {healthVulcan?.stato === "inviato" && `inviato il ${formatDate(healthVulcan.il)}`}
+                      {healthVulcan?.stato === "scartato" && `scartato: ${healthVulcan.motivo ?? "motivo non registrato"}`}
+                      {healthVulcan?.stato === "fallito" &&
+                        `fallito dopo i tentativi: ${healthVulcan.motivo ?? "motivo non registrato"} («Invia ora» in Cosa esce lo ritenta)`}
+                      {healthVulcan?.stato === "illeggibile" && "stato non leggibile (errore nel database)"}
+                    </p>
+                  )}
                   {healthRun?.status === "running" && (
                     <p className="text-sm text-amber-700 dark:text-amber-300">
                       Healthcheck in corso… i dati sotto restano dell&apos;ultimo run completato, se disponibile.

@@ -18,6 +18,7 @@ import {
   type AdHealthRunRow,
 } from "@/lib/ad/health/persist";
 import type { HealthScore } from "@/lib/ad/health/types";
+import { statoInvioAd, type StatoInvioAd } from "@/lib/vulcan/quadro";
 
 const PostBodySchema = z.object({
   integrationId: z.number().int().positive(),
@@ -74,6 +75,7 @@ export async function GET(request: Request) {
         phase5: null,
         phase6: null,
         displayRunId: null,
+        vulcan: null,
       });
     }
 
@@ -102,7 +104,16 @@ export async function GET(request: Request) {
       }
     }
 
+    // Invio a DA-Vul-can dell'esecuzione mostrata (A-IPAM): un guasto nel leggerlo si dice, non si tace.
+    let vulcan: StatoInvioAd | { stato: "illeggibile" } | null;
+    try {
+      vulcan = statoInvioAd(db, display.id);
+    } catch {
+      vulcan = { stato: "illeggibile" };
+    }
+
     return NextResponse.json({
+      vulcan,
       run: latest,
       displayRunId: display.id,
       score: scoreFromRun(display),

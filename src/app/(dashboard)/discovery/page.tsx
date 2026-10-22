@@ -103,6 +103,8 @@ import { hostGestitoSenzaProva } from "@/lib/devices/credenziali-assegnate";
 import { PresetsDialog } from "@/components/devices/presets-dialog";
 import type { InfoClusterDiscovery } from "@/lib/devices/cluster-discovery";
 import { useUrlPerBrowser } from "@/components/shared/url-per-browser";
+import { contatoriDiscovery, vistaRiga } from "./filtro-cluster";
+import { BadgeAltriIp } from "./cluster-ip";
 
 const SORTED_CLASSIFICATIONS = sortClassificationsByDisplayLabel(DEVICE_CLASSIFICATIONS_ORDERED);
 
@@ -893,9 +895,11 @@ export default function DiscoveryPage() {
   // v0.2.646 audit perf UI3: usa qDebounced (250ms) per il filter, non `q`.
   // L'input rimane reattivo (controlled component), ma il filter su 1000+ host
   // gira al massimo 1 volta ogni 250ms invece di a ogni keystroke.
-  const filtered = useMemo(() => {
+  // Un apparato fisico = una riga (cluster.principale): i secondari sono nascosti, la ricerca li trova comunque.
+  const { filtered, comeSecondario } = useMemo(() => {
     const lower = qDebounced.toLowerCase().trim();
-    return hosts.filter((h) => {
+    const trovati = new Map<number, string>();
+    const righe = hosts.filter((h) => {
       if (statusFilter && h.status !== statusFilter) return false;
       if (classFilter) {
         // Una regola sola per tabella e conteggi delle chip (revisione del 19/10): i
@@ -907,17 +911,21 @@ export default function DiscoveryPage() {
           return false;
         }
       }
-      if (networkFilter && String(h.network_id) !== networkFilter) return false;
       if (vulnFilter === "critical_high" && !(h.vuln && (h.vuln.critical > 0 || h.vuln.high > 0))) return false;
       if (vulnFilter === "critical" && !(h.vuln && h.vuln.critical > 0)) return false;
       if (vulnFilter === "with_findings" && !(h.vuln && h.vuln.total > 0)) return false;
-      if (lower) {
-        const hay = [h.ip, h.mac, displayName(h), h.vendor, h.network_name, h.network_cidr, h.notes, h.os_info, h.device_manufacturer].filter(Boolean).join(" ").toLowerCase();
-        if (!hay.includes(lower)) return false;
-      }
+      const testoRiga = lower ? [h.ip, h.mac, displayName(h), h.vendor, h.network_name, h.network_cidr, h.notes, h.os_info, h.device_manufacturer].filter(Boolean).join(" ").toLowerCase() : "";
+      const v = vistaRiga({ id: h.id, network_id: h.network_id, cluster: h.cluster, testoRiga }, { testo: lower, reteId: networkFilter || null }, (t) => t.toLowerCase().includes(lower));
+      if (!v.visibile) return false;
+      if (v.trovataComeSecondario) trovati.set(h.id, v.trovataComeSecondario);
       return true;
     });
+    return { filtered: righe, comeSecondario: trovati };
   }, [hosts, qDebounced, statusFilter, classFilter, networkFilter, vulnFilter, presets]);
+
+  // Base delle chip e del «di M»: le righe dopo l'accorpamento, senza filtri.
+  const hostVisibili = useMemo(() => hosts.filter((h) => !(h.cluster && !h.cluster.principale)), [hosts]);
+  const hostPerId = useMemo(() => new Map(hosts.map((h) => [h.id, h])), [hosts]);
 
   // ---------- sort ----------
   const sortAccessors = useMemo(() => ({
@@ -1402,9 +1410,22 @@ export default function DiscoveryPage() {
     switch (colId) {
       case "ip":
         return (
-          <Link href={`/objects/${h.id}`} className="font-mono text-sm text-primary hover:underline inline-flex items-center gap-1">
-            {h.ip} <ExternalLink className="h-3 w-3 opacity-50" />
-          </Link>
+          <div className="flex flex-col items-start gap-0.5">
+            <span className="inline-flex items-center gap-1.5">
+              <Link href={`/objects/${h.id}`} className="font-mono text-sm text-primary hover:underline inline-flex items-center gap-1">
+                {h.ip} <ExternalLink className="h-3 w-3 opacity-50" />
+              </Link>
+              {h.cluster?.principale && h.cluster.altri.length > 0 && <BadgeAltriIp cluster={h.cluster} nome={displayName(h) || h.ip} />}
+            </span>
+            {comeSecondario.has(h.id) && (
+              <span className="inline-flex items-center gap-1 rounded-md border-2 px-1.5 text-[13px] font-semibold leading-tight bg-[#FFD400] text-[#0D2537] border-[#C9A800]">
+                ↳ trovato come IP secondario <span className="font-mono">{comeSecondario.get(h.id)}</span>
+              </span>
+            )}
+            {h.cluster && !h.cluster.principale && (
+              <span className="text-[13px] text-muted-foreground">IP secondario di <span className="font-mono">{hostPerId.get(h.cluster.principale_host_id)?.ip ?? "—"}</span></span>
+            )}
+          </div>
         );
       case "hostname": {
         const autoName = h.hostname || h.dns_reverse || h.ad_dns_host_name || "";
@@ -1831,9 +1852,7 @@ export default function DiscoveryPage() {
   }
 
   // ---------- counts ----------
-  const online = filtered.filter((h) => h.status === "online").length;
-  const offline = filtered.filter((h) => h.status === "offline").length;
-  const unknown = filtered.length - online - offline;
+  const { online, offline, sconosciuti: unknown, accorpati, totale } = contatoriDiscovery(hosts, filtered);
 
   const pageAllSelected = pagedRows.length > 0 && pagedRows.every((h) => selectedIds.has(h.id));
 
@@ -1845,8 +1864,12 @@ export default function DiscoveryPage() {
           <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
             <h1 className="text-2xl font-bold tracking-tight">Discovery</h1>
             <span className="text-sm text-muted-foreground">
-              <span className="font-semibold text-foreground">{filtered.length}</span> host
-              {filtered.length !== hosts.length ? ` di ${hosts.length}` : ""}
+              <span
+                className="font-semibold text-foreground"
+                title={"Righe mostrate dopo i filtri: un apparato con più IP conta 1. Online, offline e sconosciuti sono lo stato della riga principale (il secondario offline si vede in «+N IP»)."}
+              >{filtered.length}</span> apparati e host
+              {filtered.length !== totale ? <span title="Tutte le righe dopo l'accorpamento, senza filtri"> di {totale}</span> : ""}
+              {accorpati > 0 && <span title="IP secondari nascosti dentro le righe mostrate: si aprono dal «+N IP» della riga principale"> · {accorpati} IP accorpati</span>}
               {" · "}<span className="font-semibold text-success">● {online}</span> online
               {" · "}<span className="font-semibold text-destructive">○ {offline}</span> offline
               {" · "}<span className="font-semibold">{unknown}</span> sconosciuti
@@ -1983,7 +2006,7 @@ export default function DiscoveryPage() {
               Tutti
             </Button>
             {(() => {
-              const conConteggio = presets.map((preset) => ({ preset, count: contaPreset(preset, hosts, presets) }));
+              const conConteggio = presets.map((preset) => ({ preset, count: contaPreset(preset, hostVisibili, presets) }));
               const piene = conConteggio.filter(({ preset, count }) => count > 0 || classFilter === preset.filter);
               const vuote = conConteggio.filter(({ preset, count }) => count === 0 && classFilter !== preset.filter);
               const chip = ({ preset, count }: { preset: ClassPreset; count: number }) => {

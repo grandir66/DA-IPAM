@@ -22,17 +22,18 @@ export function lettoreDellaFonte(fonte: string): Lettore {
     case "manual":
       return "persona";
     default:
-      return "apparato"; // device, ssh
+      return "apparato"; // device, ssh, collector
   }
 }
 
 /**
  * Le fonti dei vicini che dicono «lo interroghiamo come apparato di rete» (prova di ruolo «legge vicini», spec §13.8.2):
- * l'apparato («device», e «ssh» del lettore che lo scrive via SSH), il controller («unifi», «controller») e SNMP. Non la
+ * l'apparato («device», e «ssh» del lettore che lo scrive via SSH), il controller («unifi», «controller»), SNMP e il collector
+ * dell'acquisizione modulare («collector», decisione c di fine giro 2, piano 2026-10-21 §7). Non la
  * lettura dal lato dell'host («host»: un hypervisor letto come host). Elenco chiuso: una fonte nuova non diventa una prova di
  * ruolo senza una decisione (revisione del Task 3 di T3).
  */
-const FONTI_DI_RETE: ReadonlySet<string> = new Set(["device", "ssh", FONTE_CONTROLLER, "controller", "snmp"]);
+const FONTI_DI_RETE: ReadonlySet<string> = new Set(["device", "ssh", FONTE_CONTROLLER, "controller", "snmp", "collector"]);
 export function leggeViciniDiRete(fonte: string): boolean {
   return FONTI_DI_RETE.has(fonte);
 }

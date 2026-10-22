@@ -36,6 +36,12 @@ export interface DescrittoreCollector {
      * come fa l'app di sempre). Assente = `console`.
      */
     ssh_modo?: "console" | "exec" | "exec_per_comando";
+    /**
+     * Limiti della richiesta che l'app manda (millisecondi): per comando e in tutto. Assente = valori di serie dello schema
+     * (4 s, 90 s). Comware IRF: `display interface brief` supera i 4 s e il giro si fermava prima di `display vlan all`
+     * (70151, 22/10); il collaudo del 21/10 girava a 15 s.
+     */
+    limiti?: { timeout_ms: number; total_timeout_ms: number };
     /** Script PowerShell fissi per WinRM, per id (mai testo dall'input). Assente = il collector non usa WinRM. */
     script_winrm?: Readonly<Record<string, string>>;
     collaudo: StatoCollaudo;
@@ -60,7 +66,9 @@ export const CATALOGO = [
     {
         id: "hp-comware", versione: "1.0.0", famiglia: "switch", prodotti: ["HPE FlexFabric (Comware)"],
         credenziali: { ammesse: ["snmp", "ssh"], una_di: ["snmp", "ssh"] },
-        sezioni: [...switchSezioni, "hardware", "modules", "resources", "environment"], comandi: COMWARE_COMMANDS, ssh_modo: "exec_per_comando", collaudo: "collaudato",
+        sezioni: [...switchSezioni, "hardware", "modules", "resources", "environment"], comandi: COMWARE_COMMANDS, ssh_modo: "exec_per_comando",
+        // Sotto i 5 minuti del lucchetto per apparato del job `apparati_scelti`.
+        limiti: { timeout_ms: 15000, total_timeout_ms: 240000 }, collaudo: "collaudato",
         collaudati: [{ modello: "HPE FlexFabric 5700", firmware: "Comware 7.1.045 Release 2432P06", nota: "IRF a quattro membri; alcune tabelle SNMP parziali" }],
     },
     {

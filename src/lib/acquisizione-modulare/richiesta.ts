@@ -5,7 +5,7 @@
  * per pressione del pulsante, nessuna seconda credenziale, nemmeno dopo un'uscita parziale).
  */
 import type { AcquisitionRequest, CollectorId } from "@/lib/acquisition";
-import type { ProtocolloCollector } from "@/lib/acquisition/catalogo";
+import { descrittore, type ProtocolloCollector } from "@/lib/acquisition/catalogo";
 import { leggiSegretoDb, type Segreto, type UsoSegreto } from "@/lib/credentials/segreti";
 import type Database from "better-sqlite3";
 import type { CredenzialiProposte } from "./fonte";
@@ -46,6 +46,8 @@ const USO: Record<ProtocolloCollector, UsoSegreto> = { ssh: "ssh", snmp: "snmp",
 
 export function costruisciRichiesta(collector: CollectorId, device: ApparatoPerRichiesta, credenziali: CredenzialiProposte, leggi: LettoreSegreto): RichiestaCostruita {
   const richiesta: Record<string, unknown> = { collector, host: device.host };
+  const limiti = descrittore(collector).limiti;
+  if (limiti) richiesta.limits = { ...limiti };
   const segreti: string[] = [];
   for (const [p, c] of Object.entries(credenziali) as Array<[ProtocolloCollector, NonNullable<CredenzialiProposte[ProtocolloCollector]>]>) {
     const letto = leggi(c.credential_id, USO[p], p === "snmp" && device.protocol === "snmp_v3");

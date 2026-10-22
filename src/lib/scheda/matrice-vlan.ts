@@ -8,7 +8,11 @@ export type CellaVlan = "U" | "T" | null;
 export interface ColonnaVlan { id: number | null; etichetta: string; nome: string | null }
 export type StatoPortaMatrice = "attiva" | "inattiva" | "disabilitata";
 /** `nota`: testo in coda al nome della porta (per i MikroTik il bond, per gli switch quello che serve). */
-export interface RigaMatrice { porta: string; stato: StatoPortaMatrice; pvid: number | null; nota: string | null; celle: CellaVlan[] }
+export interface RigaMatrice {
+  porta: string; stato: StatoPortaMatrice; pvid: number | null; nota: string | null; celle: CellaVlan[];
+  /** Accanto al PVID, quando un'altra fonte lo contraddice (switch: «nativa 20 (controller)»). */
+  pvid_nota?: string | null;
+}
 export interface MatriceVlanBase { colonne: ColonnaVlan[]; righe: RigaMatrice[] }
 
 const VLAN_MIN = 1;

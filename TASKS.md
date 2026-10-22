@@ -1,5 +1,40 @@
 # TASKS — DA-IPAM
 
+## 2026-10-22 — LibreNMS come fonte di dati degli apparati SNMP
+
+Spec [`docs/superpowers/specs/2026-10-22-librenms-fonte-dati-design.md`](docs/superpowers/specs/2026-10-22-librenms-fonte-dati-design.md), piano [`docs/superpowers/plans/2026-10-22-librenms-fonte-dati.md`](docs/superpowers/plans/2026-10-22-librenms-fonte-dati.md) (10 task; completo per aggiunta, migrazione, giro e mappa, leggero per rotte e interfaccia; stato: bozza da approvare). Prova in sola lettura sull'hub il 22/10: LibreNMS ha 3-4 volte porte, vicini e MAC dei nostri motori, più 1160 sensori.
+
+- [x] Prova in sola lettura sull'API di LibreNMS dell'hub e confronto con il DB 70791 (spec §2)
+- [x] Spec e piano scritti
+- [x] Riccardo (22/10): leggero; vicini aggiunti in automatico se l'SNMP risponde; i 5 server mai interrogati quasi certamente senza SNMP (si verifica nel task 4, poi si propone di toglierli); container LibreNMS già aggiornato. Registro del piano. In coda dietro i collector modulari.
+- [ ] Piano approvato da Riccardo (livelli compresi)
+- [ ] T1 aggiunta senza force_add, v1/v2c/v3
+- [ ] T2 migrazione librenms_fonte_v21
+- [x] T3 client e lettori con uscite vere anonimizzate — una query per 50 apparati; regola SNMP in SQL confrontata con quella vera da una prova
+- [ ] T4 scrittura e giro nel job librenms_sync (prova a vuoto sulla copia dell'hub)
+- [ ] T5 rotte API
+- [ ] T6 tavola grafica approvata
+- [ ] T7 scheda: Sensori, Porte e Vicini con fonte
+- [ ] T8 pagina del modulo: non interrogati, rifiutati, candidati
+- [ ] T9 vicini nella mappa (zona rossa, misura prima/dopo)
+- [ ] T10 accensione sull'hub, ADR, documenti
+
+## 2026-10-22 — scansione automatica dei device scelti
+
+Piano: [`docs/superpowers/plans/2026-10-22-scansione-automatica-da-discovery.md`](docs/superpowers/plans/2026-10-22-scansione-automatica-da-discovery.md) (10 task; giro e migrazione livello completo, interfaccia leggero; stato: bozza da approvare). Tavola approvata il 22/10: artboard `ScansioneAutomatica` (J1-J4) del canvas https://claude.ai/artifact/7ezwy7nkAAzUWSn1wJCNKv. Risponde anche al punto (a) qui sotto (job `arp_poll` sull'hub).
+
+- [x] Piano approvato da Riccardo (22/10: tavola «si va benissimo», piano «ok»)
+- [x] T1 tipo `apparati_scelti`, CHECK v11 di `scheduled_jobs`, tabella `job_apparati_esiti` (misura sulla copia dell'hub) — v0.9.861; v11 sulla copia 3-4 ms, 23 job identici, integrity ok; revisione completa: approvato (una colonna sconosciuta ora blocca la ricostruzione)
+- [x] T2 regole pure: config, frequenze (ogni ora · ogni 4 ore · ogni giorno alle HH:MM), idoneità, letture valide — regole pure; il job segue l ora italiana (fuso esplicito); revisione completa: 1 importante (fuso) corretto
+- [ ] T3 funzioni DB: stato degli apparati in una query, esiti per apparato
+- [ ] T4 letture estratte da «Interroga» e dal giro ARP, lucchetto per apparato, log senza nomi né IP
+- [ ] T5 il giro `apparati_scelti` nello scheduler (prova a vuoto sulla copia dell'hub)
+- [ ] T6 rotte API (anteprima, creazione, modifica, esiti, testata)
+- [ ] T7 Discovery: pulsante e finestra (J1, J2), resa 1440 e 1920
+- [ ] T8 pagina dei job: riga ed esiti per apparato (J3), resa 1440 e 1920
+- [ ] T9 testata della scheda: pastiglia (J4), resa 1440 e 1920
+- [ ] T10 accensione sull'hub (con l'ok di Riccardo per creare il job), ADR 0030, CHANGELOG, CONTEXT, scheda-mappa
+
 ## 2026-10-22 — accorpamento IP e matrice VLAN degli switch
 
 Piano: [`docs/superpowers/plans/2026-10-22-accorpamento-ip-e-vlan-switch.md`](docs/superpowers/plans/2026-10-22-accorpamento-ip-e-vlan-switch.md) (12 task + 1 rimandato; A leggero, B leggero con misura sulla copia dell'hub, C completo; stato: eseguito e acceso sull'hub il 22/10, aperti (a)-(f)). Grafica: artboard `Discovery` e `SwitchVlan` del canvas https://claude.ai/artifact/7ezwy7nkAAzUWSn1wJCNKv.
@@ -20,11 +55,14 @@ Piano: [`docs/superpowers/plans/2026-10-22-accorpamento-ip-e-vlan-switch.md`](do
 - [ ] (a) decidere se creare sull'hub il job `arp_poll` o accettare solo «Aggiorna»/«Interroga»: oggi l'hub NON ha il job, quindi gli switch si leggono solo a mano; con il job si leggerebbero ogni ora anche le tabelle MAC di tutti gli switch (decide Riccardo)
 - [ ] (b) cluster 10 e 11 (iLO HPE + schede di rete dello stesso server?) da confermare con Riccardo
 - [ ] (c) SW-UFLEX-RG-10GB (apparato 9) non risponde a SNMP (TEMPO_SCADUTO): community, ACL o SNMP spento sullo switch
-- [ ] (d) T13 completamento dal controller UniFi: serve allargare la lista bianca di `unifi-api` (`GET rest/networkconf`), serve l'ok di Riccardo
+- [x] (d) T13 completamento dal controller UniFi (ok di Riccardo 22/10): lista bianca + `GET rest/networkconf`, native in `switch_vlan_nativa` dalla sync UniFi (solo con `switch_vlan` accesa); ProMax 14 porte completate, resta «dedotta» (18 porte senza nativa dal controller); prove `unifi-vlan-native`, `vlan-switch`, `unifi-api`; resa a 1440 vista sulla copia
 - [ ] (e) il blocco «un IP, un apparato» va aggiunto anche in `unifi-sync` prima di accenderlo (oggi spento)
 - [ ] (f) le migrazioni sulla copia del cliente A (MikroTik v1-v3, cluster, `switch_vlan`) non sono mai state misurate: la copia non era disponibile
-- [ ] (rimandato) T13 completamento dal controller UniFi: serve l'ok ad ammettere `GET rest/networkconf` nella lista bianca di `unifi-api`
-- [ ] Panoramica dello switch sull hub (SW-CED-48POE-242): scorre di ~190 px a 1440×900 per il riquadro VLAN (13 righe); tagliarlo a 8 righe con «+N altre ›» come le altre liste della Panoramica.
+- [ ] ProMax: PVID SNMP diverso dalla nativa del controller su 6 porte su 14 confrontabili, e l'SNMP non dà le porte 33-52 (sugli altri 4 switch 99/99 uguali): la lettura Q-BRIDGE della ProMax (bit «inversi», ifIndex) è da rivedere
+- [ ] Native del controller senza scadenza: se uno switch esce dal controller o la lettura `switch_vlan` si spegne e riaccende, le righe di `switch_vlan_nativa` restano (l'età si vede da `nativa_letta_il` nella riga delle fonti); da decidere se farle scadere
+- [ ] Sull'hub la nativa si scrive al primo giro di `unifi_sync` #22 (03:00) dopo il rilascio: verificare `switch_vlan_nativa` il giorno dopo
+- [x] Panoramica dello switch sull hub (SW-CED-48POE-242): scorreva di ~190 px a 1440×900. Il riquadro mostrava già 5 VLAN: a far scorrere era la colonna destra (dettaglio + vicini + VLAN). Ora VLAN a 8 voci (due colonne da 4) sotto «Porte da guardare», «tutte (N) ›» verso la tab: a 1440×900 entra (scrollHeight 900, vista sulla copia).
+- [ ] Con un filtro a chip che riempie la tabella (Trunk 7, Tutte) la pagina scorre ancora di ~150 px: la tabella arriva a 230 px e il riquadro VLAN sta sotto. Da decidere se accettarlo (vista di lavoro scelta dall'utente) o accorciare la tabella.
 
 ## 2026-10-22 — invio AD e inventario a DA-Vul-can (A-IPAM)
 

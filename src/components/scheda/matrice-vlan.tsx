@@ -44,6 +44,7 @@ export function TabellaMatriceVlan({ m, prima = "Interfaccia", avviso, blocchi }
       <td className="whitespace-nowrap px-3 py-1"><StatoPorta s={r.stato} /></td>
       <td className="whitespace-nowrap px-3 py-1">
         {r.pvid != null ? <span className="rounded border border-[#B8C4CC] bg-muted px-1.5 font-mono font-semibold">P:{r.pvid}</span> : "—"}
+        {r.pvid_nota && <span className="ml-1 whitespace-nowrap text-[13px] font-semibold">▲ {r.pvid_nota}</span>}
       </td>
       {r.celle.map((c, k) => <td key={m.colonne[k].etichetta} className="h-[32px] border-l px-1 text-center"><Cella c={c} /></td>)}
     </tr>

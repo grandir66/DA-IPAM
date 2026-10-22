@@ -115,6 +115,40 @@ test("sola lettura: stat/sta (client collegati) ammessa in GET, con e senza pref
   assert.equal(isUnifiRequestAllowed("GET", "/api/s/default/stat/stations"), false);
 });
 
+// Piano 2026-10-22 accorpamento, Task 13 (ok di Riccardo del 22/10): il primo e unico percorso `rest/` ammesso è l'elenco
+// delle reti, in GET; ogni altro `rest/` e ogni altro metodo su `rest/networkconf` restano rifiutati.
+test("sola lettura: GET rest/networkconf ammessa (con e senza prefisso UniFi OS), nient'altro di rest/", () => {
+  assert.equal(isUnifiRequestAllowed("GET", "/api/s/default/rest/networkconf"), true);
+  assert.equal(isUnifiRequestAllowed("GET", "/proxy/network/api/s/3oumjv0i/rest/networkconf"), true);
+  for (const m of ["POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"]) {
+    assert.equal(isUnifiRequestAllowed(m, "/api/s/default/rest/networkconf"), false, `${m} rest/networkconf deve essere rifiutata`);
+    assert.equal(isUnifiRequestAllowed(m, "/proxy/network/api/s/default/rest/networkconf"), false, `${m} (UniFi OS) deve essere rifiutata`);
+  }
+  for (const p of [
+    "/api/s/default/rest/networkconf/5f00aa",
+    "/api/s/default/rest/networkconf/",
+    "/api/s/default/rest/networkconfx",
+    "/api/s/default/rest/networkconf?x=1",
+    "/api/s/default/rest/portconf",
+    "/api/s/default/rest/device",
+    "/api/s/default/rest/device/abc",
+    "/api/s/default/rest/user",
+    "/api/s/default/rest/wlanconf",
+    "/api/s/default/rest/setting",
+    "/api/s/default/rest/firewallrule",
+    "/api/s/default/rest/routing",
+    "/api/s/../rest/networkconf",
+    "/api/s/a%2Fb/rest/networkconf",
+    "/api/s//rest/networkconf",
+    "/api/rest/networkconf",
+    "/proxy/network/api/s/default/rest/portconf",
+    "/proxy/network/../api/s/default/rest/networkconf",
+    "/v2/api/site/default/networkconf",
+  ]) {
+    assert.equal(isUnifiRequestAllowed("GET", p), false, `GET ${p} deve essere rifiutata`);
+  }
+});
+
 // ── Classificazione ──────────────────────────────────────────────────────────
 
 test("classificazione: credenziali, 2FA, site, permessi, percorso, server", () => {

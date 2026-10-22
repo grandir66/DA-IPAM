@@ -8,6 +8,8 @@
  *   GET  /api/s/<site>/stat/sta    → client collegati (vedi `unifi-clients.ts`)
  *   POST /api/logout
  *   GET  /api/self/sites → i site, per sceglierne uno (facoltativo)
+ *   GET  /api/s/<site>/rest/networkconf → le reti e i loro numeri di VLAN (vedi
+ *        `unifi-reti.ts`): l'unico `rest/` ammesso, solo GET (Task 13, 22/10)
  *
  * Backend `udm` (console UniFi OS: UDM, UDM Pro/Beast, Cloud Key Gen2+), due vie:
  * - chiave API creata sulla console, nell'app Network (Control Plane, poi
@@ -21,6 +23,7 @@
  *   GET  /proxy/network/api/s/<site>/stat/device
  *   GET  /proxy/network/api/s/<site>/stat/sta
  *   GET  /proxy/network/api/self/sites
+ *   GET  /proxy/network/api/s/<site>/rest/networkconf
  *
  * Nient'altro: ogni richiesta passa da `isUnifiRequestAllowed`, che conosce
  * solo questi percorsi. Il client non scrive mai sul controller. Unica
@@ -54,6 +57,7 @@ import { spkiPinFromDer } from "@/lib/vuln/scanner-edge-client";
 import { mergeCookieHeader, parseSetCookies } from "./librenms-web-session";
 import { parseStatDeviceResponse, UnifiResponseError, type UnifiDevice } from "./unifi-device";
 import { parseStatStaResponse, type UnifiStaClient } from "./unifi-clients";
+import { parseNetworkconfResponse, type UnifiRete } from "./unifi-reti";
 import type { ComponentConfig, UnifiCertPinStore, UnifiKind } from "./types";
 
 // ── Errori ───────────────────────────────────────────────────────────────────
@@ -163,15 +167,19 @@ const ALLOWED_POSTS: ReadonlySet<string> = new Set(["/api/login", "/api/logout",
 
 /**
  * true solo per login e logout (self-hosted e UniFi OS), lettura degli apparati
- * e dei client collegati di un site ed elenco dei site, con o senza il prefisso
- * delle console UniFi OS. Tutte GET di `stat/`: nessun comando (`cmd/`), mai.
+ * e dei client collegati di un site, elenco dei site e elenco delle reti del
+ * site (`rest/networkconf`), con o senza il prefisso delle console UniFi OS.
+ * Tutte GET: nessun comando (`cmd/`), mai. `rest/networkconf` è l'UNICO
+ * percorso `rest/` ammesso, solo in GET e senza id (piano 2026-10-22
+ * accorpamento, Task 13, ok di Riccardo del 22/10): dà i numeri di VLAN delle
+ * reti che il `port_table` cita per id.
  */
 export function isUnifiRequestAllowed(method: string, path: string): boolean {
   if (method === "POST") return ALLOWED_POSTS.has(path);
   if (method === "GET") {
     const rest = path.startsWith(`${UNIFI_OS_PREFIX}/`) ? path.slice(UNIFI_OS_PREFIX.length) : path;
     if (rest === "/api/self/sites") return true;
-    const m = /^\/api\/s\/([^/]+)\/stat\/(device|sta)$/.exec(rest);
+    const m = /^\/api\/s\/([^/]+)\/(?:stat\/(?:device|sta)|rest\/networkconf)$/.exec(rest);
     return m !== null && SITE_RE.test(m[1]);
   }
   return false;
@@ -201,7 +209,15 @@ export function controllerMsgFromBody(body: string): string | null {
  * (apparati di default). `unifiOs` = sessione con utente locale su una console
  * UniFi OS (ADR 0019).
  */
-type ErrorCtx = { step: "login" | "lettura"; site?: string; apiKey?: boolean; unifiOs?: boolean; what?: "device" | "sta" };
+type ErrorCtx = { step: "login" | "lettura"; site?: string; apiKey?: boolean; unifiOs?: boolean; what?: LetturaUnifi };
+
+/** Che cosa si legge: apparati (`stat/device`), client (`stat/sta`), reti (`rest/networkconf`). */
+type LetturaUnifi = "device" | "sta" | "networkconf";
+const COSA_LETTA: Record<LetturaUnifi, { art: string; di: string }> = {
+  device: { art: "gli apparati", di: "degli apparati" },
+  sta: { art: "i client", di: "dei client" },
+  networkconf: { art: "le reti", di: "delle reti" },
+};
 
 export const UNIFI_OS_LOGIN_MESSAGES = {
   401: "Utente o password non accettati dalla console",
@@ -217,7 +233,7 @@ export function classifyUnifiHttpError(
   ctx: ErrorCtx,
 ): { reason: UnifiErrorReason; message: string } {
   const msg = controllerMsg ?? "";
-  const cosa = ctx.what === "sta" ? "client" : "apparati";
+  const cosa = COSA_LETTA[ctx.what ?? "device"];
   if (ctx.unifiOs && ctx.step === "login") {
     if (status === 401) return { reason: "auth", message: UNIFI_OS_LOGIN_MESSAGES[401] };
     // 499 = la console chiede il secondo fattore (MFA_AUTH_REQUIRED): stesso rimedio del 403.
@@ -237,7 +253,7 @@ export function classifyUnifiHttpError(
   if (ctx.unifiOs && ctx.step === "lettura" && status === 403) {
     return {
       reason: "auth",
-      message: `L'account della console non ha il permesso di leggere ${cosa === "client" ? "i client" : "gli apparati"} nell'app Network: serve almeno la lettura`,
+      message: `L'account della console non ha il permesso di leggere ${cosa.art} nell'app Network: serve almeno la lettura`,
     };
   }
   if (ctx.apiKey && (status === 401 || status === 403)) {
@@ -265,7 +281,7 @@ export function classifyUnifiHttpError(
   if (msg === "api.err.NoPermission") {
     return {
       reason: "auth",
-      message: `L'account del controller non ha il permesso di leggere ${cosa === "client" ? "i client" : "gli apparati"} del site`,
+      message: `L'account del controller non ha il permesso di leggere ${cosa.art} del site`,
     };
   }
   if (status === 401 || status === 403 || msg === "api.err.Invalid" || msg === "api.err.LoginRequired") {
@@ -274,7 +290,7 @@ export function classifyUnifiHttpError(
       message:
         ctx.step === "login"
           ? "Credenziali del controller rifiutate (utente o password errati)"
-          : `Il controller ha rifiutato la sessione durante la lettura ${cosa === "client" ? "dei client" : "degli apparati"}`,
+          : `Il controller ha rifiutato la sessione durante la lettura ${cosa.di}`,
     };
   }
   if (status === 429) {
@@ -541,6 +557,11 @@ export interface UnifiClient {
   listDevices(): Promise<UnifiDevice[]>;
   /** Client collegati del site (stat/sta). Lancia `UnifiApiError`. */
   listClients(): Promise<UnifiStaClient[]>;
+  /**
+   * Apparati e reti del site in una sessione (Task 13): la sync li chiede solo con la lettura `switch_vlan` accesa.
+   * Lancia `UnifiApiError` se non legge gli apparati; reti non lette → `networks: null`.
+   */
+  listDevicesWithNetworks(): Promise<UnifiDevicesAndNetworks>;
 }
 
 export interface UnifiClientOptions {
@@ -711,25 +732,51 @@ interface ReadAuth {
   unifiOs: boolean;
 }
 
-/** Una lettura `stat/<what>` del site: stessa gestione degli errori per apparati e client. */
+/** Una lettura del site (`stat/device`, `stat/sta`, `rest/networkconf`): stessa gestione degli errori per tutte. */
 type StatReader<T> = (send: UnifiTransport, auth: ReadAuth, site: string, timeoutMs: number) => Promise<T>;
 
-function statReader<T>(what: "device" | "sta", parse: (json: unknown) => T): StatReader<T> {
+function statReader<T>(what: LetturaUnifi, parse: (json: unknown) => T): StatReader<T> {
   return (send, auth, site, timeoutMs) => statGet(send, auth, site, timeoutMs, what, parse);
 }
 
 const statDevice = statReader("device", parseStatDeviceResponse);
 const statSta = statReader("sta", parseStatStaResponse);
+const restNetworkconf = statReader("networkconf", parseNetworkconfResponse);
+
+/** Apparati e reti del site nella STESSA sessione (un login). */
+export interface UnifiDevicesAndNetworks {
+  devices: UnifiDevice[];
+  /** null = reti non lette («non so»): gli apparati valgono lo stesso, le VLAN native no. */
+  networks: UnifiRete[] | null;
+  /** Perché le reti non si sono lette (testo del controller classificato), se non si sono lette. */
+  networksError: string | null;
+}
+
+/**
+ * `stat/device`, poi `rest/networkconf`. Un errore sulle reti non costa gli apparati (che si scrivono come sempre): le reti
+ * tornano null col motivo. Un certificato cambiato a metà invece ferma tutto, come in ogni altra lettura.
+ */
+const statDeviceConReti: StatReader<UnifiDevicesAndNetworks> = async (send, auth, site, timeoutMs) => {
+  const devices = await statDevice(send, auth, site, timeoutMs);
+  try {
+    return { devices, networks: await restNetworkconf(send, auth, site, timeoutMs), networksError: null };
+  } catch (e) {
+    const err = toUnifiError(e);
+    if (err.reason === "cert") throw err;
+    return { devices, networks: null, networksError: err.message };
+  }
+};
 
 async function statGet<T>(
   send: UnifiTransport,
   auth: ReadAuth,
   site: string,
   timeoutMs: number,
-  what: "device" | "sta",
+  what: LetturaUnifi,
   parse: (json: unknown) => T,
 ): Promise<T> {
-  const res = await send({ method: "GET", path: `${auth.prefix}/api/s/${site}/stat/${what}`, headers: auth.headers(), timeoutMs });
+  const percorso = what === "networkconf" ? "rest/networkconf" : `stat/${what}`;
+  const res = await send({ method: "GET", path: `${auth.prefix}/api/s/${site}/${percorso}`, headers: auth.headers(), timeoutMs });
   const ctx: ErrorCtx = { step: "lettura", site, apiKey: auth.apiKey, unifiOs: auth.unifiOs, what };
   if (res.status !== 200) throw httpError(res, ctx);
   const json = parseJsonBody(res.body);
@@ -990,6 +1037,13 @@ export function createUnifiClient(
     async listClients() {
       try {
         return (await read(statSta, false)).data;
+      } catch (e) {
+        throw toUnifiError(e);
+      }
+    },
+    async listDevicesWithNetworks() {
+      try {
+        return (await read(statDeviceConReti, false)).data;
       } catch (e) {
         throw toUnifiError(e);
       }

@@ -2,13 +2,13 @@
  * Tipi di job schedulato (`scheduled_jobs.job_type`): l'UNICO elenco.
  *
  * Da qui derivano il CHECK dello schema tenant (`db-tenant-schema.ts`), quello
- * delle ultime ricostruzioni della tabella (`migrateScheduledJobsV8`, `V9` e
- * `V10` in `db-tenant.ts`) e il tipo TypeScript (`ScheduledJob["job_type"]` in
+ * delle ultime ricostruzioni della tabella (`migrateScheduledJobsV8`…`V11` in
+ * `db-tenant.ts`) e il tipo TypeScript (`ScheduledJob["job_type"]` in
  * `@/types`). Prima erano tre elenchi scritti a mano, più uno per ognuna delle
  * ricostruzioni v2…v7: se lo schema e la migrazione divergono, un DB nuovo e
  * uno aggiornato accettano job diversi.
  *
- * Aggiungere un tipo: in coda qui, poi una nuova ricostruzione (v11…) in
+ * Aggiungere un tipo: in coda qui, poi una nuova ricostruzione (v12…) in
  * `getTenantDb` con la guardia sul nuovo valore. Togliere un tipo no: le righe
  * esistenti non passerebbero il CHECK della copia.
  *
@@ -41,6 +41,9 @@ export const SCHEDULED_JOB_TYPES = [
   // host assenti e cancella l'archivio oltre i 90 giorni. Uno per tenant,
   // spento di default: lo accende solo l'interruttore della pagina della pulizia.
   "pulizia_host",
+  // v11 (scansione automatica, piano 2026-10-22): job creato da un admin da
+  // Discovery; nessuno si crea da solo. Rilegge gli apparati scelti.
+  "apparati_scelti",
 ] as const;
 
 export type ScheduledJobType = (typeof SCHEDULED_JOB_TYPES)[number];

@@ -71,7 +71,7 @@ import type {
 } from "@/types";
 import { modelloEtichettaDiPorte, type FingerprintUserRule } from "./device-fingerprint-classification";
 import { registraRipiego } from "./db-maintenance/ripieghi";
-import { cleanOrphanedForeignKeys as cleanOrphanedForeignKeysSu, getCurrentTenantCode as tenantCorrente, livelloSchemaSchedaMk, NEIGHBORS_LATEST_ROUND_SQL, NEIGHBORS_MODEL_SOURCES_SQL, resetConfiguration as resetConfigurazioneTenant } from "./db-tenant";
+import { cleanOrphanedForeignKeys as cleanOrphanedForeignKeysSu, deleteScheduledJob as deleteScheduledJobConEsiti, getCurrentTenantCode as tenantCorrente, livelloSchemaSchedaMk, NEIGHBORS_LATEST_ROUND_SQL, NEIGHBORS_MODEL_SOURCES_SQL, resetConfiguration as resetConfigurazioneTenant } from "./db-tenant";
 
 const DATA_DIR = resolveDataDir();
 /** Path effettivo del DB. `DA_IPAM_DB_PATH` serve solo a `scripts/generate-empty-db.ts` (template versionato). */
@@ -5462,8 +5462,9 @@ export function toggleJob(id: number, enabled: boolean): void {
   getDb().prepare("UPDATE scheduled_jobs SET enabled = ?, updated_at = datetime('now') WHERE id = ?").run(enabled ? 1 : 0, id);
 }
 
+/** Una sola copia in db-tenant.ts (scansione automatica, 2026-10-22): toglie anche gli esiti per apparato, in transazione. */
 export function deleteScheduledJob(id: number): boolean {
-  return getDb().prepare("DELETE FROM scheduled_jobs WHERE id = ?").run(id).changes > 0;
+  return deleteScheduledJobConEsiti(id);
 }
 
 // ========================

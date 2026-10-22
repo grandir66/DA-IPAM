@@ -4,6 +4,7 @@ import { getActiveTenants } from "@/lib/db-hub";
 import { withTenant } from "@/lib/db-tenant";
 import { runJob, type OpzioniRunJob } from "./jobs";
 import { oraDelGiroGiornaliero } from "@/lib/scheduled-job-types";
+import { FUSO_UTENTI } from "@/lib/db-date";
 import {
   createFailureState,
   findTenantOutages,
@@ -134,9 +135,10 @@ export function initializeScheduler(): void {
 /**
  * L'espressione cron di un job: dall'intervallo e, per i job di un giorno o più,
  * dall'ora del tipo (`oraDelGiroGiornaliero`: pulizia_host alle 04:00, gli altri
- * alle 03:00). Senza tipo, le 03:00 di sempre. Esportata per le prove.
+ * alle 03:00). Senza tipo, le 03:00 di sempre. `ora` (scansione automatica, piano 2026-10-22): l'ora scelta
+ * per il giornaliero di `apparati_scelti` (`config.ora`); sotto il giorno non conta. Esportata per le prove.
  */
-export function intervalToCron(minutes: number, jobType?: string): string {
+export function intervalToCron(minutes: number, jobType?: string, ora?: { h: number; m: number }): string {
   // Fix B1 2026-06-23: la vecchia versione collassava ogni intervallo ≥1440min
   // (3 giorni, settimana) in "0 0 * * *" = GIORNALIERO → VA scan 7× troppo
   // frequenti; e `*/N` per N che non divide il campo dava cadenza irregolare.
@@ -154,10 +156,11 @@ export function intervalToCron(minutes: number, jobType?: string): string {
   // ≥ 1 giorno: esegui ogni N giorni (N≥1). cron `*/d` sul campo day-of-month
   // approssima "ogni d giorni" (reset a inizio mese, ma niente più 7× al giorno).
   const days = Math.max(1, Math.round(minutes / 1440));
-  const ora = oraDelGiroGiornaliero(jobType);
-  if (days === 1) return `0 ${ora} * * *`;       // giornaliero (03:00; pulizia_host 04:00)
-  if (days >= 7) return `0 ${ora} * * 1`;        // settimanale: lunedì
-  return `0 ${ora} */${days} * *`;               // ogni N giorni
+  const h = ora?.h ?? oraDelGiroGiornaliero(jobType);
+  const m = ora?.m ?? 0;
+  if (days === 1) return `${m} ${h} * * *`;       // giornaliero (03:00; pulizia_host 04:00; apparati_scelti all'ora scelta)
+  if (days >= 7) return `${m} ${h} * * 1`;        // settimanale: lunedì
+  return `${m} ${h} */${days} * *`;               // ogni N giorni
 }
 
 export function scheduleJob(
@@ -173,9 +176,12 @@ export function scheduleJob(
 
   const cronExpr = intervalToCron(intervalMinutes, jobType);
 
+  // apparati_scelti (scansione automatica, revisione 22/10): l'ora scelta e le fasce di 4 ore sono italiane anche su
+  // un server in UTC. Gli altri tipi restano sull'ora del server, come prima.
+  const opzioni = jobType === "apparati_scelti" ? { timezone: FUSO_UTENTI } : undefined;
   const task = cron.schedule(cronExpr, async () => {
     await eseguiJobProgrammato(key, jobId, tenantCode);
-  });
+  }, opzioni);
 
   activeTasks.set(key, task);
 }

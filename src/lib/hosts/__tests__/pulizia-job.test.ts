@@ -88,7 +88,8 @@ function dbV9(): Database.Database {
 }
 
 test("tipi: pulizia_host in coda, dopo i tipi della v9 che restano tutti", () => {
-  assert.deepEqual([...SCHEDULED_JOB_TYPES], [...V9_TYPES, "pulizia_host"]);
+  // Dopo la v10 vengono i tipi delle ricostruzioni seguenti (v11: apparati_scelti, __tests__/scheduled-jobs-v11.test.ts).
+  assert.deepEqual([...SCHEDULED_JOB_TYPES].slice(0, V9_TYPES.length + 1), [...V9_TYPES, "pulizia_host"]);
   assert.equal(PULIZIA_HOST_MINUTES, 1440);
 });
 

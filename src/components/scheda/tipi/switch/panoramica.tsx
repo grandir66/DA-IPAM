@@ -2,7 +2,7 @@
 
 /**
  * Panoramica dello switch (artboard Switch): striscia dei numeri, pannello frontale con il dettaglio della porta
- * scelta, «Porte da guardare» con i filtri a chip, vicini e VLAN in breve, hardware se noto, fonti. Deve stare in
+ * scelta, «Porte da guardare» con i filtri a chip e sotto le VLAN in breve (8), vicini, hardware se noto, fonti. Deve stare in
  * 1440×900 senza scorrere la pagina: la tabella scorre dentro il suo riquadro.
  */
 import { useMemo, useState } from "react";
@@ -23,6 +23,9 @@ import { attaccatoA, porteDi, viciniDi } from "./dati-porte";
 import { useVlanSwitch } from "./vlan";
 
 type Filtro = "guardare" | "trunk" | "poe" | "tutte";
+
+/** Righe del riquadro VLAN: le altre si vedono dalla tab («tutte (N) ›»). */
+const VLAN_IN_PANORAMICA = 8;
 
 const breve = (iso: string): string =>
   parseUtcDate(iso).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
@@ -164,6 +167,16 @@ export function PanoramicaSwitch({ ctx }: { ctx: ContestoScheda }) {
               </div>
             )}
           </Riquadro>
+
+          <Riquadro titolo={`VLAN (${vlan.length})`} vuoto={vlan.length === 0}
+            azione={<button type="button" onClick={() => apriTab("vlan")} className="text-[13px] font-semibold text-[#006C96] hover:underline dark:text-sky-300">tutte ({vlan.length}) ›</button>}>
+            {/* Al più 8 VLAN, su due colonne da 4 sotto le porte: in colonna a destra la pagina scorreva a 1440×900. */}
+            <ul className="grid grid-flow-col grid-cols-2 grid-rows-4 gap-x-6 gap-y-1 text-[13px]">
+              {vlan.slice(0, VLAN_IN_PANORAMICA).map((v) => (
+                <li key={v.vlan} className="flex gap-2"><span className="w-12 shrink-0 font-mono font-semibold">{v.vlan}</span><span>{v.porte} {v.porte === 1 ? "porta" : "porte"}{v.trunk > 0 ? ` (${v.trunk} trunk)` : ""}</span></li>
+              ))}
+            </ul>
+          </Riquadro>
         </div>
 
         <div className="min-w-0 space-y-4">
@@ -178,16 +191,6 @@ export function PanoramicaSwitch({ ctx }: { ctx: ContestoScheda }) {
                 <li key={v.chiave} className="flex gap-2"><span className="w-14 shrink-0 font-mono font-semibold">{v.portaLocale.replace(/^\D+/, "") || v.portaLocale}</span><span className="min-w-0 truncate">{v.nome}{v.portaRemota ? ` · porta ${v.portaRemota}` : ""} <span className="text-muted-foreground">· {v.protocollo.toUpperCase()}</span></span></li>
               ))}
             </ul>
-          </Riquadro>
-
-          <Riquadro titolo={`VLAN (${vlan.length})`} vuoto={vlan.length === 0}
-            azione={<button type="button" onClick={() => apriTab("vlan")} className="text-[13px] font-semibold text-[#006C96] hover:underline dark:text-sky-300">dettaglio ›</button>}>
-            <ul className="space-y-1 text-[13px]">
-              {vlan.slice(0, 5).map((v) => (
-                <li key={v.vlan} className="flex gap-2"><span className="w-12 shrink-0 font-mono font-semibold">{v.vlan}</span><span>{v.porte} {v.porte === 1 ? "porta" : "porte"}{v.trunk > 0 ? ` (${v.trunk} trunk)` : ""}</span></li>
-              ))}
-            </ul>
-            {vlan.length > 5 && <button type="button" onClick={() => apriTab("vlan")} className="mt-1 text-[13px] font-semibold text-[#006C96] hover:underline dark:text-sky-300">+{vlan.length - 5} altre ›</button>}
           </Riquadro>
 
           <Riquadro titolo="Hardware" vuoto={!haHardware}>

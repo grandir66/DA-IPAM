@@ -9,7 +9,7 @@ import { useCallback, useEffect, useState } from "react";
 import { LoadError } from "@/components/shared/load-error";
 import { BadgeAvviso } from "@/components/devices/rendi-apparato-esito";
 import { fetchJson } from "@/lib/fetch-json";
-import { fonteVlanSwitch, sezioniMatriceSwitch, statoLetturaVlanSwitch, type RigaMatriceSwitch } from "@/lib/scheda/vlan-switch";
+import { fonteNativaController, fonteVlanSwitch, sezioniMatriceSwitch, statoLetturaVlanSwitch, type RigaMatriceSwitch } from "@/lib/scheda/vlan-switch";
 import type { RispostaVlanSwitch } from "@/lib/devices/vlan-switch-rotta";
 import { Riquadro } from "../../riquadro";
 import { RigaFonti } from "../../riga-fonti";
@@ -73,8 +73,15 @@ export function VlanSwitch({ ctx }: { ctx: ContestoScheda }) {
     }
   }
 
+  const dalController = m.dal_controller > 0
+    ? `U dal controller UniFi su ${m.dal_controller} ${m.dal_controller === 1 ? "porta" : "porte"}`
+    : null;
   const avviso = m.qualita === "dedotta" ? (
-    <p className="mt-1 text-[13px] font-semibold text-foreground">Lo switch non dichiara le porte untagged: U dedotta dal PVID.</p>
+    <p className="mt-1 text-[13px] font-semibold text-foreground">
+      Lo switch non dichiara le porte untagged: U dedotta dal PVID{dalController ? `, tranne dove la dà il controller (${dalController})` : ""}.
+    </p>
+  ) : m.qualita === "completa" && dalController ? (
+    <p className="mt-1 text-[13px] text-foreground">Lo switch non dichiara le porte untagged: {dalController} (VLAN nativa).</p>
   ) : m.qualita === "solo_pvid" ? (
     <p className="mt-1 text-[13px] font-semibold text-foreground">
       Tagged e nomi: serve la lettura «VLAN degli switch via SNMP», {statoLetturaVlanSwitch(lettura)}. Qui solo le VLAN dei PVID.
@@ -107,7 +114,7 @@ export function VlanSwitch({ ctx }: { ctx: ContestoScheda }) {
           <TabellaMatriceVlan m={m} prima="Porta" blocchi={blocchi} avviso={avviso} />
         )}
       </Riquadro>
-      <RigaFonti fonti={[fonteVlanSwitch(lettura)]} />
+      <RigaFonti fonti={[fonteVlanSwitch(lettura), ...(m.dal_controller > 0 && lettura.nativa_letta_il ? [fonteNativaController(lettura.nativa_letta_il)] : [])]} />
     </div>
   );
 }

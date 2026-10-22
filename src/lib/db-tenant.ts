@@ -19,9 +19,11 @@ import { buildPatchFromHost, buildPatchFromDevice, buildSyncMerge, buildSourceLa
 import fs from "fs";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { LetturaVlanSwitch } from "./devices/snmp-vlan";
-import { DDL_SWITCH_VLAN_V1, SEGNO_SWITCH_VLAN, VERSIONE_SWITCH_VLAN, COLONNA_CLUSTER_PRINCIPALE, INDICE_CLUSTER_PRINCIPALE, SEGNO_CLUSTER_PRINCIPALE, VERSIONE_CLUSTER_PRINCIPALE, COLONNE_SCHEDA_MK_V1, DDL_HOSTS_ARCHIVIO, DDL_SCHEDA_MK_V2, DDL_SCHEDA_MK_V3, DDL_TOPOLOGY_CAVI, DDL_TOPOLOGY_UNIONI, INDICI_HOSTS_ARCHIVIO, INDICI_TOPOLOGY_UNIONI, TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL, SEGNO_SCHEDA_MK, VERSIONE_SCHEDA_MK } from "./db-tenant-schema";
+import { DDL_JOB_APPARATI_ESITI, INDICI_JOB_APPARATI_ESITI, SEGNO_APPARATI_SCELTI, VERSIONE_APPARATI_SCELTI, DDL_SWITCH_VLAN_NATIVA, SEGNO_SWITCH_VLAN_NATIVA, VERSIONE_SWITCH_VLAN_NATIVA, DDL_SWITCH_VLAN_V1, SEGNO_SWITCH_VLAN, VERSIONE_SWITCH_VLAN, COLONNA_CLUSTER_PRINCIPALE, INDICE_CLUSTER_PRINCIPALE, SEGNO_CLUSTER_PRINCIPALE, VERSIONE_CLUSTER_PRINCIPALE, COLONNE_SCHEDA_MK_V1, DDL_HOSTS_ARCHIVIO, DDL_SCHEDA_MK_V2, DDL_SCHEDA_MK_V3, DDL_TOPOLOGY_CAVI, DDL_TOPOLOGY_UNIONI, INDICI_HOSTS_ARCHIVIO, INDICI_TOPOLOGY_UNIONI, TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL, SEGNO_SCHEDA_MK, VERSIONE_SCHEDA_MK } from "./db-tenant-schema";
 import { HYPERVISOR_SYNC_MINUTES, PULIZIA_HOST_MINUTES, SCHEDULED_JOB_TYPES_CHECK_SQL } from "./scheduled-job-types";
-import { isProxmoxVeDevice } from "./devices/device-acquisition-resolve";
+import { isProxmoxVeDevice, resolveDeviceAcquisition } from "./devices/device-acquisition-resolve";
+import { networkDeviceUsesArpPoll } from "./network-device-arp";
+import { STATI_ESITO, type EsitoLettura, type EsitoRiga, type StatoApparato, type StatoEsito } from "./apparati-scelti/regole";
 import { macToHex, normalizeMac, normalizeMacForStorage } from "./utils";
 import { lookupVendorSync } from "./scanner/mac-vendor";
 import { VENDOR_PLACEHOLDER_RE } from "./attribution/emitters";
@@ -356,6 +358,107 @@ export function migrateScheduledJobsV10(db: Database.Database): boolean {
     db.pragma("foreign_keys = ON");
   }
   return true;
+}
+
+/**
+ * Migrazione runtime v11 di `scheduled_jobs` (scansione automatica, piano 2026-10-22): il CHECK di `job_type` accetta
+ * `'apparati_scelti'`. Copia della v10 (CHECK dalla stessa costante dello schema, colonne copiate per nome, contatore
+ * AUTOINCREMENT conservato, tutto in una transazione con foreign_keys spento prima); cambia la guardia, e in più:
+ * - il numero di righe si conta prima e dopo la copia: se non torna si lancia e la transazione torna indietro;
+ * - indici e trigger della tabella si rileggono da sqlite_master prima e si ricreano tali e quali dopo (oggi c'è solo
+ *   `idx_scheduled_jobs_enabled_next`, che si ricrea comunque).
+ * Se qualcosa non riesce la tabella resta com'era e l'errore sale a `getTenantDb`, che lo registra e apre il tenant.
+ * Non crea nessun job: lo crea solo un admin da Discovery.
+ *
+ * Restituisce true se ha ricostruito, false se non c'era niente da fare.
+ * Esportata per le prove (`scheduled-jobs-v11.test.ts`).
+ */
+export function migrateScheduledJobsV11(db: Database.Database): boolean {
+  const row = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='scheduled_jobs'").get() as
+    | { sql?: string }
+    | undefined;
+  if (!row?.sql || row.sql.includes("'apparati_scelti'")) return false;
+
+  const conta = (t: string): number => (db.prepare(`SELECT COUNT(*) AS n FROM ${t}`).get() as { n: number }).n;
+  let fatta = false;
+
+  // PRAGMA foreign_keys non ha effetto dentro una transazione: si spegne prima.
+  db.pragma("foreign_keys = OFF");
+  try {
+    db.transaction(() => {
+      // Guardia e colonne si rileggono dentro la transazione: un'altra connessione può aver già ricostruito.
+      const dentro = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='scheduled_jobs'").get() as
+        | { sql?: string }
+        | undefined;
+      if (!dentro?.sql || dentro.sql.includes("'apparati_scelti'")) return;
+      const present = (db.prepare("PRAGMA table_info(scheduled_jobs)").all() as Array<{ name: string }>).map((c) => c.name);
+      // Una colonna che la copia non conosce si perderebbe in silenzio: si lancia e la tabella resta com'era.
+      const ignote = present.filter((c) => !(SCHEDULED_JOBS_COLUMNS as readonly string[]).includes(c));
+      if (ignote.length > 0) throw new Error(`v11: colonne di scheduled_jobs sconosciute alla copia: ${ignote.join(", ")}`);
+      const cols = SCHEDULED_JOBS_COLUMNS.filter((c) => present.includes(c)).join(", ");
+      const seq = db.prepare("SELECT seq FROM sqlite_sequence WHERE name = 'scheduled_jobs'").get() as
+        | { seq: number }
+        | undefined;
+      const accessori = db
+        .prepare("SELECT sql FROM sqlite_master WHERE tbl_name = 'scheduled_jobs' AND type IN ('index', 'trigger') AND sql IS NOT NULL ORDER BY type, name")
+        .all() as Array<{ sql: string }>;
+      const prima = conta("scheduled_jobs");
+      db.exec("DROP TABLE IF EXISTS scheduled_jobs_v11");
+      db.exec(`CREATE TABLE scheduled_jobs_v11 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        network_id INTEGER REFERENCES networks(id) ON DELETE CASCADE,
+        job_type TEXT NOT NULL CHECK(${SCHEDULED_JOB_TYPES_CHECK_SQL}),
+        interval_minutes INTEGER NOT NULL DEFAULT 60,
+        last_run TEXT,
+        next_run TEXT,
+        enabled INTEGER DEFAULT 1,
+        config TEXT DEFAULT '{}',
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      )`);
+      db.exec(`INSERT INTO scheduled_jobs_v11 (${cols}) SELECT ${cols} FROM scheduled_jobs`);
+      const dopo = conta("scheduled_jobs_v11");
+      if (dopo !== prima) throw new Error(`v11: copiate ${dopo} righe di scheduled_jobs su ${prima}`);
+      if (seq) {
+        const upd = db.prepare("UPDATE sqlite_sequence SET seq = MAX(seq, ?) WHERE name = 'scheduled_jobs_v11'").run(seq.seq);
+        if (upd.changes === 0) {
+          db.prepare("INSERT INTO sqlite_sequence (name, seq) VALUES ('scheduled_jobs_v11', ?)").run(seq.seq);
+        }
+      }
+      db.exec("DROP TABLE scheduled_jobs");
+      db.exec("ALTER TABLE scheduled_jobs_v11 RENAME TO scheduled_jobs");
+      for (const a of accessori) db.exec(a.sql);
+      db.exec("CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_enabled_next ON scheduled_jobs(enabled, next_run)");
+      fatta = true;
+    })();
+  } finally {
+    db.pragma("foreign_keys = ON");
+  }
+  return fatta;
+}
+
+/**
+ * Tabella degli esiti dei job `apparati_scelti` (piano 2026-10-22 scansione automatica, Task 1): la tabella (se lo schema
+ * non l'ha già creata) e il suo indice, solo se mancano. Additiva, idempotente, in UNA transazione; segno
+ * `apparati_scelti_v21` = `done:<data>:v1` una volta sola. Separata dalla v11: se fallisce, i job di oggi restano come sono.
+ * Restituisce i nomi degli oggetti aggiunti. Esportata per le prove (`scheduled-jobs-v11.test.ts`).
+ */
+export function migraApparatiScelti(db: Database.Database): string[] {
+  const added: string[] = [];
+  const c = db.prepare("SELECT 1 FROM sqlite_master WHERE type IN ('table', 'index') AND name = ?");
+  db.transaction(() => {
+    for (const [n, ddl] of [...DDL_JOB_APPARATI_ESITI, ...INDICI_JOB_APPARATI_ESITI]) {
+      if (c.get(n)) continue;
+      db.exec(ddl);
+      added.push(n);
+    }
+    const chiusa = `:v${VERSIONE_APPARATI_SCELTI}`;
+    const attuale = leggiSegno(db, SEGNO_APPARATI_SCELTI);
+    if (!(attuale?.startsWith("done:") && attuale.endsWith(chiusa))) {
+      scriviSegno(db, SEGNO_APPARATI_SCELTI, `done:${new Date().toISOString().slice(0, 10)}${chiusa}`);
+    }
+  })();
+  return added;
 }
 
 /**
@@ -900,6 +1003,39 @@ export function chiudiMigrazioneSwitchVlanFallita(db: Database.Database, tenantC
   }
 }
 
+/** «La tabella delle VLAN native dal controller c'è», annotato all'apertura come le altre. */
+const SCHEMA_SWITCH_VLAN_NATIVA = new WeakMap<Database.Database, boolean>();
+
+export function schemaSwitchVlanNativaPresente(d: Database.Database): boolean {
+  const v = SCHEMA_SWITCH_VLAN_NATIVA.get(d);
+  if (v !== undefined) return v;
+  const n = tabelleSchedaMkMancanti(d, DDL_SWITCH_VLAN_NATIVA).length === 0;
+  SCHEMA_SWITCH_VLAN_NATIVA.set(d, n);
+  return n;
+}
+
+/**
+ * VLAN native dal controller UniFi (piano 2026-10-22 accorpamento, Task 13): la tabella di DDL_SWITCH_VLAN_NATIVA solo se
+ * manca. Additiva, idempotente, in UNA transazione; segno `done:<data>:v1` una volta sola. Separata da `migrateSwitchVlan`:
+ * se fallisce, le VLAN via SNMP restano come sono.
+ */
+export function migrateSwitchVlanNativa(db: Database.Database): string[] {
+  const added: string[] = [];
+  db.transaction(() => {
+    for (const [n, ddl] of tabelleSchedaMkMancanti(db, DDL_SWITCH_VLAN_NATIVA)) {
+      db.exec(ddl);
+      added.push(n);
+    }
+    const chiusa = `:v${VERSIONE_SWITCH_VLAN_NATIVA}`;
+    const attuale = leggiSegno(db, SEGNO_SWITCH_VLAN_NATIVA);
+    if (!(attuale?.startsWith("done:") && attuale.endsWith(chiusa))) {
+      scriviSegno(db, SEGNO_SWITCH_VLAN_NATIVA, `done:${new Date().toISOString().slice(0, 10)}${chiusa}`);
+    }
+  })();
+  SCHEMA_SWITCH_VLAN_NATIVA.set(db, tabelleSchedaMkMancanti(db, DDL_SWITCH_VLAN_NATIVA).length === 0);
+  return added;
+}
+
 /** «Le tabelle delle unioni ci sono, con i loro indici», annotato all'apertura: senza, l'ingresso non ha righe e le rotte non scrivono. */
 const SCHEMA_UNIONI = new WeakMap<Database.Database, boolean>();
 const NOMI_SCHEMA_UNIONI = [...DDL_TOPOLOGY_UNIONI, ...INDICI_TOPOLOGY_UNIONI].map(([n]) => n);
@@ -1385,6 +1521,39 @@ export function getTenantDb(tenantCode: string): Database.Database {
     }
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: migrazione pulizia_host fallita:`, e);
+  }
+
+  // Migrazione runtime v11: scheduled_jobs.job_type CHECK include 'apparati_scelti'
+  // (scansione automatica dei device scelti in Discovery, piano 2026-10-22). Dopo la v10.
+  // Se fallisce la tabella resta quella di prima (ROLLBACK) e il tenant si apre: i job
+  // apparati_scelti non si possono creare finché la v11 non passa a un'apertura dopo.
+  let v11Fallita: unknown;
+  try {
+    const t0 = Date.now();
+    if (migrateScheduledJobsV11(newDb)) {
+      console.info(`[db-tenant] ${tenantCode}: scheduled_jobs CHECK aggiornato con 'apparati_scelti' (v11, ${Date.now() - t0} ms)`);
+    }
+  } catch (e) {
+    v11Fallita = e;
+    console.error(`[db-tenant] ${tenantCode}: migrazione apparati_scelti (v11) fallita (ROLLBACK), scheduled_jobs invariata:`, e);
+  }
+
+  // Esiti dei job apparati_scelti (stesso piano): tabella e indice, solo se mancano, col segno. Se fallisce (o è fallita
+  // la v11: i job apparati_scelti non si possono creare) il tenant si apre lo stesso e il segno dice l'errore; l'apertura
+  // dopo riprova e, se passa, riscrive «done».
+  try {
+    if (v11Fallita !== undefined) throw v11Fallita;
+    const added = migraApparatiScelti(newDb);
+    if (added.length > 0) {
+      console.info(`[db-tenant] ${tenantCode}: esiti dei job apparati_scelti, aggiunto ${added.join(", ")}`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione esiti apparati_scelti fallita (ROLLBACK):`, e);
+    try {
+      scriviSegno(newDb, SEGNO_APPARATI_SCELTI, segnoErrore(e));
+    } catch (e2) {
+      console.error(`[db-tenant] ${tenantCode}: ${SEGNO_APPARATI_SCELTI}, segno non scritto:`, e2);
+    }
   }
 
   // Migrazione runtime: vuln_scanners.{cert_pin,cert_fingerprint} per
@@ -2509,6 +2678,23 @@ export function getTenantDb(tenantCode: string): Database.Database {
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: migrazione switch vlan fallita (ROLLBACK), le VLAN degli switch non si scrivono:`, e);
     chiudiMigrazioneSwitchVlanFallita(newDb, tenantCode, e);
+  }
+
+  // VLAN native dal controller UniFi (Task 13): una tabella nuova, solo se manca. Se fallisce il tenant si apre lo stesso:
+  // la sync non scrive le native e la matrice resta «dedotta» dove l'SNMP non dichiara gli untagged.
+  try {
+    const added = migrateSwitchVlanNativa(newDb);
+    if (added.length > 0) {
+      console.info(`[db-tenant] ${tenantCode}: switch vlan native, aggiunto ${added.join(", ")}`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione switch vlan native fallita (ROLLBACK), le native del controller non si scrivono:`, e);
+    try {
+      SCHEMA_SWITCH_VLAN_NATIVA.set(newDb, tabelleSchedaMkMancanti(newDb, DDL_SWITCH_VLAN_NATIVA).length === 0);
+      scriviSegno(newDb, SEGNO_SWITCH_VLAN_NATIVA, segnoErrore(e));
+    } catch (e2) {
+      console.error(`[db-tenant] ${tenantCode}: ${SEGNO_SWITCH_VLAN_NATIVA}, segno non scritto:`, e2);
+    }
   }
 
   tenantDbs.set(tenantCode, { db: newDb, lastUsed: Date.now() });
@@ -6001,6 +6187,9 @@ export function dateSchedaMikrotikV3(deviceId: number): { vlan_il: string | null
 // ── VLAN degli switch via SNMP (piano 2026-10-22 accorpamento, Task 8, ADR 0029) ──
 
 export interface VlanSwitchDb {
+  /** Task 13: VLAN native dal controller UniFi (vuota se mai lette o schema assente) e quando sono state lette. */
+  nativa?: Array<{ if_index: number; vlan_id: number }>;
+  nativa_letta_il?: string | null;
   vlan: Array<{ vlan_id: number; nome: string | null }>;
   porte: Array<{ vlan_id: number; if_index: number; egress: boolean; untagged: boolean | null }>;
   pvid: Array<{ if_index: number; pvid: number }>;
@@ -6063,7 +6252,15 @@ export function scriviVlanSwitch(deviceId: number, l: LetturaVlanSwitch, adesso:
 /** L'ultima fotografia delle VLAN di uno switch (ordinata per VLAN e porta). Mai letta o schema assente → liste vuote, lettura null. */
 export function leggiVlanSwitchDb(deviceId: number): VlanSwitchDb {
   const d = db();
-  if (!schemaSwitchVlanPresente(d)) return { vlan: [], porte: [], pvid: [], lettura: null };
+  let nativa: VlanSwitchDb["nativa"] = [];
+  let nativa_letta_il: string | null = null;
+  if (schemaSwitchVlanNativaPresente(d)) {
+    const righe = d.prepare("SELECT if_index, vlan_id, letto_il FROM switch_vlan_nativa WHERE device_id = ? ORDER BY if_index")
+      .all(deviceId) as Array<{ if_index: number; vlan_id: number; letto_il: string }>;
+    nativa = righe.map((r) => ({ if_index: r.if_index, vlan_id: r.vlan_id }));
+    nativa_letta_il = righe.reduce<string | null>((m, r) => (m === null || r.letto_il > m ? r.letto_il : m), null);
+  }
+  if (!schemaSwitchVlanPresente(d)) return { nativa, nativa_letta_il, vlan: [], porte: [], pvid: [], lettura: null };
   const vlan = d.prepare("SELECT vlan_id, nome FROM switch_vlan WHERE device_id = ? ORDER BY vlan_id").all(deviceId) as VlanSwitchDb["vlan"];
   const porte = (d.prepare("SELECT vlan_id, if_index, egress, untagged FROM switch_vlan_porte WHERE device_id = ? ORDER BY vlan_id, if_index")
     .all(deviceId) as Array<{ vlan_id: number; if_index: number; egress: number; untagged: number | null }>)
@@ -6071,7 +6268,23 @@ export function leggiVlanSwitchDb(deviceId: number): VlanSwitchDb {
   const pvid = d.prepare("SELECT if_index, pvid FROM switch_porta_pvid WHERE device_id = ? ORDER BY if_index").all(deviceId) as VlanSwitchDb["pvid"];
   const lettura = d.prepare(`SELECT letto_il, tabella, mappa_porte, n_vlan, ordine_bit, porte_senza_mappa
     FROM switch_vlan_lettura WHERE device_id = ?`).get(deviceId) as VlanSwitchDb["lettura"] | undefined;
-  return { vlan, porte, pvid, lettura: lettura ?? null };
+  return { nativa, nativa_letta_il, vlan, porte, pvid, lettura: lettura ?? null };
+}
+
+/**
+ * Le VLAN native di uno switch dal controller UniFi (Task 13): fotografia per apparato, DELETE + INSERT in UNA transazione.
+ * La chiama la sync UniFi solo con le reti lette e lo switch connesso (un «non so» non arriva qui). false = schema assente.
+ */
+export function scriviVlanNativaSwitch(deviceId: number, righe: ReadonlyArray<{ if_index: number; vlan_id: number }>, adesso: Date = new Date()): boolean {
+  const d = db();
+  if (!schemaSwitchVlanNativaPresente(d)) return false;
+  const ora = adesso.toISOString().slice(0, 19).replace("T", " ");
+  d.transaction(() => {
+    d.prepare("DELETE FROM switch_vlan_nativa WHERE device_id = ?").run(deviceId);
+    const ins = d.prepare("INSERT OR REPLACE INTO switch_vlan_nativa (device_id, if_index, vlan_id, letto_il) VALUES (?, ?, ?, ?)");
+    for (const r of righe) ins.run(deviceId, r.if_index, r.vlan_id, ora);
+  })();
+  return true;
 }
 
 /**
@@ -6670,8 +6883,13 @@ export function updateScheduledJobInterval(id: number, intervalMinutes: number):
   ).run(intervalMinutes, intervalMinutes, id);
 }
 
+/** Toglie il job e, nella stessa transazione, gli esiti per apparato (`job_apparati_esiti` non ha FK: la v11 ricostruisce la tabella). */
 export function deleteScheduledJob(id: number): boolean {
-  return db().prepare("DELETE FROM scheduled_jobs WHERE id = ?").run(id).changes > 0;
+  const d = db();
+  return d.transaction(() => {
+    d.prepare("DELETE FROM job_apparati_esiti WHERE job_id = ?").run(id);
+    return d.prepare("DELETE FROM scheduled_jobs WHERE id = ?").run(id).changes > 0;
+  })();
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -11203,4 +11421,211 @@ export function inserisciModificheAcquisizione(snapshotId: number, deviceId: num
 export function chiaviViciniApparato(deviceId: number): Set<string> {
   const righe = db().prepare("SELECT local_port, remote_device_name, remote_port FROM device_neighbors WHERE device_id = ?").all(deviceId) as Array<{ local_port: string; remote_device_name: string; remote_port: string }>;
   return new Set(righe.map((r) => `${r.local_port}\u0000${r.remote_device_name}\u0000${r.remote_port}`));
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Scansione automatica dei device scelti (piano 2026-10-22, Task 3)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Le colonne dello stato di un apparato per il job `apparati_scelti`, in UNA query (niente N+1). Le credenziali con
+ * sottoquery correlate sugli indici di `host_credentials(host_id)` e `device_credential_bindings(device_id)`.
+ * `ha_snmp` è la regola di `haSnmpApparatoDb` (fonti dell'apparato: un binding SNMP non fallito con una voce di tipo
+ * snmp/snmp_v3) scritta in SQL, perché `haSnmpApparato` fa tre letture per apparato e qui sarebbe un N+1 (50 apparati,
+ * 150 query). Vale per gli apparati salvati (le voci provvisorie della finestra non passano di qui). Serve a
+ * `leggibile` e a `vlan_switch`; il giro legge poi con le funzioni vere. La prova `apparati-scelti/__tests__/db.test.ts`
+ * la confronta con `haSnmpApparato`, `vlanSwitchDaLeggere` e `resolveDeviceAcquisition`: se il motore cambia, lo dice.
+ */
+const COLONNE_STATO_APPARATO = `
+  nd.id AS device_id, nd.name AS dev_nome, nd.enabled AS dev_enabled, nd.device_type, nd.vendor, nd.protocol,
+  nd.classification, nd.snmp_credential_id, nd.scan_target, nd.product_profile, nd.use_for_arp_poll,
+  h.id AS host_id, h.ip AS host_ip, COALESCE(h.custom_name, h.hostname) AS host_nome, h.classification AS host_classification,
+  (SELECT COUNT(*) FROM host_credentials hc WHERE hc.host_id = h.id) AS cred_host,
+  (SELECT COUNT(*) FROM host_credentials hc WHERE hc.host_id = h.id AND hc.validated = 1) AS validate_host,
+  (SELECT COUNT(*) FROM device_credential_bindings b WHERE b.device_id = nd.id AND b.credential_id IS NOT NULL) AS cred_binding,
+  (SELECT COUNT(*) FROM device_credential_bindings b WHERE b.device_id = nd.id AND b.test_status = 'success') AS binding_riusciti,
+  EXISTS (SELECT 1 FROM device_credential_bindings b JOIN credentials c ON c.id = b.credential_id
+           WHERE b.device_id = nd.id AND b.protocol_type = 'snmp' AND b.test_status != 'failed'
+             AND c.credential_type IN ('snmp', 'snmp_v3')) AS ha_snmp`;
+
+interface RigaStatoApparato {
+  device_id: number | null;
+  dev_nome: string | null;
+  dev_enabled: number | null;
+  device_type: string | null;
+  vendor: string | null;
+  protocol: string | null;
+  classification: string | null;
+  snmp_credential_id: number | null;
+  scan_target: string | null;
+  product_profile: string | null;
+  use_for_arp_poll: number | null;
+  host_id: number | null;
+  host_ip: string | null;
+  host_nome: string | null;
+  host_classification: string | null;
+  cred_host: number;
+  validate_host: number;
+  cred_binding: number;
+  binding_riusciti: number;
+  ha_snmp: number;
+}
+
+/**
+ * Da una riga allo `StatoApparato` di `regole.ts`. `leggibile`, `usa_arp` e `vlan_switch` con le funzioni pure di
+ * «Interroga» e del giro ARP (`resolveDeviceAcquisition`, `networkDeviceUsesArpPoll`, la regola di `vlanSwitchDaLeggere`).
+ * Le credenziali memorizzate: le righe dell'host e i binding con una voce (quelli inline il motore non li legge più).
+ */
+function statoDaRiga(r: RigaStatoApparato): StatoApparato {
+  const haSnmp = r.ha_snmp === 1;
+  const conApparato = r.device_id != null && r.device_type != null;
+  const dev = {
+    device_type: r.device_type ?? undefined,
+    vendor: r.vendor ?? undefined,
+    protocol: r.protocol ?? undefined,
+    classification: r.classification,
+    snmp_credential_id: r.snmp_credential_id,
+    scan_target: r.scan_target,
+    product_profile: r.product_profile,
+    use_for_arp_poll: r.use_for_arp_poll,
+  };
+  const sessioneSnmp = r.protocol === "snmp_v2" || r.protocol === "snmp_v3" || haSnmp;
+  return {
+    host_id: r.host_id,
+    device_id: r.device_id,
+    enabled: conApparato ? r.dev_enabled !== 0 : true,
+    credenziali_memorizzate: r.cred_host + r.cred_binding,
+    validate_sul_host: r.host_id != null ? r.validate_host : null,
+    binding_riusciti: r.binding_riusciti,
+    leggibile: conApparato ? resolveDeviceAcquisition(dev, haSnmp).implemented : false,
+    tipo: {
+      device_type: r.device_type ?? "",
+      vendor: r.vendor,
+      protocol: r.protocol,
+      usa_arp: conApparato ? networkDeviceUsesArpPoll({ device_type: r.device_type as NetworkDevice["device_type"], vendor: r.vendor as NetworkDevice["vendor"], use_for_arp_poll: r.use_for_arp_poll }) : false,
+      vlan_switch: r.device_type === "switch" && !(r.vendor === "mikrotik" && r.protocol === "ssh") && sessioneSnmp,
+    },
+  };
+}
+
+/**
+ * Lo stato degli host scelti in Discovery (finestra J2), in una query. L'apparato di un host: quello collegato
+ * (`network_devices.host_id`), altrimenti quello con lo stesso IP (come lo vede Discovery). Un id inesistente non compare.
+ */
+export function statoApparatiPerHost(hostIds: number[]): Array<StatoApparato & { host_id: number; nome: string; ip: string; tipo_scheda: string }> {
+  if (hostIds.length === 0) return [];
+  const righe = db().prepare(`
+    SELECT ${COLONNE_STATO_APPARATO}
+      FROM hosts h
+      LEFT JOIN network_devices nd ON nd.id = COALESCE(
+        (SELECT MIN(x.id) FROM network_devices x WHERE x.host_id = h.id),
+        (SELECT MIN(x.id) FROM network_devices x WHERE x.host = h.ip))
+     WHERE h.id IN (${hostIds.map(() => "?").join(",")})
+     ORDER BY h.id`).all(...hostIds) as RigaStatoApparato[];
+  return righe.map((r) => ({
+    ...statoDaRiga(r),
+    host_id: r.host_id as number,
+    nome: r.dev_nome ?? r.host_nome ?? r.host_ip ?? "",
+    ip: r.host_ip ?? "",
+    tipo_scheda: r.device_type ?? r.host_classification ?? "unknown",
+  }));
+}
+
+/**
+ * Lo stato degli apparati di un job (il giro), in una query. L'host di un apparato: quello collegato, altrimenti
+ * quello con lo stesso IP. Un id che non c'è più resta fuori dalla mappa: per il giro è TOLTO.
+ */
+export function statoApparatiPerDevice(deviceIds: number[]): Map<number, StatoApparato & { nome: string }> {
+  const out = new Map<number, StatoApparato & { nome: string }>();
+  if (deviceIds.length === 0) return out;
+  const righe = db().prepare(`
+    SELECT ${COLONNE_STATO_APPARATO}
+      FROM network_devices nd
+      LEFT JOIN hosts h ON h.id = COALESCE(
+        (SELECT x.id FROM hosts x WHERE x.id = nd.host_id),
+        (SELECT MIN(x.id) FROM hosts x WHERE x.ip = nd.host))
+     WHERE nd.id IN (${deviceIds.map(() => "?").join(",")})`).all(...deviceIds) as RigaStatoApparato[];
+  for (const r of righe) out.set(r.device_id as number, { ...statoDaRiga(r), nome: r.dev_nome ?? "" });
+  return out;
+}
+
+/** L'ultimo giro di un job: toglie le righe del giro prima e scrive queste, in una transazione. Uno stato fuori elenco lancia. */
+export function scriviEsitiGiro(
+  jobId: number,
+  giroIl: string,
+  righe: Array<{ device_id: number; stato: StatoEsito; letture: Record<string, EsitoLettura>; motivo?: string | null }>,
+): void {
+  for (const r of righe) {
+    if (!(STATI_ESITO as readonly string[]).includes(r.stato)) throw new Error(`Stato d'esito non previsto: ${String(r.stato)}`);
+  }
+  const d = db();
+  d.transaction(() => {
+    d.prepare("DELETE FROM job_apparati_esiti WHERE job_id = ?").run(jobId);
+    const ins = d.prepare("INSERT INTO job_apparati_esiti (job_id, device_id, giro_il, stato, letture, motivo) VALUES (?, ?, ?, ?, ?, ?)");
+    for (const r of righe) ins.run(jobId, r.device_id, giroIl, r.stato, JSON.stringify(r.letture), r.motivo ?? null);
+  })();
+}
+
+/** Gli esiti dell'ultimo giro di un job, col nome dell'apparato (null se l'apparato è stato tolto). */
+export function leggiEsitiJob(jobId: number): { giro_il: string | null; righe: Array<EsitoRiga & { nome: string | null }> } {
+  const righe = db().prepare(`
+    SELECT e.device_id, e.giro_il, e.stato, e.letture, e.motivo, nd.name AS nome
+      FROM job_apparati_esiti e
+      LEFT JOIN network_devices nd ON nd.id = e.device_id
+     WHERE e.job_id = ?
+     ORDER BY e.device_id`).all(jobId) as Array<Omit<EsitoRiga, "letture"> & { letture: string; nome: string | null }>;
+  const out = righe.map((r) => {
+    let letture: Record<string, EsitoLettura> = {};
+    try {
+      letture = JSON.parse(r.letture) as Record<string, EsitoLettura>;
+    } catch {
+      // Scritte solo da scriviEsitiGiro: una riga illeggibile mostra lo stato senza il dettaglio delle letture.
+      console.warn(`[apparati_scelti] job #${jobId}: letture illeggibili per l'apparato #${r.device_id}`);
+    }
+    return { ...r, letture };
+  });
+  const giro = out.reduce<string | null>((max, r) => (max == null || r.giro_il > max ? r.giro_il : max), null);
+  return { giro_il: giro, righe: out };
+}
+
+/**
+ * Il riassunto di J3 («✓ 3/3», «▲ 2/3 · 1 escluso») per più job, in una query, dalle righe dell'ultimo `giro_il`:
+ * letti = `ok` + `parziale`. Un job che non ha mai girato non compare.
+ */
+export function riassuntiEsitiJobs(jobIds: number[]): Map<number, { letti: number; totale: number; esclusi: number; giro_il: string }> {
+  const out = new Map<number, { letti: number; totale: number; esclusi: number; giro_il: string }>();
+  if (jobIds.length === 0) return out;
+  const righe = db().prepare(`
+    SELECT e.job_id,
+           SUM(CASE WHEN e.stato IN ('ok', 'parziale') THEN 1 ELSE 0 END) AS letti,
+           COUNT(*) AS totale,
+           SUM(CASE WHEN e.stato = 'escluso' THEN 1 ELSE 0 END) AS esclusi,
+           MAX(e.giro_il) AS giro_il
+      FROM job_apparati_esiti e
+     WHERE e.job_id IN (${jobIds.map(() => "?").join(",")})
+       AND e.giro_il = (SELECT MAX(u.giro_il) FROM job_apparati_esiti u WHERE u.job_id = e.job_id)
+     GROUP BY e.job_id`).all(...jobIds) as Array<{ job_id: number; letti: number; totale: number; esclusi: number; giro_il: string }>;
+  for (const r of righe) out.set(r.job_id, { letti: r.letti, totale: r.totale, esclusi: r.esclusi, giro_il: r.giro_il });
+  return out;
+}
+
+/** I job `apparati_scelti` che contengono l'apparato (testata J4). Una config illeggibile non entra. */
+export function jobsDelApparato(deviceId: number): Array<{ id: number; nome: string; enabled: boolean; interval_minutes: number; config: string; last_run: string | null }> {
+  const righe = db().prepare(`
+    SELECT sj.id, COALESCE(json_extract(sj.config, '$.nome'), 'Apparati scelti') AS nome, sj.enabled, sj.interval_minutes, sj.config, sj.last_run
+      FROM scheduled_jobs sj
+     WHERE sj.job_type = 'apparati_scelti'
+       AND json_valid(sj.config)
+       AND EXISTS (SELECT 1 FROM json_each(sj.config, '$.device_ids') j WHERE j.value = ?)
+     ORDER BY sj.id`).all(deviceId) as Array<{ id: number; nome: string; enabled: number | null; interval_minutes: number; config: string; last_run: string | null }>;
+  return righe.map((r) => ({ ...r, enabled: r.enabled === 1 }));
+}
+
+export function cancellaEsitiJob(jobId: number): void {
+  db().prepare("DELETE FROM job_apparati_esiti WHERE job_id = ?").run(jobId);
+}
+
+/** Gli esiti dei job che non ci sono più (all'inizio di ogni giro). Restituisce le righe tolte. */
+export function cancellaEsitiOrfani(): number {
+  return db().prepare("DELETE FROM job_apparati_esiti WHERE job_id NOT IN (SELECT id FROM scheduled_jobs)").run().changes;
 }

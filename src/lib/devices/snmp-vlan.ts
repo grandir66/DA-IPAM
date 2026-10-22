@@ -26,6 +26,8 @@ export const OID_QBRIDGE = {
   pvid: "1.3.6.1.2.1.17.7.1.4.5.1.1", basePortIfIndex: "1.3.6.1.2.1.17.1.4.1.2",
 } as const;
 
+export type NomeWalk = keyof typeof OID_QBRIDGE;
+
 export interface LetturaVlanSwitch {
   vlan: Array<{ vlan_id: number; nome: string | null }>;
   /** null = lo switch non dichiara gli untagged (o non sono credibili): la U si deduce dal PVID. */
@@ -35,7 +37,11 @@ export interface LetturaVlanSwitch {
   mappa_porte: "base_port" | "ifindex";
   /** Come sono scritte le PortList: «standard» come la MIB, «inverso» come la ProMax. */
   ordine_bit: "standard" | "inverso";
+  /** Porte del bridge (bit dell'egress o indice del PVID) scartate perché la mappa del bridge non le traduce. */
+  porte_senza_mappa: number;
   letture: number; riuscite: number; codice: string | null;
+  /** Il codice d'errore di ogni walk che non ha risposto (le assenti hanno risposto). */
+  codici: Partial<Record<NomeWalk, string>>;
   esito: "letto" | "non_riuscito" | "non_so";
 }
 
@@ -70,35 +76,42 @@ const nonSo = (codice: string): boolean => codice === CODICE_TEMPO_SCADUTO || !c
 export async function leggiVlanSwitch(walk: LettoreSnmp): Promise<LetturaVlanSwitch> {
   let letture = 0, riuscite = 0, muto = false;
   let codice: string | null = null;
-  const leggi = async (oid: string): Promise<VoceSnmp[] | null> => {
+  const codici: Partial<Record<NomeWalk, string>> = {};
+  const leggi = async (nome: NomeWalk): Promise<VoceSnmp[] | null> => {
     if (muto) return null;
     letture++;
     try {
-      const r = await walk(oid);
+      const r = await walk(OID_QBRIDGE[nome]);
       riuscite++;
       return r;
     } catch (e) {
       const c = codiceErrore(e);
       codice ??= c;
+      codici[nome] = c;
       // Lo switch non risponde: le walk dopo si saltano, l'esito è «non so» (mai una lista vuota scritta).
       if (nonSo(c)) muto = true;
       return null;
     }
   };
-  const O = OID_QBRIDGE;
-  const nomiT = await leggi(O.staticName), sEgrT = await leggi(O.staticEgress), sUntT = await leggi(O.staticUntagged);
-  const cEgrT = await leggi(O.currentEgress), cUntT = await leggi(O.currentUntagged);
-  const pvidT = await leggi(O.pvid), baseT = await leggi(O.basePortIfIndex);
-
-  const esito: LetturaVlanSwitch["esito"] = muto ? "non_so" : letture > 0 && riuscite === 0 ? "non_riuscito" : "letto";
-  const vuota: LetturaVlanSwitch = {
-    vlan: [], porte: [], pvid: [], tabella: "nessuna", mappa_porte: "ifindex", ordine_bit: "standard", letture, riuscite, codice, esito,
-  };
-  if (esito !== "letto") return vuota;
+  const nomiT = await leggi("staticName"), sEgrT = await leggi("staticEgress"), sUntT = await leggi("staticUntagged");
+  const cEgrT = await leggi("currentEgress"), cUntT = await leggi("currentUntagged");
+  const pvidT = await leggi("pvid"), baseT = await leggi("basePortIfIndex");
 
   const nomi = perUltimo(nomiT);
   const sEgr = bitmap(perUltimo(sEgrT)), sUnt = bitmap(perUltimo(sUntT));
   const cEgr = bitmap(perUltimo(cEgrT)), cUnt = bitmap(perUltimo(cUntT));
+  const pvidGrezzo = perUltimo(pvidT);
+  // Revisione del Task 7: un rifiuto parziale non diventa «letto» con porte sbagliate. Il ripiego bit = ifIndex vale
+  // solo se la mappa del bridge ha risposto (anche vuota, la ProMax); VLAN note senza nessuna Egress letta = non riuscito.
+  const daTradurre = sEgr.size + sUnt.size + cEgr.size + cUnt.size + pvidGrezzo.size > 0;
+  const parziale = (baseT === null && daTradurre) || (nomi.size > 0 && sEgrT === null && cEgrT === null);
+  const esito: LetturaVlanSwitch["esito"] = muto ? "non_so" : (letture > 0 && riuscite === 0) || parziale ? "non_riuscito" : "letto";
+  const vuota: LetturaVlanSwitch = {
+    vlan: [], porte: [], pvid: [], tabella: "nessuna", mappa_porte: "ifindex", ordine_bit: "standard", porte_senza_mappa: 0,
+    letture, riuscite, codice, codici, esito,
+  };
+  if (esito !== "letto") return vuota;
+
   const tabella: LetturaVlanSwitch["tabella"] = nomi.size + sEgr.size > 0 ? "static" : cEgr.size + cUnt.size > 0 ? "current" : "nessuna";
 
   // Porta del bridge → ifIndex; mappa vuota = l'indice è già l'ifIndex (UniFi ProMax).
@@ -108,14 +121,26 @@ export async function leggiVlanSwitch(walk: LettoreSnmp): Promise<LetturaVlanSwi
     if (i !== null && Number.isInteger(bp)) ifDellaPorta.set(bp, i);
   }
   const mappa_porte: LetturaVlanSwitch["mappa_porte"] = ifDellaPorta.size > 0 ? "base_port" : "ifindex";
-  const ifDi = (bp: number): number | null => (ifDellaPorta.size > 0 ? (ifDellaPorta.get(bp) ?? null) : bp);
-  const pvidGrezzo = perUltimo(pvidT);
+  const senzaMappa = new Set<number>();
+  const ifDi = (bp: number): number | null => {
+    if (ifDellaPorta.size === 0) return bp;
+    const i = ifDellaPorta.get(bp);
+    if (i === undefined) senzaMappa.add(bp);
+    return i ?? null;
+  };
 
-  // L'ordine dei bit: quello che fa cadere più porte fra quelle note; a pari merito, quello della MIB.
+  // L'ordine dei bit: al contrario solo con un margine netto (revisione del Task 7) — nell'ordine della MIB al più metà
+  // dei bit accesi cade fra le porte note, al contrario almeno il 90% — e con tutte le PortList della stessa lunghezza
+  // (un ottetto in meno, letto al contrario, sposterebbe le porte di 8).
   const note = new Set(ifDellaPorta.size > 0 ? ifDellaPorta.keys() : pvidGrezzo.keys());
   const tutte = [...sEgr.values(), ...sUnt.values(), ...cEgr.values(), ...cUnt.values()];
-  const punti = (f: (b: Buffer) => number[]) => tutte.reduce((n, b) => n + f(b).filter((p) => note.has(p)).length, 0);
-  const ordine_bit: LetturaVlanSwitch["ordine_bit"] = punti(portePortListInverso) > punti(portePortList) ? "inverso" : "standard";
+  const quota = (f: (b: Buffer) => number[]): number => {
+    const porte = tutte.flatMap(f);
+    return porte.length === 0 ? 0 : porte.filter((p) => note.has(p)).length / porte.length;
+  };
+  const stessaLunghezza = new Set(tutte.map((b) => b.length)).size === 1;
+  const inverso = stessaLunghezza && quota(portePortList) <= 0.5 && quota(portePortListInverso) >= 0.9;
+  const ordine_bit: LetturaVlanSwitch["ordine_bit"] = inverso ? "inverso" : "standard";
   const porteDi = ordine_bit === "inverso" ? portePortListInverso : portePortList;
 
   const ids = [...new Set([...nomi.keys(), ...sEgr.keys(), ...cEgr.keys()])].filter(vlanValida).sort((a, b) => a - b);
@@ -145,5 +170,5 @@ export async function leggiVlanSwitch(walk: LettoreSnmp): Promise<LetturaVlanSwi
   }
   pvid.sort((a, b) => a.if_index - b.if_index);
 
-  return { vlan, porte, pvid, tabella, mappa_porte, ordine_bit, letture, riuscite, codice, esito };
+  return { vlan, porte, pvid, tabella, mappa_porte, ordine_bit, porte_senza_mappa: senzaMappa.size, letture, riuscite, codice, codici, esito };
 }

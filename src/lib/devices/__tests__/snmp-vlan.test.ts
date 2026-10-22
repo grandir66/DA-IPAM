@@ -146,3 +146,63 @@ test("VLAN fuori da 1-4094 scartate", async () => {
   assert.deepEqual(l.vlan.map((v) => v.vlan_id), [1, 4094]);
   assert.deepEqual(l.porte, []);
 });
+
+// Revisione del Task 7.
+test("mappa del bridge rifiutata ed Egress rifiutate: non riuscito, non un «letto» con le porte sbagliate", async () => {
+  const f = carica("qbridge-static-48.json");
+  for (const k of ["basePortIfIndex", "staticEgress", "currentEgress"]) f.walks[k] = { ...f.walks[k], voci: null, codice: "SNMP_STATO_2" };
+  const l = await leggiVlanSwitch(lettore(f));
+  assert.equal(l.esito, "non_riuscito");
+  assert.equal(l.codice, "SNMP_STATO_2");
+  assert.deepEqual(l.codici, { staticEgress: "SNMP_STATO_2", currentEgress: "SNMP_STATO_2", basePortIfIndex: "SNMP_STATO_2" });
+});
+
+test("solo la mappa del bridge rifiutata: non riuscito (il ripiego bit = ifIndex vale solo se la mappa ha risposto vuota)", async () => {
+  const f = carica("qbridge-static-48.json");
+  f.walks.basePortIfIndex = { ...f.walks.basePortIfIndex, voci: null, codice: "SNMP_STATO_5" };
+  const l = await leggiVlanSwitch(lettore(f));
+  assert.equal(l.esito, "non_riuscito");
+  assert.deepEqual(l.codici, { basePortIfIndex: "SNMP_STATO_5" });
+});
+
+test("VLAN con i nomi ma entrambe le Egress rifiutate: non riuscito", async () => {
+  const f = carica("qbridge-static-48.json");
+  for (const k of ["staticEgress", "currentEgress"]) f.walks[k] = { ...f.walks[k], voci: null, codice: "SNMP_STATO_2" };
+  const l = await leggiVlanSwitch(lettore(f));
+  assert.equal(l.esito, "non_riuscito");
+});
+
+/** Uno switch di 24 porte con PVID solo sulle 1-20 e PortList di 3 ottetti. */
+function piccolo(egress: Record<number, string>): Fixture {
+  return { walks: {
+    currentEgress: { oid: OID_QBRIDGE.currentEgress, codice: null, voci: Object.entries(egress).map(([v, hex]) => ({ oid: `${OID_QBRIDGE.currentEgress}.0.${v}`, hex })) },
+    pvid: { oid: OID_QBRIDGE.pvid, codice: null, voci: da(1, 20).map((p) => ({ oid: `${OID_QBRIDGE.pvid}.${p}`, num: 1 })) },
+    basePortIfIndex: { oid: OID_QBRIDGE.basePortIfIndex, codice: null, voci: [] },
+  } };
+}
+
+test("ordine al contrario solo con un margine netto: poche porte accese restano nell'ordine della MIB", async () => {
+  // Standard: porte 1, 22, 23 (1 nota su 3). Al contrario: 1, 2, 23 (2 su 3): più, ma non abbastanza.
+  const l = await leggiVlanSwitch(lettore(piccolo({ 1: "800006" })));
+  assert.equal(l.ordine_bit, "standard");
+  assert.deepEqual(ifEgress(l, 1), [1, 22, 23]);
+});
+
+test("ordine al contrario con lunghezze diverse: non si sceglie (un ottetto in meno sposterebbe le porte di 8)", async () => {
+  const f = carica("qbridge-current-promax.json");
+  const v = f.walks.currentEgress.voci!;
+  v[1] = { ...v[1], hex: v[1].hex!.slice(2) };
+  const l = await leggiVlanSwitch(lettore(f));
+  assert.equal(l.ordine_bit, "standard");
+});
+
+test("porte del bridge senza ifIndex nella mappa: contate", async () => {
+  const f = carica("qbridge-static-16xg.json");
+  // La porta del bridge 1 tolta dalla mappa: esce in tutte le VLAN e ha un PVID.
+  f.walks.basePortIfIndex.voci = f.walks.basePortIfIndex.voci!.filter((x) => !x.oid.endsWith(".1.4.1.2.1"));
+  const l = await leggiVlanSwitch(lettore(f));
+  assert.equal(l.esito, "letto");
+  assert.equal(l.porte_senza_mappa, 1);
+  assert.ok(!ifEgress(l, 1).includes(1));
+  assert.equal((await leggiVlanSwitch(lettore(carica("qbridge-static-16xg.json")))).porte_senza_mappa, 0);
+});

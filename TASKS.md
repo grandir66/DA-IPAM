@@ -6,7 +6,8 @@ Riccardo (22/10): in `/vulnerabilities` l'elenco anche per host/IP, e per ogni v
 
 - [x] Riccardo: fonti CISA KEV + Exploit-DB + EPSS; selettore «Per vulnerabilità | Per host» nella stessa pagina; scaricamento giornaliero acceso di default
 - [x] Passi 1-5 del piano (archivio, job, viste, interfaccia, cancello verde): stati e verifiche nel piano
-- [ ] Passo 6: verifica su hub e cliente A che il feed scarichi davvero
+- [x] Passo 6, hub: v0.9.880 installata e riavviata il 22/10 alle 19:24 (ora italiana), i tre feed scaricati senza errori alle 19:26
+- [ ] Passo 6, cliente A: controllare che l'appliance scarichi i feed (Riccardo deve dire quale file del vault)
 - [ ] Aperto: a 1280 px le ultime 2-3 colonne delle tabelle scorrono di lato (a 1920 ci stanno)
 
 ## 2026-10-22 sera — elenco degli aperti verificato su origin (18:30)

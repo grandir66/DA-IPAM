@@ -67,9 +67,12 @@ test("nessuna credenziale memorizzata: SENZA_CREDENZIALE", () => {
   assert.deepEqual(valutaApparato(stato({ credenziali_memorizzate: 0, validate_sul_host: 0 })), { incluso: false, motivo: "SENZA_CREDENZIALE" });
 });
 
-test("credenziale memorizzata ma validated = 0 sull'host: CREDENZIALE_NON_PROVATA", () => {
-  assert.deepEqual(valutaApparato(stato({ validate_sul_host: 0, binding_riusciti: 3 })), { incluso: false, motivo: "CREDENZIALE_NON_PROVATA" },
-    "con l'host vale l'host: i binding riusciti non contano (regola unica)");
+test("credenziale memorizzata ma validated = 0 sull'host e nessun binding riuscito: CREDENZIALE_NON_PROVATA", () => {
+  assert.deepEqual(valutaApparato(stato({ validate_sul_host: 0, binding_riusciti: 0 })), { incluso: false, motivo: "CREDENZIALE_NON_PROVATA" });
+});
+
+test("host senza credenziale validata ma con un binding riuscito: incluso (Riccardo 22/10, una credenziale memorizzata che funziona conta)", () => {
+  assert.deepEqual(valutaApparato(stato({ validate_sul_host: 0, binding_riusciti: 1 })), { incluso: true });
 });
 
 test("apparato senza host con un binding success: incluso", () => {
@@ -78,6 +81,10 @@ test("apparato senza host con un binding success: incluso", () => {
 
 test("apparato senza host senza binding riusciti: CREDENZIALE_NON_PROVATA", () => {
   assert.deepEqual(valutaApparato(stato({ host_id: null, validate_sul_host: null, binding_riusciti: 0 })), { incluso: false, motivo: "CREDENZIALE_NON_PROVATA" });
+});
+
+test("hypervisor anche con ARP: niente porte e MAC (il giro ARP non lo legge, nulla si scriverebbe)", () => {
+  assert.deepEqual(lettureValide({ device_type: "hypervisor", vendor: "proxmox", protocol: "api", usa_arp: true, vlan_switch: false }), ["info"]);
 });
 
 test("ordine dei motivi: NON_APPARATO, TOLTO, DISATTIVATO, NON_LEGGIBILE, SENZA_CREDENZIALE, CREDENZIALE_NON_PROVATA", () => {

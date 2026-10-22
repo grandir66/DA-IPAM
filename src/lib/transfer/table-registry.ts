@@ -150,6 +150,10 @@ export const EXCLUDED_TENANT_TABLES: string[] = [
   // un'acquisizione. I dati che hanno scritto viaggiano già con l'apparato (porte, vicini, identità).
   "acquisition_snapshots",
   "acquisition_changes",
+  // Coda degli invii verso DA-Vul-can (piano 2026-10-22): vale per questa istanza e il suo gettone. Copiata altrove,
+  // un'altra istanza rimanderebbe all'hub gli invii di questa, o resterebbe sospesa per un gettone che non ha.
+  "vulcan_coda",
+  "vulcan_stato",
 ];
 
 /** Tabelle hub install-level: identità/auth/setup, NON viaggiano col tenant. */

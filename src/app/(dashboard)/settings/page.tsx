@@ -2,9 +2,10 @@
 import { parseDbDate } from "@/lib/db-date";
 import { scheduledJobLabel } from "@/lib/scheduled-job-types";
 import { fetchJson } from "@/lib/fetch-json";
+import { cn } from "@/lib/utils";
 import { LoadError } from "@/components/shared/load-error";
 
-import { useEffect, useState, useMemo, useCallback, Suspense } from "react";
+import { Fragment, useEffect, useRef, useState, useMemo, useCallback, Suspense } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -67,6 +68,10 @@ import type { ScheduledJob, NetworkWithStats } from "@/types";
 import { ScanConfigTab } from "@/components/settings/scan-config-tab";
 import { DeviceIdentificationTab } from "@/components/settings/device-identification-tab";
 import { ModulesTab } from "@/components/settings/modules-tab";
+import { FinestraScansioneAutomatica } from "@/components/jobs/finestra-scansione-automatica";
+import { EsitiApparatiScelti } from "@/components/jobs/esiti-apparati-scelti";
+import { PastigliaStato } from "@/components/jobs/pastiglia-stato";
+import { FUSO_UTENTI } from "@/lib/db-date";
 import { UpdatesTab } from "@/components/settings/updates-tab";
 import { PuliziaHostCard } from "@/components/settings/pulizia-host-card";
 import { InterruttoreAcquisizioneModulare } from "@/components/settings/interruttore-acquisizione-modulare";
@@ -90,7 +95,34 @@ const JOB_TYPE_LABELS: Record<string, string> = {
   unifi_sync: "Sincronizzazione controller UniFi",
   hypervisor_sync: "Lettura hypervisor (VM e schede)",
   pulizia_host: "Pulizia host assenti (notte)",
+  apparati_scelti: "Lettura apparati",
 };
+
+/** Le righe `apparati_scelti` arrivano da GET /api/jobs con questi campi in più (J3); le altre no. */
+interface DatiApparatiScelti {
+  nome?: string | null;
+  apparati?: number;
+  frequenza?: string;
+  prossima?: string | null;
+  riassunto?: { letti: number; parziali: number; totale: number; esclusi: number; giro_il: string } | null;
+}
+
+type Riassunto = NonNullable<DatiApparatiScelti["riassunto"]>;
+
+/** La pastiglia del riassunto (J3): «✓ 3/3», «✓ 2/3 · ▲ 1 parziale», «✕ 0/3 · 2 esclusi»; il tono dal caso peggiore. */
+function pastigliaRiassunto(r: Riassunto): { tono: "ok" | "attenzione" | "guasto"; testo: string } {
+  const tono = r.letti === r.totale ? "ok" : r.letti + r.parziali === 0 ? "guasto" : "attenzione";
+  const parti = [`${tono === "guasto" ? "✕" : "✓"} ${r.letti}/${r.totale}`];
+  if (r.parziali > 0) parti.push(`▲ ${r.parziali} parzial${r.parziali === 1 ? "e" : "i"}`);
+  if (r.esclusi > 0) parti.push(`${r.esclusi} esclus${r.esclusi === 1 ? "o" : "i"}`);
+  return { tono, testo: parti.join(" · ") };
+}
+
+/** Ogni quanto si guarda se il giro lanciato da «Esegui ora» è finito, e fin quando (il giro sta sotto 5 minuti per apparato). */
+const ATTESA_GIRO_MS = 5_000;
+const ATTESA_GIRO_MAX_MS = 30 * 60_000;
+
+const dataItaliana = (d: Date): string => d.toLocaleString("it-IT", { timeZone: FUSO_UTENTI });
 
 const HEAVY_JOB_TYPES = new Set(["fast_scan", "ping_sweep"]);
 
@@ -347,6 +379,17 @@ function SettingsPageInner() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [newJobType, setNewJobType] = useState<string>("known_host_check");
   const [runningJobId, setRunningJobId] = useState<number | null>(null);
+  // Scansione automatica (J3): job in modifica e righe con il dettaglio per apparato aperto.
+  const [jobInModifica, setJobInModifica] = useState<number | null>(null);
+  const [dettagliAperti, setDettagliAperti] = useState<Set<number>>(new Set());
+  // «Esegui ora» di un apparati_scelti risponde 202: si guarda il giro_il degli esiti finché cambia, poi si ricarica.
+  const [giriInCorso, setGiriInCorso] = useState<Set<number>>(new Set());
+  const [versioneEsiti, setVersioneEsiti] = useState<Record<number, number>>({});
+  const attesaGiri = useRef(new Map<number, ReturnType<typeof setInterval>>());
+  useEffect(() => {
+    const timer = attesaGiri.current;
+    return () => { for (const t of timer.values()) clearInterval(t); timer.clear(); };
+  }, []);
 
   useEffect(() => {
     fetch("/api/jobs").then((r) => r.json()).then(setJobs).catch(() => {});
@@ -633,6 +676,32 @@ function SettingsPageInner() {
       body: JSON.stringify({ id, enabled }),
     });
     setJobs((prev) => prev.map((j) => (j.id === id ? { ...j, enabled: enabled ? 1 : 0 } : j)));
+    // «Prossima» e «sospeso» li calcola il server (apparati_scelti): si rilegge l'elenco.
+    void ricaricaJobs();
+  }
+
+  /** Il giro di un apparati_scelti lanciato a mano: si guarda `giro_il` finché cambia, poi elenco e dettaglio si ricaricano. */
+  function seguiGiro(id: number, giroPrima: string | null) {
+    const timer = attesaGiri.current;
+    if (timer.has(id)) clearInterval(timer.get(id));
+    setGiriInCorso((p) => new Set(p).add(id));
+    const fine = (finito: boolean) => {
+      clearInterval(timer.get(id));
+      timer.delete(id);
+      setGiriInCorso((p) => { const n = new Set(p); n.delete(id); return n; });
+      if (!finito) return;
+      setVersioneEsiti((v) => ({ ...v, [id]: (v[id] ?? 0) + 1 }));
+      void ricaricaJobs();
+      toast.success("Giro finito: esiti aggiornati");
+    };
+    const scadenza = Date.now() + ATTESA_GIRO_MAX_MS;
+    timer.set(id, setInterval(() => {
+      if (Date.now() > scadenza) { fine(false); return; }
+      void fetchJson<{ giro_il: string | null }>(`/api/jobs/apparati-scelti/${id}/esiti`).then((r) => {
+        if (!timer.has(id)) return;
+        if (r.ok && r.data.giro_il && r.data.giro_il !== giroPrima) fine(true);
+      });
+    }, ATTESA_GIRO_MS));
   }
 
   async function runJobNow(id: number) {
@@ -640,7 +709,12 @@ function SettingsPageInner() {
     try {
       const res = await fetch(`/api/jobs/${id}/run`, { method: "POST" });
       const data = await res.json().catch(() => ({}));
-      if (res.status === 202) {
+      if (res.status === 202 && data.job_type === "apparati_scelti") {
+        // Lettura apparati: il giro continua in sottofondo; a giro finito il dettaglio aperto si ricarica da solo.
+        toast.success("Giro avviato: il dettaglio si aggiorna a fine giro");
+        const prima = (jobs.find((j) => j.id === id) as (ScheduledJob & DatiApparatiScelti) | undefined)?.riassunto?.giro_il ?? null;
+        seguiGiro(id, prima);
+      } else if (res.status === 202) {
         // Job di scansione: il giro continua in background, «Ultima esecuzione» si aggiorna a fine giro.
         toast.success("Scansione avviata: l'ultima esecuzione si aggiorna a fine giro");
         const updated = await fetch("/api/jobs").then((r) => r.json());
@@ -661,11 +735,23 @@ function SettingsPageInner() {
     }
   }
 
-  async function deleteJob(id: number) {
-    if (!confirm("Eliminare questo job?")) return;
+  async function deleteJob(id: number, nome?: string | null) {
+    if (!confirm(nome ? `Eliminare il job «${nome}»?` : "Eliminare questo job?")) return;
     await fetch(`/api/jobs?id=${id}`, { method: "DELETE" });
     setJobs((prev) => prev.filter((j) => j.id !== id));
     toast.success("Job eliminato");
+  }
+
+  // Il link della testata della scheda (J4) arriva a /settings?tab=jobs#job-<id>: porta la riga in vista.
+  useEffect(() => {
+    if (activeTab !== "jobs" || jobs.length === 0) return;
+    const m = /^#job-(\d+)$/.exec(window.location.hash);
+    if (m) document.getElementById(`job-${m[1]}`)?.scrollIntoView({ block: "center" });
+  }, [activeTab, jobs.length]);
+
+  async function ricaricaJobs() {
+    const r = await fetchJson<ScheduledJob[]>("/api/jobs");
+    if (r.ok) setJobs(r.data); else toast.error(r.message);
   }
 
   // ============ RENDER ============
@@ -1066,46 +1152,83 @@ function SettingsPageInner() {
                   const isLargeNet = networkIsLarge(network?.cidr);
                   const shortInterval = job.interval_minutes < 720;
                   const riskyCpu = isHeavy && isLargeNet && shortInterval && !!job.enabled;
-                  const isRunning = runningJobId === job.id;
+                  const isRunning = runningJobId === job.id || giriInCorso.has(job.id);
                   // pulizia_host si gestisce solo dalla sua scheda: qui non si accende, non si lancia, non si cancella.
                   const soloLettura = job.job_type === "pulizia_host";
+                  // Scansione automatica (J3): la crea e la gestisce solo un admin.
+                  const scelti = job.job_type === "apparati_scelti";
+                  const ds = job as ScheduledJob & DatiApparatiScelti;
+                  const rs = ds.riassunto;
+                  const aperto = dettagliAperti.has(job.id);
                   return (
-                    <TableRow key={job.id}>
+                    <Fragment key={job.id}>
+                    <TableRow id={`job-${job.id}`}>
                       <TableCell>
                         <Switch
                           checked={!!job.enabled}
-                          disabled={soloLettura}
+                          disabled={soloLettura || (scelti && !isAdmin)}
                           onCheckedChange={(checked) => toggleJobEnabled(job.id, checked)}
                         />
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2 flex-wrap">
-                          <Badge variant="outline">{scheduledJobLabel(job, JOB_TYPE_LABELS)}</Badge>
+                          {scelti ? (
+                            <span className="font-medium">{scheduledJobLabel(job, JOB_TYPE_LABELS)}</span>
+                          ) : (
+                            <Badge variant="outline">{scheduledJobLabel(job, JOB_TYPE_LABELS)}</Badge>
+                          )}
                           {riskyCpu && (
                             <Badge variant="outline" className="border-amber-500 text-amber-700 dark:text-amber-400" title="Scan completo subnet grande con frequenza <12h: rischio saturazione CPU.">
                               ⚠ Carico CPU alto
                             </Badge>
                           )}
                         </div>
+                        {scelti && (
+                          <p className="mt-1 text-[13px] text-muted-foreground">
+                            {JOB_TYPE_LABELS.apparati_scelti} · {ds.apparati ?? 0} apparat{ds.apparati === 1 ? "o" : "i"}
+                          </p>
+                        )}
                         {soloLettura && (
                           <p className="mt-1 text-[13px] text-muted-foreground">
                             Si gestisce da Impostazioni → Sistema → Pulizia degli host assenti
                           </p>
                         )}
                       </TableCell>
-                      <TableCell>{network ? `${network.name} (${network.cidr})` : "Tutte"}</TableCell>
+                      <TableCell>{scelti ? "—" : network ? `${network.name} (${network.cidr})` : "Tutte"}</TableCell>
                       <TableCell>
-                        {INTERVAL_OPTIONS.find((o) => o.value === String(job.interval_minutes))?.label || `${job.interval_minutes} min`}
+                        {scelti
+                          ? (ds.frequenza ?? `${job.interval_minutes} min`)
+                          : INTERVAL_OPTIONS.find((o) => o.value === String(job.interval_minutes))?.label || `${job.interval_minutes} min`}
                       </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        {job.last_run ? parseDbDate(job.last_run).toLocaleString("it-IT") : "Mai"}
+                      <TableCell className={cn("text-muted-foreground", scelti ? "text-[13px]" : "text-xs")}>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {/* apparati_scelti: l'ora dell'ultimo giro dagli esiti (c'è anche quando il giro non ha letto niente). */}
+                          <span>{scelti && rs ? dataItaliana(parseDbDate(rs.giro_il)) : job.last_run ? (scelti ? dataItaliana(parseDbDate(job.last_run)) : parseDbDate(job.last_run).toLocaleString("it-IT")) : "Mai"}</span>
+                          {scelti && rs && (
+                            <button
+                              type="button"
+                              onClick={() => setDettagliAperti((prec) => { const n = new Set(prec); if (n.has(job.id)) n.delete(job.id); else n.add(job.id); return n; })}
+                              aria-expanded={aperto}
+                              title="Mostra l'esito per apparato"
+                            >
+                              <PastigliaStato tono={pastigliaRiassunto(rs).tono} senzaSegno>{pastigliaRiassunto(rs).testo}</PastigliaStato>
+                            </button>
+                          )}
+                        </div>
                       </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        {job.next_run ? parseDbDate(job.next_run).toLocaleString("it-IT") : "—"}
+                      <TableCell className={cn("text-muted-foreground", scelti ? "text-[13px]" : "text-xs")}>
+                        {scelti
+                          ? (ds.prossima ? dataItaliana(new Date(ds.prossima)) : "sospeso")
+                          : job.next_run ? parseDbDate(job.next_run).toLocaleString("it-IT") : "—"}
                       </TableCell>
                       <TableCell>
-                        {!soloLettura && (
+                        {!soloLettura && (!scelti || isAdmin) && (
                           <div className="flex items-center gap-1">
+                            {scelti && (
+                              <Button variant="outline" size="sm" className="h-8 text-[13px]" onClick={() => setJobInModifica(job.id)}>
+                                Modifica
+                              </Button>
+                            )}
                             <Button
                               variant="ghost"
                               size="icon"
@@ -1122,7 +1245,7 @@ function SettingsPageInner() {
                               variant="ghost"
                               size="icon"
                               className="h-8 w-8 text-destructive/60 hover:text-destructive"
-                              onClick={() => deleteJob(job.id)}
+                              onClick={() => deleteJob(job.id, scelti ? scheduledJobLabel(job, JOB_TYPE_LABELS) : null)}
                               title="Elimina job"
                             >
                               <Trash2 className="h-4 w-4" />
@@ -1131,12 +1254,27 @@ function SettingsPageInner() {
                         )}
                       </TableCell>
                     </TableRow>
+                    {scelti && aperto && (
+                      <TableRow>
+                        <TableCell colSpan={7} className="bg-muted/30 p-0"><EsitiApparatiScelti key={versioneEsiti[job.id] ?? 0} jobId={job.id} /></TableCell>
+                      </TableRow>
+                    )}
+                    </Fragment>
                   );
                 })}
               </TableBody>
             </Table>
           </CardContent>
         </Card>
+      )}
+      {jobInModifica != null && (
+        <FinestraScansioneAutomatica
+          modo="modifica"
+          jobId={jobInModifica}
+          open
+          onOpenChange={(o) => { if (!o) setJobInModifica(null); }}
+          onFatto={() => void ricaricaJobs()}
+        />
       )}
 
       {/* === Tab: Integrazioni === */}

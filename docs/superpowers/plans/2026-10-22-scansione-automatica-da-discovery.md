@@ -69,22 +69,22 @@
 
 | ID | Stato | Passo | Agente | Dipende da | Fatto quando | Verifica |
 | --- | --- | --- | --- | --- | --- | --- |
-| S1 | [ ] | Tipo `apparati_scelti`, CHECK v11, tabella degli esiti | implementer | — | migrazione idempotente sulla copia dell'hub, prove verdi | prova vista rossa poi verde; due aperture della copia |
-| S2 | [ ] | Regole pure: config, frequenze, idoneità, letture valide | implementer | — | prove verdi | prova vista rossa poi verde |
-| S3 | [ ] | Funzioni DB: stato apparati in una query, esiti | implementer | S1 | prove verdi, ratchet invariato | prova vista rossa poi verde |
-| S4 | [ ] | Letture estratte + lucchetto per apparato + log senza nomi | implementer | — | prove ARP di oggi verdi senza toccarle + prove nuove | suite `cron/__tests__` |
-| S5 | [ ] | Giro `apparati_scelti` nello scheduler | implementer | S1-S4 | prove verdi; prova a vuoto sulla copia | prova vista rossa poi verde |
-| S6 | [ ] | Rotte API | implementer | S2, S3, S5 | guardie e censimento verdi | `api-auth-guards`, `rotte-censite` |
-| S7 | [ ] | J1 + J2 in Discovery | implementer | S6 | resa 1440 e 1920 | screenshot nello scratchpad |
-| S8 | [ ] | J3 nella pagina dei job | implementer | S6, S7 | resa 1440 e 1920 | screenshot |
-| S9 | [ ] | J4 nella testata | implementer | S6 | resa 1440 e 1920 | screenshot |
-| S10 | [ ] | Accensione sull'hub, documenti | sessione principale | S1-S9 | job vero letto 3/3 sull'hub | esiti in tabella, journal anonimo |
+| S1 | [x] | Tipo `apparati_scelti`, CHECK v11, tabella degli esiti | implementer | — | migrazione idempotente sulla copia dell'hub, prove verdi | v11 sulla copia dell'hub 3 ms, 23 job identici, integrity ok, due aperture; prove v11/v8/v9 rosse poi verdi (v0.9.861) |
+| S2 | [x] | Regole pure: config, frequenze, idoneità, letture valide | implementer | — | prove verdi | regole (31+ casi) e interval-to-cron-ora rosse poi verdi; tsc 0, eslint 0 |
+| S3 | [x] | Funzioni DB: stato apparati in una query, esiti | implementer | S1 | prove verdi, ratchet invariato | db.test 11 casi rosso poi verde; 1 query per 50 id; ratchet verde |
+| S4 | [x] | Letture estratte + lucchetto per apparato + log senza nomi | implementer | — | prove ARP di oggi verdi senza toccarle + prove nuove | prove ARP invariate + nuove (lucchetto, log anonimo, tempo massimo) rosse poi verdi; suite 625/625 |
+| S5 | [x] | Giro `apparati_scelti` nello scheduler | implementer | S1-S4 | prove verdi; prova a vuoto sulla copia | giro 17/17 rosso poi verde; prova a vuoto sulla copia dell'hub |
+| S6 | [x] | Rotte API | implementer | S2, S3, S5 | guardie e censimento verdi | verifica-permessi sulla copia: 5 casi nuovi ok (238 casi, 2 KO di altre rotte); guardie e censimento verdi |
+| S7 | [x] | J1 + J2 in Discovery | implementer | S6 | resa 1440 e 1920 | foto 1440 e 1920 sulla copia; tsc 0, eslint 0 |
+| S8 | [x] | J3 nella pagina dei job | implementer | S6, S7 | resa 1440 e 1920 | foto 1440 e 1920; salvataggio della modifica non provato a schermo |
+| S9 | [x] | J4 nella testata | implementer | S6 | resa 1440 e 1920 | foto 1440 e 1920; tsc 0, eslint 0 |
+| S10 | [x] | Accensione sull'hub, documenti | sessione principale | S1-S9 | job vero letto 3/3 sull'hub | hub 22/10 11:24 ora italiana: job #25 letto 6 su 6 in 83 s; revisione finale, 3 importanti corretti |
 
 S2 e S4 non hanno file in comune con S1: si possono fare in parallelo se Riccardo approva i subagent (REGOLA #2); altrimenti in ordine.
 
 ---
 
-### [ ] Task 1 — Tipo `apparati_scelti`, CHECK v11, tabella degli esiti (completo)
+### [x] Task 1 — Tipo `apparati_scelti`, CHECK v11, tabella degli esiti (completo)
 
 **File**
 - Modifica: `src/lib/scheduled-job-types.ts` (in coda a `SCHEDULED_JOB_TYPES`, con commento «v11 (scansione automatica, piano 2026-10-22): job creato da un admin da Discovery; nessuno si crea da solo»).
@@ -113,7 +113,7 @@ CREATE INDEX IF NOT EXISTS idx_job_apparati_esiti_device ON job_apparati_esiti(d
 
 **Verifica** prova verde; sulla copia del DB dell'hub: due aperture (`getTenantDb` da script nello scratchpad), `PRAGMA integrity_check` = ok, `SELECT sql FROM sqlite_master WHERE name='scheduled_jobs'` contiene `'apparati_scelti'`, numero di righe di `scheduled_jobs` invariato, tempo della migrazione nel Registro. Revisione del task. Lint, tsc, build. **Commit** `apparati_scelti: tipo di job, CHECK v11 e tabella degli esiti` + rilascio.
 
-### [ ] Task 2 — Regole pure: config, frequenze, idoneità, letture valide (completo)
+### [x] Task 2 — Regole pure: config, frequenze, idoneità, letture valide (completo)
 
 **File**
 - Crea: `src/lib/apparati-scelti/regole.ts` (modulo puro: niente DB, niente Node).
@@ -145,7 +145,7 @@ export const TESTO_MOTIVO: Record<MotivoEsclusione, string>; // «non è un appa
 
 **Verifica** prova verde. Revisione del task. Lint, tsc, build. **Commit** `apparati_scelti: regole di config, frequenza e idoneità`.
 
-### [ ] Task 3 — Funzioni DB: stato degli apparati in una query, esiti (completo)
+### [x] Task 3 — Funzioni DB: stato degli apparati in una query, esiti (completo)
 
 **File**
 - Modifica: `src/lib/db-tenant.ts` (in fondo, sezione «Scansione automatica dei device scelti»).
@@ -167,7 +167,7 @@ Le due `statoApparati*` sono **una** query ciascuna (JOIN `hosts` ↔ `network_d
 
 **Verifica** prova verde; `db-facade-ratchet` verde e soglia invariata. Revisione del task. Lint, tsc, build. **Commit** `apparati_scelti: funzioni DB dello stato e degli esiti`.
 
-### [ ] Task 4 — Letture estratte, lucchetto per apparato, log senza nomi (completo)
+### [x] Task 4 — Letture estratte, lucchetto per apparato, log senza nomi (completo)
 
 **File**
 - Modifica: `src/lib/cron/jobs.ts`: il corpo del `for (const device of devices)` di `runArpPoll` (oggi righe ~853-1250 di `jobs.ts`, rami router e switch) diventa `export async function leggiApparatoArp(device, contesto, opzioni)`; `runArpPoll` lo chiama nel ciclo dentro `conLucchettoApparato`.
@@ -205,7 +205,7 @@ Log: le cinque righe con `device.name` diventano `apparato #${device.id}` + codi
 
 **Verifica** suite `src/lib/cron/__tests__` e `src/lib/devices/__tests__` verdi; sulla copia dell'hub in locale «Interroga» su SW-CED-48POE-242 e MK-RTR-CORE dà lo stesso progresso di prima (righe a confronto nel Registro). Revisione del task. Lint, tsc, build. **Commit** `letture per apparato riusabili, lucchetto condiviso, log senza nomi` + rilascio.
 
-### [ ] Task 5 — Il giro `apparati_scelti` (completo)
+### [x] Task 5 — Il giro `apparati_scelti` (completo)
 
 **File**
 - Crea: `src/lib/apparati-scelti/giro.ts`.
@@ -239,7 +239,7 @@ Passi: `leggiConfig` (null → lancia «Config del job non valida»); cancella g
 
 **Verifica** prove verdi; **prova a vuoto sulla copia dell'hub** in locale: job creato da script con i 3 apparati della tavola (SW-CED-48POE-242, MK-RTR-CORE, DA-PX-01) e `runApparatiScelti` con i client finti che registrano le chiamate (nessun traffico verso gli apparati): esiti scritti, nessuna altra tabella cambiata (conteggi prima/dopo nel Registro). Revisione del task. Lint, tsc, build. **Commit** `apparati_scelti: il giro, con esito per apparato` + rilascio (il tipo esiste, nessun job si crea da solo: nulla gira finché un admin non lo crea).
 
-### [ ] Task 6 — Rotte API (completo)
+### [x] Task 6 — Rotte API (completo)
 
 **File**
 - Crea: `src/app/api/jobs/apparati-scelti/anteprima/route.ts` — `POST { host_ids: number[] }` (admin): per ogni host `{ host_id, device_id, nome, ip, tipo_scheda, credenziale: "provata"|"non_provata"|"nessuna", incluso, motivo?, testo_motivo?, link? , letture_valide }` + `interruttori: { switch_vlan, mikrotik_scheda }`; più di 50 host → 400 «Al più 50 apparati per job».
@@ -255,7 +255,7 @@ Passi: `leggiConfig` (null → lancia «Config del job non valida»); cancella g
 
 **Verifica** prove verdi, `rotte-censite` e `api-auth-guards` verdi, `scripts/verifica-permessi.sh` verde. Revisione del task. Lint, tsc, build. **Commit** `apparati_scelti: rotte di anteprima, creazione, modifica, esiti` + rilascio.
 
-### [ ] Task 7 — J1 e J2 in Discovery (leggero)
+### [x] Task 7 — J1 e J2 in Discovery (leggero)
 
 **File**
 - Crea: `src/components/jobs/finestra-scansione-automatica.tsx` (modo `crea` con `hostIds`, modo `modifica` con `jobId`).
@@ -265,7 +265,7 @@ Passi: `leggiConfig` (null → lancia «Config del job non valida»); cancella g
 
 **Verifica** sulla copia dell'hub in locale, selezionati i 4 host della tavola (SW-CED-48POE-242, MK-RTR-CORE, DA-PX-01 e un host non apparato): finestra resa a **1440×900** e **1920×1080**, confronto con J2 (screenshot nello scratchpad); un job creato davvero sulla copia (riga in `scheduled_jobs`). Lint, tsc, build. **Commit** `Discovery: scansione automatica dei device scelti (J1, J2)` + rilascio.
 
-### [ ] Task 8 — J3 nella pagina dei job (leggero)
+### [x] Task 8 — J3 nella pagina dei job (leggero)
 
 **File**
 - Modifica: `src/app/(dashboard)/settings/page.tsx` (tab «Job pianificati», tabella di ~riga 1042; `JOB_TYPE_LABELS` con `apparati_scelti: "Lettura apparati"`).
@@ -276,7 +276,7 @@ Passi: `leggiConfig` (null → lancia «Config del job non valida»); cancella g
 
 **Verifica** sulla copia, col job del Task 7 e un giro fatto con la prova a vuoto del Task 5 (esiti scritti): resa a 1440 e 1920, confronto con J3, dettaglio aperto, modifica di frequenza salvata (riga in `scheduled_jobs` cambiata, cron ricaricato nel log). Lint, tsc, build. **Commit** `Job pianificati: riga e esiti della scansione automatica (J3)` + rilascio.
 
-### [ ] Task 9 — J4 nella testata della scheda (leggero)
+### [x] Task 9 — J4 nella testata della scheda (leggero)
 
 **File**
 - Modifica: `src/components/scheda/intestazione-scheda.tsx` (prop `scansioneAutomatica?: { jobId: number; frequenza: string; ultima: string | null; prossima: string | null; altri: number } | null`).
@@ -286,7 +286,7 @@ Passi: `leggiConfig` (null → lancia «Config del job non valida»); cancella g
 
 **Verifica** sulla copia: scheda di SW-CED-48POE-242 (nel job) e di un apparato fuori dal job (nessuna pastiglia), a 1440 e 1920, confronto con J4; il nome non si tronca a 1440. Lint, tsc, build. **Commit** `Scheda: pastiglia della scansione automatica (J4)` + rilascio.
 
-### [ ] Task 10 — Accensione sull'hub e documenti (completo, sessione principale)
+### [x] Task 10 — Accensione sull'hub e documenti (completo, sessione principale)
 
 **Cosa fare**
 1. Hub aggiornato alla versione del Task 9 (`DA_COMMIT`, riga d'avvio nel journal); righe delle migrazioni v11 e `apparati_scelti_v21` nel journal.
@@ -312,8 +312,26 @@ Passi: `leggiConfig` (null → lancia «Config del job non valida»); cancella g
 
 ## Registro
 
+- 22/10 — Eseguito in una sessione unica (worktree `da-ipam-giro`, ramo `giro-switch`): T1-T6 e T10 a livello completo con revisione per task, T7-T9 leggero. Registro e rapporti in `.superpowers/sdd/2026-10-22-scansione-automatica-da-discovery/`. Rilasci v0.9.861-867.
+- Decisione: T10 (creazione del job sull'hub) fatto dal controllore con l'ok di Riccardo («procedi fino al live»).
+- Decisione: allo scadere dei 5 minuti il lucchetto dell'apparato si libera anche se la lettura appesa continua; costo: in quel caso raro due letture possono sovrapporsi.
+- Decisione (Riccardo, 22/10: «le credenziali devono essere memorizzate»): per il job un apparato è idoneo anche con un collegamento credenziale riuscito, non solo con una credenziale validata sull'host. Diverge dalla regola della testata, che resta invariata.
+
 ## Consuntivo
 ### Fatto
+- Tipo di job `apparati_scelti` (CHECK v11, tabella `job_apparati_esiti`), regole pure, letture riusate con lucchetto per apparato (in memoria, `globalThis`), giro nello scheduler con esito per apparato, rotte API, J1-J2 in Discovery, J3 nella pagina dei job, J4 nella testata.
+- Sull'hub (22/10, 11:24 ora italiana): provate le credenziali SNMP di 5 switch e del router; job #25 «Switch e router del CED» ogni 4 ore sugli apparati 1, 7, 8, 10, 11, 12; primo giro 6 letti su 6 in 83 s. Backup `/root/70791.db.bak-20261022-092258-prima-job-apparati`.
+- Revisione finale: 3 importanti corretti (modifica che restringeva il job, VLAN tolta in silenzio, «Esegui ora» sovrapponibile; ora gira in sottofondo con `runningJobs`).
 ### Mancante
+- ADR 0030 non scritto (previsto da T10); `docs/adr/` si ferma allo 0029.
+- Salvataggio della modifica del job non provato a schermo (solo aperta); migrazione v11 non misurata sulla copia del cliente A (non disponibile).
+- Nessun avviso se un apparato resta escluso per più giri (visibile solo in J3).
 ### Scostamenti dal piano
+- Job sull'hub con 6 apparati, non 3 (si sono aggiunti i 5 switch Ubiquiti e il router).
+- Idoneità con binding riuscito (decisione sopra); i 5 switch Ubiquiti hanno richiesto prima «Prova credenziali».
+- J4: «ultima lettura · prossima» sta in una riga sotto la testata (a `max-w-7xl` non c'è posto senza troncare il nome); sotto 2xl marca e modello spariscono.
+- Orario del job in ora italiana (fuso esplicito, solo per questo tipo); `next_run` non vale per questi job (la «prossima» è calcolata).
 ### Consigli di sviluppo
+- Un job creato da script ha bisogno di un reload o riavvio dello scheduler: se serve di nuovo, un endpoint di ricarica.
+- Valutare «Aggiungi al job…» da Discovery e uno storico degli esiti (già in Proposte).
+- Scrivere l'ADR 0030 con «cosa diventa difficile»: lucchetto in memoria, due letture sovrapponibili dopo il timeout.

@@ -18,6 +18,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { RefreshCw } from "lucide-react";
 import { toast } from "sonner";
+import { fetchJson } from "@/lib/fetch-json";
 import { ruoliDaJson } from "@/lib/classification/canonico";
 import { getClassificationLabel, DEVICE_CLASSIFICATIONS_ORDERED } from "@/lib/device-classifications";
 import { isMacOsHost } from "@/lib/host-platform-detect";
@@ -27,7 +28,7 @@ import { mikrotikPerTab, tabDelTipo, tipoScheda, type TabId } from "@/lib/scheda
 import { AzioniScheda } from "@/components/scheda/azioni-scheda";
 import type { ContestoScheda, LibreNmsStato, MembroCluster } from "@/components/scheda/contesto";
 import type { DeviceFull } from "@/components/scheda/dati";
-import { IntestazioneScheda, type VmSu } from "@/components/scheda/intestazione-scheda";
+import { IntestazioneScheda, type ScansioneAutomatica, type VmSu } from "@/components/scheda/intestazione-scheda";
 import type { VmSuNodo } from "@/lib/scheda/abbinamento-proxmox";
 import type { RispostaAd, RispostaDipendenze } from "@/lib/devices/server-scheda";
 import { TabScheda } from "@/components/scheda/tab-scheda";
@@ -53,6 +54,8 @@ export default function ObjectDetailPage() {
 
   const [host, setHost] = useState<HostDetail | null>(null);
   const [device, setDevice] = useState<DeviceFull | null>(null);
+  // J4: l'apparato è in un job di scansione automatica? Un errore qui non rompe la scheda: la pastiglia manca e basta.
+  const [scansioneAutomatica, setScansioneAutomatica] = useState<ScansioneAutomatica | null>(null);
   // F3.3: finestra «Rendi apparato» inline (no più redirect a /hosts/[id]?promote=1)
   const [promoteOpen, setPromoteOpen] = useState(false);
   // v0.2.599: modale edit device inline (no più redirect a /devices/[id], che era senza tab)
@@ -247,6 +250,21 @@ export default function ObjectDetailPage() {
       router.replace(`/objects/${host.id}`);
     }
   }, [host?.id, device?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!device?.id) { setScansioneAutomatica(null); return; }
+    let attiva = true;
+    void fetchJson<{ jobs: Array<{ id: number; frequenza: string; attivo: boolean; prossima: string | null; esito: ScansioneAutomatica["esito"] }> }>(
+      `/api/devices/${device.id}/scansione-automatica`,
+    ).then((r) => {
+      if (!attiva) return;
+      const jobs = r.ok ? r.data.jobs : [];
+      // Il job che conta è il primo attivo (altrimenti il primo): gli altri si contano nel «+N».
+      const primo = jobs.find((j) => j.attivo) ?? jobs[0];
+      setScansioneAutomatica(primo ? { jobId: primo.id, frequenza: primo.frequenza, attivo: primo.attivo, esito: primo.esito, prossima: primo.prossima, altri: jobs.length - 1 } : null);
+    }).catch(() => { /* richiesta annullata */ });
+    return () => { attiva = false; };
+  }, [device?.id]);
 
   async function handleUnlinkHost(targetHostId: number) {
     if (!confirm("Scollegare questo IP dal device fisico?")) return;
@@ -492,6 +510,7 @@ export default function ObjectDetailPage() {
         ruoli={ruoli}
         vmSu={vmSu}
         apparatoCluster={host.apparato_cluster ?? null}
+        scansioneAutomatica={scansioneAutomatica}
         azioni={
           <AzioniScheda
             gestito={isManaged}

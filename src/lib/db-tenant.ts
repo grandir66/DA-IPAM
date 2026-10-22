@@ -19,7 +19,7 @@ import { buildPatchFromHost, buildPatchFromDevice, buildSyncMerge, buildSourceLa
 import fs from "fs";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { LetturaVlanSwitch } from "./devices/snmp-vlan";
-import { DDL_JOB_APPARATI_ESITI, INDICI_JOB_APPARATI_ESITI, SEGNO_APPARATI_SCELTI, VERSIONE_APPARATI_SCELTI, DDL_SWITCH_VLAN_NATIVA, SEGNO_SWITCH_VLAN_NATIVA, VERSIONE_SWITCH_VLAN_NATIVA, DDL_SWITCH_VLAN_V1, SEGNO_SWITCH_VLAN, VERSIONE_SWITCH_VLAN, COLONNA_CLUSTER_PRINCIPALE, INDICE_CLUSTER_PRINCIPALE, SEGNO_CLUSTER_PRINCIPALE, VERSIONE_CLUSTER_PRINCIPALE, COLONNE_SCHEDA_MK_V1, DDL_HOSTS_ARCHIVIO, DDL_SCHEDA_MK_V2, DDL_SCHEDA_MK_V3, DDL_TOPOLOGY_CAVI, DDL_TOPOLOGY_UNIONI, INDICI_HOSTS_ARCHIVIO, INDICI_TOPOLOGY_UNIONI, TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL, SEGNO_SCHEDA_MK, VERSIONE_SCHEDA_MK } from "./db-tenant-schema";
+import { DDL_VULCAN, INDICI_VULCAN, SEGNO_VULCAN, VERSIONE_VULCAN, DDL_JOB_APPARATI_ESITI, INDICI_JOB_APPARATI_ESITI, SEGNO_APPARATI_SCELTI, VERSIONE_APPARATI_SCELTI, DDL_SWITCH_VLAN_NATIVA, SEGNO_SWITCH_VLAN_NATIVA, VERSIONE_SWITCH_VLAN_NATIVA, DDL_SWITCH_VLAN_V1, SEGNO_SWITCH_VLAN, VERSIONE_SWITCH_VLAN, COLONNA_CLUSTER_PRINCIPALE, INDICE_CLUSTER_PRINCIPALE, SEGNO_CLUSTER_PRINCIPALE, VERSIONE_CLUSTER_PRINCIPALE, COLONNE_SCHEDA_MK_V1, DDL_HOSTS_ARCHIVIO, DDL_SCHEDA_MK_V2, DDL_SCHEDA_MK_V3, DDL_TOPOLOGY_CAVI, DDL_TOPOLOGY_UNIONI, INDICI_HOSTS_ARCHIVIO, INDICI_TOPOLOGY_UNIONI, TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL, SEGNO_SCHEDA_MK, VERSIONE_SCHEDA_MK } from "./db-tenant-schema";
 import { HYPERVISOR_SYNC_MINUTES, PULIZIA_HOST_MINUTES, SCHEDULED_JOB_TYPES_CHECK_SQL } from "./scheduled-job-types";
 import { isProxmoxVeDevice, resolveDeviceAcquisition } from "./devices/device-acquisition-resolve";
 import { networkDeviceUsesArpPoll } from "./network-device-arp";
@@ -1033,6 +1033,50 @@ export function migrateSwitchVlanNativa(db: Database.Database): string[] {
     }
   })();
   SCHEMA_SWITCH_VLAN_NATIVA.set(db, tabelleSchedaMkMancanti(db, DDL_SWITCH_VLAN_NATIVA).length === 0);
+  return added;
+}
+
+/** «La coda verso DA-Vul-can c'è, col suo indice», annotato all'apertura come le altre (niente query di schema a ogni accodamento). */
+const SCHEMA_VULCAN = new WeakMap<Database.Database, boolean>();
+
+function oggettiVulcanMancanti(d: Database.Database): Array<readonly [string, string]> {
+  const t = d.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?");
+  const i = d.prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?");
+  return [...DDL_VULCAN.filter(([n]) => !t.get(n)), ...INDICI_VULCAN.filter(([n]) => !i.get(n))];
+}
+
+/** Coda verso DA-Vul-can presente (annotato; si rimisura solo con la migrazione). Chi accoda lo chiede prima di scrivere. */
+export function schemaVulcanPresente(d: Database.Database): boolean {
+  const v = SCHEMA_VULCAN.get(d);
+  if (v !== undefined) return v;
+  const n = oggettiVulcanMancanti(d).length === 0;
+  SCHEMA_VULCAN.set(d, n);
+  return n;
+}
+
+/**
+ * Coda degli invii verso DA-Vul-can (piano 2026-10-22 invio AD e inventario, Task 2): le tabelle di DDL_VULCAN e
+ * l'indice di INDICI_VULCAN solo se mancano (sqlite_master: un oggetto omonimo di altro tipo fa fallire, non passa muto).
+ * Additiva, idempotente, in UNA transazione; restituisce i nomi di ciò che aggiunge, poi scrive il segno `done:<data>:v1`
+ * una volta sola (la migrazione non lo consulta).
+ */
+export function migrateVulcanCoda(db: Database.Database): string[] {
+  const added: string[] = [];
+  try {
+    db.transaction(() => {
+      for (const [n, ddl] of oggettiVulcanMancanti(db)) {
+        db.exec(ddl);
+        added.push(n);
+      }
+      const chiusa = `:v${VERSIONE_VULCAN}`;
+      const attuale = leggiSegno(db, SEGNO_VULCAN);
+      if (!(attuale?.startsWith("done:") && attuale.endsWith(chiusa))) {
+        scriviSegno(db, SEGNO_VULCAN, `done:${new Date().toISOString().slice(0, 10)}${chiusa}`);
+      }
+    })();
+  } finally {
+    SCHEMA_VULCAN.set(db, oggettiVulcanMancanti(db).length === 0);
+  }
   return added;
 }
 
@@ -2694,6 +2738,28 @@ export function getTenantDb(tenantCode: string): Database.Database {
       scriviSegno(newDb, SEGNO_SWITCH_VLAN_NATIVA, segnoErrore(e));
     } catch (e2) {
       console.error(`[db-tenant] ${tenantCode}: ${SEGNO_SWITCH_VLAN_NATIVA}, segno non scritto:`, e2);
+    }
+  }
+
+  // Coda verso DA-Vul-can (piano 2026-10-22 invio AD e inventario): due tabelle e un indice nuovi, solo se mancano. Se
+  // fallisce il tenant si apre lo stesso: schemaVulcanPresente() dice false e il flusso non accoda (lo dice, non scrive a vuoto).
+  try {
+    const added = migrateVulcanCoda(newDb);
+    if (added.length > 0) {
+      console.info(`[db-tenant] ${tenantCode}: coda vulcan, aggiunto ${added.join(", ")}`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione coda vulcan fallita (ROLLBACK), gli invii verso DA-Vul-can non si accodano:`, e);
+    try {
+      // Schema completo dopo il fallimento = un altro processo ha vinto la corsa: segno `done`, non un errore.
+      if (schemaVulcanPresente(newDb)) {
+        const attuale = leggiSegno(newDb, SEGNO_VULCAN);
+        if (!attuale?.startsWith("done:")) scriviSegno(newDb, SEGNO_VULCAN, `done:${new Date().toISOString().slice(0, 10)}:v${VERSIONE_VULCAN}`);
+      } else {
+        scriviSegno(newDb, SEGNO_VULCAN, segnoErrore(e));
+      }
+    } catch (e2) {
+      console.error(`[db-tenant] ${tenantCode}: ${SEGNO_VULCAN}, segno non scritto:`, e2);
     }
   }
 
@@ -11567,13 +11633,13 @@ export function scriviEsitiGiro(
 }
 
 /** Gli esiti dell'ultimo giro di un job, col nome dell'apparato (null se l'apparato è stato tolto). */
-export function leggiEsitiJob(jobId: number): { giro_il: string | null; righe: Array<EsitoRiga & { nome: string | null }> } {
+export function leggiEsitiJob(jobId: number): { giro_il: string | null; righe: Array<EsitoRiga & { nome: string | null; host_id: number | null }> } {
   const righe = db().prepare(`
-    SELECT e.device_id, e.giro_il, e.stato, e.letture, e.motivo, nd.name AS nome
+    SELECT e.device_id, e.giro_il, e.stato, e.letture, e.motivo, nd.name AS nome, nd.host_id
       FROM job_apparati_esiti e
       LEFT JOIN network_devices nd ON nd.id = e.device_id
      WHERE e.job_id = ?
-     ORDER BY e.device_id`).all(jobId) as Array<Omit<EsitoRiga, "letture"> & { letture: string; nome: string | null }>;
+     ORDER BY e.device_id`).all(jobId) as Array<Omit<EsitoRiga, "letture"> & { letture: string; nome: string | null; host_id: number | null }>;
   const out = righe.map((r) => {
     let letture: Record<string, EsitoLettura> = {};
     try {
@@ -11590,22 +11656,23 @@ export function leggiEsitiJob(jobId: number): { giro_il: string | null; righe: A
 
 /**
  * Il riassunto di J3 («✓ 3/3», «▲ 2/3 · 1 escluso») per più job, in una query, dalle righe dell'ultimo `giro_il`:
- * letti = `ok` + `parziale`. Un job che non ha mai girato non compare.
+ * letti = `ok`, parziali a parte (la pastiglia li distingue). Un job che non ha mai girato non compare.
  */
-export function riassuntiEsitiJobs(jobIds: number[]): Map<number, { letti: number; totale: number; esclusi: number; giro_il: string }> {
-  const out = new Map<number, { letti: number; totale: number; esclusi: number; giro_il: string }>();
+export function riassuntiEsitiJobs(jobIds: number[]): Map<number, { letti: number; parziali: number; totale: number; esclusi: number; giro_il: string }> {
+  const out = new Map<number, { letti: number; parziali: number; totale: number; esclusi: number; giro_il: string }>();
   if (jobIds.length === 0) return out;
   const righe = db().prepare(`
     SELECT e.job_id,
-           SUM(CASE WHEN e.stato IN ('ok', 'parziale') THEN 1 ELSE 0 END) AS letti,
+           SUM(CASE WHEN e.stato = 'ok' THEN 1 ELSE 0 END) AS letti,
+           SUM(CASE WHEN e.stato = 'parziale' THEN 1 ELSE 0 END) AS parziali,
            COUNT(*) AS totale,
            SUM(CASE WHEN e.stato = 'escluso' THEN 1 ELSE 0 END) AS esclusi,
            MAX(e.giro_il) AS giro_il
       FROM job_apparati_esiti e
      WHERE e.job_id IN (${jobIds.map(() => "?").join(",")})
        AND e.giro_il = (SELECT MAX(u.giro_il) FROM job_apparati_esiti u WHERE u.job_id = e.job_id)
-     GROUP BY e.job_id`).all(...jobIds) as Array<{ job_id: number; letti: number; totale: number; esclusi: number; giro_il: string }>;
-  for (const r of righe) out.set(r.job_id, { letti: r.letti, totale: r.totale, esclusi: r.esclusi, giro_il: r.giro_il });
+     GROUP BY e.job_id`).all(...jobIds) as Array<{ job_id: number; letti: number; parziali: number; totale: number; esclusi: number; giro_il: string }>;
+  for (const r of righe) out.set(r.job_id, { letti: r.letti, parziali: r.parziali, totale: r.totale, esclusi: r.esclusi, giro_il: r.giro_il });
   return out;
 }
 
@@ -11628,4 +11695,32 @@ export function cancellaEsitiJob(jobId: number): void {
 /** Gli esiti dei job che non ci sono più (all'inizio di ogni giro). Restituisce le righe tolte. */
 export function cancellaEsitiOrfani(): number {
   return db().prepare("DELETE FROM job_apparati_esiti WHERE job_id NOT IN (SELECT id FROM scheduled_jobs)").run().changes;
+}
+
+/**
+ * «Modifica» di un job `apparati_scelti` (Task 6): intervallo e config insieme e, nella stessa transazione, gli esiti
+ * degli apparati tolti dal job (J3 non deve contarli fino al giro dopo). `config` già validata dalla rotta. false = il
+ * job non c'è o non è di quel tipo.
+ */
+export function aggiornaJobApparatiScelti(id: number, intervalMinutes: number, config: { device_ids: number[] } & Record<string, unknown>): boolean {
+  const d = db();
+  return d.transaction(() => {
+    const cambiate = d.prepare(
+      `UPDATE scheduled_jobs SET interval_minutes = ?, config = ?, next_run = datetime('now', '+' || ? || ' minutes'), updated_at = datetime('now')
+        WHERE id = ? AND job_type = 'apparati_scelti'`,
+    ).run(intervalMinutes, JSON.stringify(config), intervalMinutes, id).changes;
+    if (cambiate === 0) return false;
+    d.prepare(
+      `DELETE FROM job_apparati_esiti WHERE job_id = ? AND device_id NOT IN (SELECT j.value FROM json_each(?) j)`,
+    ).run(id, JSON.stringify(config.device_ids));
+    return true;
+  })();
+}
+
+/** L'ultimo esito di un apparato in ogni job che lo contiene (testata J4), in una query: job_id → stato e giro. */
+export function esitiApparatoNeiJob(deviceId: number): Map<number, { stato: StatoEsito; giro_il: string }> {
+  const righe = db().prepare(
+    "SELECT job_id, stato, giro_il FROM job_apparati_esiti WHERE device_id = ?",
+  ).all(deviceId) as Array<{ job_id: number; stato: StatoEsito; giro_il: string }>;
+  return new Map(righe.map((r) => [r.job_id, { stato: r.stato, giro_il: r.giro_il }]));
 }

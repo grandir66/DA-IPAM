@@ -3,8 +3,10 @@ import { currentFacadeTenant, getEnabledJobs, updateJobLastRun } from "@/lib/db"
 import { getActiveTenants } from "@/lib/db-hub";
 import { withTenant } from "@/lib/db-tenant";
 import { runJob, type OpzioniRunJob } from "./jobs";
+import { chiaveJob, statoScheduler } from "./stato-scheduler";
 import { oraDelGiroGiornaliero } from "@/lib/scheduled-job-types";
 import { FUSO_UTENTI } from "@/lib/db-date";
+import { leggiConfig, oraDaTesto } from "@/lib/apparati-scelti/regole";
 import {
   createFailureState,
   findTenantOutages,
@@ -14,27 +16,8 @@ import {
   summarizeFailures,
 } from "@/lib/health/job-failure-tracker";
 
-type ScheduledTask = ReturnType<typeof cron.schedule>;
-
-/**
- * Cron attivi e job in esecuzione: UNO stato per processo, non per istanza del
- * modulo. Sotto tsx (e nei bundle delle rotte) questo file può essere caricato
- * due volte nello stesso processo: con lo stato nel modulo, una rotta che
- * chiamava `reloadTenantScheduler` non vedeva i cron registrati da server.ts,
- * non li fermava e ne aggiungeva altri — sul cliente A il controllo host è partito due
- * volte alle 15:04 del 2026-10-12 (NUC-5). Stessa classe dell'incidente
- * db-tenant del 2026-09-02 (ADR 0002).
- */
-interface SchedulerState {
-  activeTasks: Map<string, ScheduledTask>;
-  /** Guard: job keys currently running (prevents overlapping execution) */
-  runningJobs: Set<string>;
-}
-const STATE_KEY = Symbol.for("da-ipam.cron.scheduler.state");
-const processGlobals = globalThis as unknown as Record<symbol, SchedulerState | undefined>;
-const state: SchedulerState =
-  processGlobals[STATE_KEY] ??
-  (processGlobals[STATE_KEY] = { activeTasks: new Map(), runningJobs: new Set() });
+// Stato per processo (cron attivi e guardia dei job in corso): vedi stato-scheduler.ts.
+const state = statoScheduler();
 const activeTasks = state.activeTasks;
 const runningJobs = state.runningJobs;
 /**
@@ -119,8 +102,8 @@ export function initializeScheduler(): void {
     withTenant(tenant.codice_cliente, () => {
       const jobs = getEnabledJobs();
       for (const job of jobs) {
-        const key = `${tenant.codice_cliente}:${job.id}`;
-        scheduleJob(key, job.id, job.interval_minutes, tenant.codice_cliente, job.job_type);
+        const key = chiaveJob(tenant.codice_cliente, job.id);
+        scheduleJob(key, job.id, job.interval_minutes, tenant.codice_cliente, job.job_type, oraDelJob(job));
         totalJobs++;
       }
       if (jobs.length > 0) {
@@ -163,6 +146,16 @@ export function intervalToCron(minutes: number, jobType?: string, ora?: { h: num
   return `${m} ${h} */${days} * *`;               // ogni N giorni
 }
 
+/**
+ * L'ora scelta del giornaliero di `apparati_scelti` (`config.ora`); undefined per gli altri tipi, per gli altri intervalli
+ * e per una config illeggibile (il giro lo dirà fallendo: «Config del job non valida»).
+ */
+export function oraDelJob(job: { job_type: string; interval_minutes: number; config: string | null }): { h: number; m: number } | undefined {
+  if (job.job_type !== "apparati_scelti" || job.interval_minutes < 1440) return undefined;
+  const ora = leggiConfig(job.config)?.ora;
+  return ora ? oraDaTesto(ora) : undefined;
+}
+
 export function scheduleJob(
   key: string,
   jobId: number,
@@ -170,11 +163,13 @@ export function scheduleJob(
   tenantCode: string,
   /** Il tipo del job: decide l'ora dei giornalieri (`intervalToCron`). */
   jobType?: string,
+  /** L'ora scelta del giornaliero (`apparati_scelti`, `oraDelJob`). */
+  ora?: { h: number; m: number },
 ): void {
   // Stop existing task if any
   stopJob(key);
 
-  const cronExpr = intervalToCron(intervalMinutes, jobType);
+  const cronExpr = intervalToCron(intervalMinutes, jobType, ora);
 
   // apparati_scelti (scansione automatica, revisione 22/10): l'ora scelta e le fasce di 4 ore sono italiane anche su
   // un server in UTC. Gli altri tipi restano sull'ora del server, come prima.
@@ -273,8 +268,8 @@ export function reloadTenantScheduler(tenantCode: string): void {
   withTenant(tenantCode, () => {
     const jobs = getEnabledJobs();
     for (const job of jobs) {
-      const key = `${tenantCode}:${job.id}`;
-      scheduleJob(key, job.id, job.interval_minutes, tenantCode, job.job_type);
+      const key = chiaveJob(tenantCode, job.id);
+      scheduleJob(key, job.id, job.interval_minutes, tenantCode, job.job_type, oraDelJob(job));
     }
     console.info(`[Scheduler] Tenant ${tenantCode}: ${jobs.length} job ricaricati`);
   });

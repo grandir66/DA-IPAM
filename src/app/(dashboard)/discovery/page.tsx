@@ -33,6 +33,7 @@ import { FingerprintConfidenceBadge } from "@/components/shared/fingerprint-conf
 import { ProtocolBadges } from "@/components/shared/protocol-badges";
 import { LinkIpsDialog } from "@/components/devices/link-ips-dialog";
 import { RendiApparatoDialog } from "@/components/devices/rendi-apparato-dialog";
+import { FinestraScansioneAutomatica } from "@/components/jobs/finestra-scansione-automatica";
 import { SeparaDialog } from "@/components/topology/unioni/separa-dialog";
 import { UnisciDialog } from "@/components/topology/unioni/unisci-dialog";
 import { InlineEditCell } from "@/components/shared/inline-edit-cell";
@@ -536,6 +537,8 @@ export default function DiscoveryPage() {
 
   // ─── Add to devices (bulk promote host → device) ──────────
   const [addDevicesOpen, setAddDevicesOpen] = useState(false);
+  // Scansione automatica degli host scelti (J1-J2): solo admin.
+  const [scansioneAutomaticaOpen, setScansioneAutomaticaOpen] = useState(false);
   const [linkSameDeviceOpen, setLinkSameDeviceOpen] = useState(false);
   // Unioni a mano sulla mappa (piano 2026-10-16, Task 6): solo admin; «Unisci…» / «Separa…» per gli host selezionati.
   // Azioni riservate agli admin (unioni, terminale, desktop remoto, test, modifiche): al viewer
@@ -2116,6 +2119,17 @@ export default function DiscoveryPage() {
                   ? `${bulkScanProgress.current}/${bulkScanProgress.total} · ${bulkScanProgress.label}`
                   : "Aggiorna selezionati"}
               </Button>
+              {admin && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5"
+                  onClick={() => setScansioneAutomaticaOpen(true)}
+                  title="Crea un job che rilegge da solo gli apparati scelti, con le credenziali memorizzate"
+                >
+                  ↻ {selectedIds.size > 50 ? `Scansione automatica… (50 su ${selectedIds.size})` : "Scansione automatica…"}
+                </Button>
+              )}
               <Button
                 size="sm"
                 variant="outline"
@@ -2845,6 +2859,19 @@ export default function DiscoveryPage() {
             setSelectedIds((prec) => new Set([...prec].filter((id) => !proposti.has(id))));
             fetchData();
           }}
+        />
+      )}
+
+      {/* ════════════════ FINESTRA SCANSIONE AUTOMATICA (J2) ════════════════ */}
+      {admin && scansioneAutomaticaOpen && selectedIds.size > 0 && (
+        <FinestraScansioneAutomatica
+          modo="crea"
+          open={scansioneAutomaticaOpen}
+          onOpenChange={setScansioneAutomaticaOpen}
+          // Agisce solo sugli id selezionati (al più 50 per job); la selezione resta dopo la creazione.
+          hostIds={hosts.filter((h) => selectedIds.has(h.id)).slice(0, 50).map((h) => h.id)}
+          selezionati={selectedIds.size}
+          onRendiApparato={() => { setScansioneAutomaticaOpen(false); openAddDevices(); }}
         />
       )}
 

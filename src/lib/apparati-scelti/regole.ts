@@ -5,7 +5,6 @@
  * finestra J2, le rotte e il giro.
  */
 import { z } from "zod";
-import { senzaCredenzialeProvata } from "@/lib/devices/credenziali-assegnate";
 import { FUSO_UTENTI } from "@/lib/db-date";
 
 /** Tetto per job: lo stesso della finestra «Rendi apparato» (decisione 3: un giro seriale da 50 sta nell'ora). */
@@ -158,17 +157,29 @@ export const TESTO_MOTIVO: Record<MotivoEsclusione, string> = {
 
 /**
  * Entra nel giro? Ordine dei motivi: NON_APPARATO, TOLTO, DISATTIVATO, NON_LEGGIBILE, SENZA_CREDENZIALE,
- * CREDENZIALE_NON_PROVATA. «Provata» è la definizione unica di `senzaCredenzialeProvata`: con l'host vale l'host,
- * solo un apparato senza host ricade sui binding.
+ * CREDENZIALE_NON_PROVATA. «Provata» qui (decisione del controllore sulla richiesta di Riccardo del 22/10, «le
+ * credenziali devono essere memorizzate»: una credenziale memorizzata che funziona conta): una credenziale validata
+ * sull'host OPPURE un binding riuscito dell'apparato, anche quando l'host c'è. Solo per questo job: la definizione
+ * comune `senzaCredenzialeProvata` (con l'host vale l'host) resta quella delle altre pagine. La finestra J2 deve usare
+ * questa funzione, non una sua.
  */
 export function valutaApparato(s: StatoApparato): { incluso: true } | { incluso: false; motivo: MotivoEsclusione } {
   if (s.device_id == null) return { incluso: false, motivo: s.host_id == null ? "TOLTO" : "NON_APPARATO" };
   if (!s.enabled) return { incluso: false, motivo: "DISATTIVATO" };
   if (!s.leggibile) return { incluso: false, motivo: "NON_LEGGIBILE" };
-  if (s.credenziali_memorizzate <= 0) return { incluso: false, motivo: "SENZA_CREDENZIALE" };
-  const bindings = s.binding_riusciti > 0 ? [{ test_status: "success" as const }] : [];
-  if (senzaCredenzialeProvata(s.validate_sul_host, bindings)) return { incluso: false, motivo: "CREDENZIALE_NON_PROVATA" };
+  const cred = statoCredenziale(s);
+  if (cred === "nessuna") return { incluso: false, motivo: "SENZA_CREDENZIALE" };
+  if (cred === "non_provata") return { incluso: false, motivo: "CREDENZIALE_NON_PROVATA" };
   return { incluso: true };
+}
+
+/**
+ * La pastiglia della credenziale di J2, con la stessa regola di `valutaApparato` (una definizione sola): nessuna
+ * credenziale memorizzata; memorizzata ma né validata sull'host né con un binding riuscito; provata.
+ */
+export function statoCredenziale(s: Pick<StatoApparato, "credenziali_memorizzate" | "validate_sul_host" | "binding_riusciti">): "provata" | "non_provata" | "nessuna" {
+  if (s.credenziali_memorizzate <= 0) return "nessuna";
+  return (s.validate_sul_host ?? 0) > 0 || s.binding_riusciti > 0 ? "provata" : "non_provata";
 }
 
 /**
@@ -177,9 +188,20 @@ export function valutaApparato(s: StatoApparato): { incluso: true } | { incluso:
  */
 export function lettureValide(t: StatoApparato["tipo"]): Lettura[] {
   const out: Lettura[] = ["info"];
-  if (t.usa_arp || t.device_type === "switch") out.push("porte_mac");
+  // L'hypervisor no anche con ARP: il giro ARP lo salta, non si scriverebbe niente.
+  if (t.device_type !== "hypervisor" && (t.usa_arp || t.device_type === "switch")) out.push("porte_mac");
   if (t.vlan_switch || (t.device_type === "router" && t.vendor === "mikrotik" && t.protocol === "ssh")) out.push("vlan");
   return out;
+}
+
+/**
+ * L'interruttore che regge la lettura VLAN di un tipo (ADR 0018), come la sceglie il giro: lo switch della lettura
+ * `switch_vlan`, altrimenti la scheda MikroTik; null se la VLAN non vale per il tipo. Lo decide il server: la finestra
+ * J2 non ha il tipo (revisione finale 22/10, in modifica lo ricalcolava da un `tipo_scheda` null).
+ */
+export function interruttoreVlan(t: StatoApparato["tipo"]): "switch_vlan" | "mikrotik_scheda" | null {
+  if (!lettureValide(t).includes("vlan")) return null;
+  return t.vlan_switch ? "switch_vlan" : "mikrotik_scheda";
 }
 
 // ── Esiti per apparato (decisione 11) ─────────────────────────────────────

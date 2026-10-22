@@ -26,14 +26,21 @@ Piano: [`docs/superpowers/plans/2026-10-22-scansione-automatica-da-discovery.md`
 - [x] Piano approvato da Riccardo (22/10: tavola «si va benissimo», piano «ok»)
 - [x] T1 tipo `apparati_scelti`, CHECK v11 di `scheduled_jobs`, tabella `job_apparati_esiti` (misura sulla copia dell'hub) — v0.9.861; v11 sulla copia 3-4 ms, 23 job identici, integrity ok; revisione completa: approvato (una colonna sconosciuta ora blocca la ricostruzione)
 - [x] T2 regole pure: config, frequenze (ogni ora · ogni 4 ore · ogni giorno alle HH:MM), idoneità, letture valide — regole pure; il job segue l ora italiana (fuso esplicito); revisione completa: 1 importante (fuso) corretto
-- [ ] T3 funzioni DB: stato degli apparati in una query, esiti per apparato
-- [ ] T4 letture estratte da «Interroga» e dal giro ARP, lucchetto per apparato, log senza nomi né IP
-- [ ] T5 il giro `apparati_scelti` nello scheduler (prova a vuoto sulla copia dell'hub)
-- [ ] T6 rotte API (anteprima, creazione, modifica, esiti, testata)
-- [ ] T7 Discovery: pulsante e finestra (J1, J2), resa 1440 e 1920
-- [ ] T8 pagina dei job: riga ed esiti per apparato (J3), resa 1440 e 1920
-- [ ] T9 testata della scheda: pastiglia (J4), resa 1440 e 1920
-- [ ] T10 accensione sull'hub (con l'ok di Riccardo per creare il job), ADR 0030, CHANGELOG, CONTEXT, scheda-mappa
+- [x] T3 funzioni DB: stato degli apparati in una query, esiti per apparato — una query per 50 id, db.test 11 casi rosso poi verde
+- [x] T4 letture estratte da «Interroga» e dal giro ARP, lucchetto per apparato, log senza nomi né IP — lucchetto in comune fra scheduler e rotte (globalThis), 5 min per apparato, log senza nomi né IP; le 90 prove del giro invariate; revisione completa: 1 grave (lucchetto non condiviso) corretto
+- [x] T5 il giro `apparati_scelti` nello scheduler (prova a vuoto sulla copia dell'hub) — giro in serie con esito per apparato; «saltato» se niente da leggere; idoneo anche con binding riuscito (decisione nel registro); prova a vuoto sulla copia; revisione completa: 1 grave corretto. Nota per T10: i 5 switch Ubiquiti hanno il binding SNMP mai provato → prima «Prova credenziali»
+- [x] T6 rotte API (anteprima, creazione, modifica, esiti, testata) — rotte con guardie (scrittura solo admin), anteprima con valutaApparato, /api/jobs generico non può creare né cambiare la frequenza di questi job; revisione completa: approvato
+- [x] T7 Discovery: pulsante e finestra (J1, J2), resa 1440 e 1920 — J1-J2 in Discovery, viste a 1440 e 1920
+- [x] T8 pagina dei job: riga ed esiti per apparato (J3), resa 1440 e 1920 — viste sulla copia; salvataggio della modifica non provato a schermo
+- [x] T9 testata della scheda: pastiglia (J4), resa 1440 e 1920 — viste sulla copia
+- [x] T10 accensione sull'hub (con l'ok di Riccardo per creare il job), ADR 0030, CHANGELOG, CONTEXT, scheda-mappa — sull hub (22/10 11:24 ora italiana): credenziali SNMP di 5 switch e del router provate, job #25 «Switch e router del CED» ogni 4 ore con 6 apparati, primo giro 6 letti su 6 in 83 s; servizio riavviato perché lo scheduler veda il job; backup /root/70791.db.bak-20261022-092258-prima-job-apparati. Revisione finale: 3 importanti corretti (modifica che restringeva il job, VLAN tolta in silenzio, «Esegui ora» sovrapponibile)
+- [x] Consuntivo scritto nel piano; ADR 0030 non scritto (resta aperto, sotto)
+- [x] ADR 0030 «job sugli apparati scelti» con «cosa diventa difficile» (lucchetto in memoria, due letture sovrapponibili dopo il timeout dei 5 minuti) → scritto il 22/10
+- [x] SW-UFLEX-RG-10GB (apparato 9): IP 192.168.40.240 morto dal 06/10 e assente dal controller UniFi, quindi fuori dal job #25: serve da Riccardo l'IP attuale (sostituisce il punto (c) sotto) → Riccardo 22/10: non è più attivo; apparato 9 disattivato (enabled=0, non cancellato).
+- [ ] ProMax: PVID SNMP diverso dalla nativa del controller su 6 porte su 14 (vedi riga più sotto); finché non si rivede la lettura Q-BRIDGE il job la rilegge ma la matrice resta «dedotta» — Riccardo 22/10: forse porte aggregate (LAG); da verificare con la lettura dei LAG.
+- [ ] Panoramica switch: con i filtri «Trunk» / «Tutte» la pagina scorre ancora di ~150 px a 1440×900 (vedi riga più sotto)
+- [ ] J4: la pastiglia nello stato «spenta» (job sospeso) non è stata vista a schermo, solo con e senza job
+- [ ] Un job creato da script ha bisogno di un reload o riavvio dello scheduler; se capita ancora, aggiungere un modo per ricaricarlo
 
 ## 2026-10-22 — accorpamento IP e matrice VLAN degli switch
 
@@ -52,13 +59,13 @@ Piano: [`docs/superpowers/plans/2026-10-22-accorpamento-ip-e-vlan-switch.md`](do
 - [x] T10 matrice VLAN condivisa estratta dalla scheda MikroTik (aspetto invariato) — v0.9.856; matrice in `components/scheda/matrice-vlan.tsx` + `lib/scheda/matrice-vlan.ts`; la tab VLAN del MikroTik è identica byte per byte prima e dopo
 - [x] T11 tab VLAN dello switch: striscia VLAN/trunk/access/senza VLAN + matrice — v0.9.857; striscia e matrice viste a 1440 e 1920 sulla copia (48POE 13·45·7·0, ProMax 13·31·1·20 «dedotta»); revisione completa: approvato + 4 minori corretti
 - [x] T12 accensione sull'hub e verifica sul dato vero — hub v0.9.858 (22/10, 04:05): migrazioni `cluster_principale_v21` e `switch_vlan_v21` fatte (righe nel journal); lettura `switch_vlan` ACCESA («procedi fino al live»); lettura fatta una volta da script: 5 switch letti, 13 VLAN ciascuno, SW-UFLEX-RG-10GB (apparato 9) TEMPO_SCADUTO; tab VLAN di SW-CED-48POE-242 vista con i nomi veri; la Panoramica ora conta 13 come la tab (831c88d5); Discovery: 7 cluster, 17 righe nascoste; correzioni della revisione finale 4cf651d8 (filtri e ricerca anche sui secondari, CSV «Altri IP», blocco anche su PUT host e DHCP AD) e ratchet di `db.ts` (df2e7dc3); CONTEXT, CHANGELOG, scheda-mappa aggiornati
-- [ ] (a) decidere se creare sull'hub il job `arp_poll` o accettare solo «Aggiorna»/«Interroga»: oggi l'hub NON ha il job, quindi gli switch si leggono solo a mano; con il job si leggerebbero ogni ora anche le tabelle MAC di tutti gli switch (decide Riccardo)
+- [ ] (a) job `arp_poll` sull'hub: il job `apparati_scelti` #25 (22/10) legge già ogni 4 ore router e switch scelti; da chiudere se Riccardo conferma che basta (decide lui)
 - [ ] (b) cluster 10 e 11 (iLO HPE + schede di rete dello stesso server?) da confermare con Riccardo
-- [ ] (c) SW-UFLEX-RG-10GB (apparato 9) non risponde a SNMP (TEMPO_SCADUTO): community, ACL o SNMP spento sullo switch
+- [x] (c) SW-UFLEX-RG-10GB (apparato 9) non risponde a SNMP (TEMPO_SCADUTO): community, ACL o SNMP spento sullo switch → Riccardo 22/10: non è più attivo; apparato 9 disattivato (enabled=0, non cancellato).
 - [x] (d) T13 completamento dal controller UniFi (ok di Riccardo 22/10): lista bianca + `GET rest/networkconf`, native in `switch_vlan_nativa` dalla sync UniFi (solo con `switch_vlan` accesa); ProMax 14 porte completate, resta «dedotta» (18 porte senza nativa dal controller); prove `unifi-vlan-native`, `vlan-switch`, `unifi-api`; resa a 1440 vista sulla copia
 - [ ] (e) il blocco «un IP, un apparato» va aggiunto anche in `unifi-sync` prima di accenderlo (oggi spento)
 - [ ] (f) le migrazioni sulla copia del cliente A (MikroTik v1-v3, cluster, `switch_vlan`) non sono mai state misurate: la copia non era disponibile
-- [ ] ProMax: PVID SNMP diverso dalla nativa del controller su 6 porte su 14 confrontabili, e l'SNMP non dà le porte 33-52 (sugli altri 4 switch 99/99 uguali): la lettura Q-BRIDGE della ProMax (bit «inversi», ifIndex) è da rivedere
+- [ ] ProMax: PVID SNMP diverso dalla nativa del controller su 6 porte su 14 confrontabili, e l'SNMP non dà le porte 33-52 (sugli altri 4 switch 99/99 uguali): la lettura Q-BRIDGE della ProMax (bit «inversi», ifIndex) è da rivedere — Riccardo 22/10: forse porte aggregate (LAG); da verificare con la lettura dei LAG.
 - [ ] Native del controller senza scadenza: se uno switch esce dal controller o la lettura `switch_vlan` si spegne e riaccende, le righe di `switch_vlan_nativa` restano (l'età si vede da `nativa_letta_il` nella riga delle fonti); da decidere se farle scadere
 - [ ] Sull'hub la nativa si scrive al primo giro di `unifi_sync` #22 (03:00) dopo il rilascio: verificare `switch_vlan_nativa` il giorno dopo
 - [x] Panoramica dello switch sull hub (SW-CED-48POE-242): scorreva di ~190 px a 1440×900. Il riquadro mostrava già 5 VLAN: a far scorrere era la colonna destra (dettaglio + vicini + VLAN). Ora VLAN a 8 voci (due colonne da 4) sotto «Porte da guardare», «tutte (N) ›» verso la tab: a 1440×900 entra (scrollHeight 900, vista sulla copia).
@@ -68,13 +75,13 @@ Piano: [`docs/superpowers/plans/2026-10-22-accorpamento-ip-e-vlan-switch.md`](do
 
 Piano: [`docs/superpowers/plans/2026-10-22-invio-ad-inventario-a-vulcan.md`](docs/superpowers/plans/2026-10-22-invio-ad-inventario-a-vulcan.md) (9 task, livello completo, stato: bozza da approvare). Oggi l'AD arriva all'hub solo a mano (download qui, «Carica» là): il piano aggiunge l'invio automatico, inventario e battito; spento senza `VULCAN_TOKEN`.
 
-- [ ] Piano approvato da Riccardo
-- [ ] T1 chiavi `VULCAN_URL`/`VULCAN_TOKEN` da `oggetto.env` e cliente dell'invio
-- [ ] T2 coda `vulcan_coda` nel DB del cliente (segno `vulcan_coda_v21`), misura sulla copia 70791
-- [ ] T3 invio automatico AD Health a fine esecuzione (riusa `toHubExport`, il download resta)
-- [ ] T4 inventario a lista bianca (prova dei campi «Mai»), misura dei byte sulla copia 70791
-- [ ] T5 trasporto HTTPS gzip verso l'hub (TLS normale)
-- [ ] T6 giro: coda, ping, battito, audit JSONL
+- [x] Piano approvato da Riccardo — Riccardo 22/10: «andiamo avanti», eseguito qui
+- [x] T1 chiavi `VULCAN_URL`/`VULCAN_TOKEN` da `oggetto.env` e cliente dell'invio — gettone mai in log/errori/risposte (18 prove); file rifiutato se non root, link simbolico o permessi ≠ 600
+- [x] T2 coda `vulcan_coda` nel DB del cliente (segno `vulcan_coda_v21`), misura sulla copia 70791 — migrazione sulla copia 7 ms, integrity ok; revisione completa: 1 medio corretto (inventario superato non torna in coda)
+- [x] T3 invio automatico AD Health a fine esecuzione (riusa `toHubExport`, il download resta) — l export AD va in coda a fine esecuzione solo col gettone; le 8 esecuzioni della copia passano lo schema dell hub
+- [x] T4 inventario a lista bianca (prova dei campi «Mai»), misura dei byte sulla copia 70791 — copia 70791: 351 oggetti, 226 KB, 19 KB gzip, 3 ms; sentinella sui campi «Mai» vista fallire su un costruttore sbagliato; revisione completa: approvato
+- [x] T5 trasporto HTTPS gzip verso l'hub (TLS normale) — TLS verificato sempre (prove rosse togliendolo), gettone solo nell intestazione, risposta limitata a 64 KB
+- [x] T6 giro: coda, ping, battito, audit JSONL — giro entro 8 minuti, sospensione su gettone rifiutato salvata nel DB, audit senza dati personali; revisione completa: 1 importante corretto (invii doppi con hub lento)
 - [ ] T7 timer in `server.ts` (nessuna chiamata senza gettone)
 - [ ] T8 riquadro in «Cosa esce», «Invia ora», riga nella pagina AD
 - [ ] T9 collaudo contro DA-Vul-can di sviluppo (ping/battito/AD; inventario solo hub finto), documenti, rilascio spento, copie 70791 cancellate
@@ -140,7 +147,7 @@ Tavola: https://claude.ai/artifact/7ezwy7nkAAzUWSn1wJCNKv (oggi, scheletro comun
   - [ ] DA-DC01: la casella «Active Directory» sta su una riga a sé sopra la striscia (la striscia va in due righe); «VM 401 s…» troncato in intestazione.
   - [x] VLAN degli switch UniFi cancellate ogni notte: la sincronizzazione del controller (03:00) riscriveva le porte con `vlan` vuota; ora conserva `vlan` e `stp_state` letti via SNMP (v0.9.830, hub aggiornato il 21/10 alle 19:18). Anche il ProMax senza `dot1dBasePortIfIndex` ora lega la VLAN alla porta.
   - [ ] Verificare il 22/10: dopo un «Aggiorna» di SW-CED-48POE-242 le porte hanno la VLAN, e dopo il giro UniFi delle 03:00 ce l hanno ancora (`select count(*) from switch_ports where device_id=7 and vlan is not null`). Se i nomi SNMP e quelli del controller non combaciano e gli indici sono sfalsati, la VLAN non si conserva (mai su una porta sbagliata).
-  - [ ] Switch sull hub: un `ERR_TOO_MANY_RETRIES` + eccezione `Event` in console (probabile flusso SSE che si riconnette): da capire.
+  - [x] Switch sull hub: un `ERR_TOO_MANY_RETRIES` + eccezione `Event` in console (probabile flusso SSE che si riconnette): da capire. → 22/10: 5 caricamenti di fila delle schede switch (con le tab) senza errori; le tre volte viste erano subito dopo un riavvio dell'hub (pezzi della pagina non scaricati mentre il servizio ripartiva), non un difetto della scheda.
   - [x] Da guardare sull hub, a schermo: router MK-RTR-CORE (barre DHCP: compaiono in Panoramica solo dopo aver aperto la tab DHCP, niente SSH a ogni apertura), export solo admin, una pagina per tipo. → fatto il 22/10 con `prova-claude` (pagine per tipo, Panoramica e Interfacce del router).
   - [x] Conversione `device_type`: i 14 server non sono più «switch» → non hanno più la riga SNMP forzata in «credenziali usate» né l attribuzione della porta switch per MAC (`db.ts:2802`); la lettura SNMP extra del cron (`jobs.ts:1013`, spenta di default) non parte più per loro. Decidere se serve. → Riccardo (22/10): va bene così.
   - [ ] Minori lasciati: SNS EVA2 resta `device_type=server` nel dato; `text-[10px]` nel codice spostato com era; costo di `proxmox-vm`; prove della migrazione su DB vero.

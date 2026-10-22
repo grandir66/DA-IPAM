@@ -321,6 +321,56 @@ export const SEGNO_APPARATI_SCELTI = "apparati_scelti_v21";
 export const VERSIONE_APPARATI_SCELTI = 1;
 
 /**
+ * Coda degli invii verso l'hub DA-Vul-can (piano 2026-10-22 invio AD e inventario, Task 2; modello `upload_queue.py`
+ * della sonda). Dati del cliente che escono → DB del tenant. Una riga per invio (AD Health di un run, fotografia
+ * dell'inventario); `corpo_gz` è il JSON gzip e si svuota quando la riga esce dalla coda (inviato, scartato, superato).
+ * `sha256` del JSON non compresso (lo stesso che calcola l'hub per il doppione). `esito_il` è l'ora dell'ultimo esito
+ * (aggiunta al DDL del piano: serve a «ultimo errore» e ai 90 giorni di pulizia). Date nella forma di SQLite, confrontate
+ * come stringhe con `datetime('now')`. `vulcan_stato` è la riga unica del flusso: battito, ping, sospensione per
+ * l'impronta di un gettone (mai il gettone). Tutto nasce SOLO nella migrazione (`migrateVulcanCoda`), senza
+ * `IF NOT EXISTS`: un oggetto omonimo fa fallire la migrazione invece di passare muto. Fuori dal trasferimento
+ * (EXCLUDED_TENANT_TABLES): la coda e la sospensione valgono per questa istanza e il suo gettone, e la coda
+ * contiene i dati del cliente non ancora inviati.
+ */
+export const DDL_VULCAN: ReadonlyArray<readonly [string, string]> = [
+  ["vulcan_coda", `CREATE TABLE vulcan_coda (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tipo TEXT NOT NULL CHECK (tipo IN ('ad-health', 'inventario')),
+  rif TEXT,
+  corpo_gz BLOB NOT NULL,
+  byte_json INTEGER NOT NULL,
+  oggetti INTEGER,
+  sha256 TEXT NOT NULL,
+  stato TEXT NOT NULL DEFAULT 'in_attesa'
+    CHECK (stato IN ('in_attesa', 'inviato', 'scartato', 'fallito', 'superato')),
+  tentativi INTEGER NOT NULL DEFAULT 0,
+  prossimo_tentativo TEXT NOT NULL DEFAULT (datetime('now')),
+  preso_fino TEXT,
+  ultimo_esito TEXT,
+  ultimo_errore TEXT,
+  esito_il TEXT,
+  risposta_id TEXT,
+  creato_il TEXT NOT NULL DEFAULT (datetime('now')),
+  inviato_il TEXT,
+  UNIQUE (tipo, sha256)
+)`],
+  ["vulcan_stato", `CREATE TABLE vulcan_stato (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  battito_il TEXT, battito_esito TEXT, battito_dettaglio TEXT,
+  ping_il TEXT, ping_esito TEXT, ping_dettaglio TEXT,
+  sospeso_gettone TEXT,
+  sospeso_motivo TEXT,
+  aggiornato_il TEXT NOT NULL DEFAULT (datetime('now'))
+)`],
+];
+export const INDICI_VULCAN: ReadonlyArray<readonly [string, string]> = [
+  ["idx_vulcan_coda_attesa", "CREATE INDEX idx_vulcan_coda_attesa ON vulcan_coda(stato, prossimo_tentativo)"],
+];
+/** Segno in `tenant_settings` (`done:<data>:v<versione>`); la migrazione non lo consulta. */
+export const SEGNO_VULCAN = "vulcan_coda_v21";
+export const VERSIONE_VULCAN = 1;
+
+/**
  * Pannello Zabbix in sola lettura (passo 7.4-7.5 del piano di solidità, 16/10; API del centro in DA-Zabbix,
  * `docs/2026-10-16-api-lettura-per-cliente-design.md`). Dati del cliente → DB del tenant.
  *

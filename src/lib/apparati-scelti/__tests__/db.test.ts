@@ -199,7 +199,7 @@ test("scriviEsitiGiro: uno stato fuori elenco lancia e non tocca le righe di pri
   assert.equal(leggiEsitiJob(j).giro_il, "2026-10-22 06:00:00");
 }));
 
-test("riassuntiEsitiJobs: letti, totale, esclusi per job in una query", () => withTenant(T, () => {
+test("riassuntiEsitiJobs: letti (solo ok), parziali, totale, esclusi per job in una query", () => withTenant(T, () => {
   const d = getTenantDb(T);
   const a = job(d, [F.sw, F.rt, F.px]);
   const b = job(d, [F.sw, F.rt, F.px]);
@@ -224,8 +224,9 @@ test("riassuntiEsitiJobs: letti, totale, esclusi per job in una query", () => wi
     (d as { prepare: unknown }).prepare = originale;
   }
   assert.equal(n, 1);
-  assert.deepEqual(r.get(a), { letti: 3, totale: 3, esclusi: 0, giro_il: "2026-10-22 10:00:00" });
-  assert.deepEqual(r.get(b), { letti: 2, totale: 3, esclusi: 1, giro_il: "2026-10-22 10:00:00" });
+  assert.deepEqual(r.get(a), { letti: 3, parziali: 0, totale: 3, esclusi: 0, giro_il: "2026-10-22 10:00:00" });
+  // I parziali a parte (pastiglia «✓ 1/3 · ▲ 1 parziale · 1 escluso», revisione finale 22/10).
+  assert.deepEqual(r.get(b), { letti: 1, parziali: 1, totale: 3, esclusi: 1, giro_il: "2026-10-22 10:00:00" });
   assert.equal(r.has(vuoto), false, "mai girato: nessun riassunto");
   assert.equal(riassuntiEsitiJobs([]).size, 0);
 }));

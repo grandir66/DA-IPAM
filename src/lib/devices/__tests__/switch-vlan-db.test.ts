@@ -124,7 +124,8 @@ test("transazione: una riga che non si scrive annulla tutta la fotografia, quell
 
 test("mai letta: liste vuote e lettura null", () => {
   apparato(13);
-  assert.deepEqual(withTenant(T, () => leggiVlanSwitchDb(13)), { vlan: [], porte: [], pvid: [], lettura: null });
+  // Dal commit 874dfff4 (VLAN native dalla sync UniFi) anche le native: vuote e mai lette.
+  assert.deepEqual(withTenant(T, () => leggiVlanSwitchDb(13)), { nativa: [], nativa_letta_il: null, vlan: [], porte: [], pvid: [], lettura: null });
 });
 
 test("apparato cancellato: le sue righe se ne vanno (CASCADE, foreign_keys acceso come nell'app)", async () => {

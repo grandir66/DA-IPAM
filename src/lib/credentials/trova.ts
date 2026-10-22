@@ -89,7 +89,8 @@ function nonProvata(errore: string): EsitoProvaSuHost {
   return { ok: false, errore, protocollo: null, porta: null, registra: false, trasporto: false, risposta: { success: false, error: errore } };
 }
 
-const SSH_TRASPORTO = new Set(["connect_refused", "connect_timeout", "unreachable"]);
+// closed_by_remote (22/10): il dispositivo chiude prima di presentarsi, la credenziale non è nemmeno stata provata.
+const SSH_TRASPORTO = new Set(["connect_refused", "connect_timeout", "closed_by_remote", "unreachable"]);
 const WINRM_TRASPORTO = new Set(["TCP_CLOSED", "TCP_TIMEOUT", "BRIDGE_TIMEOUT"]);
 
 /**

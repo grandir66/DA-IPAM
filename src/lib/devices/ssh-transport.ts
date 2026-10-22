@@ -106,6 +106,8 @@ export type SshErrorKind =
   | "key_invalid"
   | "connect_refused"
   | "connect_timeout"
+  /** Il dispositivo chiude prima di presentarsi (indirizzi ammessi al servizio SSH, firewall): 70151, 22/10. */
+  | "closed_by_remote"
   | "unreachable"
   | "host_key_changed"
   | "protocol_error"
@@ -118,7 +120,7 @@ export interface SshErrorInfo {
   message: string;
   /** Suggerimento di fix, opzionale. */
   hint?: string;
-  /** Messaggio raw dalla libreria (utile per log/debug, NON in UI). */
+  /** Messaggio grezzo della libreria: nei log e, a carattere piccolo, nei «dettagli» del test della credenziale. */
   raw: string;
   host?: string;
   port?: number;
@@ -464,6 +466,28 @@ export function mapSshError(err: unknown, ctx: MapSshErrorContext = {}): SshErro
       kind: "connect_refused",
       message: `${target}: connessione SSH rifiutata (porta ${ctx.port ?? 22} non in ascolto o filtrata).`,
       hint: "Verifica che il servizio SSH sia attivo sul dispositivo e che la porta non sia bloccata da firewall.",
+    };
+  }
+  // Prima dell'handshake generico (22/10, 70151): un dispositivo che chiude la connessione senza presentarsi non chiede
+  // algoritmi legacy, ammette SSH solo da altri indirizzi; e chi non risponde affatto ha la porta filtrata o SSH spento.
+  if (
+    low.includes("connection lost before handshake") ||
+    low.includes("kex_exchange_identification") ||
+    low.includes("closed by remote")
+  ) {
+    return {
+      ...base,
+      kind: "closed_by_remote",
+      message: `${target}: il dispositivo chiude la connessione prima di presentarsi.`,
+      hint: "Controlla gli indirizzi ammessi al servizio SSH del dispositivo (MikroTik: IP › Services › ssh › Available From) e il firewall in ingresso.",
+    };
+  }
+  if (low.includes("timed out while waiting for handshake")) {
+    return {
+      ...base,
+      kind: "connect_timeout",
+      message: `${target}: nessuna risposta SSH entro il tempo.`,
+      hint: `Porta ${ctx.port ?? 22} filtrata dal firewall, oppure il servizio SSH è spento.`,
     };
   }
   if (low.includes("etimedout") || low.includes("timed out") || low.includes("timeout")) {

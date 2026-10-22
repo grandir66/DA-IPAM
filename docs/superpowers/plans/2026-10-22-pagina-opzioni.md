@@ -217,7 +217,7 @@ tutte le prove di `tests/` verdi, `shellcheck -S error` 0. Trovato: la strada di
 metteva DA-IPAM a un commit fisso staccato e scriveva `ipam_branch: main` a mano): ora il ramo è quello che contiene il
 commit. **Aperto:** push di Deploy-Appliance (da chiedere a Riccardo); la verifica su 70151 sta nel Task 7.
 
-### [~] Task 9 — Errore SSH che dice la causa vera
+### [x] Task 9 — Errore SSH che dice la causa vera
 
 Incidente del 22/10 (70151): il router MikroTik chiudeva la connessione prima di presentarsi (servizio SSH limitato
 ad altri indirizzi) e la pagina diceva «handshake SSH fallito… algoritmi crittografici legacy»: in
@@ -241,6 +241,11 @@ prova esistente di `classifySshError`, se c'è).
 `unknown` col grezzo.
 **Verifica:** la prova vista fallire sui due primi casi e poi verde; `npm test` verde.
 **Commit:** «SSH: il rifiuto del dispositivo non è più "algoritmi legacy"».
+**Fatto (22/10 sera):** `ssh-transport-classifica.test.ts` 5/5, viste fallire 3/5 (i due casi nuovi e il trasporto);
+`src/lib/devices/__tests__/ssh-*` e `src/lib/credentials/__tests__/*` 509/0. Il classificatore si chiama `mapSshError`
+(non `classifySshError`). In più: `closed_by_remote` conta come errore di trasporto (`eErroreDiTrasporto`): la credenziale
+non è nemmeno stata provata, quindi il binding non diventa «fallito» e la credenziale non si esclude dall'host. Il grezzo
+(`raw`) arriva alla finestra «Diagnostica SSH binding» in un «Dettagli» a 13 px.
 
 ## Registro
 

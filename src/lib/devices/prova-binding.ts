@@ -23,6 +23,8 @@ export interface EsitoProvaBinding {
   hint?: string;
   methodsOffered?: string[];
   methodsTried?: string[];
+  /** Il testo grezzo della libreria SSH, per i «dettagli» della diagnostica. */
+  raw?: string;
 }
 
 /** Prova una singola credenziale binding su un host. */
@@ -67,6 +69,7 @@ export async function provaBinding(
         hint: err.hint,
         methodsOffered: err.methodsOffered,
         methodsTried: err.methodsTried,
+        raw: err.raw,
       };
     }
 

@@ -125,6 +125,20 @@ export const ATTESI: Atteso[] = [
     livello: "admin",
     motivo: "archivio degli host tolti al cliente, con chi li ha tolti: lo legge chi può recuperarli",
   },
+  // Scansione automatica dei device scelti (piano 2026-10-22, Task 6): la finestra in modifica e gli esiti sono di chi
+  // gestisce il job (decisione 4); la pastiglia della testata resta con la sessione (livello predefinito).
+  {
+    rotta: "/api/jobs/apparati-scelti/[id]",
+    metodi: ["GET"],
+    livello: "admin",
+    motivo: "job della scansione automatica in modifica: config e stato degli apparati, per chi può cambiarlo",
+  },
+  {
+    rotta: "/api/jobs/apparati-scelti/[id]/esiti",
+    metodi: ["GET"],
+    livello: "admin",
+    motivo: "esiti per apparato del job, dettaglio della pagina dei job che è da admin",
+  },
 ];
 
 const PROVA_MASCHERATE = "src/lib/permessi/__tests__/letture-mascherate.test.ts";

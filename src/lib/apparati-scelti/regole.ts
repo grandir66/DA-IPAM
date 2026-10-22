@@ -167,9 +167,19 @@ export function valutaApparato(s: StatoApparato): { incluso: true } | { incluso:
   if (s.device_id == null) return { incluso: false, motivo: s.host_id == null ? "TOLTO" : "NON_APPARATO" };
   if (!s.enabled) return { incluso: false, motivo: "DISATTIVATO" };
   if (!s.leggibile) return { incluso: false, motivo: "NON_LEGGIBILE" };
-  if (s.credenziali_memorizzate <= 0) return { incluso: false, motivo: "SENZA_CREDENZIALE" };
-  if (!((s.validate_sul_host ?? 0) > 0 || s.binding_riusciti > 0)) return { incluso: false, motivo: "CREDENZIALE_NON_PROVATA" };
+  const cred = statoCredenziale(s);
+  if (cred === "nessuna") return { incluso: false, motivo: "SENZA_CREDENZIALE" };
+  if (cred === "non_provata") return { incluso: false, motivo: "CREDENZIALE_NON_PROVATA" };
   return { incluso: true };
+}
+
+/**
+ * La pastiglia della credenziale di J2, con la stessa regola di `valutaApparato` (una definizione sola): nessuna
+ * credenziale memorizzata; memorizzata ma né validata sull'host né con un binding riuscito; provata.
+ */
+export function statoCredenziale(s: Pick<StatoApparato, "credenziali_memorizzate" | "validate_sul_host" | "binding_riusciti">): "provata" | "non_provata" | "nessuna" {
+  if (s.credenziali_memorizzate <= 0) return "nessuna";
+  return (s.validate_sul_host ?? 0) > 0 || s.binding_riusciti > 0 ? "provata" : "non_provata";
 }
 
 /**

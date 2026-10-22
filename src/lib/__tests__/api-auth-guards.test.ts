@@ -111,6 +111,17 @@ const CONTRACT: Contract[] = [
   { route: "zabbix/pannello", method: "POST", guard: "requireAdmin" },
   { route: "zabbix/abbinamenti", method: "POST", guard: "requireAdmin" },
   { route: "zabbix/abbinamenti", method: "DELETE", guard: "requireAdmin" },
+  // Scansione automatica dei device scelti (piano 2026-10-22, Task 6): creare, modificare e leggere il job (anteprima
+  // con host e IP, finestra in modifica, esiti) solo da admin; la pastiglia della testata (J4) con la sessione.
+  // I corpi (400, 404, 409) li prova src/app/api/jobs/apparati-scelti/__tests__/route.test.ts.
+  { route: "jobs/apparati-scelti", method: "POST", guard: "requireAdmin" },
+  { route: "jobs/apparati-scelti/anteprima", method: "POST", guard: "requireAdmin" },
+  { route: "jobs/apparati-scelti/[id]", method: "GET", guard: "requireAdmin" },
+  { route: "jobs/apparati-scelti/[id]", method: "PUT", guard: "requireAdmin" },
+  { route: "jobs/apparati-scelti/[id]/esiti", method: "GET", guard: "requireAdmin" },
+  { route: "jobs", method: "PUT", guard: "requireAdmin" },
+  { route: "jobs", method: "DELETE", guard: "requireAdmin" },
+  { route: "devices/[id]/scansione-automatica", method: "GET", guard: "requireAuth" },
 ];
 
 /** Estrae il corpo di un metodo HTTP esportato (slice fino al prossimo export). */

@@ -11428,3 +11428,31 @@ export function cancellaEsitiJob(jobId: number): void {
 export function cancellaEsitiOrfani(): number {
   return db().prepare("DELETE FROM job_apparati_esiti WHERE job_id NOT IN (SELECT id FROM scheduled_jobs)").run().changes;
 }
+
+/**
+ * «Modifica» di un job `apparati_scelti` (Task 6): intervallo e config insieme e, nella stessa transazione, gli esiti
+ * degli apparati tolti dal job (J3 non deve contarli fino al giro dopo). `config` già validata dalla rotta. false = il
+ * job non c'è o non è di quel tipo.
+ */
+export function aggiornaJobApparatiScelti(id: number, intervalMinutes: number, config: { device_ids: number[] } & Record<string, unknown>): boolean {
+  const d = db();
+  return d.transaction(() => {
+    const cambiate = d.prepare(
+      `UPDATE scheduled_jobs SET interval_minutes = ?, config = ?, next_run = datetime('now', '+' || ? || ' minutes'), updated_at = datetime('now')
+        WHERE id = ? AND job_type = 'apparati_scelti'`,
+    ).run(intervalMinutes, JSON.stringify(config), intervalMinutes, id).changes;
+    if (cambiate === 0) return false;
+    d.prepare(
+      `DELETE FROM job_apparati_esiti WHERE job_id = ? AND device_id NOT IN (SELECT j.value FROM json_each(?) j)`,
+    ).run(id, JSON.stringify(config.device_ids));
+    return true;
+  })();
+}
+
+/** L'ultimo esito di un apparato in ogni job che lo contiene (testata J4), in una query: job_id → stato e giro. */
+export function esitiApparatoNeiJob(deviceId: number): Map<number, { stato: StatoEsito; giro_il: string }> {
+  const righe = db().prepare(
+    "SELECT job_id, stato, giro_il FROM job_apparati_esiti WHERE device_id = ?",
+  ).all(deviceId) as Array<{ job_id: number; stato: StatoEsito; giro_il: string }>;
+  return new Map(righe.map((r) => [r.job_id, { stato: r.stato, giro_il: r.giro_il }]));
+}

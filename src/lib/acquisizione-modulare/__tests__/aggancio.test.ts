@@ -35,11 +35,20 @@ describe("riconoscimento del collector dal prodotto", () => {
     ["HP switch senza indizi: caso dubbio", { vendor: "hp", device_type: "switch" }, ["hp-procurve", "hp-comware"]],
     ["iLO: nessun collector", { vendor: "hp", product_profile: "hp_server_ilo", device_type: "server" }, []],
     ["QNAP QSS", { vendor: "qnap", model: "QSW-M3216R-8S8T" }, ["qnap-switch"]],
-    ["QNAP NAS: nessun collector", { vendor: "qnap", device_type: "nas", product_profile: "qnap_storage" }, []],
+    ["QNAP NAS", { vendor: "qnap", device_type: "nas", product_profile: "qnap_storage" }, ["qnap-nas"]],
+    ["QNAP router: nessun collector", { vendor: "qnap", product_profile: "qnap_router" }, []],
+    ["Synology", { vendor: "synology", product_profile: "synology_storage" }, ["synology-dsm"]],
+    ["MikroTik router", { vendor: "mikrotik", product_profile: "mikrotik_router" }, ["mikrotik-routeros"]],
+    ["MikroTik SwOS: nessun collector", { vendor: "mikrotik", sysdescr: "SwOS CSS610" }, []],
+    ["MikroTik altro: nessun collector", { vendor: "mikrotik", product_profile: "mikrotik_other" }, []],
+    ["UniFi access point", { vendor: "ubiquiti", product_profile: "ubiquiti_access_point" }, ["ubiquiti-device"]],
+    ["EdgeRouter: nessun collector", { vendor: "ubiquiti", product_profile: "ubiquiti_router" }, []],
+    ["Proxmox VE", { vendor: "proxmox", product_profile: "proxmox_ve" }, ["proxmox-ve"]],
+    ["Proxmox Backup Server: nessun collector", { vendor: "proxmox", product_profile: "proxmox_pbs" }, []],
+    ["Linux e Windows (non collaudati): nessun collector", { vendor: "linux", product_profile: "linux_server" }, []],
     ["ESXi", { vendor: "vmware", device_type: "hypervisor" }, ["vmware-esxi"]],
     ["vCenter: nessun collector", { vendor: "vmware", sysdescr: "VMware vCenter Server 8.0" }, []],
     ["NetApp dal sysDescr", { vendor: "other", sysdescr: "NetApp Release 9.16.1P11" }, ["netapp-ontap"]],
-    ["MikroTik: nessun collector", { vendor: "mikrotik", device_type: "router" }, []],
   ];
   for (const [nome, a, atteso] of casi) it(nome, () => assert.deepEqual(collectorPossibili(a), atteso));
 });
@@ -55,7 +64,7 @@ describe("valutaFonte (dipendenze finte)", () => {
   });
 
   it("acceso ma nessun collector per il prodotto: percorso di sempre, senza leggere credenziali", () => {
-    const v = valutaFonte({ id: 2, vendor: "mikrotik", device_type: "router" }, { accesa: () => true, scelta: () => null, candidati: vietato("le credenziali") });
+    const v = valutaFonte({ id: 2, vendor: "linux", device_type: "server" }, { accesa: () => true, scelta: () => null, candidati: vietato("le credenziali") });
     assert.equal(v.esito, "nessun_collector");
     assert.equal(usaPercorsoDiSempre(v), true);
   });

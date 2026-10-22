@@ -355,5 +355,17 @@ dove la domanda era aperta, sotto è scritto cosa si applica.
    «Scegli la fonte» obbligatoria (l'oggetto 15 diventa la finestra del caso dubbio).
 5. Etichetta «anteprima» nel titolo finché C2 non è chiuso: sì.
 
+**Fine giro 2 (Riccardo, 22/10: «le tue proposte vanno bene»):**
+
+- **(a)** Due scrittori sulle porte: subito, per le famiglie con collector (oggi gli HP), si anticipa il pezzo di
+  C5: con l'interruttore acceso e un collector per l'apparato, il giro pianificato non riscrive le colonne di
+  `switch_ports` che il collector fornisce (continua a scrivere MAC per porta e ciò che il collector non legge).
+- **(b)** L'identità di `network_devices` si sovrascrive come fa già l'acquisizione di oggi; il valore a mano sta
+  sull'host, protetto. Nessun cambio.
+- **(c)** `collector` entra fra le fonti che valgono come prova di ruolo «legge vicini» (`leggeViciniDiRete`).
+- **(d)** La vecchia `/api/topology/model` legge anche i vicini `collector`, come `ssh` e `snmp`. Nessun cambio.
+- **(e)** Scansione in blocco: gli apparati nel caso dubbio si saltano e si elencano a fine giro, non bloccano.
+- **(f)** VMware dal pulsante resta per C4.
+
 **Ancora aperta:** nella sede nuova «ArubaOS» è ArubaOS-Switch (basta `hp-procurve`) o AOS-CX (serve
 `aruba-cx`)? Si vede al collaudo: il `sysDescr` lo dice.

@@ -108,6 +108,29 @@ si ricava da sola, **i dati popolano l'apparato**.
 Fermati a fine C2. A fine giro: cancello completo, TASKS aggiornato con cosa provare in locale
 (acquisizione vera di un HP della sede nuova, misura delle differenze sulla copia del DB dell'hub).
 
+## Giro 3 (22/10): correzioni di fine C2, poi i collector nuovi
+
+Decisioni di Riccardo nel §7 del piano, paragrafo «Fine giro 2». Prima di tutto merge di `origin/dev`.
+
+1. **(a)** Con l'interruttore acceso e un collector per l'apparato, i giri pianificati (`cron/jobs.ts`,
+   `upsertSwitchPorts`) non riscrivono le colonne che il collector fornisce. Controllo completo: prova vista rossa
+   (il giro notturno che oggi rimette i dati vecchi), interruttore spento = comportamento di oggi.
+2. **(c)** `collector` in `leggeViciniDiRete` (`topology/lettori/fonti.ts`), con prova; T1 resta bit per bit.
+3. **(e)** `bulk-scan`: gli apparati nel caso dubbio si saltano e si elencano nell'esito, senza 409 per tutto il
+   blocco.
+4. **C3, collector nuovi**, uno per commit, ognuno col descrittore nel catalogo, allowlist, parser puri, fixture
+   anonimizzate dalla forma documentata (non sono uscite vere: dichiaralo nel descrittore, «non collaudato»),
+   prova di contratto e guida «Aggiungere una famiglia» rispettata. Ordine:
+   `qnap-nas` → `mikrotik-routeros` → `windows` → `linux` → `synology-nas`. Donatori e regole nel piano §5, C3.
+   Per `mikrotik-routeros` leggi prima cosa ha fatto la sessione della scheda MikroTik su `dev`
+   (`devices/mikrotik-*`, uscite di prova anonime già nel repo) e riusane parser e fixture invece di riscriverli.
+   Per `windows` gli script WinRM stanno nell'allowlist del descrittore (`script_winrm`), mai `Win32_Product`.
+   Requisiti di regressione dei donatori (§6 del piano): tensione PoE mai come potenza, `vlan-ids` letto,
+   colonne per nome e non per posizione.
+
+Fermati a fine `synology-nas` o prima se il tempo non basta, lasciando ogni collector chiuso (mai a metà).
+Cancello completo a fine giro, TASKS aggiornato.
+
 ## Da lasciare a Riccardo in locale
 
 - Misure su copia del DB dell'hub (S3; differenze dell'anteprima in C2).

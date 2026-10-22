@@ -17,6 +17,27 @@ const commandSets: Record<ConsoleProfile, readonly string[]> = Object.fromEntrie
 const fail = <T>(data: T, code: string): ReadResult<T> => ({ status: "error", data, warnings: [code] });
 /** Codici dopo i quali una lettura exec in serie non prova i comandi rimasti (trasporto, limiti, permessi). */
 const EXEC_BATCH_STOP = ['SSH_CONNECT_FAILED', 'SSH_EXEC_TIMEOUT', 'SSH_CHANNEL_ERROR', 'SSH_EXEC_UNAVAILABLE', 'OUTPUT_LIMIT', 'PAGE_LIMIT', 'TOTAL_TIMEOUT', 'SSH_PERMISSION_DENIED', 'SSH_EXIT_STATUS_MISSING'];
+/**
+ * Codici che dicono la connessione guasta: dopo uno di questi il lotto non prova i comandi rimasti. Un comando che esce
+ * con stato ≠ 0, manca, non ha il permesso o riempie il limite di byte è il suo problema: ha la sua lettura (`error`,
+ * `unsupported`, `partial`) e il lotto continua. Un comando che scade una volta può essere solo lento (`timedatectl`
+ * senza D-Bus): si ferma alla seconda scadenza di fila.
+ */
+export const LOTTO_GUASTO_TRASPORTO = ['SSH_CONNECT_FAILED', 'SSH_CHANNEL_ERROR', 'SSH_EXEC_UNAVAILABLE', 'TOTAL_TIMEOUT', 'LOCAL_SSH_READ_FAILED'];
+export async function leggiLotto(commands: readonly string[], leggi: (command: string) => Promise<ReadResult<string>>, deadline: number, result: Record<string, ReadResult<string>> = {}): Promise<Record<string, ReadResult<string>>> {
+    let fermo = false, scaduti = 0;
+    for (const command of commands) {
+        if (fermo || Date.now() >= deadline) {
+            result[command] = fail('', fermo ? 'SSH_BATCH_ABORTED' : 'TOTAL_TIMEOUT');
+            continue;
+        }
+        const r = await leggi(command);
+        result[command] = r;
+        scaduti = r.warnings.includes('SSH_EXEC_TIMEOUT') ? scaduti + 1 : 0;
+        fermo = scaduti >= 2 || r.warnings.some(w => LOTTO_GUASTO_TRASPORTO.includes(w));
+    }
+    return result;
+}
 export function assertCommands(commands: readonly string[], profile: ConsoleProfile = 'qnap-switch'): void {
     const allowed: readonly string[] = commandSets[profile];
     if (!allowed || commands.length > allowed.length || commands.some(c => !allowed.includes(c)))
@@ -228,21 +249,16 @@ export function createTransports(input: AcquisitionInput, deps: TransportDeps = 
     return { get: oids => query(oids, false), walk: oid => query([oid], true), shell: async (commands) => {
             assertCommands(commands, input.collector);
             if (isInventoryProfile(input.collector)) {
-                const result: Record<string, ReadResult<string>> = {};
-                let aborted=false;
-                const run=async (conn?: Parameters<typeof readExec>[0]) => {
-                    for(const command of commands){
-                        if(aborted || Date.now()>=deadline){result[command]=fail('', 'SSH_BATCH_ABORTED');continue;}
-                        if(conn) result[command]=await readExec(conn,command,input.limits,deadline);
-                        else result[command]=await new Promise<ReadResult<string>>(resolve=>execFile('ssh',['-n','-o','BatchMode=yes','-o','StrictHostKeyChecking=yes','-o','ConnectTimeout=5','--',`root@${input.host}`,command],{timeout:Math.max(1,Math.min(input.limits.timeout_ms,deadline-Date.now())),maxBuffer:input.limits.max_output_bytes},(error,stdout)=>resolve(error?{status:stdout?'partial':'error',data:stdout,warnings:['LOCAL_SSH_READ_FAILED']}:{status:'ok',data:stdout,warnings:[]})));
-                        aborted=result[command].warnings.some(w=>['SSH_EXEC_TIMEOUT','SSH_CHANNEL_ERROR','SSH_EXEC_UNAVAILABLE','TOTAL_TIMEOUT','OUTPUT_LIMIT','SSH_EXIT_STATUS_MISSING','LOCAL_SSH_READ_FAILED'].includes(w));
-                    }
-                    return result;
-                };
+                // Letture già fatte: se la connessione cade a lotto avviato restano, il resto prende il codice del guasto.
+                const fatte: Record<string, ReadResult<string>> = {};
+                const run=(conn?: Parameters<typeof readExec>[0]) => leggiLotto(commands, async command => {
+                    if(conn) return readExec(conn,command,input.limits,deadline);
+                    return new Promise<ReadResult<string>>(resolve=>execFile('ssh',['-n','-o','BatchMode=yes','-o','StrictHostKeyChecking=yes','-o','ConnectTimeout=5','--',`root@${input.host}`,command],{timeout:Math.max(1,Math.min(input.limits.timeout_ms,deadline-Date.now())),maxBuffer:input.limits.max_output_bytes},(error,stdout)=>resolve(!error?{status:'ok',data:stdout,warnings:[]}:{status:stdout?'partial':'error',data:stdout,warnings:[typeof error.code==='number'?'SSH_COMMAND_FAILED':'LOCAL_SSH_READ_FAILED']})));
+                }, deadline, fatte);
                 if(input.local_ssh && input.collector==='proxmox-ve') return run();
                 if(!input.ssh) return Object.fromEntries(commands.map(c=>[c,fail('', 'NO_SSH_CREDENTIAL')]));
                 try {return await withSshClient({host:input.host,...input.ssh,timeout:Math.max(1,Math.min(input.limits.timeout_ms,deadline-Date.now()))},conn=>run(conn));}
-                catch(error) {const code=error instanceof SshError?'SSH_'+error.kind.toUpperCase():'SSH_CONNECT_FAILED';return Object.fromEntries(commands.map(c=>[c,result[c]??fail('', code)]));}
+                catch(error) {const code=error instanceof SshError?'SSH_'+error.kind.toUpperCase():'SSH_CONNECT_FAILED';return Object.fromEntries(commands.map(c=>[c,fatte[c]??fail('', code)]));}
             }
             if (!input.ssh || Date.now() >= deadline)
                 return Object.fromEntries(commands.map(c => [c, fail('', input.ssh ? 'TOTAL_TIMEOUT' : 'NO_SSH_CREDENTIAL')]));
@@ -270,17 +286,7 @@ export function createTransports(input: AcquisitionInput, deps: TransportDeps = 
                 // comandi rimasti non partono.
                 try {
                     return await withSshClient({ host: input.host, ...input.ssh, timeout: Math.min(input.limits.timeout_ms, Math.max(1, deadline - Date.now())) }, async conn => {
-                        const result: Record<string, ReadResult<string>> = {};
-                        let aborted = false;
-                        for (const command of commands) {
-                            if (aborted || Date.now() >= deadline) {
-                                result[command] = fail('', aborted ? 'SSH_BATCH_ABORTED' : 'TOTAL_TIMEOUT');
-                                continue;
-                            }
-                            result[command] = await readExec(conn, command, input.limits, deadline);
-                            aborted = result[command].warnings.some(c => EXEC_BATCH_STOP.includes(c));
-                        }
-                        return result;
+                        return leggiLotto(commands, command => readExec(conn, command, input.limits, deadline), deadline);
                     });
                 }
                 catch {

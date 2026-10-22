@@ -142,8 +142,8 @@ describe("rotta POST /api/devices/[id]/query: l'aggancio è solo un'aggiunta", (
   it("valuta la fonte una volta, prima del ramo Proxmox, ed esce solo per dubbio o pronta", () => {
     const i = sorgente.indexOf("const fonte = valutaFonte(device, dipendenzeDb());");
     assert.ok(i > 0);
-    assert.ok(i < sorgente.indexOf("if (isProxmoxDevice(device)) {"), "prima del percorso di sempre");
-    const blocco = sorgente.slice(i, sorgente.indexOf("if (isProxmoxDevice(device)) {"));
+    assert.ok(i < sorgente.indexOf("if (tipo === "proxmox") {"), "prima del percorso di sempre");
+    const blocco = sorgente.slice(i, sorgente.indexOf("if (tipo === "proxmox") {"));
     assert.equal((blocco.match(/return /g) ?? []).length, 2, "due sole uscite");
     assert.match(blocco, /if \(fonte\.esito === "dubbio"\) \{/);
     assert.match(blocco, /if \(fonte\.esito === "pronta"\) \{/);

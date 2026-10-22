@@ -1,5 +1,16 @@
 # TASKS — DA-IPAM
 
+## 2026-10-21 — S3, un elenco solo dei MAC virtuali (ramo `s3-mac-virtuali`)
+
+Piano: `docs/superpowers/plans/2026-10-21-recupero-dadude3-mknet.md` (ramo `collector-modulari`), blocco S3, controllo completo.
+
+- [x] Prova `devices/__tests__/mac-virtuali.test.ts` vista rossa (la mappa non riconosceva HSRPv2), poi verde.
+- [x] `devices/mac-virtuali.ts` puro; `topology/identity.ts` e `devices/physical-device-db.ts` lo usano (riesportato, chiamanti invariati).
+- [x] Prove di topologia, apparati e MeshCentral: 1292 verdi; `tsc` e lint verdi.
+- [x] Misura in sola lettura sui DB dell'hub: 0 MAC cambiano esito (oltre 13 milioni letti).
+- [ ] Riccardo: unire in `dev` e rilasciare (`version:release`) quando decide; facoltativa la stessa misura sull'appliance del cliente A.
+- Nota: le righe di `device_interfaces.is_virtual_mac` scritte prima restano come sono (si ricalcolano alla scrittura successiva); sull'hub non ce n'è nessuna da correggere.
+
 ## 2026-10-22 — Letture degli apparati accese di serie (ADR 0031)
 
 Livello leggero, approvato da Riccardo il 22/10 dopo 70151 (VLAN del router mancanti perché la lettura nasceva spenta).

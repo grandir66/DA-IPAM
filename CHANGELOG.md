@@ -4,6 +4,11 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-21 · Un elenco solo dei MAC virtuali
+
+### Corretto
+- La mappa riconosceva come virtuali solo VRRP e HSRP v1, mentre gli apparati fisici conoscevano anche HSRPv2 e HSRP IPv6: due elenchi diversi in `topology/identity.ts` e `devices/physical-device-db.ts`. Un MAC HSRPv2 o GLBP visto su due router poteva fondere due apparati nella mappa, e la forma a punti Cisco (`0000.0c9f.f001`) non veniva letta. Ora c'è un elenco solo, `devices/mac-virtuali.ts` (VRRP v4/v6, HSRP v1/v2/IPv6, GLBP), usato da entrambi. Misura sui DB dell'hub (21/10): 0 MAC cambiano esito su oltre 13 milioni letti.
+
 ## [Non rilasciato] — 2026-10-22 · QNAP via SNMP con gli OID giusti, Proxmox alla parità sui dati
 
 ### Corretto

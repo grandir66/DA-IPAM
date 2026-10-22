@@ -5,13 +5,11 @@
  * di un cliente).
  */
 import { canonicalizza } from "@/lib/classification/canonico";
+import { isVirtualMac } from "@/lib/devices/mac-virtuali";
 import type { MapNode, ModelHostRow, ModelNeighborRow } from "@/lib/topology/model-types";
 
-const VIRTUALI = [/^00:00:5e:00:0[12]:/i, /^00:00:0c:07:ac:/i];
-
-export function isVirtualMac(mac: string | null | undefined): boolean {
-  return !!mac && VIRTUALI.some((r) => r.test(mac.replace(/-/g, ":")));
-}
+/** L'elenco unico dei MAC virtuali (S3, 21/10): prima qui ne stava uno più corto di quello degli apparati fisici. */
+export { isVirtualMac };
 
 /**
  * Nomi di fabbrica: li portano tanti apparati diversi (l'identità predefinita di

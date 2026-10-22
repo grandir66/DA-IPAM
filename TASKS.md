@@ -24,6 +24,7 @@ Piano: [`docs/superpowers/plans/2026-10-22-accorpamento-ip-e-vlan-switch.md`](do
 - [ ] (e) il blocco «un IP, un apparato» va aggiunto anche in `unifi-sync` prima di accenderlo (oggi spento)
 - [ ] (f) le migrazioni sulla copia del cliente A (MikroTik v1-v3, cluster, `switch_vlan`) non sono mai state misurate: la copia non era disponibile
 - [ ] (rimandato) T13 completamento dal controller UniFi: serve l'ok ad ammettere `GET rest/networkconf` nella lista bianca di `unifi-api`
+- [ ] Panoramica dello switch sull hub (SW-CED-48POE-242): scorre di ~190 px a 1440×900 per il riquadro VLAN (13 righe); tagliarlo a 8 righe con «+N altre ›» come le altre liste della Panoramica.
 
 ## 2026-10-22 — invio AD e inventario a DA-Vul-can (A-IPAM)
 

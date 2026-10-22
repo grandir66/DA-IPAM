@@ -80,8 +80,8 @@ Piano: [`docs/superpowers/plans/2026-10-22-invio-ad-inventario-a-vulcan.md`](doc
 - [x] T2 coda `vulcan_coda` nel DB del cliente (segno `vulcan_coda_v21`), misura sulla copia 70791 — migrazione sulla copia 7 ms, integrity ok; revisione completa: 1 medio corretto (inventario superato non torna in coda)
 - [x] T3 invio automatico AD Health a fine esecuzione (riusa `toHubExport`, il download resta) — l export AD va in coda a fine esecuzione solo col gettone; le 8 esecuzioni della copia passano lo schema dell hub
 - [x] T4 inventario a lista bianca (prova dei campi «Mai»), misura dei byte sulla copia 70791 — copia 70791: 351 oggetti, 226 KB, 19 KB gzip, 3 ms; sentinella sui campi «Mai» vista fallire su un costruttore sbagliato; revisione completa: approvato
-- [ ] T5 trasporto HTTPS gzip verso l'hub (TLS normale)
-- [ ] T6 giro: coda, ping, battito, audit JSONL
+- [x] T5 trasporto HTTPS gzip verso l'hub (TLS normale) — TLS verificato sempre (prove rosse togliendolo), gettone solo nell intestazione, risposta limitata a 64 KB
+- [x] T6 giro: coda, ping, battito, audit JSONL — giro entro 8 minuti, sospensione su gettone rifiutato salvata nel DB, audit senza dati personali; revisione completa: 1 importante corretto (invii doppi con hub lento)
 - [ ] T7 timer in `server.ts` (nessuna chiamata senza gettone)
 - [ ] T8 riquadro in «Cosa esce», «Invia ora», riga nella pagina AD
 - [ ] T9 collaudo contro DA-Vul-can di sviluppo (ping/battito/AD; inventario solo hub finto), documenti, rilascio spento, copie 70791 cancellate

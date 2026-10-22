@@ -4,6 +4,14 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-23 · LibreNMS nell'interfaccia (esclusione, candidati, aggiunta in blocco) e VLAN degli switch MikroTik via SSH
+
+### Aggiunto
+
+- **LibreNMS nell'interfaccia** (tavola `docs/proposte/2026-10-23-librenms-esclusione-e-blocco.html`, approvata da Riccardo il 23/10). Nella scheda di un oggetto che non è in LibreNMS, la riga «Dati da» dice lo stato dell'aggiunta automatica: in coda (SNMP verificato), rifiutato col motivo, escluso. Accanto c'è «Non aggiungere a LibreNMS» / «Togli l'esclusione» (solo admin); «Aggiungi a LibreNMS» resta, perché l'esclusione ferma solo il giro automatico. Nella pagina del modulo ci sono le liste «Con SNMP verificato» (con «Escludi») ed «Esclusi» (con «Togli»), e il riepilogo dell'ultimo giro conta i candidati aggiunti.
+- **Discovery: «Aggiungi a LibreNMS (N)» sugli host selezionati.** Usa la stessa rotta di una sola aggiunta, un oggetto alla volta, mai forzata. La finestra mostra l'esito riga per riga (aggiunto, già presente e aggiornato, rifiutato col motivo, senza SNMP) e ha «Ferma dopo questo». Prima si aggiungeva solo dal menu di ogni riga.
+- **VLAN degli switch MikroTik letti in SSH nella matrice** (punto 5 del giro, strada scelta da Riccardo il 23/10). RouterOS non dà le VLAN del bridge via SNMP: i sei CORE di 70151 ne mostravano 0. Uno switch MikroTik in SSH ora legge `/interface bridge vlan` e `/interface bridge port` (due comandi in sola lettura) e li scrive nelle tabelle VLAN della scheda degli switch: porte per nome tradotte negli ifIndex della tabella delle porte (letta in SNMP accanto all'SSH), PVID dalle porte del bridge, fonte «mikrotik». Vale con lo stesso interruttore, la stessa cadenza oraria e lo stesso lucchetto della lettura VLAN degli switch, nel giro, in «Interroga» e nel job degli apparati scelti (che ora offre la «VLAN» anche a questi switch). Prima la lettura delle VLAN di bridge c'era solo per i router, e gli switch MikroTik in SSH erano esclusi dalla lettura VLAN.
+
 ## [Non rilasciato] — 2026-10-23 · Switch e router con SSH e SNMP, LibreNMS su tutti gli oggetti SNMP, matrice VLAN leggibile
 
 ### Aggiunto

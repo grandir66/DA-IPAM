@@ -4,6 +4,7 @@
 import { cn } from "@/lib/utils";
 import { parseDbDate } from "@/lib/db-date";
 import type { FonteVicino, StatoSensore } from "@/lib/scheda/librenms-vista";
+import type { StatoAggiuntaLibrenms } from "@/lib/integrations/librenms-fonte";
 
 /** Ore in ora italiana: «10:15» oggi, «22/10 10:15» altrimenti. */
 export function oraBreve(iso: string | null | undefined): string {
@@ -37,6 +38,31 @@ export function EtichettaFonte({ fonte, ora }: { fonte: FonteVicino; ora?: strin
   return (
     <span className={cn("inline-block whitespace-nowrap rounded border px-1.5 text-[13px]", fonte === "librenms" && "border-[#00A7E7]", fonte === "entrambe" && "border-[3px] border-double")}>
       {testo}{ora ? ` ${soloOra(ora)}` : ""}
+    </span>
+  );
+}
+
+/**
+ * Stato dell'aggiunta automatica in LibreNMS di un oggetto che non c'è (tavola 2026-10-23, oggetti 1, 3, 4): escluso (scuro
+ * pieno, ✕), rifiutato (ambra a righe, ▲, col motivo), in coda (grigio chiaro, ◷) se l'SNMP è verificato; null = niente.
+ */
+export function statoAggiunta(a: StatoAggiuntaLibrenms | null | undefined): { tono: StatoSensore; segno: string; testo: string; nota: string } | null {
+  if (!a) return null;
+  if (a.escluso_il) return { tono: "oltre", segno: "✕", testo: "LibreNMS: escluso", nota: `dal ${oraBreve(a.escluso_il)} · il giro automatico non lo aggiunge` };
+  if (a.rifiuto && a.rifiuto.codice !== "senza_snmp") {
+    return { tono: "vicino", segno: "▲", testo: `LibreNMS: rifiutato ${oraBreve(a.rifiuto.il)}`, nota: `«${a.rifiuto.motivo}» · si riprova dopo 24 ore` };
+  }
+  if (a.snmp_verificato) return { tono: "nd", segno: "◷", testo: "LibreNMS: in coda", nota: "SNMP verificato · si aggiunge da solo al prossimo giro" };
+  return null;
+}
+
+export function PastigliaAggiunta({ a }: { a: StatoAggiuntaLibrenms | null | undefined }) {
+  const s = statoAggiunta(a);
+  if (!s) return null;
+  return (
+    <span className="inline-flex flex-wrap items-center gap-x-2 text-[13px] text-muted-foreground">
+      <span className={cn("inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-px font-semibold", PASTIGLIA[s.tono].classe)}><span aria-hidden>{s.segno}</span>{s.testo}</span>
+      <span className="max-w-[40rem] truncate" title={s.nota}>{s.nota}</span>
     </span>
   );
 }

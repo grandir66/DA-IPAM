@@ -18,6 +18,7 @@ import {
   intervalloDaFrequenza,
   leggiConfig,
   lettureValide,
+  interruttoreVlan,
   prossimaEsecuzione,
   valutaApparato,
   type StatoApparato,
@@ -119,6 +120,15 @@ test("hypervisor: solo le informazioni", () => {
 
 test("router MikroTik via SSH con ARP: tutte e tre (VLAN dalla scheda MikroTik)", () => {
   assert.deepEqual(lettureValide({ device_type: "router", vendor: "mikrotik", protocol: "ssh", usa_arp: true, vlan_switch: false }), ["info", "porte_mac", "vlan"]);
+});
+
+// 23/10 (punto 5 del giro switch): RouterOS non dà le VLAN via SNMP; uno switch MikroTik in SSH le legge dal bridge e le
+// scrive nella matrice degli switch, dietro l'interruttore degli switch.
+test("switch MikroTik via SSH: anche la VLAN, dietro switch_vlan", () => {
+  const t = { device_type: "switch", vendor: "mikrotik", protocol: "ssh", usa_arp: false, vlan_switch: false };
+  assert.deepEqual(lettureValide(t), ["info", "porte_mac", "vlan"]);
+  assert.equal(interruttoreVlan(t), "switch_vlan");
+  assert.equal(interruttoreVlan({ device_type: "router", vendor: "mikrotik", protocol: "ssh", usa_arp: true, vlan_switch: false }), "mikrotik_scheda");
 });
 
 test("router non MikroTik con ARP: informazioni e porte, niente VLAN", () => {

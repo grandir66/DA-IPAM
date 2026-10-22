@@ -3,12 +3,13 @@
  * sensori, gruppi per classe, porte con la fonte per riga, vicini con le due fonti, voce di LibreNMS nella riga «Dati da:».
  * Modulo puro (niente React, niente DB): le ore del DB sono UTC senza fuso.
  */
-import type { DatiLibrenmsHost } from "@/lib/integrations/librenms-fonte";
+import type { DatiLibrenmsHost, StatoAggiuntaLibrenms } from "@/lib/integrations/librenms-fonte";
 import { parseDbDate } from "@/lib/db-date";
 import { etichettaVelocita } from "./porte-da-guardare";
 
 /** La risposta di GET /api/hosts/[id]/librenms/dati più l'interruttore della lettura (spento = la scheda è come prima). */
-export type DatiLibrenmsScheda = DatiLibrenmsHost & { acceso: boolean };
+/** `aggiunta`: lo stato dell'aggiunta automatica (null senza schema di LibreNMS; assente nelle risposte di prima della v0.9.884). */
+export type DatiLibrenmsScheda = DatiLibrenmsHost & { acceso: boolean; aggiunta?: StatoAggiuntaLibrenms | null };
 type Abbinato = Extract<DatiLibrenmsScheda, { abbinato: true }>;
 
 /** I dati di LibreNMS da mostrare, o null: lettura spenta, oggetto non abbinato, apparato senza fotografia. */

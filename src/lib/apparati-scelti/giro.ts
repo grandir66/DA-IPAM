@@ -17,6 +17,8 @@ import {
 import {
   leggiApparatoArp,
   letturaSchedaMikrotik,
+  letturaVlanSwitchMikrotik,
+  vlanSwitchMikrotikDaLeggere,
   letturaVlanSwitch,
   vlanSwitchDaLeggere,
   type ContestoArp,
@@ -102,7 +104,9 @@ async function leggiApparato(device: NetworkDevice, daLeggere: Lettura[], out: R
         // Senza la cadenza oraria (scelta esplicita di un admin), ma dietro l'interruttore: spenta resta spenta.
         const e = vlanSwitchDaLeggere(device)
           ? await letturaVlanSwitch(device, arp, { ignoraCadenza: true })
-          : await letturaSchedaMikrotik(device, arp, { ignoraCadenza: true });
+          : vlanSwitchMikrotikDaLeggere(device)
+            ? await letturaVlanSwitchMikrotik(device, arp, { ignoraCadenza: true })
+            : await letturaSchedaMikrotik(device, arp, { ignoraCadenza: true });
         out.vlan = daEsitoGiro(e);
       }
     } catch (err) {

@@ -33,8 +33,8 @@ export interface LetturaVlanSwitch {
   /** null = lo switch non dichiara gli untagged (o non sono credibili): la U si deduce dal PVID. */
   porte: Array<{ vlan_id: number; if_index: number; egress: boolean; untagged: boolean | null }>;
   pvid: Array<{ if_index: number; pvid: number }>;
-  /** «collector»: la fotografia viene dalle VLAN lette via SSH dal collector (Comware, 70151 22/10), non da Q-BRIDGE. */
-  tabella: "static" | "current" | "nessuna" | "collector";
+  /** «collector»: la fotografia viene dalle VLAN lette via SSH dal collector (Comware, 70151 22/10), non da Q-BRIDGE; «mikrotik»: da `/interface bridge vlan` via SSH (23/10). */
+  tabella: "static" | "current" | "nessuna" | "collector" | "mikrotik";
   mappa_porte: "base_port" | "ifindex";
   /** Come sono scritte le PortList: «standard» come la MIB, «inverso» come la ProMax. */
   ordine_bit: "standard" | "inverso";

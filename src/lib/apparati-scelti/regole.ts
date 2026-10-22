@@ -184,13 +184,14 @@ export function statoCredenziale(s: Pick<StatoApparato, "credenziali_memorizzate
 
 /**
  * Le letture che valgono per un tipo (decisione 9): informazioni per ogni apparato leggibile; porte e MAC per i
- * router con ARP e il ramo switch; VLAN per gli switch della lettura `switch_vlan` o i router MikroTik via SSH.
+ * router con ARP e il ramo switch; VLAN per gli switch della lettura `switch_vlan` e i MikroTik via SSH (router e, dal 23/10,
+ * switch: le VLAN del bridge via SSH nella matrice degli switch).
  */
 export function lettureValide(t: StatoApparato["tipo"]): Lettura[] {
   const out: Lettura[] = ["info"];
   // L'hypervisor no anche con ARP: il giro ARP lo salta, non si scriverebbe niente.
   if (t.device_type !== "hypervisor" && (t.usa_arp || t.device_type === "switch")) out.push("porte_mac");
-  if (t.vlan_switch || (t.device_type === "router" && t.vendor === "mikrotik" && t.protocol === "ssh")) out.push("vlan");
+  if (t.vlan_switch || ((t.device_type === "router" || t.device_type === "switch") && t.vendor === "mikrotik" && t.protocol === "ssh")) out.push("vlan");
   return out;
 }
 
@@ -201,7 +202,7 @@ export function lettureValide(t: StatoApparato["tipo"]): Lettura[] {
  */
 export function interruttoreVlan(t: StatoApparato["tipo"]): "switch_vlan" | "mikrotik_scheda" | null {
   if (!lettureValide(t).includes("vlan")) return null;
-  return t.vlan_switch ? "switch_vlan" : "mikrotik_scheda";
+  return t.vlan_switch || t.device_type === "switch" ? "switch_vlan" : "mikrotik_scheda";
 }
 
 // ── Esiti per apparato (decisione 11) ─────────────────────────────────────

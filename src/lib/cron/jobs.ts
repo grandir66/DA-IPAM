@@ -77,6 +77,7 @@ import {
   leggiVlanSwitchDb,
   scriviVlanSwitch,
   schemaSwitchVlanCorrente,
+  getSwitchPortsByDevice,
 } from "@/lib/db-tenant";
 import { HYPERVISOR_SYNC_MINUTES, unifiJobKind } from "@/lib/scheduled-job-types";
 // Statico: run-proxmox-device-scan importa il facade db, che risolve db-tenant (ADR 0002).
@@ -86,6 +87,7 @@ import { SshError } from "@/lib/devices/ssh-transport";
 import { conLucchettoApparato, entroTempoApparato, TEMPO_APPARATO_MS } from "@/lib/devices/lucchetto-apparato";
 import { apriEsecutoreSsh, codiceTrasporto, interpretaUscita, leggiMikrotikScheda, leggiMikrotikTopologia, type ApriEsecutore, type RisultatoMk } from "@/lib/devices/mikrotik-letture";
 import { parseBondScheda, parseBridgeScheda, parsePorteBridgeScheda } from "@/lib/devices/mikrotik-scheda";
+import { leggiVlanSwitchMikrotik } from "@/lib/devices/mikrotik-vlan-switch";
 import { parseInterfacce } from "@/lib/devices/mikrotik-stp";
 import { aggiornaInterfacceRouterOs } from "@/lib/devices/physical-device-db";
 import { fattiMikrotik } from "@/lib/devices/mikrotik-stp";
@@ -892,6 +894,35 @@ export async function letturaVlanSwitch(device: NetworkDevice, options?: Pick<Ru
   }, options?.adesso, opzioni);
 }
 
+/** Uno switch MikroTik letto via SSH: le sue VLAN vengono dal bridge via SSH, non da Q-BRIDGE (punto 5 del giro del 22/10). */
+export function vlanSwitchMikrotikDaLeggere(device: NetworkDevice): boolean {
+  return device.device_type === "switch" && device.vendor === "mikrotik" && device.protocol === "ssh";
+}
+
+/**
+ * Le VLAN di uno switch MikroTik letto via SSH nella matrice degli switch (strada scelta da Riccardo il 23/10): RouterOS non
+ * le dà via SNMP (0 VLAN sui sei CORE di 70151). Stesso interruttore, lucchetto, cadenza e tabelle di `letturaVlanSwitch`;
+ * due comandi in sola lettura su una connessione SSH; le porte per nome diventano gli ifIndex di `switch_ports` (letti
+ * in SNMP accanto all'SSH). Solo «letto» scrive.
+ */
+export async function letturaVlanSwitchMikrotik(device: NetworkDevice, options?: Pick<RunArpPollOptions, "apriEsecutore" | "adesso">,
+  opzioni: { ignoraCadenza?: boolean } = {}): Promise<EsitoGiro<number>> {
+  return conCadenza("switch_vlan", device.id, async () => {
+    if (!schemaSwitchVlanCorrente()) {
+      throw Object.assign(new Error("Schema delle VLAN degli switch assente"), { code: "SCHEMA_SWITCH_VLAN" });
+    }
+    const porte = getSwitchPortsByDevice(device.id).map((p) => ({ port_index: p.port_index, port_name: p.port_name }));
+    const l = await (options?.apriEsecutore ?? apriEsecutoreSsh)(device, (esegui) => leggiVlanSwitchMikrotik(esegui, porte));
+    if (l.esito !== "letto") {
+      throw Object.assign(new Error(`VLAN dello switch MikroTik: esito ${l.esito}`), { code: l.codice ?? "NESSUNA_LETTURA" });
+    }
+    if (!scriviVlanSwitch(device.id, l, options?.adesso?.() ?? new Date())) {
+      throw Object.assign(new Error("Schema delle VLAN degli switch assente"), { code: "SCHEMA_SWITCH_VLAN" });
+    }
+    return { valore: l.vlan.length, conteggio: { comandi: l.letture, riusciti: l.riuscite, codice: l.codice } };
+  }, options?.adesso, opzioni);
+}
+
 /** Il giro ARP fra un apparato e l'altro: reti, IP da arricchire e resoconto (porte non lette, letture in più). */
 export interface ContestoArp {
   networks: ReturnType<typeof getNetworks>;
@@ -1204,6 +1235,10 @@ async function corpoApparatoArp(device: NetworkDevice, ctx: ContestoArp,
       // Letture in più (T2, spenta di default) per prime: una tabella MAC che fallisce non deve toglierle.
       if (device.vendor === "mikrotik" && device.protocol === "ssh") {
         esitiLetture.push(await letturaMikrotik(device, null, true, options));
+      }
+      // Le VLAN di uno switch MikroTik in SSH dal bridge (punto 5, 23/10): stesso interruttore e stesso `vlan: "no"` di sotto.
+      if (conVlan && letturaAccesa("switch_vlan") && vlanSwitchMikrotikDaLeggere(device)) {
+        esitiLetture.push(await letturaVlanSwitchMikrotik(device, options));
       }
       // SN6: solo per gli switch senza controller (la chiave dei vicini non ha la fonte: due lettori della stessa riga si
       // scambierebbero la fonte) e non letti come MikroTik via SSH (hanno le loro letture). Interruttore guardato per

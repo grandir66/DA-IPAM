@@ -4,7 +4,8 @@
 // Livello completo: spenta, il giro degli switch è quello di prima (nessuna walk nuova, stesse chiamate al client, stesse
 // sedici letture SNMP della topologia quando quella è accesa, nessuna riga, nessun esito, stesso resoconto); accesa, sette
 // walk in sola lettura solo sugli switch con SNMP (anche quelli del controller), non su router, AP, NAS, MikroTik letti via
-// SSH, switch senza SNMP; al più una volta l'ora per apparato, un lucchetto; 10 s per walk; tre esiti — «non so» e «non
+// SSH (dal 23/10 lo switch MikroTik in SSH legge le VLAN del bridge via SSH, non via SNMP), switch senza SNMP; al più una
+// volta l'ora per apparato, un lucchetto; 10 s per walk; tre esiti — «non so» e «non
 // riuscito» non scrivono mai (le righe di prima restano con la loro data). «Interroga»: senza la cadenza, mai da spenta.
 // Le letture vengono dalle uscite vere (anonime) dello switch a 48 porte dell'hub (fixture del Task 7).
 //
@@ -18,6 +19,7 @@ import { closeHubDb } from "@/lib/db-hub";
 import { encrypt } from "@/lib/crypto";
 import { deleteTenantDatabase, getTenantDb, leggiVlanSwitchDb, rileggiSchemaCavi, rileggiSchemaSwitchVlan, scriviVlanSwitch, withTenant } from "@/lib/db-tenant";
 import { letturaVlanSwitch, runArpPoll, vlanSwitchDaLeggere } from "@/lib/cron/jobs";
+import type { ApriEsecutore } from "@/lib/devices/mikrotik-letture";
 import type { RouterClient } from "@/lib/devices/router-client";
 import type { SwitchClient } from "@/lib/devices/switch-client";
 import { TEMPO_WALK_MS, type LettoreSnmp, type VoceSnmp } from "@/lib/devices/snmp-walk";
@@ -41,7 +43,8 @@ beforeEach(() => {
   // 5 switch SNMP; 6 switch del controller con SNMP (la ProMax dell'hub risponde via SNMP: si legge anche lui).
   ins.run(5, "SW-5", "192.0.2.5", "switch", "cisco", "snmp_v2", 0, "public");
   ins.run(6, "SW-6", "192.0.2.6", "switch", "ubiquiti", "snmp_v2", 0, "public");
-  // Niente per: un MikroTik letto via SSH (ha le sue letture), uno switch senza SNMP, un AP e un NAS con SNMP, un router con SNMP.
+  // Niente SNMP per: un MikroTik letto via SSH (le VLAN del bridge via SSH, 23/10), uno switch senza SNMP, un AP e un NAS con
+  // SNMP, un router con SNMP.
   ins.run(7, "SW-7", "192.0.2.7", "switch", "mikrotik", "ssh", 0, "public");
   ins.run(8, "SW-8", "192.0.2.8", "switch", "hp", "ssh", 0, null);
   ins.run(10, "AP-10", "192.0.2.10", "access_point", "hp", "snmp_v2", 0, "public");
@@ -52,6 +55,11 @@ beforeEach(() => {
   const voce = Number(db().prepare("INSERT INTO credentials (name, credential_type, encrypted_password) VALUES ('Community', 'snmp', ?)")
     .run(encrypt("public")).lastInsertRowid);
   db().prepare("INSERT INTO device_credential_bindings (device_id, credential_id, protocol_type, port, sort_order) VALUES (7, ?, 'snmp', 161, 0)").run(voce);
+  // Le porte del MikroTik (lette in SNMP accanto all'SSH): ifIndex per nome.
+  db().exec("DELETE FROM switch_ports");
+  for (const [i, n] of [[1, "ether1"], [2, "ether2"], [10, "sfp-sfpplus1"]] as const) {
+    db().prepare("INSERT INTO switch_ports (device_id, port_index, port_name, status) VALUES (7, ?, ?, 'up')").run(i, n);
+  }
   withTenant(T, () => { rileggiSchemaCavi(); rileggiSchemaSwitchVlan(); });
 });
 after(() => { deleteTenantDatabase(T); closeHubDb(); removeTestHubDb(); });
@@ -95,9 +103,16 @@ function clientSwitch(chiamate: string[]) {
 }
 const routerFinto = async (): Promise<RouterClient> => ({ async getArpTable() { return []; }, async testConnection() { return true; } });
 
+/** L'SSH del MikroTik (SW-7): `/interface bridge vlan` e `/interface bridge port` in forma `print terse` vera. */
+const sshMk: string[] = [];
+const apriSshFinto: ApriEsecutore = async (device, fn) => fn(async (cmd) => {
+  sshMk.push(`${device.id}:${cmd}`);
+  if (cmd.includes("bridge vlan")) return " 0   bridge=BR vlan-ids=10,20 tagged=BR,sfp-sfpplus1 untagged=ether1\n 1 D bridge=BR vlan-ids=1 tagged=BR untagged= current-tagged=BR current-untagged=ether2";
+  return " 0   interface=ether1 bridge=BR pvid=10\n 1   interface=ether2 bridge=BR pvid=1";
+});
 const ora = (s: string) => new Date(`2026-10-22T${s}Z`);
 const giro = (s: ReturnType<typeof spia>, quando: Date, chiamate: string[] = []) =>
-  withTenant(T, () => runArpPoll(null, { skipDhcpLeases: true, creaClientRouter: routerFinto, creaClientSwitch: clientSwitch(chiamate), creaWalkSnmp: s.crea, adesso: () => quando }));
+  withTenant(T, () => runArpPoll(null, { skipDhcpLeases: true, creaClientRouter: routerFinto, creaClientSwitch: clientSwitch(chiamate), creaWalkSnmp: s.crea, apriEsecutore: apriSshFinto, adesso: () => quando }));
 const accendi = (l: "switch_vlan" | "snmp" = "switch_vlan") => withTenant(T, () => scriviInterruttore(l, true, "admin"));
 const righe = (id: number): number[] =>
   TABELLE.map((t) => (db().prepare(`SELECT COUNT(*) AS n FROM ${t} WHERE device_id = ?`).get(id) as { n: number }).n);
@@ -146,8 +161,14 @@ test("accesa: solo gli switch con SNMP (anche del controller), sette walk ciascu
   const l = withTenant(T, () => leggiVlanSwitchDb(5)).lettura;
   assert.deepEqual([l?.letto_il, l?.tabella, l?.mappa_porte, l?.n_vlan], ["2026-10-22 08:00:00", "static", "base_port", 13]);
   assert.deepEqual(withTenant(T, () => leggiEsiti("switch_vlan"))["5"], { il: "2026-10-22 08:00:00", comandi: 7, riusciti: 7, codice: null });
-  assert.deepEqual(Object.keys(withTenant(T, () => leggiEsiti("switch_vlan"))).sort(), ["5", "6"]);
-  assert.match(r.phase ?? "", /letture in più: 2 lette$/);
+  assert.deepEqual(Object.keys(withTenant(T, () => leggiEsiti("switch_vlan"))).sort(), ["5", "6", "7"]);
+  assert.match(r.phase ?? "", /letture in più: 3 lette$/);
+  // Il MikroTik in SSH: due comandi SSH, nessuna walk; le VLAN del bridge per ifIndex, il bridge fuori, PVID dalle porte.
+  const mk = withTenant(T, () => leggiVlanSwitchDb(7));
+  assert.deepEqual([mk.lettura?.tabella, mk.lettura?.n_vlan, mk.lettura?.porte_senza_mappa], ["mikrotik", 3, 0]);
+  assert.deepEqual(mk.porte.map((x) => `${x.vlan_id}|${x.if_index}|${x.untagged ? "U" : "T"}`).sort(), ["1|2|U", "10|1|U", "10|10|T", "20|1|U", "20|10|T"].sort());
+  assert.deepEqual(mk.pvid.map((x) => [x.if_index, x.pvid]).sort(), [[1, 10], [2, 1]]);
+  assert.deepEqual(withTenant(T, () => leggiEsiti("switch_vlan"))["7"], { il: "2026-10-22 08:00:00", comandi: 2, riusciti: 2, codice: null });
 });
 
 test("cadenza: mezz'ora dopo saltata, un'ora dopo riletta (nuova data)", async () => {
@@ -156,7 +177,7 @@ test("cadenza: mezz'ora dopo saltata, un'ora dopo riletta (nuova data)", async (
   await giro(s, ora("08:00:00"));
   const r = await giro(s, ora("08:30:00"));
   assert.deepEqual(s.apparati, [5, 6]);
-  assert.match(r.phase ?? "", /2 saltate \(cadenza 2, lucchetto 0\)/);
+  assert.match(r.phase ?? "", /3 saltate \(cadenza 3, lucchetto 0\)/);
   await giro(s, ora("09:01:00"));
   assert.deepEqual(s.apparati, [5, 6, 5, 6]);
   assert.equal(lettaIl(5), "2026-10-22 09:01:00");
@@ -184,7 +205,7 @@ test("non so (tempo scaduto): una walk sola, nessuna scrittura, le righe di prim
   const e = withTenant(T, () => leggiEsiti("switch_vlan"))["5"];
   assert.deepEqual([e.il, e.codice], ["2026-10-22 09:01:00", "TEMPO_SCADUTO"]);
   assert.ok(chiamate.includes("5:getMacTable"), "la tabella MAC dello switch si legge lo stesso");
-  assert.match(r.phase ?? "", /1 lette, 1 non riuscita; codici: TEMPO_SCADUTO/);
+  assert.match(r.phase ?? "", /2 lette, 1 non riuscita; codici: TEMPO_SCADUTO/);
 });
 
 test("non riuscito (errore SNMP su ogni walk): nessuna scrittura, esito col codice", async () => {

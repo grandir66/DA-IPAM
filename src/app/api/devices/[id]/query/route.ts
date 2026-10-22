@@ -15,7 +15,7 @@ import { letturaAccesa, senzaCampiCavi } from "@/lib/topology/letture/interrutto
 import { resolveDeviceAcquisition } from "@/lib/devices/device-acquisition-resolve";
 import { getScanProgress } from "@/lib/scanner/discovery";
 import type { ScanProgress } from "@/types";
-import { letturaVlanSwitch, vlanSwitchDaLeggere } from "@/lib/cron/jobs";
+import { letturaVlanSwitch, letturaVlanSwitchMikrotik, vlanSwitchDaLeggere, vlanSwitchMikrotikDaLeggere } from "@/lib/cron/jobs";
 import { leggiInfoComputer, leggiProxmox, leggiStpSnmp, leggiStpSwitch, salvaInfoApparato, sondaInterfacce, tipoLetturaApparato } from "@/lib/devices/lettura-info";
 import { apparatoOccupato, avviaConLucchetto, MESSAGGIO_OCCUPATO } from "@/lib/devices/lucchetto-apparato";
 
@@ -330,9 +330,10 @@ async function runSwitchQuery(deviceId: number, device: Parameters<typeof create
   // switch), senza aspettare l'ora; lucchetto ed esito come nel giro. Interruttore guardato per primo. Un errore del DB
   // (interruttore, esito, scrittura) si dice nel progresso e non fa fallire tutto «Interroga» (revisione del Task 9).
   try {
-    if (letturaAccesa("switch_vlan") && vlanSwitchDaLeggere(device)) {
-      p.phase = "Acquisizione VLAN (SNMP)...";
-      const v = await letturaVlanSwitch(device, undefined, { ignoraCadenza: true });
+    if (letturaAccesa("switch_vlan") && (vlanSwitchDaLeggere(device) || vlanSwitchMikrotikDaLeggere(device))) {
+      const mk = vlanSwitchMikrotikDaLeggere(device);
+      p.phase = mk ? "Acquisizione VLAN (SSH)..." : "Acquisizione VLAN (SNMP)...";
+      const v = mk ? await letturaVlanSwitchMikrotik(device, undefined, { ignoraCadenza: true }) : await letturaVlanSwitch(device, undefined, { ignoraCadenza: true });
       if (v.stato === "letto") plog(p, `✓ VLAN: ${v.valore}`);
       else if (v.stato === "errore") plog(p, `— VLAN non lette: ${v.esito.codice ?? "errore"}`);
       else if (v.motivo === "lucchetto") plog(p, "— VLAN: lettura già in corso");

@@ -4,6 +4,8 @@
  * «Apparati e lettura dei dati» nella pagina del modulo LibreNMS (piano 2026-10-22 LibreNMS, task 8, tavola L5): la lettura
  * per parte, gli apparati mai interrogati (senza pulsante per toglierli: spec §3.A), i rifiuti col motivo e i vicini da
  * aggiungere. Dati da GET /api/integrations/librenms/candidati; «Riprova» e «Aggiungi ora» (admin) sono il POST della stessa rotta.
+ * Dal 23/10 (tavola `docs/proposte/2026-10-23-librenms-esclusione-e-blocco.html`, oggetti 6-7) anche gli oggetti con l'SNMP
+ * verificato che il giro aggiungerà e gli esclusi a mano; «Escludi» e «Togli» sono la rotta dell'esclusione dell'host.
  */
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
@@ -18,7 +20,7 @@ import { ETICHETTA_PARTE, ORDINE_PARTI, motivoRifiuto, statoParte, visibili, typ
 
 interface Risposta extends CandidatiLibrenms {
   letture: Record<Parte, LetturaParte>;
-  ultimo_giro: { il?: unknown; ms?: unknown } | null;
+  ultimo_giro: { il?: unknown; ms?: unknown; candidati?: { provati?: unknown; aggiunti?: unknown; senza_esclusioni?: unknown } } | null;
   interruttore: { acceso: boolean; da: string | null; il: string | null };
 }
 
@@ -73,6 +75,15 @@ export function ApparatiLibrenmsCard({ isAdmin }: { isAdmin: boolean }) {
     void carica();
   }, [carica]);
 
+  async function esclusione(hostId: number, escludi: boolean) {
+    setOccupato(hostId);
+    const r = await fetchJson<unknown>(`/api/hosts/${hostId}/librenms/esclusione`, { method: escludi ? "POST" : "DELETE" });
+    setOccupato(null);
+    if (r.ok) toast.success(escludi ? "Escluso dall'aggiunta automatica" : "Esclusione tolta: torna in coda");
+    else toast.error(r.message);
+    await carica();
+  }
+
   async function aggiungi(hostId: number) {
     setOccupato(hostId);
     const r = await fetchJson<{ added: boolean }>("/api/integrations/librenms/candidati", {
@@ -95,6 +106,11 @@ export function ApparatiLibrenmsCard({ isAdmin }: { isAdmin: boolean }) {
   const mai = visibili(dati.non_interrogati, tutti.mai === true);
   const rif = visibili(dati.rifiutati, tutti.rif === true);
   const vic = visibili(dati.dai_vicini, tutti.vic === true);
+  const snmp = visibili(dati.snmp_verificati ?? [], tutti.snmp === true);
+  const escl = visibili(dati.esclusi ?? [], tutti.escl === true);
+  const cand = giro?.candidati;
+  const provati = typeof cand?.provati === "number" ? cand.provati : null;
+  const aggiunti = typeof cand?.aggiunti === "number" ? cand.aggiunti : null;
   const alterna = (k: string) => setTutti((t) => ({ ...t, [k]: !t[k] }));
 
   return (
@@ -110,7 +126,7 @@ export function ApparatiLibrenmsCard({ isAdmin }: { isAdmin: boolean }) {
       {!sw.acceso && <p className="rounded-md border border-[#E69F00] px-3 py-2 text-[13px] font-semibold"><span aria-hidden>▲ </span>La lettura è spenta: le schede degli oggetti non mostrano i dati di LibreNMS e le righe qui sotto possono essere vecchie.</p>}
 
       <div>
-        <h4 className="mb-1 text-sm font-semibold">Lettura per parte{il ? <span className="ml-2 font-normal text-[13px] text-muted-foreground">ultimo giro alle {oraBreve(il)}{ms !== null ? `, ${(ms / 1000).toFixed(1).replace(".", ",")} s` : ""}</span> : null}</h4>
+        <h4 className="mb-1 text-sm font-semibold">Lettura per parte{il ? <span className="ml-2 font-normal text-[13px] text-muted-foreground">ultimo giro alle {oraBreve(il)}{ms !== null ? `, ${(ms / 1000).toFixed(1).replace(".", ",")} s` : ""}{provati !== null && aggiunti !== null ? ` · candidati ${aggiunti} aggiunti su ${provati}` : ""}{cand?.senza_esclusioni === true ? " · oggetti SNMP non aggiunti: esclusioni non disponibili" : ""}</span> : null}</h4>
         <div className="overflow-x-auto">
           <table className="w-full text-[13px]">
             <thead className="border-b-2 bg-muted/40"><tr><th className={th}>Parte</th><th className={th}>Esito</th><th className={th}>Righe</th><th className={th}>Letta il</th><th className={th}>Tentata il</th></tr></thead>
@@ -199,6 +215,51 @@ export function ApparatiLibrenmsCard({ isAdmin }: { isAdmin: boolean }) {
             </div>
           )}
           <Altre n={vic.altre} tutte={tutti.vic === true} onToggle={() => alterna("vic")} />
+        </div>
+      </div>
+
+      <div className="grid gap-4 min-[1500px]:grid-cols-3">
+        <div className="min-w-0 rounded-md border p-3 min-[1500px]:col-span-2">
+          <h4 className="mb-2 text-sm font-semibold">Con SNMP verificato <span className="font-normal text-[13px] text-muted-foreground">{(dati.snmp_verificati ?? []).length} · si aggiungono da soli, 5 per giro</span></h4>
+          {snmp.mostrate.length === 0 ? <p className="text-[13px] text-muted-foreground">Nessuno.</p> : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-[13px]">
+                <thead className="border-b-2 bg-muted/40"><tr><th className={th}>Oggetto</th><th className={th}>Tipo</th><th className={th}>Stato</th>{isAdmin && <th className={th} />}</tr></thead>
+                <tbody>
+                  {snmp.mostrate.map((r) => (
+                    <tr key={r.ip} className="border-b">
+                      <td className={td}><NomeOggetto hostId={r.host_id} nome={r.nome} ip={r.ip} /></td>
+                      <td className={td}>{r.tipo === "apparato" ? "Apparato" : "Host"}</td>
+                      <td className={td}>{r.rifiutato_il ? <Pastiglia tono="att" segno="▲">rifiutato {oraBreve(r.rifiutato_il)}</Pastiglia> : <Pastiglia tono="nd" segno="◷">in coda</Pastiglia>}</td>
+                      {isAdmin && <td className={td}>{r.host_id ? <Button size="sm" variant="outline" disabled={occupato === r.host_id} onClick={() => void esclusione(r.host_id as number, true)}>{occupato === r.host_id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Escludi"}</Button> : null}</td>}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <Altre n={snmp.altre} tutte={tutti.snmp === true} onToggle={() => alterna("snmp")} />
+        </div>
+
+        <div className="min-w-0 rounded-md border p-3">
+          <h4 className="mb-2 text-sm font-semibold">Esclusi <span className="font-normal text-[13px] text-muted-foreground">{(dati.esclusi ?? []).length} · il giro non li aggiunge</span></h4>
+          {escl.mostrate.length === 0 ? <p className="text-[13px] text-muted-foreground">Nessuno.</p> : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-[13px]">
+                <thead className="border-b-2 bg-muted/40"><tr><th className={th}>Oggetto</th><th className={th}>Dal</th>{isAdmin && <th className={th} />}</tr></thead>
+                <tbody>
+                  {escl.mostrate.map((r) => (
+                    <tr key={r.ip} className="border-b">
+                      <td className={td}><NomeOggetto hostId={r.host_id} nome={r.nome} ip={r.ip} /></td>
+                      <td className={`${td} whitespace-nowrap`}>{oraBreve(r.il)}</td>
+                      {isAdmin && <td className={td}>{r.host_id ? <Button size="sm" variant="outline" disabled={occupato === r.host_id} onClick={() => void esclusione(r.host_id as number, false)}>{occupato === r.host_id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Togli"}</Button> : null}</td>}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <Altre n={escl.altre} tutte={tutti.escl === true} onToggle={() => alterna("escl")} />
         </div>
       </div>
     </section>

@@ -32,7 +32,7 @@ Leggilo per primo, poi [CLAUDE.md](CLAUDE.md) (stack e schema; su «multi-tenant
 
 ## 6. Stato e trappole per area (2026-10-22)
 
-- **Rami su origin**: `dev`, `main`, `tappa3b/nucleo` (non potare), `sonde-integrate-20261020` (già in `dev`, da togliere).
+- **Rami su origin**: `dev`, `main`, `tappa3b/nucleo` (non potare), `sonde-integrate-20261020` (da togliere).
 - **NetBird e DA-Link** (ADR 0011, 0013, 0014; `plans/2026-10-15-tappa-c1-netbird.md`). Blocco `edge` del segnale in `dev` (`lib/dalink/edge-segnale.ts`, `edge-sonda.ts`). **Trappole**:
   - configurazione = `/etc/dalink/oggetto.env` (assente = niente rete; permessi ≠ 600 = rifiutata); nodo `<codcli>-ipam`, poi `<codcli>-ipam-<n>` (2..99) per sede, stessa forma in `config.ts` e `prepara-netbird.sh`; livello in `dalink_livello_registro` (hub); a DA-Link solo `ok`|`degraded`|`fail`;
   - la tabella nft `inet dalink` sta sul **prerouting** e restringe soltanto: con UFW serve anche `ufw allow in on wt0`. La scrive `dalink-firewall.service` **solo se c'è `/etc/dalink/firewall.env`**, che scrive `scripts/dalink/prepara-netbird.sh`;
@@ -50,12 +50,13 @@ Leggilo per primo, poi [CLAUDE.md](CLAUDE.md) (stack e schema; su «multi-tenant
 - **Accesso** (ADR 0023): verifica in due passaggi per utente, la chiede l'admin; login locale tutto da `lib/accesso/accesso-locale.ts`; recupero `scripts/seconda-verifica.ts`; JWT 30 giorni.
 - **Scheda apparato per tipo** (`/objects/[id]`, piano `plans/2026-10-21-scheda-apparato-per-tipo.md`, v0.9.822-829): `tipoScheda()` in `lib/scheda/tipo-scheda.ts` è l'**unico** punto che decide il tipo (switch, router, firewall, storage, hypervisor, server_windows, server_linux, generico, host) e `tabDelTipo()` le tab; componenti in `components/scheda/tipi/<tipo>/`, registro tab → componente e innesto in `components/scheda/tab-scheda.tsx`; Panoramica generica per `generico` e `host`. **Trappole**: un blocco di `/objects` va nella tab del tipo, **non** in «Dettagli» (resta solo per `generico`); `device_type` dei server vecchi era `switch` (convertito, segno `device_type_v21`): il tipo si legge da `tipoScheda`, mai da `device_type`; il POST di `proxmox-match` scrive, la GET legge.
 - **Scheda MikroTik** (`components/scheda/tipi/router/mikrotik/`, `lib/devices/mikrotik-scheda.ts`, ADR 0027, v0.9.832-842): tabelle `mikrotik_*` (segno `scheda_mikrotik_v21` = `done:…:v3`); lettura `mikrotik_scheda` **spenta di default**. **Trappole**: la scheda legge `mikrotik_*`, la mappa `topology_*`; tab VLAN e Bridge solo con la lettura topologia accesa e ≥1 bridge; utenti del router e export solo admin; l'export si ripulisce sul server (`ripulisciExport`: script e scheduler contengono la password SFTP); l'alias dell'interfaccia è il commento RouterOS; risorse e hardware compaiono dopo «Aggiorna».
+- **Accorpamento IP e VLAN degli switch** (ADR 0029, 22/10, v0.9.849-858): `lib/devices/cluster-discovery.ts`, `apparato-del-cluster.ts`, `discovery/filtro-cluster.ts`, `lib/devices/snmp-vlan.ts`, tabelle `switch_vlan*` (segni `cluster_principale_v21`, `switch_vlan_v21`); lettura `switch_vlan` spenta di default (accesa sull'hub). **Trappole**: Discovery nasconde i secondari ma filtri, ricerca e CSV li includono; Q-BRIDGE: porte da Current non da Static, ProMax con ordine dei bit inverso e U dedotta dal PVID; sull'hub non c'è il job `arp_poll`, gli switch si leggono solo con «Aggiorna»/«Interroga».
 - **Interfaccia**: `useUrlPerBrowser()` per ogni link/iframe verso un servizio dell'appliance (mai l'URL nudo); `DropdownMenuLabel` senza `DropdownMenuGroup` fa cadere la pagina; `<Table fissa>`/`ScorrimentoTabella` per le liste lunghe; colori di stato in `--host-*`/`--alert-cat-*` e `stile-stato-modulo.ts`; l'ordine delle 19 colonne di Discovery è di Riccardo (le viste filtrano).
 - **Chocolatey automatico** (21/10): `lib/patch/choco-automatico.ts`, acceso di default (`patch.choco_automatico`); automatiche con `user_id = 0`.
 - **Zabbix in sola lettura**: `src/lib/zabbix-lettura/`, `/zabbix`. **Controller di rete** (ADR 0005, 0007): `unifi_sync` spento.
 - **DB dell'hub**: `systemctl stop` lascia `failed` (normale); niente `.recover` sul sqlite3 di Ubuntu; snapshot `pre-dalink-20261019` (VM 533) e `data/tenants/.db` di 0 byte: via solo con l'ok.
-- **Piano di miglioramento**: `specs/2026-10-12-piano-miglioramento-design.md`, ADR 0004.
-- **da-invent scarica male da internet** (21/10): se `update.sh` o `npm ci` si piantano sull'hub, può essere la rete (`DA-Vul-can/TASKS.md`).
+- **Piano di miglioramento**: `specs/2026-10-12-piano-miglioramento-design.md`.
+- **da-invent scarica male** (21/10): se `update.sh`/`npm ci` si piantano sull'hub, può essere la rete.
 
 ## 7. Trappola: `db-tenant` e le due istanze sotto `tsx` (2026-09-02)
 

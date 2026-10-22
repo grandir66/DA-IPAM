@@ -100,6 +100,8 @@ import { syncUnifiClientsForController } from "@/lib/integrations/unifi-clients-
 // Statici per la stessa ragione: mesh-sync e feature importano db-tenant.
 import { syncMeshForTenant } from "@/lib/integrations/meshcentral/mesh-sync";
 import { meshAttivo } from "@/lib/integrations/meshcentral/feature";
+// Statico (ADR 0002): il giro importa db-tenant. Ciclo con questo file voluto: giro.ts usa le letture di qui solo a giro avviato.
+import { motivoGiroApparati, runApparatiScelti, type OpzioniGiro } from "@/lib/apparati-scelti/giro";
 
 /** Job che lanciano giri di discovery: durano quanto il giro (fino a ~49 minuti misurati). */
 export const JOB_DI_SCANSIONE: ReadonlySet<string> = new Set(["ping_sweep", "fast_scan", "snmp_scan", "nmap_scan"]);
@@ -121,6 +123,8 @@ export interface OpzioniRunJob {
   attesaMassimaMs?: number;
   /** L'ora con cui il job dei client UniFi guarda la finestra 7-20 (le prove la fissano). */
   adesso?: Date;
+  /** Solo per le prove: le letture finte del job `apparati_scelti`. */
+  apparatiScelti?: OpzioniGiro;
 }
 
 /** Attesa massima predefinita: la soglia d'allarme del lucchetto, in ms. */
@@ -422,6 +426,13 @@ export async function runJob(jobId: number, opzioni?: OpzioniRunJob): Promise<Es
         esito: "eseguito",
         motivo: `${r.archiviati} host archiviati, ${r.cancellatiDallArchivio} cancellati dall'archivio${dettagli.length ? `; ${dettagli.join(", ")}` : ""}`,
       };
+    }
+    case "apparati_scelti": {
+      // Scansione automatica dei device scelti in Discovery (piano 2026-10-22, decisione 12): nessuno letto → si lancia,
+      // così lo scheduler lo conta fra i falliti e l'allarme lo vede; gli esiti per apparato sono già scritti.
+      const r = await runApparatiScelti(jobId, opzioni?.apparatiScelti);
+      if (r.letti === 0) throw new Error(`Nessun apparato letto: 0 su ${r.totale}`);
+      return { esito: "eseguito", motivo: motivoGiroApparati(r) };
     }
   }
   return ESEGUITO;

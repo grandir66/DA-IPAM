@@ -5,6 +5,7 @@ import { withTenant } from "@/lib/db-tenant";
 import { runJob, type OpzioniRunJob } from "./jobs";
 import { oraDelGiroGiornaliero } from "@/lib/scheduled-job-types";
 import { FUSO_UTENTI } from "@/lib/db-date";
+import { leggiConfig, oraDaTesto } from "@/lib/apparati-scelti/regole";
 import {
   createFailureState,
   findTenantOutages,
@@ -120,7 +121,7 @@ export function initializeScheduler(): void {
       const jobs = getEnabledJobs();
       for (const job of jobs) {
         const key = `${tenant.codice_cliente}:${job.id}`;
-        scheduleJob(key, job.id, job.interval_minutes, tenant.codice_cliente, job.job_type);
+        scheduleJob(key, job.id, job.interval_minutes, tenant.codice_cliente, job.job_type, oraDelJob(job));
         totalJobs++;
       }
       if (jobs.length > 0) {
@@ -163,6 +164,16 @@ export function intervalToCron(minutes: number, jobType?: string, ora?: { h: num
   return `${m} ${h} */${days} * *`;               // ogni N giorni
 }
 
+/**
+ * L'ora scelta del giornaliero di `apparati_scelti` (`config.ora`); undefined per gli altri tipi, per gli altri intervalli
+ * e per una config illeggibile (il giro lo dirà fallendo: «Config del job non valida»).
+ */
+export function oraDelJob(job: { job_type: string; interval_minutes: number; config: string | null }): { h: number; m: number } | undefined {
+  if (job.job_type !== "apparati_scelti" || job.interval_minutes < 1440) return undefined;
+  const ora = leggiConfig(job.config)?.ora;
+  return ora ? oraDaTesto(ora) : undefined;
+}
+
 export function scheduleJob(
   key: string,
   jobId: number,
@@ -170,11 +181,13 @@ export function scheduleJob(
   tenantCode: string,
   /** Il tipo del job: decide l'ora dei giornalieri (`intervalToCron`). */
   jobType?: string,
+  /** L'ora scelta del giornaliero (`apparati_scelti`, `oraDelJob`). */
+  ora?: { h: number; m: number },
 ): void {
   // Stop existing task if any
   stopJob(key);
 
-  const cronExpr = intervalToCron(intervalMinutes, jobType);
+  const cronExpr = intervalToCron(intervalMinutes, jobType, ora);
 
   // apparati_scelti (scansione automatica, revisione 22/10): l'ora scelta e le fasce di 4 ore sono italiane anche su
   // un server in UTC. Gli altri tipi restano sull'ora del server, come prima.
@@ -274,7 +287,7 @@ export function reloadTenantScheduler(tenantCode: string): void {
     const jobs = getEnabledJobs();
     for (const job of jobs) {
       const key = `${tenantCode}:${job.id}`;
-      scheduleJob(key, job.id, job.interval_minutes, tenantCode, job.job_type);
+      scheduleJob(key, job.id, job.interval_minutes, tenantCode, job.job_type, oraDelJob(job));
     }
     console.info(`[Scheduler] Tenant ${tenantCode}: ${jobs.length} job ricaricati`);
   });

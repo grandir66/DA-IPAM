@@ -19,7 +19,7 @@ import { buildPatchFromHost, buildPatchFromDevice, buildSyncMerge, buildSourceLa
 import fs from "fs";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { LetturaVlanSwitch } from "./devices/snmp-vlan";
-import { DDL_JOB_APPARATI_ESITI, INDICI_JOB_APPARATI_ESITI, SEGNO_APPARATI_SCELTI, VERSIONE_APPARATI_SCELTI, DDL_SWITCH_VLAN_NATIVA, SEGNO_SWITCH_VLAN_NATIVA, VERSIONE_SWITCH_VLAN_NATIVA, DDL_SWITCH_VLAN_V1, SEGNO_SWITCH_VLAN, VERSIONE_SWITCH_VLAN, COLONNA_CLUSTER_PRINCIPALE, INDICE_CLUSTER_PRINCIPALE, SEGNO_CLUSTER_PRINCIPALE, VERSIONE_CLUSTER_PRINCIPALE, COLONNE_SCHEDA_MK_V1, DDL_HOSTS_ARCHIVIO, DDL_SCHEDA_MK_V2, DDL_SCHEDA_MK_V3, DDL_TOPOLOGY_CAVI, DDL_TOPOLOGY_UNIONI, INDICI_HOSTS_ARCHIVIO, INDICI_TOPOLOGY_UNIONI, TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL, SEGNO_SCHEDA_MK, VERSIONE_SCHEDA_MK } from "./db-tenant-schema";
+import { DDL_VULCAN, INDICI_VULCAN, SEGNO_VULCAN, VERSIONE_VULCAN, DDL_JOB_APPARATI_ESITI, INDICI_JOB_APPARATI_ESITI, SEGNO_APPARATI_SCELTI, VERSIONE_APPARATI_SCELTI, DDL_SWITCH_VLAN_NATIVA, SEGNO_SWITCH_VLAN_NATIVA, VERSIONE_SWITCH_VLAN_NATIVA, DDL_SWITCH_VLAN_V1, SEGNO_SWITCH_VLAN, VERSIONE_SWITCH_VLAN, COLONNA_CLUSTER_PRINCIPALE, INDICE_CLUSTER_PRINCIPALE, SEGNO_CLUSTER_PRINCIPALE, VERSIONE_CLUSTER_PRINCIPALE, COLONNE_SCHEDA_MK_V1, DDL_HOSTS_ARCHIVIO, DDL_SCHEDA_MK_V2, DDL_SCHEDA_MK_V3, DDL_TOPOLOGY_CAVI, DDL_TOPOLOGY_UNIONI, INDICI_HOSTS_ARCHIVIO, INDICI_TOPOLOGY_UNIONI, TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL, SEGNO_SCHEDA_MK, VERSIONE_SCHEDA_MK } from "./db-tenant-schema";
 import { HYPERVISOR_SYNC_MINUTES, PULIZIA_HOST_MINUTES, SCHEDULED_JOB_TYPES_CHECK_SQL } from "./scheduled-job-types";
 import { isProxmoxVeDevice, resolveDeviceAcquisition } from "./devices/device-acquisition-resolve";
 import { networkDeviceUsesArpPoll } from "./network-device-arp";
@@ -1032,6 +1032,50 @@ export function migrateSwitchVlanNativa(db: Database.Database): string[] {
     }
   })();
   SCHEMA_SWITCH_VLAN_NATIVA.set(db, tabelleSchedaMkMancanti(db, DDL_SWITCH_VLAN_NATIVA).length === 0);
+  return added;
+}
+
+/** «La coda verso DA-Vul-can c'è, col suo indice», annotato all'apertura come le altre (niente query di schema a ogni accodamento). */
+const SCHEMA_VULCAN = new WeakMap<Database.Database, boolean>();
+
+function oggettiVulcanMancanti(d: Database.Database): Array<readonly [string, string]> {
+  const t = d.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?");
+  const i = d.prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?");
+  return [...DDL_VULCAN.filter(([n]) => !t.get(n)), ...INDICI_VULCAN.filter(([n]) => !i.get(n))];
+}
+
+/** Coda verso DA-Vul-can presente (annotato; si rimisura solo con la migrazione). Chi accoda lo chiede prima di scrivere. */
+export function schemaVulcanPresente(d: Database.Database): boolean {
+  const v = SCHEMA_VULCAN.get(d);
+  if (v !== undefined) return v;
+  const n = oggettiVulcanMancanti(d).length === 0;
+  SCHEMA_VULCAN.set(d, n);
+  return n;
+}
+
+/**
+ * Coda degli invii verso DA-Vul-can (piano 2026-10-22 invio AD e inventario, Task 2): le tabelle di DDL_VULCAN e
+ * l'indice di INDICI_VULCAN solo se mancano (sqlite_master: un oggetto omonimo di altro tipo fa fallire, non passa muto).
+ * Additiva, idempotente, in UNA transazione; restituisce i nomi di ciò che aggiunge, poi scrive il segno `done:<data>:v1`
+ * una volta sola (la migrazione non lo consulta).
+ */
+export function migrateVulcanCoda(db: Database.Database): string[] {
+  const added: string[] = [];
+  try {
+    db.transaction(() => {
+      for (const [n, ddl] of oggettiVulcanMancanti(db)) {
+        db.exec(ddl);
+        added.push(n);
+      }
+      const chiusa = `:v${VERSIONE_VULCAN}`;
+      const attuale = leggiSegno(db, SEGNO_VULCAN);
+      if (!(attuale?.startsWith("done:") && attuale.endsWith(chiusa))) {
+        scriviSegno(db, SEGNO_VULCAN, `done:${new Date().toISOString().slice(0, 10)}${chiusa}`);
+      }
+    })();
+  } finally {
+    SCHEMA_VULCAN.set(db, oggettiVulcanMancanti(db).length === 0);
+  }
   return added;
 }
 
@@ -2693,6 +2737,28 @@ export function getTenantDb(tenantCode: string): Database.Database {
       scriviSegno(newDb, SEGNO_SWITCH_VLAN_NATIVA, segnoErrore(e));
     } catch (e2) {
       console.error(`[db-tenant] ${tenantCode}: ${SEGNO_SWITCH_VLAN_NATIVA}, segno non scritto:`, e2);
+    }
+  }
+
+  // Coda verso DA-Vul-can (piano 2026-10-22 invio AD e inventario): due tabelle e un indice nuovi, solo se mancano. Se
+  // fallisce il tenant si apre lo stesso: schemaVulcanPresente() dice false e il flusso non accoda (lo dice, non scrive a vuoto).
+  try {
+    const added = migrateVulcanCoda(newDb);
+    if (added.length > 0) {
+      console.info(`[db-tenant] ${tenantCode}: coda vulcan, aggiunto ${added.join(", ")}`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione coda vulcan fallita (ROLLBACK), gli invii verso DA-Vul-can non si accodano:`, e);
+    try {
+      // Schema completo dopo il fallimento = un altro processo ha vinto la corsa: segno `done`, non un errore.
+      if (schemaVulcanPresente(newDb)) {
+        const attuale = leggiSegno(newDb, SEGNO_VULCAN);
+        if (!attuale?.startsWith("done:")) scriviSegno(newDb, SEGNO_VULCAN, `done:${new Date().toISOString().slice(0, 10)}:v${VERSIONE_VULCAN}`);
+      } else {
+        scriviSegno(newDb, SEGNO_VULCAN, segnoErrore(e));
+      }
+    } catch (e2) {
+      console.error(`[db-tenant] ${tenantCode}: ${SEGNO_VULCAN}, segno non scritto:`, e2);
     }
   }
 

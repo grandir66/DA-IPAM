@@ -144,6 +144,10 @@ export const EXCLUDED_TENANT_TABLES: string[] = [
   // Chiave di lettura del centro Zabbix: una per cliente E per istanza (design dell'API, §2). Un'altra
   // installazione riceve la sua dal kit di DA-Link; copiarla farebbe parlare due istanze con la stessa chiave.
   "zabbix_lettura_config",
+  // Coda degli invii verso DA-Vul-can (piano 2026-10-22): vale per questa istanza e il suo gettone. Copiata altrove,
+  // un'altra istanza rimanderebbe all'hub gli invii di questa, o resterebbe sospesa per un gettone che non ha.
+  "vulcan_coda",
+  "vulcan_stato",
 ];
 
 /** Tabelle hub install-level: identità/auth/setup, NON viaggiano col tenant. */

@@ -208,8 +208,16 @@ Push di Deploy-Appliance: chiedere a Riccardo (è ciò che scaricano i tecnici).
 **Verifica:** la prova di DA-IPAM vista fallire sullo script di oggi (retrocede) e passare dopo; `bash tests/<nuova>.sh`
 in Deploy-Appliance → exit 0; su 70151 `systemctl start da-ipam-update` con canale `dev` resta «Aggiornamento completato».
 **Commit:** «auto-update: rifiuta la retrocessione» (DA-IPAM) · «installatore: DA_INVENT_BRANCH dal ramo installato» (Deploy-Appliance).
+**Fatto (22/10 sera):** DA-IPAM `ffaf779a`: guardia in `scripts/lib/guardia-versione.sh` (versione letta con node: la sed
+sbagliava il JSON su una riga del banco), chiamata dopo il fetch e prima del checkout, esito `retrocessione_rifiutata` nella
+pagina Aggiornamenti; `auto-update-retrocessione.test.ts` 5/5 (viste fallire 5/5 senza guardia), `aggiornamento-automatico`
+e `aggiornamento-stato` verdi (il banco ora copia anche la guardia). Deploy-Appliance `e9a1fda` sul worktree
+`.worktrees/deploy-appliance-ramo` (da `origin/main`): `tests/test_ipam_ramo.sh` 10/10 (vista fallire: funzione assente),
+tutte le prove di `tests/` verdi, `shellcheck -S error` 0. Trovato: la strada di 70151 era l'**immagine** (`lib/immagine.sh`
+metteva DA-IPAM a un commit fisso staccato e scriveva `ipam_branch: main` a mano): ora il ramo è quello che contiene il
+commit. **Aperto:** push di Deploy-Appliance (da chiedere a Riccardo); la verifica su 70151 sta nel Task 7.
 
-### [ ] Task 9 — Errore SSH che dice la causa vera
+### [~] Task 9 — Errore SSH che dice la causa vera
 
 Incidente del 22/10 (70151): il router MikroTik chiudeva la connessione prima di presentarsi (servizio SSH limitato
 ad altri indirizzi) e la pagina diceva «handshake SSH fallito… algoritmi crittografici legacy»: in

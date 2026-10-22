@@ -7,12 +7,13 @@
  */
 import type { ReactNode } from "react";
 import { LoadError } from "@/components/shared/load-error";
-import { descriviBond, fonteLetturaScheda, matriceVlan, type CellaVlan, type MatriceVlan } from "@/lib/scheda/mikrotik";
+import { fonteLetturaScheda, matriceVlan, type MatriceVlan } from "@/lib/scheda/mikrotik";
 import type { RigaBridgeMk } from "@/lib/devices/mikrotik-scheda";
 import { Riquadro } from "../../../riquadro";
 import { RigaFonti, type Fonte } from "../../../riga-fonti";
 import type { ContestoScheda } from "../../../contesto";
-import { oraMk, StatoPorta } from "./bridge";
+import { TabellaMatriceVlan } from "../../../matrice-vlan";
+import { oraMk } from "./bridge";
 import { statoPortaMatrice, useInterfacceMikrotik, useSchedaMikrotik } from "./dati-mikrotik";
 
 const siNo = (v: boolean | null): string | null => (v === null ? null : v ? "sì" : "no");
@@ -30,72 +31,19 @@ function attributi(b: RigaBridgeMk, porte: number, vlan: number): { etichetta: s
   return v.filter(([, x]) => x !== null && x !== undefined && x !== "").map(([etichetta, valore]) => ({ etichetta, valore }));
 }
 
-/** U pieno scuro, T bordo spesso su chiaro: si distinguono dalla lettera e dalla luminanza, mai dal solo colore. */
-function Cella({ c }: { c: CellaVlan }) {
-  if (c === "U") return <span className="inline-flex h-[26px] w-[30px] items-center justify-center rounded border-2 border-[#0D2537] bg-[#0D2537] text-sm font-bold text-white dark:border-sky-100 dark:bg-sky-100 dark:text-[#0D2537]">U</span>;
-  if (c === "T") return <span className="inline-flex h-[26px] w-[30px] items-center justify-center rounded border-[3px] border-[#0D2537] bg-white text-sm font-bold text-[#0D2537] dark:border-sky-100 dark:bg-transparent dark:text-sky-100">T</span>;
-  return null;
-}
-
-const thFisso = "whitespace-nowrap px-3 py-1.5 text-left align-bottom text-[13px] font-semibold text-muted-foreground";
-
 function Matrice({ m, letturaScheda }: { m: MatriceVlan; letturaScheda: { acceso: boolean } }) {
   if (m.righe.length === 0 || m.colonne.length === 0) {
     return <p className="text-sm text-muted-foreground">Nessuna VLAN o porta configurata per questo bridge.</p>;
   }
   return (
-    <>
-      <div className="-mx-4 overflow-x-auto">
-        <table className="text-[13px]">
-          <thead className="border-b-2 bg-muted/40">
-            <tr>
-              <th rowSpan={2} className={thFisso}>Interfaccia</th>
-              <th rowSpan={2} className={thFisso}>Stato</th>
-              <th rowSpan={2} className={thFisso}>PVID</th>
-              {m.colonne.map((c) => (
-                <th key={c.etichetta} className="border-l px-1 pt-1.5 text-center align-bottom text-[13px] font-semibold">
-                  {/* Nome in verticale come nel Manager: la colonna resta larga quanto la cella U/T, e 12+ VLAN entrano a 1440. */}
-                  <span className="mx-auto block max-h-[8rem] overflow-hidden text-ellipsis whitespace-nowrap [writing-mode:vertical-rl] rotate-180" title={c.nome ?? undefined}>{c.nome ?? "·"}</span>
-                </th>
-              ))}
-            </tr>
-            <tr>
-              {m.colonne.map((c) => (
-                <th key={c.etichetta} className="border-l px-1 pb-1.5 text-center">
-                  <span className="inline-block rounded border border-[#B8C4CC] bg-muted px-1.5 font-mono text-[13px] font-semibold">{c.etichetta}</span>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {m.righe.map((r) => (
-              <tr key={r.porta} className={`border-b ${r.stato === "attiva" ? "" : "bg-muted/30"}`}>
-                <td className="whitespace-nowrap px-3 py-1">
-                  <span className="font-mono font-semibold">{r.porta}</span>
-                  {r.bond && <span className="ml-2 text-muted-foreground">· {descriviBond(r.bond)}</span>}
-                </td>
-                <td className="whitespace-nowrap px-3 py-1"><StatoPorta s={r.stato} /></td>
-                <td className="whitespace-nowrap px-3 py-1">
-                  {r.pvid != null ? <span className="rounded border border-[#B8C4CC] bg-muted px-1.5 font-mono font-semibold">P:{r.pvid}</span> : "—"}
-                </td>
-                {r.celle.map((c, k) => <td key={m.colonne[k].etichetta} className="h-[32px] border-l px-1 text-center"><Cella c={c} /></td>)}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <p className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-1 text-[13px] text-muted-foreground">
-        <span className="inline-flex items-center gap-1.5"><Cella c="U" /> untagged</span>
-        <span className="inline-flex items-center gap-1.5"><Cella c="T" /> tagged</span>
-        <span>✓ attiva · ● inattiva · ✕ disabilitata</span>
-        <span>U se la porta è negli untagged della VLAN o il suo PVID è quella VLAN; T se è nei tagged.</span>
-      </p>
-      {!m.completa && (
+    <TabellaMatriceVlan
+      m={m}
+      avviso={!m.completa && (
         <p className="mt-1 text-[13px] font-semibold text-foreground">
           Tagged: serve la lettura «VLAN, DNS e utenti dei MikroTik», {letturaScheda.acceso ? "mai letta" : "spenta"}. Qui solo le VLAN dei PVID.
         </p>
       )}
-    </>
+    />
   );
 }
 

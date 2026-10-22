@@ -115,6 +115,13 @@ export function estendiMikrotik(s: AcquisitionSnapshot, leggi: Lettore): void {
         }
         i.pvid ??= pbV.dati.find(p => p.porta === i.name)?.pvid ?? null;
     }
+    // Il motore dichiara «bandiere e velocità non interpretate» quando le interfacce vengono dal terse: se le bandiere sono lette
+    // sopra e il monitor è capito, l'avviso non è più vero (collaudo `192.168.15.254`, 22/10).
+    const NON_INTERPRETATE = "TERSE_FLAGS_AND_NEGOTIATED_SPEED_NOT_INTERPRETED";
+    if (s.interfaces.warnings.includes(NON_INTERPRETATE)) {
+        const resto = s.interfaces.warnings.filter(w => w !== NON_INTERPRETATE);
+        s.interfaces.warnings = ipV.capita && ethV.capita ? resto : ipV.capita ? [...resto, "NEGOTIATED_SPEED_NOT_INTERPRETED"] : s.interfaces.warnings;
+    }
     if (s.interfaces.data.length) {
         if (!ethV.capita) s.interfaces.warnings = [...s.interfaces.warnings, "ETHERNET_MONITOR_NOT_READ"];
         if (!pbV.capita) s.interfaces.warnings = [...s.interfaces.warnings, "BRIDGE_PORTS_NOT_READ"];
@@ -122,7 +129,11 @@ export function estendiMikrotik(s: AcquisitionSnapshot, leggi: Lettore): void {
 
     // PoE: la potenza viene solo da `poe-out-power` (la tensione non è mai potenza). Un modello senza PoE risponde con un errore: `unsupported`.
     const poe = r("/interface ethernet poe monitor [find] once"), poeV = voci(poe, parseMonitorPoe);
-    s.poe = sez(poeV.dati.map(p => ({ port: p.porta, enabled: p.acceso, status: p.stato, power_watts: p.potenza_watt })), statoLettura(poe, poeV.capita), [fonte("/interface ethernet poe monitor [find] once")], [...poe.warnings, ...ignoto(poe, poeV.capita)]);
+    // Un apparato senza PoE (router, CCR) non ha le righe `poe-out*`: l'uscita non ha il formato del PoE e non è un guasto. «Non presente»,
+    // non `FORMAT_UNRECOGNIZED_OR_EMPTY`.
+    const senzaPoe = poe.status === "ok" && !poeV.dati.some(p => p.acceso !== null || p.stato !== null || p.potenza_watt !== null) && !/poe-out/i.test(poe.data);
+    if (senzaPoe) s.poe = sez([], "unsupported", [fonte("/interface ethernet poe monitor [find] once")], ["POE_NOT_PRESENT"]);
+    else s.poe = sez(poeV.dati.map(p => ({ port: p.porta, enabled: p.acceso, status: p.stato, power_watts: p.potenza_watt })), statoLettura(poe, poeV.capita), [fonte("/interface ethernet poe monitor [find] once")], [...poe.warnings, ...ignoto(poe, poeV.capita)]);
 
     // FDB dal bridge host (gli indirizzi locali non entrano).
     const host = daLettura(r("/interface bridge host print terse without-paging"), t => { const v = parseMikrotikMacTable(t); return v.length || t.trim() === "" ? v : null; }, [], fonte("/interface bridge host print terse without-paging"), () => true);

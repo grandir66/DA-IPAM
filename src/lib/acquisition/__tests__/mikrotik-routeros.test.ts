@@ -97,3 +97,16 @@ test("il core dei collector non importa DB, route o client storici con DB", () =
         for (const i of importi) assert.ok(!/(^|\/)db(-tenant|-hub)?$|router-client|switch-client|api-tenant|next-auth/.test(i), `${f} importa ${i}`);
     }
 });
+
+test("router senza PoE (collaudo CCR): «non presente», non formato non riconosciuto; velocità e bandiere lette tolgono l'avviso «non interpretate»", async () => {
+    const t: AcquisitionTransports = {
+        get: async () => { throw Error("x"); }, walk: async () => { throw Error("x"); },
+        shell: async c => Object.fromEntries(c.map(x => [x, { status: "ok" as const, data: x === "/interface ethernet poe monitor [find] once" ? "     name: ether1 ether2\n" : (MIKROTIK_USCITE[x] ?? ""), warnings: [] }])),
+    };
+    const s = await collectDevice(FIXTURE["mikrotik-routeros"].richiesta, t);
+    assert.equal(s.poe.status, "unsupported");
+    assert.deepEqual(s.poe.warnings, ["POE_NOT_PRESENT"]);
+    assert.ok(!s.interfaces.warnings.includes("TERSE_FLAGS_AND_NEGOTIATED_SPEED_NOT_INTERPRETED"));
+    const e1 = s.interfaces.data.find(i => i.name === "ether1")!;
+    assert.deepEqual([e1.speed_bps, e1.duplex, e1.oper_status], [1e9, "full", "up"]);
+});

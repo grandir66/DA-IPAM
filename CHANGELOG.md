@@ -4,6 +4,19 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-22 · Vulnerabilità per host ed exploit noti
+
+### Aggiunto
+
+- **Vista «Per host» nella pagina Vulnerabilità** (Riccardo, 22/10). Oltre all'elenco per CVE si poteva vedere quali vulnerabilità ha un PC solo aprendo la sua scheda, una alla volta. Ora un selettore «Per vulnerabilità | Per host» (anche `?vista=host`) mostra una riga per host, o per IP senza match nell'inventario, con i conteggi per severità. Una CVE trovata su più porte dello stesso host conta una volta. La riga si apre su tutte le vulnerabilità dell'host, le sfruttate in cima (200 alla volta: un PC Windows con Wazuh ne ha 4.420 sul cliente A). La ricerca, in entrambe le viste, trova anche per IP e nome dell'host.
+- **Exploit noti per ogni vulnerabilità.** CVSS e severità non dicono se qualcuno sta già usando la falla. Tre feed pubblici, scaricati ogni mattina alle 06:00 (e all'avvio se mancano o hanno più di 26 ore): **CISA KEV** («Sfruttata», badge scuro pieno col triangolo; «R» se è usata dai ransomware), **Exploit-DB** («Exploit pubblico», badge chiaro bordato col quadrato) ed **EPSS** (probabilità di sfruttamento a 30 giorni). Badge distinti per luminanza e forma. Ci sono il filtro «Sfruttate / Con exploit pubblico», l'ordinamento per exploit, le colonne anche nella scheda dell'host, lo stato dei feed sotto i filtri e «Aggiorna ora» per gli admin. Sul cliente A (22/10): 94 vulnerabilità sfruttate su 13.588, su 25 host su 231.
+- **Levetta «Dati sugli exploit» in Opzioni**, accesa di default per decisione di Riccardo: è una sola lettura da fonti pubbliche, non tocca apparati né dati dei clienti.
+
+### Note
+
+- I feed stanno in `exploit-intel.db` nella cartella dati, non in `hub.db`. Sono ~17 MB pubblici e riscaricabili, e non devono finire nei backup dell'hub: cancellare il file non perde niente.
+- Una fonte che non risponde, o che manda un file vuoto o dimezzato, non cancella i dati del giorno prima. L'errore compare sotto i filtri e in Opzioni.
+
 ## [Non rilasciato] — 2026-10-22 · Comware: VLAN via SNMP e profilo giusto dal sysDescr
 
 ### Corretto

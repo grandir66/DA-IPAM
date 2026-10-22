@@ -2,10 +2,12 @@
 
 ## 2026-10-22 — Vulnerabilità per host ed exploit noti
 
-Riccardo (22/10): in `/vulnerabilities` l'elenco anche per host/IP, e per ogni vulnerabilità se esiste già un exploit. Piano: `docs/superpowers/plans/2026-10-22-vulnerabilita-per-host-ed-exploit.md` (mockup approvato, livello leggero proposto, in attesa del via sul piano).
+Riccardo (22/10): in `/vulnerabilities` l'elenco anche per host/IP, e per ogni vulnerabilità se esiste già un exploit. Piano: `docs/superpowers/plans/2026-10-22-vulnerabilita-per-host-ed-exploit.md` (mockup approvato, livello leggero, via di Riccardo il 22/10: eseguito in questa sessione).
 
 - [x] Riccardo: fonti CISA KEV + Exploit-DB + EPSS; selettore «Per vulnerabilità | Per host» nella stessa pagina; scaricamento giornaliero acceso di default
-- [ ] Passi 1-6 del piano
+- [x] Passi 1-5 del piano (archivio, job, viste, interfaccia, cancello verde): stati e verifiche nel piano
+- [ ] Passo 6: verifica su hub e cliente A che il feed scarichi davvero
+- [ ] Aperto: a 1280 px le ultime 2-3 colonne delle tabelle scorrono di lato (a 1920 ci stanno)
 
 ## 2026-10-22 sera — elenco degli aperti verificato su origin (18:30)
 

@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ShieldAlert, ChevronRight, ChevronDown } from "lucide-react";
 import { SEVERITY_STYLE } from "@/lib/severity-style";
-import { CveLink, SourcesBadges } from "@/components/shared/vuln-badges";
+import { CveLink, EpssCell, ExploitBadges, SourcesBadges, type ExploitUi } from "@/components/shared/vuln-badges";
 
 interface Finding {
   id: string | number;
@@ -20,6 +20,7 @@ interface Finding {
   nvt_name: string | null;
   scanned_at: string;
   sources?: string[];
+  exploit?: ExploitUi | null;
 }
 
 interface FindingGroup {
@@ -32,13 +33,19 @@ interface FindingGroup {
   sources: string[];
   latest_scanned_at: string;
   breakdown: { Critical: number; High: number; Medium: number; Low: number };
-  cves: Array<{ cve_id: string | null; severity: string; cvss_score: number | null; scanned_at: string }>;
+  cves: Array<{ cve_id: string | null; severity: string; cvss_score: number | null; scanned_at: string; exploit?: ExploitUi | null }>;
+}
+
+/** Il segnale più forte fra le CVE del gruppo: una sfruttata vince su un exploit pubblico. */
+function exploitDelGruppo(g: FindingGroup): ExploitUi | null {
+  return g.cves.find((c) => c.exploit?.kev)?.exploit ?? g.cves.find((c) => (c.exploit?.edb ?? 0) > 0)?.exploit ?? null;
 }
 
 interface VulnPayload {
   host_id: number;
   last_run: { id: number; started_at: string; finished_at: string | null; finding_count: number } | null;
   severity_rollup: { Critical: number; High: number; Medium: number; Low: number; Log: number };
+  exploit_errore?: string | null;
   groups: FindingGroup[];
   findings: Finding[];
 }
@@ -153,6 +160,9 @@ export function HostVulnerabilitiesCard({ hostId }: { hostId: number }) {
           </p>
         ) : (
           <>
+            {data.exploit_errore && (
+              <p className="mb-2 text-xs text-amber-800 dark:text-amber-300">Exploit: {data.exploit_errore}</p>
+            )}
             <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
               <div className="flex flex-wrap gap-2 text-xs">
                 {(["Critical", "High", "Medium", "Low"] as const).map((sev) => (
@@ -190,6 +200,7 @@ export function HostVulnerabilitiesCard({ hostId }: { hostId: number }) {
                       <th className="text-left py-1 pr-2">Pacchetto / NVT</th>
                       <th className="text-left py-1 pr-2">Top sev.</th>
                       <th className="text-left py-1 pr-2">CVE breakdown</th>
+                      <th className="text-left py-1 pr-2">Exploit</th>
                       <th className="text-left py-1 pr-2">Fonte</th>
                       <th className="text-left py-1">Ultimo</th>
                     </tr>
@@ -219,18 +230,21 @@ export function HostVulnerabilitiesCard({ hostId }: { hostId: number }) {
                               </Badge>
                             </td>
                             <td className="py-1 pr-2"><BreakdownBadges b={g.breakdown} /></td>
+                            <td className="py-1 pr-2"><ExploitBadges exploit={exploitDelGruppo(g)} compatto /></td>
                             <td className="py-1 pr-2"><SourcesBadges sources={g.sources} /></td>
                             <td className="py-1 text-xs text-muted-foreground">{formatDate(g.latest_scanned_at)}</td>
                           </tr>
                           {isExp && (
                             <tr key={`${g.key}-detail`} className="bg-muted/10">
-                              <td colSpan={6} className="py-2 px-4">
+                              <td colSpan={7} className="py-2 px-4">
                                 <table className="w-full text-xs">
                                   <thead className="text-muted-foreground">
                                     <tr>
                                       <th className="text-left py-0.5 pr-2">CVE</th>
                                       <th className="text-left py-0.5 pr-2">Severità</th>
                                       <th className="text-left py-0.5 pr-2">CVSS</th>
+                                      <th className="text-left py-0.5 pr-2">Exploit</th>
+                                      <th className="text-left py-0.5 pr-2">EPSS</th>
                                       <th className="text-left py-0.5">Scansionato</th>
                                     </tr>
                                   </thead>
@@ -242,6 +256,8 @@ export function HostVulnerabilitiesCard({ hostId }: { hostId: number }) {
                                           <Badge className={`text-[10px] px-1.5 py-0 ${SEVERITY_STYLE[c.severity] ?? ""}`}>{c.severity}</Badge>
                                         </td>
                                         <td className="py-0.5 pr-2 font-mono">{c.cvss_score?.toFixed(1) ?? "—"}</td>
+                                        <td className="py-0.5 pr-2"><ExploitBadges exploit={c.exploit} compatto /></td>
+                                        <td className="py-0.5 pr-2"><EpssCell epss={c.exploit?.epss} /></td>
                                         <td className="py-0.5 text-muted-foreground">{formatDate(c.scanned_at)}</td>
                                       </tr>
                                     ))}
@@ -266,6 +282,8 @@ export function HostVulnerabilitiesCard({ hostId }: { hostId: number }) {
                       <th className="text-left py-1 pr-2">CVSS</th>
                       <th className="text-left py-1 pr-2">Porta</th>
                       <th className="text-left py-1 pr-2">Pacchetto / NVT</th>
+                      <th className="text-left py-1 pr-2">Exploit</th>
+                      <th className="text-left py-1 pr-2">EPSS</th>
                       <th className="text-left py-1 pr-2">Fonte</th>
                       <th className="text-left py-1">Scansionato</th>
                     </tr>
@@ -278,6 +296,8 @@ export function HostVulnerabilitiesCard({ hostId }: { hostId: number }) {
                         <td className="py-1 pr-2 font-mono">{f.cvss_score?.toFixed(1) ?? "—"}</td>
                         <td className="py-1 pr-2 font-mono text-xs">{f.port ?? "—"}</td>
                         <td className="py-1 pr-2 truncate max-w-[28rem]" title={f.nvt_name ?? ""}>{f.nvt_name ?? "—"}</td>
+                        <td className="py-1 pr-2"><ExploitBadges exploit={f.exploit} compatto /></td>
+                        <td className="py-1 pr-2"><EpssCell epss={f.exploit?.epss} /></td>
                         <td className="py-1 pr-2"><SourcesBadges sources={f.sources} /></td>
                         <td className="py-1 text-xs text-muted-foreground">{formatDate(f.scanned_at)}</td>
                       </tr>

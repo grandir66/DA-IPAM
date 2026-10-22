@@ -9262,6 +9262,7 @@ export function getLatestOkSoftwareScanForDevice(
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { SEVERITY_RANK, maxSeverity, normalizeSeverity, type Severity } from "./severity-style";
+import { rangoExploit, type ExploitInfo } from "./vuln/exploit-feed/archivio";
 
 export type AggregatedVulnSourceLabel = string;
 
@@ -9290,7 +9291,15 @@ export interface AggregatedVuln {
   orphan_count: number;
   hosts_preview: AggregatedVulnHostRef[];
   latest_scanned_at: string;
+  /** Exploit noti (KEV, Exploit-DB, EPSS); null = nessuna fonte la cita, o chiave `nvt:`. */
+  exploit: ExploitInfo | null;
 }
+
+/** «kev» = sfruttata attivamente (CISA KEV), «edb» = exploit pubblico (Exploit-DB). */
+export type FiltroExploit = "kev" | "edb";
+
+/** Le informazioni sugli exploit per un elenco di CVE: la rotta passa l'archivio vero, le prove uno finto. */
+export type ExploitDi = (cves: string[]) => Map<string, ExploitInfo>;
 
 export type OsFamily = "Windows" | "Linux" | "Apple" | "Unknown";
 
@@ -9337,7 +9346,9 @@ export interface AggregatedVulnOpts {
   osFamilies?: OsFamily[];
   search?: string;
   hasCve?: boolean;
-  sortBy?: "severity" | "cvss" | "host_count" | "latest_scanned_at" | "cve_id";
+  exploit?: FiltroExploit[];
+  exploitDi?: ExploitDi;
+  sortBy?: "severity" | "cvss" | "host_count" | "latest_scanned_at" | "cve_id" | "exploit";
   sortDir?: "asc" | "desc";
 }
 
@@ -9409,23 +9420,27 @@ interface HostMeta {
   hostname: string | null;
   network_id: number | null;
   network_name: string | null;
+  os_family: string | null;
 }
 
 function loadHostsMeta(hostIds: number[]): Map<number, HostMeta> {
   const map = new Map<number, HostMeta>();
-  if (hostIds.length === 0) return map;
-  const placeholders = hostIds.map(() => "?").join(",");
-  const rows = db()
-    .prepare(
-      `SELECT h.id AS host_id, h.ip,
-              COALESCE(h.custom_name, h.hostname) AS hostname,
-              h.network_id, n.name AS network_name
-         FROM hosts h
-         LEFT JOIN networks n ON n.id = h.network_id
-        WHERE h.id IN (${placeholders})`
-    )
-    .all(...hostIds) as HostMeta[];
-  for (const r of rows) map.set(r.host_id, r);
+  // A blocchi: la vista per host e la ricerca per nome chiedono tutti gli host con vulnerabilità.
+  for (let i = 0; i < hostIds.length; i += 500) {
+    const parte = hostIds.slice(i, i + 500);
+    const placeholders = parte.map(() => "?").join(",");
+    const rows = db()
+      .prepare(
+        `SELECT h.id AS host_id, h.ip,
+                COALESCE(h.custom_name, h.hostname) AS hostname,
+                h.network_id, n.name AS network_name, h.os_family
+           FROM hosts h
+           LEFT JOIN networks n ON n.id = h.network_id
+          WHERE h.id IN (${placeholders})`
+      )
+      .all(...parte) as HostMeta[];
+    for (const r of rows) map.set(r.host_id, r);
+  }
   return map;
 }
 
@@ -9448,15 +9463,20 @@ interface RawVulnRow {
   package_label: string | null;
   host_id: number | null;
   ip: string;
+  port: string | null;
   scanned_at: string;
   source: string;
 }
 
-export function getAggregatedVulnerabilities(opts: AggregatedVulnOpts): AggregatedVulnResult {
+/**
+ * Le righe grezze di tutte le vulnerabilità del tenant (Edge + Wazuh), una per rilevamento:
+ * la fonte comune della vista per CVE e di quella per host (22/10).
+ */
+function leggiRigheVuln(osFamilies?: OsFamily[]): RawVulnRow[] {
   // Filtro OS via SQL nativo (indice idx_hosts_os_family). Se attivo: JOIN
   // su hosts.os_family. Quando non c'è filtro evitiamo la join (più veloce).
-  const osActive = !!(opts.osFamilies && opts.osFamilies.length > 0 && opts.osFamilies.length < OS_FAMILIES.length);
-  const osList = osActive ? opts.osFamilies! : [];
+  const osActive = !!(osFamilies && osFamilies.length > 0 && osFamilies.length < OS_FAMILIES.length);
+  const osList = osActive ? osFamilies! : [];
   const osPlaceholders = osList.map(() => "?").join(",");
   const edgeOsJoin = osActive ? `JOIN hosts h ON h.id = f.host_id AND h.os_family IN (${osPlaceholders})` : "";
   const wazuhOsJoin = osActive ? `JOIN hosts h ON h.id = a.host_id AND h.os_family IN (${osPlaceholders})` : "";
@@ -9471,6 +9491,7 @@ export function getAggregatedVulnerabilities(opts: AggregatedVulnOpts): Aggregat
       f.nvt_name AS package_label,
       f.host_id,
       f.ip,
+      f.port,
       f.scanned_at,
       'Edge' AS source
     FROM vuln_findings f
@@ -9488,6 +9509,7 @@ export function getAggregatedVulnerabilities(opts: AggregatedVulnOpts): Aggregat
            ELSE v.package_name || COALESCE(' ' || v.package_version, '') END AS package_label,
       a.host_id,
       COALESCE(a.ip, '') AS ip,
+      NULL AS port,
       COALESCE(v.detection_time, v.synced_at) AS scanned_at,
       'Wazuh' AS source
     FROM wazuh_vuln v
@@ -9498,7 +9520,36 @@ export function getAggregatedVulnerabilities(opts: AggregatedVulnOpts): Aggregat
   `;
 
   const params = osActive ? [...osList, ...osList] : [];
-  const rows = db().prepare(baseSql).all(...params) as RawVulnRow[];
+  return db().prepare(baseSql).all(...params) as RawVulnRow[];
+}
+
+/** Vero se l'exploit passa il filtro: basta una delle condizioni scelte. */
+function passaFiltroExploit(e: ExploitInfo | null, filtro: FiltroExploit[] | undefined): boolean {
+  if (!filtro?.length) return true;
+  if (!e) return false;
+  return filtro.some((f) => (f === "kev" ? e.kev : e.edb > 0));
+}
+
+/** Le chiavi `h:<id>`/`ip:<ip>` degli host il cui IP o nome contiene `q` (già in minuscolo). */
+function hostCheCorrispondono(rows: RawVulnRow[], q: string): Set<string> {
+  const ids = [...new Set(rows.map((r) => r.host_id).filter((x): x is number => x != null))];
+  const meta = loadHostsMeta(ids);
+  const out = new Set<string>();
+  for (const r of rows) {
+    const m = r.host_id != null ? meta.get(r.host_id) : undefined;
+    const ip = (m?.ip || r.ip || "").toLowerCase();
+    if (ip.includes(q) || (m?.hostname ?? "").toLowerCase().includes(q)) out.add(chiaveHostVuln(r));
+  }
+  return out;
+}
+
+/** La chiave dell'host nella vista per host: l'id se l'host è agganciato, altrimenti l'IP. */
+function chiaveHostVuln(r: { host_id: number | null; ip: string }): string {
+  return r.host_id != null ? `h:${r.host_id}` : `ip:${r.ip}`;
+}
+
+export function getAggregatedVulnerabilities(opts: AggregatedVulnOpts): AggregatedVulnResult {
+  const rows = leggiRigheVuln(opts.osFamilies);
 
   interface AggInternal extends AggregatedVuln {
     _hostKeys: Set<string>;
@@ -9526,6 +9577,7 @@ export function getAggregatedVulnerabilities(opts: AggregatedVulnOpts): Aggregat
         orphan_count: 0,
         hosts_preview: [],
         latest_scanned_at: r.scanned_at,
+        exploit: null,
         _hostKeys: new Set(),
         _hostIds: new Set(),
         _orphanCount: 0,
@@ -9568,6 +9620,10 @@ export function getAggregatedVulnerabilities(opts: AggregatedVulnOpts): Aggregat
     a.host_count = a._hostIds.size + a._orphanCount;
     a.orphan_count = a._orphanCount;
   }
+  if (opts.exploitDi) {
+    const info = opts.exploitDi([...map.values()].map((a) => a.cve_id).filter((c): c is string => !!c));
+    for (const a of map.values()) a.exploit = (a.cve_id && info.get(a.cve_id)) || null;
+  }
 
   let arr = [...map.values()];
   const severity_rollup = { Critical: 0, High: 0, Medium: 0, Low: 0 };
@@ -9585,13 +9641,18 @@ export function getAggregatedVulnerabilities(opts: AggregatedVulnOpts): Aggregat
   }
   if (opts.hasCve === true) arr = arr.filter((v) => v.cve_id !== null);
   else if (opts.hasCve === false) arr = arr.filter((v) => v.cve_id === null);
+  if (opts.exploit?.length) arr = arr.filter((v) => passaFiltroExploit(v.exploit, opts.exploit));
   if (opts.search) {
     const q = opts.search.toLowerCase();
+    // Anche per IP e nome dell'host (22/10): una vulnerabilità passa se uno dei suoi host corrisponde.
+    const hostOk = hostCheCorrispondono(rows, q);
+    const chiaviPerHost = new Set(rows.filter((r) => hostOk.has(chiaveHostVuln(r))).map((r) => r.key));
     arr = arr.filter(
       (v) =>
         v.cve_id?.toLowerCase().includes(q) ||
         v.package_label?.toLowerCase().includes(q) ||
-        v.nvt_oid?.toLowerCase().includes(q)
+        v.nvt_oid?.toLowerCase().includes(q) ||
+        chiaviPerHost.has(v.key)
     );
   }
 
@@ -9618,6 +9679,14 @@ export function getAggregatedVulnerabilities(opts: AggregatedVulnOpts): Aggregat
         cmp = sortDir === "asc"
           ? (a.cve_id ?? "zzz").localeCompare(b.cve_id ?? "zzz")
           : (b.cve_id ?? "zzz").localeCompare(a.cve_id ?? "zzz");
+        if (cmp !== 0) return cmp;
+        break;
+      case "exploit":
+        cmp = sortDir === "asc"
+          ? rangoExploit(a.exploit) - rangoExploit(b.exploit)
+          : rangoExploit(b.exploit) - rangoExploit(a.exploit);
+        if (cmp !== 0) return cmp;
+        cmp = compareSeverityRank(a.severity, b.severity);
         if (cmp !== 0) return cmp;
         break;
       case "severity":
@@ -9729,6 +9798,238 @@ export function getVulnHostsByKey(key: string, limit = 500): AggregatedVulnHostR
     });
   }
   return out;
+}
+
+// ── Vista per host (Riccardo, 22/10) ─────────────────────────────────────────
+// Le stesse righe della vista per CVE, raggruppate per host: una CVE trovata su più porte
+// dello stesso host conta una volta. Gli IP senza host agganciato restano, con chiave `ip:`.
+
+export interface VulnHostRow {
+  /** `h:<id>` o `ip:<ip>` (senza match nell'inventario). */
+  host_key: string;
+  host_id: number | null;
+  ip: string;
+  hostname: string | null;
+  network_name: string | null;
+  os_family: string | null;
+  top_severity: Severity;
+  counts: { Critical: number; High: number; Medium: number; Low: number };
+  vuln_count: number;
+  /** Vulnerabilità in CISA KEV (sfruttate attivamente). */
+  kev_count: number;
+  /** Vulnerabilità con almeno un exploit pubblico in Exploit-DB. */
+  edb_count: number;
+  epss_max: number | null;
+  sources: string[];
+  latest_scanned_at: string;
+}
+
+export interface VulnHostOpts {
+  page: number;
+  pageSize: number;
+  severity?: Severity[];
+  sources?: string[];
+  osFamilies?: OsFamily[];
+  search?: string;
+  hasCve?: boolean;
+  exploit?: FiltroExploit[];
+  exploitDi?: ExploitDi;
+  sortBy?: "severity" | "exploit" | "vuln_count" | "ip" | "latest_scanned_at";
+  sortDir?: "asc" | "desc";
+}
+
+export interface VulnHostResult {
+  data: VulnHostRow[];
+  total: number;
+  severity_rollup: { Critical: number; High: number; Medium: number; Low: number };
+}
+
+export interface VulnDiHost {
+  key: string;
+  cve_id: string | null;
+  nvt_oid: string | null;
+  severity: Severity;
+  cvss_score: number | null;
+  package_label: string | null;
+  /** Porte distinte dove è stata trovata (vuoto per Wazuh). */
+  ports: string[];
+  sources: string[];
+  scanned_at: string;
+  exploit: ExploitInfo | null;
+}
+
+/** Ordina gli IPv4 per numero (192.168.1.9 prima di 192.168.1.10); il resto per testo. */
+function confrontaIp(a: string, b: string): number {
+  const na = a.split(".").map(Number);
+  const nb = b.split(".").map(Number);
+  if (na.length === 4 && nb.length === 4 && na.every(Number.isFinite) && nb.every(Number.isFinite)) {
+    for (let i = 0; i < 4; i++) if (na[i] !== nb[i]) return na[i]! - nb[i]!;
+    return 0;
+  }
+  return a.localeCompare(b);
+}
+
+/** Una vulnerabilità per chiave, su un insieme di righe dello stesso host. */
+function vulnDistinte(rows: RawVulnRow[], info: Map<string, ExploitInfo>): VulnDiHost[] {
+  const per = new Map<string, VulnDiHost>();
+  for (const r of rows) {
+    const sev = normalizeSeverity(r.severity);
+    let v = per.get(r.key);
+    if (!v) {
+      v = {
+        key: r.key, cve_id: r.cve_id, nvt_oid: r.nvt_oid, severity: sev, cvss_score: r.cvss_score,
+        package_label: r.package_label, ports: [], sources: [], scanned_at: r.scanned_at,
+        exploit: (r.cve_id && info.get(r.cve_id)) || null,
+      };
+      per.set(r.key, v);
+    }
+    v.severity = maxSeverity(v.severity, sev) as Severity;
+    if (r.cvss_score != null && (v.cvss_score == null || r.cvss_score > v.cvss_score)) v.cvss_score = r.cvss_score;
+    if (!v.package_label && r.package_label) v.package_label = r.package_label;
+    if (r.port && !v.ports.includes(r.port)) v.ports.push(r.port);
+    if (!v.sources.includes(r.source)) v.sources.push(r.source);
+    if (r.scanned_at > v.scanned_at) v.scanned_at = r.scanned_at;
+  }
+  return [...per.values()];
+}
+
+function infoExploit(rows: RawVulnRow[], exploitDi: ExploitDi | undefined): Map<string, ExploitInfo> {
+  if (!exploitDi) return new Map();
+  return exploitDi([...new Set(rows.map((r) => r.cve_id).filter((c): c is string => !!c))]);
+}
+
+export function getVulnerabilitiesByHost(opts: VulnHostOpts): VulnHostResult {
+  const rows = leggiRigheVuln(opts.osFamilies);
+  const info = infoExploit(rows, opts.exploitDi);
+
+  // Il riepilogo in testa resta quello delle vulnerabilità distinte, come nella vista per CVE.
+  const severity_rollup = { Critical: 0, High: 0, Medium: 0, Low: 0 };
+  const sevPerChiave = new Map<string, Severity>();
+  for (const r of rows) {
+    if (!r.key) continue;
+    sevPerChiave.set(r.key, maxSeverity(sevPerChiave.get(r.key) ?? "Low", normalizeSeverity(r.severity)) as Severity);
+  }
+  for (const sev of sevPerChiave.values()) severity_rollup[sev] += 1;
+
+  const sevSet = opts.severity?.length ? new Set(opts.severity) : null;
+  const srcSet = opts.sources?.length ? new Set(opts.sources) : null;
+  const q = opts.search?.toLowerCase() ?? "";
+  const hostOk = q ? hostCheCorrispondono(rows, q) : null;
+
+  const filtrate = rows.filter((r) => {
+    if (!r.key) return false;
+    if (sevSet && !sevSet.has(normalizeSeverity(r.severity))) return false;
+    if (srcSet && !srcSet.has(r.source)) return false;
+    if (opts.hasCve === true && !r.cve_id) return false;
+    if (opts.hasCve === false && r.cve_id) return false;
+    if (!passaFiltroExploit((r.cve_id && info.get(r.cve_id)) || null, opts.exploit)) return false;
+    if (q) {
+      const suVuln =
+        r.cve_id?.toLowerCase().includes(q) ||
+        r.package_label?.toLowerCase().includes(q) ||
+        r.nvt_oid?.toLowerCase().includes(q);
+      if (!suVuln && !hostOk!.has(chiaveHostVuln(r))) return false;
+    }
+    return true;
+  });
+
+  const perHost = new Map<string, RawVulnRow[]>();
+  for (const r of filtrate) {
+    const k = chiaveHostVuln(r);
+    const l = perHost.get(k);
+    if (l) l.push(r);
+    else perHost.set(k, [r]);
+  }
+
+  const ids = [...new Set(filtrate.map((r) => r.host_id).filter((x): x is number => x != null))];
+  const meta = loadHostsMeta(ids);
+
+  let arr: VulnHostRow[] = [...perHost.entries()].map(([host_key, rs]) => {
+    const vulns = vulnDistinte(rs, info);
+    const counts = { Critical: 0, High: 0, Medium: 0, Low: 0 };
+    let top: Severity = "Low";
+    let kev = 0;
+    let edb = 0;
+    let epss: number | null = null;
+    for (const v of vulns) {
+      counts[v.severity] += 1;
+      top = maxSeverity(top, v.severity) as Severity;
+      if (v.exploit?.kev) kev += 1;
+      if ((v.exploit?.edb ?? 0) > 0) edb += 1;
+      if (v.exploit?.epss != null && (epss == null || v.exploit.epss > epss)) epss = v.exploit.epss;
+    }
+    const sources = [...new Set(rs.map((r) => r.source))];
+    const latest = rs.reduce((acc, r) => (r.scanned_at > acc ? r.scanned_at : acc), rs[0]!.scanned_at);
+    const hostId = rs[0]!.host_id;
+    const m = hostId != null ? meta.get(hostId) : undefined;
+    return {
+      host_key, host_id: hostId, ip: m?.ip || rs[0]!.ip, hostname: m?.hostname ?? null,
+      network_name: m?.network_name ?? null, os_family: m?.os_family ?? null,
+      top_severity: top, counts, vuln_count: vulns.length, kev_count: kev, edb_count: edb, epss_max: epss,
+      sources, latest_scanned_at: latest,
+    };
+  });
+
+  const sortBy = opts.sortBy ?? "severity";
+  const dir = opts.sortDir === "asc" ? -1 : 1;
+  const perGravita = (a: VulnHostRow, b: VulnHostRow) =>
+    compareSeverityRank(a.top_severity, b.top_severity) ||
+    b.counts.Critical - a.counts.Critical ||
+    b.counts.High - a.counts.High ||
+    b.counts.Medium - a.counts.Medium ||
+    b.counts.Low - a.counts.Low;
+  const perExploit = (a: VulnHostRow, b: VulnHostRow) =>
+    b.kev_count - a.kev_count || b.edb_count - a.edb_count || (b.epss_max ?? -1) - (a.epss_max ?? -1);
+  arr.sort((a, b) => {
+    let cmp = 0;
+    switch (sortBy) {
+      case "exploit":
+        cmp = dir * perExploit(a, b) || perGravita(a, b);
+        break;
+      case "vuln_count":
+        cmp = dir * (b.vuln_count - a.vuln_count) || perGravita(a, b);
+        break;
+      case "ip":
+        cmp = -dir * confrontaIp(a.ip, b.ip);
+        break;
+      case "latest_scanned_at":
+        cmp = dir * b.latest_scanned_at.localeCompare(a.latest_scanned_at);
+        break;
+      case "severity":
+      default:
+        cmp = dir * perGravita(a, b) || perExploit(a, b);
+        break;
+    }
+    return cmp || confrontaIp(a.ip, b.ip);
+  });
+
+  const total = arr.length;
+  const start = (opts.page - 1) * opts.pageSize;
+  arr = arr.slice(start, start + opts.pageSize);
+  return { data: arr, total, severity_rollup };
+}
+
+/**
+ * Tutte le vulnerabilità di un host (`h:<id>` o `ip:<ip>`), senza filtri: le sfruttate in
+ * cima, poi quelle con exploit pubblico, poi per gravità e CVSS. Null = chiave non valida.
+ */
+export function getVulnerabilitiesOfHost(hostKey: string, exploitDi?: ExploitDi): VulnDiHost[] | null {
+  let filtro: (r: RawVulnRow) => boolean;
+  if (/^h:\d+$/.test(hostKey)) {
+    const id = Number(hostKey.slice(2));
+    filtro = (r) => r.host_id === id;
+  } else if (hostKey.startsWith("ip:") && hostKey.length > 3) {
+    const ip = hostKey.slice(3);
+    filtro = (r) => r.host_id == null && r.ip === ip;
+  } else return null;
+  const rows = leggiRigheVuln().filter((r) => r.key && filtro(r));
+  return vulnDistinte(rows, infoExploit(rows, exploitDi)).sort(
+    (a, b) =>
+      rangoExploit(b.exploit) - rangoExploit(a.exploit) ||
+      compareSeverityRank(a.severity, b.severity) ||
+      (b.cvss_score ?? -1) - (a.cvss_score ?? -1) ||
+      a.key.localeCompare(b.key),
+  );
 }
 
 interface RawSoftwareRow {

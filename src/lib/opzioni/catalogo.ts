@@ -32,6 +32,8 @@ import { getMdmConfig, saveMdmConfig } from "@/lib/integrations/mdm-config";
 import { getWazuhConfig } from "@/lib/integrations/wazuh-config";
 import { getIntegrationConfig } from "@/lib/integrations/config";
 import { chocoAutomaticoAccesoDb, impostaChocoAutomaticoDb } from "@/lib/patch/choco-automatico";
+import { CHIAVE_FEED_EXPLOIT, feedExploitAcceso } from "@/lib/vuln/exploit-feed/job";
+import { archivioExploit, statoFeed } from "@/lib/vuln/exploit-feed/archivio";
 import { CHIAVE_MODO, impostazioniDa } from "@/lib/scanner/offline-guard";
 import { CHIAVE_SENZA_AGENTE, statoSenzaAgente } from "@/lib/integrations/meshcentral/senza-agente";
 import { getNotificationConfig, setNotificationConfig } from "@/lib/notifications/config";
@@ -576,6 +578,31 @@ function opzioniAutomatismi(): Opzione[] {
       },
       cambia(r) {
         impostaChocoAutomaticoDb(getTenantDb(tenant()), soloAcceso(r));
+      },
+    },
+    {
+      id: "automatismo.feed_exploit",
+      gruppo: "automatismi",
+      nome: "Dati sugli exploit",
+      cosa: "scarica ogni mattina alle 06:00 CISA KEV, Exploit-DB ed EPSS per la pagina Vulnerabilità",
+      valePer: "hub",
+      forma: "levetta",
+      diSerie: "acceso",
+      spegnendo: {
+        siFerma: "lo scaricamento giornaliero: la pagina Vulnerabilità mostra i dati sugli exploit dell'ultimo scaricamento, che invecchiano.",
+        resta: "i dati già scaricati e il pulsante «Aggiorna ora» nella pagina Vulnerabilità.",
+      },
+      leggi() {
+        if (!feedExploitAcceso()) return diSerieStato(false, esito("neutro", "spento"));
+        const stati = statoFeed(archivioExploit());
+        const guasto = stati.find((s) => s.errore);
+        if (guasto) return diSerieStato(true, esito("attenzione", guasto.errore ?? "errore"));
+        if (stati.some((s) => !s.scaricato_at)) return diSerieStato(true, esito("neutro", "non ancora scaricati"));
+        const piuVecchio = stati.map((s) => s.scaricato_at!).sort()[0];
+        return diSerieStato(true, esito("ok", `aggiornati ${oraItaliana(piuVecchio)}`));
+      },
+      cambia(r) {
+        setSetting(CHIAVE_FEED_EXPLOIT, soloAcceso(r) ? "1" : "0");
       },
     },
     {

@@ -146,6 +146,16 @@ app.prepare().then(() => {
       console.error("WARNING: giro notturno di Chocolatey non avviato:", error);
     });
 
+    // Dati sugli exploit per la pagina Vulnerabilità (22/10/2026): CISA KEV, Exploit-DB ed
+    // EPSS alle 06:00, e 90 s dopo l'avvio se mancano o hanno più di 26 ore. Acceso di
+    // default, levetta in Opzioni (automatismo.feed_exploit).
+    import("./src/lib/vuln/exploit-feed/job").then(({ avviaFeedExploit }) => {
+      avviaFeedExploit();
+      console.log("> Dati sugli exploit: scaricamento alle 06:00");
+    }).catch((error) => {
+      console.error("WARNING: scaricamento dei dati sugli exploit non avviato:", error);
+    });
+
     // Segnale di vita verso DA-Link (tappa C1 NetBird). Spento finché non esiste
     // /etc/dalink/oggetto.env, scritto dal comando d'installazione di DA-Link:
     // senza quel file nessun giro arriva alla rete.

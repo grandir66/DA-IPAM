@@ -226,7 +226,8 @@ export interface VoceFonte { nome: string; esito: "ok" | "assente" | "non_abbina
 export function voceLibrenms(dati: DatiLibrenmsScheda | null | undefined, vecchia: VoceFonte | null, ora: (iso: string) => string): VoceFonte | null {
   if (!dati) return vecchia;
   if (!dati.acceso) return vecchia && vecchia.esito === "ok" ? { nome: "LibreNMS", esito: "assente", nota: "lettura spenta" } : vecchia;
-  if (!dati.abbinato) return vecchia;
+  // Non in LibreNMS: la voce c'è su ogni tipo di scheda (tavola L4), anche dove la Panoramica non ne aveva una (hypervisor).
+  if (!dati.abbinato) return vecchia ?? { nome: "LibreNMS", esito: "non_abbinato" };
   if (dati.apparato === null) {
     const ultima = dati.porte[0]?.letto_il ?? dati.sensori[0]?.letto_il ?? dati.letture.apparati.letto_il;
     return { nome: "LibreNMS", esito: "assente", nota: ultima ? `non più in LibreNMS (ultima lettura ${ora(ultima)})` : "non più in LibreNMS" };

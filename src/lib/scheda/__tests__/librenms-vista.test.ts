@@ -120,6 +120,8 @@ describe("voceLibrenms", () => {
     const non = { nome: "LibreNMS", esito: "non_abbinato" as const };
     assert.equal(voceLibrenms({ ...dati(), acceso: false } as DatiLibrenmsScheda, non, ora), non);
     assert.equal(voceLibrenms({ acceso: true, abbinato: false, letture: LETTURE }, non, ora), non);
+    // 22/10: la scheda hypervisor non aveva una voce sua e LibreNMS spariva dalla riga (Riccardo, DA-PX-01).
+    assert.deepEqual(voceLibrenms({ acceso: true, abbinato: false, letture: LETTURE }, null, ora), non);
   });
   it("letto = ok con l'ora; mai interrogato; tolto da LibreNMS", () => {
     assert.deepEqual(voceLibrenms(dati(), null, ora), { nome: "LibreNMS", esito: "ok", quando: "10:15" });

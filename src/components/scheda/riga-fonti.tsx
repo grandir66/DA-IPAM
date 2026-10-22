@@ -1,3 +1,8 @@
+"use client";
+
+import { useState } from "react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { conLibrenms } from "@/lib/scheda/librenms-vista";
 import type { ContestoScheda } from "./contesto";
@@ -26,7 +31,40 @@ export function RigaFonti({ fonti }: { fonti: Fonte[] }) {
   );
 }
 
-/** La riga delle fonti della Panoramica con la voce di LibreNMS dalle tabelle `librenms_*` (L4), se la sua lettura è accesa. */
+/**
+ * La riga delle fonti della Panoramica con la voce di LibreNMS dalle tabelle `librenms_*` (L4), se la sua lettura è accesa.
+ * Oggetto non in LibreNMS: «Aggiungi a LibreNMS» accanto (solo admin), la stessa rotta della Discovery, senza `force_add`:
+ * un rifiuto dice il motivo di LibreNMS (22/10: sulla scheda degli hypervisor non c'era modo di aggiungerlo).
+ */
 export function RigaFontiScheda({ ctx, fonti }: { ctx: ContestoScheda; fonti: Fonte[] }) {
-  return <RigaFonti fonti={conLibrenms(fonti, ctx.librenmsDati, oraBreve)} />;
+  const [inCorso, setInCorso] = useState(false);
+  const d = ctx.librenmsDati;
+  const puoAggiungere = ctx.isAdmin && !!d?.acceso && !d.abbinato;
+  const aggiungi = async () => {
+    setInCorso(true);
+    try {
+      const r = await fetch("/api/integrations/librenms/host", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ host_id: ctx.hostId }),
+      });
+      const corpo = (await r.json().catch(() => ({}))) as { error?: string };
+      if (r.ok) toast.success("Aggiunto a LibreNMS: i suoi dati arrivano con la prossima lettura.");
+      else toast.error(`LibreNMS non l'ha aggiunto: ${corpo.error ?? `errore ${r.status}`}`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Errore di rete");
+    } finally {
+      setInCorso(false);
+    }
+  };
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+      <RigaFonti fonti={conLibrenms(fonti, d, oraBreve)} />
+      {puoAggiungere && (
+        <Button variant="outline" size="sm" disabled={inCorso} onClick={() => void aggiungi()}>
+          {inCorso ? "Aggiunta in corso…" : "Aggiungi a LibreNMS"}
+        </Button>
+      )}
+    </div>
+  );
 }

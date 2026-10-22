@@ -42,12 +42,15 @@ export function collectorPossibili(a: ApparatoDaRiconoscere): CollectorId[] {
   if (vendor === "vmware" || a.scan_target === "vmware" || profilo === "vmware_vsphere") {
     return /vcenter/i.test(testo) ? [] : ["vmware-esxi"];
   }
-  // Famiglie collaudate in locale (giro 4). `linux` e `windows` (non collaudati) e `unifi-controller` (console, non un apparato:
-  // si legge dalla CLI, nessuna regola chiara per agganciarlo al pulsante di un apparato) non entrano qui.
+  // Famiglie collaudate in locale. `unifi-controller` (console, non un apparato: si legge dalla CLI, nessuna regola chiara per
+  // agganciarlo al pulsante di un apparato) non entra qui. `proxmox-ve` neppure (giro 5, decisione 3): legge meno della scansione
+  // Proxmox di oggi (niente VM e CT), quindi il pulsante resta alla scansione storica finché non c'è la parità.
+  if (vendor === "windows") return ["windows"];
+  // Un host Linux che è un hypervisor Proxmox resta alla scansione Proxmox: qui sarebbe un server qualunque.
+  if (vendor === "linux") return a.device_type === "hypervisor" || a.scan_target === "proxmox" ? [] : ["linux"];
   if (vendor === "synology") return ["synology-dsm"];
   if (vendor === "mikrotik") return profilo === "mikrotik_other" || /\bSwOS\b/i.test(testo) ? [] : ["mikrotik-routeros"];
   if (vendor === "ubiquiti") return ["ubiquiti_access_point", "ubiquiti_switch_managed", "ubiquiti_switch_base"].includes(profilo) ? ["ubiquiti-device"] : [];
-  if (vendor === "proxmox") return profilo === "proxmox_pbs" ? [] : ["proxmox-ve"];
   if (/\bnetapp\b|\bontap\b/i.test(testo)) return ["netapp-ontap"];
   return [];
 }

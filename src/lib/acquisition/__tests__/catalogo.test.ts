@@ -60,5 +60,5 @@ test("le famiglie collaudate in locale dicono il vero: collaudato con modelli; l
         if (d.collaudo === "collaudato") assert.ok(d.collaudati.length > 0, `${d.id}: collaudato senza modelli`);
         else assert.equal(d.collaudati.length, 0, d.id);
     }
-    assert.deepEqual(CATALOGO.filter(d => d.collaudo === "non_collaudato").map(d => d.id).sort(), ["linux", "windows"]);
+    assert.equal(CATALOGO.filter(d => (d.collaudo as string) === "non_collaudato").length, 0, "dopo i collaudi del 22/10 ogni famiglia ha un apparato provato");
 });

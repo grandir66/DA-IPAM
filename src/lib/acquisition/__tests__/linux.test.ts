@@ -1,5 +1,5 @@
 /**
- * Collector `linux` (non collaudato): utente senza sudo, comandi assenti = non supportato, colonne per nome, byte e
+ * Collector `linux` (collaudato il 22/10): utente senza sudo, comandi assenti = non supportato, colonne per nome, byte e
  * inode come stringhe decimali, LVM in JSON, servizi systemd per nome.
  */
 import { test } from "node:test";
@@ -8,9 +8,9 @@ import { FIXTURE } from "./contratto-fixture";
 import { descrittore } from "../catalogo";
 import { byteLvm, parseLvmReport, parseSystemctlShow, parseTimedatectl } from "../linux-parsers";
 
-test("linux: non collaudato, nessun sudo nell'allowlist, solo letture", () => {
+test("linux: collaudato (Ubuntu 24.04), nessun sudo nell'allowlist, solo letture", () => {
     const d = descrittore("linux");
-    assert.equal(d.collaudo, "non_collaudato");
+    assert.equal(d.collaudo, "collaudato");
     for (const c of d.comandi ?? []) assert.ok(!/\bsudo\b|>|\brm\b|\bkill\b|systemctl (start|stop|restart|enable|disable)/.test(c), c);
 });
 
@@ -38,4 +38,22 @@ test("parser: LVM con e senza suffisso, report non JSON; systemctl e timedatectl
     assert.equal(parseLvmReport("  WARNING: Running as a non-root user.", "vg"), null);
     assert.equal(parseSystemctlShow("niente di riconoscibile"), null);
     assert.deepEqual(parseTimedatectl("NTP=no\n"), { timezone: null, enabled: false, synchronized: null });
+});
+
+test("linux: forma del collaudo `da-ftp` – timedatectl fallisce, dischi, pacchetti, servizi e interfacce restano letti", async () => {
+    const { collectDevice } = await import("../index");
+    const { LINUX_USCITE } = await import("./contratto-fixture");
+    const t = {
+        get: async () => { throw Error("nessuno SNMP"); }, walk: async () => { throw Error("nessuno SNMP"); },
+        // Come fa leggiLotto: l'errore di un comando è la sua lettura, gli altri comandi sono stati eseguiti.
+        shell: async (comandi: readonly string[]) => Object.fromEntries(comandi.map(c => [c, c.startsWith("timedatectl")
+            ? { status: "error" as const, data: "", warnings: ["SSH_COMMAND_FAILED"] }
+            : { status: "ok" as const, data: LINUX_USCITE[c] ?? "", warnings: [] }])),
+    };
+    const s = await collectDevice({ collector: "linux", host: "192.0.2.14", ssh: { username: "lab", password: "x" } }, t);
+    assert.ok(s.host_storage?.data.filesystems.length, "dischi");
+    assert.ok(s.software?.data.length, "pacchetti");
+    assert.ok(s.services?.data.length, "servizi");
+    assert.ok(s.interfaces.data.length, "interfacce");
+    assert.ok(s.system?.warnings.length, "la lettura mancante è dichiarata, non nascosta");
 });

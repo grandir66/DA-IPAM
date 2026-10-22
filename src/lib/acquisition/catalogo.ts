@@ -88,18 +88,18 @@ export const CATALOGO = [
         collaudo: "collaudato", collaudati: [{ modello: "MikroTik router (12 interfacce) e switch (7 interfacce)", firmware: "RouterOS 7, versione non registrata nel repo", nota: "SwOS e access point radio non collaudati; PoE, FDB e STP per porta non ancora provati" }],
     },
     {
-        // Non collaudato: script PowerShell fissi (allowlist WinRM), busta JSON dalla forma documentata dei cmdlet.
+        // Collaudato il 22/10 su Windows Server 2022 (script PowerShell fissi, allowlist WinRM); la sezione Hyper-V non è provata.
         id: "windows", versione: "0.1.0", famiglia: "server", prodotti: ["Microsoft Windows e Windows Server (WinRM), anche Hyper-V"],
         credenziali: { ammesse: ["winrm"], una_di: ["winrm"] },
         sezioni: ["identity", "system", "interfaces", "network", "resources", "host_storage", "software", "services", "security", "guests"], comandi: null, script_winrm: SCRIPT_WINDOWS,
-        collaudo: "non_collaudato", collaudati: [],
+        collaudo: "collaudato", collaudati: [{ modello: "Windows Server 2022 Standard", firmware: "build 20348", nota: "WinRM 5985; host senza ruolo Hyper-V: la sezione guests non è provata; CPU, NTP, ARP e duplex non letti (dichiarati)" }],
     },
     {
-        // Non collaudato: comandi dal repertorio DADude3 linux.py, uscite dalla documentazione (util-linux, LVM, systemd).
+        // Collaudato il 22/10 su Ubuntu 24.04 (comandi dal repertorio DADude3 linux.py; il lotto completo da ricollaudare dopo la correzione).
         id: "linux", versione: "0.1.0", famiglia: "server", prodotti: ["Linux (Debian, Ubuntu, RHEL e derivate; utente senza sudo)"],
         credenziali: { ammesse: ["ssh"], una_di: ["ssh"] },
         sezioni: ["identity", "system", "interfaces", "network", "resources", "host_storage", "software", "services"], comandi: LINUX_COMMANDS, ssh_modo: "exec",
-        collaudo: "non_collaudato", collaudati: [],
+        collaudo: "collaudato", collaudati: [{ modello: "Ubuntu 24.04.2 LTS (VM QEMU)", firmware: "kernel Ubuntu 24.04", nota: "identità, sistema e memoria letti sull'apparato; dischi, pacchetti, servizi e interfacce da ricollaudare dopo la correzione del lotto SSH (un comando fallito non ferma più gli altri)" }],
     },
     {
         // Base collaudata in locale (22/10): un Synology vero via SSH/SNMP. Dal giro 3: condivisioni e pacchetti, non ancora provati su un apparato.

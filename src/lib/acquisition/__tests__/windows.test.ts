@@ -1,5 +1,5 @@
 /**
- * Collector `windows` (non collaudato): script a id fisso nell'allowlist WinRM, mai `Win32_Product`, busta JSON letta per
+ * Collector `windows` (collaudato il 22/10): script a id fisso nell'allowlist WinRM, mai `Win32_Product`, busta JSON letta per
  * nome nelle tre forme di PowerShell 5.1, Hyper-V col GUID, Defender e firewall senza riassunti.
  */
 import { test } from "node:test";
@@ -11,9 +11,9 @@ import { leggiBusta, lista, parseHyperv, parseReteWindows } from "../windows-par
 import { createWinrmReader } from "../transports";
 import { acquisitionInputSchema } from "../schema";
 
-test("windows: non collaudato; gli script sono quelli del descrittore, solo letture, mai Win32_Product", () => {
+test("windows: collaudato (Server 2022); gli script sono quelli del descrittore, solo letture, mai Win32_Product", () => {
     const d = descrittore("windows");
-    assert.equal(d.collaudo, "non_collaudato");
+    assert.equal(d.collaudo, "collaudato");
     assert.equal(d.comandi, null);
     assert.deepEqual(d.script_winrm, SCRIPT_WINDOWS);
     for (const [id, script] of Object.entries(SCRIPT_WINDOWS)) {

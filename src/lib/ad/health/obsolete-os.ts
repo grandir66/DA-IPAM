@@ -54,3 +54,22 @@ export function isObsoleteOs(os: string | null, now: Date = new Date()): boolean
   }
   return false;
 }
+
+/**
+ * Per l'inventario verso DA-Vul-can (A-IPAM, Task 4), stessa tabella delle date:
+ * true = fuori supporto, false = riconosciuto e ancora supportato, null = non
+ * riconosciuto (Linux, RouterOS, stringa vuota…). Mai inventare: `isObsoleteOs`
+ * dice false anche per «non so», qui il «non so» resta null.
+ */
+export function statoSupportoOs(os: string | null, now: Date = new Date()): boolean | null {
+  if (os == null || os.trim() === "") return null;
+  const lower = os.toLowerCase();
+
+  const entry = OS_END_OF_SUPPORT.find((e) => lower.includes(e.match));
+  if (entry) return Date.parse(entry.eol) <= now.getTime();
+
+  if (lower.includes("ltsc") || lower.includes("ltsb")) {
+    return Date.parse(UNKNOWN_LTSC_EOL) <= now.getTime();
+  }
+  return null;
+}

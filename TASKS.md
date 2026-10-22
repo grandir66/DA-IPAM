@@ -220,9 +220,70 @@ Analisi del 20/10: canvas Cursor `progetti-fermi-DADude3-DA-MKNET-MKHA` (50 sche
 - [x] Scoperto: `DA-MKNET/backend/database.sqlite` è vuoto (0 byte): nei cloni non c'è storico da importare.
 - [x] Piano scritto: classificazione delle 50 schede, blocchi B1-B6, task con donatori e destinatari, prove, livelli di controllo, decisioni.
 - [x] Riccardo (21/10): niente in uso (DADude3, The Dude, QuTS hero, Docker, SCCM, DATIA: fuori); collaudi HP su una sede con Comware, ProCurve e ArubaOS, all'installazione di IPAM nei prossimi giorni. Piano aggiornato (§6).
-- [ ] Riccardo: approvare piano e livelli; rispondere a D1, D2, D4-D7, D9; dire se «ArubaOS» è ArubaOS-Switch o AOS-CX; dove collaudare MikroTik, QNAP, Hyper-V/Windows/Linux.
-- [ ] T1.1 (MAC virtuali) aspetta il commit della sessione delle tappe 3-5, che modifica `topology/identity.ts`.
-- [ ] Dopo l'ok: tavola grafica degli oggetti d'interfaccia (B2-B5) prima di scrivere schermate.
+- [x] Riccardo (21/10 sera): collector modulari come fonte nuova e principale, famiglie aggiunte nel tempo nello stesso JSON. Lette consegna, pacchetto (identico al codice nel `dev` locale), canvas del modello, ADR 0024-0026, manuale; 79 prove dei collector verdi (exit 0).
+- [x] Scoperto: i collector `hp-procurve`/`hp-comware` coprono già M1, M2, M3 ed E02; resta l'aggancio all'app (unico chiamante oggi: la CLI).
+- [x] Scoperto: `dev` locale (15 commit: collector e piano) e `origin/dev` (41 commit altrui) sono divergenti; la consegna vieta il push su `dev`.
+- [x] Scoperto: tre meccanismi di acquisizione convivono (client storici, `devices/acquisition/registry.ts`, `src/lib/acquisition/`); elenco dei collector ripetuto in tre punti; versione unica `1.0.0`; niente SNMPv3 né WinRM nei trasporti dei collector.
+- [x] Piano riscritto in v2 attorno ai collector: blocchi S, C0-C6, decisioni D1-D9 più la domanda su ArubaOS.
+- [x] Riccardo (21/10 sera): «accetto le tue proposte» → decisioni D1-D9 scritte nel §7 del piano.
+- [x] D1: collector pubblicati sul ramo `collector-modulari` (`6cca5a8a`); `origin/dev` non toccato.
+- [x] Riccardo: sviluppo nel cloud finché non serve unire in locale. Prompt nel repo: `docs/handoff/2026-10-21-prompt-cloud-collector-modulari.md` (il cloud non vede `~/.claude`).
+- [ ] Aperta: «ArubaOS» della sede nuova è ArubaOS-Switch o AOS-CX? Si vede al collaudo (`sysDescr`).
+- [ ] Sessione cloud su `collector-modulari`: merge di `origin/dev`, poi S1 → S2 → C0 → C1 → C2 → C3 (S3 dopo il commit delle tappe 3-5).
+- [ ] In locale (Riccardo): misure sul DB dell'hub, collaudo HP nella sede nuova, unione in `dev`.
+- [ ] S3 (MAC virtuali) aspetta il commit della sessione delle tappe 3-5, che modifica `topology/identity.ts`.
+- [x] Cloud (22/10), passo 0: i due donatori (`dadude-native`, `DA-MKNET`) sono leggibili come repository della sessione; nessuna password dei vecchi `OLDSCRIPT` copiata.
+- [x] Cloud, merge di `origin/dev` in `collector-modulari` (`d41537e9`): conflitti solo in CHANGELOG, CONTEXT e TASKS, tenute le sezioni di entrambi i rami; 79 prove del modulo e `tsc` verdi (exit 0).
+- [x] S1: l'export MikroTik solo admin **era già in `dev`** (sessione della scheda router, `9232b22d`: `mikrotik-guardia.ts`, contratto in `api-auth-guards`). Riletto come revisore: il 403 arrivava dopo la ricerca dell'apparato (un non admin poteva distinguere 404 da 403) e la lista degli admin era duplicata. Corretto (prova vista rossa, poi verde): guardia prima della ricerca, `eAdmin` unico.
+- [ ] S1, in locale: GET `?action=config` con un viewer → 403, con un admin → 200 su un router vero; `scripts/verifica-permessi.sh` (serve l'app accesa e il DB hub).
+- [ ] S1, nota: per un non admin `action=all` esegue comunque `getConfig` (l'export viene letto sul router e scartato). Non cambiato: serve `systemInfo` alla scheda; da separare in C3 (`mikrotik-routeros`).
+- [x] S2: firmware QNAP nel percorso storico. Prova vista rossa (3 casi su codice di oggi: firmware = uname, SSH nullo che cancella l'SNMP), poi `devices/nas/qnap-versione.ts` (`getsysinfo firmver`, `/etc/version`, build), `identitaNasDaShell` ed `unisciInfoSsh` estratti puri. `kernel` resta in `nas_inventory.ssh.kernel`.
+- [ ] S2, in locale: su un QNAP QTS vero leggere `getsysinfo firmver`, `/etc/version` e la build, e confrontare col firmware mostrato (formato `X.Y.Z build AAAAMMGG` ipotizzato dal donatore `qnap.py:193`, non visto su apparato).
+- [x] C0.1-2: `acquisition/catalogo.ts` è l'elenco unico (id, versione, descrittore con credenziali, sezioni, allowlist, modelli collaudati); enum dell'input, enum dello snapshot, `COLLECTORS` e allowlist dei trasporti ne derivano; `collector_version` ora per collector (semver). `comandi.ts` foglia con le tre allowlist. 85 prove del modulo verdi (79 + 6 nuove, una vista rossa).
+- [x] C0.3: sezioni opzionali `system`, `host_storage`, `software`, `services`, `security` (`sistema-schema.ts`); capacità e conteggi come stringhe decimali; snapshot 1.0 già prodotti restano validi; redazione che non tocca i conteggi.
+- [x] C0.4: trasporti. SNMPv3 (`input.snmp` con `version: "3"`) aperto solo da `apriSessioneSnmp`; opzioni incoerenti = errore prima della rete (`SNMP_V3_OPTIONS_INVALID`), chiavi v3 redatte. WinRM: `input.winrm` + `createWinrmReader` su `devices/winrm-run.ts`, solo script a id fisso del descrittore (`script_winrm`, vuoto finché non c'è il collector `windows`), solo codici d'errore, lotto fermato dopo errore di rete/auth. Nessun collector li usa ancora.
+- [ ] C0.4, in locale: SNMPv3 authPriv contro un apparato vero e WinRM contro un server di prova (nel cloud solo con moduli finti). Nota: `runWinrmCommand` ha un suo timeout di 120 s; lo scadere del totale non ferma il processo Python, ne smette di aspettare l'esito.
+- [x] C0.5: prova di contratto comune `__tests__/contratto.test.ts` + `contratto-fixture.ts` (una fixture per collector, `Record<CollectorId,…>`: la voce mancante rompe `tsc` e la suite): snapshot valido con versione del catalogo, formato ignoto mai `ok`, senza SSH nessuna shell e sezioni solo-SSH `skipped`, trasporto guasto = `error` senza segreti e senza secondo tentativo, credenziali di altro tipo respinte per i collector API. Viste rosse: redazione spenta (4 prove cadono), fixture tolta (suite e `tsc` cadono).
+- [x] C0.5, osservato (non cambiato): con uscite di formato ignoto `hp-procurve` e `hp-comware` danno `interfaces: error`, mentre `qnap-switch` dà `partial`; entrambi non sono `ok`, ma la regola del piano («partial») non è uniforme. Da decidere se allineare.
+- [x] C0.6: guida «Aggiungere una famiglia» in `docs/modules/acquisition.md` (file da creare, descrittore, fixture anonimizzate, prove, modelli/firmware collaudati, trasporti).
+- [x] C0.7: censimento di `devices/acquisition/registry.ts` in `docs/proposte/2026-10-22-censimento-registry-acquisizione.md`: nessun chiamante, `mikrotik.ts` mai caricato, codice morto di 282 righe; proposta di ritirarlo. **Nessun cambio**: aspetta la decisione di Riccardo.
+- [ ] Decisione di Riccardo: ritirare `src/lib/devices/acquisition/` (C0.7)? Allineare `interfaces` a `partial` sui formati ignoti HP?
+- [x] C1, solo proposta: tavola grafica `docs/proposte/2026-10-22-collector-interfaccia.html` (15 oggetti numerati, 5 stati distinti per segno e luminanza, resa verificata con Chromium a 1280 e 390 px, senza scroll orizzontale) e schema fisico `docs/proposte/2026-10-22-collector-snapshot-schema.md` (`acquisition_sources`, `acquisition_snapshots`, chiave `acquisizione_modulare.attiva`, rotte e prove previste). Nessuna rotta, tabella o schermata scritta.
+- [x] Riccardo (22/10): tavola C1 approvata con correzioni (piano §7): acquisizione normale con un altro formato, i dati popolano l'apparato (C1+C2 insieme, niente «Applica»), fonte automatica, 5 righe, «anteprima» finché C2 non è chiuso. Tavola pubblicata: https://claude.ai/artifact/RNgNG1UYmXfk1WfXFTSwZE
+- [x] Cancello di fine perimetro (22/10, cloud): `npm run lint` exit 0, `npx tsc --noEmit` exit 0, `npm run build` exit 0, prove del modulo 117/117. `npm test` exit 1 con 4956 pass e **1 fallita non nostra**: `db-facade-ratchet.test.ts` («db.ts definisce 265 funzioni, la soglia è 262»); `src/lib/db.ts` è identico a `origin/dev`, quindi la fallita arriva da `dev` (sessione MikroTik/scheda): serve alzare la soglia o spostare le funzioni in `db-tenant.ts`.
+- [ ] Da fare in locale (Riccardo): decisioni sulla tavola C1 e sul censimento C0.7; prova S1 con viewer/admin su un router; prova S2 su un QNAP QTS; SNMPv3 e WinRM veri; la fallita del ratchet `db.ts`; unione in `dev` e rilascio (qui non c'è stato `version:release`: lo bumpa chi unisce).
+- [x] Giro cloud 2 (22/10): C1 + C2 insieme. Merge di `origin/dev` (`ddaf7710`; conflitti in CONTEXT e `mikrotik-guardia.ts`, tenuti entrambi). `db-facade-ratchet` ancora rosso per funzioni di `dev` (265 contro 262): non nostro, le funzioni nuove stanno in `db-tenant.ts`.
+- [x] C1.3 schema (`987a6531`): `acquisition_snapshots`, `acquisition_source_choices` (solo la scelta del caso dubbio), `acquisition_changes`; CREATE idempotenti in `TENANT_SCHEMA_SQL`; retention D5; interruttore spento di default.
+- [x] C1.1-2 aggancio (`8c59c6ef`): il pulsante di sempre (`POST /api/devices/[id]/query`) legge col collector se l'interruttore è acceso e il prodotto ne ha uno; fonte ricavata, una credenziale per protocollo dai binding, un tentativo solo, lucchetto; spento = percorso di sempre (prova sul sorgente e sulle dipendenze).
+- [x] C2.1-2.5 proiezioni e applicazione (`e1bf0437`): `switch_ports` per campo, vicini e fatti con fonte `collector`, manuale che vince sull'host, una transazione, T1 identica (prova con controprova).
+- [x] Revisione indipendente del diff C1/C2: un bloccante (porte abbinate per indice prima del nome → dati sulla porta sbagliata) e due da correggere (snapshot rifiutato senza traccia; password di sole cifre trovata in `speed_bps`), corretti in `95c1e89e` con prove viste rosse.
+- [x] C1.4 rotte (`274a70ca`): riquadro (sessione), scelta della fonte (admin), scarico JSON (admin, in ATTESI), interruttore.
+- [x] C1.5 schermata (`7868442b`): riquadro in Gestione sotto «Credenziali», finestra del caso dubbio, interruttore in Impostazioni → Sistema; resa con dati finti a 1280 e 1920 (8 varianti, nessuno scroll orizzontale).
+- [x] Cancello di fine C2 (22/10, cloud): `npm run lint` exit 0 (0 errori), `npx tsc --noEmit` exit 0, `npm run build` exit 0, `npm test` exit 1 con 5167 pass e **1 fallita non nostra**: `db-facade-ratchet` («265 funzioni, soglia 262»; `src/lib/db.ts` identico a `origin/dev`). Al primo giro cadeva anche «I33 fuori dal giro» (guardia sul sorgente: le chiamate a `upsertNeighbors` devono dichiarare la fonte): aggiunto `collector` all'elenco delle fonti dichiarate della prova.
+- [ ] **Da provare in locale (Riccardo):** acceso l'interruttore, «Aggiorna» su un HP della sede nuova (ProCurve, Comware, e l'«ArubaOS»: se il sysDescr dice AOS-CX non c'è collector e resta l'acquisizione di sempre); guardare nel riquadro cosa è cambiato e controllare porte, vicini e firmware nella scheda. Poi spegnerlo e verificare che «Aggiorna» torni come prima.
+- [ ] **Da misurare in locale:** su una copia del DB dell'hub, applicare uno snapshot vero a uno switch già letto dal percorso di sempre e spiegare ogni riga di `acquisition_changes` (soprattutto porte «tolte» e «aggiunte»: i nomi SSH e SNMP delle porte possono differire).
+- [x] Riccardo (22/10): decisioni (a)-(f) di fine giro 2 come proposte (piano §7, «Fine giro 2»): (a) giri pianificati non riscrivono le colonne del collector, (c) `collector` prova di ruolo, (e) bulk-scan salta i dubbi, (b)(d)(f) nessun cambio.
+- [x] Ratchet `db.ts` rosso: già sistemato su `dev` da un'altra sessione (`df2e7dc3`), verde il 22/10.
+- [x] Giro cloud 3 (22/10): merge di `origin/dev` (`7b97fc1f`, conflitto solo in CONTEXT §6, tenute le voci di entrambi).
+- [x] (a) giri pianificati (`cba44003`): `cron/jobs.ts` passa da `scriviPorteDelGiro` (`acquisizione-modulare/giri.ts`). Acceso + collector + snapshot non in errore che ha scritto le porte: i campi che la proiezione scrive da quello snapshot (per porta) restano del collector, il giro scrive MAC per porta e il resto; le porte che solo il collector conosce restano. Spento, «classica», nessuno snapshot: `upsertSwitchPorts` come oggi. Prova vista rossa (il giro rimetteva «100/1000T» sopra «1000 Mbps»).
+- [ ] (a), nota: `POST /api/networks/bulk-scan-devices` (ARP dei router dalla pagina Reti) scrive ancora con `upsertSwitchPorts`: non è un giro pianificato, lasciato com'è. Da decidere se allinearlo.
+- [x] (c) `collector` in `leggeViciniDiRete` (`551c7da9`): prova vista rossa, topologia 916/916, T1 non lo legge.
+- [x] (e) scansione in blocco (`acfb6fb8`): i dubbi si saltano prima del test delle credenziali, vanno in `skipped_devices` e nel nuovo elenco `dubbi`, con una frase nel messaggio. Spento = nessun salto.
+- [x] C3 `qnap-nas` (`8d9e4c93`), con l'infrastruttura comune: `ssh_modo` nel descrittore (`console`/`exec`/`exec_per_comando`; Comware lo dichiara), uscita 127 = non supportato, `costruzione.ts`, `linux-parsers.ts`, sezione opzionale `shares`.
+- [x] C3 `mikrotik-routeros` (`6eb216fe`): riusa i parser della scheda MikroTik; PoE solo da `poe-out-power` (mutante «tensione come potenza» visto rosso), `vlan-ids` con intervalli, monitor per colonne, errori di RouterOS su stdout. `parseRouterOsDurationSeconds` spostata in `devices/routeros-durata.ts` (router-client la riesporta) perché il core dei collector non importi il DB: prova nuova sugli import.
+- [x] C3 `windows` (`64552015`): otto script PowerShell nell'allowlist WinRM, busta JSON, mai `Win32_Product`, Hyper-V col GUID (sezione opzionale `guests`), Defender/firewall senza riassunti. Prova di contratto generalizzata alle credenziali non SSH.
+- [x] C3 `linux` (`7e3c493e`) e `synology-nas` (`8f91c919`).
+- [x] Tutti e cinque **non collaudati** (versione `0.1.0`, `collaudo: non_collaudato`), fixture con la forma documentata e dati inventati, **non agganciati al riconoscimento del prodotto** (`riconosci.ts`): si usano dalla CLI. Motivo: le proiezioni scrivono `switch_ports` da `interfaces` per qualunque apparato; un NAS o un server non deve avere porte da switch. Da decidere prima dell'aggancio: proiezione delle porte solo per le famiglie switch/router.
+- [x] Cancello di fine giro 3 (22/10, cloud): `npm run lint` exit 0 (0 errori, 65 avvisi), `npx tsc --noEmit` exit 0, `npm test` exit 0 (5336 prove, 5333 pass, 0 fail, 2 saltate, 1 TODO), `npm run build` exit 0. Prove del modulo dei collector 176/176.
+- [ ] **Da provare in locale (Riccardo), collector nuovi dalla CLI** (`scripts/acquire-device.ts`, sola lettura), uno per famiglia:
+  - `qnap-nas` su un QNAP QTS (e uno QuTS hero se c'è): firmware e build, `smb.conf`/`qpkg.conf` nei percorsi attesi, `ip`/`df -i` di BusyBox;
+  - `mikrotik-routeros` su un CRS con PoE e su un CCR: monitor ethernet e PoE, tempi con molte interfacce, più canali exec sulla stessa connessione;
+  - `windows` su un Windows Server 2016/2019/2022 con Hyper-V e su un client: gli otto script su PowerShell 5.1, forma vera degli array, tempi;
+  - `linux` su un Debian/Ubuntu e su un RHEL: `systemctl show '*.service'`, LVM senza root;
+  - `synology-nas` su una DSM 7: quale forma di `synoshare` risponde, `smb.share.conf`, `/var/packages/*/INFO`.
+  Dopo il collaudo: modello e firmware in `collaudati`, `collaudo: "collaudato"`, versione `1.0.0`.
+- [ ] **Da provare in locale, (a) ed (e):** interruttore acceso, uno switch HP acquisito col collector, poi un giro ARP pianificato (o «Esegui ora»): velocità, duplex, VLAN e stato STP devono restare quelli del collector, i MAC per porta aggiornati. Spento: il giro torna a scrivere tutto. Scansione in blocco con uno switch HP senza indizi (due collector possibili): saltato ed elencato, gli altri acquisiti.
+- [ ] Etichetta «anteprima» nel titolo: si toglie a fine C2, dopo le prove in locale (Riccardo).
 
 ## 2026-10-21 — cose aperte dopo la notte del 20→21/10
 
@@ -252,3 +313,164 @@ Prompt: `~/.claude/prompts/da-ipam-sonde-e-aperti-2026-10-21.md`.
 - [x] 5f. DTS: segno `classificazioni_v21` done (29 host, 2 apparati), alla v0.9.819 alle 16:11, la 820 arriva col timer.
 - [x] 9. Export AD (`lib/ad/health/export.ts`), chiesto da DA-VULCAN: (a) `diagnostic: true` esplicito nel raw_json dei diagnostici; (b) DA-A-DomainScore con gravità e CVSS allineati. Collaudo sull'hub DA-Vul-can (21/10, esecuzione 9): (b) verificata, Critical/CVSS 10; (a) non visibile, perché l'esecuzione non ha diagnostici (la copre la prova). File di collaudo cancellato.
 - [ ] 10. Invio diretto AD + inventario all'hub DA-Vul-can: il contratto delle rotte `/api/ipam/*` arriva dopo l'approvazione del piano A2 di DA-Vul-can (Riccardo). Fino ad allora niente codice qui.
+
+## 2026-10-21 — Collector modulari QNAP
+
+Piano: docs/superpowers/plans/2026-10-21-collector-modulari-qnap.md
+
+- [x] Piano e controllo completo approvati; lettura regole e identificazione iniziale.
+- [x] Spec e piano registrati; esecuzione locale senza push/deploy.
+- [x] Contratto e parser con prove.
+- [x] Trasporti limitati, registry e collector QNAP QSS.
+- [x] CLI e adapter senza DB.
+- [x] Collaudo reale: identità/porte/VLAN/FDB/LLDP/STP/LAG/sensori; IP/ARP errori espliciti e PVID non osservato.
+- [x] 32 prove mirate/SNMP verdi, lint senza errori e typecheck/build verdi; manuale e ADR 0024.
+- [x] Difetti scoperti e corretti: timeout durante output lungo, STP ruolo/stato scambiati, errore IP escluso dal risultato globale, fonti SNMP attribuite senza credenziali.
+- [x] Commit locali selettivi e verifiche conclusi; nessun push/deploy.
+- [ ] Rinviato: aggancio persistente/UI in DA-IPAM, altri firmware, LLDP esteso, PoE, API e SNMPv3; non approvati in questa tappa.
+- [x] Trappola rilevata e gestita: SSH solo shell, SNMP per tabella; timeout di inattività + termine totale per output lungo.
+
+## 2026-10-21 — Collector HP ProCurve / ArubaOS-Switch
+
+Estensione richiesta da Riccardo, stesso contratto e perimetro locale della tappa QNAP.
+Piano: docs/superpowers/plans/2026-10-21-collector-procurve.md
+
+- [x] Lettura contesto e stato: working tree pulito; SNMP identifica Aruba 2540 JL357A.
+- [x] Campioni read-only acquisiti con operator: porte/VLAN/LLDP dettagliati, STP, LAG, PoE e ventole.
+- [x] Parser ProCurve e profilo console con regressioni QNAP; 46 prove verdi.
+- [x] Collector hp-procurve, registry e adapter comuni; risorse/ambiente opzionali compatibili con QNAP.
+- [x] Collaudo reale con 52 porte fisiche, 48 PoE, 24 VLAN e LLDP dettagliato; nessun segreto nell’output.
+- [x] 47 test, lint senza errori e typecheck/build verdi; documentazione aggiornata.
+- [x] Commit locali del 2540 e verifiche conclusi; nessun push/deploy.
+- [ ] Rinviato: singole istanze MST, sensori numerici temperatura/RPM e altri modelli/firmware, non collaudati.
+
+- [x] Difetto scoperto nel pager HP: “next line: Enter” incollato alla riga seguente perdeva una porta PoE e altre righe. Fix e prova vista rossa→verde; controllo dei conteggi per FDB/VLAN/LLDP.
+
+- [x] Secondo apparato identificato HP J9850A 5406R zl2; raccolta modulare riuscita con lo stesso collector.
+- [x] Modulare collaudato: 132 entità fisiche, 6 moduli osservati; interfacce/PoE predisposti senza modulo osservato marcati, non cancellati.
+
+## 2026-10-21 — Collector Comware
+
+Seguito richiesto da Riccardo dopo HP modulare: profilo separato, stesso JSON/CLI, sola lettura, niente push/deploy. Credenziali solo nel vault.
+
+- [x] Identificato IRF HPE 5700, Comware 7.1.045 Release 2432P06; campioni display acquisiti.
+- [x] Parser/collector hp-comware e profilo SSH exec; risorse per membro, 63 prove verdi (QNAP/HP/Comware/SNMP).
+- [x] Collaudo reale completato: 4 membri IRF, 29 VLAN, 94 LLDP, 42 LAG, 12 temperature, 8 ventole/8 PSU; snapshot parziale esplicito per timeout SNMP. Lint/typecheck/build verdi, manuale aggiornato.
+
+- [x] Difetto temperatura: nome «hotspot 1» contiene uno spazio; regressione vista rossa→verde.
+- [x] Diagnostica preliminare: timeout 8 s con canali aperti bloccava il batch; una lettura corretta, poi exec separati con chiusura e stop su trasporto guasto.
+- [ ] Rinviato: Comware 5/altri firmware, PoE abilitato, ottiche DOM/IPv6 e integrazione persistente; fuori dai casi collaudati.
+
+- [ ] Comware: completare ifTable/ifXTable/ENTITY con strategia SNMP misurata; a 15 s anche blocchi 50 restano parziali (dati preservati, 307 entità osservate). Nessun inventario completo dichiarato.
+
+- [x] Chiusura locale: 63 test, lint (0 errori/69 avvisi preesistenti), typecheck e build verdi; controllo segreti/permessi, compatibilità JSON QNAP/modulare e documentazione. Commit selettivo senza push/deploy.
+
+## 2026-10-21 — Collector VMware ESXi diretto
+
+Piano: `docs/superpowers/plans/2026-10-21-collector-vmware-esxi.md`; estensione richiesta da Riccardo, stesso perimetro locale senza push/deploy.
+
+- [x] Working tree pulito e regole lette; preflight API identifica HostAgent ESXi 8.0.3, impronta TLS e credenziali solo nel vault.
+- [x] Trasporto SOAP, contratto e collector con proprietà selezionate, CA/pin TLS, sessione singola e logout.
+- [x] 76 prove verdi; CLI reale: 18 VM/8 datastore confrontati con riferimenti host, 30 vNIC/32 dischi/4 snapshot, 4 pNIC/2 vSwitch/12 portgroup/2 VMkernel e 59 sensori.
+- [x] Lint (0 errori/69 avvisi preesistenti), typecheck e build verdi; manuale e contesto aggiornati, nessun push/deploy. Commit locali selettivi.
+
+- [x] Regressioni viste rosse→verdi: type/xsi:type confusi cancellavano i riferimenti VM/datastore; logout vuoto; route come array diretto, pNIC per key e nome rete guest distinto da MoRef.
+- [ ] Rinviato VMware: LLDP/CDP/ARP, ruoli VMkernel, policy vDS/vCenter/cluster, altri ESXi e aggancio UI/DB; questa tappa legge solo il singolo host.
+
+## 2026-10-21 — Collector NetApp ONTAP / MetroCluster
+
+Piano: `docs/superpowers/plans/2026-10-21-collector-netapp-ontap.md`; stesso perimetro locale dei collector, nessun push/deploy.
+
+- [x] Working tree pulito; preflight e login REST riusciti su ONTAP 9.16.1P11, credenziali e pin nel vault.
+- [x] Trasporto GET limitato e collector/schema storage/MetroCluster, stato per sottocollezione, byte esatti.
+- [x] 87 prove verdi e CLI reale: storage ok, nodi/DR distinti, 36 dischi locali e 36 remoti, nessun segreto nel JSON.
+- [x] Lint senza errori, typecheck/build verdi; manuale/ADR/consegna e contesto aggiornati, commit locali senza push/deploy.
+
+- [x] Richiesta successiva: analisi vCenter per costruire il modello. Prova locale riuscita con 13 host/431 VM/38 datastore/5 cluster/2 DVS/21 DV portgroup, snapshot nel vault/dossier privato.
+- [x] Consegna richiesta per l’agente DA-IPAM in `docs/handoff/2026-10-21-acquisizione-infrastruttura-da-ipam.md`; modello e criteri di correlazione, separazione da installazione/persistenza ancora da eseguire.
+- [x] Difetti scoperti: XML grande oltre limite entity parser; test rosso→verde con DTD sempre rifiutati. Proprietà derivate vCenter InvalidProperty: prototipo legge configurationEx e defaultPortConfig, selezione nel parser.
+- [x] Analisi privata: 8 correlazioni NFS univoche su 25, 17 non correlate; dati identificativi restano nel dossier clienti, vista aggregata separata.
+- [ ] Rinviato: profilo vCenter di prodotto, schema/anteprima/UI/importazioni dev, cluster ONTAP remoto diretto, mapping VMFS→LUN e rete fisica. Nessuna attivazione implicita.
+
+- [x] Pacchetto `~/Documents/DA-IPAM-collector-e-modello-20261021.tar.gz`: 35 file, manifest con hash/commit, codice/test/manuale/consegna; nessun inventario o credenziale. Verificati hash e contenuto. Vista aggregata Canvas con typecheck verde.
+
+## 2026-10-22 — giro 4 dei collector
+
+- [x] Trovati nel `dev` locale di Riccardo due commit non pubblicati (`6395bfa9`, `6bf94155`): profili collaudati `unifi-controller`, `synology-dsm`, `qnap-nas`, `mikrotik-routeros`, `ubiquiti-device`, `proxmox-ve`, su base di prima di C0. Pubblicati sul ramo `collector-locali`.
+- [x] Giro cloud 4 (leggero, cloud): merge di `dev` e `collector-locali`; un collector per famiglia sul catalogo unico; porte solo per switch/router; aggancio al riconoscimento; `bulk-scan-devices` allineato; manuale con stato di collaudo.
+  - `qnap-nas`, `mikrotik-routeros`, `synology-dsm`: base collaudata (motore d'inventario); dal giro 3 solo firmware QNAP vero, condivisioni e pacchetti NAS, velocità/PoE/FDB/STP/stato MikroTik, modello e seriale Synology da SSH. `synology-nas` e i due collector paralleli sono tolti. `ubiquiti-device`, `proxmox-ve`, `unifi-controller` nel catalogo (credenziale `unifi` solo per la CLI).
+  - Corretto nel motore collaudato: vicini e bond su un'uscita illeggibile erano `ok` con lista vuota, ora `partial` (la prova di contratto lo ha visto).
+  - **Da provare in locale, su apparati veri** (tutto ciò che è «dal giro 3» non è mai stato visto su un apparato): QNAP NAS (firmware da `getsysinfo firmver`/`/etc/version`, condivisioni, QPKG); Synology (condivisioni, `synoshare --enum` o `-enum`, pacchetti INFO, modello da `/proc/sys/kernel`); MikroTik su un router e su un CRS con PoE (monitor ethernet, PoE, `bridge host`, STP per porta, oper/admin dalle bandiere); Ubiquiti: SSH da correggere, finora solo SNMP; Proxmox con credenziale `ssh` dell'archivio (non `local_ssh`) con l'interruttore acceso; poi premere «Aggiorna» su un NAS e verificare che l'apparato non riceva porte da switch.
+  - **Decisioni aperte per Riccardo**: (1) `unifi-controller` NON è agganciato al pulsante: nessuna regola chiara (una console non è un apparato; serve una scheda o un'anagrafica «controller»). (2) `linux` e `windows` non sono agganciati perché non collaudati. (3) Proxmox con l'interruttore acceso e credenziale `ssh` sostituisce il Scan Proxmox storico (API :8006 + VM/CT): le VM non si importerebbero finché non si sceglie «classica» nella tavola della fonte; da decidere se il collector deve restare solo-hypervisor in sola lettura accanto allo scan. (4) VLAN MikroTik: il collaudato legge solo la membership corrente (`current-*`), il giro 3 ripiegava sulla configurata.
+
+## 2026-10-21 — Collector dedicati NAS e Proxmox (seguito multivendor)
+
+Livello Base, sola lettura e sviluppo locale; accessi NAS confermati da Riccardo, Proxmox da vault locale. Niente push/deploy o DB.
+
+- [x] Identificati tre NAS raggiungibili e target Proxmox documentato; accessi/campioni solo nel vault. Quarto NAS irraggiungibile al preflight, collaudo rimandato.
+- [x] Estratte letture/parser da nas-acquisition e Proxreporter/Proxmox, senza DB, cron o installazioni remote.
+- [x] Aggiunti profili Synology DSM, QNAP NAS e Proxmox VE nello stesso contratto/CLI; manuale e consegna aggiornati, copertura parziale dichiarata.
+- [x] 22/10: 123 prove verdi, lint 0 errori/69 avvisi storici, typecheck/build verdi; campioni reali e controllo segreti, commit locale selettivo.
+- [x] MikroTik RouterOS: profilo dedicato, router 12 e switch 7 interfacce, VLAN/bridge/ARP/rotte/vicini; campioni e credenziali solo nel vault.
+- [x] Ubiquiti diretto: profilo SNMP/SSH dedicato, AP con 13 interfacce SNMP; SSH rifiutata (auth_failed), tentativi fermati. Altro switch non acquisito per mancata risposta. Controller già collaudati; offline non equivale a rimosso.
+
+## 2026-10-22 — UniFi controller, prima tappa multivendor
+
+- [x] Collector `unifi-controller` integrato nel contratto/registry/CLI; riuso del client read-only e parser senza DB.
+- [x] 90 prove verdi, typecheck verde; CLI su entrambi i controller, 17 e 11 apparati, pin conservati negli input del vault e segreti assenti dai JSON.
+- [x] Lint (0 errori/69 avvisi preesistenti), typecheck, build e 24 regressioni del client UniFi verdi; commit selettivo locale, nessun push/deploy.
+- [x] Prima copertura parziale degli altri cinque profili completata il 22/10; radio/client ancora da estendere.
+
+## 2026-10-22 — Chiusura prima copertura multivendor
+
+- [x] Allowlist statiche, sessione SSH per batch e OpenSSH locale opt-in Proxmox; errori, dati parziali e comandi unsupported distinti.
+- [x] Regressione MikroTik capacità stringa→array corretta e verificata sul router reale; BigInt senza literal per target TS del progetto.
+- [ ] Accesso SSH Ubiquiti da correggere/confermare: autenticazione rifiutata, nessun ulteriore tentativo automatico.
+- [ ] NAS irraggiungibile da ricollaudare quando raggiungibile; vecchi NAS senza lsblk/ip JSON restano parziali, nessun tool installato.
+- [ ] Estensioni future: radio/client avanzati, PoE/FDB/STP operativo completi, API native NAS/Proxmox e dettaglio dischi VM; integrazione UI/DB ancora separata.
+- [x] Riccardo (22/10), fine giro 4: (1) controller UniFi = migliorare la sua sincronizzazione con più dati, non il pulsante; (2) collaudi Windows su 192.168.99.71, Linux su un nodo Proxmox o da-sftp; (3) Proxmox: prima il collector legge tutto (VM/CT) senza sostituire la scansione di oggi, intanto **fuori dal pulsante**; (4) VLAN MikroTik configurata e attiva, entrambe. Piano §7 «Fine giro 4».
+- [x] Collaudi dalla CLI (22/10, sessione locale, codice `collector-modulari` a `b13894ef`, file d'ingresso del vault `collectors/`; uscite 2 = parziale, come dichiarato):
+  - **QNAP .40.26** (SSH): modello TS-h765eU, **firmware 5.2.7 giusto** (non più il kernel), 17 QPKG, 6 condivisioni, memoria, RAID, 9 interfacce; `df` permesso negato con utente non root (dichiarato).
+  - **QNAP .40.24** (solo SNMP): 4 dischi, 2 volumi, 19 interfacce come stanotte; **modello e firmware vuoti**: via SNMP non si leggono gli OID QNAP (`1.3.6.1.4.1.24681.1.2.x`, QTS5 `…24681.1.4`) che il profilo storico conosce.
+  - **Synology .40.22**: DS723+, DSM 7.4.1, 24 pacchetti, 14 condivisioni (parziale: `synoshare` e NFS non letti senza root), 4 dischi, 4 RAID, 8 interfacce via SNMP; **difetto: il messaggio SSH «Could not chdir to home directory…» finisce nel nome host**; `ip -j` non esiste su DSM.
+  - **Synology .40.23**: irraggiungibile (SSH e SNMP in timeout), come al preflight di stanotte; il suo file d'ingresso ha un blocco `api` che lo schema rifiuta.
+- [x] Collaudi (22/10, pomeriggio), file d'ingresso nel vault `collectors/` (Windows e MikroTik compilati da Riccardo), Linux con la chiave di Riccardo in un ingresso temporaneo cancellato subito:
+  - **Windows** `RGSERVER` 192.168.99.71, WinRM 5985: **esito ok** in 15 s. Windows Server 2022 Standard (20348), 42 programmi, 239 servizi, 1 disco, antivirus, 3 profili firewall separati, memoria, 2 IPv4, 1 scheda. Non letti: CPU, NTP, ARP, duplex (dichiarati). Non è un host Hyper-V: la sezione virtualizzazione resta da collaudare su un host col ruolo.
+  - **MikroTik** `DA-RT-CORE` 192.168.15.254 (CCR2004, 7.24.5): parziale. Risorse, 8 IPv4, 1523 ARP, 33 interfacce, 12 VLAN (configurate e correnti distinte), 229 FDB, 39 vicini, RSTP su 9 porte, 3 bond. **Da correggere:** velocità/duplex non interpretati (`TERSE_FLAGS_AND_NEGOTIATED_SPEED_NOT_INTERPRETED`); PoE su un apparato senza PoE dà `FORMAT_UNRECOGNIZED_OR_EMPTY` invece di «non presente».
+  - **Linux** `da-ftp` 192.168.20.14 (utente `domarc`, chiave): identità (Ubuntu 24.04.2, VM QEMU), sistema e memoria letti; **poi il lotto si interrompe** (`SSH_BATCH_ABORTED`): dischi, pacchetti, servizi, interfacce vuoti. Un comando fallito (probabilmente `timedatectl`) è trattato come guasto di trasporto.
+- [ ] Giro 5: Proxmox fuori dal pulsante e collector esteso fino alla parità con la scansione di oggi; VLAN MikroTik configurata+attiva; dai collaudi: stderr/banner SSH mai nei campi (nome host Synology), identità QNAP via SNMP dagli OID enterprise, ripiego senza `ip -j` sui NAS vecchi; Linux: comando fallito ≠ trasporto guasto, il lotto continua; MikroTik: velocità/duplex dalle bandiere e dal monitor, PoE assente = non presente; poi aggancio di Windows e Linux dopo i loro collaudi.
+- [x] Giro cloud 5 (leggero, 22/10): correzioni dai collaudi, Proxmox fuori dal pulsante ed esteso verso la parità, Windows e Linux agganciati (prompt, «Giro 5»).
+  - **Linux/SSH a lotti** (`leggiLotto`, `transports.ts`): un comando fallito, assente, senza permesso, senza stato di uscita o oltre il limite di byte non ferma il lotto; si ferma per canale caduto, connessione fallita, tempo totale o due scadenze di fila. Prova `lotto-ssh.test.ts` (vista rossa con la lista vecchia).
+  - **Synology**: stderr e «Could not chdir to home directory…» mai nei dati (`exec-reader.ts`, rossa vista); `ip -j` che esce 1 su DSM = `unsupported` con `IP_JSON_NOT_AVAILABLE_ON_DSM` + `SNMP_USED_INSTEAD`.
+  - **QNAP solo SNMP**: modello, firmware e seriale da `…24681.1.2.1/2/3.0` (valori numerici o con «%» scartati). **Le varianti QTS5 (`…24681.1.4`) NON sono aggiunte**: non conosco gli OID esatti; serve uno `snmpwalk` su `.24` per scriverli.
+  - **MikroTik**: tolto l'avviso «bandiere/velocità non interpretate» quando le bandiere e il monitor ethernet sono capiti; PoE senza righe `poe-out` = `unsupported` / `POE_NOT_PRESENT`. **Non so la forma vera** dell'uscita `poe monitor` su un CCR senza PoE: la prova usa una forma plausibile (solo `name:`). Se sul `192.168.15.254` resta `FORMAT_UNRECOGNIZED_OR_EMPTY`, serve l'uscita grezza.
+  - **Proxmox** fuori dal riconoscimento del pulsante; il collector legge `guests` (VM e CT: stato, risorse, dischi, reti), `storage_pools`, `cluster_nodes` (nuove sezioni opzionali dello schema; due `grep -H` nell'allowlist). Tabella della differenza nel manuale: mancano dati hardware del nodo, IP delle VM (agent) e scrittura nell'inventario. L'aggancio torna solo con una tua decisione.
+  - **Windows e Linux** agganciati al riconoscimento (vendor `windows`; vendor `linux` tranne hypervisor/scan_target proxmox); descrittori `collaudato`. Le porte da switch restano solo per switch e router.
+  - **Non fatto**: VLAN MikroTik configurata+attiva distinte (decisione 4 del fine giro 4; il motore legge ancora solo la membership corrente).
+  - **Da ricollaudare in locale**: Linux `da-ftp` (dischi, pacchetti, servizi, interfacce dopo la correzione del lotto), MikroTik `192.168.15.254` (velocità/duplex, PoE «non presente»), QNAP `.24` (modello e firmware via SNMP), Synology `.22` (nome host senza il messaggio, interfacce da SNMP senza errori `ip -j`), Proxmox da CLI (guest, storage, nodi; serve un utente che legga `/etc/pve`); poi premere «Aggiorna» su un Windows e su un Linux con interruttore acceso.
+  - **Decisioni per Riccardo**: (1) Proxmox: si vuole la parità (IP VM, dati nodo, scrittura inventario) o il collector resta solo-lettura accanto alla scansione? (2) VLAN MikroTik configurata+attiva nel prossimo giro? (3) Servono gli OID QTS5 di QNAP: uno snmpwalk di `.24`.
+
+## 2026-10-22 — ricollaudi del giro 5 (sessione locale, codice `9ef16c64`)
+
+- [x] **Linux `da-ftp`**: lotto corretto, ora completo salvo LVM (permesso negato senza sudo, dichiarato): 3 dischi, 9 filesystem, 811 pacchetti, 64 servizi, 2 interfacce, Ubuntu 24.04.2.
+- [x] **MikroTik `DA-RT-CORE` 192.168.15.254**: velocità e duplex su 12 porte su 33 (le collegate); PoE `unsupported` con `POE_NOT_PRESENT`. VLAN configurate e attive distinte (Riccardo, 22/10: «configurate e attive», entrambe).
+- [x] **Synology `.22`**: nome host pulito («DA-FILES»).
+- [x] **QNAP `.24` (solo SNMP): errore nuovo** — `firmware = "15979.0 MB"` (è la memoria). Gli OID `…24681.1.2.1/.2/.3` presi dal profilo storico qui sono CPU %, memoria totale, memoria libera, non modello/firmware/seriale. Walk limitato del 22/10 (QGD-1602P, valori corti, seriale mascherato):
+  - modello: `1.3.6.1.4.1.24681.1.4.1.1.1.1.1.2.1.3.1` («QGD-1602P») e `1.3.6.1.4.1.55062.1.12.3.0`;
+  - seriale: `…24681.1.4.1.1.1.1.1.2.1.4.1`; nome: `….2.1.6.1`; temperatura: `….2.1.7.1`;
+  - ventole: tabella `1.3.6.1.4.1.55062.1.12.9.1` (indice `.1`, nome `.2`, giri `.3`);
+  - firmware: **non trovato via SNMP** su questo modello → resta `null`, mai un valore preso da un altro OID.
+- [x] Giro 6: identità QNAP via SNMP dagli OID sopra (con prova che un valore «… MB» o «… %» non diventa mai firmware/modello); stessa verifica sul **profilo storico** `scanner/snmp-vendor-profiles.ts` (`id: "qnap"`), che usa gli stessi OID sbagliati e oggi, su `dev`, può scrivere la memoria come firmware: correzione da portare anche su `dev`.
+- [x] Giro 6: Proxmox fino alla parità (dati hardware del nodo, IP delle VM dall'agent, VM nell'inventario come fa la scansione). **Aggancio al pulsante: decisione di Riccardo**, tabella nel manuale (`docs/modules/acquisition.md`).
+- [x] Riccardo (22/10): giro 6 sì; il profilo storico QNAP si corregge sul ramo e arriva su `dev` con l'unione.
+- [x] Giro cloud 6 (leggero): QNAP via SNMP con gli OID giusti (collector e profilo storico), Proxmox fino alla parità (prompt, «Giro 6»).
+- [ ] **Da ricollaudare in locale (giro 6)**: (1) QNAP `.24` solo SNMP: attesi modello `QGD-1602P`, firmware assente (`null`), seriale, temperatura e ventole; nessun «MB» o «%» nei campi. (2) Profilo storico `qnap` su un hub vero: dopo l'avvio la riga builtin ha i nuovi OID (una scansione di un QNAP non scrive più la memoria come firmware). (3) Proxmox da CLI con un utente che legga `/etc/pve` e il rapporto del nodo: nodi con CPU/kernel/disco root/seriale/abbonamento, VM accese con IP dall'agent; con un utente senza permessi attesi i codici `NODE_*_NOT_READ`. (4) Con interruttore acceso, applicare lo snapshot Proxmox a un apparato e confrontare `last_proxmox_scan_result` con quello della scansione di oggi (nodi, VM, IP).
+- [ ] Decisione di Riccardo: agganciare `proxmox-ve` al pulsante? Differenze rimaste: schede di rete dei nodi (non proiettate), socket/core delle VM (`sockets` = 1).
+- Nota del giro 6: il `v0.9.871` del giro 5 non è stato rialzato; il merge di `origin/dev` ha portato `VERSION` a 0.9.873 (versione di `dev`).
+- Cancello del giro 6 (commit 07a4944e): lint=0, tsc=0, npm test=0 (DA_INVENT_DATA_DIR temporanea), build=0.
+
+## 2026-10-22 — collaudi del giro 6 (sessione locale, codice `7e0b83a2`)
+
+- [x] **QNAP `.24`** (solo SNMP): **corretto** — modello QGD-1602P, seriale letto, firmware `null` (non più la memoria), 6 sensori, 19 interfacce.
+- [x] **Proxmox DA-PX-04** 192.168.40.4, root con la chiave di Riccardo (ingresso temporaneo cancellato): 76 s, parziale. Cluster visibile intero: 4 nodi (CPU, socket, core, kernel, disco root, abbonamento attivo), 52 guest (stato, risorse, dischi, reti; agent su 44), 28 storage, 34 interfacce.
+- [ ] **Proxmox, mancano per la parità**: modello/seriale/produttore hardware dei nodi vuoti su tutti e 4 (la scansione li prende dall'API); IP dei guest su 24 di 52 con agent attivo su 44 (`GUEST_IP_ADDRESSES_PARTIAL`). Da completare prima dell'aggancio al pulsante.

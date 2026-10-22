@@ -79,6 +79,8 @@ export const ATTESI: Atteso[] = [
   { rotta: "/api/networks", metodi: ["POST"], livello: "admin-o-onboarding", motivo: MOTIVO_ONBOARDING },
   // Scheda MikroTik (Task 10): gli utenti del router (nomi, gruppi, indirizzi ammessi) sono un dato riservato, solo admin.
   { rotta: "/api/devices/[id]/mikrotik-utenti", metodi: ["GET"], livello: "admin", motivo: "utenti del router: nomi, gruppi e indirizzi ammessi, dato riservato" },
+  // Acquisizione modulare (tavola C1, decisione 2): lo snapshot completo come JSON è l'inventario dell'apparato, solo admin.
+  { rotta: "/api/devices/[id]/acquisizione/snapshot/[sid]/scarica", metodi: ["GET"], livello: "admin", motivo: "snapshot completo del collector: l'inventario dell'apparato da scaricare, solo admin (tavola C1)" },
   // Tappa 4 credenziali (15/10): il punto raggiunto, letto all'apertura e salvato a ogni passo.
   { rotta: "/api/onboarding/progresso", metodi: ["GET", "PUT"], livello: "admin-o-onboarding", motivo: MOTIVO_ONBOARDING },
   // Revisione della tappa 4: il router già creato si modifica con colonne, porta e binding insieme.

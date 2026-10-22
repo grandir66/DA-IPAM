@@ -4,6 +4,16 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-22 · QNAP via SNMP con gli OID giusti, Proxmox alla parità sui dati
+
+### Corretto
+
+- **QNAP: il firmware non è più la memoria.** Gli OID `…24681.1.2.1/.2/.3` sono CPU %, memoria totale e libera, non modello/firmware/seriale (un QNAP mostrava firmware «15979.0 MB»). Collector e profilo SNMP storico `qnap` (seed, righe `builtin` già nell'hub) usano gli OID del walk; il firmware via SNMP resta assente. Un valore con unità (MB, %, C, rpm) non è mai modello, firmware o seriale.
+
+### Aggiunto
+
+- **Collector `proxmox-ve`**: dati hardware dei nodi (CPU, kernel, disco root, seriale, produttore, modello, stato abbonamento — mai la chiave) e IP delle VM dall'agent QEMU, con tre forme di `pvesh get` per nodo/VM nell'allowlist. Proiezione verso `last_proxmox_scan_result` e inventario solo per gli snapshot del collector. Resta fuori dal pulsante.
+
 ## [Non rilasciato] — 2026-10-22 · Pagina Opzioni e job di serie
 
 Piano `docs/superpowers/plans/2026-10-22-pagina-opzioni.md`, ADR 0032.
@@ -59,6 +69,15 @@ Piano `docs/superpowers/plans/2026-10-22-invio-ad-inventario-a-vulcan.md` (A-IPA
   il processo di collaudo): 503 con `ipam.ingest` spento → riga in coda da ritentare; acceso → AD 201 (report 1),
   battito 200, inventario 201 (351 oggetti); stesso run reinviato → 200 doppione, una riga sola sull'hub; gettone
   sbagliato → 401 e «sospeso», tolto da solo col gettone giusto; fonte revocata → 403 e «sospeso».
+
+## [Non rilasciato] — 2026-10-22 · Collector: uno per famiglia, agganciati al pulsante
+
+### Cambiato
+
+- **Un collector per famiglia.** QNAP NAS, MikroTik e Synology (rinominato `synology-dsm`) usano il motore d'inventario collaudato su apparati veri; dal collector scritto senza apparati si sono tenuti firmware QNAP vero, condivisioni e pacchetti dei NAS, velocità/PoE/FDB/STP di MikroTik. Perché: due versioni dello stesso collector erano un doppione, e quella collaudata è l'unica che ha letto un apparato.
+- **Porte da switch solo a switch e router.** NAS, server, hypervisor, controller e access point non ricevono più `switch_ports` dalla proiezione.
+- **Il pulsante «Aggiorna» e la scansione dei router da Reti** usano il collector per QNAP NAS, Synology, MikroTik, Ubiquiti e Proxmox quando l'interruttore dell'acquisizione modulare è acceso (spento di default: nessun cambiamento).
+- Corretto: vicini e bond MikroTik letti da un'uscita illeggibile non sono più dati per «letti, lista vuota».
 
 ## [Non rilasciato] — 2026-10-22 · Un apparato, una riga; matrice VLAN degli switch
 
@@ -199,6 +218,65 @@ da Riccardo il 21/10.
 - La tab «Dettagli» per switch, router, firewall, storage, hypervisor e server: i loro blocchi stanno nelle tab del
   tipo. Resta solo per il tipo `generico` (stampanti, access point, UPS, postazioni), che non ha tab sue.
 - Il testo «Aggiungi a dispositivi da Discovery» (per promuovere un host c'è la finestra «Rendi apparato»).
+
+## [Non rilasciato] — ONTAP/MetroCluster e consegna del modello (solo locale)
+
+## [Non rilasciato] — collector modulari e consegna del modello (solo locale)
+
+- Prima copertura parziale Synology DSM, QNAP NAS, MikroTik RouterOS, Ubiquiti diretto e Proxmox VE nella CLI comune: letture statiche, tabelle con fonti/stati e capacità df esatte; errori conservati senza scritture DB.
+
+- Collector locale UniFi via API key nella CLI comune: conserva offline e topologia per apparato, senza DB; copertura parziale esplicita (radio/client rinviati).
+
+- Collector `netapp-ontap`, REST GET con CA/pin, paginazione vincolata e stato per
+  collezione: cluster/nodi/DR, SVM/LIF, aggregati, volumi/LUN e mapping, dischi/shelf
+  e rete. Cluster logico distinto dai controller, nessuna operazione di gestione.
+- Capacità JSON grandi preservate dal token originale; zero/false e località dei
+  dischi mantenuti. Prove su conteggi, TLS, next link, 401/403/404 e dati parziali.
+- SOAP: risposte grandi con entità standard gestite senza espansione DTD; NFS4.1
+  conserva tutti i server. Consegna per lo sviluppo con logica di osservazioni,
+  identità scoped, relazioni e prove; vCenter resta una prova locale, non profilo UI.
+
+## [Non rilasciato] — collector VMware ESXi via vSphere (solo locale)
+
+- Profilo `vmware-esxi` API diretta con stesso JSON/CLI/adapter: hardware, rete
+  fisica/virtuale, VMkernel, datastore/LUN/multipath, VM/vNIC/dischi/snapshot e sensori.
+  Riferimenti e byte esatti preservati; IP dei Tools distinti da una scansione.
+- HTTPS con CA oppure impronta esplicita prima delle credenziali; sessione limitata,
+  proprietà selezionate, paginazione e logout. Endpoint vCenter rifiutati.
+- Corretta la collisione XML tra type del ManagedObjectReference e xsi:type,
+  con regressioni per singleton, route/pNIC, byte grandi, TLS e risposte parziali.
+  Nessuna persistenza, modifica dell’host, attivazione UI o pubblicazione.
+
+## [Non rilasciato] — inventario modulare e Comware IRF (solo locale)
+
+- ProCurve 5406R zl2: inventario ENTITY e moduli nativi, mantenendo le porte senza
+  modulo osservato anziché confonderle con porte installate o cancellarle.
+- Collector `hp-comware`: profilo SSH exec separato e limitato; VLAN, porte, LLDP,
+  MAC, LAG/STP e inventario IRF nello stesso JSON/CLI. CPU e memoria per membro,
+  temperature, ventole e alimentatori distinti dalla potenza PoE.
+- Campi opzionali compatibili con i JSON QNAP precedenti; errori e letture parziali
+  espliciti. Nessuna persistenza, scheduler, nuova rotta o pubblicazione automatica.
+
+## [Non rilasciato] — collector ProCurve / ArubaOS-Switch (solo locale)
+
+- Profilo `hp-procurve` nel registry e nella stessa CLI del QNAP: collaudo Aruba
+  2540 JL357A con operator, letture SSH/SNMP senza promozione di privilegi o DB.
+- Porte fisiche e LAG distinti, membership VLAN/PVID espliciti, LLDP dettagliato,
+  FDB, STP CIST, PoE assorbito dai dispositivi, CPU/memoria e salute delle ventole.
+  Risorse/ambiente e part-number/ROM sono estensioni opzionali compatibili con JSON 1.0.
+- Corretto il footer del pager HP incollato alle righe: Enter/Return non causano più
+  perdita silenziosa di porte o MAC. Allowlist per famiglia, prompt operator e
+  conteggi verificati; test e snapshot QNAP precedenti restano validi. Nessun rilascio.
+
+## [Non rilasciato] — collector modulari QNAP (solo locale)
+
+- Collector `qnap-switch` richiamabile da CLI e adapter senza DB, per acquisire lo
+  stesso JSON versionato dal banco e dall'app senza duplicare i parser. Trasporti
+  SNMP centralizzati e console SSH QSS con timeout, paginazione e allowlist read-only.
+- Sezioni e errori espliciti per identità, porte, VLAN, FDB, LLDP, STP, LAG, sensori
+  e IP/ARP; risultati parziali non diventano liste vuote autorevoli. Credenziali solo
+  da file privato fuori git, output reale fuori repo; nessuno scheduler o rilascio.
+- Motivazione, limiti e prove: ADR 0024 e `docs/modules/acquisition.md`.
 
 ## [Non rilasciato] — 2026-10-21 · «Rendi apparato», classificazione unica, voci senza doppioni (v0.9.815-820)
 

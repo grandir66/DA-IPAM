@@ -479,6 +479,74 @@ export function assicuraTabelleZabbixLettura(db: Database.Database): void {
   for (const [, ddl] of DDL_ZABBIX_LETTURA) db.exec(ddl);
 }
 
+/**
+ * Acquisizione modulare (collector JSON 1.0, piano 2026-10-21 §5 C1-C2; schema in
+ * `docs/proposte/2026-10-22-collector-snapshot-schema.md`, adattato alla decisione 4 della tavola C1). Dati del
+ * cliente → DB del tenant. Nessuna colonna su `network_devices` (si ricostruisce da `sqlite_master`).
+ *
+ * - `acquisition_snapshots`: gli snapshot letti, immutabili (solo INSERT e la cancellazione della retention D5),
+ *   JSON gzip già ripulito dei segreti. `credenziali` = i NOMI delle voci usate per protocollo, mai segreti.
+ * - `acquisition_source_choices`: solo la scelta fatta nel caso dubbio (due collector possibili, o nessuna
+ *   credenziale compatibile). La fonte si ricava da sola dal prodotto e dalle credenziali assegnate; questa riga
+ *   c'è solo dove una persona ha deciso. `scelta` = id del catalogo oppure `classica` (acquisizione di sempre).
+ * - `acquisition_changes`: cosa ha cambiato nell'apparato ciascuno snapshot (campo, prima, dopo, esito); va via
+ *   con lo snapshot.
+ *
+ * Niente CHECK sui valori (collector, stato, esito): un valore nuovo non deve chiedere una ricostruzione. Le stesse
+ * CREATE stanno dentro `TENANT_SCHEMA_SQL`, che gira a ogni apertura; `assicuraTabelleAcquisizioneModulare` le rifà
+ * per chi apre un DB senza `getTenantDb` (prove).
+ */
+export const DDL_ACQUISIZIONE_MODULARE: ReadonlyArray<readonly [string, string]> = [
+  ["acquisition_snapshots", `CREATE TABLE IF NOT EXISTS acquisition_snapshots (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  device_id INTEGER NOT NULL REFERENCES network_devices(id) ON DELETE CASCADE,
+  collector TEXT NOT NULL,
+  collector_version TEXT NOT NULL,
+  schema_version TEXT NOT NULL,
+  started_at TEXT NOT NULL,
+  finished_at TEXT NOT NULL,
+  duration_ms INTEGER NOT NULL,
+  status TEXT NOT NULL,
+  section_status TEXT NOT NULL,
+  warning_count INTEGER NOT NULL DEFAULT 0,
+  credenziali TEXT NOT NULL DEFAULT '{}',
+  requested_by INTEGER,
+  requested_by_name TEXT,
+  trigger TEXT NOT NULL DEFAULT 'manual',
+  payload BLOB NOT NULL,
+  payload_bytes INTEGER NOT NULL,
+  payload_gzip_bytes INTEGER NOT NULL,
+  sha256 TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+)`],
+  ["idx_acq_snap_device_time", "CREATE INDEX IF NOT EXISTS idx_acq_snap_device_time ON acquisition_snapshots(device_id, finished_at DESC, id DESC)"],
+  ["acquisition_source_choices", `CREATE TABLE IF NOT EXISTS acquisition_source_choices (
+  device_id INTEGER PRIMARY KEY REFERENCES network_devices(id) ON DELETE CASCADE,
+  scelta TEXT NOT NULL,
+  chosen_by INTEGER,
+  chosen_by_name TEXT,
+  chosen_at TEXT NOT NULL DEFAULT (datetime('now'))
+)`],
+  ["acquisition_changes", `CREATE TABLE IF NOT EXISTS acquisition_changes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  snapshot_id INTEGER NOT NULL REFERENCES acquisition_snapshots(id) ON DELETE CASCADE,
+  device_id INTEGER NOT NULL REFERENCES network_devices(id) ON DELETE CASCADE,
+  destinazione TEXT NOT NULL,
+  chiave TEXT NOT NULL,
+  campo TEXT NOT NULL,
+  prima TEXT,
+  dopo TEXT,
+  esito TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+)`],
+  ["idx_acq_changes_snapshot", "CREATE INDEX IF NOT EXISTS idx_acq_changes_snapshot ON acquisition_changes(snapshot_id, id)"],
+];
+
+/** Crea le tabelle dell'acquisizione modulare se mancano. Ripetibile, solo additiva. */
+export function assicuraTabelleAcquisizioneModulare(db: Database.Database): void {
+  for (const [, ddl] of DDL_ACQUISIZIONE_MODULARE) db.exec(ddl);
+}
+
 export const TENANT_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS networks (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1906,6 +1974,9 @@ CREATE INDEX IF NOT EXISTS idx_controller_runs_controller ON network_controller_
 
 -- Pannello Zabbix in sola lettura (passo 7.4): vedi DDL_ZABBIX_LETTURA.
 ${DDL_ZABBIX_LETTURA.map(([, ddl]) => `${ddl};`).join("\n\n")}
+
+-- Acquisizione modulare (collector JSON 1.0): vedi DDL_ACQUISIZIONE_MODULARE.
+${DDL_ACQUISIZIONE_MODULARE.map(([, ddl]) => `${ddl};`).join("\n\n")}
 `;
 
 export const TENANT_INDEXES_SQL = `

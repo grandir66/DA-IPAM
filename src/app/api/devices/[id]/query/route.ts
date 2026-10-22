@@ -5,6 +5,10 @@ import { createRouterClient } from "@/lib/devices/router-client";
 import { createSwitchClient } from "@/lib/devices/switch-client";
 import { lookupVendor } from "@/lib/scanner/mac-vendor";
 import { updateHostIfExists, getNetworks, upsertDhcpLease, upsertMacIpMapping, syncIpAssignmentsForNetwork, getCurrentTenantCode } from "@/lib/db";
+import { getTenantDb, withTenant } from "@/lib/db-tenant";
+import { dipendenzeDb, testoDubbio, valutaFonte, type ValutazioneFonte } from "@/lib/acquisizione-modulare/fonte";
+import { DIPENDENZE_VERE, eseguiAcquisizioneModulare, lasciaLucchetto, prendiLucchetto } from "@/lib/acquisizione-modulare/esegui";
+import { lettoreDb } from "@/lib/acquisizione-modulare/richiesta";
 import { isIpInCidr, normalizePortNameForMatch } from "@/lib/utils";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { letturaAccesa, senzaCampiCavi } from "@/lib/topology/letture/interruttori";
@@ -364,6 +368,48 @@ async function runInfoQuery(deviceId: number, device: Parameters<typeof leggiInf
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// Background task: acquisizione con un collector (fonte «pronta»)
+// ═══════════════════════════════════════════════════════════════════════════
+
+function avviaAcquisizioneModulare(
+  deviceId: number,
+  device: NonNullable<ReturnType<typeof getNetworkDeviceById>>,
+  fonte: Extract<ValutazioneFonte, { esito: "pronta" }>,
+  utente: { id?: string | null; name?: string | null },
+) {
+  if (!prendiLucchetto(deviceId)) {
+    return NextResponse.json({ error: "Un'acquisizione con collector di questo apparato è già in corso" }, { status: 409 });
+  }
+  const progress = createDeviceQueryProgress(device.name, `Collector ${fonte.collector} — ${device.name}`);
+  const tenantCode = getCurrentTenantCode();
+  const runTask = async () => {
+    try {
+      if (!tenantCode) throw new Error("Contesto tenant assente");
+      const dbh = getTenantDb(tenantCode);
+      const esito = await eseguiAcquisizioneModulare({
+        deviceId, device, collector: fonte.collector, credenziali: fonte.credenziali,
+        utente: { id: utente.id ? Number(utente.id) : null, nome: utente.name ?? null },
+        log: (riga) => plog(progress, riga),
+      }, { ...DIPENDENZE_VERE, leggi: lettoreDb(dbh) });
+      finishProgress(progress, esito.status === "error" ? "failed" : "completed",
+        esito.status === "error" ? `Collector ${fonte.collector}: lettura non riuscita (snapshot #${esito.snapshotId})` : `Collector ${fonte.collector}: snapshot #${esito.snapshotId} (${esito.status})`);
+    } catch (err) {
+      lasciaLucchetto(deviceId);
+      console.error(`[Device Query] Collector error device ${deviceId}:`, err instanceof Error ? err.message : "errore");
+      plog(progress, "✗ Acquisizione con collector non riuscita");
+      finishProgress(progress, "failed", "Acquisizione con collector non riuscita");
+    }
+  };
+  // Lucchetto comune con il giro ARP e «Interroga» (conLucchettoApparato): mai due letture dello stesso apparato insieme.
+  const bgTask = avviaConLucchetto(deviceId, tenantCode, runTask);
+  bgTask.catch(() => {
+    lasciaLucchetto(deviceId);
+    finishProgress(progress, "failed", "Errore fatale");
+  });
+  return NextResponse.json({ id: progress.id, progress });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // POST handler
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -417,6 +463,17 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
           finishProgress(progress, "failed", MESSAGGIO_OCCUPATO);
         }
       };
+
+      // Acquisizione modulare (piano 2026-10-21 C1-C2, tavola C1): lo stesso pulsante, un altro formato. Con
+      // l'interruttore spento, senza un collector per il prodotto o con «classica» scelta, `valutaFonte` lo dice e da
+      // qui in giù il percorso è quello di sempre, invariato (prova `acquisizione-modulare/__tests__/aggancio.test.ts`).
+      const fonte = valutaFonte(device, dipendenzeDb());
+      if (fonte.esito === "dubbio") {
+        return NextResponse.json({ error: testoDubbio(fonte), dubbio: fonte.motivo }, { status: 409 });
+      }
+      if (fonte.esito === "pronta") {
+        return avviaAcquisizioneModulare(deviceId, device, fonte, adminCheck.user);
+      }
 
       if (tipo === "proxmox") {
         const progress = createDeviceQueryProgress(device.name, `Proxmox VE — ${device.name}`);

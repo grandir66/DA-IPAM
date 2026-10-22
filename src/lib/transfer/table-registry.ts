@@ -37,6 +37,8 @@ export const TENANT_TABLES: TableSpec[] = [
   // Pannello Zabbix (passo 7.4): gli abbinamenti verificati da una persona viaggiano con gli host.
   // La configurazione no (in EXCLUDED_TENANT_TABLES): la chiave di lettura vale per un'istanza sola.
   { table: "zabbix_abbinamenti", scope: "tenant", tier: "config" },
+  // Acquisizione modulare: la scelta fatta a mano nel caso dubbio (collector o acquisizione classica), per apparato.
+  { table: "acquisition_source_choices", scope: "tenant", tier: "config" },
   // --- asset (default ON) ---
   { table: "hosts", scope: "tenant", tier: "asset" },
   // Archivio della pulizia degli host (piano 2026-10-20): istantanee degli host tolti, viaggiano con gli host.
@@ -155,6 +157,10 @@ export const EXCLUDED_TENANT_TABLES: string[] = [
   // Chiave di lettura del centro Zabbix: una per cliente E per istanza (design dell'API, §2). Un'altra
   // installazione riceve la sua dal kit di DA-Link; copiarla farebbe parlare due istanze con la stessa chiave.
   "zabbix_lettura_config",
+  // Snapshot dei collector (payload gzip in BLOB) e le modifiche che hanno fatto: storia di questa istanza, si rifà con
+  // un'acquisizione. I dati che hanno scritto viaggiano già con l'apparato (porte, vicini, identità).
+  "acquisition_snapshots",
+  "acquisition_changes",
   // Coda degli invii verso DA-Vul-can (piano 2026-10-22): vale per questa istanza e il suo gettone. Copiata altrove,
   // un'altra istanza rimanderebbe all'hub gli invii di questa, o resterebbe sospesa per un gettone che non ha.
   "vulcan_coda",

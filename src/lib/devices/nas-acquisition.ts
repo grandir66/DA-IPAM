@@ -11,6 +11,7 @@ import type { NetworkDevice } from "@/types";
 import { getDeviceCredentials } from "@/lib/db";
 import { sshExec } from "./ssh-helper";
 import { haSegretoSsh, segretoSsh } from "./ssh-transport";
+import { parseQnapVersione } from "./nas/qnap-versione";
 import type { DeviceInfo, NasInventorySnapshot } from "./device-info";
 import { snmpSubwalkLimitedForDevice, stringifySnmpValue } from "@/lib/scanner/snmp-query";
 
@@ -500,6 +501,49 @@ function countSynopkgLines(out: string): number | null {
   return lines.length;
 }
 
+/** Uscite grezze dei comandi di identità di un NAS (stringa vuota = comando senza risposta). */
+export interface UsciteIdentitaNas {
+  synoVer: string;
+  synoInfo: string;
+  synoSerial: string;
+  qnapModel: string;
+  qnapSerial: string;
+  qnapUname: string;
+  qnapFirmver: string;
+  qnapEtcVersion: string;
+  qnapBuild: string;
+  dmiProduct: string;
+  dmiSerial: string;
+}
+
+/** Modello, seriale e firmware di un NAS dalle uscite della shell. Puro: nessuna connessione. */
+export function identitaNasDaShell(
+  vendor: NasVendor,
+  o: UsciteIdentitaNas,
+): { model: string | null; serial_number: string | null; firmware: string | null } {
+  let model: string | null = null;
+  let serial_number: string | null = null;
+  let firmware: string | null = null;
+  if (vendor === "synology") {
+    const m = o.synoInfo.match(/upnpmodelname\s*=\s*["']?([^"'\n]+)/i);
+    model = m?.[1]?.trim() || o.dmiProduct.trim() || null;
+    const build = o.synoVer.match(/buildnumber\s*=\s*["']?(\d+)/i)?.[1];
+    const major = o.synoVer.match(/majorversion\s*=\s*["']?(\d+)/i)?.[1];
+    const minor = o.synoVer.match(/minorversion\s*=\s*["']?(\d+)/i)?.[1];
+    firmware = [major, minor, build].filter(Boolean).join(".") || o.synoVer.trim() || null;
+    const s = o.synoSerial.trim();
+    if (s && !/synology_/i.test(s)) serial_number = s;
+  } else {
+    model = o.qnapModel.trim() || o.dmiProduct.trim() || null;
+    serial_number =
+      o.qnapSerial.trim() ||
+      (o.dmiSerial.trim() && !/Not Specified/i.test(o.dmiSerial) ? o.dmiSerial.trim() : null) ||
+      null;
+    firmware = parseQnapVersione({ firmver: o.qnapFirmver, etcVersion: o.qnapEtcVersion, build: o.qnapBuild }).firmware;
+  }
+  return { model, serial_number, firmware };
+}
+
 /**
  * Acquisizione SSH completa per NAS Synology / QNAP (comandi shell disponibili su DSM/QTS).
  */
@@ -539,6 +583,9 @@ export async function getNasDeviceInfoFromSsh(device: NetworkDevice, vendor: Nas
     qnapModel,
     qnapSerial,
     qnapUname,
+    qnapFirmver,
+    qnapEtcVersion,
+    qnapBuild,
     dmiProduct,
     dmiSerial,
     synoShares,
@@ -568,6 +615,11 @@ export async function getNasDeviceInfoFromSsh(device: NetworkDevice, vendor: Nas
     vendor === "qnap" ? exec("getsysinfo model 2>/dev/null") : Promise.resolve(""),
     vendor === "qnap" ? exec("getsysinfo serial 2>/dev/null || cat /etc/nas_serial 2>/dev/null") : Promise.resolve(""),
     vendor === "qnap" ? exec("uname -rsm 2>/dev/null") : Promise.resolve(""),
+    vendor === "qnap" ? exec("getsysinfo firmver 2>/dev/null") : Promise.resolve(""),
+    vendor === "qnap" ? exec("cat /etc/version 2>/dev/null") : Promise.resolve(""),
+    vendor === "qnap"
+      ? exec("cat /etc/default_config/WEBAPP.build 2>/dev/null || getsysinfo build 2>/dev/null")
+      : Promise.resolve(""),
     exec("cat /sys/class/dmi/id/product_name 2>/dev/null"),
     exec("cat /sys/class/dmi/id/product_serial 2>/dev/null"),
     vendor === "synology" ? exec("synoshare --enum ALL 2>/dev/null | head -35") : Promise.resolve(""),
@@ -587,28 +639,20 @@ export async function getNasDeviceInfoFromSsh(device: NetworkDevice, vendor: Nas
       : Promise.resolve(""),
   ]);
 
-  let model: string | null = null;
-  let serial_number: string | null = null;
-  let firmware: string | null = null;
   const sysname = hostname.trim() || null;
-
-  if (vendor === "synology") {
-    const m = synoInfo.match(/upnpmodelname\s*=\s*["']?([^"'\n]+)/i);
-    model = m?.[1]?.trim() || dmiProduct.trim() || null;
-    const build = synoVer.match(/buildnumber\s*=\s*["']?(\d+)/i)?.[1];
-    const major = synoVer.match(/majorversion\s*=\s*["']?(\d+)/i)?.[1];
-    const minor = synoVer.match(/minorversion\s*=\s*["']?(\d+)/i)?.[1];
-    firmware = [major, minor, build].filter(Boolean).join(".") || synoVer.trim() || null;
-    const s = synoSerial.trim();
-    if (s && !/synology_/i.test(s)) serial_number = s;
-  } else {
-    model = qnapModel.trim() || dmiProduct.trim() || null;
-    serial_number =
-      qnapSerial.trim() ||
-      (dmiSerial.trim() && !/Not Specified/i.test(dmiSerial) ? dmiSerial.trim() : null) ||
-      null;
-    firmware = qnapUname.trim() || null;
-  }
+  const { model, serial_number, firmware } = identitaNasDaShell(vendor, {
+    synoVer,
+    synoInfo,
+    synoSerial,
+    qnapModel,
+    qnapSerial,
+    qnapUname,
+    qnapFirmver,
+    qnapEtcVersion,
+    qnapBuild,
+    dmiProduct,
+    dmiSerial,
+  });
 
   const ramKb = parseInt(memKb.trim(), 10);
   const ram_total_gb = !Number.isNaN(ramKb) ? Math.round((ramKb / (1024 * 1024)) * 10) / 10 : null;

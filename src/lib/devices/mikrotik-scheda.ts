@@ -3,7 +3,7 @@
  * `/system routerboard print` (scheda MikroTik, task 2); attributi di bridge, porte e bond dalle uscite `print terse`
  * che la lettura della topologia riceve già (task 8). Puro: niente rete, niente DB.
  */
-import { parseRouterOsDurationSeconds } from "./router-client";
+import { parseRouterOsDurationSeconds } from "./routeros-durata";
 import { campiTerse, righeDiUscita } from "./mikrotik-vicini";
 import { segni } from "./mikrotik-stp";
 

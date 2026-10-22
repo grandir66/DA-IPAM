@@ -1,464 +1,385 @@
-# Recupero da DADude3 e DA-MKNET — piano
+# Collector modulari e recupero da DADude3 / DA-MKNET — piano
 
-**Data:** 2026-10-21 · **Stato:** proposta, da approvare (niente codice prima dell'ok)
-**Fonti:** canvas Cursor `progetti-fermi-DADude3-DA-MKNET-MKHA.canvas.tsx` (analisi del 20/10, 50 schede:
-M1-M5, D1-D4, E01-E41) · donatori `~/Progetti/DADude3` (`569b416`) e `~/Progetti/DA-MKNET` (`812b1ad`),
-invariati dal 20/10 · DA-IPAM `dev` a `e718248f` · ADR 0016, 0017, 0018, 0021 · spec
-`2026-10-14-topologia-collegamenti-reali-design.md`, `2026-10-15-credenziali-promozione-wizard-design.md`.
-**Checklist:** `TASKS.md`, sezione «2026-10-21 — recupero da DADude3 e DA-MKNET».
+**Versione 2, 21/10 sera** (la v1 del mattino è in git, `bcce0b69` + `65568a82`).
+**Stato:** approvato il 21/10 sera (decisioni in §7); si esegue nel cloud sul ramo `collector-modulari`.
+**Checklist:** `TASKS.md`, sezione «2026-10-21 — recupero da DADude3 e DA-MKNET». Bacheca:
+`lavori recupero-dadude3-mknet`.
 
-Le prove del 20/10 sono metodi isolati su fixture sintetiche: non sono collaudi sugli apparati. Una
-proprietà in un tipo, una dipendenza installata o una voce nel README non contano come funzione.
+**Fonti.** Analisi del 20/10 (canvas `progetti-fermi-DADude3-DA-MKNET-MKHA`, 50 schede M1-M5, D1-D4,
+E01-E41) · consegna dei collector `docs/handoff/2026-10-21-acquisizione-infrastruttura-da-ipam.md`, pacchetto
+`~/Documents/DA-IPAM-collector-e-modello-20261021.tar.gz` (identico al codice nel `dev` locale), canvas
+`da-ipam-modello-infrastruttura` · ADR 0016-0018, 0021, **0024-0026** · manuale `docs/modules/acquisition.md`
+· donatori `~/Progetti/DADude3` (`569b416`) e `~/Progetti/DA-MKNET` (`812b1ad`), invariati dal 20/10.
 
-## 0. Confini (validi per ogni task)
+## 0. Cosa chiede Riccardo e cosa cambia
 
-- DA-IPAM conserva identità degli apparati, credenziali, trasporti (`ssh-helper`, `ssh-transport`,
-  `winrm-run`, `apriSessioneSnmp`), scheduler, discovery e persistenza. Dai donatori si prendono **parser
-  e conoscenza dei dispositivi**; niente runtime Python nuovo, niente agent, niente moduli condivisi.
-- Parser **puri** (testo → tipo), separati da trasporto e persistenza; ogni risultato porta fonte, ora di
-  raccolta, unità e stato (`ok` | `parziale` | `assente` | `negato` | `errore`).
-- Errore o raccolta parziale **non cancellano** il dato precedente; un campo non letto è `undefined`
-  (resta com'era), un campo letto e vuoto è `null` (contratto già usato da `FattoPortaIn`).
-- Comandi nuovi sugli apparati = automatismo nuovo → dietro interruttore **spento** (ADR 0018). Parsare
-  meglio un'uscita che si legge già non è un comando nuovo.
-- Nessuna scrittura sugli apparati, nessun lookup esterno con dati dei clienti, nessuna regola di
-  dominio cambiata senza prova e decisione.
-- Il repo è **pubblico**: le fixture sono uscite vere anonimizzate (MAC, IP, nomi, seriali sostituiti;
-  riuso di `topology/anonimizza.ts` dove si applica), mai uscite grezze dei clienti.
-- Schermate: tavola grafica degli oggetti prima di scriverle (una per tutto il lavoro, vedi B0).
+Richiesta (21/10 sera): **scanner modulari per famiglia di oggetti**, da aggiungere nel tempo, che con le
+credenziali giuste producano **un JSON da parsare** e arricchiscano l'inventario **in modo coerente**,
+senza stravolgere DA-IPAM. Il sistema dei collector già consegnato è la prima fonte di questo tipo; le
+famiglie nuove arriveranno nello stesso formato man mano che si incontrano apparati da supportare.
 
-## 1. Cosa è cambiato rispetto all'analisi del 20/10
+Conseguenza sul piano del mattino: **il veicolo cambia**. La conoscenza dei donatori non va più dentro
+`hp-vendor.ts`, `device-info.ts` e `nas-acquisition.ts`, ma in **collector nuovi** con lo stesso contratto
+JSON 1.0. I collector `hp-procurve` e `hp-comware` coprono già quasi tutto ciò che M1-M3 volevano portare da
+DA-MKNET. Il lavoro grosso che manca è l'**aggancio**: credenziali dall'archivio, snapshot salvati,
+anteprima dell'arricchimento, applicazione esplicita.
 
-Verifica fatta oggi sul codice di `dev`. Sei fatti cambiano priorità o forma dei task:
+## 1. Confini (validi per ogni task)
 
-1. **MAC virtuali: due elenchi diversi.** `devices/physical-device-db.ts:21-25` riconosce VRRP v4/v6,
-   HSRP v1, HSRPv2 (`00:00:0c:9f:f`) e HSRP IPv6 (`00:05:73:a0`); `topology/identity.ts:9`, che governa
-   l'indice dei nodi della mappa, solo VRRP e HSRP v1, e normalizza i trattini ma non la forma a punti
-   Cisco. Il delta di E06 è «un elenco solo», più GLBP.
-2. **Firmware QNAP: l'SSH sovrascrive l'SNMP.** Il profilo SNMP QNAP legge il firmware
-   (`scanner/snmp-vendor-profiles.ts:458`, OID `…24681.1.2.2.0`), poi `getDeviceInfo`
-   (`devices/device-info.ts`, ramo `hasSsh`) fa `{ ...result, ...sshInfo }` e `sshInfo.firmware` è
-   `uname -rsm` (`nas-acquisition.ts:610`), o `null`. D1 è quindi una correzione di dato, non solo un
-   arricchimento.
-3. **Gli HP letti via SSH non scrivono vicini.** `getHp*LldpNeighbors` è chiamato solo da
-   `switch-client.ts:493,524` → `mergeLldpIntoPorts` → `switch_ports.trunk_neighbor_*`. Nessun
-   `upsertNeighbors`: la topologia degli HP arriva oggi solo dalla lettura SNMP (`cron/jobs.ts:722`).
-   M1 si divide: parser subito (B1), scrittura dei vicini come lettura nuova dietro interruttore (B3).
-4. **ProCurve: `speed` contiene il tipo fisico.** `hp-vendor.ts:169` scrive `type` («100/1000T») in
-   `speed`; la velocità negoziata sta nella colonna Mode. Nessuna prova esiste sui lettori HP.
-5. **`upsertSwitchPorts` riscrive la riga intera** (`db-tenant.ts:5082`, DELETE + INSERT; la guardia
-   `portInfos.length > 0` in `cron/jobs.ts` protegge solo dall'elenco vuoto). Quando VLAN o PoE
-   arriveranno da comandi separati, una sotto-lettura fallita scriverebbe `null` sopra il valore buono.
-6. **L'export MikroTik è leggibile da ogni utente con sessione.** La GET di
-   `app/api/devices/[id]/mikrotik/route.ts` (azioni `config` e `all`, usata da
-   `devices/[id]/page.tsx:684`) non chiama `requireAuth` né `requireAdmin`: la protegge solo il proxy.
-   L'export completo di un router (su RouterOS 6 anche segreti PPP e chiavi Wi-Fi) va riservato
-   all'admin. Zona rossa (autenticazione): decisione D2.
+- DA-IPAM resta com'è nel cuore: identità degli apparati, archivio credenziali (ADR 0017), anti-lockout,
+  scheduler, discovery, classificazione, persistenza SQLite con migrazioni inline. **I collector non li
+  sostituiscono**: producono osservazioni; un livello separato le confronta e le applica (ADR 0024).
+- Il core dei collector non importa DB, NextAuth, cron o route. Registry statico, niente codice caricato a
+  runtime, niente comandi liberi dall'input: ogni profilo ha la sua allowlist.
+- Ogni sezione dello snapshot ha `status` (`ok` | `partial` | `unsupported` | `error` | `skipped`), fonti,
+  avvisi e ora. `null` = ignoto; zero e false sono dati. **Partial non cancella mai**; neanche un `ok`
+  cancella da solo: un'assenza diventa «non vista», la rimozione è una regola esplicita con anteprima.
+- Nessun segreto in snapshot, audit, log o risposte al browser; le credenziali si risolvono nel backend.
+- Nessuna scrittura sugli apparati, nessun lookup esterno con dati dei clienti, nessun automatismo acceso
+  per impostazione predefinita, nessuna regola di dominio cambiata senza prova e decisione.
+- Il repo è pubblico: fixture solo anonimizzate. Schermate: tavola grafica prima di scriverle.
+- **Niente push dei collector su `dev`**: vivono sul ramo `collector-modulari` finché C0 non riallinea (§2.1, D1).
 
-Altri fatti utili: `DA-MKNET/backend/database.sqlite` è vuoto (0 byte), quindi nei cloni non c'è storico
-da importare (E31); in `DA-MKNET/OLDSCRIPT/info_complete_6100.py` ci sono anche `parse_aruba_poe_brief`
-(:153) e `parse_aruba_vlan_tagged` (:229), oltre ai due parser citati da E01; DA-IPAM non ha un sottotipo
-Aruba CX (`switch-client.ts:558`: tutto ciò che non è `comware` passa dal parser ProCurve).
+## 2. Stato verificato il 21/10
 
-## 2. Classificazione delle 50 schede
+### 2.1 I collector consegnati
 
-Tipo di lavoro: **A** = codice TypeScript del donatore direttamente adattabile · **R** = logica da
-riscrivere (Python, o donatore difettoso) · **N** = sviluppo nuovo nel modello di DA-IPAM · **—** =
-nessun porting (solo fixture o casi di prova).
+- Cinque profili in `src/lib/acquisition/`: `qnap-switch`, `hp-procurve` (collaudato su Aruba 2540 e
+  5406R zl2), `hp-comware` (FlexFabric 5700 IRF a quattro membri; alcune tabelle SNMP restano parziali),
+  `vmware-esxi` (API diretta dell'host), `netapp-ontap` (REST GET). CLI `scripts/acquire-device.ts`.
+- **79 prove verdi oggi** (`node --import tsx --test src/lib/acquisition/__tests__/*.test.ts`, exit 0).
+- Nessun aggancio all'app: l'unico chiamante è la CLI. Niente route, tabelle, job o schermate.
+- **Git:** i commit dei collector stavano solo nel `dev` locale: 15 commit che `origin/dev` non ha
+  (collector e piano), mentre `origin/dev` ne ha 41 che il locale non ha (altre sessioni, tra cui la
+  «scheda MikroTik» del worktree `da-ipam-mk`). La consegna chiede di non pubblicare su `dev`: un push lì
+  arriva all'appliance del cliente A col timer. **D1 (21/10):** pubblicati sul ramo `collector-modulari`
+  (`6cca5a8a`), che il timer non segue; `origin/dev` non è stato toccato.
 
-| ID | Tema | 20/10 | 21/10 | Tipo | Blocco | Verifica di oggi |
-| --- | --- | --- | --- | --- | --- | --- |
-| M1 | LLDP HP/Comware | Adattare | Adattare, diviso | A | B1 parser, B3 scrittura | Confermato; in più: oggi nessun vicino HP via SSH arriva al DB (fatto 3) |
-| M2 | Porte HP: VLAN, duplex, PoE, route | Adattare | Adattare | A | B2 | Confermato: `vlan/duplex/poe_*` null; ProCurve `speed` = tipo fisico (fatto 4) |
-| M3 | STP per porta e LAG HP → T3 | Adattare | Adattare | A + N | B3 | Confermato: `stp_state` null; `FattoPortaIn` pronto; serve una lettura nuova in `LETTURE` |
-| M4 | Storico configurazioni | Adattare | Sviluppo nuovo | N (+A per HP) | B5 | Nessun archivio esiste; export MikroTik solo a richiesta e senza guardia admin (fatto 6) |
-| D1 | Firmware QNAP | Adattare | Correggere + adattare | R | B1 | Peggio del previsto: l'`uname` cancella il firmware SNMP (fatto 2) |
-| D2 | ZFS QuTS hero | Adattare | Condizionato | R | B6 | Confermato; solo se ci sono QuTS hero in esercizio (D8) |
-| D3 | Share e pacchetti NAS | Adattare | Adattare | R | B6 | Confermato: anteprime troncate con `head -35` / `head -25` |
-| D4 | Configurazioni host Proxmox | Condizionato | Condizionato | N | dopo B5 | Invariato; solo dopo l'archivio di M4 |
-| M5 | Vicini da completare | Adattare | Adattare, dopo il wizard | N | B3 | `da-sistemare.ts` esiste; va dopo le tappe 3-5 (TASKS 5c) |
-| E01 | Aruba 6100 interface brief | Adattare | Condizionato | R | B2 | Manca il sottotipo Aruba CX; servono un 6100 vero e la fixture (D3) |
-| E02 | VLAN chassis modulari HP | Adattare | Adattare | R | B2 | Confermato; una versione canonica dei quattro OLDSCRIPT |
-| E03 | MikroTik velocità/duplex | Adattare | Adattare | A | B2 | Confermato: `getPortSchema() { return []; }`; si usa `tabellaMonitor` di DA-IPAM, non lo split del donatore |
-| E04 | MikroTik PoE | Adattare | Riscrivere il mapping | R | B2 | Confermato; il donatore mette 48V in `poePower` |
-| E05 | MikroTik VLAN bridge | Adattare | Riscrivere il parser | R | B2 | Confermato; il donatore ignora `vlan-ids` |
-| E06 | MAC virtuali | Adattare | Unificare | — + N | B1 | Due elenchi diversi (fatto 1) |
-| E07 | Hyper-V | Adattare | Adattare | R | B4 | Confermato: nessuna lettura `root/virtualization/v2` |
-| E08 | Defender e profili firewall | Adattare | Adattare | R | B4 | Confermato: solo `SecurityCenter2`, che sui Server manca |
-| E09 | Ruoli server nel ripiego DCOM | Adattare | Adattare | R | B4 | Confermato: `wmi-run.ts:40` li dichiara mancanti |
-| E10 | Batteria / aggiornamenti SCCM | Condizionato | Condizionato | R | — | Batterie già da GLPI; SCCM solo se c'è un uso (D8) |
-| E11 | Software Windows | Già coperto | Già coperto | — | — | `probes/software-windows.ts` usa il registro e vieta `Win32_Product` |
-| E12 | Storage Linux (LVM, inode, mount) | Adattare | Adattare | R | B4 | Confermato: solo `df` e `lsblk -d` |
-| E13 | Docker | Condizionato | Condizionato | R | — | Nessun consumatore del dato oggi (D8) |
-| E14 | Dettagli Linux (NTP, fuso, SELinux) | Adattare | Adattare, ridotto | R | B4 | Firewall e cron già presenti; restano fuso/NTP e SELinux/AppArmor |
-| E15 | Libreria OID per prodotto | Adattare | Solo confronto | — | a richiesta | OID nuovi solo con decoder e fixture, quando un'area li chiede |
-| E16 | LLDP/CDP via SNMP | Già coperto | Già coperto | — | — | `snmp-topologia.ts` e fatti T3 |
-| E17 | Sonde Cisco/HP/Ubiquiti/Linux | Già coperto | Già coperto | — | — | Solo fixture di formati mancanti |
-| E18 | Inventario Proxmox | Già coperto | Già coperto | — | — | `proxmox/run-proxmox-device-scan.ts` |
-| E19 | Normalizzazione OS | Adattare | Solo casi di prova | — | — | Nessun task la tocca; se un task normalizza versioni, entrano i casi RouterOS 7.20.3 ed EdgeOS |
-| E20 | Tassonomie e prefissi modello | Adattare | Solo regole puntuali | — | a richiesta | Il motore a evidenze resta; regole nuove una per una con controesempio |
-| E21 | DNS | Già coperto | Già coperto | — | — | `scanner/dns.ts` |
-| E22 | Porte e protocolli | Già coperto | Già coperto | — | — | nmap/naabu/profili |
-| E23 | Credenziali e cifratura | Già coperto | Già coperto | — | — | archivio unico (ADR 0017) |
-| E24 | Pianificazione | Già coperto | Già coperto | — | — | `cron/scheduler.ts`, `last_run` a fine giro |
-| E25 | Coda persistente | Condizionato | Condizionato | N | — | Nessun requisito oggi; il difetto «inviato ma solo in RAM» resta requisito di regressione |
-| E26 | WebSocket hub | Escludere | Escludere | — | — | |
-| E27 | PKI agent | Escludere | Escludere | — | — | |
-| E28 | Ciclo degli eventi | Già coperto | Già coperto | — | — | `analytics/anomaly-db.ts`; B5 vi scriverà «configurazione cambiata» se D6 lo chiede |
-| E29 | Webhook multi-destinazione | Condizionato | Condizionato | N | — | |
-| E30 | Pulizia e fusioni automatiche | Escludere | Escludere | — | — | |
-| E31 | Import dello storico | Condizionato | Condizionato | N | — | Nei cloni nulla da importare; dipende da un DADude3 in esercizio (D8) |
-| E32 | Procedura prima di una modifica | Condizionato | Fuori iniziativa | — | — | Scrive sugli apparati: fuori dalla raccolta |
-| E33 | Interazioni di dettaglio MKNET | Adattare | Solo criteri | — | B0 tavola | Criteri per M5, niente JSX |
-| E34 | Contratti, completezza, provenienza | Adattare | Trasversale | N | tutti | Si applica come contratto (§0), riusando `EsitoGiro` |
-| E35 | Updater e installer | Escludere | Escludere | — | — | |
-| E36 | The Dude | Condizionato | Condizionato | N | — | Solo se un The Dude in esercizio ha dati non acquisiti (D8) |
-| E37 | Sottosezioni d'inventario | Adattare | Trasversale | — | tutti | Regola: prima nel JSON, colonna solo con un consumatore |
-| E38 | Questionario DATIA | Condizionato | Condizionato | — | — | Fuori, salvo decisione (D8) |
-| E39 | Comandi via AI | Escludere | Escludere | — | — | |
-| E40 | SFP ottici, «real-time» | Escludere | Escludere | — | — | Nessun campo SFP senza lettore vero |
-| E41 | Lookup MAC esterno | Escludere | Escludere | — | — | |
+### 2.2 Oggi convivono tre meccanismi di acquisizione
 
-Conteggio (50): **17 da lavorare** (M1-M5, D1, D3, E02-E09, E12, E14), **3 condizionati con task
-pronto** (D2, D4, E01), **7 condizionati senza task** (E10, E13, E25, E29, E31, E36, E38), **1 fuori
-dall'iniziativa** (E32), **6 solo come fixture o regole puntuali** (E15, E19, E20, E33, E34, E37), **9 già
-coperti**, **7 esclusi**.
+1. I client storici: `devices/switch-client.ts`, `router-client.ts`, `device-info.ts`,
+   `nas-acquisition.ts`, `hp-vendor.ts`. È quello che gira davvero nei giri pianificati.
+2. `devices/acquisition/registry.ts`: un registry di handler più vecchio, con la stessa ambizione di
+   modularità. Va censito: chi lo usa e se si ritira o si tiene come facciata.
+3. `src/lib/acquisition/`: i collector JSON 1.0.
 
-## 3. Ordine e priorità
+Il piano non ne aggiunge un quarto: **i collector sono il meccanismo nuovo**; i client storici restano finché
+il collector di una famiglia non ha dimostrato la parità (C5).
 
-L'ordine proposto nel prompt regge, con due spostamenti motivati dal codice:
+### 2.3 Cosa serve al framework per «aggiungere famiglie nel tempo»
 
-- la **scrittura** dei vicini HP passa da B1 a B3: non è un delta piccolo (fatto 3), serve una lettura
-  nuova dietro interruttore, e cambia ciò che vede il modello per cavo;
-- la **guardia admin sull'export MikroTik** sale in B1 (fatto 6): è piccola, riduce un'esposizione
-  presente oggi, e B5 la presuppone.
+Letto il codice di `index.ts`, `schema.ts`, `adapter.ts`, `transports.ts`:
 
-| Blocco | Contenuto | Valore | Rischio | Dipende da | Controllo |
-| --- | --- | --- | --- | --- | --- |
-| B0 | Fixture anonimizzate e tavola grafica | Rende provabili gli altri | Basso | apparati disponibili (D3) | Leggero |
-| B1 | E06, D1, M1 parser, guardia export | Alto: dati sbagliati oggi | Basso-medio (E06 tocca l'identità) | B0 per D1 e M1 | **Completo** per E06 e guardia export; leggero per D1 e M1 |
-| B2 | Porte HP e MikroTik (M2, E02, E03-E05, E01) | Alto: campi oggi vuoti | Medio: scrittore condiviso `upsertSwitchPorts` | B1 (nomi HP), B0 | **Completo** per T2.2 (scrittore); leggero per i parser |
-| B3 | Topologia HP (M1 scrittura, M3) e vicini da completare (M5) | Medio-alto | Medio-alto: attribuzione topologica | B1, B2, tappe 3-5 per M5 | **Completo** |
-| B4 | Hyper-V, Windows, Linux (E07-E09, E12, E14) | Medio | Basso: blocchi additivi nel JSON | tavola grafica | Leggero |
-| B5 | Storico configurazioni (M4), poi D4 | Alto | Alto: archivio nuovo, segreti, cifratura, retention | guardia export (B1) | **Completo** |
-| B6 | NAS avanzato (D3, D2) | Medio-basso | Basso | D1, NAS veri | Leggero |
+- L'elenco dei collector è ripetuto in **tre punti** (enum dell'input, enum dello snapshot, `COLLECTORS`):
+  una famiglia nuova li tocca tutti. Serve un elenco solo da cui derivare gli altri due.
+- `collector_version` è il letterale `"1.0.0"` per tutti: una famiglia non può cambiare versione senza
+  toccare lo schema. Serve la versione per collector.
+- Le sezioni da switch (`interfaces`, `vlans`, `forwarding`, `neighbors`, `spanning_tree`, `aggregation`,
+  `poe`, `sensors`, `network`) sono **obbligatorie per tutti**: un NAS o un server Windows deve dichiararle
+  `unsupported`/`skipped`. Va bene, ma mancano le estensioni per i sistemi: sistema operativo, storage
+  dell'host, software, servizi, sicurezza. Si aggiungono come sezioni **opzionali** (come `storage` e
+  `virtualization`), senza invalidare gli snapshot già prodotti.
+- Trasporti: SSH (console ed exec), SNMP **solo v1/v2c a community**, HTTPS per vSphere e ONTAP. Mancano
+  **SNMPv3** (che l'archivio credenziali gestisce già, ADR 0016) e **WinRM** (che l'app ha in `winrm-run`).
+- Credenziali: l'input porta i segreti in chiaro. Per la CLI è voluto; nell'app la richiesta va costruita
+  nel backend da `credentials/resolve.ts`, col budget anti-lockout. Exit 2 (parziale) non autorizza a
+  provare altre credenziali.
+- Ogni collector deve dichiarare un **descrittore**: famiglie e prodotti riconosciuti, credenziali e
+  protocolli richiesti, sezioni prodotte, allowlist dei comandi, modelli e firmware collaudati.
 
-Stima complessiva, revisioni e correzioni comprese: **circa 30-40 ore di lavoro agente** (B1 ~5, B2 ~9,
-B3 ~8, B4 ~6, B5 ~9, B6 ~3), più la raccolta delle fixture, che dipende dagli apparati disponibili.
-Si ricalcola se cresce lo scope.
+### 2.4 Scoperte del mattino (restano valide)
 
-## 4. Task
+1. Due elenchi di MAC virtuali diversi (`devices/physical-device-db.ts:21` conosce HSRPv2 e HSRP IPv6,
+   `topology/identity.ts:9` no). `identity.ts` lo sta modificando ora la sessione delle tappe 3-5.
+2. Firmware QNAP: nel percorso storico `getDeviceInfo` stende l'SSH sopra l'SNMP, e l'`uname` cancella il
+   firmware letto via SNMP.
+3. Gli HP letti via SSH dal percorso storico non scrivono vicini; il loro LLDP finisce solo in
+   `switch_ports.trunk_neighbor_*`.
+4. ProCurve nel percorso storico scrive in `speed` il tipo di porta, non la velocità negoziata.
+5. `upsertSwitchPorts` riscrive la riga intera: un campo non letto diventerebbe null.
+6. La GET `/api/devices/[id]/mikrotik?action=config|all` (export completo) non controlla il ruolo.
 
-Ogni task: prova vista fallire → codice → prove mirate → lint e tsc → commit su `dev` (con
-`version:release` quando cambia codice). Percorsi di DA-IPAM relativi a `src/lib/` salvo indicazione.
+## 3. Il sistema proposto: dal JSON all'inventario
 
-### B0 — Preparazione
+```text
+fonte (apparato + profilo + credential_ref)
+  → collector (JSON 1.0 validato, nessun DB)
+  → archivio degli snapshot (immutabili, senza segreti)
+  → proiezioni per sezione (pure: snapshot → osservazioni)
+  → anteprima (cosa cambierebbe, conflitti; nessuna scrittura)
+  → applicazione esplicita (admin, transazione, traccia della fonte)
+```
 
-**T0.1 Fixture.** Raccolta in sola lettura dei comandi elencati in §5 sugli apparati scelti (D3),
-anonimizzazione, deposito in `devices/__tests__/fixtures/<prodotto>/<comando>.txt` con un `LEGGIMI.md`
-(modello, firmware, data, cosa è stato sostituito). Prova: una verifica automatica che nessuna fixture
-contenga MAC/IP non di documentazione (192.0.2.0/24, 198.51.100.0/24, MAC `02:00:00:…`).
-Fatto quando: ogni task di B1-B2 ha la sua fixture, o il task è marcato «senza fixture vera».
+Regole dell'**arricchimento coerente**:
 
-**T0.2 Tavola grafica.** Una tavola sola, oggetti numerati, per: riga dell'interruttore «Letture in più
-delle porte» e «HP» in «Dati della mappa»; colonne/valori nuovi della vista porte (VLAN, duplex, PoE con
-unità e fonte); riquadri Hyper-V, Defender/firewall, storage Linux nella scheda dell'apparato; storico
-configurazioni (elenco versioni, confronto, «Salva ora»); vista «Vicini da completare». Si approva prima
-di B2-T2.3.
+- Un valore entra solo da una sezione `ok` o `partial` e solo se non è `null`; non sostituisce mai un
+  valore scritto a mano né un'unione/separazione manuale.
+- Precedenza per campo dichiarata in una tabella sola (fonte, data, completezza), non sparsa nel codice.
+- Una lista (porte, VLAN, vicini) si sostituisce solo da una sezione `ok`; da `partial` si aggiunge o si
+  aggiorna, mai si toglie.
+- Ogni riga scritta porta fonte (`collector:<profilo>@<versione>`), snapshot e ora.
 
-### B1 — Delta piccoli
+Dove va ciascuna sezione (da confermare nello schema fisico, D4):
 
-**T1.1 MAC virtuali: un elenco solo (E06).** Controllo completo.
-- Donatore: `DA-MKNET/backend/src/vendors/mac-vendor.service.ts:113` (`virtualMacPrefixes`), solo i
-  prefissi unicast di protocollo: VRRP v4/v6, HSRP v1, HSRPv2, GLBP `00:07:b4:00`; da DA-IPAM HSRP IPv6.
-  I multicast (`01:00:5e`, `33:33`, `01:80:c2`, `01:00:0c`) sono un'altra categoria: funzione a parte
-  (bit di gruppo), non mescolata.
-- Destinatari: nuovo `devices/mac-virtuali.ts` (puro: `normalizzaMac` colon/trattini/punti/nudo,
-  `eMacVirtuale`, `eMacMulticast`); `topology/identity.ts:9` e `devices/physical-device-db.ts:21` lo
-  importano invece degli elenchi propri.
-- Prove (vista rossa prima): `00:00:0c:9f:f0:01`, `0000.0c9f.f001`, `00-07-B4-00-01-02` virtuali; un MAC
-  fisico no; tutti i candidati virtuali → nessuna identità (niente «primo MAC» alla `findBestMac`); le
-  separazioni manuali vincono (`identity.test.ts`, prove di `node-index`).
-- Misura: su copia del DB dell'hub e del cliente A, quanti MAC in `hosts`, `device_neighbors.remote_mac`,
-  `topology_device_macs` cadono nei prefissi nuovi, e `misura-unioni` prima/dopo. Ogni differenza
-  spiegata per nome prima del commit.
-- Fatto quando: un elenco solo nel codice, misura scritta nel commit.
-
-**T1.2 Firmware QNAP (D1).** Controllo leggero.
-- Donatore: `DADude3/dadude-agent/app/probes/ssh_vendors/qnap.py:193` `_get_qts_version` (`getsysinfo
-  firmver`, `/etc/version`, `/etc/default_config/WEBAPP.build`, `getsysinfo build`), `:176` piattaforma.
-  Riscrittura in TS.
-- Destinatari: nuovo `devices/nas/qnap-versione.ts` (`parseQnapVersion({firmver, version, build})`);
-  letture aggiunte nel blocco `exec` di `nas-acquisition.ts:568`; `firmware` = versione QTS/QuTS o
-  `null`, mai l'`uname`; `kernel_version` resta l'`uname`; `nas_inventory.ssh.qnap_build` e
-  `qnap_product_version` in `device-info.ts:128`.
-- Correzione di precedenza in `getDeviceInfo`: un `firmware` nullo dall'SSH non sostituisce quello
-  SNMP. Ristretta al firmware (non si cambia lo spread generale senza misura).
-- Prove: fixture QTS 5.x, QuTS h5.x, build assente, comandi assenti, solo `uname`; prova che un firmware
-  SNMP sopravvive a un SSH senza firmware (vista rossa sul codice di oggi).
-- Collaudo: un QNAP vero via «Acquisisci», firmware uguale a quello dell'interfaccia del NAS.
-
-**T1.3 Parser LLDP HP e nomi delle porte (M1, prima metà).** Controllo leggero.
-- Donatori: `DA-MKNET/backend/src/vendors/vendors.service.ts:792` `getHPComwareLLDPNeighbors`
-  (normalizzazione, Port description, capabilities, PVID, LAG, MTU), `:470` `getHPProCurveLLDPNeighbors`
-  (formato tabellare e dettagliato). Estratti senza `@Injectable`, Repository, Logger, lookup ARP.
-- Destinatari: `devices/hp/nomi-porta.ts` (`normalizeHpInterfaceName`: GE, XGE, FGE, M-GE, BAGG; il nome
-  grezzo si conserva); `devices/hp/lldp.ts` con `parseHpComwareLldp` e `parseHpProcurveLldp` puri,
-  spostati da `hp-vendor.ts:87,271`, che resta facciata. `LldpNeighbor` (`hp-vendor.ts:22`) cresce in modo
-  additivo: `portDescription`, `capabilities`, `pvid`, `lagId`.
-- Nessuna persistenza nuova: `mergeLldpIntoPorts` (`switch-client.ts:542`) invariato.
-- Da non cambiare senza decisione: `hp-vendor.ts:294` riempie `chassisId` col MAC del Port ID quando il
-  chassis manca. Resta, ma il parser dice da dove viene (`chassisDaPortId: true`).
-- Prove (prime prove HP del repo): FortyGigE1/0/41 → FGE1/0/41; due vicini sulla stessa porta; annuncio
-  senza IP; MAC non di telaio; tabellare con `|`.
-
-**T1.4 Export MikroTik solo admin.** Controllo completo (autenticazione). Solo con D2 = sì.
-- Destinatario: `app/api/devices/[id]/mikrotik/route.ts`, GET: `requireAdmin()` per `config` e `all`,
-  `requireAuth()` per le altre azioni; voce in `permessi/rotte.ts` se serve.
-- Prove: utente non admin → 403 su `config`; admin → 200; `scripts/verifica-permessi.sh` verde;
-  `rotte-censite.test.ts` verde. La scheda apparato (`devices/[id]/page.tsx:684`) chiede `all`: verifica
-  resa con utente non admin (la sezione MikroTik deve dire perché è vuota).
-
-### B2 — Porte
-
-**T2.1 HP: duplex, VLAN, modo dalle uscite già lette (M2).** Controllo leggero, nessun comando nuovo.
-- Donatori: `vendors.service.ts:2046` `getHPComwarePortDetails` (righe bridge e route-mode), `:1568`
-  `getHPProCurvePortDetails` (parte `show interface brief`).
-- Destinatari: `devices/hp/interface-brief.ts` (puro), facciata `hp-vendor.ts:147,313`. Comware:
-  `XGE1/0/1 UP 10G(a) F(a) T 20` → duplex `full`, PVID 20, modo trunk. Le righe route-mode si leggono con
-  `modo: "route"` e **non** entrano in `switch_ports` (non sono porte di commutazione). ProCurve: velocità
-  e duplex dalla colonna Mode (`1000FDx` → `1000`, `full`), il tipo fisico non è più la velocità.
-  `port_index` resta la posizione (non è un ifIndex), identità per nome.
-- Misura: su copia del DB, quali etichette di velocità cambiano nella mappa (`topology/known-ports.ts`).
-- Prove: modulare A1, uscita con `|`, porte ADM, VLAN 1-4094, uscita troncata, potenza 0.
-
-**T2.2 Scrittura delle porte per campo.** Controllo completo (scrittore condiviso con UniFi e SNMP).
-- Destinatario: `upsertSwitchPorts` in `db-tenant.ts:5047` e facciata `db.ts:5110`. Un campo
-  `undefined` in tutte le righe del giro = «non letto»: si conserva il valore della riga precedente con lo
-  stesso `port_name`; `null` = letto e vuoto. Una porta assente da una lettura **completa** sparisce.
-- Prove: VLAN non letta → resta la vecchia; porta sparita → tolta; percorsi UniFi e SNMP invariati
-  (prove esistenti più una per ciascuno).
-- Prerequisito di T2.3, T2.5-T2.7.
-
-**T2.3 HP: PoE e VLAN da comandi in più, dietro interruttore spento.** Controllo leggero.
-- Interruttore nuovo «Letture in più delle porte» (`tenant_settings`, forma di
-  `topology/letture/interruttori.ts`), spento; riga in «Dati della mappa» secondo la tavola.
-- ProCurve: `show power-over-ethernet brief`, `show vlans ports <porte> detail` o
-  `show vlans ports all detail`; Comware: `display poe interface`, `display port vlan` (da confermare sulle
-  fixture). Donatori: `vendors.service.ts:1568` (PoE, `show name`, running-config) ed E02
-  `DA-MKNET/OLDSCRIPT/info_complete_FULL.py:291` `parse_vlan_ports_all_detail_modular` (versione
-  canonica, varianti `info_complete_WEB.py:291`, `info_complete.py:289` solo per le prove). Riscrittura
-  di `expandPortRange` (`vendors.service.ts:2487`): i Trk restano aggregati, `A1-B3` ambiguo si rifiuta.
-- Dati: VLAN non etichettata → `switch_ports.vlan`; potenza in W → `poe_power_mw` con conversione
-  esplicita; VLAN etichettate secondo D4.
-- Prove: potenza 0 valida, misura assente ≠ 0, Trk3-Trk4, A1/B3, nomi VLAN con spazi, comando assente
-  (non cancella il noto, via T2.2).
-
-**T2.4 Aruba CX / 6100 (E01).** Solo con D3 = c'è un 6100. Controllo leggero.
-- Donatori: `OLDSCRIPT/info_complete_6100.py:95` `parse_aruba_interface_brief`, `:187`
-  `parse_aruba_lldp_detail`, `:153` `parse_aruba_poe_brief`, `:229` `parse_aruba_vlan_tagged`.
-- Destinatari: sottotipo `arubacx` riconosciuto da `device-product-profiles.ts` e smistato in
-  `switch-client.ts:558`; parser in `devices/hp/arubacx.ts`. Stato `parziale` esplicito per righe saltate.
-
-**T2.5 MikroTik: velocità e duplex (E03).** Dietro lo stesso interruttore di T2.3. Controllo leggero.
-- Comandi: `/interface ethernet print terse without-paging`, `/interface ethernet monitor [find] once`.
-- Donatori: `DA-MKNET/backend/src/mikrotik/mikrotik.service.ts:1946` `enrichInterfacesWithEthernet`
-  (selezione e join), `:2135` `parseMonitorOutput` solo come riferimento: si usa `tabellaMonitor`
-  (`devices/mikrotik-stp.ts:131`), che conserva le colonne vuote.
-- Destinatario: `createMikrotikSwitchClient` (`switch-client.ts:434`, oggi `getPortSchema` → `[]`), più un
-  modulo puro `devices/mikrotik-ethernet.ts`. `rate` → velocità corrente, `advertise` resta capacità.
-  Contatori fuori dalla prima tappa (nessun consumatore).
-- Prove: colonne vuote, porta down, porta rinominata, 1G e 40G sulla stessa tabella.
-- Misura: righe nuove in `switch_ports` per i MikroTik e loro effetto sulla mappa (copia del DB).
-
-**T2.6 MikroTik PoE (E04).** Dietro lo stesso interruttore. Mapping riscritto.
-- Comandi: `/interface ethernet poe print terse`, `/interface ethernet poe monitor [find] once`.
-- Donatore: `mikrotik.service.ts:1862` `enrichInterfacesWithPoe` (selezione e associazione), mapping
-  delle unità riscritto: `poe-out-power` (W) → `poe_power_mw`; tensione e corrente separate nel JSON della
-  porta; nessuna potenza calcolata senza dirlo.
-- Prova di regressione: «48V» non diventa mai potenza; `auto-on` senza carico ≠ spento.
-
-**T2.7 MikroTik VLAN del bridge (E05).** Dietro lo stesso interruttore. Parser riscritto.
-- Comando: `/interface bridge vlan print terse without-paging`; PVID dalle porte del bridge già lette
-  (`parsePorteBridge`, `mikrotik-stp.ts:108`).
-- Donatori: `mikrotik.service.ts:1738` `enrichInterfacesWithVlan` (solo l'idea dell'insieme VLAN per
-  porta), `:1609` `getBridgePortsViaSSH` come riferimento.
-- Prova di regressione: `bridge=br vlan-ids=20 tagged=ether1` arricchisce `ether1`; elenchi e intervalli
-  (`10,20-25`); porta CPU del bridge; `tagged` configurato ≠ `current-tagged`.
-
-### B3 — Topologia
-
-**T3.1 Lettura «HP» dei vicini (M1, seconda metà).** Controllo completo.
-- `LETTURE` in `topology/letture/interruttori.ts` cresce con `"hp"` (spenta), con testi, rotta PUT, riga
-  in «Dati della mappa», cadenza oraria (`cadenza.ts`, `conCadenza`).
-- La lettura usa i parser di T1.3 e scrive `upsertNeighbors(id, vicini, "ssh")`, come il ramo switch dei
-  MikroTik (`cron/jobs.ts:713`): la fonte `ssh` la legge solo il modello per cavo, T1 resta bit per bit
-  (`NEIGHBORS_MODEL_SOURCES_SQL`). Capacità annunciate nella codifica di `topology/lettori/fonti.ts`.
-- Prove: lettura spenta = parità di T1 (`misura-cavi`); lettura fallita = nessuna scrittura né potatura;
-  nessuna unione per `systemName` uguale.
-
-**T3.2 STP per porta e LAG degli HP (M3).** Dentro la lettura «hp». Controllo completo.
-- Comandi: Comware `display stp brief`, `display link-aggregation summary`; ProCurve `show spanning-tree`
-  (sezione porte), `show trunks`.
-- Donatori: `vendors.service.ts:2190` (`display stp brief`), `:1895` (STP ProCurve e trunk). Simboli
-  nuovi: `parseHpComwareStpBrief`, `parseHpProcurveStpPorts`, `hpTopologyFacts`.
-- Destinatario: `scriviFattiTopologia(id, "device", …)` (`db-tenant.ts:5364`), solo istanza 0/CIST
-  (`topology_port_facts` non ha l'istanza nella chiave). `ALTN DISCARDING` → `alternate`/`discarding`;
-  BAGG/Trk → `if_kind = "lag"`, membri con `lag_group`.
-- Prove: porta up e discarding; LAG con due membri; lettura interrotta; due istanze MST non si
-  sovrascrivono (si scrive solo la 0).
-
-**T3.3 Vicini da completare (M5).** Dopo le tappe 3-5 (TASKS 5c) e la tavola. Controllo completo.
-- Donatori: `DA-MKNET/backend/src/topology/topology.service.ts:341` `getUnmanagedNeighbors` (forma:
-  problema, azioni, `seenFromCount`), `:563` `convertNeighborToDevice` (solo la sequenza dei controlli).
-  Non si portano `deepLookup`, `autoDiscoverNetwork`, il MAC → un IP di `arp-resolution.service.ts:56`.
-- Destinatari: `discovery/vicini-da-completare.ts` (`classifyNeighborIssue`, `buildNeighborCandidates`,
-  query in blocco senza N+1); azione verso `devices/proposta-apparato.ts:262`; credenziali da
-  `credentials/resolve.ts` con backoff. Motivi: senza IP, IP ambiguo, nessuna credenziale compatibile,
-  accesso fallito, acquisizione fallita, già acquisito.
-- Prove: stesso MAC su più IP, proxy ARP, omonimi in sedi diverse, annuncio vecchio, credenziale in
-  backoff, scelte manuali che vincono; le 19 colonne di Discovery restano nell'ordine di Riccardo.
-
-### B4 — Sistemi
-
-**T4.1 Hyper-V via WinRM (E07).** Controllo leggero.
-- Donatori: `DADude3/dadude-agent/app/probes/wmi_vendors/hyperv.py:58` `_get_vms`, `:94`
-  `_get_virtual_switches`, `:112` `_get_hyperv_storage` (query e mappa degli stati), riscritti.
-- Destinatari: script WinRM in `devices/device-info.ts` (blocco ~1310-1320): CIM
-  `root/virtualization/v2` (`Msvm_ComputerSystem` delle VM con `Name` = GUID, `ElementName`,
-  `EnabledState`; `Msvm_VirtualEthernetSwitch`); mapping in `mapWindowsRawToDeviceInfo` verso un blocco
-  `hyperv_inventory` con stato `assente` | `negato` | `ok`, ora di raccolta. Niente ripiego DCOM in prima
-  tappa, niente passaggio dal collector Proxmox.
-- Prove: host senza ruolo, namespace negato, VM spente e in transizione, due VM con lo stesso nome (GUID
-  diversi), nessun `Win32_Product` nello script. Collaudo su un host di laboratorio (D3).
-
-**T4.2 Defender e profili firewall (E08).** Controllo leggero.
-- Donatore: `DADude3/.../wmi_vendors/windows_server.py:453` `_get_security_info`, senza i suoi riassunti
-  (`enabled` dalla sola presenza, `any(Enabled)`).
-- Destinatari: stesso script: `MSFT_MpComputerStatus` (`root/Microsoft/Windows/Defender`) →
-  `AntivirusEnabled`, `RealTimeProtectionEnabled`, età delle firme; `MSFT_NetFirewallProfile`
-  (`root/StandardCimv2`) → stato per Domain/Private/Public. Stato per namespace.
-- Prove: SecurityCenter assente, Defender installato e spento, profilo Domain attivo e Public spento,
-  accesso negato; nessun «protetto» dalla sola connessione.
-
-**T4.3 Ruoli server nel ripiego DCOM (E09).** Controllo leggero.
-- Donatore: `windows_server.py:372` `_get_server_roles`.
-- Destinatari: `devices/wmi-bridge.py` (query `Win32_ServerFeature WHERE ParentID=0`), `wmi-run.ts:40`
-  (togliere `server_roles` dalle mancanze), mapping già esistente (`device-info.ts:1125`).
-- Prove: client Windows, server con ruoli, permesso negato; con WinRM attivo nessun doppione.
-
-**T4.4 Storage Linux (E12).** Controllo leggero.
-- Donatori: `DADude3/.../ssh_vendors/linux.py:432` `_get_detailed_storage` e
-  `ssh_advanced_scanner.py:419` come repertorio dei comandi; parser riscritti su uscite macchina.
-- Comandi: `lsblk -J -b -o NAME,TYPE,SIZE,FSTYPE,MOUNTPOINT,PKNAME`, `df -P -i`, `lvs`/`vgs` con
-  `--reportformat json --units b --nosuffix` senza sudo (permesso negato = stato `negato`).
-- Destinatario: `getDeviceInfoFromLinux` (`device-info.ts:595`), blocco `linux_storage` (PV → VG → LV
-  dove letto, inode per mount). Nessuna somma fra disco, LV e filesystem.
-- Prove: LVM assente, thin, inode al 100%, mount multipli, nessun `du`.
-
-**T4.5 Fuso, NTP, SELinux/AppArmor (E14).** Controllo leggero.
-- Donatore: `linux.py:794` `_get_system_details` (repertorio).
-- Comandi: `timedatectl show -p Timezone -p NTPSynchronized`, `getenforce`,
-  `cat /sys/module/apparmor/parameters/enabled`. Stato `disabled` ≠ comando negato ≠ assente.
-
-### B5 — Storico configurazioni
-
-**T5.1 Schema e archivio.** Controllo completo.
-- `db-tenant-schema.ts`: `device_config_attempts(id, device_id, started_at, finished_at, status,
-  error_code, snapshot_id)`, `device_config_snapshots(id, device_id, captured_at, format,
-  product_profile, firmware, raw_sha256, comparable_sha256, encrypted_path, size_bytes)`, additive e
-  idempotenti. File cifrati con la chiave dell'app (`crypto.ts`, da leggere con ADR 0013-0014 prima di
-  scegliere), percorsi da ID e hash sotto la cartella dati, mai dal nome remoto. Retention secondo D6;
-  l'ultima versione valida non si tocca mai.
-- Prove: stesso contenuto = stesso file, due tentativi; export vuoto, comando negato, uscita troncata →
-  tentativo fallito, ultima valida intatta; file corrotto → errore visibile.
-
-**T5.2 Lettori e confronto.** Controllo completo.
-- Donatori: `DADude3/dadude-server/app/services/device_backup_service.py:66` e `:332` (flusso e storico),
-  `mikrotik_backup_collector.py:385` solo come riferimento (senza il filtro delle righe che iniziano con
-  `[`), `vendors.service.ts:2550,2578` (`show running-config`, `display current-configuration`).
-- Destinatari: `lib/device-config/{readers,collect,normalize,store,diff}.ts`. Il lettore MikroTik riusa
-  `getConfig` di `router-client.ts:643`; mai `show-sensitive`. `normalize` toglie solo la riga d'intestazione
-  con data; il confronto non ordina mai le righe. Nessun `_binary_backup` (scrive sul router).
-- Prove: commento con data diverso = nessun cambio; ordine delle regole firewall diverso = cambio.
-
-**T5.3 Rotte e schermata.** Controllo completo. Elenco versioni, scarica (admin), confronto, «Salva ora»
-(admin, manuale) secondo la tavola. Guardie in `permessi/rotte.ts`.
-
-**T5.4 Job pianificato.** Tipo nuovo in `scheduled-job-types.ts`, spento; `last_run` a fine giro.
-
-**T5.5 (D4, dopo) Configurazioni host Proxmox.** Lettore nello stesso archivio, file in elenco chiuso,
-manifest per file; etichetta «configurazioni host», mai «backup». Solo con decisione.
-
-### B6 — NAS avanzato
-
-**T6.1 Share e pacchetti strutturati (D3).** Donatori `qnap.py:779`, `synology.py:810`, `:798`;
-destinatari `devices/nas/share.ts` (`parseSambaShares`, `parseNfsExports`, `parseSynologyShareList`),
-`nas-acquisition.ts:573-586` senza `head`, `complete` esplicito. Prove: `global`/`homes` esclusi, nomi con
-spazi e non ASCII, SMB e NFS della stessa cartella senza doppioni; `-enum`/`--enum` verificato sulla DSM
-vera. Percorsi e utenti mai nei log.
-
-**T6.2 ZFS QuTS hero (D2).** Solo con D8. `zpool list -H -p -o name,size,alloc,free,cap,health`,
-`zfs list -H -p -o name,used,avail,mountpoint`; parser per colonne dichiarate in `devices/nas/qnap-zfs.ts`.
-Prova di regressione: intestazione con CKPOINT/FRAG → `health = ONLINE`, `capacity = 20`.
-
-## 5. Prove, fixture, collaudi
-
-| Area | Fixture da raccogliere (sola lettura) | Collaudo sull'apparato |
+| Sezione dello snapshot | Destinazione in DA-IPAM | Nota |
 | --- | --- | --- |
-| HP Comware | `display lldp neighbor-information verbose`, `display interface brief`, `display stp brief`, `display link-aggregation summary`, `display poe interface`, `display port vlan` | Lettura «hp» accesa su uno switch, confronto con l'interfaccia web |
-| HP ProCurve / Aruba OS | `show lldp info remote-device` (e dettaglio), `show interface brief`, `show spanning-tree`, `show trunks`, `show power-over-ethernet brief`, `show vlans ports all detail` | Come sopra |
-| Aruba CX 6100 | `show interface brief`, `show lldp neighbor-info detail`, `show power-over-ethernet`, `show vlan` | Solo se esiste |
-| MikroTik | `/interface ethernet print terse`, `… monitor [find] once`, `… poe print terse`, `… poe monitor [find] once`, `/interface bridge vlan print terse` (un CRS con PoE, un CCR con SFP) | Interruttore acceso su un apparato, `switch_ports` confrontate con WinBox |
-| QNAP | `getsysinfo firmver`, `cat /etc/version`, `getsysinfo build`, `uname -rsm`; QuTS hero: `zpool`/`zfs` | «Acquisisci» e firmware a schermo |
-| Synology | `synoshare --enum ALL` (o `-enum`), elenco pacchetti | Share e pacchetti a schermo |
-| Windows | host Hyper-V; Server senza WinRM (DCOM); Server con Defender | Scheda apparato |
-| Linux | host con LVM, uno senza | Scheda apparato |
+| `identity` | `network_devices` (modello, firmware, seriale, part number) | come `toDeviceInfo`, senza sovrascrivere il manuale |
+| `interfaces`, `vlans` (PVID), `poe` | `switch_ports` | richiede la scrittura per campo (scoperta 5) |
+| `vlans` tagged/untagged complete | restano nello snapshot | in tabella solo se una schermata le usa |
+| `neighbors` | `device_neighbors` con fonte nuova `collector` | letta solo dal modello per cavo, come `ssh`: T1 resta bit per bit |
+| `spanning_tree`, `aggregation` | `topology_port_facts` (solo istanza 0/CIST) | fonte nuova nell'elenco chiuso `FonteFatti` |
+| `forwarding`, `network.arp` | nessuna in prima tappa | i giri esistenti scrivono già MAC per porta e ARP: niente doppi scrittori |
+| `hardware`, `modules`, `resources`, `environment`, `sensors` | scheda dell'apparato, letta dallo snapshot | niente colonne finché nessuna query le chiede |
+| `virtualization`, `storage` (ESXi, ONTAP) | modello entità/alias/relazioni (C4) | mai una tabella unica che mescola host, VM, SVM e IP |
 
-Requisiti di regressione dai difetti noti (ognuno diventa una prova quando si tocca l'area): tensione
-PoE nel campo potenza (T2.6); `vlan-ids` ignorato (T2.7); MAC con trattini e punti (T1.1); versione
-RouterOS troncata ed EdgeOS chiamato UniFi OS (qualsiasi task che normalizzi versioni; T1.2 non tronca la
-versione QTS); colonne ZFS per posizione (T6.2); «inviato» con il dato solo in RAM (E25, se mai si apre);
-niente `Win32_Product` (T4.1-T4.3); nessun campo SFP senza lettore (E40).
+## 4. Le 50 schede alla luce dei collector
 
-Cancello di ogni task: `npm run lint && npx tsc --noEmit` più le prove mirate; il cancello completo
-(`npm test` con `DA_INVENT_DATA_DIR` temporanea, `npm run build`) una volta per blocco, esito letto dal
-codice di uscita con log nello scratchpad.
+Veicolo: **col** = collector JSON (esistente o nuovo) · **app** = codice dell'app fuori dai collector ·
+**—** = nessun porting.
 
-## 6. Risposte di Riccardo (21/10) e cosa cambiano
+| ID | Tema | Esito 21/10 sera | Veicolo | Blocco |
+| --- | --- | --- | --- | --- |
+| M1 | LLDP HP | **Coperto** da `hp-procurve`/`hp-comware` (chassis non MAC, capacità, indirizzi, più vicini per porta). Resta l'aggancio | col esistente | C2 |
+| M2 | Porte HP: VLAN, duplex, PoE | **Coperto** (PVID esplicito, tagged/untagged, PoE come PD draw, velocità in bit/s). Resta l'aggancio | col esistente | C2 |
+| M3 | STP per porta e LAG HP | **Coperto** per il CIST e i LAG; le istanze MST non sono lette (dichiarato). Resta l'aggancio ai fatti T3 | col esistente | C2 |
+| M4 | Storico configurazioni | Da fare; profili `*-config` separati: i collector HP escludono di proposito la running-config | col nuovo + app | C6 |
+| M5 | Vicini da completare | Da fare, dopo le tappe 3-5; si nutre anche dei vicini dei collector | app | C2 dopo |
+| D1 | Firmware QNAP | Correzione nel percorso storico (gira oggi) **e** lettura giusta nel collector `qnap-nas` | app + col nuovo | S, C3 |
+| D2 | ZFS QuTS hero | Fuori (niente in uso) | — | — |
+| D3 | Share e pacchetti NAS | Nei collector `qnap-nas` e `synology-nas` | col nuovo | C3 |
+| D4 | Configurazioni host Proxmox | Condizionato, dopo C6 | col nuovo | dopo C6 |
+| E01 | Aruba 6100 / AOS-CX | Collector `aruba-cx` se la sede nuova ha AOS-CX | col nuovo | C3 |
+| E02 | VLAN chassis modulari HP | **Coperto** (`show vlans ports all detail`, 5406R modulare) | col esistente | — |
+| E03 | MikroTik velocità/duplex | Nel collector `mikrotik-routeros`, coordinato con la scheda MikroTik | col nuovo | C3 |
+| E04 | MikroTik PoE | Idem; mapping delle unità riscritto | col nuovo | C3 |
+| E05 | MikroTik VLAN bridge | Idem; parser riscritto per `vlan-ids` | col nuovo | C3 |
+| E06 | MAC virtuali | Un elenco solo, nell'app (serve anche alle proiezioni) | app | S |
+| E07 | Hyper-V | Collector `windows` (trasporto WinRM), sezione `virtualization` | col nuovo | C3 |
+| E08 | Defender, profili firewall | Collector `windows`, sezione opzionale di sicurezza | col nuovo | C3 |
+| E09 | Ruoli server | Collector `windows` (WinRM); il ripiego DCOM solo se serve | col nuovo | C3 |
+| E10, E13, E38 | SCCM, Docker, questionario | Fuori (niente in uso) | — | — |
+| E11 | Software Windows | Già coperto: il collector `windows` riusa l'approccio del registro, mai `Win32_Product` | — | — |
+| E12 | Storage Linux | Collector `linux`, sezione storage dell'host | col nuovo | C3 |
+| E14 | Fuso, NTP, SELinux | Collector `linux` | col nuovo | C3 |
+| E15, E19, E20, E33, E34, E37 | Fixture e regole puntuali | E34 ed E37 diventano il contratto del framework (C0) | — | C0 |
+| E16-E18, E21-E24, E28 | Già coperti | Invariato | — | — |
+| E25, E29 | Coda persistente, webhook | Condizionati senza task | — | — |
+| E31, E36 | Import storico, The Dude | **Esclusi** (niente in uso) | — | — |
+| E32 | Procedura di modifica | Fuori iniziativa (scrive sugli apparati) | — | — |
+| E26, E27, E30, E35, E39, E40, E41 | | Esclusi | — | — |
 
-- **D8 — «non c'è nulla in uso».** Nessun DADude3, The Dude o storico da importare: E31 ed E36
-  passano a **Escludere**. Senza QuTS hero, Docker, SCCM o questionario in uso: D2 (T6.2), E13, E10 ed
-  E38 escono dal piano finché non nasce un bisogno.
-- **D3 — collaudi HP.** Si fanno su una rete con **HP Comware, ProCurve e ArubaOS**, quando IPAM sarà
-  installato in quella sede (nei prossimi giorni). Le fixture di T0.1 si raccolgono dall'appliance di
-  quella sede, coi comandi in sola lettura di §5. Conseguenze sull'ordine:
-  - **subito, senza apparati:** T1.4 (export solo admin, se D2 = sì), T2.2 (scrittura delle porte per
-    campo, provata con dati finti nella forma di `switch_ports`), T1.1 (MAC virtuali) **dopo** il commit
-    della sessione delle tappe 3-5, che sta modificando `topology/identity.ts`;
-  - **all'arrivo della sede:** T0.1 per gli HP, poi T1.3 → T2.1 → T2.3 → T3.1 → T3.2;
-  - T2.4 (Aruba CX) dipende da cosa sia «ArubaOS» in quella sede: ArubaOS-Switch (2530/2930) usa la
-    stessa riga di comando dei ProCurve e i loro parser; AOS-CX (6100/6300) richiede il sottotipo nuovo.
-- **Restano senza apparato di collaudo dichiarato:** MikroTik con PoE (T2.5-T2.7), QNAP (T1.2),
-  Synology (T6.1), Hyper-V/Windows/Linux (B4). Si possono scrivere su uscite di documentazione, ma non
-  si dichiarano finiti senza una prova sull'apparato.
+Il prompt di consegna aggiunge un collector che non viene dai donatori: **`vmware-vcenter`** (C3).
 
-## 7. Decisioni da prendere (D1-D9)
+## 5. Blocchi
 
-1. **D1.** Piano, ordine B0→B6 e livelli di controllo come in §3: approvati?
-2. **D2.** Export MikroTik (`?action=config|all`) riservato all'admin subito (T1.4)?
-3. **D3.** Quali apparati per fixture e collaudi (§5): HP Comware, ProCurve/Aruba, Aruba 6100, MikroTik
-   con PoE, QNAP QTS e QuTS hero, Synology, host Hyper-V, Windows Server senza WinRM, Linux con LVM.
-   Sono apparati dei clienti: va bene lanciarvi i comandi di sola lettura elencati?
-4. **D4.** VLAN etichettate: si salvano subito in una tabella nuova (`switch_port_vlans`, una riga per
-   porta e VLAN) o si tiene solo la non etichettata finché una schermata non le usa?
-5. **D5.** Due interruttori nuovi, entrambi spenti: «Letture in più delle porte» (HP + MikroTik) e «HP»
-   per la topologia. Oppure uno solo?
-6. **D6.** Storico configurazioni: retention (proposta: ultime 30 versioni diverse per apparato, l'ultima
-   valida sempre), HP già nella prima tappa insieme al MikroTik, evento «configurazione cambiata» negli
-   eventi esistenti sì/no.
-7. **D7.** Unificare i MAC virtuali e aggiungere GLBP (cambia l'indice dei nodi, misura prima): sì?
-8. **D8.** Condizionati: c'è un DADude3 o un The Dude in esercizio con dati utili (E31, E36)? NAS QuTS
-   hero in esercizio (D2)? Serve Docker (E13), SCCM (E10) o il questionario DATIA (E38)?
-9. **D9.** Esecuzione: in questa sessione o in una nuova col prompt pronto; con subagent (una revisione
-   alla fine per blocco leggero, una per task nei blocchi completi) o direttamente?
+| Blocco | Contenuto | Livello | Dipende da | Stima |
+| --- | --- | --- | --- | --- |
+| S | Piccoli e indipendenti: export MikroTik solo admin, firmware QNAP nel percorso storico, MAC virtuali | Completo (export, MAC), leggero (QNAP) | MAC: commit della sessione tappe 3-5 | ~5 h |
+| C0 | Framework pronto a crescere | Leggero, schema come contratto pubblico | D1 | ~6 h |
+| C1 | Aggancio manuale in sviluppo: fonte, credenziali, snapshot salvati, consultazione | **Completo** | C0 | ~10 h |
+| C2 | Proiezioni, anteprima, applicazione | **Completo** | C1 | ~12 h |
+| C3 | Collector nuovi, uno alla volta | Leggero per collector | C0; collaudo su apparato | ~5 h l'uno, 7 previsti |
+| C4 | Modello infrastrutturale (ESXi, vCenter, ONTAP) | **Completo** | C2 | ~12 h |
+| C5 | Sostituzione dei percorsi storici, famiglia per famiglia | **Completo** | C2 e un collector collaudato | ~3 h a famiglia |
+| C6 | Storico configurazioni | **Completo** | C1 | ~10 h |
+
+Totale realistico con revisioni: **circa 90-110 ore di lavoro agente**, di cui ~35 per i sette collector
+nuovi. Il primo risultato visibile (un HP della sede nuova acquisito dal collector e mostrato nella scheda,
+senza applicare nulla) arriva dopo S, C0 e C1: ~20 ore.
+
+### S — Piccoli e indipendenti
+
+- **S1 Export MikroTik solo admin** (scoperta 6). `app/api/devices/[id]/mikrotik/route.ts`: `requireAdmin`
+  per `config` e `all`; guardie censite in `permessi/rotte.ts`. Prove: non admin 403, admin 200,
+  `scripts/verifica-permessi.sh` verde, scheda apparato resa con utente non admin.
+- **S2 Firmware QNAP nel percorso storico** (D1, scoperta 2). Da `qnap.py:193` `_get_qts_version`:
+  `getsysinfo firmver`, `/etc/version`, build; parser puro `devices/nas/qnap-versione.ts`; `firmware` mai
+  dall'`uname`; un firmware SSH nullo non cancella quello SNMP. Prova vista rossa sul codice di oggi.
+- **S3 MAC virtuali, un elenco solo** (E06, scoperta 1). `devices/mac-virtuali.ts` puro (VRRP v4/v6, HSRP
+  v1/v2/IPv6, GLBP; normalizzazione colon/trattini/punti; multicast in una funzione a parte), usato da
+  `identity.ts` e `physical-device-db.ts`. Misura con `misura-unioni` su copia del DB dell'hub prima e dopo.
+
+### C0 — Framework pronto a crescere
+
+1. **Elenco unico dei collector** in `acquisition/catalogo.ts`: id, versione, descrittore; enum dell'input,
+   enum dello snapshot e `COLLECTORS` derivati da lì. Prova: un collector registrato senza descrittore o
+   senza fixture fa fallire la suite.
+2. **Versione per collector** nello snapshot (`collector_version` dal catalogo); `schema_version` resta
+   `1.0` finché le aggiunte sono opzionali. Prova: gli snapshot 1.0 già prodotti (fixture QNAP, ProCurve,
+   Comware, ESXi, ONTAP) restano validi.
+3. **Sezioni opzionali per i sistemi**: `system` (sistema operativo, versione, kernel, fuso, NTP, stato
+   SELinux/AppArmor), `host_storage` (dischi, PV/VG/LV, filesystem con byte e inode, mount), `software`,
+   `services`, `security` (antivirus/Defender, profili firewall per nome). Ogni campo con unità; capacità
+   come stringhe decimali dove serve.
+4. **Trasporti mancanti** come adattatori sui moduli dell'app, non copie: SNMPv3 via
+   `protocols/snmp-sessione.ts`; WinRM via `devices/winrm-run.ts`, con script in allowlist.
+5. **Prova di contratto comune** (`__tests__/contratto.test.ts`): per ogni collector, fixture → snapshot
+   valido; uscita di formato ignoto → `partial`, mai `ok` con righe perse; trasporto assente → `skipped`;
+   nessun segreto nello snapshot.
+6. **Guida «aggiungere una famiglia»** nel manuale: file da creare, descrittore, fixture anonimizzate,
+   prove minime, cosa dichiarare (modelli e firmware collaudati). È il percorso per le famiglie future.
+7. Censimento di `devices/acquisition/registry.ts`: chi lo usa, e proposta (tenerlo come facciata o
+   ritirarlo). Nessun cambio senza decisione.
+
+### C1 — Aggancio manuale in sviluppo
+
+1. **Fonte di raccolta**: per un apparato, il profilo scelto (dal descrittore e dal prodotto riconosciuto)
+   più il riferimento alla credenziale dell'archivio. Nessuna credenziale nuova, nessuna ricerca a tappeto.
+2. **Costruzione della richiesta nel backend** da `credentials/resolve.ts`, col budget di
+   `scanner/credential-anti-lockout.ts`; esito registrato come per gli altri giri; exit 2 non fa provare
+   altre credenziali.
+3. **Archivio degli snapshot**: tabella additiva nel DB del tenant (`acquisition_snapshots`: id,
+   device_id, profilo, versione, iniziato/finito, stato, stati per sezione, hash, dimensione) e JSON
+   compresso; retention secondo D5; mai segreti.
+4. **Rotte**: «Acquisisci con collector» (POST, admin, `withTenantFromSession`), elenco e lettura degli
+   snapshot (GET, auth). Interruttore per tenant spento.
+5. **Schermata** (dopo la tavola grafica): nella scheda dell'apparato, ultimo snapshot con stato per
+   sezione, avvisi e dati letti; nessuna applicazione in questa tappa.
+6. Prove: contesto tenant, guardie, nessuna scrittura fuori dalla tabella degli snapshot, credenziale
+   assente, partial/timeout/403, crash a metà con chiusura delle sessioni.
+7. **Collaudo**: gli HP della sede nuova (Comware, ProCurve, ArubaOS) acquisiti dall'appliance di quella
+   sede, in sola lettura.
+
+### C2 — Proiezioni, anteprima, applicazione
+
+1. **Proiezioni pure** in `acquisition/proiezioni/`, una per destinazione della tabella in §3. Prove con
+   gli snapshot di fixture.
+2. **Scrittura per campo di `switch_ports`** (scoperta 5): campo assente = resta, `null` = letto e vuoto,
+   porta tolta solo da una sezione `ok`. Percorsi UniFi e SNMP invariati.
+3. **Fonte `collector`** per vicini e fatti T3, letta solo dal modello per cavo (ADR 0018). Prova: con la
+   proiezione spenta T1 resta bit per bit (`misura-cavi`).
+4. **Anteprima**: per apparato, cosa cambierebbe (campi, porte, vicini), conflitti col manuale, sezioni
+   ignorate perché parziali. Nessuna scrittura (prova con DB in sola lettura).
+5. **Applicazione** esplicita (admin), in transazione, con traccia; ripetibile senza effetti doppi.
+6. **M5 Vicini da completare** dopo le tappe 3-5 (`discovery/vicini-da-completare.ts`; donatori
+   `topology.service.ts:341` e `:563`, solo forma e sequenza dei controlli).
+7. Misura su copia del DB dell'hub: ogni differenza dell'anteprima spiegata prima di applicare.
+
+### C3 — Collector nuovi (uno alla volta, stesso contratto)
+
+Per ognuno: descrittore, allowlist, parser puri, fixture anonimizzate, prove di contratto, collaudo su un
+apparato vero prima di dichiararlo supportato. Ordine proposto:
+
+1. **`aruba-cx`** se la sede nuova ha AOS-CX (E01). Donatore `DA-MKNET/OLDSCRIPT/info_complete_6100.py:95`,
+   `:153`, `:187`, `:229`. Se è ArubaOS-Switch, basta `hp-procurve`.
+2. **`qnap-nas`** (D1, D3): `getsysinfo firmver`/`/etc/version`/build, modello e piattaforma
+   (`qnap.py:176,193`), share SMB/NFS (`qnap.py:779`), pacchetti. Distinto da `qnap-switch`.
+3. **`mikrotik-routeros`** (E03-E05) più le letture MikroTik che l'app fa già (risorse, firmware, porte del
+   bridge), **coordinato con la sessione della scheda MikroTik** (`origin/dev`, `188a1dae`). Donatori
+   `mikrotik.service.ts:1946,2135` (ethernet e monitor, con `tabellaMonitor` di DA-IPAM), `:1862` (PoE: la
+   tensione non va mai in `power_watts`), `:1738` (VLAN: `vlan-ids` con intervalli).
+4. **`windows`** (E07-E09) su WinRM: identità e sistema, Hyper-V da `root/virtualization/v2` con GUID delle
+   VM (`hyperv.py:58,94,112`), Defender e profili firewall (`windows_server.py:453`, senza i suoi
+   riassunti), ruoli (`:372`), software dal registro (mai `Win32_Product`).
+5. **`linux`** (E12, E14): `lsblk -J -b`, `df -P -i`, `lvs`/`vgs` in JSON senza sudo, `timedatectl show`,
+   `getenforce`, AppArmor (`linux.py:432,794` come repertorio dei comandi).
+6. **`synology-nas`** (D3): `synoshare` (verificare `-enum`/`--enum` sulla DSM vera), pacchetti senza
+   limiti silenziosi (`synology.py:798,810`).
+7. **`vmware-vcenter`** (dalla consegna): profilo separato da `vmware-esxi`, ContainerView, proprietà a
+   blocchi da 100, DestroyView e Logout anche su errore, risultati parziali strutturati.
+
+### C4 — Modello infrastrutturale
+
+Dalla consegna §3-5 e dal canvas: fonte e snapshot; entità con ID interno; osservazioni; alias con scope
+(endpoint o instance UUID + tipo + ID esterno); relazioni con prova (`api_reference`,
+`correlated_unique`, `reference_only`, `candidate`) e intervallo di validità. Correlazione NFS → volume
+solo con IP della LIF + SVM unica + percorso esatto (8 su 25 nel campione, gli altri restano non
+correlati); niente VMFS → LUN senza NAA/WWID. **Schema fisico e resa proposti prima**, DB di sviluppo
+isolato, mai snapshot reali sul DB live.
+
+### C5 — Sostituzione dei percorsi storici
+
+Per famiglia, quando il collector è collaudato: interruttore per tenant che fa leggere quella famiglia dal
+collector invece che dal client storico; misura di parità sulla copia del DB; mai due scrittori sullo stesso
+campo. Prima candidata: HP (i difetti delle scoperte 3 e 4 spariscono senza toccare `hp-vendor.ts`).
+
+### C6 — Storico configurazioni
+
+Come M4 nel piano v1, ma la lettura passa da profili `mikrotik-config`, `hp-procurve-config`,
+`hp-comware-config` con allowlist propria (`/export` senza `show-sensitive`; `show running-config`;
+`display current-configuration`): leggere la configurazione è un'autorizzazione diversa dall'inventario.
+Archivio cifrato, tentativi distinti dalle versioni, confronto senza ordinare le righe, retention che non
+tocca mai l'ultima valida, job spento. Richiede S1.
+
+## 6. Prove e collaudi
+
+- Ogni task: prova vista fallire, lint, tsc, prove mirate; cancello completo una volta per blocco (`npm test`
+  con `DA_INVENT_DATA_DIR` temporanea, `npm run build`), esito dal codice di uscita, log nello scratchpad.
+- **Collaudi HP** nella sede con Comware, ProCurve e ArubaOS, all'installazione di IPAM (nei prossimi
+  giorni): CLI prima, poi C1. Il collaudo dice modello e firmware: entrano nel descrittore.
+- MikroTik, QNAP, Synology, Windows/Hyper-V, Linux: nessun apparato di collaudo dichiarato. I collector si
+  scrivono su uscite di documentazione ma restano «non collaudati» finché non si provano su un apparato.
+- Requisiti di regressione dai difetti dei donatori: tensione PoE mai come potenza; `vlan-ids` letto; MAC
+  con trattini e punti; versioni mai troncate, EdgeOS mai «UniFi OS»; colonne lette per nome, non per
+  posizione; niente `Win32_Product`; nessun campo SFP senza lettura; nessun «inviato» senza ricevuta.
+
+## 7. Decisioni
+
+**Prese da Riccardo il 21/10 sera: «accetto le tue proposte».** Dove avevo dato una proposta vale quella;
+dove la domanda era aperta, sotto è scritto cosa si applica.
+
+1. **D1** Collector pubblicati sul ramo `collector-modulari` (fatto, `6cca5a8a`). Il riallineamento con
+   `origin/dev` (rebase dei 15 commit sui 41 nuovi) lo fa la sessione che apre C0, con l'albero libero; poi
+   il primo push su `dev` porta codice inerte (nessuna rotta, job o schermata accesa).
+2. **D2** Piano v2 approvato: S → C0 → C1 → C2, poi C3 a richiesta, C4-C6 dopo; livelli come in §5.
+3. **D3** Export MikroTik solo admin subito (S1).
+4. **D4** Destinazioni come nella tabella di §3: fonte nuova `collector` per vicini e fatti T3, letta solo dal
+   modello per cavo; VLAN tagged solo nello snapshot finché una schermata non le usa.
+5. **D5** Snapshot nel DB del tenant come JSON compresso; si tengono gli ultimi 20 per apparato più il primo e
+   l'ultimo `ok`.
+6. **D6** Collector nuovi nell'ordine di C3 (`aruba-cx` solo se serve, poi `qnap-nas`, `mikrotik-routeros`,
+   `windows`, `linux`, `synology-nas`, `vmware-vcenter`).
+7. **D7** Storico configurazioni: ultime 30 versioni diverse per apparato, l'ultima valida sempre; HP nella
+   prima tappa insieme al MikroTik; evento «configurazione cambiata» negli eventi esistenti
+   (`analytics/anomaly-db.ts`), **spento** come le altre notifiche nuove.
+8. **D8** MAC virtuali unificati con GLBP, misurati prima (S3).
+9. **D9** Esecuzione **nel cloud** (Riccardo, 21/10 sera: «sviluppo sul cloud finché non serve unirlo
+   localmente»), sessione Claude Code aperta sul ramo `collector-modulari` col prompt
+   `docs/handoff/2026-10-21-prompt-cloud-collector-modulari.md`. Si pubblica solo su quel ramo; l'unione in
+   `dev` la fa Riccardo in locale. Controlli ridotti: una revisione alla fine per i blocchi leggeri, una per
+   task nei blocchi completi (S1, S3, C1, C2, C4-C6). Restano locali le misure sul DB dell'hub, i collaudi
+   sugli apparati e la resa coi dati veri.
+
+**Tavola C1 (Riccardo, 22/10)** — `docs/proposte/2026-10-22-collector-interfaccia.html`:
+
+1. Il riquadro va in «Gestione» sotto «Credenziali». **È l'acquisizione normale dell'apparato con un altro
+   formato**: niente funzione separata; il pulsante è quello dell'acquisizione di oggi, che per le famiglie
+   con un collector legge il JSON 1.0.
+2. «Scarica JSON» solo admin. **I dati letti devono popolare l'apparato** (identità, porte, VLAN, vicini…):
+   C1 e C2 si fanno nello stesso giro. L'acquisizione premuta dall'admin è l'atto esplicito: niente secondo
+   pulsante «Applica». Regole invariate: un `partial` non cancella, il manuale vince, ogni valore porta la fonte;
+   nel riquadro si vede cosa è cambiato.
+3. Prime 5 righe lette nell'anteprima: sì.
+4. **Fonte automatica (b)**: collector dal prodotto riconosciuto, credenziali già assegnate all'apparato; si
+   chiede solo se c'è un dubbio (due collector possibili, nessuna credenziale compatibile). Nessuna finestra
+   «Scegli la fonte» obbligatoria (l'oggetto 15 diventa la finestra del caso dubbio).
+5. Etichetta «anteprima» nel titolo finché C2 non è chiuso: sì.
+
+**Fine giro 2 (Riccardo, 22/10: «le tue proposte vanno bene»):**
+
+- **(a)** Due scrittori sulle porte: subito, per le famiglie con collector (oggi gli HP), si anticipa il pezzo di
+  C5: con l'interruttore acceso e un collector per l'apparato, il giro pianificato non riscrive le colonne di
+  `switch_ports` che il collector fornisce (continua a scrivere MAC per porta e ciò che il collector non legge).
+- **(b)** L'identità di `network_devices` si sovrascrive come fa già l'acquisizione di oggi; il valore a mano sta
+  sull'host, protetto. Nessun cambio.
+- **(c)** `collector` entra fra le fonti che valgono come prova di ruolo «legge vicini» (`leggeViciniDiRete`).
+- **(d)** La vecchia `/api/topology/model` legge anche i vicini `collector`, come `ssh` e `snmp`. Nessun cambio.
+- **(e)** Scansione in blocco: gli apparati nel caso dubbio si saltano e si elencano a fine giro, non bloccano.
+- **(f)** VMware dal pulsante resta per C4.
+
+**Fine giro 4 (Riccardo, 22/10):**
+
+1. **Controller UniFi**: non va sul pulsante dell'apparato. Ha già una sua scansione (la sincronizzazione UniFi): il
+   collector serve a **migliorarla acquisendo più dati**, non a sostituirla.
+2. **Windows e Linux** si agganciano dopo il collaudo: Windows sul server di casa `192.168.99.71`; Linux su un nodo
+   Proxmox (è Debian) o su `da-sftp`. Credenziali nel vault.
+3. **Proxmox**: se il collector legge meno della scansione Proxmox di oggi, **prima si estende il collector fino a
+   leggere tutto** (VM e CT compresi), senza sostituire la scansione esistente. Finché non c'è la parità, il collector
+   Proxmox **non** è agganciato al pulsante.
+4. **VLAN MikroTik**: si tengono **entrambe**, configurata e attiva, distinte.
+
+Collaudi indicati da Riccardo: QNAP `192.168.40.26` e `.24`, Synology `192.168.40.22` e `.23`, MikroTik
+`172.20.4.254`, Windows `192.168.99.71`, Linux un nodo Proxmox o `da-sftp`.
+
+**Ancora aperta:** nella sede nuova «ArubaOS» è ArubaOS-Switch (basta `hp-procurve`) o AOS-CX (serve
+`aruba-cx`)? Si vede al collaudo: il `sysDescr` lo dice.

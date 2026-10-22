@@ -61,4 +61,12 @@ describe("la rotta usa la guardia", () => {
     assert.match(get, /esitoAzioneMikrotik\(/);
     assert.match(get, /configPerRuolo\(/);
   });
+  it("il 403 arriva prima di cercare l'apparato: un non admin non ricava se l'id esiste", () => {
+    assert.ok(get.indexOf("esitoAzioneMikrotik(") < get.indexOf("getNetworkDeviceById("), "guardia dopo la ricerca dell'apparato");
+  });
+  it("la lista degli admin è quella unica di eAdmin, non un duplicato", () => {
+    const guardia = readFileSync(join(process.cwd(), "src/lib/devices/mikrotik-guardia.ts"), "utf8");
+    assert.match(guardia, /eAdmin\(/);
+    assert.doesNotMatch(guardia, /new Set\(\["admin"/);
+  });
 });

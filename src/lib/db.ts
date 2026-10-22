@@ -16,6 +16,7 @@
  *
  * Per capire l'architettura: leggere CLAUDE.md sezione "Architettura Multi-Tenant"
  */
+import { correggiOidProfiloQnap } from "./db-hub";
 import { apparatoDelCluster } from "@/lib/devices/apparato-del-cluster";
 import Database from "better-sqlite3";
 import path from "path";
@@ -1544,10 +1545,9 @@ export function getDb(): Database.Database {
         temperature: "1.3.6.1.4.1.6574.1.4.2.0",
       });
       const qnapFields = JSON.stringify({
-        model: "1.3.6.1.4.1.24681.1.2.1.0",
-        firmware: "1.3.6.1.4.1.24681.1.2.2.0",
-        serial: "1.3.6.1.4.1.24681.1.2.3.0",
-        temperature: "1.3.6.1.4.1.24681.1.2.7.0",
+        model: ["1.3.6.1.4.1.24681.1.4.1.1.1.1.1.2.1.3.1", "1.3.6.1.4.1.55062.1.12.3.0"],
+        serial: "1.3.6.1.4.1.24681.1.4.1.1.1.1.1.2.1.4.1",
+        temperature: "1.3.6.1.4.1.24681.1.4.1.1.1.1.1.2.1.7.1",
       });
       _db
         .prepare(
@@ -1561,6 +1561,12 @@ export function getDb(): Database.Database {
         .run(qnapFields);
       _db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('migration_snmp_nas_profiles_v1', '1')").run();
     }
+  } catch {
+    /* ignore */
+  }
+
+  try {
+    correggiOidProfiloQnap(_db);
   } catch {
     /* ignore */
   }
@@ -2078,10 +2084,9 @@ function seedBuiltinSnmpVendorProfiles(db: Database.Database): void {
       } },
     { id: "qnap", name: "QNAP QTS", cat: "storage", oids: ["1.3.6.1.4.1.24681"], conf: 0.98,
       fields: {
-        model: "1.3.6.1.4.1.24681.1.2.1.0",
-        firmware: "1.3.6.1.4.1.24681.1.2.2.0",
-        serial: "1.3.6.1.4.1.24681.1.2.3.0",
-        temperature: "1.3.6.1.4.1.24681.1.2.7.0",
+        model: ["1.3.6.1.4.1.24681.1.4.1.1.1.1.1.2.1.3.1", "1.3.6.1.4.1.55062.1.12.3.0"],
+        serial: "1.3.6.1.4.1.24681.1.4.1.1.1.1.1.2.1.4.1",
+        temperature: "1.3.6.1.4.1.24681.1.4.1.1.1.1.1.2.1.7.1",
       } },
     { id: "truenas", name: "TrueNAS", cat: "storage", oids: [], sysDescr: "truenas|freenas", conf: 0.94, fields: { os: "1.3.6.1.2.1.1.1.0" } },
     { id: "netapp", name: "NetApp ONTAP", cat: "storage", oids: ["1.3.6.1.4.1.789"], conf: 0.97,

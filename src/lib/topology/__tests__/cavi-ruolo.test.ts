@@ -141,3 +141,13 @@ test("§13.8.2: legge vicini anche con i lettori di T2 (SNMP); la lettura dal la
   ] }));
   assert.deepEqual([m.classi.get("dev:2"), m.classi.get("dev:9"), m.classi.get("dev:10")], ["infra", "da_sistemare", "da_sistemare"]);
 });
+
+// Decisione (c) di fine giro 2 (piano 2026-10-21 §7): il vicino letto da un collector JSON 1.0 (fonte `collector`) dice
+// «lo interroghiamo come apparato di rete», come `ssh` e `snmp`. Il modello di oggi (T1) non legge quella fonte.
+test("§13.8.2: legge vicini anche con la fonte `collector` dell'acquisizione modulare", () => {
+  const t1 = baseInput({ devices: [dev(11, { name: "SW-11", vendor: "altro" })] });
+  const m = cavi(ingresso(t1, { vicini: [
+    vic({ device_id: 11, local_port: "1", remote_device_name: "srv-b", remote_port: "eth0", source: "collector" }),
+  ] }));
+  assert.equal(m.classi.get("dev:11"), "infra");
+});

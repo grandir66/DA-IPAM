@@ -12,13 +12,15 @@
  * Destinazioni (tabella del §3, decisione D4): `identity` → apparato (e i campi dell'host che ne derivano);
  * `interfaces`, `vlans` (PVID), `poe`, `spanning_tree`, `neighbors` → `switch_ports` per campo; `neighbors` → vicini
  * con fonte `collector`; `spanning_tree` (solo CIST) e `aggregation` → fatti di porta con fonte `collector`.
- * `forwarding`, `network`, VLAN tagged e il resto restano nello snapshot.
+ * `vlans` con stato `ok` → le tabelle VLAN della scheda (`switch_vlan*`, fonte «collector»: taggate e non taggate per porta).
+ * `forwarding`, `network` e il resto restano nello snapshot.
  *
  * Le porte «da switch» (`switch_ports`, fatti di porta) si proiettano solo per le famiglie switch e router del catalogo
  * (`ricevePorteDaSwitch`): le interfacce di un NAS, di un server, di un hypervisor, di un controller o di un access point
  * restano nello snapshot e non diventano porte di uno switch.
  */
 import { ricevePorteDaSwitch } from "../catalogo";
+import type { LetturaVlanSwitch } from "@/lib/devices/snmp-vlan";
 import type { AcquisitionSnapshot, DeviceInterface } from "../schema";
 
 export type StatoSezione = "ok" | "partial" | "unsupported" | "error" | "skipped";
@@ -278,6 +280,43 @@ export function proiettaFatti(snapshot: AcquisitionSnapshot): FattoPortaProietta
   });
 }
 
+// ── VLAN della scheda (switch_vlan*, fonte «collector») ─────────────────────
+
+/**
+ * Le VLAN dello switch come le scrive la lettura SNMP (`scriviVlanSwitch`), dalla sezione `vlans` del collector: è una
+ * fotografia che sostituisce la precedente, quindi solo da `ok` (un `partial`, per esempio con gli intervalli di porte di
+ * Comware, non scrive). Porte per nome → ifIndex delle interfacce dello snapshot; quelle senza ifIndex si contano in
+ * `porte_senza_mappa`. A 70151 (22/10) i Comware IRF rispondono tooBig a ogni riga Q-BRIDGE delle porte: via SSH
+ * `display vlan all` le dà tutte (29 VLAN, ~2800 porte taggate).
+ */
+export function proiettaVlan(snapshot: AcquisitionSnapshot): LetturaVlanSwitch | null {
+  if (!ricevePorteDaSwitch(snapshot.collector) || snapshot.vlans.status !== "ok" || snapshot.vlans.data.length === 0) return null;
+  const indice = new Map<string, number>();
+  for (const i of snapshot.interfaces.data) if (i.if_index !== null) indice.set(nomePorta(i.name), i.if_index);
+  const porte = new Map<string, LetturaVlanSwitch["porte"][number]>();
+  const senzaMappa = new Set<string>();
+  for (const v of snapshot.vlans.data) {
+    // Prima le taggate, poi le non taggate: una porta scritta in tutte e due resta U.
+    for (const [lista, untagged] of [[v.tagged_ports, false], [v.untagged_ports, true]] as const) {
+      for (const nome of lista) {
+        const ifIndex = indice.get(nomePorta(nome));
+        if (ifIndex === undefined) { senzaMappa.add(nomePorta(nome)); continue; }
+        porte.set(`${v.id}|${ifIndex}`, { vlan_id: v.id, if_index: ifIndex, egress: true, untagged });
+      }
+    }
+  }
+  const pvid = snapshot.interfaces.data
+    .filter((i): i is DeviceInterface & { if_index: number; pvid: number } => i.if_index !== null && i.pvid !== null)
+    .map((i) => ({ if_index: i.if_index, pvid: i.pvid }));
+  return {
+    vlan: snapshot.vlans.data.map((v) => ({ vlan_id: v.id, nome: v.name })),
+    porte: [...porte.values()],
+    pvid,
+    tabella: "collector", mappa_porte: "ifindex", ordine_bit: "standard", porte_senza_mappa: senzaMappa.size,
+    letture: 1, riuscite: 1, codice: null, codici: {}, esito: "letto",
+  };
+}
+
 // ── Insieme ─────────────────────────────────────────────────────────────────
 
 export interface Proiezione {
@@ -285,6 +324,8 @@ export interface Proiezione {
   porte: ModifichePorte;
   vicini: VicinoProiettato[] | null;
   fatti: FattoPortaProiettato[] | null;
+  /** null = niente da scrivere nelle tabelle VLAN (sezione non `ok`, vuota, o collector che non dà porte da switch). */
+  vlan: LetturaVlanSwitch | null;
   ignorate: SezioneIgnorata[];
 }
 
@@ -303,6 +344,7 @@ export function proietta(snapshot: AcquisitionSnapshot, stato: { identita: Stato
     porte: proiettaPorte(snapshot, stato.porte),
     vicini: proiettaVicini(snapshot),
     fatti: proiettaFatti(snapshot),
+    vlan: proiettaVlan(snapshot),
     ignorate,
   };
 }

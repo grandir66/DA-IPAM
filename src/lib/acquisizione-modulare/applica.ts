@@ -12,9 +12,11 @@ import { proietta, type Proiezione } from "@/lib/acquisition/proiezioni";
 import { proiettaProxmox } from "@/lib/acquisition/proiezioni/proxmox";
 import type { AcquisitionSnapshot } from "@/lib/acquisition";
 import {
-  chiaviViciniApparato, getCurrentTenantCode, getNetworkDeviceById, getTenantDb, hostPerProiezione, inserisciModificheAcquisizione,
-  portePerProiezione, scriviCampiIdentita, scriviFattiTopologia, scriviPortePerCampo, syncInventoryFromDevice, updateNetworkDevice, upsertNeighbors, type ModificaAcquisizione,
+  chiaviViciniApparato, getCurrentTenantCode, getNetworkDeviceById, getTenantDb, hostPerProiezione, inserisciModificheAcquisizione, leggiVlanSwitchDb,
+  portePerProiezione, scriviCampiIdentita, scriviFattiTopologia, scriviPortePerCampo, scriviVlanSwitch, syncInventoryFromDevice, updateNetworkDevice, upsertNeighbors,
+  type ModificaAcquisizione, type VlanSwitchDb,
 } from "@/lib/db-tenant";
+import type { LetturaVlanSwitch } from "@/lib/devices/snmp-vlan";
 
 export interface EsitoApplicazione {
   /** Modifiche scritte (campi, porte aggiunte o tolte, vicini nuovi). */
@@ -27,6 +29,15 @@ export interface EsitoApplicazione {
 }
 
 const testo = (v: string | number | null | undefined): string | null => (v === null || v === undefined ? null : String(v));
+
+/** La fotografia VLAN che c'è è già quella del collector con le stesse righe: niente da riscrivere. */
+function stessaFotografiaVlan(c: VlanSwitchDb, l: LetturaVlanSwitch): boolean {
+  if (c.lettura?.tabella !== "collector") return false;
+  const ordina = (a: string[]) => JSON.stringify([...a].sort());
+  return ordina(c.vlan.map((v) => `${v.vlan_id}|${v.nome ?? ""}`)) === ordina(l.vlan.map((v) => `${v.vlan_id}|${v.nome ?? ""}`))
+    && ordina(c.porte.map((p) => `${p.vlan_id}|${p.if_index}|${p.untagged}`)) === ordina(l.porte.map((p) => `${p.vlan_id}|${p.if_index}|${p.untagged}`))
+    && ordina(c.pvid.map((p) => `${p.if_index}|${p.pvid}`)) === ordina(l.pvid.map((p) => `${p.if_index}|${p.pvid}`));
+}
 
 export function applicaSnapshot(deviceId: number, snapshotId: number, snapshot: AcquisitionSnapshot, adesso: Date = new Date()): EsitoApplicazione {
   const code = getCurrentTenantCode();
@@ -74,6 +85,19 @@ export function applicaSnapshot(deviceId: number, snapshotId: number, snapshot: 
     }
     let fatti = 0;
     if (p.fatti) fatti = scriviFattiTopologia(deviceId, "collector", { porte: p.fatti, bridge: [], macs: [] }, adesso)?.porte ?? 0;
+
+    // VLAN della scheda (Comware via SSH, 70151 22/10): la fotografia si sostituisce solo se cambia.
+    if (p.vlan) {
+      const prima = leggiVlanSwitchDb(deviceId);
+      if (!stessaFotografiaVlan(prima, p.vlan) && scriviVlanSwitch(deviceId, p.vlan, adesso)) {
+        const taggate = p.vlan.porte.filter((x) => x.untagged === false).length;
+        righe.push({
+          destinazione: "vlan", chiave: device.name, campo: "VLAN",
+          prima: prima.lettura ? `${prima.vlan.length} VLAN (${prima.lettura.tabella})` : null,
+          dopo: `${p.vlan.vlan.length} VLAN, ${taggate} porte taggate`, esito: "scritto",
+        });
+      }
+    }
 
     // Proxmox: nodi e VM nello stesso `last_proxmox_scan_result` della scansione di oggi, poi l'inventario come fa lei.
     // Solo per lo snapshot del collector `proxmox-ve` (gli altri collector non toccano queste colonne).

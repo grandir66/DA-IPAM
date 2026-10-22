@@ -55,7 +55,7 @@ const quando = (iso: string): string => parseDbDate(iso).toLocaleString("it-IT",
 const secondi = (ms: number): string => `${(ms / 1000).toLocaleString("it-IT", { maximumFractionDigits: 1 })} s`;
 const peso = (b: number): string => (b >= 1024 * 1024 ? `${(b / 1024 / 1024).toLocaleString("it-IT", { maximumFractionDigits: 1 })} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
 const PROTOCOLLO: Record<string, string> = { ssh: "SSH", snmp: "SNMP", api: "API", winrm: "WinRM" };
-const DOVE: Record<string, string> = { apparato: "Apparato", host: "Host", porte: "Porta", vicini: "Vicino", inventario: "Inventario" };
+const DOVE: Record<string, string> = { apparato: "Apparato", host: "Host", porte: "Porta", vicini: "Vicino", inventario: "Inventario", vlan: "VLAN" };
 const ESITO: Record<string, string> = { scritto: "aggiornato", aggiunta: "aggiunta", tolta: "tolta", manuale: "lasciato: scritto a mano" };
 
 /** Azione testuale: navy sottolineato (il cian non va mai sul testo, brand Domarc). */

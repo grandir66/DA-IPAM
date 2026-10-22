@@ -145,3 +145,49 @@ describe("T1 bit per bit con vicini e fatti `collector`", () => {
     });
   });
 });
+
+// 70151, 22/10: le VLAN dei Comware arrivano solo dal collector (SNMP tooBig su ogni riga delle porte): l'acquisizione le
+// scrive nelle tabelle della matrice, una volta; ripetere lo stesso snapshot non riscrive.
+describe("applicaSnapshot: VLAN della scheda dal collector", () => {
+  const T2 = "TESTACQAPPLICAVLAN";
+  let sw = 0;
+  const vlan = (id: number, name: string, tagged: string[], untagged: string[]) => ({ id, name, description: null, tagged_ports: tagged, untagged_ports: untagged, forbidden_ports: [] });
+  const conVlan = () => snap({
+    collector: "hp-comware",
+    interfaces: sez([iface("XGE1/0/1", { if_index: 101, pvid: 1 }), iface("XGE1/0/2", { if_index: 102, pvid: 20 })]),
+    vlans: sez([vlan(1, "default", [], ["XGE1/0/1"]), vlan(20, "uffici", ["XGE1/0/1"], ["XGE1/0/2"])]),
+    neighbors: sez([]), aggregation: sez([]), spanning_tree: sez({ enabled: true, protocol: "rstp", ports: [] }),
+  });
+  const applica = (s: AcquisitionSnapshot) => applicaSnapshot(sw, salvaSnapshot(sw, s, { credenziali: {}, utente: null }), s);
+  before(() => {
+    withTenant(T2, () => {
+      sw = Number(getTenantDb(T2).prepare("INSERT INTO network_devices (name, host, device_type, vendor, vendor_subtype, protocol, port) VALUES ('sw-irf', '192.0.2.70', 'switch', 'hp', 'comware', 'ssh', 22)").run().lastInsertRowid);
+    });
+  });
+  after(() => deleteTenantDatabase(T2));
+
+  it("scrive VLAN, porte taggate e non taggate e PVID con fonte collector, e lo registra", () => {
+    withTenant(T2, () => {
+      const e = applica(conVlan());
+      const v = tenant.leggiVlanSwitchDb(sw);
+      assert.equal(v.lettura?.tabella, "collector");
+      assert.deepEqual(v.vlan.map((x) => x.vlan_id), [1, 20]);
+      assert.deepEqual(v.porte.map((p) => `${p.vlan_id}|${p.if_index}|${p.untagged ? "U" : "T"}`), ["1|101|U", "20|101|T", "20|102|U"]);
+      assert.deepEqual(v.pvid, [{ if_index: 101, pvid: 1 }, { if_index: 102, pvid: 20 }]);
+      const righe = getTenantDb(T2).prepare("SELECT destinazione, campo, dopo FROM acquisition_changes WHERE device_id = ? AND destinazione = 'vlan'").all(sw) as Array<{ destinazione: string; campo: string; dopo: string }>;
+      assert.equal(righe.length, 1);
+      assert.match(righe[0]!.dopo, /2 VLAN, 1 porte taggate/);
+      assert.ok(e.scritte >= 1);
+    });
+  });
+
+  it("lo stesso snapshot non riscrive la fotografia né la registra di nuovo", () => {
+    withTenant(T2, () => {
+      const prima = tenant.leggiVlanSwitchDb(sw).lettura?.letto_il;
+      applica(conVlan());
+      assert.equal(tenant.leggiVlanSwitchDb(sw).lettura?.letto_il, prima);
+      const n = (getTenantDb(T2).prepare("SELECT COUNT(*) AS n FROM acquisition_changes WHERE device_id = ? AND destinazione = 'vlan'").get(sw) as { n: number }).n;
+      assert.equal(n, 1);
+    });
+  });
+});

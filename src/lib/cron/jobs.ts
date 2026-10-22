@@ -74,6 +74,7 @@ import {
   scriviSchedaMikrotikTopologia,
   scriviSchedaMikrotikLettura,
   livelloSchedaMkCorrente,
+  leggiVlanSwitchDb,
   scriviVlanSwitch,
   schemaSwitchVlanCorrente,
 } from "@/lib/db-tenant";
@@ -875,6 +876,14 @@ export async function letturaVlanSwitch(device: NetworkDevice, options?: Pick<Ru
     const l = await leggiVlanSwitch(walk);
     if (l.esito !== "letto") {
       throw Object.assign(new Error(`VLAN dello switch: esito ${l.esito}`), { code: l.codice ?? (l.esito === "non_so" ? "NON_SO" : "NESSUNA_LETTURA") });
+    }
+    // Una lettura senza tabelle VLAN (Comware: tooBig su Q-BRIDGE, solo PVID e mappa del bridge) non sostituisce la
+    // fotografia del collector, che le VLAN le ha lette via SSH (70151, 22/10). Una lettura con le tabelle sì.
+    if (l.tabella === "nessuna") {
+      const c = leggiVlanSwitchDb(device.id);
+      if (c.lettura?.tabella === "collector") {
+        return { valore: c.vlan.length, conteggio: { comandi: l.letture, riusciti: l.riuscite, codice: l.codice } };
+      }
     }
     if (!scriviVlanSwitch(device.id, l, options?.adesso?.() ?? new Date())) {
       throw Object.assign(new Error("Schema delle VLAN degli switch assente"), { code: "SCHEMA_SWITCH_VLAN" });

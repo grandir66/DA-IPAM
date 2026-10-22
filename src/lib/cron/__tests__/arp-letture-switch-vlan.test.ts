@@ -16,7 +16,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { closeHubDb } from "@/lib/db-hub";
 import { encrypt } from "@/lib/crypto";
-import { deleteTenantDatabase, getTenantDb, leggiVlanSwitchDb, rileggiSchemaCavi, rileggiSchemaSwitchVlan, withTenant } from "@/lib/db-tenant";
+import { deleteTenantDatabase, getTenantDb, leggiVlanSwitchDb, rileggiSchemaCavi, rileggiSchemaSwitchVlan, scriviVlanSwitch, withTenant } from "@/lib/db-tenant";
 import { letturaVlanSwitch, runArpPoll, vlanSwitchDaLeggere } from "@/lib/cron/jobs";
 import type { RouterClient } from "@/lib/devices/router-client";
 import type { SwitchClient } from "@/lib/devices/switch-client";
@@ -237,4 +237,34 @@ test("«Interroga»: spenta non legge; accesa legge anche entro l'ora (senza cad
   // Senza ignoraCadenza (il giro) entro l'ora: saltata.
   const giroDopo = await withTenant(T, () => letturaVlanSwitch(d, { creaWalkSnmp: s.crea, adesso: () => ora("08:30:00") }));
   assert.deepEqual(giroDopo, { stato: "saltato", motivo: "cadenza" });
+});
+
+// 70151, 22/10: sui Comware la lettura SNMP riceve tooBig sulle cinque walk Q-BRIDGE ma PVID e mappa del bridge rispondono,
+// quindi è «letta» con zero VLAN: ogni ora avrebbe cancellato la fotografia arrivata via SSH dal collector.
+test("una lettura SNMP senza tabelle VLAN non sostituisce la fotografia del collector; una con le VLAN sì", async () => {
+  accendi();
+  const d = withTenant(T, () => apparato(6));
+  withTenant(T, () => scriviVlanSwitch(6, {
+    vlan: [{ vlan_id: 1, nome: "default" }, { vlan_id: 20, nome: "uffici" }], porte: [{ vlan_id: 20, if_index: 1, egress: true, untagged: false }],
+    pvid: [{ if_index: 1, pvid: 1 }], tabella: "collector", mappa_porte: "ifindex", ordine_bit: "standard", porte_senza_mappa: 0,
+    letture: 1, riuscite: 1, codice: null, codici: {}, esito: "letto",
+  }, ora("09:00:00")));
+  const comware = async (): Promise<LettoreSnmp> => {
+    const walk = async (oid: string): Promise<VoceSnmp[]> => {
+      if (oid === OID_QBRIDGE.pvid) return [{ oid: `${oid}.1`, value: 1 }];
+      if (oid === OID_QBRIDGE.basePortIfIndex) return [{ oid: `${oid}.1`, value: 1 }];
+      throw fallisce("SNMP_STATO_1");
+    };
+    return Object.assign(walk, { get: async () => [] as VoceSnmp[] });
+  };
+  const r = await withTenant(T, () => letturaVlanSwitch(d, { creaWalkSnmp: comware, adesso: () => ora("09:10:00") }, { ignoraCadenza: true }));
+  assert.equal(r.stato, "letto");
+  const dopo = withTenant(T, () => leggiVlanSwitchDb(6));
+  assert.equal(dopo.lettura?.tabella, "collector");
+  assert.equal(dopo.lettura?.letto_il, "2026-10-22 09:00:00");
+  assert.deepEqual(dopo.vlan.map((v) => v.vlan_id), [1, 20]);
+  // Una lettura SNMP con le tabelle vere sostituisce la fotografia del collector.
+  const s = spia();
+  await withTenant(T, () => letturaVlanSwitch(d, { creaWalkSnmp: s.crea, adesso: () => ora("09:20:00") }, { ignoraCadenza: true }));
+  assert.equal(withTenant(T, () => leggiVlanSwitchDb(6)).lettura?.tabella, "static");
 });

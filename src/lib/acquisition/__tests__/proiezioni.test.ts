@@ -7,7 +7,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { snapshotSchema, type AcquisitionSnapshot, type DeviceInterface } from "../schema";
-import { campiDelCollectorPerPorta, proiettaFatti, proiettaIdentita, proiettaPorte, proiettaVicini, proietta, type PortaAttuale } from "../proiezioni";
+import { campiDelCollectorPerPorta, proiettaFatti, proiettaIdentita, proiettaPorte, proiettaVicini, proiettaVlan, proietta, type PortaAttuale } from "../proiezioni";
 import { ricevePorteDaSwitch } from "../catalogo";
 
 const AT = "2026-10-22T08:00:00.000Z";
@@ -182,5 +182,41 @@ describe("porte solo per switch e router", () => {
 
   it("un id di collector sconosciuto non scrive porte", () => {
     assert.equal(ricevePorteDaSwitch("collector-tolto"), false);
+  });
+});
+
+// 70151, 22/10: i Comware IRF rispondono tooBig a ogni riga Q-BRIDGE delle porte; le VLAN con taggate e non taggate arrivano
+// solo via SSH dal collector, e vanno nelle tabelle della matrice (fonte «collector»).
+describe("VLAN della scheda", () => {
+  const vlan = (id: number, name: string, tagged: string[], untagged: string[]) => ({ id, name, description: null, tagged_ports: tagged, untagged_ports: untagged, forbidden_ports: [] });
+  const comware = (vlans: unknown, interfaces = sez([iface("XGE1/0/1", { if_index: 101, pvid: 1 }), iface("XGE1/0/2", { if_index: 102, pvid: 20 }), iface("BAGG3", { if_index: 403, kind: "aggregate", pvid: 1 })])) =>
+    snap({ collector: "hp-comware", interfaces, vlans });
+
+  it("da ok: VLAN coi nomi, taggate e non taggate per ifIndex, PVID; una porta senza ifIndex si conta", () => {
+    const l = proiettaVlan(comware(sez([vlan(1, "default", [], ["XGE1/0/1", "BAGG3"]), vlan(20, "uffici", ["XGE1/0/1", "BAGG3"], ["XGE1/0/2"]), vlan(30, "voce", ["XGE9/0/9"], [])])));
+    assert.ok(l);
+    assert.equal(l.tabella, "collector");
+    assert.equal(l.esito, "letto");
+    assert.deepEqual(l.vlan.map((v) => [v.vlan_id, v.nome]), [[1, "default"], [20, "uffici"], [30, "voce"]]);
+    const chiave = (p: { vlan_id: number; if_index: number; untagged: boolean | null }) => `${p.vlan_id}|${p.if_index}|${p.untagged ? "U" : "T"}`;
+    assert.deepEqual(l.porte.map(chiave).sort(), ["1|101|U", "1|403|U", "20|101|T", "20|102|U", "20|403|T"]);
+    assert.deepEqual(l.pvid, [{ if_index: 101, pvid: 1 }, { if_index: 102, pvid: 20 }, { if_index: 403, pvid: 1 }]);
+    assert.equal(l.porte_senza_mappa, 1);
+  });
+
+  it("una porta in tutte e due le liste della stessa VLAN resta U", () => {
+    const l = proiettaVlan(comware(sez([vlan(20, "uffici", ["XGE1/0/2"], ["XGE1/0/2"])])));
+    assert.deepEqual(l?.porte, [{ vlan_id: 20, if_index: 102, egress: true, untagged: true }]);
+  });
+
+  it("niente da scrivere: sezione partial (intervalli Comware), vuota, o collector che non dà porte da switch", () => {
+    assert.equal(proiettaVlan(comware(sez([vlan(1, "default", [], ["XGE1/0/1"])], "partial"))), null);
+    assert.equal(proiettaVlan(comware(sez([]))), null);
+    assert.equal(proiettaVlan(snap({ collector: "qnap-nas", vlans: sez([vlan(1, "default", [], ["1"])]) })), null);
+  });
+
+  it("proietta() la porta con sé", () => {
+    const p = proietta(comware(sez([vlan(1, "default", [], ["XGE1/0/1"])])), { identita: { apparato: { sysname: null, model: null, firmware: null, serial_number: null, part_number: null }, host: null }, porte: [] });
+    assert.equal(p.vlan?.vlan.length, 1);
   });
 });

@@ -4,6 +4,16 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-22 · Comware: VLAN e porte taggate dal collector via SSH
+
+### Aggiunto
+
+- **Le VLAN lette dal collector vanno nella matrice della scheda.** Sui Comware IRF (sede 70151) l'SNMP risponde *tooBig* anche a una sola riga delle liste di porte Q-BRIDGE: una riga è più grande del pacchetto massimo dello switch, quindi nessun modo di chiederla via SNMP la fa arrivare. Il collector `hp-comware` le legge via SSH (`display vlan all`); l'acquisizione ora le scrive nelle tabelle VLAN della scheda (VLAN coi nomi, porte taggate e non taggate per ifIndex, PVID, fonte «collector»), solo da una sezione `ok` e solo se cambiano. Il riquadro dell'acquisizione registra la riga «VLAN».
+
+### Corretto
+
+- **La lettura SNMP oraria non cancella più le VLAN del collector.** Sui Comware la lettura riusciva solo per PVID e mappa del bridge e scriveva una fotografia con zero VLAN: ora una lettura senza tabelle VLAN lascia la fotografia del collector; una lettura con le tabelle vere la sostituisce come prima.
+
 ## [Non rilasciato] — 2026-10-22 · Vulnerabilità per host ed exploit noti
 
 ### Aggiunto

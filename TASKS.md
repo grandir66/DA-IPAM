@@ -82,8 +82,8 @@ Piano: [`docs/superpowers/plans/2026-10-22-invio-ad-inventario-a-vulcan.md`](doc
 - [x] T4 inventario a lista bianca (prova dei campi «Mai»), misura dei byte sulla copia 70791 — copia 70791: 351 oggetti, 226 KB, 19 KB gzip, 3 ms; sentinella sui campi «Mai» vista fallire su un costruttore sbagliato; revisione completa: approvato
 - [x] T5 trasporto HTTPS gzip verso l'hub (TLS normale) — TLS verificato sempre (prove rosse togliendolo), gettone solo nell intestazione, risposta limitata a 64 KB
 - [x] T6 giro: coda, ping, battito, audit JSONL — giro entro 8 minuti, sospensione su gettone rifiutato salvata nel DB, audit senza dati personali; revisione completa: 1 importante corretto (invii doppi con hub lento)
-- [ ] T7 timer in `server.ts` (nessuna chiamata senza gettone)
-- [ ] T8 riquadro in «Cosa esce», «Invia ora», riga nella pagina AD
+- [x] T7 timer in `server.ts` (nessuna chiamata senza gettone) — senza gettone solo la lettura della config, timer una volta per processo, inventario alle 03:00 italiane + recupero oltre 26 h
+- [x] T8 riquadro in «Cosa esce», «Invia ora», riga nella pagina AD — riquadro in «Cosa esce» (oggi «Spento: manca VULCAN_TOKEN»), «Invia ora» solo admin, riga nella pagina AD; revisione completa: approvato
 - [ ] T9 collaudo contro DA-Vul-can di sviluppo (ping/battito/AD; inventario solo hub finto), documenti, rilascio spento, copie 70791 cancellate
 - [ ] Fuori piano, da seguire: A-Link (`tipo:"ipam"`, chiavi in `oggetto.env`, policy P9 con conferma), A3 sull'hub (rotta inventario, nessun piano su origin al 22/10), nome `da-vulcan.domarc.it` fissato sull'appliance
 

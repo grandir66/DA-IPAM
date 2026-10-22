@@ -7,9 +7,9 @@
  * riscrive la logica, la si indicizza. Si chiama nel contesto del tenant (rotte: `withTenantFromSession`).
  */
 import {
-  getCurrentTenantCode, getHypervisorSyncSchedule, getScheduledJobs, getTenantDb, getTenantSetting,
+  acquisizioneModulareAccesa, getCurrentTenantCode, getHypervisorSyncSchedule, getScheduledJobs, getTenantDb, getTenantSetting,
   getVulnScannerStato, listControllerClientScheduleJobs, listControllerScheduleJobs, listNetworksLite, schemaCaviPresente,
-  setControllerSchedule, setHypervisorSyncSchedule, setPuliziaHostSchedule, setTenantSetting, setVulnScannerEnabled, toggleJob,
+  impostaAcquisizioneModulare, setControllerSchedule, setHypervisorSyncSchedule, setPuliziaHostSchedule, setTenantSetting, setVulnScannerEnabled, toggleJob,
   updateScheduledJobInterval,
 } from "@/lib/db-tenant";
 import { getSetting, setSetting } from "@/lib/db-hub";
@@ -653,6 +653,23 @@ function opzioniAutomatismi(): Opzione[] {
           throw new ErroreOpzione("Acceso da MESHCENTRAL_SENZA_AGENTE=1 in .env.local: si spegne togliendo quella riga e riavviando il servizio.");
         }
         setTenantSetting(CHIAVE_SENZA_AGENTE, acceso ? "1" : "0");
+      },
+    },
+    {
+      id: "automatismo.acquisizione_modulare",
+      gruppo: "automatismi",
+      nome: "Acquisizione con i collector",
+      cosa: "«Aggiorna» nella scheda legge con un collector gli apparati che ne hanno uno e ne popola i dati",
+      valePer: "cliente",
+      forma: "levetta",
+      diSerie: "spenta",
+      spegnendo: { siFerma: "la lettura con i collector: «Aggiorna» e la scansione dei router tornano all'acquisizione di sempre.", resta: "gli snapshot e i dati già scritti." },
+      leggi() {
+        const acceso = acquisizioneModulareAccesa();
+        return diSerieStato(acceso, esito("neutro", acceso ? "gli apparati con un collector si leggono col collector" : "acquisizione di sempre"));
+      },
+      cambia(r) {
+        impostaAcquisizioneModulare(soloAcceso(r));
       },
     },
     {

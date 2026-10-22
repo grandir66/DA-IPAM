@@ -5,7 +5,7 @@ import { removeTestHubDb } from "@/lib/integrations/__tests__/support/hub-isolat
 import { test, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { closeHubDb } from "@/lib/db-hub";
-import { createScheduledJob, deleteTenantDatabase, getTenantDb, withTenant } from "@/lib/db-tenant";
+import { acquisizioneModulareAccesa, createScheduledJob, deleteTenantDatabase, getTenantDb, withTenant } from "@/lib/db-tenant";
 import { LETTURE } from "@/lib/topology/letture/interruttori";
 import { SCHEDULED_JOB_TYPES } from "@/lib/scheduled-job-types";
 import { MODULE_DESCRIPTORS } from "@/lib/modules/registry";
@@ -32,6 +32,7 @@ const CENSIMENTO: ReadonlyArray<[chiave: string, id: string]> = [
   ["topologia.mappa.cavi", "automatismo.mappa_cavi"],
   ["patch.choco_automatico", "automatismo.choco_automatico"],
   ["offline_guard_mode", "automatismo.freno_offline"],
+  ["acquisizione_modulare.attiva", "automatismo.acquisizione_modulare"],
   ["meshcentral.senza_agente", "automatismo.senza_agente"],
   ["nis2_inventory_enabled", "modulo.nis2_inventory"],
   ["integration_wazuh_enabled", "modulo.wazuh"],
@@ -140,5 +141,22 @@ test("(d) cliente appena nato: le sei letture accese di serie (librenms spenta: 
     assert.equal(per("automatismo.mappa_cavi")?.acceso, false);
     const illeggibili = righe.filter((r) => r.stato.esito.testo.startsWith("stato illeggibile")).map((r) => `${r.opzione.id}: ${r.stato.esito.testo}`);
     assert.deepEqual(illeggibili, []);
+  });
+});
+
+test("(e) acquisizione modulare: spenta di serie, si accende e si spegne da Opzioni, scrive la stessa impostazione di prima", () => {
+  withTenant(T, () => {
+    const o = catalogo().find((x) => x.id === "automatismo.acquisizione_modulare");
+    assert.ok(o, "riga mancante");
+    assert.equal(o.forma, "levetta");
+    assert.equal(o.valePer, "cliente");
+    assert.equal(o.leggi().acceso, false);
+    o.cambia?.({ acceso: true }, "test");
+    assert.equal(o.leggi().acceso, true);
+    assert.equal(acquisizioneModulareAccesa(), true, "è la stessa impostazione letta dal pulsante d'acquisizione");
+    o.cambia?.({ acceso: false }, "test");
+    assert.equal(o.leggi().acceso, false);
+    assert.equal(acquisizioneModulareAccesa(), false);
+    assert.throws(() => o.cambia?.({}, "test"), /accendere o spegnere/);
   });
 });

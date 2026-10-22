@@ -376,16 +376,23 @@ export function migrateScheduledJobsV11(db: Database.Database): boolean {
     | undefined;
   if (!row?.sql || row.sql.includes("'apparati_scelti'")) return false;
 
-  const present = new Set(
-    (db.prepare("PRAGMA table_info(scheduled_jobs)").all() as Array<{ name: string }>).map((c) => c.name),
-  );
-  const cols = SCHEDULED_JOBS_COLUMNS.filter((c) => present.has(c)).join(", ");
   const conta = (t: string): number => (db.prepare(`SELECT COUNT(*) AS n FROM ${t}`).get() as { n: number }).n;
+  let fatta = false;
 
   // PRAGMA foreign_keys non ha effetto dentro una transazione: si spegne prima.
   db.pragma("foreign_keys = OFF");
   try {
     db.transaction(() => {
+      // Guardia e colonne si rileggono dentro la transazione: un'altra connessione può aver già ricostruito.
+      const dentro = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='scheduled_jobs'").get() as
+        | { sql?: string }
+        | undefined;
+      if (!dentro?.sql || dentro.sql.includes("'apparati_scelti'")) return;
+      const present = (db.prepare("PRAGMA table_info(scheduled_jobs)").all() as Array<{ name: string }>).map((c) => c.name);
+      // Una colonna che la copia non conosce si perderebbe in silenzio: si lancia e la tabella resta com'era.
+      const ignote = present.filter((c) => !(SCHEDULED_JOBS_COLUMNS as readonly string[]).includes(c));
+      if (ignote.length > 0) throw new Error(`v11: colonne di scheduled_jobs sconosciute alla copia: ${ignote.join(", ")}`);
+      const cols = SCHEDULED_JOBS_COLUMNS.filter((c) => present.includes(c)).join(", ");
       const seq = db.prepare("SELECT seq FROM sqlite_sequence WHERE name = 'scheduled_jobs'").get() as
         | { seq: number }
         | undefined;
@@ -419,11 +426,12 @@ export function migrateScheduledJobsV11(db: Database.Database): boolean {
       db.exec("ALTER TABLE scheduled_jobs_v11 RENAME TO scheduled_jobs");
       for (const a of accessori) db.exec(a.sql);
       db.exec("CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_enabled_next ON scheduled_jobs(enabled, next_run)");
+      fatta = true;
     })();
   } finally {
     db.pragma("foreign_keys = ON");
   }
-  return true;
+  return fatta;
 }
 
 /**
@@ -1516,18 +1524,22 @@ export function getTenantDb(tenantCode: string): Database.Database {
   // (scansione automatica dei device scelti in Discovery, piano 2026-10-22). Dopo la v10.
   // Se fallisce la tabella resta quella di prima (ROLLBACK) e il tenant si apre: i job
   // apparati_scelti non si possono creare finché la v11 non passa a un'apertura dopo.
+  let v11Fallita: unknown;
   try {
     const t0 = Date.now();
     if (migrateScheduledJobsV11(newDb)) {
       console.info(`[db-tenant] ${tenantCode}: scheduled_jobs CHECK aggiornato con 'apparati_scelti' (v11, ${Date.now() - t0} ms)`);
     }
   } catch (e) {
+    v11Fallita = e;
     console.error(`[db-tenant] ${tenantCode}: migrazione apparati_scelti (v11) fallita (ROLLBACK), scheduled_jobs invariata:`, e);
   }
 
-  // Esiti dei job apparati_scelti (stesso piano): tabella e indice, solo se mancano, col segno. Se fallisce il tenant si
-  // apre lo stesso e il segno dice l'errore.
+  // Esiti dei job apparati_scelti (stesso piano): tabella e indice, solo se mancano, col segno. Se fallisce (o è fallita
+  // la v11: i job apparati_scelti non si possono creare) il tenant si apre lo stesso e il segno dice l'errore; l'apertura
+  // dopo riprova e, se passa, riscrive «done».
   try {
+    if (v11Fallita !== undefined) throw v11Fallita;
     const added = migraApparatiScelti(newDb);
     if (added.length > 0) {
       console.info(`[db-tenant] ${tenantCode}: esiti dei job apparati_scelti, aggiunto ${added.join(", ")}`);

@@ -232,3 +232,35 @@ test("tenant nuovo: CHECK con apparati_scelti, tabella degli esiti col suo indic
   assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_job_apparati_esiti_device'").get());
   assert.match(leggiSegno(db, SEGNO_APPARATI_SCELTI) ?? "", /^done:\d{4}-\d{2}-\d{2}:v1$/);
 });
+
+test("v11: una colonna che la copia non conosce non si perde in silenzio: lancia e la tabella resta com'era", () => {
+  const db = dbV10();
+  db.exec("ALTER TABLE scheduled_jobs ADD COLUMN aggiunta_a_mano TEXT");
+  db.prepare("INSERT INTO scheduled_jobs (network_id, job_type, aggiunta_a_mano) VALUES (NULL, 'cleanup', 'x')").run();
+  const prima = tableSql(db);
+  assert.throws(() => migrateScheduledJobsV11(db), /aggiunta_a_mano/);
+  assert.equal(tableSql(db), prima);
+  assert.deepEqual(db.prepare("SELECT aggiunta_a_mano FROM scheduled_jobs").all(), [{ aggiunta_a_mano: "x" }]);
+  assert.equal(db.pragma("foreign_keys", { simple: true }), 1);
+});
+
+test("tenant vero con una colonna sconosciuta: si apre, scheduled_jobs invariata, segno di errore", () => {
+  deleteTenantDatabase(T);
+  getTenantDb(T);
+  closeTenantDb(T);
+  const raw = new Database(path.join(resolveDataDir(), "tenants", `${T}.db`));
+  raw.pragma("foreign_keys = OFF");
+  raw.exec("DROP TABLE scheduled_jobs");
+  raw.exec(`DELETE FROM tenant_settings WHERE key = '${SEGNO_APPARATI_SCELTI}'`);
+  raw.exec(V10_DDL);
+  raw.exec("ALTER TABLE scheduled_jobs ADD COLUMN aggiunta_a_mano TEXT");
+  raw.exec("INSERT INTO scheduled_jobs (id, network_id, job_type, aggiunta_a_mano) VALUES (4, NULL, 'cleanup', 'x')");
+  const prima = tableSql(raw);
+  raw.close();
+
+  const db = getTenantDb(T);
+  assert.equal(tableSql(db), prima);
+  assert.deepEqual(db.prepare("SELECT id, aggiunta_a_mano FROM scheduled_jobs").all(), [{ id: 4, aggiunta_a_mano: "x" }]);
+  assert.match(leggiSegno(db, SEGNO_APPARATI_SCELTI) ?? "", /^errore:.*aggiunta_a_mano/);
+  closeTenantDb(T);
+});

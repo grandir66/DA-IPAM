@@ -256,6 +256,66 @@ export const DDL_SWITCH_VLAN_NATIVA: ReadonlyArray<readonly [string, string]> = 
 export const SEGNO_SWITCH_VLAN_NATIVA = "switch_vlan_nativa_v21";
 export const VERSIONE_SWITCH_VLAN_NATIVA = 1;
 
+/**
+ * LibreNMS come fonte di dati (piano 2026-10-22 LibreNMS, task 2; spec `specs/2026-10-22-librenms-fonte-dati-design.md`):
+ * la fotografia dell'ultima lettura buona di ogni parte dell'API di LibreNMS locale (apparati, porte, vicini, VLAN, MAC per
+ * porta, ARP, sensori, inventario), come ADR 0027/0029, più `librenms_lettura` (come è andata ogni parte) e
+ * `librenms_rifiuto` (gli apparati che LibreNMS ha rifiutato all'aggiunta, col motivo: senza `force_add` un rifiuto non
+ * lascia una riga in `librenms_host_map`). Chiavi di LibreNMS, nessuna FOREIGN KEY (spec §4.4: la maggior parte degli
+ * oggetti di LibreNMS sono host senza apparato), nessun CHECK. Date `YYYY-MM-DD HH:MM:SS` UTC per `letto_il`, `tentato_il`
+ * e `il`; le date di LibreNMS (`last_polled`, `aggiornato_il`, `visto_il`) restano come le dà la sua API. CREATE solo nella
+ * migrazione (`migrateLibrenmsFonte`), senza `IF NOT EXISTS` (ADR 0029 §4). La mappa non le legge (spec §4.3).
+ */
+export const DDL_LIBRENMS_FONTE_V1: ReadonlyArray<readonly [string, string]> = [
+  ["librenms_apparato", `CREATE TABLE librenms_apparato (
+  librenms_device_id INTEGER PRIMARY KEY, ip TEXT, hostname TEXT, sysname TEXT, os TEXT, hardware TEXT, version TEXT,
+  serial TEXT, status INTEGER, last_polled TEXT, last_discovered TEXT, letto_il TEXT NOT NULL
+)`],
+  ["librenms_porta", `CREATE TABLE librenms_porta (
+  librenms_device_id INTEGER NOT NULL, port_id INTEGER NOT NULL, if_index INTEGER, if_name TEXT, if_alias TEXT, if_type TEXT,
+  oper_status TEXT, admin_status TEXT, speed INTEGER, mac TEXT, vlan INTEGER, letto_il TEXT NOT NULL,
+  PRIMARY KEY (librenms_device_id, port_id)
+)`],
+  ["librenms_vicino", `CREATE TABLE librenms_vicino (
+  librenms_device_id INTEGER NOT NULL, link_id INTEGER NOT NULL, local_port_id INTEGER, protocol TEXT, remote_hostname TEXT,
+  remote_port TEXT, remote_platform TEXT, remote_device_id INTEGER, remote_port_id INTEGER, letto_il TEXT NOT NULL,
+  PRIMARY KEY (librenms_device_id, link_id)
+)`],
+  ["librenms_vlan", `CREATE TABLE librenms_vlan (
+  librenms_device_id INTEGER NOT NULL, vlan_id INTEGER NOT NULL, nome TEXT, letto_il TEXT NOT NULL,
+  PRIMARY KEY (librenms_device_id, vlan_id)
+)`],
+  ["librenms_mac_porta", `CREATE TABLE librenms_mac_porta (
+  librenms_device_id INTEGER NOT NULL, port_id INTEGER NOT NULL, mac TEXT NOT NULL, vlan_id INTEGER, visto_il TEXT,
+  letto_il TEXT NOT NULL, PRIMARY KEY (librenms_device_id, port_id, mac)
+)`],
+  ["librenms_arp", `CREATE TABLE librenms_arp (
+  librenms_device_id INTEGER NOT NULL, port_id INTEGER, mac TEXT NOT NULL, ip TEXT NOT NULL, letto_il TEXT NOT NULL,
+  PRIMARY KEY (librenms_device_id, mac, ip)
+)`],
+  ["librenms_sensore", `CREATE TABLE librenms_sensore (
+  sensor_id INTEGER PRIMARY KEY, librenms_device_id INTEGER NOT NULL, classe TEXT NOT NULL, descrizione TEXT, valore REAL,
+  limite_basso REAL, limite_alto REAL, aggiornato_il TEXT, letto_il TEXT NOT NULL
+)`],
+  ["librenms_inventario", `CREATE TABLE librenms_inventario (
+  librenms_device_id INTEGER NOT NULL, ent_index INTEGER NOT NULL, classe TEXT, nome TEXT, descrizione TEXT, modello TEXT,
+  seriale TEXT, firmware TEXT, contenuto_in INTEGER, letto_il TEXT NOT NULL, PRIMARY KEY (librenms_device_id, ent_index)
+)`],
+  ["librenms_lettura", `CREATE TABLE librenms_lettura (
+  parte TEXT PRIMARY KEY, esito TEXT NOT NULL, righe INTEGER, letto_il TEXT, tentato_il TEXT NOT NULL, codice TEXT
+)`],
+  ["librenms_rifiuto", `CREATE TABLE librenms_rifiuto (
+  ip TEXT PRIMARY KEY, host_id INTEGER, network_device_id INTEGER, codice TEXT NOT NULL, motivo TEXT NOT NULL, il TEXT NOT NULL
+)`],
+];
+export const INDICI_LIBRENMS_FONTE_V1: ReadonlyArray<readonly [string, string]> = [
+  ["idx_librenms_apparato_ip", "CREATE INDEX idx_librenms_apparato_ip ON librenms_apparato(ip)"],
+  ["idx_librenms_sensore_device", "CREATE INDEX idx_librenms_sensore_device ON librenms_sensore(librenms_device_id)"],
+];
+/** Segno in `tenant_settings` (`done:<data>:v<versione>`); la migrazione non lo consulta. */
+export const SEGNO_LIBRENMS_FONTE = "librenms_fonte_v21";
+export const VERSIONE_LIBRENMS_FONTE = 1;
+
 /** Unioni e separazioni a mano (ADR 0021): le scrivono solo le rotte /api/topology/unioni; mai cancellate (tolto_*: la storia).
  *  Membri come id della mappa, senza chiavi esterne né CHECK. Indici solo nella migrazione. */
 export const DDL_TOPOLOGY_UNIONI: ReadonlyArray<readonly [string, string]> = [

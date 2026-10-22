@@ -29,6 +29,7 @@ import {
   reclaimStaleRunningRuns,
 } from "./persist";
 import { ALL_RULES } from "./rules";
+import { accodaAdHealthSeAcceso } from "@/lib/vulcan/accoda-ad";
 import { aggregateScores, severityFromPoints } from "./score";
 import type {
   AdComputerRow,
@@ -299,6 +300,8 @@ export async function runAdHealthcheck(
     const { score, findings } = evaluateContext(ctx);
     insertFindings(db, runId, findings);
     finishRun(db, runId, { status: "ok", score, statsJson: stats });
+    // A-IPAM: l'export va in coda verso DA-Vul-can solo se il flusso è acceso; mai un'eccezione qui.
+    accodaAdHealthSeAcceso(db, runId);
     return { runId, score, findings, privilegeMatrix, acl, winrm, phase6 };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

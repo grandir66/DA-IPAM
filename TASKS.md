@@ -1,5 +1,21 @@
 # TASKS — DA-IPAM
 
+## 2026-10-22 — invio AD e inventario a DA-Vul-can (A-IPAM)
+
+Piano: [`docs/superpowers/plans/2026-10-22-invio-ad-inventario-a-vulcan.md`](docs/superpowers/plans/2026-10-22-invio-ad-inventario-a-vulcan.md) (9 task, livello completo, stato: bozza da approvare). Oggi l'AD arriva all'hub solo a mano (download qui, «Carica» là): il piano aggiunge l'invio automatico, inventario e battito; spento senza `VULCAN_TOKEN`.
+
+- [ ] Piano approvato da Riccardo
+- [ ] T1 chiavi `VULCAN_URL`/`VULCAN_TOKEN` da `oggetto.env` e cliente dell'invio
+- [ ] T2 coda `vulcan_coda` nel DB del cliente (segno `vulcan_coda_v21`), misura sulla copia 70791
+- [ ] T3 invio automatico AD Health a fine esecuzione (riusa `toHubExport`, il download resta)
+- [ ] T4 inventario a lista bianca (prova dei campi «Mai»), misura dei byte sulla copia 70791
+- [ ] T5 trasporto HTTPS gzip verso l'hub (TLS normale)
+- [ ] T6 giro: coda, ping, battito, audit JSONL
+- [ ] T7 timer in `server.ts` (nessuna chiamata senza gettone)
+- [ ] T8 riquadro in «Cosa esce», «Invia ora», riga nella pagina AD
+- [ ] T9 collaudo contro DA-Vul-can di sviluppo (ping/battito/AD; inventario solo hub finto), documenti, rilascio spento, copie 70791 cancellate
+- [ ] Fuori piano, da seguire: A-Link (`tipo:"ipam"`, chiavi in `oggetto.env`, policy P9 con conferma), A3 sull'hub (rotta inventario, nessun piano su origin al 22/10), nome `da-vulcan.domarc.it` fissato sull'appliance
+
 ## 2026-10-22 — topologia: spazio in basso, cavi a mano, server non agganciati
 
 Livello leggero. Worktree `.worktrees/da-ipam-topologia` da `origin/dev` (il `dev` locale ha 18 commit dei collector non pubblicati).

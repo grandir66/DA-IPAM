@@ -1,5 +1,17 @@
 # TASKS — DA-IPAM
 
+## 2026-10-22 — Letture degli apparati accese di serie (ADR 0031)
+
+Livello leggero, approvato da Riccardo il 22/10 dopo 70151 (VLAN del router mancanti perché la lettura nasceva spenta).
+
+- [x] Chiave assente/rovinata = accesa in `leggiInterruttore`; la mappa nuova resta spenta
+- [x] Testi della pagina «Dati della mappa» («accesa di serie»)
+- [x] Prove: 49 che davano per scontata la partenza spenta ora la dichiarano; prova nuova sul valore di serie
+- [x] ADR 0031, CHANGELOG
+- [ ] Cancello (lint, tsc, prove, build), release, push su dev
+- [ ] Aggiornamento dell'appliance di 70151 e verifica delle VLAN sul router 172.20.40.102
+- [ ] Pagina unica delle opzioni (richiesta di Riccardo, 22/10): censimento degli interruttori e proposta grafica prima di scriverla
+
 ## 2026-10-22 — LibreNMS come fonte di dati degli apparati SNMP
 
 Spec [`docs/superpowers/specs/2026-10-22-librenms-fonte-dati-design.md`](docs/superpowers/specs/2026-10-22-librenms-fonte-dati-design.md), piano [`docs/superpowers/plans/2026-10-22-librenms-fonte-dati.md`](docs/superpowers/plans/2026-10-22-librenms-fonte-dati.md) (10 task; completo per aggiunta, migrazione, giro e mappa, leggero per rotte e interfaccia; stato: bozza da approvare). Prova in sola lettura sull'hub il 22/10: LibreNMS ha 3-4 volte porte, vicini e MAC dei nostri motori, più 1160 sensori.

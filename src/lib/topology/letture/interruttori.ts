@@ -1,7 +1,7 @@
 /**
  * Gli interruttori delle letture in più per la mappa (spec topologia §13.5.6), uno per lettura e per cliente, in
- * tenant_settings del DB del cliente. Chiave assente, valore rovinato o `acceso` diverso da `true` = SPENTO: un ambiente
- * che non dichiara niente non legge (D4). Accanto, l'esito di ogni lettura per apparato: serve alla cadenza propria
+ * tenant_settings del DB del cliente. Accese di serie (ADR 0031, sostituisce D4): si spengono solo con `acceso: false`
+ * scritto da un admin (vedi `leggiInterruttore`). Accanto, l'esito di ogni lettura per apparato: serve alla cadenza propria
  * (cadenza.ts) e alla riga «ultima lettura ed esito» di «Dati della mappa». Ore in UTC, come nel DB.
  */
 import { getTenantSetting, runInTenantTransaction, setTenantSetting, type CampiViciniCavi } from "@/lib/db-tenant";
@@ -53,8 +53,15 @@ export function leggiStatoChiave(chiave: string): StatoInterruttore {
   return { acceso: o?.acceso === true, da: typeof o?.da === "string" ? o.da : null, il: typeof o?.il === "string" ? o.il : null };
 }
 
+/**
+ * Le letture sono ACCESE DI SERIE (ADR 0031, 22/10): chiave assente o rovinata = accesa, con `da` null. Si spengono solo
+ * con `acceso: false` scritto da un admin. Prima valeva il contrario (D4): sull'appliance di 70151 le VLAN del router non
+ * arrivavano finché qualcuno non andava ad accendere la lettura. La mappa nuova (`leggiStatoChiave`) resta spenta di serie.
+ */
 export function leggiInterruttore(l: Lettura): StatoInterruttore {
-  return leggiStatoChiave(chiaveLettura(l));
+  const o = oggetto(leggiJson(chiaveLettura(l)));
+  if (!o) return { acceso: true, da: null, il: null };
+  return { acceso: o.acceso !== false, da: typeof o.da === "string" ? o.da : null, il: typeof o.il === "string" ? o.il : null };
 }
 
 export function letturaAccesa(l: Lettura): boolean {

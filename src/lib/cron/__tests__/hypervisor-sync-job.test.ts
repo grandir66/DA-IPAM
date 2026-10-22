@@ -23,6 +23,7 @@ import { encrypt } from "@/lib/crypto";
 import { HYPERVISOR_SYNC_MINUTES, motivoHypervisorSync, runHypervisorSync, runJob } from "@/lib/cron/jobs";
 import { scriviInterruttore } from "@/lib/topology/letture/interruttori";
 import type { EsitoGiro } from "@/lib/topology/letture/cadenza";
+import { LETTURE_SPENTE_SQL } from "@/lib/topology/letture/__tests__/letture-spente";
 
 const T = "TESTHYPERVISORJOB";
 
@@ -34,6 +35,7 @@ after(() => {
 
 beforeEach(() => {
   deleteTenantDatabase(T);
+  getTenantDb(T).exec(LETTURE_SPENTE_SQL);
 });
 
 function apparato(campi: { name: string; host: string; device_type: string; vendor: string; scan_target?: string | null; enabled?: number; creds?: boolean }): number {

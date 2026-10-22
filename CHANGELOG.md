@@ -4,6 +4,16 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-22 · Letture degli apparati accese di serie
+
+### Cambiato
+
+- **Le sei letture in più degli apparati partono accese** (ADR 0031): VLAN, DNS e utenti dei MikroTik, spanning tree e
+  bridge dei MikroTik, VLAN degli switch via SNMP, LLDP via SNMP, campi del controller, LLDP degli hypervisor. Una chiave
+  assente vale «accesa»; si spengono solo da «Dati della mappa», cliente per cliente. Perché: sull'appliance di 70151 il
+  router era leggibile ma la scheda non aveva le VLAN, perché la lettura nasceva spenta e andava accesa a mano, appliance
+  per appliance. La mappa nuova resta spenta di serie.
+
 ## [Non rilasciato] — 2026-10-22 · Invio di AD Health e inventario a DA-Vul-can (v0.9.869-871)
 
 Piano `docs/superpowers/plans/2026-10-22-invio-ad-inventario-a-vulcan.md` (A-IPAM della spec DA-Vul-can del 21/10).

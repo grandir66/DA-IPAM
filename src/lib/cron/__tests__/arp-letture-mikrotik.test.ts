@@ -27,6 +27,7 @@ import {
 } from "@/lib/devices/mikrotik-letture";
 import { leggiEsiti, scriviInterruttore } from "@/lib/topology/letture/interruttori";
 import { DESCRIZIONE_LETTURE } from "@/lib/topology/letture/testi";
+import { LETTURE_SPENTE_SQL } from "@/lib/topology/letture/__tests__/letture-spente";
 
 const T = "TESTARPLETTUREMK";
 const db = () => getTenantDb(T);
@@ -72,7 +73,8 @@ beforeEach(() => {
     DELETE FROM mikrotik_bridge; DELETE FROM mikrotik_bridge_port; DELETE FROM mikrotik_bond;
     DELETE FROM mikrotik_bridge_vlan; DELETE FROM mikrotik_vlan; DELETE FROM mikrotik_dns; DELETE FROM mikrotik_user;
     DELETE FROM device_neighbors; DELETE FROM mac_port_entries; DELETE FROM network_devices; DELETE FROM networks;
-    DELETE FROM tenant_settings WHERE key LIKE 'topologia.lettura.%';`);
+    DELETE FROM tenant_settings WHERE key LIKE 'topologia.lettura.%';
+    ${LETTURE_SPENTE_SQL}`);
   db().exec("INSERT INTO networks (id, cidr, name) VALUES (1, '192.0.2.0/24', 'LAN prova')");
   db().exec("INSERT INTO network_devices (id, name, host, device_type, vendor, protocol, enabled, use_for_arp_poll) "
     + "VALUES (1, 'RTR-1', '192.0.2.1', 'router', 'mikrotik', 'ssh', 1, 1), (2, 'SW-2', '192.0.2.2', 'switch', 'mikrotik', 'ssh', 1, 0)");

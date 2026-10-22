@@ -19,13 +19,15 @@ import type { SwitchClient } from "@/lib/devices/switch-client";
 import type { LettoreSnmp, VoceSnmp } from "@/lib/devices/snmp-walk";
 import { scriviInterruttore } from "@/lib/topology/letture/interruttori";
 import type { NetworkDevice } from "@/types";
+import { LETTURE_SPENTE_SQL } from "@/lib/topology/letture/__tests__/letture-spente";
 
 const T = "TESTLETTURAAPPARATO";
 const db = () => getTenantDb(T);
 
 beforeEach(() => {
   db().exec(`DELETE FROM mac_port_entries; DELETE FROM switch_ports; DELETE FROM arp_entries; DELETE FROM switch_vlan_lettura;
-    DELETE FROM network_devices; DELETE FROM networks; DELETE FROM tenant_settings WHERE key LIKE 'topologia.lettura.%';`);
+    DELETE FROM network_devices; DELETE FROM networks; DELETE FROM tenant_settings WHERE key LIKE 'topologia.lettura.%';
+    ${LETTURE_SPENTE_SQL}`);
   db().exec("INSERT INTO networks (id, cidr, name) VALUES (1, '192.0.2.0/24', 'LAN prova')");
   const ins = db().prepare("INSERT INTO network_devices (id, name, host, device_type, vendor, protocol, enabled, use_for_arp_poll, community_string) "
     + "VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)");

@@ -25,6 +25,7 @@ import { OID_QBRIDGE } from "@/lib/devices/snmp-vlan";
 import { TABELLE_SNMP } from "@/lib/devices/snmp-topologia";
 import { leggiEsiti, scriviInterruttore } from "@/lib/topology/letture/interruttori";
 import type { NetworkDevice } from "@/types";
+import { LETTURE_SPENTE_SQL } from "@/lib/topology/letture/__tests__/letture-spente";
 
 const T = "TESTARPLETTURESWVLAN";
 const db = () => getTenantDb(T);
@@ -33,7 +34,8 @@ const TABELLE = ["switch_vlan", "switch_vlan_porte", "switch_porta_pvid", "switc
 beforeEach(() => {
   db().exec(`DELETE FROM switch_vlan; DELETE FROM switch_vlan_porte; DELETE FROM switch_porta_pvid; DELETE FROM switch_vlan_lettura;
     DELETE FROM topology_port_facts; DELETE FROM topology_bridge_facts; DELETE FROM topology_device_macs; DELETE FROM device_neighbors;
-    DELETE FROM device_credential_bindings; DELETE FROM credentials; DELETE FROM network_devices; DELETE FROM networks; DELETE FROM tenant_settings WHERE key LIKE 'topologia.lettura.%';`);
+    DELETE FROM device_credential_bindings; DELETE FROM credentials; DELETE FROM network_devices; DELETE FROM networks; DELETE FROM tenant_settings WHERE key LIKE 'topologia.lettura.%';
+    ${LETTURE_SPENTE_SQL}`);
   const ins = db().prepare("INSERT INTO network_devices (id, name, host, device_type, vendor, protocol, enabled, use_for_arp_poll, community_string) "
     + "VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)");
   // 5 switch SNMP; 6 switch del controller con SNMP (la ProMax dell'hub risponde via SNMP: si legge anche lui).

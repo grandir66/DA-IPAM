@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { LETTURE } from "@/lib/topology/letture/interruttori";
-import { DESCRIZIONE_LETTURE, NASCE_SPENTA, frequenza, quandoItaliano, righeEsito, testoDialogo, testoEsito, testoStato } from "@/lib/topology/letture/testi";
+import { DESCRIZIONE_LETTURE, NASCE_ACCESA, frequenza, quandoItaliano, righeEsito, testoDialogo, testoEsito, testoStato } from "@/lib/topology/letture/testi";
 
 const HUB = { router: { minuti: 15, daScansioni: true }, switch: 60 };
 const CLIENTE_A = { router: { minuti: 60, daScansioni: false }, switch: 60 };
@@ -37,7 +37,7 @@ test("ogni lettura dice che cosa legge, su quali apparati, con quali comandi, e 
     const d = DESCRIZIONE_LETTURE[l];
     assert.ok(d.titolo.length > 0 && d.legge.length > 0 && d.comandi.length > 0 && d.apparati.length > 0, l);
   }
-  assert.ok(NASCE_SPENTA.toLowerCase().includes("nasce spenta"), "ogni riga dice che nasce spenta");
+  assert.ok(NASCE_ACCESA.toLowerCase().includes("accesa di serie"), "ogni riga dice che è accesa di serie (ADR 0031)");
 });
 
 test("VLAN, DNS e utenti dei MikroTik: titolo, che cosa legge (nessuna password), apparati, comandi; il dialogo dice quattro comandi e l'ora", () => {
@@ -77,9 +77,10 @@ test("stato e orari in ora italiana (UTC+2 fino al 25/10)", () => {
   assert.ok(quandoItaliano("2026-10-15 08:30:00").includes("10:30"));
   assert.equal(quandoItaliano(null), "—");
   assert.equal(quandoItaliano("non una data"), "—");
-  assert.equal(testoStato({ acceso: false, da: "admin", il: "2026-10-15 08:30:00" }), "spenta");
+  assert.ok(testoStato({ acceso: false, da: "admin", il: "2026-10-15 08:30:00" }).startsWith("spenta da admin il "));
+  assert.equal(testoStato({ acceso: false, da: null, il: null }), "spenta");
   assert.ok(testoStato({ acceso: true, da: "admin", il: "2026-10-15 08:30:00" }).startsWith("accesa da admin il "));
-  assert.ok(testoStato({ acceso: true, da: null, il: null }).startsWith("accesa da utente non noto il "));
+  assert.equal(testoStato({ acceso: true, da: null, il: null }), "accesa di serie", "chiave assente (ADR 0031)");
 });
 
 test("l'esito in parole, e un limite con «+ altri N»", () => {

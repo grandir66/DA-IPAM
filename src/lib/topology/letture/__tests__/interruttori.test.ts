@@ -17,13 +17,16 @@ const T = "TESTLETTUREINT";
 beforeEach(() => { getTenantDb(T).exec("DELETE FROM tenant_settings WHERE key LIKE 'topologia.lettura.%'"); });
 after(() => { deleteTenantDatabase(T); closeHubDb(); removeTestHubDb(); });
 
-test("chiave assente, valore rovinato o diverso da acceso:true → spento", () => {
+// ADR 0031 (22/10, 70151: le VLAN del router non arrivavano perché la lettura nasceva spenta): accese di serie.
+test("accese di serie: chiave assente o valore rovinato → accesa; si spegne solo con acceso:false", () => {
   withTenant(T, () => {
-    assert.equal(letturaAccesa("mikrotik"), false);
+    for (const l of LETTURE) assert.deepEqual(leggiInterruttore(l), { acceso: true, da: null, il: null }, l);
     for (const v of ["{", "true", '{"acceso":"si"}', '{"acceso":1}', "[]"]) {
       setTenantSetting(chiaveLettura("mikrotik"), v);
-      assert.equal(letturaAccesa("mikrotik"), false, v);
+      assert.equal(letturaAccesa("mikrotik"), true, v);
     }
+    setTenantSetting(chiaveLettura("mikrotik"), '{"acceso":false}');
+    assert.equal(letturaAccesa("mikrotik"), false, "spenta scritta");
   });
 });
 
@@ -33,7 +36,7 @@ test("accesa e spenta da un admin, con chi e quando (UTC)", () => {
     assert.deepEqual(leggiInterruttore("snmp"), { acceso: true, da: "admin", il: "2026-10-15 08:30:00" });
     scriviInterruttore("snmp", false, "admin", new Date("2026-10-15T09:00:00Z"));
     assert.equal(letturaAccesa("snmp"), false);
-    assert.equal(letturaAccesa("mikrotik"), false, "le altre restano spente");
+    assert.equal(letturaAccesa("mikrotik"), true, "le altre restano accese di serie");
   });
 });
 
@@ -57,12 +60,12 @@ test("senzaCampiCavi toglie solo le colonne nuove dei vicini", () => {
 });
 
 // Cinque dal Task 10 della scheda MikroTik: `mikrotik_scheda` (VLAN, DNS e utenti) è una lettura in più come le altre, con il
-// suo interruttore nella card «Letture in più» e la sua cadenza; nasce spenta come tutte.
-test("tutte e cinque le letture sono disponibili (`host` col Task 7 di T2, `mikrotik_scheda` col Task 10 della scheda): la PUT le accetta; spente finché un admin non le accende", () => {
+// suo interruttore nella card «Letture in più» e la sua cadenza; accesa di serie come tutte (ADR 0031).
+test("tutte e cinque le letture sono disponibili (`host` col Task 7 di T2, `mikrotik_scheda` col Task 10 della scheda): la PUT le accetta; accese di serie", () => {
   assert.deepEqual([...LETTURE], ["mikrotik", "controller", "snmp", "host", "mikrotik_scheda", "switch_vlan"]);
   assert.deepEqual([...LETTURE].filter((l) => !LETTURE_DISPONIBILI.has(l)), []);
-  withTenant(T, () => assert.equal(letturaAccesa("host"), false));
-  withTenant(T, () => assert.equal(letturaAccesa("mikrotik_scheda"), false));
+  withTenant(T, () => assert.equal(letturaAccesa("host"), true));
+  withTenant(T, () => assert.equal(letturaAccesa("mikrotik_scheda"), true));
   assert.equal(chiaveLettura("mikrotik_scheda"), "topologia.lettura.mikrotik_scheda");
   // I comandi che la riga della pagina elenca sono quelli che la lettura manda (senza le opzioni di stampa).
   for (const c of Object.values(COMANDI_MK_SCHEDA)) assert.ok(DESCRIZIONE_LETTURE.mikrotik_scheda.comandi.includes(c.replace(/ terse| without-paging/g, "")), c);
@@ -70,19 +73,20 @@ test("tutte e cinque le letture sono disponibili (`host` col Task 7 di T2, `mikr
   assert.equal(DESCRIZIONE_LETTURE.host.comandi.startsWith(Object.values(COMANDI_HOST).join(" · ")), true);
 });
 
-// Sei dal Task 9 del piano accorpamento/VLAN (ADR 0029): `switch_vlan`, letture SNMP nuove sugli switch dei clienti, nasce
-// spenta: chiave assente = spenta; valore rovinato = spenta.
-test("`switch_vlan`: disponibile, la PUT la accetta, spenta finché un admin non la accende; chiave e valore rovinato", () => {
+// Sei dal Task 9 del piano accorpamento/VLAN (ADR 0029): `switch_vlan`, letture SNMP sugli switch dei clienti; dall'ADR 0031
+// accesa di serie: chiave assente = accesa; valore rovinato = accesa; spenta solo da un admin.
+test("`switch_vlan`: disponibile, la PUT la accetta, accesa di serie finché un admin non la spegne; chiave e valore rovinato", () => {
   assert.ok(LETTURE.includes("switch_vlan") && LETTURE_DISPONIBILI.has("switch_vlan"));
   assert.equal(chiaveLettura("switch_vlan"), "topologia.lettura.switch_vlan");
   withTenant(T, () => {
     getTenantDb(T).prepare("DELETE FROM tenant_settings WHERE key = ?").run("topologia.lettura.switch_vlan");
-    assert.equal(letturaAccesa("switch_vlan"), false, "chiave assente");
+    assert.equal(letturaAccesa("switch_vlan"), true, "chiave assente");
     getTenantDb(T).prepare("INSERT INTO tenant_settings (key, value) VALUES (?, ?)").run("topologia.lettura.switch_vlan", "{rotto");
-    assert.equal(letturaAccesa("switch_vlan"), false, "valore rovinato");
+    assert.equal(letturaAccesa("switch_vlan"), true, "valore rovinato");
+    scriviInterruttore("switch_vlan", false, "admin");
+    assert.equal(letturaAccesa("switch_vlan"), false);
     scriviInterruttore("switch_vlan", true, "admin");
     assert.equal(letturaAccesa("switch_vlan"), true);
-    scriviInterruttore("switch_vlan", false, "admin");
   });
   // Le walk che la riga della pagina elenca sono le sette di OID_QBRIDGE.
   assert.equal(Object.keys(OID_QBRIDGE).length, 7);

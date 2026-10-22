@@ -163,6 +163,37 @@ nel frattempo `qnap-nas`, `mikrotik-routeros`, `synology-nas`, `windows`, `linux
 Fermati a fine punto 5. Cancello completo a fine giro, TASKS aggiornato con cosa provare in locale e su quali
 apparati. Non toccare il ramo `collector-locali` (si legge e si unisce, non si riscrive).
 
+## Giro 5 (22/10): correzioni dai collaudi, Proxmox fuori dal pulsante, Windows e Linux agganciati
+
+Livello **leggero**. Esiti dei collaudi veri in TASKS.md (sezione «giro 4 dei collector», voci del 22/10). Decisioni nel
+§7 del piano, «Fine giro 4». Prima di tutto merge di `origin/dev`.
+
+1. **Linux**: un comando che fallisce (uscita ≠ 0, comando assente, permesso negato) **non è un guasto di trasporto**:
+   il lotto continua e quella lettura ha il suo stato (`unsupported`/`error` con codice). Si ferma solo per un guasto
+   vero della connessione. Sul collaudo `da-ftp` il lotto si fermava dopo i primi comandi (`SSH_BATCH_ABORTED`). Vale per
+   tutti i collector che usano lo stesso lettore SSH a lotti: prova vista rossa.
+2. **Synology**: banner e messaggi su stderr del login SSH («Could not chdir to home directory…») non entrano mai nei
+   campi: il nome host del collaudo conteneva il messaggio. Su DSM `ip -j` non esiste: ripiego dichiarato (le
+   interfacce arrivano già da SNMP), niente errore che sembri un guasto.
+3. **QNAP via solo SNMP**: modello e firmware dagli OID enterprise QNAP che il profilo storico già legge
+   (`scanner/snmp-vendor-profiles.ts`, `id: "qnap"`: `…24681.1.2.1.0` modello, `.2.0` firmware, `.3.0` seriale) con le
+   varianti QTS5 se presenti.
+4. **MikroTik**: velocità e duplex dalle bandiere `terse` e dal monitor ethernet (il giro 3 aveva il parser; sul
+   collaudo resta `TERSE_FLAGS_AND_NEGOTIATED_SPEED_NOT_INTERPRETED`); PoE su un apparato senza PoE = «non presente»
+   (`unsupported` con codice chiaro), non `FORMAT_UNRECOGNIZED_OR_EMPTY`.
+5. **Proxmox**: fuori dal riconoscimento del pulsante (decisione 3). Poi il collector `proxmox-ve` si estende verso la
+   parità con la scansione Proxmox di oggi (`proxmox/run-proxmox-device-scan.ts`, `proxmox-client.ts`): VM e CT con
+   stato, risorse, dischi e reti, storage, nodi. Si confronta campo per campo cosa legge la scansione e cosa il
+   collector, e si scrive la tabella della differenza nel manuale. L'aggancio torna solo a parità, con decisione di
+   Riccardo.
+6. **Windows** (collaudato, esito ok su Windows Server 2022) e **Linux** (dopo il punto 1) agganciati al riconoscimento
+   del prodotto, come gli altri; le porte da switch restano solo per switch e router. Descrittore `windows`: collaudato
+   (Windows Server 2022 Standard, WinRM 5985, senza ruolo Hyper-V); `linux`: collaudato su Ubuntu 24.04 se il punto 1
+   è verde sulla fixture con la forma del collaudo.
+
+Fermati a fine punto 6. Cancello completo, TASKS aggiornato con cosa ricollaudare in locale (Linux `da-ftp`, MikroTik
+`192.168.15.254`, QNAP `.24`, Synology `.22`).
+
 ## Da lasciare a Riccardo in locale
 
 - Misure su copia del DB dell'hub (S3; differenze dell'anteprima in C2).

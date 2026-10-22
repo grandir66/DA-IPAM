@@ -80,6 +80,7 @@ export function matriceVlanSwitch(i: { porte: PortaPerMatrice[]; db: DatiVlanSwi
   let qualita: MatriceVlanSwitch["qualita"];
   let colonne: ColonnaVlan[];
   let pvidDi: (p: PortaPerMatrice) => number | null;
+  let pvidNotaDi: (p: PortaPerMatrice) => string | null = () => null;
   let cellaDi: (p: PortaPerMatrice, vlan: number) => CellaVlan;
   let dalController = 0;
 
@@ -108,6 +109,12 @@ export function matriceVlanSwitch(i: { porte: PortaPerMatrice[]; db: DatiVlanSwi
       ...[...nativa.entries()].filter(([i]) => daNativa(i)).map(([, v]) => v)])].sort((a, b) => a - b);
     colonne = ids.map((id) => ({ id, etichetta: String(id), nome: nomi.get(id) ?? null }));
     pvidDi = (p) => pvid.get(p.port_index) ?? (daNativa(p.port_index) ? nativa.get(p.port_index)! : null);
+    // La U viene dal controller ma il PVID mostrato è dell'SNMP: se non coincidono la riga lo dice.
+    pvidNotaDi = (p) => {
+      const s = pvid.get(p.port_index);
+      const n = nativa.get(p.port_index);
+      return daNativa(p.port_index) && s !== undefined && n !== undefined && s !== n ? `nativa ${n} (controller)` : null;
+    };
     cellaDi = (p, v) => {
       const e = membro.get(`${v}|${p.port_index}`);
       if (daNativa(p.port_index)) {
@@ -130,7 +137,7 @@ export function matriceVlanSwitch(i: { porte: PortaPerMatrice[]; db: DatiVlanSwi
     const gruppo: GruppoPorta = eAggregato(p.port_name) ? "aggregato" : eSfpSwitch(p) ? "sfp" : "porta";
     const celle = colonne.map((c) => cellaDi(p, c.id!));
     return {
-      porta: etichetta(p, gruppo), stato: statoPorta(p.status), pvid: pvidDi(p), nota: nota(p), celle,
+      porta: etichetta(p, gruppo), stato: statoPorta(p.status), pvid: pvidDi(p), pvid_nota: pvidNotaDi(p), nota: nota(p), celle,
       if_index: p.port_index, gruppo, senza_vlan: celle.every((c) => c === null),
     };
   });

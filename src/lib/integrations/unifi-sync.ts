@@ -420,7 +420,8 @@ function scriviCampiCavi(deviceId: number, d: UnifiDevice): string[] {
  * fotografia intera per apparato. Un guasto qui non tocca la scrittura dell'apparato: avviso con id e codice, mai nomi.
  */
 function scriviNative(deviceId: number, d: UnifiDevice, vlanDi: ReadonlyMap<string, number>, result: UnifiSyncResult): void {
-  if (d.type !== "usw" || d.state !== 1) return;
+  // Senza porte il controller non ha detto niente sulle native: «non so», le righe di prima restano.
+  if (d.type !== "usw" || d.state !== 1 || d.port_table.length === 0) return;
   const righe = vlanNativePorte(d, vlanDi);
   try {
     if (scriviVlanNativaSwitch(deviceId, righe)) result.vlanNativeScritte += righe.length;
@@ -546,8 +547,13 @@ export async function syncUnifiForTenant(opts: UnifiSyncOptions = {}): Promise<U
     if (conReti) {
       const r = await source.listDevicesWithNetworks!();
       devices = r.devices;
-      if (r.networks) vlanDi = vlanDelleReti(r.networks);
-      else result.errors.push(`Reti del controller non lette: VLAN native degli switch non aggiornate (${r.networksError ?? "motivo ignoto"})`);
+      // Un elenco vuoto, o senza nessuna rete di porta, è un «non so» come un errore: scriverlo cancellerebbe le native.
+      const mappa = r.networks && r.networks.length > 0 ? vlanDelleReti(r.networks) : null;
+      if (mappa && mappa.size > 0) vlanDi = mappa;
+      else {
+        const motivo = r.networks ? "elenco delle reti vuoto o senza reti di porta" : (r.networksError ?? "motivo ignoto");
+        result.errors.push(`Reti del controller non lette: VLAN native degli switch non aggiornate (${motivo})`);
+      }
     } else {
       devices = await source.listDevices();
     }

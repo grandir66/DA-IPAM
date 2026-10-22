@@ -181,3 +181,27 @@ test("sync accesa, switch offline: le native di prima restano", async () => {
     assert.equal((leggiVlanSwitchDb(idProMax()).nativa ?? []).length, 22);
   });
 });
+
+test("sync accesa, elenco delle reti VUOTO o senza reti di porta: «non so», le native di prima restano, avviso", async () => {
+  await withTenant(T, async () => {
+    scriviInterruttore("switch_vlan", true, "prova");
+    for (const reti of [[], RETI().filter((r) => r.purpose === "wan")]) {
+      const s = sorgente(reti);
+      const r = await syncUnifiForTenant({ source: s });
+      assert.equal(r.vlanNativeScritte, 0);
+      assert.ok(r.errors.some((e) => /reti del controller non lette/i.test(e)), r.errors.join(" | "));
+      assert.equal((leggiVlanSwitchDb(idProMax()).nativa ?? []).length, 22, "un elenco vuoto non cancella");
+    }
+  });
+});
+
+test("sync accesa, switch connesso ma senza port_table: le native di prima restano", async () => {
+  await withTenant(T, async () => {
+    scriviInterruttore("switch_vlan", true, "prova");
+    const s = sorgente(RETI());
+    s.listDevicesWithNetworks = async () => ({ devices: PROMAX().map((d) => ({ ...d, port_table: [] })), networks: RETI(), networksError: null });
+    const r = await syncUnifiForTenant({ source: s });
+    assert.equal(r.vlanNativeScritte, 0);
+    assert.equal((leggiVlanSwitchDb(idProMax()).nativa ?? []).length, 22);
+  });
+});

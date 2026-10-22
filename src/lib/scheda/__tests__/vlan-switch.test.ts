@@ -299,3 +299,15 @@ test("nativa senza lettura SNMP: la matrice resta «solo PVID» (la nativa da so
   assert.equal(m.qualita, "solo_pvid");
   assert.equal(m.dal_controller, 0);
 });
+
+test("nativa diversa dal PVID SNMP della stessa porta: la riga lo dice («nativa N (controller)»), non si contraddice in silenzio", () => {
+  const m = matriceVlanSwitch({
+    porte: [porta(1, "Port 1"), porta(2, "Port 2"), porta(3, "Port 3")],
+    db: { ...datiDedotti(), nativa: [{ if_index: 1, vlan_id: 5 }, { if_index: 2, vlan_id: 5 }, { if_index: 3, vlan_id: 40 }] },
+  });
+  const r = (i: number) => m.righe.find((x) => x.if_index === i)!;
+  assert.equal(r(1).pvid, 1);
+  assert.equal(r(1).pvid_nota, "nativa 5 (controller)", "PVID SNMP 1, nativa 5");
+  assert.equal(r(2).pvid_nota ?? null, null, "PVID SNMP 5 = nativa 5: niente da dire");
+  assert.equal(r(3).pvid_nota ?? null, null, "PVID preso dal controller: niente contrasto");
+});

@@ -87,5 +87,16 @@ export function unifiJobKind(configStr: string | null | undefined): "apparati" |
  */
 export function scheduledJobLabel(job: { job_type: string; config: string | null }, labels: Record<string, string>): string {
   if (job.job_type === "unifi_sync" && unifiJobKind(job.config) === "client") return "Lettura client UniFi (7–20)";
+  if (job.job_type === "apparati_scelti") return nomeApparatiScelti(job.config) ?? labels[job.job_type] ?? job.job_type;
   return labels[job.job_type] || job.job_type;
+}
+
+/** Il nome scelto dall'admin per un job `apparati_scelti` (`config.nome`); null se manca o la config non si legge. */
+export function nomeApparatiScelti(configStr: string | null | undefined): string | null {
+  try {
+    const nome = (JSON.parse(configStr || "{}") as { nome?: unknown }).nome;
+    return typeof nome === "string" && nome.trim() ? nome : null;
+  } catch {
+    return null;
+  }
 }

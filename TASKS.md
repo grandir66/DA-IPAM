@@ -31,7 +31,9 @@ Diagnosi in sola lettura sull'appliance 70151 (VM 104 su PX01, `qm guest exec`; 
 - [x] Walk SNMP: su *tooBig* riprova la stessa walk a blocchi più piccoli (5, poi 1) — 2 prove viste fallire poi verdi (`snmp-walk.test.ts`), suite 5789/0
 - [x] Profilo HP dal sysDescr alla lettura delle informazioni (`profiloHpDaSysDescr`, solo profili switch HP; AOS-CX escluso) — 3 prove viste fallire poi verdi
 - [ ] Lettura SNMP generale dei Comware: `TEMPO_SCADUTO` su 1-3 walk su 16 (IRF lento, già noto dal collector): da guardare dopo la VLAN
-- [ ] Canale di aggiornamento di 70151 su `dev` (scrittura sull'appliance di un cliente: conferma di Riccardo), poi verifica VLAN dei Comware sul dato vero
+- [x] Canale di aggiornamento di 70151 su `dev` (ok di Riccardo 22/10): `DA_INVENT_BRANCH=dev` in `.env.local`, backup `.env.local.bak-20261022-164828`, aggiornamento avviato
+- [ ] Verifica VLAN dei Comware sul dato vero dopo l'aggiornamento a v0.9.879
+- Prompt per il resto del giro: [`docs/handoff/2026-10-22-prompt-switch-librenms.md`](docs/handoff/2026-10-22-prompt-switch-librenms.md) (Riccardo: ok a farlo in una sessione nuova)
 - [ ] Proposta di aggiunta switch/router: SSH principale + SNMP (oggi con SNMP principale non propone mai l'SSH: `proposta-apparato.ts`)
 - [ ] LibreNMS: candidati all'aggiunta automatica = tutti gli oggetti con SNMP verificato; esclusione per oggetto «Non aggiungere a LibreNMS»; esito visibile
 - [ ] LibreNMS: aggiunta in blocco dalla Discovery

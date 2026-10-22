@@ -367,5 +367,19 @@ dove la domanda era aperta, sotto è scritto cosa si applica.
 - **(e)** Scansione in blocco: gli apparati nel caso dubbio si saltano e si elencano a fine giro, non bloccano.
 - **(f)** VMware dal pulsante resta per C4.
 
+**Fine giro 4 (Riccardo, 22/10):**
+
+1. **Controller UniFi**: non va sul pulsante dell'apparato. Ha già una sua scansione (la sincronizzazione UniFi): il
+   collector serve a **migliorarla acquisendo più dati**, non a sostituirla.
+2. **Windows e Linux** si agganciano dopo il collaudo: Windows sul server di casa `192.168.99.71`; Linux su un nodo
+   Proxmox (è Debian) o su `da-sftp`. Credenziali nel vault.
+3. **Proxmox**: se il collector legge meno della scansione Proxmox di oggi, **prima si estende il collector fino a
+   leggere tutto** (VM e CT compresi), senza sostituire la scansione esistente. Finché non c'è la parità, il collector
+   Proxmox **non** è agganciato al pulsante.
+4. **VLAN MikroTik**: si tengono **entrambe**, configurata e attiva, distinte.
+
+Collaudi indicati da Riccardo: QNAP `192.168.40.26` e `.24`, Synology `192.168.40.22` e `.23`, MikroTik
+`172.20.4.254`, Windows `192.168.99.71`, Linux un nodo Proxmox o `da-sftp`.
+
 **Ancora aperta:** nella sede nuova «ArubaOS» è ArubaOS-Switch (basta `hp-procurve`) o AOS-CX (serve
 `aruba-cx`)? Si vede al collaudo: il `sysDescr` lo dice.

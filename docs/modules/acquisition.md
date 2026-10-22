@@ -85,6 +85,33 @@ contesto tenant e persistenza correnti. Non usare automaticamente i dati per
 riclassificare dispositivi o eliminare porte, MAC e vicini. Non viene modificato il
 percorso NAS QNAP preesistente, né il traffico di scansione attuale.
 
+## Aggancio all'app: acquisizione modulare (C1-C2, 22/10, anteprima)
+
+È **l'acquisizione normale dell'apparato con un altro formato** (tavola C1, piano
+`2026-10-21-recupero-dadude3-mknet.md` §7). Spenta di default: Impostazioni → Sistema →
+«Acquisizione modulare (anteprima)», chiave del tenant `acquisizione_modulare.attiva` («1» = acceso).
+
+- **Dove parte:** `POST /api/devices/[id]/query` (il pulsante «Aggiorna» della scheda, la Discovery).
+  `acquisizione-modulare/fonte.ts` decide: interruttore spento, nessun collector per il prodotto o
+  «classica» scelta → il percorso di sempre, invariato (il blocco nella rotta è solo un'aggiunta).
+- **Fonte ricavata:** collector da profilo/sottotipo/sysDescr (`acquisition/riconosci.ts`, puro),
+  credenziali fra i binding non falliti dell'apparato (mai host, rete, hub, «public»), una per
+  protocollo. Caso dubbio (due collector, o nessuna credenziale compatibile) → 409 e finestra
+  «Scegli la fonte»; la scelta sta in `acquisition_source_choices`.
+- **Un tentativo:** segreti letti nel backend solo per quelle voci (`richiesta.ts`); una voce
+  illeggibile, un errore o un parziale non fanno provare altre credenziali. Lucchetto per apparato.
+- **Archivio:** `acquisition_snapshots` (gzip, validato, senza segreti; errori salvati col solo codice),
+  retention D5 (ultimi 20 + primo e ultimo ok).
+- **Popola l'apparato** (`acquisition/proiezioni`, puro; `acquisizione-modulare/applica.ts`, una
+  transazione): identità → `network_devices` (e modello/firmware/seriale sull'host solo se l'host
+  aveva il valore copiato dall'apparato: un valore a mano resta, registrato come «manuale»);
+  interfacce/PVID/PoE/STP CIST/vicini → `switch_ports` per campo (abbinate per nome, poi per indice;
+  tolte solo da `interfaces` ok); vicini → `device_neighbors` fonte `collector`; STP CIST e
+  aggregazioni → `topology_port_facts` fonte `collector`. Le fonti `collector` le legge il modello
+  per cavo, non la mappa di oggi (T1) né l'attribuzione. Ogni modifica in `acquisition_changes`.
+- **Scheda:** tab Gestione, riquadro sotto «Credenziali»; `GET /api/devices/[id]/acquisizione`
+  (sessione), JSON completo solo admin (`.../snapshot/[sid]/scarica`).
+
 ## Collector qnap-switch
 
 Collaudato in lettura su **QSW-M3216R-8S8T, QSS 4.5.0.847494 (20260908)**. Si identifica

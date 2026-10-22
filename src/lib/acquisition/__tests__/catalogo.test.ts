@@ -44,3 +44,21 @@ test("collector_version nello snapshot è per collector: una versione diversa da
     assert.equal(snapshotSchema.safeParse({ ...snap, collector_version: "1.2.0" }).success, true);
     assert.equal(snapshotSchema.safeParse({ ...snap, collector_version: "abc" }).success, false);
 });
+
+test("un collector per famiglia: nessun id duplicato o orfano, i profili d'inventario derivano dal catalogo", async () => {
+    const { INVENTORY_COMMANDS } = await import("../device-profiles");
+    const ids = CATALOGO.map(d => d.id);
+    assert.equal(new Set(ids).size, ids.length);
+    assert.deepEqual(Object.keys(COLLECTORS).sort(), [...ids].sort(), "nessun collector senza descrittore e viceversa");
+    const inventario = CATALOGO.filter(d => "motore" in d).map(d => d.id).sort();
+    assert.deepEqual(Object.keys(INVENTORY_COMMANDS).sort(), inventario);
+    for (const d of CATALOGO) if ("motore" in d) assert.deepEqual(INVENTORY_COMMANDS[d.id as keyof typeof INVENTORY_COMMANDS], d.comandi, `${d.id}: allowlist dal catalogo`);
+    assert.equal(ids.includes("synology-nas" as never), false, "il nome definitivo è synology-dsm");
+});
+test("le famiglie collaudate in locale dicono il vero: collaudato con modelli; le altre non_collaudato senza modelli", () => {
+    for (const d of CATALOGO) {
+        if (d.collaudo === "collaudato") assert.ok(d.collaudati.length > 0, `${d.id}: collaudato senza modelli`);
+        else assert.equal(d.collaudati.length, 0, d.id);
+    }
+    assert.deepEqual(CATALOGO.filter(d => d.collaudo === "non_collaudato").map(d => d.id).sort(), ["linux", "windows"]);
+});

@@ -4,6 +4,15 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-22 · Collector: uno per famiglia, agganciati al pulsante
+
+### Cambiato
+
+- **Un collector per famiglia.** QNAP NAS, MikroTik e Synology (rinominato `synology-dsm`) usano il motore d'inventario collaudato su apparati veri; dal collector scritto senza apparati si sono tenuti firmware QNAP vero, condivisioni e pacchetti dei NAS, velocità/PoE/FDB/STP di MikroTik. Perché: due versioni dello stesso collector erano un doppione, e quella collaudata è l'unica che ha letto un apparato.
+- **Porte da switch solo a switch e router.** NAS, server, hypervisor, controller e access point non ricevono più `switch_ports` dalla proiezione.
+- **Il pulsante «Aggiorna» e la scansione dei router da Reti** usano il collector per QNAP NAS, Synology, MikroTik, Ubiquiti e Proxmox quando l'interruttore dell'acquisizione modulare è acceso (spento di default: nessun cambiamento).
+- Corretto: vicini e bond MikroTik letti da un'uscita illeggibile non sono più dati per «letti, lista vuota».
+
 ## [Non rilasciato] — 2026-10-22 · Un apparato, una riga; matrice VLAN degli switch
 
 Piano `docs/superpowers/plans/2026-10-22-accorpamento-ip-e-vlan-switch.md` (decisioni di Riccardo del 22/10).

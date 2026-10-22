@@ -396,42 +396,38 @@ anche la lista dei remote_hosts.
 Riferimenti: [MetroCluster nodes](https://docs.netapp.com/us-en/ontap-restapi/get-cluster-metrocluster-nodes.html),
 [ONTAP API reference](https://github.com/NetAppDocs/ontap-automation/blob/main/reference/api_reference.adoc).
 
-## Collector qnap-nas (non collaudato)
+## Collector qnap-nas (collaudato in locale; aggiunte non ancora provate)
 
-QNAP NAS con QTS o QuTS hero, letto via **SSH exec** (`ssh_modo: "exec"`: un login, un canale per comando, nessun
-`sudo`), allowlist `QNAP_NAS_COMMANDS`. Distinto da `qnap-switch`.
+QNAP NAS con QTS o QuTS hero, letto dal **motore d'inventario** (`inventory-collector.ts`) via SSH exec (un login, un
+canale per comando, nessun `sudo`) o SNMP; allowlist `QNAP_NAS_COMMANDS` nel catalogo. Distinto da `qnap-switch`.
+Un solo collector per famiglia: la base è la versione collaudata su QNAP veri (22/10: via SNMP 4 dischi, 2 volumi,
+19 interfacce; via SSH 9 interfacce). Dal collector del giro 3 si sono tenute solo tre cose (`inventory-estensioni.ts`),
+**non ancora provate su un apparato vero**:
 
-- **identity**: modello da `getsysinfo model` (poi `DISPLAY_NAME` di `/etc/platform.conf`), seriale da
-  `getsysinfo serial`, firmware come nel percorso storico corretto (S2, `devices/nas/qnap-versione.ts`):
-  `getsysinfo firmver` o `/etc/version` più la build. **Mai** l'`uname`: il kernel va in `system.kernel`.
-- **system**, **resources** (memoria da `/proc/meminfo`), **interfaces** e **network** (`ip -o link`,
-  `ip -o -4 addr`), **host_storage** (solo filesystem da `df -P -k` e `df -P -i`, colonne per nome; dischi e RAID
-  non letti: sezione `partial`), **shares** (nuova sezione opzionale: `smb.conf` più `/etc/exports`, unite per
-  percorso), **software** (pacchetti da `/etc/config/qpkg.conf`). Le sezioni da switch sono `unsupported`.
-- Un apparato che non risponde come QNAP (`getsysinfo` assente) dà `error` e nessuna sezione letta.
-- **Non collaudato**: fixture inventate con la forma documentata (DADude3 `qnap.py:176,193,779`). Non è nel
-  riconoscimento del prodotto (`riconosci.ts`): si usa dalla CLI finché un QNAP vero non l'ha letto. Da verificare
-  al collaudo: percorso di `smb.conf` e `qpkg.conf` sul firmware vero, `ip` e `df -i` di BusyBox.
+- **firmware** come nel percorso storico (S2, `devices/nas/qnap-versione.ts`): `getsysinfo firmver` o `/etc/version`
+  più la build di `WEBAPP.build`; se non rispondono resta il valore di `getcfg` del collaudo. Mai l'`uname`.
+- **shares** (`smb.conf` più `/etc/exports`, unite per percorso) e **software** (`qpkg.conf`), solo se c'è una shell SSH.
 
-## Collector mikrotik-routeros (non collaudato)
+Le sezioni da switch restano `skipped`. Da verificare al collaudo: percorso di `smb.conf` e `qpkg.conf` sul firmware
+vero, `getsysinfo firmver`.
 
-MikroTik RouterOS 7 (router e switch CRS) via **SSH exec su una connessione sola** (`ssh_modo: "exec"`, come la
-scheda MikroTik dell'app), allowlist `MIKROTIK_ROUTEROS_COMMANDS`: solo `print` e `monitor … once`, mai `/export`.
+## Collector mikrotik-routeros (collaudato in locale; aggiunte non ancora provate)
 
-- Coordinato con la scheda MikroTik: interfacce, bridge, porte, monitor delle porte, bonding, vicini, risorse,
-  routerboard, VLAN del bridge e tabella MAC si leggono coi parser di `devices/mikrotik-*` (uscite vere anonime nel
-  repo). `parseRouterOsDurationSeconds` è passata in `devices/routeros-durata.ts` (foglia senza DB; `router-client`
-  la riesporta) perché il core dei collector non importi il DB: lo controlla una prova.
-- Nuovi (`mikrotik-routeros-parsers.ts`): velocità e duplex da `/interface ethernet monitor` letto **per colonne**
-  (`tabellaMonitor`), PoE da `/interface ethernet poe monitor` con la potenza **solo** da `poe-out-power` (la
-  tensione non è mai potenza: difetto di DA-MKNET `mikrotik.service.ts:1862`), `vlan-ids` con intervalli ed elenchi
-  (`:1738`), indirizzi e ARP.
-- Un errore di RouterOS scritto su stdout con exit 0 (`bad command name`, `not enough permissions`) non è un'uscita
-  buona: comando sconosciuto = `unsupported`, permessi = `error`.
-- Spanning tree solo CIST (le MSTI non si leggono, avviso `MSTI_NOT_COLLECTED`); sensori (`/system health`) non letti.
-- **Non collaudato** e non nel riconoscimento del prodotto: i giri di oggi continuano a leggere i MikroTik col
-  percorso storico. Da verificare al collaudo: monitor ethernet e PoE su un modello con PoE, `bridge host` con molte
-  voci, tempi su un CCR con molte interfacce.
+MikroTik RouterOS 7 (router e switch CRS), motore d'inventario via **SSH exec su una connessione sola** o SNMP,
+allowlist `MIKROTIK_ROUTEROS_COMMANDS`: solo `print` e `monitor … once`, mai `/export`. Base collaudata su un router
+(12 interfacce) e uno switch (7): interfacce, indirizzi, ARP, vicini, bridge, porte, VLAN (`vlan-ids` con intervalli),
+bond, rotte, metadati Wi-Fi.
+
+Dal giro 3 (`inventory-estensioni.ts`, **non ancora provato su un apparato vero**): velocità e duplex da
+`/interface ethernet monitor` letto **per colonne**, stato amministrativo e operativo dalle bandiere di
+`/interface print terse`, PVID dalle porte del bridge, PoE da `/interface ethernet poe monitor` con la potenza
+**solo** da `poe-out-power` (la tensione non è mai potenza), FDB da `bridge host`, STP per porta (solo CIST, avviso
+`MSTI_NOT_COLLECTED`), risorse e uptime da `/system resource print`, indirizzi e ARP anche via sola SSH.
+
+Un errore di RouterOS scritto su stdout con exit 0 (`bad command name`, `not enough permissions`) non è un'uscita buona:
+comando sconosciuto = `unsupported`, permessi = `error`. Famiglia `router`: riceve le porte nell'app. SwOS e access
+point radio non collaudati. Differenza nota col collector del giro 3: le VLAN usano la membership corrente
+(`current-*`); quella configurata resta nelle tabelle d'inventario.
 
 ## Collector windows (non collaudato)
 
@@ -469,20 +465,32 @@ Server Linux via **SSH exec** con un utente **senza `sudo`**, un login, allowlis
 - **Non collaudato** (repertorio da DADude3 `linux.py:432,794`) e non nel riconoscimento del prodotto. Da verificare al
   collaudo: `systemctl show '*.service'` sulle versioni di systemd in uso, LVM senza root, `df -T` con BusyBox.
 
-## Collector synology-nas (non collaudato)
+## Collector synology-dsm (collaudato in locale; aggiunte non ancora provate)
 
-Synology DSM 7 via **SSH exec**, un login, allowlist `SYNOLOGY_NAS_COMMANDS`, nessun `sudo`.
+Synology DSM, motore d'inventario via SSH exec o SNMP (nome definitivo della famiglia: `synology-dsm`, il vecchio
+`synology-nas` del giro 3 non esiste più). Base collaudata su un Synology (4 dischi, 4 volumi RAID, 8 interfacce;
+un secondo era irraggiungibile). Dal giro 3, **non ancora provato su un apparato vero**: **shares** da
+`/etc/samba/smb.share.conf` più `/etc/exports` (e i nomi di `synoshare`, in allowlist nelle due forme `--enum ALL` e
+`-enum ALL`: quale vale è da verificare), **software** da tutti gli `INFO` di `/var/packages` senza limiti, modello e
+seriale da `/proc/sys/kernel/syno_*` dove l'SNMP non li dà.
 
-- **identity**: firmware intero da `/etc.defaults/VERSION` («DSM 7.2.1-69057 Update 5»: versione, build, update; mai
-  troncato), modello da `/proc/sys/kernel/syno_hw_version` (poi `upnpmodelname` di `synoinfo.conf`), seriale da
-  `/proc/sys/kernel/syno_serial`.
-- **system**, **resources**, **interfaces**, **network**, **host_storage** (solo filesystem da `df -P`; dischi e RAID
-  non letti) coi parser comuni Linux.
-- **shares** da `/etc/samba/smb.share.conf` più `/etc/exports`; i nomi di `synoshare` si aggiungono se l'utente può
-  leggerli. `synoshare` è in allowlist nelle due forme (`--enum ALL`, `-enum ALL`): quale vale è da verificare sulla
-  DSM vera; senza root di solito non risponde (avviso `SYNOSHARE_NOT_READ`).
-- **software** da tutti gli `INFO` di `/var/packages`, **senza limiti** (il donatore ne teneva 50 in silenzio).
-- **Non collaudato** (DADude3 `synology.py:798,810`) e non nel riconoscimento del prodotto.
+## Stato di collaudo dei collector
+
+| Collector | Famiglia | Porte nell'app | Stato | Agganciato al pulsante |
+|---|---|---|---|---|
+| `qnap-switch`, `hp-procurve`, `hp-comware` | switch | sì | collaudato | sì |
+| `mikrotik-routeros` | router | sì | collaudato (base); PoE/FDB/STP/velocità da provare | sì (router e switch CRS, non SwOS) |
+| `vmware-esxi` | hypervisor | no | collaudato | sì |
+| `netapp-ontap` | storage | no | collaudato | sì (dal sysDescr) |
+| `qnap-nas`, `synology-dsm` | nas | no | collaudato (base); firmware QNAP, condivisioni, pacchetti da provare | sì |
+| `ubiquiti-device` | ap | no | collaudato solo via SNMP (SSH rifiutata) | sì (access point e switch gestiti) |
+| `proxmox-ve` | hypervisor | no | collaudato | sì, solo con credenziali `ssh` dell'archivio (`local_ssh` è per la CLI) |
+| `unifi-controller` | controller | no | collaudato (due console) | **no**: si legge dalla CLI, nessuna regola chiara per il pulsante di un apparato |
+| `windows`, `linux` | server | no | non collaudato | no |
+
+Le porte «da switch» (`switch_ports`, fatti di porta) si proiettano solo per le famiglie `switch` e `router`
+(`FAMIGLIE_CON_PORTE` nel catalogo). Il motore d'inventario si dichiara nel descrittore con `motore: "inventario"`:
+allowlist e trasporto derivano dal catalogo.
 
 ## Aggiungere una famiglia
 
@@ -497,6 +505,10 @@ File da creare o toccare, in quest'ordine:
    (allowlist; `null` se non usa console) o `script_winrm` (script PowerShell fissi, per id), `collaudo`
    (`non_collaudato` finché nessun apparato vero l'ha letto) e `collaudati` (modelli e firmware realmente
    visti: vuoto finché non collaudato). `verificaCatalogo` rifiuta le voci incoerenti.
+   Se la famiglia si legge col motore d'inventario (`inventory-collector.ts`) basta `motore: "inventario"` e un
+   profilo in `inventory-collector.ts`; `famiglia` decide se riceve le porte da switch (`FAMIGLIE_CON_PORTE`) e
+   `riconosci.ts` se si aggancia al pulsante. Un solo collector per famiglia: se ne esiste già uno collaudato, lo si
+   estende (vedi `inventory-estensioni.ts`) invece di scriverne un secondo.
 2. **`comandi.ts`** se serve una nuova allowlist di console (solo comandi di lettura, nessuna
    configurazione, nessun `sudo` libero).
 3. **Parser puri** (`<famiglia>-parsers.ts`): testo o JSON in, dati tipizzati fuori, nessuna rete. Colonne

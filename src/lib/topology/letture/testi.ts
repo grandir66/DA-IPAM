@@ -46,6 +46,12 @@ export const DESCRIZIONE_LETTURE: Readonly<Record<Lettura, { titolo: string; leg
     apparati: "gli switch con credenziale SNMP, anche quelli del controller; non i MikroTik letti via SSH",
     comandi: "7 letture in sola lettura: Q-BRIDGE-MIB (dot1qVlanStatic, dot1qVlanCurrent, dot1qPvid) e BRIDGE-MIB (dot1dBasePortIfIndex)",
   },
+  librenms: {
+    titolo: "LibreNMS (dati degli apparati)",
+    legge: "Dal LibreNMS di questa installazione: apparati, porte, vicini LLDP e CDP, VLAN, MAC per porta, ARP, sensori (temperature, ventole, alimentazione, ottiche, UPS) e inventario fisico. I vicini che LibreNMS vede ma non interroga, se sono host di DA-IPAM, si aggiungono a LibreNMS (solo se il loro SNMP risponde).",
+    apparati: "gli apparati che LibreNMS interroga già; nessuna richiesta nuova verso gli apparati",
+    comandi: "Solo l'API di LibreNMS locale, in sola lettura: /devices, /ports, /resources/links, /resources/vlans, /resources/fdb, /resources/ip/arp/all, /resources/sensors, /inventory/{id}/all (al più 20 apparati per giro). Al più ogni 15 minuti, nel job di LibreNMS.",
+  },
 };
 
 export function quandoItaliano(utc: string | null): string {
@@ -100,5 +106,8 @@ export function testoDialogo(l: Lettura, accendi: boolean, c: { router: { minuti
     case "switch_vlan":
       // Come la scheda MikroTik: riempie la tab VLAN della scheda dello switch, non la mappa.
       return `Accendere la lettura delle VLAN sugli switch di questo cliente? Il giro degli switch parte ${frequenza(c.switch, false)}: questa lettura parte al più una volta l'ora per switch, 7 letture SNMP in sola lettura, 10 secondi al massimo ciascuna; anche «Interroga» sullo switch la fa, finché è accesa. Riempie la matrice VLAN della scheda dello switch. Si spegne da qui.`;
+    case "librenms":
+      // Non serve alla mappa (spec LibreNMS §4.3): riempie la scheda dell'oggetto.
+      return "Accendere la lettura dei dati di LibreNMS? Si legge solo l'API del LibreNMS di questa installazione, al più ogni 15 minuti, nel job di LibreNMS: nessuna richiesta nuova verso gli apparati. Riempie sensori, porte e vicini della scheda dell'oggetto. I vicini che LibreNMS vede ma non interroga e che sono host di DA-IPAM si aggiungono a LibreNMS, al più 5 per giro, solo se il loro SNMP risponde. La mappa non cambia. Si spegne da qui.";
   }
 }

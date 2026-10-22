@@ -7,12 +7,14 @@
 import { getTenantSetting, runInTenantTransaction, setTenantSetting, type CampiViciniCavi } from "@/lib/db-tenant";
 
 /** `mikrotik_scheda` (scheda MikroTik, Task 10, ADR 0027): VLAN, DNS e utenti dei router, per la scheda e non per la mappa.
- *  `switch_vlan` (accorpamento e VLAN, Task 9, ADR 0029): le VLAN degli switch via SNMP, per la scheda e non per la mappa. */
-export const LETTURE = ["mikrotik", "controller", "snmp", "host", "mikrotik_scheda", "switch_vlan"] as const;
+ *  `switch_vlan` (accorpamento e VLAN, Task 9, ADR 0029): le VLAN degli switch via SNMP, per la scheda e non per la mappa.
+ *  `librenms` (piano 2026-10-22 LibreNMS, task 4; spec `specs/2026-10-22-librenms-fonte-dati-design.md`): i dati degli
+ *  apparati letti dall'API di LibreNMS locale nelle tabelle `librenms_*`, per la scheda e non per la mappa (spec §4.3). */
+export const LETTURE = ["mikrotik", "controller", "snmp", "host", "mikrotik_scheda", "switch_vlan", "librenms"] as const;
 export type Lettura = (typeof LETTURE)[number];
 
 /** Le letture che questa versione sa fare. `host` è arrivata col Task 7 del piano di T2, scritta sull'uscita vera T2-b. */
-export const LETTURE_DISPONIBILI: ReadonlySet<Lettura> = new Set<Lettura>(["mikrotik", "controller", "snmp", "host", "mikrotik_scheda", "switch_vlan"]);
+export const LETTURE_DISPONIBILI: ReadonlySet<Lettura> = new Set<Lettura>(["mikrotik", "controller", "snmp", "host", "mikrotik_scheda", "switch_vlan", "librenms"]);
 
 export function eLettura(x: unknown): x is Lettura {
   return typeof x === "string" && (LETTURE as readonly string[]).includes(x);

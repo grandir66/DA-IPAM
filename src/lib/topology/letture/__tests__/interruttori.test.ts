@@ -59,8 +59,10 @@ test("senzaCampiCavi toglie solo le colonne nuove dei vicini", () => {
 // Cinque dal Task 10 della scheda MikroTik: `mikrotik_scheda` (VLAN, DNS e utenti) è una lettura in più come le altre, con il
 // suo interruttore nella card «Letture in più» e la sua cadenza; nasce spenta come tutte.
 test("tutte e cinque le letture sono disponibili (`host` col Task 7 di T2, `mikrotik_scheda` col Task 10 della scheda): la PUT le accetta; spente finché un admin non le accende", () => {
-  assert.deepEqual([...LETTURE], ["mikrotik", "controller", "snmp", "host", "mikrotik_scheda", "switch_vlan"]);
+  // `librenms` dal piano 2026-10-22 LibreNMS (task 4): legge solo l'API di LibreNMS locale, nasce spenta.
+  assert.deepEqual([...LETTURE], ["mikrotik", "controller", "snmp", "host", "mikrotik_scheda", "switch_vlan", "librenms"]);
   assert.deepEqual([...LETTURE].filter((l) => !LETTURE_DISPONIBILI.has(l)), []);
+  withTenant(T, () => assert.equal(letturaAccesa("librenms"), false));
   withTenant(T, () => assert.equal(letturaAccesa("host"), false));
   withTenant(T, () => assert.equal(letturaAccesa("mikrotik_scheda"), false));
   assert.equal(chiaveLettura("mikrotik_scheda"), "topologia.lettura.mikrotik_scheda");

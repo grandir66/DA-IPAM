@@ -6,6 +6,8 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ## [Non rilasciato] — collector modulari e consegna del modello (solo locale)
 
+- Prima copertura parziale Synology DSM, QNAP NAS, MikroTik RouterOS, Ubiquiti diretto e Proxmox VE nella CLI comune: letture statiche, tabelle con fonti/stati e capacità df esatte; errori conservati senza scritture DB.
+
 - Collector locale UniFi via API key nella CLI comune: conserva offline e topologia per apparato, senza DB; copertura parziale esplicita (radio/client rinviati).
 
 - Collector `netapp-ontap`, REST GET con CA/pin, paginazione vincolata e stato per

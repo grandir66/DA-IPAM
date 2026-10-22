@@ -4,14 +4,20 @@ import { virtualizationSchema } from "./vmware-schema";
 const port = z.number().int().min(1).max(65535);
 const secret = z.string().min(1).max(16384);
 export const acquisitionInputSchema = z.object({
-    collector: z.enum(["qnap-switch", "hp-procurve", "hp-comware", "vmware-esxi", "netapp-ontap", "unifi-controller"]).default("qnap-switch"),
+    collector: z.enum(["qnap-switch", "hp-procurve", "hp-comware", "vmware-esxi", "netapp-ontap", "unifi-controller", "synology-dsm", "qnap-nas", "mikrotik-routeros", "ubiquiti-device", "proxmox-ve"]).default("qnap-switch"),
     host: z.string().min(1).max(253).regex(/^[a-zA-Z0-9.:_-]+$/),
     snmp: z.object({ community: secret, version: z.enum(["1", "2c"]).default("2c"), port: port.default(161) }).strict().optional(),
     ssh: z.object({ username: z.string().min(1).max(128), password: secret.optional(), privateKey: secret.optional(), passphrase: secret.optional(), port: port.default(22) }).strict().refine(v => !!(v.password || v.privateKey), "Manca il segreto SSH").optional(),
     api: z.object({username:z.string().min(1).max(128),password:secret,port:port.default(443),tls_sha256:z.string().regex(/^(?:[a-fA-F0-9]{2}:){31}[a-fA-F0-9]{2}$/).optional()}).strict().optional(),
+    local_ssh: z.literal(true).optional(),
     unifi: z.object({ api_token: secret, site: z.string().regex(/^[a-zA-Z0-9_-]+$/).default("default"), port: port.default(443), tls_pin: z.string().min(1).max(256).optional() }).strict().optional(),
     limits: z.object({ timeout_ms: z.number().int().min(500).max(15000).default(4000), max_rows: z.number().int().min(32).max(20000).default(4096), max_output_bytes: z.number().int().min(4096).max(4194304).default(1048576), total_timeout_ms: z.number().int().min(5000).max(300000).default(90000) }).strict().default({ timeout_ms: 4000, max_rows: 4096, max_output_bytes: 1048576, total_timeout_ms: 90000 }),
-}).strict().refine(v => v.collector === "unifi-controller" ? !!v.unifi && !v.api && !v.ssh && !v.snmp : !v.unifi && (["vmware-esxi","netapp-ontap"].includes(v.collector) ? !!v.api && !v.ssh && !v.snmp : !v.api && !!(v.snmp || v.ssh)), "Credenziali non compatibili con il collector");
+ }).strict().refine(v => {
+ if(v.collector === 'proxmox-ve' && v.local_ssh) return !v.api && !v.unifi && !v.ssh && !v.snmp;
+ if(v.local_ssh) return false;
+ if(v.collector === 'unifi-controller') return !!v.unifi && !v.api && !v.ssh && !v.snmp;
+ return !v.unifi && (["vmware-esxi","netapp-ontap"].includes(v.collector) ? !!v.api && !v.ssh && !v.snmp : !v.api && !!(v.snmp || v.ssh));
+}, "Credenziali non compatibili con il collector");
 export type AcquisitionInput = z.infer<typeof acquisitionInputSchema>;
 export type AcquisitionRequest = z.input<typeof acquisitionInputSchema>;
 const nullableString = z.string().nullable();
@@ -28,7 +34,8 @@ export const poeSchema = z.object({ port: z.string(), enabled: z.boolean().nulla
 export const sectionStatus = z.enum(["ok", "partial", "unsupported", "error", "skipped"]);
 function section<T extends z.ZodType>(data: T) { return z.object({ status: sectionStatus, collected_at: z.string().datetime(), sources: z.array(z.string()), warnings: z.array(z.string()), data: data }); }
 export const snapshotSchema = z.object({
-    schema_version: z.literal("1.0"), collector: z.enum(["qnap-switch", "hp-procurve", "hp-comware", "vmware-esxi", "netapp-ontap", "unifi-controller"]), collector_version: z.literal("1.0.0"), target: z.string(), collected_at: z.string().datetime(), duration_ms: z.number().nonnegative(), status: z.enum(["ok", "partial", "error"]),
+    schema_version: z.literal("1.0"), collector: z.enum(["qnap-switch", "hp-procurve", "hp-comware", "vmware-esxi", "netapp-ontap", "unifi-controller", "synology-dsm", "qnap-nas", "mikrotik-routeros", "ubiquiti-device", "proxmox-ve"]), collector_version: z.literal("1.0.0"), target: z.string(), collected_at: z.string().datetime(), duration_ms: z.number().nonnegative(), status: z.enum(["ok", "partial", "error"]),
+    inventory: section(z.object({ scope: z.enum(['device','proxmox-cluster-visible']), tables: z.array(z.object({ name: z.string(), status: sectionStatus, sources: z.array(z.string()), warnings: z.array(z.string()), records: z.array(z.record(z.string(), z.union([z.string(),z.number(),z.boolean(),z.null()]))) })) })).optional(),
     controller_inventory: section(z.object({ site: z.string(), tls_pin: nullableString, devices: z.array(z.object({ mac: nullableString, name: nullableString, model: nullableString, type: nullableString, ip: nullableString, state: nullableNumber, version: nullableString, serial: nullableString, adopted: z.boolean().nullable(), port_table: z.array(z.object({ port_idx: z.number(), name: nullableString, up: z.boolean().nullable(), enable: z.boolean().nullable(), speed: nullableNumber, full_duplex: z.boolean().nullable(), poe_power: nullableNumber, stp_state: nullableString, aggregated_by: nullableNumber })), lldp_table: z.array(z.object({ chassis_id: nullableString, port_id: nullableString, local_port_idx: nullableNumber, local_port_name: nullableString, mgmt_ips: z.array(z.string()) })), uplink: z.object({ port_idx: nullableNumber, uplink_mac: nullableString, uplink_remote_port: nullableNumber, uplink_device_name: nullableString, uplink_source: nullableString, type: z.enum(["wire", "wireless"]).nullable() }).nullable() })) })).optional(),
     storage: section(ontapStorageSchema).optional(),
     virtualization: section(virtualizationSchema).optional(),

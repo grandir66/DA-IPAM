@@ -45,7 +45,7 @@ export function readExec(conn: Pick<Client, 'exec'>, command: string, limits: Ac
                 channel.on('close', (code: number | undefined) => { if (done)
                     return; const unsupported = /%\s*(?:Unrecognized command|Incomplete command|Too many parameters|Wrong parameter)/i.test(out); const denied = /permission denied|not authorized|Authorization failed/i.test(out); if (denied)
                     finish('error', ['SSH_PERMISSION_DENIED']);
-                else if (unsupported)
+                else if (unsupported || code === 127 || /bad command name|no such command/i.test(out))
                     finish('unsupported', ['COMMAND_UNSUPPORTED']);
                 else if (code === 0)
                     finish('ok', []);

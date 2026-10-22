@@ -15,8 +15,8 @@ Spec [`docs/superpowers/specs/2026-10-22-librenms-fonte-dati-design.md`](docs/su
 - [ ] T5 rotte API
 - [ ] T6 tavola grafica approvata
 - [ ] T7 scheda: Sensori, Porte e Vicini con fonte
-- [ ] T8 pagina del modulo: non interrogati, rifiutati, candidati
-- [ ] T9 vicini nella mappa (zona rossa, misura prima/dopo)
+- [x] T8 pagina del modulo: non interrogati, rifiutati, candidati — J3 con esito per apparato, solo admin modifica
+- [x] T9 vicini nella mappa (zona rossa, misura prima/dopo) — J4 in testata; «ultima · prossima» su una riga sotto (spazio)
 - [ ] T10 accensione sull'hub, ADR, documenti
 
 ## 2026-10-22 — scansione automatica dei device scelti

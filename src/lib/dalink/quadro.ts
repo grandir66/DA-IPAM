@@ -7,7 +7,9 @@
  *   prossimo segnale, costruita con lo stesso `costruisciSegnale` del giro;
  * - gli altri flussi: risultati delle scansioni verso da-vulcan se l'edge è acceso,
  *   monitoraggio verso Zabbix se c'è il proxy. Sono il servizio chiesto dal cliente e
- *   si fermano spegnendo il modulo.
+ *   si fermano spegnendo il modulo;
+ * - l'invio di AD Health e inventario all'hub DA-Vul-can (`vulcan/quadro.ts`), spento
+ *   finché `oggetto.env` non ha `VULCAN_TOKEN`.
  *
  * Senza configurazione si mostra lo stesso cosa conterrebbe il segnale, col cliente
  * dell'istanza se è uno solo: chi decide il livello prima di collegarsi vede cosa
@@ -20,6 +22,7 @@ import { FILE_PROXY_ZABBIX, fattiIstanza, inventarioCliente } from "./fatti";
 export { FILE_PROXY_ZABBIX };
 import { costruisciSegnale, type CorpoSegnale, type FattiIstanza, type Inventario } from "./segnale";
 import { OGNI_MS } from "./segnale-job";
+import { quadroVulcan, type QuadroVulcan } from "@/lib/vulcan/quadro";
 import {
   livelloAttuale,
   registroLivello,
@@ -38,6 +41,8 @@ export interface DipendenzeQuadro {
   fatti: (codcli: string) => Promise<{ fatti: FattiIstanza; clienteTrovato: boolean; tenant?: string | null }>;
   inventario: (codcli: string) => Inventario | null;
   proxyZabbix: () => boolean;
+  /** Invio di AD Health e inventario all'hub DA-Vul-can (A-IPAM). */
+  vulcan: () => QuadroVulcan;
 }
 
 export type ConfigurazioneVista =
@@ -55,6 +60,7 @@ export interface QuadroCosaEsce {
   anteprima_errore: string | null;
   ogni_minuti: number;
   altri_flussi: { edge: "acceso" | "spento" | "non_so"; zabbix_proxy: "presente" | "non_rilevato" };
+  vulcan: QuadroVulcan;
 }
 
 const dipendenzeReali: DipendenzeQuadro = {
@@ -66,6 +72,7 @@ const dipendenzeReali: DipendenzeQuadro = {
   fatti: (codcli) => fattiIstanza(codcli, statoSegnale()?.esito && statoSegnale()?.esito !== "ok" ? `segnale precedente: ${statoSegnale()?.dettaglio ?? ""}` : null),
   inventario: (codcli) => inventarioCliente(codcli),
   proxyZabbix: () => fs.existsSync(FILE_PROXY_ZABBIX),
+  vulcan: () => quadroVulcan(),
 };
 
 function vista(cfg: ConfigDalink): ConfigurazioneVista {
@@ -107,6 +114,23 @@ export async function quadroCosaEsce(dip: Partial<DipendenzeQuadro> = {}): Promi
     proxy = false;
   }
 
+  let vulcan: QuadroVulcan;
+  try {
+    vulcan = d.vulcan();
+  } catch {
+    // Si vede in rosso: mai «spento» per un guasto.
+    vulcan = {
+      stato: "non_valida",
+      motivo: "stato dell'invio non leggibile: errore nel database del cliente",
+      destinazione: null,
+      battito: { il: null, esito: null },
+      coda: { in_attesa: 0, falliti: 0 },
+      ultimo_ad: null,
+      ultimo_inventario: null,
+      ultimo_errore: null,
+    };
+  }
+
   return {
     configurazione: vista(cfg),
     livello,
@@ -117,5 +141,6 @@ export async function quadroCosaEsce(dip: Partial<DipendenzeQuadro> = {}): Promi
     anteprima_errore: anteprimaErrore,
     ogni_minuti: Math.round(OGNI_MS / 60_000),
     altri_flussi: { edge, zabbix_proxy: proxy ? "presente" : "non_rilevato" },
+    vulcan,
   };
 }

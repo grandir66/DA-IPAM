@@ -69,6 +69,7 @@ import { DeviceIdentificationTab } from "@/components/settings/device-identifica
 import { ModulesTab } from "@/components/settings/modules-tab";
 import { UpdatesTab } from "@/components/settings/updates-tab";
 import { PuliziaHostCard } from "@/components/settings/pulizia-host-card";
+import { InterruttoreAcquisizioneModulare } from "@/components/settings/interruttore-acquisizione-modulare";
 import { NotificationsTab } from "@/components/settings/notifications-tab";
 import { SecurityAlertsTab } from "@/components/settings/security-alerts-tab";
 
@@ -1249,6 +1250,8 @@ function SettingsPageInner() {
           )}
 
           {isAdmin && <PuliziaHostCard />}
+
+          {isAdmin && <InterruttoreAcquisizioneModulare isAdmin={isAdmin} />}
 
           <Card>
             <CardHeader>

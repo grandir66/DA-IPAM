@@ -35,3 +35,21 @@ test("parser: versione DSM mai troncata, update 0 non scritto; pacchetti oltre 5
     assert.deepEqual(parseSynoshareEnum("Share Enum Arguments: [0xF08] ALL\nShare Num: 2\nName list:\n[Dati]\n[homes]\n"), ["Dati", "homes"]);
     assert.equal(parseSynoshareEnum("synoshare: permission denied"), null);
 });
+
+test("synology-dsm: senza `ip -j` (uscita 1 su DSM) è un ripiego dichiarato, non un errore", async () => {
+    const { collectDevice } = await import("../index");
+    const { SYNOLOGY_USCITE } = await import("./contratto-fixture");
+    const t = {
+        get: async () => ({ status: "error" as const, data: [], warnings: ["SNMP_OPEN_FAILED"] }),
+        walk: async () => ({ status: "error" as const, data: [], warnings: ["SNMP_OPEN_FAILED"] }),
+        shell: async (comandi: readonly string[]) => Object.fromEntries(comandi.map(c => [c, c.startsWith("ip -j")
+            ? { status: "error" as const, data: "", warnings: ["SSH_COMMAND_FAILED"] }
+            : { status: "ok" as const, data: SYNOLOGY_USCITE[c] ?? "", warnings: [] }])),
+    };
+    const s = await collectDevice({ collector: "synology-dsm", host: "192.0.2.70", ssh: { username: "lab", password: "x" } }, t);
+    for (const nome of ["ip -j link show", "ip -j address show"]) {
+        const tab = s.inventory!.data.tables.find(x => x.name === nome)!;
+        assert.equal(tab.status, "unsupported", nome);
+        assert.deepEqual(tab.warnings, ["IP_JSON_NOT_AVAILABLE_ON_DSM", "SNMP_USED_INSTEAD"]);
+    }
+});

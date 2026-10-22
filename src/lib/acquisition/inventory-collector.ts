@@ -23,7 +23,9 @@ export async function collectInventoryDevice(request:AcquisitionRequest,transpor
  if(input.ssh||input.local_ssh){try{shell=await io.shell(INVENTORY_COMMANDS[profile]);}catch{shell=Object.fromEntries(INVENTORY_COMMANDS[profile].map(c=>[c,failed('','SSH_BATCH_FAILED')]));}}
  const read=(c:string)=>shell[c]??failed('');
  const okText=(c:string)=>read(c).status==='ok'?read(c).data:'';
- for(const [command,r] of Object.entries(shell)){
+ for(const [command,r0] of Object.entries(shell)){
+  // DSM non ha `ip -j` (BusyBox/iproute vecchio: «invalid option», uscita 1): ripiego dichiarato, le interfacce arrivano da SNMP.
+  const r:ReadResult<string>=profile==='synology-dsm'&&command.startsWith('ip -j')&&r0.status==='error'&&r0.warnings.includes('SSH_COMMAND_FAILED')?{status:'unsupported',data:'',warnings:['IP_JSON_NOT_AVAILABLE_ON_DSM','SNMP_USED_INSTEAD']}:r0;
   const parsed=parseRead(command,r.data),limited=parsed.length>input.limits.max_rows;
   // Inventory commands with scalar identity output are consumed below, not dumped as raw text.
   if(command.includes('terse')||command.includes('pvesh')||command.includes('ip -')||command.startsWith('lsblk')||['df -P -k','cat /proc/meminfo','cat /proc/mdstat','mca-status'].includes(command))tables.push({name:command,status:r.status==='ok'&&r.data.trim()&&!parsed.length?'partial':limited?'partial':r.status,sources:['ssh:'+command],warnings:[...r.warnings,...(limited?['ROW_LIMIT']:[]),...(r.status==='ok'&&r.data.trim()&&!parsed.length?['FORMAT_UNRECOGNIZED_OR_EMPTY']:[])],records:parsed.slice(0,input.limits.max_rows)});

@@ -23,3 +23,16 @@ test('exec: pager spezzato e comando non supportato', async () => { const c = ne
 test('exec: byte cap e timeout non attestano raccolta completa', async () => { const c = new Channel(), r = run(c, { max_output_bytes: 4 }); c.emit('data', Buffer.from('12345')); assert.equal((await r).status, 'partial'); assert.equal(c.closed, true); const d = new Channel(); assert.equal((await run(d)).warnings[0], 'SSH_EXEC_TIMEOUT'); assert.equal(d.closed, true); });
 test('exec: callback tardiva chiude canale e scadenza totale già raggiunta', async () => { let callback: ((e: Error | null, c: ClientChannel) => void) | undefined; const conn = { exec: (_cmd: string, cb: typeof callback) => { callback = cb; } } as unknown as Pick<Client, 'exec'>; const r = readExec(conn, 'display version', limits, Date.now() + 10); assert.equal((await r).status, 'error'); const c = new Channel(); callback!(null, c as unknown as ClientChannel); assert.equal(c.closed, true); assert.deepEqual((await readExec(conn, 'display version', limits, Date.now() - 1)).warnings, ['TOTAL_TIMEOUT']); });
 test('exec: uscita 127 di una shell Unix (comando assente) è «non supportato», non un errore', async () => { const c = new Channel(), r = run(c); c.emit('data', Buffer.from('sh: getsysinfo: not found')); c.emit('close', 127); const v = await r; assert.equal(v.status, 'unsupported'); assert.deepEqual(v.warnings, ['COMMAND_UNSUPPORTED']); });
+test('exec: stderr e messaggio di login non entrano nei dati (nome host Synology del collaudo), il permesso negato sì riconosciuto', async () => {
+    const c = new Channel(), r = run(c);
+    c.stderr.emit('data', Buffer.from('Could not chdir to home directory /var/services/homes/utente: No such file or directory\n'));
+    c.emit('data', Buffer.from('Could not chdir to home directory /var/services/homes/utente: No such file or directory\nnas-prova\n'));
+    c.emit('close', 0);
+    const v = await r;
+    assert.equal(v.data.trim(), 'nas-prova');
+    const d = new Channel(), rd = run(d);
+    d.stderr.emit('data', Buffer.from('df: permission denied\n'));
+    d.emit('close', 1);
+    const vd = await rd;
+    assert.deepEqual([vd.status, vd.warnings, vd.data], ['error', ['SSH_PERMISSION_DENIED'], '']);
+});

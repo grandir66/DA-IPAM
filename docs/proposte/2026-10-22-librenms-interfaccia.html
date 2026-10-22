@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LibreNMS nella scheda</title>
+<!--
+  Tavola grafica del task 6 (S6) del piano docs/superpowers/plans/2026-10-22-librenms-fonte-dati.md, da approvare prima dei
+  task 7 e 8. Dati finti con la forma vera della prova del 22/10 (indirizzi di documentazione 192.0.2.x, nomi inventati).
+  Larghezza di riferimento 1920 (si legge anche a 1440). Stati per luminanza E forma: Riccardo è daltonico.
+-->
+<style>
+  :root {
+    --primary: #00A7E7; --navy: #0D2537; --gold: #FFD400; --bg: #EDEDED; --card: #FFFFFF;
+    --ink: #0D2537; --muted: #52606B; --line: #D0D8DC;
+    /* Gli stessi token di globals.css: online verde scuro pieno, offline arancio a righe, sconosciuto grigio chiaro. */
+    --ok: #1F7A4D; --att: #E69F00; --nd: #D0D8DC; --crit: #0D2537;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg: #0B1A26; --card: #12283A; --ink: #E7EAEB; --muted: #A9B7C2; --line: #24405A; --ok: #5ED3A0; --nd: #4A6070; --crit: #E6EEF4; }
+  }
+  :root[data-theme="dark"] { --bg: #0B1A26; --card: #12283A; --ink: #E7EAEB; --muted: #A9B7C2; --line: #24405A; --ok: #5ED3A0; --nd: #4A6070; --crit: #E6EEF4; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 "Signika", "Segoe UI", system-ui, sans-serif; }
+  header.tavola { background: var(--navy); color: #fff; padding: 20px 32px; border-bottom: 4px solid var(--gold); }
+  header.tavola h1 { margin: 0 0 4px; font-size: 22px; }
+  header.tavola p { margin: 0; color: #C9D6DF; max-width: 1200px; }
+  main { max-width: 1920px; margin: 0 auto; padding: 24px 32px 64px; display: grid; gap: 32px; }
+  section.oggetto { display: grid; grid-template-columns: minmax(0, 1fr) 420px; gap: 24px; align-items: start; }
+  @media (max-width: 1100px) { section.oggetto { grid-template-columns: 1fr; } main { padding: 16px; } }
+  .schermo { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 16px 20px; overflow-x: auto; }
+  .nota { background: var(--card); border-left: 4px solid var(--primary); border-radius: 4px; padding: 12px 16px; }
+  .nota h3 { margin: 0 0 6px; font-size: 15px; }
+  .nota ol, .nota ul { margin: 6px 0 0; padding-left: 20px; }
+  .nota li { margin: 4px 0; }
+  .num { display: inline-flex; align-items: center; justify-content: center; min-width: 30px; height: 26px; padding: 0 6px;
+         border-radius: 13px; background: var(--gold); color: #0D2537; font-weight: 700; font-size: 13px; margin-right: 8px; }
+  .tabs { display: flex; gap: 2px; border-bottom: 2px solid var(--line); margin: 8px 0 12px; flex-wrap: wrap; }
+  .tabs span { padding: 6px 14px; color: var(--muted); }
+  .tabs span.on { color: var(--ink); font-weight: 600; border-bottom: 3px solid var(--primary); margin-bottom: -2px; }
+  .testa { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+  .testa h2 { margin: 0; font-size: 18px; }
+  .fioca { color: var(--muted); font-size: 13px; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th { text-align: left; font-weight: 600; padding: 6px 10px; border-bottom: 2px solid var(--line); background: color-mix(in srgb, var(--line) 35%, transparent); white-space: nowrap; }
+  td { padding: 6px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  td.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  h4 { margin: 18px 0 6px; font-size: 14px; display: flex; gap: 8px; align-items: baseline; }
+  h4 .fioca { font-weight: 400; }
+  /* Pastiglie di stato: il segno e la parola sempre, il colore in più. */
+  .p { display: inline-flex; gap: 5px; align-items: center; padding: 1px 8px; border-radius: 10px; font-weight: 600; font-size: 12px; white-space: nowrap; }
+  .p.ok { background: var(--ok); color: #fff; }
+  .p.att { background: repeating-linear-gradient(135deg, var(--att) 0 6px, #F3C25A 6px 10px); color: #0D2537; }
+  .p.crit { background: var(--crit); color: var(--card); outline: 2px solid var(--att); outline-offset: -2px; }
+  .p.nd { background: var(--nd); color: #0D2537; }
+  .fonte { display: inline-block; padding: 0 6px; border: 1px solid var(--line); border-radius: 4px; font-size: 12px; white-space: nowrap; }
+  .fonte.lnms { border-color: var(--primary); }
+  .fonte.due { border-style: double; border-width: 3px; }
+  .disaccordo td { background: color-mix(in srgb, var(--att) 14%, transparent); }
+  .riga-fonti { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; color: var(--muted); margin-top: 10px; }
+  .riga-fonti b { color: var(--ink); }
+  .riga-fonti .si { color: var(--ink); }
+  .btn { display: inline-block; padding: 3px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); font-size: 12px; font-weight: 600; white-space: nowrap; }
+  .btn.prim { background: var(--primary); color: #fff; border-color: var(--primary); }
+  .griglia3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+  @media (max-width: 1500px) { .griglia3 { grid-template-columns: 1fr; } }
+  .scatola { border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; }
+  .scatola h4 { margin-top: 0; }
+  .legenda { display: flex; flex-wrap: wrap; gap: 10px 20px; align-items: center; }
+  footer { max-width: 1920px; margin: 0 auto; padding: 0 32px 48px; }
+</style>
+</head>
+<body>
+<header class="tavola">
+  <h1>LibreNMS come fonte di dati — tavola grafica (S6)</h1>
+  <p>Scheda dell'oggetto (L1-L4) e pagina del modulo LibreNMS (L5). Da approvare oggetto per oggetto prima dei task 7 e 8.
+     Dati finti con la forma vera della prova del 22/10. Gli stati si leggono dal segno e dalla parola; il colore viene dopo
+     (luminanza diversa: pieno scuro, a righe, grigio chiaro, scuro bordato).</p>
+</header>
+
+<main>
+  <section class="oggetto" aria-label="Legenda">
+    <div class="schermo">
+      <div class="legenda">
+        <span class="p ok">✓ nei limiti</span>
+        <span class="p att">▲ vicino al limite</span>
+        <span class="p crit">✕ oltre il limite</span>
+        <span class="p nd">– senza limiti</span>
+        <span class="fonte">DA-IPAM 10:12</span>
+        <span class="fonte lnms">LibreNMS 10:15</span>
+        <span class="fonte due">DA-IPAM e LibreNMS</span>
+      </div>
+    </div>
+    <div class="nota"><h3>Legenda</h3>Stessi token di <code>globals.css</code> (<code>--host-*</code>). Le fonti si distinguono anche
+      dal bordo (sottile, azzurro, doppio), non solo dal testo. Ore sempre in ora italiana.</div>
+  </section>
+
+  <!-- L1 -->
+  <section class="oggetto" aria-labelledby="l1">
+    <div class="schermo">
+      <div class="fioca">Oggetti › sw-core-01 (switch) · 192.0.2.10</div>
+      <div class="tabs"><span>Panoramica</span><span>Porte</span><span>VLAN</span><span>Vicini</span><span class="on">Sensori</span><span>Storico</span><span>Gestione</span></div>
+      <div class="testa">
+        <h2 id="l1"><span class="num">L1</span>Sensori</h2>
+        <span class="fioca">Da LibreNMS · valori ogni 5 minuti · letti il 22/10 alle 10:15 · 14 sensori</span>
+      </div>
+
+      <h4>Temperatura <span class="fioca">°C</span></h4>
+      <table>
+        <thead><tr><th>Sensore</th><th>Valore</th><th>Limite basso</th><th>Limite alto</th><th>Stato</th><th>Aggiornato</th></tr></thead>
+        <tbody>
+          <tr><td>CPU</td><td class="n">46</td><td class="n">—</td><td class="n">80</td><td><span class="p ok">✓ nei limiti</span></td><td>10:15</td></tr>
+          <tr><td>Scheda</td><td class="n">71</td><td class="n">—</td><td class="n">75</td><td><span class="p att">▲ vicino al limite</span></td><td>10:15</td></tr>
+          <tr><td>Modulo SFP 1/0/49</td><td class="n">83</td><td class="n">−5</td><td class="n">80</td><td><span class="p crit">✕ oltre il limite</span></td><td>10:15</td></tr>
+        </tbody>
+      </table>
+
+      <h4>Ventole <span class="fioca">giri/min</span></h4>
+      <table>
+        <thead><tr><th>Sensore</th><th>Valore</th><th>Limite basso</th><th>Limite alto</th><th>Stato</th><th>Aggiornato</th></tr></thead>
+        <tbody>
+          <tr><td>Ventola 1</td><td class="n">7 068</td><td class="n">5 806</td><td class="n">13 064</td><td><span class="p ok">✓ nei limiti</span></td><td>10:15</td></tr>
+          <tr><td>Ventola 2</td><td class="n">7 725</td><td class="n">6 390</td><td class="n">14 378</td><td><span class="p ok">✓ nei limiti</span></td><td>10:15</td></tr>
+        </tbody>
+      </table>
+
+      <h4>Alimentazione <span class="fioca">tensioni, correnti, potenza</span></h4>
+      <table>
+        <thead><tr><th>Sensore</th><th>Valore</th><th>Limite basso</th><th>Limite alto</th><th>Stato</th><th>Aggiornato</th></tr></thead>
+        <tbody>
+          <tr><td>Alimentatore 1 — tensione</td><td class="n">12,1 V</td><td class="n">11,4 V</td><td class="n">12,6 V</td><td><span class="p ok">✓ nei limiti</span></td><td>10:15</td></tr>
+          <tr><td>Alimentatore 2 — tensione</td><td class="n">0 V</td><td class="n">11,4 V</td><td class="n">12,6 V</td><td><span class="p crit">✕ oltre il limite</span></td><td>10:15</td></tr>
+          <tr><td>PoE totale</td><td class="n">212 W</td><td class="n">—</td><td class="n">—</td><td><span class="p nd">– senza limiti</span></td><td>10:15</td></tr>
+        </tbody>
+      </table>
+
+      <h4>Ottiche <span class="fioca">dBm, per porta</span></h4>
+      <table>
+        <thead><tr><th>Porta</th><th>Ricezione</th><th>Trasmissione</th><th>Limiti (Rx)</th><th>Stato</th><th>Aggiornato</th></tr></thead>
+        <tbody>
+          <tr><td>1/0/49</td><td class="n">−3,2</td><td class="n">−2,4</td><td class="n">−14,4 … 0,5</td><td><span class="p ok">✓ nei limiti</span></td><td>10:15</td></tr>
+          <tr><td>1/0/50</td><td class="n">−13,9</td><td class="n">−2,6</td><td class="n">−14,4 … 0,5</td><td><span class="p att">▲ vicino al limite</span></td><td>10:15</td></tr>
+        </tbody>
+      </table>
+
+      <h4>Stati <span class="fioca">come li dichiara l'apparato</span></h4>
+      <table>
+        <thead><tr><th>Sensore</th><th>Valore dichiarato</th><th>Stato</th><th>Aggiornato</th></tr></thead>
+        <tbody>
+          <tr><td>Alimentatore 1</td><td>presente, funziona</td><td><span class="p ok">✓ normale</span></td><td>10:15</td></tr>
+          <tr><td>Alimentatore 2</td><td>assente</td><td><span class="p crit">✕ guasto</span></td><td>10:15</td></tr>
+        </tbody>
+      </table>
+
+      <h4>UPS <span class="fioca">solo sugli UPS (es. APC)</span></h4>
+      <table>
+        <thead><tr><th>Sensore</th><th>Valore</th><th>Limite basso</th><th>Limite alto</th><th>Stato</th><th>Aggiornato</th></tr></thead>
+        <tbody>
+          <tr><td>Carica della batteria</td><td class="n">100 %</td><td class="n">20 %</td><td class="n">—</td><td><span class="p ok">✓ nei limiti</span></td><td>10:15</td></tr>
+          <tr><td>Autonomia</td><td class="n">38 min</td><td class="n">10 min</td><td class="n">—</td><td><span class="p ok">✓ nei limiti</span></td><td>10:15</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="nota">
+      <h3><span class="num">L1</span>Tab «Sensori»</h3>
+      <ol>
+        <li>La tab c'è per ogni tipo di scheda ma <b>compare solo se LibreNMS ha almeno un sensore</b> dell'oggetto (come VLAN e Bridge).</li>
+        <li>Un gruppo per classe, nell'ordine: temperatura, ventole, alimentazione (tensione, corrente, potenza), ottiche (dBm,
+          ricezione e trasmissione sulla stessa riga della porta), stati, UPS (carica, autonomia). Classi senza sensori: il gruppo non c'è.</li>
+        <li><b>Stato</b> calcolato dai limiti di LibreNMS: oltre = ✕, entro il 10% dal limite = ▲, dentro = ✓, nessun limite = –.
+          Per i sensori «stato» il testo dichiarato dall'apparato e lo stato che LibreNMS gli associa.</li>
+        <li>In testa la fonte e l'ora della lettura; «Aggiornato» è l'ora di LibreNMS per quel sensore.</li>
+        <li>Lettura vecchia di oltre 1 ora (lettura spenta o LibreNMS giù): una riga ▲ sopra i gruppi «Dati di LibreNMS del 22/10 alle 07:40: possono essere vecchi».</li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- L2 -->
+  <section class="oggetto" aria-labelledby="l2">
+    <div class="schermo">
+      <div class="tabs"><span>Panoramica</span><span class="on">Porte</span><span>VLAN</span><span>Vicini</span><span>Sensori</span></div>
+      <div class="testa">
+        <h2 id="l2"><span class="num">L2</span>Porte</h2>
+        <span class="fioca">52 porte · DA-IPAM letto alle 10:12 · LibreNMS letto alle 10:15</span>
+      </div>
+      <table>
+        <thead><tr><th>Porta</th><th>Stato</th><th>Velocità</th><th>VLAN</th><th>Alias</th><th>MAC</th><th>Neighbor / dispositivo collegato</th><th>Fonte</th></tr></thead>
+        <tbody>
+          <tr><td>1/0/1</td><td><span class="p ok">✓ su</span></td><td class="n">1 Gb/s</td><td class="n">10</td><td>stampante-2p</td><td>3</td><td>stampante-ufficio</td><td><span class="fonte">DA-IPAM 10:12</span></td></tr>
+          <tr><td>1/0/2</td><td><span class="p nd">– giù</span></td><td class="n">—</td><td class="n">10</td><td></td><td>0</td><td></td><td><span class="fonte">DA-IPAM 10:12</span></td></tr>
+          <tr><td>1/0/49</td><td><span class="p ok">✓ su</span></td><td class="n">10 Gb/s</td><td class="n">1</td><td>uplink-ccr</td><td>41</td><td>ccr-core</td><td><span class="fonte">DA-IPAM 10:12</span></td></tr>
+          <tr><td>vlan40</td><td><span class="p ok">✓ su</span></td><td class="n">—</td><td class="n">40</td><td>gestione</td><td>—</td><td></td><td><span class="fonte lnms">LibreNMS 10:15</span></td></tr>
+        </tbody>
+      </table>
+      <p class="fioca" style="margin-top:10px">Variante: il nostro giro non legge lo switch da 3 ore → tutte le righe con <span class="fonte lnms">LibreNMS 10:15</span>, e sopra la tabella:
+        <span class="p att">▲ Porte da LibreNMS: la lettura di DA-IPAM è del 22/10 alle 07:12</span></p>
+    </div>
+    <div class="nota">
+      <h3><span class="num">L2</span>Porte con la fonte</h3>
+      <ol>
+        <li>Colonna nuova <b>«Fonte»</b> in fondo, con l'ora: chi ha dato stato, velocità e alias di quella riga.</li>
+        <li>Precedenza (spec §5): <b>il nostro dato se ha meno di 1 ora</b>, altrimenti LibreNMS. Per porta, non per tabella.</li>
+        <li>Le porte che solo LibreNMS conosce (interfacce VLAN, aggregati) entrano con la fonte LibreNMS.</li>
+        <li>MAC per porta e «Neighbor» restano i nostri (la mappa e Discovery li usano); LibreNMS solo dove noi non abbiamo niente per quell'apparato.</li>
+        <li>Alias nuovo (da LibreNMS <code>ifAlias</code>): da decidere se mostrarlo sempre o solo se c'è in almeno una porta.</li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- L3 -->
+  <section class="oggetto" aria-labelledby="l3">
+    <div class="schermo">
+      <div class="tabs"><span>Panoramica</span><span>Porte</span><span>VLAN</span><span class="on">Vicini</span><span>Sensori</span></div>
+      <div class="testa">
+        <h2 id="l3"><span class="num">L3</span>Vicini LLDP/CDP</h2>
+        <span class="fioca">6 vicini · 1 disaccordo</span>
+      </div>
+      <table>
+        <thead><tr><th>Porta locale</th><th>Dispositivo remoto</th><th>Porta remota</th><th>Protocollo</th><th>IP remoto</th><th>Piattaforma</th><th>Fonte</th></tr></thead>
+        <tbody>
+          <tr><td>1/0/49</td><td>ccr-core</td><td>sfp-sfpplus1</td><td>LLDP</td><td>192.0.2.1</td><td>RouterOS</td><td><span class="fonte due">DA-IPAM e LibreNMS</span></td></tr>
+          <tr><td>1/0/50</td><td>sw-piano-1</td><td>Port 52</td><td>LLDP</td><td>192.0.2.11</td><td>EdgeSwitch</td><td><span class="fonte due">DA-IPAM e LibreNMS</span></td></tr>
+          <tr><td>1/0/24</td><td>ap-sala</td><td>eth0</td><td>LLDP</td><td>—</td><td>UniFi AP</td><td><span class="fonte lnms">solo LibreNMS 10:15</span></td></tr>
+          <tr><td>1/0/12</td><td>pve-nodo-2</td><td>eno1</td><td>LLDP</td><td>192.0.2.32</td><td>Linux</td><td><span class="fonte">solo DA-IPAM 10:12</span></td></tr>
+          <tr class="disaccordo"><td rowspan="2">1/0/47</td><td>nas-backup</td><td>eth1</td><td>LLDP</td><td>192.0.2.40</td><td>DSM</td><td><span class="fonte">DA-IPAM 10:12</span></td></tr>
+          <tr class="disaccordo"><td>nas-backup-2</td><td>eth1</td><td>LLDP</td><td>—</td><td>DSM</td><td><span class="fonte lnms">LibreNMS 10:15</span> <span class="p att">▲ le fonti non concordano</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="nota">
+      <h3><span class="num">L3</span>Vicini con le due fonti</h3>
+      <ol>
+        <li>Si mostrano <b>entrambe</b> le fonti. Righe uguali (porta locale, nome remoto, porta remota) <b>una volta sola</b>, con «DA-IPAM e LibreNMS».</li>
+        <li>Stessa porta locale con un vicino diverso: due righe consecutive con lo sfondo a righe tenue e ▲ «le fonti non concordano». Il disaccordo si vede, non si sceglie.</li>
+        <li>Il nome del vicino resta un collegamento alla sua scheda quando è un oggetto di DA-IPAM (come oggi, <code>nome-vicino.tsx</code>).</li>
+        <li>La mappa non cambia: questi vicini di LibreNMS entrano nella mappa solo col task 9 e il suo interruttore.</li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- L4 -->
+  <section class="oggetto" aria-labelledby="l4">
+    <div class="schermo">
+      <h2 id="l4" style="margin:0 0 6px;font-size:18px"><span class="num">L4</span>Riga «Dati da:» (in fondo alla Panoramica)</h2>
+      <div class="riga-fonti"><b>Dati da:</b><span class="si">✓ SNMP 10:12</span><span class="si">✓ LibreNMS 10:15</span><span>– Zabbix: non abbinato</span><span>– Agente: nessun agente</span></div>
+      <p class="fioca" style="margin:14px 0 4px">Varianti della voce LibreNMS:</p>
+      <div class="riga-fonti"><b>Dati da:</b><span>● LibreNMS: in LibreNMS ma mai interrogato (SNMP non risponde)</span></div>
+      <div class="riga-fonti"><b>Dati da:</b><span>– LibreNMS: non più in LibreNMS (ultima lettura il 21/10 alle 18:00)</span></div>
+      <div class="riga-fonti"><b>Dati da:</b><span>– LibreNMS: non abbinato</span><span class="btn">Aggiungi a LibreNMS</span></div>
+      <div class="riga-fonti"><b>Dati da:</b><span>– LibreNMS: lettura spenta</span></div>
+    </div>
+    <div class="nota">
+      <h3><span class="num">L4</span>LibreNMS nella riga delle fonti</h3>
+      <ol>
+        <li>Una voce «LibreNMS» con l'ora dell'ultima lettura buona dell'apparato (segno ✓ ● – come le altre fonti, <code>riga-fonti.tsx</code>).</li>
+        <li>Mai interrogato (<code>last_polled</code> nullo) = ● col motivo: «SNMP non risponde».</li>
+        <li>Tolto da LibreNMS = – «non più in LibreNMS» con l'ora dell'ultima volta (caso 3 del piano).</li>
+        <li>«Aggiungi a LibreNMS» (solo admin) dove l'oggetto non è abbinato: è lo stesso pulsante di oggi, ora senza <code>force_add</code>: un rifiuto mostra il motivo.</li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- L5 -->
+  <section class="oggetto" aria-labelledby="l5">
+    <div class="schermo">
+      <div class="fioca">Impostazioni › Moduli › LibreNMS</div>
+      <div class="testa" style="margin-top:6px">
+        <h2 id="l5"><span class="num">L5</span>Apparati e lettura dei dati</h2>
+        <span class="fioca">Lettura «LibreNMS (dati degli apparati)»: accesa da riccardo il 22/10 alle 10:00 · si spegne da Dati della mappa</span>
+      </div>
+
+      <h4>Lettura per parte <span class="fioca">ultimo giro alle 10:15, 3,1 s</span></h4>
+      <table>
+        <thead><tr><th>Parte</th><th>Esito</th><th>Righe</th><th>Letta il</th><th>Tentata il</th></tr></thead>
+        <tbody>
+          <tr><td>Apparati</td><td><span class="p ok">✓ letta</span></td><td class="n">51</td><td>22/10 10:15</td><td>22/10 10:15</td></tr>
+          <tr><td>Porte</td><td><span class="p ok">✓ letta</span></td><td class="n">1 088</td><td>22/10 10:15</td><td>22/10 10:15</td></tr>
+          <tr><td>Vicini</td><td><span class="p ok">✓ letta</span></td><td class="n">109</td><td>22/10 10:15</td><td>22/10 10:15</td></tr>
+          <tr><td>VLAN</td><td><span class="p ok">✓ letta</span></td><td class="n">76</td><td>22/10 10:15</td><td>22/10 10:15</td></tr>
+          <tr><td>MAC per porta</td><td><span class="p ok">✓ letta</span></td><td class="n">3 483</td><td>22/10 10:15</td><td>22/10 10:15</td></tr>
+          <tr><td>ARP</td><td><span class="p att">▲ non so (HTTP 500): restano le righe di prima</span></td><td class="n">3 069</td><td>22/10 10:00</td><td>22/10 10:15</td></tr>
+          <tr><td>Sensori</td><td><span class="p ok">✓ letta</span></td><td class="n">1 160</td><td>22/10 10:15</td><td>22/10 10:15</td></tr>
+          <tr><td>Inventario</td><td><span class="p ok">✓ letta</span> <span class="fioca">15 apparati, 20 per giro</span></td><td class="n">227</td><td>22/10 10:15</td><td>22/10 10:15</td></tr>
+          <tr><td>VLAN per porta</td><td><span class="p nd">– non disponibile nell'API di LibreNMS</span></td><td class="n">—</td><td>—</td><td>—</td></tr>
+        </tbody>
+      </table>
+
+      <div class="griglia3" style="margin-top:16px">
+        <div class="scatola">
+          <h4>Mai interrogati <span class="fioca">5 · in LibreNMS senza alcuna lettura</span></h4>
+          <table>
+            <thead><tr><th>Oggetto</th><th>IP</th><th>Dal</th></tr></thead>
+            <tbody>
+              <tr><td>srv-file-01</td><td>192.0.2.110</td><td>14/10</td></tr>
+              <tr><td>srv-app-02</td><td>192.0.2.119</td><td>14/10</td></tr>
+              <tr><td>srv-db-01</td><td>192.0.2.140</td><td>15/10</td></tr>
+              <tr><td colspan="3" class="fioca">+ altri 2 · Mostra tutti (5)</td></tr>
+            </tbody>
+          </table>
+          <p class="fioca"><span class="p nd">● SNMP non risponde</span> Entrati con l'aggiunta forzata di prima. Si propone di toglierli da LibreNMS: nessun pulsante qui, non si tolgono da soli.</p>
+        </div>
+        <div class="scatola">
+          <h4>Rifiutati da LibreNMS <span class="fioca">2 · ultima prova</span></h4>
+          <table>
+            <thead><tr><th>Oggetto</th><th>Motivo</th><th>Il</th><th></th></tr></thead>
+            <tbody>
+              <tr><td>stampante-3p<br><span class="fioca">192.0.2.61</span></td><td><span class="p att">▲ SNMP non risponde</span><br><span class="fioca">Could not connect to 192.0.2.61, please check the snmp details and snmp reachability</span></td><td>10:15</td><td><span class="btn">Riprova</span></td></tr>
+              <tr><td>nvr-cancello<br><span class="fioca">192.0.2.70</span></td><td><span class="p att">▲ rifiutato</span><br><span class="fioca">Could not ping 192.0.2.70</span></td><td>09:30</td><td><span class="btn">Riprova</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="scatola">
+          <h4>Visti come vicini <span class="fioca">3 · si aggiungono da soli, 5 per giro, se l'SNMP risponde</span></h4>
+          <table>
+            <thead><tr><th>Oggetto</th><th>Visto da</th><th>Porta</th><th></th></tr></thead>
+            <tbody>
+              <tr><td>ucg-fiber<br><span class="fioca">192.0.2.254</span></td><td>ccr-core</td><td>sfp-sfpplus2</td><td><span class="btn prim">Aggiungi ora</span></td></tr>
+              <tr><td>sw-gestione-1<br><span class="fioca">192.0.2.250</span></td><td>sw-core-01</td><td>1/0/48</td><td><span class="btn prim">Aggiungi ora</span></td></tr>
+              <tr><td>sw-gestione-2<br><span class="fioca">192.0.2.251</span></td><td>sw-core-01</td><td>1/0/47</td><td><span class="p ok">✓ aggiunto</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div class="nota">
+      <h3><span class="num">L5</span>Pagina del modulo</h3>
+      <ol>
+        <li>Sezione nuova nella pagina del modulo LibreNMS (<code>#module-librenms</code>), sotto la configurazione: «Apparati e lettura dei dati».</li>
+        <li><b>Lettura per parte</b>: esito con segno, righe, ora dell'ultima lettura buona e dell'ultimo tentativo. Un «non so» dice che le righe di prima restano. La VLAN per porta si dichiara assente (spec §4.7).</li>
+        <li><b>Mai interrogati</b>: elenco senza pulsante per toglierli (spec §3.A, Registro punto 3). Testo «SNMP non risponde».</li>
+        <li><b>Rifiutati</b>: il motivo di LibreNMS com'è, sotto un'etichetta breve; «Riprova» (admin) rifà l'aggiunta senza <code>force_add</code>, l'esito sulla stessa riga.</li>
+        <li><b>Visti come vicini</b>: si aggiungono da soli (Registro punto 2); «Aggiungi ora» (admin) non aspetta il giro. Chi viene rifiutato passa nella lista accanto col motivo.</li>
+        <li>Liste lunghe: le prime 10 con «Mostra tutti (N)» (al più 500 dalla rotta).</li>
+      </ol>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="nota">
+    <h3>Da decidere con Riccardo</h3>
+    <ul>
+      <li>L1: soglia del ▲ «vicino al limite» al 10% dal limite — va bene, o solo i limiti «warn» di LibreNMS dove ci sono?</li>
+      <li>L2: la colonna «Alias» (da LibreNMS) sempre o solo se almeno una porta ce l'ha?</li>
+      <li>L3: il disaccordo come due righe col ▲ va bene, o una riga sola con le due versioni?</li>
+      <li>L5: la sezione nella pagina del modulo o una pagina a sé (<code>/integrations/librenms</code>)?</li>
+    </ul>
+  </div>
+</footer>
+</body>
+</html>

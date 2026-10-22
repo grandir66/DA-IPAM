@@ -21,7 +21,9 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type { LetturaVlanSwitch } from "./devices/snmp-vlan";
 import { DDL_JOB_APPARATI_ESITI, INDICI_JOB_APPARATI_ESITI, SEGNO_APPARATI_SCELTI, VERSIONE_APPARATI_SCELTI, DDL_SWITCH_VLAN_NATIVA, SEGNO_SWITCH_VLAN_NATIVA, VERSIONE_SWITCH_VLAN_NATIVA, DDL_SWITCH_VLAN_V1, SEGNO_SWITCH_VLAN, VERSIONE_SWITCH_VLAN, COLONNA_CLUSTER_PRINCIPALE, INDICE_CLUSTER_PRINCIPALE, SEGNO_CLUSTER_PRINCIPALE, VERSIONE_CLUSTER_PRINCIPALE, COLONNE_SCHEDA_MK_V1, DDL_HOSTS_ARCHIVIO, DDL_SCHEDA_MK_V2, DDL_SCHEDA_MK_V3, DDL_TOPOLOGY_CAVI, DDL_TOPOLOGY_UNIONI, INDICI_HOSTS_ARCHIVIO, INDICI_TOPOLOGY_UNIONI, TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL, SEGNO_SCHEDA_MK, VERSIONE_SCHEDA_MK } from "./db-tenant-schema";
 import { HYPERVISOR_SYNC_MINUTES, PULIZIA_HOST_MINUTES, SCHEDULED_JOB_TYPES_CHECK_SQL } from "./scheduled-job-types";
-import { isProxmoxVeDevice } from "./devices/device-acquisition-resolve";
+import { isProxmoxVeDevice, resolveDeviceAcquisition } from "./devices/device-acquisition-resolve";
+import { networkDeviceUsesArpPoll } from "./network-device-arp";
+import { STATI_ESITO, type EsitoLettura, type EsitoRiga, type StatoApparato, type StatoEsito } from "./apparati-scelti/regole";
 import { macToHex, normalizeMac, normalizeMacForStorage } from "./utils";
 import { lookupVendorSync } from "./scanner/mac-vendor";
 import { VENDOR_PLACEHOLDER_RE } from "./attribution/emitters";
@@ -6878,8 +6880,13 @@ export function updateScheduledJobInterval(id: number, intervalMinutes: number):
   ).run(intervalMinutes, intervalMinutes, id);
 }
 
+/** Toglie il job e, nella stessa transazione, gli esiti per apparato (`job_apparati_esiti` non ha FK: la v11 ricostruisce la tabella). */
 export function deleteScheduledJob(id: number): boolean {
-  return db().prepare("DELETE FROM scheduled_jobs WHERE id = ?").run(id).changes > 0;
+  const d = db();
+  return d.transaction(() => {
+    d.prepare("DELETE FROM job_apparati_esiti WHERE job_id = ?").run(id);
+    return d.prepare("DELETE FROM scheduled_jobs WHERE id = ?").run(id).changes > 0;
+  })();
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -11213,4 +11220,208 @@ export function getTopologyKnownPorts(nodeId: string): KnownPort[] | null {
     "SELECT id, last_proxmox_scan_result AS raw FROM network_devices WHERE last_proxmox_scan_result IS NOT NULL AND last_proxmox_scan_result <> '' ORDER BY id",
   ).all() as Array<{ id: number; raw: string }>;
   return hypervisorNics({ id: dev.id, host: dev.host ?? "", name: dev.name ?? "" }, scans);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Scansione automatica dei device scelti (piano 2026-10-22, Task 3)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Le colonne dello stato di un apparato per il job `apparati_scelti`, in UNA query (niente N+1). Le credenziali con
+ * sottoquery correlate sugli indici di `host_credentials(host_id)` e `device_credential_bindings(device_id)`.
+ * `ha_snmp` è la regola di `haSnmpApparatoDb` (fonti dell'apparato: un binding SNMP non fallito con una voce di tipo
+ * snmp/snmp_v3) scritta in SQL: la prova `apparati-scelti/__tests__/db.test.ts` la confronta con quella vera.
+ */
+const COLONNE_STATO_APPARATO = `
+  nd.id AS device_id, nd.name AS dev_nome, nd.enabled AS dev_enabled, nd.device_type, nd.vendor, nd.protocol,
+  nd.classification, nd.snmp_credential_id, nd.scan_target, nd.product_profile, nd.use_for_arp_poll,
+  h.id AS host_id, h.ip AS host_ip, COALESCE(h.custom_name, h.hostname) AS host_nome, h.classification AS host_classification,
+  (SELECT COUNT(*) FROM host_credentials hc WHERE hc.host_id = h.id) AS cred_host,
+  (SELECT COUNT(*) FROM host_credentials hc WHERE hc.host_id = h.id AND hc.validated = 1) AS validate_host,
+  (SELECT COUNT(*) FROM device_credential_bindings b WHERE b.device_id = nd.id AND b.credential_id IS NOT NULL) AS cred_binding,
+  (SELECT COUNT(*) FROM device_credential_bindings b WHERE b.device_id = nd.id AND b.test_status = 'success') AS binding_riusciti,
+  EXISTS (SELECT 1 FROM device_credential_bindings b JOIN credentials c ON c.id = b.credential_id
+           WHERE b.device_id = nd.id AND b.protocol_type = 'snmp' AND b.test_status != 'failed'
+             AND c.credential_type IN ('snmp', 'snmp_v3')) AS ha_snmp`;
+
+interface RigaStatoApparato {
+  device_id: number | null;
+  dev_nome: string | null;
+  dev_enabled: number | null;
+  device_type: string | null;
+  vendor: string | null;
+  protocol: string | null;
+  classification: string | null;
+  snmp_credential_id: number | null;
+  scan_target: string | null;
+  product_profile: string | null;
+  use_for_arp_poll: number | null;
+  host_id: number | null;
+  host_ip: string | null;
+  host_nome: string | null;
+  host_classification: string | null;
+  cred_host: number;
+  validate_host: number;
+  cred_binding: number;
+  binding_riusciti: number;
+  ha_snmp: number;
+}
+
+/**
+ * Da una riga allo `StatoApparato` di `regole.ts`. `leggibile`, `usa_arp` e `vlan_switch` con le funzioni pure di
+ * «Interroga» e del giro ARP (`resolveDeviceAcquisition`, `networkDeviceUsesArpPoll`, la regola di `vlanSwitchDaLeggere`).
+ * Le credenziali memorizzate: le righe dell'host e i binding con una voce (quelli inline il motore non li legge più).
+ */
+function statoDaRiga(r: RigaStatoApparato): StatoApparato {
+  const haSnmp = r.ha_snmp === 1;
+  const conApparato = r.device_id != null && r.device_type != null;
+  const dev = {
+    device_type: r.device_type ?? undefined,
+    vendor: r.vendor ?? undefined,
+    protocol: r.protocol ?? undefined,
+    classification: r.classification,
+    snmp_credential_id: r.snmp_credential_id,
+    scan_target: r.scan_target,
+    product_profile: r.product_profile,
+    use_for_arp_poll: r.use_for_arp_poll,
+  };
+  const sessioneSnmp = r.protocol === "snmp_v2" || r.protocol === "snmp_v3" || haSnmp;
+  return {
+    host_id: r.host_id,
+    device_id: r.device_id,
+    enabled: conApparato ? r.dev_enabled !== 0 : true,
+    credenziali_memorizzate: r.cred_host + r.cred_binding,
+    validate_sul_host: r.host_id != null ? r.validate_host : null,
+    binding_riusciti: r.binding_riusciti,
+    leggibile: conApparato ? resolveDeviceAcquisition(dev, haSnmp).implemented : false,
+    tipo: {
+      device_type: r.device_type ?? "",
+      vendor: r.vendor,
+      protocol: r.protocol,
+      usa_arp: conApparato ? networkDeviceUsesArpPoll({ device_type: r.device_type as NetworkDevice["device_type"], vendor: r.vendor as NetworkDevice["vendor"], use_for_arp_poll: r.use_for_arp_poll }) : false,
+      vlan_switch: r.device_type === "switch" && !(r.vendor === "mikrotik" && r.protocol === "ssh") && sessioneSnmp,
+    },
+  };
+}
+
+/**
+ * Lo stato degli host scelti in Discovery (finestra J2), in una query. L'apparato di un host: quello collegato
+ * (`network_devices.host_id`), altrimenti quello con lo stesso IP (come lo vede Discovery). Un id inesistente non compare.
+ */
+export function statoApparatiPerHost(hostIds: number[]): Array<StatoApparato & { host_id: number; nome: string; ip: string; tipo_scheda: string }> {
+  if (hostIds.length === 0) return [];
+  const righe = db().prepare(`
+    SELECT ${COLONNE_STATO_APPARATO}
+      FROM hosts h
+      LEFT JOIN network_devices nd ON nd.id = COALESCE(
+        (SELECT MIN(x.id) FROM network_devices x WHERE x.host_id = h.id),
+        (SELECT MIN(x.id) FROM network_devices x WHERE x.host = h.ip))
+     WHERE h.id IN (${hostIds.map(() => "?").join(",")})
+     ORDER BY h.id`).all(...hostIds) as RigaStatoApparato[];
+  return righe.map((r) => ({
+    ...statoDaRiga(r),
+    host_id: r.host_id as number,
+    nome: r.dev_nome ?? r.host_nome ?? r.host_ip ?? "",
+    ip: r.host_ip ?? "",
+    tipo_scheda: r.device_type ?? r.host_classification ?? "unknown",
+  }));
+}
+
+/**
+ * Lo stato degli apparati di un job (il giro), in una query. L'host di un apparato: quello collegato, altrimenti
+ * quello con lo stesso IP. Un id che non c'è più resta fuori dalla mappa: per il giro è TOLTO.
+ */
+export function statoApparatiPerDevice(deviceIds: number[]): Map<number, StatoApparato & { nome: string }> {
+  const out = new Map<number, StatoApparato & { nome: string }>();
+  if (deviceIds.length === 0) return out;
+  const righe = db().prepare(`
+    SELECT ${COLONNE_STATO_APPARATO}
+      FROM network_devices nd
+      LEFT JOIN hosts h ON h.id = COALESCE(
+        (SELECT x.id FROM hosts x WHERE x.id = nd.host_id),
+        (SELECT MIN(x.id) FROM hosts x WHERE x.ip = nd.host))
+     WHERE nd.id IN (${deviceIds.map(() => "?").join(",")})`).all(...deviceIds) as RigaStatoApparato[];
+  for (const r of righe) out.set(r.device_id as number, { ...statoDaRiga(r), nome: r.dev_nome ?? "" });
+  return out;
+}
+
+/** L'ultimo giro di un job: toglie le righe del giro prima e scrive queste, in una transazione. Uno stato fuori elenco lancia. */
+export function scriviEsitiGiro(
+  jobId: number,
+  giroIl: string,
+  righe: Array<{ device_id: number; stato: StatoEsito; letture: Record<string, EsitoLettura>; motivo?: string | null }>,
+): void {
+  for (const r of righe) {
+    if (!(STATI_ESITO as readonly string[]).includes(r.stato)) throw new Error(`Stato d'esito non previsto: ${String(r.stato)}`);
+  }
+  const d = db();
+  d.transaction(() => {
+    d.prepare("DELETE FROM job_apparati_esiti WHERE job_id = ?").run(jobId);
+    const ins = d.prepare("INSERT INTO job_apparati_esiti (job_id, device_id, giro_il, stato, letture, motivo) VALUES (?, ?, ?, ?, ?, ?)");
+    for (const r of righe) ins.run(jobId, r.device_id, giroIl, r.stato, JSON.stringify(r.letture), r.motivo ?? null);
+  })();
+}
+
+/** Gli esiti dell'ultimo giro di un job, col nome dell'apparato (null se l'apparato è stato tolto). */
+export function leggiEsitiJob(jobId: number): { giro_il: string | null; righe: Array<EsitoRiga & { nome: string | null }> } {
+  const righe = db().prepare(`
+    SELECT e.device_id, e.giro_il, e.stato, e.letture, e.motivo, nd.name AS nome
+      FROM job_apparati_esiti e
+      LEFT JOIN network_devices nd ON nd.id = e.device_id
+     WHERE e.job_id = ?
+     ORDER BY e.device_id`).all(jobId) as Array<Omit<EsitoRiga, "letture"> & { letture: string; nome: string | null }>;
+  const out = righe.map((r) => {
+    let letture: Record<string, EsitoLettura> = {};
+    try {
+      letture = JSON.parse(r.letture) as Record<string, EsitoLettura>;
+    } catch {
+      // Scritte solo da scriviEsitiGiro: una riga illeggibile mostra lo stato senza il dettaglio delle letture.
+      console.warn(`[apparati_scelti] job #${jobId}: letture illeggibili per l'apparato #${r.device_id}`);
+    }
+    return { ...r, letture };
+  });
+  const giro = out.reduce<string | null>((max, r) => (max == null || r.giro_il > max ? r.giro_il : max), null);
+  return { giro_il: giro, righe: out };
+}
+
+/**
+ * Il riassunto di J3 («✓ 3/3», «▲ 2/3 · 1 escluso») per più job, in una query, dalle righe dell'ultimo `giro_il`:
+ * letti = `ok` + `parziale`. Un job che non ha mai girato non compare.
+ */
+export function riassuntiEsitiJobs(jobIds: number[]): Map<number, { letti: number; totale: number; esclusi: number; giro_il: string }> {
+  const out = new Map<number, { letti: number; totale: number; esclusi: number; giro_il: string }>();
+  if (jobIds.length === 0) return out;
+  const righe = db().prepare(`
+    SELECT e.job_id,
+           SUM(CASE WHEN e.stato IN ('ok', 'parziale') THEN 1 ELSE 0 END) AS letti,
+           COUNT(*) AS totale,
+           SUM(CASE WHEN e.stato = 'escluso' THEN 1 ELSE 0 END) AS esclusi,
+           MAX(e.giro_il) AS giro_il
+      FROM job_apparati_esiti e
+     WHERE e.job_id IN (${jobIds.map(() => "?").join(",")})
+       AND e.giro_il = (SELECT MAX(u.giro_il) FROM job_apparati_esiti u WHERE u.job_id = e.job_id)
+     GROUP BY e.job_id`).all(...jobIds) as Array<{ job_id: number; letti: number; totale: number; esclusi: number; giro_il: string }>;
+  for (const r of righe) out.set(r.job_id, { letti: r.letti, totale: r.totale, esclusi: r.esclusi, giro_il: r.giro_il });
+  return out;
+}
+
+/** I job `apparati_scelti` che contengono l'apparato (testata J4). Una config illeggibile non entra. */
+export function jobsDelApparato(deviceId: number): Array<{ id: number; nome: string; enabled: boolean; interval_minutes: number; config: string; last_run: string | null }> {
+  const righe = db().prepare(`
+    SELECT sj.id, COALESCE(json_extract(sj.config, '$.nome'), 'Apparati scelti') AS nome, sj.enabled, sj.interval_minutes, sj.config, sj.last_run
+      FROM scheduled_jobs sj
+     WHERE sj.job_type = 'apparati_scelti'
+       AND json_valid(sj.config)
+       AND EXISTS (SELECT 1 FROM json_each(sj.config, '$.device_ids') j WHERE j.value = ?)
+     ORDER BY sj.id`).all(deviceId) as Array<{ id: number; nome: string; enabled: number | null; interval_minutes: number; config: string; last_run: string | null }>;
+  return righe.map((r) => ({ ...r, enabled: r.enabled === 1 }));
+}
+
+export function cancellaEsitiJob(jobId: number): void {
+  db().prepare("DELETE FROM job_apparati_esiti WHERE job_id = ?").run(jobId);
+}
+
+/** Gli esiti dei job che non ci sono più (all'inizio di ogni giro). Restituisce le righe tolte. */
+export function cancellaEsitiOrfani(): number {
+  return db().prepare("DELETE FROM job_apparati_esiti WHERE job_id NOT IN (SELECT id FROM scheduled_jobs)").run().changes;
 }

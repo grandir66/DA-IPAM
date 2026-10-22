@@ -144,3 +144,24 @@ export function lettureValide(t: StatoApparato["tipo"]): Lettura[] {
   if (t.vlan_switch || (t.device_type === "router" && t.vendor === "mikrotik" && t.protocol === "ssh")) out.push("vlan");
   return out;
 }
+
+// ── Esiti per apparato (decisione 11) ─────────────────────────────────────
+
+/** Stato di una riga di `job_apparati_esiti`: validato nel codice (la tabella non ha CHECK). */
+export const STATI_ESITO = ["ok", "parziale", "errore", "escluso", "saltato"] as const;
+export type StatoEsito = (typeof STATI_ESITO)[number];
+
+/** Esito di una lettura scelta: `codice` è un codice (mai un messaggio con nomi o IP). */
+export interface EsitoLettura {
+  stato: string;
+  codice?: string;
+}
+
+/** L'ultimo esito di un apparato in un job. */
+export interface EsitoRiga {
+  device_id: number;
+  giro_il: string;
+  stato: StatoEsito;
+  letture: Record<string, EsitoLettura>;
+  motivo: string | null;
+}

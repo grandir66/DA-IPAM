@@ -9,10 +9,12 @@
  *   05e4272e32b3cc7adf8d36e377f69bf24732f8f9 src/lib/parser/domarc-ad-health.ts   (exportSchema, MAX_AD_HEALTH_FINDINGS)
  *   05864398b5e19803218302e87b1c7c98f72dc5e3 src/app/api/ipam/ad-health/route.ts  (409 codcli, 413 oltre 5.000 regole)
  *   acc656698946f1fd42cd2332575ede5155cf162f src/app/api/ipam/inventario/route.ts (409 codcli, poi SchemaInventario)
+ *   96df629ab4b4744a46ba01d5552af7385220d338 src/app/api/ipam/heartbeat/route.ts  (Battito; aggiunto col Task 6)
  *
  * Come si tiene allineata (a ogni tocco del flusso e nel collaudo del Task 9):
  *   for f in src/lib/ipam/inventario.ts src/lib/parser/domarc-ad-health.ts \
- *            src/app/api/ipam/ad-health/route.ts src/app/api/ipam/inventario/route.ts; do
+ *            src/app/api/ipam/ad-health/route.ts src/app/api/ipam/inventario/route.ts \
+ *            src/app/api/ipam/heartbeat/route.ts; do
  *     echo "$(git -C ~/Progetti/Domarc/DA-Vul-can rev-parse origin/HEAD:$f) $f"; done
  * Un blob diverso da quelli sopra = si rilegge il file dell'hub e si ricopia qui.
  * Niente prova automatica contro il repo dell'hub: dipenderebbe dalla macchina.
@@ -101,3 +103,14 @@ export const SchemaInventarioHub = z
 
 /** Le chiavi ammesse dall'hub per un oggetto: la lista bianca locale deve starci dentro. */
 export const CHIAVI_OGGETTO_HUB: readonly string[] = Object.keys(Oggetto.shape);
+
+// ── src/app/api/ipam/heartbeat/route.ts ────────────────────────────────────
+// `inventario.oggetti` NON è nullable: senza inventari inviati si manda 0.
+const quando = z.string().max(40).nullable();
+export const BattitoHub = z.object({
+  versione: z.string().min(1).max(40),
+  generato_il: z.string().min(1).max(40),
+  ad: z.object({ ultima_esecuzione: quando, esito: z.string().max(40).nullable() }),
+  inventario: z.object({ ultimo_invio: quando, oggetti: z.number().int().nonnegative() }),
+  coda: z.object({ in_attesa: z.number().int().nonnegative(), falliti: z.number().int().nonnegative() }),
+});

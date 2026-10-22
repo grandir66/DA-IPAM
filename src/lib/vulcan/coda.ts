@@ -272,3 +272,21 @@ export function scriviStatoVulcan(db: Database.Database, parz: Partial<Omit<Stat
     db.prepare(`UPDATE vulcan_stato SET ${set} WHERE id = 1`).run(...valori);
   })();
 }
+
+/**
+ * Un invio che non è nemmeno nato (il costruttore dell'inventario è fallito): una riga
+ * `scartato` senza corpo, con il motivo, così «ultimo errore» nella pagina la mostra.
+ * Lo sha256 è di una stringa casuale: non è un corpo e non deve mai fare da doppione.
+ */
+export function registraScartoSenzaCorpo(db: Database.Database, tipo: TipoInvio, errore: string, adesso: Date): number {
+  richiediSchema(db);
+  const ora = dataSqlite(adesso);
+  const sha256 = crypto.createHash("sha256").update(`scarto:${crypto.randomUUID()}`).digest("hex");
+  const r = db
+    .prepare(
+      `INSERT INTO vulcan_coda (tipo, rif, corpo_gz, byte_json, oggetti, sha256, stato, ultimo_esito, ultimo_errore, esito_il, creato_il)
+       VALUES (?, NULL, zeroblob(0), 0, NULL, ?, 'scartato', 'non_costruito', ?, ?, ?)`,
+    )
+    .run(tipo, sha256, errore, ora, ora);
+  return Number(r.lastInsertRowid);
+}

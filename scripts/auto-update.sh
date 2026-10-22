@@ -16,6 +16,8 @@
 #      — «Aggiorna ora» dell'interfaccia lascia data/aggiornamento-richiesto e
 #        avvia questo servizio: vale come la forzatura
 #   5. altrimenti → delega a update.sh --restart (pull + npm install + build + restart)
+#   Prima del checkout (22/10/2026): se origin/<branch> è una versione più VECCHIA
+#   di quella installata → esci 1 senza toccare niente (lib/guardia-versione.sh)
 #
 # Ogni giro lascia il suo esito in data/aggiornamento.json (ultimo_controllo),
 # che la pagina Aggiornamenti legge.
@@ -77,6 +79,16 @@ git fetch --quiet origin "$BRANCH" || {
   echo "[auto-update] git fetch fallito, riprovo al prossimo tick."
   exit 0
 }
+
+# Mai indietro (incidente del 22/10, 70151): se origin/<ramo> ha una versione più vecchia di quella installata, niente
+# checkout né update.sh; il servizio esce 1 e resta «failed», così l'allarme sui job fermi e la pagina lo vedono.
+# shellcheck source=lib/guardia-versione.sh
+. "$SCRIPT_DIR/lib/guardia-versione.sh"
+if ! MOTIVO="$(guardia_versione "$BRANCH")"; then
+  stato controllo retrocessione_rifiutata $ORIGINE || true
+  echo "[auto-update] $MOTIVO"
+  exit 1
+fi
 
 if [ "$CURRENT" != "$BRANCH" ]; then
   echo "[auto-update] branch corrente '$CURRENT' != target '$BRANCH': checkout in corso..."

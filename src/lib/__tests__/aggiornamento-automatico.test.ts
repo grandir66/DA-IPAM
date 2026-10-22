@@ -99,7 +99,9 @@ function preparaAmbiente(): Ambiente {
   sh(`git init -q --bare -b main "${origin}"`, radice);
   sh(`git init -q -b main "${lavoro}"`, radice);
   fs.mkdirSync(path.join(lavoro, "scripts"));
-  for (const f of ["auto-update.sh", "update.sh", "stato-aggiornamento.mjs"]) {
+  fs.mkdirSync(path.join(lavoro, "scripts", "lib"));
+  // lib/guardia-versione.sh: auto-update.sh la carica prima del checkout (niente retrocessioni, 22/10).
+  for (const f of ["auto-update.sh", "update.sh", "stato-aggiornamento.mjs", "lib/guardia-versione.sh"]) {
     fs.copyFileSync(path.join(REPO, "scripts", f), path.join(lavoro, "scripts", f));
   }
   fs.writeFileSync(path.join(lavoro, "package.json"), JSON.stringify({ name: "prova", version: "1.0.0" }));

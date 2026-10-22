@@ -28,7 +28,8 @@
 //   controllo <esito> [interfaccia]  com'è finito l'ultimo giro di auto-update.sh:
 //                                 gia_aggiornato | commit_fallito_attendo |
 //                                 solo_documentazione | aggiornamento_avviato |
-//                                 fetch_fallito | servizio_fermo; «interfaccia» se l'ha
+//                                 fetch_fallito | servizio_fermo |
+//                                 retrocessione_rifiutata; «interfaccia» se l'ha
 //                                 chiesto «Aggiorna ora»
 import fs from "node:fs";
 import path from "node:path";
@@ -42,6 +43,7 @@ const ESITI_CONTROLLO = new Set([
   "aggiornamento_avviato",
   "fetch_fallito",
   "servizio_fermo",
+  "retrocessione_rifiutata",
 ]);
 
 export function percorsoStato(env = process.env) {

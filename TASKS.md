@@ -189,7 +189,25 @@ Analisi del 20/10: canvas Cursor `progetti-fermi-DADude3-DA-MKNET-MKHA` (50 sche
 - [ ] **Da misurare in locale:** su una copia del DB dell'hub, applicare uno snapshot vero a uno switch già letto dal percorso di sempre e spiegare ogni riga di `acquisition_changes` (soprattutto porte «tolte» e «aggiunte»: i nomi SSH e SNMP delle porte possono differire).
 - [x] Riccardo (22/10): decisioni (a)-(f) di fine giro 2 come proposte (piano §7, «Fine giro 2»): (a) giri pianificati non riscrivono le colonne del collector, (c) `collector` prova di ruolo, (e) bulk-scan salta i dubbi, (b)(d)(f) nessun cambio.
 - [x] Ratchet `db.ts` rosso: già sistemato su `dev` da un'altra sessione (`df2e7dc3`), verde il 22/10.
-- [ ] Giro cloud 3: (a), (c), (e), poi `qnap-nas` → `mikrotik-routeros` → `windows` → `linux` → `synology-nas` (prompt, «Giro 3»).
+- [x] Giro cloud 3 (22/10): merge di `origin/dev` (`7b97fc1f`, conflitto solo in CONTEXT §6, tenute le voci di entrambi).
+- [x] (a) giri pianificati (`cba44003`): `cron/jobs.ts` passa da `scriviPorteDelGiro` (`acquisizione-modulare/giri.ts`). Acceso + collector + snapshot non in errore che ha scritto le porte: i campi che la proiezione scrive da quello snapshot (per porta) restano del collector, il giro scrive MAC per porta e il resto; le porte che solo il collector conosce restano. Spento, «classica», nessuno snapshot: `upsertSwitchPorts` come oggi. Prova vista rossa (il giro rimetteva «100/1000T» sopra «1000 Mbps»).
+- [ ] (a), nota: `POST /api/networks/bulk-scan-devices` (ARP dei router dalla pagina Reti) scrive ancora con `upsertSwitchPorts`: non è un giro pianificato, lasciato com'è. Da decidere se allinearlo.
+- [x] (c) `collector` in `leggeViciniDiRete` (`551c7da9`): prova vista rossa, topologia 916/916, T1 non lo legge.
+- [x] (e) scansione in blocco (`acfb6fb8`): i dubbi si saltano prima del test delle credenziali, vanno in `skipped_devices` e nel nuovo elenco `dubbi`, con una frase nel messaggio. Spento = nessun salto.
+- [x] C3 `qnap-nas` (`8d9e4c93`), con l'infrastruttura comune: `ssh_modo` nel descrittore (`console`/`exec`/`exec_per_comando`; Comware lo dichiara), uscita 127 = non supportato, `costruzione.ts`, `linux-parsers.ts`, sezione opzionale `shares`.
+- [x] C3 `mikrotik-routeros` (`6eb216fe`): riusa i parser della scheda MikroTik; PoE solo da `poe-out-power` (mutante «tensione come potenza» visto rosso), `vlan-ids` con intervalli, monitor per colonne, errori di RouterOS su stdout. `parseRouterOsDurationSeconds` spostata in `devices/routeros-durata.ts` (router-client la riesporta) perché il core dei collector non importi il DB: prova nuova sugli import.
+- [x] C3 `windows` (`64552015`): otto script PowerShell nell'allowlist WinRM, busta JSON, mai `Win32_Product`, Hyper-V col GUID (sezione opzionale `guests`), Defender/firewall senza riassunti. Prova di contratto generalizzata alle credenziali non SSH.
+- [x] C3 `linux` (`7e3c493e`) e `synology-nas` (`8f91c919`).
+- [x] Tutti e cinque **non collaudati** (versione `0.1.0`, `collaudo: non_collaudato`), fixture con la forma documentata e dati inventati, **non agganciati al riconoscimento del prodotto** (`riconosci.ts`): si usano dalla CLI. Motivo: le proiezioni scrivono `switch_ports` da `interfaces` per qualunque apparato; un NAS o un server non deve avere porte da switch. Da decidere prima dell'aggancio: proiezione delle porte solo per le famiglie switch/router.
+- [x] Cancello di fine giro 3 (22/10, cloud): `npm run lint` exit 0 (0 errori, 65 avvisi), `npx tsc --noEmit` exit 0, `npm test` exit 0 (5336 prove, 5333 pass, 0 fail, 2 saltate, 1 TODO), `npm run build` exit 0. Prove del modulo dei collector 176/176.
+- [ ] **Da provare in locale (Riccardo), collector nuovi dalla CLI** (`scripts/acquire-device.ts`, sola lettura), uno per famiglia:
+  - `qnap-nas` su un QNAP QTS (e uno QuTS hero se c'è): firmware e build, `smb.conf`/`qpkg.conf` nei percorsi attesi, `ip`/`df -i` di BusyBox;
+  - `mikrotik-routeros` su un CRS con PoE e su un CCR: monitor ethernet e PoE, tempi con molte interfacce, più canali exec sulla stessa connessione;
+  - `windows` su un Windows Server 2016/2019/2022 con Hyper-V e su un client: gli otto script su PowerShell 5.1, forma vera degli array, tempi;
+  - `linux` su un Debian/Ubuntu e su un RHEL: `systemctl show '*.service'`, LVM senza root;
+  - `synology-nas` su una DSM 7: quale forma di `synoshare` risponde, `smb.share.conf`, `/var/packages/*/INFO`.
+  Dopo il collaudo: modello e firmware in `collaudati`, `collaudo: "collaudato"`, versione `1.0.0`.
+- [ ] **Da provare in locale, (a) ed (e):** interruttore acceso, uno switch HP acquisito col collector, poi un giro ARP pianificato (o «Esegui ora»): velocità, duplex, VLAN e stato STP devono restare quelli del collector, i MAC per porta aggiornati. Spento: il giro torna a scrivere tutto. Scansione in blocco con uno switch HP senza indizi (due collector possibili): saltato ed elencato, gli altri acquisiti.
 - [ ] Etichetta «anteprima» nel titolo: si toglie a fine C2, dopo le prove in locale (Riccardo).
 
 ## 2026-10-21 — cose aperte dopo la notte del 20→21/10

@@ -285,7 +285,8 @@ export function FinestraScansioneAutomatica(props: ProprietaFinestraScansione) {
                       ) : (
                         <PastigliaStato tono="guasto" title={r.testo_motivo}>escluso</PastigliaStato>
                       )}
-                      {!r.incluso && r.device_id != null && r.testo_motivo && (
+                      {/* La riga in più solo se la pastiglia della credenziale non spiega già il motivo (apparato disattivato, lettura non disponibile). */}
+                      {!r.incluso && r.device_id != null && r.testo_motivo && r.credenziale === "provata" && (
                         <span className="basis-full text-[13px] text-muted-foreground">{r.testo_motivo}</span>
                       )}
                       {props.modo === "modifica" && r.device_id != null && (

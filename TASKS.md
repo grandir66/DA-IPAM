@@ -28,7 +28,7 @@ Piano: [`docs/superpowers/plans/2026-10-22-scansione-automatica-da-discovery.md`
 - [x] T2 regole pure: config, frequenze (ogni ora · ogni 4 ore · ogni giorno alle HH:MM), idoneità, letture valide — regole pure; il job segue l ora italiana (fuso esplicito); revisione completa: 1 importante (fuso) corretto
 - [ ] T3 funzioni DB: stato degli apparati in una query, esiti per apparato
 - [x] T4 letture estratte da «Interroga» e dal giro ARP, lucchetto per apparato, log senza nomi né IP — lucchetto in comune fra scheduler e rotte (globalThis), 5 min per apparato, log senza nomi né IP; le 90 prove del giro invariate; revisione completa: 1 grave (lucchetto non condiviso) corretto
-- [ ] T5 il giro `apparati_scelti` nello scheduler (prova a vuoto sulla copia dell'hub)
+- [x] T5 il giro `apparati_scelti` nello scheduler (prova a vuoto sulla copia dell'hub) — giro in serie con esito per apparato; «saltato» se niente da leggere; idoneo anche con binding riuscito (decisione nel registro); prova a vuoto sulla copia; revisione completa: 1 grave corretto. Nota per T10: i 5 switch Ubiquiti hanno il binding SNMP mai provato → prima «Prova credenziali»
 - [ ] T6 rotte API (anteprima, creazione, modifica, esiti, testata)
 - [ ] T7 Discovery: pulsante e finestra (J1, J2), resa 1440 e 1920
 - [ ] T8 pagina dei job: riga ed esiti per apparato (J3), resa 1440 e 1920

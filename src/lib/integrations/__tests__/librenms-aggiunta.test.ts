@@ -168,18 +168,19 @@ test("host: 500 di LibreNMS → esito snmp_non_risponde, rifiuto in librenms_rif
   assert.deepEqual(d.prepare("SELECT COUNT(*) AS n FROM librenms_rifiuto").get(), { n: 0 });
 });
 
-test("host senza SNMP: ping-only, sempre senza force_add; LibreNMS che non lo pinga → rifiutato col motivo", async () => {
+test("host senza SNMP: niente aggiunta «solo ping», nessuna chiamata a LibreNMS, rifiuto senza_snmp col motivo", async () => {
+  // 22/10 sull'hub: col «solo ping» LibreNMS accettava qualunque oggetto che risponde al ping (client, nodi Proxmox), sia dal
+  // pulsante sia dal giro automatico. Regola di Riccardo: in LibreNMS entra solo chi ha l'SNMP.
   setIntegrationConfig("librenms", { mode: "external", url: "http://192.0.2.200:8090", apiToken: "token-finto" });
-  rispostaPost = () => Response.json({ status: "error", message: "Could not ping 192.0.2.99" }, { status: 500 });
+  rispostaPost = () => Response.json({ status: "ok", id: [91] });
   const id = withTenant(T, () => {
     const r = getTenantDb(T).prepare("INSERT INTO hosts (network_id, ip, status) VALUES (1, '192.0.2.99', 'online')").run();
     return Number(r.lastInsertRowid);
   });
   const esito = await withTenant(T, () => addSingleHostToLibreNMS(id));
   assert.equal(esito.ok, false);
-  assert.equal(!esito.ok && esito.codice, "rifiutato");
-  const post = chiamate.find((x) => x.metodo === "POST");
-  assert.equal(post?.corpo?.snmp_disable, true);
-  assert.equal(post?.corpo?.force_add, false);
-  assert.ok(getTenantDb(T).prepare("SELECT 1 FROM librenms_rifiuto WHERE ip = '192.0.2.99'").get());
+  assert.equal(!esito.ok && esito.codice, "senza_snmp");
+  assert.equal(chiamate.some((x) => x.metodo === "POST"), false, "nessuna aggiunta mandata a LibreNMS");
+  const r = getTenantDb(T).prepare("SELECT codice FROM librenms_rifiuto WHERE ip = '192.0.2.99'").get();
+  assert.deepEqual(r, { codice: "senza_snmp" });
 });

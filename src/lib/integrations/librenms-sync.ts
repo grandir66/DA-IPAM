@@ -256,9 +256,11 @@ function campiDaInviare(c: CampiSnmpLibreNms): Omit<CampiAggiuntaLibreNms, "host
 }
 
 /**
- * Aggiunge o aggiorna un singolo host in LibreNMS. Senza SNMP l'host va in ping-only (`snmp_disable: true`), come prima,
- * ma senza `force_add`: un oggetto che non risponde LibreNMS lo rifiuta, e il rifiuto torna come esito col motivo (scritto
- * in `librenms_rifiuto`), non come eccezione. Lancia solo per un errore di DA-IPAM (host assente, LibreNMS non configurato).
+ * Aggiunge o aggiorna un singolo host in LibreNMS, sempre senza `force_add`: un oggetto che non risponde LibreNMS lo rifiuta,
+ * e il rifiuto torna come esito col motivo (scritto in `librenms_rifiuto`), non come eccezione. **Senza SNMP non si aggiunge**
+ * (22/10, regola di Riccardo): il «solo ping» faceva entrare in LibreNMS ogni oggetto che risponde al ping, client e nodi
+ * compresi, sia dal pulsante sia dal giro automatico; ora è un rifiuto `senza_snmp`, senza chiamate a LibreNMS.
+ * Lancia solo per un errore di DA-IPAM (host assente, LibreNMS non configurato).
  */
 export async function addSingleHostToLibreNMS(hostId: number): Promise<EsitoAggiunta> {
   const cfg = getIntegrationConfig("librenms");
@@ -274,7 +276,11 @@ export async function addSingleHostToLibreNMS(hostId: number): Promise<EsitoAggi
 
   const snmpData   = parseSnmpData(host.snmp_data ?? null);
   const snmpParams = resolveSnmpParams(snmpData, networkCommunity);
-  // snmpParams può essere null: in quel caso aggiungiamo a LibreNMS in modalità ping-only
+  if (!snmpParams && !getLibreNMSMapByIp(host.network_id, host.ip)) {
+    const messaggio = "Nessuna credenziale SNMP per questo oggetto: in LibreNMS si aggiunge solo chi ha l'SNMP (niente «solo ping»).";
+    scriviRifiutoLibrenms(host.ip, { hostId: host.id, codice: "senza_snmp", motivo: messaggio });
+    return { ok: false, codice: "senza_snmp", messaggio };
+  }
 
   const client = createLibreNMSClient(cfg.url, cfg.apiToken);
   // v0.2.638 audit B6: messaggio chiaro al caller (UI) invece di generico.
@@ -399,6 +405,13 @@ export async function addSingleNetworkDeviceToLibreNMS(deviceId: number): Promis
 
   const device = getNetworkDeviceById(deviceId);
   if (!device) throw new Error("Dispositivo non trovato");
+  // Senza SNMP non si aggiunge (22/10, regola di Riccardo): niente «solo ping», rifiuto col motivo della credenziale.
+  const campiSnmp = campiSnmpPerLibreNms(device);
+  if (campiSnmp.snmp_disable && !getLibreNMSMapByDeviceIp(device.host)) {
+    const messaggio = `Nessuna credenziale SNMP utilizzabile (${campiSnmp.motivo}): in LibreNMS si aggiunge solo chi ha l'SNMP (niente «solo ping»).`;
+    scriviRifiutoLibrenms(device.host, { networkDeviceId: device.id, codice: "senza_snmp", motivo: messaggio });
+    return { ok: false, codice: "senza_snmp", messaggio };
+  }
 
   const client = createLibreNMSClient(cfg.url, cfg.apiToken);
   // v0.2.638 audit B6: messaggio chiaro al caller (UI) invece di generico.
@@ -409,7 +422,7 @@ export async function addSingleNetworkDeviceToLibreNMS(deviceId: number): Promis
   const sysName  = device.sysname || device.name || undefined;
 
   // Parametri SNMP se disponibili (gli stessi per aggiornamento e aggiunta)
-  const snmpFields = campiDaInviare(campiSnmpPerLibreNms(device));
+  const snmpFields = campiDaInviare(campiSnmp);
   const metadati = {
     ...(sysName              ? { sysName }                       : {}),
     ...(device.model         ? { hardware: device.model }        : {}),

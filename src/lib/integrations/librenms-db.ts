@@ -76,7 +76,7 @@ export function getLibreNMSMapByDeviceIp(ip: string): LibreNMSHostMap | null {
 }
 
 /** Codici di un'aggiunta rifiutata da LibreNMS (piano 2026-10-22 LibreNMS, task 1). */
-export type CodiceRifiuto = "snmp_non_risponde" | "gia_presente" | "rifiutato" | "rete";
+export type CodiceRifiuto = "snmp_non_risponde" | "gia_presente" | "rifiutato" | "rete" | "senza_snmp";
 
 /**
  * Il rifiuto di un'aggiunta: una riga in `librenms_rifiuto` per IP (l'ultima vince) e, se l'IP ha già una riga di mappa,

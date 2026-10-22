@@ -181,18 +181,18 @@ test("(e) vault remoto: una riga sola, DA-Link; DA_VAULT_OPENBAO=1 rimasto nel f
   }
 });
 
-test("(f) acquisizione modulare: spenta di serie, si accende e si spegne da Opzioni, scrive la stessa impostazione di prima", () => {
-  withTenant(T, () => {
+test("(f) acquisizione modulare: spenta di serie, si accende e si spegne da Opzioni, scrive la stessa impostazione di prima", async () => {
+  await withTenant(T, async () => {
     const o = catalogo().find((x) => x.id === "automatismo.acquisizione_modulare");
     assert.ok(o, "riga mancante");
     assert.equal(o.forma, "levetta");
     assert.equal(o.valePer, "cliente");
-    assert.equal(o.leggi().acceso, false);
+    assert.equal((await o.leggi()).acceso, false);
     o.cambia?.({ acceso: true }, "test");
-    assert.equal(o.leggi().acceso, true);
+    assert.equal((await o.leggi()).acceso, true);
     assert.equal(acquisizioneModulareAccesa(), true, "è la stessa impostazione letta dal pulsante d'acquisizione");
     o.cambia?.({ acceso: false }, "test");
-    assert.equal(o.leggi().acceso, false);
+    assert.equal((await o.leggi()).acceso, false);
     assert.equal(acquisizioneModulareAccesa(), false);
     assert.throws(() => o.cambia?.({}, "test"), /accendere o spegnere/);
   });

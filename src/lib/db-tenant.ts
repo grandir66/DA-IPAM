@@ -11117,6 +11117,18 @@ export function leggiSnapshotAcquisizione(deviceId: number, snapshotId: number):
     .get(snapshotId, deviceId) as (SnapshotAcquisizioneRiga & { payload: Buffer }) | undefined) ?? null;
 }
 
+/**
+ * L'ultimo snapshot non in errore dell'apparato fra quelli dei collector dati, senza payload (decisione a di fine giro 2:
+ * i giri pianificati lasciano al collector le colonne che ha letto). null se non ce n'è.
+ */
+export function ultimoSnapshotNonInErrore(deviceId: number, collectors: readonly string[]): SnapshotAcquisizioneRiga | null {
+  if (collectors.length === 0) return null;
+  return (db().prepare(
+    `SELECT ${COLONNE_SNAPSHOT_PICCOLE} FROM acquisition_snapshots WHERE device_id = ? AND status != 'error'
+       AND collector IN (${collectors.map(() => "?").join(",")}) ORDER BY finished_at DESC, id DESC LIMIT 1`,
+  ).get(deviceId, ...collectors) as SnapshotAcquisizioneRiga | undefined) ?? null;
+}
+
 /** Una modifica fatta (o rifiutata) da uno snapshot sull'apparato. `esito`: scritto, aggiunta, tolta, manuale. */
 export interface ModificaAcquisizione {
   destinazione: string;

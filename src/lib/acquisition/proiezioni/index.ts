@@ -186,6 +186,22 @@ export function proiettaPorte(snapshot: AcquisitionSnapshot, attuali: readonly P
   return out;
 }
 
+/**
+ * Per ogni porta che il collector legge (per nome normalizzato), i campi di `switch_ports` che la proiezione scrive da
+ * questo snapshot: gli stessi di `proiettaPorte`, dalle stesse regole. Serve ai giri pianificati (decisione a di fine
+ * giro 2) per non riscrivere quei campi. Vuota se `interfaces` non è usabile: allora il collector non scrive porte.
+ */
+export function campiDelCollectorPerPorta(snapshot: AcquisitionSnapshot): Map<string, CampoPorta[]> {
+  const out = new Map<string, CampoPorta[]>();
+  if (!usabile(snapshot.interfaces)) return out;
+  for (const i of snapshot.interfaces.data) {
+    if (i.kind === "other") continue;
+    const v = valoriPerPorta(snapshot, i);
+    out.set(nomePorta(i.name), CAMPI_PORTA.filter((c) => c in v));
+  }
+  return out;
+}
+
 // ── Vicini (fonte `collector`, letta solo dal modello per cavo) ─────────────
 
 export interface VicinoProiettato {

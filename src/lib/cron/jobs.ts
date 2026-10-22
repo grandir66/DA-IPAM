@@ -12,7 +12,6 @@ import {
   getActiveNmapProfile,
   updateHostIfExists,
   upsertArpEntries,
-  upsertSwitchPorts,
   resolveMacToDevice,
   resolveMacToNetworkDevice,
   upsertMacIpMapping,
@@ -23,6 +22,8 @@ import {
   updateJobLastRun,
 } from "@/lib/db";
 import { discoverNetwork, type AvvioDiscovery } from "@/lib/scanner/discovery";
+// Decisione (a) di fine giro 2: le colonne delle porte che un collector fornisce non le riscrive il giro.
+import { scriviPorteDelGiro } from "@/lib/acquisizione-modulare/giri";
 import {
   attendiRilascio,
   CHIAVE_SOGLIA_ALLARME,
@@ -1042,7 +1043,7 @@ export async function runArpPoll(
             };
           });
 
-          upsertSwitchPorts(device.id, switchPorts);
+          scriviPorteDelGiro(device, switchPorts);
           // Fase 2b, Task 1b: l'ARP di un router non va più in mac_port_entries — la sua
           // `interface=` è bridge/VLAN/VRRP, non il cavo. I MAC per porta vengono dalla bridge host, sotto.
         }
@@ -1223,7 +1224,7 @@ export async function runArpPoll(
           };
         });
 
-        upsertSwitchPorts(device.id, switchPorts);
+        scriviPorteDelGiro(device, switchPorts);
       }
     }
     } catch (error) {

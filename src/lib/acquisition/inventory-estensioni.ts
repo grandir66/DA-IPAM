@@ -14,7 +14,7 @@ import { daLettura, sez } from "./costruzione";
 import type { StatoSezione } from "./costruzione";
 import { parseExports, parseQpkgConf, parseSmbConf, unisciCondivisioni } from "./qnap-nas-parsers";
 import { parseInfoPacchetti, parseSynoshareEnum } from "./synology-nas-parsers";
-import { cmdAbbonamentoNodo, cmdAgentVm, cmdReportNodo, cmdStatoNodo, nomeNodoValido, parseAbbonamentoNodo, parseConfigurazioniGuest, parseIpAgent, parseReportNodo, parseRisorseCluster, parseStatoNodo } from "./proxmox-parsers";
+import { COMANDI_DMI, cmdAbbonamentoNodo, cmdAgentVm, cmdReportNodo, cmdStatoNodo, nodoLocale, nomeNodoValido, parseAbbonamentoNodo, parseConfigurazioniGuest, parseDmi, parseIpAgent, parseReportNodo, parseRisorseCluster, parseStatoNodo } from "./proxmox-parsers";
 import { parseArp, parseIndirizzi, parseMonitorEthernet, parseMonitorPoe } from "./mikrotik-routeros-parsers";
 import type { AcquisitionSnapshot, ReadResult } from "./schema";
 
@@ -194,15 +194,26 @@ const MAX_NODI = 16, MAX_VM_AGENT = 128;
  * indirizzi IP dall'agent QEMU delle VM accese. Solo comandi `pvesh get` di lettura, nelle forme del catalogo
  * (`MODELLI_COMANDI_PROXMOX`); nome del nodo e id della VM sono validati, mai testo libero.
  */
-export function comandiApprofondimentoProxmox(s: AcquisitionSnapshot): string[] {
+export function comandiApprofondimentoProxmox(s: AcquisitionSnapshot, locale: string | null = null): string[] {
     const nodi = (s.cluster_nodes?.data ?? []).map(n => n.name).filter(nomeNodoValido).slice(0, MAX_NODI);
     const vm = (s.guests?.data ?? []).filter(g => g.platform === "qemu" && g.power_state === "running" && g.vmid != null && g.node && nomeNodoValido(g.node)).slice(0, MAX_VM_AGENT);
-    return [...nodi.flatMap(n => [cmdStatoNodo(n), cmdAbbonamentoNodo(n), cmdReportNodo(n)]), ...vm.map(g => cmdAgentVm(g.node as string, g.vmid as number))];
+    // Il DMI (`dmidecode`) è del solo nodo a cui si è connessi: per gli altri nodi resta il rapporto di `pvesh`.
+    const dmi = locale && nodi.includes(locale) ? Object.values(COMANDI_DMI) : [];
+    return [...nodi.flatMap(n => [cmdStatoNodo(n), cmdAbbonamentoNodo(n), cmdReportNodo(n)]), ...dmi, ...vm.map(g => cmdAgentVm(g.node as string, g.vmid as number))];
 }
 
-export function applicaApprofondimentoProxmox(s: AcquisitionSnapshot, leggi: Lettore): void {
+/** Il nodo locale: quello di `cluster/status`, o l'unico nodo se è un Proxmox singolo e il cluster non lo dice. */
+export function nodoLocaleProxmox(s: AcquisitionSnapshot, statoCluster: string): string | null {
+    const dichiarato = nodoLocale(statoCluster);
+    if (dichiarato) return dichiarato;
+    const nodi = s.cluster_nodes?.data ?? [];
+    return nodi.length === 1 ? nodi[0].name : null;
+}
+
+export function applicaApprofondimentoProxmox(s: AcquisitionSnapshot, leggi: Lettore, locale: string | null = null): void {
     const nodi = s.cluster_nodes;
     if (nodi) {
+        const dmi = locale ? parseDmi(testo(leggi(COMANDI_DMI.produttore)), testo(leggi(COMANDI_DMI.modello)), testo(leggi(COMANDI_DMI.seriale))) : null;
         const mancano = new Set<string>();
         for (const n of nodi.data) {
             if (!nomeNodoValido(n.name)) continue;
@@ -211,9 +222,12 @@ export function applicaApprofondimentoProxmox(s: AcquisitionSnapshot, leggi: Let
             const rep = parseReportNodo(testo(leggi(cmdReportNodo(n.name))));
             if (stato) Object.assign(n, stato); else mancano.add("NODE_STATUS_NOT_READ");
             if (abb) Object.assign(n, abb); else mancano.add("NODE_SUBSCRIPTION_NOT_READ");
-            if (rep) Object.assign(n, rep); else mancano.add("NODE_REPORT_NOT_READ");
+            // Il rapporto di pvesh non sempre porta l'hardware: per il nodo locale si completa con il DMI, solo i campi mancanti.
+            const hw = { ...(rep ?? {}) } as Partial<Pick<typeof n, "hardware_serial" | "hardware_manufacturer" | "hardware_model">>;
+            if (n.name === locale && dmi) for (const k of ["hardware_serial", "hardware_manufacturer", "hardware_model"] as const) if (!hw[k] && dmi[k]) hw[k] = dmi[k];
+            if (hw.hardware_serial || hw.hardware_manufacturer || hw.hardware_model) Object.assign(n, hw); else mancano.add("NODE_REPORT_NOT_READ");
         }
-        nodi.sources = [...nodi.sources, fonte("pvesh get /nodes/<nodo>/status"), fonte("pvesh get /nodes/<nodo>/subscription"), fonte("pvesh get /nodes/<nodo>/report")];
+        nodi.sources = [...nodi.sources, fonte("pvesh get /nodes/<nodo>/status"), fonte("pvesh get /nodes/<nodo>/subscription"), fonte("pvesh get /nodes/<nodo>/report"), ...(locale ? [fonte("dmidecode -s system-*")] : [])];
         if (mancano.size) { nodi.warnings = [...nodi.warnings, ...mancano]; if (nodi.status === "ok") nodi.status = "partial"; }
     }
     const guests = s.guests;
@@ -222,7 +236,9 @@ export function applicaApprofondimentoProxmox(s: AcquisitionSnapshot, leggi: Let
         let senza = 0;
         for (const g of acceso.slice(0, MAX_VM_AGENT)) {
             const ips = parseIpAgent(testo(leggi(cmdAgentVm(g.node as string, g.vmid as number))));
-            if (ips) g.ip_addresses = ips; else senza++;
+            if (ips) g.ip_addresses = ips;
+            // Una VM senza agent attivo nella configurazione non ha un IP da leggere: non è una lettura mancata.
+            else if (g.agent !== "0") senza++;
         }
         guests.warnings = guests.warnings.filter(w => w !== "GUEST_IP_ADDRESSES_NOT_COLLECTED");
         // Agent spento o non installato è normale: non declassa la sezione, ma si dichiara.

@@ -46,6 +46,9 @@ export function usaPercorsoDiSempre(v: ValutazioneFonte): boolean {
   return v.esito === "spenta" || v.esito === "nessun_collector" || v.esito === "classica_scelta";
 }
 
+/** Collector che, senza la credenziale che chiedono, lasciano il pulsante all'acquisizione di sempre invece di chiedere una scelta. */
+const SENZA_CREDENZIALI_SI_CLASSICA: readonly CollectorId[] = ["proxmox-ve"];
+
 export function valutaFonte(device: ApparatoDaRiconoscere & { id: number }, deps: DipendenzeFonte): ValutazioneFonte {
   if (!deps.accesa()) return { esito: "spenta" };
   const possibili = collectorPossibili(device);
@@ -65,6 +68,8 @@ export function valutaFonte(device: ApparatoDaRiconoscere & { id: number }, deps
   }
   const unaDi = doApp(d.credenziali.una_di);
   if (unaDi.length === 0 || !unaDi.some((p) => credenziali[p])) {
+    // Proxmox: la scansione di oggi legge anche con la sola API; senza una chiave SSH nell'archivio il pulsante resta lì, non si ferma.
+    if (SENZA_CREDENZIALI_SI_CLASSICA.includes(collector)) return { esito: "nessun_collector" };
     return { esito: "dubbio", motivo: "credenziali", collector, possibili, richieste: unaDi };
   }
   return { esito: "pronta", collector, possibili, credenziali, scelta: sceltaValida ? scelta : null };

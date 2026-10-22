@@ -28,6 +28,16 @@ Piano `docs/superpowers/plans/2026-10-22-accorpamento-ip-e-vlan-switch.md` (deci
   `switch_vlan_nativa` (segno `switch_vlan_nativa_v21`). La matrice usa la nativa solo dove l'SNMP non dichiara gli
   untagged; un untagged dichiarato vince sempre. Perché: la ProMax non dichiara gli untagged e la U era dedotta dal
   PVID. Misurato sull'hub: sui 4 switch che li dichiarano, nativa del controller = PVID SNMP su 99 porte su 99.
+  La lista bianca passa da «niente `rest/`» a **solo** `GET rest/networkconf` (ogni altro `rest/`, con id o query, e ogni
+  metodo diverso da GET restano rifiutati), con l'ok di Riccardo. Sulla ProMax la lettura SNMP e il controller non
+  tornano (PVID diverso su 6 porte su 14): la riga delle fonti mostra «▲ nativa N (controller)» accanto al PVID.
+- **Scansione automatica dei device scelti** (Riccardo, 22/10): dalla Discovery si scelgono gli apparati e un nuovo tipo
+  di job `apparati_scelti` li rilegge da solo (ogni ora, ogni 4 ore o ogni giorno all'ora italiana), con esito per
+  apparato nella pagina dei job (✓/▲/✕ n/m) e una pastiglia nella testata della scheda. Riusa le letture di «Interroga» e
+  del giro ARP, con un lucchetto per apparato condiviso con le rotte e rispettando gli interruttori (`switch_vlan`).
+  Perché: gli apparati si leggevano solo con «Aggiorna» e l'hub non ha il job `arp_poll`, quindi le tabelle MAC e le
+  VLAN degli switch invecchiavano. Idoneo con credenziale provata sull'host **o** collegamento credenziale riuscito
+  (diverso dalla regola della testata). Sull'hub: job #25 «Switch e router del CED», ogni 4 ore, sei apparati.
 
 ### Corretto
 

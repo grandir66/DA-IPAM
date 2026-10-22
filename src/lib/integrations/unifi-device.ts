@@ -69,6 +69,8 @@ export interface UnifiPort {
   /** T2 (spec §13.5.3): fascio (LAG) di cui la porta fa parte, e il costo della porta nello spanning tree. Assenti nelle risposte costruite a mano dalle prove. */
   lag_idx?: number | null;
   stp_pathcost?: number | null;
+  /** Task 13 (22/10): id della rete nativa (untagged) della porta in `rest/networkconf`; assente sulle porte col profilo di default. */
+  native_networkconf_id?: string | null;
 }
 
 /**
@@ -204,6 +206,7 @@ function parsePort(raw: unknown): UnifiPort | null {
     aggregated_by: int(r.aggregated_by),
     lag_idx: int(r.lag_idx),
     stp_pathcost: int(r.stp_pathcost),
+    native_networkconf_id: str(r.native_networkconf_id),
   };
 }
 

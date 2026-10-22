@@ -239,6 +239,23 @@ export const DDL_SWITCH_VLAN_V1: ReadonlyArray<readonly [string, string]> = [
 export const SEGNO_SWITCH_VLAN = "switch_vlan_v21";
 export const VERSIONE_SWITCH_VLAN = 1;
 
+/**
+ * VLAN native delle porte dal controller UniFi (piano 2026-10-22 accorpamento, Task 13, ADR 0029): dove l'SNMP non dichiara
+ * gli untagged (la ProMax), la nativa che il controller dà per porta. Fotografia per apparato, scritta dalla sync UniFi
+ * (solo con la lettura `switch_vlan` accesa) e separata dalle tabelle SNMP: la lettura oraria SNMP le riscrive intere e
+ * cancellerebbe il completamento. Porte per ifIndex (= `port_idx` del controller). Come le altre: CREATE solo nella
+ * migrazione (`migrateSwitchVlanNativa`), senza `IF NOT EXISTS`, nessun CHECK, nessun indice in più.
+ */
+export const DDL_SWITCH_VLAN_NATIVA: ReadonlyArray<readonly [string, string]> = [
+  ["switch_vlan_nativa", `CREATE TABLE switch_vlan_nativa (
+  device_id INTEGER NOT NULL REFERENCES network_devices(id) ON DELETE CASCADE,
+  if_index INTEGER NOT NULL, vlan_id INTEGER NOT NULL, letto_il TEXT NOT NULL,
+  PRIMARY KEY (device_id, if_index)
+)`],
+];
+export const SEGNO_SWITCH_VLAN_NATIVA = "switch_vlan_nativa_v21";
+export const VERSIONE_SWITCH_VLAN_NATIVA = 1;
+
 /** Unioni e separazioni a mano (ADR 0021): le scrivono solo le rotte /api/topology/unioni; mai cancellate (tolto_*: la storia).
  *  Membri come id della mappa, senza chiavi esterne né CHECK. Indici solo nella migrazione. */
 export const DDL_TOPOLOGY_UNIONI: ReadonlyArray<readonly [string, string]> = [

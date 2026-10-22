@@ -240,3 +240,62 @@ test("Panoramica: le VLAN del riquadro sono le colonne della matrice (stessa uni
   const senza = matriceVlanSwitch({ porte: [porta(1, "Port 1", "up", 5), porta(2, "Port 2", "up", 5)], db: null });
   assert.deepEqual(vlanDaMatrice(senza), [{ vlan: 5, porte: 2, trunk: 0 }]);
 });
+
+// ── Task 13: native dal controller UniFi dove l'SNMP non dichiara gli untagged ──
+// Precedenza: un untagged dichiarato dall'SNMP vince sempre; la nativa del controller vale solo dove l'SNMP dà null (o
+// scrive i bit al contrario); PVID dall'SNMP, dal controller solo dove l'SNMP non ne ha. Porte senza nativa: dedotta.
+
+const datiDedotti = (): DatiVlanSwitch => ({
+  vlan: [],
+  porte: [
+    { vlan_id: 1, if_index: 1, egress: true, untagged: null },
+    { vlan_id: 5, if_index: 1, egress: true, untagged: null },
+    { vlan_id: 1, if_index: 2, egress: true, untagged: null },
+    { vlan_id: 5, if_index: 2, egress: true, untagged: null },
+  ],
+  pvid: [{ if_index: 1, pvid: 1 }, { if_index: 2, pvid: 5 }],
+  lettura: { letto_il: "2026-10-22 02:00:00", ordine_bit: "inverso" },
+});
+
+test("nativa: copre tutte le porte dedotte → U dalla nativa, il resto T, matrice completa", () => {
+  const m = matriceVlanSwitch({
+    porte: [porta(1, "Port 1"), porta(2, "Port 2"), porta(3, "Port 3")],
+    db: { ...datiDedotti(), nativa: [{ if_index: 1, vlan_id: 5 }, { if_index: 2, vlan_id: 5 }, { if_index: 3, vlan_id: 40 }] },
+  });
+  assert.equal(m.qualita, "completa");
+  assert.equal(m.dal_controller, 2, "porte con righe SNMP completate dal controller");
+  assert.deepEqual(m.colonne.map((c) => c.id), [1, 5, 40], "la VLAN nativa entra fra le colonne");
+  const r = (i: number) => m.righe.find((x) => x.if_index === i)!;
+  assert.deepEqual(r(1).celle, ["T", "U", null], "porta 1: PVID SNMP 1 ma nativa 5 → U su 5");
+  assert.equal(r(1).pvid, 1, "il PVID resta quello letto via SNMP");
+  assert.deepEqual(r(3).celle, [null, null, "U"], "porta senza righe SNMP: la nativa del controller");
+  assert.equal(r(3).pvid, 40, "PVID dal controller dove l'SNMP non ne ha");
+});
+
+test("nativa: copre solo alcune porte → dedotta per le altre, completata dove c'è", () => {
+  const m = matriceVlanSwitch({ porte: [porta(1, "Port 1"), porta(2, "Port 2")], db: { ...datiDedotti(), nativa: [{ if_index: 1, vlan_id: 5 }] } });
+  assert.equal(m.qualita, "dedotta");
+  assert.equal(m.dal_controller, 1);
+  assert.deepEqual(m.righe[0].celle, ["T", "U"]);
+  assert.deepEqual(m.righe[1].celle, ["T", "U"], "porta 2 dedotta dal PVID 5");
+});
+
+test("nativa: l'untagged dichiarato dall'SNMP vince sulla nativa del controller", () => {
+  const db: DatiVlanSwitch = {
+    vlan: [],
+    porte: [{ vlan_id: 1, if_index: 1, egress: true, untagged: true }, { vlan_id: 5, if_index: 1, egress: true, untagged: false }],
+    pvid: [{ if_index: 1, pvid: 1 }],
+    lettura: { letto_il: "2026-10-22 02:00:00", ordine_bit: "standard" },
+    nativa: [{ if_index: 1, vlan_id: 5 }],
+  };
+  const m = matriceVlanSwitch({ porte: [porta(1, "Port 1")], db });
+  assert.equal(m.qualita, "completa");
+  assert.equal(m.dal_controller, 0);
+  assert.deepEqual(m.righe[0].celle, ["U", "T"]);
+});
+
+test("nativa senza lettura SNMP: la matrice resta «solo PVID» (la nativa da sola non fa una lettura)", () => {
+  const m = matriceVlanSwitch({ porte: [porta(1, "Port 1", "up", 1)], db: { vlan: [], porte: [], pvid: [], lettura: null, nativa: [{ if_index: 1, vlan_id: 5 }] } });
+  assert.equal(m.qualita, "solo_pvid");
+  assert.equal(m.dal_controller, 0);
+});

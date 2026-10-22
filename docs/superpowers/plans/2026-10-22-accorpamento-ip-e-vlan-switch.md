@@ -452,7 +452,10 @@ export function matriceVlanSwitch(i: {
 
 **Commit** `docs: VLAN degli switch accese sull'hub, contesto e changelog` (solo `.md`, niente rilascio).
 
-### [-] Task 13 — Completamento dal controller UniFi (fuori da questo giro)
+### [x] Task 13 — Completamento dal controller UniFi (fatto il 22/10 con l'ok di Riccardo)
+
+Fatto: lista bianca + `GET rest/networkconf` (prova `unifi-api.test.ts`: ogni altro `rest/` e ogni altro metodo rifiutati); campi veri del controller dell'hub (Network su UDM, 22/10): `port_table` ha `native_networkconf_id` (146 porte su 210 dei 12 switch), `tagged_vlan_mgmt` (auto/custom/block_all) ed `excluded_networkconf_ids`, NON `tagged_networkconf_ids`; `rest/networkconf` ha `_id`, `purpose`, `vlan_enabled`, `vlan` (numero o stringa). Tabella `switch_vlan_nativa` (segno `switch_vlan_nativa_v21`), scritta dalla sync UniFi esistente solo con `switch_vlan` accesa; precedenza: untagged SNMP dichiarato vince, la nativa solo dove l'SNMP dà null/bit inversi. Prove `unifi-vlan-native.test.ts` (fixture anonime) e `vlan-switch.test.ts`. ProMax: 14 porte completate, resta «dedotta». Testo originale sotto.
+
 
 Annullato in questo giro: la lista bianca di `unifi-api` (`isUnifiRequestAllowed`, `src/lib/integrations/unifi-api.ts:169`) non ammette `rest/networkconf`, e senza l'elenco delle reti gli id `native_networkconf_id` / reti tagged del `port_table` non diventano numeri di VLAN. Per farlo serve l'**ok di Riccardo** ad allargare la lista a `GET /api/s/<site>/rest/networkconf` (sola lettura, ma è il primo percorso `rest/` ammesso); poi: (1) prova che la lista ammetta solo quella GET (`unifi-api.test.ts`); (2) `port_table` di `stat/device` legge `native_networkconf_id`, `tagged_networkconf_ids`/`excluded_networkconf_ids` (verificare i nomi sul controller vero del cliente A, risposta salvata anonima); (3) completa `switch_vlan_porte` per gli switch del controller dove SNMP non dichiara gli untagged (la ProMax passa da `dedotta` a `completa`); (4) `unifi_sync` resta spento (`CONTEXT.md` §6). Riga aperta in `TASKS.md`.
 

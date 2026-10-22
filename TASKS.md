@@ -36,10 +36,11 @@ Piano: [`docs/superpowers/plans/2026-10-22-accorpamento-ip-e-vlan-switch.md`](do
 - [ ] (a) decidere se creare sull'hub il job `arp_poll` o accettare solo «Aggiorna»/«Interroga»: oggi l'hub NON ha il job, quindi gli switch si leggono solo a mano; con il job si leggerebbero ogni ora anche le tabelle MAC di tutti gli switch (decide Riccardo)
 - [ ] (b) cluster 10 e 11 (iLO HPE + schede di rete dello stesso server?) da confermare con Riccardo
 - [ ] (c) SW-UFLEX-RG-10GB (apparato 9) non risponde a SNMP (TEMPO_SCADUTO): community, ACL o SNMP spento sullo switch
-- [ ] (d) T13 completamento dal controller UniFi: serve allargare la lista bianca di `unifi-api` (`GET rest/networkconf`), serve l'ok di Riccardo
+- [x] (d) T13 completamento dal controller UniFi (ok di Riccardo 22/10): lista bianca + `GET rest/networkconf`, native in `switch_vlan_nativa` dalla sync UniFi (solo con `switch_vlan` accesa); ProMax 14 porte completate, resta «dedotta» (18 porte senza nativa dal controller); prove `unifi-vlan-native`, `vlan-switch`, `unifi-api`; resa a 1440 vista sulla copia
 - [ ] (e) il blocco «un IP, un apparato» va aggiunto anche in `unifi-sync` prima di accenderlo (oggi spento)
 - [ ] (f) le migrazioni sulla copia del cliente A (MikroTik v1-v3, cluster, `switch_vlan`) non sono mai state misurate: la copia non era disponibile
-- [ ] (rimandato) T13 completamento dal controller UniFi: serve l'ok ad ammettere `GET rest/networkconf` nella lista bianca di `unifi-api`
+- [ ] ProMax: PVID SNMP diverso dalla nativa del controller su 6 porte su 14 confrontabili, e l'SNMP non dà le porte 33-52 (sugli altri 4 switch 99/99 uguali): la lettura Q-BRIDGE della ProMax (bit «inversi», ifIndex) è da rivedere
+- [ ] Sull'hub la nativa si scrive al primo giro di `unifi_sync` #22 (03:00) dopo il rilascio: verificare `switch_vlan_nativa` il giorno dopo
 - [x] Panoramica dello switch sull hub (SW-CED-48POE-242): scorreva di ~190 px a 1440×900. Il riquadro mostrava già 5 VLAN: a far scorrere era la colonna destra (dettaglio + vicini + VLAN). Ora VLAN a 8 voci (due colonne da 4) sotto «Porte da guardare», «tutte (N) ›» verso la tab: a 1440×900 entra (scrollHeight 900, vista sulla copia).
 - [ ] Con un filtro a chip che riempie la tabella (Trunk 7, Tutte) la pagina scorre ancora di ~150 px: la tabella arriva a 230 px e il riquadro VLAN sta sotto. Da decidere se accettarlo (vista di lavoro scelta dall'utente) o accorciare la tabella.
 

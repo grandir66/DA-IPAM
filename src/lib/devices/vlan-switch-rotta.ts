@@ -10,7 +10,8 @@ import { matriceVlanSwitch, type MatriceVlanSwitch } from "@/lib/scheda/vlan-swi
 
 export interface RispostaVlanSwitch {
   matrice: MatriceVlanSwitch;
-  lettura: { acceso: boolean; letto_il: string | null; tabella: string | null; esito: EsitoApparato | null };
+  /** `nativa_letta_il`: quando la sync UniFi ha scritto le VLAN native (Task 13); null = mai. */
+  lettura: { acceso: boolean; letto_il: string | null; tabella: string | null; esito: EsitoApparato | null; nativa_letta_il: string | null };
 }
 
 export function rispostaVlanSwitch(deviceId: number): { status: 200; body: RispostaVlanSwitch } | { status: 404; body: { error: string } } {
@@ -26,6 +27,7 @@ export function rispostaVlanSwitch(deviceId: number): { status: 200; body: Rispo
         letto_il: db.lettura?.letto_il ?? null,
         tabella: db.lettura?.tabella ?? null,
         esito: leggiEsiti("switch_vlan")[String(deviceId)] ?? null,
+        nativa_letta_il: db.nativa_letta_il ?? null,
       },
     },
   };

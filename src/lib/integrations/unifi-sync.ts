@@ -65,6 +65,7 @@ import {
   runInTenantTransaction,
   schemaCaviPresente,
   scriviFattiTopologia,
+  scriviVlanNativaSwitch,
   setNetworkDeviceControllerFacts,
   setUplinkCavi,
   updateNetworkDevice,
@@ -76,6 +77,8 @@ import { letturaAccesa, oraUtc, scriviEsito } from "@/lib/topology/letture/inter
 import { normalizeMacForStorage } from "@/lib/utils";
 import type { NetworkDevice } from "@/types";
 import type { UnifiDevice } from "./unifi-device";
+import type { UnifiDevicesAndNetworks } from "./unifi-api";
+import { vlanDelleReti, vlanNativePorte } from "./unifi-reti";
 import {
   buildUnifiMacIndex,
   mapUnifiDevice,
@@ -93,6 +96,8 @@ import {
 /** Da dove arrivano gli apparati: il client del controller, o una fixture nelle prove. */
 export interface UnifiDeviceSource {
   listDevices(): Promise<UnifiDevice[]>;
+  /** Apparati e reti in una sessione (Task 13): si chiede SOLO con la lettura `switch_vlan` accesa. */
+  listDevicesWithNetworks?(): Promise<UnifiDevicesAndNetworks>;
 }
 
 export interface UnifiSyncOptions {
@@ -119,6 +124,8 @@ export interface UnifiSyncResult {
   neighborsUpserted: number;
   /** Apparati di cui si è salvato l'uplink in questo giro. */
   uplinksSaved: number;
+  /** Task 13: porte di switch con la VLAN nativa scritta dal controller (0 con la lettura `switch_vlan` spenta). */
+  vlanNativeScritte: number;
   errors: string[];
   /**
    * Apparati che il controller non vede connessi («nome (ip)»): i fatti si
@@ -407,7 +414,23 @@ function scriviCampiCavi(deviceId: number, d: UnifiDevice): string[] {
   return avvisi;
 }
 
-function writeDevices(devices: UnifiDevice[], result: UnifiSyncResult): void {
+/**
+ * Task 13 (ADR 0029): le VLAN native di uno switch del controller, per completare la matrice dove l'SNMP non dichiara gli
+ * untagged. Solo switch connessi (offline il controller manda l'ultima configurazione nota) e solo con le reti lette;
+ * fotografia intera per apparato. Un guasto qui non tocca la scrittura dell'apparato: avviso con id e codice, mai nomi.
+ */
+function scriviNative(deviceId: number, d: UnifiDevice, vlanDi: ReadonlyMap<string, number>, result: UnifiSyncResult): void {
+  if (d.type !== "usw" || d.state !== 1) return;
+  const righe = vlanNativePorte(d, vlanDi);
+  try {
+    if (scriviVlanNativaSwitch(deviceId, righe)) result.vlanNativeScritte += righe.length;
+    else result.errors.push(`apparato #${deviceId}: VLAN native non scritte (schema di questo cliente non aggiornato)`);
+  } catch (e) {
+    result.errors.push(`apparato #${deviceId}: VLAN native non scritte (${codiceErrore(e)})`);
+  }
+}
+
+function writeDevices(devices: UnifiDevice[], result: UnifiSyncResult, vlanDi: ReadonlyMap<string, number> | null = null): void {
   // T2: l'interruttore e lo schema si leggono una volta per giro, lo stesso valore per tutti gli apparati. Accesa senza
   // lo schema nuovo non si scrive niente di nuovo, e il resoconto lo dice (spec §13.5.7, «Se la migrazione non riesce»).
   const accesa = letturaAccesa("controller");
@@ -462,6 +485,7 @@ function writeDevices(devices: UnifiDevice[], result: UnifiSyncResult): void {
     }
 
     claimed.add(out.device.id);
+    if (vlanDi) scriviNative(out.device.id, d, vlanDi, result);
     if (out.created) {
       result.added++;
       ctx.existing.byHost.set(out.device.host, out.device);
@@ -498,6 +522,7 @@ export async function syncUnifiForTenant(opts: UnifiSyncOptions = {}): Promise<U
     portsUpserted: 0,
     neighborsUpserted: 0,
     uplinksSaved: 0,
+    vlanNativeScritte: 0,
     errors: [],
     offline: [],
   };
@@ -513,9 +538,19 @@ export async function syncUnifiForTenant(opts: UnifiSyncOptions = {}): Promise<U
     return result;
   }
 
+  // Task 13: le reti (rest/networkconf) si chiedono solo con la lettura «VLAN degli switch» accesa, nella stessa sessione.
+  const conReti = letturaAccesa("switch_vlan") && typeof source.listDevicesWithNetworks === "function";
   let devices: UnifiDevice[];
+  let vlanDi: Map<string, number> | null = null;
   try {
-    devices = await source.listDevices();
+    if (conReti) {
+      const r = await source.listDevicesWithNetworks!();
+      devices = r.devices;
+      if (r.networks) vlanDi = vlanDelleReti(r.networks);
+      else result.errors.push(`Reti del controller non lette: VLAN native degli switch non aggiornate (${r.networksError ?? "motivo ignoto"})`);
+    } else {
+      devices = await source.listDevices();
+    }
   } catch (e) {
     result.errors.push(`Controller UniFi: ${errorMessage(e)}`);
     return result;
@@ -534,7 +569,7 @@ export async function syncUnifiForTenant(opts: UnifiSyncOptions = {}): Promise<U
   }
 
   try {
-    writeDevices(devices, result);
+    writeDevices(devices, result, vlanDi);
   } catch (e) {
     result.errors.push(`Sync UniFi interrotta: ${errorMessage(e)}`);
   }

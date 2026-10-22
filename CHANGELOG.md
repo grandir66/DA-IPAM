@@ -21,8 +21,13 @@ Piano `docs/superpowers/plans/2026-10-22-accorpamento-ip-e-vlan-switch.md` (deci
 - **Matrice porte × VLAN degli switch** (Q-BRIDGE-MIB via SNMP, qualunque marca): tabelle `switch_vlan*` per
   apparato, lettura `switch_vlan` nata **spenta** (ADR 0018), tab VLAN della scheda switch con la striscia
   (VLAN, trunk, access, senza VLAN) e la stessa matrice dei MikroTik, estratta in un componente condiviso. Perché:
-  per gli switch si vedeva solo il PVID per porta, non quali VLAN passano taggate. Il completamento dal controller
-  UniFi resta fuori (serve allargare la lista bianca delle chiamate).
+  per gli switch si vedeva solo il PVID per porta, non quali VLAN passano taggate.
+- **VLAN native dal controller UniFi** (Task 13, ok di Riccardo del 22/10): la lista bianca del client UniFi ammette
+  `GET rest/networkconf` (unico `rest/`, solo GET, senza id); con la lettura `switch_vlan` accesa la sync UniFi che
+  già gira legge anche le reti nella stessa sessione e scrive la VLAN nativa per porta (`native_networkconf_id`) in
+  `switch_vlan_nativa` (segno `switch_vlan_nativa_v21`). La matrice usa la nativa solo dove l'SNMP non dichiara gli
+  untagged; un untagged dichiarato vince sempre. Perché: la ProMax non dichiara gli untagged e la U era dedotta dal
+  PVID. Misurato sull'hub: sui 4 switch che li dichiarano, nativa del controller = PVID SNMP su 99 porte su 99.
 
 ### Corretto
 

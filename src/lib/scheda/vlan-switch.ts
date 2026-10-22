@@ -28,6 +28,8 @@ export interface DatiVlanSwitch {
   porte: Array<{ vlan_id: number; if_index: number; egress: boolean; untagged: boolean | null }>;
   pvid: Array<{ if_index: number; pvid: number }>;
   lettura: { letto_il: string; ordine_bit: "standard" | "inverso" } | null;
+  /** Task 13: VLAN nativa per porta dal controller UniFi (completa gli untagged dove l'SNMP non li dichiara). */
+  nativa?: Array<{ if_index: number; vlan_id: number }>;
 }
 
 /** `porta` = presa normale; `sfp` = porte SFP+/10G (in fondo, artboard V5); `aggregato` = LAG («Link Aggregate N»). */
@@ -36,8 +38,13 @@ export interface RigaMatriceSwitch extends RigaMatrice { if_index: number; grupp
 
 export interface MatriceVlanSwitch extends MatriceVlanBase {
   righe: RigaMatriceSwitch[];
-  /** "completa": untagged dichiarati; "dedotta": solo egress, U dal PVID; "solo_pvid": lettura spenta o mai fatta, colonne dai PVID di switch_ports. */
+  /**
+   * "completa": untagged dichiarati (dall'SNMP, o dal controller UniFi dove l'SNMP non li dà); "dedotta": resta almeno una
+   * porta con solo egress, U dal PVID; "solo_pvid": lettura spenta o mai fatta, colonne dai PVID di switch_ports.
+   */
   qualita: "completa" | "dedotta" | "solo_pvid";
+  /** Porte con righe SNMP senza untagged, completate con la nativa del controller UniFi (Task 13). */
+  dal_controller: number;
   /** Contata sulle porte fisiche (prese e SFP+): un aggregato spento con PVID 1 non è una «porta access». */
   striscia: { vlan: number; trunk: number; access: number; senza_vlan: number };
 }
@@ -74,6 +81,7 @@ export function matriceVlanSwitch(i: { porte: PortaPerMatrice[]; db: DatiVlanSwi
   let colonne: ColonnaVlan[];
   let pvidDi: (p: PortaPerMatrice) => number | null;
   let cellaDi: (p: PortaPerMatrice, vlan: number) => CellaVlan;
+  let dalController = 0;
 
   if (!db) {
     // Senza lettura: la matrice di prima, colonne dalle VLAN di switch_ports e solo la U implicita del PVID.
@@ -83,16 +91,30 @@ export function matriceVlanSwitch(i: { porte: PortaPerMatrice[]; db: DatiVlanSwi
     pvidDi = (p) => p.vlan;
     cellaDi = (p, v) => (p.vlan === v ? "U" : null);
   } else {
-    // «dedotta»: lo switch non dichiara gli untagged, o li scrive al contrario (ProMax, caso 5 del piano).
-    qualita = db.lettura!.ordine_bit === "inverso" || db.porte.some((x) => x.untagged === null) ? "dedotta" : "completa";
+    // Untagged incerto: lo switch non lo dichiara (null) o scrive i bit al contrario (ProMax, caso 5 del piano).
+    const inverso = db.lettura!.ordine_bit === "inverso";
+    const incerta = (x: { untagged: boolean | null }): boolean => inverso || x.untagged === null;
+    // Task 13, precedenza: dove l'untagged SNMP è incerto vale la nativa del controller; dove è dichiarato vince l'SNMP.
+    // Nessuna nativa per la porta → si deduce dal PVID come prima.
+    const nativa = new Map((db.nativa ?? []).map((x) => [x.if_index, x.vlan_id]));
+    const porteIncerte = new Set(db.porte.filter(incerta).map((x) => x.if_index));
+    const daNativa = (ifIndex: number): boolean => nativa.has(ifIndex) && (porteIncerte.has(ifIndex) || !db.porte.some((x) => x.if_index === ifIndex));
+    dalController = [...porteIncerte].filter((i) => nativa.has(i)).length;
+    qualita = [...porteIncerte].some((i) => !nativa.has(i)) ? "dedotta" : "completa";
     const nomi = new Map(db.vlan.map((v) => [v.vlan_id, v.nome]));
     const pvid = new Map(db.pvid.map((x) => [x.if_index, x.pvid]));
     const membro = new Map(db.porte.map((x) => [`${x.vlan_id}|${x.if_index}`, x]));
-    const ids = [...new Set([...db.vlan.map((v) => v.vlan_id), ...db.porte.map((x) => x.vlan_id), ...db.pvid.map((x) => x.pvid)])].sort((a, b) => a - b);
+    const ids = [...new Set([...db.vlan.map((v) => v.vlan_id), ...db.porte.map((x) => x.vlan_id), ...db.pvid.map((x) => x.pvid),
+      ...[...nativa.entries()].filter(([i]) => daNativa(i)).map(([, v]) => v)])].sort((a, b) => a - b);
     colonne = ids.map((id) => ({ id, etichetta: String(id), nome: nomi.get(id) ?? null }));
-    pvidDi = (p) => pvid.get(p.port_index) ?? null;
+    pvidDi = (p) => pvid.get(p.port_index) ?? (daNativa(p.port_index) ? nativa.get(p.port_index)! : null);
     cellaDi = (p, v) => {
       const e = membro.get(`${v}|${p.port_index}`);
+      if (daNativa(p.port_index)) {
+        // La nativa del controller è la U; le altre VLAN in uscita sono T.
+        if (nativa.get(p.port_index) === v) return "U";
+        return e?.egress ? "T" : null;
+      }
       const proprio = pvid.get(p.port_index) === v;
       if (e?.egress) {
         // Come i MikroTik: untagged → U, egress → T, PVID → U. Dedotta: egress sul proprio PVID → U, altrimenti T.
@@ -117,7 +139,7 @@ export function matriceVlanSwitch(i: { porte: PortaPerMatrice[]; db: DatiVlanSwi
   const trunk = fisiche.filter((r) => r.celle.includes("T")).length;
   const access = fisiche.filter((r) => !r.celle.includes("T") && r.celle.includes("U")).length;
   return {
-    colonne, righe, qualita,
+    colonne, righe, qualita, dal_controller: dalController,
     striscia: { vlan: colonne.length, trunk, access, senza_vlan: fisiche.length - trunk - access },
   };
 }
@@ -163,6 +185,11 @@ export interface LetturaVlanSwitchScheda {
 export function statoLetturaVlanSwitch(l: LetturaVlanSwitchScheda): string {
   if (!l.acceso) return "spenta";
   return l.esito?.codice ? `non riuscita: ${l.esito.codice}` : "mai fatta";
+}
+
+/** Task 13: «✓ Controller UniFi (VLAN native) <ora>», accanto all'SNMP quando la matrice usa le native del controller. */
+export function fonteNativaController(lettoIl: string): Fonte {
+  return { nome: "Controller UniFi (VLAN native)", esito: "ok", quando: oraItaliana(lettoIl) };
 }
 
 /** «Dati da: ✓ SNMP (Q-BRIDGE) <ora>» con l'ora dei DATI, o perché non ci sono (spenta, mai letta, non riuscita: <codice>). */

@@ -19,7 +19,7 @@ import { buildPatchFromHost, buildPatchFromDevice, buildSyncMerge, buildSourceLa
 import fs from "fs";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { LetturaVlanSwitch } from "./devices/snmp-vlan";
-import { DDL_SWITCH_VLAN_V1, SEGNO_SWITCH_VLAN, VERSIONE_SWITCH_VLAN, COLONNA_CLUSTER_PRINCIPALE, INDICE_CLUSTER_PRINCIPALE, SEGNO_CLUSTER_PRINCIPALE, VERSIONE_CLUSTER_PRINCIPALE, COLONNE_SCHEDA_MK_V1, DDL_HOSTS_ARCHIVIO, DDL_SCHEDA_MK_V2, DDL_SCHEDA_MK_V3, DDL_TOPOLOGY_CAVI, DDL_TOPOLOGY_UNIONI, INDICI_HOSTS_ARCHIVIO, INDICI_TOPOLOGY_UNIONI, TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL, SEGNO_SCHEDA_MK, VERSIONE_SCHEDA_MK } from "./db-tenant-schema";
+import { DDL_SWITCH_VLAN_NATIVA, SEGNO_SWITCH_VLAN_NATIVA, VERSIONE_SWITCH_VLAN_NATIVA, DDL_SWITCH_VLAN_V1, SEGNO_SWITCH_VLAN, VERSIONE_SWITCH_VLAN, COLONNA_CLUSTER_PRINCIPALE, INDICE_CLUSTER_PRINCIPALE, SEGNO_CLUSTER_PRINCIPALE, VERSIONE_CLUSTER_PRINCIPALE, COLONNE_SCHEDA_MK_V1, DDL_HOSTS_ARCHIVIO, DDL_SCHEDA_MK_V2, DDL_SCHEDA_MK_V3, DDL_TOPOLOGY_CAVI, DDL_TOPOLOGY_UNIONI, INDICI_HOSTS_ARCHIVIO, INDICI_TOPOLOGY_UNIONI, TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL, SEGNO_SCHEDA_MK, VERSIONE_SCHEDA_MK } from "./db-tenant-schema";
 import { HYPERVISOR_SYNC_MINUTES, PULIZIA_HOST_MINUTES, SCHEDULED_JOB_TYPES_CHECK_SQL } from "./scheduled-job-types";
 import { isProxmoxVeDevice } from "./devices/device-acquisition-resolve";
 import { macToHex, normalizeMac, normalizeMacForStorage } from "./utils";
@@ -897,6 +897,39 @@ export function chiudiMigrazioneSwitchVlanFallita(db: Database.Database, tenantC
   } catch (e2) {
     console.error(`[db-tenant] ${tenantCode}: ${SEGNO_SWITCH_VLAN}, segno non scritto:`, e2);
   }
+}
+
+/** «La tabella delle VLAN native dal controller c'è», annotato all'apertura come le altre. */
+const SCHEMA_SWITCH_VLAN_NATIVA = new WeakMap<Database.Database, boolean>();
+
+export function schemaSwitchVlanNativaPresente(d: Database.Database): boolean {
+  const v = SCHEMA_SWITCH_VLAN_NATIVA.get(d);
+  if (v !== undefined) return v;
+  const n = tabelleSchedaMkMancanti(d, DDL_SWITCH_VLAN_NATIVA).length === 0;
+  SCHEMA_SWITCH_VLAN_NATIVA.set(d, n);
+  return n;
+}
+
+/**
+ * VLAN native dal controller UniFi (piano 2026-10-22 accorpamento, Task 13): la tabella di DDL_SWITCH_VLAN_NATIVA solo se
+ * manca. Additiva, idempotente, in UNA transazione; segno `done:<data>:v1` una volta sola. Separata da `migrateSwitchVlan`:
+ * se fallisce, le VLAN via SNMP restano come sono.
+ */
+export function migrateSwitchVlanNativa(db: Database.Database): string[] {
+  const added: string[] = [];
+  db.transaction(() => {
+    for (const [n, ddl] of tabelleSchedaMkMancanti(db, DDL_SWITCH_VLAN_NATIVA)) {
+      db.exec(ddl);
+      added.push(n);
+    }
+    const chiusa = `:v${VERSIONE_SWITCH_VLAN_NATIVA}`;
+    const attuale = leggiSegno(db, SEGNO_SWITCH_VLAN_NATIVA);
+    if (!(attuale?.startsWith("done:") && attuale.endsWith(chiusa))) {
+      scriviSegno(db, SEGNO_SWITCH_VLAN_NATIVA, `done:${new Date().toISOString().slice(0, 10)}${chiusa}`);
+    }
+  })();
+  SCHEMA_SWITCH_VLAN_NATIVA.set(db, tabelleSchedaMkMancanti(db, DDL_SWITCH_VLAN_NATIVA).length === 0);
+  return added;
 }
 
 /** «Le tabelle delle unioni ci sono, con i loro indici», annotato all'apertura: senza, l'ingresso non ha righe e le rotte non scrivono. */
@@ -2508,6 +2541,23 @@ export function getTenantDb(tenantCode: string): Database.Database {
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: migrazione switch vlan fallita (ROLLBACK), le VLAN degli switch non si scrivono:`, e);
     chiudiMigrazioneSwitchVlanFallita(newDb, tenantCode, e);
+  }
+
+  // VLAN native dal controller UniFi (Task 13): una tabella nuova, solo se manca. Se fallisce il tenant si apre lo stesso:
+  // la sync non scrive le native e la matrice resta «dedotta» dove l'SNMP non dichiara gli untagged.
+  try {
+    const added = migrateSwitchVlanNativa(newDb);
+    if (added.length > 0) {
+      console.info(`[db-tenant] ${tenantCode}: switch vlan native, aggiunto ${added.join(", ")}`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione switch vlan native fallita (ROLLBACK), le native del controller non si scrivono:`, e);
+    try {
+      SCHEMA_SWITCH_VLAN_NATIVA.set(newDb, tabelleSchedaMkMancanti(newDb, DDL_SWITCH_VLAN_NATIVA).length === 0);
+      scriviSegno(newDb, SEGNO_SWITCH_VLAN_NATIVA, segnoErrore(e));
+    } catch (e2) {
+      console.error(`[db-tenant] ${tenantCode}: ${SEGNO_SWITCH_VLAN_NATIVA}, segno non scritto:`, e2);
+    }
   }
 
   tenantDbs.set(tenantCode, { db: newDb, lastUsed: Date.now() });
@@ -5999,6 +6049,9 @@ export function dateSchedaMikrotikV3(deviceId: number): { vlan_il: string | null
 // ── VLAN degli switch via SNMP (piano 2026-10-22 accorpamento, Task 8, ADR 0029) ──
 
 export interface VlanSwitchDb {
+  /** Task 13: VLAN native dal controller UniFi (vuota se mai lette o schema assente) e quando sono state lette. */
+  nativa?: Array<{ if_index: number; vlan_id: number }>;
+  nativa_letta_il?: string | null;
   vlan: Array<{ vlan_id: number; nome: string | null }>;
   porte: Array<{ vlan_id: number; if_index: number; egress: boolean; untagged: boolean | null }>;
   pvid: Array<{ if_index: number; pvid: number }>;
@@ -6061,7 +6114,15 @@ export function scriviVlanSwitch(deviceId: number, l: LetturaVlanSwitch, adesso:
 /** L'ultima fotografia delle VLAN di uno switch (ordinata per VLAN e porta). Mai letta o schema assente → liste vuote, lettura null. */
 export function leggiVlanSwitchDb(deviceId: number): VlanSwitchDb {
   const d = db();
-  if (!schemaSwitchVlanPresente(d)) return { vlan: [], porte: [], pvid: [], lettura: null };
+  let nativa: VlanSwitchDb["nativa"] = [];
+  let nativa_letta_il: string | null = null;
+  if (schemaSwitchVlanNativaPresente(d)) {
+    const righe = d.prepare("SELECT if_index, vlan_id, letto_il FROM switch_vlan_nativa WHERE device_id = ? ORDER BY if_index")
+      .all(deviceId) as Array<{ if_index: number; vlan_id: number; letto_il: string }>;
+    nativa = righe.map((r) => ({ if_index: r.if_index, vlan_id: r.vlan_id }));
+    nativa_letta_il = righe.reduce<string | null>((m, r) => (m === null || r.letto_il > m ? r.letto_il : m), null);
+  }
+  if (!schemaSwitchVlanPresente(d)) return { nativa, nativa_letta_il, vlan: [], porte: [], pvid: [], lettura: null };
   const vlan = d.prepare("SELECT vlan_id, nome FROM switch_vlan WHERE device_id = ? ORDER BY vlan_id").all(deviceId) as VlanSwitchDb["vlan"];
   const porte = (d.prepare("SELECT vlan_id, if_index, egress, untagged FROM switch_vlan_porte WHERE device_id = ? ORDER BY vlan_id, if_index")
     .all(deviceId) as Array<{ vlan_id: number; if_index: number; egress: number; untagged: number | null }>)
@@ -6069,7 +6130,23 @@ export function leggiVlanSwitchDb(deviceId: number): VlanSwitchDb {
   const pvid = d.prepare("SELECT if_index, pvid FROM switch_porta_pvid WHERE device_id = ? ORDER BY if_index").all(deviceId) as VlanSwitchDb["pvid"];
   const lettura = d.prepare(`SELECT letto_il, tabella, mappa_porte, n_vlan, ordine_bit, porte_senza_mappa
     FROM switch_vlan_lettura WHERE device_id = ?`).get(deviceId) as VlanSwitchDb["lettura"] | undefined;
-  return { vlan, porte, pvid, lettura: lettura ?? null };
+  return { nativa, nativa_letta_il, vlan, porte, pvid, lettura: lettura ?? null };
+}
+
+/**
+ * Le VLAN native di uno switch dal controller UniFi (Task 13): fotografia per apparato, DELETE + INSERT in UNA transazione.
+ * La chiama la sync UniFi solo con le reti lette e lo switch connesso (un «non so» non arriva qui). false = schema assente.
+ */
+export function scriviVlanNativaSwitch(deviceId: number, righe: ReadonlyArray<{ if_index: number; vlan_id: number }>, adesso: Date = new Date()): boolean {
+  const d = db();
+  if (!schemaSwitchVlanNativaPresente(d)) return false;
+  const ora = adesso.toISOString().slice(0, 19).replace("T", " ");
+  d.transaction(() => {
+    d.prepare("DELETE FROM switch_vlan_nativa WHERE device_id = ?").run(deviceId);
+    const ins = d.prepare("INSERT OR REPLACE INTO switch_vlan_nativa (device_id, if_index, vlan_id, letto_il) VALUES (?, ?, ?, ?)");
+    for (const r of righe) ins.run(deviceId, r.if_index, r.vlan_id, ora);
+  })();
+  return true;
 }
 
 /**

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { VoceBootstrapSchema } from "@/lib/credentials-vault-tipi";
 import { requireAdmin } from "@/lib/api-auth";
 import {
   listCredentials,
@@ -10,33 +11,8 @@ import {
   type LaunchMode,
 } from "@/lib/credentials-vault";
 
-const KindEnum = z.enum([
-  "wazuh",
-  "graylog",
-  "librenms",
-  "truenas",
-  "edge",
-  "hub",
-  "tailscale",
-  "pve",
-  "other",
-]);
-const LaunchModeEnum = z.enum(["copy", "sso_form", "sso_token"]);
-
-const EntrySchema = z.object({
-  kind: KindEnum,
-  label: z.string().min(1).max(120),
-  url: z.string().url().nullable().optional(),
-  api_url: z.string().url().nullable().optional(),
-  username: z.string().nullable().optional(),
-  password: z.string().nullable().optional(),
-  api_token: z.string().nullable().optional(),
-  notes: z.string().nullable().optional(),
-  launch_mode: LaunchModeEnum.optional(),
-});
-
 const BodySchema = z.object({
-  entries: z.array(EntrySchema).min(1).max(50),
+  entries: z.array(VoceBootstrapSchema).min(1).max(50),
 });
 
 /**

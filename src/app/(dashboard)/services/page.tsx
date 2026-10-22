@@ -169,7 +169,7 @@ export default function ServicesPage() {
               Nessun servizio. Clicca <b>Nuovo servizio</b> per cominciare.
             </div>
           ) : (
-            <Table>
+            <Table fissa>
               <TableHeader>
                 <TableRow>
                   <TableHead>Nome</TableHead>

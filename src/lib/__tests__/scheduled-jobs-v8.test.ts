@@ -112,9 +112,9 @@ test("schema: il CHECK di scheduled_jobs è esattamente SCHEDULED_JOB_TYPES, uni
   assert.deepEqual(lista, [...SCHEDULED_JOB_TYPES]);
   assert.ok(lista.includes("unifi_sync"));
   // La v8 aggiunge e non toglie: ogni tipo della v7 resta accettato, altrimenti
-  // la copia delle righe esistenti fallirebbe. (hypervisor_sync è della v9.)
+  // la copia delle righe esistenti fallirebbe. (hypervisor_sync è della v9, pulizia_host della v10, apparati_scelti della v11.)
   assert.deepEqual(
-    [...SCHEDULED_JOB_TYPES].filter((t) => t !== "unifi_sync" && t !== "hypervisor_sync").sort(),
+    [...SCHEDULED_JOB_TYPES].filter((t) => t !== "unifi_sync" && t !== "hypervisor_sync" && t !== "pulizia_host" && t !== "apparati_scelti").sort(),
     [...V7_TYPES].sort(),
   );
 });

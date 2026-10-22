@@ -5,7 +5,9 @@
  * `nodo`, `livello` (`solo_stato` | `stato_inventario` | null), `versione`, `moduli`
  * ({testo: bool}), `salute` ({testo: testo}), `ultimo_errore` (≤500 o null),
  * `porte_netbird` ([int], ≤64), `inventario` (numeri o null), `aggiornamento`
- * (facoltativo, dal 16/10: stato dell'aggiornamento automatico, `AggiornamentoSegnale`).
+ * (facoltativo, dal 16/10: stato dell'aggiornamento automatico, `AggiornamentoSegnale`),
+ * `edge` (facoltativo, dal 20/10: stato dichiarato dalla sonda locale, `edge-segnale.ts`;
+ * DA-Link lo scarta finché non lo conosce, `extra="ignore"`).
  *
  * La scelta vale ALL'ORIGINE: con «solo stato», o senza scelta dichiarata, i numeri
  * dell'inventario non si leggono nemmeno (`leggiInventario` non viene chiamata). Anche
@@ -15,6 +17,8 @@
 import type { StatoAggiornamento } from "@/lib/aggiornamento-stato";
 import type { Livello } from "./stato";
 import type { StatiComponenti } from "./stati-componenti";
+import { edgePerSegnale, type EdgeSegnale, type LetturaEdge } from "./edge-segnale";
+import { LIMITI } from "./segnale-limiti";
 
 export interface FattiIstanza {
   versione: string;
@@ -26,6 +30,8 @@ export interface FattiIstanza {
   aggiornamento?: AggiornamentoSegnale | null;
   /** Solo sulle basi modulari; null/assente = campo non mandato (DA-Link conserva). */
   statiComponenti?: StatiComponenti | null;
+  /** Lettura della sonda locale; null/assente = modulo edge non configurato (blocco omesso). */
+  edge?: LetturaEdge | null;
 }
 
 /**
@@ -66,20 +72,12 @@ export interface CorpoSegnale {
   aggiornamento?: AggiornamentoSegnale;
   /** Assente fuori dalle basi modulari di Deploy-Appliance. */
   stati_componenti?: StatiComponenti;
+  /** Stato della sonda locale (sonde integrate, 20/10); assente se il modulo edge non c'è. */
+  edge?: EdgeSegnale;
 }
 
 /** Limiti del contratto di DA-Link: oltre, il segnale prende 422. */
-export const LIMITI = {
-  ultimoErrore: 500,
-  porte: 64,
-  versione: 64,
-  ultimaScansione: 32,
-  esitoScansione: 64,
-  commit: 64,
-  ramo: 64,
-  fase: 32,
-  data: 40,
-} as const;
+export { LIMITI };
 
 function taglia(v: string | null, n: number): string | null {
   return v == null ? null : v.slice(0, n);
@@ -101,8 +99,10 @@ export function aggiornamentoPerSegnale(stato: StatoAggiornamento, ramo: string 
   return {
     commit_avviato: taglia(stato.commitAvviato, LIMITI.commit),
     ramo: taglia(ramo, LIMITI.ramo),
-    esito: t?.esito ?? null,
-    fase: taglia(t?.fase ?? null, LIMITI.fase),
+    // DA-Link conosce quattro esiti e scarta il campo intero se ne arriva un altro: la
+    // build pronta col servizio fermo, per lui, è un giro fermato prima dell'avvio (19/10, F03).
+    esito: t?.esito === "pronto_non_avviato" ? "interrotto" : (t?.esito ?? null),
+    fase: t?.esito === "pronto_non_avviato" ? "avvio" : taglia(t?.fase ?? null, LIMITI.fase),
     commit_tentato: taglia(t?.commit ?? null, LIMITI.commit),
     tentativi: t?.tentativi != null && t.tentativi >= 0 ? Math.floor(t.tentativi) : null,
     tentativo_iniziato_il: taglia(t?.iniziatoIl ?? null, LIMITI.data),
@@ -141,5 +141,6 @@ export function costruisciSegnale(
     inventario,
     ...(fatti.aggiornamento ? { aggiornamento: { ...fatti.aggiornamento } } : {}),
     ...(fatti.statiComponenti ? { stati_componenti: { ...fatti.statiComponenti } } : {}),
+    ...(fatti.edge ? { edge: edgePerSegnale(fatti.edge) } : {}),
   };
 }

@@ -702,7 +702,7 @@ export function DeviceIdentificationTab() {
             </Button>
           </CardHeader>
           <CardContent className="p-0">
-            <Table>
+            <Table fissa>
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[72px]">Attiva</TableHead>

@@ -4,13 +4,16 @@ import { ScheduledJobSchema } from "@/lib/validators";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession, getServerTenantCode } from "@/lib/api-tenant";
 import { reloadTenantScheduler } from "@/lib/cron/scheduler";
+import { rifiutoJobRiservato } from "@/lib/cron/job-riservati";
+import { arricchisciJobs, rifiutoPutGenerico } from "@/lib/apparati-scelti/rotte-server";
 
 export async function GET() {
   return withTenantFromSession(async () => {
     try {
       const authCheck = await requireAdmin();
       if (isAuthError(authCheck)) return authCheck;
-      return NextResponse.json(getScheduledJobs());
+      // Le righe apparati_scelti con nome, frequenza, prossima e riassunto dell'ultimo giro (J3, una query).
+      return NextResponse.json(arricchisciJobs(getScheduledJobs()));
     } catch (error) {
       console.error("Error fetching jobs:", error);
       return NextResponse.json({ error: "Errore" }, { status: 500 });
@@ -48,6 +51,12 @@ export async function PUT(request: Request) {
       if (typeof id !== "number") {
         return NextResponse.json({ error: "ID job mancante o non valido" }, { status: 400 });
       }
+      // pulizia_host si accende e si spegne solo dalla sua scheda (m6, revisione finale 20/10).
+      const riservato = rifiutoJobRiservato(id);
+      if (riservato) return NextResponse.json(riservato.body, { status: riservato.status });
+      // apparati_scelti: qui solo «Sospendi» (enabled); la frequenza da «Modifica» (409, decisione 16 del piano 2026-10-22).
+      const daModifica = rifiutoPutGenerico(id, body);
+      if (daModifica) return NextResponse.json(daModifica.body, { status: daModifica.status });
       if (typeof enabled === "boolean") toggleJob(id, enabled);
       if (typeof interval_minutes === "number" && interval_minutes >= 1) updateScheduledJobInterval(id, interval_minutes);
       try { reloadTenantScheduler(await getServerTenantCode()); } catch (e) { console.error("[jobs] scheduler reload failed:", e); }
@@ -67,6 +76,8 @@ export async function DELETE(request: Request) {
       const { searchParams } = new URL(request.url);
       const id = searchParams.get("id");
       if (!id) return NextResponse.json({ error: "ID richiesto" }, { status: 400 });
+      const riservato = rifiutoJobRiservato(Number(id));
+      if (riservato) return NextResponse.json(riservato.body, { status: riservato.status });
       deleteScheduledJob(Number(id));
       try { reloadTenantScheduler(await getServerTenantCode()); } catch (e) { console.error("[jobs] scheduler reload failed:", e); }
       return NextResponse.json({ success: true });

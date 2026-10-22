@@ -258,6 +258,10 @@ export interface NetworkDevice {
   snmp_version?: "1" | "2c" | null;
   /** 1 = versione scelta a mano: la discovery non la sovrascrive. */
   snmp_version_fissata?: number;
+  /** 1 = classificazione scelta a mano: la scansione non la riscrive (tappa 5). */
+  classification_manual?: number;
+  /** JSON array dei ruoli del server (`["dns","backup"]`). */
+  server_roles?: string | null;
   api_url: string | null;
   port: number;
   enabled: number;
@@ -316,6 +320,9 @@ export interface DeviceInterface {
   /** MAC virtuale (VRRP/HSRP/CARP/bond) → ESCLUSO dal matching identità. */
   is_virtual_mac: number;
   alias: string | null;
+  /** Scheda MikroTik (RouterOS, `/interface print`): MTU e interfaccia spenta a mano (1/0); null = non letti o schema vecchio. */
+  mtu?: number | null;
+  disabled?: number | null;
   updated_at: string;
 }
 
@@ -336,6 +343,9 @@ export interface ArpEntry {
   mac: string;
   ip: string | null;
   interface_name: string | null;
+  /** Scheda MikroTik: stato della voce (reachable, stale, …) e voce dinamica (1/0); null = non letti (SNMP) o schema vecchio. */
+  status?: string | null;
+  dynamic?: number | null;
   timestamp: string;
 }
 
@@ -785,6 +795,8 @@ export interface HostDetail extends Host {
     vendor: string;
     protocol: string;
   } | null;
+  /** Host senza apparato proprio ma nel cluster fisico di UN solo apparato gestito: la scheda è quella dell'apparato. */
+  apparato_cluster?: { network_device_id: number; nome: string; host_id: number; ip: string; n_indirizzi: number } | null;
   /** v0.2.603: aggregazione multi-IP (multihomed). Popolato da getHostById tramite
    *  JOIN su multihomed_links. Bridge con physical_device_id da v0.2.596. */
   multihomed?: {

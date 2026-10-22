@@ -13,12 +13,13 @@
 import {
   createNetworkDevice,
   getHostByIp,
-  updateHost,
   ensureInventoryAssetForNetworkDevice,
   addDeviceCredentialBinding,
   getCredentialById,
   getDb,
 } from "@/lib/db";
+import { scriviSeCambiata } from "@/lib/classification/scrivi";
+import { RUOLI_SERVER, type RuoloServer } from "@/lib/classification/canonico";
 import { NetworkDeviceSchema } from "@/lib/validators";
 import {
   suggestProductProfileForClassification,
@@ -31,12 +32,21 @@ import {
 import { linkInvAgentEndpointToHost } from "@/lib/inventory-agent/db";
 import { portaCredenziale } from "@/lib/credentials/porte";
 import { RifiutoCredenziali, segretiInVociApparatoDb } from "@/lib/credentials/apparato-archivio";
+import { apparatoGiaPresente, messaggioIpDiApparato, type ApparatoGiaPresente } from "./apparato-del-cluster";
 import { tipoBindingPerProtocollo } from "./binding-apparato";
 import type { NetworkDevice } from "@/types";
 
 export type EsitoCreaApparato =
   | { ok: true; device: NetworkDevice }
-  | { ok: false; status: 400; error: string };
+  | { ok: false; status: 400; error: string }
+  | { ok: false; status: 409; error: string; codice: "IP_DI_APPARATO"; apparato: ApparatoGiaPresente };
+
+/** Ruoli del server dal corpo della richiesta: solo quelli del catalogo, il resto si ignora. */
+export function ruoliDalCorpo(body: unknown): RuoloServer[] {
+  const grezzi = body && typeof body === "object" ? (body as { server_roles?: unknown }).server_roles : undefined;
+  if (!Array.isArray(grezzi)) return [];
+  return grezzi.filter((r): r is RuoloServer => (RUOLI_SERVER as readonly string[]).includes(String(r)));
+}
 
 export function creaApparato(body: unknown): EsitoCreaApparato {
   const parsed = NetworkDeviceSchema.safeParse(body);
@@ -45,6 +55,9 @@ export function creaApparato(body: unknown): EsitoCreaApparato {
   }
 
   const data = parsed.data;
+  // Un IP già di un apparato (anche di un altro IP dello stesso device fisico) non diventa un secondo apparato.
+  const gia = apparatoGiaPresente(getDb(), data.host);
+  if (gia) return { ok: false, status: 409, error: messaggioIpDiApparato(gia.nome, gia.ip !== data.host), codice: "IP_DI_APPARATO", apparato: gia };
   // Senza classificazione vale il tipo dispositivo (è un valore ammesso anche
   // fra le classificazioni). Prima il ripiego era «hypervisor» per tutto ciò
   // che non era router o switch: un server diventava hypervisor, anche sull'host.
@@ -127,7 +140,10 @@ export function creaApparato(body: unknown): EsitoCreaApparato {
 
   const host = getHostByIp(data.host);
   if (host) {
-    updateHost(host.id, { classification: deviceClassification });
+    // Punto unico. È «a mano» solo se l'utente ha cambiato la classificazione proposta dall'host
+    // (revisione finale, n. 1): una proposta accettata così com'è resta automatica.
+    const ruoli = body && typeof body === "object" && Array.isArray((body as { server_roles?: unknown }).server_roles) ? ruoliDalCorpo(body) : undefined;
+    scriviSeCambiata(getDb(), { hostId: host.id }, deviceClassification, { classification: host.classification ?? null, server_roles: (host as { server_roles?: string | null }).server_roles ?? null }, { ruoli });
     try {
       linkInvAgentEndpointToHost(host.id);
     } catch {

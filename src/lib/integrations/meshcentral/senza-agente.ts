@@ -18,10 +18,12 @@
  * Credenziali: restano in DA-IPAM. La pagina RDP di MeshCentral le chiede al
  * momento (non esiste un'API per passargliele); VNC chiede la sua password.
  *
- * Spento di default: serve MESHCENTRAL_SENZA_AGENTE=1, finché non è provato sul
- * pilota. Con il flag spento i pulsanti non compaiono e la rotta risponde 409.
+ * Spento di default. Si accende da Impostazioni → Moduli → MeshCentral
+ * (impostazione del tenant `meshcentral.senza_agente`, dal 19/10) oppure con
+ * MESHCENTRAL_SENZA_AGENTE=1 in `.env.local`, che vince. Con l'interruttore spento
+ * i pulsanti non compaiono e la rotta risponde 409.
  */
-import { getCurrentTenantCode, getTenantDb } from "@/lib/db-tenant";
+import { getCurrentTenantCode, getTenantDb, getTenantSetting } from "@/lib/db-tenant";
 import { getMeshCreds as realGetMeshCreds, type MeshCreds } from "./config";
 import { mintLoginToken as realMintLoginToken } from "./login-token";
 import { recordRemoteSession as realRecordRemoteSession } from "./remote-session-audit";
@@ -34,7 +36,10 @@ export { porteAperte, portaPer, portaSessione, protocolliDisponibili, type Proto
 export const GRUPPO_SENZA_AGENTE = "Domarc Senza Agente";
 
 export const SENZA_AGENTE_SPENTO =
-  "Desktop remoto senza agente non attivo su questa appliance (MESHCENTRAL_SENZA_AGENTE)";
+  "Desktop remoto senza agente spento: si accende in Impostazioni → Moduli → MeshCentral";
+
+/** Impostazione del tenant che accende il desktop remoto senza agente («1»). */
+export const CHIAVE_SENZA_AGENTE = "meshcentral.senza_agente";
 
 /**
  * Viewmode scritti nell'audit mc_remote_session. 11/12/13 sono di MeshCentral
@@ -42,8 +47,19 @@ export const SENZA_AGENTE_SPENTO =
  */
 export const VIEWMODE_AUDIT: Record<ProtocolloRemoto, number> = { rdp: 21, vnc: 22 };
 
+/**
+ * L'interruttore e da dove viene. Analisi del 19/10: stava solo in `.env.local` e
+ * dall'interfaccia non si vedeva (sull'hub la voce RDP mancava per questo). La
+ * variabile d'ambiente resta e vince, per le installazioni accese così.
+ */
+export function statoSenzaAgente(): { attivo: boolean; daAmbiente: boolean } {
+  if (process.env.MESHCENTRAL_SENZA_AGENTE === "1") return { attivo: true, daAmbiente: true };
+  if (!getCurrentTenantCode()) return { attivo: false, daAmbiente: false };
+  return { attivo: getTenantSetting(CHIAVE_SENZA_AGENTE) === "1", daAmbiente: false };
+}
+
 export function senzaAgenteAttivo(): boolean {
-  return process.env.MESHCENTRAL_SENZA_AGENTE === "1";
+  return statoSenzaAgente().attivo;
 }
 
 /** Tipo device di 'addlocaldevice': 4 Windows · 6 Linux · 29 macOS (solo icona). */

@@ -6,8 +6,8 @@
 import { FUSO_UTENTI, parseDbDate } from "@/lib/db-date";
 import type { EsitoApparato, Lettura, StatoInterruttore } from "./interruttori";
 
-/** Ogni riga lo dice accanto a ciò che legge: nessuna lettura è accesa finché un amministratore non lo fa, cliente per cliente. */
-export const NASCE_SPENTA = "Nasce spenta: si accende solo da qui, cliente per cliente.";
+/** Ogni riga lo dice accanto a ciò che legge: le letture sono accese di serie (ADR 0031), si spengono da qui cliente per cliente. */
+export const NASCE_ACCESA = "Accesa di serie: si spegne da qui, cliente per cliente.";
 
 export const DESCRIZIONE_LETTURE: Readonly<Record<Lettura, { titolo: string; legge: string; apparati: string; comandi: string }>> = {
   mikrotik: {
@@ -34,6 +34,18 @@ export const DESCRIZIONE_LETTURE: Readonly<Record<Lettura, { titolo: string; leg
     apparati: "i nodi hypervisor letti dalla lettura notturna",
     comandi: "command -v lldpcli · lldpcli -f json0 show neighbors details · ip -d -j link show (sola lettura, nella lettura notturna degli hypervisor)",
   },
+  mikrotik_scheda: {
+    titolo: "VLAN, DNS e utenti dei MikroTik",
+    legge: "Le VLAN dei bridge (tagged e untagged per porta), le interfacce VLAN col loro id e la loro interfaccia madre, la configurazione DNS, gli utenti del router (nome, gruppo, ultimo accesso; nessuna password).",
+    apparati: "router MikroTik letti via SSH",
+    comandi: "/interface bridge vlan print · /interface vlan print · /ip dns print · /user print (sola lettura, una connessione per apparato, al più una volta l'ora)",
+  },
+  switch_vlan: {
+    titolo: "VLAN degli switch via SNMP",
+    legge: "Per ogni switch: le VLAN con il nome, le porte tagged e untagged di ognuna, il PVID di ogni porta.",
+    apparati: "gli switch con credenziale SNMP, anche quelli del controller; non i MikroTik letti via SSH",
+    comandi: "7 letture in sola lettura: Q-BRIDGE-MIB (dot1qVlanStatic, dot1qVlanCurrent, dot1qPvid) e BRIDGE-MIB (dot1dBasePortIfIndex)",
+  },
 };
 
 export function quandoItaliano(utc: string | null): string {
@@ -44,7 +56,8 @@ export function quandoItaliano(utc: string | null): string {
 }
 
 export function testoStato(s: StatoInterruttore): string {
-  return s.acceso ? `accesa da ${s.da ?? "utente non noto"} il ${quandoItaliano(s.il)}` : "spenta";
+  if (!s.acceso) return s.da ? `spenta da ${s.da} il ${quandoItaliano(s.il)}` : "spenta";
+  return s.da ? `accesa da ${s.da} il ${quandoItaliano(s.il)}` : "accesa di serie";
 }
 
 export function testoEsito(e: EsitoApparato): string {
@@ -82,5 +95,11 @@ export function testoDialogo(l: Lettura, accendi: boolean, c: { router: { minuti
       return `Accendere le letture SNMP per la mappa sugli switch che non sono del controller? Il giro degli switch parte ${frequenza(c.switch, false)}: le letture in più partono al più una volta l'ora per switch, 16 letture in sola lettura. ${CHIUSA}`;
     case "host":
       return `Accendere la lettura LLDP degli hypervisor? Si legge con la lettura notturna degli hypervisor, tre comandi in sola lettura per nodo. ${CHIUSA}`;
+    case "mikrotik_scheda":
+      // Non serve alla mappa (riempie la scheda del router): niente frase sulla mappa nuova.
+      return `Accendere la lettura di VLAN, DNS e utenti sui MikroTik di questo cliente? Il router si legge ${frequenza(c.router.minuti, c.router.daScansioni)}: questa lettura parte al più una volta l'ora, 4 comandi in sola lettura sul router, su una connessione sua. Riempie la matrice VLAN e il DNS della scheda del router; gli utenti del router (nessuna password) li vede solo un amministratore. Si spegne da qui.`;
+    case "switch_vlan":
+      // Come la scheda MikroTik: riempie la tab VLAN della scheda dello switch, non la mappa.
+      return `Accendere la lettura delle VLAN sugli switch di questo cliente? Il giro degli switch parte ${frequenza(c.switch, false)}: questa lettura parte al più una volta l'ora per switch, 7 letture SNMP in sola lettura, 10 secondi al massimo ciascuna; anche «Interroga» sullo switch la fa, finché è accesa. Riempie la matrice VLAN della scheda dello switch. Si spegne da qui.`;
   }
 }

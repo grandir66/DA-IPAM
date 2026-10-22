@@ -8,11 +8,13 @@ import { closeHubDb } from "@/lib/db-hub";
 import { deleteTenantDatabase, getTenantDb, rileggiSchemaCavi, withTenant } from "@/lib/db-tenant";
 import { conCadenza, riassuntoLetture } from "@/lib/topology/letture/cadenza";
 import { leggiEsiti, scriviInterruttore } from "@/lib/topology/letture/interruttori";
+import { LETTURE_SPENTE_SQL } from "@/lib/topology/letture/__tests__/letture-spente";
 
 const T = "TESTLETTURECAD";
 const ore = (h: number, m = 0) => () => new Date(Date.UTC(2026, 9, 15, h, m, 0));
 beforeEach(() => {
   getTenantDb(T).exec("DELETE FROM tenant_settings WHERE key LIKE 'topologia.lettura.%'");
+  getTenantDb(T).exec(LETTURE_SPENTE_SQL);
   withTenant(T, () => rileggiSchemaCavi());
 });
 after(() => { deleteTenantDatabase(T); closeHubDb(); removeTestHubDb(); });

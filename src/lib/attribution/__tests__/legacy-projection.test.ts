@@ -1,3 +1,4 @@
+import { SLUG_VECCHI } from "@/lib/classification/canonico";
 import { describe, it } from "node:test";
 import assert from "node:assert";
 import { projectLegacy } from "../legacy-projection";
@@ -174,7 +175,8 @@ describe("projectLegacy", () => {
 
   it("round-trip su tutti gli slug legacy che mappano a categoria di livello 2 (tranne eccezioni dichiarate)", () => {
     let level2Count = 0;
-    for (const slug of DEVICE_CLASSIFICATIONS) {
+    // Gli slug vecchi non sono più nei menu (catalogo canonico 21/10) ma i classificatori li emettono ancora.
+    for (const slug of [...DEVICE_CLASSIFICATIONS, ...SLUG_VECCHI]) {
       const mapped = mapLegacyClassification(slug);
       if (mapped.category == null || !mapped.category.includes(".")) continue; // solo livello 2
       level2Count += 1;

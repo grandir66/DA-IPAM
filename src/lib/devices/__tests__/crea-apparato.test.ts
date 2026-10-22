@@ -42,6 +42,20 @@ describe("creaApparato", () => {
     assert.equal(host.classification, "server");
   });
 
+  // Finestra «Rendi apparato» (tappa 3): i ruoli scelti per un server arrivano nel corpo.
+  it("server con ruoli → ruoli sull'host e sull'apparato, quelli fuori catalogo ignorati", () => {
+    const d = getTenantDb(T);
+    d.prepare(`INSERT INTO hosts (id, network_id, ip, classification) VALUES (2, 1, '10.40.0.6', 'unknown')`).run();
+    const esito = withTenant(T, () =>
+      creaApparato({ name: "dc", host: "10.40.0.6", device_type: "server", classification: "server", vendor: "windows", protocol: "winrm", server_roles: ["dc", "dns", "inventato"] })
+    );
+    assert.ok(esito.ok, esito.ok ? "" : esito.error);
+    const h = d.prepare(`SELECT server_roles FROM hosts WHERE id = 2`).get() as { server_roles: string };
+    const a = d.prepare(`SELECT server_roles FROM network_devices WHERE id = ?`).get(esito.device.id) as { server_roles: string };
+    assert.deepEqual([...JSON.parse(h.server_roles)].sort(), ["dc", "dns"]);
+    assert.deepEqual([...JSON.parse(a.server_roles)].sort(), ["dc", "dns"]);
+  });
+
   it("classificazione fuori elenco («printer») → 400 con messaggio in italiano", () => {
     const esito = withTenant(T, () =>
       creaApparato({ name: "stampa", host: "10.40.0.9", device_type: "server", vendor: "other", protocol: "snmp_v2", classification: "printer" })
@@ -152,5 +166,59 @@ describe("creaApparato", () => {
     assert.equal(esito.ok, false);
     if (!esito.ok) assert.equal(esito.status, 400);
     assert.equal(d.prepare(`SELECT id FROM network_devices WHERE host = '10.40.0.42'`).get(), undefined);
+  });
+  it("Server + Proxmox VE → device_type hypervisor (resta nella topologia)", () => {
+    getTenantDb(T).prepare(`INSERT INTO hosts (id, network_id, ip, classification) VALUES (9, 1, '10.40.0.19', 'unknown')`).run();
+    const esito = withTenant(T, () =>
+      creaApparato({ name: "pve", host: "10.40.0.19", device_type: "server", classification: "server", vendor: "proxmox", product_profile: "proxmox_ve", protocol: "api" })
+    );
+    assert.ok(esito.ok, esito.ok ? "" : esito.error);
+    assert.equal(esito.device.device_type, "hypervisor");
+    const n = getTenantDb(T).prepare(`SELECT device_type FROM network_devices WHERE id = ?`).get(esito.device.id) as { device_type: string };
+    assert.equal(n.device_type, "hypervisor");
+  });
+
+  it("classificazione già uguale a quella dell'host: l'apparato nasce senza «scelta a mano»", () => {
+    const d = getTenantDb(T);
+    // IP diverso da quello dell'apparato "sw" (riga 81): un IP già di un apparato oggi è rifiutato (409).
+    d.prepare(`INSERT INTO hosts (id, network_id, ip, classification, classification_manual) VALUES (10, 1, '10.40.0.22', 'stampante', 0)`).run();
+    const esito = withTenant(T, () =>
+      creaApparato({ name: "stampa", host: "10.40.0.22", device_type: "server", classification: "stampante", vendor: "other", protocol: "snmp_v2" })
+    );
+    assert.ok(esito.ok, esito.ok ? "" : esito.error);
+    assert.equal((d.prepare(`SELECT classification_manual m FROM hosts WHERE id = 10`).get() as { m: number }).m, 0);
+    assert.notEqual((d.prepare(`SELECT classification_manual m FROM network_devices WHERE id = ?`).get(esito.device.id) as { m: number | null }).m, 1);
+  });
+
+  it("classificazione diversa da quella dell'host: scelta a mano", () => {
+    const d = getTenantDb(T);
+    d.prepare(`INSERT INTO hosts (id, network_id, ip, classification, classification_manual) VALUES (11, 1, '10.40.0.21', 'unknown', 0)`).run();
+    const esito = withTenant(T, () =>
+      creaApparato({ name: "r", host: "10.40.0.21", device_type: "router", classification: "router", vendor: "mikrotik", protocol: "ssh" })
+    );
+    assert.ok(esito.ok, esito.ok ? "" : esito.error);
+    assert.equal((d.prepare(`SELECT classification_manual m FROM hosts WHERE id = 11`).get() as { m: number }).m, 1);
+  });
+  // Incidente 21/10, hub: DA-RT-CORE creato su un IP secondario del router MK-RTR-CORE. IP .31: il .30 è dell'apparato
+  // «mac» creato sopra senza host_id, che con l'IP scritto conta anche lui (sqlApparatoDellHost).
+  it("IP secondario di un apparato (stesso cluster fisico) → 409 IP_DI_APPARATO e nessun apparato nuovo", () => {
+    const d = getTenantDb(T);
+    d.prepare(`INSERT INTO physical_devices (id, identity_confidence, identity_anchor) VALUES (50, 1, 'cr1')`).run();
+    d.prepare(`INSERT INTO hosts (id, network_id, ip, physical_device_id) VALUES (20, 1, '10.40.0.31', 50)`).run();
+    d.prepare(`INSERT INTO hosts (id, network_id, ip, physical_device_id) VALUES (21, 1, '10.40.1.31', 50)`).run();
+    d.prepare(`INSERT INTO network_devices (id, name, host, host_id, device_type, vendor, protocol, port, enabled) VALUES (900, 'MK-RTR-CORE', '10.40.0.31', 20, 'router', 'mikrotik', 'ssh', 22, 1)`).run();
+    const conta = () => (d.prepare(`SELECT COUNT(*) n FROM network_devices`).get() as { n: number }).n;
+    const prima = conta();
+    const esito = withTenant(T, () =>
+      creaApparato({ name: "DA-RT-CORE", host: "10.40.1.31", device_type: "router", classification: "router", vendor: "mikrotik", protocol: "ssh" })
+    );
+    assert.equal(esito.ok, false);
+    if (esito.ok || esito.status !== 409) return assert.fail("atteso 409");
+    assert.equal(esito.codice, "IP_DI_APPARATO");
+    // IP del gruppo, non dell'apparato: il messaggio dice come farne un apparato a sé (revisione finale 22/10).
+    assert.equal(esito.error, "Questo IP è già dell'apparato MK-RTR-CORE. Per farne un apparato a sé, prima togli l'IP dal gruppo nella scheda di MK-RTR-CORE");
+    assert.equal(esito.apparato.network_device_id, 900);
+    assert.equal(esito.apparato.host_id, 20);
+    assert.equal(conta(), prima);
   });
 });

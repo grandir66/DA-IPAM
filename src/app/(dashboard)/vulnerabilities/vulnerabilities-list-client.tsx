@@ -252,10 +252,16 @@ export function VulnerabilitiesListClient() {
     <div className="space-y-4 p-4 sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold flex items-center gap-2">
-            <ShieldAlert className="h-6 w-6 text-orange-500" />
-            Vulnerabilità
-          </h1>
+          <div className="flex flex-wrap items-center gap-x-3">
+            <h1 className="text-2xl font-semibold flex items-center gap-2">
+              <ShieldAlert className="h-6 w-6 text-orange-500" />
+              Vulnerabilità
+            </h1>
+            {/* Paginazione nella riga del titolo (Riccardo, 20/10): sotto la tabella occupava spazio. */}
+            {!loading && total > 0 && (
+              <Pagination inTesta page={page} totalPages={totalPages} onPageChange={setPage} pageSize={PAGE_SIZE} total={total} />
+            )}
+          </div>
           <p className="text-sm text-muted-foreground mt-1">
             Tutte le CVE rilevate da edge-scan e Wazuh, aggregate per CVE con elenco host affetti.
           </p>
@@ -370,7 +376,7 @@ export function VulnerabilitiesListClient() {
             <div className="p-4 text-sm text-destructive">{error}</div>
           )}
           <div className="overflow-x-auto">
-            <Table>
+            <Table fissa riserva={52}>
               <TableHeader>
                 <TableRow>
                   <SortableTableHead columnId="" sortColumn={sortBy} sortDirection={sortDir} onSort={() => {}} className="w-8" >{""}</SortableTableHead>
@@ -423,14 +429,6 @@ export function VulnerabilitiesListClient() {
               </TableBody>
             </Table>
           </div>
-          {!loading && total > 0 && (
-            <div className="flex items-center justify-between gap-3 pt-3 text-sm text-muted-foreground">
-              <span>
-                Mostrando {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} di {total}
-              </span>
-            </div>
-          )}
-          <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
         </CardContent>
       </Card>
 

@@ -9,15 +9,21 @@
  * Functions that reference hub settings (getSetting) import from db-hub.ts.
  */
 
+import { apparatoDelCluster } from "@/lib/devices/apparato-del-cluster";
+import { leggiClusterDiscovery, type InfoClusterDiscovery } from "@/lib/devices/cluster-discovery";
+import { condizioneAssente } from "@/lib/hosts/assenti";
 import Database from "better-sqlite3";
 import path from "path";
 import { resolveDataDir } from "./data-dir";
 import { buildPatchFromHost, buildPatchFromDevice, buildSyncMerge, buildSourceLabel } from "./inventory/discovery-sync";
 import fs from "fs";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { DDL_TOPOLOGY_CAVI, DDL_TOPOLOGY_UNIONI, INDICI_TOPOLOGY_UNIONI, TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL } from "./db-tenant-schema";
-import { HYPERVISOR_SYNC_MINUTES, SCHEDULED_JOB_TYPES_CHECK_SQL } from "./scheduled-job-types";
-import { isProxmoxVeDevice } from "./devices/device-acquisition-resolve";
+import type { LetturaVlanSwitch } from "./devices/snmp-vlan";
+import { DDL_VULCAN, INDICI_VULCAN, SEGNO_VULCAN, VERSIONE_VULCAN, DDL_JOB_APPARATI_ESITI, INDICI_JOB_APPARATI_ESITI, SEGNO_APPARATI_SCELTI, VERSIONE_APPARATI_SCELTI, DDL_SWITCH_VLAN_NATIVA, SEGNO_SWITCH_VLAN_NATIVA, VERSIONE_SWITCH_VLAN_NATIVA, DDL_SWITCH_VLAN_V1, SEGNO_SWITCH_VLAN, VERSIONE_SWITCH_VLAN, COLONNA_CLUSTER_PRINCIPALE, INDICE_CLUSTER_PRINCIPALE, SEGNO_CLUSTER_PRINCIPALE, VERSIONE_CLUSTER_PRINCIPALE, COLONNE_SCHEDA_MK_V1, DDL_HOSTS_ARCHIVIO, DDL_SCHEDA_MK_V2, DDL_SCHEDA_MK_V3, DDL_TOPOLOGY_CAVI, DDL_TOPOLOGY_UNIONI, INDICI_HOSTS_ARCHIVIO, INDICI_TOPOLOGY_UNIONI, TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL, SEGNO_SCHEDA_MK, VERSIONE_SCHEDA_MK } from "./db-tenant-schema";
+import { HYPERVISOR_SYNC_MINUTES, PULIZIA_HOST_MINUTES, SCHEDULED_JOB_TYPES_CHECK_SQL } from "./scheduled-job-types";
+import { isProxmoxVeDevice, resolveDeviceAcquisition } from "./devices/device-acquisition-resolve";
+import { networkDeviceUsesArpPoll } from "./network-device-arp";
+import { STATI_ESITO, type EsitoLettura, type EsitoRiga, type StatoApparato, type StatoEsito } from "./apparati-scelti/regole";
 import { macToHex, normalizeMac, normalizeMacForStorage } from "./utils";
 import { lookupVendorSync } from "./scanner/mac-vendor";
 import { VENDOR_PLACEHOLDER_RE } from "./attribution/emitters";
@@ -30,6 +36,10 @@ import { convertiControllerEAd, descriviIntegrazioni, segnoIntegrazioni } from "
 import { chiaviGlobaliHub, convertiCateneVecchie, descriviCatene, MOTIVO_DUE_TENANT, segnoCatene } from "./credentials/converti-catene";
 import { convertiCredenzialiApparati, descriviApparati, segnoApparati } from "./credentials/converti-apparati";
 import { migraAppleMacos } from "./devices/migra-apple-macos";
+import { canonicalizza, type Canonica } from "./classification/canonico";
+import { aggiungiRuoloServer, impostaVendorSeVuoto } from "./classification/scrittura";
+import { convertiClassificazioniV21, migrateServerRoles, SEGNO_CLASSIFICAZIONI_V21 } from "./classification/migrazione-v21";
+import { convertiDeviceTypeV21, SEGNO_DEVICE_TYPE_V21 } from "./devices/migra-device-type-v21";
 import { randomUUID } from "crypto";
 import { inferIpAssignment, resolveAdDhcpLeaseForHost, resolveDhcpLeaseForHost } from "./ip-assignment";
 import { getActiveTenants, getHubDbPath, getSetting, getTenantByCode } from "./db-hub";
@@ -68,6 +78,9 @@ import { libreStatusFrom } from "./topology/status-map";
 import { modelloEtichettaDiPorte } from "./device-fingerprint-classification";
 import { parseProxmoxScan } from "./topology/vms";
 import { hypervisorNics, switchPortsToKnown, type SwitchPortRow } from "./topology/known-ports";
+import type { IngressoDispositivi } from "./scheda/dispositivi-router";
+import type { RigaBondMk, RigaBridgeMk, RigaDnsMk, RigaPortaBridgeMk, RigaPortaSchedaMk, RigaUtenteMk, RigaVlanBridgeMk, RigaVlanMk } from "./devices/mikrotik-scheda";
+import type { RisultatoMkScheda } from "./devices/mikrotik-letture";
 import type { KnownPort } from "./topology/api-input";
 import type { LinkMedium, MapOrientation } from "./topology/model-types";
 import { TESTI_UNIONI, type PianoUnioni, type RigaSeparazione, type RigaUnione } from "./topology/unioni-tipi";
@@ -287,6 +300,167 @@ export function migrateScheduledJobsV9(db: Database.Database): boolean {
 }
 
 /**
+ * Migrazione runtime v10 di `scheduled_jobs` (pulizia degli host assenti, piano
+ * 2026-10-20): il CHECK di `job_type` accetta `'pulizia_host'`. Copia esatta della
+ * v9 (CHECK dalla stessa costante dello schema, colonne copiate per nome,
+ * contatore AUTOINCREMENT conservato, indice ricreato subito, tutto in una
+ * transazione); cambia solo la guardia. Su un DB più vecchio della v9 la v8 o la
+ * v9 scrivono già il CHECK con `pulizia_host` e qui non resta niente da fare.
+ * Non crea nessun job: il job lo crea solo l'interruttore (`setPuliziaHostSchedule`).
+ *
+ * Restituisce true se ha ricostruito, false se non c'era niente da fare.
+ * Esportata per le prove (`hosts/__tests__/pulizia-job.test.ts`).
+ */
+export function migrateScheduledJobsV10(db: Database.Database): boolean {
+  const row = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='scheduled_jobs'").get() as
+    | { sql?: string }
+    | undefined;
+  if (!row?.sql || row.sql.includes("'pulizia_host'")) return false;
+
+  const present = new Set(
+    (db.prepare("PRAGMA table_info(scheduled_jobs)").all() as Array<{ name: string }>).map((c) => c.name),
+  );
+  const cols = SCHEDULED_JOBS_COLUMNS.filter((c) => present.has(c)).join(", ");
+
+  // PRAGMA foreign_keys non ha effetto dentro una transazione: si spegne prima.
+  db.pragma("foreign_keys = OFF");
+  try {
+    db.transaction(() => {
+      const seq = db.prepare("SELECT seq FROM sqlite_sequence WHERE name = 'scheduled_jobs'").get() as
+        | { seq: number }
+        | undefined;
+      db.exec("DROP TABLE IF EXISTS scheduled_jobs_v10");
+      db.exec(`CREATE TABLE scheduled_jobs_v10 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        network_id INTEGER REFERENCES networks(id) ON DELETE CASCADE,
+        job_type TEXT NOT NULL CHECK(${SCHEDULED_JOB_TYPES_CHECK_SQL}),
+        interval_minutes INTEGER NOT NULL DEFAULT 60,
+        last_run TEXT,
+        next_run TEXT,
+        enabled INTEGER DEFAULT 1,
+        config TEXT DEFAULT '{}',
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      )`);
+      db.exec(`INSERT INTO scheduled_jobs_v10 (${cols}) SELECT ${cols} FROM scheduled_jobs`);
+      if (seq) {
+        const upd = db.prepare("UPDATE sqlite_sequence SET seq = MAX(seq, ?) WHERE name = 'scheduled_jobs_v10'").run(seq.seq);
+        if (upd.changes === 0) {
+          db.prepare("INSERT INTO sqlite_sequence (name, seq) VALUES ('scheduled_jobs_v10', ?)").run(seq.seq);
+        }
+      }
+      db.exec("DROP TABLE scheduled_jobs");
+      db.exec("ALTER TABLE scheduled_jobs_v10 RENAME TO scheduled_jobs");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_enabled_next ON scheduled_jobs(enabled, next_run)");
+    })();
+  } finally {
+    db.pragma("foreign_keys = ON");
+  }
+  return true;
+}
+
+/**
+ * Migrazione runtime v11 di `scheduled_jobs` (scansione automatica, piano 2026-10-22): il CHECK di `job_type` accetta
+ * `'apparati_scelti'`. Copia della v10 (CHECK dalla stessa costante dello schema, colonne copiate per nome, contatore
+ * AUTOINCREMENT conservato, tutto in una transazione con foreign_keys spento prima); cambia la guardia, e in più:
+ * - il numero di righe si conta prima e dopo la copia: se non torna si lancia e la transazione torna indietro;
+ * - indici e trigger della tabella si rileggono da sqlite_master prima e si ricreano tali e quali dopo (oggi c'è solo
+ *   `idx_scheduled_jobs_enabled_next`, che si ricrea comunque).
+ * Se qualcosa non riesce la tabella resta com'era e l'errore sale a `getTenantDb`, che lo registra e apre il tenant.
+ * Non crea nessun job: lo crea solo un admin da Discovery.
+ *
+ * Restituisce true se ha ricostruito, false se non c'era niente da fare.
+ * Esportata per le prove (`scheduled-jobs-v11.test.ts`).
+ */
+export function migrateScheduledJobsV11(db: Database.Database): boolean {
+  const row = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='scheduled_jobs'").get() as
+    | { sql?: string }
+    | undefined;
+  if (!row?.sql || row.sql.includes("'apparati_scelti'")) return false;
+
+  const conta = (t: string): number => (db.prepare(`SELECT COUNT(*) AS n FROM ${t}`).get() as { n: number }).n;
+  let fatta = false;
+
+  // PRAGMA foreign_keys non ha effetto dentro una transazione: si spegne prima.
+  db.pragma("foreign_keys = OFF");
+  try {
+    db.transaction(() => {
+      // Guardia e colonne si rileggono dentro la transazione: un'altra connessione può aver già ricostruito.
+      const dentro = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='scheduled_jobs'").get() as
+        | { sql?: string }
+        | undefined;
+      if (!dentro?.sql || dentro.sql.includes("'apparati_scelti'")) return;
+      const present = (db.prepare("PRAGMA table_info(scheduled_jobs)").all() as Array<{ name: string }>).map((c) => c.name);
+      // Una colonna che la copia non conosce si perderebbe in silenzio: si lancia e la tabella resta com'era.
+      const ignote = present.filter((c) => !(SCHEDULED_JOBS_COLUMNS as readonly string[]).includes(c));
+      if (ignote.length > 0) throw new Error(`v11: colonne di scheduled_jobs sconosciute alla copia: ${ignote.join(", ")}`);
+      const cols = SCHEDULED_JOBS_COLUMNS.filter((c) => present.includes(c)).join(", ");
+      const seq = db.prepare("SELECT seq FROM sqlite_sequence WHERE name = 'scheduled_jobs'").get() as
+        | { seq: number }
+        | undefined;
+      const accessori = db
+        .prepare("SELECT sql FROM sqlite_master WHERE tbl_name = 'scheduled_jobs' AND type IN ('index', 'trigger') AND sql IS NOT NULL ORDER BY type, name")
+        .all() as Array<{ sql: string }>;
+      const prima = conta("scheduled_jobs");
+      db.exec("DROP TABLE IF EXISTS scheduled_jobs_v11");
+      db.exec(`CREATE TABLE scheduled_jobs_v11 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        network_id INTEGER REFERENCES networks(id) ON DELETE CASCADE,
+        job_type TEXT NOT NULL CHECK(${SCHEDULED_JOB_TYPES_CHECK_SQL}),
+        interval_minutes INTEGER NOT NULL DEFAULT 60,
+        last_run TEXT,
+        next_run TEXT,
+        enabled INTEGER DEFAULT 1,
+        config TEXT DEFAULT '{}',
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      )`);
+      db.exec(`INSERT INTO scheduled_jobs_v11 (${cols}) SELECT ${cols} FROM scheduled_jobs`);
+      const dopo = conta("scheduled_jobs_v11");
+      if (dopo !== prima) throw new Error(`v11: copiate ${dopo} righe di scheduled_jobs su ${prima}`);
+      if (seq) {
+        const upd = db.prepare("UPDATE sqlite_sequence SET seq = MAX(seq, ?) WHERE name = 'scheduled_jobs_v11'").run(seq.seq);
+        if (upd.changes === 0) {
+          db.prepare("INSERT INTO sqlite_sequence (name, seq) VALUES ('scheduled_jobs_v11', ?)").run(seq.seq);
+        }
+      }
+      db.exec("DROP TABLE scheduled_jobs");
+      db.exec("ALTER TABLE scheduled_jobs_v11 RENAME TO scheduled_jobs");
+      for (const a of accessori) db.exec(a.sql);
+      db.exec("CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_enabled_next ON scheduled_jobs(enabled, next_run)");
+      fatta = true;
+    })();
+  } finally {
+    db.pragma("foreign_keys = ON");
+  }
+  return fatta;
+}
+
+/**
+ * Tabella degli esiti dei job `apparati_scelti` (piano 2026-10-22 scansione automatica, Task 1): la tabella (se lo schema
+ * non l'ha già creata) e il suo indice, solo se mancano. Additiva, idempotente, in UNA transazione; segno
+ * `apparati_scelti_v21` = `done:<data>:v1` una volta sola. Separata dalla v11: se fallisce, i job di oggi restano come sono.
+ * Restituisce i nomi degli oggetti aggiunti. Esportata per le prove (`scheduled-jobs-v11.test.ts`).
+ */
+export function migraApparatiScelti(db: Database.Database): string[] {
+  const added: string[] = [];
+  const c = db.prepare("SELECT 1 FROM sqlite_master WHERE type IN ('table', 'index') AND name = ?");
+  db.transaction(() => {
+    for (const [n, ddl] of [...DDL_JOB_APPARATI_ESITI, ...INDICI_JOB_APPARATI_ESITI]) {
+      if (c.get(n)) continue;
+      db.exec(ddl);
+      added.push(n);
+    }
+    const chiusa = `:v${VERSIONE_APPARATI_SCELTI}`;
+    const attuale = leggiSegno(db, SEGNO_APPARATI_SCELTI);
+    if (!(attuale?.startsWith("done:") && attuale.endsWith(chiusa))) {
+      scriviSegno(db, SEGNO_APPARATI_SCELTI, `done:${new Date().toISOString().slice(0, 10)}${chiusa}`);
+    }
+  })();
+  return added;
+}
+
+/**
  * Migrazione runtime «topologia fase 1» (spec 2026-10-12-topology-map-design
  * §5, piano 2026-10-13-topologia-fase1-dati). Solo colonne e una tabella nuove,
  * in una transazione: o tutto o niente. Gli indici sulle colonne nuove stanno
@@ -491,6 +665,17 @@ export function migrateSnmpVersione(db: Database.Database): string[] {
 }
 
 /**
+ * Classificazione scelta a mano anche sull'apparato (tappa 5, 21/10): `classification_manual` (1 = la scansione non
+ * la riscrive), come già sugli host. Solo colonna nuova, idempotente. Esportata per le prove.
+ */
+export function migrateClassificazioneManualeApparato(db: Database.Database): string[] {
+  const has = (db.prepare("PRAGMA table_info(network_devices)").all() as Array<{ name: string }>).some((c) => c.name === "classification_manual");
+  if (has) return [];
+  db.exec("ALTER TABLE network_devices ADD COLUMN classification_manual INTEGER NOT NULL DEFAULT 0");
+  return ["network_devices.classification_manual"];
+}
+
+/**
  * Migrazione «topologia cavi» (spec 2026-10-14 §13.5.7, tappa T2): le colonne nuove dei vicini e degli apparati e le tre
  * tabelle dei fatti delle letture in più, con l'indice sui MAC. Additiva, idempotente, in UNA transazione (o tutto o
  * niente); restituisce ciò che aggiunge. Le tabelle nascono anche dallo schema (stesse CREATE, `DDL_TOPOLOGY_CAVI`): qui
@@ -566,6 +751,331 @@ export function migrateTopologyUnioni(db: Database.Database): string[] {
       added.push(name);
     }
   })();
+  return added;
+}
+
+/**
+ * Migrazione dell'archivio degli host (pulizia degli host assenti, piano 2026-10-20, Task 1): la tabella `hosts_archivio`
+ * e i suoi due indici. Gemella di `migrateTopologyUnioni`: additiva, idempotente, in una transazione, restituisce ciò che
+ * aggiunge. Chiamata in fondo a `getTenantDb`.
+ */
+export function migrateHostsArchivio(db: Database.Database): string[] {
+  const added: string[] = [];
+  const exists = (type: "table" | "index", name: string): boolean =>
+    !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = ? AND name = ?").get(type, name);
+  db.transaction(() => {
+    for (const [name, ddl] of DDL_HOSTS_ARCHIVIO) {
+      if (exists("table", name)) continue;
+      db.exec(ddl);
+      added.push(name);
+    }
+    for (const [name, ddl] of INDICI_HOSTS_ARCHIVIO) {
+      if (exists("index", name)) continue;
+      db.exec(ddl);
+      added.push(name);
+    }
+  })();
+  return added;
+}
+
+/** Le colonne di un livello della scheda MikroTik che mancano (PRAGMA: costa niente). */
+function colonneSchedaMkMancanti(db: Database.Database, voci: ReadonlyArray<readonly [string, string, string]>): Array<readonly [string, string, string]> {
+  const presenti = new Map<string, Set<string>>();
+  const di = (t: string): Set<string> => {
+    let s = presenti.get(t);
+    if (!s) {
+      s = new Set((db.prepare(`PRAGMA table_info(${t})`).all() as Array<{ name: string }>).map((c) => c.name));
+      presenti.set(t, s);
+    }
+    return s;
+  };
+  return voci.filter(([t, c]) => !di(t).has(c));
+}
+
+/** Versione completa dello schema della scheda MikroTik presente, annotata all'apertura (0 = niente), come SCHEMA_CAVI. */
+const SCHEMA_SCHEDA_MK = new WeakMap<Database.Database, number>();
+
+/** Le tabelle di un livello della scheda MikroTik che mancano (sqlite_master: una vista con lo stesso nome non conta). */
+function tabelleSchedaMkMancanti(db: Database.Database, voci: ReadonlyArray<readonly [string, string]>): Array<readonly [string, string]> {
+  const c = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?");
+  return voci.filter(([n]) => !c.get(n));
+}
+
+function misuraLivelloSchedaMk(d: Database.Database): number {
+  // I livelli si sommano: ognuno vale solo se c'è tutto il precedente.
+  const livelli: Array<() => boolean> = [
+    () => colonneSchedaMkMancanti(d, COLONNE_SCHEDA_MK_V1).length === 0,
+    () => tabelleSchedaMkMancanti(d, DDL_SCHEDA_MK_V2).length === 0,
+    () => tabelleSchedaMkMancanti(d, DDL_SCHEDA_MK_V3).length === 0,
+  ];
+  let n = 0;
+  for (const completo of livelli) {
+    if (!completo()) break;
+    n++;
+  }
+  return n;
+}
+
+/**
+ * Livello dello schema della scheda MikroTik presente nel database (0 = nessuno): chi scrive le colonne nuove lo chiede
+ * prima (`>= 1`), così su un tenant la cui migrazione è fallita le scritture di oggi restano quelle di oggi.
+ */
+export function livelloSchemaSchedaMk(d: Database.Database): number {
+  // Annotato anche sotto il bersaglio (rilievo della revisione del Task 8): una v2 fallita non deve costare le query di
+  // schema a ogni chiamata. Si rimisura solo con la migrazione o con rileggiSchemaSchedaMk().
+  const v = SCHEMA_SCHEDA_MK.get(d);
+  if (v !== undefined) return v;
+  const n = misuraLivelloSchedaMk(d);
+  SCHEMA_SCHEDA_MK.set(d, n);
+  return n;
+}
+
+/** Il livello dello schema della scheda del tenant corrente (annotato, come livelloSchemaSchedaMk). */
+export function livelloSchedaMkCorrente(): number {
+  return livelloSchemaSchedaMk(db());
+}
+
+/** Rimisura il livello dello schema della scheda del tenant corrente (prove; dopo una correzione a mano dello schema). */
+export function rileggiSchemaSchedaMk(): number {
+  const d = db();
+  const n = misuraLivelloSchedaMk(d);
+  SCHEMA_SCHEDA_MK.set(d, n);
+  return n;
+}
+
+/**
+ * Dopo una migrazione fallita: se lo schema è comunque completo (un altro processo ha vinto la corsa e ha aggiunto le
+ * colonne mentre noi fallivamo su «duplicate column») il segno resta `done`, non `errore:…`; altrimenti si scrive l'errore.
+ */
+export function chiudiMigrazioneSchedaMkFallita(db: Database.Database, tenantCode: string, e: unknown): void {
+  try {
+    if (misuraLivelloSchedaMk(db) >= VERSIONE_SCHEDA_MK) {
+      SCHEMA_SCHEDA_MK.set(db, VERSIONE_SCHEDA_MK);
+      const attuale = leggiSegno(db, SEGNO_SCHEDA_MK);
+      if (!attuale?.startsWith("done:")) scriviSegno(db, SEGNO_SCHEDA_MK, `done:${new Date().toISOString().slice(0, 10)}:v${VERSIONE_SCHEDA_MK}`);
+    } else {
+      scriviSegno(db, SEGNO_SCHEDA_MK, segnoErrore(e));
+    }
+  } catch (e2) {
+    console.error(`[db-tenant] ${tenantCode}: ${SEGNO_SCHEDA_MK}, segno non scritto:`, e2);
+  }
+}
+
+/**
+ * Migrazione della scheda MikroTik (piano 2026-10-21): livello 1 (Task 3), le colonne di COLONNE_SCHEDA_MK_V1 solo se
+ * mancano (`PRAGMA table_info`); livello 2 (Task 8, ADR 0027), le tre tabelle di DDL_SCHEDA_MK_V2 solo se mancano; livello 3
+ * (Task 10), le quattro di DDL_SCHEDA_MK_V3 (VLAN dei bridge, interfacce VLAN, DNS, utenti) solo se mancano.
+ * Additiva, idempotente, in UNA transazione; restituisce «tabella.colonna» o il nome della tabella di ciò che aggiunge. Poi
+ * scrive il segno `done:<data>:v<versione>` (dice fin dove è arrivato lo schema; la migrazione non lo consulta).
+ */
+export function migrateSchedaMikrotik(db: Database.Database): string[] {
+  const added: string[] = [];
+  db.transaction(() => {
+    for (const [t, c, ddl] of colonneSchedaMkMancanti(db, COLONNE_SCHEDA_MK_V1)) {
+      db.exec(`ALTER TABLE ${t} ADD COLUMN ${c} ${ddl}`);
+      added.push(`${t}.${c}`);
+    }
+    for (const [n, ddl] of [...tabelleSchedaMkMancanti(db, DDL_SCHEDA_MK_V2), ...tabelleSchedaMkMancanti(db, DDL_SCHEDA_MK_V3)]) {
+      db.exec(ddl);
+      added.push(n);
+    }
+    // Il segno si scrive una volta per versione: a una seconda apertura non cambia (né valore né updated_at).
+    const chiusa = `:v${VERSIONE_SCHEDA_MK}`;
+    const attuale = leggiSegno(db, SEGNO_SCHEDA_MK);
+    if (!(attuale?.startsWith("done:") && attuale.endsWith(chiusa))) {
+      scriviSegno(db, SEGNO_SCHEDA_MK, `done:${new Date().toISOString().slice(0, 10)}${chiusa}`);
+    }
+  })();
+  SCHEMA_SCHEDA_MK.set(db, misuraLivelloSchedaMk(db));
+  return added;
+}
+
+/** Colonna e indice del principale del cluster presenti (PRAGMA e sqlite_master: costano niente). */
+function schemaClusterPrincipaleCompleto(db: Database.Database): boolean {
+  const [t, c] = COLONNA_CLUSTER_PRINCIPALE;
+  const col = (db.prepare(`PRAGMA table_info(${t})`).all() as Array<{ name: string }>).some((r) => r.name === c);
+  return col && !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?").get(INDICE_CLUSTER_PRINCIPALE[0]);
+}
+
+/**
+ * Principale del cluster fisico (piano 2026-10-22 accorpamento, Task 3): `physical_devices.primary_host_id` e il suo indice,
+ * solo se mancano. Additiva, idempotente, in UNA transazione; restituisce «tabella.colonna» e il nome dell'indice di ciò che
+ * aggiunge, poi scrive il segno `done:<data>:v1` una volta sola (la migrazione non lo consulta).
+ */
+export function migrateClusterPrincipale(db: Database.Database): string[] {
+  const added: string[] = [];
+  const [t, c, ddl] = COLONNA_CLUSTER_PRINCIPALE;
+  const [nomeIndice, ddlIndice] = INDICE_CLUSTER_PRINCIPALE;
+  db.transaction(() => {
+    const presenti = (db.prepare(`PRAGMA table_info(${t})`).all() as Array<{ name: string }>).map((r) => r.name);
+    if (!presenti.includes(c)) {
+      db.exec(`ALTER TABLE ${t} ADD COLUMN ${c} ${ddl}`);
+      added.push(`${t}.${c}`);
+    }
+    if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?").get(nomeIndice)) {
+      db.exec(ddlIndice);
+      added.push(nomeIndice);
+    }
+    const chiusa = `:v${VERSIONE_CLUSTER_PRINCIPALE}`;
+    const attuale = leggiSegno(db, SEGNO_CLUSTER_PRINCIPALE);
+    if (!(attuale?.startsWith("done:") && attuale.endsWith(chiusa))) {
+      scriviSegno(db, SEGNO_CLUSTER_PRINCIPALE, `done:${new Date().toISOString().slice(0, 10)}${chiusa}`);
+    }
+  })();
+  return added;
+}
+
+/** Dopo una migrazione fallita: schema completo (un altro processo ha vinto la corsa) → segno `done`, altrimenti `errore:…`. */
+export function chiudiMigrazioneClusterPrincipaleFallita(db: Database.Database, tenantCode: string, e: unknown): void {
+  try {
+    if (schemaClusterPrincipaleCompleto(db)) {
+      const attuale = leggiSegno(db, SEGNO_CLUSTER_PRINCIPALE);
+      if (!attuale?.startsWith("done:")) scriviSegno(db, SEGNO_CLUSTER_PRINCIPALE, `done:${new Date().toISOString().slice(0, 10)}:v${VERSIONE_CLUSTER_PRINCIPALE}`);
+    } else {
+      scriviSegno(db, SEGNO_CLUSTER_PRINCIPALE, segnoErrore(e));
+    }
+  } catch (e2) {
+    console.error(`[db-tenant] ${tenantCode}: ${SEGNO_CLUSTER_PRINCIPALE}, segno non scritto:`, e2);
+  }
+}
+
+/** «Le quattro tabelle delle VLAN degli switch ci sono», annotato all'apertura come SCHEMA_SCHEDA_MK (niente query di schema a ogni scrittura). */
+const SCHEMA_SWITCH_VLAN = new WeakMap<Database.Database, boolean>();
+
+/** Schema delle VLAN degli switch presente (annotato; si rimisura solo con la migrazione o con rileggiSchemaSwitchVlan()). */
+export function schemaSwitchVlanPresente(d: Database.Database): boolean {
+  const v = SCHEMA_SWITCH_VLAN.get(d);
+  if (v !== undefined) return v;
+  const n = tabelleSchedaMkMancanti(d, DDL_SWITCH_VLAN_V1).length === 0;
+  SCHEMA_SWITCH_VLAN.set(d, n);
+  return n;
+}
+
+/** Schema delle VLAN degli switch del tenant corrente (la lettura `switch_vlan` lo chiede prima di aprire la sessione SNMP). */
+export function schemaSwitchVlanCorrente(): boolean {
+  return schemaSwitchVlanPresente(db());
+}
+
+/** Rimisura lo schema delle VLAN degli switch del tenant corrente (prove; dopo una correzione a mano dello schema). */
+export function rileggiSchemaSwitchVlan(): boolean {
+  const d = db();
+  const n = tabelleSchedaMkMancanti(d, DDL_SWITCH_VLAN_V1).length === 0;
+  SCHEMA_SWITCH_VLAN.set(d, n);
+  return n;
+}
+
+/**
+ * VLAN degli switch (piano 2026-10-22 accorpamento, Task 8, ADR 0029): le quattro tabelle di DDL_SWITCH_VLAN_V1 solo se
+ * mancano (sqlite_master: una vista con lo stesso nome fa fallire, non passa muta). Additiva, idempotente, in UNA transazione;
+ * restituisce i nomi delle tabelle che aggiunge, poi scrive il segno `done:<data>:v1` una volta sola (la migrazione non lo consulta).
+ */
+export function migrateSwitchVlan(db: Database.Database): string[] {
+  const added: string[] = [];
+  db.transaction(() => {
+    for (const [n, ddl] of tabelleSchedaMkMancanti(db, DDL_SWITCH_VLAN_V1)) {
+      db.exec(ddl);
+      added.push(n);
+    }
+    const chiusa = `:v${VERSIONE_SWITCH_VLAN}`;
+    const attuale = leggiSegno(db, SEGNO_SWITCH_VLAN);
+    if (!(attuale?.startsWith("done:") && attuale.endsWith(chiusa))) {
+      scriviSegno(db, SEGNO_SWITCH_VLAN, `done:${new Date().toISOString().slice(0, 10)}${chiusa}`);
+    }
+  })();
+  SCHEMA_SWITCH_VLAN.set(db, tabelleSchedaMkMancanti(db, DDL_SWITCH_VLAN_V1).length === 0);
+  return added;
+}
+
+/** Dopo una migrazione fallita: schema completo (un altro processo ha vinto la corsa) → segno `done`, altrimenti `errore:…`. */
+export function chiudiMigrazioneSwitchVlanFallita(db: Database.Database, tenantCode: string, e: unknown): void {
+  try {
+    const completo = tabelleSchedaMkMancanti(db, DDL_SWITCH_VLAN_V1).length === 0;
+    SCHEMA_SWITCH_VLAN.set(db, completo);
+    if (completo) {
+      const attuale = leggiSegno(db, SEGNO_SWITCH_VLAN);
+      if (!attuale?.startsWith("done:")) scriviSegno(db, SEGNO_SWITCH_VLAN, `done:${new Date().toISOString().slice(0, 10)}:v${VERSIONE_SWITCH_VLAN}`);
+    } else {
+      scriviSegno(db, SEGNO_SWITCH_VLAN, segnoErrore(e));
+    }
+  } catch (e2) {
+    console.error(`[db-tenant] ${tenantCode}: ${SEGNO_SWITCH_VLAN}, segno non scritto:`, e2);
+  }
+}
+
+/** «La tabella delle VLAN native dal controller c'è», annotato all'apertura come le altre. */
+const SCHEMA_SWITCH_VLAN_NATIVA = new WeakMap<Database.Database, boolean>();
+
+export function schemaSwitchVlanNativaPresente(d: Database.Database): boolean {
+  const v = SCHEMA_SWITCH_VLAN_NATIVA.get(d);
+  if (v !== undefined) return v;
+  const n = tabelleSchedaMkMancanti(d, DDL_SWITCH_VLAN_NATIVA).length === 0;
+  SCHEMA_SWITCH_VLAN_NATIVA.set(d, n);
+  return n;
+}
+
+/**
+ * VLAN native dal controller UniFi (piano 2026-10-22 accorpamento, Task 13): la tabella di DDL_SWITCH_VLAN_NATIVA solo se
+ * manca. Additiva, idempotente, in UNA transazione; segno `done:<data>:v1` una volta sola. Separata da `migrateSwitchVlan`:
+ * se fallisce, le VLAN via SNMP restano come sono.
+ */
+export function migrateSwitchVlanNativa(db: Database.Database): string[] {
+  const added: string[] = [];
+  db.transaction(() => {
+    for (const [n, ddl] of tabelleSchedaMkMancanti(db, DDL_SWITCH_VLAN_NATIVA)) {
+      db.exec(ddl);
+      added.push(n);
+    }
+    const chiusa = `:v${VERSIONE_SWITCH_VLAN_NATIVA}`;
+    const attuale = leggiSegno(db, SEGNO_SWITCH_VLAN_NATIVA);
+    if (!(attuale?.startsWith("done:") && attuale.endsWith(chiusa))) {
+      scriviSegno(db, SEGNO_SWITCH_VLAN_NATIVA, `done:${new Date().toISOString().slice(0, 10)}${chiusa}`);
+    }
+  })();
+  SCHEMA_SWITCH_VLAN_NATIVA.set(db, tabelleSchedaMkMancanti(db, DDL_SWITCH_VLAN_NATIVA).length === 0);
+  return added;
+}
+
+/** «La coda verso DA-Vul-can c'è, col suo indice», annotato all'apertura come le altre (niente query di schema a ogni accodamento). */
+const SCHEMA_VULCAN = new WeakMap<Database.Database, boolean>();
+
+function oggettiVulcanMancanti(d: Database.Database): Array<readonly [string, string]> {
+  const t = d.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?");
+  const i = d.prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?");
+  return [...DDL_VULCAN.filter(([n]) => !t.get(n)), ...INDICI_VULCAN.filter(([n]) => !i.get(n))];
+}
+
+/** Coda verso DA-Vul-can presente (annotato; si rimisura solo con la migrazione). Chi accoda lo chiede prima di scrivere. */
+export function schemaVulcanPresente(d: Database.Database): boolean {
+  const v = SCHEMA_VULCAN.get(d);
+  if (v !== undefined) return v;
+  const n = oggettiVulcanMancanti(d).length === 0;
+  SCHEMA_VULCAN.set(d, n);
+  return n;
+}
+
+/**
+ * Coda degli invii verso DA-Vul-can (piano 2026-10-22 invio AD e inventario, Task 2): le tabelle di DDL_VULCAN e
+ * l'indice di INDICI_VULCAN solo se mancano (sqlite_master: un oggetto omonimo di altro tipo fa fallire, non passa muto).
+ * Additiva, idempotente, in UNA transazione; restituisce i nomi di ciò che aggiunge, poi scrive il segno `done:<data>:v1`
+ * una volta sola (la migrazione non lo consulta).
+ */
+export function migrateVulcanCoda(db: Database.Database): string[] {
+  const added: string[] = [];
+  try {
+    db.transaction(() => {
+      for (const [n, ddl] of oggettiVulcanMancanti(db)) {
+        db.exec(ddl);
+        added.push(n);
+      }
+      const chiusa = `:v${VERSIONE_VULCAN}`;
+      const attuale = leggiSegno(db, SEGNO_VULCAN);
+      if (!(attuale?.startsWith("done:") && attuale.endsWith(chiusa))) {
+        scriviSegno(db, SEGNO_VULCAN, `done:${new Date().toISOString().slice(0, 10)}${chiusa}`);
+      }
+    })();
+  } finally {
+    SCHEMA_VULCAN.set(db, oggettiVulcanMancanti(db).length === 0);
+  }
   return added;
 }
 
@@ -1044,6 +1554,49 @@ export function getTenantDb(tenantCode: string): Database.Database {
     }
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: migrazione hypervisor_sync fallita:`, e);
+  }
+
+  // Migrazione runtime v10: scheduled_jobs.job_type CHECK include 'pulizia_host'
+  // (pulizia notturna degli host assenti, piano 2026-10-20). Dopo la v9.
+  try {
+    if (migrateScheduledJobsV10(newDb)) {
+      console.info(`[db-tenant] ${tenantCode}: scheduled_jobs CHECK aggiornato con 'pulizia_host' (v10)`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione pulizia_host fallita:`, e);
+  }
+
+  // Migrazione runtime v11: scheduled_jobs.job_type CHECK include 'apparati_scelti'
+  // (scansione automatica dei device scelti in Discovery, piano 2026-10-22). Dopo la v10.
+  // Se fallisce la tabella resta quella di prima (ROLLBACK) e il tenant si apre: i job
+  // apparati_scelti non si possono creare finché la v11 non passa a un'apertura dopo.
+  let v11Fallita: unknown;
+  try {
+    const t0 = Date.now();
+    if (migrateScheduledJobsV11(newDb)) {
+      console.info(`[db-tenant] ${tenantCode}: scheduled_jobs CHECK aggiornato con 'apparati_scelti' (v11, ${Date.now() - t0} ms)`);
+    }
+  } catch (e) {
+    v11Fallita = e;
+    console.error(`[db-tenant] ${tenantCode}: migrazione apparati_scelti (v11) fallita (ROLLBACK), scheduled_jobs invariata:`, e);
+  }
+
+  // Esiti dei job apparati_scelti (stesso piano): tabella e indice, solo se mancano, col segno. Se fallisce (o è fallita
+  // la v11: i job apparati_scelti non si possono creare) il tenant si apre lo stesso e il segno dice l'errore; l'apertura
+  // dopo riprova e, se passa, riscrive «done».
+  try {
+    if (v11Fallita !== undefined) throw v11Fallita;
+    const added = migraApparatiScelti(newDb);
+    if (added.length > 0) {
+      console.info(`[db-tenant] ${tenantCode}: esiti dei job apparati_scelti, aggiunto ${added.join(", ")}`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione esiti apparati_scelti fallita (ROLLBACK):`, e);
+    try {
+      scriviSegno(newDb, SEGNO_APPARATI_SCELTI, segnoErrore(e));
+    } catch (e2) {
+      console.error(`[db-tenant] ${tenantCode}: ${SEGNO_APPARATI_SCELTI}, segno non scritto:`, e2);
+    }
   }
 
   // Migrazione runtime: vuln_scanners.{cert_pin,cert_fingerprint} per
@@ -1905,6 +2458,41 @@ export function getTenantDb(tenantCode: string): Database.Database {
     console.error(`[db-tenant] ${tenantCode}: migrazione versione SNMP fallita:`, e);
   }
 
+  try {
+    const added = migrateClassificazioneManualeApparato(newDb);
+    if (added.length > 0) console.info(`[db-tenant] ${tenantCode}: classificazione a mano, aggiunto ${added.join(", ")}`);
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione classificazione a mano fallita:`, e);
+  }
+
+  // Catalogo canonico (21/10): colonna server_roles e conversione una tantum degli slug doppi. Prima della
+  // ricostruzione di network_devices (riparte dalla definizione attuale). Se fallisce il tenant si apre lo stesso:
+  // la scrittura canonicalizza comunque e la conversione si riprova all'apertura dopo (segno non scritto).
+  try {
+    const added = migrateServerRoles(newDb);
+    if (added.length > 0) console.info(`[db-tenant] ${tenantCode}: ruoli dei server, aggiunto ${added.join(", ")}`);
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione ruoli dei server fallita:`, e);
+  }
+  try {
+    const esito = convertiClassificazioniV21(newDb);
+    if (esito.eseguita) {
+      console.info(`[db-tenant] ${tenantCode}: ${SEGNO_CLASSIFICAZIONI_V21}, convertiti ${esito.hosts} host e ${esito.apparati} apparati`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: ${SEGNO_CLASSIFICAZIONI_V21} fallita (ROLLBACK), si riprova alla prossima apertura:`, e);
+  }
+  // device_type corretto sulle righe vecchie (21/10, scheda per tipo): `switch` era il workaround di schema per
+  // server/NAS/firewall. Dopo la conversione delle classificazioni; elenco per nome nel log prima di scrivere.
+  try {
+    const esito = convertiDeviceTypeV21(newDb, (riga) => console.info(`[db-tenant] ${tenantCode}: ${riga}`));
+    if (esito.eseguita) {
+      console.info(`[db-tenant] ${tenantCode}: ${SEGNO_DEVICE_TYPE_V21}, corretti ${esito.convertiti} apparati`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: ${SEGNO_DEVICE_TYPE_V21} fallita (ROLLBACK), si riprova alla prossima apertura:`, e);
+  }
+
   // Apple e macOS nella tabella degli apparati (tappa 1b, 15/10). In fondo, dopo
   // ogni migrazione che aggiunge colonne a network_devices: la ricostruzione parte
   // dalla definizione attuale e non perde colonne. Se fallisce si annulla (ROLLBACK)
@@ -2085,6 +2673,93 @@ export function getTenantDb(tenantCode: string): Database.Database {
     SCHEMA_UNIONI.set(newDb, verificaSchemaUnioni(newDb));
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: verifica dello schema delle unioni fallita, si rifà alla prima lettura:`, e);
+  }
+
+  // Archivio della pulizia degli host (piano 2026-10-20): una tabella e due indici, solo cose nuove. Se fallisce il tenant si
+  // apre lo stesso: archiviare e recuperare falliscono con l'errore di SQLite (tabella assente), niente si cancella senza istantanea.
+  try {
+    const added = migrateHostsArchivio(newDb);
+    if (added.length > 0) {
+      console.info(`[db-tenant] ${tenantCode}: archivio host, aggiunto ${added.join(", ")}`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione dell'archivio host fallita, la pulizia degli host non è disponibile:`, e);
+  }
+
+  // Scheda MikroTik (piano 2026-10-21): cinque colonne nuove su tabelle che esistono già (v1), le tabelle di bridge, porte e
+  // bond (v2) e quelle di VLAN dei bridge, interfacce VLAN, DNS e utenti (v3). Se fallisce il tenant si apre lo stesso: livelloSchemaSchedaMk() dice il livello che c'è e le letture scrivono
+  // solo fin lì. La riga del journal è la prova del rilascio.
+  try {
+    const added = migrateSchedaMikrotik(newDb);
+    if (added.length > 0) {
+      console.info(`[db-tenant] ${tenantCode}: scheda mikrotik, aggiunto ${added.join(", ")}`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione scheda mikrotik fallita (ROLLBACK), le colonne nuove non si scrivono:`, e);
+    chiudiMigrazioneSchedaMkFallita(newDb, tenantCode, e);
+  }
+
+  // Principale del cluster fisico (piano 2026-10-22 accorpamento): una colonna e un indice su physical_devices. Se fallisce il
+  // tenant si apre lo stesso: Discovery usa la regola senza la scelta a mano (cluster-discovery.ts guarda se la colonna c'è).
+  try {
+    const added = migrateClusterPrincipale(newDb);
+    if (added.length > 0) {
+      console.info(`[db-tenant] ${tenantCode}: principale del cluster, aggiunto ${added.join(", ")}`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione principale del cluster fallita (ROLLBACK), la scelta a mano non si salva:`, e);
+    chiudiMigrazioneClusterPrincipaleFallita(newDb, tenantCode, e);
+  }
+
+  // VLAN degli switch (piano 2026-10-22 accorpamento, ADR 0029): quattro tabelle nuove, solo se mancano. Se fallisce il tenant
+  // si apre lo stesso: schemaSwitchVlanPresente() dice false, la lettura non scrive e la scheda mostra «mai lette».
+  try {
+    const added = migrateSwitchVlan(newDb);
+    if (added.length > 0) {
+      console.info(`[db-tenant] ${tenantCode}: switch vlan, aggiunto ${added.join(", ")}`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione switch vlan fallita (ROLLBACK), le VLAN degli switch non si scrivono:`, e);
+    chiudiMigrazioneSwitchVlanFallita(newDb, tenantCode, e);
+  }
+
+  // VLAN native dal controller UniFi (Task 13): una tabella nuova, solo se manca. Se fallisce il tenant si apre lo stesso:
+  // la sync non scrive le native e la matrice resta «dedotta» dove l'SNMP non dichiara gli untagged.
+  try {
+    const added = migrateSwitchVlanNativa(newDb);
+    if (added.length > 0) {
+      console.info(`[db-tenant] ${tenantCode}: switch vlan native, aggiunto ${added.join(", ")}`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione switch vlan native fallita (ROLLBACK), le native del controller non si scrivono:`, e);
+    try {
+      SCHEMA_SWITCH_VLAN_NATIVA.set(newDb, tabelleSchedaMkMancanti(newDb, DDL_SWITCH_VLAN_NATIVA).length === 0);
+      scriviSegno(newDb, SEGNO_SWITCH_VLAN_NATIVA, segnoErrore(e));
+    } catch (e2) {
+      console.error(`[db-tenant] ${tenantCode}: ${SEGNO_SWITCH_VLAN_NATIVA}, segno non scritto:`, e2);
+    }
+  }
+
+  // Coda verso DA-Vul-can (piano 2026-10-22 invio AD e inventario): due tabelle e un indice nuovi, solo se mancano. Se
+  // fallisce il tenant si apre lo stesso: schemaVulcanPresente() dice false e il flusso non accoda (lo dice, non scrive a vuoto).
+  try {
+    const added = migrateVulcanCoda(newDb);
+    if (added.length > 0) {
+      console.info(`[db-tenant] ${tenantCode}: coda vulcan, aggiunto ${added.join(", ")}`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione coda vulcan fallita (ROLLBACK), gli invii verso DA-Vul-can non si accodano:`, e);
+    try {
+      // Schema completo dopo il fallimento = un altro processo ha vinto la corsa: segno `done`, non un errore.
+      if (schemaVulcanPresente(newDb)) {
+        const attuale = leggiSegno(newDb, SEGNO_VULCAN);
+        if (!attuale?.startsWith("done:")) scriviSegno(newDb, SEGNO_VULCAN, `done:${new Date().toISOString().slice(0, 10)}:v${VERSIONE_VULCAN}`);
+      } else {
+        scriviSegno(newDb, SEGNO_VULCAN, segnoErrore(e));
+      }
+    } catch (e2) {
+      console.error(`[db-tenant] ${tenantCode}: ${SEGNO_VULCAN}, segno non scritto:`, e2);
+    }
   }
 
   tenantDbs.set(tenantCode, { db: newDb, lastUsed: Date.now() });
@@ -2798,6 +3473,10 @@ export function getHostById(id: number): HostDetail | undefined {
   // v0.2.603: include multihomed group info (peers + is_primary). Prima era
   // popolato solo dalla list discovery, /objects/[id] non lo riceveva → simbolo
   // multihomed sempre nascosto anche dopo manual link manualLinkHostsToPhysicalDevice.
+  // Un apparato, una scheda da qualunque suo IP (specchio di db.ts).
+  const cluster = networkDevice ? null : apparatoDelCluster(db(), host.id);
+  const apparatoCluster = cluster?.esito === "cluster" ? cluster.apparato : null;
+
   const mhLink = db().prepare(
     "SELECT group_id, match_type, is_primary FROM multihomed_links WHERE host_id = ? LIMIT 1"
   ).get(id) as { group_id: string; match_type: string; is_primary: number } | undefined;
@@ -2842,6 +3521,7 @@ export function getHostById(id: number): HostDetail | undefined {
     arp_source: arpSource || null,
     switch_port: switchPort || null,
     network_device: networkDevice ? { id: networkDevice.id, name: networkDevice.name, sysname: networkDevice.sysname, vendor: networkDevice.vendor, protocol: networkDevice.protocol } : null,
+    apparato_cluster: apparatoCluster,
     multihomed,
   };
 }
@@ -2905,13 +3585,17 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
       }
     }
     if (input.custom_name !== undefined) { fields.push("custom_name = ?"); values.push(input.custom_name); }
-    if (input.classification !== undefined && !classificationManual) {
-      if (input.classification !== "unknown") {
-        fields.push("classification = ?"); values.push(input.classification);
+    // Catalogo canonico (21/10): lo slug passa da canonicalizza; il ruolo del server va in server_roles dopo l'UPDATE.
+    let ruoloDaAggiungere: Canonica | null = null;
+    const canonIn = input.classification !== undefined ? canonicalizza(input.classification) : null;
+    if (input.classification !== undefined && canonIn && !classificationManual) {
+      if (canonIn.classificazione !== "unknown") {
+        ruoloDaAggiungere = canonIn;
+        fields.push("classification = ?"); values.push(canonIn.classificazione);
       } else {
         const cur = (db().prepare("SELECT classification FROM hosts WHERE id = ?").get(existing.id) as { classification?: string })?.classification;
         if (!cur || cur === "unknown") {
-          fields.push("classification = ?"); values.push(input.classification);
+          fields.push("classification = ?"); values.push(canonIn.classificazione);
         }
       }
     }
@@ -2972,6 +3656,7 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
 
     values.push(existing.id);
     db().prepare(`UPDATE hosts SET ${fields.join(", ")} WHERE id = ?`).run(...values);
+    if (ruoloDaAggiungere) aggiungiRuoloServer(db(), "hosts", existing.id, ruoloDaAggiungere);
     const host = db().prepare("SELECT * FROM hosts WHERE id = ?").get(existing.id) as Host;
     if (host.mac && input.ip) {
       upsertMacIpMapping({
@@ -3066,7 +3751,7 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
     input.dns_forward || null,
     input.dns_reverse || null,
     input.custom_name || null,
-    input.classification || "unknown",
+    canonicalizza(input.classification).classificazione,
     input.inventory_code || null,
     input.notes || "",
     input.status || "unknown",
@@ -3079,6 +3764,7 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
     (input as { detection_json?: string | null }).detection_json ?? null,
     (input as { snmp_data?: string | null }).snmp_data ?? null
   );
+  aggiungiRuoloServer(db(), "hosts", Number(result.lastInsertRowid), canonicalizza(input.classification));
   const host = db().prepare("SELECT * FROM hosts WHERE id = ?").get(result.lastInsertRowid) as Host;
   if (host.mac && input.ip) {
     upsertMacIpMapping({
@@ -3226,9 +3912,10 @@ export function updateHost(id: number, input: HostUpdate): Host | undefined {
   const values: unknown[] = [];
 
   if (input.custom_name !== undefined) { fields.push("custom_name = ?"); values.push(input.custom_name); }
-  if (input.classification !== undefined) {
+  const canonManuale = input.classification !== undefined ? canonicalizza(input.classification) : null;
+  if (input.classification !== undefined && canonManuale) {
     fields.push("classification = ?");
-    values.push(input.classification);
+    values.push(canonManuale.classificazione);
     fields.push("classification_manual = 1");
   }
   if (input.inventory_code !== undefined) { fields.push("inventory_code = ?"); values.push(input.inventory_code); }
@@ -3256,6 +3943,7 @@ export function updateHost(id: number, input: HostUpdate): Host | undefined {
   values.push(id);
 
   db().prepare(`UPDATE hosts SET ${fields.join(", ")} WHERE id = ?`).run(...values);
+  if (canonManuale) aggiungiRuoloServer(db(), "hosts", id, canonManuale);
   const updated = db().prepare("SELECT * FROM hosts WHERE id = ?").get(id) as Host | undefined;
   if (input.mac !== undefined && prevForMac && updated) {
     if (macToHex(prevForMac.mac ?? "") !== macToHex(updated.mac ?? "")) {
@@ -3501,15 +4189,23 @@ export function markHostsOffline(
   const d = db();
   return d.transaction((): number => {
     const ids = candidatiOffline(networkId, onlineIps, scannedIps, startedAt).map((r) => r.id);
+    // 20/10: il passaggio a offline va anche nello storico, come i controlli degli host
+    // noti; senza, grafico e transizioni non vedevano chi andava offline per una scansione.
+    const storico = d.prepare("INSERT INTO status_history (host_id, status, response_time_ms) VALUES (?, 'offline', NULL)");
     let cambiati = 0;
     for (let i = 0; i < ids.length; i += 500) {
       const blocco = ids.slice(i, i + 500);
+      const segnaposti = blocco.map(() => "?").join(",");
+      const daCambiare = (d
+        .prepare(`SELECT id FROM hosts WHERE id IN (${segnaposti}) AND ${WHERE_OFFLINE}`)
+        .all(...blocco, networkId, startedAt) as { id: number }[]).map((r) => r.id);
       cambiati += d
         .prepare(
           `UPDATE hosts SET status = 'offline', updated_at = datetime('now')
-           WHERE id IN (${blocco.map(() => "?").join(",")}) AND ${WHERE_OFFLINE}`,
+           WHERE id IN (${segnaposti}) AND ${WHERE_OFFLINE}`,
         )
         .run(...blocco, networkId, startedAt).changes;
+      for (const id of daCambiare) storico.run(id);
     }
     return cambiati;
   })();
@@ -3791,12 +4487,12 @@ export function getSwitches(): NetworkDevice[] {
 export function getDevicesByClassification(classification: string): NetworkDevice[] {
   if (classification === "storage") {
     return db()
-      .prepare("SELECT * FROM network_devices WHERE classification IN ('storage', 'nas', 'nas_synology', 'nas_qnap') ORDER BY name")
+      .prepare("SELECT * FROM network_devices WHERE classification = 'nas' ORDER BY name")
       .all() as NetworkDevice[];
   }
   return db()
     .prepare("SELECT * FROM network_devices WHERE classification = ? ORDER BY name")
-    .all(classification) as NetworkDevice[];
+    .all(canonicalizza(classification).classificazione) as NetworkDevice[];
 }
 
 export function getDevicesByClassificationOrLegacy(classification: string): NetworkDevice[] {
@@ -3825,7 +4521,7 @@ export function getHostsByClassification(classification: string): (Host & { netw
       .prepare(
         `SELECT h.*, n.name as network_name FROM hosts h
          JOIN networks n ON n.id = h.network_id
-         WHERE h.classification IN ('storage', 'nas', 'nas_synology', 'nas_qnap') ORDER BY h.custom_name, h.hostname, h.ip`
+         WHERE h.classification = 'nas' ORDER BY h.custom_name, h.hostname, h.ip`
       )
       .all() as (Host & { network_name?: string })[];
   }
@@ -3835,7 +4531,7 @@ export function getHostsByClassification(classification: string): (Host & { netw
        JOIN networks n ON n.id = h.network_id
        WHERE h.classification = ? ORDER BY h.custom_name, h.hostname, h.ip`
     )
-    .all(classification) as (Host & { network_name?: string })[];
+    .all(canonicalizza(classification).classificazione) as (Host & { network_name?: string })[];
 }
 
 export function getNetworkRouterId(networkId: number): number | null {
@@ -3898,6 +4594,8 @@ export function createNetworkDevice(input: CreateDeviceInput): NetworkDevice {
     if (match) hostId = match.id;
   }
 
+  const classIn = (input as { classification?: string | null }).classification;
+  const canonDev = classIn ? canonicalizza(classIn) : null;
   const stmt = db().prepare(
     `INSERT INTO network_devices (name, host, device_type, vendor, vendor_subtype, protocol, api_url, port, enabled, classification, scan_target, product_profile, use_for_arp_poll, host_id)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
@@ -3907,7 +4605,7 @@ export function createNetworkDevice(input: CreateDeviceInput): NetworkDevice {
     input.vendor_subtype ?? null, input.protocol,
     // Le credenziali si legano dopo, coi binding d'archivio (T20): le colonne vecchie non si scrivono (T26).
     input.api_url, input.port, input.enabled,
-    (input as { classification?: string | null }).classification ?? null,
+    canonDev ? canonDev.classificazione : null,
     (input as { scan_target?: string | null }).scan_target ?? null,
     (input as { product_profile?: string | null }).product_profile ?? null,
     // use_for_arp_poll: rispetta il flag esplicito se fornito; altrimenti default
@@ -3921,6 +4619,10 @@ export function createNetworkDevice(input: CreateDeviceInput): NetworkDevice {
     })(),
     hostId
   );
+  if (canonDev) {
+    aggiungiRuoloServer(db(), "network_devices", Number(result.lastInsertRowid), canonDev);
+    impostaVendorSeVuoto(db(), Number(result.lastInsertRowid), canonDev);
+  }
   return db().prepare("SELECT * FROM network_devices WHERE id = ?").get(result.lastInsertRowid) as NetworkDevice;
 }
 
@@ -3929,10 +4631,17 @@ export function updateNetworkDevice(id: number, input: Partial<Omit<NetworkDevic
   const values: unknown[] = [];
 
   const keys = ["name", "host", "device_type", "vendor", "vendor_subtype", "protocol", "api_url", "port", "enabled", "classification", "sysname", "sysdescr", "model", "firmware", "serial_number", "part_number", "last_info_update", "last_device_info_json", "stp_info", "last_proxmox_scan_at", "last_proxmox_scan_result", "scan_target", "product_profile", "use_for_arp_poll", "host_id", "snmp_version", "snmp_version_fissata"] as const;
+  let canonAgg: Canonica | null = null;
   for (const key of keys) {
     if (input[key] !== undefined) {
       fields.push(`${key} = ?`);
-      values.push(input[key]);
+      // Catalogo canonico (21/10): la classificazione scritta è sempre quella canonica.
+      if (key === "classification" && typeof input[key] === "string" && input[key]) {
+        canonAgg = canonicalizza(input[key] as string);
+        values.push(canonAgg.classificazione);
+      } else {
+        values.push(input[key]);
+      }
     }
   }
 
@@ -3941,6 +4650,10 @@ export function updateNetworkDevice(id: number, input: Partial<Omit<NetworkDevic
   fields.push("updated_at = datetime('now')");
   values.push(id);
   db().prepare(`UPDATE network_devices SET ${fields.join(", ")} WHERE id = ?`).run(...values);
+  if (canonAgg) {
+    aggiungiRuoloServer(db(), "network_devices", id, canonAgg);
+    if (input.vendor === undefined) impostaVendorSeVuoto(db(), id, canonAgg);
+  }
   return getNetworkDeviceById(id);
 }
 
@@ -4137,11 +4850,14 @@ export function syncNetworkDeviceFromHostScan(ip: string, hostOpenPorts: Array<{
   }
 
   if (hostClassification && hostClassification !== "unknown") {
-    const deviceClassification = device.classification ?? device.device_type;
+    // Catalogo canonico (21/10): si confronta e si scrive lo slug canonico (updateNetworkDevice aggiunge ruolo e vendor).
+    const classCanonica = canonicalizza(hostClassification).classificazione;
+    const deviceClassification = canonicalizza(device.classification ?? device.device_type).classificazione;
     const isInfra = ["router", "switch", "hypervisor"].includes(device.device_type);
-    if (isInfra && deviceClassification !== hostClassification) {
-      const infraSpecific = ["router", "switch", "hypervisor", "firewall", "access_point", "load_balancer", "vpn_gateway", "server", "server_linux", "server_windows", "nas", "nas_synology", "nas_qnap", "storage"];
-      if (infraSpecific.includes(hostClassification)) {
+    // Scelta a mano sull'apparato (tappa 5): la scansione non la riscrive.
+    if (isInfra && device.classification_manual !== 1 && deviceClassification !== classCanonica) {
+      const infraSpecific = ["router", "switch", "hypervisor", "firewall", "access_point", "load_balancer", "vpn_gateway", "server", "nas"];
+      if (infraSpecific.includes(classCanonica)) {
         updates.classification = hostClassification;
       }
     }
@@ -4374,6 +5090,11 @@ export function getAllHostValidatedProtocols(): Map<number, string[]> {
     map.set(r.host_id, arr);
   }
   return map;
+}
+
+/** Cluster fisici accorpati per la pagina Discovery (una query sola): host_id → principale/secondario e gli altri IP. */
+export function getClusterDiscovery(): Map<number, InfoClusterDiscovery> {
+  return leggiClusterDiscovery(db());
 }
 
 /** Tutti i link multihomed con i peer, per la pagina Discovery. */
@@ -4629,6 +5350,30 @@ export function tokenApiApparato(device: ApparatoInAcquisizione): SceltaTokenApi
   return tokenApiApparatoDb(db(), device);
 }
 
+/** Host di IPAM per l'abbinamento con Proxmox (scheda hypervisor): id, ip, nome e stato, senza il resto della riga. */
+export function getHostNotoPerIp(ip: string): { id: number; ip: string; hostname: string | null; status: string | null } | undefined {
+  return db().prepare("SELECT id, ip, COALESCE(hostname, custom_name) AS hostname, status FROM hosts WHERE ip = ? LIMIT 1")
+    .get(ip) as { id: number; ip: string; hostname: string | null; status: string | null } | undefined;
+}
+
+/** Il nodo Proxmox «DA-PX-01» è l'host di IPAM «DA-PX-01» o «DA-PX-01.dominio» (hostname o nome personalizzato). */
+export function getHostNotoPerNomeNodo(nome: string): { id: number; ip: string; hostname: string | null; status: string | null } | undefined {
+  const n = nome.trim().toLowerCase();
+  if (n === "") return undefined;
+  return db().prepare(
+    `SELECT id, ip, COALESCE(hostname, custom_name) AS hostname, status FROM hosts
+      WHERE lower(hostname) = ?1 OR substr(lower(hostname), 1, length(?1) + 1) = ?1 || '.' OR lower(custom_name) = ?1
+      ORDER BY id LIMIT 1`,
+  ).get(n) as { id: number; ip: string; hostname: string | null; status: string | null } | undefined;
+}
+
+/** Le scansioni Proxmox salvate sugli apparati (JSON grezzo): da lì si risale alla VM di un host. */
+export function getScansioniProxmoxSalvate(): Array<{ id: number; raw: string }> {
+  return db()
+    .prepare("SELECT id, last_proxmox_scan_result AS raw FROM network_devices WHERE last_proxmox_scan_result IS NOT NULL AND last_proxmox_scan_result <> '' ORDER BY id")
+    .all() as Array<{ id: number; raw: string }>;
+}
+
 /** Vero solo con una fonte SNMP dell'apparato (livelli 1-5), mai con la catena della rete o «public». */
 export function haSnmpApparato(device: ApparatoInAcquisizione): boolean {
   return haSnmpApparatoDb(db(), device);
@@ -4650,22 +5395,34 @@ export function getDeviceCredentials(device: ApparatoInAcquisizione): AccessoSsh
 
 export function upsertArpEntries(
   deviceId: number,
-  entries: { mac: string; ip: string | null; interface_name: string | null }[],
+  entries: { mac: string; ip: string | null; interface_name: string | null; status?: string | null; dynamic?: boolean | null }[],
   getNetworkIdForIp?: (ip: string) => number | null
 ): void {
   const d = db();
 
-  const stmt = d.prepare(
-    `INSERT INTO arp_entries (device_id, host_id, mac, ip, interface_name)
-     VALUES (?, (SELECT id FROM hosts WHERE ${MAC_HEX("mac")} = ? LIMIT 1), ?, ?, ?)`
-  );
+  // Scheda MikroTik: stato e «dinamica» solo se lo schema ha le colonne; altrimenti l'INSERT di oggi.
+  const conStato = livelloSchemaSchedaMk(d) >= 1;
+  const stmt = conStato
+    ? d.prepare(
+      `INSERT INTO arp_entries (device_id, host_id, mac, ip, interface_name, status, dynamic)
+       VALUES (?, (SELECT id FROM hosts WHERE ${MAC_HEX("mac")} = ? LIMIT 1), ?, ?, ?, ?, ?)`
+    )
+    : d.prepare(
+      `INSERT INTO arp_entries (device_id, host_id, mac, ip, interface_name)
+       VALUES (?, (SELECT id FROM hosts WHERE ${MAC_HEX("mac")} = ? LIMIT 1), ?, ?, ?)`
+    );
 
   const replaceAll = d.transaction((items: typeof entries) => {
     d.prepare("DELETE FROM arp_entries WHERE device_id = ?").run(deviceId);
 
     for (const entry of items) {
       const hex = macToHex(entry.mac);
-      stmt.run(deviceId, hex, entry.mac, entry.ip, entry.interface_name);
+      if (conStato) {
+        stmt.run(deviceId, hex, entry.mac, entry.ip, entry.interface_name, entry.status ?? null,
+          entry.dynamic == null ? null : entry.dynamic ? 1 : 0);
+      } else {
+        stmt.run(deviceId, hex, entry.mac, entry.ip, entry.interface_name);
+      }
       if (entry.ip && entry.mac) {
         const networkId = getNetworkIdForIp?.(entry.ip) ?? null;
         // Propaga il MAC all'host ESISTENTE per quell'IP (by-IP, non by-MAC):
@@ -4845,6 +5602,93 @@ export function getArpEntriesByDevice(deviceId: number): (ArpEntry & { host_ip?:
   `).all(deviceId) as (ArpEntry & { host_ip?: string; host_name?: string })[];
 }
 
+/**
+ * Reti servite dal router: quelle collegate in network_router e quelle dei suoi lease. Un host con lo stesso IP in
+ * un'altra sede non deve prestare nome né tenere in vita un'ARP «failed» (revisione finale, 22/10).
+ */
+function reteServiteDa(d: ReturnType<typeof db>, deviceId: number): Set<number> {
+  return new Set((d.prepare(
+    `SELECT network_id FROM network_router WHERE router_id = ?
+     UNION SELECT network_id FROM dhcp_leases WHERE source_device_id = ? AND network_id IS NOT NULL`,
+  ).all(deviceId, deviceId) as { network_id: number }[]).map((r) => r.network_id));
+}
+
+/**
+ * Quali host si possono collegare a ciò che vede un router: con reti servite note vale solo un host di quelle; senza,
+ * solo una chiave (IP o MAC) che nel tenant ha un host solo. In entrambi i casi una chiave rimasta con più host non
+ * si collega. Unica regola per «Dispositivi» e per i vicini «non in IPAM».
+ */
+function hostDelRouter<T extends { network_id: number | null }>(candidati: T[], servite: Set<number>, chiave: (h: T) => string): T[] {
+  const tenuti = servite.size > 0 ? candidati.filter((h) => h.network_id != null && servite.has(h.network_id)) : candidati;
+  const quanti = new Map<string, number>();
+  for (const h of tenuti) quanti.set(chiave(h), (quanti.get(chiave(h)) ?? 0) + 1);
+  return tenuti.filter((h) => quanti.get(chiave(h)) === 1);
+}
+
+/**
+ * Host di IPAM per i vicini LLDP/CDP/MNDP dell'ultimo giro di un apparato (stesse righe di `getNeighborsByDevice`):
+ * per IP e per MAC (12 cifre esadecimali maiuscole), con la stessa restrizione della tab «Dispositivi».
+ */
+export function viciniConHost(deviceId: number): { ip: Record<string, number>; mac: Record<string, number> } {
+  const d = db();
+  const righe = d.prepare(
+    `SELECT dn.remote_ip, dn.remote_mac FROM device_neighbors dn WHERE dn.device_id = ? AND ${NEIGHBORS_LATEST_ROUND_SQL}`,
+  ).all(deviceId) as { remote_ip: string | null; remote_mac: string | null }[];
+  const ips = [...new Set(righe.map((r) => (r.remote_ip ?? "").trim()).filter((x) => x !== ""))];
+  const macs = [...new Set(righe.map((r) => (r.remote_mac ?? "").replace(/[^0-9a-fA-F]/g, "").toUpperCase()).filter((x) => x.length === 12))];
+  const servite = reteServiteDa(d, deviceId);
+  type Cand = { id: number; chiave: string; network_id: number | null };
+  const perIp: Cand[] = [];
+  const perMac: Cand[] = [];
+  for (let k = 0; k < ips.length; k += 500) {
+    const pezzo = ips.slice(k, k + 500);
+    perIp.push(...(d.prepare(`SELECT id, ip AS chiave, network_id FROM hosts WHERE ip IN (${pezzo.map(() => "?").join(",")})`).all(...pezzo) as Cand[]));
+  }
+  for (let k = 0; k < macs.length; k += 500) {
+    const pezzo = macs.slice(k, k + 500);
+    perMac.push(...(d.prepare(`SELECT id, ${MAC_HEX("mac")} AS chiave, network_id FROM hosts WHERE ${MAC_HEX("mac")} IN (${pezzo.map(() => "?").join(",")})`).all(...pezzo) as Cand[]));
+  }
+  const mappa = (c: Cand[]): Record<string, number> => Object.fromEntries(hostDelRouter(c, servite, (h) => h.chiave).map((h) => [h.chiave, h.id]));
+  return { ip: mappa(perIp), mac: mappa(perMac) };
+}
+
+/**
+ * Le quattro letture della tab «Dispositivi» di un router MikroTik (ARP, lease DHCP, vicini dell'ultimo giro, host IPAM
+ * con quegli IP). Niente N+1: gli host si cercano in blocco per `ip IN (...)`. L'unione e le precedenze stanno in
+ * `src/lib/scheda/dispositivi-router.ts` (puro).
+ */
+export function ingressoDispositivi(deviceId: number): IngressoDispositivi {
+  const d = db();
+  // `status` esiste solo dallo schema della scheda MikroTik (livello 1): prima, lo stato dell'ARP è ignoto.
+  const conStato = livelloSchemaSchedaMk(d) >= 1;
+  const arp = d.prepare(`SELECT ip, mac, interface_name, ${conStato ? "status" : "NULL AS status"}, timestamp FROM arp_entries WHERE device_id = ?`).all(deviceId) as IngressoDispositivi["arp"];
+  // I lease non si cancellano mai (upsert): si tengono quelli riscritti entro un giorno dall'ultima lettura
+  // dell'apparato. Non la finestra stretta dei vicini: molte letture riscrivono solo una parte dei lease (la discovery
+  // passa gli IP online, il recupero DHCP una rete sola) e una finestra di minuti nasconderebbe il resto.
+  const lease = d.prepare(
+    `SELECT ip_address, mac_address, hostname, dynamic_lease, description, last_seen FROM dhcp_leases dl
+     WHERE dl.source_device_id = ?
+       AND datetime(dl.last_synced) >= (SELECT datetime(MAX(l2.last_synced), '-1 day') FROM dhcp_leases l2 WHERE l2.source_device_id = dl.source_device_id)`,
+  ).all(deviceId) as IngressoDispositivi["lease"];
+  const vicini = d.prepare(
+    `SELECT dn.remote_ip, dn.remote_mac, dn.remote_device_name, dn.local_port, dn.timestamp
+     FROM device_neighbors dn WHERE dn.device_id = ? AND ${NEIGHBORS_LATEST_ROUND_SQL}`,
+  ).all(deviceId) as IngressoDispositivi["vicini"];
+  const ips = [...new Set([...arp.map((a) => a.ip), ...lease.map((l) => l.ip_address), ...vicini.map((v) => v.remote_ip)].filter((x): x is string => !!x))];
+  const servite = reteServiteDa(d, deviceId);
+  const candidati: (IngressoDispositivi["host"][number] & { network_id: number | null })[] = [];
+  // 500 per volta: sotto il limite delle variabili di SQLite anche con router da migliaia di righe.
+  for (let k = 0; k < ips.length; k += 500) {
+    const pezzo = ips.slice(k, k + 500);
+    candidati.push(...(d.prepare(
+      `SELECT id, ip, COALESCE(custom_name, hostname, dns_reverse) AS nome_dns, status, network_id FROM hosts WHERE ip IN (${pezzo.map(() => "?").join(",")})`,
+    ).all(...pezzo) as (IngressoDispositivi["host"][number] & { network_id: number | null })[]));
+  }
+  const host: IngressoDispositivi["host"] = hostDelRouter(candidati, servite, (h) => h.ip)
+    .map(({ id, ip, nome_dns, status }) => ({ id, ip, nome_dns, status }));
+  return { arp, lease, vicini, host };
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // MAC PORT ENTRIES
 // ═══════════════════════════════════════════════════════════════════════════
@@ -4996,6 +5840,8 @@ export interface DbNeighborEntry {
   remote_ip: string | null;
   remote_mac: string | null;
   remote_platform: string | null;
+  /** Scheda MikroTik: `version=` annunciata dal vicino; null = non la annuncia o schema senza colonna. */
+  remote_version?: string | null;
   timestamp: string;
 }
 
@@ -5060,6 +5906,8 @@ export function upsertNeighbors(
     remoteIp?: string;
     remoteMac?: string;
     remotePlatform?: string;
+    /** Scheda MikroTik: `version=` del vicino. Non è un dato della topologia: `senzaCampiCavi` non lo toglie. */
+    remoteVersion?: string;
   } & CampiViciniCavi>,
   source: NeighborSource = "device",
 ): void {
@@ -5119,6 +5967,21 @@ export function upsertNeighbors(
     }
   }
 
+  // Scheda MikroTik: la versione annunciata dal vicino, con un'istruzione a parte (come le colonne dei cavi) e solo se lo schema
+  // ha la colonna. COALESCE: un giro che non la legge non cancella quella di prima.
+  const conVersione = neighbors.filter((n) => n.remoteVersion);
+  if (conVersione.length > 0 && livelloSchemaSchedaMk(d) >= 1) {
+    try {
+      const up = d.prepare(`UPDATE device_neighbors SET remote_version = ?
+        WHERE device_id = ? AND local_port = ? AND remote_device_name = ? AND remote_port = ?`);
+      d.transaction(() => {
+        for (const n of conVersione) up.run(n.remoteVersion, deviceId, n.localPort, n.remoteDevice, n.remotePort);
+      })();
+    } catch (e) {
+      console.error(`[db-tenant] apparato #${deviceId}: versione dei vicini non scritta (${e instanceof Error ? e.message : "errore"})`);
+    }
+  }
+
   // Attribution v2: i vicini LLDP/CDP appena scritti sono evidenza per gli host remoti. Solo per le fonti di oggi: le
   // nuove non entrano nell'attribuzione (NEIGHBORS_MODEL_SOURCES_SQL), e il ricalcolo scriverebbe lo stesso sulle evidenze
   // (observed_at, expires_at) a ogni lettura accesa (spec §13.5.7, «Come si scrive»; revisione del Task 1 di T2).
@@ -5166,6 +6029,347 @@ export function rileggiSchemaCavi(): boolean {
   const ok = verificaSchemaCavi(d);
   SCHEMA_CAVI.set(d, ok);
   return ok;
+}
+
+/** Connessioni su cui il rifiuto per schema sotto il livello 2 è già stato detto (una riga sola, non una per apparato e giro). */
+const AVVISATO_SCHEMA_MK = new WeakSet<Database.Database>();
+
+/** Bridge, porte e bond di un MikroTik per la scheda (Task 8, ADR 0027). Una parte null = non letta: la sua tabella non si tocca. */
+export interface SchedaMkTopologia { bridge: RigaBridgeMk[] | null; porte: RigaPortaBridgeMk[] | null; bond: RigaBondMk[] | null }
+
+const COLONNE_MK_BRIDGE = ["name", "mac_address", "mtu", "actual_mtu", "l2mtu", "arp", "arp_timeout", "protocol_mode", "priority",
+  "fast_forward", "igmp_snooping", "dhcp_snooping", "vlan_filtering", "pvid", "frame_types", "ingress_filtering", "ether_type",
+  "ageing_time", "forward_delay", "max_message_age", "comment", "running", "disabled"] as const satisfies ReadonlyArray<keyof RigaBridgeMk>;
+const COLONNE_MK_PORTA = ["interface", "bridge", "pvid", "priority", "path_cost", "internal_path_cost", "edge", "point_to_point", "horizon",
+  "hw", "hw_offload", "frame_types", "ingress_filtering", "bpdu_guard", "trusted", "inactive", "disabled", "dynamic", "comment",
+] as const satisfies ReadonlyArray<keyof RigaPortaBridgeMk>;
+const COLONNE_MK_BOND = ["name", "mode", "slaves", "transmit_hash_policy", "mlag_id", "link_monitoring", "mii_interval", "lacp_rate",
+  "mtu", "comment", "running", "disabled"] as const satisfies ReadonlyArray<keyof RigaBondMk>;
+
+/** Un valore di una riga della scheda per SQLite: boolean → 0/1, lista (slaves) → testo con le virgole. */
+function valoreMk(v: unknown): string | number | null {
+  if (v === null || v === undefined) return null;
+  if (typeof v === "boolean") return v ? 1 : 0;
+  if (Array.isArray(v)) return v.join(",");
+  return v as string | number;
+}
+
+/**
+ * Bridge, porte e bond di un MikroTik nelle tabelle della scheda: una fotografia per apparato, non la storia. Per ogni parte
+ * letta (anche vuota) si cancellano le righe dell'apparato e si scrivono quelle lette con lo stesso `seen_at`; una parte null
+ * (comando non riuscito, «non so») non tocca la sua tabella e le righe dell'ultima lettura buona restano con la loro età. Una
+ * transazione per le tre tabelle: o tutto o niente. null = schema sotto il livello 2 (migrazione non fatta o fallita).
+ */
+export function scriviSchedaMikrotikTopologia(deviceId: number, s: SchedaMkTopologia, adesso: Date = new Date()):
+  { bridge: number; porte: number; bond: number } | null {
+  const d = db();
+  const livello = livelloSchemaSchedaMk(d);
+  if (livello < 2) {
+    // Rifiuto muto no (revisione del Task 9): si dice una volta per connessione, senza nomi.
+    if (!AVVISATO_SCHEMA_MK.has(d)) {
+      AVVISATO_SCHEMA_MK.add(d);
+      console.warn(`[db-tenant] scheda mikrotik: schema al livello ${livello}, sotto il 2: bridge, porte e bond non si scrivono`);
+    }
+    return null;
+  }
+  const ora = adesso.toISOString().slice(0, 19).replace("T", " ");
+  const out = { bridge: 0, porte: 0, bond: 0 };
+  const sostituisci = <R extends object>(tabella: string, colonne: ReadonlyArray<keyof R & string>, righe: R[]): number => {
+    d.prepare(`DELETE FROM ${tabella} WHERE device_id = ?`).run(deviceId);
+    const ins = d.prepare(`INSERT OR REPLACE INTO ${tabella} (device_id, ${colonne.join(", ")}, seen_at) VALUES (?, ${colonne.map(() => "?, ").join("")}?)`);
+    for (const r of righe) ins.run(deviceId, ...colonne.map((c) => valoreMk(r[c])), ora);
+    // Due righe con la stessa chiave nella stessa uscita: vince l'ultima, ma si dice (solo i numeri: niente nomi nel log).
+    const scritte = (d.prepare(`SELECT COUNT(*) AS n FROM ${tabella} WHERE device_id = ?`).get(deviceId) as { n: number }).n;
+    if (scritte < righe.length) {
+      console.warn(`[db-tenant] scheda mikrotik: ${tabella} apparato ${deviceId}, righe lette ${righe.length}, scritte ${scritte} (chiavi doppie)`);
+    }
+    return scritte;
+  };
+  d.transaction(() => {
+    if (s.bridge) out.bridge = sostituisci("mikrotik_bridge", COLONNE_MK_BRIDGE, s.bridge);
+    if (s.porte) out.porte = sostituisci("mikrotik_bridge_port", COLONNE_MK_PORTA, s.porte);
+    if (s.bond) out.bond = sostituisci("mikrotik_bond", COLONNE_MK_BOND, s.bond);
+  })();
+  return out;
+}
+
+/** Le colonne 0/1 delle tre tabelle della scheda, rilette come boolean (le altre restano come sono; `slaves` torna lista). */
+const BOOL_MK = new Set(["fast_forward", "igmp_snooping", "dhcp_snooping", "vlan_filtering", "ingress_filtering", "running", "disabled", "hw",
+  "hw_offload", "bpdu_guard", "trusted", "inactive", "dynamic"]);
+const BOOL_MK_SEMPRE = new Set(["running", "disabled", "hw_offload", "inactive", "dynamic"]); // dai segni: mai null
+
+function rigaMk<R>(r: Record<string, unknown>): R {
+  const o: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(r)) {
+    if (k === "device_id" || k === "seen_at") continue;
+    if (BOOL_MK.has(k)) o[k] = v === null || v === undefined ? (BOOL_MK_SEMPRE.has(k) ? false : null) : v === 1;
+    else if (k === "slaves") o[k] = typeof v === "string" && v !== "" ? v.split(",") : [];
+    else o[k] = v;
+  }
+  return o as R;
+}
+
+const SCHEDA_MK_VUOTA = { bridge: [], porte: [], bond: [], letto_il: null, vlanBridge: null, vlan: null, dns: null };
+
+// ── Livello 3 (Task 10): VLAN dei bridge, interfacce VLAN, DNS, utenti ───────
+
+const COLONNE_MK_VLAN_BRIDGE = ["bridge", "vlan_ids", "tagged", "untagged", "current_tagged", "current_untagged", "dynamic", "disabled",
+  "comment"] as const satisfies ReadonlyArray<keyof RigaVlanBridgeMk>;
+const COLONNE_MK_VLAN = ["name", "vlan_id", "interface", "mtu", "mac_address", "running", "disabled", "comment"] as const satisfies ReadonlyArray<keyof RigaVlanMk>;
+const COLONNE_MK_DNS = ["servers", "dynamic_servers", "allow_remote_requests", "cache_size", "cache_used", "max_concurrent_queries",
+  "use_doh_server"] as const satisfies ReadonlyArray<keyof RigaDnsMk>;
+/** La colonna `grp` è `group` della riga (parola riservata in SQL). */
+const COLONNE_MK_UTENTE = [["name", "name"], ["grp", "group"], ["address", "address"], ["last_logged_in", "last_logged_in"], ["disabled", "disabled"],
+  ["comment", "comment"]] as const satisfies ReadonlyArray<readonly [string, keyof RigaUtenteMk]>;
+/** Liste e 0/1 delle tabelle del livello 3, rilette come le dà il lettore. `dynamic`, `running`, `disabled` vengono dai segni: mai null. */
+const LISTE_MK_V3 = new Set(["tagged", "untagged", "current_tagged", "current_untagged", "servers", "dynamic_servers"]);
+const SEGNI_MK_V3 = new Set(["dynamic", "running", "disabled"]);
+
+function rigaMkV3<R>(r: Record<string, unknown>, togli: ReadonlyArray<string> = []): R {
+  const o: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(r)) {
+    if (k === "device_id" || k === "seen_at" || togli.includes(k)) continue;
+    if (LISTE_MK_V3.has(k)) o[k] = typeof v === "string" && v !== "" ? v.split(",") : [];
+    else if (SEGNI_MK_V3.has(k)) o[k] = v === 1;
+    else if (k === "allow_remote_requests") o[k] = v === null || v === undefined ? null : v === 1;
+    else o[k] = v;
+  }
+  return o as R;
+}
+
+/** Connessioni su cui il rifiuto per schema sotto il livello 3 è già stato detto. */
+const AVVISATO_SCHEMA_MK_V3 = new WeakSet<Database.Database>();
+
+/**
+ * VLAN dei bridge, interfacce VLAN, DNS e utenti di un MikroTik (lettura `mikrotik_scheda`, Task 10): una fotografia per
+ * tabella come `scriviSchedaMikrotikTopologia`. Parte null (non letta, «non so») → la tabella resta com'era; letta (anche
+ * vuota) → DELETE dell'apparato e righe nuove con lo stesso `seen_at`. Una transazione per le quattro tabelle. false =
+ * schema sotto il livello 3 (niente scritto, un avviso per connessione). Niente nomi nel log: gli utenti sono dati riservati.
+ */
+export function scriviSchedaMikrotikLettura(deviceId: number, r: RisultatoMkScheda, adesso: Date = new Date()): boolean {
+  const d = db();
+  const livello = livelloSchemaSchedaMk(d);
+  if (livello < 3) {
+    if (!AVVISATO_SCHEMA_MK_V3.has(d)) {
+      AVVISATO_SCHEMA_MK_V3.add(d);
+      console.warn(`[db-tenant] scheda mikrotik: schema al livello ${livello}, sotto il 3: VLAN, DNS e utenti non si scrivono`);
+    }
+    return false;
+  }
+  const ora = adesso.toISOString().slice(0, 19).replace("T", " ");
+  const sostituisci = (tabella: string, colonne: ReadonlyArray<string>, righe: ReadonlyArray<ReadonlyArray<unknown>>): void => {
+    d.prepare(`DELETE FROM ${tabella} WHERE device_id = ?`).run(deviceId);
+    const ins = d.prepare(`INSERT OR REPLACE INTO ${tabella} (device_id, ${colonne.join(", ")}, seen_at) VALUES (?, ${colonne.map(() => "?, ").join("")}?)`);
+    for (const valori of righe) ins.run(deviceId, ...valori.map(valoreMk), ora);
+    const scritte = (d.prepare(`SELECT COUNT(*) AS n FROM ${tabella} WHERE device_id = ?`).get(deviceId) as { n: number }).n;
+    if (scritte < righe.length) {
+      console.warn(`[db-tenant] scheda mikrotik: ${tabella} apparato ${deviceId}, righe lette ${righe.length}, scritte ${scritte} (chiavi doppie)`);
+    }
+  };
+  d.transaction(() => {
+    if (r.vlanBridge) {
+      sostituisci("mikrotik_bridge_vlan", ["pos", ...COLONNE_MK_VLAN_BRIDGE], r.vlanBridge.map((v, i) => [i, ...COLONNE_MK_VLAN_BRIDGE.map((c) => v[c])]));
+    }
+    if (r.vlan) sostituisci("mikrotik_vlan", COLONNE_MK_VLAN, r.vlan.map((v) => COLONNE_MK_VLAN.map((c) => v[c])));
+    if (r.dns) sostituisci("mikrotik_dns", COLONNE_MK_DNS, [COLONNE_MK_DNS.map((c) => r.dns![c])]);
+    if (r.utenti) sostituisci("mikrotik_user", COLONNE_MK_UTENTE.map(([c]) => c), r.utenti.map((u) => COLONNE_MK_UTENTE.map(([, k]) => u[k])));
+  })();
+  return true;
+}
+
+/**
+ * Gli utenti di un MikroTik dall'ultima lettura buona: SOLO per GET /api/devices/[id]/mikrotik-utenti (admin). La scheda per
+ * tutti (`leggiSchedaMikrotik`) non li porta. null = schema sotto il livello 3.
+ */
+export function leggiUtentiMikrotik(deviceId: number): { utenti: RigaUtenteMk[]; letto_il: string | null } | null {
+  const d = db();
+  if (livelloSchemaSchedaMk(d) < 3) return null;
+  const righe = d.prepare("SELECT * FROM mikrotik_user WHERE device_id = ? ORDER BY name").all(deviceId) as Record<string, unknown>[];
+  const date = righe.map((r) => r.seen_at).filter((s): s is string => typeof s === "string");
+  return {
+    utenti: righe.map((r) => {
+      const u = rigaMkV3<Record<string, unknown>>(r);
+      return Object.fromEntries(COLONNE_MK_UTENTE.map(([c, k]) => [k, u[c] ?? (k === "disabled" ? false : null)])) as RigaUtenteMk;
+    }),
+    letto_il: date.length > 0 ? date.reduce((a, b) => (b > a ? b : a)) : null,
+  };
+}
+
+/**
+ * Bridge, porte e bond dell'ultima fotografia di un MikroTik per la scheda (Task 9). Le porte portano ruolo e stato STP
+ * dell'ultima lettura della topologia (`topology_port_facts`, fonte `device`, stessa porta), nella stessa query.
+ * `vlanBridge`, `vlan`, `dns` (Task 10): le righe dell'ultima lettura buona, null se non ce n'è nessuna (mai letti, o schema
+ * sotto il livello 3); gli utenti no (solo `leggiUtentiMikrotik`, per l'admin). Schema sotto il livello 2 → tutto vuoto.
+ */
+export function leggiSchedaMikrotik(deviceId: number): {
+  bridge: RigaBridgeMk[]; porte: RigaPortaSchedaMk[]; bond: RigaBondMk[]; letto_il: string | null;
+  vlanBridge: RigaVlanBridgeMk[] | null; vlan: RigaVlanMk[] | null; dns: RigaDnsMk | null;
+} {
+  const d = db();
+  if (livelloSchemaSchedaMk(d) < 2) return { ...SCHEDA_MK_VUOTA };
+  const bridge = (d.prepare("SELECT * FROM mikrotik_bridge WHERE device_id = ? ORDER BY name").all(deviceId) as Record<string, unknown>[]);
+  const bond = (d.prepare("SELECT * FROM mikrotik_bond WHERE device_id = ? ORDER BY name").all(deviceId) as Record<string, unknown>[]);
+  // Senza lo schema delle letture in più la tabella dei fatti non c'è: il ruolo STP resta null.
+  const porte = (schemaCaviPresente()
+    ? d.prepare(`SELECT p.*, f.stp_role AS stp_ruolo, f.stp_state AS stp_stato FROM mikrotik_bridge_port p
+        LEFT JOIN topology_port_facts f ON f.device_id = p.device_id AND f.source = 'device' AND f.port_name = p.interface
+          AND f.seen_at = (SELECT MAX(seen_at) FROM topology_port_facts WHERE device_id = p.device_id AND source = 'device')
+        WHERE p.device_id = ? ORDER BY p.rowid`).all(deviceId)
+    : d.prepare("SELECT *, NULL AS stp_ruolo, NULL AS stp_stato FROM mikrotik_bridge_port WHERE device_id = ? ORDER BY rowid").all(deviceId)) as Record<string, unknown>[];
+  const date = [...bridge, ...porte, ...bond].map((r) => r.seen_at).filter((s): s is string => typeof s === "string");
+  const v3 = livelloSchemaSchedaMk(d) >= 3;
+  const vlanBridge = v3 ? d.prepare("SELECT * FROM mikrotik_bridge_vlan WHERE device_id = ? ORDER BY pos").all(deviceId) as Record<string, unknown>[] : [];
+  const vlan = v3 ? d.prepare("SELECT * FROM mikrotik_vlan WHERE device_id = ? ORDER BY vlan_id, name").all(deviceId) as Record<string, unknown>[] : [];
+  const dns = v3 ? d.prepare("SELECT * FROM mikrotik_dns WHERE device_id = ?").get(deviceId) as Record<string, unknown> | undefined : undefined;
+  return {
+    bridge: bridge.map((r) => rigaMk<RigaBridgeMk>(r)),
+    porte: porte.map((r) => rigaMk<RigaPortaSchedaMk>(r)),
+    bond: bond.map((r) => rigaMk<RigaBondMk>(r)),
+    letto_il: date.length > 0 ? date.reduce((a, b) => (b > a ? b : a)) : null,
+    vlanBridge: vlanBridge.length > 0 ? vlanBridge.map((r) => rigaMkV3<RigaVlanBridgeMk>(r, ["pos"])) : null,
+    vlan: vlan.length > 0 ? vlan.map((r) => rigaMkV3<RigaVlanMk>(r)) : null,
+    dns: dns ? rigaMkV3<RigaDnsMk>(dns) : null,
+  };
+}
+
+/**
+ * Data dei DATI della lettura «VLAN, DNS e utenti», una per sezione (revisione dei Task 10 e 11): VLAN = il `seen_at` più
+ * recente di `mikrotik_bridge_vlan` e `mikrotik_vlan`; DNS = quello di `mikrotik_dns`. Mai l'ora dell'ultimo tentativo (può
+ * essere fallito e non aver scritto niente) e mai la data di `mikrotik_user` (dato del solo admin: ha la sua, nella sua rotta).
+ * null = schema sotto il livello 3.
+ */
+export function dateSchedaMikrotikV3(deviceId: number): { vlan_il: string | null; dns_il: string | null } | null {
+  const d = db();
+  if (livelloSchemaSchedaMk(d) < 3) return null;
+  const r = d.prepare(`SELECT
+      (SELECT MAX(il) FROM (SELECT MAX(seen_at) AS il FROM mikrotik_bridge_vlan WHERE device_id = ?
+        UNION ALL SELECT MAX(seen_at) FROM mikrotik_vlan WHERE device_id = ?)) AS vlan_il,
+      (SELECT MAX(seen_at) FROM mikrotik_dns WHERE device_id = ?) AS dns_il`).get(deviceId, deviceId, deviceId) as { vlan_il: string | null; dns_il: string | null };
+  return { vlan_il: r.vlan_il ?? null, dns_il: r.dns_il ?? null };
+}
+
+// ── VLAN degli switch via SNMP (piano 2026-10-22 accorpamento, Task 8, ADR 0029) ──
+
+export interface VlanSwitchDb {
+  /** Task 13: VLAN native dal controller UniFi (vuota se mai lette o schema assente) e quando sono state lette. */
+  nativa?: Array<{ if_index: number; vlan_id: number }>;
+  nativa_letta_il?: string | null;
+  vlan: Array<{ vlan_id: number; nome: string | null }>;
+  porte: Array<{ vlan_id: number; if_index: number; egress: boolean; untagged: boolean | null }>;
+  pvid: Array<{ if_index: number; pvid: number }>;
+  lettura: {
+    letto_il: string; tabella: LetturaVlanSwitch["tabella"]; mappa_porte: LetturaVlanSwitch["mappa_porte"]; n_vlan: number;
+    ordine_bit: LetturaVlanSwitch["ordine_bit"]; porte_senza_mappa: number;
+  } | null;
+}
+
+/** Connessioni su cui il rifiuto per schema assente è già stato detto. */
+const AVVISATO_SCHEMA_SWITCH_VLAN = new WeakSet<Database.Database>();
+
+/**
+ * Le VLAN di uno switch nelle quattro tabelle: una fotografia per apparato, l'ultima lettura buona. DELETE delle righe
+ * dell'apparato e INSERT di quelle lette, in UNA transazione (o tutto o niente). Solo con esito «letto» (anche vuoto): un
+ * «non riuscito» o un «non so» LANCIA, così la regola «non so non scrive» non dipende da chi chiama e le righe di prima
+ * restano con la loro data. false = schema assente (migrazione fallita): niente scritto, un avviso per connessione.
+ */
+export function scriviVlanSwitch(deviceId: number, l: LetturaVlanSwitch, adesso: Date = new Date()): boolean {
+  if (l.esito !== "letto") {
+    throw new Error(`scriviVlanSwitch: esito «${l.esito}», si scrive solo una lettura riuscita`);
+  }
+  const d = db();
+  if (!schemaSwitchVlanPresente(d)) {
+    if (!AVVISATO_SCHEMA_SWITCH_VLAN.has(d)) {
+      AVVISATO_SCHEMA_SWITCH_VLAN.add(d);
+      console.warn("[db-tenant] switch vlan: schema assente, le VLAN degli switch non si scrivono");
+    }
+    return false;
+  }
+  const ora = adesso.toISOString().slice(0, 19).replace("T", " ");
+  const bool = (v: boolean | null): number | null => (v === null ? null : v ? 1 : 0);
+  d.transaction(() => {
+    for (const t of ["switch_vlan", "switch_vlan_porte", "switch_porta_pvid", "switch_vlan_lettura"]) {
+      d.prepare(`DELETE FROM ${t} WHERE device_id = ?`).run(deviceId);
+    }
+    // OR REPLACE: due righe con la stessa chiave nella stessa lettura non devono costare tutta la fotografia (vince l'ultima),
+    // ma si dice, come in `sostituisci` della scheda MikroTik (solo i numeri: niente nomi nel log).
+    const scrivi = <R>(tabella: string, sql: string, righeLette: ReadonlyArray<R>, valori: (r: R) => Array<string | number | null>): number => {
+      const ins = d.prepare(sql);
+      for (const r of righeLette) ins.run(deviceId, ...valori(r));
+      const scritte = (d.prepare(`SELECT COUNT(*) AS n FROM ${tabella} WHERE device_id = ?`).get(deviceId) as { n: number }).n;
+      if (scritte < righeLette.length) {
+        console.warn(`[db-tenant] switch vlan: ${tabella} apparato ${deviceId}, righe lette ${righeLette.length}, scritte ${scritte} (chiavi doppie)`);
+      }
+      return scritte;
+    };
+    const nVlan = scrivi("switch_vlan", "INSERT OR REPLACE INTO switch_vlan (device_id, vlan_id, nome) VALUES (?, ?, ?)", l.vlan,
+      (v) => [v.vlan_id, v.nome]);
+    scrivi("switch_vlan_porte", "INSERT OR REPLACE INTO switch_vlan_porte (device_id, vlan_id, if_index, egress, untagged) VALUES (?, ?, ?, ?, ?)", l.porte,
+      (p) => [p.vlan_id, p.if_index, p.egress ? 1 : 0, bool(p.untagged)]);
+    scrivi("switch_porta_pvid", "INSERT OR REPLACE INTO switch_porta_pvid (device_id, if_index, pvid) VALUES (?, ?, ?)", l.pvid,
+      (p) => [p.if_index, p.pvid]);
+    d.prepare(`INSERT INTO switch_vlan_lettura (device_id, letto_il, tabella, mappa_porte, n_vlan, ordine_bit, porte_senza_mappa)
+      VALUES (?, ?, ?, ?, ?, ?, ?)`).run(deviceId, ora, l.tabella, l.mappa_porte, nVlan, l.ordine_bit, l.porte_senza_mappa);
+  })();
+  return true;
+}
+
+/** L'ultima fotografia delle VLAN di uno switch (ordinata per VLAN e porta). Mai letta o schema assente → liste vuote, lettura null. */
+export function leggiVlanSwitchDb(deviceId: number): VlanSwitchDb {
+  const d = db();
+  let nativa: VlanSwitchDb["nativa"] = [];
+  let nativa_letta_il: string | null = null;
+  if (schemaSwitchVlanNativaPresente(d)) {
+    const righe = d.prepare("SELECT if_index, vlan_id, letto_il FROM switch_vlan_nativa WHERE device_id = ? ORDER BY if_index")
+      .all(deviceId) as Array<{ if_index: number; vlan_id: number; letto_il: string }>;
+    nativa = righe.map((r) => ({ if_index: r.if_index, vlan_id: r.vlan_id }));
+    nativa_letta_il = righe.reduce<string | null>((m, r) => (m === null || r.letto_il > m ? r.letto_il : m), null);
+  }
+  if (!schemaSwitchVlanPresente(d)) return { nativa, nativa_letta_il, vlan: [], porte: [], pvid: [], lettura: null };
+  const vlan = d.prepare("SELECT vlan_id, nome FROM switch_vlan WHERE device_id = ? ORDER BY vlan_id").all(deviceId) as VlanSwitchDb["vlan"];
+  const porte = (d.prepare("SELECT vlan_id, if_index, egress, untagged FROM switch_vlan_porte WHERE device_id = ? ORDER BY vlan_id, if_index")
+    .all(deviceId) as Array<{ vlan_id: number; if_index: number; egress: number; untagged: number | null }>)
+    .map((r) => ({ vlan_id: r.vlan_id, if_index: r.if_index, egress: r.egress === 1, untagged: r.untagged === null ? null : r.untagged === 1 }));
+  const pvid = d.prepare("SELECT if_index, pvid FROM switch_porta_pvid WHERE device_id = ? ORDER BY if_index").all(deviceId) as VlanSwitchDb["pvid"];
+  const lettura = d.prepare(`SELECT letto_il, tabella, mappa_porte, n_vlan, ordine_bit, porte_senza_mappa
+    FROM switch_vlan_lettura WHERE device_id = ?`).get(deviceId) as VlanSwitchDb["lettura"] | undefined;
+  return { nativa, nativa_letta_il, vlan, porte, pvid, lettura: lettura ?? null };
+}
+
+/**
+ * Le VLAN native di uno switch dal controller UniFi (Task 13): fotografia per apparato, DELETE + INSERT in UNA transazione.
+ * La chiama la sync UniFi solo con le reti lette e lo switch connesso (un «non so» non arriva qui). false = schema assente.
+ */
+export function scriviVlanNativaSwitch(deviceId: number, righe: ReadonlyArray<{ if_index: number; vlan_id: number }>, adesso: Date = new Date()): boolean {
+  const d = db();
+  if (!schemaSwitchVlanNativaPresente(d)) return false;
+  const ora = adesso.toISOString().slice(0, 19).replace("T", " ");
+  d.transaction(() => {
+    d.prepare("DELETE FROM switch_vlan_nativa WHERE device_id = ?").run(deviceId);
+    const ins = d.prepare("INSERT OR REPLACE INTO switch_vlan_nativa (device_id, if_index, vlan_id, letto_il) VALUES (?, ?, ?, ?)");
+    for (const r of righe) ins.run(deviceId, r.if_index, r.vlan_id, ora);
+  })();
+  return true;
+}
+
+/**
+ * Quante colonne ha la matrice VLAN dello switch (numero della tab VLAN): la stessa unione di `matriceVlanSwitch` — VLAN lette,
+ * VLAN delle porte, PVID — in una query. 0 = nessuna o schema assente.
+ */
+export function contaVlanSwitch(deviceId: number): number {
+  const d = db();
+  if (!schemaSwitchVlanPresente(d)) return 0;
+  return (d.prepare(`SELECT COUNT(*) AS n FROM (
+      SELECT vlan_id AS v FROM switch_vlan WHERE device_id = ?
+      UNION SELECT vlan_id FROM switch_vlan_porte WHERE device_id = ?
+      UNION SELECT pvid FROM switch_porta_pvid WHERE device_id = ?)`).get(deviceId, deviceId, deviceId) as { n: number }).n;
+}
+
+/** Quanti bridge ha l'ultima fotografia (una COUNT, per le tab di `GET /api/devices/[id]`); null = schema sotto il livello 2. */
+export function contaBridgeMikrotik(deviceId: number): { bridge: number; letto_il: string | null } | null {
+  const d = db();
+  if (livelloSchemaSchedaMk(d) < 2) return null;
+  const r = d.prepare("SELECT COUNT(*) AS n, MAX(seen_at) AS il FROM mikrotik_bridge WHERE device_id = ?").get(deviceId) as { n: number; il: string | null };
+  return { bridge: r.n, letto_il: r.il };
 }
 
 /** Chi ha letto i fatti (spec §13.5.7): il lettore, mai la marca. */
@@ -5742,8 +6946,13 @@ export function updateScheduledJobInterval(id: number, intervalMinutes: number):
   ).run(intervalMinutes, intervalMinutes, id);
 }
 
+/** Toglie il job e, nella stessa transazione, gli esiti per apparato (`job_apparati_esiti` non ha FK: la v11 ricostruisce la tabella). */
 export function deleteScheduledJob(id: number): boolean {
-  return db().prepare("DELETE FROM scheduled_jobs WHERE id = ?").run(id).changes > 0;
+  const d = db();
+  return d.transaction(() => {
+    d.prepare("DELETE FROM job_apparati_esiti WHERE job_id = ?").run(id);
+    return d.prepare("DELETE FROM scheduled_jobs WHERE id = ?").run(id).changes > 0;
+  })();
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -5931,7 +7140,10 @@ export function getStatusOverTime(
   const startMs = statusWindowStartMs(hours, nowMs);
   const toSql = (ms: number) => new Date(ms).toISOString().replace("T", " ").slice(0, 19);
   const bucketFmt = hours <= 48 ? "%Y-%m-%dT%H:00:00" : "%Y-%m-%dT00:00:00";
-  const totalRow = db().prepare("SELECT COUNT(*) as c FROM hosts").get() as { c: number };
+  // Gli host assenti (offline, non visti da oltre 7 giorni) restano fuori dal grafico,
+  // come dalla salute in alto (Riccardo, 20/10).
+  const totalRow = db().prepare(`SELECT COUNT(*) as c FROM hosts WHERE NOT ${condizioneAssente()}`).get() as { c: number };
+  const fuori = `host_id NOT IN (SELECT id FROM hosts WHERE ${condizioneAssente()})`;
   // Per ogni host: l'ultimo controllo di ciascun periodo della finestra, più
   // l'ultimo prima della finestra (entro STALE_HOURS) come stato di partenza.
   const observations = db().prepare(`
@@ -5939,13 +7151,13 @@ export function getStatusOverTime(
       SELECT host_id, status, checked_at,
         ROW_NUMBER() OVER (PARTITION BY strftime(?, checked_at), host_id ORDER BY checked_at DESC, id DESC) AS rn
       FROM status_history
-      WHERE checked_at >= ?
+      WHERE checked_at >= ? AND ${fuori}
     ),
     prima AS (
       SELECT host_id, status, checked_at,
         ROW_NUMBER() OVER (PARTITION BY host_id ORDER BY checked_at DESC, id DESC) AS rn
       FROM status_history
-      WHERE checked_at >= ? AND checked_at < ?
+      WHERE checked_at >= ? AND checked_at < ? AND ${fuori}
     )
     SELECT host_id, status, checked_at FROM dentro WHERE rn = 1
     UNION ALL
@@ -6064,26 +7276,6 @@ export function getRecentActivity(limit: number = 10): ScanHistory[] {
   ).all(limit) as ScanHistory[];
 }
 
-export function cleanupStaleHosts(daysUntilStale: number, daysUntilDelete: number): { flagged: number; deleted: number } {
-  // Fix C2 (fase 4): un host classificato a mano (classification_manual=1) non
-  // deve mai essere sovrascritto automaticamente — nemmeno col sentinel 'stale'.
-  // Senza questo filtro, un host bloccato dall'utente che va offline perde il
-  // valore scelto E resta con classification_manual=1 (nessuno lo ripara più,
-  // perché quel flag è pensato per proteggerlo, non per segnalare un problema).
-  const flagged = db().prepare(
-    `UPDATE hosts SET classification = 'stale', updated_at = datetime('now')
-     WHERE status = 'offline' AND last_seen < datetime('now', '-' || ? || ' days')
-     AND classification != 'stale' AND classification_manual = 0`
-  ).run(daysUntilStale);
-
-  const deleted = db().prepare(
-    `DELETE FROM hosts
-     WHERE classification = 'stale' AND last_seen < datetime('now', '-' || ? || ' days')`
-  ).run(daysUntilDelete);
-
-  return { flagged: flagged.changes, deleted: deleted.changes };
-}
-
 export function globalSearch(query: string, limit: number = 20): {
   hosts: Host[];
   networks: Network[];
@@ -6152,7 +7344,8 @@ export function getDeviceIdsWithInventoryAsset(): Set<number> {
 }
 
 function mapClassificationToInventoryCategoria(classification: string | null, deviceType: string, vendor?: string | null): import("@/types").InventoryAssetCategoria | null {
-  const c = (classification ?? "").toLowerCase().trim();
+  const cGrezzo = (classification ?? "").toLowerCase().trim();
+  const c = cGrezzo ? canonicalizza(cGrezzo).classificazione : ""; // catalogo canonico (21/10)
   const dt = (deviceType ?? "").toLowerCase().trim();
   const v = (vendor ?? "").toLowerCase().trim();
 
@@ -6161,13 +7354,13 @@ function mapClassificationToInventoryCategoria(classification: string | null, de
   if (c === "access_point") return "Access Point";
   if (["router", "load_balancer", "vpn_gateway"].includes(c)) return "Router";
   if (c === "switch") return "Switch";
-  if (["server", "web_server", "database_server", "mail_server", "backup_server", "nfs_server", "linux_server", "windows_server", "server_linux", "server_windows"].includes(c)) return "Server";
+  if (["server", "linux_server", "windows_server"].includes(c)) return "Server";
   if (c === "hypervisor") return "Server";
   if (["workstation", "desktop", "pc"].includes(c)) return "Desktop";
   if (["notebook", "laptop"].includes(c)) return "Laptop";
   if (c === "vm") return "VM";
-  if (["nas", "nas_synology", "nas_qnap", "storage"].includes(c)) return "NAS";
-  if (["stampante", "scanner", "fotocopiatrice", "multifunzione"].includes(c)) return "Stampante";
+  if (["nas"].includes(c)) return "NAS";
+  if (["stampante", "scanner", "multifunzione"].includes(c)) return "Stampante";
   if (["telecamera", "voip", "iot"].includes(c)) return "Other";
 
   // 2) device_type fallback — ma attenzione: device_type='switch' è un WORKAROUND
@@ -6206,17 +7399,17 @@ function mapVendorToMarca(vendor: string): string | null {
 }
 
 function mapHostClassificationToInventoryCategoria(classification: string | null): import("@/types").InventoryAssetCategoria | null {
-  const c = (classification ?? "").toLowerCase();
+  const c = canonicalizza((classification ?? "").toLowerCase()).classificazione;
   if (["workstation", "desktop", "pc"].includes(c)) return "Desktop";
   if (["notebook", "laptop"].includes(c)) return "Laptop";
   if (["vm"].includes(c)) return "VM";
-  if (["server", "hypervisor", "web_server", "database_server", "mail_server", "backup_server", "nfs_server"].includes(c)) return "Server";
+  if (["server", "hypervisor"].includes(c)) return "Server";
   if (["switch"].includes(c)) return "Switch";
   if (["router", "load_balancer", "vpn_gateway"].includes(c)) return "Router";
   if (["firewall"].includes(c)) return "Firewall";
   if (["access_point"].includes(c)) return "Access Point";
-  if (["nas", "nas_synology", "nas_qnap", "storage"].includes(c)) return "NAS";
-  if (["stampante", "scanner", "fotocopiatrice", "multifunzione"].includes(c)) return "Stampante";
+  if (["nas"].includes(c)) return "NAS";
+  if (["stampante", "scanner", "multifunzione"].includes(c)) return "Stampante";
   if (["iot", "smart_tv", "telecamera", "voip", "phone"].includes(c)) return "Other";
   return null;
 }
@@ -9418,6 +10611,50 @@ export function setHypervisorSyncSchedule(on: boolean): void {
   });
 }
 
+export interface PuliziaHostState {
+  /** Il job c'è ed è acceso. */
+  enabled: boolean;
+  jobId: number | null;
+  /** Fine dell'ultimo giro del job (UTC del DB), null se non è mai girato. */
+  lastRun: string | null;
+}
+
+/** La pulizia notturna degli host assenti (piano 2026-10-20, Task 5): il job pulizia_host del tenant. */
+export function getPuliziaHostSchedule(): PuliziaHostState {
+  const job = db()
+    .prepare("SELECT id, enabled, last_run FROM scheduled_jobs WHERE job_type = 'pulizia_host' ORDER BY id LIMIT 1")
+    .get() as { id: number; enabled: number; last_run: string | null } | undefined;
+  return { enabled: !!job && job.enabled === 1, jobId: job?.id ?? null, lastRun: job?.last_run ?? null };
+}
+
+/**
+ * Accende o spegne la pulizia notturna degli host assenti: `on` = un job
+ * pulizia_host (creato se manca, uno solo, ogni giorno, config `{}`), `!on` =
+ * cancellato (non resta un job spento che si riaccende dalla pagina dei job
+ * senza vedere cosa fa). È l'unica strada che crea il job: nessuna migrazione e
+ * nessun tenant nuovo lo hanno (decisione 4). Copia di `setHypervisorSyncSchedule`.
+ * Chi chiama ricarica lo scheduler del tenant.
+ */
+export function setPuliziaHostSchedule(on: boolean): void {
+  runInTenantTransaction(() => {
+    const d = db();
+    const existing = d.prepare("SELECT id FROM scheduled_jobs WHERE job_type = 'pulizia_host' ORDER BY id").all() as Array<{ id: number }>;
+    const [keep, ...extra] = existing;
+    for (const j of on ? extra : existing) d.prepare("DELETE FROM scheduled_jobs WHERE id = ?").run(j.id);
+    if (!on) return;
+    if (keep) {
+      d.prepare("UPDATE scheduled_jobs SET interval_minutes = ?, enabled = 1, updated_at = datetime('now') WHERE id = ?").run(
+        PULIZIA_HOST_MINUTES,
+        keep.id,
+      );
+    } else {
+      d.prepare(
+        "INSERT INTO scheduled_jobs (network_id, job_type, interval_minutes, enabled, config) VALUES (NULL, 'pulizia_host', ?, 1, '{}')",
+      ).run(PULIZIA_HOST_MINUTES);
+    }
+  });
+}
+
 /**
  * Ogni quanto si leggono router e switch (spec §13.5.6, il dialogo delle letture in più): il router lo leggono il giro
  * ARP e le scansioni delle reti (il più frequente fra i job accesi); gli switch solo il giro ARP. null = nessun job acceso.
@@ -10049,4 +11286,240 @@ export function getTopologyKnownPorts(nodeId: string): KnownPort[] | null {
     "SELECT id, last_proxmox_scan_result AS raw FROM network_devices WHERE last_proxmox_scan_result IS NOT NULL AND last_proxmox_scan_result <> '' ORDER BY id",
   ).all() as Array<{ id: number; raw: string }>;
   return hypervisorNics({ id: dev.id, host: dev.host ?? "", name: dev.name ?? "" }, scans);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Scansione automatica dei device scelti (piano 2026-10-22, Task 3)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Le colonne dello stato di un apparato per il job `apparati_scelti`, in UNA query (niente N+1). Le credenziali con
+ * sottoquery correlate sugli indici di `host_credentials(host_id)` e `device_credential_bindings(device_id)`.
+ * `ha_snmp` è la regola di `haSnmpApparatoDb` (fonti dell'apparato: un binding SNMP non fallito con una voce di tipo
+ * snmp/snmp_v3) scritta in SQL, perché `haSnmpApparato` fa tre letture per apparato e qui sarebbe un N+1 (50 apparati,
+ * 150 query). Vale per gli apparati salvati (le voci provvisorie della finestra non passano di qui). Serve a
+ * `leggibile` e a `vlan_switch`; il giro legge poi con le funzioni vere. La prova `apparati-scelti/__tests__/db.test.ts`
+ * la confronta con `haSnmpApparato`, `vlanSwitchDaLeggere` e `resolveDeviceAcquisition`: se il motore cambia, lo dice.
+ */
+const COLONNE_STATO_APPARATO = `
+  nd.id AS device_id, nd.name AS dev_nome, nd.enabled AS dev_enabled, nd.device_type, nd.vendor, nd.protocol,
+  nd.classification, nd.snmp_credential_id, nd.scan_target, nd.product_profile, nd.use_for_arp_poll,
+  h.id AS host_id, h.ip AS host_ip, COALESCE(h.custom_name, h.hostname) AS host_nome, h.classification AS host_classification,
+  (SELECT COUNT(*) FROM host_credentials hc WHERE hc.host_id = h.id) AS cred_host,
+  (SELECT COUNT(*) FROM host_credentials hc WHERE hc.host_id = h.id AND hc.validated = 1) AS validate_host,
+  (SELECT COUNT(*) FROM device_credential_bindings b WHERE b.device_id = nd.id AND b.credential_id IS NOT NULL) AS cred_binding,
+  (SELECT COUNT(*) FROM device_credential_bindings b WHERE b.device_id = nd.id AND b.test_status = 'success') AS binding_riusciti,
+  EXISTS (SELECT 1 FROM device_credential_bindings b JOIN credentials c ON c.id = b.credential_id
+           WHERE b.device_id = nd.id AND b.protocol_type = 'snmp' AND b.test_status != 'failed'
+             AND c.credential_type IN ('snmp', 'snmp_v3')) AS ha_snmp`;
+
+interface RigaStatoApparato {
+  device_id: number | null;
+  dev_nome: string | null;
+  dev_enabled: number | null;
+  device_type: string | null;
+  vendor: string | null;
+  protocol: string | null;
+  classification: string | null;
+  snmp_credential_id: number | null;
+  scan_target: string | null;
+  product_profile: string | null;
+  use_for_arp_poll: number | null;
+  host_id: number | null;
+  host_ip: string | null;
+  host_nome: string | null;
+  host_classification: string | null;
+  cred_host: number;
+  validate_host: number;
+  cred_binding: number;
+  binding_riusciti: number;
+  ha_snmp: number;
+}
+
+/**
+ * Da una riga allo `StatoApparato` di `regole.ts`. `leggibile`, `usa_arp` e `vlan_switch` con le funzioni pure di
+ * «Interroga» e del giro ARP (`resolveDeviceAcquisition`, `networkDeviceUsesArpPoll`, la regola di `vlanSwitchDaLeggere`).
+ * Le credenziali memorizzate: le righe dell'host e i binding con una voce (quelli inline il motore non li legge più).
+ */
+function statoDaRiga(r: RigaStatoApparato): StatoApparato {
+  const haSnmp = r.ha_snmp === 1;
+  const conApparato = r.device_id != null && r.device_type != null;
+  const dev = {
+    device_type: r.device_type ?? undefined,
+    vendor: r.vendor ?? undefined,
+    protocol: r.protocol ?? undefined,
+    classification: r.classification,
+    snmp_credential_id: r.snmp_credential_id,
+    scan_target: r.scan_target,
+    product_profile: r.product_profile,
+    use_for_arp_poll: r.use_for_arp_poll,
+  };
+  const sessioneSnmp = r.protocol === "snmp_v2" || r.protocol === "snmp_v3" || haSnmp;
+  return {
+    host_id: r.host_id,
+    device_id: r.device_id,
+    enabled: conApparato ? r.dev_enabled !== 0 : true,
+    credenziali_memorizzate: r.cred_host + r.cred_binding,
+    validate_sul_host: r.host_id != null ? r.validate_host : null,
+    binding_riusciti: r.binding_riusciti,
+    leggibile: conApparato ? resolveDeviceAcquisition(dev, haSnmp).implemented : false,
+    tipo: {
+      device_type: r.device_type ?? "",
+      vendor: r.vendor,
+      protocol: r.protocol,
+      usa_arp: conApparato ? networkDeviceUsesArpPoll({ device_type: r.device_type as NetworkDevice["device_type"], vendor: r.vendor as NetworkDevice["vendor"], use_for_arp_poll: r.use_for_arp_poll }) : false,
+      vlan_switch: r.device_type === "switch" && !(r.vendor === "mikrotik" && r.protocol === "ssh") && sessioneSnmp,
+    },
+  };
+}
+
+/**
+ * Lo stato degli host scelti in Discovery (finestra J2), in una query. L'apparato di un host: quello collegato
+ * (`network_devices.host_id`), altrimenti quello con lo stesso IP (come lo vede Discovery). Un id inesistente non compare.
+ */
+export function statoApparatiPerHost(hostIds: number[]): Array<StatoApparato & { host_id: number; nome: string; ip: string; tipo_scheda: string }> {
+  if (hostIds.length === 0) return [];
+  const righe = db().prepare(`
+    SELECT ${COLONNE_STATO_APPARATO}
+      FROM hosts h
+      LEFT JOIN network_devices nd ON nd.id = COALESCE(
+        (SELECT MIN(x.id) FROM network_devices x WHERE x.host_id = h.id),
+        (SELECT MIN(x.id) FROM network_devices x WHERE x.host = h.ip))
+     WHERE h.id IN (${hostIds.map(() => "?").join(",")})
+     ORDER BY h.id`).all(...hostIds) as RigaStatoApparato[];
+  return righe.map((r) => ({
+    ...statoDaRiga(r),
+    host_id: r.host_id as number,
+    nome: r.dev_nome ?? r.host_nome ?? r.host_ip ?? "",
+    ip: r.host_ip ?? "",
+    tipo_scheda: r.device_type ?? r.host_classification ?? "unknown",
+  }));
+}
+
+/**
+ * Lo stato degli apparati di un job (il giro), in una query. L'host di un apparato: quello collegato, altrimenti
+ * quello con lo stesso IP. Un id che non c'è più resta fuori dalla mappa: per il giro è TOLTO.
+ */
+export function statoApparatiPerDevice(deviceIds: number[]): Map<number, StatoApparato & { nome: string }> {
+  const out = new Map<number, StatoApparato & { nome: string }>();
+  if (deviceIds.length === 0) return out;
+  const righe = db().prepare(`
+    SELECT ${COLONNE_STATO_APPARATO}
+      FROM network_devices nd
+      LEFT JOIN hosts h ON h.id = COALESCE(
+        (SELECT x.id FROM hosts x WHERE x.id = nd.host_id),
+        (SELECT MIN(x.id) FROM hosts x WHERE x.ip = nd.host))
+     WHERE nd.id IN (${deviceIds.map(() => "?").join(",")})`).all(...deviceIds) as RigaStatoApparato[];
+  for (const r of righe) out.set(r.device_id as number, { ...statoDaRiga(r), nome: r.dev_nome ?? "" });
+  return out;
+}
+
+/** L'ultimo giro di un job: toglie le righe del giro prima e scrive queste, in una transazione. Uno stato fuori elenco lancia. */
+export function scriviEsitiGiro(
+  jobId: number,
+  giroIl: string,
+  righe: Array<{ device_id: number; stato: StatoEsito; letture: Record<string, EsitoLettura>; motivo?: string | null }>,
+): void {
+  for (const r of righe) {
+    if (!(STATI_ESITO as readonly string[]).includes(r.stato)) throw new Error(`Stato d'esito non previsto: ${String(r.stato)}`);
+  }
+  const d = db();
+  d.transaction(() => {
+    d.prepare("DELETE FROM job_apparati_esiti WHERE job_id = ?").run(jobId);
+    const ins = d.prepare("INSERT INTO job_apparati_esiti (job_id, device_id, giro_il, stato, letture, motivo) VALUES (?, ?, ?, ?, ?, ?)");
+    for (const r of righe) ins.run(jobId, r.device_id, giroIl, r.stato, JSON.stringify(r.letture), r.motivo ?? null);
+  })();
+}
+
+/** Gli esiti dell'ultimo giro di un job, col nome dell'apparato (null se l'apparato è stato tolto). */
+export function leggiEsitiJob(jobId: number): { giro_il: string | null; righe: Array<EsitoRiga & { nome: string | null; host_id: number | null }> } {
+  const righe = db().prepare(`
+    SELECT e.device_id, e.giro_il, e.stato, e.letture, e.motivo, nd.name AS nome, nd.host_id
+      FROM job_apparati_esiti e
+      LEFT JOIN network_devices nd ON nd.id = e.device_id
+     WHERE e.job_id = ?
+     ORDER BY e.device_id`).all(jobId) as Array<Omit<EsitoRiga, "letture"> & { letture: string; nome: string | null; host_id: number | null }>;
+  const out = righe.map((r) => {
+    let letture: Record<string, EsitoLettura> = {};
+    try {
+      letture = JSON.parse(r.letture) as Record<string, EsitoLettura>;
+    } catch {
+      // Scritte solo da scriviEsitiGiro: una riga illeggibile mostra lo stato senza il dettaglio delle letture.
+      console.warn(`[apparati_scelti] job #${jobId}: letture illeggibili per l'apparato #${r.device_id}`);
+    }
+    return { ...r, letture };
+  });
+  const giro = out.reduce<string | null>((max, r) => (max == null || r.giro_il > max ? r.giro_il : max), null);
+  return { giro_il: giro, righe: out };
+}
+
+/**
+ * Il riassunto di J3 («✓ 3/3», «▲ 2/3 · 1 escluso») per più job, in una query, dalle righe dell'ultimo `giro_il`:
+ * letti = `ok`, parziali a parte (la pastiglia li distingue). Un job che non ha mai girato non compare.
+ */
+export function riassuntiEsitiJobs(jobIds: number[]): Map<number, { letti: number; parziali: number; totale: number; esclusi: number; giro_il: string }> {
+  const out = new Map<number, { letti: number; parziali: number; totale: number; esclusi: number; giro_il: string }>();
+  if (jobIds.length === 0) return out;
+  const righe = db().prepare(`
+    SELECT e.job_id,
+           SUM(CASE WHEN e.stato = 'ok' THEN 1 ELSE 0 END) AS letti,
+           SUM(CASE WHEN e.stato = 'parziale' THEN 1 ELSE 0 END) AS parziali,
+           COUNT(*) AS totale,
+           SUM(CASE WHEN e.stato = 'escluso' THEN 1 ELSE 0 END) AS esclusi,
+           MAX(e.giro_il) AS giro_il
+      FROM job_apparati_esiti e
+     WHERE e.job_id IN (${jobIds.map(() => "?").join(",")})
+       AND e.giro_il = (SELECT MAX(u.giro_il) FROM job_apparati_esiti u WHERE u.job_id = e.job_id)
+     GROUP BY e.job_id`).all(...jobIds) as Array<{ job_id: number; letti: number; parziali: number; totale: number; esclusi: number; giro_il: string }>;
+  for (const r of righe) out.set(r.job_id, { letti: r.letti, parziali: r.parziali, totale: r.totale, esclusi: r.esclusi, giro_il: r.giro_il });
+  return out;
+}
+
+/** I job `apparati_scelti` che contengono l'apparato (testata J4). Una config illeggibile non entra. */
+export function jobsDelApparato(deviceId: number): Array<{ id: number; nome: string; enabled: boolean; interval_minutes: number; config: string; last_run: string | null }> {
+  const righe = db().prepare(`
+    SELECT sj.id, COALESCE(json_extract(sj.config, '$.nome'), 'Apparati scelti') AS nome, sj.enabled, sj.interval_minutes, sj.config, sj.last_run
+      FROM scheduled_jobs sj
+     WHERE sj.job_type = 'apparati_scelti'
+       AND json_valid(sj.config)
+       AND EXISTS (SELECT 1 FROM json_each(sj.config, '$.device_ids') j WHERE j.value = ?)
+     ORDER BY sj.id`).all(deviceId) as Array<{ id: number; nome: string; enabled: number | null; interval_minutes: number; config: string; last_run: string | null }>;
+  return righe.map((r) => ({ ...r, enabled: r.enabled === 1 }));
+}
+
+export function cancellaEsitiJob(jobId: number): void {
+  db().prepare("DELETE FROM job_apparati_esiti WHERE job_id = ?").run(jobId);
+}
+
+/** Gli esiti dei job che non ci sono più (all'inizio di ogni giro). Restituisce le righe tolte. */
+export function cancellaEsitiOrfani(): number {
+  return db().prepare("DELETE FROM job_apparati_esiti WHERE job_id NOT IN (SELECT id FROM scheduled_jobs)").run().changes;
+}
+
+/**
+ * «Modifica» di un job `apparati_scelti` (Task 6): intervallo e config insieme e, nella stessa transazione, gli esiti
+ * degli apparati tolti dal job (J3 non deve contarli fino al giro dopo). `config` già validata dalla rotta. false = il
+ * job non c'è o non è di quel tipo.
+ */
+export function aggiornaJobApparatiScelti(id: number, intervalMinutes: number, config: { device_ids: number[] } & Record<string, unknown>): boolean {
+  const d = db();
+  return d.transaction(() => {
+    const cambiate = d.prepare(
+      `UPDATE scheduled_jobs SET interval_minutes = ?, config = ?, next_run = datetime('now', '+' || ? || ' minutes'), updated_at = datetime('now')
+        WHERE id = ? AND job_type = 'apparati_scelti'`,
+    ).run(intervalMinutes, JSON.stringify(config), intervalMinutes, id).changes;
+    if (cambiate === 0) return false;
+    d.prepare(
+      `DELETE FROM job_apparati_esiti WHERE job_id = ? AND device_id NOT IN (SELECT j.value FROM json_each(?) j)`,
+    ).run(id, JSON.stringify(config.device_ids));
+    return true;
+  })();
+}
+
+/** L'ultimo esito di un apparato in ogni job che lo contiene (testata J4), in una query: job_id → stato e giro. */
+export function esitiApparatoNeiJob(deviceId: number): Map<number, { stato: StatoEsito; giro_il: string }> {
+  const righe = db().prepare(
+    "SELECT job_id, stato, giro_il FROM job_apparati_esiti WHERE device_id = ?",
+  ).all(deviceId) as Array<{ job_id: number; stato: StatoEsito; giro_il: string }>;
+  return new Map(righe.map((r) => [r.job_id, { stato: r.stato, giro_il: r.giro_il }]));
 }

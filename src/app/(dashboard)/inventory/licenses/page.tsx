@@ -156,7 +156,7 @@ export default function LicensesPage() {
           {licenses.length === 0 ? (
             <p className="text-muted-foreground py-8 text-center">Nessuna licenza. Clicca &quot;Nuova licenza&quot; per aggiungerne.</p>
           ) : (
-            <Table>
+            <Table fissa>
               <TableHeader>
                 <TableRow>
                   <TableHead>Nome</TableHead>

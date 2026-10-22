@@ -133,6 +133,19 @@ app.prepare().then(() => {
       console.error("WARNING: scheduler health notifier init failed:", error);
     });
 
+    // Chocolatey automatico sugli host Windows con credenziale WinRM (21/10/2026):
+    // giro notturno alle 02:00 per chi non ce l'ha o ha un tentativo fallito.
+    // Interruttore nella pagina del modulo Patch Management (acceso di default).
+    import("node-cron").then(async ({ default: cron }) => {
+      const { giroNotturnoChoco } = await import("./src/lib/patch/choco-automatico");
+      cron.schedule("0 2 * * *", () => {
+        void giroNotturnoChoco();
+      });
+      console.log("> Chocolatey automatico: giro notturno alle 02:00");
+    }).catch((error) => {
+      console.error("WARNING: giro notturno di Chocolatey non avviato:", error);
+    });
+
     // Segnale di vita verso DA-Link (tappa C1 NetBird). Spento finché non esiste
     // /etc/dalink/oggetto.env, scritto dal comando d'installazione di DA-Link:
     // senza quel file nessun giro arriva alla rete.
@@ -140,6 +153,16 @@ app.prepare().then(() => {
       avviaSegnaleDalink();
     }).catch((error) => {
       console.error("WARNING: segnale DA-Link non avviato:", error);
+    });
+
+    // Invio di AD Health e inventario all'hub DA-Vul-can (A-IPAM). Spento finché
+    // /etc/dalink/oggetto.env non ha VULCAN_TOKEN: ogni tic legge il file e, senza
+    // gettone, si ferma lì (niente DB, niente rete). Un secondo avvio non crea altri timer.
+    import("./src/lib/vulcan/job").then(({ avviaInvioVulcan }) => {
+      avviaInvioVulcan();
+      console.log("> Invio a DA-Vul-can: timer avviati (spenti senza VULCAN_TOKEN)");
+    }).catch((error) => {
+      console.error("WARNING: invio a DA-Vul-can non avviato:", error);
     });
   }
 });

@@ -5,8 +5,9 @@ import { parseDbDate } from "@/lib/db-date";
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { librenmsDevicePath } from "@/lib/integrations/public-url";
 import Link from "next/link";
-import { useSession } from "next-auth/react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useEAdmin } from "@/hooks/use-e-admin";
+import { colonneDellaVista, contaPreset, etichettaPreset, GLOSSARIO, prendePreset, VISTE, type Vista } from "@/lib/discovery/viste-filtri";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -30,15 +31,14 @@ import {
 import { StatusBadge } from "@/components/shared/status-badge";
 import { FingerprintConfidenceBadge } from "@/components/shared/fingerprint-confidence-badge";
 import { ProtocolBadges } from "@/components/shared/protocol-badges";
-import { DeviceFormFields } from "@/components/shared/device-form-fields";
 import { LinkIpsDialog } from "@/components/devices/link-ips-dialog";
+import { RendiApparatoDialog } from "@/components/devices/rendi-apparato-dialog";
+import { FinestraScansioneAutomatica } from "@/components/jobs/finestra-scansione-automatica";
 import { SeparaDialog } from "@/components/topology/unioni/separa-dialog";
 import { UnisciDialog } from "@/components/topology/unioni/unisci-dialog";
 import { InlineEditCell } from "@/components/shared/inline-edit-cell";
-import { AddableSelect } from "@/components/shared/addable-select";
-import { opzioniCreazioneRapida, tipiCredenzialePerProtocollo, tipoCreazioneRapida, vociDAccesso, vociSnmpAggiuntive } from "@/lib/credential-protocol-map";
+import { vociDAccesso } from "@/lib/credential-protocol-map";
 import { etichettaTipo, normalizzaTipo } from "@/lib/credentials/tipi";
-import { profiloPerClassificazione, proponiApparato, riallineaAlProtocollo, type ProtocolloApparato } from "@/lib/devices/proposta-apparato";
 import { CreateFingerprintRuleDialog } from "@/components/shared/create-fingerprint-rule-dialog";
 import { SortableTableHead } from "@/components/shared/sortable-table-head";
 import { Pagination } from "@/components/shared/pagination";
@@ -48,7 +48,7 @@ import {
 } from "@/lib/device-classifications";
 import { parseDetectedDeviceFromDetectionJson } from "@/lib/device-fingerprint-classification";
 import {
-  Search, RefreshCw, Columns3, Download, Radar, ExternalLink,
+  Search, RefreshCw, Columns3, Download, ExternalLink,
   Pencil, X, Loader2, Save, PlusCircle, Sparkles, Activity, PackagePlus, Server,
   Wrench, Package, Boxes, Router as RouterIcon, Cable, Shield, ShieldAlert, HardDrive, Monitor,
   Terminal as TerminalIcon, Globe,
@@ -59,7 +59,7 @@ import {
 
 /**
  * Preset rapidi per filtrare per macro-categoria di device.
- * - "group:<key>" copre più classificazioni (Server raggruppa server/server_linux/server_windows).
+ * - "group:<key>" copre più classificazioni (Server raggruppa i server).
  * - I singoletti (router/switch/firewall/hypervisor) usano direttamente la classificazione,
  *   così la chip e l'opzione del dropdown classFilter restano allineate.
  */
@@ -73,21 +73,21 @@ const ICON_MAP: Record<IconName, typeof Server> = {
 };
 
 const DEFAULT_CLASS_PRESETS: ClassPreset[] = [
-  { filter: "group:server",   label: "Server",     iconName: "Server",    match: ["server", "server_linux", "server_windows"], builtin: true },
+  { filter: "group:server",   label: "Server",     iconName: "Server",    match: ["server"], builtin: true },
   { filter: "group:client",   label: "Client",     iconName: "Monitor",   match: ["workstation", "notebook"], builtin: true },
   { filter: "hypervisor",     label: "Hypervisor", iconName: "HardDrive", match: ["hypervisor"], builtin: true },
   { filter: "router",         label: "Router",     iconName: "RouterIcon",match: ["router"], builtin: true },
   { filter: "switch",         label: "Switch",     iconName: "Cable",     match: ["switch"], builtin: true },
   { filter: "access_point",   label: "AP",         iconName: "Wifi",      match: ["access_point"], builtin: true },
   { filter: "firewall",       label: "Firewall",   iconName: "Shield",    match: ["firewall"], builtin: true },
-  { filter: "group:net",      label: "NET",        iconName: "Network",   match: ["bridge", "repeater", "modem", "ont", "load_balancer", "vpn_gateway", "proxy", "rete_ot", "controller_wifi", "network_controller"], builtin: true },
+  { filter: "group:net",      label: "NET",        iconName: "Network",   match: ["bridge", "repeater", "modem", "load_balancer", "vpn_gateway", "proxy", "rete_ot", "network_controller"], builtin: true },
   { filter: "ups",            label: "UPS",        iconName: "BatteryCharging", match: ["ups"], builtin: true },
   { filter: "group:tel",      label: "TEL",        iconName: "Phone",     match: ["voip"], builtin: true },
-  { filter: "group:print",    label: "PRINT",      iconName: "Printer",   match: ["stampante", "scanner", "fotocopiatrice", "multifunzione"], builtin: true },
+  { filter: "group:print",    label: "PRINT",      iconName: "Printer",   match: ["stampante", "scanner", "multifunzione"], builtin: true },
   { filter: "group:cam",      label: "CAM",        iconName: "Camera",    match: ["telecamera"], builtin: true },
-  { filter: "group:iot",      label: "IOT",        iconName: "Cpu",       match: ["iot", "domotica", "smart_tv", "console", "sensore", "plc", "hmi", "controller"], builtin: true },
+  { filter: "group:iot",      label: "IOT",        iconName: "Cpu",       match: ["iot", "domotica", "smart_tv", "console", "sensore", "plc", "hmi"], builtin: true },
   { filter: "group:mobile",   label: "MOBILE",     iconName: "Smartphone",match: ["tablet", "smartphone"], builtin: true },
-  { filter: "group:storage",  label: "STORAGE",    iconName: "Database",  match: ["storage", "nas", "nas_synology", "nas_qnap"], builtin: true },
+  { filter: "group:storage",  label: "STORAGE",    iconName: "Database",  match: ["nas"], builtin: true },
   { filter: "group:multihomed", label: "MH",       iconName: "Link2",     match: [] /* speciale: h.multihomed != null */, builtin: true },
   { filter: "group:other",    label: "ALTRO",      iconName: "Boxes",     match: [] /* catchall */, builtin: true },
 ];
@@ -99,7 +99,13 @@ import { SshTerminalDialog } from "@/components/ssh-terminal/ssh-terminal-dialog
 import { MeshCentralHostBadge } from "@/components/integrations/meshcentral-host-badge";
 import { porteAperte } from "@/lib/integrations/meshcentral/senza-agente-porte";
 import type { ClassPreset, IconName } from "./preset-types";
+import { BadgeAMano, BadgeSenzaProva } from "@/components/devices/credenziali-assegnate";
+import { hostGestitoSenzaProva } from "@/lib/devices/credenziali-assegnate";
 import { PresetsDialog } from "@/components/devices/presets-dialog";
+import type { InfoClusterDiscovery } from "@/lib/devices/cluster-discovery";
+import { useUrlPerBrowser } from "@/components/shared/url-per-browser";
+import { altriIpCsv, contatoriDiscovery, vistaRigaConCriteri } from "./filtro-cluster";
+import { BadgeAltriIp } from "./cluster-ip";
 
 const SORTED_CLASSIFICATIONS = sortClassificationsByDisplayLabel(DEVICE_CLASSIFICATIONS_ORDERED);
 
@@ -120,6 +126,10 @@ type EnrichedHost = Host & {
   switch_device_name?: string;
   ad_dns_host_name?: string | null;
   validated_protocols?: string[];
+  /** Cluster fisico accorpato (null = host solo o cluster ambiguo): chi è il principale e gli altri IP. */
+  cluster?: InfoClusterDiscovery | null;
+  /** 1 = classificazione scelta a mano (la scansione non la cambia). */
+  classification_manual?: number;
   multihomed?: {
     group_id: string;
     match_type: string;
@@ -527,36 +537,20 @@ export default function DiscoveryPage() {
 
   // ─── Add to devices (bulk promote host → device) ──────────
   const [addDevicesOpen, setAddDevicesOpen] = useState(false);
+  // Scansione automatica degli host scelti (J1-J2): solo admin.
+  const [scansioneAutomaticaOpen, setScansioneAutomaticaOpen] = useState(false);
   const [linkSameDeviceOpen, setLinkSameDeviceOpen] = useState(false);
   // Unioni a mano sulla mappa (piano 2026-10-16, Task 6): solo admin; «Unisci…» / «Separa…» per gli host selezionati.
-  const { data: sessioneUnioni } = useSession();
-  const ruoloUnioni = (sessioneUnioni?.user as { role?: string } | undefined)?.role;
-  const adminUnioni = ruoloUnioni === "admin" || ruoloUnioni === "superadmin";
+  // Azioni riservate agli admin (unioni, terminale, desktop remoto, test, modifiche): al viewer
+  // non si offrono, il server le rifiuterebbe (analisi del 19/10, F07).
+  const admin = useEAdmin();
   const [unisciOpen, setUnisciOpen] = useState(false);
   const [separaOpen, setSeparaOpen] = useState(false);
-  const [addDevicesSaving, setAddDevicesSaving] = useState(false);
-  // Valori veri li mette openAddDevices dalla proposta sugli host scelti (tappa 1).
-  const [addClassification, setAddClassification] = useState<string>("");
-  const [addHostDiversi, setAddHostDiversi] = useState(false);
-  const [addVendor, setAddVendor] = useState<string>("other");
-  const [addProtocol, setAddProtocol] = useState<string>("ssh");
-  const [addVendorSubtype, setAddVendorSubtype] = useState<string | null>(null);
-  const [addProductProfile, setAddProductProfile] = useState<string | null>(null);
-  const [addScanTarget, setAddScanTarget] = useState<string | null>(null);
-  const [addCredentialId, setAddCredentialId] = useState<string | null>(null);
-  const [addSnmpCredentialId, setAddSnmpCredentialId] = useState<string | null>(null);
-  const [addUseForArpPoll, setAddUseForArpPoll] = useState<boolean>(false);
-  const [addCredentials, setAddCredentials] = useState<Array<{ id: number; name: string; credential_type: string; port?: number | null }>>([]);
-
-  const refreshCredentials = async () => {
-    try {
-      const r = await fetch("/api/credentials", { cache: "no-store" });
-      if (r.ok) setAddCredentials(await r.json());
-    } catch { /* ignore */ }
-  };
-
   // ─── LibreNMS: URL base e aggiunta singolo host ─────────
-  const [librenmsUrl, setLibrenmsUrl] = useState("");
+  const [librenmsUrlSalvato, setLibrenmsUrl] = useState("");
+  // LibreNMS dell'appliance con l'host del browser (21/10).
+  const perBrowser = useUrlPerBrowser();
+  const librenmsUrl = perBrowser(librenmsUrlSalvato);
   const [librenmsAdding, setLibrenmsAdding] = useState<Set<number>>(new Set());
 
   async function addHostToLibreNMS(h: EnrichedHost) {
@@ -857,7 +851,6 @@ export default function DiscoveryPage() {
   // Carica credenziali per il dialog bulk + URL LibreNMS
   useEffect(() => {
     fetch("/api/credentials").then((r) => r.json()).then((data: { id: number; name: string; credential_type: string }[]) => {
-      setAddCredentials(data);
       if (Array.isArray(data)) setCredentials(data);
     }).catch(() => {});
     fetch("/api/integrations/active").then((r) => r.json()).then((data: Record<string, { enabled: boolean; directUrl?: string; url: string }>) => {
@@ -905,40 +898,42 @@ export default function DiscoveryPage() {
   // v0.2.646 audit perf UI3: usa qDebounced (250ms) per il filter, non `q`.
   // L'input rimane reattivo (controlled component), ma il filter su 1000+ host
   // gira al massimo 1 volta ogni 250ms invece di a ogni keystroke.
-  const filtered = useMemo(() => {
+  // Un apparato fisico = una riga (cluster.principale): i secondari sono nascosti, ma ogni filtro (stato,
+  // classificazione, CVE, ricerca) guarda anche loro, così un problema solo su un IP secondario non sparisce
+  // (revisione finale 22/10, regola in filtro-cluster.ts). Tabella, CSV e contatori leggono `filtered`.
+  const { filtered, comeSecondario } = useMemo(() => {
     const lower = qDebounced.toLowerCase().trim();
-    return hosts.filter((h) => {
-      if (statusFilter && h.status !== statusFilter) return false;
-      if (classFilter) {
-        if (classFilter === "group:multihomed") {
-          // MH = host che appartengono a un gruppo multihomed (più IP correlati
-          // allo stesso device fisico via serial/sysName/hostname/AD).
-          if (!h.multihomed) return false;
-        } else if (classFilter === "group:other") {
-          // ALTRO = host la cui classificazione non rientra in nessun altro preset.
-          // Include anche unknown/null/"" così l'utente vede tutto ciò che resta fuori.
-          const claimed = new Set(
-            presets.filter((p) => p.filter !== "group:other" && p.filter !== "group:multihomed").flatMap((p) => p.match)
-          );
-          if (claimed.has(h.classification ?? "")) return false;
-        } else if (classFilter.startsWith("group:")) {
-          const preset = presets.find((p) => p.filter === classFilter);
-          if (preset && !preset.match.includes(h.classification ?? "")) return false;
-        } else if (h.classification !== classFilter) {
-          return false;
-        }
-      }
-      if (networkFilter && String(h.network_id) !== networkFilter) return false;
-      if (vulnFilter === "critical_high" && !(h.vuln && (h.vuln.critical > 0 || h.vuln.high > 0))) return false;
-      if (vulnFilter === "critical" && !(h.vuln && h.vuln.critical > 0)) return false;
-      if (vulnFilter === "with_findings" && !(h.vuln && h.vuln.total > 0)) return false;
-      if (lower) {
-        const hay = [h.ip, h.mac, displayName(h), h.vendor, h.network_name, h.network_cidr, h.notes, h.os_info, h.device_manufacturer].filter(Boolean).join(" ").toLowerCase();
-        if (!hay.includes(lower)) return false;
-      }
+    const perId = new Map(hosts.map((h) => [h.id, h]));
+    const prendi = (id: number, f: (h: EnrichedHost) => boolean) => { const h = perId.get(id); return h ? f(h) : false; };
+    const criteri: Array<(id: number) => boolean> = [];
+    if (statusFilter) criteri.push((id) => prendi(id, (h) => h.status === statusFilter));
+    if (classFilter) {
+      // Una regola sola per tabella e conteggi delle chip (revisione del 19/10): i
+      // preset personali `user:<slug>` prima svuotavano la tabella.
+      const preset = presets.find((p) => p.filter === classFilter);
+      criteri.push((id) => prendi(id, (h) => (preset ? prendePreset(preset, h, presets) : h.classification === classFilter)));
+    }
+    if (vulnFilter === "critical_high") criteri.push((id) => prendi(id, (h) => !!h.vuln && (h.vuln.critical > 0 || h.vuln.high > 0)));
+    if (vulnFilter === "critical") criteri.push((id) => prendi(id, (h) => !!h.vuln && h.vuln.critical > 0));
+    if (vulnFilter === "with_findings") criteri.push((id) => prendi(id, (h) => !!h.vuln && h.vuln.total > 0));
+    if (lower) {
+      criteri.push((id) => prendi(id, (h) =>
+        [h.ip, h.mac, displayName(h), h.vendor, h.network_name, h.network_cidr, h.notes, h.os_info, h.device_manufacturer]
+          .filter(Boolean).join(" ").toLowerCase().includes(lower)));
+    }
+    const trovati = new Map<number, string[]>();
+    const righe = hosts.filter((h) => {
+      const v = vistaRigaConCriteri(h, networkFilter || null, criteri);
+      if (!v.visibile) return false;
+      if (v.corrispondeSecondario.length > 0) trovati.set(h.id, v.corrispondeSecondario);
       return true;
     });
+    return { filtered: righe, comeSecondario: trovati };
   }, [hosts, qDebounced, statusFilter, classFilter, networkFilter, vulnFilter, presets]);
+
+  // Base delle chip e del «di M»: le righe dopo l'accorpamento, senza filtri.
+  const hostVisibili = useMemo(() => hosts.filter((h) => !(h.cluster && !h.cluster.principale)), [hosts]);
+  const hostPerId = useMemo(() => new Map(hosts.map((h) => [h.id, h])), [hosts]);
 
   // ---------- sort ----------
   const sortAccessors = useMemo(() => ({
@@ -1032,88 +1027,11 @@ export default function DiscoveryPage() {
     }
   }
 
-  const archivioCredenziali = () =>
-    addCredentials.map((c) => ({ id: c.id, name: c.name, credential_type: c.credential_type, port: c.port ?? null }));
-
-  // Tappa 1 (15/10): valori iniziali dalla proposta unica sugli host scelti
-  // (piattaforma dal SO, classificazione valida). Tutti gli stati si
-  // reimpostano a ogni apertura: prima restavano quelli dell'apertura
-  // precedente, e «printer» o «microsoft» arrivavano al server.
+  /** «Rendi apparato» sugli host scelti: la finestra unica propone, prova le credenziali e crea (tappa 3). */
   function openAddDevices() {
-    const archivio = archivioCredenziali();
-    const proposte = hosts.filter((h) => selectedIds.has(h.id)).map((h) => proponiApparato(h, archivio));
-    const prima = proposte[0];
-    const uguali = !!prima && proposte.every(
-      (p) => p.vendor === prima.vendor && p.protocol === prima.protocol && p.classification === prima.classification
-    );
-    setAddVendor(prima?.vendor ?? "other");
-    setAddVendorSubtype(null);
-    setAddProtocol(prima?.protocol ?? "ssh");
-    setAddClassification(uguali ? prima.classification : "");
-    setAddProductProfile(uguali ? prima.productProfile : null);
-    setAddScanTarget(prima?.scanTarget ?? null);
-    setAddCredentialId(uguali ? prima.credentialId : null);
-    setAddSnmpCredentialId(uguali ? prima.snmpCredentialId : null);
-    setAddUseForArpPoll(uguali ? prima.useForArpPoll : false);
-    setAddHostDiversi(proposte.length > 1 && !uguali);
+    // La finestra lavora su 50 host per volta: si dice, gli altri restano selezionati (revisione finale, n. 12).
+    if (selectedIds.size > 50) toast.warning(`Ne propongo 50 su ${selectedIds.size}: gli altri restano selezionati per il giro dopo`);
     setAddDevicesOpen(true);
-  }
-
-  /** Cambio di protocollo: credenziale incompatibile azzerata, con SNMP la principale è la SNMP. */
-  function cambiaProtocolloAggiunta(v: string) {
-    const q = riallineaAlProtocollo(
-      {
-        name: "", vendor: addVendor, protocol: addProtocol as ProtocolloApparato,
-        classification: addClassification, productProfile: addProductProfile, scanTarget: addScanTarget,
-        port: 0, credentialId: addCredentialId, snmpCredentialId: addSnmpCredentialId, useForArpPoll: addUseForArpPoll,
-      },
-      v as ProtocolloApparato,
-      archivioCredenziali(),
-    );
-    setAddProtocol(v);
-    setAddCredentialId(q.credentialId);
-    setAddSnmpCredentialId(q.snmpCredentialId);
-  }
-
-  // ---------- bulk edit ----------
-  async function handleBulkAddToDevices() {
-    if (selectedIds.size === 0 || !addClassification) return;
-    setAddDevicesSaving(true);
-    try {
-      const body: Record<string, unknown> = {
-        host_ids: Array.from(selectedIds),
-        classification: addClassification,
-        vendor: addVendor,
-        protocol: addProtocol,
-        scan_target: addScanTarget,
-        inherit_host_credentials: true,
-      };
-      if (addProductProfile) body.product_profile = addProductProfile;
-      if (addVendorSubtype) body.vendor_subtype = addVendorSubtype;
-      // Solo 1: in modalità «bulk» la spunta non si vede, quindi assente = il
-      // server decide dalla classificazione finale (router e firewall accesi).
-      if (addUseForArpPoll) body.use_for_arp_poll = 1;
-      if (addCredentialId && addCredentialId !== "none") body.credential_id = Number(addCredentialId);
-      if (addSnmpCredentialId && addSnmpCredentialId !== "none") body.snmp_credential_id = Number(addSnmpCredentialId);
-      const res = await fetch("/api/devices/bulk", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        toast.success(data.message ?? `${selectedIds.size} dispositivi creati`);
-        setAddDevicesOpen(false);
-        setSelectedIds(new Set());
-        fetchData();
-      } else {
-        toast.error(data.error || "Errore nella creazione dispositivi");
-      }
-    } catch {
-      toast.error("Errore di rete");
-    } finally {
-      setAddDevicesSaving(false);
-    }
   }
 
   function openBulkEdit() {
@@ -1384,12 +1302,35 @@ export default function DiscoveryPage() {
     () => columnOrder.map((id) => COLUMNS.find((c) => c.id === id)).filter((c): c is typeof COLUMNS[number] => !!c),
     [columnOrder]
   );
+  // Viste per attività (analisi del 19/10, F09): filtrano le colonne mostrate senza
+  // toccare l'ordine salvato, che resta «Tutte». Ricordata per browser.
+  const [vista, setVistaStato] = useState<Vista>(() => {
+    try {
+      const v = typeof window !== "undefined" ? window.localStorage.getItem("discovery-vista") : null;
+      return v === "inventario" || v === "sicurezza" || v === "rete" ? v : "tutte";
+    } catch {
+      return "tutte";
+    }
+  });
+  const setVista = (v: Vista) => {
+    setVistaStato(v);
+    try { window.localStorage.setItem("discovery-vista", v); } catch { /* solo comodità */ }
+  };
+  const colonneMostrate = useMemo(
+    () => vista === "tutte"
+      ? orderedVisibleCols
+      : colonneDellaVista(vista, columnOrder).map((id) => COLUMNS.find((c) => c.id === id)).filter((c): c is typeof COLUMNS[number] => !!c),
+    [vista, orderedVisibleCols, columnOrder]
+  );
+  // Filtri rapidi a zero: da parte, dietro «Altre categorie».
+  const [mostraVuote, setMostraVuote] = useState(false);
 
   // ---------- CSV export ----------
   const exportCsv = () => {
-    const visibleDefs = orderedVisibleCols;
-    const header = joinCsvRow(visibleDefs.map((c) => c.label));
-    const rows = sortedRows.map((h) => joinCsvRow(visibleDefs.map((c) => getCellText(h, c.id))));
+    const visibleDefs = colonneMostrate;
+    // «Altri IP» in fondo (l'ordine delle colonne è di Riccardo): gli IP accorpati non hanno riga propria.
+    const header = joinCsvRow([...visibleDefs.map((c) => c.label), "Altri IP"]);
+    const rows = sortedRows.map((h) => joinCsvRow([...visibleDefs.map((c) => getCellText(h, c.id)), altriIpCsv(h.cluster)]));
     const csv = [header, ...rows].join("\n");
     const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -1478,9 +1419,22 @@ export default function DiscoveryPage() {
     switch (colId) {
       case "ip":
         return (
-          <Link href={`/objects/${h.id}`} className="font-mono text-sm text-primary hover:underline inline-flex items-center gap-1">
-            {h.ip} <ExternalLink className="h-3 w-3 opacity-50" />
-          </Link>
+          <div className="flex flex-col items-start gap-0.5">
+            <span className="inline-flex items-center gap-1.5">
+              <Link href={`/objects/${h.id}`} className="font-mono text-sm text-primary hover:underline inline-flex items-center gap-1">
+                {h.ip} <ExternalLink className="h-3 w-3 opacity-50" />
+              </Link>
+              {h.cluster?.principale && h.cluster.altri.length > 0 && <BadgeAltriIp cluster={h.cluster} nome={displayName(h) || h.ip} />}
+            </span>
+            {comeSecondario.has(h.id) && (
+              <span className="inline-flex items-center gap-1 rounded-md border-2 px-1.5 text-[13px] font-semibold leading-tight bg-[#FFD400] text-[#0D2537] border-[#C9A800]">
+                ↳ corrisponde <span className="font-mono">{comeSecondario.get(h.id)!.join(", ")}</span> (IP secondario)
+              </span>
+            )}
+            {h.cluster && !h.cluster.principale && (
+              <span className="text-[13px] text-muted-foreground">IP secondario di <span className="font-mono">{hostPerId.get(h.cluster.principale_host_id)?.ip ?? "—"}</span></span>
+            )}
+          </div>
         );
       case "hostname": {
         const autoName = h.hostname || h.dns_reverse || h.ad_dns_host_name || "";
@@ -1526,7 +1480,12 @@ export default function DiscoveryPage() {
             selectOptions={opts}
             onSave={(v) => saveHostFieldInline(h.id, { classification: v || "unknown" })}
             display={h.classification && h.classification !== "unknown"
-              ? <Badge variant="outline" className="text-xs">{effectiveLabel(h.classification) || h.classification}</Badge>
+              ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Badge variant="outline" className="text-xs">{effectiveLabel(h.classification) || h.classification}</Badge>
+                  {h.classification_manual === 1 && <BadgeAMano piccolo />}
+                </span>
+              )
               : <span className="text-muted-foreground text-xs">—</span>}
             title="Clicca per cambiare classificazione"
           />
@@ -1645,7 +1604,9 @@ export default function DiscoveryPage() {
           : <span className="text-muted-foreground text-xs">—</span>;
       }
       case "validated_creds":
-        return <ProtocolBadges protocols={h.validated_protocols || []} />;
+        return hostGestitoSenzaProva(h.device_id, h.validated_protocols)
+          ? <BadgeSenzaProva corto />
+          : <ProtocolBadges protocols={h.validated_protocols || []} />;
       case "detected": {
         const det = parseDetectedDeviceFromDetectionJson(h.detection_json);
         if (!det) return <span className="text-muted-foreground text-xs">—</span>;
@@ -1798,7 +1759,7 @@ export default function DiscoveryPage() {
             {/* Accesso rapido: desktop remoto senza agente (RDP via MeshCentral) e
                 terminale SSH di DA-IPAM. Colorati se la scansione ha visto la porta,
                 grigi ma cliccabili altrimenti (la scansione veloce può non vederla). */}
-            {senzaAgenteOn && (
+            {senzaAgenteOn && admin && (
               <Link
                 href={`/rmm/${h.id}/senza-agente?p=rdp`}
                 title={porteAperte(h.open_ports ?? null).includes(3389)
@@ -1811,18 +1772,20 @@ export default function DiscoveryPage() {
                 <Monitor className="h-3.5 w-3.5" />
               </Link>
             )}
-            <button
-              type="button"
-              onClick={() => setSshTermRow(h)}
-              title={porteAperte(h.open_ports ?? null).includes(22)
-                ? "Terminale SSH"
-                : "Terminale SSH — la scansione non ha visto la porta 22"}
-              className={porteAperte(h.open_ports ?? null).includes(22)
-                ? "inline-flex items-center text-primary hover:opacity-80"
-                : "inline-flex items-center text-muted-foreground/40 hover:text-primary"}
-            >
-              <TerminalIcon className="h-3.5 w-3.5" />
-            </button>
+            {admin && (
+              <button
+                type="button"
+                onClick={() => setSshTermRow(h)}
+                title={porteAperte(h.open_ports ?? null).includes(22)
+                  ? "Terminale SSH"
+                  : "Terminale SSH — la scansione non ha visto la porta 22"}
+                className={porteAperte(h.open_ports ?? null).includes(22)
+                  ? "inline-flex items-center text-primary hover:opacity-80"
+                  : "inline-flex items-center text-muted-foreground/40 hover:text-primary"}
+              >
+                <TerminalIcon className="h-3.5 w-3.5" />
+              </button>
+            )}
 
             {/* Multihomed — host con più IP correlati allo stesso device fisico.
                 Icona Link2:
@@ -1898,53 +1861,29 @@ export default function DiscoveryPage() {
   }
 
   // ---------- counts ----------
-  const online = filtered.filter((h) => h.status === "online").length;
-  const offline = filtered.filter((h) => h.status === "offline").length;
-  const unknown = filtered.length - online - offline;
+  const { online, offline, sconosciuti: unknown, accorpati, totale } = contatoriDiscovery(hosts, filtered);
 
   const pageAllSelected = pagedRows.length > 0 && pagedRows.every((h) => selectedIds.has(h.id));
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Discovery</h1>
-        <p className="text-muted-foreground mt-1">
-          Vista unificata di tutti gli host rilevati nelle subnet, arricchiti con dati di scansione.
-        </p>
-      </div>
-
-      {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <Card className="py-3 px-4">
-          <p className="text-xs text-muted-foreground uppercase tracking-wider">Totale</p>
-          <p className="text-2xl font-bold">{filtered.length}</p>
-        </Card>
-        <Card className="py-3 px-4">
-          <p className="text-xs text-muted-foreground uppercase tracking-wider">Online</p>
-          <p className="text-2xl font-bold text-success">{online}</p>
-        </Card>
-        <Card className="py-3 px-4">
-          <p className="text-xs text-muted-foreground uppercase tracking-wider">Offline</p>
-          <p className="text-2xl font-bold text-destructive">{offline}</p>
-        </Card>
-        <Card className="py-3 px-4">
-          <p className="text-xs text-muted-foreground uppercase tracking-wider">Sconosciuto</p>
-          <p className="text-2xl font-bold text-muted-foreground">{unknown}</p>
-        </Card>
-      </div>
-
-      {/* Main table card */}
-      <Card>
-        <CardHeader>
-          <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
-              <Radar className="h-5 w-5" />
-              Host rilevati
-              <span className="text-sm font-normal text-muted-foreground ml-1">
-                ({filtered.length}{filtered.length !== hosts.length ? ` / ${hosts.length}` : ""})
-              </span>
-            </CardTitle>
+    <div className="space-y-3">
+      {/* Testata compatta (Riccardo, 20/10): titolo, contatori e filtri su una riga; la frase
+          descrittiva e i quattro riquadri di conteggio occupavano ~260 px sopra la tabella. */}
+      <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
+          <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+            <h1 className="text-2xl font-bold tracking-tight">Discovery</h1>
+            <span className="text-sm text-muted-foreground">
+              <span
+                className="font-semibold text-foreground"
+                title={"Righe mostrate dopo i filtri: un apparato con più IP conta 1. Online, offline e sconosciuti sono lo stato della riga principale (il secondario offline si vede in «+N IP»)."}
+              >{filtered.length}</span> apparati e host
+              {filtered.length !== totale ? <span title="Tutte le righe dopo l'accorpamento, senza filtri"> di {totale}</span> : ""}
+              {accorpati > 0 && <span title="IP secondari nascosti dentro le righe mostrate: si aprono dal «+N IP» della riga principale"> · {accorpati} IP accorpati</span>}
+              {" · "}<span className="font-semibold text-success">● {online}</span> online
+              {" · "}<span className="font-semibold text-destructive">○ {offline}</span> offline
+              {" · "}<span className="font-semibold">{unknown}</span> sconosciuti
+            </span>
+          </div>
 
             <div className="flex flex-wrap gap-2 items-center">
               {/* Search */}
@@ -2011,7 +1950,7 @@ export default function DiscoveryPage() {
               </Select>
 
               {/* Column picker */}
-              <Button variant="outline" size="icon" title="Gestisci colonne (ordine + visibilità)" onClick={() => setColumnsDialogOpen(true)}>
+              <Button variant="outline" size="icon" title="Gestisci colonne (ordine + visibilità)" onClick={() => { setVista("tutte"); setColumnsDialogOpen(true); }}>
                 <Columns3 className="h-4 w-4" />
               </Button>
 
@@ -2025,12 +1964,48 @@ export default function DiscoveryPage() {
                 <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
               </Button>
             </div>
-          </div>
+      </div>
 
+      {/* Main table card */}
+      <Card>
+        <CardHeader className="pb-2">
           {/* Preset chips: filtro rapido per macro-categoria. Cliccando una chip
               attiva imposta classFilter al preset; il dropdown "Classificazione"
               resta utilizzabile per scelte fini. */}
-          <div className="flex flex-wrap gap-1.5 pt-1">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+          {/* Riga «Vista» a tutta larghezza con la paginazione a destra (Riccardo, 20/10): sotto
+              la scheda la paginazione occupava ~100 px, nella riga del titolo mandava a capo i filtri. */}
+          <div className="flex w-full flex-wrap items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Vista delle colonne">
+            <span className="text-xs text-muted-foreground mr-1">Vista</span>
+            {(["tutte", "inventario", "sicurezza", "rete"] as const).map((v) => (
+              <Button
+                key={v}
+                variant={vista === v ? "default" : "outline"}
+                size="sm"
+                className="h-7 text-xs"
+                aria-pressed={vista === v}
+                onClick={() => setVista(v)}
+                title={v === "tutte" ? "Le colonne scelte da te" : `Solo le colonne per ${VISTE[v].etichetta.toLowerCase()}`}
+              >
+                {v === "tutte" ? "Tutte" : VISTE[v].etichetta}
+              </Button>
+            ))}
+          </div>
+            <div className="ml-auto">
+              <Pagination
+                inTesta
+                page={safeP}
+                totalPages={totalPages}
+                onPageChange={setPage}
+                pageSize={pageSize}
+                onPageSizeChange={handlePageSizeChange}
+                pageSizeOptions={PAGE_SIZE_OPTIONS}
+                total={sortedRows.length}
+              />
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
             <Button
               variant={classFilter === "" ? "default" : "outline"}
               size="sm"
@@ -2039,24 +2014,39 @@ export default function DiscoveryPage() {
             >
               Tutti
             </Button>
-            {presets.map((preset) => {
-              const Icon = ICON_MAP[preset.iconName] ?? Boxes;
-              const active = classFilter === preset.filter;
-              const count = hosts.filter((h) => preset.match.includes(h.classification ?? "")).length;
+            {(() => {
+              const conConteggio = presets.map((preset) => ({ preset, count: contaPreset(preset, hostVisibili, presets) }));
+              const piene = conConteggio.filter(({ preset, count }) => count > 0 || classFilter === preset.filter);
+              const vuote = conConteggio.filter(({ preset, count }) => count === 0 && classFilter !== preset.filter);
+              const chip = ({ preset, count }: { preset: ClassPreset; count: number }) => {
+                const Icon = ICON_MAP[preset.iconName] ?? Boxes;
+                const active = classFilter === preset.filter;
+                return (
+                  <Button
+                    key={preset.filter}
+                    variant={active ? "default" : "outline"}
+                    size="sm"
+                    className="h-7 text-xs gap-1.5"
+                    onClick={() => setClassFilter(active ? "" : preset.filter)}
+                  >
+                    <Icon className="h-3.5 w-3.5" />
+                    {etichettaPreset(preset)}
+                    <span className="text-muted-foreground/80">({count})</span>
+                  </Button>
+                );
+              };
               return (
-                <Button
-                  key={preset.filter}
-                  variant={active ? "default" : "outline"}
-                  size="sm"
-                  className="h-7 text-xs gap-1.5"
-                  onClick={() => setClassFilter(active ? "" : preset.filter)}
-                >
-                  <Icon className="h-3.5 w-3.5" />
-                  {preset.label}
-                  <span className="text-muted-foreground/80">({count})</span>
-                </Button>
+                <>
+                  {piene.map(chip)}
+                  {mostraVuote && vuote.map(chip)}
+                  {vuote.length > 0 && (
+                    <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground" onClick={() => setMostraVuote((v) => !v)}>
+                      {mostraVuote ? "Nascondi le categorie vuote" : `Altre categorie (${vuote.length}, vuote)`}
+                    </Button>
+                  )}
+                </>
               );
-            })}
+            })()}
             {/* v0.2.628: bottone per gestire i preset */}
             <Button
               variant="ghost"
@@ -2074,6 +2064,7 @@ export default function DiscoveryPage() {
               Classification
             </Link>
           </div>
+          </div>
         </CardHeader>
 
         <CardContent className="p-0">
@@ -2089,7 +2080,7 @@ export default function DiscoveryPage() {
               </Button>
               <Button size="sm" variant="outline" className="gap-1.5" onClick={openAddDevices}>
                 <PackagePlus className="h-3.5 w-3.5" />
-                Aggiungi a dispositivi
+                {selectedIds.size > 50 ? `Rendi apparato (50 su ${selectedIds.size})` : "Rendi apparato"}
               </Button>
               {selectedIds.size >= 2 && (
                 <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setLinkSameDeviceOpen(true)}>
@@ -2097,7 +2088,7 @@ export default function DiscoveryPage() {
                   Stesso device fisico
                 </Button>
               )}
-              {adminUnioni && selectedIds.size === 1 && (
+              {admin && selectedIds.size === 1 && (
                 <>
                   <Button size="sm" variant="outline" className="gap-1.5 text-[13px]" onClick={() => setUnisciOpen(true)}>
                     <Merge className="h-3.5 w-3.5" />
@@ -2109,7 +2100,7 @@ export default function DiscoveryPage() {
                   </Button>
                 </>
               )}
-              {adminUnioni && selectedIds.size >= 2 && (
+              {admin && selectedIds.size >= 2 && (
                 <Button size="sm" variant="outline" className="gap-1.5 text-[13px]" onClick={() => setUnisciOpen(true)}>
                   <Merge className="h-3.5 w-3.5" />
                   Unisci ({selectedIds.size})…
@@ -2128,6 +2119,17 @@ export default function DiscoveryPage() {
                   ? `${bulkScanProgress.current}/${bulkScanProgress.total} · ${bulkScanProgress.label}`
                   : "Aggiorna selezionati"}
               </Button>
+              {admin && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5"
+                  onClick={() => setScansioneAutomaticaOpen(true)}
+                  title="Crea un job che rilegge da solo gli apparati scelti, con le credenziali memorizzate"
+                >
+                  ↻ {selectedIds.size > 50 ? `Scansione automatica… (50 su ${selectedIds.size})` : "Scansione automatica…"}
+                </Button>
+              )}
               <Button
                 size="sm"
                 variant="outline"
@@ -2158,7 +2160,7 @@ export default function DiscoveryPage() {
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <Table>
+              <Table fissa riserva={40}>
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-10">
@@ -2168,7 +2170,7 @@ export default function DiscoveryPage() {
                       />
                     </TableHead>
                     <TableHead className="w-10 whitespace-nowrap text-center">Azioni</TableHead>
-                    {orderedVisibleCols.map((col) => (
+                    {colonneMostrate.map((col) => (
                       <SortableTableHead
                         key={col.id}
                         columnId={col.id}
@@ -2177,7 +2179,9 @@ export default function DiscoveryPage() {
                         onSort={onSort}
                         className="whitespace-nowrap"
                       >
-                        {col.label}
+                        {GLOSSARIO[col.id] ? (
+                          <span title={GLOSSARIO[col.id]} className="underline decoration-dotted underline-offset-4 cursor-help">{col.label}</span>
+                        ) : col.label}
                       </SortableTableHead>
                     ))}
                   </TableRow>
@@ -2231,16 +2235,16 @@ export default function DiscoveryPage() {
                                 <DropdownMenuContent align="end" className="w-56">
                                   {/* v0.2.601: dal menu sempre alla scheda asset unica /objects/[id].
                                       Se isDev → ?edit=1 auto-apre EditDeviceDialog.
-                                      Se !isDev (host non promosso) → ?promote=1 auto-apre PromoteHostDialog. */}
+                                      Se !isDev (host non promosso) → ?promote=1 auto-apre RendiApparatoDialog. */}
                                   <DropdownMenuItem
                                     render={
-                                      <Link href={`/objects/${h.id}${isDev ? "?edit=1" : "?promote=1"}`}>
+                                      <Link href={`/objects/${h.id}${!admin ? "" : isDev ? "?edit=1" : "?promote=1"}`}>
                                         <Pencil className="h-3.5 w-3.5" />
-                                        {isDev ? "Modifica dispositivo" : "Promuovi a dispositivo"}
+                                        {!admin ? "Apri la scheda" : isDev ? "Modifica dispositivo" : "Promuovi a dispositivo"}
                                       </Link>
                                     }
                                   />
-                                  {isDev && (
+                                  {isDev && admin && (
                                     <>
                                       <DropdownMenuItem
                                         disabled={busyHere || isMhSecondary}
@@ -2262,6 +2266,8 @@ export default function DiscoveryPage() {
                                       </DropdownMenuItem>
                                     </>
                                   )}
+                                  {admin && (
+                                  <>
                                   <DropdownMenuItem onClick={() => openTestForRow(h)}>
                                     <KeyRound className="h-3.5 w-3.5" />
                                     Test credenziali host
@@ -2305,6 +2311,9 @@ export default function DiscoveryPage() {
                                     </>
                                   )}
 
+                                  </>
+                                  )}
+
                                   {/* Apri un servizio web dell'host in una tab separata (porta/schema editabili) */}
                                   <DropdownMenuItem
                                     onClick={() => {
@@ -2339,7 +2348,7 @@ export default function DiscoveryPage() {
                                         In LibreNMS (URL non configurato)
                                       </DropdownMenuItem>
                                     )
-                                  ) : (
+                                  ) : admin ? (
                                     <DropdownMenuItem
                                       disabled={isAddingLnms}
                                       onClick={() => addHostToLibreNMS(h)}
@@ -2349,7 +2358,7 @@ export default function DiscoveryPage() {
                                         : <PlusCircle className="h-3.5 w-3.5" />}
                                       Aggiungi a LibreNMS
                                     </DropdownMenuItem>
-                                  )}
+                                  ) : null}
 
                                   {/* Wazuh: stato informativo nel menu kebab. L'azione (apri dashboard /
                                       enrollment) sta sull'icona Shield della colonna "Profilo" che apre
@@ -2375,9 +2384,9 @@ export default function DiscoveryPage() {
                                     );
                                   })()}
 
-                                  <DropdownMenuSeparator />
+                                  {admin && <DropdownMenuSeparator />}
 
-                                  {isDev ? (
+                                  {!admin ? null : isDev ? (
                                     <DropdownMenuItem
                                       variant="destructive"
                                       disabled={busyHere}
@@ -2401,7 +2410,7 @@ export default function DiscoveryPage() {
                           );
                         })()}
                       </TableCell>
-                      {orderedVisibleCols.map((col) => (
+                      {colonneMostrate.map((col) => (
                         <TableCell key={col.id} className="py-2">
                           {renderCell(h, col.id)}
                         </TableCell>
@@ -2414,16 +2423,6 @@ export default function DiscoveryPage() {
           )}
         </CardContent>
       </Card>
-
-      <Pagination
-        page={safeP}
-        totalPages={totalPages}
-        onPageChange={setPage}
-        pageSize={pageSize}
-        onPageSizeChange={handlePageSizeChange}
-        pageSizeOptions={PAGE_SIZE_OPTIONS}
-        total={sortedRows.length}
-      />
 
       {/* ════════════════ DIALOG MODIFICA MULTIPLA HOST ════════════════ */}
       <Dialog open={bulkEditOpen} onOpenChange={setBulkEditOpen}>
@@ -2848,125 +2847,33 @@ export default function DiscoveryPage() {
         </DialogContent>
       </Dialog>
 
-      {/* ════════════════ DIALOG AGGIUNGI A DISPOSITIVI ════════════════ */}
-      <Dialog open={addDevicesOpen} onOpenChange={setAddDevicesOpen}>
-        <DialogContent className={DIALOG_PANEL_WIDE_CLASS}>
-          <DialogHeader className="shrink-0 border-b border-border/50 px-4 pt-4 pb-3">
-            <DialogTitle className="flex items-center gap-2">
-              <PackagePlus className="h-5 w-5" />
-              Aggiungi {selectedIds.size} host a dispositivi
-            </DialogTitle>
-            <p className="text-xs text-muted-foreground mt-1">
-              Promuove gli host selezionati a network device. Imposta profilo, vendor, protocollo e credenziali.
-              Le credenziali già validate sull&apos;host verranno comunque ereditate.
-            </p>
-          </DialogHeader>
-          <DialogScrollableArea className="px-4 py-3">
-            <div className="space-y-4">
-              <DeviceFormFields
-                mode="bulk"
-                credentials={addCredentials}
-                idPrefix="discovery-add-devices"
-                showIdentificazione={false}
-                showProfilo={true}
-                showCredenziali={false}
-                classification={addClassification}
-                vendor={addVendor}
-                vendorSubtype={addVendorSubtype}
-                protocol={addProtocol}
-                scanTarget={addScanTarget}
-                productProfile={addProductProfile}
-                credentialId={addCredentialId}
-                snmpCredentialId={addSnmpCredentialId}
-                useForArpPoll={addUseForArpPoll}
-                onClassificationChange={(v) => {
-                  setAddClassification(v);
-                  if (v) setAddProductProfile(profiloPerClassificazione(addVendor, v));
-                }}
-                creazioneInBlocco
-                onVendorChange={(v) => { setAddVendor(v); if (v !== "hp") setAddVendorSubtype(null); }}
-                onVendorSubtypeChange={setAddVendorSubtype}
-                onProtocolChange={(v) => { if (v !== addProtocol) cambiaProtocolloAggiunta(v); }}
-                onScanTargetChange={setAddScanTarget}
-                onCredentialIdChange={setAddCredentialId}
-                onSnmpCredentialIdChange={setAddSnmpCredentialId}
-                onProductProfileChange={(v) => setAddProductProfile(v)}
-                onUseForArpPollChange={setAddUseForArpPoll}
-                defaultClassification=""
-                defaultVendor={addVendor}
-                defaultProtocol={addProtocol}
-              />
-              {addHostDiversi && (
-                <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-800 dark:text-amber-200/90">
-                  Gli host selezionati non sono dello stesso tipo: scegli classificazione, marca e protocollo validi per tutti.
-                </p>
-              )}
+      {/* ════════════════ FINESTRA RENDI APPARATO ════════════════ */}
+      {addDevicesOpen && selectedIds.size > 0 && (
+        <RendiApparatoDialog
+          hosts={hosts.filter((h) => selectedIds.has(h.id)).slice(0, 50)}
+          open={addDevicesOpen}
+          onOpenChange={setAddDevicesOpen}
+          // Si tolgono dalla selezione solo gli host proposti, non quelli oltre i 50.
+          onCreated={() => {
+            const proposti = new Set(hosts.filter((h) => selectedIds.has(h.id)).slice(0, 50).map((h) => h.id));
+            setSelectedIds((prec) => new Set([...prec].filter((id) => !proposti.has(id))));
+            fetchData();
+          }}
+        />
+      )}
 
-              {(() => {
-                const tipiPrincipale = tipiCredenzialePerProtocollo(addProtocol);
-                const primaryOpts = addCredentials.filter((c) => tipiPrincipale.includes(c.credential_type));
-                const snmpOpts = vociSnmpAggiuntive(addCredentials);
-                // Con SNMP come protocollo la principale è già la SNMP: la seconda tendina non serve.
-                const protocolloSnmp = addProtocol === "snmp_v2" || addProtocol === "snmp_v3";
-                return (
-                  <div className="rounded-lg border border-border/60 bg-muted/20 p-3 space-y-3">
-                    <div className="text-sm font-medium">Credenziali</div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      <div className="space-y-1.5">
-                        <Label className="text-xs">Credenziale principale</Label>
-                        <AddableSelect
-                          value={addCredentialId && addCredentialId !== "none" ? Number(addCredentialId) : null}
-                          onChange={(v) => setAddCredentialId(v != null ? String(v) : null)}
-                          options={primaryOpts.map((c) => ({ id: c.id, label: c.name, extra: etichettaTipo(c.credential_type) }))}
-                          entityLabel="credenziale"
-                          createApiUrl="/api/credentials"
-                          extraFields={[
-                            { key: "credential_type", label: "Tipo", type: "select", required: true, defaultValue: tipoCreazioneRapida(addProtocol), options: opzioniCreazioneRapida(addProtocol) },
-                            { key: "username", label: "Username", placeholder: "admin" },
-                            { key: "password", label: "Password / Community", type: "password", required: true },
-                          ]}
-                          onCreated={refreshCredentials}
-                        />
-                      </div>
-                      {!protocolloSnmp && (
-                      <div className="space-y-1.5">
-                        <Label className="text-xs">Credenziale SNMP (opzionale)</Label>
-                        <AddableSelect
-                          value={addSnmpCredentialId && addSnmpCredentialId !== "none" ? Number(addSnmpCredentialId) : null}
-                          onChange={(v) => setAddSnmpCredentialId(v != null ? String(v) : null)}
-                          options={snmpOpts.map((c) => ({ id: c.id, label: c.name, extra: etichettaTipo(c.credential_type) }))}
-                          entityLabel="credenziale SNMP"
-                          createApiUrl="/api/credentials"
-                          extraFields={[
-                            { key: "credential_type", label: "Tipo", type: "select", required: true, defaultValue: "snmp", options: [{ value: "snmp", label: "SNMP" }] },
-                            { key: "password", label: "Community string", type: "password", required: true, placeholder: "public" },
-                          ]}
-                          onCreated={refreshCredentials}
-                        />
-                      </div>
-                      )}
-                    </div>
-                    <p className="text-xs text-muted-foreground border-t border-border/60 pt-2">
-                      Le credenziali validate sugli host saranno ereditate come fallback. Imposta qui per forzare credenziali specifiche.
-                    </p>
-                  </div>
-                );
-              })()}
-            </div>
-          </DialogScrollableArea>
-          <DialogFooter className="border-t border-border/50 px-4 py-3 items-center">
-            {!addClassification && (
-              <span className="mr-auto text-sm text-amber-800 dark:text-amber-200">Scegli la classificazione</span>
-            )}
-            <Button variant="ghost" onClick={() => setAddDevicesOpen(false)} disabled={addDevicesSaving}>
-              Annulla
-            </Button>
-            <Button onClick={handleBulkAddToDevices} disabled={addDevicesSaving || selectedIds.size === 0 || !addClassification}>
-              {addDevicesSaving ? <><Loader2 className="h-4 w-4 mr-1.5 animate-spin" />Creazione...</> : <><Server className="h-4 w-4 mr-1.5" />Crea {selectedIds.size} dispositivi</>}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* ════════════════ FINESTRA SCANSIONE AUTOMATICA (J2) ════════════════ */}
+      {admin && scansioneAutomaticaOpen && selectedIds.size > 0 && (
+        <FinestraScansioneAutomatica
+          modo="crea"
+          open={scansioneAutomaticaOpen}
+          onOpenChange={setScansioneAutomaticaOpen}
+          // Agisce solo sugli id selezionati (al più 50 per job); la selezione resta dopo la creazione.
+          hostIds={hosts.filter((h) => selectedIds.has(h.id)).slice(0, 50).map((h) => h.id)}
+          selezionati={selectedIds.size}
+          onRendiApparato={() => { setScansioneAutomaticaOpen(false); openAddDevices(); }}
+        />
+      )}
 
       {/* ════════════════ DIALOG CREA REGOLA FINGERPRINT ════════════════ */}
       {ruleHost && getRuleFingerprint() && (

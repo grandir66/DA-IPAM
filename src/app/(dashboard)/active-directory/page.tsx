@@ -1,8 +1,8 @@
 "use client";
 import { parseDbDate } from "@/lib/db-date";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useState, useCallback, useMemo } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import {
@@ -36,6 +36,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
+import { ScorrimentoTabella } from "@/components/ui/table";
 import { Pagination } from "@/components/shared/pagination";
 import { SkeletonTable } from "@/components/shared/skeleton-table";
 import { ADSetupGuideDialog } from "@/components/shared/ad-setup-guide-dialog";
@@ -49,6 +50,7 @@ import {
 import { parseVociArchivio, type VoceArchivio } from "@/components/controllers/controllers-model";
 import { stessoDc } from "@/lib/ad/account-ldap";
 import { fetchJson } from "@/lib/fetch-json";
+import type { StatoInvioAd } from "@/lib/vulcan/quadro";
 import { SEVERITY_STYLE } from "@/lib/severity-style";
 import type { AclExtras, AclObjectKind, InterestingAce } from "@/lib/ad/health/acl/types";
 import {
@@ -221,7 +223,25 @@ function useDebounced<T>(value: T, ms = 300): T {
   return v;
 }
 
+// La voce «Health Active Directory» del gruppo Sicurezza (19/10) apre ?tab=health:
+// useSearchParams vuole un Suspense attorno.
 export default function ActiveDirectoryPage() {
+  return (
+    <Suspense fallback={null}>
+      <PaginaActiveDirectory />
+    </Suspense>
+  );
+}
+
+const SCHEDE_AD = new Set(["computers", "users", "groups", "dhcp", "health"]);
+
+function PaginaActiveDirectory() {
+  const searchParams = useSearchParams();
+  const tabRichiesta = searchParams.get("tab");
+  const [scheda, setScheda] = useState(() => (tabRichiesta && SCHEDE_AD.has(tabRichiesta) ? tabRichiesta : "computers"));
+  useEffect(() => {
+    if (tabRichiesta && SCHEDE_AD.has(tabRichiesta)) setScheda(tabRichiesta);
+  }, [tabRichiesta]);
   const router = useRouter();
   const [integrations, setIntegrations] = useState<AdIntegration[]>([]);
   const [selectedIntegration, setSelectedIntegration] = useState<AdIntegration | null>(null);
@@ -271,6 +291,7 @@ export default function ActiveDirectoryPage() {
   const [editSaving, setEditSaving] = useState(false);
 
   const [healthRun, setHealthRun] = useState<AdHealthRun | null>(null);
+  const [healthVulcan, setHealthVulcan] = useState<StatoInvioAd | { stato: "illeggibile" } | null>(null);
   const [healthScore, setHealthScore] = useState<HealthScore | null>(null);
   const [healthFindings, setHealthFindings] = useState<HealthFinding[]>([]);
   const [privilegeMatrix, setPrivilegeMatrix] = useState<PrivilegeMatrix | null>(null);
@@ -429,6 +450,7 @@ export default function ActiveDirectoryPage() {
   const fetchHealth = useCallback(async () => {
     if (!selectedIntegration) {
       setHealthRun(null);
+      setHealthVulcan(null);
       setHealthScore(null);
       setHealthFindings([]);
       setPrivilegeMatrix(null);
@@ -445,6 +467,7 @@ export default function ActiveDirectoryPage() {
       if (!res.ok) throw new Error("Errore caricamento AD Health");
       const data = await res.json();
       setHealthRun(data.run ?? null);
+      setHealthVulcan(data.vulcan ?? null);
       setHealthScore(data.score ?? null);
       setHealthFindings(Array.isArray(data.findings) ? data.findings : []);
       setPrivilegeMatrix(data.privilegeMatrix ?? null);
@@ -455,6 +478,7 @@ export default function ActiveDirectoryPage() {
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Errore");
       setHealthRun(null);
+      setHealthVulcan(null);
       setHealthScore(null);
       setHealthFindings([]);
       setPrivilegeMatrix(null);
@@ -1169,7 +1193,7 @@ export default function ActiveDirectoryPage() {
                 </Card>
               </div>
 
-              <Tabs defaultValue="computers" className="mt-6">
+              <Tabs value={scheda} onValueChange={(v) => setScheda(String(v))} className="mt-6">
                 <TabsList>
                   <TabsTrigger value="computers" className="flex items-center gap-2">
                     <Monitor className="w-4 h-4" />
@@ -1214,8 +1238,12 @@ export default function ActiveDirectoryPage() {
                     {computersActiveOnly && (
                       <span className="text-xs text-muted-foreground">Solo logon negli ultimi 90 giorni: {computersTotal} di {selectedIntegration.computers_count}</span>
                     )}
+                    {/* Paginazione in cima, accanto alla ricerca (Riccardo, 20/10). */}
+                    <div className="ml-auto">
+                      <Pagination inTesta page={computersPage} totalPages={Math.ceil(computersTotal / pageSize)} onPageChange={setComputersPage} pageSize={pageSize} total={computersTotal} />
+                    </div>
                   </div>
-                  <div className="border rounded-lg overflow-hidden">
+                  <ScorrimentoTabella className="border rounded-lg">
                     <table className="w-full text-sm">
                       <thead className="bg-muted/50">
                         <tr>
@@ -1267,14 +1295,7 @@ export default function ActiveDirectoryPage() {
                         )}
                       </tbody>
                     </table>
-                  </div>
-                  <div className="mt-4">
-                    <Pagination
-                      page={computersPage}
-                      totalPages={Math.ceil(computersTotal / pageSize)}
-                      onPageChange={setComputersPage}
-                    />
-                  </div>
+                  </ScorrimentoTabella>
                 </TabsContent>
 
                 <TabsContent value="users" className="mt-4">
@@ -1298,8 +1319,12 @@ export default function ActiveDirectoryPage() {
                     {usersActiveOnly && (
                       <span className="text-xs text-muted-foreground">Solo logon negli ultimi 90 giorni: {usersTotal} di {selectedIntegration.users_count}</span>
                     )}
+                    {/* Paginazione in cima, accanto alla ricerca (Riccardo, 20/10). */}
+                    <div className="ml-auto">
+                      <Pagination inTesta page={usersPage} totalPages={Math.ceil(usersTotal / pageSize)} onPageChange={setUsersPage} pageSize={pageSize} total={usersTotal} />
+                    </div>
                   </div>
-                  <div className="border rounded-lg overflow-hidden">
+                  <ScorrimentoTabella className="border rounded-lg">
                     <table className="w-full text-sm">
                       <thead className="bg-muted/50">
                         <tr>
@@ -1345,14 +1370,7 @@ export default function ActiveDirectoryPage() {
                         )}
                       </tbody>
                     </table>
-                  </div>
-                  <div className="mt-4">
-                    <Pagination
-                      page={usersPage}
-                      totalPages={Math.ceil(usersTotal / pageSize)}
-                      onPageChange={setUsersPage}
-                    />
-                  </div>
+                  </ScorrimentoTabella>
                 </TabsContent>
 
                 <TabsContent value="groups" className="mt-4">
@@ -1366,8 +1384,12 @@ export default function ActiveDirectoryPage() {
                       }}
                       className="max-w-sm"
                     />
+                    {/* Paginazione in cima, accanto alla ricerca (Riccardo, 20/10). */}
+                    <div className="ml-auto">
+                      <Pagination inTesta page={groupsPage} totalPages={Math.ceil(groupsTotal / pageSize)} onPageChange={setGroupsPage} pageSize={pageSize} total={groupsTotal} />
+                    </div>
                   </div>
-                  <div className="border rounded-lg overflow-hidden">
+                  <ScorrimentoTabella className="border rounded-lg">
                     <table className="w-full text-sm">
                       <thead className="bg-muted/50">
                         <tr>
@@ -1399,14 +1421,7 @@ export default function ActiveDirectoryPage() {
                         )}
                       </tbody>
                     </table>
-                  </div>
-                  <div className="mt-4">
-                    <Pagination
-                      page={groupsPage}
-                      totalPages={Math.ceil(groupsTotal / pageSize)}
-                      onPageChange={setGroupsPage}
-                    />
-                  </div>
+                  </ScorrimentoTabella>
                 </TabsContent>
 
                 <TabsContent value="dhcp" className="mt-4">
@@ -1433,8 +1448,12 @@ export default function ActiveDirectoryPage() {
                           }}
                           className="max-w-sm"
                         />
+                        {/* Paginazione in cima, accanto alla ricerca (Riccardo, 20/10). */}
+                        <div className="ml-auto">
+                          <Pagination inTesta page={dhcpPage} totalPages={Math.ceil(dhcpTotal / pageSize)} onPageChange={setDhcpPage} pageSize={pageSize} total={dhcpTotal} />
+                        </div>
                       </div>
-                      <div className="border rounded-lg overflow-hidden">
+                      <ScorrimentoTabella className="border rounded-lg">
                         <table className="w-full text-sm">
                           <thead className="bg-muted/50">
                             <tr>
@@ -1473,14 +1492,7 @@ export default function ActiveDirectoryPage() {
                             )}
                           </tbody>
                         </table>
-                      </div>
-                      <div className="mt-4">
-                        <Pagination
-                          page={dhcpPage}
-                          totalPages={Math.ceil(dhcpTotal / pageSize)}
-                          onPageChange={setDhcpPage}
-                        />
-                      </div>
+                      </ScorrimentoTabella>
                     </>
                   )}
                 </TabsContent>
@@ -1537,6 +1549,21 @@ export default function ActiveDirectoryPage() {
                     )}
                   </div>
 
+                  {healthRun && (
+                    <p className="text-[13px] text-muted-foreground">
+                      Invio a DA-Vul-can dell&apos;ultimo run ok:{" "}
+                      {healthVulcan === null && "mai accodato"}
+                      {healthVulcan?.stato === "spento" && "spento (nessun gettone dell'hub su questa istanza)"}
+                      {healthVulcan?.stato === "altro_cliente" && "non parte: questo non è il cliente dell'invio su questa istanza"}
+                      {healthVulcan?.stato === "in_coda" &&
+                        `in coda${healthVulcan.motivo ? ` — ultimo tentativo: ${healthVulcan.motivo}` : ""}`}
+                      {healthVulcan?.stato === "inviato" && `inviato il ${formatDate(healthVulcan.il)}`}
+                      {healthVulcan?.stato === "scartato" && `scartato: ${healthVulcan.motivo ?? "motivo non registrato"}`}
+                      {healthVulcan?.stato === "fallito" &&
+                        `fallito dopo i tentativi: ${healthVulcan.motivo ?? "motivo non registrato"} («Invia ora» in Cosa esce lo ritenta)`}
+                      {healthVulcan?.stato === "illeggibile" && "stato non leggibile (errore nel database)"}
+                    </p>
+                  )}
                   {healthRun?.status === "running" && (
                     <p className="text-sm text-amber-700 dark:text-amber-300">
                       Healthcheck in corso… i dati sotto restano dell&apos;ultimo run completato, se disponibile.

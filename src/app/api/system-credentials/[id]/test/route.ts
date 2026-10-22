@@ -32,7 +32,6 @@ const PROBE_PATHS: Record<string, string> = {
   truenas: "/api/v2.0/system/info",               // TrueNAS REST
   edge: "/",                                       // scanner-edge UI (sealed)
   hub: "/scanner-edge-version",                    // DA-Vul-can hub
-  tailscale: "/",                                  // Tailscale (vario)
   pve: "/api2/json/version",                       // Proxmox VE API
   other: "/",
 };

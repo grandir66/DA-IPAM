@@ -398,9 +398,13 @@ export default function DevicesUnifiedPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Dispositivi</h1>
-          <p className="text-muted-foreground">
-            {sortedItems.length} dispositivi {hasFilters && `(filtrati da ${items.length})`}
-          </p>
+          <div className="flex flex-wrap items-center gap-x-3">
+            <p className="text-muted-foreground">
+              {sortedItems.length} dispositivi {hasFilters && `(filtrati da ${items.length})`}
+            </p>
+            {/* Paginazione nella riga del titolo (Riccardo, 20/10): sotto la tabella occupava spazio. */}
+            <Pagination inTesta page={page} totalPages={totalPages} onPageChange={setPage} />
+          </div>
         </div>
         <Button onClick={fetchData} variant="outline" className="gap-2">
           <RefreshCw className="h-4 w-4" />
@@ -516,7 +520,7 @@ export default function DevicesUnifiedPage() {
           </CardContent>
         ) : (
           <TooltipProvider>
-            <Table>
+            <Table fissa>
               <TableHeader>
                 <TableRow>
                   <TableHead 
@@ -704,9 +708,6 @@ export default function DevicesUnifiedPage() {
         )}
       </Card>
 
-      {totalPages > 1 && (
-        <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
-      )}
     </div>
   );
 }

@@ -170,6 +170,23 @@ export function decideDelete(actor: UserManager, target: ManagedUser): Decision 
 }
 
 /**
+ * Verifica in due passaggi (Riccardo, 20/10; ADR 0023): come «Reimposta password», ma su se
+ * stessi si può chiederla e azzerarla (telefono cambiato); toglierla a se stessi no, per
+ * nessun ruolo: abbassa la propria protezione, lo fa un altro admin o lo script da server.
+ */
+export function decideSecondaVerifica(actor: UserManager, target: ManagedUser, azione: "richiedi" | "azzera" | "togli"): Decision {
+  if (isSelf(actor, target)) {
+    return azione === "togli"
+      ? deny(400, "Non puoi toglierti la verifica in due passaggi: chiedilo a un altro amministratore")
+      : { ok: true };
+  }
+  if (!canManageUser(actor, target)) {
+    return denyTarget(target, "Non puoi cambiare la verifica di un super amministratore");
+  }
+  return { ok: true };
+}
+
+/**
  * Reimpostazione della password. L'admin solo per i suoi utenti, mai per un
  * superadmin, e mai per sé stesso: «Cambia password» nel menu utente chiede la
  * password attuale, questa rotta no. Una sessione rubata o lasciata aperta

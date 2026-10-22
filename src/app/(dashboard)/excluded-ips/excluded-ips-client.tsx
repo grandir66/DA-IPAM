@@ -93,7 +93,7 @@ export function ExcludedIpsClient() {
               Nessun IP escluso. Quando elimini un host la sua coppia (rete, IP) finirà qui.
             </div>
           ) : (
-            <Table>
+            <Table fissa>
               <TableHeader>
                 <TableRow>
                   <TableHead>Rete</TableHead>

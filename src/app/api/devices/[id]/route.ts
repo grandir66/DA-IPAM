@@ -7,14 +7,21 @@ import {
   applyProductProfileScanDefaults,
   type ProductProfileId,
 } from "@/lib/device-product-profiles";
+import { scriviSeCambiata } from "@/lib/classification/scrivi";
+import { tipoScheda } from "@/lib/scheda/tipo-scheda";
+import { RUOLI_SERVER, type RuoloServer } from "@/lib/classification/canonico";
 import { coerceProtocolForVendor } from "@/lib/vendor-device-profile";
 import { applicaCorpoApparatoDb, avvisoFalliti, RifiutoCredenziali, usataAdessoDb, type EsitoScelte } from "@/lib/credentials/apparato-archivio";
+import { classificazioneCanonicaEnum } from "@/lib/validators";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { parseJsonSafe } from "@/lib/json-safe";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { networkDeviceUsesArpPoll } from "@/lib/network-device-arp";
 import { senzaColonneVecchie } from "@/lib/devices/colonne-vecchie";
 import { avvisoPortaProtocollo } from "@/lib/devices/porta-protocollo";
+import { riassuntoMikrotik } from "@/lib/devices/scheda-mikrotik-rotta";
+import { contaVlanSwitch } from "@/lib/db-tenant";
+import { bloccoCambioHost } from "@/lib/devices/apparato-del-cluster";
 
 const NO_CACHE_HEADERS = { "Cache-Control": "no-store, no-cache, must-revalidate" };
 
@@ -61,10 +68,18 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: "Dispositivo non trovato" }, { status: 404 });
     }
 
-    const isHypervisor = device.device_type === "hypervisor" || device.scan_target === "proxmox";
+    // Le scelte seguono il tipo di scheda (classificazione), non device_type: per i server era `switch`.
+    const tipo = tipoScheda({
+      gestito: true,
+      classification: device.classification,
+      device_type: device.device_type,
+      vendor: device.vendor,
+      scan_target: device.scan_target,
+    });
+    const isHypervisor = tipo === "hypervisor" || device.scan_target === "proxmox";
     const arpCapable = networkDeviceUsesArpPoll(device);
     const arpEntries = arpCapable ? getArpEntriesByDevice(Number(id)) : [];
-    const macPortEntries = device.device_type === "switch" ? getMacPortEntriesByDevice(Number(id)) : [];
+    const macPortEntries = tipo === "switch" ? getMacPortEntriesByDevice(Number(id)) : [];
     const switchPorts = isHypervisor ? [] : getSwitchPortsByDevice(Number(id));
     const neighbors = getNeighborsByDevice(Number(id));
     const routes = arpCapable ? getRoutesByDevice(Number(id)) : [];
@@ -99,6 +114,11 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     }
 
     const proxmox_data = isHypervisor ? parseProxmoxSummary(device.last_proxmox_scan_result) : null;
+    // Scheda MikroTik (Task 9): bridge dell'ultima fotografia (una COUNT) e lettura della topologia accesa, solo per i
+    // MikroTik in SSH. Da qui la pagina decide le tab VLAN e Bridge; null = schema della scheda sotto il livello 2.
+    const mikrotik = device.vendor === "mikrotik" && device.protocol === "ssh" ? riassuntoMikrotik(Number(id)) : null;
+    // Tab VLAN degli switch (piano accorpamento, Task 11): quante VLAN ha l'ultima lettura Q-BRIDGE (una COUNT).
+    const switch_vlan_n = isHypervisor ? 0 : contaVlanSwitch(Number(id));
 
     return NextResponse.json(
       {
@@ -110,6 +130,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
         arp_entries: arpEntries,
         mac_port_entries: macPortEntries,
         switch_ports: switchPorts,
+        switch_vlan_n,
         neighbors,
         routes,
         dhcp_leases,
@@ -117,6 +138,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
         // La scelta del motore per il protocollo principale e per SNMP (T20,
         // interfaccia punto 5): la scheda la mostra come «Usata adesso».
         usata_adesso: usataAdessoDb(getDb(), Number(id)),
+        mikrotik,
       },
       { headers: NO_CACHE_HEADERS }
     );
@@ -137,13 +159,27 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     if (!existing) {
       return NextResponse.json({ error: "Dispositivo non trovato" }, { status: 404 });
     }
-    const body = await request.json();
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return NextResponse.json({ error: "Corpo della richiesta non valido" }, { status: 400 });
+    }
+    // La classificazione finisce anche sull'host abbinato: deve essere una voce dell'elenco (n. 10).
+    if (body.classification !== undefined && body.classification !== null && body.classification !== "") {
+      const c = classificazioneCanonicaEnum().safeParse(body.classification);
+      if (!c.success) return NextResponse.json({ error: "Classificazione non valida: scegline una dall'elenco" }, { status: 400 });
+      body.classification = c.data;
+    }
 
     const updates: Record<string, unknown> = {};
     if (body.name !== undefined) updates.name = body.name;
-    if (body.host !== undefined) updates.host = body.host;
+    if (body.host !== undefined) {
+      // Stesso blocco di «Rendi apparato» (revisione finale 22/10): spostare un apparato sull'IP di un altro apparato,
+      // o su un altro IP del suo device fisico, ne farebbe due. L'apparato stesso non conta.
+      const blocco = bloccoCambioHost(getDb(), existing, body.host);
+      if (blocco) return NextResponse.json(blocco, { status: 409 });
+      updates.host = body.host;
+    }
     if (body.device_type !== undefined) updates.device_type = body.device_type;
-    if (body.classification !== undefined) updates.classification = body.classification;
     if (body.vendor !== undefined) updates.vendor = body.vendor;
     if (body.vendor_subtype !== undefined) updates.vendor_subtype = body.vendor_subtype;
     if (body.protocol !== undefined) updates.protocol = body.protocol;
@@ -228,6 +264,14 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     const dbh = getDb();
     const { device, credenziali } = dbh.transaction(() => {
       const aggiornato = updateNetworkDevice(Number(id), updates as Partial<import("@/types").NetworkDevice>);
+      // Classificazione dal punto unico: solo se è cambiata (o cambiano i ruoli). La finestra «Modifica» la
+      // rimanda a ogni salvataggio: non deve fissarla «a mano» (revisione finale, n. 1).
+      if (aggiornato && typeof body.classification === "string" && body.classification) {
+        const ruoli = Array.isArray(body.server_roles)
+          ? (body.server_roles as unknown[]).filter((r): r is RuoloServer => (RUOLI_SERVER as readonly string[]).includes(String(r)))
+          : undefined;
+        scriviSeCambiata(dbh, { deviceId: Number(id) }, body.classification, { classification: existing.classification ?? null, server_roles: existing.server_roles ?? null }, { ruoli });
+      }
       const esito: EsitoScelte | null = aggiornato
         ? applicaCorpoApparatoDb(dbh, Number(id), body as Record<string, unknown>, { conferma: body.conferma_rimozione === true })
         : null;

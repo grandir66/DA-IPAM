@@ -16,11 +16,14 @@
  *
  * Per capire l'architettura: leggere CLAUDE.md sezione "Architettura Multi-Tenant"
  */
+import { apparatoDelCluster } from "@/lib/devices/apparato-del-cluster";
 import Database from "better-sqlite3";
 import path from "path";
 import { resolveDataDir } from "./data-dir";
 import fs from "fs";
 import { SCHEMA_SQL } from "./db-schema";
+import { canonicalizza, type Canonica } from "./classification/canonico";
+import { aggiungiRuoloServer, impostaVendorSeVuoto } from "./classification/scrittura";
 import { macToHex, normalizeMac, normalizeMacForStorage } from "./utils";
 import { ipSortKey, sqlOrderByDhcpLeases, sqlOrderByNetworks, type SortDirection } from "./table-sort";
 import { randomUUID } from "crypto";
@@ -68,7 +71,7 @@ import type {
 } from "@/types";
 import { modelloEtichettaDiPorte, type FingerprintUserRule } from "./device-fingerprint-classification";
 import { registraRipiego } from "./db-maintenance/ripieghi";
-import { cleanOrphanedForeignKeys as cleanOrphanedForeignKeysSu, NEIGHBORS_LATEST_ROUND_SQL, NEIGHBORS_MODEL_SOURCES_SQL } from "./db-tenant";
+import { cleanOrphanedForeignKeys as cleanOrphanedForeignKeysSu, deleteScheduledJob as deleteScheduledJobConEsiti, getCurrentTenantCode as tenantCorrente, livelloSchemaSchedaMk, NEIGHBORS_LATEST_ROUND_SQL, NEIGHBORS_MODEL_SOURCES_SQL, resetConfiguration as resetConfigurazioneTenant } from "./db-tenant";
 
 const DATA_DIR = resolveDataDir();
 /** Path effettivo del DB. `DA_IPAM_DB_PATH` serve solo a `scripts/generate-empty-db.ts` (template versionato). */
@@ -767,6 +770,15 @@ export function getDb(): Database.Database {
   ensureNetworkDevicesColumn(_db, "scan_target", "ALTER TABLE network_devices ADD COLUMN scan_target TEXT");
   ensureNetworkDevicesColumn(_db, "snmp_version", "ALTER TABLE network_devices ADD COLUMN snmp_version TEXT CHECK(snmp_version IN ('1', '2c'))");
   ensureNetworkDevicesColumn(_db, "snmp_version_fissata", "ALTER TABLE network_devices ADD COLUMN snmp_version_fissata INTEGER NOT NULL DEFAULT 0");
+  // Ruoli dei server (catalogo canonico 21/10): JSON array, colonna nuova su hosts e network_devices.
+  ensureNetworkDevicesColumn(_db, "server_roles", "ALTER TABLE network_devices ADD COLUMN server_roles TEXT");
+  // Classificazione scelta a mano sull'apparato (tappa 5, 21/10): la scansione non la sovrascrive.
+  ensureNetworkDevicesColumn(_db, "classification_manual", "ALTER TABLE network_devices ADD COLUMN classification_manual INTEGER NOT NULL DEFAULT 0");
+  try {
+    if (!tableHasColumn(_db, "hosts", "server_roles")) _db.exec("ALTER TABLE hosts ADD COLUMN server_roles TEXT");
+  } catch (e) {
+    console.error("[db] colonna hosts.server_roles non aggiunta:", e);
+  }
 
   // Colonne hosts aggiunte in migrazioni pre-SCHEMA: su DB nuovi la tabella non esisteva e l'ALTER veniva ignorato.
   // Ripetizione idempotente dopo CREATE TABLE garantisce schema allineato (build/prerender inclusi).
@@ -2776,6 +2788,10 @@ export function getHostById(id: number): HostDetail | undefined {
 
   const scanTypesSeen = [...new Set(recentScans.map((s) => s.scan_type))];
 
+  // Un apparato, una scheda da qualunque suo IP: host senza apparato proprio nel cluster di uno solo.
+  const cluster = networkDevice ? null : apparatoDelCluster(getDb(), host.id);
+  const apparatoCluster = cluster?.esito === "cluster" ? cluster.apparato : null;
+
   // v0.2.603: include multihomed group info (mirror di db-tenant.ts).
   const mhLink = getDb().prepare(
     "SELECT group_id, match_type, is_primary FROM multihomed_links WHERE host_id = ? LIMIT 1"
@@ -2814,6 +2830,7 @@ export function getHostById(id: number): HostDetail | undefined {
     arp_source: arpSource || null,
     switch_port: switchPort || null,
     network_device: networkDevice ? { id: networkDevice.id, name: networkDevice.name, sysname: networkDevice.sysname, vendor: networkDevice.vendor, protocol: networkDevice.protocol } : null,
+    apparato_cluster: apparatoCluster,
     multihomed,
   };
 }
@@ -2918,16 +2935,20 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
       }
     }
     if (input.custom_name !== undefined) { fields.push("custom_name = ?"); values.push(input.custom_name); }
-    if (input.classification !== undefined && !classificationManual) {
-      if (input.classification !== "unknown") {
+    // Catalogo canonico (21/10): lo slug passa da canonicalizza; il ruolo del server va in server_roles dopo l'UPDATE.
+    let ruoloDaAggiungere: Canonica | null = null;
+    const canonIn = input.classification !== undefined ? canonicalizza(input.classification) : null;
+    if (input.classification !== undefined && canonIn && !classificationManual) {
+      if (canonIn.classificazione !== "unknown") {
+        ruoloDaAggiungere = canonIn;
         // preserve_existing per classification: NON applicato — le classificazioni auto-rilevate
         // possono sempre essere aggiornate da scan successivi con dati migliori.
         // Solo classification_manual=1 è protetto (via classificationManual check sopra).
-        fields.push("classification = ?"); values.push(input.classification);
+        fields.push("classification = ?"); values.push(canonIn.classificazione);
       } else {
         const cur = (getDb().prepare("SELECT classification FROM hosts WHERE id = ?").get(existing.id) as { classification?: string })?.classification;
         if (!cur || cur === "unknown") {
-          fields.push("classification = ?"); values.push(input.classification);
+          fields.push("classification = ?"); values.push(canonIn.classificazione);
         }
       }
     }
@@ -2993,6 +3014,7 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
 
     values.push(existing.id);
     getDb().prepare(`UPDATE hosts SET ${fields.join(", ")} WHERE id = ?`).run(...values);
+    if (ruoloDaAggiungere) aggiungiRuoloServer(getDb(), "hosts", existing.id, ruoloDaAggiungere);
     const host = getDb().prepare("SELECT * FROM hosts WHERE id = ?").get(existing.id) as Host;
     if (host.mac && input.ip) {
       upsertMacIpMapping({
@@ -3094,7 +3116,7 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
     input.dns_forward || null,
     input.dns_reverse || null,
     input.custom_name || null,
-    input.classification || "unknown",
+    canonicalizza(input.classification).classificazione,
     input.inventory_code || null,
     input.notes || "",
     input.status || "unknown",
@@ -3107,6 +3129,7 @@ export function upsertHost(input: HostInput & { mac?: string; vendor?: string; h
     (input as { detection_json?: string | null }).detection_json ?? null,
     (input as { snmp_data?: string | null }).snmp_data ?? null
   );
+  aggiungiRuoloServer(getDb(), "hosts", Number(result.lastInsertRowid), canonicalizza(input.classification));
   const host = getDb().prepare("SELECT * FROM hosts WHERE id = ?").get(result.lastInsertRowid) as Host;
   if (host.mac && input.ip) {
     upsertMacIpMapping({
@@ -3242,9 +3265,10 @@ export function updateHost(id: number, input: HostUpdate): Host | undefined {
   const values: unknown[] = [];
 
   if (input.custom_name !== undefined) { fields.push("custom_name = ?"); values.push(input.custom_name); }
-  if (input.classification !== undefined) {
+  const canonManuale = input.classification !== undefined ? canonicalizza(input.classification) : null;
+  if (input.classification !== undefined && canonManuale) {
     fields.push("classification = ?");
-    values.push(input.classification);
+    values.push(canonManuale.classificazione);
     fields.push("classification_manual = 1");
   }
   if (input.inventory_code !== undefined) { fields.push("inventory_code = ?"); values.push(input.inventory_code); }
@@ -3272,6 +3296,7 @@ export function updateHost(id: number, input: HostUpdate): Host | undefined {
   values.push(id);
 
   getDb().prepare(`UPDATE hosts SET ${fields.join(", ")} WHERE id = ?`).run(...values);
+  if (canonManuale) aggiungiRuoloServer(getDb(), "hosts", id, canonManuale);
   const updated = getDb().prepare("SELECT * FROM hosts WHERE id = ?").get(id) as Host | undefined;
   if (input.mac !== undefined && prevForMac && updated) {
     if (macToHex(prevForMac.mac ?? "") !== macToHex(updated.mac ?? "")) {
@@ -3673,12 +3698,12 @@ export function getSwitches(): NetworkDevice[] {
 export function getDevicesByClassification(classification: string): NetworkDevice[] {
   if (classification === "storage") {
     return getDb()
-      .prepare("SELECT * FROM network_devices WHERE classification IN ('storage', 'nas', 'nas_synology', 'nas_qnap') ORDER BY name")
+      .prepare("SELECT * FROM network_devices WHERE classification = 'nas' ORDER BY name")
       .all() as NetworkDevice[];
   }
   return getDb()
     .prepare("SELECT * FROM network_devices WHERE classification = ? ORDER BY name")
-    .all(classification) as NetworkDevice[];
+    .all(canonicalizza(classification).classificazione) as NetworkDevice[];
 }
 
 /** Dispositivi per classificazione, includendo legacy (device_type senza classification) per router/switch */
@@ -3708,7 +3733,7 @@ export function getHostsByClassification(classification: string): (Host & { netw
       .prepare(
         `SELECT h.*, n.name as network_name FROM hosts h
          JOIN networks n ON n.id = h.network_id
-         WHERE h.classification IN ('storage', 'nas', 'nas_synology', 'nas_qnap') ORDER BY h.custom_name, h.hostname, h.ip`
+         WHERE h.classification = 'nas' ORDER BY h.custom_name, h.hostname, h.ip`
       )
       .all() as (Host & { network_name?: string })[];
   }
@@ -3718,7 +3743,7 @@ export function getHostsByClassification(classification: string): (Host & { netw
        JOIN networks n ON n.id = h.network_id
        WHERE h.classification = ? ORDER BY h.custom_name, h.hostname, h.ip`
     )
-    .all(classification) as (Host & { network_name?: string })[];
+    .all(canonicalizza(classification).classificazione) as (Host & { network_name?: string })[];
 }
 
 // ========================
@@ -4203,6 +4228,8 @@ export function createNetworkDevice(input: CreateDeviceInput): NetworkDevice {
     if (match) hostId = match.id;
   }
 
+  const classIn = (input as { classification?: string | null }).classification;
+  const canonDev = classIn ? canonicalizza(classIn) : null;
   const stmt = getDb().prepare(
     `INSERT INTO network_devices (name, host, device_type, vendor, vendor_subtype, protocol, api_url, port, enabled, classification, scan_target, product_profile, use_for_arp_poll, host_id)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
@@ -4212,7 +4239,7 @@ export function createNetworkDevice(input: CreateDeviceInput): NetworkDevice {
     input.vendor_subtype ?? null, input.protocol,
     // Le credenziali si legano dopo, coi binding d'archivio (T20): le colonne vecchie non si scrivono (T26).
     input.api_url, input.port, input.enabled,
-    (input as { classification?: string | null }).classification ?? null,
+    canonDev ? canonDev.classificazione : null,
     (input as { scan_target?: string | null }).scan_target ?? null,
     (input as { product_profile?: string | null }).product_profile ?? null,
     ((): number => {
@@ -4223,6 +4250,10 @@ export function createNetworkDevice(input: CreateDeviceInput): NetworkDevice {
     })(),
     hostId
   );
+  if (canonDev) {
+    aggiungiRuoloServer(getDb(), "network_devices", Number(result.lastInsertRowid), canonDev);
+    impostaVendorSeVuoto(getDb(), Number(result.lastInsertRowid), canonDev);
+  }
   return getDb().prepare("SELECT * FROM network_devices WHERE id = ?").get(result.lastInsertRowid) as NetworkDevice;
 }
 
@@ -4231,10 +4262,17 @@ export function updateNetworkDevice(id: number, input: Partial<Omit<NetworkDevic
   const values: unknown[] = [];
 
   const keys = ["name", "host", "device_type", "vendor", "vendor_subtype", "protocol", "api_url", "port", "enabled", "classification", "sysname", "sysdescr", "model", "firmware", "serial_number", "part_number", "last_info_update", "last_device_info_json", "stp_info", "last_proxmox_scan_at", "last_proxmox_scan_result", "scan_target", "product_profile", "use_for_arp_poll", "host_id", "snmp_version", "snmp_version_fissata"] as const;
+  let canonAgg: Canonica | null = null;
   for (const key of keys) {
     if (input[key] !== undefined) {
       fields.push(`${key} = ?`);
-      values.push(input[key]);
+      // Catalogo canonico (21/10): la classificazione scritta è sempre quella canonica.
+      if (key === "classification" && typeof input[key] === "string" && input[key]) {
+        canonAgg = canonicalizza(input[key] as string);
+        values.push(canonAgg.classificazione);
+      } else {
+        values.push(input[key]);
+      }
     }
   }
 
@@ -4243,6 +4281,10 @@ export function updateNetworkDevice(id: number, input: Partial<Omit<NetworkDevic
   fields.push("updated_at = datetime('now')");
   values.push(id);
   getDb().prepare(`UPDATE network_devices SET ${fields.join(", ")} WHERE id = ?`).run(...values);
+  if (canonAgg) {
+    aggiungiRuoloServer(getDb(), "network_devices", id, canonAgg);
+    if (input.vendor === undefined) impostaVendorSeVuoto(getDb(), id, canonAgg);
+  }
   return getNetworkDeviceById(id);
 }
 
@@ -4258,17 +4300,24 @@ export function deleteNetworkDevice(id: number): boolean {
 
 export function upsertArpEntries(
   deviceId: number,
-  entries: { mac: string; ip: string | null; interface_name: string | null }[],
+  entries: { mac: string; ip: string | null; interface_name: string | null; status?: string | null; dynamic?: boolean | null }[],
   getNetworkIdForIp?: (ip: string) => number | null
 ): void {
   // Sul database che la facciata ha risolto (tenant, DEFAULT o legacy), come prima.
   cleanOrphanedForeignKeysSu(getDb());
   const db = getDb();
 
-  const stmt = db.prepare(
-    `INSERT INTO arp_entries (device_id, host_id, mac, ip, interface_name)
-     VALUES (?, (SELECT id FROM hosts WHERE ${MAC_HEX("mac")} = ? LIMIT 1), ?, ?, ?)`
-  );
+  // Scheda MikroTik (stessa regola della gemella in db-tenant.ts): stato e «dinamica» solo se lo schema ha le colonne.
+  const conStato = livelloSchemaSchedaMk(db) >= 1;
+  const stmt = conStato
+    ? db.prepare(
+      `INSERT INTO arp_entries (device_id, host_id, mac, ip, interface_name, status, dynamic)
+       VALUES (?, (SELECT id FROM hosts WHERE ${MAC_HEX("mac")} = ? LIMIT 1), ?, ?, ?, ?, ?)`
+    )
+    : db.prepare(
+      `INSERT INTO arp_entries (device_id, host_id, mac, ip, interface_name)
+       VALUES (?, (SELECT id FROM hosts WHERE ${MAC_HEX("mac")} = ? LIMIT 1), ?, ?, ?)`
+    );
 
   const replaceAll = db.transaction((items: typeof entries) => {
     // DELETE dentro la transazione per garantire atomicità
@@ -4276,7 +4325,12 @@ export function upsertArpEntries(
 
     for (const entry of items) {
       const hex = macToHex(entry.mac);
-      stmt.run(deviceId, hex, entry.mac, entry.ip, entry.interface_name);
+      if (conStato) {
+        stmt.run(deviceId, hex, entry.mac, entry.ip, entry.interface_name, entry.status ?? null,
+          entry.dynamic == null ? null : entry.dynamic ? 1 : 0);
+      } else {
+        stmt.run(deviceId, hex, entry.mac, entry.ip, entry.interface_name);
+      }
       if (entry.ip && entry.mac) {
         const networkId = getNetworkIdForIp?.(entry.ip) ?? null;
         upsertMacIpMapping({
@@ -4571,7 +4625,8 @@ export function syncInventoryFromDevice(device: NetworkDevice): import("@/types"
 }
 
 function mapClassificationToInventoryCategoria(classification: string | null, deviceType: string, vendor?: string | null): import("@/types").InventoryAssetCategoria | null {
-  const c = (classification ?? "").toLowerCase().trim();
+  const cGrezzo = (classification ?? "").toLowerCase().trim();
+  const c = cGrezzo ? canonicalizza(cGrezzo).classificazione : ""; // catalogo canonico (21/10)
   const dt = (deviceType ?? "").toLowerCase().trim();
   const v = (vendor ?? "").toLowerCase().trim();
 
@@ -4580,13 +4635,13 @@ function mapClassificationToInventoryCategoria(classification: string | null, de
   if (c === "access_point") return "Access Point";
   if (["router", "load_balancer", "vpn_gateway"].includes(c)) return "Router";
   if (c === "switch") return "Switch";
-  if (["server", "web_server", "database_server", "mail_server", "backup_server", "nfs_server", "linux_server", "windows_server", "server_linux", "server_windows"].includes(c)) return "Server";
+  if (["server", "linux_server", "windows_server"].includes(c)) return "Server";
   if (c === "hypervisor") return "Server";
   if (["workstation", "desktop", "pc"].includes(c)) return "Desktop";
   if (["notebook", "laptop"].includes(c)) return "Laptop";
   if (c === "vm") return "VM";
-  if (["nas", "nas_synology", "nas_qnap", "storage"].includes(c)) return "NAS";
-  if (["stampante", "scanner", "fotocopiatrice", "multifunzione"].includes(c)) return "Stampante";
+  if (["nas"].includes(c)) return "NAS";
+  if (["stampante", "scanner", "multifunzione"].includes(c)) return "Stampante";
   if (["telecamera", "voip", "iot"].includes(c)) return "Other";
 
   // 2) device_type fallback — ma attenzione: device_type='switch' è un WORKAROUND
@@ -4643,17 +4698,17 @@ export function getHostIdsWithInventoryAsset(): Set<number> {
 
 /** Mappa classification host → categoria inventario (workstation→Desktop, notebook→Laptop, ecc.) */
 function mapHostClassificationToInventoryCategoria(classification: string | null): import("@/types").InventoryAssetCategoria | null {
-  const c = (classification ?? "").toLowerCase();
+  const c = canonicalizza((classification ?? "").toLowerCase()).classificazione;
   if (["workstation", "desktop", "pc"].includes(c)) return "Desktop";
   if (["notebook", "laptop"].includes(c)) return "Laptop";
   if (["vm"].includes(c)) return "VM";
-  if (["server", "hypervisor", "web_server", "database_server", "mail_server", "backup_server", "nfs_server"].includes(c)) return "Server";
+  if (["server", "hypervisor"].includes(c)) return "Server";
   if (["switch"].includes(c)) return "Switch";
   if (["router", "load_balancer", "vpn_gateway"].includes(c)) return "Router";
   if (["firewall"].includes(c)) return "Firewall";
   if (["access_point"].includes(c)) return "Access Point";
-  if (["nas", "nas_synology", "nas_qnap", "storage"].includes(c)) return "NAS";
-  if (["stampante", "scanner", "fotocopiatrice", "multifunzione"].includes(c)) return "Stampante";
+  if (["nas"].includes(c)) return "NAS";
+  if (["stampante", "scanner", "multifunzione"].includes(c)) return "Stampante";
   if (["iot", "smart_tv", "telecamera", "voip", "phone"].includes(c)) return "Other";
   return null;
 }
@@ -5407,8 +5462,9 @@ export function toggleJob(id: number, enabled: boolean): void {
   getDb().prepare("UPDATE scheduled_jobs SET enabled = ?, updated_at = datetime('now') WHERE id = ?").run(enabled ? 1 : 0, id);
 }
 
+/** Una sola copia in db-tenant.ts (scansione automatica, 2026-10-22): toglie anche gli esiti per apparato, in transazione. */
 export function deleteScheduledJob(id: number): boolean {
-  return getDb().prepare("DELETE FROM scheduled_jobs WHERE id = ?").run(id).changes > 0;
+  return deleteScheduledJobConEsiti(id);
 }
 
 // ========================
@@ -5502,29 +5558,6 @@ export function getRecentActivity(limit: number = 10): ScanHistory[] {
   return getDb().prepare(
     "SELECT * FROM scan_history ORDER BY timestamp DESC LIMIT ?"
   ).all(limit) as ScanHistory[];
-}
-
-// ========================
-// Cleanup
-// ========================
-
-export function cleanupStaleHosts(daysUntilStale: number, daysUntilDelete: number): { flagged: number; deleted: number } {
-  // Fix C2 (fase 4): un host classificato a mano (classification_manual=1) non
-  // deve mai essere sovrascritto automaticamente — nemmeno col sentinel 'stale'.
-  // Vedi db-tenant.ts::cleanupStaleHosts per la spiegazione completa (regola 12:
-  // questa è la facade, stessa logica).
-  const flagged = getDb().prepare(
-    `UPDATE hosts SET classification = 'stale', updated_at = datetime('now')
-     WHERE status = 'offline' AND last_seen < datetime('now', '-' || ? || ' days')
-     AND classification != 'stale' AND classification_manual = 0`
-  ).run(daysUntilStale);
-
-  const deleted = getDb().prepare(
-    `DELETE FROM hosts
-     WHERE classification = 'stale' AND last_seen < datetime('now', '-' || ? || ' days')`
-  ).run(daysUntilDelete);
-
-  return { flagged: flagged.changes, deleted: deleted.changes };
 }
 
 // ========================
@@ -5826,6 +5859,13 @@ export function deleteUser(userId: number): boolean {
  * pulizia della 2g le ha tolte, una DELETE darebbe «no such table» e farebbe fallire l'intero reset.
  */
 export function resetConfiguration(): void {
+  // Analisi del 19/10 (F02): dentro un tenant il DB è quello del cliente, che non
+  // ha `users` né `settings` (stanno nell'hub): «no such table: users» e rollback.
+  // Lì vale la gemella del tenant, che lascia impostazioni e utenti (Riccardo, 19/10).
+  if (tenantCorrente()) {
+    resetConfigurazioneTenant();
+    return;
+  }
   const db = getDb();
   db.transaction(() => {
     db.exec(`
@@ -6072,11 +6112,14 @@ export function syncNetworkDeviceFromHostScan(ip: string, hostOpenPorts: Array<{
 
   // Allinea classification se l'host ha valore più specifico
   if (hostClassification && hostClassification !== "unknown") {
-    const deviceClassification = device.classification ?? device.device_type;
+    // Catalogo canonico (21/10): si confronta e si scrive lo slug canonico (updateNetworkDevice aggiunge ruolo e vendor).
+    const classCanonica = canonicalizza(hostClassification).classificazione;
+    const deviceClassification = canonicalizza(device.classification ?? device.device_type).classificazione;
     const isInfra = ["router", "switch", "hypervisor"].includes(device.device_type);
-    if (isInfra && deviceClassification !== hostClassification) {
-      const infraSpecific = ["router", "switch", "hypervisor", "firewall", "access_point", "load_balancer", "vpn_gateway", "server", "server_linux", "server_windows", "nas", "nas_synology", "nas_qnap", "storage"];
-      if (infraSpecific.includes(hostClassification)) {
+    // Scelta a mano sull'apparato (tappa 5): la scansione non la riscrive.
+    if (isInfra && device.classification_manual !== 1 && deviceClassification !== classCanonica) {
+      const infraSpecific = ["router", "switch", "hypervisor", "firewall", "access_point", "load_balancer", "vpn_gateway", "server", "nas"];
+      if (infraSpecific.includes(classCanonica)) {
         updates.classification = hostClassification;
       }
     }
@@ -7371,4 +7414,8 @@ export {
   registraVersioneSnmpRilevata,
   // Token API dell'apparato dall'archivio (credenziali 2e, T20): una sola copia
   tokenApiApparato,
+  // Abbinamento Proxmox della scheda hypervisor: una sola copia
+  getHostNotoPerIp,
+  getHostNotoPerNomeNodo,
+  getScansioniProxmoxSalvate,
 } from "./db-tenant";

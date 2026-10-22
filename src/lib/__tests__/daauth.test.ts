@@ -117,7 +117,11 @@ test("il login locale non è stato spento: è la riserva", () => {
    */
   const auth = readFileSync(join(process.cwd(), "src/lib/auth.ts"), "utf8");
   assert.ok(auth.includes('id: "domarc"'), "manca il provider DA-Auth");
-  assert.ok(auth.includes("bcrypt.compare"), "il login locale di riserva è sparito");
+  // Dal 20/10 (ADR 0023) la password locale si controlla in accesso-locale.ts, chiamato
+  // dal provider `credentials`: la riserva c'è se ci sono tutti e due i pezzi.
+  assert.ok(auth.includes('name: "credentials"') && auth.includes("verificaAccessoLocale"), "il login locale di riserva è sparito");
+  const locale = readFileSync(join(process.cwd(), "src/lib/accesso/accesso-locale.ts"), "utf8");
+  assert.ok(locale.includes("bcrypt.compare(password, utente.password_hash)"), "il login locale di riserva non controlla più la password");
 
   const pagina = readFileSync(join(process.cwd(), "src/app/login/page.tsx"), "utf8");
   assert.ok(pagina.includes('name="password"'), "la pagina non offre più la riserva");

@@ -65,7 +65,7 @@ export function KnownHostsClient({ initialRows }: { initialRows: Row[] }) {
         </p>
       ) : (
         <div className="rounded-md border overflow-x-auto">
-          <Table>
+          <Table fissa>
             <TableHeader>
               <TableRow>
                 <TableHead>Rete</TableHead>

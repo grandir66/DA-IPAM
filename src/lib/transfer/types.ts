@@ -76,6 +76,11 @@ export interface ImportResult {
    * `tenant_settings`: il valore scritto e cosa hanno cambiato, per id.
    */
   conversioni: Record<string, { segno: string; dettaglio: string }>;
+  /**
+   * Unione (wipe:false), decisione del 19/10: vince la destinazione. Per tabella
+   * a chiave naturale, le chiavi del bundle già presenti e quindi saltate.
+   */
+  saltate: Record<string, string[]>;
 }
 
 export const BUNDLE_FORMAT = "da-ipam-tenant-bundle" as const;

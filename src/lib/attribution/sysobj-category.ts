@@ -10,10 +10,12 @@
  * discovery.ts prosegue con i livelli successivi invece di fissare uno slug sbagliato.
  */
 import { DEVICE_CLASSIFICATIONS } from "@/lib/device-classifications";
+import { SLUG_VECCHI } from "@/lib/classification/canonico";
 import type { DeviceClassification } from "@/lib/device-classifier";
 import type { SysObjMatch } from "@/lib/scanner/snmp-sysobj-lookup";
 
-const VALID = new Set<string>(DEVICE_CLASSIFICATIONS);
+// Gli slug vecchi (es. "storage" della tabella sysObjectID) restano validi: la scrittura li canonicalizza (catalogo 21/10).
+const VALID = new Set<string>([...DEVICE_CLASSIFICATIONS, ...SLUG_VECCHI]);
 
 /** Linee prodotto inequivocabilmente switch. Valutate PRIMA dei router: "Cloud Router Switch" è uno switch. */
 const SWITCH_PRODUCT = /switch|catalyst|procurve|comware|aos-cx|\bcrs\b|\busw\b|tl-sg|m4[13]00|hp\s*19[12]0/i;

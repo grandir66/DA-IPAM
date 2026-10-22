@@ -100,7 +100,7 @@ di `netbird-c1`. Mai `dev` né `main`: `dev` arriva a un cliente ogni 15 minuti.
     policy NetBird come barriera (rischio 10) e `salute.firewall_wt0` lo dice
     (`attivo_sorgenti_aperte`). Una lista per tutte le porte, non una per porta.
 12. **L'ingresso in NetBird lo fa il comando di DA-Link.** L'installatore di DA-IPAM prepara
-    la macchina prima (client NetBird dal repository firmato, Tailscale con
+    la macchina prima (client NetBird dal repository firmato, VPN precedente con
     `--netfilter-mode=off`, firewall e suo servizio d'avvio) e verifica dopo. Per gli
     installatori che non incollano il comando (G1), accetta la chiave **solo da stdin**
     (`--chiave-da-stdin`), la scrive in un file 600, la passa a `netbird up --setup-key-file` e la
@@ -404,12 +404,12 @@ export async function inviaAdesso(): Promise<EsitoGiro>; // un giro alla volta: 
 **File:** crea `scripts/dalink/prepara-netbird.sh`; modifica `scripts/install.sh` (opzione
 `--netbird` che lo richiama dopo l'installazione); prova
 `src/lib/dalink/__tests__/prepara-netbird.test.ts` con comandi finti nel `PATH` (`apt-get`,
-`netbird`, `tailscale`, `nft`, `systemctl`, `shred`, `id`) che registrano i propri argomenti.
+`netbird`, il client della VPN precedente, `nft`, `systemctl`, `shred`, `id`) che registrano i propri argomenti.
 
 `prepara-netbird.sh [--applica] --edge si|no [--sorgenti "…"] [--chiave-da-stdin]`:
 1. prova a vuoto di default: dice cosa farebbe;
 2. client NetBird dal repository firmato `pkgs.netbird.io` se `netbird` manca;
-3. Tailscale presente → `tailscale set --netfilter-mode=off` (rischio 1);
+3. VPN precedente presente → il suo firewall spento (`netfilter-mode=off`, rischio 1);
 4. `/etc/dalink/firewall.env` (600) se manca; servizio `dalink-firewall` installato, abilitato e
    avviato; firewall applicato e riletto;
 5. con `--chiave-da-stdin`: legge **una riga da stdin**, la scrive in `/etc/dalink/netbird.key`
@@ -419,7 +419,7 @@ export async function inviaAdesso(): Promise<EsitoGiro>; // un giro alla volta: 
 
 - [x] Prove: **`la chiave non compare in nessun argomento dei comandi né nell'uscita`**; `il
   file della chiave non esiste più alla fine`; `prova a vuoto → nessun comando che scrive`;
-  `senza --edge → esce ≠0`; `tailscale presente → netfilter-mode=off prima di netbird up`;
+  `senza --edge → esce ≠0`; `VPN precedente presente → netfilter-mode=off prima di netbird up`;
   `senza oggetto.env e con la chiave → si ferma e non chiama netbird up`.
 - [x] Viste fallire → script → verdi.
 

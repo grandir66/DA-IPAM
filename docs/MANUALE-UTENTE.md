@@ -33,11 +33,11 @@
 19. [Servizi NIS2](#19-servizi-nis2)
 20. [Network Services (DNS / DHCP / AdBlock)](#20-network-services-dns--dhcp--adblock)
 21. [Anomalie (Analytics)](#21-anomalie-analytics)
-22. [Launchpad e Integrazioni](#22-launchpad-e-integrazioni)
-23. [Agenti remoti (Scanner-Edge)](#23-agenti-remoti-scanner-edge)
+22. [Applicativi e moduli](#22-applicativi-e-moduli)
+23. [URL dell'hub](#23-url-dellhub)
 24. [Scansioni — storico ed esecuzioni manuali](#24-scansioni--storico-ed-esecuzioni-manuali)
 25. [Impostazioni](#25-impostazioni)
-26. [Ricerca globale](#26-ricerca-globale)
+26. [Ricerca](#26-ricerca)
 27. [Export e Backup](#27-export-e-backup)
 28. [Multi-tenant e Superadmin](#28-multi-tenant-e-superadmin)
 29. [Manuale in-app](#29-manuale-in-app)
@@ -55,8 +55,8 @@
 - **Vulnerability management**: CVE correlate agli host, raccolte da **Scanner-Edge** (Greenbone/OpenVAS) e dagli agenti **Wazuh** (§14)
 - **Inventario software** realmente installato sugli host (§15) e **Patch Management** Windows CVE-driven (§16)
 - **Network Services** gestiti: DNS, DHCP e filtraggio (AdBlock) tramite una VM dedicata (§20)
-- **Launchpad**: cruscotto unico dello stato di tutti i moduli e integrazioni (§22)
-- **Agenti remoti**: appliance **Scanner-Edge** installate presso i clienti, registrate e monitorate dall'hub (§23)
+- **Applicativi** (menu) e **Impostazioni → Moduli**: entrare nei moduli e vederne lo stato (§22)
+- **URL dell'hub**: l'indirizzo pubblico con cui le macchine dei clienti raggiungono l'hub (§23)
 - **Multi-tenant** (un'installazione → più clienti separati, §28)
 
 Differenze chiave rispetto ad altri IPAM:
@@ -65,7 +65,7 @@ Differenze chiave rispetto ad altri IPAM:
 - Stati granulari (Offline, Unreachable, Transient, Lost) per distinguere il transitorio dal dismesso.
 - Entry point unico: la pagina **Discovery** (§6) mostra ogni host di ogni subnet con filtri rapidi, badge CVE, e collegamento alle integrazioni (Wazuh, LibreNMS).
 
-**Architettura** (per i curiosi): Next.js 16 + TypeScript strict + SQLite (better-sqlite3, un DB per tenant) + NextAuth v5, architettura **hub + spoke**. Gli scanner remoti (Scanner-Edge) e i servizi di rete girano su VM/appliance separate e dialogano via HTTP/Tailscale. Vedi `MANUALE-SVILUPPATORE.md` per i dettagli.
+**Architettura** (per i curiosi): Next.js 16 + TypeScript strict + SQLite (better-sqlite3, un DB per tenant) + NextAuth v5, architettura **hub + spoke**. Gli scanner remoti (Scanner-Edge) e i servizi di rete girano su VM/appliance separate e dialogano via HTTP su NetBird. Vedi `MANUALE-SVILUPPATORE.md` per i dettagli.
 
 ---
 
@@ -92,12 +92,14 @@ L'account creato ha ruolo `admin` sul cliente appena creato. Il `superadmin`, ch
 
 URL: `https://<indirizzo-server>/login` (o `http://...:3001` in dev).
 
-Inserire username e password. Dopo **5 tentativi errati in 15 minuti** per lo stesso username scatta il rate-limit (HTTP 429).
+Sull'hub c'è anche **«Accedi con l'account Domarc»** (entra.domarc.it): chi entra così non deve fare altro. Altrimenti nome utente e password. Dopo **5 tentativi errati in 15 minuti** per lo stesso nome l'accesso si blocca per un po': la pagina dice per quanto e a che ora si sblocca.
+
+**Verifica in due passaggi** (dal 20/10/2026): se un amministratore l'ha chiesta per il tuo utente, dopo la password la pagina chiede il **codice a 6 cifre** dell'app di autenticazione sul telefono (Microsoft Authenticator, Google Authenticator…). La prima volta mostra invece un **QR** da inquadrare (o un codice da inserire a mano nell'app): scrivi il codice che compare e sei dentro; il QR vale 10 minuti. Telefono perso o cambiato: chiedi a un amministratore di fare **«Azzera»**, al prossimo accesso vedrai un QR nuovo.
 
 ### Struttura sidebar (tenant attivo)
 
 ![Sidebar di navigazione di DA-IPAM con i gruppi Network, Inventario e Network Services](/manual/img/sidebar.png)
-*La sidebar reale (v0.3.116): voci di primo livello + tre gruppi collassabili (Network, Inventario, Network Services).*
+*La sidebar reale (v0.3.325, 19/10): voci di primo livello + gruppi collassabili (Network, Sicurezza, Inventario, Network Services, Applicativi).*
 
 ```
 ─────────────────────────
@@ -105,7 +107,7 @@ Inserire username e password. Dopo **5 tentativi errati in 15 minuti** per lo st
 ─────────────────────────
 (solo superadmin)
 🏢 Clienti
-🖥️ Agenti remoti
+🖥️ URL dell'hub
 ─── Tenant switcher ───
 ─── Dati cliente ───
 
@@ -114,15 +116,22 @@ Inserire username e password. Dopo **5 tentativi errati in 15 minuti** per lo st
 ▾ Network
    Subnet
    Discovery               ← entry point principale
-   Vulnerabilità           ← CVE aggregate (§14)
+   Topologia
    Software                ← inventario installato (§15)
    Active Directory
+   ─── Credenziali ───
    Credenziali
+   Controller di rete
    ─── Diagnostica ───
    Tabella ARP
    Sorgenti DHCP
    Scansioni
    IP esclusi
+
+▾ Sicurezza
+   Vulnerabilità           ← CVE aggregate (§14)
+   Alert sicurezza         ← Wazuh
+   Health Active Directory ← scheda Health della pagina AD
 
 ▾ Inventario
    Asset
@@ -137,9 +146,13 @@ Inserire username e password. Dopo **5 tentativi errati in 15 minuti** per lo st
    DNS
    DHCP
 
-🔑 Launchpad               ← stato moduli + integrazioni (§22)
+▾ Applicativi               ← moduli opzionali e console esterne (§22)
+   ─── Patch Management ─── (se attivo, §16)
+   ─── Controllo remoto ─── (se attivo)
+   ─── Zabbix ───           (se attivo)
+   ─── Console esterne ───  Scanner-Edge, Wazuh, UniFi, LibreNMS, Graylog, MDM (si aprono in una scheda nuova)
+
 ⚠️  Anomalie  (badge rosso se non gestite)
-🛡️ Patch Management        ← solo se il modulo è attivo per il tenant (§16)
 📖 Manuale
 
 ──── Sistema ────
@@ -148,7 +161,7 @@ Inserire username e password. Dopo **5 tentativi errati in 15 minuti** per lo st
 
 Solo per **superadmin** appaiono in alto:
 - **Clienti** — gestione tenant (§28)
-- **Agenti remoti** — appliance Scanner-Edge installate presso i clienti (§23)
+- **URL dell'hub** — indirizzo pubblico dell'hub (§23)
 
 > Le voci **Patch Management** è condizionale: compare solo se la relativa *feature* è installata per il tenant attivo (Impostazioni → Moduli). La voce **Config Cliente** è presente ma disabilitata ("In arrivo").
 
@@ -160,9 +173,13 @@ Sotto il blocco superadmin, un selettore tenant ti permette di passare velocemen
 
 Su mobile la sidebar è collassata; aprila con il bottone hamburger in alto a sinistra. Tap fuori per chiuderla.
 
-### Ricerca globale
+### Tema e utente
 
-In cima alla pagina trovi una **search bar** che cerca in IP, MAC, hostname, network device name, classificazione, su tutti i tenant a cui hai accesso. Vedi §26.
+Non c'è più una barra in cima alla pagina (dal 20/10/2026): in fondo al menu a sinistra trovi **Tema scuro / Tema chiaro**, **Comprimi menu**, la riga col tuo **nome e ruolo** (un clic apre «Cambia password») ed **Esci**. Col menu compresso restano le icone; il nome compare passandoci sopra.
+
+### Ricerca
+
+Non c'è una ricerca generale: ogni tabella che ne ha bisogno ha il suo campo. Per IP, MAC e hostname si cerca in **Discovery**. Vedi §26.
 
 ---
 
@@ -593,7 +610,7 @@ E può essere **inserita in catene** sulle subnet (vedi §5) per essere provata 
 
 ## 14. Vulnerabilità (CVE)
 
-`Network → Vulnerabilità` (`/vulnerabilities`, icona 🛡️ **ShieldAlert**) è la vista aggregata delle **CVE** che interessano gli host del tenant. I dati provengono da due sorgenti:
+`Applicativi → Vulnerabilità` (`/vulnerabilities`, icona 🛡️ **ShieldAlert**) è la vista aggregata delle **CVE** che interessano gli host del tenant. I dati provengono da due sorgenti:
 
 - **Scanner-Edge** (Greenbone/OpenVAS) — appliance di scansione installata presso il cliente (§23)
 - **Wazuh** — gli agenti endpoint riportano le vulnerabilità note dei pacchetti installati
@@ -627,7 +644,7 @@ E può essere **inserita in catene** sulle subnet (vedi §5) per essere provata 
 | ⏳ **Loader2** (spinner) | caricamento in corso |
 | ▸ / ▾ **Chevron** | espandi / comprimi gli host affetti |
 
-> La pagina è popolata solo se almeno una sorgente (Scanner-Edge o Wazuh) è configurata e ha completato una sincronizzazione. Lo stato delle integrazioni si vede nel **Launchpad** (§22).
+> La pagina è popolata solo se almeno una sorgente (Scanner-Edge o Wazuh) è configurata e ha completato una sincronizzazione. Lo stato delle integrazioni si vede in **Impostazioni → Moduli** (§22).
 
 ---
 
@@ -796,48 +813,34 @@ Job `anomaly_check` configurabile (default 15 min).
 
 ---
 
-## 22. Launchpad e Integrazioni
+## 22. Applicativi e moduli
 
-Il **Launchpad** (`/launchpad`, icona 🔑) è il **punto unico** da cui vedi lo stato di tutti i moduli/integrazioni e li apri o configuri. Ha assorbito le vecchie viste "Integrazioni" e "Catalogo appliance": le route `/integrations` e `/appliance` ora **reindirizzano** qui.
+Dal 19/10 il Launchpad a tessere non c'è più: era un doppione delle voci del menu. `/launchpad`,
+`/integrations` e `/appliance` portano a **Impostazioni → Moduli**.
 
-![Launchpad con le tile dei moduli e lo stato di salute](/manual/img/launchpad.png)
+### Il gruppo «Applicativi» del menu
 
-### Tile moduli
+Contiene i moduli opzionali accesi, ognuno con le sue pagine (**Patch Management**: Panoramica,
+CVE, Storico; **Controllo remoto**: Dispositivi e console MeshCentral; **Zabbix**: Pannello) e le
+**console esterne** dei prodotti configurati (Scanner-Edge, Wazuh, UniFi, LibreNMS, Graylog, MDM),
+che si aprono in una scheda nuova. Un modulo spento non compare. Vulnerabilità e Alert sicurezza
+stanno nel gruppo **Sicurezza**; i Controller di rete in **Network**, sotto Credenziali.
 
-Per ciascun modulo (es. **Wazuh**, **Vulnerabilità**, **Patch Management**, **Agenti remoti**, **Network Services**, **Graylog**) una tile mostra:
-- Icona + nome del modulo
-- **Stato di salute** (pallino): Attivo / Attenzione / Errore / Non configurato
-- Tempo relativo dell'ultimo health check (es. "1h fa")
-- Pulsanti **Apri** (URL esterno o route in-app) e **Configura** (deep-link a Impostazioni → Moduli)
-- **Verdict** L7 quando disponibile (ok / degradato / fail)
+### Impostazioni → Moduli
 
-L'health è in polling (≈60s). Le icone: 🛡️ ShieldAlert (Vulnerabilità), 📦 PackageCheck (Patch), 🖥️ ServerCog (Agenti), 📈 Activity (Monitoring), 📜 ScrollText (Graylog), 📡 Radar (Network Services), 🔧 Wrench (azione di ripristino).
-
-### Dove si configurano le integrazioni
-
-La configurazione vera e propria vive in **Impostazioni → Moduli**: LibreNMS, Wazuh, Scanner-Edge, Network Services, Graylog. Active Directory si configura invece da **Network → Active Directory** (§12). Il Launchpad è il cruscotto; le impostazioni sono il pannello di controllo.
+Un elenco con una riga per modulo: nome, «Opzione» per i moduli a pagamento, stato (Acceso ✓,
+Spento –, Da verificare ?, Attenzione !, Guasto ✕: fondo, bordo e simbolo diversi) e la salute
+in parole. **Apri** porta alla pagina del modulo (`/settings/moduli/<modulo>`), dove stanno
+configurazione, salute, verifica dell'apertura e, per MeshCentral, l'interruttore del desktop
+remoto senza agente. Active Directory si configura da **Network → Active Directory** (§12).
 
 ---
 
-## 23. Agenti remoti (Scanner-Edge)
+## 23. URL dell'hub
 
-`Agenti remoti` (`/agents`, **solo superadmin**, icona 🖥️ **ServerCog**) gestisce le appliance **Scanner-Edge** installate presso i clienti. Lo Scanner-Edge esegue le scansioni Greenbone/OpenVAS in loco e invia i findings all'hub (CVE → §14), raggiungibile via URL pubblico o **Tailscale**.
+`URL dell'hub` (`/agents`, **solo superadmin**) imposta `public_hub_url`: l'indirizzo con cui le macchine dei clienti raggiungono questo hub (script d'installazione dell'agente d'inventario, §21). Vuoto: si usa l'indirizzo da cui è aperta la pagina.
 
-![Agenti remoti — tabella agenti e wizard di registrazione](/manual/img/agents.png)
-
-### Tabella agenti
-
-Colonne: Cliente, Sede/Label, Hostname:Porta, Versione, **Heartbeat**, Stato (badge verde con latenza / rosso con codice errore / outline se non testato). Azioni di riga: **Test** (PlugZap), **Configura** (Settings2), **Elimina** (Trash2). In alto: **Ricarica**, **Test All**, **Nuovo agente**.
-
-### Wizard "Nuovo agente" (3 step)
-
-1. **Tenant** — cliente esistente o nuovo (codice + ragione sociale)
-2. **Agent** — label, hostname (nome breve Tailscale), porta, `subnet_match`
-3. **Token** — il token è mostrato **una sola volta** (⚠️ ShieldAlert): copialo subito. Opzionale auth-key Tailscale; viene generato il **comando di installazione** (curl one-liner) da incollare sul nodo edge.
-
-### Hub URL
-
-Pannello di configurazione dell'**URL effettivo** dell'hub che gli agenti contattano: `public_hub_url` (URL pubblico) con fallback `hub_tailnet_hostname` (Tailscale). Se non configurato, il wizard avvisa che gli agenti non potranno fare heartbeat.
+Fino al 20/10/2026 qui c'era anche l'elenco degli **agenti Python remoti**: tolti (nessuno li usava). Le scansioni girano sull'istanza; un cliente rimasto in modalità remota non scansiona finché non torna in modalità locale. Le appliance **Scanner-Edge** dei clienti si governano da DA-Vul-can e DA-Link.
 
 ---
 
@@ -858,6 +861,7 @@ La gestione dei **job schedulati** (abilita/disabilita, interval, prossima esecu
 - Ruoli: `superadmin`, `admin`, `user`
 - Reset password, cambio username
 - Multi-tenant access (quali tenant può vedere)
+- **Due passaggi** (verifica in due passaggi): «–» non richiesta → **Richiedi**; «▲ da attivare» (al prossimo accesso vedrà il QR) → **Togli**; «✓ attiva» → **Azzera** (telefono perso: QR nuovo al prossimo accesso) o **Togli**. Sul proprio utente si può chiedere e azzerare, non togliere. Ogni azione finisce nel registro `data/audit/accessi-*.jsonl`. Se l'unico amministratore ha perso il telefono, dal server: `npx tsx scripts/seconda-verifica.ts azzera <utente>`.
 
 ### Profilo Nmap
 - Elenco porte TCP (obbligatorio)
@@ -869,7 +873,7 @@ La gestione dei **job schedulati** (abilita/disabilita, interval, prossima esecu
 
 ### Moduli
 - Attivazione e configurazione di **LibreNMS, Wazuh, Scanner-Edge, Network Services, Graylog, Patch Management** (Active Directory sta in **Network → Active Directory**, §12)
-- Lo stato runtime di questi moduli si vede nel **Launchpad** (§22)
+- Lo stato runtime di questi moduli si vede in **Impostazioni → Moduli** (§22)
 
 ### Scansione periodica
 - Toggle global "Auto-scan subnet"
@@ -887,15 +891,11 @@ La gestione dei **job schedulati** (abilita/disabilita, interval, prossima esecu
 
 ---
 
-## 26. Ricerca globale
+## 26. Ricerca
 
-La **search bar in cima** cerca cross-tenant (su tutti i tenant a cui hai accesso) in:
-- IP, MAC, hostname custom o rilevato
-- Network device name, vendor, sysname
-- Classificazione, OS, modello
-- Asset tag, codice asset
-
-Mostra fino a 50 risultati raggruppati per tipo (host / device / asset). Click → vai al dettaglio.
+Dal 20/10/2026 la ricerca generale in cima alla pagina non c'è più (Riccardo: lo spazio in alto serve alle pagine). Si cerca dove sta il dato:
+- **Discovery** per IP, MAC e hostname degli host;
+- il campo di ricerca della tabella su cui lavori (Subnet, Apparati, Inventario, Software, Vulnerabilità, Active Directory, ARP, Patch, ecc.).
 
 ---
 
@@ -936,7 +936,7 @@ In sidebar, sotto il blocco superadmin, dropdown per cambiare tenant attivo. "Tu
 ### Voci solo per superadmin
 
 - **Clienti** — CRUD tenant
-- **Agenti remoti** — appliance Scanner-Edge installate presso i clienti (§23)
+- **URL dell'hub** — indirizzo pubblico dell'hub (§23)
 
 ### Isolamento dati
 

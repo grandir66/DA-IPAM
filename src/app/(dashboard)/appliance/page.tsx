@@ -5,5 +5,5 @@ import { redirect } from "next/navigation";
  * con stato + Apri + Configura). Redirect per compatibilità link.
  */
 export default function AppliancePage() {
-  redirect("/launchpad");
+  redirect("/settings?tab=moduli");
 }

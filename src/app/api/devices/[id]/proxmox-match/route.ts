@@ -8,7 +8,33 @@ import {
   updateInventoryAsset,
 } from "@/lib/db";
 import type { ProxmoxVM } from "@/lib/proxmox/proxmox-client";
-import { requireAdmin, isAuthError } from "@/lib/api-auth";
+import { requireAdmin, requireAuth, isAuthError } from "@/lib/api-auth";
+import { getHostNotoPerIp, getHostNotoPerNomeNodo } from "@/lib/db";
+import { parseProxmoxScan } from "@/lib/topology/vms";
+import { abbinaNodi, abbinaVm } from "@/lib/scheda/abbinamento-proxmox";
+
+/**
+ * GET: sola lettura, niente scritture (il POST sotto crea e aggiorna gli asset). Dice, per la scansione salvata
+ * dell'apparato, quale host di IPAM è ogni VM e ogni nodo del cluster: serve alla scheda hypervisor.
+ */
+export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+  return withTenantFromSession(async () => {
+    try {
+      const guardia = await requireAuth();
+      if (isAuthError(guardia)) return guardia;
+      const deviceId = parseInt((await params).id, 10);
+      if (isNaN(deviceId)) return NextResponse.json({ error: "ID non valido" }, { status: 400 });
+      const device = getNetworkDeviceById(deviceId);
+      if (!device) return NextResponse.json({ error: "Dispositivo non trovato" }, { status: 404 });
+      const { vms, hosts } = parseProxmoxScan(deviceId, device.last_proxmox_scan_result ?? null);
+      const ricerche = { perIp: getHostNotoPerIp, perNome: getHostNotoPerNomeNodo };
+      return NextResponse.json({ vms: abbinaVm(vms, ricerche), nodi: abbinaNodi(hosts, ricerche) });
+    } catch (error) {
+      console.error("Proxmox match (lettura) error:", error);
+      return NextResponse.json({ error: "Errore nell'abbinamento con Proxmox" }, { status: 500 });
+    }
+  });
+}
 
 export async function POST(
   _request: Request,

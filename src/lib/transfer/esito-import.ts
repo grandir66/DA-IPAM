@@ -49,3 +49,20 @@ export function righeConversioni(conversioni: Readonly<Record<string, { segno: s
     return { testo: `${nome}: esito non riconosciuto («${segno}»): ${dettaglio}`, daControllare: true };
   });
 }
+
+/**
+ * Unione (wipe:false), decisione del 19/10: vince la destinazione. Le chiavi del
+ * bundle già presenti non si scrivono; la pagina le elenca, così chi importa sa
+ * quali impostazioni sono rimaste quelle di prima.
+ */
+export function righeSaltate(saltate: Readonly<Record<string, readonly string[]>> | null | undefined): RigaConversione[] {
+  if (!saltate) return [];
+  return Object.entries(saltate)
+    .filter(([, chiavi]) => chiavi.length > 0)
+    .map(([tabella, chiavi]) => ({
+      testo: chiavi.length === 1
+        ? `${tabella}: 1 chiave già presente, resta il valore attuale (${chiavi[0]})`
+        : `${tabella}: ${chiavi.length} chiavi già presenti, restano i valori attuali (${chiavi.join(", ")})`,
+      daControllare: false,
+    }));
+}

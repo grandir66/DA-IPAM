@@ -77,6 +77,8 @@ export const ATTESI: Atteso[] = [
   { rotta: "/api/credentials", metodi: ["POST"], livello: "admin-o-onboarding", motivo: MOTIVO_ONBOARDING },
   { rotta: "/api/devices", metodi: ["POST"], livello: "admin-o-onboarding", motivo: MOTIVO_ONBOARDING },
   { rotta: "/api/networks", metodi: ["POST"], livello: "admin-o-onboarding", motivo: MOTIVO_ONBOARDING },
+  // Scheda MikroTik (Task 10): gli utenti del router (nomi, gruppi, indirizzi ammessi) sono un dato riservato, solo admin.
+  { rotta: "/api/devices/[id]/mikrotik-utenti", metodi: ["GET"], livello: "admin", motivo: "utenti del router: nomi, gruppi e indirizzi ammessi, dato riservato" },
   // Tappa 4 credenziali (15/10): il punto raggiunto, letto all'apertura e salvato a ogni passo.
   { rotta: "/api/onboarding/progresso", metodi: ["GET", "PUT"], livello: "admin-o-onboarding", motivo: MOTIVO_ONBOARDING },
   // Revisione della tappa 4: il router già creato si modifica con colonne, porta e binding insieme.
@@ -110,6 +112,33 @@ export const ATTESI: Atteso[] = [
     livello: "admin",
     motivo: "«Cosa cambierebbe con la mappa nuova»: un calcolo per chi decide quando accendere la mappa nuova (spec topologia §13.11.3)",
   },
+  // Pulizia degli host assenti (piano 2026-10-20, Task 4): letture admin per scelta.
+  {
+    rotta: "/api/hosts/pulizia",
+    metodi: ["GET"],
+    livello: "admin",
+    motivo: "anteprima della pulizia: l'elenco degli host del cliente che verrebbero tolti, per chi può premere «Applica»",
+  },
+  {
+    rotta: "/api/hosts/archivio",
+    metodi: ["GET"],
+    livello: "admin",
+    motivo: "archivio degli host tolti al cliente, con chi li ha tolti: lo legge chi può recuperarli",
+  },
+  // Scansione automatica dei device scelti (piano 2026-10-22, Task 6): la finestra in modifica e gli esiti sono di chi
+  // gestisce il job (decisione 4); la pastiglia della testata resta con la sessione (livello predefinito).
+  {
+    rotta: "/api/jobs/apparati-scelti/[id]",
+    metodi: ["GET"],
+    livello: "admin",
+    motivo: "job della scansione automatica in modifica: config e stato degli apparati, per chi può cambiarlo",
+  },
+  {
+    rotta: "/api/jobs/apparati-scelti/[id]/esiti",
+    metodi: ["GET"],
+    livello: "admin",
+    motivo: "esiti per apparato del job, dettaglio della pagina dei job che è da admin",
+  },
 ];
 
 const PROVA_MASCHERATE = "src/lib/permessi/__tests__/letture-mascherate.test.ts";
@@ -120,6 +149,7 @@ export const ECCEZIONI: Eccezione[] = [
   // --- pubbliche: coincidono con l'elenco consentito di src/lib/auth.config.ts
   { rotta: "/api/auth/[...nextauth]", metodi: ["GET", "POST"], tipo: "pubblica", guardia: "esterna", motivo: "gestori di NextAuth: accesso e uscita" },
   { rotta: "/api/auth/lock-state", metodi: ["GET"], tipo: "pubblica", guardia: "nessuna", motivo: "la pagina di accesso la interroga prima che esista una sessione" },
+  { rotta: "/api/auth/passo-uno", metodi: ["POST"], tipo: "pubblica", guardia: "nessuna", motivo: "passo 1 della pagina d'accesso, prima che esista una sessione; protetta dallo stesso blocco dei tentativi del login (ADR 0023)" },
   { rotta: "/api/health", metodi: ["GET"], tipo: "pubblica", guardia: "nessuna", motivo: "controllo di salute per il monitoraggio" },
   { rotta: "/api/version", metodi: ["GET"], tipo: "pubblica", guardia: "nessuna", motivo: "versione installata, letta dall'aggiornamento" },
   { rotta: "/api/setup", metodi: ["GET", "POST"], tipo: "pubblica", guardia: "nessuna", motivo: "prima configurazione, prima che esista un utente" },

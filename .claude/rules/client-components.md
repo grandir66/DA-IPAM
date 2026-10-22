@@ -50,6 +50,11 @@ NON usare `asChild`:
 - **`<Select>`**: l'etichetta nel trigger la ricava il wrapper dalle `<SelectItem>`
   figlie. Se le voci le genera un componente proprio, passare `items` a mano.
 
+## Menu a tendina (base-ui, 2026-10-20)
+
+`DropdownMenuLabel` va dentro un `DropdownMenuGroup`: da solo la pagina intera cade
+(«MenuGroupRootContext is missing») appena si apre il menu. Tipi e build non lo vedono.
+
 ## Fetch + refresh
 
 Per mutazioni: dopo la fetch chiamare `router.refresh()` (Server Components re-render). NON chiamare `revalidatePath` da client.

@@ -16,7 +16,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { righeConversioni } from "../esito-import";
+import { righeConversioni, righeSaltate } from "../esito-import";
 
 const ZERO = "linux_ssh=0,snmp_v3=0,ibride=0,v3_vecchie=0,v3_vecchie_divise=0,usi_spostati=0,lasciate=0";
 const DETTAGLIO_ZERO =
@@ -77,5 +77,23 @@ describe("la pagina di trasferimento", () => {
   it("avvisa, all'export, che un'installazione di prima della 2c rifiuta il bundle", () => {
     assert.match(pagina, /SNMP v3, UniFi,\s+Omada, Active Directory/);
     assert.match(pagina, /senza chiave/);
+  });
+});
+
+// Unione, decisione del 19/10 (analisi F01): vince la destinazione, e le chiavi
+// rimaste quelle di prima si dicono, una per una.
+describe("righeSaltate", () => {
+  it("nessuna chiave saltata → nessuna riga", () => {
+    assert.deepEqual(righeSaltate({}), []);
+    assert.deepEqual(righeSaltate(undefined), []);
+    assert.deepEqual(righeSaltate({ tenant_settings: [] }), []);
+  });
+  it("le chiavi saltate si elencano per tabella, al singolare e al plurale", () => {
+    assert.deepEqual(righeSaltate({ tenant_settings: ["audit-key"] }), [
+      { testo: "tenant_settings: 1 chiave già presente, resta il valore attuale (audit-key)", daControllare: false },
+    ]);
+    assert.deepEqual(righeSaltate({ tenant_settings: ["a", "b"] }), [
+      { testo: "tenant_settings: 2 chiavi già presenti, restano i valori attuali (a, b)", daControllare: false },
+    ]);
   });
 });

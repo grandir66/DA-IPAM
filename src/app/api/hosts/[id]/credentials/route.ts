@@ -9,6 +9,7 @@ import {
 import { aggiungiRigaHost, VoceNonValePerProtocollo } from "@/lib/credentials/lega-voce";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
+import { avviaChocoDopoCredenziali } from "@/lib/patch/choco-automatico";
 
 /** GET — credenziali associate a un host. */
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -49,6 +50,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     // La voce deve valere per il protocollo (T13): un account AD non è una riga
     // WinRM. Il controllo sta in aggiungiRigaHost, qui il rifiuto è un 400.
     aggiungiRigaHost(hostId, credential_id, protocol_type, port, { validated });
+    // Credenziale WinRM salvata: Chocolatey si installa da solo, se serve (21/10).
+    if (protocol_type === "winrm") avviaChocoDopoCredenziali([hostId]);
     const credentials = getHostCredentials(hostId);
     return NextResponse.json({ credentials });
     } catch (error) {
@@ -106,6 +109,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     }
     setHostCredentialValidated(parsed.data.binding_id, parsed.data.validated);
     const credentials = getHostCredentials(hostId);
+    if (parsed.data.validated && credentials.some((c) => c.id === parsed.data.binding_id && c.protocol_type === "winrm")) {
+      avviaChocoDopoCredenziali([hostId]);
+    }
     return NextResponse.json({ credentials });
     } catch (error) {
       console.error("Error updating host credential:", error);

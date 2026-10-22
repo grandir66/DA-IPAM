@@ -1,14 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Sidebar } from "./sidebar";
 import { SidebarProvider, useSidebar } from "./sidebar-context";
 import { PageTransition } from "./page-transition";
-import { GlobalSearch } from "./global-search";
-import { ThemeToggle } from "./theme-toggle";
 import { UpdateChecker } from "./update-checker";
-import { UserMenu } from "./user-menu";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -72,19 +69,14 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-background">
         <UpdateChecker />
-        <Sidebar />
+        {/* Il menu legge ?tab= (voce «Health Active Directory», 19/10): useSearchParams vuole un Suspense. */}
+        <Suspense fallback={null}>
+          <Sidebar />
+        </Suspense>
         <main className={`${collapsed ? "md:ml-16" : "md:ml-64"} min-h-screen flex flex-col transition-[margin] duration-200`}>
-          {/* Top bar */}
-          <div className="sticky top-0 z-20 shrink-0 bg-background/80 backdrop-blur-sm border-b border-border">
-            <div className="flex items-center gap-3 px-3 py-2">
-              <div className="flex-1 md:pl-0 pl-10 min-w-0">
-                <GlobalSearch />
-              </div>
-              <ThemeToggle />
-              <UserMenu />
-            </div>
-          </div>
-          <div className="flex-1 overflow-auto px-2 py-2 md:px-3 md:py-3">
+          {/* Niente barra in alto (Riccardo, 20/10): tema e utente stanno in fondo al menu, la
+              ricerca nelle tabelle che la chiedono. Sul telefono 3,5rem in alto per il pulsante del menu. */}
+          <div className="flex-1 overflow-auto px-2 pt-14 pb-2 md:px-3 md:py-3">
             <PageTransition>{children}</PageTransition>
           </div>
         </main>

@@ -667,6 +667,9 @@ function clientSenzaCredenziale(kind: UnifiKind, motivo: string): UnifiClient {
     listClients: async () => {
       throw new UnifiApiError("config", motivo);
     },
+    listDevicesWithNetworks: async () => {
+      throw new UnifiApiError("config", motivo);
+    },
   };
 }
 
@@ -796,6 +799,7 @@ export async function syncController(
     portsUpserted: 0,
     neighborsUpserted: 0,
     uplinksSaved: 0,
+    vlanNativeScritte: 0,
     errors: [msg],
     offline: [],
   });

@@ -10,6 +10,7 @@ import { sshExec, sshExecViaShell } from "./ssh-helper";
 import { haSegretoSsh, segretoSsh } from "./ssh-transport";
 import { snmpGetTollerante, type SnmpGetSession } from "./snmp-get-tollerante";
 import { apriSessioneSnmp, versioneApparato, type VersioneSnmp } from "@/lib/protocols/snmp-sessione";
+import { parseRisorse, parseRouterboard, type HardwareMikrotik, type RisorseMikrotik } from "./mikrotik-scheda";
 
 export interface DeviceInfo {
   sysname: string | null;
@@ -122,6 +123,10 @@ export interface DeviceInfo {
   firewall_filter_count?: number | null;
   firewall_nat_count?: number | null;
   firewall_mangle_count?: number | null;
+  /** MikroTik: risorse (uptime, CPU, memoria, disco) da `/system resource print` */
+  mikrotik_risorse?: RisorseMikrotik;
+  /** MikroTik: hardware e firmware da `/system routerboard print` */
+  mikrotik_hardware?: HardwareMikrotik;
 }
 
 /** Snapshot strutturato per Synology / QNAP (serializzato in last_device_info_json) */
@@ -351,6 +356,40 @@ export async function getDeviceInfoFromSnmp(device: NetworkDevice, portaProva?: 
 }
 
 /**
+ * Campi dell'apparato MikroTik letti in SSH (`/system resource`, `/system identity`, `/system routerboard`, conteggi
+ * del firewall). Puro, per le prove.
+ */
+export function infoMikrotikDaSsh(i: { resource: string; identity: string | undefined; routerboard: string; filter: number; nat: number; mangle: number }): Partial<DeviceInfo> {
+  const board = i.resource.match(/board-name:\s*(.+)/)?.[1]?.trim();
+  const version = i.resource.match(/version:\s*(.+)/)?.[1]?.trim();
+  const identity = i.identity;
+  const fwFilter = i.filter, fwNat = i.nat, fwMangle = i.mangle;
+  const risorse = parseRisorse(i.resource);
+  const hardware = parseRouterboard(i.routerboard);
+  return {
+    model: board || null,
+    firmware: version || null,
+    sysname: identity || null,
+    // il seriale sta in routerboard, non in resource. Su un CHR/x86 (o se la lettura fallisce) non c'è: la chiave
+    // resta fuori, altrimenti `{ ...snmp, ...ssh }` in getDeviceInfo cancella seriale e part number dell'SNMP
+    ...(hardware.seriale ? { serial_number: hardware.seriale } : {}),
+    ...(hardware.modello ? { part_number: hardware.modello } : {}),
+    mikrotik_risorse: risorse,
+    mikrotik_hardware: hardware,
+    uptime: risorse.uptime ?? undefined,
+    cpu_cores: risorse.cpu_core ?? undefined,
+    cpu_speed_mhz: risorse.cpu_mhz ?? undefined,
+    ram_total_mb: risorse.memoria_totale_b !== null ? Math.round(risorse.memoria_totale_b / 1048576) : undefined,
+    ram_free_mb: risorse.memoria_libera_b !== null ? Math.round(risorse.memoria_libera_b / 1048576) : undefined,
+    architecture: risorse.architettura ?? undefined,
+    cpu_model: risorse.cpu ?? undefined,
+    firewall_filter_count: !Number.isNaN(fwFilter) ? fwFilter : null,
+    firewall_nat_count: !Number.isNaN(fwNat) ? fwNat : null,
+    firewall_mangle_count: !Number.isNaN(fwMangle) ? fwMangle : null,
+  };
+}
+
+/**
  * Recupera model e firmware via SSH con comandi vendor-specific.
  */
 export async function getDeviceInfoFromSsh(device: NetworkDevice): Promise<Partial<DeviceInfo>> {
@@ -421,9 +460,6 @@ export async function getDeviceInfoFromSsh(device: NetworkDevice): Promise<Parti
 
     if (device.vendor === "mikrotik") {
       const r = await sshExec(opts, '/system resource print');
-      const board = r.stdout.match(/board-name:\s*(.+)/)?.[1]?.trim();
-      const version = r.stdout.match(/version:\s*(.+)/)?.[1]?.trim();
-      const serial = r.stdout.match(/serial-number:\s*(.+)/)?.[1]?.trim();
       const [identity, rbInfo, fwFilter, fwNat, fwMangle] = await Promise.all([
         sshExec(opts, '/system identity print').then((x) => x.stdout.match(/name:\s*(.+)/)?.[1]?.trim()).catch(() => undefined),
         sshExec(opts, '/system routerboard print').catch(() => ({ stdout: "" })),
@@ -431,17 +467,7 @@ export async function getDeviceInfoFromSsh(device: NetworkDevice): Promise<Parti
         sshExec(opts, '/ip firewall nat print count-only').then((x) => parseInt(x.stdout.trim(), 10)).catch(() => NaN),
         sshExec(opts, '/ip firewall mangle print count-only').then((x) => parseInt(x.stdout.trim(), 10)).catch(() => NaN),
       ]);
-      const partNumber = rbInfo.stdout.match(/model:\s*(.+)/i)?.[1]?.trim();
-      return {
-        model: board || null,
-        firmware: version || null,
-        sysname: identity || null,
-        serial_number: serial || null,
-        part_number: partNumber || null,
-        firewall_filter_count: !Number.isNaN(fwFilter) ? fwFilter : null,
-        firewall_nat_count: !Number.isNaN(fwNat) ? fwNat : null,
-        firewall_mangle_count: !Number.isNaN(fwMangle) ? fwMangle : null,
-      };
+      return infoMikrotikDaSsh({ resource: r.stdout, identity, routerboard: rbInfo.stdout, filter: fwFilter, nat: fwNat, mangle: fwMangle });
     }
 
     if (device.vendor === "cisco") {
@@ -1500,7 +1526,8 @@ export async function getDeviceInfo(device: NetworkDevice): Promise<DeviceInfo> 
       };
       // Se il profilo ha fornito model + firmware + serial, possiamo saltare SSH (tranne NAS: serve SSH per volumi/utenti/rete)
       const snmpComplete = result.model && result.firmware && result.serial_number;
-      if (snmpComplete && hasSsh && !nasKind) {
+      // MikroTik: le risorse si leggono solo in SSH
+      if (snmpComplete && hasSsh && !nasKind && device.vendor !== "mikrotik") {
         return result;
       }
     } else {

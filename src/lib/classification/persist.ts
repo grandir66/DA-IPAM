@@ -1,4 +1,6 @@
 import type Database from "better-sqlite3";
+import { canonicalizza } from "./canonico";
+import { aggiungiRuoloServer } from "./scrittura";
 import { shouldTouchClassification } from "./engine";
 import {
   HISTORY_CONFIDENCE_DELTA,
@@ -119,6 +121,7 @@ export function applyClassificationDecision(
           );
 
   const touchedClassification = policy.apply;
+  const canonDec = canonicalizza(decision.classification); // catalogo canonico (21/10)
 
   if (touchedClassification) {
     if (force && ctx.classification_manual) {
@@ -131,7 +134,7 @@ export function applyClassificationDecision(
            classification_json = ?
          WHERE id = ?`
       ).run(
-        decision.classification,
+        canonDec.classificazione,
         decision.confidence,
         decision.reason,
         classificationJson,
@@ -146,7 +149,7 @@ export function applyClassificationDecision(
            classification_json = ?
          WHERE id = ?`
       ).run(
-        decision.classification,
+        canonDec.classificazione,
         decision.confidence,
         decision.reason,
         classificationJson,
@@ -162,6 +165,8 @@ export function applyClassificationDecision(
        WHERE id = ?`
     ).run(decision.confidence, decision.reason, classificationJson, hostId);
   }
+
+  if (touchedClassification) aggiungiRuoloServer(db, "hosts", hostId, canonDec);
 
   mergeInferredReasons(db, hostId, decision.reason);
 

@@ -14,6 +14,7 @@ import type { NetworkDevice } from "@/types";
 import { getDeviceCredentials } from "@/lib/db";
 import { haSegretoSsh, segretoSsh, sshExec } from "./ssh-transport";
 import type { InterfaceProbeResult, InterfaceProbeAddress } from "./interface-probe";
+import { parseInterfacce } from "./mikrotik-stp";
 
 const PROBE_TIMEOUT_MS = 15_000;
 
@@ -48,44 +49,6 @@ function ipv6Scope(ip: string): "global" | "link" | "host" {
 // ──────────────────────────────────────────────────────────────────
 // MikroTik RouterOS CLI
 // ──────────────────────────────────────────────────────────────────
-
-/**
- * Parser per output `/interface print terse`. Formato per riga:
- *   ` 0   name=ether1 default-name=ether1 type=ether mtu=1500 ...`
- * Restituisce mappa `ifname → {type, mtu}`.
- */
-function parseMikrotikInterfacePrint(output: string): Map<string, { type: string | null; mtu: number | null }> {
-  const map = new Map<string, { type: string | null; mtu: number | null }>();
-  for (const line of output.split("\n")) {
-    const nameMatch = line.match(/\bname=("[^"]+"|\S+)/);
-    if (!nameMatch) continue;
-    const name = nameMatch[1].replace(/^"|"$/g, "");
-    const typeMatch = line.match(/\btype=(\S+)/);
-    const mtuMatch = line.match(/\bmtu=(\d+)/);
-    map.set(name, {
-      type: typeMatch?.[1] ?? null,
-      mtu: mtuMatch ? parseInt(mtuMatch[1]) : null,
-    });
-  }
-  return map;
-}
-
-/**
- * Parser per `/interface ethernet print terse`. Estrae MAC per nome interfaccia.
- *   ` 0  name=ether1 mac-address=4C:5E:0C:11:22:33 ...`
- */
-function parseMikrotikEthernetMacs(output: string): Map<string, string> {
-  const map = new Map<string, string>();
-  for (const line of output.split("\n")) {
-    const nameMatch = line.match(/\bname=("[^"]+"|\S+)/);
-    const macMatch = line.match(/\bmac-address=([0-9A-Fa-f:]{17})/);
-    if (nameMatch && macMatch) {
-      const name = nameMatch[1].replace(/^"|"$/g, "");
-      map.set(name, macMatch[1].toLowerCase());
-    }
-  }
-  return map;
-}
 
 /**
  * Parser per `/ip address print terse` (IPv4). Formato:
@@ -134,17 +97,10 @@ export async function probeMikrotikInterfaces(device: NetworkDevice): Promise<In
   const opts = buildSshOptions(device);
   if (!opts) return null;
 
-  // 1. lista interfacce
+  // 1. lista interfacce: tipo, MAC, MTU, commento e segni R/X stanno tutti sulla stessa riga (scheda MikroTik, Task 3)
   const ifPrint = await sshExec(opts, "/interface print terse");
-  const ifaces = parseMikrotikInterfacePrint(ifPrint.stdout + ifPrint.stderr);
-  if (ifaces.size === 0) return [];
-
-  // 2. MAC per ethernet (best-effort)
-  let ethMacs = new Map<string, string>();
-  try {
-    const ethPrint = await sshExec(opts, "/interface ethernet print terse");
-    ethMacs = parseMikrotikEthernetMacs(ethPrint.stdout + ethPrint.stderr);
-  } catch { /* alcune versioni/edizioni non hanno /interface ethernet */ }
+  const ifaces = parseInterfacce(ifPrint.stdout + ifPrint.stderr);
+  if (ifaces.length === 0) return [];
 
   // 3. IPv4
   const ip4 = await sshExec(opts, "/ip address print terse");
@@ -160,7 +116,8 @@ export async function probeMikrotikInterfaces(device: NetworkDevice): Promise<In
   // 5. merge per interfaccia
   const results: InterfaceProbeResult[] = [];
   let ifindexCounter = 1;
-  for (const [ifname, meta] of ifaces) {
+  for (const meta of ifaces) {
+    const ifname = meta.nome;
     const addresses: InterfaceProbeAddress[] = [
       ...(v4.get(ifname) ?? []),
       ...(v6.get(ifname) ?? []),
@@ -168,10 +125,14 @@ export async function probeMikrotikInterfaces(device: NetworkDevice): Promise<In
     results.push({
       ifname,
       ifindex: ifindexCounter++,
-      mac: ethMacs.get(ifname) ?? null,
-      status: "unknown", // RouterOS terse non esplicita oper-status uniformemente
+      mac: meta.mac, // anche delle VLAN e dei bridge: prima solo le ethernet, e le VLAN senza IP sparivano dal filtro qui sotto
+      status: meta.accesa ? "up" : "down", // segno R (running)
       speed_mbps: null,
-      alias: meta.type, // riusiamo alias per esporre il tipo Mikrotik (ether/bridge/vlan/...)
+      alias: meta.commento, // come ifAlias di SNMP: su RouterOS è il commento
+      aliasAutorevole: true,
+      type: meta.tipo,
+      mtu: meta.mtu,
+      disabled: meta.spenta,
       addresses,
     });
   }

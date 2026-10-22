@@ -254,10 +254,16 @@ export function SoftwareListClient() {
     <div className="space-y-4 p-4 sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold flex items-center gap-2">
-            <Package className="h-6 w-6 text-sky-500" />
-            Software
-          </h1>
+          <div className="flex flex-wrap items-center gap-x-3">
+            <h1 className="text-2xl font-semibold flex items-center gap-2">
+              <Package className="h-6 w-6 text-sky-500" />
+              Software
+            </h1>
+            {/* Paginazione nella riga del titolo (Riccardo, 20/10): sotto la tabella occupava spazio. */}
+            {!loading && total > 0 && (
+              <Pagination inTesta page={page} totalPages={totalPages} onPageChange={setPage} pageSize={PAGE_SIZE} total={total} />
+            )}
+          </div>
           <p className="text-sm text-muted-foreground mt-1">
             Tutti i software rilevati nel parco macchine, deduplicati per nome+versione, con elenco host.
           </p>
@@ -337,7 +343,7 @@ export function SoftwareListClient() {
         <CardContent className="pt-4">
           {error && <div className="p-4 text-sm text-destructive">{error}</div>}
           <div className="overflow-x-auto">
-            <Table>
+            <Table fissa riserva={52}>
               <TableHeader>
                 <TableRow>
                   <SortableTableHead columnId="" sortColumn={sortBy} sortDirection={sortDir} onSort={() => {}} className="w-8">{""}</SortableTableHead>
@@ -382,14 +388,6 @@ export function SoftwareListClient() {
               </TableBody>
             </Table>
           </div>
-          {!loading && total > 0 && (
-            <div className="flex items-center justify-between gap-3 pt-3 text-sm text-muted-foreground">
-              <span>
-                Mostrando {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} di {total}
-              </span>
-            </div>
-          )}
-          <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
         </CardContent>
       </Card>
 

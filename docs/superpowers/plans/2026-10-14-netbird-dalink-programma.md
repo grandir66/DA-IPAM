@@ -7,7 +7,7 @@
 > Il piano dettagliato della fase 0 è già scritto:
 > [`2026-10-14-netbird-fase0-preparazione.md`](2026-10-14-netbird-fase0-preparazione.md).
 
-**Obiettivo:** portare gli oggetti dei clienti da Tailscale a NetBird in una rete a stella
+**Obiettivo:** portare gli oggetti dei clienti dalla VPN precedente a NetBird in una rete a stella
 governata da DA-Link, con licenza, CA interna e resilienza della flotta.
 
 **Architettura:** DA-Link, un progetto nuovo in sede, fa entrare gli oggetti in NetBird da
@@ -57,7 +57,7 @@ ADR [0011](../../adr/0011-netbird-rete-a-stella.md) e [0013](../../adr/0013-lice
 | **G2** | Deploy-Appliance e centrali: radici della CA, chiave di emergenza, chiave di recupero all'installazione | Deploy-Appliance + centrali | B | sì: deploy sui centrali |
 | **2b** | **Pilota cliente A, licenza** (col freno: solo segnalazioni) e **prova di compromissione** sulla VM di prova | — | C2, D2, G2 | **sì** |
 | **3** | Gli altri clienti, uno per volta (lista dalla fase 0) | — | 2 (e 2b per la licenza) | **sì, per cliente** |
-| **4** | Spegnimento di Tailscale e pulizia del codice | tutti | 3 | **sì** |
+| **4** | Spegnimento della VPN precedente e pulizia del codice | tutti | 3 | **sì** |
 
 ## Ordine e parallelo, per andare veloci
 
@@ -109,13 +109,13 @@ ADR [0011](../../adr/0011-netbird-rete-a-stella.md) e [0013](../../adr/0013-lice
   `All` è uscito dalle 5 policy accese e dai 2 nameserver, con la fotografia nel vault, e
   `users` è diventato gruppo automatico di tutte le persone. `Default` era già spenta.
   Gruppi `centro-vulcan`, `centro-zabbix` e `centro-link` creati; DA-ZABBIX è in
-  `centro-zabbix`; da-vulcan è in NetBird (`da-vulcan.netbird.selfhosted`, Tailscale
+  `centro-zabbix`; da-vulcan è in NetBird (`da-vulcan.netbird.selfhosted`, VPN precedente
   acceso con `netfilter-mode=off`). R1–R4 sono verdi a mano.
   Restano aperti:
   - ~~la verifica di un collega che sta solo in `users`, da fuori sede~~: fatta da Riccardo il 14/10
     (INTEGRA, Manager, RDP, DMZ, uscita);
   - ~~le YubiKey da ordinare (Task 6)~~: niente YubiKey per ora (decisione 28, ADR 0014);
-  - il nodo `prova-convivenza` da togliere dalla console di Tailscale.
+  - il nodo `prova-convivenza` da togliere dalla console della VPN precedente.
 - 2026-10-14 notte: **tappa A avviata, non eseguita.** Progetto DA-Link aperto in
   `~/Progetti/Domarc/DA-Link` (remote privato `grandir66/DA-Link`, censito, cancello verde).
   Piano dettagliato in `DA-Link/docs/superpowers/plans/2026-10-14-tappa-a-nucleo.md`, da
@@ -177,7 +177,7 @@ ADR [0011](../../adr/0011-netbird-rete-a-stella.md) e [0013](../../adr/0013-lice
     (VM 545, oggetto `70791-edge`) con NetBird collegato: senza filtro la 443 era aperta. Pubblicazione sul
     server in attesa della conferma.
   - **DTS in NetBird**: `71734-ipam`, snapshot di Riccardo prima; solo 22/443/6443 raggiungibili, R1–R5 verde,
-    livello «solo stato». Tailscale `--netfilter-mode=off` dopo aver messo in UFW le sue regole equivalenti.
+    livello «solo stato». VPN precedente con `--netfilter-mode=off` dopo aver messo in UFW le sue regole equivalenti.
   - Prossimo: prova del livello abbassato (Riccardo, pagina «Cosa esce» del server di prova), revoca di
     `70791-edge` e della VM 545, poi C1b e la rinomina dei proxy cliente per cliente.
 

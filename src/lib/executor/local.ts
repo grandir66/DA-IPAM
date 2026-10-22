@@ -1,12 +1,8 @@
 /**
  * LocalExecutor — implementazione `Executor` che gira nello stesso processo dell'hub.
  *
- * Delega ai moduli scanner/devices esistenti senza alterarne la firma. Usato per:
- *   - tutti i tenant con `agent_mode='local'` (DEFAULT, dev, demo)
- *   - test e ambienti in cui non c'è (ancora) un agente remoto
- *
- * In Phase 3 verrà affiancato da `RemoteExecutor` con la stessa interfaccia ma
- * invocazioni HTTP verso un agente Python via Tailscale.
+ * Delega ai moduli scanner/devices esistenti senza alterarne la firma. È l'unico
+ * esecutore: l'agente remoto è tolto (20/10/2026, decisione 26 della spec NetBird).
  */
 
 import fs from "fs";

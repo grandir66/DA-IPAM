@@ -2,9 +2,10 @@
 import { parseDbDate } from "@/lib/db-date";
 import { scheduledJobLabel } from "@/lib/scheduled-job-types";
 import { fetchJson } from "@/lib/fetch-json";
+import { cn } from "@/lib/utils";
 import { LoadError } from "@/components/shared/load-error";
 
-import { useEffect, useState, useMemo, useCallback, Suspense } from "react";
+import { Fragment, useEffect, useRef, useState, useMemo, useCallback, Suspense } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -67,7 +68,12 @@ import type { ScheduledJob, NetworkWithStats } from "@/types";
 import { ScanConfigTab } from "@/components/settings/scan-config-tab";
 import { DeviceIdentificationTab } from "@/components/settings/device-identification-tab";
 import { ModulesTab } from "@/components/settings/modules-tab";
+import { FinestraScansioneAutomatica } from "@/components/jobs/finestra-scansione-automatica";
+import { EsitiApparatiScelti } from "@/components/jobs/esiti-apparati-scelti";
+import { PastigliaStato } from "@/components/jobs/pastiglia-stato";
+import { FUSO_UTENTI } from "@/lib/db-date";
 import { UpdatesTab } from "@/components/settings/updates-tab";
+import { PuliziaHostCard } from "@/components/settings/pulizia-host-card";
 import { NotificationsTab } from "@/components/settings/notifications-tab";
 import { SecurityAlertsTab } from "@/components/settings/security-alerts-tab";
 
@@ -79,7 +85,7 @@ const JOB_TYPE_LABELS: Record<string, string> = {
   arp_poll: "ARP Poll",
   dns_resolve: "DNS Resolve",
   known_host_check: "Monitoraggio host registrati (ICMP)",
-  cleanup: "Pulizia Host",
+  cleanup: "Pulizia tabelle MAC",
   anomaly_check: "Rilevamento anomalie",
   librenms_sync: "Sincronizzazione LibreNMS",
   vuln_sync: "Sincronizzazione vulnerability scanner",
@@ -87,7 +93,35 @@ const JOB_TYPE_LABELS: Record<string, string> = {
   ad_sync: "Sincronizzazione Active Directory",
   unifi_sync: "Sincronizzazione controller UniFi",
   hypervisor_sync: "Lettura hypervisor (VM e schede)",
+  pulizia_host: "Pulizia host assenti (notte)",
+  apparati_scelti: "Lettura apparati",
 };
+
+/** Le righe `apparati_scelti` arrivano da GET /api/jobs con questi campi in più (J3); le altre no. */
+interface DatiApparatiScelti {
+  nome?: string | null;
+  apparati?: number;
+  frequenza?: string;
+  prossima?: string | null;
+  riassunto?: { letti: number; parziali: number; totale: number; esclusi: number; giro_il: string } | null;
+}
+
+type Riassunto = NonNullable<DatiApparatiScelti["riassunto"]>;
+
+/** La pastiglia del riassunto (J3): «✓ 3/3», «✓ 2/3 · ▲ 1 parziale», «✕ 0/3 · 2 esclusi»; il tono dal caso peggiore. */
+function pastigliaRiassunto(r: Riassunto): { tono: "ok" | "attenzione" | "guasto"; testo: string } {
+  const tono = r.letti === r.totale ? "ok" : r.letti + r.parziali === 0 ? "guasto" : "attenzione";
+  const parti = [`${tono === "guasto" ? "✕" : "✓"} ${r.letti}/${r.totale}`];
+  if (r.parziali > 0) parti.push(`▲ ${r.parziali} parzial${r.parziali === 1 ? "e" : "i"}`);
+  if (r.esclusi > 0) parti.push(`${r.esclusi} esclus${r.esclusi === 1 ? "o" : "i"}`);
+  return { tono, testo: parti.join(" · ") };
+}
+
+/** Ogni quanto si guarda se il giro lanciato da «Esegui ora» è finito, e fin quando (il giro sta sotto 5 minuti per apparato). */
+const ATTESA_GIRO_MS = 5_000;
+const ATTESA_GIRO_MAX_MS = 30 * 60_000;
+
+const dataItaliana = (d: Date): string => d.toLocaleString("it-IT", { timeZone: FUSO_UTENTI });
 
 const HEAVY_JOB_TYPES = new Set(["fast_scan", "ping_sweep"]);
 
@@ -158,6 +192,9 @@ interface UserWithAccess {
   role: string;
   created_at: string;
   last_login: string | null;
+  /** Verifica in due passaggi (ADR 0023): 1 = richiesta dall'admin; totp_attiva 1 = QR confermato. */
+  totp_richiesta?: number;
+  totp_attiva?: number;
   tenant_access?: { tenant_id: number; codice_cliente: string; ragione_sociale: string; role: string }[];
 }
 
@@ -267,7 +304,6 @@ function SettingsPageInner() {
   // === Reset state (full reconfig) ===
   const [resetting, setResetting] = useState(false);
   const [openingWizard, setOpeningWizard] = useState(false);
-  const [resettingLabConfig, setResettingLabConfig] = useState(false);
 
   // === Users ===
   const [users, setUsers] = useState<UserWithAccess[]>([]);
@@ -342,6 +378,17 @@ function SettingsPageInner() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [newJobType, setNewJobType] = useState<string>("known_host_check");
   const [runningJobId, setRunningJobId] = useState<number | null>(null);
+  // Scansione automatica (J3): job in modifica e righe con il dettaglio per apparato aperto.
+  const [jobInModifica, setJobInModifica] = useState<number | null>(null);
+  const [dettagliAperti, setDettagliAperti] = useState<Set<number>>(new Set());
+  // «Esegui ora» di un apparati_scelti risponde 202: si guarda il giro_il degli esiti finché cambia, poi si ricarica.
+  const [giriInCorso, setGiriInCorso] = useState<Set<number>>(new Set());
+  const [versioneEsiti, setVersioneEsiti] = useState<Record<number, number>>({});
+  const attesaGiri = useRef(new Map<number, ReturnType<typeof setInterval>>());
+  useEffect(() => {
+    const timer = attesaGiri.current;
+    return () => { for (const t of timer.values()) clearInterval(t); timer.clear(); };
+  }, []);
 
   useEffect(() => {
     fetch("/api/jobs").then((r) => r.json()).then(setJobs).catch(() => {});
@@ -384,41 +431,14 @@ function SettingsPageInner() {
     }
   }
 
-  async function handleResetLabNetworkConfig() {
-    if (
-      !confirm(
-        "Azzerare reti, host, ARP, DHCP, credenziali di discovery, AD e inventario del tenant corrente?\n\n" +
-          "Restano intatti: integrazioni appliance (Edge, LibreNMS, Network Services), admin, Launchpad e moduli.\n\n" +
-          "Verrai reindirizzato al wizard di pre-configurazione. Procedere?",
-      )
-    ) {
-      return;
-    }
-    setResettingLabConfig(true);
-    try {
-      const res = await fetch("/api/lab-config/reset", { method: "POST" });
-      const data = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
-      if (!res.ok) {
-        toast.error(typeof data.error === "string" ? data.error : "Reset lab non riuscito");
-        return;
-      }
-      toast.success(data.message ?? "Configurazione di rete azzerata");
-      router.push("/onboarding");
-    } catch {
-      toast.error("Errore di rete");
-    } finally {
-      setResettingLabConfig(false);
-    }
-  }
-
   async function handleResetConfiguration() {
-    if (!confirm("Resettare tutta la configurazione? Verranno eliminati TUTTI i dati: reti, host, dispositivi, credenziali, integrazioni Active Directory (e dati sincronizzati), utenti e impostazioni. Resteranno solo il profilo Nmap e le regole fingerprint. Dovrai rifare il setup iniziale. Procedere?")) return;
+    if (!confirm("Resettare la configurazione per un nuovo cliente? Verranno eliminati reti, host, apparati, credenziali, controller, Active Directory, telefoni, Wazuh, vulnerabilità, topologia, inventario e job. Restano le impostazioni, la configurazione dei moduli dell'appliance e gli utenti. Ripartirai dal wizard di configurazione. Procedere?")) return;
     setResetting(true);
     try {
       const res = await fetch("/api/reset", { method: "POST" });
       if (res.ok) {
-        toast.success("Configurazione resettata. Reindirizzamento al setup iniziale...");
-        window.location.href = "/setup";
+        toast.success("Configurazione resettata. Reindirizzamento al wizard di configurazione...");
+        router.push("/onboarding");
       } else {
         const data = await res.json();
         toast.error(data.error || "Errore nel reset");
@@ -508,6 +528,39 @@ function SettingsPageInner() {
         toast.error(data.error || "Errore nell'eliminazione");
       }
     } catch { toast.error("Errore di rete"); }
+  }
+
+  /** Verifica in due passaggi: richiedi, azzera, togli (Riccardo, 20/10; ADR 0023). */
+  async function handleSecondaVerifica(user: UserWithAccess, azione: "richiedi" | "azzera" | "togli") {
+    const sestesso = user.username === sessionUsername;
+    const domanda =
+      azione === "azzera"
+        ? `Azzerare la verifica in due passaggi di "${user.username}"? Al prossimo accesso dovrà inquadrare un QR nuovo (telefono perso o cambiato).${sestesso ? " È il tuo utente: ti servirà il telefono nuovo al prossimo accesso." : ""}`
+        : azione === "togli"
+          ? `Togliere la verifica in due passaggi a "${user.username}"? Entrerà con la sola password.`
+          : null;
+    if (domanda && !confirm(domanda)) return;
+    try {
+      const res = await fetch(`/api/users/${user.id}/seconda-verifica`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ azione }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data.error || "Errore nella verifica in due passaggi");
+        return;
+      }
+      toast.success(data.message || "Fatto");
+      setUsers((prev) =>
+        prev.map((u) =>
+          u.id !== user.id ? u
+            : { ...u, totp_richiesta: azione === "togli" ? 0 : 1, totp_attiva: 0 },
+        ),
+      );
+    } catch {
+      toast.error("Errore di rete");
+    }
   }
 
   function openResetPassword(user: UserWithAccess) {
@@ -622,6 +675,32 @@ function SettingsPageInner() {
       body: JSON.stringify({ id, enabled }),
     });
     setJobs((prev) => prev.map((j) => (j.id === id ? { ...j, enabled: enabled ? 1 : 0 } : j)));
+    // «Prossima» e «sospeso» li calcola il server (apparati_scelti): si rilegge l'elenco.
+    void ricaricaJobs();
+  }
+
+  /** Il giro di un apparati_scelti lanciato a mano: si guarda `giro_il` finché cambia, poi elenco e dettaglio si ricaricano. */
+  function seguiGiro(id: number, giroPrima: string | null) {
+    const timer = attesaGiri.current;
+    if (timer.has(id)) clearInterval(timer.get(id));
+    setGiriInCorso((p) => new Set(p).add(id));
+    const fine = (finito: boolean) => {
+      clearInterval(timer.get(id));
+      timer.delete(id);
+      setGiriInCorso((p) => { const n = new Set(p); n.delete(id); return n; });
+      if (!finito) return;
+      setVersioneEsiti((v) => ({ ...v, [id]: (v[id] ?? 0) + 1 }));
+      void ricaricaJobs();
+      toast.success("Giro finito: esiti aggiornati");
+    };
+    const scadenza = Date.now() + ATTESA_GIRO_MAX_MS;
+    timer.set(id, setInterval(() => {
+      if (Date.now() > scadenza) { fine(false); return; }
+      void fetchJson<{ giro_il: string | null }>(`/api/jobs/apparati-scelti/${id}/esiti`).then((r) => {
+        if (!timer.has(id)) return;
+        if (r.ok && r.data.giro_il && r.data.giro_il !== giroPrima) fine(true);
+      });
+    }, ATTESA_GIRO_MS));
   }
 
   async function runJobNow(id: number) {
@@ -629,7 +708,12 @@ function SettingsPageInner() {
     try {
       const res = await fetch(`/api/jobs/${id}/run`, { method: "POST" });
       const data = await res.json().catch(() => ({}));
-      if (res.status === 202) {
+      if (res.status === 202 && data.job_type === "apparati_scelti") {
+        // Lettura apparati: il giro continua in sottofondo; a giro finito il dettaglio aperto si ricarica da solo.
+        toast.success("Giro avviato: il dettaglio si aggiorna a fine giro");
+        const prima = (jobs.find((j) => j.id === id) as (ScheduledJob & DatiApparatiScelti) | undefined)?.riassunto?.giro_il ?? null;
+        seguiGiro(id, prima);
+      } else if (res.status === 202) {
         // Job di scansione: il giro continua in background, «Ultima esecuzione» si aggiorna a fine giro.
         toast.success("Scansione avviata: l'ultima esecuzione si aggiorna a fine giro");
         const updated = await fetch("/api/jobs").then((r) => r.json());
@@ -650,11 +734,23 @@ function SettingsPageInner() {
     }
   }
 
-  async function deleteJob(id: number) {
-    if (!confirm("Eliminare questo job?")) return;
+  async function deleteJob(id: number, nome?: string | null) {
+    if (!confirm(nome ? `Eliminare il job «${nome}»?` : "Eliminare questo job?")) return;
     await fetch(`/api/jobs?id=${id}`, { method: "DELETE" });
     setJobs((prev) => prev.filter((j) => j.id !== id));
     toast.success("Job eliminato");
+  }
+
+  // Il link della testata della scheda (J4) arriva a /settings?tab=jobs#job-<id>: porta la riga in vista.
+  useEffect(() => {
+    if (activeTab !== "jobs" || jobs.length === 0) return;
+    const m = /^#job-(\d+)$/.exec(window.location.hash);
+    if (m) document.getElementById(`job-${m[1]}`)?.scrollIntoView({ block: "center" });
+  }, [activeTab, jobs.length]);
+
+  async function ricaricaJobs() {
+    const r = await fetchJson<ScheduledJob[]>("/api/jobs");
+    if (r.ok) setJobs(r.data); else toast.error(r.message);
   }
 
   // ============ RENDER ============
@@ -875,6 +971,7 @@ function SettingsPageInner() {
                   <TableHead>Cliente</TableHead>
                   <TableHead>Creato il</TableHead>
                   <TableHead>Ultimo accesso</TableHead>
+                  <TableHead title="Verifica in due passaggi: codice dall'app di autenticazione oltre alla password. Chi entra con l'account Domarc non ne ha bisogno.">Due passaggi</TableHead>
                   <TableHead className="w-[140px]">Azioni</TableHead>
                 </TableRow>
               </TableHeader>
@@ -905,6 +1002,9 @@ function SettingsPageInner() {
                     </TableCell>
                     <TableCell>{parseDbDate(user.created_at).toLocaleDateString("it-IT")}</TableCell>
                     <TableCell>{user.last_login ? parseDbDate(user.last_login).toLocaleString("it-IT") : "Mai"}</TableCell>
+                    <TableCell>
+                      <CellaDuePassaggi user={user} sestesso={user.username === sessionUsername} onAzione={(a) => void handleSecondaVerifica(user, a)} />
+                    </TableCell>
                     <TableCell>
                       <div className="flex gap-1">
                         <Button
@@ -982,7 +1082,7 @@ function SettingsPageInner() {
                         <SelectItem value="arp_poll">ARP Poll (passivo via SNMP switch)</SelectItem>
                         <SelectItem value="snmp_scan">SNMP Scan</SelectItem>
                         <SelectItem value="dns_resolve">DNS Resolve</SelectItem>
-                        <SelectItem value="cleanup">Pulizia Host</SelectItem>
+                        <SelectItem value="cleanup">Pulizia tabelle MAC</SelectItem>
                         <SelectItem value="ping_sweep">Ping Sweep (scan completo subnet)</SelectItem>
                         <SelectItem value="fast_scan">Scoperta veloce subnet</SelectItem>
                         <SelectItem value="nmap_scan">Nmap Scan</SelectItem>
@@ -1051,67 +1151,129 @@ function SettingsPageInner() {
                   const isLargeNet = networkIsLarge(network?.cidr);
                   const shortInterval = job.interval_minutes < 720;
                   const riskyCpu = isHeavy && isLargeNet && shortInterval && !!job.enabled;
-                  const isRunning = runningJobId === job.id;
+                  const isRunning = runningJobId === job.id || giriInCorso.has(job.id);
+                  // pulizia_host si gestisce solo dalla sua scheda: qui non si accende, non si lancia, non si cancella.
+                  const soloLettura = job.job_type === "pulizia_host";
+                  // Scansione automatica (J3): la crea e la gestisce solo un admin.
+                  const scelti = job.job_type === "apparati_scelti";
+                  const ds = job as ScheduledJob & DatiApparatiScelti;
+                  const rs = ds.riassunto;
+                  const aperto = dettagliAperti.has(job.id);
                   return (
-                    <TableRow key={job.id}>
+                    <Fragment key={job.id}>
+                    <TableRow id={`job-${job.id}`}>
                       <TableCell>
                         <Switch
                           checked={!!job.enabled}
+                          disabled={soloLettura || (scelti && !isAdmin)}
                           onCheckedChange={(checked) => toggleJobEnabled(job.id, checked)}
                         />
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2 flex-wrap">
-                          <Badge variant="outline">{scheduledJobLabel(job, JOB_TYPE_LABELS)}</Badge>
+                          {scelti ? (
+                            <span className="font-medium">{scheduledJobLabel(job, JOB_TYPE_LABELS)}</span>
+                          ) : (
+                            <Badge variant="outline">{scheduledJobLabel(job, JOB_TYPE_LABELS)}</Badge>
+                          )}
                           {riskyCpu && (
                             <Badge variant="outline" className="border-amber-500 text-amber-700 dark:text-amber-400" title="Scan completo subnet grande con frequenza <12h: rischio saturazione CPU.">
                               ⚠ Carico CPU alto
                             </Badge>
                           )}
                         </div>
+                        {scelti && (
+                          <p className="mt-1 text-[13px] text-muted-foreground">
+                            {JOB_TYPE_LABELS.apparati_scelti} · {ds.apparati ?? 0} apparat{ds.apparati === 1 ? "o" : "i"}
+                          </p>
+                        )}
+                        {soloLettura && (
+                          <p className="mt-1 text-[13px] text-muted-foreground">
+                            Si gestisce da Impostazioni → Sistema → Pulizia degli host assenti
+                          </p>
+                        )}
                       </TableCell>
-                      <TableCell>{network ? `${network.name} (${network.cidr})` : "Tutte"}</TableCell>
+                      <TableCell>{scelti ? "—" : network ? `${network.name} (${network.cidr})` : "Tutte"}</TableCell>
                       <TableCell>
-                        {INTERVAL_OPTIONS.find((o) => o.value === String(job.interval_minutes))?.label || `${job.interval_minutes} min`}
+                        {scelti
+                          ? (ds.frequenza ?? `${job.interval_minutes} min`)
+                          : INTERVAL_OPTIONS.find((o) => o.value === String(job.interval_minutes))?.label || `${job.interval_minutes} min`}
                       </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        {job.last_run ? parseDbDate(job.last_run).toLocaleString("it-IT") : "Mai"}
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        {job.next_run ? parseDbDate(job.next_run).toLocaleString("it-IT") : "—"}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                            disabled={isRunning}
-                            onClick={() => runJobNow(job.id)}
-                            title="Esegui ora"
-                          >
-                            {isRunning
-                              ? <RefreshCw className="h-4 w-4 animate-spin" />
-                              : <Play className="h-4 w-4" />}
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-destructive/60 hover:text-destructive"
-                            onClick={() => deleteJob(job.id)}
-                            title="Elimina job"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                      <TableCell className={cn("text-muted-foreground", scelti ? "text-[13px]" : "text-xs")}>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {/* apparati_scelti: l'ora dell'ultimo giro dagli esiti (c'è anche quando il giro non ha letto niente). */}
+                          <span>{scelti && rs ? dataItaliana(parseDbDate(rs.giro_il)) : job.last_run ? (scelti ? dataItaliana(parseDbDate(job.last_run)) : parseDbDate(job.last_run).toLocaleString("it-IT")) : "Mai"}</span>
+                          {scelti && rs && (
+                            <button
+                              type="button"
+                              onClick={() => setDettagliAperti((prec) => { const n = new Set(prec); if (n.has(job.id)) n.delete(job.id); else n.add(job.id); return n; })}
+                              aria-expanded={aperto}
+                              title="Mostra l'esito per apparato"
+                            >
+                              <PastigliaStato tono={pastigliaRiassunto(rs).tono} senzaSegno>{pastigliaRiassunto(rs).testo}</PastigliaStato>
+                            </button>
+                          )}
                         </div>
                       </TableCell>
+                      <TableCell className={cn("text-muted-foreground", scelti ? "text-[13px]" : "text-xs")}>
+                        {scelti
+                          ? (ds.prossima ? dataItaliana(new Date(ds.prossima)) : "sospeso")
+                          : job.next_run ? parseDbDate(job.next_run).toLocaleString("it-IT") : "—"}
+                      </TableCell>
+                      <TableCell>
+                        {!soloLettura && (!scelti || isAdmin) && (
+                          <div className="flex items-center gap-1">
+                            {scelti && (
+                              <Button variant="outline" size="sm" className="h-8 text-[13px]" onClick={() => setJobInModifica(job.id)}>
+                                Modifica
+                              </Button>
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              disabled={isRunning}
+                              onClick={() => runJobNow(job.id)}
+                              title="Esegui ora"
+                            >
+                              {isRunning
+                                ? <RefreshCw className="h-4 w-4 animate-spin" />
+                                : <Play className="h-4 w-4" />}
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-destructive/60 hover:text-destructive"
+                              onClick={() => deleteJob(job.id, scelti ? scheduledJobLabel(job, JOB_TYPE_LABELS) : null)}
+                              title="Elimina job"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        )}
+                      </TableCell>
                     </TableRow>
+                    {scelti && aperto && (
+                      <TableRow>
+                        <TableCell colSpan={7} className="bg-muted/30 p-0"><EsitiApparatiScelti key={versioneEsiti[job.id] ?? 0} jobId={job.id} /></TableCell>
+                      </TableRow>
+                    )}
+                    </Fragment>
                   );
                 })}
               </TableBody>
             </Table>
           </CardContent>
         </Card>
+      )}
+      {jobInModifica != null && (
+        <FinestraScansioneAutomatica
+          modo="modifica"
+          jobId={jobInModifica}
+          open
+          onOpenChange={(o) => { if (!o) setJobInModifica(null); }}
+          onFatto={() => void ricaricaJobs()}
+        />
       )}
 
       {/* === Tab: Integrazioni === */}
@@ -1224,34 +1386,7 @@ function SettingsPageInner() {
             </Card>
           )}
 
-          {isAdmin && (
-            <Card className="border-amber-500/30">
-              <CardHeader>
-                <div className="flex items-center gap-2">
-                  <Radar className="h-5 w-5 text-amber-600" />
-                  <CardTitle className="text-base">Reset lab / pre-consegna</CardTitle>
-                </div>
-                <CardDescription>
-                  Azzera <strong>solo i dati di rete e discovery</strong> (subnet, host, ARP, DHCP,
-                  credenziali scan, AD, inventario) per ripartire con il wizard e pre-configurare
-                  l&apos;appliance in lab prima del cliente. Integrazioni moduli, admin e Launchpad
-                  restano attivi.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="gap-2 border-amber-500/50 text-amber-800 dark:text-amber-400 hover:bg-amber-500/10"
-                  onClick={() => void handleResetLabNetworkConfig()}
-                  disabled={resettingLabConfig}
-                >
-                  <RotateCcw className={`h-4 w-4 ${resettingLabConfig ? "animate-spin" : ""}`} />
-                  {resettingLabConfig ? "Reset in corso…" : "Azzera config rete e riparti da zero"}
-                </Button>
-              </CardContent>
-            </Card>
-          )}
+          {isAdmin && <PuliziaHostCard />}
 
           <Card>
             <CardHeader>
@@ -1287,7 +1422,7 @@ function SettingsPageInner() {
                 <CardTitle className="text-base">Dati e manutenzione</CardTitle>
               </div>
               <CardDescription>
-                Esporta dati o resetta la configurazione per un nuovo cliente. Il reset cancella tutto (incluso Active Directory) tranne il profilo Nmap e le regole fingerprint.
+                Esporta dati o resetta la configurazione per un nuovo cliente. Il reset cancella i dati del cliente (reti, host, apparati, credenziali, AD, telefoni, Wazuh, vulnerabilità, topologia, inventario, job); restano le impostazioni, la configurazione dei moduli e gli utenti.
               </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-wrap gap-3">
@@ -1318,5 +1453,51 @@ function SettingsPageInner() {
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Stato della verifica in due passaggi di un utente con l'azione che serve (Riccardo, 20/10;
+ * ADR 0023): «–» non richiesta → Richiedi; «▲ da attivare» (vedrà il QR) → Togli;
+ * «✓ attiva» → Azzera (telefono perso) e Togli. Simbolo e parola, non solo colore.
+ */
+function CellaDuePassaggi({ user, sestesso, onAzione }: { user: UserWithAccess; sestesso: boolean; onAzione: (a: "richiedi" | "azzera" | "togli") => void }) {
+  const azione = (a: "richiedi" | "azzera" | "togli", testo: string, titolo: string) => {
+    // Togliersela da soli no (decideSecondaVerifica): spento, col perché.
+    const spento = sestesso && a === "togli";
+    return (
+      <button
+        type="button"
+        disabled={spento}
+        onClick={() => onAzione(a)}
+        title={spento ? "Non puoi toglierti la verifica in due passaggi: chiedilo a un altro amministratore" : titolo}
+        className="text-[13px] text-[#006C96] hover:underline disabled:text-muted-foreground disabled:no-underline disabled:cursor-not-allowed dark:text-[#3FBBF0]"
+      >
+        {testo}
+      </button>
+    );
+  };
+  if (user.totp_richiesta !== 1) {
+    return (
+      <span className="flex items-center gap-2 text-[13px]">
+        <span className="text-muted-foreground" title="Non richiesta: entra con la sola password">–</span>
+        {azione("richiedi", "Richiedi", "Al prossimo accesso dovrà inquadrare un QR con l'app di autenticazione")}
+      </span>
+    );
+  }
+  if (user.totp_attiva !== 1) {
+    return (
+      <span className="flex flex-wrap items-center gap-2 text-[13px]">
+        <span className="rounded border border-[#C9A800] bg-[#FFD400] px-1.5 text-[#0D2537]" title="Richiesta: al prossimo accesso vedrà il QR">▲ da attivare</span>
+        {azione("togli", "Togli", "Torna alla sola password")}
+      </span>
+    );
+  }
+  return (
+    <span className="flex flex-wrap items-center gap-2 text-[13px]">
+      <span className="rounded border border-[#1F7A4D] bg-[#1F7A4D] px-1.5 text-white" title="Attiva: entra con password e codice">✓ attiva</span>
+      {azione("azzera", "Azzera", "Telefono perso o cambiato: al prossimo accesso un QR nuovo")}
+      {azione("togli", "Togli", "Torna alla sola password")}
+    </span>
   );
 }

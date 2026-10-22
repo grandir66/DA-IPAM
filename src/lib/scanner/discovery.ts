@@ -11,7 +11,7 @@ import { pingSweep as _localPingSweep } from "./ping";
 import { nmapDiscoverHosts as _localNmapDiscoverHosts, nmapPortScan as _localNmapPortScan, isNmapAvailable as _localIsNmapAvailable } from "./nmap";
 import { tcpConnect as _localTcpConnect, FALLBACK_TCP_PORTS } from "./tcp-check";
 import type { Executor } from "@/lib/executor";
-import { getExecutor, getScanIoOverride } from "@/lib/executor";
+import { esecutorePerGiro, getScanIoOverride } from "@/lib/executor";
 import {
   buildTcpScanArgs,
   buildNetworkDiscoveryQuickTcpArgs,
@@ -474,27 +474,18 @@ async function runDiscovery(
   const tenantInBackground = getCurrentTenantCode();
   console.info(`[Discovery] runDiscovery started — tenant context: ${tenantInBackground ?? "NONE (fallback to DEFAULT)"}, network: ${networkId}, scanType: ${scanType}`);
 
-  /* ─── Executor dispatch (Phase 3.5) ──────────────────────────────────────
-   * Risolve l'Executor del tenant corrente: LocalExecutor per tenant local
-   * (comportamento pre-Phase 3.5 invariato), RemoteExecutor per tenant con
-   * agent configurato. Gli alias `pingSweep`, `nmapDiscoverHosts`,
-   * `nmapPortScan` shadowano gli import top-level: tutti i call site
-   * sottostanti li usano automaticamente senza modifiche.
+  /* ─── Executor del giro ───────────────────────────────────────────────────
+   * LocalExecutor (o il doppio delle prove). Gli alias `pingSweep`,
+   * `nmapDiscoverHosts`, `nmapPortScan` shadowano gli import top-level: tutti i
+   * call site sottostanti li usano automaticamente senza modifiche.
    *
-   * Se getExecutor fallisce (tenant remote senza hostname/token), facciamo
-   * fallback al LOCAL per non spaccare l'utente: la scansione girerà
-   * sull'hub e troverà nulla (visibile in UI), ma il job non crasha.
+   * Un cliente rimasto in modalità «agente remoto» (tolta il 20/10/2026) fa
+   * fallire il giro col messaggio di `esecutorePerGiro`: niente ripiego muto
+   * sull'hub, che manderebbe offline host che da qui non si vedono. Un cliente
+   * non trovato esegue in locale come prima, con l'avviso nel log.
    */
-  let _exec: Executor | null = null;
-  if (tenantInBackground) {
-    try {
-      _exec = getExecutor(tenantInBackground);
-      console.info(`[Discovery] Executor mode: ${_exec.mode}`);
-    } catch (e) {
-      console.warn(`[Discovery] getExecutor("${tenantInBackground}") fallito — fallback local: ${(e as Error).message}`);
-      _exec = null;
-    }
-  }
+  const _exec: Executor | null = esecutorePerGiro(tenantInBackground);
+  if (_exec) console.info(`[Discovery] Executor mode: ${_exec.mode}`);
   const rawPingSweep = _exec
     ? (ips: string[], concurrency: number = 50, onProgress?: (scanned: number, found: number) => void) =>
         _exec!.pingSweep(ips, concurrency, onProgress ? { onProgress } : undefined)
@@ -544,15 +535,13 @@ async function runDiscovery(
           opts?.onLog ? { onLog: opts.onLog } : undefined,
         )
     : _localNmapPortScan;
-  // Per executor remoto saltiamo il check locale di nmap (sul hub nmap può
-  // mancare): ci fidiamo dell'agente. Per executor locale usiamo il check
-  // originale (subprocess `nmap --version`).
+  // Check locale di nmap (subprocess `nmap --version`).
   /* Porta delle prove (T3-16): con l'esecutore finto installato, anche le uscite
    * che non passano dall'esecutore (TCP del secondo passaggio, cache ARP locale,
    * ARP dagli apparati, controllo di nmap) restano nel banco. In produzione
    * `getScanIoOverride()` è null e tutto resta com'era. */
   const ioOverride = getScanIoOverride();
-  const isNmapAvailable: () => Promise<boolean> = ioOverride || (_exec && _exec.mode === "remote")
+  const isNmapAvailable: () => Promise<boolean> = ioOverride
     ? async () => true
     : _localIsNmapAvailable;
   const tcpConnect = ioOverride

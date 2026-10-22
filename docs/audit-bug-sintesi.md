@@ -137,7 +137,7 @@ Solo `viewer` passa da `getUserTenantAccess()`. **Admin può selezionare qualsia
 | RBAC-6 | POST creazione tenant: commento “solo superadmin” ma `requireAdmin()` | `tenants/route.ts` |
 | SEC-7 | `client-config`: qualsiasi auth user legge config VPN/credentiali per codice | `client-config/route.ts` |
 | SEC-8 | `GET /api/backup` — download `ipam.db` legacy, no tenant scope | `backup/route.ts` |
-| RBAC-7 | Token agent rotazione per qualsiasi tenant ID (admin) | `tenants/[id]/agent/token/*` |
+| RBAC-7 | Token agent rotazione per qualsiasi tenant ID (admin) — superato: rotte tolte con l'agente remoto (v0.9.811, 20/10/2026) | `tenants/[id]/agent/token/*` |
 
 ### Operazioni invasive
 

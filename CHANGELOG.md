@@ -4,6 +4,700 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-22 · Letture degli apparati accese di serie
+
+### Cambiato
+
+- **Le sei letture in più degli apparati partono accese** (ADR 0031): VLAN, DNS e utenti dei MikroTik, spanning tree e
+  bridge dei MikroTik, VLAN degli switch via SNMP, LLDP via SNMP, campi del controller, LLDP degli hypervisor. Una chiave
+  assente vale «accesa»; si spengono solo da «Dati della mappa», cliente per cliente. Perché: sull'appliance di 70151 il
+  router era leggibile ma la scheda non aveva le VLAN, perché la lettura nasceva spenta e andava accesa a mano, appliance
+  per appliance. La mappa nuova resta spenta di serie.
+
+## [Non rilasciato] — 2026-10-22 · Invio di AD Health e inventario a DA-Vul-can (v0.9.869-871)
+
+Piano `docs/superpowers/plans/2026-10-22-invio-ad-inventario-a-vulcan.md` (A-IPAM della spec DA-Vul-can del 21/10).
+
+### Aggiunto
+
+- **Invio automatico all'hub DA-Vul-can** (`src/lib/vulcan/`): l'export di ogni esecuzione AD Health riuscita, una
+  fotografia dell'inventario al giorno (03:00 italiane) e un battito ogni 15 minuti, con una coda nel DB del cliente
+  (`vulcan_coda`, segno `vulcan_coda_v21`) che ritenta col backoff della sonda e si ferma da sola su un gettone
+  rifiutato. Perché: oggi l'AD arriva all'hub solo a mano (download qui, «Carica» là), e l'hub non sapeva se
+  un'istanza è viva né cosa contiene la sua rete. Il download resta come ripiego.
+- **Spento senza `VULCAN_TOKEN`** in `/etc/dalink/oggetto.env`: nessuna rete, nessuna riga, nessun audit. Perché: le
+  chiavi le scrive DA-Link (A-Link) e la rete la apre la policy NetBird P9; finché non ci sono, il rilascio non
+  cambia niente sulle appliance.
+- **Inventario a lista bianca**: colonne scelte una per una; non escono mai credenziali, community SNMP, `snmp_data`,
+  `detection_json`, utenti, note, assegnatari, licenze (prova sentinella). Perché: i dati del cliente escono dalla
+  sua rete e devono essere solo quelli che servono all'analisi.
+- **TLS verificato normale** (niente pin, mai `rejectUnauthorized: false`), gettone solo nell'intestazione, niente
+  redirect, risposta letta fino a 64 KB. Perché: l'hub ha un certificato pubblico valido, e il gettone vale come una
+  password.
+- **Riquadro in «Cosa esce»** (stato, coda, ultimo battito, ultimo AD e inventario, ultimo errore, «Invia ora» solo
+  admin) e riga nella pagina AD. Perché: un invio che non si vede nell'interfaccia non si sa se esiste.
+- Collaudo del 22/10 contro DA-Vul-can locale (worktree di `origin/HEAD`, DB vuoto, TLS con una CA di prova solo per
+  il processo di collaudo): 503 con `ipam.ingest` spento → riga in coda da ritentare; acceso → AD 201 (report 1),
+  battito 200, inventario 201 (351 oggetti); stesso run reinviato → 200 doppione, una riga sola sull'hub; gettone
+  sbagliato → 401 e «sospeso», tolto da solo col gettone giusto; fonte revocata → 403 e «sospeso».
+
+## [Non rilasciato] — 2026-10-22 · Un apparato, una riga; matrice VLAN degli switch
+
+Piano `docs/superpowers/plans/2026-10-22-accorpamento-ip-e-vlan-switch.md` (decisioni di Riccardo del 22/10).
+
+### Aggiunto
+
+- **Discovery: un apparato fisico, una riga.** Gli IP dello stesso cluster fisico si accorpano sotto la riga
+  principale (l'IP dell'apparato gestito, altrimenti quello scelto con «Scegli come principale», altrimenti il più
+  basso) con «+N IP» che apre gli altri. Perché: un router con sette IP occupava sette righe, ognuna con la sua
+  scheda, e contatori e filtri contavano sette apparati. Con due apparati nello stesso cluster non si accorpa niente.
+- **Ogni filtro guarda anche gli IP accorpati** (stato, classificazione, CVE, ricerca su IP, nome e MAC): la riga
+  principale compare con «↳ corrisponde <IP> (IP secondario)». Perché: nella prima stesura i filtri scartavano le
+  righe prima dell'accorpamento, e un problema solo su un IP secondario (CVE critiche, un IP giù) spariva dalla lista.
+  Il CSV ha in fondo la colonna «Altri IP» (ip · rete), che senza righe proprie altrimenti si perdevano.
+- **Matrice porte × VLAN degli switch** (Q-BRIDGE-MIB via SNMP, qualunque marca): tabelle `switch_vlan*` per
+  apparato, lettura `switch_vlan` nata **spenta** (ADR 0018), tab VLAN della scheda switch con la striscia
+  (VLAN, trunk, access, senza VLAN) e la stessa matrice dei MikroTik, estratta in un componente condiviso. Perché:
+  per gli switch si vedeva solo il PVID per porta, non quali VLAN passano taggate.
+- **VLAN native dal controller UniFi** (Task 13, ok di Riccardo del 22/10): la lista bianca del client UniFi ammette
+  `GET rest/networkconf` (unico `rest/`, solo GET, senza id); con la lettura `switch_vlan` accesa la sync UniFi che
+  già gira legge anche le reti nella stessa sessione e scrive la VLAN nativa per porta (`native_networkconf_id`) in
+  `switch_vlan_nativa` (segno `switch_vlan_nativa_v21`). La matrice usa la nativa solo dove l'SNMP non dichiara gli
+  untagged; un untagged dichiarato vince sempre. Perché: la ProMax non dichiara gli untagged e la U era dedotta dal
+  PVID. Misurato sull'hub: sui 4 switch che li dichiarano, nativa del controller = PVID SNMP su 99 porte su 99.
+  La lista bianca passa da «niente `rest/`» a **solo** `GET rest/networkconf` (ogni altro `rest/`, con id o query, e ogni
+  metodo diverso da GET restano rifiutati), con l'ok di Riccardo. Sulla ProMax la lettura SNMP e il controller non
+  tornano (PVID diverso su 6 porte su 14): la riga delle fonti mostra «▲ nativa N (controller)» accanto al PVID.
+- **Scansione automatica dei device scelti** (Riccardo, 22/10): dalla Discovery si scelgono gli apparati e un nuovo tipo
+  di job `apparati_scelti` li rilegge da solo (ogni ora, ogni 4 ore o ogni giorno all'ora italiana), con esito per
+  apparato nella pagina dei job (✓/▲/✕ n/m) e una pastiglia nella testata della scheda. Riusa le letture di «Interroga» e
+  del giro ARP, con un lucchetto per apparato condiviso con le rotte e rispettando gli interruttori (`switch_vlan`).
+  Perché: gli apparati si leggevano solo con «Aggiorna» e l'hub non ha il job `arp_poll`, quindi le tabelle MAC e le
+  VLAN degli switch invecchiavano. Idoneo con credenziale provata sull'host **o** collegamento credenziale riuscito
+  (diverso dalla regola della testata). Sull'hub: job #25 «Switch e router del CED», ogni 4 ore, sei apparati.
+
+### Corretto
+
+- **«Rendi apparato» non fa due apparati dello stesso device**: un IP che è già di un apparato, o un altro IP del suo
+  cluster fisico, risponde 409 «Questo IP è già dell'apparato X» (singolo e in blocco); per un IP del gruppo il
+  messaggio dice di toglierlo prima dal gruppo nella scheda di X. Lo stesso blocco vale ora per la modifica dell'IP di
+  un apparato e per l'apparato DHCP che la sincronizzazione AD crea per il DC. Perché: il 21/10 sull'hub è nato così
+  un secondo apparato per il router di sede.
+- **«È un apparato» vuol dire la stessa cosa ovunque** (`sqlApparatoDellHost`): legato all'host, o con l'IP scritto
+  se è un apparato vecchio senza legame. Prima Discovery contava solo il legame e il blocco anche l'IP, così un
+  apparato vecchio era principale per uno e non per l'altro.
+
+## [Non rilasciato] — 2026-10-22 · Topologia: il cavo a mano vince
+
+- **Un apparato, una scheda, da qualunque suo IP** (Riccardo, 22/10): aprendo `/objects/<host>` di un IP che appartiene a un apparato fisico il cui cluster ha UN solo apparato gestito, si vede la scheda di quell'apparato (stesso tipo, tab, dati); l'intestazione mostra l'IP aperto e «stesso apparato di <nome> · N indirizzi» col link. Con due apparati nel cluster o con nessuno non cambia nulla. Prima gli altri IP del router si aprivano come host semplici con una scheda diversa. `lib/devices/apparato-del-cluster.ts`.
+- **Il collegamento tracciato a mano vince sempre** (Riccardo, 22/10) su quelli solo letti o dedotti, dopo la ★: un
+  server o un hypervisor collegato a mano a uno switch sta sotto quello switch anche se un altro lo vede nella tabella
+  MAC. Prima la fiducia «a mano» era l'ultima della chiave del Prim e il cavo finiva fra le ridondanze.
+- **Una partenza che è un oggetto finale** (hypervisor, server, client) si appende al suo switch: trascinato in una
+  mappa «passo passo» prima di collegarlo diventava partenza, e il Prim partiva da lui senza poter crescere. Ora fa da
+  radice solo se nessuno lo raggiunge.
+- **La mappa occupa tutta l'altezza**: i 9rem tolti erano della barra in alto, rimossa il 20/10 (~80 px vuoti in fondo).
+
+## [Non rilasciato] — 2026-10-22 · La scheda MikroTik copiata dal Manager (v0.9.832-842)
+
+- **Ritocchi alla scheda apparato** (22/10): numeri accanto al nome delle tab (porte, VLAN, vicini e MAC, rotte e ARP, bridge, VM, nodi, dischi, volumi…) solo dai dati già caricati; nei vicini LLDP/CDP/MNDP (MikroTik e switch) «· non in IPAM» o il link all'host (IP, poi MAC, stessa restrizione di «Dispositivi»); striscia MikroTik: il firmware compare solo se aggiornabile e il suo posto lo prende il pool DHCP più pieno (≥85%, solo dalla cache della tab DHCP), «Acceso da» passa nel riquadro Risorse.
+
+La pagina del router MikroTik del Manager mostrava più cose della scheda di DA-IPAM, che per i router non aveva
+risorse, hardware, bridge, VLAN né stato delle interfacce. Si porta quello che il Manager mostra, ma i dati li legge
+DA-IPAM dal router (nessun collegamento col Manager). Piano `docs/superpowers/plans/2026-10-21-scheda-mikrotik-dal-manager.md`,
+ADR 0027. Non si portano: IP Scan del router, backup binari, generatore di script, archivio delle configurazioni.
+
+### Aggiunto
+
+- **Scheda del router MikroTik** (`components/scheda/tipi/router/mikrotik/`, `lib/devices/mikrotik-scheda.ts`):
+  Panoramica con risorse, hardware e firmware aggiornabile, interfacce raggruppate per tipo con stato, MTU e commento,
+  dispositivi visti dal router, ARP con stato, tab Bridge e VLAN (matrice dai PVID, VLAN con la madre), DNS, utenti
+  del router (solo admin) e Configurazione. Tabelle `mikrotik_*` per apparato, migrazione `scheda_mikrotik_v21` (v3).
+- **Lettura `mikrotik_scheda`, nata spenta**: bridge vlan, vlan, DNS e utenti con comandi in più sul router solo se
+  un admin la accende. Perché: nessun comando nuovo ai router dei clienti senza un ok esplicito.
+
+### Corretto
+
+- **Server DHCP disabilitati letti come attivi**: il flag `X` in testa alla riga non veniva letto (solo `disabled=`),
+  quindi i pool di un server spento contavano.
+- **Export della configurazione ripulito sul server**: `GET /api/devices/[id]/mikrotik` (`config` e `all`, solo
+  admin) esce già senza `/system script` e `/system scheduler`: sui router con lo script di backup del Manager lì c'è
+  la password SFTP, e la vecchia pagina `/devices/[id]` la mostrava e la scaricava così com'era.
+- **Host IPAM abbinati per IP**: con lo stesso IP in due reti, un host di un'altra sede teneva in vita l'ARP «failed»
+  e prestava il nome. Ora vale solo un host delle reti servite dal router.
+- **Lease nella vista Dispositivi**: si tengono quelli con `last_synced` entro 1 giorno dall'ultima lettura, e non
+  restano per sempre.
+- **Seriale e part number letti via SNMP** non vengono più cancellati dalla lettura SSH quando il routerboard è vuoto (CHR).
+
+## [Non rilasciato] — 2026-10-21 · VLAN delle porte UniFi
+
+### Corretto
+- Le porte degli switch Ubiquiti restavano senza VLAN: la sincronizzazione notturna del controller UniFi sostituiva tutte le porte dell'apparato e cancellava VLAN e stato STP letti via SNMP (il controller non li dà). Ora si conservano i valori già nel DB per le colonne che il controller non fornisce (abbinamento per nome di porta, poi per indice); un valore del controller vince sempre.
+- Lo scan SNMP scartava la VLAN sugli agenti con `dot1dBasePortIfIndex` vuota ma `dot1qPvid` piena (SW-ING-ProMax-239): in quel caso l'indice del PVID vale come ifIndex.
+
+## [Non rilasciato] — 2026-10-21 · La scheda dell'apparato cambia secondo il tipo (v0.9.822-829)
+
+La scheda `/objects/[id]` aveva sette tab uguali per ogni apparato: uno switch trovava «Software» con la frase
+«non applicabile», un NAS i dischi sotto «Sistema», una VM Proxmox sotto «Network», e le cose più utili
+(porte, interfacce, servizi, controller di dominio) erano persi, nascosti o rimasti nella pagina `/devices/[id]`
+che nessuno apre. Piano `docs/superpowers/plans/2026-10-21-scheda-apparato-per-tipo.md`, tavola grafica approvata
+da Riccardo il 21/10.
+
+### Aggiunto
+
+- **Tab per tipo** (`components/scheda/tipi/<tipo>/`): switch (pannello frontale, porte da guardare, VLAN, vicini e MAC),
+  router e firewall (interfacce, routing e ARP, DHCP, configurazione), storage (dischi e RAID, volumi, servizi),
+  hypervisor (VM e container abbinate agli host, nodi, storage, rete), server Windows e Linux (sistema, servizi,
+  aggiornamenti, software, utenti, Active Directory per i DC, dipendenze). In comune a tutti: intestazione in una
+  riga, striscia di numeri, Panoramica che entra in una schermata, Sicurezza · Gestione · Storico.
+- **Un solo punto che decide il tipo**: `tipoScheda()` (`lib/scheda/tipo-scheda.ts`) legge classificazione e
+  piattaforma, mai `device_type`; `tabDelTipo()` elenca le tab. Il punto di innesto per i tipi nuovi è
+  `components/scheda/tab-scheda.tsx`.
+- **Gestione anche per l'host non gestito**: classificazione, seriale, inventario, note e asset NIS2 si modificano dalla
+  scheda dell'host (Discovery) senza «Rendi apparato». In Gestione, il riquadro «Rete e SNMP» riporta SNMP, IP collegati
+  e «Sulla mappa» per i tipi le cui tab non li mostrano (NAS, server, host, switch e hypervisor solo SNMP).
+- **Nuove letture** in sola lettura, tutte dietro login: `GET /api/devices/[id]/interfacce`,
+  `GET /api/devices/[id]/proxmox-match` (il POST, che scrive, resta solo admin), `GET /api/hosts/[id]/proxmox-vm`,
+  `/api/hosts/[id]/ad`, `/api/hosts/[id]/dipendenze`.
+
+### Cambiato
+
+- **`device_type` dei server vecchi**: lo schema d'origine non ammetteva `server`, quindi i server Windows e Linux
+  erano salvati come `switch` e le query dell'API sceglievano il ramo sbagliato. Conversione una tantum
+  (`lib/devices/migra-device-type-v21.ts`, segno `device_type_v21`, elenco per nome nel log prima di scrivere);
+  gli apparati senza classificazione non si toccano.
+- **Export della configurazione MikroTik** (`GET /api/devices/[id]/mikrotik?action=config`): ora solo admin. Prima
+  bastava una sessione qualunque per scaricare l'intera configurazione del router.
+- La scheda `/objects/[id]` è passata da 2889 righe a poco più di 500: i blocchi sono stati spostati nei componenti, non riscritti.
+
+### Corretto
+
+- Il conteggio delle VM Proxmox usava un'espressione con un errore di precedenza (`?? … > 0`): ora è `numeroVm()`,
+  con prova.
+
+### Tolto
+
+- La tab «Dettagli» per switch, router, firewall, storage, hypervisor e server: i loro blocchi stanno nelle tab del
+  tipo. Resta solo per il tipo `generico` (stampanti, access point, UPS, postazioni), che non ha tab sue.
+- Il testo «Aggiungi a dispositivi da Discovery» (per promuovere un host c'è la finestra «Rendi apparato»).
+
+## [Non rilasciato] — 2026-10-21 · «Rendi apparato», classificazione unica, voci senza doppioni (v0.9.815-820)
+
+Riccardo, creando apparati, trovava la finestra caotica (stesse domande ripetute, credenziale scelta alla
+cieca) e la classificazione da correggere dopo. Piano `docs/superpowers/plans/2026-10-21-tappe-3-5-rendi-apparato.md`,
+decisioni nella proposta `docs/proposte/2026-10-21-tappe-3-5-interfaccia.md`.
+
+### Aggiunto
+
+- **Finestra unica «Rendi apparato»** (`components/devices/rendi-apparato-*.tsx`) da scheda oggetto, Discovery,
+  pagina della rete e lista per classificazione, per uno o più host (fino a 50): cos'è (classificazione,
+  piattaforma, variante solo se la piattaforma ne ha più d'una, ruoli per i server), come ci arrivo (porta con
+  segno standard/non standard), credenziale con «Prova», «nuova nell'archivio», «SNMP aggiuntivo» e «Trova in
+  automatico». Tipo dispositivo, scan target e sottotipo non si chiedono più: si deducono (la variante decide il
+  tipo: Proxmox VE → hypervisor). Si crea anche senza credenziale provata, con l'avviso.
+- **Ricerca della credenziale** (`lib/credentials/trova.ts`, `POST/GET /api/hosts/trova-credenziale`): prima le
+  validate sull'host, poi la lista della rete, poi l'archivio; una credenziale già rifiutata su quell'host è
+  **esclusa e detta** (si riabilita con «Prova»); su WinRM **al massimo 3 tentativi per host** e, nel giro su più
+  host, un account rifiutato 3 volte non si prova più; host che non risponde = la ricerca si ferma senza
+  escludere niente. Ogni prova (anche il pulsante «Prova») registra successo e fallimento.
+- **Ruoli dei server** (`server_roles` su host e apparati): DC, DNS, DHCP, posta, web, database, backup, NFS.
+- **Scelta a mano anche sugli apparati** (`network_devices.classification_manual`) e un solo punto di scrittura
+  (`lib/classification/scrivi.ts`) che scrive host e apparato insieme; «Torna automatica»
+  (`POST /api/classificazione/automatica`). Le scansioni non toccano una scelta a mano.
+- In scheda (linguetta «Asset & Credenziali»): classificazione con ruoli, «Credenziali assegnate» con ultimo
+  esito, badge «▲ senza credenziale provata» e «a mano» anche nelle liste.
+
+### Cambiato
+
+- **Catalogo delle classificazioni senza doppioni** (`lib/classification/canonico.ts`): «Server Windows/Linux» →
+  Server + piattaforma; «NAS Synology/QNAP» e «Storage» → «NAS / Storage»; i tre controller → «Controller di
+  rete»; fotocopiatrice → «Stampante multifunzione»; ONT → «Modem / ONT»; i server DNS/DHCP/posta/web/database/
+  backup/NFS → Server + ruolo. Le scritture convertono da sole gli slug vecchi che i classificatori emettono
+  ancora; conversione una tantum dei dati (segno `classificazioni_v21`: sull'hub 47 host e 13 apparati il 21/10).
+  «unknown» si legge «Non classificato», etichette con maiuscole e sigle giuste.
+- Salvare un apparato fissa la classificazione «a mano» solo se cambia.
+
+### Tolto
+
+- `components/devices/promote-host-dialog.tsx` e i moduli di creazione propri di Discovery, rete e lista.
+
+## [Non rilasciato] — 2026-10-21 · Chocolatey si installa da solo sugli host Windows
+
+Decisione di Riccardo (21/10): fino a oggi Chocolatey si installava solo a mano, host per host, dal
+bootstrap della pagina del dispositivo (60-120 s, solo admin). Un host dimenticato restava senza patch e
+nessuno lo diceva. Ora, con il modulo Patch Management attivo, parte da solo.
+
+### Aggiunto
+
+- **Installazione automatica** (`lib/patch/choco-automatico.ts`) sugli host Windows (`os_family`) con una
+  credenziale WinRM secondo la regola del loader delle patch (`hostConCredenzialeWinrmDb`, compreso
+  l'account WinRM dell'integrazione AD): (1) subito, in sottofondo, quando una credenziale WinRM di un host
+  viene salvata (riga dell'host, modifica in blocco) o verificata con successo (prova della voce, prova del
+  binding dell'apparato, «validata» a mano); (2) ogni notte alle 02:00 (ora del server, cron in
+  `server.ts`) per chi non ha Chocolatey o ha un tentativo fallito. Ogni tentativo è un bootstrap vero
+  (`executeBootstrap`): riga in `patch_operations` con `user_id = 0`, che lo storico mostra come
+  «Automatico», con esito e motivo dell'errore (WinRM rifiutato, niente internet, timeout).
+- **Freni**: già installato (ultimo probe senza `CHOCO_MISSING` o ultimo bootstrap riuscito) → non si tocca;
+  un'operazione in coda o in corso sull'host, o un'installazione già avviata da questo processo → si salta
+  (mai due insieme sullo stesso host); al massimo **3 installazioni insieme** in tutto il processo; di notte
+  al massimo **3 tentativi automatici falliti**, poi l'host resta fermo finché un admin non lo riprova a
+  mano (un bootstrap con utente vero azzera il conto). Il salvataggio di una credenziale prova comunque una
+  volta: è un gesto di un admin.
+- **Interruttore «Installa Chocolatey automaticamente»** nella pagina del modulo Patch Management
+  (`/settings/moduli/patch_management`), **acceso di default**, impostazione del tenant
+  `patch.choco_automatico` («0» = spento); rotta `GET/PUT /api/patch/choco-automatico` (lettura con
+  sessione e modulo attivo, scrittura admin). La card dice quanti host Windows con WinRM sono installati,
+  da installare, da ritentare e fermi.
+- **Prove** `lib/patch/__tests__/choco-automatico.test.ts` (viste fallire togliendo ogni freno): credenziali
+  salvate → un solo bootstrap anche con due richieste insieme; Linux, senza WinRM, interruttore spento,
+  modulo spento, già installato, operazione in corso → niente; errore → storico col motivo e nuovo tentativo
+  fino a 3 notti, poi fermo e sbloccato da un admin; mai più di 3 installazioni insieme.
+
+### Da sapere
+
+- `dev` arriva da solo alle appliance su quel canale: con l'interruttore acceso di default, dopo il
+  rilascio Chocolatey parte sugli host Windows con credenziale WinRM delle appliance che hanno il modulo
+  Patch Management attivo (al primo salvataggio/verifica di una credenziale, e comunque la notte dopo).
+- Le credenziali WinRM trovate dalla discovery non fanno partire niente subito: le prende il giro notturno.
+
+## [Non rilasciato] — 2026-10-21 · I link verso l'appliance usano l'host del browser
+
+Riccardo (21/10, «ok per 1»): l'installatore (Deploy-Appliance `connect_bootstrap_launchpad`) registra gli
+URL dei servizi con l'IP LAN dell'appliance (`https://192.168.99.61:6443`). Chi apre DA-IPAM da un nome DNS o
+da NetBird finiva, coi pulsanti, su un indirizzo irraggiungibile o con un certificato che non corrisponde.
+
+### Cambiato
+
+- **Regola unica `urlPerIlBrowser`** (`lib/integrations/url-per-browser.ts`, prove in
+  `url-per-browser.test.ts`): un URL il cui host è l'appliance stessa si apre con l'host del browser
+  (`window.location.hostname`), con porta, percorso e schema salvati; un URL di un'altra macchina (Proxmox,
+  Wazuh o LibreNMS in una VM loro, servizi del cliente) resta com'è. Lo schema non si forza a https: gli URL
+  dell'installatore lo sono già, e un `http://` salvato a mano che funzionava continua a funzionare. **Nel
+  database resta l'URL vero**: cambia solo cosa si apre.
+- **Chi è «l'appliance stessa»** (`host-appliance-server.ts`): loopback, nome della macchina, indirizzi delle
+  interfacce vere (non Docker, non link-local: l'IP LAN c'è anche se `APPLIANCE_LAN_IP` manca dall'ambiente
+  del servizio), variabili dell'host pubblico e di `NEXTAUTH_URL`/`AUTH_URL`/`DA_IPAM_PUBLIC_URL`, voce
+  «DA-IPAM (this)» del vault. Il layout le passa al client con l'Host della richiesta
+  (`components/shared/url-per-browser.tsx`, `useUrlPerBrowser`); dopo l'idratazione vale `window.location`.
+  La stessa lista serve ora all'accesso automatico di LibreNMS (`librenmsHostAllineabili`), che prima leggeva
+  solo le variabili d'ambiente.
+- **Dove si applica**: console esterne del menu Applicativi, riquadri dei moduli in dashboard, «Apri» delle
+  credenziali di sistema, card delle integrazioni e di Wazuh, Scanner-Edge, viewer delle dashboard (riquadro,
+  «Apri in nuova scheda», scorciatoie), link a LibreNMS da Discovery e dalla scheda dell'oggetto, Wazuh dal
+  badge dell'host, MeshCentral (console, riquadro della sessione, «Apri»), MDM, «Apri e accetta il
+  certificato» della verifica di apertura.
+- Fuori: gli script di installazione dell'agente d'inventario (li usano altre macchine, non il browser) e il
+  «Apri servizio web» di Discovery (URL scritto a mano dall'operatore).
+
+## [Non rilasciato] — 2026-10-20 · Via le rotte ferme dell'agente remoto
+
+### Rimosso
+
+- **Rotte dell'agente Python remoto** (`/api/agents`, `/api/tenant-agents/**`, `/api/tenants/[id]/agent/**`),
+  **`/agent-install.sh`** (con la sua voce fra i percorsi pubblici di `auth.config.ts`), la **pagina
+  `/tenants/[id]/agent`** e l'helper `lib/agente-remoto-tolto.ts`. Con la v0.9.810 erano rimaste ferme (410)
+  per un giro, perché un `update.sh` più vecchio della v0.9.805 legge i tipi della build in uso che le citano e
+  la build nuova sarebbe caduta (trappola di `/api/search`). La condizione è verificata il 20/10 sera, in sola
+  lettura: da-invent 0.9.808, DTS 0.9.810, PX-NAS 0.9.810, tutte con lo script nuovo. La prova
+  `rotte-agente-tolte.test.ts` impedisce che tornino; `/agents` («URL dell'hub») resta. Nel DB restano, senza
+  uso, `tenant_agents` e `tenants.agent_*` (niente DROP). Matrice delle guardie (`docs/auth-matrix.md`)
+  rigenerata.
+
+## [Non rilasciato] — 2026-10-20 · Via la VPN precedente: l'overlay è solo NetBird
+
+Riccardo (20/10 notte): la VPN precedente non esiste più su nessun dispositivo (verificato su Proxmox
+Domarc, hub, da-invent, DTS, DA-VA-OVH, Mac) e va tolta da codice e documenti, storia compresa.
+L'overlay è solo NetBird, governato da DA-Link (ADR 0011).
+
+### Rimosso
+
+- **Tipo di credenziale della VPN precedente** dalle API del caveau e dal pannello: un solo elenco dei tipi
+  ammessi per creazione, modifica e bootstrap (`credentials-vault-tipi.ts`). Sul live 0 righe; niente
+  migrazione che cancella: una riga vecchia di un tipo tolto si legge ancora e l'interfaccia la mostra come
+  «Altro» (prova `overlay-precedente.test.ts`).
+- **Nome dell'hub nella VPN precedente** come ripiego dell'indirizzo dell'hub (impostazione vuota sul live):
+  non si legge, non si scrive e non nasce più nei DB nuovi; `GET /api/settings/hub-url` usa solo
+  `public_hub_url`. La riga resta nei DB vecchi (niente DROP), nessuno la legge.
+- **Agente Python remoto** (`agent/`, decisione 26 della spec NetBird: «si toglie nella tappa C1»; nessuno lo
+  usava, una sola riga sull'hub mai collegata): via il pacchetto con installatore, unità, `openapi.json` e prove,
+  il job di CI, l'esecutore remoto, l'elenco e il wizard degli agenti, la pagina agente del cliente e il suo
+  pulsante, la scheda del modulo e il playbook. **Restano, ferme**, le rotte (`/api/agents`,
+  `/api/tenant-agents/**`, `/api/tenants/[id]/agent/**`, `/agent-install.sh`: 410) e la pagina
+  `/tenants/[id]/agent`, per un giro: chi aggiorna con un `update.sh` più vecchio della v0.9.805 legge ancora i
+  tipi della build attiva che le citano (trappola di `/api/search`). Nel DB restano, senza uso, la tabella
+  `tenant_agents` e le colonne `tenants.agent_*` (niente DROP). Un cliente rimasto con `agent_mode='remote'`
+  non ripiega in silenzio sull'hub (manderebbe offline host che da lì non si vedono): il giro di scansione
+  fallisce con un messaggio che dice di riportarlo in locale (prova `modalita-remota-tolta.test.ts`).
+- **Doppio binario in `prepara-netbird.sh`**: lo script prepara solo NetBird e il firewall di `wt0`.
+- **Policy ACL e playbook di migrazione della VPN precedente**: cancellati (la storia è in git).
+
+### Modificato
+
+- **`/agents` è ora «URL dell'hub»** (stessa voce di menu, solo superadmin): resta solo il riquadro di
+  `public_hub_url`, che serve anche agli script dell'agente d'inventario e a cui rimanda il Launchpad.
+- **Launchpad**: aprire in modifica una credenziale di un tipo non più ammesso e salvarla rimandava il suo tipo
+  e prendeva 400; ora il tipo si manda solo se cambiato (`tipoDaInviare`). Gli schemi delle tre rotte delle
+  credenziali stanno in `credentials-vault-tipi.ts` e sono provati col tipo tolto.
+- **Playbook di oggi** (nuovo hub, nuovo bridge, DR, rotazione della chiave) riscritti su NetBird e DA-Link
+  senza l'agente remoto; manuale utente allineato. Nella storia (CHANGELOG, spec, piani, ADR) il nome è
+  diventato «la VPN precedente», i fatti restano quelli.
+
+## [Non rilasciato] — 2026-10-20 · Testata delle scansioni semplificata
+
+### Modificato
+
+- **Pagina della rete: quattro comandi di scansione invece di dodici** (Riccardo, 20/10: «troppe voci»). Gli stessi
+  strumenti comparivano due volte, una per la subnet e una per gli host selezionati (Nmap, SNMP), e «Credenziali»
+  stava nel gruppo «intera subnet» pur lavorando solo sugli host selezionati. Ora la portata la decide la selezione
+  nella lista: **Scoperta host** (sempre sulla subnet); **Avanzata** (subnet: ping → Nmap -sV → SNMP → Enrich in un
+  giro solo lato server; host selezionati: Nmap profilo completo poi SNMP deep), con le fasi singole e la loro ultima
+  esecuzione nel menu a fianco; **Accesso agli host** (solo selezione: verifica credenziali se la rete ne ha, poi
+  WinRM, poi SSH, ferma alla prima fase in errore); **Attribuzione** (apre l'anteprima, col conteggio a livello 2 sul
+  pulsante). «Applica diretto» è diventato «Applica tutto senza rivedere» dentro l'anteprima; VA Scan resta a destra.
+  Nessuna funzione tolta: ogni comando di prima è a uno o due clic.
+- **La scansione periodica entra nella stessa barra** (Riccardo, 20/10): era una riga pieghevole sotto, alta
+  quanto la barra; ora è il pulsante «Scansione periodica · ogni 15 minuti» (o «· sospesa») che apre gli stessi
+  controlli in una finestra.
+
+## [Non rilasciato] — 2026-10-20 · Pagina d'accesso nuova e verifica in due passaggi
+
+### Aggiunto
+
+- **Verifica in due passaggi per utente** (Riccardo, 20/10; ADR 0023): un admin la chiede da Impostazioni → Utenti
+  (colonna «Due passaggi»: Richiedi, Azzera, Togli); al primo accesso dopo, l'utente inquadra un QR e la attiva con
+  un codice; poi entra con password e codice a 6 cifre. Chi entra con l'account Domarc (entra.domarc.it) non ha
+  bisogno di niente; l'utenza di servizio `domarc` resta com'è. Nessun accesso cambia finché un admin non la chiede a
+  qualcuno. Registro delle azioni in `data/audit/accessi-*.jsonl`; recupero dal server con
+  `scripts/seconda-verifica.ts`.
+
+### Modificato
+
+- **Pagina d'accesso in due metà**, come DA-Template: marchio su fondo navy a sinistra (testata sul telefono), modulo
+  bianco a destra; codice e QR nella stessa scheda; errori e blocco in avvisi col simbolo, il blocco con l'ora di
+  sblocco.
+
+### Sicurezza
+
+- Password dell'utenza di servizio `domarc` confrontata a tempo costante.
+- I tentativi d'accesso si contano prima di ogni attesa: in parallelo il blocco ora tiene (prima 60 richieste
+  insieme passavano tutte il controllo).
+- Un nome inesistente risponde nello stesso tempo di una password sbagliata (prima 0,1 ms contro 49 ms: si capiva
+  se il nome esisteva).
+
+## [Non rilasciato] — 2026-10-20 · Dashboard e Alert sicurezza ridisegnate
+
+### Modificato
+
+- **Dashboard a tre colonne** (mockup e scelta di Riccardo, 20/10): indicatori in card basse con l'anello della
+  Health; Sicurezza in card bianche con la striscia a tinta piena del token e il simbolo (niente pastello: Riccardo è
+  daltonico); a sinistra stato host e accessi falliti, al centro host offline (alta quanto la lista) e transizioni, a
+  destra subnet e moduli. I moduli non configurati stanno in una riga sola invece di due file di riquadri grigi.
+- **Barre delle subnet proporzionali**: una rete da 6 host non è più lunga come una da 100; l'offline ha la trama
+  diagonale oltre al colore (verde e rosso hanno quasi la stessa luminanza).
+- **Accessi falliti**: istogramma snello con media e picco. I conteggi orari vengono dall'indexer di Wazuh (gli stessi
+  della pagina Alert, 5 minuti in memoria): la stima di prima ripartiva ogni gruppo d'allarme sulla sua durata e dava
+  24 barre quasi uguali (massimo 13 in un'ora sull'hub). Se l'indexer non risponde si torna alla stima e c'è scritto.
+- **«Uptime 24 h»** al posto di «Health» nel grafico dello stato host: conta gli host controllati nelle ultime 24 ore,
+  mentre la Health in alto conta anche gli offline visti negli ultimi 7 giorni (74% contro 94% sull'hub).
+- **Alert sicurezza in una schermata**: lo stato di Wazuh in quattro pastiglie sulla testata, tutti i filtri in alto,
+  la coda degli eventi a sinistra (scorre con le intestazioni ferme), grafico nel tempo e classifiche in linguette a
+  destra. Prima il lavoro da fare stava in fondo a tre schermate. Via la torta (ripeteva i conteggi delle categorie)
+  e le frasi di spiegazione (ora nei `title`). Livelli coi token pieni al posto del pastello.
+
+- **Colori ben distinguibili** (Riccardo, 20/10), misurati col validatore per daltonici della skill dataviz.
+  Stato degli host (grafico, barre delle subnet, transizioni): online verde scuro pieno, offline **arancio a righe**,
+  sconosciuti grigio chiaro (distanza minima 18,6; prima verde/rosso 7,4). Transizioni con la pastiglia ▲ online /
+  ▼ offline. Categorie degli alert: tre colori fissi (accessi falliti navy, account privilegiati arancio, ransomware
+  blu) e le altre grigio chiaro (prima sei tinte, coppia peggiore 3,2). Il «● da verificare» dei moduli diventa grigio
+  chiaro con testo navy: il grigio pieno dei token stava a 6,2 dal verde «ok» (solo in DA-IPAM; per DA-Template resta
+  una proposta). Colori in un posto solo: `--host-*` e `--alert-cat-*` in `globals.css`.
+
+- **Via la barra in alto** (Riccardo, 20/10): ogni pagina guadagna circa 53 px. Tema chiaro/scuro, riga utente (nome e
+  ruolo, il clic apre «Cambia password») ed «Esci» stanno in fondo al menu a sinistra; col menu compresso restano le
+  icone. **Tolta la ricerca generale** (e ⌘K, con la rotta `/api/search`): si cerca nelle tabelle che hanno il loro
+  campo, IP/MAC/hostname in Discovery.
+
+- **Paginazione in alto** (Riccardo, 20/10: «perché tutto quello spazio inutilmente utilizzato in basso?»): sotto le
+  tabelle la riga «Righe per pagina… Pagina 1 di 7» e i suoi margini toglievano ~100 px. Ora è compatta
+  («[50] 1–50 di 348 « ‹ 1/7 › »») nella riga del titolo (Discovery: a destra della riga «Vista»; Active Directory:
+  accanto alla ricerca di ogni linguetta), su tutte le 9 pagine che la usano; lo spazio riservato sotto le tabelle
+  scende da 72 a 40 px. Discovery a 1920×1080: 18 righe visibili invece di 13.
+
+### Corretto
+
+- **Aggiornamento bloccato da una rotta tolta**: la v0.9.804 non si è installata sull'hub (tornato da solo alla
+  v0.9.803). La build nuova controllava anche i tipi generati dalla build in uso, che citavano `/api/search` appena
+  tolta. `update.sh` ora li svuota prima di costruire; `/api/search` resta come rotta ferma (risponde 410) finché
+  tutte le installazioni non hanno lo script nuovo, perché chi aggiorna esegue ancora quello vecchio.
+- Menu utente: il clic faceva cadere la pagina (Base UI vuole l'etichetta dentro un gruppo), quindi «Cambia password»
+  non si raggiungeva.
+- Alert sicurezza: senza indexer «Alert nel periodo», «Agent» e «Regole» dicevano 0 mentre la tabella mostrava gli
+  eventi; ora dicono «—» col motivo.
+
+## [Non rilasciato] — 2026-10-20 · Pulizia degli host assenti e dei cambi di IP (spenta)
+
+Da questo rilascio la numerazione passa da 0.3.x a **0.9.801** (Riccardo, 20/10: «siamo a uno stato quasi
+definitivo»). Il numero si mostra soltanto: gli aggiornamenti decidono sul commit, non sulla versione.
+
+### Aggiunto
+
+- **Pulizia degli host assenti** (Impostazioni → Sistema, solo admin; ADR 0022). Richiesta di Riccardo: sull'hub 178
+  host offline, molti non visti da mesi, gonfiavano liste e conteggi. Si archiviano gli host offline da oltre 60
+  giorni e, subito, il vecchio IP di un MAC che ha cambiato indirizzo nella stessa rete, solo se il MAC sta su due host
+  esatti con nomi coerenti (sull'hub un router in proxy ARP aveva lo stesso MAC di 13 macchine diverse); dopo 90 giorni
+  d'archivio si cancellano. Esclusi: apparati, host monitorati, nome scritto a mano, classificazione a mano, asset, credenziali,
+  unioni a mano, multihomed, sessioni remote registrate, host recuperati a mano, MAC su più host online. Anteprima coi
+  nomi e il motivo, «Applica» col numero scritto, recupero con un clic (torna l'identità, non lo storico), registro
+  JSONL di ogni operazione (`data/audit/pulizia-host-*.jsonl`, 400 giorni).
+- **Job notturno `pulizia_host`** alle 04:00, **spento**: si accende solo dall'interruttore della pulizia, con
+  conferma; nella pagina dei job è in sola lettura e le sue rotte lo rifiutano. Gli host di una rete in scansione si
+  rimandano.
+- **«Archiviati»** in dashboard accanto ad «Assenti», **«IP precedenti»** nella scheda dell'oggetto.
+
+### Cambiato
+
+- **Il job `cleanup` («Pulizia tabelle MAC») non tocca più gli host**: dopo 30 giorni sovrascriveva la
+  classificazione con `stale` e dopo 90 cancellava senza nessuna esclusione (apparati, credenziali, asset). Resta la
+  pulizia di `mac_port_entries`; le soglie vecchie nelle config si ignorano.
+## [Non rilasciato] — 2026-10-20 · Stato della sonda locale nel segnale verso DA-Link
+
+Parte DA-IPAM delle «sonde integrate con DA-Link» (spec DA-Vul-can
+`docs/superpowers/specs/2026-10-20-sonde-integrate-dalink-design.md`, §8.2), approvata da
+Riccardo il 20/10. Perché: il 19/10 PX-NAS taceva perché non risolveva il nome dell'hub e
+DA-VA-OVH perché aveva il disco pieno; la sonda lo sapeva, Domarc no.
+
+### Aggiunto
+
+- **Blocco `edge` nel segnale di vita** (`lib/dalink/edge-segnale.ts`, `edge-sonda.ts`):
+  `{ raggiungibile, versione_vera, hub, aggiornamento, disco }` letto da `/api/v1/health`
+  della sonda del cliente, copiato a lista bianca coi campi e gli elenchi chiusi della §8.1
+  (valori fuori elenco → null, versioni e date solo nella loro forma, mai messaggi liberi né
+  il nome dell'istanza). `raggiungibile: false` e il resto null quando la sonda non risponde,
+  risponde con un errore, con qualcosa che non è JSON, o con un certificato diverso dal pin:
+  un errore di trasporto non è un «ok». Sonda vecchia (solo `ok`/`version`): raggiungibile,
+  il resto null, e `version` non diventa `versione_vera` (è il pyproject).
+- Il blocco **non esce** se il modulo edge non è configurato (nessuna riga in
+  `vuln_scanners`) o se l'istanza non ha il cliente di DA-Link. Stessa fiducia TLS delle
+  altre chiamate alla sonda (pin SPKI di `cert_pin`, `leggiSaluteEdge`), timeout totale di
+  3 secondi, lettura in parallelo alle sonde dei moduli: il segnale non rallenta e non
+  fallisce per la sonda. DA-Link oggi ignora i campi che non conosce (`Segnale`,
+  `extra="ignore"`): il segnale non prende 422; verificato col modello di `origin/main`.
+- `LIMITI` del segnale in `lib/dalink/segnale-limiti.ts` (riesportati da `segnale.ts`), per
+  usarli anche nel blocco della sonda senza import circolari.
+
+### Corretto (revisione del 20/10, stesso ramo)
+
+- **Stesse forme di DA-Link** (`dalink/sonde/forma.py` del suo ramo sonde): versioni e
+  commit `^[0-9A-Za-z][0-9A-Za-z.+_-]{0,31}$` **senza tagliare** (prima si tagliavano a 64:
+  una versione tagliata è un'altra versione, e DA-Link l'avrebbe scartata), interi fino a un
+  miliardo, disco solo con tutti e due i numeri validi, totale > 0 e liberi ≤ totale, motivo
+  del contatto con l'hub solo con esito «errore». Così nessun valore cambia significato
+  attraversando il confine.
+- **Modulo edge spento per scelta** (`enabled=0` senza `auto_disabled_at`): il blocco non
+  esce, come chiede il contratto («assente se il modulo edge non c'è»). Resta quando lo ha
+  spento la sequenza di errori: lì serve sapere se la sonda risponde.
+- **Allo scadere dei 3 secondi la connessione si chiude davvero** (`AbortSignal` fino al
+  socket) e il corpo ha un tetto di 64 KB: il timeout del socket di `rawRequest` è di
+  inattività, e una sonda che risponde a goccia lo rinnovava all'infinito, lasciando la
+  richiesta appesa dietro al segnale. `signal` e `maxBytes` sono facoltativi: le altre
+  chiamate alla sonda restano come prima.
+
+## [Non rilasciato] — 2026-10-20 · Salute coerente e passaggi a offline nello storico
+
+### Corretto
+
+- **Passaggio a offline delle scansioni nello storico** (`markHostsOffline`): cambiava lo
+  stato senza scrivere `status_history`, quindi grafico e «Transizioni recenti» non vedevano
+  chi andava offline per una scansione (sull'hub 34 host «online» nello storico e offline
+  nello stato attuale). Vale da ora in avanti.
+- **Salute in alto e grafico dicevano due cose** (51% contro 98% sull'hub): la riga in alto
+  contava tutti gli offline, il grafico solo chi aveva controlli recenti. Decisione di
+  Riccardo: «offline» = visto negli ultimi 7 giorni; gli host offline non visti da più di 7
+  giorni sono «assenti» (`lib/hosts/assenti.ts`), un indicatore a parte, fuori dalla salute
+  e dal grafico.
+
+## [Non rilasciato] — 2026-10-20 · Colori ufficiali degli stati, accessi falliti nelle 24 ore
+
+### Cambiato
+
+- **Colori degli stati dai token di DA-Template** (design system Domarc): ✓ verde pieno
+  `#1F7A4D` = funziona, ▲ giallo `#FFD400` = attenzione, ✕ rosso pieno `#8E1B20` = guasto,
+  ● grigio pieno `#5B6B77` = da verificare, – grigio tratteggiato = non configurato; valori
+  scuri dei token in modalità scura. Prima il verde era `green-800`, più scuro, e attenzione
+  un ambra pallido («il verde deve essere un verde», Riccardo). Valgono per riquadri, riga
+  Sicurezza, etichette della dashboard ed elenco di Impostazioni → Moduli.
+- **Accessi falliti**: il grafico parte dalle ultime 24 ore, ora per ora in ora italiana, con
+  l'interruttore per i 14 giorni (Riccardo: «è utile avere le ultime 24 ore»).
+
+## [Non rilasciato] — 2026-10-20 · Dashboard: KPI di sicurezza
+
+Richiesta di Riccardo del 20/10, dati misurati sull'hub prima del codice.
+
+### Cambiato
+
+- **Riga «Sicurezza»** (`lib/security/kpi-dashboard.ts`): vulnerabilità critiche e alte dello
+  Scanner-Edge (contate come la pagina Vulnerabilità: CVE, o NVT quando la CVE manca; host
+  colpiti), accessi falliti nelle ultime 24 ore con la tendenza, account bloccati in 30
+  giorni, alert da gestire (dagli alert di Wazuh, diagnostici esclusi), Health AD (rilievi,
+  età, tentativo fallito). Una fonte non configurata è grigia, non «0».
+- **«Accessi falliti, 14 giorni»** al posto di «Attività scan recente»: barre per giorno
+  italiano, account bloccati segnati sopra.
+- Gli alert di Wazuh sono raggruppati e un gruppo resta aperto per mesi: ogni gruppo si
+  ripartisce sul periodo in cui è rimasto aperto. Contarlo tutto nel giorno dell'ultima
+  occorrenza dava 41.223 accessi falliti in 24 ore sull'hub contro circa 530 (revisione del
+  20/10). Resta un'approssimazione: niente contatore giornaliero (scelta di Riccardo).
+
+## [Non rilasciato] — 2026-10-20 · Dashboard in una schermata, stato moduli a riquadri
+
+Richiesta di Riccardo del 20/10, proposta approvata prima del codice.
+
+### Cambiato
+
+- **Dashboard senza scorrere** (1920×1080, 1366×768, 1280×720): titolo e indicatori su una
+  riga; «Stato moduli» a riquadri; sotto tre colonne a tutta altezza (grafico e transizioni,
+  host conosciuti offline, subnet e scansioni) con le liste che scorrono dentro il riquadro.
+- **Stato moduli a riquadri piccoli**, uno per applicativo: nome, ultimo aggiornamento in
+  forma breve (ora esatta e dettaglio al passaggio), stato dal colore con simbolo e
+  luminanza (✓ verde pieno, ! ambra, ✕ rosso pieno, ? bianco, – grigio tratteggiato). Tutti
+  i moduli possibili: i non configurati o spenti in grigio, anche Inventario NIS2, Zabbix e
+  Active Directory se assenti. Zabbix prende lo stato dall'esito delle letture.
+- Colori degli stati in un file solo (`components/shared/stile-stato-modulo.ts`), lo stesso
+  dell'elenco in Impostazioni → Moduli.
+
+## [Non rilasciato] — 2026-10-20 · Intestazioni ferme anche sulle pagine secondarie
+
+### Cambiato
+
+- `<Table fissa>` sulle liste principali delle altre pagine: Subnet, Tabella ARP, Scansioni,
+  Agenti remoti, IP esclusi, Anomalie, Clienti, Dispositivi (e la lista per classificazione),
+  Ubicazioni, Licenze, Assegnatari, Servizi NIS2, Sorgenti DHCP, Host conosciuti, Patch
+  (dispositivi e software), CVE del Patch, Storico Patch, Classificazioni, e nelle Impostazioni
+  le tabelle di MAC→prodotto, identificazione dispositivi e sysObjectID. Restano come prima le
+  pagine di dettaglio con più tabelle e le tabelle nei dialoghi.
+- Le intestazioni ferme valgono anche per un `thead` scritto con celle normali (Anomalie).
+
+### Corretto
+
+- Menu: sulla Health di Active Directory non si accende anche «Active Directory» in Network,
+  e il gruppo Sicurezza si apre da solo.
+
+## [Non rilasciato] — 2026-10-20 · Tabelle con le intestazioni ferme, testate più basse
+
+Richiesta di Riccardo del 20/10 («le intestazioni sono enormi; intestazioni e colonne
+scorrono col contenuto»), proposta approvata prima del codice.
+
+### Cambiato
+
+- **Intestazioni delle colonne ferme**: `ScorrimentoTabella` e `<Table fissa>`
+  (`components/ui/table.tsx`, hook `use-altezza-disponibile.ts`), la regola del kit di
+  DA-Template: la tabella è alta quanto lo spazio che resta sullo schermo e scorre lei;
+  titolo, filtri e paginazione restano dove sono. Accese su Discovery, dettaglio subnet,
+  Credenziali, Inventario, Controller, Software, Vulnerabilità, Alert sicurezza e le quattro
+  liste di Active Directory. Le sottotabelle delle righe espanse non si incollano.
+- **Discovery**: titolo, contatori e filtri su una riga; vista e categorie su una riga. La
+  tabella parte a ~180 px invece di ~410 (a 1920).
+- **Dettaglio subnet**: contatori, gateway e router accanto al titolo; i quattro riquadri
+  «Azioni» diventano gruppi in linea (data dell'ultima esecuzione nel suggerimento,
+  «obsoleta» a vista); vista e filtri della lista nella barra della selezione; «Seleziona
+  per tipo» accanto al conteggio della selezione (aggiunge, non filtra). La tabella parte a
+  ~380 px invece di ~600.
+
+## [Non rilasciato] — 2026-10-19 · Menu: Applicativi e Sicurezza al posto del Launchpad
+
+Richiesta di Riccardo del 19/10 sera, proposta approvata prima del codice.
+
+### Cambiato
+
+- **Gruppo «Applicativi»** nel menu al posto del Launchpad a tessere e delle voci sparse dei
+  moduli (un doppione): Patch Management (Panoramica, CVE, Storico), Controllo remoto
+  (Dispositivi, console MeshCentral), Zabbix, e le console esterne (Scanner-Edge, Wazuh, UniFi,
+  LibreNMS, Graylog, MDM) in una scheda nuova. Solo i moduli accesi. `/launchpad`,
+  `/integrations` e `/appliance` portano a Impostazioni → Moduli; le righe dei moduli esterni
+  in dashboard alla pagina del modulo.
+- **Gruppo «Sicurezza»**: Vulnerabilità, Alert sicurezza e Health Active Directory (la pagina AD
+  si apre sulla scheda Health con `?tab=health`).
+- **Network**: «Credenziali» come sezione con Credenziali e Controller di rete.
+- Nel menu è evidenziata solo la voce più precisa (su CVE del Patch non anche «Panoramica»,
+  su Assegnatari non anche «Asset»).
+
+### Corretto
+
+- Riga MDM della dashboard verso `/settings/mdm` (andava a «Modulo sconosciuto»); messaggi
+  d'apertura che citavano «la Launchpad»; manuale (§22 riscritta, albero del menu).
+
+## [Non rilasciato] — 2026-10-19 · Moduli, MDM e Discovery più leggibili (F09-F11)
+
+Proposta approvata da Riccardo il 19/10, oggetto per oggetto.
+
+### Cambiato
+
+- **Moduli: un elenco e una pagina per modulo** (F10). La scheda mostrava insieme
+  configurazione, installazione, salute, certificati e vault di tutti i moduli (49 pulsanti):
+  ora è una riga per modulo (nome, «Opzione», stato con fondo, bordo e simbolo, salute in
+  parole, «Apri») e ogni modulo ha `/settings/moduli/<chiave>`. I collegamenti di prima
+  (`#module-…`, `#int-…`) portano lì.
+- **Desktop remoto senza agente: interruttore nella pagina di MeshCentral** (F10). Stava solo in
+  `.env.local` e dall'interfaccia non si vedeva: sull'hub la voce RDP mancava per questo.
+  Ora è un'impostazione del tenant; `MESHCENTRAL_SENZA_AGENTE=1` resta e vince.
+- **MDM come gli altri moduli** (F11): nell'elenco, nella salute (dall'esito della
+  sincronizzazione, senza sonde di rete) e nel Launchpad solo con la console configurata.
+- **Un solo reset** in Impostazioni: «Reset lab» faceva la stessa cosa di «Reset per nuovo cliente».
+- **Discovery** (F09): viste per attività (Inventario, Sicurezza, Rete) che filtrano le colonne
+  senza toccare l'ordine salvato (l'ordine delle 19 colonne è una decisione di Riccardo, 23/05);
+  le sigle (Cred, Conf, CVE C/H/M, DHCP, AD, MH…) si spiegano passando sull'intestazione; i
+  filtri rapidi di serie in italiano, quelli a zero dietro «Altre categorie». «Più IP» e
+  «Altro» contavano sempre 0: ora contano con la loro regola.
+
+### Corretto
+
+- **Filtri rapidi personali di Discovery** (`user:<slug>`): cliccandoli la tabella si svuotava
+  (confrontava la classificazione con «user:…»). Ora tabella e conteggi usano una regola sola
+  (`prendePreset`); un filtro di serie rinominato dall'utente tiene il suo nome.
+- **verify-install verso l'host locale** non controlla più il nome del certificato (`-k` solo
+  per `https://127.0.0.1` e `https://localhost`): sull'hub ogni aggiornamento finiva «con avvisi».
+
+## [Non rilasciato] — 2026-10-19 · Correzioni dell'analisi del 19/10 (F01-F04, F06-F08)
+
+### Corretto
+
+- **Import per unione** (F01): falliva sempre su un'installazione vera («UNIQUE constraint
+  failed: tenant_settings.key», le migrazioni scrivono 4 chiavi anche su un tenant nuovo) e
+  annullava tutto. Decisione di Riccardo: **vince la destinazione**. Sulle tabelle a chiave
+  naturale la riga del bundle si salta e la pagina elenca le chiavi rimaste quelle di prima;
+  sulle tabelle a id numerico un id già presente ferma l'import prima di scrivere, con le
+  tabelle e i conteggi: l'unione non rinumera, e saltare la riga attaccherebbe le righe figlie
+  del bundle a quella sbagliata. Anche gli indici UNIQUE parziali o su espressione seguono la
+  regola, e il segno delle conversioni si legge dal bundle: una sorgente già convertita non si
+  riconverte, come con lo svuotamento.
+- **Reset per nuovo cliente** (F02): la rotta chiamava la gemella di `db.ts`, che dentro un
+  tenant cercava `users` nel DB del cliente («no such table: users»): non ha mai funzionato.
+  Decisione di Riccardo: **restano le impostazioni del cliente e gli utenti**. La rotta usa lo
+  stesso reset del laboratorio e riapre il wizard; la gemella di `db.ts` dentro un tenant passa
+  a quella del tenant. Il reset ora dichiara cosa **resta** (`TABELLE_TENUTE`: impostazioni,
+  configurazione dei moduli dell'appliance, classificazioni personalizzate) e svuota ogni altra
+  tabella del tenant: le due liste a mano lasciavano controller di rete con le password,
+  telefoni, Wazuh, vulnerabilità, apparati e topologia del cliente di prima. Non scrive più il
+  flag d'onboarding globale dell'hub (apriva `requireAdminOrOnboarding` a tutti i tenant).
+- **Aggiornamento con servizio fermo** (F03): `update.sh` chiudeva «riuscito» senza riavvio né
+  salute, e il commit risultava avviato. Ora l'esito è `pronto_non_avviato`, il commit avviato
+  resta quello di prima, `auto-update` non rifà la build ogni 15 minuti finché il servizio è
+  fermo, e verso DA-Link (che accetta quattro esiti) va come «interrotto», fase «avvio».
+  Ogni build scrive il suo commit in `DA_COMMIT`: un ritorno indietro torna al codice della
+  build in uso, non al commit avviato (dopo un «pronto_non_avviato» non coincidono).
+- **verify-install fallito** (F04): l'esito resta «riuscito» (salute buona), ma la scheda
+  Aggiornamenti dice «riuscito, con avvisi» e «Aggiorna ora» riporta l'avviso.
+- **`stato-aggiornamento.mjs` non partiva da una cartella dietro un collegamento simbolico**
+  (macOS `/var/folders`): le 9 prove «rosse per `flock`» del Mac erano questo. Si confrontano
+  i percorsi reali.
+- **Menu compatto da tastiera** (F06): Invio/Spazio aprono il flyout, Tab ci entra, Escape lo
+  chiude e torna al pulsante; `aria-expanded` e `aria-haspopup`.
+- **Azioni riservate al viewer** (F07): Discovery offriva al viewer terminale SSH, desktop
+  remoto, test credenziali, installazioni, LibreNMS ed eliminazioni, che il server poi
+  rifiutava. Regola unica `eAdmin` (`src/lib/permessi/ruolo.ts`, hook `useEAdmin`); per il
+  viewer «Apri la scheda».
+- **Controllo remoto che spariva su un errore** (F08): una lettura non riuscita diventava
+  «nessun nodo». Ora la scheda dice «non riesco a leggere» con il codice e un Riprova.
+
 ## [Non rilasciato] — 2026-10-19 · Segnale verso DA-Link: stati dei moduli sulle basi modulari
 
 ### Novità
@@ -1172,7 +1866,7 @@ l'istanza non chiama nessuno.
   centrali dichiarati; Wazuh mai. Restringe soltanto, non apre niente che UFW chiude.
   Perché: la policy NetBird è la prima barriera, questa è la seconda.
 - **Preparazione all'ingresso in NetBird** (`scripts/dalink/prepara-netbird.sh`,
-  `install.sh --netbird --edge=si|no`): client NetBird dal repository firmato, Tailscale
+  `install.sh --netbird --edge=si|no`): client NetBird dal repository firmato, la VPN precedente
   con `--netfilter-mode=off`, firewall; la chiave d'ingresso solo da stdin. Prova a vuoto
   di default.
 
@@ -2062,7 +2756,7 @@ router) e v0.3.280 (tutto il resto).
 
 ## [Unreleased] — branch `feature/remote-agents`
 
-Aggiunge l'architettura **hub + agenti remoti via Tailscale**: l'hub IPAM
+Aggiunge l'architettura **hub + agenti remoti via VPN precedente**: l'hub IPAM
 orchestra agenti Python installati presso i clienti, mantenendo invariato
 il flusso per i tenant gestiti localmente.
 
@@ -2084,14 +2778,14 @@ il flusso per i tenant gestiti localmente.
 - **Wizard "Nuovo agente"** (dialog 2-step + token):
   - Step 1: scelta cliente esistente (dropdown) o creazione cliente nuovo
     inline (codice + ragione sociale).
-  - Step 2: configurazione agente (label/sede, hostname Tailscale, porta,
+  - Step 2: configurazione agente (label/sede, hostname nella VPN precedente, porta,
     subnet_match opzionale). Imposta automaticamente `agent_mode='remote'`.
   - Step 3: mostra token plaintext (una sola volta) + campo opzionale
-    Tailscale auth-key + comando di install one-liner pre-popolato.
+    chiave d'ingresso della VPN precedente + comando di install one-liner pre-popolato.
 - **`Executor` abstraction** (`src/lib/executor/`):
   - `Executor` interface (`index.ts`): primitive ping/nmap/dns/macVendor.
   - `LocalExecutor` (`local.ts`): delega ai moduli `src/lib/scanner/*`.
-  - `RemoteExecutor` (`remote.ts`): client HTTP verso agent via Tailscale,
+  - `RemoteExecutor` (`remote.ts`): client HTTP verso agent via VPN precedente,
     timeout per metodo, error envelope strutturato (`RemoteExecutorError`).
   - `getExecutor(tenantCode)`: legge `tenants.agent_mode` e pesca il primo
     agente da `tenant_agents` per i tenant remote.
@@ -2117,8 +2811,8 @@ il flusso per i tenant gestiti localmente.
   fping, arping, Kerberos, build-essential), `setcap` su nmap, crea venv
   pywinrm in `/root/.da-invent-venv`. Da usare dopo migrazioni LXC→VM.
 - **Sidebar**: voce "Agenti remoti" (solo superadmin) con icona `ServerCog`.
-- **Validazione hostname Tailscale** lato API (`PUT /agent`): regex
-  MagicDNS short-name o FQDN, niente schemi `http://` o path.
+- **Validazione hostname nella VPN precedente** lato API (`PUT /agent`): regex
+  nome breve del suo DNS o FQDN, niente schemi `http://` o path.
 - **Frontend `Tenant` interface** allineata: campi `agent_*` opzionali nel
   tipo della pagina `/tenants`.
 
@@ -2146,7 +2840,7 @@ il flusso per i tenant gestiti localmente.
     con codes: `tool_missing`, `auth_invalid`, `scope_denied`, `invalid_input`,
     `target_unreachable`, `timeout`, `parse_error`, `internal`.
   - **`/healthz` esteso**: `tools` (nmap, snmpwalk, ping, ssh), `network`
-    (tailscale ok + tailscale_ip), cache 60s.
+    (stato e IP della VPN precedente), cache 60s.
   - **OpenAPI export**: `agent/scripts/dump_openapi.py` +
     `check_openapi_fresh.sh` + pre-commit hook locale.
 - **v0.2.1** — fix bug asyncssh: rimosso kwarg invalido `client_keys_load_path`,
@@ -2166,12 +2860,12 @@ il flusso per i tenant gestiti localmente.
     libpcap).
   - Installer scrive `/etc/sudoers.d/da-invent-agent` con NOPASSWD
     limitato a `/usr/bin/nmap`, validato con `visudo -cf`.
-- **v0.2.4** — installer one-liner ora gestisce Tailscale:
-  - `install.sh` installa Tailscale (script ufficiale `tailscale.com/install.sh`)
+- **v0.2.4** — installer one-liner ora gestisce la VPN precedente:
+  - `install.sh` installa la VPN precedente (script ufficiale del fornitore)
     se mancante.
-  - `tailscale up` con `TAILSCALE_AUTH_KEY` se fornito (fully automated)
+  - ingresso nella VPN precedente con la sua chiave, se fornita (fully automated)
     o interattivo (stampa URL da aprire nel browser).
-  - Variabile `TAILSCALE_HOSTNAME` opzionale.
+  - Variabile opzionale per il nome del nodo.
 
 ### Changed
 
@@ -2225,7 +2919,7 @@ il flusso per i tenant gestiti localmente.
 
 | Tag/Versione | Commit | Note |
 |---|---|---|
-| `agent-v0.2.4` | `7501732` | installer gestisce Tailscale |
+| `agent-v0.2.4` | `7501732` | installer gestisce la VPN precedente |
 | (hub) | `43d5380` | aggiunto `scripts/hub-install.sh` |
 | (hub v0.2.421) | `a9cb244` | skip isNmapAvailable locale per remote |
 | `agent-v0.2.3` | `9ec4130` | UDP scan attivo + sudo fallback |
@@ -2250,21 +2944,21 @@ contesto di sessione, decisioni del branch `feature/remote-agents` e gotchas.
 **DA-INVENT** (alias DA-IPAM) è un IPAM multi-tenant Next.js 16 + better-sqlite3
 con architettura **hub + spoke**: un DB SQLite per tenant (`data/tenants/<code>.db`)
 e un hub condiviso (`data/hub.db`). Da Phase 1 il sistema supporta anche
-**agenti Python remoti** installati presso i clienti, raggiunti via Tailscale,
+**agenti Python remoti** installati presso i clienti, raggiunti via VPN precedente,
 che eseguono le primitive di rete (ping/nmap/SNMP/SSH/WinRM) dentro la rete
 del cliente. L'hub orchestrazione resta uguale; l'`Executor` decide a runtime
 se eseguire localmente o tramite agent.
 
 Stato produzione (2026-05-12): hub su **VM 533** (Proxmox PX-04, IP interno
 `192.168.4.8`, accessibile da chi sta sulla 192.168.4.0/24 o via jump host
-`root@192.168.40.4`). Un agent live su `bridge-domarc-ovh` (Tailscale IP
+`root@192.168.40.4`). Un agent live su `bridge-domarc-ovh` (IP nella VPN precedente
 `100.89.234.89`) servente il tenant `70791a` (DOMARC-OVH).
 
 ## 2. Architettura agenti remoti — modello mentale
 
 ```
 ┌────────────────┐                         ┌─────────────────────┐
-│   DA-INVENT    │   HTTPS via Tailscale   │  da-invent-agent    │
+│   DA-INVENT    │   HTTPS via VPN precedente   │  da-invent-agent    │
 │  hub (Next.js) │ ──────────────────────▶ │  (Python/FastAPI)   │
 │   VM 533       │   Bearer token          │   N istanze per     │
 │                │                         │   tenant possibili  │
@@ -2293,7 +2987,7 @@ src/lib/executor/             ← astrazione (introdotta in questo branch)
   ├── types.ts                ← interfacce I/O (PingResult, NmapResult, …)
   ├── index.ts                ← Executor interface + getExecutor(tenantCode)
   ├── local.ts                ← LocalExecutor (wrap src/lib/scanner/*)
-  └── remote.ts               ← RemoteExecutor (HTTP → agent via Tailscale)
+  └── remote.ts               ← RemoteExecutor (HTTP → agent via VPN precedente)
 
 src/lib/db-hub-schema.ts      ← include `tenants` (con agent_* deprecati)
                                 e `tenant_agents` (autorità)
@@ -2334,7 +3028,7 @@ agent/
 │   ├── auth.py                 ← bearer token + origin CGNAT + require_scope()
 │   ├── scopes.py               ← Scope enum (exec:network|device, admin:update)
 │   ├── errors.py               ← AgentException + error envelope uniforme
-│   ├── system_probe.py         ← _which() + probe Tailscale, cache 60s
+│   ├── system_probe.py         ← _which() + probe della VPN precedente, cache 60s
 │   ├── models.py               ← pydantic models speculari a executor/types.ts
 │   └── exec/
 │       ├── ping.py             ← subprocess ping (cross-platform)
@@ -2346,7 +3040,7 @@ agent/
 │       ├── winrm.py            ← subprocess winrm_bridge.py, classify_error
 │       └── winrm_bridge.py     ← copia di src/lib/devices/winrm-bridge.py (hardenato)
 ├── scripts/
-│   ├── install.sh              ← installer one-liner (apt, Tailscale, venv, systemd)
+│   ├── install.sh              ← installer one-liner (apt, VPN precedente, venv, systemd)
 │   ├── da-invent-agent.service ← systemd unit (no NoNewPrivileges per sudo+caps)
 │   ├── dump_openapi.py         ← rigenera openapi.json
 │   └── check_openapi_fresh.sh  ← pre-commit drift check
@@ -2390,9 +3084,9 @@ ssh -J root@192.168.40.4 root@192.168.4.8 'cd /opt/da-invent && npm run build &&
 | Web app hub | `https://192.168.4.8` (login: admin / **DaInvent2026** — cambia al primo uso) |
 | SSH hub VM 533 | `ssh -J root@192.168.40.4 root@192.168.4.8` (chiave già autorizzata su entrambi) |
 | Proxmox host | `ssh root@192.168.40.4` (chiave già autorizzata) |
-| Agent OVH | `ssh root@100.89.234.89` (direct via Tailscale, chiave autorizzata) |
+| Agent OVH | `ssh root@100.89.234.89` (direct via VPN precedente, chiave autorizzata) |
 | Agent OVH (config) | `/etc/da-invent-agent/config.yml`, service `systemctl status da-invent-agent` |
-| Tailscale visibility | hub `100.124.2.70` (da-invent), agent `100.89.234.89` (bridge-domarc-ovh) |
+| Visibilità nella VPN precedente | hub `100.124.2.70` (da-invent), agent `100.89.234.89` (bridge-domarc-ovh) |
 
 ## 6. Lezioni dure imparate (memorie persistenti)
 
@@ -2415,13 +3109,13 @@ Tutte in `~/.claude/projects/-Users-riccardo-Progetti-DA-IPAM/memory/`:
 
 ## 7. Gotchas tecniche scoperte in questa sessione
 
-### Tailscale + agent
+### VPN precedente + agent
 - Agent **DEVE** girare con CGNAT origin check (100.64.0.0/10): il middleware
-  rifiuta richieste da fuori la tailnet.
-- Tailscale **MagicDNS short name** e FQDN entrambi accettati. La validazione
+  rifiuta richieste da fuori la rete della VPN precedente.
+- **Nome breve del DNS della VPN precedente** e FQDN entrambi accettati. La validazione
   hostname hub-side usa regex permissiva: niente schemi `http://`, niente path.
-- Tailscale `up` interattivo: stampa URL, lo script aspetta. Con
-  `TAILSCALE_AUTH_KEY` (reusable) → fully automated.
+- Ingresso interattivo nella VPN precedente: stampa URL, lo script aspetta. Con
+  la sua chiave (reusable) → fully automated.
 
 ### nmap + capabilities (Ubuntu 24.04)
 - **nmap 7.94 hard-checka `euid==0`** per `-sU`/`-sS` ANCHE con
@@ -2466,7 +3160,7 @@ Tutte in `~/.claude/projects/-Users-riccardo-Progetti-DA-IPAM/memory/`:
 |---|---|---|
 | **6** | Heartbeat + observability persistenti | Tabella `agent_heartbeats` su hub.db, agente fa POST a hub `/api/agents/heartbeat` ogni 60s. Per ora abbiamo solo on-demand test. |
 | **7** | Routing **subnet → agent** | Quando un tenant ha N agent con subnet diverse, decidere quale chiamare in base al target IP. Campo `subnet_match` (CSV CIDR) già nello schema. `getExecutor()` accetta optional targetIp param. |
-| **7+** | TLS end-to-end | Oggi HTTP plain via Tailscale (WireGuard cifra). Per compliance: Tailscale Serve con cert LetsEncrypt OR self-signed con TOFU pinning hub-side. |
+| **7+** | TLS end-to-end | Oggi HTTP plain via VPN precedente (WireGuard cifra). Per compliance: il servizio HTTPS della VPN precedente con cert LetsEncrypt OR self-signed con TOFU pinning hub-side. |
 | **8** | Auto-update agent dall'hub | Endpoint agent `/admin/update` (token-protetto, scope `admin:update`) scarica tarball + verifica SHA256 + atomic swap + systemctl restart. Tabella `agent_releases` hub-side. |
 | **9** | UI tenant per-tenant agents | Oggi `/tenants/[id]/agent` mostra solo il primo agent (back-compat). Trasformare in `/tenants/[id]/agents` con lista multi-agent. |
 | **dep** | Rimuovere campi `tenants.agent_*` | Sono deprecati dalla migrazione. Lasciati per back-compat di route esistenti. Dopo 1-2 release di stabilità si possono droppare. |

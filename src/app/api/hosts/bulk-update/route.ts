@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { updateHost } from "@/lib/db";
+import { updateHost, getDb } from "@/lib/db";
+import { scriviClassificazione } from "@/lib/classification/scrivi";
 import { assegnaCredenzialeAgliHost, VoceNonValePerProtocollo } from "@/lib/credentials/lega-voce";
 import {
   bulkUpdateNetworkDeviceByHostId,
@@ -7,10 +8,11 @@ import {
 } from "@/lib/db-tenant";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
+import { avviaChocoDopoCredenziali } from "@/lib/patch/choco-automatico";
 import { z } from "zod";
-import { DEVICE_CLASSIFICATIONS } from "@/lib/device-classifications";
+import { classificazioneCanonicaEnum } from "@/lib/validators";
 
-const classificationSchema = z.enum(DEVICE_CLASSIFICATIONS as unknown as [string, ...string[]]);
+const classificationSchema = classificazioneCanonicaEnum();
 const deviceTypeSchema = z.enum(["router", "switch", "firewall", "hypervisor"]);
 const vendorSchema = z.enum([
   "mikrotik","ubiquiti","hp","cisco","omada","stormshield","proxmox","vmware",
@@ -101,6 +103,8 @@ export async function PATCH(request: Request) {
           const esito = assegnaCredenzialeAgliHost(host_ids, credential_id, proto, port);
           credentialsAdded = esito.aggiunte;
           credentialsFailed = esito.falliti.length;
+          // WinRM assegnato in blocco: Chocolatey si installa da solo dove serve (21/10).
+          if (proto === "winrm") avviaChocoDopoCredenziali(host_ids.filter((h) => !esito.falliti.includes(h)));
         } catch (err) {
           if (err instanceof VoceNonValePerProtocollo) return NextResponse.json({ error: err.message }, { status: 400 });
           throw err;
@@ -124,7 +128,6 @@ export async function PATCH(request: Request) {
       for (const id of host_ids) {
         // Aggiorna campi host
         const update: Record<string, unknown> = {};
-        if (classification !== undefined) update.classification = classification;
         if (known_host !== undefined) update.known_host = known_host;
         if (notes !== undefined) update.notes = notes;
         if (device_manufacturer !== undefined) update.device_manufacturer = device_manufacturer;
@@ -133,6 +136,11 @@ export async function PATCH(request: Request) {
         if (Object.keys(update).length > 0) {
           const result = updateHost(id, update as Parameters<typeof updateHost>[1]);
           if (result) updated++;
+        }
+        // Classificazione dal punto unico: scrive anche sull'apparato abbinato.
+        if (classification !== undefined) {
+          const r = scriviClassificazione(getDb(), { hostId: id }, classification, { manuale: true });
+          if (r.hostId != null && Object.keys(update).length === 0) updated++;
         }
 
         // Aggiorna network_devices linkati via IP (se ci sono campi device da aggiornare)

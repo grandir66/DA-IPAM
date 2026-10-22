@@ -240,3 +240,20 @@ test("banco: un host visto vivo durante un giro lento non viene spento da quel g
   assert.equal(righe.get("10.250.0.5"), "offline");
   assert.equal(righe.get("10.250.0.1"), "online");
 });
+
+// 20/10 (Riccardo): il passaggio a offline di fine giro cambiava lo stato senza scrivere
+// lo storico; grafico «Stato host nel tempo» e «Transizioni recenti» non vedevano chi
+// andava offline per una scansione (sull'hub 34 host «online» nello storico e offline
+// nello stato attuale).
+test("chi passa a offline lascia una riga nello storico; chi resta com'era no", () => {
+  const reteId = withTenant(T, () => preparaRete([
+    { ip: "10.250.0.4", status: "online", last_seen: PRIMA },
+    { ip: "10.250.0.5", status: "online", last_seen: DOPO },
+    { ip: "10.250.0.6", status: "offline", last_seen: PRIMA },
+  ]));
+  withTenant(T, () => markHostsOffline(reteId, [], SCANSIONATI, INIZIO));
+  const storico = withTenant(T, () =>
+    db().prepare("SELECT h.ip, s.status FROM status_history s JOIN hosts h ON h.id = s.host_id ORDER BY h.ip").all(),
+  );
+  assert.deepEqual(storico, [{ ip: "10.250.0.4", status: "offline" }]);
+});

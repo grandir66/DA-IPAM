@@ -1,7 +1,7 @@
 # Playbook — Deploy nuovo hub DA-IPAM (o DA-Vul-can) da Ubuntu vuoto
 
 Procedura per portare una VM Ubuntu 24.04 fresca a hub Domarc completamente
-funzionante (UI HTTPS + scheduler cron + agent connector + backup nightly).
+funzionante (UI HTTPS + scheduler cron + backup nightly).
 
 **Tempo stimato**: 25-40 minuti, di cui 15-20 min di build/npm ci.
 **Prerequisiti**: VM Ubuntu 24.04 (≥4GB RAM, ≥30GB disco), accesso SSH
@@ -44,7 +44,7 @@ apt-get install -y \
   libkrb5-dev krb5-config krb5-user libffi-dev \
   python3 python3-pip python3-venv
 
-# setcap su nmap (servirà se l'hub fa scan locali; per scan via agent non serve)
+# setcap su nmap (le scansioni girano sull'hub)
 setcap cap_net_raw,cap_net_admin,cap_net_bind_service=eip /usr/bin/nmap
 ```
 
@@ -58,7 +58,7 @@ useradd -r -m -s /bin/bash -d /opt/da-invent da-invent || true
 cd /opt
 git clone https://github.com/grandir66/DA-IPAM.git da-invent
 cd da-invent
-git checkout main   # o feature/remote-agents per branch in lavorazione
+git checkout main
 chown -R da-invent:da-invent /opt/da-invent
 
 # .env.local — generare segreti
@@ -76,8 +76,8 @@ chmod 600 /opt/da-invent/.env.local
 chown da-invent:da-invent /opt/da-invent/.env.local
 ```
 
-⚠️ **SALVA ENCRYPTION_KEY in Keeper SUBITO**. Se la perdi, tutti i token
-agent cifrati nel DB diventano inutilizzabili (`decrypt_failed`).
+⚠️ **SALVA ENCRYPTION_KEY in Keeper SUBITO**. Se la perdi, tutti i segreti
+cifrati nel DB diventano inutilizzabili (`decrypt_failed`).
 
 ## 5. Install npm deps + build (10 min)
 
@@ -108,7 +108,7 @@ RestartSec=5
 StandardOutput=journal
 StandardError=journal
 
-# Hardening minimo (non così aggressivo da rompere nmap/sudo come per l'agent)
+# Hardening minimo (non così aggressivo da rompere nmap/sudo)
 NoNewPrivileges=true
 ProtectSystem=full
 ProtectHome=true
@@ -153,22 +153,23 @@ rm -f /etc/nginx/sites-enabled/default
 nginx -t && systemctl reload nginx
 ```
 
-## 8. Tailscale (3 min)
+## 8. NetBird (3 min)
+
+L'ingresso in NetBird lo governa DA-Link (ADR 0011). Si prepara la macchina
+(client NetBird dal repository firmato, firewall di `wt0`) e si incolla il
+comando emesso da DA-Link per l'oggetto `<codice>-ipam`:
 
 ```bash
-curl -fsSL https://tailscale.com/install.sh | sh
-tailscale up --reset \
-  --authkey=tskey-auth-NEW_KEY_HERE \
-  --advertise-tags=tag:da-hub \
-  --hostname=da-invent \
-  --ssh \
-  --accept-dns=true
-tailscale ip -4
+cd /opt/da-invent
+bash scripts/dalink/prepara-netbird.sh --edge no             # prova a vuoto
+sudo bash scripts/dalink/prepara-netbird.sh --applica --edge no
+# poi il comando di DA-Link (chiave monouso e token: mai in un argomento)
+netbird status | grep -E '^(Management|FQDN|NetBird IP)'
 ```
 
 ## 9. Setup admin user (2 min)
 
-Apri `https://<tailscale-ip>` o `https://<lan-ip>` nel browser:
+Apri `https://<ip-netbird>` o `https://<lan-ip>` nel browser:
 
 - La prima visita reindirizza a `/setup`
 - Crea il primo utente admin (username + password ≥8 char)
@@ -176,11 +177,11 @@ Apri `https://<tailscale-ip>` o `https://<lan-ip>` nel browser:
 
 ## 10. Configurazione PUBLIC_HUB_URL (1 min)
 
-Dalla UI: **Impostazioni** → **Hub URL pubblico**:
-- Settare **Hostname Tailscale (fallback)** = `da-invent`
+Dalla UI (superadmin): menu **URL dell'hub**:
+- Settare **URL pubblico** = `https://<codice>-ipam.netbird.selfhosted` (o il nome LAN)
 - Salva
 
-Da ora il wizard `/agents` userà `https://da-invent` nel one-liner.
+Da ora gli script d'installazione dell'agente d'inventario useranno quell'indirizzo.
 
 ## 11. Verifica end-to-end
 
@@ -191,18 +192,19 @@ curl -fsS http://localhost:3001/api/version
 curl -fsSk https://localhost
 journalctl -u da-invent -n 30 --no-pager
 
-# Da una macchina admin in tailnet:
-curl -fsS https://da-invent/api/version
-ssh root@da-invent
+# Da una macchina admin in NetBird:
+curl -fsS https://<codice>-ipam.netbird.selfhosted/api/version
+ssh root@<codice>-ipam.netbird.selfhosted
 ```
 
 ## 12. Hardening produzione (opzionale ma raccomandato)
 
 ```bash
-# Firewall: solo SSH (22) e HTTPS (443) accettati su LAN, tutto su tailnet
+# Firewall: SSH (22) e HTTPS (443) su LAN; su NetBird decide la tabella
+# `inet dalink` (porte di wt0), UFW la lascia passare
 ufw default deny incoming
 ufw default allow outgoing
-ufw allow from 100.64.0.0/10 to any              # tutto da tailnet
+ufw allow in on wt0
 ufw allow 22/tcp
 ufw allow 443/tcp
 ufw --force enable
@@ -221,7 +223,7 @@ systemctl restart sshd
 - [ ] **ENCRYPTION_KEY salvata in Keeper**
 - [ ] systemd unit attivo, /api/version risponde
 - [ ] HTTPS reverse proxy attivo
-- [ ] Tailscale up con `tag:da-hub` e hostname stabile
+- [ ] NetBird connesso col nodo `<codice>-ipam` (DA-Link), firewall `wt0` caricato
 - [ ] Admin user creato via /setup
 - [ ] PUBLIC_HUB_URL settato in UI
 - [ ] Firewall UFW attivo, password ssh disabilitato
@@ -233,8 +235,7 @@ Stessa procedura con sostituzioni:
 - Repo: `https://github.com/grandir66/DA-Vul-can.git`
 - Path: `/opt/da-vulcan`
 - Service: `da-vulcan.service`
-- Tag Tailscale: `tag:da-hub` (stesso)
-- Hostname Tailscale: `da-vulcan`
+- Nodo NetBird: `da-vulcan` (gruppi in DA-Link)
 - Porta: 3002 (default DA-Vul-can)
 - System deps aggiuntive: `python3-lxml python3-docx` (sidecar Python per .docx)
 - `.env.local` aggiuntivo: `ANTHROPIC_API_KEY=sk-...`

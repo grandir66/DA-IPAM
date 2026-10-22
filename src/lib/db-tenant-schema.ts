@@ -105,6 +105,157 @@ export const DDL_TOPOLOGY_CAVI: ReadonlyArray<readonly [string, string]> = [
 )`],
 ];
 
+/**
+ * Scheda MikroTik (piano 2026-10-21, Task 3): colonne nuove su tabelle che esistono già, scritte dalle letture che girano
+ * già (interfacce, ARP, vicini). Solo `ALTER TABLE … ADD COLUMN` (`migrateSchedaMikrotik`, db-tenant.ts): nessuna
+ * ricostruzione, nessun CHECK. Una voce per colonna: [tabella, colonna, tipo]. I Task 8 e 10 aggiungono un livello ciascuno.
+ */
+export const COLONNE_SCHEDA_MK_V1: ReadonlyArray<readonly [tabella: string, colonna: string, ddl: string]> = [
+  ["device_interfaces", "mtu", "INTEGER"],
+  ["device_interfaces", "disabled", "INTEGER"],
+  ["arp_entries", "status", "TEXT"],
+  ["arp_entries", "dynamic", "INTEGER"],
+  ["device_neighbors", "remote_version", "TEXT"],
+];
+/**
+ * Livello 2 (Task 8, ADR 0027): bridge, porte dei bridge e bond di un MikroTik, gli attributi che la lettura della topologia
+ * riceve già (MK3, MK4, MK8). Una fotografia per apparato (l'ultima lettura buona), separata dalle tabelle `topology_*`: la
+ * mappa legge quelle, la scheda queste. Nessun CHECK, nessun indice in più (la chiave primaria comincia da device_id). Le
+ * CREATE stanno SOLO nella migrazione (`migrateSchedaMikrotik`), non in TENANT_SCHEMA_SQL: lo schema gira prima e le
+ * creerebbe fuori dalla transazione, senza riga nel journal; così il journal dice quando sono nate. Senza `IF NOT EXISTS`:
+ * la migrazione le crea solo dopo averle cercate, e un oggetto con lo stesso nome (una vista) deve far fallire, non passare muto.
+ */
+export const DDL_SCHEDA_MK_V2: ReadonlyArray<readonly [string, string]> = [
+  ["mikrotik_bridge", `CREATE TABLE mikrotik_bridge (
+  device_id INTEGER NOT NULL REFERENCES network_devices(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  mac_address TEXT, mtu TEXT, actual_mtu INTEGER, l2mtu INTEGER, arp TEXT, arp_timeout TEXT,
+  protocol_mode TEXT, priority TEXT, fast_forward INTEGER, igmp_snooping INTEGER, dhcp_snooping INTEGER,
+  vlan_filtering INTEGER, pvid INTEGER, frame_types TEXT, ingress_filtering INTEGER, ether_type TEXT,
+  ageing_time TEXT, forward_delay TEXT, max_message_age TEXT, comment TEXT, running INTEGER, disabled INTEGER,
+  seen_at TEXT NOT NULL,
+  PRIMARY KEY (device_id, name)
+)`],
+  ["mikrotik_bridge_port", `CREATE TABLE mikrotik_bridge_port (
+  device_id INTEGER NOT NULL REFERENCES network_devices(id) ON DELETE CASCADE,
+  interface TEXT NOT NULL,
+  bridge TEXT NOT NULL,
+  pvid INTEGER, priority TEXT, path_cost INTEGER, internal_path_cost INTEGER,
+  edge TEXT, point_to_point TEXT, horizon TEXT, hw INTEGER, hw_offload INTEGER, frame_types TEXT, ingress_filtering INTEGER,
+  bpdu_guard INTEGER, trusted INTEGER, inactive INTEGER, disabled INTEGER, dynamic INTEGER, comment TEXT,
+  seen_at TEXT NOT NULL,
+  PRIMARY KEY (device_id, interface)
+)`],
+  ["mikrotik_bond", `CREATE TABLE mikrotik_bond (
+  device_id INTEGER NOT NULL REFERENCES network_devices(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  mode TEXT, slaves TEXT, transmit_hash_policy TEXT, mlag_id TEXT, link_monitoring TEXT,
+  mii_interval TEXT, lacp_rate TEXT, mtu INTEGER, comment TEXT, running INTEGER, disabled INTEGER,
+  seen_at TEXT NOT NULL,
+  PRIMARY KEY (device_id, name)
+)`],
+];
+/**
+ * Livello 3 (Task 10, ADR 0027): VLAN dei bridge, interfacce VLAN, DNS e utenti di un MikroTik, dalla lettura
+ * `mikrotik_scheda` (spenta di default, quattro comandi in sola lettura). Una fotografia per apparato come il livello 2; liste
+ * (tagged, server DNS…) come testo con le virgole. `mikrotik_bridge_vlan` non ha un nome: `pos` = ordine di lettura.
+ * `mikrotik_user` la legge solo l'admin (GET /api/devices/[id]/mikrotik-utenti); nessuna password. Stesse regole del
+ * livello 2: solo nella migrazione, senza `IF NOT EXISTS`.
+ */
+export const DDL_SCHEDA_MK_V3: ReadonlyArray<readonly [string, string]> = [
+  ["mikrotik_bridge_vlan", `CREATE TABLE mikrotik_bridge_vlan (
+  device_id INTEGER NOT NULL REFERENCES network_devices(id) ON DELETE CASCADE,
+  pos INTEGER NOT NULL, bridge TEXT NOT NULL, vlan_ids TEXT NOT NULL, tagged TEXT, untagged TEXT, current_tagged TEXT,
+  current_untagged TEXT, dynamic INTEGER, disabled INTEGER, comment TEXT, seen_at TEXT NOT NULL,
+  PRIMARY KEY (device_id, pos)
+)`],
+  ["mikrotik_vlan", `CREATE TABLE mikrotik_vlan (
+  device_id INTEGER NOT NULL REFERENCES network_devices(id) ON DELETE CASCADE,
+  name TEXT NOT NULL, vlan_id INTEGER, interface TEXT, mtu INTEGER, mac_address TEXT, running INTEGER, disabled INTEGER,
+  comment TEXT, seen_at TEXT NOT NULL,
+  PRIMARY KEY (device_id, name)
+)`],
+  ["mikrotik_dns", `CREATE TABLE mikrotik_dns (
+  device_id INTEGER PRIMARY KEY REFERENCES network_devices(id) ON DELETE CASCADE,
+  servers TEXT, dynamic_servers TEXT, allow_remote_requests INTEGER, cache_size TEXT, cache_used TEXT,
+  max_concurrent_queries INTEGER, use_doh_server TEXT, seen_at TEXT NOT NULL
+)`],
+  ["mikrotik_user", `CREATE TABLE mikrotik_user (
+  device_id INTEGER NOT NULL REFERENCES network_devices(id) ON DELETE CASCADE,
+  name TEXT NOT NULL, grp TEXT, address TEXT, last_logged_in TEXT, disabled INTEGER, comment TEXT,
+  seen_at TEXT NOT NULL,
+  PRIMARY KEY (device_id, name)
+)`],
+];
+/** Segno in `tenant_settings`: dice fin dove è arrivato lo schema (`done:<data>:v<versione>`); la migrazione non lo consulta. */
+export const SEGNO_SCHEDA_MK = "scheda_mikrotik_v21";
+/** Versione dello schema della scheda: 1 = COLONNE_SCHEDA_MK_V1, 2 = DDL_SCHEDA_MK_V2, 3 = DDL_SCHEDA_MK_V3. */
+export const VERSIONE_SCHEDA_MK = 3;
+
+/**
+ * Principale del cluster fisico scelto a mano (piano 2026-10-22 accorpamento, Task 3): in Discovery un apparato fisico ha
+ * una riga sola. NULL = vale la regola (apparato gestito, poi IP più basso, `devices/cluster-discovery.ts`); torna NULL se
+ * l'host esce dal cluster o è cancellato. Come le colonne della scheda MikroTik non sta in `physical_devices` qui sotto: la
+ * crea solo la migrazione (`migrateClusterPrincipale`), così tenant nuovi e vecchi passano dalla stessa strada.
+ */
+export const COLONNA_CLUSTER_PRINCIPALE = ["physical_devices", "primary_host_id", "INTEGER REFERENCES hosts(id) ON DELETE SET NULL"] as const;
+/** L'indice serve all'ON DELETE SET NULL: senza, ogni host cancellato scorre tutta `physical_devices`. */
+export const INDICE_CLUSTER_PRINCIPALE = ["idx_physical_devices_primary_host", "CREATE INDEX IF NOT EXISTS idx_physical_devices_primary_host ON physical_devices(primary_host_id)"] as const;
+/** Segno in `tenant_settings` (`done:<data>:v<versione>`); la migrazione non lo consulta. */
+export const SEGNO_CLUSTER_PRINCIPALE = "cluster_principale_v21";
+export const VERSIONE_CLUSTER_PRINCIPALE = 1;
+
+/**
+ * VLAN degli switch via SNMP (piano 2026-10-22 accorpamento, Task 8, ADR 0029): VLAN con il nome, porte di ogni VLAN (egress,
+ * untagged; untagged NULL = lo switch non lo dichiara e la U si deduce dal PVID), PVID di ogni porta, e come è andata l'ultima
+ * lettura buona. Una fotografia per apparato, separata da `switch_ports.vlan` (il giro ARP la scrive, la mappa la legge): la
+ * scheda dello switch legge queste. Porte per ifIndex, come le dà `devices/snmp-vlan.ts`. Come la scheda MikroTik: le CREATE
+ * stanno SOLO nella migrazione (`migrateSwitchVlan`), senza `IF NOT EXISTS`, nessun CHECK, nessun indice in più.
+ * `ordine_bit` e `porte_senza_mappa` (Task 7, «Correzioni») dicono alla tab VLAN quando la matrice è dedotta.
+ */
+export const DDL_SWITCH_VLAN_V1: ReadonlyArray<readonly [string, string]> = [
+  ["switch_vlan", `CREATE TABLE switch_vlan (
+  device_id INTEGER NOT NULL REFERENCES network_devices(id) ON DELETE CASCADE,
+  vlan_id INTEGER NOT NULL, nome TEXT,
+  PRIMARY KEY (device_id, vlan_id)
+)`],
+  ["switch_vlan_porte", `CREATE TABLE switch_vlan_porte (
+  device_id INTEGER NOT NULL REFERENCES network_devices(id) ON DELETE CASCADE,
+  vlan_id INTEGER NOT NULL, if_index INTEGER NOT NULL, egress INTEGER NOT NULL, untagged INTEGER,
+  PRIMARY KEY (device_id, vlan_id, if_index)
+)`],
+  ["switch_porta_pvid", `CREATE TABLE switch_porta_pvid (
+  device_id INTEGER NOT NULL REFERENCES network_devices(id) ON DELETE CASCADE,
+  if_index INTEGER NOT NULL, pvid INTEGER NOT NULL,
+  PRIMARY KEY (device_id, if_index)
+)`],
+  ["switch_vlan_lettura", `CREATE TABLE switch_vlan_lettura (
+  device_id INTEGER PRIMARY KEY REFERENCES network_devices(id) ON DELETE CASCADE,
+  letto_il TEXT NOT NULL, tabella TEXT NOT NULL, mappa_porte TEXT NOT NULL, n_vlan INTEGER NOT NULL,
+  ordine_bit TEXT NOT NULL, porte_senza_mappa INTEGER NOT NULL
+)`],
+];
+/** Segno in `tenant_settings` (`done:<data>:v<versione>`); la migrazione non lo consulta. */
+export const SEGNO_SWITCH_VLAN = "switch_vlan_v21";
+export const VERSIONE_SWITCH_VLAN = 1;
+
+/**
+ * VLAN native delle porte dal controller UniFi (piano 2026-10-22 accorpamento, Task 13, ADR 0029): dove l'SNMP non dichiara
+ * gli untagged (la ProMax), la nativa che il controller dà per porta. Fotografia per apparato, scritta dalla sync UniFi
+ * (solo con la lettura `switch_vlan` accesa) e separata dalle tabelle SNMP: la lettura oraria SNMP le riscrive intere e
+ * cancellerebbe il completamento. Porte per ifIndex (= `port_idx` del controller). Come le altre: CREATE solo nella
+ * migrazione (`migrateSwitchVlanNativa`), senza `IF NOT EXISTS`, nessun CHECK, nessun indice in più.
+ */
+export const DDL_SWITCH_VLAN_NATIVA: ReadonlyArray<readonly [string, string]> = [
+  ["switch_vlan_nativa", `CREATE TABLE switch_vlan_nativa (
+  device_id INTEGER NOT NULL REFERENCES network_devices(id) ON DELETE CASCADE,
+  if_index INTEGER NOT NULL, vlan_id INTEGER NOT NULL, letto_il TEXT NOT NULL,
+  PRIMARY KEY (device_id, if_index)
+)`],
+];
+export const SEGNO_SWITCH_VLAN_NATIVA = "switch_vlan_nativa_v21";
+export const VERSIONE_SWITCH_VLAN_NATIVA = 1;
+
 /** Unioni e separazioni a mano (ADR 0021): le scrivono solo le rotte /api/topology/unioni; mai cancellate (tolto_*: la storia).
  *  Membri come id della mappa, senza chiavi esterne né CHECK. Indici solo nella migrazione. */
 export const DDL_TOPOLOGY_UNIONI: ReadonlyArray<readonly [string, string]> = [
@@ -121,6 +272,103 @@ export const INDICI_TOPOLOGY_UNIONI: ReadonlyArray<readonly [string, string]> = 
   ["idx_topology_unioni_gruppo", "CREATE INDEX idx_topology_unioni_gruppo ON topology_unioni(gruppo) WHERE tolto_il IS NULL"],
   ["idx_topology_separazioni_coppia_attiva", "CREATE UNIQUE INDEX idx_topology_separazioni_coppia_attiva ON topology_separazioni(membro, altro) WHERE tolto_il IS NULL"],
 ];
+
+/** Archivio degli host tolti dalla pulizia (piano 2026-10-20, scelta A): l'istantanea JSON della riga di `hosts`, poi
+ *  l'host si cancella con un DELETE diretto. Le scrive solo `hosts/pulizia-archivio.ts`; via dopo 90 giorni; una riga
+ *  recuperata resta finché esiste il suo host (lo protegge dalla pulizia), poi segue i 90 giorni. Senza chiavi esterne: la riga deve sopravvivere all'host, e anche alla sua rete (il recupero lo dice).
+ *  Gemella delle unioni: la tabella nasce anche dallo schema, gli indici solo nella migrazione (`migrateHostsArchivio`). */
+export const DDL_HOSTS_ARCHIVIO: ReadonlyArray<readonly [string, string]> = [
+  ["hosts_archivio", `CREATE TABLE IF NOT EXISTS hosts_archivio (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  host_id_originale INTEGER NOT NULL,
+  network_id INTEGER NOT NULL,
+  ip TEXT NOT NULL,
+  mac_hex TEXT,
+  nome TEXT NOT NULL,
+  motivo TEXT NOT NULL CHECK(motivo IN ('assente', 'cambio_ip')),
+  dettaglio TEXT,
+  ultima_vista TEXT,
+  istantanea TEXT NOT NULL,
+  archiviato_il TEXT NOT NULL DEFAULT (datetime('now')),
+  archiviato_da TEXT NOT NULL,
+  recuperato_il TEXT, recuperato_da TEXT, nuovo_host_id INTEGER)`],
+];
+export const INDICI_HOSTS_ARCHIVIO: ReadonlyArray<readonly [string, string]> = [
+  ["idx_hosts_archivio_mac", "CREATE INDEX idx_hosts_archivio_mac ON hosts_archivio(mac_hex)"],
+  ["idx_hosts_archivio_il", "CREATE INDEX idx_hosts_archivio_il ON hosts_archivio(archiviato_il)"],
+];
+
+/** Ultimo esito per apparato dei job `apparati_scelti` (piano 2026-10-22 scansione automatica, Task 1): una riga per job e
+ *  apparato, niente storico. `stato` (ok | parziale | errore | escluso | saltato) e `motivo` (codici: TOLTO, SENZA_CREDENZIALE,
+ *  CREDENZIALE_NON_PROVATA, …) si validano nel codice, nessun CHECK: un codice nuovo non chiede una ricostruzione. Niente
+ *  chiavi esterne: la v11 ricostruisce `scheduled_jobs`; le righe di un job si cancellano con il job e gli orfani a ogni giro.
+ *  `giro_il` in UTC. Gemella di hosts_archivio: la tabella nasce anche dallo schema, l'indice solo nella migrazione
+ *  (`migraApparatiScelti`). */
+export const DDL_JOB_APPARATI_ESITI: ReadonlyArray<readonly [string, string]> = [
+  ["job_apparati_esiti", `CREATE TABLE IF NOT EXISTS job_apparati_esiti (
+  job_id INTEGER NOT NULL,
+  device_id INTEGER NOT NULL,
+  giro_il TEXT NOT NULL,
+  stato TEXT NOT NULL,
+  letture TEXT NOT NULL DEFAULT '{}',
+  motivo TEXT,
+  PRIMARY KEY (job_id, device_id))`],
+];
+export const INDICI_JOB_APPARATI_ESITI: ReadonlyArray<readonly [string, string]> = [
+  ["idx_job_apparati_esiti_device", "CREATE INDEX idx_job_apparati_esiti_device ON job_apparati_esiti(device_id)"],
+];
+export const SEGNO_APPARATI_SCELTI = "apparati_scelti_v21";
+export const VERSIONE_APPARATI_SCELTI = 1;
+
+/**
+ * Coda degli invii verso l'hub DA-Vul-can (piano 2026-10-22 invio AD e inventario, Task 2; modello `upload_queue.py`
+ * della sonda). Dati del cliente che escono → DB del tenant. Una riga per invio (AD Health di un run, fotografia
+ * dell'inventario); `corpo_gz` è il JSON gzip e si svuota quando la riga esce dalla coda (inviato, scartato, superato).
+ * `sha256` del JSON non compresso (lo stesso che calcola l'hub per il doppione). `esito_il` è l'ora dell'ultimo esito
+ * (aggiunta al DDL del piano: serve a «ultimo errore» e ai 90 giorni di pulizia). Date nella forma di SQLite, confrontate
+ * come stringhe con `datetime('now')`. `vulcan_stato` è la riga unica del flusso: battito, ping, sospensione per
+ * l'impronta di un gettone (mai il gettone). Tutto nasce SOLO nella migrazione (`migrateVulcanCoda`), senza
+ * `IF NOT EXISTS`: un oggetto omonimo fa fallire la migrazione invece di passare muto. Fuori dal trasferimento
+ * (EXCLUDED_TENANT_TABLES): la coda e la sospensione valgono per questa istanza e il suo gettone, e la coda
+ * contiene i dati del cliente non ancora inviati.
+ */
+export const DDL_VULCAN: ReadonlyArray<readonly [string, string]> = [
+  ["vulcan_coda", `CREATE TABLE vulcan_coda (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tipo TEXT NOT NULL CHECK (tipo IN ('ad-health', 'inventario')),
+  rif TEXT,
+  corpo_gz BLOB NOT NULL,
+  byte_json INTEGER NOT NULL,
+  oggetti INTEGER,
+  sha256 TEXT NOT NULL,
+  stato TEXT NOT NULL DEFAULT 'in_attesa'
+    CHECK (stato IN ('in_attesa', 'inviato', 'scartato', 'fallito', 'superato')),
+  tentativi INTEGER NOT NULL DEFAULT 0,
+  prossimo_tentativo TEXT NOT NULL DEFAULT (datetime('now')),
+  preso_fino TEXT,
+  ultimo_esito TEXT,
+  ultimo_errore TEXT,
+  esito_il TEXT,
+  risposta_id TEXT,
+  creato_il TEXT NOT NULL DEFAULT (datetime('now')),
+  inviato_il TEXT,
+  UNIQUE (tipo, sha256)
+)`],
+  ["vulcan_stato", `CREATE TABLE vulcan_stato (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  battito_il TEXT, battito_esito TEXT, battito_dettaglio TEXT,
+  ping_il TEXT, ping_esito TEXT, ping_dettaglio TEXT,
+  sospeso_gettone TEXT,
+  sospeso_motivo TEXT,
+  aggiornato_il TEXT NOT NULL DEFAULT (datetime('now'))
+)`],
+];
+export const INDICI_VULCAN: ReadonlyArray<readonly [string, string]> = [
+  ["idx_vulcan_coda_attesa", "CREATE INDEX idx_vulcan_coda_attesa ON vulcan_coda(stato, prossimo_tentativo)"],
+];
+/** Segno in `tenant_settings` (`done:<data>:v<versione>`); la migrazione non lo consulta. */
+export const SEGNO_VULCAN = "vulcan_coda_v21";
+export const VERSIONE_VULCAN = 1;
 
 /**
  * Pannello Zabbix in sola lettura (passo 7.4-7.5 del piano di solidità, 16/10; API del centro in DA-Zabbix,
@@ -204,6 +452,7 @@ CREATE TABLE IF NOT EXISTS hosts (
   dns_reverse TEXT,
   custom_name TEXT,
   classification TEXT DEFAULT 'unknown',
+  server_roles TEXT,
   inventory_code TEXT,
   notes TEXT DEFAULT '',
   status TEXT DEFAULT 'unknown' CHECK(status IN ('online', 'offline', 'unknown')),
@@ -337,6 +586,9 @@ CREATE TABLE IF NOT EXISTS network_devices (
   port INTEGER DEFAULT 22,
   enabled INTEGER DEFAULT 1,
   classification TEXT,
+  server_roles TEXT,
+  -- 1 = classificazione scelta a mano: scansioni e attribuzione non la toccano (tappa 5, 21/10).
+  classification_manual INTEGER NOT NULL DEFAULT 0,
   sysname TEXT,
   sysdescr TEXT,
   model TEXT,
@@ -1528,6 +1780,14 @@ CREATE TABLE IF NOT EXISTS topology_link_overrides (
 -- Topologia: unioni e separazioni a mano (ADR 0021). Stesse CREATE della migrazione
 -- runtime (migrateTopologyUnioni in db-tenant.ts), che aggiunge gli indici.
 ${DDL_TOPOLOGY_UNIONI.map(([, ddl]) => `${ddl};`).join("\n\n")}
+
+-- Archivio degli host tolti dalla pulizia (piano 2026-10-20). Stessa CREATE della migrazione
+-- runtime (migrateHostsArchivio in db-tenant.ts), che aggiunge gli indici.
+${DDL_HOSTS_ARCHIVIO.map(([, ddl]) => `${ddl};`).join("\n\n")}
+
+-- Ultimo esito per apparato dei job apparati_scelti (piano 2026-10-22). Stessa CREATE della
+-- migrazione runtime (migraApparatiScelti in db-tenant.ts), che aggiunge l'indice.
+${DDL_JOB_APPARATI_ESITI.map(([, ddl]) => `${ddl};`).join("\n\n")}
 
 -- Controller di rete (UniFi, poi Omada): uno per riga, nel DB del cliente.
 -- Prima la configurazione era una sola, nelle impostazioni globali dell'hub

@@ -80,10 +80,10 @@ describe("applyAttribution — proiezione legacy (fase 4)", () => {
     assert.equal(row.classification, "workstation", "meglio un dato vecchio che nessun dato");
   });
 
-  it("compute.server + os=windows → classification diventa server_windows", () => {
+  it("compute.server + os=windows → classification diventa server (slug canonico)", () => {
     insertHost({ id: 4, classificationManual: 0, classification: "unknown" });
     applyAttribution(db, 4, fusionResult({ category: "compute.server", os: "windows" }), "scan");
-    assert.equal(hostRow(4).classification, "server_windows");
+    assert.equal(hostRow(4).classification, "server");
   });
 
   it("valore già allineato → non riscrive (nessun cambiamento, resta idempotente)", () => {

@@ -1,19 +1,31 @@
 import { parseDbDate, FUSO_UTENTI } from "@/lib/db-date";
-import { getDashboardStats, getNetworks, getRecentActivity, getUserCount, getKnownHostStats, getOfflineKnownHosts } from "@/lib/db";
+import { getDashboardStats, getNetworks, getUserCount, getKnownHostStats, getOfflineKnownHosts } from "@/lib/db";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { Network, Monitor, Wifi, WifiOff, HelpCircle, Shield, AlertTriangle, Activity, TrendingUp, PlugZap, CheckCircle2, XCircle, Clock } from "lucide-react";
+import { Network, Shield, Activity, PlugZap } from "lucide-react";
 import { StatusOverTimeChart } from "@/components/shared/status-over-time-chart";
 import { StatusChangeFeed } from "@/components/shared/status-change-feed";
 import { getServerTenantCode } from "@/lib/api-tenant";
-import { withTenant } from "@/lib/db-tenant";
+import { getTenantDb, withTenant } from "@/lib/db-tenant";
+import { kpiSicurezza, type KpiSicurezza } from "@/lib/security/kpi-dashboard";
+import { IstogrammaAccessi } from "@/components/dashboard/istogramma-accessi";
+import { CardSicurezza } from "@/components/dashboard/card-sicurezza";
+import { BarreSubnet, LegendaSubnet } from "@/components/dashboard/barre-subnet";
+import { ModuliCompatti } from "@/components/dashboard/moduli-compatti";
+import { leggiAccessiIndexer, type SerieAccessi } from "@/lib/security/accessi-indexer";
+import { ASSENTE_DOPO_GIORNI, condizioneAssente } from "@/lib/hosts/assenti";
+import { contaArchiviatiOTrattino } from "@/lib/hosts/pulizia-archivio";
 import { getIntegrationsOverview, type IntegrationHealth } from "@/lib/integrations/dashboard-health";
 import { getModulesHealth } from "@/lib/modules/health";
 import { MODULE_DESCRIPTORS, resolveModules, type ModuleState } from "@/lib/modules/registry";
 import { moduleRowTarget, type DestinazioneRigaModulo } from "@/lib/modules/dashboard-rows";
+import { completaRiquadri, tempoFa, type StatoPannelloZabbix } from "@/lib/modules/riquadri-dashboard";
+import { STILE_STATO } from "@/components/shared/stile-stato-modulo";
+import { dipendenzeReali } from "@/lib/zabbix-lettura/reale";
+import { leggiConfigLettura } from "@/lib/zabbix-lettura/config";
 
 /** Riga «Stato moduli»: le righe dei moduli portano anche dove aprono (UI-20). */
 type StatoModuloRiga = IntegrationHealth & {
@@ -35,7 +47,6 @@ export default async function DashboardPage() {
   const tenantCode = await getServerTenantCode();
   const stats = withTenant(tenantCode, () => getDashboardStats());
   const networks = withTenant(tenantCode, () => getNetworks());
-  const recentActivity = withTenant(tenantCode, () => getRecentActivity(8));
   const monitorStats = withTenant(tenantCode, () => getKnownHostStats());
   const offlineKnown = withTenant(tenantCode, () => getOfflineKnownHosts());
   // Stato moduli (registry + health cachato 60s) + riga Active Directory separata
@@ -76,12 +87,40 @@ export default async function DashboardPage() {
       apre: target.apre,
       notaStato: target.notaStato,
       contaNegliErrori: target.contaNegliErrori,
+      abilitato: moduleStates.find((m) => m.key === h.key)?.enabled,
     };
   });
   const adRows = withTenant(tenantCode, () => getIntegrationsOverview()).filter((i) =>
     i.key.startsWith("ad_"),
   );
   const integrations: StatoModuloRiga[] = [...moduleRows, ...adRows];
+  // Riquadri (Riccardo, 20/10): tutti i moduli possibili, i non configurati in grigio.
+  let zabbix: StatoPannelloZabbix | null = null;
+  try {
+    zabbix = withTenant(tenantCode, () => {
+      const d = dipendenzeReali();
+      return d.acquistato() ? leggiConfigLettura(d.db) : null;
+    });
+  } catch (e) {
+    console.error("[dashboard] pannello Zabbix non leggibile:", e);
+  }
+  // KPI di sicurezza (Riccardo, 20/10): solo letture del DB del cliente.
+  let sicurezza: KpiSicurezza = { cve: null, accessi: null, healthAd: null };
+  try {
+    sicurezza = withTenant(tenantCode, () => kpiSicurezza(getTenantDb(tenantCode)));
+  } catch (e) {
+    console.error("[dashboard] KPI di sicurezza non leggibili:", e);
+  }
+  // Le tabelle esistono sempre (schema e job di pulizia): «non configurato» lo dice il
+  // catalogo dei moduli, non la presenza della tabella (revisione del 20/10).
+  const configurato = (k: string) => moduleStates.find((m) => m.key === k)?.configured === true;
+  if (!configurato("edge")) sicurezza = { ...sicurezza, cve: null };
+  if (!configurato("wazuh")) sicurezza = { ...sicurezza, accessi: null };
+  const riquadri = completaRiquadri(
+    integrations,
+    MODULE_DESCRIPTORS.map((d) => ({ ...d, enabled: moduleStates.find((m) => m.key === d.key)?.enabled === true })),
+    { zabbix },
+  );
   // Un modulo non installato non conta: la sua sonda può fallire (MeshCentral
   // disinstallato tiene i parametri di collegamento) senza che sia un guasto.
   const contate = integrations.filter((i) => i.contaNegliErrori !== false);
@@ -90,338 +129,279 @@ export default async function DashboardPage() {
     (i) => i.status === "warning" || i.status === "stale",
   ).length;
 
-  // KPI hero: Health%, totali, subnet, monitorati offline come allerta
-  const denom = stats.online_hosts + stats.offline_hosts + stats.unknown_hosts;
+
+  // Accessi falliti (Riccardo, 20/10): i conteggi veri dell'indexer; senza indexer la stima.
+  const lettura = sicurezza.accessi ? await leggiAccessiIndexer(tenantCode) : null;
+  const stimati = sicurezza.accessi;
+  const accessi: SerieAccessi | null = lettura?.serie ?? (stimati
+    ? {
+        fonte: "stima",
+        motivo: lettura?.motivo ?? undefined,
+        ore: stimati.serie24h.map((o) => ({ ora: o.ora, falliti: o.falliti })),
+        giorni: stimati.serie.map((g) => ({ giorno: g.giorno, falliti: g.falliti })),
+        // Lo stesso totale del grafico (le 24 ore ora per ora), non un secondo calcolo.
+        totale24h: stimati.serie24h.reduce((n, o) => n + o.falliti, 0),
+        totale24hPrima: stimati.falliti24hPrima,
+        tendenza: stimati.falliti24h > stimati.falliti24hPrima ? "su" : stimati.falliti24h < stimati.falliti24hPrima ? "giu" : "pari",
+      }
+    : null);
+
+  // Indicatori: Health%, totali, subnet, monitorati.
+  // Offline = visti negli ultimi 7 giorni; gli «assenti» a parte, fuori dalla salute, come
+  // nel grafico (Riccardo, 20/10: in alto 51%, nel grafico 98%).
+  const offlineSplit = withTenant(tenantCode, () =>
+    getTenantDb(tenantCode)
+      .prepare(`SELECT COALESCE(SUM(status = 'offline' AND NOT ${condizioneAssente()}), 0) AS recenti, COALESCE(SUM(${condizioneAssente()}), 0) AS assenti FROM hosts`)
+      .get() as { recenti: number; assenti: number },
+  );
+  // «—» se l'archivio non si legge: l'indicatore non fa cadere la dashboard (m11, revisione finale).
+  const archiviati = withTenant(tenantCode, () => contaArchiviatiOTrattino());
+  const denom = stats.online_hosts + offlineSplit.recenti + stats.unknown_hosts;
   const healthPct = denom > 0 ? Math.round((stats.online_hosts / denom) * 100) : 0;
   const healthColor =
     healthPct >= 90 ? "text-success" :
-    healthPct >= 70 ? "text-amber-500" :
+    healthPct >= 70 ? "text-amber-600" :
     "text-destructive";
 
+  // Dashboard in una schermata, disposizione a tre colonne (Riccardo, 20/10): andamenti a
+  // sinistra, operatività al centro, infrastruttura a destra. Le liste scorrono nel riquadro.
   return (
-    <div className="space-y-4">
-      {/* ── Header ────────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold tracking-tight">Dashboard</h1>
-          <p className="text-muted-foreground text-sm mt-0.5">Panoramica del sistema IPAM</p>
-        </div>
-      </div>
-
-      {/* ── Hero KPI: Health grande + 4 contatori ────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-2">
-        <Card className="lg:col-span-2 bg-gradient-to-br from-primary/5 via-card to-card border-primary/20">
-          <CardContent className="py-5 px-5">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Health</p>
-                <p className={`text-5xl font-bold ${healthColor} leading-tight`}>{healthPct}<span className="text-2xl">%</span></p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {stats.online_hosts}/{denom} host online ora
-                </p>
-              </div>
-              <div className={`${healthColor} opacity-30`}>
-                <TrendingUp className="h-12 w-12" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <KpiCard title="Subnet" value={stats.total_networks} icon={<Network className="h-4 w-4" />} color="text-primary" href="/networks" />
-        <KpiCard title="Host Totali" value={stats.total_hosts} icon={<Monitor className="h-4 w-4" />} color="text-foreground" href="/discovery" />
-        <KpiCard title="Offline" value={stats.offline_hosts} icon={<WifiOff className="h-4 w-4" />} color="text-destructive" href="/discovery?status=offline" />
-      </div>
-
-      {/* ── Chart stato nel tempo + Change feed (2 colonne) ─────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-2">
-        <Card className="lg:col-span-2">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Activity className="h-4 w-4 text-primary" />
-              Stato host nel tempo
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <StatusOverTimeChart />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Activity className="h-4 w-4 text-primary" />
-              Transizioni recenti
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <StatusChangeFeed />
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* ── Monitoring + alert host offline ───────────────────────────── */}
-      {monitorStats.total > 0 && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Shield className="h-4 w-4 text-primary" />
-              Monitoraggio attivo
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
-              <span className="inline-flex items-center gap-1.5">
-                <Monitor className="h-4 w-4 text-muted-foreground" />
-                <span className="font-bold">{monitorStats.total}</span>
-                <span className="text-muted-foreground">monitorati</span>
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <Wifi className="h-4 w-4 text-success" />
-                <span className="text-success font-medium">{monitorStats.online} online</span>
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <WifiOff className="h-4 w-4 text-destructive" />
-                <span className="text-destructive font-medium">{monitorStats.offline} offline</span>
-              </span>
-              {monitorStats.avg_latency !== null && (
-                <span className="inline-flex items-center gap-1.5">
-                  <Activity className="h-4 w-4 text-primary" />
-                  <span>Latenza media: <span className="font-mono font-medium">{Math.round(monitorStats.avg_latency)}ms</span></span>
-                </span>
-              )}
-            </div>
-
-            {offlineKnown.length > 0 && (
-              <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3">
-                <div className="flex items-center gap-2 mb-2">
-                  <AlertTriangle className="h-4 w-4 text-destructive" />
-                  <span className="text-sm font-medium text-destructive">
-                    {offlineKnown.length} host conosciut{offlineKnown.length === 1 ? "o" : "i"} offline
-                  </span>
-                </div>
-                <div className="space-y-0.5">
-                  {offlineKnown.slice(0, 8).map((h) => (
-                    <Link
-                      key={h.id}
-                      href={`/hosts/${h.id}`}
-                      className="flex items-center justify-between text-sm hover:bg-destructive/10 rounded px-2 py-1 transition-colors"
-                    >
-                      <span>
-                        <span className="font-mono">{h.ip}</span>
-                        {(h.custom_name || h.hostname) && (
-                          <span className="text-muted-foreground ml-2">
-                            ({h.custom_name || h.hostname})
-                          </span>
-                        )}
-                      </span>
-                      {h.last_seen && (
-                        <span className="text-xs text-muted-foreground">
-                          Ultimo contatto: {parseDbDate(h.last_seen).toLocaleString("it-IT", { timeZone: FUSO_UTENTI })}
-                        </span>
-                      )}
-                    </Link>
-                  ))}
-                  {offlineKnown.length > 8 && (
-                    <Link href="/monitoring/known-hosts" className="text-xs text-primary hover:underline px-2 pt-1 inline-block">
-                      Vedi tutti ({offlineKnown.length}) →
-                    </Link>
-                  )}
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* ── Stato moduli ─────────────────────────────────────────────── */}
-      {integrations.length > 0 && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base flex items-center gap-2">
-              <PlugZap className="h-4 w-4 text-primary" />
-              Stato Moduli
-              {integrationErrors > 0 && (
-                <Badge variant="destructive" className="ml-1 text-xs">
-                  {integrationErrors} in errore
-                </Badge>
-              )}
-              {integrationErrors === 0 && integrationWarnings > 0 && (
-                <Badge variant="outline" className="ml-1 text-xs border-amber-500/60 text-amber-700 dark:text-amber-400">
-                  {integrationWarnings} da verificare
-                </Badge>
-              )}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-1">
-            {integrations.map((it) => (
-              <IntegrationRow key={it.key} item={it} />
-            ))}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* ── Subnet grid compatta ──────────────────────────────────────── */}
-      <div>
-        <div className="flex items-center justify-between mb-2">
-          <h2 className="text-base font-semibold flex items-center gap-2">
-            <Network className="h-4 w-4 text-primary" />
-            Subnet
-          </h2>
-          <Link href="/networks" className="text-sm text-primary hover:underline">
-            Vedi tutte →
-          </Link>
-        </div>
-        {networks.length === 0 ? (
-          <Card>
-            <CardContent className="py-10 text-center">
-              <Network className="h-10 w-10 mx-auto text-muted-foreground/40 mb-3" />
-              <p className="text-muted-foreground text-sm">Nessuna rete configurata</p>
-              <Link href="/networks" className="text-primary hover:underline text-sm mt-2 inline-block">
-                Aggiungi la prima rete →
-              </Link>
-            </CardContent>
-          </Card>
-        ) : (
-          <Card>
-            <CardContent className="p-0">
-              <div className="divide-y divide-border">
-                {networks.map((net) => {
-                  const pctOnline = net.total_hosts > 0 ? (net.online_count / net.total_hosts) * 100 : 0;
-                  const pctOffline = net.total_hosts > 0 ? (net.offline_count / net.total_hosts) * 100 : 0;
-                  const pctUnknown = net.total_hosts > 0 ? (net.unknown_count / net.total_hosts) * 100 : 0;
-                  return (
-                    <Link
-                      key={net.id}
-                      href={`/networks/${net.id}`}
-                      className="flex items-center gap-3 px-3 py-1.5 text-sm hover:bg-muted/50 transition-colors group"
-                    >
-                      <span className="font-medium truncate w-32 sm:w-44 shrink-0 group-hover:text-primary" title={net.name}>
-                        {net.name}
-                      </span>
-                      <span className="font-mono text-[11px] text-muted-foreground w-28 shrink-0 truncate" title={net.cidr}>
-                        {net.cidr}
-                      </span>
-                      <div className="flex h-1.5 rounded-full overflow-hidden bg-muted flex-1 min-w-[80px] max-w-xs">
-                        {pctOnline > 0 && <div className="bg-success" style={{ width: `${pctOnline}%` }} />}
-                        {pctOffline > 0 && <div className="bg-destructive" style={{ width: `${pctOffline}%` }} />}
-                        {pctUnknown > 0 && <div className="bg-muted-foreground/40" style={{ width: `${pctUnknown}%` }} />}
-                      </div>
-                      <span className="font-mono text-[11px] tabular-nums w-32 sm:w-40 text-right shrink-0">
-                        <span className="text-success">{net.online_count}</span>
-                        <span className="text-muted-foreground/40 mx-0.5">/</span>
-                        <span className="text-destructive">{net.offline_count}</span>
-                        <span className="text-muted-foreground/40 mx-0.5">/</span>
-                        <span className="text-muted-foreground">{net.unknown_count}</span>
-                        <span className="text-muted-foreground ml-2">({net.total_hosts})</span>
-                      </span>
-                      {net.last_scan && (
-                        <span className="hidden md:inline text-[11px] text-muted-foreground whitespace-nowrap w-24 text-right shrink-0">
-                          {parseDbDate(net.last_scan).toLocaleString("it-IT", { timeZone: FUSO_UTENTI, day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
-                        </span>
-                      )}
-                    </Link>
-                  );
-                })}
-              </div>
-            </CardContent>
-          </Card>
+    <div className="flex flex-col gap-2 lg:h-[calc(100dvh-1.5rem)]">
+      {/* ── Riga 1: titolo e indicatori ───────────────────────────────── */}
+      <div className="flex flex-wrap items-stretch gap-2 shrink-0">
+        <h1 className="text-xl font-bold tracking-tight mr-2 self-center">Dashboard</h1>
+        <Indicatore titolo="Health" valore={`${healthPct}%`} colore={healthColor} nota={`${stats.online_hosts}/${denom} host online (offline visti negli ultimi ${ASSENTE_DOPO_GIORNI} giorni)`} anello={healthPct} />
+        <Indicatore titolo="Subnet" valore={stats.total_networks} href="/networks" />
+        <Indicatore titolo="Host" valore={stats.total_hosts} href="/discovery" />
+        <Indicatore titolo="Offline" valore={offlineSplit.recenti} colore="text-destructive" href="/discovery?status=offline" nota={`Offline visti negli ultimi ${ASSENTE_DOPO_GIORNI} giorni`} />
+        <Indicatore titolo={`Assenti > ${ASSENTE_DOPO_GIORNI} g`} valore={offlineSplit.assenti} colore="text-muted-foreground" href="/discovery?status=offline" nota={`Offline e non visti da oltre ${ASSENTE_DOPO_GIORNI} giorni: fuori dalla salute`} />
+        <Indicatore titolo="Archiviati" valore={archiviati} colore="text-muted-foreground" href="/settings?tab=sistema#pulizia-host" nota="Archiviati dalla pulizia: si recuperano per 90 giorni" />
+        {monitorStats.total > 0 && (
+          <Indicatore titolo="Monitorati" valore={`${monitorStats.online}/${monitorStats.total}`} nota={monitorStats.avg_latency !== null ? `latenza media ${Math.round(monitorStats.avg_latency)} ms` : undefined} href="/monitoring/known-hosts" />
         )}
       </div>
 
-      {/* ── Recent scan activity ──────────────────────────────────────── */}
-      {recentActivity.length > 0 && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base flex items-center gap-2">
-              <HelpCircle className="h-4 w-4 text-muted-foreground" />
-              Attività scan recente
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div className="divide-y divide-border">
-              {recentActivity.map((activity) => (
-                <div key={activity.id} className="flex items-center gap-3 px-4 py-2 text-sm">
-                  <Badge variant="outline" className="text-xs shrink-0">
-                    {activity.scan_type}
-                  </Badge>
-                  <span className="text-muted-foreground text-xs">
-                    {activity.status}
-                  </span>
-                  <span className="ml-auto text-xs text-muted-foreground">
-                    {parseDbDate(activity.timestamp).toLocaleString("it-IT", { timeZone: FUSO_UTENTI })}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+      {/* ── Riga 2: sicurezza, card bianche con striscia (Riccardo, 20/10) ── */}
+      <RigaSicurezza k={sicurezza} accessi={accessi} />
+
+      {/* ── Riga 3: tre colonne che riempiono l'altezza che resta ─────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-2 lg:flex-1 lg:min-h-0">
+        <div className="flex flex-col gap-2 lg:min-h-0">
+          <Card size="sm" className="shrink-0 data-[size=sm]:gap-1">
+            <CardHeader>
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Activity className="h-4 w-4 text-primary" />
+                Stato host nel tempo
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <StatusOverTimeChart altezza={250} />
+            </CardContent>
+          </Card>
+          <Card size="sm" className="lg:flex-1 lg:min-h-0 data-[size=sm]:gap-1">
+            <CardHeader>
+              <CardTitle className="text-sm flex items-center justify-between gap-2">
+                <span className="flex items-center gap-2" title="Fallimenti di autenticazione di Windows e Linux raccolti da Wazuh, esclusi i nostri account e le nostre reti. Microsoft 365 e apparati di rete stanno nella pagina Alert.">
+                  <Shield className="h-4 w-4 text-primary" />
+                  Accessi falliti
+                </span>
+                <Link href="/security-alerts" className="text-[13px] font-normal text-primary hover:underline">Alert →</Link>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="lg:flex-1 lg:min-h-0 flex flex-col">
+              <IstogrammaAccessi ore={accessi?.ore ?? null} giorni={accessi?.giorni ?? null} fonte={accessi?.fonte ?? "stima"} motivo={accessi?.motivo} />
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="flex flex-col gap-2 lg:min-h-0">
+          <Card size="sm" className="shrink-0 lg:max-h-[45%] lg:min-h-0 data-[size=sm]:gap-1">
+            <CardHeader>
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Shield className="h-4 w-4 text-primary" />
+                Host conosciuti offline
+                {monitorStats.offline > 0 && (
+                  <Badge variant="outline" className={`text-[13px] ${STILE_STATO.guasto.classi}`}>{monitorStats.offline}</Badge>
+                )}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="lg:min-h-0 lg:overflow-auto space-y-0.5">
+              {monitorStats.total === 0 ? (
+                <p className="text-sm text-muted-foreground py-1">
+                  Nessun host monitorato. <Link href="/monitoring/known-hosts" className="text-primary hover:underline">Segna gli host da tenere d&apos;occhio →</Link>
+                </p>
+              ) : offlineKnown.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-1">
+                  {monitorStats.online === monitorStats.total
+                    ? `Tutti i ${monitorStats.total} host monitorati sono online.`
+                    : `Nessun host offline; ${monitorStats.total - monitorStats.online} di ${monitorStats.total} in stato sconosciuto.`}
+                </p>
+              ) : (
+                <>
+                {offlineKnown.map((h) => (
+                  <Link
+                    key={h.id}
+                    href={`/hosts/${h.id}`}
+                    className="grid grid-cols-[9rem_minmax(0,1fr)_auto] items-center gap-2 text-sm hover:bg-destructive/10 rounded px-2 py-1 transition-colors"
+                    title="Apri la scheda dell'host"
+                  >
+                    <span className="font-mono">{h.ip}</span>
+                    <span className="text-muted-foreground truncate">{h.custom_name || h.hostname || ""}</span>
+                    <span className="text-[13px] text-muted-foreground whitespace-nowrap" title={h.last_seen ? `Visto l'ultima volta: ${parseDbDate(h.last_seen).toLocaleString("it-IT", { timeZone: FUSO_UTENTI })}` : undefined}>
+                      {h.last_seen ? `visto ${tempoFa(h.last_seen)}` : "mai visto"}
+                    </span>
+                  </Link>
+                ))}
+                {/* La lista si ferma a 20: il conteggio vero sta nel badge, il resto nella pagina. */}
+                {monitorStats.offline > offlineKnown.length && (
+                  <Link href="/monitoring/known-hosts" className="text-[13px] text-primary hover:underline px-2 pt-1 inline-block">
+                    Vedi tutti ({monitorStats.offline}) →
+                  </Link>
+                )}
+                </>
+              )}
+            </CardContent>
+          </Card>
+          <Card size="sm" className="lg:flex-1 lg:min-h-0 data-[size=sm]:gap-1">
+            <CardHeader>
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Activity className="h-4 w-4 text-primary" />
+                Transizioni recenti
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="lg:flex-1 lg:min-h-0 lg:overflow-auto">
+              <StatusChangeFeed />
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="flex flex-col gap-2 lg:min-h-0">
+          <Card size="sm" className="lg:flex-1 lg:min-h-0 data-[size=sm]:gap-1">
+            <CardHeader>
+              <CardTitle className="text-sm flex items-center justify-between gap-2">
+                <span className="flex items-center gap-2">
+                  <Network className="h-4 w-4 text-primary" />
+                  Subnet
+                </span>
+                <Link href="/networks" className="text-[13px] font-normal text-primary hover:underline">Vedi tutte →</Link>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0 lg:flex-1 lg:min-h-0 lg:overflow-auto">
+              {networks.length === 0 ? (
+                <p className="text-sm text-muted-foreground px-4 py-2">
+                  Nessuna rete configurata. <Link href="/networks" className="text-primary hover:underline">Aggiungi la prima rete →</Link>
+                </p>
+              ) : (
+                <>
+                  <BarreSubnet reti={networks} />
+                  <LegendaSubnet />
+                </>
+              )}
+            </CardContent>
+          </Card>
+          <Card size="sm" className="shrink-0 data-[size=sm]:gap-1">
+            <CardHeader>
+              <CardTitle className="text-sm flex items-center gap-2">
+                <PlugZap className="h-4 w-4 text-primary" />
+                Moduli
+                {integrationErrors > 0 && (
+                  <Badge variant="outline" className={`text-[13px] ${STILE_STATO.guasto.classi}`}>{STILE_STATO.guasto.segno} {integrationErrors} in errore</Badge>
+                )}
+                {integrationErrors === 0 && integrationWarnings > 0 && (
+                  <Badge variant="outline" className={`text-[13px] ${STILE_STATO.attenzione.classi}`}>{STILE_STATO.attenzione.segno} {integrationWarnings} da verificare</Badge>
+                )}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ModuliCompatti riquadri={riquadri} />
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const numero = (n: number) => Math.round(n).toLocaleString("it-IT");
+
+/**
+ * Riga «Sicurezza» (Riccardo, 20/10): CVE dello Scanner-Edge, accessi falliti e account
+ * bloccati da Wazuh, alert da gestire, Health di Active Directory. Una fonte non
+ * configurata è grigia, non «zero». Card bianche con la striscia del token e il simbolo.
+ */
+function RigaSicurezza({ k, accessi }: { k: KpiSicurezza; accessi: SerieAccessi | null }) {
+  const a = k.accessi;
+  const falliti = accessi?.totale24h ?? 0;
+  const prima = accessi?.totale24hPrima ?? 0;
+  const freccia = accessi?.tendenza === "su" ? " ↑" : accessi?.tendenza === "giu" ? " ↓" : "";
+  return (
+    <div className="grid gap-2 grid-cols-2 md:grid-cols-3 xl:grid-cols-6 shrink-0">
+      {k.cve ? (
+        <>
+          <CardSicurezza tono={k.cve.critiche.cve > 0 ? "guasto" : "ok"} titolo="Vulnerabilità critiche" valore={numero(k.cve.critiche.cve)} nota={`su ${k.cve.critiche.host} host`} href="/vulnerabilities"
+            title={`Scanner-Edge: vulnerabilità distinte di gravità Critical (CVE, o NVT quando manca la CVE) e host colpiti${k.cve.ultimaScansione ? ` · ultima scansione ${parseDbDate(k.cve.ultimaScansione).toLocaleString("it-IT", { timeZone: FUSO_UTENTI })}` : ""}`} />
+          <CardSicurezza tono={k.cve.alte.cve > 0 ? "attenzione" : "ok"} titolo="Vulnerabilità alte" valore={numero(k.cve.alte.cve)} nota={`su ${k.cve.alte.host} host`} href="/vulnerabilities" title="Scanner-Edge: vulnerabilità distinte di gravità High e host colpiti" />
+        </>
+      ) : (
+        <CardSicurezza tono="grigio" titolo="Vulnerabilità" valore="Scanner-Edge non configurato" href="/settings/moduli/edge" />
+      )}
+      {a && accessi ? (
+        <>
+          <CardSicurezza
+            tono={falliti === 0 ? "ok" : falliti > 100 && falliti > prima * 2 ? "guasto" : "attenzione"}
+            titolo="Accessi falliti 24h" valore={`${numero(falliti)}${freccia}`} nota={`le 24 ore prima: ${numero(prima)}${accessi.fonte === "stima" ? " · stima" : ""}`} href="/security-alerts"
+            title={accessi.fonte === "indexer"
+              ? "Fallimenti di autenticazione di Windows e Linux dall'indexer di Wazuh nelle ultime 24 ore, esclusi i nostri account e le nostre reti. La freccia confronta le 24 ore piene con le 24 prima."
+              : `${accessi.motivo ? `${accessi.motivo[0].toUpperCase()}${accessi.motivo.slice(1)}: ` : ""}eventi 4625 stimati, ogni gruppo d'allarme è ripartito sul periodo in cui è rimasto aperto.`} />
+          <CardSicurezza tono={a.bloccati30g > 0 ? "attenzione" : "ok"} titolo="Account bloccati 30g" valore={numero(a.bloccati30g)} href="/security-alerts" title="Eventi 4740 da Wazuh negli ultimi 30 giorni" />
+          <CardSicurezza tono={a.daGestire > 0 ? "attenzione" : "ok"} titolo="Alert da gestire" valore={numero(a.daGestire)} href="/security-alerts" title="Alert di Wazuh non ancora presi in carico" />
+        </>
+      ) : (
+        <CardSicurezza tono="grigio" titolo="Accessi e alert" valore="Wazuh non configurato" href="/settings/moduli/wazuh" />
+      )}
+      {k.healthAd ? (
+        <CardSicurezza
+          tono={k.healthAd.critici > 0 ? "guasto" : k.healthAd.alti > 0 || k.healthAd.giorni > 7 || k.healthAd.ultimoFallito ? "attenzione" : "ok"}
+          titolo="Health AD" valore={`${k.healthAd.critici} critici · ${k.healthAd.alti} alti`}
+          nota={`${k.healthAd.giorni === 0 ? "oggi" : `${k.healthAd.giorni} g fa`}${k.healthAd.ultimoFallito ? " · ultimo tentativo fallito" : ""}`}
+          href="/active-directory?tab=health" title={`Ultima Health riuscita, punteggio globale ${k.healthAd.punteggio ?? "—"}. Oltre 7 giorni è da rifare.${k.healthAd.ultimoFallito ? " L'ultimo tentativo è fallito." : ""}`} />
+      ) : (
+        <CardSicurezza tono="grigio" titolo="Health AD" valore="mai eseguita" href="/active-directory?tab=health" />
       )}
     </div>
   );
 }
 
-function KpiCard({ title, value, icon, color, href }: {
-  title: string;
-  value: number;
-  icon: React.ReactNode;
-  color: string;
+/** Indicatore della prima riga: card bassa, etichetta sopra e valore grande; Health con l'anello. */
+function Indicatore({ titolo, valore, colore = "text-foreground", nota, href, anello }: {
+  titolo: string;
+  valore: number | string;
+  colore?: string;
+  nota?: string;
   href?: string;
+  anello?: number;
 }) {
-  const card = (
-    <Card size="sm" className="hover:border-primary/40 transition-colors h-full">
-      <CardContent className="py-4 px-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium">{title}</p>
-            <p className={`text-3xl font-bold ${color} leading-tight mt-0.5`}>{value}</p>
-          </div>
-          <div className={`${color} opacity-50`}>{icon}</div>
-        </div>
-      </CardContent>
-    </Card>
+  const corpo = (
+    <span className="flex h-full items-center gap-2 rounded-md border bg-card px-3 py-1 hover:border-primary/40 transition-colors" title={nota}>
+      {anello !== undefined && <Anello pct={anello} colore={colore} />}
+      <span className="flex flex-col leading-tight">
+        <span className="text-[13px] text-muted-foreground">{titolo}</span>
+        <span className={`text-xl font-bold leading-none ${colore}`}>{valore}</span>
+      </span>
+    </span>
   );
-  return href ? <Link href={href}>{card}</Link> : card;
+  return href ? <Link href={href}>{corpo}</Link> : corpo;
 }
 
-const TITOLO_APRE: Record<DestinazioneRigaModulo["apre"], string> = {
-  modulo: "Apri il modulo",
-  launchpad: "Apri dal Launchpad",
-  configurazione: "Apri la configurazione del modulo",
-};
-
-function IntegrationRow({ item }: { item: StatoModuloRiga }) {
-  const icon =
-    item.contaNegliErrori === false ? <HelpCircle className="h-4 w-4 text-muted-foreground" /> :
-    item.status === "ok" ? <CheckCircle2 className="h-4 w-4 text-success" /> :
-    item.status === "error" ? <XCircle className="h-4 w-4 text-destructive" /> :
-    item.status === "warning" ? <AlertTriangle className="h-4 w-4 text-amber-500" /> :
-    item.status === "stale" ? <Clock className="h-4 w-4 text-amber-500" /> :
-    <HelpCircle className="h-4 w-4 text-muted-foreground" />;
-  // Un modulo non attivo non «non ha mai girato»: lo si dice (UI-20).
-  const lastSyncLabel = item.notaStato
-    ? item.notaStato
-    : item.lastSync
-      ? parseDbDate(item.lastSync).toLocaleString("it-IT", { timeZone: FUSO_UTENTI })
-      : "Mai eseguita";
+/** Anello della Health: la parte piena nel colore della soglia, il resto grigio. */
+function Anello({ pct, colore }: { pct: number; colore: string }) {
+  const r = 14;
+  const c = 2 * Math.PI * r;
   return (
-    <Link
-      href={item.href}
-      title={item.apre ? TITOLO_APRE[item.apre] : undefined}
-      className="flex items-center justify-between gap-3 rounded-md px-2 py-1.5 hover:bg-muted/50 transition-colors"
-    >
-      <span className="flex items-center gap-2 min-w-0">
-        {icon}
-        <span className="text-sm font-medium truncate">{item.label}</span>
-        {/* Di un modulo non installato non si mostra l'esito della sonda. */}
-        {item.message && item.contaNegliErrori !== false && (
-          <span className="text-xs text-muted-foreground truncate hidden sm:inline">
-            — {item.message}
-          </span>
-        )}
-      </span>
-      <span className="text-xs text-muted-foreground whitespace-nowrap shrink-0">
-        {lastSyncLabel}
-      </span>
-    </Link>
+    <svg width="36" height="36" viewBox="0 0 36 36" aria-hidden className={colore}>
+      <circle cx="18" cy="18" r={r} fill="none" stroke="currentColor" strokeOpacity="0.18" strokeWidth="5" />
+      <circle cx="18" cy="18" r={r} fill="none" stroke="currentColor" strokeWidth="5" strokeLinecap="round"
+        strokeDasharray={`${(Math.max(0, Math.min(100, pct)) / 100) * c} ${c}`} transform="rotate(-90 18 18)" />
+    </svg>
   );
 }

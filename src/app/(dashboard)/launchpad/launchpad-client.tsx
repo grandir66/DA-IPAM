@@ -17,7 +17,6 @@ import {
   Activity,
   Radar,
   Cloud,
-  Wifi,
   RefreshCw,
   HardDrive,
   CheckCircle2,
@@ -49,12 +48,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { CredentialKind, SystemCredential } from "@/lib/credentials-vault";
+import { tipoDaInviare } from "@/lib/credentials-vault-tipi";
+import { useUrlPerBrowser } from "@/components/shared/url-per-browser";
 
 /**
  * Mappa kind+label → URL della pagina di configurazione corrispondente.
  * Le integrazioni Docker (Wazuh, LibreNMS, Graylog, Scanner-Edge, Loki) vivono
  * tutte sotto /settings?tab=moduli#module-<anchor>. Il Hub URL pubblico
- * (usato per enrollment agenti) vive invece in /agents#hub-url-config.
+ * vive invece in /agents#hub-url-config (pagina «URL dell'hub»).
  *
  * Ritorna l'URL completo (deep-link diretto) oppure null se la entry vault è
  * "stand-alone" (nessuna pagina di config dedicata — usato come hint testuale
@@ -77,14 +78,12 @@ function getIntegrationConfigHref(item: SystemCredential): string | null {
 }
 
 /**
- * Per i kind senza pagina di config (Tailscale, Proxmox, TrueNAS, "other" non-Loki)
+ * Per i kind senza pagina di config (Proxmox, TrueNAS, "other" non-Loki)
  * ritorna una breve descrizione di dove la credenziale viene usata in DA-IPAM.
  * Aiuta l'utente a capire cosa farà la credenziale prima di salvarla.
  */
 function getCredentialUsageHint(item: SystemCredential): string | null {
   switch (item.kind) {
-    case "tailscale":
-      return "Tailscale auth key — usato dal wizard nuovo agente per join automatico VPN. Nessuna pagina config: la credenziale viene letta solo al momento dell'enrollment.";
     case "pve":
       return "Proxmox API — letto da /devices durante match per-device (Proxmox-targets). Nessuna pagina config centralizzata.";
     case "truenas":
@@ -112,7 +111,6 @@ const KIND_META: Record<CredentialKind, { icon: typeof Shield; label: string; co
   truenas: { icon: HardDrive, label: "TrueNAS (backup)", color: "text-rose-600" },
   edge: { icon: Radar, label: "Scanner-Edge", color: "text-purple-600" },
   hub: { icon: Cloud, label: "DA-Vul-can Hub", color: "text-cyan-600" },
-  tailscale: { icon: Wifi, label: "Tailscale", color: "text-indigo-600" },
   pve: { icon: Server, label: "Proxmox", color: "text-orange-600" },
   other: { icon: KeyRound, label: "Altro", color: "text-gray-600" },
 };
@@ -126,6 +124,8 @@ interface RevealedSecrets {
 interface EditFormState {
   id?: number;
   kind: CredentialKind;
+  /** Tipo della riga aperta in modifica: si rimanda solo se cambiato (può essere un tipo tolto). */
+  kindOriginale?: string;
   label: string;
   url: string;
   api_url: string;
@@ -161,6 +161,7 @@ export function LaunchpadClient({ initialItems, embedded = false }: LaunchpadCli
     ((session?.user as { role?: string } | undefined)?.role ?? ""),
   );
 
+  const perBrowser = useUrlPerBrowser();
   const [items, setItems] = useState<SystemCredential[]>(initialItems);
   const [editOpen, setEditOpen] = useState(false);
   const [form, setForm] = useState<EditFormState>(EMPTY_FORM);
@@ -250,6 +251,7 @@ export function LaunchpadClient({ initialItems, embedded = false }: LaunchpadCli
     setForm({
       id: item.id,
       kind: item.kind,
+      kindOriginale: item.kind,
       label: item.label,
       url: item.url ?? "",
       api_url: item.api_url ?? "",
@@ -269,13 +271,14 @@ export function LaunchpadClient({ initialItems, embedded = false }: LaunchpadCli
     setBusy(true);
     try {
       const payload: Record<string, unknown> = {
-        kind: form.kind,
         label: form.label.trim(),
         url: form.url.trim() || null,
         api_url: form.api_url.trim() || null,
         username: form.username.trim() || null,
         notes: form.notes.trim() || null,
       };
+      const kind = tipoDaInviare({ originale: form.kindOriginale, scelto: form.kind });
+      if (kind !== undefined) payload.kind = kind;
       // Secret: invia solo se l'admin ha digitato qualcosa. Stringa vuota = NON cambiare.
       if (form.password.trim()) payload.password = form.password;
       if (form.api_token.trim()) payload.api_token = form.api_token;
@@ -587,9 +590,9 @@ export function LaunchpadClient({ initialItems, embedded = false }: LaunchpadCli
                     if (href) {
                       const incomplete = isCredentialIncomplete(item);
                       // Label dinamico: "Impostazioni" per /settings,
-                      // "wizard agenti" per /agents (Hub URL config sta lì).
+                      // "URL dell'hub" per /agents (Hub URL config sta lì).
                       const destinationLabel = href.startsWith("/agents")
-                        ? "wizard agenti"
+                        ? "URL dell'hub"
                         : "Impostazioni";
                       if (incomplete) {
                         return (
@@ -606,7 +609,7 @@ export function LaunchpadClient({ initialItems, embedded = false }: LaunchpadCli
                         );
                       }
                       const linkLabel = href.startsWith("/agents")
-                        ? "Hub URL & enrollment →"
+                        ? "URL dell'hub →"
                         : "Configura integrazione →";
                       return (
                         <a
@@ -636,7 +639,7 @@ export function LaunchpadClient({ initialItems, embedded = false }: LaunchpadCli
                         variant="outline"
                         size="sm"
                         className="flex-1"
-                        onClick={() => window.open(item.open_url ?? item.url!, "_blank", "noopener,noreferrer")}
+                        onClick={() => window.open(perBrowser(item.open_url ?? item.url!), "_blank", "noopener,noreferrer")}
                       >
                         <ExternalLink className="h-3 w-3 mr-1" />
                         Apri

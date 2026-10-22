@@ -2,18 +2,14 @@
  * Tipi pubblici dell'astrazione Executor.
  *
  * L'Executor è la frontiera tra hub orchestratore e nodo che esegue I/O di rete.
- * In Phase 1 esiste solo `LocalExecutor` (esecuzione in-process). In Phase 3
- * verrà aggiunto `RemoteExecutor` che invocherà un agente Python via Tailscale.
- *
- * Le firme dei metodi sono pensate per essere serializzabili JSON: callback
- * opzionali (progress/log) sono utili solo lato `local` e verranno ignorati
- * lato `remote` (Phase 3+).
+ * Esiste solo `LocalExecutor` (esecuzione in-process): l'agente remoto è tolto
+ * (20/10/2026, decisione 26 della spec NetBird).
  */
 
 import type { PingResult, NmapResult } from "@/types";
 import type { DnsResolution } from "@/lib/scanner/dns";
 
-export type ExecutorMode = "local" | "remote";
+export type ExecutorMode = "local";
 
 export interface HealthCheckResult {
   ok: boolean;

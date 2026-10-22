@@ -20,7 +20,7 @@ export type CredentialKind =
   | "truenas"      // backup target (futuro)
   | "edge"
   | "hub"
-  | "tailscale"
+  // Un tipo tolto resta leggibile (kind TEXT senza CHECK): l'interfaccia lo mostra come «Altro».
   | "pve"
   | "other";
 

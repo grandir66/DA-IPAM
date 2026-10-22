@@ -229,7 +229,7 @@ export function ControllersPage() {
       ) : (
         <Card>
           <CardContent className="p-0 overflow-x-auto">
-            <Table className="text-sm">
+            <Table fissa className="text-sm">
               <TableHeader>
                 <TableRow>
                   <TableHead>Nome</TableHead>

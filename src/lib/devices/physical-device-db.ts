@@ -10,6 +10,10 @@
  */
 
 import { getDb } from "@/lib/db";
+import { livelloSchemaSchedaMk } from "@/lib/db-tenant";
+import type { InterfacciaMk } from "@/lib/devices/mikrotik-stp";
+import { haColonnaPrincipale } from "@/lib/devices/cluster-discovery";
+import { hostConApparato } from "@/lib/devices/apparato-del-cluster";
 import type {
   PhysicalDevice,
   DeviceInterface,
@@ -147,11 +151,45 @@ export interface UpsertInterfaceInput {
   speed_mbps?: number | null;
   type?: string | null;
   alias?: string | null;
+  /** Scheda MikroTik: MTU e interfaccia spenta a mano. Si scrivono solo se lo schema ha le colonne (`livelloSchemaSchedaMk`). */
+  mtu?: number | null;
+  disabled?: boolean | null;
+  /** La fonte è la sola a sapere l'alias (RouterOS: il commento): si scrive com'è, anche null (commento tolto). Senza: COALESCE. */
+  aliasAutorevole?: boolean;
 }
 
 export function upsertDeviceInterface(physicalDeviceId: number, input: UpsertInterfaceInput): DeviceInterface {
   const mac = normalizeMac(input.mac ?? null);
   const isVirtual = isVirtualMac(mac) ? 1 : 0;
+  const aliasSet = input.aliasAutorevole ? "excluded.alias" : "COALESCE(excluded.alias, device_interfaces.alias)";
+  if (livelloSchemaSchedaMk(getDb()) >= 1) {
+    // COALESCE come per le altre colonne: una lettura che non conosce MTU o stato (SNMP) non cancella quella di RouterOS.
+    getDb()
+      .prepare(
+        `INSERT INTO device_interfaces
+          (physical_device_id, ifname, ifindex, mac, status, speed_mbps, type, is_virtual_mac, alias, mtu, disabled)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(physical_device_id, ifname) DO UPDATE SET
+           ifindex = COALESCE(excluded.ifindex, device_interfaces.ifindex),
+           mac = COALESCE(excluded.mac, device_interfaces.mac),
+           status = excluded.status,
+           speed_mbps = COALESCE(excluded.speed_mbps, device_interfaces.speed_mbps),
+           type = COALESCE(excluded.type, device_interfaces.type),
+           is_virtual_mac = excluded.is_virtual_mac,
+           alias = ${aliasSet},
+           mtu = COALESCE(excluded.mtu, device_interfaces.mtu),
+           disabled = COALESCE(excluded.disabled, device_interfaces.disabled),
+           updated_at = datetime('now')`
+      )
+      .run(
+        physicalDeviceId, input.ifname, input.ifindex ?? null, mac, input.status ?? "unknown", input.speed_mbps ?? null,
+        input.type ?? null, isVirtual, input.alias ?? null, input.mtu ?? null,
+        input.disabled == null ? null : input.disabled ? 1 : 0,
+      );
+    return getDb()
+      .prepare("SELECT * FROM device_interfaces WHERE physical_device_id = ? AND ifname = ?")
+      .get(physicalDeviceId, input.ifname) as DeviceInterface;
+  }
   getDb()
     .prepare(
       `INSERT INTO device_interfaces
@@ -164,7 +202,7 @@ export function upsertDeviceInterface(physicalDeviceId: number, input: UpsertInt
          speed_mbps = COALESCE(excluded.speed_mbps, device_interfaces.speed_mbps),
          type = COALESCE(excluded.type, device_interfaces.type),
          is_virtual_mac = excluded.is_virtual_mac,
-         alias = COALESCE(excluded.alias, device_interfaces.alias),
+         alias = ${aliasSet},
          updated_at = datetime('now')`
     )
     .run(
@@ -181,6 +219,24 @@ export function upsertDeviceInterface(physicalDeviceId: number, input: UpsertInt
   return getDb()
     .prepare("SELECT * FROM device_interfaces WHERE physical_device_id = ? AND ifname = ?")
     .get(physicalDeviceId, input.ifname) as DeviceInterface;
+}
+
+/**
+ * Scheda MikroTik: le interfacce lette da `/interface print terse` (già in mano al giro ARP) sulle righe di
+ * `device_interfaces` dell'apparato fisico. `alias` = commento (su RouterOS è ciò che SNMP chiama `ifAlias`), `type` = tipo di
+ * RouterOS, `status` dal segno R, `disabled` dal segno X. Restituisce le righe scritte.
+ */
+export function aggiornaInterfacceRouterOs(physicalDeviceId: number, righe: InterfacciaMk[]): number {
+  // Una transazione sola: il giro o c'è tutto o non c'è (e un solo fsync invece di uno per interfaccia).
+  getDb().transaction(() => {
+    for (const r of righe) {
+      upsertDeviceInterface(physicalDeviceId, {
+        ifname: r.nome, mac: r.mac, status: r.accesa ? "up" : "down", type: r.tipo, alias: r.commento, aliasAutorevole: true,
+        mtu: r.mtu, disabled: r.spenta,
+      });
+    }
+  })();
+  return righe.length;
 }
 
 export function listDeviceInterfaces(physicalDeviceId: number): DeviceInterface[] {
@@ -258,9 +314,18 @@ export function setNetworkDevicePhysicalDevice(networkDeviceId: number, physical
 }
 
 export function setHostPhysicalDevice(hostId: number, physicalDeviceId: number | null): void {
-  getDb()
-    .prepare("UPDATE hosts SET physical_device_id = ?, updated_at = datetime('now') WHERE id = ?")
-    .run(physicalDeviceId, hostId);
+  const db = getDb();
+  db.transaction(() => {
+    db.prepare("UPDATE hosts SET physical_device_id = ?, updated_at = datetime('now') WHERE id = ?").run(physicalDeviceId, hostId);
+    // L'host cambia cluster: nel vecchio non resta come principale scelto a mano (`IS NOT` regge anche il NULL).
+    liberaPrincipaleAltrove(db, hostId, physicalDeviceId);
+  })();
+}
+
+/** Azzera `primary_host_id` dei cluster diversi da `clusterAttuale` che puntano a `hostId`. Senza la colonna non fa niente. */
+function liberaPrincipaleAltrove(db: ReturnType<typeof getDb>, hostId: number, clusterAttuale: number | null): void {
+  if (!haColonnaPrincipale(db)) return;
+  db.prepare("UPDATE physical_devices SET primary_host_id = NULL WHERE primary_host_id = ? AND id IS NOT ?").run(hostId, clusterAttuale);
 }
 
 export function listNetworkDevicesByPhysicalDevice(physicalDeviceId: number): Array<{ id: number; name: string; host: string }> {
@@ -308,6 +373,7 @@ export interface ManualLinkResult {
 export function manualLinkHostsToPhysicalDevice(
   host_ids: number[],
   target_physical_device_id?: number | null,
+  principale_host_id?: number | null,
 ): ManualLinkResult {
   if (host_ids.length === 0) {
     throw new Error("Almeno un host richiesto per il link");
@@ -330,6 +396,21 @@ export function manualLinkHostsToPhysicalDevice(
 
   if (hosts.length === 0) {
     throw new Error("Nessun host trovato per gli ID forniti");
+  }
+
+  // Principale scelto da chi collega (piano 2026-10-22, Task 6): deve essere un membro del cluster che ne risulta e il
+  // cluster non deve avere un apparato (il suo IP è il principale per regola). Si controlla prima di scrivere.
+  const idsEsistenti = Array.from(new Set(hosts.map((h) => h.physical_device_id).filter((x): x is number => x !== null)));
+  if (principale_host_id != null) {
+    // Il cluster risultante raccoglie gli host passati e i membri dei cluster che confluiscono (o del target esplicito).
+    const membri = new Set<number>(hosts.map((h) => h.id));
+    for (const pd of [...idsEsistenti, ...(target_physical_device_id ? [target_physical_device_id] : [])]) {
+      for (const m of listHostsByPhysicalDevice(pd)) membri.add(m.id);
+    }
+    if (!membri.has(principale_host_id)) throw new Error("Il principale scelto non è fra gli IP del cluster");
+    const ids = [...membri];
+    if (hostConApparato(db, ids).size > 0) throw new Error("Il cluster ha un apparato gestito: il principale è il suo IP e non si sceglie");
+    if (!haColonnaPrincipale(db)) throw new Error("Scelta del principale non disponibile su questo database");
   }
 
   // Decide il target physical_device_id
@@ -368,8 +449,12 @@ export function manualLinkHostsToPhysicalDevice(
   const updateStmt = db.prepare("UPDATE hosts SET physical_device_id = ?, updated_at = datetime('now') WHERE id = ?");
   const updateAll = db.transaction(() => {
     for (const h of hosts) {
-      if (h.physical_device_id !== targetId) updateStmt.run(targetId, h.id);
+      if (h.physical_device_id !== targetId) {
+        updateStmt.run(targetId, h.id);
+        liberaPrincipaleAltrove(db, h.id, targetId);
+      }
     }
+    if (principale_host_id != null) db.prepare("UPDATE physical_devices SET primary_host_id = ? WHERE id = ?").run(principale_host_id, targetId);
   });
   updateAll();
 
@@ -425,7 +510,12 @@ export function unlinkHostFromPhysicalDevice(hostId: number): { previous_physica
   const prevId = row.physical_device_id;
   if (prevId === null) return { previous_physical_device_id: null, orphaned: false };
 
-  db.prepare("UPDATE hosts SET physical_device_id = NULL, updated_at = datetime('now') WHERE id = ?").run(hostId);
+  // Il principale scelto a mano che esce dal cluster non resta come scelta (piano 2026-10-22 accorpamento): vale la regola.
+  // Senza la colonna (migrazione cluster_principale_v21 fallita) non c'è niente da azzerare. Staccare e azzerare: una transazione.
+  db.transaction(() => {
+    db.prepare("UPDATE hosts SET physical_device_id = NULL, updated_at = datetime('now') WHERE id = ?").run(hostId);
+    if (haColonnaPrincipale(db)) db.prepare("UPDATE physical_devices SET primary_host_id = NULL WHERE id = ? AND primary_host_id = ?").run(prevId, hostId);
+  })();
 
   // Verifica se il cluster è rimasto vuoto
   const remaining = db.prepare("SELECT COUNT(*) AS n FROM hosts WHERE physical_device_id = ?").get(prevId) as { n: number };
@@ -581,4 +671,18 @@ function hostnamePrefix(hostname: string | null): string | null {
   // Prendi i primi 2 segmenti se il primo è corto (≤4 char), altrimenti solo il primo
   if (parts[0].length <= 4 && parts[1]) return `${parts[0]}-${parts[1]}`;
   return parts[0];
+}
+
+export type EsitoScegliPrincipale = { ok: true } | { ok: false; status: 400 | 404 | 409; error: string };
+
+/** 409 se il cluster ha un apparato: il principale è il suo IP e non si sceglie. 400 se l'host non è del cluster. */
+export function scegliPrincipale(physicalDeviceId: number, hostId: number): EsitoScegliPrincipale {
+  const db = getDb();
+  if (!getPhysicalDeviceById(physicalDeviceId)) return { ok: false, status: 404, error: "Cluster fisico non trovato" };
+  const membri = listHostsByPhysicalDevice(physicalDeviceId).map((h) => h.id);
+  if (!membri.includes(hostId)) return { ok: false, status: 400, error: "L'host non fa parte di questo cluster" };
+  if (hostConApparato(db, membri).size > 0) return { ok: false, status: 409, error: "Il cluster ha un apparato gestito: il principale è il suo IP e non si sceglie" };
+  if (!haColonnaPrincipale(db)) return { ok: false, status: 409, error: "Scelta del principale non disponibile su questo database" };
+  db.prepare("UPDATE physical_devices SET primary_host_id = ? WHERE id = ?").run(hostId, physicalDeviceId);
+  return { ok: true };
 }

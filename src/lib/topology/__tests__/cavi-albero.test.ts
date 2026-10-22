@@ -545,7 +545,8 @@ test("§13.9: la ★ sulle porte di una linea a mano diversa dal cavo visto sceg
   const senza = dueCavi(null, { overrides: [add], soloCavo1: true });
   assert.deepEqual(fra(senza.m, "dev:2", "dev:3").map((c) => [capoDi(c, "dev:3"), c.fiducia, c.aManoDiverse ?? false]).sort(),
     [["i:1", "certo", false], ["i:5", "a_mano", true]], "due linee: il cavo visto e quella a mano");
-  assert.equal(senza.m.albero.via.get("dev:3")?.id, senza.cavo1?.id);
+  // Dal 22/10 la linea a mano vince anche senza ★ (Riccardo: «il collegamento manuale deve sempre vincere»); prima il cavo visto.
+  assert.equal(senza.m.albero.via.get("dev:3")?.id, senza.cavo5?.id);
   const con = dueCavi({ node_port: "ether5", other_port: "ether5" }, { overrides: [add], soloCavo1: true });
   assert.equal(con.m.albero.via.get("dev:3")?.id, con.cavo5?.id, "la ★ vale per la linea a mano");
   assert.deepEqual(con.m.albero.stelle.map((s) => [s.linea, s.diPrima]), [[con.cavo5?.id, false]]);
@@ -606,7 +607,7 @@ test("§13.8.3 punto 8 con i ruoli a mano: «accesso» non ha mai l'anomalia; «
 // Spec §12.5 e §13.8.3 punto 6: il principale dell'hypervisor si sceglie «fra i collegamenti dai dati». Una linea a mano unita a
 // un cavo visto con le stesse porte (Task 4 di T3: «a mano, confermato») è un cavo dei dati; prima la regola la scartava come
 // una correzione, e l'hypervisor finiva sul cavo lento per la fiducia (come T1 la conta: fonti non solo «a mano»).
-test("§12.5: una linea a mano confermata da un cavo visto concorre al principale dell'hypervisor; una solo a mano no", () => {
+test("§12.5: una linea a mano confermata da un cavo visto concorre al principale dell'hypervisor; una solo a mano vince (22/10)", () => {
   const d = [dev(1, { name: "RTR-1", device_type: "router", ...mk }), dev(2, { name: "SW-2", ...mk }), dev(3, { name: "SW-3", ...mk }), dev(9, { name: "HV-1", device_type: "server", vendor: "proxmox", host: "10.0.0.9", port_count: 0 })];
   const righe = [
     ...cavo(1, "ether1", 2, "ether1", "SW-2", "RTR-1"), ...cavo(1, "ether2", 3, "ether2", "SW-3", "RTR-1"),
@@ -624,11 +625,12 @@ test("§12.5: una linea a mano confermata da un cavo visto concorre al principal
   assert.deepEqual(fra(con, "dev:3", "dev:9").map((c) => c.fiducia), ["a_mano_confermato"], "il cavo veloce è anche dichiarato a mano: una linea");
   assert.equal(lineaDi(fra(con, "dev:3", "dev:9")[0]).aMano, false, "una linea con un cavo visto non è «solo a mano»");
   assert.equal(con.albero.padri["dev:9"], "dev:3", "il cavo dei dati più veloce è il principale, anche se dichiarato a mano");
-  // Senza il cavo visto la linea è solo a mano: non concorre (le correzioni non scelgono il principale), decide Prim.
+  // Senza il cavo visto la linea è solo a mano, e dal 22/10 è lei il principale (Riccardo: «il collegamento manuale deve sempre
+  // vincere»). Prima non concorreva e l'hypervisor finiva sotto SW-2, l'unico che lo vedeva dai dati.
   const soloMano = albero(false);
   assert.deepEqual(fra(soloMano, "dev:3", "dev:9").map((c) => c.fiducia), ["a_mano"]);
   assert.equal(lineaDi(fra(soloMano, "dev:3", "dev:9")[0]).aMano, true);
-  assert.equal(soloMano.albero.padri["dev:9"], "dev:2");
+  assert.equal(soloMano.albero.padri["dev:9"], "dev:3");
 });
 
 // ── T3, Task 5: `primCavi`, l'albero che userà anche la pagina (Task 7) ─────────────────────────────────────────────────────

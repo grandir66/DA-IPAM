@@ -120,7 +120,7 @@ export default function LocationsPage() {
           ) : locations.length === 0 ? (
             <div className="text-muted-foreground py-8 text-center">Nessuna ubicazione. Clicca <b>Nuova ubicazione</b> per aggiungere.</div>
           ) : (
-            <Table>
+            <Table fissa>
               <TableHeader>
                 <TableRow>
                   <TableHead>Nome</TableHead>

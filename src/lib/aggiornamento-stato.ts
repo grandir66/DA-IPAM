@@ -7,14 +7,16 @@
  * La lettura del file e l'avvio del servizio stanno in `aggiornamento-servizio.ts`.
  */
 
-export type EsitoTentativo = "in_corso" | "riuscito" | "fallito" | "interrotto";
+/** «pronto_non_avviato» (19/10, F03): build pronta, servizio fermo, avvio e salute non provati. */
+export type EsitoTentativo = "in_corso" | "riuscito" | "fallito" | "interrotto" | "pronto_non_avviato";
 
 export type EsitoControllo =
   | "gia_aggiornato"
   | "commit_fallito_attendo"
   | "solo_documentazione"
   | "aggiornamento_avviato"
-  | "fetch_fallito";
+  | "fetch_fallito"
+  | "servizio_fermo";
 
 export interface TentativoAggiornamento {
   commit: string;
@@ -44,13 +46,14 @@ export const STATO_VUOTO: StatoAggiornamento = {
   ultimoControllo: null,
 };
 
-const ESITI_TENTATIVO: readonly EsitoTentativo[] = ["in_corso", "riuscito", "fallito", "interrotto"];
+const ESITI_TENTATIVO: readonly EsitoTentativo[] = ["in_corso", "riuscito", "fallito", "interrotto", "pronto_non_avviato"];
 const ESITI_CONTROLLO: readonly EsitoControllo[] = [
   "gia_aggiornato",
   "commit_fallito_attendo",
   "solo_documentazione",
   "aggiornamento_avviato",
   "fetch_fallito",
+  "servizio_fermo",
 ];
 
 function oggetto(v: unknown): Record<string, unknown> | null {
@@ -116,7 +119,10 @@ export type Avanzamento =
   | { tipo: "in_corso"; fase: string | null }
   | { tipo: "riuscito"; nota: string | null }
   | { tipo: "nessuna_novita" }
-  | { tipo: "fallito"; messaggio: string };
+  | { tipo: "fallito"; messaggio: string; nonAvviata?: true };
+
+/** Servizio fermo con la build pronta (19/10, F03): la build è cambiata, il processo non è partito. */
+const NON_AVVIATA = "il servizio non è attivo: la build nuova è pronta e parte quando lo avvii";
 
 /**
  * Le date sono ISO 8601 in UTC scritte dallo stesso server (`toISOString`), quindi
@@ -128,7 +134,10 @@ export function valutaAvanzamento(stato: StatoAggiornamento, richiestoIl: string
   if (t && t.iniziatoIl && t.iniziatoIl >= richiestoIl) {
     switch (t.esito) {
       case "riuscito":
-        return { tipo: "riuscito", nota: null };
+        // Un controllo d'installazione fallito (verify-install) non è un «tutto bene» (19/10, F04).
+        return { tipo: "riuscito", nota: t.avvisi.length > 0 ? `con avvisi: ${t.avvisi.join("; ")}` : null };
+      case "pronto_non_avviato":
+        return { tipo: "fallito", messaggio: NON_AVVIATA, nonAvviata: true };
       case "fallito":
       case "interrotto":
         return {
@@ -152,6 +161,8 @@ export function valutaAvanzamento(stato: StatoAggiornamento, richiestoIl: string
         return { tipo: "fallito", messaggio: "commit già fallito più volte: si aspetta un commit nuovo" };
       case "aggiornamento_avviato":
         return { tipo: "in_corso", fase: "inizio" };
+      case "servizio_fermo":
+        return { tipo: "fallito", messaggio: NON_AVVIATA, nonAvviata: true };
     }
   }
   return { tipo: "in_attesa" };

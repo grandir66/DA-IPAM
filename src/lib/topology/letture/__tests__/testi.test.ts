@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { LETTURE } from "@/lib/topology/letture/interruttori";
-import { DESCRIZIONE_LETTURE, NASCE_SPENTA, frequenza, quandoItaliano, righeEsito, testoDialogo, testoEsito, testoStato } from "@/lib/topology/letture/testi";
+import { DESCRIZIONE_LETTURE, NASCE_ACCESA, frequenza, quandoItaliano, righeEsito, testoDialogo, testoEsito, testoStato } from "@/lib/topology/letture/testi";
 
 const HUB = { router: { minuti: 15, daScansioni: true }, switch: 60 };
 const CLIENTE_A = { router: { minuti: 60, daScansioni: false }, switch: 60 };
@@ -37,7 +37,33 @@ test("ogni lettura dice che cosa legge, su quali apparati, con quali comandi, e 
     const d = DESCRIZIONE_LETTURE[l];
     assert.ok(d.titolo.length > 0 && d.legge.length > 0 && d.comandi.length > 0 && d.apparati.length > 0, l);
   }
-  assert.ok(NASCE_SPENTA.toLowerCase().includes("nasce spenta"), "ogni riga dice che nasce spenta");
+  assert.ok(NASCE_ACCESA.toLowerCase().includes("accesa di serie"), "ogni riga dice che è accesa di serie (ADR 0031)");
+});
+
+test("VLAN, DNS e utenti dei MikroTik: titolo, che cosa legge (nessuna password), apparati, comandi; il dialogo dice quattro comandi e l'ora", () => {
+  const d = DESCRIZIONE_LETTURE.mikrotik_scheda;
+  assert.equal(d.titolo, "VLAN, DNS e utenti dei MikroTik");
+  assert.equal(d.legge, "Le VLAN dei bridge (tagged e untagged per porta), le interfacce VLAN col loro id e la loro interfaccia madre, la configurazione DNS, gli utenti del router (nome, gruppo, ultimo accesso; nessuna password).");
+  assert.equal(d.apparati, "router MikroTik letti via SSH");
+  assert.equal(d.comandi, "/interface bridge vlan print · /interface vlan print · /ip dns print · /user print (sola lettura, una connessione per apparato, al più una volta l'ora)");
+  const t = testoDialogo("mikrotik_scheda", true, HUB);
+  assert.ok(t.includes("4 comandi in sola lettura") && t.includes("al più una volta l'ora") && t.includes("Il router si legge ogni 15 minuti dalle scansioni veloci"), t);
+  assert.ok(t.includes("solo un amministratore"), "gli utenti del router si vedono solo da admin");
+  assert.ok(!t.includes("La mappa non cambia"), "questa lettura non serve alla mappa: riempie la scheda");
+  assert.ok(testoDialogo("mikrotik_scheda", false, HUB).startsWith("Spegnere la lettura «VLAN, DNS e utenti dei MikroTik»?"));
+});
+
+test("VLAN degli switch via SNMP (Task 9, ADR 0029): titolo, che cosa legge, apparati, comandi; il dialogo dice sette letture, l'ora e «Interroga»", () => {
+  const d = DESCRIZIONE_LETTURE.switch_vlan;
+  assert.equal(d.titolo, "VLAN degli switch via SNMP");
+  assert.equal(d.legge, "Per ogni switch: le VLAN con il nome, le porte tagged e untagged di ognuna, il PVID di ogni porta.");
+  assert.equal(d.apparati, "gli switch con credenziale SNMP, anche quelli del controller; non i MikroTik letti via SSH");
+  assert.equal(d.comandi, "7 letture in sola lettura: Q-BRIDGE-MIB (dot1qVlanStatic, dot1qVlanCurrent, dot1qPvid) e BRIDGE-MIB (dot1dBasePortIfIndex)");
+  const t = testoDialogo("switch_vlan", true, CLIENTE_A);
+  assert.ok(t.includes("7 letture SNMP in sola lettura") && t.includes("al più una volta l'ora per switch") && t.includes("Il giro degli switch parte ogni ora"), t);
+  assert.ok(t.includes("«Interroga»"), "anche la lettura a mano, finché è accesa");
+  assert.ok(!t.includes("La mappa non cambia"), "questa lettura non serve alla mappa: riempie la scheda");
+  assert.ok(testoDialogo("switch_vlan", false, HUB).startsWith("Spegnere la lettura «VLAN degli switch via SNMP»?"));
 });
 
 test("frequenza in parole", () => {
@@ -51,9 +77,10 @@ test("stato e orari in ora italiana (UTC+2 fino al 25/10)", () => {
   assert.ok(quandoItaliano("2026-10-15 08:30:00").includes("10:30"));
   assert.equal(quandoItaliano(null), "—");
   assert.equal(quandoItaliano("non una data"), "—");
-  assert.equal(testoStato({ acceso: false, da: "admin", il: "2026-10-15 08:30:00" }), "spenta");
+  assert.ok(testoStato({ acceso: false, da: "admin", il: "2026-10-15 08:30:00" }).startsWith("spenta da admin il "));
+  assert.equal(testoStato({ acceso: false, da: null, il: null }), "spenta");
   assert.ok(testoStato({ acceso: true, da: "admin", il: "2026-10-15 08:30:00" }).startsWith("accesa da admin il "));
-  assert.ok(testoStato({ acceso: true, da: null, il: null }).startsWith("accesa da utente non noto il "));
+  assert.equal(testoStato({ acceso: true, da: null, il: null }), "accesa di serie", "chiave assente (ADR 0031)");
 });
 
 test("l'esito in parole, e un limite con «+ altri N»", () => {

@@ -1,7 +1,7 @@
 # Playbook operativi Domarc
 
 Procedure step-by-step per le operazioni ricorrenti su DA-IPAM, DA-Vul-can
-e infrastruttura condivisa (bridge VM clienti, Tailscale, segreti).
+e infrastruttura condivisa (bridge VM clienti, NetBird, segreti).
 
 Ogni playbook è pensato per essere **autosufficiente**: scarica + segui
 senza dover conoscere il resto. Tempi e prerequisiti documentati in
@@ -12,10 +12,8 @@ testa a ogni file.
 ### Setup nuovi nodi
 - [DEPLOY-NEW-HUB.md](DEPLOY-NEW-HUB.md) — VM Ubuntu vuota → hub Domarc produzione
 - [DEPLOY-NEW-BRIDGE.md](DEPLOY-NEW-BRIDGE.md) — Proxmox template → bridge cliente
-- [DEPLOY-NEW-AGENT.md](DEPLOY-NEW-AGENT.md) — host esistente → agent DA-IPAM
 
 ### Manutenzione
-- [CHANGE-TAILNET.md](CHANGE-TAILNET.md) — migrazione tailnet (personale → aziendale)
 - [CHANGE-ENCRYPTION-KEY.md](CHANGE-ENCRYPTION-KEY.md) — rotazione chiave cifratura
 - [DR.md](DR.md) — disaster recovery (3 scenari)
 

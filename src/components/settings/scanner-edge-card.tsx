@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { CheckCircle2, Loader2, RefreshCw, ShieldCheck, ShieldAlert, Trash2, PlayCircle, Network, ExternalLink, Plug } from "lucide-react";
 import { edgeRemovalConfirmText } from "@/lib/modules/uninstall-copy";
+import { useUrlPerBrowser } from "@/components/shared/url-per-browser";
 
 interface ScannerRow {
   id: number;
@@ -33,7 +34,8 @@ interface ScannerRow {
 function EdgePanel({ scanner }: { scanner: ScannerRow }) {
   // Dal server: il nodo che serve la 6443 (nginx sul nodo di DA-IPAM), non l'host
   // di base_url, che in consolidated è 127.0.0.1 e in full l'IP dell'edge.
-  const uiBase = scanner.ui_url ? scanner.ui_url.replace(/\/+$/, "") : null;
+  const perBrowser = useUrlPerBrowser();
+  const uiBase = scanner.ui_url ? perBrowser(scanner.ui_url.replace(/\/+$/, "")).replace(/\/+$/, "") : null;
   const connected = scanner.enabled === 1 && !scanner.auto_disabled_at;
 
   return (

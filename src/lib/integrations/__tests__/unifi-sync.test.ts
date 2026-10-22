@@ -565,6 +565,7 @@ function esito(campi: Partial<UnifiSyncResult> = {}): UnifiSyncResult {
     portsUpserted: 39,
     neighborsUpserted: 7,
     uplinksSaved: 0,
+    vlanNativeScritte: 0,
     errors: [],
     offline: [],
     ...campi,

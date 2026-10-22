@@ -10,6 +10,8 @@ import { requireAuth, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { listHostsByPhysicalDevice, getPhysicalDeviceById } from "@/lib/devices/physical-device-db";
 import { getDb } from "@/lib/db";
+import { principaleDelCluster, haColonnaPrincipale } from "@/lib/devices/cluster-discovery";
+import { hostConApparato } from "@/lib/devices/apparato-del-cluster";
 
 const NO_CACHE_HEADERS = { "Cache-Control": "no-store, no-cache, must-revalidate" };
 
@@ -58,6 +60,21 @@ export async function GET(
       network_cidr: string;
     }>;
 
-    return NextResponse.json({ device, hosts: enriched }, { headers: NO_CACHE_HEADERS });
+    // Principale del cluster per la regola di Discovery (apparato > scelta a mano > IP più basso): la scheda lo mostra
+    // e offre «Scegli come principale» ai soli membri che non lo sono, quando il cluster non ha un apparato.
+    const conApparato = hostConApparato(getDb(), rawHosts.map((h) => h.id));
+    const sceltoAMano = haColonnaPrincipale(getDb())
+      ? (getDb().prepare("SELECT primary_host_id AS p FROM physical_devices WHERE id = ?").get(physicalDeviceId) as { p: number | null }).p
+      : null;
+    const principale = principaleDelCluster(
+      enriched.map((h) => ({ host_id: h.id, ip: h.ip, network_id: h.network_id, network_name: h.network_name, status: h.status, ha_apparato: conApparato.has(h.id) })),
+      sceltoAMano,
+    );
+    return NextResponse.json({
+      device,
+      hosts: enriched.map((h) => ({ ...h, ha_apparato: conApparato.has(h.id) })),
+      principale_host_id: principale,
+      cluster_ha_apparato: conApparato.size > 0,
+    }, { headers: NO_CACHE_HEADERS });
   });
 }

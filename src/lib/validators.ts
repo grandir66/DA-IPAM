@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { PRODUCT_PROFILE_IDS } from "@/lib/device-product-profiles";
 import { DEVICE_CLASSIFICATIONS } from "@/lib/device-classifications";
+import { canonicalizza } from "@/lib/classification/canonico";
 import { SNMP_V3_AUTH_PROTOCOLS, SNMP_V3_PRIV_PROTOCOLS, SNMP_V3_SECURITY_LEVELS } from "@/lib/protocols/snmpv3";
 import { METODI_ACCESSO, TIPI_CREDENZIALE, normalizzaTipo } from "@/lib/credentials/tipi";
 
@@ -104,6 +105,16 @@ export const KnownHostRunCheckSchema = z.object({
 
 const productProfileEnum = z.enum(PRODUCT_PROFILE_IDS as unknown as [string, ...string[]]);
 
+/**
+ * Classificazione dell'elenco canonico (catalogo 21/10): gli slug vecchi (`server_windows`, `dns_server`...)
+ * si accettano e si convertono; il resto resta com'è e lo valida l'enum.
+ */
+export const classificazioneCanonicaEnum = (messaggio?: string) =>
+  z.preprocess(
+    (v) => (typeof v === "string" && v !== "" ? canonicalizza(v).classificazione : v),
+    z.enum(DEVICE_CLASSIFICATIONS as unknown as [string, ...string[]], messaggio ? { error: messaggio } : undefined)
+  );
+
 /** Form HTML inviano spesso "" invece di undefined: gli enum Zod altrimenti falliscono. */
 const emptyToUndefined = (v: unknown) => (v === "" ? undefined : v);
 
@@ -115,7 +126,7 @@ export const NetworkDeviceSchema = z.object({
   // e l'apparato spariva dalle liste per classificazione.
   classification: z.preprocess(
     emptyToUndefined,
-    z.enum(DEVICE_CLASSIFICATIONS, { error: "Classificazione non valida: scegline una dall'elenco" }).optional().nullable()
+    classificazioneCanonicaEnum("Classificazione non valida: scegline una dall'elenco").optional().nullable()
   ),
   vendor: z.enum(["mikrotik", "ubiquiti", "hp", "cisco", "omada", "stormshield", "proxmox", "vmware", "linux", "windows", "synology", "qnap", "apple", "other"]),
   vendor_subtype: z.preprocess(emptyToUndefined, z.enum(["procurve", "comware"]).optional().nullable()),
@@ -383,7 +394,7 @@ export const SetupSchema = z.object({
   path: ["ragione_sociale"],
 });
 
-const fingerprintClassEnum = z.enum(DEVICE_CLASSIFICATIONS as unknown as [string, ...string[]]);
+const fingerprintClassEnum = classificazioneCanonicaEnum();
 
 export const FingerprintClassificationMapCreateSchema = z.object({
   match_kind: z.enum(["exact", "contains"]),

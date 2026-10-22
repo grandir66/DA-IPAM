@@ -1,7 +1,8 @@
 import { withTenantFromSession } from "@/lib/api-tenant";
 /**
  * API MikroTik - Download config, DHCP leases, servers, pools
- * GET /api/devices/[id]/mikrotik?action=config|dhcp|servers|pools|all
+ * GET /api/devices/[id]/mikrotik?action=config|dhcp|servers|pools|dhcp-pool|all
+ *   config (e exportFull dentro all) = solo admin; dhcp-pool = server + pool in un colpo solo (Panoramica router)
  * POST /api/devices/[id]/mikrotik/import-dhcp - importa lease DHCP come host IPAM
  */
 
@@ -17,10 +18,15 @@ import {
   syncIpAssignmentsForNetwork,
 } from "@/lib/db";
 import { createRouterClient, type DhcpLeaseEntry } from "@/lib/devices/router-client";
+import { esitoAzioneMikrotik, configPerRuolo } from "@/lib/devices/mikrotik-guardia";
 
 type RouteParams = { params: Promise<{ id: string }> };
 
 export async function GET(request: NextRequest, { params }: RouteParams) {
+  // Sessione obbligatoria; l'export della configurazione (action=config / exportFull) chiede l'admin (esitoAzioneMikrotik).
+  const authCheck = await requireAuth();
+  if (isAuthError(authCheck)) return authCheck;
+  const ruolo = authCheck.user.role;
   return withTenantFromSession(async () => {
   const { id } = await params;
   const deviceId = parseInt(id, 10);
@@ -44,6 +50,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   const url = new URL(request.url);
   const action = url.searchParams.get("action") || "all";
 
+  const esito = esitoAzioneMikrotik(action, ruolo);
+  if (!esito.ok) return NextResponse.json({ error: esito.error }, { status: esito.status });
+
   try {
     const client = await createRouterClient(device);
 
@@ -53,7 +62,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           return NextResponse.json({ error: "getConfig non disponibile" }, { status: 501 });
         }
         const config = await client.getConfig();
-        return NextResponse.json({ config });
+        return NextResponse.json({ config: configPerRuolo(config, ruolo) });
       }
 
       case "dhcp": {
@@ -80,6 +89,15 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         return NextResponse.json({ pools });
       }
 
+      case "dhcp-pool": {
+        // Server e pool DHCP insieme: la Panoramica del router calcola da qui l'uso dei pool (una sola connessione).
+        const [servers, pools] = await Promise.all([
+          client.getDhcpServers?.() ?? Promise.resolve([]),
+          client.getDhcpPools?.() ?? Promise.resolve([]),
+        ]);
+        return NextResponse.json({ servers, pools });
+      }
+
       case "all":
       default: {
         const [config, leases, servers, pools] = await Promise.all([
@@ -89,7 +107,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           client.getDhcpPools?.().catch(() => []),
         ]);
         return NextResponse.json({
-          config,
+          config: configPerRuolo(config, ruolo),
           leases: leases || [],
           servers: servers || [],
           pools: pools || [],

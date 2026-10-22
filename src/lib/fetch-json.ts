@@ -10,7 +10,8 @@
  */
 export type FetchJsonResult<T> =
   | { ok: true; data: T }
-  | { ok: false; status: number | null; message: string };
+  /** `body`: il JSON dell'errore, se c'era (es. il 409 con l'apparato che possiede già l'IP). */
+  | { ok: false; status: number | null; message: string; body?: unknown };
 
 export async function fetchJson<T>(input: string, init?: RequestInit): Promise<FetchJsonResult<T>> {
   let res: Response;
@@ -35,7 +36,7 @@ export async function fetchJson<T>(input: string, init?: RequestInit): Promise<F
       /* corpo assente o non JSON */
     }
   }
-  if (!res.ok) return { ok: false, status: res.status, message: errorMessage(res.status, body) };
+  if (!res.ok) return { ok: false, status: res.status, message: errorMessage(res.status, body), body };
   if (res.status !== 204 && !isJson) {
     return { ok: false, status: res.status, message: "Risposta non valida dal server" };
   }

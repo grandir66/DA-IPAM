@@ -4,7 +4,7 @@ import { parseDbDate } from "@/lib/db-date";
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -41,17 +41,21 @@ import { ScanProgress } from "@/components/shared/scan-progress";
 import { SubnetScheduleCard } from "@/components/networks/subnet-schedule-card";
 import { SubnetEdgeScanPanel } from "@/components/networks/subnet-edge-scan-panel";
 import { AttributionPreviewDialog } from "@/components/networks/attribution-preview-dialog";
-import { ArrowLeft, Scan, Download, LayoutGrid, List, Pencil, RefreshCw, CheckCircle2, Cpu, ExternalLink, X, Plus, Server, Sparkles, Trash2, UserCheck, UserX, Key, PlusCircle, Loader2, Activity, Radar, Layers, Tags } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { ArrowLeft, Scan, Download, LayoutGrid, List, Pencil, RefreshCw, CheckCircle2, ExternalLink, X, Plus, Server, Trash2, UserCheck, UserX, Key, PlusCircle, Loader2, Activity, Radar, Tags, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import type { Network, Host, NetworkDevice, ScanProgress as ScanProgressType } from "@/types";
 import { cn, hostOpenPortsToFullLabel } from "@/lib/utils";
 
 /** Altezza uniforme per tutti i pulsanti della toolbar azioni subnet. */
 const ACTION_BTN = "h-8 min-h-8 px-2.5 text-xs font-medium shrink-0";
-const ACTION_PANEL =
-  "rounded-lg border-2 border-primary/45 bg-primary/5 px-2.5 pt-1.5 pb-1.5 min-w-[min(100%,14rem)] flex-1 sm:flex-none shadow-sm flex flex-col";
-const ACTION_PANEL_TITLE =
-  "text-[11px] font-bold uppercase tracking-wide text-primary leading-tight mb-1.5";
 import {
   DEVICE_CLASSIFICATIONS_ORDERED,
   getClassificationLabel,
@@ -60,20 +64,10 @@ import {
 import { parseDetectedDeviceFromDetectionJson } from "@/lib/device-fingerprint-classification";
 import { NetworkCredentialsTable } from "@/components/shared/network-credentials-table";
 import { ProtocolBadges } from "@/components/shared/protocol-badges";
-import { AddableSelect } from "@/components/shared/addable-select";
-import { opzioniCreazioneRapida, tipiCredenzialePerProtocollo, tipoCreazioneRapida, vociSnmpAggiuntive } from "@/lib/credential-protocol-map";
-import { etichettaTipo } from "@/lib/credentials/tipi";
-import { profiloPerClassificazione, proponiApparato, riallineaAlProtocollo, type CredenzialeArchivio, type ProtocolloApparato } from "@/lib/devices/proposta-apparato";
+import { RendiApparatoDialog } from "@/components/devices/rendi-apparato-dialog";
+import { BadgeAMano, BadgeSenzaProva } from "@/components/devices/credenziali-assegnate";
+import { hostGestitoSenzaProva } from "@/lib/devices/credenziali-assegnate";
 import { HostCredentialsDialog } from "@/components/shared/host-credentials-dialog";
-import {
-  getDefaultNetworkDeviceVendorOptions,
-  type NetworkDeviceVendorSelectOption,
-} from "@/lib/network-device-vendor-options";
-import { DeviceFormFields } from "@/components/shared/device-form-fields";
-import {
-  coerceProtocolForVendor,
-  coerceScanTargetForVendor,
-} from "@/lib/vendor-device-profile";
 import { ipAssignmentShortLabel } from "@/lib/ip-assignment";
 import { SortableTableHead } from "@/components/shared/sortable-table-head";
 import { compareUnknown, type SortDirection } from "@/lib/table-sort";
@@ -123,20 +117,26 @@ function formatPhaseLastRun(iso: string): string {
   return `il ${dd}/${mm} ${hh}:${mi}`;
 }
 
-/** Riga di stato sotto ciascun pulsante fase (§6.2): "mai eseguita" / "il DD/MM HH:mm" [+ badge "obsoleta"]. */
-function PhaseStatusLine({ phase }: { phase: ScanPhasesResponse["phases"][number] | null }) {
-  if (!phase?.last_run) {
-    return <p className="text-[10px] text-muted-foreground leading-snug px-0.5">mai eseguita</p>;
-  }
+/** «Ultima esecuzione: il DD/MM HH:mm» / «Mai eseguita» [+ «, obsoleta»], per suggerimenti e menu. */
+function phaseWhen(phase: ScanPhasesResponse["phases"][number] | null): string {
+  if (!phase?.last_run) return "Mai eseguita";
+  return `Ultima esecuzione: ${formatPhaseLastRun(phase.last_run)}${phase.stale ? ", obsoleta" : ""}`;
+}
+
+/** Voce di menu di una fase della subnet: nome a sinistra, ultima esecuzione a destra. */
+function PhaseMenuItem({ label, phase, onClick }: { label: string; phase: ScanPhasesResponse["phases"][number] | null; onClick: () => void }) {
   return (
-    <p className="text-[10px] text-muted-foreground leading-snug px-0.5 flex items-center gap-1">
-      {formatPhaseLastRun(phase.last_run)}
-      {phase.stale && (
-        <Badge variant="outline" className="text-[9px] leading-none py-0 px-1 h-3.5">
-          obsoleta
-        </Badge>
-      )}
-    </p>
+    <DropdownMenuItem onClick={onClick} title={phase?.adds}>
+      {label}
+      <span className="ml-auto pl-4 text-xs text-muted-foreground inline-flex items-center gap-1">
+        {phase?.last_run ? formatPhaseLastRun(phase.last_run) : "mai"}
+        {phase?.stale && (
+          <Badge variant="outline" className="text-[10px] leading-none py-0 px-1 h-4">
+            obsoleta
+          </Badge>
+        )}
+      </span>
+    </DropdownMenuItem>
   );
 }
 
@@ -183,7 +183,6 @@ export function NetworkDetailClient({
   // Stato fasi di scansione + completezza attribuzione (§6.2/6.3, fase 3b)
   const [scanPhases, setScanPhases] = useState<ScanPhasesResponse | null>(null);
   const [scanPhasesRefreshKey, setScanPhasesRefreshKey] = useState(0);
-  const [applyingAttribution, setApplyingAttribution] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [view, setView] = useState<"grid" | "list">("list");
@@ -208,22 +207,6 @@ export function NetworkDetailClient({
   const [addDeviceCredentials, setAddDeviceCredentials] = useState<{ id: number; name: string; credential_type: string; port?: number | null }[]>([]);
   const [selectedHostIds, setSelectedHostIds] = useState<Set<number>>(new Set());
   const [bulkAddOpen, setBulkAddOpen] = useState(false);
-  // Valori veri li mette apriAggiungiDispositivi dalla proposta sugli host scelti (tappa 1).
-  const [bulkAddClassification, setBulkAddClassification] = useState("");
-  const [bulkAddProtocol, setBulkAddProtocol] = useState("ssh");
-  const [bulkAddVendor, setBulkAddVendor] = useState("other");
-  const [bulkAddHostDiversi, setBulkAddHostDiversi] = useState(false);
-  const [bulkAddCredentialId, setBulkAddCredentialId] = useState<string | null>(null);
-  const [bulkAddSnmpCredentialId, setBulkAddSnmpCredentialId] = useState<string | null>(null);
-  const [bulkAddVendorSubtype, setBulkAddVendorSubtype] = useState<string | null>(null);
-  const [bulkAddScanTarget, setBulkAddScanTarget] = useState<string | null>(null);
-  const [bulkAddProductProfile, setBulkAddProductProfile] = useState<string | null>(null);
-  const [bulkVendorOptions, setBulkVendorOptions] = useState<NetworkDeviceVendorSelectOption[]>(() =>
-    getDefaultNetworkDeviceVendorOptions()
-  );
-  const [bulkAddSaving, setBulkAddSaving] = useState(false);
-  const [bulkTestResult, setBulkTestResult] = useState<{ ok: boolean; message: string } | null>(null);
-  const [bulkTesting, setBulkTesting] = useState(false);
   const [bulkHostBusy, setBulkHostBusy] = useState(false);
   // Lista unica delle credenziali della rete. Le quattro catene vecchie non si
   // leggono né si rimandano più (tappa 2 credenziali, T12): restano nel DB,
@@ -304,20 +287,6 @@ export function NetworkDetailClient({
       .then((r) => (r.ok ? r.json() : []))
       .then(setAddDeviceCredentials)
       .catch(() => setAddDeviceCredentials([]));
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/device-vendor-options")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data: { options?: NetworkDeviceVendorSelectOption[] } | null) => {
-        if (cancelled || !data?.options?.length) return;
-        setBulkVendorOptions(data.options);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
   }, []);
 
   const refreshCredentialsList = useCallback(async () => {
@@ -510,86 +479,9 @@ export function NetworkDetailClient({
 
   const clearHostSelection = () => setSelectedHostIds(new Set());
 
-  const archivioCredenziali = (): CredenzialeArchivio[] =>
-    addDeviceCredentials.map((c) => ({ id: c.id, name: c.name, credential_type: c.credential_type, port: c.port ?? null }));
-
-  /**
-   * Apre «Aggiungi dispositivi» coi valori proposti dagli host scelti (tappa 1):
-   * prima partiva sempre da «server + Altro + UPS + SNMP v2». Se gli host
-   * danno proposte diverse, la classificazione resta da scegliere.
-   */
+  /** «Rendi apparato» sugli host scelti: la finestra unica propone, prova le credenziali e crea (tappa 3). */
   function apriAggiungiDispositivi() {
-    const archivio = archivioCredenziali();
-    const proposte = hosts.filter((h) => selectedHostIds.has(h.id)).map((h) => proponiApparato(h, archivio));
-    const prima = proposte[0];
-    const uguali = !!prima && proposte.every(
-      (p) => p.vendor === prima.vendor && p.protocol === prima.protocol && p.classification === prima.classification
-    );
-    setBulkAddVendor(prima?.vendor ?? "other");
-    setBulkAddVendorSubtype(null);
-    setBulkAddProtocol(prima?.protocol ?? "ssh");
-    setBulkAddClassification(uguali ? prima.classification : "");
-    setBulkAddProductProfile(uguali ? prima.productProfile : null);
-    setBulkAddScanTarget(prima?.scanTarget ?? null);
-    setBulkAddCredentialId(uguali ? prima.credentialId : null);
-    setBulkAddSnmpCredentialId(uguali ? prima.snmpCredentialId : null);
-    setBulkAddHostDiversi(proposte.length > 1 && !uguali);
-    setBulkTestResult(null);
     setBulkAddOpen(true);
-  }
-
-  /** Cambio di protocollo: credenziale incompatibile azzerata, con SNMP la principale è la SNMP. */
-  function cambiaProtocolloAggiunta(v: string) {
-    const q = riallineaAlProtocollo(
-      {
-        name: "", vendor: bulkAddVendor, protocol: bulkAddProtocol as ProtocolloApparato,
-        classification: bulkAddClassification, productProfile: bulkAddProductProfile, scanTarget: bulkAddScanTarget,
-        port: 0, credentialId: bulkAddCredentialId, snmpCredentialId: bulkAddSnmpCredentialId, useForArpPoll: false,
-      },
-      v as ProtocolloApparato,
-      archivioCredenziali(),
-    );
-    setBulkAddProtocol(v);
-    setBulkAddCredentialId(q.credentialId);
-    setBulkAddSnmpCredentialId(q.snmpCredentialId);
-  }
-
-  async function handleBulkAdd() {
-    if (selectedHostIds.size === 0 || !bulkAddClassification) return;
-    const hasCred = bulkAddCredentialId && bulkAddCredentialId !== "none";
-    const hasSnmpCred = bulkAddSnmpCredentialId && bulkAddSnmpCredentialId !== "none";
-    setBulkAddSaving(true);
-    try {
-      const body: Record<string, unknown> = {
-        host_ids: Array.from(selectedHostIds),
-        classification: bulkAddClassification,
-        protocol: bulkAddProtocol,
-        vendor: bulkAddVendor,
-        scan_target: bulkAddScanTarget,
-      };
-      if (bulkAddProductProfile) body.product_profile = bulkAddProductProfile;
-      if (hasCred) body.credential_id = Number(bulkAddCredentialId);
-      if (hasSnmpCred) body.snmp_credential_id = Number(bulkAddSnmpCredentialId);
-      body.inherit_host_credentials = true;
-      const res = await fetch("/api/devices/bulk", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        toast.success(data.message);
-        setBulkAddOpen(false);
-        clearHostSelection();
-        await refreshHosts();
-        router.refresh();
-      } else {
-        toast.error(data.error || "Errore nell'aggiunta");
-      }
-    } catch {
-      toast.error("Errore nell'aggiunta");
-    }
-    setBulkAddSaving(false);
   }
 
   async function handleBulkKnown(known: 0 | 1) {
@@ -938,67 +830,67 @@ export function NetworkDetailClient({
     }
   }
 
-  /** Blocco B — "Applica diretto": ricalcola e applica l'attribuzione senza anteprima. */
-  async function applyAttributionDirect() {
-    if (applyingAttribution) return;
-    setApplyingAttribution(true);
-    try {
-      const res = await fetch("/api/attribution/recompute", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ network_id: network.id }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        toast.error((data as { error?: string }).error || "Errore nel ricalcolo dell'attribuzione");
-        return;
-      }
-      toast.success((data as { message?: string }).message || "Attribuzione ricalcolata");
-      await refreshHosts();
-      router.refresh();
-      setScanPhasesRefreshKey((k) => k + 1);
-    } catch {
-      toast.error("Errore di rete");
-    } finally {
-      setApplyingAttribution(false);
+  /**
+   * «Avanzata» (testata semplificata, 20/10). Senza selezione: la sequenza della
+   * subnet lato server (scan_full: ping → Nmap -sV → SNMP → Enrich), un giro solo che
+   * sopravvive alla chiusura della pagina. Con host selezionati: Nmap profilo completo
+   * poi SNMP deep su quegli host (ex «Nmap adv» + «SNMP deep»).
+   */
+  async function runAdvanced() {
+    if (!hostScope) {
+      await runScanJob("scan_full");
+      return;
     }
+    const nmap = await runScanJob("nmap", { showStartToast: false });
+    if (!nmap.ok) {
+      toast.error("Porte e servizi terminata con errori: SNMP non avviato");
+      setScanning(null);
+      return;
+    }
+    const snmp = await runScanJob("snmp", { showStartToast: false });
+    if (snmp.ok) toast.success(`Avanzata completata su ${selectedHostIds.size} host (porte e servizi + SNMP)`);
+    setScanning(null);
   }
 
-  async function triggerAdvancedDetection() {
-    if (selectedHostIds.size === 0) {
-      toast.error("Seleziona uno o più host nella vista lista (azioni manuali solo sugli IP selezionati)");
+  /**
+   * «Accesso agli host» (testata semplificata, 20/10): un comando solo al posto di
+   * «Credenziali» e «Rilevamento OS». Verifica le credenziali della rete (se ce ne
+   * sono), poi WinRM, poi SSH, sugli host selezionati. Solo selezione: ogni
+   * tentativo è un logon reale (allarmi MDR/XDR, lockout AD); ogni fase ha il suo
+   * freno CredentialRunBudget lato server.
+   */
+  async function runHostAccess() {
+    if (!hostScope) {
+      toast.error("Seleziona gli host nella vista lista: l'accesso fa tentativi di login reali");
       return;
     }
-    toast.info("Rilevamento avanzato — fase 1/2: WinRM (Windows)…");
-    const phase1 = await runScanJob("windows", { showStartToast: false, refreshOnComplete: true });
-    if (!phase1.ok) {
-      toast.error(
-        phase1.lastProgress?.status === "failed"
-          ? "Fase WinRM terminata con errori"
-          : "Impossibile completare la fase WinRM"
-      );
-      setScanning(null);
-      return;
+    const steps: Array<{ type: ScanJobType; label: string }> = [
+      ...(networkCredentialIds.length > 0 ? [{ type: "credential_validate" as const, label: "verifica credenziali" }] : []),
+      { type: "windows", label: "WinRM (Windows)" },
+      { type: "ssh", label: "SSH (Linux)" },
+    ];
+    for (const [i, step] of steps.entries()) {
+      toast.info(`Accesso agli host — fase ${i + 1}/${steps.length}: ${step.label}…`);
+      const r = await runScanJob(step.type, { showStartToast: false });
+      if (!r.ok) {
+        toast.error(`Accesso agli host: fase ${step.label} terminata con errori, le successive non sono partite`);
+        setScanning(null);
+        return;
+      }
     }
-    toast.info("Rilevamento avanzato — fase 2/2: SSH (Linux)…");
-    const phase2 = await runScanJob("ssh", { showStartToast: false, refreshOnComplete: true });
-    if (!phase2.ok) {
-      toast.error(
-        phase2.lastProgress?.status === "failed"
-          ? "Fase SSH terminata con errori"
-          : "Impossibile completare la fase SSH"
-      );
-      setScanning(null);
-      return;
-    }
-    toast.success("Rilevamento avanzato completato (WinRM + SSH)");
+    toast.success(`Accesso agli host completato (${steps.map((s) => s.label).join(" + ")})`);
     setScanning(null);
   }
 
   const onlineCount = hosts.filter((h) => h.status === "online").length;
   const offlineCount = hosts.filter((h) => h.status === "offline").length;
 
+  // Portata dei comandi: host selezionati nella lista, altrimenti tutta la subnet.
+  const hostScope = view === "list" && selectedHostIds.size > 0;
+  const busy = !!scanning || enriching;
+
   // Stato delle fasi successive alla "Scansione iniziale" (§6.2 Blocco A)
+  const phaseInitial = scanPhases?.phases.find((p) => p.key === "initial") ?? null;
   const phaseNmapDeep = scanPhases?.phases.find((p) => p.key === "nmap_deep") ?? null;
   const phaseSnmp = scanPhases?.phases.find((p) => p.key === "snmp") ?? null;
   const phaseEnrich = scanPhases?.phases.find((p) => p.key === "enrich") ?? null;
@@ -1018,6 +910,18 @@ export function NetworkDetailClient({
             <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-lg font-bold tracking-tight leading-tight">{network.name}</h1>
               <Badge variant="secondary" className="font-mono text-xs py-0">{network.cidr}</Badge>
+              {/* Contatori accanto al titolo (testata compatta, 20/10) */}
+              <span className="text-xs text-muted-foreground">
+                <span className="font-semibold text-foreground">{hosts.length}</span> host
+                {" · "}<span className="font-semibold text-success">● {onlineCount}</span> online
+                {" · "}<span className="font-semibold text-destructive">○ {offlineCount}</span> offline
+                {" · "}GW <span className="font-mono font-semibold text-foreground">{network.gateway || "—"}</span>
+                {[
+                  routerId && `Router ${routers.find((r) => r.id === routerId)?.name ?? routerId}`,
+                  network.snmp_community && `SNMP ${network.snmp_community}`,
+                  network.dns_server && `DNS ${network.dns_server}`,
+                ].filter(Boolean).map((t) => ` · ${t}`).join("")}
+              </span>
             </div>
             {network.description && (
               <p className="text-muted-foreground text-xs leading-snug line-clamp-1 mt-0.5" title={network.description}>
@@ -1119,208 +1023,126 @@ export function NetworkDetailClient({
           </div>
         </div>
 
-        {/* Toolbar a fasi: area principale in evidenza rispetto ad auto-refresh sotto */}
+        {/* Testata delle scansioni (semplificata il 20/10): quattro comandi invece di dodici.
+            La portata la decide la selezione — nessun host selezionato = subnet, altrimenti
+            gli host selezionati — e le ore dell'ultima esecuzione stanno nei menu. */}
         <div className="space-y-2">
-          {/* Riga di completezza attribuzione (§6.3) — nessuna riga se scan-phases non ancora caricato */}
-          {scanPhases && (
-            <p className="text-xs text-muted-foreground px-1">
-              Attribuzione: {scanPhases.attribution.level2}/{scanPhases.attribution.total} a livello 2 · {scanPhases.attribution.level1} a livello 1 · {scanPhases.attribution.none} senza
-              {scanPhases.attribution.suggestion ? ` — ${scanPhases.attribution.suggestion}` : ""}
-              {" · "}
-              {scanPhases.phases.filter((p) => p.last_run).length}/{scanPhases.phases.length} fasi eseguite
-            </p>
-          )}
-          <div className="rounded-xl border-2 border-primary/20 bg-card/95 shadow-md ring-1 ring-primary/10 p-3">
-            <p className="text-xs font-semibold text-foreground mb-1.5 flex items-center gap-2">
-              <span className="rounded bg-primary/15 text-primary px-1.5 py-0.5 text-[10px] uppercase tracking-wide">Azioni</span>
-              Scansione e acquisizione dati
-            </p>
-            <div className="flex flex-wrap gap-2 items-stretch content-start">
+          <div className="rounded-lg border bg-card p-1.5 flex flex-wrap items-center gap-1.5">
+            <Button
+              size="default"
+              variant="default"
+              className={ACTION_BTN}
+              onClick={() => void runInitialScan()}
+              disabled={busy}
+              title={`Trova gli host attivi su tutta la subnet: Naabu se disponibile (Impostazioni → Scansione), altrimenti ICMP + Nmap quick. ${phaseWhen(phaseInitial)}`}
+            >
+              {scanning ? (
+                <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin shrink-0" />
+              ) : (
+                <Radar className="h-3.5 w-3.5 mr-1 shrink-0" />
+              )}
+              Scoperta host
+            </Button>
 
-            {/* ─── ACQUISIZIONE — intera subnet (§6.2 Blocco A) ────────── */}
-            <div className={`${ACTION_PANEL} min-w-[min(100%,26rem)]`}>
-              <p className={ACTION_PANEL_TITLE}>Acquisizione</p>
-              <div className="flex flex-col gap-1.5 flex-1 justify-end">
-                <div className="flex flex-nowrap gap-1.5">
-                  <Button
-                    size="default"
-                    variant="default"
-                    className={cn(ACTION_BTN, "flex-1")}
-                    onClick={() => void runInitialScan()}
-                    disabled={!!scanning || enriching}
-                    title="Scoperta host attivi: Naabu se disponibile (Impostazioni → Scansione), altrimenti ICMP + Nmap quick. Percorso scelto automaticamente."
-                  >
-                    {scanning ? (
-                      <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin shrink-0" />
-                    ) : (
-                      <Radar className="h-3.5 w-3.5 mr-1 shrink-0" />
-                    )}
-                    Scansione iniziale
-                  </Button>
-                  <Button
-                    size="default"
-                    variant="outline"
-                    className={cn(ACTION_BTN, "bg-background/90")}
-                    onClick={() => triggerScan("scan_full")}
-                    disabled={!!scanning || enriching}
-                    title="Esegue in sequenza tutte le fasi di acquisizione (ICMP/Naabu → Nmap -sV → SNMP → Enrich)"
-                  >
-                    Esegui tutte le fasi
-                  </Button>
-                </div>
-                <div className="flex flex-nowrap gap-2 overflow-x-auto pb-0.5">
-                  <div className="flex flex-col gap-0.5 min-w-[8rem]">
+            <div className="flex items-center">
+              <Button
+                size="default"
+                variant="outline"
+                className={cn(ACTION_BTN, "bg-background/90 rounded-r-none")}
+                onClick={() => void runAdvanced()}
+                disabled={busy}
+                title={
+                  hostScope
+                    ? `Porte e servizi (Nmap profilo completo) poi SNMP deep sui ${selectedHostIds.size} host selezionati`
+                    : "Tutte le fasi avanzate sulla subnet: ping, porte e servizi (Nmap -sV), SNMP, Enrich (ARP/DHCP/AD)"
+                }
+              >
+                <Scan className="h-3.5 w-3.5 mr-1 shrink-0" />
+                {hostScope ? `Avanzata · ${selectedHostIds.size} host` : "Avanzata"}
+              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
                     <Button
                       size="default"
                       variant="outline"
-                      className={cn(ACTION_BTN, "bg-background/90 w-full")}
-                      onClick={() => triggerScan("scan_nmap_base")}
-                      disabled={!!scanning || enriching}
-                      title={phaseNmapDeep?.adds ?? "Nmap -sV: banner e versioni dei servizi, OS fingerprint approfondito"}
+                      className={cn(ACTION_BTN, "bg-background/90 rounded-l-none border-l-0 px-1.5")}
+                      disabled={busy}
+                      aria-label="Fasi singole della scansione avanzata"
                     >
-                      <Scan className="h-3.5 w-3.5 mr-1 shrink-0" />
-                      Porte approfondite
+                      <ChevronDown className="h-3.5 w-3.5" />
                     </Button>
-                    <PhaseStatusLine phase={phaseNmapDeep} />
-                  </div>
-                  <div className="flex flex-col gap-0.5 min-w-[6rem]">
-                    <Button
-                      size="default"
-                      variant="outline"
-                      className={cn(ACTION_BTN, "bg-background/90 w-full")}
-                      onClick={() => triggerScan("scan_snmp_verify")}
-                      disabled={!!scanning || enriching}
-                      title={phaseSnmp?.adds ?? "SNMP → sysObjectID, LLDP: distingue AP da switch"}
-                    >
-                      <Cpu className="h-3.5 w-3.5 mr-1 shrink-0" />
-                      SNMP
-                    </Button>
-                    <PhaseStatusLine phase={phaseSnmp} />
-                  </div>
-                  <div className="flex flex-col gap-0.5 min-w-[7rem]">
-                    <Button
-                      size="default"
-                      variant="outline"
-                      className={cn(ACTION_BTN, "bg-background/90 w-full")}
-                      onClick={() => void triggerEnrich(true)}
-                      disabled={!!scanning || enriching}
-                      title={phaseEnrich?.adds ?? "ARP/DHCP/AD: hostname, MAC/vendor, collegamento a computer Active Directory"}
-                    >
-                      <Layers className="h-3.5 w-3.5 mr-1 shrink-0" />
-                      {enriching ? "Enrich…" : "Enrich"}
-                    </Button>
-                    <PhaseStatusLine phase={phaseEnrich} />
-                  </div>
-                  <div className="flex flex-col gap-0.5 min-w-[8rem]">
-                    <Button
-                      size="default"
-                      variant="outline"
-                      className={cn(ACTION_BTN, "bg-background/90 w-full")}
-                      onClick={() => triggerScan("credential_validate")}
-                      disabled={!!scanning || enriching || networkCredentialIds.length === 0 || selectedHostIds.size === 0}
-                      title={
-                        networkCredentialIds.length === 0
-                          ? "Configura credenziali nella modifica rete"
-                          : selectedHostIds.size === 0
-                            ? "Seleziona gli host nella vista lista: la validazione genera tentativi di login reali (allarmi MDR/XDR, rischio lockout AD)"
-                            : `Valida le credenziali sugli ${selectedHostIds.size} host selezionati`
-                      }
-                    >
-                      <Key className="h-3.5 w-3.5 mr-1 shrink-0" />
-                      Credenziali
-                    </Button>
-                    <PhaseStatusLine phase={phaseCredentials} />
-                  </div>
-                </div>
-              </div>
+                  }
+                />
+                <DropdownMenuContent align="start" className="w-auto min-w-64">
+                  {hostScope ? (
+                    <DropdownMenuGroup>
+                      <DropdownMenuLabel>Sui {selectedHostIds.size} host selezionati</DropdownMenuLabel>
+                      <DropdownMenuItem onClick={() => void triggerScan("nmap")}>
+                        Porte e servizi
+                        <span className="ml-auto pl-4 text-xs text-muted-foreground">Nmap profilo completo</span>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => void triggerScan("snmp")}>
+                        SNMP deep
+                        <span className="ml-auto pl-4 text-xs text-muted-foreground">modello, firmware, seriale</span>
+                      </DropdownMenuItem>
+                    </DropdownMenuGroup>
+                  ) : (
+                    <DropdownMenuGroup>
+                      <DropdownMenuLabel>Su tutta la subnet</DropdownMenuLabel>
+                      <PhaseMenuItem label="Porte e servizi" phase={phaseNmapDeep} onClick={() => void triggerScan("scan_nmap_base")} />
+                      <PhaseMenuItem label="SNMP" phase={phaseSnmp} onClick={() => void triggerScan("scan_snmp_verify")} />
+                      <PhaseMenuItem label="Enrich (ARP/DHCP/AD)" phase={phaseEnrich} onClick={() => void triggerEnrich(true)} />
+                    </DropdownMenuGroup>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
 
-            {/* ─── DETECT — host selezionati ─────────────────────────── */}
-            <div className={ACTION_PANEL}>
-              <p className={ACTION_PANEL_TITLE}>Detect — host selezionati</p>
-              <div className="flex flex-nowrap gap-1.5 overflow-x-auto pb-0.5 flex-1 items-end">
-                <Button
-                  size="default"
-                  variant="default"
-                  className={ACTION_BTN}
-                  onClick={() => triggerScan("nmap")}
-                  disabled={!!scanning || view !== "list" || selectedHostIds.size === 0}
-                  title="Nmap profilo completo: port scan TCP/UDP esteso + SNMP unificato"
-                >
-                  <Scan className="h-3.5 w-3.5 mr-1 shrink-0" />
-                  Nmap adv
-                </Button>
-                <Button
-                  size="default"
-                  variant="outline"
-                  className={cn(ACTION_BTN, "bg-background/90")}
-                  onClick={() => triggerScan("snmp")}
-                  disabled={!!scanning || view !== "list" || selectedHostIds.size === 0}
-                  title="SNMP deep walk: produttore, modello, firmware, seriale, ARP table, OID fingerprint"
-                >
-                  <Cpu className="h-3.5 w-3.5 mr-1 shrink-0" />
-                  SNMP deep
-                </Button>
-                <Button
-                  size="default"
-                  variant="outline"
-                  className={cn(ACTION_BTN, "bg-background/90")}
-                  onClick={() => void triggerAdvancedDetection()}
-                  disabled={!!scanning || view !== "list" || selectedHostIds.size === 0}
-                  title="WinRM (Windows) + SSH (Linux) in sequenza"
-                >
-                  <Sparkles className="h-3.5 w-3.5 mr-1 shrink-0" />
-                  Rilevamento OS
-                </Button>
-              </div>
-            </div>
+            <Button
+              size="default"
+              variant="outline"
+              className={cn(ACTION_BTN, "bg-background/90")}
+              onClick={() => void runHostAccess()}
+              disabled={busy || !hostScope}
+              title={
+                hostScope
+                  ? `Login sui ${selectedHostIds.size} host selezionati: ${networkCredentialIds.length > 0 ? "verifica credenziali, poi " : ""}WinRM (Windows) e SSH (Linux). ${phaseWhen(phaseCredentials)}`
+                  : "Seleziona gli host nella vista lista: l'accesso fa tentativi di login reali (allarmi MDR/XDR, rischio lockout AD)"
+              }
+            >
+              <Key className="h-3.5 w-3.5 mr-1 shrink-0" />
+              {hostScope ? `Accedi a ${selectedHostIds.size} host` : "Accesso agli host"}
+            </Button>
 
-            {/* ─── ATTRIBUZIONE (§6.2 Blocco B) — Test credenziali assorbito nella fase Credenziali sopra ─── */}
-            <div className="rounded-lg border border-dashed border-border bg-muted/25 px-2.5 pt-1.5 pb-1.5 min-w-[min(100%,14rem)] flex-1 sm:flex-none flex flex-col">
-              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide leading-tight mb-1.5">
-                Attribuzione
-              </p>
-              <div className="flex flex-col gap-1.5 mt-auto">
-                <Button
-                  size="default"
-                  variant="default"
-                  className={cn(ACTION_BTN, "w-full")}
-                  onClick={() => setAttributionPreviewOpen(true)}
-                  title="Anteprima: mostra i cambi di vendor/categoria/OS proposti dalle evidenze già salvate, prima di applicarli. Funziona anche durante uno scan."
-                >
-                  <Tags className="h-3.5 w-3.5 mr-1 shrink-0" />
-                  Ricalcola attribuzione
-                </Button>
-                <Button
-                  size="default"
-                  variant="outline"
-                  className={cn(ACTION_BTN, "w-full")}
-                  onClick={() => void applyAttributionDirect()}
-                  disabled={applyingAttribution}
-                  title="Ricalcola e applica direttamente l'attribuzione su tutta la subnet, senza anteprima."
-                >
-                  {applyingAttribution ? (
-                    <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin shrink-0" />
-                  ) : null}
-                  Applica diretto
-                </Button>
-              </div>
-            </div>
+            <Button
+              size="default"
+              variant="outline"
+              className={cn(ACTION_BTN, "bg-background/90")}
+              onClick={() => setAttributionPreviewOpen(true)}
+              title={
+                scanPhases
+                  ? `Anteprima dei cambi di vendor/categoria/OS proposti dalle evidenze. Oggi: ${scanPhases.attribution.level2} host a livello 2, ${scanPhases.attribution.level1} a livello 1, ${scanPhases.attribution.none} senza su ${scanPhases.attribution.total}.${scanPhases.attribution.suggestion ? ` ${scanPhases.attribution.suggestion}` : ""}`
+                  : "Anteprima dei cambi di vendor/categoria/OS proposti dalle evidenze"
+              }
+            >
+              <Tags className="h-3.5 w-3.5 mr-1 shrink-0" />
+              Attribuzione
+              {scanPhases && (
+                <span className="ml-1.5 tabular-nums text-muted-foreground">
+                  {scanPhases.attribution.level2}/{scanPhases.attribution.total}
+                </span>
+              )}
+            </Button>
 
-            {/* ─── VA SCAN — vulnerability assessment (ultimo) ─────────── */}
-            <div className="rounded-lg border-2 border-purple-500/45 bg-purple-500/5 px-2.5 pt-1.5 pb-1.5 min-w-[min(100%,14rem)] flex-1 sm:flex-none shadow-sm flex flex-col sm:max-w-[16rem]">
-              <p className="text-[11px] font-bold uppercase tracking-wide text-purple-800 dark:text-purple-300 leading-tight mb-1.5">
-                VA Scan
-              </p>
-              <div className="mt-auto">
-                <SubnetEdgeScanPanel networkId={network.id} disabled={!!scanning || enriching} hosts={hosts} cidr={network.cidr} networkName={network.name} />
-              </div>
-            </div>
+            <SubnetScheduleCard networkId={network.id} />
 
+            {/* VA Scan a parte: scansione invasiva dall'edge, con la sua pianificazione */}
+            <div className="ml-auto">
+              <SubnetEdgeScanPanel networkId={network.id} disabled={busy} hosts={hosts} cidr={network.cidr} networkName={network.name} />
             </div>
           </div>
 
-          <SubnetScheduleCard networkId={network.id} />
 
           {/* Barra unica: azioni bulk a sinistra, refresh live a destra (niente toolbar dedicata sotto) */}
           <div
@@ -1332,17 +1154,98 @@ export function NetworkDetailClient({
             )}
           >
             <div className="flex flex-wrap items-center gap-x-3 gap-y-2 min-w-0 flex-1">
+              {/* Vista: nella stessa barra (testata compatta, 20/10) */}
+              <div className="flex items-center gap-1" role="group" aria-label="Visualizzazione">
+                <Button variant={view === "grid" ? "secondary" : "outline"} size="sm" aria-pressed={view === "grid"} onClick={() => setView("grid")}>
+                  <LayoutGrid className="h-4 w-4 mr-1" />
+                  Griglia IP
+                </Button>
+                <Button variant={view === "list" ? "secondary" : "outline"} size="sm" aria-pressed={view === "list"} onClick={() => setView("list")}>
+                  <List className="h-4 w-4 mr-1" />
+                  Lista
+                </Button>
+              </div>
+              {/* Filtri della lista nella stessa barra (testata compatta, 20/10) */}
+              {view === "list" && (
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-2">
+                <Label className="text-xs text-muted-foreground">Stato</Label>
+                <select
+                  value={filterStatus}
+                  onChange={(e) => setFilterStatus(e.target.value)}
+                  className="h-8 rounded-md border border-input bg-background px-2 text-sm min-w-[100px]"
+                >
+                  <option value="">Tutti</option>
+                  <option value="online">Online</option>
+                  <option value="offline">Offline</option>
+                  <option value="unknown">Sconosciuto</option>
+                </select>
+              </div>
+              <div className="flex items-center gap-2">
+                <Label className="text-xs text-muted-foreground">Classificazione</Label>
+                <select
+                  value={filterClassification}
+                  onChange={(e) => setFilterClassification(e.target.value)}
+                  className="h-8 rounded-md border border-input bg-background px-2 text-sm min-w-[140px]"
+                >
+                  <option value="">Tutte</option>
+                  <option value="__empty__">— Senza classificazione</option>
+                  {sortClassificationsByDisplayLabel(DEVICE_CLASSIFICATIONS_ORDERED).map((c) => (
+                    <option key={c} value={c}>{getClassificationLabel(c)}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="filter-known"
+                  checked={filterKnownOnly}
+                  onCheckedChange={setFilterKnownOnly}
+                />
+                <Label htmlFor="filter-known" className="text-xs text-muted-foreground">Solo conosciuti</Label>
+              </div>
+              {(filterStatus || filterClassification || filterKnownOnly) && (
+                <Button variant="ghost" size="sm" onClick={() => { setFilterStatus(""); setFilterClassification(""); setFilterKnownOnly(false); }}>
+                  Cancella filtri
+                </Button>
+              )}
+            </div>
+              )}
               {view === "list" ? (
                 <>
-                  <div className="min-w-0 shrink">
-                    <p className="text-[11px] font-semibold text-foreground leading-tight">
-                      Selezione in lista
-                    </p>
-                    <p className="text-[10px] text-muted-foreground leading-snug">
-                      {selectedHostIds.size === 0
-                        ? "Spunta gli host nella tabella per le azioni a sinistra."
-                        : `${selectedHostIds.size} host selezionati`}
-                    </p>
+                  <p className="text-[11px] text-muted-foreground whitespace-nowrap" title="Spunta gli host nella tabella per le azioni qui a fianco.">
+                    {selectedHostIds.size === 0 ? "Nessun host selezionato" : `${selectedHostIds.size} host selezionati`}
+                  </p>
+                  {/* Aggiunge alla selezione, non filtra: sta col gruppo della selezione (revisione 20/10). */}
+                  <div className="flex items-center gap-1">
+                    <Label className="text-xs text-muted-foreground">Seleziona per tipo:</Label>
+                    <select
+                      className="h-8 rounded-md border border-input bg-background px-2 text-sm min-w-[140px]"
+                      value=""
+                      onChange={(e) => {
+                        const c = e.target.value;
+                        e.target.value = "";
+                        if (!c) return;
+                        const toSelect = c === "__empty__"
+                          ? filteredHosts.filter((h) => !h.classification)
+                          : filteredHosts.filter((h) => h.classification === c);
+                        if (toSelect.length === 0) {
+                          toast.info(c === "__empty__" ? "Nessun host senza classificazione" : `Nessun host con classificazione "${getClassificationLabel(c)}"`);
+                          return;
+                        }
+                        setSelectedHostIds((prev) => {
+                          const next = new Set(prev);
+                          for (const h of toSelect) next.add(h.id);
+                          return next;
+                        });
+                        toast.success(`${toSelect.length} host selezionati`);
+                      }}
+                    >
+                      <option value="">—</option>
+                      <option value="__empty__">— Senza classificazione</option>
+                      {sortClassificationsByDisplayLabel(DEVICE_CLASSIFICATIONS_ORDERED).map((c) => (
+                        <option key={c} value={c}>{getClassificationLabel(c)}</option>
+                      ))}
+                    </select>
                   </div>
                   <div className="flex flex-wrap gap-1.5 items-center">
                     <Button
@@ -1353,7 +1256,7 @@ export function NetworkDetailClient({
                       disabled={selectedHostIds.size === 0 || bulkHostBusy}
                     >
                       <Plus className="h-4 w-4 mr-1.5 shrink-0" />
-                      Aggiungi dispositivo
+                      Rendi apparato
                     </Button>
                     <Button
                       variant="secondary"
@@ -1426,44 +1329,6 @@ export function NetworkDetailClient({
         </div>
       </div>
 
-      {/* Vista: subito dopo le azioni principali (prima di statistiche e auto-refresh) */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-xs font-medium text-muted-foreground mr-1">Visualizzazione</span>
-        <Button
-          variant={view === "grid" ? "secondary" : "outline"}
-          size="default"
-          onClick={() => setView("grid")}
-        >
-          <LayoutGrid className="h-4 w-4 mr-1.5" />
-          Griglia IP
-        </Button>
-        <Button
-          variant={view === "list" ? "secondary" : "outline"}
-          size="default"
-          onClick={() => setView("list")}
-        >
-          <List className="h-4 w-4 mr-1.5" />
-          Lista
-        </Button>
-      </div>
-
-      {/* Stats - minimali */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5 text-xs">
-        <span className="text-muted-foreground">Host Totali <span className="font-semibold text-foreground">{hosts.length}</span></span>
-        <span className="text-muted-foreground">Online <span className="font-semibold text-success">{onlineCount}</span></span>
-        <span className="text-muted-foreground">Offline <span className="font-semibold text-destructive">{offlineCount}</span></span>
-        <span className="text-muted-foreground">Gateway <span className="font-mono font-semibold text-foreground">{network.gateway || "—"}</span></span>
-        {(routerId || network.snmp_community || network.dns_server) && (
-          <span className="text-muted-foreground">
-            {[
-              routerId && `Router: ${routers.find((r) => r.id === routerId)?.name ?? routerId}`,
-              network.snmp_community && `SNMP: ${network.snmp_community}`,
-              network.dns_server && `DNS: ${network.dns_server}`,
-            ].filter(Boolean).join(" · ")}
-          </span>
-        )}
-      </div>
-
       {/* Scan Progress */}
       {scanning && <ScanProgress progress={scanning} onClose={() => setScanning(null)} />}
 
@@ -1486,269 +1351,18 @@ export function NetworkDetailClient({
         </Card>
       )}
 
-      <Dialog open={bulkAddOpen} onOpenChange={(open) => { setBulkAddOpen(open); if (!open) setBulkTestResult(null); }}>
-        <DialogContent className={DIALOG_PANEL_WIDE_CLASS}>
-          <DialogHeader className="shrink-0 border-b border-border/50 px-4 pt-4 pb-3">
-            <DialogTitle>Aggiungi {selectedHostIds.size} dispositivo{selectedHostIds.size !== 1 ? "i" : ""}</DialogTitle>
-            <CardDescription>
-              Configura profilo, protocollo e credenziali. Usa <strong>Prova connessione</strong> per testare le credenziali su uno degli host selezionati prima di salvare.
-            </CardDescription>
-          </DialogHeader>
-          <DialogScrollableArea className="px-4 py-3">
-          <div className="space-y-4">
-            <DeviceFormFields
-              mode="bulk"
-              credentials={addDeviceCredentials}
-              idPrefix="network-bulk-add"
-              showIdentificazione={false}
-              showProfilo={true}
-              showCredenziali={false}
-              classification={bulkAddClassification}
-              vendor={bulkAddVendor}
-              vendorSubtype={bulkAddVendorSubtype}
-              protocol={bulkAddProtocol}
-              scanTarget={bulkAddScanTarget}
-              productProfile={bulkAddProductProfile}
-              onProductProfileChange={setBulkAddProductProfile}
-              credentialId={bulkAddCredentialId}
-              snmpCredentialId={bulkAddSnmpCredentialId}
-              onClassificationChange={(v) => {
-                setBulkAddClassification(v);
-                if (v) setBulkAddProductProfile(profiloPerClassificazione(bulkAddVendor, v));
-              }}
-              creazioneInBlocco
-              onVendorChange={(v) => {
-                setBulkAddVendor(v);
-                if (v !== "hp") setBulkAddVendorSubtype(null);
-                const nextP = coerceProtocolForVendor(v, bulkAddProtocol);
-                if (nextP !== bulkAddProtocol) cambiaProtocolloAggiunta(nextP);
-                const nextS = coerceScanTargetForVendor(v, bulkAddScanTarget);
-                if (nextS !== bulkAddScanTarget) setBulkAddScanTarget(nextS);
-              }}
-              onVendorSubtypeChange={(v) => setBulkAddVendorSubtype(v)}
-              onProtocolChange={(v) => { if (v !== bulkAddProtocol) cambiaProtocolloAggiunta(v); }}
-              onScanTargetChange={(v) => setBulkAddScanTarget(v)}
-              onCredentialIdChange={(v) => setBulkAddCredentialId(v)}
-              onSnmpCredentialIdChange={(v) => setBulkAddSnmpCredentialId(v)}
-              vendorOptions={bulkVendorOptions}
-              defaultClassification=""
-              defaultVendor={bulkAddVendor}
-              defaultProtocol={bulkAddProtocol}
-            />
-            {bulkAddHostDiversi && (
-              <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-800 dark:text-amber-200/90">
-                Gli host selezionati non sono dello stesso tipo: scegli classificazione, marca e protocollo validi per tutti.
-              </p>
-            )}
-
-            {/* Credenziali: scelta esplicita + creazione inline ─ con badge eredità automatica */}
-            {(() => {
-              const tipiPrincipale = tipiCredenzialePerProtocollo(bulkAddProtocol);
-              const primaryOpts = addDeviceCredentials.filter((c) => tipiPrincipale.includes(c.credential_type));
-              const snmpOpts = vociSnmpAggiuntive(addDeviceCredentials);
-              // Con SNMP come protocollo la principale è già la SNMP: la seconda tendina non serve.
-              const protocolloSnmp = bulkAddProtocol === "snmp_v2" || bulkAddProtocol === "snmp_v3";
-              const protos = new Set<string>();
-              for (const hid of selectedHostIds) {
-                for (const p of (hostValidatedProtocols[hid] || [])) protos.add(p);
-              }
-              return (
-                <div className="rounded-lg border border-border/60 bg-muted/20 p-3 space-y-3">
-                  <div className="flex items-center gap-2">
-                    <Key className="h-4 w-4 text-primary" />
-                    <span className="text-sm font-medium">Credenziali</span>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div className="space-y-1.5">
-                      <Label className="text-xs">Credenziale principale</Label>
-                      <AddableSelect
-                        value={bulkAddCredentialId && bulkAddCredentialId !== "none" ? Number(bulkAddCredentialId) : null}
-                        onChange={(v) => setBulkAddCredentialId(v != null ? String(v) : null)}
-                        options={primaryOpts.map((c) => ({ id: c.id, label: c.name, extra: etichettaTipo(c.credential_type) }))}
-                        entityLabel="credenziale"
-                        createApiUrl="/api/credentials"
-                        extraFields={[
-                          { key: "credential_type", label: "Tipo", type: "select", required: true, defaultValue: tipoCreazioneRapida(bulkAddProtocol), options: opzioniCreazioneRapida(bulkAddProtocol) },
-                          { key: "username", label: "Username", placeholder: "admin" },
-                          { key: "password", label: "Password / Community", type: "password", required: true },
-                        ]}
-                        onCreated={refreshCredentialsList}
-                      />
-                    </div>
-                    {!protocolloSnmp && (
-                    <div className="space-y-1.5">
-                      <Label className="text-xs">Credenziale SNMP (opzionale)</Label>
-                      <AddableSelect
-                        value={bulkAddSnmpCredentialId && bulkAddSnmpCredentialId !== "none" ? Number(bulkAddSnmpCredentialId) : null}
-                        onChange={(v) => setBulkAddSnmpCredentialId(v != null ? String(v) : null)}
-                        options={snmpOpts.map((c) => ({ id: c.id, label: c.name, extra: etichettaTipo(c.credential_type) }))}
-                        entityLabel="credenziale SNMP"
-                        createApiUrl="/api/credentials"
-                        extraFields={[
-                          { key: "credential_type", label: "Tipo", type: "select", required: true, defaultValue: "snmp", options: [{ value: "snmp", label: "SNMP" }] },
-                          { key: "password", label: "Community string", type: "password", required: true, placeholder: "public" },
-                        ]}
-                        onCreated={refreshCredentialsList}
-                      />
-                    </div>
-                    )}
-                  </div>
-                  <div className="text-xs text-muted-foreground border-t border-border/60 pt-2">
-                    {protos.size > 0 ? (
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span>Protocolli già validati sugli host:</span>
-                        <ProtocolBadges protocols={[...protos]} />
-                        <span className="text-[11px] opacity-75">(verranno ereditati come fallback se non assegni qui sopra)</span>
-                      </div>
-                    ) : (
-                      <span className="text-amber-600 dark:text-amber-400">Nessuna credenziale validata sugli host: assegnane una qui sopra.</span>
-                    )}
-                  </div>
-                </div>
-              );
-            })()}
-            {bulkTestResult && (
-              <div className={cn("text-sm px-3 py-2 rounded border", bulkTestResult.ok ? "border-green-500 bg-green-50 text-green-700" : "border-red-500 bg-red-50 text-red-700")}>
-                {bulkTestResult.message}
-              </div>
-            )}
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                onClick={async () => {
-                  if (selectedHostIds.size === 0) return;
-                  setBulkTesting(true);
-                  setBulkTestResult(null);
-                  try {
-                    const firstHostId = Array.from(selectedHostIds)[0];
-                    const firstHost = hosts.find((h) => h.id === firstHostId);
-                    if (!firstHost) {
-                      setBulkTestResult({ ok: false, message: "Host non trovato" });
-                      setBulkTesting(false);
-                      return;
-                    }
-                    const res = await fetch("/api/devices/test-provisional", {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({
-                        host: firstHost.ip,
-                        vendor: bulkAddVendor,
-                        protocol: bulkAddProtocol,
-                        scan_target: bulkAddScanTarget,
-                        product_profile: bulkAddProductProfile,
-                        credential_id: bulkAddCredentialId && bulkAddCredentialId !== "none" ? Number(bulkAddCredentialId) : null,
-                        snmp_credential_id: bulkAddSnmpCredentialId && bulkAddSnmpCredentialId !== "none" ? Number(bulkAddSnmpCredentialId) : null,
-                        // La stessa porta che userà la creazione: quella propria della credenziale, se c'è.
-                        port: addDeviceCredentials.find((c) => String(c.id) === bulkAddCredentialId)?.port ?? undefined,
-                      }),
-                    });
-                    const data = await res.json();
-                    // Si prova sul primo host scelto: lo si dice, con più host l'esito non vale per tutti.
-                    const suChi = selectedHostIds.size > 1 ? `Provato su ${firstHost.ip} (il primo dei ${selectedHostIds.size} scelti)` : `Provato su ${firstHost.ip}`;
-                    if (res.ok && data.success) {
-                      setBulkTestResult({ ok: true, message: `${suChi}: ${data.message || "connessione riuscita"}` });
-                    } else {
-                      setBulkTestResult({ ok: false, message: `${suChi}: ${data.error || "connessione fallita"}` });
-                    }
-                  } catch {
-                    setBulkTestResult({ ok: false, message: "Errore di rete" });
-                  } finally {
-                    setBulkTesting(false);
-                  }
-                }}
-                disabled={bulkTesting || bulkAddSaving}
-                className="flex-1"
-              >
-                {bulkTesting ? "Test in corso..." : "Prova connessione"}
-              </Button>
-              <Button onClick={handleBulkAdd} disabled={bulkAddSaving || !bulkAddClassification} className="flex-1">
-                {bulkAddSaving ? "Aggiunta in corso..." : "Aggiungi dispositivi"}
-              </Button>
-            </div>
-            {!bulkAddClassification && (
-              <p className="text-right text-sm text-amber-800 dark:text-amber-200">Scegli la classificazione</p>
-            )}
-          </div>
-          </DialogScrollableArea>
-        </DialogContent>
-      </Dialog>
+      {bulkAddOpen && selectedHostIds.size > 0 && (
+        <RendiApparatoDialog
+          hosts={hosts.filter((h) => selectedHostIds.has(h.id)).slice(0, 50)}
+          open={bulkAddOpen}
+          onOpenChange={setBulkAddOpen}
+          onCreated={() => { clearHostSelection(); void refreshHosts(); router.refresh(); }}
+        />
+      )}
 
       {view === "list" && (
-        <Card className="overflow-hidden">
-          <div className="flex flex-wrap items-center gap-2 p-2 border-b">
-            <div className="flex items-center gap-2">
-              <Label className="text-xs text-muted-foreground">Stato</Label>
-              <select
-                value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
-                className="h-8 rounded-md border border-input bg-background px-2 text-sm min-w-[100px]"
-              >
-                <option value="">Tutti</option>
-                <option value="online">Online</option>
-                <option value="offline">Offline</option>
-                <option value="unknown">Sconosciuto</option>
-              </select>
-            </div>
-            <div className="flex items-center gap-2">
-              <Label className="text-xs text-muted-foreground">Classificazione</Label>
-              <select
-                value={filterClassification}
-                onChange={(e) => setFilterClassification(e.target.value)}
-                className="h-8 rounded-md border border-input bg-background px-2 text-sm min-w-[140px]"
-              >
-                <option value="">Tutte</option>
-                <option value="__empty__">— Senza classificazione</option>
-                {sortClassificationsByDisplayLabel(DEVICE_CLASSIFICATIONS_ORDERED).map((c) => (
-                  <option key={c} value={c}>{getClassificationLabel(c)}</option>
-                ))}
-              </select>
-            </div>
-            <div className="flex items-center gap-2">
-              <Switch
-                id="filter-known"
-                checked={filterKnownOnly}
-                onCheckedChange={setFilterKnownOnly}
-              />
-              <Label htmlFor="filter-known" className="text-xs text-muted-foreground">Solo conosciuti</Label>
-            </div>
-            {(filterStatus || filterClassification || filterKnownOnly) && (
-              <Button variant="ghost" size="sm" onClick={() => { setFilterStatus(""); setFilterClassification(""); setFilterKnownOnly(false); }}>
-                Cancella filtri
-              </Button>
-            )}
-            <div className="flex items-center gap-1 ml-auto">
-              <Label className="text-xs text-muted-foreground">Seleziona per tipo:</Label>
-              <select
-                className="h-8 rounded-md border border-input bg-background px-2 text-sm min-w-[140px]"
-                value=""
-                onChange={(e) => {
-                  const c = e.target.value;
-                  e.target.value = "";
-                  if (!c) return;
-                  const toSelect = c === "__empty__"
-                    ? filteredHosts.filter((h) => !h.classification)
-                    : filteredHosts.filter((h) => h.classification === c);
-                  if (toSelect.length === 0) {
-                    toast.info(c === "__empty__" ? "Nessun host senza classificazione" : `Nessun host con classificazione "${getClassificationLabel(c)}"`);
-                    return;
-                  }
-                  setSelectedHostIds((prev) => {
-                    const next = new Set(prev);
-                    for (const h of toSelect) next.add(h.id);
-                    return next;
-                  });
-                  toast.success(`${toSelect.length} host selezionati`);
-                }}
-              >
-                <option value="">—</option>
-                <option value="__empty__">— Senza classificazione</option>
-                {sortClassificationsByDisplayLabel(DEVICE_CLASSIFICATIONS_ORDERED).map((c) => (
-                  <option key={c} value={c}>{getClassificationLabel(c)}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-          <Table>
+        <Card className="overflow-hidden py-0 gap-0">
+          <Table fissa>
             <TableHeader>
               <TableRow>
                 <TableHead className="w-10">
@@ -1837,6 +1451,7 @@ export function NetworkDetailClient({
                       )}
                     </TableCell>
                     <TableCell onClick={(e) => e.stopPropagation()}>
+                      {hostGestitoSenzaProva((host as HostWithDevice).device_id, hostValidatedProtocols[host.id]) && <BadgeSenzaProva corto />}
                       <ProtocolBadges
                         protocols={hostValidatedProtocols[host.id] || []}
                         onClick={() => setCredDialogHost({ id: host.id, ip: host.ip })}
@@ -1927,7 +1542,7 @@ export function NetworkDetailClient({
                         // Mostriamo il valore impostato a mano + eventuale suggerimento v2 non applicato.
                         <div className="flex flex-col gap-0.5 leading-tight">
                           <div className="flex items-center gap-1 flex-wrap">
-                            <Badge variant="outline" className="text-[10px] py-0">Manuale</Badge>
+                            <BadgeAMano piccolo />
                             <Badge variant="outline">{host.classification ? getClassificationLabel(host.classification) : "—"}</Badge>
                           </div>
                           {host.attr_category ? (

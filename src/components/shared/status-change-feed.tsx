@@ -57,18 +57,24 @@ export function StatusChangeFeed() {
             className="flex items-center gap-2 px-2 py-2 text-sm hover:bg-muted/50 transition-colors"
           >
             {wentDown ? (
-              <ArrowDownRight className="h-3.5 w-3.5 text-destructive shrink-0" />
+              <ArrowDownRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
             ) : (
-              <ArrowUpRight className="h-3.5 w-3.5 text-success shrink-0" />
+              <ArrowUpRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
             )}
-            <span className="font-mono text-xs">{c.ip}</span>
+            <span className="font-mono text-[13px]">{c.ip}</span>
             {c.hostname && (
-              <span className="text-xs text-muted-foreground truncate">{c.hostname}</span>
+              <span className="text-[13px] text-muted-foreground truncate">{c.hostname}</span>
             )}
-            <span className={`ml-auto text-[11px] font-medium ${wentDown ? "text-destructive" : "text-success"}`}>
-              {c.from_status ?? "?"} → {c.to_status}
+            {/* Stato d'arrivo come pastiglia: offline arancio con ▼, online verde scuro con ▲
+                (Riccardo, 20/10: colori ben distinguibili, non solo verde contro rosso). */}
+            <span
+              className={`ml-auto inline-flex items-center gap-1 rounded px-1.5 text-[13px] font-medium leading-snug ${wentDown ? "bg-[var(--host-offline)] text-[#0D2537]" : "bg-[var(--host-online)] text-white dark:text-[#0D2537]"}`}
+              title={`${c.from_status ?? "?"} → ${c.to_status}`}
+            >
+              <span aria-hidden>{wentDown ? "▼" : "▲"}</span>
+              {c.to_status}
             </span>
-            <span className="text-[11px] text-muted-foreground whitespace-nowrap">
+            <span className="text-[13px] text-muted-foreground whitespace-nowrap">
               {timeAgo(c.changed_at)}
             </span>
           </Link>

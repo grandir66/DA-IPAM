@@ -20,6 +20,9 @@ import {
   erroreRouterOs, parseBridge, parseFasci, parseInterfacce, parseMonitorBridge, parseMonitorFasci, parseMonitorMsti, parseMonitorPorte,
   parseMsti, parsePorteBridge, type LetturaMk,
 } from "@/lib/devices/mikrotik-stp";
+import {
+  parseDns, parseUtenti, parseVlanBridge, parseVlanInterfacce, type RigaDnsMk, type RigaUtenteMk, type RigaVlanBridgeMk, type RigaVlanMk,
+} from "@/lib/devices/mikrotik-scheda";
 
 /** Il tempo massimo di un comando nuovo (spec §13.5.1). Sulla rete B 32 comandi in circa un secondo: 20 s è largo. */
 export const TEMPO_COMANDO_MS = 20_000;
@@ -124,12 +127,18 @@ export interface RisultatoMk {
   riusciti: number;
   /** Il primo errore, col solo codice (resoconto ed esito). */
   codice: string | null;
+  /**
+   * Le uscite grezze di MK3, MK4 e MK8 lette davvero (esito «letto», anche vuote): la scheda le rilegge coi suoi lettori
+   * (Task 8, ADR 0027) senza comandi nuovi. Una chiave assente = non riuscito o «non so».
+   */
+  uscite: Partial<Record<"bridge" | "porteBridge" | "fasci", string>>;
 }
 
 export async function leggiMikrotikTopologia(esegui: Esegui, opz: { uscitaInterfacce: string | null; conVicini: boolean }): Promise<RisultatoMk> {
   let comandi = 0, riusciti = 0;
   let codice: string | null = null;
-  const prova = async <T>(cmd: string, leggi: (out: string) => T[]): Promise<T[] | null> => {
+  const uscite: RisultatoMk["uscite"] = {};
+  const prova = async <T>(cmd: string, leggi: (out: string) => T[], tieni?: keyof RisultatoMk["uscite"]): Promise<T[] | null> => {
     comandi++;
     let out: string;
     try {
@@ -146,17 +155,18 @@ export async function leggiMikrotikTopologia(esegui: Esegui, opz: { uscitaInterf
       return null;
     }
     riusciti++;
+    if (tieni) uscite[tieni] = out;
     return r.valore;
   };
   // MK2 già letto dal giro dei router: vale se si capisce; altrimenti si rilegge qui (errore dal testo o uscita strana).
   const daGiro = opz.uscitaInterfacce !== null ? interpretaUscita(opz.uscitaInterfacce, parseInterfacce) : null;
   const interfacce = daGiro !== null && "valore" in daGiro ? daGiro.valore : await prova(COMANDI_MK.interfacce, parseInterfacce);
   const vicini = opz.conVicini ? await prova(COMANDI_MK.vicini, parseMikrotikNeighbors) : null;
-  const bridge = await prova(COMANDI_MK.bridge, parseBridge);
-  const porteBridge = await prova(COMANDI_MK.porteBridge, parsePorteBridge);
+  const bridge = await prova(COMANDI_MK.bridge, parseBridge, "bridge");
+  const porteBridge = await prova(COMANDI_MK.porteBridge, parsePorteBridge, "porteBridge");
   const monitorBridge = await prova(COMANDI_MK.monitorBridge, parseMonitorBridge);
   const monitorPorte = await prova(COMANDI_MK.monitorPorte, parseMonitorPorte);
-  const fasci = await prova(COMANDI_MK.fasci, parseFasci);
+  const fasci = await prova(COMANDI_MK.fasci, parseFasci, "fasci");
   const monitorFasci = await prova(COMANDI_MK.monitorFasci, parseMonitorFasci);
   // MK7 (spec §13.5.2): solo se un bridge è in MSTP, lo decide il codice fra un comando e l'altro (MK3 non letto: non si sa,
   // non si manda). Il monitor si attacca alle righe di `msti print`: senza quelle non servirebbe, e non parte.
@@ -165,6 +175,63 @@ export async function leggiMikrotikTopologia(esegui: Esegui, opz: { uscitaInterf
   const monitorIstanze = istanze !== null ? await prova(COMANDI_MK.monitorMsti, parseMonitorMsti) : null;
   return {
     lettura: { interfacce, bridge, porteBridge, monitorBridge, monitorPorte, fasci, monitorFasci, istanze, monitorIstanze },
-    vicini, comandi, riusciti, codice,
+    vicini, comandi, riusciti, codice, uscite,
   };
+}
+
+/**
+ * I comandi della lettura «VLAN, DNS e utenti dei MikroTik» (scheda MikroTik, Task 10, ADR 0027), esatti, in sola lettura.
+ * Dietro `topologia.lettura.mikrotik_scheda`, spenta di default. `/user print` nella forma `terse`: la tabella si rompe sui
+ * valori con lo spazio (commenti, ora dell'ultimo accesso); la password RouterOS non la mostra in nessuna delle due.
+ */
+export const COMANDI_MK_SCHEDA = {
+  vlanBridge: "/interface bridge vlan print terse without-paging",
+  vlan: "/interface vlan print terse without-paging",
+  dns: "/ip dns print",
+  utenti: "/user print terse without-paging",
+} as const;
+
+/** null = non letto (errore, tempo scaduto, uscita non capita): chi scrive non tocca quella tabella. [] = letto e vuoto. */
+export interface RisultatoMkScheda {
+  vlanBridge: RigaVlanBridgeMk[] | null;
+  vlan: RigaVlanMk[] | null;
+  dns: RigaDnsMk | null;
+  utenti: RigaUtenteMk[] | null;
+  comandi: number;
+  riusciti: number;
+  /** Il primo errore, col solo codice. */
+  codice: string | null;
+}
+
+/** I quattro comandi su una connessione (quella di `esegui`), ognuno col suo tempo e i tre esiti di `interpretaUscita`. */
+export async function leggiMikrotikScheda(esegui: Esegui): Promise<RisultatoMkScheda> {
+  let comandi = 0, riusciti = 0;
+  let codice: string | null = null;
+  const prova = async <T>(cmd: string, leggi: (out: string) => T[], vuotoNonCapito = false): Promise<T[] | null> => {
+    comandi++;
+    let out: string;
+    try {
+      out = await esegui(cmd, TEMPO_COMANDO_MS);
+    } catch (e) {
+      codice ??= codiceTrasporto(e);
+      return null;
+    }
+    const r = interpretaUscita(out, leggi);
+    if ("codice" in r) {
+      codice ??= r.codice;
+      return null;
+    }
+    // `/ip dns print` ha sempre delle chiavi: un'uscita vuota non è «nessun DNS», è un'uscita che non si capisce.
+    if (vuotoNonCapito && r.valore.length === 0) {
+      codice ??= CODICE_USCITA_NON_CAPITA;
+      return null;
+    }
+    riusciti++;
+    return r.valore;
+  };
+  const vlanBridge = await prova(COMANDI_MK_SCHEDA.vlanBridge, parseVlanBridge);
+  const vlan = await prova(COMANDI_MK_SCHEDA.vlan, parseVlanInterfacce);
+  const dns = await prova(COMANDI_MK_SCHEDA.dns, (o) => { const d = parseDns(o); return d ? [d] : []; }, true);
+  const utenti = await prova(COMANDI_MK_SCHEDA.utenti, parseUtenti);
+  return { vlanBridge, vlan, dns: dns ? dns[0] : null, utenti, comandi, riusciti, codice };
 }

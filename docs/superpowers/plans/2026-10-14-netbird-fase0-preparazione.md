@@ -7,7 +7,7 @@
 > **Eseguito il 2026-10-14**: esito nel piano generale, «Avanzamento». La VM del Task 3 è stata
 > fatta sul PX-NAS di casa (`192.168.99.1`) invece che su DA-PX-04, per scelta di Riccardo.
 
-**Obiettivo:** sapere esattamente cosa c'è oggi, provare che Tailscale e NetBird convivono,
+**Obiettivo:** sapere esattamente cosa c'è oggi, provare che la VPN precedente e NetBird convivono,
 togliere `All` dalle policy dei colleghi e mettere in NetBird i centrali. Il tutto senza
 toccare nessun cliente.
 
@@ -41,10 +41,10 @@ su da-vulcan sono poche, ognuna con fotografia prima e modo di tornare indietro.
    raggiungere tutto come prima. La verifica sta nel Task 4, passo 5.
 2. **Un peer che oggi sta solo in `All`** (nessun altro gruppo): dopo lo spostamento perde
    l'accesso. Il Task 4, passo 2 li elenca per nome prima di toccare.
-3. **Tailscale che scarta il traffico NetBird** (spec, rischio 1): si prova nel Task 3, prima
+3. **La VPN precedente che scarta il traffico NetBird** (spec, rischio 1): si prova nel Task 3, prima
    di toccare da-vulcan nel Task 5.
 4. **Codici tenant che non sono `codcli`** (es. `70791a`): il Task 1, passo 4 li elenca.
-5. **Un censimento parziale.** Un nodo Tailscale spento oggi non compare come attivo, ma va
+5. **Un censimento parziale.** Un nodo della VPN precedente spento oggi non compare come attivo, ma va
    censito lo stesso. Il Task 1 legge anche i nodi offline, con la data dell'ultimo
    contatto.
 
@@ -59,7 +59,7 @@ su da-vulcan sono poche, ognuna con fotografia prima e modo di tornare indietro.
   - **Task 4**: spostare policy, rotte e nameserver da `All` a `users`/`admins`, poi
     spegnere `Default`;
   - **Task 5**: creare i gruppi `centro-vulcan`, `centro-zabbix`, `centro-link`; installare
-    il client NetBird su da-vulcan accanto a Tailscale e aggiungere DA-ZABBIX al suo gruppo.
+    il client NetBird su da-vulcan accanto alla VPN precedente e aggiungere DA-ZABBIX al suo gruppo.
 - [x] **Passo 2:** annotare nel CONTEXT di DA-IPAM (§6) cosa è confermato e cosa no. Un
   task non confermato si salta e si dice.
 
@@ -69,10 +69,10 @@ su da-vulcan sono poche, ognuna con fotografia prima e modo di tornare indietro.
 - Crea, usa e getta, nello scratchpad: `censimento_netbird.py`
 - Modifica: la spec, appendice nuova «A. Censimento fase 0 (data)»
 
-- [x] **Passo 1: Tailscale, una sola chiamata.**
+- [x] **Passo 1: la VPN precedente, una sola chiamata.**
 
 ```bash
-ssh -o ConnectTimeout=10 domarc@da-vulcan 'tailscale status --json' > "$SCRATCH/ts.json"; echo "exit=$?"
+ssh -o ConnectTimeout=10 domarc@da-vulcan '<stato della VPN precedente in JSON>' > "$SCRATCH/ts.json"; echo "exit=$?"
 python3 - "$SCRATCH/ts.json" <<'EOF'
 import json, sys
 d = json.load(open(sys.argv[1]))
@@ -80,12 +80,12 @@ righe = [d["Self"]] + list(d.get("Peer", {}).values())
 for p in sorted(righe, key=lambda p: p.get("HostName", "")):
     print(f'{p.get("HostName",""):30} {",".join(p.get("Tags") or []):25} '
           f'{p.get("OS",""):8} online={p.get("Online")} ultimo={p.get("LastSeen","")[:16]} '
-          f'ip={(p.get("TailscaleIPs") or [""])[0]}')
+          f'ip=<primo IP del nodo nella VPN precedente>')
 EOF
 ```
 
 Atteso: `exit=0` e una riga per nodo, compresi quelli offline. Se `exit=255` è ssh, non
-Tailscale: si prova `ssh domarc@192.168.4.6` una volta, poi ci si ferma e si chiede (REGOLA #0).
+VPN precedente: si prova `ssh domarc@192.168.4.6` una volta, poi ci si ferma e si chiede (REGOLA #0).
 
 - [x] **Passo 2: NetBird, script in sola lettura.**
 
@@ -173,7 +173,7 @@ libreria standard): niente installazioni.
 
 - [x] **Passo 6: l'appendice della spec.** Si aggiunge in fondo alla spec «Appendice A —
   Censimento fase 0 (AAAA-MM-GG, fonti)»:
-  - tabella dei nodi Tailscale (nome, tipo di oggetto dedotto, cliente, online, ultimo
+  - tabella dei nodi della VPN precedente (nome, tipo di oggetto dedotto, cliente, online, ultimo
     contatto);
   - policy, rotte e nameserver NetBird con `All`;
   - peer solo in `All`;
@@ -185,7 +185,7 @@ libreria standard): niente installazioni.
 - [x] **Passo 7: commit** (solo documentazione, su `dev` da un worktree di `origin/dev`):
 ```bash
 git add docs/superpowers/specs/2026-10-14-netbird-rete-a-stella-design.md
-git commit -m "docs(netbird): censimento fase 0 — Tailscale, NetBird, edge, tenant"
+git commit -m "docs(netbird): censimento fase 0 — VPN precedente, NetBird, edge, tenant"
 ```
 
 ### Task 2: Decisioni con Riccardo sul censimento
@@ -201,12 +201,12 @@ git commit -m "docs(netbird): censimento fase 0 — Tailscale, NetBird, edge, te
 - [x] **Passo 2:** le risposte nella spec, §2 (decisioni nuove numerate) e §15 (voci chiuse).
   Commit come nel Task 1, passo 7.
 
-### Task 3: Prova di convivenza Tailscale + NetBird (**CONFERMA**)
+### Task 3: Prova di convivenza VPN precedente + NetBird (**CONFERMA**)
 
-Risponde al rischio 1 della spec: con Tailscale acceso, il traffico NetBird passa?
+Risponde al rischio 1 della spec: con la VPN precedente accesa, il traffico NetBird passa?
 
 - [x] **Passo 1: VM di prova** su `DA-PX-04` (`192.168.40.4`): Ubuntu 24.04 da template,
-  nome `prova-convivenza`. Tailscale installato e collegato alla tailnet attuale con un
+  nome `prova-convivenza`. VPN precedente installata e collegata al suo account attuale con un
   login interattivo che fa Riccardo. Niente auth-key in chiaro.
 - [x] **Passo 2: NetBird.**
   - Con lo script del Task 1, esteso con una sola funzione di scrittura, si creano il gruppo
@@ -247,12 +247,12 @@ python3 -I "$SCRATCH/emetti.py" | ssh root@<vm> 'read -r K; netbird up --managem
   Atteso: `exit=0` e, sulla VM, `netbird status` con `Management: Connected`.
 - [x] **Passo 3: misura, in un solo comando sulla VM.**
 ```bash
-ssh root@<vm> 'iptables -S | grep -E "ts-input|100.64" ; ip rule ; ip route show table all | grep -E "wt0|tailscale0" | head; netbird status | head -20; tailscale status | head -5'
+ssh root@<vm> 'iptables -S | grep -E "ts-input|100.64" ; ip rule ; ip route show table all | grep -E "wt0|<interfaccia della VPN precedente>" | head; netbird status | head -20; <stato della VPN precedente> | head -5'
 ```
   e dal Mac di un admin collegato a NetBird: `ssh -o ConnectTimeout=5 root@prova-convivenza.netbird.selfhosted true; echo exit=$?`.
 - [x] **Passo 4: esito.**
   - Se `exit=0`, la convivenza regge: si annota e si va avanti.
-  - Se fallisce, una sola prova del rimedio `tailscale set --netfilter-mode=off` e si
+  - Se fallisce, una sola prova del rimedio (firewall della VPN precedente spento, `netfilter-mode=off`) e si
     ripete il passo 3.
   - Se fallisce ancora, ci si ferma e si porta a Riccardo la seconda via: una fascia NetBird
     diversa, impostazione dell'account, che è una scrittura sul NetBird di tutti.
@@ -289,7 +289,7 @@ ssh root@<vm> 'iptables -S | grep -E "ts-input|100.64" ; ip rule ; ip route show
 - [x] **Passo 8:** in DA-Infra `docs/servizi/netbird.md` la regola «`All` mai in policy,
   rotte e nameserver», con la data. Commit in DA-Infra.
 
-### Task 5: I centrali in NetBird, senza lasciare Tailscale (**CONFERMA**)
+### Task 5: I centrali in NetBird, senza lasciare la VPN precedente (**CONFERMA**)
 
 - [x] **Passo 1:** gruppi `centro-vulcan`, `centro-zabbix`, `centro-link`, vuoti. Nessuna
   policy nuova: le scriverà DA-Link (tappa A), che ne è il proprietario.
@@ -298,7 +298,7 @@ ssh root@<vm> 'iptables -S | grep -E "ts-input|100.64" ; ip rule ; ip route show
 - [x] **Passo 3: da-vulcan.**
   - Client NetBird installato da repo ufficiale; setup key monouso con gruppo
     `centro-vulcan`, passata da stdin.
-  - **Tailscale resta acceso.**
+  - **La VPN precedente resta accesa.**
   - Prima e dopo, in un solo comando:
     `systemctl is-active da-vul-can; curl -sk -o /dev/null -w "%{http_code}" https://localhost/api/health`.
   - Dopo, in più: `netbird status | head`.

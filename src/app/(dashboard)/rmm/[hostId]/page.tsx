@@ -47,6 +47,7 @@ import { CommandPanel } from "@/components/rmm/command-panel";
 import { Badge } from "@/components/ui/badge";
 import { EsitiApertura, chiediApertura } from "@/components/integrations/apertura-browser";
 import type { AperturaModulo } from "@/lib/modules/health";
+import { useUrlPerBrowser } from "@/components/shared/url-per-browser";
 
 /**
  * Modalita' della sessione. I viewmode 11/12/13 sono di MeshCentral e vivono
@@ -76,7 +77,10 @@ export default function RemoteSessionPage() {
   const hostId = Number(params?.hostId);
 
   const [mode, setMode] = useState<Mode>(11);
-  const [url, setUrl] = useState<string | null>(null);
+  const [urlSessione, setUrl] = useState<string | null>(null);
+  // MeshCentral dell'appliance con l'host del browser (21/10): riquadro e «Apri».
+  const perBrowser = useUrlPerBrowser();
+  const url = perBrowser(urlSessione);
   const [status, setStatus] = useState<MeshStatus | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -263,7 +267,7 @@ export default function RemoteSessionPage() {
                     },
                   );
                   const d = (await r.json().catch(() => ({}))) as { url?: string };
-                  if (d.url) window.open(d.url, "_blank", "noopener,noreferrer");
+                  if (d.url) window.open(perBrowser(d.url), "_blank", "noopener,noreferrer");
                 })();
               }}
             >

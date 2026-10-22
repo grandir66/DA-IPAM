@@ -128,74 +128,44 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       credentials: {
         username: { label: "Username", type: "text" },
         password: { label: "Password", type: "password" },
+        codice: { label: "Codice", type: "text" },
       },
-      async authorize(credentials, request) {
-        if (!credentials?.username || !credentials?.password) {
+      async authorize(credentials) {
+        // Password, blocco dei tentativi (backoff incrementale e visibile: incidenti 99.50 del
+        // 17/07 e appliance cliente A) e verifica in due passaggi per chi l'admin l'ha richiesta
+        // stanno in una funzione sola, la stessa del passo 1 della pagina (ADR 0023).
+        const { verificaAccessoLocale } = await import("./accesso/accesso-locale");
+        const esito = await verificaAccessoLocale(
+          {
+            username: String(credentials?.username ?? ""),
+            password: String(credentials?.password ?? ""),
+            codice: credentials?.codice ? String(credentials.codice) : undefined,
+          },
+          { fase: "accesso" },
+        );
+        if (esito.esito === "bloccato") {
+          console.warn(`[Auth] ${String(credentials?.username ?? "").trim()}: login bloccato ancora ${esito.secondi}s`);
           return null;
         }
 
-        const username = (credentials.username as string).trim();
-        const password = credentials.password as string;
-        if (!username) {
-          return null;
-        }
-
-        // Login: backoff INCREMENTALE e VISIBILE. I primi tentativi non bloccano;
-        // dal superamento della soglia scatta un cooldown che raddoppia a ogni
-        // ulteriore fallimento (30s → 1m → 2m → … cap 15m). Solo i FALLIMENTI
-        // contano; un successo azzera (clearRateLimit). Se bloccato si torna qui
-        // SENZA toccare la password e SENZA registrare un nuovo fallimento (i
-        // tentativi durante il cooldown non aggravano il blocco). La UI mostra il
-        // countdown via GET /api/auth/lock-state, così l'utente sa di dover
-        // aspettare e non crede di aver perso la password. Radice degli incidenti
-        // 99.50 (17/07) e appliance cliente A (blocco "muto" = "credenziali errate").
-        const { loginLockState, recordFailedAttempt, clearRateLimit } = await import("./rate-limit");
-        const rateLimitKey = `login:${username}`;
-        const lock = loginLockState(rateLimitKey);
-        if (lock.locked) {
-          console.warn(
-            `[Auth] ${username}: login bloccato ancora ${lock.retryAfterSec}s dopo ${lock.fails} tentativi falliti`,
-          );
-          return null;
-        }
-
-        // ── Utente di servizio Domarc (env var, accesso incondizionato) ──
-        const domarcUser = process.env.DOMARC_USERNAME || "domarc";
-        const domarcPass = process.env.DOMARC_PASSWORD;
-        if (domarcPass && username === domarcUser && password === domarcPass) {
+        // ── Utente di servizio Domarc (env var, accesso incondizionato, senza codice) ──
+        if (esito.esito === "servizio") {
           const { getActiveTenants } = await import("./db-hub");
           const allTenants = getActiveTenants();
           return {
             id: "0",
-            name: domarcUser,
+            name: esito.username,
             email: "support@domarc.it",
             role: "superadmin",
             tenants: allTenants.map(t => ({ code: t.codice_cliente, name: t.ragione_sociale, role: "superadmin" })),
             tenantCode: "__ALL__",
           };
         }
+        if (esito.esito !== "entra") return null;
 
-        // ── Autenticazione standard da hub DB ──
-        const { getUserByUsername, getUserTenantAccess } = await import("./db-hub");
+        const user = esito.utente;
+        const { getUserTenantAccess } = await import("./db-hub");
         const { updateUserLastLogin } = await import("./db");
-        const bcrypt = await import("bcrypt");
-
-        const user = getUserByUsername(username);
-        if (!user) {
-          recordFailedAttempt(rateLimitKey);
-          return null;
-        }
-
-        const isValid = await bcrypt.compare(password, user.password_hash);
-        if (!isValid) {
-          recordFailedAttempt(rateLimitKey);
-          return null;
-        }
-
-        // Password corretta → azzera i fallimenti: chi indovina al 5° tentativo
-        // deve poter entrare, e i tentativi andati a vuoto non devono accumularsi
-        // fino a bloccare un utente legittimo giorni dopo.
-        clearRateLimit(rateLimitKey);
         updateUserLastLogin(user.id);
 
         // Superadmin vede tutti i tenant attivi (come utente Domarc),

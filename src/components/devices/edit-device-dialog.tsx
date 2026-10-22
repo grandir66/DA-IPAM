@@ -162,7 +162,8 @@ export function EditDeviceDialog({ device, open, onOpenChange, onSaved }: EditDe
       return;
     }
     if (editProductProfile) body.product_profile = editProductProfile;
-    if (editClassification) body.classification = editClassification;
+    // Solo se l'utente l'ha cambiata: una classificazione rimandata uguale non deve fissarsi «a mano».
+    if (editClassification && editClassification !== ((device as { classification?: string | null }).classification ?? "")) body.classification = editClassification;
     body.use_for_arp_poll = editUseForArpPoll ? 1 : 0;
     if (editSnmpVersione !== sceltaVersioneSnmp(device)) body.snmp_version_scelta = editSnmpVersione;
     formData.forEach((val, key) => {

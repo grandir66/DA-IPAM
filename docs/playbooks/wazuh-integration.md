@@ -47,7 +47,7 @@ Risultato: due utenti read-only attivi sul Wazuh — uno per la API REST (porta 
 DA-IPAM apre connessioni HTTP server-side verso il Wazuh manager + dashboard
 (reverse proxy iframe + API REST). Se il FQDN `da-wazuh.<dominio>` non è
 risolvibile dal resolver della VM DA-IPAM (es. DNS interno LAN non
-configurato, Tailscale MagicDNS non condiviso), tutte le chiamate server-side
+configurato, DNS dell'overlay non condiviso), tutte le chiamate server-side
 falliscono con `ENOTFOUND` mentre il browser dell'utente risolve normalmente
 (usa il DNS aziendale).
 

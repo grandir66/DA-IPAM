@@ -1,0 +1,122 @@
+{
+ "meta": {
+  "rc": "ok"
+ },
+ "data": [
+  {
+   "_id": "000000000000000000000001",
+   "name": "rete-01",
+   "purpose": "corporate",
+   "vlan_enabled": false
+  },
+  {
+   "_id": "000000000000000000000002",
+   "name": "rete-02",
+   "purpose": "vlan-only",
+   "vlan_enabled": true,
+   "vlan": 4
+  },
+  {
+   "_id": "000000000000000000000003",
+   "name": "rete-03",
+   "purpose": "vlan-only",
+   "vlan_enabled": true,
+   "vlan": "5"
+  },
+  {
+   "_id": "000000000000000000000004",
+   "name": "rete-04",
+   "purpose": "vlan-only",
+   "vlan_enabled": true,
+   "vlan": "7"
+  },
+  {
+   "_id": "000000000000000000000005",
+   "name": "rete-05",
+   "purpose": "vlan-only",
+   "vlan_enabled": true,
+   "vlan": 6
+  },
+  {
+   "_id": "000000000000000000000006",
+   "name": "rete-06",
+   "purpose": "vlan-only",
+   "vlan_enabled": true,
+   "vlan": "2"
+  },
+  {
+   "_id": "000000000000000000000007",
+   "name": "rete-07",
+   "purpose": "corporate",
+   "vlan_enabled": true,
+   "vlan": 88
+  },
+  {
+   "_id": "000000000000000000000008",
+   "name": "rete-08",
+   "purpose": "vlan-only",
+   "vlan_enabled": true,
+   "vlan": 666
+  },
+  {
+   "_id": "000000000000000000000009",
+   "name": "rete-09",
+   "purpose": "vlan-only",
+   "vlan_enabled": true,
+   "vlan": 133
+  },
+  {
+   "_id": "000000000000000000000010",
+   "name": "rete-10",
+   "purpose": "vlan-only",
+   "vlan_enabled": true,
+   "vlan": 15
+  },
+  {
+   "_id": "000000000000000000000011",
+   "name": "rete-11",
+   "purpose": "vlan-only",
+   "vlan_enabled": true,
+   "vlan": 20
+  },
+  {
+   "_id": "000000000000000000000012",
+   "name": "rete-12",
+   "purpose": "vlan-only",
+   "vlan_enabled": true,
+   "vlan": 40
+  },
+  {
+   "_id": "000000000000000000000013",
+   "name": "rete-13",
+   "purpose": "vlan-only",
+   "vlan_enabled": true,
+   "vlan": 16
+  },
+  {
+   "_id": "000000000000000000000014",
+   "name": "rete-14",
+   "purpose": "wan"
+  },
+  {
+   "_id": "000000000000000000000015",
+   "name": "rete-15",
+   "purpose": "wan"
+  },
+  {
+   "_id": "000000000000000000000016",
+   "name": "rete-16",
+   "purpose": "wan"
+  },
+  {
+   "_id": "000000000000000000000017",
+   "name": "rete-17",
+   "purpose": "remote-user-vpn"
+  },
+  {
+   "_id": "000000000000000000000018",
+   "name": "rete-18",
+   "purpose": "vpn-client"
+  }
+ ]
+}

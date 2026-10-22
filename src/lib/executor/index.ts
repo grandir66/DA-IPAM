@@ -1,17 +1,15 @@
 /**
  * Executor — astrazione che disaccoppia chi orchestra (hub) da chi esegue
- * effettivamente I/O verso la rete cliente (in-process locale o agente remoto).
+ * effettivamente I/O verso la rete cliente. Esiste solo l'esecuzione locale.
  *
- * In Phase 1 la factory `getExecutor()` ritorna sempre `LocalExecutor`.
- * Per i tenant marcati `agent_mode='remote'` ma con agent non configurato,
- * lanciamo un errore esplicito: in Phase 3 la stessa condizione verrà sostituita
- * dal `RemoteExecutor`.
+ * L'agente Python remoto è tolto (20/10/2026, decisione 26 della spec NetBird:
+ * nessuno lo usava). Un cliente rimasto con `agent_mode='remote'` nel DB non
+ * ripiega in silenzio sull'hub: `getExecutor` lancia `ExecutorNotConfiguredError`
+ * con la via d'uscita, e il giro di scansione si ferma con quel messaggio.
  */
 
-import { getTenantByCode, getFirstTenantAgent } from "@/lib/db-hub";
-import { safeDecrypt } from "@/lib/crypto";
+import { getTenantByCode } from "@/lib/db-hub";
 import { LocalExecutor } from "./local";
-import { RemoteExecutor } from "./remote";
 import type {
   DnsBatchCallbacks,
   DnsResolution,
@@ -96,40 +94,32 @@ export function getExecutor(tenantCode: string): Executor {
     throw new ExecutorNotConfiguredError(tenantCode, `Tenant '${tenantCode}' non trovato`);
   }
 
-  const mode: ExecutorMode = tenant.agent_mode === "remote" ? "remote" : "local";
-
-  if (mode === "remote") {
-    // Fonte di verità: tabella tenant_agents (N agent per tenant). Phase 7+
-    // sceglierà l'agent giusto in base a subnet_match; per ora usiamo il primo.
-    const agent = getFirstTenantAgent(tenant.id);
-    if (!agent) {
-      throw new ExecutorNotConfiguredError(
-        tenantCode,
-        `Tenant '${tenantCode}' è 'remote' ma non ha agenti configurati. Aggiungine uno da /agents.`,
-      );
-    }
-    if (!agent.token_encrypted) {
-      throw new ExecutorNotConfiguredError(
-        tenantCode,
-        `Agente '${agent.label}' del tenant '${tenantCode}' senza token. Generane uno da /agents.`,
-      );
-    }
-    const token = safeDecrypt(agent.token_encrypted);
-    if (!token) {
-      throw new ExecutorNotConfiguredError(
-        tenantCode,
-        `Decifratura token fallita per agente '${agent.label}'. Rigenera il token.`,
-      );
-    }
-    return new RemoteExecutor({
-      hostname: agent.hostname,
-      port: agent.port,
-      token,
+  if (tenant.agent_mode === "remote") {
+    throw new ExecutorNotConfiguredError(
       tenantCode,
-    });
+      `Il cliente '${tenantCode}' è ancora in modalità «agente remoto», che non esiste più (tolta il 20/10/2026): ` +
+        "la scansione non parte, per non provarla dall'hub su reti che l'hub non vede. " +
+        "Per scansionare dall'hub va riportato in modalità locale (tenants.agent_mode = 'local').",
+    );
   }
 
   return new LocalExecutor();
+}
+
+/**
+ * L'esecutore di un giro di scansione. `null` = esecuzione locale coi moduli dello
+ * scanner, come prima: nessun cliente nel contesto, o cliente non trovato (avviso nel
+ * log). Un cliente in modalità remota fa invece fallire il giro (vedi sopra).
+ */
+export function esecutorePerGiro(tenantCode: string | null | undefined): Executor | null {
+  if (!tenantCode) return null;
+  try {
+    return getExecutor(tenantCode);
+  } catch (e) {
+    if (e instanceof ExecutorNotConfiguredError && getTenantByCode(tenantCode)) throw e;
+    console.warn(`[Executor] getExecutor("${tenantCode}") fallito — esecuzione locale: ${(e as Error).message}`);
+    return null;
+  }
 }
 
 export type { HealthCheckResult, NmapPortScanOptions } from "./types";

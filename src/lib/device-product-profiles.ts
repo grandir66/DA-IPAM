@@ -1,4 +1,5 @@
 import type { NetworkDevice } from "@/types";
+import { canonicalizza } from "./classification/canonico";
 
 /**
  * Profilo prodotto: marca (vendor DB) + tipologia funzionale.
@@ -244,7 +245,9 @@ export function resolveDeviceTypeForCreate(input: {
     input.classification === "server_linux" ||
     input.classification === "server_windows"
   ) {
-    return "server";
+    // La variante vince sulla classificazione generica: «Server» + Proxmox VE/PBS o vSphere è un hypervisor
+    // (la topologia filtra per device_type; revisione finale 21/10, n. 6).
+    return suggestDeviceTypeFromProductProfile(input.product_profile) === "hypervisor" ? "hypervisor" : "server";
   }
   if (input.device_type) return input.device_type;
   return suggestDeviceTypeFromProductProfile(input.product_profile);
@@ -731,4 +734,60 @@ export function inferProductProfileFromLegacy(
   }
   if (vendor === "vmware") return "vmware_vsphere";
   return getDefaultProductProfileForVendor(vendor);
+}
+
+/**
+ * Classificazioni con cui ogni profilo ha senso. Un profilo assente (`*_other`) non
+ * è mai proposto come variante: «Altro» non dice nulla in più della classificazione.
+ */
+const CLASSIFICAZIONI_DEL_PROFILO: Partial<Record<ProductProfileId, readonly string[]>> = {
+  mikrotik_router: ["router"],
+  mikrotik_switch: ["switch"],
+  ubiquiti_router: ["router", "firewall"],
+  ubiquiti_switch_base: ["switch"],
+  ubiquiti_switch_managed: ["switch"],
+  ubiquiti_access_point: ["access_point"],
+  windows_server: ["server", "hypervisor", "vm"],
+  windows_client: ["workstation", "notebook", "tablet"],
+  linux_server: ["server", "hypervisor", "vm"],
+  linux_client: ["workstation", "notebook", "tablet"],
+  proxmox_ve: ["server", "hypervisor"],
+  proxmox_pbs: ["server", "hypervisor"],
+  synology_storage: ["nas"],
+  qnap_storage: ["nas"],
+  qnap_switch: ["switch"],
+  qnap_router: ["router"],
+  hp_switch_procurve: ["switch"],
+  hp_switch_comware: ["switch"],
+  hp_switch_arubaos: ["switch"],
+  hp_server_ilo: ["server"],
+  hp_stampante: ["stampante", "multifunzione", "scanner"],
+  omada_switch: ["switch"],
+  omada_access_point: ["access_point"],
+  stormshield_firewall: ["firewall"],
+  cisco_switch: ["switch"],
+  cisco_router: ["router"],
+  cisco_telefono: ["voip"],
+  vmware_vsphere: ["hypervisor", "server"],
+  macos_notebook: ["notebook"],
+  macos_desktop: ["workstation"],
+  macos_server: ["server"],
+  generic_ups: ["ups"],
+  generic_voip: ["voip"],
+  generic_cam: ["telecamera"],
+  generic_stampante: ["stampante", "multifunzione", "scanner"],
+  generic_iot: ["iot", "sensore", "domotica"],
+};
+
+/**
+ * Varianti da chiedere all'utente (finestra «Rendi apparato», 21/10): i profili della
+ * piattaforma compatibili con la classificazione, nell'ordine del catalogo. Con zero o
+ * una sola il campo «Variante» non si mostra (MikroTik switch → una sola); con più di una
+ * serve la scelta (HPE switch → ProCurve · Comware · ArubaOS; Proxmox server → VE · PBS).
+ */
+export function variantiPer(vendor: string, classificazione: string): ProductProfileId[] {
+  const classe = canonicalizza(classificazione).classificazione;
+  if (!classe) return [];
+  const profili = (PRODUCT_PROFILES_BY_VENDOR as Record<string, readonly ProductProfileId[]>)[vendor] ?? [];
+  return profili.filter((p) => CLASSIFICAZIONI_DEL_PROFILO[p]?.includes(classe));
 }

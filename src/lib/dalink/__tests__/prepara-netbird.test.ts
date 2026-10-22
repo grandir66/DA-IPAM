@@ -19,7 +19,7 @@ const RADICE = fs.mkdtempSync(path.join(os.tmpdir(), "dalink-prepara-"));
 after(() => fs.rmSync(RADICE, { recursive: true, force: true }));
 
 const CHIAVE = "A1B2C3D4-E5F6-4789-9ABC-DEF012345678";
-const FINTI = ["apt-get", "curl", "gpg", "netbird", "tailscale", "nft", "systemctl", "shred", "id", "ip"];
+const FINTI = ["apt-get", "curl", "gpg", "netbird", "nft", "systemctl", "shred", "id", "ip"];
 
 interface Ambiente {
   dir: string;
@@ -28,7 +28,7 @@ interface Ambiente {
   registro: string;
 }
 
-function ambiente(opz: { tailscale?: boolean; netbird?: boolean; oggetto?: boolean; nodo?: string } = {}): Ambiente {
+function ambiente(opz: { netbird?: boolean; oggetto?: boolean; nodo?: string } = {}): Ambiente {
   const dir = fs.mkdtempSync(path.join(RADICE, "a-"));
   const bin = path.join(dir, "bin");
   const dalink = path.join(dir, "etc-dalink");
@@ -37,7 +37,6 @@ function ambiente(opz: { tailscale?: boolean; netbird?: boolean; oggetto?: boole
   fs.mkdirSync(bin);
   fs.mkdirSync(systemd);
   for (const c of FINTI) {
-    if (c === "tailscale" && !opz.tailscale) continue;
     if (c === "netbird" && opz.netbird === false) continue;
     let corpo = `#!/bin/bash\necho "${c} $*" >> "${registro}"\n`;
     if (c === "id") corpo += 'echo 0\n';
@@ -80,10 +79,10 @@ test("la chiave non compare in nessun argomento né nell'uscita, e il suo file s
 });
 
 test("prova a vuoto: nessun comando che scrive, nessun file creato", () => {
-  const a = ambiente({ tailscale: true });
+  const a = ambiente();
   const r = lancia(a, ["--edge", "si", "--chiave-da-stdin"], `${CHIAVE}\n`);
   assert.equal(r.codice, 0, r.out);
-  assert.doesNotMatch(r.comandi, /apt-get|netbird up|systemctl|tailscale set|nft -f|shred/);
+  assert.doesNotMatch(r.comandi, /apt-get|netbird up|systemctl|nft -f|shred/);
   assert.match(r.out, /Prova a vuoto/);
   assert.match(r.out, /6443/);
   assert.ok(!r.out.includes(CHIAVE));
@@ -96,16 +95,6 @@ test("senza --edge si ferma prima di tutto", () => {
   const r = lancia(a, ["--applica"]);
   assert.notEqual(r.codice, 0);
   assert.equal(r.comandi, "");
-});
-
-test("Tailscale presente: netfilter-mode=off prima di netbird up", () => {
-  const a = ambiente({ tailscale: true });
-  const r = lancia(a, ["--applica", "--edge", "no", "--chiave-da-stdin"], `${CHIAVE}\n`);
-  assert.equal(r.codice, 0, r.out);
-  const righe = r.comandi.split("\n");
-  const ts = righe.findIndex((x) => x === "tailscale set --netfilter-mode=off");
-  const up = righe.findIndex((x) => x.startsWith("netbird up"));
-  assert.ok(ts >= 0 && up > ts, r.comandi);
 });
 
 test("senza oggetto.env e con la chiave: si ferma e non chiama netbird up", () => {

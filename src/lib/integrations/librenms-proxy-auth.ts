@@ -6,7 +6,8 @@ import {
   verificaSessioneLibreNMS,
   type LibreNMSWebSessionOptions,
 } from "@/lib/integrations/librenms-web-session";
-import { applianceHostPubblici, isInternalIntegrationUrl } from "@/lib/integrations/public-url";
+import { isInternalIntegrationUrl } from "@/lib/integrations/public-url";
+import { hostDellAppliance } from "@/lib/integrations/host-appliance-server";
 import { scegliUrlOperatoreLibreNMS } from "@/lib/integrations/librenms-accesso";
 
 const DEFAULT_USERNAME = "admin";
@@ -106,7 +107,9 @@ export function librenmsSvuotaSessioniAccesso(): void {
  * browser sullo stesso nome con cui ha aperto DA-IPAM (i cookie seguono il nome).
  */
 export function librenmsHostAllineabili(): string[] {
-  return applianceHostPubblici();
+  // Stessa fonte dei link dell'interfaccia (`urlPerIlBrowser`, 21/10): prima solo
+  // le variabili d'ambiente, che sulle appliance spesso mancano.
+  return hostDellAppliance();
 }
 
 export function librenmsAutologinEnabled(): boolean {

@@ -1,6 +1,8 @@
 import type Database from "better-sqlite3";
 import type { AttributionResult } from "./fuse";
 import { projectLegacy } from "./legacy-projection";
+import { canonicalizza, type Canonica } from "@/lib/classification/canonico";
+import { aggiungiRuoloServer } from "@/lib/classification/scrittura";
 
 interface CurrentAttrRow {
   attr_vendor: string | null;
@@ -92,8 +94,14 @@ export function applyAttribution(
   // write-amplification che il guard esisteva per evitare).
   const projectable = current !== undefined && current.classification_manual === 0;
   const legacyToWrite: Array<[column: string, value: string | number | null]> = [];
+  let ruoloProiezione: Canonica | null = null;
   if (projectable) {
     const projection = projectLegacy(result);
+    // Catalogo canonico (21/10): la proiezione passa da canonicalizza (il ruolo va in server_roles).
+    if (projection.classification !== null) {
+      ruoloProiezione = canonicalizza(projection.classification);
+      projection.classification = ruoloProiezione.classificazione;
+    }
     const candidates: Array<[column: string, value: string | number | null, currentValue: string | number | null]> = [
       ["classification", projection.classification, current.classification],
       ["inferred_device_type", projection.inferred_device_type, current.inferred_device_type],
@@ -152,6 +160,9 @@ export function applyAttribution(
       dbh.prepare(`UPDATE hosts SET ${setClause} WHERE id = ?`).run(
         ...legacyToWrite.map(([, value]) => value), hostId
       );
+      if (ruoloProiezione && legacyToWrite.some(([c]) => c === "classification")) {
+        aggiungiRuoloServer(dbh, "hosts", hostId, ruoloProiezione);
+      }
     }
   })();
   return true;

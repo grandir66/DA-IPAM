@@ -406,7 +406,7 @@ export function MacProductMapTab() {
             </CardDescription>
           </CardHeader>
           <CardContent className="p-0">
-            <Table>
+            <Table fissa>
               <TableHeader>
                 <TableRow>
                   <TableHead>Data</TableHead>

@@ -260,10 +260,14 @@ export default function AnalyticsPage() {
       {/* Tabella */}
       <Card>
         <CardHeader className="pb-2 pt-4 px-4">
-          <CardTitle className="text-sm font-medium">Eventi anomalia</CardTitle>
+          <CardTitle className="text-sm font-medium flex flex-wrap items-center justify-between gap-2">
+            Eventi anomalia
+            {/* Paginazione nella riga del titolo (Riccardo, 20/10). */}
+            <Pagination inTesta page={page} totalPages={totalPages} onPageChange={setPage} />
+          </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
-          <Table>
+          <Table fissa>
             <TableHeader>
               <TableRow>
                 <TableCell className="font-medium text-xs text-muted-foreground w-28">Tipo</TableCell>
@@ -341,8 +345,6 @@ export default function AnalyticsPage() {
           </Table>
         </CardContent>
       </Card>
-
-      <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
 
       {/* Detail dialog */}
       <Dialog open={!!selected} onOpenChange={(o) => { if (!o) setSelected(null); }}>

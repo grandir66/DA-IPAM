@@ -36,6 +36,17 @@ function cvssForFinding(f: HealthFinding, score: HealthScore): number {
   return SEVERITY_CVSS[f.severity] ?? Math.min(10, f.points / 10);
 }
 
+// The domain score's own severity comes from points, its CVSS from global/10: the hub
+// showed "Critical" next to 3.5. Derive the severity from the same CVSS bands instead.
+function severityForFinding(f: HealthFinding, score: HealthScore): string {
+  if (f.ruleId !== "DA-A-DomainScore") return f.severity;
+  const cvss = cvssForFinding(f, score);
+  if (cvss >= 9) return "Critical";
+  if (cvss >= 7) return "High";
+  if (cvss >= 4) return "Medium";
+  return "Low";
+}
+
 export function toHubExport(args: {
   domainFqdn: string;
   score: HealthScore;
@@ -52,7 +63,7 @@ export function toHubExport(args: {
     findings: args.findings.map((f) => ({
       ip: null,
       hostname: args.domainFqdn,
-      severity: f.severity,
+      severity: severityForFinding(f, args.score),
       cvss_score: cvssForFinding(f, args.score),
       nvt_oid: f.ruleId,
       nvt_name: f.title,
@@ -67,6 +78,8 @@ export function toHubExport(args: {
         points: f.points,
         objectCount: f.objectCount,
         sampleDns: f.sampleDns,
+        // Esplicito per l'hub (DA-Vul-can 21/10): prima lo deduceva da source_kind.
+        ...(f.diagnostic ? { diagnostic: true } : {}),
         ...(f.raw ? { raw: f.raw } : {}),
       }),
     })),

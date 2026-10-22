@@ -5,7 +5,7 @@ description: Deploy DA-INVENT in produzione (VM 533, Proxmox PX-04) — GitOps s
 
 # Deploy produzione (Proxmox VM 533)
 
-DA-INVENT gira sulla **VM 533** del nodo Proxmox `DA-PX-04` (`192.168.40.4`).
+DA-INVENT gira sulla **VM 533**, dal 19/10 sul nodo `DA-PX-03` (prima `DA-PX-04`, `192.168.40.4`: da lì `pvesh` raggiunge il cluster). SSH diretto: `ssh root@192.168.4.8`.
 A partire dal 2026-05-12 `/opt/da-invent` è un **git repo** (GitOps).
 
 ```text

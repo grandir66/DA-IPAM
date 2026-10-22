@@ -99,11 +99,11 @@ function dbNuovo(): Database.Database {
   return db;
 }
 
-test("schema: il CHECK di scheduled_jobs è SCHEDULED_JOB_TYPES, hypervisor_sync in coda; nessun tipo della v8 tolto", () => {
+test("schema: il CHECK di scheduled_jobs è SCHEDULED_JOB_TYPES, hypervisor_sync subito dopo i tipi della v8, nessuno tolto", () => {
   const lista = checkList(schemaJobsSql());
   assert.deepEqual(lista, [...SCHEDULED_JOB_TYPES]);
-  assert.equal(lista[lista.length - 1], "hypervisor_sync");
-  assert.deepEqual(lista.slice(0, -1), V8_TYPES);
+  // Dopo la v9 vengono i tipi delle ricostruzioni seguenti (v10: pulizia_host, hosts/__tests__/pulizia-job.test.ts).
+  assert.deepEqual(lista.slice(0, V8_TYPES.length + 1), [...V8_TYPES, "hypervisor_sync"]);
 });
 
 test("v9 su un DB col CHECK della v8: stesso elenco dello schema, tabella uguale a una nuova", () => {

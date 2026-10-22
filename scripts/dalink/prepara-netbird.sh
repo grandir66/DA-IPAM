@@ -17,13 +17,11 @@
 #
 # Passi (spec NetBird §5.1, §12 «DA-IPAM», rischio 1):
 #   1. client NetBird dal repository firmato pkgs.netbird.io, se manca; nftables se manca;
-#   2. Tailscale presente → `tailscale set --netfilter-mode=off` (senza, le sue regole
-#      scartano il traffico NetBird appena tailscaled si riavvia: misurato il 14/10);
-#   3. /etc/dalink/firewall.env (600, copia di riserva se c'era) e servizio
+#   2. /etc/dalink/firewall.env (600, copia di riserva se c'era) e servizio
 #      dalink-firewall (abilitato, avviato: carica la tabella prima di NetBird);
-#   4. con --chiave-da-stdin: chiave in un file 600, `netbird up --setup-key-file`,
+#   3. con --chiave-da-stdin: chiave in un file 600, `netbird up --setup-key-file`,
 #      file distrutto con shred in ogni caso;
-#   5. verifica: tabella caricata, oggetto.env con permessi 600, interfaccia wt0.
+#   4. verifica: tabella caricata, oggetto.env con permessi 600, interfaccia wt0.
 set -u
 set -f
 
@@ -100,7 +98,6 @@ if [ "$APPLICA" -eq 0 ]; then
   echo "=== Prova a vuoto (niente cambia; per eseguire: --applica) ==="
   command -v netbird >/dev/null 2>&1 && echo "- client NetBird già presente" || echo "- installerei il client NetBird da pkgs.netbird.io (repository firmato)"
   command -v nft >/dev/null 2>&1 || echo "- installerei nftables"
-  command -v tailscale >/dev/null 2>&1 && echo "- metterei Tailscale con --netfilter-mode=off"
   echo "- scriverei $DALINK_DIR/firewall.env (edge: $EDGE${SORGENTI:+, sorgenti: $SORGENTI})"
   echo "- installerei e avvierei dalink-firewall.service; il ruleset sarebbe:"
   sed 's/^/    /' "$TMPD/ruleset.nft"
@@ -127,11 +124,6 @@ fi
 if ! command -v nft >/dev/null 2>&1; then
   passo "nftables"
   apt-get install -y nftables || errore "nftables non installato"
-fi
-
-if command -v tailscale >/dev/null 2>&1; then
-  passo "Tailscale: --netfilter-mode=off (convivenza con NetBird, rischio 1)"
-  tailscale set --netfilter-mode=off || errore "tailscale set --netfilter-mode=off fallito: NetBird verrebbe scartato"
 fi
 
 passo "Firewall di wt0"

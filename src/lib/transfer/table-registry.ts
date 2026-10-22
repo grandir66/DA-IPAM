@@ -39,6 +39,8 @@ export const TENANT_TABLES: TableSpec[] = [
   { table: "zabbix_abbinamenti", scope: "tenant", tier: "config" },
   // --- asset (default ON) ---
   { table: "hosts", scope: "tenant", tier: "asset" },
+  // Archivio della pulizia degli host (piano 2026-10-20): istantanee degli host tolti, viaggiano con gli host.
+  { table: "hosts_archivio", scope: "tenant", tier: "asset" },
   { table: "mobile_devices", scope: "tenant", tier: "asset" },
   { table: "inventory_assets", scope: "tenant", tier: "asset" },
   { table: "asset_assignees", scope: "tenant", tier: "asset" },
@@ -70,6 +72,24 @@ export const TENANT_TABLES: TableSpec[] = [
   { table: "topology_port_facts", scope: "tenant", tier: "history" },
   { table: "topology_bridge_facts", scope: "tenant", tier: "history" },
   { table: "topology_device_macs", scope: "tenant", tier: "history" },
+  // Scheda MikroTik (ADR 0027): fotografia di bridge, porte e bond dell'ultima lettura, riscritta a ogni giro.
+  { table: "mikrotik_bridge", scope: "tenant", tier: "history" },
+  { table: "mikrotik_bridge_port", scope: "tenant", tier: "history" },
+  { table: "mikrotik_bond", scope: "tenant", tier: "history" },
+  // Livello 3 (Task 10): VLAN dei bridge, interfacce VLAN, DNS e utenti del router (questi solo admin, come l'esportazione).
+  { table: "mikrotik_bridge_vlan", scope: "tenant", tier: "history" },
+  { table: "mikrotik_vlan", scope: "tenant", tier: "history" },
+  { table: "mikrotik_dns", scope: "tenant", tier: "history" },
+  { table: "mikrotik_user", scope: "tenant", tier: "history" },
+  // VLAN degli switch via SNMP (ADR 0029): fotografia dell'ultima lettura buona, riscritta a ogni lettura.
+  { table: "switch_vlan", scope: "tenant", tier: "history" },
+  { table: "switch_vlan_porte", scope: "tenant", tier: "history" },
+  { table: "switch_porta_pvid", scope: "tenant", tier: "history" },
+  { table: "switch_vlan_lettura", scope: "tenant", tier: "history" },
+  // VLAN native dal controller UniFi (Task 13): fotografia della sync UniFi, riscritta a ogni giro.
+  { table: "switch_vlan_nativa", scope: "tenant", tier: "history" },
+  // Ultimo esito per apparato dei job apparati_scelti (piano 2026-10-22): riscritto a ogni giro, segue i job.
+  { table: "job_apparati_esiti", scope: "tenant", tier: "history" },
   { table: "mobile_inventory_history", scope: "tenant", tier: "history" },
   { table: "mc_remote_session", scope: "tenant", tier: "history" }, // sessioni remote effimere
   { table: "mc_command_log", scope: "tenant", tier: "history" },    // audit comandi RMM
@@ -124,6 +144,10 @@ export const EXCLUDED_TENANT_TABLES: string[] = [
   // Chiave di lettura del centro Zabbix: una per cliente E per istanza (design dell'API, §2). Un'altra
   // installazione riceve la sua dal kit di DA-Link; copiarla farebbe parlare due istanze con la stessa chiave.
   "zabbix_lettura_config",
+  // Coda degli invii verso DA-Vul-can (piano 2026-10-22): vale per questa istanza e il suo gettone. Copiata altrove,
+  // un'altra istanza rimanderebbe all'hub gli invii di questa, o resterebbe sospesa per un gettone che non ha.
+  "vulcan_coda",
+  "vulcan_stato",
 ];
 
 /** Tabelle hub install-level: identità/auth/setup, NON viaggiano col tenant. */

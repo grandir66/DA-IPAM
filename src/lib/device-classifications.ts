@@ -1,3 +1,5 @@
+import { canonicalizza } from "./classification/canonico";
+
 /**
  * Classificazioni predefinite per dispositivi di rete.
  * Elenco ampio dei tipi di device comunemente presenti in una rete informatica.
@@ -7,15 +9,13 @@ export const DEVICE_CATEGORY_SLUGS = [
   "firewall",
   "hypervisor",
   "iot",
+  "nas",
   "notebook",
   "workstation",
   "vm",
   "router",
   "server",
-  "server_windows",
-  "server_linux",
   "stampante",
-  "storage",
   "switch",
   "telecamera",
   "voip",
@@ -27,8 +27,6 @@ export const DEVICE_CLASSIFICATIONS = [
   "firewall",
   "access_point",
   "server",
-  "server_windows",
-  "server_linux",
   "workstation",
   "notebook",
   "vm",
@@ -37,17 +35,9 @@ export const DEVICE_CLASSIFICATIONS = [
   "telecamera",
   "voip",
   "ups",
-  "storage",
   "load_balancer",
   "vpn_gateway",
   "proxy",
-  "dhcp_server",
-  "dns_server",
-  "nfs_server",
-  "mail_server",
-  "web_server",
-  "database_server",
-  "backup_server",
   "hypervisor",
   "iot",
   "smart_tv",
@@ -55,22 +45,16 @@ export const DEVICE_CLASSIFICATIONS = [
   "tablet",
   "smartphone",
   "scanner",
-  "fotocopiatrice",
   "multifunzione",
-  "nas_synology",
-  "nas_qnap",
   "rete_ot",
   "plc",
   "hmi",
   "sensore",
-  "controller",
   "domotica",
-  "controller_wifi",
   "network_controller",
   "bridge",
   "repeater",
   "modem",
-  "ont",
   "decoder",
   "media_player",
   "unknown",
@@ -78,23 +62,55 @@ export const DEVICE_CLASSIFICATIONS = [
 
 const categorySet = new Set<string>(DEVICE_CATEGORY_SLUGS);
 
-/** Etichette per la visualizzazione: workstation→PC, vm→VM, ecc. */
+/**
+ * Etichette per la visualizzazione (catalogo canonico, 21/10): iniziale maiuscola e sigle giuste.
+ * Gli slug vecchi non hanno etichetta propria: `getClassificationLabel` usa quella del canonico.
+ */
 const CLASSIFICATION_LABELS: Record<string, string> = {
+  router: "Router",
+  switch: "Switch",
+  firewall: "Firewall",
+  access_point: "Access Point",
+  server: "Server",
   workstation: "PC",
   notebook: "Notebook",
   vm: "VM",
-  server_windows: "Server Windows",
-  server_linux: "Server Linux",
-  access_point: "Access Point",
-  storage: "Storage",
+  stampante: "Stampante",
+  nas: "NAS / Storage",
+  telecamera: "Telecamera",
+  voip: "VoIP",
+  ups: "UPS",
+  load_balancer: "Load balancer",
+  vpn_gateway: "VPN gateway",
+  proxy: "Proxy",
+  hypervisor: "Hypervisor",
+  iot: "IoT",
+  smart_tv: "Smart TV",
+  console: "Console",
+  tablet: "Tablet",
+  smartphone: "Smartphone",
+  scanner: "Scanner",
+  multifunzione: "Stampante multifunzione",
+  rete_ot: "Rete OT",
+  plc: "PLC",
+  hmi: "HMI",
+  sensore: "Sensore",
   domotica: "Domotica",
-  controller_wifi: "Controller WiFi",
   network_controller: "Controller di rete",
+  bridge: "Bridge",
+  repeater: "Repeater",
+  modem: "Modem / ONT",
+  decoder: "Decoder",
+  media_player: "Media player",
+  unknown: "Non classificato",
 };
 
-/** Restituisce l'etichetta leggibile per una classificazione (es. workstation → "PC") */
+/** Restituisce l'etichetta leggibile per una classificazione (es. workstation → "PC"); gli slug vecchi → etichetta del canonico. */
 export function getClassificationLabel(classification: string): string {
-  return CLASSIFICATION_LABELS[classification] ?? classification.replace(/_/g, " ");
+  const slug = canonicalizza(classification).classificazione;
+  if (CLASSIFICATION_LABELS[slug]) return CLASSIFICATION_LABELS[slug];
+  const testo = slug.replace(/_/g, " ");
+  return testo.charAt(0).toUpperCase() + testo.slice(1);
 }
 
 /** Ordina gli slug di classificazione per etichetta visibile (locale it), per menu select. */
@@ -134,7 +150,7 @@ const GROUP_BY_CLASSIFICATION: Record<string, DeviceCategoryGroup> = {
   vpn_gateway: "infrastructure",
   proxy: "infrastructure",
   modem: "infrastructure",
-  ont: "infrastructure",
+  ont: "infrastructure", // vecchio slug: i dati non ancora convertiti restano raggruppati
   dhcp_server: "compute",
   dns_server: "compute",
   nfs_server: "compute",

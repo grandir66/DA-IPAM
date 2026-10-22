@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { z } from "zod";
+import { AggiornaCredenzialeSchema as UpdateSchema } from "@/lib/credentials-vault-tipi";
 import { requireAuth, requireAdmin } from "@/lib/api-auth";
 import {
   getCredential,
@@ -7,34 +7,6 @@ import {
   deleteCredential,
   logCredentialEvent,
 } from "@/lib/credentials-vault";
-
-const KindEnum = z.enum([
-  "wazuh",
-  "graylog",
-  "librenms",
-  "truenas",
-  "edge",
-  "hub",
-  "tailscale",
-  "pve",
-  "other",
-]);
-const LaunchModeEnum = z.enum(["copy", "sso_form", "sso_token"]);
-
-const UpdateSchema = z.object({
-  kind: KindEnum.optional(),
-  label: z.string().min(1).max(120).optional(),
-  url: z.string().url().nullable().optional(),
-  api_url: z.string().url().nullable().optional(),
-  username: z.string().nullable().optional(),
-  password: z.string().nullable().optional(),
-  api_token: z.string().nullable().optional(),
-  extra: z.record(z.string(), z.string()).nullable().optional(),
-  launch_mode: LaunchModeEnum.optional(),
-  notes: z.string().nullable().optional(),
-  enabled: z.boolean().optional(),
-  sort_order: z.number().int().optional(),
-});
 
 type Ctx = { params: Promise<{ id: string }> };
 

@@ -1,0 +1,20 @@
+                   uptime: 2w20m57s           
+                  version: 7.24.5 (stable)    
+               build-time: 2026-09-29 14:21:27
+          minimum-version: 6.46.4             
+              free-memory: 3729.3MiB          
+             total-memory: 4096.0MiB          
+                      cpu: ARM64              
+                cpu-count: 4                  
+            cpu-frequency: 1700MHz            
+                 cpu-load: 1%                 
+           free-hdd-space: 83.4MiB            
+          total-hdd-space: 128.0MiB           
+  write-sect-since-reboot: 59601              
+         write-sect-total: 5134715            
+               bad-blocks: 0%                 
+        architecture-name: arm64              
+               board-name: CCR2004-1G-12S+2XS 
+                 platform: MikroTik           
+
+

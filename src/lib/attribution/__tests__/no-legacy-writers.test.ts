@@ -50,7 +50,7 @@ const ALLOWED_FILES: Record<string, string> = {
     "corrente. Tutti gli altri writer di questo file sono stati ritirati nel Task 2.",
 
   "src/lib/db-tenant.ts":
-    "Tre scritture dirette, tutte legittime e NON automatiche/di scan, distinte " +
+    "Due scritture dirette, tutte legittime e NON automatiche/di scan, distinte " +
     "dal motore v2: " +
     "(1) upsertHost — pass-through generico: se il CHIAMANTE fornisce esplicitamente " +
     "input.classification (es. mdm-sync.ts per device MDM riconosciuti come " +
@@ -60,14 +60,23 @@ const ALLOWED_FILES: Record<string, string> = {
     "(2) updateHost — correzione manuale dell'utente (scheda host): imposta anche " +
     "classification_manual=1, è la funzione che rende un host immune a future " +
     "proiezioni automatiche (invariante sacro del piano). " +
-    "(3) cleanupStaleHosts — scrive il sentinel 'stale' in classification per host " +
-    "offline da tempo: non è una classificazione di tipo device, è un marcatore di " +
-    "ciclo di vita per la pipeline di pulizia/cancellazione, semanticamente estraneo " +
-    "all'attribuzione.",
+    "(La terza, cleanupStaleHosts, è stata tolta il 20/10: P1 del piano di pulizia.)",
 
   "src/lib/db.ts":
-    "Facade di db-tenant.ts (fallback DEFAULT tenant): stesse tre scritture " +
+    "Facade di db-tenant.ts (fallback DEFAULT tenant): stesse due scritture " +
     "legittime e per lo stesso motivo — vedi src/lib/db-tenant.ts.",
+
+  "src/lib/classification/migrazione-v21.ts":
+    "Conversione una tantum (segno classificazioni_v21 in tenant_settings, 21/10) degli slug doppi " +
+    "(server_windows, dns_server, nas_qnap...) nello slug canonico. Non classifica niente: riscrive " +
+    "lo stesso valore in forma canonica, anche sugli host con classification_manual=1 (e lascia " +
+    "classification_manual com'è), e aggiunge il ruolo/vendor che lo slug vecchio conteneva.",
+
+  "src/lib/classification/scrivi.ts":
+    "Punto unico della scelta dell'utente (tappa 5, 21/10): le rotte (scheda host, scheda apparato, " +
+    "modifiche in blocco, creazione apparato) scrivono la classificazione su host e apparato abbinati " +
+    "da qui, con classification_manual=1. Non è un writer automatico: non lo chiamano scansioni, " +
+    "attribution né cron. `tornaAutomatica` azzera il flag.",
 
   "src/lib/classification/persist.ts":
     "Motore di classificazione legacy SEPARATO e preesistente (applyClassificationDecision). " +

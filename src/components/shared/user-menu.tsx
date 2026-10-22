@@ -1,11 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { signOut, useSession } from "next-auth/react";
-import { User as UserIcon, LogOut, KeyRound, Loader2 } from "lucide-react";
+import { useSession } from "next-auth/react";
+import { User as UserIcon, KeyRound, Loader2, MoreHorizontal } from "lucide-react";
+import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -24,7 +26,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 
-export function UserMenu() {
+/**
+ * Utente in fondo al menu a sinistra (Riccardo, 20/10: via la barra in alto): iniziale, nome
+ * e ruolo; il clic apre «Cambia password». «Esci» resta una voce a sé, a un clic.
+ */
+export function UserMenu({ compresso = false }: { compresso?: boolean }) {
   const { data: session } = useSession();
   const username = session?.user?.name ?? "";
   const role = (session?.user as { role?: string } | undefined)?.role;
@@ -78,28 +84,37 @@ export function UserMenu() {
       <DropdownMenu>
         <DropdownMenuTrigger
           aria-label="Menu utente"
-          className="h-9 w-9 rounded-full bg-primary/10 hover:bg-primary/20 text-primary font-semibold text-sm flex items-center justify-center transition-colors"
+          title={compresso ? `${username || "Utente"}${roleLabel ? ` · ${roleLabel}` : ""}` : undefined}
+          className={cn(
+            "flex items-center gap-3 px-2 py-2 rounded-lg w-full text-left hover:bg-sidebar-accent transition-colors",
+            compresso && "md:justify-center md:px-0",
+          )}
         >
-          {initial}
+          <span className="h-8 w-8 shrink-0 rounded-full bg-sidebar-accent text-sidebar-accent-foreground font-semibold text-sm flex items-center justify-center">
+            {initial}
+          </span>
+          <span className={cn("min-w-0 flex-1 leading-tight", compresso && "md:hidden")}>
+            <span className="block truncate text-sm font-medium text-sidebar-foreground">{username || "Utente"}</span>
+            {roleLabel && <span className="block truncate text-[13px] text-sidebar-foreground/60">{roleLabel}</span>}
+          </span>
+          <MoreHorizontal className={cn("h-4 w-4 shrink-0 text-sidebar-foreground/60", compresso && "md:hidden")} />
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-56">
-          <DropdownMenuLabel>
-            <div className="flex flex-col gap-0.5">
-              <span className="font-medium truncate">{username || "Utente"}</span>
-              {roleLabel && (
-                <span className="text-xs text-muted-foreground font-normal">{roleLabel}</span>
-              )}
-            </div>
-          </DropdownMenuLabel>
+        <DropdownMenuContent side="right" align="end" className="w-56">
+          {/* Base UI vuole l'etichetta dentro un gruppo: senza, il clic faceva cadere la pagina. */}
+          <DropdownMenuGroup>
+            <DropdownMenuLabel>
+              <div className="flex flex-col gap-0.5">
+                <span className="font-medium truncate">{username || "Utente"}</span>
+                {roleLabel && (
+                  <span className="text-[13px] text-muted-foreground font-normal">{roleLabel}</span>
+                )}
+              </div>
+            </DropdownMenuLabel>
+          </DropdownMenuGroup>
           <DropdownMenuSeparator />
           <DropdownMenuItem onSelect={() => setPwOpen(true)}>
             <KeyRound className="h-4 w-4 mr-2" />
             Cambia password
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={() => void signOut({ callbackUrl: "/login" })}>
-            <LogOut className="h-4 w-4 mr-2" />
-            Esci
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

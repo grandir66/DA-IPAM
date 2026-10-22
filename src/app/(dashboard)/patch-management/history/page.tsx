@@ -643,7 +643,7 @@ export default function PatchHistoryPage() {
         !moduleMissing &&
         filteredItems.length > 0 && (
           <Card>
-            <Table>
+            <Table fissa>
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-44">Data</TableHead>
@@ -820,7 +820,7 @@ export default function PatchHistoryPage() {
                       <div className="text-xs text-muted-foreground">
                         Utente
                       </div>
-                      <div>#{detailOp.userId}</div>
+                      <div>{detailOp.userId === 0 ? "Automatico" : `#${detailOp.userId}`}</div>
                     </div>
                     <div className="col-span-2">
                       <div className="text-xs text-muted-foreground">

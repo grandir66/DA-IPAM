@@ -20,6 +20,7 @@
  * Modulo puro: niente DB, lo usano i componenti client.
  */
 import { DEVICE_CLASSIFICATIONS } from "@/lib/device-classifications";
+import { canonicalizza } from "@/lib/classification/canonico";
 import { coerceProtocolForVendor, coerceScanTargetForVendor } from "@/lib/vendor-device-profile";
 import { inferVendorFromManufacturer } from "@/lib/vendor-inference";
 import { isMacOsHost, suggestEndpointClassification } from "@/lib/host-platform-detect";
@@ -33,6 +34,8 @@ export interface HostPerProposta {
   custom_name: string | null;
   classification: string | null;
   classification_manual?: number | null;
+  /** JSON array dei ruoli del server (`["dns","backup"]`), se la riga li ha. */
+  server_roles?: string | null;
   // Facoltativi: le righe di `hosts` li hanno, le liste leggere a volte no.
   inferred_vendor?: string | null;
   inferred_os_family?: string | null;
@@ -44,7 +47,7 @@ export interface HostPerProposta {
   model: string | null;
   vendor: string | null;
   snmp_data: string | null;
-  host_credentials?: Array<{ credential_id: number; protocol_type: string; port: number; validated: number }>;
+  host_credentials?: Array<{ credential_id: number; protocol_type: string; port: number; validated: number; validated_at?: string | null }>;
 }
 
 export interface CredenzialeArchivio {
@@ -92,7 +95,7 @@ const CLASSIFICAZIONI = new Set<string>(DEVICE_CLASSIFICATIONS.filter((c) => c !
 /** Slug di DEVICE_CLASSIFICATIONS, con gli alias del classificatore; "" se non è un valore ammesso. */
 export function classificazioneValida(valore: string | null | undefined): string {
   if (!valore) return "";
-  const v = ALIAS_CLASSIFICAZIONE[valore] ?? valore;
+  const v = canonicalizza(ALIAS_CLASSIFICAZIONE[valore] ?? valore).classificazione;
   return CLASSIFICAZIONI.has(v) ? v : "";
 }
 
@@ -114,6 +117,16 @@ function eMac(host: HostPerProposta): boolean {
     model: host.model,
     vendor: host.vendor,
   });
+}
+
+/** Ruoli del server dell'host: la colonna e l'eventuale vecchio slug `*_server` non ancora convertito. */
+export function ruoliDaHost(host: HostPerProposta): string[] {
+  const r = canonicalizza(host.classification).ruolo;
+  let lista: string[] = [];
+  if (host.server_roles) {
+    try { const p = JSON.parse(host.server_roles) as unknown; if (Array.isArray(p)) lista = p.map(String); } catch { /* illeggibili */ }
+  }
+  return r ? [...lista, r] : lista;
 }
 
 function classificazioneDaHost(host: HostPerProposta): string {
@@ -158,7 +171,16 @@ export function piattaformaDaHost(host: HostPerProposta): string {
  * prende il primo dell'elenco (ProCurve per ogni «hp», server per ogni Windows).
  * Esportata: le finestre la usano anche quando si cambia la classificazione a mano.
  */
-export function profiloPerClassificazione(piattaforma: string, classificazione: string): string {
+export function profiloPerClassificazione(piattaforma: string, classificazione: string, ruoli?: readonly string[] | string | null): string {
+  // Catalogo canonico (21/10): il vecchio `backup_server` è `server` con ruolo `backup`.
+  const canon = canonicalizza(classificazione);
+  let elencoRuoli: string[] = [];
+  if (typeof ruoli === "string") {
+    try { const p = JSON.parse(ruoli) as unknown; if (Array.isArray(p)) elencoRuoli = p.map(String); } catch { /* ruoli illeggibili: nessuno */ }
+  } else if (ruoli) elencoRuoli = [...ruoli];
+  if (canon.ruolo) elencoRuoli.push(canon.ruolo);
+  const pbs = canon.classificazione === "server" && elencoRuoli.includes("backup");
+  classificazione = canon.classificazione;
   const ammessi = (PRODUCT_PROFILES_BY_VENDOR as Record<string, readonly string[]>)[piattaforma] ?? [];
   const server = classificazione.startsWith("server") || classificazione.endsWith("_server") || classificazione === "vm";
   const preferito: Record<string, string | undefined> = {
@@ -170,7 +192,7 @@ export function profiloPerClassificazione(piattaforma: string, classificazione: 
     cisco: classificazione === "router" ? "cisco_router" : classificazione === "voip" ? "cisco_telefono" : undefined,
     qnap: classificazione === "switch" ? "qnap_switch" : classificazione === "router" ? "qnap_router" : undefined,
     omada: classificazione === "access_point" ? "omada_access_point" : classificazione === "switch" ? "omada_switch" : undefined,
-    proxmox: classificazione === "backup_server" ? "proxmox_pbs" : undefined,
+    proxmox: pbs ? "proxmox_pbs" : undefined,
   };
   const scelto = preferito[piattaforma];
   if (scelto && ammessi.includes(scelto)) return scelto;
@@ -238,7 +260,7 @@ export function proponiApparato(host: HostPerProposta, archivio: CredenzialeArch
     vendor,
     protocol,
     classification,
-    productProfile: profiloPerClassificazione(vendor, classification),
+    productProfile: profiloPerClassificazione(vendor, classification, ruoliDaHost(host)),
     scanTarget: coerceScanTargetForVendor(vendor, vendor === "apple" ? "macos" : host.inferred_scan_target),
     port: principale?.port ?? portaPerCredenziale(credentialId, protocol, archivio, host),
     credentialId,

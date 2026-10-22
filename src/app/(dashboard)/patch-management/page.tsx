@@ -638,7 +638,7 @@ function DeviceTab() {
 
       {!loading && !error && !moduleMissing && filtered.length > 0 && (
         <Card>
-          <Table>
+          <Table fissa>
             <TableHeader>
               <TableRow>
                 <TableHead className="w-10">
@@ -1034,7 +1034,7 @@ function SoftwareTab() {
 
       {!loading && !error && !moduleMissing && items.length > 0 && (
         <Card>
-          <Table>
+          <Table fissa>
             <TableHeader>
               <TableRow>
                 <TableHead>Nome</TableHead>

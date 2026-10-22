@@ -25,8 +25,13 @@ test("le fixture hanno la forma vera: righe chiuse da \\r\\n, spazi in coda cons
 test("MK2: nome, tipo, MAC; acceso dal segno R", () => {
   const i = parseInterfacce(F("mikrotik-mk2-testa.txt"));
   assert.equal(i.length, 24);
-  assert.deepEqual(i[0], { nome: "ether1", tipo: "ether", mac: "02:00:A0:10:07:01", accesa: false, spenta: false });
-  assert.deepEqual(i[1], { nome: "sfp-sfpplus1", tipo: "ether", mac: "02:00:A0:10:0E:02", accesa: true, spenta: false });
+  // Task 3 della scheda MikroTik: anche MTU, commento e nome di fabbrica (`mtu=`, `comment=`, `default-name=`), dalla stessa riga.
+  assert.deepEqual(i[0], { nome: "ether1", tipo: "ether", mac: "02:00:A0:10:07:01", accesa: false, spenta: false, mtu: 1500, commento: null, predefinito: "ether1" });
+  assert.deepEqual(i[1], { nome: "sfp-sfpplus1", tipo: "ether", mac: "02:00:A0:10:0E:02", accesa: true, spenta: false, mtu: 1500, commento: null, predefinito: "sfp-sfpplus1" });
+  const bond = i.find((x) => x.nome === "bond1");
+  assert.equal(bond?.commento, "cavo-a");
+  assert.equal(bond?.mtu, 1500);
+  assert.equal(bond?.predefinito, null, "un bond non ha nome di fabbrica");
   assert.equal(i[5].accesa, false, "« S» senza R: la porta è giù");
   assert.deepEqual(i.filter((x) => x.mac === null).map((x) => x.nome), ["lo"], "un MAC tutto zeri non è un MAC");
   assert.deepEqual([...new Set(i.map((x) => tipoNeutro(x.tipo)))].sort(), ["bridge", "lag", "other", "physical", "tunnel", "vlan"]);
@@ -352,4 +357,16 @@ test("il tunnel della regione sui fatti veri di MK7: bloccato nell'albero comune
   // Con un digest diverso i due bridge non sono la stessa regione (§13.7.2 passo 8: stesso nome, revisione e digest): il
   // tunnel è «bloccato» e basta. (La prima copia anonima aveva cambiato i digest uno per uno: sulle uscite vere sono uguali.)
   assert.deepEqual(stato(tunnelInRegione("36b3216fdaeeb975729fae923d5a4fd1")), [["tunnel", "bloccato", undefined, undefined]]);
+});
+
+test("MK2: il segno X è «spenta»; MTU «auto» o assente = null; il commento con spazi è intero", () => {
+  const i = parseInterfacce([
+    " 0  X comment=uplink sede nord name=ether9 default-name=ether9 type=ether mtu=1500 mac-address=02:00:A0:10:07:09",
+    " 1 R  name=vlan7 type=vlan mtu=auto mac-address=02:00:A0:10:07:0A",
+    " 2    name=lo type=loopback",
+  ].join("\n"));
+  assert.deepEqual(i[0], { nome: "ether9", tipo: "ether", mac: "02:00:A0:10:07:09", accesa: false, spenta: true, mtu: 1500, commento: "uplink sede nord", predefinito: "ether9" });
+  assert.equal(i[1].mtu, null);
+  assert.equal(i[2].mtu, null);
+  assert.equal(i[2].commento, null);
 });

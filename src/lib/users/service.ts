@@ -25,6 +25,7 @@ import {
   getUserByUsername,
   getUserTenantAccess,
   getUsers,
+  impostaSecondaVerifica,
   removeUserTenantAccess,
   setUserTenantAccess,
   updateUserPassword,
@@ -35,6 +36,7 @@ import {
   decideCreate,
   decideDelete,
   decideResetPassword,
+  decideSecondaVerifica,
   decideUpdate,
   isUserRole,
   type Denial,
@@ -42,6 +44,7 @@ import {
   type UserManager,
   type UserRole,
 } from "./permissions";
+import { scriviRegistroAccessi } from "@/lib/accesso/registro-accessi";
 
 /** Quel che serve della sessione di NextAuth (`requireAdmin()` la restituisce così). */
 export interface SessionLike {
@@ -333,6 +336,54 @@ export function deleteUserAs(session: SessionLike, rawId: string): UsersResult {
     throw err;
   }
   return { status: 200, body: { success: true, message: "Utente eliminato" } };
+}
+
+// ─── POST /api/users/[id]/seconda-verifica ───
+
+const AZIONI_SECONDA_VERIFICA = ["richiedi", "azzera", "togli"] as const;
+type AzioneSecondaVerifica = (typeof AZIONI_SECONDA_VERIFICA)[number];
+
+const ESITO_SECONDA_VERIFICA: Record<AzioneSecondaVerifica, string> = {
+  richiedi: "verifica in due passaggi richiesta: al prossimo accesso vedrà il QR",
+  azzera: "verifica in due passaggi azzerata: al prossimo accesso vedrà un QR nuovo",
+  togli: "verifica in due passaggi tolta: entra con la sola password",
+};
+
+/**
+ * Verifica in due passaggi decisa dall'admin (Riccardo, 20/10; ADR 0023): regole in
+ * `decideSecondaVerifica`. Ogni azione va nel registro degli accessi.
+ */
+export async function secondaVerificaAs(session: SessionLike, rawId: string, request: Request): Promise<UsersResult> {
+  const who = resolveUserManager(session);
+  if (!who.ok) return fromDenial(who);
+
+  const userId = parseId(rawId);
+  if (userId === null) return fail(400, "ID utente non valido");
+
+  const read = await readBody(request);
+  if (!read.ok) return fail(400, "JSON non valido");
+  const azione = read.body.azione;
+  if (typeof azione !== "string" || !(AZIONI_SECONDA_VERIFICA as readonly string[]).includes(azione)) {
+    return fail(400, "Azione non valida: richiedi, azzera o togli");
+  }
+
+  const user = getUserById(userId);
+  if (!user) return fail(404, "Utente non trovato");
+
+  const a = azione as AzioneSecondaVerifica;
+  const decision = decideSecondaVerifica(who.actor, managedUser(user), a);
+  if (!decision.ok) return fromDenial(decision);
+
+  // Prima il registro, poi la modifica: un registro non scrivibile ferma l'azione invece di
+  // lasciarla fatta senza traccia (seconda revisione del 20/10).
+  scriviRegistroAccessi({
+    azione: `seconda_verifica_${a}`,
+    utente: user.username,
+    utenteId: user.id,
+    da: session.user?.name ?? "?",
+  });
+  impostaSecondaVerifica(userId, a);
+  return { status: 200, body: { success: true, message: `«${user.username}»: ${ESITO_SECONDA_VERIFICA[a]}` } };
 }
 
 // ─── POST /api/users/[id]/reset-password ───

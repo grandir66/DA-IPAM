@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { signOut, useSession } from "next-auth/react";
 import { TenantSwitcher } from "./tenant-switcher";
@@ -39,14 +39,22 @@ import {
   ShieldCheck,
   MonitorSmartphone,
   ExternalLink,
-  KeyRound,
+  Bug,
+  History,
+  LayoutGrid,
+  HeartPulse,
+  ShieldHalf,
   Globe,
   Wifi,
   PanelLeftClose,
   PanelLeftOpen,
   type LucideIcon,
 } from "lucide-react";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
+import { ThemeToggle } from "./theme-toggle";
+import { UserMenu } from "./user-menu";
+import { useUrlPerBrowser } from "./url-per-browser";
+import { vociApplicativi, type IconaVoce, type ModuloPerMenu } from "@/lib/modules/voci-applicativi";
 import { Button } from "@/components/ui/button";
 
 type SubItem = {
@@ -55,6 +63,12 @@ type SubItem = {
   icon: LucideIcon;
   /** Inserisce un separatore visivo PRIMA di questa voce. */
   divider?: string;
+  /** Console di un prodotto esterno: nuova scheda (gruppo Applicativi, 19/10). */
+  esterno?: boolean;
+};
+
+const ICONE_APPLICATIVI: Record<IconaVoce, LucideIcon> = {
+  ShieldCheck, Bug, History, MonitorSmartphone, Activity, ExternalLink,
 };
 
 const inventorySubItems: readonly SubItem[] = [
@@ -66,21 +80,29 @@ const inventorySubItems: readonly SubItem[] = [
   { href: "/services", label: "Servizi NIS2", icon: Workflow },
 ] as const;
 
+// Network (Riccardo, 19/10 sera): «Credenziali» con i controller di rete sotto la sua
+// intestazione; Vulnerabilità e Alert sicurezza nel gruppo «Sicurezza».
 const networkSubItems: readonly SubItem[] = [
   { href: "/networks", label: "Subnet", icon: Network },
   { href: "/discovery", label: "Discovery", icon: Radar },
-  { href: "/controllers", label: "Controller di rete", icon: Router },
   { href: "/topology", label: "Topologia", icon: Workflow },
-  { href: "/vulnerabilities", label: "Vulnerabilità", icon: ShieldAlert },
-  { href: "/security-alerts", label: "Alert sicurezza", icon: Siren },
   { href: "/software", label: "Software", icon: Package },
   { href: "/active-directory", label: "Active Directory", icon: FolderTree },
-  { href: "/credentials", label: "Credenziali", icon: Key },
+  { href: "/credentials", label: "Credenziali", icon: Key, divider: "Credenziali" },
+  { href: "/controllers", label: "Controller di rete", icon: Router },
   { href: "/arp-table", label: "Tabella ARP", icon: ListOrdered, divider: "Diagnostica" },
   { href: "/dhcp/sources", label: "Sorgenti DHCP", icon: Server },
   { href: "/scans", label: "Scansioni", icon: Scan },
   { href: "/excluded-ips", label: "IP esclusi", icon: Ban },
-] as const;
+];
+
+// Sicurezza (Riccardo, 19/10 sera): le viste di sicurezza in un gruppo solo. La Health
+// di Active Directory è la scheda della pagina AD, aperta già lì.
+const sicurezzaSubItems: readonly SubItem[] = [
+  { href: "/vulnerabilities", label: "Vulnerabilità", icon: ShieldAlert },
+  { href: "/security-alerts", label: "Alert sicurezza", icon: Siren },
+  { href: "/active-directory?tab=health", label: "Health Active Directory", icon: HeartPulse },
+];
 
 const networkServicesSubItems: readonly SubItem[] = [
   { href: "/network-services", label: "Panoramica", icon: ServerCog },
@@ -156,10 +178,16 @@ function SubList({
   isActive: (href: string) => boolean;
   onNavigate: () => void;
 }) {
+  // Attiva solo la voce più precisa: su /patch-management/cve non anche «Panoramica»
+  // (/patch-management), su /inventory/assignees non anche «Asset» (19/10).
+  const migliore = items
+    .filter((i) => !i.esterno && isActive(i.href))
+    .sort((a, b) => b.href.length - a.href.length)[0]?.href;
+  const perBrowser = useUrlPerBrowser();
   return (
     <>
       {items.map((item) => (
-        <div key={item.href}>
+        <div key={`${item.href}|${item.label}`}>
           {item.divider && (
             <div className="pt-2 pb-1 px-2.5">
               <p className="text-[10px] uppercase tracking-wider text-sidebar-foreground/40 font-semibold">
@@ -167,17 +195,31 @@ function SubList({
               </p>
             </div>
           )}
-          <Link
-            href={item.href}
-            onClick={onNavigate}
-            className={cn(
-              "flex items-center gap-2.5 px-2.5 py-2 rounded-md text-sm transition-colors",
-              isActive(item.href) ? ITEM_ACTIVE : ITEM_INACTIVE
-            )}
-          >
-            <item.icon className="h-3.5 w-3.5 shrink-0" />
-            {item.label}
-          </Link>
+          {item.esterno ? (
+            <a
+              href={perBrowser(item.href)}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={onNavigate}
+              title={`${item.label} (si apre in una scheda nuova)`}
+              className={cn("flex items-center gap-2.5 px-2.5 py-2 rounded-md text-sm transition-colors", ITEM_INACTIVE)}
+            >
+              <item.icon className="h-3.5 w-3.5 shrink-0" />
+              {item.label}
+            </a>
+          ) : (
+            <Link
+              href={item.href}
+              onClick={onNavigate}
+              className={cn(
+                "flex items-center gap-2.5 px-2.5 py-2 rounded-md text-sm transition-colors",
+                item.href === migliore ? ITEM_ACTIVE : ITEM_INACTIVE
+              )}
+            >
+              <item.icon className="h-3.5 w-3.5 shrink-0" />
+              {item.label}
+            </Link>
+          )}
         </div>
       ))}
     </>
@@ -188,6 +230,12 @@ function SubList({
  * Gruppo collassabile. Espanso: toggle inline con chevron.
  * Collassato (desktop): solo icona + flyout al hover con le sottovoci.
  * Su mobile resta sempre l'espansione inline (collapsed non si applica).
+ *
+ * Tastiera (analisi del 19/10, F06): da collassato il flyout dipendeva solo dal
+ * mouse; Invio cambiava `open`, ma il ramo inline è nascosto su desktop e le
+ * sottovoci restavano invisibili. Ora Invio/Spazio aprono e chiudono il flyout,
+ * Tab ci entra (sta subito dopo il pulsante), Escape lo chiude e torna al pulsante,
+ * e si chiude quando il fuoco esce dal gruppo.
  */
 function NavGroup({
   icon: Icon,
@@ -221,13 +269,37 @@ function NavGroup({
     setFlyout({ top: r.top, left: r.right });
   };
   const hideFlyout = () => setFlyout(null);
+  const flyoutDesktop = () => collapsed && typeof window !== "undefined" && window.innerWidth >= 768;
 
   return (
-    <div className="pt-1 relative" onMouseEnter={showFlyout} onMouseLeave={hideFlyout}>
+    <div
+      className="pt-1 relative"
+      onMouseEnter={showFlyout}
+      onMouseLeave={hideFlyout}
+      onKeyDown={(e) => {
+        if (e.key === "Escape" && flyout) {
+          e.stopPropagation();
+          hideFlyout();
+          btnRef.current?.focus();
+        }
+      }}
+      onBlur={(e) => {
+        if (flyout && !e.currentTarget.contains(e.relatedTarget as Node | null)) hideFlyout();
+      }}
+    >
       <button
         ref={btnRef}
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => {
+          if (flyoutDesktop()) {
+            if (flyout) hideFlyout();
+            else showFlyout();
+            return;
+          }
+          setOpen((o) => !o);
+        }}
+        aria-expanded={flyoutDesktop() ? flyout !== null : open}
+        aria-haspopup={collapsed ? "menu" : undefined}
         title={collapsed ? label : undefined}
         className={cn(
           ITEM_BASE,
@@ -265,7 +337,7 @@ function NavGroup({
             <p className="px-2.5 pt-1 pb-1.5 text-[10px] uppercase tracking-wider text-sidebar-foreground/40 font-semibold">
               {label}
             </p>
-            <SubList items={items} isActive={isActive} onNavigate={onNavigate} />
+            <SubList items={items} isActive={isActive} onNavigate={() => { hideFlyout(); onNavigate(); }} />
           </div>
         </div>
       )}
@@ -275,6 +347,7 @@ function NavGroup({
 
 export function Sidebar() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { data: session } = useSession();
   const { collapsed, toggle } = useSidebar();
   const userRole = (session?.user as { role?: string } | undefined)?.role;
@@ -290,6 +363,10 @@ export function Sidebar() {
   const [networkOpen, setNetworkOpen] = useState(() =>
     networkSubItems.some((d) => pathname.startsWith(d.href))
   );
+  const [sicurezzaOpen, setSicurezzaOpen] = useState(() =>
+    ["/vulnerabilities", "/security-alerts"].some((h) => pathname.startsWith(h)) ||
+      (pathname === "/active-directory" && searchParams.get("tab") === "health")
+  );
   const [inventoryOpen, setInventoryOpen] = useState(() =>
     inventorySubItems.some((d) => pathname.startsWith(d.href))
   );
@@ -300,29 +377,32 @@ export function Sidebar() {
   // Moduli abilitati: fonte unica = registry (/api/modules). Ogni voce di menu
   // dei moduli compare SOLO se il modulo è enabled per il tenant.
   const [enabledModules, setEnabledModules] = useState<Set<string>>(new Set());
-  const [externalModules, setExternalModules] = useState<Array<{ key: string; label: string; url: string }>>([]);
+  const [moduliMenu, setModuliMenu] = useState<ModuloPerMenu[]>([]);
   // Pannello Zabbix (passo 7.4): fuori dal catalogo dei moduli, in menu solo se acquistato, configurato e acceso.
   const [pannelloZabbix, setPannelloZabbix] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const applicativiItems = useMemo<SubItem[]>(
+    () => vociApplicativi(moduliMenu, pannelloZabbix).map((v) => ({ href: v.href, label: v.label, icon: ICONE_APPLICATIVI[v.icona], divider: v.divider, esterno: v.esterno })),
+    [moduliMenu, pannelloZabbix],
+  );
+  const [applicativiOpen, setApplicativiOpen] = useState(() =>
+    ["/patch-management", "/rmm", "/zabbix"].some((h) => pathname.startsWith(h))
+  );
 
   useEffect(() => {
     if (!tenantCode || tenantCode === "__ALL__") {
       setEnabledModules(new Set());
-      setExternalModules([]);
+      setModuliMenu([]);
       setPannelloZabbix(false);
       return;
     }
     fetch("/api/modules", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
-      .then((d: { modules?: Array<{ key: string; label: string; enabled: boolean; uiUrl: string | null; uiIsInternal: boolean }>; pannelli?: { zabbix?: boolean } } | null) => {
+      .then((d: { modules?: ModuloPerMenu[]; pannelli?: { zabbix?: boolean } } | null) => {
         const mods = d?.modules ?? [];
         setPannelloZabbix(d?.pannelli?.zabbix === true);
         setEnabledModules(new Set(mods.filter((m) => m.enabled).map((m) => m.key)));
-        setExternalModules(
-          mods
-            .filter((m) => m.enabled && !m.uiIsInternal && m.uiUrl)
-            .map((m) => ({ key: m.key, label: m.label, url: m.uiUrl as string })),
-        );
+        setModuliMenu(mods);
       })
       .catch(() => { /* moduli off come default */ });
   }, [tenantCode]);
@@ -341,8 +421,16 @@ export function Sidebar() {
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, []);
 
+  // Una voce con la query (es. /active-directory?tab=health) vale solo con quella query.
+  const attivaConQuery = (href: string) => {
+    const [p, q] = href.split("?");
+    return pathname === p && new URLSearchParams(q).get("tab") === searchParams.get("tab");
+  };
   const isActive = (href: string) => {
     if (href === "/") return pathname === "/";
+    if (href.includes("?")) return attivaConQuery(href);
+    // Sulla Health di AD non si accende anche «Active Directory» in Network (20/10).
+    if (sicurezzaSubItems.some((v) => v.href.includes("?") && v.href.split("?")[0] === href && attivaConQuery(v.href))) return false;
     return pathname.startsWith(href);
   };
   const closeMobile = () => setMobileOpen(false);
@@ -374,7 +462,8 @@ export function Sidebar() {
         {isSuperadmin && (
           <>
             <NavItem href="/tenants" icon={Building2} label="Clienti" active={isActive("/tenants")} collapsed={collapsed} onNavigate={closeMobile} />
-            <NavItem href="/agents" icon={ServerCog} label="Agenti remoti" active={isActive("/agents")} collapsed={collapsed} onNavigate={closeMobile} />
+            {/* L'elenco degli agenti remoti è tolto (20/10/2026): all'indirizzo resta l'URL pubblico dell'hub. */}
+            <NavItem href="/agents" icon={ServerCog} label="URL dell'hub" active={isActive("/agents")} collapsed={collapsed} onNavigate={closeMobile} />
           </>
         )}
 
@@ -407,6 +496,8 @@ export function Sidebar() {
           come gestione dettagliata; verranno sostituite da azioni inline in Fase 3.
         */}
 
+        {/* Sicurezza (Riccardo, 19/10 sera): Vulnerabilità, Alert sicurezza, Health AD */}
+        <NavGroup icon={ShieldHalf} label="Sicurezza" items={sicurezzaSubItems} open={sicurezzaOpen} setOpen={setSicurezzaOpen} collapsed={collapsed} isActive={isActive} onNavigate={closeMobile} />
         {/* Inventario — la voce "Servizi NIS2" compare solo se il modulo è abilitato */}
         <NavGroup icon={Package} label="Inventario" items={enabledModules.has("nis2_inventory") ? inventorySubItems : inventorySubItems.filter((i) => i.href !== "/services")} open={inventoryOpen} setOpen={setInventoryOpen} collapsed={collapsed} isActive={isActive} onNavigate={closeMobile} />
 
@@ -414,9 +505,10 @@ export function Sidebar() {
         {enabledModules.has("network_services") && (
           <NavGroup icon={ServerCog} label="Network Services" items={networkServicesSubItems} open={networkServicesOpen} setOpen={setNetworkServicesOpen} collapsed={collapsed} isActive={isActive} onNavigate={closeMobile} />
         )}
+        {/* Applicativi (Riccardo, 19/10): al posto del Launchpad a tessere e delle voci sparse
+            dei moduli. Ogni prodotto con le sue pagine interne e la sua console. */}
+        <NavGroup icon={LayoutGrid} label="Applicativi" items={applicativiItems} open={applicativiOpen} setOpen={setApplicativiOpen} collapsed={collapsed} isActive={isActive} onNavigate={closeMobile} />
 
-        {/* Launchpad — accesso rapido moduli attivi */}
-        <NavItem href="/launchpad" icon={KeyRound} label="Launchpad" active={pathname.startsWith("/launchpad")} collapsed={collapsed} onNavigate={closeMobile} />
 
         {/* Anomalie */}
         <NavItem href="/analytics" icon={AlertTriangle} label="Anomalie" active={isActive("/analytics")} collapsed={collapsed} onNavigate={closeMobile} badgeCount={unackedAnomalies} />
@@ -434,40 +526,6 @@ export function Sidebar() {
           <ClipboardList className="h-4 w-4 shrink-0" />
           <span className={cn(collapsed && "md:hidden")}>Config Cliente</span>
         </div>
-
-        {/* Patch Management (Chocolatey) — solo se il modulo è abilitato */}
-        {enabledModules.has("patch_management") && (
-          <NavItem href="/patch-management" icon={ShieldCheck} label="Patch Management" active={isActive("/patch-management")} collapsed={collapsed} onNavigate={closeMobile} />
-        )}
-
-        {/* RMM / Controllo remoto (MeshCentral) — solo se il modulo è abilitato */}
-        {enabledModules.has("meshcentral") && (
-          <NavItem href="/rmm" icon={MonitorSmartphone} label="Controllo remoto" active={isActive("/rmm")} collapsed={collapsed} onNavigate={closeMobile} />
-        )}
-
-        {/* Pannello Zabbix in sola lettura — solo se acquistato, configurato e acceso */}
-        {pannelloZabbix && (
-          <NavItem href="/zabbix" icon={Activity} label="Zabbix" active={isActive("/zabbix")} collapsed={collapsed} onNavigate={closeMobile} />
-        )}
-
-        {/* Moduli esterni abilitati (LibreNMS / Wazuh / Graylog) — link diretto alla dashboard */}
-        {externalModules.map((m) => (
-          <a
-            key={m.key}
-            href={m.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={closeMobile}
-            className={cn(
-              "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors",
-              collapsed && "md:justify-center md:px-0",
-            )}
-            title={`${m.label} (apre in nuova scheda)`}
-          >
-            <ExternalLink className="h-4 w-4 shrink-0" />
-            <span className={cn(collapsed && "md:hidden")}>{m.label}</span>
-          </a>
-        ))}
 
         {/* Manuale in-app: viewer markdown dei doc in /docs */}
         <NavItem href="/manual" icon={BookOpen} label="Manuale" active={isActive("/manual")} collapsed={collapsed} onNavigate={closeMobile} />
@@ -493,6 +551,8 @@ export function Sidebar() {
 
       {/* Footer: toggle collapse (desktop) + Logout */}
       <div className="shrink-0 p-3 border-t border-sidebar-border space-y-1">
+        {/* Tema e utente stanno qui dal 20/10 (Riccardo): la barra in alto non c'è più. */}
+        <ThemeToggle compresso={collapsed} />
         <button
           type="button"
           onClick={toggle}
@@ -505,6 +565,7 @@ export function Sidebar() {
           {collapsed ? <PanelLeftOpen className="h-4 w-4 shrink-0" /> : <PanelLeftClose className="h-4 w-4 shrink-0" />}
           <span className={cn(collapsed && "md:hidden")}>Comprimi menu</span>
         </button>
+        <UserMenu compresso={collapsed} />
         <button
           onClick={() => signOut({ callbackUrl: "/login" })}
           title={collapsed ? "Esci" : undefined}

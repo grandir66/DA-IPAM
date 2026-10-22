@@ -16,17 +16,18 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { closeHubDb } from "@/lib/db-hub";
-import { deleteTenantDatabase, getTenantDb, rileggiSchemaCavi, withTenant } from "@/lib/db-tenant";
+import { deleteTenantDatabase, getTenantDb, rileggiSchemaCavi, rileggiSchemaSchedaMk, withTenant } from "@/lib/db-tenant";
 import { runArpPoll } from "@/lib/cron/jobs";
 import type { RouterClient } from "@/lib/devices/router-client";
 import { parseMikrotikNeighbors } from "@/lib/devices/mikrotik-vicini";
 import { parseMikrotikInterfaceTypes } from "@/lib/devices/mikrotik-porte";
 import { ComandoScaduto, SshError } from "@/lib/devices/ssh-transport";
 import {
-  COMANDI_MK, TEMPO_COMANDO_MS, codiceTrasporto, interpretaUscita, leggiMikrotikTopologia, type ApriEsecutore,
+  COMANDI_MK, COMANDI_MK_SCHEDA, TEMPO_COMANDO_MS, codiceTrasporto, interpretaUscita, leggiMikrotikTopologia, type ApriEsecutore,
 } from "@/lib/devices/mikrotik-letture";
 import { leggiEsiti, scriviInterruttore } from "@/lib/topology/letture/interruttori";
 import { DESCRIZIONE_LETTURE } from "@/lib/topology/letture/testi";
+import { LETTURE_SPENTE_SQL } from "@/lib/topology/letture/__tests__/letture-spente";
 
 const T = "TESTARPLETTUREMK";
 const db = () => getTenantDb(T);
@@ -69,8 +70,11 @@ function clientFinto(): RouterClient {
 
 beforeEach(() => {
   db().exec(`DELETE FROM topology_port_facts; DELETE FROM topology_bridge_facts; DELETE FROM topology_device_macs;
+    DELETE FROM mikrotik_bridge; DELETE FROM mikrotik_bridge_port; DELETE FROM mikrotik_bond;
+    DELETE FROM mikrotik_bridge_vlan; DELETE FROM mikrotik_vlan; DELETE FROM mikrotik_dns; DELETE FROM mikrotik_user;
     DELETE FROM device_neighbors; DELETE FROM mac_port_entries; DELETE FROM network_devices; DELETE FROM networks;
-    DELETE FROM tenant_settings WHERE key LIKE 'topologia.lettura.%';`);
+    DELETE FROM tenant_settings WHERE key LIKE 'topologia.lettura.%';
+    ${LETTURE_SPENTE_SQL}`);
   db().exec("INSERT INTO networks (id, cidr, name) VALUES (1, '192.0.2.0/24', 'LAN prova')");
   db().exec("INSERT INTO network_devices (id, name, host, device_type, vendor, protocol, enabled, use_for_arp_poll) "
     + "VALUES (1, 'RTR-1', '192.0.2.1', 'router', 'mikrotik', 'ssh', 1, 1), (2, 'SW-2', '192.0.2.2', 'switch', 'mikrotik', 'ssh', 1, 0)");
@@ -332,4 +336,172 @@ test("MK7: ogni comando ha il suo tempo massimo, anche i due nuovi (10 comandi c
 test("MK7: la scheda «Letture in più» dice anche i due comandi nuovi e quando partono (l'interruttore è già acceso dal cliente)", () => {
   assert.ok(DESCRIZIONE_LETTURE.mikrotik.comandi.includes("/interface bridge msti print e monitor (2 in più dove un bridge è in MSTP)"));
   assert.ok(DESCRIZIONE_LETTURE.mikrotik.legge.includes("sui bridge in MSTP la porta radice e le VLAN di ogni istanza"));
+});
+
+// ── Scheda MikroTik (Task 3): interfacce dall'uscita già letta dal giro ──────
+
+const righeInterfacce = (): number => conta("SELECT COUNT(*) AS n FROM device_interfaces");
+function collegaFisico(): number {
+  const r = db().prepare("INSERT INTO physical_devices (vendor, identity_confidence, identity_anchor) VALUES ('mikrotik', 1, 'prova')").run();
+  const id = Number(r.lastInsertRowid);
+  db().prepare("UPDATE network_devices SET physical_device_id = ? WHERE id = 1").run(id);
+  db().exec("DELETE FROM device_interfaces");
+  return id;
+}
+
+test("scheda MikroTik: con l'apparato fisico le interfacce si scrivono (tipo, MTU, commento, stato)", async () => {
+  const pd = collegaFisico();
+  await giro(spia());
+  assert.equal(righeInterfacce(), 24);
+  assert.deepEqual(db().prepare("SELECT type, mtu, alias, status, disabled FROM device_interfaces WHERE physical_device_id = ? AND ifname = 'bond1'").get(pd),
+    { type: "bond", mtu: 1500, alias: "cavo-a", status: "up", disabled: 0 });
+});
+
+test("scheda MikroTik: senza apparato fisico non si scrive niente", async () => {
+  db().exec("DELETE FROM device_interfaces");
+  await giro(spia());
+  assert.equal(righeInterfacce(), 0);
+});
+
+test("scheda MikroTik: un errore va in console.warn col solo codice e il giro continua (vicini scritti)", async () => {
+  const avvisi: string[] = [];
+  const originale = console.warn;
+  console.warn = (...a: unknown[]) => { avvisi.push(a.map(String).join(" ")); };
+  try {
+    collegaFisico();
+    db().exec("CREATE TRIGGER prova_scrittura_rifiutata BEFORE INSERT ON device_interfaces BEGIN SELECT RAISE(ABORT, 'rifiutata per prova'); END");
+    await giro(spia());
+  } finally {
+    console.warn = originale;
+    db().exec("DROP TRIGGER IF EXISTS prova_scrittura_rifiutata");
+  }
+  assert.ok(avvisi.some((a) => a.includes("apparato #1: interfacce non scritte")), avvisi.join("|"));
+  assert.ok(!avvisi.some((a) => a.includes("bond1") || a.includes("cavo-a")), "niente nomi né commenti nel log");
+  assert.equal(conta("SELECT COUNT(*) AS n FROM device_neighbors WHERE device_id = 1"), 9, "il giro è andato avanti");
+});
+
+// ── Task 8 (scheda MikroTik, P3): bridge, porte e bond nelle tabelle della scheda, dalle stesse uscite ──────────────
+
+const righeScheda = (id: number): number[] => ["mikrotik_bridge", "mikrotik_bridge_port", "mikrotik_bond"]
+  .map((t) => conta(`SELECT COUNT(*) AS n FROM ${t} WHERE device_id = ${id}`));
+
+test("scheda: lettura accesa → le tre tabelle del router con le righe delle fixture; lo switch non le scrive; nessun comando in più", async () => {
+  accendi();
+  const s = spia();
+  await giro(s);
+  assert.deepEqual(righeScheda(1), [1, 10, 3]);
+  assert.deepEqual(righeScheda(2), [0, 0, 0], "ramo degli switch: niente scheda");
+  assert.deepEqual(s.chiamate.map((c) => [c.device, c.comandi.length]), [[1, 6], [2, 8]]);
+  assert.equal(conta("SELECT COUNT(*) AS n FROM mikrotik_bridge_port WHERE device_id = 1 AND interface = 'sfp-sfpplus5' AND inactive = 1"), 1);
+});
+
+test("scheda: lettura spenta → nessuna riga e nessun comando", async () => {
+  const s = spia();
+  await giro(s);
+  assert.deepEqual(s.chiamate, []);
+  assert.deepEqual(righeScheda(1), [0, 0, 0]);
+});
+
+test("scheda: un «non so» non scrive una lista vuota, le righe dell'ultima lettura buona restano", async () => {
+  accendi();
+  await giro(spia());
+  // Un'ora e mezza dopo: il bridge in errore dal testo, le porte senza risposta, i fasci letti e vuoti.
+  await giro(spia({
+    [COMANDI_MK.bridge]: async () => F("mikrotik-errore.txt"),
+    [COMANDI_MK.porteBridge]: async () => { throw new ComandoScaduto(20_000); },
+    [COMANDI_MK.fasci]: async () => "",
+  }), ora(9, 30));
+  assert.deepEqual(righeScheda(1), [1, 10, 0]);
+  assert.equal(conta("SELECT COUNT(*) AS n FROM mikrotik_bridge WHERE device_id = 1 AND seen_at = '2026-10-15 08:00:00'"), 1, "il bridge resta con la sua età");
+});
+
+// ── Task 10 (scheda MikroTik, P4): lettura «VLAN, DNS e utenti dei MikroTik», spenta di default ──────────────
+// Zona rossa: quattro comandi nuovi sui router dei clienti. Spenta = nessuno dei quattro parte, e il giro di oggi è identico
+// (stessi comandi, stesse righe, stesso resoconto). Accesa: solo sui router, una connessione sua, al più una volta l'ora.
+
+const USCITE_SCHEDA: Record<string, () => Promise<string>> = {
+  [COMANDI_MK_SCHEDA.vlanBridge]: async () => F("mikrotik-bridge-vlan-terse.txt"), [COMANDI_MK_SCHEDA.vlan]: async () => F("mikrotik-vlan-terse.txt"),
+  [COMANDI_MK_SCHEDA.dns]: async () => F("mikrotik-dns.txt"), [COMANDI_MK_SCHEDA.utenti]: async () => F("mikrotik-user-terse.txt"),
+};
+const SCHEDA = new Set<string>(Object.values(COMANDI_MK_SCHEDA));
+const righeV3 = (id: number): number[] => ["mikrotik_bridge_vlan", "mikrotik_vlan", "mikrotik_dns", "mikrotik_user"]
+  .map((t) => conta(`SELECT COUNT(*) AS n FROM ${t} WHERE device_id = ${id}`));
+const accendiScheda = () => withTenant(T, () => scriviInterruttore("mikrotik_scheda", true, "admin"));
+
+test("VLAN/DNS/utenti spenta (topologia accesa): nessuno dei quattro comandi; giro, righe e resoconto come prima", async () => {
+  accendi();
+  const s = spia(USCITE_SCHEDA);
+  const r = await giro(s);
+  assert.deepEqual(s.chiamate.map((c) => [c.device, c.comandi.length]), [[1, 6], [2, 8]], "le stesse connessioni e gli stessi comandi di prima");
+  assert.equal(s.chiamate.flatMap((c) => c.comandi).filter((c) => SCHEDA.has(c)).length, 0);
+  assert.deepEqual(righeV3(1), [0, 0, 0, 0]);
+  assert.deepEqual(righeScheda(1), [1, 10, 3]);
+  assert.match(r.phase ?? "", /letture in più: 2 lette(;|$|\s)/);
+  assert.deepEqual(withTenant(T, () => leggiEsiti("mikrotik_scheda")), {});
+});
+
+test("VLAN/DNS/utenti accesa, topologia spenta: solo sul router, una connessione coi quattro comandi, righe ed esito", async () => {
+  accendiScheda();
+  const s = spia(USCITE_SCHEDA);
+  const r = await giro(s);
+  assert.deepEqual(s.chiamate.map((c) => [c.device, c.comandi]), [[1, Object.values(COMANDI_MK_SCHEDA)]], "lo switch no, la topologia no");
+  assert.deepEqual(righeV3(1), [12, 11, 1, 4]);
+  assert.deepEqual(righeV3(2), [0, 0, 0, 0]);
+  const e = withTenant(T, () => leggiEsiti("mikrotik_scheda"));
+  assert.deepEqual(Object.keys(e), ["1"]);
+  assert.deepEqual([e["1"].comandi, e["1"].riusciti, e["1"].codice], [4, 4, null]);
+  assert.match(r.phase ?? "", /letture in più: 1 lette/);
+});
+
+test("VLAN/DNS/utenti accesa con la topologia: due connessioni sul router (6 + 4), poi lo switch", async () => {
+  accendi();
+  accendiScheda();
+  const s = spia(USCITE_SCHEDA);
+  await giro(s);
+  assert.deepEqual(s.chiamate.map((c) => [c.device, c.comandi.length]), [[1, 6], [1, 4], [2, 8]]);
+  assert.deepEqual(righeScheda(1), [1, 10, 3]);
+});
+
+test("VLAN/DNS/utenti: al più una volta l'ora; un'ora e mezza dopo si rilegge, e un comando in errore non svuota la tabella", async () => {
+  accendiScheda();
+  await giro(spia(USCITE_SCHEDA));
+  const s2 = spia(USCITE_SCHEDA);
+  await giro(s2, ora(8, 30));
+  assert.deepEqual(s2.chiamate, [], "nell'ora: saltato, nessun comando");
+  await giro(spia({ ...USCITE_SCHEDA, [COMANDI_MK_SCHEDA.vlan]: async () => "bad command name vlan (line 1 column 12)", [COMANDI_MK_SCHEDA.utenti]: async () => "" }), ora(9, 30));
+  assert.deepEqual(righeV3(1), [12, 11, 1, 0], "VLAN in errore restano, utenti letti e vuoti");
+  const e = withTenant(T, () => leggiEsiti("mikrotik_scheda"))["1"];
+  assert.deepEqual([e.comandi, e.riusciti, e.codice, e.il], [4, 3, "BAD_COMMAND", "2026-10-15 09:30:00"]);
+});
+
+test("VLAN/DNS/utenti accesa ma schema sotto il livello 3: nessun comando, esito SCHEMA_SCHEDA", async () => {
+  accendiScheda();
+  db().exec("ALTER TABLE mikrotik_user RENAME TO mikrotik_user_via");
+  try {
+    withTenant(T, () => rileggiSchemaSchedaMk());
+    const s = spia(USCITE_SCHEDA);
+    const r = await giro(s);
+    assert.deepEqual(s.chiamate, []);
+    const e = withTenant(T, () => leggiEsiti("mikrotik_scheda"))["1"];
+    assert.deepEqual([e.comandi, e.riusciti, e.codice], [0, 0, "SCHEMA_SCHEDA"]);
+    assert.match(r.phase ?? "", /SCHEMA_SCHEDA/);
+  } finally {
+    db().exec("ALTER TABLE mikrotik_user_via RENAME TO mikrotik_user");
+    withTenant(T, () => rileggiSchemaSchedaMk());
+  }
+});
+
+test("VLAN/DNS/utenti: il resoconto e i log del giro non portano i nomi degli utenti", async () => {
+  accendiScheda();
+  const scritti: string[] = [];
+  const orig = { log: console.log, info: console.info, warn: console.warn, error: console.error };
+  for (const k of ["log", "info", "warn", "error"] as const) console[k] = (...a: unknown[]) => { scritti.push(a.map(String).join(" ")); };
+  let r;
+  try {
+    r = await giro(spia(USCITE_SCHEDA));
+  } finally {
+    Object.assign(console, orig);
+  }
+  const tutto = [...scritti, JSON.stringify(r)].join("\n");
+  for (const n of ["utente01", "utente02", "utente03", "utente04", "commento 0"]) assert.equal(tutto.includes(n), false, n);
 });

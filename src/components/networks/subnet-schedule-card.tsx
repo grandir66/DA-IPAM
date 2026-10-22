@@ -5,8 +5,8 @@ import { useEffect, useState } from "react";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { ChevronDown, ChevronRight, Clock, Loader2, Save } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Clock, Loader2, Save } from "lucide-react";
 import { toast } from "sonner";
 import type { ScheduledJob } from "@/types";
 
@@ -162,32 +162,38 @@ export function SubnetScheduleCard({ networkId }: SubnetScheduleCardProps) {
     }
   }
 
-  if (loading) return null;
-
   const isActive = job?.enabled === 1;
   const summary = !job
     ? "nessuna"
     : isActive
       ? `ogni ${intervalLabel(job.interval_minutes).toLowerCase()}${job.next_run ? ` · prossima ${formatRelative(job.next_run)}` : ""}`
       : `sospesa (${intervalLabel(job.interval_minutes).toLowerCase()})`;
+  // Sul pulsante della barra lo stato in parole (Riccardo è daltonico: mai solo il colore).
+  const buttonState = !job ? null : isActive ? `ogni ${intervalLabel(job.interval_minutes).toLowerCase()}` : "sospesa";
 
+  // Pulsante nella barra delle scansioni (20/10): prima era una riga pieghevole sotto la barra.
   return (
-    <Collapsible open={open} onOpenChange={setOpen}>
-      <CollapsibleTrigger className="w-full flex items-center justify-between rounded-md border border-border/60 bg-muted/30 hover:bg-muted/50 transition-colors px-3 py-1.5 text-left">
-          <span className="flex items-center gap-2 text-xs font-medium">
-            {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-            <Clock className="h-3.5 w-3.5 text-amber-600" />
-            Schedulazione scansione veloce
-            {isActive && (
-              <span className="text-[10px] font-bold uppercase rounded bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 px-1.5 py-0.5">
-                Attiva
-              </span>
-            )}
-          </span>
-          <span className="text-[11px] text-muted-foreground">{summary}</span>
-      </CollapsibleTrigger>
-      <CollapsibleContent>
-        <div className="rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2.5 mt-1">
+    <>
+      <Button
+        size="default"
+        variant="outline"
+        className="h-8 min-h-8 px-2.5 text-xs font-medium shrink-0 bg-background/90"
+        onClick={() => setOpen(true)}
+        disabled={loading}
+        title={`Scansione veloce periodica della subnet: ${summary}`}
+      >
+        <Clock className="h-3.5 w-3.5 mr-1 shrink-0" />
+        Scansione periodica
+        {buttonState && (
+          <span className={isActive ? "ml-1.5 font-semibold" : "ml-1.5 text-muted-foreground"}>· {buttonState}</span>
+        )}
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Scansione veloce periodica</DialogTitle>
+            <DialogDescription>Ripete da sola la scansione veloce di questa subnet all&apos;intervallo scelto.</DialogDescription>
+          </DialogHeader>
           {!job ? (
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-sm text-muted-foreground">
@@ -208,61 +214,60 @@ export function SubnetScheduleCard({ networkId }: SubnetScheduleCardProps) {
                   ))}
                 </SelectContent>
               </Select>
-              <Button
-                size="sm"
-                onClick={createSchedule}
-                disabled={saving}
-                className="bg-amber-500 hover:bg-amber-600 text-white"
-              >
+              <Button size="sm" onClick={createSchedule} disabled={saving}>
                 {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Save className="h-4 w-4 mr-1" />}
                 Attiva
               </Button>
             </div>
           ) : (
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="flex items-center gap-2">
-                <Switch
-                  checked={job.enabled === 1}
-                  onCheckedChange={toggleEnabled}
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <Switch
+                    checked={job.enabled === 1}
+                    onCheckedChange={toggleEnabled}
+                    disabled={saving}
+                  />
+                  <span className="text-sm">Esegui ogni</span>
+                </div>
+                <Select
+                  value={String(intervalMinutes)}
+                  onValueChange={(v) => setIntervalMinutes(Number(v))}
                   disabled={saving}
-                />
-                <span className="text-sm">Esegui ogni</span>
-              </div>
-              <Select
-                value={String(intervalMinutes)}
-                onValueChange={(v) => setIntervalMinutes(Number(v))}
-                disabled={saving}
-              >
-                <SelectTrigger className="w-[130px] h-8">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {INTERVAL_OPTIONS.map((opt) => (
-                    <SelectItem key={opt.value} value={String(opt.value)}>
-                      {opt.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {intervalMinutes !== job.interval_minutes && (
-                <Button size="sm" variant="outline" onClick={updateInterval} disabled={saving}>
-                  {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Save className="h-4 w-4 mr-1" />}
-                  Salva intervallo
-                </Button>
-              )}
-              <span className="text-xs text-muted-foreground ml-auto">
-                Ultima run: <b>{formatRelative(job.last_run)}</b>
-                {job.next_run && isActive && (
-                  <> · Prossima: <b>{formatRelative(job.next_run)}</b></>
+                >
+                  <SelectTrigger className="w-[130px] h-8">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {INTERVAL_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={String(opt.value)}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {intervalMinutes !== job.interval_minutes && (
+                  <Button size="sm" variant="outline" onClick={updateInterval} disabled={saving}>
+                    {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Save className="h-4 w-4 mr-1" />}
+                    Salva intervallo
+                  </Button>
                 )}
-              </span>
-              <Button size="sm" variant="ghost" onClick={removeSchedule} disabled={saving} className="text-destructive">
-                Rimuovi
-              </Button>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="text-sm text-muted-foreground">
+                  Ultima esecuzione: <b>{formatRelative(job.last_run)}</b>
+                  {job.next_run && isActive && (
+                    <> · Prossima: <b>{formatRelative(job.next_run)}</b></>
+                  )}
+                </span>
+                <Button size="sm" variant="ghost" onClick={removeSchedule} disabled={saving} className="text-destructive ml-auto">
+                  Rimuovi
+                </Button>
+              </div>
             </div>
           )}
-        </div>
-      </CollapsibleContent>
-    </Collapsible>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

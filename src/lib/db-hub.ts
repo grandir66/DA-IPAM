@@ -420,6 +420,23 @@ function initializeHubDb(db: Database.Database): void {
       db.exec("ALTER TABLE users ADD COLUMN email TEXT");
     }
   } catch { /* ignore */ }
+  // Verifica in due passaggi (Riccardo, 20/10; ADR 0023): richiesta dall'admin utente per
+  // utente, segreto TOTP cifrato con encrypt(), proposto (QR) a parte finché il primo codice
+  // giusto non lo conferma. Niente catch muto: senza queste colonne l'accesso non si legge.
+  {
+    const cols = new Set((db.prepare("PRAGMA table_info(users)").all() as { name: string }[]).map((c) => c.name));
+    const nuove: [string, string][] = [
+      ["totp_richiesta", "INTEGER NOT NULL DEFAULT 0"],
+      ["totp_segreto", "TEXT"],
+      ["totp_attivato_at", "TEXT"],
+      ["totp_ultimo_passo", "INTEGER"],
+      ["totp_proposto", "TEXT"],
+      ["totp_proposto_scade", "TEXT"],
+    ];
+    for (const [nome, tipo] of nuove) {
+      if (!cols.has(nome)) db.exec(`ALTER TABLE users ADD COLUMN ${nome} ${tipo}`);
+    }
+  }
   // Migrazione: aggiunge colonne agent_* a tenants se mancanti (architettura hub + agent remoti)
   try {
     const tcols = db.prepare("PRAGMA table_info(tenants)").all() as { name: string }[];
@@ -456,43 +473,6 @@ function initializeHubDb(db: Database.Database): void {
       CREATE INDEX IF NOT EXISTS idx_inventory_ingest_tenant ON inventory_ingest_tokens(tenant_code);
     `);
   } catch { /* ignore */ }
-  // Migrazione 1->N agent: per ogni tenant con agent_hostname configurato,
-  // crea una riga in tenant_agents se non già esistente. Idempotente.
-  try {
-    const rows = db.prepare(`
-      SELECT id, agent_hostname, agent_port, agent_token_hash,
-             agent_token_encrypted, agent_version, agent_last_seen_at
-      FROM tenants
-      WHERE agent_hostname IS NOT NULL AND agent_hostname != ''
-    `).all() as Array<{
-      id: number;
-      agent_hostname: string;
-      agent_port: number;
-      agent_token_hash: string | null;
-      agent_token_encrypted: string | null;
-      agent_version: string | null;
-      agent_last_seen_at: string | null;
-    }>;
-    const existsStmt = db.prepare("SELECT 1 FROM tenant_agents WHERE tenant_id = ? LIMIT 1");
-    const insertStmt = db.prepare(`
-      INSERT INTO tenant_agents (tenant_id, label, hostname, port, token_hash, token_encrypted, version, last_seen_at)
-      VALUES (?, 'Sede principale', ?, ?, ?, ?, ?, ?)
-    `);
-    for (const r of rows) {
-      if (existsStmt.get(r.id)) continue; // tenant ha già un agent migrato
-      insertStmt.run(
-        r.id,
-        r.agent_hostname,
-        r.agent_port ?? 8443,
-        r.agent_token_hash,
-        r.agent_token_encrypted,
-        r.agent_version,
-        r.agent_last_seen_at,
-      );
-    }
-  } catch (e) {
-    console.error("[db-hub] Migrazione tenants→tenant_agents fallita (non blocca):", e);
-  }
   seedHubDefaults(db);
   try {
     backfillAllIntegrationUiUrls();
@@ -572,6 +552,16 @@ export interface HubUser {
   tenant_id: number | null;
   created_at: string;
   last_login: string | null;
+  /** Verifica in due passaggi (ADR 0023): 1 = richiesta dall'admin. */
+  totp_richiesta?: number;
+  /** Segreto confermato, cifrato con encrypt(); null = non ancora attivata. */
+  totp_segreto?: string | null;
+  totp_attivato_at?: string | null;
+  /** Ultimo passo TOTP usato: un codice uguale o più vecchio non vale. */
+  totp_ultimo_passo?: number | null;
+  /** Segreto proposto col QR, cifrato, valido fino a totp_proposto_scade. */
+  totp_proposto?: string | null;
+  totp_proposto_scade?: string | null;
 }
 
 export interface FingerprintClassificationMapRow {
@@ -745,167 +735,9 @@ export function deleteTenant(id: number): boolean {
   return getHubDb().prepare("DELETE FROM tenants WHERE id = ?").run(id).changes > 0;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Tenant agent (architettura hub + agenti remoti via Tailscale)
-// ═══════════════════════════════════════════════════════════════════════════
-
-export interface TenantAgentConfigInput {
-  agent_mode?: "local" | "remote";
-  agent_hostname?: string | null;
-  agent_port?: number;
-}
-
-/**
- * Aggiorna la configurazione dell'agente per un tenant (mode, hostname, port).
- * Non modifica token né dati di heartbeat — quelli hanno setter dedicati.
- */
-export function updateTenantAgentConfig(id: number, input: TenantAgentConfigInput): Tenant | undefined {
-  const existing = getHubDb().prepare("SELECT id FROM tenants WHERE id = ?").get(id) as { id: number } | undefined;
-  if (!existing) return undefined;
-
-  const sets: string[] = ["updated_at = datetime('now')"];
-  const vals: unknown[] = [];
-  const field = (col: string, val: unknown) => { sets.push(`${col} = ?`); vals.push(val); };
-
-  if (input.agent_mode !== undefined) field("agent_mode", input.agent_mode);
-  if (input.agent_hostname !== undefined) field("agent_hostname", input.agent_hostname);
-  if (input.agent_port !== undefined) field("agent_port", input.agent_port);
-
-  if (sets.length === 1) return getTenantById(id);
-
-  vals.push(id);
-  getHubDb().prepare(`UPDATE tenants SET ${sets.join(", ")} WHERE id = ?`).run(...vals);
-  return getTenantById(id);
-}
-
-/**
- * Salva un nuovo token agente: hash bcrypt per verifica rapida + ciphertext per uso interno dell'hub.
- * Il plaintext NON viene mai persistito.
- */
-export function setTenantAgentToken(id: number, tokenHash: string, tokenEncrypted: string): boolean {
-  return getHubDb().prepare(
-    "UPDATE tenants SET agent_token_hash = ?, agent_token_encrypted = ?, updated_at = datetime('now') WHERE id = ?"
-  ).run(tokenHash, tokenEncrypted, id).changes > 0;
-}
-
-/**
- * Aggiorna i dati di heartbeat di un tenant. Chiamato dall'endpoint di heartbeat (Phase 6).
- */
-export function updateTenantAgentHeartbeat(id: number, version: string): boolean {
-  return getHubDb().prepare(
-    "UPDATE tenants SET agent_version = ?, agent_last_seen_at = datetime('now') WHERE id = ?"
-  ).run(version, id).changes > 0;
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Tenant agents (N agent per tenant — sedi diverse dello stesso cliente)
-// ═══════════════════════════════════════════════════════════════════════════
-
-export interface TenantAgent {
-  id: number;
-  tenant_id: number;
-  label: string;
-  hostname: string;
-  port: number;
-  token_hash: string | null;
-  token_encrypted: string | null;
-  version: string | null;
-  last_seen_at: string | null;
-  subnet_match: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface TenantAgentWithTenantInfo extends TenantAgent {
-  codice_cliente: string;
-  ragione_sociale: string;
-}
-
-export function getTenantAgents(tenantId: number): TenantAgent[] {
-  return getHubDb()
-    .prepare("SELECT * FROM tenant_agents WHERE tenant_id = ? ORDER BY id ASC")
-    .all(tenantId) as TenantAgent[];
-}
-
-export function getTenantAgentById(agentId: number): TenantAgent | undefined {
-  return getHubDb()
-    .prepare("SELECT * FROM tenant_agents WHERE id = ?")
-    .get(agentId) as TenantAgent | undefined;
-}
-
-export function getAllTenantAgentsWithInfo(): TenantAgentWithTenantInfo[] {
-  return getHubDb().prepare(`
-    SELECT ta.*, t.codice_cliente, t.ragione_sociale
-    FROM tenant_agents ta
-    JOIN tenants t ON t.id = ta.tenant_id
-    ORDER BY t.codice_cliente, ta.label
-  `).all() as TenantAgentWithTenantInfo[];
-}
-
-export function getFirstTenantAgent(tenantId: number): TenantAgent | undefined {
-  return getHubDb()
-    .prepare("SELECT * FROM tenant_agents WHERE tenant_id = ? ORDER BY id ASC LIMIT 1")
-    .get(tenantId) as TenantAgent | undefined;
-}
-
-export interface CreateTenantAgentInput {
-  tenant_id: number;
-  label: string;
-  hostname: string;
-  port?: number;
-  subnet_match?: string | null;
-}
-
-export function createTenantAgent(input: CreateTenantAgentInput): TenantAgent {
-  const port = input.port ?? 8443;
-  const result = getHubDb().prepare(`
-    INSERT INTO tenant_agents (tenant_id, label, hostname, port, subnet_match)
-    VALUES (?, ?, ?, ?, ?)
-  `).run(input.tenant_id, input.label, input.hostname, port, input.subnet_match ?? null);
-  return getTenantAgentById(Number(result.lastInsertRowid))!;
-}
-
-export interface UpdateTenantAgentInput {
-  label?: string;
-  hostname?: string;
-  port?: number;
-  subnet_match?: string | null;
-}
-
-export function updateTenantAgent(agentId: number, input: UpdateTenantAgentInput): TenantAgent | undefined {
-  const existing = getTenantAgentById(agentId);
-  if (!existing) return undefined;
-
-  const sets: string[] = ["updated_at = datetime('now')"];
-  const vals: unknown[] = [];
-  const field = (col: string, val: unknown) => { sets.push(`${col} = ?`); vals.push(val); };
-
-  if (input.label !== undefined) field("label", input.label);
-  if (input.hostname !== undefined) field("hostname", input.hostname);
-  if (input.port !== undefined) field("port", input.port);
-  if (input.subnet_match !== undefined) field("subnet_match", input.subnet_match);
-
-  if (sets.length === 1) return existing;
-  vals.push(agentId);
-  getHubDb().prepare(`UPDATE tenant_agents SET ${sets.join(", ")} WHERE id = ?`).run(...vals);
-  return getTenantAgentById(agentId);
-}
-
-export function deleteTenantAgent(agentId: number): boolean {
-  return getHubDb().prepare("DELETE FROM tenant_agents WHERE id = ?").run(agentId).changes > 0;
-}
-
-export function setTenantAgentTokenById(agentId: number, tokenHash: string, tokenEncrypted: string): boolean {
-  return getHubDb().prepare(
-    "UPDATE tenant_agents SET token_hash = ?, token_encrypted = ?, updated_at = datetime('now') WHERE id = ?"
-  ).run(tokenHash, tokenEncrypted, agentId).changes > 0;
-}
-
-export function updateTenantAgentHeartbeatById(agentId: number, version: string): boolean {
-  return getHubDb().prepare(
-    "UPDATE tenant_agents SET version = ?, last_seen_at = datetime('now') WHERE id = ?"
-  ).run(version, agentId).changes > 0;
-}
+// L'agente Python remoto è tolto (20/10/2026, decisione 26 della spec NetBird): le
+// colonne `tenants.agent_*` e la tabella `tenant_agents` restano nel DB, senza uso
+// (niente DROP); l'esecutore rifiuta un cliente rimasto con `agent_mode='remote'`.
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Users
@@ -937,6 +769,55 @@ export function createUser(
   return getHubDb().prepare("SELECT * FROM users WHERE id = ?").get(result.lastInsertRowid) as HubUser;
 }
 
+// ── Verifica in due passaggi (ADR 0023) ─────────────────────────────────
+// Le scritture sono condizionate: un codice già usato o un QR già confermato non passano
+// due volte, nemmeno con due accessi nello stesso istante (changes === 0 = rifiuto).
+
+/**
+ * Salva il QR proposto solo se nel frattempo nessuno l'ha cambiato (`precedente` = quello letto):
+ * due passi 1 insieme non lasciano due QR diversi (revisione del 20/10). false = un altro ha
+ * scritto prima: si rilegge il suo.
+ */
+export function salvaTotpProposto(userId: number, segretoCifrato: string, scadeIso: string, precedente: string | null): boolean {
+  return (
+    getHubDb()
+      .prepare("UPDATE users SET totp_proposto = ?, totp_proposto_scade = ? WHERE id = ? AND totp_segreto IS NULL AND totp_proposto IS ?")
+      .run(segretoCifrato, scadeIso, userId, precedente).changes === 1
+  );
+}
+
+/** Conferma il proposto: true solo se era ancora quello e la 2FA non era già attiva. */
+export function attivaTotp(userId: number, propostoCifrato: string, passo: number): boolean {
+  return (
+    getHubDb()
+      .prepare(
+        `UPDATE users SET totp_segreto = totp_proposto, totp_attivato_at = datetime('now'), totp_ultimo_passo = ?,
+           totp_proposto = NULL, totp_proposto_scade = NULL
+         WHERE id = ? AND totp_segreto IS NULL AND totp_proposto = ?`,
+      )
+      .run(passo, userId, propostoCifrato).changes === 1
+  );
+}
+
+/** Segna il passo usato: false se un accesso ha già usato quel passo o uno più nuovo. */
+export function usaPassoTotp(userId: number, passo: number): boolean {
+  return (
+    getHubDb()
+      .prepare("UPDATE users SET totp_ultimo_passo = ? WHERE id = ? AND (totp_ultimo_passo IS NULL OR totp_ultimo_passo < ?)")
+      .run(passo, userId, passo).changes === 1
+  );
+}
+
+/** Azione dell'admin: richiedi (accende), azzera (nuovo QR al prossimo accesso), togli (spegne e cancella). */
+export function impostaSecondaVerifica(userId: number, azione: "richiedi" | "azzera" | "togli"): boolean {
+  const pulisci = "totp_segreto = NULL, totp_attivato_at = NULL, totp_ultimo_passo = NULL, totp_proposto = NULL, totp_proposto_scade = NULL";
+  const sql =
+    azione === "richiedi" ? "UPDATE users SET totp_richiesta = 1 WHERE id = ?"
+      : azione === "azzera" ? `UPDATE users SET ${pulisci} WHERE id = ?`
+        : `UPDATE users SET totp_richiesta = 0, ${pulisci} WHERE id = ?`;
+  return getHubDb().prepare(sql).run(userId).changes === 1;
+}
+
 export function updateUserLastLogin(userId: number): void {
   getHubDb().prepare("UPDATE users SET last_login = datetime('now') WHERE id = ?").run(userId);
 }
@@ -945,8 +826,15 @@ export function updateUserPassword(userId: number, passwordHash: string): void {
   getHubDb().prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(passwordHash, userId);
 }
 
-export function getUsers(): Omit<HubUser, "password_hash">[] {
-  return getHubDb().prepare("SELECT id, username, email, role, tenant_id, created_at, last_login FROM users ORDER BY username").all() as Omit<HubUser, "password_hash">[];
+/** Elenco utenti senza hash né segreti: della verifica in due passaggi solo se è richiesta e se è attiva. */
+export function getUsers(): Array<Omit<HubUser, "password_hash" | "totp_segreto" | "totp_proposto" | "totp_proposto_scade" | "totp_ultimo_passo"> & { totp_attiva: number }> {
+  return getHubDb()
+    .prepare(
+      `SELECT id, username, email, role, tenant_id, created_at, last_login, totp_richiesta, totp_attivato_at,
+         (totp_segreto IS NOT NULL) AS totp_attiva
+       FROM users ORDER BY username`,
+    )
+    .all() as Array<Omit<HubUser, "password_hash" | "totp_segreto" | "totp_proposto" | "totp_proposto_scade" | "totp_ultimo_passo"> & { totp_attiva: number }>;
 }
 
 export function updateUserEmail(userId: number, email: string | null): boolean {

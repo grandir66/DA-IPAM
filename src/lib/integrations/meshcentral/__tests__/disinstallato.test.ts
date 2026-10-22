@@ -231,6 +231,7 @@ const LIBERE: Record<string, string> = {
   "features/[key]/install/route.ts": "è la via per riattivare il modulo",
   "integrations/meshcentral/install/route.ts": "installa il server sull'appliance: è la via per attivare il modulo",
   "integrations/meshcentral/config/route.ts": "la configurazione resta modificabile anche a modulo spento",
+  "integrations/meshcentral/senza-agente/route.ts": "è un'impostazione (19/10): non comanda il server; le sessioni passano dalla rotta d'azione host/[hostId]/senza-agente",
   "integrations/meshcentral/host/[hostId]/route.ts": "legge la copia locale dei nodi; i pulsanti della scheda chiamano rotte d'azione",
 };
 

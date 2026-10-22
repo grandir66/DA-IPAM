@@ -32,6 +32,7 @@ export const OFFERTA_MODULO: Readonly<Record<ModuleKey, Offerta>> = {
   inventory_agent: "base",
   nis2_inventory: "base",
   unifi: "base",
+  mdm: "opzione",
   appliance: "base",
 };
 

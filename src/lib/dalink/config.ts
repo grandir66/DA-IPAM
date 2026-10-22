@@ -49,16 +49,16 @@ export function normalizzaImpronta(v: string): string | null {
   return m ? `sha256/${m[1]}` : null;
 }
 
-const CODCLI = /^[0-9]{3,8}$/;
+export const CODCLI = /^[0-9]{3,8}$/;
 const TOKEN = /^dlk_[A-Za-z0-9_-]{20,200}$/;
 /**
  * Un'appliance per sede per cliente (decisione del 18/10/2026): la prima sede è
  * `<codcli>-ipam`, dalla seconda `<codcli>-ipam-<n>` con n da 2 a 99, senza zeri
  * davanti. Stessa forma in `scripts/dalink/prepara-netbird.sh`.
  */
-const NODO_IPAM = /^([0-9]{3,8})-ipam(?:-([2-9]|[1-9][0-9]))?$/;
+export const NODO_IPAM = /^([0-9]{3,8})-ipam(?:-([2-9]|[1-9][0-9]))?$/;
 
-function leggiRighe(testo: string): Map<string, string> {
+export function leggiRighe(testo: string): Map<string, string> {
   const valori = new Map<string, string>();
   for (const grezza of testo.split(/\r?\n/)) {
     const riga = grezza.trim();
@@ -76,27 +76,61 @@ function leggiRighe(testo: string): Map<string, string> {
   return valori;
 }
 
-export function leggiConfigDalink(percorso: string = percorsoOggettoEnv()): ConfigDalink {
+/**
+ * Chi può possedere `oggetto.env`: root (il comando di DA-Link si incolla in una shell di root, `cat >` sotto
+ * `umask 077`) o l'utente che fa girare DA-IPAM. Un file d'altri, anche a 600, l'ha scritto qualcun altro.
+ */
+function proprietariAmmessi(): number[] {
+  const uid = typeof process.getuid === "function" ? process.getuid() : null;
+  return uid === null ? [0] : [0, uid];
+}
+
+export type FileOggetto =
+  | { esito: "assente" }
+  | { esito: "non_valido"; motivo: string }
+  | { esito: "letto"; testo: string };
+
+/**
+ * Le regole sul file, comuni a DA-Link e all'invio verso DA-Vul-can: assente,
+ * non un file, permessi più larghi di 600, illeggibile. Nessun motivo contiene
+ * valori del file.
+ */
+export function controllaFileOggetto(percorso: string, proprietari: readonly number[] = proprietariAmmessi()): FileOggetto {
   let stat: fs.Stats;
   try {
-    stat = fs.statSync(percorso);
+    stat = fs.lstatSync(percorso);
   } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === "ENOENT") return { stato: "assente" };
-    return { stato: "non_valida", motivo: "file di configurazione DA-Link non leggibile" };
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return { esito: "assente" };
+    return { esito: "non_valido", motivo: "file di configurazione DA-Link non leggibile" };
   }
-  if (!stat.isFile()) return { stato: "non_valida", motivo: "la configurazione DA-Link non è un file" };
+  if (stat.isSymbolicLink()) {
+    return { esito: "non_valido", motivo: "la configurazione DA-Link è un collegamento simbolico: deve essere il file scritto da DA-Link" };
+  }
+  if (!stat.isFile()) return { esito: "non_valido", motivo: "la configurazione DA-Link non è un file" };
+  if (!proprietari.includes(stat.uid)) {
+    return {
+      esito: "non_valido",
+      motivo: "il proprietario del file di configurazione DA-Link non è root né l'utente che fa girare DA-IPAM",
+    };
+  }
   if ((stat.mode & 0o077) !== 0) {
     return {
-      stato: "non_valida",
+      esito: "non_valido",
       motivo: "permessi troppo larghi sul file di configurazione DA-Link: deve essere leggibile solo dal proprietario (600)",
     };
   }
-  let testo: string;
   try {
-    testo = fs.readFileSync(percorso, "utf8");
+    return { esito: "letto", testo: fs.readFileSync(percorso, "utf8") };
   } catch {
-    return { stato: "non_valida", motivo: "file di configurazione DA-Link non leggibile" };
+    return { esito: "non_valido", motivo: "file di configurazione DA-Link non leggibile" };
   }
+}
+
+export function leggiConfigDalink(percorso: string = percorsoOggettoEnv()): ConfigDalink {
+  const f = controllaFileOggetto(percorso);
+  if (f.esito === "assente") return { stato: "assente" };
+  if (f.esito === "non_valido") return { stato: "non_valida", motivo: f.motivo };
+  const testo = f.testo;
   const v = leggiRighe(testo);
 
   const urlGrezzo = (v.get("DALINK_URL") ?? "").trim();

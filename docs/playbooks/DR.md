@@ -62,9 +62,8 @@ Da rivedere e testare ogni 6 mesi.
    ```
 
    ⚠️ **CRITICO**: la `ENCRYPTION_KEY` DEVE essere identica a quella
-   del DB che stai ripristinando. Se cambi chiave, tutti i token agent
-   cifrati in `tenant_agents.token_encrypted` diventano `decrypt_failed`
-   e dovrai rigenerarli a mano dalla UI.
+   del DB che stai ripristinando. Se cambi chiave, tutti i segreti cifrati
+   (credenziali, caveau) diventano illeggibili e vanno reinseriti a mano.
 
 6. **Start service + verifica**:
    ```bash
@@ -73,22 +72,17 @@ Da rivedere e testare ogni 6 mesi.
    curl http://localhost:3001/api/version
    ```
 
-7. **Re-join Tailscale**:
+7. **Rientro in NetBird** (lo governa DA-Link):
    ```bash
-   tailscale up --reset \
-     --authkey=<reusable-key> \
-     --advertise-tags=tag:da-hub \
-     --hostname=da-invent \
-     --ssh
+   sudo bash scripts/dalink/prepara-netbird.sh --applica --edge no
+   # poi il comando emesso da DA-Link per l'oggetto <codice>-ipam
    ```
-   ⚠️ Sul vecchio admin Tailscale, **rimuovi** il nodo "morto"
-   altrimenti i bridge potrebbero ancora puntargli (cache MagicDNS).
+   ⚠️ In DA-Link **revoca** il peer della macchina "morta" prima di far
+   entrare la nuova con lo stesso nome.
 
 8. **Verifica E2E**:
    - `https://da-invent` login funziona
-   - `/agents` mostra agent ancora visibili (last_seen sarà vecchio finché
-     non li ritesti)
-   - "Testa tutti" → tutti verde (gli agent sui bridge continuano a girare)
+   - le credenziali si aprono (Credenziali → Prova su un apparato)
 
 ### Note
 
@@ -98,41 +92,34 @@ Da rivedere e testare ogni 6 mesi.
 
 ---
 
-## Scenario B — Account Tailscale compromesso / da revocare
+## Scenario B — Accesso a NetBird compromesso / da revocare
 
 ### Sintomo
-- Tailscale admin email/password leak sospetto
-- Pulsante "panic" Tailscale: tutti i device disconnessi
-- Necessità di rotazione completa identità tailnet
+- Sospetta fuga di un accesso amministrativo a NetBird (`https://netbird.domarc.it`)
+  o di DA-Link
+- Peer sconosciuti nell'elenco di NetBird
+- Necessità di rotazione completa delle chiavi d'ingresso
 
 ### Procedura
 
-1. **Cambia password admin Tailscale** IMMEDIATAMENTE da
-   <https://login.tailscale.com/admin/personal-settings>.
+1. **Cambia subito la password** dell'utenza amministrativa compromessa
+   (NetBird o DA-Link).
 
-2. **Revoca tutte le auth-key esistenti**:
-   <https://login.tailscale.com/admin/settings/keys> → Delete su ognuna.
+2. **Revoca le chiavi d'ingresso ancora valide** dalla console di NetBird
+   (Setup Keys): sono monouso, ma finché valgono fanno entrare chiunque.
 
-3. **Revoca i nodi compromessi** (se identificabili):
-   <https://login.tailscale.com/admin/machines> → Remove per ogni
-   nodo sospetto.
+3. **Revoca i peer sospetti** dalla console di NetBird (o da DA-Link, che ne
+   tiene l'elenco per oggetto).
 
-4. **Se necessario rotazione completa**: segui
-   [CHANGE-TAILNET.md](CHANGE-TAILNET.md) — è la procedura di migrazione
-   verso un NUOVO tailnet, equivalente al "ripartire da zero" su quello
-   esistente.
+4. **Riallinea le policy** da DA-Link: rimette gruppi e regole come li dichiara.
 
-5. **Genera nuove auth-key** taggate per ogni ruolo
-   (`tag:da-hub`, `tag:da-bridge`, `tag:da-admin`).
+5. **Fai rientrare i nodi revocati** col comando emesso da DA-Link (chiave nuova).
 
-6. **Re-up tutti i nodi** con le nuove auth-key (vedi
-   [infra/tailscale/README.md](../../infra/tailscale/README.md)).
-
-7. **Salva le nuove credenziali in Keeper**.
+6. **Salva le nuove credenziali in Keeper**.
 
 ### Note
 
-- I token agent **non** vengono compromessi (sono ortogonali a Tailscale).
+- Le credenziali nel DB **non** vengono compromesse (sono ortogonali a NetBird).
 - I DB sui server **non** vanno ripristinati.
 - Tempo totale: ~2-3 ore per cluster con 5-10 nodi.
 
@@ -240,7 +227,7 @@ Esecuzione consigliata: ogni gennaio + luglio.
 2. Spegni la VM lab
 3. Su una VM Ubuntu pulita, esegui Scenario A end-to-end usando
    l'ultimo backup nightly
-4. Verifica: UI accessibile, agent test verde, scansione test riuscita
+4. Verifica: UI accessibile, scansione test riuscita
 5. Documenta il tempo impiegato + eventuali sorprese
 6. Aggiorna questo playbook se serve
 
@@ -253,5 +240,5 @@ Esecuzione consigliata: ogni gennaio + luglio.
 - [ ] Test mensile rapido (ls + sqlite3 count) — calendario operatore
 - [ ] Test DR semestrale completo — calendario operatore
 - [ ] ENCRYPTION_KEY, AUTH_SECRET, DOMARC_PASSWORD salvati in Keeper
-- [ ] Tailscale auth-key correnti salvate in Keeper
-- [ ] Procedure Tailscale e DB documentate qui — sempre aggiornare se cambia infrastruttura
+- [ ] Accessi a NetBird e DA-Link salvati in Keeper
+- [ ] Procedure NetBird e DB documentate qui — sempre aggiornare se cambia infrastruttura

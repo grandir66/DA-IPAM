@@ -36,7 +36,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { ArrowLeft, RefreshCw, Zap, ZapOff, Cable, Minus, Pencil, Key, Server, Wifi, Database, Activity, Radio, Package, ExternalLink, Plus, Monitor, Cpu, HardDrive, Shield, Users, Clock, Award, Layers, Info, Download, Link2 } from "lucide-react";
+import { ArrowLeft, RefreshCw, Zap, ZapOff, Cable, Minus, Pencil, Server, Wifi, Database, Activity, Radio, Package, ExternalLink, Plus, Monitor, Cpu, HardDrive, Shield, Users, Clock, Award, Layers, Info, Download, Link2 } from "lucide-react";
 
 import { runDeviceAcquisitionScan } from "@/lib/devices/device-scan-client";
 import { describeDeviceAcquisition } from "@/lib/devices/device-acquisition-resolve";
@@ -58,7 +58,9 @@ import {
 import type { NetworkDevice, ArpEntry, MacPortEntry, SwitchPort } from "@/types";
 import { networkDeviceUsesArpPoll } from "@/lib/network-device-arp";
 import { corpoModificaApparato, inviaConConferma, tendineDaApparato } from "../modifica-in-blocco";
-import { nomeFonteUsata, type UsataAdesso } from "@/lib/devices/usata-adesso";
+import type { UsataAdesso } from "@/lib/devices/usata-adesso";
+import { BadgeAMano, BadgeSenzaProva, ClassificazioneApparato, CredenzialiAssegnate } from "@/components/devices/credenziali-assegnate";
+import type { RuoloServer } from "@/lib/classification/canonico";
 
 interface Credential {
   id: number;
@@ -507,46 +509,15 @@ function getPortTypeIcon(portName: string, isTrunk: boolean) {
 
 const CLASSIFICATION_SLUGS = ["access_point", "firewall", "hypervisor", "iot", "notebook", "router", "server", "stampante", "storage", "switch", "telecamera", "voip", "vm", "workstation"];
 
-type DeviceCredentialRowInput = Pick<NetworkDevice, "protocol" | "snmp_version" | "snmp_version_fissata"> & {
-  usata_adesso?: UsataAdesso[];
-};
-
-/**
- * Righe del riquadro «Usata adesso» (tappa 2e, T20, interfaccia punto 5): la
- * credenziale che il motore sceglie per il protocollo principale e per SNMP,
- * con la fonte. Prima il riquadro leggeva le colonne dell'apparato, mentre la
- * tabella sotto mostrava i binding: due risposte diverse sulla stessa pagina.
- */
-function buildDeviceCredentialRows(
-  device: DeviceCredentialRowInput,
-): { key: string; protocolLabel: string; archiveLabel: string; conVoce: boolean; note: string }[] {
-  // Versione che parla davvero chi apre una sessione a community (snmp-sessione.ts).
-  const versioneSnmp = device.snmp_version
-    ? `SNMP ${etichettaVersioneSnmp(device.snmp_version)} ${device.snmp_version_fissata === 1 ? "fissata a mano" : "rilevata"}`
-    : "versione SNMP non rilevata";
-  const titolo = (u: UsataAdesso): string => {
-    if (u.ruolo === "snmp") return "SNMP — walk, porte, LLDP, spanning tree";
-    if (u.protocollo === "snmp") return `${String(device.protocol).toUpperCase()} — gestione dispositivo`;
-    if (u.protocollo === "winrm") return "WinRM — Windows Management";
-    if (u.protocollo === "api") return "API REST";
-    return "SSH — shell / comandi";
-  };
-  return (device.usata_adesso ?? []).map((u) => {
-    const parti: string[] = [];
-    if (u.fonte == null) parti.push(u.motivo ?? "Nessuna credenziale");
-    else {
-      if (u.porta != null) parti.push(`Porta ${u.porta}`);
-      parti.push(nomeFonteUsata(u.fonte));
-    }
-    if (u.protocollo === "snmp" && device.protocol !== "snmp_v3") parti.push(versioneSnmp);
-    return {
-      key: `${u.ruolo}-${u.protocollo}`,
-      protocolLabel: titolo(u),
-      archiveLabel: u.nome ?? "Nessuna",
-      conVoce: u.credential_id != null,
-      note: parti.join(" · "),
-    };
-  });
+/** Ruoli del server dalla colonna JSON `server_roles` (illeggibile = nessuno). */
+function ruoliDaApparato(json: string | null | undefined): RuoloServer[] {
+  if (!json) return [];
+  try {
+    const p = JSON.parse(json) as unknown;
+    return Array.isArray(p) ? (p.map(String) as RuoloServer[]) : [];
+  } catch {
+    return [];
+  }
 }
 
 export default function DevicePage() {
@@ -803,7 +774,10 @@ function DeviceDetailPage() {
     }
   }
 
-  const credentialRows = useMemo(() => (device ? buildDeviceCredentialRows(device) : []), [device]);
+  // Credenziali assegnate (tappa 5): le prove si rileggono quando la tabella dei binding cambia.
+  const [versioneBinding, setVersioneBinding] = useState(0);
+  const [senzaProva, setSenzaProva] = useState(false);
+  const tabellaCredenzialiRef = useRef<HTMLDivElement>(null);
   // «Usata adesso» si ricalcola quando i binding cambiano nella tabella (non al primo caricamento).
   const bindingCaricati = useRef(false);
   const ricaricaUsataAdesso = useCallback(() => {
@@ -813,6 +787,11 @@ function DeviceDetailPage() {
     }
     void fetchDevice();
   }, [fetchDevice]);
+  // Identità stabile: la tabella lo mette fra le dipendenze di un effetto (un'arrow nuova a ogni render lo rifarebbe in ciclo).
+  const alCambioBinding = useCallback(() => {
+    setVersioneBinding((v) => v + 1);
+    ricaricaUsataAdesso();
+  }, [ricaricaUsataAdesso]);
   const primaryCredLabels = useMemo(() => getPrimaryCredentialLabels(editProtocol), [editProtocol]);
 
   async function handleEdit(e: React.FormEvent<HTMLFormElement>) {
@@ -932,6 +911,8 @@ function DeviceDetailPage() {
                   {device.classification.replace(/_/g, " ")}
                 </Badge>
               )}
+              {device.classification_manual === 1 && <BadgeAMano />}
+              {senzaProva && <BadgeSenzaProva />}
               <Badge variant="outline" className="capitalize">{device.vendor}</Badge>
               {device.product_profile && (
                 <Badge variant="outline" className="text-xs font-normal">
@@ -1035,37 +1016,24 @@ function DeviceDetailPage() {
             </div>
           </div>
 
-          <div className="mt-5 pt-4 border-t border-border">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-2">
-              <Key className="h-3.5 w-3.5" />
-              Usata adesso
-            </p>
-            <p className="text-xs text-muted-foreground mb-3">
-              La credenziale che l&apos;acquisizione sceglie fra quelle dell&apos;apparato: prima una riuscita, poi le non provate; le fallite si saltano.
-            </p>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[40%]">Protocollo / ambito</TableHead>
-                  <TableHead>Credenziale</TableHead>
-                  <TableHead className="w-[28%]">Nota</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {credentialRows.map((row) => (
-                  <TableRow key={row.key}>
-                    <TableCell className="font-medium text-sm">{row.protocolLabel}</TableCell>
-                    <TableCell>
-                      <span className="flex items-center gap-1.5 text-sm">
-                        {row.conVoce && <Key className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
-                        {row.archiveLabel}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{row.note}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+          <div className="mt-5 space-y-5 border-t border-border pt-4">
+            <ClassificazioneApparato
+              deviceId={device.id}
+              classificazione={device.classification ?? ""}
+              etichetta={getClassificationLabel(device.classification ?? "") || device.device_type}
+              aMano={device.classification_manual === 1}
+              ruoli={ruoliDaApparato(device.server_roles)}
+              eServer={device.classification === "server"}
+              onCambiata={fetchDevice}
+            />
+            <CredenzialiAssegnate
+              deviceId={device.id}
+              usate={device.usata_adesso ?? []}
+              versione={versioneBinding}
+              versioneSnmp={device.snmp_version && device.protocol !== "snmp_v3" ? etichettaVersioneSnmp(device.snmp_version) : null}
+              onSenzaProva={setSenzaProva}
+              onCambia={() => tabellaCredenzialiRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
+            />
           </div>
         </CardContent>
       </Card>
@@ -1959,7 +1927,12 @@ function DeviceDetailPage() {
         </DialogContent>
       </Dialog>
 
-      <DeviceCredentialsTable deviceId={device.id} onBindingsChange={ricaricaUsataAdesso} />
+      <div ref={tabellaCredenzialiRef}>
+        <DeviceCredentialsTable
+          deviceId={device.id}
+          onBindingsChange={alCambioBinding}
+        />
+      </div>
 
       <Tabs defaultValue={isMikrotik ? "mikrotik" : showArpTab && totalPorts === 0 ? "arp" : "ports"}>
         <TabsList>

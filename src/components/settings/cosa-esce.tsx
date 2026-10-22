@@ -109,12 +109,130 @@ function Riga({ etichetta, children }: { etichetta: string; children: React.Reac
   );
 }
 
+const NOMI_BATTITO: Record<string, string> = {
+  ok: "Ricevuto",
+  spento_hub: "Ricezione spenta sull'hub",
+  rete: "Hub non raggiungibile",
+  tempo: "Nessuna risposta in tempo",
+  cert: "Certificato dell'hub rifiutato",
+  risposta: "Risposta illeggibile",
+  errore: "Errore",
+};
+
+const NOMI_TIPO: Record<string, string> = { "ad-health": "AD Health", inventario: "Inventario" };
+
+/** Invio di AD Health e inventario all'hub DA-Vul-can (A-IPAM): stato letto dal sistema vivo. */
+function SchedaVulcan({ v, invio, onInvia }: { v: QuadroCosaEsce["vulcan"]; invio: boolean; onInvia: () => void }) {
+  const acceso = v.stato === "attivo" || v.stato === "sospeso";
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-start justify-between gap-4">
+        <div>
+          <CardTitle>Dati verso DA-Vul-can (AD Health e inventario)</CardTitle>
+          <CardDescription className="text-sm">
+            Cosa parte: risultati AD Health dopo ogni esecuzione e un inventario al giorno (IP, rete, sistema, porte). Mai
+            credenziali, note, utenti, licenze.
+          </CardDescription>
+        </div>
+        <Button variant="outline" onClick={onInvia} disabled={invio || v.stato !== "attivo"}>
+          <Send className="h-4 w-4 mr-1.5" />
+          {invio ? "Invio…" : "Invia ora"}
+        </Button>
+      </CardHeader>
+      <CardContent>
+        <Riga etichetta="Stato">
+          <div className="flex flex-wrap items-center gap-3">
+            {v.stato === "spento" && (
+              <>
+                <Stato tono="spento">Spento</Stato>
+                <span>Nessun gettone dell&apos;hub su questa istanza (manca VULCAN_TOKEN): non parte niente.</span>
+              </>
+            )}
+            {v.stato === "non_valida" && (
+              <>
+                <Stato tono="errore">Configurazione non valida</Stato>
+                <span>{v.motivo}. Non parte niente.</span>
+              </>
+            )}
+            {v.stato === "sospeso" && (
+              <>
+                <Stato tono="errore">Sospeso</Stato>
+                <span>{v.motivo}</span>
+              </>
+            )}
+            {v.stato === "attivo" && <Stato tono="ok">Attivo</Stato>}
+          </div>
+        </Riga>
+        {v.destinazione && (
+          <Riga etichetta="Destinazione">
+            <span className="font-mono">{v.destinazione}</span>
+          </Riga>
+        )}
+        {acceso && (
+          <>
+            <Riga etichetta="Ultimo battito">
+              {v.battito.il ? (
+                <div className="flex flex-wrap items-center gap-3">
+                  <Stato tono={v.battito.esito === "ok" ? "ok" : "errore"}>
+                    {NOMI_BATTITO[v.battito.esito ?? ""] ?? `Errore (${v.battito.esito ?? "?"})`}
+                  </Stato>
+                  <span>{quando(v.battito.il)}</span>
+                </div>
+              ) : (
+                <Stato tono="neutro">Mai inviato</Stato>
+              )}
+            </Riga>
+            <Riga etichetta="Coda">
+              <div className="flex flex-wrap items-center gap-3">
+                <Stato tono={v.coda.falliti > 0 ? "attesa" : v.coda.in_attesa > 0 ? "neutro" : "ok"}>
+                  {v.coda.in_attesa} in attesa · {v.coda.falliti} falliti
+                </Stato>
+                {v.coda.falliti > 0 && <span>«Invia ora» li rimette in attesa.</span>}
+              </div>
+            </Riga>
+            <Riga etichetta="Ultimo AD Health">
+              {v.ultimo_ad ? (
+                <span>
+                  {quando(v.ultimo_ad.il)}
+                  {v.ultimo_ad.report_id ? ` · report ${v.ultimo_ad.report_id} sull'hub` : ""}
+                </span>
+              ) : (
+                <span>mai inviato</span>
+              )}
+            </Riga>
+            <Riga etichetta="Ultimo inventario">
+              {v.ultimo_inventario ? (
+                <span>
+                  {quando(v.ultimo_inventario.il)}
+                  {v.ultimo_inventario.oggetti !== null ? ` · ${v.ultimo_inventario.oggetti} oggetti` : ""}
+                </span>
+              ) : (
+                <span>mai inviato</span>
+              )}
+            </Riga>
+            <Riga etichetta="Ultimo errore">
+              {v.ultimo_errore ? (
+                <span>
+                  {quando(v.ultimo_errore.il)} · {NOMI_TIPO[v.ultimo_errore.tipo] ?? v.ultimo_errore.tipo}: {v.ultimo_errore.errore}
+                </span>
+              ) : (
+                <span>nessuno</span>
+              )}
+            </Riga>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export function CosaEsce() {
   const [quadro, setQuadro] = useState<QuadroCosaEsce | null>(null);
   const [errore, setErrore] = useState<string | null>(null);
   const [scelta, setScelta] = useState<Livello | null>(null);
   const [salvo, setSalvo] = useState(false);
   const [invio, setInvio] = useState(false);
+  const [invioVulcan, setInvioVulcan] = useState(false);
   const sceltaToccata = useRef(false);
   const rilettura = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -170,6 +288,21 @@ export function CosaEsce() {
     else if (r.data.esito === "ok") toast.success("Segnale ricevuto da DA-Link");
     else toast.error(r.data.dettaglio);
     await carica();
+  }
+
+  async function inviaOraVulcan() {
+    setInvioVulcan(true);
+    const r = await fetchJson<{ avviato: boolean }>("/api/dalink/vulcan/invia", { method: "POST" });
+    if (!r.ok) {
+      setInvioVulcan(false);
+      toast.error(r.message);
+      return;
+    }
+    toast.success("Invio a DA-Vul-can avviato: l'esito compare qui sotto fra pochi secondi");
+    // Il giro gira in sottofondo: si rilegge lo stato vivo dopo qualche secondo.
+    setTimeout(() => {
+      void carica().finally(() => setInvioVulcan(false));
+    }, 4000);
   }
 
   if (errore && !quadro) {
@@ -406,6 +539,8 @@ export function CosaEsce() {
           )}
         </CardContent>
       </Card>
+
+      <SchedaVulcan v={quadro.vulcan} invio={invioVulcan} onInvia={() => void inviaOraVulcan()} />
 
       <Card>
         <CardHeader>

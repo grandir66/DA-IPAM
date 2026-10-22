@@ -14,6 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { MeshCentralUnmatched } from "@/components/integrations/meshcentral-unmatched";
+import { useUrlPerBrowser } from "@/components/shared/url-per-browser";
 
 interface MeshConfigPublic {
   present: boolean;
@@ -35,6 +36,7 @@ interface MeshNodeRow {
 
 export default function RmmPage() {
   const router = useRouter();
+  const perBrowser = useUrlPerBrowser();
   const [cfg, setCfg] = useState<MeshConfigPublic | null>(null);
   const [nodes, setNodes] = useState<MeshNodeRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -113,7 +115,7 @@ export default function RmmPage() {
             Sincronizza ora
           </Button>
           {cfg?.present && cfg.serverUrl && (
-            <a href={cfg.serverUrl} target="_blank" rel="noopener noreferrer">
+            <a href={perBrowser(cfg.serverUrl)} target="_blank" rel="noopener noreferrer">
               <Button variant="outline" size="sm">
                 <ExternalLink className="h-4 w-4 mr-1" /> Console MeshCentral
               </Button>

@@ -536,7 +536,7 @@ Mese 4:  Fase 2 (Graylog)
 ### Fase 0 (Collector)
 1. `docker compose up` → PG + collector su :8080
 2. DA-INVENT: configura collector via `/api/collector-sync/configure`
-3. Heartbeat visibile in `GET /api/agents`
+3. Heartbeat visibile (era `GET /api/agents`, tolta il 20/10/2026 con l'agente Python remoto, v0.9.811: da ridefinire se la fase riparte)
 4. Dopo sync: dati in PG (`synced_hosts`, `synced_networks`)
 5. Comando `ping` dal collector → risposta dall'agent
 6. Test offline: stop collector → queue cresce → restart → flush

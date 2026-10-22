@@ -5,7 +5,6 @@ import {
   getNetworkDevices,
   getNetworkRouterId,
   getNetworkDeviceById,
-  cleanupStaleHosts,
   getHostsByNetwork,
   getKnownHosts,
   recordHostHeartbeat,
@@ -39,6 +38,7 @@ import { tcpConnect, FALLBACK_TCP_PORTS } from "@/lib/scanner/tcp-check";
 import { createRouterClient, routerOsDurationToIsoTimestamp } from "@/lib/devices/router-client";
 import { createSwitchClient, creaWalkSnmp, deviceHasSnmpSession } from "@/lib/devices/switch-client";
 import { leggiSnmpTopologia } from "@/lib/devices/snmp-topologia";
+import { leggiVlanSwitch } from "@/lib/devices/snmp-vlan";
 import { TEMPO_WALK_MS } from "@/lib/devices/snmp-walk";
 import { lookupVendor } from "@/lib/scanner/mac-vendor";
 import { isIpInCidr, normalizePortNameForMatch } from "@/lib/utils";
@@ -69,16 +69,28 @@ import {
   MAC_PORT_RETENTION_DAYS,
   listHypervisorScanDevices,
   scriviFattiTopologia,
+  scriviSchedaMikrotikTopologia,
+  scriviSchedaMikrotikLettura,
+  livelloSchedaMkCorrente,
+  scriviVlanSwitch,
+  schemaSwitchVlanCorrente,
 } from "@/lib/db-tenant";
 import { HYPERVISOR_SYNC_MINUTES, unifiJobKind } from "@/lib/scheduled-job-types";
 // Statico: run-proxmox-device-scan importa il facade db, che risolve db-tenant (ADR 0002).
 import { runProxmoxDeviceScan } from "@/lib/proxmox/run-proxmox-device-scan";
 import { codiceErrore, leggiMacPorteRouter } from "@/lib/devices/mikrotik-porte";
-import { apriEsecutoreSsh, codiceTrasporto, leggiMikrotikTopologia, type ApriEsecutore } from "@/lib/devices/mikrotik-letture";
+import { SshError } from "@/lib/devices/ssh-transport";
+import { conLucchettoApparato, entroTempoApparato, TEMPO_APPARATO_MS } from "@/lib/devices/lucchetto-apparato";
+import { apriEsecutoreSsh, codiceTrasporto, interpretaUscita, leggiMikrotikScheda, leggiMikrotikTopologia, type ApriEsecutore, type RisultatoMk } from "@/lib/devices/mikrotik-letture";
+import { parseBondScheda, parseBridgeScheda, parsePorteBridgeScheda } from "@/lib/devices/mikrotik-scheda";
+import { parseInterfacce } from "@/lib/devices/mikrotik-stp";
+import { aggiornaInterfacceRouterOs } from "@/lib/devices/physical-device-db";
 import { fattiMikrotik } from "@/lib/devices/mikrotik-stp";
 import { conCadenza, riassuntoLetture, type EsitoGiro } from "@/lib/topology/letture/cadenza";
 import { letturaAccesa, oraUtc, senzaCampiCavi } from "@/lib/topology/letture/interruttori";
 import { leggiHost } from "@/lib/proxmox/lldp-host";
+// Statico: pulizia-archivio importa db-tenant (ADR 0002).
+import { runPuliziaHost } from "@/lib/hosts/pulizia-archivio";
 import type { NetworkDevice } from "@/types";
 import { syncNetworkToLibreNMS, syncAllNetworksToLibreNMS } from "@/lib/integrations/librenms-sync";
 // Import statico (come LibreNMS, non dinamico come Wazuh): unifi-sync importa
@@ -88,6 +100,9 @@ import { syncUnifiClientsForController } from "@/lib/integrations/unifi-clients-
 // Statici per la stessa ragione: mesh-sync e feature importano db-tenant.
 import { syncMeshForTenant } from "@/lib/integrations/meshcentral/mesh-sync";
 import { meshAttivo } from "@/lib/integrations/meshcentral/feature";
+// Statico (ADR 0002): il giro importa db-tenant. Ciclo con questo file voluto: giro.ts usa le letture di qui solo a giro avviato.
+import { motivoGiroApparati, runApparatiScelti, type OpzioniGiro } from "@/lib/apparati-scelti/giro";
+import { chiaveJob, statoScheduler } from "./stato-scheduler";
 
 /** Job che lanciano giri di discovery: durano quanto il giro (fino a ~49 minuti misurati). */
 export const JOB_DI_SCANSIONE: ReadonlySet<string> = new Set(["ping_sweep", "fast_scan", "snmp_scan", "nmap_scan"]);
@@ -109,6 +124,8 @@ export interface OpzioniRunJob {
   attesaMassimaMs?: number;
   /** L'ora con cui il job dei client UniFi guarda la finestra 7-20 (le prove la fissano). */
   adesso?: Date;
+  /** Solo per le prove: le letture finte del job `apparati_scelti`. */
+  apparatiScelti?: OpzioniGiro;
 }
 
 /** Attesa massima predefinita: la soglia d'allarme del lucchetto, in ms. */
@@ -398,6 +415,28 @@ export async function runJob(jobId: number, opzioni?: OpzioniRunJob): Promise<Es
       if (motivo) return { esito: "eseguito", motivo };
       break;
     }
+    case "pulizia_host": {
+      // Pulizia notturna degli host assenti (piano 2026-10-20, Task 5). Un guasto lancia (fra i falliti, niente
+      // last_run); il resoconto è di soli numeri, i nomi stanno nel registro JSONL della pulizia.
+      const r = runPuliziaHost();
+      const dettagli = [
+        r.nonPiuArchiviabili ? `${r.nonPiuArchiviabili} non più archiviabili` : "",
+        r.rinviati ? `${r.rinviati} rinviati perché la loro rete era in scansione` : "",
+      ].filter(Boolean);
+      return {
+        esito: "eseguito",
+        motivo: `${r.archiviati} host archiviati, ${r.cancellatiDallArchivio} cancellati dall'archivio${dettagli.length ? `; ${dettagli.join(", ")}` : ""}`,
+      };
+    }
+    case "apparati_scelti": {
+      // Scansione automatica dei device scelti in Discovery (piano 2026-10-22, decisione 12): nessuno letto → si lancia,
+      // così lo scheduler lo conta fra i falliti e l'allarme lo vede; gli esiti per apparato sono già scritti.
+      const r = await runApparatiScelti(jobId, opzioni?.apparatiScelti);
+      // Niente tentato (letture spente o non valide, apparati già in lettura): «saltato», non un guasto.
+      if (r.letti === 0 && r.tentati === 0 && r.esclusi === 0) return { esito: "saltato", motivo: motivoGiroApparati(r) };
+      if (r.letti === 0) throw new Error(`Nessun apparato letto: ${motivoGiroApparati(r)}`);
+      return { esito: "eseguito", motivo: motivoGiroApparati(r) };
+    }
   }
   return ESEGUITO;
 }
@@ -413,12 +452,18 @@ export type EsitoEseguiOra =
   /** `motivo`: il job è finito senza fare tutto (es. client UniFi fuori dalle 7-20): la pagina lo mostra. */
   | { modo: "eseguito"; durationMs: number; motivo?: string }
   /** Rete già in scansione (T3-18): niente giro, niente `last_run`. */
-  | { modo: "saltato"; motivo: string; giroInCorso?: GiroOccupante };
+  | { modo: "saltato"; motivo: string; giroInCorso?: GiroOccupante }
+  /** `apparati_scelti`: il giro continua in sottofondo; `fine` si risolve a giro chiuso (solo per le prove). */
+  | { modo: "in_background"; fine: Promise<void> }
+  /** `apparati_scelti` già in giro (un altro «Esegui ora» o il cron): non parte. */
+  | { modo: "in_corso" };
 
-export async function eseguiJobOra(jobId: number, opzioni?: Pick<OpzioniRunJob, "adesso">): Promise<EsitoEseguiOra> {
+export async function eseguiJobOra(jobId: number, opzioni?: Pick<OpzioniRunJob, "adesso" | "apparatiScelti">): Promise<EsitoEseguiOra> {
   const job = getScheduledJobById(jobId);
   if (!job) throw new Error(`Job #${jobId} non trovato`);
   const inizio = Date.now();
+
+  if (job.job_type === "apparati_scelti") return giroApparatiInSottofondo(jobId, opzioni);
 
   if (!JOB_DI_SCANSIONE.has(job.job_type)) {
     const e = await runJob(jobId, opzioni);
@@ -463,6 +508,32 @@ export async function eseguiJobOra(jobId: number, opzioni?: Pick<OpzioniRunJob, 
       },
     );
   });
+}
+
+/**
+ * «Esegui ora» di un `apparati_scelti` (revisione finale 22/10): il giro dura fino a 5 minuti per apparato, quindi non si
+ * aspetta (la rotta risponde 202) e prende la guardia del cron (`runningJobs`, chiave `<tenant>:<id>`): il tick
+ * programmato dello stesso job non si accavalla, e un secondo «Esegui ora» è «in_corso». Esito come lo scheduler:
+ * `last_run` solo se «eseguito»; un giro che lancia resta nel journal (gli esiti per apparato sono già scritti).
+ */
+function giroApparatiInSottofondo(jobId: number, opzioni?: Pick<OpzioniRunJob, "apparatiScelti">): EsitoEseguiOra {
+  const tenant = getCurrentTenantCode();
+  if (!tenant) throw new Error("Contesto tenant assente");
+  const chiave = chiaveJob(tenant, jobId);
+  const { runningJobs } = statoScheduler();
+  if (runningJobs.has(chiave)) return { modo: "in_corso" };
+  runningJobs.add(chiave);
+  const fine = (async () => {
+    try {
+      const e = await runJob(jobId, opzioni);
+      if (e.esito === "eseguito") updateJobLastRun(jobId);
+    } catch (error) {
+      console.error(`[Jobs] Esecuzione manuale del job #${jobId} fallita: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      runningJobs.delete(chiave);
+    }
+  })();
+  return { modo: "in_background", fine };
 }
 
 /**
@@ -670,6 +741,28 @@ export function salvaMacPorta(
   }
 }
 
+/**
+ * Bridge, porte e bond di un router MikroTik nelle tabelle della scheda (Task 8, ADR 0027), dalle uscite grezze che la
+ * lettura della topologia ha letto davvero. Un'uscita assente (non riuscita, «non so») o che il lettore della scheda non
+ * capisce resta null: la tabella non si tocca, mai una lista vuota. Un errore va nel log col solo codice e non cambia
+ * l'esito della lettura della topologia.
+ */
+function salvaSchedaMikrotik(deviceId: number, uscite: RisultatoMk["uscite"], adesso: Date): void {
+  const leggi = <T>(out: string | undefined, lettore: (o: string) => T[]): T[] | null => {
+    if (out === undefined) return null;
+    const r = interpretaUscita(out, lettore);
+    return "valore" in r ? r.valore : null;
+  };
+  try {
+    scriviSchedaMikrotikTopologia(deviceId, {
+      bridge: leggi(uscite.bridge, parseBridgeScheda), porte: leggi(uscite.porteBridge, parsePorteBridgeScheda), bond: leggi(uscite.fasci, parseBondScheda),
+    }, adesso);
+  } catch (err) {
+    const code = (err as { code?: unknown } | null)?.code;
+    console.warn(`[MikroTik] apparato #${deviceId}: scheda (bridge, porte, bond) non scritta (${typeof code === "string" ? code : err instanceof Error ? err.name : "errore"})`);
+  }
+}
+
 export type RunArpPollOptions = {
   /** Se impostato, aggiorna solo questi IP (nessun nuovo host da voci ARP fuori elenco). */
   onlyEnrichIps?: string[];
@@ -695,10 +788,33 @@ export type RunArpPollOptions = {
 async function letturaMikrotik(device: NetworkDevice, uscitaInterfacce: string | null, conVicini: boolean, options?: RunArpPollOptions): Promise<EsitoGiro<unknown>> {
   return conCadenza("mikrotik", device.id, async () => {
     const r = await (options?.apriEsecutore ?? apriEsecutoreSsh)(device, (esegui) => leggiMikrotikTopologia(esegui, { uscitaInterfacce, conVicini }));
-    const scritti = scriviFattiTopologia(device.id, "device", fattiMikrotik(r.lettura), options?.adesso?.() ?? new Date());
+    const adesso = options?.adesso?.() ?? new Date();
+    const scritti = scriviFattiTopologia(device.id, "device", fattiMikrotik(r.lettura), adesso);
+    // Scheda MikroTik (Task 8, ADR 0027): solo i router (il ramo degli switch legge coi vicini), dalle stesse uscite.
+    if (!conVicini) salvaSchedaMikrotik(device.id, r.uscite, adesso);
     if (r.vicini && r.vicini.length > 0) upsertNeighbors(device.id, r.vicini, "ssh");
     return { valore: scritti, conteggio: { comandi: r.comandi, riusciti: r.riusciti, codice: r.codice } };
   }, options?.adesso);
+}
+
+/**
+ * VLAN dei bridge, interfacce VLAN, DNS e utenti di un router MikroTik (scheda MikroTik, Task 10, ADR 0027), dietro
+ * `topologia.lettura.mikrotik_scheda` (spenta di default), al più una volta l'ora per apparato: quattro comandi in sola
+ * lettura su una connessione sua. Schema della scheda sotto il livello 3 → errore `SCHEMA_SCHEDA` prima di aprire la
+ * connessione (nessun comando). Una parte non letta (null) non tocca la sua tabella. Esito e resoconto: numeri e codici, mai
+ * nomi (gli utenti del router sono dati riservati). `ignoraCadenza`: subito, senza aspettare l'ora (il job
+ * `apparati_scelti`, scelta esplicita di un admin), ma mai da spenta.
+ */
+export async function letturaSchedaMikrotik(device: NetworkDevice, options?: RunArpPollOptions,
+  opzioni: { ignoraCadenza?: boolean } = {}): Promise<EsitoGiro<unknown>> {
+  return conCadenza("mikrotik_scheda", device.id, async () => {
+    if (livelloSchedaMkCorrente() < 3) {
+      throw Object.assign(new Error("Schema della scheda MikroTik sotto il livello 3"), { code: "SCHEMA_SCHEDA" });
+    }
+    const r = await (options?.apriEsecutore ?? apriEsecutoreSsh)(device, (esegui) => leggiMikrotikScheda(esegui));
+    const scritto = scriviSchedaMikrotikLettura(device.id, r, options?.adesso?.() ?? new Date());
+    return { valore: scritto, conteggio: { comandi: r.comandi, riusciti: r.riusciti, codice: r.codice } };
+  }, options?.adesso, opzioni);
 }
 
 /**
@@ -716,6 +832,484 @@ async function letturaSnmp(device: NetworkDevice, options?: RunArpPollOptions): 
     if (l.vicini.length > 0) upsertNeighbors(device.id, l.vicini, "snmp");
     return { valore: scritti, conteggio: { comandi: l.letture, riusciti: l.riuscite, codice: l.codice } };
   }, options?.adesso);
+}
+
+/**
+ * Gli apparati della lettura `switch_vlan`: gli switch con una sessione SNMP, anche quelli del controller (la ProMax dell'hub
+ * risponde via SNMP; le tabelle sono della scheda, non toccano i vicini della mappa), non i MikroTik letti via SSH (hanno le
+ * loro letture). AP, NAS, server e router no. Chi chiama guarda PRIMA l'interruttore: spenta, nemmeno la credenziale si cerca.
+ */
+export function vlanSwitchDaLeggere(device: NetworkDevice): boolean {
+  return device.device_type === "switch" && !(device.vendor === "mikrotik" && device.protocol === "ssh") && deviceHasSnmpSession(device);
+}
+
+/**
+ * Le VLAN di uno switch via SNMP (piano 2026-10-22 accorpamento, Task 9, ADR 0029), dietro `topologia.lettura.switch_vlan`
+ * (spenta di default, ADR 0018): sette walk in sola lettura (Q-BRIDGE-MIB e BRIDGE-MIB), ognuna con la sua sessione e
+ * TEMPO_WALK_MS; al più una volta l'ora per apparato nel giro, subito con `ignoraCadenza` («Interroga»). Schema assente →
+ * errore `SCHEMA_SWITCH_VLAN` prima di aprire la sessione. Solo «letto» scrive (una fotografia); «non so» e «non riuscito»
+ * sono un errore col codice: niente scrittura, le righe di prima restano con la loro data, il resoconto le conta fra le non
+ * riuscite. Il valore è il numero di VLAN scritte. Esito e resoconto: numeri e codici, mai nomi o IP.
+ */
+export async function letturaVlanSwitch(device: NetworkDevice, options?: Pick<RunArpPollOptions, "creaWalkSnmp" | "adesso">,
+  opzioni: { ignoraCadenza?: boolean } = {}): Promise<EsitoGiro<number>> {
+  return conCadenza("switch_vlan", device.id, async () => {
+    if (!schemaSwitchVlanCorrente()) {
+      throw Object.assign(new Error("Schema delle VLAN degli switch assente"), { code: "SCHEMA_SWITCH_VLAN" });
+    }
+    const walk = await (options?.creaWalkSnmp ?? creaWalkSnmp)(device, TEMPO_WALK_MS);
+    const l = await leggiVlanSwitch(walk);
+    if (l.esito !== "letto") {
+      throw Object.assign(new Error(`VLAN dello switch: esito ${l.esito}`), { code: l.codice ?? (l.esito === "non_so" ? "NON_SO" : "NESSUNA_LETTURA") });
+    }
+    if (!scriviVlanSwitch(device.id, l, options?.adesso?.() ?? new Date())) {
+      throw Object.assign(new Error("Schema delle VLAN degli switch assente"), { code: "SCHEMA_SWITCH_VLAN" });
+    }
+    return { valore: l.vlan.length, conteggio: { comandi: l.letture, riusciti: l.riuscite, codice: l.codice } };
+  }, options?.adesso, opzioni);
+}
+
+/** Il giro ARP fra un apparato e l'altro: reti, IP da arricchire e resoconto (porte non lette, letture in più). */
+export interface ContestoArp {
+  networks: ReturnType<typeof getNetworks>;
+  enrichSet: Set<string> | null;
+  porteNonLette: string[];
+  esitiLetture: Array<EsitoGiro<unknown>>;
+  /** Il job `apparati_scelti`: le porte fisiche di un router non lette, per apparato (solo il codice). Il giro ARP non lo passa. */
+  porteErrore?: Map<number, string>;
+}
+
+const IP_NEL_TESTO = /\b\d{1,3}(?:\.\d{1,3}){3}\b/g;
+/** IPv6 (anche abbreviati, `::1`) e MAC: gruppi esadecimali separati da «:». Copre anche un orario «10:20:30»: va bene. */
+const IPV6_O_MAC_NEL_TESTO = /(?:[0-9a-f]{0,4}:){2,7}[0-9a-f]{0,4}/gi;
+/** Nomi di dominio (FQDN, `sw1.cliente.local`): due o più parti separate da punti, dopo gli IP già tolti. */
+const DOMINIO_NEL_TESTO = /\b[a-z0-9-]+(?:\.[a-z0-9-]+)+\b/gi;
+
+/**
+ * Un errore per il journal (piano 2026-10-22 scansione automatica, decisione 14): il codice e il messaggio senza IP (v4 e
+ * v6), MAC, nome, host o altri nomi di dominio (la maschera degli IP di «Interroga», allargata nella revisione del Task 4).
+ * Un `SshError` porta anche l'utente: solo il codice.
+ */
+export function erroreSenzaNomi(err: unknown, device: Pick<NetworkDevice, "name" | "host">): string {
+  const codice = codiceTrasporto(err);
+  if (err instanceof SshError) return codice;
+  let msg = err instanceof Error ? err.message : String(err);
+  for (const s of [device.name, device.host]) if (s) msg = msg.split(s).join("<apparato>");
+  msg = msg.replace(IP_NEL_TESTO, "<ip>").replace(IPV6_O_MAC_NEL_TESTO, "<ip>").replace(DOMINIO_NEL_TESTO, "<host>");
+  return `${codice}: ${msg}`;
+}
+
+/**
+ * La lettura di un apparato del giro ARP (piano 2026-10-22 scansione automatica, Task 4): ramo dei router (ARP, lease
+ * DHCP, schema porte, MAC per porta dalla bridge host, vicini, routing, letture in più dei MikroTik) o degli switch
+ * (tabella MAC, `mac_ip_mapping`, schema porte). Era il corpo del ciclo di `runArpPoll`, che la chiama per ogni apparato
+ * sotto il lucchetto; il job `apparati_scelti` la chiama per «Porte e MAC» con `vlan: "no"` (la VLAN la fa lui, se
+ * scelta). Un errore va nel journal (id e codice) e arriva a chi chiama, come prima fermava il corpo del ciclo.
+ */
+export async function leggiApparatoArp(device: NetworkDevice, ctx: ContestoArp,
+  opzioni?: RunArpPollOptions & { vlan?: "come_il_giro" | "no"; tempoMs?: number }): Promise<void> {
+  if (device.device_type === "hypervisor") return;
+  // Al più TEMPO_APPARATO_MS (revisione del Task 4): una lettura che non torna non tiene il lucchetto per sempre.
+  try {
+    await entroTempoApparato(corpoApparatoArp(device, ctx, opzioni), opzioni?.tempoMs ?? TEMPO_APPARATO_MS);
+  } catch (error) {
+    if ((error as { code?: unknown } | null)?.code === "TEMPO_SCADUTO") {
+      console.error(`[ARP Poll] apparato #${device.id}: errore (${erroreSenzaNomi(error, device)})`);
+    }
+    throw error;
+  }
+}
+
+async function corpoApparatoArp(device: NetworkDevice, ctx: ContestoArp,
+  opzioni?: RunArpPollOptions & { vlan?: "come_il_giro" | "no" }): Promise<void> {
+  const options = opzioni;
+  const { networks, enrichSet, porteNonLette, esitiLetture } = ctx;
+  const conVlan = opzioni?.vlan !== "no";
+  let mkProvata = false; // la lettura in più del MikroTik di questo giro è partita (B5, revisione del Task 4)
+  try {
+    if (networkDeviceUsesArpPoll(device)) {
+      const client = await (options?.creaClientRouter ?? createRouterClient)(device);
+      const entries = await client.getArpTable();
+
+      // Prima aggiorna hosts con MAC e vendor, poi upsertArpEntries (così host_id in arp_entries è corretto)
+      for (const entry of entries) {
+        if (!entry.ip || !entry.mac) continue;
+        if (enrichSet && !enrichSet.has(entry.ip)) continue;
+        const network = networks.find((n) => isIpInCidr(entry.ip!, n.cidr));
+        if (!network) continue;
+        const vendor = await lookupVendor(entry.mac);
+        // ARP è fonte PASSIVA: aggiorna solo host già esistenti, MAI inserisce.
+        // I router tengono entry ARP per ore (Cisco 4h default), quindi un IP nella
+        // tabella ARP non prova reachability attuale né "esistenza" del device.
+        // Solo i probe attivi (ICMP + TCP fallback in network_discovery) sono
+        // autoritativi per la CREAZIONE di un host. Se l'host è stato cancellato
+        // dall'utente, NON va ricreato fino a quando ICMP non lo ri-conferma.
+        // Fase 4: bypass classifyDevice→classification rimosso — un solo
+        // scrittore (attribution v2). recomputeAttributionSafe sotto emette
+        // l'evidenza "oui" dal vendor appena scritto e proietta il risultato.
+        const host = updateHostIfExists({
+          network_id: network.id,
+          ip: entry.ip,
+          mac: entry.mac,
+          vendor: vendor || undefined,
+          hostname_source: "arp",
+        });
+        if (host) {
+          const { recomputeAttributionSafe } = await import("@/lib/attribution/recompute");
+          recomputeAttributionSafe(host.id, "scan");
+        }
+      }
+      upsertArpEntries(device.id, entries, (ip) => {
+        const n = networks.find((net) => isIpInCidr(ip, net.cidr));
+        return n?.id ?? null;
+      });
+
+      // MikroTik: recupera lease DHCP per popolare hostname, MAC e altri campi
+      if (client.getDhcpLeases && !options?.skipDhcpLeases) {
+        try {
+          const leases = await client.getDhcpLeases();
+          const dhcpNetworksToSync = new Set<number>();
+          for (const lease of leases) {
+            if (enrichSet && !enrichSet.has(lease.ip)) continue;
+            const network = networks.find((n) => isIpInCidr(lease.ip, n.cidr));
+            if (!network) continue;
+            const vendor = await lookupVendor(lease.mac);
+            // DHCP è fonte PASSIVA: aggiorna solo host esistenti, MAI inserisce.
+            // I DHCP server tengono lease per ore/giorni dopo che il device si
+            // spegne, quindi un lease attivo non prova che l'host esista più.
+            // Vedi commento in arp_poll sopra.
+            // Fase 4: bypass classifyDevice→classification rimosso — un solo
+            // scrittore (attribution v2), vedi recomputeAttributionSafe sotto.
+            const host = updateHostIfExists({
+              network_id: network.id,
+              ip: lease.ip,
+              mac: lease.mac,
+              ...(lease.hostname && { hostname: lease.hostname }),
+              hostname_source: "dhcp",
+              vendor: vendor || undefined,
+            });
+            if (host) {
+              const { recomputeAttributionSafe } = await import("@/lib/attribution/recompute");
+              recomputeAttributionSafe(host.id, "scan");
+            }
+            upsertMacIpMapping({
+              mac: lease.mac,
+              ip: lease.ip,
+              source: "dhcp",
+              source_device_id: device.id,
+              network_id: network.id,
+              host_id: host?.id ?? null,
+              vendor: vendor ?? undefined,
+              hostname: lease.hostname ?? undefined,
+            });
+            upsertDhcpLease({
+              source_type: "mikrotik",
+              source_device_id: device.id,
+              source_name: device.name,
+              server_name: lease.server ?? null,
+              ip_address: lease.ip,
+              mac_address: lease.mac,
+              hostname: lease.hostname ?? null,
+              status: lease.status ?? null,
+              lease_expires: lease.expiresAfter ?? null,
+              description: lease.comment ?? null,
+              dynamic_lease: lease.dynamic === true ? 1 : lease.dynamic === false ? 0 : null,
+              // v0.2.659: last-seen RouterOS è durata relativa (es. "1d2h").
+              // Convertita in ISO timestamp assoluto = now - duration.
+              last_seen: routerOsDurationToIsoTimestamp(lease.lastSeen),
+              host_id: host?.id ?? null,
+              network_id: network.id,
+            });
+            dhcpNetworksToSync.add(network.id);
+          }
+          for (const nid of dhcpNetworksToSync) {
+            syncIpAssignmentsForNetwork(nid);
+          }
+        } catch (err) {
+          console.error(`[DHCP Leases] apparato #${device.id}: ${erroreSenzaNomi(err, device)}`);
+        }
+      }
+
+      // Schema porte e LLDP/CDP (SNMP)
+      const portInfos = await client.getPortSchema?.().catch((err: unknown) => {
+        console.warn(`[ARP Poll] apparato #${device.id}: getPortSchema fallito (${erroreSenzaNomi(err, device)})`);
+        return [];
+      }) ?? [];
+      if (portInfos.length > 0) {
+      const macsByPortByIndex = new Map<number, { macs: string[] }>();
+      const macsByPortByName = new Map<string, { macs: string[] }>();
+      for (const e of entries) {
+        const ifName = (e.interface_name ?? "").trim();
+        if (!ifName) continue;
+        const ifIndexMatch = ifName.match(/^if(\d+)$/i);
+        if (ifIndexMatch) {
+          const idx = parseInt(ifIndexMatch[1], 10);
+          const existing = macsByPortByIndex.get(idx) || { macs: [] };
+          existing.macs.push(e.mac);
+          macsByPortByIndex.set(idx, existing);
+        } else {
+          const key = normalizePortNameForMatch(ifName);
+          const existing = macsByPortByName.get(key) || { macs: [] };
+          existing.macs.push(e.mac);
+          macsByPortByName.set(key, existing);
+        }
+      }
+
+      const switchPorts = portInfos.map((p) => {
+          const portMacs = macsByPortByIndex.get(p.port_index) ?? macsByPortByName.get(normalizePortNameForMatch(p.port_name.trim()));
+          const macCount = portMacs?.macs.length || 0;
+          const isTrunk = macCount > 1 ? 1 : 0;
+          let singleMac: string | null = null;
+          let singleMacVendor: string | null = null;
+          let singleMacIp: string | null = null;
+          let singleMacHostname: string | null = null;
+          let hostId: number | null = null;
+          if (macCount === 1 && portMacs) {
+            singleMac = portMacs.macs[0];
+            const resolved = resolveMacToDevice(singleMac);
+            singleMacIp = resolved.ip;
+            singleMacHostname = resolved.hostname;
+            singleMacVendor = resolved.vendor;
+            hostId = resolved.host_id;
+          }
+
+          let trunk_primary_device_id: number | null = null;
+          let trunk_primary_name: string | null = null;
+          if (isTrunk && portMacs && !p.trunk_neighbor_name) {
+            const matches: { device_id: number; device_name: string; device_type: string }[] = [];
+            for (const mac of portMacs.macs) {
+              const nd = resolveMacToNetworkDevice(mac, device.id);
+              if (nd) matches.push(nd);
+            }
+            const primary = matches.find((m) => m.device_type === "router") ?? matches[0];
+            if (primary) {
+              trunk_primary_device_id = primary.device_id;
+              trunk_primary_name = primary.device_name;
+            }
+          }
+
+          return {
+            port_index: p.port_index,
+            port_name: p.port_name.trim(),
+            status: p.status,
+            speed: p.speed,
+            duplex: p.duplex,
+            vlan: p.vlan,
+            poe_status: p.poe_status,
+            poe_power_mw: p.poe_power_mw,
+            mac_count: macCount,
+            is_trunk: isTrunk,
+            single_mac: singleMac,
+            single_mac_vendor: singleMacVendor,
+            single_mac_ip: singleMacIp,
+            single_mac_hostname: singleMacHostname,
+            host_id: hostId,
+            trunk_neighbor_name: p.trunk_neighbor_name ?? null,
+            trunk_neighbor_port: p.trunk_neighbor_port ?? null,
+            trunk_primary_device_id,
+            trunk_primary_name,
+            stp_state: p.stp_state ?? null,
+          };
+        });
+
+        upsertSwitchPorts(device.id, switchPorts);
+        // Fase 2b, Task 1b: l'ARP di un router non va più in mac_port_entries — la sua
+        // `interface=` è bridge/VLAN/VRRP, non il cavo. I MAC per porta vengono dalla bridge host, sotto.
+      }
+
+      // MAC per porta del router: la bridge host sulle porte fisiche (ether, bond), in sola lettura.
+      // Un errore non ferma il resto del giro: va nel resoconto, col solo codice (niente MAC né IP).
+      const porte = await leggiMacPorteRouter(client);
+      if (porte.righe) {
+        salvaMacPorta(device.id, porte.righe.map((e) => ({ ...e, port_name: e.port_name.trim() })));
+      } else if (porte.errore) {
+        console.warn(`[ARP Poll] apparato #${device.id}: porte fisiche non lette (${porte.errore})`);
+        porteNonLette.push(`${device.name} (${porte.errore})`);
+        ctx.porteErrore?.set(device.id, porte.errore);
+      }
+
+      // Scheda MikroTik (Task 3): `/interface print terse` è già stato letto qui sopra (getInterfaceTypes); da quella stessa
+      // uscita escono stato, MTU, commento e tipo delle interfacce, sulle righe dell'apparato fisico. Nessun comando nuovo.
+      // Un errore non ferma il giro: va in console col solo codice (niente nomi né commenti del cliente).
+      if (device.vendor === "mikrotik" && device.protocol === "ssh" && device.physical_device_id != null) {
+        const uscita = client.ultimaUscitaInterfacce?.() ?? null;
+        if (uscita !== null) {
+          try {
+            const lette = interpretaUscita(uscita, parseInterfacce);
+            if ("valore" in lette) aggiornaInterfacceRouterOs(device.physical_device_id, lette.valore);
+            else console.warn(`[ARP Poll] apparato #${device.id}: interfacce non lette (${lette.codice})`);
+          } catch (err) {
+            console.warn(`[ARP Poll] apparato #${device.id}: interfacce non scritte (${err instanceof Error ? err.name : "errore"})`);
+          }
+        }
+      }
+
+      // Neighbors LLDP/CDP/MNDP
+      if (client.getNeighbors) {
+        try {
+          const neighbors = await client.getNeighbors();
+          if (neighbors.length > 0) {
+            // T2 (spec §13.5.2, MK1): discovered-by e capacità solo con la lettura dei MikroTik accesa (I33).
+            upsertNeighbors(device.id, letturaAccesa("mikrotik") ? neighbors : neighbors.map(senzaCampiCavi));
+          }
+        } catch (err) {
+          console.warn(`[Neighbors] apparato #${device.id}: ${erroreSenzaNomi(err, device)}`);
+        }
+      }
+
+      // Tabella di routing
+      if (client.getRoutingTable) {
+        try {
+          const routes = await client.getRoutingTable();
+          if (routes.length > 0) {
+            upsertRoutes(device.id, routes);
+          }
+        } catch (err) {
+          console.warn(`[Routing] apparato #${device.id}: ${erroreSenzaNomi(err, device)}`);
+        }
+      }
+
+      // Letture in più (T2, spenta di default): MK3-MK8 su una connessione sola; MK2 è l'uscita già letta qui sopra.
+      if (device.vendor === "mikrotik" && device.protocol === "ssh") {
+        mkProvata = true;
+        esitiLetture.push(await letturaMikrotik(device, client.ultimaUscitaInterfacce?.() ?? null, false, options));
+        // Scheda MikroTik (Task 10): VLAN, DNS e utenti, spenta di default; solo i router. Il job `apparati_scelti` la
+        // chiede a parte, solo se ha scelto la VLAN (`vlan: "no"` qui).
+        if (conVlan) esitiLetture.push(await letturaSchedaMikrotik(device, options));
+      }
+    } else {
+      // Letture in più (T2, spenta di default) per prime: una tabella MAC che fallisce non deve toglierle.
+      if (device.vendor === "mikrotik" && device.protocol === "ssh") {
+        esitiLetture.push(await letturaMikrotik(device, null, true, options));
+      }
+      // SN6: solo per gli switch senza controller (la chiave dei vicini non ha la fonte: due lettori della stessa riga si
+      // scambierebbero la fonte) e non letti come MikroTik via SSH (hanno le loro letture). Interruttore guardato per
+      // primo: spenta, il giro degli switch fa esattamente quello di prima (nemmeno la ricerca della credenziale SNMP).
+      // Solo gli switch (spec §13.5.4; revisione del Task 6, C5): AP, NAS e server di questo ramo no, scelta di Riccardo.
+      const delController = !!(device as NetworkDevice & { controller_mac?: string | null }).controller_mac;
+      if (device.device_type === "switch" && !delController && !(device.vendor === "mikrotik" && device.protocol === "ssh")
+        && letturaAccesa("snmp") && deviceHasSnmpSession(device)) {
+        esitiLetture.push(await letturaSnmp(device, options));
+      }
+      // VLAN degli switch (Task 9, ADR 0029), spenta di default: interruttore per primo, come sopra. Prima della tabella MAC,
+      // che può fallire e fermare il ramo.
+      // Il job `apparati_scelti` la chiede a parte, solo se scelta (`vlan: "no"`): qui nemmeno l'interruttore si guarda.
+      if (conVlan && letturaAccesa("switch_vlan") && vlanSwitchDaLeggere(device)) {
+        esitiLetture.push(await letturaVlanSwitch(device, options));
+      }
+      const client = await (options?.creaClientSwitch ?? createSwitchClient)(device);
+      const entries = await client.getMacTable();
+      salvaMacPorta(device.id, entries.map((e) => ({
+        mac: e.mac,
+        port_name: e.port_name.trim(),
+        vlan: e.vlan,
+        port_status: e.port_status,
+        speed: e.speed,
+      })));
+
+      // Popola mac_ip_mapping con MAC da switch risolti a IP (hosts/ARP)
+      const switchNetwork = networks.find((n) => isIpInCidr(device.host, n.cidr));
+      for (const e of entries) {
+        if (!e.mac) continue;
+        const resolved = resolveMacToDevice(e.mac);
+        if (resolved.ip) {
+          upsertMacIpMapping({
+            mac: e.mac,
+            ip: resolved.ip,
+            source: "switch",
+            source_device_id: device.id,
+            network_id: switchNetwork?.id ?? null,
+            host_id: resolved.host_id,
+            vendor: resolved.vendor ?? undefined,
+            hostname: resolved.hostname ?? undefined,
+          });
+        }
+      }
+
+      // Port schema con cross-ref ARP/IPAM per assegnare device alla porta
+      const portInfos = await client.getPortSchema();
+      if (portInfos.length > 0) {
+        const macsByPort = new Map<string, { macs: string[]; vlan: number | null }>();
+        for (const e of entries) {
+          const key = normalizePortNameForMatch(e.port_name.trim());
+          const existing = macsByPort.get(key) || { macs: [], vlan: e.vlan };
+          existing.macs.push(e.mac);
+          if (e.vlan != null) existing.vlan = e.vlan;
+          macsByPort.set(key, existing);
+        }
+
+        const switchPorts = portInfos.map((p) => {
+          const portMacs = macsByPort.get(normalizePortNameForMatch(p.port_name.trim()));
+          const macCount = portMacs?.macs.length || 0;
+          const isTrunk = macCount > 1 ? 1 : 0;
+          let singleMac: string | null = null;
+          let singleMacVendor: string | null = null;
+          let singleMacIp: string | null = null;
+          let singleMacHostname: string | null = null;
+
+          let hostId: number | null = null;
+          if (macCount === 1 && portMacs) {
+            singleMac = portMacs.macs[0];
+            const resolved = resolveMacToDevice(singleMac);
+            singleMacIp = resolved.ip;
+            singleMacHostname = resolved.hostname;
+            singleMacVendor = resolved.vendor;
+            hostId = resolved.host_id;
+          }
+
+          let trunk_primary_device_id: number | null = null;
+          let trunk_primary_name: string | null = null;
+          if (isTrunk && portMacs && !p.trunk_neighbor_name) {
+            const matches: { device_id: number; device_name: string; device_type: string }[] = [];
+            for (const mac of portMacs.macs) {
+              const nd = resolveMacToNetworkDevice(mac, device.id);
+              if (nd) matches.push(nd);
+            }
+            const primary = matches.find((m) => m.device_type === "router") ?? matches[0];
+            if (primary) {
+              trunk_primary_device_id = primary.device_id;
+              trunk_primary_name = primary.device_name;
+            }
+          }
+
+          return {
+            port_index: p.port_index,
+            port_name: p.port_name.trim(),
+            status: p.status,
+            speed: p.speed,
+            duplex: p.duplex,
+            vlan: portMacs?.vlan ?? p.vlan,
+            poe_status: p.poe_status,
+            poe_power_mw: p.poe_power_mw,
+            mac_count: macCount,
+            is_trunk: isTrunk,
+            single_mac: singleMac,
+            single_mac_vendor: singleMacVendor,
+            single_mac_ip: singleMacIp,
+            single_mac_hostname: singleMacHostname,
+            host_id: hostId,
+          trunk_neighbor_name: p.trunk_neighbor_name ?? null,
+          trunk_neighbor_port: p.trunk_neighbor_port ?? null,
+          trunk_primary_device_id,
+          trunk_primary_name,
+          stp_state: p.stp_state ?? null,
+        };
+      });
+
+      upsertSwitchPorts(device.id, switchPorts);
+    }
+  }
+  } catch (error) {
+    console.error(`[ARP Poll] apparato #${device.id}: errore (${erroreSenzaNomi(error, device)})`);
+    // Revisione del Task 4 di T2 (B5): il giro del router fermato prima (ARP che non risponde, client che non si crea)
+    // saltava le letture in più senza esito. Adesso l'esito «non so» col codice, con le regole di sempre (spenta, cadenza).
+    if (!mkProvata && networkDeviceUsesArpPoll(device) && device.vendor === "mikrotik" && device.protocol === "ssh") {
+      esitiLetture.push(await conCadenza("mikrotik", device.id, async () => {
+        throw Object.assign(new Error("Giro del router non riuscito"), { code: codiceTrasporto(error) });
+      }, options?.adesso));
+    }
+    throw error;
+  }
 }
 
 export async function runArpPoll(
@@ -749,370 +1343,22 @@ export async function runArpPoll(
   const porteNonLette: string[] = []; // router la cui bridge host non si è letta: nel resoconto
   const esitiLetture: Array<EsitoGiro<unknown>> = []; // letture in più (T2): numeri e codici, mai nomi
   const durate = { router: 0, switch: 0, nRouter: 0, nSwitch: 0 }; // la riga dei tempi del giro (misura del carico, T2)
+  const ctx: ContestoArp = { networks, enrichSet, porteNonLette, esitiLetture };
   for (const device of devices) {
+    if (device.device_type === "hypervisor") continue;
     const t0 = performance.now();
-    let mkProvata = false; // la lettura in più del MikroTik di questo giro è partita (B5, revisione del Task 4)
+    let letto = true;
     try {
-      if (device.device_type === "hypervisor") {
-        continue;
+      // Un apparato già in lettura («Interroga», il job `apparati_scelti`) si salta: mai due letture insieme (decisione 10b).
+      const r = await conLucchettoApparato(device.id, () => leggiApparatoArp(device, ctx, options));
+      if (r.stato === "occupato") {
+        letto = false;
+        console.info(`[ARP Poll] apparato #${device.id}: saltato, lettura già in corso`);
       }
-      if (networkDeviceUsesArpPoll(device)) {
-        const client = await (options?.creaClientRouter ?? createRouterClient)(device);
-        const entries = await client.getArpTable();
-
-        // Prima aggiorna hosts con MAC e vendor, poi upsertArpEntries (così host_id in arp_entries è corretto)
-        for (const entry of entries) {
-          if (!entry.ip || !entry.mac) continue;
-          if (enrichSet && !enrichSet.has(entry.ip)) continue;
-          const network = networks.find((n) => isIpInCidr(entry.ip!, n.cidr));
-          if (!network) continue;
-          const vendor = await lookupVendor(entry.mac);
-          // ARP è fonte PASSIVA: aggiorna solo host già esistenti, MAI inserisce.
-          // I router tengono entry ARP per ore (Cisco 4h default), quindi un IP nella
-          // tabella ARP non prova reachability attuale né "esistenza" del device.
-          // Solo i probe attivi (ICMP + TCP fallback in network_discovery) sono
-          // autoritativi per la CREAZIONE di un host. Se l'host è stato cancellato
-          // dall'utente, NON va ricreato fino a quando ICMP non lo ri-conferma.
-          // Fase 4: bypass classifyDevice→classification rimosso — un solo
-          // scrittore (attribution v2). recomputeAttributionSafe sotto emette
-          // l'evidenza "oui" dal vendor appena scritto e proietta il risultato.
-          const host = updateHostIfExists({
-            network_id: network.id,
-            ip: entry.ip,
-            mac: entry.mac,
-            vendor: vendor || undefined,
-            hostname_source: "arp",
-          });
-          if (host) {
-            const { recomputeAttributionSafe } = await import("@/lib/attribution/recompute");
-            recomputeAttributionSafe(host.id, "scan");
-          }
-        }
-        upsertArpEntries(device.id, entries, (ip) => {
-          const n = networks.find((net) => isIpInCidr(ip, net.cidr));
-          return n?.id ?? null;
-        });
-
-        // MikroTik: recupera lease DHCP per popolare hostname, MAC e altri campi
-        if (client.getDhcpLeases && !options?.skipDhcpLeases) {
-          try {
-            const leases = await client.getDhcpLeases();
-            const dhcpNetworksToSync = new Set<number>();
-            for (const lease of leases) {
-              if (enrichSet && !enrichSet.has(lease.ip)) continue;
-              const network = networks.find((n) => isIpInCidr(lease.ip, n.cidr));
-              if (!network) continue;
-              const vendor = await lookupVendor(lease.mac);
-              // DHCP è fonte PASSIVA: aggiorna solo host esistenti, MAI inserisce.
-              // I DHCP server tengono lease per ore/giorni dopo che il device si
-              // spegne, quindi un lease attivo non prova che l'host esista più.
-              // Vedi commento in arp_poll sopra.
-              // Fase 4: bypass classifyDevice→classification rimosso — un solo
-              // scrittore (attribution v2), vedi recomputeAttributionSafe sotto.
-              const host = updateHostIfExists({
-                network_id: network.id,
-                ip: lease.ip,
-                mac: lease.mac,
-                ...(lease.hostname && { hostname: lease.hostname }),
-                hostname_source: "dhcp",
-                vendor: vendor || undefined,
-              });
-              if (host) {
-                const { recomputeAttributionSafe } = await import("@/lib/attribution/recompute");
-                recomputeAttributionSafe(host.id, "scan");
-              }
-              upsertMacIpMapping({
-                mac: lease.mac,
-                ip: lease.ip,
-                source: "dhcp",
-                source_device_id: device.id,
-                network_id: network.id,
-                host_id: host?.id ?? null,
-                vendor: vendor ?? undefined,
-                hostname: lease.hostname ?? undefined,
-              });
-              upsertDhcpLease({
-                source_type: "mikrotik",
-                source_device_id: device.id,
-                source_name: device.name,
-                server_name: lease.server ?? null,
-                ip_address: lease.ip,
-                mac_address: lease.mac,
-                hostname: lease.hostname ?? null,
-                status: lease.status ?? null,
-                lease_expires: lease.expiresAfter ?? null,
-                description: lease.comment ?? null,
-                dynamic_lease: lease.dynamic === true ? 1 : lease.dynamic === false ? 0 : null,
-                // v0.2.659: last-seen RouterOS è durata relativa (es. "1d2h").
-                // Convertita in ISO timestamp assoluto = now - duration.
-                last_seen: routerOsDurationToIsoTimestamp(lease.lastSeen),
-                host_id: host?.id ?? null,
-                network_id: network.id,
-              });
-              dhcpNetworksToSync.add(network.id);
-            }
-            for (const nid of dhcpNetworksToSync) {
-              syncIpAssignmentsForNetwork(nid);
-            }
-          } catch (err) {
-            console.error(`[DHCP Leases] Errore su ${device.name}:`, err);
-          }
-        }
-
-        // Schema porte e LLDP/CDP (SNMP)
-        const portInfos = await client.getPortSchema?.().catch((err: unknown) => {
-          console.warn(`[ARP Poll] getPortSchema fallito per ${device.name}:`, err instanceof Error ? err.message : err);
-          return [];
-        }) ?? [];
-        if (portInfos.length > 0) {
-        const macsByPortByIndex = new Map<number, { macs: string[] }>();
-        const macsByPortByName = new Map<string, { macs: string[] }>();
-        for (const e of entries) {
-          const ifName = (e.interface_name ?? "").trim();
-          if (!ifName) continue;
-          const ifIndexMatch = ifName.match(/^if(\d+)$/i);
-          if (ifIndexMatch) {
-            const idx = parseInt(ifIndexMatch[1], 10);
-            const existing = macsByPortByIndex.get(idx) || { macs: [] };
-            existing.macs.push(e.mac);
-            macsByPortByIndex.set(idx, existing);
-          } else {
-            const key = normalizePortNameForMatch(ifName);
-            const existing = macsByPortByName.get(key) || { macs: [] };
-            existing.macs.push(e.mac);
-            macsByPortByName.set(key, existing);
-          }
-        }
-
-        const switchPorts = portInfos.map((p) => {
-            const portMacs = macsByPortByIndex.get(p.port_index) ?? macsByPortByName.get(normalizePortNameForMatch(p.port_name.trim()));
-            const macCount = portMacs?.macs.length || 0;
-            const isTrunk = macCount > 1 ? 1 : 0;
-            let singleMac: string | null = null;
-            let singleMacVendor: string | null = null;
-            let singleMacIp: string | null = null;
-            let singleMacHostname: string | null = null;
-            let hostId: number | null = null;
-            if (macCount === 1 && portMacs) {
-              singleMac = portMacs.macs[0];
-              const resolved = resolveMacToDevice(singleMac);
-              singleMacIp = resolved.ip;
-              singleMacHostname = resolved.hostname;
-              singleMacVendor = resolved.vendor;
-              hostId = resolved.host_id;
-            }
-
-            let trunk_primary_device_id: number | null = null;
-            let trunk_primary_name: string | null = null;
-            if (isTrunk && portMacs && !p.trunk_neighbor_name) {
-              const matches: { device_id: number; device_name: string; device_type: string }[] = [];
-              for (const mac of portMacs.macs) {
-                const nd = resolveMacToNetworkDevice(mac, device.id);
-                if (nd) matches.push(nd);
-              }
-              const primary = matches.find((m) => m.device_type === "router") ?? matches[0];
-              if (primary) {
-                trunk_primary_device_id = primary.device_id;
-                trunk_primary_name = primary.device_name;
-              }
-            }
-
-            return {
-              port_index: p.port_index,
-              port_name: p.port_name.trim(),
-              status: p.status,
-              speed: p.speed,
-              duplex: p.duplex,
-              vlan: p.vlan,
-              poe_status: p.poe_status,
-              poe_power_mw: p.poe_power_mw,
-              mac_count: macCount,
-              is_trunk: isTrunk,
-              single_mac: singleMac,
-              single_mac_vendor: singleMacVendor,
-              single_mac_ip: singleMacIp,
-              single_mac_hostname: singleMacHostname,
-              host_id: hostId,
-              trunk_neighbor_name: p.trunk_neighbor_name ?? null,
-              trunk_neighbor_port: p.trunk_neighbor_port ?? null,
-              trunk_primary_device_id,
-              trunk_primary_name,
-              stp_state: p.stp_state ?? null,
-            };
-          });
-
-          upsertSwitchPorts(device.id, switchPorts);
-          // Fase 2b, Task 1b: l'ARP di un router non va più in mac_port_entries — la sua
-          // `interface=` è bridge/VLAN/VRRP, non il cavo. I MAC per porta vengono dalla bridge host, sotto.
-        }
-
-        // MAC per porta del router: la bridge host sulle porte fisiche (ether, bond), in sola lettura.
-        // Un errore non ferma il resto del giro: va nel resoconto, col solo codice (niente MAC né IP).
-        const porte = await leggiMacPorteRouter(client);
-        if (porte.righe) {
-          salvaMacPorta(device.id, porte.righe.map((e) => ({ ...e, port_name: e.port_name.trim() })));
-        } else if (porte.errore) {
-          console.warn(`[ARP Poll] apparato #${device.id}: porte fisiche non lette (${porte.errore})`);
-          porteNonLette.push(`${device.name} (${porte.errore})`);
-        }
-
-        // Neighbors LLDP/CDP/MNDP
-        if (client.getNeighbors) {
-          try {
-            const neighbors = await client.getNeighbors();
-            if (neighbors.length > 0) {
-              // T2 (spec §13.5.2, MK1): discovered-by e capacità solo con la lettura dei MikroTik accesa (I33).
-              upsertNeighbors(device.id, letturaAccesa("mikrotik") ? neighbors : neighbors.map(senzaCampiCavi));
-            }
-          } catch (err) {
-            console.warn(`[Neighbors] Errore su ${device.name}:`, err);
-          }
-        }
-
-        // Tabella di routing
-        if (client.getRoutingTable) {
-          try {
-            const routes = await client.getRoutingTable();
-            if (routes.length > 0) {
-              upsertRoutes(device.id, routes);
-            }
-          } catch (err) {
-            console.warn(`[Routing] Errore su ${device.name}:`, err);
-          }
-        }
-
-        // Letture in più (T2, spenta di default): MK3-MK8 su una connessione sola; MK2 è l'uscita già letta qui sopra.
-        if (device.vendor === "mikrotik" && device.protocol === "ssh") {
-          mkProvata = true;
-          esitiLetture.push(await letturaMikrotik(device, client.ultimaUscitaInterfacce?.() ?? null, false, options));
-        }
-      } else {
-        // Letture in più (T2, spenta di default) per prime: una tabella MAC che fallisce non deve toglierle.
-        if (device.vendor === "mikrotik" && device.protocol === "ssh") {
-          esitiLetture.push(await letturaMikrotik(device, null, true, options));
-        }
-        // SN6: solo per gli switch senza controller (la chiave dei vicini non ha la fonte: due lettori della stessa riga si
-        // scambierebbero la fonte) e non letti come MikroTik via SSH (hanno le loro letture). Interruttore guardato per
-        // primo: spenta, il giro degli switch fa esattamente quello di prima (nemmeno la ricerca della credenziale SNMP).
-        // Solo gli switch (spec §13.5.4; revisione del Task 6, C5): AP, NAS e server di questo ramo no, scelta di Riccardo.
-        const delController = !!(device as NetworkDevice & { controller_mac?: string | null }).controller_mac;
-        if (device.device_type === "switch" && !delController && !(device.vendor === "mikrotik" && device.protocol === "ssh")
-          && letturaAccesa("snmp") && deviceHasSnmpSession(device)) {
-          esitiLetture.push(await letturaSnmp(device, options));
-        }
-        const client = await (options?.creaClientSwitch ?? createSwitchClient)(device);
-        const entries = await client.getMacTable();
-        salvaMacPorta(device.id, entries.map((e) => ({
-          mac: e.mac,
-          port_name: e.port_name.trim(),
-          vlan: e.vlan,
-          port_status: e.port_status,
-          speed: e.speed,
-        })));
-
-        // Popola mac_ip_mapping con MAC da switch risolti a IP (hosts/ARP)
-        const switchNetwork = networks.find((n) => isIpInCidr(device.host, n.cidr));
-        for (const e of entries) {
-          if (!e.mac) continue;
-          const resolved = resolveMacToDevice(e.mac);
-          if (resolved.ip) {
-            upsertMacIpMapping({
-              mac: e.mac,
-              ip: resolved.ip,
-              source: "switch",
-              source_device_id: device.id,
-              network_id: switchNetwork?.id ?? null,
-              host_id: resolved.host_id,
-              vendor: resolved.vendor ?? undefined,
-              hostname: resolved.hostname ?? undefined,
-            });
-          }
-        }
-
-        // Port schema con cross-ref ARP/IPAM per assegnare device alla porta
-        const portInfos = await client.getPortSchema();
-        if (portInfos.length > 0) {
-          const macsByPort = new Map<string, { macs: string[]; vlan: number | null }>();
-          for (const e of entries) {
-            const key = normalizePortNameForMatch(e.port_name.trim());
-            const existing = macsByPort.get(key) || { macs: [], vlan: e.vlan };
-            existing.macs.push(e.mac);
-            if (e.vlan != null) existing.vlan = e.vlan;
-            macsByPort.set(key, existing);
-          }
-
-          const switchPorts = portInfos.map((p) => {
-            const portMacs = macsByPort.get(normalizePortNameForMatch(p.port_name.trim()));
-            const macCount = portMacs?.macs.length || 0;
-            const isTrunk = macCount > 1 ? 1 : 0;
-            let singleMac: string | null = null;
-            let singleMacVendor: string | null = null;
-            let singleMacIp: string | null = null;
-            let singleMacHostname: string | null = null;
-
-            let hostId: number | null = null;
-            if (macCount === 1 && portMacs) {
-              singleMac = portMacs.macs[0];
-              const resolved = resolveMacToDevice(singleMac);
-              singleMacIp = resolved.ip;
-              singleMacHostname = resolved.hostname;
-              singleMacVendor = resolved.vendor;
-              hostId = resolved.host_id;
-            }
-
-            let trunk_primary_device_id: number | null = null;
-            let trunk_primary_name: string | null = null;
-            if (isTrunk && portMacs && !p.trunk_neighbor_name) {
-              const matches: { device_id: number; device_name: string; device_type: string }[] = [];
-              for (const mac of portMacs.macs) {
-                const nd = resolveMacToNetworkDevice(mac, device.id);
-                if (nd) matches.push(nd);
-              }
-              const primary = matches.find((m) => m.device_type === "router") ?? matches[0];
-              if (primary) {
-                trunk_primary_device_id = primary.device_id;
-                trunk_primary_name = primary.device_name;
-              }
-            }
-
-            return {
-              port_index: p.port_index,
-              port_name: p.port_name.trim(),
-              status: p.status,
-              speed: p.speed,
-              duplex: p.duplex,
-              vlan: portMacs?.vlan ?? p.vlan,
-              poe_status: p.poe_status,
-              poe_power_mw: p.poe_power_mw,
-              mac_count: macCount,
-              is_trunk: isTrunk,
-              single_mac: singleMac,
-              single_mac_vendor: singleMacVendor,
-              single_mac_ip: singleMacIp,
-              single_mac_hostname: singleMacHostname,
-              host_id: hostId,
-            trunk_neighbor_name: p.trunk_neighbor_name ?? null,
-            trunk_neighbor_port: p.trunk_neighbor_port ?? null,
-            trunk_primary_device_id,
-            trunk_primary_name,
-            stp_state: p.stp_state ?? null,
-          };
-        });
-
-        upsertSwitchPorts(device.id, switchPorts);
-      }
-    }
-    } catch (error) {
-      console.error(`[ARP Poll] Errore su ${device.name}:`, error);
-      // Revisione del Task 4 di T2 (B5): il giro del router fermato prima (ARP che non risponde, client che non si crea)
-      // saltava le letture in più senza esito. Adesso l'esito «non so» col codice, con le regole di sempre (spenta, cadenza).
-      if (!mkProvata && networkDeviceUsesArpPoll(device) && device.vendor === "mikrotik" && device.protocol === "ssh") {
-        esitiLetture.push(await conCadenza("mikrotik", device.id, async () => {
-          throw Object.assign(new Error("Giro del router non riuscito"), { code: codiceTrasporto(error) });
-        }, options?.adesso));
-      }
+    } catch {
+      // Già nel journal (leggiApparatoArp, id e codice): il giro passa all'apparato dopo, come prima.
     } finally {
-      if (device.device_type !== "hypervisor") {
+      if (letto) {
         if (networkDeviceUsesArpPoll(device)) {
           durate.router += performance.now() - t0;
           durate.nRouter++;
@@ -1363,23 +1609,23 @@ export async function runDnsResolve(
 }
 
 async function runCleanup(configStr: string): Promise<void> {
-  let config: { days_until_stale?: number; days_until_delete?: number; mac_port_retention_days?: number };
+  // days_until_stale / days_until_delete possono restare nelle config vecchie: si ignorano.
+  let config: { mac_port_retention_days?: number };
   try {
     config = JSON.parse(configStr || "{}");
   } catch {
     console.error("[Cleanup] Configurazione JSON non valida, uso valori predefiniti:", configStr);
     config = {};
   }
-  const daysUntilStale = config.days_until_stale || 30;
-  const daysUntilDelete = config.days_until_delete || 90;
+  // P1 del piano 2026-10-20 (Riccardo): questo job NON tocca più gli host. Prima li
+  // marcava 'stale' a 30 giorni e li cancellava a 90, senza le esclusioni della nuova
+  // pulizia (src/lib/hosts/pulizia-*), che è l'unica a gestirli. Le soglie
+  // days_until_stale / days_until_delete nelle config già salvate non hanno più effetto.
   // Retention mac_port_entries in giorni (topologia fase 2, spec §10.5). Fino
   // alla v0.2.651 erano 24 ore perché ogni giro riscriveva l'intera MAC table;
   // ora le righe sono una per (apparato, MAC, porta), aggiornate a ogni giro:
   // il volume non cresce coi giri, e una riga vecchia dice «visto l'ultima volta».
   const macPortRetentionDays = config.mac_port_retention_days ?? MAC_PORT_RETENTION_DAYS;
-
-  const result = cleanupStaleHosts(daysUntilStale, daysUntilDelete);
-  console.info(`[Cleanup] ${result.flagged} host segnalati stale, ${result.deleted} eliminati`);
 
   try {
     const deleted = cleanupOldMacPortEntries(macPortRetentionDays);

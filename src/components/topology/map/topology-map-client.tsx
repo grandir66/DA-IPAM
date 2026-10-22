@@ -541,7 +541,7 @@ function TopologyMap({ isAdmin }: { isAdmin: boolean }) {
   }
   const paroleIgnora = membroDelSegmento ? "Togli dal segmento" : membriFascio ? "Ignora i cavi scelti" : `Ignora questo ${nomeDelGenere(genereIgnora)}`;
   return (
-    <div className="flex h-[calc(100dvh-9rem)] min-h-[560px] flex-col overflow-hidden rounded-lg border border-border bg-card">
+    <div className="flex h-[calc(100dvh-6.5rem)] min-h-[560px] md:h-[calc(100dvh-4rem)] flex-col overflow-hidden rounded-lg border border-border bg-card">
       <TopologyIconDefs />
       <MapToolbar
         mode={mode}

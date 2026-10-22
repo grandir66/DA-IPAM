@@ -16,6 +16,7 @@ import { parseStatDeviceResponse, type UnifiDevice } from "../unifi-device";
 import { buildUnifiMacIndex, mapUnifiFattiCavi, mapUnifiLldp, mapUnifiLldpConIndici } from "../unifi-map";
 import { syncUnifiForTenant, type UnifiDeviceSource } from "../unifi-sync";
 import { leggiEsiti, scriviInterruttore } from "@/lib/topology/letture/interruttori";
+import { LETTURE_SPENTE_SQL } from "@/lib/topology/letture/__tests__/letture-spente";
 
 const T = "TESTUNIFICAVI";
 const db = () => getTenantDb(T);
@@ -47,7 +48,8 @@ function fotografia(): string[] {
 beforeEach(() => {
   db().exec(`DELETE FROM topology_port_facts; DELETE FROM topology_bridge_facts; DELETE FROM topology_device_macs;
     DELETE FROM device_neighbors; DELETE FROM switch_ports; DELETE FROM network_devices; DELETE FROM hosts;
-    DELETE FROM tenant_settings WHERE key LIKE 'topologia.lettura.%';`);
+    DELETE FROM tenant_settings WHERE key LIKE 'topologia.lettura.%';
+    ${LETTURE_SPENTE_SQL}`);
   withTenant(T, () => rileggiSchemaCavi());
 });
 after(() => { deleteTenantDatabase(T); closeHubDb(); removeTestHubDb(); });

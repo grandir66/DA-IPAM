@@ -94,6 +94,31 @@ export function recordFailedAttempt(key: string): void {
 }
 
 /**
+ * Prenota un tentativo di login PRIMA di ogni attesa (revisione del 20/10): conta subito per il
+ * blocco, così cento richieste in parallelo non passano tutte il controllo prima che la prima
+ * registri il suo fallimento. Ritorna il segno da passare ad `annullaTentativo` quando il
+ * tentativo risulta buono e non deve contare (passo 1 della pagina d'accesso riuscito).
+ */
+export function prenotaTentativo(key: string): number {
+  // Lo stesso istante nel contatore e nel segno: con due letture dell'orologio, a cavallo del
+  // millisecondo l'annullamento non trovava il segno (5 casi su 300.000, seconda revisione 20/10).
+  const t = Date.now();
+  const entry = store.get(key) || { timestamps: [] };
+  entry.timestamps.push(t);
+  store.set(key, entry);
+  return t;
+}
+
+/** Toglie un tentativo prenotato (uno solo, quello col segno dato). */
+export function annullaTentativo(key: string, segno: number): void {
+  const entry = store.get(key);
+  if (!entry) return;
+  const i = entry.timestamps.lastIndexOf(segno);
+  if (i >= 0) entry.timestamps.splice(i, 1);
+  if (entry.timestamps.length === 0) store.delete(key);
+}
+
+/**
  * Conta tentativi attivi nella finestra per una chiave.
  */
 export function getAttemptCount(key: string, windowMs: number = 15 * 60 * 1000): number {

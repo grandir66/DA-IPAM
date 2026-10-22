@@ -45,7 +45,6 @@ const LIBERE = [
   "host_windows_credential_id",
   "host_linux_credential_id",
   "public_hub_url",
-  "hub_tailnet_hostname",
   "naabu_bin_path",
   "notify_smtp_host",
   "notify_smtp_user",

@@ -53,6 +53,11 @@ export interface EsitoGiroApparati {
   /** Apparati del job, esclusi compresi. */
   totale: number;
   esclusi: number;
+  /** Apparati su cui almeno una lettura è partita (letta o in errore). */
+  tentati: number;
+  /** Apparati saltati: già in lettura (`OCCUPATO`) o niente da leggere (`NIENTE_DA_LEGGERE`). */
+  occupati: number;
+  nienteDaLeggere: number;
   /** Per ogni lettura: quanti apparati l'hanno letta su quanti l'hanno tentata (spenta e non valida non contano). */
   perLettura: Record<Lettura, { letti: number; su: number }>;
 }
@@ -88,8 +93,11 @@ async function leggiApparato(device: NetworkDevice, daLeggere: Lettura[], out: R
           : { stato: "errore", codice: r.codice };
       } else if (l === "porte_mac") {
         // `vlan: "no"`: la VLAN la fa il job qui sotto, solo se scelta (decisione 8).
+        ctx.porteErrore?.delete(device.id);
         await leggiApparatoArp(device, ctx, { ...arp, vlan: "no", tempoMs });
-        out.porte_mac = { stato: "letto" };
+        // Le porte fisiche del router non lette: la lettura non ha scritto le porte, è un errore col codice.
+        const codice = ctx.porteErrore?.get(device.id);
+        out.porte_mac = codice ? { stato: "errore", codice } : { stato: "letto" };
       } else {
         // Senza la cadenza oraria (scelta esplicita di un admin), ma dietro l'interruttore: spenta resta spenta.
         const e = vlanSwitchDaLeggere(device)
@@ -128,7 +136,7 @@ export async function runApparatiScelti(jobId: number, opzioni: OpzioniGiro = {}
   }
   // I record completi solo per gli inclusi, in una query (niente N+1): le letture vogliono l'apparato intero.
   const apparati = new Map(idsInclusi.size > 0 ? getNetworkDevices().filter((d) => idsInclusi.has(d.id)).map((d) => [d.id, d]) : []);
-  const ctx: ContestoArp = { networks: idsInclusi.size > 0 ? getNetworks() : [], enrichSet: null, porteNonLette: [], esitiLetture: [] };
+  const ctx: ContestoArp = { networks: idsInclusi.size > 0 ? getNetworks() : [], enrichSet: null, porteNonLette: [], esitiLetture: [], porteErrore: new Map() };
   const scelte = LETTURE.filter((l) => cfg.cosa[l]);
 
   const righe: Riga[] = [];
@@ -178,14 +186,25 @@ export async function runApparatiScelti(jobId: number, opzioni: OpzioniGiro = {}
   scriviEsitiGiro(jobId, giroIl, righe);
   const esclusi = righe.filter((r) => r.stato === "escluso").length;
   const letti = righe.filter((r) => r.stato === "ok" || r.stato === "parziale").length;
+  const tentati = letti + righe.filter((r) => r.stato === "errore").length;
+  const occupati = righe.filter((r) => r.motivo === "OCCUPATO").length;
+  const nienteDaLeggere = righe.filter((r) => r.motivo === "NIENTE_DA_LEGGERE").length;
   const n = (l: Lettura) => `${perLettura[l].letti}/${perLettura[l].su}`;
   console.info(`[Scheduler] apparati_scelti #${jobId}: ${letti} letti su ${righe.length - esclusi}, ${esclusi} esclusi; `
     + `info ${n("info")}, porte ${n("porte_mac")}, vlan ${n("vlan")}`);
-  return { letti, totale: righe.length, esclusi, perLettura };
+  return { letti, totale: righe.length, esclusi, tentati, occupati, nienteDaLeggere, perLettura };
 }
 
-/** Il motivo per lo scheduler (decisione 12), in numeri: «2 letti su 3; 1 escluso». */
+/**
+ * Il motivo per lo scheduler (decisione 12), in numeri: «2 letti su 3; 1 escluso». Niente tentato e nessun escluso:
+ * «niente da leggere: …» o «tutti occupati: …» (il job è «saltato»).
+ */
 export function motivoGiroApparati(r: EsitoGiroApparati): string {
+  if (r.letti === 0 && r.tentati === 0 && r.esclusi === 0) {
+    if (r.occupati === r.totale) return `tutti occupati: ${r.occupati} apparati già in lettura`;
+    const parti = [r.nienteDaLeggere ? `${r.nienteDaLeggere} con le letture scelte spente o non valide` : "", r.occupati ? `${r.occupati} già in lettura` : ""];
+    return `niente da leggere: ${parti.filter(Boolean).join(", ")}`;
+  }
   const base = `${r.letti} letti su ${r.totale - r.esclusi}`;
   return r.esclusi > 0 ? `${base}; ${r.esclusi} ${r.esclusi === 1 ? "escluso" : "esclusi"}` : base;
 }

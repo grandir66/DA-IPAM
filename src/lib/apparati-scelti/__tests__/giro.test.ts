@@ -199,8 +199,50 @@ test("VLAN con switch_vlan acceso e lettura di 10 minuti fa: si legge lo stesso 
 test("tutti in errore o esclusi: runJob lancia «Nessun apparato letto», gli esiti sono scritti", async () => {
   const j = creaJob([F.sw, F.nudo], { info: true, porte_mac: false, vlan: false });
   const f = finti(async () => ({ stato: "errore", codice: "SSH_TIMEOUT" }));
-  await assert.rejects(withTenant(T, () => runJob(j, { apparatiScelti: f.opz })), /Nessun apparato letto: 0 su 2/);
+  await assert.rejects(withTenant(T, () => runJob(j, { apparatiScelti: f.opz })), /Nessun apparato letto: 0 letti su 1; 1 escluso/);
   assert.deepEqual(esiti(j).map((r) => [r.id, r.stato]).sort(), [[F.sw, "errore"], [F.nudo, "escluso"]].sort());
+});
+
+test("solo VLAN scelta e switch_vlan spento: niente da leggere, il job è «saltato», non fallisce", async () => {
+  const j = creaJob([F.sw], { info: false, porte_mac: false, vlan: true });
+  const e = await withTenant(T, () => runJob(j, { apparatiScelti: finti().opz }));
+  assert.equal(e.esito, "saltato");
+  assert.match(e.motivo ?? "", /^niente da leggere/);
+  assert.deepEqual(riga(j, F.sw), { id: F.sw, stato: "saltato", motivo: "NIENTE_DA_LEGGERE", letture: { vlan: { stato: "spenta" } } });
+});
+
+test("tutti gli apparati occupati: il job è «saltato» (tutti occupati), non fallisce", async () => {
+  const j = creaJob([F.sw, F.rt]);
+  let libera!: () => void;
+  const tenuto = new Promise<void>((r) => { libera = r; });
+  const prese = [F.sw, F.rt].map((id) => withTenant(T, () => conLucchettoApparato(id, () => tenuto)));
+  const e = await withTenant(T, () => runJob(j, { apparatiScelti: finti().opz }));
+  libera();
+  await Promise.all(prese);
+  assert.equal(e.esito, "saltato");
+  assert.match(e.motivo ?? "", /tutti occupati/);
+});
+
+test("host senza credenziale validata ma con un binding SNMP riuscito: incluso e letto", async () => {
+  db().prepare("UPDATE host_credentials SET validated = 0 WHERE host_id = ?").run(F.hostSw);
+  const voce = Number(db().prepare("INSERT INTO credentials (name, credential_type) VALUES ('c', 'snmp')").run().lastInsertRowid);
+  db().prepare("INSERT INTO device_credential_bindings (device_id, credential_id, protocol_type, port, test_status) VALUES (?, ?, 'snmp', 161, 'success')").run(F.sw, voce);
+  const j = creaJob([F.sw], { info: true, porte_mac: false, vlan: false });
+  await withTenant(T, () => runApparatiScelti(j, finti().opz));
+  assert.equal(riga(j, F.sw)?.stato, "ok");
+});
+
+test("router: porte fisiche non lette (bridge host in errore) = porte e MAC in errore col codice, non «letto»", async () => {
+  const j = creaJob([F.rt], { info: false, porte_mac: true, vlan: false });
+  const f = finti();
+  f.opz.creaClientRouter = async (): Promise<RouterClient> => ({
+    async getArpTable() { return []; }, async testConnection() { return true; },
+    async getBridgeHosts() { throw Object.assign(new Error("finto"), { code: "SSH_TIMEOUT_FINTO" }); },
+    async getInterfaceTypes() { return []; },
+  } as unknown as RouterClient);
+  await withTenant(T, () => runApparatiScelti(j, f.opz));
+  assert.deepEqual(riga(j, F.rt)?.letture, { porte_mac: { stato: "errore", codice: "SSH_TIMEOUT_FINTO" } });
+  assert.equal(riga(j, F.rt)?.stato, "errore");
 });
 
 test("porte e MAC non scelte: il client dello switch non si crea", async () => {

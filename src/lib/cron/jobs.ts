@@ -431,7 +431,9 @@ export async function runJob(jobId: number, opzioni?: OpzioniRunJob): Promise<Es
       // Scansione automatica dei device scelti in Discovery (piano 2026-10-22, decisione 12): nessuno letto → si lancia,
       // così lo scheduler lo conta fra i falliti e l'allarme lo vede; gli esiti per apparato sono già scritti.
       const r = await runApparatiScelti(jobId, opzioni?.apparatiScelti);
-      if (r.letti === 0) throw new Error(`Nessun apparato letto: 0 su ${r.totale}`);
+      // Niente tentato (letture spente o non valide, apparati già in lettura): «saltato», non un guasto.
+      if (r.letti === 0 && r.tentati === 0 && r.esclusi === 0) return { esito: "saltato", motivo: motivoGiroApparati(r) };
+      if (r.letti === 0) throw new Error(`Nessun apparato letto: ${motivoGiroApparati(r)}`);
       return { esito: "eseguito", motivo: motivoGiroApparati(r) };
     }
   }
@@ -840,6 +842,8 @@ export interface ContestoArp {
   enrichSet: Set<string> | null;
   porteNonLette: string[];
   esitiLetture: Array<EsitoGiro<unknown>>;
+  /** Il job `apparati_scelti`: le porte fisiche di un router non lette, per apparato (solo il codice). Il giro ARP non lo passa. */
+  porteErrore?: Map<number, string>;
 }
 
 const IP_NEL_TESTO = /\b\d{1,3}(?:\.\d{1,3}){3}\b/g;
@@ -1088,6 +1092,7 @@ async function corpoApparatoArp(device: NetworkDevice, ctx: ContestoArp,
       } else if (porte.errore) {
         console.warn(`[ARP Poll] apparato #${device.id}: porte fisiche non lette (${porte.errore})`);
         porteNonLette.push(`${device.name} (${porte.errore})`);
+        ctx.porteErrore?.set(device.id, porte.errore);
       }
 
       // Scheda MikroTik (Task 3): `/interface print terse` è già stato letto qui sopra (getInterfaceTypes); da quella stessa

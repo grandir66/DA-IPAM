@@ -5,7 +5,6 @@
  * finestra J2, le rotte e il giro.
  */
 import { z } from "zod";
-import { senzaCredenzialeProvata } from "@/lib/devices/credenziali-assegnate";
 import { FUSO_UTENTI } from "@/lib/db-date";
 
 /** Tetto per job: lo stesso della finestra «Rendi apparato» (decisione 3: un giro seriale da 50 sta nell'ora). */
@@ -158,16 +157,18 @@ export const TESTO_MOTIVO: Record<MotivoEsclusione, string> = {
 
 /**
  * Entra nel giro? Ordine dei motivi: NON_APPARATO, TOLTO, DISATTIVATO, NON_LEGGIBILE, SENZA_CREDENZIALE,
- * CREDENZIALE_NON_PROVATA. «Provata» è la definizione unica di `senzaCredenzialeProvata`: con l'host vale l'host,
- * solo un apparato senza host ricade sui binding.
+ * CREDENZIALE_NON_PROVATA. «Provata» qui (decisione del controllore sulla richiesta di Riccardo del 22/10, «le
+ * credenziali devono essere memorizzate»: una credenziale memorizzata che funziona conta): una credenziale validata
+ * sull'host OPPURE un binding riuscito dell'apparato, anche quando l'host c'è. Solo per questo job: la definizione
+ * comune `senzaCredenzialeProvata` (con l'host vale l'host) resta quella delle altre pagine. La finestra J2 deve usare
+ * questa funzione, non una sua.
  */
 export function valutaApparato(s: StatoApparato): { incluso: true } | { incluso: false; motivo: MotivoEsclusione } {
   if (s.device_id == null) return { incluso: false, motivo: s.host_id == null ? "TOLTO" : "NON_APPARATO" };
   if (!s.enabled) return { incluso: false, motivo: "DISATTIVATO" };
   if (!s.leggibile) return { incluso: false, motivo: "NON_LEGGIBILE" };
   if (s.credenziali_memorizzate <= 0) return { incluso: false, motivo: "SENZA_CREDENZIALE" };
-  const bindings = s.binding_riusciti > 0 ? [{ test_status: "success" as const }] : [];
-  if (senzaCredenzialeProvata(s.validate_sul_host, bindings)) return { incluso: false, motivo: "CREDENZIALE_NON_PROVATA" };
+  if (!((s.validate_sul_host ?? 0) > 0 || s.binding_riusciti > 0)) return { incluso: false, motivo: "CREDENZIALE_NON_PROVATA" };
   return { incluso: true };
 }
 
@@ -177,7 +178,8 @@ export function valutaApparato(s: StatoApparato): { incluso: true } | { incluso:
  */
 export function lettureValide(t: StatoApparato["tipo"]): Lettura[] {
   const out: Lettura[] = ["info"];
-  if (t.usa_arp || t.device_type === "switch") out.push("porte_mac");
+  // L'hypervisor no anche con ARP: il giro ARP lo salta, non si scriverebbe niente.
+  if (t.device_type !== "hypervisor" && (t.usa_arp || t.device_type === "switch")) out.push("porte_mac");
   if (t.vlan_switch || (t.device_type === "router" && t.vendor === "mikrotik" && t.protocol === "ssh")) out.push("vlan");
   return out;
 }

@@ -75,9 +75,9 @@ Piano: [`docs/superpowers/plans/2026-10-22-accorpamento-ip-e-vlan-switch.md`](do
 
 Piano: [`docs/superpowers/plans/2026-10-22-invio-ad-inventario-a-vulcan.md`](docs/superpowers/plans/2026-10-22-invio-ad-inventario-a-vulcan.md) (9 task, livello completo, stato: bozza da approvare). Oggi l'AD arriva all'hub solo a mano (download qui, «Carica» là): il piano aggiunge l'invio automatico, inventario e battito; spento senza `VULCAN_TOKEN`.
 
-- [ ] Piano approvato da Riccardo
-- [ ] T1 chiavi `VULCAN_URL`/`VULCAN_TOKEN` da `oggetto.env` e cliente dell'invio
-- [ ] T2 coda `vulcan_coda` nel DB del cliente (segno `vulcan_coda_v21`), misura sulla copia 70791
+- [x] Piano approvato da Riccardo — Riccardo 22/10: «andiamo avanti», eseguito qui
+- [x] T1 chiavi `VULCAN_URL`/`VULCAN_TOKEN` da `oggetto.env` e cliente dell'invio — gettone mai in log/errori/risposte (18 prove); file rifiutato se non root, link simbolico o permessi ≠ 600
+- [x] T2 coda `vulcan_coda` nel DB del cliente (segno `vulcan_coda_v21`), misura sulla copia 70791 — migrazione sulla copia 7 ms, integrity ok; revisione completa: 1 medio corretto (inventario superato non torna in coda)
 - [ ] T3 invio automatico AD Health a fine esecuzione (riusa `toHubExport`, il download resta)
 - [ ] T4 inventario a lista bianca (prova dei campi «Mai»), misura dei byte sulla copia 70791
 - [ ] T5 trasporto HTTPS gzip verso l'hub (TLS normale)

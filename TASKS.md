@@ -12,7 +12,9 @@ Livello leggero, approvato da Riccardo il 22/10 dopo 70151 (VLAN del router manc
 - [x] Appliance di 70151 aggiornata a 0.9.873 (14:20 italiane, health 200)
 - [x] Scoperto: su 70151 nessun job legge gli apparati (niente `arp_poll` né scansioni): creato `arp_poll` ogni 30 min (job 4, ok di Riccardo)
 - [x] Verifica sul router 172.20.40.102: primo giro 15:00 italiane, letture 6/6 e 4/4 comandi, 19 VLAN, 26 VLAN di bridge, 1 bridge
-- [ ] Pagina unica delle opzioni + job di serie all'installazione (Riccardo, 22/10): censimento di interruttori e job, proposta grafica prima di scriverla
+- [x] Pagina unica delle opzioni + job di serie: censimento (34 interruttori in 13 pagine), tavola approvata, spec e piano scritti
+- [x] Promote dev → main v0.9.873 (85662969), chiesto da Riccardo il 22/10
+- [ ] Esecuzione del piano [`2026-10-22-pagina-opzioni.md`](docs/superpowers/plans/2026-10-22-pagina-opzioni.md) (7 task, leggero) in una sessione nuova
 
 ## 2026-10-22 — LibreNMS come fonte di dati degli apparati SNMP
 

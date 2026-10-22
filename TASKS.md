@@ -4,7 +4,7 @@
 
 Piano: [`docs/superpowers/plans/2026-10-22-scansione-automatica-da-discovery.md`](docs/superpowers/plans/2026-10-22-scansione-automatica-da-discovery.md) (10 task; giro e migrazione livello completo, interfaccia leggero; stato: bozza da approvare). Tavola approvata il 22/10: artboard `ScansioneAutomatica` (J1-J4) del canvas https://claude.ai/artifact/7ezwy7nkAAzUWSn1wJCNKv. Risponde anche al punto (a) qui sotto (job `arp_poll` sull'hub).
 
-- [ ] Piano approvato da Riccardo
+- [x] Piano approvato da Riccardo — v0.9.861; v11 sulla copia dell hub 3-4 ms, 23 job identici, integrity ok; revisione completa: approvato (colonna sconosciuta ora blocca)
 - [ ] T1 tipo `apparati_scelti`, CHECK v11 di `scheduled_jobs`, tabella `job_apparati_esiti` (misura sulla copia dell'hub)
 - [ ] T2 regole pure: config, frequenze (ogni ora · ogni 4 ore · ogni giorno alle HH:MM), idoneità, letture valide
 - [ ] T3 funzioni DB: stato degli apparati in una query, esiti per apparato

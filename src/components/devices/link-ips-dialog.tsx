@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { Search, Link2 } from "lucide-react";
+import { ipToLong } from "@/lib/utils";
 
 interface CandidateRow {
   id: number;
@@ -44,6 +45,8 @@ interface CandidateRow {
   physical_device_id: number | null;
   affinity_score: number;
   reasons: string[];
+  /** L'IP è già quello di un apparato gestito: il cluster non permette di scegliere il principale. */
+  ha_apparato?: boolean;
 }
 
 interface LinkIpsDialogProps {
@@ -55,6 +58,13 @@ interface LinkIpsDialogProps {
   /** mode="add": host anchor da cui si parte (la sua scheda è aperta) */
   anchorHostId?: number;
   anchorHostLabel?: string;
+  /** IP dell'anchor e dei suoi attuali compagni di cluster, per la scelta del principale. */
+  anchorIp?: string;
+  anchorMembri?: Array<{ id: number; ip: string }>;
+  /** L'anchor (o il suo cluster) ha un apparato gestito: il suo IP è il principale e la scelta non c'è. */
+  anchorHaApparato?: boolean;
+  /** Principale di oggi del cluster dell'anchor, se c'è. */
+  anchorPrincipaleHostId?: number | null;
 
   /** mode="bulk": host già selezionati nella lista di discovery */
   preSelectedHostIds?: number[];
@@ -67,6 +77,10 @@ export function LinkIpsDialog({
   onLinked,
   anchorHostId,
   anchorHostLabel,
+  anchorIp,
+  anchorMembri,
+  anchorHaApparato,
+  anchorPrincipaleHostId,
   preSelectedHostIds,
   preSelectedHostLabels,
 }: LinkIpsDialogProps) {
@@ -76,12 +90,15 @@ export function LinkIpsDialog({
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [search, setSearch] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  // Principale scelto a mano (null = non toccato: vale la regola, e non si manda niente al server).
+  const [principaleScelto, setPrincipaleScelto] = useState<number | null>(null);
 
   // Carica i candidati quando il modale si apre in mode="add"
   useEffect(() => {
     if (!open || mode !== "add" || !anchorHostId) return;
     setLoadingCandidates(true);
     setSelectedIds(new Set());
+    setPrincipaleScelto(null);
     fetch(`/api/hosts/${anchorHostId}/link-candidates?limit=50`, { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : { candidates: [] }))
       .then((data: { candidates: CandidateRow[] }) => setCandidates(data.candidates ?? []))
@@ -99,6 +116,21 @@ export function LinkIpsDialog({
       c.network_name.toLowerCase().includes(q),
     );
   }, [candidates, search]);
+
+  // Candidati al ruolo di principale: l'anchor con i suoi compagni di cluster e gli IP che si stanno collegando.
+  // Non c'è scelta se qualcuno è un apparato gestito (il suo IP è il principale per regola).
+  const sceltaPrincipale = useMemo(() => {
+    if (mode !== "add" || !anchorHostId || selectedIds.size === 0 || anchorHaApparato) return null;
+    const scelti = candidates.filter((c) => selectedIds.has(c.id));
+    if (scelti.some((c) => c.ha_apparato)) return null;
+    const righe = new Map<number, string>();
+    for (const m of anchorMembri ?? []) righe.set(m.id, m.ip);
+    if (!righe.has(anchorHostId) && anchorIp) righe.set(anchorHostId, anchorIp);
+    for (const c of scelti) righe.set(c.id, c.ip);
+    const elenco = [...righe].map(([id, ip]) => ({ id, ip })).sort((a, b) => ipToLong(a.ip) - ipToLong(b.ip));
+    const predefinito = anchorPrincipaleHostId != null && righe.has(anchorPrincipaleHostId) ? anchorPrincipaleHostId : elenco[0]?.id ?? null;
+    return { elenco, predefinito };
+  }, [mode, anchorHostId, selectedIds, anchorHaApparato, candidates, anchorMembri, anchorIp, anchorPrincipaleHostId]);
 
   function toggle(id: number) {
     setSelectedIds((prev) => {
@@ -132,7 +164,11 @@ export function LinkIpsDialog({
       const res = await fetch("/api/physical-devices/link", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ host_ids: hostIds }),
+        body: JSON.stringify({
+          host_ids: hostIds,
+          // Solo se chi collega ha scelto davvero un principale e lo vede ancora nell'elenco.
+          ...(principaleScelto !== null && sceltaPrincipale?.elenco.some((r) => r.id === principaleScelto) ? { principale_host_id: principaleScelto } : {}),
+        }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -236,6 +272,28 @@ export function LinkIpsDialog({
                 </div>
               )}
             </>
+          )}
+
+          {mode === "add" && sceltaPrincipale && (
+            <fieldset className="border rounded-md px-3 py-2 space-y-1.5">
+              <legend className="px-1 text-[13px] font-semibold">Quale IP porta la riga in Discovery?</legend>
+              {sceltaPrincipale.elenco.map((r) => {
+                const attivo = (principaleScelto ?? sceltaPrincipale.predefinito) === r.id;
+                return (
+                  <label key={r.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="radio"
+                      name="principale-cluster"
+                      checked={attivo}
+                      onChange={() => setPrincipaleScelto(r.id)}
+                    />
+                    <span className="font-mono">{r.ip}</span>
+                    {r.id === sceltaPrincipale.predefinito && <span className="text-[13px] text-muted-foreground">· oggi</span>}
+                  </label>
+                );
+              })}
+              <p className="text-[13px] text-muted-foreground">Gli altri restano sotto «+N IP». Si può cambiare dopo, dalla scheda.</p>
+            </fieldset>
           )}
 
           {mode === "bulk" && (

@@ -34,7 +34,7 @@ export function principaleDelCluster(membri: MembroCluster[], sceltoAMano: numbe
 }
 
 /** La colonna la crea la migrazione `cluster_principale_v21`: se è fallita, si legge NULL e vale la regola senza scelta a mano. */
-function haColonnaPrincipale(db: Database.Database): boolean {
+export function haColonnaPrincipale(db: Database.Database): boolean {
   return (db.prepare("PRAGMA table_info(physical_devices)").all() as Array<{ name: string }>).some((c) => c.name === "primary_host_id");
 }
 

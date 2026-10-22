@@ -35,6 +35,8 @@ export interface MembroCluster {
   status: "online" | "offline" | "unknown";
   network_name: string;
   inferred_os_family: string | null;
+  /** Questo IP è quello di un apparato gestito (network_devices.host_id). */
+  ha_apparato?: boolean;
 }
 
 export interface ContestoScheda {
@@ -60,6 +62,11 @@ export interface ContestoScheda {
     validatedCreds: NonNullable<HostDetail["host_credentials"]>;
   };
   clusterMembers: MembroCluster[];
+  /** Principale del cluster per la regola di Discovery (null = ambiguo o cluster di un IP solo) e se il cluster ha un apparato. */
+  clusterPrincipaleHostId: number | null;
+  clusterHaApparato: boolean;
+  /** PUT /api/physical-devices/[id]/principale, poi rilegge il cluster. */
+  scegliPrincipale: (hostId: number) => Promise<void>;
   /** «VM n su <nodo>» se l'host è una VM delle scansioni Proxmox salvate. */
   vmSu: VmSu | null;
   /** Server: il computer in Active Directory e i rilievi (solo se DC). null = non letto o non è un server. */

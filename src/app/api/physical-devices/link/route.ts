@@ -10,6 +10,7 @@
  *   {
  *     host_ids: number[],                     // ≥1, host che diventano lo stesso device
  *     target_physical_device_id?: number      // opzionale: forza il cluster di destinazione
+ *     principale_host_id?: number             // opzionale: IP principale (cluster senza apparato)
  *   }
  *
  * Risposta: ManualLinkResult (vedi physical-device-db.ts)
@@ -26,6 +27,8 @@ const NO_CACHE_HEADERS = { "Cache-Control": "no-store, no-cache, must-revalidate
 const BodySchema = z.object({
   host_ids: z.array(z.number().int().positive()).min(1, "Almeno un host richiesto"),
   target_physical_device_id: z.number().int().positive().nullable().optional(),
+  /** Principale del cluster scelto da chi collega (solo se il cluster non ha un apparato gestito). */
+  principale_host_id: z.number().int().positive().nullable().optional(),
 });
 
 export async function POST(request: Request) {
@@ -48,6 +51,7 @@ export async function POST(request: Request) {
       const result = manualLinkHostsToPhysicalDevice(
         parsed.data.host_ids,
         parsed.data.target_physical_device_id ?? null,
+        parsed.data.principale_host_id ?? null,
       );
       return NextResponse.json(result, { headers: NO_CACHE_HEADERS });
     } catch (e) {

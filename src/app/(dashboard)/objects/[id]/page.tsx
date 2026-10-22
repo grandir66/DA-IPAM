@@ -82,6 +82,8 @@ export default function ObjectDetailPage() {
   // Multi-IP link manuale (v0.2.594+)
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [clusterMembers, setClusterMembers] = useState<MembroCluster[]>([]);
+  const [clusterPrincipaleHostId, setClusterPrincipaleHostId] = useState<number | null>(null);
+  const [clusterHaApparato, setClusterHaApparato] = useState(false);
   const [unlinkingHostId, setUnlinkingHostId] = useState<number | null>(null);
   const [asset, setAsset] = useState<InventoryAsset | null>(null);
   const [librenms, setLibrenms] = useState<LibreNmsStato | null>(null);
@@ -153,12 +155,14 @@ export default function ObjectDetailPage() {
 
   // Carica gli host del cluster fisico (se esistono) — usato dalla sezione "IP collegati"
   const fetchClusterMembers = useCallback(async () => {
-    if (!host?.physical_device_id) { setClusterMembers([]); return; }
+    if (!host?.physical_device_id) { setClusterMembers([]); setClusterPrincipaleHostId(null); setClusterHaApparato(false); return; }
     try {
       const r = await fetch(`/api/physical-devices/${host.physical_device_id}/hosts`, { cache: "no-store" });
       if (r.ok) {
-        const data = await r.json() as { hosts: MembroCluster[] };
+        const data = await r.json() as { hosts: MembroCluster[]; principale_host_id?: number | null; cluster_ha_apparato?: boolean };
         setClusterMembers(data.hosts ?? []);
+        setClusterPrincipaleHostId(data.principale_host_id ?? null);
+        setClusterHaApparato(data.cluster_ha_apparato ?? false);
       }
     } catch { /* non critico */ }
   }, [host?.physical_device_id]);
@@ -264,6 +268,22 @@ export default function ObjectDetailPage() {
     } finally {
       setUnlinkingHostId(null);
     }
+  }
+
+  async function handleScegliPrincipale(targetHostId: number) {
+    if (!host?.physical_device_id) return;
+    const r = await fetch(`/api/physical-devices/${host.physical_device_id}/principale`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host_id: targetHostId }),
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      toast.error(typeof err.error === "string" ? err.error : "Non sono riuscito a cambiare il principale");
+      return;
+    }
+    toast.success("Principale cambiato: Discovery mostra questo IP");
+    void fetchClusterMembers();
   }
 
   async function handleUpdateAll() {
@@ -443,6 +463,9 @@ export default function ObjectDetailPage() {
     classificationLabel,
     runtimeSummary,
     clusterMembers,
+    clusterPrincipaleHostId,
+    clusterHaApparato,
+    scegliPrincipale: handleScegliPrincipale,
     vmSu,
     ad,
     dipendenze,
@@ -511,6 +534,10 @@ export default function ObjectDetailPage() {
           onOpenChange={setLinkDialogOpen}
           anchorHostId={host.id}
           anchorHostLabel={host.hostname || host.ip}
+          anchorIp={host.ip}
+          anchorMembri={clusterMembers.map((m) => ({ id: m.id, ip: m.ip }))}
+          anchorHaApparato={clusterHaApparato || !!device}
+          anchorPrincipaleHostId={clusterPrincipaleHostId}
           onLinked={() => { void fetchAll(); void fetchClusterMembers(); }}
         />
       )}

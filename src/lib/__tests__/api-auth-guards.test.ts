@@ -31,6 +31,8 @@ interface Contract {
 // positivi su route già protette (documentano l'intento e catturano rimozioni).
 const CONTRACT: Contract[] = [
   { route: "devices/test-provisional", method: "POST", guard: "requireAdmin" },
+  // scelta del principale del cluster fisico (22/10): scrittura, solo admin
+  { route: "physical-devices/[id]/principale", method: "PUT", guard: "requireAdmin" },
   { route: "analytics/anomalies/[id]", method: "PATCH", guard: "requireAdmin" },
   { route: "analytics/anomalies/[id]", method: "DELETE", guard: "requireAdmin" },
   // probe diagnostici verso host/credenziali arbitrari (audit SEC-9)

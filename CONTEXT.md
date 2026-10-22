@@ -60,6 +60,10 @@ Leggilo per primo, poi [CLAUDE.md](CLAUDE.md) (stack e schema; su «multi-tenant
   `cron/scheduler-defaults.ts` (non da `db-tenant.ts`: ciclo d'import). **Trappole**: **un interruttore nuovo va nel
   catalogo**, o la prova di completezza fallisce; un job di serie cancellato rinasce al riavvio **salvo** la lapide
   `opzioni.job_di_serie.<tipo>`; una levetta nuova in una pagina vecchia è un errore: va in Opzioni, nella pagina il rimando.
+  v0.9.874 (22/10): 70151 verificata; hub ancora a 0.9.872 (riceverà i job di serie al suo aggiornamento).
+- **Aggiornamento che non retrocede** (22/10, v0.9.874): `scripts/lib/guardia-versione.sh` prima del checkout di
+  `auto-update.sh`; esito `retrocessione_rifiutata`. Il ramo `DA_INVENT_BRANCH` lo scrive l'installatore di
+  Deploy-Appliance dal ramo dei sorgenti posati (e9a1fda).
 - **DB dell'hub**: `systemctl stop` lascia `failed` (normale); niente `.recover` sul sqlite3 di Ubuntu; snapshot `pre-dalink-20261019` (VM 533) e `data/tenants/.db` di 0 byte: via solo con l'ok.
 - **da-invent scarica male** (21/10): se `update.sh`/`npm ci` si piantano sull'hub, può essere la rete.
 

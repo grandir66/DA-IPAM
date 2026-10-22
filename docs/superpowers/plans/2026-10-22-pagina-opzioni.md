@@ -10,7 +10,7 @@ lettura e scrittura che esistono; due rotte (`GET /api/opzioni`, `PUT /api/opzio
 rimandi nelle pagine vecchie lo usano; il seme dei job sta in `applyTenantSchedulerDefaults`.
 **Spec:** `docs/superpowers/specs/2026-10-22-pagina-opzioni-design.md` · **Tavola:** https://claude.ai/artifact/MFg8HqVhyS4dEzwiDoo1LX
 **Livello di controllo:** leggero (deciso da Riccardo il 22/10/2026).
-**Stato:** in esecuzione (sessione del 22/10 sera, worktree `.worktrees/da-ipam-opzioni`) · **Ultimo aggiornamento:** 2026-10-22 16:20 (aggiunti i Task 8 e 9 su richiesta di Riccardo)
+**Stato:** chiuso il 22/10 sera (v0.9.874 su dev; promote su main da chiedere) · **Ultimo aggiornamento:** 2026-10-22 16:20 (aggiunti i Task 8 e 9 su richiesta di Riccardo)
 
 ## Vincoli globali
 
@@ -171,7 +171,7 @@ ADR 0029 e 0031, che sono storia). In più: il censimento del §1 messo nella sp
 consiglio «fast_scan a 15 min su tutte le subnet», che contraddiceva freno /22 e job di serie. `scheda-mappa` invariata
 (lo stato del progetto non cambia).
 
-### [ ] Task 7 — Cancello, rilascio su dev, verifica su 70151
+### [x] Task 7 — Cancello, rilascio su dev, verifica su 70151
 
 **Cosa fare:** cancello completo col codice di uscita letto (`cmd; ESITO=$?`, log nello scratchpad);
 `npm run version:release`; riallineare su `origin/dev`; `git push origin HEAD:dev`. Sull'appliance di 70151 (VM 104
@@ -182,7 +182,7 @@ conferma.
 **Verifica:** esiti scritti qui sotto nel Registro.
 **Commit:** la release.
 
-### [~] Task 8 — L'aggiornamento non torna mai indietro, e l'installatore dichiara il ramo giusto
+### [x] Task 8 — L'aggiornamento non torna mai indietro, e l'installatore dichiara il ramo giusto
 
 Incidente del 22/10 (70151): l'installatore aveva messo il commit `f2207f44` di `dev` (v0.9.813) chiamando «main» il
 ramo locale; il primo giro di `da-ipam-update` puntava a `origin/main`, allora fermo a v0.3.322, e stava
@@ -249,8 +249,48 @@ non è nemmeno stata provata, quindi il binding non diventa «fallito» e la cre
 
 ## Registro
 
+- 22/10 16:40 italiane — cancello completo (`scratchpad/cancello.sh`, esito dal codice d'uscita): lint 0 errori, tsc 0,
+  `npm test` 5403 passate / 0 fallite, build 0.
+- Riccardo, alle domande prima del push: «Sì, rilascia così» (job di serie anche su hub e cliente A, nonostante il
+  principio del 25/05 e l'`arp_poll` assente di proposito sull'hub) e «Sì, push su main» per Deploy-Appliance.
+- `release: v0.9.874` = `42c5ba90`, `git push origin HEAD:dev` (0d0bf83c..42c5ba90). Deploy-Appliance `e9a1fda` su `main`
+  (d0eb2c4..e9a1fda).
+- 70151 (VM 104 su PX01, `qm guest exec`), prima: v0.9.873 su `dev`, `DA_INVENT_BRANCH=dev`, timer d'aggiornamento spento,
+  2 reti, job 1-7 (ARP = job 4). `systemctl start --no-block da-ipam-update` alle 16:47 italiane → `inactive success`;
+  journal: «nuovo commit su origin/dev (42c5ba90): aggiorno…», «Aggiornamento completato» (la guardia ha lasciato passare:
+  dev è più nuovo); servizio riavviato 16:49; `/api/version` = 0.9.874; avvio: «1 tenant, 0 … disabilitati, 4 job creati».
+  DB: job 4 `arp_poll` invariato (uno solo), nuovi 8 `hypervisor_sync`, 9 `dns_resolve` 1440, 10-11 `fast_scan` 720 sulle
+  reti 1 e 2. Nessuna lapide. **Da fare da Riccardo:** aprire `/settings/opzioni` su 70151.
+- Hub (VM 533), sola lettura alle 16:52: ancora v0.9.872 (avviato 13:16): i job di serie nasceranno lì al suo prossimo
+  aggiornamento (su 70791 giro ARP e DNS; su 70791a i quattro).
+
 ## Consuntivo
+
 ### Fatto
+Tutti i 9 task: catalogo e prova di completezza, quattro job di serie con lapide, rotte, pagina `/settings/opzioni`,
+rimandi in 13 pagine, ADR 0032 e documenti, aggiornamento che rifiuta di retrocedere (DA-IPAM) e ramo dichiarato giusto
+dall'installatore (Deploy-Appliance), errore SSH con la causa vera. Rilasciato v0.9.874 su `dev`, verificato su 70151.
+
 ### Mancante
+- Riccardo apre `/settings/opzioni` su 70151 (guardata solo in locale coi dati finti).
+- Promote `dev → main`: da chiedere a Riccardo.
+- L'hub riceve 0.9.874 e i job di serie al suo prossimo aggiornamento: da guardare (job creati, nessun carico strano).
+
 ### Scostamenti dal piano
+- Task 2 prima del Task 1 (il catalogo usa la lapide); il seme è chiamato da `cron/scheduler-defaults.ts` e non da
+  `applyTenantSchedulerDefaults` (ciclo d'import).
+- `leggi`/`cambia`/`leggiTutte` asincrone (lo stato dei moduli si legge con `getFeatureStatus`, async).
+- Logica delle rotte in `lib/opzioni/cambio.ts`; la pagina legge `GET /api/opzioni` dal client e rilegge dopo un cambio.
+- MeshCentral si installa ancora solo dalla sua scheda (l'assistente crea il server); la pulizia degli host chiede
+  conferma anche ad accendere; «Disinstalla e cancella i dati…» resta nelle schede dei moduli.
+- Task 8: la causa di 70151 era la strada dell'immagine (`lib/immagine.sh`, `ipam_branch: main` scritto a mano per un
+  commit di dev), non elencata nel piano: corretta anche quella.
+
 ### Consigli di sviluppo
+- `testoDialogo`, `testoStato`, `NASCE_ACCESA` di `lib/topology/letture/testi.ts` non hanno più chiamanti (solo le prove):
+  da togliere, o da riusare come testi del dialogo di Opzioni per le letture (dicono la cadenza vera).
+- Una rete creata dopo l'avvio riceve la scansione veloce solo al riavvio successivo: si può chiamare il seme anche alla
+  creazione della rete.
+- La frequenza degli apparati UniFi si cambia ancora anche dalla finestra del controller (campo del controller): valutare
+  se toglierla.
+- Un canale di audit su file (JSONL) per i cambi di Opzioni: oggi la riga va solo nel journal.

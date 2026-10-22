@@ -13,7 +13,7 @@ import { accesoDa, casellePanoramicaGenerica } from "@/lib/scheda/panoramica";
 import type { HostDetail } from "@/types";
 import { Campo, parseUtcDate } from "./blocchi";
 import { Riquadro } from "./riquadro";
-import { RigaFonti, type Fonte } from "./riga-fonti";
+import { RigaFontiScheda, type Fonte } from "./riga-fonti";
 import { StrisciaNumeri } from "./striscia-numeri";
 import type { ContestoScheda } from "./contesto";
 
@@ -118,7 +118,7 @@ export function PanoramicaGenerica({ ctx }: { ctx: ContestoScheda }) {
         </Riquadro>
       </div>
 
-      <RigaFonti fonti={fonti} />
+      <RigaFontiScheda ctx={ctx} fonti={fonti} />
     </div>
   );
 }

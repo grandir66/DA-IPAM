@@ -13,7 +13,7 @@ export type TabId =
   | "panoramica" | "porte" | "vlan" | "vicini" | "interfacce" | "routing" | "dhcp"
   | "configurazione" | "dischi" | "volumi" | "servizi_nas" | "vm" | "nodi" | "storage_px"
   | "rete_px" | "sistema" | "servizi" | "aggiornamenti" | "software" | "utenti" | "ad"
-  | "dipendenze" | "dettagli" | "sicurezza" | "gestione" | "storico" | "bridge" | "dispositivi";
+  | "dipendenze" | "dettagli" | "sicurezza" | "gestione" | "storico" | "bridge" | "dispositivi" | "sensori";
 
 export interface InputTipoScheda {
   gestito: boolean;
@@ -86,6 +86,8 @@ export interface OpzioniTab {
   haDipendenze: boolean;
   /** Router o firewall MikroTik letto via SSH; null per ogni altro apparato. `haBridge` = almeno un bridge nell'ultima lettura. */
   mikrotik: { haBridge: boolean } | null;
+  /** LibreNMS ha almeno un sensore dell'oggetto e la sua lettura è accesa (piano 2026-10-22 LibreNMS, task 7). */
+  haSensori?: boolean;
 }
 
 /**
@@ -106,6 +108,14 @@ export const TAB_COMUNI: TabId[] = ["sicurezza", "gestione", "storico"];
  * solo se qualche servizio poggia sull'host (`haDipendenze`). Solo il tipo `generico` tiene «Dettagli» (non ha tab sue).
  */
 export function tabDelTipo(t: TipoScheda, o: OpzioniTab): TabId[] {
+  const tab = tabBaseDelTipo(t, o);
+  if (!o.haSensori) return tab;
+  // «Sensori» prima delle tab comuni, per ogni tipo (come VLAN e Bridge compare solo con i dati).
+  const i = tab.findIndex((x) => TAB_COMUNI.includes(x));
+  return i < 0 ? [...tab, "sensori"] : [...tab.slice(0, i), "sensori", ...tab.slice(i)];
+}
+
+function tabBaseDelTipo(t: TipoScheda, o: OpzioniTab): TabId[] {
   // Host non gestito: «Gestione» ridotta (classificazione, inventario, note, asset NIS2), senza credenziali.
   if (t === "host") return ["panoramica", "sicurezza", "gestione", "storico"];
   if (t === "switch") return ["panoramica", "porte", "vlan", "vicini", ...TAB_COMUNI];

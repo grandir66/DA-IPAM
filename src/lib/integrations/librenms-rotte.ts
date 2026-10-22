@@ -4,18 +4,22 @@
  * `__tests__/librenms-rotte.test.ts`. La guardia la provano `rotte-censite` e `scripts/verifica-permessi.sh`.
  */
 import { z } from "zod";
+import { letturaAccesa } from "../topology/letture/interruttori";
 import { getHostById } from "../db-tenant";
 import { candidatiLibrenms, datiLibrenmsHost, lettureLibrenms, ultimoGiroLibrenms } from "./librenms-fonte";
 import { addSingleHostToLibreNMS, type EsitoAggiunta } from "./librenms-sync";
 
 export interface Risposta { status: number; corpo: unknown }
 
-/** GET /api/hosts/[id]/librenms/dati: i dati di LibreNMS dell'host, o `{ abbinato: false }`. */
+/**
+ * GET /api/hosts/[id]/librenms/dati: i dati di LibreNMS dell'host, o `{ abbinato: false }`, con `acceso` = l'interruttore
+ * della lettura `librenms` (spento: la scheda ignora i dati e resta com'era; le righe nelle tabelle possono essere vecchie).
+ */
 export function rispostaDatiHost(idTesto: string): Risposta {
   const id = Number(idTesto);
   if (!Number.isInteger(id) || id <= 0) return { status: 400, corpo: { error: "Id dell'host non valido" } };
   if (!getHostById(id)) return { status: 404, corpo: { error: "Host non trovato" } };
-  return { status: 200, corpo: datiLibrenmsHost(id) };
+  return { status: 200, corpo: { ...datiLibrenmsHost(id), acceso: letturaAccesa("librenms") } };
 }
 
 /** GET /api/integrations/librenms/candidati: le tre liste, lo stato della lettura per parte e l'esito dell'ultimo giro. */

@@ -21,6 +21,7 @@ import { TabDettagli } from "./tab-dettagli";
 import { TabGestione } from "./tab-gestione";
 import { TabSicurezza } from "./tab-sicurezza";
 import { TabStorico } from "./tab-storico";
+import { TabSensori } from "./tab-sensori";
 import { PanoramicaSwitch } from "./tipi/switch/panoramica";
 import { PorteSwitch } from "./tipi/switch/porte";
 import { VlanSwitch } from "./tipi/switch/vlan";
@@ -127,6 +128,7 @@ const TAB_BASE: Partial<Record<TabId, VoceTab>> = {
   sicurezza: { render: (c) => <TabSicurezza ctx={c} /> },
   gestione: { render: (c) => <TabGestione ctx={c} /> },
   storico: { render: (c) => <TabStorico ctx={c} /> },
+  sensori: { render: (c) => <TabSensori ctx={c} /> },
 };
 
 export const ETICHETTE_TAB: Record<TabId, string> = {
@@ -158,6 +160,7 @@ export const ETICHETTE_TAB: Record<TabId, string> = {
   storico: "Storico",
   bridge: "Bridge",
   dispositivi: "Dispositivi",
+  sensori: "Sensori",
 };
 
 function voce(tipo: TipoScheda, tab: TabId): VoceTab | undefined {

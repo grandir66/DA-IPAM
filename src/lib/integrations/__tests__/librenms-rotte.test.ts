@@ -11,6 +11,7 @@ import { closeHubDb } from "@/lib/db-hub";
 import { deleteTenantDatabase, getTenantDb, withTenant } from "@/lib/db-tenant";
 import { leggiApparati, leggiPorte, leggiSensori } from "../librenms-lettori";
 import { scriviParteLibrenms } from "../librenms-fonte";
+import { scriviInterruttore } from "../../topology/letture/interruttori";
 import { rispostaAggiungiCandidato, rispostaCandidati, rispostaDatiHost } from "../librenms-rotte";
 
 const T = "TESTLIBRENMSROTTE";
@@ -50,6 +51,11 @@ test("dati dell'host: id non valido 400, host assente 404, non abbinato, abbinat
     assert.equal(c.librenms_device_id, 5);
     assert.equal(c.letture.apparati.esito, "letto");
     assert.equal(c.letture.vicini.esito, "mai", "parte mai letta: si dice");
+    assert.equal((ccr.corpo as { acceso: boolean }).acceso, false, "interruttore non acceso = spento: la scheda ignora i dati");
+    assert.equal((nudo.corpo as { acceso: boolean }).acceso, false);
+    scriviInterruttore("librenms", true, "test");
+    assert.equal((rispostaDatiHost(String(H.ccr)).corpo as { acceso: boolean }).acceso, true);
+    scriviInterruttore("librenms", false, "test");
   });
 });
 

@@ -1,4 +1,7 @@
 import { cn } from "@/lib/utils";
+import { conLibrenms } from "@/lib/scheda/librenms-vista";
+import type { ContestoScheda } from "./contesto";
+import { oraBreve } from "./librenms-pezzi";
 
 /** Da dove vengono i dati. `nota` sostituisce il testo di default dell'esito («nessun agente», «non abbinato»…). */
 export type Fonte = { nome: string; esito: "ok" | "assente" | "non_abbinato"; quando?: string; nota?: string };
@@ -21,4 +24,9 @@ export function RigaFonti({ fonti }: { fonti: Fonte[] }) {
       ))}
     </p>
   );
+}
+
+/** La riga delle fonti della Panoramica con la voce di LibreNMS dalle tabelle `librenms_*` (L4), se la sua lettura è accesa. */
+export function RigaFontiScheda({ ctx, fonti }: { ctx: ContestoScheda; fonti: Fonte[] }) {
+  return <RigaFonti fonti={conLibrenms(fonti, ctx.librenmsDati, oraBreve)} />;
 }

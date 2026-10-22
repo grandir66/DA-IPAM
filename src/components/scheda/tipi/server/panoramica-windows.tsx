@@ -14,7 +14,7 @@ import { Campo, parseUtcDate } from "../../blocchi";
 import type { ContestoScheda } from "../../contesto";
 import { PanoramicaGenerica } from "../../panoramica-generica";
 import { Riquadro } from "../../riquadro";
-import { RigaFonti, type Fonte } from "../../riga-fonti";
+import { RigaFontiScheda, type Fonte } from "../../riga-fonti";
 import { StrisciaNumeri } from "../../striscia-numeri";
 import { ElencoDischi, ElencoRilievi, ElencoServizi, LinkPatch, dataBreve, infoDi, lnk } from "./dati-server";
 import { ServiziDelRuolo } from "./servizi";
@@ -100,7 +100,7 @@ export function PanoramicaWindows({ ctx }: { ctx: ContestoScheda }) {
         </div>
       </div>
 
-      <RigaFonti fonti={fonti} />
+      <RigaFontiScheda ctx={ctx} fonti={fonti} />
     </div>
   );
 }

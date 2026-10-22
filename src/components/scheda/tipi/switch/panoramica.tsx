@@ -13,7 +13,7 @@ import { accesoDa } from "@/lib/scheda/panoramica";
 import { casellePanoramicaSwitch, numeroPorta, porteDaGuardare, vlanDistinte, motiviPorta } from "@/lib/scheda/porte-da-guardare";
 import { Campo, parseUtcDate } from "../../blocchi";
 import { Riquadro } from "../../riquadro";
-import { RigaFonti, type Fonte } from "../../riga-fonti";
+import { RigaFontiScheda, type Fonte } from "../../riga-fonti";
 import { StrisciaNumeri } from "../../striscia-numeri";
 import type { ContestoScheda } from "../../contesto";
 import { vlanDaMatrice } from "@/lib/scheda/vlan-switch";
@@ -202,7 +202,7 @@ export function PanoramicaSwitch({ ctx }: { ctx: ContestoScheda }) {
         </div>
       </div>
 
-      <RigaFonti fonti={fonti} />
+      <RigaFontiScheda ctx={ctx} fonti={fonti} />
     </div>
   );
 }

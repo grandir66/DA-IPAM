@@ -24,7 +24,7 @@ Piano: [`docs/superpowers/plans/2026-10-22-scansione-automatica-da-discovery.md`
 
 - [x] Piano approvato da Riccardo (22/10: tavola «si va benissimo», piano «ok»)
 - [x] T1 tipo `apparati_scelti`, CHECK v11 di `scheduled_jobs`, tabella `job_apparati_esiti` (misura sulla copia dell'hub) — v0.9.861; v11 sulla copia 3-4 ms, 23 job identici, integrity ok; revisione completa: approvato (una colonna sconosciuta ora blocca la ricostruzione)
-- [ ] T2 regole pure: config, frequenze (ogni ora · ogni 4 ore · ogni giorno alle HH:MM), idoneità, letture valide
+- [x] T2 regole pure: config, frequenze (ogni ora · ogni 4 ore · ogni giorno alle HH:MM), idoneità, letture valide — regole pure; il job segue l ora italiana (fuso esplicito); revisione completa: 1 importante (fuso) corretto
 - [ ] T3 funzioni DB: stato degli apparati in una query, esiti per apparato
 - [ ] T4 letture estratte da «Interroga» e dal giro ARP, lucchetto per apparato, log senza nomi né IP
 - [ ] T5 il giro `apparati_scelti` nello scheduler (prova a vuoto sulla copia dell'hub)

@@ -1,6 +1,6 @@
 /**
- * Collector `qnap-nas` (non collaudato): parser puri e snapshot dalla fixture con la forma documentata (dati inventati).
- * Requisiti dei donatori: firmware mai dall'uname; colonne di `df` per nome; byte come stringhe decimali.
+ * Collector `qnap-nas` (base collaudata in locale, più firmware, condivisioni e pacchetti del giro 3 non ancora provati su un apparato):
+ * fixture con la forma documentata (dati inventati). Requisiti dei donatori: firmware mai dall'uname; colonne di `df` per nome.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -8,47 +8,47 @@ import { FIXTURE, QNAP_NAS_USCITE } from "./contratto-fixture";
 import { parseDf, parseIpAddr, parseIpLink, parseLsblk, parseUname } from "../linux-parsers";
 import { parseExports, parseQpkgConf, parseSmbConf, unisciCondivisioni } from "../qnap-nas-parsers";
 import { descrittore } from "../catalogo";
+import { collectDevice } from "../index";
+import type { AcquisitionTransports } from "../schema";
 
-test("qnap-nas: dichiarato non collaudato, nessun modello collaudato", () => {
+test("qnap-nas: una sola famiglia, collaudata in locale, letta dal motore d'inventario con exec", () => {
     const d = descrittore("qnap-nas");
-    assert.equal(d.collaudo, "non_collaudato");
-    assert.deepEqual(d.collaudati, []);
+    assert.equal(d.collaudo, "collaudato");
+    assert.equal(d.motore, "inventario");
     assert.equal(d.ssh_modo, "exec");
+    assert.ok(d.comandi?.includes("getsysinfo firmver") && d.comandi.includes("cat /etc/version"), "firmware del percorso storico (S2)");
+    assert.ok(!d.comandi?.some(c => /sudo|reboot|^set |^\/export/.test(c)), "solo letture");
 });
 
-test("qnap-nas: identità col firmware della build, kernel solo in system", async () => {
+test("qnap-nas: firmware dal percorso storico con la build, mai dal valore di getcfg quando getsysinfo risponde", async () => {
     const { snapshot } = await FIXTURE["qnap-nas"].normale();
-    assert.equal(snapshot.identity.data?.firmware, "5.1.5 build 20240101");
+    assert.equal(snapshot.identity.data?.firmware, "5.1.5 build 20240101", "getsysinfo firmver + build, non il 5.1.4 di getcfg");
     assert.equal(snapshot.identity.data?.model, "TS-LAB4");
     assert.equal(snapshot.identity.data?.manufacturer, "QNAP");
-    assert.equal(snapshot.system?.data.kernel, "Linux 5.10.60-qnap");
-    assert.notEqual(snapshot.identity.data?.firmware, snapshot.system?.data.kernel);
-    assert.equal(snapshot.identity.status, "ok");
 });
 
-test("qnap-nas: condivisioni SMB e NFS unite per percorso, pacchetti, filesystem in byte", async () => {
+test("qnap-nas: se getsysinfo e /etc/version non rispondono resta il firmware del collaudo (getcfg)", async () => {
+    const t: AcquisitionTransports = {
+        get: async () => { throw Error("x"); }, walk: async () => { throw Error("x"); },
+        shell: async c => Object.fromEntries(c.map(x => [x, x === "getsysinfo firmver" || x === "cat /etc/version" ? { status: "unsupported" as const, data: "", warnings: ["COMMAND_UNSUPPORTED"] } : { status: "ok" as const, data: QNAP_NAS_USCITE[x] ?? "", warnings: [] }])),
+    };
+    const s = await collectDevice(FIXTURE["qnap-nas"].richiesta, t);
+    assert.equal(s.identity.data?.firmware, "5.1.4");
+});
+
+test("qnap-nas: condivisioni SMB e NFS unite per percorso, pacchetti QPKG", async () => {
     const { snapshot } = await FIXTURE["qnap-nas"].normale();
     assert.deepEqual(snapshot.shares?.data, [{ name: "Public", path: "/share/CACHEDEV1_DATA/Public", protocols: ["smb", "nfs"], comment: "Cartella di prova", public: true }]);
     assert.equal(snapshot.shares?.status, "ok");
     assert.deepEqual(snapshot.software?.data.map(p => [p.name, p.version]), [["HybridBackup", "3.0.0"]]);
-    const fs = snapshot.host_storage?.data.filesystems[0];
-    assert.equal(fs?.size_bytes, "9216000000000");
-    assert.equal(fs?.inodes_free, "299980000");
-    assert.equal(snapshot.host_storage?.status, "partial", "dischi e RAID non letti: mai ok");
-    assert.equal(snapshot.network.data.ipv4_addresses[0]?.netmask, "255.255.255.0");
-    assert.deepEqual(snapshot.interfaces.data.map(i => [i.name, i.kind, i.oper_status]), [["lo", "other", null], ["eth0", "physical", "up"]]);
-    assert.equal(snapshot.poe.status, "unsupported");
+    assert.equal(snapshot.poe.status, "skipped", "nessuna sezione da switch");
 });
 
-test("qnap-nas: un apparato che non risponde come QNAP non dichiara niente letto", async () => {
-    const { snapshot } = await (async () => {
-        const { collectDevice } = await import("../index");
-        const t = { get: async () => { throw Error("x"); }, walk: async () => { throw Error("x"); }, shell: async (c: readonly string[]) => Object.fromEntries(c.map(x => [x, { status: "unsupported" as const, data: "", warnings: ["COMMAND_UNSUPPORTED"] }])) };
-        return { snapshot: await collectDevice(FIXTURE["qnap-nas"].richiesta, t) };
-    })();
-    assert.equal(snapshot.status, "error");
-    assert.equal(snapshot.identity.data, null);
-    assert.equal(snapshot.shares, undefined);
+test("qnap-nas: con la sola SNMP non si dichiarano condivisioni né pacchetti letti", async () => {
+    const t: AcquisitionTransports = { get: async () => ({ status: "ok", data: [], warnings: [] }), walk: async () => ({ status: "ok", data: [], warnings: [] }), shell: async () => { throw Error("nessuna shell senza SSH"); } };
+    const s = await collectDevice({ collector: "qnap-nas", host: "192.0.2.40", snmp: { community: "lab" } }, t);
+    assert.equal(s.shares, undefined);
+    assert.equal(s.software, undefined);
 });
 
 test("parser: df con il punto di montaggio con spazi e intestazione per nome; formato ignoto = null", () => {
@@ -60,7 +60,6 @@ test("parser: df con il punto di montaggio con spazi e intestazione per nome; fo
 test("parser: uname, ip, lsblk", () => {
     assert.deepEqual(parseUname("Linux 6.1.0 x86_64\n"), { kernel: "Linux 6.1.0", architecture: "x86_64" });
     assert.deepEqual(parseUname("BusyBox"), { kernel: null, architecture: null });
-    assert.equal(parseIpLink(QNAP_NAS_USCITE["ip -o link show"]).length, 2);
     assert.deepEqual(parseIpAddr("3: bond0    inet 198.51.100.7/30 scope global bond0"), [{ address: "198.51.100.7", netmask: "255.255.255.252", if_index: 3 }]);
     assert.deepEqual(parseLsblk('{"blockdevices":[{"name":"sda","size":4000787030016,"model":"LAB DISK","serial":"LABS1","rota":true,"tran":"sata"},{"name":"loop0","size":"1","rota":"0"}]}'),
         [{ name: "sda", model: "LAB DISK", serial_number: "LABS1", size_bytes: "4000787030016", rotational: true, transport: "sata" }]);

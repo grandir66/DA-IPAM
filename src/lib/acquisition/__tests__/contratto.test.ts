@@ -34,7 +34,9 @@ for (const id of ids) {
         assert.equal(snapshot.schema_version, "1.0");
         assert.equal(snapshot.collector, id);
         assert.equal(snapshot.collector_version, d.versione);
-        assert.ok(["ok", "partial"].includes(snapshot.identity.status), `identity ${snapshot.identity.status}`);
+        // Una console di controller non è un apparato singolo: la sua identità è `skipped` per costruzione.
+        const attese = d.famiglia === "controller" ? ["skipped"] : ["ok", "partial"];
+        assert.ok(attese.includes(snapshot.identity.status), `identity ${snapshot.identity.status}`);
         assert.equal(JSON.stringify(snapshot).includes(SEGRETO), false);
     });
 

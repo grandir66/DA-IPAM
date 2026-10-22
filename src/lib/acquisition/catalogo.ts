@@ -6,21 +6,26 @@
  * (la fixture): la prova di contratto fallisce se manca uno dei tre. Guida: docs/modules/acquisition.md.
  */
 import { SCRIPT_WINDOWS } from "./windows-script";
-import { QSS_COMMANDS, PROCURVE_COMMANDS, COMWARE_COMMANDS, QNAP_NAS_COMMANDS, MIKROTIK_ROUTEROS_COMMANDS, LINUX_COMMANDS, SYNOLOGY_NAS_COMMANDS } from "./comandi";
+import { QSS_COMMANDS, PROCURVE_COMMANDS, COMWARE_COMMANDS, QNAP_NAS_COMMANDS, MIKROTIK_ROUTEROS_COMMANDS, LINUX_COMMANDS, SYNOLOGY_DSM_COMMANDS, UBIQUITI_DEVICE_COMMANDS, PROXMOX_VE_COMMANDS } from "./comandi";
 
+/** Le credenziali che l'archivio dell'app sa assegnare a un apparato. */
 export type ProtocolloCollector = "snmp" | "ssh" | "api" | "winrm";
+/** Più `unifi` (API key della console), che l'app non assegna agli apparati: solo CLI e controller. */
+export type ProtocolloDescrittore = ProtocolloCollector | "unifi";
 export type StatoCollaudo = "collaudato" | "non_collaudato";
 
 export interface DescrittoreCollector {
     id: string;
     /** semver del collector: sale quando cambia ciò che produce, indipendente da `schema_version`. */
     versione: string;
-    /** Famiglia di oggetti (switch, nas, hypervisor, storage...). */
+    /** Famiglia di oggetti (switch, router, nas, server, hypervisor, storage, ap, controller). Decide anche dove l'app proietta le porte: `FAMIGLIE_CON_PORTE`. */
     famiglia: string;
+    /** `inventario` = lo legge il motore d'inventario (`inventory-collector.ts`); assente = collector proprio. */
+    motore?: "inventario";
     /** Prodotti riconosciuti, in parole (non è un elenco di modelli collaudati). */
     prodotti: readonly string[];
     /** Credenziali accettate; `una_di` = almeno una di queste è obbligatoria; le altre sono rifiutate. */
-    credenziali: { ammesse: readonly ProtocolloCollector[]; una_di: readonly ProtocolloCollector[] };
+    credenziali: { ammesse: readonly ProtocolloDescrittore[]; una_di: readonly ProtocolloDescrittore[] };
     /** Sezioni dello snapshot che questo collector popola davvero (le altre restano `skipped`/`unsupported`). */
     sezioni: readonly string[];
     /** Allowlist dei comandi di console; `null` se il collector non usa comandi liberi (API, script fissi). */
@@ -69,18 +74,18 @@ export const CATALOGO = [
         sezioni: ["identity", "interfaces", "vlans", "network", "storage"], comandi: null, collaudo: "collaudato", collaudati: [{ modello: "NetApp AFF A70", firmware: "ONTAP 9.16.1P11", nota: "MetroCluster IP" }],
     },
     {
-        // Non collaudato: parser e fixture dalla forma documentata (DADude3 qnap.py), nessun QNAP NAS vero letto.
-        id: "qnap-nas", versione: "0.1.0", famiglia: "nas", prodotti: ["QNAP NAS (QTS, QuTS hero)"],
-        credenziali: { ammesse: ["ssh"], una_di: ["ssh"] },
-        sezioni: ["identity", "system", "interfaces", "network", "resources", "host_storage", "shares", "software"], comandi: QNAP_NAS_COMMANDS, ssh_modo: "exec",
-        collaudo: "non_collaudato", collaudati: [],
+        // Base collaudata in locale (22/10): SSH e SNMP su QNAP veri. Dal giro 3: firmware vero (S2), condivisioni e pacchetti QPKG, non ancora provati su un apparato.
+        id: "qnap-nas", versione: "1.1.0", famiglia: "nas", motore: "inventario", prodotti: ["QNAP NAS (QTS, QuTS hero)"],
+        credenziali: { ammesse: ["snmp", "ssh"], una_di: ["snmp", "ssh"] },
+        sezioni: ["identity", "interfaces", "network", "resources", "shares", "software", "inventory"], comandi: QNAP_NAS_COMMANDS, ssh_modo: "exec",
+        collaudo: "collaudato", collaudati: [{ modello: "QNAP NAS (via SNMP: 4 dischi, 2 volumi, 19 interfacce; altro via SSH: 9 interfacce)", firmware: "non registrato nel repo", nota: "condivisioni, pacchetti e firmware da getsysinfo/etc-version non ancora provati su un apparato" }],
     },
     {
-        // Non collaudato: parser della scheda MikroTik (uscite vere anonime nel repo) più monitor ethernet/PoE dalla documentazione.
-        id: "mikrotik-routeros", versione: "0.1.0", famiglia: "router", prodotti: ["MikroTik RouterOS 7 (router e switch CRS)"],
-        credenziali: { ammesse: ["ssh"], una_di: ["ssh"] },
-        sezioni: ["identity", "interfaces", "vlans", "forwarding", "neighbors", "spanning_tree", "aggregation", "poe", "network", "resources"], comandi: MIKROTIK_ROUTEROS_COMMANDS, ssh_modo: "exec",
-        collaudo: "non_collaudato", collaudati: [],
+        // Base collaudata in locale (22/10): router e switch veri. Dal giro 3: velocità e duplex, PoE, FDB, STP per porta, non ancora provati su un apparato.
+        id: "mikrotik-routeros", versione: "1.1.0", famiglia: "router", motore: "inventario", prodotti: ["MikroTik RouterOS 7 (router e switch CRS)"],
+        credenziali: { ammesse: ["snmp", "ssh"], una_di: ["snmp", "ssh"] },
+        sezioni: ["identity", "interfaces", "vlans", "forwarding", "neighbors", "spanning_tree", "aggregation", "poe", "network", "resources", "inventory"], comandi: MIKROTIK_ROUTEROS_COMMANDS, ssh_modo: "exec",
+        collaudo: "collaudato", collaudati: [{ modello: "MikroTik router (12 interfacce) e switch (7 interfacce)", firmware: "RouterOS 7, versione non registrata nel repo", nota: "SwOS e access point radio non collaudati; PoE, FDB e STP per porta non ancora provati" }],
     },
     {
         // Non collaudato: script PowerShell fissi (allowlist WinRM), busta JSON dalla forma documentata dei cmdlet.
@@ -97,13 +102,38 @@ export const CATALOGO = [
         collaudo: "non_collaudato", collaudati: [],
     },
     {
-        // Non collaudato: uscite dalla documentazione DSM e da DADude3 synology.py; `-enum`/`--enum` da verificare sulla DSM vera.
-        id: "synology-nas", versione: "0.1.0", famiglia: "nas", prodotti: ["Synology NAS (DSM 7)"],
+        // Base collaudata in locale (22/10): un Synology vero via SSH/SNMP. Dal giro 3: condivisioni e pacchetti, non ancora provati su un apparato.
+        id: "synology-dsm", versione: "1.1.0", famiglia: "nas", motore: "inventario", prodotti: ["Synology NAS (DSM)"],
+        credenziali: { ammesse: ["snmp", "ssh"], una_di: ["snmp", "ssh"] },
+        sezioni: ["identity", "interfaces", "network", "resources", "shares", "software", "inventory"], comandi: SYNOLOGY_DSM_COMMANDS, ssh_modo: "exec",
+        collaudo: "collaudato", collaudati: [{ modello: "Synology NAS (4 dischi, 4 volumi RAID, 8 interfacce)", firmware: "DSM, versione non registrata nel repo", nota: "un secondo Synology era irraggiungibile; condivisioni e pacchetti non ancora provati; `synoshare --enum` o `-enum` da verificare" }],
+    },
+    {
+        // Collaudato in locale (22/10): SNMP su un access point (13 interfacce). SSH rifiutata (autenticazione): nessuna lettura SSH provata.
+        id: "ubiquiti-device", versione: "1.0.0", famiglia: "ap", motore: "inventario", prodotti: ["Ubiquiti UniFi (access point e switch, lettura diretta)"],
+        credenziali: { ammesse: ["snmp", "ssh"], una_di: ["snmp", "ssh"] },
+        sezioni: ["identity", "interfaces", "network", "resources", "inventory"], comandi: UBIQUITI_DEVICE_COMMANDS, ssh_modo: "exec",
+        collaudo: "collaudato", collaudati: [{ modello: "Ubiquiti UniFi access point (13 interfacce)", firmware: "non registrato nel repo", nota: "solo SNMP; SSH non collaudata, un secondo apparato non ha risposto" }],
+    },
+    {
+        // Collaudato in locale (22/10): un cluster Proxmox VE di 4 nodi (88 risorse). Nell'app solo credenziali `ssh` dell'archivio; `local_ssh` è per la CLI.
+        id: "proxmox-ve", versione: "1.0.0", famiglia: "hypervisor", motore: "inventario", prodotti: ["Proxmox VE (nodo e cluster visibile)"],
         credenziali: { ammesse: ["ssh"], una_di: ["ssh"] },
-        sezioni: ["identity", "system", "interfaces", "network", "resources", "host_storage", "shares", "software"], comandi: SYNOLOGY_NAS_COMMANDS, ssh_modo: "exec",
-        collaudo: "non_collaudato", collaudati: [],
+        sezioni: ["identity", "interfaces", "network", "resources", "inventory"], comandi: PROXMOX_VE_COMMANDS, ssh_modo: "exec",
+        collaudo: "collaudato", collaudati: [{ modello: "Proxmox VE, cluster di 4 nodi visibili e 88 risorse", firmware: "versione non registrata nel repo" }],
+    },
+    {
+        // Collaudato in locale (22/10): due console UniFi OS con API key (17 e 11 apparati). Resta separato dai device diretti.
+        id: "unifi-controller", versione: "1.0.0", famiglia: "controller", prodotti: ["UniFi OS console (inventario per sito, sola lettura)"],
+        credenziali: { ammesse: ["unifi"], una_di: ["unifi"] },
+        sezioni: ["controller_inventory"], comandi: null,
+        collaudo: "collaudato", collaudati: [{ modello: "UniFi OS console (17 apparati) e UniFi OS console (11 apparati)", firmware: "non registrato nel repo", nota: "radio e client non raccolti" }],
     },
 ] as const satisfies readonly DescrittoreCollector[];
+
+/** Famiglie con porte da switch: solo loro ricevono la proiezione su `switch_ports` (NAS, server, hypervisor, controller e AP no). */
+export const FAMIGLIE_CON_PORTE: ReadonlySet<string> = new Set(["switch", "router"]);
+export function ricevePorteDaSwitch(id: CollectorId): boolean { return FAMIGLIE_CON_PORTE.has(descrittore(id).famiglia); }
 
 export type CollectorId = (typeof CATALOGO)[number]["id"];
 

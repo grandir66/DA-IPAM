@@ -361,3 +361,29 @@ Piano: `docs/superpowers/plans/2026-10-21-collector-netapp-ontap.md`; stesso per
 
 - [x] Trovati nel `dev` locale di Riccardo due commit non pubblicati (`6395bfa9`, `6bf94155`): profili collaudati `unifi-controller`, `synology-dsm`, `qnap-nas`, `mikrotik-routeros`, `ubiquiti-device`, `proxmox-ve`, su base di prima di C0. Pubblicati sul ramo `collector-locali`.
 - [ ] Giro cloud 4 (leggero): merge, un collector per famiglia (base collaudata), porte solo per switch/router, aggancio al riconoscimento, scansione da Reti allineata (prompt, «Giro 4»).
+
+## 2026-10-21 — Collector dedicati NAS e Proxmox (seguito multivendor)
+
+Livello Base, sola lettura e sviluppo locale; accessi NAS confermati da Riccardo, Proxmox da vault locale. Niente push/deploy o DB.
+
+- [x] Identificati tre NAS raggiungibili e target Proxmox documentato; accessi/campioni solo nel vault. Quarto NAS irraggiungibile al preflight, collaudo rimandato.
+- [x] Estratte letture/parser da nas-acquisition e Proxreporter/Proxmox, senza DB, cron o installazioni remote.
+- [x] Aggiunti profili Synology DSM, QNAP NAS e Proxmox VE nello stesso contratto/CLI; manuale e consegna aggiornati, copertura parziale dichiarata.
+- [x] 22/10: 123 prove verdi, lint 0 errori/69 avvisi storici, typecheck/build verdi; campioni reali e controllo segreti, commit locale selettivo.
+- [x] MikroTik RouterOS: profilo dedicato, router 12 e switch 7 interfacce, VLAN/bridge/ARP/rotte/vicini; campioni e credenziali solo nel vault.
+- [x] Ubiquiti diretto: profilo SNMP/SSH dedicato, AP con 13 interfacce SNMP; SSH rifiutata (auth_failed), tentativi fermati. Altro switch non acquisito per mancata risposta. Controller già collaudati; offline non equivale a rimosso.
+
+## 2026-10-22 — UniFi controller, prima tappa multivendor
+
+- [x] Collector `unifi-controller` integrato nel contratto/registry/CLI; riuso del client read-only e parser senza DB.
+- [x] 90 prove verdi, typecheck verde; CLI su entrambi i controller, 17 e 11 apparati, pin conservati negli input del vault e segreti assenti dai JSON.
+- [x] Lint (0 errori/69 avvisi preesistenti), typecheck, build e 24 regressioni del client UniFi verdi; commit selettivo locale, nessun push/deploy.
+- [x] Prima copertura parziale degli altri cinque profili completata il 22/10; radio/client ancora da estendere.
+
+## 2026-10-22 — Chiusura prima copertura multivendor
+
+- [x] Allowlist statiche, sessione SSH per batch e OpenSSH locale opt-in Proxmox; errori, dati parziali e comandi unsupported distinti.
+- [x] Regressione MikroTik capacità stringa→array corretta e verificata sul router reale; BigInt senza literal per target TS del progetto.
+- [ ] Accesso SSH Ubiquiti da correggere/confermare: autenticazione rifiutata, nessun ulteriore tentativo automatico.
+- [ ] NAS irraggiungibile da ricollaudare quando raggiungibile; vecchi NAS senza lsblk/ip JSON restano parziali, nessun tool installato.
+- [ ] Estensioni future: radio/client avanzati, PoE/FDB/STP operativo completi, API native NAS/Proxmox e dettaglio dischi VM; integrazione UI/DB ancora separata.

@@ -9,7 +9,7 @@
  * percorso di sempre (prova `aggancio.test.ts`).
  */
 import { CATALOGO, COLLECTOR_IDS, descrittore, type CollectorId } from "@/lib/acquisition";
-import type { ProtocolloCollector } from "@/lib/acquisition/catalogo";
+import type { ProtocolloCollector, ProtocolloDescrittore } from "@/lib/acquisition/catalogo";
 import { collectorPossibili, type ApparatoDaRiconoscere } from "@/lib/acquisition/riconosci";
 import { credenzialiApparatoDb, FONTI_APPARATO } from "@/lib/credentials/resolve";
 import { acquisizioneModulareAccesa, getCurrentTenantCode, getTenantDb, sceltaFonteAcquisizione, type SceltaFonteAcquisizione } from "@/lib/db-tenant";
@@ -57,12 +57,15 @@ export function valutaFonte(device: ApparatoDaRiconoscere & { id: number }, deps
   const collector = sceltaValida ?? possibili[0];
   const d = descrittore(collector);
   const credenziali: CredenzialiProposte = {};
-  for (const p of d.credenziali.ammesse) {
+  // `unifi` (API key della console) non è una credenziale che l'app assegna a un apparato: non entra mai qui.
+  const doApp = (l: readonly ProtocolloDescrittore[]) => l.filter((p): p is ProtocolloCollector => p !== "unifi");
+  for (const p of doApp(d.credenziali.ammesse)) {
     const primo = deps.candidati(device.id, p)[0];
     if (primo) credenziali[p] = primo;
   }
-  if (!d.credenziali.una_di.some((p) => credenziali[p])) {
-    return { esito: "dubbio", motivo: "credenziali", collector, possibili, richieste: d.credenziali.una_di };
+  const unaDi = doApp(d.credenziali.una_di);
+  if (unaDi.length === 0 || !unaDi.some((p) => credenziali[p])) {
+    return { esito: "dubbio", motivo: "credenziali", collector, possibili, richieste: unaDi };
   }
   return { esito: "pronta", collector, possibili, credenziali, scelta: sceltaValida ? scelta : null };
 }

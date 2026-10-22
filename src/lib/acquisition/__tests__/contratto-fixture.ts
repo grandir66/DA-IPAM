@@ -8,6 +8,8 @@ import type { AcquisitionRequest, AcquisitionSnapshot, AcquisitionTransports, Re
 import { collectDevice } from "../index";
 import { collectVmwareEsxi } from "../vmware-esxi";
 import { collectNetappOntap } from "../netapp-ontap";
+import { collectUnifiController } from "../unifi-controller";
+import type { createUnifiClient } from "../../integrations/unifi-api";
 import { ONTAP_ENDPOINTS } from "../ontap-transport";
 import type { OntapInventory } from "../ontap-transport";
 import type { VsphereInventory, PropertyObject } from "../vsphere-transport";
@@ -101,16 +103,17 @@ function perExec(richiesta: AcquisitionRequest, uscita: (comando: string) => str
     };
 }
 
-// QNAP NAS (forma da DADude3 qnap.py e dalla documentazione QTS; dati inventati).
+// QNAP NAS (forma da DADude3 qnap.py, dalla documentazione QTS e dalle uscite del motore d'inventario; dati inventati).
+const linkJson = (nome: string, mac: string, idx = 2) => JSON.stringify([{ ifindex: 1, ifname: "lo", mtu: 65536, operstate: "UNKNOWN", address: "00:00:00:00:00:00" }, { ifindex: idx, ifname: nome, mtu: 1500, operstate: "UP", address: mac }]);
+const addrJson = (nome: string, ip: string) => JSON.stringify([{ ifindex: 2, ifname: nome, addr_info: [{ family: "inet", local: ip, prefixlen: 24, scope: "global" }] }]);
 const qnapNasUscite: Record<string, string> = {
-    "getsysinfo model": "TS-LAB4\n", "getsysinfo serial": "LABQ0001\n", "getsysinfo firmver": "5.1.5\n", "cat /etc/version": "5.1.5\n",
-    "cat /etc/default_config/WEBAPP.build": "20240101\n", "cat /etc/platform.conf": "Platform = LAB\nDISPLAY_NAME = TS-LAB4\n",
-    "hostname": `nas-${SEGRETO}\n`, "uname -srm": "Linux 5.10.60-qnap x86_64\n", "cat /proc/uptime": "3600.50 7000.10\n",
-    "cat /proc/meminfo": "MemTotal:        8000000 kB\nMemFree:          100000 kB\nMemAvailable:    4000000 kB\n",
-    "ip -o link show": "1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN mode DEFAULT group default qlen 1000\\    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00\n2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc mq state UP mode DEFAULT group default qlen 1000\\    link/ether 02:00:00:00:10:01 brd ff:ff:ff:ff:ff:ff\n",
-    "ip -o -4 addr show": "2: eth0    inet 192.0.2.40/24 brd 192.0.2.255 scope global eth0\\       valid_lft forever preferred_lft forever\n",
+    "uname -s": "Linux\n", "getsysinfo model": "TS-LAB4\n", "getsysinfo serial_num": "LABQ0001\n", "getcfg System Version -f /etc/config/uLinux.conf": "5.1.4\n",
+    "getsysinfo firmver": "5.1.5\n", "cat /etc/version": "5.1.5\n", "cat /etc/default_config/WEBAPP.build": "20240101\n",
+    "hostname": `nas-${SEGRETO}\n`,
+    "cat /proc/meminfo": "MemTotal:        8000000 kB\nMemFree:          100000 kB\nMemAvailable:    4000000 kB\n", "cat /proc/mdstat": "Personalities : [raid1]\nmd1 : active raid1 sda3[0] sdb3[1]\n",
     "df -P -k": "Filesystem           1024-blocks      Used Available Capacity Mounted on\n/dev/mapper/cachedev1 9000000000 1000000000 8000000000  11% /share/CACHEDEV1_DATA\n",
-    "df -P -i": "Filesystem              Inodes   IUsed     IFree IUse% Mounted on\n/dev/mapper/cachedev1 300000000  20000 299980000    1% /share/CACHEDEV1_DATA\n",
+    "ip -j link show": linkJson("eth0", "02:00:00:00:40:01"), "ip -j address show": addrJson("eth0", "192.0.2.40"),
+    "lsblk -b -J -o NAME,TYPE,SIZE,MODEL,SERIAL,ROTA": '{"blockdevices":[{"name":"sda","type":"disk","size":4000787030016,"model":"LAB DISK","serial":"LABS1","rota":true}]}',
     "cat /etc/config/smb.conf": "[global]\nworkgroup = LAB\n[Public]\npath = /share/CACHEDEV1_DATA/Public\ncomment = Cartella di prova\npublic = yes\n",
     "cat /etc/exports": "\"/share/CACHEDEV1_DATA/Public\" 192.0.2.0/24(rw,async,no_subtree_check)\n",
     "cat /etc/config/qpkg.conf": "[HybridBackup]\nName = HybridBackup\nVersion = 3.0.0\nAuthor = QNAP Systems, Inc.\nEnable = TRUE\n",
@@ -125,7 +128,7 @@ const mikrotikUscite: Record<string, string> = {
     "/system resource print": "                   uptime: 2w20m57s\n                  version: 7.24.5 (stable)\n             total-memory: 1024.0MiB\n              free-memory: 512.0MiB\n                 cpu-load: 3%\n               board-name: CRS-LAB-8P\n",
     "/system routerboard print": "       routerboard: yes\n             model: CRS-LAB-8P\n     serial-number: LABMK0001\n  current-firmware: 7.24.5\n",
     "/system identity print": `  name: rt-${SEGRETO}\n`,
-    "/interface print terse": " 0 RS name=ether1 default-name=ether1 type=ether mtu=1500 mac-address=02:00:00:00:20:01\n 1  S name=ether2 default-name=ether2 type=ether mtu=1500 mac-address=02:00:00:00:20:02\n 2 R  name=bond1 type=bond mtu=1500 mac-address=02:00:00:00:20:03\n 3 R  name=bridge type=bridge mtu=auto mac-address=02:00:00:00:20:04\n",
+    "/interface print terse without-paging": " 0 RS name=ether1 default-name=ether1 type=ether mtu=1500 mac-address=02:00:00:00:20:01\n 1  S name=ether2 default-name=ether2 type=ether mtu=1500 mac-address=02:00:00:00:20:02\n 2 R  name=bond1 type=bond mtu=1500 mac-address=02:00:00:00:20:03\n 3 R  name=bridge type=bridge mtu=auto mac-address=02:00:00:00:20:04\n",
     "/interface ethernet monitor [find] once": "                      name: ether1    ether2\n                    status: link-ok   no-link\n          auto-negotiation: done      done\n                      rate: 1Gbps\n               full-duplex: yes\n",
     "/interface ethernet poe monitor [find] once": "                name: ether1     ether2\n             poe-out: auto-on    off\n      poe-out-status: powered-on disabled\n     poe-out-voltage: 24.1V\n     poe-out-current: 120mA\n       poe-out-power: 2.9W\n",
     "/interface bridge print terse without-paging": " 0 R name=bridge mtu=auto mac-address=02:00:00:00:20:04 protocol-mode=rstp priority=0x8000 vlan-filtering=yes\n",
@@ -134,7 +137,7 @@ const mikrotikUscite: Record<string, string> = {
     "/interface bridge vlan print terse without-paging": " 0   bridge=bridge vlan-ids=10 tagged=bridge,bond1 untagged=ether1 current-tagged=bridge,bond1 current-untagged=ether1\n 1   bridge=bridge vlan-ids=100-102,200 tagged=bridge,bond1 untagged= current-tagged= current-untagged=\n",
     "/interface bridge host print terse without-paging": " 0  D mac-address=02:00:00:00:30:01 vid=10 on-interface=ether1 bridge=bridge\n",
     "/interface bonding print terse without-paging": " 0 R name=bond1 mtu=1500 slaves=ether3,ether4 mode=802.3ad\n",
-    "/ip neighbor print terse": " 0 interface=bond1 address=192.0.2.1 address4=192.0.2.1 mac-address=02:00:00:00:40:01 identity=sw-core platform=MikroTik version=7.24.5 (stable) interface-name=sfp1 system-caps-enabled=bridge,router discovered-by=lldp\n",
+    "/ip neighbor print terse without-paging": " 0 interface=bond1 address=192.0.2.1 address4=192.0.2.1 mac-address=02:00:00:00:40:01 identity=sw-core platform=MikroTik version=7.24.5 (stable) interface-name=sfp1 system-caps-enabled=bridge,router discovered-by=lldp\n",
     "/ip address print terse without-paging": " 0   address=192.0.2.2/24 network=192.0.2.0 interface=bridge actual-interface=bridge\n",
     "/ip arp print terse without-paging": "   0 DC address=192.0.2.50 mac-address=02:00:00:00:30:01 interface=bridge published=no status=reachable\n",
 };
@@ -203,24 +206,21 @@ function perExecLinux(): FixtureCollector {
     return { ...base, normale: () => esegui(c => linuxUscite[c] ?? "") };
 }
 
-// Synology DSM 7 (forme dalla documentazione DSM e da DADude3 synology.py; dati inventati). synoshare senza root: errore.
+// Synology DSM 7 (forme dalla documentazione DSM, da DADude3 synology.py e dal motore d'inventario; dati inventati). synoshare senza root: errore.
 const synologyUscite: Record<string, string> = {
-    "cat /etc.defaults/VERSION": 'majorversion="7"\nminorversion="2"\nproductversion="7.2.1"\nbuildnumber="69057"\nsmallfixnumber="5"\n',
-    "cat /etc/synoinfo.conf": 'upnpmodelname="DS-LAB"\nunique="synology_lab_dslab"\n', "cat /proc/sys/kernel/syno_hw_version": "DS-LAB\n",
-    "cat /proc/sys/kernel/syno_serial": "LABS0001\n", "hostname": `syn-${SEGRETO}\n`, "uname -srm": "Linux 4.4.302+ x86_64\n", "cat /proc/uptime": "1000.00 2000.00\n",
-    "cat /proc/meminfo": "MemTotal:        4000000 kB\nMemAvailable:    2000000 kB\n",
-    "ip -o link show": "2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc mq state UP mode DEFAULT group default qlen 1000\\    link/ether 02:00:00:00:70:01 brd ff:ff:ff:ff:ff:ff\n",
-    "ip -o -4 addr show": "2: eth0    inet 192.0.2.70/24 brd 192.0.2.255 scope global eth0\\       valid_lft forever preferred_lft forever\n",
+    "uname -s": "Linux\n", "hostname": `syn-${SEGRETO}\n`, "cat /proc/sys/kernel/syno_hw_version": "DS-LAB\n", "cat /proc/sys/kernel/syno_serial": "LABS0001\n", "cat /etc.defaults/VERSION": 'majorversion="7"\nminorversion="2"\nproductversion="7.2.1"\nbuildnumber="69057"\nsmallfixnumber="5"\n',
+    "cat /proc/meminfo": "MemTotal:        4000000 kB\nMemFree:         1000000 kB\n", "cat /proc/mdstat": "md2 : active raid1 sata1p3[0] sata2p3[1]\n",
     "df -P -k": "Filesystem         1024-blocks       Used  Available Capacity Mounted on\n/dev/mapper/cachedev_0 7000000000 1000000000 6000000000      15% /volume1\n",
-    "df -P -i": "Filesystem            Inodes IUsed IFree IUse% Mounted on\n/dev/mapper/cachedev_0      0     0     0     - /volume1\n",
+    "ip -j link show": linkJson("eth0", "02:00:00:00:70:01"), "ip -j address show": addrJson("eth0", "192.0.2.70"),
+    "lsblk -b -J -o NAME,TYPE,SIZE,MODEL,SERIAL,ROTA": '{"blockdevices":[{"name":"sata1","type":"disk","size":4000787030016,"model":"LAB DISK","serial":"LABS2","rota":true}]}',
     "cat /etc/samba/smb.share.conf": "[Dati]\npath=/volume1/Dati\ncomment=Prova\n",
     "cat /etc/exports": "/volume1/Dati\t192.0.2.0/24(rw,async,no_wdelay,crossmnt,insecure,all_squash,insecure_locks,sec=sys,anonuid=1025,anongid=100)\n",
     "cat /var/packages/*/INFO": 'package="HyperBackup"\nversion="4.1.0-3718"\nmaintainer="Synology Inc."\npackage="SynologyPhotos"\nversion="1.6.2-0720"\nmaintainer="Synology Inc."\n',
 };
-const synologyReq: AcquisitionRequest = { collector: "synology-nas", host: "192.0.2.70", ssh: { username: "lab", password: SEGRETO } };
+const synologyReq: AcquisitionRequest = { collector: "synology-dsm", host: "192.0.2.70", ssh: { username: "lab", password: SEGRETO } };
 export const SYNOLOGY_USCITE = synologyUscite;
 function perExecSynology(): FixtureCollector {
-    const base = perExec(synologyReq, c => synologyUscite[c] ?? "", ["cat /etc.defaults/VERSION"]);
+    const base = perExec(synologyReq, c => synologyUscite[c] ?? "", ["hostname", "cat /etc.defaults/VERSION"]);
     const esegui = async (): Promise<Esito> => {
         let chiamate = 0;
         const t: AcquisitionTransports = {
@@ -232,6 +232,35 @@ function perExecSynology(): FixtureCollector {
     return { ...base, normale: esegui };
 }
 
+
+// Ubiquiti diretto e Proxmox VE (forme del motore d'inventario; dati inventati).
+const ubiquitiUscite: Record<string, string> = {
+    "uname -s": "Linux\n", "hostname": `ap-${SEGRETO}\n`, "cat /etc/version": "6.6.0\n", "mca-status": '{"model":"UAP-LAB","name":"ap-lab","mac":"02:00:00:00:80:01","version":"6.6.0","password":"non-esportare"}',
+    "cat /proc/meminfo": "MemTotal:         256000 kB\nMemFree:          100000 kB\n", "ip -j link show": linkJson("eth0", "02:00:00:00:80:01"), "ip -j address show": addrJson("eth0", "192.0.2.80"),
+    "ip -j neighbor show": '[{"dst":"192.0.2.1","dev":"eth0","lladdr":"02:00:00:00:80:02","state":["REACHABLE"]}]',
+};
+const ubiquitiReq: AcquisitionRequest = { collector: "ubiquiti-device", host: "192.0.2.80", ssh: { username: "lab", password: SEGRETO } };
+const proxmoxUscite: Record<string, string> = {
+    "pveversion": "pve-manager/8.2.4/faa83925c9641325 (running kernel: 6.8.8-2-pve)\n", "hostname": `pve-${SEGRETO}\n`,
+    "pvesh get /nodes --output-format json": '[{"node":"pve-lab","status":"online","cpu":0.1,"maxcpu":8,"mem":1000,"maxmem":8000,"disk":1,"maxdisk":100,"uptime":1000,"id":"node/pve-lab","type":"node"}]',
+    "pvesh get /cluster/status --output-format json": '[{"type":"node","name":"pve-lab","online":1,"local":1,"ip":"192.0.2.90","id":"node/pve-lab","nodeid":1}]',
+    "pvesh get /cluster/resources --output-format json": '[{"id":"qemu/100","type":"qemu","node":"pve-lab","vmid":100,"name":"guest-lab","status":"running","maxmem":1000,"token":"non-esportare"}]',
+    "ip -d -j link show": linkJson("vmbr0", "02:00:00:00:90:01"), "ip -j address show": addrJson("vmbr0", "192.0.2.90"), "cat /proc/meminfo": "MemTotal:        8000000 kB\nMemFree:         1000000 kB\n",
+    "lsblk -b -J -o NAME,TYPE,SIZE,MODEL,SERIAL,ROTA": '{"blockdevices":[]}',
+};
+const proxmoxReq: AcquisitionRequest = { collector: "proxmox-ve", host: "192.0.2.90", ssh: { username: "lab", password: SEGRETO } };
+
+// UniFi controller: client finto (nessuna rete), un apparato offline che resta inventario.
+const unifiReq: AcquisitionRequest = { collector: "unifi-controller", host: "192.0.2.100", unifi: { api_token: SEGRETO } };
+function unifiFixture(): FixtureCollector {
+    const finto = (guasto: boolean) => (() => ({ kind: "udm", probe: async () => ({ ok: true, devices: 0, certPin: null, certPinRecorded: false }), listDevices: async () => { if (guasto) throw Error(SEGRETO); return [{ mac: "02:00:00:00:a0:01", name: `sw-${SEGRETO}`, model: "USW-LAB", type: "usw", ip: "192.0.2.101", state: 1, version: "7.0.0", serial: null, adopted: true, port_table: [], lldp_table: [], uplink: null }]; }, listClients: async () => [] })) as unknown as typeof createUnifiClient;
+    return {
+        richiesta: unifiReq,
+        normale: async () => ({ snapshot: await collectUnifiController(unifiReq, finto(false)), chiamateShell: 0 }),
+        trasportoGuasto: async () => ({ snapshot: await collectUnifiController(unifiReq, finto(true)), chiamateShell: 0 }),
+    };
+}
+
 export const FIXTURE: Record<CollectorId, FixtureCollector> = {
     "qnap-switch": conGarbage(perShell(qnapReq, consola({ identita: { "show system-information": qnapIdent } }, qnapNormale)), { "show system-information": qnapIdent }, undefined),
     "hp-procurve": conGarbage(perShell(procurveReq, consola({ identita: procurveIdent, snmp: procurveSnmp }, procurveNormale)), procurveIdent, procurveSnmp),
@@ -241,11 +270,14 @@ export const FIXTURE: Record<CollectorId, FixtureCollector> = {
         normale: async () => ({ snapshot: await collectVmwareEsxi(esxiReq, async () => esxiRaw()), chiamateShell: 0 }),
         trasportoGuasto: async () => ({ snapshot: await collectVmwareEsxi(esxiReq, async () => { throw Error(SEGRETO); }), chiamateShell: 0 }),
     },
-    "qnap-nas": perExec(qnapNasReq, c => qnapNasUscite[c] ?? "", ["getsysinfo model", "getsysinfo firmver", "cat /etc/version", "cat /etc/default_config/WEBAPP.build"]),
+    "qnap-nas": perExec(qnapNasReq, c => qnapNasUscite[c] ?? "", ["hostname", "getsysinfo model", "getsysinfo firmver", "cat /etc/version", "cat /etc/default_config/WEBAPP.build"]),
     "mikrotik-routeros": perExec(mikrotikReq, c => mikrotikUscite[c] ?? "", ["/system resource print", "/system routerboard print"]),
     "windows": perWinrm(windowsReq, id => windowsUscite[id] ?? ""),
     "linux": perExecLinux(),
-    "synology-nas": perExecSynology(),
+    "synology-dsm": perExecSynology(),
+    "ubiquiti-device": perExec(ubiquitiReq, c => ubiquitiUscite[c] ?? "", ["hostname", "cat /etc/version"]),
+    "proxmox-ve": perExec(proxmoxReq, c => proxmoxUscite[c] ?? "", ["pveversion", "hostname"]),
+    "unifi-controller": unifiFixture(),
     "netapp-ontap": {
         richiesta: ontapReq,
         normale: async () => ({ snapshot: await collectNetappOntap(ontapReq, async () => ontapRaw()), chiamateShell: 0 }),

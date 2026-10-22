@@ -249,3 +249,11 @@ finché non si vede il risultato nell’interfaccia dev con dati autorizzati.
 Consegna finale: file cambiati, commit/pacchetto installato, prove con exit code,
 limiti ancora aperti, cosa è acceso/spento. Non eseguire push/deploy live o timer
 per concludere questa consegna.
+
+## Aggiornamento collector multivendor — 2026-10-22
+
+Sono aggiunti i profili `unifi-controller`, `synology-dsm`, `qnap-nas`, `mikrotik-routeros`, `ubiquiti-device`, `proxmox-ve` alla CLI comune. Vedere `docs/modules/acquisition.md` per input, copertura reale e limiti: questi ultimi cinque sono una prima acquisizione parziale, non copertura completa del prodotto. I file nuovi sono `device-profiles.ts`, `inventory-parsers.ts`, `inventory-collector.ts` e relativi test; aggiornati schema, registry, allowlist/trasporto e classificazione comando SSH unsupported.
+
+L'adapter deve trattare `inventory.tables` come osservazioni con stato e fonte; mai trasformare una tabella fallita in cancellazione. Le tabelle cluster Proxmox non appartengono tutte al solo chassis di target: `scope=proxmox-cluster-visible`, ogni risorsa mantiene node/id/type. Le porte virtuali Linux non sono cavi; le righe VLAN RouterOS hanno il bridge come contesto. `*_vendor_units` non sono byte. Il profilo dichiarato dal chiamante non dimostra da solo il produttore. Il controller UniFi resta distinto dai device diretti: correlare MAC e seriale, mantenendo fonte e sito. Token/password/chiavi restano nel vault; local_ssh è solo per CLI e ambienti con OpenSSH configurato.
+
+Letture SSH Ubiquiti non ancora validate per rifiuto autenticazione; usare SNMP/API disponibili e chiedere conferma dell'accesso device senza tentativi ripetuti. Synology irraggiungibile resta non collaudato. Persistenza, interfaccia, radio avanzate e completa copertura per famiglia restano passi successivi: niente importazione automatica dai nuovi campioni.

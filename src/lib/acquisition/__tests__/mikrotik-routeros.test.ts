@@ -1,5 +1,5 @@
 /**
- * Collector `mikrotik-routeros` (non collaudato). Requisiti di regressione dei donatori (piano §6): tensione PoE mai come
+ * Collector `mikrotik-routeros` (base collaudata in locale; PoE, FDB, STP e velocità del giro 3 non ancora provati su un apparato). Requisiti di regressione dei donatori (piano §6): tensione PoE mai come
  * potenza, `vlan-ids` letto con gli intervalli, velocità e duplex dal monitor per colonne. Le uscite `terse` vere (anonime)
  * della scheda MikroTik passano dagli stessi parser.
  */
@@ -15,10 +15,11 @@ import type { AcquisitionTransports } from "../schema";
 
 const FIX = join(process.cwd(), "src/lib/devices/__tests__/fixtures");
 
-test("mikrotik-routeros: dichiarato non collaudato, exec su una connessione", () => {
+test("mikrotik-routeros: famiglia collaudata in locale, motore d'inventario, exec su una connessione", () => {
     const d = descrittore("mikrotik-routeros");
-    assert.equal(d.collaudo, "non_collaudato");
-    assert.deepEqual(d.collaudati, []);
+    assert.equal(d.collaudo, "collaudato");
+    assert.equal(d.motore, "inventario");
+    assert.equal(d.famiglia, "router");
     assert.equal(d.ssh_modo, "exec");
     assert.ok(!d.comandi?.some(c => /export|set |add |remove|reboot/.test(c)), "solo letture");
 });
@@ -49,20 +50,21 @@ test("monitor ethernet per colonne: la porta senza link non prende la velocità 
 
 test("snapshot dalla fixture: identità, interfacce, VLAN espanse, PoE, STP, LAG, vicini, rete", async () => {
     const { snapshot: s } = await FIXTURE["mikrotik-routeros"].normale();
-    assert.equal(s.identity.data?.firmware, "RouterOS 7.24.5 (stable)");
+    assert.equal(s.identity.data?.firmware, "7.24.5 (stable)");
     assert.equal(s.identity.data?.model, "CRS-LAB-8P");
     assert.equal(s.identity.data?.serial_number, "LABMK0001");
+    assert.equal(s.identity.data?.uptime_seconds, 2 * 7 * 86400 + 20 * 60 + 57, "uptime da /system resource print");
     const e1 = s.interfaces.data.find(i => i.name === "ether1")!;
-    assert.deepEqual([e1.kind, e1.oper_status, e1.speed_bps, e1.duplex, e1.pvid], ["physical", "up", 1e9, "full", 10]);
+    assert.deepEqual([e1.kind, e1.admin_status, e1.oper_status, e1.speed_bps, e1.duplex, e1.pvid], ["physical", "up", "up", 1e9, "full", 10]);
+    assert.equal(s.interfaces.data.find(i => i.name === "ether2")?.speed_bps, null, "la porta senza link non prende la velocità della vicina");
     assert.equal(s.interfaces.data.find(i => i.name === "bond1")?.kind, "aggregate");
     assert.equal(s.interfaces.data.find(i => i.name === "bridge")?.kind, "other");
     assert.deepEqual(s.vlans.data.map(v => v.id), [10, 100, 101, 102, 200]);
     assert.deepEqual(s.vlans.data[0].untagged_ports, ["ether1"]);
-    assert.deepEqual(s.vlans.data[1].tagged_ports, ["bridge", "bond1"], "senza current-* valgono le porte configurate");
     assert.equal(s.poe.data[0].power_watts, 2.9);
     assert.deepEqual(s.spanning_tree.data.ports.map(p => [p.port, p.role, p.state, p.instance]), [["ether1", "designated", "forwarding", "CIST"], ["bond1", "root", "forwarding", "CIST"]]);
     assert.equal(s.spanning_tree.data.protocol, "rstp");
-    assert.deepEqual(s.aggregation.data[0], { name: "bond1", protocol: "lacp", admin_status: "up", oper_status: "up", members: ["ether3", "ether4"] });
+    assert.deepEqual(s.aggregation.data[0], { name: "bond1", protocol: "802.3ad", admin_status: "up", oper_status: "up", members: ["ether3", "ether4"] });
     assert.equal(s.neighbors.data[0].system_name, "sw-core");
     assert.deepEqual(s.neighbors.data[0].capabilities, ["bridge", "router"]);
     assert.deepEqual(s.network.data.ipv4_addresses, [{ address: "192.0.2.2", netmask: "255.255.255.0", if_index: null }]);

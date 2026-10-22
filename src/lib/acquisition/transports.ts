@@ -1,3 +1,5 @@
+import { execFile } from "node:child_process";
+import { INVENTORY_COMMANDS, isInventoryProfile } from "./device-profiles";
 import { readExec } from "./exec-reader";
 import type { EventEmitter } from "node:events";
 import * as snmp from "net-snmp";
@@ -5,7 +7,7 @@ import type { ClientChannel } from "ssh2";
 import { apriSessioneSnmp } from "../protocols/snmp-sessione";
 import type { CredenzialeSnmp } from "../protocols/snmp-sessione";
 import { runWinrmCommand, WinrmError } from "../devices/winrm-run";
-import { withSshClient } from "../devices/ssh-transport";
+import { SshError, withSshClient } from "../devices/ssh-transport";
 import { cleanConsole } from "./parsers";
 import { CATALOGO, descrittore } from "./catalogo";
 import type { AcquisitionInput, AcquisitionTransports, ReadResult, SnmpRow } from "./schema";
@@ -225,6 +227,23 @@ export function createTransports(input: AcquisitionInput, deps: TransportDeps = 
     }
     return { get: oids => query(oids, false), walk: oid => query([oid], true), shell: async (commands) => {
             assertCommands(commands, input.collector);
+            if (isInventoryProfile(input.collector)) {
+                const result: Record<string, ReadResult<string>> = {};
+                let aborted=false;
+                const run=async (conn?: Parameters<typeof readExec>[0]) => {
+                    for(const command of commands){
+                        if(aborted || Date.now()>=deadline){result[command]=fail('', 'SSH_BATCH_ABORTED');continue;}
+                        if(conn) result[command]=await readExec(conn,command,input.limits,deadline);
+                        else result[command]=await new Promise<ReadResult<string>>(resolve=>execFile('ssh',['-n','-o','BatchMode=yes','-o','StrictHostKeyChecking=yes','-o','ConnectTimeout=5','--',`root@${input.host}`,command],{timeout:Math.max(1,Math.min(input.limits.timeout_ms,deadline-Date.now())),maxBuffer:input.limits.max_output_bytes},(error,stdout)=>resolve(error?{status:stdout?'partial':'error',data:stdout,warnings:['LOCAL_SSH_READ_FAILED']}:{status:'ok',data:stdout,warnings:[]})));
+                        aborted=result[command].warnings.some(w=>['SSH_EXEC_TIMEOUT','SSH_CHANNEL_ERROR','SSH_EXEC_UNAVAILABLE','TOTAL_TIMEOUT','OUTPUT_LIMIT','SSH_EXIT_STATUS_MISSING','LOCAL_SSH_READ_FAILED'].includes(w));
+                    }
+                    return result;
+                };
+                if(input.local_ssh && input.collector==='proxmox-ve') return run();
+                if(!input.ssh) return Object.fromEntries(commands.map(c=>[c,fail('', 'NO_SSH_CREDENTIAL')]));
+                try {return await withSshClient({host:input.host,...input.ssh,timeout:Math.max(1,Math.min(input.limits.timeout_ms,deadline-Date.now()))},conn=>run(conn));}
+                catch(error) {const code=error instanceof SshError?'SSH_'+error.kind.toUpperCase():'SSH_CONNECT_FAILED';return Object.fromEntries(commands.map(c=>[c,result[c]??fail('', code)]));}
+            }
             if (!input.ssh || Date.now() >= deadline)
                 return Object.fromEntries(commands.map(c => [c, fail('', input.ssh ? 'TOTAL_TIMEOUT' : 'NO_SSH_CREDENTIAL')]));
             const modo = descrittore(input.collector).ssh_modo ?? 'console';

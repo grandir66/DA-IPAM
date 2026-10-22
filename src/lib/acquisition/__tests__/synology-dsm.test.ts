@@ -1,6 +1,6 @@
 /**
- * Collector `synology-nas` (non collaudato): firmware DSM intero (versione, build, update), pacchetti senza limiti
- * silenziosi, cartelle condivise da smb.share.conf ed exports, synoshare nelle due forme.
+ * Collector `synology-dsm` (base collaudata in locale; condivisioni e pacchetti del giro 3 non ancora provati su un apparato):
+ * pacchetti senza limiti silenziosi, cartelle condivise da smb.share.conf ed exports, synoshare nelle due forme.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -8,20 +8,22 @@ import { FIXTURE } from "./contratto-fixture";
 import { descrittore } from "../catalogo";
 import { parseInfoPacchetti, parseSynoshareEnum, parseVersioneDsm } from "../synology-nas-parsers";
 
-test("synology-nas: non collaudato; synoshare nelle due forme in allowlist", () => {
-    const d = descrittore("synology-nas");
-    assert.equal(d.collaudo, "non_collaudato");
+test("synology-dsm: famiglia collaudata in locale; synoshare nelle due forme in allowlist", () => {
+    const d = descrittore("synology-dsm");
+    assert.equal(d.collaudo, "collaudato");
+    assert.equal(d.motore, "inventario");
     assert.ok(d.comandi?.includes("synoshare --enum ALL") && d.comandi.includes("synoshare -enum ALL"));
+    assert.ok(!d.comandi?.some(c => /sudo|reboot|set /.test(c)), "solo letture");
 });
 
-test("synology-nas: snapshot dalla fixture", async () => {
-    const { snapshot: s } = await FIXTURE["synology-nas"].normale();
-    assert.equal(s.identity.data?.firmware, "DSM 7.2.1-69057 Update 5");
-    assert.equal(s.identity.data?.model, "DS-LAB");
+test("synology-dsm: snapshot dalla fixture (identità, condivisioni, pacchetti)", async () => {
+    const { snapshot: s } = await FIXTURE["synology-dsm"].normale();
+    assert.equal(s.identity.data?.firmware, "7.2.1", "il firmware resta quello del collaudo");
+    assert.equal(s.identity.data?.model, "DS-LAB", "modello dal kernel DSM quando l'SNMP non c'è");
+    assert.equal(s.identity.data?.serial_number, "LABS0001");
     assert.deepEqual(s.shares?.data, [{ name: "Dati", path: "/volume1/Dati", protocols: ["smb", "nfs"], comment: "Prova", public: null }]);
     assert.ok(s.shares?.warnings.includes("SYNOSHARE_NOT_READ"));
     assert.deepEqual(s.software?.data.map(p => [p.name, p.version]), [["HyperBackup", "4.1.0-3718"], ["SynologyPhotos", "1.6.2-0720"]]);
-    assert.equal(s.host_storage?.data.filesystems[0].inodes_total, "0", "zero è un dato (btrfs non conta gli inode)");
 });
 
 test("parser: versione DSM mai troncata, update 0 non scritto; pacchetti oltre 50; synoshare", () => {

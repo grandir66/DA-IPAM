@@ -15,3 +15,9 @@ Anonimizzazione **a chiusura**, fatta sull'hub prima che i file uscissero:
   segnaposto, i nomi di interfaccia non standard (VLAN con nomi parlanti) sono `ifname-N`.
 
 Non contengono token, IP, MAC, nomi o seriali veri. Non rigenerarle a mano dal DB: rifarle con lo stesso criterio.
+
+## `forma-sconosciuta/`
+
+Risposte **inventate** (nessun dato vero), una per parte, con la forma che un aggiornamento dell'API potrebbe dare: lista
+come oggetto, id come testo, chiave rinominata (`data`, `mac`, `ip`), campo chiave assente (`vlan_vlan`), numero come
+testo, lista nulla. Ogni lettore deve rispondere «non so» (spec §4.2, caso 1 del piano), mai una lista a metà.

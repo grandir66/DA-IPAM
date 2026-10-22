@@ -1,5 +1,26 @@
 # TASKS — DA-IPAM
 
+## 2026-10-22 — Opzioni complete e voce «Schedulazioni» nel menu
+
+Riccardo (22/10): «raccogliere tutti i parametri che sono opzioni e inserirli tutti nel menu, e così una voce per
+le schedulazioni che ora sono sparse». Decisioni (22/10, risposte alle domande):
+- «Opzioni» (già nel menu, ADR 0032) si allarga dagli interruttori ai **parametri e soglie**, ognuno con descrizione
+  e predefinito; chiavi API e password restano nelle loro pagine;
+- voce nuova nel menu **«Schedulazioni»**: elenco unico (cosa, rete/controller, quando, prossimo giro, ultimo esito)
+  con acceso/spento; «Modifica» apre la pagina che la configura oggi, niente moduli doppi;
+- livello leggero; solo admin, modifiche nel diario; **tavola grafica da approvare**, poi piano breve ed esecuzione
+  in una sessione nuova.
+
+Censimento (22/10, origin/dev): parametri fuori da Opzioni nelle schede di `/settings` Scansione, Alert sicurezza,
+Notifiche, Sistema, Aggiornamenti, e in `/settings/mdm` (intervallo, errori di fila). Schedulazioni in quattro posti:
+`/settings?tab=jobs`, righe `gruppo: "job"` del catalogo, `SubnetScheduleCard` in `/networks/[id]` (edge-scan,
+oggi in `fuori-catalogo.ts` come dato della rete: nell'elenco ci va col rimando), intervalli propri di MDM e dei
+timer di `src/lib/vulcan/`.
+
+- [ ] Censimento puntuale dei parametri per scheda (chiave, dove si legge, predefinito)
+- [ ] Tavola grafica di Opzioni allargata e Schedulazioni, approvata da Riccardo
+- [ ] Piano breve, esecuzione, cancello, resa ≥1280, rilascio su dev; promote con conferma
+
 ## 2026-10-22 — Vulnerabilità per host ed exploit noti
 
 Riccardo (22/10): in `/vulnerabilities` l'elenco anche per host/IP, e per ogni vulnerabilità se esiste già un exploit. Piano: `docs/superpowers/plans/2026-10-22-vulnerabilita-per-host-ed-exploit.md` (mockup approvato, livello leggero, via di Riccardo il 22/10: eseguito in questa sessione).

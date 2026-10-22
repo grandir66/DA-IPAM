@@ -101,6 +101,7 @@ import type { ClassPreset, IconName } from "./preset-types";
 import { BadgeAMano, BadgeSenzaProva } from "@/components/devices/credenziali-assegnate";
 import { hostGestitoSenzaProva } from "@/lib/devices/credenziali-assegnate";
 import { PresetsDialog } from "@/components/devices/presets-dialog";
+import type { InfoClusterDiscovery } from "@/lib/devices/cluster-discovery";
 import { useUrlPerBrowser } from "@/components/shared/url-per-browser";
 
 const SORTED_CLASSIFICATIONS = sortClassificationsByDisplayLabel(DEVICE_CLASSIFICATIONS_ORDERED);
@@ -122,6 +123,8 @@ type EnrichedHost = Host & {
   switch_device_name?: string;
   ad_dns_host_name?: string | null;
   validated_protocols?: string[];
+  /** Cluster fisico accorpato (null = host solo o cluster ambiguo): chi è il principale e gli altri IP. */
+  cluster?: InfoClusterDiscovery | null;
   /** 1 = classificazione scelta a mano (la scansione non la cambia). */
   classification_manual?: number;
   multihomed?: {

@@ -15,7 +15,7 @@ import Database from "better-sqlite3";
 
 process.env.ENCRYPTION_KEY ||= "test-encryption-key-cluster-discovery";
 
-import { withTenant, deleteTenantDatabase, createNetworkDevice, getTenantDb, closeTenantDb, migrateClusterPrincipale, chiudiMigrazioneClusterPrincipaleFallita } from "@/lib/db-tenant";
+import { withTenant, deleteTenantDatabase, createNetworkDevice, getTenantDb, closeTenantDb, migrateClusterPrincipale, chiudiMigrazioneClusterPrincipaleFallita, getClusterDiscovery } from "@/lib/db-tenant";
 import { TENANT_SCHEMA_SQL, SEGNO_CLUSTER_PRINCIPALE } from "@/lib/db-tenant-schema";
 import { createPhysicalDevice, setHostPhysicalDevice, unlinkHostFromPhysicalDevice } from "@/lib/devices/physical-device-db";
 import { getDb } from "@/lib/db";
@@ -146,6 +146,24 @@ function vecchio(): Database.Database {
   assert.equal(colonne(db, "physical_devices").includes("primary_host_id"), false, "non deve esserci prima");
   return db;
 }
+
+describe("getClusterDiscovery (involucro per l'API di Discovery)", () => {
+  it("legge dal tenant corrente; il principale offline con i secondari online resta il principale (regola semplice, niente stato)", () => {
+    withTenant(T, () => {
+      const pd = createPhysicalDevice({ identity_confidence: 1, identity_anchor: "c-off" }).id;
+      const ra = rete();
+      const hp = host("192.0.2.200", ra, pd);
+      const hs = host("192.0.2.201", ra, pd);
+      getDb().prepare("UPDATE hosts SET status = 'offline' WHERE id = ?").run(hp);
+      getDb().prepare("UPDATE hosts SET status = 'online' WHERE id = ?").run(hs);
+      const mappa = getClusterDiscovery();
+      assert.equal(mappa.get(hp)?.principale, true, "il principale non cambia con lo stato");
+      assert.equal(mappa.get(hs)?.principale, false);
+      assert.deepEqual(mappa.get(hp)?.altri.map((a) => [a.host_id, a.status]), [[hs, "online"]]);
+      assert.deepEqual(mappa.get(hs)?.altri, []);
+    });
+  });
+});
 
 describe("migrateClusterPrincipale", () => {
   it("aggiunge colonna e indice; la seconda volta niente; il segno si scrive una volta; le righe restano", () => {

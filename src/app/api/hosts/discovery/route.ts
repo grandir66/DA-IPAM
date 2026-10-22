@@ -5,6 +5,7 @@ import {
   getAllHostsEnriched,
   getAllHostValidatedProtocols,
   getAllMultihomedLinks,
+  getClusterDiscovery,
   getAllHostsVulnSummary,
 } from "@/lib/db-tenant";
 
@@ -25,6 +26,7 @@ export async function GET(req: Request) {
       const hosts = getAllHostsEnriched(10000);
       const credMap = getAllHostValidatedProtocols();
       const mhMap = getAllMultihomedLinks();
+      const clusterMap = getClusterDiscovery();
       const vulnMap = getAllHostsVulnSummary();
 
       const enriched = hosts.map((h) => {
@@ -37,6 +39,7 @@ export async function GET(req: Request) {
             ...lean,
             validated_protocols: credMap.get(h.id) || [],
             multihomed: mhMap.get(h.id) ?? null,
+            cluster: clusterMap.get(h.id) ?? null,
             vuln: vulnMap.get(h.id) ?? null,
           };
         }
@@ -44,6 +47,7 @@ export async function GET(req: Request) {
           ...h,
           validated_protocols: credMap.get(h.id) || [],
           multihomed: mhMap.get(h.id) ?? null,
+          cluster: clusterMap.get(h.id) ?? null,
           vuln: vulnMap.get(h.id) ?? null,
         };
       });

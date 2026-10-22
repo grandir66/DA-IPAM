@@ -3,6 +3,9 @@
  * si accorpano sotto una riga principale. Principale = l'IP dell'apparato gestito se il cluster ne ha uno; con due
  * apparati il cluster è ambiguo e non si accorpa (tutte le righe restano visibili perché qualcuno lo sistemi); senza
  * apparato vale la scelta a mano (`physical_devices.primary_host_id`), poi l'IP numericamente più basso. Sola lettura.
+ * Lo stato non entra nella scelta: se il principale è assente/offline e i secondari sono vivi, resta lui (la riga
+ * mostra il suo stato, i secondari vivi si vedono in «+N IP»); l'apparato gestito è l'ancora, e cambiare riga con lo
+ * stato farebbe ballare la riga di Discovery a ogni scansione.
  */
 import type Database from "better-sqlite3";
 import { ipToLong } from "@/lib/utils";

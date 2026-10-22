@@ -10,6 +10,7 @@
  */
 
 import { apparatoDelCluster } from "@/lib/devices/apparato-del-cluster";
+import { leggiClusterDiscovery, type InfoClusterDiscovery } from "@/lib/devices/cluster-discovery";
 import { condizioneAssente } from "@/lib/hosts/assenti";
 import Database from "better-sqlite3";
 import path from "path";
@@ -4761,6 +4762,11 @@ export function getAllHostValidatedProtocols(): Map<number, string[]> {
     map.set(r.host_id, arr);
   }
   return map;
+}
+
+/** Cluster fisici accorpati per la pagina Discovery (una query sola): host_id → principale/secondario e gli altri IP. */
+export function getClusterDiscovery(): Map<number, InfoClusterDiscovery> {
+  return leggiClusterDiscovery(db());
 }
 
 /** Tutti i link multihomed con i peer, per la pagina Discovery. */

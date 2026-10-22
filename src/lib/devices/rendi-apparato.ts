@@ -26,6 +26,9 @@ export type HostPerRendiApparato = HostPerProposta & {
   id: number;
   inferred_confidence?: number | null;
   inferred_at?: string | null;
+  /** Dalla scheda dell'host (`/api/hosts/<id>`): se l'IP è già di un apparato, la finestra è bloccata. */
+  network_device?: { name: string } | null;
+  apparato_cluster?: { nome: string; host_id: number } | null;
 };
 
 export type TipoDispositivo = "router" | "switch" | "firewall" | "hypervisor" | "access_point" | "nas" | "server";

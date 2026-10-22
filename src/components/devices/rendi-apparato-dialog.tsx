@@ -60,7 +60,8 @@ import type { HostDetail, NetworkDevice } from "@/types";
 import { BadgeAvviso, BadgeNeutro, eMotivoTetto, type EsitoCredenziale } from "./rendi-apparato-esito";
 import { RendiApparatoCredenziale, type NuovaCredenziale } from "./rendi-apparato-credenziale";
 import { RendiApparatoTabella } from "./rendi-apparato-tabella";
-import { esitoVisibile, type AzioniCredenziale, type EscluseHost, type RigaApparato, type TentativoVista } from "./rendi-apparato-tipi";
+import Link from "next/link";
+import { bloccoDa409, bloccoDaHost, esitoVisibile, type AzioniCredenziale, type EscluseHost, type RigaApparato, type TentativoVista } from "./rendi-apparato-tipi";
 
 export interface RendiApparatoProps {
   /** Da 1 a 50 host: uno apre la finestra semplice, più host la tabella. */
@@ -184,6 +185,7 @@ function inizializza(hosts: HostPerRendiApparato[], archivio: CredenzialeArchivi
     esito: null,
     tentativi: [],
     creazione: null,
+    bloccata: bloccoDaHost(h),
   }));
   return { comuni, righe, uguali, daScegliere, ruoliIniziali: [...ruoli] as RuoloServer[] };
 }
@@ -229,9 +231,9 @@ function CorpoRendiApparato({
   useEffect(() => () => { fermaRicerca.current = true; }, []);
 
   // Credenziali già rifiutate su ciascun host: servono a dirlo («esclusa») prima di provarle di nuovo.
-  const idHost = elencoHost.map((h) => h.id).join(",");
+  const idHost = elencoHost.filter((h) => !bloccoDaHost(h)).map((h) => h.id).join(",");
   useEffect(() => {
-    if (!(comuni.porta >= 1 && comuni.porta <= 65535)) return;
+    if (idHost === "" || !(comuni.porta >= 1 && comuni.porta <= 65535)) return;
     const ac = new AbortController();
     const t = setTimeout(async () => {
       try {
@@ -457,7 +459,8 @@ function CorpoRendiApparato({
 
   // ───── creazione ─────
 
-  const daCreare = righe.filter((r) => r.creazione?.stato !== "creato");
+  const daCreare = righe.filter((r) => r.creazione?.stato !== "creato" && !r.bloccata);
+  const nBloccati = righe.filter((r) => r.bloccata).length;
   const senzaProva = daCreare.filter((r) => esitoVisibile(r, comuni.protocollo, escluse, archivio).stato !== "riuscita").length;
   const manca = !comuni.classificazione || daScegliere.piattaforma || daScegliere.protocollo;
   const nomiOk = daCreare.every((r) => r.nome.trim() !== "");
@@ -482,6 +485,10 @@ function CorpoRendiApparato({
         creati++;
         for (const a of r.data.avvisi ?? []) toast.warning(a);
         aggiornaRiga(riga.host.id, (x) => ({ ...x, creazione: { stato: "creato" } }));
+      } else if (r.status === 409 && bloccoDa409(r.body)) {
+        // Il server è l'arbitro: l'IP è già di un apparato (anche creato nel frattempo da un altro).
+        const b = bloccoDa409(r.body);
+        aggiornaRiga(riga.host.id, (x) => ({ ...x, bloccata: b }));
       } else {
         falliti++;
         aggiornaRiga(riga.host.id, (x) => ({ ...x, creazione: { stato: "errore", messaggio: r.message } }));
@@ -490,7 +497,9 @@ function CorpoRendiApparato({
     }
     setCreando(false);
     if (creati > 0) onCreated?.();
-    if (falliti === 0) {
+    if (falliti === 0 && creati === 0) {
+      toast.error("Nessun apparato creato: l'IP è già di un apparato");
+    } else if (falliti === 0) {
       toast.success(creati === 1 ? "Apparato creato" : `${creati} apparati creati`);
       onClose();
     } else {
@@ -611,6 +620,33 @@ function CorpoRendiApparato({
       </fieldset>
     ) : null;
 
+  // Un host solo, e il suo IP è già di un apparato: nessuna scelta da fare, solo il rimando alla scheda.
+  if (!multi && prima.bloccata) {
+    return (
+      <>
+        <DialogScrollableArea className="px-4 py-3">
+          <div className="space-y-3 rounded-lg border-2 border-[#B8C4CC] p-4">
+            <BadgeAvviso>bloccato</BadgeAvviso>
+            <p className="text-sm font-semibold">Questo IP è già dell&apos;apparato {prima.bloccata.nome}{prima.host.id !== prima.bloccata.host_id ? " (stesso device fisico)" : ""}.</p>
+            <Link href={`/objects/${prima.bloccata.host_id}`} className="inline-block text-sm font-semibold text-[#006C96] underline underline-offset-2 dark:text-[#3FBBF0]">
+              Apri la scheda di {prima.bloccata.nome}
+            </Link>
+            {prima.host.id !== prima.bloccata.host_id && (
+              <p className="text-[13px] text-muted-foreground">
+                Per farne un apparato a sé, prima «Esci dal cluster» nella scheda di {prima.bloccata.nome}.
+              </p>
+            )}
+          </div>
+        </DialogScrollableArea>
+        <DialogFooter className="mx-0 mb-0 shrink-0 items-center border-t border-border/50 px-4 py-3">
+          <Button type="button" variant="outline" onClick={onClose}>
+            Chiudi
+          </Button>
+        </DialogFooter>
+      </>
+    );
+  }
+
   return (
     <>
       <DialogScrollableArea className="px-4 py-3">
@@ -699,6 +735,7 @@ function CorpoRendiApparato({
 
       <DialogFooter className="mx-0 mb-0 shrink-0 items-center border-t border-border/50 px-4 py-3">
         <div className="mr-auto flex flex-wrap items-center gap-2">
+          {nBloccati > 0 && <BadgeAvviso>{nBloccati === 1 ? "1 bloccato: già di un apparato" : `${nBloccati} bloccati: già di un apparato`}</BadgeAvviso>}
           {senzaProva > 0 && (
             <BadgeAvviso>{multi ? `${senzaProva} su ${daCreare.length} senza credenziale provata` : "senza credenziale provata"}</BadgeAvviso>
           )}

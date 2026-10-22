@@ -10,7 +10,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { tipiCredenzialePerProtocollo } from "@/lib/credential-protocol-map";
 import { dataBreve } from "@/lib/devices/rendi-apparato";
 import type { CredenzialeArchivio, ProtocolloApparato } from "@/lib/devices/proposta-apparato";
-import { BadgeEsito } from "./rendi-apparato-esito";
+import Link from "next/link";
+import { BadgeEsito, BadgeAvviso } from "./rendi-apparato-esito";
 import { esitoVisibile, tentativiFatti, type AzioniCredenziale, type EscluseHost, type RigaApparato } from "./rendi-apparato-tipi";
 
 interface Props {
@@ -29,7 +30,7 @@ interface Props {
 export function RendiApparatoTabella({ righe, archivio, protocollo, escluse, azioni, inCorso, ricercaAttiva, rigaViva }: Props) {
   const tipi = tipiCredenzialePerProtocollo(protocollo);
   const voci = archivio.filter((c) => tipi.includes(c.credential_type));
-  const idDaFare = righe.filter((r) => r.creazione?.stato !== "creato").map((r) => r.host.id);
+  const idDaFare = righe.filter((r) => r.creazione?.stato !== "creato" && !r.bloccata).map((r) => r.host.id);
 
   return (
     <div className="space-y-3">
@@ -65,6 +66,22 @@ export function RendiApparatoTabella({ righe, archivio, protocollo, escluse, azi
             {righe.map((r) => {
               const esito = inCorso.has(r.host.id) ? { stato: "in_corso" as const } : esitoVisibile(r, protocollo, escluse, archivio);
               const fatta = r.creazione?.stato === "creato";
+              if (r.bloccata) {
+                return (
+                  <tr key={r.host.id} className="border-t border-border align-top">
+                    <td className="whitespace-nowrap px-3 py-2 font-mono text-[13px]">{r.host.ip}</td>
+                    <td colSpan={4} className="px-3 py-2">
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                        <BadgeAvviso>bloccato</BadgeAvviso>
+                        <span className="text-[13px]">Questo IP è già dell&apos;apparato {r.bloccata.nome}</span>
+                        <Link href={`/objects/${r.bloccata.host_id}`} className="text-[13px] font-semibold text-[#006C96] underline underline-offset-2 dark:text-[#3FBBF0]">
+                          Apri la scheda di {r.bloccata.nome}
+                        </Link>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              }
               const escludeHost = escluse[r.host.id] ?? {};
               return (
                 <tr key={r.host.id} className="border-t border-border align-top">

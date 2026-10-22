@@ -39,3 +39,32 @@ export function apparatoDelCluster(db: Database.Database, hostId: number): Esito
   const n = (db.prepare("SELECT COUNT(*) AS n FROM hosts WHERE physical_device_id = ?").get(h.pd) as { n: number }).n;
   return { esito: "cluster", apparato: { ...apparati[0], n_indirizzi: n } };
 }
+
+export interface ApparatoGiaPresente { network_device_id: number; nome: string; host_id: number; ip: string }
+
+export const messaggioIpDiApparato = (nome: string): string => `Questo IP è già dell'apparato ${nome}`;
+
+/**
+ * L'apparato che possiede già questo IP: lo stesso host («proprio») o un altro host del suo cluster fisico.
+ * Controlla TUTTE le righe `hosts` con quell'IP (lo stesso IP può stare in due reti). Con più apparati nel
+ * cluster vale il primo per `network_devices.id`. Senza righe `hosts` per l'IP: null (un apparato su un IP mai
+ * scansionato resta ammesso). Sola lettura.
+ */
+export function apparatoGiaPresente(db: Database.Database, ip: string): ApparatoGiaPresente | null {
+  const righe = db.prepare("SELECT id, physical_device_id AS pd FROM hosts WHERE ip = ?").all(ip) as Array<{ id: number; pd: number | null }>;
+  const trovati: Array<ApparatoGiaPresente> = [];
+  for (const r of righe) {
+    const proprio = db.prepare("SELECT id, name, host_id, host FROM network_devices WHERE host_id = ? OR host = ? ORDER BY id LIMIT 1")
+      .get(r.id, ip) as { id: number; name: string; host_id: number | null; host: string } | undefined;
+    if (proprio) { trovati.push({ network_device_id: proprio.id, nome: proprio.name, host_id: proprio.host_id ?? r.id, ip }); continue; }
+    if (!r.pd) continue;
+    const c = db.prepare(
+      `SELECT nd.id AS network_device_id, nd.name AS nome, hh.id AS host_id, hh.ip AS ip
+         FROM hosts hh JOIN network_devices nd ON nd.host_id = hh.id
+        WHERE hh.physical_device_id = ? ORDER BY nd.id LIMIT 1`,
+    ).get(r.pd) as ApparatoGiaPresente | undefined;
+    if (c) trovati.push(c);
+  }
+  trovati.sort((a, b) => a.network_device_id - b.network_device_id);
+  return trovati[0] ?? null;
+}

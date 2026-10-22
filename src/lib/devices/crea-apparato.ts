@@ -32,12 +32,14 @@ import {
 import { linkInvAgentEndpointToHost } from "@/lib/inventory-agent/db";
 import { portaCredenziale } from "@/lib/credentials/porte";
 import { RifiutoCredenziali, segretiInVociApparatoDb } from "@/lib/credentials/apparato-archivio";
+import { apparatoGiaPresente, messaggioIpDiApparato, type ApparatoGiaPresente } from "./apparato-del-cluster";
 import { tipoBindingPerProtocollo } from "./binding-apparato";
 import type { NetworkDevice } from "@/types";
 
 export type EsitoCreaApparato =
   | { ok: true; device: NetworkDevice }
-  | { ok: false; status: 400; error: string };
+  | { ok: false; status: 400; error: string }
+  | { ok: false; status: 409; error: string; codice: "IP_DI_APPARATO"; apparato: ApparatoGiaPresente };
 
 /** Ruoli del server dal corpo della richiesta: solo quelli del catalogo, il resto si ignora. */
 export function ruoliDalCorpo(body: unknown): RuoloServer[] {
@@ -53,6 +55,9 @@ export function creaApparato(body: unknown): EsitoCreaApparato {
   }
 
   const data = parsed.data;
+  // Un IP già di un apparato (anche di un altro IP dello stesso device fisico) non diventa un secondo apparato.
+  const gia = apparatoGiaPresente(getDb(), data.host);
+  if (gia) return { ok: false, status: 409, error: messaggioIpDiApparato(gia.nome), codice: "IP_DI_APPARATO", apparato: gia };
   // Senza classificazione vale il tipo dispositivo (è un valore ammesso anche
   // fra le classificazioni). Prima il ripiego era «hypervisor» per tutto ciò
   // che non era router o switch: un server diventava hypervisor, anche sull'host.

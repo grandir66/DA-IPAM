@@ -455,3 +455,9 @@ Livello Base, sola lettura e sviluppo locale; accessi NAS confermati da Riccardo
 - [ ] Decisione di Riccardo: agganciare `proxmox-ve` al pulsante? Differenze rimaste: schede di rete dei nodi (non proiettate), socket/core delle VM (`sockets` = 1).
 - Nota del giro 6: il `v0.9.871` del giro 5 non è stato rialzato; il merge di `origin/dev` ha portato `VERSION` a 0.9.873 (versione di `dev`).
 - Cancello del giro 6 (commit 07a4944e): lint=0, tsc=0, npm test=0 (DA_INVENT_DATA_DIR temporanea), build=0.
+
+## 2026-10-22 — collaudi del giro 6 (sessione locale, codice `7e0b83a2`)
+
+- [x] **QNAP `.24`** (solo SNMP): **corretto** — modello QGD-1602P, seriale letto, firmware `null` (non più la memoria), 6 sensori, 19 interfacce.
+- [x] **Proxmox DA-PX-04** 192.168.40.4, root con la chiave di Riccardo (ingresso temporaneo cancellato): 76 s, parziale. Cluster visibile intero: 4 nodi (CPU, socket, core, kernel, disco root, abbonamento attivo), 52 guest (stato, risorse, dischi, reti; agent su 44), 28 storage, 34 interfacce.
+- [ ] **Proxmox, mancano per la parità**: modello/seriale/produttore hardware dei nodi vuoti su tutti e 4 (la scansione li prende dall'API); IP dei guest su 24 di 52 con agent attivo su 44 (`GUEST_IP_ADDRESSES_PARTIAL`). Da completare prima dell'aggancio al pulsante.

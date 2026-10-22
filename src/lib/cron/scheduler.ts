@@ -4,6 +4,7 @@ import { getActiveTenants } from "@/lib/db-hub";
 import { withTenant } from "@/lib/db-tenant";
 import { runJob, type OpzioniRunJob } from "./jobs";
 import { oraDelGiroGiornaliero } from "@/lib/scheduled-job-types";
+import { FUSO_UTENTI } from "@/lib/db-date";
 import {
   createFailureState,
   findTenantOutages,
@@ -175,9 +176,12 @@ export function scheduleJob(
 
   const cronExpr = intervalToCron(intervalMinutes, jobType);
 
+  // apparati_scelti (scansione automatica, revisione 22/10): l'ora scelta e le fasce di 4 ore sono italiane anche su
+  // un server in UTC. Gli altri tipi restano sull'ora del server, come prima.
+  const opzioni = jobType === "apparati_scelti" ? { timezone: FUSO_UTENTI } : undefined;
   const task = cron.schedule(cronExpr, async () => {
     await eseguiJobProgrammato(key, jobId, tenantCode);
-  });
+  }, opzioni);
 
   activeTasks.set(key, task);
 }

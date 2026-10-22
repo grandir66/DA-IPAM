@@ -6,6 +6,7 @@
  */
 import { z } from "zod";
 import { senzaCredenzialeProvata } from "@/lib/devices/credenziali-assegnate";
+import { FUSO_UTENTI } from "@/lib/db-date";
 
 /** Tetto per job: lo stesso della finestra «Rendi apparato» (decisione 3: un giro seriale da 50 sta nell'ora). */
 export const MAX_APPARATI = 50;
@@ -51,13 +52,28 @@ export function intervalloDaFrequenza(f: Frequenza): 60 | 240 | 1440 {
   return f.tipo === "ora" ? 60 : f.tipo === "4ore" ? 240 : 1440;
 }
 
-/** La frequenza di un job salvato; null = una forma che la finestra non sa fare (giornaliero senza ora, altri intervalli). */
+/**
+ * La frequenza di un job salvato; null = una forma che la finestra non sa fare: giornaliero senza ora, ora con
+ * «ogni ora» o «ogni 4 ore», altri intervalli.
+ */
 export function frequenzaDaJob(intervalMinutes: number, config: { ora?: string }): Frequenza | null {
+  if (intervalMinutes !== 1440 && config.ora !== undefined) return null;
   if (intervalMinutes === 60) return { tipo: "ora" };
   if (intervalMinutes === 240) return { tipo: "4ore" };
   if (intervalMinutes === 1440 && typeof config.ora === "string" && ORA_RE.test(config.ora)) return { tipo: "giorno", ora: config.ora };
   return null;
 }
+
+/**
+ * Il job intero come lo creano e modificano le rotte: la config con le sue regole e una frequenza che la finestra sa
+ * fare (60, 240, 1440; `ora` se e solo se 1440). Qui, così la rotta non ne ha una sua.
+ */
+export const JobApparatiScelti = z
+  .object({ interval_minutes: z.number().int(), config: ConfigApparatiScelti })
+  .refine((j) => frequenzaDaJob(j.interval_minutes, j.config) !== null, {
+    message: "Frequenza non prevista: ogni ora, ogni 4 ore o ogni giorno a un'ora scelta",
+    path: ["interval_minutes"],
+  });
 
 export function etichettaFrequenza(f: Frequenza): string {
   return f.tipo === "ora" ? "ogni ora" : f.tipo === "4ore" ? "ogni 4 ore" : `ogni giorno alle ${f.ora}`;
@@ -69,24 +85,45 @@ export function oraDaTesto(ora: string): { h: number; m: number } {
   return { h, m };
 }
 
+/** Ora, minuti e data di un istante sull'orologio italiano. */
+function orologioItalia(t: number): { y: number; mo: number; d: number; h: number; mi: number } {
+  const parti = new Intl.DateTimeFormat("en-GB", {
+    timeZone: FUSO_UTENTI, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
+  }).formatToParts(new Date(t));
+  const n = (tipo: string): number => Number(parti.find((p) => p.type === tipo)?.value);
+  return { y: n("year"), mo: n("month"), d: n("day"), h: n("hour"), mi: n("minute") };
+}
+
+/** L'istante in cui l'orologio italiano segna quella data e ora (lo scarto si rilegge sul risultato: estate +2, inverno +1). */
+function istanteItalia(y: number, mo: number, d: number, h: number, mi: number): number {
+  const comeUtc = Date.UTC(y, mo - 1, d, h, mi);
+  const scarto = (t: number): number => { const o = orologioItalia(t); return Date.UTC(o.y, o.mo - 1, o.d, o.h, o.mi) - t; };
+  let t = comeUtc - scarto(comeUtc);
+  t = comeUtc - scarto(t);
+  return t;
+}
+
 /**
- * Il prossimo scatto dopo `adesso` (strettamente dopo), nell'ora del server come node-cron: «ogni ora» = `0 *\/1`,
- * «ogni 4 ore» = `0 *\/4` (00, 04, 08, …), «ogni giorno» = l'ora scelta, oggi se non è passata, altrimenti domani.
+ * Il prossimo scatto dopo `adesso` (strettamente dopo) in ora italiana, come lo scheduler registra questo job
+ * (`timezone: FUSO_UTENTI`): «ogni ora» = `0 *\/1`, «ogni 4 ore» = `0 *\/4` (00, 04, 08, … italiane), «ogni giorno» =
+ * l'ora scelta, oggi se non è passata, altrimenti domani. Il server può essere in UTC (l'hub): non conta.
  */
 export function prossimaEsecuzione(f: Frequenza, adesso: Date): Date {
-  const p = new Date(adesso.getTime());
+  const ora0 = Math.floor(adesso.getTime() / 3_600_000) * 3_600_000; // le ore piene italiane coincidono con quelle UTC
   if (f.tipo === "giorno") {
     const { h, m } = oraDaTesto(f.ora);
-    p.setHours(h, m, 0, 0);
-    if (p.getTime() <= adesso.getTime()) p.setDate(p.getDate() + 1);
-    return p;
+    const oggi = orologioItalia(adesso.getTime());
+    for (let giorni = 0; giorni < 3; giorni++) {
+      const t = istanteItalia(oggi.y, oggi.mo, oggi.d + giorni, h, m);
+      if (t > adesso.getTime()) return new Date(t);
+    }
   }
-  const passo = f.tipo === "ora" ? 1 : 4;
-  p.setMinutes(0, 0, 0);
+  const passo = f.tipo === "4ore" ? 4 : 1;
+  let t = ora0;
   do {
-    p.setHours(p.getHours() + 1);
-  } while (p.getHours() % passo !== 0 || p.getTime() <= adesso.getTime());
-  return p;
+    t += 3_600_000;
+  } while (orologioItalia(t).h % passo !== 0);
+  return new Date(t);
 }
 
 // ── Idoneità (decisione 5) ──────────────────────────────────────────────

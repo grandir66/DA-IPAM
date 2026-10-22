@@ -11230,7 +11230,10 @@ export function getTopologyKnownPorts(nodeId: string): KnownPort[] | null {
  * Le colonne dello stato di un apparato per il job `apparati_scelti`, in UNA query (niente N+1). Le credenziali con
  * sottoquery correlate sugli indici di `host_credentials(host_id)` e `device_credential_bindings(device_id)`.
  * `ha_snmp` è la regola di `haSnmpApparatoDb` (fonti dell'apparato: un binding SNMP non fallito con una voce di tipo
- * snmp/snmp_v3) scritta in SQL: la prova `apparati-scelti/__tests__/db.test.ts` la confronta con quella vera.
+ * snmp/snmp_v3) scritta in SQL, perché `haSnmpApparato` fa tre letture per apparato e qui sarebbe un N+1 (50 apparati,
+ * 150 query). Vale per gli apparati salvati (le voci provvisorie della finestra non passano di qui). Serve a
+ * `leggibile` e a `vlan_switch`; il giro legge poi con le funzioni vere. La prova `apparati-scelti/__tests__/db.test.ts`
+ * la confronta con `haSnmpApparato`, `vlanSwitchDaLeggere` e `resolveDeviceAcquisition`: se il motore cambia, lo dice.
  */
 const COLONNE_STATO_APPARATO = `
   nd.id AS device_id, nd.name AS dev_nome, nd.enabled AS dev_enabled, nd.device_type, nd.vendor, nd.protocol,

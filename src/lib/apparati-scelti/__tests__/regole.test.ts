@@ -4,10 +4,13 @@
  *
  * Run: node --import tsx --test src/lib/apparati-scelti/__tests__/regole.test.ts
  */
+// Il server può girare in UTC (l'hub): le ore del job sono quelle italiane comunque (revisione T2-3, 22/10).
+process.env.TZ = "UTC";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   ConfigApparatiScelti,
+  JobApparatiScelti,
   MAX_APPARATI,
   TESTO_MOTIVO,
   etichettaFrequenza,
@@ -180,6 +183,25 @@ test("intervalloDaFrequenza e frequenzaDaJob vanno e tornano", () => {
   assert.deepEqual(frequenzaDaJob(1440, { ora: "02:00" }), { tipo: "giorno", ora: "02:00" });
 });
 
+test("frequenzaDaJob: «ora» solo col giornaliero", () => {
+  assert.equal(frequenzaDaJob(60, { ora: "02:00" }), null);
+  assert.equal(frequenzaDaJob(240, { ora: "02:00" }), null);
+});
+
+test("JobApparatiScelti: 1440 vuole l'ora, l'ora vuole 1440, solo 60/240/1440", () => {
+  const ok = (interval_minutes: number, ora?: string): boolean =>
+    JobApparatiScelti.safeParse({ interval_minutes, config: { ...CONFIG_OK, ...(ora ? { ora } : {}) } }).success;
+  assert.equal(ok(60), true);
+  assert.equal(ok(240), true);
+  assert.equal(ok(1440, "02:00"), true);
+  assert.equal(ok(1440), false, "giornaliero senza ora");
+  assert.equal(ok(60, "02:00"), false, "ora con ogni ora");
+  assert.equal(ok(240, "02:00"), false, "ora con ogni 4 ore");
+  assert.equal(ok(30), false);
+  assert.equal(ok(120), false);
+  assert.equal(JobApparatiScelti.safeParse({ interval_minutes: 60, config: { ...CONFIG_OK, device_ids: [] } }).success, false, "la config si convalida con le sue regole");
+});
+
 test("frequenzaDaJob: forma non prevista → null", () => {
   assert.equal(frequenzaDaJob(1440, {}), null, "giornaliero senza ora");
   assert.equal(frequenzaDaJob(1440, { ora: "25:00" }), null);
@@ -193,18 +215,32 @@ test("etichettaFrequenza", () => {
   assert.equal(etichettaFrequenza({ tipo: "giorno", ora: "02:00" }), "ogni giorno alle 02:00");
 });
 
+/** Un istante dato in ora italiana col suo scarto esplicito («2026-10-22T09:40+02:00»). */
+const t = (iso: string): number => new Date(iso).getTime();
+
 test("prossimaEsecuzione: ogni ora → l'ora piena dopo", () => {
-  const p = prossimaEsecuzione({ tipo: "ora" }, new Date(2026, 9, 22, 9, 40));
-  assert.equal(p.getTime(), new Date(2026, 9, 22, 10, 0).getTime());
+  assert.equal(prossimaEsecuzione({ tipo: "ora" }, new Date("2026-10-22T09:40+02:00")).getTime(), t("2026-10-22T10:00+02:00"));
 });
 
-test("prossimaEsecuzione: ogni 4 ore alle 09:40 → 12:00 (ore divisibili per 4, come node-cron)", () => {
-  assert.equal(prossimaEsecuzione({ tipo: "4ore" }, new Date(2026, 9, 22, 9, 40)).getTime(), new Date(2026, 9, 22, 12, 0).getTime());
-  assert.equal(prossimaEsecuzione({ tipo: "4ore" }, new Date(2026, 9, 22, 22, 10)).getTime(), new Date(2026, 9, 23, 0, 0).getTime());
-  assert.equal(prossimaEsecuzione({ tipo: "4ore" }, new Date(2026, 9, 22, 12, 0)).getTime(), new Date(2026, 9, 22, 16, 0).getTime(), "sull'ora esatta: la prossima");
+test("prossimaEsecuzione: ogni 4 ore alle 09:40 → 12:00 italiane (ore divisibili per 4, come node-cron)", () => {
+  assert.equal(prossimaEsecuzione({ tipo: "4ore" }, new Date("2026-10-22T09:40+02:00")).getTime(), t("2026-10-22T12:00+02:00"));
+  assert.equal(prossimaEsecuzione({ tipo: "4ore" }, new Date("2026-10-22T22:10+02:00")).getTime(), t("2026-10-23T00:00+02:00"));
+  assert.equal(prossimaEsecuzione({ tipo: "4ore" }, new Date("2026-10-22T12:00+02:00")).getTime(), t("2026-10-22T16:00+02:00"), "sull'ora esatta: la prossima");
+  assert.equal(prossimaEsecuzione({ tipo: "4ore" }, new Date("2026-01-15T09:40+01:00")).getTime(), t("2026-01-15T12:00+01:00"), "inverno");
 });
 
-test("prossimaEsecuzione: ogni giorno alle 02:00, alle 09:40 → domani 02:00; alle 01:00 → oggi 02:00", () => {
-  assert.equal(prossimaEsecuzione({ tipo: "giorno", ora: "02:00" }, new Date(2026, 9, 22, 9, 40)).getTime(), new Date(2026, 9, 23, 2, 0).getTime());
-  assert.equal(prossimaEsecuzione({ tipo: "giorno", ora: "02:30" }, new Date(2026, 9, 22, 1, 0)).getTime(), new Date(2026, 9, 22, 2, 30).getTime());
+test("prossimaEsecuzione: ogni giorno alle 02:00, alle 09:40 → domani 02:00; alle 01:00 → oggi 02:30", () => {
+  assert.equal(prossimaEsecuzione({ tipo: "giorno", ora: "02:00" }, new Date("2026-10-22T09:40+02:00")).getTime(), t("2026-10-23T02:00+02:00"));
+  assert.equal(prossimaEsecuzione({ tipo: "giorno", ora: "02:30" }, new Date("2026-10-22T01:00+02:00")).getTime(), t("2026-10-22T02:30+02:00"));
+});
+
+test("prossimaEsecuzione su un server in UTC: le 02:00 sono italiane (00:00 UTC d'estate, 01:00 d'inverno)", () => {
+  assert.equal(prossimaEsecuzione({ tipo: "giorno", ora: "02:00" }, new Date("2026-07-15T08:40Z")).toISOString(), "2026-07-16T00:00:00.000Z");
+  assert.equal(prossimaEsecuzione({ tipo: "giorno", ora: "02:00" }, new Date("2026-01-15T08:40Z")).toISOString(), "2026-01-16T01:00:00.000Z");
+  // 23:30 UTC del 15 luglio = 01:30 italiane del 16: le 02:00 sono fra mezz'ora.
+  assert.equal(prossimaEsecuzione({ tipo: "giorno", ora: "02:00" }, new Date("2026-07-15T23:30Z")).toISOString(), "2026-07-16T00:00:00.000Z");
+  // 4 ore: 10:40 italiane → 12:00 italiane = 10:00 UTC d'estate.
+  assert.equal(prossimaEsecuzione({ tipo: "4ore" }, new Date("2026-07-15T08:40Z")).toISOString(), "2026-07-15T10:00:00.000Z");
+  // Cambio dell'ora (25/10, 03:00 → 02:00): il giorno dopo le 02:00 sono di nuovo +01:00.
+  assert.equal(prossimaEsecuzione({ tipo: "giorno", ora: "02:00" }, new Date("2026-10-25T12:00Z")).toISOString(), "2026-10-26T01:00:00.000Z");
 });

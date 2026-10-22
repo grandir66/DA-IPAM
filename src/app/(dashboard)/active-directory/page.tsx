@@ -1554,6 +1554,7 @@ function PaginaActiveDirectory() {
                       Invio a DA-Vul-can dell&apos;ultimo run ok:{" "}
                       {healthVulcan === null && "mai accodato"}
                       {healthVulcan?.stato === "spento" && "spento (nessun gettone dell'hub su questa istanza)"}
+                      {healthVulcan?.stato === "altro_cliente" && "non parte: questo non è il cliente dell'invio su questa istanza"}
                       {healthVulcan?.stato === "in_coda" &&
                         `in coda${healthVulcan.motivo ? ` — ultimo tentativo: ${healthVulcan.motivo}` : ""}`}
                       {healthVulcan?.stato === "inviato" && `inviato il ${formatDate(healthVulcan.il)}`}

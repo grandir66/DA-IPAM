@@ -33,6 +33,7 @@ import {
   RECUPERO_ORE,
   avviaInvioVulcan,
   inviaOraVulcan,
+  invioOraInCorso,
   lavoroInCorso,
   type CronMinimo,
   type DipendenzeJob,
@@ -341,4 +342,27 @@ test("dipendenze vere, oggetto.env assente, 20 minuti simulati: nessuna riga [vu
   assert.deepEqual(righe.filter((r) => r.includes("[vulcan]")), []);
   assert.equal(fs.existsSync(path.join(TEST_DATA_DIR, "audit")), false, "nessun file di audit");
   assert.equal(lavoroInCorso(), false);
+});
+
+test("«Invia ora» in corso si distingue da un giro automatico in corso (la rotta fa 409 solo nel primo caso)", async () => {
+  mock.timers.enable({ apis: ["setTimeout", "setInterval", "Date"], now: T0 });
+  const { dip, c } = finte(PRONTA, nuovoDb());
+  let sblocca: () => void = () => {};
+  dip.giro = () => {
+    c.giro++;
+    return new Promise<EsitoGiroVulcan>((r) => (sblocca = () => r(OK)));
+  };
+  ferma = avviaInvioVulcan({ ...dip, cron: cronFinto().c });
+  mock.timers.tick(PRIMO_MS);
+  await scorri();
+  assert.equal(lavoroInCorso(), true, "il giro automatico è in corso");
+  assert.equal(invioOraInCorso(), false, "un «Invia ora» si può ancora mettere in fila");
+  const ora = inviaOraVulcan("mario", dip);
+  assert.equal(invioOraInCorso(), true);
+  sblocca();
+  await scorri();
+  sblocca();
+  await ora;
+  assert.equal(invioOraInCorso(), false);
+  assert.equal(c.giro, 2, "il giro automatico e poi quello di «Invia ora»");
 });

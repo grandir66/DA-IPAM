@@ -101,6 +101,11 @@ function inFila<T>(lavoro: Lavoro, fn: () => Promise<T>): Promise<T> {
   return p;
 }
 
+/** Vero se un «Invia ora» è già in fila o in corso (un secondo sarebbe lo stesso giro: la rotta dice 409). */
+export function invioOraInCorso(): boolean {
+  return stato().attesi.has("invia_ora");
+}
+
 /** Vero se un giro, un battito, un inventario o un «Invia ora» è in fila o in corso. */
 export function lavoroInCorso(): boolean {
   return stato().attesi.size > 0;
@@ -201,7 +206,7 @@ export function avviaInvioVulcan(
     clearTimeout(primo);
     if (ogniGiro) clearInterval(ogniGiro);
     if (ogniBattito) clearInterval(ogniBattito);
-    void notte.stop();
+    Promise.resolve(notte.stop()).catch(() => {});
     if (stato().stop === stop) stato().stop = null;
   };
   s.stop = stop;

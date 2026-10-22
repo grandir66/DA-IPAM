@@ -8,7 +8,7 @@
  * Mai il gettone, mai l'URL completo: della destinazione solo il nome dell'host.
  */
 import type Database from "better-sqlite3";
-import { getTenantDb, schemaVulcanPresente } from "@/lib/db-tenant";
+import { getCurrentTenantCode, getTenantDb, schemaVulcanPresente } from "@/lib/db-tenant";
 import { conteggiCoda, leggiStatoVulcan, ultimoErrore, ultimoInviato } from "./coda";
 import { leggiConfigVulcan, tenantPerVulcan, type ConfigVulcan } from "./config";
 
@@ -85,18 +85,39 @@ export function quadroVulcan(dip: Partial<DipendenzeQuadroVulcan> = {}): QuadroV
 }
 
 export type StatoInvioAd = {
-  stato: "spento" | "in_coda" | "inviato" | "scartato" | "fallito";
+  stato: "spento" | "altro_cliente" | "in_coda" | "inviato" | "scartato" | "fallito";
   il: string | null;
   motivo: string | null;
 };
 
+export interface DipStatoInvioAd {
+  config: () => ConfigVulcan;
+  /** Il tenant che la pagina sta guardando. */
+  tenantCorrente: () => string | null;
+  /** Il tenant da cui parte l'invio (`tenantPerVulcan`). */
+  tenantInvio: (codcli: string) => string | null;
+}
+
 /**
  * L'invio di un'esecuzione AD Health (`rif = run.id`) nel DB del tenant che la pagina sta
- * guardando. null = mai accodata (esecuzione precedente all'accensione, o di un cliente che
- * non è quello dell'invio).
+ * guardando. `altro_cliente` = su questa istanza l'invio parte da un altro tenant (hub
+ * multi-tenant): i dati di questo non escono. null = mai accodata (esecuzione precedente
+ * all'accensione).
  */
-export function statoInvioAd(db: Database.Database, runId: number, config: () => ConfigVulcan = () => leggiConfigVulcan()): StatoInvioAd | null {
-  if (config().stato === "spento") return { stato: "spento", il: null, motivo: null };
+export function statoInvioAd(db: Database.Database, runId: number, dip: Partial<DipStatoInvioAd> = {}): StatoInvioAd | null {
+  const d: DipStatoInvioAd = {
+    config: () => leggiConfigVulcan(),
+    tenantCorrente: () => getCurrentTenantCode(),
+    tenantInvio: (c) => tenantPerVulcan(c),
+    ...dip,
+  };
+  const cfg = d.config();
+  if (cfg.stato === "spento") return { stato: "spento", il: null, motivo: null };
+  if (cfg.stato === "pronta") {
+    const corrente = d.tenantCorrente();
+    const invio = d.tenantInvio(cfg.codcli);
+    if (!corrente || corrente !== invio) return { stato: "altro_cliente", il: null, motivo: null };
+  }
   if (!schemaVulcanPresente(db)) return null;
   const r = db
     .prepare(

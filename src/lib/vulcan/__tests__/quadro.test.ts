@@ -92,20 +92,31 @@ test("sospeso per questo gettone: stato sospeso col motivo; gettone diverso → 
   assert.equal(q.stato, "attivo");
 });
 
+const STESSO = { config: () => PRONTA, tenantCorrente: () => "70791", tenantInvio: () => "70791" };
+
+test("riga della pagina AD: un tenant che non è il cliente dell'invio lo dice, anche con righe in coda", () => {
+  const db = nuovoDb();
+  accoda(db, { tipo: "ad-health", rif: "8", json: '{"r":8}', oggetti: 1 });
+  const altro = { config: () => PRONTA, tenantCorrente: () => "12345", tenantInvio: () => "70791" };
+  assert.deepEqual(statoInvioAd(db, 8, altro), { stato: "altro_cliente", il: null, motivo: null });
+  assert.equal(statoInvioAd(db, 8, { ...altro, tenantInvio: () => null })?.stato, "altro_cliente");
+  assert.equal(statoInvioAd(db, 8, STESSO)?.stato, "in_coda");
+});
+
 test("riga della pagina AD: spento, mai, in coda, inviato, scartato, fallito", () => {
   const db = nuovoDb();
   const ora = new Date("2026-10-22T08:00:00Z");
-  assert.deepEqual(statoInvioAd(db, 8, () => ({ stato: "spento" })), { stato: "spento", il: null, motivo: null });
-  assert.equal(statoInvioAd(db, 8, () => PRONTA), null);
+  assert.deepEqual(statoInvioAd(db, 8, { config: () => ({ stato: "spento" }) }), { stato: "spento", il: null, motivo: null });
+  assert.equal(statoInvioAd(db, 8, STESSO), null);
   const r = accoda(db, { tipo: "ad-health", rif: "8", json: '{"r":8}', oggetti: 1 });
-  assert.equal(statoInvioAd(db, 8, () => PRONTA)?.stato, "in_coda");
+  assert.equal(statoInvioAd(db, 8, STESSO)?.stato, "in_coda");
   segnaInviato(db, r.id, "272", ora);
-  assert.deepEqual(statoInvioAd(db, 8, () => PRONTA), { stato: "inviato", il: "2026-10-22 08:00:00", motivo: null });
+  assert.deepEqual(statoInvioAd(db, 8, STESSO), { stato: "inviato", il: "2026-10-22 08:00:00", motivo: null });
   const s = accoda(db, { tipo: "ad-health", rif: "9", json: '{"r":9}', oggetti: 1 });
   segnaScartato(db, s.id, "http_422", "l'hub ha rifiutato la forma dei dati (422): scartato", ora);
-  assert.equal(statoInvioAd(db, 9, () => PRONTA)?.stato, "scartato");
-  assert.match(statoInvioAd(db, 9, () => PRONTA)?.motivo ?? "", /422/);
+  assert.equal(statoInvioAd(db, 9, STESSO)?.stato, "scartato");
+  assert.match(statoInvioAd(db, 9, STESSO)?.motivo ?? "", /422/);
   const f = accoda(db, { tipo: "ad-health", rif: "10", json: '{"r":10}', oggetti: 1 });
   db.prepare("UPDATE vulcan_coda SET stato = 'fallito', ultimo_errore = 'ricezione spenta' WHERE id = ?").run(f.id);
-  assert.equal(statoInvioAd(db, 10, () => PRONTA)?.stato, "fallito");
+  assert.equal(statoInvioAd(db, 10, STESSO)?.stato, "fallito");
 });

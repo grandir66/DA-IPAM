@@ -33,7 +33,7 @@ Piano: [`docs/superpowers/plans/2026-10-22-scansione-automatica-da-discovery.md`
 - [x] T7 Discovery: pulsante e finestra (J1, J2), resa 1440 e 1920 — J1-J2 in Discovery, viste a 1440 e 1920
 - [ ] T8 pagina dei job: riga ed esiti per apparato (J3), resa 1440 e 1920
 - [ ] T9 testata della scheda: pastiglia (J4), resa 1440 e 1920
-- [ ] T10 accensione sull'hub (con l'ok di Riccardo per creare il job), ADR 0030, CHANGELOG, CONTEXT, scheda-mappa
+- [x] T10 accensione sull'hub (con l'ok di Riccardo per creare il job), ADR 0030, CHANGELOG, CONTEXT, scheda-mappa — sull hub (22/10 11:24 ora italiana): credenziali SNMP di 5 switch e del router provate, job #25 «Switch e router del CED» ogni 4 ore con 6 apparati, primo giro 6 letti su 6 in 83 s; servizio riavviato perché lo scheduler veda il job; backup /root/70791.db.bak-20261022-092258-prima-job-apparati. Revisione finale: 3 importanti corretti (modifica che restringeva il job, VLAN tolta in silenzio, «Esegui ora» sovrapponibile)
 
 ## 2026-10-22 — accorpamento IP e matrice VLAN degli switch
 

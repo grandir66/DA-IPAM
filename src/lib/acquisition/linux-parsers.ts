@@ -139,7 +139,7 @@ const perMille = (v: string | undefined, fattore: bigint): string | null => (v &
 const cifra = (v: string | undefined): string | null => (v && /^\d+$/.test(v) ? v : null);
 
 /**
- * `df -P -k` (blocchi da 1024) e `df -P -i` → filesystem con byte e inode, uniti per punto di montaggio. null = intestazione
+ * `df -P -k` (blocchi da 1024, con `-T` anche la colonna «Type») e `df -P -i` → filesystem con byte e inode, uniti per punto di montaggio. null = intestazione
  * di `df -P -k` non riconosciuta. Gli inode mancano (null) se la seconda uscita non c'è o non ha quel montaggio.
  */
 export function parseDf(kb: string, inode: string): Filesystem[] | null {
@@ -150,7 +150,7 @@ export function parseDf(kb: string, inode: string): Filesystem[] | null {
     return blocchi.map(r => {
         const i = inodi.get(r.Mounted_on);
         return {
-            device: r.Filesystem ?? null, mount_point: r.Mounted_on, type: null,
+            device: r.Filesystem ?? null, mount_point: r.Mounted_on, type: r.Type ?? null,
             size_bytes: perMille(r[colonnaBlocchi], BigInt(1024)), used_bytes: perMille(r.Used, BigInt(1024)), available_bytes: perMille(r.Available, BigInt(1024)),
             inodes_total: cifra(i?.Inodes), inodes_used: cifra(i?.IUsed), inodes_free: cifra(i?.IFree),
         };
@@ -161,4 +161,54 @@ export function parseDf(kb: string, inode: string): Filesystem[] | null {
 export function parseNomeVersione(testo: string, fonte: string): Array<{ name: string; version: string | null; publisher: null; install_date: null; source: string }> {
     return testo.split(/\r?\n/).map(r => r.split("\t")).filter(c => c.length >= 2 && c[0].trim() !== "")
         .map(([nome, versione]) => ({ name: nome.trim(), version: versione.trim() || null, publisher: null, install_date: null, source: fonte }));
+}
+
+/** Una tabella di un report JSON di LVM (`pvs`/`vgs`/`lvs --reportformat json`): `{"report":[{"<chiave>":[…]}]}`. null = non è un report. */
+export function parseLvmReport(testo: string, chiave: "pv" | "vg" | "lv"): Array<Record<string, string>> | null {
+    let json: unknown;
+    try { json = JSON.parse(testo); } catch { return null; }
+    const report = (json as { report?: unknown }).report;
+    if (!Array.isArray(report)) return null;
+    const out: Array<Record<string, string>> = [];
+    for (const r of report) {
+        const righe = (r as Record<string, unknown> | null)?.[chiave];
+        if (!Array.isArray(righe)) continue;
+        for (const x of righe) if (x && typeof x === "object") out.push(Object.fromEntries(Object.entries(x).map(([k, v]) => [k, String(v ?? "")])));
+    }
+    return out;
+}
+
+/** Una dimensione di LVM con `--units b --nosuffix` («1000204886016», talvolta «1000204886016B»): stringa decimale o null. */
+export const byteLvm = (v: string | undefined): string | null => { const m = /^(\d+)B?$/.exec((v ?? "").trim()); return m ? m[1] : null; };
+
+/** `systemctl show --property=… '*.service'`: blocchi `K=V` separati da una riga vuota, uno per unità. */
+export function parseSystemctlShow(testo: string): Array<{ name: string; display_name: string | null; state: "running" | "stopped" | "other" | null; start_mode: "auto" | "manual" | "disabled" | "other" | null; account: null }> | null {
+    const blocchi = testo.split(/\r?\n\s*\r?\n/).map(b => parseKeyValue(b)).filter(kv => kv.Id);
+    if (blocchi.length === 0) return null;
+    return blocchi.map(kv => {
+        const att = (kv.ActiveState ?? "").toLowerCase(), uf = (kv.UnitFileState ?? "").toLowerCase();
+        return {
+            name: kv.Id, display_name: kv.Description || null,
+            state: att === "active" ? "running" : att === "inactive" || att === "failed" ? "stopped" : att ? "other" : null,
+            start_mode: uf === "enabled" || uf === "enabled-runtime" ? "auto" : uf === "disabled" || uf === "masked" ? "disabled" : uf ? "other" : null,
+            account: null,
+        };
+    });
+}
+
+/** `timedatectl show` → fuso e NTP (chiavi `Timezone`, `NTP`, `NTPSynchronized`). */
+export function parseTimedatectl(testo: string): { timezone: string | null; enabled: boolean | null; synchronized: boolean | null } {
+    const kv = parseKeyValue(testo);
+    const si = (v: string | undefined): boolean | null => (v === "yes" ? true : v === "no" ? false : null);
+    return { timezone: kv.Timezone || null, enabled: si(kv.NTP), synchronized: si(kv.NTPSynchronized) };
+}
+
+export function parseGetenforce(testo: string): "enforcing" | "permissive" | "disabled" | null {
+    const v = (primaRiga(testo) ?? "").toLowerCase();
+    return v === "enforcing" || v === "permissive" || v === "disabled" ? v : null;
+}
+
+export function parseApparmor(testo: string): "enabled" | "disabled" | null {
+    const v = (primaRiga(testo) ?? "").toUpperCase();
+    return v === "Y" ? "enabled" : v === "N" ? "disabled" : null;
 }

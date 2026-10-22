@@ -453,6 +453,22 @@ Windows e Windows Server via **WinRM** con i soli script a id fisso del descritt
   non nel riconoscimento del prodotto. Da verificare al collaudo: gli script su PowerShell 5.1 di un Server 2016/2019,
   i tempi (ogni script è un giro di `pywinrm`), la forma vera degli array.
 
+## Collector linux (non collaudato)
+
+Server Linux via **SSH exec** con un utente **senza `sudo`**, un login, allowlist `LINUX_COMMANDS`.
+
+- **system**: `/etc/os-release`, `uname -srm`, fuso e NTP da `timedatectl show`, SELinux (`getenforce`) e AppArmor
+  (`/sys/module/apparmor/parameters/enabled`); **identity** con produttore e modello DMI (il seriale DMI di solito
+  vuole root: avviso `SERIAL_NEEDS_ROOT_OR_ABSENT`).
+- **host_storage**: dischi da `lsblk -J -b`, LVM da `pvs`/`vgs`/`lvs --reportformat json --units b --nosuffix`,
+  filesystem da `df -P -k -T` e `df -P -i` (colonne per nome, byte e inode come stringhe decimali). LVM assente
+  (127) non rende parziale la sezione; LVM senza permessi sì.
+- **software** da `dpkg-query` o `rpm` (formato `nome<TAB>versione` scelto da noi), **services** da `systemctl show`
+  per chiave (`Id`, `Description`, `ActiveState`, `UnitFileState`), non dalle colonne di `list-units`.
+- Un comando assente su quella distribuzione (exit 127) è `unsupported`, mai una lista vuota `ok`.
+- **Non collaudato** (repertorio da DADude3 `linux.py:432,794`) e non nel riconoscimento del prodotto. Da verificare al
+  collaudo: `systemctl show '*.service'` sulle versioni di systemd in uso, LVM senza root, `df -T` con BusyBox.
+
 ## Aggiungere una famiglia
 
 Una famiglia è un collector con lo stesso contratto JSON 1.0. Il catalogo è l'**unico elenco**: l'enum

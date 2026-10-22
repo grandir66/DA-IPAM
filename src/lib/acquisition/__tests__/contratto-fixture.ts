@@ -168,6 +168,41 @@ function perWinrm(richiesta: AcquisitionRequest, uscita: (id: string) => string)
     return { richiesta, normale: () => esegui(uscita), formatoIgnoto: () => esegui(id => (id === "identita" ? uscita(id) : GARBAGE(id))), trasportoGuasto: () => esegui(uscita, true) };
 }
 
+// Linux (forme di util-linux, LVM, systemd e coreutils dalla documentazione; dati inventati). rpm assente: 127.
+const linuxUscite: Record<string, string> = {
+    "cat /etc/os-release": 'PRETTY_NAME="Debian GNU/Linux 12 (bookworm)"\nNAME="Debian GNU/Linux"\nVERSION_ID="12"\nID=debian\n',
+    "uname -srm": "Linux 6.1.0-26-amd64 x86_64\n", "hostname": `lnx-${SEGRETO}\n`, "cat /proc/uptime": "86400.00 170000.00\n",
+    "cat /proc/meminfo": "MemTotal:       16000000 kB\nMemAvailable:    8000000 kB\n",
+    "cat /sys/class/dmi/id/sys_vendor": "Lab\n", "cat /sys/class/dmi/id/product_name": "LabServer 2\n",
+    "ip -o link show": "2: ens18: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP mode DEFAULT group default qlen 1000\\    link/ether 02:00:00:00:60:01 brd ff:ff:ff:ff:ff:ff\n",
+    "ip -o -4 addr show": "2: ens18    inet 198.51.100.10/24 brd 198.51.100.255 scope global ens18\\       valid_lft forever preferred_lft forever\n",
+    "lsblk -J -b -d -o NAME,SIZE,MODEL,SERIAL,ROTA,TRAN": '{"blockdevices":[{"name":"sda","size":107374182400,"model":"LAB DISK","serial":null,"rota":false,"tran":null}]}',
+    "df -P -k -T": "Filesystem              Type 1024-blocks    Used Available Capacity Mounted on\n/dev/mapper/vg0-root    ext4    50000000 10000000  37000000      22% /\n",
+    "df -P -i": "Filesystem               Inodes  IUsed   IFree IUse% Mounted on\n/dev/mapper/vg0-root    3276800 120000 3156800    4% /\n",
+    "pvs --reportformat json --units b --nosuffix -o pv_name,vg_name,pv_size,pv_free": '{"report":[{"pv":[{"pv_name":"/dev/sda3","vg_name":"vg0","pv_size":"106300440576","pv_free":"0"}]}]}',
+    "vgs --reportformat json --units b --nosuffix -o vg_name,vg_size,vg_free,lv_count": '{"report":[{"vg":[{"vg_name":"vg0","vg_size":"106300440576","vg_free":"0","lv_count":"2"}]}]}',
+    "lvs --reportformat json --units b --nosuffix -o lv_name,vg_name,lv_size,lv_path": '{"report":[{"lv":[{"lv_name":"root","vg_name":"vg0","lv_size":"51200000000","lv_path":"/dev/vg0/root"}]}]}',
+    "timedatectl show": "Timezone=Europe/Rome\nLocalRTC=no\nNTP=yes\nNTPSynchronized=yes\n", "cat /sys/module/apparmor/parameters/enabled": "Y\n",
+    "dpkg-query -W -f '${Package}\\t${Version}\\n'": "openssh-server\t1:9.2p1-2+deb12u3\nbash\t5.2.15-2+b7\n",
+    "systemctl show --property=Id,Description,ActiveState,UnitFileState '*.service'": "Id=ssh.service\nDescription=OpenBSD Secure Shell server\nActiveState=active\nUnitFileState=enabled\n\nId=cron.service\nDescription=Regular background program processing daemon\nActiveState=inactive\nUnitFileState=disabled\n",
+};
+const LINUX_ASSENTI = new Set(["getenforce", "rpm -qa --qf '%{NAME}\\t%{VERSION}-%{RELEASE}\\n'", "cat /sys/class/dmi/id/product_serial"]);
+const linuxReq: AcquisitionRequest = { collector: "linux", host: "198.51.100.10", ssh: { username: "lab", password: SEGRETO } };
+export const LINUX_USCITE = linuxUscite;
+function perExecLinux(): FixtureCollector {
+    const base = perExec(linuxReq, c => linuxUscite[c] ?? "", ["cat /etc/os-release", "uname -srm"]);
+    // Come perExec, ma i comandi che il sistema non ha rispondono «non supportato» (exit 127) invece che vuoti.
+    const esegui = async (risposta: (c: string) => string): Promise<Esito> => {
+        let chiamate = 0;
+        const t: AcquisitionTransports = {
+            get: async () => { throw Error(SEGRETO); }, walk: async () => { throw Error(SEGRETO); },
+            shell: async comandi => { chiamate++; return Object.fromEntries(comandi.map(c => [c, LINUX_ASSENTI.has(c) ? { status: "unsupported" as const, data: "", warnings: ["COMMAND_UNSUPPORTED"] } : ok(risposta(c))])); },
+        };
+        return { snapshot: await collectDevice(linuxReq, t), chiamateShell: chiamate };
+    };
+    return { ...base, normale: () => esegui(c => linuxUscite[c] ?? "") };
+}
+
 export const FIXTURE: Record<CollectorId, FixtureCollector> = {
     "qnap-switch": conGarbage(perShell(qnapReq, consola({ identita: { "show system-information": qnapIdent } }, qnapNormale)), { "show system-information": qnapIdent }, undefined),
     "hp-procurve": conGarbage(perShell(procurveReq, consola({ identita: procurveIdent, snmp: procurveSnmp }, procurveNormale)), procurveIdent, procurveSnmp),
@@ -180,6 +215,7 @@ export const FIXTURE: Record<CollectorId, FixtureCollector> = {
     "qnap-nas": perExec(qnapNasReq, c => qnapNasUscite[c] ?? "", ["getsysinfo model", "getsysinfo firmver", "cat /etc/version", "cat /etc/default_config/WEBAPP.build"]),
     "mikrotik-routeros": perExec(mikrotikReq, c => mikrotikUscite[c] ?? "", ["/system resource print", "/system routerboard print"]),
     "windows": perWinrm(windowsReq, id => windowsUscite[id] ?? ""),
+    "linux": perExecLinux(),
     "netapp-ontap": {
         richiesta: ontapReq,
         normale: async () => ({ snapshot: await collectNetappOntap(ontapReq, async () => ontapRaw()), chiamateShell: 0 }),

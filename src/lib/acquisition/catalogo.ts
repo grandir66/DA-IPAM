@@ -6,7 +6,7 @@
  * (la fixture): la prova di contratto fallisce se manca uno dei tre. Guida: docs/modules/acquisition.md.
  */
 import { SCRIPT_WINDOWS } from "./windows-script";
-import { QSS_COMMANDS, PROCURVE_COMMANDS, COMWARE_COMMANDS, QNAP_NAS_COMMANDS, MIKROTIK_ROUTEROS_COMMANDS } from "./comandi";
+import { QSS_COMMANDS, PROCURVE_COMMANDS, COMWARE_COMMANDS, QNAP_NAS_COMMANDS, MIKROTIK_ROUTEROS_COMMANDS, LINUX_COMMANDS } from "./comandi";
 
 export type ProtocolloCollector = "snmp" | "ssh" | "api" | "winrm";
 export type StatoCollaudo = "collaudato" | "non_collaudato";
@@ -87,6 +87,13 @@ export const CATALOGO = [
         id: "windows", versione: "0.1.0", famiglia: "server", prodotti: ["Microsoft Windows e Windows Server (WinRM), anche Hyper-V"],
         credenziali: { ammesse: ["winrm"], una_di: ["winrm"] },
         sezioni: ["identity", "system", "interfaces", "network", "resources", "host_storage", "software", "services", "security", "guests"], comandi: null, script_winrm: SCRIPT_WINDOWS,
+        collaudo: "non_collaudato", collaudati: [],
+    },
+    {
+        // Non collaudato: comandi dal repertorio DADude3 linux.py, uscite dalla documentazione (util-linux, LVM, systemd).
+        id: "linux", versione: "0.1.0", famiglia: "server", prodotti: ["Linux (Debian, Ubuntu, RHEL e derivate; utente senza sudo)"],
+        credenziali: { ammesse: ["ssh"], una_di: ["ssh"] },
+        sezioni: ["identity", "system", "interfaces", "network", "resources", "host_storage", "software", "services"], comandi: LINUX_COMMANDS, ssh_modo: "exec",
         collaudo: "non_collaudato", collaudati: [],
     },
 ] as const satisfies readonly DescrittoreCollector[];

@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LibreNMS: esclusione e aggiunta in blocco</title>
+<!--
+  Tavola grafica dei punti 2 e 3 del giro del 22/10 (docs/handoff/2026-10-22-prompt-switch-librenms.md), da approvare prima
+  di scrivere l'interfaccia. Il lato server è già su dev (v0.9.884). Dati finti, indirizzi di documentazione 192.0.2.x.
+  Riferimento 1920, si legge a 1440. Stati per luminanza E forma: Riccardo è daltonico.
+-->
+<style>
+  :root {
+    --primary: #00A7E7; --navy: #0D2537; --gold: #FFD400; --bg: #EDEDED; --card: #FFFFFF;
+    --ink: #0D2537; --muted: #52606B; --line: #D0D8DC;
+    /* Gli stessi token di globals.css: online verde scuro pieno, offline arancio a righe, sconosciuto grigio chiaro. */
+    --ok: #1F7A4D; --att: #E69F00; --nd: #D0D8DC; --crit: #0D2537;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg: #0B1A26; --card: #12283A; --ink: #E7EAEB; --muted: #A9B7C2; --line: #24405A; --ok: #5ED3A0; --nd: #4A6070; --crit: #E6EEF4; }
+  }
+  :root[data-theme="dark"] { --bg: #0B1A26; --card: #12283A; --ink: #E7EAEB; --muted: #A9B7C2; --line: #24405A; --ok: #5ED3A0; --nd: #4A6070; --crit: #E6EEF4; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 "Signika", "Segoe UI", system-ui, sans-serif; }
+  header.tavola { background: var(--navy); color: #fff; padding: 20px 32px; border-bottom: 4px solid var(--gold); }
+  header.tavola h1 { margin: 0 0 4px; font-size: 22px; }
+  header.tavola p { margin: 0; color: #C9D6DF; max-width: 1200px; }
+  main { max-width: 1920px; margin: 0 auto; padding: 24px 32px 64px; display: grid; gap: 32px; }
+  section.oggetto { display: grid; grid-template-columns: minmax(0, 1fr) 420px; gap: 24px; align-items: start; }
+  @media (max-width: 1100px) { section.oggetto { grid-template-columns: 1fr; } main { padding: 16px; } }
+  .schermo { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 16px 20px; overflow-x: auto; }
+  .nota { background: var(--card); border-left: 4px solid var(--primary); border-radius: 4px; padding: 12px 16px; }
+  .nota h3 { margin: 0 0 6px; font-size: 15px; }
+  .nota ol, .nota ul { margin: 6px 0 0; padding-left: 20px; }
+  .nota li { margin: 4px 0; }
+  .num { display: inline-flex; align-items: center; justify-content: center; min-width: 30px; height: 26px; padding: 0 6px;
+         border-radius: 13px; background: var(--gold); color: #0D2537; font-weight: 700; font-size: 13px; margin-right: 8px; }
+  .tabs { display: flex; gap: 2px; border-bottom: 2px solid var(--line); margin: 8px 0 12px; flex-wrap: wrap; }
+  .tabs span { padding: 6px 14px; color: var(--muted); }
+  .tabs span.on { color: var(--ink); font-weight: 600; border-bottom: 3px solid var(--primary); margin-bottom: -2px; }
+  .testa { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+  .testa h2 { margin: 0; font-size: 18px; }
+  .fioca { color: var(--muted); font-size: 13px; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th { text-align: left; font-weight: 600; padding: 6px 10px; border-bottom: 2px solid var(--line); background: color-mix(in srgb, var(--line) 35%, transparent); white-space: nowrap; }
+  td { padding: 6px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  td.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  h4 { margin: 18px 0 6px; font-size: 14px; display: flex; gap: 8px; align-items: baseline; }
+  h4 .fioca { font-weight: 400; }
+  /* Pastiglie di stato: il segno e la parola sempre, il colore in più. */
+  .p { display: inline-flex; gap: 5px; align-items: center; padding: 1px 8px; border-radius: 10px; font-weight: 600; font-size: 12px; white-space: nowrap; }
+  .p.ok { background: var(--ok); color: #fff; }
+  .p.att { background: repeating-linear-gradient(135deg, var(--att) 0 6px, #F3C25A 6px 10px); color: #0D2537; }
+  .p.crit { background: var(--crit); color: var(--card); outline: 2px solid var(--att); outline-offset: -2px; }
+  .p.nd { background: var(--nd); color: #0D2537; }
+  .fonte { display: inline-block; padding: 0 6px; border: 1px solid var(--line); border-radius: 4px; font-size: 12px; white-space: nowrap; }
+  .fonte.lnms { border-color: var(--primary); }
+  .fonte.due { border-style: double; border-width: 3px; }
+  .disaccordo td { background: color-mix(in srgb, var(--att) 14%, transparent); }
+  .riga-fonti { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; color: var(--muted); margin-top: 10px; }
+  .riga-fonti b { color: var(--ink); }
+  .riga-fonti .si { color: var(--ink); }
+  .btn { display: inline-block; padding: 3px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); font-size: 12px; font-weight: 600; white-space: nowrap; }
+  .btn.prim { background: var(--primary); color: #fff; border-color: var(--primary); }
+  .griglia3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+  @media (max-width: 1500px) { .griglia3 { grid-template-columns: 1fr; } }
+  .scatola { border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; }
+  .scatola h4 { margin-top: 0; }
+  .legenda { display: flex; flex-wrap: wrap; gap: 10px 20px; align-items: center; }
+  footer { max-width: 1920px; margin: 0 auto; padding: 0 32px 48px; }
+
+  .nuovo { outline: 2px dashed var(--primary); outline-offset: 3px; border-radius: 6px; }
+  .barra { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: color-mix(in srgb, var(--primary) 7%, var(--card)); }
+  .finestra { max-width: 760px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); box-shadow: 0 8px 24px rgba(13,37,55,.18); padding: 16px 20px; }
+  .finestra h3 { margin: 0 0 4px; font-size: 16px; }
+  .avanz { height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; margin: 8px 0 4px; }
+  .avanz i { display: block; height: 100%; width: 58%; background: var(--navy); }
+  .griglia5 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+  @media (max-width: 1500px) { .griglia5 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header class="tavola">
+  <h1>LibreNMS: «Non aggiungere», candidati SNMP, aggiunta in blocco</h1>
+  <p>Tre punti dell'interfaccia. Il riquadro tratteggiato azzurro segna ciò che è nuovo. Il giro automatico è già cambiato sul server (v0.9.884): aggiunge da solo, 5 per giro, gli oggetti con l'SNMP verificato, tranne gli esclusi.</p>
+</header>
+<main>
+
+<section class="oggetto">
+  <div class="schermo">
+    <div class="testa"><h2>sw-magazzino-02</h2><span class="fioca">Switch · 192.0.2.41 · Panoramica</span></div>
+    <div class="tabs"><span class="on">Panoramica</span><span>Porte</span><span>VLAN</span><span>Vicini</span><span>Credenziali</span></div>
+    <p class="fioca" style="margin:0 0 6px">Tre stati possibili della riga «Dati da» per un oggetto che non è in LibreNMS:</p>
+
+    <div class="riga-fonti"><span>Dati da:</span><span class="si"><b>SNMP</b> 23/10 08:10</span><span class="si"><b>SSH</b> 23/10 08:10</span>
+      <span class="nuovo"><span class="num">1</span><span class="p nd">◷ LibreNMS: in coda</span> <span class="fioca">SNMP verificato · si aggiunge da solo al prossimo giro</span></span>
+      <span class="btn">Aggiungi a LibreNMS</span>
+      <span class="nuovo"><span class="num">2</span><span class="btn">Non aggiungere a LibreNMS</span></span>
+    </div>
+
+    <div class="riga-fonti" style="margin-top:18px"><span>Dati da:</span><span class="si"><b>SNMP</b> 23/10 08:10</span>
+      <span class="nuovo"><span class="num">3</span><span class="p att">▲ LibreNMS: rifiutato 23/10 09:15</span> <span class="fioca">«SNMP non risponde» · si riprova dopo 24 ore</span></span>
+      <span class="btn">Aggiungi a LibreNMS</span><span class="btn">Non aggiungere a LibreNMS</span>
+    </div>
+
+    <div class="riga-fonti" style="margin-top:18px"><span>Dati da:</span><span class="si"><b>SNMP</b> 23/10 08:10</span>
+      <span class="nuovo"><span class="num">4</span><span class="p crit">✕ LibreNMS: escluso</span> <span class="fioca">dal 23/10 10:02 · il giro automatico non lo aggiunge</span></span>
+      <span class="btn">Aggiungi a LibreNMS</span>
+      <span class="nuovo"><span class="num">5</span><span class="btn">Togli l'esclusione</span></span>
+    </div>
+  </div>
+  <div class="nota">
+    <h3>Scheda dell'oggetto, riga «Dati da»</h3>
+    <ol>
+      <li><span class="num">1</span>Accanto ai pulsanti, lo stato dell'aggiunta automatica: <b>in coda</b> (grigio chiaro, orologio) se l'SNMP è verificato; senza SNMP verificato la pastiglia non c'è e resta solo il pulsante, come oggi.</li>
+      <li><span class="num">2</span><b>Non aggiungere a LibreNMS</b>, solo admin: un clic, nessuna finestra di conferma (si toglie con un clic).</li>
+      <li><span class="num">3</span><b>Rifiutato</b>: ambra a righe col triangolo, data e motivo di LibreNMS.</li>
+      <li><span class="num">4</span><b>Escluso</b>: scuro pieno con la croce e la data.</li>
+      <li><span class="num">5</span>Da escluso il pulsante diventa <b>Togli l'esclusione</b>. «Aggiungi a LibreNMS» resta: l'esclusione ferma solo il giro automatico, non chi aggiunge a mano.</li>
+    </ol>
+  </div>
+</section>
+
+<section class="oggetto">
+  <div class="schermo">
+    <div class="testa"><h2>Moduli › LibreNMS</h2><span class="fioca">Apparati e lettura dei dati</span></div>
+    <p class="fioca" style="margin:6px 0 0">Sopra restano «Lettura per parte» e le tre liste di oggi (Mai interrogati · Rifiutati da LibreNMS · Visti come vicini). Sotto, due liste nuove:</p>
+    <div class="griglia5" style="margin-top:10px">
+      <div class="scatola nuovo" style="grid-column: span 2">
+        <h4><span class="num">6</span>Con SNMP verificato <span class="fioca">38 · si aggiungono da soli, 5 per giro (circa 2 ore per tutti)</span></h4>
+        <table>
+          <thead><tr><th>Oggetto</th><th>Tipo</th><th>IP</th><th>Stato</th><th></th></tr></thead>
+          <tbody>
+            <tr><td>core-sw-01</td><td>Apparato · switch</td><td>192.0.2.21</td><td><span class="p nd">◷ in coda</span></td><td><span class="btn">Escludi</span></td></tr>
+            <tr><td>core-sw-02</td><td>Apparato · switch</td><td>192.0.2.22</td><td><span class="p att">▲ rifiutato 23/10 09:15</span></td><td><span class="btn">Escludi</span></td></tr>
+            <tr><td>stampante-uff-3</td><td>Host</td><td>192.0.2.73</td><td><span class="p nd">◷ in coda</span></td><td><span class="btn">Escludi</span></td></tr>
+            <tr><td>ups-sala-server</td><td>Host</td><td>192.0.2.80</td><td><span class="p nd">◷ in coda</span></td><td><span class="btn">Escludi</span></td></tr>
+            <tr><td colspan="5" class="fioca">+34 · mostra tutti ›</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="scatola nuovo">
+        <h4><span class="num">7</span>Esclusi <span class="fioca">2 · il giro non li aggiunge</span></h4>
+        <table>
+          <thead><tr><th>Oggetto</th><th>IP</th><th>Dal</th><th></th></tr></thead>
+          <tbody>
+            <tr><td>pc-reception</td><td>192.0.2.120</td><td>23/10 10:02</td><td><span class="btn">Togli</span></td></tr>
+            <tr><td>tv-sala-riunioni</td><td>192.0.2.131</td><td>23/10 10:04</td><td><span class="btn">Togli</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="nota">
+    <h3>Pagina del modulo</h3>
+    <ol>
+      <li><span class="num">6</span><b>Con SNMP verificato</b>: chi il giro aggiungerà, apparati prima. Il nome apre la scheda. «Escludi» per riga, solo admin. Le prime 10 righe, poi «mostra tutti» come le liste di oggi.</li>
+      <li><span class="num">7</span><b>Esclusi</b>: chi è stato tolto a mano, con la data; «Togli» lo rimette in coda.</li>
+    </ol>
+    <p class="fioca">Il riepilogo dell'ultimo giro (in alto) aggiunge «candidati 3 aggiunti su 5».</p>
+  </div>
+</section>
+
+<section class="oggetto">
+  <div class="schermo">
+    <div class="testa"><h2>Discovery</h2><span class="fioca">12 host selezionati</span></div>
+    <div class="barra" style="margin-top:10px">
+      <b>12 host selezionati</b>
+      <span class="btn prim">Modifica</span><span class="btn">Aggiungi ai dispositivi</span><span class="btn">Unisci…</span><span class="btn">Aggiorna selezionati</span><span class="btn">Crea asset NIS2</span>
+      <span class="nuovo"><span class="num">8</span><span class="btn">Aggiungi a LibreNMS (12)</span></span>
+      <span class="btn">Deseleziona</span>
+    </div>
+
+    <div class="finestra nuovo" style="margin-top:22px">
+      <h3><span class="num">9</span>Aggiunta a LibreNMS · 7 di 12</h3>
+      <div class="avanz"><i></i></div>
+      <p class="fioca" style="margin:0 0 8px">Uno alla volta, senza aggiunta forzata. Chiudendo la finestra le aggiunte già fatte restano.</p>
+      <table>
+        <thead><tr><th>Oggetto</th><th>IP</th><th>Esito</th></tr></thead>
+        <tbody>
+          <tr><td>core-sw-01</td><td>192.0.2.21</td><td><span class="p ok">✓ aggiunto</span></td></tr>
+          <tr><td>core-sw-02</td><td>192.0.2.22</td><td><span class="p ok">✓ già presente, aggiornato</span></td></tr>
+          <tr><td>stampante-uff-3</td><td>192.0.2.73</td><td><span class="p att">▲ rifiutato</span> <span class="fioca">SNMP non risponde (Could not connect …)</span></td></tr>
+          <tr><td>pc-reception</td><td>192.0.2.120</td><td><span class="p nd">– senza SNMP</span> <span class="fioca">nessuna credenziale SNMP: non si aggiunge</span></td></tr>
+          <tr><td>ups-sala-server</td><td>192.0.2.80</td><td><span class="p nd">◷ in corso…</span></td></tr>
+          <tr><td>…</td><td></td><td><span class="fioca">in attesa</span></td></tr>
+        </tbody>
+      </table>
+      <p style="margin:12px 0 0;display:flex;gap:8px;justify-content:flex-end"><span class="btn">Ferma dopo questo</span><span class="btn">Chiudi</span></p>
+    </div>
+  </div>
+  <div class="nota">
+    <h3>Discovery, aggiunta in blocco</h3>
+    <ol>
+      <li><span class="num">8</span>Nella barra della selezione, solo admin e solo con LibreNMS configurato: <b>Aggiungi a LibreNMS (N)</b>.</li>
+      <li><span class="num">9</span>Una finestra con una riga per oggetto: la stessa rotta di una sola aggiunta, chiamata uno alla volta. Esiti: <b>aggiunto</b> (verde pieno, ✓), <b>già presente</b> (verde, aggiornato), <b>rifiutato</b> col motivo di LibreNMS (ambra a righe, ▲), <b>senza SNMP</b> (grigio, –). «Ferma dopo questo» interrompe la coda.</li>
+    </ol>
+    <p class="fioca">Gli host già in LibreNMS si mandano lo stesso (la rotta li aggiorna, come oggi dal menu della riga).</p>
+  </div>
+</section>
+
+</main>
+</body>
+</html>

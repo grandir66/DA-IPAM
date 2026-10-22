@@ -1,0 +1,205 @@
+{
+ "status": "ok",
+ "arp": [
+  {
+   "id": 497,
+   "port_id": 447,
+   "device_id": 28,
+   "mac_address": "020000000023",
+   "ipv4_address": "192.0.2.19",
+   "context_name": ""
+  },
+  {
+   "id": 499,
+   "port_id": 447,
+   "device_id": 28,
+   "mac_address": "020000000024",
+   "ipv4_address": "192.0.2.27",
+   "context_name": ""
+  },
+  {
+   "id": 500,
+   "port_id": 447,
+   "device_id": 28,
+   "mac_address": "020000000025",
+   "ipv4_address": "192.0.2.28",
+   "context_name": ""
+  },
+  {
+   "id": 501,
+   "port_id": 447,
+   "device_id": 28,
+   "mac_address": "020000000026",
+   "ipv4_address": "192.0.2.29",
+   "context_name": ""
+  },
+  {
+   "id": 502,
+   "port_id": 447,
+   "device_id": 28,
+   "mac_address": "020000000027",
+   "ipv4_address": "192.0.2.30",
+   "context_name": ""
+  },
+  {
+   "id": 503,
+   "port_id": 447,
+   "device_id": 28,
+   "mac_address": "020000000028",
+   "ipv4_address": "192.0.2.22",
+   "context_name": ""
+  },
+  {
+   "id": 504,
+   "port_id": 447,
+   "device_id": 28,
+   "mac_address": "020000000029",
+   "ipv4_address": "192.0.2.31",
+   "context_name": ""
+  },
+  {
+   "id": 505,
+   "port_id": 447,
+   "device_id": 28,
+   "mac_address": "02000000002a",
+   "ipv4_address": "192.0.2.32",
+   "context_name": ""
+  },
+  {
+   "id": 506,
+   "port_id": 447,
+   "device_id": 28,
+   "mac_address": "02000000002b",
+   "ipv4_address": "192.0.2.33",
+   "context_name": ""
+  },
+  {
+   "id": 508,
+   "port_id": 447,
+   "device_id": 28,
+   "mac_address": "02000000002c",
+   "ipv4_address": "192.0.2.34",
+   "context_name": ""
+  },
+  {
+   "id": 509,
+   "port_id": 447,
+   "device_id": 28,
+   "mac_address": "02000000002d",
+   "ipv4_address": "192.0.2.35",
+   "context_name": ""
+  },
+  {
+   "id": 510,
+   "port_id": 447,
+   "device_id": 28,
+   "mac_address": "02000000002e",
+   "ipv4_address": "192.0.2.36",
+   "context_name": ""
+  },
+  {
+   "id": 513,
+   "port_id": 447,
+   "device_id": 28,
+   "mac_address": "02000000002f",
+   "ipv4_address": "192.0.2.37",
+   "context_name": ""
+  },
+  {
+   "id": 514,
+   "port_id": 447,
+   "device_id": 28,
+   "mac_address": "020000000030",
+   "ipv4_address": "192.0.2.38",
+   "context_name": ""
+  },
+  {
+   "id": 515,
+   "port_id": 447,
+   "device_id": 28,
+   "mac_address": "020000000031",
+   "ipv4_address": "192.0.2.39",
+   "context_name": ""
+  },
+  {
+   "id": 516,
+   "port_id": 447,
+   "device_id": 28,
+   "mac_address": "020000000032",
+   "ipv4_address": "192.0.2.40",
+   "context_name": ""
+  },
+  {
+   "id": 517,
+   "port_id": 447,
+   "device_id": 28,
+   "mac_address": "020000000033",
+   "ipv4_address": "192.0.2.41",
+   "context_name": ""
+  },
+  {
+   "id": 518,
+   "port_id": 447,
+   "device_id": 28,
+   "mac_address": "020000000034",
+   "ipv4_address": "192.0.2.42",
+   "context_name": ""
+  },
+  {
+   "id": 519,
+   "port_id": 447,
+   "device_id": 28,
+   "mac_address": "020000000035",
+   "ipv4_address": "192.0.2.43",
+   "context_name": ""
+  },
+  {
+   "id": 520,
+   "port_id": 447,
+   "device_id": 28,
+   "mac_address": "020000000036",
+   "ipv4_address": "192.0.2.44",
+   "context_name": ""
+  },
+  {
+   "id": 521,
+   "port_id": 447,
+   "device_id": 28,
+   "mac_address": "020000000037",
+   "ipv4_address": "192.0.2.45",
+   "context_name": ""
+  },
+  {
+   "id": 522,
+   "port_id": 447,
+   "device_id": 28,
+   "mac_address": "020000000038",
+   "ipv4_address": "192.0.2.46",
+   "context_name": ""
+  },
+  {
+   "id": 523,
+   "port_id": 447,
+   "device_id": 28,
+   "mac_address": "020000000039",
+   "ipv4_address": "192.0.2.47",
+   "context_name": ""
+  },
+  {
+   "id": 524,
+   "port_id": 447,
+   "device_id": 28,
+   "mac_address": "020000000029",
+   "ipv4_address": "192.0.2.48",
+   "context_name": ""
+  },
+  {
+   "id": 525,
+   "port_id": 447,
+   "device_id": 28,
+   "mac_address": "020000000004",
+   "ipv4_address": "192.0.2.23",
+   "context_name": ""
+  }
+ ]
+}

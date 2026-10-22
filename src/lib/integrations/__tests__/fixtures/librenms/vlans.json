@@ -1,0 +1,231 @@
+{
+ "status": "ok",
+ "vlans": [
+  {
+   "vlan_id": 1,
+   "device_id": 39,
+   "vlan_vlan": 1,
+   "vlan_domain": 1,
+   "vlan_name": "vlan_name-198",
+   "vlan_type": null,
+   "vlan_state": 1
+  },
+  {
+   "vlan_id": 2,
+   "device_id": 39,
+   "vlan_vlan": 2,
+   "vlan_domain": 1,
+   "vlan_name": "vlan_name-199",
+   "vlan_type": null,
+   "vlan_state": 1
+  },
+  {
+   "vlan_id": 3,
+   "device_id": 39,
+   "vlan_vlan": 4,
+   "vlan_domain": 1,
+   "vlan_name": "vlan_name-200",
+   "vlan_type": null,
+   "vlan_state": 1
+  },
+  {
+   "vlan_id": 4,
+   "device_id": 39,
+   "vlan_vlan": 5,
+   "vlan_domain": 1,
+   "vlan_name": "vlan_name-201",
+   "vlan_type": null,
+   "vlan_state": 1
+  },
+  {
+   "vlan_id": 5,
+   "device_id": 39,
+   "vlan_vlan": 6,
+   "vlan_domain": 1,
+   "vlan_name": "vlan_name-202",
+   "vlan_type": null,
+   "vlan_state": 1
+  },
+  {
+   "vlan_id": 6,
+   "device_id": 39,
+   "vlan_vlan": 7,
+   "vlan_domain": 1,
+   "vlan_name": "vlan_name-203",
+   "vlan_type": null,
+   "vlan_state": 1
+  },
+  {
+   "vlan_id": 7,
+   "device_id": 39,
+   "vlan_vlan": 15,
+   "vlan_domain": 1,
+   "vlan_name": "vlan_name-204",
+   "vlan_type": null,
+   "vlan_state": 1
+  },
+  {
+   "vlan_id": 8,
+   "device_id": 39,
+   "vlan_vlan": 16,
+   "vlan_domain": 1,
+   "vlan_name": "vlan_name-205",
+   "vlan_type": null,
+   "vlan_state": 1
+  },
+  {
+   "vlan_id": 9,
+   "device_id": 39,
+   "vlan_vlan": 20,
+   "vlan_domain": 1,
+   "vlan_name": "vlan_name-206",
+   "vlan_type": null,
+   "vlan_state": 1
+  },
+  {
+   "vlan_id": 10,
+   "device_id": 39,
+   "vlan_vlan": 40,
+   "vlan_domain": 1,
+   "vlan_name": "vlan_name-207",
+   "vlan_type": null,
+   "vlan_state": 1
+  },
+  {
+   "vlan_id": 11,
+   "device_id": 39,
+   "vlan_vlan": 88,
+   "vlan_domain": 1,
+   "vlan_name": "vlan_name-208",
+   "vlan_type": null,
+   "vlan_state": 1
+  },
+  {
+   "vlan_id": 12,
+   "device_id": 39,
+   "vlan_vlan": 133,
+   "vlan_domain": 1,
+   "vlan_name": "vlan_name-209",
+   "vlan_type": null,
+   "vlan_state": 1
+  },
+  {
+   "vlan_id": 13,
+   "device_id": 39,
+   "vlan_vlan": 666,
+   "vlan_domain": 1,
+   "vlan_name": "vlan_name-210",
+   "vlan_type": null,
+   "vlan_state": 1
+  },
+  {
+   "vlan_id": 14,
+   "device_id": 41,
+   "vlan_vlan": 1,
+   "vlan_domain": 1,
+   "vlan_name": "vlan_name-198",
+   "vlan_type": null,
+   "vlan_state": 1
+  },
+  {
+   "vlan_id": 15,
+   "device_id": 41,
+   "vlan_vlan": 2,
+   "vlan_domain": 1,
+   "vlan_name": "vlan_name-199",
+   "vlan_type": null,
+   "vlan_state": 1
+  },
+  {
+   "vlan_id": 16,
+   "device_id": 41,
+   "vlan_vlan": 4,
+   "vlan_domain": 1,
+   "vlan_name": "vlan_name-200",
+   "vlan_type": null,
+   "vlan_state": 1
+  },
+  {
+   "vlan_id": 17,
+   "device_id": 41,
+   "vlan_vlan": 5,
+   "vlan_domain": 1,
+   "vlan_name": "vlan_name-201",
+   "vlan_type": null,
+   "vlan_state": 1
+  },
+  {
+   "vlan_id": 18,
+   "device_id": 41,
+   "vlan_vlan": 6,
+   "vlan_domain": 1,
+   "vlan_name": "vlan_name-202",
+   "vlan_type": null,
+   "vlan_state": 1
+  },
+  {
+   "vlan_id": 19,
+   "device_id": 41,
+   "vlan_vlan": 7,
+   "vlan_domain": 1,
+   "vlan_name": "vlan_name-203",
+   "vlan_type": null,
+   "vlan_state": 1
+  },
+  {
+   "vlan_id": 20,
+   "device_id": 41,
+   "vlan_vlan": 15,
+   "vlan_domain": 1,
+   "vlan_name": "vlan_name-204",
+   "vlan_type": null,
+   "vlan_state": 1
+  },
+  {
+   "vlan_id": 21,
+   "device_id": 41,
+   "vlan_vlan": 16,
+   "vlan_domain": 1,
+   "vlan_name": "vlan_name-205",
+   "vlan_type": null,
+   "vlan_state": 1
+  },
+  {
+   "vlan_id": 22,
+   "device_id": 41,
+   "vlan_vlan": 20,
+   "vlan_domain": 1,
+   "vlan_name": "vlan_name-206",
+   "vlan_type": null,
+   "vlan_state": 1
+  },
+  {
+   "vlan_id": 23,
+   "device_id": 41,
+   "vlan_vlan": 40,
+   "vlan_domain": 1,
+   "vlan_name": "vlan_name-207",
+   "vlan_type": null,
+   "vlan_state": 1
+  },
+  {
+   "vlan_id": 24,
+   "device_id": 41,
+   "vlan_vlan": 88,
+   "vlan_domain": 1,
+   "vlan_name": "vlan_name-208",
+   "vlan_type": null,
+   "vlan_state": 1
+  },
+  {
+   "vlan_id": 25,
+   "device_id": 41,
+   "vlan_vlan": 133,
+   "vlan_domain": 1,
+   "vlan_name": "vlan_name-209",
+   "vlan_type": null,
+   "vlan_state": 1
+  }
+ ],
+ "count": 76
+}

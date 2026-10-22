@@ -312,6 +312,9 @@ collegamenti nuovi e di quelli cambiati portato a Riccardo; accensione sull'hub 
 
 ## Registro
 
+- **22/10, esecuzione:** in parallelo ai collector, nel cloud sul ramo `librenms-fonte` (prompt
+  `docs/handoff/2026-10-22-prompt-cloud-librenms.md`). Le uscite vere per S3 sono raccolte sull'hub in sola lettura e
+  anonimizzate a chiusura (`src/lib/integrations/__tests__/fixtures/librenms/LEGGIMI.md`): `ports_vlans` dà 404.
 - **22/10, risposte di Riccardo alle tre scelte e al container:**
   1. **Livello: leggero** («vai di leggero»). Restano, perché sono le regole delle zone rosse e non un livello: prova
      vista fallire e prova a vuoto prima di ogni scrittura in LibreNMS (task 4), backup e misura sul DB copia per la

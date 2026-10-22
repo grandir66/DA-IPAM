@@ -7,6 +7,8 @@ Spec [`docs/superpowers/specs/2026-10-22-librenms-fonte-dati-design.md`](docs/su
 - [x] Prova in sola lettura sull'API di LibreNMS dell'hub e confronto con il DB 70791 (spec §2)
 - [x] Spec e piano scritti
 - [x] Riccardo (22/10): leggero; vicini aggiunti in automatico se l'SNMP risponde; i 5 server mai interrogati quasi certamente senza SNMP (si verifica nel task 4, poi si propone di toglierli); container LibreNMS già aggiornato. Registro del piano. In coda dietro i collector modulari.
+- [x] Uscite vere per S3 raccolte sull'hub (sola lettura) e anonimizzate a chiusura: fixture in `src/lib/integrations/__tests__/fixtures/librenms/`; `ports_vlans` dà 404.
+- [ ] Giro cloud LibreNMS 1 sul ramo `librenms-fonte`: S1-S5 e la tavola S6 (prompt `docs/handoff/2026-10-22-prompt-cloud-librenms.md`).
 - [ ] Piano approvato da Riccardo (livelli compresi)
 - [ ] T1 aggiunta senza force_add, v1/v2c/v3
 - [ ] T2 migrazione librenms_fonte_v21

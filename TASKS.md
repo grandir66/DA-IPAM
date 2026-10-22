@@ -17,8 +17,32 @@ Notifiche, Sistema, Aggiornamenti, e in `/settings/mdm` (intervallo, errori di f
 oggi in `fuori-catalogo.ts` come dato della rete: nell'elenco ci va col rimando), intervalli propri di MDM e dei
 timer di `src/lib/vulcan/`.
 
-- [ ] Censimento puntuale dei parametri per scheda (chiave, dove si legge, predefinito)
-- [ ] Tavola grafica di Opzioni allargata e Schedulazioni, approvata da Riccardo
+- [x] Censimento puntuale dei parametri per scheda (chiave, dove si legge, predefinito) — 22/10 sera, su `6ee683f9`:
+  - **Scansione** (`components/settings/scan-config-tab.tsx`, `tenant_settings` via `/api/settings`, letti da
+    `/api/scan-config`): `quick_scan_concurrency` (6), `quick_scan_host_timeout_s` (10), `quick_scan_exec_limit_ms`
+    (22000), `quick_scan_tcp_ports` (lista di serie dello scanner), `port_discovery` (già in Opzioni: `automatismo.naabu`),
+    `naabu_bin_path` (vuoto = PATH); profilo Nmap (`nmap_profiles`: porte TCP/UDP, community) = **dato**, resta lì.
+  - **Alert sicurezza** (`/api/integrations/wazuh/alerts/config`): `wazuh_alerts_self_ips`, `wazuh_alerts_self_accounts`,
+    `integration_wazuh_device_rule_ids` = dati (elenchi nostri), restano; `notify_retention_days` (30, 1-365) = parametro.
+  - **Notifiche** (`lib/notifications/config.ts`): canale SMTP/webhook = dati e segreti, restano;
+    `notify_immediate_categories` (ransomware, log_tampering), `notify_immediate_min_level` (12),
+    `notify_digest_interval_minutes` (60) = parametri.
+  - **Sistema** (in `settings/page.tsx`): configurazione guidata, `PuliziaHostCard` (soglie in costanti: 60 giorni di
+    assenza, 90 d'archivio, 400 di registro — oggi non si cambiano), scheda MDM, export/backup. Nessuna chiave nuova.
+  - **Aggiornamenti** (`/api/system/update-channel`): canale = `DA_INVENT_BRANCH` in `.env.local` (voce da file); timer
+    `da-ipam-update.timer` ogni 15 min (systemd, fuori dall'app).
+  - **MDM** (`lib/integrations/mdm-config.ts`): `MDM_SYNC_INTERVALLO_MINUTI` 60 (ritmo del job `mdm_sync` creato
+    all'accensione), `MDM_MAX_ERRORI_CONSECUTIVI` 5 (costante); URL, utente, password, campo utente = dati.
+  - **Schedulazioni**, sei famiglie: (1) `scheduled_jobs` per cliente (16 tipi + `unifi_sync` per controller, +
+    `apparati_scelti` creati da Discovery) — `/settings?tab=jobs` e Opzioni; (2) scansione rapida per rete
+    `SubnetScheduleCard` in `/networks/[id]` (è un `scheduled_jobs` con rete); (3) Edge per rete
+    (`lib/vuln/edge-schedule-store.ts`, cron sulla sonda) — `/networks/[id]`; (4) timer dell'app in `server.ts`:
+    backup 03:00 (`DA_INVENT_BACKUP_CRON`), Chocolatey 02:00, feed exploit 06:00, salute appliance e job fermi ogni 30
+    min, segnale DA-Link ogni 5 min, DA-Vul-can coda 1 min/battito 15 min/inventario 24 h; (5) `mdm_sync` (job, ritmo 60);
+    (6) aggiornamento automatico (systemd, 15 min).
+- [ ] Tavola grafica di Opzioni allargata e Schedulazioni, approvata da Riccardo — pubblicata il 22/10 sera
+  (https://claude.ai/artifact/MFg8HqVhyS4dEzwiDoo1LX, fogli «parametri e soglie» e «Schedulazioni», oggetti 14-30),
+  in attesa dell'approvazione oggetto per oggetto. Lavoro nel worktree `.worktrees/da-ipam-opzioni`.
 - [ ] Piano breve, esecuzione, cancello, resa ≥1280, rilascio su dev; promote con conferma
 
 ## 2026-10-22 — Vulnerabilità per host ed exploit noti

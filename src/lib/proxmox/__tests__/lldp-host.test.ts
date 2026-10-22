@@ -25,6 +25,7 @@ import { CODICE_CONNESSIONE_CADUTA } from "@/lib/devices/ssh-transport";
 import { COMANDI_HOST, apriHostSsh, fattiHost, leggiHost, parseLldpcliJson0, type ApriHost } from "@/lib/proxmox/lldp-host";
 import { LIVE_INTERFACES_COMMAND, membriDeiBond } from "@/lib/proxmox/live-interfaces";
 import { leggiEsiti, scriviInterruttore } from "@/lib/topology/letture/interruttori";
+import { LETTURE_SPENTE_SQL } from "@/lib/topology/letture/__tests__/letture-spente";
 
 const F = (n: string): string => fs.readFileSync(path.join(__dirname, "fixtures", n), "utf8");
 const IP_LINK = (): unknown[] => JSON.parse(F("ip-link-bond.json")) as unknown[];
@@ -204,7 +205,8 @@ const macs = (id: number) => db().prepare("SELECT mac, port_key, source FROM top
 
 beforeEach(() => {
   db().exec(`DELETE FROM topology_port_facts; DELETE FROM topology_bridge_facts; DELETE FROM topology_device_macs;
-    DELETE FROM device_neighbors; DELETE FROM network_devices; DELETE FROM tenant_settings WHERE key LIKE 'topologia.lettura.%';`);
+    DELETE FROM device_neighbors; DELETE FROM network_devices; DELETE FROM tenant_settings WHERE key LIKE 'topologia.lettura.%';
+    ${LETTURE_SPENTE_SQL}`);
   // La credenziale SSH in un binding d'archivio (dalla 2g, T26, le colonne dell'apparato non si leggono più).
   db().exec("DELETE FROM device_credential_bindings; DELETE FROM credentials WHERE name = 'root di prova';");
   const voce = Number(db().prepare("INSERT INTO credentials (name, credential_type, encrypted_username, encrypted_password) VALUES ('root di prova', 'ssh', ?, ?)")

@@ -6,8 +6,8 @@
 import { FUSO_UTENTI, parseDbDate } from "@/lib/db-date";
 import type { EsitoApparato, Lettura, StatoInterruttore } from "./interruttori";
 
-/** Ogni riga lo dice accanto a ciò che legge: nessuna lettura è accesa finché un amministratore non lo fa, cliente per cliente. */
-export const NASCE_SPENTA = "Nasce spenta: si accende solo da qui, cliente per cliente.";
+/** Ogni riga lo dice accanto a ciò che legge: le letture sono accese di serie (ADR 0031), si spengono da qui cliente per cliente. */
+export const NASCE_ACCESA = "Accesa di serie: si spegne da qui, cliente per cliente.";
 
 export const DESCRIZIONE_LETTURE: Readonly<Record<Lettura, { titolo: string; legge: string; apparati: string; comandi: string }>> = {
   mikrotik: {
@@ -56,7 +56,8 @@ export function quandoItaliano(utc: string | null): string {
 }
 
 export function testoStato(s: StatoInterruttore): string {
-  return s.acceso ? `accesa da ${s.da ?? "utente non noto"} il ${quandoItaliano(s.il)}` : "spenta";
+  if (!s.acceso) return s.da ? `spenta da ${s.da} il ${quandoItaliano(s.il)}` : "spenta";
+  return s.da ? `accesa da ${s.da} il ${quandoItaliano(s.il)}` : "accesa di serie";
 }
 
 export function testoEsito(e: EsitoApparato): string {

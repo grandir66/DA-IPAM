@@ -32,6 +32,7 @@ import type { SwitchClient } from "@/lib/devices/switch-client";
 import type { LettoreSnmp, VoceSnmp } from "@/lib/devices/snmp-walk";
 import { oraUtc, scriviEsito, scriviInterruttore } from "@/lib/topology/letture/interruttori";
 import type { NetworkDevice } from "@/types";
+import { LETTURE_SPENTE_SQL } from "@/lib/topology/letture/__tests__/letture-spente";
 
 const T = "TESTAPPARATISCELTIGIRO";
 const db = () => getTenantDb(T);
@@ -49,7 +50,8 @@ beforeEach(() => {
   d.exec(`DELETE FROM job_apparati_esiti; DELETE FROM scheduled_jobs; DELETE FROM mac_port_entries; DELETE FROM switch_ports;
     DELETE FROM arp_entries; DELETE FROM switch_vlan; DELETE FROM switch_vlan_porte; DELETE FROM switch_porta_pvid; DELETE FROM switch_vlan_lettura;
     DELETE FROM host_credentials; DELETE FROM device_credential_bindings; DELETE FROM credentials; DELETE FROM network_devices;
-    DELETE FROM hosts; DELETE FROM networks; DELETE FROM tenant_settings WHERE key LIKE 'topologia.lettura.%';`);
+    DELETE FROM hosts; DELETE FROM networks; DELETE FROM tenant_settings WHERE key LIKE 'topologia.lettura.%';
+    ${LETTURE_SPENTE_SQL}`);
   const net = Number(d.prepare("INSERT INTO networks (cidr, name) VALUES ('192.0.2.0/24', 'Prova')").run().lastInsertRowid);
   const host = (ip: string): number => Number(d.prepare("INSERT INTO hosts (network_id, ip, hostname) VALUES (?, ?, ?)").run(net, ip, `h-${ip}`).lastInsertRowid);
   const voce = (tipo: string): number => Number(d.prepare("INSERT INTO credentials (name, credential_type) VALUES (?, ?)").run(`voce ${tipo}`, tipo).lastInsertRowid);

@@ -291,3 +291,13 @@ export function registraScartoSenzaCorpo(db: Database.Database, tipo: TipoInvio,
     .run(tipo, sha256, errore, ora, ora);
   return Number(r.lastInsertRowid);
 }
+
+/**
+ * Quando è nata l'ultima fotografia dell'inventario (in qualunque stato, anche scartata
+ * o non costruita): il recupero all'avvio la confronta con `RECUPERO_ORE` di `job.ts`,
+ * così un inventario che fallisce non si ritenta più di una volta al giorno.
+ */
+export function ultimoInventarioCreato(db: Database.Database): string | null {
+  const r = db.prepare("SELECT MAX(creato_il) AS il FROM vulcan_coda WHERE tipo = 'inventario'").get() as { il: string | null } | undefined;
+  return r?.il ?? null;
+}

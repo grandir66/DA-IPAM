@@ -45,7 +45,7 @@ import type { LettoreSnmp, VoceSnmp } from "@/lib/devices/snmp-walk";
 import {
   fattiMikrotik, parseBridge, parseFasci, parseInterfacce, parseMonitorBridge, parseMonitorFasci, parseMonitorPorte, parsePorteBridge,
 } from "@/lib/devices/mikrotik-stp";
-import { scriviInterruttore } from "@/lib/topology/letture/interruttori";
+import { LETTURE, scriviInterruttore } from "@/lib/topology/letture/interruttori";
 import { buildTopologyModel } from "@/lib/topology/model";
 import { costruisciModelloCavi } from "@/lib/topology/cavi/modello";
 import type { TopologyModelInput } from "@/lib/topology/model-types";
@@ -278,7 +278,9 @@ async function giri(tenant: string, accese: boolean): Promise<ReturnType<typeof 
   vicino.run(5, "Gi1/0/1", "VECCHIO-B", "Port 1", "lldp", null, null, null, "device", giorniFa(120), giorniFa(91));
   vicino.run(2, "ether2", "VECCHIO-C", "Port 1", "lldp", null, null, null, "ssh", giorniFa(120), giorniFa(91));
   vicino.run(5, "Gi1/0/2", "VECCHIO-D", "Port 1", "lldp", null, null, null, "snmp", giorniFa(120), giorniFa(91));
-  if (accese) withTenant(tenant, () => { for (const l of ["mikrotik", "controller", "snmp"] as const) scriviInterruttore(l, true, "admin"); });
+  // Dall'ADR 0031 le letture sono accese di serie: si dichiara tutto. «Accese» = le tre di T2, le altre spente come prima.
+  const diT2: readonly string[] = ["mikrotik", "controller", "snmp"];
+  withTenant(tenant, () => { for (const l of LETTURE) scriviInterruttore(l, accese && diT2.includes(l), "admin"); });
 
   await withTenant(tenant, () => syncUnifiForTenant({ source: sorgenteUnifi() }));
   const ora = new Date(ADESSO);

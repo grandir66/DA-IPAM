@@ -23,13 +23,15 @@ import { codiceErrore } from "@/lib/devices/mikrotik-porte";
 import { leggiEsiti, scriviInterruttore } from "@/lib/topology/letture/interruttori";
 import { avviaAgenteFinto } from "@/lib/protocols/__tests__/support/agente-snmp-finto";
 import type { NetworkDevice } from "@/types";
+import { LETTURE_SPENTE_SQL } from "@/lib/topology/letture/__tests__/letture-spente";
 
 const T = "TESTARPLETTURESNMP";
 const db = () => getTenantDb(T);
 beforeEach(() => {
   db().exec(`DELETE FROM topology_port_facts; DELETE FROM topology_bridge_facts; DELETE FROM topology_device_macs;
     DELETE FROM device_neighbors; DELETE FROM network_devices; DELETE FROM networks;
-    DELETE FROM tenant_settings WHERE key LIKE 'topologia.lettura.%';`);
+    DELETE FROM tenant_settings WHERE key LIKE 'topologia.lettura.%';
+    ${LETTURE_SPENTE_SQL}`);
   db().exec("INSERT INTO network_devices (id, name, host, device_type, vendor, protocol, enabled, use_for_arp_poll, community_string) "
     + "VALUES (5, 'SW-5', '192.0.2.5', 'switch', 'cisco', 'snmp_v2', 1, 0, 'public'), (6, 'SW-6', '192.0.2.6', 'switch', 'ubiquiti', 'snmp_v2', 1, 0, 'public')");
   db().exec("UPDATE network_devices SET controller_mac = '02:00:00:00:00:06' WHERE id = 6");

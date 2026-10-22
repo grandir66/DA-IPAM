@@ -154,5 +154,15 @@ app.prepare().then(() => {
     }).catch((error) => {
       console.error("WARNING: segnale DA-Link non avviato:", error);
     });
+
+    // Invio di AD Health e inventario all'hub DA-Vul-can (A-IPAM). Spento finché
+    // /etc/dalink/oggetto.env non ha VULCAN_TOKEN: ogni tic legge il file e, senza
+    // gettone, si ferma lì (niente DB, niente rete). Un secondo avvio non crea altri timer.
+    import("./src/lib/vulcan/job").then(({ avviaInvioVulcan }) => {
+      avviaInvioVulcan();
+      console.log("> Invio a DA-Vul-can: timer avviati (spenti senza VULCAN_TOKEN)");
+    }).catch((error) => {
+      console.error("WARNING: invio a DA-Vul-can non avviato:", error);
+    });
   }
 });

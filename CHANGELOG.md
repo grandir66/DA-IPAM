@@ -4,6 +4,43 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-22 · Letture degli apparati accese di serie
+
+### Cambiato
+
+- **Le sei letture in più degli apparati partono accese** (ADR 0031): VLAN, DNS e utenti dei MikroTik, spanning tree e
+  bridge dei MikroTik, VLAN degli switch via SNMP, LLDP via SNMP, campi del controller, LLDP degli hypervisor. Una chiave
+  assente vale «accesa»; si spengono solo da «Dati della mappa», cliente per cliente. Perché: sull'appliance di 70151 il
+  router era leggibile ma la scheda non aveva le VLAN, perché la lettura nasceva spenta e andava accesa a mano, appliance
+  per appliance. La mappa nuova resta spenta di serie.
+
+## [Non rilasciato] — 2026-10-22 · Invio di AD Health e inventario a DA-Vul-can (v0.9.869-871)
+
+Piano `docs/superpowers/plans/2026-10-22-invio-ad-inventario-a-vulcan.md` (A-IPAM della spec DA-Vul-can del 21/10).
+
+### Aggiunto
+
+- **Invio automatico all'hub DA-Vul-can** (`src/lib/vulcan/`): l'export di ogni esecuzione AD Health riuscita, una
+  fotografia dell'inventario al giorno (03:00 italiane) e un battito ogni 15 minuti, con una coda nel DB del cliente
+  (`vulcan_coda`, segno `vulcan_coda_v21`) che ritenta col backoff della sonda e si ferma da sola su un gettone
+  rifiutato. Perché: oggi l'AD arriva all'hub solo a mano (download qui, «Carica» là), e l'hub non sapeva se
+  un'istanza è viva né cosa contiene la sua rete. Il download resta come ripiego.
+- **Spento senza `VULCAN_TOKEN`** in `/etc/dalink/oggetto.env`: nessuna rete, nessuna riga, nessun audit. Perché: le
+  chiavi le scrive DA-Link (A-Link) e la rete la apre la policy NetBird P9; finché non ci sono, il rilascio non
+  cambia niente sulle appliance.
+- **Inventario a lista bianca**: colonne scelte una per una; non escono mai credenziali, community SNMP, `snmp_data`,
+  `detection_json`, utenti, note, assegnatari, licenze (prova sentinella). Perché: i dati del cliente escono dalla
+  sua rete e devono essere solo quelli che servono all'analisi.
+- **TLS verificato normale** (niente pin, mai `rejectUnauthorized: false`), gettone solo nell'intestazione, niente
+  redirect, risposta letta fino a 64 KB. Perché: l'hub ha un certificato pubblico valido, e il gettone vale come una
+  password.
+- **Riquadro in «Cosa esce»** (stato, coda, ultimo battito, ultimo AD e inventario, ultimo errore, «Invia ora» solo
+  admin) e riga nella pagina AD. Perché: un invio che non si vede nell'interfaccia non si sa se esiste.
+- Collaudo del 22/10 contro DA-Vul-can locale (worktree di `origin/HEAD`, DB vuoto, TLS con una CA di prova solo per
+  il processo di collaudo): 503 con `ipam.ingest` spento → riga in coda da ritentare; acceso → AD 201 (report 1),
+  battito 200, inventario 201 (351 oggetti); stesso run reinviato → 200 doppione, una riga sola sull'hub; gettone
+  sbagliato → 401 e «sospeso», tolto da solo col gettone giusto; fonte revocata → 403 e «sospeso».
+
 ## [Non rilasciato] — 2026-10-22 · Collector: uno per famiglia, agganciati al pulsante
 
 ### Cambiato

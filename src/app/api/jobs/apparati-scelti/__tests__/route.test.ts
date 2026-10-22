@@ -94,7 +94,7 @@ test("anteprima: 2 inclusi su 4, esclusi col motivo e il link che lo risolve, in
   assert.equal(b.righe.length, 4);
   assert.equal(b.inclusi, 2);
   assert.equal(b.esclusi, 2);
-  assert.deepEqual(b.interruttori, { switch_vlan: false, mikrotik_scheda: false }, "spenti senza impostazione");
+  assert.deepEqual(b.interruttori, { switch_vlan: true, mikrotik_scheda: true }, "accesi di serie senza impostazione (ADR 0031)");
   const sw = per.get(F.hostSw)!;
   assert.equal(sw.incluso, true);
   assert.equal(sw.credenziale, "provata");

@@ -25,6 +25,17 @@ beforeEach(() => {
   getHubDb().exec("DELETE FROM dalink_livello_registro; DELETE FROM dalink_segnale_stato;");
 });
 
+const VULCAN_SPENTO = {
+  stato: "spento" as const,
+  motivo: null,
+  destinazione: null,
+  battito: { il: null, esito: null },
+  coda: { in_attesa: 0, falliti: 0 },
+  ultimo_ad: null,
+  ultimo_inventario: null,
+  ultimo_errore: null,
+};
+
 const TOKEN = "dlk_" + "Q".repeat(43);
 const FATTI: FattiIstanza = { versione: "0.3.281", moduli: { edge: true, wazuh: false }, salute: { edge: "ok" }, ultimoErrore: null, porte: [22, 443] };
 
@@ -42,6 +53,7 @@ function dip(extra: Partial<DipendenzeQuadro> = {}): Partial<DipendenzeQuadro> {
     fatti: async () => ({ fatti: FATTI, clienteTrovato: true }),
     inventario: () => ({ dispositivi: 7, reti: 1, ultima_scansione: null, esito_scansione: null }),
     proxyZabbix: () => false,
+    vulcan: () => ({ ...VULCAN_SPENTO }),
     ...extra,
   };
 }
@@ -100,4 +112,18 @@ test("la raccolta che fallisce: anteprima assente col motivo, il resto c'è", as
   assert.match(q.anteprima_errore ?? "", /raccolta/);
   assert.equal(q.altri_flussi.edge, "non_so");
   assert.equal(q.ogni_minuti, 5);
+});
+
+test("invio a DA-Vul-can: il quadro lo porta; un errore nel leggerlo si vede, mai «spento»", async () => {
+  let q = await quadroCosaEsce(dip());
+  assert.deepEqual(q.vulcan, VULCAN_SPENTO);
+  q = await quadroCosaEsce(
+    dip({
+      vulcan: () => {
+        throw new Error("SQLITE_BUSY");
+      },
+    }),
+  );
+  assert.equal(q.vulcan.stato, "non_valida");
+  assert.match(q.vulcan.motivo ?? "", /non leggibile/);
 });

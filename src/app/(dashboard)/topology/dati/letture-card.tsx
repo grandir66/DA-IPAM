@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { LoadError } from "@/components/shared/load-error";
 import { fetchJson } from "@/lib/fetch-json";
 import type { EsitoApparato, Lettura, StatoInterruttore } from "@/lib/topology/letture/interruttori";
-import { DESCRIZIONE_LETTURE, NASCE_SPENTA, righeEsito, testoDialogo, testoStato } from "@/lib/topology/letture/testi";
+import { DESCRIZIONE_LETTURE, NASCE_ACCESA, righeEsito, testoDialogo, testoStato } from "@/lib/topology/letture/testi";
 
 type Riga = { lettura: Lettura; disponibile: boolean; stato: StatoInterruttore; esiti: Record<string, EsitoApparato>; nomi: Record<string, string> };
 type Stato = { letture: Riga[]; schema: boolean; cadenza: { router: { minuti: number | null; daScansioni: boolean }; switch: number | null } };
@@ -77,7 +77,7 @@ export function LettureCard({ isAdmin }: { isAdmin: boolean }) {
                   </div>
                   <p className="text-sm">{d.legge}</p>
                   <p className="text-sm">
-                    Apparati: {d.apparati}.{r.disponibile ? ` ${NASCE_SPENTA}` : ""}
+                    Apparati: {d.apparati}.{r.disponibile ? ` ${NASCE_ACCESA}` : ""}
                   </p>
                   <p className="text-sm text-muted-foreground">{d.comandi}</p>
                   {e.righe.length === 0 ? (

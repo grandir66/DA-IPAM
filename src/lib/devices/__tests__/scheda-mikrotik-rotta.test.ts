@@ -1,6 +1,6 @@
 /**
  * GET /api/devices/[id]/mikrotik-scheda (scheda MikroTik, Task 9): 404 apparato assente, 400 non MikroTik, 200 con le
- * righe dell'ultima fotografia e lo stato della lettura della topologia preso dall'interruttore (spenta = assente).
+ * righe dell'ultima fotografia e lo stato della lettura della topologia preso dall'interruttore (assente = accesa di serie, ADR 0031).
  * La guardia (requireAuth prima di tutto) la tengono api-auth-guards.test.ts e scripts/verifica-permessi.sh.
  *
  * Run: DA_INVENT_DATA_DIR=$(mktemp -d) node --import tsx --test src/lib/devices/__tests__/scheda-mikrotik-rotta.test.ts
@@ -34,7 +34,7 @@ describe("rispostaSchedaMikrotik", () => {
     });
   });
 
-  it("200: righe della fotografia; topologia spenta → acceso false, poi accesa con l'ora dell'esito dell'apparato", () => {
+  it("200: righe della fotografia; topologia accesa di serie senza esito → il null, poi l'ora dell'esito dell'apparato", () => {
     withTenant(T, () => {
       const d = nuovo("rtr", "10.70.0.1", "mikrotik");
       scriviSchedaMikrotikTopologia(d.id, {
@@ -45,7 +45,7 @@ describe("rispostaSchedaMikrotik", () => {
       if (r.status !== 200) return;
       assert.deepEqual([r.body.bridge.length, r.body.porte.length, r.body.bond.length], [1, 10, 3]);
       assert.equal(r.body.letto_il, "2026-10-21 08:00:00");
-      assert.deepEqual(r.body.letture, { topologia: { acceso: false, il: null }, scheda: { acceso: false, il: null, codice: null, vlan_il: null, dns_il: null } });
+      assert.deepEqual(r.body.letture, { topologia: { acceso: true, il: null }, scheda: { acceso: true, il: null, codice: null, vlan_il: null, dns_il: null } });
       assert.equal(r.body.vlanBridge, null);
 
       scriviInterruttore("mikrotik", true, "prova");
@@ -82,7 +82,7 @@ describe("Task 10: VLAN, DNS e utenti", () => {
       const d = nuovo("rtr-v", "10.70.0.6", "mikrotik");
       const r0 = rispostaSchedaMikrotik(d.id);
       assert.ok(r0.status === 200 && r0.body.vlanBridge === null && r0.body.dns === null, "mai letta: null");
-      if (r0.status === 200) assert.deepEqual(r0.body.letture.scheda, { acceso: false, il: null, codice: null, vlan_il: null, dns_il: null });
+      if (r0.status === 200) assert.deepEqual(r0.body.letture.scheda, { acceso: true, il: null, codice: null, vlan_il: null, dns_il: null });
       scriviSchedaMikrotikLettura(d.id, lettura(), new Date(Date.UTC(2026, 9, 22, 8, 0)));
       scriviInterruttore("mikrotik_scheda", true, "prova");
       scriviEsito("mikrotik_scheda", d.id, { il: "2026-10-22 08:00:00", comandi: 4, riusciti: 4, codice: null });

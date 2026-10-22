@@ -49,12 +49,11 @@ const primo = (...v: (string | null)[]): string | null => {
   return null;
 };
 
-/** Data del DB (SQLite UTC senza fuso) in ISO; illeggibile → il testo com'è, accorciato; vuota → null. */
+/** Data del DB (SQLite UTC senza fuso) in ISO; vuota o illeggibile → null, mai un testo finto (revisione 22/10). */
 function dataIso(v: string | null): string | null {
-  const s = taglia(v, 40);
-  if (s == null) return null;
-  const d = parseDbDate(s);
-  return Number.isNaN(d.getTime()) ? s : d.toISOString();
+  if (v == null || v.trim() === "") return null;
+  const d = parseDbDate(v.trim());
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
 
 /** Minuscole solo ASCII, come `LOWER()` di SQLite. */
@@ -199,8 +198,8 @@ export function corpoInventario(
 
   const json = JSON.stringify({
     schema_versione: SCHEMA_VERSIONE_INVENTARIO,
-    codcli: testa.codcli,
-    nodo: testa.nodo,
+    codcli: taglia(testa.codcli, 20) ?? "",
+    nodo: taglia(testa.nodo, 80) ?? "",
     generato_il: testa.adesso.toISOString(),
     versione_ipam: taglia(testa.versione, 40),
     reti,

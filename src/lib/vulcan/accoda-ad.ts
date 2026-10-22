@@ -35,7 +35,11 @@ export function accodaAdHealthSeAcceso(db: Database, runId: number, dip: DipAcco
 
     const corrente = (dip.tenantCorrente ?? getCurrentTenantCode)();
     const invio = (dip.tenantInvio ?? tenantPerVulcan)(config.codcli);
-    if (!corrente || !invio || corrente !== invio) return "altro_cliente";
+    if (!corrente || !invio || corrente !== invio) {
+      // Lo scarto si vede (revisione 22/10), senza codcli né nomi dei tenant.
+      console.warn(`[vulcan] AD Health run=${runId} non accodato: il tenant dell'esecuzione non è quello dell'invio`);
+      return "altro_cliente";
+    }
 
     const run = getRunById(db, runId);
     if (!run) throw new Error("esecuzione non trovata");

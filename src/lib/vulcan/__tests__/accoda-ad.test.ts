@@ -103,10 +103,19 @@ test("config non valida → spento, nessuna riga", () => {
 
 test("tenant corrente diverso da quello dell'invio → altro_cliente, nessuna riga", () => {
   const { db, runId } = nuovoDb();
-  assert.equal(accodaAdHealthSeAcceso(db, runId, dip({ tenantCorrente: () => "DEFAULT" })), "altro_cliente");
-  assert.equal(accodaAdHealthSeAcceso(db, runId, dip({ tenantInvio: () => null })), "altro_cliente");
-  assert.equal(accodaAdHealthSeAcceso(db, runId, dip({ tenantCorrente: () => null })), "altro_cliente");
+  const { r, righe: log } = conConsole(() => [
+    accodaAdHealthSeAcceso(db, runId, dip({ tenantCorrente: () => "DEFAULT" })),
+    accodaAdHealthSeAcceso(db, runId, dip({ tenantInvio: () => null })),
+    accodaAdHealthSeAcceso(db, runId, dip({ tenantCorrente: () => null })),
+  ]);
+  assert.deepEqual(r, ["altro_cliente", "altro_cliente", "altro_cliente"]);
   assert.equal(righe(db).length, 0);
+  // Revisione 22/10: lo scarto si vede, una riga [vulcan] per volta, senza codcli né nomi di tenant.
+  assert.equal(log.length, 3);
+  for (const l of log) {
+    assert.match(l, new RegExp(`^\\[vulcan\\] AD Health run=${runId} non accodato: `));
+    assert.ok(!l.includes("70791") && !l.includes("DEFAULT"), l);
+  }
 });
 
 test("config pronta → una riga ad-health con rif = run id, corpo = export del run", () => {

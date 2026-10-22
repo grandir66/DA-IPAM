@@ -189,6 +189,28 @@ test("date: SQLite UTC → ISO; first_seen vuoto → created_at; last_seen vuoto
   assert.equal(o2.visto_ultima, "2026-10-22T08:15:37.000Z");
 });
 
+test("data illeggibile → null, mai un testo finto: first_seen → created_at, last_seen → visto_prima", () => {
+  const d = dati({ host: [
+    host({ id: 1, ip: "10.0.0.1", first_seen: "non è una data", last_seen: "boh", created_at: "2026-04-27 13:14:36" }),
+    host({ id: 2, ip: "10.0.0.2", first_seen: "boh", last_seen: "2026-10-22 08:15:37", created_at: "neanche" }),
+  ] });
+  const r = ok(corpoInventario(d, TESTA));
+  const o = oggetti(r.json);
+  assert.equal(o.length, 1);
+  assert.equal(o[0].visto_prima, "2026-04-27T13:14:36.000Z");
+  assert.equal(o[0].visto_ultima, "2026-04-27T13:14:36.000Z");
+  assert.equal(r.saltati, 1);
+  assert.ok(!r.json.includes("boh") && !r.json.includes("non è una data"));
+});
+
+test("testa: nodo e codcli accorciati ai limiti dell'hub (80, 20), la fotografia resta valida", () => {
+  const r = ok(corpoInventario(dati(), { ...TESTA, nodo: "n".repeat(200), codcli: "c".repeat(30) }));
+  const j = JSON.parse(r.json) as { nodo: string; codcli: string };
+  assert.equal(j.nodo.length, 80);
+  assert.equal(j.codcli.length, 20);
+  assert.ok(SchemaInventarioHub.safeParse(j).success);
+});
+
 test("valori oltre i limiti dell'hub si accorciano, stato e classificazione mai vuoti", () => {
   const lungo = "W".repeat(300);
   const d = dati({ host: [host({ os_info: `Windows ${lungo}`, hostname: lungo, vendor: lungo, model: lungo, status: null, classification: null })] });

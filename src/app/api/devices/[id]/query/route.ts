@@ -1,24 +1,19 @@
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { NextResponse } from "next/server";
-import { getNetworkDeviceById, updateNetworkDevice, upsertArpEntries, upsertMacPortEntries, upsertSwitchPorts, resolveMacToDevice, resolveMacToNetworkDevice, getInventoryAssetByNetworkDevice, updateInventoryAsset, syncDeviceToHost, trackDeviceInfoChanges, upsertNeighbors, upsertRoutes, credenzialeSnmpApparato, haSnmpApparato, cleanOrphanedForeignKeys, getMultihomedStatusByDeviceId } from "@/lib/db";
+import { getNetworkDeviceById, upsertArpEntries, upsertMacPortEntries, upsertSwitchPorts, resolveMacToDevice, resolveMacToNetworkDevice, upsertNeighbors, upsertRoutes, haSnmpApparato, cleanOrphanedForeignKeys, getMultihomedStatusByDeviceId } from "@/lib/db";
 import { createRouterClient } from "@/lib/devices/router-client";
 import { createSwitchClient } from "@/lib/devices/switch-client";
-import { getDeviceInfo, resolveNasKind } from "@/lib/devices/device-info";
 import { lookupVendor } from "@/lib/scanner/mac-vendor";
 import { updateHostIfExists, getNetworks, upsertDhcpLease, upsertMacIpMapping, syncIpAssignmentsForNetwork, getCurrentTenantCode } from "@/lib/db";
-import { withTenant } from "@/lib/db-tenant";
 import { isIpInCidr, normalizePortNameForMatch } from "@/lib/utils";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
-import { networkDeviceUsesArpPoll } from "@/lib/network-device-arp";
 import { letturaAccesa, senzaCampiCavi } from "@/lib/topology/letture/interruttori";
-import { isProxmoxDevice } from "@/lib/devices/device-connection-test";
 import { resolveDeviceAcquisition } from "@/lib/devices/device-acquisition-resolve";
-import { runProxmoxDeviceScan } from "@/lib/proxmox/run-proxmox-device-scan";
 import { getScanProgress } from "@/lib/scanner/discovery";
 import type { ScanProgress } from "@/types";
-import { apriSessioneSnmp, versioneApparato } from "@/lib/protocols/snmp-sessione";
-import { walkConSessioneSua, type SessioneWalk } from "@/lib/devices/snmp-walk";
 import { letturaVlanSwitch, vlanSwitchDaLeggere } from "@/lib/cron/jobs";
+import { leggiInfoComputer, leggiProxmox, leggiStpSnmp, leggiStpSwitch, salvaInfoApparato, sondaInterfacce, tipoLetturaApparato } from "@/lib/devices/lettura-info";
+import { apparatoOccupato, avviaConLucchetto, MESSAGGIO_OCCUPATO } from "@/lib/devices/lucchetto-apparato";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Progress tracking (stessa map globale usata da discovery.ts)
@@ -62,49 +57,6 @@ function finishProgress(p: ScanProgress, status: "completed" | "failed", phase: 
   p.phase = phase;
   p.scanned = p.total;
   setTimeout(() => getProgressMap().delete(p.id), 300_000);
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Helper per salvare device info (condiviso tra router e switch)
-// ═══════════════════════════════════════════════════════════════════════════
-
-async function saveDeviceInfo(deviceId: number, device: { host: string; name: string; community_string?: string | null; snmp_credential_id?: number | null }, p: ScanProgress) {
-  try {
-    const info = await getDeviceInfo(device as Parameters<typeof getDeviceInfo>[0]);
-    const now = new Date().toISOString();
-    const hasInfo = info.sysname || info.sysdescr || info.model || info.firmware || info.serial_number || info.part_number;
-    if (hasInfo) {
-      const deviceInfoJson = JSON.stringify({ ...info, scanned_at: now });
-      trackDeviceInfoChanges(deviceId, info);
-      updateNetworkDevice(deviceId, {
-        sysname: info.sysname ?? undefined,
-        sysdescr: info.sysdescr ?? undefined,
-        model: info.model ?? undefined,
-        firmware: info.firmware ?? undefined,
-        serial_number: info.serial_number ?? undefined,
-        part_number: info.part_number ?? undefined,
-        last_info_update: now,
-        last_device_info_json: deviceInfoJson,
-      });
-      syncDeviceToHost(deviceId);
-      const asset = getInventoryAssetByNetworkDevice(deviceId);
-      if (asset) {
-        updateInventoryAsset(asset.id, {
-          modello: info.model ?? undefined,
-          serial_number: info.serial_number ?? undefined,
-          part_number: info.part_number ?? undefined,
-          firmware_version: info.firmware ?? undefined,
-          technical_data: deviceInfoJson,
-        });
-      }
-      const fields = Object.keys(info).filter(k => info[k as keyof typeof info] != null);
-      plog(p, `✓ Device info: ${fields.length} campi acquisiti`);
-    } else {
-      plog(p, "— Nessuna info dispositivo via SNMP");
-    }
-  } catch {
-    plog(p, "— Device info non disponibile");
-  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -280,69 +232,18 @@ async function runRouterQuery(deviceId: number, device: Parameters<typeof create
 
   // Device info
   p.phase = "Acquisizione info dispositivo...";
-  await saveDeviceInfo(deviceId, device, p);
+  await salvaInfoApparato(device, (r) => plog(p, r));
 
   // STP via SNMP
-  try {
-    p.phase = "Acquisizione STP (SNMP)...";
-    const { getSnmpStpInfo } = await import("@/lib/devices/snmp-stp-info");
-    const snmpMod = await import("net-snmp");
-    // Credenziale e porta dal motore (tappa 2 credenziali, T8): a un apparato v3 non parte più una community.
-    const scelta = credenzialeSnmpApparato(device);
-    if (!scelta.ok) throw new Error(scelta.motivo);
-    // SN1 (spec topologia §13.5.4): una sessione per lettura. La sessione unica si chiudeva alla fine del primo walk e
-    // annullava gli altri otto, partiti insieme. NULL = v1, come prima (createSession senza version). Una lettura non
-    // riuscita vale null in getSnmpStpInfo, come prima.
-    const snmpWalk = walkConSessioneSua(() => {
-      const aperta = apriSessioneSnmp(snmpMod, device.host, scelta.cred, { port: scelta.port, timeout: 5000, versione: versioneApparato(device, "1") });
-      if (!aperta.ok) throw new Error(aperta.motivo);
-      return aperta.session as unknown as SessioneWalk;
-    }, 10_000);
-    const stpInfo = await getSnmpStpInfo(snmpWalk);
-    if (stpInfo) {
-      updateNetworkDevice(deviceId, { stp_info: JSON.stringify(stpInfo) });
-      plog(p, "✓ STP info acquisite");
-    }
-  } catch (e) {
-    // STP opzionale: la scansione continua, ma il motivo si vede nel registro della scansione.
-    plog(p, `— STP non letto: ${e instanceof Error ? e.message : String(e)}`);
-  }
+  p.phase = "Acquisizione STP (SNMP)...";
+  await leggiStpSnmp(device, (r) => plog(p, r));
 
   const portsMsg = portInfos.length > 0 ? `, ${portInfos.length} porte` : "";
 
   // Fase 1+2 aggregazione: probe interfacce + identity resolver (best-effort).
-  await runInterfacesProbeAndResolve(deviceId, p);
+  await sondaInterfacce(deviceId, (r) => plog(p, r));
 
   finishProgress(p, "completed", `Completata: ${entries.length} ARP${portsMsg}`);
-}
-
-/**
- * Probe interfacce SNMP IP-MIB + risoluzione physical_device + auto-promote hosts.
- * Best-effort: errori loggati ma non bloccano il flusso chiamante.
- */
-async function runInterfacesProbeAndResolve(deviceId: number, p: ScanProgress): Promise<void> {
-  try {
-    const { probeDeviceInterfaces } = await import("@/lib/devices/interface-probe");
-    const { resolvePhysicalDevice } = await import("@/lib/devices/identity-resolver");
-    const { getNetworkDeviceById } = await import("@/lib/db");
-    const fresh = getNetworkDeviceById(deviceId);
-    if (!fresh) return;
-    const probeOutcome = await probeDeviceInterfaces(fresh);
-    if (probeOutcome.source === "none") return; // SNMP non configurato: skip silenzioso
-    if (probeOutcome.interfaces.length === 0) {
-      plog(p, `⚠ Probe interfacce: 0 risultati (${probeOutcome.warnings.slice(0, 2).join("; ") || "no warnings"})`);
-      return;
-    }
-    const resolved = resolvePhysicalDevice(fresh, probeOutcome);
-    plog(p,
-      `✓ Aggregazione: physical_device #${resolved.physical_device_id} ` +
-      `(${resolved.created ? "creato" : "match " + resolved.identity_anchor + " score=" + resolved.identity_confidence}), ` +
-      `${resolved.interfaces_upserted} interfacce, ${resolved.addresses_upserted} IP, ` +
-      `${resolved.promoted_hosts.filter((h) => h.created).length} host promossi`
-    );
-  } catch (err) {
-    plog(p, `⚠ Probe interfacce fallito: ${err instanceof Error ? err.message : String(err)}`);
-  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -416,18 +317,10 @@ async function runSwitchQuery(deviceId: number, device: Parameters<typeof create
 
   // Device info
   p.phase = "Acquisizione info dispositivo...";
-  await saveDeviceInfo(deviceId, device, p);
+  await salvaInfoApparato(device, (r) => plog(p, r));
 
   // STP
-  try {
-    if ("getStpInfo" in client && typeof client.getStpInfo === "function") {
-      const stpInfo = await client.getStpInfo();
-      if (stpInfo) {
-        updateNetworkDevice(deviceId, { stp_info: JSON.stringify(stpInfo) });
-        plog(p, "✓ STP info acquisite");
-      }
-    }
-  } catch { /* STP opzionale */ }
+  await leggiStpSwitch(deviceId, client, (r) => plog(p, r));
 
   // VLAN degli switch (Task 9, ADR 0029): solo con la lettura accesa (spenta, «Interroga» non manda niente di nuovo allo
   // switch), senza aspettare l'ora; lucchetto ed esito come nel giro. Interruttore guardato per primo. Un errore del DB
@@ -455,48 +348,17 @@ async function runSwitchQuery(deviceId: number, device: Parameters<typeof create
 // Background task: info-only query (Windows, SSH, SNMP)
 // ═══════════════════════════════════════════════════════════════════════════
 
-async function runInfoQuery(deviceId: number, device: Parameters<typeof getDeviceInfo>[0], scanLabel: string, p: ScanProgress) {
+async function runInfoQuery(deviceId: number, device: Parameters<typeof leggiInfoComputer>[0], scanLabel: string, p: ScanProgress) {
   p.phase = `Acquisizione dati ${scanLabel}...`;
   p.total = 1;
-  const info = await getDeviceInfo(device);
-  const now = new Date().toISOString();
-  const hasInfo = info.sysname || info.sysdescr || info.model || info.firmware ||
-    info.serial_number || info.part_number || info.os_name || info.hostname ||
-    (info.nas_inventory != null);
-
-  if (!hasInfo) {
-    plog(p, `✗ Nessun dato acquisito via ${scanLabel}`);
+  const fields = await leggiInfoComputer(device, scanLabel, (r) => plog(p, r));
+  if (!fields) {
     finishProgress(p, "failed", `Nessun dato da ${scanLabel}`);
     return;
   }
-
-  const deviceInfoJson = JSON.stringify({ ...info, scanned_at: now });
-  trackDeviceInfoChanges(deviceId, info);
-  updateNetworkDevice(deviceId, {
-    sysname: info.sysname ?? (info.hostname as string | undefined) ?? undefined,
-    sysdescr: info.os_name ? `${info.os_name} ${info.os_version || ""}`.trim() : (info.sysdescr ?? undefined),
-    model: info.model ?? undefined,
-    firmware: info.os_build ? `Build ${info.os_build}` : (info.os_version ? info.os_version : (info.firmware ?? undefined)),
-    serial_number: info.serial_number ?? undefined,
-    part_number: info.part_number ?? undefined,
-    last_info_update: now,
-    last_device_info_json: deviceInfoJson,
-  });
-  syncDeviceToHost(deviceId);
-  const asset = getInventoryAssetByNetworkDevice(deviceId);
-  if (asset) {
-    updateInventoryAsset(asset.id, {
-      modello: info.model ?? undefined,
-      serial_number: info.serial_number ?? undefined,
-      firmware_version: info.os_name ? `${info.os_name} ${info.os_version || ""}`.trim() : (info.firmware ?? undefined),
-      technical_data: deviceInfoJson,
-    });
-  }
-  const fields = Object.keys(info).filter(k => info[k as keyof typeof info] != null);
   p.scanned = 1;
-  plog(p, `✓ ${fields.length} campi acquisiti: ${fields.join(", ")}`);
 
-  await runInterfacesProbeAndResolve(deviceId, p);
+  await sondaInterfacce(deviceId, (r) => plog(p, r));
 
   finishProgress(p, "completed", `${scanLabel}: ${fields.length} campi acquisiti`);
 }
@@ -539,21 +401,30 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
         );
       }
 
-      if (isProxmoxDevice(device)) {
+      // Un apparato in lettura (giro ARP, job `apparati_scelti`, un altro «Interroga») non si legge due volte: 409 prima di
+      // creare il progresso. La lettura in sottofondo tiene il lucchetto fino alla fine (decisione 10b del piano 2026-10-22).
+      const deviceId = Number(id);
+      if (apparatoOccupato(deviceId)) {
+        return NextResponse.json({ error: MESSAGGIO_OCCUPATO }, { status: 409 });
+      }
+      const tenantCode = getCurrentTenantCode();
+      // Il ramo della lettura, scelta unica con il job `apparati_scelti` (lettura-info.ts).
+      const { tipo, etichetta: scanLabel } = tipoLetturaApparato(device);
+      /** Il lucchetto preso da un altro proprio adesso (corsa senza `await` in mezzo: non succede, ma si chiude). */
+      const seOccupato = (progress: ScanProgress) => (stato: "fatto" | "occupato") => {
+        if (stato === "occupato") {
+          plog(progress, `✗ ${MESSAGGIO_OCCUPATO}`);
+          finishProgress(progress, "failed", MESSAGGIO_OCCUPATO);
+        }
+      };
+
+      if (tipo === "proxmox") {
         const progress = createDeviceQueryProgress(device.name, `Proxmox VE — ${device.name}`);
-        const tenantCode = getCurrentTenantCode();
-        const deviceId = Number(id);
 
         const runTask = async () => {
           try {
-            plog(progress, "Scan Proxmox (API :8006 + SSH)...");
-            const result = await runProxmoxDeviceScan(deviceId);
-            const msg = `Proxmox: ${result.hosts.length} nodi, ${result.vms.length} VM/CT`;
-            plog(progress, `✓ ${msg}`);
-            if (result.avvisi?.length) {
-              plog(progress, `Avvisi: ${result.avvisi.join(" | ")}`);
-            }
-            finishProgress(progress, "completed", msg);
+            const r = await leggiProxmox(deviceId, (riga) => plog(progress, riga));
+            finishProgress(progress, "completed", r.messaggio);
           } catch (err) {
             const msg = err instanceof Error ? err.message : "Errore sconosciuto";
             console.error(`[Device Query] Proxmox scan error device ${deviceId}:`, err);
@@ -562,8 +433,8 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
           }
         };
 
-        const bgTask = tenantCode ? withTenant(tenantCode, runTask) : runTask();
-        bgTask.catch((err) => {
+        const bgTask = avviaConLucchetto(deviceId, tenantCode, runTask);
+        bgTask.then(seOccupato(progress)).catch((err) => {
           console.error(`[Device Query] Unhandled Proxmox error device ${deviceId}:`, err);
           const msg = err instanceof Error ? err.message : "Errore fatale";
           plog(progress, `✗ ${msg}`);
@@ -573,41 +444,19 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
         return NextResponse.json({ id: progress.id, progress });
       }
 
-      const scanTarget = (device as { scan_target?: string | null }).scan_target;
-      const nasKindRoute = resolveNasKind(device);
-      const isWindows = device.protocol === "winrm" || device.vendor === "windows" || scanTarget === "windows";
-      const isLinuxVendor = scanTarget === "linux" || device.vendor === "linux" || device.vendor === "other" || device.vendor === "synology" || device.vendor === "qnap";
-      const isSshScannable = isLinuxVendor || nasKindRoute != null;
-      const isSnmpInfoDevice = (device.protocol === "snmp_v2" || device.protocol === "snmp_v3" || haSnmpApparato(device))
-        && ["stampante", "telecamera", "voip", "iot", "access_point", "firewall", "vm"].includes(device.classification ?? "");
-
-      // Determina tipo di scan e label
-      let scanType: string;
-      let scanLabel: string;
-      if (isWindows) { scanType = "windows"; scanLabel = "WinRM"; }
-      else if (isSshScannable) { scanType = "ssh"; scanLabel = nasKindRoute != null ? "Storage" : "Linux/SSH"; }
-      // I device router/firewall con capability ARP (Stormshield, Mikrotik, ...) vanno in arp_poll
-      // anche se hanno community SNMP, altrimenti runInfoQuery raccoglie solo sysname/descr e non la tabella ARP.
-      else if (networkDeviceUsesArpPoll(device)) { scanType = "arp_poll"; scanLabel = "Router"; }
-      else if (isSnmpInfoDevice) { scanType = "snmp"; scanLabel = "SNMP"; }
-      else { scanType = "switch"; scanLabel = "Switch"; }
-
       // Crea progress e lancia task in background
       const progress = createDeviceQueryProgress(device.name, `${scanLabel} — ${device.name}`);
 
-      const tenantCode = getCurrentTenantCode();
-      const deviceId = Number(id);
-
       const runTask = async () => {
         try {
-          if (isWindows || isSshScannable) {
-            await runInfoQuery(deviceId, device as Parameters<typeof getDeviceInfo>[0], scanLabel, progress);
-          } else if (networkDeviceUsesArpPoll(device)) {
-            await runRouterQuery(deviceId, device as Parameters<typeof createRouterClient>[0], progress);
-          } else if (isSnmpInfoDevice) {
-            await runInfoQuery(deviceId, device as Parameters<typeof getDeviceInfo>[0], scanLabel, progress);
+          // I device router/firewall con capability ARP (Stormshield, Mikrotik, ...) vanno in arp_poll anche se hanno
+          // community SNMP, altrimenti runInfoQuery raccoglie solo sysname/descr e non la tabella ARP (tipoLetturaApparato).
+          if (tipo === "windows" || tipo === "ssh" || tipo === "snmp") {
+            await runInfoQuery(deviceId, device, scanLabel, progress);
+          } else if (tipo === "arp_poll") {
+            await runRouterQuery(deviceId, device, progress);
           } else {
-            await runSwitchQuery(deviceId, device as Parameters<typeof createSwitchClient>[0], progress);
+            await runSwitchQuery(deviceId, device, progress);
           }
         } catch (err) {
           const msg = err instanceof Error ? err.message : "Errore sconosciuto";
@@ -617,8 +466,8 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
         }
       };
 
-      const bgTask = tenantCode ? withTenant(tenantCode, runTask) : runTask();
-      bgTask.catch((err) => {
+      const bgTask = avviaConLucchetto(deviceId, tenantCode, runTask);
+      bgTask.then(seOccupato(progress)).catch((err) => {
         console.error(`[Device Query] Unhandled error device ${deviceId}:`, err);
         const msg = err instanceof Error ? err.message : "Errore fatale";
         plog(progress, `✗ ${msg}`);

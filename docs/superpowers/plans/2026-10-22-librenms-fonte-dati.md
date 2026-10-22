@@ -35,12 +35,12 @@ mappa accesa sul cliente A); leggero per 3, 5, 6, 7, 8 (proposto il 22/10, da co
 
 | ID | Stato | Passo | Agente | Dipende da | Fatto quando | Verifica |
 | --- | --- | --- | --- | --- | --- | --- |
-| S1 | [ ] | Aggiunta corretta (v1/v2c/v3, niente force_add, rifiuto scritto) | implementer | — | prove verdi, una aggiunta rifiutata vista sull'hub | `npm test` mirato + prova a mano su un IP muto |
-| S2 | [ ] | Migrazione `librenms_fonte_v21` | implementer | — | migrazione su DB nuovo e sulla copia dell'hub, journal ok | prova migrazione + `integrity_check` |
-| S3 | [ ] | Client e lettori puri, con uscite vere anonimizzate | implementer | — | lettori verdi su uscite vere, forma sbagliata = null | `npm test` mirato |
-| S4 | [ ] | Scrittura e giro nel job `librenms_sync` | implementer | S2, S3 | prova a vuoto sulla copia dell'hub con l'API vera | numeri contro la tabella della spec §2 |
-| S5 | [ ] | Rotte API (dati per oggetto, candidati, aggiunta) | implementer | S4 | rotte in `rotte.ts`, `verifica-permessi.sh` verde | prove rotte |
-| S6 | [ ] | Tavola grafica, approvazione di Riccardo | orchestratore | S5 | Riccardo dice ok | — |
+| S1 | [~] codice e prove fatti (22/10, cloud); manca la prova sull'hub | Aggiunta corretta (v1/v2c/v3, niente force_add, rifiuto scritto) | implementer | — | prove verdi, una aggiunta rifiutata vista sull'hub | `npm test` mirato + prova a mano su un IP muto |
+| S2 | [~] fatta e provata su DB nuovo e di oggi (22/10, cloud); manca la copia dell'hub | Migrazione `librenms_fonte_v21` | implementer | — | migrazione su DB nuovo e sulla copia dell'hub, journal ok | prova migrazione + `integrity_check` |
+| S3 | [x] (22/10, cloud) | Client e lettori puri, con uscite vere anonimizzate | implementer | — | lettori verdi su uscite vere, forma sbagliata = null | `npm test` mirato |
+| S4 | [~] codice e prove con API finta (22/10, cloud); manca la prova a vuoto con l'API vera | Scrittura e giro nel job `librenms_sync` | implementer | S2, S3 | prova a vuoto sulla copia dell'hub con l'API vera | numeri contro la tabella della spec §2 |
+| S5 | [~] rotte e prove (22/10, cloud); manca `verifica-permessi.sh` con l'app accesa | Rotte API (dati per oggetto, candidati, aggiunta) | implementer | S4 | rotte in `rotte.ts`, `verifica-permessi.sh` verde | prove rotte |
+| S6 | [~] tavola in `docs/proposte/2026-10-22-librenms-interfaccia.html`, attende l'ok | Tavola grafica, approvazione di Riccardo | orchestratore | S5 | Riccardo dice ok | — |
 | S7 | [ ] | Scheda: Sensori, Porte e Vicini con fonte, «Dati da:» | implementer | S6 | resa 1440/1920 vista | Playwright |
 | S8 | [ ] | Pagina del modulo: non interrogati, rifiutati, candidati | implementer | S6 | resa 1440/1920 vista | Playwright |
 | S9 | [ ] | Vicini di LibreNMS nella mappa (zona rossa) | orchestratore | S4 | misura prima/dopo, spento = bit per bit | `scripts/misura-cavi.ts` |
@@ -327,6 +327,20 @@ collegamenti nuovi e di quelli cambiati portato a Riccardo; accensione sull'hub 
      senza toglierli da soli.
   4. **Container LibreNMS dell'hub: già aggiornato** (vulnerabilità chiusa dalla sessione DA-Link/Deploy-Appliance);
      prima del task 4 si rilegge la versione dall'API.
+
+- **22/10, giro cloud 1 (S1-S6, ramo `librenms-fonte`), scostamenti dal piano:**
+  1. Decima tabella `librenms_rifiuto` (ip, host_id, network_device_id, codice, motivo, il): senza `force_add` un
+     rifiuto non lascia una riga di mappa, e la lista «rifiutati» del task 5 non avrebbe avuto dove leggere.
+  2. `scriviParteLibrenms` non fa l'inventario: è per apparato (`scriviInventarioLibrenms`), altrimenti la DELETE di
+     un giro da 20 apparati cancellerebbe gli altri.
+  3. Il `vlan_id` di `/resources/fdb` è l'id di riga di `/resources/vlans`, non il numero: si traduce con la lettura
+     delle VLAN dello stesso giro, altrimenti null.
+  4. Aggiunta automatica dei vicini (Registro punto 2) dentro `giroLibrenms`, al più 5 per giro, rifiutati riprovati
+     dopo 24 ore; la prova a vuoto la spegne (`aggiungiCandidati: false`). Il POST dei candidati resta per «Aggiungi ora».
+  5. AES256C (Reeder) fuori tabella: LibreNMS non lo dichiara, non si manda.
+  6. Niente `npm run version:release` sul ramo: il rilascio si fa all'unione in `dev`.
+  7. La card «Letture in più» mostra l'interruttore `librenms` ma non i suoi esiti (sono per parte, non per
+     apparato): l'esito per parte va nella pagina del modulo (L5, task 8).
 
 ## Consuntivo
 ### Fatto

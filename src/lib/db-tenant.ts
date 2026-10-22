@@ -6048,6 +6048,13 @@ export function leggiVlanSwitchDb(deviceId: number): VlanSwitchDb {
   return { vlan, porte, pvid, lettura: lettura ?? null };
 }
 
+/** Quante VLAN ha l'ultima lettura dello switch (una COUNT, per il numero della tab VLAN); 0 = nessuna o schema assente. */
+export function contaVlanSwitch(deviceId: number): number {
+  const d = db();
+  if (!schemaSwitchVlanPresente(d)) return 0;
+  return (d.prepare("SELECT COUNT(*) AS n FROM switch_vlan WHERE device_id = ?").get(deviceId) as { n: number }).n;
+}
+
 /** Quanti bridge ha l'ultima fotografia (una COUNT, per le tab di `GET /api/devices/[id]`); null = schema sotto il livello 2. */
 export function contaBridgeMikrotik(deviceId: number): { bridge: number; letto_il: string | null } | null {
   const d = db();

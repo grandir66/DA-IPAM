@@ -39,7 +39,8 @@ export function conteggioTab(tipo: TipoScheda, tab: TabId, { device, dipendenze 
   switch (tipo) {
     case "switch":
       if (tab === "porte") return num(device.switch_ports?.length ?? 0);
-      if (tab === "vlan") return num(vlanDistinte((device.switch_ports ?? []) as unknown as PortaSwitch[]).length);
+      // Le VLAN lette via Q-BRIDGE se ci sono (Task 11 accorpamento), altrimenti quelle dei PVID di switch_ports.
+      if (tab === "vlan") return num((device.switch_vlan_n ?? 0) > 0 ? device.switch_vlan_n! : vlanDistinte((device.switch_ports ?? []) as unknown as PortaSwitch[]).length);
       if (tab === "vicini") return coppia(contaVicini(device), device.mac_port_entries?.length ?? 0);
       return null;
     case "router":

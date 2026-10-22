@@ -21,6 +21,12 @@ describe("conteggioTab: switch", () => {
   const d: DatiConteggio = { device: switchCompleto, dipendenze: null };
   it("porte", () => assert.equal(conteggioTab("switch", "porte", d), "3"));
   it("VLAN distinte", () => assert.equal(conteggioTab("switch", "vlan", d), "2"));
+  it("VLAN lette via Q-BRIDGE al posto di quelle dei PVID (Task 11 accorpamento); 0 = quelle dei PVID", () => {
+    const letto = { ...switchCompleto, switch_vlan_n: 13 } as unknown as DatiConteggio["device"];
+    assert.equal(conteggioTab("switch", "vlan", { device: letto, dipendenze: null }), "13");
+    const zero = { ...switchCompleto, switch_vlan_n: 0 } as unknown as DatiConteggio["device"];
+    assert.equal(conteggioTab("switch", "vlan", { device: zero, dipendenze: null }), "2");
+  });
   it("vicini (una riga per porta e nome) · MAC", () => assert.equal(conteggioTab("switch", "vicini", d), "2 · 4"));
   it("vicini senza MAC table: solo i vicini, mai «0»", () => {
     const solo = { ...switchCompleto, mac_port_entries: [] } as unknown as DatiConteggio["device"];

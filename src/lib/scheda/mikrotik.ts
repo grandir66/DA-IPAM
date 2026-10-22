@@ -273,7 +273,7 @@ export interface RispostaSchedaMikrotik {
 export interface LetturaSchedaMk { acceso: boolean; il: string | null; codice: string | null; vlan_il: string | null; dns_il: string | null }
 
 /** «22/10, 08:00» in ora italiana da un'ora del DB (UTC). */
-function oraItaliana(s: string): string {
+export function oraItaliana(s: string): string {
   const d = dataLettura(s);
   return d ? d.toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Rome" }) : s;
 }

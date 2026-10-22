@@ -20,6 +20,7 @@ import { networkDeviceUsesArpPoll } from "@/lib/network-device-arp";
 import { senzaColonneVecchie } from "@/lib/devices/colonne-vecchie";
 import { avvisoPortaProtocollo } from "@/lib/devices/porta-protocollo";
 import { riassuntoMikrotik } from "@/lib/devices/scheda-mikrotik-rotta";
+import { contaVlanSwitch } from "@/lib/db-tenant";
 
 const NO_CACHE_HEADERS = { "Cache-Control": "no-store, no-cache, must-revalidate" };
 
@@ -115,6 +116,8 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     // Scheda MikroTik (Task 9): bridge dell'ultima fotografia (una COUNT) e lettura della topologia accesa, solo per i
     // MikroTik in SSH. Da qui la pagina decide le tab VLAN e Bridge; null = schema della scheda sotto il livello 2.
     const mikrotik = device.vendor === "mikrotik" && device.protocol === "ssh" ? riassuntoMikrotik(Number(id)) : null;
+    // Tab VLAN degli switch (piano accorpamento, Task 11): quante VLAN ha l'ultima lettura Q-BRIDGE (una COUNT).
+    const switch_vlan_n = isHypervisor ? 0 : contaVlanSwitch(Number(id));
 
     return NextResponse.json(
       {
@@ -126,6 +129,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
         arp_entries: arpEntries,
         mac_port_entries: macPortEntries,
         switch_ports: switchPorts,
+        switch_vlan_n,
         neighbors,
         routes,
         dhcp_leases,

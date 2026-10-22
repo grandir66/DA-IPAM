@@ -50,6 +50,7 @@ const CONTRACT: Contract[] = [
   { route: "devices/[id]/mikrotik", method: "GET", guard: "requireAuth" },
   { route: "devices/[id]/dispositivi", method: "GET", guard: "requireAuth" },
   { route: "devices/[id]/mikrotik-scheda", method: "GET", guard: "requireAuth" },
+  { route: "devices/[id]/vlan-switch", method: "GET", guard: "requireAuth" },
   // Utenti del router MikroTik (Task 10): dato riservato, solo l'admin (la scheda per tutti non li porta).
   { route: "devices/[id]/mikrotik-utenti", method: "GET", guard: "requireAdmin" },
   // scheda dei server (21/10): dipendenze NIS2 e Active Directory di un host, sola lettura con la sessione.

@@ -22,6 +22,8 @@ export interface DeviceExtras {
   arp_entries?: Array<ArpEntry & { hostname?: string | null; host_ip?: string | null; host_name?: string | null }>;
   mac_port_entries?: Array<MacPortEntry & { host_ip?: string | null; host_name?: string | null }>;
   switch_ports?: SwitchPort[];
+  /** VLAN dell'ultima lettura «VLAN degli switch via SNMP» (GET /api/devices/[id], Task 11 accorpamento); 0 = nessuna. */
+  switch_vlan_n?: number;
   neighbors?: Array<{
     id?: number;
     interface_name?: string | null;

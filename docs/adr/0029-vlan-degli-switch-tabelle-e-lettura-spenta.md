@@ -36,7 +36,8 @@ di VLAN per porta è `switch_ports.vlan`, scritto dal giro ARP e letto dalla map
    NAS, server, router. Nel giro ARP, ramo degli switch, accanto alle letture SNMP della topologia, interruttore guardato
    per primo (spenta: nemmeno la credenziale si cerca; il giro è quello di prima, provato contando le walk). 10 s per walk
    (`TEMPO_WALK_MS`), sessione da `creaWalkSnmp`; uno switch muto costa una walk sola. «Non so» e «non riuscito» sono un
-   errore col codice nell'esito (non «letta in parte»): niente scrittura.
+   errore col codice nell'esito (non «letta in parte»): niente scrittura. Caso peggiore: uno switch lento che risponde a
+   ogni walk appena sotto il limite costa 7 walk × 10 s = 70 s per apparato, in serie, prima della tabella MAC.
 7. **«Interroga» sullo switch con la lettura spenta non legge le VLAN.** Un admin che preme «Interroga» chiede di rileggere
    quello che l'apparato già dà (MAC, porte, STP), non acconsente a letture nuove: l'interruttore resta l'unico posto in cui
    si decide, per cliente, se lo switch riceve le walk Q-BRIDGE. Accesa, «Interroga» la fa **senza aspettare l'ora**

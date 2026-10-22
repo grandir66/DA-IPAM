@@ -1,14 +1,9 @@
 import { NextResponse } from "next/server";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
-import { getCurrentTenantCode, getTenantDb } from "@/lib/db-tenant";
-import { setFeatureEnabled, invalidateFeatureCache } from "@/lib/patch/feature";
-import { applyPatchModuleMigrations } from "@/lib/patch/schema";
-import { runFullSyncMatch } from "@/lib/patch/matcher";
-import { applyInventoryAgentMigrations } from "@/lib/inventory-agent/schema";
-import { installInventoryAgentFeature } from "@/lib/inventory-agent/feature";
-import { installMeshFeature } from "@/lib/integrations/meshcentral/feature";
-import { MC_TABLES } from "@/lib/integrations/meshcentral/schema";
+import { getCurrentTenantCode } from "@/lib/db-tenant";
+import { installaModulo } from "@/lib/modules/installa";
+import type { UninstallableFeature } from "@/lib/modules/uninstall-copy";
 
 /**
  * Feature key whitelistate. Le route /api/features/[key]/* accettano solo
@@ -61,42 +56,7 @@ export async function POST(
       : userId;
 
     try {
-      // F1: applica migration modulo (idempotente — IF NOT EXISTS).
-      // Per ora solo patch_management è whitelistata: hardcoded sopra.
-      // Quando aggiungeremo altri moduli demultiplexeremo qui per feature key.
-      const tenantDb = getTenantDb(tenantCode);
-      let tablesCreated: string[] = [];
-      if (key === "patch_management") {
-        const migration = applyPatchModuleMigrations(tenantDb);
-        tablesCreated = migration.tablesCreated;
-        setFeatureEnabled(tenantCode, key, safeUserId);
-      } else if (key === "inventory_agent") {
-        const migration = applyInventoryAgentMigrations(tenantDb);
-        tablesCreated = migration.tablesCreated;
-        installInventoryAgentFeature(tenantCode, safeUserId);
-      } else if (key === "meshcentral") {
-        // installMeshFeature applica mc_* schema + abilita il flag (usa il tenant context).
-        installMeshFeature();
-        tablesCreated = [...MC_TABLES];
-      } else {
-        setFeatureEnabled(tenantCode, key, safeUserId);
-      }
-      invalidateFeatureCache(tenantCode, key);
-
-      // Auto-trigger matching iniziale per popolare patch_software_meta e patch_cve_target.
-      // Non-blocking opzionale; qui awaited così la response include il summary.
-      // Se fallisce, l'install rimane valida — l'utente potrà ri-eseguire dal bottone.
-      let initialMatching: InstallResponse["initialMatching"];
-      if (key === "patch_management") {
-        try {
-          initialMatching = runFullSyncMatch(tenantDb);
-        } catch (matchErr) {
-          console.error(
-            `[features/${key}/install] initial matching failed (non-blocking):`,
-            matchErr
-          );
-        }
-      }
+      const { tablesCreated, initialMatching } = installaModulo(key as UninstallableFeature, tenantCode, safeUserId);
 
       const payload: InstallResponse = {
         status: "installed",

@@ -228,7 +228,6 @@ const AZIONI: Record<string, string> = {
 
 /** Rotte che usano MeshCentral senza comandare: col motivo. */
 const LIBERE: Record<string, string> = {
-  "features/[key]/install/route.ts": "è la via per riattivare il modulo",
   "integrations/meshcentral/install/route.ts": "installa il server sull'appliance: è la via per attivare il modulo",
   "integrations/meshcentral/config/route.ts": "la configurazione resta modificabile anche a modulo spento",
   "integrations/meshcentral/senza-agente/route.ts": "è un'impostazione (19/10): non comanda il server; le sessioni passano dalla rotta d'azione host/[hostId]/senza-agente",
@@ -264,8 +263,12 @@ test("invariante: ogni rotta che usa MeshCentral è un'azione con la guardia o �
   assert.deepEqual(sparite, [], "voce che non corrisponde più a una rotta che usa MeshCentral");
 });
 
+// Dal 22/10 installare e disinstallare stanno in lib/modules/installa.ts (le chiamano la rotta e la pagina Opzioni):
+// la rotta d'installazione non importa più MeshCentral, quindi non è più fra le LIBERE.
 test("la disattivazione provata qui è ancora quella della rotta di disinstallazione", () => {
-  const src = readFileSync(join(API, "features", "[key]", "uninstall", "route.ts"), "utf8");
+  const rotta = readFileSync(join(API, "features", "[key]", "uninstall", "route.ts"), "utf8");
+  assert.ok(rotta.includes("disinstallaModulo(key, tenantCode, dropData)"));
+  const src = readFileSync(join(process.cwd(), "src", "lib", "modules", "installa.ts"), "utf8");
   assert.ok(src.includes("setFeatureDisabled(tenantCode, key)"));
   assert.ok(src.includes("const dataDropped = dropData"), "senza la casella i dati restano");
 });

@@ -34,7 +34,7 @@ rimandi nelle pagine vecchie lo usano; il seme dei job sta in `applyTenantSchedu
 4. `leggi` che lancia: riga «✕ stato illeggibile (codice)», la pagina regge → Task 1 e Task 3.
 5. Utente non admin: GET sì, PUT 403, pagina con levette ferme → Task 3 e Task 4.
 
-### [~] Task 1 — Catalogo delle opzioni e prova di completezza
+### [x] Task 1 — Catalogo delle opzioni e prova di completezza
 
 **File:** crea `src/lib/opzioni/tipi.ts`, `src/lib/opzioni/catalogo.ts`, `src/lib/opzioni/fuori-catalogo.ts`;
 prova `src/lib/opzioni/__tests__/catalogo.test.ts`.
@@ -56,6 +56,13 @@ del censimento, ogni modulo di `tenant_features` e ogni tipo di `SCHEDULED_JOB_T
 d'errore e non lancia; (d) su un tenant vuoto le sei letture risultano accese di serie, la mappa spenta.
 **Verifica:** `node --import tsx --test src/lib/opzioni/__tests__/catalogo.test.ts` → tutte verdi (viste fallire prima).
 **Commit:** «Opzioni: catalogo unico degli interruttori».
+**Fatto (22/10 sera):** `node --import tsx --test src/lib/opzioni/__tests__/catalogo.test.ts` → 7/7, viste fallire 5/7 col
+catalogo rotto apposta (mappa tolta, lettura `host` tolta, cattura degli errori tolta). In più la (d) prova ogni `leggi`
+su un cliente appena nato: nessuna riga «stato illeggibile». Scostamenti: `leggi`/`cambia` possono essere asincrone
+(lo stato dei moduli in `tenant_features` si legge con `getFeatureStatus`, che è async) e quindi `leggiTutte` è async;
+installa/disinstalla dei moduli estratti in `lib/modules/installa.ts` (le rotte /api/features e Opzioni fanno la stessa
+cosa); etichette dei job spostate in `ETICHETTE_JOB` (`scheduled-job-types.ts`); due prove di MeshCentral che leggevano il
+testo della rotta d'installazione ora leggono `installa.ts`.
 
 ### [x] Task 2 — Job di serie con lapide
 
@@ -78,7 +85,7 @@ Scostamento: il seme si chiama da `applySchedulerBootMigration` (`cron/scheduler
 `applyTenantSchedulerDefaults`, perché `db-tenant.ts` non può importare `opzioni/job-di-serie.ts` (ciclo d'import, lo
 stesso motivo per cui esiste `scheduler-defaults.ts`). Fatto prima del Task 1, che ne usa la lapide.
 
-### [ ] Task 3 — Rotte `GET /api/opzioni` e `PUT /api/opzioni/[id]`
+### [~] Task 3 — Rotte `GET /api/opzioni` e `PUT /api/opzioni/[id]`
 
 **File:** crea `src/app/api/opzioni/route.ts`, `src/app/api/opzioni/[id]/route.ts`; prova
 `src/app/api/opzioni/__tests__/route.test.ts`.

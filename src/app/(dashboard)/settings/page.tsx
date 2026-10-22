@@ -1,6 +1,6 @@
 "use client";
 import { parseDbDate } from "@/lib/db-date";
-import { scheduledJobLabel } from "@/lib/scheduled-job-types";
+import { ETICHETTE_JOB, scheduledJobLabel } from "@/lib/scheduled-job-types";
 import { fetchJson } from "@/lib/fetch-json";
 import { cn } from "@/lib/utils";
 import { LoadError } from "@/components/shared/load-error";
@@ -77,25 +77,7 @@ import { PuliziaHostCard } from "@/components/settings/pulizia-host-card";
 import { NotificationsTab } from "@/components/settings/notifications-tab";
 import { SecurityAlertsTab } from "@/components/settings/security-alerts-tab";
 
-const JOB_TYPE_LABELS: Record<string, string> = {
-  ping_sweep: "Scoperta rete (ICMP + Nmap quick + DNS + ARP)",
-  fast_scan: "Scoperta veloce subnet",
-  snmp_scan: "SNMP Scan",
-  nmap_scan: "Nmap Scan",
-  arp_poll: "ARP Poll",
-  dns_resolve: "DNS Resolve",
-  known_host_check: "Monitoraggio host registrati (ICMP)",
-  cleanup: "Pulizia tabelle MAC",
-  anomaly_check: "Rilevamento anomalie",
-  librenms_sync: "Sincronizzazione LibreNMS",
-  vuln_sync: "Sincronizzazione vulnerability scanner",
-  wazuh_sync: "Sincronizzazione Wazuh (agent/sysc/CVE)",
-  ad_sync: "Sincronizzazione Active Directory",
-  unifi_sync: "Sincronizzazione controller UniFi",
-  hypervisor_sync: "Lettura hypervisor (VM e schede)",
-  pulizia_host: "Pulizia host assenti (notte)",
-  apparati_scelti: "Lettura apparati",
-};
+const JOB_TYPE_LABELS: Record<string, string> = ETICHETTE_JOB;
 
 /** Le righe `apparati_scelti` arrivano da GET /api/jobs con questi campi in più (J3); le altre no. */
 interface DatiApparatiScelti {

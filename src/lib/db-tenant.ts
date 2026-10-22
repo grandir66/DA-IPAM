@@ -6960,9 +6960,34 @@ export function insertSeededJob(jobType: ScheduledJob["job_type"], networkId: nu
   return Number(res.lastInsertRowid);
 }
 
-/** Gli id delle reti del cliente, senza le statistiche di `getNetworks`. */
-export function listNetworkIds(): number[] {
-  return (db().prepare("SELECT id FROM networks ORDER BY id").all() as Array<{ id: number }>).map((r) => r.id);
+/**
+ * Accende o spegne lo Scanner-Edge del cliente (pagina Opzioni). Riaccendere azzera gli errori, come la PATCH della sua
+ * scheda: altrimenti resterebbe «spento da solo». false = nessuno scanner configurato.
+ */
+export function setVulnScannerEnabled(on: boolean): boolean {
+  const r = db()
+    .prepare(
+      on
+        ? `UPDATE vuln_scanners SET enabled = 1, consecutive_errors = 0, last_error = NULL, auto_disabled_at = NULL, updated_at = datetime('now')
+            WHERE id = (SELECT id FROM vuln_scanners ORDER BY id LIMIT 1)`
+        : `UPDATE vuln_scanners SET enabled = 0, updated_at = datetime('now') WHERE id = (SELECT id FROM vuln_scanners ORDER BY id LIMIT 1)`,
+    )
+    .run();
+  return r.changes > 0;
+}
+
+/** Lo Scanner-Edge del cliente in breve, o null se non c'è. */
+export function getVulnScannerStato(): { enabled: boolean; autoDisabledAt: string | null; lastSyncAt: string | null; lastError: string | null } | null {
+  const r = db()
+    .prepare("SELECT enabled, auto_disabled_at, last_sync_at, last_error FROM vuln_scanners ORDER BY id LIMIT 1")
+    .get() as { enabled: number; auto_disabled_at: string | null; last_sync_at: string | null; last_error: string | null } | undefined;
+  if (!r) return null;
+  return { enabled: r.enabled === 1, autoDisabledAt: r.auto_disabled_at, lastSyncAt: r.last_sync_at, lastError: r.last_error };
+}
+
+/** Le reti del cliente, solo id, nome e CIDR: senza le statistiche di `getNetworks`. */
+export function listNetworksLite(): Array<{ id: number; name: string; cidr: string }> {
+  return db().prepare("SELECT id, name, cidr FROM networks ORDER BY id").all() as Array<{ id: number; name: string; cidr: string }>;
 }
 
 /** Toglie il job e, nella stessa transazione, gli esiti per apparato (`job_apparati_esiti` non ha FK: la v11 ricostruisce la tabella). */

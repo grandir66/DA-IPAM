@@ -8,7 +8,7 @@
  * non lo ricrea. Riaccenderlo da Opzioni toglie la lapide.
  */
 import {
-  deleteTenantSetting, getScheduledJobs, getTenantSetting, insertSeededJob, listNetworkIds, setHypervisorSyncSchedule, setTenantSetting,
+  deleteTenantSetting, getScheduledJobs, getTenantSetting, insertSeededJob, listNetworksLite, setHypervisorSyncSchedule, setTenantSetting,
   staggerOffsetMinutes,
 } from "@/lib/db-tenant";
 import { HYPERVISOR_SYNC_MINUTES } from "@/lib/scheduled-job-types";
@@ -59,11 +59,12 @@ export function togliLapide(tipo: TipoJobDiSerie): void {
   deleteTenantSetting(chiaveLapide(tipo));
 }
 
-/** Crea i job di serie che mancano nel cliente corrente (contesto tenant di chi chiama). */
-export function seminaJobDiSerie(): { creati: number } {
+/** Crea i job di serie che mancano nel cliente corrente (contesto tenant di chi chiama); `soloTipo` = solo quello. */
+export function seminaJobDiSerie(soloTipo?: TipoJobDiSerie): { creati: number } {
   const jobs = getScheduledJobs();
   let creati = 0;
   for (const def of JOB_DI_SERIE) {
+    if (soloTipo && def.tipo !== soloTipo) continue;
     if (lapide(def.tipo)) continue;
     if (!def.perRete) {
       if (jobs.some((j) => j.job_type === def.tipo)) continue;
@@ -72,7 +73,7 @@ export function seminaJobDiSerie(): { creati: number } {
       creati++;
       continue;
     }
-    const mancanti = listNetworkIds().filter((id) => !jobs.some((j) => j.job_type === def.tipo && j.network_id === id));
+    const mancanti = listNetworksLite().map((n) => n.id).filter((id) => !jobs.some((j) => j.job_type === def.tipo && j.network_id === id));
     mancanti.forEach((id, idx) => insertSeededJob(def.tipo, id, def.intervalloMinuti, staggerOffsetMinutes(idx, mancanti.length)));
     creati += mancanti.length;
   }

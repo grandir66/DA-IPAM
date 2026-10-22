@@ -74,3 +74,21 @@ test("parser: smb.conf senza sezioni speciali, exports con e senza virgolette, q
     assert.deepEqual(unisciCondivisioni(smb ?? [], ["/share/Solo"]).map(c => [c.name, c.protocols]), [["Dati", ["smb"]], ["Solo", ["nfs"]]]);
     assert.equal(parseQpkgConf("[X]\nVersion = 1\n")?.[0].name, "X");
 });
+
+test("qnap-nas: solo SNMP (collaudo .24) – modello, firmware e seriale dagli OID enterprise QNAP", async () => {
+    const valori: Record<string, string> = {
+        "1.3.6.1.4.1.24681.1.2.1.0": "TS-LAB", "1.3.6.1.4.1.24681.1.2.2.0": "5.1.3", "1.3.6.1.4.1.24681.1.2.3.0": "Q000LAB01",
+        "1.3.6.1.2.1.1.5.0": "nas-prova",
+    };
+    const t: AcquisitionTransports = {
+        get: async oids => ({ status: "ok", data: oids.filter(o => o in valori).map(o => ({ oid: o, value: valori[o] })) as never, warnings: [] }),
+        walk: async () => ({ status: "ok", data: [], warnings: [] }),
+        shell: async () => { throw Error("nessuna shell senza SSH"); },
+    };
+    const s = await collectDevice({ collector: "qnap-nas", host: "192.0.2.40", snmp: { community: "lab" } }, t);
+    assert.deepEqual([s.identity.data?.model, s.identity.data?.firmware, s.identity.data?.serial_number], ["TS-LAB", "5.1.3", "Q000LAB01"]);
+    // valori che non sono un nome (percentuale di CPU, numero) non diventano modello né firmware
+    valori["1.3.6.1.4.1.24681.1.2.1.0"] = "12 %"; valori["1.3.6.1.4.1.24681.1.2.2.0"] = "";
+    const s2 = await collectDevice({ collector: "qnap-nas", host: "192.0.2.40", snmp: { community: "lab" } }, t);
+    assert.deepEqual([s2.identity.data?.model, s2.identity.data?.firmware], [null, null]);
+});

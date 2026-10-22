@@ -99,10 +99,11 @@ const LETTURE_TESTI: Record<Lettura, { nome: string; cosa: string }> = {
   snmp: { nome: "Spanning tree, LLDP e fasci via SNMP", cosa: "gli switch che non sono MikroTik né del controller" },
   controller: { nome: "Campi del controller", cosa: "porte, fasci e vicini dal controller UniFi" },
   host: { nome: "LLDP e bond degli hypervisor", cosa: "dentro la lettura notturna degli hypervisor" },
+  librenms: { nome: "Dati degli apparati da LibreNMS", cosa: "porte, vicini, VLAN, MAC, ARP, sensori e inventario dall'API di LibreNMS; aggiunge a LibreNMS i vicini con SNMP che risponde (spenta di serie)" },
 };
 
 /** Ordine della tavola. */
-const ORDINE_LETTURE: readonly Lettura[] = ["mikrotik", "mikrotik_scheda", "switch_vlan", "snmp", "controller", "host"];
+const ORDINE_LETTURE: readonly Lettura[] = ["mikrotik", "mikrotik_scheda", "switch_vlan", "snmp", "controller", "host", "librenms"];
 
 function esitoLettura(l: Lettura, acceso: boolean): StatoOpzione["esito"] {
   if (!acceso) return esito("neutro", "spenta");

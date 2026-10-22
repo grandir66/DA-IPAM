@@ -132,11 +132,11 @@ test("(c) una `leggi` che lancia dà la riga d'errore col codice, e le altre rig
   assert.equal(righe[1].stato.acceso, true);
 });
 
-test("(d) cliente appena nato: le sei letture accese di serie, la mappa nuova spenta, nessuna riga illeggibile", async () => {
+test("(d) cliente appena nato: le sei letture accese di serie (librenms spenta: scrive in LibreNMS), la mappa nuova spenta, nessuna riga illeggibile", async () => {
   await withTenant(T, async () => {
     const righe = await leggiTutte();
     const per = (id: string) => righe.find((r) => r.opzione.id === id)?.stato;
-    for (const l of LETTURE) assert.deepEqual([per(`lettura.${l}`)?.acceso, per(`lettura.${l}`)?.da], [true, null], l);
+    for (const l of LETTURE) assert.deepEqual([per(`lettura.${l}`)?.acceso, per(`lettura.${l}`)?.da], [l !== "librenms", null], l);
     assert.equal(per("automatismo.mappa_cavi")?.acceso, false);
     const illeggibili = righe.filter((r) => r.stato.esito.testo.startsWith("stato illeggibile")).map((r) => `${r.opzione.id}: ${r.stato.esito.testo}`);
     assert.deepEqual(illeggibili, []);

@@ -9,7 +9,7 @@ Spec [`docs/superpowers/specs/2026-10-22-librenms-fonte-dati-design.md`](docs/su
 - [ ] Piano approvato da Riccardo (livelli compresi)
 - [ ] T1 aggiunta senza force_add, v1/v2c/v3
 - [ ] T2 migrazione librenms_fonte_v21
-- [ ] T3 client e lettori con uscite vere anonimizzate
+- [x] T3 client e lettori con uscite vere anonimizzate — una query per 50 apparati; regola SNMP in SQL confrontata con quella vera da una prova
 - [ ] T4 scrittura e giro nel job librenms_sync (prova a vuoto sulla copia dell'hub)
 - [ ] T5 rotte API
 - [ ] T6 tavola grafica approvata

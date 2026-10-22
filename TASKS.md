@@ -73,7 +73,7 @@ Piano: [`docs/superpowers/plans/2026-10-22-accorpamento-ip-e-vlan-switch.md`](do
 
 ## 2026-10-22 — invio AD e inventario a DA-Vul-can (A-IPAM)
 
-Piano: [`docs/superpowers/plans/2026-10-22-invio-ad-inventario-a-vulcan.md`](docs/superpowers/plans/2026-10-22-invio-ad-inventario-a-vulcan.md) (9 task, livello completo, stato: bozza da approvare). Oggi l'AD arriva all'hub solo a mano (download qui, «Carica» là): il piano aggiunge l'invio automatico, inventario e battito; spento senza `VULCAN_TOKEN`.
+Piano: [`docs/superpowers/plans/2026-10-22-invio-ad-inventario-a-vulcan.md`](docs/superpowers/plans/2026-10-22-invio-ad-inventario-a-vulcan.md) (9 task, livello completo, eseguito il 22/10). Oggi l'AD arriva all'hub solo a mano (download qui, «Carica» là): il piano aggiunge l'invio automatico, inventario e battito; spento senza `VULCAN_TOKEN`.
 
 - [x] Piano approvato da Riccardo — Riccardo 22/10: «andiamo avanti», eseguito qui
 - [x] T1 chiavi `VULCAN_URL`/`VULCAN_TOKEN` da `oggetto.env` e cliente dell'invio — gettone mai in log/errori/risposte (18 prove); file rifiutato se non root, link simbolico o permessi ≠ 600
@@ -84,7 +84,8 @@ Piano: [`docs/superpowers/plans/2026-10-22-invio-ad-inventario-a-vulcan.md`](doc
 - [x] T6 giro: coda, ping, battito, audit JSONL — giro entro 8 minuti, sospensione su gettone rifiutato salvata nel DB, audit senza dati personali; revisione completa: 1 importante corretto (invii doppi con hub lento)
 - [x] T7 timer in `server.ts` (nessuna chiamata senza gettone) — senza gettone solo la lettura della config, timer una volta per processo, inventario alle 03:00 italiane + recupero oltre 26 h
 - [x] T8 riquadro in «Cosa esce», «Invia ora», riga nella pagina AD — riquadro in «Cosa esce» (oggi «Spento: manca VULCAN_TOKEN»), «Invia ora» solo admin, riga nella pagina AD; revisione completa: approvato
-- [ ] T9 collaudo contro DA-Vul-can di sviluppo (ping/battito/AD; inventario solo hub finto), documenti, rilascio spento, copie 70791 cancellate
+- [x] T9 collaudo contro DA-Vul-can di sviluppo, documenti, copie cancellate — 22/10, DA-Vul-can origin/HEAD in locale (DB vuoto, CA di prova solo per il collaudo): spento 503 → in coda; acceso AD 201, battito 200, inventario 201 (351 oggetti), doppione 200 senza seconda riga, 401 e 403 → «sospeso»; worktree, CA e copie rimossi; CHANGELOG, CONTEXT §6, consuntivo nel piano
+- [ ] Rilascio su `dev` e verifica sul live (hub e cliente A «Spento», nessuna riga `[vulcan]` nel journal) — al controllore
 - [ ] Fuori piano, da seguire: A-Link (`tipo:"ipam"`, chiavi in `oggetto.env`, policy P9 con conferma), A3 sull'hub (rotta inventario, nessun piano su origin al 22/10), nome `da-vulcan.domarc.it` fissato sull'appliance
 
 ## 2026-10-22 — topologia: spazio in basso, cavi a mano, server non agganciati

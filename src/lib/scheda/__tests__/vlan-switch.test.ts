@@ -16,7 +16,7 @@ import { contaVlanSwitch, deleteTenantDatabase, getTenantDb, leggiVlanSwitchDb, 
 import { leggiVlanSwitch, type LetturaVlanSwitch } from "@/lib/devices/snmp-vlan";
 import type { LettoreSnmp, VoceSnmp } from "@/lib/devices/snmp-walk";
 import { vlanDistinte, type PortaSwitch } from "../porte-da-guardare";
-import { fonteVlanSwitch, matriceVlanSwitch, statoLetturaVlanSwitch, sezioniMatriceSwitch, type MatriceVlanSwitch, type PortaPerMatrice } from "../vlan-switch";
+import { fonteVlanSwitch, matriceVlanSwitch, statoLetturaVlanSwitch, vlanDaMatrice, sezioniMatriceSwitch, type DatiVlanSwitch, type MatriceVlanSwitch, type PortaPerMatrice } from "../vlan-switch";
 
 const T = "TESTVLANSWITCHSCHEDA";
 after(() => {
@@ -217,4 +217,26 @@ test("riga sotto la legenda: spenta, mai fatta, non riuscita col codice (come la
   assert.equal(statoLetturaVlanSwitch({ acceso: true, letto_il: null, esito: null }), "mai fatta");
   assert.equal(statoLetturaVlanSwitch({ acceso: true, letto_il: null, esito: { il: "2026-10-22 08:00:00", comandi: 0, riusciti: 0, codice: "TEMPO_SCADUTO" } }),
     "non riuscita: TEMPO_SCADUTO");
+});
+
+test("Panoramica: le VLAN del riquadro sono le colonne della matrice (stessa unione della tab), con porte membro e quante tagged", () => {
+  const db: DatiVlanSwitch = {
+    vlan: [{ vlan_id: 10, nome: "uno" }, { vlan_id: 20, nome: "due" }, { vlan_id: 99, nome: "vuota" }],
+    porte: [
+      { vlan_id: 10, if_index: 1, egress: true, untagged: true },
+      { vlan_id: 10, if_index: 2, egress: true, untagged: false },
+      { vlan_id: 20, if_index: 2, egress: true, untagged: false },
+    ],
+    pvid: [{ if_index: 1, pvid: 10 }, { if_index: 2, pvid: 10 }, { if_index: 3, pvid: 30 }],
+    lettura: { letto_il: "2026-10-22 08:00:00", ordine_bit: "standard" },
+  };
+  const m = matriceVlanSwitch({ porte: [porta(1, "Port 1"), porta(2, "Port 2"), porta(3, "Port 3")], db });
+  const v = vlanDaMatrice(m);
+  assert.equal(v.length, m.striscia.vlan);
+  assert.deepEqual(v, [
+    { vlan: 10, porte: 2, trunk: 1 }, { vlan: 20, porte: 1, trunk: 1 }, { vlan: 30, porte: 1, trunk: 0 }, { vlan: 99, porte: 0, trunk: 0 },
+  ]);
+  // Senza lettura: le VLAN dei PVID, come vlanDistinte.
+  const senza = matriceVlanSwitch({ porte: [porta(1, "Port 1", "up", 5), porta(2, "Port 2", "up", 5)], db: null });
+  assert.deepEqual(vlanDaMatrice(senza), [{ vlan: 5, porte: 2, trunk: 0 }]);
 });

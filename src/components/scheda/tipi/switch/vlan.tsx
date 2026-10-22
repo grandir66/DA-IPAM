@@ -18,7 +18,7 @@ import { TabellaMatriceVlan, type BloccoMatrice } from "../../matrice-vlan";
 import type { ContestoScheda } from "../../contesto";
 import type { Caricamento } from "../router/dati-router";
 
-function useVlanSwitch(deviceId: number | undefined): { stato: Caricamento<RispostaVlanSwitch>; riprova: () => void } {
+export function useVlanSwitch(deviceId: number | undefined): { stato: Caricamento<RispostaVlanSwitch>; riprova: () => void } {
   const [stato, setStato] = useState<Caricamento<RispostaVlanSwitch>>({ fase: "carico" });
   const [n, setN] = useState(0);
   useEffect(() => {

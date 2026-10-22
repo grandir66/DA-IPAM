@@ -16,9 +16,11 @@ import { Riquadro } from "../../riquadro";
 import { RigaFonti, type Fonte } from "../../riga-fonti";
 import { StrisciaNumeri } from "../../striscia-numeri";
 import type { ContestoScheda } from "../../contesto";
+import { vlanDaMatrice } from "@/lib/scheda/vlan-switch";
 import { PannelloFrontale } from "./pannello-frontale";
 import { AttaccatoCella, PoePorta, StatoPorta, Velocita, colonneConDato } from "./celle";
 import { attaccatoA, porteDi, viciniDi } from "./dati-porte";
+import { useVlanSwitch } from "./vlan";
 
 type Filtro = "guardare" | "trunk" | "poe" | "tutte";
 
@@ -59,6 +61,9 @@ export function PanoramicaSwitch({ ctx }: { ctx: ContestoScheda }) {
   const vicini = viciniDi(ctx);
   const [filtro, setFiltro] = useState<Filtro>("guardare");
   const [scelta, setScelta] = useState<number | null>(null);
+  // Con la lettura delle VLAN via SNMP la Panoramica conta come la tab (stessa matrice); senza, i PVID di switch_ports.
+  const { stato: statoVlan } = useVlanSwitch((device?.switch_vlan_n ?? 0) > 0 ? device?.id : undefined);
+  const vlanLette = statoVlan.fase === "ok" && statoVlan.dati.matrice.qualita !== "solo_pvid" ? vlanDaMatrice(statoVlan.dati.matrice) : null;
 
   const guarda = useMemo(() => porteDaGuardare(porte), [porte]);
   const motiviPer = useMemo(() => new Map(guarda.map((g) => [g.porta.id, g.motivi])), [guarda]);
@@ -68,6 +73,7 @@ export function PanoramicaSwitch({ ctx }: { ctx: ContestoScheda }) {
     vicini: vicini.length,
     protocolliVicini: [...new Set(vicini.map((v) => v.protocollo).filter(Boolean))],
     acceso: accesoDaSwitch(ctx),
+    ...(vlanLette ? { vlan: vlanLette } : {}),
   });
 
   const conteggi = {
@@ -81,7 +87,7 @@ export function PanoramicaSwitch({ ctx }: { ctx: ContestoScheda }) {
   );
   const col = colonneConDato(porte);
   const selezionata = porte.find((p) => p.id === scelta);
-  const vlan = vlanDistinte(porte);
+  const vlan = vlanLette ?? vlanDistinte(porte);
 
   const di = device?.device_info ?? null;
   const haHardware = !!(di && (di.cpu_model || di.ram_total_gb || di.ram_total_mb));
@@ -181,6 +187,7 @@ export function PanoramicaSwitch({ ctx }: { ctx: ContestoScheda }) {
                 <li key={v.vlan} className="flex gap-2"><span className="w-12 shrink-0 font-mono font-semibold">{v.vlan}</span><span>{v.porte} {v.porte === 1 ? "porta" : "porte"}{v.trunk > 0 ? ` (${v.trunk} trunk)` : ""}</span></li>
               ))}
             </ul>
+            {vlan.length > 5 && <button type="button" onClick={() => apriTab("vlan")} className="mt-1 text-[13px] font-semibold text-[#006C96] hover:underline dark:text-sky-300">+{vlan.length - 5} altre ›</button>}
           </Riquadro>
 
           <Riquadro titolo="Hardware" vuoto={!haHardware}>

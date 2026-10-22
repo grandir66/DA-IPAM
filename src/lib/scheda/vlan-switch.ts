@@ -123,6 +123,19 @@ export function matriceVlanSwitch(i: { porte: PortaPerMatrice[]; db: DatiVlanSwi
 }
 
 /**
+ * Le VLAN della Panoramica con la stessa unione della tab (le colonne della matrice): per ognuna le porte fisiche
+ * (prese e SFP+, non i LAG) che ne fanno parte e quante la portano tagged. Stessa forma di `vlanDistinte`.
+ */
+export function vlanDaMatrice(m: MatriceVlanSwitch): Array<{ vlan: number; porte: number; trunk: number }> {
+  const fisiche = m.righe.map((r, i) => ({ r, i })).filter((x) => x.r.gruppo !== "aggregato");
+  return m.colonne.map((c, k) => ({
+    vlan: c.id!,
+    porte: fisiche.filter((x) => x.r.celle[k] !== null).length,
+    trunk: fisiche.filter((x) => x.r.celle[k] === "T").length,
+  }));
+}
+
+/**
  * Come si divide la matrice nella tab (artboard V4-V5): le prese con almeno una VLAN, le porte senza VLAN (chiuse in una
  * riga «+N porte senza VLAN»), le SFP+ in fondo, gli aggregati attivi, quelli spenti a parte (chiusi). Ogni riga una volta.
  */

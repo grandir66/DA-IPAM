@@ -318,3 +318,8 @@ Piano: `docs/superpowers/plans/2026-10-21-collector-netapp-ontap.md`; stesso per
 - [ ] Rinviato: profilo vCenter di prodotto, schema/anteprima/UI/importazioni dev, cluster ONTAP remoto diretto, mapping VMFS→LUN e rete fisica. Nessuna attivazione implicita.
 
 - [x] Pacchetto `~/Documents/DA-IPAM-collector-e-modello-20261021.tar.gz`: 35 file, manifest con hash/commit, codice/test/manuale/consegna; nessun inventario o credenziale. Verificati hash e contenuto. Vista aggregata Canvas con typecheck verde.
+
+## 2026-10-22 — giro 4 dei collector
+
+- [x] Trovati nel `dev` locale di Riccardo due commit non pubblicati (`6395bfa9`, `6bf94155`): profili collaudati `unifi-controller`, `synology-dsm`, `qnap-nas`, `mikrotik-routeros`, `ubiquiti-device`, `proxmox-ve`, su base di prima di C0. Pubblicati sul ramo `collector-locali`.
+- [ ] Giro cloud 4 (leggero): merge, un collector per famiglia (base collaudata), porte solo per switch/router, aggancio al riconoscimento, scansione da Reti allineata (prompt, «Giro 4»).

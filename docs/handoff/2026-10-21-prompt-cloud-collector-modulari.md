@@ -131,6 +131,38 @@ Decisioni di Riccardo nel §7 del piano, paragrafo «Fine giro 2». Prima di tut
 Fermati a fine `synology-nas` o prima se il tempo non basta, lasciando ogni collector chiuso (mai a metà).
 Cancello completo a fine giro, TASKS aggiornato.
 
+## Giro 4 (22/10): i collector collaudati in locale, un collector per famiglia, aggancio
+
+Livello **leggero** (Riccardo, 22/10): prove a fine tappa, cancello a fine giro, nessun revisore per passo.
+
+Fatto nuovo: la notte del 22/10 una sessione locale ha scritto, **collaudati su apparati veri**, i profili
+`unifi-controller`, `synology-dsm`, `qnap-nas`, `mikrotik-routeros`, `ubiquiti-device`, `proxmox-ve`, partendo dalla
+base di prima di C0 (non conosce `catalogo.ts`). Sono sul ramo **`collector-locali`** (`6bf94155`); descrizione,
+copertura e collaudi in `docs/modules/acquisition.md` e nel documento di consegna di quel ramo. Il giro 3 ha scritto
+nel frattempo `qnap-nas`, `mikrotik-routeros`, `synology-nas`, `windows`, `linux` **non collaudati**.
+
+0. Merge di `origin/dev`, poi merge di `origin/collector-locali` in `collector-modulari`. Adatta i profili locali al
+   catalogo unico (descrittore, versione per collector, allowlist dal catalogo, prova di contratto con la loro
+   fixture). Il loro motore `inventory-collector.ts` e l'estensione `inventory` dello snapshot restano.
+1. **Un collector per famiglia.** Dove esistono due versioni (QNAP, MikroTik, Synology) la base è quella
+   **collaudata** del ramo locale; dalla versione del giro 3 si prende solo ciò che manca e serve (per QNAP il
+   firmware vero da `getsysinfo firmver`/`/etc/version` già usato da S2; share e pacchetti NAS se non ci sono), con
+   prova. Nome definitivo della famiglia Synology: `synology-dsm` (il nome collaudato). `windows` e `linux` restano.
+   Ogni descrittore dice il vero: `collaudato` coi modelli del collaudo per i profili locali, `non_collaudato` per gli
+   altri. Nessun id di collector duplicato o orfano nel catalogo.
+2. **Porte solo per switch e router**: la proiezione su `switch_ports` vale per le famiglie switch/router (dal
+   descrittore); NAS, server, hypervisor, controller e AP non ricevono porte «da switch». Prova.
+3. **Aggancio al riconoscimento del prodotto** (`riconosci.ts`) dei collector della famiglia giusta, come gli HP:
+   con l'interruttore acceso «Aggiorna» li usa. Il controller UniFi resta separato dai device diretti: non si
+   aggancia al pulsante dell'apparato senza una regola chiara (se non c'è, scrivilo in TASKS come decisione).
+   `proxmox-ve` con `local_ssh` non è usabile dall'app: nell'app solo credenziali `ssh` dell'archivio.
+4. **Scansione dei router dalla pagina Reti** (`POST /api/networks/bulk-scan-devices`): stesso comportamento del
+   punto (a) del giro 3 (con interruttore acceso e collector, non riscrive le colonne del collector).
+5. Guida «Aggiungere una famiglia» e manuale aggiornati: elenco dei collector con stato di collaudo.
+
+Fermati a fine punto 5. Cancello completo a fine giro, TASKS aggiornato con cosa provare in locale e su quali
+apparati. Non toccare il ramo `collector-locali` (si legge e si unisce, non si riscrive).
+
 ## Da lasciare a Riccardo in locale
 
 - Misure su copia del DB dell'hub (S3; differenze dell'anteprima in C2).

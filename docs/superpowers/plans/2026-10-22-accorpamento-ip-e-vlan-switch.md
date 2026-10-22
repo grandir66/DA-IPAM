@@ -317,18 +317,21 @@ CREATE TABLE switch_vlan_porte (device_id INTEGER NOT NULL REFERENCES network_de
 CREATE TABLE switch_porta_pvid (device_id INTEGER NOT NULL REFERENCES network_devices(id) ON DELETE CASCADE,
   if_index INTEGER NOT NULL, pvid INTEGER NOT NULL, PRIMARY KEY (device_id, if_index));
 CREATE TABLE switch_vlan_lettura (device_id INTEGER PRIMARY KEY REFERENCES network_devices(id) ON DELETE CASCADE,
-  letto_il TEXT NOT NULL, tabella TEXT NOT NULL, mappa_porte TEXT NOT NULL, n_vlan INTEGER NOT NULL);
+  letto_il TEXT NOT NULL, tabella TEXT NOT NULL, mappa_porte TEXT NOT NULL, n_vlan INTEGER NOT NULL,
+  ordine_bit TEXT NOT NULL, porte_senza_mappa INTEGER NOT NULL);  -- le ultime due aggiunte nel Task 8 (campi del Task 7, «Correzioni»)
 ```
 
 ```ts
 export function migrateSwitchVlan(db: Database.Database): string[];
-/** Fotografia: DELETE + INSERT delle tre tabelle dell'apparato in UNA transazione. Solo con esito "letto". */
-export function scriviVlanSwitch(deviceId: number, l: LetturaVlanSwitch, adesso: Date): void;
+/** Fotografia: DELETE + INSERT delle quattro tabelle dell'apparato in UNA transazione. Solo con esito "letto" (altrimenti lancia).
+ *  false = schema assente (migrazione fallita): niente scritto. Chiavi doppie nella lettura → vince l'ultima + avviso coi numeri. */
+export function scriviVlanSwitch(deviceId: number, l: LetturaVlanSwitch, adesso?: Date): boolean;
 export interface VlanSwitchDb {
   vlan: Array<{ vlan_id: number; nome: string | null }>;
   porte: Array<{ vlan_id: number; if_index: number; egress: boolean; untagged: boolean | null }>;
   pvid: Array<{ if_index: number; pvid: number }>;
-  lettura: { letto_il: string; tabella: "static" | "current" | "nessuna"; mappa_porte: "base_port" | "ifindex"; n_vlan: number } | null;
+  lettura: { letto_il: string; tabella: "static" | "current" | "nessuna"; mappa_porte: "base_port" | "ifindex"; n_vlan: number;
+    ordine_bit: "standard" | "inverso"; porte_senza_mappa: number } | null;
 }
 export function leggiVlanSwitchDb(deviceId: number): VlanSwitchDb;
 ```
@@ -426,7 +429,7 @@ export function matriceVlanSwitch(i: {
 - Aspetto: artboard `SwitchVlan`.
 - Conteggio della tab: `switch_vlan_n` se > 0, altrimenti il conteggio di oggi.
 
-**Prova (vista rossa)** `vlan-switch.test.ts` con le tre fixture passate da `leggiVlanSwitch` → `scriviVlanSwitch` → `leggiVlanSwitchDb` (DB di prova): 48POE `completa` con 13 colonne e i numeri della striscia calcolati a mano dalla fixture (scritti nella prova); ProMax `dedotta`; nessun dato → `solo_pvid` uguale alle VLAN distinte di oggi (`vlanDistinte`).
+**Prova (vista rossa)** `vlan-switch.test.ts` con le tre fixture passate da `leggiVlanSwitch` → `scriviVlanSwitch` → `leggiVlanSwitchDb` (DB di prova): 48POE `completa` con 13 colonne e i numeri della striscia calcolati a mano dalla fixture (scritti nella prova); ProMax `dedotta` (da `untagged === null` o `lettura.ordine_bit === "inverso"`); nessun dato → `solo_pvid` uguale alle VLAN distinte di oggi (`vlanDistinte`).
 
 **Verifica** prova verde; `rotte-censite` verde; resa sulla copia dell'hub (dove nel Task 12 i dati ci saranno; qui con le righe scritte dalla prova a mano sulla copia, `scriviVlanSwitch` da script nello scratchpad) dei tre switch a 1920 e 1440; confronto con l'artboard. Revisione del task. Lint, tsc, build.
 

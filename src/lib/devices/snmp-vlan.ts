@@ -164,9 +164,13 @@ export async function leggiVlanSwitch(walk: LettoreSnmp): Promise<LetturaVlanSwi
   }
 
   const pvid: LetturaVlanSwitch["pvid"] = [];
+  // Due porte del bridge sullo stesso ifIndex (mappa sbagliata): un PVID solo, il primo, come per le porte delle VLAN.
+  const pvidVisti = new Set<number>();
   for (const [bp, v] of pvidGrezzo) {
     const n = numero(v), if_index = ifDi(bp);
-    if (n !== null && vlanValida(n) && if_index !== null) pvid.push({ if_index, pvid: n });
+    if (n === null || !vlanValida(n) || if_index === null || pvidVisti.has(if_index)) continue;
+    pvidVisti.add(if_index);
+    pvid.push({ if_index, pvid: n });
   }
   pvid.sort((a, b) => a.if_index - b.if_index);
 

@@ -206,3 +206,16 @@ test("porte del bridge senza ifIndex nella mappa: contate", async () => {
   assert.ok(!ifEgress(l, 1).includes(1));
   assert.equal((await leggiVlanSwitch(lettore(carica("qbridge-static-16xg.json")))).porte_senza_mappa, 0);
 });
+
+// Revisione del Task 8: due porte del bridge con lo stesso ifIndex nella mappa davano due PVID per una porta (chiave doppia
+// in switch_porta_pvid). Come per le porte delle VLAN vale la prima.
+test("PVID: due porte del bridge sullo stesso ifIndex danno un PVID solo (il primo)", async () => {
+  const f = carica("qbridge-static-16xg.json");
+  const mappa = f.walks.basePortIfIndex.voci!;
+  const ifDi1 = mappa.find((x) => x.oid.endsWith(".1.4.1.2.1"))!.num;
+  const i2 = mappa.findIndex((x) => x.oid.endsWith(".1.4.1.2.2"));
+  mappa[i2] = { ...mappa[i2], num: ifDi1 };
+  const l = await leggiVlanSwitch(lettore(f));
+  assert.equal(l.pvid.filter((p) => p.if_index === ifDi1).length, 1);
+  assert.equal(new Set(l.pvid.map((p) => p.if_index)).size, l.pvid.length);
+});

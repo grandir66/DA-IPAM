@@ -137,3 +137,16 @@ test("apparato cancellato: le sue righe se ne vanno (CASCADE, foreign_keys acces
   d.prepare("DELETE FROM network_devices WHERE id = 14").run();
   assert.deepEqual(righe(14), [0, 0, 0, 0]);
 });
+
+test("chiavi doppie nella stessa lettura: una riga sola, e un avviso coi numeri (niente nomi)", async (t) => {
+  apparato(15);
+  const l = await leggiVlanSwitch(lettore("qbridge-static-16xg.json"));
+  const doppia: LetturaVlanSwitch = { ...l, pvid: [{ if_index: 1, pvid: 1 }, { if_index: 1, pvid: 20 }] };
+  const avvisi: string[] = [];
+  t.mock.method(console, "warn", (m: unknown) => { avvisi.push(String(m)); });
+  withTenant(T, () => scriviVlanSwitch(15, doppia, t1));
+  assert.equal(conta("switch_porta_pvid", 15), 1);
+  assert.deepEqual(withTenant(T, () => leggiVlanSwitchDb(15)).pvid, [{ if_index: 1, pvid: 20 }], "vince l'ultima");
+  assert.deepEqual(avvisi.filter((a) => a.includes("switch vlan")),
+    ["[db-tenant] switch vlan: switch_porta_pvid apparato 15, righe lette 2, scritte 1 (chiavi doppie)"]);
+});

@@ -6006,14 +6006,23 @@ export function scriviVlanSwitch(deviceId: number, l: LetturaVlanSwitch, adesso:
     for (const t of ["switch_vlan", "switch_vlan_porte", "switch_porta_pvid", "switch_vlan_lettura"]) {
       d.prepare(`DELETE FROM ${t} WHERE device_id = ?`).run(deviceId);
     }
-    // OR REPLACE: due righe con la stessa chiave nella stessa lettura non devono costare tutta la fotografia (vince l'ultima).
-    const insV = d.prepare("INSERT OR REPLACE INTO switch_vlan (device_id, vlan_id, nome) VALUES (?, ?, ?)");
-    for (const v of l.vlan) insV.run(deviceId, v.vlan_id, v.nome);
-    const insP = d.prepare("INSERT OR REPLACE INTO switch_vlan_porte (device_id, vlan_id, if_index, egress, untagged) VALUES (?, ?, ?, ?, ?)");
-    for (const p of l.porte) insP.run(deviceId, p.vlan_id, p.if_index, p.egress ? 1 : 0, bool(p.untagged));
-    const insPv = d.prepare("INSERT OR REPLACE INTO switch_porta_pvid (device_id, if_index, pvid) VALUES (?, ?, ?)");
-    for (const p of l.pvid) insPv.run(deviceId, p.if_index, p.pvid);
-    const nVlan = (d.prepare("SELECT COUNT(*) AS n FROM switch_vlan WHERE device_id = ?").get(deviceId) as { n: number }).n;
+    // OR REPLACE: due righe con la stessa chiave nella stessa lettura non devono costare tutta la fotografia (vince l'ultima),
+    // ma si dice, come in `sostituisci` della scheda MikroTik (solo i numeri: niente nomi nel log).
+    const scrivi = <R>(tabella: string, sql: string, righeLette: ReadonlyArray<R>, valori: (r: R) => Array<string | number | null>): number => {
+      const ins = d.prepare(sql);
+      for (const r of righeLette) ins.run(deviceId, ...valori(r));
+      const scritte = (d.prepare(`SELECT COUNT(*) AS n FROM ${tabella} WHERE device_id = ?`).get(deviceId) as { n: number }).n;
+      if (scritte < righeLette.length) {
+        console.warn(`[db-tenant] switch vlan: ${tabella} apparato ${deviceId}, righe lette ${righeLette.length}, scritte ${scritte} (chiavi doppie)`);
+      }
+      return scritte;
+    };
+    const nVlan = scrivi("switch_vlan", "INSERT OR REPLACE INTO switch_vlan (device_id, vlan_id, nome) VALUES (?, ?, ?)", l.vlan,
+      (v) => [v.vlan_id, v.nome]);
+    scrivi("switch_vlan_porte", "INSERT OR REPLACE INTO switch_vlan_porte (device_id, vlan_id, if_index, egress, untagged) VALUES (?, ?, ?, ?, ?)", l.porte,
+      (p) => [p.vlan_id, p.if_index, p.egress ? 1 : 0, bool(p.untagged)]);
+    scrivi("switch_porta_pvid", "INSERT OR REPLACE INTO switch_porta_pvid (device_id, if_index, pvid) VALUES (?, ?, ?)", l.pvid,
+      (p) => [p.if_index, p.pvid]);
     d.prepare(`INSERT INTO switch_vlan_lettura (device_id, letto_il, tabella, mappa_porte, n_vlan, ordine_bit, porte_senza_mappa)
       VALUES (?, ?, ?, ?, ?, ?, ?)`).run(deviceId, ora, l.tabella, l.mappa_porte, nVlan, l.ordine_bit, l.porte_senza_mappa);
   })();

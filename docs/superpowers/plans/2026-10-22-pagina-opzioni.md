@@ -85,7 +85,7 @@ Scostamento: il seme si chiama da `applySchedulerBootMigration` (`cron/scheduler
 `applyTenantSchedulerDefaults`, perché `db-tenant.ts` non può importare `opzioni/job-di-serie.ts` (ciclo d'import, lo
 stesso motivo per cui esiste `scheduler-defaults.ts`). Fatto prima del Task 1, che ne usa la lapide.
 
-### [~] Task 3 — Rotte `GET /api/opzioni` e `PUT /api/opzioni/[id]`
+### [x] Task 3 — Rotte `GET /api/opzioni` e `PUT /api/opzioni/[id]`
 
 **File:** crea `src/app/api/opzioni/route.ts`, `src/app/api/opzioni/[id]/route.ts`; prova
 `src/app/api/opzioni/__tests__/route.test.ts`.
@@ -98,8 +98,14 @@ poi `reloadTenantScheduler(tenant)`. Audit col canale audit del progetto (chi, o
 **Verifica:** `node --import tsx --test src/app/api/opzioni/__tests__/route.test.ts` → verdi; aggiungere le due rotte
 a `scripts/verifica-permessi.sh` / `api-auth-guards.test.ts` come le altre.
 **Commit:** «Opzioni: rotte di lettura e cambio».
+**Fatto (22/10 sera):** `node --import tsx --test src/app/api/opzioni/__tests__/route.test.ts src/lib/__tests__/api-auth-guards.test.ts`
+→ 75/75; viste fallire 3 prove con le regole rotte apposta (tutti admin, nessun 405). Scostamenti: la logica sta in
+`lib/opzioni/cambio.ts` (provabile senza sessione: `mock.module` non gira con tsx), le rotte sono sottili; la regola
+dell'hub è quella di `/api/settings`, cioè admin o superadmin: oggi coincide con «admin», il ramo 403 vale per gli altri
+ruoli. `scripts/verifica-permessi.sh` non va toccato: ricava i casi dal censimento delle rotte. Registro su journald
+(`[opzioni] audit {utente: id, opzione, prima, dopo}`): il progetto non ha un canale di audit su file.
 
-### [ ] Task 4 — Pagina `/settings/opzioni` e voce di menu
+### [~] Task 4 — Pagina `/settings/opzioni` e voce di menu
 
 **File:** crea `src/app/(dashboard)/settings/opzioni/page.tsx` (server: legge e passa), `src/components/opzioni/pagina-opzioni.tsx`
 (client), `src/components/opzioni/levetta-opzione.tsx`, `src/components/opzioni/dialogo-spegni.tsx`; modifica

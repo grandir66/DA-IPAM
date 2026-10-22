@@ -15,7 +15,7 @@ Livello leggero, approvato da Riccardo il 22/10 dopo 70151 (VLAN del router manc
 - [x] Pagina unica delle opzioni + job di serie: censimento (34 interruttori in 13 pagine), tavola approvata, spec e piano scritti
 - [x] Promote dev → main v0.9.873 (85662969), chiesto da Riccardo il 22/10
 - [~] Esecuzione del piano [`2026-10-22-pagina-opzioni.md`](docs/superpowers/plans/2026-10-22-pagina-opzioni.md) (9 task, leggero; 8 = aggiornamento che non retrocede + installatore, 9 = errore SSH), avviata il 22/10 sera nel worktree `.worktrees/da-ipam-opzioni`; ordine 1-6, 8, 9, poi 7 (Riccardo:)
-  - [x] Task 1 catalogo · [x] 2 job di serie · [~] 3 rotte · [ ] 4 pagina · [ ] 5 rimandi · [ ] 6 documenti · [ ] 8 niente retrocessioni · [ ] 9 errore SSH · [ ] 7 rilascio e 70151
+  - [x] Task 1 catalogo · [x] 2 job di serie · [x] 3 rotte · [~] 4 pagina · [ ] 5 rimandi · [ ] 6 documenti · [ ] 8 niente retrocessioni · [ ] 9 errore SSH · [ ] 7 rilascio e 70151
   - Trovato: la spec rimanda al censimento del §1, che nel file non c'era; recuperato dal trascritto della sessione di progettazione, va nella spec col Task 6
 
 ## 2026-10-22 — LibreNMS come fonte di dati degli apparati SNMP

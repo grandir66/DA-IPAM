@@ -133,4 +133,10 @@ describe("i giri pianificati passano da scriviPorteDelGiro", () => {
     assert.equal(/\bupsertSwitchPorts\s*\(/.test(src), false);
     assert.equal((src.match(/\bscriviPorteDelGiro\s*\(/g) ?? []).length, 2);
   });
+
+  it("la scansione dei router dalla pagina Reti (bulk-scan-devices) scrive le porte allo stesso modo", () => {
+    const src = readFileSync(join(process.cwd(), "src/app/api/networks/bulk-scan-devices/route.ts"), "utf8");
+    assert.equal(/\bupsertSwitchPorts\s*\(/.test(src), false);
+    assert.equal((src.match(/\bscriviPorteDelGiro\s*\(/g) ?? []).length, 2);
+  });
 });

@@ -188,9 +188,7 @@ function opzioneAggregata(a: (typeof AGGREGATI)[number]): Opzione {
     tocchiJob: true,
     spegnendo: {
       siFerma: a.siFerma,
-      resta: diSerie
-        ? "tutto quello già letto, che invecchia. Dopo gli aggiornamenti resta spento: non si riaccende da solo."
-        : "tutto quello già letto, che invecchia.",
+      resta: "tutto quello già letto, che invecchia.",
     },
     leggi() {
       const jobs = getScheduledJobs().filter((j) => j.job_type === a.tipo);

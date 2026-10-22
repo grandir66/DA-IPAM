@@ -105,7 +105,7 @@ dell'hub è quella di `/api/settings`, cioè admin o superadmin: oggi coincide c
 ruoli. `scripts/verifica-permessi.sh` non va toccato: ricava i casi dal censimento delle rotte. Registro su journald
 (`[opzioni] audit {utente: id, opzione, prima, dopo}`): il progetto non ha un canale di audit su file.
 
-### [~] Task 4 — Pagina `/settings/opzioni` e voce di menu
+### [x] Task 4 — Pagina `/settings/opzioni` e voce di menu
 
 **File:** crea `src/app/(dashboard)/settings/opzioni/page.tsx` (server: legge e passa), `src/components/opzioni/pagina-opzioni.tsx`
 (client), `src/components/opzioni/levetta-opzione.tsx`, `src/components/opzioni/dialogo-spegni.tsx`; modifica
@@ -117,8 +117,16 @@ aggiornamenti: resta spento»; mutazioni con `fetch` + `router.refresh()`.
 **Verifica:** Playwright sulla pagina resa in locale (`npm run dev:server`, dati finti di prova) a 1920 e 1280:
 schermate in scratchpad, guardate; un non admin vede le levette ferme.
 **Commit:** «Opzioni: la pagina».
+**Fatto (22/10 sera):** app accesa in locale (porta 3111, dati nuovi nello scratchpad, cliente 70151 finto con due reti
+/24 e /22). Al riavvio il seme vero ha creato 5 job (ARP, hypervisor, DNS, due scansioni veloci; la /22 non frenata).
+Pagina guardata a 1920 (intera) e 1280 (niente scorrimento orizzontale); spento il giro ARP: dialogo con «Si ferma / Resta /
+Dopo gli aggiornamenti», riga «spenta da prova il 22/10 alle 16:18» (ora italiana); `#job.arp_poll` scorre alla riga e la
+evidenzia. Da viewer: scritta «Solo un amministratore può cambiarle», tutte le levette ferme, PUT → 403. Corretto in
+corsa: «dopo gli aggiornamenti» ripetuto due volte nel dialogo dei job di serie. Scostamento: la pagina server passa solo
+il nome del cliente e il componente legge `GET /api/opzioni` (la vista aggregata «tutti i clienti» la risolve la rotta);
+dopo un cambio rilegge l'elenco invece di `router.refresh()`, che non rileggerebbe i dati del client.
 
-### [ ] Task 5 — Rimandi nelle pagine vecchie
+### [~] Task 5 — Rimandi nelle pagine vecchie
 
 **File:** crea `src/components/opzioni/riga-rimando.tsx` (`{ id: string; nome: string; stato: StatoOpzione }` → riga
 dell'oggetto 11); modifica le pagine della spec §3.5: `src/app/(dashboard)/topology/dati/letture-card.tsx`,

@@ -1,5 +1,12 @@
 # TASKS — DA-IPAM
 
+## 2026-10-22 — Vulnerabilità per host ed exploit noti
+
+Riccardo (22/10): in `/vulnerabilities` l'elenco anche per host/IP, e per ogni vulnerabilità se esiste già un exploit. Piano: `docs/superpowers/plans/2026-10-22-vulnerabilita-per-host-ed-exploit.md` (mockup approvato, livello leggero proposto, in attesa del via sul piano).
+
+- [x] Riccardo: fonti CISA KEV + Exploit-DB + EPSS; selettore «Per vulnerabilità | Per host» nella stessa pagina; scaricamento giornaliero acceso di default
+- [ ] Passi 1-6 del piano
+
 ## 2026-10-22 sera — elenco degli aperti verificato su origin (18:30)
 
 Riccardo ha chiesto di valutare l'elenco «cose da fare» della sessione «VLAN VMware in da-ipam». Confronto con i rami su origin alle 18:30 italiane:

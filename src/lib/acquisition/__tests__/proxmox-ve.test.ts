@@ -154,3 +154,68 @@ test("proxmox-ve: proiezione verso l'inventario – nodi e VM come la scansione,
     assert.deepEqual([nuovo.hosts[0].hardware_serial, nuovo.hosts[0].cpu_model, nuovo.hosts[0].subscription], [null, null, null]);
     assert.deepEqual(nuovo.vms[0].ip_addresses, []);
 });
+
+const DMI: Record<string, string> = {
+    "dmidecode -s system-manufacturer": "Lab Corp\n", "dmidecode -s system-product-name": "LabServer 1\n", "dmidecode -s system-serial-number": "LAB0001\n",
+};
+const trasportoConRisposte = async (extra: Record<string, string>, ricette: (c: string) => string | undefined = () => undefined): Promise<{ s: Awaited<ReturnType<typeof collectDevice>>; chiesti: string[] }> => {
+    const { PROXMOX_USCITE } = await import("./contratto-fixture");
+    const chiesti: string[] = [];
+    const t: AcquisitionTransports = {
+        get: async () => { throw Error("x"); }, walk: async () => { throw Error("x"); },
+        shell: async c => { chiesti.push(...c); return Object.fromEntries(c.map(x => [x, { status: "ok" as const, data: extra[x] ?? ricette(x) ?? PROXMOX_USCITE[x] ?? "", warnings: [] }])); },
+    };
+    return { s: await collectDevice(FIXTURE["proxmox-ve"].richiesta, t), chiesti };
+};
+
+test("proxmox-ve: il rapporto del nodo non dà l'hardware → modello, seriale e produttore dal DMI del nodo a cui si è connessi", async () => {
+    const { s, chiesti } = await trasportoConRisposte({ ...DMI, [cmdStatoNodo("pve-lab")]: STATO, [cmdAbbonamentoNodo("pve-lab")]: ABBONAMENTO, [cmdReportNodo("pve-lab")]: "==== solo versioni ====\npve-manager: 8.2.4\n" });
+    const n = s.cluster_nodes!.data[0];
+    assert.deepEqual([n.hardware_serial, n.hardware_manufacturer, n.hardware_model], ["LAB0001", "Lab Corp", "LabServer 1"]);
+    for (const c of Object.keys(DMI)) assert.ok(chiesti.includes(c), c);
+    assert.ok(!s.cluster_nodes!.warnings.includes("NODE_REPORT_NOT_READ"), "l'hardware c'è: niente avviso");
+});
+
+test("proxmox-ve: valori segnaposto del DMI non sono un modello né un seriale", async () => {
+    const { s } = await trasportoConRisposte({
+        "dmidecode -s system-manufacturer": "To Be Filled By O.E.M.\n", "dmidecode -s system-product-name": "Not Specified\n", "dmidecode -s system-serial-number": "Default string\n",
+        [cmdReportNodo("pve-lab")]: "niente",
+    });
+    const n = s.cluster_nodes!.data[0];
+    assert.deepEqual([n.hardware_serial, n.hardware_manufacturer, n.hardware_model], [undefined, undefined, undefined]);
+    assert.ok(s.cluster_nodes!.warnings.includes("NODE_REPORT_NOT_READ"), "l'hardware non c'è: lo dice");
+});
+
+test("proxmox-ve: il DMI si legge solo per il nodo locale, mai per gli altri del cluster", async () => {
+    const cluster = JSON.stringify([
+        { id: "node/pve-lab", type: "node", node: "pve-lab", status: "online", maxcpu: 8 }, { id: "node/pve-due", type: "node", node: "pve-due", status: "online", maxcpu: 8 },
+    ]);
+    const stato = JSON.stringify([{ type: "node", name: "pve-lab", local: 0 }, { type: "node", name: "pve-due", local: 1 }]);
+    const { s, chiesti } = await trasportoConRisposte({ ...DMI, "pvesh get /cluster/resources --output-format json": cluster, "pvesh get /cluster/status --output-format json": stato });
+    assert.equal(chiesti.filter(c => c.startsWith("dmidecode")).length, 3, "una sola serie di tre letture");
+    const per = (nome: string) => s.cluster_nodes!.data.find(n => n.name === nome)!;
+    assert.equal(per("pve-due").hardware_serial, "LAB0001");
+    assert.equal(per("pve-lab").hardware_serial, undefined, "l'altro nodo non eredita il seriale del locale");
+});
+
+test("proxmox-ve: rapporto del nodo avvolto in una stringa JSON (pvesh con --output-format json) si legge lo stesso", () => {
+    const avvolto = JSON.stringify("==== dmi ====\n\tManufacturer: Lab Corp\n\tSerial Number: LAB0001\n");
+    assert.deepEqual(parseReportNodo(avvolto), { hardware_serial: "LAB0001", hardware_model: null, hardware_manufacturer: "Lab Corp" });
+});
+
+test("proxmox-ve: allowlist – le tre letture del DMI sì, ogni altra forma di dmidecode no", () => {
+    assertCommands(Object.keys(DMI), "proxmox-ve");
+    for (const c of ["dmidecode", "dmidecode -t 1", "dmidecode -s system-serial-number; id", "dmidecode -s bios-version", "dmidecode -s system-uuid"])
+        assert.throws(() => assertCommands([c], "proxmox-ve"), /COMMAND_NOT_ALLOWED/, c);
+    assert.throws(() => assertCommands(Object.keys(DMI), "linux"), /COMMAND_NOT_ALLOWED/);
+});
+
+test("proxmox-ve: VM accesa senza agent attivo è normale (nessun avviso), con agent attivo che tace si dichiara", async () => {
+    const conf = (agent: string) => (c: string) => c === 'grep -H "" /etc/pve/nodes/*/qemu-server/*.conf'
+        ? ["/etc/pve/nodes/pve-lab/qemu-server/100.conf:" + (agent ? "agent: " + agent : "name: x"), "/etc/pve/nodes/pve-lab/qemu-server/100.conf:net0: virtio=02:00:00:00:90:10,bridge=vmbr0", ""].join("\n") : undefined;
+    const senza = await trasportoConRisposte({}, conf(""));
+    assert.equal(senza.s.guests!.data[0].agent, "0");
+    assert.ok(!senza.s.guests!.warnings.includes("GUEST_IP_ADDRESSES_PARTIAL"), "agent non attivo: non è una lettura mancata");
+    const con = await trasportoConRisposte({}, conf("1"));
+    assert.ok(con.s.guests!.warnings.includes("GUEST_IP_ADDRESSES_PARTIAL"));
+});

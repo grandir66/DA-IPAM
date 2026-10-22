@@ -6,6 +6,7 @@
  * che il catalogo non legge (AOS-CX, vCenter, iLO, EdgeRouter, console UniFi) non riceve mai un collector «vicino».
  */
 import type { CollectorId } from "./catalogo";
+import { isProxmoxVeDevice } from "@/lib/devices/device-acquisition-resolve";
 
 export interface ApparatoDaRiconoscere {
   vendor: string | null;
@@ -21,6 +22,10 @@ export function collectorPossibili(a: ApparatoDaRiconoscere): CollectorId[] {
   const vendor = (a.vendor ?? "").toLowerCase();
   const profilo = a.product_profile ?? "";
   const testo = `${a.sysdescr ?? ""} ${a.model ?? ""}`;
+
+  // Proxmox VE (stessa regola del pulsante: `isProxmoxVeDevice`, così il collector e la scansione di oggi non si contraddicono).
+  // Prima di Linux: un nodo scelto come Proxmox è un hypervisor, non «un server qualunque».
+  if (isProxmoxVeDevice({ vendor: vendor || undefined, scan_target: a.scan_target, product_profile: a.product_profile })) return ["proxmox-ve"];
 
   if (vendor === "hp") {
     if (profilo === "hp_server_ilo" || profilo === "hp_stampante") return [];
@@ -43,11 +48,10 @@ export function collectorPossibili(a: ApparatoDaRiconoscere): CollectorId[] {
     return /vcenter/i.test(testo) ? [] : ["vmware-esxi"];
   }
   // Famiglie collaudate in locale. `unifi-controller` (console, non un apparato: si legge dalla CLI, nessuna regola chiara per
-  // agganciarlo al pulsante di un apparato) non entra qui. `proxmox-ve` neppure (giro 5, decisione 3): legge meno della scansione
-  // Proxmox di oggi (niente VM e CT), quindi il pulsante resta alla scansione storica finché non c'è la parità.
+  // agganciarlo al pulsante di un apparato) non entra qui: arricchisce la sincronizzazione UniFi (giro 7).
   if (vendor === "windows") return ["windows"];
-  // Un host Linux che è un hypervisor Proxmox resta alla scansione Proxmox: qui sarebbe un server qualunque.
-  if (vendor === "linux") return a.device_type === "hypervisor" || a.scan_target === "proxmox" ? [] : ["linux"];
+  // Un hypervisor Linux senza indizi di Proxmox resta all'acquisizione di sempre: qui sarebbe un server qualunque.
+  if (vendor === "linux") return a.device_type === "hypervisor" ? [] : ["linux"];
   if (vendor === "synology") return ["synology-dsm"];
   if (vendor === "mikrotik") return profilo === "mikrotik_other" || /\bSwOS\b/i.test(testo) ? [] : ["mikrotik-routeros"];
   if (vendor === "ubiquiti") return ["ubiquiti_access_point", "ubiquiti_switch_managed", "ubiquiti_switch_base"].includes(profilo) ? ["ubiquiti-device"] : [];

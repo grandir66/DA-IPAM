@@ -470,7 +470,7 @@ Server Linux via **SSH exec** con un utente **senza `sudo`**, un login, allowlis
   riempie il limite di byte ha la sua lettura e il lotto continua; si ferma solo per canale caduto, connessione
   fallita, tempo totale finito o due comandi scaduti di fila (`leggiLotto` in `transports.ts`, vale per tutti i
   collector del motore d'inventario). Da ricollaudare su `da-ftp`: dischi, pacchetti, servizi, interfacce. Agganciato
-  al pulsante (vendor `linux`, tranne i nodi Proxmox). Repertorio da DADude3 `linux.py:432,794`.
+  al pulsante (vendor `linux`, tranne gli hypervisor; i nodi scelti come Proxmox vanno a `proxmox-ve`). Repertorio da DADude3 `linux.py:432,794`.
 
 ## Collector synology-dsm (collaudato in locale; aggiunte non ancora provate)
 
@@ -491,21 +491,23 @@ seriale da `/proc/sys/kernel/syno_*` dove l'SNMP non li dà.
 | `netapp-ontap` | storage | no | collaudato | sì (dal sysDescr) |
 | `qnap-nas`, `synology-dsm` | nas | no | collaudato (base); firmware QNAP, condivisioni, pacchetti da provare | sì |
 | `ubiquiti-device` | ap | no | collaudato solo via SNMP (SSH rifiutata) | sì (access point e switch gestiti) |
-| `proxmox-ve` | hypervisor | no | collaudato (nodi e risorse); VM, container, storage, dati hardware dei nodi e IP dall'agent da provare | **no**: parità sui dati, l'aggancio lo decide Riccardo (tabella sotto) |
+| `proxmox-ve` | hypervisor | no | collaudato (nodi e risorse, 22/10); DMI del nodo locale e IP dall'agent da ricollaudare | **sì** (giro 7, decisione di Riccardo «agganciamo tutto»): con l'interruttore acceso e una credenziale `ssh` nell'archivio; senza credenziale resta la scansione di oggi |
 | `unifi-controller` | controller | no | collaudato (due console) | **no**: si legge dalla CLI, nessuna regola chiara per il pulsante di un apparato |
 | `windows`, `linux` | server | no | collaudato (Windows Server 2022; Ubuntu 24.04, lotto da ricollaudare) | sì |
 
 ### Proxmox: scansione di oggi e collector, campo per campo
 
-La scansione Proxmox (`proxmox/run-proxmox-device-scan.ts`: API :8006 + SSH + schede vive) resta l'unica che il pulsante
-usa per Proxmox. Il collector `proxmox-ve` legge via SSH `pvesh` e i file di `/etc/pve`; la tabella dice cosa manca
-prima di poterlo agganciare.
+La scansione Proxmox (`proxmox/run-proxmox-device-scan.ts`: API :8006 + SSH + schede vive) è quella che il pulsante usa
+con l'interruttore spento, e anche acceso quando l'apparato non ha una credenziale `ssh` nell'archivio. Dal giro 7, con
+l'interruttore acceso e una credenziale `ssh`, «Aggiorna» su un Proxmox usa il collector `proxmox-ve` (via SSH: `pvesh` e
+file di `/etc/pve`); la tabella dice cosa legge ciascuno. Restano alla scansione di oggi la mappa e l'elenco apparati
+(`POST /api/devices/<id>/proxmox-scan` diretto), non il pulsante «Aggiorna».
 
 | Dato | Scansione di oggi | Collector `proxmox-ve` (giro 6) |
 |---|---|---|
 | Nodo: nome, stato, uptime, memoria | sì | sì (`cluster_nodes`) |
 | Nodo: modello CPU, MHz, socket, core, versione kernel, disco root | sì | sì (`pvesh get /nodes/<nodo>/status`), da provare |
-| Nodo: seriale, produttore, modello hardware | sì (API `report`) | sì (`pvesh get /nodes/<nodo>/report`, stesse ricerche di testo), da provare; con un utente che non può leggere il rapporto resta assente e dichiarato |
+| Nodo: seriale, produttore, modello hardware | sì (API `report`) | sì: rapporto del nodo (`pvesh get /nodes/<nodo>/report`, stesse ricerche di testo) e, **solo per il nodo a cui si è connessi**, il DMI (`dmidecode -s system-manufacturer\|product-name\|serial-number`, root); segnaposto dei costruttori («To Be Filled By O.E.M.») scartati. Gli altri nodi del cluster senza rapporto restano senza hardware, dichiarato `NODE_REPORT_NOT_READ`; da ricollaudare |
 | Nodo: abbonamento | sì (stato, livello, chiave) | stato e livello (`…/subscription`); **la chiave non esce mai**, da provare |
 | Versione Proxmox | sì | sì (`pveversion`, in identità; nella proiezione solo per il nodo interrogato) |
 | Schede di rete del nodo e schede vive | sì (config + `ip` vive) | sì in snapshot (`ip -d -j`); **non proiettate** nell'inventario: restano quelle della scansione di prima |
@@ -515,17 +517,18 @@ prima di poterlo agganciare.
 | CT: dischi | no (elenco vuoto) | sì (`rootfs`, `mp`) |
 | VM e CT: reti (modello, MAC, bridge, VLAN) | sì | sì (CT: anche `ip=`) |
 | VM: BIOS, machine, agent | sì | sì |
-| VM: indirizzi IP dall'agent QEMU | sì | sì (`…/qemu/<vmid>/agent/network-get-interfaces`, solo VM QEMU accese, max 128), da provare; agent spento = nessun IP, dichiarato `GUEST_IP_ADDRESSES_PARTIAL` |
+| VM: indirizzi IP dall'agent QEMU | sì | sì (`…/qemu/<vmid>/agent/network-get-interfaces`, solo VM QEMU accese, max 128), da provare; VM senza agent attivo nella configurazione = nessun IP e nessun avviso; agent attivo che non risponde = `GUEST_IP_ADDRESSES_PARTIAL` |
 | Storage: nome, tipo, stato, capacità, contenuto | sì | sì (`storage_pools`, uno per nodo) |
 | Inventario dell'apparato e VM come host (`syncInventoryFromDevice`) | sì | sì, **solo per snapshot del collector** applicati con l'interruttore acceso: stessa colonna `last_proxmox_scan_result` (`proiezioni/proxmox.ts`); campo assente = resta quello di prima, guest non letti = restano le VM di prima |
 | Credenziale | utente `…@pam` con password per l'API, SSH password o chiave | solo SSH (password o chiave); `/etc/pve`, `report` e lo stato dei nodi richiedono root o un utente che li legga |
 
-I comandi per nodo e per VM non sono nell'elenco fisso: l'allowlist accetta tre **forme** (`MODELLI_COMANDI_PROXMOX`), con nome
+I comandi per nodo e per VM non sono nell'elenco fisso: l'allowlist accetta quattro **forme** (le tre `pvesh` e le tre letture `dmidecode -s`) (`MODELLI_COMANDI_PROXMOX`), con nome
 del nodo (`[A-Za-z0-9-]`) e id della VM (cifre) validati; qualunque altro `pvesh`, anche `create` o `get …/config`, è respinto.
 
-Parità raggiunta sui dati; **l'aggancio al pulsante non c'è**: lo decide Riccardo guardando questa tabella dopo il
-collaudo da CLI (utente che legga `/etc/pve`). Restano diversi: le schede di rete dei nodi (non proiettate) e la
-divisione socket/core delle VM. Con l'interruttore spento la scansione Proxmox di oggi non cambia (il suo codice non è toccato).
+Aggancio al pulsante (giro 7): `riconosci.ts` usa la stessa regola del pulsante (`isProxmoxVeDevice`), quindi un nodo
+scelto come Proxmox, anche con produttore Linux, va al collector. Restano diversi: le schede di rete dei nodi (non
+proiettate) e la divisione socket/core delle VM. Con l'interruttore spento la scansione Proxmox di oggi non cambia
+(prova in `aggancio.test.ts`). Serve una credenziale `ssh` con root (o un utente che legga `/etc/pve` e `dmidecode`).
 
 Le porte «da switch» (`switch_ports`, fatti di porta) si proiettano solo per le famiglie `switch` e `router`
 (`FAMIGLIE_CON_PORTE` nel catalogo). Il motore d'inventario si dichiara nel descrittore con `motore: "inventario"`:

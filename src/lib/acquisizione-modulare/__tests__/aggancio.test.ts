@@ -43,10 +43,12 @@ describe("riconoscimento del collector dal prodotto", () => {
     ["MikroTik altro: nessun collector", { vendor: "mikrotik", product_profile: "mikrotik_other" }, []],
     ["UniFi access point", { vendor: "ubiquiti", product_profile: "ubiquiti_access_point" }, ["ubiquiti-device"]],
     ["EdgeRouter: nessun collector", { vendor: "ubiquiti", product_profile: "ubiquiti_router" }, []],
-    ["Proxmox VE: fuori dal pulsante finché il collector non ha la parità con la scansione", { vendor: "proxmox", product_profile: "proxmox_ve" }, []],
+    ["Proxmox VE dal profilo", { vendor: "proxmox", product_profile: "proxmox_ve" }, ["proxmox-ve"]],
+    ["Proxmox VE dal solo produttore", { vendor: "proxmox", device_type: "hypervisor" }, ["proxmox-ve"]],
     ["Proxmox Backup Server: nessun collector", { vendor: "proxmox", product_profile: "proxmox_pbs" }, []],
     ["Linux", { vendor: "linux", product_profile: "linux_server", device_type: "server" }, ["linux"]],
-    ["Linux che è un nodo Proxmox: scansione di sempre", { vendor: "linux", device_type: "hypervisor", scan_target: "proxmox" }, []],
+    ["Linux che è un nodo Proxmox (scelto a mano): collector Proxmox", { vendor: "linux", device_type: "hypervisor", scan_target: "proxmox" }, ["proxmox-ve"]],
+    ["Linux hypervisor senza indizi di Proxmox: acquisizione di sempre", { vendor: "linux", device_type: "hypervisor" }, []],
     ["Windows", { vendor: "windows", device_type: "server" }, ["windows"]],
     ["ESXi", { vendor: "vmware", device_type: "hypervisor" }, ["vmware-esxi"]],
     ["vCenter: nessun collector", { vendor: "vmware", sysdescr: "VMware vCenter Server 8.0" }, []],
@@ -61,6 +63,13 @@ describe("valutaFonte (dipendenze finte)", () => {
   it("interruttore spento: «spenta», e non legge né la scelta né le credenziali", () => {
     const deps: DipendenzeFonte = { accesa: () => false, scelta: vietato("la scelta"), candidati: vietato("le credenziali") };
     const v = valutaFonte(hp, deps);
+    assert.equal(v.esito, "spenta");
+    assert.equal(usaPercorsoDiSempre(v), true);
+  });
+
+  it("Proxmox con l'interruttore spento: «spenta», nessuna lettura di scelta o credenziali, resta la scansione Proxmox di oggi", () => {
+    const pve = { id: 8, vendor: "proxmox", product_profile: "proxmox_ve", device_type: "hypervisor" };
+    const v = valutaFonte(pve, { accesa: () => false, scelta: vietato("la scelta"), candidati: vietato("le credenziali") });
     assert.equal(v.esito, "spenta");
     assert.equal(usaPercorsoDiSempre(v), true);
   });
@@ -93,6 +102,16 @@ describe("valutaFonte (dipendenze finte)", () => {
     const v = valutaFonte(hp, { accesa: () => true, scelta: () => null, candidati: () => [] });
     assert.equal(v.esito, "dubbio");
     if (v.esito === "dubbio") assert.equal(v.motivo, "credenziali");
+  });
+
+  it("Proxmox senza una credenziale SSH nell'archivio: scansione di sempre (API + SSH), mai un 409 al pulsante", () => {
+    const pve = { id: 7, vendor: "proxmox", product_profile: "proxmox_ve", device_type: "hypervisor" };
+    const v = valutaFonte(pve, { accesa: () => true, scelta: () => null, candidati: () => [] });
+    assert.equal(v.esito, "nessun_collector");
+    assert.equal(usaPercorsoDiSempre(v), true);
+    const conSsh = valutaFonte(pve, { accesa: () => true, scelta: () => null, candidati: () => [{ protocollo: "ssh", credential_id: 3, nome: "root-pve", port: 22 }] });
+    assert.equal(conSsh.esito, "pronta");
+    // gli altri collector senza credenziale restano un dubbio da sciogliere (il test sopra, per HP)
   });
 
   it("una credenziale per protocollo, la prima nell'ordine del motore", () => {

@@ -113,6 +113,7 @@ export const nomeNodoValido = (nodo: string) => NOME_NODO.test(nodo);
 export const MODELLI_COMANDI_PROXMOX: readonly RegExp[] = [
     /^pvesh get \/nodes\/[A-Za-z0-9][A-Za-z0-9-]*\/(?:status|subscription) --output-format json$/,
     /^pvesh get \/nodes\/[A-Za-z0-9][A-Za-z0-9-]*\/report$/,
+    /^dmidecode -s system-(?:manufacturer|product-name|serial-number)$/,
     /^pvesh get \/nodes\/[A-Za-z0-9][A-Za-z0-9-]*\/qemu\/\d+\/agent\/network-get-interfaces --output-format json$/,
 ];
 
@@ -141,8 +142,35 @@ export function parseAbbonamentoNodo(testo: string): Pick<ClusterNode, "subscrip
     return { subscription_status: str(o.status), subscription_level: str(o.level) };
 }
 
+/** Le tre letture del DMI del nodo a cui si è connessi (`dmidecode -s`, sola lettura, root): modello, seriale, produttore. */
+export const COMANDI_DMI = { produttore: "dmidecode -s system-manufacturer", modello: "dmidecode -s system-product-name", seriale: "dmidecode -s system-serial-number" } as const;
+const SEGNAPOSTO_DMI = /^(?:not specified|not present|not applicable|to be filled by o\.e\.m\.|default string|system (?:manufacturer|product name|serial number)|unknown|none|0+)$/i;
+const valoreDmi = (testo: string): string | null => {
+    const riga = testo.split(/\r?\n/).map(r => r.trim()).find(r => r !== "" && !r.startsWith("#"));
+    return riga && !SEGNAPOSTO_DMI.test(riga) ? riga : null;
+};
+/** Hardware dal DMI; `null` se nessuna delle tre letture ha un valore vero (segnaposto dei costruttori esclusi). */
+export function parseDmi(produttore: string, modello: string, seriale: string): Pick<ClusterNode, "hardware_serial" | "hardware_manufacturer" | "hardware_model"> | null {
+    const out = { hardware_serial: valoreDmi(seriale), hardware_model: valoreDmi(modello), hardware_manufacturer: valoreDmi(produttore) };
+    return out.hardware_serial || out.hardware_model || out.hardware_manufacturer ? out : null;
+}
+
+/** Il nodo a cui ci si è connessi, da `pvesh get /cluster/status` (voce `local: 1`); `null` se non lo dice. */
+export function nodoLocale(testo: string): string | null {
+    let json: unknown;
+    try { json = JSON.parse(testo); } catch { return null; }
+    if (!Array.isArray(json)) return null;
+    for (const r of json) {
+        if (r && typeof r === "object" && (r as Record<string, unknown>).type === "node" && (r as Record<string, unknown>).local === 1) return str((r as Record<string, unknown>).name);
+    }
+    return null;
+}
+
 /** Rapporto del nodo (`pvesh get /nodes/<nodo>/report`): seriale, produttore e modello come li cerca la scansione di oggi. */
-export function parseReportNodo(testo: string): Pick<ClusterNode, "hardware_serial" | "hardware_manufacturer" | "hardware_model"> | null {
+export function parseReportNodo(testo0: string): Pick<ClusterNode, "hardware_serial" | "hardware_manufacturer" | "hardware_model"> | null {
+    // `pvesh ... --output-format json` può restituire il rapporto come una stringa JSON: si toglie l'involucro.
+    let testo = testo0;
+    if (testo0.trimStart().startsWith('"')) { try { const v: unknown = JSON.parse(testo0); if (typeof v === "string") testo = v; } catch { /* resta il testo com'è */ } }
     const campo = (...re: RegExp[]) => { for (const r of re) { const m = r.exec(testo); if (m && m[1].trim()) return m[1].trim(); } return null; };
     const out = {
         hardware_serial: campo(/Serial Number[:\s]+([^\n\r]+)/i),

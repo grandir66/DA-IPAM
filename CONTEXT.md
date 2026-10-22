@@ -15,7 +15,7 @@ Leggilo per primo, poi [CLAUDE.md](CLAUDE.md) (stack e schema; su «multi-tenant
 
 ## 3. Flusso di rilascio (CRITICO)
 
-- Branch **`dev`** (unico pushabile). `main` avanza SOLO via promote, da una copia del repo (il pulsante dell'hub lascia l'app su `main`); le appliance cliente pullano `main`. Ogni modifica: `npm run version:release` + `git push origin dev`.
+- Branch **`dev`** (unico pushabile). `main` avanza SOLO via promote, da una copia del repo (il pulsante dell'hub lascia l'app su `main`); le appliance pullano `main`, **ma oggi (Riccardo, 22/10) tutte le installazioni sono su `dev`**: ogni push su `dev` arriva a tutte; la promozione a `main` si farà più avanti. Ogni modifica: `npm run version:release` + `git push origin dev`.
 - **`dev` arriva anche all'appliance del cliente A** (`da-ipam-update.timer`, 15 min: pull + build + restart): un push di codice su `dev` è un rilascio. Un commit di soli `.md` non riavvia.
 - Hub: VM 533 `/opt/da-invent`, segue `dev`, `ssh root@192.168.4.8` diretto (il salto via `.40.4` cade nei comandi lunghi: lavori lunghi con `nohup` e log). **Mai `npm run build` senza riavviare subito.** Aggiornamento a due cartelle (`.next-a`/`.next-b`, `.next-attiva`, `data/aggiornamento.json`, 3 tentativi per commit).
 - «Aggiorna ora» e `scripts/update.sh` a mano si rompono a vicenda (niente lucchetto): prima `ps -eo pid,args | grep -E "[u]pdate\.sh|[n]ext build"` in una chiamata ssh a parte.

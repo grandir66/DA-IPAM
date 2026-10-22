@@ -20,11 +20,15 @@ export type EsitoGiro<T> =
 
 const occupati = new Set<string>();
 
+/**
+ * `ignoraCadenza`: la lettura chiesta a mano («Interroga» di un admin sull'apparato) non aspetta l'ora; interruttore, schema,
+ * lucchetto ed esito valgono come nel giro (spenta = niente, anche a mano).
+ */
 export async function conCadenza<T>(l: Lettura, deviceId: number, leggi: () => Promise<{ valore: T; conteggio: Conteggio }>,
-  adesso: () => Date = () => new Date()): Promise<EsitoGiro<T>> {
+  adesso: () => Date = () => new Date(), opzioni: { ignoraCadenza?: boolean } = {}): Promise<EsitoGiro<T>> {
   if (!letturaAccesa(l)) return { stato: "saltato", motivo: "spenta" };
   if (!schemaCaviPresente()) return { stato: "saltato", motivo: "schema" };
-  const prima = leggiEsiti(l)[String(deviceId)];
+  const prima = opzioni.ignoraCadenza ? undefined : leggiEsiti(l)[String(deviceId)];
   const t = prima ? parseDbDate(prima.il).getTime() : Number.NaN;
   if (Number.isFinite(t) && adesso().getTime() - t < CADENZA_MS) return { stato: "saltato", motivo: "cadenza" };
   // Fino a qui niente `await`: il controllo e la presa del lucchetto non si possono intrecciare con un altro giro.

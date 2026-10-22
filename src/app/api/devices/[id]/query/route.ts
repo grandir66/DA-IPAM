@@ -18,6 +18,7 @@ import { getScanProgress } from "@/lib/scanner/discovery";
 import type { ScanProgress } from "@/types";
 import { apriSessioneSnmp, versioneApparato } from "@/lib/protocols/snmp-sessione";
 import { walkConSessioneSua, type SessioneWalk } from "@/lib/devices/snmp-walk";
+import { letturaVlanSwitch, vlanSwitchDaLeggere } from "@/lib/cron/jobs";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Progress tracking (stessa map globale usata da discovery.ts)
@@ -427,6 +428,16 @@ async function runSwitchQuery(deviceId: number, device: Parameters<typeof create
       }
     }
   } catch { /* STP opzionale */ }
+
+  // VLAN degli switch (Task 9, ADR 0029): solo con la lettura accesa (spenta, «Interroga» non manda niente di nuovo allo
+  // switch), senza aspettare l'ora; lucchetto ed esito come nel giro. Interruttore guardato per primo.
+  if (letturaAccesa("switch_vlan") && vlanSwitchDaLeggere(device)) {
+    p.phase = "Acquisizione VLAN (SNMP)...";
+    const v = await letturaVlanSwitch(device, undefined, { ignoraCadenza: true });
+    if (v.stato === "letto") plog(p, `✓ VLAN: ${v.valore}`);
+    else if (v.stato === "errore") plog(p, `— VLAN non lette: ${v.esito.codice ?? "errore"}`);
+    else if (v.motivo === "lucchetto") plog(p, "— VLAN: lettura già in corso");
+  }
 
   finishProgress(p, "completed", `Completata: ${entries.length} MAC, ${portInfos.length} porte`);
 }

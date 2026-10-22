@@ -40,6 +40,12 @@ export const DESCRIZIONE_LETTURE: Readonly<Record<Lettura, { titolo: string; leg
     apparati: "router MikroTik letti via SSH",
     comandi: "/interface bridge vlan print · /interface vlan print · /ip dns print · /user print (sola lettura, una connessione per apparato, al più una volta l'ora)",
   },
+  switch_vlan: {
+    titolo: "VLAN degli switch via SNMP",
+    legge: "Per ogni switch: le VLAN con il nome, le porte tagged e untagged di ognuna, il PVID di ogni porta.",
+    apparati: "gli switch con credenziale SNMP, anche quelli del controller; non i MikroTik letti via SSH",
+    comandi: "7 letture in sola lettura: Q-BRIDGE-MIB (dot1qVlanStatic, dot1qVlanCurrent, dot1qPvid) e BRIDGE-MIB (dot1dBasePortIfIndex)",
+  },
 };
 
 export function quandoItaliano(utc: string | null): string {
@@ -91,5 +97,8 @@ export function testoDialogo(l: Lettura, accendi: boolean, c: { router: { minuti
     case "mikrotik_scheda":
       // Non serve alla mappa (riempie la scheda del router): niente frase sulla mappa nuova.
       return `Accendere la lettura di VLAN, DNS e utenti sui MikroTik di questo cliente? Il router si legge ${frequenza(c.router.minuti, c.router.daScansioni)}: questa lettura parte al più una volta l'ora, 4 comandi in sola lettura sul router, su una connessione sua. Riempie la matrice VLAN e il DNS della scheda del router; gli utenti del router (nessuna password) li vede solo un amministratore. Si spegne da qui.`;
+    case "switch_vlan":
+      // Come la scheda MikroTik: riempie la tab VLAN della scheda dello switch, non la mappa.
+      return `Accendere la lettura delle VLAN sugli switch di questo cliente? Il giro degli switch parte ${frequenza(c.switch, false)}: questa lettura parte al più una volta l'ora per switch, 7 letture SNMP in sola lettura, 10 secondi al massimo ciascuna; anche «Interroga» sullo switch la fa, finché è accesa. Riempie la matrice VLAN della scheda dello switch. Si spegne da qui.`;
   }
 }

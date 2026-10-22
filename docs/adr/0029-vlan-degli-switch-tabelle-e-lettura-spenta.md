@@ -31,6 +31,17 @@ di VLAN per porta è `switch_ports.vlan`, scritto dal giro ARP e letto dalla map
 5. **Lettura spenta di default** (Task 9, schema di ADR 0018): interruttore `topologia.lettura.switch_vlan`, chiave assente
    = spenta, al più una volta l'ora per apparato, sette walk in sola lettura. Sono letture SNMP nuove sugli switch dei
    clienti: si accendono per cliente, da chi le guarda.
+6. **Chi legge e quando** (Task 9, `letturaVlanSwitch` e `vlanSwitchDaLeggere` in `src/lib/cron/jobs.ts`): gli switch
+   (`device_type = 'switch'`) con una sessione SNMP, anche quelli del controller UniFi; non i MikroTik letti via SSH, non AP,
+   NAS, server, router. Nel giro ARP, ramo degli switch, accanto alle letture SNMP della topologia, interruttore guardato
+   per primo (spenta: nemmeno la credenziale si cerca; il giro è quello di prima, provato contando le walk). 10 s per walk
+   (`TEMPO_WALK_MS`), sessione da `creaWalkSnmp`; uno switch muto costa una walk sola. «Non so» e «non riuscito» sono un
+   errore col codice nell'esito (non «letta in parte»): niente scrittura.
+7. **«Interroga» sullo switch con la lettura spenta non legge le VLAN.** Un admin che preme «Interroga» chiede di rileggere
+   quello che l'apparato già dà (MAC, porte, STP), non acconsente a letture nuove: l'interruttore resta l'unico posto in cui
+   si decide, per cliente, se lo switch riceve le walk Q-BRIDGE. Accesa, «Interroga» la fa **senza aspettare l'ora**
+   (`conCadenza` con `ignoraCadenza`), col lucchetto e l'esito del giro (il giro dopo la salta per un'ora).
+   Gli switch L3 con «Usa per polling ARP» passano dal ramo dei router (e da «Interroga» come router): lì la lettura non c'è.
 
 ## Alternative scartate
 

@@ -848,6 +848,11 @@ export function schemaSwitchVlanPresente(d: Database.Database): boolean {
   return n;
 }
 
+/** Schema delle VLAN degli switch del tenant corrente (la lettura `switch_vlan` lo chiede prima di aprire la sessione SNMP). */
+export function schemaSwitchVlanCorrente(): boolean {
+  return schemaSwitchVlanPresente(db());
+}
+
 /** Rimisura lo schema delle VLAN degli switch del tenant corrente (prove; dopo una correzione a mano dello schema). */
 export function rileggiSchemaSwitchVlan(): boolean {
   const d = db();

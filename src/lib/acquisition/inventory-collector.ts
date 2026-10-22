@@ -7,7 +7,7 @@ import {parseMikrotikNeighbors} from '../devices/mikrotik-vicini';
 import {redactSnapshot} from './redact';
 import {versioneCollector} from './catalogo';
 import {QNAP_OID,identitaQnap} from '../scanner/qnap-oid';
-import {estendiNas,estendiMikrotik, estendiProxmox} from './inventory-estensioni';
+import {estendiNas,estendiMikrotik, estendiProxmox, comandiApprofondimentoProxmox, applicaApprofondimentoProxmox} from './inventory-estensioni';
 const section=<T>(data:T,status:'ok'|'partial'|'error'|'unsupported'|'skipped'='skipped',sources:string[]=[],warnings:string[]=[])=>({data,status,collected_at:new Date().toISOString(),sources,warnings});
 const failed=<T>(data:T,code='NOT_COLLECTED'):ReadResult<T>=>({data,status:'error',warnings:[code]});
 /** An `ok` read with output but no recognised row is a format we do not know, never an authoritative empty list. */
@@ -77,7 +77,7 @@ export async function collectInventoryDevice(request:AcquisitionRequest,transpor
   const bonds=terse(br.data).filter(r=>typeof r.name==='string');
   s.aggregation=section(bonds.map(r=>({name:String(r.name),protocol:typeof r.mode==='string'?r.mode:null,admin_status:r.disabled==='true'?'down':null,oper_status:null,members:split(r.slaves)})),unrecognised(br,bonds.length),['ssh:'+bondCmd],[...br.warnings,...(unrecognised(br,bonds.length)!==br.status?['FORMAT_UNRECOGNIZED_OR_EMPTY']:[]),'BOND_MONITOR_NOT_COLLECTED']);
  }
- if(input.ssh||input.local_ssh){if(profile==='qnap-nas'||profile==='synology-dsm')estendiNas(s,profile,read);if(profile==='mikrotik-routeros')estendiMikrotik(s,read);if(profile==='proxmox-ve')estendiProxmox(s,read);}
+ if(input.ssh||input.local_ssh){if(profile==='qnap-nas'||profile==='synology-dsm')estendiNas(s,profile,read);if(profile==='mikrotik-routeros')estendiMikrotik(s,read);if(profile==='proxmox-ve'){estendiProxmox(s,read);const extra=comandiApprofondimentoProxmox(s);if(extra.length){let sh2:Record<string,ReadResult<string>>;try{sh2=await io.shell(extra);}catch{sh2=Object.fromEntries(extra.map(c=>[c,failed('','SSH_BATCH_FAILED')]));}applicaApprofondimentoProxmox(s,c=>sh2[c]??failed(''));}}}
  const mem=tables.find(t=>t.name==='cat /proc/meminfo');
  if(mem){const bytes=(name:string)=>{const value=mem.records.find(r=>r.name===name)?.size_bytes;return typeof value==='string'&&/^\d+$/.test(value)&&BigInt(value)<=BigInt(Number.MAX_SAFE_INTEGER)?Number(value):null;};s.resources=section({cpu_percent:null,memory_total_bytes:bytes('MemTotal'),memory_free_bytes:bytes('MemFree')},mem.status,mem.sources,mem.warnings);}
  const disks=tables.find(t=>t.name==='disks');

@@ -34,8 +34,16 @@ export const guestsSchema = z.array(z.object({
     disks: z.array(z.object({ id: z.string(), storage: s, size: s })).optional(),
     networks: z.array(z.object({ id: z.string(), model: s, mac: s, bridge: s, vlan: s, ip: s })).optional(),
     bios: s.optional(), machine: s.optional(), agent: s.optional(),
+    /** Indirizzi IP riportati dall'agent QEMU (solo VM accese con l'agent che risponde). */
+    ip_addresses: z.array(z.string()).optional(),
 }));
 /** Storage di un hypervisor (Proxmox: un elemento per nodo e storage, come li riporta il cluster). */
 export const storagePoolsSchema = z.array(z.object({ name: z.string(), node: s, type: s, status: s, total_bytes: count, used_bytes: count, available_bytes: count, content: z.array(z.string()), shared: b }));
 /** Nodi di un cluster di hypervisor. */
-export const clusterNodesSchema = z.array(z.object({ name: z.string(), status: s, uptime_seconds: n, cpu_count: n, cpu_fraction: n, memory_total_bytes: count, memory_used_bytes: count }));
+export const clusterNodesSchema = z.array(z.object({ name: z.string(), status: s, uptime_seconds: n, cpu_count: n, cpu_fraction: n, memory_total_bytes: count, memory_used_bytes: count,
+    // Dati hardware del nodo (`pvesh get /nodes/<nodo>/status`, `/subscription`, `/report`): assenti se non letti.
+    cpu_model: s.optional(), cpu_mhz: n.optional(), cpu_sockets: n.optional(), cpu_cores: n.optional(), kernel_version: s.optional(),
+    rootfs_total_bytes: count.optional(), rootfs_used_bytes: count.optional(),
+    hardware_serial: s.optional(), hardware_manufacturer: s.optional(), hardware_model: s.optional(),
+    subscription_status: s.optional(), subscription_level: s.optional(),
+}));

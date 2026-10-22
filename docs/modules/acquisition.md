@@ -404,6 +404,8 @@ Un solo collector per famiglia: la base è la versione collaudata su QNAP veri (
 19 interfacce; via SSH 9 interfacce). Dal collector del giro 3 si sono tenute solo tre cose (`inventory-estensioni.ts`),
 **non ancora provate su un apparato vero**:
 
+**QNAP via solo SNMP (giro 6).** Modello e seriale vengono dagli OID del walk del 22/10 (`…24681.1.4.1.1.1.1.1.2.1.3.1` modello, `….4.1` seriale, `….6.1` nome, `….7.1` temperatura; `1.3.6.1.4.1.55062.1.12.3.0` come secondo modello; ventole dalla tabella `1.3.6.1.4.1.55062.1.12.9.1`, colonne `.2` nome e `.3` giri). Gli OID `…24681.1.2.1/.2/.3` che si usavano prima sono CPU %, memoria totale e libera: non si leggono più. Il firmware via SNMP non esiste su questo modello: resta `null`, mai preso da un altro OID. Un valore con unità (`MB`, `%`, `C`, `rpm`) non è mai modello, firmware o seriale (`scanner/qnap-oid.ts`). Stessa correzione nel profilo storico `id: "qnap"` (seed dell'hub e riscrittura delle righe `builtin` che hanno ancora i vecchi OID; le modifiche dell'utente non si toccano).
+
 - **firmware** come nel percorso storico (S2, `devices/nas/qnap-versione.ts`): `getsysinfo firmver` o `/etc/version`
   più la build di `WEBAPP.build`; se non rispondono resta il valore di `getcfg` del collaudo. Mai l'`uname`.
 - **shares** (`smb.conf` più `/etc/exports`, unite per percorso) e **software** (`qpkg.conf`), solo se c'è una shell SSH.
@@ -489,7 +491,7 @@ seriale da `/proc/sys/kernel/syno_*` dove l'SNMP non li dà.
 | `netapp-ontap` | storage | no | collaudato | sì (dal sysDescr) |
 | `qnap-nas`, `synology-dsm` | nas | no | collaudato (base); firmware QNAP, condivisioni, pacchetti da provare | sì |
 | `ubiquiti-device` | ap | no | collaudato solo via SNMP (SSH rifiutata) | sì (access point e switch gestiti) |
-| `proxmox-ve` | hypervisor | no | collaudato (nodi e risorse); VM, container, storage, nodi da provare | **no**: finché non ha la parità con la scansione Proxmox (tabella sotto) |
+| `proxmox-ve` | hypervisor | no | collaudato (nodi e risorse); VM, container, storage, dati hardware dei nodi e IP dall'agent da provare | **no**: parità sui dati, l'aggancio lo decide Riccardo (tabella sotto) |
 | `unifi-controller` | controller | no | collaudato (due console) | **no**: si legge dalla CLI, nessuna regola chiara per il pulsante di un apparato |
 | `windows`, `linux` | server | no | collaudato (Windows Server 2022; Ubuntu 24.04, lotto da ricollaudare) | sì |
 
@@ -499,26 +501,31 @@ La scansione Proxmox (`proxmox/run-proxmox-device-scan.ts`: API :8006 + SSH + sc
 usa per Proxmox. Il collector `proxmox-ve` legge via SSH `pvesh` e i file di `/etc/pve`; la tabella dice cosa manca
 prima di poterlo agganciare.
 
-| Dato | Scansione di oggi | Collector `proxmox-ve` |
+| Dato | Scansione di oggi | Collector `proxmox-ve` (giro 6) |
 |---|---|---|
 | Nodo: nome, stato, uptime, memoria | sì | sì (`cluster_nodes`) |
-| Nodo: modello CPU, MHz, socket, core, versione kernel, disco root | sì | **no** |
-| Nodo: seriale, produttore, modello hardware, abbonamento | sì (API) | **no** |
-| Versione Proxmox | sì | sì (`pveversion`, in identità) |
-| Schede di rete del nodo e schede vive | sì (config + `ip` vive) | sì (`ip -d -j`, interfacce virtuali conservate) |
+| Nodo: modello CPU, MHz, socket, core, versione kernel, disco root | sì | sì (`pvesh get /nodes/<nodo>/status`), da provare |
+| Nodo: seriale, produttore, modello hardware | sì (API `report`) | sì (`pvesh get /nodes/<nodo>/report`, stesse ricerche di testo), da provare; con un utente che non può leggere il rapporto resta assente e dichiarato |
+| Nodo: abbonamento | sì (stato, livello, chiave) | stato e livello (`…/subscription`); **la chiave non esce mai**, da provare |
+| Versione Proxmox | sì | sì (`pveversion`, in identità; nella proiezione solo per il nodo interrogato) |
+| Schede di rete del nodo e schede vive | sì (config + `ip` vive) | sì in snapshot (`ip -d -j`); **non proiettate** nell'inventario: restano quelle della scansione di prima |
 | VM e CT: nome, id, nodo, stato | sì | sì (`guests`) |
-| VM e CT: CPU, memoria, disco massimo | sì | sì |
+| VM e CT: CPU, memoria, disco massimo | sì | sì (`cores` = CPU totali, `sockets` = 1: la divisione non è nello snapshot) |
 | VM: dischi (id, storage, dimensione) | sì | sì (da `qemu-server/*.conf`) |
 | CT: dischi | no (elenco vuoto) | sì (`rootfs`, `mp`) |
 | VM e CT: reti (modello, MAC, bridge, VLAN) | sì | sì (CT: anche `ip=`) |
 | VM: BIOS, machine, agent | sì | sì |
-| VM: indirizzi IP dall'agent QEMU | sì | **no** (serve un percorso per VM, fuori dall'allowlist) |
+| VM: indirizzi IP dall'agent QEMU | sì | sì (`…/qemu/<vmid>/agent/network-get-interfaces`, solo VM QEMU accese, max 128), da provare; agent spento = nessun IP, dichiarato `GUEST_IP_ADDRESSES_PARTIAL` |
 | Storage: nome, tipo, stato, capacità, contenuto | sì | sì (`storage_pools`, uno per nodo) |
-| Inventario dell'apparato e sincronizzazione (VM come host, mappa topologia) | sì (`syncInventoryFromDevice`) | **no**: il collector non scrive VM nell'inventario |
-| Credenziale | utente `…@pam` con password per l'API, SSH password o chiave | solo SSH (password o chiave); `/etc/pve` richiede root o un utente che lo legga |
+| Inventario dell'apparato e VM come host (`syncInventoryFromDevice`) | sì | sì, **solo per snapshot del collector** applicati con l'interruttore acceso: stessa colonna `last_proxmox_scan_result` (`proiezioni/proxmox.ts`); campo assente = resta quello di prima, guest non letti = restano le VM di prima |
+| Credenziale | utente `…@pam` con password per l'API, SSH password o chiave | solo SSH (password o chiave); `/etc/pve`, `report` e lo stato dei nodi richiedono root o un utente che li legga |
 
-Parità non raggiunta: mancano i dati hardware del nodo, gli IP delle VM e soprattutto la scrittura dell'inventario. Per
-questo l'aggancio al pulsante torna solo con una decisione di Riccardo.
+I comandi per nodo e per VM non sono nell'elenco fisso: l'allowlist accetta tre **forme** (`MODELLI_COMANDI_PROXMOX`), con nome
+del nodo (`[A-Za-z0-9-]`) e id della VM (cifre) validati; qualunque altro `pvesh`, anche `create` o `get …/config`, è respinto.
+
+Parità raggiunta sui dati; **l'aggancio al pulsante non c'è**: lo decide Riccardo guardando questa tabella dopo il
+collaudo da CLI (utente che legga `/etc/pve`). Restano diversi: le schede di rete dei nodi (non proiettate) e la
+divisione socket/core delle VM. Con l'interruttore spento la scansione Proxmox di oggi non cambia (il suo codice non è toccato).
 
 Le porte «da switch» (`switch_ports`, fatti di porta) si proiettano solo per le famiglie `switch` e `router`
 (`FAMIGLIE_CON_PORTE` nel catalogo). Il motore d'inventario si dichiara nel descrittore con `motore: "inventario"`:

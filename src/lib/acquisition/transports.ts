@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { MODELLI_COMANDI_PROXMOX } from "./proxmox-parsers";
 import { INVENTORY_COMMANDS, isInventoryProfile } from "./device-profiles";
 import { readExec } from "./exec-reader";
 import type { EventEmitter } from "node:events";
@@ -40,7 +41,10 @@ export async function leggiLotto(commands: readonly string[], leggi: (command: s
 }
 export function assertCommands(commands: readonly string[], profile: ConsoleProfile = 'qnap-switch'): void {
     const allowed: readonly string[] = commandSets[profile];
-    if (!allowed || commands.length > allowed.length || commands.some(c => !allowed.includes(c)))
+    // Comandi per nodo/VM (Proxmox): solo le forme del catalogo, con nome nodo e id validati dall'espressione.
+    const modelli = profile === 'proxmox-ve' ? MODELLI_COMANDI_PROXMOX : [];
+    const fissi = commands.filter(c => allowed?.includes(c));
+    if (!allowed || fissi.length > allowed.length || commands.some(c => !allowed.includes(c) && !modelli.some(m => m.test(c))))
         throw Error('COMMAND_NOT_ALLOWED');
 }
 /** Exported for byte-level timeout/pagination tests; never sends configuration commands. */

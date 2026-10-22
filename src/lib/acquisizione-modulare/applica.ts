@@ -9,10 +9,11 @@
  * e l'attribuzione leggono `device`/`unifi` e restano bit per bit (prova `applica.test.ts`).
  */
 import { proietta, type Proiezione } from "@/lib/acquisition/proiezioni";
+import { proiettaProxmox } from "@/lib/acquisition/proiezioni/proxmox";
 import type { AcquisitionSnapshot } from "@/lib/acquisition";
 import {
   chiaviViciniApparato, getCurrentTenantCode, getNetworkDeviceById, getTenantDb, hostPerProiezione, inserisciModificheAcquisizione,
-  portePerProiezione, scriviCampiIdentita, scriviFattiTopologia, scriviPortePerCampo, upsertNeighbors, type ModificaAcquisizione,
+  portePerProiezione, scriviCampiIdentita, scriviFattiTopologia, scriviPortePerCampo, syncInventoryFromDevice, updateNetworkDevice, upsertNeighbors, type ModificaAcquisizione,
 } from "@/lib/db-tenant";
 
 export interface EsitoApplicazione {
@@ -73,6 +74,18 @@ export function applicaSnapshot(deviceId: number, snapshotId: number, snapshot: 
     }
     let fatti = 0;
     if (p.fatti) fatti = scriviFattiTopologia(deviceId, "collector", { porte: p.fatti, bridge: [], macs: [] }, adesso)?.porte ?? 0;
+
+    // Proxmox: nodi e VM nello stesso `last_proxmox_scan_result` della scansione di oggi, poi l'inventario come fa lei.
+    // Solo per lo snapshot del collector `proxmox-ve` (gli altri collector non toccano queste colonne).
+    const proxmox = proiettaProxmox(snapshot, device.last_proxmox_scan_result ?? null);
+    if (proxmox) {
+      const risultato = JSON.stringify(proxmox);
+      if (risultato !== device.last_proxmox_scan_result) {
+        updateNetworkDevice(deviceId, { last_proxmox_scan_at: proxmox.scanned_at, last_proxmox_scan_result: risultato });
+        syncInventoryFromDevice({ ...device, last_proxmox_scan_at: proxmox.scanned_at, last_proxmox_scan_result: risultato });
+        righe.push({ destinazione: "inventario", chiave: device.name, campo: "nodi e VM", prima: null, dopo: `${proxmox.hosts.length} nodi, ${proxmox.vms.length} VM`, esito: "scritto" });
+      }
+    }
 
     inserisciModificheAcquisizione(snapshotId, deviceId, righe);
     return {

@@ -4,6 +4,16 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-22 · QNAP via SNMP con gli OID giusti, Proxmox alla parità sui dati
+
+### Corretto
+
+- **QNAP: il firmware non è più la memoria.** Gli OID `…24681.1.2.1/.2/.3` sono CPU %, memoria totale e libera, non modello/firmware/seriale (un QNAP mostrava firmware «15979.0 MB»). Collector e profilo SNMP storico `qnap` (seed, righe `builtin` già nell'hub) usano gli OID del walk; il firmware via SNMP resta assente. Un valore con unità (MB, %, C, rpm) non è mai modello, firmware o seriale.
+
+### Aggiunto
+
+- **Collector `proxmox-ve`**: dati hardware dei nodi (CPU, kernel, disco root, seriale, produttore, modello, stato abbonamento — mai la chiave) e IP delle VM dall'agent QEMU, con tre forme di `pvesh get` per nodo/VM nell'allowlist. Proiezione verso `last_proxmox_scan_result` e inventario solo per gli snapshot del collector. Resta fuori dal pulsante.
+
 ## [Non rilasciato] — 2026-10-22 · Letture degli apparati accese di serie
 
 ### Cambiato

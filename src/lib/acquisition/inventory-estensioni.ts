@@ -14,7 +14,7 @@ import { daLettura, sez } from "./costruzione";
 import type { StatoSezione } from "./costruzione";
 import { parseExports, parseQpkgConf, parseSmbConf, unisciCondivisioni } from "./qnap-nas-parsers";
 import { parseInfoPacchetti, parseSynoshareEnum } from "./synology-nas-parsers";
-import { parseConfigurazioniGuest, parseRisorseCluster } from "./proxmox-parsers";
+import { cmdAbbonamentoNodo, cmdAgentVm, cmdReportNodo, cmdStatoNodo, nomeNodoValido, parseAbbonamentoNodo, parseConfigurazioniGuest, parseIpAgent, parseReportNodo, parseRisorseCluster, parseStatoNodo } from "./proxmox-parsers";
 import { parseArp, parseIndirizzi, parseMonitorEthernet, parseMonitorPoe } from "./mikrotik-routeros-parsers";
 import type { AcquisitionSnapshot, ReadResult } from "./schema";
 
@@ -159,7 +159,7 @@ const CMD_LXC = 'grep -H "" /etc/pve/nodes/*/lxc/*.conf';
 /**
  * Proxmox: VM e container (stato, risorse, dischi, reti), storage e nodi, per avvicinarsi alla scansione Proxmox di oggi.
  * Stato e risorse vengono dal cluster (`pvesh get /cluster/resources`), dischi e reti dai file di configurazione di ogni guest.
- * Gli indirizzi IP della VM (agent QEMU) non si leggono: richiedono un percorso per VM, fuori dall'allowlist.
+ * Gli indirizzi IP delle VM e i dati hardware dei nodi vengono da un secondo giro (`comandiApprofondimentoProxmox`).
  */
 export function estendiProxmox(s: AcquisitionSnapshot, leggi: Lettore): void {
     const ris = leggi(CMD_RISORSE), parsed = ris.status === "ok" || ris.status === "partial" ? parseRisorseCluster(ris.data) : null;
@@ -186,4 +186,47 @@ export function estendiProxmox(s: AcquisitionSnapshot, leggi: Lettore): void {
     const avvisiConf = [qemu, lxc].flatMap((x, i) => x.status === "ok" ? [] : [(i === 0 ? "QEMU" : "LXC") + "_CONFIG_NOT_READ"]);
     const conGuest = parsed.guests.length > 0;
     s.guests = sez(parsed.guests, stato === "ok" && (avvisiConf.length === 0 || !conGuest) ? "ok" : "partial", [...f, fonte(CMD_QEMU), fonte(CMD_LXC)], [...ris.warnings, ...avvisiConf, "GUEST_IP_ADDRESSES_NOT_COLLECTED"]);
+}
+
+const MAX_NODI = 16, MAX_VM_AGENT = 128;
+/**
+ * Secondo giro Proxmox, per nodo e per VM (parità con la scansione di oggi): stato/hardware, abbonamento e rapporto di ogni nodo,
+ * indirizzi IP dall'agent QEMU delle VM accese. Solo comandi `pvesh get` di lettura, nelle forme del catalogo
+ * (`MODELLI_COMANDI_PROXMOX`); nome del nodo e id della VM sono validati, mai testo libero.
+ */
+export function comandiApprofondimentoProxmox(s: AcquisitionSnapshot): string[] {
+    const nodi = (s.cluster_nodes?.data ?? []).map(n => n.name).filter(nomeNodoValido).slice(0, MAX_NODI);
+    const vm = (s.guests?.data ?? []).filter(g => g.platform === "qemu" && g.power_state === "running" && g.vmid != null && g.node && nomeNodoValido(g.node)).slice(0, MAX_VM_AGENT);
+    return [...nodi.flatMap(n => [cmdStatoNodo(n), cmdAbbonamentoNodo(n), cmdReportNodo(n)]), ...vm.map(g => cmdAgentVm(g.node as string, g.vmid as number))];
+}
+
+export function applicaApprofondimentoProxmox(s: AcquisitionSnapshot, leggi: Lettore): void {
+    const nodi = s.cluster_nodes;
+    if (nodi) {
+        const mancano = new Set<string>();
+        for (const n of nodi.data) {
+            if (!nomeNodoValido(n.name)) continue;
+            const stato = parseStatoNodo(testo(leggi(cmdStatoNodo(n.name))));
+            const abb = parseAbbonamentoNodo(testo(leggi(cmdAbbonamentoNodo(n.name))));
+            const rep = parseReportNodo(testo(leggi(cmdReportNodo(n.name))));
+            if (stato) Object.assign(n, stato); else mancano.add("NODE_STATUS_NOT_READ");
+            if (abb) Object.assign(n, abb); else mancano.add("NODE_SUBSCRIPTION_NOT_READ");
+            if (rep) Object.assign(n, rep); else mancano.add("NODE_REPORT_NOT_READ");
+        }
+        nodi.sources = [...nodi.sources, fonte("pvesh get /nodes/<nodo>/status"), fonte("pvesh get /nodes/<nodo>/subscription"), fonte("pvesh get /nodes/<nodo>/report")];
+        if (mancano.size) { nodi.warnings = [...nodi.warnings, ...mancano]; if (nodi.status === "ok") nodi.status = "partial"; }
+    }
+    const guests = s.guests;
+    if (guests) {
+        const acceso = guests.data.filter(g => g.platform === "qemu" && g.power_state === "running" && g.vmid != null && g.node && nomeNodoValido(g.node));
+        let senza = 0;
+        for (const g of acceso.slice(0, MAX_VM_AGENT)) {
+            const ips = parseIpAgent(testo(leggi(cmdAgentVm(g.node as string, g.vmid as number))));
+            if (ips) g.ip_addresses = ips; else senza++;
+        }
+        guests.warnings = guests.warnings.filter(w => w !== "GUEST_IP_ADDRESSES_NOT_COLLECTED");
+        // Agent spento o non installato è normale: non declassa la sezione, ma si dichiara.
+        if (senza || acceso.length > MAX_VM_AGENT) guests.warnings.push("GUEST_IP_ADDRESSES_PARTIAL");
+        guests.sources = [...guests.sources, fonte("pvesh get /nodes/<nodo>/qemu/<vmid>/agent/network-get-interfaces")];
+    }
 }

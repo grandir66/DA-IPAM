@@ -12,11 +12,11 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { closeHubDb } from "@/lib/db-hub";
-import { deleteTenantDatabase, getTenantDb, leggiVlanSwitchDb, scriviVlanSwitch, withTenant, type VlanSwitchDb } from "@/lib/db-tenant";
-import { leggiVlanSwitch } from "@/lib/devices/snmp-vlan";
+import { contaVlanSwitch, deleteTenantDatabase, getTenantDb, leggiVlanSwitchDb, scriviVlanSwitch, withTenant, type VlanSwitchDb } from "@/lib/db-tenant";
+import { leggiVlanSwitch, type LetturaVlanSwitch } from "@/lib/devices/snmp-vlan";
 import type { LettoreSnmp, VoceSnmp } from "@/lib/devices/snmp-walk";
 import { vlanDistinte, type PortaSwitch } from "../porte-da-guardare";
-import { fonteVlanSwitch, matriceVlanSwitch, sezioniMatriceSwitch, type MatriceVlanSwitch, type PortaPerMatrice } from "../vlan-switch";
+import { fonteVlanSwitch, matriceVlanSwitch, statoLetturaVlanSwitch, sezioniMatriceSwitch, type MatriceVlanSwitch, type PortaPerMatrice } from "../vlan-switch";
 
 const T = "TESTVLANSWITCHSCHEDA";
 after(() => {
@@ -74,8 +74,8 @@ test("48POE: completa, 13 colonne, striscia contata a mano sulla fixture (aggreg
   assert.equal(m.qualita, "completa");
   assert.deepEqual(m.colonne.map((c) => c.id), [1, 2, 4, 5, 6, 7, 15, 16, 20, 40, 88, 133, 666]);
   assert.ok(m.colonne.every((c) => c.nome !== null));
-  // Fixture: 1-46 e 51 egress su tutte le 13 (untagged la 1, il resto tagged), 47-48 untagged la 40 e tagged le altre;
-  // 49, 50, 52 nessun egress, solo il PVID 1. Trunk = almeno una T: 1-48 tranne le porte con solo il PVID → 45; access 7.
+  // Fixture: 45 porte con almeno una T (trunk); access (solo U) = 41-44 (U sulla VLAN 2, il loro PVID) e le SFP+ 49, 50,
+  // 52 (nessun egress, solo il PVID 1) → 7; nessuna porta fisica senza VLAN.
   assert.deepEqual(m.striscia, { vlan: 13, trunk: 45, access: 7, senza_vlan: 0 });
   assert.equal(cella(m, 1, 1), "U");
   assert.equal(cella(m, 1, 40), "T");
@@ -192,4 +192,29 @@ test("riga delle fonti: ora dei dati, lettura spenta, mai letta, non riuscita co
   assert.deepEqual(fonteVlanSwitch({ acceso: true, letto_il: null, esito: null }), { nome: "SNMP (Q-BRIDGE)", esito: "assente", nota: "mai letta" });
   assert.deepEqual(fonteVlanSwitch({ acceso: true, letto_il: null, esito: { il, comandi: 0, riusciti: 0, codice: "TEMPO_SCADUTO" } }),
     { nome: "SNMP (Q-BRIDGE)", esito: "assente", nota: "non riuscita: TEMPO_SCADUTO" });
+});
+
+test("numero della tab = colonne della matrice: VLAN lette ∪ VLAN delle porte ∪ PVID (revisione del Task 11)", () => {
+  getTenantDb(T).prepare(`INSERT OR IGNORE INTO network_devices (id, name, host, device_type, vendor, protocol, enabled)
+    VALUES (21, 'SW-21', '192.0.2.21', 'switch', 'other', 'snmp_v2', 1)`).run();
+  const l: LetturaVlanSwitch = {
+    vlan: [{ vlan_id: 10, nome: "uno" }, { vlan_id: 20, nome: "due" }],
+    porte: [{ vlan_id: 20, if_index: 1, egress: true, untagged: false }],
+    pvid: [{ if_index: 1, pvid: 10 }, { if_index: 2, pvid: 30 }],
+    tabella: "static", mappa_porte: "base_port", ordine_bit: "standard", porte_senza_mappa: 0,
+    letture: 7, riuscite: 7, codice: null, codici: {}, esito: "letto",
+  };
+  withTenant(T, () => scriviVlanSwitch(21, l));
+  const db = withTenant(T, () => leggiVlanSwitchDb(21));
+  const m = matriceVlanSwitch({ porte: [porta(1, "Port 1"), porta(2, "Port 2")], db });
+  assert.equal(m.striscia.vlan, 3);
+  assert.equal(withTenant(T, () => contaVlanSwitch(21)), 3);
+  assert.equal(withTenant(T, () => contaVlanSwitch(999)), 0);
+});
+
+test("riga sotto la legenda: spenta, mai fatta, non riuscita col codice (come la riga delle fonti)", () => {
+  assert.equal(statoLetturaVlanSwitch({ acceso: false, letto_il: null, esito: null }), "spenta");
+  assert.equal(statoLetturaVlanSwitch({ acceso: true, letto_il: null, esito: null }), "mai fatta");
+  assert.equal(statoLetturaVlanSwitch({ acceso: true, letto_il: null, esito: { il: "2026-10-22 08:00:00", comandi: 0, riusciti: 0, codice: "TEMPO_SCADUTO" } }),
+    "non riuscita: TEMPO_SCADUTO");
 });

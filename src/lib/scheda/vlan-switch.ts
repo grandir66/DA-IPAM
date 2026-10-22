@@ -146,6 +146,12 @@ export interface LetturaVlanSwitchScheda {
   esito: { il: string; comandi: number; riusciti: number; codice: string | null } | null;
 }
 
+/** Perché la matrice è solo dai PVID, con le stesse parole della riga delle fonti: «spenta», «mai fatta», «non riuscita: <codice>». */
+export function statoLetturaVlanSwitch(l: LetturaVlanSwitchScheda): string {
+  if (!l.acceso) return "spenta";
+  return l.esito?.codice ? `non riuscita: ${l.esito.codice}` : "mai fatta";
+}
+
 /** «Dati da: ✓ SNMP (Q-BRIDGE) <ora>» con l'ora dei DATI, o perché non ci sono (spenta, mai letta, non riuscita: <codice>). */
 export function fonteVlanSwitch(l: LetturaVlanSwitchScheda): Fonte {
   const nome = "SNMP (Q-BRIDGE)";

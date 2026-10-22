@@ -9,7 +9,7 @@ import { useCallback, useEffect, useState } from "react";
 import { LoadError } from "@/components/shared/load-error";
 import { BadgeAvviso } from "@/components/devices/rendi-apparato-esito";
 import { fetchJson } from "@/lib/fetch-json";
-import { fonteVlanSwitch, sezioniMatriceSwitch, type RigaMatriceSwitch } from "@/lib/scheda/vlan-switch";
+import { fonteVlanSwitch, sezioniMatriceSwitch, statoLetturaVlanSwitch, type RigaMatriceSwitch } from "@/lib/scheda/vlan-switch";
 import type { RispostaVlanSwitch } from "@/lib/devices/vlan-switch-rotta";
 import { Riquadro } from "../../riquadro";
 import { RigaFonti } from "../../riga-fonti";
@@ -77,7 +77,7 @@ export function VlanSwitch({ ctx }: { ctx: ContestoScheda }) {
     <p className="mt-1 text-[13px] font-semibold text-foreground">Lo switch non dichiara le porte untagged: U dedotta dal PVID.</p>
   ) : m.qualita === "solo_pvid" ? (
     <p className="mt-1 text-[13px] font-semibold text-foreground">
-      Tagged e nomi: serve la lettura «VLAN degli switch via SNMP», {lettura.acceso ? "mai fatta" : "spenta"}. Qui solo le VLAN dei PVID.
+      Tagged e nomi: serve la lettura «VLAN degli switch via SNMP», {statoLetturaVlanSwitch(lettura)}. Qui solo le VLAN dei PVID.
     </p>
   ) : null;
 

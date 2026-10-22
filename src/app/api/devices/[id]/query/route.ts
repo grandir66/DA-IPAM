@@ -442,7 +442,10 @@ async function runSwitchQuery(deviceId: number, device: Parameters<typeof create
       else if (v.motivo === "schema") plog(p, "— VLAN: schema non aggiornato");
     }
   } catch (e) {
-    plog(p, `— VLAN non lette: ${(e as { code?: unknown })?.code ?? "errore"}`);
+    // Nel journal il messaggio dell'errore con l'id dell'apparato (niente nome; un IP nel messaggio si toglie); nel progresso il codice.
+    const msg = (e instanceof Error ? e.message : String(e)).replace(/\b\d{1,3}(?:\.\d{1,3}){3}\b/g, "<ip>");
+    console.error(`[query] VLAN switch apparato ${deviceId}: ${msg}`);
+    plog(p, `— VLAN non lette: ${String((e as { code?: unknown })?.code ?? "errore")}`);
   }
 
   finishProgress(p, "completed", `Completata: ${entries.length} MAC, ${portInfos.length} porte`);

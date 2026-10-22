@@ -6048,11 +6048,17 @@ export function leggiVlanSwitchDb(deviceId: number): VlanSwitchDb {
   return { vlan, porte, pvid, lettura: lettura ?? null };
 }
 
-/** Quante VLAN ha l'ultima lettura dello switch (una COUNT, per il numero della tab VLAN); 0 = nessuna o schema assente. */
+/**
+ * Quante colonne ha la matrice VLAN dello switch (numero della tab VLAN): la stessa unione di `matriceVlanSwitch` — VLAN lette,
+ * VLAN delle porte, PVID — in una query. 0 = nessuna o schema assente.
+ */
 export function contaVlanSwitch(deviceId: number): number {
   const d = db();
   if (!schemaSwitchVlanPresente(d)) return 0;
-  return (d.prepare("SELECT COUNT(*) AS n FROM switch_vlan WHERE device_id = ?").get(deviceId) as { n: number }).n;
+  return (d.prepare(`SELECT COUNT(*) AS n FROM (
+      SELECT vlan_id AS v FROM switch_vlan WHERE device_id = ?
+      UNION SELECT vlan_id FROM switch_vlan_porte WHERE device_id = ?
+      UNION SELECT pvid FROM switch_porta_pvid WHERE device_id = ?)`).get(deviceId, deviceId, deviceId) as { n: number }).n;
 }
 
 /** Quanti bridge ha l'ultima fotografia (una COUNT, per le tab di `GET /api/devices/[id]`); null = schema sotto il livello 2. */

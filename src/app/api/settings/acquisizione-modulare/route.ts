@@ -1,5 +1,5 @@
 /**
- * Interruttore «Acquisizione modulare (anteprima)» in Impostazioni → Sistema (tavola C1, oggetto 14): impostazione del
+ * Impostazione «Acquisizione modulare» (tavola C1, oggetto 14): la levetta sta in Opzioni (ADR 0032); questa rotta resta per chi la usa già.
  * tenant `acquisizione_modulare.attiva`, assente = spento. Lettura con la sessione, scrittura solo admin.
  */
 import { NextResponse } from "next/server";

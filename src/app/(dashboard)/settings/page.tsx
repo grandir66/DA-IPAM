@@ -1393,7 +1393,7 @@ function SettingsPageInner() {
 
           {isAdmin && <PuliziaHostCard />}
 
-          {isAdmin && <InterruttoreAcquisizioneModulare isAdmin={isAdmin} />}
+          {isAdmin && <InterruttoreAcquisizioneModulare />}
 
           <Card>
             <CardHeader>

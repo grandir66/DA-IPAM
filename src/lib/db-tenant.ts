@@ -10741,3 +10741,140 @@ export function getTopologyKnownPorts(nodeId: string): KnownPort[] | null {
   ).all() as Array<{ id: number; raw: string }>;
   return hypervisorNics({ id: dev.id, host: dev.host ?? "", name: dev.name ?? "" }, scans);
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ACQUISIZIONE MODULARE — snapshot dei collector, scelta del caso dubbio, modifiche (piano 2026-10-21 C1-C2)
+// Tabelle in DDL_ACQUISIZIONE_MODULARE (db-tenant-schema.ts). Compressione e validazione stanno in
+// `acquisizione-modulare/archivio.ts`: qui solo righe.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Impostazione del tenant: «1» = acceso; assente o altro = spento (l'opposto di `patch.choco_automatico`). */
+export const CHIAVE_ACQUISIZIONE_MODULARE = "acquisizione_modulare.attiva";
+
+export function acquisizioneModulareAccesa(): boolean {
+  const r = db().prepare("SELECT value FROM tenant_settings WHERE key = ?").get(CHIAVE_ACQUISIZIONE_MODULARE) as { value: string } | undefined;
+  return r?.value === "1";
+}
+
+export function impostaAcquisizioneModulare(acceso: boolean): void {
+  db().prepare(
+    `INSERT INTO tenant_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')`,
+  ).run(CHIAVE_ACQUISIZIONE_MODULARE, acceso ? "1" : "0");
+}
+
+export interface SceltaFonteAcquisizione { scelta: string; chosen_by_name: string | null; chosen_at: string }
+
+/** La scelta fatta a mano nel caso dubbio, o null (la fonte si ricava da sola). */
+export function sceltaFonteAcquisizione(deviceId: number): SceltaFonteAcquisizione | null {
+  return (db().prepare("SELECT scelta, chosen_by_name, chosen_at FROM acquisition_source_choices WHERE device_id = ?").get(deviceId) as SceltaFonteAcquisizione | undefined) ?? null;
+}
+
+export function salvaSceltaFonteAcquisizione(deviceId: number, scelta: string, utente: { id: number | null; nome: string | null } | null): void {
+  db().prepare(
+    `INSERT INTO acquisition_source_choices (device_id, scelta, chosen_by, chosen_by_name, chosen_at) VALUES (?, ?, ?, ?, datetime('now'))
+     ON CONFLICT(device_id) DO UPDATE SET scelta = excluded.scelta, chosen_by = excluded.chosen_by, chosen_by_name = excluded.chosen_by_name, chosen_at = excluded.chosen_at`,
+  ).run(deviceId, scelta, utente?.id ?? null, utente?.nome ?? null);
+}
+
+export function togliSceltaFonteAcquisizione(deviceId: number): boolean {
+  return db().prepare("DELETE FROM acquisition_source_choices WHERE device_id = ?").run(deviceId).changes > 0;
+}
+
+/** Una riga di `acquisition_snapshots` da scrivere (payload già compresso e validato da chi chiama). */
+export interface SnapshotAcquisizioneIn {
+  device_id: number;
+  collector: string;
+  collector_version: string;
+  schema_version: string;
+  started_at: string;
+  finished_at: string;
+  duration_ms: number;
+  status: string;
+  section_status: string;
+  warning_count: number;
+  credenziali: string;
+  requested_by: number | null;
+  requested_by_name: string | null;
+  trigger: string;
+  payload: Buffer;
+  payload_bytes: number;
+  payload_gzip_bytes: number;
+  sha256: string;
+}
+
+/** Colonne piccole: la lista non porta mai il payload. */
+export type SnapshotAcquisizioneRiga = Omit<SnapshotAcquisizioneIn, "payload"> & { id: number; created_at: string };
+
+const COLONNE_SNAPSHOT_PICCOLE = "id, device_id, collector, collector_version, schema_version, started_at, finished_at, duration_ms, status, section_status, warning_count, credenziali, requested_by, requested_by_name, trigger, payload_bytes, payload_gzip_bytes, sha256, created_at";
+
+/** Snapshot da tenere per apparato (D5): gli ultimi tanti, più il primo e l'ultimo `ok`. */
+export const SNAPSHOT_TENUTI = 20;
+
+/**
+ * Inserisce uno snapshot e applica la retention D5 dello stesso apparato, in una transazione: restano gli ultimi
+ * `SNAPSHOT_TENUTI` per `finished_at`, più il primo e l'ultimo con stato `ok`. Un errore non spinge mai fuori l'ultimo
+ * snapshot riuscito. Le modifiche (`acquisition_changes`) degli snapshot tolti vanno via a cascata.
+ */
+export function inserisciSnapshotAcquisizione(r: SnapshotAcquisizioneIn): number {
+  const d = db();
+  return d.transaction(() => {
+    const id = Number(d.prepare(
+      `INSERT INTO acquisition_snapshots (device_id, collector, collector_version, schema_version, started_at, finished_at, duration_ms, status,
+         section_status, warning_count, credenziali, requested_by, requested_by_name, trigger, payload, payload_bytes, payload_gzip_bytes, sha256)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(r.device_id, r.collector, r.collector_version, r.schema_version, r.started_at, r.finished_at, r.duration_ms, r.status,
+      r.section_status, r.warning_count, r.credenziali, r.requested_by, r.requested_by_name, r.trigger, r.payload, r.payload_bytes,
+      r.payload_gzip_bytes, r.sha256).lastInsertRowid);
+    d.prepare(
+      `DELETE FROM acquisition_snapshots WHERE device_id = ?
+         AND id NOT IN (SELECT id FROM acquisition_snapshots WHERE device_id = ? ORDER BY finished_at DESC, id DESC LIMIT ?)
+         AND id NOT IN (SELECT id FROM acquisition_snapshots WHERE device_id = ? AND status = 'ok' ORDER BY finished_at ASC, id ASC LIMIT 1)
+         AND id NOT IN (SELECT id FROM acquisition_snapshots WHERE device_id = ? AND status = 'ok' ORDER BY finished_at DESC, id DESC LIMIT 1)`,
+    ).run(r.device_id, r.device_id, SNAPSHOT_TENUTI, r.device_id, r.device_id);
+    return id;
+  })();
+}
+
+/** Elenco paginato (regola 9), dal più recente, senza payload. */
+export function elencoSnapshotAcquisizione(deviceId: number, limit: number, offset: number): { righe: SnapshotAcquisizioneRiga[]; totale: number } {
+  const d = db();
+  const righe = d.prepare(
+    `SELECT ${COLONNE_SNAPSHOT_PICCOLE} FROM acquisition_snapshots WHERE device_id = ? ORDER BY finished_at DESC, id DESC LIMIT ? OFFSET ?`,
+  ).all(deviceId, limit, offset) as SnapshotAcquisizioneRiga[];
+  const totale = (d.prepare("SELECT COUNT(*) AS n FROM acquisition_snapshots WHERE device_id = ?").get(deviceId) as { n: number }).n;
+  return { righe, totale };
+}
+
+/** Uno snapshot dell'apparato col payload compresso; null se non c'è o è di un altro apparato. */
+export function leggiSnapshotAcquisizione(deviceId: number, snapshotId: number): (SnapshotAcquisizioneRiga & { payload: Buffer }) | null {
+  return (db().prepare(`SELECT ${COLONNE_SNAPSHOT_PICCOLE}, payload FROM acquisition_snapshots WHERE id = ? AND device_id = ?`)
+    .get(snapshotId, deviceId) as (SnapshotAcquisizioneRiga & { payload: Buffer }) | undefined) ?? null;
+}
+
+/** Una modifica fatta (o rifiutata) da uno snapshot sull'apparato. `esito`: scritto, aggiunta, tolta, manuale. */
+export interface ModificaAcquisizione {
+  destinazione: string;
+  chiave: string;
+  campo: string;
+  prima: string | null;
+  dopo: string | null;
+  esito: string;
+}
+
+export function modificheSnapshotAcquisizione(snapshotId: number, limit: number): { righe: ModificaAcquisizione[]; totale: number } {
+  const d = db();
+  const righe = d.prepare("SELECT destinazione, chiave, campo, prima, dopo, esito FROM acquisition_changes WHERE snapshot_id = ? ORDER BY id LIMIT ?")
+    .all(snapshotId, limit) as ModificaAcquisizione[];
+  const totale = (d.prepare("SELECT COUNT(*) AS n FROM acquisition_changes WHERE snapshot_id = ?").get(snapshotId) as { n: number }).n;
+  return { righe, totale };
+}
+
+/** L'ultimo valore che un collector ha scritto in un campo dell'apparato (per riconoscere un valore messo a mano). */
+export function ultimiValoriScrittiDaCollector(deviceId: number, destinazione: string): Map<string, string | null> {
+  const righe = db().prepare(
+    `SELECT campo, dopo FROM acquisition_changes WHERE id IN (
+       SELECT MAX(id) FROM acquisition_changes WHERE device_id = ? AND destinazione = ? AND esito = 'scritto' GROUP BY campo)`,
+  ).all(deviceId, destinazione) as Array<{ campo: string; dopo: string | null }>;
+  return new Map(righe.map((r) => [r.campo, r.dopo]));
+}

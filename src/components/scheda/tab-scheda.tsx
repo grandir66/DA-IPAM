@@ -13,6 +13,7 @@
  */
 import type { ReactNode } from "react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { conteggioTab } from "@/lib/scheda/conteggi-tab";
 import { TAB_COMUNI, type TabId, type TipoScheda } from "@/lib/scheda/tipo-scheda";
 import type { ContestoScheda } from "./contesto";
 import { PanoramicaGenerica } from "./panoramica-generica";
@@ -28,6 +29,9 @@ import { PanoramicaRouter } from "./tipi/router/panoramica";
 import { PanoramicaMikrotik } from "./tipi/router/mikrotik/panoramica";
 import { eMikrotikSsh } from "./tipi/router/dati-router";
 import { InterfacceMikrotik } from "./tipi/router/mikrotik/interfacce";
+import { DispositiviMikrotik } from "./tipi/router/mikrotik/dispositivi";
+import { VlanMikrotik } from "./tipi/router/mikrotik/vlan";
+import { BridgeMikrotik } from "./tipi/router/mikrotik/bridge";
 import { InterfacceRouter } from "./tipi/router/interfacce";
 import { RoutingRouter } from "./tipi/router/routing";
 import { DhcpRouter } from "./tipi/router/dhcp";
@@ -61,8 +65,12 @@ export interface VoceTab {
 const TAB_ROUTER: Partial<Record<TabId, VoceTab>> = {
   panoramica: { render: (c) => (eMikrotikSsh(c) ? <PanoramicaMikrotik ctx={c} /> : <PanoramicaRouter ctx={c} />) },
   interfacce: { render: (c) => (eMikrotikSsh(c) ? <InterfacceMikrotik ctx={c} /> : <InterfacceRouter ctx={c} />) },
+  // VLAN e Bridge: `tabDelTipo` le dà solo ai MikroTik in SSH con almeno un bridge, quindi nessun altro router le vede.
+  vlan: { render: (c) => <VlanMikrotik ctx={c} /> },
+  bridge: { render: (c) => <BridgeMikrotik ctx={c} /> },
   routing: { render: (c) => <RoutingRouter ctx={c} /> },
   dhcp: { render: (c) => <DhcpRouter ctx={c} /> },
+  dispositivi: { render: (c) => <DispositiviMikrotik ctx={c} /> },
   configurazione: { render: (c) => <ConfigurazioneRouter ctx={c} /> },
 };
 
@@ -148,11 +156,17 @@ export const ETICHETTE_TAB: Record<TabId, string> = {
   sicurezza: "Sicurezza",
   gestione: "Gestione",
   storico: "Storico",
+  bridge: "Bridge",
+  dispositivi: "Dispositivi",
 };
 
 function voce(tipo: TipoScheda, tab: TabId): VoceTab | undefined {
   return TAB_DEL_TIPO[tipo]?.[tab] ?? TAB_BASE[tab];
 }
+
+/** Il numero accanto al nome (`conteggioTab`): solo per le tab proprie del tipo, e solo se i dati della pagina lo danno. */
+const conteggio = (ctx: ContestoScheda, t: TabId): string | null =>
+  TAB_COMUNI.includes(t) ? null : conteggioTab(ctx.tipo, t, { device: ctx.device, dipendenze: ctx.dipendenze });
 
 const COMUNI: ReadonlySet<TabId> = new Set(TAB_COMUNI);
 
@@ -163,6 +177,7 @@ export function TabScheda({ ctx, tabs, attiva, onCambia }: { ctx: ContestoScheda
   const trigger = (t: TabId) => (
     <TabsTrigger key={t} value={t} className="px-3 py-1.5 text-sm">
       {voce(ctx.tipo, t)?.etichetta ?? ETICHETTE_TAB[t]}
+      {conteggio(ctx, t) && <span className="ml-1.5 text-[13px] font-normal opacity-80">{conteggio(ctx, t)}</span>}
     </TabsTrigger>
   );
   const corrente = voce(ctx.tipo, attiva);

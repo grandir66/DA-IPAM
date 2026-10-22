@@ -6,12 +6,13 @@
  * all'amministratore — la configurazione in diretta con «Scarica .rsc». L'elenco delle regole, le copie di
  * configurazione e le VPN non si raccolgono ancora: non hanno un riquadro.
  */
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Download, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { LoadError } from "@/components/shared/load-error";
 import { fetchJson } from "@/lib/fetch-json";
+import { nomeFileExport, ripulisciExport } from "@/lib/scheda/mikrotik";
 import { Campo } from "../../blocchi";
 import { Riquadro } from "../../riquadro";
 import { SezioneSnmp } from "../../dettagli/sistema";
@@ -20,6 +21,8 @@ import { eMikrotikSsh, regoleDi } from "./dati-router";
 
 interface ConfigMikrotik {
   exportFull: string;
+  /** sezioni tolte dal server (nome senza «/»): la ripulitura vera avviene lì, qui si ripassa per sicurezza */
+  exportTolte?: string[];
   systemInfo?: { identity?: string; version?: string; boardName?: string; serialNumber?: string; uptime?: string };
 }
 
@@ -44,6 +47,16 @@ export function ConfigurazioneRouter({ ctx }: { ctx: ContestoScheda }) {
   const [errore, setErrore] = useState<string | null>(null);
   const [leggo, setLeggo] = useState(false);
   const [mostra, setMostra] = useState(false);
+  const [letto, setLetto] = useState<Date | null>(null);
+  // l'export arriva già ripulito dal server (script e scheduler portano la password SFTP); il secondo passaggio qui
+  // non toglie nulla in condizioni normali, le sezioni tolte si leggono da `exportTolte`
+  const pulito = useMemo(() => {
+    if (!cfg?.exportFull) return null;
+    const r = ripulisciExport(cfg.exportFull);
+    const dalServer = (cfg.exportTolte ?? []).map((t) => `/${t}`);
+    return { ...r, tolte: [...new Set([...dalServer, ...r.tolte])] };
+  }, [cfg]);
+  const nomeFile = cfg ? nomeFileExport(cfg.systemInfo?.identity ?? displayName, letto ?? new Date()) : "";
 
   async function carica() {
     if (!device) return;
@@ -51,15 +64,15 @@ export function ConfigurazioneRouter({ ctx }: { ctx: ContestoScheda }) {
     setErrore(null);
     const r = await fetchJson<{ config: ConfigMikrotik | null }>(`/api/devices/${device.id}/mikrotik?action=config`);
     setLeggo(false);
-    if (r.ok) setCfg(r.data.config); else setErrore(r.message);
+    if (r.ok) { setCfg(r.data.config); setLetto(new Date()); } else setErrore(r.message);
   }
 
   function scarica() {
-    if (!cfg?.exportFull) return;
-    const url = URL.createObjectURL(new Blob([cfg.exportFull], { type: "text/plain" }));
+    if (!pulito?.testo) return;
+    const url = URL.createObjectURL(new Blob([pulito.testo], { type: "text/plain" }));
     const a = document.createElement("a");
     a.href = url;
-    a.download = `mikrotik-${displayName || device?.id}-config.rsc`;
+    a.download = nomeFile;
     a.click();
     URL.revokeObjectURL(url);
     toast.success("Configurazione scaricata");
@@ -110,7 +123,7 @@ export function ConfigurazioneRouter({ ctx }: { ctx: ContestoScheda }) {
                 <RefreshCw className={`mr-1.5 h-4 w-4 ${leggo ? "animate-spin" : ""}`} />
                 {leggo ? "Lettura…" : cfg ? "Rileggi" : "Leggi dal router"}
               </Button>
-              {cfg?.exportFull ? <Button variant="outline" size="sm" onClick={scarica}><Download className="mr-1.5 h-4 w-4" />Scarica .rsc</Button> : null}
+              {pulito?.testo ? <Button variant="outline" size="sm" onClick={scarica}><Download className="mr-1.5 h-4 w-4" />Scarica .rsc</Button> : null}
             </div>
           }
         >
@@ -125,10 +138,14 @@ export function ConfigurazioneRouter({ ctx }: { ctx: ContestoScheda }) {
               <Campo label="Acceso da" value={cfg.systemInfo.uptime} />
             </dl>
           )}
-          {cfg?.exportFull ? (
+          {pulito?.testo ? (
             <div className="mt-4">
-              <Button variant="outline" size="sm" onClick={() => setMostra((m) => !m)}>{mostra ? "Nascondi l'export" : "Mostra l'export"}</Button>
-              {mostra && <pre className="mt-3 max-h-[400px] overflow-auto whitespace-pre-wrap rounded-md bg-muted p-4 font-mono text-[13px]">{cfg.exportFull}</pre>}
+              <p className="font-mono text-[13px] text-muted-foreground">
+                {nomeFile} · {Math.max(1, Math.round(new Blob([pulito.testo]).size / 1024))} KB · {pulito.righe} righe
+              </p>
+              <Button className="mt-2" variant="outline" size="sm" onClick={() => setMostra((m) => !m)}>{mostra ? "Nascondi l'export" : "Mostra l'export"}</Button>
+              {mostra && <pre className="mt-3 max-h-[400px] overflow-auto whitespace-pre-wrap rounded-md bg-muted p-4 font-mono text-[13px]">{pulito.testo}</pre>}
+              {mostra && pulito.tolte.length > 0 && <p className="mt-2 font-mono text-[13px] text-muted-foreground"># [tolte: {pulito.tolte.join(", ")}]</p>}
             </div>
           ) : null}
         </Riquadro>

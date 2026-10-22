@@ -8,6 +8,7 @@
 import { useMemo, useState } from "react";
 import { parseDbDate } from "@/lib/db-date";
 import { eRottaDefault } from "@/lib/scheda/router";
+import { statoArp } from "@/lib/scheda/mikrotik";
 import { Riquadro } from "../../riquadro";
 import type { ContestoScheda } from "../../contesto";
 import { StatoRotta } from "./celle";
@@ -41,6 +42,9 @@ export function RoutingRouter({ ctx }: { ctx: ContestoScheda }) {
 
   const q = (s: string, ...campi: (string | number | null | undefined)[]) => !s.trim() || campi.some((c) => String(c ?? "").toLowerCase().includes(s.trim().toLowerCase()));
   const rotteVisibili = rotte.filter((r) => q(fr, r.destination, r.gateway, r.interface_name, r.protocol));
+  // Stato e Tipo vengono dalla lettura SSH: per i router letti in SNMP sono vuoti per tutte le voci e le colonne spariscono
+  const haStato = arp.some((a) => statoArp(a.status));
+  const haTipo = arp.some((a) => a.dynamic != null);
   const arpVisibili = arp.filter((a) => q(fa, a.ip, a.mac, a.interface_name, a.hostname, a.host_name, a.host_ip));
 
   return (
@@ -81,7 +85,7 @@ export function RoutingRouter({ ctx }: { ctx: ContestoScheda }) {
         <div className="-mx-4 -mt-4 max-h-[420px] overflow-auto">
           <table className="w-full text-[13px]">
             <thead className="sticky top-0 border-b-2 bg-muted">
-              <tr><th className={th}>IP</th><th className={th}>MAC</th><th className={th}>Interfaccia</th><th className={th}>Host associato</th><th className={th}>Visto</th></tr>
+              <tr><th className={th}>IP</th><th className={th}>MAC</th><th className={th}>Interfaccia</th><th className={th}>Host associato</th>{haStato && <th className={th}>Stato</th>}{haTipo && <th className={th}>Tipo</th>}<th className={th}>Visto</th></tr>
             </thead>
             <tbody>
               {arpVisibili.slice(0, MAX).map((a) => (
@@ -90,6 +94,12 @@ export function RoutingRouter({ ctx }: { ctx: ContestoScheda }) {
                   <td className="px-3 py-1.5 font-mono">{a.mac}</td>
                   <td className="px-3 py-1.5">{a.interface_name ?? "—"}</td>
                   <td className="px-3 py-1.5">{a.hostname ?? a.host_name ?? <span className="text-muted-foreground">—</span>}</td>
+                  {haStato && (
+                    <td className="whitespace-nowrap px-3 py-1.5">
+                      {(() => { const v = statoArp(a.status); return v ? <span className={v.forte ? "font-semibold" : "text-muted-foreground"}>{v.segno} {v.parola}</span> : <span className="text-muted-foreground">—</span>; })()}
+                    </td>
+                  )}
+                  {haTipo && <td className="whitespace-nowrap px-3 py-1.5">{a.dynamic == null ? <span className="text-muted-foreground">—</span> : a.dynamic === 1 ? "dinamica" : "statica"}</td>}
                   <td className="whitespace-nowrap px-3 py-1.5 text-muted-foreground">{a.timestamp ? parseDbDate(a.timestamp).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—"}</td>
                 </tr>
               ))}

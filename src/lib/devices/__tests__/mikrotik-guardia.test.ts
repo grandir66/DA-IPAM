@@ -33,11 +33,24 @@ describe("esitoAzioneMikrotik", () => {
 
 describe("configPerRuolo", () => {
   const cfg = { exportFull: "/ip firewall ...", exportCompact: "x", systemInfo: { identity: "rtr", version: "7.15" } };
-  it("admin: com'è", () => assert.deepEqual(configPerRuolo(cfg, "admin"), cfg));
+  it("admin: com'è, più le sezioni tolte (nessuna qui)", () => assert.deepEqual(configPerRuolo(cfg, "admin"), { ...cfg, exportTolte: [] }));
   it("non admin: via l'export, resta l'identità del sistema", () => {
     assert.deepEqual(configPerRuolo(cfg, "viewer"), { exportFull: "", systemInfo: { identity: "rtr", version: "7.15" } });
   });
   it("config assente resta null", () => assert.equal(configPerRuolo(null, "viewer"), null));
+  // 22/10, revisione finale: la ripulitura girava solo nel browser; la vecchia pagina /devices/[id] mostrava e
+  // scaricava l'export grezzo, con la password SFTP dello script di backup del Manager in /system script.
+  it("admin: entrambi gli export arrivano senza /system script né /system scheduler", () => {
+    const grezzo = "/system scheduler\nadd name=b on-event=mikrotik_backup\n/system script\nadd name=mikrotik_backup source=\"/tool fetch url=sftp://u:SEGRETO@h\"\n/ip dns\nset servers=1.1.1.1\n";
+    const r = configPerRuolo({ exportFull: grezzo, exportCompact: grezzo, systemInfo: { identity: "rtr" } }, "admin");
+    const json = JSON.stringify(r);
+    assert.ok(!json.includes("/system script"), "niente /system script");
+    assert.ok(!json.includes("/system scheduler"), "niente /system scheduler");
+    assert.ok(!json.includes("SEGRETO"));
+    assert.ok(r && "exportFull" in r && r.exportFull.includes("/ip dns"), "il resto resta");
+    assert.ok(r && "exportCompact" in r && typeof r.exportCompact === "string" && r.exportCompact.includes("/ip dns"));
+    assert.deepEqual(r && "exportTolte" in r ? r.exportTolte : null, ["system scheduler", "system script"]);
+  });
 });
 
 describe("la rotta usa la guardia", () => {

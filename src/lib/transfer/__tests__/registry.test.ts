@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import Database from "better-sqlite3";
 import { TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL } from "../../db-tenant-schema";
 import { HUB_SCHEMA_SQL } from "../../db-hub-schema";
-import { migrateTopologyPhase1, migrateTopologyPhase2 } from "../../db-tenant";
+import { migrateSchedaMikrotik, migrateTopologyPhase1, migrateTopologyPhase2 } from "../../db-tenant";
 import {
   TENANT_TABLES,
   HUB_TABLES,
@@ -19,6 +19,7 @@ function realTables(...sqlParts: string[]): string[] {
   if (sqlParts.includes(TENANT_SCHEMA_SQL)) {
     migrateTopologyPhase1(db);
     migrateTopologyPhase2(db);
+    migrateSchedaMikrotik(db); // le tabelle della scheda MikroTik nascono solo qui (ADR 0027)
   }
   const rows = db
     .prepare(

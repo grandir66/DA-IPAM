@@ -4,6 +4,7 @@
  * restano a chi ha la sessione. Puro: la rotta ci passa il ruolo della sessione.
  */
 import { eAdmin } from "@/lib/permessi/ruolo";
+import { ripulisciExport } from "@/lib/scheda/mikrotik";
 
 const AZIONI_SOLO_ADMIN = new Set(["config"]);
 
@@ -16,12 +17,28 @@ export function esitoAzioneMikrotik(action: string, ruolo: string | undefined): 
   return { ok: true };
 }
 
-/** Per un non admin la configurazione perde l'export e tiene l'identità del sistema (versione, scheda, uptime). */
+/**
+ * Per un non admin la configurazione perde l'export e tiene l'identità del sistema (versione, scheda, uptime).
+ * Per l'admin i due export passano da `ripulisciExport` QUI, sul server (22/10): `/system script` e
+ * `/system scheduler` sui router con lo script di backup del Manager portano la password SFTP, e la vecchia pagina
+ * /devices/[id] mostrava e scaricava l'export così com'era. `exportTolte` dice quali sezioni sono state tolte (nome senza «/»).
+ */
 export function configPerRuolo<C extends { exportFull?: string; exportCompact?: string; systemInfo?: unknown }>(
   config: C | null | undefined,
   ruolo: string | undefined,
-): C | { exportFull: string; systemInfo?: unknown } | null {
+): (C & { exportTolte: string[] }) | { exportFull: string; systemInfo?: unknown } | null {
   if (!config) return null;
-  if (eAdmin(ruolo)) return config;
+  if (eAdmin(ruolo)) {
+    const full = typeof config.exportFull === "string" ? ripulisciExport(config.exportFull) : null;
+    const compact = typeof config.exportCompact === "string" ? ripulisciExport(config.exportCompact) : null;
+    // senza la «/» iniziale: la risposta non contiene mai il testo «/system script» né «/system scheduler»
+    const tolte = [...new Set([...(full?.tolte ?? []), ...(compact?.tolte ?? [])].map((t) => t.replace(/^\//, "")))];
+    return {
+      ...config,
+      ...(full ? { exportFull: full.testo } : {}),
+      ...(compact ? { exportCompact: compact.testo } : {}),
+      exportTolte: tolte,
+    };
+  }
   return { exportFull: "", ...(config.systemInfo !== undefined ? { systemInfo: config.systemInfo } : {}) };
 }

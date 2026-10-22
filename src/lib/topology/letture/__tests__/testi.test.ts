@@ -40,6 +40,19 @@ test("ogni lettura dice che cosa legge, su quali apparati, con quali comandi, e 
   assert.ok(NASCE_SPENTA.toLowerCase().includes("nasce spenta"), "ogni riga dice che nasce spenta");
 });
 
+test("VLAN, DNS e utenti dei MikroTik: titolo, che cosa legge (nessuna password), apparati, comandi; il dialogo dice quattro comandi e l'ora", () => {
+  const d = DESCRIZIONE_LETTURE.mikrotik_scheda;
+  assert.equal(d.titolo, "VLAN, DNS e utenti dei MikroTik");
+  assert.equal(d.legge, "Le VLAN dei bridge (tagged e untagged per porta), le interfacce VLAN col loro id e la loro interfaccia madre, la configurazione DNS, gli utenti del router (nome, gruppo, ultimo accesso; nessuna password).");
+  assert.equal(d.apparati, "router MikroTik letti via SSH");
+  assert.equal(d.comandi, "/interface bridge vlan print · /interface vlan print · /ip dns print · /user print (sola lettura, una connessione per apparato, al più una volta l'ora)");
+  const t = testoDialogo("mikrotik_scheda", true, HUB);
+  assert.ok(t.includes("4 comandi in sola lettura") && t.includes("al più una volta l'ora") && t.includes("Il router si legge ogni 15 minuti dalle scansioni veloci"), t);
+  assert.ok(t.includes("solo un amministratore"), "gli utenti del router si vedono solo da admin");
+  assert.ok(!t.includes("La mappa non cambia"), "questa lettura non serve alla mappa: riempie la scheda");
+  assert.ok(testoDialogo("mikrotik_scheda", false, HUB).startsWith("Spegnere la lettura «VLAN, DNS e utenti dei MikroTik»?"));
+});
+
 test("frequenza in parole", () => {
   assert.equal(frequenza(15, true), "ogni 15 minuti dalle scansioni veloci");
   assert.equal(frequenza(60, false), "ogni ora");

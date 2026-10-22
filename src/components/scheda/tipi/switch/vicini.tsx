@@ -9,6 +9,7 @@ import { Riquadro } from "../../riquadro";
 import { InfoRow } from "../../blocchi";
 import { IpCollegati, SullaMappa } from "../../dettagli/rete";
 import type { ContestoScheda } from "../../contesto";
+import { NomeVicino, useViciniIpam } from "../../nome-vicino";
 import { parseDbDate } from "@/lib/db-date";
 import { porteDi, viciniDi } from "./dati-porte";
 
@@ -18,6 +19,7 @@ const MAX_MAC = 200;
 export function ViciniSwitch({ ctx }: { ctx: ContestoScheda }) {
   const { device, hostId, isAdmin } = ctx;
   const vicini = viciniDi(ctx);
+  const mappaVicini = useViciniIpam(device?.id);
   const trunk = porteDi(ctx).filter((p) => p.is_trunk && (p.trunk_neighbor_name || p.trunk_neighbor_port || p.trunk_primary_name));
   const mac = device?.mac_port_entries ?? [];
   const stp = device?.stp_info ?? null;
@@ -33,7 +35,7 @@ export function ViciniSwitch({ ctx }: { ctx: ContestoScheda }) {
               {vicini.map((v) => (
                 <tr key={v.chiave} className="border-b">
                   <td className="px-3 py-1.5 font-mono font-semibold">{v.portaLocale}</td>
-                  <td className="px-3 py-1.5 font-medium">{v.nome}</td>
+                  <td className="px-3 py-1.5 font-medium"><NomeVicino nome={v.nome} ip={v.ip} mac={v.mac} mappa={mappaVicini} /></td>
                   <td className="px-3 py-1.5 font-mono">{v.portaRemota ?? "—"}</td>
                   <td className="px-3 py-1.5"><Badge variant="outline" className="text-[13px] uppercase">{v.protocollo || "?"}</Badge></td>
                   <td className="px-3 py-1.5 font-mono">{v.ip ?? "—"}</td>

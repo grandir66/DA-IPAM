@@ -4,6 +4,47 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-22 · Topologia: il cavo a mano vince
+
+- **Il collegamento tracciato a mano vince sempre** (Riccardo, 22/10) su quelli solo letti o dedotti, dopo la ★: un
+  server o un hypervisor collegato a mano a uno switch sta sotto quello switch anche se un altro lo vede nella tabella
+  MAC. Prima la fiducia «a mano» era l'ultima della chiave del Prim e il cavo finiva fra le ridondanze.
+- **Una partenza che è un oggetto finale** (hypervisor, server, client) si appende al suo switch: trascinato in una
+  mappa «passo passo» prima di collegarlo diventava partenza, e il Prim partiva da lui senza poter crescere. Ora fa da
+  radice solo se nessuno lo raggiunge.
+- **La mappa occupa tutta l'altezza**: i 9rem tolti erano della barra in alto, rimossa il 20/10 (~80 px vuoti in fondo).
+
+## [Non rilasciato] — 2026-10-22 · La scheda MikroTik copiata dal Manager (v0.9.832-842)
+
+- **Ritocchi alla scheda apparato** (22/10): numeri accanto al nome delle tab (porte, VLAN, vicini e MAC, rotte e ARP, bridge, VM, nodi, dischi, volumi…) solo dai dati già caricati; nei vicini LLDP/CDP/MNDP (MikroTik e switch) «· non in IPAM» o il link all'host (IP, poi MAC, stessa restrizione di «Dispositivi»); striscia MikroTik: il firmware compare solo se aggiornabile e il suo posto lo prende il pool DHCP più pieno (≥85%, solo dalla cache della tab DHCP), «Acceso da» passa nel riquadro Risorse.
+
+La pagina del router MikroTik del Manager mostrava più cose della scheda di DA-IPAM, che per i router non aveva
+risorse, hardware, bridge, VLAN né stato delle interfacce. Si porta quello che il Manager mostra, ma i dati li legge
+DA-IPAM dal router (nessun collegamento col Manager). Piano `docs/superpowers/plans/2026-10-21-scheda-mikrotik-dal-manager.md`,
+ADR 0027. Non si portano: IP Scan del router, backup binari, generatore di script, archivio delle configurazioni.
+
+### Aggiunto
+
+- **Scheda del router MikroTik** (`components/scheda/tipi/router/mikrotik/`, `lib/devices/mikrotik-scheda.ts`):
+  Panoramica con risorse, hardware e firmware aggiornabile, interfacce raggruppate per tipo con stato, MTU e commento,
+  dispositivi visti dal router, ARP con stato, tab Bridge e VLAN (matrice dai PVID, VLAN con la madre), DNS, utenti
+  del router (solo admin) e Configurazione. Tabelle `mikrotik_*` per apparato, migrazione `scheda_mikrotik_v21` (v3).
+- **Lettura `mikrotik_scheda`, nata spenta**: bridge vlan, vlan, DNS e utenti con comandi in più sul router solo se
+  un admin la accende. Perché: nessun comando nuovo ai router dei clienti senza un ok esplicito.
+
+### Corretto
+
+- **Server DHCP disabilitati letti come attivi**: il flag `X` in testa alla riga non veniva letto (solo `disabled=`),
+  quindi i pool di un server spento contavano.
+- **Export della configurazione ripulito sul server**: `GET /api/devices/[id]/mikrotik` (`config` e `all`, solo
+  admin) esce già senza `/system script` e `/system scheduler`: sui router con lo script di backup del Manager lì c'è
+  la password SFTP, e la vecchia pagina `/devices/[id]` la mostrava e la scaricava così com'era.
+- **Host IPAM abbinati per IP**: con lo stesso IP in due reti, un host di un'altra sede teneva in vita l'ARP «failed»
+  e prestava il nome. Ora vale solo un host delle reti servite dal router.
+- **Lease nella vista Dispositivi**: si tengono quelli con `last_synced` entro 1 giorno dall'ultima lettura, e non
+  restano per sempre.
+- **Seriale e part number letti via SNMP** non vengono più cancellati dalla lettura SSH quando il routerboard è vuoto (CHR).
+
 ## [Non rilasciato] — 2026-10-21 · VLAN delle porte UniFi
 
 ### Corretto

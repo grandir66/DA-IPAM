@@ -77,6 +77,8 @@ export const ATTESI: Atteso[] = [
   { rotta: "/api/credentials", metodi: ["POST"], livello: "admin-o-onboarding", motivo: MOTIVO_ONBOARDING },
   { rotta: "/api/devices", metodi: ["POST"], livello: "admin-o-onboarding", motivo: MOTIVO_ONBOARDING },
   { rotta: "/api/networks", metodi: ["POST"], livello: "admin-o-onboarding", motivo: MOTIVO_ONBOARDING },
+  // Scheda MikroTik (Task 10): gli utenti del router (nomi, gruppi, indirizzi ammessi) sono un dato riservato, solo admin.
+  { rotta: "/api/devices/[id]/mikrotik-utenti", metodi: ["GET"], livello: "admin", motivo: "utenti del router: nomi, gruppi e indirizzi ammessi, dato riservato" },
   // Tappa 4 credenziali (15/10): il punto raggiunto, letto all'apertura e salvato a ogni passo.
   { rotta: "/api/onboarding/progresso", metodi: ["GET", "PUT"], livello: "admin-o-onboarding", motivo: MOTIVO_ONBOARDING },
   // Revisione della tappa 4: il router già creato si modifica con colonne, porta e binding insieme.

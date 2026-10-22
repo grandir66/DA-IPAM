@@ -4,7 +4,7 @@
  * `__tests__/librenms-rotte.test.ts`. La guardia la provano `rotte-censite` e `scripts/verifica-permessi.sh`.
  */
 import { z } from "zod";
-import { letturaAccesa } from "../topology/letture/interruttori";
+import { leggiInterruttore, letturaAccesa } from "../topology/letture/interruttori";
 import { getHostById } from "../db-tenant";
 import { candidatiLibrenms, datiLibrenmsHost, lettureLibrenms, ultimoGiroLibrenms } from "./librenms-fonte";
 import { addSingleHostToLibreNMS, type EsitoAggiunta } from "./librenms-sync";
@@ -22,9 +22,9 @@ export function rispostaDatiHost(idTesto: string): Risposta {
   return { status: 200, corpo: { ...datiLibrenmsHost(id), acceso: letturaAccesa("librenms") } };
 }
 
-/** GET /api/integrations/librenms/candidati: le tre liste, lo stato della lettura per parte e l'esito dell'ultimo giro. */
+/** GET /api/integrations/librenms/candidati: le tre liste, lo stato della lettura per parte, l'esito dell'ultimo giro e l'interruttore (acceso, da chi, quando). */
 export function rispostaCandidati(): Risposta {
-  return { status: 200, corpo: { ...candidatiLibrenms(), letture: lettureLibrenms(), ultimo_giro: ultimoGiroLibrenms() } };
+  return { status: 200, corpo: { ...candidatiLibrenms(), letture: lettureLibrenms(), ultimo_giro: ultimoGiroLibrenms(), interruttore: leggiInterruttore("librenms") } };
 }
 
 const CorpoAggiunta = z.object({ host_id: z.number().int().positive() }, { error: "Richiesta non valida" }).strict();

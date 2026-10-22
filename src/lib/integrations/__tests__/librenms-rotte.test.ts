@@ -63,8 +63,11 @@ test("candidati: le tre liste e lo stato per parte", () => {
   withTenant(T, () => {
     const r = rispostaCandidati();
     assert.equal(r.status, 200);
-    const c = r.corpo as { non_interrogati: unknown[]; rifiutati: unknown[]; dai_vicini: unknown[]; letture: Record<string, unknown> };
+    const c = r.corpo as { non_interrogati: unknown[]; rifiutati: unknown[]; dai_vicini: unknown[]; letture: Record<string, { righe: number | null }>; interruttore: { acceso: boolean } };
     assert.equal(c.non_interrogati.length, 3);
+    assert.equal(c.interruttore.acceso, false);
+    assert.ok((c.letture.apparati?.righe ?? 0) > 0, "le righe dell'ultima lettura buona ci sono");
+    assert.equal(c.letture.vicini?.righe, null);
     assert.deepEqual(c.rifiutati, []);
     assert.deepEqual(c.dai_vicini, [], "senza vicini letti nessun candidato");
     assert.deepEqual(Object.keys(c.letture).sort(), ["apparati", "arp", "inventario", "mac_porta", "porte", "sensori", "vicini", "vlan"]);

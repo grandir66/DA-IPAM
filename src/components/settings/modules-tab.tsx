@@ -43,6 +43,7 @@ import { MeshCentralCard } from "./meshcentral-card";
 import { MeshCentralInstallDialog } from "./meshcentral-install-dialog";
 import { Nis2ToggleCard } from "./nis2-toggle-card";
 import { ZabbixLetturaCard } from "./zabbix-lettura-card";
+import { ApparatiLibrenmsCard } from "./apparati-librenms-card";
 import { ModuleJsonImport } from "./module-json-import";
 import { IntegrationViewer } from "@/components/integrations/integration-viewer";
 import { VerificaModulo } from "@/components/integrations/apertura-browser";
@@ -583,6 +584,7 @@ export function ModulesTab({ isAdmin, solo }: { isAdmin: boolean; solo?: string 
           dockerAvailable={dockerAvailable ?? false}
           showSyncButton
         />
+        <ApparatiLibrenmsCard isAdmin={isAdmin} />
         <VerificaModulo moduleKey="librenms" isAdmin={isAdmin} />
       </ModuleSection>
 

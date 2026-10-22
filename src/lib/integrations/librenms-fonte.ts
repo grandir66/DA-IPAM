@@ -302,14 +302,14 @@ async function giroInventario(
 
 // ── Letture per le rotte ─────────────────────────────────────────────────────
 
-export interface LetturaParte { esito: string; letto_il: string | null; tentato_il: string | null; codice: string | null }
+export interface LetturaParte { esito: string; righe: number | null; letto_il: string | null; tentato_il: string | null; codice: string | null }
 
 export function lettureLibrenms(): Record<Parte, LetturaParte> {
-  const out = Object.fromEntries(PARTI.map((p) => [p, { esito: "mai", letto_il: null, tentato_il: null, codice: null }])) as Record<Parte, LetturaParte>;
+  const out = Object.fromEntries(PARTI.map((p) => [p, { esito: "mai", righe: null, letto_il: null, tentato_il: null, codice: null }])) as Record<Parte, LetturaParte>;
   if (livelloSchemaLibrenms() < 1) return out;
-  for (const r of db().prepare("SELECT parte, esito, letto_il, tentato_il, codice FROM librenms_lettura").all() as Array<LetturaParte & { parte: string }>) {
+  for (const r of db().prepare("SELECT parte, esito, righe, letto_il, tentato_il, codice FROM librenms_lettura").all() as Array<LetturaParte & { parte: string }>) {
     if ((PARTI as readonly string[]).includes(r.parte)) {
-      out[r.parte as Parte] = { esito: r.esito, letto_il: r.letto_il, tentato_il: r.tentato_il, codice: r.codice };
+      out[r.parte as Parte] = { esito: r.esito, righe: r.righe, letto_il: r.letto_il, tentato_il: r.tentato_il, codice: r.codice };
     }
   }
   return out;

@@ -11,7 +11,7 @@ spento; scheda con fonte dichiarata. La mappa (T1) riceve i vicini solo nel task
 **Spec:** [`docs/superpowers/specs/2026-10-22-librenms-fonte-dati-design.md`](../specs/2026-10-22-librenms-fonte-dati-design.md)
 **Livello di controllo:** completo per i task 1, 2, 4, 9 (scrivono in LibreNMS dei clienti, migrano il DB, toccano la
 mappa accesa sul cliente A); leggero per 3, 5, 6, 7, 8 (proposto il 22/10, da confermare con l'approvazione).
-**Stato:** bozza · **Ultimo aggiornamento:** 2026-10-22 12:30
+**Stato:** approvato (22/10, risposte sotto in «Registro»), in coda dietro il lavoro dei collector modulari · **Ultimo aggiornamento:** 2026-10-22
 
 ## Vincoli globali
 
@@ -311,6 +311,19 @@ collegamenti nuovi e di quelli cambiati portato a Riccardo; accensione sull'hub 
    cambia), `docs/scheda-mappa.md`, `TASKS.md`; consuntivo qui sotto.
 
 ## Registro
+
+- **22/10, risposte di Riccardo alle tre scelte e al container:**
+  1. **Livello: leggero** («vai di leggero»). Restano, perché sono le regole delle zone rosse e non un livello: prova
+     vista fallire e prova a vuoto prima di ogni scrittura in LibreNMS (task 4), backup e misura sul DB copia per la
+     migrazione (task 2), mappa dietro il suo interruttore con T1 bit per bit (task 9). Niente revisore per passo.
+  2. **Vicini non interrogati: si aggiungono a LibreNMS in automatico, se il loro SNMP risponde** (non con un clic).
+     Chi non risponde resta candidato, col motivo visibile; niente `force_add`.
+  3. **I 5 server mai interrogati** (`.4.10 .4.19 .4.40 .4.41 .4.42`): Riccardo chiede se manca l'SNMP. Quasi
+     certamente sì: sono entrati con `force_add` e `last_polled` è nullo (spec §2). Da verificare col task 4 (prova
+     SNMP con la credenziale dell'apparato); poi si mostrano come «SNMP non risponde» e si propone di toglierli,
+     senza toglierli da soli.
+  4. **Container LibreNMS dell'hub: già aggiornato** (vulnerabilità chiusa dalla sessione DA-Link/Deploy-Appliance);
+     prima del task 4 si rilegge la versione dall'API.
 
 ## Consuntivo
 ### Fatto

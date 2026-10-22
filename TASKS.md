@@ -17,8 +17,8 @@ Spec [`docs/superpowers/specs/2026-10-22-librenms-fonte-dati-design.md`](docs/su
 - [ ] T5 rotte API
 - [ ] T6 tavola grafica approvata
 - [ ] T7 scheda: Sensori, Porte e Vicini con fonte
-- [x] T8 pagina del modulo: non interrogati, rifiutati, candidati — J3 con esito per apparato, solo admin modifica
-- [x] T9 vicini nella mappa (zona rossa, misura prima/dopo) — J4 in testata; «ultima · prossima» su una riga sotto (spazio)
+- [ ] T8 pagina del modulo: non interrogati, rifiutati, candidati
+- [ ] T9 vicini nella mappa (zona rossa, misura prima/dopo)
 - [ ] T10 accensione sull'hub, ADR, documenti
 
 ## 2026-10-22 — scansione automatica dei device scelti
@@ -28,14 +28,21 @@ Piano: [`docs/superpowers/plans/2026-10-22-scansione-automatica-da-discovery.md`
 - [x] Piano approvato da Riccardo (22/10: tavola «si va benissimo», piano «ok»)
 - [x] T1 tipo `apparati_scelti`, CHECK v11 di `scheduled_jobs`, tabella `job_apparati_esiti` (misura sulla copia dell'hub) — v0.9.861; v11 sulla copia 3-4 ms, 23 job identici, integrity ok; revisione completa: approvato (una colonna sconosciuta ora blocca la ricostruzione)
 - [x] T2 regole pure: config, frequenze (ogni ora · ogni 4 ore · ogni giorno alle HH:MM), idoneità, letture valide — regole pure; il job segue l ora italiana (fuso esplicito); revisione completa: 1 importante (fuso) corretto
-- [ ] T3 funzioni DB: stato degli apparati in una query, esiti per apparato
+- [x] T3 funzioni DB: stato degli apparati in una query, esiti per apparato — una query per 50 id, db.test 11 casi rosso poi verde
 - [x] T4 letture estratte da «Interroga» e dal giro ARP, lucchetto per apparato, log senza nomi né IP — lucchetto in comune fra scheduler e rotte (globalThis), 5 min per apparato, log senza nomi né IP; le 90 prove del giro invariate; revisione completa: 1 grave (lucchetto non condiviso) corretto
 - [x] T5 il giro `apparati_scelti` nello scheduler (prova a vuoto sulla copia dell'hub) — giro in serie con esito per apparato; «saltato» se niente da leggere; idoneo anche con binding riuscito (decisione nel registro); prova a vuoto sulla copia; revisione completa: 1 grave corretto. Nota per T10: i 5 switch Ubiquiti hanno il binding SNMP mai provato → prima «Prova credenziali»
 - [x] T6 rotte API (anteprima, creazione, modifica, esiti, testata) — rotte con guardie (scrittura solo admin), anteprima con valutaApparato, /api/jobs generico non può creare né cambiare la frequenza di questi job; revisione completa: approvato
 - [x] T7 Discovery: pulsante e finestra (J1, J2), resa 1440 e 1920 — J1-J2 in Discovery, viste a 1440 e 1920
-- [ ] T8 pagina dei job: riga ed esiti per apparato (J3), resa 1440 e 1920
-- [ ] T9 testata della scheda: pastiglia (J4), resa 1440 e 1920
-- [ ] T10 accensione sull'hub (con l'ok di Riccardo per creare il job), ADR 0030, CHANGELOG, CONTEXT, scheda-mappa
+- [x] T8 pagina dei job: riga ed esiti per apparato (J3), resa 1440 e 1920 — viste sulla copia; salvataggio della modifica non provato a schermo
+- [x] T9 testata della scheda: pastiglia (J4), resa 1440 e 1920 — viste sulla copia
+- [x] T10 accensione sull'hub (con l'ok di Riccardo per creare il job), ADR 0030, CHANGELOG, CONTEXT, scheda-mappa — sull hub (22/10 11:24 ora italiana): credenziali SNMP di 5 switch e del router provate, job #25 «Switch e router del CED» ogni 4 ore con 6 apparati, primo giro 6 letti su 6 in 83 s; servizio riavviato perché lo scheduler veda il job; backup /root/70791.db.bak-20261022-092258-prima-job-apparati. Revisione finale: 3 importanti corretti (modifica che restringeva il job, VLAN tolta in silenzio, «Esegui ora» sovrapponibile)
+- [x] Consuntivo scritto nel piano; ADR 0030 non scritto (resta aperto, sotto)
+- [ ] ADR 0030 «job sugli apparati scelti» con «cosa diventa difficile» (lucchetto in memoria, due letture sovrapponibili dopo il timeout dei 5 minuti)
+- [ ] SW-UFLEX-RG-10GB (apparato 9): IP 192.168.40.240 morto dal 06/10 e assente dal controller UniFi, quindi fuori dal job #25: serve da Riccardo l'IP attuale (sostituisce il punto (c) sotto)
+- [ ] ProMax: PVID SNMP diverso dalla nativa del controller su 6 porte su 14 (vedi riga più sotto); finché non si rivede la lettura Q-BRIDGE il job la rilegge ma la matrice resta «dedotta»
+- [ ] Panoramica switch: con i filtri «Trunk» / «Tutte» la pagina scorre ancora di ~150 px a 1440×900 (vedi riga più sotto)
+- [ ] J4: la pastiglia nello stato «spenta» (job sospeso) non è stata vista a schermo, solo con e senza job
+- [ ] Un job creato da script ha bisogno di un reload o riavvio dello scheduler; se capita ancora, aggiungere un modo per ricaricarlo
 
 ## 2026-10-22 — accorpamento IP e matrice VLAN degli switch
 
@@ -54,7 +61,7 @@ Piano: [`docs/superpowers/plans/2026-10-22-accorpamento-ip-e-vlan-switch.md`](do
 - [x] T10 matrice VLAN condivisa estratta dalla scheda MikroTik (aspetto invariato) — v0.9.856; matrice in `components/scheda/matrice-vlan.tsx` + `lib/scheda/matrice-vlan.ts`; la tab VLAN del MikroTik è identica byte per byte prima e dopo
 - [x] T11 tab VLAN dello switch: striscia VLAN/trunk/access/senza VLAN + matrice — v0.9.857; striscia e matrice viste a 1440 e 1920 sulla copia (48POE 13·45·7·0, ProMax 13·31·1·20 «dedotta»); revisione completa: approvato + 4 minori corretti
 - [x] T12 accensione sull'hub e verifica sul dato vero — hub v0.9.858 (22/10, 04:05): migrazioni `cluster_principale_v21` e `switch_vlan_v21` fatte (righe nel journal); lettura `switch_vlan` ACCESA («procedi fino al live»); lettura fatta una volta da script: 5 switch letti, 13 VLAN ciascuno, SW-UFLEX-RG-10GB (apparato 9) TEMPO_SCADUTO; tab VLAN di SW-CED-48POE-242 vista con i nomi veri; la Panoramica ora conta 13 come la tab (831c88d5); Discovery: 7 cluster, 17 righe nascoste; correzioni della revisione finale 4cf651d8 (filtri e ricerca anche sui secondari, CSV «Altri IP», blocco anche su PUT host e DHCP AD) e ratchet di `db.ts` (df2e7dc3); CONTEXT, CHANGELOG, scheda-mappa aggiornati
-- [ ] (a) decidere se creare sull'hub il job `arp_poll` o accettare solo «Aggiorna»/«Interroga»: oggi l'hub NON ha il job, quindi gli switch si leggono solo a mano; con il job si leggerebbero ogni ora anche le tabelle MAC di tutti gli switch (decide Riccardo)
+- [ ] (a) job `arp_poll` sull'hub: il job `apparati_scelti` #25 (22/10) legge già ogni 4 ore router e switch scelti; da chiudere se Riccardo conferma che basta (decide lui)
 - [ ] (b) cluster 10 e 11 (iLO HPE + schede di rete dello stesso server?) da confermare con Riccardo
 - [ ] (c) SW-UFLEX-RG-10GB (apparato 9) non risponde a SNMP (TEMPO_SCADUTO): community, ACL o SNMP spento sullo switch
 - [x] (d) T13 completamento dal controller UniFi (ok di Riccardo 22/10): lista bianca + `GET rest/networkconf`, native in `switch_vlan_nativa` dalla sync UniFi (solo con `switch_vlan` accesa); ProMax 14 porte completate, resta «dedotta» (18 porte senza nativa dal controller); prove `unifi-vlan-native`, `vlan-switch`, `unifi-api`; resa a 1440 vista sulla copia

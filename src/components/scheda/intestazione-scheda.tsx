@@ -15,7 +15,7 @@ import { STILE_STATO } from "@/components/shared/stile-stato-modulo";
 import { ETICHETTE_RUOLI, type RuoloServer } from "@/lib/classification/canonico";
 import { senzaCredenzialeProvata } from "@/lib/devices/credenziali-assegnate";
 import type { TipoScheda } from "@/lib/scheda/tipo-scheda";
-import { FUSO_UTENTI } from "@/lib/db-date";
+import { FUSO_UTENTI, parseDbDate } from "@/lib/db-date";
 import { cn } from "@/lib/utils";
 import type { HostDetail } from "@/types";
 import type { DeviceFull } from "./dati";
@@ -39,13 +39,19 @@ export interface ScansioneAutomatica {
   jobId: number;
   frequenza: string;
   attivo: boolean;
-  ultima: string | null;
+  /** L'esito di QUESTO apparato nell'ultimo giro del job (non il `last_run` del job); null = mai letto. */
+  esito: { stato: "ok" | "parziale" | "errore" | "escluso" | "saltato"; giro_il: string } | null;
   prossima: string | null;
   altri: number;
 }
 
-const oraItaliana = (iso: string): string =>
-  new Intl.DateTimeFormat("it-IT", { timeZone: FUSO_UTENTI, hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
+/** Giorno e ora in ora italiana («22/10, 10:00»): `giro_il` è UTC come lo scrive il DB, `prossima` è ISO. */
+const giornoOra = (d: Date): string =>
+  new Intl.DateTimeFormat("it-IT", { timeZone: FUSO_UTENTI, day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).format(d);
+
+const ESITO_APPARATO: Record<NonNullable<ScansioneAutomatica["esito"]>["stato"], string> = {
+  ok: "✓ letto", parziale: "▲ parziale", errore: "✕ errore", escluso: "● escluso", saltato: "● saltato",
+};
 
 /** «VM 105 su DA-PX-01» quando l'abbinamento con Proxmox c'è (lo fornisce la scheda dell'hypervisor, T6). */
 export interface VmSu { vmid: number; nodo: string; href?: string }
@@ -132,11 +138,13 @@ export function IntestazioneScheda({
         )}
         <div className="ml-auto flex shrink-0 items-center gap-2">{azioni}</div>
       </div>
-      {scansioneAutomatica && (scansioneAutomatica.ultima || scansioneAutomatica.prossima) && (
+      {scansioneAutomatica && (scansioneAutomatica.esito || scansioneAutomatica.prossima) && (
         // In una riga a sé: sulla riga della testata non c'è posto senza accorciare il nome dell'apparato (max-w-7xl).
         <p className="mt-1.5 pl-1 text-[13px] text-muted-foreground">
-          {scansioneAutomatica.ultima ? `ultima lettura ${oraItaliana(scansioneAutomatica.ultima)}` : "mai letto"}
-          {scansioneAutomatica.prossima ? ` · prossima ${oraItaliana(scansioneAutomatica.prossima)}` : ""}
+          {scansioneAutomatica.esito
+            ? <>ultima lettura {giornoOra(parseDbDate(scansioneAutomatica.esito.giro_il))} · <span className="font-semibold text-foreground">{ESITO_APPARATO[scansioneAutomatica.esito.stato]}</span></>
+            : "mai letto"}
+          {scansioneAutomatica.prossima ? ` · prossima ${giornoOra(new Date(scansioneAutomatica.prossima))}` : ""}
         </p>
       )}
       {apparatoCluster && (

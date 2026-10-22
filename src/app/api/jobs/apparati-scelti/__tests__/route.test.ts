@@ -23,6 +23,7 @@ import {
   withTenant,
 } from "@/lib/db-tenant";
 import { deleteScheduledJob } from "@/lib/db";
+import { scriviInterruttore } from "@/lib/topology/letture/interruttori";
 import {
   arricchisciJobs,
   rifiutoPutGenerico,
@@ -227,9 +228,10 @@ test("esiti: righe dell'ultimo giro; 404 su un job d'altro tipo", () => withTena
   scriviEsitiGiro(id, "2026-10-22 08:00:00", [{ device_id: F.sw, stato: "parziale", letture: { info: { stato: "letto" }, vlan: { stato: "errore", codice: "TIMEOUT" } } }]);
   const r = rispostaEsiti(String(id));
   assert.equal(r.status, 200);
-  const b = r.body as { giro_il: string; righe: Array<{ device_id: number; stato: string; nome: string }> };
+  const b = r.body as { giro_il: string; righe: Array<{ device_id: number; host_id: number | null; stato: string; nome: string }> };
   assert.equal(b.giro_il, "2026-10-22 08:00:00");
-  assert.deepEqual(b.righe.map((x) => [x.device_id, x.stato, x.nome]), [[F.sw, "parziale", "SW-PROVA"]]);
+  // host_id per il link alla scheda (/objects/<host_id>, revisione finale 22/10: /devices/<id> non è la scheda).
+  assert.deepEqual(b.righe.map((x) => [x.device_id, x.host_id, x.stato, x.nome]), [[F.sw, F.hostSw, "parziale", "SW-PROVA"]]);
   assert.equal(rispostaEsiti(String(F.fast)).status, 404);
 }));
 
@@ -295,6 +297,7 @@ test("elenco dei job: riassunto, nome, frequenza e prossima solo sulle righe app
     { device_id: F.rt, stato: "escluso", letture: {}, motivo: "CREDENZIALE_NON_PROVATA" },
   ]);
   const jobs = [getScheduledJobById(F.fast)!, getScheduledJobById(id)!];
+  // Il riassunto distingue i letti per intero dai parziali (pastiglia «✓ 2/3 · ▲ 1 parziale», revisione finale 22/10).
   const out = arricchisciJobs(jobs, new Date("2026-10-22T08:30:00Z")) as Array<Record<string, unknown>>;
   assert.equal(out[0].riassunto, undefined, "le altre righe restano come sono");
   assert.deepEqual(Object.keys(out[0]).sort(), Object.keys(jobs[0]).sort());
@@ -302,7 +305,7 @@ test("elenco dei job: riassunto, nome, frequenza e prossima solo sulle righe app
   assert.equal(out[1].apparati, 2);
   assert.equal(out[1].frequenza, "ogni 4 ore");
   assert.equal(out[1].prossima, "2026-10-22T10:00:00.000Z");
-  assert.deepEqual(out[1].riassunto, { letti: 1, totale: 2, esclusi: 1, giro_il: "2026-10-22 08:00:00" });
+  assert.deepEqual(out[1].riassunto, { letti: 1, parziali: 0, totale: 2, esclusi: 1, giro_il: "2026-10-22 08:00:00" });
 }));
 
 test("nome: tagliato, vuoto → «Apparati scelti» in creazione e in modifica, oltre 80 → errore che nomina «nome»", () => withTenant(T, () => {
@@ -328,4 +331,54 @@ test("testata J4: last_run illeggibile → ultima null, la risposta non lancia",
   assert.equal(r.status, 200);
   const mio = (r.body as { jobs: Array<Record<string, unknown>> }).jobs.find((j) => j.id === id)!;
   assert.equal(mio.ultima, null);
+}));
+
+// ── Revisione finale (22/10) ──────────────────────────────────────────────
+
+/** Un job scritto a mano coi device dati (anche esclusi ora: la creazione non li avrebbe presi). */
+function jobDiretto(deviceIds: number[], cosa = { info: true, porte_mac: true, vlan: true }): number {
+  return Number(getTenantDb(T).prepare("INSERT INTO scheduled_jobs (job_type, interval_minutes, config, enabled) VALUES ('apparati_scelti', 240, ?, 1)")
+    .run(JSON.stringify({ nome: "Diretto", device_ids: deviceIds, cosa })).lastInsertRowid);
+}
+
+test("modifica: si tengono anche gli apparati esclusi ora (l'idoneità si ricontrolla al giro), anche tutti", () => withTenant(T, () => {
+  const id = jobDiretto([F.sw, F.senzaCred]);
+  const r = rispostaModifica(String(id), { device_ids: [F.sw, F.senzaCred], nome: "Diretto" });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.deepEqual(JSON.parse(getScheduledJobById(id)!.config as unknown as string).device_ids, [F.sw, F.senzaCred]);
+  const soloEscluso = rispostaModifica(String(id), { device_ids: [F.senzaCred] });
+  assert.equal(soloEscluso.status, 200, JSON.stringify(soloEscluso.body));
+  assert.deepEqual(JSON.parse(getScheduledJobById(id)!.config as unknown as string).device_ids, [F.senzaCred]);
+}));
+
+test("VLAN per apparato decisa dal server: switch → switch_vlan, MikroTik → mikrotik_scheda, null dove non vale", () => withTenant(T, () => {
+  try {
+    scriviInterruttore("switch_vlan", false, "prova");
+    scriviInterruttore("mikrotik_scheda", true, "prova");
+    const id = jobDiretto([F.sw, F.rt]);
+    const per = (body: unknown) => new Map((body as { apparati: Array<{ device_id: number; vlan_accesa: boolean | null }> }).apparati.map((a) => [a.device_id, a.vlan_accesa]));
+    let m = per(rispostaLeggiJob(String(id)).body);
+    assert.equal(m.get(F.sw), false, "switch con switch_vlan spenta");
+    assert.equal(m.get(F.rt), true, "MikroTik con mikrotik_scheda accesa");
+    scriviInterruttore("switch_vlan", true, "prova");
+    scriviInterruttore("mikrotik_scheda", false, "prova");
+    m = per(rispostaLeggiJob(String(id)).body);
+    assert.equal(m.get(F.sw), true);
+    assert.equal(m.get(F.rt), false);
+    const a = rispostaAnteprima({ host_ids: [F.hostSw, F.hostNudo] }).body as { righe: Array<{ host_id: number; vlan_accesa: boolean | null }> };
+    assert.equal(a.righe.find((x) => x.host_id === F.hostSw)!.vlan_accesa, true);
+    assert.equal(a.righe.find((x) => x.host_id === F.hostNudo)!.vlan_accesa, null, "non è un apparato: la VLAN non vale");
+  } finally {
+    scriviInterruttore("switch_vlan", false, "prova");
+    scriviInterruttore("mikrotik_scheda", false, "prova");
+  }
+}));
+
+test("VLAN spenta adesso: la scelta si salva com'è, in creazione e in modifica (il giro la salta, il dettaglio dice «spenta»)", () => withTenant(T, () => {
+  scriviInterruttore("switch_vlan", false, "prova");
+  scriviInterruttore("mikrotik_scheda", false, "prova");
+  const id = creaJob({ cosa: { info: false, porte_mac: false, vlan: true } });
+  assert.deepEqual(JSON.parse(getScheduledJobById(id)!.config as unknown as string).cosa, { info: false, porte_mac: false, vlan: true });
+  assert.equal(rispostaModifica(String(id), { cosa: { info: true, porte_mac: false, vlan: true } }).status, 200);
+  assert.deepEqual(JSON.parse(getScheduledJobById(id)!.config as unknown as string).cosa, { info: true, porte_mac: false, vlan: true });
 }));

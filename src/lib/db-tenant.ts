@@ -11366,13 +11366,13 @@ export function scriviEsitiGiro(
 }
 
 /** Gli esiti dell'ultimo giro di un job, col nome dell'apparato (null se l'apparato è stato tolto). */
-export function leggiEsitiJob(jobId: number): { giro_il: string | null; righe: Array<EsitoRiga & { nome: string | null }> } {
+export function leggiEsitiJob(jobId: number): { giro_il: string | null; righe: Array<EsitoRiga & { nome: string | null; host_id: number | null }> } {
   const righe = db().prepare(`
-    SELECT e.device_id, e.giro_il, e.stato, e.letture, e.motivo, nd.name AS nome
+    SELECT e.device_id, e.giro_il, e.stato, e.letture, e.motivo, nd.name AS nome, nd.host_id
       FROM job_apparati_esiti e
       LEFT JOIN network_devices nd ON nd.id = e.device_id
      WHERE e.job_id = ?
-     ORDER BY e.device_id`).all(jobId) as Array<Omit<EsitoRiga, "letture"> & { letture: string; nome: string | null }>;
+     ORDER BY e.device_id`).all(jobId) as Array<Omit<EsitoRiga, "letture"> & { letture: string; nome: string | null; host_id: number | null }>;
   const out = righe.map((r) => {
     let letture: Record<string, EsitoLettura> = {};
     try {
@@ -11389,22 +11389,23 @@ export function leggiEsitiJob(jobId: number): { giro_il: string | null; righe: A
 
 /**
  * Il riassunto di J3 («✓ 3/3», «▲ 2/3 · 1 escluso») per più job, in una query, dalle righe dell'ultimo `giro_il`:
- * letti = `ok` + `parziale`. Un job che non ha mai girato non compare.
+ * letti = `ok`, parziali a parte (la pastiglia li distingue). Un job che non ha mai girato non compare.
  */
-export function riassuntiEsitiJobs(jobIds: number[]): Map<number, { letti: number; totale: number; esclusi: number; giro_il: string }> {
-  const out = new Map<number, { letti: number; totale: number; esclusi: number; giro_il: string }>();
+export function riassuntiEsitiJobs(jobIds: number[]): Map<number, { letti: number; parziali: number; totale: number; esclusi: number; giro_il: string }> {
+  const out = new Map<number, { letti: number; parziali: number; totale: number; esclusi: number; giro_il: string }>();
   if (jobIds.length === 0) return out;
   const righe = db().prepare(`
     SELECT e.job_id,
-           SUM(CASE WHEN e.stato IN ('ok', 'parziale') THEN 1 ELSE 0 END) AS letti,
+           SUM(CASE WHEN e.stato = 'ok' THEN 1 ELSE 0 END) AS letti,
+           SUM(CASE WHEN e.stato = 'parziale' THEN 1 ELSE 0 END) AS parziali,
            COUNT(*) AS totale,
            SUM(CASE WHEN e.stato = 'escluso' THEN 1 ELSE 0 END) AS esclusi,
            MAX(e.giro_il) AS giro_il
       FROM job_apparati_esiti e
      WHERE e.job_id IN (${jobIds.map(() => "?").join(",")})
        AND e.giro_il = (SELECT MAX(u.giro_il) FROM job_apparati_esiti u WHERE u.job_id = e.job_id)
-     GROUP BY e.job_id`).all(...jobIds) as Array<{ job_id: number; letti: number; totale: number; esclusi: number; giro_il: string }>;
-  for (const r of righe) out.set(r.job_id, { letti: r.letti, totale: r.totale, esclusi: r.esclusi, giro_il: r.giro_il });
+     GROUP BY e.job_id`).all(...jobIds) as Array<{ job_id: number; letti: number; parziali: number; totale: number; esclusi: number; giro_il: string }>;
+  for (const r of righe) out.set(r.job_id, { letti: r.letti, parziali: r.parziali, totale: r.totale, esclusi: r.esclusi, giro_il: r.giro_il });
   return out;
 }
 

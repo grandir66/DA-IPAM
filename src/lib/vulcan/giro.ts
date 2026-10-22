@@ -27,6 +27,7 @@ import { getTenantDb, schemaVulcanPresente } from "@/lib/db-tenant";
 import { versioneIstanza } from "@/lib/dalink/fatti";
 import { dataSqlite } from "@/lib/dalink/stato";
 import {
+  PRESA_MIN,
   accoda,
   conteggiCoda,
   leggiStatoVulcan,
@@ -308,14 +309,24 @@ export async function giroCoda(dip: Partial<DipendenzeGiro> = {}): Promise<Esito
     } else conto.ritentati++;
   };
   const scarta = (r: RigaCoda, esito: string, motivo: string, http?: number) => {
+    // Una riga superata nel frattempo resta superata: niente scarto da contare né da registrare.
+    if (!segnaScartato(db, r.id, esito, motivo, d.ora())) return;
     ultimo = motivo;
     conto.scartati++;
-    segnaScartato(db, r.id, esito, motivo, d.ora());
     scriviAudit(d, { azione: "scarto", tipo: r.tipo, ...(http !== undefined ? { http } : {}), byte: r.byte_json, oggetti: r.oggetti, sha: r.sha256.slice(0, 12), motivo });
   };
 
+  // Il giro non deve durare più della presa (PRESA_MIN): oltre, un altro giro potrebbe prendere le
+  // stesse righe e inviarle due volte. Due minuti di margine per l'ultimo invio (fino a 60 s).
+  const limite = ora.getTime() + (PRESA_MIN - 2) * 60_000;
+  let fermato = 0;
   for (let i = 0; i < righe.length; i++) {
     const r = righe[i];
+    if (d.ora().getTime() > limite) {
+      for (const resto of righe.slice(i)) rilascia(db, resto.id);
+      fermato = righe.length - i;
+      break;
+    }
     if (!r.corpo_gz || r.corpo_gz.length === 0) {
       scarta(r, "senza_corpo", "corpo assente nella coda: scartato");
       continue;
@@ -347,7 +358,9 @@ export async function giroCoda(dip: Partial<DipendenzeGiro> = {}): Promise<Esito
   }
 
   if (righe.length === 0) return registra("invio", { esito: "ok", dettaglio: "niente da inviare", inviati: 0 });
-  const conti = `inviati ${conto.inviati}, da ritentare ${conto.ritentati}, scartati ${conto.scartati}, falliti ${conto.falliti}`;
+  const conti =
+    `inviati ${conto.inviati}, da ritentare ${conto.ritentati}, scartati ${conto.scartati}, falliti ${conto.falliti}` +
+    (fermato > 0 ? `, ${fermato} rimandate al giro dopo (tempo del giro finito)` : "");
   const esito: EsitoGiroVulcan["esito"] = conto.ritentati + conto.falliti > 0 ? "errore" : "ok";
   return registra(
     "invio",
@@ -433,6 +446,8 @@ export async function battito(dip: Partial<DipendenzeGiro> = {}): Promise<EsitoG
   return chiudi(`http_${r.status}`, `l'hub ha risposto ${r.status} al battito`, "errore");
 }
 
+class NonAccodato extends Error {}
+
 /**
  * La fotografia dell'inventario del giorno entra in coda (la più nuova sostituisce quella
  * in attesa). Se il costruttore fallisce: una riga `[vulcan]` nel journal e una riga
@@ -454,7 +469,14 @@ export async function accodaInventario(dip: Partial<DipendenzeGiro> = {}): Promi
   try {
     const c = corpoInventario(d.inventario(db), { codcli: cfg.codcli, nodo: cfg.nodo, versione: d.versione(), adesso: ora });
     if ("errore" in c) throw new Error(c.errore);
-    const r = accoda(db, { tipo: "inventario", rif: null, json: c.json, oggetti: c.oggetti });
+    let r: { nuovo: boolean };
+    try {
+      r = accoda(db, { tipo: "inventario", rif: null, json: c.json, oggetti: c.oggetti });
+    } catch (e) {
+      // Il corpo c'era: l'errore è della coda (DB pieno, bloccato, schema). Solo il codice, mai il messaggio intero.
+      const code = (e as { code?: unknown })?.code;
+      throw new NonAccodato(`inventario costruito, non accodato: ${typeof code === "string" && /^[A-Z0-9_]{1,60}$/.test(code) ? code : "errore della coda"}`);
+    }
     try {
       puliziaCoda(db, ora);
     } catch (e) {
@@ -463,7 +485,8 @@ export async function accodaInventario(dip: Partial<DipendenzeGiro> = {}): Promi
     registra("inventario", { esito: "ok", dettaglio: "fotografia dell'inventario in coda" });
     return r.nuovo ? "accodato" : "doppione";
   } catch (e) {
-    const motivo = `inventario non costruito: ${(e instanceof Error ? e.message : String(e)).slice(0, 300)}`;
+    const motivo =
+      e instanceof NonAccodato ? e.message : `inventario non costruito: ${(e instanceof Error ? e.message : String(e)).slice(0, 300)}`;
     registra("inventario", { esito: "errore", dettaglio: motivo });
     try {
       registraScartoSenzaCorpo(db, "inventario", motivo, ora);

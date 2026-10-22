@@ -177,12 +177,13 @@ export function segnaRitento(db: Database.Database, id: number, esito: string, e
 }
 
 /** Un rifiuto per cui ritentare non serve (400, 404, 413, 422): la riga esce dalla coda e perde il corpo. */
-export function segnaScartato(db: Database.Database, id: number, esito: string, errore: string, adesso: Date): void {
-  db.prepare(
+/** true se la riga è stata scartata davvero (era ancora in attesa). */
+export function segnaScartato(db: Database.Database, id: number, esito: string, errore: string, adesso: Date): boolean {
+  return db.prepare(
     `UPDATE vulcan_coda SET stato = 'scartato', corpo_gz = zeroblob(0), preso_fino = NULL,
        ultimo_esito = ?, ultimo_errore = ?, esito_il = ?
      WHERE id = ? AND stato = 'in_attesa'`,
-  ).run(esito, errore, dataSqlite(adesso), id);
+  ).run(esito, errore, dataSqlite(adesso), id).changes > 0;
 }
 
 /** Flusso sospeso (401, 403, 409): la riga torna in attesa senza contare un tentativo. */

@@ -588,3 +588,58 @@ test("sul bordo: hub finto HTTPS, gettone e gzip veri, audit su file senza getto
     assert.ok(!/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/.test(t), "IP");
   }
 });
+
+test("revisione: un giro lento si ferma prima che scada la presa; il secondo giro non rimanda le righe del primo", async () => {
+  const b = banco();
+  for (let k = 0; k < 12; k++) accoda(b.db, { tipo: "ad-health", rif: String(k), json: JSON_AD(k), oggetti: 1 });
+  await giroCoda({ ...b.dip, chiama: async (r) => (r.percorso === "/api/ipam/ping" ? PING_OK : { status: 503, body: "" }) });
+  // Tutte di nuovo scadute; ora l'hub è lento: ogni invio dura 60 s finti (il massimo del trasporto).
+  b.orologio.avanza(86_401);
+  const inizio = b.orologio.t.getTime();
+  let secondo: Promise<unknown> | null = null;
+  const veloce = b.dip.chiama as DipendenzeGiro["chiama"];
+  b.dip.chiama = async (r) => {
+    const x = await veloce(r);
+    if (r.percorso === "/api/ipam/ad-health") {
+      b.orologio.avanza(60);
+      // Scaduta la presa del primo giro (10 minuti), ne parte un altro mentre il primo è ancora aperto.
+      if (!secondo && b.orologio.t.getTime() - inizio >= 10 * 60_000) secondo = giroCoda({ ...b.dip, chiama: veloce });
+    }
+    return x;
+  };
+  const primo = (await giroCoda(b.dip)) as { inviati?: number; dettaglio: string };
+  if (!secondo) {
+    // Il primo si è fermato prima: il secondo parte adesso, a presa scaduta.
+    b.orologio.t = new Date(inizio + 10 * 60_000);
+    secondo = giroCoda({ ...b.dip, chiama: veloce });
+  }
+  await secondo;
+  const corpi = invii(b).map((c) => zlib.gunzipSync(c.corpoGz as Buffer).toString("utf8"));
+  assert.equal(new Set(corpi).size, 12, "tutte inviate");
+  assert.equal(corpi.length, 12, "nessuna riga inviata due volte");
+  assert.equal(primo.inviati, 9, "il primo giro si ferma a 8 minuti dall'inizio");
+  assert.match(primo.dettaglio, /3 rimandate al giro dopo/);
+  const stati = b.db.prepare("SELECT stato, tentativi FROM vulcan_coda ORDER BY id").all() as { stato: string; tentativi: number }[];
+  assert.ok(stati.every((s) => s.stato === "inviato" && s.tentativi === 1), JSON.stringify(stati));
+});
+
+test("revisione: inventario costruito ma non accodato → motivo distinto col codice", async () => {
+  const b = banco();
+  b.db.exec("CREATE TRIGGER blocca BEFORE INSERT ON vulcan_coda WHEN NEW.stato = 'in_attesa' BEGIN SELECT RAISE(ABORT, 'bloccato'); END");
+  assert.equal(await accodaInventario(b.dip), "errore");
+  const r = b.db.prepare("SELECT stato, ultimo_errore FROM vulcan_coda").all();
+  assert.deepEqual(r, [{ stato: "scartato", ultimo_errore: "inventario costruito, non accodato: SQLITE_CONSTRAINT_TRIGGER" }]);
+});
+
+test("revisione: scarto di una riga superata nel frattempo → nessuna riga d'audit", async () => {
+  const b = banco();
+  const vecchio = accoda(b.db, { tipo: "inventario", rif: null, json: '{"schema_versione":1,"n":1}', oggetti: 1 });
+  b.risposta.invio = () => {
+    // Mentre la vecchia fotografia viaggia ne arriva una nuova: la vecchia diventa `superato`.
+    accoda(b.db, { tipo: "inventario", rif: null, json: '{"schema_versione":1,"n":2}', oggetti: 2 });
+    return { status: 422, body: "{}" };
+  };
+  await giroCoda({ ...b.dip, chiama: async (r) => (r.percorso === "/api/ipam/ping" ? PING_OK : b.risposta.invio(r)) });
+  assert.equal(riga(b.db, vecchio.id).stato, "superato");
+  assert.deepEqual(b.audit, [], "nessuno scarto registrato per una riga che non è stata scartata");
+});

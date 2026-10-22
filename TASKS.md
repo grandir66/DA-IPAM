@@ -14,7 +14,7 @@ Livello leggero, approvato da Riccardo il 22/10 dopo 70151 (VLAN del router manc
 - [x] Verifica sul router 172.20.40.102: primo giro 15:00 italiane, letture 6/6 e 4/4 comandi, 19 VLAN, 26 VLAN di bridge, 1 bridge
 - [x] Pagina unica delle opzioni + job di serie: censimento (34 interruttori in 13 pagine), tavola approvata, spec e piano scritti
 - [x] Promote dev → main v0.9.873 (85662969), chiesto da Riccardo il 22/10
-- [ ] Esecuzione del piano [`2026-10-22-pagina-opzioni.md`](docs/superpowers/plans/2026-10-22-pagina-opzioni.md) (7 task, leggero) in una sessione nuova
+- [ ] Esecuzione del piano [`2026-10-22-pagina-opzioni.md`](docs/superpowers/plans/2026-10-22-pagina-opzioni.md) (9 task, leggero; 8 = aggiornamento che non retrocede + installatore, 9 = errore SSH) in una sessione nuova
 
 ## 2026-10-22 — LibreNMS come fonte di dati degli apparati SNMP
 

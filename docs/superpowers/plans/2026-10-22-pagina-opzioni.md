@@ -10,7 +10,7 @@ lettura e scrittura che esistono; due rotte (`GET /api/opzioni`, `PUT /api/opzio
 rimandi nelle pagine vecchie lo usano; il seme dei job sta in `applyTenantSchedulerDefaults`.
 **Spec:** `docs/superpowers/specs/2026-10-22-pagina-opzioni-design.md` · **Tavola:** https://claude.ai/artifact/MFg8HqVhyS4dEzwiDoo1LX
 **Livello di controllo:** leggero (deciso da Riccardo il 22/10/2026).
-**Stato:** approvato · **Ultimo aggiornamento:** 2026-10-22 16:00
+**Stato:** approvato · **Ultimo aggiornamento:** 2026-10-22 16:20 (aggiunti i Task 8 e 9 su richiesta di Riccardo)
 
 ## Vincoli globali
 
@@ -134,6 +134,58 @@ su PX01 172.20.40.191, `qm guest exec`): `systemctl start da-ipam-update`, versi
 conferma.
 **Verifica:** esiti scritti qui sotto nel Registro.
 **Commit:** la release.
+
+### [ ] Task 8 — L'aggiornamento non torna mai indietro, e l'installatore dichiara il ramo giusto
+
+Incidente del 22/10 (70151): l'installatore aveva messo il commit `f2207f44` di `dev` (v0.9.813) chiamando «main» il
+ramo locale; il primo giro di `da-ipam-update` puntava a `origin/main`, allora fermo a v0.3.322, e stava
+**retrocedendo** l'appliance: l'ha salvata solo una compilazione fallita. `main` è stato riallineato il 22/10
+(promote v0.9.873), ma la causa resta in due posti.
+
+**File (DA-IPAM):** modifica `scripts/auto-update.sh` (prima del `checkout -B`, riga ~81, e prima di delegare a
+`update.sh`); prova `src/lib/__tests__/auto-update-retrocessione.test.ts` che crea in una cartella temporanea un repo
+«origin» con due rami (`main` a 0.3.0, `dev` a 0.9.0) e un clone a 0.9.0, ed esegue lo script con
+`DA_INVENT_DIR`/`DA_INVENT_BRANCH` puntati lì (nessuna rete, nessun systemctl: lo script va reso eseguibile in prova con
+una variabile `DA_INVENT_UPDATE_PROVA=1` che salta build e restart, oppure si estrae la guardia in
+`scripts/lib/guardia-versione.sh` e si prova quella).
+**Cosa fare:** confronto di versione semver fra `package.json` dell'albero e `git show origin/$BRANCH:package.json`;
+se il ramo bersaglio è **più vecchio**: nessun checkout, riga `ERRORE: retrocessione rifiutata: installata vX, origin/<ramo>
+vY — scegli il canale giusto da Opzioni o allinea <ramo>`, uscita 1 (il servizio resta «failed» e l'allarme sui job
+fermi lo vede). Uguale o più nuovo: come oggi.
+**File (Deploy-Appliance, repo separato `~/Progetti/Domarc/Deploy-Appliance`):** `core/consolidated-installer.sh`
+righe ~185-225 e `lib/secrets.sh:137`: `DA_INVENT_BRANCH` si scrive dalla **stessa** variabile `branch` usata per il
+clone; nelle due strade `rsync` (sorgenti da `DA_IPAM_SRC` o da `/opt/da-ipam` del PVE) il ramo si legge dalla sorgente
+(`git -C <sorgente> rev-parse --abbrev-ref HEAD`, e se il commit non è contenuto in `origin/<quel ramo>` → `die` col
+motivo); niente più valore di ripiego «main» silenzioso. Prova in `tests/` col modello di `tests/test_app_stack.sh`.
+Push di Deploy-Appliance: chiedere a Riccardo (è ciò che scaricano i tecnici).
+**Verifica:** la prova di DA-IPAM vista fallire sullo script di oggi (retrocede) e passare dopo; `bash tests/<nuova>.sh`
+in Deploy-Appliance → exit 0; su 70151 `systemctl start da-ipam-update` con canale `dev` resta «Aggiornamento completato».
+**Commit:** «auto-update: rifiuta la retrocessione» (DA-IPAM) · «installatore: DA_INVENT_BRANCH dal ramo installato» (Deploy-Appliance).
+
+### [ ] Task 9 — Errore SSH che dice la causa vera
+
+Incidente del 22/10 (70151): il router MikroTik chiudeva la connessione prima di presentarsi (servizio SSH limitato
+ad altri indirizzi) e la pagina diceva «handshake SSH fallito… algoritmi crittografici legacy»: in
+`classifySshError` (`src/lib/devices/ssh-transport.ts`, ~righe 500-525) qualunque messaggio con «handshake» diventa
+`protocol_error` con quel suggerimento. Le credenziali erano giuste; si è perso tempo sulla pista sbagliata.
+
+**File:** modifica `src/lib/devices/ssh-transport.ts` (tipo `SshErrorKind`, riga ~102: aggiungere `"closed_by_remote"`;
+classificazione); il componente che mostra «Diagnostica SSH binding» / «dettagli» del test della credenziale (cercarlo
+con `rg -n "Diagnostica SSH" src`); prova `src/lib/devices/__tests__/ssh-transport-classifica.test.ts` (o il file di
+prova esistente di `classifySshError`, se c'è).
+**Cosa fare**, testi esatti (italiano, con l'indirizzo `target` come oggi):
+- `Connection lost before handshake` (e `kex_exchange_identification` / «closed by remote») → `closed_by_remote`:
+  «<target>: il dispositivo chiude la connessione prima di presentarsi.» · suggerimento «Controlla gli indirizzi
+  ammessi al servizio SSH del dispositivo (MikroTik: IP › Services › ssh › Available From) e il firewall in ingresso.»
+- `Timed out while waiting for handshake` → `connect_timeout`: «<target>: nessuna risposta SSH entro il tempo.» ·
+  «Porta 22 filtrata dal firewall, oppure il servizio SSH è spento.»
+- `Handshake failed: no matching …` → resta `protocol_error` con il suggerimento sugli algoritmi di oggi.
+- `raw` (testo grezzo della libreria, già in `SshErrorInfo`) visibile nei «dettagli» del test della credenziale, a
+  carattere piccolo, mai IP o utenti oltre a quelli che la riga mostra già.
+**Prove (prima del codice):** i tre messaggi grezzi danno i tre `kind` e i testi sopra; un messaggio sconosciuto resta
+`unknown` col grezzo.
+**Verifica:** la prova vista fallire sui due primi casi e poi verde; `npm test` verde.
+**Commit:** «SSH: il rifiuto del dispositivo non è più "algoritmi legacy"».
 
 ## Registro
 

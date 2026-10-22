@@ -298,6 +298,28 @@ export const INDICI_HOSTS_ARCHIVIO: ReadonlyArray<readonly [string, string]> = [
   ["idx_hosts_archivio_il", "CREATE INDEX idx_hosts_archivio_il ON hosts_archivio(archiviato_il)"],
 ];
 
+/** Ultimo esito per apparato dei job `apparati_scelti` (piano 2026-10-22 scansione automatica, Task 1): una riga per job e
+ *  apparato, niente storico. `stato` (ok | parziale | errore | escluso | saltato) e `motivo` (codici: TOLTO, SENZA_CREDENZIALE,
+ *  CREDENZIALE_NON_PROVATA, …) si validano nel codice, nessun CHECK: un codice nuovo non chiede una ricostruzione. Niente
+ *  chiavi esterne: la v11 ricostruisce `scheduled_jobs`; le righe di un job si cancellano con il job e gli orfani a ogni giro.
+ *  `giro_il` in UTC. Gemella di hosts_archivio: la tabella nasce anche dallo schema, l'indice solo nella migrazione
+ *  (`migraApparatiScelti`). */
+export const DDL_JOB_APPARATI_ESITI: ReadonlyArray<readonly [string, string]> = [
+  ["job_apparati_esiti", `CREATE TABLE IF NOT EXISTS job_apparati_esiti (
+  job_id INTEGER NOT NULL,
+  device_id INTEGER NOT NULL,
+  giro_il TEXT NOT NULL,
+  stato TEXT NOT NULL,
+  letture TEXT NOT NULL DEFAULT '{}',
+  motivo TEXT,
+  PRIMARY KEY (job_id, device_id))`],
+];
+export const INDICI_JOB_APPARATI_ESITI: ReadonlyArray<readonly [string, string]> = [
+  ["idx_job_apparati_esiti_device", "CREATE INDEX idx_job_apparati_esiti_device ON job_apparati_esiti(device_id)"],
+];
+export const SEGNO_APPARATI_SCELTI = "apparati_scelti_v21";
+export const VERSIONE_APPARATI_SCELTI = 1;
+
 /**
  * Pannello Zabbix in sola lettura (passo 7.4-7.5 del piano di solidità, 16/10; API del centro in DA-Zabbix,
  * `docs/2026-10-16-api-lettura-per-cliente-design.md`). Dati del cliente → DB del tenant.
@@ -1712,6 +1734,10 @@ ${DDL_TOPOLOGY_UNIONI.map(([, ddl]) => `${ddl};`).join("\n\n")}
 -- Archivio degli host tolti dalla pulizia (piano 2026-10-20). Stessa CREATE della migrazione
 -- runtime (migrateHostsArchivio in db-tenant.ts), che aggiunge gli indici.
 ${DDL_HOSTS_ARCHIVIO.map(([, ddl]) => `${ddl};`).join("\n\n")}
+
+-- Ultimo esito per apparato dei job apparati_scelti (piano 2026-10-22). Stessa CREATE della
+-- migrazione runtime (migraApparatiScelti in db-tenant.ts), che aggiunge l'indice.
+${DDL_JOB_APPARATI_ESITI.map(([, ddl]) => `${ddl};`).join("\n\n")}
 
 -- Controller di rete (UniFi, poi Omada): uno per riga, nel DB del cliente.
 -- Prima la configurazione era una sola, nelle impostazioni globali dell'hub

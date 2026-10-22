@@ -19,7 +19,7 @@ import { buildPatchFromHost, buildPatchFromDevice, buildSyncMerge, buildSourceLa
 import fs from "fs";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { LetturaVlanSwitch } from "./devices/snmp-vlan";
-import { DDL_SWITCH_VLAN_NATIVA, SEGNO_SWITCH_VLAN_NATIVA, VERSIONE_SWITCH_VLAN_NATIVA, DDL_SWITCH_VLAN_V1, SEGNO_SWITCH_VLAN, VERSIONE_SWITCH_VLAN, COLONNA_CLUSTER_PRINCIPALE, INDICE_CLUSTER_PRINCIPALE, SEGNO_CLUSTER_PRINCIPALE, VERSIONE_CLUSTER_PRINCIPALE, COLONNE_SCHEDA_MK_V1, DDL_HOSTS_ARCHIVIO, DDL_SCHEDA_MK_V2, DDL_SCHEDA_MK_V3, DDL_TOPOLOGY_CAVI, DDL_TOPOLOGY_UNIONI, INDICI_HOSTS_ARCHIVIO, INDICI_TOPOLOGY_UNIONI, TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL, SEGNO_SCHEDA_MK, VERSIONE_SCHEDA_MK } from "./db-tenant-schema";
+import { DDL_JOB_APPARATI_ESITI, INDICI_JOB_APPARATI_ESITI, SEGNO_APPARATI_SCELTI, VERSIONE_APPARATI_SCELTI, DDL_SWITCH_VLAN_NATIVA, SEGNO_SWITCH_VLAN_NATIVA, VERSIONE_SWITCH_VLAN_NATIVA, DDL_SWITCH_VLAN_V1, SEGNO_SWITCH_VLAN, VERSIONE_SWITCH_VLAN, COLONNA_CLUSTER_PRINCIPALE, INDICE_CLUSTER_PRINCIPALE, SEGNO_CLUSTER_PRINCIPALE, VERSIONE_CLUSTER_PRINCIPALE, COLONNE_SCHEDA_MK_V1, DDL_HOSTS_ARCHIVIO, DDL_SCHEDA_MK_V2, DDL_SCHEDA_MK_V3, DDL_TOPOLOGY_CAVI, DDL_TOPOLOGY_UNIONI, INDICI_HOSTS_ARCHIVIO, INDICI_TOPOLOGY_UNIONI, TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL, SEGNO_SCHEDA_MK, VERSIONE_SCHEDA_MK } from "./db-tenant-schema";
 import { HYPERVISOR_SYNC_MINUTES, PULIZIA_HOST_MINUTES, SCHEDULED_JOB_TYPES_CHECK_SQL } from "./scheduled-job-types";
 import { isProxmoxVeDevice } from "./devices/device-acquisition-resolve";
 import { macToHex, normalizeMac, normalizeMacForStorage } from "./utils";
@@ -355,6 +355,99 @@ export function migrateScheduledJobsV10(db: Database.Database): boolean {
     db.pragma("foreign_keys = ON");
   }
   return true;
+}
+
+/**
+ * Migrazione runtime v11 di `scheduled_jobs` (scansione automatica, piano 2026-10-22): il CHECK di `job_type` accetta
+ * `'apparati_scelti'`. Copia della v10 (CHECK dalla stessa costante dello schema, colonne copiate per nome, contatore
+ * AUTOINCREMENT conservato, tutto in una transazione con foreign_keys spento prima); cambia la guardia, e in più:
+ * - il numero di righe si conta prima e dopo la copia: se non torna si lancia e la transazione torna indietro;
+ * - indici e trigger della tabella si rileggono da sqlite_master prima e si ricreano tali e quali dopo (oggi c'è solo
+ *   `idx_scheduled_jobs_enabled_next`, che si ricrea comunque).
+ * Se qualcosa non riesce la tabella resta com'era e l'errore sale a `getTenantDb`, che lo registra e apre il tenant.
+ * Non crea nessun job: lo crea solo un admin da Discovery.
+ *
+ * Restituisce true se ha ricostruito, false se non c'era niente da fare.
+ * Esportata per le prove (`scheduled-jobs-v11.test.ts`).
+ */
+export function migrateScheduledJobsV11(db: Database.Database): boolean {
+  const row = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='scheduled_jobs'").get() as
+    | { sql?: string }
+    | undefined;
+  if (!row?.sql || row.sql.includes("'apparati_scelti'")) return false;
+
+  const present = new Set(
+    (db.prepare("PRAGMA table_info(scheduled_jobs)").all() as Array<{ name: string }>).map((c) => c.name),
+  );
+  const cols = SCHEDULED_JOBS_COLUMNS.filter((c) => present.has(c)).join(", ");
+  const conta = (t: string): number => (db.prepare(`SELECT COUNT(*) AS n FROM ${t}`).get() as { n: number }).n;
+
+  // PRAGMA foreign_keys non ha effetto dentro una transazione: si spegne prima.
+  db.pragma("foreign_keys = OFF");
+  try {
+    db.transaction(() => {
+      const seq = db.prepare("SELECT seq FROM sqlite_sequence WHERE name = 'scheduled_jobs'").get() as
+        | { seq: number }
+        | undefined;
+      const accessori = db
+        .prepare("SELECT sql FROM sqlite_master WHERE tbl_name = 'scheduled_jobs' AND type IN ('index', 'trigger') AND sql IS NOT NULL ORDER BY type, name")
+        .all() as Array<{ sql: string }>;
+      const prima = conta("scheduled_jobs");
+      db.exec("DROP TABLE IF EXISTS scheduled_jobs_v11");
+      db.exec(`CREATE TABLE scheduled_jobs_v11 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        network_id INTEGER REFERENCES networks(id) ON DELETE CASCADE,
+        job_type TEXT NOT NULL CHECK(${SCHEDULED_JOB_TYPES_CHECK_SQL}),
+        interval_minutes INTEGER NOT NULL DEFAULT 60,
+        last_run TEXT,
+        next_run TEXT,
+        enabled INTEGER DEFAULT 1,
+        config TEXT DEFAULT '{}',
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      )`);
+      db.exec(`INSERT INTO scheduled_jobs_v11 (${cols}) SELECT ${cols} FROM scheduled_jobs`);
+      const dopo = conta("scheduled_jobs_v11");
+      if (dopo !== prima) throw new Error(`v11: copiate ${dopo} righe di scheduled_jobs su ${prima}`);
+      if (seq) {
+        const upd = db.prepare("UPDATE sqlite_sequence SET seq = MAX(seq, ?) WHERE name = 'scheduled_jobs_v11'").run(seq.seq);
+        if (upd.changes === 0) {
+          db.prepare("INSERT INTO sqlite_sequence (name, seq) VALUES ('scheduled_jobs_v11', ?)").run(seq.seq);
+        }
+      }
+      db.exec("DROP TABLE scheduled_jobs");
+      db.exec("ALTER TABLE scheduled_jobs_v11 RENAME TO scheduled_jobs");
+      for (const a of accessori) db.exec(a.sql);
+      db.exec("CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_enabled_next ON scheduled_jobs(enabled, next_run)");
+    })();
+  } finally {
+    db.pragma("foreign_keys = ON");
+  }
+  return true;
+}
+
+/**
+ * Tabella degli esiti dei job `apparati_scelti` (piano 2026-10-22 scansione automatica, Task 1): la tabella (se lo schema
+ * non l'ha già creata) e il suo indice, solo se mancano. Additiva, idempotente, in UNA transazione; segno
+ * `apparati_scelti_v21` = `done:<data>:v1` una volta sola. Separata dalla v11: se fallisce, i job di oggi restano come sono.
+ * Restituisce i nomi degli oggetti aggiunti. Esportata per le prove (`scheduled-jobs-v11.test.ts`).
+ */
+export function migraApparatiScelti(db: Database.Database): string[] {
+  const added: string[] = [];
+  const c = db.prepare("SELECT 1 FROM sqlite_master WHERE type IN ('table', 'index') AND name = ?");
+  db.transaction(() => {
+    for (const [n, ddl] of [...DDL_JOB_APPARATI_ESITI, ...INDICI_JOB_APPARATI_ESITI]) {
+      if (c.get(n)) continue;
+      db.exec(ddl);
+      added.push(n);
+    }
+    const chiusa = `:v${VERSIONE_APPARATI_SCELTI}`;
+    const attuale = leggiSegno(db, SEGNO_APPARATI_SCELTI);
+    if (!(attuale?.startsWith("done:") && attuale.endsWith(chiusa))) {
+      scriviSegno(db, SEGNO_APPARATI_SCELTI, `done:${new Date().toISOString().slice(0, 10)}${chiusa}`);
+    }
+  })();
+  return added;
 }
 
 /**
@@ -1417,6 +1510,35 @@ export function getTenantDb(tenantCode: string): Database.Database {
     }
   } catch (e) {
     console.error(`[db-tenant] ${tenantCode}: migrazione pulizia_host fallita:`, e);
+  }
+
+  // Migrazione runtime v11: scheduled_jobs.job_type CHECK include 'apparati_scelti'
+  // (scansione automatica dei device scelti in Discovery, piano 2026-10-22). Dopo la v10.
+  // Se fallisce la tabella resta quella di prima (ROLLBACK) e il tenant si apre: i job
+  // apparati_scelti non si possono creare finché la v11 non passa a un'apertura dopo.
+  try {
+    const t0 = Date.now();
+    if (migrateScheduledJobsV11(newDb)) {
+      console.info(`[db-tenant] ${tenantCode}: scheduled_jobs CHECK aggiornato con 'apparati_scelti' (v11, ${Date.now() - t0} ms)`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione apparati_scelti (v11) fallita (ROLLBACK), scheduled_jobs invariata:`, e);
+  }
+
+  // Esiti dei job apparati_scelti (stesso piano): tabella e indice, solo se mancano, col segno. Se fallisce il tenant si
+  // apre lo stesso e il segno dice l'errore.
+  try {
+    const added = migraApparatiScelti(newDb);
+    if (added.length > 0) {
+      console.info(`[db-tenant] ${tenantCode}: esiti dei job apparati_scelti, aggiunto ${added.join(", ")}`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione esiti apparati_scelti fallita (ROLLBACK):`, e);
+    try {
+      scriviSegno(newDb, SEGNO_APPARATI_SCELTI, segnoErrore(e));
+    } catch (e2) {
+      console.error(`[db-tenant] ${tenantCode}: ${SEGNO_APPARATI_SCELTI}, segno non scritto:`, e2);
+    }
   }
 
   // Migrazione runtime: vuln_scanners.{cert_pin,cert_fingerprint} per

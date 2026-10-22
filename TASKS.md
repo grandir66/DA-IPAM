@@ -8,7 +8,7 @@ Piano: [`docs/superpowers/plans/2026-10-22-accorpamento-ip-e-vlan-switch.md`](do
 - [x] T1 blocco di «Rendi apparato» sul server (`apparatoGiaPresente`, 409, anche `/api/devices/bulk`)
 - [x] T2 blocco nella finestra, singolo e in blocco, con link all'apparato
 - [x] T3 principale del cluster (`physical_devices.primary_host_id`, segno `cluster_principale_v21`) + elenco per nome delle righe nascoste sulla copia dell'hub — v0.9.849; sull hub: 7 cluster, 17 righe da nascondere, tutti i principali sono IP di apparati; cluster 10 e 11 (iLO HPE + schede dello stesso server?) da confermare con Riccardo; migrazione 2 ms, integrity ok; revisione: approvato
-- [ ] T4 API di Discovery con il cluster, tempo misurato sulla copia (soglia +10 % o +50 ms)
+- [x] T4 API di Discovery con il cluster, tempo misurato sulla copia (soglia +10 % o +50 ms) — v0.9.850; tempo invariato sulla copia (36-43 ms prima, 39-41 dopo), risposta +0,4 %; principale offline resta principale (la riga non balla a ogni scansione)
 - [ ] T5 Discovery: secondari nascosti, «+N IP», ricerca sugli IP secondari, contatori spiegati
 - [ ] T6 «Scegli come principale» e scelta nel «Collega altro IP»
 - [ ] T7 lettore Q-BRIDGE con le uscite vere di SW-CED-48POE-242, SW-CED-16XG-241, SW-ING-ProMax-239

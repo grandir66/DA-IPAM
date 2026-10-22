@@ -95,6 +95,24 @@ export function testoDubbio(v: Extract<ValutazioneFonte, { esito: "dubbio" }>): 
   return `Acquisizione modulare: ${v.collector} vuole una credenziale ${v.richieste.map((p) => p.toUpperCase()).join(" o ")} assegnata all'apparato, e non ce n'è. Assegnala in «Credenziali» o scegli l'acquisizione di sempre in «Acquisizione modulare».`;
 }
 
+/** Un apparato saltato dalla scansione in blocco perché la fonte è in dubbio (decisione e di fine giro 2). */
+export interface DubbioSaltato {
+  id: number;
+  name: string;
+  motivo: Extract<ValutazioneFonte, { esito: "dubbio" }>["motivo"];
+  reason: string;
+}
+
+/**
+ * Per la scansione in blocco: null se l'apparato si acquisisce (percorso di sempre o collector pronto), altrimenti il
+ * dubbio da elencare nell'esito. Con l'interruttore spento non legge altro che l'interruttore.
+ */
+export function dubbioDaSaltare(device: ApparatoDaRiconoscere & { id: number; name: string }, deps: DipendenzeFonte): DubbioSaltato | null {
+  const v = valutaFonte(device, deps);
+  if (v.esito !== "dubbio") return null;
+  return { id: device.id, name: device.name, motivo: v.motivo, reason: testoDubbio(v) };
+}
+
 /** Id del catalogo validi per una scelta, più «classica». */
 export const SCELTE_AMMESSE: readonly string[] = [...COLLECTOR_IDS, SCELTA_CLASSICA];
 

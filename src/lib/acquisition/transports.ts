@@ -13,6 +13,8 @@ export { QSS_COMMANDS, PROCURVE_COMMANDS, COMWARE_COMMANDS } from "./comandi";
 type ConsoleProfile = AcquisitionInput['collector'];
 const commandSets: Record<ConsoleProfile, readonly string[]> = Object.fromEntries(CATALOGO.map(d => [d.id, d.comandi ?? []])) as unknown as Record<ConsoleProfile, readonly string[]>;
 const fail = <T>(data: T, code: string): ReadResult<T> => ({ status: "error", data, warnings: [code] });
+/** Codici dopo i quali una lettura exec in serie non prova i comandi rimasti (trasporto, limiti, permessi). */
+const EXEC_BATCH_STOP = ['SSH_CONNECT_FAILED', 'SSH_EXEC_TIMEOUT', 'SSH_CHANNEL_ERROR', 'SSH_EXEC_UNAVAILABLE', 'OUTPUT_LIMIT', 'PAGE_LIMIT', 'TOTAL_TIMEOUT', 'SSH_PERMISSION_DENIED', 'SSH_EXIT_STATUS_MISSING'];
 export function assertCommands(commands: readonly string[], profile: ConsoleProfile = 'qnap-switch'): void {
     const allowed: readonly string[] = commandSets[profile];
     if (!allowed || commands.length > allowed.length || commands.some(c => !allowed.includes(c)))
@@ -225,7 +227,8 @@ export function createTransports(input: AcquisitionInput, deps: TransportDeps = 
             assertCommands(commands, input.collector);
             if (!input.ssh || Date.now() >= deadline)
                 return Object.fromEntries(commands.map(c => [c, fail('', input.ssh ? 'TOTAL_TIMEOUT' : 'NO_SSH_CREDENTIAL')]));
-            if (input.collector === 'hp-comware') {
+            const modo = descrittore(input.collector).ssh_modo ?? 'console';
+            if (modo === 'exec_per_comando') {
                 const result: Record<string, ReadResult<string>> = {};
                 let aborted = false;
                 for (const command of commands) {
@@ -239,9 +242,31 @@ export function createTransports(input: AcquisitionInput, deps: TransportDeps = 
                     catch {
                         result[command] = fail('', 'SSH_CONNECT_FAILED');
                     }
-                    aborted = result[command].warnings.some(c => ['SSH_CONNECT_FAILED', 'SSH_EXEC_TIMEOUT', 'SSH_CHANNEL_ERROR', 'SSH_EXEC_UNAVAILABLE', 'OUTPUT_LIMIT', 'PAGE_LIMIT', 'TOTAL_TIMEOUT', 'SSH_PERMISSION_DENIED', 'SSH_EXIT_STATUS_MISSING'].includes(c));
+                    aborted = result[command].warnings.some(c => EXEC_BATCH_STOP.includes(c));
                 }
                 return result;
+            }
+            if (modo === 'exec') {
+                // Una connessione sola (un login), un canale exec per comando in sequenza; dopo un errore di trasporto i
+                // comandi rimasti non partono.
+                try {
+                    return await withSshClient({ host: input.host, ...input.ssh, timeout: Math.min(input.limits.timeout_ms, Math.max(1, deadline - Date.now())) }, async conn => {
+                        const result: Record<string, ReadResult<string>> = {};
+                        let aborted = false;
+                        for (const command of commands) {
+                            if (aborted || Date.now() >= deadline) {
+                                result[command] = fail('', aborted ? 'SSH_BATCH_ABORTED' : 'TOTAL_TIMEOUT');
+                                continue;
+                            }
+                            result[command] = await readExec(conn, command, input.limits, deadline);
+                            aborted = result[command].warnings.some(c => EXEC_BATCH_STOP.includes(c));
+                        }
+                        return result;
+                    });
+                }
+                catch {
+                    return Object.fromEntries(commands.map(c => [c, fail('', 'SSH_CONNECT_FAILED')]));
+                }
             }
             try {
                 return await withSshClient({ host: input.host, ...input.ssh, timeout: Math.min(input.limits.timeout_ms, Math.max(1, deadline - Date.now())) }, conn => new Promise<Record<string, ReadResult<string>>>(resolve => {

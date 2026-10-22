@@ -5,7 +5,7 @@
  * Una famiglia nuova si aggiunge qui, in `index.ts` (la funzione `collect`) e in `__tests__/contratto-fixture.ts`
  * (la fixture): la prova di contratto fallisce se manca uno dei tre. Guida: docs/modules/acquisition.md.
  */
-import { QSS_COMMANDS, PROCURVE_COMMANDS, COMWARE_COMMANDS } from "./comandi";
+import { QSS_COMMANDS, PROCURVE_COMMANDS, COMWARE_COMMANDS, QNAP_NAS_COMMANDS } from "./comandi";
 
 export type ProtocolloCollector = "snmp" | "ssh" | "api" | "winrm";
 export type StatoCollaudo = "collaudato" | "non_collaudato";
@@ -24,6 +24,12 @@ export interface DescrittoreCollector {
     sezioni: readonly string[];
     /** Allowlist dei comandi di console; `null` se il collector non usa comandi liberi (API, script fissi). */
     comandi: readonly string[] | null;
+    /**
+     * Come si leggono i comandi via SSH: `console` (shell interattiva col prompt, il default), `exec` (un canale exec per
+     * comando sulla stessa connessione: shell Unix), `exec_per_comando` (una connessione per comando: Comware, RouterOS,
+     * come fa l'app di sempre). Assente = `console`.
+     */
+    ssh_modo?: "console" | "exec" | "exec_per_comando";
     /** Script PowerShell fissi per WinRM, per id (mai testo dall'input). Assente = il collector non usa WinRM. */
     script_winrm?: Readonly<Record<string, string>>;
     collaudo: StatoCollaudo;
@@ -48,7 +54,7 @@ export const CATALOGO = [
     {
         id: "hp-comware", versione: "1.0.0", famiglia: "switch", prodotti: ["HPE FlexFabric (Comware)"],
         credenziali: { ammesse: ["snmp", "ssh"], una_di: ["snmp", "ssh"] },
-        sezioni: [...switchSezioni, "hardware", "modules", "resources", "environment"], comandi: COMWARE_COMMANDS, collaudo: "collaudato",
+        sezioni: [...switchSezioni, "hardware", "modules", "resources", "environment"], comandi: COMWARE_COMMANDS, ssh_modo: "exec_per_comando", collaudo: "collaudato",
         collaudati: [{ modello: "HPE FlexFabric 5700", firmware: "Comware 7.1.045 Release 2432P06", nota: "IRF a quattro membri; alcune tabelle SNMP parziali" }],
     },
     {
@@ -60,6 +66,13 @@ export const CATALOGO = [
         id: "netapp-ontap", versione: "1.0.0", famiglia: "storage", prodotti: ["NetApp ONTAP (REST, anche MetroCluster)"],
         credenziali: { ammesse: ["api"], una_di: ["api"] },
         sezioni: ["identity", "interfaces", "vlans", "network", "storage"], comandi: null, collaudo: "collaudato", collaudati: [{ modello: "NetApp AFF A70", firmware: "ONTAP 9.16.1P11", nota: "MetroCluster IP" }],
+    },
+    {
+        // Non collaudato: parser e fixture dalla forma documentata (DADude3 qnap.py), nessun QNAP NAS vero letto.
+        id: "qnap-nas", versione: "0.1.0", famiglia: "nas", prodotti: ["QNAP NAS (QTS, QuTS hero)"],
+        credenziali: { ammesse: ["ssh"], una_di: ["ssh"] },
+        sezioni: ["identity", "system", "interfaces", "network", "resources", "host_storage", "shares", "software"], comandi: QNAP_NAS_COMMANDS, ssh_modo: "exec",
+        collaudo: "non_collaudato", collaudati: [],
     },
 ] as const satisfies readonly DescrittoreCollector[];
 

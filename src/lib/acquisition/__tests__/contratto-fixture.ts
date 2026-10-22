@@ -79,6 +79,45 @@ const esxiReq: AcquisitionRequest = { collector: "vmware-esxi", host: "192.0.2.4
 const ontapRaw = (): OntapInventory => { const raw = Object.fromEntries(Object.keys(ONTAP_ENDPOINTS).map(k => [k, { status: "ok", data: [], warnings: [] }])) as unknown as OntapInventory; raw.cluster.data = [{ uuid: "cluster-1", name: `cl-${SEGRETO}`, version: { full: "NetApp Release 9.16.1" } }]; return raw; };
 const ontapReq: AcquisitionRequest = { collector: "netapp-ontap", host: "192.0.2.5", api: { username: "lab", password: SEGRETO, tls_sha256: PIN } };
 
+/**
+ * Un collector di sistema letto via shell exec (un'apertura sola per tutti i comandi): uscite di `uscita(comando)`,
+ * `garbage` per il formato ignoto. Senza `senzaSsh`: SSH è l'unica credenziale ammessa.
+ */
+function perExec(richiesta: AcquisitionRequest, uscita: (comando: string) => string, identita: readonly string[]): FixtureCollector {
+    const esegui = async (risposta: (c: string) => string, guasto = false): Promise<Esito> => {
+        let chiamate = 0;
+        const t: AcquisitionTransports = {
+            get: async () => { throw Error(SEGRETO); }, walk: async () => { throw Error(SEGRETO); },
+            shell: async comandi => { chiamate++; if (guasto) throw Error(SEGRETO); return Object.fromEntries(comandi.map(c => [c, ok(risposta(c))])); },
+        };
+        const snapshot = await collectDevice(richiesta, t);
+        return { snapshot, chiamateShell: chiamate };
+    };
+    return {
+        richiesta,
+        normale: () => esegui(uscita),
+        formatoIgnoto: () => esegui(c => (identita.includes(c) ? uscita(c) : GARBAGE(c))),
+        trasportoGuasto: () => esegui(uscita, true),
+    };
+}
+
+// QNAP NAS (forma da DADude3 qnap.py e dalla documentazione QTS; dati inventati).
+const qnapNasUscite: Record<string, string> = {
+    "getsysinfo model": "TS-LAB4\n", "getsysinfo serial": "LABQ0001\n", "getsysinfo firmver": "5.1.5\n", "cat /etc/version": "5.1.5\n",
+    "cat /etc/default_config/WEBAPP.build": "20240101\n", "cat /etc/platform.conf": "Platform = LAB\nDISPLAY_NAME = TS-LAB4\n",
+    "hostname": `nas-${SEGRETO}\n`, "uname -srm": "Linux 5.10.60-qnap x86_64\n", "cat /proc/uptime": "3600.50 7000.10\n",
+    "cat /proc/meminfo": "MemTotal:        8000000 kB\nMemFree:          100000 kB\nMemAvailable:    4000000 kB\n",
+    "ip -o link show": "1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN mode DEFAULT group default qlen 1000\\    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00\n2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc mq state UP mode DEFAULT group default qlen 1000\\    link/ether 02:00:00:00:10:01 brd ff:ff:ff:ff:ff:ff\n",
+    "ip -o -4 addr show": "2: eth0    inet 192.0.2.40/24 brd 192.0.2.255 scope global eth0\\       valid_lft forever preferred_lft forever\n",
+    "df -P -k": "Filesystem           1024-blocks      Used Available Capacity Mounted on\n/dev/mapper/cachedev1 9000000000 1000000000 8000000000  11% /share/CACHEDEV1_DATA\n",
+    "df -P -i": "Filesystem              Inodes   IUsed     IFree IUse% Mounted on\n/dev/mapper/cachedev1 300000000  20000 299980000    1% /share/CACHEDEV1_DATA\n",
+    "cat /etc/config/smb.conf": "[global]\nworkgroup = LAB\n[Public]\npath = /share/CACHEDEV1_DATA/Public\ncomment = Cartella di prova\npublic = yes\n",
+    "cat /etc/exports": "\"/share/CACHEDEV1_DATA/Public\" 192.0.2.0/24(rw,async,no_subtree_check)\n",
+    "cat /etc/config/qpkg.conf": "[HybridBackup]\nName = HybridBackup\nVersion = 3.0.0\nAuthor = QNAP Systems, Inc.\nEnable = TRUE\n",
+};
+const qnapNasReq: AcquisitionRequest = { collector: "qnap-nas", host: "192.0.2.40", ssh: { username: "lab", password: SEGRETO } };
+export const QNAP_NAS_USCITE = qnapNasUscite;
+
 export const FIXTURE: Record<CollectorId, FixtureCollector> = {
     "qnap-switch": conGarbage(perShell(qnapReq, consola({ identita: { "show system-information": qnapIdent } }, qnapNormale)), { "show system-information": qnapIdent }, undefined),
     "hp-procurve": conGarbage(perShell(procurveReq, consola({ identita: procurveIdent, snmp: procurveSnmp }, procurveNormale)), procurveIdent, procurveSnmp),
@@ -88,6 +127,7 @@ export const FIXTURE: Record<CollectorId, FixtureCollector> = {
         normale: async () => ({ snapshot: await collectVmwareEsxi(esxiReq, async () => esxiRaw()), chiamateShell: 0 }),
         trasportoGuasto: async () => ({ snapshot: await collectVmwareEsxi(esxiReq, async () => { throw Error(SEGRETO); }), chiamateShell: 0 }),
     },
+    "qnap-nas": perExec(qnapNasReq, c => qnapNasUscite[c] ?? "", ["getsysinfo model", "getsysinfo firmver", "cat /etc/version", "cat /etc/default_config/WEBAPP.build"]),
     "netapp-ontap": {
         richiesta: ontapReq,
         normale: async () => ({ snapshot: await collectNetappOntap(ontapReq, async () => ontapRaw()), chiamateShell: 0 }),

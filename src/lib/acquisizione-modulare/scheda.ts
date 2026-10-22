@@ -12,7 +12,7 @@ export const NOMI_SEZIONI: Readonly<Record<string, string>> = {
   spanning_tree: "Spanning tree", aggregation: "Aggregazioni", poe: "PoE", sensors: "Sensori", network: "Indirizzi e ARP",
   hardware: "Hardware", modules: "Moduli", resources: "Risorse", environment: "Ambiente", storage: "Storage",
   virtualization: "Virtualizzazione", system: "Sistema", host_storage: "Dischi dell'host", software: "Software",
-  services: "Servizi", security: "Sicurezza",
+  services: "Servizi", security: "Sicurezza", shares: "Cartelle condivise",
 };
 
 /** Avvisi più comuni in parole; gli altri si mostrano col solo codice. */

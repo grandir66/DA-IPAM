@@ -24,3 +24,5 @@ export const securitySchema = z.object({
     antivirus: z.array(z.object({ product: z.string(), enabled: b, real_time_protection: b, signatures_up_to_date: b })),
     firewall_profiles: z.array(z.object({ name: z.string(), enabled: b, default_inbound: s, default_outbound: s })),
 });
+/** Cartelle condivise di un NAS o di un server (SMB, NFS...). `path` è il percorso sul sistema, non un URL. */
+export const sharesSchema = z.array(z.object({ name: z.string(), path: s, protocols: z.array(z.enum(["smb", "nfs", "afp", "ftp", "other"])), comment: s, public: b }));

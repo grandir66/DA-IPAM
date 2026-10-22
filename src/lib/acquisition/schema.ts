@@ -3,7 +3,7 @@ import {ontapStorageSchema} from "./ontap-schema";
 import { virtualizationSchema } from "./vmware-schema";
 import { COLLECTOR_IDS, descrittore } from "./catalogo";
 import { SNMP_V3_AUTH_PROTOCOLS, SNMP_V3_PRIV_PROTOCOLS, SNMP_V3_SECURITY_LEVELS } from "../protocols/snmp-sessione";
-import { systemSchema, hostStorageSchema, softwareSchema, servicesSchema, securitySchema } from "./sistema-schema";
+import { systemSchema, hostStorageSchema, softwareSchema, servicesSchema, securitySchema, sharesSchema } from "./sistema-schema";
 const port = z.number().int().min(1).max(65535);
 const secret = z.string().min(1).max(16384);
 export const acquisitionInputSchema = z.object({
@@ -42,6 +42,7 @@ export const snapshotSchema = z.object({
     software: section(softwareSchema).optional(),
     services: section(servicesSchema).optional(),
     security: section(securitySchema).optional(),
+    shares: section(sharesSchema).optional(),
     modules: section(z.array(z.object({ slot: z.string(), description: nullableString, model: nullableString, serial_number: nullableString, status: nullableString, software_revision: nullableString.optional(), subslot: nullableNumber.optional() }))).optional(),
     hardware: section(z.array(z.object({ entity_index: z.number().int(), parent_index: nullableNumber, position: nullableNumber, class_code: nullableNumber, name: nullableString, description: nullableString, model: nullableString, serial_number: nullableString, manufacturer: nullableString, hardware_revision: nullableString, firmware_revision: nullableString, software_revision: nullableString, alias: nullableString, asset_tag: nullableString, replaceable: z.boolean().nullable() }))).optional(),
     resources: section(z.object({ cpu_percent: nullableNumber, memory_total_bytes: nullableNumber, memory_free_bytes: nullableNumber, instances: z.array(z.object({ slot: z.string(), cpu_percent: nullableNumber, memory_total_bytes: nullableNumber, memory_free_bytes: nullableNumber })).optional() })).optional(),

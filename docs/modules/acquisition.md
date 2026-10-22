@@ -396,6 +396,23 @@ anche la lista dei remote_hosts.
 Riferimenti: [MetroCluster nodes](https://docs.netapp.com/us-en/ontap-restapi/get-cluster-metrocluster-nodes.html),
 [ONTAP API reference](https://github.com/NetAppDocs/ontap-automation/blob/main/reference/api_reference.adoc).
 
+## Collector qnap-nas (non collaudato)
+
+QNAP NAS con QTS o QuTS hero, letto via **SSH exec** (`ssh_modo: "exec"`: un login, un canale per comando, nessun
+`sudo`), allowlist `QNAP_NAS_COMMANDS`. Distinto da `qnap-switch`.
+
+- **identity**: modello da `getsysinfo model` (poi `DISPLAY_NAME` di `/etc/platform.conf`), seriale da
+  `getsysinfo serial`, firmware come nel percorso storico corretto (S2, `devices/nas/qnap-versione.ts`):
+  `getsysinfo firmver` o `/etc/version` più la build. **Mai** l'`uname`: il kernel va in `system.kernel`.
+- **system**, **resources** (memoria da `/proc/meminfo`), **interfaces** e **network** (`ip -o link`,
+  `ip -o -4 addr`), **host_storage** (solo filesystem da `df -P -k` e `df -P -i`, colonne per nome; dischi e RAID
+  non letti: sezione `partial`), **shares** (nuova sezione opzionale: `smb.conf` più `/etc/exports`, unite per
+  percorso), **software** (pacchetti da `/etc/config/qpkg.conf`). Le sezioni da switch sono `unsupported`.
+- Un apparato che non risponde come QNAP (`getsysinfo` assente) dà `error` e nessuna sezione letta.
+- **Non collaudato**: fixture inventate con la forma documentata (DADude3 `qnap.py:176,193,779`). Non è nel
+  riconoscimento del prodotto (`riconosci.ts`): si usa dalla CLI finché un QNAP vero non l'ha letto. Da verificare
+  al collaudo: percorso di `smb.conf` e `qpkg.conf` sul firmware vero, `ip` e `df -i` di BusyBox.
+
 ## Aggiungere una famiglia
 
 Una famiglia è un collector con lo stesso contratto JSON 1.0. Il catalogo è l'**unico elenco**: l'enum

@@ -49,6 +49,8 @@ export function readExec(conn: Pick<Client, 'exec'>, command: string, limits: Ac
                     finish('unsupported', ['COMMAND_UNSUPPORTED']);
                 else if (code === 0)
                     finish('ok', []);
+                else if (code === 127)
+                    finish('unsupported', ['COMMAND_UNSUPPORTED']); // shell Unix: comando assente su questo sistema
                 else if (code === undefined)
                     finish('partial', ['SSH_EXIT_STATUS_MISSING']);
                 else

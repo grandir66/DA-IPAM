@@ -54,6 +54,7 @@ import {
   type SceltaTokenApi,
 } from "./credentials/resolve";
 import { accessoSshDb, communityDb, coppiaLoginDb, coppiaSshDb, type AccessoSsh, type EsitoAccessoSsh } from "./credentials/segreti";
+import { CAMPI_HOST, CAMPI_IDENTITA, CAMPI_PORTA, type CampoHost, type CampoPorta, type ModifichePorte, type PortaAttuale } from "./acquisition/proiezioni";
 import { aggiornaCredenzialeDb, creaCredenzialeDb, eliminaCredenzialeDb, type ColonneCredenziale } from "./credentials/archivio";
 import { aggiungiAllaListaReteDb, copiaListaReteDb, sostituisciListaReteDb } from "./credentials/lista-rete";
 import type { ControllerKind, ControllerRunKind, ControllerRunStoredTrigger, MetodoVoceController, NetworkControllerRow } from "./controllers/types";
@@ -5423,10 +5424,11 @@ export interface DbNeighborEntry {
 /**
  * Chi ha scritto una riga dei vicini. `device` e `unifi` sono quelle che leggono il modello di oggi e l'attribuzione
  * (NEIGHBORS_MODEL_SOURCES_SQL); `ssh` (switch MikroTik nel giro), `snmp` (switch non del controller) e `host` (`lldpcli`
- * sugli hypervisor) sono le fonti nuove di T2 (spec §13.5.7): le legge solo il modello per cavo. La colonna non ha
- * vincoli (db-tenant-schema.ts): non serve schema.
+ * sugli hypervisor) sono le fonti nuove di T2 (spec §13.5.7): le legge solo il modello per cavo. `collector` (acquisizione
+ * modulare, piano 2026-10-21 C2, decisione D4) è il vicino letto da un collector JSON 1.0: anche lui solo per il modello
+ * per cavo. La colonna non ha vincoli (db-tenant-schema.ts): non serve schema.
  */
-export type NeighborSource = "device" | "unifi" | "ssh" | "snmp" | "host";
+export type NeighborSource = "device" | "unifi" | "ssh" | "snmp" | "host" | "collector";
 
 /**
  * Le colonne nuove dei vicini (spec §13.5.7): l'elenco letto di `discovered-by`, gli indici delle due porte quando il
@@ -5832,7 +5834,8 @@ export function contaBridgeMikrotik(deviceId: number): { bridge: number; letto_i
 }
 
 /** Chi ha letto i fatti (spec §13.5.7): il lettore, mai la marca. */
-export type FonteFatti = "device" | "controller" | "snmp" | "host";
+/** `collector`: fatti di porta letti da un collector JSON 1.0 (acquisizione modulare, decisione D4), solo istanza 0/CIST. */
+export type FonteFatti = "device" | "controller" | "snmp" | "host" | "collector";
 
 /**
  * Un fatto di porta come lo scrive un lettore. `port_key`: «i:<indice>» se l'indice è noto, altrimenti «n:<nome
@@ -10877,4 +10880,62 @@ export function ultimiValoriScrittiDaCollector(deviceId: number, destinazione: s
        SELECT MAX(id) FROM acquisition_changes WHERE device_id = ? AND destinazione = ? AND esito = 'scritto' GROUP BY campo)`,
   ).all(deviceId, destinazione) as Array<{ campo: string; dopo: string | null }>;
   return new Map(righe.map((r) => [r.campo, r.dopo]));
+}
+
+/** Le porte dell'apparato con i soli campi che la proiezione dei collector conosce (`acquisition/proiezioni`). */
+export function portePerProiezione(deviceId: number): PortaAttuale[] {
+  return db().prepare(`SELECT port_index, port_name, ${CAMPI_PORTA.join(", ")} FROM switch_ports WHERE device_id = ? ORDER BY port_index`)
+    .all(deviceId) as PortaAttuale[];
+}
+
+/**
+ * Scrive le porte PER CAMPO (scoperta 5 del piano, C2.2): un campo assente dalle modifiche resta com'è, `null` si scrive
+ * (letto e vuoto); una porta si toglie solo se la proiezione lo dice (sezione `interfaces` con stato `ok`). Colonne da un
+ * elenco chiuso (`CAMPI_PORTA`), mai dal dato. `upsertSwitchPorts`, che UniFi e SNMP usano, non cambia. Chi chiama apre la
+ * transazione (l'applicazione di uno snapshot è una sola).
+ */
+export function scriviPortePerCampo(deviceId: number, m: ModifichePorte): void {
+  const d = db();
+  const ammessa = (c: string): c is CampoPorta => (CAMPI_PORTA as readonly string[]).includes(c);
+  for (const u of m.aggiorna) {
+    const cols = Object.keys(u.campi).filter(ammessa);
+    if (cols.length === 0) continue;
+    d.prepare(`UPDATE switch_ports SET ${cols.map((c) => `${c} = ?`).join(", ")}, timestamp = datetime('now') WHERE device_id = ? AND port_index = ?`)
+      .run(...cols.map((c) => u.campi[c] ?? null), deviceId, u.port_index);
+  }
+  for (const a of m.aggiungi) {
+    const cols = Object.keys(a.campi).filter(ammessa);
+    d.prepare(`INSERT INTO switch_ports (device_id, port_index, port_name${cols.map((c) => `, ${c}`).join("")}) VALUES (?, ?, ?${cols.map(() => ", ?").join("")})`)
+      .run(deviceId, a.port_index, a.port_name, ...cols.map((c) => a.campi[c] ?? null));
+  }
+  const del = d.prepare("DELETE FROM switch_ports WHERE device_id = ? AND port_index = ?");
+  for (const t of m.togli) del.run(deviceId, t.port_index);
+}
+
+/** L'host abbinato all'apparato come lo trova `syncDeviceToHost` (stesso IP), coi campi che l'apparato gli passa. */
+export function hostPerProiezione(deviceId: number): ({ id: number } & Record<CampoHost, string | null>) | null {
+  return (db().prepare(
+    `SELECT h.id, h.model, h.firmware, h.serial_number FROM network_devices nd JOIN hosts h ON h.ip = nd.host WHERE nd.id = ? ORDER BY h.id LIMIT 1`,
+  ).get(deviceId) as ({ id: number } & Record<CampoHost, string | null>) | undefined) ?? null;
+}
+
+/** Campi dell'apparato o dell'host dalla proiezione dell'identità. Elenchi chiusi. */
+export function scriviCampiIdentita(tabella: "network_devices" | "hosts", id: number, campi: ReadonlyArray<{ campo: string; dopo: string }>): void {
+  const ammessi: readonly string[] = tabella === "network_devices" ? CAMPI_IDENTITA : CAMPI_HOST;
+  const ok = campi.filter((c) => ammessi.includes(c.campo));
+  if (ok.length === 0) return;
+  const extra = tabella === "network_devices" ? ", last_info_update = datetime('now')" : "";
+  db().prepare(`UPDATE ${tabella} SET ${ok.map((c) => `${c.campo} = ?`).join(", ")}, updated_at = datetime('now')${extra} WHERE id = ?`)
+    .run(...ok.map((c) => c.dopo), id);
+}
+
+export function inserisciModificheAcquisizione(snapshotId: number, deviceId: number, righe: readonly ModificaAcquisizione[]): void {
+  const ins = db().prepare("INSERT INTO acquisition_changes (snapshot_id, device_id, destinazione, chiave, campo, prima, dopo, esito) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+  for (const r of righe) ins.run(snapshotId, deviceId, r.destinazione, r.chiave, r.campo, r.prima, r.dopo, r.esito);
+}
+
+/** Le chiavi dei vicini dell'apparato già scritti, di qualunque fonte: per dire quali vicini sono nuovi. */
+export function chiaviViciniApparato(deviceId: number): Set<string> {
+  const righe = db().prepare("SELECT local_port, remote_device_name, remote_port FROM device_neighbors WHERE device_id = ?").all(deviceId) as Array<{ local_port: string; remote_device_name: string; remote_port: string }>;
+  return new Set(righe.map((r) => `${r.local_port}\u0000${r.remote_device_name}\u0000${r.remote_port}`));
 }

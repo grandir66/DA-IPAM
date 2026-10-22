@@ -1,6 +1,6 @@
 /**
  * Esecuzione di un'acquisizione con collector (C1.2-C1.3): richiesta costruita nel backend dalle voci della fonte, un
- * tentativo solo, snapshot salvato anche in errore, nessun segreto nel DB, lucchetto per apparato.
+ * tentativo solo, snapshot salvato anche in errore, nessun segreto nel DB, lucchetto per apparato, apparato popolato.
  *
  * Run: DA_INVENT_DATA_DIR="$(mktemp -d)" node --import tsx --test src/lib/acquisizione-modulare/__tests__/esegui.test.ts
  */
@@ -148,13 +148,15 @@ describe("eseguiAcquisizioneModulare", () => {
     });
   });
 
-  it("niente scritture fuori dall'archivio in questa tappa (porte, vicini, identità invariati)", () => {
+  it("lo snapshot letto popola l'apparato (C2): porte, firmware e modifiche registrate con lo snapshot", () => {
     withTenant(T, () => {
       const d = getTenantDb(T);
       const n = (sql: string) => (d.prepare(sql).get() as { n: number }).n;
-      assert.equal(n("SELECT COUNT(*) AS n FROM switch_ports"), 0);
-      assert.equal(n("SELECT COUNT(*) AS n FROM device_neighbors"), 0);
-      assert.equal((d.prepare("SELECT model FROM network_devices WHERE id = ?").get(dev) as { model: string | null }).model, null);
+      assert.equal(n("SELECT COUNT(*) AS n FROM switch_ports"), 2, "le due porte lette");
+      assert.equal((d.prepare("SELECT firmware FROM network_devices WHERE id = ?").get(dev) as { firmware: string | null }).firmware, "YC.16.11.0020");
+      assert.ok(n("SELECT COUNT(*) AS n FROM acquisition_changes c JOIN acquisition_snapshots s ON s.id = c.snapshot_id") > 0);
+      const json = JSON.stringify(d.prepare("SELECT * FROM acquisition_changes").all());
+      assert.ok(!json.includes(SEGRETO) && !json.includes(COMMUNITY), "nessun segreto nelle modifiche");
     });
   });
 });

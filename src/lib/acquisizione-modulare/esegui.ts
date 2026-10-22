@@ -12,6 +12,7 @@ import { acquisitionInputSchema, collectDevice, type AcquisitionRequest, type Ac
 import { redactSnapshot } from "@/lib/acquisition/redact";
 import { getCurrentTenantCode } from "@/lib/db-tenant";
 import { salvaSnapshot, type CredenzialiUsate } from "./archivio";
+import { applicaSnapshot, type EsitoApplicazione } from "./applica";
 import { costruisciRichiesta, type ApparatoPerRichiesta, type LettoreSegreto } from "./richiesta";
 import { snapshotDiErrore } from "./snapshot-errore";
 import type { CredenzialiProposte } from "./fonte";
@@ -52,6 +53,8 @@ export interface EsitoEsecuzione {
   snapshotId: number;
   status: AcquisitionSnapshot["status"];
   sezioni: Record<string, string>;
+  /** Cosa è cambiato nell'apparato; null se lo snapshot è in errore (non si applica niente). */
+  applicazione: EsitoApplicazione | null;
   /** Codice dell'errore prima o durante la lettura (richiesta, eccezione); null se il collector ha risposto. */
   errore: string | null;
 }
@@ -105,7 +108,12 @@ export async function eseguiAcquisizioneModulare(p: ParametriEsecuzione, deps: D
     const sezioni = Object.fromEntries(Object.entries(snapshot).filter(([, v]) => v && typeof v === "object" && "status" in (v as object))
       .map(([k, v]) => [k, (v as { status: string }).status]));
     log(`${snapshot.status === "ok" ? "✓" : snapshot.status === "partial" ? "▲" : "✕"} Snapshot #${snapshotId} salvato (${snapshot.status})`);
-    return { snapshotId, status: snapshot.status, sezioni, errore };
+    let applicazione: EsitoApplicazione | null = null;
+    if (snapshot.status !== "error") {
+      applicazione = applicaSnapshot(p.deviceId, snapshotId, snapshot);
+      log(`✓ Apparato aggiornato: ${applicazione.scritte} modifiche, ${applicazione.manuali} valori a mano lasciati${applicazione.ignorate.length ? `, sezioni non usate: ${applicazione.ignorate.map((x) => `${x.sezione} (${x.stato})`).join(", ")}` : ""}`);
+    }
+    return { snapshotId, status: snapshot.status, sezioni, applicazione, errore };
   } finally {
     lasciaLucchetto(p.deviceId);
   }

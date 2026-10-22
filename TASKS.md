@@ -1,5 +1,16 @@
 # TASKS — DA-IPAM
 
+## 2026-10-22 sera — elenco degli aperti verificato su origin (18:30)
+
+Riccardo ha chiesto di valutare l'elenco «cose da fare» della sessione «VLAN VMware in da-ipam». Confronto con i rami su origin alle 18:30 italiane:
+
+- [x] MAC virtuali: non aspetta più nessuno, è in `dev` dalla v0.9.876 (voce S3 qui sotto chiusa).
+- [x] Invio diretto all'hub con l'inventario: le regole ci sono (`DA-Vul-can/docs/operativo/contratto-ipam-hub.md`), A-IPAM è in v0.9.872, A-Link S7-S12a in esercizio; il primo inventario di 70791 è arrivato all'hub alle 16:18. Restano: il primo AD Health automatico (al prossimo controllo AD Health, vedi TASKS di DA-Link S12b) e A3 sull'hub (rotta e report dell'inventario, nessun piano ancora).
+- [x] CIDR vero nei documenti: fatto in DA-Vul-can (`nome-rete.ts`, «LAN BASE · 172.16.0.0/17»).
+- [ ] Collector modulari: il giro 7 (riga in Opzioni per l'acquisizione con i collector, Proxmox agganciato al pulsante) è su `origin/collector-modulari` ma **non in `dev`**: 5 commit da unire, `dev` intanto è andato avanti di 4 (v0.9.877-878). Poi le due prove sull'hub scritte nella sezione «giro 7».
+- [ ] Controller UniFi: decisione di Riccardo fra (a) lasciarlo strumento da CLI, (b) fotografia per apparato dalla stessa lettura della sincronizzazione, (c) radio e client (sezione «giro 7» su `collector-modulari`).
+- Restano aperti come scritti: collaudo HP della sede nuova (e lì si vede se «ArubaOS» è ArubaOS-Switch o AOS-CX), misure sul DB dell'hub, SSH rifiutato sugli Ubiquiti, NAS da ricollaudare, letture SNMP Comware incomplete (forse la stessa causa di VLAN e porte taggate mancanti). Rinviati di proposito: firmware e modelli in più, PoE/ottiche/sensori, LLDP, aggancio all'interfaccia per Comware, ProCurve, QNAP, VMware e NetApp.
+
 ## 2026-10-21 — S3, un elenco solo dei MAC virtuali (ramo `s3-mac-virtuali`)
 
 Piano: `docs/superpowers/plans/2026-10-21-recupero-dadude3-mknet.md` (ramo `collector-modulari`), blocco S3, controllo completo.
@@ -8,7 +19,7 @@ Piano: `docs/superpowers/plans/2026-10-21-recupero-dadude3-mknet.md` (ramo `coll
 - [x] `devices/mac-virtuali.ts` puro; `topology/identity.ts` e `devices/physical-device-db.ts` lo usano (riesportato, chiamanti invariati).
 - [x] Prove di topologia, apparati e MeshCentral: 1292 verdi; `tsc` e lint verdi.
 - [x] Misura in sola lettura sui DB dell'hub: 0 MAC cambiano esito (oltre 13 milioni letti).
-- [ ] Riccardo: unire in `dev` e rilasciare (`version:release`) quando decide; facoltativa la stessa misura sull'appliance del cliente A.
+- [x] Riccardo: unire in `dev` e rilasciare — unito il 22/10 (e1f15243, ramo `integra-20261022`), uscito con v0.9.876 sull'hub; resta facoltativa la stessa misura sull'appliance del cliente A.
 - Nota: le righe di `device_interfaces.is_virtual_mac` scritte prima restano come sono (si ricalcolano alla scrittura successiva); sull'hub non ce n'è nessuna da correggere.
 
 ## 2026-10-22 — Letture degli apparati accese di serie (ADR 0031)

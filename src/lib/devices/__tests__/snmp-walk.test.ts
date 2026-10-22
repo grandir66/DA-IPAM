@@ -98,6 +98,48 @@ test("un errore dell'agente («no»): rifiuta col suo stato SNMP come codice, no
   assert.equal(chiusa, 1);
 });
 
+// 70151, 22/10: gli switch Comware IRF rispondono «tooBig» (stato 1) al GETBULK di 20 righe sulle tabelle Q-BRIDGE (liste di
+// porte lunghe): VLAN e porte taggate mancavano (2 walk riuscite su 7). Il walk si rifà da capo a blocchi più piccoli.
+function agenteTooBig(sopra: number) {
+  const blocchi: Array<number | undefined> = [];
+  let chiuse = 0;
+  const apri = (): SessioneWalk => {
+    const s = {
+      subtree(oid: string, a: unknown, b: unknown, c?: unknown) {
+        const [rip, feed, done] = (typeof a === "number" ? [a, b, c] : [undefined, a, b]) as [number | undefined, (v: Array<{ oid: string; value: unknown }>) => void, (e?: Error) => void];
+        blocchi.push(rip);
+        setTimeout(() => {
+          if ((rip ?? 20) > sopra) return done(Object.assign(new Error("tooBig"), { status: 1 }));
+          feed([{ oid: `${oid}.1`, value: Buffer.alloc(64) }]);
+          feed([{ oid: `${oid}.2`, value: Buffer.alloc(64) }]);
+          done();
+        }, 1);
+      },
+      close() { chiuse++; },
+    };
+    return s as unknown as SessioneWalk;
+  };
+  return { apri, blocchi, chiuse: () => chiuse };
+}
+
+test("tooBig: il walk riprova a blocchi più piccoli (5, poi 1) e dà la tabella intera, una sessione per tentativo", async () => {
+  const a = agenteTooBig(5);
+  const voci = await walkConSessioneSua(a.apri, 1000)(`${B}.7.1.4.3.1.2`);
+  assert.deepEqual(a.blocchi, [undefined, 5]);
+  assert.equal(voci.length, 2);
+  assert.equal(a.chiuse(), 2);
+  const b = agenteTooBig(1);
+  assert.equal((await walkConSessioneSua(b.apri, 1000)(`${B}.7.1.4.3.1.2`)).length, 2);
+  assert.deepEqual(b.blocchi, [undefined, 5, 1]);
+});
+
+test("tooBig anche a 1 riga per richiesta: rifiuta con SNMP_STATO_1, non dà una tabella vuota", async () => {
+  const a = agenteTooBig(0);
+  await assert.rejects(walkConSessioneSua(a.apri, 1000)(`${B}.7.1.4.3.1.2`), (e: unknown) => codiceErrore(e) === "SNMP_STATO_1");
+  assert.deepEqual(a.blocchi, [undefined, 5, 1]);
+  assert.equal(a.chiuse(), 3);
+});
+
 test("sola lettura: la sessione riceve solo subtree e close, una chiusura per lettura", async () => {
   const a = agente();
   const walk = walkConSessioneSua(a.apri, 1000);

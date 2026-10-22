@@ -43,19 +43,25 @@ function conCodice(err: Error): Error {
   return err;
 }
 
+const statoDi = (err: Error): unknown => (err as { status?: unknown }).status;
+
+/** Stato SNMP «tooBig»: la risposta al GETBULK non entra in un pacchetto. */
+const TOO_BIG = 1;
+/**
+ * Righe per richiesta dopo un «tooBig» (net-snmp ne chiede 20 di serie). Gli switch Comware IRF della sede 70151 (22/10)
+ * rispondevano tooBig alle tabelle Q-BRIDGE, liste di porte lunghe: VLAN e porte taggate mancavano. Il walk si rifà da capo.
+ */
+const BLOCCHI_RIDOTTI = [5, 1];
+type Feed = (vbs: Array<{ oid: string; value: unknown }>) => void;
+type SubtreeConBlocchi = (oid: string, maxRepetitions: number, feed: Feed, done: (err?: Error) => void) => void;
+
 export function walkConSessioneSua(apri: () => SessioneWalk, tempoMs: number): SnmpWalkFn {
   return (oid) => new Promise<VoceSnmp[]>((resolve, reject) => {
-    let s: SessioneWalk;
-    try {
-      s = apri();
-    } catch (e) {
-      reject(e);
-      return;
-    }
-    const out: VoceSnmp[] = [];
+    let s: SessioneWalk | null = null;
+    let out: VoceSnmp[] = [];
     let finito = false;
     const chiudi = (): void => {
-      try { s.close(); } catch { /* già chiusa */ }
+      try { s?.close(); } catch { /* già chiusa */ }
     };
     const timer = setTimeout(() => {
       if (finito) return;
@@ -71,14 +77,37 @@ export function walkConSessioneSua(apri: () => SessioneWalk, tempoMs: number): S
       if (err) reject(conCodice(err));
       else resolve(out);
     };
-    try {
-      s.subtree(oid, (vbs) => {
+    // Tentativo `n`: 0 = blocchi di serie, poi BLOCCHI_RIDOTTI; ogni tentativo con la sua sessione e da capo (mezza tabella
+    // del tentativo caduto non resta).
+    const prova = (n: number): void => {
+      try {
+        s = apri();
+      } catch (e) {
+        fine(e instanceof Error ? e : new Error("sessione non aperta"));
+        return;
+      }
+      out = [];
+      const feed: Feed = (vbs) => {
         for (const vb of vbs) out.push({ oid: vb.oid, value: vb.value as VoceSnmp["value"] });
-      }, fine);
-    } catch (e) {
-      // net-snmp rifiuta subito un OID che non sa scrivere: è un «no», non un tempo scaduto.
-      fine(e instanceof Error ? e : new Error("walk non partito"));
-    }
+      };
+      const done = (err?: Error): void => {
+        if (finito) return;
+        if (err && statoDi(err) === TOO_BIG && n < BLOCCHI_RIDOTTI.length) {
+          chiudi();
+          prova(n + 1);
+          return;
+        }
+        fine(err);
+      };
+      try {
+        if (n === 0) s.subtree(oid, feed, done);
+        else (s.subtree as unknown as SubtreeConBlocchi).call(s, oid, BLOCCHI_RIDOTTI[n - 1]!, feed, done);
+      } catch (e) {
+        // net-snmp rifiuta subito un OID che non sa scrivere: è un «no», non un tempo scaduto.
+        fine(e instanceof Error ? e : new Error("walk non partito"));
+      }
+    };
+    prova(0);
   });
 }
 
@@ -86,7 +115,6 @@ export function walkConSessioneSua(apri: () => SessioneWalk, tempoMs: number): S
 const ASSENTE = new Set([128, 129, 130]);
 /** Lo stato «noSuchName» di SNMP v1: vale per tutta la richiesta, non dice quali OID ci sono. */
 const NO_SUCH_NAME = 2;
-const statoDi = (err: Error): unknown => (err as { status?: unknown }).status;
 
 /**
  * Il GET degli scalari (revisione del Task 6 di T2, piano «Scelte» 10): una sessione e un tempo massimo per tutta la

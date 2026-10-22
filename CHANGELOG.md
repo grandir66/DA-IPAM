@@ -4,6 +4,13 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-22 · Comware: VLAN via SNMP e profilo giusto dal sysDescr
+
+### Corretto
+
+- **VLAN e porte taggate dei Comware via SNMP.** Gli switch Comware IRF (sede 70151) rispondono *tooBig* al GETBULK di 20 righe sulle tabelle Q-BRIDGE, perché le liste di porte sono lunghe: delle 7 walk della lettura VLAN ne riuscivano 2 (PVID e mappa del bridge), quindi 0 VLAN e nessuna porta taggata. Il lettore comune (`walkConSessioneSua`) dopo un *tooBig* rifà la walk da capo a 5 righe per richiesta, poi a 1; se fallisce anche così resta il rifiuto `SNMP_STATO_1`, mai una tabella vuota.
+- **Profilo HP corretto dal sysDescr.** Cinque Comware creati in blocco col profilo di serie ProCurve non ricevevano mai comandi né collector Comware, anche se il sysDescr letto diceva «HPE Comware Platform Software». La lettura delle informazioni ora corregge profilo e sottotipo in Comware (o in ProCurve, se il sysDescr dice ProCurve/Aruba su un apparato registrato Comware; AOS-CX non si tocca) e lo scrive nel registro della lettura.
+
 ## [Non rilasciato] — 2026-10-21 · Un elenco solo dei MAC virtuali
 
 ### Corretto

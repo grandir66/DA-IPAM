@@ -18,6 +18,7 @@ import {
   updateInventoryAsset,
   updateNetworkDevice,
 } from "@/lib/db";
+import { profiloHpDaSysDescr, vendorSubtypeFromProductProfile } from "@/lib/device-product-profiles";
 import { getDeviceInfo, resolveNasKind } from "@/lib/devices/device-info";
 import { isProxmoxDevice } from "@/lib/devices/device-connection-test";
 import { probeDeviceInterfaces } from "@/lib/devices/interface-probe";
@@ -85,6 +86,12 @@ export async function salvaInfoApparato(device: NetworkDevice, log: Log = muto, 
         last_info_update: now,
         last_device_info_json: deviceInfoJson,
       });
+      // Il sysDescr dice Comware o ProCurve meglio del profilo di serie scelto alla creazione (70151, 22/10).
+      const profilo = profiloHpDaSysDescr(device, info.sysdescr);
+      if (profilo) {
+        updateNetworkDevice(deviceId, { product_profile: profilo, vendor_subtype: vendorSubtypeFromProductProfile(profilo) });
+        log(`✓ Profilo corretto dal sysDescr: ${device.product_profile ?? "nessuno"} → ${profilo}`);
+      }
       syncDeviceToHost(deviceId);
       const asset = getInventoryAssetByNetworkDevice(deviceId);
       if (asset) {

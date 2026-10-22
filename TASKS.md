@@ -11,6 +11,26 @@ Riccardo ha chiesto di valutare l'elenco «cose da fare» della sessione «VLAN 
 - [ ] Controller UniFi: decisione di Riccardo fra (a) lasciarlo strumento da CLI, (b) fotografia per apparato dalla stessa lettura della sincronizzazione, (c) radio e client (sezione «giro 7» su `collector-modulari`).
 - Restano aperti come scritti: collaudo HP della sede nuova (e lì si vede se «ArubaOS» è ArubaOS-Switch o AOS-CX), misure sul DB dell'hub, SSH rifiutato sugli Ubiquiti, NAS da ricollaudare, letture SNMP Comware incomplete (forse la stessa causa di VLAN e porte taggate mancanti). Rinviati di proposito: firmware e modelli in più, PoE/ottiche/sensori, LLDP, aggancio all'interfaccia per Comware, ProCurve, QNAP, VMware e NetApp.
 
+## 2026-10-22 — difetti degli switch segnalati sulla sede 70151 (Comware, VLAN, LibreNMS)
+
+Diagnosi in sola lettura sull'appliance 70151 (VM 104 su PX01, `qm guest exec`; v0.9.874) il 22/10 sera. Livello leggero.
+
+- [x] Causa VLAN Comware: le 5 walk Q-BRIDGE (Static/Current) ricevono `SNMP_STATO_1` = *tooBig* (liste di porte IRF lunghe con GETBULK a 20 righe), riescono solo PVID e mappa del bridge (2/7); stessa causa per le porte taggate mancanti
+- [x] Causa profilo: i 5 Comware (5900AF, 4× FF 5700) creati il 22/10 alle 14:19 con profilo `hp_switch_procurve` benché il sysDescr dica «HPE Comware Platform Software»: con quel profilo non si usano mai comandi e collector Comware
+- [x] Aruba 2530/2540 della stessa sede: VLAN complete (21-24, taggate e non) — il lettore Q-BRIDGE va
+- [x] Scoperto: l'appliance 70151 non si aggiorna più: «Aggiorna ora» segue il canale `main` (v0.9.873) ed è installata `dev` v0.9.874 → «retrocessione rifiutata» (15:21 e 15:38 UTC)
+- [x] Riccardo (22/10): switch e router con le due acquisizioni sommate, SSH principale quando c'è ed è migliore, più SNMP
+- [x] Riccardo (22/10): aggiunta automatica in LibreNMS estesa a tutti gli oggetti con SNMP verificato (non solo i vicini LLDP)
+- [x] Walk SNMP: su *tooBig* riprova la stessa walk a blocchi più piccoli (5, poi 1) — 2 prove viste fallire poi verdi (`snmp-walk.test.ts`), suite 5789/0
+- [x] Profilo HP dal sysDescr alla lettura delle informazioni (`profiloHpDaSysDescr`, solo profili switch HP; AOS-CX escluso) — 3 prove viste fallire poi verdi
+- [ ] Lettura SNMP generale dei Comware: `TEMPO_SCADUTO` su 1-3 walk su 16 (IRF lento, già noto dal collector): da guardare dopo la VLAN
+- [ ] Canale di aggiornamento di 70151 su `dev` (scrittura sull'appliance di un cliente: conferma di Riccardo), poi verifica VLAN dei Comware sul dato vero
+- [ ] Proposta di aggiunta switch/router: SSH principale + SNMP (oggi con SNMP principale non propone mai l'SSH: `proposta-apparato.ts`)
+- [ ] LibreNMS: candidati all'aggiunta automatica = tutti gli oggetti con SNMP verificato; esclusione per oggetto «Non aggiungere a LibreNMS»; esito visibile
+- [ ] LibreNMS: aggiunta in blocco dalla Discovery
+- [ ] Matrice VLAN: colonne e intestazione fisse, altezza limitata (barra orizzontale oggi in fondo a una tabella di ~2500 px)
+- [ ] MikroTik CORE1/CORE2 (6 switch SNMP) senza VLAN: RouterOS non espone Q-BRIDGE via SNMP; servono SSH (`/interface bridge vlan`) o il collector
+
 ## 2026-10-21 — S3, un elenco solo dei MAC virtuali (ramo `s3-mac-virtuali`)
 
 Piano: `docs/superpowers/plans/2026-10-21-recupero-dadude3-mknet.md` (ramo `collector-modulari`), blocco S3, controllo completo.

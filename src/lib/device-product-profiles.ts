@@ -277,6 +277,29 @@ export function vendorSubtypeFromProductProfile(profile: ProductProfileId): "pro
   return null;
 }
 
+/** Profili degli switch HP che il sysDescr distingue; gli altri profili HP (iLO, stampanti) non si toccano. */
+const PROFILI_SWITCH_HP = new Set<string | null>([null, "hp_switch_procurve", "hp_switch_comware", "hp_switch_arubaos"]);
+
+/**
+ * Il profilo di uno switch HP come lo dice il sysDescr, solo se diverso da quello registrato; null = niente da correggere.
+ * Comware/H3C → `hp_switch_comware`; ProCurve o Aruba (ArubaOS-Switch) su un apparato registrato Comware →
+ * `hp_switch_procurve`; AOS-CX resta com'è. A 70151 (22/10) cinque Comware creati in blocco col profilo di serie ProCurve
+ * non ricevevano mai comandi e collector Comware.
+ */
+export function profiloHpDaSysDescr(
+  device: { vendor: string; product_profile?: string | null },
+  sysDescr: string | null | undefined,
+): ProductProfileId | null {
+  if (device.vendor !== "hp" || !sysDescr) return null;
+  const attuale = device.product_profile ?? null;
+  if (!PROFILI_SWITCH_HP.has(attuale)) return null;
+  if (/\b(Comware|H3C)\b/i.test(sysDescr)) return attuale === "hp_switch_comware" ? null : "hp_switch_comware";
+  if (attuale === "hp_switch_comware" && /\b(ProCurve|Aruba)\b/i.test(sysDescr) && !/AOS-CX|ArubaOS-CX/i.test(sysDescr)) {
+    return "hp_switch_procurve";
+  }
+  return null;
+}
+
 /**
  * Allinea scan_target Proxmox (VE vs PBS).
  */

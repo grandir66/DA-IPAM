@@ -1,5 +1,21 @@
 # TASKS — DA-IPAM
 
+## 2026-10-22 — scansione automatica dei device scelti
+
+Piano: [`docs/superpowers/plans/2026-10-22-scansione-automatica-da-discovery.md`](docs/superpowers/plans/2026-10-22-scansione-automatica-da-discovery.md) (10 task; giro e migrazione livello completo, interfaccia leggero; stato: bozza da approvare). Tavola approvata il 22/10: artboard `ScansioneAutomatica` (J1-J4) del canvas https://claude.ai/artifact/7ezwy7nkAAzUWSn1wJCNKv. Risponde anche al punto (a) qui sotto (job `arp_poll` sull'hub).
+
+- [ ] Piano approvato da Riccardo
+- [ ] T1 tipo `apparati_scelti`, CHECK v11 di `scheduled_jobs`, tabella `job_apparati_esiti` (misura sulla copia dell'hub)
+- [ ] T2 regole pure: config, frequenze (ogni ora · ogni 4 ore · ogni giorno alle HH:MM), idoneità, letture valide
+- [ ] T3 funzioni DB: stato degli apparati in una query, esiti per apparato
+- [ ] T4 letture estratte da «Interroga» e dal giro ARP, lucchetto per apparato, log senza nomi né IP
+- [ ] T5 il giro `apparati_scelti` nello scheduler (prova a vuoto sulla copia dell'hub)
+- [ ] T6 rotte API (anteprima, creazione, modifica, esiti, testata)
+- [ ] T7 Discovery: pulsante e finestra (J1, J2), resa 1440 e 1920
+- [ ] T8 pagina dei job: riga ed esiti per apparato (J3), resa 1440 e 1920
+- [ ] T9 testata della scheda: pastiglia (J4), resa 1440 e 1920
+- [ ] T10 accensione sull'hub (con l'ok di Riccardo per creare il job), ADR 0030, CHANGELOG, CONTEXT, scheda-mappa
+
 ## 2026-10-22 — accorpamento IP e matrice VLAN degli switch
 
 Piano: [`docs/superpowers/plans/2026-10-22-accorpamento-ip-e-vlan-switch.md`](docs/superpowers/plans/2026-10-22-accorpamento-ip-e-vlan-switch.md) (12 task + 1 rimandato; A leggero, B leggero con misura sulla copia dell'hub, C completo; stato: eseguito e acceso sull'hub il 22/10, aperti (a)-(f)). Grafica: artboard `Discovery` e `SwitchVlan` del canvas https://claude.ai/artifact/7ezwy7nkAAzUWSn1wJCNKv.

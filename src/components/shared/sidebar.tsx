@@ -52,7 +52,6 @@ import {
   SlidersHorizontal,
 } from "lucide-react";
 import { useState, useEffect, useMemo, useRef } from "react";
-import { ThemeToggle } from "./theme-toggle";
 import { UserMenu } from "./user-menu";
 import { useUrlPerBrowser } from "./url-per-browser";
 import { vociApplicativi, type IconaVoce, type ModuloPerMenu } from "@/lib/modules/voci-applicativi";
@@ -438,34 +437,52 @@ export function Sidebar() {
 
   const nav = (
     <>
-      {/* Header: Logo */}
-      <div className="shrink-0 p-4 border-b border-sidebar-border text-center">
-        <div className={cn("w-full flex justify-center", collapsed && "md:hidden")}>
+      {/* Testata (Riccardo, 23/10): logo piccolo, nome e «Comprimi» in una riga, sotto utente ed
+          «Esci». Prima logo grande in alto e tema, comprimi, utente, esci in un blocco in fondo. */}
+      <div className="shrink-0 border-b border-sidebar-border">
+        <div className={cn("flex items-center gap-2 h-12 pl-14 pr-2 md:pl-4", collapsed && "md:flex-col md:h-auto md:py-3 md:px-0")}>
           <img
             src="/logo-white.png"
-            alt="Logo"
-            className="w-full max-w-[220px] h-14 object-contain object-center"
+            alt="Domarc"
+            className={cn("h-6 w-auto object-contain", collapsed && "md:h-auto md:w-11")}
           />
+          <span className={cn("w-px h-5 bg-sidebar-border", collapsed && "md:hidden")} />
+          <span title="IP Address Management" className={cn("flex-1 truncate font-semibold text-sidebar-foreground", collapsed && "md:hidden")}>
+            DA-IPAM
+          </span>
+          {/* Con il bordo perché si veda che è un comando, non un ornamento (Riccardo, 23/10). */}
+          <button
+            type="button"
+            onClick={toggle}
+            title={collapsed ? "Espandi menu" : "Comprimi menu"}
+            aria-label={collapsed ? "Espandi menu" : "Comprimi menu"}
+            className="hidden md:grid h-8 w-8 shrink-0 place-items-center rounded-md border border-sidebar-border text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors"
+          >
+            {collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+          </button>
         </div>
-        {/* Logo compatto (solo desktop collassato) */}
-        <img
-          src="/logo-white.png"
-          alt="Logo"
-          className={cn("h-9 mx-auto object-contain", collapsed ? "hidden md:block" : "hidden")}
-        />
-        <h1 className={cn("text-xl font-bold text-primary mt-3", collapsed && "md:hidden")}>DA-IPAM</h1>
-        <p className={cn("text-xs text-sidebar-foreground/60 mt-0.5", collapsed && "md:hidden")}>IP Address Management</p>
+        <div className={cn("flex items-center gap-1 px-2 pb-2", collapsed && "md:flex-col md:px-0")}>
+          <div className={cn("min-w-0 flex-1", collapsed && "md:flex-none md:w-full")}>
+            <UserMenu compresso={collapsed} />
+          </div>
+          <button
+            type="button"
+            onClick={() => signOut({ callbackUrl: "/login" })}
+            title="Esci"
+            aria-label="Esci"
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-md text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors"
+          >
+            <LogOut className="h-4 w-4" />
+          </button>
+        </div>
       </div>
 
       <nav className="flex-1 overflow-y-auto p-3 space-y-1 min-h-0">
 
         {/* ═══ GESTIONE CLIENTI (solo superadmin) ═══ */}
+        {/* «URL dell'hub» è in Impostazioni → Sistema dal 23/10 (Riccardo: quasi inutile qui). */}
         {isSuperadmin && (
-          <>
-            <NavItem href="/tenants" icon={Building2} label="Clienti" active={isActive("/tenants")} collapsed={collapsed} onNavigate={closeMobile} />
-            {/* L'elenco degli agenti remoti è tolto (20/10/2026): all'indirizzo resta l'URL pubblico dell'hub. */}
-            <NavItem href="/agents" icon={ServerCog} label="URL dell'hub" active={isActive("/agents")} collapsed={collapsed} onNavigate={closeMobile} />
-          </>
+          <NavItem href="/tenants" icon={Building2} label="Clienti" active={isActive("/tenants")} collapsed={collapsed} onNavigate={closeMobile} />
         )}
 
         {/* ═══ TENANT SWITCHER + SEPARATORE (nascosti se collassato) ═══ */}
@@ -553,35 +570,6 @@ export function Sidebar() {
 
       </nav>
 
-      {/* Footer: toggle collapse (desktop) + Logout */}
-      <div className="shrink-0 p-3 border-t border-sidebar-border space-y-1">
-        {/* Tema e utente stanno qui dal 20/10 (Riccardo): la barra in alto non c'è più. */}
-        <ThemeToggle compresso={collapsed} />
-        <button
-          type="button"
-          onClick={toggle}
-          title={collapsed ? "Espandi menu" : "Comprimi menu"}
-          className={cn(
-            "hidden md:flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors w-full",
-            collapsed && "md:justify-center md:px-0"
-          )}
-        >
-          {collapsed ? <PanelLeftOpen className="h-4 w-4 shrink-0" /> : <PanelLeftClose className="h-4 w-4 shrink-0" />}
-          <span className={cn(collapsed && "md:hidden")}>Comprimi menu</span>
-        </button>
-        <UserMenu compresso={collapsed} />
-        <button
-          onClick={() => signOut({ callbackUrl: "/login" })}
-          title={collapsed ? "Esci" : undefined}
-          className={cn(
-            "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors w-full",
-            collapsed && "md:justify-center md:px-0"
-          )}
-        >
-          <LogOut className="h-4 w-4 shrink-0" />
-          <span className={cn(collapsed && "md:hidden")}>Esci</span>
-        </button>
-      </div>
     </>
   );
 

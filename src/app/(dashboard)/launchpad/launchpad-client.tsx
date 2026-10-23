@@ -54,8 +54,8 @@ import { useUrlPerBrowser } from "@/components/shared/url-per-browser";
 /**
  * Mappa kind+label → URL della pagina di configurazione corrispondente.
  * Le integrazioni Docker (Wazuh, LibreNMS, Graylog, Scanner-Edge, Loki) vivono
- * tutte sotto /settings?tab=moduli#module-<anchor>. Il Hub URL pubblico
- * vive invece in /agents#hub-url-config (pagina «URL dell'hub»).
+ * tutte sotto /settings?tab=moduli#module-<anchor>. L'URL pubblico dell'hub
+ * sta in /settings?tab=sistema#hub-url-config.
  *
  * Ritorna l'URL completo (deep-link diretto) oppure null se la entry vault è
  * "stand-alone" (nessuna pagina di config dedicata — usato come hint testuale
@@ -68,7 +68,7 @@ function getIntegrationConfigHref(item: SystemCredential): string | null {
     case "librenms": return "/settings?tab=moduli#module-librenms";
     case "graylog": return "/settings?tab=moduli#module-graylog";
     case "edge": return "/settings?tab=moduli#module-edge";
-    case "hub": return "/agents#hub-url-config";
+    case "hub": return "/settings?tab=sistema#hub-url-config";
     case "other":
       if (label.includes("loki")) return "/settings?tab=moduli#module-loki";
       return null;
@@ -589,11 +589,6 @@ export function LaunchpadClient({ initialItems, embedded = false }: LaunchpadCli
                     const href = getIntegrationConfigHref(item);
                     if (href) {
                       const incomplete = isCredentialIncomplete(item);
-                      // Label dinamico: "Impostazioni" per /settings,
-                      // "URL dell'hub" per /agents (Hub URL config sta lì).
-                      const destinationLabel = href.startsWith("/agents")
-                        ? "URL dell'hub"
-                        : "Impostazioni";
                       if (incomplete) {
                         return (
                           <a
@@ -602,7 +597,7 @@ export function LaunchpadClient({ initialItems, embedded = false }: LaunchpadCli
                           >
                             <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
                             <span className="flex-1 leading-tight">
-                              Config incompleta — vai a {destinationLabel}
+                              Config incompleta — vai a Impostazioni
                             </span>
                             <SettingsIcon className="h-3.5 w-3.5 shrink-0" />
                           </a>

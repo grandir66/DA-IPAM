@@ -1,5 +1,14 @@
 # TASKS — DA-IPAM
 
+## 2026-10-23 — Barra laterale compatta e cambio password
+
+Riccardo (23/10): il blocco in basso della barra è brutto, logo più piccolo, «URL dell'hub» in Impostazioni,
+comprimi ben visibile; scelta «tutto in alto». Segnalato: il cambio password non funziona.
+- [x] causa del cambio password: `onSelect` (Radix) su un menu Base UI → `onClick` (provato in locale: la finestra si apre)
+- [x] testata compatta con comprimi, utente ed Esci; tema nel menu utente; piede tolto (resa guardata a 1440 aperta e compressa)
+- [x] «URL dell'hub» in Impostazioni → Sistema, `/agents` rimanda lì (provato in locale)
+- [ ] guardarla sull'hub dopo l'aggiornamento, anche a menu compresso col logo piccolo
+
 ## 2026-10-23 — Assegnatari NIS2 da AD e utente prevalente dei PC (idea, da decidere)
 
 Riccardo (23/10): «come possiamo determinare almeno dei PC gli utenti collegati? Nella voce NIS2 degli assegnatari

@@ -79,6 +79,7 @@ import { PuliziaHostCard } from "@/components/settings/pulizia-host-card";
 import { InterruttoreAcquisizioneModulare } from "@/components/settings/interruttore-acquisizione-modulare";
 import { NotificationsTab } from "@/components/settings/notifications-tab";
 import { SecurityAlertsTab } from "@/components/settings/security-alerts-tab";
+import { HubUrlCard } from "@/components/settings/hub-url-card";
 
 const JOB_TYPE_LABELS: Record<string, string> = ETICHETTE_JOB;
 
@@ -1337,6 +1338,8 @@ function SettingsPageInner() {
           liste delle reti dove valevano. */}
       {activeTab === "sistema" && (
         <div className="space-y-6">
+          {/* URL pubblico dell'hub: tolto dal menu a sinistra il 23/10 (Riccardo), prima stava in /agents. */}
+          {isSuperAdmin && <HubUrlCard />}
           {isAdmin && (
             <Card>
               <CardHeader>

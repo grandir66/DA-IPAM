@@ -30,14 +30,17 @@ livello leggero. Prossimo passo: tavola grafica (pagina «Importa da AD» + riqu
 breve ed esecuzione in una sessione nuova.
 - [x] tavola grafica (23/10): https://claude.ai/artifact/64gZcjsoZQmrcoXJkV6eFf — elenco assegnatari (1-4),
       «Importa da AD» (5-11), scheda asset con proposta, chi si collega e i casi limite (12-18); **da approvare**
-- [ ] misurare su un Wazuh vero: quanti 60106 con logonType 2/10/11 per agente negli ultimi 30 giorni (sola lettura)
+- [x] misura su Wazuh dell'hub .8 (23/10, sola lettura): tastiera 11 PC → 10 proposte; rete 38 postazioni → 30
+      proposte; dettaglio e trappole nel piano
+- [x] tavola e soglia approvate da Riccardo (23/10); **piano: `docs/superpowers/plans/2026-10-23-assegnatari-da-ad.md`**,
+      da eseguire in una sessione nuova (i punti sotto sono dettagliati là)
 - [ ] storico delle osservazioni utente↔host (WinRM, GLPI, Wazuh 60106, eventi 4624/4768 dei DC) e «utente prevalente» per PC
 - [ ] `ad-client`: leggere anche givenName, sn, mobile, company, manager, employeeID, office; computer: managedBy
 - [ ] `asset_assignees`: legame con l'utente AD (guid), reparto, ruolo, origine; «Importa da AD» con proposta
       (abilitato, nome e cognome, mail, accesso recente, niente account di servizio) e conferma a spunte
 - [ ] proposta di assegnatario sull'asset dall'utente prevalente, mai sopra un'assegnazione manuale; utente AD
       disabilitato → asset da riassegnare
-- [ ] verificare chi scrive `ad_computers.host_id` (nella sync non l'ho trovato)
+- [x] chi scrive `ad_computers.host_id`: `linkAdComputerToHost` nella sync AD e `relinkAdComputersForNetwork` dopo una scansione
 
 ## 2026-10-22 — Opzioni complete e voce «Schedulazioni» nel menu
 

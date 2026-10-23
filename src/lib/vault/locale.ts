@@ -17,6 +17,9 @@ import { controllaPercorso, ErroreVault, type SecretStore, type StatoStore, type
 
 const FILE = "segreti.json";
 
+/** Il key file delle esportazioni KeePass: il suo slot nell'archivio (lo usano l'esportazione e il recupero). */
+export const PERCORSO_KEYFILE = "app/da-ipam/keepass/keyfile";
+
 interface FileSegreti {
   formato: 1;
   voci: Record<string, string>;

@@ -17,12 +17,12 @@ import { schemaVaultPresente } from "@/lib/db-tenant";
 import { campiVoceDb, type CampoSegreto } from "@/lib/credentials/segreti";
 import { apriConPassphrase } from "./archivio";
 import { cartellaVault } from "./appliance";
-import { LocaleStore } from "./locale";
+import { LocaleStore, PERCORSO_KEYFILE } from "./locale";
 import { registraVisualizzazione, type UtenteSessione } from "./mostra";
 import { chiaveDatiAttiva, vaultLocaleAcceso } from "./stato";
 import { ErroreVault } from "./tipi";
 
-export const PERCORSO_KEYFILE = "app/da-ipam/keepass/keyfile";
+export { PERCORSO_KEYFILE };
 export const ARGON2_DI_SERIE = { memoriaKiB: 64 * 1024, iterazioni: 3, parallelismo: 2 } as const;
 
 type Rifiuto = { ok: false; stato: number; errore: string };

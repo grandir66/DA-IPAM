@@ -10,8 +10,16 @@ Cosa c'è già (origin/dev `646fe741`): `ad_users` sincronizzati (nome visualizz
 ultimo accesso); `ad_computers.host_id`; raccolta WinRM in `lib/devices/device-info.ts` con `last_logged_on_user`
 (registro LogonUI) e `logged_on_users` (Win32_LoggedOnUser) in `last_device_info_json`; agente GLPI con
 `last_logged_user`; `asset_assignees` ha solo nome/mail/telefono/nota, `inventory_assets.asset_assignee_id`.
-Proposta in chat (in attesa di risposte):
-- [ ] storico delle osservazioni utente↔host (WinRM, GLPI, eventi 4624/4768 dei DC) e «utente prevalente» per PC
+Decisioni di Riccardo (23/10): **sì, strada da prevedere come disegnata**; niente clienti solo su Entra (basta AD
+locale); **Wazuh come fonte** dove è installato. Wazuh (verificato su origin/dev): gli alert dell'indexer hanno già
+`data.win.eventdata.targetUserName`/`workstationName`/`ipAddress` + `agent.name` (li aggrega
+`wazuh-alerts-stats.ts`); l'accesso riuscito 4624 è la regola 60106 (livello 3), da misurare se arriva all'indice;
+i processi di syscollector (`wazuh_process`) non hanno il proprietario, quindi non servono.
+Valori predefiniti proposti (Riccardo può correggerli): solo proposta con conferma, niente assegnazione automatica;
+livello leggero. Prossimo passo: tavola grafica (pagina «Importa da AD» + riquadro proposta sull'asset), poi piano
+breve ed esecuzione in una sessione nuova.
+- [ ] misurare su un Wazuh vero: quanti 60106 con logonType 2/10/11 per agente negli ultimi 30 giorni (sola lettura)
+- [ ] storico delle osservazioni utente↔host (WinRM, GLPI, Wazuh 60106, eventi 4624/4768 dei DC) e «utente prevalente» per PC
 - [ ] `ad-client`: leggere anche givenName, sn, mobile, company, manager, employeeID, office; computer: managedBy
 - [ ] `asset_assignees`: legame con l'utente AD (guid), reparto, ruolo, origine; «Importa da AD» con proposta
       (abilitato, nome e cognome, mail, accesso recente, niente account di servizio) e conferma a spunte

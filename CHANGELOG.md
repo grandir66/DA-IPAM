@@ -16,6 +16,15 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 - **OpenBao per l'hub (`DA_VAULT_OPENBAO=1`, spento di serie).** Libreria `src/lib/vault` (interfaccia `SecretStore`, backend `openbao` con solo `fetch`, AppRole, token di 20 minuti, cache a tempo, `X-Domarc-Utente` per le letture per conto di una persona). Colonna `credentials.credential_ref`: con l'interruttore acceso le credenziali dei device si leggono da OpenBao; OpenBao giù oltre la cache = scansioni in pausa e letture rifiutate, mai un ripiego sulla colonna. `scripts/da-vault-migra-openbao.ts` (a vuoto di serie, `--applica`, `--verifica`) con doppia lettura per una versione.
 - Col vault acceso il backup notturno copia anche l'archivio (slot già cifrati): un ripristino dei database ricifrati ha gli slot che li aprono.
 
+### Corretto dopo la revisione (23/10)
+
+- `/api/health` col vault bloccato risponde **200 «degraded»** (503 solo con `?strict=1`): `update.sh` e `auto-update.sh` aspettano un 200 dopo il riavvio e prima tornavano a una build che non legge i valori ricifrati.
+- Ricifra: con `--applica` checkpoint e `VACUUM` si fanno **sempre** (un crash fra COMMIT e VACUUM lasciava i valori vecchi nelle pagine libere); una cartella dati senza `hub.db` è un errore e la cartella usata si stampa; `ricifra --inversa` (dalla chiave degli slot a `ENCRYPTION_KEY`); dopo `--applica` il CLI elenca i backup rimasti con la chiave vecchia e propone `--purga-backup` (a vuoto di serie).
+- `age-encryption` si carica solo dentro le funzioni che lo usano: l'avvio dell'app non lo raggiunge più a interruttori spenti (su Node 20.x vecchi non partiva).
+- OpenBao: un `credential_ref` malformato salta quella voce con un avviso (cliente e voce) invece di fermare la cache; `X-Domarc-Utente` percent-encoded con l'id; credenziale eliminata = cancellati i metadata del percorso (se OpenBao non risponde, avviso e `--verifica` elenca gli orfani).
+- Passphrase: limite di tentativi **per utente**, condiviso fra sblocco e KeePass, e tetto alle derivazioni scrypt in corso (429); spazi ai bordi rifiutati sia da `crea` sia dal recupero.
+- `crea --senza-domarc` vuole `--richiesta-cliente` e la scrive nell'archivio e in `recuperi.jsonl`; i registri dei recuperi scrivono l'intento prima e l'esito dopo. «Chi ha visto cosa» solo agli admin. All'avvio il vault parte prima delle altre inizializzazioni.
+
 ### Perché così
 
 - Interruttori nel file dell'appliance e non in Opzioni: ogni push su `dev` arriva a tutte le installazioni, e il vault si accende un'appliance alla volta, dopo aver creato l'archivio, con un riavvio (piano, «Rischi»).

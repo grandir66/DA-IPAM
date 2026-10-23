@@ -46,6 +46,44 @@ sulla chiave d'installazione; gli interruttori stanno nel file dell'appliance.**
   di OpenBao (`leggiSync`); senza riferimento legge la colonna con un avviso; un segreto cambiato dalla pagina toglie
   il riferimento (la voce torna alla colonna col valore nuovo e la migrazione la riporta in OpenBao).
 
+## Correzioni dopo la revisione (23/10)
+
+Decisioni prese correggendo la PR #18 (rilievi della revisione, numerati come là):
+
+- **Spegnere `DA_VAULT_LOCALE` dopo una ricifra (rilievo 8).** C'è la **ricifra inversa**: `scripts/da-vault.ts ricifra --inversa
+  [--applica]`, dalla chiave degli slot a `ENCRYPTION_KEY`, con le stesse garanzie della ricifra (a vuoto di serie, tutto o
+  niente per database, verifica col lettore unico, `VACUUM`). Si lancia a **servizio fermo** con `DA_VAULT_LOCALE=1`, poi si toglie
+  l'interruttore dal file e si riavvia. Se qualcuno spegne l'interruttore senza farla, il controllo della chiave (avvio e
+  `/api/health`) lo dice a schermo: «valori ricifrati dal vault e DA_VAULT_LOCALE spento … ricifra --inversa». I segreti TOTP non
+  si toccano (non si sono mai mossi).
+- **Backup e `.bak-` con la chiave vecchia (rilievo 9).** Dopo `ricifra --applica` il CLI elenca i backup che hanno ancora valori
+  della chiave vecchia (`<dati>/hub.db.bak-*`, `<dati>/tenants/*.db.bak-*`, backup notturni `<radice>/AAAA-MM-GG/*.db.gz`; i
+  segreti TOTP non contano: restano sulla chiave d'installazione per scelta) e propone `--purga-backup`. **A vuoto di serie**:
+  cancella solo `--purga-backup --applica`. Non tocca le copie fuori da qui (snapshot di Proxmox, backup fuori sede): restano con la
+  chiave vecchia, e il CLI lo ricorda. Cancellare i backup toglie anche il punto di ritorno alla situazione di prima: si fa dopo
+  aver verificato l'appliance ricifrata, non subito.
+- **Segreto in OpenBao dopo la cancellazione o la modifica di una credenziale (rilievo 7).** Alla cancellazione di una voce con
+  `credential_ref` (e `DA_VAULT_OPENBAO=1`) si cancellano i **metadata** del percorso (`DELETE kv-domarc/metadata/<percorso>`:
+  tutte le versioni, non solo l'ultima). È asincrona (la cancellazione dal database è sincrona): se OpenBao non risponde o la
+  policy dell'AppRole non permette `delete` sui metadata, la voce si cancella lo stesso e l'avviso nel log nomina cliente e voce
+  (mai un ripiego muto). `da-vault-migra-openbao --verifica` elenca i **percorsi orfani** (sotto `clienti/<cliente>/da-ipam/` ma
+  senza voce che li usi) e copre quello che la cancellazione non vede: un cancellamento fallito, una cancellazione in massa, un
+  segreto cambiato dalla pagina (toglie il riferimento: la migrazione riscrive lo stesso percorso, ma le **versioni vecchie**
+  restano nella cronologia del KV; per tenerle corte servono `max_versions` e `delete_version_after` sul mount, da impostare in
+  OpenBao). La policy dell'AppRole `da-ipam` deve quindi includere `delete` su `kv-domarc/metadata/clienti/*/da-ipam/*`.
+- **Passphrase del cliente (rilievi 5 e 10).** Un solo contatore di tentativi sbagliati **per utente** (5 in 15 minuti) per
+  sblocco e KeePass, prenotato prima della derivazione; tetto di 2 derivazioni scrypt in corso (le altre 429). Normalizzazione
+  unica: una passphrase con spazi, tab o a capo ai bordi è **rifiutata** in creazione, cambio e recupero (mai tagliata in
+  silenzio: prima `crea` la teneva e il recupero la tagliava).
+- **Esclusione di Domarc (rilievo 12).** Senza slot Domarc il riferimento della richiesta scritta del cliente è obbligatorio, sta
+  in `archivio.json` (`domarcEscluso`) e in `recuperi.jsonl`; nel registro dei recuperi si scrive prima l'intento e poi l'esito.
+- **`/api/health` (rilievo 1).** Col vault locale acceso e bloccato: 200 «degraded» con «vault bloccato»; 503 solo con `?strict=1`
+  (monitoraggio). Il guasto vero (chiave sbagliata a vault spento) resta 503.
+- **Moduli ESM (rilievo 6).** `age-encryption` si carica con `await import()` dentro le funzioni che lo usano; `kdbxweb` e
+  `hash-wasm` non sono raggiunti dall'avvio (solo dalla rotta KeePass).
+- **Registro e stato (rilievo 14).** «Chi ha visto cosa» solo admin (tecnici Domarc e admin del cliente, D2); lo stato del vault
+  resta a tutti gli autenticati ma senza nomi di credenziali (solo conteggi).
+
 ## Alternative scartate
 
 - **Prefisso di versione nel valore (`v2:…`)** — scartata: tutti i controlli di formato dell'app (`FORMATO_CIFRATO`,
@@ -75,6 +113,10 @@ sulla chiave d'installazione; gli interruttori stanno nel file dell'appliance.**
   `integrations/self-identity.ts`, `controllers/credenziale.ts`, la `for_edit` della rotta delle credenziali) non
   sanno di `credential_ref`: funzionano finché le colonne restano piene (doppia lettura). Prima di svuotarle vanno
   portate sul lettore unico.
+
+- Il segreto di una credenziale cambiata resta nelle versioni vecchie del KV finché non si limitano `max_versions` /
+  `delete_version_after` in OpenBao; la cancellazione dei metadata riguarda le voci eliminate.
+- `ricifra --inversa` e `--purga-backup` sono operazioni da fare a servizio fermo e con un backup recente a portata di mano.
 
 ### Cosa diventa difficile in futuro
 

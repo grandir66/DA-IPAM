@@ -8,9 +8,12 @@ e si riparte dall'ultima usata; verificare sull'hub (unico multi-istanza) le Opz
 - [x] revoca all'uscita (`sessioni_valide_da`, `accessoAt`), cambio d'istanza controllato, ultima istanza
 - [x] Impostazioni → Istanza, riga in sola lettura nella barra, «cliente» → «istanza» (resa locale a 1440, aperta e compressa)
 - [x] scenario locale: dopo «Esci» `/` porta a `/login`; rientro sull'ultima istanza; un viewer non forza un'altra istanza né «tutte»
-- [ ] aggiornare l'hub (.8 non ha il timer: `scripts/update.sh`) e verificare lì Opzioni con istanza scelta
-- [ ] `next build --webpack` in locale cade su `api/integrations/meshcentral/config/route.ts` (esporta
-  `seedMeshSyncJobForTenant`, c'è da giugno): sull'hub la build normale passa; da capire se va spostata la funzione
+- [x] hub aggiornato a v0.9.891 (`scripts/update.sh --restart`, servizio ripartito 08:52 UTC); verificato con `prova-claude`:
+  Opzioni si apre sull'istanza 70791 con gli interruttori, nessun «vista aggregata»; dopo «Esci» `/` porta a `/login`, sessione null
+- [ ] sull'hub non provati col superadmin (prova-claude ha una sola istanza): scheda Istanza, scelta e rientro sull'ultima — li prova Riccardo
+- [ ] Opzioni dice ancora «Cliente 70791 · …» e «questo cliente»: da portare a «istanza» (pagina di un'altra sessione attiva il 23/10)
+- [ ] `next build --webpack` (solo in locale, serve col worktree perché Turbopack rifiuta `node_modules` in link) cade
+  sulle rotte che esportano funzioni (`meshcentral/*`, `mac-product-map`): la build normale dell'hub passa. Non urgente
 
 ## 2026-10-23 — Idea: DA-IPAM per i portatili dei tecnici (da pensare, nessun codice)
 

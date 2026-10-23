@@ -7,7 +7,8 @@ comprimi ben visibile; scelta «tutto in alto». Segnalato: il cambio password n
 - [x] causa del cambio password: `onSelect` (Radix) su un menu Base UI → `onClick` (provato in locale: la finestra si apre)
 - [x] testata compatta con comprimi, utente ed Esci; tema nel menu utente; piede tolto (resa guardata a 1440 aperta e compressa)
 - [x] «URL dell'hub» in Impostazioni → Sistema, `/agents` rimanda lì (provato in locale)
-- [ ] guardarla sull'hub dopo l'aggiornamento, anche a menu compresso col logo piccolo
+- [x] a menu compresso solo il simbolo (Riccardo, 23/10; resa guardata in locale a 1440)
+- [ ] guardarla sull'hub dopo l'aggiornamento
 
 ## 2026-10-23 — Assegnatari NIS2 da AD e utente prevalente dei PC (idea, da decidere)
 

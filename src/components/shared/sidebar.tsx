@@ -444,7 +444,13 @@ export function Sidebar() {
           <img
             src="/logo-white.png"
             alt="Domarc"
-            className={cn("h-6 w-auto object-contain", collapsed && "md:h-auto md:w-11")}
+            className={cn("h-6 w-auto object-contain", collapsed && "md:hidden")}
+          />
+          {/* A menu compresso solo il simbolo (Riccardo, 23/10): il logo intero a 44 px non si leggeva. */}
+          <img
+            src="/simbolo-domarc.png"
+            alt="Domarc"
+            className={cn("h-6 w-6 object-contain", collapsed ? "hidden md:block" : "hidden")}
           />
           <span className={cn("w-px h-5 bg-sidebar-border", collapsed && "md:hidden")} />
           <span title="IP Address Management" className={cn("flex-1 truncate font-semibold text-sidebar-foreground", collapsed && "md:hidden")}>

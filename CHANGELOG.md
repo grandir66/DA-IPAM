@@ -12,7 +12,7 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ### Cambiato
 
-- **Barra laterale: tutto in alto, niente blocco in fondo** (tavola approvata da Riccardo il 23/10, variante «tutto in alto»). Testata in una riga (logo alto 24 px invece di 56, «DA-IPAM», pulsante «Comprimi menu» col bordo perché si veda) e sotto l'utente con «Esci» a un clic. Il tema scuro/chiaro è una voce del menu dell'utente. Il piede con tema, comprimi, utente ed esci (≈200 px) non c'è più: la lista arriva fino in fondo.
+- **Barra laterale: tutto in alto, niente blocco in fondo** (tavola approvata da Riccardo il 23/10, variante «tutto in alto»). Testata in una riga (logo alto 24 px invece di 56, «DA-IPAM», pulsante «Comprimi menu» col bordo perché si veda) e sotto l'utente con «Esci» a un clic. Il tema scuro/chiaro è una voce del menu dell'utente. Il piede con tema, comprimi, utente ed esci (≈200 px) non c'è più: la lista arriva fino in fondo. A menu compresso, in cima c'è solo il simbolo Domarc (la freccia cian, `public/simbolo-domarc.png` da DA-Template): il logo intero ridotto a 44 px non si leggeva.
 - **«URL dell'hub» è in Impostazioni → Sistema** (Riccardo: «quasi inutile nel menu»). `/agents` resta e rimanda lì; il Launchpad punta direttamente alla nuova posizione.
 
 ## [Non rilasciato] — 2026-10-23 · LibreNMS nell'interfaccia (esclusione, candidati, aggiunta in blocco) e VLAN degli switch MikroTik via SSH

@@ -13,7 +13,8 @@
  */
 import { createHash, timingSafeEqual } from "node:crypto";
 import QRCode from "qrcode";
-import { encrypt, safeDecrypt } from "@/lib/crypto";
+// Chiave d'installazione anche col vault acceso: col vault bloccato si deve poter entrare a sbloccarlo (ADR 0034).
+import { cifraAccesso, safeDecifraAccesso } from "@/lib/crypto";
 import { annullaTentativo, clearRateLimit, loginLockState, prenotaTentativo } from "@/lib/rate-limit";
 import {
   attivaTotp,
@@ -118,7 +119,7 @@ async function verifica(
   if (utente.totp_segreto) {
     if (opzioni.fase === "passo_uno") return buono({ esito: "serve_codice" });
     if (!input.codice) return rifiuta();
-    const segreto = safeDecrypt(utente.totp_segreto);
+    const segreto = safeDecifraAccesso(utente.totp_segreto);
     if (!segreto) {
       console.error(`[Auth] ${username}: segreto della verifica in due passaggi non leggibile (chiave cambiata?)`);
       return rifiuta();
@@ -135,15 +136,15 @@ async function verifica(
       : null;
 
   if (opzioni.fase === "passo_uno") {
-    let segreto = propostoValido ? safeDecrypt(propostoValido) : null;
+    let segreto = propostoValido ? safeDecifraAccesso(propostoValido) : null;
     if (!segreto) {
       const nuovo = nuovoSegreto();
-      if (salvaTotpProposto(utente.id, encrypt(nuovo), new Date(ora + DURATA_PROPOSTA_MS).toISOString(), utente.totp_proposto ?? null)) {
+      if (salvaTotpProposto(utente.id, cifraAccesso(nuovo), new Date(ora + DURATA_PROPOSTA_MS).toISOString(), utente.totp_proposto ?? null)) {
         segreto = nuovo;
       } else {
         // Un altro passo 1 ha scritto prima: si usa il suo QR, non uno diverso.
         const attuale = getUserByUsername(username)?.totp_proposto;
-        segreto = attuale ? safeDecrypt(attuale) : null;
+        segreto = attuale ? safeDecifraAccesso(attuale) : null;
       }
     }
     if (!segreto) return rifiuta();
@@ -152,7 +153,7 @@ async function verifica(
   }
 
   if (!propostoValido || !input.codice) return rifiuta();
-  const segreto = safeDecrypt(propostoValido);
+  const segreto = safeDecifraAccesso(propostoValido);
   if (!segreto) return rifiuta();
   const passo = verificaTotp(segreto, input.codice, ora, null);
   if (passo === null || !attivaTotp(utente.id, propostoValido, passo)) return rifiuta();

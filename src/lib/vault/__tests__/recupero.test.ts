@@ -74,9 +74,9 @@ describe("CLI", () => {
     assert.ok(!r.stdout.includes("nuova-passphrase-da-cli"));
     assert.deepEqual(await apriConPassphrase(dir, "nuova-passphrase-da-cli"), chiave);
     const righe = readFileSync(join(dir, "recuperi.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l) as Record<string, unknown>);
-    assert.equal(righe.length, 1);
-    assert.equal(righe[0].ticket, "TCK-42");
-    assert.equal(righe[0].comando, "reset-password");
+    // Intento prima, esito dopo (rilievo 12 della revisione del 23/10).
+    assert.deepEqual(righe.map((r) => r.stato), ["intento", "ok"]);
+    assert.ok(righe.every((r) => r.ticket === "TCK-42" && r.comando === "reset-password"));
     assert.ok(!JSON.stringify(righe).includes(identita));
   });
 

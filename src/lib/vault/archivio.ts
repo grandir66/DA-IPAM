@@ -18,7 +18,6 @@
 import { createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { Decrypter, Encrypter } from "age-encryption";
 import { ErroreVault } from "./tipi";
 
 export const PASSPHRASE_MINIMA = 14;
@@ -35,10 +34,18 @@ const FILE_SLOT: Record<NomeSlot, string> = {
 };
 const FILE_ARCHIVIO = "archivio.json";
 
+/** D5: il cliente ha escluso lo slot Domarc per iscritto; il riferimento della sua richiesta sta nell'archivio. */
+export interface DomarcEscluso {
+  richiesta: string;
+  il: string;
+}
+
 export interface InfoArchivio {
   formato: number;
   id: string;
   creato: string;
+  /** Presente solo se l'archivio è nato senza slot Domarc, con la richiesta scritta del cliente. */
+  domarcEscluso?: DomarcEscluso;
   /** Lo slot è dichiarato nell'archivio e il suo file c'è. */
   slot: Record<NomeSlot, boolean>;
 }
@@ -48,6 +55,7 @@ interface ArchivioSuDisco {
   id: string;
   creato: string;
   verifica: string;
+  domarcEscluso?: DomarcEscluso;
   slot: Record<NomeSlot, boolean>;
 }
 
@@ -105,11 +113,15 @@ function leggiSuDisco(dir: string): ArchivioSuDisco {
     throw new ErroreVault("archivio_rotto", "archivio.json del vault non ha la forma attesa");
   }
   const s = r.slot as Partial<Record<NomeSlot, unknown>>;
+  const e = (r as { domarcEscluso?: Partial<DomarcEscluso> }).domarcEscluso;
+  // Il riferimento della richiesta del cliente si conserva a ogni riscrittura di archivio.json (slot TPM, slot, …).
+  const domarcEscluso = e && typeof e.richiesta === "string" && typeof e.il === "string" ? { richiesta: e.richiesta, il: e.il } : undefined;
   return {
     formato: r.formato,
     id: r.id,
     creato: r.creato,
     verifica: r.verifica,
+    ...(domarcEscluso ? { domarcEscluso } : {}),
     slot: { cliente: s.cliente === true, domarc: s.domarc === true, tpm: s.tpm === true },
   };
 }
@@ -178,7 +190,18 @@ function fileSlot(dir: string, a: ArchivioSuDisco, slot: NomeSlot): string {
 
 // ── Cifratura age ───────────────────────────────────────────────────────────
 
+/**
+ * `age-encryption` si carica SOLO quando serve (`await import`): è un modulo ESM puro con dipendenze (`@noble/*`) che
+ * vogliono Node >= 20.19, mentre l'app dichiara `node >=20`. Questo file lo raggiungono all'avvio jobs, backup, layout
+ * e catalogo delle opzioni (via `appliance.ts`): importato in modo statico, su un Node 20.x più vecchio l'app non
+ * partirebbe più anche a interruttori spenti (revisione del 23/10, rilievo 6; provato da `avvio-leggero.test.ts`).
+ */
+async function age(): Promise<typeof import("age-encryption")> {
+  return import("age-encryption");
+}
+
 async function cifraConPassphrase(dati: Uint8Array, passphrase: string, logN: number): Promise<Uint8Array> {
+  const { Encrypter } = await age();
   const e = new Encrypter();
   e.setPassphrase(passphrase);
   e.setScryptWorkFactor(logN);
@@ -194,6 +217,7 @@ async function cifraVersoDestinatario(dati: Uint8Array, destinatario: string): P
   if (!destinatarioValido(destinatario)) {
     throw new ErroreVault("configurazione", "La chiave pubblica Domarc non è un destinatario age X25519 (age1…)");
   }
+  const { Encrypter } = await age();
   const e = new Encrypter();
   try {
     e.addRecipient(destinatario.trim());
@@ -203,9 +227,18 @@ async function cifraVersoDestinatario(dati: Uint8Array, destinatario: string): P
   return e.encrypt(dati);
 }
 
+/**
+ * La regola unica per la passphrase del cliente (creazione, cambio, recupero): almeno 14 caratteri e niente spazi, tab o
+ * a capo all'inizio o alla fine. Non si taglia in silenzio: `crea` la prendeva com'era e `reset-password` la tagliava, e
+ * un cliente con uno spazio finale restava fuori dopo un recupero (revisione del 23/10, rilievo 10). Rifiutarla agli
+ * estremi rende le due strade identiche.
+ */
 function controllaPassphrase(passphrase: string): void {
   if (typeof passphrase !== "string" || [...passphrase].length < PASSPHRASE_MINIMA) {
     throw new ErroreVault("configurazione", `La passphrase del cliente deve avere almeno ${PASSPHRASE_MINIMA} caratteri`);
+  }
+  if (passphrase !== passphrase.trim()) {
+    throw new ErroreVault("configurazione", "La passphrase del cliente non deve avere spazi, tab o a capo all'inizio o alla fine (spazi dentro vanno bene)");
   }
 }
 
@@ -217,6 +250,8 @@ export interface OpzioniCreazione {
   chiaveDomarc: string | null;
   /** D5: il cliente ha escluso per iscritto lo slot Domarc. */
   senzaDomarc?: boolean;
+  /** Con `senzaDomarc` è OBBLIGATORIO: il riferimento della richiesta scritta del cliente (finisce nell'archivio). */
+  richiestaCliente?: string;
   scryptLogN?: number;
 }
 
@@ -227,6 +262,10 @@ export async function creaArchivio(dir: string, op: OpzioniCreazione): Promise<{
   }
   controllaPassphrase(op.passphrase);
   const conDomarc = !op.senzaDomarc;
+  const richiesta = op.richiestaCliente?.trim();
+  if (!conDomarc && !richiesta) {
+    throw new ErroreVault("configurazione", "Senza slot Domarc serve il riferimento della richiesta scritta del cliente (richiesta cliente)");
+  }
   if (conDomarc && !op.chiaveDomarc) {
     throw new ErroreVault(
       "configurazione",
@@ -243,6 +282,7 @@ export async function creaArchivio(dir: string, op: OpzioniCreazione): Promise<{
     id: randomUUID(),
     creato: new Date().toISOString(),
     verifica: "",
+    ...(!conDomarc && richiesta ? { domarcEscluso: { richiesta, il: new Date().toISOString() } } : {}),
     slot: { cliente: true, domarc: conDomarc, tpm: false },
   };
   a.verifica = verificaDi(chiave, a.id);
@@ -261,12 +301,19 @@ export function archivioPresente(dir: string): boolean {
 export function leggiArchivio(dir: string): InfoArchivio {
   const a = leggiSuDisco(dir);
   const presente = (s: NomeSlot) => a.slot[s] && existsSync(join(dir, FILE_SLOT[s]));
-  return { formato: a.formato, id: a.id, creato: a.creato, slot: { cliente: presente("cliente"), domarc: presente("domarc"), tpm: presente("tpm") } };
+  return {
+    formato: a.formato,
+    id: a.id,
+    creato: a.creato,
+    ...(a.domarcEscluso ? { domarcEscluso: a.domarcEscluso } : {}),
+    slot: { cliente: presente("cliente"), domarc: presente("domarc"), tpm: presente("tpm") },
+  };
 }
 
 export async function apriConPassphrase(dir: string, passphrase: string): Promise<Buffer> {
   const a = leggiSuDisco(dir);
   const p = fileSlot(dir, a, "cliente");
+  const { Decrypter } = await age();
   const d = new Decrypter();
   d.addPassphrase(passphrase);
   let dati: Uint8Array;
@@ -282,6 +329,7 @@ export async function apriConPassphrase(dir: string, passphrase: string): Promis
 export async function apriConDomarc(dir: string, identita: string): Promise<Buffer> {
   const a = leggiSuDisco(dir);
   const p = fileSlot(dir, a, "domarc");
+  const { Decrypter } = await age();
   const d = new Decrypter();
   try {
     d.addIdentity(identita.trim());

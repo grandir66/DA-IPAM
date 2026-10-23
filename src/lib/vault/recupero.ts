@@ -8,10 +8,10 @@
  * - `export-keyfile`: dà il key file delle esportazioni KeePass (il cliente l'ha perso);
  * - `rotate`: riscrive lo slot Domarc verso una chiave pubblica nuova (cambio di generazione, es. `domarc-2027`).
  *
- * Ogni uso chiede un ticket e lascia una riga in `recuperi.jsonl` nella cartella dell'archivio, senza segreti: la
- * comunicazione al cliente (D5: «Domarc lo informa di ogni uso») parte da lì.
+ * Ogni uso chiede un ticket e lascia in `recuperi.jsonl`, nella cartella dell'archivio, una riga PRIMA (intento) e una
+ * DOPO (ok o fallito), senza segreti: la comunicazione al cliente (D5: «Domarc lo informa di ogni uso») parte da lì.
  */
-import { appendFileSync } from "node:fs";
+import { appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { apriConDomarc, scriviSlotCliente, scriviSlotDomarc, SCRYPT_LOGN } from "./archivio";
 import { LocaleStore, PERCORSO_KEYFILE } from "./locale";
@@ -19,10 +19,14 @@ import { ErroreVault } from "./tipi";
 
 const IDENTITA = /^AGE-SECRET-KEY-1[0-9A-Z]{58}$/;
 
-/** Prima riga dello stdin: l'identità; le righe dopo (es. la passphrase nuova) in `resto`. */
+/**
+ * Prima riga dello stdin: l'identità (ripulita ai bordi: è una chiave, non una frase); le righe dopo (es. la passphrase
+ * nuova) in `resto`, COM'ERANO: la passphrase non si taglia (la stessa regola di `crea`, che la rifiuta se ha spazi ai
+ * bordi: `controllaPassphrase` in archivio.ts). Righe vuote saltate.
+ */
 export function leggiIdentitaDaStdin(testo: string): { identita: string; resto: string[] } {
-  const righe = testo.split(/\r?\n/).map((r) => r.trim()).filter((r) => r !== "");
-  const identita = righe[0] ?? "";
+  const righe = testo.split(/\r?\n/).filter((r) => r.trim() !== "");
+  const identita = (righe[0] ?? "").trim();
   if (!IDENTITA.test(identita)) {
     throw new ErroreVault("configurazione", "Sullo stdin, alla prima riga, serve la chiave privata Domarc (AGE-SECRET-KEY-1…)");
   }
@@ -63,7 +67,14 @@ export async function ruotaSlotDomarc(dir: string, identita: string, nuovoDestin
   await scriviSlotDomarc(dir, chiave, nuovoDestinatario);
 }
 
-/** Una riga in `recuperi.jsonl`: ticket, comando, ora, chi (utente del sistema). Mai segreti. */
-export function registraRecupero(dir: string, riga: { ticket: string; comando: string; chi: string }): void {
+export type StatoRecupero = "intento" | "ok" | "fallito";
+
+/**
+ * Una riga in `recuperi.jsonl`: ticket, comando, ora, chi (utente del sistema), stato. Mai segreti. Si scrive PRIMA
+ * dell'operazione (`intento`) e DOPO con l'esito (`ok` o `fallito`, con il solo codice dell'errore): un tentativo
+ * fallito o interrotto lascia comunque la traccia, e il cliente (D5: «Domarc lo informa di ogni uso») la vede.
+ */
+export function registraRecupero(dir: string, riga: { ticket: string; comando: string; chi: string; stato?: StatoRecupero; errore?: string }): void {
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
   appendFileSync(join(dir, "recuperi.jsonl"), `${JSON.stringify({ ...riga, il: new Date().toISOString() })}\n`, { mode: 0o600 });
 }

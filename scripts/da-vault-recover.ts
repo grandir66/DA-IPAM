@@ -10,7 +10,8 @@
  *   <chiave da Keeper> | npx tsx scripts/da-vault-recover.ts rotate --ticket T-123 --destinatario age1…
  *
  * `--archivio <cartella>` sposta l'archivio (di serie `<dati>/vault`). Mai la chiave come argomento: il comando la
- * rifiuta. Nessun segreto a schermo; ogni uso lascia una riga (ticket, comando, ora, utente) in `recuperi.jsonl`.
+ * rifiuta. Nessun segreto a schermo; ogni uso lascia in `recuperi.jsonl` una riga PRIMA (intento) e una DOPO (ok o
+ * fallito) con ticket, comando, ora e utente: un tentativo fallito o interrotto lascia comunque la traccia.
  */
 import os from "node:os";
 import { existsSync, writeFileSync } from "node:fs";
@@ -34,7 +35,7 @@ function opzione(argomenti: string[], nome: string): string | undefined {
 
 async function leggiStdin(): Promise<string> {
   if (process.stdin.isTTY) {
-    esci("La chiave Domarc va passata sullo stdin da un comando (non scritta alla tastiera, che la mostrerebbe a schermo).");
+    throw new ErroreVault("configurazione", "La chiave Domarc va passata sullo stdin da un comando (non scritta alla tastiera, che la mostrerebbe a schermo).");
   }
   const parti: Buffer[] = [];
   for await (const p of process.stdin) parti.push(p as Buffer);
@@ -59,10 +60,23 @@ async function main(): Promise<void> {
   if (comando === "export-keyfile" && uscita && existsSync(uscita)) esci(`Il file ${uscita} c'è già: non si sovrascrive`);
   if (comando === "rotate" && !destinatario) esci("rotate vuole --destinatario age1… (la chiave pubblica nuova)");
 
+  const chi = os.userInfo().username;
+  registraRecupero(dir, { ticket, comando, chi, stato: "intento" });
+  try {
+    await eseguiRecupero({ comando, dir, uscita, destinatario });
+  } catch (e) {
+    registraRecupero(dir, { ticket, comando, chi, stato: "fallito", errore: e instanceof ErroreVault ? e.codice : "errore" });
+    throw e;
+  }
+  registraRecupero(dir, { ticket, comando, chi, stato: "ok" });
+}
+
+async function eseguiRecupero(op: { comando: string; dir: string; uscita?: string; destinatario?: string }): Promise<void> {
+  const { comando, dir, uscita, destinatario } = op;
   const { identita, resto } = leggiIdentitaDaStdin(await leggiStdin());
   if (comando === "reset-password") {
     const nuova = resto[0];
-    if (!nuova) esci("reset-password: la passphrase nuova va alla seconda riga dello stdin");
+    if (!nuova) throw new ErroreVault("configurazione", "reset-password: la passphrase nuova va alla seconda riga dello stdin");
     await resetPassword(dir, identita, nuova);
     console.info("Slot del cliente riscritto con la passphrase nuova. Comunicalo al cliente (ticket nel registro).");
   } else if (comando === "export-keyfile" && uscita) {
@@ -72,7 +86,6 @@ async function main(): Promise<void> {
     await ruotaSlotDomarc(dir, identita, destinatario);
     console.info("Slot Domarc riscritto verso la chiave pubblica nuova; la chiave dei dati non cambia.");
   }
-  registraRecupero(dir, { ticket, comando, chi: os.userInfo().username });
 }
 
 main().catch((e: unknown) => {

@@ -84,7 +84,7 @@ describe("creazione", () => {
   it("senza chiave Domarc rifiuta, a meno dell'esclusione scritta (D5)", async () => {
     const dir = cartella();
     assert.equal(await codiceDi(creaArchivio(dir, { passphrase: PASS, chiaveDomarc: null, scryptLogN: LOGN })), "configurazione");
-    const { chiave } = await creaArchivio(dir, { passphrase: PASS, chiaveDomarc: null, senzaDomarc: true, scryptLogN: LOGN });
+    const { chiave } = await creaArchivio(dir, { passphrase: PASS, chiaveDomarc: null, senzaDomarc: true, richiestaCliente: "RIC-PROVA-1", scryptLogN: LOGN });
     assert.deepEqual(leggiArchivio(dir).slot, { cliente: true, domarc: false, tpm: false });
     assert.deepEqual(await apriConPassphrase(dir, PASS), chiave);
   });
@@ -219,7 +219,7 @@ describe("slot cancellato", () => {
 
   it("l'ultimo slot non si toglie: l'archivio resterebbe chiuso per sempre", async () => {
     const dir = cartella();
-    await creaArchivio(dir, { passphrase: PASS, chiaveDomarc: null, senzaDomarc: true, scryptLogN: LOGN });
+    await creaArchivio(dir, { passphrase: PASS, chiaveDomarc: null, senzaDomarc: true, richiestaCliente: "RIC-PROVA-1", scryptLogN: LOGN });
     assert.equal(await codiceDi(() => togliSlot(dir, "cliente")), "configurazione");
     assert.equal(existsSync(join(dir, "slot-cliente.age")), true);
   });

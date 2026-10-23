@@ -36,6 +36,8 @@ Riccardo (22/10): da verificare in un secondo momento, nessuna analisi fatta fin
 Riccardo (23/10): il blocco in basso della barra è brutto, logo più piccolo, «URL dell'hub» in Impostazioni,
 comprimi ben visibile; scelta «tutto in alto». Segnalato: il cambio password non funziona.
 - [x] causa del cambio password: `onSelect` (Radix) su un menu Base UI → `onClick` (provato in locale: la finestra si apre)
+- [x] cambio password verificato sull'hub v0.9.894 (23/10, utente `prova-claude-admin`, dall'interfaccia): la finestra si apre dal menu,
+  conferma diversa e password corrente sbagliata rifiutate, cambio riuscito, dopo «Esci» la vecchia non entra e la nuova sì
 - [x] testata compatta con comprimi, utente ed Esci; tema nel menu utente; piede tolto (resa guardata a 1440 aperta e compressa)
 - [x] «URL dell'hub» in Impostazioni → Sistema, `/agents` rimanda lì (provato in locale)
 - [x] a menu compresso solo il simbolo (Riccardo, 23/10; resa guardata in locale a 1440)

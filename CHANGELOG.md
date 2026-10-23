@@ -24,6 +24,7 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 - OpenBao: un `credential_ref` malformato salta quella voce con un avviso (cliente e voce) invece di fermare la cache; `X-Domarc-Utente` percent-encoded con l'id; credenziale eliminata = cancellati i metadata del percorso (se OpenBao non risponde, avviso e `--verifica` elenca gli orfani).
 - Passphrase: limite di tentativi **per utente**, condiviso fra sblocco e KeePass, e tetto alle derivazioni scrypt in corso (429); spazi ai bordi rifiutati sia da `crea` sia dal recupero.
 - `crea --senza-domarc` vuole `--richiesta-cliente` e la scrive nell'archivio e in `recuperi.jsonl`; i registri dei recuperi scrivono l'intento prima e l'esito dopo. «Chi ha visto cosa» solo agli admin. All'avvio il vault parte prima delle altre inizializzazioni.
+- OpenBao: un riferimento nuovo non ancora in cache (dopo `--applica` ad app accesa) fa partire **un** giro (uno alla volta, al più ogni 30 s) e la lettura dopo lo trova, senza aspettare i 5 minuti; il file del secret_id mancante o illeggibile dà `ErroreVault(configurazione)` con messaggio controllato, senza il percorso grezzo.
 
 ### Perché così
 

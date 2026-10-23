@@ -10,7 +10,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import Database from "better-sqlite3";
 import { TENANT_SCHEMA_SQL } from "@/lib/db-tenant-schema";
-import { migrateVault, schemaVaultPresente } from "@/lib/db-tenant";
+import { closeTenantDb, deleteTenantDatabase, getTenantDb, migrateVault, schemaVaultPresente } from "@/lib/db-tenant";
 
 function db(): Database.Database {
   const d = new Database(":memory:");
@@ -39,8 +39,7 @@ describe("migrateVault", () => {
     assert.match(segno ?? "", /^done:\d{4}-\d{2}-\d{2}:v1$/);
   });
 
-  it("un database del cliente aperto dall'app ha già lo schema del vault", async () => {
-    const { getTenantDb, closeTenantDb, deleteTenantDatabase } = await import("@/lib/db-tenant");
+  it("un database del cliente aperto dall'app ha già lo schema del vault", () => {
     const d = getTenantDb("VAULTMIG");
     try {
       assert.equal(schemaVaultPresente(d), true);

@@ -19,12 +19,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { encrypt } from "@/lib/crypto";
 import { closeTenantDb, deleteTenantDatabase, getTenantDb, withTenant } from "@/lib/db-tenant";
-import { closeHubDb } from "@/lib/db-hub";
+import { closeHubDb, createTenant } from "@/lib/db-hub";
 import { creaCredenzialeDb } from "@/lib/credentials/archivio";
 import { campiVoceDb, leggiSegretoDb, type UsoSegreto } from "@/lib/credentials/segreti";
 import { OpenBaoStore } from "../openbao";
 import { migraVersoOpenBao, percorsoCredenziale, verificaMigrazione } from "../migra-openbao";
-import { configurazioneOpenBao } from "../avvio";
+import { configurazioneOpenBao, riferimentiDelleCredenziali } from "../avvio";
 import { statoVaultProcesso } from "../stato";
 import { percorsoValido } from "../tipi";
 import { creaOpenBaoFinto, type OpenBaoFinto } from "./support/openbao-finto";
@@ -190,9 +190,7 @@ describe("configurazione da ambiente", () => {
 });
 
 describe("riferimenti nella cache all'avvio (hub)", () => {
-  it("riferimentiDelleCredenziali dà i credential_ref di tutti i clienti attivi, una volta ciascuno", async () => {
-    const { createTenant } = await import("@/lib/db-hub");
-    const { riferimentiDelleCredenziali } = await import("../avvio");
+  it("riferimentiDelleCredenziali dà i credential_ref di tutti i clienti attivi, una volta ciascuno", () => {
     createTenant({ codice_cliente: T, ragione_sociale: "Cliente di prova", active: 1 } as Parameters<typeof createTenant>[0]);
     const refs = riferimenti().filter((r): r is string => Boolean(r));
     assert.equal(refs.length, 4);

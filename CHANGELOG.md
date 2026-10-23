@@ -4,6 +4,18 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-23 · «Esci» che chiude davvero, istanza controllata e ricordata, «cliente» diventa «istanza»
+
+### Corretto
+
+- **«Esci» non chiudeva la sessione** (ADR 0033). Le richieste della dashboard partite un attimo prima dell'uscita tornavano dopo e rimettevano il cookie, perché il JWT si rinnova a ogni risposta: tornando su `/` si era ancora dentro. Ora l'uscita segna l'ora sull'utente (`users.sessioni_valide_da`) e un token nato da un accesso precedente non vale più, da qualunque richiesta arrivi. «Esci» chiude la sessione su tutti i browser dell'utente.
+- **Il cambio d'istanza accettava qualsiasi codice dal browser.** Un utente con la sola istanza A poteva chiedere B o la vista «tutte». Ora passa solo verso istanze dell'utente (lette dal DB) e «tutte» solo per il superadmin; un rifiuto lascia l'istanza di prima e lo dice a schermo.
+
+### Cambiato
+
+- **L'hub riparte dall'ultima istanza usata** (`users.ultima_istanza`), se l'accesso c'è ancora; chi non ne ha mai scelta una entra come prima (superadmin nella vista «tutte»).
+- **La scelta dell'istanza è in Impostazioni → Istanza** (Riccardo, 23/10), visibile solo con più istanze. Nella barra resta una riga da leggere sotto l'utente («Domarc Srl · 70791»), che porta lì. «Cliente» diventa «istanza» nella scelta, in «Dati istanza», «Config istanza» e nella pagina «Istanze» (prima «Clienti»).
+
 ## [Non rilasciato] — 2026-10-23 · Scansione veloce, soglie della pulizia e MDM da Opzioni; «Esegui ora» in Schedulazioni
 
 ### Cambiato

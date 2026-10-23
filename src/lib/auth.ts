@@ -108,18 +108,14 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           }));
         }
 
+        const { istanzaIniziale } = await import("./accesso/sessione");
         return {
           id: String(user.id),
           name: user.username,
           email: user.email || `${user.username}@da-invent.local`,
           role: user.role,
           tenants: tenantList,
-          tenantCode:
-            tenantList.length === 1
-              ? tenantList[0].code
-              : user.role === "superadmin"
-                ? "__ALL__"
-                : null,
+          tenantCode: istanzaIniziale(user, tenantList),
         };
       },
     }),
@@ -180,6 +176,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           tenantList = tenants.map(t => ({ code: t.codice_cliente, name: t.ragione_sociale, role: t.role }));
         }
 
+        const { istanzaIniziale } = await import("./accesso/sessione");
         return {
           id: String(user.id),
           name: user.username,
@@ -189,13 +186,9 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           // Single-tenant (es. appliance): TUTTI, superadmin incluso, defaultano
           // all'unico tenant — altrimenti il superadmin resta su __ALL__ (vista
           // aggregata) e ogni pagina tenant-scoped fa 409 (niente tenant risolto).
-          // Multi-tenant: superadmin → __ALL__ (+ switcher), altri → selezione.
-          tenantCode:
-            tenantList.length === 1
-              ? tenantList[0].code
-              : user.role === "superadmin"
-                ? "__ALL__"
-                : null,
+          // Multi-tenant: l'ultima istanza scelta se è ancora ammessa (23/10), poi
+          // superadmin → __ALL__, altri → selezione.
+          tenantCode: istanzaIniziale(user, tenantList),
         };
       },
     }),

@@ -447,6 +447,10 @@ function initializeHubDb(db: Database.Database): void {
       ["totp_ultimo_passo", "INTEGER"],
       ["totp_proposto", "TEXT"],
       ["totp_proposto_scade", "TEXT"],
+      // Sessione e istanza (23/10, lib/accesso/sessione.ts): ora dell'ultimo «Esci» in ms e
+      // ultima istanza scelta, da cui si riparte all'accesso.
+      ["sessioni_valide_da", "INTEGER"],
+      ["ultima_istanza", "TEXT"],
     ];
     for (const [nome, tipo] of nuove) {
       if (!cols.has(nome)) db.exec(`ALTER TABLE users ADD COLUMN ${nome} ${tipo}`);
@@ -570,6 +574,10 @@ export interface HubUser {
   last_login: string | null;
   /** Verifica in due passaggi (ADR 0023): 1 = richiesta dall'admin. */
   totp_richiesta?: number;
+  /** Ora dell'ultimo «Esci» (ms): i token di accessi precedenti non valgono (lib/accesso/sessione.ts). */
+  sessioni_valide_da?: number | null;
+  /** Ultima istanza scelta, da cui si riparte all'accesso. */
+  ultima_istanza?: string | null;
   /** Segreto confermato, cifrato con encrypt(); null = non ancora attivata. */
   totp_segreto?: string | null;
   totp_attivato_at?: string | null;

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useSession } from "next-auth/react";
-import { TenantSwitcher } from "./tenant-switcher";
+import { IstanzaCorrente } from "./tenant-switcher";
 import { useSidebar } from "./sidebar-context";
 import {
   Activity,
@@ -355,7 +355,7 @@ export function Sidebar() {
   const tenantCode = (session?.user as { tenantCode?: string } | undefined)?.tenantCode;
   const tenants = ((session?.user as Record<string, unknown>)?.tenants ?? []) as Array<{ code: string; name: string }>;
   const currentTenantName = tenantCode === "__ALL__"
-    ? "Tutti i clienti"
+    ? "Tutte le istanze"
     : tenants.find((t) => t.code === tenantCode)?.name ?? tenantCode ?? "";
 
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -468,30 +468,29 @@ export function Sidebar() {
         </div>
         <div className={cn("px-2 pb-2", collapsed && "md:px-0")}>
           <UserMenu compresso={collapsed} />
+          {/* Su quale istanza si lavora; la scelta è in Impostazioni → Istanza (Riccardo, 23/10). */}
+          <IstanzaCorrente compresso={collapsed} onNavigate={closeMobile} />
         </div>
       </div>
 
       <nav className="flex-1 overflow-y-auto p-3 space-y-1 min-h-0">
 
-        {/* ═══ GESTIONE CLIENTI (solo superadmin) ═══ */}
+        {/* ═══ GESTIONE ISTANZE (solo superadmin) ═══ */}
         {/* «URL dell'hub» è in Impostazioni → Sistema dal 23/10 (Riccardo: quasi inutile qui). */}
         {isSuperadmin && (
-          <NavItem href="/tenants" icon={Building2} label="Clienti" active={isActive("/tenants")} collapsed={collapsed} onNavigate={closeMobile} />
+          <NavItem href="/tenants" icon={Building2} label="Istanze" active={isActive("/tenants")} collapsed={collapsed} onNavigate={closeMobile} />
         )}
 
-        {/* ═══ TENANT SWITCHER + SEPARATORE (nascosti se collassato) ═══ */}
-        <div className={cn("pt-2 pb-1", collapsed && "md:hidden")}>
-          <TenantSwitcher />
-          {currentTenantName && (
-            <div className="mt-2 px-3">
-              <div className="border-t border-sidebar-border pt-2">
-                <p className="text-[10px] uppercase tracking-wider text-sidebar-foreground/40 font-semibold">
-                  Dati cliente
-                </p>
-              </div>
+        {/* ═══ SEPARATORE DATI ISTANZA (nascosto se collassato); la scelta è in Impostazioni ═══ */}
+        {currentTenantName && (
+          <div className={cn("pt-3 pb-1 px-3", collapsed && "md:hidden")}>
+            <div className="border-t border-sidebar-border pt-2">
+              <p className="text-[10px] uppercase tracking-wider text-sidebar-foreground/40 font-semibold">
+                Dati istanza
+              </p>
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* ═══ VOCI DIPENDENTI DAL TENANT ═══ */}
 
@@ -527,7 +526,7 @@ export function Sidebar() {
 
         {/* Active Directory: spostato come voce di Network */}
 
-        {/* Config Cliente — disabilitato, da rifare con UX guidata */}
+        {/* Config istanza — disabilitato, da rifare con UX guidata */}
         <div
           className={cn(
             "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-sidebar-foreground/40 cursor-not-allowed",
@@ -536,7 +535,7 @@ export function Sidebar() {
           title="In arrivo"
         >
           <ClipboardList className="h-4 w-4 shrink-0" />
-          <span className={cn(collapsed && "md:hidden")}>Config Cliente</span>
+          <span className={cn(collapsed && "md:hidden")}>Config istanza</span>
         </div>
 
         {/* Manuale in-app: viewer markdown dei doc in /docs */}

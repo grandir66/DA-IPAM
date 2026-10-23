@@ -1,5 +1,22 @@
 # TASKS — DA-IPAM
 
+## 2026-10-23 — Uscita vera, istanza controllata e ricordata (livello completo, ADR 0033)
+
+Riccardo (23/10): ok alla revoca della sessione; la scelta del cliente diventa «istanza», va in Impostazioni,
+e si riparte dall'ultima usata; verificare sull'hub (unico multi-istanza) le Opzioni con un'istanza scelta.
+- [x] prove `src/lib/accesso/__tests__/sessione.test.ts` viste fallire (5 su 6) prima della correzione, poi verdi
+- [x] revoca all'uscita (`sessioni_valide_da`, `accessoAt`), cambio d'istanza controllato, ultima istanza
+- [x] Impostazioni → Istanza, riga in sola lettura nella barra, «cliente» → «istanza» (resa locale a 1440, aperta e compressa)
+- [x] scenario locale: dopo «Esci» `/` porta a `/login`; rientro sull'ultima istanza; un viewer non forza un'altra istanza né «tutte»
+- [ ] aggiornare l'hub (.8 non ha il timer: `scripts/update.sh`) e verificare lì Opzioni con istanza scelta
+- [ ] `next build --webpack` in locale cade su `api/integrations/meshcentral/config/route.ts` (esporta
+  `seedMeshSyncJobForTenant`, c'è da giugno): sull'hub la build normale passa; da capire se va spostata la funzione
+
+## 2026-10-23 — Idea: DA-IPAM per i portatili dei tecnici (da pensare, nessun codice)
+
+Riccardo (23/10): «poi penseremo a una release di DA-IPAM da eseguire sui notebook dei tecnici, multi tenant con
+meno funzioni». Da decidere: quali funzioni restano, da dove prende le istanze (hub? copia locale?), come si aggiorna.
+
 ## 2026-10-23 — Barra laterale compatta e cambio password
 
 Riccardo (23/10): il blocco in basso della barra è brutto, logo più piccolo, «URL dell'hub» in Impostazioni,

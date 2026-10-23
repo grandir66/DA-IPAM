@@ -52,6 +52,7 @@ import {
   Pencil,
   RotateCcw,
   Users,
+  Building2,
   Shield,
   ArrowUpCircle,
   Bell,
@@ -80,6 +81,7 @@ import { InterruttoreAcquisizioneModulare } from "@/components/settings/interrut
 import { NotificationsTab } from "@/components/settings/notifications-tab";
 import { SecurityAlertsTab } from "@/components/settings/security-alerts-tab";
 import { HubUrlCard } from "@/components/settings/hub-url-card";
+import { SceltaIstanza } from "@/components/shared/tenant-switcher";
 
 const JOB_TYPE_LABELS: Record<string, string> = ETICHETTE_JOB;
 
@@ -129,6 +131,7 @@ const INTERVAL_OPTIONS = [
 ];
 
 type TabKey =
+  | "istanza"
   | "utenti"
   | "scansione"
   | "identificazione"
@@ -141,6 +144,9 @@ type TabKey =
   | "sistema";
 
 const TAB_ALIASES: Record<string, TabKey> = {
+  istanza: "istanza",
+  tenant: "istanza",
+  cliente: "istanza",
   utenti: "utenti",
   users: "utenti",
   scansione: "scansione",
@@ -265,6 +271,7 @@ function SettingsPageInner() {
   // Sessione caricata e ruolo di sola lettura: la gestione utenti non lo riguarda
   // (/api/users gli risponde 403 per scelta). Finché la sessione carica non si decide.
   const isViewer = sessionStatus === "authenticated" && !isAdmin;
+  const istanzeUtente = ((session?.user as { tenants?: unknown[] } | undefined)?.tenants ?? []).length;
 
   const initialTab: TabKey = useMemo(() => {
     const raw = (searchParams?.get("tab") ?? "").toLowerCase();
@@ -731,6 +738,8 @@ function SettingsPageInner() {
   // ============ RENDER ============
 
   const allTabs: Array<{ key: TabKey; label: string; icon: React.ComponentType<{ className?: string }> }> = [
+    // Istanza (Riccardo, 23/10): la scelta del tenant, tolta dalla barra; solo con più istanze.
+    ...(istanzeUtente > 1 ? [{ key: "istanza" as const, label: "Istanza", icon: Building2 }] : []),
     { key: "utenti", label: "Utenti", icon: Users },
     { key: "scansione", label: "Scansione", icon: Radar },
     { key: "identificazione", label: "Identificazione", icon: Fingerprint },
@@ -790,6 +799,21 @@ function SettingsPageInner() {
           );
         })}
       </div>
+
+      {/* === Tab: Istanza === */}
+      {activeTab === "istanza" && istanzeUtente > 1 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Istanza su cui lavori</CardTitle>
+            <CardDescription>
+              Le pagine con i dati (reti, inventario, anomalie…) mostrano l&apos;istanza scelta qui.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <SceltaIstanza />
+          </CardContent>
+        </Card>
+      )}
 
       {/* === Tab: Utenti === */}
       {activeTab === "utenti" && isViewer && (

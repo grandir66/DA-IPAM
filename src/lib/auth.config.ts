@@ -38,6 +38,16 @@ export const authConfig: NextAuthConfig = {
   pages: {
     signIn: "/login",
   },
+  events: {
+    // «Esci»: segna l'ora sull'utente, così le richieste in ritardo non riaprono la sessione.
+    async signOut(message) {
+      const token = "token" in message ? message.token : null;
+      const userId = token?.userId && token.userId !== "0" ? Number(token.userId) : null;
+      if (!userId) return;
+      const { segnaUscita } = await import("./accesso/sessione");
+      segnaUscita(userId);
+    },
+  },
   callbacks: {
     async jwt({ token, user, trigger, session }) {
       if (user) {
@@ -48,10 +58,26 @@ export const authConfig: NextAuthConfig = {
         // ma lo replichiamo esplicitamente per robustezza tra refresh/update.
         const rawId = (user as { id?: string }).id;
         if (rawId) token.userId = rawId;
+        // Ora dell'accesso: non cambia ai rinnovi, a differenza di `iat` (lib/accesso/sessione.ts).
+        token.accessoAt = Date.now();
+      } else if (token.userId && token.userId !== "0") {
+        // Dopo «Esci» un token di un accesso precedente non vale più, anche se una richiesta
+        // partita prima dell'uscita lo rinnova: null fa cancellare il cookie ad Auth.js.
+        const { sessioneRevocata } = await import("./accesso/sessione");
+        if (sessioneRevocata(Number(token.userId), token.accessoAt as number | undefined)) return null;
       }
-      // Allow client-side tenant switch via session update
+      // Cambio d'istanza dal browser: solo verso le istanze dell'utente, «tutte» solo al
+      // superadmin (prima passava qualsiasi codice, 23/10). Rifiutato = resta dov'era.
       if (trigger === "update" && session?.tenantCode) {
-        token.tenantCode = session.tenantCode;
+        const { istanzaAmmessa, segnaUltimaIstanza } = await import("./accesso/sessione");
+        const richiesta = String(session.tenantCode);
+        const userId = token.userId && token.userId !== "0" ? Number(token.userId) : null;
+        if (!istanzaAmmessa(userId, token.role as string | undefined, richiesta)) {
+          console.warn(`[Auth] utente ${token.userId ?? "?"}: cambio d'istanza verso «${richiesta}» rifiutato`);
+          return token;
+        }
+        token.tenantCode = richiesta;
+        if (userId) segnaUltimaIstanza(userId, richiesta);
         // Ricarica lista tenant per superadmin (potrebbe aver creato nuovi clienti)
         if (token.role === "superadmin") {
           try {

@@ -1,7 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
+import { toast } from "sonner";
 import {
   Select,
   SelectContent,
@@ -10,85 +13,114 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Building2 } from "lucide-react";
+import { cn } from "@/lib/utils";
 
-interface TenantInfo {
+/**
+ * Istanza = il tenant su cui si lavora (Riccardo, 23/10: «cliente» diventa «istanza»). Nella
+ * barra resta una riga da leggere; la scelta sta in Impostazioni → Istanza. L'hub ricorda
+ * l'ultima scelta e all'accesso riparte da lì (lib/accesso/sessione.ts).
+ */
+interface IstanzaInfo {
   code: string;
   name: string;
   role: string;
 }
 
-export function TenantSwitcher() {
+const VISTA_TUTTE = "__ALL__";
+
+function useIstanze() {
   const { data: session, update } = useSession();
+  const u = session?.user as Record<string, unknown> | undefined;
+  const istanze = (u?.tenants ?? []) as IstanzaInfo[];
+  const corrente = (u?.tenantCode as string | null | undefined) ?? null;
+  const isSuperadmin = u?.role === "superadmin";
+  const attuale = corrente === VISTA_TUTTE
+    ? { code: VISTA_TUTTE, name: "Tutte le istanze", role: "superadmin" }
+    : istanze.find((t) => t.code === corrente);
+  return { istanze, corrente, attuale, isSuperadmin, update };
+}
+
+/** Riga nella barra: dice su quale istanza si sta lavorando; il clic porta alla scelta. */
+export function IstanzaCorrente({ compresso = false, onNavigate }: { compresso?: boolean; onNavigate?: () => void }) {
+  const { istanze, attuale } = useIstanze();
+  if (istanze.length === 0) return null;
+
+  const testo = attuale ? (attuale.code === VISTA_TUTTE ? attuale.name : `${attuale.name} · ${attuale.code}`) : "Nessuna istanza scelta";
+  const contenuto = (
+    <>
+      <Building2 className="h-3.5 w-3.5 shrink-0" />
+      <span className={cn("truncate", compresso && "md:hidden")}>{testo}</span>
+    </>
+  );
+  const classi = cn(
+    "flex items-center gap-2 px-3 py-1 rounded-md text-[13px] text-sidebar-foreground/60 min-w-0",
+    compresso && "md:justify-center md:px-0",
+  );
+  // Una sola istanza (appliance): niente da scegliere, la riga è solo da leggere.
+  if (istanze.length === 1) {
+    return <div className={classi} title={compresso ? testo : undefined}>{contenuto}</div>;
+  }
+  return (
+    <Link
+      href="/settings?tab=istanza"
+      onClick={onNavigate}
+      title={compresso ? `Istanza: ${testo}` : "Cambia istanza"}
+      className={cn(classi, "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors")}
+    >
+      {contenuto}
+    </Link>
+  );
+}
+
+/** Scelta dell'istanza, in Impostazioni → Istanza. */
+export function SceltaIstanza() {
+  const { istanze, corrente, attuale, isSuperadmin, update } = useIstanze();
   const router = useRouter();
+  const [cambio, setCambio] = useState(false);
 
-  const tenants = ((session?.user as Record<string, unknown>)?.tenants ?? []) as TenantInfo[];
-  const currentCode = (session?.user as Record<string, unknown>)?.tenantCode as string | null;
-  const role = (session?.user as Record<string, unknown>)?.role as string | undefined;
-  const isSuperadmin = role === "superadmin";
-  const currentTenant = currentCode === "__ALL__"
-    ? { code: "__ALL__", name: "Tutti i clienti", role: "superadmin" }
-    : tenants.find((t) => t.code === currentCode);
-
-  if (tenants.length === 0) {
-    return null;
-  }
-
-  // Singolo tenant: mostra solo il nome, senza dropdown
-  if (tenants.length === 1) {
-    return (
-      <div className="flex items-center gap-2 px-3 py-2 text-sm">
-        <Building2 className="h-4 w-4 text-sidebar-foreground/60 shrink-0" />
-        <div className="min-w-0">
-          <p className="font-medium truncate text-sidebar-foreground text-xs">
-            {tenants[0].name}
-          </p>
-          <p className="text-[10px] text-sidebar-foreground/50 truncate">
-            {tenants[0].code}
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  // Piu' tenant: dropdown per il cambio
-  async function handleChange(value: string | null) {
-    if (!value || value === currentCode) return;
-    await update({ tenantCode: value });
-    router.refresh();
+  async function scegli(value: string | null) {
+    if (!value || value === corrente) return;
+    setCambio(true);
+    try {
+      const nuova = await update({ tenantCode: value });
+      // L'hub rifiuta un'istanza senza accesso e lascia quella di prima: dirlo.
+      const ottenuta = (nuova?.user as Record<string, unknown> | undefined)?.tenantCode;
+      if (ottenuta !== value) {
+        toast.error("Istanza non disponibile per il tuo utente");
+        return;
+      }
+      toast.success("Istanza cambiata");
+      router.refresh();
+    } finally {
+      setCambio(false);
+    }
   }
 
   return (
-    <div className="px-2 py-2">
-      <Select value={currentCode ?? ""} onValueChange={handleChange}>
-        <SelectTrigger className="w-full bg-sidebar-accent/50 border-sidebar-border text-sidebar-foreground text-xs h-auto py-1.5">
+    <div className="space-y-2 max-w-md">
+      <Select value={corrente ?? ""} onValueChange={scegli} disabled={cambio}>
+        <SelectTrigger className="w-full h-auto py-2">
           <div className="flex items-center gap-2 min-w-0">
-            <Building2 className="h-3.5 w-3.5 shrink-0" />
+            <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
             <SelectValue>
-              <div className="min-w-0 text-left">
-                <p className="truncate font-medium">{currentTenant?.name ?? "Seleziona..."}</p>
-                {currentTenant && (
-                  <p className="text-[10px] text-sidebar-foreground/50 truncate">
-                    {currentTenant.code}
-                  </p>
-                )}
-              </div>
+              <span className="truncate">
+                {attuale ? (attuale.code === VISTA_TUTTE ? attuale.name : `${attuale.name} · ${attuale.code}`) : "Scegli un'istanza"}
+              </span>
             </SelectValue>
           </div>
         </SelectTrigger>
         <SelectContent>
-          {isSuperadmin && (
-            <SelectItem value="__ALL__">Tutti i clienti (aggregata)</SelectItem>
-          )}
-          {tenants.map((tenant) => (
-            <SelectItem key={tenant.code} value={tenant.code}>
-              <div className="min-w-0">
-                <p className="truncate">{tenant.name}</p>
-                <p className="text-[10px] text-muted-foreground truncate">{tenant.code}</p>
-              </div>
+          {isSuperadmin && <SelectItem value={VISTA_TUTTE}>Tutte le istanze (vista aggregata)</SelectItem>}
+          {istanze.map((t) => (
+            <SelectItem key={t.code} value={t.code}>
+              {t.name} · {t.code}
             </SelectItem>
           ))}
         </SelectContent>
       </Select>
+      <p className="text-[13px] text-muted-foreground">
+        Al prossimo accesso riparti da qui.
+      </p>
     </div>
   );
 }

@@ -21,6 +21,9 @@
 import path from "path";
 import fs from "fs";
 import { resolveDataDir } from "../data-dir";
+import { cartellaVault } from "../vault/appliance";
+import { copiaArchivioVault } from "../vault/backup";
+import { vaultLocaleAcceso } from "../vault/stato";
 import os from "os";
 import zlib from "zlib";
 import crypto from "crypto";
@@ -53,7 +56,7 @@ const DEFAULT_BACKUP_ROOT = "/var/backups/da-invent";
 const DEFAULT_RETENTION_DAYS = 30;
 const DATA_DIR = resolveDataDir();
 
-function getBackupRoot(): string {
+export function getBackupRoot(): string {
   return process.env.DA_INVENT_BACKUP_ROOT || DEFAULT_BACKUP_ROOT;
 }
 
@@ -231,6 +234,10 @@ export async function runHubBackup(tenantCodes: string[] = []): Promise<BackupMa
     const dest = path.join(tenantOutDir, `${code}.db.gz`);
     manifest.files.push(await backupOne(`tenant-${code}`, src, dest));
   }
+
+  // da-vault: dopo la ricifra i database si aprono solo con gli slot; col vault acceso l'archivio va nello stesso
+  // backup (file già cifrati). Spento: nessun cambiamento.
+  if (vaultLocaleAcceso()) manifest.files.push(...copiaArchivioVault(cartellaVault(), outDir));
 
   // Manifest
   const finished = new Date();

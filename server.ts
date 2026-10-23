@@ -42,7 +42,7 @@ app.prepare().then(() => {
       attachSshTerminalWs(httpsServer); // terminale SSH web (/ws/ssh)
       httpsServer.listen(port, hostname, () => {
         console.log(`> DA-INVENT ready on https://localhost:${port}`);
-        initCron();
+        avviaInizializzazioni();
       });
 
       // Optional HTTP redirect
@@ -73,11 +73,31 @@ app.prepare().then(() => {
     attachSshTerminalWs(httpServer); // terminale SSH web (/ws/ssh)
     httpServer.listen(port, hostname, () => {
       console.log(`> DA-INVENT ready on http://0.0.0.0:${port} (anche http://localhost:${port})`);
-      initCron();
+      avviaInizializzazioni();
     });
   }
 
-  function initCron() {
+  function avviaInizializzazioni() {
+    initCron().catch((error) => {
+      console.error("CRITICAL: inizializzazione dei timer fallita:", error);
+    });
+  }
+
+  async function initCron() {
+    // da-vault (piano 2026-10-23): sblocco del vault e cache di OpenBao, solo con un interruttore acceso (spenti di
+    // serie: l'avvio resta quello di oggi). SI ASPETTA prima di ogni altra inizializzazione (revisione del 23/10): le
+    // altre (migrazione dei segreti delle installazioni, scheduler, notificatori) possono chiamare `encrypt()`, che col
+    // vault locale acceso e non ancora sbloccato lancia. `avviaVault()` sblocca dal TPM in modo sincrono; se non
+    // riesce, il vault resta bloccato col motivo (banner, scansioni in pausa) e il resto parte comunque.
+    if (process.env.DA_VAULT_LOCALE === "1" || process.env.DA_VAULT_OPENBAO === "1") {
+      try {
+        const { avviaVault } = await import("./src/lib/vault/avvio");
+        avviaVault();
+      } catch (error) {
+        console.error("CRITICAL: avvio del vault fallito — credenziali non leggibili, scansioni in pausa:", error);
+      }
+    }
+
     // Boot migration prima dello scheduler: garantisce che ogni tenant abbia
     // known_host_check sui propri network e nessun fast_scan rischioso schedulato.
     // Vedi src/lib/cron/scheduler-defaults.ts e incident cliente A 2026-05-25.

@@ -498,6 +498,35 @@ export const SEGNO_ASSEGNATARI_AD = "assegnatari_ad_v21";
 export const VERSIONE_ASSEGNATARI_AD = 1;
 
 /**
+ * da-vault (piano 2026-10-23):
+ * - `credentials.credential_ref` (passo 6): il percorso del segreto in OpenBao (`clienti/<codcli>/…`), accanto alle
+ *   colonne cifrate. Si legge solo con `DA_VAULT_OPENBAO=1`; NULL = la voce si legge dalle colonne (doppia lettura);
+ * - `vault_visualizzazioni` (passo 10): chi ha visto una password o esportato l'archivio, e quando. Niente chiave
+ *   esterna sulla credenziale: il registro resta anche se la voce si elimina (col nome di allora).
+ *
+ * Tutto additivo e solo nella migrazione (`migrateVault`), come gli assegnatari qui sopra.
+ */
+export const COLONNE_VAULT: ReadonlyArray<readonly [tabella: string, colonna: string, ddl: string]> = [
+  ["credentials", "credential_ref", "TEXT"],
+];
+export const DDL_VAULT: ReadonlyArray<readonly [string, string]> = [
+  ["vault_visualizzazioni", `CREATE TABLE vault_visualizzazioni (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  utente_id TEXT,
+  utente TEXT NOT NULL,
+  azione TEXT NOT NULL,
+  credential_id INTEGER,
+  credenziale TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+)`],
+];
+export const INDICI_VAULT: ReadonlyArray<readonly [string, string]> = [
+  ["idx_vault_visualizzazioni_data", "CREATE INDEX idx_vault_visualizzazioni_data ON vault_visualizzazioni(created_at)"],
+];
+export const SEGNO_VAULT = "vault_v21";
+export const VERSIONE_VAULT = 1;
+
+/**
  * Pannello Zabbix in sola lettura (passo 7.4-7.5 del piano di solidità, 16/10; API del centro in DA-Zabbix,
  * `docs/2026-10-16-api-lettura-per-cliente-design.md`). Dati del cliente → DB del tenant.
  *

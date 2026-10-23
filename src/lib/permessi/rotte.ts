@@ -77,6 +77,10 @@ export const ATTESI: Atteso[] = [
   { rotta: "/api/credentials", metodi: ["POST"], livello: "admin-o-onboarding", motivo: MOTIVO_ONBOARDING },
   { rotta: "/api/devices", metodi: ["POST"], livello: "admin-o-onboarding", motivo: MOTIVO_ONBOARDING },
   { rotta: "/api/networks", metodi: ["POST"], livello: "admin-o-onboarding", motivo: MOTIVO_ONBOARDING },
+  // da-vault (revisione del 23/10, rilievo 14): «chi ha visto cosa» riporta i nomi delle credenziali viste e le persone che
+  // le hanno guardate: solo admin (tecnici Domarc e admin del cliente, D2). Lo stato del vault resta a tutti gli
+  // autenticati, ma senza nomi di credenziali (provato in `src/lib/vault/__tests__/stato-senza-nomi.test.ts`).
+  { rotta: "/api/vault/registro", metodi: ["GET"], livello: "admin", motivo: "il registro riporta nomi di credenziali e di persone" },
   // Scheda MikroTik (Task 10): gli utenti del router (nomi, gruppi, indirizzi ammessi) sono un dato riservato, solo admin.
   { rotta: "/api/devices/[id]/mikrotik-utenti", metodi: ["GET"], livello: "admin", motivo: "utenti del router: nomi, gruppi e indirizzi ammessi, dato riservato" },
   // Acquisizione modulare (tavola C1, decisione 2): lo snapshot completo come JSON è l'inventario dell'apparato, solo admin.

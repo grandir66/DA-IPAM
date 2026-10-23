@@ -33,10 +33,16 @@
  *
  * Un rifiuto non contiene mai il segreto: solo nome, tipo e cosa manca.
  *
+ * da-vault, passo 6 (hub, solo con `DA_VAULT_OPENBAO=1`): una voce con `credential_ref` si legge da OpenBao (la cache
+ * del backend, `leggiSync`), mai dalle colonne; OpenBao oltre la cache o segreto assente = rifiuto col motivo. Una
+ * voce senza riferimento si legge dalle colonne e lo si scrive nel log, una volta per voce (doppia lettura, per una
+ * versione). Interruttore spento: il riferimento non conta.
+ *
  * Non importa né `db.ts` né `db-tenant.ts`: riceve l'handle.
  */
 import type Database from "better-sqlite3";
 import { safeDecrypt } from "@/lib/crypto";
+import { statoVaultProcesso, vaultOpenBaoAcceso } from "@/lib/vault/stato";
 import type { SnmpV3CredentialRecord } from "@/lib/protocols/snmpv3";
 import { campiRichiesti, etichettaTipo, METODI_PER_TIPO, normalizzaTipo, tipiPerProtocollo, type MetodoAccesso, type TipoCredenziale } from "./tipi";
 
@@ -86,7 +92,9 @@ function tipiPerUso(uso: UsoSegreto): string[] {
   return tipiPerProtocollo(uso);
 }
 
-type Riga = Record<string, unknown>;
+/** I valori in chiaro di una voce letta da OpenBao, per colonna: al posto della decifratura delle colonne. */
+const DA_OPENBAO = Symbol("da-openbao");
+type Riga = Record<string, unknown> & { [DA_OPENBAO]?: Readonly<Record<string, string | null>> };
 
 /** Valore testuale di una colonna; colonna assente, NULL o non testo → null. */
 function testo(riga: Riga, colonna: string): string | null {
@@ -94,13 +102,55 @@ function testo(riga: Riga, colonna: string): string | null {
   return typeof v === "string" ? v : null;
 }
 
+/** La colonna ha un valore (cifrato, o in chiaro da OpenBao). */
+function presente(riga: Riga, colonna: string): boolean {
+  const daOpenBao = riga[DA_OPENBAO];
+  return daOpenBao ? Boolean(daOpenBao[colonna]) : Boolean(testo(riga, colonna));
+}
+
 type Campo = { ok: true; valore: string | null } | { ok: false; motivo: string };
+
+/**
+ * La riga pronta per la lettura (da-vault, passo 6). Interruttore spento: com'è. Acceso, con `credential_ref`: i
+ * valori da OpenBao al posto delle colonne, o il rifiuto dichiarato. Acceso, senza riferimento: com'è, con un avviso
+ * nel log una volta per voce (doppia lettura).
+ */
+function rigaDaLeggere(dbh: Database.Database, riga: Riga, credentialId: number, nome: string): { ok: true; riga: Riga } | { ok: false; motivo: string } {
+  if (!vaultOpenBaoAcceso()) return { ok: true, riga };
+  const chi = `La credenziale «${nome}»`;
+  const ref = testo(riga, "credential_ref")?.trim();
+  if (!ref) {
+    const segnalate = statoVaultProcesso().doppiaLetturaSegnalata;
+    const chiave = `${dbh.name}#${credentialId}`;
+    if (!segnalate.has(chiave)) {
+      segnalate.add(chiave);
+      console.warn(`[vault] credenziale #${credentialId} «${nome}» senza riferimento OpenBao: letta dalla colonna cifrata (doppia lettura, da migrare)`);
+    }
+    return { ok: true, riga };
+  }
+  const store = statoVaultProcesso().openbao;
+  if (!store) return { ok: false, motivo: `${chi}: OpenBao acceso (DA_VAULT_OPENBAO) ma non configurato` };
+  let v: Readonly<Record<string, string>>;
+  try {
+    v = store.leggiSync(ref);
+  } catch (e) {
+    return { ok: false, motivo: `${chi}: ${e instanceof Error ? e.message : "OpenBao non ha risposto"}` };
+  }
+  const chiari: Record<string, string | null> = {};
+  for (const [campo, colonna] of Object.entries(COLONNA_DEL_CAMPO)) chiari[colonna] = v[campo] ?? null;
+  return { ok: true, riga: { ...riga, [DA_OPENBAO]: chiari } };
+}
 
 /**
  * Decifra una colonna. Assente o vuota → `valore: null`; non decifrabile →
  * rifiuto (un segreto rotto non è un segreto assente).
  */
 function decifra(riga: Riga, colonna: string, chi: string, cosa: string): Campo {
+  const daOpenBao = riga[DA_OPENBAO];
+  if (daOpenBao) {
+    const v = daOpenBao[colonna] ?? null;
+    return { ok: true, valore: v ? v : null };
+  }
   const cifrato = testo(riga, colonna);
   if (!cifrato) return { ok: true, valore: null };
   const chiaro = safeDecrypt(cifrato);
@@ -170,7 +220,7 @@ function v3(riga: Riga, chi: string, livello: string): { ok: true; segreto: Segr
 
 /** Community di una `snmp` senza livello: `encrypted_password`, poi `encrypted_username` (com'era). */
 function community(riga: Riga, chi: string): { ok: true; segreto: Segreto } | { ok: false; motivo: string } {
-  const colonna = testo(riga, "encrypted_password") ? "encrypted_password" : "encrypted_username";
+  const colonna = presente(riga, "encrypted_password") ? "encrypted_password" : "encrypted_username";
   const c = richiesto(riga, colonna, chi, "la community");
   if (!c.ok) return c;
   return { ok: true, segreto: { forma: "community", community: c.valore } };
@@ -181,11 +231,11 @@ function community(riga: Riga, chi: string): { ok: true; segreto: Segreto } | { 
  * Null quando non lo è (la voce resta una community, come oggi).
  */
 function v3Vecchio(riga: Riga): Segreto | null {
-  const u = testo(riga, "encrypted_username");
-  const p = testo(riga, "encrypted_password");
-  if (!u || !p) return null;
-  const username = safeDecrypt(u);
-  const authKey = safeDecrypt(p);
+  if (!presente(riga, "encrypted_username") || !presente(riga, "encrypted_password")) return null;
+  const cu = decifra(riga, "encrypted_username", "", "");
+  const cp = decifra(riga, "encrypted_password", "", "");
+  const username = cu.ok ? cu.valore : null;
+  const authKey = cp.ok ? cp.valore : null;
   if (!username?.trim() || !authKey?.trim()) return null;
   return {
     forma: "v3",
@@ -253,7 +303,12 @@ export function leggiSegretoDb(dbh: Database.Database, credentialId: number, uso
   }
   const tipo = normalizzaTipo(codice);
   if (!tipo) return rifiuto(`La credenziale «${nome}» ha un tipo sconosciuto («${codice}»)`);
+  const pronta = rigaDaLeggere(dbh, riga, credentialId, nome);
+  if (!pronta.ok) return rifiuto(pronta.motivo);
+  return leggiDaRiga(pronta.riga, credentialId, nome, codice, tipo, opzioni);
+}
 
+function leggiDaRiga(riga: Riga, credentialId: number, nome: string, codice: string, tipo: TipoCredenziale, opzioni: OpzioniLettura): EsitoSegreto {
   const base = { ok: true as const, credentialId, nome, tipo: codice, port: porta(riga) };
   const chi = `La credenziale «${nome}»`;
   const livello = testo(riga, "security_level")?.trim() || null;
@@ -279,6 +334,56 @@ export function leggiSegretoDb(dbh: Database.Database, credentialId: number, uso
   }
   const r = segretoPerMetodo(riga, chi, tipo, metodo);
   return r.ok ? { ...base, segreto: r.segreto } : rifiuto(r.motivo);
+}
+
+/**
+ * I campi segreti di una voce, coi nomi del KV di OpenBao (da-vault): `username`, `password`, `private_key`,
+ * `key_passphrase`, `auth_key`, `priv_key`. Una colonna vuota non c'è.
+ */
+export type CampoSegreto = "username" | "password" | "private_key" | "key_passphrase" | "auth_key" | "priv_key";
+
+export const COLONNA_DEL_CAMPO: Readonly<Record<CampoSegreto, string>> = {
+  username: "encrypted_username",
+  password: "encrypted_password",
+  private_key: "encrypted_private_key",
+  key_passphrase: "encrypted_key_passphrase",
+  auth_key: "encrypted_auth_key",
+  priv_key: "encrypted_priv_key",
+};
+
+const COSA_DEL_CAMPO: Readonly<Record<CampoSegreto, string>> = {
+  username: "l'utente",
+  password: "la password",
+  private_key: "la chiave privata",
+  key_passphrase: "la passphrase della chiave",
+  auth_key: "la chiave di autenticazione SNMPv3",
+  priv_key: "la chiave di privacy SNMPv3",
+};
+
+export type EsitoCampi =
+  | { ok: true; credentialId: number; nome: string; tipo: string; port: number | null; campi: Partial<Record<CampoSegreto, string>> }
+  | { ok: false; motivo: string };
+
+/**
+ * Tutti i campi segreti di una voce in chiaro (da-vault): la verifica della ricifra (stessi campi prima e dopo), la
+ * «mostra password», l'esportazione KeePass, la migrazione verso OpenBao. Non guarda tipo né metodo: dà quello che
+ * c'è. Un campo che non si decifra è un rifiuto col nome della voce, mai col valore.
+ */
+export function campiVoceDb(dbh: Database.Database, credentialId: number, opzioni: { ignoraRiferimento?: boolean } = {}): EsitoCampi {
+  const riga = dbh.prepare("SELECT * FROM credentials WHERE id = ?").get(credentialId) as Riga | undefined;
+  if (!riga) return { ok: false, motivo: `La credenziale #${credentialId} non esiste` };
+  const nome = testo(riga, "name") ?? `#${credentialId}`;
+  const chi = `La credenziale «${nome}»`;
+  // `ignoraRiferimento`: le colonne, anche con OpenBao acceso (la migrazione e la sua verifica).
+  const pronta = opzioni.ignoraRiferimento ? { ok: true as const, riga } : rigaDaLeggere(dbh, riga, credentialId, nome);
+  if (!pronta.ok) return pronta;
+  const campi: Partial<Record<CampoSegreto, string>> = {};
+  for (const campo of Object.keys(COLONNA_DEL_CAMPO) as CampoSegreto[]) {
+    const c = decifra(pronta.riga, COLONNA_DEL_CAMPO[campo], chi, COSA_DEL_CAMPO[campo]);
+    if (!c.ok) return c;
+    if (c.valore !== null && c.valore !== "") campi[campo] = c.valore;
+  }
+  return { ok: true, credentialId, nome, tipo: (testo(riga, "credential_type") ?? "").trim().toLowerCase(), port: porta(riga), campi };
 }
 
 /** Tipo d'archivio che corrisponde al protocollo di un binding inline. */

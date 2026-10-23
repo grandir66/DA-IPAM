@@ -1,5 +1,37 @@
 # TASKS — DA-IPAM
 
+## 2026-10-23 — da-vault (piano approvato, livello completo)
+
+Riccardo (23/10): sta valutando un vault unico al posto dei file locali di ogni app, a partire dalle credenziali del DA-IPAM di Domarc (hub) e poi firewall e altri device. Piano in valutazione: `~/Downloads/da-vault — Piano di implementazione.md` (OpenBao interno + KDBX/age dai clienti, libreria `@domarc/vault`).
+- [ ] decidere dove gira OpenBao: Riccardo pensa a DA-Link o a DA-Auth (oggi sulla .42); valutazione Claude 23/10: no alla .42, sì alla VM di DA-Link o a una VM piccola dedicata
+- [x] punto d'innesto nel codice (fatto il 23/10, ADR 0034: la chiave degli slot sta dentro `encrypt()` di `crypto.ts`, il riferimento OpenBao dentro il lettore unico): `src/lib/credentials/segreti.ts` (lettore unico dei segreti), più gli altri `encrypt()` fuori da `credentials/` (integrazioni, vuln edge, inventory-agent, network-services)
+- [ ] rimando a DA-Link/TASKS.md (stessa data) per la parte vault interno
+- [ ] Riccardo (23/10): valutare Keeper (già in uso, tenant keepersecurity.eu) sia per il vault personale dei file «accessi» sul Mac sia per la soluzione. Analisi Claude 23/10: Keeper (cartelle condivise + Secrets Manager, un'applicazione KSM per app) al posto di OpenBao per Domarc; dai clienti resta l'archivio locale con slot age. Da verificare: licenza (KSM, SSO Entra, KeeperPAM inclusi?), prezzo per chiamate API
+- [ ] licenza letta nella console il 23/10: **Keeper Business**, 18 licenze, scade 20/06/2027, 100 GB; niente SSO (serve Enterprise, listino 5,50 €/utente/mese), niente ARAM, compliance, BreachWatch. **KSM richiede KeeperPAM, 90 €/utente/mese**: chiedere a Keeper il preventivo per 2-3 utenti PAM prima di decidere KSM vs OpenBao per le app. Persone e vault personale: Business basta
+- [x] **Decisione di Riccardo (23/10)**: Keeper Business solo per le persone e il vault personale (Commander per gli agenti); per le app **OpenBao** (open source, self-hosted): KSM troppo costoso e il prodotto è pensato per essere open source. Dai clienti archivio locale con slot age. Il vault personale si fa per primo (piano in ~/.claude)
+- [x] piano riscritto (23/10, sessione da-vault): `docs/superpowers/plans/2026-10-23-da-vault.md` — regola della fonte (se una macchina la usa sta in OpenBao, altrimenti Keeper; in Keeper solo puntatori), 12 passi, livello completo, ~5-6 settimane
+- [x] Riccardo (23/10): D1 OpenBao in container nella VM di DA-Link, niente VM nuova; D2 nel DA-IPAM dei clienti entrano tecnici e cliente; D3 per ora senza YubiKey (chiave age in Keeper, cartella personale); D4 `fc5171b` in esercizio ora, in OpenBao al passo 9 — piano aggiornato
+- [x] Riccardo (23/10): D5 slot Domarc acceso di serie con una riga nel contratto (chi non lo vuole lo spegne firmando); **piano approvato, livello completo**
+- [x] clausola sullo slot Domarc approvata da Riccardo il 23/10 (testo nel piano, sezione Decisioni)
+- [x] esecuzione, parte di codice (sessione cloud del 23/10, prompt `~/.claude/prompts/da-vault-esecuzione-1.md`): passi 5, 6 e 10 sul ramo `claude/da-vault-codice`, PR verso `dev` (dettaglio sotto)
+- [ ] analisi Claude 23/10 (da approvare): separare la «chiave» di ogni app (da TPM/OpenBao, mai in `.env.local`) dalle «credenziali condivise» dei device (OpenBao KV, solo riferimenti nelle app); dai clienti archivio locale cifrato con slot age e KDBX solo come esportazione, non come archivio vivo; login tecnici con OIDC nativo di OpenBao (DA-Auth non si tocca)
+
+Esecuzione, parte di codice (23/10, sessione cloud, ramo `claude/da-vault-codice`, livello completo; interruttori spenti):
+- [x] passo 5, `src/lib/vault/`: `SecretStore` (tipi.ts), archivio a slot age (archivio.ts: cliente scrypt, Domarc X25519, TPM da `$CREDENTIALS_DIRECTORY/vault-key`), backend `locale` e `openbao` (solo fetch, AppRole, token 20 min, cache a tempo della cartella dell'app, `X-Domarc-Utente`, errore dichiarato oltre la cache), OpenBao finto per le prove — archivio 23, openbao 22, locale 6
+- [x] passo 10: chiave degli slot dentro `encrypt()`/`decrypt()`, 2FA sulla chiave d'installazione (ADR 0034), ricifra (a vuoto di serie, `--applica`, tutto o niente, lettore unico, VACUUM, crash con SIGKILL), «Vault bloccato» (banner, job in pausa), «Mostra password» (2FA, 5 min, admin, registro e pagina), «Esporta in KeePass» (kdbxweb + Argon2id di hash-wasm, key file nel suo slot), `scripts/da-vault-recover.ts`, `scripts/da-vault.ts`, archivio nel backup notturno
+- [x] passo 6: `credentials.credential_ref`, doppia lettura in `segreti.ts`, OpenBao dall'ambiente all'avvio, `scripts/da-vault-migra-openbao.ts` (a vuoto di serie, `--applica`, `--verifica`)
+- [ ] **in locale** (non fattibile dal cloud): container OpenBao nella VM di DA-Link (passo 1), app «Domarc Vault» in Entra, chiave Domarc age generata scollegata e messa in Keeper (passo 0), AppRole `da-ipam` dell'hub con `secret_id` in `LoadCredentialEncrypted`, CA in `NODE_EXTRA_CA_CERTS`
+- [ ] **in locale**: migrazione sui dati veri dell'hub (`--applica`, `--verifica`, poi `DA_VAULT_OPENBAO=1`); campione SNMP/SSH/API provato
+- [ ] **in locale**: appliance una alla volta, con la conferma di Riccardo per ciascuna: `crea` → `slot-tpm` (VM modello con `tpmstate0`) → unità con `LoadCredentialEncrypted=vault-key:…` → `DA_VAULT_LOCALE=1` e riavvio → `ricifra` a vuoto → `--applica`
+- [ ] **in locale**: un'esportazione aperta con KeePassXC senza DA-IPAM (la prova usa kdbxweb)
+- [ ] (scoperto) prima di svuotare le colonne cifrate sull'hub (versione dopo la doppia lettura): portare sul lettore unico le letture dirette (`credentials/trova.ts`, `apparato-archivio.ts`, `integrations/self-identity.ts`, `controllers/credenziale.ts`, `for_edit` di `/api/credentials/[id]`), poi svuota + VACUUM
+- [ ] (scoperto) l'interfaccia `SecretStore` è ricavata dal piano: il documento originale (`~/Downloads/da-vault — Piano di implementazione.md`) non era nel repo; confrontarla
+- [ ] (scoperto) «parte un avviso» quando il vault resta bloccato: oggi log CRITICAL + banner + Opzioni; manca un avviso nelle notifiche (email/webhook)
+- [ ] (scoperto) cambio di generazione della chiave Domarc: oggi `da-vault-recover rotate` a mano; la riscrittura dello slot al primo sblocco (piano, «Più avanti») non è fatta
+- [ ] (scoperto) `kdbxweb` porta `@xmldom/xmldom` 0.7 con avvisi alti: forzato a 0.8.15 con `overrides` in package.json; da ricontrollare a ogni aggiornamento di kdbxweb
+- [ ] (scoperto) `ENCRYPTION_KEY` resta sull'appliance per i segreti TOTP (ADR 0034): toglierla vuole un'altra soluzione per la 2FA
+
+
 ## 2026-10-23 — Uscita vera, istanza controllata e ricordata (livello completo, ADR 0033)
 
 Riccardo (23/10): ok alla revoca della sessione; la scelta del cliente diventa «istanza», va in Impostazioni,

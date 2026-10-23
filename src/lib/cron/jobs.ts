@@ -109,6 +109,7 @@ import { meshAttivo } from "@/lib/integrations/meshcentral/feature";
 // Statico (ADR 0002): il giro importa db-tenant. Ciclo con questo file voluto: giro.ts usa le letture di qui solo a giro avviato.
 import { motivoGiroApparati, runApparatiScelti, type OpzioniGiro } from "@/lib/apparati-scelti/giro";
 import { chiaveJob, statoScheduler } from "./stato-scheduler";
+import { motivoPausaVault } from "@/lib/vault/appliance";
 
 /** Job che lanciano giri di discovery: durano quanto il giro (fino a ~49 minuti misurati). */
 export const JOB_DI_SCANSIONE: ReadonlySet<string> = new Set(["ping_sweep", "fast_scan", "snmp_scan", "nmap_scan"]);
@@ -292,6 +293,11 @@ export async function runJob(jobId: number, opzioni?: OpzioniRunJob): Promise<Es
   // v0.2.642 audit perf MC3: SELECT WHERE id invece di full-scan + .find().
   const job = getScheduledJobById(jobId);
   if (!job) throw new Error(`Job #${jobId} non trovato`);
+
+  // da-vault (piano 2026-10-23): vault bloccato o OpenBao oltre la cache = scansioni in pausa, col motivo. Interruttori
+  // spenti (di serie): sempre null, nessun cambiamento.
+  const pausa = motivoPausaVault();
+  if (pausa) return { esito: "saltato", motivo: pausa };
 
   switch (job.job_type) {
     case "ping_sweep":

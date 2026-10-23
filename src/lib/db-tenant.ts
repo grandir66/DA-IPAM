@@ -19,7 +19,7 @@ import { buildPatchFromHost, buildPatchFromDevice, buildSyncMerge, buildSourceLa
 import fs from "fs";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { LetturaVlanSwitch } from "./devices/snmp-vlan";
-import { COLONNE_ASSEGNATARI_AD, DDL_ASSEGNATARI_AD, INDICI_ASSEGNATARI_AD, SEGNO_ASSEGNATARI_AD, VERSIONE_ASSEGNATARI_AD, DDL_VULCAN, INDICI_VULCAN, SEGNO_VULCAN, VERSIONE_VULCAN, DDL_LIBRENMS_FONTE_V1, INDICI_LIBRENMS_FONTE_V1, SEGNO_LIBRENMS_FONTE, VERSIONE_LIBRENMS_FONTE, DDL_LIBRENMS_ESCLUSIONE, SEGNO_LIBRENMS_ESCLUSIONE, VERSIONE_LIBRENMS_ESCLUSIONE, DDL_JOB_APPARATI_ESITI, INDICI_JOB_APPARATI_ESITI, SEGNO_APPARATI_SCELTI, VERSIONE_APPARATI_SCELTI, DDL_SWITCH_VLAN_NATIVA, SEGNO_SWITCH_VLAN_NATIVA, VERSIONE_SWITCH_VLAN_NATIVA, DDL_SWITCH_VLAN_V1, SEGNO_SWITCH_VLAN, VERSIONE_SWITCH_VLAN, COLONNA_CLUSTER_PRINCIPALE, INDICE_CLUSTER_PRINCIPALE, SEGNO_CLUSTER_PRINCIPALE, VERSIONE_CLUSTER_PRINCIPALE, COLONNE_SCHEDA_MK_V1, DDL_HOSTS_ARCHIVIO, DDL_SCHEDA_MK_V2, DDL_SCHEDA_MK_V3, DDL_TOPOLOGY_CAVI, DDL_TOPOLOGY_UNIONI, INDICI_HOSTS_ARCHIVIO, INDICI_TOPOLOGY_UNIONI, TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL, SEGNO_SCHEDA_MK, VERSIONE_SCHEDA_MK } from "./db-tenant-schema";
+import { COLONNE_ASSEGNATARI_AD, DDL_ASSEGNATARI_AD, INDICI_ASSEGNATARI_AD, SEGNO_ASSEGNATARI_AD, VERSIONE_ASSEGNATARI_AD, COLONNE_VAULT, DDL_VAULT, INDICI_VAULT, SEGNO_VAULT, VERSIONE_VAULT, DDL_VULCAN, INDICI_VULCAN, SEGNO_VULCAN, VERSIONE_VULCAN, DDL_LIBRENMS_FONTE_V1, INDICI_LIBRENMS_FONTE_V1, SEGNO_LIBRENMS_FONTE, VERSIONE_LIBRENMS_FONTE, DDL_LIBRENMS_ESCLUSIONE, SEGNO_LIBRENMS_ESCLUSIONE, VERSIONE_LIBRENMS_ESCLUSIONE, DDL_JOB_APPARATI_ESITI, INDICI_JOB_APPARATI_ESITI, SEGNO_APPARATI_SCELTI, VERSIONE_APPARATI_SCELTI, DDL_SWITCH_VLAN_NATIVA, SEGNO_SWITCH_VLAN_NATIVA, VERSIONE_SWITCH_VLAN_NATIVA, DDL_SWITCH_VLAN_V1, SEGNO_SWITCH_VLAN, VERSIONE_SWITCH_VLAN, COLONNA_CLUSTER_PRINCIPALE, INDICE_CLUSTER_PRINCIPALE, SEGNO_CLUSTER_PRINCIPALE, VERSIONE_CLUSTER_PRINCIPALE, COLONNE_SCHEDA_MK_V1, DDL_HOSTS_ARCHIVIO, DDL_SCHEDA_MK_V2, DDL_SCHEDA_MK_V3, DDL_TOPOLOGY_CAVI, DDL_TOPOLOGY_UNIONI, INDICI_HOSTS_ARCHIVIO, INDICI_TOPOLOGY_UNIONI, TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL, SEGNO_SCHEDA_MK, VERSIONE_SCHEDA_MK } from "./db-tenant-schema";
 import { HYPERVISOR_SYNC_MINUTES, PULIZIA_HOST_MINUTES, SCHEDULED_JOB_TYPES_CHECK_SQL } from "./scheduled-job-types";
 import { isProxmoxVeDevice, resolveDeviceAcquisition } from "./devices/device-acquisition-resolve";
 import { networkDeviceUsesArpPoll } from "./network-device-arp";
@@ -1194,6 +1194,65 @@ export function migrateAssegnatariAd(db: Database.Database): string[] {
     })();
   } finally {
     SCHEMA_ASSEGNATARI_AD.set(db, oggettiAssegnatariAdMancanti(db).length === 0);
+  }
+  return added;
+}
+
+/** «Colonna e registro del vault ci sono», annotato all'apertura come gli altri. */
+const SCHEMA_VAULT = new WeakMap<Database.Database, boolean>();
+
+function oggettiVaultMancanti(d: Database.Database): string[] {
+  const t = d.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?");
+  const i = d.prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?");
+  return [
+    ...colonneSchedaMkMancanti(d, COLONNE_VAULT).map(([tab, c]) => `${tab}.${c}`),
+    ...DDL_VAULT.filter(([n]) => !t.get(n)).map(([n]) => n),
+    ...INDICI_VAULT.filter(([n]) => !i.get(n)).map(([n]) => n),
+  ];
+}
+
+/** Schema del vault presente (annotato; si rimisura solo con la migrazione). Il registro e il riferimento lo chiedono prima. */
+export function schemaVaultPresente(d: Database.Database): boolean {
+  const v = SCHEMA_VAULT.get(d);
+  if (v !== undefined) return v;
+  const n = oggettiVaultMancanti(d).length === 0;
+  SCHEMA_VAULT.set(d, n);
+  return n;
+}
+
+/**
+ * da-vault (piano 2026-10-23): `credentials.credential_ref` e il registro `vault_visualizzazioni` col suo indice, solo
+ * se mancano. Additiva, idempotente, in UNA transazione; restituisce ciò che aggiunge e scrive il segno una volta sola.
+ * Gli interruttori del vault non la guardano: lo schema c'è anche spenti, e spenti nessuno lo legge.
+ */
+export function migrateVault(db: Database.Database): string[] {
+  const added: string[] = [];
+  try {
+    db.transaction(() => {
+      for (const [t, c, ddl] of colonneSchedaMkMancanti(db, COLONNE_VAULT)) {
+        db.exec(`ALTER TABLE ${t} ADD COLUMN ${c} ${ddl}`);
+        added.push(`${t}.${c}`);
+      }
+      const tab = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?");
+      for (const [n, ddl] of DDL_VAULT) {
+        if (tab.get(n)) continue;
+        db.exec(ddl);
+        added.push(n);
+      }
+      const idx = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?");
+      for (const [n, ddl] of INDICI_VAULT) {
+        if (idx.get(n)) continue;
+        db.exec(ddl);
+        added.push(n);
+      }
+      const chiusa = `:v${VERSIONE_VAULT}`;
+      const attuale = leggiSegno(db, SEGNO_VAULT);
+      if (!(attuale?.startsWith("done:") && attuale.endsWith(chiusa))) {
+        scriviSegno(db, SEGNO_VAULT, `done:${new Date().toISOString().slice(0, 10)}${chiusa}`);
+      }
+    })();
+  } finally {
+    SCHEMA_VAULT.set(db, oggettiVaultMancanti(db).length === 0);
   }
   return added;
 }
@@ -2976,6 +3035,28 @@ export function getTenantDb(tenantCode: string): Database.Database {
       }
     } catch (e2) {
       console.error(`[db-tenant] ${tenantCode}: ${SEGNO_ASSEGNATARI_AD}, segno non scritto:`, e2);
+    }
+  }
+
+  // da-vault (piano 2026-10-23): riferimento a OpenBao e registro delle visualizzazioni, solo se mancano. Se fallisce il
+  // tenant si apre lo stesso: schemaVaultPresente() dice false e le funzioni del vault lo dicono (a interruttori spenti
+  // nessuno le usa).
+  try {
+    const added = migrateVault(newDb);
+    if (added.length > 0) {
+      console.info(`[db-tenant] ${tenantCode}: vault, aggiunto ${added.join(", ")}`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione del vault fallita (ROLLBACK), registro e riferimenti OpenBao non disponibili:`, e);
+    try {
+      if (schemaVaultPresente(newDb)) {
+        const attuale = leggiSegno(newDb, SEGNO_VAULT);
+        if (!attuale?.startsWith("done:")) scriviSegno(newDb, SEGNO_VAULT, `done:${new Date().toISOString().slice(0, 10)}:v${VERSIONE_VAULT}`);
+      } else {
+        scriviSegno(newDb, SEGNO_VAULT, segnoErrore(e));
+      }
+    } catch (e2) {
+      console.error(`[db-tenant] ${tenantCode}: ${SEGNO_VAULT}, segno non scritto:`, e2);
     }
   }
 

@@ -30,6 +30,8 @@ import {
 import { Plus, Trash2, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { WinRMSetupGuideDialog } from "@/components/shared/winrm-setup-guide-dialog";
+import { MostraPassword, useMostraPasswordAttiva } from "@/components/vault/mostra-password";
+import { useEAdmin } from "@/hooks/use-e-admin";
 
 type Credential = VoceArchivio;
 
@@ -54,6 +56,8 @@ type FinestraUsi =
   | { stato: "errore"; voce: Credential; messaggio: string };
 
 export default function CredentialsPage() {
+  // da-vault: «Mostra password» solo per gli admin e solo con un interruttore del vault acceso.
+  const mostraPassword = useMostraPasswordAttiva(useEAdmin());
   const [credentials, setCredentials] = useState<Credential[]>([]);
   const [caricamento, setCaricamento] = useState<Caricamento>({ fase: "caricamento" });
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -305,6 +309,7 @@ export default function CredentialsPage() {
                             {testingId === c.id ? "..." : "Test"}
                           </Button>
                         )}
+                        {mostraPassword && <MostraPassword credentialId={c.id} nome={c.name} />}
                         <Button variant="ghost" size="icon" onClick={() => void openEdit(c)} title="Modifica">
                           <Pencil className="h-4 w-4" />
                         </Button>

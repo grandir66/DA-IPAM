@@ -43,6 +43,8 @@ import { leggiConfigDalink } from "@/lib/dalink/config";
 import { leggiConfigVulcan } from "@/lib/vulcan/config";
 import { CHIAVE_GIRO_ACCESO, dbCliente, giroAccessiAcceso, scriviImpostazione, ultimoGiroAccessi } from "@/lib/assegnatari/db";
 import { giroAccessiAdesso } from "@/lib/assegnatari/job";
+import { statoVault } from "@/lib/vault/appliance";
+import { vaultLocaleAcceso, vaultOpenBaoAcceso } from "@/lib/vault/stato";
 import { opzioniParametri } from "./parametri";
 import { ErroreOpzione, type Opzione, type RichiestaCambio, type Scelta, type StatoOpzione, type TipoEsito } from "./tipi";
 
@@ -884,7 +886,48 @@ function opzioniDaFile(): Opzione[] {
     dove: "Gira sempre: non ha un interruttore.",
     leggi: () => diSerieStato(true, esito("ok", "sempre acceso")),
   }));
-  return [...ambiente, ...sempre];
+  return [...ambiente, ...opzioniVault(), ...sempre];
+}
+
+/**
+ * da-vault (piano 2026-10-23): i due interruttori stanno nel file dell'appliance e si cambiano solo sul server, con
+ * un riavvio, un'appliance alla volta (spenti di serie). Qui si leggono, col loro stato.
+ */
+function opzioniVault(): Opzione[] {
+  return [
+    {
+      id: "file.vault_locale",
+      gruppo: "da_file",
+      nome: "Vault locale (archivio a slot)",
+      cosa: "le credenziali cifrate con la chiave degli slot (cliente, Domarc, TPM) invece che con ENCRYPTION_KEY",
+      valePer: "hub",
+      forma: "file",
+      diSerie: "spento",
+      configura: { href: "/settings/vault", etichetta: "Vault ›" },
+      dove: "Riga DA_VAULT_LOCALE=1 nel file .env.local dell'appliance, dopo aver creato l'archivio (scripts/da-vault.ts crea), poi riavvio del servizio.",
+      leggi() {
+        if (!vaultLocaleAcceso()) return diSerieStato(false, esito("neutro", "spento"));
+        const s = statoVault().locale;
+        return diSerieStato(true, s.sbloccato ? esito("ok", `sbloccato (${s.sbloccatoDa})`) : esito("errore", `bloccato: ${s.motivo ?? "chiave non aperta"}`));
+      },
+    },
+    {
+      id: "file.vault_openbao",
+      gruppo: "da_file",
+      nome: "Credenziali da OpenBao",
+      cosa: "le credenziali dei device lette da OpenBao col riferimento (credential_ref), sull'hub",
+      valePer: "hub",
+      forma: "file",
+      diSerie: "spento",
+      configura: { href: "/settings/vault", etichetta: "Vault ›" },
+      dove: "Riga DA_VAULT_OPENBAO=1 nel file .env.local, con DA_VAULT_OPENBAO_URL e l'AppRole, poi riavvio del servizio.",
+      leggi() {
+        if (!vaultOpenBaoAcceso()) return diSerieStato(false, esito("neutro", "spento"));
+        const o = statoVault().openbao;
+        return diSerieStato(true, o.pronto ? esito(o.motivo ? "attenzione" : "ok", o.motivo ?? "segreti caricati") : esito("errore", o.motivo ?? "non pronto"));
+      },
+    },
+  ];
 }
 
 // ── Il catalogo ──────────────────────────────────────────────────────────────

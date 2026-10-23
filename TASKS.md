@@ -1,5 +1,22 @@
 # TASKS — DA-IPAM
 
+## 2026-10-23 — da-vault (piano approvato, livello completo)
+
+Riccardo (23/10): sta valutando un vault unico al posto dei file locali di ogni app, a partire dalle credenziali del DA-IPAM di Domarc (hub) e poi firewall e altri device. Piano in valutazione: `~/Downloads/da-vault — Piano di implementazione.md` (OpenBao interno + KDBX/age dai clienti, libreria `@domarc/vault`).
+- [ ] decidere dove gira OpenBao: Riccardo pensa a DA-Link o a DA-Auth (oggi sulla .42); valutazione Claude 23/10: no alla .42, sì alla VM di DA-Link o a una VM piccola dedicata
+- [ ] punto d'innesto nel codice: `src/lib/credentials/segreti.ts` (lettore unico dei segreti), più gli altri `encrypt()` fuori da `credentials/` (integrazioni, vuln edge, inventory-agent, network-services)
+- [ ] rimando a DA-Link/TASKS.md (stessa data) per la parte vault interno
+- [ ] Riccardo (23/10): valutare Keeper (già in uso, tenant keepersecurity.eu) sia per il vault personale dei file «accessi» sul Mac sia per la soluzione. Analisi Claude 23/10: Keeper (cartelle condivise + Secrets Manager, un'applicazione KSM per app) al posto di OpenBao per Domarc; dai clienti resta l'archivio locale con slot age. Da verificare: licenza (KSM, SSO Entra, KeeperPAM inclusi?), prezzo per chiamate API
+- [ ] licenza letta nella console il 23/10: **Keeper Business**, 18 licenze, scade 20/06/2027, 100 GB; niente SSO (serve Enterprise, listino 5,50 €/utente/mese), niente ARAM, compliance, BreachWatch. **KSM richiede KeeperPAM, 90 €/utente/mese**: chiedere a Keeper il preventivo per 2-3 utenti PAM prima di decidere KSM vs OpenBao per le app. Persone e vault personale: Business basta
+- [x] **Decisione di Riccardo (23/10)**: Keeper Business solo per le persone e il vault personale (Commander per gli agenti); per le app **OpenBao** (open source, self-hosted): KSM troppo costoso e il prodotto è pensato per essere open source. Dai clienti archivio locale con slot age. Il vault personale si fa per primo (piano in ~/.claude)
+- [x] piano riscritto (23/10, sessione da-vault): `docs/superpowers/plans/2026-10-23-da-vault.md` — regola della fonte (se una macchina la usa sta in OpenBao, altrimenti Keeper; in Keeper solo puntatori), 12 passi, livello completo, ~5-6 settimane
+- [x] Riccardo (23/10): D1 OpenBao in container nella VM di DA-Link, niente VM nuova; D2 nel DA-IPAM dei clienti entrano tecnici e cliente; D3 per ora senza YubiKey (chiave age in Keeper, cartella personale); D4 `fc5171b` in esercizio ora, in OpenBao al passo 9 — piano aggiornato
+- [x] Riccardo (23/10): D5 slot Domarc acceso di serie con una riga nel contratto (chi non lo vuole lo spegne firmando); **piano approvato, livello completo**
+- [x] clausola sullo slot Domarc approvata da Riccardo il 23/10 (testo nel piano, sezione Decisioni)
+- [ ] esecuzione in una sessione nuova: prompt `~/.claude/prompts/da-vault-esecuzione-1.md`
+- [ ] analisi Claude 23/10 (da approvare): separare la «chiave» di ogni app (da TPM/OpenBao, mai in `.env.local`) dalle «credenziali condivise» dei device (OpenBao KV, solo riferimenti nelle app); dai clienti archivio locale cifrato con slot age e KDBX solo come esportazione, non come archivio vivo; login tecnici con OIDC nativo di OpenBao (DA-Auth non si tocca)
+
+
 ## 2026-10-23 — Uscita vera, istanza controllata e ricordata (livello completo, ADR 0033)
 
 Riccardo (23/10): ok alla revoca della sessione; la scelta del cliente diventa «istanza», va in Impostazioni,

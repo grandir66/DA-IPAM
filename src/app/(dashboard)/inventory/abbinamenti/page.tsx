@@ -20,8 +20,11 @@ const ETICHETTA: Record<Filtro, string> = {
 };
 const selectCls = "h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground";
 
-/** Una voce scelta per la conferma: la persona vista quando si è spuntata, la categoria se l'asset va creato. */
-interface Scelta { account: string; categoria?: string }
+/**
+ * Una voce scelta per la conferma: la persona vista quando si è spuntata, la categoria se l'asset va creato, e con un
+ * asset omonimo in inventario la scelta fra «Collega» (il suo numero) e «Crea nuovo».
+ */
+interface Scelta { account: string; categoria?: string; asset?: "nuovo" | number }
 
 function Accessi({ v }: { v: VoceAbbinamento }) {
   return <>{v.accessi.toLocaleString("it-IT")} su {v.totale.toLocaleString("it-IT")} <span className="text-muted-foreground">{v.base === "rete" ? "di rete" : "alla tastiera"}</span></>;
@@ -76,39 +79,49 @@ export default function AbbinamentiPage() {
     if (!v.persona) return;
     setScelti((m) => {
       const n = new Map(m);
-      if (si) n.set(v.hostId, { account: v.persona!.account, categoria: m.get(v.hostId)?.categoria });
+      if (si) n.set(v.hostId, { ...m.get(v.hostId), account: v.persona!.account });
       else n.delete(v.hostId);
       return n;
     });
   }
   function categoria(v: VoceAbbinamento, c: string) {
-    setScelti((m) => new Map(m).set(v.hostId, { account: v.persona!.account, categoria: c || undefined }));
+    setScelti((m) => new Map(m).set(v.hostId, { ...m.get(v.hostId), account: v.persona!.account, categoria: c || undefined }));
+  }
+  function sceltaAsset(v: VoceAbbinamento, x: string) {
+    const asset = x === "" ? undefined : x === "nuovo" ? "nuovo" as const : Number(x);
+    setScelti((m) => new Map(m).set(v.hostId, { ...m.get(v.hostId), account: v.persona!.account, asset }));
   }
 
   // Il riepilogo ㉔: per i proposti dal riepilogo del server (tutte le pagine), per i «da rivedere» dalle loro voci.
   const riepilogo = useMemo(() => {
-    let asset = 0, importa = 0, senzaCategoria = 0;
+    let asset = 0, collega = 0, importa = 0, senzaCategoria = 0, senzaScelta = 0;
     for (const [id, s] of scelti) {
       const p = dati?.proposti[id];
       const r = rivedere.find((x) => x.hostId === id);
-      const creaAsset = p ? p.creaAsset : false;
-      if (creaAsset) asset++;
+      const collegaQui = typeof s.asset === "number";
+      if (p?.creaAsset && collegaQui) collega++;
+      else if (p?.creaAsset) asset++;
       if (p ? p.importaAssegnatario : r ? r.assegnatarioPersona === null : false) importa++;
-      if (p?.categoriaDaScegliere && !s.categoria) senzaCategoria++;
+      if (p?.omonimi && s.asset === undefined) senzaScelta++;
+      else if (p?.categoriaDaScegliere && !collegaQui && !s.categoria) senzaCategoria++;
     }
-    return { totale: scelti.size, asset, importa, senzaCategoria };
+    return { totale: scelti.size, asset, collega, importa, senzaCategoria, senzaScelta };
   }, [scelti, dati, rivedere]);
 
   async function conferma() {
     setConfermando(true);
-    const voci = [...scelti].map(([hostId, s]) => ({ hostId, account: s.account, ...(s.categoria ? { categoria: s.categoria } : {}) }));
+    const voci = [...scelti].map(([hostId, s]) => ({
+      hostId, account: s.account,
+      ...(s.categoria && typeof s.asset !== "number" ? { categoria: s.categoria } : {}),
+      ...(s.asset !== undefined ? { asset: s.asset } : {}),
+    }));
     const r = await fetchJson<EsitoConferma>("/api/assegnatari/abbinamenti", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ voci }),
     });
     setConfermando(false);
     if (!r.ok) { toast.error(`Errore: ${r.message}`); return; }
     const e = r.data;
-    toast.success(`Abbinati ${e.assegnati} PC: ${e.assetCreati} asset creati, ${e.assegnatariCreati} assegnatari importati da AD`);
+    toast.success(`Abbinati ${e.assegnati} PC: ${e.assetCreati} asset creati, ${e.assetCollegati} collegati, ${e.assegnatariCreati} assegnatari importati da AD`);
     if (e.saltati.length > 0) toast.warning(`${e.saltati.length} non abbinati: ${e.saltati.slice(0, 3).map((s) => s.motivo).join("; ")}`);
     setSeminato(false);
     setScelti(new Map());
@@ -194,7 +207,9 @@ export default function AbbinamentiPage() {
                       {dati.voci.map((v) => {
                         const scelta = scelti.get(v.hostId);
                         const spuntabile = (v.gruppo === "proposto" || v.gruppo === "da_rivedere") && !!v.persona;
-                        const daScegliere = !v.asset && !v.categoriaProposta;
+                        const conOmonimi = !v.asset && v.omonimi.length > 0;
+                        const collegaQui = typeof scelta?.asset === "number";
+                        const daScegliere = !v.asset && ((conOmonimi && scelta?.asset === undefined) || (!v.categoriaProposta && !collegaQui));
                         return (
                           <TableRow key={v.hostId} className={daScegliere && spuntabile ? "bg-[#FFFBE6] dark:bg-[#3A3415]" : undefined}>
                             <TableCell>
@@ -209,6 +224,20 @@ export default function AbbinamentiPage() {
                             <TableCell>
                               {v.asset ? (
                                 <Link href={`/inventory/${v.asset.id}`} className="font-semibold text-[#006C96] underline">{v.asset.categoria ?? "Asset"}</Link>
+                              ) : conOmonimi && spuntabile ? (
+                                <div className="flex flex-col gap-1">
+                                  <select aria-label={`Asset per ${v.pc}`} className={selectCls} value={scelta?.asset === undefined ? "" : String(scelta.asset)} onChange={(e) => sceltaAsset(v, e.target.value)}>
+                                    <option value="">▲ esiste già un asset con questo nome</option>
+                                    {v.omonimi.map((o) => <option key={o.id} value={o.id}>Collega a n. {o.id} · {o.nome}{o.ip ? ` · ${o.ip}` : ""}</option>)}
+                                    <option value="nuovo">Crea nuovo{v.categoriaProposta ? ` (${v.categoriaProposta})` : ""}</option>
+                                  </select>
+                                  {scelta?.asset === "nuovo" && !v.categoriaProposta && (
+                                    <select aria-label={`Categoria per ${v.pc}`} className={selectCls} value={scelta?.categoria ?? ""} onChange={(e) => categoria(v, e.target.value)}>
+                                      <option value="">▲ categoria da scegliere</option>
+                                      {CATEGORIE.map((k) => <option key={k} value={k}>{k}</option>)}
+                                    </select>
+                                  )}
+                                </div>
                               ) : v.categoriaProposta ? (
                                 <BadgeSegno tipo="neutro">Si crea: {v.categoriaProposta}</BadgeSegno>
                               ) : spuntabile ? (
@@ -286,11 +315,13 @@ export default function AbbinamentiPage() {
 
           <div className="flex flex-wrap items-center justify-end gap-3 rounded-lg border bg-card px-4 py-3">
             <span className="flex-1 text-sm">
-              Selezionati: <strong className="font-semibold">{riepilogo.totale}</strong> — {riepilogo.asset} asset da creare, {riepilogo.importa}{" "}
+              Selezionati: <strong className="font-semibold">{riepilogo.totale}</strong> — {riepilogo.asset} asset da creare,
+              {riepilogo.collega > 0 ? ` ${riepilogo.collega} da collegare,` : ""} {riepilogo.importa}{" "}
               {riepilogo.importa === 1 ? "assegnatario" : "assegnatari"} da importare da AD, {riepilogo.totale} assegnazioni. Ogni asset scrive una riga nel suo diario.
+              {riepilogo.senzaScelta > 0 && <span className="ml-2 font-semibold text-[#8A6D00] dark:text-[#FFD400]">▲ {riepilogo.senzaScelta} con un asset dallo stesso nome: scegli «Collega» o «Crea nuovo»</span>}
               {riepilogo.senzaCategoria > 0 && <span className="ml-2 font-semibold text-[#8A6D00] dark:text-[#FFD400]">▲ {riepilogo.senzaCategoria} senza categoria: sceglila nella riga</span>}
             </span>
-            <Button className="min-h-11 text-[#0D2537]" disabled={riepilogo.totale === 0 || riepilogo.senzaCategoria > 0 || confermando} onClick={() => void conferma()}>
+            <Button className="min-h-11 text-[#0D2537]" disabled={riepilogo.totale === 0 || riepilogo.senzaCategoria > 0 || riepilogo.senzaScelta > 0 || confermando} onClick={() => void conferma()}>
               {confermando ? "Conferma…" : `Conferma ${riepilogo.totale} ${riepilogo.totale === 1 ? "abbinamento" : "abbinamenti"}`}
             </Button>
           </div>

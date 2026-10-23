@@ -100,7 +100,11 @@ Pagina «Abbinamenti» (Riccardo, 23/10, decisioni alle domande; livello leggero
 - [x] **tutti gli host con accessi**, anche quelli non ancora in inventario
 - [x] conferma **tutto in un clic**, a spunte: crea l'assegnatario da AD se manca, crea l'asset se manca, assegna (prove; non eseguita sull'hub)
 - [x] asset già assegnati a un altro: sezione «Da rivedere», **senza spunta**; si sostituisce solo spuntando a mano
-- [ ] (aperto) prima conferma vera sull'hub: la fa Riccardo (13 proposti su 70791; 2 chiedono la categoria). Piano: `docs/superpowers/plans/2026-10-23-abbinamenti.md`
+- [x] prima conferma vera sull'hub fatta da Riccardo (23/10, 16:25): 11 abbinamenti, 6 asset creati, diario a posto
+- [ ] Abbinamenti, asset con lo stesso nome (Riccardo, 23/10: «sì, ma un utente può avere asset multipli»): se esiste già un
+  asset col nome del PC, la riga chiede «Collega a n. X» o «Crea nuovo» e non si conferma senza scelta. Il controllo è
+  sul NOME del PC, mai sulla persona (più asset per persona è normale). Nato dal doppione NB-AGUZZOLI n. 31/36
+- [ ] NB-AGUZZOLI n. 31 (IP .172, oggi un iPhone): rinominare o dismettere lo decide Riccardo; 5 host Discovery con quel nome
 - Riccardo (23/10) «non vedo nulla»: il suo utente superadmin entra nella vista «tutte» e la scheda era aperta da prima
   dell'aggiornamento; i dati stanno solo in 70791 (scegliere l'istanza e ricaricare). Da confermare con lui.
 - Scostamento (23/10): il giro orario non è un tipo nuovo di `scheduled_jobs` (il CHECK su `job_type` vorrebbe la

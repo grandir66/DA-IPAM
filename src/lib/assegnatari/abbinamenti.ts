@@ -28,6 +28,12 @@ export interface VoceAbbinamento {
   asset: { id: number; categoria: string | null } | null;
   /** Senza asset: la categoria che avrà; null = da scegliere nella riga. */
   categoriaProposta: InventoryAssetCategoria | null;
+  /**
+   * Senza asset: gli asset d'inventario con lo stesso nome del PC (prima parte del nome, senza maiuscole), legati ad
+   * altro. Se ce n'è almeno uno la riga chiede «Collega» o «Crea nuovo» (doppione NB-AGUZZOLI n. 31/36, 23/10). Il
+   * controllo è sul nome del PC, non sulla persona: più asset per persona è normale.
+   */
+  omonimi: Array<{ id: number; nome: string; ip: string | null; categoria: string | null }>;
   gruppo: GruppoAbbinamento;
   /** Perché è escluso o ha pochi dati, a parole. */
   motivo: string | null;
@@ -48,7 +54,7 @@ export interface Abbinamenti {
   pagina: number;
   perPagina: number;
   /** Per ogni proposto (tutte le pagine): cosa creerebbe la conferma. Serve al riepilogo ㉔ della selezione. */
-  proposti: Record<number, { account: string; creaAsset: boolean; importaAssegnatario: boolean; categoriaDaScegliere: boolean }>;
+  proposti: Record<number, { account: string; creaAsset: boolean; importaAssegnatario: boolean; categoriaDaScegliere: boolean; omonimi: boolean }>;
   giorni: number;
 }
 
@@ -105,6 +111,12 @@ function calcolaVoci(db: Database.Database, soloHost?: number): { voci: VoceAbbi
     for (const r of righe) (accessi.get(r.host_id) ?? accessi.set(r.host_id, []).get(r.host_id)!).push(r);
   }
   const persone = personeAd(db, [...new Set([...accessi.values()].flat().map((a) => a.account))]);
+  // Asset per nome (prima parte, minuscolo): una lettura sola, per gli omonimi dei PC senza asset.
+  const assetPerNome = new Map<string, VoceAbbinamento["omonimi"]>();
+  for (const r of db.prepare("SELECT id, hostname, ip_address, categoria FROM inventory_assets WHERE hostname IS NOT NULL AND hostname <> ''").all() as Array<{ id: number; hostname: string; ip_address: string | null; categoria: string | null }>) {
+    const k = r.hostname.trim().toLowerCase().split(".")[0];
+    (assetPerNome.get(k) ?? assetPerNome.set(k, []).get(k)!).push({ id: r.id, nome: r.hostname, ip: r.ip_address, categoria: r.categoria });
+  }
   const perGuid = new Map<string, number>();
   for (const r of db.prepare("SELECT id, ad_integration_id, ad_object_guid FROM asset_assignees WHERE ad_object_guid IS NOT NULL").all() as Array<{ id: number; ad_integration_id: number; ad_object_guid: string }>) {
     perGuid.set(`${r.ad_integration_id}:${r.ad_object_guid}`, r.id);
@@ -150,6 +162,7 @@ function calcolaVoci(db: Database.Database, soloHost?: number): { voci: VoceAbbi
       ip: h.ip,
       classificazione: h.classification,
       asset: h.asset_id !== null ? { id: h.asset_id, categoria: h.categoria } : null,
+      omonimi: h.asset_id === null && h.pc !== h.ip ? assetPerNome.get(h.pc.trim().toLowerCase().split(".")[0]) ?? [] : [],
       categoriaProposta: h.asset_id === null && daClassificazione && !CATEGORIE_SENZA_PROPOSTA.has(daClassificazione)
         && daClassificazione !== "Other" && daClassificazione !== "VM" ? daClassificazione : null,
       gruppo,
@@ -184,6 +197,7 @@ export function elencoAbbinamenti(db: Database.Database, f: { gruppo: GruppoAbbi
       creaAsset: v.asset === null,
       importaAssegnatario: v.assegnatarioPersona === null,
       categoriaDaScegliere: v.asset === null && v.categoriaProposta === null,
+      omonimi: v.omonimi.length > 0,
     };
   }
   return { contatori, voci: filtrate.slice(da, da + f.perPagina), totale: filtrate.length, pagina: f.pagina, perPagina: f.perPagina, proposti, giorni };
@@ -194,11 +208,14 @@ export interface RichiestaAbbinamento {
   account: string;
   /** Solo per gli asset da creare senza categoria proposta. */
   categoria?: InventoryAssetCategoria;
+  /** Con omonimi: «nuovo» crea comunque, un numero collega quell'asset (deve essere fra gli omonimi). */
+  asset?: "nuovo" | number;
 }
 
 export interface EsitoConferma {
   assegnati: number;
   assetCreati: number;
+  assetCollegati: number;
   assegnatariCreati: number;
   saltati: Array<{ hostId: number; motivo: string }>;
 }
@@ -208,7 +225,7 @@ export interface EsitoConferma {
  * stessa persona; altrimenti si salta col motivo (la pagina lo dice). Crea l'assegnatario da AD e l'asset se mancano.
  */
 export function confermaAbbinamenti(db: Database.Database, richieste: readonly RichiestaAbbinamento[], utente: number | null): EsitoConferma {
-  const esito: EsitoConferma = { assegnati: 0, assetCreati: 0, assegnatariCreati: 0, saltati: [] };
+  const esito: EsitoConferma = { assegnati: 0, assetCreati: 0, assetCollegati: 0, assegnatariCreati: 0, saltati: [] };
   const audit = db.prepare("INSERT INTO inventory_audit_log (asset_id, user_id, action, field_name, old_value, new_value) VALUES (?, ?, ?, ?, ?, ?)");
   db.transaction(() => {
     for (const r of richieste) {
@@ -217,14 +234,31 @@ export function confermaAbbinamenti(db: Database.Database, richieste: readonly R
       if (!v) { salta("nessun accesso nel periodo"); continue; }
       if (v.gruppo !== "proposto" && v.gruppo !== "da_rivedere") { salta(v.gruppo === "abbinato" ? "già abbinato" : `non più proposto (${v.motivo ?? v.gruppo})`); continue; }
       if (!v.persona || v.persona.account !== r.account.toLowerCase()) { salta("la persona proposta è cambiata"); continue; }
-      const categoria = v.asset ? null : v.categoriaProposta ?? r.categoria ?? null;
-      if (!v.asset && !categoria) { salta("categoria dell'asset da scegliere"); continue; }
+      const collega = !v.asset && typeof r.asset === "number" ? v.omonimi.find((o) => o.id === r.asset) ?? null : null;
+      if (!v.asset && v.omonimi.length > 0 && r.asset === undefined) { salta("esiste già un asset con lo stesso nome: scegli «Collega» o «Crea nuovo»"); continue; }
+      if (typeof r.asset === "number" && !collega) { salta("l'asset da collegare non ha più lo stesso nome"); continue; }
+      const categoria = v.asset || collega ? null : v.categoriaProposta ?? r.categoria ?? null;
+      if (!v.asset && !collega && !categoria) { salta("categoria dell'asset da scegliere"); continue; }
       const u = utenteAdPerAccount(db, r.account);
       if (!u) { salta("utente non trovato in AD"); continue; }
 
       const { id: assegnatarioId, creato } = assegnatarioDaUtente(db, u);
       if (creato) esito.assegnatariCreati++;
       let assetId = v.asset?.id ?? null;
+      if (assetId === null && collega) {
+        // «Collega»: l'asset esistente passa su questo host (IP compreso) e lascia il legame vecchio con l'apparato, che
+        // era quello sbagliato (NB-AGUZZOLI n. 31 puntava all'IP passato a un iPhone). Ogni campo cambiato nel diario.
+        const prima = db.prepare("SELECT host_id, network_device_id, ip_address FROM inventory_assets WHERE id = ?").get(collega.id) as
+          { host_id: number | null; network_device_id: number | null; ip_address: string | null };
+        db.prepare("UPDATE inventory_assets SET host_id = ?, network_device_id = NULL, ip_address = ?, updated_at = datetime('now') WHERE id = ?")
+          .run(r.hostId, v.ip, collega.id);
+        const s = (x: number | null) => (x === null ? null : String(x));
+        audit.run(collega.id, utente, "update", "host_id", s(prima.host_id), String(r.hostId));
+        if (prima.network_device_id !== null) audit.run(collega.id, utente, "update", "network_device_id", s(prima.network_device_id), null);
+        if (prima.ip_address !== v.ip) audit.run(collega.id, utente, "update", "ip_address", prima.ip_address, v.ip);
+        assetId = collega.id;
+        esito.assetCollegati++;
+      }
       if (assetId === null) {
         const h = db.prepare("SELECT id, ip, hostname, custom_name, vendor, model, serial_number, mac, os_info FROM hosts WHERE id = ?").get(r.hostId) as
           { id: number; ip: string; hostname: string | null; custom_name: string | null; vendor: string | null; model: string | null; serial_number: string | null; mac: string | null; os_info: string | null };

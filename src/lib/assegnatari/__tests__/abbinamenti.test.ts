@@ -59,7 +59,7 @@ test("gruppi: proposti con e senza asset, server escluso anche senza asset, da r
   });
   assert.deepEqual(e.contatori, { proposto: 3, da_rivedere: 1, abbinato: 0, pochi_dati: 1, escluso: 1 });
   assert.match(String(e.voci.find((v) => v.pc === "da-sns")?.motivo), /server/);
-  assert.deepEqual(e.proposti[4], { account: "r.lucchi", creaAsset: true, importaAssegnatario: true, categoriaDaScegliere: true });
+  assert.deepEqual(e.proposti[4], { account: "r.lucchi", creaAsset: true, importaAssegnatario: true, categoriaDaScegliere: true, omonimi: false });
   assert.equal(elencoAbbinamenti(db, { ...tutti, gruppo: "proposto", soloSenzaAsset: true }).totale, 2);
   assert.equal(elencoAbbinamenti(db, { ...tutti, cerca: "miari" }).totale, 1);
 });
@@ -71,7 +71,7 @@ test("conferma: crea assegnatari e asset, assegna, scrive il diario; il Mac senz
     { hostId: 2, account: "l.aguzzoli" },
     { hostId: 4, account: "r.lucchi" },
   ], 7);
-  assert.deepEqual(r, { assegnati: 2, assetCreati: 1, assegnatariCreati: 2, saltati: [{ hostId: 4, motivo: "categoria dell'asset da scegliere" }] });
+  assert.deepEqual(r, { assegnati: 2, assetCreati: 1, assetCollegati: 0, assegnatariCreati: 2, saltati: [{ hostId: 4, motivo: "categoria dell'asset da scegliere" }] });
   const nb = db.prepare("SELECT a.categoria, a.modello, a.ip_address, aa.name FROM inventory_assets a JOIN asset_assignees aa ON aa.id = a.asset_assignee_id WHERE a.host_id = 2").get();
   assert.deepEqual(nb, { categoria: "Laptop", modello: "Latitude 5440", ip_address: "192.168.4.140", name: "Luca Aguzzoli" });
   assert.equal((db.prepare("SELECT COUNT(*) AS n FROM inventory_audit_log WHERE user_id = 7").get() as { n: number }).n, 3, "create + 2 assegnazioni");
@@ -93,4 +93,37 @@ test("conferma: da rivedere solo se chiesto; persona cambiata, escluso o già ab
   assert.deepEqual(r.saltati.map((s) => [s.hostId, s.motivo.split(" (")[0]]), [[1, "la persona proposta è cambiata"], [3, "non più proposto"], [6, "non più proposto"]]);
   assert.equal((db.prepare("SELECT aa.name FROM inventory_assets a JOIN asset_assignees aa ON aa.id = a.asset_assignee_id WHERE a.id = 11").get() as { name: string }).name, "Massimo Malagola");
   assert.deepEqual(confermaAbbinamenti(db, [{ hostId: 5, account: "massimo" }], null).saltati, [{ hostId: 5, motivo: "già abbinato" }]);
+});
+
+test("omonimi: un asset col nome del PC legato ad altro chiede «Collega» o «Crea nuovo»; più asset per persona vanno bene", () => {
+  const db = dbProva();
+  // Come NB-AGUZZOLI n. 31 sull'hub: stesso nome, legato all'apparato di un altro IP (oggi un iPhone).
+  db.prepare("INSERT INTO hosts (id, network_id, ip, hostname, classification) VALUES (7, 1, '192.168.4.172', 'iPhone', 'workstation')").run();
+  db.prepare("INSERT INTO network_devices (id, name, host, device_type, vendor, protocol, enabled, host_id) VALUES (2, 'x', '192.168.4.172', 'server', 'windows', 'winrm', 1, 7)").run();
+  db.prepare("INSERT INTO inventory_assets (id, hostname, network_device_id, categoria, ip_address) VALUES (31, 'NB-AGUZZOLI', 2, 'Desktop', '192.168.4.172')").run();
+  const v = elencoAbbinamenti(db, tutti).voci.find((x) => x.pc === "NB-AGUZZOLI")!;
+  assert.deepEqual(v.omonimi.map((o) => o.id), [31]);
+  assert.equal(elencoAbbinamenti(db, tutti).proposti[2].omonimi, true);
+  // Senza scelta: saltato. Con «Collega»: l'asset 31 passa sull'host 2, perde l'apparato vecchio, e va a Luca.
+  assert.match(confermaAbbinamenti(db, [{ hostId: 2, account: "l.aguzzoli" }], 7).saltati[0].motivo, /stesso nome/);
+  const r = confermaAbbinamenti(db, [{ hostId: 2, account: "l.aguzzoli", asset: 31 }], 7);
+  assert.deepEqual([r.assegnati, r.assetCollegati, r.assetCreati], [1, 1, 0]);
+  assert.deepEqual(db.prepare("SELECT host_id, network_device_id, ip_address FROM inventory_assets WHERE id = 31").get(), { host_id: 2, network_device_id: null, ip_address: "192.168.4.140" });
+  assert.deepEqual(
+    db.prepare("SELECT field_name, old_value, new_value FROM inventory_audit_log WHERE asset_id = 31 ORDER BY id").all(),
+    [
+      { field_name: "host_id", old_value: null, new_value: "2" },
+      { field_name: "network_device_id", old_value: "2", new_value: null },
+      { field_name: "ip_address", old_value: "192.168.4.172", new_value: "192.168.4.140" },
+      { field_name: "asset_assignee_id", old_value: null, new_value: String((db.prepare("SELECT asset_assignee_id AS a FROM inventory_assets WHERE id = 31").get() as { a: number }).a) },
+    ],
+  );
+  // «Crea nuovo» su un altro omonimo e la stessa persona su due asset: si può.
+  db.prepare("INSERT INTO hosts (id, network_id, ip, hostname, classification) VALUES (8, 1, '192.168.4.190', 'NB-AGUZZOLI', 'notebook')").run();
+  registraAccessi(db, [{ hostId: 8, account: "l.aguzzoli", fonte: "wazuh_tastiera", giorno: new Date().toISOString().slice(0, 10), conteggio: 9, ultimo: null }], "somma");
+  const n = confermaAbbinamenti(db, [{ hostId: 8, account: "l.aguzzoli", asset: "nuovo" }], 7);
+  assert.deepEqual([n.assegnati, n.assetCreati], [1, 1]);
+  assert.equal((db.prepare("SELECT COUNT(*) AS n FROM inventory_assets a JOIN asset_assignees aa ON aa.id = a.asset_assignee_id WHERE aa.name = 'Luca Aguzzoli'").get() as { n: number }).n, 2);
+  // Un numero che non è fra gli omonimi non passa.
+  assert.match(confermaAbbinamenti(db, [{ hostId: 4, account: "r.lucchi", asset: 999 }], 7).saltati[0].motivo, /non ha più lo stesso nome/);
 });

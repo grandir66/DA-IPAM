@@ -47,6 +47,7 @@ const Corpo = z.object({
     hostId: z.number().int().positive(),
     account: z.string().min(1).max(256),
     categoria: z.enum(CATEGORIE_NUOVO_ASSET as [string, ...string[]]).optional(),
+    asset: z.union([z.literal("nuovo"), z.number().int().positive()]).optional(),
   })).min(1).max(2000),
 });
 

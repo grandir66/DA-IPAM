@@ -20,6 +20,17 @@ e si riparte dall'ultima usata; verificare sull'hub (unico multi-istanza) le Opz
 Riccardo (23/10): «poi penseremo a una release di DA-IPAM da eseguire sui notebook dei tecnici, multi tenant con
 meno funzioni». Da decidere: quali funzioni restano, da dove prende le istanze (hub? copia locale?), come si aggiorna.
 
+## 2026-10-22 — da controllare (solo nota, niente lavoro fatto)
+
+Riccardo (22/10): da verificare in un secondo momento, nessuna analisi fatta finora.
+
+- [ ] VLAN degli switch HP Comware: non sempre vengono rilevate tutte le VLAN.
+- [ ] VLAN degli switch HP Comware: le porte taggate (trunk) non vengono riconosciute.
+- [ ] Schermata VLAN: con troppe VLAN la tabella taglia le colonne più a destra (manca lo scorrimento orizzontale o l'adattamento).
+- [ ] Scansione switch: per default si abilita solo SNMP anche quando SSH risponde. Da decidere se è voluto (un protocollo basta) o se servono entrambi (es. SSH per VLAN/trunk dove SNMP è parziale, vedi Comware).
+- [ ] LibreNMS: aggiunta in batch di più oggetti, invece di uno alla volta dalla pagina Discovery.
+- [ ] LibreNMS: se l'integrazione è presente (configurata), gli oggetti che rispondono a SNMP si aggiungono in automatico. Da definire: quando (a fine scansione?), come si escludono, cosa si vede a schermo dell'esito.
+
 ## 2026-10-23 — Barra laterale compatta e cambio password
 
 Riccardo (23/10): il blocco in basso della barra è brutto, logo più piccolo, «URL dell'hub» in Impostazioni,

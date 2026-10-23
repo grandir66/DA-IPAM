@@ -78,6 +78,14 @@ app.prepare().then(() => {
   }
 
   function initCron() {
+    // da-vault (piano 2026-10-23): sblocco del vault e cache di OpenBao, solo con un interruttore acceso (spenti di
+    // serie: l'avvio resta quello di oggi). Prima dello scheduler: i job col vault bloccato restano in pausa.
+    if (process.env.DA_VAULT_LOCALE === "1" || process.env.DA_VAULT_OPENBAO === "1") {
+      import("./src/lib/vault/avvio").then(({ avviaVault }) => avviaVault()).catch((error) => {
+        console.error("CRITICAL: avvio del vault fallito — credenziali non leggibili, scansioni in pausa:", error);
+      });
+    }
+
     // Boot migration prima dello scheduler: garantisce che ogni tenant abbia
     // known_host_check sui propri network e nessun fast_scan rischioso schedulato.
     // Vedi src/lib/cron/scheduler-defaults.ts e incident cliente A 2026-05-25.

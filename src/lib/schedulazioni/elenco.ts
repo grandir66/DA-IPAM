@@ -289,6 +289,7 @@ export const TIMER_DI_SERVER: Readonly<Record<string, string>> = {
   "./src/lib/cron/scheduler-defaults": "fuori: correzioni all'avvio, non un giro (in Opzioni › Da file)",
   "./src/lib/vulcan/job": "fuori: deciso il 23/10, spento senza gettone su tutte le appliance (in Opzioni › Notifiche e uscite)",
   "./src/lib/integrations/segreti-migrazione": "fuori: gira una volta all'avvio (copia dei segreti di LibreNMS e Graylog), non è un giro",
+  "./src/lib/vault/avvio": "fuori: sblocco del vault all'avvio e cache di OpenBao, solo con DA_VAULT_LOCALE/DA_VAULT_OPENBAO (spenti di serie, in Opzioni › Da file)",
 };
 
 async function righeTimer(adesso: Date): Promise<RigaSchedulazione[]> {

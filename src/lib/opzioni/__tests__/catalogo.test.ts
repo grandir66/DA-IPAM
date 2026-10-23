@@ -57,6 +57,9 @@ const CENSIMENTO: ReadonlyArray<[chiave: string, id: string]> = [
   ["tenants.active", "fuori"],
   ["VULCAN_TOKEN", "uscite.vulcan"],
   ["oggetto.env", "uscite.dalink_segnale"],
+  // da-vault (piano 2026-10-23): i due interruttori del vault, nel file dell'appliance, spenti di serie.
+  ["DA_VAULT_LOCALE", "file.vault_locale"],
+  ["DA_VAULT_OPENBAO", "file.vault_openbao"],
   ...VOCI_DA_AMBIENTE.map((v): [string, string] => [v.variabile, `file.${v.variabile.toLowerCase()}`]),
   ["DA_INVENT_BACKUP_CRON", "sempre.backup"],
   ["allarme salute", "sempre.allarme_salute"],

@@ -156,3 +156,8 @@ export function registroVisualizzazioni(dbh: Database.Database, op: { pagina?: n
     .all(perPagina, (pagina - 1) * perPagina) as RigaRegistro[];
   return { totale, righe };
 }
+
+/** L'utente per il vault dalla sessione di NextAuth (`requireAdmin`/`requireAuth`): id, nome utente, ruolo. */
+export function utenteDaSessione(s: { user: { id?: string | null; name?: string | null; role?: string } }): UtenteSessione {
+  return { id: String(s.user.id ?? "0"), nome: s.user.name?.trim() || "sconosciuto", ruolo: s.user.role ?? "" };
+}

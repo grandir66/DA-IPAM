@@ -25,7 +25,7 @@ import type Database from "better-sqlite3";
 import type { z } from "zod";
 import type { Credential } from "@/types";
 import type { CredentialSchema } from "@/lib/validators";
-import { aggiornamentiCredenziale, colonneNuovaCredenziale } from "./aggiornamenti";
+import { aggiornamentiCredenziale, colonneNuovaCredenziale, togliRiferimentoSeCambianoSegreti } from "./aggiornamenti";
 import { mascheraCredenziale, type CredenzialeVista } from "./maschera";
 import {
   METODI_PER_TIPO,
@@ -56,6 +56,8 @@ export interface ColonneCredenziale {
   priv_protocol?: string | null;
   security_level?: string | null;
   port?: number | null;
+  /** da-vault: il percorso in OpenBao (lo scrive la migrazione; la pagina lo toglie quando cambia un segreto). */
+  credential_ref?: string | null;
 }
 
 type Colonna = keyof ColonneCredenziale;
@@ -74,6 +76,7 @@ const COLONNE: readonly Colonna[] = [
   "priv_protocol",
   "security_level",
   "port",
+  "credential_ref",
 ];
 
 function tipoDaScrivere(t: string): TipoCredenziale {
@@ -293,6 +296,7 @@ export function modificaVoceDb(dbh: Database.Database, id: number, dati: Partial
     const c = controlla(tipo, metodo, risultante, haCampiV3(dati));
     if (!c.ok) return { ok: false, stato: 400, errore: c.errore };
     for (const col of c.daSvuotare) aggiornamenti[col] = null;
+    togliRiferimentoSeCambianoSegreti(aggiornamenti);
 
     const voce = aggiornaCredenzialeDb(dbh, id, aggiornamenti as Partial<ColonneCredenziale>);
     if (!voce) return { ok: false, stato: 404, errore: "Credenziale non trovata" };

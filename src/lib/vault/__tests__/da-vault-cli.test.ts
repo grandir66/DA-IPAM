@@ -10,6 +10,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import Database from "better-sqlite3";
 import { generateX25519Identity, identityToRecipient } from "age-encryption";
 
 const PASS = "passphrase-cliente-cli-0123";
@@ -27,6 +28,10 @@ const cli = (args: string[], stdin: string, env: Record<string, string> = {}) =>
 
 before(async () => {
   dati = mkdtempSync(join(tmpdir(), "da-vault-cli-"));
+  // `crea` e `ricifra` rifiutano una cartella dati senza hub.db (rilievo 3 della revisione): ce ne vuole uno.
+  const hub = new Database(join(dati, "hub.db"));
+  hub.exec("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT)");
+  hub.close();
   destinatario = await identityToRecipient(await generateX25519Identity());
 });
 

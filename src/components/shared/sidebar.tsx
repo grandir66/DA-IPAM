@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { signOut, useSession } from "next-auth/react";
+import { useSession } from "next-auth/react";
 import { TenantSwitcher } from "./tenant-switcher";
 import { useSidebar } from "./sidebar-context";
 import {
@@ -15,7 +15,6 @@ import {
   Key,
   Settings,
   ServerCog,
-  LogOut,
   Menu,
   X,
   ChevronDown,
@@ -437,8 +436,8 @@ export function Sidebar() {
 
   const nav = (
     <>
-      {/* Testata (Riccardo, 23/10): logo piccolo, nome e «Comprimi» in una riga, sotto utente ed
-          «Esci». Prima logo grande in alto e tema, comprimi, utente, esci in un blocco in fondo. */}
+      {/* Testata (Riccardo, 23/10): logo piccolo, nome e «Comprimi» in una riga, sotto l'utente
+          (nel suo menu anche «Esci»). Prima logo grande in alto e tema, comprimi, utente, esci in un blocco in fondo. */}
       <div className="shrink-0 border-b border-sidebar-border">
         <div className={cn("flex items-center gap-2 h-12 pl-14 pr-2 md:pl-4", collapsed && "md:flex-col md:h-auto md:py-3 md:px-0")}>
           <img
@@ -467,19 +466,8 @@ export function Sidebar() {
             {collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
           </button>
         </div>
-        <div className={cn("flex items-center gap-1 px-2 pb-2", collapsed && "md:flex-col md:px-0")}>
-          <div className={cn("min-w-0 flex-1", collapsed && "md:flex-none md:w-full")}>
-            <UserMenu compresso={collapsed} />
-          </div>
-          <button
-            type="button"
-            onClick={() => signOut({ callbackUrl: "/login" })}
-            title="Esci"
-            aria-label="Esci"
-            className="grid h-8 w-8 shrink-0 place-items-center rounded-md text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors"
-          >
-            <LogOut className="h-4 w-4" />
-          </button>
+        <div className={cn("px-2 pb-2", collapsed && "md:px-0")}>
+          <UserMenu compresso={collapsed} />
         </div>
       </div>
 

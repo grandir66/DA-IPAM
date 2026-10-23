@@ -8,6 +8,10 @@ comprimi ben visibile; scelta «tutto in alto». Segnalato: il cambio password n
 - [x] testata compatta con comprimi, utente ed Esci; tema nel menu utente; piede tolto (resa guardata a 1440 aperta e compressa)
 - [x] «URL dell'hub» in Impostazioni → Sistema, `/agents` rimanda lì (provato in locale)
 - [x] a menu compresso solo il simbolo (Riccardo, 23/10; resa guardata in locale a 1440)
+- [x] «Esci» nel menu dell'utente e ritorno a `/login` deciso dal browser (sull'hub il server rispondeva `https://0.0.0.0/login`; provato in locale)
+- [ ] **«Esci» non chiude davvero la sessione** (trovato il 23/10, c'era già prima): le richieste della dashboard partite prima dell'uscita
+  tornano dopo e rimettono il cookie, perché il proxy rinnova il JWT a ogni risposta (traccia: signout `Max-Age=0` a +495 ms,
+  `/api/status/*` rimettono `authjs.session-token` a +525 ms, `/` riapre la sessione). Zona rossa (accesso): proposta a Riccardo, in attesa dell'ok.
 - [ ] guardarla sull'hub dopo l'aggiornamento
 
 ## 2026-10-23 — Assegnatari NIS2 da AD e utente prevalente dei PC (idea, da decidere)

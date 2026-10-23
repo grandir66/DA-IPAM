@@ -50,6 +50,7 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ### Corretto
 
+- **«Esci» portava a una pagina vuota** (Riccardo, 23/10). Auth.js costruisce l'indirizzo di ritorno dal nome su cui ascolta il server: sull'hub `/api/auth/signout` rispondeva `https://0.0.0.0/login`. Ora l'uscita non chiede il ritorno al server e il browser va su `/login` da solo. «Esci» è passato nel menu dell'utente.
 - **«Cambia password» nel menu dell'utente non apriva niente** (segnalato a Riccardo il 23/10). La voce usava `onSelect`, che è di Radix: i menu di DA-IPAM sono Base UI, che risponde a `onClick`. Il clic chiudeva il menu e la finestra non compariva. Rotta e database erano giusti.
 
 ### Cambiato

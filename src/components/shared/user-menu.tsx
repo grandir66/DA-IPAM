@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useSession } from "next-auth/react";
-import { User as UserIcon, KeyRound, Loader2, MoreHorizontal, Moon, Sun } from "lucide-react";
+import { signOut, useSession } from "next-auth/react";
+import { User as UserIcon, KeyRound, Loader2, LogOut, MoreHorizontal, Moon, Sun } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTema } from "./theme-toggle";
 import {
@@ -29,7 +29,7 @@ import { toast } from "sonner";
 
 /**
  * Utente in cima al menu a sinistra (Riccardo, 23/10: in basso restava un blocco enorme):
- * iniziale, nome e ruolo; il clic apre «Cambia password» e il tema. «Esci» resta a sé, a un clic.
+ * iniziale, nome e ruolo; il clic apre «Cambia password», il tema ed «Esci» (Riccardo, 23/10).
  */
 export function UserMenu({ compresso = false }: { compresso?: boolean }) {
   const { data: session } = useSession();
@@ -38,6 +38,13 @@ export function UserMenu({ compresso = false }: { compresso?: boolean }) {
   const initial = username.charAt(0).toUpperCase() || "?";
 
   const tema = useTema();
+
+  // Il ritorno lo decide il browser: Auth.js costruisce l'indirizzo dal nome su cui ascolta il
+  // server, e sull'hub rispondeva https://0.0.0.0/login (pagina vuota, segnalato il 23/10).
+  async function esci() {
+    await signOut({ redirect: false });
+    window.location.href = "/login";
+  }
   const [pwOpen, setPwOpen] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -123,6 +130,11 @@ export function UserMenu({ compresso = false }: { compresso?: boolean }) {
           <DropdownMenuItem onClick={tema.toggle} disabled={!tema.mounted}>
             {tema.dark ? <Sun className="h-4 w-4 mr-2" /> : <Moon className="h-4 w-4 mr-2" />}
             {tema.etichetta}
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={() => void esci()}>
+            <LogOut className="h-4 w-4 mr-2" />
+            Esci
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

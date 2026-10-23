@@ -143,3 +143,14 @@ test("PC condiviso: niente proposta finché non si toglie; server esclusi; asset
   assert.equal(propostaPerAsset(db, 999), null);
   assert.throws(() => segnaCondiviso(db, 999, true, 1), (e: unknown) => e instanceof ErroreProposta && e.status === 404);
 });
+
+test("l'host dell'asset arriva anche dall'apparato collegato (32 asset su 34 sull'hub .8 avevano solo network_device_id)", () => {
+  const db = dbProva();
+  conAsset(db);
+  db.exec("ALTER TABLE network_devices ADD COLUMN host_id INTEGER REFERENCES hosts(id) ON DELETE SET NULL");
+  db.prepare("INSERT INTO network_devices (id, name, host, device_type, vendor, protocol, enabled, host_id) VALUES (3, 'PC', '10.10.20.43', 'server', 'windows', 'winrm', 1, 1)").run();
+  db.prepare("INSERT INTO inventory_assets (id, hostname, network_device_id, categoria) VALUES (8, 'PC-ACQ-03', 3, 'Desktop')").run();
+  const p = propostaPerAsset(db, 8)!;
+  assert.equal(p.hostId, 1);
+  assert.equal(p.esito, "proposta");
+});

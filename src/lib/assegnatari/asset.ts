@@ -57,8 +57,17 @@ interface AssetMinimo {
   proposta_assegnatario_off: number;
 }
 
+/**
+ * L'host dell'asset è il suo `host_id` o, se manca, quello dell'apparato collegato: sull'hub .8 (23/10) 32 asset su 34
+ * avevano solo `network_device_id`. `network_devices.host_id` lo aggiunge un ALTER all'apertura del tenant.
+ */
 function assetMinimo(db: Database.Database, assetId: number): AssetMinimo | undefined {
-  return db.prepare("SELECT id, host_id, categoria, asset_assignee_id, proposta_assegnatario_off FROM inventory_assets WHERE id = ?").get(assetId) as AssetMinimo | undefined;
+  const conHostApparato = (db.prepare("PRAGMA table_info(network_devices)").all() as Array<{ name: string }>).some((c) => c.name === "host_id");
+  return db.prepare(
+    `SELECT a.id, ${conHostApparato ? "COALESCE(a.host_id, nd.host_id)" : "a.host_id"} AS host_id, a.categoria, a.asset_assignee_id,
+            a.proposta_assegnatario_off
+     FROM inventory_assets a LEFT JOIN network_devices nd ON nd.id = a.network_device_id WHERE a.id = ?`,
+  ).get(assetId) as AssetMinimo | undefined;
 }
 
 /** null = l'asset non c'è. */

@@ -28,6 +28,8 @@ i processi di syscollector (`wazuh_process`) non hanno il proprietario, quindi n
 Valori predefiniti proposti (Riccardo può correggerli): solo proposta con conferma, niente assegnazione automatica;
 livello leggero. Prossimo passo: tavola grafica (pagina «Importa da AD» + riquadro proposta sull'asset), poi piano
 breve ed esecuzione in una sessione nuova.
+- [x] tavola grafica (23/10): https://claude.ai/artifact/64gZcjsoZQmrcoXJkV6eFf — elenco assegnatari (1-4),
+      «Importa da AD» (5-11), scheda asset con proposta, chi si collega e i casi limite (12-18); **da approvare**
 - [ ] misurare su un Wazuh vero: quanti 60106 con logonType 2/10/11 per agente negli ultimi 30 giorni (sola lettura)
 - [ ] storico delle osservazioni utente↔host (WinRM, GLPI, Wazuh 60106, eventi 4624/4768 dei DC) e «utente prevalente» per PC
 - [ ] `ad-client`: leggere anche givenName, sn, mobile, company, manager, employeeID, office; computer: managedBy

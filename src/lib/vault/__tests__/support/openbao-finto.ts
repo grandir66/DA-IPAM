@@ -1,0 +1,127 @@
+/**
+ * Un OpenBao finto per le prove (nessun server vero): risponde come l'API HTTP di OpenBao 2.x per quello che
+ * `@domarc/vault` usa — login AppRole, KV v2 (lettura, scrittura, LIST dei metadati, cancellazione) — con l'orologio
+ * delle prove. Registra ogni richiesta (metodo, percorso, intestazioni utili) per guardare cosa esce.
+ *
+ * `giu = true` simula OpenBao spento: `fetch` lancia come undici quando la connessione è rifiutata.
+ */
+import { randomBytes } from "node:crypto";
+
+export interface RichiestaVista {
+  metodo: string;
+  percorso: string;
+  token: string | null;
+  utente: string | null;
+  corpo: string | null;
+}
+
+export interface OpenBaoFinto {
+  fetch: typeof fetch;
+  kv: Map<string, Record<string, unknown>>;
+  richieste: RichiestaVista[];
+  giu: boolean;
+  /** Durata dei token che il finto rilascia (lease_duration, secondi). */
+  ttlSecondi: number;
+  login: number;
+  /** Revoca tutti i token (la prossima richiesta risponde 403). */
+  revocaToken(): void;
+  readonly roleId: string;
+  readonly secretId: string;
+  readonly url: string;
+}
+
+export function creaOpenBaoFinto(op: { ora: () => number; ttlSecondi?: number; mount?: string }): OpenBaoFinto {
+  const mount = op.mount ?? "kv-domarc";
+  const token = new Map<string, number>();
+  const roleId = `role-${randomBytes(4).toString("hex")}`;
+  const secretId = `sid-${randomBytes(12).toString("hex")}`;
+  const url = "https://openbao.prova:8200";
+
+  const json = (status: number, corpo: unknown): Response =>
+    new Response(corpo === null ? null : JSON.stringify(corpo), { status, headers: { "content-type": "application/json" } });
+
+  const finto: OpenBaoFinto = {
+    kv: new Map(),
+    richieste: [],
+    giu: false,
+    ttlSecondi: op.ttlSecondi ?? 3600,
+    login: 0,
+    roleId,
+    secretId,
+    url,
+    revocaToken() {
+      token.clear();
+    },
+    fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (finto.giu) throw new TypeError("fetch failed");
+      const u = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
+      const metodo = (init?.method ?? "GET").toUpperCase();
+      const h = new Headers(init?.headers);
+      const corpo = typeof init?.body === "string" ? init.body : null;
+      finto.richieste.push({ metodo, percorso: u.pathname + u.search, token: h.get("x-vault-token"), utente: h.get("x-domarc-utente"), corpo });
+
+      if (u.origin !== url) return json(404, { errors: ["host sconosciuto"] });
+      if (u.pathname === "/v1/auth/approle/login" && metodo === "POST") {
+        let b: { role_id?: string; secret_id?: string } = {};
+        try {
+          b = JSON.parse(corpo ?? "{}") as typeof b;
+        } catch {
+          return json(400, { errors: ["corpo non valido"] });
+        }
+        if (b.role_id !== roleId || b.secret_id !== secretId) return json(400, { errors: ["invalid role or secret ID"] });
+        finto.login += 1;
+        const t = `hvs.${randomBytes(16).toString("hex")}`;
+        token.set(t, op.ora() + finto.ttlSecondi * 1000);
+        return json(200, { auth: { client_token: t, lease_duration: finto.ttlSecondi, renewable: true } });
+      }
+
+      const t = h.get("x-vault-token");
+      const scade = t ? token.get(t) : undefined;
+      if (!t || scade === undefined || scade <= op.ora()) return json(403, { errors: ["permission denied"] });
+
+      const dati = `/v1/${mount}/data/`;
+      const meta = `/v1/${mount}/metadata/`;
+      if (u.pathname.startsWith(dati)) {
+        const p = decodeURIComponent(u.pathname.slice(dati.length));
+        if (metodo === "GET") {
+          const v = finto.kv.get(p);
+          if (!v) return json(404, { errors: [] });
+          return json(200, { data: { data: v, metadata: { version: 1 } } });
+        }
+        if (metodo === "POST" || metodo === "PUT") {
+          let b: { data?: Record<string, unknown> } = {};
+          try {
+            b = JSON.parse(corpo ?? "{}") as typeof b;
+          } catch {
+            return json(400, { errors: ["corpo non valido"] });
+          }
+          if (!b.data || typeof b.data !== "object") return json(400, { errors: ["manca data"] });
+          finto.kv.set(p, { ...b.data });
+          return json(200, { data: { version: 1 } });
+        }
+      }
+      if (u.pathname.startsWith(meta)) {
+        const p = decodeURIComponent(u.pathname.slice(meta.length)).replace(/\/$/, "");
+        const elenco = metodo === "LIST" || (metodo === "GET" && u.searchParams.get("list") === "true");
+        if (elenco) {
+          const pref = p === "" ? "" : `${p}/`;
+          const figli = new Set<string>();
+          for (const k of finto.kv.keys()) {
+            if (!k.startsWith(pref)) continue;
+            const resto = k.slice(pref.length);
+            const i = resto.indexOf("/");
+            figli.add(i < 0 ? resto : `${resto.slice(0, i)}/`);
+          }
+          if (figli.size === 0) return json(404, { errors: [] });
+          return json(200, { data: { keys: [...figli].sort() } });
+        }
+        if (metodo === "DELETE") {
+          finto.kv.delete(p);
+          return json(204, null);
+        }
+      }
+      return json(405, { errors: ["metodo non previsto dal finto"] });
+    }) as typeof fetch,
+  };
+  return finto;
+}

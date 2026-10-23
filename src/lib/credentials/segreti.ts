@@ -369,12 +369,13 @@ export type EsitoCampi =
  * «mostra password», l'esportazione KeePass, la migrazione verso OpenBao. Non guarda tipo né metodo: dà quello che
  * c'è. Un campo che non si decifra è un rifiuto col nome della voce, mai col valore.
  */
-export function campiVoceDb(dbh: Database.Database, credentialId: number): EsitoCampi {
+export function campiVoceDb(dbh: Database.Database, credentialId: number, opzioni: { ignoraRiferimento?: boolean } = {}): EsitoCampi {
   const riga = dbh.prepare("SELECT * FROM credentials WHERE id = ?").get(credentialId) as Riga | undefined;
   if (!riga) return { ok: false, motivo: `La credenziale #${credentialId} non esiste` };
   const nome = testo(riga, "name") ?? `#${credentialId}`;
   const chi = `La credenziale «${nome}»`;
-  const pronta = rigaDaLeggere(dbh, riga, credentialId, nome);
+  // `ignoraRiferimento`: le colonne, anche con OpenBao acceso (la migrazione e la sua verifica).
+  const pronta = opzioni.ignoraRiferimento ? { ok: true as const, riga } : rigaDaLeggere(dbh, riga, credentialId, nome);
   if (!pronta.ok) return pronta;
   const campi: Partial<Record<CampoSegreto, string>> = {};
   for (const campo of Object.keys(COLONNA_DEL_CAMPO) as CampoSegreto[]) {

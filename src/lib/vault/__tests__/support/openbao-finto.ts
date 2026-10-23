@@ -30,12 +30,12 @@ export interface OpenBaoFinto {
   readonly url: string;
 }
 
-export function creaOpenBaoFinto(op: { ora: () => number; ttlSecondi?: number; mount?: string }): OpenBaoFinto {
+export function creaOpenBaoFinto(op: { ora: () => number; ttlSecondi?: number; mount?: string; url?: string }): OpenBaoFinto {
   const mount = op.mount ?? "kv-domarc";
   const token = new Map<string, number>();
   const roleId = `role-${randomBytes(4).toString("hex")}`;
   const secretId = `sid-${randomBytes(12).toString("hex")}`;
-  const url = "https://openbao.prova:8200";
+  const url = op.url ?? "https://openbao.prova:8200";
 
   const json = (status: number, corpo: unknown): Response =>
     new Response(corpo === null ? null : JSON.stringify(corpo), { status, headers: { "content-type": "application/json" } });
@@ -124,4 +124,38 @@ export function creaOpenBaoFinto(op: { ora: () => number; ttlSecondi?: number; m
     }) as typeof fetch,
   };
   return finto;
+}
+
+/**
+ * Il finto dietro un server HTTP locale (porta scelta dal sistema), per provare le righe di comando che usano il
+ * `fetch` vero. Restituisce l'URL e la chiusura.
+ */
+export async function servaOpenBaoFinto(op: { ora: () => number }): Promise<{ finto: OpenBaoFinto; url: string; chiudi: () => Promise<void> }> {
+  const { createServer } = await import("node:http");
+  let finto: OpenBaoFinto | null = null;
+  const server = createServer((req, res) => {
+    const parti: Buffer[] = [];
+    req.on("data", (p: Buffer) => parti.push(p));
+    req.on("end", () => {
+      const corpo = parti.length ? Buffer.concat(parti).toString("utf8") : undefined;
+      const intestazioni: Record<string, string> = {};
+      for (const [k, v] of Object.entries(req.headers)) if (typeof v === "string") intestazioni[k] = v;
+      (finto as OpenBaoFinto)
+        .fetch(`${(finto as OpenBaoFinto).url}${req.url ?? "/"}`, { method: req.method, headers: intestazioni, body: corpo })
+        .then(async (r) => {
+          res.writeHead(r.status, { "content-type": "application/json" });
+          res.end(await r.text());
+        })
+        .catch(() => {
+          res.writeHead(502);
+          res.end();
+        });
+    });
+  });
+  await new Promise<void>((ok) => server.listen(0, "127.0.0.1", ok));
+  const indirizzo = server.address();
+  const porta = typeof indirizzo === "object" && indirizzo ? indirizzo.port : 0;
+  const url = `http://127.0.0.1:${porta}`;
+  finto = creaOpenBaoFinto({ ora: op.ora, url });
+  return { finto, url, chiudi: () => new Promise<void>((ok) => server.close(() => ok())) };
 }

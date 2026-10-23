@@ -281,6 +281,53 @@ export function leggiSegretoDb(dbh: Database.Database, credentialId: number, uso
   return r.ok ? { ...base, segreto: r.segreto } : rifiuto(r.motivo);
 }
 
+/**
+ * I campi segreti di una voce, coi nomi del KV di OpenBao (da-vault): `username`, `password`, `private_key`,
+ * `key_passphrase`, `auth_key`, `priv_key`. Una colonna vuota non c'è.
+ */
+export type CampoSegreto = "username" | "password" | "private_key" | "key_passphrase" | "auth_key" | "priv_key";
+
+export const COLONNA_DEL_CAMPO: Readonly<Record<CampoSegreto, string>> = {
+  username: "encrypted_username",
+  password: "encrypted_password",
+  private_key: "encrypted_private_key",
+  key_passphrase: "encrypted_key_passphrase",
+  auth_key: "encrypted_auth_key",
+  priv_key: "encrypted_priv_key",
+};
+
+const COSA_DEL_CAMPO: Readonly<Record<CampoSegreto, string>> = {
+  username: "l'utente",
+  password: "la password",
+  private_key: "la chiave privata",
+  key_passphrase: "la passphrase della chiave",
+  auth_key: "la chiave di autenticazione SNMPv3",
+  priv_key: "la chiave di privacy SNMPv3",
+};
+
+export type EsitoCampi =
+  | { ok: true; credentialId: number; nome: string; tipo: string; port: number | null; campi: Partial<Record<CampoSegreto, string>> }
+  | { ok: false; motivo: string };
+
+/**
+ * Tutti i campi segreti di una voce in chiaro (da-vault): la verifica della ricifra (stessi campi prima e dopo), la
+ * «mostra password», l'esportazione KeePass, la migrazione verso OpenBao. Non guarda tipo né metodo: dà quello che
+ * c'è. Un campo che non si decifra è un rifiuto col nome della voce, mai col valore.
+ */
+export function campiVoceDb(dbh: Database.Database, credentialId: number): EsitoCampi {
+  const riga = dbh.prepare("SELECT * FROM credentials WHERE id = ?").get(credentialId) as Riga | undefined;
+  if (!riga) return { ok: false, motivo: `La credenziale #${credentialId} non esiste` };
+  const nome = testo(riga, "name") ?? `#${credentialId}`;
+  const chi = `La credenziale «${nome}»`;
+  const campi: Partial<Record<CampoSegreto, string>> = {};
+  for (const campo of Object.keys(COLONNA_DEL_CAMPO) as CampoSegreto[]) {
+    const c = decifra(riga, COLONNA_DEL_CAMPO[campo], chi, COSA_DEL_CAMPO[campo]);
+    if (!c.ok) return c;
+    if (c.valore !== null && c.valore !== "") campi[campo] = c.valore;
+  }
+  return { ok: true, credentialId, nome, tipo: (testo(riga, "credential_type") ?? "").trim().toLowerCase(), port: porta(riga), campi };
+}
+
 /** Tipo d'archivio che corrisponde al protocollo di un binding inline. */
 function tipoDelBinding(protocollo: string): string {
   if (protocollo === "snmp") return "snmp";

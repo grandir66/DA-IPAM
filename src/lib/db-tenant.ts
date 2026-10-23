@@ -7661,7 +7661,7 @@ function mapVendorToMarca(vendor: string): string | null {
   return map[v] ?? null;
 }
 
-function mapHostClassificationToInventoryCategoria(classification: string | null): import("@/types").InventoryAssetCategoria | null {
+export function mapHostClassificationToInventoryCategoria(classification: string | null): import("@/types").InventoryAssetCategoria | null {
   const c = canonicalizza((classification ?? "").toLowerCase()).classificazione;
   if (["workstation", "desktop", "pc"].includes(c)) return "Desktop";
   if (["notebook", "laptop"].includes(c)) return "Laptop";

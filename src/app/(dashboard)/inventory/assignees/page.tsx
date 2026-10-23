@@ -49,6 +49,13 @@ export default function AssetAssigneesPage() {
   const [editing, setEditing] = useState<RigaElencoAssegnatari | null>(null);
   const [form, setForm] = useState({ name: "", email: "", phone: "", note: "" });
   const attesa = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [daAbbinare, setDaAbbinare] = useState(0);
+
+  // Riga ㉕ (piano abbinamenti): quanti PC hanno un utente prevalente senza assegnatario. Un errore qui non disturba.
+  useEffect(() => {
+    void fetchJson<{ contatori: { proposto: number } }>("/api/assegnatari/abbinamenti?gruppo=proposto&perPagina=10", { cache: "no-store" })
+      .then((r) => { if (r.ok) setDaAbbinare(r.data.contatori.proposto); });
+  }, []);
 
   const carica = useCallback(async () => {
     const q = new URLSearchParams({ origine, pagina: String(pagina), perPagina: String(PER_PAGINA), usciti: soloUsciti ? "1" : "0" });
@@ -143,6 +150,13 @@ export default function AssetAssigneesPage() {
           Nuovo assegnatario
         </Button>
       </div>
+
+      {daAbbinare > 0 && (
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-card px-4 py-2 text-sm">
+          <span className="flex-1">● <strong className="font-semibold">{daAbbinare} PC</strong> {daAbbinare === 1 ? "ha" : "hanno"} un utente prevalente da abbinare</span>
+          <Link href="/inventory/abbinamenti" className="font-semibold text-[#006C96] underline">Abbinamenti ›</Link>
+        </div>
+      )}
 
       {dati && dati.usciti.assegnatari > 0 && (
         <div className="flex flex-wrap items-center gap-3 rounded-lg border-2 border-[#8A6D00] bg-[#FFF6C2] px-4 py-3 text-[#0D2537]">

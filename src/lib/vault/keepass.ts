@@ -17,6 +17,7 @@ import { schemaVaultPresente } from "@/lib/db-tenant";
 import { campiVoceDb, type CampoSegreto } from "@/lib/credentials/segreti";
 import { apriConPassphrase } from "./archivio";
 import { cartellaVault } from "./appliance";
+import { conGuardiaPassphrase } from "./guardia-passphrase";
 import { LocaleStore, PERCORSO_KEYFILE } from "./locale";
 import { registraVisualizzazione, type UtenteSessione } from "./mostra";
 import { chiaveDatiAttiva, vaultLocaleAcceso } from "./stato";
@@ -50,15 +51,23 @@ export function collegaArgon2(): void {
   collegato = true;
 }
 
-/** Controlli comuni: interruttore, vault aperto, schema, passphrase giusta sullo slot del cliente. */
-async function controlla(dbh: Database.Database, passphrase: string): Promise<{ ok: true; chiave: Buffer } | Rifiuto> {
+/**
+ * Controlli comuni: interruttore, vault aperto, schema, passphrase giusta sullo slot del cliente. La prova della
+ * passphrase (scrypt) passa dalla guardia: limite di tentativi PER UTENTE, condiviso con lo sblocco, e tetto alle
+ * derivazioni in corso (429).
+ */
+async function controlla(dbh: Database.Database, passphrase: string, utente: UtenteSessione): Promise<{ ok: true; chiave: Buffer } | Rifiuto> {
   if (!vaultLocaleAcceso()) return rifiuto(404, "Funzione non attiva su questa installazione");
   const chiave = chiaveDatiAttiva();
   if (!chiave) return rifiuto(423, "Vault bloccato: va sbloccato prima (Impostazioni › Vault)");
   if (!schemaVaultPresente(dbh)) return rifiuto(503, "Lo schema del vault di questo cliente non è aggiornato: vedi il journal del servizio");
   try {
-    const dallaPassphrase = await apriConPassphrase(cartellaVault(), passphrase);
-    if (!dallaPassphrase.equals(chiave)) return rifiuto(403, "Passphrase del cliente errata");
+    const g = await conGuardiaPassphrase(utente.id, async () => {
+      const dallaPassphrase = await apriConPassphrase(cartellaVault(), passphrase);
+      // La passphrase apre l'archivio ma non è quello aperto in questo processo: per la guardia è un tentativo sbagliato.
+      if (!dallaPassphrase.equals(chiave)) throw new ErroreVault("slot_errato", "Passphrase del cliente errata");
+    });
+    if (!g.ok) return rifiuto(g.stato, g.errore);
   } catch (e) {
     if (e instanceof ErroreVault && e.codice === "slot_errato") return rifiuto(403, "Passphrase del cliente errata");
     if (e instanceof ErroreVault && e.codice === "slot_assente") return rifiuto(409, "Lo slot del cliente non c'è: va riscritto (da-vault-recover reset-password)");
@@ -89,7 +98,7 @@ export async function esportaKeePass(op: {
   passphrase: string;
   argon2?: { memoriaKiB: number; iterazioni: number; parallelismo: number };
 }): Promise<{ ok: true; kdbx: ArrayBuffer; voci: number; saltate: Array<{ nome: string; motivo: string }> } | Rifiuto> {
-  const c = await controlla(op.dbh, op.passphrase);
+  const c = await controlla(op.dbh, op.passphrase, op.utente);
   if (!c.ok) return c;
   collegaArgon2();
   const keyfile = await keyFileDellArchivio(c.chiave);
@@ -137,7 +146,7 @@ export async function esportaKeePass(op: {
 
 /** Il key file per aprire le esportazioni (lo stesso per tutte). Vuole la passphrase del cliente. */
 export async function esportaKeyFile(op: { dbh: Database.Database; utente: UtenteSessione; passphrase: string }): Promise<{ ok: true; keyfile: Uint8Array } | Rifiuto> {
-  const c = await controlla(op.dbh, op.passphrase);
+  const c = await controlla(op.dbh, op.passphrase, op.utente);
   if (!c.ok) return c;
   const keyfile = await keyFileDellArchivio(c.chiave);
   registraVisualizzazione(op.dbh, { utente: op.utente, azione: "keyfile", credentialId: null, credenziale: null });

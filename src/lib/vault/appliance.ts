@@ -12,6 +12,7 @@
 import { join } from "node:path";
 import { resolveDataDir } from "@/lib/data-dir";
 import { apriConPassphrase, apriConTpm, archivioPresente, leggiArchivio, type NomeSlot } from "./archivio";
+import { conGuardiaPassphrase, type EsitoGuardia } from "./guardia-passphrase";
 import { chiudiVault, impostaChiaveDati, statoVaultProcesso, vaultLocaleAcceso, vaultOpenBaoAcceso, type ModoSblocco } from "./stato";
 import { ErroreVault } from "./tipi";
 
@@ -44,6 +45,14 @@ export async function sbloccaConPassphrase(passphrase: string): Promise<void> {
   const chiave = await apriConPassphrase(cartellaVault(), passphrase);
   impostaChiaveDati(chiave, "passphrase");
   console.info("[vault] sbloccato con la passphrase del cliente");
+}
+
+/**
+ * Lo sblocco a mano dietro la guardia della passphrase (limite per utente condiviso con l'esportazione KeePass, tetto
+ * alle derivazioni in corso). `{ ok: false, stato: 429 }` se bloccato; `ErroreVault` come `sbloccaConPassphrase` altrimenti.
+ */
+export async function sbloccaGuardato(utenteId: string, passphrase: string): Promise<EsitoGuardia<void>> {
+  return conGuardiaPassphrase(utenteId, () => sbloccaConPassphrase(passphrase));
 }
 
 /** Perché le scansioni sono in pausa; null = nessuna pausa (sempre null con gli interruttori spenti). */

@@ -178,6 +178,20 @@ export function PaginaSchedulazioni({ cliente }: { cliente: string }) {
     [carica],
   );
 
+  /** «Esegui ora» (P3, 23/10): la rotta della pagina dei job; 202 = partito, l'esito arriva nell'elenco. */
+  const esegui = useCallback(
+    async (r: RigaSchedulazione) => {
+      if (r.jobId === null) return;
+      setInCorso(r.id);
+      const res = await fetchJson<{ error?: string }>(`/api/jobs/${r.jobId}/run`, { method: "POST" });
+      if (res.ok) toast.success(`«${r.nome}» partito: l'esito si vede qui appena finisce`);
+      else toast.error(`«${r.nome}»: ${res.message}`);
+      await carica();
+      setInCorso(null);
+    },
+    [carica],
+  );
+
   const righe = useMemo(() => {
     if (!dati) return [];
     const q = cerca.trim().toLowerCase();
@@ -298,13 +312,23 @@ export function PaginaSchedulazioni({ cliente }: { cliente: string }) {
                   </span>
                   <span className="min-w-0 text-[13px]">{r.esito.testo}</span>
                 </div>
-                <div>
+                <div className="flex flex-col items-start gap-1">
                   {r.dove ? (
                     <Link href={r.dove.href} className="text-[#006C96] underline hover:text-[#0D2537] dark:text-[#3FBBF0]">
                       {r.dove.etichetta}
                     </Link>
                   ) : (
                     "—"
+                  )}
+                  {dati.puoCambiare && r.jobId !== null && (
+                    <button
+                      type="button"
+                      disabled={inCorso === r.id}
+                      onClick={() => void esegui(r)}
+                      className="rounded-lg border border-[#D0D8DC] bg-white px-2 py-0.5 text-[13px] text-[#0D2537] hover:bg-[#EDEDED] disabled:opacity-60 dark:border-[#3A4A57] dark:bg-transparent dark:text-[#E6EEF4]"
+                    >
+                      Esegui ora
+                    </button>
                   )}
                 </div>
               </div>

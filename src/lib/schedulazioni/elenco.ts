@@ -14,11 +14,12 @@ import { ETICHETTE_JOB, scheduledJobLabel, unifiJobKind } from "@/lib/scheduled-
 import type { ScheduledJob } from "@/types";
 import { statoScheduler, chiaveJob } from "@/lib/cron/stato-scheduler";
 import { findStaleJobs } from "@/lib/health/scheduler-freshness";
+import { eJobRiservato } from "@/lib/cron/job-riservati";
 import { idOpzioneDelJob } from "@/lib/opzioni/ancore";
 import { catalogo, leggiStato, oraItaliana } from "@/lib/opzioni/catalogo";
 import type { TipoEsito } from "@/lib/opzioni/tipi";
 import { listControllerViews } from "@/lib/controllers/service";
-import { getMdmConfig, MDM_MAX_ERRORI_CONSECUTIVI } from "@/lib/integrations/mdm-config";
+import { getMdmConfig } from "@/lib/integrations/mdm-config";
 import { etichettaFrequenza, frequenzaDaJob, leggiConfig, prossimaEsecuzione } from "@/lib/apparati-scelti/regole";
 import { listEdgeSchedules } from "@/lib/vuln/edge-schedule-store";
 import { describeCron, type Frequency } from "@/lib/vuln/cron-builder";
@@ -48,6 +49,8 @@ export interface RigaSchedulazione {
   dove: { href: string; etichetta: string } | null;
   /** Come si accende e si spegne da qui; null = non da qui (`perche` dice dove). */
   cambio: Cambio | null;
+  /** Il job da lanciare con «Esegui ora» (`POST /api/jobs/[id]/run`); null = non è un job. */
+  jobId: number | null;
   perche?: string;
 }
 
@@ -124,7 +127,7 @@ function esitoJob(j: ScheduledJob, adesso: Date): RigaSchedulazione["esito"] {
   if (j.job_type === "mdm_sync") {
     const m = getMdmConfig();
     if (m.consecutive_errors > 0) {
-      return esito("errore", `${taglia(m.last_error ?? "errore")} (${m.consecutive_errors} di fila su ${MDM_MAX_ERRORI_CONSECUTIVI})`);
+      return esito("errore", `${taglia(m.last_error ?? "errore")} (${m.consecutive_errors} di fila su ${m.max_errori})`);
     }
   }
   if (j.job_type === "hypervisor_sync" && getHypervisorSyncSchedule().hypervisors === 0) {
@@ -209,13 +212,15 @@ function rigaJob(j: ScheduledJob, reti: Map<number, string>, controller: Map<num
     esito: esitoJob(j, adesso),
     dove,
     cambio,
+    // La pulizia degli host non si lancia a mano (gira solo di notte, `job-riservati.ts`).
+    jobId: eJobRiservato(tipo) ? null : j.id,
   };
 }
 
 /** I controller senza job degli apparati (spenti), o la riga che chiede di aggiungerne uno. */
 function righeController(jobs: ScheduledJob[]): RigaSchedulazione[] {
   const controller = listControllerViews().filter((c) => c.kind !== "omada");
-  const base = { famiglia: "apparati" as const, cosa: "", quando: "—", prossimo: null, fisso: false };
+  const base = { famiglia: "apparati" as const, cosa: "", quando: "—", prossimo: null, fisso: false, jobId: null };
   if (controller.length === 0) {
     return [{
       ...base, id: "controller.nessuno", nome: "Lettura degli apparati UniFi", su: "serve un controller", stato: "da_configurare",
@@ -263,6 +268,7 @@ function righeEdge(reti: Map<number, string>): RigaSchedulazione[] {
       esito: esito("neutro", "l'esito è nella pagina della rete"),
       dove: { href: `/networks/${e.network_id}`, etichetta: "Rete ›" },
       cambio: null,
+      jobId: null,
       perche: "Si accende e si spegne dalla pagina della rete: la pianificazione sta sulla sonda Edge",
     } satisfies RigaSchedulazione;
   });
@@ -285,7 +291,7 @@ export const TIMER_DI_SERVER: Readonly<Record<string, string>> = {
 };
 
 async function righeTimer(adesso: Date): Promise<RigaSchedulazione[]> {
-  const base = { famiglia: "appliance" as const, cosa: "", su: "l'appliance", fisso: true, cambio: null };
+  const base = { famiglia: "appliance" as const, cosa: "", su: "l'appliance", fisso: true, cambio: null, jobId: null };
   const righe: RigaSchedulazione[] = [];
 
   const exprBackup = process.env.DA_INVENT_BACKUP_CRON || "0 3 * * *";
@@ -408,7 +414,7 @@ async function sicuro(nome: string, f: () => RigaSchedulazione[] | Promise<RigaS
     const codice = e && typeof e === "object" && "code" in e && typeof e.code === "string" ? e.code : e instanceof Error ? e.name : "errore";
     return [{
       id: `errore.${nome}`, famiglia: "appliance", nome: `Elenco non leggibile: ${nome}`, cosa: "", su: "—", quando: "—", prossimo: null,
-      stato: "spento", fisso: true, esito: esito("errore", `stato illeggibile (${codice})`), dove: null, cambio: null,
+      stato: "spento", fisso: true, esito: esito("errore", `stato illeggibile (${codice})`), dove: null, cambio: null, jobId: null,
     }];
   }
 }

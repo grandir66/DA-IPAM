@@ -24,6 +24,10 @@ export const FUORI_CATALOGO: readonly FuoriCatalogo[] = [
   { chiave: "wazuh_alerts_self_ips", motivo: "elenco dei nostri IP e reti: è un dato, resta in Impostazioni › Alert sicurezza" },
   { chiave: "wazuh_alerts_self_accounts", motivo: "elenco dei nostri account di servizio: è un dato, resta in Impostazioni › Alert sicurezza" },
   { chiave: "integration_wazuh_device_rule_ids", motivo: "le regole degli apparati da raccogliere sono un elenco di dati, resta in Impostazioni › Alert sicurezza" },
+  ...["quick_scan_concurrency", "quick_scan_host_timeout_s", "quick_scan_exec_limit_ms"].map((chiave) => ({
+    chiave,
+    motivo: "scritta dalla vecchia scheda Scansione e mai letta dallo scanner: ignorata apposta (le chiavi vere sono scansione_veloce.*)",
+  })),
   { chiave: "MDM_SYNC_INTERVALLO_MINUTI", motivo: "è il ritmo del job mdm_sync creato all'accensione: si vede in Schedulazioni" },
   { chiave: "GIORNI_REGISTRO_PULIZIA", motivo: "conservazione tecnica del registro delle pulizie, non regola cosa si archivia" },
 ];

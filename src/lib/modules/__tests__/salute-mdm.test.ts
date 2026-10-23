@@ -11,7 +11,7 @@ import { saluteMdm } from "../salute-mdm";
 
 const base = {
   base_url: "https://mdm.esempio.it", username: "u", user_field: "description", enabled: true,
-  last_sync_at: null, last_error: null, consecutive_errors: 0, last_attempt_at: null, last_success_at: null, auto_disabled: false,
+  last_sync_at: null, last_error: null, consecutive_errors: 0, last_attempt_at: null, last_success_at: null, auto_disabled: false, max_errori: 5,
 };
 
 test("spento dall'admin → off", () => {

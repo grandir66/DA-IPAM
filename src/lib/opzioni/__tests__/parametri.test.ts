@@ -8,26 +8,42 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { closeHubDb, deleteSetting, getSetting, setSetting } from "@/lib/db-hub";
-import { deleteTenantDatabase, withTenant } from "@/lib/db-tenant";
+import { deleteTenantDatabase, getTenantDb, withTenant } from "@/lib/db-tenant";
 import { catalogo } from "@/lib/opzioni/catalogo";
 import { cambiaOpzione } from "@/lib/opzioni/cambio";
 import { FUORI_CATALOGO } from "@/lib/opzioni/fuori-catalogo";
 import { chiaveSegno, normalizzaPorte } from "@/lib/opzioni/parametri";
 import { CHIAVI_NOTIFICHE, getNotificationConfig } from "@/lib/notifications/config";
-import { getQuickScanTcpPorts, NETWORK_DISCOVERY_QUICK_TCP_PORTS, setGetSettingFn } from "@/lib/scanner/ports";
+import {
+  CHIAVI_SCANSIONE_VELOCE, getNetworkDiscoveryQuickConcurrency, getNetworkDiscoveryQuickExecMs, getQuickScanTcpPorts,
+  NETWORK_DISCOVERY_QUICK_TCP_PORTS, setGetSettingFn,
+} from "@/lib/scanner/ports";
+import { CHIAVI_SOGLIE_PULIZIA } from "@/lib/hosts/soglie-pulizia";
+import { giorniAssenzaArchivio } from "@/lib/hosts/pulizia-candidati";
+import { giorniArchivioPrimaDiCancellare } from "@/lib/hosts/pulizia-archivio";
+import { CHIAVE_MDM_MAX_ERRORI, mdmMaxErrori } from "@/lib/integrations/mdm-config";
+import { getTenantSetting } from "@/lib/db-tenant";
 
 const T = "TESTOPZIONIPAR";
 const ADMIN = { ruolo: "admin", chi: "mario", idUtente: "7" };
 const nessunaRicarica = () => null;
 const CHIAVI = [
-  "quick_scan_tcp_ports", "naabu_bin_path", CHIAVI_NOTIFICHE.immediateMinLevel, CHIAVI_NOTIFICHE.immediateCategories,
+  "quick_scan_tcp_ports", "naabu_bin_path", ...Object.values(CHIAVI_SCANSIONE_VELOCE), CHIAVI_NOTIFICHE.immediateMinLevel, CHIAVI_NOTIFICHE.immediateCategories,
   CHIAVI_NOTIFICHE.digestIntervalMinutes, CHIAVI_NOTIFICHE.retentionDays,
 ];
 beforeEach(() => {
   for (const k of CHIAVI) deleteSetting(k);
+  withTenant(T, () => {
+    for (const k of [...Object.values(CHIAVI_SOGLIE_PULIZIA), CHIAVE_MDM_MAX_ERRORI]) setTenantSettingVuota(k);
+  });
   for (const o of withTenant(T, () => catalogo())) deleteSetting(chiaveSegno(o.id));
 });
 after(() => { deleteTenantDatabase(T); closeHubDb(); removeTestHubDb(); });
+
+/** Toglie una chiave del cliente (il test parte sempre dai valori di serie). */
+function setTenantSettingVuota(k: string): void {
+  getTenantDb(T).prepare("DELETE FROM tenant_settings WHERE key = ?").run(k);
+}
 
 const presenti = (): Set<string> => new Set(withTenant(T, () => catalogo().map((o) => o.id)));
 const fuori = new Set(FUORI_CATALOGO.map((f) => f.chiave));
@@ -37,9 +53,12 @@ const sorgente = (p: string): string => readFileSync(join(process.cwd(), p), "ut
 const PARAMETRI_CENSITI: Readonly<Record<string, string>> = {
   quick_scan_tcp_ports: "parametro.quick_scan_tcp_ports",
   naabu_bin_path: "parametro.naabu_bin_path",
-  quick_scan_concurrency: "parametro.quick_scan_concurrency",
-  quick_scan_host_timeout_s: "parametro.quick_scan_host_timeout_s",
-  quick_scan_exec_limit_ms: "parametro.quick_scan_exec_limit_ms",
+  [CHIAVI_SCANSIONE_VELOCE.hostParalleli]: "parametro.quick_scan_concurrency",
+  [CHIAVI_SCANSIONE_VELOCE.attesaHostS]: "parametro.quick_scan_host_timeout_s",
+  [CHIAVI_SCANSIONE_VELOCE.tempoNmapMs]: "parametro.quick_scan_exec_limit_ms",
+  [CHIAVI_SOGLIE_PULIZIA.assenza]: "parametro.pulizia_giorni_assenza",
+  [CHIAVI_SOGLIE_PULIZIA.archivio]: "parametro.pulizia_giorni_archivio",
+  [CHIAVE_MDM_MAX_ERRORI]: "parametro.mdm_max_errori",
   port_discovery: "automatismo.naabu",
   [CHIAVI_NOTIFICHE.enabled]: "notifiche.attive",
   [CHIAVI_NOTIFICHE.smtpEnabled]: "notifiche.email",
@@ -62,8 +81,13 @@ function chiaviDaiSorgenti(): string[] {
   const costanti = (p: string, prefisso: string) =>
     [...sorgente(p).matchAll(new RegExp(`export const (${prefisso}[A-Z_]+)\\s*=\\s*\\d`, "g"))].map((m) => m[1]);
   const chiaviCost = (p: string) => [...sorgente(p).matchAll(/const KEY_[A-Z_]+\s*=\s*"([a-z0-9_]+)"/g)].map((m) => m[1]);
+  // Le chiavi che si leggono da una costante (scanner, soglie della pulizia, MDM): dai sorgenti, come stringhe «a.b».
+  const puntate = ["src/lib/scanner/ports.ts", "src/lib/hosts/soglie-pulizia.ts", "src/lib/integrations/mdm-config.ts"].flatMap(
+    (p) => [...sorgente(p).matchAll(/"((?:scansione_veloce|pulizia|mdm)\.[a-z_]+)"/g)].map((m) => m[1]),
+  );
   return [
     ...daScanner,
+    ...puntate,
     ...Object.values(CHIAVI_NOTIFICHE),
     ...chiaviCost("src/lib/integrations/self-identity.ts"),
     "integration_wazuh_device_rule_ids",
@@ -135,23 +159,53 @@ test("(d) un valore scritto dalla scheda di prima si vede come cambiato, senza n
   assert.deepEqual([s.valore, s.da, s.esito.testo], ["45", null, "cambiato dalla scheda di prima"]);
 });
 
-test("(e) i fissi non si cambiano (405 col posto) e dicono il valore che vale davvero", async () => {
+test("(e) scansione veloce: il valore di Opzioni vince sul file, la chiave vecchia resta ignorata, lo scanner lo legge", async () => {
   const prima = process.env.DA_INVENT_NMAP_DISCOVERY_CONCURRENCY;
   try {
+    setGetSettingFn(getSetting);
     process.env.DA_INVENT_NMAP_DISCOVERY_CONCURRENCY = "7";
-    // La vecchia scheda scriveva questa chiave: lo scanner non la legge, la riga non deve crederci.
+    // La vecchia scheda scriveva questa chiave: non deve accendersi da sola con questa versione.
     setSetting("quick_scan_concurrency", "3");
-    const o = withTenant(T, () => catalogo().find((x) => x.id === "parametro.quick_scan_concurrency"));
-    const s = o?.leggi() as { valore: string; esito: { testo: string } };
-    assert.deepEqual([o?.forma, s.valore, s.esito.testo], ["fisso", "7", "dal file (DA_INVENT_NMAP_DISCOVERY_CONCURRENCY)"]);
-    const r = await withTenant(T, () => cambiaOpzione("parametro.pulizia_giorni_assenza", { valore: "30" }, ADMIN, nessunaRicarica));
-    assert.equal(r.status, 405);
-    assert.match(String(r.body.error), /^Da qui non si cambia\. Fisso nel codice/);
+    const o = () => withTenant(T, () => catalogo().find((x) => x.id === "parametro.quick_scan_concurrency"));
+    const s0 = o()?.leggi() as { valore: string; esito: { testo: string } };
+    assert.deepEqual([s0.valore, s0.esito.testo, getNetworkDiscoveryQuickConcurrency()], ["7", "dal file (DA_INVENT_NMAP_DISCOVERY_CONCURRENCY)", 7]);
+
+    const r = await withTenant(T, () => cambiaOpzione("parametro.quick_scan_concurrency", { valore: "16" }, ADMIN, nessunaRicarica));
+    assert.equal(r.status, 200);
+    assert.equal(getNetworkDiscoveryQuickConcurrency(), 16);
+    // «Torna a …» e la colonna «Di serie» dicono il valore del file, non quello appena salvato (visto a schermo il 23/10).
+    const dopo = withTenant(T, () => catalogo().find((x) => x.id === "parametro.quick_scan_concurrency"));
+    assert.equal(dopo?.diSerie, "7 host");
+    const no = await withTenant(T, () => cambiaOpzione("parametro.quick_scan_concurrency", { valore: "40" }, ADMIN, nessunaRicarica));
+    assert.equal(no.status, 400);
+
+    // Tempo di Nmap: si scrive in millisecondi, si mostra in secondi.
+    await withTenant(T, () => cambiaOpzione("parametro.quick_scan_exec_limit_ms", { valore: "30" }, ADMIN, nessunaRicarica));
+    assert.equal(getNetworkDiscoveryQuickExecMs(), 30_000);
+    const n = withTenant(T, () => catalogo().find((x) => x.id === "parametro.quick_scan_exec_limit_ms"))?.leggi() as { valore: string };
+    assert.equal(n.valore, "30");
   } finally {
     if (prima === undefined) delete process.env.DA_INVENT_NMAP_DISCOVERY_CONCURRENCY;
     else process.env.DA_INVENT_NMAP_DISCOVERY_CONCURRENCY = prima;
     deleteSetting("quick_scan_concurrency");
   }
+});
+
+test("(e) soglie della pulizia e limite di MDM: per cliente, mai sotto il minimo, lette da chi le usa", async () => {
+  await withTenant(T, async () => {
+    assert.deepEqual([giorniAssenzaArchivio(), giorniArchivioPrimaDiCancellare(), mdmMaxErrori()], [60, 90, 5]);
+    const basso = await cambiaOpzione("parametro.pulizia_giorni_assenza", { valore: "10" }, ADMIN, nessunaRicarica);
+    assert.equal(basso.status, 400);
+    assert.match(String(basso.body.error), /da 30 a 365/);
+    await cambiaOpzione("parametro.pulizia_giorni_assenza", { valore: "45" }, ADMIN, nessunaRicarica);
+    await cambiaOpzione("parametro.pulizia_giorni_archivio", { valore: "120" }, ADMIN, nessunaRicarica);
+    await cambiaOpzione("parametro.mdm_max_errori", { valore: "3" }, ADMIN, nessunaRicarica);
+    assert.deepEqual([giorniAssenzaArchivio(), giorniArchivioPrimaDiCancellare(), mdmMaxErrori()], [45, 120, 3]);
+    assert.equal(getTenantSetting(CHIAVI_SOGLIE_PULIZIA.assenza), "45");
+    // Un valore scritto a mano fuori dai limiti non passa: si legge dentro i limiti.
+    getTenantDb(T).prepare("UPDATE tenant_settings SET value = '2' WHERE key = ?").run(CHIAVI_SOGLIE_PULIZIA.assenza);
+    assert.equal(giorniAssenzaArchivio(), 30);
+  });
 });
 
 test("(f) chi non è admin non cambia un parametro", async () => {

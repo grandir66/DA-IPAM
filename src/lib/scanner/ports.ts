@@ -77,28 +77,59 @@ export function getNmapVersionIntensity(): number {
  */
 export const NETWORK_DISCOVERY_QUICK_TCP_PORTS = "22,25,53,80,88,110,135,139,143,389,443,445,541,542,623,636,902,993,995,3389,4786,5000,5001,5900,5985,5986,5988,5989,8006,8007,8080,8200,8291,8443,8728,8729,9443,10443,17988";
 
+/**
+ * I tre numeri della scansione veloce si cambiano da Opzioni (23/10, chiavi nelle impostazioni dell'hub). Chiavi NUOVE:
+ * le `quick_scan_*` che la vecchia scheda Scansione salvava non le ha mai lette nessuno, e un valore dimenticato là non
+ * deve accendersi da solo con questa versione.
+ */
+export const CHIAVI_SCANSIONE_VELOCE = {
+  hostParalleli: "scansione_veloce.host_paralleli",
+  attesaHostS: "scansione_veloce.attesa_host_s",
+  tempoNmapMs: "scansione_veloce.tempo_nmap_ms",
+} as const;
+
+/**
+ * Un numero della scansione veloce: Opzioni › riga del file `.env.local` › di serie, sempre dentro i limiti. Con
+ * `conOpzioni = false` salta Opzioni: è il valore a cui riporta «Torna a …».
+ */
+function numeroScansioneVeloce(chiave: string, variabile: string, diSerie: number, min: number, max: number, conOpzioni = true): number {
+  let daOpzioni: string | null | undefined = null;
+  try {
+    daOpzioni = conOpzioni ? _getSettingFn?.(chiave) : null;
+  } catch {
+    daOpzioni = null;
+  }
+  const grezzo = daOpzioni?.trim() ? daOpzioni : process.env[variabile];
+  const n = parseInt(grezzo || String(diSerie), 10);
+  if (Number.isNaN(n)) return diSerie;
+  return Math.min(max, Math.max(min, n));
+}
+
+/** I tre numeri senza il valore di Opzioni (file o di serie): il «di serie» della riga di Opzioni. */
+export function scansioneVeloceSenzaOpzioni(): { hostParalleli: number; attesaHostS: number; tempoNmapMs: number } {
+  return {
+    hostParalleli: numeroScansioneVeloce(CHIAVI_SCANSIONE_VELOCE.hostParalleli, "DA_INVENT_NMAP_DISCOVERY_CONCURRENCY", 12, 1, 24, false),
+    attesaHostS: numeroScansioneVeloce(CHIAVI_SCANSIONE_VELOCE.attesaHostS, "DA_INVENT_NMAP_DISCOVERY_QUICK_TIMEOUT_S", 10, 5, 20, false),
+    tempoNmapMs: numeroScansioneVeloce(CHIAVI_SCANSIONE_VELOCE.tempoNmapMs, "DA_INVENT_NMAP_DISCOVERY_EXEC_MS", 22_000, 10_000, 90_000, false),
+  };
+}
+
 /** Timeout Nmap interno per fase quick (s). L’host è già verificato con ICMP. */
 export function getNetworkDiscoveryQuickHostTimeoutSeconds(): number {
-  const n = parseInt(process.env.DA_INVENT_NMAP_DISCOVERY_QUICK_TIMEOUT_S || "10", 10);
-  if (Number.isNaN(n)) return 10;
-  return Math.min(20, Math.max(5, n));
+  return numeroScansioneVeloce(CHIAVI_SCANSIONE_VELOCE.attesaHostS, "DA_INVENT_NMAP_DISCOVERY_QUICK_TIMEOUT_S", 10, 5, 20);
 }
 
 /** Host Nmap quick in parallelo (default 12 da v0.2.643 audit perf SC3,
  *  prima era 6). Bilanciamento aggressivo: -Pn -T5 host stabili, 12 paralleli
  *  saturano meno la rete di 16 ma dimezzano il tempo di sweep.
- *  Override: DA_INVENT_NMAP_DISCOVERY_CONCURRENCY. */
+ *  Si cambia da Opzioni; override del file: DA_INVENT_NMAP_DISCOVERY_CONCURRENCY. */
 export function getNetworkDiscoveryQuickConcurrency(): number {
-  const n = parseInt(process.env.DA_INVENT_NMAP_DISCOVERY_CONCURRENCY || "12", 10);
-  if (Number.isNaN(n)) return 12;
-  return Math.min(24, Math.max(1, n));
+  return numeroScansioneVeloce(CHIAVI_SCANSIONE_VELOCE.hostParalleli, "DA_INVENT_NMAP_DISCOVERY_CONCURRENCY", 12, 1, 24);
 }
 
 /** Limite duro (ms) sul processo `nmap` per host in fase quick. */
 export function getNetworkDiscoveryQuickExecMs(): number {
-  const n = parseInt(process.env.DA_INVENT_NMAP_DISCOVERY_EXEC_MS || "22000", 10);
-  if (Number.isNaN(n)) return 22_000;
-  return Math.min(90_000, Math.max(10_000, n));
+  return numeroScansioneVeloce(CHIAVI_SCANSIONE_VELOCE.tempoNmapMs, "DA_INVENT_NMAP_DISCOVERY_EXEC_MS", 22_000, 10_000, 90_000);
 }
 
 /**

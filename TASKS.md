@@ -116,8 +116,20 @@ timer di `src/lib/vulcan/`.
         17 rifiutato col motivo, 10 salvato «cambiato da prova», «Torna a 12», categorie in finestra, SNMP spento da
         Schedulazioni con dialogo e registro, Edge ferma. Corretti in corsa: campo Naabu troppo largo, colonna Famiglia
         nascosta sotto 1536 (a 1280 esito e «Dove» uscivano di vista), doppio salvataggio Invio+uscita dal campo.
-  - Proposte (non fatte): far leggere allo scanner i tre numeri della scansione veloce dal DB (cambia il ritmo ovunque);
-    rendere cambiabili le soglie della pulizia e il limite di MDM; «Esegui ora» in Schedulazioni.
+  - Proposte approvate da Riccardo il 23/10 («perfetto anche sulle proposte»), livello leggero:
+    - [x] P1 scansione veloce: i tre numeri da Opzioni con chiavi NUOVE `scansione_veloce.*` (le vecchie `quick_scan_*`
+          scritte dalla scheda di prima restano ignorate: un valore dimenticato non deve accendersi da solo al rilascio);
+          ordine: Opzioni › file `.env.local` › di serie; stessi limiti del file (1-24 host, 5-20 s, 10-90 s)
+    - [x] P2 soglie della pulizia per cliente (`pulizia.giorni_assenza` 30-365, di serie 60; `pulizia.giorni_archivio`
+          30-365, di serie 90) e limite di MDM (`mdm.max_errori` 1-20, di serie 5), letti dove oggi ci sono le costanti;
+          il minimo di 30 giorni è una mia scelta: la pulizia cancella righe
+    - [x] P3 «Esegui ora» sulle righe dei job in Schedulazioni, con la rotta che c'è (`POST /api/jobs/[id]/run`)
+    - [x] prove (viste rosse), cancello, resa, rilascio su `dev`, CHANGELOG/CONTEXT — 23/10: cancello intero verde
+          (5848 passate, 0 fallite, build ok), poi tipi/lint/prove toccate/build dopo le correzioni a schermo; resa a
+          1920 e 1280: 10 giorni rifiutato («da 30 a 365»), 45 salvato e letto dalla scheda Sistema, 16 host salvato,
+          «Esegui ora» sul DNS → «girato alle 10:16», niente «Esegui ora» sulla pulizia. Corretti in corsa: «Torna a
+          16 host» (il di serie leggeva il valore appena salvato; prova aggiunta), la scheda della pulizia diceva «60»
+          fisso finché non si chiedeva l'anteprima.
 
 ## 2026-10-22 — Vulnerabilità per host ed exploit noti
 

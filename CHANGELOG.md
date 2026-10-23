@@ -4,6 +4,24 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-23 · Scansione veloce, soglie della pulizia e MDM da Opzioni; «Esegui ora» in Schedulazioni
+
+### Cambiato
+
+- **I tre numeri della scansione veloce si cambiano da Opzioni** (proposta approvata da Riccardo il 23/10): host in
+  parallelo, attesa per host e tempo massimo di Nmap. Ordine: Opzioni › riga del file `.env.local` › di serie, sempre
+  nei limiti di prima (1-24 host, 5-20 s, 10-90 s). Chiavi nuove `scansione_veloce.*`: le `quick_scan_*` salvate dalla
+  vecchia scheda e mai lette restano ignorate, perché un valore dimenticato non cambi il ritmo delle scansioni al rilascio.
+- **Soglie della pulizia degli host e limite di errori di MDM per cliente, da Opzioni**: assenza prima dell'archivio
+  (di serie 60 giorni) e archivio prima della cancellazione (di serie 90), da 30 a 365 giorni (il minimo è voluto: la
+  pulizia cancella righe); errori di fila prima che MDM si spenga da sola (di serie 5, da 1 a 20). Le leggono la
+  pulizia notturna, l'anteprima di Impostazioni › Sistema e la sincronizzazione di MDM.
+
+### Aggiunto
+
+- **«Esegui ora» sulle righe dei job in Schedulazioni**, con la stessa rotta della pagina dei job. Non c'è sulla pulizia
+  degli host, che gira solo di notte, né sui timer dell'appliance.
+
 ## [Non rilasciato] — 2026-10-23 · Opzioni con parametri e soglie, voce «Schedulazioni» nel menu
 
 ### Aggiunto

@@ -40,7 +40,7 @@ export default async function MdmSettingsPage() {
       </div>
       <MdmSettingsClient
         config={config}
-        maxErrori={MDM_MAX_ERRORI_CONSECUTIVI}
+        maxErrori={config.max_errori}
         intervalloMinuti={MDM_SYNC_INTERVALLO_MINUTI}
       />
     </div>

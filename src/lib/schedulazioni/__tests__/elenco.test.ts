@@ -118,3 +118,13 @@ test("(d) prima chi ha un prossimo giro, il più vicino in cima", async () => {
     assert.ok(ids.slice(0, conProssimo).every((id) => id !== "timer.dalink"), "il segnale senza file non ha un prossimo giro");
   });
 });
+
+test("(e) «Esegui ora» sui job, non sulla pulizia degli host (solo di notte) né sui timer dell'appliance", async () => {
+  await withTenant(T, async () => {
+    const j = createScheduledJob({ job_type: "snmp_scan", interval_minutes: 60, network_id: null });
+    const p = createScheduledJob({ job_type: "pulizia_host", interval_minutes: 1440, network_id: null });
+    const righe = await elencoSchedulazioni(ADESSO);
+    const per = (id: string) => righe.find((r) => r.id === id)?.jobId;
+    assert.deepEqual([per(`job.${j.id}`), per(`job.${p.id}`), per("timer.backup")], [j.id, null, null]);
+  });
+});

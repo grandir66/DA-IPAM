@@ -74,8 +74,10 @@ Leggilo per primo, poi [CLAUDE.md](CLAUDE.md) (stack e schema; su «multi-tenant
   `server.ts`). **Trappole**: un parametro nuovo in scanner/notifiche/moduli va in `parametri.ts` o in
   `fuori-catalogo.ts`, o `parametri.test.ts` fallisce; un `import("./src/lib/…")` nuovo in `server.ts` va in
   `TIMER_DI_SERVER`; i fallimenti in serie dello scheduler stanno in `statoScheduler().fallimenti` (globale, si azzera
-  al riavvio); i tre numeri della scansione veloce valgono SOLO dal file (`DA_INVENT_NMAP_DISCOVERY_*`), le chiavi
-  `quick_scan_concurrency/host_timeout_s/exec_limit_ms` nel DB non le legge nessuno.
+  al riavvio); i tre numeri della scansione veloce: Opzioni (`scansione_veloce.*`) › file (`DA_INVENT_NMAP_DISCOVERY_*`)
+  › di serie; le chiavi `quick_scan_concurrency/host_timeout_s/exec_limit_ms` nel DB sono della vecchia scheda e NON
+  si leggono (apposta). Soglie della pulizia (`pulizia.giorni_*`, 30-365) e `mdm.max_errori` (1-20) stanno nelle
+  impostazioni del cliente: le costanti `GIORNI_*` e `MDM_MAX_ERRORI_CONSECUTIVI` sono solo i valori di serie.
 - **Aggiornamento che non retrocede** (22/10, v0.9.874): `scripts/lib/guardia-versione.sh` prima del checkout di
   `auto-update.sh`; esito `retrocessione_rifiutata`. Il ramo `DA_INVENT_BRANCH` lo scrive l'installatore di
   Deploy-Appliance dal ramo dei sorgenti posati (e9a1fda).

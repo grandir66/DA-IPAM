@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { RigheRimando } from "@/components/opzioni/riga-rimando";
+import { RigheRimando, useVociOpzioni } from "@/components/opzioni/riga-rimando";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { LoadError } from "@/components/shared/load-error";
 import { fetchJson } from "@/lib/fetch-json";
@@ -29,7 +29,9 @@ interface Anteprima {
 }
 interface Archivio { righe: RigaArchivio[]; totale: number }
 
-const GIORNI_ARCHIVIO_DEFAULT = 90;
+/** Le soglie del cliente si cambiano da Opzioni (23/10): senza anteprima la scheda le legge da lì, non da un numero fisso. */
+const SOGLIE = ["parametro.pulizia_giorni_assenza", "parametro.pulizia_giorni_archivio"] as const;
+const giorniDa = (v: string | undefined, diSerie: number): number => (v && /^\d+$/.test(v) ? Number(v) : diSerie);
 
 function ElencoNomi({ titolo, host }: { titolo: string; host: HostNominato[] }) {
   if (host.length === 0) return null;
@@ -75,6 +77,7 @@ function EsitoApplica({ esito }: { esito: Exclude<RispostaApplica, { tipo: "ille
 export function PuliziaHostCard() {
 
   const [anteprima, setAnteprima] = useState<Anteprima | null>(null);
+  const { voci: soglie } = useVociOpzioni(SOGLIE);
   const [erroreAnteprima, setErroreAnteprima] = useState<string | null>(null);
   const [caricaAnteprima, setCaricaAnteprima] = useState(false);
 
@@ -158,7 +161,8 @@ export function PuliziaHostCard() {
     }
   }
 
-  const giorniArchivio = anteprima?.giorniArchivio ?? GIORNI_ARCHIVIO_DEFAULT;
+  const giorni = anteprima?.giorni ?? giorniDa(soglie[SOGLIE[0]]?.stato.valore, 60);
+  const giorniArchivio = anteprima?.giorniArchivio ?? giorniDa(soglie[SOGLIE[1]]?.stato.valore, 90);
   const n = candidati.length;
   const scadute = anteprima?.scadute ?? [];
   const k = scadute.length;
@@ -171,13 +175,14 @@ export function PuliziaHostCard() {
           <CardTitle className="text-base">Pulizia degli host assenti</CardTitle>
         </div>
         <CardDescription>
-          Host offline da oltre {anteprima?.giorni ?? 60} giorni e vecchi IP di un MAC che ha cambiato indirizzo. Gli archiviati
+          Host offline da oltre {giorni} giorni e vecchi IP di un MAC che ha cambiato indirizzo. Gli archiviati
           spariscono da liste, conteggi e mappa; si recuperano per {giorniArchivio} giorni, poi si cancellano.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
         {/* Accendere e spegnere si fa da Opzioni (22/10), con la conferma all'accensione: qui lo stato e il rimando. */}
         <RigheRimando ids={["job.pulizia_host"]} />
+        <RigheRimando ids={SOGLIE} mostraEsito={false} />
 
         <div>
           <Button type="button" variant="outline" onClick={() => void mostraAnteprima()} disabled={caricaAnteprima}>

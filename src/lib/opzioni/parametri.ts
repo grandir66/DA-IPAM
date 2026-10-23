@@ -7,31 +7,41 @@
  * della scheda; «chi l'ha cambiato» sta accanto, in `opzioni.cambio.<id>` delle impostazioni dell'hub. «Torna a …» toglie
  * la chiave: chi la legge ricade da sé sul valore di serie.
  *
- * I parametri `fisso` si leggono e basta: i tre numeri della scansione veloce, che lo scanner prende SOLO dal file
- * dell'appliance (la vecchia scheda li salvava nel database, ma nessuno li leggeva: scoperto il 23/10), le soglie della
- * pulizia degli host e il limite di errori di MDM, fissi nel codice.
+ * Dal 23/10 (proposte approvate da Riccardo) si cambiano anche i tre numeri della scansione veloce (chiavi nuove,
+ * `scanner/ports.ts`: Opzioni › file › di serie), le soglie della pulizia degli host e il limite di errori di MDM; questi
+ * ultimi valgono per il cliente e stanno nelle sue impostazioni.
  */
 import { deleteSetting, getSetting, setSetting } from "@/lib/db-hub";
+import { deleteTenantSetting, getTenantSetting, setTenantSetting } from "@/lib/db-tenant";
 import { oraUtc } from "@/lib/topology/letture/interruttori";
 import { CHIAVI_NOTIFICHE, DEFAULT_RETENTION_DAYS } from "@/lib/notifications/config";
 import { DEFAULT_POLICY } from "@/lib/notifications/policy";
 import { ALERT_CATEGORIES } from "@/lib/integrations/wazuh-alerts";
 import {
-  NETWORK_DISCOVERY_QUICK_TCP_PORTS, getNetworkDiscoveryQuickConcurrency, getNetworkDiscoveryQuickExecMs,
-  getNetworkDiscoveryQuickHostTimeoutSeconds,
+  CHIAVI_SCANSIONE_VELOCE, NETWORK_DISCOVERY_QUICK_TCP_PORTS, scansioneVeloceSenzaOpzioni,
 } from "@/lib/scanner/ports";
 import { GIORNI_ASSENZA_ARCHIVIO } from "@/lib/hosts/pulizia";
 import { GIORNI_ARCHIVIO_PRIMA_DI_CANCELLARE } from "@/lib/hosts/pulizia-archivio";
-import { MDM_MAX_ERRORI_CONSECUTIVI } from "@/lib/integrations/mdm-config";
+import { CHIAVI_SOGLIE_PULIZIA, LIMITI_SOGLIE_PULIZIA } from "@/lib/hosts/soglie-pulizia";
+import { CHIAVE_MDM_MAX_ERRORI, LIMITI_MDM_MAX_ERRORI, MDM_MAX_ERRORI_CONSECUTIVI } from "@/lib/integrations/mdm-config";
 import { ErroreOpzione, type Opzione, type Scelta, type StatoOpzione } from "./tipi";
 
 // ── Chi l'ha cambiato ────────────────────────────────────────────────────────
 
 export const chiaveSegno = (id: string): string => `opzioni.cambio.${id}`;
 
-/** Il segno del cambio; illeggibile = nessun nome (la riga dice comunque che il valore non è quello di serie). */
-function segno(id: string): { da: string | null; il: string | null } {
-  const testo = getSetting(chiaveSegno(id));
+/** Dove sta un parametro: le impostazioni dell'hub (vale per tutti i clienti) o quelle del cliente del contesto. */
+interface Archivio {
+  leggi(chiave: string): string | null;
+  scrivi(chiave: string, valore: string): void;
+  togli(chiave: string): void;
+}
+const HUB: Archivio = { leggi: getSetting, scrivi: setSetting, togli: deleteSetting };
+const CLIENTE: Archivio = { leggi: getTenantSetting, scrivi: setTenantSetting, togli: deleteTenantSetting };
+
+/** Il segno del cambio, accanto al valore; illeggibile = nessun nome (la riga dice comunque che non è di serie). */
+function segno(a: Archivio, id: string): { da: string | null; il: string | null } {
+  const testo = a.leggi(chiaveSegno(id));
   if (!testo) return { da: null, il: null };
   try {
     const o = JSON.parse(testo) as { da?: unknown; il?: unknown } | null;
@@ -45,8 +55,9 @@ function segno(id: string): { da: string | null; il: string | null } {
 
 interface DefParametro {
   id: string;
-  /** La chiave delle impostazioni dell'hub che legge chi usa il parametro. */
+  /** La chiave che legge chi usa il parametro, nelle impostazioni dell'hub o del cliente (`valePer`). */
   chiave: string;
+  valePer?: "hub" | "cliente";
   nome: string;
   cosa: string;
   sezione: string;
@@ -55,9 +66,13 @@ interface DefParametro {
   min?: number;
   max?: number;
   scelte?: Scelta[];
-  /** Il valore che vale senza la chiave, nella forma in cui si scrive. */
-  valoreDiSerie: string;
-  diSerie: string;
+  /** Il valore che vale senza la chiave, come si mostra; una funzione se dipende dal file dell'appliance. */
+  valoreDiSerie: string | (() => string);
+  diSerie: string | (() => string);
+  /** Il testo della colonna «chi» senza la chiave: «di serie», o «dal file (…)». */
+  senzaChiave?: () => string;
+  /** Dal valore salvato a quello che si mostra (i millisecondi di Nmap si mostrano in secondi). */
+  mostra?: (salvato: string) => string;
   configura?: { href: string; etichetta: string };
   /** Controlla e normalizza il valore chiesto; lancia `ErroreOpzione` col motivo. */
   normalizza(valore: string): string;
@@ -87,6 +102,13 @@ export function normalizzaPorte(valore: string): string {
 }
 
 const ID_CATEGORIE = new Set(ALERT_CATEGORIES.map((c) => c.id));
+
+/** I numeri della scansione veloce senza valore in Opzioni: valgono quelli del file, se c'è la riga, o quelli di serie. */
+function daFile(variabile: string): () => string {
+  return () => (process.env[variabile]?.trim() ? `dal file (${variabile})` : "di serie");
+}
+
+const valore = (x: string | (() => string)): string => (typeof x === "function" ? x() : x);
 
 const PARAMETRI: readonly DefParametro[] = [
   {
@@ -181,19 +203,117 @@ const PARAMETRI: readonly DefParametro[] = [
     diSerie: `${DEFAULT_RETENTION_DAYS} giorni`,
     normalizza: (v) => intero(v, 1, 365, "Conservazione degli eventi"),
   },
+  {
+    id: "parametro.quick_scan_concurrency",
+    chiave: CHIAVI_SCANSIONE_VELOCE.hostParalleli,
+    nome: "Host in parallelo",
+    cosa: "quanti indirizzi la scansione veloce prova insieme: di più è più veloce e manda più traffico",
+    sezione: "Scansione veloce delle reti",
+    forma: "numero",
+    unita: "host",
+    min: 1,
+    max: 24,
+    valoreDiSerie: () => String(scansioneVeloceSenzaOpzioni().hostParalleli),
+    diSerie: () => `${scansioneVeloceSenzaOpzioni().hostParalleli} host`,
+    senzaChiave: daFile("DA_INVENT_NMAP_DISCOVERY_CONCURRENCY"),
+    normalizza: (v) => intero(v, 1, 24, "Host in parallelo"),
+  },
+  {
+    id: "parametro.quick_scan_host_timeout_s",
+    chiave: CHIAVI_SCANSIONE_VELOCE.attesaHostS,
+    nome: "Attesa per host",
+    cosa: "oltre questo tempo l'host è «non risponde»",
+    sezione: "Scansione veloce delle reti",
+    forma: "numero",
+    unita: "s",
+    min: 5,
+    max: 20,
+    valoreDiSerie: () => String(scansioneVeloceSenzaOpzioni().attesaHostS),
+    diSerie: () => `${scansioneVeloceSenzaOpzioni().attesaHostS} s`,
+    senzaChiave: daFile("DA_INVENT_NMAP_DISCOVERY_QUICK_TIMEOUT_S"),
+    normalizza: (v) => intero(v, 5, 20, "Attesa per host"),
+  },
+  {
+    id: "parametro.quick_scan_exec_limit_ms",
+    chiave: CHIAVI_SCANSIONE_VELOCE.tempoNmapMs,
+    nome: "Tempo massimo di Nmap",
+    cosa: "per ogni host della scansione veloce",
+    sezione: "Scansione veloce delle reti",
+    forma: "numero",
+    unita: "s",
+    min: 10,
+    max: 90,
+    valoreDiSerie: () => String(Math.round(scansioneVeloceSenzaOpzioni().tempoNmapMs / 1000)),
+    diSerie: () => `${Math.round(scansioneVeloceSenzaOpzioni().tempoNmapMs / 1000)} s`,
+    senzaChiave: daFile("DA_INVENT_NMAP_DISCOVERY_EXEC_MS"),
+    // Si scrive in millisecondi, come lo legge lo scanner; si mostra in secondi.
+    mostra: (salvato) => String(Math.round(Number(salvato) / 1000)),
+    normalizza: (v) => String(Number(intero(v, 10, 90, "Tempo massimo di Nmap")) * 1000),
+  },
+  {
+    id: "parametro.pulizia_giorni_assenza",
+    chiave: CHIAVI_SOGLIE_PULIZIA.assenza,
+    valePer: "cliente",
+    nome: "Assenza prima dell'archivio",
+    cosa: "un host offline da più giorni va in archivio la notte dopo, se la pulizia è accesa",
+    sezione: "Pulizia degli host assenti",
+    forma: "numero",
+    unita: "giorni",
+    min: LIMITI_SOGLIE_PULIZIA.min,
+    max: LIMITI_SOGLIE_PULIZIA.max,
+    valoreDiSerie: String(GIORNI_ASSENZA_ARCHIVIO),
+    diSerie: `${GIORNI_ASSENZA_ARCHIVIO} giorni`,
+    configura: { href: "/settings?tab=sistema", etichetta: "Anteprima ›" },
+    normalizza: (v) => intero(v, LIMITI_SOGLIE_PULIZIA.min, LIMITI_SOGLIE_PULIZIA.max, "Assenza prima dell'archivio"),
+  },
+  {
+    id: "parametro.pulizia_giorni_archivio",
+    chiave: CHIAVI_SOGLIE_PULIZIA.archivio,
+    valePer: "cliente",
+    nome: "Archivio prima della cancellazione",
+    cosa: "dall'archivio un host si recupera fino a questa età, poi si cancella per sempre",
+    sezione: "Pulizia degli host assenti",
+    forma: "numero",
+    unita: "giorni",
+    min: LIMITI_SOGLIE_PULIZIA.min,
+    max: LIMITI_SOGLIE_PULIZIA.max,
+    valoreDiSerie: String(GIORNI_ARCHIVIO_PRIMA_DI_CANCELLARE),
+    diSerie: `${GIORNI_ARCHIVIO_PRIMA_DI_CANCELLARE} giorni`,
+    normalizza: (v) => intero(v, LIMITI_SOGLIE_PULIZIA.min, LIMITI_SOGLIE_PULIZIA.max, "Archivio prima della cancellazione"),
+  },
+  {
+    id: "parametro.mdm_max_errori",
+    chiave: CHIAVE_MDM_MAX_ERRORI,
+    valePer: "cliente",
+    nome: "Errori di fila prima di spegnersi",
+    cosa: "la sincronizzazione di MDM si spegne da sola dopo questi errori",
+    sezione: "MDM Headwind",
+    forma: "numero",
+    unita: "errori",
+    min: LIMITI_MDM_MAX_ERRORI.min,
+    max: LIMITI_MDM_MAX_ERRORI.max,
+    valoreDiSerie: String(MDM_MAX_ERRORI_CONSECUTIVI),
+    diSerie: `${MDM_MAX_ERRORI_CONSECUTIVI} errori`,
+    normalizza: (v) => intero(v, LIMITI_MDM_MAX_ERRORI.min, LIMITI_MDM_MAX_ERRORI.max, "Errori di fila prima di spegnersi"),
+  },
 ];
 
 /** Le chiavi delle impostazioni coperte da un parametro che si cambia (per la prova di completezza). */
 export const CHIAVI_PARAMETRI: readonly string[] = PARAMETRI.map((p) => p.chiave);
 
+const archivio = (p: DefParametro): Archivio => (p.valePer === "cliente" ? CLIENTE : HUB);
+
 function statoParametro(p: DefParametro): StatoOpzione {
-  const grezzo = getSetting(p.chiave);
+  const a = archivio(p);
+  const grezzo = a.leggi(p.chiave);
   if (grezzo === null || grezzo.trim() === "") {
-    return { acceso: true, da: null, il: null, valore: p.valoreDiSerie, esito: { tipo: "neutro", testo: "di serie" } };
+    const testo = p.senzaChiave ? p.senzaChiave() : "di serie";
+    return { acceso: true, da: null, il: null, valore: valore(p.valoreDiSerie), esito: { tipo: "neutro", testo } };
   }
-  const s = segno(p.id);
+  const s = segno(a, p.id);
   const testo = s.da ? `cambiato da ${s.da}` : "cambiato dalla scheda di prima";
-  return { acceso: true, da: s.da, il: s.il, valore: grezzo.trim(), cambiato: true, esito: { tipo: "neutro", testo } };
+  const mostrato = p.mostra ? p.mostra(grezzo.trim()) : grezzo.trim();
+  return { acceso: true, da: s.da, il: s.il, valore: mostrato, cambiato: true, esito: { tipo: "neutro", testo } };
 }
 
 function opzioneParametro(p: DefParametro): Opzione {
@@ -202,147 +322,33 @@ function opzioneParametro(p: DefParametro): Opzione {
     gruppo: "parametri",
     nome: p.nome,
     cosa: p.cosa,
-    valePer: "hub",
+    valePer: p.valePer ?? "hub",
     forma: p.forma,
-    diSerie: p.diSerie,
+    diSerie: valore(p.diSerie),
     scelte: p.scelte,
     configura: p.configura,
     parametro: { sezione: p.sezione, unita: p.unita, min: p.min, max: p.max },
     leggi: () => statoParametro(p),
     cambia(r, chi) {
-      if (r.diSerie) {
-        deleteSetting(p.chiave);
-        deleteSetting(chiaveSegno(p.id));
-        return;
-      }
+      const a = archivio(p);
+      const togli = () => {
+        a.togli(p.chiave);
+        a.togli(chiaveSegno(p.id));
+      };
+      if (r.diSerie) return togli();
       if (r.valore === undefined) throw new ErroreOpzione("È un parametro: indica il valore", 400);
       const v = p.normalizza(r.valore);
       // Il valore vuoto di un testo è il suo di serie: si toglie la chiave, non si scrive «».
-      if (v === "") {
-        deleteSetting(p.chiave);
-        deleteSetting(chiaveSegno(p.id));
-        return;
-      }
-      setSetting(p.chiave, v);
-      setSetting(chiaveSegno(p.id), JSON.stringify({ da: chi, il: oraUtc(new Date()) }));
+      if (v === "") return togli();
+      a.scrivi(p.chiave, v);
+      a.scrivi(chiaveSegno(p.id), JSON.stringify({ da: chi, il: oraUtc(new Date()) }));
     },
   };
 }
 
-// ── I parametri fissi ────────────────────────────────────────────────────────
-
-interface DefFisso {
-  id: string;
-  nome: string;
-  cosa: string;
-  sezione: string;
-  unita: string;
-  valePer: "cliente" | "hub";
-  valore: () => number;
-  diSerie: string;
-  /** Il testo della colonna «chi»: da file, di serie, fisso nel codice. */
-  stato: () => string;
-  dove: string;
-}
-
-/** I tre numeri della scansione veloce: valgono quelli del file, se c'è la riga, altrimenti quelli di serie. */
-function daFile(variabile: string): () => string {
-  return () => (process.env[variabile]?.trim() ? `dal file (${variabile})` : "di serie");
-}
-
-const FISSI: readonly DefFisso[] = [
-  {
-    id: "parametro.quick_scan_concurrency",
-    nome: "Host in parallelo",
-    cosa: "quanti indirizzi la scansione veloce prova insieme",
-    sezione: "Scansione veloce delle reti",
-    unita: "host",
-    valePer: "hub",
-    valore: getNetworkDiscoveryQuickConcurrency,
-    diSerie: "12 host",
-    stato: daFile("DA_INVENT_NMAP_DISCOVERY_CONCURRENCY"),
-    dove: "Riga DA_INVENT_NMAP_DISCOVERY_CONCURRENCY nel file .env.local dell'appliance (da 1 a 24), poi riavvio del servizio.",
-  },
-  {
-    id: "parametro.quick_scan_host_timeout_s",
-    nome: "Attesa per host",
-    cosa: "oltre questo tempo l'host è «non risponde»",
-    sezione: "Scansione veloce delle reti",
-    unita: "s",
-    valePer: "hub",
-    valore: getNetworkDiscoveryQuickHostTimeoutSeconds,
-    diSerie: "10 s",
-    stato: daFile("DA_INVENT_NMAP_DISCOVERY_QUICK_TIMEOUT_S"),
-    dove: "Riga DA_INVENT_NMAP_DISCOVERY_QUICK_TIMEOUT_S nel file .env.local dell'appliance (da 5 a 20 secondi), poi riavvio del servizio.",
-  },
-  {
-    id: "parametro.quick_scan_exec_limit_ms",
-    nome: "Tempo massimo di Nmap",
-    cosa: "per ogni host della scansione veloce",
-    sezione: "Scansione veloce delle reti",
-    unita: "s",
-    valePer: "hub",
-    valore: () => Math.round(getNetworkDiscoveryQuickExecMs() / 1000),
-    diSerie: "22 s",
-    stato: daFile("DA_INVENT_NMAP_DISCOVERY_EXEC_MS"),
-    dove: "Riga DA_INVENT_NMAP_DISCOVERY_EXEC_MS nel file .env.local dell'appliance, in millisecondi (da 10000 a 90000), poi riavvio del servizio.",
-  },
-  {
-    id: "parametro.pulizia_giorni_assenza",
-    nome: "Assenza prima dell'archivio",
-    cosa: "un host offline da più giorni va in archivio",
-    sezione: "Pulizia degli host assenti",
-    unita: "giorni",
-    valePer: "cliente",
-    valore: () => GIORNI_ASSENZA_ARCHIVIO,
-    diSerie: `${GIORNI_ASSENZA_ARCHIVIO} giorni`,
-    stato: () => "fisso nel codice",
-    dove: "Fisso nel codice (decisione del 20/10): per cambiarlo serve una versione nuova.",
-  },
-  {
-    id: "parametro.pulizia_giorni_archivio",
-    nome: "Archivio prima della cancellazione",
-    cosa: "dall'archivio un host si recupera fino a questa età",
-    sezione: "Pulizia degli host assenti",
-    unita: "giorni",
-    valePer: "cliente",
-    valore: () => GIORNI_ARCHIVIO_PRIMA_DI_CANCELLARE,
-    diSerie: `${GIORNI_ARCHIVIO_PRIMA_DI_CANCELLARE} giorni`,
-    stato: () => "fisso nel codice",
-    dove: "Fisso nel codice (decisione del 20/10): per cambiarlo serve una versione nuova.",
-  },
-  {
-    id: "parametro.mdm_max_errori",
-    nome: "Errori di fila prima di spegnersi",
-    cosa: "la sincronizzazione di MDM si spegne da sola dopo questi errori",
-    sezione: "MDM Headwind",
-    unita: "errori",
-    valePer: "cliente",
-    valore: () => MDM_MAX_ERRORI_CONSECUTIVI,
-    diSerie: `${MDM_MAX_ERRORI_CONSECUTIVI} errori`,
-    stato: () => "fisso nel codice",
-    dove: "Fisso nel codice: per cambiarlo serve una versione nuova.",
-  },
-];
-
-function opzioneFissa(f: DefFisso): Opzione {
-  return {
-    id: f.id,
-    gruppo: "parametri",
-    nome: f.nome,
-    cosa: f.cosa,
-    valePer: f.valePer,
-    forma: "fisso",
-    diSerie: f.diSerie,
-    dove: f.dove,
-    parametro: { sezione: f.sezione, unita: f.unita },
-    leggi: () => ({ acceso: true, da: null, il: null, valore: String(f.valore()), esito: { tipo: "neutro", testo: f.stato() } }),
-  };
-}
-
-/** Il gruppo «Parametri e soglie», nell'ordine della tavola: per sezione, i cambiabili prima dei fissi. */
+/** Il gruppo «Parametri e soglie», nell'ordine della tavola: per sezione. */
 export function opzioniParametri(): Opzione[] {
-  const tutte = [...PARAMETRI.map(opzioneParametro), ...FISSI.map(opzioneFissa)];
+  const tutte = PARAMETRI.map(opzioneParametro);
   const sezioni = [...new Set(tutte.map((o) => o.parametro?.sezione ?? ""))];
   return sezioni.flatMap((s) => tutte.filter((o) => o.parametro?.sezione === s));
 }

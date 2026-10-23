@@ -27,7 +27,8 @@
  */
 import type Database from "better-sqlite3";
 import { dbCorrente } from "@/lib/hosts/db-corrente";
-import { selezionaCandidati, type EsitoSelezione, type HostPerPulizia } from "@/lib/hosts/pulizia";
+import { GIORNI_ASSENZA_ARCHIVIO, selezionaCandidati, type EsitoSelezione, type HostPerPulizia } from "@/lib/hosts/pulizia";
+import { CHIAVI_SOGLIE_PULIZIA, sogliaPulizia } from "@/lib/hosts/soglie-pulizia";
 
 /** Le tabelle che servono alle esclusioni (oltre a `hosts`). */
 const TABELLE_DI_LEGAME = [
@@ -92,5 +93,10 @@ export function caricaHostPerPulizia(): HostPerPulizia[] {
 
 /** Anteprima, «Applica» e job: le regole di `pulizia.ts` sugli host del tenant del contesto. */
 export function candidatiPulizia(adesso: Date = new Date()): EsitoSelezione {
-  return selezionaCandidati(caricaHostPerPulizia(), adesso);
+  return selezionaCandidati(caricaHostPerPulizia(), adesso, giorniAssenzaArchivio());
+}
+
+/** I giorni di assenza dopo cui un host offline va in archivio, per il cliente del contesto. */
+export function giorniAssenzaArchivio(): number {
+  return sogliaPulizia(CHIAVI_SOGLIE_PULIZIA.assenza, GIORNI_ASSENZA_ARCHIVIO);
 }

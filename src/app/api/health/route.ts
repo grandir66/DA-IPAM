@@ -25,6 +25,7 @@ import { contaRipieghi } from "@/lib/db-maintenance/ripieghi";
 import { getTenantDb } from "@/lib/db-tenant";
 import { probeEncryptionKeyHealth } from "@/lib/encryption-key-health";
 import { getDeployModeLabel } from "@/lib/env-secrets";
+import { chiaveDatiAttiva, vaultLocaleAcceso } from "@/lib/vault/stato";
 import {
   findStaleJobs,
   summarizeFreshness,
@@ -79,15 +80,21 @@ export async function GET(request: Request) {
     const secretsOk = encryption.ok;
     const scheduler = probeScheduler();
 
+    // da-vault: col vault locale acceso e bloccato (riavvio senza TPM, passphrase da dare) le credenziali non si
+    // leggono per quello, non perche' la chiave e' sbagliata. Il codice HTTP resta 200 (status "degraded"): update.sh
+    // e auto-update.sh aspettano un 200 dopo il riavvio e altrimenti tornano a una build che non legge i valori
+    // ricifrati. Solo `?strict=1` (monitoraggio) lo vuole 503.
+    const vaultBloccato = vaultLocaleAcceso() && !chiaveDatiAttiva();
+
     // Il codice HTTP di default NON dipende dallo scheduler (vedi docblock).
-    const coreOk = dbOk && secretsOk;
-    const overallOk = coreOk && (!strict || scheduler.ok);
+    const coreOk = dbOk && (secretsOk || (vaultBloccato && !strict));
+    const overallOk = coreOk && (!strict || (scheduler.ok && !vaultBloccato));
 
     // Leggi versione da package.json (cached a startup)
     const pkg = await import("../../../../package.json");
 
     return NextResponse.json({
-      status: coreOk ? (scheduler.ok ? "ok" : "degraded") : "degraded",
+      status: coreOk && scheduler.ok && !vaultBloccato ? "ok" : "degraded",
       deploy_mode: getDeployModeLabel(),
       version: pkg.version,
       uptime_seconds: Math.floor((Date.now() - startTime) / 1000),
@@ -99,6 +106,10 @@ export async function GET(request: Request) {
         credential_count: encryption.credentialCount,
         detail: encryption.detail,
       },
+      // Solo se il vault locale e' acceso: bloccato = nessuna chiave dei dati in memoria (Impostazioni › Vault).
+      ...(vaultLocaleAcceso()
+        ? { vault: { bloccato: vaultBloccato, detail: vaultBloccato ? "vault bloccato (Impostazioni › Vault)" : null } }
+        : {}),
       // Aggregato: nessun nome di job ne' codice tenant — l'endpoint e' pubblico.
       // Il dettaglio sta su /api/modules/health, che richiede autenticazione.
       scheduler: {

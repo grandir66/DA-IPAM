@@ -4,6 +4,8 @@ import { join } from "path";
 import Database from "better-sqlite3";
 import { safeDecrypt } from "@/lib/crypto";
 import { resolveDataDir } from "./data-dir";
+import { cartellaVault } from "./vault/appliance";
+import { archivioPresente } from "./vault/archivio";
 import { chiaveDatiAttiva, vaultLocaleAcceso } from "./vault/stato";
 
 function resolveTenantsDir(): string {
@@ -125,6 +127,9 @@ export function probeEncryptionKeyHealth(): EncryptionKeyHealth {
   // da-vault: col vault locale acceso e bloccato le credenziali della chiave degli slot non si leggono per quello,
   // non per una ENCRYPTION_KEY sbagliata.
   const vaultBloccato = vaultLocaleAcceso() && !chiaveDatiAttiva();
+  // Rilievo 8 della revisione: interruttore spento ma l'archivio del vault c'è e i valori non si aprono con
+  // ENCRYPTION_KEY = quasi certamente sono stati ricifrati dal vault e qualcuno ha spento DA_VAULT_LOCALE. Lo si dice.
+  const archivioCon = !vaultLocaleAcceso() && archivioPresente(cartellaVault());
   return {
     configured: true,
     fingerprint,
@@ -135,7 +140,11 @@ export function probeEncryptionKeyHealth(): EncryptionKeyHealth {
       ? null
       : vaultBloccato
         ? `${failCount}/${credentialCount} credenziali non leggibili: vault bloccato (Impostazioni › Vault).`
-        : `${failCount}/${credentialCount} credenziali NON decifrabili con ENCRYPTION_KEY attuale. ` +
+        : archivioCon
+          ? `${failCount}/${credentialCount} credenziali non leggibili: valori ricifrati dal vault e DA_VAULT_LOCALE spento (c'è un archivio del vault). ` +
+            "Riaccendi DA_VAULT_LOCALE=1 nel file dell'appliance e riavvia, oppure riporta i valori alla chiave d'installazione " +
+            "(scripts/da-vault.ts ricifra --inversa --applica, a servizio fermo, con DA_VAULT_LOCALE=1; ADR 0034). Se non sono mai stati ricifrati, la causa è ENCRYPTION_KEY."
+          : `${failCount}/${credentialCount} credenziali NON decifrabili con ENCRYPTION_KEY attuale. ` +
           "Allinea la chiave Docker/systemd con quella usata al salvataggio o re-inserisci le credenziali.",
   };
 }

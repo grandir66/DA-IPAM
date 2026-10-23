@@ -10,11 +10,15 @@ import "@/lib/__tests__/support/data-dir-isolata";
 import { describe, it, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { encrypt } from "@/lib/crypto";
 import { closeTenantDb, deleteTenantDatabase, getTenantDb, withTenant } from "@/lib/db-tenant";
 import { closeHubDb } from "@/lib/db-hub";
 import { creaCredenzialeDb } from "@/lib/credentials/archivio";
 import { logEncryptionKeyHealthAtBoot, probeEncryptionKeyHealth } from "@/lib/encryption-key-health";
+import { GET as healthGet } from "@/app/api/health/route";
 import { chiudiVault, impostaChiaveDati } from "../stato";
 
 const T = "VAULTSALUTE";
@@ -54,6 +58,32 @@ after(() => {
 });
 
 describe("controllo della chiave col vault", () => {
+  it("rilievo 8: vault SPENTO con l'archivio presente e valori della chiave degli slot: lo dice a schermo e indica la ricifra inversa", () => {
+    delete process.env.DA_VAULT_LOCALE;
+    const cartella = mkdtempSync(join(tmpdir(), "da-vault-salute-"));
+    writeFileSync(join(cartella, "archivio.json"), "{}");
+    process.env.DA_VAULT_DIR = cartella;
+    try {
+      const p = probeEncryptionKeyHealth();
+      assert.equal(p.ok, false);
+      assert.match(p.detail ?? "", /DA_VAULT_LOCALE/);
+      assert.match(p.detail ?? "", /ricifra --inversa/);
+      const righe = errori(() => logEncryptionKeyHealthAtBoot());
+      assert.ok(righe.some((r) => r.includes("CRITICAL [encryption-key]") && r.includes("ricifra --inversa")), righe.join("\n"));
+    } finally {
+      delete process.env.DA_VAULT_DIR;
+    }
+  });
+
+  it("vault spento senza archivio: il messaggio di sempre (ENCRYPTION_KEY), niente suggerimento sul vault", () => {
+    delete process.env.DA_VAULT_LOCALE;
+    delete process.env.DA_VAULT_DIR;
+    const p = probeEncryptionKeyHealth();
+    assert.equal(p.ok, false);
+    assert.match(p.detail ?? "", /ENCRYPTION_KEY attuale/);
+    assert.doesNotMatch(p.detail ?? "", /ricifra --inversa/);
+  });
+
   it("vault aperto: le credenziali della chiave degli slot contano come leggibili", () => {
     const p = probeEncryptionKeyHealth();
     assert.equal(p.ok, true);
@@ -78,5 +108,43 @@ describe("controllo della chiave col vault", () => {
     delete process.env.DA_VAULT_LOCALE;
     const righe = errori(() => logEncryptionKeyHealthAtBoot());
     assert.ok(righe.some((r) => r.includes("CRITICAL [encryption-key]")));
+  });
+});
+
+/**
+ * Rilievo 1 della revisione (23/10): `update.sh`/`auto-update.sh` aspettano un 200 da /api/health dopo il riavvio e
+ * altrimenti tornano alla build di prima, che non legge i valori ricifrati. Col vault acceso e bloccato (niente TPM
+ * al riavvio) la risposta deve restare 200 «degraded»; il 503 resta per la chiave davvero sbagliata e per `?strict=1`.
+ */
+describe("/api/health col vault", () => {
+  async function chiama(query = ""): Promise<{ codice: number; corpo: Record<string, unknown> }> {
+    const res = await healthGet(new Request(`http://localhost/api/health${query}`));
+    return { codice: res.status, corpo: (await res.json()) as Record<string, unknown> };
+  }
+
+  it("vault aperto: 200 ok", async () => {
+    const { codice, corpo } = await chiama();
+    assert.equal(codice, 200);
+    assert.equal(corpo.status !== "error", true);
+  });
+
+  it("vault bloccato: 200 con status degraded e «vault bloccato» (il rollback di update.sh non scatta)", async () => {
+    chiudiVault("niente TPM");
+    const { codice, corpo } = await chiama();
+    assert.equal(codice, 200);
+    assert.equal(corpo.status, "degraded");
+    assert.match(JSON.stringify(corpo), /[Vv]ault bloccato/);
+  });
+
+  it("vault bloccato con ?strict=1: 503 (monitoraggio)", async () => {
+    chiudiVault("niente TPM");
+    const { codice } = await chiama("?strict=1");
+    assert.equal(codice, 503);
+  });
+
+  it("chiave sbagliata a interruttore spento: resta 503 (il vault bloccato non maschera il guasto vero)", async () => {
+    delete process.env.DA_VAULT_LOCALE;
+    const { codice } = await chiama();
+    assert.equal(codice, 503);
   });
 });

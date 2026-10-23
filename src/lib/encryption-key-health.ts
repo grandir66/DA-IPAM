@@ -4,6 +4,7 @@ import { join } from "path";
 import Database from "better-sqlite3";
 import { safeDecrypt } from "@/lib/crypto";
 import { resolveDataDir } from "./data-dir";
+import { chiaveDatiAttiva, vaultLocaleAcceso } from "./vault/stato";
 
 function resolveTenantsDir(): string {
   return join(resolveDataDir(), "tenants");
@@ -121,6 +122,9 @@ export function probeEncryptionKeyHealth(): EncryptionKeyHealth {
   // restava verde mentre credenziali di rete/integrazioni erano già irrecuperabili.
   const ok = credentialCount === 0 || decryptOkCount === credentialCount;
   const failCount = credentialCount - decryptOkCount;
+  // da-vault: col vault locale acceso e bloccato le credenziali della chiave degli slot non si leggono per quello,
+  // non per una ENCRYPTION_KEY sbagliata.
+  const vaultBloccato = vaultLocaleAcceso() && !chiaveDatiAttiva();
   return {
     configured: true,
     fingerprint,
@@ -129,12 +133,21 @@ export function probeEncryptionKeyHealth(): EncryptionKeyHealth {
     ok,
     detail: ok
       ? null
-      : `${failCount}/${credentialCount} credenziali NON decifrabili con ENCRYPTION_KEY attuale. ` +
-        "Allinea la chiave Docker/systemd con quella usata al salvataggio o re-inserisci le credenziali.",
+      : vaultBloccato
+        ? `${failCount}/${credentialCount} credenziali non leggibili: vault bloccato (Impostazioni › Vault).`
+        : `${failCount}/${credentialCount} credenziali NON decifrabili con ENCRYPTION_KEY attuale. ` +
+          "Allinea la chiave Docker/systemd con quella usata al salvataggio o re-inserisci le credenziali.",
   };
 }
 
 export function logEncryptionKeyHealthAtBoot(): void {
+  // da-vault: col vault locale acceso il controllo all'avvio girerebbe prima dello sblocco (TPM o passphrase) e
+  // scambierebbe i valori della chiave degli slot per una chiave sbagliata. Lo stato vero lo dicono /api/health e
+  // Impostazioni › Vault, dopo lo sblocco.
+  if (vaultLocaleAcceso()) {
+    console.info("[encryption-key] vault locale acceso: le credenziali si controllano dopo lo sblocco (/api/health, Impostazioni › Vault)");
+    return;
+  }
   const probe = probeEncryptionKeyHealth();
   if (!probe.configured) {
     console.error("CRITICAL [encryption-key] ENCRYPTION_KEY assente — credenziali e token non cifrati correttamente.");

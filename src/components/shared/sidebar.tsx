@@ -49,7 +49,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   type LucideIcon,
-  SlidersHorizontal,
+  SlidersHorizontal, CalendarClock,
 } from "lucide-react";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { UserMenu } from "./user-menu";
@@ -564,10 +564,13 @@ export function Sidebar() {
         </div>
 
         {/* Impostazioni (globale) */}
-        <NavItem href="/settings" icon={Settings} label="Impostazioni" active={pathname.startsWith("/settings") && !pathname.startsWith("/settings/cosa-esce") && !pathname.startsWith("/settings/opzioni")} collapsed={collapsed} onNavigate={closeMobile} />
+        <NavItem href="/settings" icon={Settings} label="Impostazioni" active={pathname.startsWith("/settings") && !pathname.startsWith("/settings/cosa-esce") && !pathname.startsWith("/settings/opzioni") && !pathname.startsWith("/settings/schedulazioni")} collapsed={collapsed} onNavigate={closeMobile} />
 
         {/* Opzioni (22/10): ogni funzione che si accende o si spegne, in un posto solo; chi non è admin la vede ferma */}
         <NavItem href="/settings/opzioni" icon={SlidersHorizontal} label="Opzioni" active={pathname.startsWith("/settings/opzioni")} collapsed={collapsed} onNavigate={closeMobile} />
+
+        {/* Schedulazioni (23/10): tutto ciò che parte da solo, in un elenco; chi non è admin lo vede fermo */}
+        <NavItem href="/settings/schedulazioni" icon={CalendarClock} label="Schedulazioni" active={pathname.startsWith("/settings/schedulazioni")} collapsed={collapsed} onNavigate={closeMobile} />
 
         {/* Cosa esce verso Domarc (DA-Link, tappa C1): solo gli amministratori dell'istanza */}
         {isAdmin && (

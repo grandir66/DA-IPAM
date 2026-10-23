@@ -4,9 +4,25 @@
  * esistono già. Modulo senza dipendenze: lo importano anche i componenti client (solo i tipi).
  */
 
-export type Gruppo = "letture" | "job" | "moduli" | "automatismi" | "notifiche_uscite" | "da_file";
-/** `levetta` sì/no · `modulo` installa/disinstalla · `scelta` un valore fra pochi · `file` si legge e basta. */
-export type Forma = "levetta" | "modulo" | "scelta" | "file";
+export type Gruppo = "letture" | "job" | "moduli" | "automatismi" | "parametri" | "notifiche_uscite" | "da_file";
+/**
+ * `levetta` sì/no · `modulo` installa/disinstalla · `scelta` un valore fra pochi · `file` si legge e basta.
+ * I parametri (gruppo `parametri`, tavola oggetti 14-19): `numero` un numero con unità e limiti · `elenco` più valori
+ * (con `scelte`: caselle; senza: uno per riga) · `testo` una riga · `fisso` un valore che da qui non si cambia (lucchetto).
+ */
+export type Forma = "levetta" | "modulo" | "scelta" | "file" | "numero" | "elenco" | "testo" | "fisso";
+
+/** Le forme dei parametri: hanno un valore, non uno stato acceso/spento. */
+export const FORME_PARAMETRO: ReadonlySet<Forma> = new Set<Forma>(["numero", "elenco", "testo", "fisso"]);
+
+/** Un parametro: dove sta nella pagina e come si scrive il suo valore. */
+export interface Parametro {
+  /** Il sottotitolo nel gruppo («Scansione veloce delle reti»). */
+  sezione: string;
+  unita?: string;
+  min?: number;
+  max?: number;
+}
 export type TipoEsito = "ok" | "attenzione" | "errore" | "neutro";
 
 export interface Scelta {
@@ -22,6 +38,8 @@ export interface StatoOpzione {
   /** Chi l'ha cambiata e quando (UTC del DB); null = di serie. */
   da: string | null;
   il: string | null;
+  /** Solo i parametri: il valore non è quello di serie (si offre «Torna a …»). */
+  cambiato?: boolean;
   /** «letta alle 15:00 · 19 VLAN», «mai girata: nessun hypervisor con credenziale». */
   esito: { tipo: TipoEsito; testo: string };
 }
@@ -29,6 +47,8 @@ export interface StatoOpzione {
 export interface RichiestaCambio {
   acceso?: boolean;
   valore?: string;
+  /** Un parametro torna al valore di serie. */
+  diSerie?: true;
 }
 
 export interface Opzione {
@@ -45,6 +65,8 @@ export interface Opzione {
   scelte?: ReadonlyArray<Scelta>;
   /** Dove si inseriscono i dati («Configura ›», «Installa ›»): resta nella scheda della funzione. */
   configura?: { href: string; etichetta: string };
+  /** Solo i parametri. */
+  parametro?: Parametro;
   /** Il dialogo di spegnimento (oggetto 10 della tavola). */
   spegnendo?: { siFerma: string; resta: string };
   /** Se c'è, anche accendere chiede conferma con questo testo (la pulizia degli host cancella righe). */
@@ -86,6 +108,7 @@ export interface VoceOpzione {
   diSerie: string;
   scelte?: ReadonlyArray<Scelta>;
   configura?: { href: string; etichetta: string };
+  parametro?: Parametro;
   spegnendo?: { siFerma: string; resta: string };
   accendendo?: string;
   dove?: string;
@@ -99,8 +122,9 @@ export const TITOLI_GRUPPI: Record<Gruppo, { titolo: string; nota: string }> = {
   job: { titolo: "Job pianificati", nota: "i quattro di serie nascono da soli; se un admin li spegne restano spenti" },
   moduli: { titolo: "Moduli", nota: "si installano qui; i dati da inserire restano nella loro scheda" },
   automatismi: { titolo: "Automatismi", nota: "" },
+  parametri: { titolo: "Parametri e soglie", nota: "numeri e scelte che regolano le funzioni; dati, indirizzi e password restano nelle loro schede" },
   notifiche_uscite: { titolo: "Notifiche e uscite", nota: "" },
   da_file: { titolo: "Da file dell'appliance", nota: "si leggono qui, si cambiano solo sul server" },
 };
 
-export const ORDINE_GRUPPI: readonly Gruppo[] = ["letture", "job", "moduli", "automatismi", "notifiche_uscite", "da_file"];
+export const ORDINE_GRUPPI: readonly Gruppo[] = ["letture", "job", "moduli", "automatismi", "parametri", "notifiche_uscite", "da_file"];

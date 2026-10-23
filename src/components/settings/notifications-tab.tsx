@@ -5,7 +5,6 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -32,14 +31,8 @@ interface ConfigDto {
   retentionDays: number;
 }
 
-interface CategoryDto {
-  id: string;
-  labelIt: string;
-}
-
 export function NotificationsTab() {
   const [cfg, setCfg] = useState<ConfigDto | null>(null);
-  const [categories, setCategories] = useState<CategoryDto[]>([]);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
 
@@ -50,12 +43,10 @@ export function NotificationsTab() {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const body = (await res.json()) as {
           config: ConfigDto;
-          categories: CategoryDto[];
         };
         // I segreti tornano mascherati: azzero i campi così restano invariati
         // se l'utente non li riscrive.
         setCfg({ ...body.config, smtpPassword: "", webhookAuthHeader: "" });
-        setCategories(body.categories);
       } catch (e) {
         toast.error(`Errore nel caricamento: ${(e as Error).message}`);
       }
@@ -73,7 +64,8 @@ export function NotificationsTab() {
       const res = await fetch("/api/notifications/config", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // Accendere e spegnere le notifiche e i canali si fa da Opzioni (22/10): il salvataggio qui non li tocca.
+        // Accendere e spegnere le notifiche e i canali si fa da Opzioni (22/10), e così livello, categorie e riepilogo
+        // (23/10): il salvataggio qui non li tocca.
         body: JSON.stringify({
           smtpHost: cfg.smtpHost,
           smtpPort: Number(cfg.smtpPort),
@@ -84,9 +76,6 @@ export function NotificationsTab() {
           smtpTo: cfg.smtpTo,
           webhookUrl: cfg.webhookUrl,
           webhookAuthHeader: cfg.webhookAuthHeader,
-          immediateCategories: cfg.policy.immediateCategories,
-          immediateMinLevel: Number(cfg.policy.immediateMinLevel),
-          digestIntervalMinutes: Number(cfg.policy.digestIntervalMinutes),
         }),
       });
       if (!res.ok) {
@@ -122,13 +111,6 @@ export function NotificationsTab() {
     }
   }
 
-  function toggleCategory(id: string, on: boolean) {
-    if (!cfg) return;
-    const set = new Set(cfg.policy.immediateCategories);
-    if (on) set.add(id);
-    else set.delete(id);
-    patch({ policy: { ...cfg.policy, immediateCategories: [...set] } });
-  }
 
   if (!cfg) return <div className="text-sm text-muted-foreground">Caricamento…</div>;
 
@@ -258,56 +240,11 @@ export function NotificationsTab() {
         <CardHeader>
           <CardTitle className="text-base">Quando notificare</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div>
-            <Label>Categorie con invio immediato</Label>
-            <div className="mt-2 space-y-2">
-              {categories.map((c) => (
-                <div key={c.id} className="flex items-center gap-2">
-                  <Checkbox
-                    id={`cat-${c.id}`}
-                    checked={cfg.policy.immediateCategories.includes(c.id)}
-                    onCheckedChange={(v: boolean) => toggleCategory(c.id, v === true)}
-                  />
-                  <Label htmlFor={`cat-${c.id}`} className="font-normal">
-                    {c.labelIt}
-                  </Label>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="grid gap-4 md:grid-cols-2">
-            <div>
-              <Label htmlFor="minLevel">Livello per invio immediato</Label>
-              <Input
-                id="minLevel"
-                type="number"
-                value={cfg.policy.immediateMinLevel}
-                onChange={(e) =>
-                  patch({
-                    policy: { ...cfg.policy, immediateMinLevel: Number(e.target.value) },
-                  })
-                }
-              />
-            </div>
-            <div>
-              <Label htmlFor="digest">Riepilogo ogni (minuti)</Label>
-              <Input
-                id="digest"
-                type="number"
-                value={cfg.policy.digestIntervalMinutes}
-                onChange={(e) =>
-                  patch({
-                    policy: {
-                      ...cfg.policy,
-                      digestIntervalMinutes: Number(e.target.value),
-                    },
-                  })
-                }
-              />
-            </div>
-
-          </div>
+        <CardContent>
+          <RigheRimando
+            ids={["parametro.notify_immediate_min_level", "parametro.notify_immediate_categories", "parametro.notify_digest_interval_minutes"]}
+            mostraEsito={false}
+          />
         </CardContent>
       </Card>
 

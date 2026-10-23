@@ -958,6 +958,11 @@ export function setSetting(key: string, value: string): void {
   ).run(key, value);
 }
 
+/** Toglie una chiave: chi la legge torna al suo valore di serie (Opzioni, «Torna a …»). */
+export function deleteSetting(key: string): void {
+  getHubDb().prepare("DELETE FROM settings WHERE key = ?").run(key);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Nmap Profiles
 // ═══════════════════════════════════════════════════════════════════════════

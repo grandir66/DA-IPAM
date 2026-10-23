@@ -41,6 +41,7 @@ import { eLivello, impostaLivello, livelloAttuale, statoSegnale } from "@/lib/da
 import { inviaAdesso } from "@/lib/dalink/segnale-job";
 import { leggiConfigDalink } from "@/lib/dalink/config";
 import { leggiConfigVulcan } from "@/lib/vulcan/config";
+import { opzioniParametri } from "./parametri";
 import { ErroreOpzione, type Opzione, type RichiestaCambio, type Scelta, type StatoOpzione, type TipoEsito } from "./tipi";
 
 // ── Aiuti ────────────────────────────────────────────────────────────────────
@@ -881,6 +882,7 @@ export function catalogo(): Opzione[] {
     ...gruppoSicuro("job", opzioniJob),
     ...gruppoSicuro("moduli", opzioniModuli),
     ...gruppoSicuro("automatismi", opzioniAutomatismi),
+    ...gruppoSicuro("parametri", opzioniParametri),
     ...gruppoSicuro("notifiche_uscite", opzioniNotificheUscite),
     ...gruppoSicuro("da_file", opzioniDaFile),
   ];

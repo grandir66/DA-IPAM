@@ -24,6 +24,15 @@ export function getEdgeSchedule(networkId: number): EdgeScheduleConfig | null {
     | Record<string, unknown>
     | undefined;
   if (!r) return null;
+  return daRiga(r);
+}
+
+/** Tutte le scansioni Edge pianificate del cliente, una per rete (pagina Schedulazioni). */
+export function listEdgeSchedules(): EdgeScheduleConfig[] {
+  return (db().prepare(`SELECT * FROM edge_scan_schedules ORDER BY network_id`).all() as Record<string, unknown>[]).map(daRiga);
+}
+
+function daRiga(r: Record<string, unknown>): EdgeScheduleConfig {
   return {
     network_id: r.network_id as number,
     job_name: (r.job_name as string) ?? null,

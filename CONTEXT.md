@@ -68,6 +68,14 @@ Leggilo per primo, poi [CLAUDE.md](CLAUDE.md) (stack e schema; su «multi-tenant
   catalogo**, o la prova di completezza fallisce; un job di serie cancellato rinasce al riavvio **salvo** la lapide
   `opzioni.job_di_serie.<tipo>`; una levetta nuova in una pagina vecchia è un errore: va in Opzioni, nella pagina il rimando.
   v0.9.874 (22/10): 70151 verificata; hub ancora a 0.9.872 (riceverà i job di serie al suo aggiornamento).
+- **Parametri e Schedulazioni** (23/10, tavola nell'artifact della pagina Opzioni, oggetti 14-30): gruppo «Parametri e
+  soglie» in `opzioni/parametri.ts` (chiavi dell'hub, segno di chi in `opzioni.cambio.<id>`, «Torna a» = chiave tolta);
+  pagina `/settings/schedulazioni` da `lib/schedulazioni/elenco.ts` (job, controller, Edge per rete, timer di
+  `server.ts`). **Trappole**: un parametro nuovo in scanner/notifiche/moduli va in `parametri.ts` o in
+  `fuori-catalogo.ts`, o `parametri.test.ts` fallisce; un `import("./src/lib/…")` nuovo in `server.ts` va in
+  `TIMER_DI_SERVER`; i fallimenti in serie dello scheduler stanno in `statoScheduler().fallimenti` (globale, si azzera
+  al riavvio); i tre numeri della scansione veloce valgono SOLO dal file (`DA_INVENT_NMAP_DISCOVERY_*`), le chiavi
+  `quick_scan_concurrency/host_timeout_s/exec_limit_ms` nel DB non le legge nessuno.
 - **Aggiornamento che non retrocede** (22/10, v0.9.874): `scripts/lib/guardia-versione.sh` prima del checkout di
   `auto-update.sh`; esito `retrocessione_rifiutata`. Il ramo `DA_INVENT_BRANCH` lo scrive l'installatore di
   Deploy-Appliance dal ramo dei sorgenti posati (e9a1fda).

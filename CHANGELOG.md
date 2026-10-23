@@ -4,6 +4,30 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-23 · Opzioni con parametri e soglie, voce «Schedulazioni» nel menu
+
+### Aggiunto
+
+- **Opzioni: gruppo «Parametri e soglie»** (tavola del 22/10, oggetti 14-20, approvata da Riccardo il 23/10). Riccardo:
+  «raccogliere tutti i parametri che sono opzioni e inserirli tutti nel menu». Porte TCP e percorso di Naabu della
+  scansione veloce, livello, categorie e riepilogo delle notifiche, conservazione degli eventi di sicurezza si cambiano
+  da Opzioni, con i limiti delle rotte di prima, «chi l'ha cambiato» e «Torna a …». Col lucchetto, in sola lettura, i
+  valori che da lì non si cambiano: i tre numeri della scansione veloce (valgono quelli del file dell'appliance), le
+  soglie della pulizia degli host (60 e 90 giorni) e il limite di errori di MDM. La prova di completezza legge le chiavi
+  dai sorgenti di scanner, notifiche e moduli: un parametro nuovo che non entra in Opzioni né in `fuori-catalogo.ts` la
+  fa fallire. Le schede Scansione, Notifiche e Alert sicurezza mostrano il riepilogo con «cambia da Opzioni ›».
+- **Voce «Schedulazioni» nel menu** (`/settings/schedulazioni`, oggetti 21-30): tutto ciò che parte da solo era in sei
+  posti (job del cliente, job per rete, controller, scansioni Edge per rete, timer dell'appliance, MDM). Ora un elenco
+  unico ordinato per prossimo giro, con su cosa, quando, ultimo esito (anche i fallimenti in serie dello scheduler) e
+  «Dove ›» verso la pagina che la configura; si accende e si spegne da qui (i job di serie passano da Opzioni, con la
+  lapide); Edge e timer dicono dove si cambiano. Una prova fa fallire un tipo di job o un timer di `server.ts` nuovi
+  che non compaiono.
+
+### Corretto
+
+- **Scansione veloce: tre numeri che la scheda salvava ma nessuno leggeva.** «Host paralleli», «Timeout per host» e
+  «Limite exec Nmap» finivano nel database, mentre lo scanner usa solo `DA_INVENT_NMAP_DISCOVERY_*` del file (di serie
+  12, 10 s, 22 s): la scheda mostrava valori che non contavano. Ora Opzioni dice il valore vero e dove si cambia.
 ## [Non rilasciato] — 2026-10-23 · Barra laterale compatta, «Cambia password» che si apre, URL dell'hub in Impostazioni
 
 ### Corretto

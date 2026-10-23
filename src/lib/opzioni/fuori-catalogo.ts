@@ -14,4 +14,16 @@ export const FUORI_CATALOGO: readonly FuoriCatalogo[] = [
   { chiave: "modulo.unifi", motivo: "i controller UniFi hanno le loro righe fra i job: lettura degli apparati e dei client, per controller" },
   { chiave: "modulo.appliance", motivo: "è la scheda dell'appliance stessa: non si accende né si spegne" },
   { chiave: "notify_smtp_secure", motivo: "TLS sulla porta 465 è un parametro del canale email, non una funzione" },
+  // Parametri (23/10): i dati restano nelle schede, qui solo i valori con un «di serie».
+  ...["notify_smtp_host", "notify_smtp_port", "notify_smtp_user", "notify_smtp_password_encrypted", "notify_smtp_from", "notify_smtp_to"].map(
+    (chiave) => ({ chiave, motivo: "dato del canale email (server, utente, mittente, destinatari): resta in Impostazioni › Notifiche" }),
+  ),
+  ...["notify_webhook_url", "notify_webhook_auth_encrypted"].map(
+    (chiave) => ({ chiave, motivo: "dato del canale webhook (indirizzo e intestazione): resta in Impostazioni › Notifiche" }),
+  ),
+  { chiave: "wazuh_alerts_self_ips", motivo: "elenco dei nostri IP e reti: è un dato, resta in Impostazioni › Alert sicurezza" },
+  { chiave: "wazuh_alerts_self_accounts", motivo: "elenco dei nostri account di servizio: è un dato, resta in Impostazioni › Alert sicurezza" },
+  { chiave: "integration_wazuh_device_rule_ids", motivo: "le regole degli apparati da raccogliere sono un elenco di dati, resta in Impostazioni › Alert sicurezza" },
+  { chiave: "MDM_SYNC_INTERVALLO_MINUTI", motivo: "è il ritmo del job mdm_sync creato all'accensione: si vede in Schedulazioni" },
+  { chiave: "GIORNI_REGISTRO_PULIZIA", motivo: "conservazione tecnica del registro delle pulizie, non regola cosa si archivia" },
 ];

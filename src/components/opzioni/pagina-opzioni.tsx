@@ -6,16 +6,17 @@
  * funzione · vale per · di serie · cosa è successo · ritmo o azione. Un'ancora `#<id>` (i rimandi delle pagine vecchie)
  * scorre alla riga e la evidenzia.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { LoadError } from "@/components/shared/load-error";
 import { fetchJson } from "@/lib/fetch-json";
 import { FUSO_UTENTI, parseDbDate } from "@/lib/db-date";
 import { cn } from "@/lib/utils";
-import { ORDINE_GRUPPI, TITOLI_GRUPPI, type TipoEsito, type VoceOpzione } from "@/lib/opzioni/tipi";
+import { FORME_PARAMETRO, ORDINE_GRUPPI, TITOLI_GRUPPI, type TipoEsito, type VoceOpzione } from "@/lib/opzioni/tipi";
 import { LevettaOpzione } from "./levetta-opzione";
 import { DialogoSpegni } from "./dialogo-spegni";
+import { CampoParametro, DialogoElenco, type SalvaParametro } from "./parametro-opzione";
 
 interface Dati {
   puoCambiare: boolean;
@@ -59,9 +60,17 @@ export function diSerieOCambiata(v: VoceOpzione): string {
   return `${verbo} da ${da} ${quando(il)}`;
 }
 
+const eParametro = (v: VoceOpzione): boolean => FORME_PARAMETRO.has(v.forma);
+
+/** «cambiato da mario il 23/10 alle 09:12», «di serie», «dal file (…)», «fisso nel codice» (oggetto 16). */
+function chiParametro(v: VoceOpzione): string {
+  return v.stato.il ? `${v.stato.esito.testo} ${quando(v.stato.il)}` : v.stato.esito.testo;
+}
+
 function passaFiltro(v: VoceOpzione, f: Filtro): boolean {
-  if (f === "accese") return v.stato.acceso === true && v.forma !== "file";
-  if (f === "spente") return v.stato.acceso !== true && v.forma !== "file";
+  // Un parametro ha un valore, non è acceso né spento.
+  if (f === "accese") return v.stato.acceso === true && v.forma !== "file" && !eParametro(v);
+  if (f === "spente") return v.stato.acceso !== true && v.forma !== "file" && !eParametro(v);
   if (f === "guardare") return v.stato.esito.tipo === "attenzione" || v.stato.esito.tipo === "errore";
   if (f === "file") return v.forma === "file";
   return true;
@@ -77,6 +86,8 @@ export function PaginaOpzioni({ cliente }: { cliente: string }) {
   const [daAccendere, setDaAccendere] = useState<VoceOpzione | null>(null);
   const [dove, setDove] = useState<string | null>(null);
   const [evidenziata, setEvidenziata] = useState<string | null>(null);
+  const [erroriParametri, setErroriParametri] = useState<Record<string, string>>({});
+  const [elenco, setElenco] = useState<VoceOpzione | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const carica = useCallback(async () => {
@@ -116,8 +127,9 @@ export function PaginaOpzioni({ cliente }: { cliente: string }) {
     };
   }, [dati]);
 
+  /** Cambia e rilegge; restituisce il motivo del rifiuto, o null. */
   const cambia = useCallback(
-    async (v: VoceOpzione, corpo: { acceso?: boolean; valore?: string }) => {
+    async (v: VoceOpzione, corpo: { acceso?: boolean; valore?: string; diSerie?: true }): Promise<string | null> => {
       setInCorso(v.id);
       const r = await fetchJson<{ avviso?: string }>(`/api/opzioni/${encodeURIComponent(v.id)}`, {
         method: "PUT",
@@ -132,8 +144,24 @@ export function PaginaOpzioni({ cliente }: { cliente: string }) {
       }
       await carica();
       setInCorso(null);
+      return r.ok ? null : r.message;
     },
     [carica],
+  );
+
+  /** Un parametro: il rifiuto resta scritto sotto la riga (oggetto 19) finché il valore non passa. */
+  const salvaParametro = useCallback(
+    (v: VoceOpzione): SalvaParametro =>
+      async (corpo) => {
+        const e = await cambia(v, corpo);
+        setErroriParametri((x) => {
+          const resto = { ...x };
+          delete resto[v.id];
+          return e ? { ...resto, [v.id]: e } : resto;
+        });
+        return e;
+      },
+    [cambia],
   );
 
   const gruppi = useMemo(() => {
@@ -212,9 +240,14 @@ export function PaginaOpzioni({ cliente }: { cliente: string }) {
                   <span className="text-[14px] font-light normal-case text-[#4A6070] dark:text-[#A9BECC]">{TITOLI_GRUPPI[gruppo].nota}</span>
                 )}
               </h2>
-              {righe.map((v) => (
+              {righe.map((v, i) => (
+                <Fragment key={v.id}>
+                {v.parametro && v.parametro.sezione !== righe[i - 1]?.parametro?.sezione && (
+                  <h3 className="border-t border-[#EDEDED] bg-[#F6F7F8] px-4 pb-1 pt-2.5 text-[13px] font-semibold uppercase text-[#4A6070] first-of-type:border-t-0 dark:border-[#22313D] dark:bg-[#0D2537] dark:text-[#A9BECC]">
+                    {v.parametro.sezione}
+                  </h3>
+                )}
                 <div
-                  key={v.id}
                   id={v.id}
                   className={cn(
                     "scroll-mt-24 border-t border-[#EDEDED] px-4 py-2.5 text-[14px] first-of-type:border-t-0 dark:border-[#22313D]",
@@ -223,31 +256,62 @@ export function PaginaOpzioni({ cliente }: { cliente: string }) {
                 >
                   <div className={COLONNE}>
                     <div>
-                      <LevettaOpzione
-                        voce={v}
-                        puoCambiare={!!dati.puoCambiare}
-                        inCorso={inCorso === v.id}
-                        onCambia={(acceso) => {
-                          if (acceso && v.accendendo) setDaAccendere(v);
-                          else if (acceso) void cambia(v, { acceso: true });
-                          else setDaSpegnere(v);
-                        }}
-                      />
+                      {eParametro(v) && v.stato.esito.tipo !== "errore" ? (
+                        <CampoParametro
+                          voce={v}
+                          puoCambiare={!!dati.puoCambiare}
+                          inCorso={inCorso === v.id}
+                          errore={erroriParametri[v.id] ?? null}
+                          onSalva={salvaParametro(v)}
+                          onApriElenco={() => setElenco(v)}
+                        />
+                      ) : (
+                        <LevettaOpzione
+                          voce={v}
+                          puoCambiare={!!dati.puoCambiare}
+                          inCorso={inCorso === v.id}
+                          onCambia={(acceso) => {
+                            if (acceso && v.accendendo) setDaAccendere(v);
+                            else if (acceso) void cambia(v, { acceso: true });
+                            else setDaSpegnere(v);
+                          }}
+                        />
+                      )}
                     </div>
                     <div className="min-w-0">
                       <div className="text-[15px] font-semibold">{v.nome}</div>
                       {v.cosa && <div className="font-light text-[#4A6070] dark:text-[#A9BECC]">{v.cosa}</div>}
+                      {erroriParametri[v.id] && (
+                        <div role="alert" className="mt-1 flex flex-wrap items-center gap-2">
+                          <span className={cn("whitespace-nowrap rounded-md px-2 py-0.5 text-[13px] font-semibold", ESITI.errore.classe)}>✕ non salvato</span>
+                          <span className="text-[13px]">{erroriParametri[v.id]}</span>
+                        </div>
+                      )}
                     </div>
                     <div className="text-[13px]">{v.valePer === "hub" ? "tutti i clienti" : "questo cliente"}</div>
-                    <div className="text-[13px]">{diSerieOCambiata(v)}</div>
-                    <div className="flex min-w-0 items-center gap-2">
-                      <span className={cn("whitespace-nowrap rounded-md px-2 py-0.5 text-[13px] font-semibold", ESITI[v.stato.esito.tipo].classe)}>
-                        {ESITI[v.stato.esito.tipo].segno}
-                      </span>
-                      <span className="text-[13px]">{v.stato.esito.testo}</span>
-                    </div>
+                    <div className="text-[13px]">{eParametro(v) ? v.diSerie : diSerieOCambiata(v)}</div>
+                    {eParametro(v) && v.stato.esito.tipo !== "errore" ? (
+                      <div className={cn("min-w-0 text-[13px]", v.stato.cambiato && "font-semibold")}>{chiParametro(v)}</div>
+                    ) : (
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className={cn("whitespace-nowrap rounded-md px-2 py-0.5 text-[13px] font-semibold", ESITI[v.stato.esito.tipo].classe)}>
+                          {ESITI[v.stato.esito.tipo].segno}
+                        </span>
+                        <span className="text-[13px]">{v.stato.esito.testo}</span>
+                      </div>
+                    )}
                     <div className="flex flex-col items-start gap-1 text-[14px]">
-                      {v.scelte && (
+                      {eParametro(v) && v.stato.cambiato && dati.puoCambiare && v.forma !== "elenco" && (
+                        <button
+                          type="button"
+                          disabled={inCorso === v.id}
+                          onClick={() => void salvaParametro(v)({ diSerie: true })}
+                          className="rounded-lg border border-[#0D2537] bg-white px-2.5 py-1 text-[14px] text-[#0D2537] hover:bg-[#EDEDED] disabled:opacity-70 dark:border-[#E6EEF4] dark:bg-transparent dark:text-[#E6EEF4]"
+                        >
+                          Torna a {v.diSerie}
+                        </button>
+                      )}
+                      {v.scelte && !eParametro(v) && (
                         <select
                           aria-label={`${v.forma === "scelta" ? "Scelta" : "Ritmo"} di «${v.nome}»`}
                           value={v.stato.valore ?? ""}
@@ -284,12 +348,19 @@ export function PaginaOpzioni({ cliente }: { cliente: string }) {
                     </div>
                   )}
                 </div>
+                </Fragment>
               ))}
             </section>
           ))}
         </>
       )}
 
+      <DialogoElenco
+        voce={elenco}
+        puoCambiare={!!dati?.puoCambiare}
+        onSalva={elenco ? salvaParametro(elenco) : async () => null}
+        onChiudi={() => setElenco(null)}
+      />
       <DialogoSpegni
         voce={daSpegnere}
         cliente={cliente}

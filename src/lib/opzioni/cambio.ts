@@ -19,10 +19,11 @@ export function voce(o: Opzione, stato: StatoOpzione): VoceOpzione {
     id: o.id, gruppo: o.gruppo, nome: o.nome, cosa: o.cosa, valePer: o.valePer, forma: o.forma, diSerie: o.diSerie,
     ...(o.scelte ? { scelte: o.scelte } : {}),
     ...(o.configura ? { configura: o.configura } : {}),
+    ...(o.parametro ? { parametro: o.parametro } : {}),
     ...(o.spegnendo ? { spegnendo: o.spegnendo } : {}),
     ...(o.accendendo ? { accendendo: o.accendendo } : {}),
     ...(o.dove ? { dove: o.dove } : {}),
-    cambiabile: o.forma !== "file" && typeof o.cambia === "function",
+    cambiabile: o.forma !== "file" && o.forma !== "fisso" && typeof o.cambia === "function",
     stato,
   };
 }
@@ -36,12 +37,16 @@ const Corpo = z
   .object(
     {
       acceso: z.boolean({ error: "acceso: vero o falso" }).optional(),
-      valore: z.string({ error: "valore: un testo" }).max(64, "valore troppo lungo").optional(),
+      // 2000: l'elenco delle porte TCP della scansione veloce sta in un valore solo.
+      valore: z.string({ error: "valore: un testo" }).max(2000, "valore troppo lungo").optional(),
+      diSerie: z.literal(true, { error: "diSerie: solo vero" }).optional(),
     },
     { error: "Richiesta non valida" },
   )
   .strict()
-  .refine((c) => c.acceso !== undefined || c.valore !== undefined, { error: "Indica se accendere, spegnere o il valore" });
+  .refine((c) => c.acceso !== undefined || c.valore !== undefined || c.diSerie !== undefined, {
+    error: "Indica se accendere, spegnere o il valore",
+  });
 
 export interface Chiamante {
   ruolo: unknown;
@@ -79,8 +84,9 @@ export async function cambiaOpzione(
   if (!p.success) return { status: 400, body: { error: p.error.issues[0]?.message ?? "Richiesta non valida" } };
   const o = opzioni.find((x) => x.id === id);
   if (!o) return { status: 404, body: { error: "Opzione sconosciuta" } };
-  if (o.forma === "file") {
-    return { status: 405, body: { error: `Si cambia solo sul server. ${o.dove ?? ""}`.trim() } };
+  if (o.forma === "file" || o.forma === "fisso") {
+    const prima = o.forma === "fisso" ? "Da qui non si cambia." : "Si cambia solo sul server.";
+    return { status: 405, body: { error: `${prima} ${o.dove ?? ""}`.trim() } };
   }
   if (!o.cambia) {
     return { status: 409, body: { error: "Da qui non si cambia: si accende configurandola nella sua scheda", configura: o.configura?.href ?? null } };

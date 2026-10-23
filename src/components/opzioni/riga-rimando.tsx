@@ -8,8 +8,9 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { fetchJson } from "@/lib/fetch-json";
 import { cn } from "@/lib/utils";
-import type { VoceOpzione } from "@/lib/opzioni/tipi";
+import { FORME_PARAMETRO, type VoceOpzione } from "@/lib/opzioni/tipi";
 import { diSerieOCambiata } from "./pagina-opzioni";
+import { etichettaElenco } from "./parametro-opzione";
 
 /** Le righe chieste, lette da `GET /api/opzioni?ids=…`; `errore` se non si leggono (mai una riga vuota muta). */
 export function useVociOpzioni(ids: readonly string[]): { voci: Record<string, VoceOpzione>; errore: string | null; ricarica: () => void } {
@@ -32,6 +33,11 @@ export function useVociOpzioni(ids: readonly string[]): { voci: Record<string, V
 }
 
 function etichetta(v: VoceOpzione): string {
+  if (FORME_PARAMETRO.has(v.forma) && v.stato.esito.tipo !== "errore") {
+    if (v.forma === "elenco") return etichettaElenco(v);
+    if (v.forma === "testo") return v.stato.valore || "vuoto";
+    return [v.stato.valore, v.parametro?.unita].filter(Boolean).join(" ");
+  }
   if (v.stato.acceso === null) return v.forma === "file" ? "DA FILE" : "DA CONFIGURARE";
   if (v.forma === "modulo") return v.stato.acceso ? "INSTALLATO" : "NON INSTALLATO";
   if (v.forma === "scelta") return (v.scelte?.find((s) => s.valore === v.stato.valore)?.etichetta ?? v.stato.valore ?? "").toUpperCase();
@@ -39,7 +45,9 @@ function etichetta(v: VoceOpzione): string {
 }
 
 export function RigaRimando({ voce, mostraEsito = true }: { voce: VoceOpzione; mostraEsito?: boolean }) {
-  const acceso = voce.stato.acceso === true && voce.forma !== "scelta";
+  // Un parametro ha un valore, non è acceso: pastiglia chiara, e accanto «di serie» o chi l'ha cambiato.
+  const parametro = FORME_PARAMETRO.has(voce.forma);
+  const acceso = voce.stato.acceso === true && voce.forma !== "scelta" && !parametro;
   return (
     <div className="rounded-lg border border-[#D0D8DC] bg-white px-3 py-2 dark:border-[#3A4A57] dark:bg-transparent">
       <div className="flex flex-wrap items-baseline gap-x-3.5 gap-y-1">
@@ -55,12 +63,12 @@ export function RigaRimando({ voce, mostraEsito = true }: { voce: VoceOpzione; m
         >
           {etichetta(voce)}
         </span>
-        <span className="text-[14px]">{diSerieOCambiata(voce)}</span>
+        <span className="text-[14px]">{parametro ? (voce.stato.cambiato ? voce.stato.esito.testo : "di serie") : diSerieOCambiata(voce)}</span>
         <Link href={`/settings/opzioni#${voce.id}`} className="text-[14px] text-[#006C96] underline hover:text-[#0D2537] dark:text-[#3FBBF0]">
           cambia da Opzioni ›
         </Link>
       </div>
-      {mostraEsito && voce.stato.esito.testo && <p className="mt-0.5 text-[14px] font-light">{voce.stato.esito.testo}</p>}
+      {mostraEsito && !parametro && voce.stato.esito.testo && <p className="mt-0.5 text-[14px] font-light">{voce.stato.esito.testo}</p>}
     </div>
   );
 }

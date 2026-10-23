@@ -57,6 +57,30 @@ function getBackupRoot(): string {
   return process.env.DA_INVENT_BACKUP_ROOT || DEFAULT_BACKUP_ROOT;
 }
 
+/**
+ * L'ultimo backup scritto (cartella `<root>/AAAA-MM-GG/manifest.json` più recente), per la pagina Schedulazioni.
+ * null = nessun backup; un manifesto illeggibile si dice, non si salta.
+ */
+export function ultimoBackup(): { giorno: string; finitoIl: string | null; errori: number; file: number; illeggibile: boolean } | null {
+  const root = getBackupRoot();
+  if (!fs.existsSync(root)) return null;
+  const giorni = fs.readdirSync(root).filter((n) => /^\d{4}-\d{2}-\d{2}$/.test(n)).sort();
+  const giorno = giorni.at(-1);
+  if (!giorno) return null;
+  try {
+    const m = JSON.parse(fs.readFileSync(path.join(root, giorno, "manifest.json"), "utf-8")) as Partial<BackupManifest>;
+    return {
+      giorno,
+      finitoIl: typeof m.finished_at === "string" ? m.finished_at : null,
+      errori: Array.isArray(m.errors) ? m.errors.length : 0,
+      file: Array.isArray(m.files) ? m.files.length : 0,
+      illeggibile: false,
+    };
+  } catch {
+    return { giorno, finitoIl: null, errori: 0, file: 0, illeggibile: true };
+  }
+}
+
 function getRetentionDays(): number {
   const v = Number(process.env.DA_INVENT_BACKUP_RETENTION_DAYS);
   return Number.isFinite(v) && v > 0 ? v : DEFAULT_RETENTION_DAYS;

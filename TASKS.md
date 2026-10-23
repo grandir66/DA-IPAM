@@ -82,7 +82,39 @@ timer di `src/lib/vulcan/`.
 - [ ] Tavola grafica di Opzioni allargata e Schedulazioni, approvata da Riccardo — pubblicata il 22/10 sera
   (https://claude.ai/artifact/MFg8HqVhyS4dEzwiDoo1LX, fogli «parametri e soglie» e «Schedulazioni», oggetti 14-30),
   in attesa dell'approvazione oggetto per oggetto. Lavoro nel worktree `.worktrees/da-ipam-opzioni`.
-- [ ] Piano breve, esecuzione, cancello, resa ≥1280, rilascio su dev; promote con conferma
+- [x] Tavola approvata da Riccardo il 23/10 («ok su tutto»): soglie fisse col lucchetto, gruppo dei job in Opzioni che
+  resta, timer dell'appliance col lucchetto (senza DA-Vul-can né aggiornamento), niente «Esegui ora», scheda job invariata.
+- Scoperto il 23/10: `quick_scan_concurrency`, `quick_scan_host_timeout_s`, `quick_scan_exec_limit_ms` li scrive la scheda
+  Scansione ma **lo scanner non li legge** (`scanner/ports.ts` usa solo `DA_INVENT_NMAP_DISCOVERY_*`, di serie 12/10 s/22 s):
+  in Opzioni col lucchetto e il valore vero; farli contare = proposta a parte (cambia il ritmo delle scansioni ovunque).
+- Piano breve (livello leggero):
+  - [x] A1 `opzioni/tipi.ts`: gruppo `parametri`, forme `numero` · `elenco` · `testo` · `fisso`; `parametro` (sezione,
+        unità, min, max); `valore` fino a 2000 caratteri; «chi l'ha cambiato» in `opzioni.cambio.<id>` (hub), «Torna a di
+        serie» cancella chiave e segno (`deleteSetting` nuovo in `db-hub`)
+  - [x] A2 `opzioni/parametri.ts`: porte TCP, percorso Naabu, livello/categorie/riepilogo delle notifiche, conservazione
+        eventi (scrivono con `setSetting`/`setNotificationConfig`, stessi limiti delle rotte); fissi: tre numeri della
+        scansione (da file), 60/90 giorni della pulizia, 5 errori di MDM
+  - [x] A3 prova di completezza: ogni chiave delle schede Scansione/Notifiche/Alert/MDM nel catalogo o in `fuori-catalogo`
+        col motivo; prove su limiti (400), ritorno al di serie, segno di chi — `parametri.test.ts` 8 verdi; vista rossa
+        togliendo il gruppo dal catalogo e una voce da `fuori-catalogo` (`quick_scan_concurrency: né in Opzioni…`)
+  - [x] A4 pagina Opzioni: gruppo «Parametri e soglie» con sottotitoli, campo in riga, finestra per gli elenchi, lucchetto;
+        schede vecchie: riga di riepilogo + «cambia da Opzioni ›» (Scansione veloce e Naabu, Quando notificare,
+        Conservazione); il salvataggio delle Notifiche non manda più la politica
+  - [x] B1 `lib/schedulazioni/elenco.ts`: righe da `scheduled_jobs`, controller senza job, Edge per rete, timer di
+        `server.ts`; esito da `last_run`, fallimenti in serie dello scheduler (stato portato su `globalThis`, come
+        `stato-scheduler.ts`), ritardo (`findStaleJobs`), MDM, hypervisor
+  - [x] B2 `GET /api/schedulazioni`, `PUT /api/schedulazioni/[id]` (admin, registro come Opzioni; righe con opzione →
+        `cambiaOpzione`, job semplici → `toggleJob` + ricarica; Edge e timer → 409 col posto dove si cambia)
+  - [x] B3 pagina `/settings/schedulazioni` + voce di menu sotto Opzioni; prove di completezza (ogni tipo di job e ogni
+        timer di `server.ts` ha la sua riga)
+  - [x] C cancello (in DA-IPAM non c'è `scripts/controlla.sh`: lint, tsc, `npm test`, build come da CLAUDE.md) —
+        23/10: lint 0 errori, tsc 0, `npm test` 5846 passate / 0 fallite, build ok; resa con playwright-core + Chrome
+        (il Playwright MCP era occupato) a 1920 e 1280 sull'app locale con dati finti: niente scorrimento orizzontale,
+        17 rifiutato col motivo, 10 salvato «cambiato da prova», «Torna a 12», categorie in finestra, SNMP spento da
+        Schedulazioni con dialogo e registro, Edge ferma. Corretti in corsa: campo Naabu troppo largo, colonna Famiglia
+        nascosta sotto 1536 (a 1280 esito e «Dove» uscivano di vista), doppio salvataggio Invio+uscita dal campo.
+  - Proposte (non fatte): far leggere allo scanner i tre numeri della scansione veloce dal DB (cambia il ritmo ovunque);
+    rendere cambiabili le soglie della pulizia e il limite di MDM; «Esegui ora» in Schedulazioni.
 
 ## 2026-10-22 — Vulnerabilità per host ed exploit noti
 

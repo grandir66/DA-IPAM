@@ -125,6 +125,28 @@ describe("AppRole e token di 20 minuti", () => {
       assert.ok(!e.message.includes("sid-sbagliato-0001"));
     }
   });
+
+  it("il file del secret_id manca o non si legge: ErroreVault(configurazione) con messaggio controllato, senza percorso né eccezione grezza", async () => {
+    // Il lettore vero (avvio.ts) è `readFileSync`: su un file mancante lancia ENOENT con il percorso nel messaggio.
+    const percorso = "/run/credentials/da-ipam.service/openbao-secret-id";
+    for (const causa of ["ENOENT", "EACCES"]) {
+      const s = store({
+        secretId: () => {
+          throw Object.assign(new Error(`${causa}: no such file or directory, open '${percorso}'`), { code: causa });
+        },
+      });
+      try {
+        await s.aggiorna();
+        assert.fail("doveva rifiutare");
+      } catch (e) {
+        assert.ok(e instanceof ErroreVault, `atteso ErroreVault, arrivato ${String(e)}`);
+        assert.equal(e.codice, "configurazione");
+        assert.match(e.message, /secret_id/);
+        assert.ok(!e.message.includes(percorso) && !e.message.includes("openbao-secret-id") && !e.message.includes(causa), e.message);
+      }
+    }
+    assert.equal(finto.richieste.length, 0, "senza secret_id non deve uscire nessuna richiesta");
+  });
 });
 
 describe("cache della cartella dell'app", () => {
@@ -144,12 +166,15 @@ describe("cache della cartella dell'app", () => {
     assert.deepEqual(s.leggiSync("clienti/c1/firewall/ssh"), { username: "admin", password: PASSWORD });
   });
 
-  it("un percorso che non è in cache: non_trovato, senza chiamare OpenBao", async () => {
+  it("un percorso che non è in cache: non_trovato, senza leggere quel percorso da OpenBao (parte solo il giro di ricarica)", async () => {
+    // Revisione PR #50 di DA-Vul-can, portata qui: la mancanza fa partire un giro di cache, mai una lettura diretta.
     const s = store();
     await s.aggiorna();
     const prima = finto.richieste.length;
     assert.equal(await codiceDi(() => s.leggiSync("clienti/c1/firewall/ssh")), "non_trovato");
-    assert.equal(finto.richieste.length, prima);
+    await new Promise((r) => setTimeout(r, 20));
+    const nuove = finto.richieste.slice(prima);
+    assert.ok(nuove.every((r) => !r.percorso.endsWith("/data/clienti/c1/firewall/ssh")), "lettura diretta del percorso mancante");
   });
 
   it("prima del primo caricamento la lettura dalla cache è non_pronto", async () => {

@@ -24,6 +24,8 @@ const MARGINE_TOKEN_MS = 60_000;
 const AGGIORNA_OGNI_MS = 5 * 60_000;
 const DURATA_CACHE_MS = 30 * 60_000;
 const TIMEOUT_MS = 10_000;
+/** Un percorso che manca dalla cache fa partire un giro, ma non più di uno ogni 30 secondi (niente raffica). */
+const RICARICA_PER_MANCANZA_OGNI_MS = 30_000;
 
 export interface ConfigOpenBao {
   /** Es. `https://openbao.interno:8200` (senza `/v1`). */
@@ -85,6 +87,8 @@ export class OpenBaoStore implements SecretStore {
   /** Riferimenti malformati saltati nell'ultimo giro (numero) e già segnalati nel log (per non ripetere l'avviso). */
   private saltati = 0;
   private saltatiSegnalati = new Set<string>();
+  /** Ultimo giro fatto partire da un percorso mancante (ms); 0 = mai. */
+  private ultimaRicaricaPerMancanza = 0;
 
   constructor(config: ConfigOpenBao) {
     this.c = {
@@ -131,7 +135,14 @@ export class OpenBaoStore implements SecretStore {
   }
 
   private async login(): Promise<string> {
-    const r = await this.richiesta("POST", "auth/approle/login", { corpo: { role_id: this.c.roleId, secret_id: this.c.secretId() } });
+    let secretId: string;
+    try {
+      secretId = this.c.secretId();
+    } catch {
+      // Il file del secret_id (credenziale di systemd) manca o non si legge: l'eccezione grezza porta il percorso, non si propaga.
+      throw new ErroreVault("configurazione", "Il secret_id di OpenBao non è leggibile: file della credenziale mancante o senza permessi (configurazione dell'appliance)");
+    }
+    const r = await this.richiesta("POST", "auth/approle/login", { corpo: { role_id: this.c.roleId, secret_id: secretId } });
     const auth = (r.corpo as { auth?: { client_token?: unknown; lease_duration?: unknown } } | null)?.auth;
     if (r.status !== 200 || typeof auth?.client_token !== "string") {
       throw new ErroreVault("rifiutato", `OpenBao ha rifiutato il login AppRole (HTTP ${r.status})`);
@@ -259,8 +270,29 @@ export class OpenBaoStore implements SecretStore {
     controllaPercorso(percorso);
     this.controllaCache();
     const v = this.cache.get(percorso);
-    if (!v) throw new ErroreVault("non_trovato", `Il segreto «${percorso}» non è in OpenBao (o non è fra quelli caricati)`);
-    return v;
+    if (v) return v;
+    // Un riferimento nuovo (dopo `--applica` ad app accesa) non è in cache fino al giro successivo. La lettura è sincrona
+    // e non può aspettare: dà l'errore dichiarato e fa partire UN giro, così la lettura dopo trova la voce. Il giro per
+    // mancanza è uno alla volta e al più uno ogni 30 secondi. (Stessa correzione di DA-Vul-can, revisione PR #50.)
+    const avviato = this.ricaricaPerMancanza();
+    throw new ErroreVault(
+      "non_trovato",
+      avviato
+        ? `Il segreto «${percorso}» non è in OpenBao (o non è ancora nella cache: ricaricamento avviato, riprova fra qualche secondo)`
+        : `Il segreto «${percorso}» non è in OpenBao (o non è fra quelli caricati)`,
+    );
+  }
+
+  /** true se un giro è in corso o è appena partito per questa mancanza; false se è troppo presto per un altro. */
+  private ricaricaPerMancanza(): boolean {
+    if (this.inCorso) return true;
+    const ora = this.c.ora();
+    if (this.ultimaRicaricaPerMancanza !== 0 && ora - this.ultimaRicaricaPerMancanza < RICARICA_PER_MANCANZA_OGNI_MS) return false;
+    this.ultimaRicaricaPerMancanza = ora;
+    this.aggiorna().catch((e: unknown) => {
+      console.warn(`[vault] OpenBao: giro per un segreto mancante non riuscito (${e instanceof ErroreVault ? e.codice : "errore"})`);
+    });
+    return true;
   }
 
   // ── SecretStore ───────────────────────────────────────────────────────────

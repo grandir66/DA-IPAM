@@ -4,6 +4,28 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-23 · da-vault: archivio a slot, «Mostra password», KeePass, OpenBao per l'hub (tutto spento di serie)
+
+### Aggiunto
+
+- **Archivio locale a slot (appliance dei clienti, `DA_VAULT_LOCALE=1`, spento di serie).** Oggi le credenziali sono cifrate con `ENCRYPTION_KEY`, che sta in `.env.local` accanto ai dati: chi ha il disco ha tutto. Con l'interruttore acceso la chiave dei dati è casuale ed esiste solo dentro gli slot age: passphrase del cliente, chiave Domarc (recupero, D3/D5), TPM della macchina (si sblocca da sola all'avvio). Ogni `encrypt()` dell'app passa da lì, senza toccare i chiamanti (ADR 0034). Senza TPM l'archivio resta **bloccato**: banner in testa alle pagine, scansioni in pausa col motivo, sblocco con la passphrase in **Impostazioni › Vault**.
+- **Ricifra** (`scripts/da-vault.ts ricifra`): dalla chiave di `ENCRYPTION_KEY` a quella degli slot, a vuoto di serie, `--applica` esplicito; tutto o niente per database, verificata col lettore unico delle credenziali, poi `VACUUM`. Ripetibile; dopo un crash ogni valore resta leggibile.
+- **«Mostra password»** nella pagina Credenziali (D2): solo admin, con la **verifica in due passaggi dell'utente collegato** (ADR 0023), non con la passphrase del cliente; vale 5 minuti. Ogni visualizzazione va nel registro con utente e ora, e il cliente lo legge in Impostazioni › Vault («Chi ha visto cosa»).
+- **«Esporta in KeePass»**: un file KDBX 4 (Argon2id) con tutte le credenziali, che si apre con la passphrase del cliente più un key file tenuto nell'archivio. È l'indipendenza del cliente da Domarc, senza un secondo archivio vivo.
+- **`scripts/da-vault-recover.ts`** (reset-password, export-keyfile, rotate) con la chiave privata Domarc **solo dallo stdin**, un ticket obbligatorio e una riga per uso in `recuperi.jsonl`.
+- **OpenBao per l'hub (`DA_VAULT_OPENBAO=1`, spento di serie).** Libreria `src/lib/vault` (interfaccia `SecretStore`, backend `openbao` con solo `fetch`, AppRole, token di 20 minuti, cache a tempo, `X-Domarc-Utente` per le letture per conto di una persona). Colonna `credentials.credential_ref`: con l'interruttore acceso le credenziali dei device si leggono da OpenBao; OpenBao giù oltre la cache = scansioni in pausa e letture rifiutate, mai un ripiego sulla colonna. `scripts/da-vault-migra-openbao.ts` (a vuoto di serie, `--applica`, `--verifica`) con doppia lettura per una versione.
+- Col vault acceso il backup notturno copia anche l'archivio (slot già cifrati): un ripristino dei database ricifrati ha gli slot che li aprono.
+
+### Perché così
+
+- Interruttori nel file dell'appliance e non in Opzioni: ogni push su `dev` arriva a tutte le installazioni, e il vault si accende un'appliance alla volta, dopo aver creato l'archivio, con un riavvio (piano, «Rischi»).
+- I segreti della 2FA restano sulla chiave d'installazione: col vault bloccato un admin deve poter entrare a sbloccarlo (ADR 0034).
+- Stesso formato dei valori cifrati: la chiave la dice GCM, così i controlli «è già cifrato?» sparsi nell'app non cifrano due volte.
+
+### Interruttori spenti
+
+- Nessun cambiamento di comportamento: provato contro una copia del `crypto.ts` di prima, con i job che girano, senza banner, senza «Mostra», col backup di sempre. Cambia solo lo schema (additivo): `credentials.credential_ref` e la tabella `vault_visualizzazioni`.
+
 ## [0.9.896] — 2026-10-23 · Abbinamenti: asset con lo stesso nome
 
 ### Cambiato

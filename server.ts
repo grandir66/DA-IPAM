@@ -156,6 +156,15 @@ app.prepare().then(() => {
       console.error("WARNING: scaricamento dei dati sugli exploit non avviato:", error);
     });
 
+    // Chi si collega ai PC (23/10/2026, piano assegnatari da AD): Wazuh e WinRM ogni ora al
+    // minuto 17. Spento di serie, si accende per cliente in Opzioni (automatismo.accessi_pc).
+    import("./src/lib/assegnatari/job").then(({ avviaGiroAccessi }) => {
+      avviaGiroAccessi();
+      console.log("> Accessi ai PC: giro orario (solo i clienti che l'hanno acceso)");
+    }).catch((error) => {
+      console.error("WARNING: giro degli accessi ai PC non avviato:", error);
+    });
+
     // Segnale di vita verso DA-Link (tappa C1 NetBird). Spento finché non esiste
     // /etc/dalink/oggetto.env, scritto dal comando d'installazione di DA-Link:
     // senza quel file nessun giro arriva alla rete.

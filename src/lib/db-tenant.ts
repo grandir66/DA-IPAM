@@ -19,7 +19,7 @@ import { buildPatchFromHost, buildPatchFromDevice, buildSyncMerge, buildSourceLa
 import fs from "fs";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { LetturaVlanSwitch } from "./devices/snmp-vlan";
-import { DDL_VULCAN, INDICI_VULCAN, SEGNO_VULCAN, VERSIONE_VULCAN, DDL_LIBRENMS_FONTE_V1, INDICI_LIBRENMS_FONTE_V1, SEGNO_LIBRENMS_FONTE, VERSIONE_LIBRENMS_FONTE, DDL_LIBRENMS_ESCLUSIONE, SEGNO_LIBRENMS_ESCLUSIONE, VERSIONE_LIBRENMS_ESCLUSIONE, DDL_JOB_APPARATI_ESITI, INDICI_JOB_APPARATI_ESITI, SEGNO_APPARATI_SCELTI, VERSIONE_APPARATI_SCELTI, DDL_SWITCH_VLAN_NATIVA, SEGNO_SWITCH_VLAN_NATIVA, VERSIONE_SWITCH_VLAN_NATIVA, DDL_SWITCH_VLAN_V1, SEGNO_SWITCH_VLAN, VERSIONE_SWITCH_VLAN, COLONNA_CLUSTER_PRINCIPALE, INDICE_CLUSTER_PRINCIPALE, SEGNO_CLUSTER_PRINCIPALE, VERSIONE_CLUSTER_PRINCIPALE, COLONNE_SCHEDA_MK_V1, DDL_HOSTS_ARCHIVIO, DDL_SCHEDA_MK_V2, DDL_SCHEDA_MK_V3, DDL_TOPOLOGY_CAVI, DDL_TOPOLOGY_UNIONI, INDICI_HOSTS_ARCHIVIO, INDICI_TOPOLOGY_UNIONI, TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL, SEGNO_SCHEDA_MK, VERSIONE_SCHEDA_MK } from "./db-tenant-schema";
+import { COLONNE_ASSEGNATARI_AD, DDL_ASSEGNATARI_AD, INDICI_ASSEGNATARI_AD, SEGNO_ASSEGNATARI_AD, VERSIONE_ASSEGNATARI_AD, DDL_VULCAN, INDICI_VULCAN, SEGNO_VULCAN, VERSIONE_VULCAN, DDL_LIBRENMS_FONTE_V1, INDICI_LIBRENMS_FONTE_V1, SEGNO_LIBRENMS_FONTE, VERSIONE_LIBRENMS_FONTE, DDL_LIBRENMS_ESCLUSIONE, SEGNO_LIBRENMS_ESCLUSIONE, VERSIONE_LIBRENMS_ESCLUSIONE, DDL_JOB_APPARATI_ESITI, INDICI_JOB_APPARATI_ESITI, SEGNO_APPARATI_SCELTI, VERSIONE_APPARATI_SCELTI, DDL_SWITCH_VLAN_NATIVA, SEGNO_SWITCH_VLAN_NATIVA, VERSIONE_SWITCH_VLAN_NATIVA, DDL_SWITCH_VLAN_V1, SEGNO_SWITCH_VLAN, VERSIONE_SWITCH_VLAN, COLONNA_CLUSTER_PRINCIPALE, INDICE_CLUSTER_PRINCIPALE, SEGNO_CLUSTER_PRINCIPALE, VERSIONE_CLUSTER_PRINCIPALE, COLONNE_SCHEDA_MK_V1, DDL_HOSTS_ARCHIVIO, DDL_SCHEDA_MK_V2, DDL_SCHEDA_MK_V3, DDL_TOPOLOGY_CAVI, DDL_TOPOLOGY_UNIONI, INDICI_HOSTS_ARCHIVIO, INDICI_TOPOLOGY_UNIONI, TENANT_SCHEMA_SQL, TENANT_INDEXES_SQL, SEGNO_SCHEDA_MK, VERSIONE_SCHEDA_MK } from "./db-tenant-schema";
 import { HYPERVISOR_SYNC_MINUTES, PULIZIA_HOST_MINUTES, SCHEDULED_JOB_TYPES_CHECK_SQL } from "./scheduled-job-types";
 import { isProxmoxVeDevice, resolveDeviceAcquisition } from "./devices/device-acquisition-resolve";
 import { networkDeviceUsesArpPoll } from "./network-device-arp";
@@ -1135,6 +1135,65 @@ export function migrateLibrenmsEsclusione(db: Database.Database): string[] {
     })();
   } finally {
     SCHEMA_LIBRENMS_ESCLUSIONE.set(db, tabelleSchedaMkMancanti(db, DDL_LIBRENMS_ESCLUSIONE).length === 0);
+  }
+  return added;
+}
+
+/** «Colonne, tabella e indici degli assegnatari da AD ci sono», annotato all'apertura come gli altri. */
+const SCHEMA_ASSEGNATARI_AD = new WeakMap<Database.Database, boolean>();
+
+function oggettiAssegnatariAdMancanti(d: Database.Database): string[] {
+  const t = d.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?");
+  const i = d.prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?");
+  return [
+    ...colonneSchedaMkMancanti(d, COLONNE_ASSEGNATARI_AD).map(([tab, c]) => `${tab}.${c}`),
+    ...DDL_ASSEGNATARI_AD.filter(([n]) => !t.get(n)).map(([n]) => n),
+    ...INDICI_ASSEGNATARI_AD.filter(([n]) => !i.get(n)).map(([n]) => n),
+  ];
+}
+
+/** Schema degli assegnatari da AD presente (annotato; si rimisura solo con la migrazione). Rotte e giro lo chiedono prima di leggere. */
+export function schemaAssegnatariAdPresente(d: Database.Database): boolean {
+  const v = SCHEMA_ASSEGNATARI_AD.get(d);
+  if (v !== undefined) return v;
+  const n = oggettiAssegnatariAdMancanti(d).length === 0;
+  SCHEMA_ASSEGNATARI_AD.set(d, n);
+  return n;
+}
+
+/**
+ * Assegnatari da AD (piano 2026-10-23, passo 1): le colonne di COLONNE_ASSEGNATARI_AD, la tabella degli accessi e i suoi
+ * indici, solo se mancano. Additiva, idempotente, in UNA transazione; restituisce «tabella.colonna» o il nome di ciò che
+ * aggiunge, poi scrive il segno `done:<data>:v1` una volta sola (la migrazione non lo consulta).
+ */
+export function migrateAssegnatariAd(db: Database.Database): string[] {
+  const added: string[] = [];
+  try {
+    db.transaction(() => {
+      for (const [t, c, ddl] of colonneSchedaMkMancanti(db, COLONNE_ASSEGNATARI_AD)) {
+        db.exec(`ALTER TABLE ${t} ADD COLUMN ${c} ${ddl}`);
+        added.push(`${t}.${c}`);
+      }
+      const tab = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?");
+      for (const [n, ddl] of DDL_ASSEGNATARI_AD) {
+        if (tab.get(n)) continue;
+        db.exec(ddl);
+        added.push(n);
+      }
+      const idx = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?");
+      for (const [n, ddl] of INDICI_ASSEGNATARI_AD) {
+        if (idx.get(n)) continue;
+        db.exec(ddl);
+        added.push(n);
+      }
+      const chiusa = `:v${VERSIONE_ASSEGNATARI_AD}`;
+      const attuale = leggiSegno(db, SEGNO_ASSEGNATARI_AD);
+      if (!(attuale?.startsWith("done:") && attuale.endsWith(chiusa))) {
+        scriviSegno(db, SEGNO_ASSEGNATARI_AD, `done:${new Date().toISOString().slice(0, 10)}${chiusa}`);
+      }
+    })();
+  } finally {
+    SCHEMA_ASSEGNATARI_AD.set(db, oggettiAssegnatariAdMancanti(db).length === 0);
   }
   return added;
 }
@@ -2896,6 +2955,27 @@ export function getTenantDb(tenantCode: string): Database.Database {
       }
     } catch (e2) {
       console.error(`[db-tenant] ${tenantCode}: ${SEGNO_VULCAN}, segno non scritto:`, e2);
+    }
+  }
+
+  // Assegnatari da AD (piano 2026-10-23): colonne nuove, la tabella degli accessi e tre indici, solo se mancano. Se fallisce
+  // il tenant si apre lo stesso: schemaAssegnatariAdPresente() dice false, il giro non raccoglie e le pagine lo dicono.
+  try {
+    const added = migrateAssegnatariAd(newDb);
+    if (added.length > 0) {
+      console.info(`[db-tenant] ${tenantCode}: assegnatari da AD, aggiunto ${added.join(", ")}`);
+    }
+  } catch (e) {
+    console.error(`[db-tenant] ${tenantCode}: migrazione assegnatari da AD fallita (ROLLBACK), proposte e importazione spente:`, e);
+    try {
+      if (schemaAssegnatariAdPresente(newDb)) {
+        const attuale = leggiSegno(newDb, SEGNO_ASSEGNATARI_AD);
+        if (!attuale?.startsWith("done:")) scriviSegno(newDb, SEGNO_ASSEGNATARI_AD, `done:${new Date().toISOString().slice(0, 10)}:v${VERSIONE_ASSEGNATARI_AD}`);
+      } else {
+        scriviSegno(newDb, SEGNO_ASSEGNATARI_AD, segnoErrore(e));
+      }
+    } catch (e2) {
+      console.error(`[db-tenant] ${tenantCode}: ${SEGNO_ASSEGNATARI_AD}, segno non scritto:`, e2);
     }
   }
 

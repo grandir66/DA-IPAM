@@ -77,6 +77,20 @@ breve ed esecuzione in una sessione nuova.
       disabilitato → asset da riassegnare
 - [x] chi scrive `ad_computers.host_id`: `linkAdComputerToHost` nella sync AD e `relinkAdComputersForNetwork` dopo una scansione
 
+Esecuzione (23/10, sessione nuova, livello leggero; passi del piano):
+- [x] passo 1, schema: `migrateAssegnatariAd` (colonne, `host_accessi_utente`, indici) — prova `assegnatari-ad-migration.test.ts` 6/6
+- [x] passo 2, AD: attributi in più e assegnatari legati riallineati dopo la sync — `raccolta.test.ts` (allineamento) verde
+- [x] passo 3, raccolta degli accessi (Wazuh tastiera/rete, WinRM, GLPI) — `raccolta.test.ts` 7/7 con risposta finta della forma vera
+- [x] passo 4, calcolo della proposta (funzione pura, provata) — `proposta.test.ts` 8/8
+- [x] passo 5, API (anteprima/importazione AD, elenco, proposta sull'asset) + interruttore e soglie in Opzioni — `importa.test.ts` 5/5, prove di Opzioni 25/25
+- [ ] passo 6, interfaccia (elenco, «Importa da AD», riquadro sull'asset)
+- [ ] passo 7, cancello
+- [ ] passo 8, rilascio sul dev, giro acceso sull'hub .8, verifica a 1440 coi dati veri
+- [ ] passo 9, documenti
+- Scostamento (23/10): il giro orario non è un tipo nuovo di `scheduled_jobs` (il CHECK su `job_type` vorrebbe la
+  ricostruzione della tabella, zona gialla) ma un timer di `server.ts` con interruttore per cliente in Opzioni, come il
+  feed degli exploit. WinRM si legge dal giro (da `network_devices.last_device_info_json`), GLPI all'arrivo dell'inventario.
+
 ## 2026-10-22 — Opzioni complete e voce «Schedulazioni» nel menu
 
 Riccardo (22/10): «raccogliere tutti i parametri che sono opzioni e inserirli tutti nel menu, e così una voce per

@@ -8,7 +8,7 @@
  */
 import {
   getCurrentTenantCode, getHypervisorSyncSchedule, getScheduledJobs, getTenantDb, getTenantSetting,
-  getVulnScannerStato, listControllerClientScheduleJobs, listControllerScheduleJobs, listNetworksLite, schemaCaviPresente,
+  getVulnScannerStato, listControllerClientScheduleJobs, listControllerScheduleJobs, listNetworksLite, schemaAssegnatariAdPresente, schemaCaviPresente,
   setControllerSchedule, setHypervisorSyncSchedule, setPuliziaHostSchedule, setTenantSetting, setVulnScannerEnabled, toggleJob,
   updateScheduledJobInterval,
 } from "@/lib/db-tenant";
@@ -41,6 +41,8 @@ import { eLivello, impostaLivello, livelloAttuale, statoSegnale } from "@/lib/da
 import { inviaAdesso } from "@/lib/dalink/segnale-job";
 import { leggiConfigDalink } from "@/lib/dalink/config";
 import { leggiConfigVulcan } from "@/lib/vulcan/config";
+import { CHIAVE_GIRO_ACCESO, dbCliente, giroAccessiAcceso, scriviImpostazione, ultimoGiroAccessi } from "@/lib/assegnatari/db";
+import { giroAccessiAdesso } from "@/lib/assegnatari/job";
 import { opzioniParametri } from "./parametri";
 import { ErroreOpzione, type Opzione, type RichiestaCambio, type Scelta, type StatoOpzione, type TipoEsito } from "./tipi";
 
@@ -659,6 +661,36 @@ function opzioniAutomatismi(): Opzione[] {
       cambia(r) {
         if (r.valore !== "registra" && r.valore !== "applica") throw new ErroreOpzione("Scelta non ammessa: registra oppure applica", 400);
         setTenantSetting(CHIAVE_MODO, r.valore);
+      },
+    },
+    {
+      id: "automatismo.accessi_pc",
+      gruppo: "job",
+      nome: "Chi si collega ai PC",
+      cosa: "accessi da Wazuh e WinRM, per proporre l'assegnatario degli asset",
+      valePer: "cliente",
+      forma: "levetta",
+      diSerie: "spento",
+      configura: { href: "/inventory/assignees", etichetta: "Assegnatari ›" },
+      spegnendo: {
+        siFerma: "la raccolta oraria di chi si collega ai PC: le proposte di assegnatario invecchiano.",
+        resta: "gli accessi già raccolti (fino a 90 giorni) e gli assegnatari.",
+      },
+      leggi() {
+        const db = dbCliente();
+        if (!schemaAssegnatariAdPresente(db)) return diSerieStato(null, esito("errore", "schema del cliente non aggiornato"));
+        const acceso = giroAccessiAcceso(db);
+        const ultimo = ultimoGiroAccessi(db);
+        if (!ultimo) return diSerieStato(acceso, esito("neutro", acceso ? "acceso, non ancora girato" : "spento"));
+        return diSerieStato(acceso, esito(ultimo.ok ? "ok" : "errore", `girato alle ${oraItaliana(ultimo.il)} · ${ultimo.testo}`));
+      },
+      cambia(r) {
+        const acceso = soloAcceso(r);
+        const db = dbCliente();
+        if (!schemaAssegnatariAdPresente(db)) throw new ErroreOpzione("Lo schema di questo cliente non è aggiornato: vedi il journal del servizio");
+        scriviImpostazione(db, CHIAVE_GIRO_ACCESO, acceso ? "1" : "0");
+        // Accendendo, il primo giro parte subito (in sottofondo): la scheda dell'asset ha dati senza aspettare l'ora.
+        if (acceso) void giroAccessiAdesso(tenant());
       },
     },
     {

@@ -447,6 +447,57 @@ export const SEGNO_VULCAN = "vulcan_coda_v21";
 export const VERSIONE_VULCAN = 1;
 
 /**
+ * Assegnatari NIS2 da AD e utente prevalente dei PC (piano 2026-10-23-assegnatari-da-ad, passo 1).
+ *
+ * - `asset_assignees`: il legame con l'utente AD (integrazione + objectGUID, unico), nome e cognome separati, reparto,
+ *   ruolo, cellulare, origine (`manuale` | `ad`), stato in AD e il giorno in cui è risultato disattivato la prima volta;
+ * - `ad_users`: gli attributi in più letti dalla sync (givenName, sn, mobile, company, manager, employeeID, ufficio);
+ * - `inventory_assets.proposta_assegnatario_off`: «PC condiviso, non proporre» (tavola ⑬);
+ * - `host_accessi_utente`: chi si è collegato a un host, un conteggio per account, fonte e giorno. La scrive il giro
+ *   orario `assegnatari/job.ts` (Wazuh, WinRM) e l'ingresso dell'agente GLPI; la pulizia a 90 giorni sta nel giro.
+ *
+ * Tutto additivo e solo nella migrazione (`migrateAssegnatariAd`), come le tabelle della coda qui sopra.
+ */
+export const COLONNE_ASSEGNATARI_AD: ReadonlyArray<readonly [tabella: string, colonna: string, ddl: string]> = [
+  ["asset_assignees", "ad_integration_id", "INTEGER REFERENCES ad_integrations(id) ON DELETE SET NULL"],
+  ["asset_assignees", "ad_object_guid", "TEXT"],
+  ["asset_assignees", "nome", "TEXT"],
+  ["asset_assignees", "cognome", "TEXT"],
+  ["asset_assignees", "reparto", "TEXT"],
+  ["asset_assignees", "ruolo", "TEXT"],
+  ["asset_assignees", "cellulare", "TEXT"],
+  ["asset_assignees", "origine", "TEXT NOT NULL DEFAULT 'manuale'"],
+  ["asset_assignees", "ad_abilitato", "INTEGER"],
+  ["asset_assignees", "ad_disattivato_il", "TEXT"],
+  ["ad_users", "given_name", "TEXT"],
+  ["ad_users", "surname", "TEXT"],
+  ["ad_users", "mobile", "TEXT"],
+  ["ad_users", "company", "TEXT"],
+  ["ad_users", "manager_dn", "TEXT"],
+  ["ad_users", "employee_id", "TEXT"],
+  ["ad_users", "office", "TEXT"],
+  ["inventory_assets", "proposta_assegnatario_off", "INTEGER NOT NULL DEFAULT 0"],
+];
+export const DDL_ASSEGNATARI_AD: ReadonlyArray<readonly [string, string]> = [
+  ["host_accessi_utente", `CREATE TABLE host_accessi_utente (
+  host_id INTEGER NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
+  account TEXT NOT NULL,
+  fonte TEXT NOT NULL CHECK (fonte IN ('wazuh_tastiera', 'wazuh_rete', 'winrm', 'glpi')),
+  giorno TEXT NOT NULL,
+  conteggio INTEGER NOT NULL DEFAULT 0,
+  ultimo TEXT,
+  PRIMARY KEY (host_id, account, fonte, giorno)
+)`],
+];
+export const INDICI_ASSEGNATARI_AD: ReadonlyArray<readonly [string, string]> = [
+  ["idx_asset_assignees_ad_guid", "CREATE UNIQUE INDEX idx_asset_assignees_ad_guid ON asset_assignees(ad_integration_id, ad_object_guid) WHERE ad_object_guid IS NOT NULL"],
+  ["idx_host_accessi_utente_account", "CREATE INDEX idx_host_accessi_utente_account ON host_accessi_utente(account, giorno)"],
+  ["idx_host_accessi_utente_giorno", "CREATE INDEX idx_host_accessi_utente_giorno ON host_accessi_utente(giorno)"],
+];
+export const SEGNO_ASSEGNATARI_AD = "assegnatari_ad_v21";
+export const VERSIONE_ASSEGNATARI_AD = 1;
+
+/**
  * Pannello Zabbix in sola lettura (passo 7.4-7.5 del piano di solidità, 16/10; API del centro in DA-Zabbix,
  * `docs/2026-10-16-api-lettura-per-cliente-design.md`). Dati del cliente → DB del tenant.
  *

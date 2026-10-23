@@ -284,6 +284,7 @@ export const TIMER_DI_SERVER: Readonly<Record<string, string>> = {
   "./src/lib/patch/choco-automatico": "timer.choco",
   "./src/lib/vuln/exploit-feed/job": "timer.feed_exploit",
   "./src/lib/dalink/segnale-job": "timer.dalink",
+  "./src/lib/assegnatari/job": "timer.accessi_pc",
   "./src/lib/cron/scheduler": "fuori: è lo scheduler dei job, le sue righe sono i job",
   "./src/lib/cron/scheduler-defaults": "fuori: correzioni all'avvio, non un giro (in Opzioni › Da file)",
   "./src/lib/vulcan/job": "fuori: deciso il 23/10, spento senza gettone su tutte le appliance (in Opzioni › Notifiche e uscite)",
@@ -367,6 +368,29 @@ async function righeTimer(adesso: Date): Promise<RigaSchedulazione[]> {
       esito: s.esito,
       dove: { href: `/settings/opzioni#${o.id}`, etichetta: "Opzioni ›" },
       cambio: { tipo: "opzione", id: o.id },
+    });
+  }
+
+  // Chi si collega ai PC (assegnatari da AD, 23/10): levetta per cliente in Opzioni, giro ogni ora al minuto 17.
+  const accessi = catalogo().find((o) => o.id === "automatismo.accessi_pc");
+  if (accessi) {
+    const s = await leggiStato(accessi);
+    const acceso = s.acceso === true;
+    const prossimo = new Date(adesso);
+    prossimo.setMinutes(17, 0, 0);
+    if (prossimo <= adesso) prossimo.setHours(prossimo.getHours() + 1);
+    righe.push({
+      ...base,
+      id: "timer.accessi_pc",
+      nome: accessi.nome,
+      su: "Wazuh e WinRM",
+      quando: "ogni ora, al minuto 17",
+      prossimo: acceso ? dataSqlite(prossimo) : null,
+      stato: acceso ? "acceso" : "spento",
+      fisso: false,
+      esito: s.esito,
+      dove: { href: `/settings/opzioni#${accessi.id}`, etichetta: "Opzioni ›" },
+      cambio: { tipo: "opzione", id: accessi.id },
     });
   }
 

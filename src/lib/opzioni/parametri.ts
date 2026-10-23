@@ -24,6 +24,8 @@ import { GIORNI_ASSENZA_ARCHIVIO } from "@/lib/hosts/pulizia";
 import { GIORNI_ARCHIVIO_PRIMA_DI_CANCELLARE } from "@/lib/hosts/pulizia-archivio";
 import { CHIAVI_SOGLIE_PULIZIA, LIMITI_SOGLIE_PULIZIA } from "@/lib/hosts/soglie-pulizia";
 import { CHIAVE_MDM_MAX_ERRORI, LIMITI_MDM_MAX_ERRORI, MDM_MAX_ERRORI_CONSECUTIVI } from "@/lib/integrations/mdm-config";
+import { CHIAVI_SOGLIE, LIMITI_SOGLIE } from "@/lib/assegnatari/db";
+import { SOGLIE_DI_SERIE } from "@/lib/assegnatari/proposta";
 import { ErroreOpzione, type Opzione, type Scelta, type StatoOpzione } from "./tipi";
 
 // ── Chi l'ha cambiato ────────────────────────────────────────────────────────
@@ -295,6 +297,52 @@ const PARAMETRI: readonly DefParametro[] = [
     valoreDiSerie: String(MDM_MAX_ERRORI_CONSECUTIVI),
     diSerie: `${MDM_MAX_ERRORI_CONSECUTIVI} errori`,
     normalizza: (v) => intero(v, LIMITI_MDM_MAX_ERRORI.min, LIMITI_MDM_MAX_ERRORI.max, "Errori di fila prima di spegnersi"),
+  },
+  // Assegnatari proposti dagli accessi ai PC (piano 2026-10-23, decisione di Riccardo: soglie cambiabili).
+  {
+    id: "parametro.assegnatari_soglia",
+    chiave: CHIAVI_SOGLIE.percentuale,
+    valePer: "cliente",
+    nome: "Quota per proporre",
+    cosa: "si propone chi supera questa quota degli accessi di persone al PC",
+    sezione: "Assegnatari proposti dagli accessi",
+    forma: "numero",
+    unita: "%",
+    min: LIMITI_SOGLIE.percentuale.min,
+    max: LIMITI_SOGLIE.percentuale.max,
+    valoreDiSerie: String(SOGLIE_DI_SERIE.percentuale),
+    diSerie: `più del ${SOGLIE_DI_SERIE.percentuale}%`,
+    normalizza: (v) => intero(v, LIMITI_SOGLIE.percentuale.min, LIMITI_SOGLIE.percentuale.max, "Quota per proporre"),
+  },
+  {
+    id: "parametro.assegnatari_minimo",
+    chiave: CHIAVI_SOGLIE.minimo,
+    valePer: "cliente",
+    nome: "Accessi minimi",
+    cosa: "sotto questi accessi di persone non si propone («pochi dati»)",
+    sezione: "Assegnatari proposti dagli accessi",
+    forma: "numero",
+    unita: "accessi",
+    min: LIMITI_SOGLIE.minimo.min,
+    max: LIMITI_SOGLIE.minimo.max,
+    valoreDiSerie: String(SOGLIE_DI_SERIE.minimo),
+    diSerie: `${SOGLIE_DI_SERIE.minimo} accessi`,
+    normalizza: (v) => intero(v, LIMITI_SOGLIE.minimo.min, LIMITI_SOGLIE.minimo.max, "Accessi minimi"),
+  },
+  {
+    id: "parametro.assegnatari_giorni",
+    chiave: CHIAVI_SOGLIE.giorni,
+    valePer: "cliente",
+    nome: "Periodo considerato",
+    cosa: "gli accessi degli ultimi giorni che contano per la proposta",
+    sezione: "Assegnatari proposti dagli accessi",
+    forma: "numero",
+    unita: "giorni",
+    min: LIMITI_SOGLIE.giorni.min,
+    max: LIMITI_SOGLIE.giorni.max,
+    valoreDiSerie: String(SOGLIE_DI_SERIE.giorni),
+    diSerie: `${SOGLIE_DI_SERIE.giorni} giorni`,
+    normalizza: (v) => intero(v, LIMITI_SOGLIE.giorni.min, LIMITI_SOGLIE.giorni.max, "Periodo considerato"),
   },
 ];
 

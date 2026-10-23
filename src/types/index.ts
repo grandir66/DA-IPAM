@@ -579,6 +579,15 @@ export interface AssetAssignee {
   phone: string | null;
   note: string | null;
   user_id: number | null;
+  /** Assegnatari da AD (piano 2026-10-23): presenti dopo la migrazione del cliente. */
+  nome?: string | null;
+  cognome?: string | null;
+  reparto?: string | null;
+  ruolo?: string | null;
+  cellulare?: string | null;
+  origine?: "manuale" | "ad";
+  ad_abilitato?: number | null;
+  ad_disattivato_il?: string | null;
   created_at: string;
   updated_at: string;
 }

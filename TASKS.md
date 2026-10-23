@@ -95,11 +95,12 @@ Esecuzione (23/10, sessione nuova, livello leggero; passi del piano):
 - [ ] (aperto) nell'AD di domarc.it il campo «Reparto» contiene il ruolo: dato loro, non un errore
 
 Pagina «Abbinamenti» (Riccardo, 23/10, decisioni alle domande; livello leggero, tavola da approvare prima del codice):
-- [ ] tavola grafica sullo stesso canvas della prima (artboard nuova)
-- [ ] Inventario › **Abbinamenti**, voce nuova accanto ad Assegnatari, con rimando «N PC da abbinare» dalla pagina Assegnatari
-- [ ] **tutti gli host con accessi**, anche quelli non ancora in inventario
-- [ ] conferma **tutto in un clic**, a spunte: crea l'assegnatario da AD se manca, crea l'asset se manca, assegna
-- [ ] asset già assegnati a un altro: sezione «Da rivedere», **senza spunta**; si sostituisce solo spuntando a mano
+- [x] tavola grafica sullo stesso canvas della prima (tavola 4, approvata il 23/10)
+- [x] Inventario › **Abbinamenti**, voce nuova accanto ad Assegnatari, con rimando «N PC da abbinare» dalla pagina Assegnatari (v0.9.895, visto sull'hub a 1440)
+- [x] **tutti gli host con accessi**, anche quelli non ancora in inventario
+- [x] conferma **tutto in un clic**, a spunte: crea l'assegnatario da AD se manca, crea l'asset se manca, assegna (prove; non eseguita sull'hub)
+- [x] asset già assegnati a un altro: sezione «Da rivedere», **senza spunta**; si sostituisce solo spuntando a mano
+- [ ] (aperto) prima conferma vera sull'hub: la fa Riccardo (13 proposti su 70791; 2 chiedono la categoria). Piano: `docs/superpowers/plans/2026-10-23-abbinamenti.md`
 - Riccardo (23/10) «non vedo nulla»: il suo utente superadmin entra nella vista «tutte» e la scheda era aperta da prima
   dell'aggiornamento; i dati stanno solo in 70791 (scegliere l'istanza e ricaricare). Da confermare con lui.
 - Scostamento (23/10): il giro orario non è un tipo nuovo di `scheduled_jobs` (il CHECK su `job_type` vorrebbe la

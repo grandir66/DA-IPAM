@@ -4,6 +4,12 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [0.9.895] — 2026-10-23 · Abbinamenti: chi usa i PC → asset e assegnatari
+
+### Aggiunto
+
+- **Inventario › Abbinamenti.** Prima la proposta si vedeva solo aprendo un asset alla volta, e i PC non ancora in inventario non comparivano da nessuna parte. Ora una pagina elenca tutti gli host con accessi, divisi in proposti, da rivedere (assegnati a un altro), già abbinati, pochi dati ed esclusi (server, apparati, condivisi, col perché). La conferma, a spunte, crea l'assegnatario da AD e l'asset se mancano e assegna, in una transazione che ricalcola ogni voce; i «da rivedere» non sono mai spuntati di serie. La categoria dell'asset nuovo viene dalla classificazione dell'host (workstation → Desktop, notebook → Laptop); quando non basta si sceglie nella riga. La pagina Assegnatari rimanda qui («N PC hanno un utente prevalente da abbinare»).
+
 ## [0.9.892 – 0.9.894] — 2026-10-23 · Assegnatari NIS2 da Active Directory e utente prevalente dei PC
 
 ### Aggiunto

@@ -93,6 +93,15 @@ Esecuzione (23/10, sessione nuova, livello leggero; passi del piano):
 - [ ] (aperto) 3 agenti Wazuh su 11 senza host: i loro accessi alla tastiera non entrano; e 18 postazioni di rete non trovate fra gli host
 - [ ] (aperto) nessun «Accetta» provato col clic sull'hub (prova-claude è in sola lettura): lo prova Riccardo; la scrittura è coperta dalle prove
 - [ ] (aperto) nell'AD di domarc.it il campo «Reparto» contiene il ruolo: dato loro, non un errore
+
+Pagina «Abbinamenti» (Riccardo, 23/10, decisioni alle domande; livello leggero, tavola da approvare prima del codice):
+- [ ] tavola grafica sullo stesso canvas della prima (artboard nuova)
+- [ ] Inventario › **Abbinamenti**, voce nuova accanto ad Assegnatari, con rimando «N PC da abbinare» dalla pagina Assegnatari
+- [ ] **tutti gli host con accessi**, anche quelli non ancora in inventario
+- [ ] conferma **tutto in un clic**, a spunte: crea l'assegnatario da AD se manca, crea l'asset se manca, assegna
+- [ ] asset già assegnati a un altro: sezione «Da rivedere», **senza spunta**; si sostituisce solo spuntando a mano
+- Riccardo (23/10) «non vedo nulla»: il suo utente superadmin entra nella vista «tutte» e la scheda era aperta da prima
+  dell'aggiornamento; i dati stanno solo in 70791 (scegliere l'istanza e ricaricare). Da confermare con lui.
 - Scostamento (23/10): il giro orario non è un tipo nuovo di `scheduled_jobs` (il CHECK su `job_type` vorrebbe la
   ricostruzione della tabella, zona gialla) ma un timer di `server.ts` con interruttore per cliente in Opzioni, come il
   feed degli exploit. WinRM si legge dal giro (da `network_devices.last_device_info_json`), GLPI all'arrivo dell'inventario.

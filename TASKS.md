@@ -1,5 +1,24 @@
 # TASKS — DA-IPAM
 
+## 2026-10-23 — Assegnatari NIS2 da AD e utente prevalente dei PC (idea, da decidere)
+
+Riccardo (23/10): «come possiamo determinare almeno dei PC gli utenti collegati? Nella voce NIS2 degli assegnatari
+permettere l'importazione degli utenti da AD in modo semi-automatico con i dati registrati, proponendo quelli che
+hanno nome e cognome e altre informazioni, e verificare se si possono collegare agli oggetti nel discovery o asset».
+
+Cosa c'è già (origin/dev `646fe741`): `ad_users` sincronizzati (nome visualizzato, mail, reparto, ruolo, telefono,
+ultimo accesso); `ad_computers.host_id`; raccolta WinRM in `lib/devices/device-info.ts` con `last_logged_on_user`
+(registro LogonUI) e `logged_on_users` (Win32_LoggedOnUser) in `last_device_info_json`; agente GLPI con
+`last_logged_user`; `asset_assignees` ha solo nome/mail/telefono/nota, `inventory_assets.asset_assignee_id`.
+Proposta in chat (in attesa di risposte):
+- [ ] storico delle osservazioni utente↔host (WinRM, GLPI, eventi 4624/4768 dei DC) e «utente prevalente» per PC
+- [ ] `ad-client`: leggere anche givenName, sn, mobile, company, manager, employeeID, office; computer: managedBy
+- [ ] `asset_assignees`: legame con l'utente AD (guid), reparto, ruolo, origine; «Importa da AD» con proposta
+      (abilitato, nome e cognome, mail, accesso recente, niente account di servizio) e conferma a spunte
+- [ ] proposta di assegnatario sull'asset dall'utente prevalente, mai sopra un'assegnazione manuale; utente AD
+      disabilitato → asset da riassegnare
+- [ ] verificare chi scrive `ad_computers.host_id` (nella sync non l'ho trovato)
+
 ## 2026-10-22 — Opzioni complete e voce «Schedulazioni» nel menu
 
 Riccardo (22/10): «raccogliere tutti i parametri che sono opzioni e inserirli tutti nel menu, e così una voce per

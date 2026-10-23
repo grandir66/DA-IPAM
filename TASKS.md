@@ -83,10 +83,14 @@ Esecuzione (23/10, sessione nuova, livello leggero; passi del piano):
 - [x] passo 3, raccolta degli accessi (Wazuh tastiera/rete, WinRM, GLPI) — `raccolta.test.ts` 7/7 con risposta finta della forma vera
 - [x] passo 4, calcolo della proposta (funzione pura, provata) — `proposta.test.ts` 8/8
 - [x] passo 5, API (anteprima/importazione AD, elenco, proposta sull'asset) + interruttore e soglie in Opzioni — `importa.test.ts` 5/5, prove di Opzioni 25/25
-- [ ] passo 6, interfaccia (elenco, «Importa da AD», riquadro sull'asset)
-- [ ] passo 7, cancello
-- [ ] passo 8, rilascio sul dev, giro acceso sull'hub .8, verifica a 1440 coi dati veri
-- [ ] passo 9, documenti
+- [x] passo 6, interfaccia (elenco, «Importa da AD», riquadro sull'asset) — resa guardata sull'hub a 1440 coi dati veri
+- [x] passo 7, cancello — tsc 0, lint 0 errori, 5882 prove / 0 rosse (worktree pulito), build 0. Nel clone del Mac 2 prove cadono solo perché c'è `data/ipam.db` di marzo (dipendono dalla macchina)
+- [x] passo 8, v0.9.892-894 sull'hub .8 (`update.sh --restart`, health ok); giro acceso per 70791: primo giro 09:13 UTC, 992 righe in 31 finestre, tastiera 8 PC, rete 30 postazioni (misura: 11 e 38), 18 postazioni senza host; importati da AD 19 assegnatari (17 da qualcuno dalla pagina alle 09:16 UTC, 2 dal mio giro, copia `70791.db.bak-20261023-assegnatari`); proposte viste su PC-MIARI e PC-APADULA, «nessuna fonte» su PC-Soragni
+- [x] passo 9, documenti: CHANGELOG, CONTEXT §6, scheda-mappa
+- [ ] (aperto) WinRM ha dato 0 righe su 70791: nessun apparato Windows con l'utente collegato letto di recente; da guardare
+- [ ] (aperto) 3 agenti Wazuh su 11 senza host: i loro accessi alla tastiera non entrano; e 18 postazioni di rete non trovate fra gli host
+- [ ] (aperto) nessun «Accetta» provato col clic sull'hub (prova-claude è in sola lettura): lo prova Riccardo; la scrittura è coperta dalle prove
+- [ ] (aperto) nell'AD di domarc.it il campo «Reparto» contiene il ruolo: dato loro, non un errore
 - Scostamento (23/10): il giro orario non è un tipo nuovo di `scheduled_jobs` (il CHECK su `job_type` vorrebbe la
   ricostruzione della tabella, zona gialla) ma un timer di `server.ts` con interruttore per cliente in Opzioni, come il
   feed degli exploit. WinRM si legge dal giro (da `network_devices.last_device_info_json`), GLPI all'arrivo dell'inventario.

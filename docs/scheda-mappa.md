@@ -4,7 +4,7 @@ tono: ok
 famiglia: 01-nucleo
 ordine: 10
 stato: cantiere
-prossimo: "VLAN switch: confermare i cluster 10/11, IP attuale di SW-UFLEX-RG-10GB (fuori dal job #25), rivedere la lettura Q-BRIDGE della ProMax; decidere se `arp_poll` serve ancora dopo il job `apparati_scelti`; ADR 0030; provare «Rendi apparato» e la ricerca credenziali sul vero; export AD: diagnostic esplicito e gravità del punteggio di dominio"
+prossimo: "Assegnatari da AD: provare «Accetta» sull'hub e capire perché WinRM non dà utenti; VLAN switch: confermare i cluster 10/11, IP attuale di SW-UFLEX-RG-10GB (fuori dal job #25), rivedere la lettura Q-BRIDGE della ProMax; decidere se `arp_poll` serve ancora dopo il job `apparati_scelti`; ADR 0030; provare «Rendi apparato» e la ricerca credenziali sul vero; export AD: diagnostic esplicito e gravità del punteggio di dominio"
 applicazione: ipam
 ---
 IPAM e inventario per le appliance cliente (un'installazione = un cliente:

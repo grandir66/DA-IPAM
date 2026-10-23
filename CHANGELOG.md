@@ -4,6 +4,20 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [0.9.892 – 0.9.894] — 2026-10-23 · Assegnatari NIS2 da Active Directory e utente prevalente dei PC
+
+### Aggiunto
+
+- **«Importa da Active Directory» nella pagina Assegnatari.** Prima ogni assegnatario si scriveva a mano. Ora l'anteprima propone le persone di AD (abilitate, con nome e cognome, accesso recente, niente account di servizio o amministrativi), dice per ognuna se è nuova, da aggiornare, da controllare (manca il cognome o la mail, omonimo) o invariata, e mostra i PC dove si collega; si importa a spunte. L'assegnatario resta legato all'utente per objectGUID: a ogni lettura di AD riprende nome, mail, reparto e ruolo, e se l'utente viene disattivato la pagina avvisa che i suoi asset vanno riassegnati. **L'importazione non tocca gli asset.**
+- **Chi si collega ai PC.** Un giro orario (spento di serie, si accende per istanza in Opzioni › «Chi si collega ai PC», ed è in Schedulazioni) conta gli accessi 4624 da Wazuh: alla tastiera dall'agente sul PC, di rete dai server per nome della postazione; in più l'utente collegato letto da WinRM e quello dell'agente GLPI. Gli accessi si tengono 90 giorni.
+- **Assegnatario proposto sulla scheda dell'asset.** Si propone chi fa più della metà degli accessi di persone al PC negli ultimi 30 giorni, con almeno 5 accessi (soglie in Opzioni › Parametri). Accanto la tabella di chi si è collegato, con il perché di chi non conta. Si scrive solo col clic («Accetta», «PC condiviso, non proporre»), con la riga nel diario dell'asset; un'assegnazione fatta a mano non si sostituisce mai: se si collega soprattutto un altro, lo dice in grigio.
+
+### Perché così
+
+- Solo proposte con conferma e soglia «più della metà»: decisione di Riccardo del 23/10. La misura sul Wazuh dell'hub (707 mila accessi in 30 giorni) ha mostrato postazioni con centinaia di migliaia di accessi di un solo account e proposte appoggiate su pochi accessi: da qui il minimo di 5 e il conteggio delle sole persone di AD.
+- Il giro non è un tipo nuovo di job: il CHECK su `scheduled_jobs.job_type` avrebbe voluto ricostruire la tabella. È un timer di `server.ts`, come i dati sugli exploit.
+- L'host dell'asset si prende anche dall'apparato collegato (0.9.893): sull'hub 32 asset su 34 avevano solo quello.
+
 ## [Non rilasciato] — 2026-10-23 · «Esci» che chiude davvero, istanza controllata e ricordata, «cliente» diventa «istanza»
 
 ### Corretto

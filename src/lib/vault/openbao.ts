@@ -16,7 +16,7 @@
  *
  * Nessun messaggio contiene valori, token o secret_id.
  */
-import { controllaPercorso, ErroreVault, type OpzioniGet, type SecretStore, type StatoStore, type ValoreSegreto } from "./tipi";
+import { controllaPercorso, ErroreVault, percorsoValido, type OpzioniGet, type SecretStore, type StatoStore, type ValoreSegreto } from "./tipi";
 
 export const DURATA_TOKEN_MS = 20 * 60_000;
 /** Il token si rinnova un minuto prima della scadenza. */
@@ -35,8 +35,12 @@ export interface ConfigOpenBao {
   secretId: () => string;
   /** Le cartelle caricate nella cache (di solito `app/<app>`). */
   cartelle: string[];
-  /** Percorsi singoli caricati nella cache a ogni giro (i riferimenti delle credenziali). */
-  percorsiExtra?: () => string[];
+  /**
+   * Percorsi singoli caricati nella cache a ogni giro (i riferimenti delle credenziali). Una voce può dire anche da
+   * dove viene (`origine`: es. «C70001#12», cliente e credenziale): un riferimento malformato si salta con un avviso
+   * che nomina l'origine, senza far fallire il giro di tutte le altre.
+   */
+  percorsiExtra?: () => Array<string | { percorso: string; origine: string }>;
   aggiornaOgniMs?: number;
   durataCacheMs?: number;
   timeoutMs?: number;
@@ -78,6 +82,9 @@ export class OpenBaoStore implements SecretStore {
   private ultimoErrore: { alle: number; codice: string } | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
   private inCorso: Promise<void> | null = null;
+  /** Riferimenti malformati saltati nell'ultimo giro (numero) e già segnalati nel log (per non ripetere l'avviso). */
+  private saltati = 0;
+  private saltatiSegnalati = new Set<string>();
 
   constructor(config: ConfigOpenBao) {
     this.c = {
@@ -198,12 +205,27 @@ export class OpenBaoStore implements SecretStore {
           }
         }
         const extra = this.c.percorsiExtra ? this.c.percorsiExtra() : [];
-        for (const p of new Set(extra)) {
+        const visti = new Set<string>();
+        let saltati = 0;
+        for (const voce of extra) {
+          const p = typeof voce === "string" ? voce : voce.percorso;
+          if (visti.has(p)) continue;
+          visti.add(p);
           if (nuova.has(p)) continue;
-          controllaPercorso(p);
+          // Un riferimento malformato in una voce non deve fermare la cache delle altre: si salta, si dice, si conta.
+          if (!percorsoValido(p)) {
+            saltati += 1;
+            const origine = typeof voce === "string" ? "(origine non indicata)" : voce.origine;
+            if (!this.saltatiSegnalati.has(origine)) {
+              this.saltatiSegnalati.add(origine);
+              console.warn(`[vault] OpenBao: riferimento non valido nella credenziale ${origine}: voce saltata, i suoi segreti non si leggono finché non si corregge`);
+            }
+            continue;
+          }
           const v = await this.leggiRemoto(p);
           if (v) nuova.set(p, v);
         }
+        this.saltati = saltati;
         this.cache = nuova;
         this.caricatoAlle = this.c.ora();
         this.ultimoErrore = null;
@@ -247,10 +269,17 @@ export class OpenBaoStore implements SecretStore {
     controllaPercorso(percorso);
     if (opzioni.perConto !== undefined) {
       const u = opzioni.perConto.trim();
-      if (!u || /[\r\n\0]/.test(u) || u.length > 200) {
+      if (!u || /[\x00-\x1f\x7f]/.test(u) || u.length > 200) {
         throw new ErroreVault("configurazione", "Nome utente non valido per X-Domarc-Utente");
       }
-      const v = await this.leggiRemoto(percorso, u);
+      const id = opzioni.perContoId?.trim();
+      if (opzioni.perContoId !== undefined && (!id || !/^[A-Za-z0-9_-]{1,64}$/.test(id))) {
+        throw new ErroreVault("configurazione", "Id utente non valido per X-Domarc-Utente");
+      }
+      // L'intestazione HTTP è ASCII: il nome va percent-encoded (un «Ł» farebbe lanciare fetch, e l'errore diventerebbe un
+      // finto «OpenBao non risponde»); l'id accanto dice chi è davvero anche se due persone si chiamano uguale.
+      const intestazione = id ? `${encodeURIComponent(u)};id=${id}` : encodeURIComponent(u);
+      const v = await this.leggiRemoto(percorso, intestazione);
       if (!v) throw new ErroreVault("non_trovato", `Il segreto «${percorso}» non è in OpenBao`);
       return v;
     }
@@ -294,13 +323,19 @@ export class OpenBaoStore implements SecretStore {
     } catch (e) {
       return { pronto: false, motivo: e instanceof Error ? e.message : "OpenBao non pronto" };
     }
+    const saltati = this.saltati > 0 ? { riferimentiSaltati: this.saltati } : {};
+    const testoSaltati = this.saltati > 0 ? `${this.saltati} riferimenti di credenziali non validi saltati (il log del servizio dice quali)` : null;
     if (this.ultimoErrore) {
       return {
         pronto: true,
         aggiornatoAlle: this.caricatoAlle,
-        degradato: `OpenBao non risponde dall'ultimo giro: si usano i segreti caricati ${minuti(this.c.ora() - (this.caricatoAlle ?? 0))} fa`,
+        degradato:
+          `OpenBao non risponde dall'ultimo giro: si usano i segreti caricati ${minuti(this.c.ora() - (this.caricatoAlle ?? 0))} fa` +
+          (testoSaltati ? `; ${testoSaltati}` : ""),
+        ...saltati,
       };
     }
+    if (testoSaltati) return { pronto: true, aggiornatoAlle: this.caricatoAlle, degradato: testoSaltati, ...saltati };
     return { pronto: true, aggiornatoAlle: this.caricatoAlle };
   }
 

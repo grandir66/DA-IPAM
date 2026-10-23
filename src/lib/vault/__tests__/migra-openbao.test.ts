@@ -194,6 +194,6 @@ describe("riferimenti nella cache all'avvio (hub)", () => {
     createTenant({ codice_cliente: T, ragione_sociale: "Cliente di prova", active: 1 } as Parameters<typeof createTenant>[0]);
     const refs = riferimenti().filter((r): r is string => Boolean(r));
     assert.equal(refs.length, 4);
-    assert.deepEqual(riferimentiDelleCredenziali().sort(), [...refs].sort());
+    assert.deepEqual([...new Set(riferimentiDelleCredenziali().map((r) => r.percorso))].sort(), [...refs].sort());
   });
 });

@@ -94,7 +94,7 @@ async function campiPerMostrare(dbh: Database.Database, credentialId: number, ut
     const store = statoVaultProcesso().openbao;
     if (!store) return rifiuto(503, "OpenBao acceso ma non configurato");
     try {
-      const v = await store.get(ref, { perConto: utente.nome });
+      const v = await store.get(ref, { perConto: utente.nome, perContoId: utente.id });
       const campi: Campi = {};
       for (const c of Object.keys(COLONNA_DEL_CAMPO) as CampoSegreto[]) if (v[c]) campi[c] = v[c];
       return { ok: true, nome: String(riga.name ?? `#${credentialId}`), campi };

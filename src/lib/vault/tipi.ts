@@ -19,10 +19,18 @@ export interface OpzioniGet {
    * OpenBao scrive nel registro. Una lettura per conto non passa dalla cache.
    */
   perConto?: string;
+  /** L'id dell'utente (hub.users.id): va in `X-Domarc-Utente` accanto al nome, che da solo può cambiare o ripetersi. */
+  perContoId?: string;
 }
 
 export type StatoStore =
-  | { pronto: true; aggiornatoAlle: number | null; degradato?: string }
+  | {
+      pronto: true;
+      aggiornatoAlle: number | null;
+      degradato?: string;
+      /** Riferimenti di credenziali malformati saltati nell'ultimo giro della cache (solo il numero; i nomi stanno nel log). */
+      riferimentiSaltati?: number;
+    }
   | { pronto: false; motivo: string };
 
 export interface SecretStore {

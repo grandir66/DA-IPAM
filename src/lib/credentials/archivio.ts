@@ -25,6 +25,8 @@ import type Database from "better-sqlite3";
 import type { z } from "zod";
 import type { Credential } from "@/types";
 import type { CredentialSchema } from "@/lib/validators";
+import { cancellaDaOpenBao } from "@/lib/vault/cancella";
+import { vaultOpenBaoAcceso } from "@/lib/vault/stato";
 import { aggiornamentiCredenziale, colonneNuovaCredenziale, togliRiferimentoSeCambianoSegreti } from "./aggiornamenti";
 import { mascheraCredenziale, type CredenzialeVista } from "./maschera";
 import {
@@ -118,8 +120,25 @@ export function aggiornaCredenzialeDb(dbh: Database.Database, id: number, input:
   return leggi(dbh, id);
 }
 
+/** Il `credential_ref` di una voce (null se non ha riferimento o lo schema del vault non c'è ancora). */
+function riferimentoDi(dbh: Database.Database, id: number): string | null {
+  const haColonna = (dbh.prepare("PRAGMA table_info(credentials)").all() as Array<{ name: string }>).some((c) => c.name === "credential_ref");
+  if (!haColonna) return null;
+  const r = dbh.prepare("SELECT credential_ref FROM credentials WHERE id = ?").get(id) as { credential_ref: string | null } | undefined;
+  return r?.credential_ref?.trim() || null;
+}
+
+/** Il cliente di un database tenant, dal nome del file (`…/tenants/C70007.db`), per l'avviso nel log. */
+function nomeCliente(dbh: Database.Database): string {
+  return dbh.name.replace(/^.*[\\/]/, "").replace(/\.db$/, "");
+}
+
 export function eliminaCredenzialeDb(dbh: Database.Database, id: number): boolean {
-  return dbh.prepare("DELETE FROM credentials WHERE id = ?").run(id).changes > 0;
+  // da-vault (passo 6): con OpenBao acceso il segreto della voce va tolto anche da lì (i metadata, tutte le versioni).
+  const riferimento = vaultOpenBaoAcceso() ? riferimentoDi(dbh, id) : null;
+  const eliminata = dbh.prepare("DELETE FROM credentials WHERE id = ?").run(id).changes > 0;
+  if (eliminata && riferimento) cancellaDaOpenBao(riferimento, `${nomeCliente(dbh)}#${id}`);
+  return eliminata;
 }
 
 // ── regole delle API ──

@@ -35,10 +35,21 @@ async function main(): Promise<void> {
   if (argomenti.includes("--verifica")) {
     const v = await verificaMigrazione({ store, tenants });
     let diverse = 0;
+    let orfani = 0;
     for (const t of v.perTenant) {
-      console.info(`${t.codice}: ${t.controllate} controllate, ${t.diverse.length} diverse`);
+      console.info(`${t.codice}: ${t.controllate} controllate, ${t.diverse.length} diverse, ${t.orfani.length} orfani in OpenBao`);
       for (const d of t.diverse) console.info(`  #${d.id} «${d.nome}» (${d.percorso}): ${d.motivo}`);
+      for (const p of t.orfani) console.info(`  ORFANO ${p}`);
+      if (t.orfaniErrore) console.error(`  ATTENZIONE: orfani NON verificati (${t.orfaniErrore})`);
       diverse += t.diverse.length;
+      orfani += t.orfani.length;
+    }
+    if (orfani > 0) {
+      console.warn(
+        `${orfani} percorsi in OpenBao senza una voce che li usi (credenziale cancellata o segreto cambiato). ` +
+          "Se la voce è davvero andata, togli il segreto da OpenBao (bao kv metadata delete kv-domarc/<percorso>); " +
+          "un segreto cambiato dalla pagina si riscrive allo stesso percorso con --applica.",
+      );
     }
     if (diverse > 0) esci(`${diverse} voci con OpenBao diverso dalle colonne: rilancia --applica dopo aver tolto i loro riferimenti, o correggi in OpenBao`, 2);
     return;

@@ -18,7 +18,9 @@ export type ModoSblocco = "tpm" | "passphrase" | "domarc";
 /** Quello che serve del backend OpenBao da qui (per non importare `openbao.ts` in `crypto.ts`). */
 export interface StoreOpenBaoProcesso {
   leggiSync(percorso: string): ValoreSegreto;
-  get(percorso: string, opzioni?: { perConto?: string }): Promise<ValoreSegreto>;
+  get(percorso: string, opzioni?: { perConto?: string; perContoId?: string }): Promise<ValoreSegreto>;
+  /** Cancella il segreto con tutte le sue versioni (metadata). */
+  delete(percorso: string): Promise<void>;
   stato(): StatoStore;
 }
 

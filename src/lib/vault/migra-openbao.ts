@@ -11,7 +11,8 @@
  * - **Le colonne cifrate restano**: per una versione la lettura è doppia (con l'interruttore acceso, una voce senza
  *   riferimento si legge dalla colonna con un avviso). Svuotarle, con `VACUUM`, è il passo della versione dopo.
  * - `verificaMigrazione`: prima di accendere `DA_VAULT_OPENBAO`, confronta OpenBao e colonne voce per voce (una
- *   modifica fatta dalla pagina a interruttore spento non toglie il riferimento).
+ *   modifica fatta dalla pagina a interruttore spento non toglie il riferimento) ed elenca i percorsi ORFANI di OpenBao
+ *   (sotto la cartella del cliente, senza voce che li usi: revisione del 23/10, rilievo 7).
  */
 import type Database from "better-sqlite3";
 import { schemaVaultPresente } from "@/lib/db-tenant";
@@ -32,6 +33,11 @@ function slug(t: string): string {
     .replace(/^-+|-+$/g, "")
     .slice(0, 60)
     .replace(/-+$/g, "");
+}
+
+/** La cartella di un cliente in OpenBao: `clienti/<codcli>/da-ipam`. */
+export function prefissoCliente(codiceCliente: string): string {
+  return `clienti/${slug(codiceCliente) || "cliente"}/da-ipam`;
 }
 
 /** Il percorso di una voce in OpenBao: `clienti/<codcli>/da-ipam/<nome>-<id>`, minuscolo con trattini. */
@@ -109,11 +115,32 @@ export async function migraVersoOpenBao(op: {
   return { applicata: applica, perTenant };
 }
 
+export interface EsitoVerificaTenant {
+  codice: string;
+  controllate: number;
+  diverse: Array<{ id: number; nome: string; percorso: string; motivo: string }>;
+  /**
+   * Percorsi in OpenBao sotto la cartella del cliente che nessuna voce usa più (voce cancellata con OpenBao che non
+   * rispondeva, segreto cambiato dalla pagina, cancellazione in massa). Mai i valori.
+   */
+  orfani: string[];
+  /** Se l'elenco di OpenBao non si è potuto leggere: gli orfani NON sono stati verificati. */
+  orfaniErrore: string | null;
+}
+
 export async function verificaMigrazione(op: {
   store: SecretStore;
   tenants: TenantDaMigrare[];
-}): Promise<{ perTenant: Array<{ codice: string; controllate: number; diverse: Array<{ id: number; nome: string; percorso: string; motivo: string }> }> }> {
-  const perTenant = [];
+}): Promise<{ perTenant: EsitoVerificaTenant[] }> {
+  const perTenant: EsitoVerificaTenant[] = [];
+  // I riferimenti in uso, di tutti i clienti: un percorso è orfano solo se nessuna voce di nessun cliente lo usa.
+  const inUso = new Set<string>();
+  for (const t of op.tenants) {
+    if (!schemaVaultPresente(t.dbh)) continue;
+    for (const r of t.dbh.prepare("SELECT credential_ref FROM credentials WHERE credential_ref IS NOT NULL AND trim(credential_ref) != ''").all() as Array<{ credential_ref: string }>) {
+      inUso.add(r.credential_ref.trim());
+    }
+  }
   for (const t of op.tenants) {
     const diverse: Array<{ id: number; nome: string; percorso: string; motivo: string }> = [];
     let controllate = 0;
@@ -136,7 +163,14 @@ export async function verificaMigrazione(op: {
         }
       }
     }
-    perTenant.push({ codice: t.codice, controllate, diverse });
+    let orfani: string[] = [];
+    let orfaniErrore: string | null = null;
+    try {
+      orfani = (await op.store.list(prefissoCliente(t.codice))).filter((p) => !inUso.has(p));
+    } catch (e) {
+      orfaniErrore = messaggio(e);
+    }
+    perTenant.push({ codice: t.codice, controllate, diverse, orfani, orfaniErrore });
   }
   return { perTenant };
 }

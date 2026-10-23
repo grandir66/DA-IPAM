@@ -43,22 +43,25 @@ export function configurazioneOpenBao(env: Record<string, string | undefined>): 
   };
 }
 
-/** I `credential_ref` di tutte le credenziali dei clienti attivi: entrano nella cache a ogni giro. */
-export function riferimentiDelleCredenziali(): string[] {
-  const out = new Set<string>();
+/**
+ * I `credential_ref` di tutte le credenziali dei clienti attivi: entrano nella cache a ogni giro. Ogni riferimento
+ * porta la sua origine (cliente e credenziale): se è malformato la cache lo salta e dice quale voce è.
+ */
+export function riferimentiDelleCredenziali(): Array<{ percorso: string; origine: string }> {
+  const out: Array<{ percorso: string; origine: string }> = [];
   for (const t of getActiveTenants()) {
     try {
       const dbh = getTenantDb(t.codice_cliente);
       if (!schemaVaultPresente(dbh)) continue;
       const righe = dbh
-        .prepare("SELECT DISTINCT credential_ref FROM credentials WHERE credential_ref IS NOT NULL AND trim(credential_ref) != ''")
-        .all() as Array<{ credential_ref: string }>;
-      for (const r of righe) out.add(r.credential_ref.trim());
+        .prepare("SELECT id, credential_ref FROM credentials WHERE credential_ref IS NOT NULL AND trim(credential_ref) != '' ORDER BY id")
+        .all() as Array<{ id: number; credential_ref: string }>;
+      for (const r of righe) out.push({ percorso: r.credential_ref.trim(), origine: `${t.codice_cliente}#${r.id}` });
     } catch (e) {
       console.warn(`[vault] riferimenti del cliente ${t.codice_cliente} non letti (${e instanceof Error ? e.name : "errore"})`);
     }
   }
-  return [...out];
+  return out;
 }
 
 export function avviaVault(env: Record<string, string | undefined> = process.env): void {

@@ -125,14 +125,16 @@ export function pcDegliAccount(db: Database.Database, account: readonly string[]
     const parte = account.slice(i, i + 500);
     if (parte.length === 0) continue;
     const righe = db.prepare(
-      `SELECT a.account, COALESCE(NULLIF(h.custom_name, ''), NULLIF(h.hostname, ''), h.ip) AS nome, SUM(a.conteggio) AS n
+      `SELECT a.account, COALESCE(NULLIF(h.custom_name, ''), NULLIF(h.hostname, ''), h.ip) AS nome, h.ip, SUM(a.conteggio) AS n
        FROM host_accessi_utente a JOIN hosts h ON h.id = a.host_id
        WHERE a.giorno >= date('now', ?) AND a.account IN (${parte.map(() => "?").join(",")})
        GROUP BY a.account, a.host_id ORDER BY a.account, n DESC`,
-    ).all(`-${giorni} days`, ...parte) as Array<{ account: string; nome: string; n: number }>;
+    ).all(`-${giorni} days`, ...parte) as Array<{ account: string; nome: string; ip: string; n: number }>;
     for (const r of righe) {
       const l = out.get(r.account) ?? [];
-      if (l.length < quanti) l.push(r.nome);
+      // «DA-PROTECT.domarc.it» → «DA-PROTECT»: i nomi completi allargavano la tabella fino a nascondere l'esito (hub .8, 23/10).
+      const breve = r.nome === r.ip ? r.nome : r.nome.split(".")[0] || r.nome;
+      if (l.length < quanti) l.push(breve);
       out.set(r.account, l);
     }
   }

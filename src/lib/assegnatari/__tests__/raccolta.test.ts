@@ -139,7 +139,7 @@ test("WinRM: utente collegato e sessioni, una presenza al giorno; account di mac
   registraAccessi(db, r, "presenza");
   registraAccessi(db, r, "presenza");
   assert.deepEqual(accessiHost(db, 1, 30).map((a) => [a.account, a.conteggio]).sort(), [["m.rossi", 1], ["s.colombo", 1]]);
-  assert.deepEqual([...pcDegliAccount(db, ["s.colombo"], 30).entries()], [["s.colombo", ["pc-acq-03.cliente.local"]]]);
+  assert.deepEqual([...pcDegliAccount(db, ["s.colombo"], 30).entries()], [["s.colombo", ["pc-acq-03"]]], "il nome breve del PC");
 });
 
 test("persone di AD e allineamento degli assegnatari legati: dati da AD, disattivato con la data della prima volta", () => {

@@ -202,8 +202,8 @@ export default function ImportaDaAdPage() {
                           <TableCell>{r.cognome ?? <span className="font-semibold text-[#8E1B20] dark:text-[#E8625A]">—</span>}</TableCell>
                           <TableCell>{r.account}</TableCell>
                           <TableCell>{r.email ?? "—"}</TableCell>
-                          <TableCell>{r.reparto ?? "—"}</TableCell>
-                          <TableCell>{r.ruolo ?? "—"}</TableCell>
+                          <TableCell className="max-w-56 truncate" title={r.reparto ?? undefined}>{r.reparto ?? "—"}</TableCell>
+                          <TableCell className="max-w-48 truncate" title={r.ruolo ?? undefined}>{r.ruolo ?? "—"}</TableCell>
                           <TableCell>{quando(r.ultimoAccesso, false)}</TableCell>
                           <TableCell>{r.pc.length > 0 ? r.pc.join(", ") : <span className="text-muted-foreground">nessuno visto</span>}</TableCell>
                           <TableCell><Esito r={r} /></TableCell>

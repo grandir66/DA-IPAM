@@ -405,13 +405,17 @@ export default function InventoryAssetPage() {
 
           {isNis2View && (
             <TabsContent value="nis2">
-              <InventoryNis2Scheda form={form} setForm={setForm} assignees={assignees} locations={locations} refetchAssignees={refetchAssignees} refetchLocations={refetchLocations} />
-              <Card className="mt-4">
-                <CardHeader><CardTitle>Assegnatario proposto dagli accessi</CardTitle></CardHeader>
-                <CardContent>
-                  <PropostaAssegnatario assetId={Number(id)} onAssegnato={assegnatoDallaProposta} />
-                </CardContent>
-              </Card>
+              <InventoryNis2Scheda
+                form={form} setForm={setForm} assignees={assignees} locations={locations} refetchAssignees={refetchAssignees} refetchLocations={refetchLocations}
+                dopoResponsabilita={
+                  <Card>
+                    <CardHeader><CardTitle>Assegnatario proposto dagli accessi</CardTitle></CardHeader>
+                    <CardContent>
+                      <PropostaAssegnatario assetId={Number(id)} onAssegnato={assegnatoDallaProposta} />
+                    </CardContent>
+                  </Card>
+                }
+              />
               {(asset as { technical_data?: string | null }).technical_data && (
                 <div className="mt-4">
                   <TechnicalDataCard data={(asset as { technical_data?: string | null }).technical_data!} />

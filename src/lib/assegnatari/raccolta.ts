@@ -263,10 +263,16 @@ export async function raccogliAccessi(db: Database.Database, indexer: IndexerAcc
         lette.push(...righe);
         esito.senzaHost += senzaHost;
       }
-      db.transaction(() => {
+      // Un altro giro (un secondo processo, un giro a mano) può aver già scritto questa finestra: dentro la transazione
+      // si rilegge il cursore e, se è andato oltre l'inizio della finestra, non si somma due volte.
+      const scritta = db.transaction(() => {
+        const ora = (db.prepare("SELECT value FROM tenant_settings WHERE key = ?").get(CHIAVE_CURSORE_WAZUH) as { value: string } | undefined)?.value;
+        if (ora && Date.parse(ora) > f.da.getTime()) return false;
         registraAccessi(db, lette, "somma");
         scriviImpostazione(db, CHIAVE_CURSORE_WAZUH, f.a.toISOString());
-      })();
+        return true;
+      }).immediate();
+      if (!scritta) continue;
       esito.finestre++;
       esito.righe += lette.length;
       esito.cursore = f.a.toISOString();

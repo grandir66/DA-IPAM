@@ -171,3 +171,20 @@ test("persone di AD e allineamento degli assegnatari legati: dati da AD, disatti
   assert.equal((db.prepare("SELECT ad_disattivato_il AS d FROM asset_assignees WHERE id = 9").get() as { d: string }).d, "2026-10-02 08:00:00", "la prima data resta");
   assert.equal((db.prepare("SELECT name FROM asset_assignees WHERE id = 10").get() as { name: string }).name, "A mano", "quelli a mano non si toccano");
 });
+
+test("due giri insieme sulla stessa finestra: il secondo non somma di nuovo", async () => {
+  const db = dbProva();
+  db.prepare("INSERT INTO tenant_settings (key, value) VALUES (?, ?)").run(CHIAVE_CURSORE_WAZUH, "2026-10-22T18:00:00.000Z");
+  const risp = risposta([{ key: "PC-ACQ-03", doc_count: 4, utenti: { buckets: [bucketUtente("s.colombo", 4, "2026-10-22T19:00:00Z")] } }]);
+  // Il primo giro, mentre aspetta l'indexer, lascia passare il secondo che scrive la stessa finestra per intero.
+  let secondo: Promise<unknown> | null = null;
+  const lento: IndexerAccessi = {
+    async aggregaAlert() {
+      if (!secondo) secondo = raccogliAccessi(db, { aggregaAlert: async () => risp }, { giorni: 30, ora: new Date("2026-10-22T20:02:00Z") });
+      await secondo;
+      return risp;
+    },
+  };
+  await raccogliAccessi(db, lento, { giorni: 30, ora: new Date("2026-10-22T20:02:00Z") });
+  assert.equal((db.prepare("SELECT SUM(conteggio) AS n FROM host_accessi_utente WHERE fonte = 'wazuh_tastiera'").get() as { n: number }).n, 4);
+});

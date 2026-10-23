@@ -4,6 +4,12 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [0.9.896] — 2026-10-23 · Abbinamenti: asset con lo stesso nome
+
+### Cambiato
+
+- **Se in inventario c'è già un asset col nome del PC, la riga chiede «Collega a n. X» o «Crea nuovo»** e non si conferma senza scelta. Alla prima conferma vera NB-AGUZZOLI è finito con due asset: il n. 31, stesso nome ma legato all'IP passato a un iPhone, e il n. 36 nuovo. «Collega» sposta l'asset sull'host del PC, toglie il legame vecchio con l'apparato e scrive ogni campo cambiato nel diario. Il controllo è sul nome del PC, non sulla persona: più asset per persona restano normali.
+
 ## [0.9.895] — 2026-10-23 · Abbinamenti: chi usa i PC → asset e assegnatari
 
 ### Aggiunto

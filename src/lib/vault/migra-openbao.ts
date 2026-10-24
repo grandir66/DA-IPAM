@@ -9,7 +9,8 @@
  *   transazione per cliente. Un errore di OpenBao a metà lascia il cliente senza riferimenti nuovi (i segreti già
  *   scritti in OpenBao restano lì e si riscrivono uguali al giro dopo). Una voce che non si legge si salta e si dice.
  * - **Le colonne cifrate restano**: per una versione la lettura è doppia (con l'interruttore acceso, una voce senza
- *   riferimento si legge dalla colonna con un avviso). Svuotarle, con `VACUUM`, è il passo della versione dopo.
+ *   riferimento si legge dalla colonna con un avviso). Svuotarle, con `VACUUM`, è `svuota-colonne.ts`
+ *   (`scripts/da-vault-svuota-colonne.ts`, ADR 0035), a valle di questa migrazione e della sua verifica.
  * - `verificaMigrazione`: prima di accendere `DA_VAULT_OPENBAO`, confronta OpenBao e colonne voce per voce (una
  *   modifica fatta dalla pagina a interruttore spento non toglie il riferimento) ed elenca i percorsi ORFANI di OpenBao
  *   (sotto la cartella del cliente, senza voce che li usi: revisione del 23/10, rilievo 7).
@@ -17,32 +18,14 @@
 import type Database from "better-sqlite3";
 import { schemaVaultPresente } from "@/lib/db-tenant";
 import { campiVoceDb } from "@/lib/credentials/segreti";
+import { percorsoCredenziale, prefissoCliente } from "./percorsi";
 import { ErroreVault, type SecretStore, type ValoreSegreto } from "./tipi";
+
+export { percorsoCredenziale, prefissoCliente };
 
 export interface TenantDaMigrare {
   codice: string;
   dbh: Database.Database;
-}
-
-function slug(t: string): string {
-  return t
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 60)
-    .replace(/-+$/g, "");
-}
-
-/** La cartella di un cliente in OpenBao: `clienti/<codcli>/da-ipam`. */
-export function prefissoCliente(codiceCliente: string): string {
-  return `clienti/${slug(codiceCliente) || "cliente"}/da-ipam`;
-}
-
-/** Il percorso di una voce in OpenBao: `clienti/<codcli>/da-ipam/<nome>-<id>`, minuscolo con trattini. */
-export function percorsoCredenziale(codiceCliente: string, credentialId: number, nome: string): string {
-  return `clienti/${slug(codiceCliente) || "cliente"}/da-ipam/${slug(nome) || "credenziale"}-${credentialId}`;
 }
 
 function uguali(a: ValoreSegreto, b: ValoreSegreto): boolean {

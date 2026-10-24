@@ -21,6 +21,10 @@ export interface StoreOpenBaoProcesso {
   get(percorso: string, opzioni?: { perConto?: string; perContoId?: string }): Promise<ValoreSegreto>;
   /** Cancella il segreto con tutte le sue versioni (metadata). */
   delete(percorso: string): Promise<void>;
+  /** Il segreto letto ORA da OpenBao (non dalla cache), in modo sincrono: per chi scrive dentro una transazione (ADR 0035). */
+  getSync(percorso: string): ValoreSegreto;
+  /** Scrive il segreto in modo sincrono e lo rilegge; lancia `ErroreVault` se OpenBao non risponde, rifiuta o non torna uguale. */
+  putSync(percorso: string, valore: ValoreSegreto): void;
   stato(): StatoStore;
 }
 

@@ -138,6 +138,8 @@ describe("vault_openbao acceso", () => {
       leggiSync: () => { throw new Error("non usato"); },
       get: async () => { throw new Error("non usato"); },
       delete: async () => { throw new Error("non usato"); },
+      getSync: () => { throw new Error("non usato"); },
+      putSync: () => { throw new Error("non usato"); },
       stato: () => stato,
     };
     assert.match(motivoPausaVault() ?? "", /OpenBao non risponde da 31 minuti/);

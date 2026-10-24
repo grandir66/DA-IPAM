@@ -6,6 +6,8 @@
  * `giu = true` simula OpenBao spento: `fetch` lancia come undici quando la connessione è rifiutata.
  */
 import { randomBytes } from "node:crypto";
+import type { FetchSync } from "../../fetch-sync";
+import { ErroreVault } from "../../tipi";
 
 export interface RichiestaVista {
   metodo: string;
@@ -17,9 +19,15 @@ export interface RichiestaVista {
 
 export interface OpenBaoFinto {
   fetch: typeof fetch;
+  /** La stessa logica, sincrona: per `OpenBaoStore.putSync/getSync` (config `fetchSync`) senza worker né rete. */
+  fetchSync: FetchSync;
   kv: Map<string, Record<string, unknown>>;
   richieste: RichiestaVista[];
   giu: boolean;
+  /** Se impostato, le scritture (POST/PUT su data) rispondono con questo stato e non scrivono (es. 403: policy senza `create`). */
+  rifiutaScritture: number | null;
+  /** Dopo questo numero di scritture riuscite le successive vengono rifiutate con 500 (null = mai). */
+  scrittureAncoraPermesse: number | null;
   /** Durata dei token che il finto rilascia (lease_duration, secondi). */
   ttlSecondi: number;
   login: number;
@@ -37,6 +45,7 @@ export function creaOpenBaoFinto(op: { ora: () => number; ttlSecondi?: number; m
   const secretId = `sid-${randomBytes(12).toString("hex")}`;
   const url = op.url ?? "https://openbao.prova:8200";
 
+  const risp = (status: number, corpo: unknown): { status: number; corpo: unknown } => ({ status, corpo });
   const json = (status: number, corpo: unknown): Response =>
     new Response(corpo === null ? null : JSON.stringify(corpo), { status, headers: { "content-type": "application/json" } });
 
@@ -44,6 +53,8 @@ export function creaOpenBaoFinto(op: { ora: () => number; ttlSecondi?: number; m
     kv: new Map(),
     richieste: [],
     giu: false,
+    rifiutaScritture: null,
+    scrittureAncoraPermesse: null,
     ttlSecondi: op.ttlSecondi ?? 3600,
     login: 0,
     roleId,
@@ -54,30 +65,43 @@ export function creaOpenBaoFinto(op: { ora: () => number; ttlSecondi?: number; m
     },
     fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
       if (finto.giu) throw new TypeError("fetch failed");
+      const r = gestisci(input, init);
+      return json(r.status, r.corpo);
+    }) as typeof fetch,
+    fetchSync: (indirizzo, richiesta) => {
+      if (finto.giu) throw new ErroreVault("non_raggiungibile", "OpenBao non risponde (TypeError)");
+      const r = gestisci(indirizzo, { method: richiesta.method, headers: richiesta.headers, body: richiesta.body });
+      return { status: r.status, testo: r.corpo === null ? "" : JSON.stringify(r.corpo) };
+    },
+  };
+  return finto;
+
+  function gestisci(input: RequestInfo | URL, init?: RequestInit): { status: number; corpo: unknown } {
+    {
       const u = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
       const metodo = (init?.method ?? "GET").toUpperCase();
       const h = new Headers(init?.headers);
       const corpo = typeof init?.body === "string" ? init.body : null;
       finto.richieste.push({ metodo, percorso: u.pathname + u.search, token: h.get("x-vault-token"), utente: h.get("x-domarc-utente"), corpo });
 
-      if (u.origin !== url) return json(404, { errors: ["host sconosciuto"] });
+      if (u.origin !== url) return risp(404, { errors: ["host sconosciuto"] });
       if (u.pathname === "/v1/auth/approle/login" && metodo === "POST") {
         let b: { role_id?: string; secret_id?: string } = {};
         try {
           b = JSON.parse(corpo ?? "{}") as typeof b;
         } catch {
-          return json(400, { errors: ["corpo non valido"] });
+          return risp(400, { errors: ["corpo non valido"] });
         }
-        if (b.role_id !== roleId || b.secret_id !== secretId) return json(400, { errors: ["invalid role or secret ID"] });
+        if (b.role_id !== roleId || b.secret_id !== secretId) return risp(400, { errors: ["invalid role or secret ID"] });
         finto.login += 1;
         const t = `hvs.${randomBytes(16).toString("hex")}`;
         token.set(t, op.ora() + finto.ttlSecondi * 1000);
-        return json(200, { auth: { client_token: t, lease_duration: finto.ttlSecondi, renewable: true } });
+        return risp(200, { auth: { client_token: t, lease_duration: finto.ttlSecondi, renewable: true } });
       }
 
       const t = h.get("x-vault-token");
       const scade = t ? token.get(t) : undefined;
-      if (!t || scade === undefined || scade <= op.ora()) return json(403, { errors: ["permission denied"] });
+      if (!t || scade === undefined || scade <= op.ora()) return risp(403, { errors: ["permission denied"] });
 
       const dati = `/v1/${mount}/data/`;
       const meta = `/v1/${mount}/metadata/`;
@@ -85,19 +109,24 @@ export function creaOpenBaoFinto(op: { ora: () => number; ttlSecondi?: number; m
         const p = decodeURIComponent(u.pathname.slice(dati.length));
         if (metodo === "GET") {
           const v = finto.kv.get(p);
-          if (!v) return json(404, { errors: [] });
-          return json(200, { data: { data: v, metadata: { version: 1 } } });
+          if (!v) return risp(404, { errors: [] });
+          return risp(200, { data: { data: v, metadata: { version: 1 } } });
         }
         if (metodo === "POST" || metodo === "PUT") {
+          if (finto.rifiutaScritture !== null) return risp(finto.rifiutaScritture, { errors: ["permission denied"] });
+          if (finto.scrittureAncoraPermesse !== null) {
+            if (finto.scrittureAncoraPermesse <= 0) return risp(500, { errors: ["internal error"] });
+            finto.scrittureAncoraPermesse -= 1;
+          }
           let b: { data?: Record<string, unknown> } = {};
           try {
             b = JSON.parse(corpo ?? "{}") as typeof b;
           } catch {
-            return json(400, { errors: ["corpo non valido"] });
+            return risp(400, { errors: ["corpo non valido"] });
           }
-          if (!b.data || typeof b.data !== "object") return json(400, { errors: ["manca data"] });
+          if (!b.data || typeof b.data !== "object") return risp(400, { errors: ["manca data"] });
           finto.kv.set(p, { ...b.data });
-          return json(200, { data: { version: 1 } });
+          return risp(200, { data: { version: 1 } });
         }
       }
       if (u.pathname.startsWith(meta)) {
@@ -112,18 +141,17 @@ export function creaOpenBaoFinto(op: { ora: () => number; ttlSecondi?: number; m
             const i = resto.indexOf("/");
             figli.add(i < 0 ? resto : `${resto.slice(0, i)}/`);
           }
-          if (figli.size === 0) return json(404, { errors: [] });
-          return json(200, { data: { keys: [...figli].sort() } });
+          if (figli.size === 0) return risp(404, { errors: [] });
+          return risp(200, { data: { keys: [...figli].sort() } });
         }
         if (metodo === "DELETE") {
           finto.kv.delete(p);
-          return json(204, null);
+          return risp(204, null);
         }
       }
-      return json(405, { errors: ["metodo non previsto dal finto"] });
-    }) as typeof fetch,
-  };
-  return finto;
+      return risp(405, { errors: ["metodo non previsto dal finto"] });
+    }
+  }
 }
 
 /**

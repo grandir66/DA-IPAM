@@ -14,8 +14,12 @@
  * - **Letture per conto di una persona** (la «mostra password»): `get(p, { perConto })` va sempre a OpenBao, manda
  *   `X-Domarc-Utente` (OpenBao lo scrive nel registro, `sys/config/auditing/request-headers`) e non usa la cache.
  *
+ * - **Scritture sincrone** (`putSync`, `getSync`): per i chiamanti sincroni dentro una transazione del database (ADR 0035).
+ *   Fermano il thread per la durata della richiesta (`fetch-sync.ts`); le letture dell'app restano sulla cache.
+ *
  * Nessun messaggio contiene valori, token o secret_id.
  */
+import { fetchSync as fetchSyncVero, type FetchSync } from "./fetch-sync";
 import { controllaPercorso, ErroreVault, percorsoValido, type OpzioniGet, type SecretStore, type StatoStore, type ValoreSegreto } from "./tipi";
 
 export const DURATA_TOKEN_MS = 20 * 60_000;
@@ -24,6 +28,8 @@ const MARGINE_TOKEN_MS = 60_000;
 const AGGIORNA_OGNI_MS = 5 * 60_000;
 const DURATA_CACHE_MS = 30 * 60_000;
 const TIMEOUT_MS = 10_000;
+/** Le richieste sincrone fermano il thread: timeout più corto di quelle asincrone. */
+const TIMEOUT_SYNC_MS = 5_000;
 /** Un percorso che manca dalla cache fa partire un giro, ma non più di uno ogni 30 secondi (niente raffica). */
 const RICARICA_PER_MANCANZA_OGNI_MS = 30_000;
 
@@ -46,7 +52,11 @@ export interface ConfigOpenBao {
   aggiornaOgniMs?: number;
   durataCacheMs?: number;
   timeoutMs?: number;
+  /** Timeout delle richieste sincrone (scritture dalla pagina), di serie 5 secondi. */
+  timeoutSyncMs?: number;
   fetch?: typeof fetch;
+  /** La richiesta sincrona (di serie quella del worker, `fetch-sync.ts`); le prove ne danno una sul finto. */
+  fetchSync?: FetchSync;
   ora?: () => number;
 }
 
@@ -89,6 +99,8 @@ export class OpenBaoStore implements SecretStore {
   private saltatiSegnalati = new Set<string>();
   /** Ultimo giro fatto partire da un percorso mancante (ms); 0 = mai. */
   private ultimaRicaricaPerMancanza = 0;
+  /** Scritture sincrone fatte mentre un giro della cache è in corso: il giro non le deve cancellare con un valore vecchio. */
+  private scritture: Map<string, ValoreSegreto> | null = null;
 
   constructor(config: ConfigOpenBao) {
     this.c = {
@@ -96,6 +108,8 @@ export class OpenBaoStore implements SecretStore {
       aggiornaOgniMs: AGGIORNA_OGNI_MS,
       durataCacheMs: DURATA_CACHE_MS,
       timeoutMs: TIMEOUT_MS,
+      timeoutSyncMs: TIMEOUT_SYNC_MS,
+      fetchSync: fetchSyncVero,
       fetch: globalThis.fetch.bind(globalThis),
       ora: Date.now,
       ...config,
@@ -200,11 +214,86 @@ export class OpenBaoStore implements SecretStore {
     return out;
   }
 
+  // ── HTTP sincrono (solo per le scritture dalla pagina, ADR 0035) ─────────────
+
+  private richiestaSync(metodo: string, percorsoApi: string, op: { token?: string; corpo?: unknown } = {}): Risposta {
+    const intestazioni: Record<string, string> = { accept: "application/json" };
+    if (op.token) intestazioni["X-Vault-Token"] = op.token;
+    if (op.corpo !== undefined) intestazioni["content-type"] = "application/json";
+    const r = this.c.fetchSync(`${this.c.url}/v1/${percorsoApi}`, {
+      method: metodo,
+      headers: intestazioni,
+      body: op.corpo === undefined ? undefined : JSON.stringify(op.corpo),
+      timeoutMs: this.c.timeoutSyncMs,
+    });
+    let corpo: unknown = null;
+    if (r.testo) {
+      try {
+        corpo = JSON.parse(r.testo);
+      } catch {
+        corpo = null;
+      }
+    }
+    return { status: r.status, corpo };
+  }
+
+  private loginSync(): string {
+    let secretId: string;
+    try {
+      secretId = this.c.secretId();
+    } catch {
+      throw new ErroreVault("configurazione", "Il secret_id di OpenBao non è leggibile: file della credenziale mancante o senza permessi (configurazione dell'appliance)");
+    }
+    const r = this.richiestaSync("POST", "auth/approle/login", { corpo: { role_id: this.c.roleId, secret_id: secretId } });
+    const auth = (r.corpo as { auth?: { client_token?: unknown; lease_duration?: unknown } } | null)?.auth;
+    if (r.status !== 200 || typeof auth?.client_token !== "string") {
+      throw new ErroreVault("rifiutato", `OpenBao ha rifiutato il login AppRole (HTTP ${r.status})`);
+    }
+    const lease = typeof auth.lease_duration === "number" && auth.lease_duration > 0 ? auth.lease_duration * 1000 : DURATA_TOKEN_MS;
+    this.token = { valore: auth.client_token, scade: this.c.ora() + Math.min(lease, DURATA_TOKEN_MS) };
+    return this.token.valore;
+  }
+
+  private conTokenSync(metodo: string, percorsoApi: string, op: { corpo?: unknown } = {}): Risposta {
+    const token = this.token && this.c.ora() < this.token.scade - MARGINE_TOKEN_MS ? this.token.valore : this.loginSync();
+    const r = this.richiestaSync(metodo, percorsoApi, { ...op, token });
+    if (r.status !== 403) return r;
+    this.token = null;
+    return this.richiestaSync(metodo, percorsoApi, { ...op, token: this.loginSync() });
+  }
+
+  /** Il segreto letto ORA da OpenBao (mai dalla cache), in modo sincrono. `non_trovato` se non c'è. */
+  getSync(percorso: string): ValoreSegreto {
+    controllaPercorso(percorso);
+    const r = this.conTokenSync("GET", this.apiDati(percorso));
+    if (r.status === 404) throw new ErroreVault("non_trovato", `Il segreto «${percorso}» non è in OpenBao`);
+    if (r.status !== 200) throw new ErroreVault("rifiutato", `OpenBao ha rifiutato la lettura di «${percorso}» (HTTP ${r.status})`);
+    return valoreDa((r.corpo as { data?: { data?: unknown } } | null)?.data?.data);
+  }
+
+  /**
+   * Scrive (sostituisce) il segreto, in modo sincrono, e lo rilegge da OpenBao: ritorna solo se il valore riletto è
+   * uguale. La cache vede subito il valore nuovo (anche se il percorso non c'era), e un giro in corso non lo cancella.
+   */
+  putSync(percorso: string, valore: ValoreSegreto): void {
+    controllaPercorso(percorso);
+    const r = this.conTokenSync("POST", this.apiDati(percorso), { corpo: { data: { ...valore } } });
+    if (r.status !== 200 && r.status !== 204) throw new ErroreVault("rifiutato", `OpenBao ha rifiutato la scrittura di «${percorso}» (HTTP ${r.status})`);
+    const riletto = this.getSync(percorso);
+    const chiavi = Object.keys(valore).sort();
+    const uguale = Object.keys(riletto).length === chiavi.length && chiavi.every((k) => riletto[k] === valore[k]);
+    if (!uguale) throw new ErroreVault("rifiutato", `Il segreto «${percorso}» riletto da OpenBao non torna uguale a quello scritto`);
+    const nuovo = Object.freeze({ ...valore });
+    this.cache.set(percorso, nuovo);
+    this.scritture?.set(percorso, nuovo);
+  }
+
   // ── Cache ─────────────────────────────────────────────────────────────────
 
   /** Un giro: ricarica cartelle e percorsi in più. Se fallisce la cache di prima resta (fino alla sua durata). */
   async aggiorna(): Promise<void> {
     if (this.inCorso) return this.inCorso;
+    this.scritture = new Map();
     this.inCorso = (async () => {
       try {
         const nuova = new Map<string, ValoreSegreto>();
@@ -237,6 +326,7 @@ export class OpenBaoStore implements SecretStore {
           if (v) nuova.set(p, v);
         }
         this.saltati = saltati;
+        for (const [p, v] of this.scritture ?? []) nuova.set(p, v);
         this.cache = nuova;
         this.caricatoAlle = this.c.ora();
         this.ultimoErrore = null;
@@ -245,6 +335,7 @@ export class OpenBaoStore implements SecretStore {
         throw e;
       } finally {
         this.inCorso = null;
+        this.scritture = null;
       }
     })();
     return this.inCorso;

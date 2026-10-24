@@ -4,6 +4,13 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-24 · Configurazione iniziale: rete dell'appliance proposta e passi a schede
+
+### Aggiunto
+
+- **La prima subnet parte dalla rete dell'appliance.** Il wizard legge interfacce, rotta predefinita e `resolv.conf` della macchina (`src/lib/onboarding/rete-appliance.ts`, puro e provato) e riempie CIDR, gateway e DNS della prima subnet, il DNS predefinito e, se c'è un dominio di ricerca, dominio e Base DN di Active Directory. Sceglie l'interfaccia di `APPLIANCE_LAN_IP`, poi quella della rotta predefinita; Docker, NetBird (`wt0`), WireGuard e link-local esclusi. Solo proposte: si scrive con «Crea rete», e una rete o un DNS già salvati non si toccano. Nel passo Router un pulsante offre il gateway come router (non precompilato: senza credenziale fermerebbe «Avanti»).
+- **Passi a schede.** In testa al wizard le cinque schede (Credenziali, Router, DNS, Active Directory, Subnet) con la spunta su ciò che è già salvato; si salta a qualunque passo. Lasciando un passo i suoi dati si salvano: andando avanti un errore ferma, andando indietro si va comunque con un avviso. «Crea rete» salva comunque router, DNS e AD prima di creare la rete.
+
 ## [Non rilasciato] — 2026-10-23 · da-vault: archivio a slot, «Mostra password», KeePass, OpenBao per l'hub (tutto spento di serie)
 
 ### Aggiunto

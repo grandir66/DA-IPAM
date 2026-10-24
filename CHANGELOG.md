@@ -4,6 +4,24 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-25 · da-vault: i segreti dalla pagina vanno subito in OpenBao, e le colonne cifrate si possono svuotare (hub, `DA_VAULT_OPENBAO=1`)
+
+### Aggiunto
+
+- **Scrittura in OpenBao.** Con `DA_VAULT_OPENBAO=1` (solo l'hub) un segreto creato o cambiato dalla pagina o dall'API va **subito** in OpenBao (`clienti/<codcli>/da-ipam/<nome>-<id>`, come la migrazione): la riga prende `credential_ref` e le sei colonne cifrate restano vuote. Prima un segreto cambiato dalla pagina toglieva il riferimento e rimetteva il valore nella colonna, cioè riempiva ciò che lo svuotamento deve vuotare. OpenBao spento, non configurato, che rifiuta o che rilegge un valore diverso = **503 col motivo** e niente salvato, mai un ripiego sulla colonna (ADR 0035). La richiesta è sincrona (worker + `Atomics.wait`) perché `creaVoceDb`/`modificaVoceDb` stanno dentro le transazioni di apparati, AD e controller: il server si ferma per i millisecondi della scrittura.
+- **`scripts/da-vault-svuota-colonne.ts`**: svuota le sei colonne cifrate di `credentials` dei clienti attivi, dopo la migrazione. **A vuoto di serie**, `--applica` esplicito, `--verifica` dopo. Svuota solo le righe con riferimento il cui segreto in OpenBao (letto ora) è uguale alla colonna; una differenza, un segreto mancante, una riga senza riferimento o OpenBao giù = esce 2 e **non tocca niente in nessun cliente**. Con `--applica`: copia del database in `<dati>/backups/` (con `quick_check`), una transazione per cliente col ricontrollo, checkpoint e `VACUUM` (i valori non restano nel file). Nel rapporto solo numeri, id e nomi di riga.
+- La vista mascherata delle credenziali porta `segreti_non_leggibili` (il motivo) quando OpenBao non risponde oltre la cache, e i `ha_…` valgono falso: non vuol dire «assente».
+
+### Cambiato
+
+- **Letture dirette portate sul lettore unico** (`segreti.ts`): la prova di una voce Windows (`credentials/trova.ts`), gli account propri (`integrations/self-identity.ts`), l'utente di una voce di controller (`controllers/credenziale.ts`), l'utente nel `for_edit` di `/api/credentials/[id]` (503 col motivo se OpenBao non risponde, non un modulo con l'utente vuoto), la maschera `ha_…` dell'elenco e della voce, e «WinRM disponibile» delle pagine patch (la CTE guarda il riferimento). Perché: con le colonne vuote il vecchio codice le avrebbe lette come «segreto assente».
+- `togliRiferimentoSeCambianoSegreti` non c'è più (sostituita dalla scrittura in OpenBao).
+
+### Da sapere
+
+- Dopo lo svuotamento la copia in `<dati>/backups/` contiene i segreti cifrati con la chiave dell'appliance: è il punto di ritorno, si cancella quando l'hub è verificato.
+- Le altre tabelle che cifrano (binding con segreto inline, integrazioni, AD, `system_credentials`) non hanno un riferimento e restano come sono.
+
 ## [Non rilasciato] — 2026-10-24 · Configurazione iniziale: rete dell'appliance proposta e passi a schede
 
 ### Aggiunto

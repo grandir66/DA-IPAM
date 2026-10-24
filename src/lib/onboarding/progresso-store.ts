@@ -14,6 +14,7 @@ import { getSetting, setSetting } from "@/lib/db-hub";
 import { getAdIntegrationById, getDeviceCredentialBindings, getNetworkById, getNetworkDeviceById, getNetworkRouterId } from "@/lib/db";
 import { vociDelRouter } from "@/lib/devices/binding-apparato";
 import { PASSO } from "./passi";
+import type { ReteAppliance } from "./rete-appliance";
 import { chiaveProgresso, leggiProgresso, scriviProgresso, type ProgressoWizard } from "./progresso";
 
 export interface RouterDelWizard {
@@ -52,6 +53,11 @@ export interface RiepilogoWizard {
   ad: AdDelWizard | null;
   /** Il DNS del passo 3, se già salvato (impostazione dell'hub). */
   dns_predefinito: string | null;
+  /**
+   * La rete su cui è installata l'appliance, da proporre nei campi (24/10).
+   * La aggiunge la rotta (legge la macchina): qui resta assente.
+   */
+  rete_appliance?: ReteAppliance | null;
 }
 
 export function leggiRiepilogoWizard(tenantCode: string): RiepilogoWizard {

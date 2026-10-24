@@ -8,15 +8,17 @@
  */
 export interface PassoWizard {
   titolo: string;
+  /** Etichetta della scheda in testa al wizard (24/10): corta, ci stanno tutte a 390 px scorrendo. */
+  breve: string;
   descrizione: string;
 }
 
 export const PASSI_WIZARD: readonly PassoWizard[] = [
-  { titolo: "Credenziali (archivio)", descrizione: "Le voci che useranno router, Active Directory e subnet" },
-  { titolo: "Router / gateway", descrizione: "ARP e, se supportato, DHCP" },
-  { titolo: "DNS", descrizione: "Risoluzione nomi per le subnet" },
-  { titolo: "Active Directory", descrizione: "Dominio e sincronizzazione (opz.)" },
-  { titolo: "Prima subnet", descrizione: "Rete da analizzare" },
+  { titolo: "Credenziali (archivio)", breve: "Credenziali", descrizione: "Le voci che useranno router, Active Directory e subnet" },
+  { titolo: "Router / gateway", breve: "Router", descrizione: "ARP e, se supportato, DHCP" },
+  { titolo: "DNS", breve: "DNS", descrizione: "Risoluzione nomi per le subnet" },
+  { titolo: "Active Directory", breve: "Active Directory", descrizione: "Dominio e sincronizzazione (opz.)" },
+  { titolo: "Prima subnet", breve: "Subnet", descrizione: "Rete da analizzare" },
 ];
 
 /** Indici dei passi, per non scrivere numeri nudi nel wizard. */

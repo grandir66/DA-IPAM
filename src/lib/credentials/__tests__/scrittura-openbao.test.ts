@@ -294,16 +294,38 @@ describe("la cancellazione e la lettura dopo la scrittura", () => {
     assert.equal(finto.kv.has(percorso), false);
   });
 
-  it("un giro della cache in corso non cancella il segreto appena scritto", async () => {
-    // Guasto provato: il giro costruisce la cache nuova da `percorsiExtra` (letto dal database PRIMA della scrittura) e la
-    // mette al posto della vecchia: senza il registro delle scritture la voce appena creata sparirebbe fino al giro dopo.
-    const giro = store.aggiorna();
+  it("un giro della cache che ha già letto il valore vecchio non lo rimette al posto del nuovo", async () => {
+    // Guasto provato: il giro legge OpenBao, la scrittura sincrona arriva mentre la risposta è in viaggio, e poi il giro
+    // mette la sua cache (col valore vecchio) al posto della vecchia: senza il registro delle scritture la modifica
+    // sparirebbe dalle letture dell'app fino al giro dopo (5 minuti), e il segreto cambiato parrebbe ancora quello di prima.
     const e = withTenant(T, () => creaVoceDb(db(), NUOVA));
     assert.ok(e.ok);
+    const percorso = `clienti/${CLIENTE}/da-ipam/firewall-sede-${e.vista.id}`;
+    let letto!: () => void;
+    const dopoLaLettura = new Promise<void>((ok) => { letto = ok; });
+    let apri!: () => void;
+    const cancello = new Promise<void>((ok) => { apri = ok; });
+    let ritarda = false;
+    const fetchLento: typeof fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const r = await finto.fetch(input, init); // il finto risponde SUBITO col valore di quel momento
+      if (ritarda && String(input).endsWith(`/data/${percorso}`) && (init?.method ?? "GET") === "GET") {
+        letto();
+        await cancello; // ... ma la risposta arriva al giro solo dopo la scrittura
+      }
+      return r;
+    }) as typeof fetch;
+    const s2 = new OpenBaoStore({
+      url: finto.url, roleId: finto.roleId, secretId: () => finto.secretId, cartelle: [], percorsiExtra: () => [percorso],
+      fetch: fetchLento, fetchSync: finto.fetchSync, ora: () => adesso,
+    });
+    await s2.aggiorna(); // la cache caricata, col token
+    ritarda = true;
+    const giro = s2.aggiorna();
+    await dopoLaLettura; // il giro ha letto il valore VECCHIO
+    s2.putSync(percorso, { username: "admin", password: "pw-nuova-durante-il-giro" });
+    apri();
     await giro;
-    const c = withTenant(T, () => campiVoceDb(db(), e.vista.id));
-    assert.ok(c.ok, c.ok ? "" : c.motivo);
-    assert.deepEqual(c.ok && c.campi, { username: "admin", password: "pw-segreta-91" });
+    assert.equal(s2.leggiSync(percorso).password, "pw-nuova-durante-il-giro");
   });
 });
 

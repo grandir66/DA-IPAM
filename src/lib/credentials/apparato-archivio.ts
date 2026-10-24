@@ -58,11 +58,11 @@ export interface ConfermaRimozione {
   riusciti: number;
 }
 
-/** Un rifiuto con lo stato HTTP che la rotta risponde; 409 con `conferma` = serve l'ok dell'utente. */
+/** Un rifiuto con lo stato HTTP che la rotta risponde; 409 con `conferma` = serve l'ok dell'utente; 503 = i segreti non sono andati in OpenBao. */
 export class RifiutoCredenziali extends Error {
   constructor(
     messaggio: string,
-    readonly stato: 400 | 404 | 409 = 400,
+    readonly stato: 400 | 404 | 409 | 503 = 400,
     readonly conferma: ConfermaRimozione | null = null,
   ) {
     super(messaggio);

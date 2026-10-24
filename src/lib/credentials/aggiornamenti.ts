@@ -9,61 +9,60 @@
  */
 import type { z } from "zod";
 import { encrypt } from "@/lib/crypto";
-import { vaultOpenBaoAcceso } from "@/lib/vault/stato";
 import type { CredentialSchema } from "@/lib/validators";
 import type { ColonneCredenziale } from "./archivio";
 
 type DatiCredenziale = z.infer<typeof CredentialSchema>;
 
 /**
+ * Come si scrive un segreto nelle colonne: cifrato (di serie) o IN CHIARO. In chiaro è solo per l'hub con OpenBao
+ * (da-vault, ADR 0035): `archivio.ts` ragiona sui valori veri (campi richiesti, cosa cambia) e poi li manda in OpenBao,
+ * lasciando le colonne vuote; il guardiano di `scrittura-openbao.ts` impedisce che un valore in chiaro arrivi al database.
+ */
+export interface OpzioniSegreti {
+  chiaro?: boolean;
+}
+
+const come = (o: OpzioniSegreti): ((v: string) => string) => (o.chiaro ? (v) => v : encrypt);
+
+/**
  * @param data  corpo validato (CredentialSchema.partial())
  * @param corpo corpo grezzo: serve a distinguere «porta assente» da «porta
  *              vuota» (che Zod rende entrambe undefined); vuota = torna standard.
  */
-export function aggiornamentiCredenziale(data: Partial<DatiCredenziale>, corpo: unknown): Record<string, unknown> {
+export function aggiornamentiCredenziale(data: Partial<DatiCredenziale>, corpo: unknown, opzioni: OpzioniSegreti = {}): Record<string, unknown> {
+  const cifra = come(opzioni);
   const updates: Record<string, unknown> = {};
   if (data.name !== undefined) updates.name = data.name;
   if (data.credential_type !== undefined) updates.credential_type = data.credential_type;
   // Metodo: presente = si scrive; null = torna al primo del tipo.
   if (data.auth_method !== undefined) updates.auth_method = data.auth_method ?? null;
   // Lo username la pagina lo manda precompilato: presente = si scrive.
-  if (data.username !== undefined) updates.encrypted_username = data.username ? encrypt(data.username) : null;
-  if (data.password) updates.encrypted_password = encrypt(data.password);
+  if (data.username !== undefined) updates.encrypted_username = data.username ? cifra(data.username) : null;
+  if (data.password) updates.encrypted_password = cifra(data.password);
   // Una chiave nuova porta la sua passphrase o nessuna: quella vecchia era
   // della chiave vecchia, e con la chiave nuova la decifratura fallirebbe.
   if (data.private_key) {
-    updates.encrypted_private_key = encrypt(data.private_key);
-    updates.encrypted_key_passphrase = data.passphrase ? encrypt(data.passphrase) : null;
+    updates.encrypted_private_key = cifra(data.private_key);
+    updates.encrypted_key_passphrase = data.passphrase ? cifra(data.passphrase) : null;
   } else if (data.passphrase) {
-    updates.encrypted_key_passphrase = encrypt(data.passphrase);
+    updates.encrypted_key_passphrase = cifra(data.passphrase);
   }
-  if (data.auth_key) updates.encrypted_auth_key = encrypt(data.auth_key);
-  if (data.priv_key) updates.encrypted_priv_key = encrypt(data.priv_key);
+  if (data.auth_key) updates.encrypted_auth_key = cifra(data.auth_key);
+  if (data.priv_key) updates.encrypted_priv_key = cifra(data.priv_key);
   // Protocolli e livello SNMPv3 non sono segreti: presenti = si scrivono, vuoti →
   // null.
   if (data.auth_protocol !== undefined) updates.auth_protocol = data.auth_protocol || null;
   if (data.priv_protocol !== undefined) updates.priv_protocol = data.priv_protocol || null;
   if (data.security_level !== undefined) updates.security_level = data.security_level || null;
   if (corpo && typeof corpo === "object" && "port" in corpo) updates.port = data.port ?? null;
-  togliRiferimentoSeCambianoSegreti(updates);
   return updates;
 }
 
-const COLONNE_SEGRETE = ["encrypted_username", "encrypted_password", "encrypted_private_key", "encrypted_key_passphrase", "encrypted_auth_key", "encrypted_priv_key"];
-
-/**
- * da-vault, passo 6: con `DA_VAULT_OPENBAO=1` un segreto cambiato (o svuotato) dalla pagina toglie `credential_ref`:
- * la voce torna a leggersi dalla colonna, che ha il valore nuovo, e la migrazione la riporta in OpenBao. Così il
- * valore in OpenBao non resta indietro senza che nessuno lo veda. Interruttore spento: niente.
- */
-export function togliRiferimentoSeCambianoSegreti(updates: Record<string, unknown>): void {
-  if (!vaultOpenBaoAcceso()) return;
-  if (COLONNE_SEGRETE.some((c) => c in updates)) updates.credential_ref = null;
-}
-
 /** Colonne di una voce nuova (POST): i segreti cifrati, i vuoti come NULL. */
-export function colonneNuovaCredenziale(data: DatiCredenziale): ColonneCredenziale {
-  const cifra = (v: string | undefined) => (v ? encrypt(v) : null);
+export function colonneNuovaCredenziale(data: DatiCredenziale, opzioni: OpzioniSegreti = {}): ColonneCredenziale {
+  const comeScritto = come(opzioni);
+  const cifra = (v: string | undefined) => (v ? comeScritto(v) : null);
   return {
     name: data.name,
     credential_type: data.credential_type,

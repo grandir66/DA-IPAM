@@ -6,8 +6,8 @@
  *   o segreto assente = rifiuto dichiarato, nessun ripiego sulla colonna;
  * - senza riferimento (doppia lettura, per una versione): si legge la colonna e si scrive un avviso, una volta per voce;
  * - interruttore spento: il riferimento non conta, tutto come oggi;
- * - una modifica dei segreti dalla pagina toglie il riferimento (la voce torna alla colonna con il valore nuovo e la
- *   migrazione la riporta in OpenBao).
+ * - una modifica dei segreti dalla pagina NON toglie più il riferimento (ADR 0035): il segreto nuovo va in OpenBao
+ *   (vedi `credentials/__tests__/scrittura-openbao.test.ts`).
  *
  * Run: node --import tsx --test src/lib/vault/__tests__/doppia-lettura.test.ts
  */
@@ -157,10 +157,13 @@ describe("interruttore acceso, senza il riferimento (doppia lettura)", () => {
 });
 
 describe("modifica dalla pagina", () => {
-  it("con l'interruttore acceso, un segreto cambiato toglie il riferimento; senza segreti nuovi resta", () => {
-    assert.equal(aggiornamentiCredenziale({ password: "nuova" }, {}).credential_ref, null);
-    assert.equal("credential_ref" in aggiornamentiCredenziale({ name: "solo il nome" }, {}), false);
-    delete process.env.DA_VAULT_OPENBAO;
+  it("le colonne da scrivere non portano più il riferimento: lo decide archivio.ts, che manda i segreti in OpenBao", () => {
+    // Prima di ADR 0035 un segreto cambiato dalla pagina metteva `credential_ref = null` (la voce tornava alla colonna).
+    // Ora il riferimento resta e il segreto nuovo va in OpenBao: `aggiornamentiCredenziale` non lo tocca più.
     assert.equal("credential_ref" in aggiornamentiCredenziale({ password: "nuova" }, {}), false);
+    assert.equal("credential_ref" in aggiornamentiCredenziale({ password: "nuova" }, {}, { chiaro: true }), false);
+    // `chiaro`: i valori restano in chiaro in memoria (solo per l'hub con OpenBao, mai nel database: c'è il guardiano)
+    assert.equal(aggiornamentiCredenziale({ password: "nuova" }, {}, { chiaro: true }).encrypted_password, "nuova");
+    assert.notEqual(aggiornamentiCredenziale({ password: "nuova" }, {}).encrypted_password, "nuova");
   });
 });

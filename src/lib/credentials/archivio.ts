@@ -27,8 +27,22 @@ import type { Credential } from "@/types";
 import type { CredentialSchema } from "@/lib/validators";
 import { cancellaDaOpenBao } from "@/lib/vault/cancella";
 import { vaultOpenBaoAcceso } from "@/lib/vault/stato";
-import { aggiornamentiCredenziale, colonneNuovaCredenziale, togliRiferimentoSeCambianoSegreti } from "./aggiornamenti";
+import { aggiornamentiCredenziale, colonneNuovaCredenziale } from "./aggiornamenti";
 import { mascheraCredenziale, type CredenzialeVista } from "./maschera";
+import { COLONNE_SEGRETE } from "./segreti";
+import {
+  haColonnaRiferimento,
+  nomeClienteDb,
+  presenzaDa,
+  riferimentoDellaRiga,
+  salvaSegretiInOpenBao,
+  scriviInOpenBao,
+  segretiAttuali,
+  segretiUguali,
+  senzaSegreti,
+  vietaChiaroNelleColonne,
+  type SegretiPerColonna,
+} from "./scrittura-openbao";
 import {
   METODI_PER_TIPO,
   campiDelMetodo,
@@ -94,6 +108,7 @@ function leggi(dbh: Database.Database, id: number | bigint): Credential | undefi
 // ── CRUD ──
 
 export function creaCredenzialeDb(dbh: Database.Database, input: ColonneCredenziale): Credential {
+  vietaChiaroNelleColonne(input);
   const valori: Partial<Record<Colonna, unknown>> = { ...input, credential_type: tipoDaScrivere(input.credential_type) };
   // Solo le colonne con un valore: il vecchio ipam.db (facade senza tenant né
   // DEFAULT) non ha le colonne della tappa 2, e una voce che non le usa ci
@@ -106,6 +121,7 @@ export function creaCredenzialeDb(dbh: Database.Database, input: ColonneCredenzi
 }
 
 export function aggiornaCredenzialeDb(dbh: Database.Database, id: number, input: Partial<ColonneCredenziale>): Credential | undefined {
+  vietaChiaroNelleColonne(input);
   const campi: string[] = [];
   const valori: unknown[] = [];
   for (const c of COLONNE) {
@@ -128,16 +144,11 @@ function riferimentoDi(dbh: Database.Database, id: number): string | null {
   return r?.credential_ref?.trim() || null;
 }
 
-/** Il cliente di un database tenant, dal nome del file (`…/tenants/C70007.db`), per l'avviso nel log. */
-function nomeCliente(dbh: Database.Database): string {
-  return dbh.name.replace(/^.*[\\/]/, "").replace(/\.db$/, "");
-}
-
 export function eliminaCredenzialeDb(dbh: Database.Database, id: number): boolean {
   // da-vault (passo 6): con OpenBao acceso il segreto della voce va tolto anche da lì (i metadata, tutte le versioni).
   const riferimento = vaultOpenBaoAcceso() ? riferimentoDi(dbh, id) : null;
   const eliminata = dbh.prepare("DELETE FROM credentials WHERE id = ?").run(id).changes > 0;
-  if (eliminata && riferimento) cancellaDaOpenBao(riferimento, `${nomeCliente(dbh)}#${id}`);
+  if (eliminata && riferimento) cancellaDaOpenBao(riferimento, `${nomeClienteDb(dbh)}#${id}`);
   return eliminata;
 }
 
@@ -145,9 +156,13 @@ export function eliminaCredenzialeDb(dbh: Database.Database, id: number): boolea
 
 type DatiCredenziale = z.infer<typeof CredentialSchema>;
 
+/**
+ * `503` = i segreti non sono andati in OpenBao (da-vault, hub con l'interruttore acceso): spento, non configurato,
+ * rifiutato o riletto diverso. Il motivo sta in `errore`; niente è stato scritto, e mai una colonna al suo posto.
+ */
 export type EsitoVoce =
   | { ok: true; stato: 200 | 201; vista: CredenzialeVista }
-  | { ok: false; stato: 400 | 404 | 409; errore: string; usi?: UsiCredenziale };
+  | { ok: false; stato: 400 | 404 | 409 | 503; errore: string; usi?: UsiCredenziale };
 
 export type EsitoElimina = { ok: true } | { ok: false; stato: 404 | 409; errore: string; usi?: UsiCredenziale };
 
@@ -252,16 +267,45 @@ function controlla(
   return { ok: true, daSvuotare };
 }
 
+/** Le sei colonne segrete di una riga di colonne (in chiaro, con OpenBao), per colonna. */
+function segretiDa(colonne: Riga): SegretiPerColonna {
+  const out: SegretiPerColonna = {};
+  for (const c of COLONNE_SEGRETE) {
+    const v = colonne[c as Colonna];
+    out[c] = typeof v === "string" && v !== "" ? v : null;
+  }
+  return out;
+}
+
 /** POST /api/credentials. */
 export function creaVoceDb(dbh: Database.Database, dati: DatiCredenziale): EsitoVoce {
-  const colonne = colonneNuovaCredenziale(dati);
+  // da-vault (ADR 0035): con OpenBao acceso i segreti restano in chiaro in memoria, si controllano come sempre e poi
+  // vanno in OpenBao; le colonne restano vuote. Spento: il codice di sempre.
+  const inOpenBao = scriviInOpenBao();
+  const colonne = colonneNuovaCredenziale(dati, { chiaro: inOpenBao });
   const c = controlla(dati.credential_type, dati.auth_method ?? null, colonne, haCampiV3(dati));
   if (!c.ok) return { ok: false, stato: 400, errore: c.errore };
   // Un campo che il metodo non ha (lo username di una community dalla
   // creazione rapida) non si scrive.
   for (const col of c.daSvuotare) (colonne as Riga)[col] = null;
-  const voce = creaCredenzialeDb(dbh, colonne);
-  return { ok: true, stato: 201, vista: mascheraCredenziale(voce, 0) };
+  if (!inOpenBao) {
+    const voce = creaCredenzialeDb(dbh, colonne);
+    return { ok: true, stato: 201, vista: mascheraCredenziale(voce, 0) };
+  }
+  if (!haColonnaRiferimento(dbh)) {
+    return { ok: false, stato: 503, errore: "Lo schema del vault di questo cliente non è aggiornato (credential_ref manca): la credenziale non è stata salvata" };
+  }
+  const segreti = segretiDa(colonne as Riga);
+  // La riga nasce senza segreti (serve l'id per il percorso), poi i segreti vanno in OpenBao e la riga prende il riferimento.
+  // Se OpenBao non li accetta la riga si toglie: nessuna voce vuota resta in archivio.
+  const nuova = creaCredenzialeDb(dbh, senzaSegreti(colonne));
+  const s = salvaSegretiInOpenBao(dbh, nuova, null, segreti);
+  if (!s.ok) {
+    dbh.prepare("DELETE FROM credentials WHERE id = ?").run(nuova.id);
+    return { ok: false, stato: 503, errore: s.motivo };
+  }
+  if (s.percorso) dbh.prepare("UPDATE credentials SET credential_ref = ? WHERE id = ?").run(s.percorso, nuova.id);
+  return { ok: true, stato: 201, vista: mascheraCredenziale(leggi(dbh, nuova.id) as Credential, 0, presenzaDa(segreti)) };
 }
 
 /**
@@ -273,6 +317,9 @@ export function creaVoceDb(dbh: Database.Database, dati: DatiCredenziale): Esito
  * proverebbe ancora).
  */
 export function modificaVoceDb(dbh: Database.Database, id: number, dati: Partial<DatiCredenziale>, corpo: unknown): EsitoVoce {
+  // da-vault (ADR 0035): con OpenBao acceso le colonne segrete si ragionano in chiaro (i segreti attuali letti da
+  // OpenBao, o dalle colonne di una voce non ancora migrata, uniti alle modifiche) e poi vanno in OpenBao.
+  const inOpenBao = scriviInOpenBao();
   return dbh.transaction((): EsitoVoce => {
     const salvata = leggi(dbh, id);
     if (!salvata) return { ok: false, stato: 404, errore: "Credenziale non trovata" };
@@ -294,7 +341,18 @@ export function modificaVoceDb(dbh: Database.Database, id: number, dati: Partial
       }
     }
 
-    const aggiornamenti = aggiornamentiCredenziale(dati, corpo) as Riga;
+    let base = salvata as unknown as Riga;
+    let attuali: SegretiPerColonna | null = null;
+    if (inOpenBao) {
+      if (!haColonnaRiferimento(dbh)) {
+        return { ok: false, stato: 503, errore: "Lo schema del vault di questo cliente non è aggiornato (credential_ref manca): la credenziale non è stata modificata" };
+      }
+      const a = segretiAttuali(dbh, salvata as unknown as Record<string, unknown>);
+      if (!a.ok) return { ok: false, stato: 503, errore: a.motivo };
+      attuali = a.segreti;
+      base = { ...base, ...attuali } as Riga;
+    }
+    const aggiornamenti = aggiornamentiCredenziale(dati, corpo, { chiaro: inOpenBao }) as Riga;
     // Il metodo salvato non vale per un tipo nuovo: se la richiesta non ne dice
     // uno, si torna al primo del tipo.
     if (dati.auth_method === undefined && cambiaTipo && salvata.auth_method != null) aggiornamenti.auth_method = null;
@@ -303,7 +361,7 @@ export function modificaVoceDb(dbh: Database.Database, id: number, dati: Partial
     const metodoPrima = tipoSalvato ? ((salvata.auth_method ?? METODI_PER_TIPO[tipoSalvato][0]) as MetodoAccesso) : null;
     const cambiaForma = !tipoSalvato || !metodoPrima || formaSegreto(tipo, metodoDopo) !== formaSegreto(tipoSalvato, metodoPrima);
 
-    const risultante: Riga = { ...(salvata as unknown as Riga), ...aggiornamenti };
+    const risultante: Riga = { ...base, ...aggiornamenti };
     if (cambiaForma) {
       for (const col of SEGRETI) {
         if (!(col in aggiornamenti) && presente(risultante[col])) {
@@ -315,11 +373,37 @@ export function modificaVoceDb(dbh: Database.Database, id: number, dati: Partial
     const c = controlla(tipo, metodo, risultante, haCampiV3(dati));
     if (!c.ok) return { ok: false, stato: 400, errore: c.errore };
     for (const col of c.daSvuotare) aggiornamenti[col] = null;
-    togliRiferimentoSeCambianoSegreti(aggiornamenti);
+
+    // Con OpenBao: i segreti (se la richiesta ne tocca) vanno in OpenBao PRIMA di toccare il database, così un rifiuto
+    // lascia tutto com'era. Le colonne segrete non ricevono mai un valore: restano vuote (il guardiano lo impedisce).
+    let presenze: ReturnType<typeof presenzaDa> | undefined;
+    if (inOpenBao && attuali) {
+      const riferimento = riferimentoDellaRiga(salvata as unknown as Record<string, unknown>);
+      const tocca = COLONNE_SEGRETE.some((col) => col in aggiornamenti);
+      if (tocca) {
+        const finali = segretiDa({ ...base, ...aggiornamenti });
+        // Una voce che ha già il riferimento e i cui segreti non cambiano davvero (la pagina rimanda lo username
+        // precompilato) non genera una versione nuova in OpenBao.
+        if (!riferimento || !segretiUguali(finali, attuali)) {
+          const s = salvaSegretiInOpenBao(dbh, salvata, riferimento, finali);
+          if (!s.ok) return { ok: false, stato: 503, errore: s.motivo };
+          if (s.percorso) aggiornamenti.credential_ref = s.percorso;
+          // Tutti i segreti della voce sono ora in OpenBao (anche quelli che la richiesta non toccava, uniti sopra):
+          // le sei colonne si svuotano, non solo quelle della richiesta.
+          for (const col of COLONNE_SEGRETE) aggiornamenti[col as Colonna] = null;
+        } else {
+          // Niente di nuovo da scrivere: le colonne non si toccano.
+          for (const col of COLONNE_SEGRETE) delete aggiornamenti[col as Colonna];
+        }
+        presenze = presenzaDa(finali);
+      } else if (riferimento) {
+        presenze = presenzaDa(attuali);
+      }
+    }
 
     const voce = aggiornaCredenzialeDb(dbh, id, aggiornamenti as Partial<ColonneCredenziale>);
     if (!voce) return { ok: false, stato: 404, errore: "Credenziale non trovata" };
-    return { ok: true, stato: 200, vista: mascheraCredenziale(voce, totaleUsi(usiCredenzialeDb(dbh, id))) };
+    return { ok: true, stato: 200, vista: mascheraCredenziale(voce, totaleUsi(usiCredenzialeDb(dbh, id)), presenze) };
   })();
 }
 

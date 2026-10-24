@@ -35,8 +35,10 @@
  *
  * da-vault, passo 6 (hub, solo con `DA_VAULT_OPENBAO=1`): una voce con `credential_ref` si legge da OpenBao (la cache
  * del backend, `leggiSync`), mai dalle colonne; OpenBao oltre la cache o segreto assente = rifiuto col motivo. Una
- * voce senza riferimento si legge dalle colonne e lo si scrive nel log, una volta per voce (doppia lettura, per una
- * versione). Interruttore spento: il riferimento non conta.
+ * voce senza riferimento si legge dalle colonne e lo si scrive nel log, una volta per voce (doppia lettura, finché la
+ * migrazione non l'ha portata in OpenBao). Interruttore spento: il riferimento non conta. Le letture di UN valore
+ * (`colonneChiareDb`, `utentiDelleVociDb`) e la presenza dei segreti (`presenzaSegretiDb`) passano dalla stessa regola:
+ * dopo lo svuotamento delle colonne (ADR 0035) nessun'altra parte del codice legge le colonne cifrate di `credentials`.
  *
  * Non importa né `db.ts` né `db-tenant.ts`: riceve l'handle.
  */
@@ -351,6 +353,9 @@ export const COLONNA_DEL_CAMPO: Readonly<Record<CampoSegreto, string>> = {
   priv_key: "encrypted_priv_key",
 };
 
+/** Le sei colonne cifrate di una voce: quelle che con OpenBao restano vuote e che lo svuotamento azzera. */
+export const COLONNE_SEGRETE = Object.freeze(Object.values(COLONNA_DEL_CAMPO)) as readonly string[];
+
 const COSA_DEL_CAMPO: Readonly<Record<CampoSegreto, string>> = {
   username: "l'utente",
   password: "la password",
@@ -384,6 +389,72 @@ export function campiVoceDb(dbh: Database.Database, credentialId: number, opzion
     if (c.valore !== null && c.valore !== "") campi[campo] = c.valore;
   }
   return { ok: true, credentialId, nome, tipo: (testo(riga, "credential_type") ?? "").trim().toLowerCase(), port: porta(riga), campi };
+}
+
+/**
+ * Colonne in chiaro di una voce, per chi ha bisogno di UN valore e non di un segreto intero (l'utente nel modulo di
+ * modifica, il test di un account Windows): `""` = colonna vuota, `null` = non si decifra (come `safeDecrypt`, che prima
+ * di da-vault lo dava a chi leggeva la colonna). Con `DA_VAULT_OPENBAO=1` e il riferimento i valori vengono da OpenBao
+ * (la cache), e OpenBao oltre la cache è un rifiuto col motivo: mai la colonna al suo posto.
+ * `esiste: false` = la voce non c'è.
+ */
+export type ColonneChiare = Partial<Record<string, string | null>>;
+
+export function colonneChiareDb(
+  dbh: Database.Database,
+  credentialId: number,
+  colonne: readonly string[],
+): { ok: true; esiste: false } | { ok: true; esiste: true; nome: string; valori: ColonneChiare } | { ok: false; motivo: string } {
+  const riga = dbh.prepare("SELECT * FROM credentials WHERE id = ?").get(credentialId) as Riga | undefined;
+  if (!riga) return { ok: true, esiste: false };
+  const nome = testo(riga, "name") ?? `#${credentialId}`;
+  const pronta = rigaDaLeggere(dbh, riga, credentialId, nome);
+  if (!pronta.ok) return pronta;
+  const valori: ColonneChiare = {};
+  for (const colonna of colonne) {
+    const daOpenBao = pronta.riga[DA_OPENBAO];
+    if (daOpenBao) {
+      valori[colonna] = daOpenBao[colonna] ?? "";
+      continue;
+    }
+    const cifrato = testo(pronta.riga, colonna);
+    valori[colonna] = cifrato ? safeDecrypt(cifrato) : "";
+  }
+  return { ok: true, esiste: true, nome, valori };
+}
+
+/**
+ * Gli utenti in chiaro delle voci di certi tipi, in una query sola (niente N+1): l'elenco degli account "propri" di
+ * `integrations/self-identity.ts`. Una voce che non si legge ha `errore` (OpenBao oltre la cache) o `username: null`
+ * (colonna che non si decifra o vuota).
+ */
+export function utentiDelleVociDb(dbh: Database.Database, tipi: readonly string[]): Array<{ id: number; nome: string; username: string | null; errore?: string }> {
+  if (tipi.length === 0) return [];
+  const righe = dbh.prepare(`SELECT * FROM credentials WHERE credential_type IN (${tipi.map(() => "?").join(",")}) ORDER BY id`).all(...tipi) as Riga[];
+  return righe.map((riga) => {
+    const id = Number(riga.id);
+    const nome = testo(riga, "name") ?? `#${id}`;
+    const pronta = rigaDaLeggere(dbh, riga, id, nome);
+    if (!pronta.ok) return { id, nome, username: null, errore: pronta.motivo };
+    const c = decifra(pronta.riga, "encrypted_username", `La credenziale «${nome}»`, "l'utente");
+    return { id, nome, username: c.ok && c.valore ? c.valore : null };
+  });
+}
+
+/** Quali segreti ha la voce (la maschera delle API, che dei segreti dice solo se ci sono): per colonna. */
+export type PresenzaSegreti = { ok: true; presenti: Readonly<Record<string, boolean>> } | { ok: false; motivo: string };
+
+/**
+ * `presente()` sulle colonne com'era, o su OpenBao: con `DA_VAULT_OPENBAO=1` e il riferimento una colonna c'è se il
+ * campo c'è nel segreto (la cache); OpenBao oltre la cache = `ok: false` col motivo. Senza riferimento: le colonne.
+ * Prende la riga già letta (`SELECT *`): l'elenco delle voci non fa una query per voce.
+ */
+export function presenzaSegretiDb(dbh: Database.Database, voce: { id: number; name: string }): PresenzaSegreti {
+  const pronta = rigaDaLeggere(dbh, voce as unknown as Riga, voce.id, voce.name);
+  if (!pronta.ok) return pronta;
+  const presenti: Record<string, boolean> = {};
+  for (const colonna of COLONNE_SEGRETE) presenti[colonna] = presente(pronta.riga, colonna);
+  return { ok: true, presenti };
 }
 
 /** Tipo d'archivio che corrisponde al protocollo di un binding inline. */

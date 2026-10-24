@@ -31,6 +31,11 @@ export interface CredenzialeVista {
   ha_passphrase: boolean;
   ha_auth_key: boolean;
   ha_priv_key: boolean;
+  /**
+   * Perché i segreti della voce non si sono potuti guardare (da-vault: con OpenBao, oltre la cache); assente = guardati.
+   * Se c'è, i sei `ha_…` valgono `false` e NON vogliono dire «assente».
+   */
+  segreti_non_leggibili?: string | null;
   /** Usi che tengono ferma la voce (`totaleUsi` di `usi.ts`). */
   usi_totale: number;
   created_at: string;
@@ -39,7 +44,17 @@ export interface CredenzialeVista {
 
 const presente = (v: string | null | undefined): boolean => v != null && v !== "";
 
-export function mascheraCredenziale(c: Credential, usiTotale: number): CredenzialeVista {
+/**
+ * Quali segreti ha la voce. Di serie si guardano le colonne; con OpenBao (da-vault) le colonne sono vuote e chi chiama
+ * dà la presenza letta da OpenBao (`presenzaSegretiDb` di `segreti.ts`), o il motivo per cui non si è potuta leggere.
+ */
+export type SegretiDellaVoce = { ok: true; presenti: Readonly<Record<string, boolean>> } | { ok: false; motivo: string };
+
+export function mascheraCredenziale(c: Credential, usiTotale: number, segreti?: SegretiDellaVoce): CredenzialeVista {
+  const ha = (colonna: keyof Credential): boolean => {
+    if (!segreti) return presente(c[colonna] as string | null | undefined);
+    return segreti.ok ? segreti.presenti[colonna] === true : false;
+  };
   return {
     id: c.id,
     name: c.name,
@@ -50,14 +65,16 @@ export function mascheraCredenziale(c: Credential, usiTotale: number): Credenzia
     security_level: c.security_level ?? null,
     auth_protocol: c.auth_protocol ?? null,
     priv_protocol: c.priv_protocol ?? null,
-    ha_username: presente(c.encrypted_username),
-    ha_password: presente(c.encrypted_password),
-    ha_chiave_privata: presente(c.encrypted_private_key),
-    ha_passphrase: presente(c.encrypted_key_passphrase),
-    ha_auth_key: presente(c.encrypted_auth_key),
-    ha_priv_key: presente(c.encrypted_priv_key),
+    ha_username: ha("encrypted_username"),
+    ha_password: ha("encrypted_password"),
+    ha_chiave_privata: ha("encrypted_private_key"),
+    ha_passphrase: ha("encrypted_key_passphrase"),
+    ha_auth_key: ha("encrypted_auth_key"),
+    ha_priv_key: ha("encrypted_priv_key"),
     usi_totale: usiTotale,
     created_at: c.created_at,
     updated_at: c.updated_at,
+    // Solo se serve: con l'interruttore spento la vista è quella di sempre, senza una chiave in più.
+    ...(segreti && !segreti.ok ? { segreti_non_leggibili: segreti.motivo } : {}),
   };
 }

@@ -66,13 +66,17 @@ const mb = (n: number) => `${(n / 1024 / 1024).toFixed(1)} MB`;
 export async function backupAccanto(
   dbh: Database.Database,
   file: string,
-  opzioni: { quando?: Date; libero?: (cartella: string) => number } = {},
+  opzioni: { quando?: Date; libero?: (cartella: string) => number; cartella?: string } = {},
 ): Promise<Backup> {
   const quando = opzioni.quando ?? new Date();
-  const percorso = nomeBackup(file, quando);
+  // `cartella`: la copia va in un'altra cartella (es. `data/backups/`, lo svuotamento delle colonne cifrate) invece che
+  // accanto al file; la cartella si crea (0700) e lo spazio si controlla lì.
+  const destinazione = opzioni.cartella ?? path.dirname(file);
+  if (opzioni.cartella) fs.mkdirSync(destinazione, { recursive: true, mode: 0o700 });
+  const percorso = opzioni.cartella ? nomeBackup(path.join(destinazione, path.basename(file)), quando) : nomeBackup(file, quando);
   if (fs.existsSync(percorso)) throw new Error(`Il backup ${percorso} esiste già: non lo sovrascrivo`);
   const serve = Math.ceil(dimensione(file) * 1.1);
-  const cartella = path.dirname(file);
+  const cartella = destinazione;
   const libero = (opzioni.libero ?? liberoIn)(cartella);
   if (libero < serve) throw new Error(`Spazio libero insufficiente in ${cartella} per il backup: servono ${mb(serve)}, liberi ${mb(libero)}`);
   try {

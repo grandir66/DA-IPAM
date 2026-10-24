@@ -11,7 +11,7 @@
  * migrazione deve poter scrivere e leggere `clienti/*\/da-ipam/*`.
  *
  * Ordine: --applica (i riferimenti a interruttore spento non contano) → --verifica → DA_VAULT_OPENBAO=1 e riavvio.
- * Le colonne cifrate restano per una versione (doppia lettura); svuotarle è il passo dopo. Mai valori a schermo.
+ * Le colonne cifrate restano finché non si lancia `scripts/da-vault-svuota-colonne.ts` (ADR 0035). Mai valori a schermo.
  */
 import { getActiveTenants } from "../src/lib/db-hub";
 import { getTenantDb } from "../src/lib/db-tenant";

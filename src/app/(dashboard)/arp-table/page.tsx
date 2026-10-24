@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useLatestRequest } from "@/hooks/use-latest-request";
 import { parseDbDate } from "@/lib/db-date";
 import { fetchJson } from "@/lib/fetch-json";
@@ -229,6 +230,9 @@ export default function ArpTablePage() {
               >
                 <RadioTower className={`h-4 w-4 mr-1.5 ${polling ? "animate-pulse" : ""}`} />
                 {polling ? "Poll…" : "Forza poll router"}
+              </Button>
+              <Button variant="outline" size="sm" nativeButton={false} render={<Link href="/arp-table/trunk" />} title="VLAN e MAC visti dal sensore sulla porta trunk">
+                VLAN dal trunk
               </Button>
               <Button variant="outline" size="icon" onClick={fetchData} disabled={loading} title="Ricarica dati dalla cache">
                 <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />

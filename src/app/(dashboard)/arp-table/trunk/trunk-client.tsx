@@ -19,6 +19,7 @@ interface Dati {
   vlan: TrunkVlanRiga[];
   righe: TrunkOsservazioneRiga[];
   totale: number;
+  retiIpam: string[];
 }
 
 export function TrunkClient({ iniziale }: { iniziale: Dati }) {
@@ -31,6 +32,22 @@ export function TrunkClient({ iniziale }: { iniziale: Dati }) {
   const [offset, setOffset] = useState(0);
   const [errore, setErrore] = useState<string | null>(null);
   const [inCorso, setInCorso] = useState(false);
+  const [retiIpam, setRetiIpam] = useState<string[]>(iniziale.retiIpam);
+
+  const portaInIpam = async (vid: number, cidr: string, gateway: string | null | undefined) => {
+    const r = await fetchJson<{ id: number }>("/api/trunk/rete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ vid, cidr, gateway: gateway ?? null }),
+    });
+    if (!r.ok) {
+      toast.error(r.message);
+      return;
+    }
+    setRetiIpam((x) => [...x, cidr]);
+    toast.success(`Rete ${cidr} creata in DA-IPAM`);
+    router.refresh();
+  };
 
   const carica = useCallback(async (v: number | null, testo: string, off: number) => {
     const p = new URLSearchParams({ limit: String(PAGINA), offset: String(off) });
@@ -103,7 +120,7 @@ export function TrunkClient({ iniziale }: { iniziale: Dati }) {
                   <TableHead>VLAN</TableHead>
                   <TableHead>Stato</TableHead>
                   <TableHead>MAC</TableHead>
-                  <TableHead>Subnet / gateway dedotti</TableHead>
+                  <TableHead>Subnet dedotte</TableHead>
                   <TableHead>Ultima vista</TableHead>
                 </TableRow>
               </TableHeader>
@@ -117,8 +134,23 @@ export function TrunkClient({ iniziale }: { iniziale: Dati }) {
                       {!v.vista && v.dichiarata && <Badge variant="destructive">dichiarata, mai vista</Badge>}
                     </TableCell>
                     <TableCell>{v.mac}</TableCell>
-                    <TableCell className="font-mono text-xs">
-                      {v.reti.map((r) => `${r.cidr}${r.gateway_ip ? ` → ${r.gateway_ip}` : ""}`).join(", ") || "—"}
+                    <TableCell className="font-mono text-xs" onClick={(e) => e.stopPropagation()}>
+                      {v.reti.length === 0 && "—"}
+                      {v.reti.map((r) => (
+                        <div key={r.cidr} className="flex items-center gap-2 py-0.5">
+                          <span>
+                            {r.cidr}
+                            {r.gateway_ip && (r.fonte === "dhcp" ? ` → gw ${r.gateway_ip}` : ` · IP più cercato ${r.gateway_ip}`)}
+                          </span>
+                          {retiIpam.includes(r.cidr) ? (
+                            <Badge variant="secondary">in DA-IPAM</Badge>
+                          ) : (
+                            <Button size="sm" variant="outline" onClick={() => void portaInIpam(v.vid, r.cidr, r.fonte === "dhcp" ? r.gateway_ip : null)}>
+                              Porta in DA-IPAM
+                            </Button>
+                          )}
+                        </div>
+                      ))}
                     </TableCell>
                     <TableCell className="text-xs">{v.ultima_vista ?? "—"}</TableCell>
                   </TableRow>

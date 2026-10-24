@@ -41,6 +41,8 @@ export interface TrunkRete {
   vid: number;
   cidr: string;
   gateway_ip?: string | null;
+  /** dhcp = gateway annunciato dal DHCP; arp/config = gateway è solo l'IP più cercato. */
+  fonte?: string;
 }
 
 export interface TrunkVlan {
@@ -190,7 +192,7 @@ export function salvaVlan(vlan: TrunkVlan[]): void {
     );
     for (const v of vlan) {
       ins.run(v.vid, v.vista ? 1 : 0, v.dichiarata ? 1 : 0, v.mac ?? 0,
-        JSON.stringify((v.reti ?? []).map((r) => ({ cidr: r.cidr, gateway_ip: r.gateway_ip ?? null }))),
+        JSON.stringify((v.reti ?? []).map((r) => ({ cidr: r.cidr, gateway_ip: r.gateway_ip ?? null, fonte: r.fonte ?? null }))),
         v.ultima_vista ?? null, adesso);
     }
   })();

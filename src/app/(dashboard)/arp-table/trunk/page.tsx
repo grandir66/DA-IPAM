@@ -1,5 +1,6 @@
 import { getServerTenantCode } from "@/lib/api-tenant";
 import { withTenant } from "@/lib/db-tenant";
+import { getNetworks } from "@/lib/db";
 import { getTrunkOsservazioniPaginated, getTrunkVlan, trunkLetturaAttiva } from "@/lib/trunk/sensore-trunk";
 import { TrunkClient } from "./trunk-client";
 
@@ -9,6 +10,7 @@ export default async function TrunkPage() {
     attiva: trunkLetturaAttiva(),
     vlan: getTrunkVlan(),
     ...getTrunkOsservazioniPaginated({ limit: 100 }),
+    retiIpam: getNetworks().map((n) => n.cidr),
   }));
   return (
     <div className="space-y-4">

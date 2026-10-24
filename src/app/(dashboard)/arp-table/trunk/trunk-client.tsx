@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -10,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { LoadError } from "@/components/shared/load-error";
 import { fetchJson } from "@/lib/fetch-json";
-import type { TrunkOsservazioneRiga, TrunkVlanRiga } from "@/lib/trunk/sensore-trunk";
+import type { TrunkOsservazioneRiga, TrunkReteMatrice, TrunkVlanRiga } from "@/lib/trunk/sensore-trunk";
 
 const PAGINA = 100;
 
@@ -20,11 +21,12 @@ interface Dati {
   righe: TrunkOsservazioneRiga[];
   totale: number;
   retiIpam: string[];
+  matrice: { giorni: string[]; reti: TrunkReteMatrice[] };
 }
 
 export function TrunkClient({ iniziale }: { iniziale: Dati }) {
   const router = useRouter();
-  const [attiva, setAttiva] = useState(iniziale.attiva);
+  const attiva = iniziale.attiva;
   const [righe, setRighe] = useState(iniziale.righe);
   const [totale, setTotale] = useState(iniziale.totale);
   const [vid, setVid] = useState<number | null>(null);
@@ -65,26 +67,19 @@ export function TrunkClient({ iniziale }: { iniziale: Dati }) {
     setOffset(off);
   }, []);
 
-  const cambiaLettura = async () => {
+  const giroArp = async (vid: number, cidr: string) => {
     setInCorso(true);
     try {
-      const r = await fetchJson<{ attiva: boolean; osservazioni?: number; nota?: string; error?: string }>("/api/trunk", {
+      const r = await fetchJson<{ id: number; fonte: string }>("/api/trunk/giro", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ attiva: !attiva }),
+        body: JSON.stringify({ vid, cidr }),
       });
       if (!r.ok) {
         toast.error(r.message);
         return;
       }
-      setAttiva(r.data.attiva);
-      if (r.data.attiva) {
-        toast.success(r.data.nota ? `Lettura accesa: ${r.data.nota}` : `Lettura accesa: ${r.data.osservazioni ?? 0} osservazioni`);
-      } else {
-        toast.success("Lettura spenta");
-      }
-      router.refresh();
-      await carica(vid, q, 0);
+      toast.success(`Giro ARP avviato su ${cidr}: i risultati compaiono al prossimo giro di lettura`);
     } finally {
       setInCorso(false);
     }
@@ -94,17 +89,25 @@ export function TrunkClient({ iniziale }: { iniziale: Dati }) {
     <div className="space-y-4">
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-4">
-          <CardTitle className="text-base">Lettura dal sensore trunk</CardTitle>
-          <Button size="sm" variant={attiva ? "outline" : "default"} disabled={inCorso} onClick={cambiaLettura}>
-            {attiva ? "Spegni la lettura" : "Accendi la lettura"}
+          <CardTitle className="text-base">Sensore trunk {attiva ? <Badge variant="secondary">acceso</Badge> : <Badge variant="outline">spento</Badge>}</CardTitle>
+          <Button size="sm" variant="outline" render={<Link href="/settings/opzioni#modulo.sensore_trunk" />}>
+            {attiva ? "Cambia in Opzioni" : "Accendi in Opzioni"}
           </Button>
         </CardHeader>
         <CardContent className="text-muted-foreground text-sm">
           {attiva
-            ? "Accesa: a ogni giro ARP si copiano le VLAN e i MAC nuovi visti dal sensore (socket locale o Scanner-Edge)."
-            : "Spenta: niente viene letto. Accendila se sull'appliance o sullo Scanner-Edge c'è il sensore trunk."}
+            ? "Acceso: a ogni giro ARP si copiano le VLAN e gli IP nuovi visti in ascolto dal sensore (sulla stessa macchina o sullo Scanner-Edge). Il giro ARP su una rete parte solo se lo chiedi."
+            : "Spento: niente viene letto. Si accende da Impostazioni › Opzioni, voce «Sensore trunk»."}
         </CardContent>
       </Card>
+
+      <MatriceReti
+        matrice={iniziale.matrice}
+        retiIpam={retiIpam}
+        inCorso={inCorso || !attiva}
+        onGiro={(vid, cidr) => void giroArp(vid, cidr)}
+        onPorta={(vid, cidr, gw) => void portaInIpam(vid, cidr, gw)}
+      />
 
       <Card>
         <CardHeader>
@@ -225,5 +228,122 @@ export function TrunkClient({ iniziale }: { iniziale: Dati }) {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function MatriceReti({
+  matrice, retiIpam, inCorso, onGiro, onPorta,
+}: {
+  matrice: { giorni: string[]; reti: TrunkReteMatrice[] };
+  retiIpam: string[];
+  inCorso: boolean;
+  onGiro: (vid: number, cidr: string) => void;
+  onPorta: (vid: number, cidr: string, gateway: string | null) => void;
+}) {
+  const [aperta, setAperta] = useState<string | null>(null);
+  const massimo = Math.max(1, ...matrice.reti.flatMap((r) => r.serie.map((g) => g.noti)));
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Reti nel tempo ({matrice.reti.length})</CardTitle>
+        <p className="text-muted-foreground text-sm">
+          Ogni riga è una subnet vista in ascolto; ogni casella un giorno. Il numero sono gli IP conosciuti fino a quel
+          giorno, il colore quanti erano attivi, il «+» quelli nuovi. Clic sulla riga per l&apos;elenco degli IP.
+        </p>
+      </CardHeader>
+      <CardContent className="overflow-x-auto">
+        {matrice.reti.length === 0 ? (
+          <p className="text-muted-foreground text-sm">Nessuna subnet dedotta finora.</p>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>VLAN</TableHead>
+                <TableHead>Subnet</TableHead>
+                {matrice.giorni.map((g) => (
+                  <TableHead key={g} className="text-center text-xs">{g.slice(8, 10)}/{g.slice(5, 7)}</TableHead>
+                ))}
+                <TableHead />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {matrice.reti.map((r) => {
+                const chiave = `${r.vid}-${r.cidr}`;
+                const gw = r.fonte === "dhcp" ? r.gateway_ip : null;
+                return [
+                  <TableRow key={chiave} className="cursor-pointer" onClick={() => setAperta(aperta === chiave ? null : chiave)}>
+                    <TableCell className="font-mono">{r.vid === 0 ? "nativa" : r.vid}</TableCell>
+                    <TableCell className="font-mono text-xs">
+                      {r.cidr}
+                      <div className="text-muted-foreground">
+                        {r.ip.length} IP
+                        {r.gateway_ip && (r.fonte === "dhcp" ? ` · gw ${r.gateway_ip}` : ` · IP più cercato ${r.gateway_ip}`)}
+                      </div>
+                    </TableCell>
+                    {r.serie.map((g) => (
+                      <TableCell
+                        key={g.giorno}
+                        className="text-center font-mono text-xs"
+                        style={g.attivi ? { backgroundColor: `rgba(0, 167, 231, ${0.15 + 0.6 * (g.attivi / massimo)})` } : undefined}
+                        title={`${g.giorno}: ${g.noti} noti, ${g.attivi} attivi, ${g.nuovi} nuovi`}
+                      >
+                        {g.noti || ""}
+                        {g.nuovi > 0 && <div className="text-xs font-semibold">+{g.nuovi}</div>}
+                      </TableCell>
+                    ))}
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="outline" disabled={inCorso} onClick={() => onGiro(r.vid, r.cidr)}>
+                          Giro ARP
+                        </Button>
+                        {retiIpam.includes(r.cidr) ? (
+                          <Badge variant="secondary">in DA-IPAM</Badge>
+                        ) : (
+                          <Button size="sm" variant="outline" onClick={() => onPorta(r.vid, r.cidr, gw)}>
+                            Porta in DA-IPAM
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>,
+                  aperta === chiave && (
+                    <TableRow key={`${chiave}-ip`}>
+                      <TableCell colSpan={matrice.giorni.length + 3}>
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>IP</TableHead>
+                              <TableHead>MAC</TableHead>
+                              <TableHead>Nome</TableHead>
+                              <TableHead>Come</TableHead>
+                              <TableHead>Prima vista</TableHead>
+                              <TableHead>Ultima vista</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {r.ip.map((i) => (
+                              <TableRow key={i.ip}>
+                                <TableCell className="font-mono">{i.ip}</TableCell>
+                                <TableCell className="font-mono">{i.mac}</TableCell>
+                                <TableCell>{i.nome ?? "—"}</TableCell>
+                                <TableCell className="text-xs">
+                                  {[i.passivo ? "ascolto" : null, i.attivo ? "giro ARP" : null].filter(Boolean).join(" + ")}
+                                </TableCell>
+                                <TableCell className="text-xs">{i.prima_vista}</TableCell>
+                                <TableCell className="text-xs">{i.ultima_vista}</TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </TableCell>
+                    </TableRow>
+                  ),
+                ];
+              })}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
   );
 }

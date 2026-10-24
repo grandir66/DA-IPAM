@@ -43,6 +43,7 @@ import { leggiConfigDalink } from "@/lib/dalink/config";
 import { leggiConfigVulcan } from "@/lib/vulcan/config";
 import { CHIAVE_GIRO_ACCESO, dbCliente, giroAccessiAcceso, scriviImpostazione, ultimoGiroAccessi } from "@/lib/assegnatari/db";
 import { giroAccessiAdesso } from "@/lib/assegnatari/job";
+import { sincronizzaTrunk, trunkLetturaAttiva, trunkRiepilogo } from "@/lib/trunk/sensore-trunk";
 import { statoVault } from "@/lib/vault/appliance";
 import { vaultLocaleAcceso, vaultOpenBaoAcceso } from "@/lib/vault/stato";
 import { opzioniParametri } from "./parametri";
@@ -425,6 +426,33 @@ function opzioniModuli(): Opzione[] {
       },
       cambia(r) {
         setTenantSetting("nis2_inventory_enabled", soloAcceso(r) ? "1" : "0");
+      },
+    },
+    {
+      id: "modulo.sensore_trunk",
+      gruppo: "moduli",
+      nome: "Sensore trunk",
+      cosa: "VLAN, reti e IP visti in ascolto sulla porta trunk (pagina Reti dal trunk)",
+      valePer: "cliente",
+      forma: "levetta",
+      diSerie: "spento",
+      configura: { href: "/arp-table/trunk", etichetta: "Apri ›" },
+      spegnendo: {
+        siFerma: "la copia di VLAN e IP dal sensore a ogni giro ARP; il sensore sull'appliance continua ad ascoltare.",
+        resta: "quanto già letto, che ricompare se lo riaccendi.",
+      },
+      leggi() {
+        const acceso = trunkLetturaAttiva();
+        if (!acceso) return diSerieStato(false, esito("neutro", "spento"));
+        const r = trunkRiepilogo();
+        if (r.vlan === 0) return diSerieStato(true, esito("attenzione", "acceso, nessuna VLAN letta: il sensore c'è?"));
+        return diSerieStato(true, esito("ok", `${r.vlan} VLAN · ${r.osservazioni} osservazioni`));
+      },
+      async cambia(r) {
+        const acceso = soloAcceso(r);
+        setTenantSetting("trunk_lettura", acceso ? "1" : "0");
+        // Il primo giro subito, così la pagina non resta vuota fino al prossimo giro ARP; un sensore assente non è un errore.
+        if (acceso) await sincronizzaTrunk().catch(() => undefined);
       },
     },
     opzioneModuloInstallabile("patch_management", "Patch Management", "aggiornamenti Windows via WinRM e Chocolatey"),

@@ -25,6 +25,7 @@ export async function GET(request: Request) {
     const { righe, totale } = getTrunkOsservazioniPaginated({
       vid,
       q: searchParams.get("q") ?? undefined,
+      metodo: ((m) => (m === "ascolto" || m === "giro" || m === "entrambi" ? m : null))(searchParams.get("metodo")),
       limit: Number(searchParams.get("limit")) || 100,
       offset: Number(searchParams.get("offset")) || 0,
     });

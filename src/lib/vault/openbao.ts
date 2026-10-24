@@ -28,7 +28,10 @@ const MARGINE_TOKEN_MS = 60_000;
 const AGGIORNA_OGNI_MS = 5 * 60_000;
 const DURATA_CACHE_MS = 30 * 60_000;
 const TIMEOUT_MS = 10_000;
-/** Le richieste sincrone fermano il thread: timeout più corto di quelle asincrone. */
+/**
+ * Le richieste sincrone fermano il thread: UN budget complessivo per ogni `putSync`/`getSync` (login, scrittura e rilettura
+ * insieme, con una scadenza condivisa), più corto dei timeout asincroni.
+ */
 const TIMEOUT_SYNC_MS = 5_000;
 /** Un percorso che manca dalla cache fa partire un giro, ma non più di uno ogni 30 secondi (niente raffica). */
 const RICARICA_PER_MANCANZA_OGNI_MS = 30_000;
@@ -52,7 +55,10 @@ export interface ConfigOpenBao {
   aggiornaOgniMs?: number;
   durataCacheMs?: number;
   timeoutMs?: number;
-  /** Timeout delle richieste sincrone (scritture dalla pagina), di serie 5 secondi. */
+  /**
+   * Budget COMPLESSIVO di una `putSync`/`getSync` (tutte le sue richieste: login, scrittura, rilettura, eventuale secondo
+   * login dopo un 403), di serie 5 secondi. Il thread resta fermo al massimo questo tempo.
+   */
   timeoutSyncMs?: number;
   fetch?: typeof fetch;
   /** La richiesta sincrona (di serie quella del worker, `fetch-sync.ts`); le prove ne danno una sul finto. */
@@ -101,6 +107,8 @@ export class OpenBaoStore implements SecretStore {
   private ultimaRicaricaPerMancanza = 0;
   /** Scritture sincrone fatte mentre un giro della cache è in corso: il giro non le deve cancellare con un valore vecchio. */
   private scritture: Map<string, ValoreSegreto> | null = null;
+  /** Scadenza (Date.now) del budget della `putSync`/`getSync` in corso; null = nessuna in corso. */
+  private scadenzaSync: number | null = null;
 
   constructor(config: ConfigOpenBao) {
     this.c = {
@@ -216,7 +224,20 @@ export class OpenBaoStore implements SecretStore {
 
   // ── HTTP sincrono (solo per le scritture dalla pagina, ADR 0035) ─────────────
 
+  /** Esegue `f` con UN budget: le richieste annidate (login, rilettura) condividono la scadenza della prima. */
+  private conBudget<T>(f: () => T): T {
+    if (this.scadenzaSync !== null) return f();
+    this.scadenzaSync = Date.now() + this.c.timeoutSyncMs;
+    try {
+      return f();
+    } finally {
+      this.scadenzaSync = null;
+    }
+  }
+
   private richiestaSync(metodo: string, percorsoApi: string, op: { token?: string; corpo?: unknown } = {}): Risposta {
+    const rimasto = (this.scadenzaSync ?? Date.now() + this.c.timeoutSyncMs) - Date.now();
+    if (rimasto <= 0) throw new ErroreVault("non_raggiungibile", "OpenBao non risponde (tempo a disposizione esaurito)");
     const intestazioni: Record<string, string> = { accept: "application/json" };
     if (op.token) intestazioni["X-Vault-Token"] = op.token;
     if (op.corpo !== undefined) intestazioni["content-type"] = "application/json";
@@ -224,7 +245,7 @@ export class OpenBaoStore implements SecretStore {
       method: metodo,
       headers: intestazioni,
       body: op.corpo === undefined ? undefined : JSON.stringify(op.corpo),
-      timeoutMs: this.c.timeoutSyncMs,
+      timeoutMs: rimasto,
     });
     let corpo: unknown = null;
     if (r.testo) {
@@ -265,10 +286,12 @@ export class OpenBaoStore implements SecretStore {
   /** Il segreto letto ORA da OpenBao (mai dalla cache), in modo sincrono. `non_trovato` se non c'è. */
   getSync(percorso: string): ValoreSegreto {
     controllaPercorso(percorso);
-    const r = this.conTokenSync("GET", this.apiDati(percorso));
-    if (r.status === 404) throw new ErroreVault("non_trovato", `Il segreto «${percorso}» non è in OpenBao`);
-    if (r.status !== 200) throw new ErroreVault("rifiutato", `OpenBao ha rifiutato la lettura di «${percorso}» (HTTP ${r.status})`);
-    return valoreDa((r.corpo as { data?: { data?: unknown } } | null)?.data?.data);
+    return this.conBudget(() => {
+      const r = this.conTokenSync("GET", this.apiDati(percorso));
+      if (r.status === 404) throw new ErroreVault("non_trovato", `Il segreto «${percorso}» non è in OpenBao`);
+      if (r.status !== 200) throw new ErroreVault("rifiutato", `OpenBao ha rifiutato la lettura di «${percorso}» (HTTP ${r.status})`);
+      return valoreDa((r.corpo as { data?: { data?: unknown } } | null)?.data?.data);
+    });
   }
 
   /**
@@ -277,15 +300,17 @@ export class OpenBaoStore implements SecretStore {
    */
   putSync(percorso: string, valore: ValoreSegreto): void {
     controllaPercorso(percorso);
-    const r = this.conTokenSync("POST", this.apiDati(percorso), { corpo: { data: { ...valore } } });
-    if (r.status !== 200 && r.status !== 204) throw new ErroreVault("rifiutato", `OpenBao ha rifiutato la scrittura di «${percorso}» (HTTP ${r.status})`);
-    const riletto = this.getSync(percorso);
-    const chiavi = Object.keys(valore).sort();
-    const uguale = Object.keys(riletto).length === chiavi.length && chiavi.every((k) => riletto[k] === valore[k]);
-    if (!uguale) throw new ErroreVault("rifiutato", `Il segreto «${percorso}» riletto da OpenBao non torna uguale a quello scritto`);
-    const nuovo = Object.freeze({ ...valore });
-    this.cache.set(percorso, nuovo);
-    this.scritture?.set(percorso, nuovo);
+    this.conBudget(() => {
+      const r = this.conTokenSync("POST", this.apiDati(percorso), { corpo: { data: { ...valore } } });
+      if (r.status !== 200 && r.status !== 204) throw new ErroreVault("rifiutato", `OpenBao ha rifiutato la scrittura di «${percorso}» (HTTP ${r.status})`);
+      const riletto = this.getSync(percorso);
+      const chiavi = Object.keys(valore).sort();
+      const uguale = Object.keys(riletto).length === chiavi.length && chiavi.every((k) => riletto[k] === valore[k]);
+      if (!uguale) throw new ErroreVault("rifiutato", `Il segreto «${percorso}» riletto da OpenBao non torna uguale a quello scritto`);
+      const nuovo = Object.freeze({ ...valore });
+      this.cache.set(percorso, nuovo);
+      this.scritture?.set(percorso, nuovo);
+    });
   }
 
   // ── Cache ─────────────────────────────────────────────────────────────────

@@ -9,6 +9,8 @@ import {
   randomSalt, deriveTransportKey, encryptFieldWithKey, encryptBuffer, writeContainer,
 } from "./envelope";
 import { safeDecrypt } from "@/lib/crypto";
+import { campiVoceDb, COLONNA_DEL_CAMPO, COLONNE_SEGRETE, type CampoSegreto } from "@/lib/credentials/segreti";
+import { vaultOpenBaoAcceso } from "@/lib/vault/stato";
 import { encryptionKeyFingerprint } from "@/lib/encryption-key-health";
 
 export interface ExportArgs {
@@ -45,10 +47,33 @@ export function exportTenant(args: ExportArgs): Buffer {
       params.push(options.tenantCode);
     }
 
+    // da-vault (ADR 0035): con OpenBao acceso le colonne segrete di `credentials` sono vuote (i segreti stanno in OpenBao) e
+    // il pacchetto deve portarli lo stesso. Si leggono dal lettore unico, come ogni altra lettura, e la voce del pacchetto
+    // è autosufficiente (colonne piene, SENZA `credential_ref`: il percorso è del sorgente, non dell'installazione che importa).
+    const daLettore = spec.table === "credentials" && spec.scope === "tenant" && vaultOpenBaoAcceso() && writableCols.has("id");
+
     const rows = db.prepare(sql).all(...params) as Record<string, unknown>[];
     let n = 0;
     for (const row of rows) {
+      if (daLettore) {
+        const c = campiVoceDb(db, Number(row.id));
+        const chiari: Record<string, string> = {};
+        if (c.ok) {
+          for (const [campo, colonna] of Object.entries(COLONNA_DEL_CAMPO) as Array<[CampoSegreto, string]>) {
+            const v = c.campi[campo];
+            if (v) chiari[colonna] = v;
+          }
+        } else {
+          secretErrors++; // OpenBao non risponde o una colonna non si decifra: la voce parte senza segreto, e il pacchetto lo dice
+        }
+        for (const col of COLONNE_SEGRETE) {
+          if (!writableCols.has(col)) continue;
+          row[col] = chiari[col] !== undefined ? encryptFieldWithKey(chiari[col], transportKey) : null;
+        }
+        if (writableCols.has("credential_ref")) row.credential_ref = null;
+      }
       for (const col of rekeys) {
+        if (daLettore && COLONNE_SEGRETE.includes(col)) continue; // già nel pacchetto, cifrato per il trasporto
         const v = row[col];
         if (typeof v === "string" && v.length > 0) {
           const pt = safeDecrypt(v); // decifra con la chiave d'installazione sorgente

@@ -8,6 +8,7 @@ import {
 } from "@/lib/db";
 import { aggiornaIntegrazioneAd, VoceNonValePerProtocollo } from "@/lib/credentials/lega-voce";
 import { accountDalCorpo } from "@/lib/ad/account-ldap";
+import { SegretiNonSalvati } from "@/lib/credentials/archivio";
 import { AccountLdapNonValido, vistaIntegrazioneAd } from "@/lib/ad/credenziale-ldap";
 import { z } from "zod/v4";
 
@@ -94,6 +95,7 @@ export async function PUT(request: Request, { params }: Params) {
       if (err instanceof VoceNonValePerProtocollo || err instanceof AccountLdapNonValido) {
         return NextResponse.json({ error: err.message }, { status: 400 });
       }
+      if (err instanceof SegretiNonSalvati) return NextResponse.json({ error: err.message }, { status: 503 });
       const msg = err instanceof Error ? err.message : "Errore sconosciuto";
       return NextResponse.json({ error: msg }, { status: 500 });
     }

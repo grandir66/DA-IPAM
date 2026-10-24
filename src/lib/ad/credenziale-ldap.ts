@@ -24,7 +24,7 @@
  */
 import type Database from "better-sqlite3";
 import type { z } from "zod";
-import { creaVoceDb } from "@/lib/credentials/archivio";
+import { creaVoceDb, SegretiNonSalvati } from "@/lib/credentials/archivio";
 import { leggiSegretoDb } from "@/lib/credentials/segreti";
 import { portaCredenziale } from "@/lib/credentials/porte";
 import { getDb, type AdIntegration } from "@/lib/db";
@@ -113,7 +113,7 @@ export function creaVoceAdDb(
   const nome = nomeUnicoDb(dbh, integrazione);
   const dati: DatiCredenziale = { name: nome, credential_type: "ad", username: nuovo.username, password: nuovo.password };
   const esito = creaVoceDb(dbh, dati);
-  if (!esito.ok) throw new AccountLdapNonValido(esito.errore);
+  if (!esito.ok) throw esito.stato === 503 ? new SegretiNonSalvati(esito.errore) : new AccountLdapNonValido(esito.errore);
   return { id: esito.vista.id, nome };
 }
 

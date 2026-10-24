@@ -14,7 +14,9 @@ import assert from "node:assert/strict";
 import { decrypt, encrypt } from "@/lib/crypto";
 import { closeTenantDb, deleteTenantDatabase, getTenantDb, withTenant } from "@/lib/db-tenant";
 import { closeHubDb } from "@/lib/db-hub";
-import { aggiornaCredenzialeDb, creaCredenzialeDb, creaVoceDb, eliminaVoceDb, modificaVoceDb } from "@/lib/credentials/archivio";
+import { aggiornaCredenzialeDb, creaCredenzialeDb, creaVoceDb, eliminaVoceDb, modificaVoceDb, SegretiNonSalvati } from "@/lib/credentials/archivio";
+import { AccountLdapNonValido, creaVoceAdDb } from "@/lib/ad/credenziale-ldap";
+import { CredenzialeControllerNonValida, creaVoceControllerDb } from "@/lib/controllers/credenziale";
 import { campiVoceDb, coppiaSshDb, COLONNE_SEGRETE, presenzaSegretiDb } from "@/lib/credentials/segreti";
 import { mascheraCredenziale } from "@/lib/credentials/maschera";
 import type { Credential } from "@/types";
@@ -203,6 +205,21 @@ describe("modifica con OpenBao acceso", () => {
     assert.deepEqual(colonnePiene(riga(id)), []);
   });
 
+  it("rinominare (o cambiare la porta) funziona anche con OpenBao giù: non legge né controlla i segreti", () => {
+    // Guasto provato: la modifica leggeva sempre i segreti attuali da OpenBao, e con OpenBao spento anche un semplice
+    // cambio di nome era un 503.
+    const { id } = conRiferimento();
+    finto.giu = true;
+    const e = withTenant(T, () => modificaVoceDb(db(), id, { name: "Firewall Sede 2", port: 2222 }, { port: 2222 }));
+    assert.ok(e.ok, e.ok ? "" : e.errore);
+    assert.equal(riga(id).name, "Firewall Sede 2");
+    assert.equal(riga(id).port, 2222);
+    assert.deepEqual(colonnePiene(riga(id)), []);
+    // e se i segreti sono toccati, sì: 503
+    const t = withTenant(T, () => modificaVoceDb(db(), id, { password: "x" }, {}));
+    assert.equal(t.ok, false);
+  });
+
   it("la pagina rimanda lo stesso utente (precompilato): nessuna versione nuova in OpenBao", () => {
     const { id } = conRiferimento();
     const prima = scritture().length;
@@ -256,11 +273,13 @@ describe("modifica con OpenBao acceso", () => {
 
   it("una voce non migrata con la colonna che non si decifra: 503 che lo dice, niente toccato", () => {
     const c = withTenant(T, () => creaCredenzialeDb(db(), { name: "Rotta", credential_type: "ssh", encrypted_username: encrypt("root"), encrypted_password: `${"a".repeat(32)}:${"b".repeat(32)}:abcd` }));
-    const e = withTenant(T, () => modificaVoceDb(db(), c.id, { name: "Rotta 2" }, {}));
+    const e = withTenant(T, () => modificaVoceDb(db(), c.id, { username: "altro" }, {}));
     assert.equal(e.ok, false);
     assert.equal(e.ok ? 0 : e.stato, 503);
     assert.match(e.ok ? "" : e.errore, /non si decifra/);
-    assert.equal(riga(c.id).name, "Rotta");
+    assert.equal(decrypt(String(riga(c.id).encrypted_username)), "root");
+    // un cambio di solo nome non guarda i segreti: funziona
+    assert.ok(withTenant(T, () => modificaVoceDb(db(), c.id, { name: "Rotta 2" }, {})).ok);
   });
 
   it("senza modificare segreti, una voce non migrata resta com'è (le colonne si migrano al primo segreto cambiato)", () => {
@@ -279,6 +298,41 @@ describe("modifica con OpenBao acceso", () => {
     const e = withTenant(T, () => modificaVoceDb(db(), id, { auth_method: "chiave", private_key: "-----K-----" }, {}));
     assert.ok(e.ok, e.ok ? "" : e.errore);
     assert.deepEqual(finto.kv.get(percorso), { username: "admin", private_key: "-----K-----" });
+  });
+});
+
+describe("creare la voce dall'AD o da un controller con OpenBao giù", () => {
+  // Guasto provato: il 503 di creaVoceDb veniva rilanciato come «account/credenziale non valida» e le rotte rispondevano
+  // 400 «richiesta sbagliata» per un guasto di OpenBao.
+  it("AD: SegretiNonSalvati (503), non AccountLdapNonValido; nessuna riga rimasta", () => {
+    finto.giu = true;
+    let errore: unknown;
+    try {
+      withTenant(T, () => creaVoceAdDb(db(), { id: 1, name: "AD sede" }, { username: "svc", password: "pw-ad-x" }));
+    } catch (e) {
+      errore = e;
+    }
+    assert.ok(errore instanceof SegretiNonSalvati, String(errore));
+    assert.ok(!(errore instanceof AccountLdapNonValido));
+    assert.equal((errore as SegretiNonSalvati).stato, 503);
+    assert.match((errore as Error).message, /OpenBao non risponde/);
+    assert.equal((db().prepare("SELECT COUNT(*) AS n FROM credentials").get() as { n: number }).n, 0);
+  });
+
+  it("controller: SegretiNonSalvati (503), non CredenzialeControllerNonValida", () => {
+    finto.giu = true;
+    let errore: unknown;
+    try {
+      withTenant(T, () => creaVoceControllerDb(db(), { id: 1, name: "Sede", kind: "unifi" }, { metodo: "utente", username: "u", password: "pw-ctl-x", apiKey: "" }));
+    } catch (e) {
+      errore = e;
+    }
+    assert.ok(errore instanceof SegretiNonSalvati, String(errore));
+    assert.ok(!(errore instanceof CredenzialeControllerNonValida));
+  });
+
+  it("una richiesta davvero sbagliata resta 400 (non valida)", () => {
+    assert.throws(() => withTenant(T, () => creaVoceAdDb(db(), { id: 1, name: "AD sede" }, { username: "svc", password: "" })), AccountLdapNonValido);
   });
 });
 

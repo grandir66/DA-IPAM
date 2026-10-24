@@ -13,8 +13,8 @@
  *   backup di SQLite, controllata con `quick_check`); poi UNA transazione che ricontrolla ogni riga contro il segreto già
  *   letto e porta a NULL le sei colonne; poi `wal_checkpoint(TRUNCATE)` e `VACUUM`, perché i valori cifrati non restino
  *   nelle pagine libere del file. Se il ricontrollo trova una riga cambiata nel frattempo, ROLLBACK e stop.
- * - **`verificaSvuotamento`**: dopo, dice quanti segreti restano nelle colonne (devono essere 0) e se ogni riga con
- *   riferimento ha il suo segreto in OpenBao.
+ * - **`verificaSvuotamento`**: dopo, dice quanti segreti restano nelle colonne (devono essere 0), che le pagine libere del
+ *   file siano 0 (il VACUUM è stato fatto davvero) e se ogni riga con riferimento ha il suo segreto in OpenBao.
  *
  * Perimetro: la tabella `credentials` di ogni cliente attivo (la stessa della migrazione). Restano com'erano, apposta, le
  * altre tabelle che cifrano (binding con segreto inline, integrazioni, AD, system_credentials): non hanno un riferimento.
@@ -91,7 +91,7 @@ export async function svuotaColonne(op: {
   const applica = op.applica === true;
   const perTenant: EsitoSvuotaTenant[] = [];
   /** I segreti letti da OpenBao nella fase di confronto, per riga: servono al ricontrollo dentro la transazione. */
-  const letti = new Map<string, Map<number, ValoreSegreto>>();
+  const letti = new Map<string, Map<number, { valore: ValoreSegreto; riferimento: string }>>();
 
   // ── Fase 1: confronto su TUTTI i clienti, niente si scrive ──────────────────────────────────────────────────────
   for (const t of op.tenants) {
@@ -107,7 +107,7 @@ export async function svuotaColonne(op: {
     const piene = righeConColonnePiene(t.dbh);
     e.conColonnePiene = piene.length;
     e.giaVuote = e.righe - piene.length;
-    const dellaRiga = new Map<number, ValoreSegreto>();
+    const dellaRiga = new Map<number, { valore: ValoreSegreto; riferimento: string }>();
     letti.set(t.codice, dellaRiga);
     for (const r of piene) {
       if (!r.riferimento) {
@@ -131,7 +131,7 @@ export async function svuotaColonne(op: {
         continue;
       }
       e.daSvuotare += 1;
-      dellaRiga.set(r.id, inOpenBao);
+      dellaRiga.set(r.id, { valore: inOpenBao, riferimento: r.riferimento });
     }
   }
 
@@ -139,34 +139,40 @@ export async function svuotaColonne(op: {
   if (!applica || bloccato) return { applicata: false, ok: !bloccato, perTenant };
 
   // ── Fase 2: un cliente alla volta, backup → transazione col ricontrollo → checkpoint e VACUUM ───────────────────
+  // Checkpoint e VACUUM si fanno SEMPRE con `applica`, anche per un cliente senza righe da svuotare: se un giro prima il
+  // VACUUM era fallito dopo il commit, al giro dopo le righe sono già vuote e i valori cifrati stanno ancora nelle pagine
+  // libere; saltare il cliente li lascerebbe lì e la verifica darebbe verde (revisione del 25/10).
   for (const t of op.tenants) {
     const e = perTenant.find((x) => x.codice === t.codice) as EsitoSvuotaTenant;
-    const dellaRiga = letti.get(t.codice) as Map<number, ValoreSegreto>;
-    if (dellaRiga.size === 0) continue;
+    const dellaRiga = letti.get(t.codice) as Map<number, { valore: ValoreSegreto; riferimento: string }>;
     try {
-      const copia = await backupAccanto(t.dbh, t.dbh.name, { cartella: op.cartellaBackup });
-      e.backup = copia.percorso;
-      const azzera = t.dbh.prepare(`UPDATE credentials SET ${COLONNE_SEGRETE.map((c) => `${c} = NULL`).join(", ")} WHERE id = ?`);
-      t.dbh
-        .transaction(() => {
-          for (const [id, inOpenBao] of dellaRiga) {
-            // Il ricontrollo: la riga deve avere ancora lo stesso riferimento e le stesse colonne di quando si è confrontato.
-            const ancora = campiVoceDb(t.dbh, id, { ignoraRiferimento: true });
-            if (!ancora.ok || !uguali(inOpenBao, { ...ancora.campi })) {
-              throw new Error(`La riga #${id} è cambiata durante lo svuotamento: annullato per questo cliente (niente toccato)`);
+      if (dellaRiga.size > 0) {
+        const copia = await backupAccanto(t.dbh, t.dbh.name, { cartella: op.cartellaBackup });
+        e.backup = copia.percorso;
+        const azzera = t.dbh.prepare(`UPDATE credentials SET ${COLONNE_SEGRETE.map((c) => `${c} = NULL`).join(", ")} WHERE id = ?`);
+        const riferimentoDi = t.dbh.prepare("SELECT credential_ref FROM credentials WHERE id = ?");
+        t.dbh
+          .transaction(() => {
+            for (const [id, letto] of dellaRiga) {
+              // Il ricontrollo: la riga deve avere ancora lo stesso riferimento e le stesse colonne di quando si è confrontato.
+              const ref = (riferimentoDi.get(id) as { credential_ref: string | null } | undefined)?.credential_ref?.trim() || null;
+              const ancora = campiVoceDb(t.dbh, id, { ignoraRiferimento: true });
+              if (ref !== letto.riferimento || !ancora.ok || !uguali(letto.valore, { ...ancora.campi })) {
+                throw new Error(`La riga #${id} è cambiata durante lo svuotamento: annullato per questo cliente (niente toccato)`);
+              }
+              azzera.run(id);
             }
-            azzera.run(id);
-          }
-        })
-        .immediate();
-      e.svuotate = dellaRiga.size;
-      // I valori cifrati non devono restare nelle pagine libere del file.
-      t.dbh.pragma("wal_checkpoint(TRUNCATE)");
+          })
+          .immediate();
+        e.svuotate = dellaRiga.size;
+      }
+      // I valori cifrati non devono restare nelle pagine libere del file né nel WAL.
+      checkpoint(t.dbh);
       t.dbh.exec("VACUUM");
-      t.dbh.pragma("wal_checkpoint(TRUNCATE)");
+      checkpoint(t.dbh);
       e.vacuum = true;
       const controllo = t.dbh.pragma("quick_check", { simple: true });
-      if (controllo !== "ok") throw new Error(`Dopo il VACUUM il controllo del database dice «${String(controllo)}»: ripristina dal backup ${e.backup}`);
+      if (controllo !== "ok") throw new Error(`Dopo il VACUUM il controllo del database dice «${String(controllo)}»${e.backup ? `: ripristina dal backup ${e.backup}` : ""}`);
       op.dopoCliente?.(t.codice);
     } catch (err) {
       e.errore = messaggio(err);
@@ -174,6 +180,12 @@ export async function svuotaColonne(op: {
     }
   }
   return { applicata: true, ok: true, perTenant };
+}
+
+/** `wal_checkpoint(TRUNCATE)`: se è occupato (`busy` = 1) il WAL non è stato svuotato e non vale come fatto. */
+function checkpoint(dbh: Database.Database): void {
+  const r = dbh.pragma("wal_checkpoint(TRUNCATE)") as Array<{ busy: number }>;
+  if (r[0]?.busy === 1) throw new Error("Il checkpoint del WAL è occupato (un'altra connessione sta leggendo o scrivendo): riprova a servizio fermo");
 }
 
 export interface EsitoVerificaSvuotamento {
@@ -185,6 +197,8 @@ export interface EsitoVerificaSvuotamento {
   senzaSegreto: Array<{ id: number; nome: string; percorso: string; motivo: string }>;
   /** Righe con riferimento e segreto in OpenBao: quelle che l'app legge da lì. */
   inOpenBao: number;
+  /** Pagine libere del file: devono essere 0 dopo il VACUUM, altrimenti i valori cifrati possono essere ancora nel file. */
+  pagineLibere: number;
   /** Righe senza colonne e senza riferimento (voci senza segreti): non è un errore, si dice. */
   senzaSegreti: number;
 }
@@ -196,13 +210,14 @@ export interface EsitoVerificaSvuotamento {
 export async function verificaSvuotamento(op: { store: SecretStore; tenants: TenantDaMigrare[] }): Promise<{ ok: boolean; perTenant: EsitoVerificaSvuotamento[] }> {
   const perTenant: EsitoVerificaSvuotamento[] = [];
   for (const t of op.tenants) {
-    const v: EsitoVerificaSvuotamento = { codice: t.codice, righe: 0, rimaste: [], senzaSegreto: [], inOpenBao: 0, senzaSegreti: 0 };
+    const v: EsitoVerificaSvuotamento = { codice: t.codice, righe: 0, rimaste: [], senzaSegreto: [], pagineLibere: 0, inOpenBao: 0, senzaSegreti: 0 };
     perTenant.push(v);
     if (!schemaVaultPresente(t.dbh)) {
       v.senzaSegreto.push({ id: 0, nome: "(schema)", percorso: "", motivo: "lo schema del vault non è aggiornato (credential_ref manca)" });
       continue;
     }
     v.righe = (t.dbh.prepare("SELECT COUNT(*) AS n FROM credentials").get() as { n: number }).n;
+    v.pagineLibere = Number(t.dbh.pragma("freelist_count", { simple: true }));
     v.rimaste = righeConColonnePiene(t.dbh).map((r) => ({ id: r.id, nome: r.nome }));
     const righe = t.dbh.prepare("SELECT id, name, credential_ref FROM credentials ORDER BY id").all() as Array<{ id: number; name: string; credential_ref: string | null }>;
     for (const r of righe) {
@@ -220,7 +235,7 @@ export async function verificaSvuotamento(op: { store: SecretStore; tenants: Ten
       }
     }
   }
-  return { ok: perTenant.every((v) => v.rimaste.length === 0 && v.senzaSegreto.length === 0), perTenant };
+  return { ok: perTenant.every((v) => v.rimaste.length === 0 && v.senzaSegreto.length === 0 && v.pagineLibere === 0), perTenant };
 }
 
 /** La cartella dei backup dello svuotamento: `<dati>/backups`. */

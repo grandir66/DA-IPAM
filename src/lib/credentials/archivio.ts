@@ -29,7 +29,7 @@ import { cancellaDaOpenBao } from "@/lib/vault/cancella";
 import { vaultOpenBaoAcceso } from "@/lib/vault/stato";
 import { aggiornamentiCredenziale, colonneNuovaCredenziale } from "./aggiornamenti";
 import { mascheraCredenziale, type CredenzialeVista } from "./maschera";
-import { COLONNE_SEGRETE } from "./segreti";
+import { COLONNE_SEGRETE, presenzaSegretiDb } from "./segreti";
 import {
   haColonnaRiferimento,
   nomeClienteDb,
@@ -74,6 +74,19 @@ export interface ColonneCredenziale {
   port?: number | null;
   /** da-vault: il percorso in OpenBao (lo scrive la migrazione; la pagina lo toglie quando cambia un segreto). */
   credential_ref?: string | null;
+}
+
+/**
+ * I segreti di una voce nuova non sono andati in OpenBao (`creaVoceDb` ha dato 503). Chi crea una voce da dentro un'altra
+ * operazione (AD, controller) lo lancia con questa classe, NON con la sua «non valida» (400): non è la richiesta a essere
+ * sbagliata. Le rotte rispondono 503 col motivo.
+ */
+export class SegretiNonSalvati extends Error {
+  readonly stato = 503 as const;
+  constructor(messaggio: string) {
+    super(messaggio);
+    this.name = "SegretiNonSalvati";
+  }
 }
 
 type Colonna = keyof ColonneCredenziale;
@@ -341,6 +354,14 @@ export function modificaVoceDb(dbh: Database.Database, id: number, dati: Partial
       }
     }
 
+    const aggiornamenti = aggiornamentiCredenziale(dati, corpo, { chiaro: inOpenBao }) as Riga;
+    // Con OpenBao, una richiesta che cambia solo nome e/o porta non guarda i segreti (le colonne sono vuote): non li
+    // legge, non li controlla e non li scrive. Rinominare una voce funziona anche con OpenBao giù (revisione del 25/10).
+    if (inOpenBao && !cambiaTipo && Object.keys(aggiornamenti).every((k) => k === "name" || k === "port")) {
+      const voce = aggiornaCredenzialeDb(dbh, id, aggiornamenti as Partial<ColonneCredenziale>);
+      if (!voce) return { ok: false, stato: 404, errore: "Credenziale non trovata" };
+      return { ok: true, stato: 200, vista: mascheraCredenziale(voce, totaleUsi(usiCredenzialeDb(dbh, id)), presenzaSegretiDb(dbh, voce)) };
+    }
     let base = salvata as unknown as Riga;
     let attuali: SegretiPerColonna | null = null;
     if (inOpenBao) {
@@ -352,7 +373,6 @@ export function modificaVoceDb(dbh: Database.Database, id: number, dati: Partial
       attuali = a.segreti;
       base = { ...base, ...attuali } as Riga;
     }
-    const aggiornamenti = aggiornamentiCredenziale(dati, corpo, { chiaro: inOpenBao }) as Riga;
     // Il metodo salvato non vale per un tipo nuovo: se la richiesta non ne dice
     // uno, si torna al primo del tipo.
     if (dati.auth_method === undefined && cambiaTipo && salvata.auth_method != null) aggiornamenti.auth_method = null;

@@ -6,6 +6,7 @@ import { reloadTenantScheduler } from "@/lib/cron/scheduler";
 import { getAdIntegrations } from "@/lib/db";
 import { creaIntegrazioneAd, VoceNonValePerProtocollo } from "@/lib/credentials/lega-voce";
 import { accountDalCorpo } from "@/lib/ad/account-ldap";
+import { SegretiNonSalvati } from "@/lib/credentials/archivio";
 import { AccountLdapNonValido, vistaIntegrazioneAd, vistaIntegrazioniAd } from "@/lib/ad/credenziale-ldap";
 import { z } from "zod/v4";
 
@@ -112,6 +113,7 @@ export async function POST(request: Request) {
     if (err instanceof VoceNonValePerProtocollo || err instanceof AccountLdapNonValido) {
       return NextResponse.json({ error: err.message }, { status: 400 });
     }
+    if (err instanceof SegretiNonSalvati) return NextResponse.json({ error: err.message }, { status: 503 });
     const msg = err instanceof Error ? err.message : "Errore sconosciuto";
     if (msg.includes("UNIQUE constraint")) {
       return NextResponse.json({ error: "Integrazione già esistente per questo DC e dominio" }, { status: 409 });

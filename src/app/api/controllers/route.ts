@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAdmin, requireAuth, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
 import { checkControllerInput, createController, listControllerViews, unifiOsWarningFor } from "@/lib/controllers/service";
+import { SegretiNonSalvati } from "@/lib/credentials/archivio";
 import { CredenzialeControllerNonValida } from "@/lib/controllers/credenziale";
 import { NO_STORE, readJson, reloadSchedulerForCurrentTenant } from "@/lib/controllers/route-helpers";
 
@@ -35,6 +36,7 @@ export async function POST(req: Request) {
       controller = createController(check.value);
     } catch (e) {
       if (e instanceof CredenzialeControllerNonValida) return NextResponse.json({ error: e.message }, { status: 400 });
+      if (e instanceof SegretiNonSalvati) return NextResponse.json({ error: e.message }, { status: 503 });
       throw e;
     }
     const warnings = [reloadSchedulerForCurrentTenant(), await unifiOsWarningFor(check.value)];

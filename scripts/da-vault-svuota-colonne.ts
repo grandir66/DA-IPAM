@@ -16,6 +16,9 @@
  * segreto mancante o diverso, colonna illeggibile, OpenBao irraggiungibile, segreti rimasti): in quel caso, a vuoto o con
  * --applica, NON ha toccato niente. Mai valori a schermo: solo numeri, id e nomi delle righe.
  *
+ * Dopo ogni importazione di un pacchetto (transfer/import.ts) le voci nuove hanno le colonne piene e nessun riferimento:
+ * rifare migra --applica, migra --verifica e questo comando (ADR 0035).
+ *
  * Con --applica: copia del database in <dati>/backups/ (con quick_check), una transazione per cliente col ricontrollo di
  * ogni riga, poi checkpoint e VACUUM. La copia contiene i segreti cifrati con la chiave dell'appliance: è il punto di
  * ritorno; si cancella dopo aver verificato l'hub (vale come ogni altro backup con segreti).
@@ -47,15 +50,18 @@ async function main(): Promise<void> {
     const v = await verificaSvuotamento({ store, tenants });
     let rimaste = 0;
     let mancanti = 0;
+    let libere = 0;
     for (const t of v.perTenant) {
-      console.info(`${t.codice}: ${t.righe} credenziali, ${t.rimaste.length} con segreti ancora nelle colonne, ${t.inOpenBao} con il segreto in OpenBao, ${t.senzaSegreti} senza segreti`);
+      console.info(`${t.codice}: ${t.righe} credenziali, ${t.rimaste.length} con segreti ancora nelle colonne, ${t.inOpenBao} con il segreto in OpenBao, ${t.senzaSegreti} senza segreti, ${t.pagineLibere} pagine libere`);
+      if (t.pagineLibere > 0) console.info(`  PAGINE LIBERE nel database di ${t.codice}: i valori cifrati possono essere ancora nel file (rilancia --applica: fa il VACUUM anche a righe già vuote)`);
       for (const r of t.rimaste) console.info(`  RIMASTA #${r.id} «${r.nome}»`);
       for (const s of t.senzaSegreto) console.info(`  SENZA SEGRETO #${s.id} «${s.nome}» (${s.percorso}): ${s.motivo}`);
       rimaste += t.rimaste.length;
       mancanti += t.senzaSegreto.length;
+      libere += t.pagineLibere;
     }
-    if (!v.ok) esci(`Verifica NON superata: ${rimaste} righe con segreti nelle colonne, ${mancanti} senza segreto in OpenBao`, 2);
-    console.info("Verifica superata: 0 segreti rimasti nelle colonne cifrate, ogni riga con riferimento ha il suo segreto in OpenBao.");
+    if (!v.ok) esci(`Verifica NON superata: ${rimaste} righe con segreti nelle colonne, ${mancanti} senza segreto in OpenBao, ${libere} pagine libere`, 2);
+    console.info("Verifica superata: 0 segreti rimasti nelle colonne cifrate, 0 pagine libere, ogni riga con riferimento ha il suo segreto in OpenBao.");
     return;
   }
 

@@ -12,6 +12,7 @@ import {
   unifiOsWarningFor,
   updateController,
 } from "@/lib/controllers/service";
+import { SegretiNonSalvati } from "@/lib/credentials/archivio";
 import { CredenzialeControllerNonValida } from "@/lib/controllers/credenziale";
 import {
   NO_STORE,
@@ -59,6 +60,7 @@ export async function PUT(req: Request, ctx: Ctx) {
       controller = updateController(id, check.value);
     } catch (e) {
       if (e instanceof CredenzialeControllerNonValida) return NextResponse.json({ error: e.message }, { status: 400 });
+      if (e instanceof SegretiNonSalvati) return NextResponse.json({ error: e.message }, { status: 503 });
       throw e;
     }
     if (!controller) return notFound();

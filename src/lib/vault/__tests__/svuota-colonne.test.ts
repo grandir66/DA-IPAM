@@ -261,6 +261,23 @@ describe("applica", () => {
     assert.equal(colonnePiene(getTenantDb(B)), 1, "e B non è stato toccato");
   });
 
+  it("il riferimento cambiato dopo il confronto (stessi valori, altro percorso): ROLLBACK, niente svuotato", async () => {
+    // Guasto provato: il commento del ricontrollo diceva «stesso riferimento e stesse colonne», ma si guardavano solo le
+    // colonne: una riga ripuntata altrove sarebbe stata svuotata col suo segreto nel percorso sbagliato.
+    const cambia = new OpenBaoStore({ url: finto.url, roleId: finto.roleId, secretId: () => finto.secretId, cartelle: [], fetch: finto.fetch });
+    const get = cambia.get.bind(cambia);
+    let ultima = 0;
+    cambia.get = async (p, o) => {
+      const v = await get(p, o);
+      if (++ultima === 3) getTenantDb(A).prepare("UPDATE credentials SET credential_ref = 'clienti/c70041/da-ipam/altrove-1' WHERE id = ?").run(ids.snmp);
+      return v;
+    };
+    const e = await svuotaColonne({ store: cambia, tenants: tenants(), applica: true, cartellaBackup: backups });
+    assert.equal(e.ok, false);
+    assert.match(e.perTenant[0].errore ?? "", /è cambiata durante lo svuotamento/);
+    assert.equal(colonnePiene(getTenantDb(A)), 3);
+  });
+
   it("un crash dopo il primo cliente: A svuotato, B intatto; rilanciando B si svuota", async () => {
     const e1 = await svuotaColonne({
       store, tenants: tenants(), applica: true, cartellaBackup: backups,
@@ -273,6 +290,60 @@ describe("applica", () => {
     const e = await svuotaColonne({ store, tenants: tenants(), applica: true, cartellaBackup: backups });
     assert.equal(e.ok, true);
     assert.equal(colonnePiene(getTenantDb(B)), 0);
+  });
+});
+
+describe("VACUUM e checkpoint (rilievo di revisione del 25/10)", () => {
+  /** Simula "il VACUUM è fallito dopo il commit": righe vuote, ma i cifrati ancora nelle pagine libere del file. */
+  function riempiLePagineLibere(t: string): void {
+    const d = getTenantDb(t);
+    d.exec("CREATE TABLE IF NOT EXISTS _scarto (v TEXT)");
+    d.prepare("INSERT INTO _scarto (v) VALUES (?)").run(`${cifrati[0]}${"x".repeat(9000)}`);
+    d.exec("DELETE FROM _scarto");
+    d.exec("DROP TABLE _scarto");
+    d.pragma("wal_checkpoint(TRUNCATE)");
+    assert.ok(Number(d.pragma("freelist_count", { simple: true })) > 0, "la prova ha davvero pagine libere");
+  }
+
+  it("un cliente già vuoto ma col file sporco: --applica fa il VACUUM lo stesso, la verifica lo vedeva rosso prima", async () => {
+    // Guasto provato: se il VACUUM falliva dopo il commit, al giro dopo le righe erano già vuote, il cliente veniva
+    // saltato e --verifica dava verde con i cifrati ancora nel file.
+    await svuotaColonne({ store, tenants: tenants(), applica: true, cartellaBackup: backups });
+    riempiLePagineLibere(A);
+    const prima = await verificaSvuotamento({ store, tenants: tenants() });
+    assert.equal(prima.ok, false, "la verifica vede le pagine libere");
+    assert.ok(prima.perTenant[0].pagineLibere > 0);
+    assert.equal(prima.perTenant[0].rimaste.length, 0);
+
+    const e = await svuotaColonne({ store, tenants: tenants(), applica: true, cartellaBackup: backups });
+    assert.equal(e.ok, true, rapporto(e.perTenant.map((t) => t.errore)));
+    assert.deepEqual(e.perTenant.map((t) => [t.daSvuotare, t.svuotate, t.vacuum]), [[0, 0, true], [0, 0, true]]);
+    const dopo = await verificaSvuotamento({ store, tenants: tenants() });
+    assert.equal(dopo.ok, true);
+    assert.equal(dopo.perTenant[0].pagineLibere, 0);
+    const file = getTenantDb(A).name;
+    for (const f of [file, `${file}-wal`]) {
+      if (existsSync(f)) assert.ok(!readFileSync(f).toString("latin1").includes(cifrati[0]), `un valore cifrato è rimasto in ${f}`);
+    }
+  });
+
+  it("checkpoint occupato (un lettore tiene aperto il WAL): errore dichiarato, non un VACUUM dato per fatto", async () => {
+    // Guasto provato: wal_checkpoint(TRUNCATE) risponde busy=1 senza lanciare; senza leggerlo il WAL, che ha ancora i
+    // vecchi valori, passava per svuotato.
+    const lettore = new Database(getTenantDb(A).name, { readonly: true });
+    lettore.pragma("journal_mode");
+    const it = lettore.prepare("SELECT * FROM credentials").iterate(); // snapshot di lettura aperto
+    it.next();
+    getTenantDb(A).pragma("busy_timeout = 300");
+    try {
+      const e = await svuotaColonne({ store, tenants: tenants(), applica: true, cartellaBackup: backups });
+      assert.equal(e.ok, false);
+      assert.match(e.perTenant[0].errore ?? "", /checkpoint del WAL è occupato/);
+    } finally {
+      it.return?.();
+      lettore.close();
+      getTenantDb(A).pragma("busy_timeout = 5000");
+    }
   });
 });
 

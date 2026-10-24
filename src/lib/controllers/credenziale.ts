@@ -23,7 +23,7 @@
 import type Database from "better-sqlite3";
 import type { z } from "zod";
 import type { CredentialSchema } from "@/lib/validators";
-import { creaCredenzialeDb, creaVoceDb } from "@/lib/credentials/archivio";
+import { creaCredenzialeDb, creaVoceDb, SegretiNonSalvati } from "@/lib/credentials/archivio";
 import { colonneChiareDb, leggiSegretoDb } from "@/lib/credentials/segreti";
 import { METODI_PER_TIPO, normalizzaTipo } from "@/lib/credentials/tipi";
 import {
@@ -197,7 +197,7 @@ export function creaVoceControllerDb(dbh: Database.Database, c: ControllerDellaV
     password: nuova.metodo === "chiave" ? nuova.apiKey : nuova.password,
   };
   const esito = creaVoceDb(dbh, dati);
-  if (!esito.ok) throw new CredenzialeControllerNonValida(esito.errore);
+  if (!esito.ok) throw esito.stato === 503 ? new SegretiNonSalvati(esito.errore) : new CredenzialeControllerNonValida(esito.errore);
   return { id: esito.vista.id, nome };
 }
 

@@ -44,7 +44,13 @@ controller UniFi/Omada). Una transazione di better-sqlite3 non può contenere un
     non tocca niente, in nessun cliente** (prima si confrontano tutti, poi si scrive);
   - per ogni cliente: copia in `<dati>/backups/` (API di backup di SQLite, `quick_check`), **una transazione** che ricontrolla
     ogni riga e porta a NULL le sei colonne, `wal_checkpoint(TRUNCATE)` e `VACUUM` (i valori non restano nelle pagine
-    libere), `quick_check` finale. Il rapporto ha solo numeri, id e nomi di riga.
+    libere), `quick_check` finale. Checkpoint e `VACUUM` si fanno con `--applica` **anche per i clienti senza righe da
+    svuotare** (un `VACUUM` fallito dopo il commit non deve restare per sempre), e un `wal_checkpoint` occupato (`busy` = 1) è
+    un errore. Il ricontrollo in transazione rilegge anche `credential_ref`. `--verifica` controlla anche `freelist_count` = 0.
+    Il rapporto ha solo numeri, id e nomi di riga.
+
+Errori: `creaVoceDb` dà `503` quando i segreti non vanno in OpenBao; chi la chiama da dentro un'altra operazione (AD,
+controller) lo rilancia come `SegretiNonSalvati` (503), non come «non valida» (400).
 
 ## Alternative scartate
 
@@ -68,13 +74,24 @@ controller UniFi/Omada). Una transazione di better-sqlite3 non può contenere un
 
 ### Negative
 
-- **Il thread del server si ferma** per la durata della richiesta di scrittura (millisecondi sulla rete interna; al massimo 5 s
-  se OpenBao non risponde). Va bene per un'azione rara di un amministratore; non va usata per un percorso caldo. Le letture
-  restano asincrone e dalla cache.
+- **Il thread del server si ferma** per la durata della richiesta (millisecondi sulla rete interna). Va bene per un'azione
+  rara di un amministratore; non va usata per un percorso caldo. Le letture restano asincrone e dalla cache. **Caso peggiore
+  reale** (OpenBao che non risponde): ogni `putSync`/`getSync` ha UN budget complessivo di 5 s (`timeoutSyncMs`), con una
+  scadenza condivisa fra login, scrittura, rilettura ed eventuale secondo login dopo un 403; ogni richiesta ha solo il tempo
+  che resta. Una **creazione** è una `putSync`: al più 5 s. Una **modifica che tocca i segreti** legge i segreti attuali (una
+  `getSync`) e poi scrive (una `putSync`): al più 10 s. Una modifica di solo nome o porta non chiama OpenBao (0 s). Se il
+  worker non parte (caso che non si è mai visto) si aggiungono 4 s di margine d'avvio. Prima del budget unico il caso
+  peggiore era ~15-20 s.
 - Una scrittura riuscita seguita da un errore **più avanti nella stessa transazione** (es. la creazione di un apparato che
   fallisce dopo la voce) annulla la riga del database ma lascia il segreto in OpenBao: un percorso **orfano**, che
   `da-vault-migra-openbao --verifica` elenca. Ogni modifica dalla pagina crea una versione nuova del KV: servono
   `max_versions`/`delete_version_after` sul mount (già segnalato in ADR 0034).
+- **Dopo ogni importazione di un pacchetto** (`transfer/import.ts` → `converti-apparati`, che crea voci con `creaCredenzialeDb`)
+  le voci nuove hanno le colonne piene e nessun riferimento (anche l'esportazione le porta così, apposta: il percorso è del
+  sorgente). Con l'interruttore acceso vanno rifatte `da-vault-migra-openbao --applica`, `--verifica` e
+  `da-vault-svuota-colonne` (il comando segnala le righe «senza riferimento»). Procedura, non automatismo.
+- **Esportazione del cliente** (`transfer/export.ts`, livello `config`): con l'interruttore acceso le colonne di `credentials`
+  si leggono dal lettore unico (`campiVoceDb`); se OpenBao non risponde la voce parte senza segreto e `secretErrors` conta.
 - Le conversioni one-off (`converti-*.ts`, `normalizza-tipi.ts`, la migrazione UniFi `creaVoceControllerCifrataDb`) scrivono
   ancora nelle colonne (sono dati vecchi già cifrati, sotto un segno «fatto»): se una girasse dopo lo svuotamento, la riga
   avrebbe colonne piene e nessun riferimento, e `da-vault-svuota-colonne` la segnala (SENZA RIFERIMENTO).

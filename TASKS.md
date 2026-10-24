@@ -30,6 +30,10 @@ Esecuzione, parte di codice (23/10, sessione cloud, ramo `claude/da-vault-codice
 - [ ] (scoperto) cambio di generazione della chiave Domarc: oggi `da-vault-recover rotate` a mano; la riscrittura dello slot al primo sblocco (piano, «Più avanti») non è fatta
 - [ ] (scoperto) `kdbxweb` porta `@xmldom/xmldom` 0.7 con avvisi alti: forzato a 0.8.15 con `overrides` in package.json; da ricontrollare a ogni aggiornamento di kdbxweb
 - [ ] (scoperto) `ENCRYPTION_KEY` resta sull'appliance per i segreti TOTP (ADR 0034): toglierla vuole un'altra soluzione per la 2FA
+- [x] (24/10, sessione locale) PR #18 fusa (`17dddc68`) e rilasciata **v0.9.897**; PR #19 (ricarica della cache per un segreto mancante, secret_id illeggibile = errore controllato) **v0.9.898**
+- [x] (24/10) passo 6 sull'hub in esercizio: AppRole `app-da-ipam` (IP NetBird dell'hub), `.env.local` con `DA_VAULT_OPENBAO*`, backup in `data/backups/*-pre-da-vault-openbao-20261023-223753.db`, 17 credenziali migrate, `--verifica` 0 diverse, `DA_VAULT_OPENBAO=1`; SNMP, SSH, AD, UniFi ok dopo l'accensione. Dettaglio: DA-Link `TASKS.md` (parte locale)
+- [ ] (24/10) passo 10 su un'appliance di prova: serve l'accesso alle appliance del laboratorio e la VM modello con `tpmstate0` (Deploy-Appliance); passo 11 dai clienti con la loro passphrase
+- [ ] (24/10) **`vault.domarc.it` non è nel DNS**: sull'hub è in `/etc/hosts` (backup `/etc/hosts.bak-*`), da togliere quando c'è il record (Riccardo)
 
 
 ## 2026-10-23 — Uscita vera, istanza controllata e ricordata (livello completo, ADR 0033)

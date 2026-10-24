@@ -17,11 +17,10 @@
  * Il DB si riceve come handle; la scrittura dell'esito passa da `db-tenant` (contesto tenant attivo).
  */
 import type Database from "better-sqlite3";
-import { safeDecrypt } from "@/lib/crypto";
 import { portaCredenziale, type CredProtocol } from "./porte";
 import { provaCredenzialeSnmpDb } from "./prova-snmp";
 import { tipiPerProtocollo } from "./tipi";
-import { accessoSshDb } from "./segreti";
+import { accessoSshDb, colonneChiareDb } from "./segreti";
 import { shouldAttemptCredential } from "@/lib/scanner/credential-anti-lockout";
 import { recordCredentialFailure, recordCredentialSuccess } from "@/lib/db-tenant";
 import type { ProtocolloApparato } from "@/lib/devices/proposta-apparato";
@@ -130,10 +129,8 @@ export async function provaCredenzialeSuHost(
   portaChiesta?: number | null,
 ): Promise<EsitoProvaSuHost> {
   const cred = dbh
-    .prepare(`SELECT id, name, credential_type, port, encrypted_username, encrypted_password FROM credentials WHERE id = ?`)
-    .get(credentialId) as
-    | { id: number; name: string; credential_type: string; port: number | null; encrypted_username: string | null; encrypted_password: string | null }
-    | undefined;
+    .prepare(`SELECT id, name, credential_type, port FROM credentials WHERE id = ?`)
+    .get(credentialId) as { id: number; name: string; credential_type: string; port: number | null } | undefined;
   if (!cred) return nonProvata("Credenziale non trovata");
   const type = String(cred.credential_type || "").toLowerCase();
   const porta = (p: CredProtocol) => (typeof portaChiesta === "number" ? portaChiesta : portaCredenziale({ port: cred.port ?? null }, p));
@@ -190,8 +187,12 @@ export async function provaCredenzialeSuHost(
   }
 
   if (type === "windows") {
-    const username = cred.encrypted_username ? safeDecrypt(cred.encrypted_username) : "";
-    const password = cred.encrypted_password ? safeDecrypt(cred.encrypted_password) : "";
+    // Utente e password dal lettore unico (da-vault): con OpenBao e il riferimento vengono da lì, mai dalla colonna vuota.
+    const letti = colonneChiareDb(dbh, credentialId, ["encrypted_username", "encrypted_password"]);
+    if (!letti.ok) return nonProvata(letti.motivo);
+    if (!letti.esiste) return nonProvata("Credenziale non trovata");
+    const username = letti.valori.encrypted_username ?? null;
+    const password = letti.valori.encrypted_password ?? null;
     if (username === null || password === null) return nonProvata("Credenziale corrotta: rigenerare la password");
     if (!username || !password) return nonProvata("Username e password richiesti");
     const port = porta("winrm");

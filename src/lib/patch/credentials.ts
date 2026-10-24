@@ -37,6 +37,7 @@ import {
 import { DEFAULT_PORTS } from "@/lib/credentials/porte";
 import { tipiPerProtocollo } from "@/lib/credentials/tipi";
 import { chiaveNonSupportata, nomeVoceDb } from "@/lib/credentials/segreti";
+import { vaultOpenBaoAcceso } from "@/lib/vault/stato";
 import type { WinrmCredentialsResolved } from "./types";
 
 /** Le fonti delle patch e del terminale: righe host, poi l'account WinRM dell'AD. */
@@ -174,8 +175,16 @@ export function hostConCredenzialeWinrmDb(db: Database): Set<number> {
   const tipi = tipiPerProtocollo("winrm");
   const inTipi = tipi.map(() => "?").join(",");
   const adesso = new Date().toISOString();
+  // da-vault: con OpenBao acceso una voce con il riferimento ha le colonne vuote e i segreti in OpenBao; "ha utente e
+  // password" lo dice il riferimento (che la voce si legga davvero lo scopre il loader, come per le colonne). Spento
+  // (o schema senza la colonna) la regola è quella di prima (le parentesi in più non cambiano il risultato).
+  const conRiferimento =
+    vaultOpenBaoAcceso() && (db.prepare("PRAGMA table_info(credentials)").all() as Array<{ name: string }>).some((c) => c.name === "credential_ref");
   const voceBuona = (a: string): string =>
-    `${a}.credential_type IN (${inTipi}) AND COALESCE(${a}.encrypted_username, '') != '' AND COALESCE(${a}.encrypted_password, '') != ''`;
+    `${a}.credential_type IN (${inTipi}) AND (` +
+    `(COALESCE(${a}.encrypted_username, '') != '' AND COALESCE(${a}.encrypted_password, '') != '')` +
+    (conRiferimento ? ` OR trim(COALESCE(${a}.credential_ref, '')) != ''` : "") +
+    ")";
   const righe = db
     .prepare(
       `WITH ad AS (

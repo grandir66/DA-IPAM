@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { getCredentialById, getDb } from "@/lib/db";
 import { CredentialSchema } from "@/lib/validators";
-import { safeDecrypt } from "@/lib/crypto";
 import { eliminaVoceDb, modificaVoceDb } from "@/lib/credentials/archivio";
 import { mascheraCredenziale, type CredenzialeVista } from "@/lib/credentials/maschera";
+import { colonneChiareDb, presenzaSegretiDb } from "@/lib/credentials/segreti";
 import { totaleUsi, usiCredenzialeDb, type UsiCredenziale } from "@/lib/credentials/usi";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
@@ -31,10 +31,16 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       }
       const usi = usiCredenzialeDb(getDb(), credential.id);
       const risposta: CredenzialeVista & { usi: UsiCredenziale; username?: string | null } = {
-        ...mascheraCredenziale(credential, totaleUsi(usi)),
+        ...mascheraCredenziale(credential, totaleUsi(usi), presenzaSegretiDb(getDb(), credential)),
         usi,
       };
-      if (forEdit) risposta.username = credential.encrypted_username ? safeDecrypt(credential.encrypted_username) : null;
+      if (forEdit) {
+        // L'utente dal lettore unico (da-vault): con OpenBao e il riferimento viene da lì; se OpenBao non risponde,
+        // 503 col motivo, non un modulo con l'utente vuoto da salvare per sbaglio.
+        const letto = colonneChiareDb(getDb(), credential.id, ["encrypted_username"]);
+        if (!letto.ok) return NextResponse.json({ error: letto.motivo }, { status: 503 });
+        risposta.username = letto.esiste ? (letto.valori.encrypted_username ?? null) || null : null;
+      }
       return NextResponse.json(risposta);
     } catch (error) {
       console.error("Error fetching credential:", error);

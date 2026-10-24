@@ -915,7 +915,7 @@ function opzioniVault(): Opzione[] {
       id: "file.vault_openbao",
       gruppo: "da_file",
       nome: "Credenziali da OpenBao",
-      cosa: "le credenziali dei device lette da OpenBao col riferimento (credential_ref), sull'hub",
+      cosa: "le credenziali dei device lette e scritte in OpenBao col riferimento (credential_ref), sull'hub: un segreto creato o cambiato dalla pagina va subito in OpenBao",
       valePer: "hub",
       forma: "file",
       diSerie: "spento",

@@ -13,7 +13,7 @@
 import * as os from "node:os";
 import type { Database } from "better-sqlite3";
 import { getSetting, setSetting } from "../db-hub";
-import { safeDecrypt } from "../crypto";
+import { utentiDelleVociDb } from "../credentials/segreti";
 import { credenzialeLdapDb, type CredenzialeLdap, type RigaAccountLdap } from "../ad/credenziale-ldap";
 import { normalizeAccount, normalizeIp, type SelfIdentity } from "./wazuh-alerts";
 
@@ -89,6 +89,15 @@ function segnalaUnaVolta(id: number, motivo: string): void {
   console.warn(`[self-identity] AD #${id}: account LDAP non letto, i suoi accessi non si riconoscono come nostri nei log: ${motivo}`);
 }
 
+const voceGiaSegnalata = new Set<string>();
+
+function segnalaVocePersa(id: number, motivo: string): void {
+  const chiave = `${id}:${motivo}`;
+  if (voceGiaSegnalata.has(chiave)) return;
+  voceGiaSegnalata.add(chiave);
+  console.warn(`[self-identity] credenziale #${id}: utente non letto, i suoi accessi non si riconoscono come nostri nei log: ${motivo}`);
+}
+
 function hostOf(url: string): string | null {
   try {
     return new URL(url).hostname;
@@ -131,11 +140,14 @@ export function collectSelfIdentity(db: Database): SelfIdentity {
     }
   }
   // Voci Windows e, dalla tappa 2 (2f), l'account LDAP dell'AD come voce `ad`.
-  for (const r of tryAll<{ encrypted_username: string | null }>(
-    "SELECT encrypted_username FROM credentials WHERE credential_type IN ('windows', 'ad')",
-  )) {
-    const u = r.encrypted_username ? safeDecrypt(r.encrypted_username) : null;
-    if (u) dbAccounts.push(u);
+  // Gli utenti dal lettore unico (da-vault): con OpenBao e il riferimento vengono da lì, non dalla colonna vuota.
+  try {
+    for (const v of utentiDelleVociDb(db, ["windows", "ad"])) {
+      if (v.errore) segnalaVocePersa(v.id, v.errore);
+      else if (v.username) dbAccounts.push(v.username);
+    }
+  } catch {
+    // schema più vecchio, tabella assente: best-effort, come le altre query
   }
   for (const r of tryAll<{ base_url: string | null }>("SELECT base_url FROM vuln_scanners")) {
     const h = r.base_url ? hostOf(r.base_url) : null;

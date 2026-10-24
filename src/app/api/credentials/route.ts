@@ -3,6 +3,7 @@ import { getAllCredentials, getDb } from "@/lib/db";
 import { CredentialSchema } from "@/lib/validators";
 import { creaVoceDb } from "@/lib/credentials/archivio";
 import { mascheraCredenziale } from "@/lib/credentials/maschera";
+import { presenzaSegretiDb } from "@/lib/credentials/segreti";
 import { usiTotaliDb } from "@/lib/credentials/usi";
 import { requireAdminOrOnboarding, isAuthError } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
@@ -14,8 +15,10 @@ import { withTenantFromSession } from "@/lib/api-tenant";
 export async function GET() {
   return withTenantFromSession(async () => {
     try {
-      const usi = usiTotaliDb(getDb());
-      const voci = getAllCredentials().map((c) => mascheraCredenziale(c, usi.get(c.id) ?? 0));
+      const dbh = getDb();
+      const usi = usiTotaliDb(dbh);
+      // I segreti "ci sono" guardando le colonne o, con OpenBao e il riferimento, OpenBao (da-vault): le colonne sono vuote.
+      const voci = getAllCredentials().map((c) => mascheraCredenziale(c, usi.get(c.id) ?? 0, presenzaSegretiDb(dbh, c)));
       // v0.2.642 audit perf UI7: cache client 60s + SWR 5min (read-mostly).
       // La pagina Credenziali e il wizard chiedono `no-store`: dopo una
       // modifica l'elenco non deve tornare com'era.
@@ -44,6 +47,7 @@ export async function POST(request: Request) {
       if (!parsed.success) {
         return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
       }
+      // Con OpenBao acceso i segreti vanno in OpenBao prima di tutto: se non vanno, 503 col motivo e niente salvato.
       const esito = creaVoceDb(getDb(), parsed.data);
       if (!esito.ok) return NextResponse.json({ error: esito.errore }, { status: esito.stato });
       return NextResponse.json(esito.vista, { status: esito.stato });

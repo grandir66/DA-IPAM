@@ -121,8 +121,9 @@ describe("trova.ts: la prova di una voce Windows", () => {
     // alla connessione. Con la colonna vuota il vecchio codice si fermava prima.
     const e = await withTenant(T, () => provaCredenzialeSuHost(db(), id.win, "127.0.0.1", 1));
     assert.equal(e.ok, false);
-    assert.doesNotMatch(e.ok ? "" : e.errore, /Username e password richiesti|corrotta/);
-    assert.ok(!(e.ok ? "" : e.errore).includes("pw-win-bao"));
+    const errore = e.ok ? "" : (e.errore ?? "");
+    assert.doesNotMatch(errore, /Username e password richiesti|corrotta/);
+    assert.ok(!errore.includes("pw-win-bao"));
   });
 
   it("OpenBao oltre la cache: il motivo dichiarato, non «richiesti»", async () => {
@@ -130,7 +131,7 @@ describe("trova.ts: la prova di una voce Windows", () => {
     adesso += 31 * MIN;
     const e = await withTenant(T, () => provaCredenzialeSuHost(db(), id.win, "127.0.0.1", 1));
     assert.equal(e.ok, false);
-    assert.match(e.ok ? "" : e.errore, /OpenBao non risponde/);
+    assert.match(e.ok ? "" : (e.errore ?? ""), /OpenBao non risponde/);
   });
 });
 

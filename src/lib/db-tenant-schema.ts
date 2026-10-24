@@ -983,6 +983,33 @@ CREATE TABLE IF NOT EXISTS mac_ip_mapping (
   previous_ip TEXT
 );
 
+-- Sensore trunk (2026-10-24): copia di quanto il sensore vede sulla porta trunk
+-- (VLAN, MAC, IP, nome). Si riempie solo con tenant_settings.trunk_lettura = '1'.
+CREATE TABLE IF NOT EXISTS trunk_osservazioni (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  vid INTEGER NOT NULL,
+  mac_normalized TEXT NOT NULL,
+  mac_display TEXT NOT NULL,
+  ip TEXT NOT NULL DEFAULT '',
+  nome TEXT,
+  fonte_nome TEXT,
+  passivo INTEGER NOT NULL DEFAULT 0,
+  attivo INTEGER NOT NULL DEFAULT 0,
+  prima_vista TEXT NOT NULL,
+  ultima_vista TEXT NOT NULL,
+  UNIQUE(vid, mac_normalized, ip)
+);
+
+CREATE TABLE IF NOT EXISTS trunk_vlan (
+  vid INTEGER PRIMARY KEY,
+  vista INTEGER NOT NULL DEFAULT 0,
+  dichiarata INTEGER NOT NULL DEFAULT 0,
+  mac INTEGER NOT NULL DEFAULT 0,
+  reti TEXT NOT NULL DEFAULT '[]',
+  ultima_vista TEXT,
+  aggiornato TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS mac_ip_history (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   mac_normalized TEXT NOT NULL,

@@ -166,6 +166,10 @@ export const EXCLUDED_TENANT_TABLES: string[] = [
   // un'altra istanza rimanderebbe all'hub gli invii di questa, o resterebbe sospesa per un gettone che non ha.
   "vulcan_coda",
   "vulcan_stato",
+  // Copia di quanto vede il sensore trunk di questa istanza (2026-10-24): il cursore sta in
+  // tenant_settings e vale per quel sensore; altrove si rilegge da capo dal sensore suo.
+  "trunk_osservazioni",
+  "trunk_vlan",
 ];
 
 /** Tabelle hub install-level: identità/auth/setup, NON viaggiano col tenant. */

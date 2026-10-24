@@ -8,6 +8,7 @@ import { IstanzaCorrente } from "./tenant-switcher";
 import { useSidebar } from "./sidebar-context";
 import {
   Activity,
+  Cable,
   LayoutDashboard,
   ArrowUpFromLine,
   Network,
@@ -92,6 +93,7 @@ const networkSubItems: readonly SubItem[] = [
   { href: "/credentials", label: "Credenziali", icon: Key, divider: "Credenziali" },
   { href: "/controllers", label: "Controller di rete", icon: Router },
   { href: "/arp-table", label: "Tabella ARP", icon: ListOrdered, divider: "Diagnostica" },
+  { href: "/arp-table/trunk", label: "Reti dal trunk", icon: Cable },
   { href: "/dhcp/sources", label: "Sorgenti DHCP", icon: Server },
   { href: "/scans", label: "Scansioni", icon: Scan },
   { href: "/excluded-ips", label: "IP esclusi", icon: Ban },
@@ -432,6 +434,8 @@ export function Sidebar() {
     if (href.includes("?")) return attivaConQuery(href);
     // Sulla Health di AD non si accende anche «Active Directory» in Network (20/10).
     if (sicurezzaSubItems.some((v) => v.href.includes("?") && v.href.split("?")[0] === href && attivaConQuery(v.href))) return false;
+    // Sulle Reti dal trunk non si accende anche «Tabella ARP».
+    if (href === "/arp-table" && pathname.startsWith("/arp-table/trunk")) return false;
     return pathname.startsWith(href);
   };
   const closeMobile = () => setMobileOpen(false);

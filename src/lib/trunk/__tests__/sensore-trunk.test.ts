@@ -14,6 +14,8 @@ import { join } from "node:path";
 import { closeTenantDb, deleteTenantDatabase, getTenantDb, getTenantSetting, setTenantSetting, withTenant } from "@/lib/db-tenant";
 import { closeHubDb } from "@/lib/db-hub";
 import {
+  chiediGiroArp,
+  getTrunkMatrice,
   getTrunkOsservazioniPaginated,
   getTrunkVlan,
   leggiDalSocket,
@@ -42,6 +44,12 @@ const server: Server = createServer((req, res) => {
       { vid: 10, vista: true, dichiarata: false, mac: 2, ultima_vista: "2026-10-24T10:00:01", reti: [{ vid: 10, cidr: "192.168.10.0/24", gateway_ip: "192.168.10.1" }] },
       { vid: 30, vista: false, dichiarata: true, mac: 0, ultima_vista: null, reti: [] },
     ] }));
+  }
+  if (u.pathname === "/giri" && req.method === "POST") {
+    let corpo = "";
+    req.on("data", (c: Buffer) => { corpo += c.toString(); });
+    req.on("end", () => { richieste.push(`POST /giri ${corpo}`); res.end(JSON.stringify({ id: 7 })); });
+    return;
   }
   if (u.pathname === "/osservazioni") {
     const dopoId = Number(u.searchParams.get("dopo_id") ?? 0);
@@ -99,5 +107,24 @@ test("acceso: VLAN, osservazioni, cursore e MAC↔IP", async () => {
     assert.ok(richieste.some((u) => u.includes("dopo_id=3")));
     assert.equal(getTrunkOsservazioniPaginated({}).totale, 2);
     assert.equal(getTrunkOsservazioniPaginated({ vid: 10, q: "gw" }).totale, 1);
+  });
+});
+
+test("matrice: IP per subnet e serie giornaliera dal DB del tenant", async () => {
+  await withTenant(T, async () => {
+    const m = getTrunkMatrice(3, new Date("2026-10-25T12:00:00Z"));
+    assert.deepEqual(m.giorni, ["2026-10-23", "2026-10-24", "2026-10-25"]);
+    const r = m.reti.find((x) => x.cidr === "192.168.10.0/24");
+    assert.ok(r);
+    assert.deepEqual(r.ip.map((i) => i.ip), ["192.168.10.1", "192.168.10.20"]);
+    assert.deepEqual(r.serie.map((g) => [g.noti, g.nuovi, g.attivi]), [[0, 0, 0], [2, 2, 2], [2, 0, 0]]);
+  });
+});
+
+test("giro ARP: parte sul socket locale con vid e subnet", async () => {
+  await withTenant(T, async () => {
+    const g = await chiediGiroArp(10, "192.168.10.0/24");
+    assert.deepEqual(g, { id: 7, fonte: "socket" });
+    assert.ok(richieste.includes('POST /giri {"vid":10,"cidr":"192.168.10.0/24","tipo":"arp"}'));
   });
 });

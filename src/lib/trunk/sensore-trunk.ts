@@ -16,7 +16,7 @@ import { getCurrentTenantCode, getTenantDb, getTenantSetting, setTenantSetting }
 import { getNetworks, upsertMacIpMapping } from "@/lib/db";
 import { isIpInCidr, macToHex, normalizeMacForStorage } from "@/lib/utils";
 import { getActiveEdgeScanner } from "@/lib/vuln/edge-scanner-db";
-import { edgeApiGet, EdgeClientError } from "@/lib/vuln/scanner-edge-client";
+import { edgeApiGet, edgeApiPost, EdgeClientError } from "@/lib/vuln/scanner-edge-client";
 
 export const TRUNK_SOCKET_DEFAULT = "/run/sensore-trunk/api.sock";
 const PAGINA = 1000;
@@ -70,6 +70,69 @@ function query(params?: Record<string, string | number>): string {
   const q = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) q.set(k, String(v));
   return `?${q.toString()}`;
+}
+
+/** POST sul socket Unix del sensore (corpo JSON). Stessi errori di `leggiDalSocket`. */
+export function scriviSulSocket<T>(percorso: string, corpo: unknown, socket = socketPath()): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const dati = JSON.stringify(corpo);
+    const req = httpRequest(
+      {
+        socketPath: socket, path: percorso, method: "POST", timeout: 10_000,
+        headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(dati) },
+      },
+      (res) => {
+        const parti: Buffer[] = [];
+        res.on("data", (c: Buffer) => parti.push(c));
+        res.on("end", () => {
+          const testo = Buffer.concat(parti).toString("utf8");
+          if ((res.statusCode ?? 0) < 200 || (res.statusCode ?? 0) >= 300) {
+            reject(new Error(`sensore trunk ${res.statusCode}: ${testo.slice(0, 200)}`));
+            return;
+          }
+          try {
+            resolve(JSON.parse(testo) as T);
+          } catch {
+            reject(new Error("sensore trunk: risposta non JSON"));
+          }
+        });
+      },
+    );
+    req.on("timeout", () => req.destroy(new Error("sensore trunk: tempo scaduto")));
+    req.on("error", (e: NodeJS.ErrnoException) => {
+      if (e.code === "ENOENT" || e.code === "ECONNREFUSED" || e.code === "EACCES") {
+        reject(new SensoreTrunkAssente(`socket ${socket}: ${e.code}`));
+      } else {
+        reject(e);
+      }
+    });
+    req.end(dati);
+  });
+}
+
+/**
+ * Chiede al sensore un giro ARP su una rete vista (solo su richiesta di un admin).
+ * Socket locale prima, poi l'edge del tenant. Ritorna il numero del giro.
+ */
+export async function chiediGiroArp(vid: number, cidr: string): Promise<{ id: number; fonte: "socket" | "edge" }> {
+  const corpo = { vid, cidr, tipo: "arp" };
+  try {
+    const r = await scriviSulSocket<{ id: number }>("/giri", corpo);
+    return { id: r.id, fonte: "socket" };
+  } catch (e) {
+    if (!(e instanceof SensoreTrunkAssente)) throw e;
+  }
+  const scanner = getActiveEdgeScanner();
+  if (!scanner) throw new SensoreTrunkAssente("né socket locale né Scanner-Edge configurato");
+  try {
+    const r = await edgeApiPost<{ id: number }>(scanner, "/api/v1/trunk/giri", { vid, cidr }, { timeoutMs: 15_000 });
+    return { id: r.id, fonte: "edge" };
+  } catch (err) {
+    if (err instanceof EdgeClientError && (err.status === 404 || err.status === 405)) {
+      throw new SensoreTrunkAssente("lo Scanner-Edge non ha il sensore trunk o va aggiornato");
+    }
+    throw err;
+  }
 }
 
 /** GET sul socket Unix del sensore. Socket assente o rifiutato → SensoreTrunkAssente. */
@@ -293,4 +356,90 @@ export function getTrunkOsservazioniPaginated(opts: { vid?: number | null; q?: s
     `SELECT id, vid, mac_display, ip, nome, fonte_nome, passivo, attivo, ultima_vista FROM trunk_osservazioni ${w} ORDER BY ultima_vista DESC, id DESC LIMIT ? OFFSET ?`,
   ).all(...par, limit, offset) as TrunkOsservazioneRiga[];
   return { righe, totale };
+}
+
+export interface TrunkIpVisto {
+  ip: string;
+  mac: string;
+  nome: string | null;
+  passivo: number;
+  attivo: number;
+  prima_vista: string;
+  ultima_vista: string;
+}
+
+export interface TrunkGiornoRete {
+  giorno: string;
+  /** IP conosciuti fino a quel giorno (cumulativo). */
+  noti: number;
+  nuovi: number;
+  attivi: number;
+}
+
+export interface TrunkReteMatrice {
+  vid: number;
+  cidr: string;
+  gateway_ip: string | null;
+  fonte: string | null;
+  ip: TrunkIpVisto[];
+  serie: TrunkGiornoRete[];
+}
+
+const MAX_IP_PER_RETE = 1024;
+
+/**
+ * Le reti viste nel tempo (come `matrice_reti` del sensore, ma dal DB del tenant):
+ * per ogni subnet dedotta gli IP che hanno parlato e, giorno per giorno, quanti
+ * erano noti, nuovi e attivi negli ultimi `giorni`.
+ */
+export function getTrunkMatrice(giorni = 14, oggi = new Date()): { giorni: string[]; reti: TrunkReteMatrice[] } {
+  const n = Math.min(Math.max(Math.trunc(giorni) || 14, 1), 60);
+  const elenco: string[] = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const d = new Date(Date.UTC(oggi.getUTCFullYear(), oggi.getUTCMonth(), oggi.getUTCDate() - i));
+    elenco.push(d.toISOString().slice(0, 10));
+  }
+  const righe = db().prepare(`
+    SELECT vid, ip, MAX(mac_display) AS mac, MAX(nome) AS nome, MAX(passivo) AS passivo, MAX(attivo) AS attivo,
+           MIN(prima_vista) AS prima_vista, MAX(ultima_vista) AS ultima_vista
+    FROM trunk_osservazioni WHERE ip != '' GROUP BY vid, ip
+  `).all() as Array<TrunkIpVisto & { vid: number }>;
+  const perVid = new Map<number, Array<TrunkIpVisto & { vid: number }>>();
+  for (const r of righe) {
+    const l = perVid.get(r.vid);
+    if (l) l.push(r);
+    else perVid.set(r.vid, [r]);
+  }
+  const reti: TrunkReteMatrice[] = [];
+  for (const v of getTrunkVlan()) {
+    for (const rete of v.reti) {
+      const ip = (perVid.get(v.vid) ?? []).filter((r) => isIpInCidr(r.ip, rete.cidr));
+      const serie = elenco.map((giorno) => ({
+        giorno,
+        noti: ip.filter((r) => r.prima_vista.slice(0, 10) <= giorno).length,
+        nuovi: ip.filter((r) => r.prima_vista.slice(0, 10) === giorno).length,
+        attivi: ip.filter((r) => r.prima_vista.slice(0, 10) <= giorno && r.ultima_vista.slice(0, 10) >= giorno).length,
+      }));
+      ip.sort((a, b) => ordinaIp(a.ip) - ordinaIp(b.ip));
+      reti.push({
+        vid: v.vid, cidr: rete.cidr, gateway_ip: rete.gateway_ip ?? null, fonte: rete.fonte ?? null,
+        ip: ip.slice(0, MAX_IP_PER_RETE).map((r) => ({
+          ip: r.ip, mac: r.mac, nome: r.nome, passivo: r.passivo, attivo: r.attivo, prima_vista: r.prima_vista, ultima_vista: r.ultima_vista,
+        })), serie,
+      });
+    }
+  }
+  return { giorni: elenco, reti };
+}
+
+function ordinaIp(ip: string): number {
+  return ip.split(".").reduce((acc, p) => acc * 256 + (Number(p) || 0), 0);
+}
+
+/** Per la riga di Opzioni: quante VLAN e osservazioni ci sono e quando si è letto l'ultima volta. */
+export function trunkRiepilogo(): { vlan: number; osservazioni: number; aggiornato: string | null } {
+  const d = db();
+  const v = d.prepare("SELECT COUNT(*) AS n, MAX(aggiornato) AS a FROM trunk_vlan").get() as { n: number; a: string | null };
+  const o = d.prepare("SELECT COUNT(*) AS n FROM trunk_osservazioni").get() as { n: number };
+  return { vlan: v.n, osservazioni: o.n, aggiornato: v.a };
 }

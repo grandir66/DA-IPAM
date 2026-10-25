@@ -4,20 +4,22 @@ import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Cable, Fingerprint, Network, Search, Waypoints, Zap } from "lucide-react";
+import { Search, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { LoadError } from "@/components/shared/load-error";
+import {
+  BarraStato, Etichetta, Legenda, Pannello, TesseraNumero, VoceSelezionabile, Vuoto,
+} from "@/components/shared/console";
 import { fetchJson } from "@/lib/fetch-json";
 import { cn } from "@/lib/utils";
 import type {
-  TrunkIpVisto, TrunkMetodo, TrunkOsservazioneRiga, TrunkReteMatrice, TrunkVlanProtocolli, TrunkVlanRiga,
+  TrunkMetodo, TrunkOsservazioneRiga, TrunkReteMatrice, TrunkVlanProtocolli, TrunkVlanRiga,
 } from "@/lib/trunk/sensore-trunk";
+import type { TrunkMaschera } from "@/lib/trunk/reti";
 
 const PAGINA = 100;
-/** Ciano leggibile come testo (il #00A7E7 resta per bordi e riempimenti). */
-const CIANO_TESTO = "text-[#006C96] dark:text-[#5CCBF5]";
 
 interface Riepilogo {
   vlan: number;
@@ -40,14 +42,24 @@ interface Dati {
   riepilogo: Riepilogo;
 }
 
+/** Il filtro «come è stato trovato»: quattro pulsanti, ognuno col suo segno (non solo il colore). */
 const METODI: Array<{ id: TrunkMetodo | ""; etichetta: string }> = [
-  { id: "", etichetta: "Tutti (ascolto e giro ARP)" },
-  { id: "ascolto", etichetta: "Solo in ascolto" },
-  { id: "giro", etichetta: "Silenziosi: trovati solo col giro ARP" },
-  { id: "entrambi", etichetta: "In ascolto e confermati col giro ARP" },
+  { id: "", etichetta: "Tutti" },
+  { id: "ascolto", etichetta: "● In ascolto" },
+  { id: "giro", etichetta: "▲ Silenziosi" },
+  { id: "entrambi", etichetta: "◆ Confermati" },
 ];
 
-const nomeVlan = (vid: number) => (vid === 0 ? "nativa" : String(vid));
+const MASCHERA: Record<TrunkMaschera, { testo: string; classe: string; spiega: string }> = {
+  dhcp: { testo: "✓ DHCP", classe: "bg-[#1F7A4D] text-white border-[#1F7A4D]", spiega: "Maschera annunciata dal DHCP" },
+  dedotta: { testo: "≈ dedotta", classe: "bg-[#FFD400] text-[#0D2537] border-[#C9A800]", spiega: "/24 vicini con lo stesso gateway uniti" },
+  incerta: { testo: "? incerta", classe: "border-dashed border-[#C9A800] text-foreground", spiega: "IP sparsi: la rete copre quelli visti, da confermare" },
+  config: { testo: "✎ impostata", classe: "bg-[#0D2537] text-white border-[#0D2537] dark:bg-[#E7EAEB] dark:text-[#0D2537]", spiega: "Scritta a mano" },
+};
+
+const PREFISSI = [16, 18, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30];
+
+const nomeVlan = (vid: number) => (vid === 0 ? "Nativa" : `VLAN ${vid}`);
 const chiaveRete = (r: { vid: number; cidr: string }) => `${r.vid}-${r.cidr}`;
 
 function fa(iso: string | null): string {
@@ -61,13 +73,19 @@ function fa(iso: string | null): string {
   return `${Math.round(s / 86400)} g fa`;
 }
 
-function ipInCidr(ip: string, cidr: string): boolean {
-  const [base, bitsRaw] = cidr.split("/");
-  const bits = Number(bitsRaw);
-  const n = (x: string) => x.split(".").reduce((a, p) => a * 256 + (Number(p) || 0), 0);
-  const blocco = 2 ** (32 - bits);
-  return Math.floor(n(ip) / blocco) === Math.floor(n(base) / blocco);
+function ipNumero(ip: string): number {
+  return ip.split(".").reduce((a, p) => a * 256 + (Number(p) || 0), 0);
 }
+
+function ipInCidr(ip: string, cidr: string): boolean {
+  const [base, bits] = cidr.split("/");
+  const blocco = 2 ** (32 - Number(bits));
+  return Math.floor(ipNumero(ip) / blocco) === Math.floor(ipNumero(base) / blocco);
+}
+
+const silenziosi = (x: TrunkReteMatrice) => x.ip.filter((i) => !i.passivo && i.attivo).length;
+const nuoviIn = (x: TrunkReteMatrice, giorni: number) => x.serie.slice(-giorni).reduce((a, g) => a + g.nuovi, 0);
+const nuoviOggi = (x: TrunkReteMatrice) => x.serie[x.serie.length - 1]?.nuovi ?? 0;
 
 export function TrunkClient({ iniziale }: { iniziale: Dati }) {
   const router = useRouter();
@@ -78,22 +96,25 @@ export function TrunkClient({ iniziale }: { iniziale: Dati }) {
   const [rete, setRete] = useState<string | null>(null);
   const [metodo, setMetodo] = useState<TrunkMetodo | "">("");
   const [q, setQ] = useState("");
-  const [cercaVlan, setCercaVlan] = useState("");
   const [offset, setOffset] = useState(0);
   const [errore, setErrore] = useState<string | null>(null);
   const [inCorso, setInCorso] = useState(false);
-  const [vista, setVista] = useState<"elenco" | "mappa">("elenco");
   const [retiIpam, setRetiIpam] = useState<string[]>(iniziale.retiIpam);
 
-  const protoPerVlan = useMemo(() => new Map(iniziale.vlanProtocolli.map((p) => [p.vid, p])), [iniziale.vlanProtocolli]);
-  const vlanVisibili = iniziale.vlan.filter((v) => !cercaVlan.trim() || nomeVlan(v.vid).includes(cercaVlan.trim())
-    || v.reti.some((x) => x.cidr.includes(cercaVlan.trim()))
-    || (protoPerVlan.get(v.vid)?.protocolli ?? []).some((p) => p.toLowerCase().includes(cercaVlan.trim().toLowerCase())));
-  const retiVisibili = matrice.reti.filter((x) => vid == null || x.vid === vid);
+  const retiPerVid = useMemo(() => {
+    const m = new Map<number, TrunkReteMatrice[]>();
+    for (const x of matrice.reti) m.set(x.vid, [...(m.get(x.vid) ?? []), x]);
+    return m;
+  }, [matrice.reti]);
+  /** Stessa rete su più VLAN: di solito un errore di configurazione, va segnalato. */
+  const vidPerCidr = useMemo(() => {
+    const m = new Map<string, number[]>();
+    for (const x of matrice.reti) m.set(x.cidr, [...(m.get(x.cidr) ?? []), x.vid]);
+    return m;
+  }, [matrice.reti]);
+  const retiVisibili = vid == null ? matrice.reti : retiPerVid.get(vid) ?? [];
   const reteScelta = matrice.reti.find((x) => chiaveRete(x) === rete) ?? null;
-
-  /** La subnet (e il suo gateway) di una riga dell'elenco, dalle reti dedotte della sua VLAN. */
-  const reteDi = (o: { vid: number; ip: string }) => matrice.reti.find((x) => x.vid === o.vid && o.ip && ipInCidr(o.ip, x.cidr));
+  const reteDi = (o: { vid: number; ip: string }) => (retiPerVid.get(o.vid) ?? []).find((x) => o.ip && ipInCidr(o.ip, x.cidr));
 
   const carica = useCallback(async (filtro: { vid: number | null; rete: TrunkReteMatrice | null; metodo: TrunkMetodo | ""; q: string; off: number }) => {
     const p = new URLSearchParams({ limit: String(PAGINA), offset: String(filtro.off) });
@@ -153,412 +174,418 @@ export function TrunkClient({ iniziale }: { iniziale: Dati }) {
     }
   };
 
+  const correggiMaschera = async (x: TrunkReteMatrice, prefisso: number | null) => {
+    const res = await fetchJson<{ ok: boolean }>("/api/trunk/maschera", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ vid: x.vid, dedotta: x.dedotta, prefisso }),
+    });
+    if (!res.ok) {
+      toast.error(res.message);
+      return;
+    }
+    setRete(null);
+    toast.success(prefisso == null ? "Maschera di nuovo dedotta dal sensore" : `Maschera impostata a /${prefisso}`);
+    router.refresh();
+  };
+
+  const nonDichiarate = iniziale.vlan.filter((v) => v.vista && !v.dichiarata).length;
+  const maiViste = iniziale.vlan.filter((v) => !v.vista).length;
+  const blocchiVisti = matrice.reti.reduce((a, x) => a + x.blocchi.length, 0);
+  const totSilenziosi = matrice.reti.reduce((a, x) => a + silenziosi(x), 0);
+
   return (
     <div className="space-y-4">
-      {/* Stato del sensore: una riga, l'azione una volta sola. */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card px-4 py-3">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-          <span className="flex items-center gap-2 font-medium">
-            <span className={cn("h-2.5 w-2.5 rounded-full", attiva ? "bg-[#00A7E7]" : "bg-muted-foreground/40")} />
-            Sensore trunk {attiva ? "acceso" : "spento"}
-          </span>
-          <span className="text-muted-foreground">
-            {attiva ? `solo ascolto · ultima lettura ${fa(r.aggiornato)} · le scansioni partono dall'IP ufficiale` : "nessuna lettura finché non lo accendi"}
-          </span>
-        </div>
-        <Button size="sm" variant={attiva ? "outline" : "default"} render={<Link href="/settings/opzioni#modulo.sensore_trunk" />}>
-          {attiva ? "Impostazioni" : "Accendi in Opzioni"}
-        </Button>
+      <BarraStato
+        acceso={attiva}
+        titolo="Sensore trunk"
+        dettagli={attiva ? ["solo ascolto", `ultima lettura ${fa(r.aggiornato)}`, "scansioni dall'IP ufficiale"] : ["nessuna lettura finché non lo accendi"]}
+        azioni={
+          <Button size="sm" variant={attiva ? "outline" : "default"} render={<Link href="/settings/opzioni#modulo.sensore_trunk" />}>
+            {attiva ? "Impostazioni" : "Accendi in Opzioni"}
+          </Button>
+        }
+      />
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <TesseraNumero titolo="VLAN viste" valore={iniziale.vlan.filter((v) => v.vista).length}
+          qualifica={`${nonDichiarate} non dichiarate`} nota={`${maiViste} dichiarate e mai viste`} />
+        <TesseraNumero titolo="Reti" valore={matrice.reti.length}
+          qualifica={`${matrice.reti.filter((x) => retiIpam.includes(x.cidr)).length} in DA-IPAM`} nota={`da ${blocchiVisti} blocchi visti`} />
+        <TesseraNumero titolo="Indirizzi IP" valore={r.ip} qualifica={`${totSilenziosi} silenziosi`} nota="senza leggere il router" />
+        <TesseraNumero titolo="Nuovi in 7 giorni" valore={matrice.reti.reduce((a, x) => a + nuoviIn(x, 7), 0)}
+          qualifica={`+${matrice.reti.reduce((a, x) => a + nuoviOggi(x), 0)} oggi`} nota="IP mai visti prima" />
       </div>
 
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <Tessera icona={<Waypoints className="h-5 w-5" />} titolo="VLAN viste sul trunk" valore={r.vlan}
-          dettaglio={`${iniziale.vlan.filter((v) => v.vista && !v.dichiarata).length} non dichiarate · ${iniziale.vlan.filter((v) => !v.vista).length} mai viste`}
-          nota="dai tag 802.1Q, senza IP sulla scheda" />
-        <Tessera icona={<Network className="h-5 w-5" />} titolo="Subnet dedotte" valore={matrice.reti.length}
-          dettaglio={`${matrice.reti.filter((x) => retiIpam.includes(x.cidr)).length} già in DA-IPAM`}
-          nota="da ARP, DHCP e broadcast" />
-        <Tessera icona={<Cable className="h-5 w-5" />} titolo="Indirizzi IP" valore={r.ip}
-          dettaglio={`${r.soloAscolto} in ascolto · ${r.soloGiro} silenziosi`}
-          nota="senza leggere la tabella ARP del router" />
-        <Tessera icona={<Fingerprint className="h-5 w-5" />} titolo="MAC unici" valore={r.mac}
-          dettaglio={`${r.osservazioni} osservazioni`} nota="un MAC può stare su più VLAN" />
-      </div>
+      {/* 1. Tutte le VLAN in poco spazio: si confrontano a colpo d'occhio. */}
+      <Pannello numero={1} titolo="VLAN viste sul trunk" conteggio={iniziale.vlan.length} sottotitolo="Scegli una VLAN: sotto le sue reti"
+        azioni={<Button size="sm" variant={vid == null ? "default" : "outline"} onClick={() => filtra({ vid: null, rete: null })}>Tutte</Button>}>
+        {iniziale.vlan.length === 0 ? (
+          <Vuoto titolo="Nessuna VLAN letta finora" testo="Il sensore manda le VLAN alla prima lettura, entro un paio di minuti dall'accensione." />
+        ) : (
+          <>
+            <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(148px, 1fr))" }}>
+              {iniziale.vlan.map((v) => {
+                const rr = retiPerVid.get(v.vid) ?? [];
+                const ip = rr.reduce((a, x) => a + x.ip.length, 0);
+                const sil = rr.reduce((a, x) => a + silenziosi(x), 0);
+                return (
+                  <VoceSelezionabile key={v.vid} scelta={vid === v.vid} className={cn("flex flex-col gap-1.5 p-2.5", !v.vista && "border-dashed")}
+                    onScegli={() => filtra({ vid: vid === v.vid ? null : v.vid, rete: null })}>
+                    <div className="flex items-baseline justify-between gap-1.5">
+                      <span className="font-mono font-semibold">{nomeVlan(v.vid)}</span>
+                      <span className="font-mono text-[13px] text-muted-foreground">{ip ? `${ip} IP` : v.mac ? `${v.mac} MAC` : "mai vista"}</span>
+                    </div>
+                    <div className="truncate text-[13px] text-muted-foreground">
+                      {!v.dichiarata ? "▲ non dichiarata" : rr.length > 1 ? `${rr.length} reti` : rr.length === 1 ? rr[0].cidr : "nessuna rete"}
+                    </div>
+                    <Barra ascolto={ip - sil} silenziosi={sil} />
+                  </VoceSelezionabile>
+                );
+              })}
+            </div>
+            <Legenda className="mt-3" voci={[
+              { classe: "bg-primary", testo: "IP in ascolto" },
+              { classe: "bg-[#0D2537] dark:bg-[#C8D3DA]", testo: "IP silenziosi" },
+              { classe: "bg-card border-dashed", testo: "bordo tratteggiato = dichiarata ma mai vista" },
+            ]} />
+          </>
+        )}
+      </Pannello>
 
-      <div className="grid gap-4 lg:grid-cols-[20rem_minmax(0,1fr)]">
-        {/* 1. VLAN */}
-        <Pannello numero={1} titolo="VLAN viste sul trunk" conteggio={iniziale.vlan.length} sottotitolo="Scegli una VLAN per filtrare subnet ed elenco"
-          className="lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto"
-          azioni={<Button size="sm" variant={vid == null ? "default" : "outline"} onClick={() => filtra({ vid: null, rete: null })}>Tutte</Button>}>
-          <div className="relative mb-3">
-            <Search className="text-muted-foreground absolute left-2.5 top-2.5 h-4 w-4" />
-            <Input className="pl-8" placeholder="Cerca VLAN, subnet, protocollo" value={cercaVlan} onChange={(e) => setCercaVlan(e.target.value)} />
-          </div>
-          <div className="space-y-2">
-            {vlanVisibili.length === 0 && <p className="text-muted-foreground text-sm">Nessuna VLAN letta finora.</p>}
-            {vlanVisibili.map((v) => {
-              const p = protoPerVlan.get(v.vid);
-              return (
-                <button key={v.vid} type="button" onClick={() => filtra({ vid: vid === v.vid ? null : v.vid, rete: null })}
-                  className={cn("w-full rounded-md border p-3 text-left transition-colors hover:bg-muted/50",
-                    vid === v.vid && "border-[#00A7E7] bg-[#00A7E7]/5 ring-1 ring-[#00A7E7]")}>
-                  <div className="flex items-center justify-between gap-2">
-                    <EtichettaVlan vid={v.vid} />
-                    <span className="text-muted-foreground font-mono text-[13px]">{v.mac} MAC</span>
-                  </div>
-                  <div className="mt-1.5 text-[13px]">
-                    {!v.vista ? (
-                      <span className="text-destructive">dichiarata, mai vista</span>
-                    ) : (
-                      <>
-                        {v.reti.length} subnet · <span className={cn("font-medium", CIANO_TESTO)}>{p?.ip ?? 0} IP</span>
-                        {!v.dichiarata && <span className="text-muted-foreground"> · non dichiarata</span>}
-                      </>
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+        {/* 2. Le reti, una voce ciascuna con la sua maschera. */}
+        <Pannello numero={2} titolo="Reti" conteggio={retiVisibili.length} sottotitolo="Una voce per rete, con la sua maschera"
+          azioni={vid != null ? <Etichetta tono="marca">{nomeVlan(vid)}</Etichetta> : undefined}>
+          {retiVisibili.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              {vid == null ? "Nessuna rete dedotta finora." : "Questa VLAN non ha IP: si vedono solo i MAC. Un giro ARP non serve finché non si conosce la rete."}
+            </p>
+          ) : (
+            <div className="flex max-h-[560px] flex-col gap-2 overflow-y-auto">
+              {retiVisibili.map((x) => {
+                const altre = (vidPerCidr.get(x.cidr) ?? []).filter((v) => v !== x.vid);
+                return (
+                  <VoceSelezionabile key={chiaveRete(x)} scelta={rete === chiaveRete(x)} className="flex flex-col gap-1.5 p-2.5"
+                    onScegli={() => filtra({ rete: rete === chiaveRete(x) ? null : chiaveRete(x), vid: rete === chiaveRete(x) ? vid : x.vid })}>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-mono text-[15px] font-semibold">{x.cidr}</span>
+                      <BadgeMaschera m={x.maschera} />
+                    </div>
+                    <div className="flex items-center justify-between gap-2 text-[13px] text-muted-foreground">
+                      <span>
+                        {vid == null && `${nomeVlan(x.vid)} · `}{x.ip.length} IP · gw <span className="font-mono">{x.gateway_ip ?? "—"}</span>
+                      </span>
+                      {nuoviOggi(x) > 0 && <Etichetta tono="ruolo">+{nuoviOggi(x)} oggi</Etichetta>}
+                    </div>
+                    {x.blocchi.length > 1 && (
+                      <div className="text-[13px] text-muted-foreground">
+                        unisce {x.blocchi.map((b) => <span key={b} className="font-mono text-foreground">{b.replace(/\.0\/24$/, ".x")} </span>)}
+                      </div>
                     )}
-                  </div>
-                  {p && p.protocolli.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-1">{p.protocolli.map((x) => <Tag key={x}>{x}</Tag>)}</div>
-                  )}
-                </button>
-              );
-            })}
-          </div>
+                    {altre.length > 0 && (
+                      <div><Etichetta tono="ruolo" mono={false}>▲ stessa rete anche su {altre.map(nomeVlan).join(", ")}</Etichetta></div>
+                    )}
+                  </VoceSelezionabile>
+                );
+              })}
+            </div>
+          )}
         </Pannello>
 
-        <div className="space-y-4">
-          {/* 2. Subnet */}
-          <Pannello numero={2} titolo="Subnet rilevate" conteggio={retiVisibili.length}
-            sottotitolo="Scegli una subnet per vederne gli indirizzi. Il giro ARP trova gli apparati silenziosi (stampanti, PLC, NAS) e parte solo se lo chiedi."
-            filtro={vid != null ? `VLAN ${nomeVlan(vid)}` : undefined}>
-            {retiVisibili.length === 0 ? (
-              <p className="text-muted-foreground text-sm">Nessuna subnet dedotta finora.</p>
-            ) : (
-              <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
-                {retiVisibili.map((x) => <SchedaRete key={chiaveRete(x)} rete={x} scelta={rete === chiaveRete(x)} inIpam={retiIpam.includes(x.cidr)}
-                  giroDisabilitato={inCorso || !attiva}
-                  onScegli={() => filtra({ rete: rete === chiaveRete(x) ? null : chiaveRete(x), vid: rete === chiaveRete(x) ? vid : x.vid })}
-                  onGiro={() => void giroArp(x)} onPorta={() => void portaInIpam(x)} />)}
-              </div>
-            )}
+        {/* 3. Il dettaglio della rete scelta: le azioni stanno qui, una volta sola. */}
+        {reteScelta ? (
+          <Dettaglio key={chiaveRete(reteScelta)} rete={reteScelta} giorni={matrice.giorni} inIpam={retiIpam.includes(reteScelta.cidr)}
+            giroDisabilitato={inCorso || !attiva} onGiro={() => void giroArp(reteScelta)} onPorta={() => void portaInIpam(reteScelta)}
+            onMaschera={(p) => void correggiMaschera(reteScelta, p)} />
+        ) : (
+          <Pannello numero={3} titolo="Dettaglio della rete" conteggio="—">
+            <p className="py-8 text-center text-[13px] text-muted-foreground">Scegli una rete a sinistra per vedere gateway, crescita e occupazione.</p>
           </Pannello>
-
-        </div>
+        )}
       </div>
 
-      {/* 3. Inventario: l'elenco è la vista principale, la mappa /24 una seconda lettura. */}
-      <Pannello numero={3} titolo="Inventario IP e MAC" conteggio={totale}
+      {/* 4. L'elenco degli indirizzi: il centro della pagina, a tutta larghezza. */}
+      <Pannello numero={4} titolo="Indirizzi IP e MAC" conteggio={totale}
         sottotitolo="Ogni indirizzo visto sul trunk, con il produttore della scheda e come è stato trovato"
-        filtro={reteScelta ? reteScelta.cidr : vid != null ? `VLAN ${nomeVlan(vid)}` : undefined}
         azioni={
-          <div className="flex rounded-md border p-0.5">
-            {(["elenco", "mappa"] as const).map((k) => (
-              <button key={k} type="button" onClick={() => setVista(k)}
-                className={cn("rounded px-3 py-1 text-sm", vista === k ? "bg-[#0D2537] text-white dark:bg-white dark:text-[#0D2537]" : "text-muted-foreground")}>
-                {k === "elenco" ? "Elenco" : "Mappa /24"}
-              </button>
-            ))}
-          </div>
+          <>
+            {(reteScelta || vid != null) && <Etichetta tono="marca">{reteScelta ? reteScelta.cidr : nomeVlan(vid as number)}</Etichetta>}
+            <div className="flex overflow-hidden rounded-lg border" role="group" aria-label="Come è stato trovato">
+              {METODI.map((m) => (
+                <button key={m.id} type="button" aria-pressed={metodo === m.id} onClick={() => filtra({ metodo: m.id })}
+                  className={cn("min-h-8 px-2.5 text-[13px]", metodo === m.id ? "bg-primary font-semibold text-[#0D2537]" : "bg-card hover:bg-muted/50")}>
+                  {m.etichetta}
+                </button>
+              ))}
+            </div>
+            <div className="relative w-64 max-w-full">
+              <Search className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
+              <Input className="h-8 pl-8" placeholder="Cerca IP, MAC, nome" value={q} onChange={(e) => setQ(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") filtra({ q }); }} />
+            </div>
+          </>
         }>
-        {vista === "mappa" ? (
-          reteScelta ? <Griglia key={chiaveRete(reteScelta)} rete={reteScelta} />
-            : <p className="text-muted-foreground text-sm">Scegli una subnet qui sopra per vederne la mappa.</p>
-        ) : (
-          <div className="space-y-3">
-            <div className="flex flex-wrap gap-2">
-              <select value={metodo} onChange={(e) => filtra({ metodo: e.target.value as TrunkMetodo | "" })}
-                className="border-input bg-background h-9 rounded-md border px-3 text-sm">
-                {METODI.map((m) => <option key={m.id} value={m.id}>{m.etichetta}</option>)}
-              </select>
-              <div className="relative min-w-56 flex-1">
-                <Search className="text-muted-foreground absolute left-2.5 top-2.5 h-4 w-4" />
-                <Input className="pl-8" placeholder="Filtra IP, MAC, nome" value={q} onChange={(e) => setQ(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter") filtra({ q }); }} />
-              </div>
+        <div className="space-y-3">
+          {errore && <LoadError what="gli indirizzi del trunk" message={errore} onRetry={() => filtra({ off: offset })} />}
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Indirizzo IP</TableHead>
+                  <TableHead>MAC</TableHead>
+                  <TableHead>Produttore</TableHead>
+                  <TableHead>VLAN · rete</TableHead>
+                  <TableHead>Come è stato trovato</TableHead>
+                  <TableHead>Nome e protocolli</TableHead>
+                  <TableHead>Ultimo visto</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {righe.length === 0 && (
+                  <TableRow><TableCell colSpan={7} className="py-6 text-center text-muted-foreground">Nessun indirizzo con questi filtri.</TableCell></TableRow>
+                )}
+                {righe.map((o) => {
+                  const sub = reteDi(o);
+                  const gw = sub && sub.gateway_ip === o.ip;
+                  return (
+                    <TableRow key={o.id}>
+                      <TableCell className="whitespace-nowrap font-mono font-semibold">
+                        {o.ip || "—"}
+                        {gw && (
+                          <Etichetta tono="ruolo" className="ml-2">
+                            <span title={sub.fonte === "dhcp" ? "Gateway annunciato dal DHCP" : "IP più cercato con ARP"}>{sub.fonte === "dhcp" ? "GW" : "GW?"}</span>
+                          </Etichetta>
+                        )}
+                      </TableCell>
+                      <TableCell className="font-mono text-[13px]">{o.mac_display}</TableCell>
+                      <TableCell className="max-w-44 truncate" title={o.vendor ?? undefined}>{o.vendor ?? <span className="text-muted-foreground">sconosciuto</span>}</TableCell>
+                      <TableCell className="whitespace-nowrap font-mono text-[13px]">
+                        <span className="text-cian-testo">{nomeVlan(o.vid)}</span>
+                        {sub && ` · ${sub.cidr}`}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-[13px] font-medium"><Come passivo={o.passivo} attivo={o.attivo} /></TableCell>
+                      <TableCell>
+                        <div className="flex flex-wrap items-center gap-1">
+                          {o.nome ? <span className="mr-1 font-mono text-[13px]">{o.nome}</span> : <span className="mr-1 text-muted-foreground">—</span>}
+                          {o.protocolli.map((x) => <Etichetta key={x}>{x}</Etichetta>)}
+                        </div>
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-[13px] text-muted-foreground" title={o.ultima_vista}>{fa(o.ultima_vista)}</TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-[13px] text-muted-foreground">
+              <span>● visto in ascolto</span>
+              <span>▲ silenzioso, trovato solo col giro ARP</span>
+              <span>◆ visto e confermato</span>
+              <span><Etichetta tono="ruolo">GW?</Etichetta> IP più cercato</span>
             </div>
-            {errore && <LoadError what="l'inventario del trunk" message={errore} onRetry={() => filtra({ off: offset })} />}
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Indirizzo IP</TableHead>
-                    <TableHead>MAC</TableHead>
-                    <TableHead>Produttore</TableHead>
-                    <TableHead>VLAN e subnet</TableHead>
-                    <TableHead>Come è stato trovato</TableHead>
-                    <TableHead>Nome e protocolli</TableHead>
-                    <TableHead>Ultimo visto</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {righe.length === 0 && (
-                    <TableRow><TableCell colSpan={7} className="text-muted-foreground py-6 text-center">Nessun indirizzo con questi filtri.</TableCell></TableRow>
-                  )}
-                  {righe.map((o) => {
-                    const sub = reteDi(o);
-                    const gw = sub && sub.gateway_ip === o.ip;
-                    return (
-                      <TableRow key={o.id}>
-                        <TableCell className="whitespace-nowrap font-mono font-medium">
-                          {o.ip || "—"}
-                          {gw && <Tag className="ml-2 border-[#FFD400] bg-[#FFD400]/25" >{sub.fonte === "dhcp" ? "GW" : "GW?"}</Tag>}
-                        </TableCell>
-                        <TableCell><span className="rounded border bg-muted/40 px-1.5 py-0.5 font-mono text-[13px]">{o.mac_display}</span></TableCell>
-                        <TableCell className="max-w-44 truncate text-[13px]" title={o.vendor ?? undefined}>{o.vendor ?? <span className="text-muted-foreground">sconosciuto</span>}</TableCell>
-                        <TableCell className="whitespace-nowrap text-[13px]">
-                          <span className={cn("font-mono", CIANO_TESTO)}>VLAN {nomeVlan(o.vid)}</span>
-                          {sub && <span className="font-mono"> · {sub.cidr}</span>}
-                        </TableCell>
-                        <TableCell><Metodo passivo={o.passivo} attivo={o.attivo} /></TableCell>
-                        <TableCell>
-                          <div className="text-[13px]">{o.nome ?? <span className="text-muted-foreground">—</span>}</div>
-                          {o.protocolli.length > 0 && <div className="mt-1 flex flex-wrap gap-1">{o.protocolli.map((x) => <Tag key={x}>{x}</Tag>)}</div>}
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap text-[13px]" title={o.ultima_vista}>{fa(o.ultima_vista)}</TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
-            <div className="flex items-center justify-end gap-2 text-sm">
+            <div className="flex items-center gap-2 text-sm">
               <Button size="sm" variant="outline" disabled={offset === 0} onClick={() => filtra({ off: Math.max(offset - PAGINA, 0) })}>Precedenti</Button>
               <span className="text-muted-foreground">{totale === 0 ? "0" : `${offset + 1}–${Math.min(offset + PAGINA, totale)}`} di {totale}</span>
               <Button size="sm" variant="outline" disabled={offset + PAGINA >= totale} onClick={() => filtra({ off: offset + PAGINA })}>Successivi</Button>
             </div>
           </div>
-        )}
+        </div>
       </Pannello>
     </div>
   );
 }
 
-function Tessera({ icona, titolo, valore, dettaglio, nota }: { icona: React.ReactNode; titolo: string; valore: number; dettaglio: string; nota: string }) {
+function Barra({ ascolto, silenziosi: sil }: { ascolto: number; silenziosi: number }) {
+  const tot = ascolto + sil;
   return (
-    <div className="rounded-lg border bg-card p-4">
-      <div className="flex items-start justify-between gap-2">
-        <p className="text-muted-foreground text-[13px] font-medium uppercase tracking-wide">{titolo}</p>
-        <span className="rounded-md bg-[#00A7E7]/10 p-2 text-[#006C96] dark:text-[#5CCBF5]">{icona}</span>
-      </div>
-      <p className="mt-1 flex items-baseline gap-2">
-        <span className="text-3xl font-bold tabular-nums text-[#0D2537] dark:text-white">{valore.toLocaleString("it-IT")}</span>
-        <span className={cn("font-mono text-[13px]", CIANO_TESTO)}>{dettaglio}</span>
-      </p>
-      <p className="text-muted-foreground mt-1 text-[13px]">{nota}</p>
+    <div className="flex h-1.5 min-w-14 overflow-hidden rounded-full bg-muted" title={`${ascolto} in ascolto, ${sil} silenziosi`}>
+      {tot > 0 && <div className="bg-primary" style={{ width: `${(ascolto / tot) * 100}%` }} />}
+      {tot > 0 && <div className="bg-[#0D2537] dark:bg-[#C8D3DA]" style={{ width: `${(sil / tot) * 100}%` }} />}
     </div>
   );
 }
 
-function Pannello({ numero, titolo, conteggio, sottotitolo, filtro, azioni, className, children }: {
-  numero: number; titolo: string; conteggio: number; sottotitolo: string; filtro?: string; azioni?: React.ReactNode; className?: string; children: React.ReactNode;
-}) {
+function BadgeMaschera({ m }: { m: TrunkMaschera }) {
+  const s = MASCHERA[m];
   return (
-    <section className={cn("rounded-lg border bg-card", className)}>
-      <header className="flex flex-wrap items-start justify-between gap-3 border-b px-4 py-3">
-        <div className="min-w-0">
-          <h2 className="flex flex-wrap items-center gap-2 text-sm font-semibold uppercase tracking-wide text-[#0D2537] dark:text-white">
-            {numero}. {titolo}
-            <span className="rounded bg-muted px-1.5 font-mono text-[13px] font-normal">{conteggio}</span>
-            {filtro && <span className="rounded border border-[#00A7E7] px-1.5 font-mono text-[13px] font-normal normal-case text-[#006C96] dark:text-[#5CCBF5]">{filtro}</span>}
-          </h2>
-          <p className="text-muted-foreground mt-0.5 text-[13px]">{sottotitolo}</p>
-        </div>
-        {azioni}
-      </header>
-      <div className="p-4">{children}</div>
-    </section>
-  );
-}
-
-function EtichettaVlan({ vid }: { vid: number }) {
-  return (
-    <span className="rounded border border-[#00A7E7] bg-[#00A7E7]/10 px-2 py-0.5 font-mono text-sm font-semibold text-[#006C96] dark:text-[#5CCBF5]">
-      {vid === 0 ? "Nativa" : `VLAN ${vid}`}
+    <span title={s.spiega} className={cn("inline-block whitespace-nowrap rounded-md border-[1.5px] px-1.5 text-[13px] font-semibold leading-[21px]", s.classe)}>
+      {s.testo}
     </span>
   );
 }
 
-function Tag({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <span className={cn("inline-block rounded border px-1.5 font-mono text-[13px] leading-5 uppercase", className)}>{children}</span>;
+function Come({ passivo, attivo }: { passivo: number; attivo: number }) {
+  if (passivo && attivo) return <span><span className="text-primary">◆</span> ascolto + giro ARP</span>;
+  if (attivo) return <span>▲ solo col giro ARP</span>;
+  return <span><span className="text-primary">●</span> visto in ascolto</span>;
 }
 
-function Metodo({ passivo, attivo }: { passivo: number; attivo: number }) {
-  const c = "whitespace-nowrap font-sans normal-case";
-  if (passivo && attivo) return <Tag className={cn(c, "border-[#00A7E7] bg-[#00A7E7] text-[#0D2537]")}>ascolto + giro ARP</Tag>;
-  if (attivo) return <Tag className={cn(c, "border-[#0D2537] bg-[#0D2537] text-white dark:bg-slate-200 dark:text-[#0D2537]")}>silenzioso</Tag>;
-  return <Tag className={cn(c, "border-[#00A7E7] bg-[#00A7E7]/10 text-[#006C96] dark:text-[#5CCBF5]")}>in ascolto</Tag>;
-}
-
-function SchedaRete({ rete, scelta, inIpam, giroDisabilitato, onScegli, onGiro, onPorta }: {
-  rete: TrunkReteMatrice; scelta: boolean; inIpam: boolean; giroDisabilitato: boolean; onScegli: () => void; onGiro: () => void; onPorta: () => void;
+function Dettaglio({ rete, giorni, inIpam, giroDisabilitato, onGiro, onPorta, onMaschera }: {
+  rete: TrunkReteMatrice; giorni: string[]; inIpam: boolean; giroDisabilitato: boolean;
+  onGiro: () => void; onPorta: () => void; onMaschera: (prefisso: number | null) => void;
 }) {
-  const ascolto = rete.ip.filter((i) => i.passivo).length;
-  const soloGiro = rete.ip.filter((i) => !i.passivo && i.attivo).length;
+  const sil = silenziosi(rete);
   const gw = rete.gateway_ip ? rete.ip.find((i) => i.ip === rete.gateway_ip) : undefined;
-  const oggi = rete.serie[rete.serie.length - 1];
+  const prefisso = Number(rete.cidr.split("/")[1]);
+  const perche: Record<TrunkMaschera, string> = {
+    dhcp: "annunciata dal DHCP",
+    dedotta: rete.blocchi.length > 1 ? `dedotta: ${rete.blocchi.length} blocchi vicini con lo stesso gateway` : "dedotta dagli IP visti",
+    incerta: `IP sparsi in ${rete.blocchi.length} blocchi: confermala prima di portarla in DA-IPAM`,
+    config: `scritta a mano (dedotta: ${rete.dedotta})`,
+  };
   return (
-    <div role="button" tabIndex={0} onClick={onScegli} onKeyDown={(e) => { if (e.key === "Enter") onScegli(); }}
-      className={cn("flex cursor-pointer flex-col rounded-md border p-3 transition-colors hover:bg-muted/40",
-        scelta && "border-[#00A7E7] bg-[#00A7E7]/5 ring-1 ring-[#00A7E7]")}>
-      <div className="flex items-center justify-between gap-2">
-        <span className="font-mono text-base font-semibold text-[#0D2537] dark:text-white">{rete.cidr}</span>
-        <span className={cn("font-mono text-[13px]", CIANO_TESTO)}>{rete.ip.length} host</span>
+    <Pannello numero={3} titolo={`Rete ${rete.cidr}`} conteggio={rete.ip.length} azioni={<Etichetta tono="marca">{nomeVlan(rete.vid)}</Etichetta>}>
+      <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))" }}>
+        <Dato nome="Gateway" valore={`${rete.gateway_ip ?? "—"}${gw?.vendor ? ` · ${gw.vendor}` : ""}`} />
+        <Dato nome="Indirizzi" valore={`${rete.ip.length} (${sil} silenziosi)`} />
+        <Dato nome="Nuovi in 7 giorni" valore={`+${nuoviIn(rete, 7)}`} />
+        <Dato nome="Maschera" valore={`/${prefisso}`} />
       </div>
-      <div className="mt-1 flex items-center gap-2">
-        <EtichettaVlan vid={rete.vid} />
-        {oggi && oggi.nuovi > 0 && <Tag className="border-[#FFD400] bg-[#FFD400]/25 normal-case">+{oggi.nuovi} oggi</Tag>}
-        {inIpam && <Tag className="normal-case">in DA-IPAM</Tag>}
+      <div className="mt-2 flex flex-wrap items-center gap-2 text-[13px] text-muted-foreground">
+        <BadgeMaschera m={rete.maschera} />
+        <span>{perche[rete.maschera]}</span>
+        {rete.maschera !== "dhcp" && (
+          <label className="ml-1 flex items-center gap-1.5">
+            correggi
+            <select value={prefisso} onChange={(e) => onMaschera(Number(e.target.value))}
+              className="h-8 rounded-md border bg-card px-2 font-mono text-[13px] text-foreground">
+              {[...new Set([...PREFISSI, prefisso])].sort((a, b) => a - b).map((p) => <option key={p} value={p}>/{p}</option>)}
+            </select>
+          </label>
+        )}
+        {rete.maschera === "config" && (
+          <Button size="sm" variant="outline" onClick={() => onMaschera(null)}>Torna alla dedotta</Button>
+        )}
       </div>
-      <dl className="mt-3 space-y-1 text-[13px]">
-        <div className="flex justify-between gap-2">
-          <dt className="text-muted-foreground">{rete.fonte === "dhcp" ? "Gateway (DHCP)" : "IP più cercato"}</dt>
-          <dd className="text-right font-mono">
-            {rete.gateway_ip ?? "—"}
-            {gw?.vendor && <span className="text-muted-foreground block font-sans">{gw.vendor}</span>}
-          </dd>
-        </div>
-      </dl>
-      <div className="mt-3 flex justify-between text-[13px]">
-        <span>In ascolto <b className={CIANO_TESTO}>{ascolto}</b></span>
-        <span>Silenziosi <b>{soloGiro}</b></span>
-      </div>
-      <div className="mt-1 flex h-1.5 overflow-hidden rounded-full bg-muted">
-        <div className="bg-[#00A7E7]" style={{ width: `${rete.ip.length ? (ascolto / rete.ip.length) * 100 : 0}%` }} />
-        <div className="bg-[#0D2537] dark:bg-slate-300" style={{ width: `${rete.ip.length ? (soloGiro / rete.ip.length) * 100 : 0}%` }} />
-      </div>
-      <div className="mt-3 flex gap-2" onClick={(e) => e.stopPropagation()}>
-        <Button size="sm" variant="outline" className="flex-1 border-[#FFD400] hover:bg-[#FFD400]/20" disabled={giroDisabilitato} onClick={onGiro}>
+
+      <p className="mt-4 mb-1 text-[13px] font-bold uppercase tracking-wider text-cian-testo">IP conosciuti negli ultimi {giorni.length} giorni</p>
+      <Grafico rete={rete} giorni={giorni} />
+
+      <p className="mt-4 text-[13px] font-bold uppercase tracking-wider text-cian-testo">Occupazione</p>
+      <Occupazione rete={rete} />
+
+      <div className="mt-4 flex flex-wrap justify-end gap-2">
+        <Button size="sm" variant="outline" className="border-[#C9A800]" disabled={giroDisabilitato} onClick={onGiro}
+          title="Trova gli apparati che non parlano: stampanti, PLC, telecamere">
           <Zap className="h-4 w-4" /> Giro ARP
         </Button>
-        {!inIpam && <Button size="sm" variant="outline" className="flex-1" onClick={onPorta}>Porta in DA-IPAM</Button>}
+        {inIpam ? <Etichetta mono={false}>✓ in DA-IPAM</Etichetta> : (
+          <Button size="sm" onClick={onPorta} className="text-[#0D2537]" title={rete.maschera === "incerta" ? "La maschera è incerta: correggila prima" : undefined}>
+            Porta in DA-IPAM
+          </Button>
+        )}
       </div>
+    </Pannello>
+  );
+}
+
+function Dato({ nome, valore }: { nome: string; valore: string }) {
+  return (
+    <div>
+      <div className="text-[13px] text-muted-foreground">{nome}</div>
+      <div className="font-mono text-[15px] font-semibold">{valore}</div>
     </div>
   );
 }
 
-
-/** Gli indirizzi di un /24 (i primi tre ottetti) dentro una subnet, con quelli visti. */
-function blocchi24(rete: TrunkReteMatrice): string[] {
-  const visti = new Set(rete.ip.map((i) => i.ip.split(".").slice(0, 3).join(".")));
-  if (visti.size === 0) visti.add(rete.cidr.split("/")[0].split(".").slice(0, 3).join("."));
-  return [...visti].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+/** Linea = IP conosciuti (cumulato), barre gialle = nuovi quel giorno. */
+function Grafico({ rete, giorni }: { rete: TrunkReteMatrice; giorni: string[] }) {
+  const W = 560, H = 160, pl = 34, pb = 22, pt = 22;
+  const serie = rete.serie;
+  const max = Math.max(1, ...serie.map((g) => g.noti));
+  const top = Math.ceil(max / 10) * 10;
+  const bw = (W - pl - 8) / Math.max(serie.length, 1);
+  const y = (v: number) => pt + (H - pt - pb) * (1 - v / top);
+  const cx = (k: number) => pl + bw * k + bw / 2;
+  const punti = serie.map((g, k) => `${cx(k).toFixed(1)},${y(g.noti).toFixed(1)}`).join(" ");
+  const ultimo = serie.length ? serie[serie.length - 1] : null;
+  return (
+    <div>
+      <svg viewBox={`0 0 ${W} ${H}`} className="block w-full" role="img" aria-label="IP conosciuti per giorno">
+        {[0, top / 2, top].map((t) => (
+          <g key={t}>
+            <line x1={pl} x2={W - 6} y1={y(t)} y2={y(t)} className="stroke-border" strokeDasharray={t ? "3 3" : undefined} />
+            <text x={pl - 6} y={y(t) + 4} textAnchor="end" fontSize={12} className="fill-muted-foreground font-mono">{t}</text>
+          </g>
+        ))}
+        {serie.map((g, k) => (
+          <g key={g.giorno}>
+            {g.nuovi > 0 && (
+              <rect x={cx(k) - bw * 0.3} y={y(g.nuovi)} width={bw * 0.6} height={y(0) - y(g.nuovi)} rx={2} fill="#FFD400" stroke="#C9A800">
+                <title>{`${g.giorno}: ${g.nuovi} nuovi`}</title>
+              </rect>
+            )}
+            {(k % 2 === 1 || k === serie.length - 1) && (
+              <text x={cx(k)} y={H - 6} textAnchor="middle" fontSize={12} className="fill-muted-foreground font-mono">{g.giorno.slice(8, 10)}</text>
+            )}
+          </g>
+        ))}
+        {serie.length > 1 && <polyline points={punti} fill="none" stroke="#00A7E7" strokeWidth={2.2} strokeLinejoin="round" />}
+        {ultimo && (
+          <>
+            <circle cx={cx(serie.length - 1)} cy={y(ultimo.noti)} r={4} fill="#00A7E7" />
+            <text x={cx(serie.length - 1) - 8} y={y(ultimo.noti) - 8} textAnchor="end" fontSize={13} fontWeight={600} className="fill-foreground font-mono">{ultimo.noti}</text>
+          </>
+        )}
+      </svg>
+      <Legenda voci={[
+        { classe: "bg-primary", testo: "IP conosciuti (cumulato)" },
+        { classe: "bg-[#FFD400] border-[#C9A800]", testo: "nuovi quel giorno" },
+        { classe: "bg-card", testo: `dal ${giorni[0]?.slice(8, 10) ?? ""}/${giorni[0]?.slice(5, 7) ?? ""}` },
+      ]} />
+    </div>
+  );
 }
 
-function comeTrovato(passivo: number, attivo: number): string {
-  return [passivo ? "ascolto" : null, attivo ? "giro ARP" : null].filter(Boolean).join(" + ") || "—";
-}
-
-const COLORI = {
-  gateway: "bg-[#FFD400] text-[#0D2537]",
-  ascolto: "bg-[#00A7E7]/35 text-[#0D2537] dark:text-white",
-  giro: "bg-[#0D2537] text-white dark:bg-slate-300 dark:text-[#0D2537]",
-  entrambi: "bg-[#00A7E7] text-[#0D2537]",
-  libero: "bg-muted text-muted-foreground/60",
-} as const;
-
-function tipoCella(i: TrunkIpVisto | undefined, gateway: boolean): keyof typeof COLORI {
-  if (gateway) return "gateway";
-  if (!i) return "libero";
-  if (i.passivo && i.attivo) return "entrambi";
-  return i.attivo ? "giro" : "ascolto";
-}
-
-function Griglia({ rete }: { rete: TrunkReteMatrice }) {
-  const blocchi = blocchi24(rete);
-  const [blocco, setBlocco] = useState(blocchi[0]);
-  const [scelto, setScelto] = useState<string | null>(null);
+/** Una griglia da 64 caselle per ogni /24 (o per la rete, se più piccola). */
+function Occupazione({ rete }: { rete: TrunkReteMatrice }) {
+  const prefisso = Number(rete.cidr.split("/")[1]);
   const perIp = new Map(rete.ip.map((i) => [i.ip, i]));
-  const dettaglio = scelto ? perIp.get(scelto) : undefined;
+  const base24 = (c: string) => c.split("/")[0].split(".").slice(0, 3).join(".");
+  const blocchi = prefisso >= 24
+    ? [{ base: ipNumero(rete.cidr.split("/")[0]), dim: 2 ** (32 - prefisso) }]
+    : [...new Set([...rete.blocchi.map(base24), ...rete.ip.map((i) => i.ip.split(".").slice(0, 3).join("."))])]
+      .sort((a, b) => ipNumero(`${a}.0`) - ipNumero(`${b}.0`))
+      .slice(0, 8)
+      .map((b) => ({ base: ipNumero(`${b}.0`), dim: 256 }));
+  const nIp = (n: number) => [n >>> 24 & 255, n >>> 16 & 255, n >>> 8 & 255, n & 255].join(".");
   return (
-    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_16rem]">
-      <div className="rounded-md border">
-        <div className="px-3 pt-3 flex flex-row flex-wrap items-center justify-between gap-2">
-          <h3 className="text-sm font-semibold">
-            Mappa {blocco}.0/24 <span className="text-muted-foreground font-normal">· VLAN {nomeVlan(rete.vid)}</span>
-          </h3>
-          {blocchi.length > 1 && (
-            <div className="flex flex-wrap gap-1">
-              {blocchi.map((b) => (
-                <Button key={b} size="sm" variant={b === blocco ? "default" : "outline"} onClick={() => setBlocco(b)}>
-                  {b}.x
-                </Button>
-              ))}
+    <div>
+      {blocchi.map(({ base, dim }) => {
+        const passo = Math.max(1, Math.round(Math.min(dim, 256) / 64));
+        return (
+          <div key={base}>
+            <div className="mt-2 mb-1 font-mono text-[13px] text-muted-foreground">
+              {nIp(base)}/{dim === 256 ? 24 : prefisso} · una casella = {passo === 1 ? "1 indirizzo" : `${passo} indirizzi`}
             </div>
-          )}
-        </div>
-        <div className="p-3 space-y-3">
-          <div className="grid gap-1" style={{ gridTemplateColumns: "repeat(16, minmax(0, 1fr))" }}>
-            {Array.from({ length: 256 }, (_, n) => {
-              const ip = `${blocco}.${n}`;
-              const dentro = ipInCidr(ip, rete.cidr);
-              const tipo = tipoCella(perIp.get(ip), ip === rete.gateway_ip);
-              return (
-                <button
-                  key={n}
-                  type="button"
-                  disabled={!dentro}
-                  onClick={() => setScelto(ip)}
-                  title={ip}
-                  className={cn(
-                    "aspect-square rounded-sm font-mono text-[13px] leading-none transition-transform hover:scale-110",
-                    dentro ? COLORI[tipo] : "opacity-20 bg-muted",
-                    scelto === ip && "ring-2 ring-[#0D2537] dark:ring-white",
-                  )}
-                >
-                  {n}
-                </button>
-              );
-            })}
+            <div className="grid gap-0.5" style={{ gridTemplateColumns: "repeat(64, minmax(0, 1fr))" }}>
+              {Array.from({ length: 64 }, (_, c) => {
+                if (c * passo >= dim) return <i key={c} className="block aspect-square rounded-[2px] bg-muted opacity-25" />;
+                let tipo: "vuoto" | "ascolto" | "giro" | "gw" = "vuoto";
+                for (let k = 0; k < passo; k++) {
+                  const ip = nIp(base + c * passo + k);
+                  const x = perIp.get(ip);
+                  if (ip === rete.gateway_ip && x) { tipo = "gw"; break; }
+                  if (x) tipo = x.passivo ? "ascolto" : tipo === "ascolto" ? "ascolto" : "giro";
+                }
+                return (
+                  <i key={c} title={passo === 1 ? nIp(base + c) : undefined} className={cn("block aspect-square rounded-[2px]", {
+                    vuoto: "bg-muted", ascolto: "bg-primary", giro: "bg-[#0D2537] dark:bg-[#C8D3DA]", gw: "bg-[#FFD400] outline outline-1 outline-[#C9A800]",
+                  }[tipo])} />
+                );
+              })}
+            </div>
           </div>
-          <div className="text-muted-foreground flex flex-wrap gap-3 text-[13px]">
-            <Legenda c={COLORI.gateway} t="gateway / IP più cercato" />
-            <Legenda c={COLORI.ascolto} t="visto in ascolto" />
-            <Legenda c={COLORI.giro} t="silenzioso, trovato col giro ARP" />
-            <Legenda c={COLORI.entrambi} t="ascolto + giro ARP" />
-            <Legenda c={COLORI.libero} t="mai visto" />
-          </div>
-        </div>
-      </div>
-      <div className="rounded-md border">
-        <div className="px-3 pt-3">
-          <h3 className="text-sm font-semibold">{scelto ?? "Scegli un indirizzo"}</h3>
-        </div>
-        <div className="p-3 space-y-2 text-sm">
-          {!scelto && <p className="text-muted-foreground">Clicca una casella della mappa per vedere cosa si sa di quell&apos;indirizzo.</p>}
-          {scelto && !dettaglio && (
-            <p className="text-muted-foreground">
-              Mai visto sul trunk. Un apparato silenzioso (stampante, PLC, NAS) compare dopo un giro ARP sulla subnet.
-            </p>
-          )}
-          {dettaglio && (
-            <dl className="space-y-1.5">
-              <Voce n="MAC" v={dettaglio.mac} mono />
-              <Voce n="Produttore" v={dettaglio.vendor ?? "—"} />
-              <Voce n="Nome" v={dettaglio.nome ?? "—"} />
-              <Voce n="Come" v={comeTrovato(dettaglio.passivo, dettaglio.attivo)} />
-              <Voce n="Prima vista" v={dettaglio.prima_vista} />
-              <Voce n="Ultima vista" v={dettaglio.ultima_vista} />
-            </dl>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Legenda({ c, t }: { c: string; t: string }) {
-  return (
-    <span className="flex items-center gap-1.5">
-      <span className={cn("inline-block h-3 w-3 rounded-sm", c)} />
-      {t}
-    </span>
-  );
-}
-
-function Voce({ n, v, mono }: { n: string; v: string; mono?: boolean }) {
-  return (
-    <div className="flex justify-between gap-2">
-      <dt className="text-muted-foreground">{n}</dt>
-      <dd className={cn("text-right", mono && "font-mono")}>{v}</dd>
+        );
+      })}
+      <Legenda className="mt-2" voci={[
+        { classe: "bg-primary", testo: "in ascolto" },
+        { classe: "bg-[#0D2537] dark:bg-[#C8D3DA]", testo: "silenzioso" },
+        { classe: "bg-[#FFD400] border-[#C9A800]", testo: "gateway" },
+        { classe: "bg-muted", testo: "mai visto" },
+      ]} />
     </div>
   );
 }

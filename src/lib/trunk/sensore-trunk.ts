@@ -19,6 +19,7 @@ import { isIpInCidr, macToHex, normalizeMacForStorage } from "@/lib/utils";
 import { lookupVendorSync } from "@/lib/scanner/mac-vendor";
 import { getActiveEdgeScanner } from "@/lib/vuln/edge-scanner-db";
 import { edgeApiGet, edgeApiPost, EdgeClientError } from "@/lib/vuln/scanner-edge-client";
+import { unisciReti, type TrunkMaschera } from "@/lib/trunk/reti";
 
 export const TRUNK_SOCKET_DEFAULT = "/run/sensore-trunk/api.sock";
 const PAGINA = 1000;
@@ -435,6 +436,12 @@ export interface TrunkReteMatrice {
   cidr: string;
   gateway_ip: string | null;
   fonte: string | null;
+  /** Da dove viene la maschera: DHCP, dedotta dai /24 vicini, incerta, scritta a mano. */
+  maschera: TrunkMaschera;
+  /** Le reti del sensore unite qui dentro (una sola = nessuna unione). */
+  blocchi: string[];
+  /** La rete dedotta prima della correzione a mano: la chiave per correggerla. */
+  dedotta: string;
   ip: TrunkIpVisto[];
   serie: TrunkGiornoRete[];
 }
@@ -465,8 +472,9 @@ export function getTrunkMatrice(giorni = 14, oggi = new Date()): { giorni: strin
     else perVid.set(r.vid, [r]);
   }
   const reti: TrunkReteMatrice[] = [];
+  const correzioni = getTrunkCorrezioniMaschera();
   for (const v of getTrunkVlan()) {
-    for (const rete of v.reti) {
+    for (const rete of unisciReti(v.vid, v.reti, correzioni)) {
       const ip = (perVid.get(v.vid) ?? []).filter((r) => isIpInCidr(r.ip, rete.cidr));
       const serie = elenco.map((giorno) => ({
         giorno,
@@ -476,7 +484,8 @@ export function getTrunkMatrice(giorni = 14, oggi = new Date()): { giorni: strin
       }));
       ip.sort((a, b) => ordinaIp(a.ip) - ordinaIp(b.ip));
       reti.push({
-        vid: v.vid, cidr: rete.cidr, gateway_ip: rete.gateway_ip ?? null, fonte: rete.fonte ?? null,
+        vid: v.vid, cidr: rete.cidr, gateway_ip: rete.gateway_ip, fonte: rete.fonte,
+        maschera: rete.maschera, blocchi: rete.blocchi, dedotta: rete.dedotta,
         ip: ip.slice(0, MAX_IP_PER_RETE).map((r) => ({
           ip: r.ip, mac: r.mac, vendor: lookupVendorSync(r.mac), nome: r.nome, protocolli: [...new Set(protocolliDa(r.protocolli))], passivo: r.passivo, attivo: r.attivo, prima_vista: r.prima_vista, ultima_vista: r.ultima_vista,
         })), serie,
@@ -484,6 +493,30 @@ export function getTrunkMatrice(giorni = 14, oggi = new Date()): { giorni: strin
     }
   }
   return { giorni: elenco, reti };
+}
+
+/** Maschere corrette a mano dalla pagina: `vid|rete dedotta` → prefisso. */
+export function getTrunkCorrezioniMaschera(): Record<string, number> {
+  const raw = getTenantSetting("trunk_maschere");
+  if (!raw) return {};
+  try {
+    const v = JSON.parse(raw) as unknown;
+    if (!v || typeof v !== "object") return {};
+    return Object.fromEntries(
+      Object.entries(v as Record<string, unknown>).filter((e): e is [string, number] => typeof e[1] === "number"),
+    );
+  } catch {
+    return {};
+  }
+}
+
+/** Corregge (o con `null` toglie la correzione) la maschera di una rete dedotta. */
+export function salvaCorrezioneMaschera(vid: number, dedotta: string, prefisso: number | null): void {
+  const c = getTrunkCorrezioniMaschera();
+  const k = `${vid}|${dedotta}`;
+  if (prefisso == null) delete c[k];
+  else c[k] = prefisso;
+  setTenantSetting("trunk_maschere", JSON.stringify(c));
 }
 
 function ordinaIp(ip: string): number {

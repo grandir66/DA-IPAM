@@ -4,6 +4,18 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-25 · Reti dal trunk: rilievi di sicurezza dalla sonda passiva, voce nel gruppo Sicurezza
+
+### Aggiunto
+
+- **Pannello «Sicurezza della rete» in Reti dal trunk.** A ogni lettura del sensore (ogni 2 minuti) DA-IPAM confronta quello che la sonda vede sul trunk con inventario, reti e sorgenti DHCP, e tiene i rilievi in `rete_rilievi` (`src/lib/trunk/rilievi.ts`, regole pure e provate). Allarmi: server DHCP non previsto (grave se in una VLAN ce n'è più d'uno), IP conteso da due schede (grave se è il gateway; MAC virtuali VRRP/HSRP esclusi), indirizzo fuori dalla sua rete. Esposizioni: apparati che usano LLMNR/NetBIOS, stesso MAC in più VLAN, switch che si annunciano con CDP/LLDP. Novità: apparati non in inventario (MAC casuali a parte), VLAN che passano sul trunk senza una rete in DA-IPAM. Un rilievo si chiude da solo quando la condizione sparisce; «Prendi in carico» resta. Nessun pacchetto in più in rete: sono gli stessi broadcast, multicast e ARP che il sensore legge già.
+- Server DHCP per VLAN (`trunk_vlan.server_dhcp`, da `/vlan`) e vicini CDP/LLDP (`trunk_vicini`, da `/vicini`; dall'edge con DA-Vul-can v0.8.164) copiati nel DB del tenant. Nell'elenco degli indirizzi un segno per i rilievi aperti su quel MAC.
+- La colonna `fonte` dei rilievi lascia la porta aperta a una futura sonda con porta specchio.
+
+### Cambiato
+
+- **«Reti dal trunk» passa dal gruppo Network al gruppo Sicurezza** (Riccardo, 25/10), con il numero rosso degli allarmi gravi da prendere in carico. L'indirizzo della pagina resta `/arp-table/trunk`. Le tessere in alto mostrano prima allarmi ed esposizioni.
+
 ## [Non rilasciato] — 2026-10-24 · Configurazione iniziale: rete dell'appliance proposta e passi a schede
 
 ### Aggiunto

@@ -18,6 +18,8 @@ import type {
   TrunkEsitoLettura, TrunkMetodo, TrunkOsservazioneRiga, TrunkStatoSonda, TrunkReteMatrice, TrunkVlanProtocolli, TrunkVlanRiga,
 } from "@/lib/trunk/sensore-trunk";
 import type { TrunkMaschera } from "@/lib/trunk/reti";
+import { TIPI_RILIEVO, type TipoRilievo } from "@/lib/trunk/rilievi-tipi";
+import { PannelloRilievi, type DatiRilievi } from "./rilievi-pannello";
 
 const PAGINA = 100;
 
@@ -42,7 +44,17 @@ interface Dati {
   riepilogo: Riepilogo;
   sonda: TrunkStatoSonda;
   ultimoEsito: TrunkEsitoLettura | null;
+  rilievi: DatiRilievi;
 }
+
+/** Segno breve dei rilievi aperti su un indirizzo, nell'elenco: il dettaglio sta nel pannello in alto. */
+const SEGNO_RILIEVO: Partial<Record<TipoRilievo, string>> = {
+  dhcp_non_previsto: "✕ DHCP non previsto",
+  fuori_rete: "▲ fuori rete",
+  nomi_insicuri: "▲ LLMNR/NetBIOS",
+  piu_vlan: "● più VLAN",
+  non_in_inventario: "● non in inventario",
+};
 
 /** Il filtro «come è stato trovato»: quattro pulsanti, ognuno col suo segno (non solo il colore). */
 const METODI: Array<{ id: TrunkMetodo | ""; etichetta: string }> = [
@@ -89,7 +101,7 @@ const silenziosi = (x: TrunkReteMatrice) => x.ip.filter((i) => !i.passivo && i.a
 const nuoviIn = (x: TrunkReteMatrice, giorni: number) => x.serie.slice(-giorni).reduce((a, g) => a + g.nuovi, 0);
 const nuoviOggi = (x: TrunkReteMatrice) => x.serie[x.serie.length - 1]?.nuovi ?? 0;
 
-export function TrunkClient({ iniziale }: { iniziale: Dati }) {
+export function TrunkClient({ iniziale, admin }: { iniziale: Dati; admin: boolean }) {
   const router = useRouter();
   const { attiva, riepilogo: r, matrice, sonda, ultimoEsito } = iniziale;
   const [righe, setRighe] = useState(iniziale.righe);
@@ -194,6 +206,8 @@ export function TrunkClient({ iniziale }: { iniziale: Dati }) {
   const nonDichiarate = iniziale.vlan.filter((v) => v.vista && !v.dichiarata).length;
   const maiViste = iniziale.vlan.filter((v) => !v.vista).length;
   const blocchiVisti = matrice.reti.reduce((a, x) => a + x.blocchi.length, 0);
+  const ril = iniziale.rilievi.riepilogo;
+  const esposizioniLlmnr = ril.perTipo.find((t) => t.tipo === "nomi_insicuri")?.n ?? 0;
   const totSilenziosi = matrice.reti.reduce((a, x) => a + silenziosi(x), 0);
 
   return (
@@ -215,15 +229,19 @@ export function TrunkClient({ iniziale }: { iniziale: Dati }) {
       />
       <StatoLettura attiva={attiva} sonda={sonda} esito={ultimoEsito} aggiornato={r.aggiornato} />
 
+      {/* Prima la sicurezza (Riccardo, 25/10: la pagina sta nel gruppo Sicurezza), poi le reti. */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <TesseraNumero titolo="Allarmi" valore={ril.allarmi}
+          qualifica={ril.allarmiAlti ? `✕ ${ril.allarmiAlti} gravi da prendere` : "nessuno grave aperto"} nota="DHCP, IP contesi, indirizzi fuori rete" />
+        <TesseraNumero titolo="Esposizioni" valore={ril.esposizioni}
+          qualifica={`${esposizioniLlmnr} con LLMNR/NetBIOS`} nota="come è fatta la rete, con cosa fare" />
         <TesseraNumero titolo="VLAN viste" valore={iniziale.vlan.filter((v) => v.vista).length}
           qualifica={`${nonDichiarate} non dichiarate`} nota={`${maiViste} dichiarate e mai viste`} />
-        <TesseraNumero titolo="Reti" valore={matrice.reti.length}
-          qualifica={`${matrice.reti.filter((x) => retiIpam.includes(x.cidr)).length} in DA-IPAM`} nota={`da ${blocchiVisti} blocchi visti`} />
-        <TesseraNumero titolo="Indirizzi IP" valore={r.ip} qualifica={`${totSilenziosi} silenziosi`} nota="senza leggere il router" />
-        <TesseraNumero titolo="Nuovi in 7 giorni" valore={matrice.reti.reduce((a, x) => a + nuoviIn(x, 7), 0)}
-          qualifica={`+${matrice.reti.reduce((a, x) => a + nuoviOggi(x), 0)} oggi`} nota="IP mai visti prima" />
+        <TesseraNumero titolo="Indirizzi IP" valore={r.ip} qualifica={`${totSilenziosi} silenziosi`}
+          nota={`+${matrice.reti.reduce((a, x) => a + nuoviIn(x, 7), 0)} nuovi in 7 giorni, senza leggere il router`} />
       </div>
+
+      <PannelloRilievi iniziale={iniziale.rilievi} admin={admin} />
 
       {/* 1. Tutte le VLAN in poco spazio: si confrontano a colpo d'occhio. */}
       <Pannello numero={1} titolo="VLAN viste sul trunk" conteggio={iniziale.vlan.length} sottotitolo="Scegli una VLAN: sotto le sue reti"
@@ -263,7 +281,8 @@ export function TrunkClient({ iniziale }: { iniziale: Dati }) {
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
         {/* 2. Le reti, una voce ciascuna con la sua maschera. */}
-        <Pannello numero={2} titolo="Reti" conteggio={retiVisibili.length} sottotitolo="Una voce per rete, con la sua maschera"
+        <Pannello numero={2} titolo="Reti" conteggio={retiVisibili.length}
+          sottotitolo={`Una voce per rete, con la sua maschera · ${matrice.reti.filter((x) => retiIpam.includes(x.cidr)).length} in DA-IPAM, da ${blocchiVisti} blocchi visti`}
           azioni={vid != null ? <Etichetta tono="marca">{nomeVlan(vid)}</Etichetta> : undefined}>
           {retiVisibili.length === 0 ? (
             <p className="text-sm text-muted-foreground">
@@ -377,6 +396,11 @@ export function TrunkClient({ iniziale }: { iniziale: Dati }) {
                         <div className="flex flex-wrap items-center gap-1">
                           {o.nome ? <span className="mr-1 font-mono text-[13px]">{o.nome}</span> : <span className="mr-1 text-muted-foreground">—</span>}
                           {o.protocolli.map((x) => <Etichetta key={x}>{x}</Etichetta>)}
+                          {o.rilievi.filter((t) => SEGNO_RILIEVO[t]).map((t) => (
+                            <Etichetta key={t} tono={t === "non_in_inventario" || t === "piu_vlan" ? "neutro" : "ruolo"} mono={false}>
+                              <span title={TIPI_RILIEVO[t].cosaFare}>{SEGNO_RILIEVO[t]}</span>
+                            </Etichetta>
+                          ))}
                         </div>
                       </TableCell>
                       <TableCell className="whitespace-nowrap text-[13px] text-muted-foreground" title={o.ultima_vista}>{fa(o.ultima_vista)}</TableCell>

@@ -383,7 +383,7 @@ function Tag({ children, className }: { children: React.ReactNode; className?: s
 
 function Metodo({ passivo, attivo }: { passivo: number; attivo: number }) {
   const c = "whitespace-nowrap font-sans normal-case";
-  if (passivo && attivo) return <Tag className={cn(c, "border-[#00A7E7] bg-[#00A7E7] text-white")}>ascolto + giro ARP</Tag>;
+  if (passivo && attivo) return <Tag className={cn(c, "border-[#00A7E7] bg-[#00A7E7] text-[#0D2537]")}>ascolto + giro ARP</Tag>;
   if (attivo) return <Tag className={cn(c, "border-[#0D2537] bg-[#0D2537] text-white dark:bg-slate-200 dark:text-[#0D2537]")}>silenzioso</Tag>;
   return <Tag className={cn(c, "border-[#00A7E7] bg-[#00A7E7]/10 text-[#006C96] dark:text-[#5CCBF5]")}>in ascolto</Tag>;
 }
@@ -451,7 +451,7 @@ const COLORI = {
   gateway: "bg-[#FFD400] text-[#0D2537]",
   ascolto: "bg-[#00A7E7]/35 text-[#0D2537] dark:text-white",
   giro: "bg-[#0D2537] text-white dark:bg-slate-300 dark:text-[#0D2537]",
-  entrambi: "bg-[#00A7E7] text-white",
+  entrambi: "bg-[#00A7E7] text-[#0D2537]",
   libero: "bg-muted text-muted-foreground/60",
 } as const;
 

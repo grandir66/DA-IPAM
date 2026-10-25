@@ -17,6 +17,9 @@ colori Domarc. **Non** la pagina «Reti dal trunk» uscita con la v0.9.902: Ricc
 molto peggio del modello (doppioni, manca l'elenco degli oggetti rilevati). Colori e regole di
 contrasto vengono dal kit di DA-Template (`kit/tokens.css`).
 
+La pagina rifatta sul modello (PR #26, `arp-table/trunk/trunk-client.tsx`) è l'esempio in
+codice: i suoi pezzi locali (`Tessera`, `Pannello`…) passeranno a quelli di `console.tsx`.
+
 **Mattoni pronti:** `src/components/shared/console.tsx`. Si usano quelli, non si ridisegnano.
 
 ## Le dieci regole
@@ -48,13 +51,17 @@ BarraStato           (se i dati vengono da un servizio: acceso/spento, ultima le
 TesseraNumero × 3-4  grid grid-cols-2 lg:grid-cols-4 gap-3
 ┌ Pannello 1 ────┐ ┌ Pannello 2 (scelte del livello 1) ──────────────────┐
 │ VoceSelezionab.│ │ VoceSelezionabile in griglia md:2 xl:3 colonne       │
-│ …              │ ├ Pannello 3: Tabs [Elenco | Mappa | …] + filtri ──────┤
-│ piede: consiglio│ │ Tabella degli oggetti (prima scheda, sempre)        │
+│ piede: consiglio│ │                                                      │
 └────────────────┘ └──────────────────────────────────────────────────────┘
+┌ Pannello 3: [Elenco | Mappa /24] + filtri + ricerca ─── tutta larghezza ┐
+│ Tabella degli oggetti rilevati (prima vista, sempre)                     │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
 - Contenitore: `space-y-4`. Colonne: `grid gap-4 lg:grid-cols-12`, lista `lg:col-span-3`,
-  area di lavoro `lg:col-span-9`. Su schermo stretto si impila, non si scorre in orizzontale.
+  scelte del livello 2 `lg:col-span-9`. Su schermo stretto si impila, non si scorre in orizzontale.
+- **La tabella degli oggetti va a tutta larghezza, sotto i livelli**, mai stretta in una colonna
+  a destra: lì le colonne si tagliano (Riccardo, 25/10, «Reti dal trunk» PR #26).
 - Pagine di elenco semplici (senza livelli): `IntestazionePagina` → tessere (se servono) →
   un `Pannello` con filtri nelle azioni e la tabella dentro.
 - Le liste lunghe scorrono **dentro** il pannello (`max-h-[…] overflow-y-auto`, oppure

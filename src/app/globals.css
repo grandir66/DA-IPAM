@@ -42,6 +42,8 @@
   --color-warning-foreground: var(--warning-foreground);
   --color-success: var(--success);
   --color-success-foreground: var(--success-foreground);
+  --color-cian-testo: var(--cian-testo);
+  --color-selezione: var(--selezione);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -61,7 +63,8 @@
   --popover: #FFFFFF;
   --popover-foreground: #0D2537;
   --primary: #00A7E7;
-  --primary-foreground: #FFFFFF;
+  /* Navy sul ciano (6,4:1); il bianco faceva 2,7:1. Riccardo, 25/10 (docs/STILE-UI.md). */
+  --primary-foreground: #0D2537;
   --secondary: #E7EAEB;
   --secondary-foreground: #0D2537;
   --muted: #E7EAEB;
@@ -90,6 +93,11 @@
   --sidebar-accent-foreground: #FFFFFF;
   --sidebar-border: #163350;
   --sidebar-ring: #00A7E7;
+  /* docs/STILE-UI.md: il ciano puro come testo ha contrasto 2,7:1 sul bianco. Per scritte,
+     link e titoli dei pannelli si usa --cian-testo; #00A7E7 resta per bordi e fondi. */
+  --cian-testo: #006C96;
+  /* Fondo della voce scelta (VLAN, subnet, riga) — dal kit di DA-Template (--sel). */
+  --selezione: #E3F2FA;
 }
 
 .dark {
@@ -100,7 +108,8 @@
   --popover: #0D2537;
   --popover-foreground: #E7EAEB;
   --primary: #00A7E7;
-  --primary-foreground: #FFFFFF;
+  /* Navy sul ciano (6,4:1); il bianco faceva 2,7:1. Riccardo, 25/10 (docs/STILE-UI.md). */
+  --primary-foreground: #0D2537;
   --secondary: #163350;
   --secondary-foreground: #E7EAEB;
   --muted: #163350;
@@ -128,6 +137,8 @@
   --sidebar-accent-foreground: #E7EAEB;
   --sidebar-border: #1E3A52;
   --sidebar-ring: #00A7E7;
+  --cian-testo: #3FBBF0;
+  --selezione: #123A55;
 }
 
 @layer base {

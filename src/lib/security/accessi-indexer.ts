@@ -187,7 +187,7 @@ export async function leggiAccessiIndexer(tenantCode: string): Promise<LetturaAc
       motivo: null,
     });
   } catch (e) {
-    console.warn(`[dashboard] indexer non leggibile, uso la stima: ${(e as Error).name}`);
+    console.warn(`[dashboard] indexer non leggibile, uso la stima: ${(e as Error).name}: ${(e as Error).message}`);
     return ricorda({ serie: null, motivo: "indexer di Wazuh non raggiungibile" });
   }
 }

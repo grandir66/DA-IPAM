@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -20,6 +20,7 @@ import type {
 import type { TrunkMaschera } from "@/lib/trunk/reti";
 import { TIPI_RILIEVO, type TipoRilievo } from "@/lib/trunk/rilievi-tipi";
 import { PannelloRilievi, type DatiRilievi } from "./rilievi-pannello";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const PAGINA = 100;
 
@@ -101,6 +102,8 @@ const silenziosi = (x: TrunkReteMatrice) => x.ip.filter((i) => !i.passivo && i.a
 const nuoviIn = (x: TrunkReteMatrice, giorni: number) => x.serie.slice(-giorni).reduce((a, g) => a + g.nuovi, 0);
 const nuoviOggi = (x: TrunkReteMatrice) => x.serie[x.serie.length - 1]?.nuovi ?? 0;
 
+type Scheda = "sicurezza" | "reti";
+
 export function TrunkClient({ iniziale, admin }: { iniziale: Dati; admin: boolean }) {
   const router = useRouter();
   const { attiva, riepilogo: r, matrice, sonda, ultimoEsito } = iniziale;
@@ -114,6 +117,17 @@ export function TrunkClient({ iniziale, admin }: { iniziale: Dati; admin: boolea
   const [errore, setErrore] = useState<string | null>(null);
   const [inCorso, setInCorso] = useState(false);
   const [retiIpam, setRetiIpam] = useState<string[]>(iniziale.retiIpam);
+  // Due schede (Riccardo, 25/10: in una pagina sola diventava troppo lunga). La scheda sta nell'indirizzo
+  // (#sicurezza, #reti), così il badge del menu e un collegamento aprono quella giusta.
+  const [scheda, setScheda] = useState<Scheda>("sicurezza");
+  useEffect(() => {
+    const h = window.location.hash.slice(1);
+    if (h === "reti" || h === "sicurezza") setScheda(h);
+  }, []);
+  const scegliScheda = useCallback((v: Scheda) => {
+    setScheda(v);
+    window.history.replaceState(null, "", `#${v}`);
+  }, []);
 
   const retiPerVid = useMemo(() => {
     const m = new Map<number, TrunkReteMatrice[]>();
@@ -229,202 +243,221 @@ export function TrunkClient({ iniziale, admin }: { iniziale: Dati; admin: boolea
       />
       <StatoLettura attiva={attiva} sonda={sonda} esito={ultimoEsito} aggiornato={r.aggiornato} />
 
-      {/* Prima la sicurezza (Riccardo, 25/10: la pagina sta nel gruppo Sicurezza), poi le reti. */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <TesseraNumero titolo="Allarmi" valore={ril.allarmi}
-          qualifica={ril.allarmiAlti ? `✕ ${ril.allarmiAlti} gravi da prendere` : "nessuno grave aperto"} nota="DHCP, IP contesi, indirizzi fuori rete" />
-        <TesseraNumero titolo="Esposizioni" valore={ril.esposizioni}
-          qualifica={`${esposizioniLlmnr} con LLMNR/NetBIOS`} nota="come è fatta la rete, con cosa fare" />
-        <TesseraNumero titolo="VLAN viste" valore={iniziale.vlan.filter((v) => v.vista).length}
-          qualifica={`${nonDichiarate} non dichiarate`} nota={`${maiViste} dichiarate e mai viste`} />
-        <TesseraNumero titolo="Indirizzi IP" valore={r.ip} qualifica={`${totSilenziosi} silenziosi`}
-          nota={`+${matrice.reti.reduce((a, x) => a + nuoviIn(x, 7), 0)} nuovi in 7 giorni, senza leggere il router`} />
-      </div>
+      <Tabs value={scheda} onValueChange={(v) => scegliScheda(v as Scheda)}>
+        <TabsList className="h-auto flex-wrap">
+          <TabsTrigger value="sicurezza">
+            Sicurezza della rete
+            {ril.allarmiAlti > 0 && (
+              <span className="ml-1.5 rounded-full bg-[#8E1B20] px-1.5 font-mono text-xs font-bold text-white" title="Allarmi gravi da prendere in carico">
+                ✕ {ril.allarmiAlti}
+              </span>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="reti">VLAN e reti</TabsTrigger>
+        </TabsList>
 
-      <PannelloRilievi iniziale={iniziale.rilievi} admin={admin} />
+        <TabsContent value="sicurezza" className="mt-4 space-y-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <TesseraNumero titolo="Allarmi" valore={ril.allarmi}
+              qualifica={ril.allarmiAlti ? `✕ ${ril.allarmiAlti} gravi da prendere` : "nessuno grave aperto"} nota="DHCP, IP contesi, indirizzi fuori rete" />
+            <TesseraNumero titolo="Esposizioni" valore={ril.esposizioni}
+              qualifica={`${esposizioniLlmnr} con LLMNR/NetBIOS`} nota="come è fatta la rete, con cosa fare" />
+          </div>
+          <PannelloRilievi iniziale={iniziale.rilievi} admin={admin} />
+        </TabsContent>
 
-      {/* 1. Tutte le VLAN in poco spazio: si confrontano a colpo d'occhio. */}
-      <Pannello numero={1} titolo="VLAN viste sul trunk" conteggio={iniziale.vlan.length} sottotitolo="Scegli una VLAN: sotto le sue reti"
-        azioni={<Button size="sm" variant={vid == null ? "default" : "outline"} onClick={() => filtra({ vid: null, rete: null })}>Tutte</Button>}>
-        {iniziale.vlan.length === 0 ? (
-          <Vuoto titolo="Nessuna VLAN letta finora" testo="Il sensore manda le VLAN alla prima lettura, entro un paio di minuti dall'accensione." />
-        ) : (
-          <>
-            <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(148px, 1fr))" }}>
-              {iniziale.vlan.map((v) => {
-                const rr = retiPerVid.get(v.vid) ?? [];
-                const ip = rr.reduce((a, x) => a + x.ip.length, 0);
-                const sil = rr.reduce((a, x) => a + silenziosi(x), 0);
-                return (
-                  <VoceSelezionabile key={v.vid} scelta={vid === v.vid} className={cn("flex flex-col gap-1.5 p-2.5", !v.vista && "border-dashed")}
-                    onScegli={() => filtra({ vid: vid === v.vid ? null : v.vid, rete: null })}>
-                    <div className="flex items-baseline justify-between gap-1.5">
-                      <span className="font-mono font-semibold">{nomeVlan(v.vid)}</span>
-                      <span className="font-mono text-[13px] text-muted-foreground">{ip ? `${ip} IP` : v.mac ? `${v.mac} MAC` : "mai vista"}</span>
-                    </div>
-                    <div className="truncate text-[13px] text-muted-foreground">
-                      {!v.dichiarata ? "▲ non dichiarata" : rr.length > 1 ? `${rr.length} reti` : rr.length === 1 ? rr[0].cidr : "nessuna rete"}
-                    </div>
-                    <Barra ascolto={ip - sil} silenziosi={sil} />
-                  </VoceSelezionabile>
-                );
-              })}
-            </div>
-            <Legenda className="mt-3" voci={[
-              { classe: "bg-primary", testo: "IP in ascolto" },
-              { classe: "bg-[#0D2537] dark:bg-[#C8D3DA]", testo: "IP silenziosi" },
-              { classe: "bg-card border-dashed", testo: "bordo tratteggiato = dichiarata ma mai vista" },
-            ]} />
-          </>
-        )}
-      </Pannello>
+        <TabsContent value="reti" className="mt-4 space-y-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <TesseraNumero titolo="VLAN viste" valore={iniziale.vlan.filter((v) => v.vista).length}
+              qualifica={`${nonDichiarate} non dichiarate`} nota={`${maiViste} dichiarate e mai viste`} />
+            <TesseraNumero titolo="Indirizzi IP" valore={r.ip} qualifica={`${totSilenziosi} silenziosi`}
+              nota={`+${matrice.reti.reduce((a, x) => a + nuoviIn(x, 7), 0)} nuovi in 7 giorni, senza leggere il router`} />
+          </div>
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
-        {/* 2. Le reti, una voce ciascuna con la sua maschera. */}
-        <Pannello numero={2} titolo="Reti" conteggio={retiVisibili.length}
-          sottotitolo={`Una voce per rete, con la sua maschera · ${matrice.reti.filter((x) => retiIpam.includes(x.cidr)).length} in DA-IPAM, da ${blocchiVisti} blocchi visti`}
-          azioni={vid != null ? <Etichetta tono="marca">{nomeVlan(vid)}</Etichetta> : undefined}>
-          {retiVisibili.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              {vid == null ? "Nessuna rete dedotta finora." : "Questa VLAN non ha IP: si vedono solo i MAC. Un giro ARP non serve finché non si conosce la rete."}
-            </p>
-          ) : (
-            <div className="flex max-h-[560px] flex-col gap-2 overflow-y-auto">
-              {retiVisibili.map((x) => {
-                const altre = (vidPerCidr.get(x.cidr) ?? []).filter((v) => v !== x.vid);
-                return (
-                  <VoceSelezionabile key={chiaveRete(x)} scelta={rete === chiaveRete(x)} className="flex flex-col gap-1.5 p-2.5"
-                    onScegli={() => filtra({ rete: rete === chiaveRete(x) ? null : chiaveRete(x), vid: rete === chiaveRete(x) ? vid : x.vid })}>
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-mono text-[15px] font-semibold">{x.cidr}</span>
-                      <BadgeMaschera m={x.maschera} />
-                    </div>
-                    <div className="flex items-center justify-between gap-2 text-[13px] text-muted-foreground">
-                      <span>
-                        {vid == null && `${nomeVlan(x.vid)} · `}{x.ip.length} IP · gw <span className="font-mono">{x.gateway_ip ?? "—"}</span>
-                      </span>
-                      {nuoviOggi(x) > 0 && <Etichetta tono="ruolo">+{nuoviOggi(x)} oggi</Etichetta>}
-                    </div>
-                    {x.blocchi.length > 1 && (
-                      <div className="text-[13px] text-muted-foreground">
-                        unisce {x.blocchi.map((b) => <span key={b} className="font-mono text-foreground">{b.replace(/\.0\/24$/, ".x")} </span>)}
-                      </div>
-                    )}
-                    {altre.length > 0 && (
-                      <div><Etichetta tono="ruolo" mono={false}>▲ stessa rete anche su {altre.map(nomeVlan).join(", ")}</Etichetta></div>
-                    )}
-                  </VoceSelezionabile>
-                );
-              })}
-            </div>
-          )}
-        </Pannello>
-
-        {/* 3. Il dettaglio della rete scelta: le azioni stanno qui, una volta sola. */}
-        {reteScelta ? (
-          <Dettaglio key={chiaveRete(reteScelta)} rete={reteScelta} giorni={matrice.giorni} inIpam={retiIpam.includes(reteScelta.cidr)}
-            giroDisabilitato={inCorso || !attiva} onGiro={() => void giroArp(reteScelta)} onPorta={() => void portaInIpam(reteScelta)}
-            onMaschera={(p) => void correggiMaschera(reteScelta, p)} />
-        ) : (
-          <Pannello numero={3} titolo="Dettaglio della rete" conteggio="—">
-            <p className="py-8 text-center text-[13px] text-muted-foreground">Scegli una rete a sinistra per vedere gateway, crescita e occupazione.</p>
-          </Pannello>
-        )}
-      </div>
-
-      {/* 4. L'elenco degli indirizzi: il centro della pagina, a tutta larghezza. */}
-      <Pannello numero={4} titolo="Indirizzi IP e MAC" conteggio={totale}
-        sottotitolo="Ogni indirizzo visto sul trunk, con il produttore della scheda e come è stato trovato"
-        azioni={
-          <>
-            {(reteScelta || vid != null) && <Etichetta tono="marca">{reteScelta ? reteScelta.cidr : nomeVlan(vid as number)}</Etichetta>}
-            <div className="flex overflow-hidden rounded-lg border" role="group" aria-label="Come è stato trovato">
-              {METODI.map((m) => (
-                <button key={m.id} type="button" aria-pressed={metodo === m.id} onClick={() => filtra({ metodo: m.id })}
-                  className={cn("min-h-8 px-2.5 text-[13px]", metodo === m.id ? "bg-primary font-semibold text-[#0D2537]" : "bg-card hover:bg-muted/50")}>
-                  {m.etichetta}
-                </button>
-              ))}
-            </div>
-            <div className="relative w-64 max-w-full">
-              <Search className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
-              <Input className="h-8 pl-8" placeholder="Cerca IP, MAC, nome" value={q} onChange={(e) => setQ(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") filtra({ q }); }} />
-            </div>
-          </>
-        }>
-        <div className="space-y-3">
-          {errore && <LoadError what="gli indirizzi del trunk" message={errore} onRetry={() => filtra({ off: offset })} />}
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Indirizzo IP</TableHead>
-                  <TableHead>MAC</TableHead>
-                  <TableHead>Produttore</TableHead>
-                  <TableHead>VLAN · rete</TableHead>
-                  <TableHead>Come è stato trovato</TableHead>
-                  <TableHead>Nome e protocolli</TableHead>
-                  <TableHead>Ultimo visto</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {righe.length === 0 && (
-                  <TableRow><TableCell colSpan={7} className="py-6 text-center text-muted-foreground">Nessun indirizzo con questi filtri.</TableCell></TableRow>
-                )}
-                {righe.map((o) => {
-                  const sub = reteDi(o);
-                  const gw = sub && sub.gateway_ip === o.ip;
-                  return (
-                    <TableRow key={o.id}>
-                      <TableCell className="whitespace-nowrap font-mono font-semibold">
-                        {o.ip || "—"}
-                        {gw && (
-                          <Etichetta tono="ruolo" className="ml-2">
-                            <span title={sub.fonte === "dhcp" ? "Gateway annunciato dal DHCP" : "IP più cercato con ARP"}>{sub.fonte === "dhcp" ? "GW" : "GW?"}</span>
-                          </Etichetta>
-                        )}
-                      </TableCell>
-                      <TableCell className="font-mono text-[13px]">{o.mac_display}</TableCell>
-                      <TableCell className="max-w-44 truncate" title={o.vendor ?? undefined}>{o.vendor ?? <span className="text-muted-foreground">sconosciuto</span>}</TableCell>
-                      <TableCell className="whitespace-nowrap font-mono text-[13px]">
-                        <span className="text-cian-testo">{nomeVlan(o.vid)}</span>
-                        {sub && ` · ${sub.cidr}`}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap text-[13px] font-medium"><Come passivo={o.passivo} attivo={o.attivo} /></TableCell>
-                      <TableCell>
-                        <div className="flex flex-wrap items-center gap-1">
-                          {o.nome ? <span className="mr-1 font-mono text-[13px]">{o.nome}</span> : <span className="mr-1 text-muted-foreground">—</span>}
-                          {o.protocolli.map((x) => <Etichetta key={x}>{x}</Etichetta>)}
-                          {o.rilievi.filter((t) => SEGNO_RILIEVO[t]).map((t) => (
-                            <Etichetta key={t} tono={t === "non_in_inventario" || t === "piu_vlan" ? "neutro" : "ruolo"} mono={false}>
-                              <span title={TIPI_RILIEVO[t].cosaFare}>{SEGNO_RILIEVO[t]}</span>
-                            </Etichetta>
-                          ))}
+          {/* 1. Tutte le VLAN in poco spazio: si confrontano a colpo d'occhio. */}
+          <Pannello numero={1} titolo="VLAN viste sul trunk" conteggio={iniziale.vlan.length} sottotitolo="Scegli una VLAN: sotto le sue reti"
+            azioni={<Button size="sm" variant={vid == null ? "default" : "outline"} onClick={() => filtra({ vid: null, rete: null })}>Tutte</Button>}>
+            {iniziale.vlan.length === 0 ? (
+              <Vuoto titolo="Nessuna VLAN letta finora" testo="Il sensore manda le VLAN alla prima lettura, entro un paio di minuti dall'accensione." />
+            ) : (
+              <>
+                <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(148px, 1fr))" }}>
+                  {iniziale.vlan.map((v) => {
+                    const rr = retiPerVid.get(v.vid) ?? [];
+                    const ip = rr.reduce((a, x) => a + x.ip.length, 0);
+                    const sil = rr.reduce((a, x) => a + silenziosi(x), 0);
+                    return (
+                      <VoceSelezionabile key={v.vid} scelta={vid === v.vid} className={cn("flex flex-col gap-1.5 p-2.5", !v.vista && "border-dashed")}
+                        onScegli={() => filtra({ vid: vid === v.vid ? null : v.vid, rete: null })}>
+                        <div className="flex items-baseline justify-between gap-1.5">
+                          <span className="font-mono font-semibold">{nomeVlan(v.vid)}</span>
+                          <span className="font-mono text-[13px] text-muted-foreground">{ip ? `${ip} IP` : v.mac ? `${v.mac} MAC` : "mai vista"}</span>
                         </div>
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap text-[13px] text-muted-foreground" title={o.ultima_vista}>{fa(o.ultima_vista)}</TableCell>
+                        <div className="truncate text-[13px] text-muted-foreground">
+                          {!v.dichiarata ? "▲ non dichiarata" : rr.length > 1 ? `${rr.length} reti` : rr.length === 1 ? rr[0].cidr : "nessuna rete"}
+                        </div>
+                        <Barra ascolto={ip - sil} silenziosi={sil} />
+                      </VoceSelezionabile>
+                    );
+                  })}
+                </div>
+                <Legenda className="mt-3" voci={[
+                  { classe: "bg-primary", testo: "IP in ascolto" },
+                  { classe: "bg-[#0D2537] dark:bg-[#C8D3DA]", testo: "IP silenziosi" },
+                  { classe: "bg-card border-dashed", testo: "bordo tratteggiato = dichiarata ma mai vista" },
+                ]} />
+              </>
+            )}
+          </Pannello>
+
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+            {/* 2. Le reti, una voce ciascuna con la sua maschera. */}
+            <Pannello numero={2} titolo="Reti" conteggio={retiVisibili.length}
+              sottotitolo={`Una voce per rete, con la sua maschera · ${matrice.reti.filter((x) => retiIpam.includes(x.cidr)).length} in DA-IPAM, da ${blocchiVisti} blocchi visti`}
+              azioni={vid != null ? <Etichetta tono="marca">{nomeVlan(vid)}</Etichetta> : undefined}>
+              {retiVisibili.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  {vid == null ? "Nessuna rete dedotta finora." : "Questa VLAN non ha IP: si vedono solo i MAC. Un giro ARP non serve finché non si conosce la rete."}
+                </p>
+              ) : (
+                <div className="flex max-h-[560px] flex-col gap-2 overflow-y-auto">
+                  {retiVisibili.map((x) => {
+                    const altre = (vidPerCidr.get(x.cidr) ?? []).filter((v) => v !== x.vid);
+                    return (
+                      <VoceSelezionabile key={chiaveRete(x)} scelta={rete === chiaveRete(x)} className="flex flex-col gap-1.5 p-2.5"
+                        onScegli={() => filtra({ rete: rete === chiaveRete(x) ? null : chiaveRete(x), vid: rete === chiaveRete(x) ? vid : x.vid })}>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-mono text-[15px] font-semibold">{x.cidr}</span>
+                          <BadgeMaschera m={x.maschera} />
+                        </div>
+                        <div className="flex items-center justify-between gap-2 text-[13px] text-muted-foreground">
+                          <span>
+                            {vid == null && `${nomeVlan(x.vid)} · `}{x.ip.length} IP · gw <span className="font-mono">{x.gateway_ip ?? "—"}</span>
+                          </span>
+                          {nuoviOggi(x) > 0 && <Etichetta tono="ruolo">+{nuoviOggi(x)} oggi</Etichetta>}
+                        </div>
+                        {x.blocchi.length > 1 && (
+                          <div className="text-[13px] text-muted-foreground">
+                            unisce {x.blocchi.map((b) => <span key={b} className="font-mono text-foreground">{b.replace(/\.0\/24$/, ".x")} </span>)}
+                          </div>
+                        )}
+                        {altre.length > 0 && (
+                          <div><Etichetta tono="ruolo" mono={false}>▲ stessa rete anche su {altre.map(nomeVlan).join(", ")}</Etichetta></div>
+                        )}
+                      </VoceSelezionabile>
+                    );
+                  })}
+                </div>
+              )}
+            </Pannello>
+
+            {/* 3. Il dettaglio della rete scelta: le azioni stanno qui, una volta sola. */}
+            {reteScelta ? (
+              <Dettaglio key={chiaveRete(reteScelta)} rete={reteScelta} giorni={matrice.giorni} inIpam={retiIpam.includes(reteScelta.cidr)}
+                giroDisabilitato={inCorso || !attiva} onGiro={() => void giroArp(reteScelta)} onPorta={() => void portaInIpam(reteScelta)}
+                onMaschera={(p) => void correggiMaschera(reteScelta, p)} />
+            ) : (
+              <Pannello numero={3} titolo="Dettaglio della rete" conteggio="—">
+                <p className="py-8 text-center text-[13px] text-muted-foreground">Scegli una rete a sinistra per vedere gateway, crescita e occupazione.</p>
+              </Pannello>
+            )}
+          </div>
+
+          {/* 4. L'elenco degli indirizzi: il centro della pagina, a tutta larghezza. */}
+          <Pannello numero={4} titolo="Indirizzi IP e MAC" conteggio={totale}
+            sottotitolo="Ogni indirizzo visto sul trunk, con il produttore della scheda e come è stato trovato"
+            azioni={
+              <>
+                {(reteScelta || vid != null) && <Etichetta tono="marca">{reteScelta ? reteScelta.cidr : nomeVlan(vid as number)}</Etichetta>}
+                <div className="flex overflow-hidden rounded-lg border" role="group" aria-label="Come è stato trovato">
+                  {METODI.map((m) => (
+                    <button key={m.id} type="button" aria-pressed={metodo === m.id} onClick={() => filtra({ metodo: m.id })}
+                      className={cn("min-h-8 px-2.5 text-[13px]", metodo === m.id ? "bg-primary font-semibold text-[#0D2537]" : "bg-card hover:bg-muted/50")}>
+                      {m.etichetta}
+                    </button>
+                  ))}
+                </div>
+                <div className="relative w-64 max-w-full">
+                  <Search className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
+                  <Input className="h-8 pl-8" placeholder="Cerca IP, MAC, nome" value={q} onChange={(e) => setQ(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") filtra({ q }); }} />
+                </div>
+              </>
+            }>
+            <div className="space-y-3">
+              {errore && <LoadError what="gli indirizzi del trunk" message={errore} onRetry={() => filtra({ off: offset })} />}
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Indirizzo IP</TableHead>
+                      <TableHead>MAC</TableHead>
+                      <TableHead>Produttore</TableHead>
+                      <TableHead>VLAN · rete</TableHead>
+                      <TableHead>Come è stato trovato</TableHead>
+                      <TableHead>Nome e protocolli</TableHead>
+                      <TableHead>Ultimo visto</TableHead>
                     </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </div>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap gap-x-4 gap-y-1 text-[13px] text-muted-foreground">
-              <span>● visto in ascolto</span>
-              <span>▲ silenzioso, trovato solo col giro ARP</span>
-              <span>◆ visto e confermato</span>
-              <span><Etichetta tono="ruolo">GW?</Etichetta> IP più cercato</span>
+                  </TableHeader>
+                  <TableBody>
+                    {righe.length === 0 && (
+                      <TableRow><TableCell colSpan={7} className="py-6 text-center text-muted-foreground">Nessun indirizzo con questi filtri.</TableCell></TableRow>
+                    )}
+                    {righe.map((o) => {
+                      const sub = reteDi(o);
+                      const gw = sub && sub.gateway_ip === o.ip;
+                      return (
+                        <TableRow key={o.id}>
+                          <TableCell className="whitespace-nowrap font-mono font-semibold">
+                            {o.ip || "—"}
+                            {gw && (
+                              <Etichetta tono="ruolo" className="ml-2">
+                                <span title={sub.fonte === "dhcp" ? "Gateway annunciato dal DHCP" : "IP più cercato con ARP"}>{sub.fonte === "dhcp" ? "GW" : "GW?"}</span>
+                              </Etichetta>
+                            )}
+                          </TableCell>
+                          <TableCell className="font-mono text-[13px]">{o.mac_display}</TableCell>
+                          <TableCell className="max-w-44 truncate" title={o.vendor ?? undefined}>{o.vendor ?? <span className="text-muted-foreground">sconosciuto</span>}</TableCell>
+                          <TableCell className="whitespace-nowrap font-mono text-[13px]">
+                            <span className="text-cian-testo">{nomeVlan(o.vid)}</span>
+                            {sub && ` · ${sub.cidr}`}
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap text-[13px] font-medium"><Come passivo={o.passivo} attivo={o.attivo} /></TableCell>
+                          <TableCell>
+                            <div className="flex flex-wrap items-center gap-1">
+                              {o.nome ? <span className="mr-1 font-mono text-[13px]">{o.nome}</span> : <span className="mr-1 text-muted-foreground">—</span>}
+                              {o.protocolli.map((x) => <Etichetta key={x}>{x}</Etichetta>)}
+                              {o.rilievi.filter((t) => SEGNO_RILIEVO[t]).map((t) => (
+                                <Etichetta key={t} tono={t === "non_in_inventario" || t === "piu_vlan" ? "neutro" : "ruolo"} mono={false}>
+                                  <span title={TIPI_RILIEVO[t].cosaFare}>{SEGNO_RILIEVO[t]}</span>
+                                </Etichetta>
+                              ))}
+                            </div>
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap text-[13px] text-muted-foreground" title={o.ultima_vista}>{fa(o.ultima_vista)}</TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-[13px] text-muted-foreground">
+                  <span>● visto in ascolto</span>
+                  <span>▲ silenzioso, trovato solo col giro ARP</span>
+                  <span>◆ visto e confermato</span>
+                  <span><Etichetta tono="ruolo">GW?</Etichetta> IP più cercato</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <Button size="sm" variant="outline" disabled={offset === 0} onClick={() => filtra({ off: Math.max(offset - PAGINA, 0) })}>Precedenti</Button>
+                  <span className="text-muted-foreground">{totale === 0 ? "0" : `${offset + 1}–${Math.min(offset + PAGINA, totale)}`} di {totale}</span>
+                  <Button size="sm" variant="outline" disabled={offset + PAGINA >= totale} onClick={() => filtra({ off: offset + PAGINA })}>Successivi</Button>
+                </div>
+              </div>
             </div>
-            <div className="flex items-center gap-2 text-sm">
-              <Button size="sm" variant="outline" disabled={offset === 0} onClick={() => filtra({ off: Math.max(offset - PAGINA, 0) })}>Precedenti</Button>
-              <span className="text-muted-foreground">{totale === 0 ? "0" : `${offset + 1}–${Math.min(offset + PAGINA, totale)}`} di {totale}</span>
-              <Button size="sm" variant="outline" disabled={offset + PAGINA >= totale} onClick={() => filtra({ off: offset + PAGINA })}>Successivi</Button>
-            </div>
-          </div>
-        </div>
-      </Pannello>
+          </Pannello>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

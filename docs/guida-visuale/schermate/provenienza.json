@@ -1,0 +1,83 @@
+{
+  "fonte": "76b15198",
+  "versione": "0.9.913",
+  "cattura": "2026-10-25",
+  "dati": "Esclusivamente sintetici, istanza DEMO",
+  "viewport": [
+    1440,
+    1000
+  ],
+  "immagini": [
+    {
+      "file": "cosa-esce.webp",
+      "route": "/settings/cosa-esce",
+      "sha256": "5d8e1078b4c67320f66db496dea38a97ebf937dfb9348fa3b80c6d598939b95f"
+    },
+    {
+      "file": "dashboard.webp",
+      "route": "/",
+      "sha256": "c70a009d4b27366ba6565e6f0d02972f5edc7d0046a5a2442346939d8d6df266"
+    },
+    {
+      "file": "discovery.webp",
+      "route": "/discovery",
+      "sha256": "372d2d7294cc565a2f94bee08303dcbc881098cd10156f69e9c59543d576e3d0"
+    },
+    {
+      "file": "inventario.webp",
+      "route": "/inventory",
+      "sha256": "d30af8f70413d2eb1e9d3051b6ba8f81ae6f690ee5a98ba42cf7e79644c8bf61"
+    },
+    {
+      "file": "moduli.webp",
+      "route": "/settings?tab=moduli",
+      "sha256": "40ca9b62a7bcc1b77c2b6d03a64e2c499839d2c5a4f818e22872f21d4514d3c4"
+    },
+    {
+      "file": "opzioni.webp",
+      "route": "/settings/opzioni",
+      "sha256": "8e8452433e21feac07012f653f422620da8af3f0895f538c9d9d232492baa60a"
+    },
+    {
+      "file": "scheda-host.webp",
+      "route": "/objects/3",
+      "sha256": "fe9ef1e53f79edcfda689a7057bdf22af1b599505a19cf398c8d188c5f61f5c9"
+    },
+    {
+      "file": "subnet.webp",
+      "route": "/networks",
+      "sha256": "bd84a1073df8fae192f5dbc5603e0c9466d42da97f141134fa7e29292b9f2991"
+    },
+    {
+      "file": "trunk-sicurezza.webp",
+      "route": "/arp-table/trunk#sicurezza",
+      "sha256": "8ceb3783c6524c90d540c2919dc774d8a3534b2777dd27982d3fde10664402dd"
+    },
+    {
+      "file": "vault.webp",
+      "route": "/settings/vault",
+      "sha256": "8f893489b9bca4c5c9f5c284c137eb93ac4e1ff3cd9cd7ee7ebc6453ee33378b"
+    },
+    {
+      "file": "controller.webp",
+      "route": "/controllers",
+      "sha256": "0a4e307bebd55a76e77a20c2449cd5f5c672ff61b5bd1ecd89efb0a11d6dcabc",
+      "cattura": "2026-10-26",
+      "stato": "laboratorio sintetico, nessun collegamento esterno"
+    },
+    {
+      "file": "credenziali.webp",
+      "route": "/credentials",
+      "sha256": "39f095e94a44f0643b456a79d6579375066146a4c3c0ef17ba695b4a71684811",
+      "cattura": "2026-10-26",
+      "stato": "laboratorio sintetico, nessun collegamento esterno"
+    },
+    {
+      "file": "rete-dettaglio.webp",
+      "route": "/networks/1",
+      "sha256": "c242a00f7e198efc678a1318beb6ad42e2d4d12647b21270320ceec01dc06833",
+      "cattura": "2026-10-26",
+      "stato": "laboratorio sintetico, nessun collegamento esterno"
+    }
+  ]
+}

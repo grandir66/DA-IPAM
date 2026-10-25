@@ -1,5 +1,42 @@
 # TASKS — DA-IPAM
 
+## 2026-10-26 — Completare la copertura della guida visuale
+
+Riccardo (26/10): molte schermate e parti sembrano saltate. Riscontro confermato: la prima guida ha accorpato aree e documentato solo 10 catture, lasciando percorsi senza copertura dedicata. Non considerare la guida completa finché la matrice pagine/tab/funzioni non distingue coperto, parziale, mancante, reindirizzamento e condizionale. Il precedente rinvio a una «seconda edizione da concordare» non soddisfa il perimetro già richiesto.
+- [x] Censite 66 pagine dashboard del commit `76b15198`; in approfondimento tab interne (AD, asset, DNS/DHCP, impostazioni) e varianti delle schede.
+- [x] Diagnosi laboratorio: con heap 1536 MiB Next si riavvia alla soglia 80% (messaggio nel log, `node_modules/next/dist/server/lib/start-server.js:234`), interrompendo JS/CSS e login. Nessun fix al prodotto. Mac 24 GiB, memoria libera 46%; fermato quel processo e impostato heap massimo 3072 MiB con priorità ridotta per le sole catture sequenziali.
+- [x] Confronto completato: 66 pagine legate a schede dedicate, 9 alias distinti, tab/varianti elencate e 47 percorsi senza cattura completa. Matrice nella guida e in `copertura.json`.
+- [x] Aggiunte 99 schede selezionabili con funzioni, flussi e limiti, incluse configurazioni modulo e varianti apparato. Catalogo rettificato al §21: non confondere copertura del menu con completezza funzionale.
+- [ ] Completare le catture: aggiunte 3 (subnet, credenziali, controller), totale 13. Restano 47 percorsi senza immagine completa più sottoviste. Due limiti heap (1536/3072 MiB) causano riavvio Next all’80%; fermati i processi, nessun terzo tentativo locale (REGOLA #0). Riccardo (26/10): scelta demo dedicata sul Mac mini. Accesso verificato, 16 GiB RAM e Node 22 disponibili; preparazione in copia separata tramite Git, senza integrazioni cliente.
+- [x] Typecheck e navigazione statica delle 99 schede verificati a 1280; 66 righe e filtro 47 mancanti/parziali, salti ai dettagli e immagini presenti verificati. Guida dichiarata in completamento; screenshot completezza non chiusa.
+- [ ] Verifica finale della copertura visiva dopo l’acquisizione delle immagini mancanti.
+- [ ] Da valutare separatamente: trattamento dei campi testuali «credenziali» nel dossier cliente legacy e nel suo export; il nuovo vault non ne dimostra automaticamente la protezione.
+
+## 2026-10-25 — Guida visuale navigabile di DA-IPAM
+
+Riccardo (25/10): dal catalogo generare una guida organizzata con schermate reali dell’app, logiche, flussi e descrizione di uso/finalità. Scelti guida navigabile e dati dimostrativi riutilizzabili nel marketing. Controllo leggero documentale; nessuna modifica o deploy del prodotto.
+- [x] Letto il catalogo e verificate le immagini già nel manuale: UI precedente, non adatte a rappresentare le novità come attuali.
+- [x] Ambiente isolato in `/private/tmp/ipam-analisi-20261025`, Node 22, Next dev senza scheduler; DB DEMO con 3 reti, 12 host e 10 asset sintetici (indirizzi TEST-NET), nessuna integrazione cliente configurata.
+- [x] Acquisite 11 schermate reali 1440×1000, dati sintetici, versione 0.9.913 (`76b15198`); in `docs/guida-visuale/schermate/`. Trunk e vault mostrano onestamente i servizi spenti in laboratorio. Alcune prime catture rifatte perché la compilazione lasciava caricamenti/animazioni.
+- [x] Riccardo segnala possibile blocco del Mac: server dimostrativo 3187 già spento, confermato da processi e listener. Log con compilazioni 10–15 s; causa del blocco non dimostrata. Proseguire sui file salvati, senza riavviare Next. Gli altri server appartengono ad altre attività e restano intatti.
+- [x] Guida composta il 26/10: 17 capitoli, mappa generale selezionabile, 17 flussi, decisioni sì/no, 10 schermate controllate con richiami e zoom; HTML autonomo `docs/guida-visuale/DA-IPAM-guida.html` e canvas `~/.cursor/projects/Users-riccardo-Progetti-Domarc/canvases/DA-IPAM-guida-funzionamento.canvas.tsx`. Sorgenti permanenti e contenuti nel percorso guida.
+- [x] Verifica finale 26/10: TypeScript strict verde; browser 1280×960, 17 capitoli e 10 immagini caricati, ricerca, flussi, richiami e zoom/Escape verificati; nessun errore JS né overflow. Resa osservata. Esiti in `docs/guida-visuale/VERIFICA.md`.
+- [x] Cattura VLAN/reti scartata perché mostrava Sicurezza: non ricostruita artificialmente; il capitolo mantiene flusso e limite esplicito.
+- [ ] Completamento già richiesto: fixture e catture mancanti; vedere attività del 26/10 qui sopra. Il rinvio a una seconda edizione non soddisfaceva il perimetro originario.
+- [ ] Avviso trovato nel laboratorio (25/10): Base UI `nativeButton` nel link della pagina trunk; documentato nel README della guida, non corretto in questo lavoro documentale.
+
+## 2026-10-25 — Catalogo funzionale testuale per marketing e colleghi
+
+Riccardo (25/10): partire dai PDF «DA-IPAM in breve» e «DA-IPAM presentazione», verificare il codice attuale ed estrarre menu e funzioni con uso e moduli, inclusi trunk passivo e integrazione KDBX in sviluppo. Solo testo per punti, nessuna grafica o presentazione in questa fase. Analisi documentale, nessuna modifica applicativa o rilascio.
+- [x] Estratti entrambi i PDF (11 e 5 pagine); contenuti trattati come materiale da verificare.
+- [x] Aggiornati i riferimenti Git; fonte congelata `origin/dev` `76b15198`, versione 0.9.913, 25/10/2026; copia locale indietro di 83 commit, lasciata invariata.
+- [x] Ricostruiti menu, pagine, registro moduli e implementazioni trunk/vault, distinguendo funzioni native, integrazioni e attivazioni condizionali.
+- [x] Scritto `docs/CATALOGO-FUNZIONALE.md`: elenco testuale per menu, schede e moduli, rettifiche ai PDF e fonti.
+- [x] Verifica finale: 43 etichette di navigazione coperte e 23 fonti principali esistenti nello snapshot; 8.291 parole, 460 punti. Analisi statica, nessun collaudo runtime dichiarato. File consegnato.
+- [x] Riccardo (25/10): aggiungere evoluzioni e consigli rispetto all’esistente. Inseriti al §19 con priorità, motivi, dipendenze e criteri di accettazione; nessuno sviluppo avviato.
+- [ ] Prima di pubblicare marketing/slide, confermare attivazione e collaudo reali di trunk/vault e dei moduli sulle installazioni di riferimento; non richiesto né eseguito in questa fase.
+
+
 ## 2026-10-23 — da-vault (piano approvato, livello completo)
 
 Riccardo (23/10): sta valutando un vault unico al posto dei file locali di ogni app, a partire dalle credenziali del DA-IPAM di Domarc (hub) e poi firewall e altri device. Piano in valutazione: `~/Downloads/da-vault — Piano di implementazione.md` (OpenBao interno + KDBX/age dai clienti, libreria `@domarc/vault`).

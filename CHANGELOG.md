@@ -4,6 +4,15 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato]
+
+### Documentazione
+
+- Rettificata la copertura della guida: censimento di 66 pagine, dettagli selezionabili e matrice delle lacune. I controlli di navigazione della prima edizione non attestavano completezza; le immagini mancanti ora sono dichiarate e il lavoro resta aperto.
+- Guida visuale navigabile: percorsi di lavoro, diagrammi selezionabili e 10 schermate autentiche con dati sintetici, per spiegare uso e limiti delle funzioni ai colleghi. HTML autonomo e canvas, con fonti e proposte separate. Verificata la navigazione desktop; nessuna modifica al prodotto.
+- Catalogo funzionale testuale per marketing e formazione, verificato su `origin/dev` `76b15198` (25/10): distingue funzioni, integrazioni e attivazioni, precisa trunk e KDBX e raccoglie consigli di evoluzione per evitare promesse non supportate dai dati. Nessuna modifica applicativa.
+
+
 ## [Non rilasciato] — 2026-10-25 · Schede grandi e visibili (SchedePagina)
 
 ### Cambiato

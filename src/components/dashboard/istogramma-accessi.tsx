@@ -17,6 +17,8 @@ import type { Bersagliato } from "@/lib/security/accessi-indexer";
  * ogni gruppo è spalmato sulla sua durata: si mostrano solo i 14 giorni e lo si dice.
  */
 const numero = (n: number) => Math.round(n).toLocaleString("it-IT");
+/** La media sotto 10 con un decimale: «media 1» con barre da 0 e 1 sembrava sbagliata (DTS, 25/10). */
+const numeroMedia = (n: number) => (n < 10 ? n.toLocaleString("it-IT", { maximumFractionDigits: 1 }) : numero(n));
 
 function compatto(n: number): string {
   if (n < 1000) return String(n);
@@ -128,7 +130,7 @@ export function IstogrammaAccessi({ ore, giorni, fonte, motivo, bersagliati }: {
                 y={media}
                 stroke="var(--chart-ink-muted)"
                 strokeDasharray="4 3"
-                label={{ value: `media ${numero(media)} ${unita}`, position: "insideTopRight", fontSize: 13, fill: "var(--chart-ink-muted)" }}
+                label={{ value: `media ${numeroMedia(media)} ${unita}`, position: "insideTopRight", fontSize: 13, fill: "var(--chart-ink-muted)" }}
               />
             )}
             <Bar dataKey="n" fill="var(--alert-cat-1)" maxBarSize={24} radius={[3, 3, 0, 0]} isAnimationActive={false} />

@@ -59,7 +59,7 @@ function minuti(s: number): string {
 }
 
 const STILE_STATO: Record<PannelloZabbix["stato"], string> = {
-  ok: "bg-[#00A7E7] text-white",
+  ok: "bg-[#00A7E7] text-[#0D2537]",
   guasto: "bg-destructive text-white",
   spento: "bg-muted text-muted-foreground",
   da_configurare: "bg-[#FFD400] text-[#0D2537]",

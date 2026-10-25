@@ -63,7 +63,8 @@
   --popover: #FFFFFF;
   --popover-foreground: #0D2537;
   --primary: #00A7E7;
-  --primary-foreground: #FFFFFF;
+  /* Navy sul ciano (6,4:1); il bianco faceva 2,7:1. Riccardo, 25/10 (docs/STILE-UI.md). */
+  --primary-foreground: #0D2537;
   --secondary: #E7EAEB;
   --secondary-foreground: #0D2537;
   --muted: #E7EAEB;
@@ -107,7 +108,8 @@
   --popover: #0D2537;
   --popover-foreground: #E7EAEB;
   --primary: #00A7E7;
-  --primary-foreground: #FFFFFF;
+  /* Navy sul ciano (6,4:1); il bianco faceva 2,7:1. Riccardo, 25/10 (docs/STILE-UI.md). */
+  --primary-foreground: #0D2537;
   --secondary: #163350;
   --secondary-foreground: #E7EAEB;
   --muted: #163350;

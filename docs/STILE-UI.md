@@ -107,7 +107,8 @@ Già esistenti, da usare così come sono:
 
 ## Pulsanti
 
-- Uno solo `variant="default"` (pieno) per riquadro: l'azione principale. Il resto `outline`;
+- Uno solo `variant="default"` (pieno: ciano con testo navy, deciso da Riccardo il 25/10) per
+  riquadro: l'azione principale. Mai testo bianco sul ciano (2,7:1). Il resto `outline`;
   `ghost` per le icone in riga; `destructive` solo per cancellare.
 - Testo = verbo + oggetto: «Giro ARP su 10.0.20.0/24», «Porta in DA-IPAM». Niente «OK», «Vai».
 - Icona lucide a sinistra quando aiuta a riconoscere l'azione; mai icona sola senza `title`.
@@ -196,7 +197,6 @@ Non si toccano ora: si rifanno una alla volta, ciascuna nel suo lavoro.
 | `active-directory/page.tsx` | 32 colori fuori palette |
 | `dhcp/sources`, `services`, `launchpad`, `analytics`, `settings/transfer` | colori fuori palette, intestazioni diverse |
 | tutte | il titolo `h1` ha 10 forme diverse: passare a `IntestazionePagina` |
-| tutti i pulsanti pieni | testo bianco su #00A7E7 ha contrasto 2,7:1; DA-Template usa testo navy sul ciano. Cambio di un token (`--primary-foreground`), da decidere con Riccardo perché tocca tutta l'app |
 
 Per rifare l'elenco: `for f in $(find "src/app/(dashboard)" src/components -name "*.tsx"); do …`
 contando `(bg|text|border)-(gray|slate|red|green|blue|…)-[0-9]+` e `text-\[(8|9|10|11|12)px\]`.

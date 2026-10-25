@@ -337,3 +337,62 @@ export function InCorso({ titolo, percentuale, dettaglio }: { titolo: string; pe
     </div>
   );
 }
+
+export interface VoceScheda<T extends string> {
+  valore: T;
+  titolo: string;
+  /** Una riga sotto il titolo: cosa c'è dentro la scheda. */
+  descrizione?: string;
+  /** Segno a destra del titolo (es. «✕ 3» per allarmi gravi): fondo pieno, mai solo colore. */
+  segnale?: ReactNode;
+}
+
+/**
+ * Schede della pagina, grandi e tutte in vista (Riccardo, 25/10: le schede piccole di shadcn
+ * erano «due pulsantini microscopici», irraggiungibili se non sai che ci sono). Una colonna per
+ * scheda a tutta larghezza, titolo a 16 px con una riga di spiegazione; la scelta ha il fondo navy
+ * e la barra ciano sotto. Si usa al posto di `Tabs` di ui/tabs per dividere una pagina.
+ */
+export function SchedePagina<T extends string>({
+  voci,
+  scelta,
+  onScegli,
+  etichetta,
+}: {
+  voci: VoceScheda<T>[];
+  scelta: T;
+  onScegli: (v: T) => void;
+  /** Nome del gruppo di schede per i lettori di schermo. */
+  etichetta: string;
+}) {
+  return (
+    <div role="tablist" aria-label={etichetta} className="grid gap-2" style={{ gridTemplateColumns: `repeat(${voci.length}, minmax(0, 1fr))` }}>
+      {voci.map((v) => {
+        const attiva = v.valore === scelta;
+        return (
+          <button
+            key={v.valore}
+            type="button"
+            role="tab"
+            aria-selected={attiva}
+            onClick={() => onScegli(v.valore)}
+            className={cn(
+              "flex min-h-14 flex-col items-start justify-center rounded-xl border-2 border-b-4 px-4 py-2.5 text-left transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+              attiva
+                ? "border-[#0D2537] border-b-primary bg-[#0D2537] text-white dark:border-primary dark:bg-primary/20"
+                : "border-border bg-card text-foreground hover:border-foreground/40 hover:bg-muted/40",
+            )}
+          >
+            <span className="flex items-center gap-2 text-base font-semibold">
+              {v.titolo}
+              {v.segnale}
+            </span>
+            {v.descrizione && (
+              <span className={cn("text-[13px]", attiva ? "text-white/80" : "text-muted-foreground")}>{v.descrizione}</span>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}

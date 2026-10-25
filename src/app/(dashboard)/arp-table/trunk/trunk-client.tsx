@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { LoadError } from "@/components/shared/load-error";
 import {
-  BarraStato, Etichetta, Legenda, Pannello, TesseraNumero, VoceSelezionabile, Vuoto,
+  BarraStato, Etichetta, Legenda, Pannello, SchedePagina, TesseraNumero, VoceSelezionabile, Vuoto,
 } from "@/components/shared/console";
 import { fetchJson } from "@/lib/fetch-json";
 import { cn } from "@/lib/utils";
@@ -20,7 +20,6 @@ import type {
 import type { TrunkMaschera } from "@/lib/trunk/reti";
 import { TIPI_RILIEVO, type TipoRilievo } from "@/lib/trunk/rilievi-tipi";
 import { PannelloRilievi, type DatiRilievi } from "./rilievi-pannello";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const PAGINA = 100;
 
@@ -243,20 +242,31 @@ export function TrunkClient({ iniziale, admin }: { iniziale: Dati; admin: boolea
       />
       <StatoLettura attiva={attiva} sonda={sonda} esito={ultimoEsito} aggiornato={r.aggiornato} />
 
-      <Tabs value={scheda} onValueChange={(v) => scegliScheda(v as Scheda)}>
-        <TabsList className="h-auto flex-wrap">
-          <TabsTrigger value="sicurezza">
-            Sicurezza della rete
-            {ril.allarmiAlti > 0 && (
-              <span className="ml-1.5 rounded-full bg-[#8E1B20] px-1.5 font-mono text-xs font-bold text-white" title="Allarmi gravi da prendere in carico">
+      <SchedePagina
+        etichetta="Parti della pagina"
+        scelta={scheda}
+        onScegli={scegliScheda}
+        voci={[
+          {
+            valore: "sicurezza",
+            titolo: "Sicurezza della rete",
+            descrizione: `${ril.allarmi} allarmi · ${ril.esposizioni} esposizioni · ${ril.novita} novità`,
+            segnale: ril.allarmiAlti > 0 ? (
+              <span className="rounded-full bg-[#8E1B20] px-2 font-mono text-[13px] font-bold text-white" title="Allarmi gravi da prendere in carico">
                 ✕ {ril.allarmiAlti}
               </span>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="reti">VLAN e reti</TabsTrigger>
-        </TabsList>
+            ) : undefined,
+          },
+          {
+            valore: "reti",
+            titolo: "VLAN e reti",
+            descrizione: `${iniziale.vlan.filter((v) => v.vista).length} VLAN viste · ${r.ip} indirizzi IP`,
+          },
+        ]}
+      />
 
-        <TabsContent value="sicurezza" className="mt-4 space-y-4">
+      {scheda === "sicurezza" && (
+        <div className="space-y-4">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <TesseraNumero titolo="Allarmi" valore={ril.allarmi}
               qualifica={ril.allarmiAlti ? `✕ ${ril.allarmiAlti} gravi da prendere` : "nessuno grave aperto"} nota="DHCP, IP contesi, indirizzi fuori rete" />
@@ -264,9 +274,11 @@ export function TrunkClient({ iniziale, admin }: { iniziale: Dati; admin: boolea
               qualifica={`${esposizioniLlmnr} con LLMNR/NetBIOS`} nota="come è fatta la rete, con cosa fare" />
           </div>
           <PannelloRilievi iniziale={iniziale.rilievi} admin={admin} />
-        </TabsContent>
+        </div>
+      )}
 
-        <TabsContent value="reti" className="mt-4 space-y-4">
+      {scheda === "reti" && (
+        <div className="space-y-4">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <TesseraNumero titolo="VLAN viste" valore={iniziale.vlan.filter((v) => v.vista).length}
               qualifica={`${nonDichiarate} non dichiarate`} nota={`${maiViste} dichiarate e mai viste`} />
@@ -456,8 +468,8 @@ export function TrunkClient({ iniziale, admin }: { iniziale: Dati; admin: boolea
               </div>
             </div>
           </Pannello>
-        </TabsContent>
-      </Tabs>
+        </div>
+      )}
     </div>
   );
 }

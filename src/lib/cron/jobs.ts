@@ -21,7 +21,6 @@ import {
   upsertRoutes,
   updateJobLastRun,
 } from "@/lib/db";
-import { sincronizzaTrunk } from "@/lib/trunk/sensore-trunk";
 import { discoverNetwork, type AvvioDiscovery } from "@/lib/scanner/discovery";
 // Decisione (a) di fine giro 2: le colonne delle porte che un collector fornisce non le riscrive il giro.
 import { scriviPorteDelGiro } from "@/lib/acquisizione-modulare/giri";
@@ -1444,14 +1443,6 @@ export async function runArpPoll(
   if (networkId == null) {
     const s = (ms: number): string => (ms / 1000).toFixed(1).replace(".", ",");
     console.info(`[ARP Poll] giro: ${durate.nRouter} router in ${s(durate.router)} s, ${durate.nSwitch} switch in ${s(durate.switch)} s${letture ? `; ${letture}` : ""}`);
-    // Sensore trunk (2026-10-24): solo con tenant_settings.trunk_lettura = '1'. Un errore
-    // qui non tocca il giro ARP: si scrive nel journal e basta.
-    try {
-      const t = await sincronizzaTrunk();
-      if (t.fonte) console.info(`[ARP Poll] sensore trunk (${t.fonte}): ${t.vlan} VLAN, ${t.osservazioni} osservazioni nuove`);
-    } catch (e) {
-      console.warn(`[ARP Poll] sensore trunk non letto: ${e instanceof Error ? e.message : String(e)}`);
-    }
   }
   return { phase };
 }

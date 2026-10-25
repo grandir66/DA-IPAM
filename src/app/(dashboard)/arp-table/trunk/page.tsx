@@ -1,7 +1,7 @@
 import { getServerTenantCode } from "@/lib/api-tenant";
 import { withTenant } from "@/lib/db-tenant";
 import { getNetworks } from "@/lib/db";
-import { getTrunkMatrice, getTrunkOsservazioniPaginated, getTrunkVlan, trunkLetturaAttiva, trunkRiepilogo } from "@/lib/trunk/sensore-trunk";
+import { getTrunkMatrice, getTrunkOsservazioniPaginated, getTrunkVlan, getTrunkVlanProtocolli, trunkLetturaAttiva, trunkRiepilogo } from "@/lib/trunk/sensore-trunk";
 import { TrunkClient } from "./trunk-client";
 
 export default async function TrunkPage() {
@@ -11,6 +11,7 @@ export default async function TrunkPage() {
     vlan: getTrunkVlan(),
     matrice: getTrunkMatrice(14),
     riepilogo: trunkRiepilogo(),
+    vlanProtocolli: getTrunkVlanProtocolli(),
     ...getTrunkOsservazioniPaginated({ limit: 100 }),
     retiIpam: getNetworks().map((n) => n.cidr),
   }));

@@ -42,6 +42,20 @@ export function assicuraColonneMdmConfig(db: Database.Database): string[] {
 }
 
 /**
+ * Sensore trunk (25/10): i protocolli in cui il sensore ha visto l'indirizzo (ARP, DHCP, mDNS, LLDP…),
+ * separati da virgola. Sui DB esistenti la aggiunge `assicuraColonnaProtocolliTrunk`, idempotente e solo additiva,
+ * chiamata da `trunk/sensore-trunk.ts` alla prima lettura o scrittura.
+ */
+export function assicuraColonnaProtocolliTrunk(db: Database.Database): boolean {
+  const colonne = new Set(
+    (db.prepare("PRAGMA table_info(trunk_osservazioni)").all() as Array<{ name: string }>).map((c) => c.name),
+  );
+  if (colonne.size === 0 || colonne.has("protocolli")) return false;
+  db.exec("ALTER TABLE trunk_osservazioni ADD COLUMN protocolli TEXT");
+  return true;
+}
+
+/**
  * Topologia T2 (spec 2026-10-14 §13.5.7): i fatti delle letture in più, uno per lettore (la fonte sta nella chiave:
  * due lettori dello stesso apparato non si sovrascrivono, ADR 0009 punto 4). Le stesse CREATE stanno qui e nella
  * migrazione (`migrateTopologyCavi`, db-tenant.ts); gli indici solo nella migrazione. Nessun CHECK: i valori li valida
@@ -993,6 +1007,7 @@ CREATE TABLE IF NOT EXISTS trunk_osservazioni (
   ip TEXT NOT NULL DEFAULT '',
   nome TEXT,
   fonte_nome TEXT,
+  protocolli TEXT,
   passivo INTEGER NOT NULL DEFAULT 0,
   attivo INTEGER NOT NULL DEFAULT 0,
   prima_vista TEXT NOT NULL,

@@ -24,6 +24,7 @@ export async function GET(request: Request) {
     const vid = vidRaw != null && vidRaw !== "" && Number.isInteger(Number(vidRaw)) ? Number(vidRaw) : null;
     const { righe, totale } = getTrunkOsservazioniPaginated({
       vid,
+      cidr: ((c) => (c && /^\d{1,3}(\.\d{1,3}){3}\/\d{1,2}$/.test(c) ? c : null))(searchParams.get("cidr")),
       q: searchParams.get("q") ?? undefined,
       metodo: ((m) => (m === "ascolto" || m === "giro" || m === "entrambi" ? m : null))(searchParams.get("metodo")),
       limit: Number(searchParams.get("limit")) || 100,

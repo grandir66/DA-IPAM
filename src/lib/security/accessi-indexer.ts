@@ -4,7 +4,8 @@
  * La stima di `kpi-dashboard.ts` riparte ogni gruppo d'allarme sulla sua durata: i totali
  * reggono, ma ora per ora le barre escono tutte uguali e i picchi spariscono. L'indexer
  * conta le ore davvero, con le stesse esclusioni della pagina Alert (nostri account e IP,
- * regole degli apparati). Una sola interrogazione oraria su 15 giorni: i bucket dell'indexer
+ * regole degli apparati). Un'interrogazione oraria sui 14 giorni (più una sulle 24 ore per i
+ * bersagliati del giorno): i bucket dell'indexer
  * sono in UTC, i giorni si sommano qui in ora italiana. Senza indexer la dashboard torna
  * alla stima e lo dice.
  */
@@ -14,7 +15,16 @@ import { getWazuhConfig } from "@/lib/integrations/wazuh-config";
 import { createWazuhIndexerClient } from "@/lib/integrations/wazuh-indexer-api";
 import { collectSelfIdentity } from "@/lib/integrations/self-identity";
 import { tenantDb } from "@/lib/integrations/wazuh-alerts-db";
-import type { SeriesRow } from "@/lib/integrations/wazuh-alerts-stats";
+import type { SeriesRow, TargetedAccount } from "@/lib/integrations/wazuh-alerts-stats";
+
+/** Un account bersagliato nella dashboard: chi, da dove e quante volte. */
+export interface Bersagliato {
+  account: string;
+  falliti: number;
+  /** Postazione e/o IP da cui partono i tentativi; null se l'evento non lo dice. */
+  origine: string | null;
+  computer: boolean;
+}
 
 export interface SerieAccessi {
   fonte: "indexer" | "stima";
@@ -28,6 +38,11 @@ export interface SerieAccessi {
   tendenza: "su" | "giu" | "pari";
   /** Con la stima: perché l'indexer non è stato usato. */
   motivo?: string;
+  /**
+   * Account più bersagliati nello stesso periodo del grafico (25/10: un conteggio da solo
+   * non dice cosa fare). Solo dall'indexer: la stima non sa chi né da dove.
+   */
+  bersagliati?: { ore: Bersagliato[]; giorni: Bersagliato[] };
 }
 
 /** Esito della lettura: la serie, oppure perché non c'è (si mostra accanto alla stima). */
@@ -42,6 +57,8 @@ const DURATA_CACHE_MS = 5 * 60_000;
 /** Un indexer spento non deve fermare la dashboard a ogni caricamento (revisione del 20/10). */
 const DURATA_CACHE_ERRORE_MS = 2 * 60_000;
 const ATTESA_MAX_MS = 5_000;
+/** Quanti bersagliati mostra la dashboard: il resto sta nella pagina Alert. */
+const QUANTI_BERSAGLIATI = 3;
 
 const oraItaliana = new Intl.DateTimeFormat("en-GB", { timeZone: FUSO_UTENTI, hour: "2-digit", hourCycle: "h23" });
 const giornoItaliano = new Intl.DateTimeFormat("sv-SE", { timeZone: FUSO_UTENTI, year: "numeric", month: "2-digit", day: "2-digit" });
@@ -88,6 +105,36 @@ export function accessiDaSerie(serie: SeriesRow[], ora: Date): Omit<SerieAccessi
   return { ore, giorni, totale24h: ore.reduce((s, o) => s + o.falliti, 0), totale24hPrima, tendenza };
 }
 
+/**
+ * Primi bersagliati di Windows e Linux, come il grafico (pura, provata): Microsoft 365 e
+ * apparati stanno nella pagina Alert. Il loopback non è un'origine: dice solo «sulla
+ * macchina stessa», e lo dice già la postazione.
+ */
+export function primiBersagliati(accounts: TargetedAccount[], quanti = QUANTI_BERSAGLIATI): Bersagliato[] {
+  return accounts
+    .filter((a) => (a.system === "windows" || a.system === "linux") && a.count > 0)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, quanti)
+    .map((a) => {
+      const ip = a.sourceIp && a.sourceIp !== "127.0.0.1" && a.sourceIp !== "::1" ? a.sourceIp : null;
+      const origine = a.workstation && ip ? `${a.workstation} · ${ip}` : (a.workstation ?? ip);
+      return { account: a.account, falliti: a.count, origine, computer: a.kind === "computer" };
+    });
+}
+
+/**
+ * Inizio della finestra della serie: la mezzanotte italiana di 13 giorni fa (così i
+ * bersagliati dei «14 giorni» sono quelli dei 14 giorni del grafico, non di 15), e mai
+ * meno di 48 ore per la tendenza.
+ */
+export function inizioFinestra(ora: Date): number {
+  const [y, m, d] = giornoItaliano.format(ora).split("-").map(Number);
+  const mezzanotteUtc = Date.UTC(y, m - 1, d) - 13 * 24 * ORA_MS;
+  // L'ora italiana alla mezzanotte UTC (1 o 2) è quanto la mezzanotte italiana la precede.
+  const anticipo = Number(oraItaliana.format(mezzanotteUtc)) * ORA_MS;
+  return Math.min(mezzanotteUtc - anticipo, ora.getTime() - 48 * ORA_MS);
+}
+
 const cache = new Map<string, { quando: number; valore: LetturaAccessi }>();
 
 /**
@@ -118,20 +165,27 @@ export async function leggiAccessiIndexer(tenantCode: string): Promise<LetturaAc
     });
     if (!client) return ricorda({ serie: null, motivo: "indexer di Wazuh non configurato" });
     const ora = new Date();
+    const filtri = { excludeAccounts: self.accounts, excludeIps: self.ips, extraRuleIds: cfg.deviceRuleIds };
     let scaduto: ReturnType<typeof setTimeout> | undefined;
-    const stats = await Promise.race([
-      client.alertStats({
-        since: new Date(ora.getTime() - 15 * 24 * ORA_MS).toISOString(),
-        interval: "1h",
-        excludeAccounts: self.accounts,
-        excludeIps: self.ips,
-        extraRuleIds: cfg.deviceRuleIds,
-      }),
+    // Due interrogazioni insieme: la serie oraria dei 14 giorni e le sole ultime 24 ore,
+    // che servono per i bersagliati del giorno (quelli dei 14 giorni li dà la prima).
+    const [stats, ultime24] = await Promise.race([
+      Promise.all([
+        client.alertStats({ since: new Date(inizioFinestra(ora)).toISOString(), interval: "1h", ...filtri }),
+        client.alertStats({ since: new Date(ora.getTime() - 24 * ORA_MS).toISOString(), interval: "1h", ...filtri }),
+      ]),
       new Promise<never>((_, rifiuta) => {
         scaduto = setTimeout(() => rifiuta(new Error("attesa oltre 5 secondi")), ATTESA_MAX_MS);
       }),
     ]).finally(() => clearTimeout(scaduto));
-    return ricorda({ serie: { fonte: "indexer", ...accessiDaSerie(stats.series, ora) }, motivo: null });
+    return ricorda({
+      serie: {
+        fonte: "indexer",
+        ...accessiDaSerie(stats.series, ora),
+        bersagliati: { ore: primiBersagliati(ultime24.topAccounts), giorni: primiBersagliati(stats.topAccounts) },
+      },
+      motivo: null,
+    });
   } catch (e) {
     console.warn(`[dashboard] indexer non leggibile, uso la stima: ${(e as Error).name}`);
     return ricorda({ serie: null, motivo: "indexer di Wazuh non raggiungibile" });

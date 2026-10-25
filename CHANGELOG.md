@@ -4,6 +4,12 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-25 · Reti dal trunk in due schede
+
+### Cambiato
+
+- **Reti dal trunk divisa in due schede**, «Sicurezza della rete» (prima, con le tessere Allarmi/Esposizioni e i rilievi) e «VLAN e reti» (tessere VLAN/IP, VLAN, reti, dettaglio, indirizzi). Barra della sonda e stato della lettura restano sopra, comuni. Su richiesta di Riccardo: in una pagina sola era troppo lunga. La scheda sta nell'indirizzo (`#sicurezza`, `#reti`); quella della sicurezza mostra il numero degli allarmi gravi.
+
 ## [Non rilasciato] — 2026-10-25 · Reti dal trunk: rilievi di sicurezza dalla sonda passiva, voce nel gruppo Sicurezza
 
 ### Aggiunto

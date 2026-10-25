@@ -15,7 +15,7 @@ import {
 import { fetchJson } from "@/lib/fetch-json";
 import { cn } from "@/lib/utils";
 import type {
-  TrunkMetodo, TrunkOsservazioneRiga, TrunkReteMatrice, TrunkVlanProtocolli, TrunkVlanRiga,
+  TrunkEsitoLettura, TrunkMetodo, TrunkOsservazioneRiga, TrunkStatoSonda, TrunkReteMatrice, TrunkVlanProtocolli, TrunkVlanRiga,
 } from "@/lib/trunk/sensore-trunk";
 import type { TrunkMaschera } from "@/lib/trunk/reti";
 
@@ -40,6 +40,8 @@ interface Dati {
   retiIpam: string[];
   matrice: { giorni: string[]; reti: TrunkReteMatrice[] };
   riepilogo: Riepilogo;
+  sonda: TrunkStatoSonda;
+  ultimoEsito: TrunkEsitoLettura | null;
 }
 
 /** Il filtro «come è stato trovato»: quattro pulsanti, ognuno col suo segno (non solo il colore). */
@@ -89,7 +91,7 @@ const nuoviOggi = (x: TrunkReteMatrice) => x.serie[x.serie.length - 1]?.nuovi ??
 
 export function TrunkClient({ iniziale }: { iniziale: Dati }) {
   const router = useRouter();
-  const { attiva, riepilogo: r, matrice } = iniziale;
+  const { attiva, riepilogo: r, matrice, sonda, ultimoEsito } = iniziale;
   const [righe, setRighe] = useState(iniziale.righe);
   const [totale, setTotale] = useState(iniziale.totale);
   const [vid, setVid] = useState<number | null>(null);
@@ -197,15 +199,21 @@ export function TrunkClient({ iniziale }: { iniziale: Dati }) {
   return (
     <div className="space-y-4">
       <BarraStato
-        acceso={attiva}
-        titolo="Sensore trunk"
-        dettagli={attiva ? ["solo ascolto", `ultima lettura ${fa(r.aggiornato)}`, "scansioni dall'IP ufficiale"] : ["nessuna lettura finché non lo accendi"]}
+        acceso={sonda.raggiungibile && sonda.inAscolto}
+        titolo="Sonda trunk"
+        dettagli={sonda.raggiungibile ? [
+          sonda.nic ? `scheda ${sonda.nic}` : "scheda non indicata",
+          sonda.pacchettiAlSecondo != null ? `${Math.round(sonda.pacchettiAlSecondo)} pacchetti/s` : "traffico non misurato",
+          sonda.tagLetti ? "tag VLAN letti" : "nessun tag VLAN visto",
+          `letta dal ${sonda.fonte === "socket" ? "socket locale" : "Scanner-Edge"}`,
+        ] : ["non risponde"]}
         azioni={
           <Button size="sm" variant={attiva ? "outline" : "default"} render={<Link href="/settings/opzioni#modulo.sensore_trunk" />}>
             {attiva ? "Impostazioni" : "Accendi in Opzioni"}
           </Button>
         }
       />
+      <StatoLettura attiva={attiva} sonda={sonda} esito={ultimoEsito} aggiornato={r.aggiornato} />
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <TesseraNumero titolo="VLAN viste" valore={iniziale.vlan.filter((v) => v.vista).length}
@@ -393,6 +401,40 @@ export function TrunkClient({ iniziale }: { iniziale: Dati }) {
           </div>
         </div>
       </Pannello>
+    </div>
+  );
+}
+
+/** Una riga in parole semplici: la sonda gira? DA-IPAM riceve i dati? Se no, perché. */
+function StatoLettura({ attiva, sonda, esito, aggiornato }: {
+  attiva: boolean; sonda: TrunkStatoSonda; esito: TrunkEsitoLettura | null; aggiornato: string | null;
+}) {
+  let segno: "✓" | "▲" | "✕";
+  let testo: string;
+  if (!sonda.raggiungibile) {
+    segno = "✕";
+    testo = `La sonda non risponde: ${sonda.errore ?? "motivo sconosciuto"}. Su questa macchina non è installata o è spenta; serve una seconda scheda di rete collegata alla porta trunk.`;
+  } else if (!sonda.inAscolto) {
+    segno = "✕";
+    testo = `La sonda è installata ma non ascolta${sonda.errore ? `: ${sonda.errore}` : ""}.`;
+  } else if (!sonda.tagLetti) {
+    segno = "▲";
+    testo = "La sonda ascolta ma non ha ancora visto pacchetti con il tag VLAN: la porta dello switch forse non è configurata come trunk.";
+  } else if (!attiva) {
+    segno = "▲";
+    testo = "La sonda funziona, ma DA-IPAM non legge i suoi dati: accendi la lettura in Opzioni.";
+  } else if (esito && esito.esito !== "ok") {
+    segno = "▲";
+    testo = `Ultima lettura ${fa(esito.quando)} non riuscita: ${esito.nota}`;
+  } else {
+    segno = "✓";
+    testo = `Funziona. Dati ricevuti ${fa(esito?.quando ?? aggiornato)}; DA-IPAM legge ogni 2 minuti.`;
+  }
+  return (
+    <div role="status" className={cn("flex items-start gap-2 rounded-xl border px-4 py-2.5 text-sm",
+      segno === "✓" ? "border-[#1F7A4D] bg-card" : segno === "▲" ? "border-[#C9A800] bg-[#FFD400]/15" : "border-[#8E1B20] bg-card")}>
+      <span aria-hidden className={cn("font-bold", segno === "✓" ? "text-[#1F7A4D]" : segno === "✕" ? "text-[#8E1B20] dark:text-[#F07178]" : "")}>{segno}</span>
+      <span>{testo}</span>
     </div>
   );
 }

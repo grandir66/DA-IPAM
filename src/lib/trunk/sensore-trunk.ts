@@ -285,6 +285,74 @@ export function salvaVlan(vlan: TrunkVlan[]): void {
  */
 export async function sincronizzaTrunk(lettore?: { fonte: string; leggi: Lettore }): Promise<{ fonte?: string; osservazioni: number; vlan: number; nota?: string }> {
   if (!trunkLetturaAttiva()) return { osservazioni: 0, vlan: 0, nota: "lettura spenta" };
+  try {
+    const esito = await sincronizza(lettore);
+    segnaEsito(esito.nota ? "assente" : "ok", esito.nota ?? `${esito.vlan} VLAN, ${esito.osservazioni} osservazioni nuove (${esito.fonte})`);
+    return esito;
+  } catch (e) {
+    segnaEsito("errore", e instanceof Error ? e.message : String(e));
+    throw e;
+  }
+}
+
+export interface TrunkEsitoLettura {
+  quando: string;
+  esito: "ok" | "assente" | "errore";
+  nota: string;
+}
+
+function segnaEsito(esito: TrunkEsitoLettura["esito"], nota: string): void {
+  setTenantSetting("trunk_ultimo_esito", JSON.stringify({ quando: new Date().toISOString(), esito, nota: nota.slice(0, 300) }));
+}
+
+/** Com'è andata l'ultima lettura programmata (ogni 2 minuti): la pagina lo mostra. */
+export function getTrunkUltimoEsito(): TrunkEsitoLettura | null {
+  const raw = getTenantSetting("trunk_ultimo_esito");
+  if (!raw) return null;
+  try {
+    const v = JSON.parse(raw) as Partial<TrunkEsitoLettura>;
+    return typeof v.quando === "string" && typeof v.nota === "string" && (v.esito === "ok" || v.esito === "assente" || v.esito === "errore")
+      ? { quando: v.quando, esito: v.esito, nota: v.nota }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+export interface TrunkStatoSonda {
+  /** La sonda risponde (dal socket locale o dall'edge). */
+  raggiungibile: boolean;
+  fonte: "socket" | "edge" | null;
+  nic: string | null;
+  inAscolto: boolean;
+  /** Ha già visto pacchetti con il tag 802.1Q: senza, la porta non è un trunk. */
+  tagLetti: boolean;
+  pacchettiAlSecondo: number | null;
+  errore: string | null;
+}
+
+/** Chiede alla sonda come sta, in pochi secondi: la pagina non deve restare appesa. */
+export async function statoSonda(attesaMs = 4_000): Promise<TrunkStatoSonda> {
+  const vuoto = { fonte: null, nic: null, inAscolto: false, tagLetti: false, pacchettiAlSecondo: null };
+  const prova = (async (): Promise<TrunkStatoSonda> => {
+    const l = await scegliLettore();
+    const s = await l.leggi<{ nic?: string; in_ascolto?: boolean; tag_letti?: boolean; pacchetti_al_secondo?: number; errore?: string | null }>("/stato");
+    return {
+      raggiungibile: true, fonte: l.fonte, nic: s.nic ?? null, inAscolto: !!s.in_ascolto, tagLetti: !!s.tag_letti,
+      pacchettiAlSecondo: typeof s.pacchetti_al_secondo === "number" ? s.pacchetti_al_secondo : null, errore: s.errore ?? null,
+    };
+  })();
+  const scaduto = new Promise<TrunkStatoSonda>((resolve) => {
+    setTimeout(() => resolve({ raggiungibile: false, ...vuoto, errore: "la sonda non ha risposto in tempo" }), attesaMs).unref?.();
+  });
+  try {
+    return await Promise.race([prova, scaduto]);
+  } catch (e) {
+    return { raggiungibile: false, ...vuoto, errore: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+async function sincronizza(lettore?: { fonte: string; leggi: Lettore }): Promise<{ fonte?: string; osservazioni: number; vlan: number; nota?: string }> {
   let l = lettore;
   if (!l) {
     try {

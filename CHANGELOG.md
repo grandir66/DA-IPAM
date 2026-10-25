@@ -4,6 +4,12 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-25 · Schede grandi e visibili (SchedePagina)
+
+### Cambiato
+
+- **Le schede di «Reti dal trunk» ora si vedono.** Le schede `Tabs` di shadcn erano alte 32 px con testo grigio: Riccardo non le trovava («due pulsantini microscopici»). Nuovo mattone `SchedePagina` in `console.tsx`: una colonna per scheda a tutta larghezza, titolo a 16 px, una riga con cosa contiene (allarmi, esposizioni, novità; VLAN e indirizzi), segno ✕ degli allarmi gravi; la scheda scelta ha il fondo navy e la barra ciano. Regola in `docs/STILE-UI.md`: per dividere una pagina si usa `SchedePagina`, non `Tabs`; oltre 4 parti, voci di menu separate.
+
 ## [Non rilasciato] — 2026-10-25 · Reti dal trunk in due schede
 
 ### Cambiato

@@ -285,6 +285,7 @@ export const TIMER_DI_SERVER: Readonly<Record<string, string>> = {
   "./src/lib/vuln/exploit-feed/job": "timer.feed_exploit",
   "./src/lib/dalink/segnale-job": "timer.dalink",
   "./src/lib/assegnatari/job": "timer.accessi_pc",
+  "./src/lib/trunk/job": "timer.sensore_trunk",
   "./src/lib/cron/scheduler": "fuori: è lo scheduler dei job, le sue righe sono i job",
   "./src/lib/cron/scheduler-defaults": "fuori: correzioni all'avvio, non un giro (in Opzioni › Da file)",
   "./src/lib/vulcan/job": "fuori: deciso il 23/10, spento senza gettone su tutte le appliance (in Opzioni › Notifiche e uscite)",
@@ -392,6 +393,29 @@ async function righeTimer(adesso: Date): Promise<RigaSchedulazione[]> {
       esito: s.esito,
       dove: { href: `/settings/opzioni#${accessi.id}`, etichetta: "Opzioni ›" },
       cambio: { tipo: "opzione", id: accessi.id },
+    });
+  }
+
+  // Sensore trunk (25/10): levetta per cliente in Opzioni, lettura ogni 2 minuti.
+  const trunk = catalogo().find((o) => o.id === "modulo.sensore_trunk");
+  if (trunk) {
+    const s = await leggiStato(trunk);
+    const acceso = s.acceso === true;
+    const prossimo = new Date(adesso);
+    prossimo.setSeconds(0, 0);
+    prossimo.setMinutes(prossimo.getMinutes() + (2 - (prossimo.getMinutes() % 2)));
+    righe.push({
+      ...base,
+      id: "timer.sensore_trunk",
+      nome: trunk.nome,
+      su: "il sensore sulla porta trunk",
+      quando: "ogni 2 minuti",
+      prossimo: acceso ? dataSqlite(prossimo) : null,
+      stato: acceso ? "acceso" : "spento",
+      fisso: false,
+      esito: s.esito,
+      dove: { href: `/settings/opzioni#${trunk.id}`, etichetta: "Opzioni ›" },
+      cambio: { tipo: "opzione", id: trunk.id },
     });
   }
 

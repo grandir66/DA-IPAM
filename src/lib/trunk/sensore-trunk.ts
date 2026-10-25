@@ -14,6 +14,7 @@
 import { request as httpRequest } from "node:http";
 import { getCurrentTenantCode, getTenantDb, getTenantSetting, setTenantSetting } from "@/lib/db-tenant";
 import { getNetworks, upsertMacIpMapping } from "@/lib/db";
+import { assicuraColonnaProtocolliTrunk } from "@/lib/db-tenant-schema";
 import { isIpInCidr, macToHex, normalizeMacForStorage } from "@/lib/utils";
 import { lookupVendorSync } from "@/lib/scanner/mac-vendor";
 import { getActiveEdgeScanner } from "@/lib/vuln/edge-scanner-db";
@@ -32,6 +33,8 @@ export interface TrunkOsservazione {
   ip: string;
   nome: string | null;
   fonte_nome: string | null;
+  /** Nomi dei protocolli in cui è stato visto (ARP, DHCP, mDNS…): li manda il sensore. */
+  protocolli?: string[] | null;
   passivo: boolean | number;
   attivo: boolean | number;
   prima_vista: string;
@@ -209,19 +212,31 @@ export function trunkLetturaAttiva(): boolean {
   return getTenantSetting("trunk_lettura") === "1";
 }
 
+const colonnaPronta = new WeakSet<object>();
+
 function db() {
-  return getTenantDb(getCurrentTenantCode() ?? "DEFAULT");
+  const d = getTenantDb(getCurrentTenantCode() ?? "DEFAULT");
+  if (!colonnaPronta.has(d)) {
+    assicuraColonnaProtocolliTrunk(d);
+    colonnaPronta.add(d);
+  }
+  return d;
+}
+
+function protocolliDa(raw: string | null | undefined): string[] {
+  return raw ? raw.split(",").filter(Boolean) : [];
 }
 
 /** Scrive le osservazioni (una transazione) e le passa alla tabella MAC↔IP. Ritorna le righe valide. */
 export function salvaOsservazioni(righe: TrunkOsservazione[]): number {
   const d = db();
   const ins = d.prepare(`
-    INSERT INTO trunk_osservazioni (vid, mac_normalized, mac_display, ip, nome, fonte_nome, passivo, attivo, prima_vista, ultima_vista)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO trunk_osservazioni (vid, mac_normalized, mac_display, ip, nome, fonte_nome, protocolli, passivo, attivo, prima_vista, ultima_vista)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(vid, mac_normalized, ip) DO UPDATE SET
       nome = COALESCE(excluded.nome, trunk_osservazioni.nome),
       fonte_nome = COALESCE(excluded.fonte_nome, trunk_osservazioni.fonte_nome),
+      protocolli = COALESCE(excluded.protocolli, trunk_osservazioni.protocolli),
       passivo = MAX(trunk_osservazioni.passivo, excluded.passivo),
       attivo = MAX(trunk_osservazioni.attivo, excluded.attivo),
       ultima_vista = MAX(trunk_osservazioni.ultima_vista, excluded.ultima_vista)
@@ -231,7 +246,8 @@ export function salvaOsservazioni(righe: TrunkOsservazione[]): number {
     for (const r of righe) {
       const display = normalizeMacForStorage(r.mac);
       if (!display) continue;
-      ins.run(r.vid, macToHex(display), display, r.ip || "", r.nome || null, r.fonte_nome || null,
+      const protocolli = Array.isArray(r.protocolli) && r.protocolli.length ? r.protocolli.join(",") : null;
+      ins.run(r.vid, macToHex(display), display, r.ip || "", r.nome || null, r.fonte_nome || null, protocolli,
         r.passivo ? 1 : 0, r.attivo ? 1 : 0, r.prima_vista, r.ultima_vista);
       valide.push({ ...r, display });
     }
@@ -332,6 +348,7 @@ export interface TrunkOsservazioneRiga {
   ip: string;
   nome: string | null;
   fonte_nome: string | null;
+  protocolli: string[];
   passivo: number;
   attivo: number;
   ultima_vista: string;
@@ -340,7 +357,9 @@ export interface TrunkOsservazioneRiga {
 /** Come è stato trovato: solo in ascolto, solo col giro ARP (host silenzioso), con entrambi. */
 export type TrunkMetodo = "ascolto" | "giro" | "entrambi";
 
-export function getTrunkOsservazioniPaginated(opts: { vid?: number | null; q?: string; metodo?: TrunkMetodo | null; limit?: number; offset?: number }): { righe: TrunkOsservazioneRiga[]; totale: number } {
+export function getTrunkOsservazioniPaginated(opts: {
+  vid?: number | null; cidr?: string | null; q?: string; metodo?: TrunkMetodo | null; limit?: number; offset?: number;
+}): { righe: TrunkOsservazioneRiga[]; totale: number } {
   const where: string[] = [];
   const par: Array<string | number> = [];
   if (opts.vid != null) {
@@ -359,11 +378,36 @@ export function getTrunkOsservazioniPaginated(opts: { vid?: number | null; q?: s
   const limit = Math.min(Math.max(opts.limit ?? 100, 1), 500);
   const offset = Math.max(opts.offset ?? 0, 0);
   const d = db();
+  const colonne = "id, vid, mac_display, ip, nome, fonte_nome, protocolli, passivo, attivo, ultima_vista";
+  type Grezza = Omit<TrunkOsservazioneRiga, "vendor" | "protocolli"> & { protocolli: string | null };
+  const completa = (r: Grezza): TrunkOsservazioneRiga => ({ ...r, protocolli: protocolliDa(r.protocolli), vendor: lookupVendorSync(r.mac_display) });
+  if (opts.cidr) {
+    // Una subnet non si filtra in SQL: si leggono le righe della VLAN (poche centinaia) e si taglia qui.
+    const tutte = (d.prepare(`SELECT ${colonne} FROM trunk_osservazioni ${w} ORDER BY ip`).all(...par) as Grezza[])
+      .filter((r) => r.ip && isIpInCidr(r.ip, opts.cidr as string));
+    tutte.sort((a, b) => ordinaIp(a.ip) - ordinaIp(b.ip));
+    return { righe: tutte.slice(offset, offset + limit).map(completa), totale: tutte.length };
+  }
   const totale = (d.prepare(`SELECT COUNT(*) AS n FROM trunk_osservazioni ${w}`).get(...par) as { n: number }).n;
   const righe = d.prepare(
-    `SELECT id, vid, mac_display, ip, nome, fonte_nome, passivo, attivo, ultima_vista FROM trunk_osservazioni ${w} ORDER BY ultima_vista DESC, id DESC LIMIT ? OFFSET ?`,
-  ).all(...par, limit, offset) as Array<Omit<TrunkOsservazioneRiga, "vendor">>;
-  return { righe: righe.map((r) => ({ ...r, vendor: lookupVendorSync(r.mac_display) })), totale };
+    `SELECT ${colonne} FROM trunk_osservazioni ${w} ORDER BY ultima_vista DESC, id DESC LIMIT ? OFFSET ?`,
+  ).all(...par, limit, offset) as Grezza[];
+  return { righe: righe.map(completa), totale };
+}
+
+export interface TrunkVlanProtocolli {
+  vid: number;
+  ip: number;
+  protocolli: string[];
+}
+
+/** Per ogni VLAN: quanti IP e in quali protocolli si sono fatti vedere (per l'elenco delle VLAN). */
+export function getTrunkVlanProtocolli(): TrunkVlanProtocolli[] {
+  const righe = db().prepare(`
+    SELECT vid, COUNT(DISTINCT CASE WHEN ip != '' THEN ip END) AS ip, GROUP_CONCAT(protocolli) AS p
+    FROM trunk_osservazioni GROUP BY vid
+  `).all() as Array<{ vid: number; ip: number; p: string | null }>;
+  return righe.map((r) => ({ vid: r.vid, ip: r.ip, protocolli: [...new Set(protocolliDa(r.p))].sort() }));
 }
 
 export interface TrunkIpVisto {
@@ -371,6 +415,7 @@ export interface TrunkIpVisto {
   mac: string;
   vendor: string | null;
   nome: string | null;
+  protocolli: string[];
   passivo: number;
   attivo: number;
   prima_vista: string;
@@ -409,11 +454,11 @@ export function getTrunkMatrice(giorni = 14, oggi = new Date()): { giorni: strin
     elenco.push(d.toISOString().slice(0, 10));
   }
   const righe = db().prepare(`
-    SELECT vid, ip, MAX(mac_display) AS mac, MAX(nome) AS nome, MAX(passivo) AS passivo, MAX(attivo) AS attivo,
+    SELECT vid, ip, MAX(mac_display) AS mac, MAX(nome) AS nome, GROUP_CONCAT(protocolli) AS protocolli, MAX(passivo) AS passivo, MAX(attivo) AS attivo,
            MIN(prima_vista) AS prima_vista, MAX(ultima_vista) AS ultima_vista
     FROM trunk_osservazioni WHERE ip != '' GROUP BY vid, ip
-  `).all() as Array<TrunkIpVisto & { vid: number }>;
-  const perVid = new Map<number, Array<TrunkIpVisto & { vid: number }>>();
+  `).all() as Array<Omit<TrunkIpVisto, "protocolli" | "vendor"> & { vid: number; protocolli: string | null }>;
+  const perVid = new Map<number, typeof righe>();
   for (const r of righe) {
     const l = perVid.get(r.vid);
     if (l) l.push(r);
@@ -433,7 +478,7 @@ export function getTrunkMatrice(giorni = 14, oggi = new Date()): { giorni: strin
       reti.push({
         vid: v.vid, cidr: rete.cidr, gateway_ip: rete.gateway_ip ?? null, fonte: rete.fonte ?? null,
         ip: ip.slice(0, MAX_IP_PER_RETE).map((r) => ({
-          ip: r.ip, mac: r.mac, vendor: lookupVendorSync(r.mac), nome: r.nome, passivo: r.passivo, attivo: r.attivo, prima_vista: r.prima_vista, ultima_vista: r.ultima_vista,
+          ip: r.ip, mac: r.mac, vendor: lookupVendorSync(r.mac), nome: r.nome, protocolli: [...new Set(protocolliDa(r.protocolli))], passivo: r.passivo, attivo: r.attivo, prima_vista: r.prima_vista, ultima_vista: r.ultima_vista,
         })), serie,
       });
     }

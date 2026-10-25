@@ -185,6 +185,15 @@ app.prepare().then(() => {
       console.error("WARNING: giro degli accessi ai PC non avviato:", error);
     });
 
+    // Sensore trunk (25/10/2026): lettura ogni 2 minuti, solo per i clienti con
+    // «Sensore trunk» acceso in Opzioni. Prima stava in coda al giro ARP (fino a 30 min).
+    import("./src/lib/trunk/job").then(({ avviaLetturaTrunk }) => {
+      avviaLetturaTrunk();
+      console.log("> Sensore trunk: lettura ogni 2 minuti (solo i clienti che l'hanno acceso)");
+    }).catch((error) => {
+      console.error("WARNING: lettura del sensore trunk non avviata:", error);
+    });
+
     // Segnale di vita verso DA-Link (tappa C1 NetBird). Spento finché non esiste
     // /etc/dalink/oggetto.env, scritto dal comando d'installazione di DA-Link:
     // senza quel file nessun giro arriva alla rete.

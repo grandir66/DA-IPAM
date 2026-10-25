@@ -1,7 +1,7 @@
 # AGENTS.md — DA-IPAM (regole per agenti di codice)
 
 File letto da Cursor, Codex e altri agenti. **Fonte di verità completa: [CLAUDE.md](CLAUDE.md)** +
-[.claude/rules/](.claude/rules/) (api-routes, client-components, db-access) + [CONTEXT.md](CONTEXT.md)
+[.claude/rules/](.claude/rules/) (api-routes, client-components, db-access, interfaccia) + [CONTEXT.md](CONTEXT.md)
 per l'onboarding. Qui solo i vincoli non negoziabili, per non duplicare.
 
 ## Ambiente
@@ -37,6 +37,9 @@ Se il working tree contiene lavoro altrui: `npm run version:release -- --staged-
 11. **TypeScript strict, no `any`.** Componenti funzionali, named export.
 12. **Testo UI ed errori in italiano**; nomi di simboli e log tecnici in inglese.
 13. **shadcn/ui v4** (`@base-ui/react`): niente `asChild`, usare `render={<Component />}`.
+14. **Stile UI vincolante**: ogni pagina segue [docs/STILE-UI.md](docs/STILE-UI.md) e usa i mattoni
+    di `src/components/shared/console.tsx`, anche se la richiesta non parla di aspetto. Una cosa si
+    dice una volta, l'elenco degli oggetti è il centro, testo ≥ 13 px, colori solo Domarc.
 
 ## Sicurezza
 

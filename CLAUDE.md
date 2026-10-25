@@ -10,6 +10,7 @@ DA-INVENT (alias DA-IPAM): IPAM multi-tenant Next.js 16. Gestisce reti, scansion
 - **Onboarding / stato progetto: [CONTEXT.md](CONTEXT.md)** ← leggere per primo, evita di rianalizzare il repo
 - Dettaglio narrativo legacy: [docs/CLAUDE-legacy-20260511.md](docs/CLAUDE-legacy-20260511.md)
 - Skills (workflow): [.claude/skills/release/](.claude/skills/release/SKILL.md), [.claude/skills/deploy-prod/](.claude/skills/deploy-prod/SKILL.md), [.claude/skills/winrm-kerberos/](.claude/skills/winrm-kerberos/SKILL.md)
+- **Stile dell'interfaccia: [docs/STILE-UI.md](docs/STILE-UI.md)** ← vincolante per ogni pagina (regola 15)
 - Rules file-scoped: [.claude/rules/](.claude/rules/)
 - ADR: [docs/adr/](docs/adr/) (template: `0000-template.md`)
 - Manuali: [docs/MANUALE-SVILUPPATORE.md](docs/MANUALE-SVILUPPATORE.md), [docs/MANUALE-UTENTE.md](docs/MANUALE-UTENTE.md)
@@ -61,6 +62,11 @@ git push origin <branch>  # senza push, il server in produzione non vede la nuov
     `src/lib/__tests__/no-dynamic-db-tenant-import.test.ts`. Incidente 2026-09-02:
     340 job falliti in 4h40 + 179 host scritti nel DB del tenant sbagliato. Vedi
     [ADR 0002](docs/adr/0002-static-db-tenant-import.md) e CONTEXT.md §7.
+15. **Stile UI Domarc sempre, non solo a richiesta** (Riccardo, 25/10/2026): ogni pagina
+    nuova o toccata segue [docs/STILE-UI.md](docs/STILE-UI.md) e usa i mattoni di
+    `src/components/shared/console.tsx`. Una cosa si dice una volta; l'elenco degli oggetti
+    è il centro della pagina; testo ≥ 13 px; niente colori Tailwind «di significato».
+    Senza regola scritta ogni sessione copiava la pagina più vicina e il risultato era brutto.
 
 ## Verifica obbligatoria post-modifica
 

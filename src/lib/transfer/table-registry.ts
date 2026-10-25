@@ -170,6 +170,10 @@ export const EXCLUDED_TENANT_TABLES: string[] = [
   // tenant_settings e vale per quel sensore; altrove si rilegge da capo dal sensore suo.
   "trunk_osservazioni",
   "trunk_vlan",
+  "trunk_vicini",
+  // Rilievi di sicurezza della rete osservata (2026-10-25): giudizi su quanto vede il sensore di questa istanza,
+  // si ricalcolano a ogni lettura; copiati altrove descriverebbero una rete che lì non si vede.
+  "rete_rilievi",
 ];
 
 /** Tabelle hub install-level: identità/auth/setup, NON viaggiano col tenant. */

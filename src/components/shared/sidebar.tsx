@@ -66,6 +66,8 @@ type SubItem = {
   divider?: string;
   /** Console di un prodotto esterno: nuova scheda (gruppo Applicativi, 19/10). */
   esterno?: boolean;
+  /** Numero rosso accanto alla voce (es. allarmi gravi della rete osservata). */
+  badge?: number;
 };
 
 const ICONE_APPLICATIVI: Record<IconaVoce, LucideIcon> = {
@@ -93,17 +95,18 @@ const networkSubItems: readonly SubItem[] = [
   { href: "/credentials", label: "Credenziali", icon: Key, divider: "Credenziali" },
   { href: "/controllers", label: "Controller di rete", icon: Router },
   { href: "/arp-table", label: "Tabella ARP", icon: ListOrdered, divider: "Diagnostica" },
-  { href: "/arp-table/trunk", label: "Reti dal trunk", icon: Cable },
   { href: "/dhcp/sources", label: "Sorgenti DHCP", icon: Server },
   { href: "/scans", label: "Scansioni", icon: Scan },
   { href: "/excluded-ips", label: "IP esclusi", icon: Ban },
 ];
 
 // Sicurezza (Riccardo, 19/10 sera): le viste di sicurezza in un gruppo solo. La Health
-// di Active Directory è la scheda della pagina AD, aperta già lì.
+// di Active Directory è la scheda della pagina AD, aperta già lì. «Reti dal trunk» qui
+// dal 25/10 (Riccardo): con i rilievi della sonda passiva è una pagina di sicurezza.
 const sicurezzaSubItems: readonly SubItem[] = [
   { href: "/vulnerabilities", label: "Vulnerabilità", icon: ShieldAlert },
   { href: "/security-alerts", label: "Alert sicurezza", icon: Siren },
+  { href: "/arp-table/trunk", label: "Reti dal trunk", icon: Cable },
   { href: "/active-directory?tab=health", label: "Health Active Directory", icon: HeartPulse },
 ];
 
@@ -220,7 +223,15 @@ function SubList({
               )}
             >
               <item.icon className="h-3.5 w-3.5 shrink-0" />
-              {item.label}
+              <span className="flex-1">{item.label}</span>
+              {item.badge != null && item.badge > 0 && (
+                <span
+                  title={`${item.badge} allarmi gravi da prendere in carico`}
+                  className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[#8E1B20] px-1 text-[13px] font-bold leading-none text-white"
+                >
+                  {item.badge > 99 ? "99+" : item.badge}
+                </span>
+              )}
             </Link>
           )}
         </div>
@@ -364,10 +375,10 @@ export function Sidebar() {
 
   const [mobileOpen, setMobileOpen] = useState(false);
   const [networkOpen, setNetworkOpen] = useState(() =>
-    networkSubItems.some((d) => pathname.startsWith(d.href))
+    !pathname.startsWith("/arp-table/trunk") && networkSubItems.some((d) => pathname.startsWith(d.href))
   );
   const [sicurezzaOpen, setSicurezzaOpen] = useState(() =>
-    ["/vulnerabilities", "/security-alerts"].some((h) => pathname.startsWith(h)) ||
+    ["/vulnerabilities", "/security-alerts", "/arp-table/trunk"].some((h) => pathname.startsWith(h)) ||
       (pathname === "/active-directory" && searchParams.get("tab") === "health")
   );
   const [inventoryOpen, setInventoryOpen] = useState(() =>
@@ -377,6 +388,11 @@ export function Sidebar() {
     networkServicesSubItems.some((d) => pathname.startsWith(d.href))
   );
   const [unackedAnomalies, setUnackedAnomalies] = useState(0);
+  const [allarmiRete, setAllarmiRete] = useState(0);
+  const sicurezzaItems = useMemo<SubItem[]>(
+    () => sicurezzaSubItems.map((v) => (v.href === "/arp-table/trunk" ? { ...v, badge: allarmiRete } : v)),
+    [allarmiRete],
+  );
   // Moduli abilitati: fonte unica = registry (/api/modules). Ogni voce di menu
   // dei moduli compare SOLO se il modulo è enabled per il tenant.
   const [enabledModules, setEnabledModules] = useState<Set<string>>(new Set());
@@ -416,6 +432,12 @@ export function Sidebar() {
         .then((r) => r.ok ? r.json() : null)
         .then((data: { unacked?: number } | null) => {
           if (data?.unacked != null) setUnackedAnomalies(data.unacked);
+        })
+        .catch(() => { /* non critico */ });
+      fetch("/api/trunk/rilievi?conteggio=1")
+        .then((r) => r.ok ? r.json() : null)
+        .then((data: { allarmiAlti?: number } | null) => {
+          if (data?.allarmiAlti != null) setAllarmiRete(data.allarmiAlti);
         })
         .catch(() => { /* non critico */ });
     };
@@ -514,7 +536,7 @@ export function Sidebar() {
         */}
 
         {/* Sicurezza (Riccardo, 19/10 sera): Vulnerabilità, Alert sicurezza, Health AD */}
-        <NavGroup icon={ShieldHalf} label="Sicurezza" items={sicurezzaSubItems} open={sicurezzaOpen} setOpen={setSicurezzaOpen} collapsed={collapsed} isActive={isActive} onNavigate={closeMobile} />
+        <NavGroup icon={ShieldHalf} label="Sicurezza" items={sicurezzaItems} open={sicurezzaOpen} setOpen={setSicurezzaOpen} collapsed={collapsed} isActive={isActive} onNavigate={closeMobile} />
         {/* Inventario — la voce "Servizi NIS2" compare solo se il modulo è abilitato */}
         <NavGroup icon={Package} label="Inventario" items={enabledModules.has("nis2_inventory") ? inventorySubItems : inventorySubItems.filter((i) => i.href !== "/services")} open={inventoryOpen} setOpen={setInventoryOpen} collapsed={collapsed} isActive={isActive} onNavigate={closeMobile} />
 

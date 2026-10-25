@@ -56,6 +56,19 @@ export function assicuraColonnaProtocolliTrunk(db: Database.Database): boolean {
 }
 
 /**
+ * Rilievi di sicurezza dal trunk (25/10): i server DHCP visti per VLAN, copiati da `/vlan` del sensore
+ * (JSON: `[{mac, ip, ultima_vista}]`). Stesso schema di `assicuraColonnaProtocolliTrunk`: idempotente, solo additiva.
+ */
+export function assicuraColonnaServerDhcpTrunk(db: Database.Database): boolean {
+  const colonne = new Set(
+    (db.prepare("PRAGMA table_info(trunk_vlan)").all() as Array<{ name: string }>).map((c) => c.name),
+  );
+  if (colonne.size === 0 || colonne.has("server_dhcp")) return false;
+  db.exec("ALTER TABLE trunk_vlan ADD COLUMN server_dhcp TEXT NOT NULL DEFAULT '[]'");
+  return true;
+}
+
+/**
  * Topologia T2 (spec 2026-10-14 §13.5.7): i fatti delle letture in più, uno per lettore (la fonte sta nella chiave:
  * due lettori dello stesso apparato non si sovrascrivono, ADR 0009 punto 4). Le stesse CREATE stanno qui e nella
  * migrazione (`migrateTopologyCavi`, db-tenant.ts); gli indici solo nella migrazione. Nessun CHECK: i valori li valida
@@ -1021,9 +1034,50 @@ CREATE TABLE IF NOT EXISTS trunk_vlan (
   dichiarata INTEGER NOT NULL DEFAULT 0,
   mac INTEGER NOT NULL DEFAULT 0,
   reti TEXT NOT NULL DEFAULT '[]',
+  server_dhcp TEXT NOT NULL DEFAULT '[]',
   ultima_vista TEXT,
   aggiornato TEXT NOT NULL
 );
+
+-- Apparati di rete che si annunciano sul trunk con CDP o LLDP (25/10), copiati da /vicini del sensore.
+CREATE TABLE IF NOT EXISTS trunk_vicini (
+  protocollo TEXT NOT NULL,
+  sistema TEXT NOT NULL,
+  porta TEXT NOT NULL,
+  vid INTEGER NOT NULL DEFAULT 0,
+  indirizzo TEXT,
+  vlan_nativa INTEGER,
+  ultima_vista TEXT NOT NULL,
+  PRIMARY KEY (protocollo, sistema, porta)
+);
+
+-- Rilievi di sicurezza della rete osservata (25/10): allarmi, esposizioni e novità calcolati da DA-IPAM
+-- sui fatti del sensore. Una riga per chiave (tipo + oggetto): si aggiorna a ogni lettura, si chiude
+-- (chiuso_il) quando la condizione sparisce, «preso in carico» resta. La colonna fonte lascia la porta aperta
+-- a una sonda con porta specchio. Nessun CHECK: i valori li valida TypeScript (trunk/rilievi.ts).
+CREATE TABLE IF NOT EXISTS rete_rilievi (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  chiave TEXT NOT NULL UNIQUE,
+  fonte TEXT NOT NULL DEFAULT 'sensore-trunk',
+  tipo TEXT NOT NULL,
+  categoria TEXT NOT NULL,
+  gravita TEXT NOT NULL,
+  vid INTEGER,
+  mac TEXT,
+  ip TEXT,
+  descrizione TEXT NOT NULL,
+  dettaglio TEXT,
+  prima_vista TEXT,
+  ultima_vista TEXT,
+  rilevato_il TEXT NOT NULL,
+  aggiornato_il TEXT NOT NULL,
+  chiuso_il TEXT,
+  preso_in_carico INTEGER NOT NULL DEFAULT 0,
+  preso_da TEXT,
+  preso_il TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_rete_rilievi_aperti ON rete_rilievi(chiuso_il, categoria, gravita);
+CREATE INDEX IF NOT EXISTS idx_rete_rilievi_mac ON rete_rilievi(mac);
 
 CREATE TABLE IF NOT EXISTS mac_ip_history (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

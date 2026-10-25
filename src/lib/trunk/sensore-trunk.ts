@@ -14,12 +14,13 @@
 import { request as httpRequest } from "node:http";
 import { getCurrentTenantCode, getTenantDb, getTenantSetting, setTenantSetting } from "@/lib/db-tenant";
 import { getNetworks, upsertMacIpMapping } from "@/lib/db";
-import { assicuraColonnaProtocolliTrunk } from "@/lib/db-tenant-schema";
+import { assicuraColonnaProtocolliTrunk, assicuraColonnaServerDhcpTrunk } from "@/lib/db-tenant-schema";
 import { isIpInCidr, macToHex, normalizeMacForStorage } from "@/lib/utils";
 import { lookupVendorSync } from "@/lib/scanner/mac-vendor";
 import { getActiveEdgeScanner } from "@/lib/vuln/edge-scanner-db";
 import { edgeApiGet, edgeApiPost, EdgeClientError } from "@/lib/vuln/scanner-edge-client";
 import { unisciReti, type TrunkMaschera } from "@/lib/trunk/reti";
+import { getTipiRilievoPerMac, valutaRilievi, type TipoRilievo } from "@/lib/trunk/rilievi";
 
 export const TRUNK_SOCKET_DEFAULT = "/run/sensore-trunk/api.sock";
 const PAGINA = 1000;
@@ -50,6 +51,13 @@ export interface TrunkRete {
   fonte?: string;
 }
 
+/** Un server DHCP visto rispondere in una VLAN (offerte e conferme che arrivano al trunk). */
+export interface TrunkServerDhcp {
+  mac: string;
+  ip: string;
+  ultima_vista: string | null;
+}
+
 export interface TrunkVlan {
   vid: number;
   vista: boolean;
@@ -57,6 +65,18 @@ export interface TrunkVlan {
   mac: number;
   ultima_vista: string | null;
   reti: TrunkRete[];
+  server_dhcp?: TrunkServerDhcp[];
+}
+
+/** Un apparato di rete che si annuncia sul trunk con CDP o LLDP. */
+export interface TrunkVicino {
+  protocollo: string;
+  sistema: string;
+  porta: string;
+  vid: number;
+  indirizzo: string | null;
+  vlan_nativa: number | null;
+  ultima_vista: string;
 }
 
 interface Cursore {
@@ -219,6 +239,7 @@ function db() {
   const d = getTenantDb(getCurrentTenantCode() ?? "DEFAULT");
   if (!colonnaPronta.has(d)) {
     assicuraColonnaProtocolliTrunk(d);
+    assicuraColonnaServerDhcpTrunk(d);
     colonnaPronta.add(d);
   }
   return d;
@@ -269,14 +290,52 @@ export function salvaVlan(vlan: TrunkVlan[]): void {
   d.transaction(() => {
     d.prepare("DELETE FROM trunk_vlan").run();
     const ins = d.prepare(
-      "INSERT INTO trunk_vlan (vid, vista, dichiarata, mac, reti, ultima_vista, aggiornato) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO trunk_vlan (vid, vista, dichiarata, mac, reti, server_dhcp, ultima_vista, aggiornato) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
     );
     for (const v of vlan) {
+      const server = (Array.isArray(v.server_dhcp) ? v.server_dhcp : [])
+        .filter((x) => x && typeof x.ip === "string" && typeof x.mac === "string")
+        .map((x) => ({ mac: normalizeMacForStorage(x.mac) ?? x.mac, ip: x.ip, ultima_vista: x.ultima_vista ?? null }));
       ins.run(v.vid, v.vista ? 1 : 0, v.dichiarata ? 1 : 0, v.mac ?? 0,
         JSON.stringify((v.reti ?? []).map((r) => ({ cidr: r.cidr, gateway_ip: r.gateway_ip ?? null, fonte: r.fonte ?? null }))),
-        v.ultima_vista ?? null, adesso);
+        JSON.stringify(server), v.ultima_vista ?? null, adesso);
     }
   })();
+}
+
+/** Sostituisce l'elenco dei vicini CDP/LLDP (DELETE+INSERT in una transazione). */
+export function salvaVicini(vicini: TrunkVicino[]): void {
+  const d = db();
+  d.transaction(() => {
+    d.prepare("DELETE FROM trunk_vicini").run();
+    const ins = d.prepare(`
+      INSERT OR REPLACE INTO trunk_vicini (protocollo, sistema, porta, vid, indirizzo, vlan_nativa, ultima_vista)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+    for (const v of vicini) {
+      if (!v || typeof v.sistema !== "string" || typeof v.protocollo !== "string") continue;
+      ins.run(v.protocollo, v.sistema, v.porta ?? "?", v.vid ?? 0, v.indirizzo ?? null,
+        typeof v.vlan_nativa === "number" ? v.vlan_nativa : null, v.ultima_vista ?? new Date().toISOString());
+    }
+  })();
+}
+
+export function getTrunkVicini(): TrunkVicino[] {
+  return db().prepare("SELECT * FROM trunk_vicini ORDER BY sistema, porta").all() as TrunkVicino[];
+}
+
+/**
+ * I vicini li espone il socket del sensore; l'edge solo se aggiornato. Se non ci sono,
+ * si va avanti senza: non è un errore della lettura.
+ */
+async function leggiVicini(l: { leggi: Lettore }): Promise<TrunkVicino[] | null> {
+  try {
+    const r = await l.leggi<{ vicini?: TrunkVicino[] }>("/vicini");
+    return Array.isArray(r.vicini) ? r.vicini : [];
+  } catch (e) {
+    if (e instanceof SensoreTrunkAssente || (e instanceof Error && /\b404\b/.test(e.message))) return null;
+    throw e;
+  }
 }
 
 /**
@@ -383,6 +442,9 @@ async function sincronizza(lettore?: { fonte: string; leggi: Lettore }): Promise
     }
     if (!pagina.prossimo) break;
   }
+  const vicini = await leggiVicini(l);
+  if (vicini) salvaVicini(vicini);
+  valutaRilievi();
   return { fonte: l.fonte, osservazioni: totale, vlan: vlan.length };
 }
 
@@ -392,21 +454,24 @@ export interface TrunkVlanRiga {
   dichiarata: number;
   mac: number;
   reti: TrunkRete[];
+  server_dhcp: TrunkServerDhcp[];
   ultima_vista: string | null;
   aggiornato: string;
 }
 
+function elencoJson<T>(raw: string | null | undefined): T[] {
+  if (!raw) return [];
+  try {
+    const v = JSON.parse(raw) as unknown;
+    return Array.isArray(v) ? (v as T[]) : [];
+  } catch {
+    return [];
+  }
+}
+
 export function getTrunkVlan(): TrunkVlanRiga[] {
-  const righe = db().prepare("SELECT * FROM trunk_vlan ORDER BY vid").all() as Array<Omit<TrunkVlanRiga, "reti"> & { reti: string }>;
-  return righe.map((r) => {
-    let reti: TrunkRete[] = [];
-    try {
-      reti = JSON.parse(r.reti) as TrunkRete[];
-    } catch {
-      reti = [];
-    }
-    return { ...r, reti };
-  });
+  const righe = db().prepare("SELECT * FROM trunk_vlan ORDER BY vid").all() as Array<Omit<TrunkVlanRiga, "reti" | "server_dhcp"> & { reti: string; server_dhcp: string | null }>;
+  return righe.map((r) => ({ ...r, reti: elencoJson<TrunkRete>(r.reti), server_dhcp: elencoJson<TrunkServerDhcp>(r.server_dhcp) }));
 }
 
 export interface TrunkOsservazioneRiga {
@@ -421,6 +486,8 @@ export interface TrunkOsservazioneRiga {
   passivo: number;
   attivo: number;
   ultima_vista: string;
+  /** Rilievi di sicurezza aperti su questo MAC (LLMNR, non in inventario…). */
+  rilievi: TipoRilievo[];
 }
 
 /** Come è stato trovato: solo in ascolto, solo col giro ARP (host silenzioso), con entrambi. */
@@ -448,20 +515,25 @@ export function getTrunkOsservazioniPaginated(opts: {
   const offset = Math.max(opts.offset ?? 0, 0);
   const d = db();
   const colonne = "id, vid, mac_display, ip, nome, fonte_nome, protocolli, passivo, attivo, ultima_vista";
-  type Grezza = Omit<TrunkOsservazioneRiga, "vendor" | "protocolli"> & { protocolli: string | null };
-  const completa = (r: Grezza): TrunkOsservazioneRiga => ({ ...r, protocolli: protocolliDa(r.protocolli), vendor: lookupVendorSync(r.mac_display) });
+  type Grezza = Omit<TrunkOsservazioneRiga, "vendor" | "protocolli" | "rilievi"> & { protocolli: string | null };
+  const completa = (grezze: Grezza[]): TrunkOsservazioneRiga[] => {
+    const rilievi = getTipiRilievoPerMac(grezze.map((r) => r.mac_display));
+    return grezze.map((r) => ({
+      ...r, protocolli: protocolliDa(r.protocolli), vendor: lookupVendorSync(r.mac_display), rilievi: rilievi.get(r.mac_display) ?? [],
+    }));
+  };
   if (opts.cidr) {
     // Una subnet non si filtra in SQL: si leggono le righe della VLAN (poche centinaia) e si taglia qui.
     const tutte = (d.prepare(`SELECT ${colonne} FROM trunk_osservazioni ${w} ORDER BY ip`).all(...par) as Grezza[])
       .filter((r) => r.ip && isIpInCidr(r.ip, opts.cidr as string));
     tutte.sort((a, b) => ordinaIp(a.ip) - ordinaIp(b.ip));
-    return { righe: tutte.slice(offset, offset + limit).map(completa), totale: tutte.length };
+    return { righe: completa(tutte.slice(offset, offset + limit)), totale: tutte.length };
   }
   const totale = (d.prepare(`SELECT COUNT(*) AS n FROM trunk_osservazioni ${w}`).get(...par) as { n: number }).n;
   const righe = d.prepare(
     `SELECT ${colonne} FROM trunk_osservazioni ${w} ORDER BY ultima_vista DESC, id DESC LIMIT ? OFFSET ?`,
   ).all(...par, limit, offset) as Grezza[];
-  return { righe: righe.map(completa), totale };
+  return { righe: completa(righe), totale };
 }
 
 export interface TrunkVlanProtocolli {

@@ -15,6 +15,7 @@ import { request as httpRequest } from "node:http";
 import { getCurrentTenantCode, getTenantDb, getTenantSetting, setTenantSetting } from "@/lib/db-tenant";
 import { getNetworks, upsertMacIpMapping } from "@/lib/db";
 import { isIpInCidr, macToHex, normalizeMacForStorage } from "@/lib/utils";
+import { lookupVendorSync } from "@/lib/scanner/mac-vendor";
 import { getActiveEdgeScanner } from "@/lib/vuln/edge-scanner-db";
 import { edgeApiGet, edgeApiPost, EdgeClientError } from "@/lib/vuln/scanner-edge-client";
 
@@ -327,6 +328,7 @@ export interface TrunkOsservazioneRiga {
   id: number;
   vid: number;
   mac_display: string;
+  vendor: string | null;
   ip: string;
   nome: string | null;
   fonte_nome: string | null;
@@ -335,7 +337,10 @@ export interface TrunkOsservazioneRiga {
   ultima_vista: string;
 }
 
-export function getTrunkOsservazioniPaginated(opts: { vid?: number | null; q?: string; limit?: number; offset?: number }): { righe: TrunkOsservazioneRiga[]; totale: number } {
+/** Come è stato trovato: solo in ascolto, solo col giro ARP (host silenzioso), con entrambi. */
+export type TrunkMetodo = "ascolto" | "giro" | "entrambi";
+
+export function getTrunkOsservazioniPaginated(opts: { vid?: number | null; q?: string; metodo?: TrunkMetodo | null; limit?: number; offset?: number }): { righe: TrunkOsservazioneRiga[]; totale: number } {
   const where: string[] = [];
   const par: Array<string | number> = [];
   if (opts.vid != null) {
@@ -347,6 +352,9 @@ export function getTrunkOsservazioniPaginated(opts: { vid?: number | null; q?: s
     const like = `%${opts.q.trim()}%`;
     par.push(like, like, like);
   }
+  if (opts.metodo === "ascolto") where.push("passivo = 1 AND attivo = 0");
+  if (opts.metodo === "giro") where.push("passivo = 0 AND attivo = 1");
+  if (opts.metodo === "entrambi") where.push("passivo = 1 AND attivo = 1");
   const w = where.length ? `WHERE ${where.join(" AND ")}` : "";
   const limit = Math.min(Math.max(opts.limit ?? 100, 1), 500);
   const offset = Math.max(opts.offset ?? 0, 0);
@@ -354,13 +362,14 @@ export function getTrunkOsservazioniPaginated(opts: { vid?: number | null; q?: s
   const totale = (d.prepare(`SELECT COUNT(*) AS n FROM trunk_osservazioni ${w}`).get(...par) as { n: number }).n;
   const righe = d.prepare(
     `SELECT id, vid, mac_display, ip, nome, fonte_nome, passivo, attivo, ultima_vista FROM trunk_osservazioni ${w} ORDER BY ultima_vista DESC, id DESC LIMIT ? OFFSET ?`,
-  ).all(...par, limit, offset) as TrunkOsservazioneRiga[];
-  return { righe, totale };
+  ).all(...par, limit, offset) as Array<Omit<TrunkOsservazioneRiga, "vendor">>;
+  return { righe: righe.map((r) => ({ ...r, vendor: lookupVendorSync(r.mac_display) })), totale };
 }
 
 export interface TrunkIpVisto {
   ip: string;
   mac: string;
+  vendor: string | null;
   nome: string | null;
   passivo: number;
   attivo: number;
@@ -424,7 +433,7 @@ export function getTrunkMatrice(giorni = 14, oggi = new Date()): { giorni: strin
       reti.push({
         vid: v.vid, cidr: rete.cidr, gateway_ip: rete.gateway_ip ?? null, fonte: rete.fonte ?? null,
         ip: ip.slice(0, MAX_IP_PER_RETE).map((r) => ({
-          ip: r.ip, mac: r.mac, nome: r.nome, passivo: r.passivo, attivo: r.attivo, prima_vista: r.prima_vista, ultima_vista: r.ultima_vista,
+          ip: r.ip, mac: r.mac, vendor: lookupVendorSync(r.mac), nome: r.nome, passivo: r.passivo, attivo: r.attivo, prima_vista: r.prima_vista, ultima_vista: r.ultima_vista,
         })), serie,
       });
     }
@@ -437,9 +446,17 @@ function ordinaIp(ip: string): number {
 }
 
 /** Per la riga di Opzioni: quante VLAN e osservazioni ci sono e quando si è letto l'ultima volta. */
-export function trunkRiepilogo(): { vlan: number; osservazioni: number; aggiornato: string | null } {
+export function trunkRiepilogo(): {
+  vlan: number; osservazioni: number; aggiornato: string | null; ip: number; mac: number; soloAscolto: number; soloGiro: number;
+} {
   const d = db();
   const v = d.prepare("SELECT COUNT(*) AS n, MAX(aggiornato) AS a FROM trunk_vlan").get() as { n: number; a: string | null };
-  const o = d.prepare("SELECT COUNT(*) AS n FROM trunk_osservazioni").get() as { n: number };
-  return { vlan: v.n, osservazioni: o.n, aggiornato: v.a };
+  const o = d.prepare(`
+    SELECT COUNT(*) AS n, COUNT(DISTINCT mac_normalized) AS mac,
+           COUNT(DISTINCT CASE WHEN ip != '' THEN vid || '/' || ip END) AS ip,
+           SUM(CASE WHEN passivo = 1 AND attivo = 0 THEN 1 ELSE 0 END) AS sa,
+           SUM(CASE WHEN passivo = 0 AND attivo = 1 THEN 1 ELSE 0 END) AS sg
+    FROM trunk_osservazioni
+  `).get() as { n: number; mac: number; ip: number; sa: number | null; sg: number | null };
+  return { vlan: v.n, osservazioni: o.n, aggiornato: v.a, ip: o.ip, mac: o.mac, soloAscolto: o.sa ?? 0, soloGiro: o.sg ?? 0 };
 }

@@ -209,7 +209,7 @@ export default async function DashboardPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="lg:flex-1 lg:min-h-0 flex flex-col">
-              <IstogrammaAccessi ore={accessi?.ore ?? null} giorni={accessi?.giorni ?? null} fonte={accessi?.fonte ?? "stima"} motivo={accessi?.motivo} />
+              <IstogrammaAccessi ore={accessi?.ore ?? null} giorni={accessi?.giorni ?? null} fonte={accessi?.fonte ?? "stima"} motivo={accessi?.motivo} bersagliati={accessi?.bersagliati} />
             </CardContent>
           </Card>
         </div>

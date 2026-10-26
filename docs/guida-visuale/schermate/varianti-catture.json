@@ -1,0 +1,322 @@
+[
+  {
+    "name": "pagina-settings-tab-istanza",
+    "route": "/settings?tab=istanza",
+    "actual": "http://127.0.0.1:3187/settings?tab=istanza",
+    "label": "pagina-settings-tab-istanza",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nImpostazioni\n\nConfigurazione sistema, sicurezza e profili di scansione\n\nv0.9.913\nIstanza\nUtenti\nScansione\nIdentificazione\nJob pianificati\nHTTPS\nModuli\nAlert sicurezza\nNotifiche\nAggiornamenti\nSistema\nIstanza su cui lavori\nLe pagine con i dati (reti, inventario, anomalie…) mostrano l'istanza scelta qui.\nAzienda dimostrativa · DEMO\n\nAl prossimo accesso riparti da qui.",
+    "date": "2026-10-25T23:59:55.211Z"
+  },
+  {
+    "name": "pagina-settings-tab-utenti",
+    "route": "/settings?tab=utenti",
+    "actual": "http://127.0.0.1:3187/settings?tab=utenti",
+    "label": "pagina-settings-tab-utenti",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nImpostazioni\n\nConfigurazione sistema, sicurezza e profili di scansione\n\nv0.9.913\nIstanza\nUtenti\nScansione\nIdentificazione\nJob pianificati\nHTTPS\nModuli\nAlert sicurezza\nNotifiche\nAggiornamenti\nSistema\nGestione utenti\nGestisci gli account di accesso al sistema. Per cambiare la tua password usa il menu utente in alto a destra.\nNuovo utente\nUsername\tEmail\tRuolo\tCliente\tCreato il\tUltimo accesso\tDue passaggi\tAzioni\nguida\ttecnico@example.invalid\tSuper Admin\tTutti i clienti\t26/10/2026\t26/10/2026, 00:59:52\t\n–\nRichiedi\n\t",
+    "date": "2026-10-25T23:59:57.510Z"
+  },
+  {
+    "name": "pagina-settings-tab-scansione",
+    "route": "/settings?tab=scansione",
+    "actual": "http://127.0.0.1:3187/settings?tab=scansione",
+    "label": "pagina-settings-tab-scansione",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nImpostazioni\n\nConfigurazione sistema, sicurezza e profili di scansione\n\nv0.9.913\nIstanza\nUtenti\nScansione\nIdentificazione\nJob pianificati\nHTTPS\nModuli\nAlert sicurezza\nNotifiche\nAggiornamenti\nSistema\nProfilo Nmap (Scansione completa)\nIndica solo le porte che vuoi testare (TCP obbligatorie; UDP opzionali — se lasci vuoto UDP, non viene eseguita alcuna scansione UDP). Usato per scansioni Nmap manuali e job pianificati. La scoperta rete automatica resta in modalita veloce su altre porte.\nNome\nDescrizione\nPorte TCP da testare\n\nElenco separato da virgole. Solo queste porte TCP vengono usate nello scan con questo profilo (nessun elenco predefinito aggiunto dal sistema).\n\nPorte UDP da testare (opzionale)\n\nSe lasci vuoto, non viene eseguita la fase UDP (solo TCP). La scansione UDP richiede spesso privilegi root sul server.\n\nCommunity SNMP (opzionale)\n\nUsata in sessione con Nmap per walk SNMP e rilevamento dispositivi (oltre alle community configurate per rete/credenziali).\n\nAnteprima (comandi effettivi)\nTCP: nmap — inserisci le porte TCP — <ip>\nUDP: nmap — nessuna UDP (solo TCP) — <ip>\nSNMP (community profilo: public + catena rete/credenziali)\nSalva Profilo\nScoperta rete veloce (Quick Scan)\nPorte TCP scansionate durante la fase Nmap \"quick\" nella scoperta rete. Queste porte vengono testate su ogni host che risponde al ping ICMP.\nPorte TCP provate\nelenco di serie\ndi serie\ncambia da Opzioni ›\nHost in parallelo\n12 host\ndi serie\ncambia da Opzioni ›\nAttesa per host\n10 s\ndi serie\ncambia da Opzioni ›\nTempo massimo di Nmap\n22 s\ndi serie\ncambia da Opzioni ›\n22\nSSH\n25\nSMTP\n53\nDNS\n80\nHTTP\n88\nKerberos\n110\nPOP3\n135\nRPC/WMI\n139\nNetBIOS\n143\nIMAP\n389\nLDAP\n443\nHTTPS\n445\nSMB\n541\nStormshield\n542\nStormshield\n623\nIPMI\n636\nLDAPS\n902\nVMware\n993\nIMAPS\n995\nPOP3S\n3389\nRDP\n4786\nCisco SI\n5000\nSynology\n5001\nSynology-S\n5900\nVNC\n5985\nWinRM\n5986\nWinRM-S\n5988\nWBEM\n5989\nWBEM-S\n8006\nProxmox\n8007\nProxmox BS\n8080\nHTTP-Alt\n8200\nMikroTik ND\n8291\nMikroTik WinBox\n8443\nUniFi\n8728\nMikroTik API\n8729\nMikroTik API-S\n9443\nVMware VC\n10443\nFortiGate\n17988\niLO\nComando Nmap generato\nnmap -Pn -sT -p 22,25,53,80,88,110,135,139,143,389,443,445,541,542,623,636,902,993,995,3389,4786,5000,5001,5900,5985,5986,5988,5989,8006,8007,8080,8200,8291,8443,8728,8729,9443,10443,17988 -T5 --max-retries 1 --min-rate 400 --host-timeout 10s <ip>\nPort discovery TCP\nOpzionale: pre-pass Naabu prima di Nmap mirato (-sV). Se Naabu non è installato, lo scan continua con Nmap only (fail-soft).\nNaabu + Nmap\n\nOff = solo Nmap (default). On = Naabu TCP poi Nmap -sV sulle porte trovate + porte sempre utili.\n\nNaabu prima di Nmap\nSPENTA\nspento\ncambia da Opzioni ›\nNaabu sul server\nnaabu: non trovato\nPercorso di Naabu\nvuoto\ndi serie\ncambia da Opzioni ›\nVariabili ambiente\nOverride delle impostazioni di scansione via variabili ambiente del server. Se non impostate, si usano i valori predefiniti.",
+    "date": "2026-10-25T23:59:59.800Z"
+  },
+  {
+    "name": "pagina-settings-tab-identificazione",
+    "route": "/settings?tab=identificazione",
+    "actual": "http://127.0.0.1:3187/settings?tab=identificazione",
+    "label": "pagina-settings-tab-identificazione",
+    "text": "rte)built-in\tZabbix\tServer(server)\t\nTCP: 10050,10051\n\t\n\n\n\t10\tWazuh (porte)built-in\tWazuh\tServer(server)\t\nTCP: 1514,1515,55000\n\t\n\n\n\t15\tTrueNAS (porte)built-in\tTrueNAS\tNAS / Storage(storage)\t\nTCP: 80,443,2049\n\t\n\n\n\t20\tWindows Server (porte)built-in\tWindows Server\tServer(server_windows)\t\nTCP: 135,139,445\n\t\n\n\n\t25\tProxmox bannerbuilt-in\tProxmox VE\tHypervisor(hypervisor)\t\nBanner: /proxmox|pve-manager/\n\t\n\n\n\t25\tSynology bannerbuilt-in\tSynology DSM\tNAS / Storage(storage)\t\nBanner: /synology|diskstation/\n\t\n\n\n\t25\tQNAP bannerbuilt-in\tQNAP QTS\tNAS / Storage(storage)\t\nBanner: /qnap|qts/\n\t\n\n\n\t30\tRouterOS (sysDescr)built-in\tMikroTik RouterOS\tRouter(router)\t\nsysDescr: /routeros|mikrotik/\n\t\n\n\n\t30\tProxmox (sysDescr)built-in\tProxmox VE\tHypervisor(hypervisor)\t\nsysDescr: /proxmox|pve-manager|qemu.?kvm/\n\t\n\n\n\t30\tSynology (sysDescr)built-in\tSynology DSM\tNAS / Storage(storage)\t\nsysDescr: /synology|diskstation/\n\t\n\n\n\t30\tQNAP (sysDescr)built-in\tQNAP QTS\tNAS / Storage(storage)\t\nsysDescr: /qnap|\\bqts\\b/\n\t\n\n\n\t30\tESXi (sysDescr)built-in\tVMware ESXi\tHypervisor(hypervisor)\t\nsysDescr: /esxi|vmware\\s*esx/\n\t\n\n\n\t35\tFirewall generico (sysDescr)built-in\tFirewall\tFirewall(firewall)\t\nsysDescr: /firewall|fortigate|pfsense|opnsense|sophos/\n\t\n\n\n\t35\tWindows Server (sysDescr)built-in\tWindows Server\tServer(server_windows)\t\nsysDescr: /windows\\s*server|microsoft.*server/\n\t\n\n\n\t35\tStampante (sysDescr)built-in\tStampante\tStampante(stampante)\t\nsysDescr: /printer|laserjet|deskjet|officejet|epson|brother.*print|lexmark|ricoh|xerox/\n\t\n\n\n\t50\tnet-snmp Linux (OID)built-in\tLinux/net-snmp\tServer(server_linux)\t\nOID: 1.3.6.1.4.1.8072.3.2\n\t\n\n\n\t60\tAP hostnamebuilt-in\tAccess Point\tAccess Point(access_point)\t\nHost: /^ap[-_]|^wifi[-_]|^unifi[-_]|^ubnt[-_]/\n\t\n\n\n\t60\tPrinter hostnamebuilt-in\tStampante\tStampante(stampante)\t\nHost: /^printer[-_]|^print[-_]|^hp[-_]lj/\n\t\n\n\n\t60\tCamera hostnamebuilt-in\tTelecamera\tTelecamera(telecamera)\t\nHost: /^cam[-_]|^ipcam[-_]|^nvr[-_]|^dvr[-_]/\n\t\n\n\n\t60\tNAS hostnamebuilt-in\tNAS/Storage\tNAS / Storage(storage)\t\nHost: /^nas[-_]|^synology[-_]|^qnap[-_]/\n\t\n\n\n\t60\tSwitch hostnamebuilt-in\tSwitch\tSwitch(switch)\t\nHost: /^switch[-_]|^sw[-_]/\n\t\n\n\n\t60\tRouter hostnamebuilt-in\tRouter\tRouter(router)\t\nHost: /^router[-_]|^gw[-_]|^gateway[-_]/\n\t\n\n\n\t60\tHypervisor hostnamebuilt-in\tHypervisor\tHypervisor(hypervisor)\t\nHost: /^esxi[-_]|^proxmox[-_]|^pve[-_]/\n\t\n\n\n\t70\tSynology MACbuilt-in\tSynology DSM\tNAS / Storage(storage)\t\nMAC: /synology/\n\t\n\n\n\t70\tQNAP MACbuilt-in\tQNAP QTS\tNAS / Storage(storage)\t\nMAC: /qnap/\n\t\n\n\n\t70\tHikvision MACbuilt-in\tHikvision\tTelecamera(telecamera)\t\nMAC: /hikvision|hangzhou/\n\t\n\n\n\t70\tVM MACbuilt-in\tVM\tVM(vm)\t\nMAC: /vmware|proxmox\\s*server|microsoft\\s*virtual|hyper-v|qemu|xensource|oracle\\s*vm|red\\s*hat.*kvm/\n\t\n\n\n\t75\tApple MACbuilt-in\tClient Apple\tPC(workstation)\t\nMAC: /apple/\n\t\n\n\n\t90\tLinux generico (porte)built-in\tLinux generico\tServer(server_linux)\t\nTCP: 22\n\t\n\n\n\t95\tTTL Windowsbuilt-in\tWindows\tPC(workstation)\t\nTTL: 65–128\n\t\nRegole fingerprint → classificazione\nMappa manualmente il valore final_device del fingerprint (match esatto o contiene) sulla classificazione host. Le regole si applicano in ordine di priorità (numeri più bassi prima) e hanno priorità sulla mappa integrata. Dopo le modifiche, usa \"Ricalcola rete\" sulla rete o un nuovo scan per aggiornare gli host. Solo gli amministratori possono creare o modificare le regole.\nNuova regola\nAttiva\tPriorità\tMatch\tPattern\tClassificazione\tNote\t\nNessuna regola personalizzata. Aggiungine una per correggere errori di assegnazione automatica.",
+    "date": "2026-10-26T00:00:02.115Z"
+  },
+  {
+    "name": "pagina-settings-tab-jobs",
+    "route": "/settings?tab=jobs",
+    "actual": "http://127.0.0.1:3187/settings?tab=jobs",
+    "label": "pagina-settings-tab-jobs",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nImpostazioni\n\nConfigurazione sistema, sicurezza e profili di scansione\n\nv0.9.913\nIstanza\nUtenti\nScansione\nIdentificazione\nJob pianificati\nHTTPS\nModuli\nAlert sicurezza\nNotifiche\nAggiornamenti\nSistema\nJob schedulati\nNuovo job\nAttivo\tTipo\tRete\tIntervallo\tUltima esecuzione\tProssima esecuzione\t\n\nNessun job schedulato",
+    "date": "2026-10-26T00:00:04.385Z"
+  },
+  {
+    "name": "pagina-settings-tab-https",
+    "route": "/settings?tab=https",
+    "actual": "http://127.0.0.1:3187/settings?tab=https",
+    "label": "pagina-settings-tab-https",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nImpostazioni\n\nConfigurazione sistema, sicurezza e profili di scansione\n\nv0.9.913\nIstanza\nUtenti\nScansione\nIdentificazione\nJob pianificati\nHTTPS\nModuli\nAlert sicurezza\nNotifiche\nAggiornamenti\nSistema\nConfigurazione HTTPS\nGestisci il certificato SSL/TLS per l'accesso sicuro al sistema.\n\nHTTPS non configurato\n\nGenera certificato self-signed\nDominio / IP\nValidità (giorni)\nGenera certificato\nImporta certificato esterno\nCertificato (PEM)\nChiave privata (PEM)\nImporta certificato",
+    "date": "2026-10-26T00:00:06.664Z"
+  },
+  {
+    "name": "pagina-settings-tab-alert-sicurezza",
+    "route": "/settings?tab=alert-sicurezza",
+    "actual": "http://127.0.0.1:3187/settings?tab=alert-sicurezza",
+    "label": "pagina-settings-tab-alert-sicurezza",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nImpostazioni\n\nConfigurazione sistema, sicurezza e profili di scansione\n\nv0.9.913\nIstanza\nUtenti\nScansione\nIdentificazione\nJob pianificati\nHTTPS\nModuli\nAlert sicurezza\nNotifiche\nAggiornamenti\nSistema\n\nCosa considerare un attacco e cosa no. Le impostazioni di invio (email, webhook, riepiloghi) stanno nel tab Notifiche.\n\nReti e account nostri\n\nQuello che parte da noi non è un attacco. Gli IP dell'appliance e gli account delle credenziali configurate vengono riconosciuti da soli: qui si aggiunge ciò che il sistema non può dedurre — reti aziendali, cloud, altri collector. Senza, le nostre sonde e le nostre sedi compaiono fra gli attaccanti.\n\nIP e reti nostri\n\nIndirizzi singoli o reti in notazione CIDR, separati da virgola. Una rete scritta a partire da un host viene normalizzata: 51.89.15.25/29 vale .24–.31. Reti più ampie di 1024 indirizzi vengono ignorate.\n\nAccount di servizio nostri\n\nRiconosciuti in qualunque forma: \"DOMINIO\\utente\" e \"utente@dominio\" valgono come \"utente\".\n\nRegole degli apparati di rete\n\nAlcuni decoder di apparati (MikroTik, firewall, VPN) non marcano i propri eventi come fallimenti di autenticazione: hanno solo il gruppo del produttore. Senza indicare gli ID delle loro regole, i tentativi falliti su quegli apparati restano invisibili.\n\nID regole da raccogliere\n\nGli ID sono specifici della tua installazione Wazuh, non del prodotto: si leggono da /var/ossec/etc/rules/local_rules.xml. Il rimedio più duraturo è aggiungere <group>authentication_failed</group> a quelle regole: così vengono riconosciute da sole, qui e altrove.\n\nConservazione\nConservazione degli eventi\n30 giorni\ndi serie\ncambia da Opzioni ›\n\nVale solo per gli eventi presi in carico. Quelli ancora aperti non vengono mai cancellati, per quanto vecchi siano.\n\nSalva",
+    "date": "2026-10-26T00:00:08.926Z"
+  },
+  {
+    "name": "pagina-settings-tab-notifiche",
+    "route": "/settings?tab=notifiche",
+    "actual": "http://127.0.0.1:3187/settings?tab=notifiche",
+    "label": "pagina-settings-tab-notifiche",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nImpostazioni\n\nConfigurazione sistema, sicurezza e profili di scansione\n\nv0.9.913\nIstanza\nUtenti\nScansione\nIdentificazione\nJob pianificati\nHTTPS\nModuli\nAlert sicurezza\nNotifiche\nAggiornamenti\nSistema\n\nInvio degli alert di sicurezza via email e webhook. Le categorie gravi partono subito; tutto il resto viene raggruppato in un riepilogo periodico.\n\nStato\nNotifiche\nSPENTA\nspento\ncambia da Opzioni ›\n\ngli allarmi restano solo nella pagina\n\nEmail (SMTP)\nCanale email\nSPENTA\nspento\ncambia da Opzioni ›\nServer SMTP\nPorta\nTLS implicito (porta 465)\nUtente\nPassword\nMittente\nDestinatari\nWebhook\nCanale webhook\nSPENTA\nspento\ncambia da Opzioni ›\nURL\nHeader Authorization (opzionale)\nQuando notificare\nLivello per invio immediato\n12\ndi serie\ncambia da Opzioni ›\nCategorie con invio immediato\n2 categorie\ndi serie\ncambia da Opzioni ›\nRiepilogo ogni\n60 minuti\ndi serie\ncambia da Opzioni ›\nSalva\nInvia notifica di prova",
+    "date": "2026-10-26T00:00:11.205Z"
+  },
+  {
+    "name": "pagina-settings-tab-aggiornamenti",
+    "route": "/settings?tab=aggiornamenti",
+    "actual": "http://127.0.0.1:3187/settings?tab=aggiornamenti",
+    "label": "pagina-settings-tab-aggiornamenti",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nImpostazioni\n\nConfigurazione sistema, sicurezza e profili di scansione\n\nv0.9.913\nIstanza\nUtenti\nScansione\nIdentificazione\nJob pianificati\nHTTPS\nModuli\nAlert sicurezza\nNotifiche\nAggiornamenti\nSistema\nAggiornamenti\n\nStato versione installata, canale di aggiornamento e applicazione manuale.\n\nRicontrolla\nBranch fuori dal canale configurato\n\nIl branch git attuale è HEAD, mentre il canale configurato pretende main.\n\nProbabile causa: una sessione di sviluppo precedente ha lasciato l'appliance su un feature branch. L'aggiornamento successivo riallinea l'appliance al canale configurato (reset hard sui tracked).\n\nRiallinea al canale Stable (main)\nVersione installata\nVersione applicativa attualmente in esecuzione sull'appliance.\nINSTALLATA\nv0.9.913\nDISPONIBILE SU STABLE (MAIN)\nv0.9.873\nULTIMO CONTROLLO\n26/10/2026, 01:00:11\nChangelog\nCommit più recenti sul canale corrente.\npromote: dev → main (v0.9.873: letture degli apparati accese di serie, collector, invio a DA-Vul-can)\nTASKS: letture accese di serie verificate su 70151\nrelease: v0.9.873\nLetture degli apparati accese di serie (ADR 0031)\nrelease: v0.9.872\nStato dell'aggiornamento\nOgni aggiornamento (dal timer o da «Aggiorna ora») costruisce in una cartella separata e passa alla build nuova solo se l'app risponde dopo il riavvio; altrimenti torna alla versione di prima.\nCODICE SCARICATO\n20866a19\nAVVIATO CON SALUTE BUONA\n—\nULTIMO CONTROLLO\n—\n\nQuesta istanza non gira come servizio di systemd: «Aggiorna ora» non è disponibile, sul server si usa bash scripts/update.sh --restart.\n\nCanale aggiornamenti\n\nSceglie da quale branch GitHub il timer auto-update tira il codice. Stable (main) è consigliato in produzione; Dev (dev) per server di test.\n\nStable (main)\nattivo\n\nProduzione. Riceve solo le promote esplicite. Sicuro per i clienti.\n\nDev (dev)\n\nRiceve ogni push di sviluppo. Solo deployment di test.\n\nBranch git locale: HEAD\nDA_INVENT_BRANCH: main\n.env.local scrivibile: sì\nPromuovi dev → main\n\nPubblica gli aggiornamenti di sviluppo in produzione. Tutti i clienti su canale Stable li riceveranno al prossimo auto-update.\n\nToken GitHub: non configurato — necessario per il push autenticato verso main\n\n262 commit di dev non in main\n·\nmain: 8566296\ndev: 76b1519\nMostra commit\nPromuovi dev → main\nConfigura token GitHub",
+    "date": "2026-10-26T00:00:15.106Z"
+  },
+  {
+    "name": "pagina-settings-tab-sistema",
+    "route": "/settings?tab=sistema",
+    "actual": "http://127.0.0.1:3187/settings?tab=sistema",
+    "label": "pagina-settings-tab-sistema",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nImpostazioni\n\nConfigurazione sistema, sicurezza e profili di scansione\n\nv0.9.913\nIstanza\nUtenti\nScansione\nIdentificazione\nJob pianificati\nHTTPS\nModuli\nAlert sicurezza\nNotifiche\nAggiornamenti\nSistema\nURL pubblico dell'hub\nIndirizzo con cui le macchine dei clienti raggiungono questo hub (script d'installazione dell'agente d'inventario). Vuoto: si usa l'indirizzo da cui è aperta la pagina. Effettivo: —\nURL pubblico\n\nSchema + host + (eventuale porta). Funziona da qualunque rete raggiunga l'URL.\n\nSalva\nConfigurazione guidata\nRiapre i passaggi del primo avvio (credenziali, router, DNS, Active Directory, prima subnet) dal punto in cui li avevi lasciati. I dati già salvati non vengono cancellati.\nApri wizard di configurazione\nPulizia degli host assenti\nHost offline da oltre 60 giorni e vecchi IP di un MAC che ha cambiato indirizzo. Gli archiviati spariscono da liste, conteggi e mappa; si recuperano per 90 giorni, poi si cancellano.\nPulizia notturna degli host assenti\nSPENTA\nspenta\ncambia da Opzioni ›\n\nspenta\n\nAssenza prima dell'archivio\n60 giorni\ndi serie\ncambia da Opzioni ›\nArchivio prima della cancellazione\n90 giorni\ndi serie\ncambia da Opzioni ›\nMostra anteprima\nArchivio (0)\n\nNessun host in archivio.\n\nAcquisizione modulare (anteprima)\n\nAcceso, «Aggiorna» nella scheda legge con un collector gli apparati che ne hanno uno (HP ProCurve e Comware, QNAP QSS, VMware ESXi, NetApp ONTAP), con le credenziali già assegnate, e ne popola identità, porte e vicini: una sezione parziale non toglie niente e un valore scritto a mano resta. Non scrive sugli apparati e non parte da sola.\n\n● Spento\n\nMDM (Headwind)\nOpzione\nConfigura la connessione al server Headwind MDM per importare i dispositivi mobili Android come host e sincronizzarne l'inventario.\nConfigura MDM\nDati e manutenzione\nEsporta dati o resetta la configurazione per un nuovo cliente. Il reset cancella i dati del cliente (reti, host, apparati, credenziali, AD, telefoni, Wazuh, vulnerabilità, topologia, inventario, job); restano le impostazioni, la configurazione dei moduli e gli utenti.\nEsporta host (CSV)\nBackup database\nReset per nuovo cliente",
+    "date": "2026-10-26T00:00:17.388Z"
+  },
+  {
+    "name": "modulo-edge",
+    "route": "/settings/moduli/edge",
+    "actual": "http://127.0.0.1:3187/settings/moduli/edge",
+    "label": "modulo-edge",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nModuli\nTutti i moduli\nSCANNER-EDGE — VULNERABILITY ASSESSMENT\nImporta JSON\nScanner-Edge (DA-Vul-can)\n\nImporta findings CVE dallo scanner-edge sulla LAN del cliente. Una sola istanza per appliance.\n\nAuto-disabilitato\nNome: Sonda dimostrativa non collegata\nURL: https://127.0.0.1:9\nUltimo sync: —\nFindings totali: 1\nHTTPS senza pin: nessuna protezione anti-MITM. Rimuovi e riconfigura su edge ≥ v0.1.176.\nRiattiva\nRimuovi\nScansioni & VLAN\n\nReti e sotto-interfacce VLAN da scansionare si gestiscono nella UI dell'edge.\n\nNessun URL per il browser: manca la voce dell'edge nella Launchpad e l'host pubblico dell'appliance. Apri la UI edge sulla porta 6443 del nodo DA-IPAM dalla LAN cliente.\n\nOnboarding DA-Vulcan\nConnessione inattiva (auto-disabilitato o disattivo)\n\nL'aggancio dell'edge all'hub (token, URL hub) si configura nella sua UI.\n\nApri /settings sulla UI edge (porta 6443) dalla LAN cliente.\n\nVerifica: API e apertura per il browser\nVerifica\n\nProva l'indirizzo che usa il browser, non solo l'API: certificato, nome, scadenza, login e riquadro.",
+    "date": "2026-10-26T00:00:19.598Z"
+  },
+  {
+    "name": "modulo-patch_management",
+    "route": "/settings/moduli/patch_management",
+    "actual": "http://127.0.0.1:3187/settings/moduli/patch_management",
+    "label": "modulo-patch_management",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nModuli\nTutti i moduli\nPATCH MANAGEMENT\nOpzione\nImporta JSON\nPatch Management CVE-driven\nInstallato\nLancia upgrade Chocolatey via WinRM guidati dalle vulnerabilità rilevate. Solo Windows, modalità interattiva.\nDisinstalla e cancella i dati…\nInstallato il 26/10/2026, 00:52:37\n\nInstalla Chocolatey automaticamente\n\nSugli host Windows con credenziale WinRM: appena la credenziale è salvata o verificata, e ogni notte per chi non ce l'ha. Dopo 3 tentativi notturni falliti l'host resta fermo finché non lo riprovi dalla sua pagina. Esiti nello storico delle patch.\n\nHost Windows con WinRM: 0 · installato 0 · da installare 0 · da ritentare 0 · fermi 0\n\nChocolatey automatico\nACCESA\nacceso\ncambia da Opzioni ›",
+    "date": "2026-10-26T00:00:21.807Z"
+  },
+  {
+    "name": "modulo-inventory_agent",
+    "route": "/settings/moduli/inventory_agent",
+    "actual": "http://127.0.0.1:3187/settings/moduli/inventory_agent",
+    "label": "modulo-inventory_agent",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nModuli\nTutti i moduli\nINVENTORY AGENT\nInventory Agent (GLPI push)\nNon installato\nGLPI Agent (solo task Inventory) → push JSON verso DA-IPAM. Nessun server GLPI né Wazuh.\nInstalla da Opzioni ›",
+    "date": "2026-10-26T00:00:24.012Z"
+  },
+  {
+    "name": "modulo-meshcentral",
+    "route": "/settings/moduli/meshcentral",
+    "actual": "http://127.0.0.1:3187/settings/moduli/meshcentral",
+    "label": "modulo-meshcentral",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nModuli\nTutti i moduli\nMESHCENTRAL — CONTROLLO REMOTO\nOpzione\nMeshCentral (controllo remoto)\nNon installato\nControllo remoto degli endpoint via MeshCentral co-locato sull'appliance. Configura URL, MeshID e service account; il login token e le credenziali admin sono cifrate at-rest e mai mostrate.\nInstalla modulo\n\nDesktop remoto senza agente (RDP e VNC)\n\nPer gli host senza agente MeshCentral con la 3389 o la 5900 aperte: la sessione la apre il server MeshCentral dell'appliance, senza installare niente sulla postazione.\n\nMeshCentral senza agente\nSPENTA\nspento\ncambia da Opzioni ›\nVerifica: API e apertura per il browser\nVerifica\n\nProva l'indirizzo che usa il browser, non solo l'API: certificato, nome, scadenza, login e riquadro.",
+    "date": "2026-10-26T00:00:26.244Z"
+  },
+  {
+    "name": "modulo-nis2_inventory",
+    "route": "/settings/moduli/nis2_inventory",
+    "actual": "http://127.0.0.1:3187/settings/moduli/nis2_inventory",
+    "label": "modulo-nis2_inventory",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nModuli\nTutti i moduli\nINVENTARIO NIS2\nInventario NIS2\nVoce di menu \"Servizi NIS2\" (anagrafica servizi/asset critici). Modulo nativo opzionale.\nInventario NIS2\nACCESA\nacceso\ncambia da Opzioni ›",
+    "date": "2026-10-26T00:00:28.493Z"
+  },
+  {
+    "name": "modulo-network_services",
+    "route": "/settings/moduli/network_services",
+    "actual": "http://127.0.0.1:3187/settings/moduli/network_services",
+    "label": "modulo-network_services",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nModuli\nTutti i moduli\nNETWORK SERVICES — DNS / DHCP / ADGUARD / UNBOUND\nImporta JSON\nNetwork Services bridge\nNon configurato\nBridge FastAPI (Unbound/AdGuard/PowerDNS/Kea). Gestione DNS/DHCP nativa in /network-services.\nURL bridge (HTTPS)\nBearer token\nTest connessione\nInstalla modulo",
+    "date": "2026-10-26T00:00:30.706Z"
+  },
+  {
+    "name": "modulo-zabbix",
+    "route": "/settings/moduli/zabbix",
+    "actual": "http://127.0.0.1:3187/settings/moduli/zabbix",
+    "label": "modulo-zabbix",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nModuli\nTutti i moduli\nZABBIX — PANNELLO IN SOLA LETTURA\nOpzione\nPannello Zabbix (sola lettura)\nHost, disponibilità, problemi e misure che il centro di monitoraggio conosce per questo cliente. Senza configurazione, o spento, nessuna richiesta parte verso il centro.\nIndirizzo del centro\n\nSolo https. Di norma l'indirizzo del centro sull'overlay NetBird.\n\nChiave di lettura\n\nCifrata nel database del cliente, non si rilegge.\n\nImpronta del certificato (facoltativa)\n\nVuota: certificato firmato da un'autorità fidata e col nome giusto. Con l'impronta: solo quel certificato. La verifica non si spegne.\n\nCodice cliente\n\nLe risposte per un altro codice sono un guasto («cliente errato»).\n\nNome del proxy di questa macchina (facoltativo)\nAcceso\nSalva",
+    "date": "2026-10-26T00:00:32.917Z"
+  },
+  {
+    "name": "modulo-unifi",
+    "route": "/settings/moduli/unifi",
+    "actual": "http://127.0.0.1:3187/settings/moduli/unifi",
+    "label": "modulo-unifi",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nModuli\nTutti i moduli\nCONTROLLER DI RETE\n\nI controller si gestiscono in Applicativi → Controller di rete.\n\nVerifica: API e apertura per il browser\nVerifica\n\nProva l'indirizzo che usa il browser, non solo l'API: certificato, nome, scadenza, login e riquadro.",
+    "date": "2026-10-26T00:00:35.165Z"
+  },
+  {
+    "name": "modulo-librenms",
+    "route": "/settings/moduli/librenms",
+    "actual": "http://127.0.0.1:3187/settings/moduli/librenms",
+    "label": "modulo-librenms",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nModuli\nTutti i moduli\nDocker non trovato su questo host.\nInstalla Docker automaticamente\nOppure installa manualmente e ricarica la pagina\nLIBRENMS\nImporta JSON\nLibreNMS\nMonitoring SNMP e metriche di rete. I grafici device sono embeddati in DA-IPAM; la dashboard completa si apre dal Launchpad o da qui.\nDisabilitato\nModalità\nDisabilitato\nSalva\nApparati e lettura dei dati\nLettura «LibreNMS (dati degli apparati)»: spenta · si cambia da «Dati della mappa»\n\n▲ La lettura è spenta: le schede degli oggetti non mostrano i dati di LibreNMS e le righe qui sotto possono essere vecchie.\n\nLettura per parte\nParte\tEsito\tRighe\tLetta il\tTentata il\nApparati\t\n–\nmai letta\t—\t—\t—\nPorte\t\n–\nmai letta\t—\t—\t—\nVicini\t\n–\nmai letta\t—\t—\t—\nVLAN\t\n–\nmai letta\t—\t—\t—\nMAC per porta\t\n–\nmai letta\t—\t—\t—\nARP\t\n–\nmai letta\t—\t—\t—\nSensori\t\n–\nmai letta\t—\t—\t—\nInventario\t\n–\nmai letta\t—\t—\t—\nVLAN per porta\t\n–\nnon disponibile nell'API di LibreNMS\t—\t—\t—\nMai interrogati 0 · in LibreNMS senza alcuna lettura\n\nNessuno.\n\nRifiutati da LibreNMS 0 · ultima prova\n\nNessuno.\n\nVisti come vicini 0 · si aggiungono da soli, 5 per giro, se l'SNMP risponde\n\nNessuno.\n\nCon SNMP verificato 0 · si aggiungono da soli, 5 per giro\n\nNessuno.\n\nEsclusi 0 · il giro non li aggiunge\n\nNessuno.\n\nVerifica: API e apertura per il browser\nVerifica\n\nProva l'indirizzo che usa il browser, non solo l'API: certificato, nome, scadenza, login e riquadro.",
+    "date": "2026-10-26T00:00:37.394Z"
+  },
+  {
+    "name": "modulo-graylog",
+    "route": "/settings/moduli/graylog",
+    "actual": "http://127.0.0.1:3187/settings/moduli/graylog",
+    "label": "modulo-graylog",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nModuli\nTutti i moduli\nDocker non trovato su questo host.\nInstalla Docker automaticamente\nOppure installa manualmente e ricarica la pagina\nGRAYLOG\nImporta JSON\nGraylog\nLog management completo (Windows/Linux/network).\nDisabilitato\nModalità\nDisabilitato\nSalva\nVerifica: API e apertura per il browser\nVerifica\n\nProva l'indirizzo che usa il browser, non solo l'API: certificato, nome, scadenza, login e riquadro.",
+    "date": "2026-10-26T00:00:39.604Z"
+  },
+  {
+    "name": "modulo-wazuh",
+    "route": "/settings/moduli/wazuh",
+    "actual": "http://127.0.0.1:3187/settings/moduli/wazuh",
+    "label": "modulo-wazuh",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nModuli\nTutti i moduli\nDocker non trovato su questo host.\nInstalla Docker automaticamente\nOppure installa manualmente e ricarica la pagina\nWAZUH SIEM\nOpzione\nImporta JSON\nWazuh (SIEM/HIDS)\n\nImporta agent, syscollector HW/OS, inventario software e CVE da Wazuh Manager + indexer OpenSearch.\n\nWazuh Manager (REST API · porta 55000)\nURL\nUsername\nPassword\nWazuh Indexer (OpenSearch · porta 9200 · CVE)\nURL (opzionale, solo se vuoi importare CVE)\nUsername\nPassword\nVerifica certificato TLS (lascia disattivato per Wazuh self-signed)\nTest connessione\nSalva\nEndpoint di stato repliche (cruscotto salute)\n\nServizio separato dal Manager Wazuh: espone lo stato dell'archivio immutabile e delle repliche. Il token è write-only — non viene mai ripopolato in lettura.\n\nEndpoint di stato\nURL\nToken\nImpronta certificato (opzionale)\nSalva\nVerifica\nSetup guidato — come creare gli utenti su Wazuh\nVerifica: API e apertura per il browser\nVerifica\n\nProva l'indirizzo che usa il browser, non solo l'API: certificato, nome, scadenza, login e riquadro.",
+    "date": "2026-10-26T00:00:41.817Z"
+  },
+  {
+    "name": "modulo-loki",
+    "route": "/settings/moduli/loki",
+    "actual": "http://127.0.0.1:3187/settings/moduli/loki",
+    "label": "modulo-loki",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nModuli\nTutti i moduli\nDocker non trovato su questo host.\nInstalla Docker automaticamente\nOppure installa manualmente e ricarica la pagina\nGrafana Loki\nLog management leggero (~512MB RAM). Raccolta syslog da device di rete e Linux.\nDisabilitato\nModalità\nDisabilitato\nSalva",
+    "date": "2026-10-26T00:00:44.021Z"
+  },
+  {
+    "name": "modulo-credenziali",
+    "route": "/settings/moduli/credenziali",
+    "actual": "http://127.0.0.1:3187/settings/moduli/credenziali",
+    "label": "modulo-credenziali",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nModuli\nTutti i moduli\nCREDENZIALI DI SISTEMA (VAULT)\n\nAccessi alla stack security (Wazuh, Graylog, LibreNMS, Proxmox, API token, …). Cifrate AES-GCM; reveal loggato in audit.\n\nAccessi & credenziali (vault cifrato)\n\nVault AES-GCM con URL, user, password/token e test connessione. Reveal loggato in audit. Solo admin può modificare.\n\nImporta legacy\nDedup\nAggiungi\n\nNessuna credenziale in vault.\n\nSetup rapido: crea i 5 placeholder standard (Wazuh Manager + Indexer, LibreNMS, Graylog, TrueNAS) e compila i secrets dopo via Modifica.\n\nCrea placeholder default\nImporta legacy\nAggiungi manuale",
+    "date": "2026-10-26T00:00:46.244Z"
+  },
+  {
+    "name": "tab-ad-0",
+    "route": "/active-directory",
+    "actual": "http://127.0.0.1:3187/active-directory",
+    "label": "Computer (2)",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSubnet\nDiscovery\nTopologia\nSoftware\nActive Directory\n\nCREDENZIALI\n\nCredenziali\nController di rete\n\nDIAGNOSTICA\n\nTabella ARP\nSorgenti DHCP\nScansioni\nIP esclusi\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nActive Directory\nGuida DC\nNuova integrazione\nIntegrazione:\nDominio dimostrativo (scollegato) (demo.invalid)\nDisabilitata\nModifica\nTest\nSincronizza\nComputer\n2\nUtenti\n2\nGruppi\n1\nDHCP Lease\n0\n\nWinRM non configurato\n\nUltima sync\n26/10/2026, 00:52:37\n\nok\n\nComputer (2)\nUtenti (2)\nGruppi (1)\nDHCP (0)\nHealth\nAttivi (90gg)\nSolo logon negli ultimi 90 giorni: 2 di 2\nNome\tDNS / IP\tOS\tOU\tUltimo logon\tStato\tCollegato\nPC-DEMO-1$\t\npc-demo-1.demo.invalid\n192.0.2.11\n\tWindows 11\t—\t26/10/2026, 00:52:37\t\n\t\nHost #3\nPC-DEMO-2$\t\npc-demo-2.demo.invalid\n192.0.2.12\n\tWindows 11\t—\t26/10/2026, 00:52:37\t\n\t\nHost #4",
+    "date": "2026-10-26T00:00:48.542Z"
+  },
+  {
+    "name": "tab-ad-1",
+    "route": "/active-directory",
+    "actual": "http://127.0.0.1:3187/active-directory",
+    "label": "Utenti (2)",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSubnet\nDiscovery\nTopologia\nSoftware\nActive Directory\n\nCREDENZIALI\n\nCredenziali\nController di rete\n\nDIAGNOSTICA\n\nTabella ARP\nSorgenti DHCP\nScansioni\nIP esclusi\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nActive Directory\nGuida DC\nNuova integrazione\nIntegrazione:\nDominio dimostrativo (scollegato) (demo.invalid)\nDisabilitata\nModifica\nTest\nSincronizza\nComputer\n2\nUtenti\n2\nGruppi\n1\nDHCP Lease\n0\n\nWinRM non configurato\n\nUltima sync\n26/10/2026, 00:52:37\n\nok\n\nComputer (2)\nUtenti (2)\nGruppi (1)\nDHCP (0)\nHealth\nAttivi (90gg)\nSolo logon negli ultimi 90 giorni: 2 di 2\nUsername\tNome\tEmail\tReparto / Ruolo\tTelefono\tOU\tUltimo logon\tStato\npersona1\tPersona Dimostrativa 1\tpersona1@example.invalid\t\nUfficio dimostrativo\nCollaboratore\n\t—\t—\t26/10/2026, 00:52:37\t\n\npersona2\tPersona Dimostrativa 2\tpersona2@example.invalid\t\nUfficio dimostrativo\nCollaboratore\n\t—\t—\t26/10/2026, 00:52:37\t",
+    "date": "2026-10-26T00:00:50.163Z"
+  },
+  {
+    "name": "tab-ad-2",
+    "route": "/active-directory",
+    "actual": "http://127.0.0.1:3187/active-directory",
+    "label": "Gruppi (1)",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSubnet\nDiscovery\nTopologia\nSoftware\nActive Directory\n\nCREDENZIALI\n\nCredenziali\nController di rete\n\nDIAGNOSTICA\n\nTabella ARP\nSorgenti DHCP\nScansioni\nIP esclusi\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nActive Directory\nGuida DC\nNuova integrazione\nIntegrazione:\nDominio dimostrativo (scollegato) (demo.invalid)\nDisabilitata\nModifica\nTest\nSincronizza\nComputer\n2\nUtenti\n2\nGruppi\n1\nDHCP Lease\n0\n\nWinRM non configurato\n\nUltima sync\n26/10/2026, 00:52:37\n\nok\n\nComputer (2)\nUtenti (2)\nGruppi (1)\nDHCP (0)\nHealth\nNome\tDisplay Name\tDescrizione\tTipo\nGruppo-Demo\tGruppo dimostrativo\t—\t—",
+    "date": "2026-10-26T00:00:51.791Z"
+  },
+  {
+    "name": "tab-ad-3",
+    "route": "/active-directory",
+    "actual": "http://127.0.0.1:3187/active-directory",
+    "label": "DHCP (0)",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSubnet\nDiscovery\nTopologia\nSoftware\nActive Directory\n\nCREDENZIALI\n\nCredenziali\nController di rete\n\nDIAGNOSTICA\n\nTabella ARP\nSorgenti DHCP\nScansioni\nIP esclusi\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nActive Directory\nGuida DC\nNuova integrazione\nIntegrazione:\nDominio dimostrativo (scollegato) (demo.invalid)\nDisabilitata\nModifica\nTest\nSincronizza\nComputer\n2\nUtenti\n2\nGruppi\n1\nDHCP Lease\n0\n\nWinRM non configurato\n\nUltima sync\n26/10/2026, 00:52:37\n\nok\n\nComputer (2)\nUtenti (2)\nGruppi (1)\nDHCP (0)\nHealth\n\nDHCP non configurato\n\nPer importare i lease DHCP da Windows Server, modifica l'integrazione e seleziona una credenziale WinRM.\n\nIl DC deve avere il ruolo DHCP Server e WinRM abilitato.",
+    "date": "2026-10-26T00:00:53.425Z"
+  },
+  {
+    "name": "tab-ad-4",
+    "route": "/active-directory",
+    "actual": "http://127.0.0.1:3187/active-directory",
+    "label": "Health",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSubnet\nDiscovery\nTopologia\nSoftware\nActive Directory\n\nCREDENZIALI\n\nCredenziali\nController di rete\n\nDIAGNOSTICA\n\nTabella ARP\nSorgenti DHCP\nScansioni\nIP esclusi\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nActive Directory\nGuida DC\nNuova integrazione\nIntegrazione:\nDominio dimostrativo (scollegato) (demo.invalid)\nDisabilitata\nModifica\nTest\nSincronizza\nComputer\n2\nUtenti\n2\nGruppi\n1\nDHCP Lease\n0\n\nWinRM non configurato\n\nUltima sync\n26/10/2026, 00:52:37\n\nok\n\nComputer (2)\nUtenti (2)\nGruppi (1)\nDHCP (0)\nHealth\n\nAD Health Domarc (LDAP) — non è PingCastle. Assessment basato su sync LDAP e regole Domarc; non esegue né sostituisce PingCastle.\n\nEsegui healthcheck\nEsporta JSON\nUltimo run: 26/10/2026, 00:52:37 · okvdemo\n\nInvio a DA-Vul-can dell'ultimo run ok: spento (nessun gettone dell'hub su questa istanza)\n\nGlobal\n10\nStale\n0\nPrivileged\n10\nTrust\n0\nAnomaly\n0\nFindings — cosa fare\n\nProblemi raggruppati per area, con spiegazione e azione consigliata. Espandi una riga per vedere gli oggetti coinvolti.\n\nMedio: 1\nPrivilegi e deleghe\n1\nDEMO-01\nMedio\n1 oggetto\nDEMO-01\n\nPerché: Finding rilevato dall’engine Domarc AD Health.\n\nCosa fare: Apri il dettaglio oggetti e valuta se la configurazione è intenzionale.",
+    "date": "2026-10-26T00:00:55.059Z"
+  },
+  {
+    "name": "tab-asset-0",
+    "route": "/inventory/3",
+    "actual": "http://127.0.0.1:3187/inventory/3",
+    "label": "Scheda NIS2",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nAsset\nSoftware\nAssegnatari\nAbbinamenti\nUbicazioni\nLicenze\nServizi NIS2\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nDEMO-003\n\nDEMO-003\n\nSync da discovery\nForce\nVista NIS2\nScheda NIS2\nServizi\nLicenze\nStorico\nIdentificazione\nAsset tag\nSerial number\nHostname\nNome / descrizione\nCategoria\nDesktop\nMarca\nModello\nUbicazione\nSede\nReparto\nUbicazione\nSede dimostrativa\nPosizione fisica\nIP\nVLAN\nResponsabilità\nBusiness owner\n— Nessuno\n\nChi ha la responsabilità decisionale (business).\n\nTechnical owner\n— Nessuno\n\nChi gestisce tecnicamente l'asset (IT/sysadmin).\n\nProprietario business (legacy / pre-NIS2)\nTecnico dimostrativo (tecnico@example.invalid)\nAssegnatario proposto dagli accessi\nCiclo di vita\nStato operativo\nAttivo\nFine supporto (EOL)\nData acquisto\nData installazione\nData dismissione\nSoftware e rete\nSistema operativo\nVersione OS\nFirmware\nMAC\nCompliance NIS2\nIn scope NIS2\nCategoria NIS2\n—\nCriticità\n—\n\nImpatto in caso di compromissione.\n\nDati trattati\n—\nClassificazione dati\nInterno\nUltimo audit\nUltima review NIS2\nMisure di protezione\nAntivirus / EDR\nCrittografia disco\nGestito da MDR\nSupporto rimovibile (USB / SD / disco esterno)\nChecklist protezione (NIS2 art. 21)\nBackup configurato\nUltimo test restore\nPatching automatico\nMFA su accessi admin\nLog centralizzati (SIEM)\nHardening baseline applicato\nDisaster recovery plan documentato\nIncident response procedurato\nNote e remediation\nSalva modifiche",
+    "date": "2026-10-26T00:00:58.677Z"
+  },
+  {
+    "name": "tab-asset-1",
+    "route": "/inventory/3",
+    "actual": "http://127.0.0.1:3187/inventory/3",
+    "label": "Servizi",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nAsset\nSoftware\nAssegnatari\nAbbinamenti\nUbicazioni\nLicenze\nServizi NIS2\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nDEMO-003\n\nDEMO-003\n\nSync da discovery\nForce\nVista NIS2\nScheda NIS2\nServizi\nLicenze\nStorico\nServizi che dipendono da questo asset\nNessun servizio collegato. Vai su /services e collega questo asset ai servizi pertinenti per abilitare l'impact analysis NIS2.\nSalva modifiche",
+    "date": "2026-10-26T00:01:00.300Z"
+  },
+  {
+    "name": "tab-asset-2",
+    "route": "/inventory/3",
+    "actual": "http://127.0.0.1:3187/inventory/3",
+    "label": "Licenze",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nAsset\nSoftware\nAssegnatari\nAbbinamenti\nUbicazioni\nLicenze\nServizi NIS2\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nDEMO-003\n\nDEMO-003\n\nSync da discovery\nForce\nVista NIS2\nScheda NIS2\nServizi\nLicenze\nStorico\nLicenze software assegnate\nAssegna licenza...\nLicenza\tAssegnato il\t\nSuite dimostrativa\t26/10/2026\t\nSalva modifiche",
+    "date": "2026-10-26T00:01:01.926Z"
+  },
+  {
+    "name": "tab-asset-3",
+    "route": "/inventory/3",
+    "actual": "http://127.0.0.1:3187/inventory/3",
+    "label": "Storico",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nAsset\nSoftware\nAssegnatari\nAbbinamenti\nUbicazioni\nLicenze\nServizi NIS2\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nDEMO-003\n\nDEMO-003\n\nSync da discovery\nForce\nVista NIS2\nScheda NIS2\nServizi\nLicenze\nStorico\nStorico modifiche (audit)\nData\tAzione\tCampo\tValore precedente\tNuovo valore\n26/10/2026, 00:52:37\tupdate\tasset_assignee_id\t\t1\nSalva modifiche",
+    "date": "2026-10-26T00:01:03.542Z"
+  },
+  {
+    "name": "tab-trunk-0",
+    "route": "/arp-table/trunk",
+    "actual": "http://127.0.0.1:3187/arp-table/trunk#sicurezza",
+    "label": "Sicurezza della rete✕ 11 allarmi · 1 esposizioni · 1 novità",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nVulnerabilità\nAlert sicurezza\nReti dal trunk\n1\nHealth Active Directory\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nReti dal trunk\n\nQuello che il sensore trunk vede in ascolto sulla porta collegata a tutte le VLAN del cliente: rilievi di sicurezza, VLAN, reti e indirizzi, senza leggere il router. Le scansioni restano sull'IP ufficiale dell'appliance.\n\nSonda trunk\nspento\nnon risponde\nAccendi in Opzioni\n✕\nLa sonda non risponde: né socket locale né Scanner-Edge configurato. Su questa macchina non è installata o è spenta; serve una seconda scheda di rete collegata alla porta trunk.\nSicurezza della rete\n✕ 1\n1 allarmi · 1 esposizioni · 1 novità\nVLAN e reti\n3 VLAN viste · 12 indirizzi IP\n\nALLARMI\n\n1\n✕ 1 gravi da prendere\n\nDHCP, IP contesi, indirizzi fuori rete\n\nESPOSIZIONI\n\n1\n1 con LLMNR/NetBIOS\n\ncome è fatta la rete, con cosa fare\n\nSICUREZZA DELLA RETE\n3\n\nQuello che si capisce ascoltando il trunk: allarmi, esposizioni e apparati sconosciuti\n\nALLARMI · cose successe, da guardare subito\n\n✕\nServer DHCP non previsto\n1\n\nESPOSIZIONI · come è fatta la rete, con cosa fare\n\n▲\nUsa LLMNR o NetBIOS\n1\n\nNOVITÀ · apparati e VLAN che non conosciamo\n\n●\nApparato non in inventario\n1\nTutti\nDa prendere in carico\nGr.\tRilievo\tVLAN\tIndirizzo IP\tMAC e produttore\tUltimo visto\tPresa in carico\n✕\t\nServer DHCP non previsto nella VLAN ospiti\nServer DHCP non previsto\n\tVLAN 30\t203.0.113.99\t—\t8 min fa\tPrendi in carico\n▲\t\nPC-AMMINISTRAZIONE usa LLMNR per risolvere i nomi\nUsa LLMNR o NetBIOS\n\tVLAN 10\t192.0.2.11\t—\t8 min fa\tPrendi in carico\n●\t\nOggetto da identificare osservato sulla rete ospiti\nApparato non in inventario\n\tVLAN 30\t203.0.113.88\t—\t8 min fa\tPrendi in carico\n✕\ngrave: conta nel numero rosso del menu\n▲\nda controllare\n●\nda sapere\nPrecedenti\n1–3 di 3\nSuccessivi\nScegli un tipo di rilievo per filtrare l'elenco e leggere cosa fare.",
+    "date": "2026-10-26T00:01:05.843Z"
+  },
+  {
+    "name": "tab-trunk-1",
+    "route": "/arp-table/trunk",
+    "actual": "http://127.0.0.1:3187/arp-table/trunk#reti",
+    "label": "VLAN e reti3 VLAN viste · 12 indirizzi IP",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nVulnerabilità\nAlert sicurezza\nReti dal trunk\n1\nHealth Active Directory\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nReti dal trunk\n\nQuello che il sensore trunk vede in ascolto sulla porta collegata a tutte le VLAN del cliente: rilievi di sicurezza, VLAN, reti e indirizzi, senza leggere il router. Le scansioni restano sull'IP ufficiale dell'appliance.\n\nSonda trunk\nspento\nnon risponde\nAccendi in Opzioni\n✕\nLa sonda non risponde: né socket locale né Scanner-Edge configurato. Su questa macchina non è installata o è spenta; serve una seconda scheda di rete collegata alla porta trunk.\nSicurezza della rete\n✕ 1\n1 allarmi · 1 esposizioni · 1 novità\nVLAN e reti\n3 VLAN viste · 12 indirizzi IP\n\nVLAN VISTE\n\n3\n0 non dichiarate\n\n0 dichiarate e mai viste\n\nINDIRIZZI IP\n\n12\n0 silenziosi\n\n+12 nuovi in 7 giorni, senza leggere il router\n\n1. VLAN VISTE SUL TRUNK\n3\n\nScegli una VLAN: sotto le sue reti\n\nTutte\nVLAN 10\n5 IP\n192.0.2.0/24\nVLAN 20\n4 IP\n198.51.100.0/24\nVLAN 30\n3 IP\n203.0.113.0/24\nIP in ascolto\nIP silenziosi\nbordo tratteggiato = dichiarata ma mai vista\n2. RETI\n3\n\nUna voce per rete, con la sua maschera · 3 in DA-IPAM, da 3 blocchi visti\n\n192.0.2.0/24\n✓ DHCP\nVLAN 10 · 5 IP · gw 192.0.2.1\n198.51.100.0/24\n✓ DHCP\nVLAN 20 · 4 IP · gw 198.51.100.1\n203.0.113.0/24\n✓ DHCP\nVLAN 30 · 3 IP · gw 203.0.113.1\n3. DETTAGLIO DELLA RETE\n—\n\nScegli una rete a sinistra per vedere gateway, crescita e occupazione.\n\n4. INDIRIZZI IP E MAC\n12\n\nOgni indirizzo visto sul trunk, con il produttore della scheda e come è stato trovato\n\nTutti\n● In ascolto\n▲ Silenziosi\n◆ Confermati\nIndirizzo IP\tMAC\tProduttore\tVLAN · rete\tCome è stato trovato\tNome e protocolli\tUltimo visto\n203.0.113.88\t02:00:00:00:01:0c\tsconosciuto\tVLAN 30 · 203.0.113.0/24\t● visto in ascolto\t\nOGGETTO-DA-IDENTIFICARE\narp\ndhcp\n\t8 min fa\n203.0.113.45\t02:00:00:00:01:0b\tsconosciuto\tVLAN 30 · 203.0.113.0/24\t● visto in ascolto\t\nCAM-INGRESSO\narp\ndhcp\n\t8 min fa\n203.0.113.12\t02:00:00:00:01:0a\tsconosciuto\tVLAN 30 · 203.0.113.0/24\t● visto in ascolto\t\nAP-OSPITI\narp\ndhcp\n\t8 min fa\n198.51.100.40\t02:00:00:00:01:09\tsconosciuto\tVLAN 20 · 198.51.100.0/24\t● visto in ascolto\t\nVM-GESTIONALE\narp\ndhcp\n\t8 min fa\n198.51.100.25\t02:00:00:00:01:08\tsconosciuto\tVLAN 20 · 198.51.100.0/24\t● visto in ascolto\t\nNAS-BACKUP\narp\ndhcp\n\t8 min fa\n198.51.100.20\t02:00:00:00:01:07\tsconosciuto\tVLAN 20 · 198.51.100.0/24\t● visto in ascolto\t\nSRV-DOMINIO\narp\ndhcp\n\t8 min fa\n198.51.100.10\t02:00:00:00:01:06\tsconosciuto\tVLAN 20 · 198.51.100.0/24\t● visto in ascolto\t\nHV-DEMO\narp\ndhcp\n\t8 min fa\n192.0.2.30\t02:00:00:00:01:05\tsconosciuto\tVLAN 10 · 192.0.2.0/24\t◆ ascolto + giro ARP\t\nPRINT-UFFICI\narp\ndhcp\n\t8 min fa\n192.0.2.12\t02:00:00:00:01:04\tsconosciuto\tVLAN 10 · 192.0.2.0/24\t● visto in ascolto\t\nNB-COMMERCIALE\narp\ndhcp\n\t8 min fa\n192.0.2.11\t02:00:00:00:01:03\tsconosciuto\tVLAN 10 · 192.0.2.0/24\t● visto in ascolto\t\nPC-AMMINISTRAZIONE\ndhcp\nllmnr\n\t8 min fa\n192.0.2.2\t02:00:00:00:01:02\tsconosciuto\tVLAN 10 · 192.0.2.0/24\t● visto in ascolto\t\nSW-ACCESSO\narp\ndhcp\n\t8 min fa\n192.0.2.1\nGW\n\t02:00:00:00:01:01\tsconosciuto\tVLAN 10 · 192.0.2.0/24\t● visto in ascolto\t\nGW-UFFICI\narp\ndhcp\n\t8 min fa\n● visto in ascolto\n▲ silenzioso, trovato solo col giro ARP\n◆ visto e confermato\nGW? IP più cercato\nPrecedenti\n1–12 di 12\nSuccessivi",
+    "date": "2026-10-26T00:01:07.483Z"
+  },
+  {
+    "name": "tab-asset-esteso-0",
+    "route": "/inventory/3",
+    "actual": "http://127.0.0.1:3187/inventory/3",
+    "label": "Identificazione",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nAsset\nSoftware\nAssegnatari\nAbbinamenti\nUbicazioni\nLicenze\nServizi NIS2\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nDEMO-003\n\nDEMO-003\n\nSync da discovery\nForce\nVista NIS2\nIdentificazione\nUbicazione\nResponsabilità\nCiclo vita\nTecnico\nCompliance\nServizi\nLicenze\nStorico\nEconomico\nSupporto\nIdentificazione asset\nAsset Tag\nSerial Number\nHostname\nNome prodotto\nCategoria\nDesktop\nMarca\nModello\nSalva modifiche",
+    "date": "2026-10-26T00:03:01.189Z"
+  },
+  {
+    "name": "tab-asset-esteso-1",
+    "route": "/inventory/3",
+    "actual": "http://127.0.0.1:3187/inventory/3",
+    "label": "Ubicazione",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nAsset\nSoftware\nAssegnatari\nAbbinamenti\nUbicazioni\nLicenze\nServizi NIS2\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nDEMO-003\n\nDEMO-003\n\nSync da discovery\nForce\nVista NIS2\nIdentificazione\nUbicazione\nResponsabilità\nCiclo vita\nTecnico\nCompliance\nServizi\nLicenze\nStorico\nEconomico\nSupporto\nUbicazione\nSede\nReparto\nUbicazione\nSede dimostrativa\nPosizione fisica\nSalva modifiche",
+    "date": "2026-10-26T00:03:02.828Z"
+  },
+  {
+    "name": "tab-asset-esteso-2",
+    "route": "/inventory/3",
+    "actual": "http://127.0.0.1:3187/inventory/3",
+    "label": "Responsabilità",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nAsset\nSoftware\nAssegnatari\nAbbinamenti\nUbicazioni\nLicenze\nServizi NIS2\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nDEMO-003\n\nDEMO-003\n\nSync da discovery\nForce\nVista NIS2\nIdentificazione\nUbicazione\nResponsabilità\nCiclo vita\nTecnico\nCompliance\nServizi\nLicenze\nStorico\nEconomico\nSupporto\nAssegnatario\nAssegnato a\nTecnico dimostrativo (tecnico@example.invalid)\nSalva modifiche",
+    "date": "2026-10-26T00:03:04.457Z"
+  },
+  {
+    "name": "tab-asset-esteso-3",
+    "route": "/inventory/3",
+    "actual": "http://127.0.0.1:3187/inventory/3",
+    "label": "Ciclo vita",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nAsset\nSoftware\nAssegnatari\nAbbinamenti\nUbicazioni\nLicenze\nServizi NIS2\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nDEMO-003\n\nDEMO-003\n\nSync da discovery\nForce\nVista NIS2\nIdentificazione\nUbicazione\nResponsabilità\nCiclo vita\nTecnico\nCompliance\nServizi\nLicenze\nStorico\nEconomico\nSupporto\nCiclo di vita\nStato\nAttivo\nFine garanzia\nFine supporto (EOL)\nSalva modifiche",
+    "date": "2026-10-26T00:03:06.101Z"
+  },
+  {
+    "name": "tab-asset-esteso-4",
+    "route": "/inventory/3",
+    "actual": "http://127.0.0.1:3187/inventory/3",
+    "label": "Tecnico",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nAsset\nSoftware\nAssegnatari\nAbbinamenti\nUbicazioni\nLicenze\nServizi NIS2\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nDEMO-003\n\nDEMO-003\n\nSync da discovery\nForce\nVista NIS2\nIdentificazione\nUbicazione\nResponsabilità\nCiclo vita\nTecnico\nCompliance\nServizi\nLicenze\nStorico\nEconomico\nSupporto\nSpecifiche tecniche\nCPU\nRAM (GB)\nStorage (GB)\nTipo storage\n—\nSistema operativo\nVersione OS / Kernel\nFirmware / Versione\nIP\nMAC\nSalva modifiche",
+    "date": "2026-10-26T00:03:07.732Z"
+  },
+  {
+    "name": "tab-asset-esteso-5",
+    "route": "/inventory/3",
+    "actual": "http://127.0.0.1:3187/inventory/3",
+    "label": "Compliance",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nAsset\nSoftware\nAssegnatari\nAbbinamenti\nUbicazioni\nLicenze\nServizi NIS2\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nDEMO-003\n\nDEMO-003\n\nSync da discovery\nForce\nVista NIS2\nIdentificazione\nUbicazione\nResponsabilità\nCiclo vita\nTecnico\nCompliance\nServizi\nLicenze\nStorico\nEconomico\nSupporto\nCompliance GDPR / NIS2\nIn scope GDPR\nIn scope NIS2\nClassificazione dati\nInterno\nUltimo audit\nSalva modifiche",
+    "date": "2026-10-26T00:03:09.358Z"
+  }
+]

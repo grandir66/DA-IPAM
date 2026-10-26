@@ -83,7 +83,7 @@
       "id": "copertura",
       "group": "Capire il prodotto",
       "title": "Copertura, lacune e stati",
-      "lead": "La prima edizione era una panoramica e lasciava aree senza dettaglio. Questa matrice censisce tutte le pagine del commit e distingue documentazione, immagini e reindirizzamenti.",
+      "lead": "Il censimento collega le 66 pagine alle schede funzionali e alle immagini. Gli stati condizionali restano distinti dalle funzioni osservate con dati.",
       "purpose": "Rendere verificabile cosa è stato trattato e cosa resta da acquisire, senza dichiarare completa una guida parziale.",
       "route": "Tutte le pagine, tab interne e varianti",
       "steps": [
@@ -122,15 +122,15 @@
           "text": "Le catture disponibili sono indicate voce per voce. Un testo verificato nel codice non viene contato come prova della schermata."
         },
         {
-          "title": "Blocco delle nuove catture",
-          "text": "Due configurazioni del laboratorio hanno raggiunto la soglia di riavvio della compilazione Next. Nessun terzo tentativo locale: le immagini mancanti restano dichiarate."
+          "title": "Demo dedicata sul mini",
+          "text": "Acquisite pagine e varianti con build ottimizzata e dati sintetici. Gli stati che richiedono servizi esterni restano dichiarati."
         }
       ],
-      "limit": "Questa versione corregge la copertura documentale. Non dichiara chiusa la copertura delle schermate e non simula i servizi esterni.",
+      "limit": "La copertura del sorgente e della UI non è un collaudo completo del prodotto. DNS/DHCP gestiti e console esterne richiedono un laboratorio integrato; il ramo legacy della vecchia scheda apparato resta condizionale.",
       "image": null,
       "markers": [],
       "decision": null,
-      "status": "Guida in completamento · catture ancora parziali",
+      "status": "Censimento e catture ampliati · prerequisiti espliciti",
       "sources": [
         "copertura.json",
         "VERIFICA.md"
@@ -666,8 +666,8 @@
           "text": "Job dedicato ogni due minuti quando acceso e raggiungibile, con esito separato dai dati conservati."
         }
       ],
-      "limit": "Dati dimostrativi inseriti nell’archivio: qui la sonda è scollegata. Il trunk non rende automaticamente visibile tutto l’unicast; la serie prima/ultima vista non è una misura esatta di uptime. La vista VLAN/reti è spiegata dallo schema: la cattura dedicata non è inclusa perché non rappresentava la scheda corretta.",
-      "image": null,
+      "limit": "Entrambe le tab sono acquisite con osservazioni sintetiche; sensore scollegato. Il trunk non rende automaticamente visibile tutto il traffico unicast e prima/ultima vista non misurano esattamente l’uptime.",
+      "image": "tab-trunk-1",
       "markers": [],
       "decision": {
         "question": "La maschera è affidabile?",
@@ -729,27 +729,8 @@
         }
       ],
       "limit": "I tre esempi visibili sono sintetici. La presa in carico non prova che la causa sia risolta. Le otto regole non costituiscono un IDS completo o un’analisi dei contenuti.",
-      "image": "trunk-sicurezza",
-      "markers": [
-        {
-          "x": 10,
-          "y": 43,
-          "title": "Contatore di menu",
-          "text": "Richiama gli allarmi gravi da prendere in carico."
-        },
-        {
-          "x": 49,
-          "y": 52,
-          "title": "Categorie del rilievo",
-          "text": "Allarmi, esposizioni e novità aiutano a leggere il tipo di azione richiesta."
-        },
-        {
-          "x": 94,
-          "y": 71,
-          "title": "Presa in carico",
-          "text": "Registra l’operatore; la verifica della risoluzione resta una fase distinta."
-        }
-      ],
+      "image": "tab-trunk-0",
+      "markers": [],
       "decision": null,
       "status": "Evoluzione recente · esempi sintetici",
       "sources": [
@@ -805,28 +786,15 @@
           "text": "Registro di consultazioni, esportazioni e scaricamenti del key file."
         }
       ],
-      "limit": "La schermata mostra correttamente il vault spento nel laboratorio: i pulsanti di export non sono rappresentati come attivi. Il codice verificato attesta export, non import o sincronizzazione bidirezionale KDBX.",
-      "image": "vault",
-      "markers": [
-        {
-          "x": 36,
-          "y": 18,
-          "title": "Stato del backend",
-          "text": "Locale e OpenBao sono distinti; l’attivazione dipende dall’installazione."
-        },
-        {
-          "x": 41,
-          "y": 29,
-          "title": "Registro di consultazione",
-          "text": "Qui vengono tracciate le operazioni previste sul vault."
-        }
-      ],
+      "limit": "Archivio sintetico locale: sblocco ed export KDBX/key file riusciti. OpenBao e TPM non configurati. Non si tratta di import o sincronizzazione bidirezionale KeePass.",
+      "image": "vault-sbloccato",
+      "markers": [],
       "decision": {
         "question": "Il vault necessario è aperto?",
         "yes": "Procedere entro i permessi previsti.",
         "no": "Sbloccare o risolvere il backend; non continuare come se i segreti fossero disponibili."
       },
-      "status": "Evoluzione recente · vault spento nel laboratorio",
+      "status": "Vault locale dimostrativo · export verificato via API",
       "sources": [
         "src/lib/vault/keepass.ts",
         "src/lib/vault/mostra.ts",
@@ -1344,7 +1312,7 @@
           "text": "Le modifiche riguardano il perimetro; la rimozione ha effetti sui dati collegati."
         }
       ],
-      "limit": "Descrizione verificata nel sorgente. La cattura dedicata e la prova del comportamento non sono ancora state completate per questa vista.",
+      "limit": "Cattura reale della demo con dati sintetici; non attesta il collaudo delle azioni operative o dei servizi esterni.",
       "image": "subnet",
       "markers": [],
       "decision": null,
@@ -1480,7 +1448,7 @@
           "text": "Collegamenti e azioni contestuali ai moduli, non prova che ogni oggetto sia già collegato."
         }
       ],
-      "limit": "Descrizione verificata nel sorgente. La cattura dedicata e la prova del comportamento non sono ancora state completate per questa vista.",
+      "limit": "Cattura reale della demo con dati sintetici; non attesta il collaudo delle azioni operative o dei servizi esterni.",
       "image": "discovery",
       "markers": [],
       "decision": null,
@@ -1625,7 +1593,7 @@
       "lead": "Ricostruire le associazioni MAC–IP e leggere i cambiamenti di indirizzo.",
       "purpose": "Ricostruire le associazioni MAC–IP e leggere i cambiamenti di indirizzo.",
       "route": "/arp-table",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Sorgente verificato · cattura della UI con dati sintetici",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -1667,7 +1635,7 @@
         }
       ],
       "limit": "Una voce in archivio non equivale a raggiungibilità attuale.",
-      "image": null,
+      "image": "pagina-arp-table",
       "markers": [],
       "decision": null,
       "sources": [
@@ -1683,7 +1651,7 @@
       "lead": "Leggere i lease dei sistemi esistenti senza sostituirne il servizio.",
       "purpose": "Leggere i lease dei sistemi esistenti senza sostituirne il servizio.",
       "route": "/dhcp/sources",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Sorgente verificato · cattura della UI con dati sintetici",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -1725,7 +1693,7 @@
         }
       ],
       "limit": "Diverso dalla gestione Kea in Network Services.",
-      "image": null,
+      "image": "pagina-dhcp-sources",
       "markers": [],
       "decision": null,
       "sources": [
@@ -1741,7 +1709,7 @@
       "lead": "Capire cosa è stato eseguito e se la raccolta è riuscita.",
       "purpose": "Capire cosa è stato eseguito e se la raccolta è riuscita.",
       "route": "/scans",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Sorgente verificato · cattura della UI con dati sintetici",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -1778,8 +1746,8 @@
           "text": "La pagina può mostrare una finestra dello storico, non tutte le righe archiviate."
         }
       ],
-      "limit": "Descrizione verificata nel sorgente. La cattura dedicata e la prova del comportamento non sono ancora state completate per questa vista.",
-      "image": null,
+      "limit": "La cattura documenta la resa della UI nella demo. Le operazioni di scansione, aggiornamento o modifica dei sistemi esterni non sono state eseguite.",
+      "image": "pagina-scans",
       "markers": [],
       "decision": null,
       "sources": [
@@ -1795,7 +1763,7 @@
       "lead": "Dichiarare indirizzi che non devono essere trattati nei flussi di scansione che applicano le esclusioni.",
       "purpose": "Dichiarare indirizzi che non devono essere trattati nei flussi di scansione che applicano le esclusioni.",
       "route": "/excluded-ips",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Sorgente verificato · cattura della UI con dati sintetici",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -1832,8 +1800,8 @@
           "text": "L’esclusione riguarda i motori che la rispettano, non cancella necessariamente osservazioni da altre sorgenti."
         }
       ],
-      "limit": "Descrizione verificata nel sorgente. La cattura dedicata e la prova del comportamento non sono ancora state completate per questa vista.",
-      "image": null,
+      "limit": "La cattura documenta la resa della UI nella demo. Le operazioni di scansione, aggiornamento o modifica dei sistemi esterni non sono state eseguite.",
+      "image": "pagina-excluded-ips",
       "markers": [],
       "decision": null,
       "sources": [
@@ -1849,7 +1817,7 @@
       "lead": "Tenere d’occhio gli oggetti marcati come importanti, separandoli dal resto del discovery.",
       "purpose": "Tenere d’occhio gli oggetti marcati come importanti, separandoli dal resto del discovery.",
       "route": "/monitoring/known-hosts",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Sorgente verificato · cattura della UI con dati sintetici",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -1886,8 +1854,8 @@
           "text": "L’operatore risale alla scheda dell’oggetto per investigare."
         }
       ],
-      "limit": "Descrizione verificata nel sorgente. La cattura dedicata e la prova del comportamento non sono ancora state completate per questa vista.",
-      "image": null,
+      "limit": "La cattura documenta la resa della UI nella demo. Le operazioni di scansione, aggiornamento o modifica dei sistemi esterni non sono state eseguite.",
+      "image": "pagina-monitoring-known-hosts",
       "markers": [],
       "decision": null,
       "sources": [
@@ -1903,7 +1871,7 @@
       "lead": "Esaminare il software installato come inventario tecnico distinto dalle licenze acquistate.",
       "purpose": "Esaminare il software installato come inventario tecnico distinto dalle licenze acquistate.",
       "route": "/software",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Sorgente verificato · cattura della UI con dati sintetici",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -1945,7 +1913,7 @@
         }
       ],
       "limit": "Il rilevamento non certifica i diritti d’uso contrattuali.",
-      "image": null,
+      "image": "pagina-software",
       "markers": [],
       "decision": null,
       "sources": [
@@ -1961,7 +1929,7 @@
       "lead": "Separare la vulnerabilità, il software coinvolto e gli oggetti affetti.",
       "purpose": "Separare la vulnerabilità, il software coinvolto e gli oggetti affetti.",
       "route": "/vulnerabilities",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Sorgente verificato · cattura della UI con dati sintetici",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -2003,7 +1971,7 @@
         }
       ],
       "limit": "Le fixture estese usano CVE-2099-0001 come identificativo fittizio, non una vulnerabilità reale.",
-      "image": null,
+      "image": "pagina-vulnerabilities",
       "markers": [],
       "decision": null,
       "sources": [
@@ -2019,7 +1987,7 @@
       "lead": "Consultare eventi delle sorgenti di sicurezza nel contesto del parco.",
       "purpose": "Consultare eventi delle sorgenti di sicurezza nel contesto del parco.",
       "route": "/security-alerts",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Sorgente verificato · parziale: stato non configurato o servizio esterno scollegato",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -2060,8 +2028,8 @@
           "text": "Registra la gestione; non elimina automaticamente la causa."
         }
       ],
-      "limit": "Descrizione verificata nel sorgente. La cattura dedicata e la prova del comportamento non sono ancora state completate per questa vista.",
-      "image": null,
+      "limit": "La cattura documenta la resa della UI nella demo. Le operazioni di scansione, aggiornamento o modifica dei sistemi esterni non sono state eseguite.",
+      "image": "pagina-security-alerts",
       "markers": [],
       "decision": null,
       "sources": [
@@ -2077,7 +2045,7 @@
       "lead": "Individuare cambiamenti che richiedono interpretazione tecnica.",
       "purpose": "Individuare cambiamenti che richiedono interpretazione tecnica.",
       "route": "/analytics",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Sorgente verificato · cattura della UI con dati sintetici",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -2119,7 +2087,7 @@
         }
       ],
       "limit": "Un cambio DHCP legittimo non è automaticamente un attacco.",
-      "image": null,
+      "image": "pagina-analytics",
       "markers": [],
       "decision": null,
       "sources": [
@@ -2180,7 +2148,7 @@
           "text": "Si applicano solo i campi selezionati."
         }
       ],
-      "limit": "Descrizione verificata nel sorgente. La cattura dedicata e la prova del comportamento non sono ancora state completate per questa vista.",
+      "limit": "Cattura reale della demo con dati sintetici; non attesta il collaudo delle azioni operative o dei servizi esterni.",
       "image": "inventario",
       "markers": [],
       "decision": null,
@@ -2197,7 +2165,7 @@
       "lead": "Approfondire un bene dalla sua identificazione fino al supporto e allo storico.",
       "purpose": "Approfondire un bene dalla sua identificazione fino al supporto e allo storico.",
       "route": "/inventory/[id]",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Sorgente verificato · cattura della UI con dati sintetici",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -2258,8 +2226,8 @@
           "text": "Rilettura dei legami tecnici: la modalità forzata va interpretata prima di applicarla."
         }
       ],
-      "limit": "Descrizione verificata nel sorgente. La cattura dedicata e la prova del comportamento non sono ancora state completate per questa vista.",
-      "image": null,
+      "limit": "La cattura documenta la resa della UI nella demo. Le operazioni di scansione, aggiornamento o modifica dei sistemi esterni non sono state eseguite.",
+      "image": "pagina-inventory-id",
       "markers": [],
       "decision": null,
       "sources": [
@@ -2288,7 +2256,7 @@
       "lead": "Mantenere l’anagrafica delle persone a cui attribuire i beni.",
       "purpose": "Mantenere l’anagrafica delle persone a cui attribuire i beni.",
       "route": "/inventory/assignees",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Sorgente verificato · cattura della UI con dati sintetici",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -2333,8 +2301,8 @@
           "text": "I dati importati possono aggiornarsi dalla directory secondo il flusso."
         }
       ],
-      "limit": "Descrizione verificata nel sorgente. La cattura dedicata e la prova del comportamento non sono ancora state completate per questa vista.",
-      "image": null,
+      "limit": "La cattura documenta la resa della UI nella demo. Le operazioni di scansione, aggiornamento o modifica dei sistemi esterni non sono state eseguite.",
+      "image": "pagina-inventory-assignees",
       "markers": [],
       "decision": null,
       "sources": [
@@ -2350,7 +2318,7 @@
       "lead": "Trasformare utenti directory idonei in assegnatari senza importare indiscriminatamente account tecnici.",
       "purpose": "Trasformare utenti directory idonei in assegnatari senza importare indiscriminatamente account tecnici.",
       "route": "/inventory/assignees/import-ad",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Sorgente verificato · cattura della UI con dati sintetici",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -2391,8 +2359,8 @@
           "text": "La scelta resta al tecnico, con revisione delle spunte."
         }
       ],
-      "limit": "Descrizione verificata nel sorgente. La cattura dedicata e la prova del comportamento non sono ancora state completate per questa vista.",
-      "image": null,
+      "limit": "La cattura documenta la resa della UI nella demo. Le operazioni di scansione, aggiornamento o modifica dei sistemi esterni non sono state eseguite.",
+      "image": "pagina-inventory-assignees-import-ad",
       "markers": [],
       "decision": null,
       "sources": [
@@ -2408,7 +2376,7 @@
       "lead": "Rivedere proposte e conflitti in un punto comune.",
       "purpose": "Rivedere proposte e conflitti in un punto comune.",
       "route": "/inventory/abbinamenti",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Sorgente verificato · cattura della UI con dati sintetici",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -2453,8 +2421,8 @@
           "text": "I casi da rivedere non sono selezionati di serie; la conferma ricalcola ogni voce."
         }
       ],
-      "limit": "Descrizione verificata nel sorgente. La cattura dedicata e la prova del comportamento non sono ancora state completate per questa vista.",
-      "image": null,
+      "limit": "La cattura documenta la resa della UI nella demo. Le operazioni di scansione, aggiornamento o modifica dei sistemi esterni non sono state eseguite.",
+      "image": "pagina-inventory-abbinamenti",
       "markers": [],
       "decision": null,
       "sources": [
@@ -2470,7 +2438,7 @@
       "lead": "Organizzare sedi, edifici, rack e zone per collocare i beni.",
       "purpose": "Organizzare sedi, edifici, rack e zone per collocare i beni.",
       "route": "/inventory/locations",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Sorgente verificato · cattura della UI con dati sintetici",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -2507,8 +2475,8 @@
           "text": "Il collegamento contestuale conduce alla rappresentazione disponibile del luogo."
         }
       ],
-      "limit": "Descrizione verificata nel sorgente. La cattura dedicata e la prova del comportamento non sono ancora state completate per questa vista.",
-      "image": null,
+      "limit": "La cattura documenta la resa della UI nella demo. Le operazioni di scansione, aggiornamento o modifica dei sistemi esterni non sono state eseguite.",
+      "image": "pagina-inventory-locations",
       "markers": [],
       "decision": null,
       "sources": [
@@ -2524,7 +2492,7 @@
       "lead": "Gestire quantità e disponibilità contrattuale dei prodotti.",
       "purpose": "Gestire quantità e disponibilità contrattuale dei prodotti.",
       "route": "/inventory/licenses",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Sorgente verificato · cattura della UI con dati sintetici",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -2566,7 +2534,7 @@
         }
       ],
       "limit": "Le licenze contrattuali restano distinte dal software installato rilevato.",
-      "image": null,
+      "image": "pagina-inventory-licenses",
       "markers": [],
       "decision": null,
       "sources": [
@@ -2582,7 +2550,7 @@
       "lead": "Censire ciò che l’azienda deve poter erogare.",
       "purpose": "Censire ciò che l’azienda deve poter erogare.",
       "route": "/services",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Sorgente verificato · cattura della UI con dati sintetici",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -2627,8 +2595,8 @@
           "text": "Conteggio degli asset collegati e accesso al dettaglio."
         }
       ],
-      "limit": "Descrizione verificata nel sorgente. La cattura dedicata e la prova del comportamento non sono ancora state completate per questa vista.",
-      "image": null,
+      "limit": "La cattura documenta la resa della UI nella demo. Le operazioni di scansione, aggiornamento o modifica dei sistemi esterni non sono state eseguite.",
+      "image": "pagina-services",
       "markers": [],
       "decision": null,
       "sources": [
@@ -2644,7 +2612,7 @@
       "lead": "Rendere leggibile il ruolo degli asset necessari al servizio.",
       "purpose": "Rendere leggibile il ruolo degli asset necessari al servizio.",
       "route": "/services/[id]",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Sorgente verificato · cattura della UI con dati sintetici",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -2693,8 +2661,8 @@
           "text": "I legami alimentano la lettura delle conseguenze, senza stimare da soli tutte le dipendenze reali."
         }
       ],
-      "limit": "Descrizione verificata nel sorgente. La cattura dedicata e la prova del comportamento non sono ancora state completate per questa vista.",
-      "image": null,
+      "limit": "La cattura documenta la resa della UI nella demo. Le operazioni di scansione, aggiornamento o modifica dei sistemi esterni non sono state eseguite.",
+      "image": "pagina-services-id",
       "markers": [],
       "decision": null,
       "sources": [
@@ -2710,7 +2678,7 @@
       "lead": "Esplorare il modello di collegamento costruito dalle fonti disponibili.",
       "purpose": "Esplorare il modello di collegamento costruito dalle fonti disponibili.",
       "route": "/topology",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Sorgente verificato · cattura della UI con dati sintetici",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -2751,8 +2719,8 @@
           "text": "Oggetti collegati, espansione delle VM, orientamento e stampa."
         }
       ],
-      "limit": "Descrizione verificata nel sorgente. La cattura dedicata e la prova del comportamento non sono ancora state completate per questa vista.",
-      "image": null,
+      "limit": "La cattura documenta la resa della UI nella demo. Le operazioni di scansione, aggiornamento o modifica dei sistemi esterni non sono state eseguite.",
+      "image": "pagina-topology",
       "markers": [],
       "decision": null,
       "sources": [
@@ -2768,7 +2736,7 @@
       "lead": "Capire quali letture alimentano la topologia e quali dati mancano.",
       "purpose": "Capire quali letture alimentano la topologia e quali dati mancano.",
       "route": "/topology/dati",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Sorgente verificato · cattura della UI con dati sintetici",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -2805,8 +2773,8 @@
           "text": "Un’informazione non letta non va interpretata come assenza fisica."
         }
       ],
-      "limit": "Descrizione verificata nel sorgente. La cattura dedicata e la prova del comportamento non sono ancora state completate per questa vista.",
-      "image": null,
+      "limit": "La cattura documenta la resa della UI nella demo. Le operazioni di scansione, aggiornamento o modifica dei sistemi esterni non sono state eseguite.",
+      "image": "pagina-topology-dati",
       "markers": [],
       "decision": null,
       "sources": [
@@ -2822,7 +2790,7 @@
       "lead": "Consultare l’inventario del dominio e l’assessment Domarc mantenendone separate le fonti.",
       "purpose": "Consultare l’inventario del dominio e l’assessment Domarc mantenendone separate le fonti.",
       "route": "/active-directory",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Sorgente verificato · cattura della UI con dati sintetici",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -2876,7 +2844,7 @@
         }
       ],
       "limit": "Il motore Domarc non esegue né sostituisce PingCastle.",
-      "image": null,
+      "image": "pagina-active-directory",
       "markers": [],
       "decision": null,
       "sources": [
@@ -2963,7 +2931,7 @@
       "lead": "Partire dai PC Windows o dai programmi rilevati per valutare la copertura di aggiornamento.",
       "purpose": "Partire dai PC Windows o dai programmi rilevati per valutare la copertura di aggiornamento.",
       "route": "/patch-management",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Sorgente verificato · cattura della UI con dati sintetici",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -3008,8 +2976,8 @@
           "text": "Calcolo dei collegamenti software–CVE–pacchetto."
         }
       ],
-      "limit": "Descrizione verificata nel sorgente. La cattura dedicata e la prova del comportamento non sono ancora state completate per questa vista.",
-      "image": null,
+      "limit": "La cattura documenta la resa della UI nella demo. Le operazioni di scansione, aggiornamento o modifica dei sistemi esterni non sono state eseguite.",
+      "image": "pagina-patch-management",
       "markers": [],
       "decision": null,
       "sources": [
@@ -3028,7 +2996,7 @@
       "lead": "Selezionare le vulnerabilità per le quali esiste un percorso di correzione riconosciuto.",
       "purpose": "Selezionare le vulnerabilità per le quali esiste un percorso di correzione riconosciuto.",
       "route": "/patch-management/cve",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Sorgente verificato · cattura della UI con dati sintetici",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -3065,8 +3033,8 @@
           "text": "Apre il caso CVE per controllare bersagli e mapping."
         }
       ],
-      "limit": "Descrizione verificata nel sorgente. La cattura dedicata e la prova del comportamento non sono ancora state completate per questa vista.",
-      "image": null,
+      "limit": "La cattura documenta la resa della UI nella demo. Le operazioni di scansione, aggiornamento o modifica dei sistemi esterni non sono state eseguite.",
+      "image": "pagina-patch-management-cve",
       "markers": [],
       "decision": null,
       "sources": [
@@ -3082,7 +3050,7 @@
       "lead": "Controllare quale correzione è applicabile a quali host.",
       "purpose": "Controllare quale correzione è applicabile a quali host.",
       "route": "/patch-management/cve/[cveId]",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Sorgente verificato · cattura della UI con dati sintetici",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -3123,8 +3091,8 @@
           "text": "Le azioni disponibili dipendono dai prerequisiti e dai permessi."
         }
       ],
-      "limit": "Descrizione verificata nel sorgente. La cattura dedicata e la prova del comportamento non sono ancora state completate per questa vista.",
-      "image": null,
+      "limit": "La cattura documenta la resa della UI nella demo. Le operazioni di scansione, aggiornamento o modifica dei sistemi esterni non sono state eseguite.",
+      "image": "pagina-patch-management-cve-cve-d",
       "markers": [],
       "decision": null,
       "sources": [
@@ -3140,7 +3108,7 @@
       "lead": "Lavorare sul software di una singola postazione.",
       "purpose": "Lavorare sul software di una singola postazione.",
       "route": "/patch-management/device/[hostId]",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Sorgente verificato · cattura della UI con dati sintetici",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -3182,7 +3150,7 @@
         }
       ],
       "limit": "La disinstallazione è un’azione sul sistema del cliente, non una semplice pulizia dell’elenco.",
-      "image": null,
+      "image": "pagina-patch-management-device-host-d",
       "markers": [],
       "decision": null,
       "sources": [
@@ -3198,7 +3166,7 @@
       "lead": "Valutare un programma su più host mantenendo chiaro il mapping scelto.",
       "purpose": "Valutare un programma su più host mantenendo chiaro il mapping scelto.",
       "route": "/patch-management/software/[softwareKey]",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Sorgente verificato · cattura della UI con dati sintetici",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -3239,8 +3207,8 @@
           "text": "Scelta esplicita del pacchetto/versione nei percorsi previsti."
         }
       ],
-      "limit": "Descrizione verificata nel sorgente. La cattura dedicata e la prova del comportamento non sono ancora state completate per questa vista.",
-      "image": null,
+      "limit": "La cattura documenta la resa della UI nella demo. Le operazioni di scansione, aggiornamento o modifica dei sistemi esterni non sono state eseguite.",
+      "image": "software-dettaglio",
       "markers": [],
       "decision": null,
       "sources": [
@@ -3256,7 +3224,7 @@
       "lead": "Sapere chi ha fatto cosa, su quale host e con quale esito.",
       "purpose": "Sapere chi ha fatto cosa, su quale host e con quale esito.",
       "route": "/patch-management/history",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Sorgente verificato · cattura della UI con dati sintetici",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -3302,7 +3270,7 @@
         }
       ],
       "limit": "La presenza del tipo rollback nel registro non garantisce che ogni pacchetto supporti un ripristino automatico.",
-      "image": null,
+      "image": "pagina-patch-management-history",
       "markers": [],
       "decision": null,
       "sources": [
@@ -3318,7 +3286,7 @@
       "lead": "Aprire il dispositivo corretto nel servizio di assistenza configurato.",
       "purpose": "Aprire il dispositivo corretto nel servizio di assistenza configurato.",
       "route": "/rmm",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Sorgente verificato · parziale: stato non configurato o servizio esterno scollegato",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -3359,8 +3327,8 @@
           "text": "Modulo e configurazione devono essere disponibili."
         }
       ],
-      "limit": "Descrizione verificata nel sorgente. La cattura dedicata e la prova del comportamento non sono ancora state completate per questa vista.",
-      "image": null,
+      "limit": "La cattura documenta la resa della UI nella demo. Le operazioni di scansione, aggiornamento o modifica dei sistemi esterni non sono state eseguite.",
+      "image": "pagina-rmm",
       "markers": [],
       "decision": null,
       "sources": [
@@ -3376,7 +3344,7 @@
       "lead": "Usare una sessione sul dispositivo con i controlli previsti dall’integrazione.",
       "purpose": "Usare una sessione sul dispositivo con i controlli previsti dall’integrazione.",
       "route": "/rmm/[hostId]",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Sorgente verificato · parziale: stato non configurato o servizio esterno scollegato",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -3418,7 +3386,7 @@
         }
       ],
       "limit": "Non si crea una sessione reale per una cattura dimostrativa non configurata.",
-      "image": null,
+      "image": "pagina-rmm-host-d",
       "markers": [],
       "decision": null,
       "sources": [
@@ -3434,7 +3402,7 @@
       "lead": "Usare il collegamento senza agente quando l’opzione e i prerequisiti sono presenti.",
       "purpose": "Usare il collegamento senza agente quando l’opzione e i prerequisiti sono presenti.",
       "route": "/rmm/[hostId]/senza-agente",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Sorgente verificato · parziale: stato non configurato o servizio esterno scollegato",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -3471,8 +3439,8 @@
           "text": "La console può aprirsi in una scheda dedicata."
         }
       ],
-      "limit": "Descrizione verificata nel sorgente. La cattura dedicata e la prova del comportamento non sono ancora state completate per questa vista.",
-      "image": null,
+      "limit": "La cattura documenta la resa della UI nella demo. Le operazioni di scansione, aggiornamento o modifica dei sistemi esterni non sono state eseguite.",
+      "image": "pagina-rmm-host-d-senza-agente",
       "markers": [],
       "decision": null,
       "sources": [
@@ -3488,7 +3456,7 @@
       "lead": "Controllare la VM bridge che eroga i servizi.",
       "purpose": "Controllare la VM bridge che eroga i servizi.",
       "route": "/network-services",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Sorgente verificato · parziale: stato non configurato o servizio esterno scollegato",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -3530,7 +3498,7 @@
         }
       ],
       "limit": "Senza bridge configurato la pagina dichiara modulo non disponibile.",
-      "image": null,
+      "image": "pagina-network-services",
       "markers": [],
       "decision": null,
       "sources": [
@@ -3546,7 +3514,7 @@
       "lead": "Gestire quattro aspetti diversi della catena DNS dalla pagina dedicata.",
       "purpose": "Gestire quattro aspetti diversi della catena DNS dalla pagina dedicata.",
       "route": "/dns",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Sorgente verificato · parziale: stato non configurato o servizio esterno scollegato",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -3591,8 +3559,8 @@
           "text": "La rappresentazione aiuta a distinguere i ruoli dei componenti."
         }
       ],
-      "limit": "Descrizione verificata nel sorgente. La cattura dedicata e la prova del comportamento non sono ancora state completate per questa vista.",
-      "image": null,
+      "limit": "La cattura documenta la resa della UI nella demo. Le operazioni di scansione, aggiornamento o modifica dei sistemi esterni non sono state eseguite.",
+      "image": "pagina-dns",
       "markers": [],
       "decision": null,
       "sources": [
@@ -3613,7 +3581,7 @@
       "lead": "Amministrare il servizio DHCP erogato dal modulo.",
       "purpose": "Amministrare il servizio DHCP erogato dal modulo.",
       "route": "/dhcp",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Sorgente verificato · parziale: stato non configurato o servizio esterno scollegato",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -3658,8 +3626,8 @@
           "text": "Rimando ai lease importati, distinti dal DHCP amministrato."
         }
       ],
-      "limit": "Descrizione verificata nel sorgente. La cattura dedicata e la prova del comportamento non sono ancora state completate per questa vista.",
-      "image": null,
+      "limit": "La cattura documenta la resa della UI nella demo. Le operazioni di scansione, aggiornamento o modifica dei sistemi esterni non sono state eseguite.",
+      "image": "pagina-dhcp",
       "markers": [],
       "decision": null,
       "sources": [
@@ -3681,7 +3649,7 @@
       "lead": "Trovare nel punto corretto accessi, acquisizione, moduli e manutenzione.",
       "purpose": "Trovare nel punto corretto accessi, acquisizione, moduli e manutenzione.",
       "route": "/settings",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Sorgente verificato · cattura della UI con dati sintetici",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -3742,8 +3710,8 @@
           "text": "Versione, canale, installazione, URL hub, backup e strumenti previsti."
         }
       ],
-      "limit": "Descrizione verificata nel sorgente. La cattura dedicata e la prova del comportamento non sono ancora state completate per questa vista.",
-      "image": null,
+      "limit": "La cattura documenta la resa della UI nella demo. Le operazioni di scansione, aggiornamento o modifica dei sistemi esterni non sono state eseguite.",
+      "image": "pagina-settings",
       "markers": [],
       "decision": null,
       "sources": [
@@ -3771,7 +3739,7 @@
       "lead": "Estendere il lessico dell’inventario senza riscrivere le categorie integrate.",
       "purpose": "Estendere il lessico dell’inventario senza riscrivere le categorie integrate.",
       "route": "/settings/classifications",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Sorgente verificato · cattura della UI con dati sintetici",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -3812,8 +3780,8 @@
           "text": "Identificativo con vincoli e stabilità distinti dalla label."
         }
       ],
-      "limit": "Descrizione verificata nel sorgente. La cattura dedicata e la prova del comportamento non sono ancora state completate per questa vista.",
-      "image": null,
+      "limit": "La cattura documenta la resa della UI nella demo. Le operazioni di scansione, aggiornamento o modifica dei sistemi esterni non sono state eseguite.",
+      "image": "pagina-settings-classifications",
       "markers": [],
       "decision": null,
       "sources": [
@@ -3829,7 +3797,7 @@
       "lead": "Definire come riconoscere e interrogare una famiglia di prodotti.",
       "purpose": "Definire come riconoscere e interrogare una famiglia di prodotti.",
       "route": "/settings/snmp-profiles",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Sorgente verificato · cattura della UI con dati sintetici",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -3875,7 +3843,7 @@
         }
       ],
       "limit": "La presenza di un OID non è una prova di supporto completo del prodotto.",
-      "image": null,
+      "image": "pagina-settings-snmp-profiles",
       "markers": [],
       "decision": null,
       "sources": [
@@ -3891,7 +3859,7 @@
       "lead": "Trasportare i dati dell’istanza secondo i livelli previsti.",
       "purpose": "Trasportare i dati dell’istanza secondo i livelli previsti.",
       "route": "/settings/transfer",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Sorgente verificato · cattura della UI con dati sintetici",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -3933,7 +3901,7 @@
         }
       ],
       "limit": "Funzione presente nel codice: non è stata dichiarata collaudata in questa analisi, in particolare l’unione con dati esistenti.",
-      "image": null,
+      "image": "pagina-settings-transfer",
       "markers": [],
       "decision": null,
       "sources": [
@@ -3949,7 +3917,7 @@
       "lead": "Collegare il servizio Android e controllare i prerequisiti dell’inventario.",
       "purpose": "Collegare il servizio Android e controllare i prerequisiti dell’inventario.",
       "route": "/settings/mdm",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Sorgente verificato · cattura della UI con dati sintetici",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -3987,7 +3955,7 @@
         }
       ],
       "limit": "Copertura e maturità dell’integrazione richiedono il collaudo dedicato.",
-      "image": null,
+      "image": "pagina-settings-mdm",
       "markers": [],
       "decision": null,
       "sources": [
@@ -4003,7 +3971,7 @@
       "lead": "Configurazione, salute e verifica di un modulo alla volta.",
       "purpose": "Configurazione, salute e verifica di un modulo alla volta.",
       "route": "/settings/moduli/[key]",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Sorgente verificato · cattura della UI con dati sintetici",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -4069,7 +4037,7 @@
         }
       ],
       "limit": "Le varianti sono 13 nel registro MODULI_CON_PAGINA; non sono 13 prodotti tutti installati.",
-      "image": null,
+      "image": "pagina-settings-moduli-key",
       "markers": [],
       "decision": null,
       "sources": [
@@ -4148,7 +4116,7 @@
           "text": "Le voci governate dal server sono dichiarate, non simulate come normali toggle."
         }
       ],
-      "limit": "Descrizione verificata nel sorgente. La cattura dedicata e la prova del comportamento non sono ancora state completate per questa vista.",
+      "limit": "Cattura reale della demo con dati sintetici; non attesta il collaudo delle azioni operative o dei servizi esterni.",
       "image": "opzioni",
       "markers": [],
       "decision": null,
@@ -4165,7 +4133,7 @@
       "lead": "Leggere insieme attività dei job, controller, Edge e timer interni.",
       "purpose": "Leggere insieme attività dei job, controller, Edge e timer interni.",
       "route": "/settings/schedulazioni",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Sorgente verificato · cattura della UI con dati sintetici",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -4202,8 +4170,8 @@
           "text": "L’ultima esecuzione e gli errori aiutano a spiegare dati vecchi."
         }
       ],
-      "limit": "Descrizione verificata nel sorgente. La cattura dedicata e la prova del comportamento non sono ancora state completate per questa vista.",
-      "image": null,
+      "limit": "La cattura documenta la resa della UI nella demo. Le operazioni di scansione, aggiornamento o modifica dei sistemi esterni non sono state eseguite.",
+      "image": "pagina-settings-schedulazioni",
       "markers": [],
       "decision": null,
       "sources": [
@@ -4264,7 +4232,7 @@
           "text": "Traccia le scelte e gli esiti disponibili."
         }
       ],
-      "limit": "Descrizione verificata nel sorgente. La cattura dedicata e la prova del comportamento non sono ancora state completate per questa vista.",
+      "limit": "Cattura reale della demo con dati sintetici; non attesta il collaudo delle azioni operative o dei servizi esterni.",
       "image": "cosa-esce",
       "markers": [],
       "decision": null,
@@ -4281,7 +4249,7 @@
       "lead": "Separare il backend segreti e le modalità di consultazione/esportazione.",
       "purpose": "Separare il backend segreti e le modalità di consultazione/esportazione.",
       "route": "/settings/vault",
-      "status": "Contenuti verificati nel sorgente · cattura disponibile",
+      "status": "Sblocco ed export KDBX/key file verificati sulla demo sintetica",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -4327,7 +4295,7 @@
         }
       ],
       "limit": "La schermata disponibile è lo stato spento; sblocco e export richiedono ancora catture in laboratorio inizializzato.",
-      "image": "vault",
+      "image": "vault-sbloccato",
       "markers": [],
       "decision": null,
       "sources": [
@@ -4343,7 +4311,7 @@
       "lead": "La pagina raccoglie le informazioni organizzate del contesto cliente.",
       "purpose": "La pagina raccoglie le informazioni organizzate del contesto cliente.",
       "route": "/client-config",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Sorgente verificato · cattura della UI con dati sintetici",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -4393,7 +4361,7 @@
         }
       ],
       "limit": "La voce Config istanza del menu è indicata “in arrivo”: l’esistenza della pagina non dimostra che tutto il nuovo percorso sia attivo.",
-      "image": null,
+      "image": "pagina-client-config",
       "markers": [],
       "decision": null,
       "sources": [
@@ -4409,7 +4377,7 @@
       "lead": "Consultare la documentazione del progetto dentro l’applicazione.",
       "purpose": "Consultare la documentazione del progetto dentro l’applicazione.",
       "route": "/manual",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Sorgente verificato · cattura della UI con dati sintetici",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -4446,8 +4414,8 @@
           "text": "Le risorse possono rimandare al repository."
         }
       ],
-      "limit": "Descrizione verificata nel sorgente. La cattura dedicata e la prova del comportamento non sono ancora state completate per questa vista.",
-      "image": null,
+      "limit": "La cattura documenta la resa della UI nella demo. Le operazioni di scansione, aggiornamento o modifica dei sistemi esterni non sono state eseguite.",
+      "image": "pagina-manual",
       "markers": [],
       "decision": null,
       "sources": [
@@ -4463,7 +4431,7 @@
       "lead": "Censire le istanze che l’hub permette agli utenti autorizzati di usare.",
       "purpose": "Censire le istanze che l’hub permette agli utenti autorizzati di usare.",
       "route": "/tenants",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Sorgente verificato · cattura della UI con dati sintetici",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -4501,7 +4469,7 @@
         }
       ],
       "limit": "La presenza tecnica dei tenant non è un confine di sicurezza certificato fra clienti.",
-      "image": null,
+      "image": "pagina-tenants",
       "markers": [],
       "decision": null,
       "sources": [
@@ -4517,7 +4485,7 @@
       "lead": "Consultare i dispositivi secondo il vecchio percorso dedicato, distinto dalla lista unificata.",
       "purpose": "Consultare i dispositivi secondo il vecchio percorso dedicato, distinto dalla lista unificata.",
       "route": "/devices",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Sorgente verificato · cattura della UI con dati sintetici",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -4559,7 +4527,7 @@
         }
       ],
       "limit": "La navigazione ordinaria privilegia Discovery e la scheda unificata.",
-      "image": null,
+      "image": "pagina-devices",
       "markers": [],
       "decision": null,
       "sources": [
@@ -4575,7 +4543,7 @@
       "lead": "Gestire i collegamenti esistenti durante il passaggio alla scheda unificata.",
       "purpose": "Gestire i collegamenti esistenti durante il passaggio alla scheda unificata.",
       "route": "/devices/[id]",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Ramo legacy condizionale · nella demo reindirizza all’elenco",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -4686,7 +4654,7 @@
           "text": "Dettagli disponibili o vista ridotta; sensori solo con fonte presente."
         }
       ],
-      "limit": "Descrizione verificata nel sorgente. La cattura dedicata e la prova del comportamento non sono ancora state completate per questa vista.",
+      "limit": "Cattura reale della demo con dati sintetici; non attesta il collaudo delle azioni operative o dei servizi esterni.",
       "image": "scheda-host",
       "markers": [],
       "decision": null,
@@ -4703,7 +4671,7 @@
       "lead": "Leggere i problemi aperti del servizio Zabbix configurato.",
       "purpose": "Leggere i problemi aperti del servizio Zabbix configurato.",
       "route": "/zabbix",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Sorgente verificato · parziale: stato non configurato o servizio esterno scollegato",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -4741,7 +4709,7 @@
         }
       ],
       "limit": "Il proxy e il pannello sono componenti diversi; non dare per attivo il servizio dal solo menu.",
-      "image": null,
+      "image": "pagina-zabbix",
       "markers": [],
       "decision": null,
       "sources": [
@@ -5216,7 +5184,7 @@
       "lead": "Scelta fra le istanze ammesse e ripartenza dall’ultima usata.",
       "purpose": "Scelta fra le istanze ammesse e ripartenza dall’ultima usata.",
       "route": "/settings?tab=istanza",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Configurazione della demo acquisita; servizio esterno non collaudato",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -5253,8 +5221,8 @@
           "text": "La tab compare quando esistono più istanze accessibili."
         }
       ],
-      "limit": "Descrizione verificata nel sorgente. La cattura dedicata e la prova del comportamento non sono ancora state completate per questa vista.",
-      "image": null,
+      "limit": "Resa della configurazione nella demo; nessun collegamento a servizi cliente e nessun salvataggio delle impostazioni.",
+      "image": "pagina-settings-tab-istanza",
       "markers": [],
       "decision": null,
       "sources": [
@@ -5272,7 +5240,7 @@
       "lead": "Amministrare gli accessi locali.",
       "purpose": "Amministrare gli accessi locali.",
       "route": "/settings?tab=utenti",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Configurazione della demo acquisita; servizio esterno non collaudato",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -5321,8 +5289,8 @@
           "text": "Informazione operativa da non scambiare per audit completo."
         }
       ],
-      "limit": "Descrizione verificata nel sorgente. La cattura dedicata e la prova del comportamento non sono ancora state completate per questa vista.",
-      "image": null,
+      "limit": "Resa della configurazione nella demo; nessun collegamento a servizi cliente e nessun salvataggio delle impostazioni.",
+      "image": "pagina-settings-tab-utenti",
       "markers": [],
       "decision": null,
       "sources": [
@@ -5340,7 +5308,7 @@
       "lead": "Governare la scoperta e la scansione completa.",
       "purpose": "Governare la scoperta e la scansione completa.",
       "route": "/settings?tab=scansione",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Configurazione della demo acquisita; servizio esterno non collaudato",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -5389,8 +5357,8 @@
           "text": "Condizioni del server rese visibili."
         }
       ],
-      "limit": "Descrizione verificata nel sorgente. La cattura dedicata e la prova del comportamento non sono ancora state completate per questa vista.",
-      "image": null,
+      "limit": "Resa della configurazione nella demo; nessun collegamento a servizi cliente e nessun salvataggio delle impostazioni.",
+      "image": "pagina-settings-tab-scansione",
       "markers": [],
       "decision": null,
       "sources": [
@@ -5408,7 +5376,7 @@
       "lead": "Controllare come l’app attribuisce tipo e prodotto.",
       "purpose": "Controllare come l’app attribuisce tipo e prodotto.",
       "route": "/settings?tab=identificazione",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Configurazione della demo acquisita; servizio esterno non collaudato",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -5457,8 +5425,8 @@
           "text": "Percentuale di host con credenziale validata per categoria pertinente."
         }
       ],
-      "limit": "Descrizione verificata nel sorgente. La cattura dedicata e la prova del comportamento non sono ancora state completate per questa vista.",
-      "image": null,
+      "limit": "Resa della configurazione nella demo; nessun collegamento a servizi cliente e nessun salvataggio delle impostazioni.",
+      "image": "pagina-settings-tab-identificazione",
       "markers": [],
       "decision": null,
       "sources": [
@@ -5476,7 +5444,7 @@
       "lead": "Creare e rivedere le attività previste.",
       "purpose": "Creare e rivedere le attività previste.",
       "route": "/settings?tab=jobs",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Configurazione della demo acquisita; servizio esterno non collaudato",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -5517,8 +5485,8 @@
           "text": "Azioni manuali, se presenti, possono avviare lavoro reale."
         }
       ],
-      "limit": "Descrizione verificata nel sorgente. La cattura dedicata e la prova del comportamento non sono ancora state completate per questa vista.",
-      "image": null,
+      "limit": "Resa della configurazione nella demo; nessun collegamento a servizi cliente e nessun salvataggio delle impostazioni.",
+      "image": "pagina-settings-tab-jobs",
       "markers": [],
       "decision": null,
       "sources": [
@@ -5536,7 +5504,7 @@
       "lead": "Gestire la configurazione TLS dell’appliance.",
       "purpose": "Gestire la configurazione TLS dell’appliance.",
       "route": "/settings?tab=https",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Configurazione della demo acquisita; servizio esterno non collaudato",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -5577,8 +5545,8 @@
           "text": "Il certificato del browser è diverso dal pin della sonda o di un controller."
         }
       ],
-      "limit": "Descrizione verificata nel sorgente. La cattura dedicata e la prova del comportamento non sono ancora state completate per questa vista.",
-      "image": null,
+      "limit": "Resa della configurazione nella demo; nessun collegamento a servizi cliente e nessun salvataggio delle impostazioni.",
+      "image": "pagina-settings-tab-https",
       "markers": [],
       "decision": null,
       "sources": [
@@ -5596,7 +5564,7 @@
       "lead": "Ridurre ambiguità fra account/reti attesi e segnalazioni.",
       "purpose": "Ridurre ambiguità fra account/reti attesi e segnalazioni.",
       "route": "/settings?tab=alert-sicurezza",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Configurazione della demo acquisita; servizio esterno non collaudato",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -5637,8 +5605,8 @@
           "text": "Parametri della retention degli alert."
         }
       ],
-      "limit": "Descrizione verificata nel sorgente. La cattura dedicata e la prova del comportamento non sono ancora state completate per questa vista.",
-      "image": null,
+      "limit": "Resa della configurazione nella demo; nessun collegamento a servizi cliente e nessun salvataggio delle impostazioni.",
+      "image": "pagina-settings-tab-alert-sicurezza",
       "markers": [],
       "decision": null,
       "sources": [
@@ -5656,7 +5624,7 @@
       "lead": "Portare fuori dall’interfaccia i segnali scelti.",
       "purpose": "Portare fuori dall’interfaccia i segnali scelti.",
       "route": "/settings?tab=notifiche",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Configurazione della demo acquisita; servizio esterno non collaudato",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -5697,8 +5665,8 @@
           "text": "Separata dalla configurazione, secondo il catalogo Opzioni."
         }
       ],
-      "limit": "Descrizione verificata nel sorgente. La cattura dedicata e la prova del comportamento non sono ancora state completate per questa vista.",
-      "image": null,
+      "limit": "Resa della configurazione nella demo; nessun collegamento a servizi cliente e nessun salvataggio delle impostazioni.",
+      "image": "pagina-settings-tab-notifiche",
       "markers": [],
       "decision": null,
       "sources": [
@@ -5716,7 +5684,7 @@
       "lead": "Capire cosa gira e come applicare un aggiornamento.",
       "purpose": "Capire cosa gira e come applicare un aggiornamento.",
       "route": "/settings?tab=aggiornamenti",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Configurazione della demo acquisita; servizio esterno non collaudato",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -5761,8 +5729,8 @@
           "text": "L’azione modifica l’installazione, non è una consultazione innocua."
         }
       ],
-      "limit": "Descrizione verificata nel sorgente. La cattura dedicata e la prova del comportamento non sono ancora state completate per questa vista.",
-      "image": null,
+      "limit": "Resa della configurazione nella demo; nessun collegamento a servizi cliente e nessun salvataggio delle impostazioni.",
+      "image": "pagina-settings-tab-aggiornamenti",
       "markers": [],
       "decision": null,
       "sources": [
@@ -5780,7 +5748,7 @@
       "lead": "Gestire i parametri della macchina e gli strumenti amministrativi.",
       "purpose": "Gestire i parametri della macchina e gli strumenti amministrativi.",
       "route": "/settings?tab=sistema",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Configurazione della demo acquisita; servizio esterno non collaudato",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -5825,8 +5793,8 @@
           "text": "Le chiavi e i segreti non vanno pubblicati nelle schermate commerciali."
         }
       ],
-      "limit": "Descrizione verificata nel sorgente. La cattura dedicata e la prova del comportamento non sono ancora state completate per questa vista.",
-      "image": null,
+      "limit": "Resa della configurazione nella demo; nessun collegamento a servizi cliente e nessun salvataggio delle impostazioni.",
+      "image": "pagina-settings-tab-sistema",
       "markers": [],
       "decision": null,
       "sources": [
@@ -5844,7 +5812,7 @@
       "lead": "Questa variante espone le informazioni pertinenti alla famiglia acquisita.",
       "purpose": "Questa variante espone le informazioni pertinenti alla famiglia acquisita.",
       "route": "/objects/[id] — variante switch",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Variante della scheda acquisita nella demo",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -5890,7 +5858,7 @@
         }
       ],
       "limit": "Variante verificata nel modello e nei componenti; mancano ancora catture dedicate popolate per tutti i tipi.",
-      "image": null,
+      "image": "apparato-switch",
       "markers": [],
       "decision": null,
       "sources": [
@@ -5908,7 +5876,7 @@
       "lead": "Questa variante espone le informazioni pertinenti alla famiglia acquisita.",
       "purpose": "Questa variante espone le informazioni pertinenti alla famiglia acquisita.",
       "route": "/objects/[id] — variante router",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Variante della scheda acquisita nella demo",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -5950,7 +5918,7 @@
         }
       ],
       "limit": "Variante verificata nel modello e nei componenti; mancano ancora catture dedicate popolate per tutti i tipi.",
-      "image": null,
+      "image": "apparato-router",
       "markers": [],
       "decision": null,
       "sources": [
@@ -5968,7 +5936,7 @@
       "lead": "Questa variante espone le informazioni pertinenti alla famiglia acquisita.",
       "purpose": "Questa variante espone le informazioni pertinenti alla famiglia acquisita.",
       "route": "/objects/[id] — variante mikrotik",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Variante della scheda acquisita nella demo",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -6018,7 +5986,7 @@
         }
       ],
       "limit": "Variante verificata nel modello e nei componenti; mancano ancora catture dedicate popolate per tutti i tipi.",
-      "image": null,
+      "image": "apparato-mikrotik",
       "markers": [],
       "decision": null,
       "sources": [
@@ -6036,7 +6004,7 @@
       "lead": "Questa variante espone le informazioni pertinenti alla famiglia acquisita.",
       "purpose": "Questa variante espone le informazioni pertinenti alla famiglia acquisita.",
       "route": "/objects/[id] — variante storage",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Variante della scheda acquisita nella demo",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -6082,7 +6050,7 @@
         }
       ],
       "limit": "Variante verificata nel modello e nei componenti; mancano ancora catture dedicate popolate per tutti i tipi.",
-      "image": null,
+      "image": "apparato-storage",
       "markers": [],
       "decision": null,
       "sources": [
@@ -6100,7 +6068,7 @@
       "lead": "Questa variante espone le informazioni pertinenti alla famiglia acquisita.",
       "purpose": "Questa variante espone le informazioni pertinenti alla famiglia acquisita.",
       "route": "/objects/[id] — variante hypervisor",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Variante della scheda acquisita nella demo",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -6146,7 +6114,7 @@
         }
       ],
       "limit": "Variante verificata nel modello e nei componenti; mancano ancora catture dedicate popolate per tutti i tipi.",
-      "image": null,
+      "image": "apparato-hypervisor",
       "markers": [],
       "decision": null,
       "sources": [
@@ -6164,7 +6132,7 @@
       "lead": "Questa variante espone le informazioni pertinenti alla famiglia acquisita.",
       "purpose": "Questa variante espone le informazioni pertinenti alla famiglia acquisita.",
       "route": "/objects/[id] — variante server_windows",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Variante della scheda acquisita nella demo",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -6214,7 +6182,7 @@
         }
       ],
       "limit": "Variante verificata nel modello e nei componenti; mancano ancora catture dedicate popolate per tutti i tipi.",
-      "image": null,
+      "image": "apparato-server_windows",
       "markers": [],
       "decision": null,
       "sources": [
@@ -6232,7 +6200,7 @@
       "lead": "Questa variante espone le informazioni pertinenti alla famiglia acquisita.",
       "purpose": "Questa variante espone le informazioni pertinenti alla famiglia acquisita.",
       "route": "/objects/[id] — variante server_linux",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Variante della scheda acquisita nella demo",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -6282,7 +6250,7 @@
         }
       ],
       "limit": "Variante verificata nel modello e nei componenti; mancano ancora catture dedicate popolate per tutti i tipi.",
-      "image": null,
+      "image": "apparato-server_linux",
       "markers": [],
       "decision": null,
       "sources": [
@@ -6300,7 +6268,7 @@
       "lead": "Questa variante espone le informazioni pertinenti alla famiglia acquisita.",
       "purpose": "Questa variante espone le informazioni pertinenti alla famiglia acquisita.",
       "route": "/objects/[id] — variante generico",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Variante della scheda acquisita nella demo",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -6346,7 +6314,7 @@
         }
       ],
       "limit": "Variante verificata nel modello e nei componenti; mancano ancora catture dedicate popolate per tutti i tipi.",
-      "image": null,
+      "image": "apparato-generico",
       "markers": [],
       "decision": null,
       "sources": [
@@ -6364,7 +6332,7 @@
       "lead": "Preparare e controllare l’accesso all’applicazione.",
       "purpose": "Preparare e controllare l’accesso all’applicazione.",
       "route": "/login",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Schermata acquisita nella demo isolata",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -6405,8 +6373,8 @@
           "text": "I percorsi amministrativi di recupero non sono gli stessi di un reset generico."
         }
       ],
-      "limit": "Descrizione verificata nel sorgente. La cattura dedicata e la prova del comportamento non sono ancora state completate per questa vista.",
-      "image": null,
+      "limit": "Primo accesso o installazione iniziale con database dimostrativo separato; nessuna utenza o installazione cliente.",
+      "image": "accesso-login",
       "markers": [],
       "decision": null,
       "sources": [
@@ -6423,7 +6391,7 @@
       "lead": "Preparare e controllare l’accesso all’applicazione.",
       "purpose": "Preparare e controllare l’accesso all’applicazione.",
       "route": "/setup",
-      "status": "Contenuti verificati nel sorgente · cattura dedicata da acquisire",
+      "status": "Schermata acquisita nella demo isolata",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -6464,8 +6432,8 @@
           "text": "Inizializzazione dei parametri necessari, fuori dai contenuti marketing."
         }
       ],
-      "limit": "Descrizione verificata nel sorgente. La cattura dedicata e la prova del comportamento non sono ancora state completate per questa vista.",
-      "image": null,
+      "limit": "Primo accesso o installazione iniziale con database dimostrativo separato; nessuna utenza o installazione cliente.",
+      "image": "accesso-setup",
       "markers": [],
       "decision": null,
       "sources": [
@@ -6482,7 +6450,7 @@
       "lead": "Collegamento della sonda e stato delle acquisizioni VA.",
       "purpose": "Collegamento della sonda e stato delle acquisizioni VA.",
       "route": "/settings/moduli/edge",
-      "status": "Configurazione presente · cattura dedicata mancante",
+      "status": "Configurazione della demo acquisita; servizio esterno non collaudato",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -6524,7 +6492,7 @@
         }
       ],
       "limit": "Le varianti sono 13 nel registro MODULI_CON_PAGINA; non sono 13 prodotti tutti installati.",
-      "image": null,
+      "image": "modulo-edge",
       "markers": [],
       "decision": null,
       "sources": [
@@ -6542,7 +6510,7 @@
       "lead": "Predisposizione del modulo di aggiornamento endpoint.",
       "purpose": "Predisposizione del modulo di aggiornamento endpoint.",
       "route": "/settings/moduli/patch_management",
-      "status": "Configurazione presente · cattura dedicata mancante",
+      "status": "Configurazione della demo acquisita; servizio esterno non collaudato",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -6580,7 +6548,7 @@
         }
       ],
       "limit": "Le varianti sono 13 nel registro MODULI_CON_PAGINA; non sono 13 prodotti tutti installati.",
-      "image": null,
+      "image": "modulo-patch_management",
       "markers": [],
       "decision": null,
       "sources": [
@@ -6598,7 +6566,7 @@
       "lead": "Raccolta inventario dagli endpoint via agente.",
       "purpose": "Raccolta inventario dagli endpoint via agente.",
       "route": "/settings/moduli/inventory_agent",
-      "status": "Configurazione presente · cattura dedicata mancante",
+      "status": "Configurazione della demo acquisita; servizio esterno non collaudato",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -6636,7 +6604,7 @@
         }
       ],
       "limit": "Le varianti sono 13 nel registro MODULI_CON_PAGINA; non sono 13 prodotti tutti installati.",
-      "image": null,
+      "image": "modulo-inventory_agent",
       "markers": [],
       "decision": null,
       "sources": [
@@ -6654,7 +6622,7 @@
       "lead": "Configurazione del servizio di controllo remoto.",
       "purpose": "Configurazione del servizio di controllo remoto.",
       "route": "/settings/moduli/meshcentral",
-      "status": "Configurazione presente · cattura dedicata mancante",
+      "status": "Configurazione della demo acquisita; servizio esterno non collaudato",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -6696,7 +6664,7 @@
         }
       ],
       "limit": "Le varianti sono 13 nel registro MODULI_CON_PAGINA; non sono 13 prodotti tutti installati.",
-      "image": null,
+      "image": "modulo-meshcentral",
       "markers": [],
       "decision": null,
       "sources": [
@@ -6714,7 +6682,7 @@
       "lead": "Disponibilità dell’area servizi e inventario.",
       "purpose": "Disponibilità dell’area servizi e inventario.",
       "route": "/settings/moduli/nis2_inventory",
-      "status": "Configurazione presente · cattura dedicata mancante",
+      "status": "Configurazione della demo acquisita; servizio esterno non collaudato",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -6752,7 +6720,7 @@
         }
       ],
       "limit": "Le varianti sono 13 nel registro MODULI_CON_PAGINA; non sono 13 prodotti tutti installati.",
-      "image": null,
+      "image": "modulo-nis2_inventory",
       "markers": [],
       "decision": null,
       "sources": [
@@ -6770,7 +6738,7 @@
       "lead": "Collegamento alla VM bridge dei servizi di rete.",
       "purpose": "Collegamento alla VM bridge dei servizi di rete.",
       "route": "/settings/moduli/network_services",
-      "status": "Configurazione presente · cattura dedicata mancante",
+      "status": "Configurazione della demo acquisita; servizio esterno non collaudato",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -6812,7 +6780,7 @@
         }
       ],
       "limit": "Le varianti sono 13 nel registro MODULI_CON_PAGINA; non sono 13 prodotti tutti installati.",
-      "image": null,
+      "image": "modulo-network_services",
       "markers": [],
       "decision": null,
       "sources": [
@@ -6830,7 +6798,7 @@
       "lead": "Collegamento del pannello di sola lettura.",
       "purpose": "Collegamento del pannello di sola lettura.",
       "route": "/settings/moduli/zabbix",
-      "status": "Configurazione presente · cattura dedicata mancante",
+      "status": "Configurazione della demo acquisita; servizio esterno non collaudato",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -6868,7 +6836,7 @@
         }
       ],
       "limit": "Le varianti sono 13 nel registro MODULI_CON_PAGINA; non sono 13 prodotti tutti installati.",
-      "image": null,
+      "image": "modulo-zabbix",
       "markers": [],
       "decision": null,
       "sources": [
@@ -6886,7 +6854,7 @@
       "lead": "Ingresso alla gestione dei controller.",
       "purpose": "Ingresso alla gestione dei controller.",
       "route": "/settings/moduli/unifi",
-      "status": "Configurazione presente · cattura dedicata mancante",
+      "status": "Configurazione della demo acquisita; servizio esterno non collaudato",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -6924,7 +6892,7 @@
         }
       ],
       "limit": "Le varianti sono 13 nel registro MODULI_CON_PAGINA; non sono 13 prodotti tutti installati.",
-      "image": null,
+      "image": "modulo-unifi",
       "markers": [],
       "decision": null,
       "sources": [
@@ -6942,7 +6910,7 @@
       "lead": "Connessione al monitoraggio SNMP integrato.",
       "purpose": "Connessione al monitoraggio SNMP integrato.",
       "route": "/settings/moduli/librenms",
-      "status": "Configurazione presente · cattura dedicata mancante",
+      "status": "Configurazione della demo acquisita; servizio esterno non collaudato",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -6984,7 +6952,7 @@
         }
       ],
       "limit": "Le varianti sono 13 nel registro MODULI_CON_PAGINA; non sono 13 prodotti tutti installati.",
-      "image": null,
+      "image": "modulo-librenms",
       "markers": [],
       "decision": null,
       "sources": [
@@ -7002,7 +6970,7 @@
       "lead": "Connessione al servizio di log operativi.",
       "purpose": "Connessione al servizio di log operativi.",
       "route": "/settings/moduli/graylog",
-      "status": "Configurazione presente · cattura dedicata mancante",
+      "status": "Configurazione della demo acquisita; servizio esterno non collaudato",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -7040,7 +7008,7 @@
         }
       ],
       "limit": "Le varianti sono 13 nel registro MODULI_CON_PAGINA; non sono 13 prodotti tutti installati.",
-      "image": null,
+      "image": "modulo-graylog",
       "markers": [],
       "decision": null,
       "sources": [
@@ -7058,7 +7026,7 @@
       "lead": "Configurazione delle fonti di sicurezza endpoint.",
       "purpose": "Configurazione delle fonti di sicurezza endpoint.",
       "route": "/settings/moduli/wazuh",
-      "status": "Configurazione presente · cattura dedicata mancante",
+      "status": "Configurazione della demo acquisita; servizio esterno non collaudato",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -7104,7 +7072,7 @@
         }
       ],
       "limit": "Le varianti sono 13 nel registro MODULI_CON_PAGINA; non sono 13 prodotti tutti installati.",
-      "image": null,
+      "image": "modulo-wazuh",
       "markers": [],
       "decision": null,
       "sources": [
@@ -7122,7 +7090,7 @@
       "lead": "Integrazione secondaria di log presente nelle configurazioni.",
       "purpose": "Integrazione secondaria di log presente nelle configurazioni.",
       "route": "/settings/moduli/loki",
-      "status": "Configurazione presente · cattura dedicata mancante",
+      "status": "Configurazione della demo acquisita; servizio esterno non collaudato",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -7160,7 +7128,7 @@
         }
       ],
       "limit": "Le varianti sono 13 nel registro MODULI_CON_PAGINA; non sono 13 prodotti tutti installati.",
-      "image": null,
+      "image": "modulo-loki",
       "markers": [],
       "decision": null,
       "sources": [
@@ -7178,7 +7146,7 @@
       "lead": "Archivio dei collegamenti alle integrazioni.",
       "purpose": "Archivio dei collegamenti alle integrazioni.",
       "route": "/settings/moduli/credenziali",
-      "status": "Configurazione presente · cattura dedicata mancante",
+      "status": "Configurazione della demo acquisita; servizio esterno non collaudato",
       "steps": [
         {
           "title": "Entrare nel contesto",
@@ -7216,7 +7184,7 @@
         }
       ],
       "limit": "Le varianti sono 13 nel registro MODULI_CON_PAGINA; non sono 13 prodotti tutti installati.",
-      "image": null,
+      "image": "modulo-credenziali",
       "markers": [],
       "decision": null,
       "sources": [
@@ -7236,9 +7204,9 @@
       "title": "Active Directory: cinque viste e configurazione",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-active-directory",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": [
         "computers",
         "users",
@@ -7268,9 +7236,9 @@
       "title": "Anomalie: variazioni dei dati di rete",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-analytics",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -7294,9 +7262,9 @@
       "title": "Tabella ARP cumulativa",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-arp-table",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -7323,9 +7291,9 @@
       "title": "Configurazione cliente: dossier tecnico",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-client-config",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -7364,7 +7332,7 @@
       "redirect": null,
       "image": null,
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire: vista residua; inoltra alla scheda unificata se esiste un host",
+      "screen": "parziale: demo reindirizza all’elenco; ramo legacy non riprodotto",
       "tabs": []
     },
     {
@@ -7375,9 +7343,9 @@
       "title": "Elenco apparati gestiti",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-devices",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -7388,9 +7356,9 @@
       "title": "DHCP Kea: panorama, scope, lease e statici",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-dhcp",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "parziale: stato non configurato o servizio esterno scollegato",
       "tabs": [
         "Panorama",
         "Scope",
@@ -7407,9 +7375,9 @@
       "title": "DHCP esterno: lease, fonti e sincronizzazione",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-dhcp-sources",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -7433,9 +7401,9 @@
       "title": "DNS: panorama, zone, filtro e resolver",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-dns",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "parziale: stato non configurato o servizio esterno scollegato",
       "tabs": [
         "Panorama",
         "Zone DNS",
@@ -7451,9 +7419,9 @@
       "title": "IP esclusi: perimetro delle eccezioni",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-excluded-ips",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -7490,9 +7458,9 @@
       "title": "Scheda asset: tutte le sezioni",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-inventory-id",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": [
         "nis2",
         "identificazione",
@@ -7516,9 +7484,9 @@
       "title": "Abbinamenti: PC, asset e utente prevalente",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-inventory-abbinamenti",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -7529,9 +7497,9 @@
       "title": "Importa da AD: proposta e conferma",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-inventory-assignees-import-ad",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -7542,9 +7510,9 @@
       "title": "Assegnatari: persone e stato AD",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-inventory-assignees",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -7555,9 +7523,9 @@
       "title": "Licenze: posti, scadenza e assegnazioni",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-inventory-licenses",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -7568,9 +7536,9 @@
       "title": "Ubicazioni: struttura fisica e mappa",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-inventory-locations",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -7607,9 +7575,9 @@
       "title": "Manuale integrato: più documenti e ricerca del contesto",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-manual",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -7620,9 +7588,9 @@
       "title": "Monitoraggio degli host conosciuti",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-monitoring-known-hosts",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -7633,9 +7601,9 @@
       "title": "Network Services: salute e collegamenti",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-network-services",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "parziale: stato non configurato o servizio esterno scollegato",
       "tabs": []
     },
     {
@@ -7674,7 +7642,7 @@
       "redirect": null,
       "image": "scheda-host",
       "content": "scheda dedicata dal sorgente",
-      "screen": "parziale: sola variante host",
+      "screen": "varianti per tipo acquisite; dati approfonditi secondo raccolte disponibili",
       "tabs": []
     },
     {
@@ -7698,9 +7666,9 @@
       "title": "Dettaglio CVE: bersagli, fix e pin manuale",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-patch-management-cve-cve-d",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -7711,9 +7679,9 @@
       "title": "Patch per CVE: trovare un fix disponibile",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-patch-management-cve",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -7724,9 +7692,9 @@
       "title": "Patch sul dispositivo: programmi e azioni",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-patch-management-device-host-d",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -7737,9 +7705,9 @@
       "title": "Storico patch: operazioni, log e riavvio",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-patch-management-history",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -7750,9 +7718,9 @@
       "title": "Patch: dispositivi e software",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-patch-management",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": [
         "device",
         "software"
@@ -7766,9 +7734,9 @@
       "title": "Patch sul software: diffusione e correzione",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "software-dettaglio",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -7779,9 +7747,9 @@
       "title": "Sessione remota: avvio, iframe e riconnessione",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-rmm-host-d",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "parziale: stato non configurato o servizio esterno scollegato",
       "tabs": []
     },
     {
@@ -7792,9 +7760,9 @@
       "title": "Remoto senza agente: percorso distinto",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-rmm-host-d-senza-agente",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "parziale: stato non configurato o servizio esterno scollegato",
       "tabs": []
     },
     {
@@ -7805,9 +7773,9 @@
       "title": "Controllo remoto: endpoint e associazioni",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-rmm",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "parziale: stato non configurato o servizio esterno scollegato",
       "tabs": []
     },
     {
@@ -7831,9 +7799,9 @@
       "title": "Scansioni: storico delle esecuzioni",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-scans",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -7844,9 +7812,9 @@
       "title": "Alert sicurezza: classificazioni e presa in carico",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-security-alerts",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "parziale: stato non configurato o servizio esterno scollegato",
       "tabs": []
     },
     {
@@ -7857,9 +7825,9 @@
       "title": "Dipendenze del servizio e impatto",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-services-id",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -7870,9 +7838,9 @@
       "title": "Servizi: criticità, responsabilità e continuità",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-services",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -7883,9 +7851,9 @@
       "title": "Classificazioni personalizzate",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-settings-classifications",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -7922,9 +7890,9 @@
       "title": "Headwind: configurazione del collegamento MDM",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-settings-mdm",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -7935,9 +7903,9 @@
       "title": "Pagine dedicate dei moduli: tutte le varianti",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-settings-moduli-key",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire: 13 varianti",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": [
         "edge",
         "patch_management",
@@ -7975,9 +7943,9 @@
       "title": "Impostazioni: tutte le schede amministrative",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-settings",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": [
         "istanza",
         "utenti",
@@ -8000,9 +7968,9 @@
       "title": "Schedulazioni: il quadro dei lavori",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-settings-schedulazioni",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -8013,9 +7981,9 @@
       "title": "Profili SNMP e libreria OID",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-settings-snmp-profiles",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -8026,9 +7994,9 @@
       "title": "Trasferimento: bundle cifrato, livelli e importazione",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-settings-transfer",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -8065,9 +8033,9 @@
       "title": "Software: versioni, fonti e computer",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-software",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -8091,9 +8059,9 @@
       "title": "Istanze: gestione riservata dell’hub",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-tenants",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -8104,9 +8072,9 @@
       "title": "Dati della mappa: fonti e opzioni",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-topology-dati",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -8117,9 +8085,9 @@
       "title": "Topologia: vista automatica e lavoro del tecnico",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-topology",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -8130,9 +8098,9 @@
       "title": "Vulnerabilità: sorgenti, CVE e host coinvolti",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-vulnerabilities",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -8143,13 +8111,13 @@
       "title": "Pannello Zabbix in sola lettura",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-zabbix",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "parziale: stato non configurato o servizio esterno scollegato",
       "tabs": []
     }
   ],
-  "completion": "Copertura documentale ampliata; catture in completamento",
+  "completion": "Guida ampliata: UI acquisita; integrazioni esterne e rami condizionali espliciti",
   "imageDates": {
     "cosa-esce": "25/10/2026",
     "scheda-host": "25/10/2026",
@@ -8163,6 +8131,671 @@
     "subnet": "25/10/2026",
     "vault": "25/10/2026",
     "inventario": "25/10/2026",
-    "opzioni": "25/10/2026"
+    "opzioni": "25/10/2026",
+    "pagina-settings-mdm": "26/10/2026",
+    "apparato-server_linux-tab-0": "26/10/2026",
+    "pagina-active-directory": "26/10/2026",
+    "tab-asset-3": "26/10/2026",
+    "modulo-patch_management": "26/10/2026",
+    "apparato-switch-tab-6": "26/10/2026",
+    "pagina-settings-tab-istanza": "26/10/2026",
+    "pagina-dhcp-sources": "26/10/2026",
+    "apparato-storage-tab-6": "26/10/2026",
+    "pagina-topology-dati": "26/10/2026",
+    "pagina-network-services": "26/10/2026",
+    "pagina-vulnerabilities": "26/10/2026",
+    "tab-asset-esteso-3": "26/10/2026",
+    "pagina-excluded-ips": "26/10/2026",
+    "apparato-router-tab-0": "26/10/2026",
+    "apparato-mikrotik-tab-0": "26/10/2026",
+    "pagina-settings-tab-aggiornamenti": "26/10/2026",
+    "apparato-mikrotik": "26/10/2026",
+    "apparato-server_windows-tab-1": "26/10/2026",
+    "apparato-hypervisor-tab-4": "26/10/2026",
+    "apparato-hypervisor-tab-5": "26/10/2026",
+    "apparato-server_windows-tab-0": "26/10/2026",
+    "apparato-generico": "26/10/2026",
+    "apparato-mikrotik-tab-1": "26/10/2026",
+    "pagina-inventory-id": "26/10/2026",
+    "apparato-router-tab-1": "26/10/2026",
+    "tab-asset-esteso-10": "26/10/2026",
+    "tab-asset-esteso-2": "26/10/2026",
+    "modulo-meshcentral": "26/10/2026",
+    "tab-ad-4": "26/10/2026",
+    "tab-asset-2": "26/10/2026",
+    "apparato-switch": "26/10/2026",
+    "modulo-graylog": "26/10/2026",
+    "apparato-server_linux-tab-1": "26/10/2026",
+    "vault-sbloccato": "26/10/2026",
+    "pagina-devices": "26/10/2026",
+    "tab-asset-esteso-5": "26/10/2026",
+    "pagina-services": "26/10/2026",
+    "pagina-analytics": "26/10/2026",
+    "apparato-generico-tab-2": "26/10/2026",
+    "pagina-dhcp": "26/10/2026",
+    "apparato-router-tab-6": "26/10/2026",
+    "pagina-scans": "26/10/2026",
+    "apparato-mikrotik-tab-6": "26/10/2026",
+    "pagina-rmm-host-d-senza-agente": "26/10/2026",
+    "pagina-patch-management": "26/10/2026",
+    "apparato-server_windows-tab-7": "26/10/2026",
+    "apparato-hypervisor-tab-2": "26/10/2026",
+    "pagina-monitoring-known-hosts": "26/10/2026",
+    "pagina-zabbix": "26/10/2026",
+    "apparato-server_linux-tab-6": "26/10/2026",
+    "pagina-inventory-abbinamenti": "26/10/2026",
+    "modulo-wazuh": "26/10/2026",
+    "tab-asset-esteso-9": "26/10/2026",
+    "pagina-patch-management-cve": "26/10/2026",
+    "apparato-switch-tab-0": "26/10/2026",
+    "pagina-settings-tab-sistema": "26/10/2026",
+    "pagina-settings": "26/10/2026",
+    "apparato-storage-tab-0": "26/10/2026",
+    "software-dettaglio": "26/10/2026",
+    "tab-ad-3": "26/10/2026",
+    "apparato-storage-tab-1": "26/10/2026",
+    "pagina-rmm": "26/10/2026",
+    "tab-ad-2": "26/10/2026",
+    "apparato-switch-tab-1": "26/10/2026",
+    "pagina-dns": "26/10/2026",
+    "modulo-credenziali": "26/10/2026",
+    "tab-asset-esteso-8": "26/10/2026",
+    "pagina-manual": "26/10/2026",
+    "apparato-server_linux-tab-7": "26/10/2026",
+    "modulo-unifi": "26/10/2026",
+    "pagina-arp-table": "26/10/2026",
+    "apparato-hypervisor-tab-3": "26/10/2026",
+    "apparato-server_windows-tab-6": "26/10/2026",
+    "apparato-server_windows": "26/10/2026",
+    "pagina-services-id": "26/10/2026",
+    "pagina-patch-management-history": "26/10/2026",
+    "apparato-generico-tab-3": "26/10/2026",
+    "tab-asset-esteso-4": "26/10/2026",
+    "pagina-security-alerts": "26/10/2026",
+    "apparato-hypervisor-tab-0": "26/10/2026",
+    "apparato-server_windows-tab-5": "26/10/2026",
+    "apparato-server_linux": "26/10/2026",
+    "apparato-mikrotik-tab-4": "26/10/2026",
+    "pagina-settings-tab-notifiche": "26/10/2026",
+    "scheda-switch-porta": "26/10/2026",
+    "apparato-router-tab-4": "26/10/2026",
+    "apparato-generico-tab-0": "26/10/2026",
+    "vault-bloccato": "26/10/2026",
+    "pagina-inventory-licenses": "26/10/2026",
+    "tab-asset-esteso-7": "26/10/2026",
+    "pagina-tenants": "26/10/2026",
+    "apparato-server_linux-tab-8": "26/10/2026",
+    "pagina-settings-moduli-key": "26/10/2026",
+    "pagina-settings-tab-https": "26/10/2026",
+    "topologia-demo": "26/10/2026",
+    "pagina-devices-id": "26/10/2026",
+    "tab-ad-1": "26/10/2026",
+    "pagina-software": "26/10/2026",
+    "apparato-storage-tab-2": "26/10/2026",
+    "apparato-switch-tab-2": "26/10/2026",
+    "pagina-inventory-locations": "26/10/2026",
+    "pagina-inventory-assignees": "26/10/2026",
+    "pagina-settings-tab-utenti": "26/10/2026",
+    "tab-trunk-1": "26/10/2026",
+    "apparato-server_linux-tab-4": "26/10/2026",
+    "pagina-patch-management-cve-cve-d": "26/10/2026",
+    "apparato-server_linux-tab-5": "26/10/2026",
+    "tab-trunk-0": "26/10/2026",
+    "apparato-hypervisor": "26/10/2026",
+    "pagina-inventory-assignees-import-ad": "26/10/2026",
+    "apparato-switch-tab-3": "26/10/2026",
+    "pagina-settings-snmp-profiles": "26/10/2026",
+    "pagina-topology": "26/10/2026",
+    "tab-ad-0": "26/10/2026",
+    "apparato-server_windows-tab-8": "26/10/2026",
+    "apparato-storage-tab-3": "26/10/2026",
+    "tab-asset-esteso-6": "26/10/2026",
+    "apparato-generico-tab-1": "26/10/2026",
+    "apparato-router-tab-5": "26/10/2026",
+    "apparato-mikrotik-tab-5": "26/10/2026",
+    "modulo-zabbix": "26/10/2026",
+    "pagina-settings-tab-alert-sicurezza": "26/10/2026",
+    "apparato-storage": "26/10/2026",
+    "apparato-server_windows-tab-4": "26/10/2026",
+    "apparato-hypervisor-tab-1": "26/10/2026",
+    "apparato-storage-tab-4": "26/10/2026",
+    "apparato-switch-tab-4": "26/10/2026",
+    "pagina-settings-transfer": "26/10/2026",
+    "tab-asset-1": "26/10/2026",
+    "pagina-patch-management-device-host-d": "26/10/2026",
+    "apparato-server_linux-tab-2": "26/10/2026",
+    "modulo-inventory_agent": "26/10/2026",
+    "apparato-hypervisor-tab-6": "26/10/2026",
+    "pagina-rmm-host-d": "26/10/2026",
+    "apparato-server_windows-tab-3": "26/10/2026",
+    "modulo-librenms": "26/10/2026",
+    "pagina-settings-tab-jobs": "26/10/2026",
+    "pagina-settings-classifications": "26/10/2026",
+    "apparato-mikrotik-tab-2": "26/10/2026",
+    "apparato-router-tab-2": "26/10/2026",
+    "tab-asset-esteso-1": "26/10/2026",
+    "modulo-edge": "26/10/2026",
+    "modulo-loki": "26/10/2026",
+    "pagina-settings-schedulazioni": "26/10/2026",
+    "tab-asset-esteso-0": "26/10/2026",
+    "modulo-network_services": "26/10/2026",
+    "apparato-router-tab-3": "26/10/2026",
+    "apparato-mikrotik-tab-3": "26/10/2026",
+    "apparato-server_windows-tab-2": "26/10/2026",
+    "apparato-hypervisor-tab-7": "26/10/2026",
+    "apparato-router": "26/10/2026",
+    "modulo-nis2_inventory": "26/10/2026",
+    "apparato-server_linux-tab-3": "26/10/2026",
+    "pagina-settings-tab-identificazione": "26/10/2026",
+    "pagina-settings-tab-scansione": "26/10/2026",
+    "vault-registro": "26/10/2026",
+    "pagina-client-config": "26/10/2026",
+    "tab-asset-0": "26/10/2026",
+    "apparato-switch-tab-5": "26/10/2026",
+    "apparato-storage-tab-5": "26/10/2026",
+    "accesso-login": "26/10/2026",
+    "accesso-setup": "26/10/2026"
+  },
+  "galleries": {
+    "pagina-active-directory": [
+      {
+        "image": "tab-ad-0",
+        "title": "Computer (2)",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "tab-ad-1",
+        "title": "Utenti (2)",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "tab-ad-2",
+        "title": "Gruppi (1)",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "tab-ad-3",
+        "title": "DHCP (0)",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "tab-ad-4",
+        "title": "Health",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      }
+    ],
+    "pagina-inventory-id": [
+      {
+        "image": "tab-asset-0",
+        "title": "Scheda NIS2",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "tab-asset-1",
+        "title": "Servizi",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "tab-asset-2",
+        "title": "Licenze",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "tab-asset-3",
+        "title": "Storico",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "tab-asset-esteso-0",
+        "title": "Identificazione",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "tab-asset-esteso-1",
+        "title": "Ubicazione",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "tab-asset-esteso-2",
+        "title": "Responsabilità",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "tab-asset-esteso-3",
+        "title": "Ciclo vita",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "tab-asset-esteso-4",
+        "title": "Tecnico",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "tab-asset-esteso-5",
+        "title": "Compliance",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "tab-asset-esteso-6",
+        "title": "Servizi",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "tab-asset-esteso-7",
+        "title": "Licenze",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "tab-asset-esteso-8",
+        "title": "Storico",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "tab-asset-esteso-9",
+        "title": "Economico",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "tab-asset-esteso-10",
+        "title": "Supporto",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      }
+    ],
+    "pagina-arp-table-trunk": [
+      {
+        "image": "tab-trunk-0",
+        "title": "Sicurezza della rete✕ 11 allarmi · 1 esposizioni · 1 novità",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "tab-trunk-1",
+        "title": "VLAN e reti3 VLAN viste · 12 indirizzi IP",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      }
+    ],
+    "pagina-objects-id-tipo-switch": [
+      {
+        "image": "apparato-switch",
+        "title": "switch",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "apparato-switch-tab-0",
+        "title": "Panoramica",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "apparato-switch-tab-1",
+        "title": "Porte",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "apparato-switch-tab-2",
+        "title": "VLAN",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "apparato-switch-tab-3",
+        "title": "Vicini e MAC",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "apparato-switch-tab-4",
+        "title": "Sicurezza",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "apparato-switch-tab-5",
+        "title": "Gestione",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "apparato-switch-tab-6",
+        "title": "Storico",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      }
+    ],
+    "pagina-objects-id-tipo-router": [
+      {
+        "image": "apparato-router",
+        "title": "router",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "apparato-router-tab-0",
+        "title": "Panoramica",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "apparato-router-tab-1",
+        "title": "Porte",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "apparato-router-tab-2",
+        "title": "VLAN",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "apparato-router-tab-3",
+        "title": "Vicini e MAC",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "apparato-router-tab-4",
+        "title": "Sicurezza",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "apparato-router-tab-5",
+        "title": "Gestione",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "apparato-router-tab-6",
+        "title": "Storico",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      }
+    ],
+    "pagina-objects-id-tipo-mikrotik": [
+      {
+        "image": "apparato-mikrotik",
+        "title": "mikrotik",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "apparato-mikrotik-tab-0",
+        "title": "Panoramica",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "apparato-mikrotik-tab-1",
+        "title": "Porte",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "apparato-mikrotik-tab-2",
+        "title": "VLAN",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "apparato-mikrotik-tab-3",
+        "title": "Vicini e MAC",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "apparato-mikrotik-tab-4",
+        "title": "Sicurezza",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "apparato-mikrotik-tab-5",
+        "title": "Gestione",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "apparato-mikrotik-tab-6",
+        "title": "Storico",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      }
+    ],
+    "pagina-objects-id-tipo-storage": [
+      {
+        "image": "apparato-storage",
+        "title": "storage",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "apparato-storage-tab-0",
+        "title": "Panoramica",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "apparato-storage-tab-1",
+        "title": "Dischi e RAID",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "apparato-storage-tab-2",
+        "title": "Volumi",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "apparato-storage-tab-3",
+        "title": "Servizi",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "apparato-storage-tab-4",
+        "title": "Sicurezza",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "apparato-storage-tab-5",
+        "title": "Gestione",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "apparato-storage-tab-6",
+        "title": "Storico",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      }
+    ],
+    "pagina-objects-id-tipo-hypervisor": [
+      {
+        "image": "apparato-hypervisor",
+        "title": "hypervisor",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "apparato-hypervisor-tab-0",
+        "title": "Panoramica",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "apparato-hypervisor-tab-1",
+        "title": "VM e container",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "apparato-hypervisor-tab-2",
+        "title": "Nodi",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "apparato-hypervisor-tab-3",
+        "title": "Storage",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "apparato-hypervisor-tab-4",
+        "title": "Rete",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "apparato-hypervisor-tab-5",
+        "title": "Sicurezza",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "apparato-hypervisor-tab-6",
+        "title": "Gestione",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "apparato-hypervisor-tab-7",
+        "title": "Storico",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      }
+    ],
+    "pagina-objects-id-tipo-server-windows": [
+      {
+        "image": "apparato-server_windows",
+        "title": "server_windows",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "apparato-server_windows-tab-0",
+        "title": "Panoramica",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "apparato-server_windows-tab-1",
+        "title": "Sistema",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "apparato-server_windows-tab-2",
+        "title": "Servizi",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "apparato-server_windows-tab-3",
+        "title": "Aggiornamenti",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "apparato-server_windows-tab-4",
+        "title": "Software",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "apparato-server_windows-tab-5",
+        "title": "Utenti",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "apparato-server_windows-tab-6",
+        "title": "Sicurezza",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "apparato-server_windows-tab-7",
+        "title": "Gestione",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "apparato-server_windows-tab-8",
+        "title": "Storico",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      }
+    ],
+    "pagina-objects-id-tipo-server-linux": [
+      {
+        "image": "apparato-server_linux",
+        "title": "server_linux",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "apparato-server_linux-tab-0",
+        "title": "Panoramica",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "apparato-server_linux-tab-1",
+        "title": "Sistema",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "apparato-server_linux-tab-2",
+        "title": "Servizi e processi",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "apparato-server_linux-tab-3",
+        "title": "Pacchetti",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "apparato-server_linux-tab-4",
+        "title": "Utenti",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "apparato-server_linux-tab-5",
+        "title": "Dipendenze1",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "apparato-server_linux-tab-6",
+        "title": "Sicurezza",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "apparato-server_linux-tab-7",
+        "title": "Gestione",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "apparato-server_linux-tab-8",
+        "title": "Storico",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      }
+    ],
+    "pagina-settings-vault": [
+      {
+        "image": "vault-bloccato",
+        "title": "Archivio bloccato e sblocco manuale",
+        "note": "Archivio sintetico locale; nessun TPM o OpenBao cliente. Esportazione KDBX e key file riuscita via API nella demo."
+      },
+      {
+        "image": "vault-sbloccato",
+        "title": "Archivio aperto ed esportazione KeePass",
+        "note": "Archivio sintetico locale; nessun TPM o OpenBao cliente. Esportazione KDBX e key file riuscita via API nella demo."
+      },
+      {
+        "image": "vault-registro",
+        "title": "Registro degli export",
+        "note": "Archivio sintetico locale; nessun TPM o OpenBao cliente. Esportazione KDBX e key file riuscita via API nella demo."
+      }
+    ],
+    "vault": [
+      {
+        "image": "vault-bloccato",
+        "title": "Archivio bloccato e sblocco manuale",
+        "note": "Archivio sintetico locale; nessun TPM o OpenBao cliente. Esportazione KDBX e key file riuscita via API nella demo."
+      },
+      {
+        "image": "vault-sbloccato",
+        "title": "Archivio aperto ed esportazione KeePass",
+        "note": "Archivio sintetico locale; nessun TPM o OpenBao cliente. Esportazione KDBX e key file riuscita via API nella demo."
+      },
+      {
+        "image": "vault-registro",
+        "title": "Registro degli export",
+        "note": "Archivio sintetico locale; nessun TPM o OpenBao cliente. Esportazione KDBX e key file riuscita via API nella demo."
+      }
+    ],
+    "pagina-objects-id-tipo-generico": [
+      {
+        "image": "apparato-generico",
+        "title": "Dispositivo gestito generico",
+        "note": "La scheda generica gestita è distinta dall’host rilevato e non ancora gestito."
+      }
+    ],
+    "trunk-reti": [
+      {
+        "image": "tab-trunk-0",
+        "title": "Sicurezza della rete✕ 11 allarmi · 1 esposizioni · 1 novità",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "tab-trunk-1",
+        "title": "VLAN e reti3 VLAN viste · 12 indirizzi IP",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      }
+    ],
+    "trunk-rilievi": [
+      {
+        "image": "tab-trunk-0",
+        "title": "Sicurezza della rete✕ 11 allarmi · 1 esposizioni · 1 novità",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      },
+      {
+        "image": "tab-trunk-1",
+        "title": "VLAN e reti3 VLAN viste · 12 indirizzi IP",
+        "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+      }
+    ]
   }
 }

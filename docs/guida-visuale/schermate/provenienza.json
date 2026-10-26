@@ -1,83 +1,1062 @@
 {
-  "fonte": "76b15198",
-  "versione": "0.9.913",
-  "cattura": "2026-10-25",
-  "dati": "Esclusivamente sintetici, istanza DEMO",
-  "viewport": [
-    1440,
-    1000
-  ],
-  "immagini": [
+  "fonte": "76b15198, v0.9.913",
+  "ambiente": "demo dedicata isolata sul Mac mini; dati TEST-NET e .invalid",
+  "catture": [
     {
-      "file": "cosa-esce.webp",
-      "route": "/settings/cosa-esce",
-      "sha256": "5d8e1078b4c67320f66db496dea38a97ebf937dfb9348fa3b80c6d598939b95f"
+      "file": "accesso-login.webp",
+      "sha256": "0ddba54a70f593d37acd4247f0dce39b855c66bc16e569f70579f04557dd3a47",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
     },
     {
-      "file": "dashboard.webp",
-      "route": "/",
-      "sha256": "c70a009d4b27366ba6565e6f0d02972f5edc7d0046a5a2442346939d8d6df266"
+      "file": "accesso-setup.webp",
+      "sha256": "b1623e1545e22e9bb332ccda5ee1b9463df872626d98a66afb7885e018b0cc9f",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
     },
     {
-      "file": "discovery.webp",
-      "route": "/discovery",
-      "sha256": "372d2d7294cc565a2f94bee08303dcbc881098cd10156f69e9c59543d576e3d0"
+      "file": "apparato-generico-tab-0.webp",
+      "sha256": "1c181c0b5b6bc61c599930d7cbaad3dd119f6cb58a121281da02645e33e5a2fa",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
     },
     {
-      "file": "inventario.webp",
-      "route": "/inventory",
-      "sha256": "d30af8f70413d2eb1e9d3051b6ba8f81ae6f690ee5a98ba42cf7e79644c8bf61"
+      "file": "apparato-generico-tab-1.webp",
+      "sha256": "6ce206aa540fa4b7969bbe5d8108ee02e13dda2e8014cc2c873a96c519852225",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
     },
     {
-      "file": "moduli.webp",
-      "route": "/settings?tab=moduli",
-      "sha256": "40ca9b62a7bcc1b77c2b6d03a64e2c499839d2c5a4f818e22872f21d4514d3c4"
+      "file": "apparato-generico-tab-2.webp",
+      "sha256": "f9a3ce7c9360b004a729abc6f1e14d5c29584deb1585a94fae903ee0c666e8ad",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
     },
     {
-      "file": "opzioni.webp",
-      "route": "/settings/opzioni",
-      "sha256": "8e8452433e21feac07012f653f422620da8af3f0895f538c9d9d232492baa60a"
+      "file": "apparato-generico-tab-3.webp",
+      "sha256": "2cdf3efb9e20644d43fc01e59f847ddd20f787be0cc82c9e05c36e33b0b7b38e",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
     },
     {
-      "file": "scheda-host.webp",
-      "route": "/objects/3",
-      "sha256": "fe9ef1e53f79edcfda689a7057bdf22af1b599505a19cf398c8d188c5f61f5c9"
+      "file": "apparato-generico.webp",
+      "sha256": "79457dcbeb4cb200c4b18a021e614d11fab4e920f0e2e348c714c6bf97113623",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
     },
     {
-      "file": "subnet.webp",
-      "route": "/networks",
-      "sha256": "bd84a1073df8fae192f5dbc5603e0c9466d42da97f141134fa7e29292b9f2991"
+      "file": "apparato-hypervisor-tab-0.webp",
+      "sha256": "8599f2127d65d350445de5edfd6aeea91866a1f5e7cbf68912144de86c5d37ae",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
     },
     {
-      "file": "trunk-sicurezza.webp",
-      "route": "/arp-table/trunk#sicurezza",
-      "sha256": "8ceb3783c6524c90d540c2919dc774d8a3534b2777dd27982d3fde10664402dd"
+      "file": "apparato-hypervisor-tab-1.webp",
+      "sha256": "76983a863dc610b7f40f0b58dbc7fda42a6fed73e7295260c0c4253aa0275c8e",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
     },
     {
-      "file": "vault.webp",
-      "route": "/settings/vault",
-      "sha256": "8f893489b9bca4c5c9f5c284c137eb93ac4e1ff3cd9cd7ee7ebc6453ee33378b"
+      "file": "apparato-hypervisor-tab-2.webp",
+      "sha256": "eabacacd60424d7a48af4587c02308e64ea29958734442f18bffb3b72a9441df",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-hypervisor-tab-3.webp",
+      "sha256": "51ab24dea95fa01f0ba439bb45ae410c192c241f5e4aab3c383ef0653ca9edf8",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-hypervisor-tab-4.webp",
+      "sha256": "63916c0800456df52448e0dbda5feaf7dfde8399cafb03705e94f3a18029278e",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-hypervisor-tab-5.webp",
+      "sha256": "888590d5cd861e4e69a2f59872686a7cd9e83a4cb5e69d2d8ded2706037958b6",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-hypervisor-tab-6.webp",
+      "sha256": "0200fc500caea04249b61a0faf34e511edcffc1e0966a842474f8d7dc72f689f",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-hypervisor-tab-7.webp",
+      "sha256": "3c0553a8b3425652878c8bed1fd881ad0a3e4f63b3dd6b9e0665ce229d92a3ef",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-hypervisor.webp",
+      "sha256": "8599f2127d65d350445de5edfd6aeea91866a1f5e7cbf68912144de86c5d37ae",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-mikrotik-tab-0.webp",
+      "sha256": "a446ee7ecc256e3b88f192da068e0dfa84305dea3a1b5d5c86cdf0c509d6888a",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-mikrotik-tab-1.webp",
+      "sha256": "5499d108ed5c9087b6c5e8413dfccb9bd6d02b6a5f6fa44842552e8af6e7ffd5",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-mikrotik-tab-2.webp",
+      "sha256": "c37797423f9b7160b6921d97e1d9593d98159fbb17e92e385528bdc6d31fa5ba",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-mikrotik-tab-3.webp",
+      "sha256": "17aa8c9b7c2ef3d26473467d295d82e6eb4c9863d19f769295651697dfa8bcb3",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-mikrotik-tab-4.webp",
+      "sha256": "d84755c53e02ec48e08bf7549323bcac286522a822816e6906360562911f21cd",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-mikrotik-tab-5.webp",
+      "sha256": "03da17703dd533dab38db808f243587de88f56cd23571430c755e3d7fdf836d7",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-mikrotik-tab-6.webp",
+      "sha256": "588ce09c76d38267a7782427e656a87daca16060fd0f8907ee5cb84708f49923",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-mikrotik.webp",
+      "sha256": "a446ee7ecc256e3b88f192da068e0dfa84305dea3a1b5d5c86cdf0c509d6888a",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-router-tab-0.webp",
+      "sha256": "a446ee7ecc256e3b88f192da068e0dfa84305dea3a1b5d5c86cdf0c509d6888a",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-router-tab-1.webp",
+      "sha256": "5499d108ed5c9087b6c5e8413dfccb9bd6d02b6a5f6fa44842552e8af6e7ffd5",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-router-tab-2.webp",
+      "sha256": "c37797423f9b7160b6921d97e1d9593d98159fbb17e92e385528bdc6d31fa5ba",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-router-tab-3.webp",
+      "sha256": "17aa8c9b7c2ef3d26473467d295d82e6eb4c9863d19f769295651697dfa8bcb3",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-router-tab-4.webp",
+      "sha256": "d84755c53e02ec48e08bf7549323bcac286522a822816e6906360562911f21cd",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-router-tab-5.webp",
+      "sha256": "03da17703dd533dab38db808f243587de88f56cd23571430c755e3d7fdf836d7",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-router-tab-6.webp",
+      "sha256": "fc1e12c01f0af542be5371f76c44cd450fcdd2c83a2dd9e9841d1e8451e58e3a",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-router.webp",
+      "sha256": "a446ee7ecc256e3b88f192da068e0dfa84305dea3a1b5d5c86cdf0c509d6888a",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-server_linux-tab-0.webp",
+      "sha256": "f78b662fe31491319f60fa93bc27617ac7544259a904bc1d9f9ecca69d9c623f",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-server_linux-tab-1.webp",
+      "sha256": "ceec20bc7f5cd0367698c89400b4d9ee065c75ed67dfd056e6b7b80af5b845dc",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-server_linux-tab-2.webp",
+      "sha256": "fb44d395c9fe18500141648256b3ba8cda937625134d2cffcaa53d131b543be0",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-server_linux-tab-3.webp",
+      "sha256": "7c35416aa0783362058bfe620277ab76684b2a067c48dbfb734677185f2a1aec",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-server_linux-tab-4.webp",
+      "sha256": "e9fa93cdff8df47502f6a17322d0b70b8730b425745eed48a94e677d32f6f7e1",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-server_linux-tab-5.webp",
+      "sha256": "7ecd49d9a225161abf0258058349720612aa23a3540e2d81a81c744205962725",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-server_linux-tab-6.webp",
+      "sha256": "7295ef1a142ad9ff2e061bcdeb0533fb35fd456914864ba1f39c8ec391dba05b",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-server_linux-tab-7.webp",
+      "sha256": "aa98ec189b2c61b6d2006234480e60d611f631e7f0775c4d59476b2ae7a5bcd8",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-server_linux-tab-8.webp",
+      "sha256": "ac7edd1a947b0d7ae7fac9ece97efc606cb7fe089ed2574f0a60bf462f6334ec",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-server_linux.webp",
+      "sha256": "f78b662fe31491319f60fa93bc27617ac7544259a904bc1d9f9ecca69d9c623f",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-server_windows-tab-0.webp",
+      "sha256": "7ac50c71547ca76756ee969689cc27350f95135a813dd38b1a6120ee1c7fd8fd",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-server_windows-tab-1.webp",
+      "sha256": "bda046eab82c83fb310fe68afe739d0212a776bc9f535ce7f609ef99fb9cc5a4",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-server_windows-tab-2.webp",
+      "sha256": "6ef04d436fbe31d47f6b19099526957b566c051a0399ff9af8a0a709ac6f11e8",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-server_windows-tab-3.webp",
+      "sha256": "683b82e7875b20201520c01c1477bc217332818b2ed9d7d60ebc3ed9b7cdaa16",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-server_windows-tab-4.webp",
+      "sha256": "8b149667cfff25528935ef8c92ea6481c391f2789059564574e428b313cad0c7",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-server_windows-tab-5.webp",
+      "sha256": "8cc94020cd0033557aca6127e7184a019d656fb6c4d06ad98813ecae9d71b91c",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-server_windows-tab-6.webp",
+      "sha256": "18e5db417a3f7ab8a0dee02d407e10e80331076b3bbe0603fa524c3370e3b71f",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-server_windows-tab-7.webp",
+      "sha256": "3e0aab1fccde0bd280043861f9cbc9a9c6c1a063cf58ba4392b931a95cd3b17f",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-server_windows-tab-8.webp",
+      "sha256": "8e1ae09f9b3a875b606367132930b23240b6971558ad4ffeeea80d179b93f8ea",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-server_windows.webp",
+      "sha256": "7ac50c71547ca76756ee969689cc27350f95135a813dd38b1a6120ee1c7fd8fd",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-storage-tab-0.webp",
+      "sha256": "81ad6164bb705ce7ffc83493ef236d12e28b498d24639658e2cf9d7a1db483d7",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-storage-tab-1.webp",
+      "sha256": "3b1264cec02f9c6c04e47e5f43bb531a24244e45991f1168bdc79746e9316a12",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-storage-tab-2.webp",
+      "sha256": "9cd7dbcc668d96ffd32ad9fb78f565dd10f381701485bc6fe681c8764e33720e",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-storage-tab-3.webp",
+      "sha256": "a052ac6bf91ecfb9698e9a615c2c83c8348bd158fb9a4f4e185a5b1735406675",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-storage-tab-4.webp",
+      "sha256": "d5dc2938525735797f074151e73bfe44af7a723e1367abd0646e8e3395fe41d3",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-storage-tab-5.webp",
+      "sha256": "7a1e924543d964a99f70e31561e45db641c67a1e526980fe7e85cf9324469de5",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-storage-tab-6.webp",
+      "sha256": "e8c7a69f76184ecf7806b8e129bcd2eb9e8014ca7835abb8767cc248ee39e3ef",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-storage.webp",
+      "sha256": "81ad6164bb705ce7ffc83493ef236d12e28b498d24639658e2cf9d7a1db483d7",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-switch-tab-0.webp",
+      "sha256": "07de430283dc8ff97aee73b3e5f10aa6ee9a8696b651111557bfc4ddd6accae6",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-switch-tab-1.webp",
+      "sha256": "c40052a7b26b80ef1a2b98b3beb3c7d3922f4a4da287f53da70352d48ef0ace9",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-switch-tab-2.webp",
+      "sha256": "194f1f1dadfa1ba3e21b9f8032822a295ea489c8360208cae1ef62a602427fb5",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-switch-tab-3.webp",
+      "sha256": "7a4997b3563232c78262a8b68212ad35199ec58df03c2fe328914e70c7128b84",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-switch-tab-4.webp",
+      "sha256": "6110da7dccc808a7ecc7b5960d961a5303d45c1af2b6ed43fd20d3346f94834d",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-switch-tab-5.webp",
+      "sha256": "e9d3ca6ea0e413a4f0f2c99353a56e11c8f97182cb967946319f9f7981821d0d",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-switch-tab-6.webp",
+      "sha256": "3ab21141de228f1af31f98293834e1901b37c9938321c13d23d5917eb2fba00c",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "apparato-switch.webp",
+      "sha256": "07de430283dc8ff97aee73b3e5f10aa6ee9a8696b651111557bfc4ddd6accae6",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
     },
     {
       "file": "controller.webp",
-      "route": "/controllers",
       "sha256": "0a4e307bebd55a76e77a20c2449cd5f5c672ff61b5bd1ecd89efb0a11d6dcabc",
-      "cattura": "2026-10-26",
-      "stato": "laboratorio sintetico, nessun collegamento esterno"
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "cosa-esce.webp",
+      "sha256": "5d8e1078b4c67320f66db496dea38a97ebf937dfb9348fa3b80c6d598939b95f",
+      "data": "25/10/2026",
+      "origine": "demo sintetica, UI reale"
     },
     {
       "file": "credenziali.webp",
-      "route": "/credentials",
       "sha256": "39f095e94a44f0643b456a79d6579375066146a4c3c0ef17ba695b4a71684811",
-      "cattura": "2026-10-26",
-      "stato": "laboratorio sintetico, nessun collegamento esterno"
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "dashboard.webp",
+      "sha256": "c70a009d4b27366ba6565e6f0d02972f5edc7d0046a5a2442346939d8d6df266",
+      "data": "25/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "discovery.webp",
+      "sha256": "372d2d7294cc565a2f94bee08303dcbc881098cd10156f69e9c59543d576e3d0",
+      "data": "25/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "inventario.webp",
+      "sha256": "d30af8f70413d2eb1e9d3051b6ba8f81ae6f690ee5a98ba42cf7e79644c8bf61",
+      "data": "25/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "moduli.webp",
+      "sha256": "40ca9b62a7bcc1b77c2b6d03a64e2c499839d2c5a4f818e22872f21d4514d3c4",
+      "data": "25/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "modulo-credenziali.webp",
+      "sha256": "f6009f1afb97b0f81a040efef54cd8d79b60c84b6012d017849f6d3cde32cec5",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "modulo-edge.webp",
+      "sha256": "e9ac50215bfca3800c1e52c34264b91aed226bbf8abbd898a6c72bfd5d96ab9e",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "modulo-graylog.webp",
+      "sha256": "73ded8324c8e120accc7bfe69b23a833c715c1306c756ff13cd28d71be550a19",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "modulo-inventory_agent.webp",
+      "sha256": "48a6a4c66a955a1fdb5bde2eb084a2ee31b6bc2e21aaba72876b82ec2b5b0e56",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "modulo-librenms.webp",
+      "sha256": "af54a629247cf17480f50ba21330e084ef997b140263a6279b362c965e56a69d",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "modulo-loki.webp",
+      "sha256": "7bb2eba73d6c9eefbabac0ea07aa699f072ce95d7ca439797a702eec097f3ced",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "modulo-meshcentral.webp",
+      "sha256": "af5724df71fc2724aa80139a9f08597eea73432419e32f5ea6b9f42bf72ef388",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "modulo-network_services.webp",
+      "sha256": "b3dde3b168b902f28083924af62d007765db1e93924713c583b5db24901051d3",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "modulo-nis2_inventory.webp",
+      "sha256": "96f51bb36b2c6586f411f48cf250dfda1d0778e6f76e21f72f7d6171439a4e7e",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "modulo-patch_management.webp",
+      "sha256": "598cff210ad540f6cb0ccd0033a849233eb31ad7fcd8edbd088cc998fe32b41b",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "modulo-unifi.webp",
+      "sha256": "e52a8ce1ff0298925b4f4052bf8dd2501f9921247d8eda958ec1b1803988fe51",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "modulo-wazuh.webp",
+      "sha256": "cadfe0041ad53f3f63f64e104dd69ddef5e31508bf46045ef92cb2b354405c03",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "modulo-zabbix.webp",
+      "sha256": "f080509a446fcd7095b3916bc009cd918f26a11bc87af6c6f99277e76f425409",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "opzioni.webp",
+      "sha256": "8e8452433e21feac07012f653f422620da8af3f0895f538c9d9d232492baa60a",
+      "data": "25/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "pagina-active-directory.webp",
+      "sha256": "1e497ff8b261506ef3ef30ee0a991a5994691e7447bde0054026ed6b00914490",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "pagina-analytics.webp",
+      "sha256": "e2bd12dd5dd01f9cb2327914131ab16815e9f502bd537400e2ac703851320e40",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "pagina-arp-table.webp",
+      "sha256": "79825c30a67885f72b3d07c475ed5494dad46d9f408b60408432bbbe0c5c8ff1",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "pagina-client-config.webp",
+      "sha256": "d9a2827e67ffb2e35cf5fc4b6119c478cc79a76632017de2e8d9ad4625dca383",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "pagina-devices-id.webp",
+      "sha256": "f095037b5e04068608c5ea76f9b054fa74754f3d39b79a88a95b619afa9dc2b6",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "pagina-devices.webp",
+      "sha256": "0804d90acee0bbae6ae12c89d3885ea4755d8f9c26285210c981f4802eb437f6",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "pagina-dhcp-sources.webp",
+      "sha256": "2dfcb94822592672bfa3f082ece86b5ae6871938f7416b96f3e6326319bb9ad0",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "pagina-dhcp.webp",
+      "sha256": "4bc75fbb025366269f6c6f8304b938c080007c401834ed908f994b2286baf031",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "pagina-dns.webp",
+      "sha256": "67cf9e3afa7ca1712ea2ab9e4edc5292193fb6aa0ea987083e20bd6cc7178a54",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "pagina-excluded-ips.webp",
+      "sha256": "8ad2fe6a3a67286947341ed2be47aadfb666bb3606b3256b7ab0acb9972b0145",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "pagina-inventory-abbinamenti.webp",
+      "sha256": "ded4422d3956e390155b73b125449059de0307b0423f28d5f08c9ec0cb01eb22",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "pagina-inventory-assignees-import-ad.webp",
+      "sha256": "4e719415efe1c96f6c7eae0bf5760ae9f23b99808ace5ac9a09a356a0b75e231",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "pagina-inventory-assignees.webp",
+      "sha256": "67f0c43de072ac016814c49329249fe34668dea8041459857e3ded463a6a9417",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "pagina-inventory-id.webp",
+      "sha256": "69188a4d0e462168f65388a387dfff551b376d48904552dea26cfb9ad699aa71",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "pagina-inventory-licenses.webp",
+      "sha256": "f978ea18386a9a0028facc33151a151f58d2d28c99142876917832e760e184a3",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "pagina-inventory-locations.webp",
+      "sha256": "f0ba208af91362c9c0ed3b5b12ede681782f71bfe19fc0d61a8862a6b966bcc4",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "pagina-manual.webp",
+      "sha256": "82b8a0999f60c60edd736b938f92e68d73efd83275a6786acbb08bfe79dc7ea1",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "pagina-monitoring-known-hosts.webp",
+      "sha256": "23b5e0fb858655729a680215a330b40a77931e84aac134dbf7553919870eaea9",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "pagina-network-services.webp",
+      "sha256": "85fc97aaa28cf6c8e90ee9a83d114d9bb47d7095971b8276c24a2342a3f7032f",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "pagina-patch-management-cve-cve-d.webp",
+      "sha256": "4efe0fe1239558659539d55bb17b60ce5e2195399513cbb33b7fb99ae8de9d53",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "pagina-patch-management-cve.webp",
+      "sha256": "11e9e51bfe16d6267e3413cad57aeda143b77817775575ea8016c65c771a2e64",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "pagina-patch-management-device-host-d.webp",
+      "sha256": "638e8d20a75230c9f287fe06c04e6d811330f4bc2908bcbc379498189f63c7db",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "pagina-patch-management-history.webp",
+      "sha256": "1dc06320d2ff1a34a52d497f4d8e80e3ea81acd35767b838e27ee53be322f0fe",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "pagina-patch-management.webp",
+      "sha256": "49ff03f226a274d749f1945b395e3d76a06b8657b1dd1acbaada5239c138237a",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "pagina-rmm-host-d-senza-agente.webp",
+      "sha256": "82c416cc4903ab3e45594a7ef532c281527d88e71bc7cd06b264ebf4cf90b639",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "pagina-rmm-host-d.webp",
+      "sha256": "e5f0077e4be467b4f66769875552b6a9aa8ad462dbfa2bf81678a688b43ab857",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "pagina-rmm.webp",
+      "sha256": "0d5cc5ba5d34154913665a20d26fad1a7d950f8f3bb36c43b83c72a487b4c3db",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "pagina-scans.webp",
+      "sha256": "49e25045dee48cdaa2d9290d0bc2997b3f7e5b4a665cd5ecc9328a62538b823f",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "pagina-security-alerts.webp",
+      "sha256": "ad7d9b7ff44ee6f9ec7e94fb36f871b01253e89fccd8ab8e7a6ea697251a0433",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "pagina-services-id.webp",
+      "sha256": "c1e839f7d17260f9a561668d45842abcbf6a9d6d0fc868ac1b50cbefa51ea0c2",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "pagina-services.webp",
+      "sha256": "17ac096d4eb39b907b61474ad8c29f34fae94d1dbdc3c67eb93bd872962fa26a",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "pagina-settings-classifications.webp",
+      "sha256": "04f5ece7082ae2444bad4ba1470c2403407edb2cbea9d88afc6f7efa3f4c277b",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "pagina-settings-mdm.webp",
+      "sha256": "14ce0befc89232530d3bb5fcd2331633d5ce646b0a5feae20c7101b373685488",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "pagina-settings-moduli-key.webp",
+      "sha256": "598cff210ad540f6cb0ccd0033a849233eb31ad7fcd8edbd088cc998fe32b41b",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "pagina-settings-schedulazioni.webp",
+      "sha256": "b95789ac9f50c28a174b51d1cfabd4949fc985f6b908b7d3b694fb128ad2e700",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "pagina-settings-snmp-profiles.webp",
+      "sha256": "acafe53ad19a1b115936d32e73c3a219e3fbd1a3adb4a884d976e2f1662e79e9",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "pagina-settings-tab-aggiornamenti.webp",
+      "sha256": "dfb831520356867944591a3b1de0683352c29a8c1f8f233b4b476bf2cbd6db3d",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "pagina-settings-tab-alert-sicurezza.webp",
+      "sha256": "6664dc2ec33d99af61c6f9c84c6363ff9bd6acede60a911510b0d923bf60682a",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "pagina-settings-tab-https.webp",
+      "sha256": "74e973c66c2f6c1d952d51f7e95692585566ddaf2b50b54641d27e94e8ead39e",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "pagina-settings-tab-identificazione.webp",
+      "sha256": "09f630a014b3efa6ac1b39e174adf440025f575398a288f8b17debddabffbe89",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "pagina-settings-tab-istanza.webp",
+      "sha256": "4dbfccfb76e629d78132e6890c6b8c1cb84950f90bcc23cdc2d93fbe5e3acb72",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "pagina-settings-tab-jobs.webp",
+      "sha256": "a361864048946620a07416c52c457b9899982f9cfab99c687f2176ec3db03ee1",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "pagina-settings-tab-notifiche.webp",
+      "sha256": "cf768995d373470f71d2047e4469430fd1a39b9c8d32ee21312542564e6602bb",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "pagina-settings-tab-scansione.webp",
+      "sha256": "016569f4ba2cdd97bd8c1e5f6cdf5cd7f8d6d6db911bb0ec365d70248b1d4871",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "pagina-settings-tab-sistema.webp",
+      "sha256": "8f9c80e391b1e776caf3652a55c2d5110ee1974363b117c5ea41bc6ee326e580",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "pagina-settings-tab-utenti.webp",
+      "sha256": "bd52e24696575d980757a857863cf97444bceda56679651b73a4ee5ddd3fb6ea",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "pagina-settings-transfer.webp",
+      "sha256": "d7c8ff0bc69d1d0fa669b59a12be6c771bbc5c78dbf143bde4abe1ed8118cb92",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "pagina-settings.webp",
+      "sha256": "0ef8418e1158cd078f5c741d90920848537a6b5beafa4e4fb6cf4bf00c0b7b96",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "pagina-software.webp",
+      "sha256": "d14fde97cd4ebfda6cc00cb592f28d6ce83bc653e59d40065b343665f314d840",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "pagina-tenants.webp",
+      "sha256": "56ebee4e765d0b5bfd8c428b9609345bd689a3a645ac54ba464c4e4004908ee5",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "pagina-topology-dati.webp",
+      "sha256": "aca72531431826703530750a785df5bf8a0b8a0a370978f33879c404f95a520e",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "pagina-topology.webp",
+      "sha256": "dc6b19d2294aa8614db1b1ee751ab4733d2640114cc9652b5c8068856c57f0bd",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "pagina-vulnerabilities.webp",
+      "sha256": "156ce99666d4a8db4afdc3ac83f1d3a07ce64b35d7d240a71a62e1b350afbd0f",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "pagina-zabbix.webp",
+      "sha256": "5da90944af799a212f3153b678b0f793d0f354e72ed1472affd7d9f4e05bee41",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
     },
     {
       "file": "rete-dettaglio.webp",
-      "route": "/networks/1",
       "sha256": "c242a00f7e198efc678a1318beb6ad42e2d4d12647b21270320ceec01dc06833",
-      "cattura": "2026-10-26",
-      "stato": "laboratorio sintetico, nessun collegamento esterno"
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "scheda-host.webp",
+      "sha256": "fe9ef1e53f79edcfda689a7057bdf22af1b599505a19cf398c8d188c5f61f5c9",
+      "data": "25/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "scheda-switch-porta.webp",
+      "sha256": "07de430283dc8ff97aee73b3e5f10aa6ee9a8696b651111557bfc4ddd6accae6",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "software-dettaglio.webp",
+      "sha256": "7f1482ecda466923e89a4d88bb173b8eeb9064adfbd2e2060fcb63efb30106fc",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "subnet.webp",
+      "sha256": "bd84a1073df8fae192f5dbc5603e0c9466d42da97f141134fa7e29292b9f2991",
+      "data": "25/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "tab-ad-0.webp",
+      "sha256": "1e497ff8b261506ef3ef30ee0a991a5994691e7447bde0054026ed6b00914490",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "tab-ad-1.webp",
+      "sha256": "9a57f4702e952c0017da41c86cde3b0dae99bcbcf6aac16c01bf6c2b9502ceb7",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "tab-ad-2.webp",
+      "sha256": "6e7ac66b052e020b1e1d4349089dfe935a3dfcb141f602454c8acbec54192776",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "tab-ad-3.webp",
+      "sha256": "89f1e274eb29dcf067f76f09e0d386027ffa6f2774bc2362ef64d28211db567d",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "tab-ad-4.webp",
+      "sha256": "0950c8a8fc32db46029ada2d63262c1c4af9db7a1519e5d5ec0a14b7bf9a2e1b",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "tab-asset-0.webp",
+      "sha256": "69188a4d0e462168f65388a387dfff551b376d48904552dea26cfb9ad699aa71",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "tab-asset-1.webp",
+      "sha256": "cba8b604cae866992cc15511703afc814b0e1753d37cbcc796818321d24f46b1",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "tab-asset-2.webp",
+      "sha256": "08506a2f799b383bc31f29bfc79971926477119bf02caa6bd0e0f1442a35fd4f",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "tab-asset-3.webp",
+      "sha256": "2ea9edb546c8b5a1a48066c96918d90c04ee571cf73a988a24804bef1be018aa",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "tab-asset-esteso-0.webp",
+      "sha256": "7ee2abc7949e430e3acfa35ebdf581b07c385cf3d32e0065a7ca9903d4637db1",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "tab-asset-esteso-1.webp",
+      "sha256": "3f16594c5142d4065d06c5910fda9c2dff92241e514302bba3e6ad0f8f80179c",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "tab-asset-esteso-10.webp",
+      "sha256": "4365482c066505a285d132aac80b8a1a0866c4cc1980734477d067abc10ae8e4",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "tab-asset-esteso-2.webp",
+      "sha256": "eab0beba0d0ddfb030c89a0647c454869d7fc71fe60b33676c6b065e3f3ac0c6",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "tab-asset-esteso-3.webp",
+      "sha256": "ad9d8440090f605ef7e2dbe85f4c54b18dc011ca07dc40a0e061c4b7d1d049f4",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "tab-asset-esteso-4.webp",
+      "sha256": "7b2eae5ebcdd71fdac6d6d653b30ab02d846ad79a57e29a7845577e310e68c6e",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "tab-asset-esteso-5.webp",
+      "sha256": "c889bedb46bcd5548857f3130966440615d5c10a7cae9705eaefb253b56f478d",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "tab-asset-esteso-6.webp",
+      "sha256": "7ef566f6da270373be535f82b85ace15a6c905b0bb3eb5c0de62825a946ea4ba",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "tab-asset-esteso-7.webp",
+      "sha256": "ccabf1f177267fcba7f07de0422741e0372200551aa67f80fc57fbf18c23b68a",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "tab-asset-esteso-8.webp",
+      "sha256": "6fe4d4f0fa82314897726eda33b740e6e6f4b10f42f46145cc9664a988d89ff7",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "tab-asset-esteso-9.webp",
+      "sha256": "5107e7c68a46a085c38998123ebfe4a4f3721f58f3799157613235346aced5ca",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "tab-trunk-0.webp",
+      "sha256": "b30555eaa8670d2bd68f94a18d45de757ec7023774d6efd9345c21237f3629ad",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "tab-trunk-1.webp",
+      "sha256": "ed2ae9813a280e8ddb896b4956fbd5a14938719caa88b3a4699b6d3ac6a0791b",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "topologia-demo.webp",
+      "sha256": "f51c5e4b609787cd131c8089c9d61a516c4a10bdb8c92b421af15cac41084b52",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "trunk-sicurezza.webp",
+      "sha256": "8ceb3783c6524c90d540c2919dc774d8a3534b2777dd27982d3fde10664402dd",
+      "data": "25/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "vault-bloccato.webp",
+      "sha256": "118f7a5b49d72112a15bc33c40d6adb419c73e88e5da2ee5817fdee643928e64",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "vault-registro.webp",
+      "sha256": "460a36ee5ed02c4271130e3186d8450fb085f6622182b24c86b14a6957854234",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "vault-sbloccato.webp",
+      "sha256": "1515f77fed2903ab4480bd8f5bfd618bda4b84bda82227ec42874513fcece320",
+      "data": "26/10/2026",
+      "origine": "demo sintetica, UI reale"
+    },
+    {
+      "file": "vault.webp",
+      "sha256": "8f893489b9bca4c5c9f5c284c137eb93ac4e1ff3cd9cd7ee7ebc6453ee33378b",
+      "data": "25/10/2026",
+      "origine": "demo sintetica, UI reale"
     }
   ]
 }

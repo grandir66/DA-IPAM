@@ -10,9 +10,9 @@
       "title": "Active Directory: cinque viste e configurazione",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-active-directory",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": [
         "computers",
         "users",
@@ -42,9 +42,9 @@
       "title": "Anomalie: variazioni dei dati di rete",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-analytics",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -68,9 +68,9 @@
       "title": "Tabella ARP cumulativa",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-arp-table",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -97,9 +97,9 @@
       "title": "Configurazione cliente: dossier tecnico",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-client-config",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -138,7 +138,7 @@
       "redirect": null,
       "image": null,
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire: vista residua; inoltra alla scheda unificata se esiste un host",
+      "screen": "parziale: demo reindirizza all’elenco; ramo legacy non riprodotto",
       "tabs": []
     },
     {
@@ -149,9 +149,9 @@
       "title": "Elenco apparati gestiti",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-devices",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -162,9 +162,9 @@
       "title": "DHCP Kea: panorama, scope, lease e statici",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-dhcp",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "parziale: stato non configurato o servizio esterno scollegato",
       "tabs": [
         "Panorama",
         "Scope",
@@ -181,9 +181,9 @@
       "title": "DHCP esterno: lease, fonti e sincronizzazione",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-dhcp-sources",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -207,9 +207,9 @@
       "title": "DNS: panorama, zone, filtro e resolver",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-dns",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "parziale: stato non configurato o servizio esterno scollegato",
       "tabs": [
         "Panorama",
         "Zone DNS",
@@ -225,9 +225,9 @@
       "title": "IP esclusi: perimetro delle eccezioni",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-excluded-ips",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -264,9 +264,9 @@
       "title": "Scheda asset: tutte le sezioni",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-inventory-id",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": [
         "nis2",
         "identificazione",
@@ -290,9 +290,9 @@
       "title": "Abbinamenti: PC, asset e utente prevalente",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-inventory-abbinamenti",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -303,9 +303,9 @@
       "title": "Importa da AD: proposta e conferma",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-inventory-assignees-import-ad",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -316,9 +316,9 @@
       "title": "Assegnatari: persone e stato AD",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-inventory-assignees",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -329,9 +329,9 @@
       "title": "Licenze: posti, scadenza e assegnazioni",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-inventory-licenses",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -342,9 +342,9 @@
       "title": "Ubicazioni: struttura fisica e mappa",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-inventory-locations",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -381,9 +381,9 @@
       "title": "Manuale integrato: più documenti e ricerca del contesto",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-manual",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -394,9 +394,9 @@
       "title": "Monitoraggio degli host conosciuti",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-monitoring-known-hosts",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -407,9 +407,9 @@
       "title": "Network Services: salute e collegamenti",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-network-services",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "parziale: stato non configurato o servizio esterno scollegato",
       "tabs": []
     },
     {
@@ -448,7 +448,7 @@
       "redirect": null,
       "image": "scheda-host",
       "content": "scheda dedicata dal sorgente",
-      "screen": "parziale: sola variante host",
+      "screen": "varianti per tipo acquisite; dati approfonditi secondo raccolte disponibili",
       "tabs": []
     },
     {
@@ -472,9 +472,9 @@
       "title": "Dettaglio CVE: bersagli, fix e pin manuale",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-patch-management-cve-cve-d",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -485,9 +485,9 @@
       "title": "Patch per CVE: trovare un fix disponibile",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-patch-management-cve",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -498,9 +498,9 @@
       "title": "Patch sul dispositivo: programmi e azioni",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-patch-management-device-host-d",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -511,9 +511,9 @@
       "title": "Storico patch: operazioni, log e riavvio",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-patch-management-history",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -524,9 +524,9 @@
       "title": "Patch: dispositivi e software",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-patch-management",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": [
         "device",
         "software"
@@ -540,9 +540,9 @@
       "title": "Patch sul software: diffusione e correzione",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "software-dettaglio",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -553,9 +553,9 @@
       "title": "Sessione remota: avvio, iframe e riconnessione",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-rmm-host-d",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "parziale: stato non configurato o servizio esterno scollegato",
       "tabs": []
     },
     {
@@ -566,9 +566,9 @@
       "title": "Remoto senza agente: percorso distinto",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-rmm-host-d-senza-agente",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "parziale: stato non configurato o servizio esterno scollegato",
       "tabs": []
     },
     {
@@ -579,9 +579,9 @@
       "title": "Controllo remoto: endpoint e associazioni",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-rmm",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "parziale: stato non configurato o servizio esterno scollegato",
       "tabs": []
     },
     {
@@ -605,9 +605,9 @@
       "title": "Scansioni: storico delle esecuzioni",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-scans",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -618,9 +618,9 @@
       "title": "Alert sicurezza: classificazioni e presa in carico",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-security-alerts",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "parziale: stato non configurato o servizio esterno scollegato",
       "tabs": []
     },
     {
@@ -631,9 +631,9 @@
       "title": "Dipendenze del servizio e impatto",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-services-id",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -644,9 +644,9 @@
       "title": "Servizi: criticità, responsabilità e continuità",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-services",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -657,9 +657,9 @@
       "title": "Classificazioni personalizzate",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-settings-classifications",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -696,9 +696,9 @@
       "title": "Headwind: configurazione del collegamento MDM",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-settings-mdm",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -709,9 +709,9 @@
       "title": "Pagine dedicate dei moduli: tutte le varianti",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-settings-moduli-key",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire: 13 varianti",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": [
         "edge",
         "patch_management",
@@ -749,9 +749,9 @@
       "title": "Impostazioni: tutte le schede amministrative",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-settings",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": [
         "istanza",
         "utenti",
@@ -774,9 +774,9 @@
       "title": "Schedulazioni: il quadro dei lavori",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-settings-schedulazioni",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -787,9 +787,9 @@
       "title": "Profili SNMP e libreria OID",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-settings-snmp-profiles",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -800,9 +800,9 @@
       "title": "Trasferimento: bundle cifrato, livelli e importazione",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-settings-transfer",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -839,9 +839,9 @@
       "title": "Software: versioni, fonti e computer",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-software",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -865,9 +865,9 @@
       "title": "Istanze: gestione riservata dell’hub",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-tenants",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -878,9 +878,9 @@
       "title": "Dati della mappa: fonti e opzioni",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-topology-dati",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -891,9 +891,9 @@
       "title": "Topologia: vista automatica e lavoro del tecnico",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-topology",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -904,9 +904,9 @@
       "title": "Vulnerabilità: sorgenti, CVE e host coinvolti",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-vulnerabilities",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "cattura della UI con dati sintetici",
       "tabs": []
     },
     {
@@ -917,9 +917,9 @@
       "title": "Pannello Zabbix in sola lettura",
       "kind": "pagina",
       "redirect": null,
-      "image": null,
+      "image": "pagina-zabbix",
       "content": "scheda dedicata dal sorgente",
-      "screen": "da acquisire",
+      "screen": "parziale: stato non configurato o servizio esterno scollegato",
       "tabs": []
     }
   ],
@@ -928,61 +928,71 @@
       "route": "/settings?tab=istanza",
       "view": "pagina-settings-tab-istanza",
       "parent": "governo",
-      "tabs": []
+      "tabs": [],
+      "image": "pagina-settings-tab-istanza"
     },
     {
       "route": "/settings?tab=utenti",
       "view": "pagina-settings-tab-utenti",
       "parent": "governo",
-      "tabs": []
+      "tabs": [],
+      "image": "pagina-settings-tab-utenti"
     },
     {
       "route": "/settings?tab=scansione",
       "view": "pagina-settings-tab-scansione",
       "parent": "governo",
-      "tabs": []
+      "tabs": [],
+      "image": "pagina-settings-tab-scansione"
     },
     {
       "route": "/settings?tab=identificazione",
       "view": "pagina-settings-tab-identificazione",
       "parent": "governo",
-      "tabs": []
+      "tabs": [],
+      "image": "pagina-settings-tab-identificazione"
     },
     {
       "route": "/settings?tab=jobs",
       "view": "pagina-settings-tab-jobs",
       "parent": "governo",
-      "tabs": []
+      "tabs": [],
+      "image": "pagina-settings-tab-jobs"
     },
     {
       "route": "/settings?tab=https",
       "view": "pagina-settings-tab-https",
       "parent": "governo",
-      "tabs": []
+      "tabs": [],
+      "image": "pagina-settings-tab-https"
     },
     {
       "route": "/settings?tab=alert-sicurezza",
       "view": "pagina-settings-tab-alert-sicurezza",
       "parent": "governo",
-      "tabs": []
+      "tabs": [],
+      "image": "pagina-settings-tab-alert-sicurezza"
     },
     {
       "route": "/settings?tab=notifiche",
       "view": "pagina-settings-tab-notifiche",
       "parent": "governo",
-      "tabs": []
+      "tabs": [],
+      "image": "pagina-settings-tab-notifiche"
     },
     {
       "route": "/settings?tab=aggiornamenti",
       "view": "pagina-settings-tab-aggiornamenti",
       "parent": "governo",
-      "tabs": []
+      "tabs": [],
+      "image": "pagina-settings-tab-aggiornamenti"
     },
     {
       "route": "/settings?tab=sistema",
       "view": "pagina-settings-tab-sistema",
       "parent": "governo",
-      "tabs": []
+      "tabs": [],
+      "image": "pagina-settings-tab-sistema"
     },
     {
       "route": "/objects/[id] — variante switch",
@@ -1036,128 +1046,104 @@
       "route": "/settings/moduli/edge",
       "view": "modulo-edge",
       "parent": "moduli",
-      "tabs": []
+      "tabs": [],
+      "image": "modulo-edge"
     },
     {
       "route": "/settings/moduli/patch_management",
       "view": "modulo-patch_management",
       "parent": "moduli",
-      "tabs": []
+      "tabs": [],
+      "image": "modulo-patch_management"
     },
     {
       "route": "/settings/moduli/inventory_agent",
       "view": "modulo-inventory_agent",
       "parent": "moduli",
-      "tabs": []
+      "tabs": [],
+      "image": "modulo-inventory_agent"
     },
     {
       "route": "/settings/moduli/meshcentral",
       "view": "modulo-meshcentral",
       "parent": "moduli",
-      "tabs": []
+      "tabs": [],
+      "image": "modulo-meshcentral"
     },
     {
       "route": "/settings/moduli/nis2_inventory",
       "view": "modulo-nis2_inventory",
       "parent": "moduli",
-      "tabs": []
+      "tabs": [],
+      "image": "modulo-nis2_inventory"
     },
     {
       "route": "/settings/moduli/network_services",
       "view": "modulo-network_services",
       "parent": "moduli",
-      "tabs": []
+      "tabs": [],
+      "image": "modulo-network_services"
     },
     {
       "route": "/settings/moduli/zabbix",
       "view": "modulo-zabbix",
       "parent": "moduli",
-      "tabs": []
+      "tabs": [],
+      "image": "modulo-zabbix"
     },
     {
       "route": "/settings/moduli/unifi",
       "view": "modulo-unifi",
       "parent": "moduli",
-      "tabs": []
+      "tabs": [],
+      "image": "modulo-unifi"
     },
     {
       "route": "/settings/moduli/librenms",
       "view": "modulo-librenms",
       "parent": "moduli",
-      "tabs": []
+      "tabs": [],
+      "image": "modulo-librenms"
     },
     {
       "route": "/settings/moduli/graylog",
       "view": "modulo-graylog",
       "parent": "moduli",
-      "tabs": []
+      "tabs": [],
+      "image": "modulo-graylog"
     },
     {
       "route": "/settings/moduli/wazuh",
       "view": "modulo-wazuh",
       "parent": "moduli",
-      "tabs": []
+      "tabs": [],
+      "image": "modulo-wazuh"
     },
     {
       "route": "/settings/moduli/loki",
       "view": "modulo-loki",
       "parent": "moduli",
-      "tabs": []
+      "tabs": [],
+      "image": "modulo-loki"
     },
     {
       "route": "/settings/moduli/credenziali",
       "view": "modulo-credenziali",
       "parent": "moduli",
-      "tabs": []
+      "tabs": [],
+      "image": "modulo-credenziali"
     }
   ],
   "missingScreens": [
-    "/active-directory",
-    "/analytics",
-    "/arp-table",
     "/arp-table/trunk",
-    "/client-config",
     "/devices/[id]",
-    "/devices",
     "/dhcp",
-    "/dhcp/sources",
     "/dns",
-    "/excluded-ips",
-    "/inventory/[id]",
-    "/inventory/abbinamenti",
-    "/inventory/assignees/import-ad",
-    "/inventory/assignees",
-    "/inventory/licenses",
-    "/inventory/locations",
-    "/manual",
-    "/monitoring/known-hosts",
     "/network-services",
-    "/objects/[id]",
-    "/patch-management/cve/[cveId]",
-    "/patch-management/cve",
-    "/patch-management/device/[hostId]",
-    "/patch-management/history",
-    "/patch-management",
-    "/patch-management/software/[softwareKey]",
     "/rmm/[hostId]",
     "/rmm/[hostId]/senza-agente",
     "/rmm",
-    "/scans",
     "/security-alerts",
-    "/services/[id]",
-    "/services",
-    "/settings/classifications",
-    "/settings/mdm",
-    "/settings/moduli/[key]",
-    "/settings",
-    "/settings/schedulazioni",
-    "/settings/snmp-profiles",
-    "/settings/transfer",
-    "/software",
-    "/tenants",
-    "/topology/dati",
-    "/topology",
-    "/vulnerabilities",
     "/zabbix"
   ]
 }

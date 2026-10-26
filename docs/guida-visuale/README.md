@@ -1,25 +1,23 @@
-# Guida visuale DA-IPAM — in completamento
+# Guida visuale DA-IPAM
 
-**Rettifica del 26/10/2026:** la prima edizione era una panoramica, non la copertura completa richiesta. L’HTML corrente espone la matrice delle 66 pagine dashboard e 99 schede dedicate, con 13 catture. I 47 percorsi senza immagine completa restano aperti, oltre alle sottoviste da acquisire. Vedi `copertura.json`, la pagina «Copertura, lacune e stati» e `VERIFICA.md`.
+Apri `DA-IPAM-guida.html`: guida navigabile autonoma, utilizzabile offline, con immagini e font incorporati. Fonte applicativa congelata: `76b15198`, versione 0.9.913, esaminata il 25–26/10/2026.
 
+La guida comprende 18 aree, 99 schede di dettaglio e la matrice delle 66 pagine dashboard. Le 176 immagini includono pagine, tab, configurazioni e varianti per tipo di apparato. Non sono 176 funzioni collaudate: alcune immagini mostrano stati vuoti o prerequisiti mancanti, dichiarati nella matrice.
 
-Guida navigabile richiesta da Riccardo: percorsi di lavoro, schemi, schermate e spiegazione delle funzioni.
+## Cosa è stato acquisito
 
-- **Apri `DA-IPAM-guida.html`**: file autonomo, immagini e font incorporati, utilizzabile offline e senza DA-IPAM acceso.
-- Versione canvas: `/Users/riccardo/.cursor/projects/Users-riccardo-Progetti-Domarc/canvases/DA-IPAM-guida-funzionamento.canvas.tsx`.
-- Contenuti modificabili: `contenuti.json`; dettaglio e fonti nel catalogo `../CATALOGO-FUNZIONALE.md`.
-- Fonte del prodotto: `origin/dev` `76b15198`, versione 0.9.913, verificata il 25/10/2026. Composizione della guida 26/10/2026.
-- Catture in `schermate/`: UI autentica, 1440×1000, dati sintetici (DEMO; indirizzi TEST-NET), nessun cliente collegato.
-- Ambiente sorgente isolato: `/private/tmp/ipam-analisi-20261025`; avvio Next dev sulla 3187, senza scheduler. Server già spento dopo l’interruzione del 25/10. Non occorre riaccenderlo per consultare la guida.
-- Trunk: osservazioni e rilievi sintetici inseriti nei DB; nessuna cattura da rete reale. Il sensore risulta scollegato. Vault e integrazioni restano spenti: le immagini non ne fingono attivazione o collaudo.
-- Le prime catture con caricamenti/animazioni sono state sostituite dove verificato; i badge Next.js/feedback sono strumenti della modalità sviluppo.
-- Rilevato avviso Base UI sul link usato come button nella pagina trunk: semantica `nativeButton`; nessuna correzione applicata in questo lavoro documentale.
-- I flussi sono schemi esplicativi del codice, non tracciati di esecuzione né traffico misurato. La sezione evoluzioni contiene proposte, non attività autorizzate.
+- Demo dedicata sul Mac mini, autorizzata da Riccardo, Node 22; dati TEST-NET e domini `.invalid`, nessun sistema cliente collegato.
+- Active Directory con computer, utenti, gruppi, lease e Health; inventario NIS2 e ITAM esteso; servizi, licenze, patch con CVE fittizia, pagine di amministrazione e tredici configurazioni modulo.
+- Schede switch, router/MikroTik, NAS, hypervisor, Windows, Linux e generica, con tab disponibili. Le raccolte hardware non eseguite restano visibili come mancanti.
+- Trunk: entrambe le tab con osservazioni e rilievi sintetici; sensore scollegato, nessuna acquisizione da rete reale.
+- Vault locale sintetico: bloccato, sblocco, export e registro. API KDBX e key file riuscite; non è un collaudo di OpenBao, TPM o ripristino su installazioni cliente.
+
+## Limiti espliciti
+
+DNS/DHCP gestiti, RMM e SIEM/Zabbix mostrano i rispettivi stati senza servizio esterno; il ramo legacy della vecchia scheda apparato non è stato riprodotto. Le console esterne non sono schermate native di DA-IPAM. Nessuna scansione o patch realmente eseguita; gli storici demo sono sintetici. I diagrammi spiegano il codice e i consigli restano proposte.
+
+Il laboratorio dev Webpack si riavviava per accumulo di memoria, anche sul mini: acquisizione conclusa con build ottimizzata e `next start`, senza scheduler. Nessuna modifica al prodotto o deploy in esercizio. Le prime catture errate o in caricamento non sono usate come prova; la cattura software con chiave errata è esclusa.
 
 ## Manutenzione
 
-Prima di pubblicare una nuova edizione, aggiornare commit e copertura dal catalogo, rigenerare le catture interessate e verificare di nuovo navigazione e resa. Le immagini restano separate e l’HTML/canvas le incorpora per la consultazione offline. Sorgenti permanenti in `sorgenti/`: `template.txt` e `costruisci.py`. Modificare `contenuti.json`, poi eseguire `python3 sorgenti/costruisci.py` (richiede Node 22 e le dipendenze esbuild/react del repo). Il font è incluso in `assets/Signika.ttf`. Il generatore produce HTML autonomo e canvas senza avviare l’applicazione.
-
-## Catture escluse
-
-La prima cattura dedicata a VLAN/reti mostrava ancora la scheda sicurezza: scartata, senza ricostruirla artificialmente. La guida include 10 schermate controllate; il capitolo VLAN/reti usa lo schema esplicativo.
+Contenuti: `contenuti.json`; censimento: `copertura.json`; immagini e hash: `schermate/provenienza.json`; verifica: `VERIFICA.md`. Il catalogo testuale è `../CATALOGO-FUNZIONALE.md`. Per rigenerare: `python3 sorgenti/costruisci.py`, con Node 22 e dipendenze esbuild/react del repo. Il generatore scrive HTML e canvas usando lo stesso componente. Gli script `scripts/guida-demo/` lavorano esclusivamente sulla demo; database, chiavi ed env non sono in Git.

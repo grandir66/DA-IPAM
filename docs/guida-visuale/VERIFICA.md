@@ -2,6 +2,12 @@
 
 Fonte applicativa congelata: `76b15198`, v0.9.913. Guida composta e controllata il 26/10. L’edizione corrente sostituisce la prima panoramica insufficiente di 17 capitoli e 10 immagini.
 
+## Edizione con atlante — correzione della consultazione
+
+Riccardo vedeva solo i capitoli e poche immagini: le aggiunte erano nascoste nei selettori e nelle gallerie chiuse. La pagina iniziale ora è un atlante con 175 miniature per area; ogni area espone i collegamenti alle schede, anche nell’indice, e le gallerie sono aperte. Dicitura iniziale «EDIZIONE CON ATLANTE · 26 OTTOBRE 2026». Aree ora 19, schede invariate 99.
+
+Verifica della correzione: build HTML verde, TypeScript strict exit 0; rendering React lato server con 175 pulsanti miniatura nell’apertura, titoli, collegamenti diretti e gallerie AD aperte. Esito in `verifica-atlante.json`. Non è una nuova verifica interattiva del browser: lo strumento non consente di osservare la scheda file:// dell’utente. I risultati Chromium sottostanti si riferiscono all’edizione precedente di 18 aree.
+
 ## Esito attuale
 
 - 18 aree, 99 schede, censimento di 66 file dashboard e 9 alias. 175 schermate originali, incluse tab e varianti, da dati sintetici. Matrice navigabile nel capitolo «Copertura, lacune e stati».

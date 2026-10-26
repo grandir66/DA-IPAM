@@ -3,7 +3,7 @@
 Leggilo per primo, poi [CLAUDE.md](CLAUDE.md) (stack e schema; su «multi-tenant» vale il §1). Ecosistema → `~/Progetti/Domarc/README.md`. Accessi: hub → skill `deploy-prod`; appliance dei clienti → vault `~/Documents/da-appliance-credentials/`, un file per appliance (repo pubblico: niente nomi di clienti, IP, MAC).
 > **Manutenzione**: voci datate, tetto ~10k caratteri (`wc -c`); il dettaglio in ADR, spec e piani (`specs/…`, `plans/…` = `docs/superpowers/…`), la storia in [`docs/storia/`](docs/storia/CONTEXT-diario-ottobre-2026.md). Numeri di sezione fissi (altri file citano §6, §7). CHANGELOG: «[Non rilasciato]» resta anche dopo il rilascio, fa fede `git log origin/dev`. Aperto: `TASKS.md`.
 
-> **Documentazione (26/10):** catalogo `docs/CATALOGO-FUNZIONALE.md` e guida offline `docs/guida-visuale/DA-IPAM-guida.html`, fonte congelata `76b15198`: 18 aree, 99 schede, 175 catture sintetiche. Dieci stati parziali/condizionali dichiarati; controlli offline/TypeScript verdi, API KDBX/key file solo su vault demo. Nessun servizio demo rimasto acceso. Banner vault dopo sblocco e credenziali dossier legacy: consigli separati, non corretti. Ramo documentale `codex/ipam-guida-demo`.
+> **Documentazione (26/10):** guida `docs/guida-visuale/DA-IPAM-guida.html`, fonte `76b15198`: 19 aree, 99 schede, 175 catture sintetiche. Dopo il riscontro «16 titoli e poche schermate», apertura cambiata in atlante con miniature e accessi diretti; gallerie aperte, edizione evidente. TypeScript e rendering React lato server verdi; prova Chromium precedente su 18 aree. Dieci stati condizionali espliciti. Ramo `codex/ipam-guida-demo`, nessun prodotto o servizio cliente modificato.
 
 ## 1. Cos'è
 

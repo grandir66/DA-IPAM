@@ -7,6 +7,45 @@
   "caption": "Interfaccia reale · dati sintetici · nessun cliente collegato",
   "chapters": [
     {
+      "id": "schermate",
+      "group": "Capire il prodotto",
+      "title": "Tutte le schermate",
+      "lead": "175 schermate della demo, visibili per area. Apri un’immagine o vai alla descrizione della funzione.",
+      "purpose": "Consultare direttamente schermate, pagine e varianti.",
+      "route": "Atlante delle schermate",
+      "steps": [
+        {
+          "title": "Acquisire",
+          "actor": "Automatico / configurato",
+          "text": "Scansioni e letture autenticate, router, controller, agenti e sensore trunk portano osservazioni diverse."
+        },
+        {
+          "title": "Riconoscere",
+          "actor": "Automatico + tecnico",
+          "text": "Firme e informazioni raccolte propongono un tipo; il tecnico controlla identità e casi ambigui."
+        },
+        {
+          "title": "Collegare",
+          "actor": "Automatico + conferma",
+          "text": "Host e apparati vengono messi in relazione con porte, asset, ubicazioni, persone e servizi."
+        },
+        {
+          "title": "Usare il contesto",
+          "actor": "Tecnico",
+          "text": "Discovery, schede, topologia e sicurezza permettono di decidere il prossimo intervento."
+        }
+      ],
+      "features": [],
+      "limit": "I numeri nelle schermate sono sintetici. “Presente nel codice”, “installato”, “acceso” e “funzionante” restano stati distinti.",
+      "image": null,
+      "markers": [],
+      "decision": null,
+      "status": "Edizione con atlante · 26 ottobre 2026",
+      "sources": [
+        "schermate/provenienza.json"
+      ]
+    },
+    {
       "id": "insieme",
       "group": "Capire il prodotto",
       "title": "Dalla rete al contesto operativo",
@@ -8787,5 +8826,1232 @@
         "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
       }
     ]
-  }
+  },
+  "screens": [
+    {
+      "image": "accesso-login",
+      "title": "Accesso, seconda verifica e menu utente",
+      "parent": "insieme",
+      "view": "pagina-login",
+      "note": "Schermata acquisita nella demo isolata"
+    },
+    {
+      "image": "dashboard",
+      "title": "Dashboard: indicatori, monitorati e fonti",
+      "parent": "insieme",
+      "view": "pagina-dashboard",
+      "note": "Contenuti verificati nel sorgente · cattura disponibile"
+    },
+    {
+      "image": "pagina-monitoring-known-hosts",
+      "title": "Monitoraggio degli host conosciuti",
+      "parent": "insieme",
+      "view": "pagina-monitoring-known-hosts",
+      "note": "Sorgente verificato · cattura della UI con dati sintetici"
+    },
+    {
+      "image": "accesso-setup",
+      "title": "Primo avvio e amministratore",
+      "parent": "insieme",
+      "view": "pagina-setup",
+      "note": "Schermata acquisita nella demo isolata"
+    },
+    {
+      "image": "rete-dettaglio",
+      "title": "Dettaglio subnet: griglia, selezioni e scansioni",
+      "parent": "reti",
+      "view": "pagina-networks-id",
+      "note": "Contenuti verificati nel sorgente · cattura disponibile"
+    },
+    {
+      "image": "pagina-dhcp-sources",
+      "title": "DHCP esterno: lease, fonti e sincronizzazione",
+      "parent": "reti",
+      "view": "pagina-dhcp-sources",
+      "note": "Sorgente verificato · cattura della UI con dati sintetici"
+    },
+    {
+      "image": "pagina-excluded-ips",
+      "title": "IP esclusi: perimetro delle eccezioni",
+      "parent": "reti",
+      "view": "pagina-excluded-ips",
+      "note": "Sorgente verificato · cattura della UI con dati sintetici"
+    },
+    {
+      "image": "pagina-scans",
+      "title": "Scansioni: storico delle esecuzioni",
+      "parent": "reti",
+      "view": "pagina-scans",
+      "note": "Sorgente verificato · cattura della UI con dati sintetici"
+    },
+    {
+      "image": "subnet",
+      "title": "Subnet: elenco e configurazione",
+      "parent": "reti",
+      "view": "pagina-networks",
+      "note": "Contenuti verificati nel sorgente · cattura disponibile"
+    },
+    {
+      "image": "pagina-arp-table",
+      "title": "Tabella ARP cumulativa",
+      "parent": "reti",
+      "view": "pagina-arp-table",
+      "note": "Sorgente verificato · cattura della UI con dati sintetici"
+    },
+    {
+      "image": "discovery",
+      "title": "Discovery: viste, azioni e riconciliazione",
+      "parent": "discovery",
+      "view": "pagina-discovery",
+      "note": "Contenuti verificati nel sorgente · cattura disponibile"
+    },
+    {
+      "image": "pagina-devices",
+      "title": "Elenco apparati gestiti",
+      "parent": "discovery",
+      "view": "pagina-devices",
+      "note": "Sorgente verificato · cattura della UI con dati sintetici"
+    },
+    {
+      "image": "pagina-devices-id",
+      "title": "/devices/[id]",
+      "parent": "scheda",
+      "view": "pagina-devices-id",
+      "note": "Cattura della demo: /devices/[id]"
+    },
+    {
+      "image": "scheda-switch-porta",
+      "title": "/objects/2",
+      "parent": "scheda",
+      "view": "",
+      "note": "Cattura della demo: /objects/2"
+    },
+    {
+      "image": "apparato-generico",
+      "title": "Host e generico: gestione senza dati inventati",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-generico",
+      "note": "Variante della scheda acquisita nella demo"
+    },
+    {
+      "image": "apparato-generico-tab-2",
+      "title": "Host non gestito · Gestione",
+      "parent": "scheda",
+      "view": "",
+      "note": "Cattura della demo: /objects/3"
+    },
+    {
+      "image": "apparato-generico-tab-0",
+      "title": "Host non gestito · Panoramica",
+      "parent": "scheda",
+      "view": "",
+      "note": "Cattura della demo: /objects/3"
+    },
+    {
+      "image": "apparato-generico-tab-1",
+      "title": "Host non gestito · Sicurezza",
+      "parent": "scheda",
+      "view": "",
+      "note": "Cattura della demo: /objects/3"
+    },
+    {
+      "image": "apparato-generico-tab-3",
+      "title": "Host non gestito · Storico",
+      "parent": "scheda",
+      "view": "",
+      "note": "Cattura della demo: /objects/3"
+    },
+    {
+      "image": "apparato-hypervisor",
+      "title": "Hypervisor: VM, nodi, storage e rete",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-hypervisor",
+      "note": "Variante della scheda acquisita nella demo"
+    },
+    {
+      "image": "apparato-hypervisor-tab-6",
+      "title": "Hypervisor: VM, nodi, storage e rete · Gestione",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-hypervisor",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "apparato-hypervisor-tab-2",
+      "title": "Hypervisor: VM, nodi, storage e rete · Nodi",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-hypervisor",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "apparato-hypervisor-tab-0",
+      "title": "Hypervisor: VM, nodi, storage e rete · Panoramica",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-hypervisor",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "apparato-hypervisor-tab-4",
+      "title": "Hypervisor: VM, nodi, storage e rete · Rete",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-hypervisor",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "apparato-hypervisor-tab-5",
+      "title": "Hypervisor: VM, nodi, storage e rete · Sicurezza",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-hypervisor",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "apparato-hypervisor-tab-3",
+      "title": "Hypervisor: VM, nodi, storage e rete · Storage",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-hypervisor",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "apparato-hypervisor-tab-7",
+      "title": "Hypervisor: VM, nodi, storage e rete · Storico",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-hypervisor",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "apparato-hypervisor-tab-1",
+      "title": "Hypervisor: VM, nodi, storage e rete · VM e container",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-hypervisor",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "apparato-mikrotik",
+      "title": "MikroTik: bridge, VLAN, dispositivi e configurazione",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-mikrotik",
+      "note": "Variante della scheda acquisita nella demo"
+    },
+    {
+      "image": "apparato-mikrotik-tab-5",
+      "title": "MikroTik: bridge, VLAN, dispositivi e configurazione · Gestione",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-mikrotik",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "apparato-mikrotik-tab-0",
+      "title": "MikroTik: bridge, VLAN, dispositivi e configurazione · Panoramica",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-mikrotik",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "apparato-mikrotik-tab-1",
+      "title": "MikroTik: bridge, VLAN, dispositivi e configurazione · Porte",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-mikrotik",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "apparato-mikrotik-tab-4",
+      "title": "MikroTik: bridge, VLAN, dispositivi e configurazione · Sicurezza",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-mikrotik",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "apparato-mikrotik-tab-6",
+      "title": "MikroTik: bridge, VLAN, dispositivi e configurazione · Storico",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-mikrotik",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "apparato-mikrotik-tab-3",
+      "title": "MikroTik: bridge, VLAN, dispositivi e configurazione · Vicini e MAC",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-mikrotik",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "apparato-mikrotik-tab-2",
+      "title": "MikroTik: bridge, VLAN, dispositivi e configurazione · VLAN",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-mikrotik",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "apparato-storage",
+      "title": "NAS: dischi, RAID, volumi e servizi",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-storage",
+      "note": "Variante della scheda acquisita nella demo"
+    },
+    {
+      "image": "apparato-storage-tab-1",
+      "title": "NAS: dischi, RAID, volumi e servizi · Dischi e RAID",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-storage",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "apparato-storage-tab-5",
+      "title": "NAS: dischi, RAID, volumi e servizi · Gestione",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-storage",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "apparato-storage-tab-0",
+      "title": "NAS: dischi, RAID, volumi e servizi · Panoramica",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-storage",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "apparato-storage-tab-3",
+      "title": "NAS: dischi, RAID, volumi e servizi · Servizi",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-storage",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "apparato-storage-tab-4",
+      "title": "NAS: dischi, RAID, volumi e servizi · Sicurezza",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-storage",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "apparato-storage-tab-6",
+      "title": "NAS: dischi, RAID, volumi e servizi · Storico",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-storage",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "apparato-storage-tab-2",
+      "title": "NAS: dischi, RAID, volumi e servizi · Volumi",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-storage",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "apparato-router",
+      "title": "Scheda router e firewall",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-router",
+      "note": "Variante della scheda acquisita nella demo"
+    },
+    {
+      "image": "apparato-router-tab-5",
+      "title": "Scheda router e firewall · Gestione",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-router",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "apparato-router-tab-0",
+      "title": "Scheda router e firewall · Panoramica",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-router",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "apparato-router-tab-1",
+      "title": "Scheda router e firewall · Porte",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-router",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "apparato-router-tab-4",
+      "title": "Scheda router e firewall · Sicurezza",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-router",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "apparato-router-tab-6",
+      "title": "Scheda router e firewall · Storico",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-router",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "apparato-router-tab-3",
+      "title": "Scheda router e firewall · Vicini e MAC",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-router",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "apparato-router-tab-2",
+      "title": "Scheda router e firewall · VLAN",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-router",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "apparato-switch",
+      "title": "Scheda switch: porte, VLAN e vicini",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-switch",
+      "note": "Variante della scheda acquisita nella demo"
+    },
+    {
+      "image": "apparato-switch-tab-5",
+      "title": "Scheda switch: porte, VLAN e vicini · Gestione",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-switch",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "apparato-switch-tab-0",
+      "title": "Scheda switch: porte, VLAN e vicini · Panoramica",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-switch",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "apparato-switch-tab-1",
+      "title": "Scheda switch: porte, VLAN e vicini · Porte",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-switch",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "apparato-switch-tab-4",
+      "title": "Scheda switch: porte, VLAN e vicini · Sicurezza",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-switch",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "apparato-switch-tab-6",
+      "title": "Scheda switch: porte, VLAN e vicini · Storico",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-switch",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "apparato-switch-tab-3",
+      "title": "Scheda switch: porte, VLAN e vicini · Vicini e MAC",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-switch",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "apparato-switch-tab-2",
+      "title": "Scheda switch: porte, VLAN e vicini · VLAN",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-switch",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "scheda-host",
+      "title": "Scheda unificata e varianti per tipo",
+      "parent": "scheda",
+      "view": "pagina-objects-id",
+      "note": "Contenuti verificati nel sorgente · cattura disponibile"
+    },
+    {
+      "image": "apparato-server_linux",
+      "title": "Server Linux: sistema e stato operativo",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-server-linux",
+      "note": "Variante della scheda acquisita nella demo"
+    },
+    {
+      "image": "apparato-server_linux-tab-5",
+      "title": "Server Linux: sistema e stato operativo · Dipendenze1",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-server-linux",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "apparato-server_linux-tab-7",
+      "title": "Server Linux: sistema e stato operativo · Gestione",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-server-linux",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "apparato-server_linux-tab-3",
+      "title": "Server Linux: sistema e stato operativo · Pacchetti",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-server-linux",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "apparato-server_linux-tab-0",
+      "title": "Server Linux: sistema e stato operativo · Panoramica",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-server-linux",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "apparato-server_linux-tab-2",
+      "title": "Server Linux: sistema e stato operativo · Servizi e processi",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-server-linux",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "apparato-server_linux-tab-6",
+      "title": "Server Linux: sistema e stato operativo · Sicurezza",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-server-linux",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "apparato-server_linux-tab-1",
+      "title": "Server Linux: sistema e stato operativo · Sistema",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-server-linux",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "apparato-server_linux-tab-8",
+      "title": "Server Linux: sistema e stato operativo · Storico",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-server-linux",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "apparato-server_linux-tab-4",
+      "title": "Server Linux: sistema e stato operativo · Utenti",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-server-linux",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "apparato-server_windows",
+      "title": "Server Windows: sistema, servizi e utenti",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-server-windows",
+      "note": "Variante della scheda acquisita nella demo"
+    },
+    {
+      "image": "apparato-server_windows-tab-3",
+      "title": "Server Windows: sistema, servizi e utenti · Aggiornamenti",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-server-windows",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "apparato-server_windows-tab-7",
+      "title": "Server Windows: sistema, servizi e utenti · Gestione",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-server-windows",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "apparato-server_windows-tab-0",
+      "title": "Server Windows: sistema, servizi e utenti · Panoramica",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-server-windows",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "apparato-server_windows-tab-2",
+      "title": "Server Windows: sistema, servizi e utenti · Servizi",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-server-windows",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "apparato-server_windows-tab-6",
+      "title": "Server Windows: sistema, servizi e utenti · Sicurezza",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-server-windows",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "apparato-server_windows-tab-1",
+      "title": "Server Windows: sistema, servizi e utenti · Sistema",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-server-windows",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "apparato-server_windows-tab-4",
+      "title": "Server Windows: sistema, servizi e utenti · Software",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-server-windows",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "apparato-server_windows-tab-8",
+      "title": "Server Windows: sistema, servizi e utenti · Storico",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-server-windows",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "apparato-server_windows-tab-5",
+      "title": "Server Windows: sistema, servizi e utenti · Utenti",
+      "parent": "scheda",
+      "view": "pagina-objects-id-tipo-server-windows",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "vault",
+      "title": "vault",
+      "parent": "scheda",
+      "view": "",
+      "note": "Cattura della demo: stato o dettaglio aggiuntivo"
+    },
+    {
+      "image": "topologia-demo",
+      "title": "/topology",
+      "parent": "topologia",
+      "view": "pagina-topology",
+      "note": "Cattura della demo: /topology"
+    },
+    {
+      "image": "pagina-topology-dati",
+      "title": "Dati della mappa: fonti e opzioni",
+      "parent": "topologia",
+      "view": "pagina-topology-dati",
+      "note": "Sorgente verificato · cattura della UI con dati sintetici"
+    },
+    {
+      "image": "pagina-topology",
+      "title": "Topologia: vista automatica e lavoro del tecnico",
+      "parent": "topologia",
+      "view": "pagina-topology",
+      "note": "Sorgente verificato · cattura della UI con dati sintetici"
+    },
+    {
+      "image": "pagina-inventory-assignees",
+      "title": "Assegnatari: persone e stato AD",
+      "parent": "asset",
+      "view": "pagina-inventory-assignees",
+      "note": "Sorgente verificato · cattura della UI con dati sintetici"
+    },
+    {
+      "image": "inventario",
+      "title": "Asset: elenco, sync e audit dei gap",
+      "parent": "asset",
+      "view": "pagina-inventory",
+      "note": "Contenuti verificati nel sorgente · cattura disponibile"
+    },
+    {
+      "image": "pagina-services-id",
+      "title": "Dipendenze del servizio e impatto",
+      "parent": "asset",
+      "view": "pagina-services-id",
+      "note": "Sorgente verificato · cattura della UI con dati sintetici"
+    },
+    {
+      "image": "pagina-inventory-licenses",
+      "title": "Licenze: posti, scadenza e assegnazioni",
+      "parent": "asset",
+      "view": "pagina-inventory-licenses",
+      "note": "Sorgente verificato · cattura della UI con dati sintetici"
+    },
+    {
+      "image": "pagina-inventory-id",
+      "title": "Scheda asset: tutte le sezioni",
+      "parent": "asset",
+      "view": "pagina-inventory-id",
+      "note": "Sorgente verificato · cattura della UI con dati sintetici"
+    },
+    {
+      "image": "tab-asset-esteso-3",
+      "title": "Scheda asset: tutte le sezioni · Ciclo vita",
+      "parent": "asset",
+      "view": "pagina-inventory-id",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "tab-asset-esteso-5",
+      "title": "Scheda asset: tutte le sezioni · Compliance",
+      "parent": "asset",
+      "view": "pagina-inventory-id",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "tab-asset-esteso-9",
+      "title": "Scheda asset: tutte le sezioni · Economico",
+      "parent": "asset",
+      "view": "pagina-inventory-id",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "tab-asset-esteso-0",
+      "title": "Scheda asset: tutte le sezioni · Identificazione",
+      "parent": "asset",
+      "view": "pagina-inventory-id",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "tab-asset-2",
+      "title": "Scheda asset: tutte le sezioni · Licenze",
+      "parent": "asset",
+      "view": "pagina-inventory-id",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "tab-asset-esteso-7",
+      "title": "Scheda asset: tutte le sezioni · Licenze",
+      "parent": "asset",
+      "view": "pagina-inventory-id",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "tab-asset-esteso-2",
+      "title": "Scheda asset: tutte le sezioni · Responsabilità",
+      "parent": "asset",
+      "view": "pagina-inventory-id",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "tab-asset-0",
+      "title": "Scheda asset: tutte le sezioni · Scheda NIS2",
+      "parent": "asset",
+      "view": "pagina-inventory-id",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "tab-asset-1",
+      "title": "Scheda asset: tutte le sezioni · Servizi",
+      "parent": "asset",
+      "view": "pagina-inventory-id",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "tab-asset-esteso-6",
+      "title": "Scheda asset: tutte le sezioni · Servizi",
+      "parent": "asset",
+      "view": "pagina-inventory-id",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "tab-asset-3",
+      "title": "Scheda asset: tutte le sezioni · Storico",
+      "parent": "asset",
+      "view": "pagina-inventory-id",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "tab-asset-esteso-8",
+      "title": "Scheda asset: tutte le sezioni · Storico",
+      "parent": "asset",
+      "view": "pagina-inventory-id",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "tab-asset-esteso-10",
+      "title": "Scheda asset: tutte le sezioni · Supporto",
+      "parent": "asset",
+      "view": "pagina-inventory-id",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "tab-asset-esteso-4",
+      "title": "Scheda asset: tutte le sezioni · Tecnico",
+      "parent": "asset",
+      "view": "pagina-inventory-id",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "tab-asset-esteso-1",
+      "title": "Scheda asset: tutte le sezioni · Ubicazione",
+      "parent": "asset",
+      "view": "pagina-inventory-id",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "pagina-services",
+      "title": "Servizi: criticità, responsabilità e continuità",
+      "parent": "asset",
+      "view": "pagina-services",
+      "note": "Sorgente verificato · cattura della UI con dati sintetici"
+    },
+    {
+      "image": "pagina-software",
+      "title": "Software: versioni, fonti e computer",
+      "parent": "asset",
+      "view": "pagina-software",
+      "note": "Sorgente verificato · cattura della UI con dati sintetici"
+    },
+    {
+      "image": "pagina-inventory-locations",
+      "title": "Ubicazioni: struttura fisica e mappa",
+      "parent": "asset",
+      "view": "pagina-inventory-locations",
+      "note": "Sorgente verificato · cattura della UI con dati sintetici"
+    },
+    {
+      "image": "pagina-inventory-abbinamenti",
+      "title": "Abbinamenti: PC, asset e utente prevalente",
+      "parent": "ad",
+      "view": "pagina-inventory-abbinamenti",
+      "note": "Sorgente verificato · cattura della UI con dati sintetici"
+    },
+    {
+      "image": "pagina-active-directory",
+      "title": "Active Directory: cinque viste e configurazione",
+      "parent": "ad",
+      "view": "pagina-active-directory",
+      "note": "Sorgente verificato · cattura della UI con dati sintetici"
+    },
+    {
+      "image": "tab-ad-0",
+      "title": "Active Directory: cinque viste e configurazione · Computer (2)",
+      "parent": "ad",
+      "view": "pagina-active-directory",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "tab-ad-3",
+      "title": "Active Directory: cinque viste e configurazione · DHCP (0)",
+      "parent": "ad",
+      "view": "pagina-active-directory",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "tab-ad-2",
+      "title": "Active Directory: cinque viste e configurazione · Gruppi (1)",
+      "parent": "ad",
+      "view": "pagina-active-directory",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "tab-ad-4",
+      "title": "Active Directory: cinque viste e configurazione · Health",
+      "parent": "ad",
+      "view": "pagina-active-directory",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "tab-ad-1",
+      "title": "Active Directory: cinque viste e configurazione · Utenti (2)",
+      "parent": "ad",
+      "view": "pagina-active-directory",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "pagina-inventory-assignees-import-ad",
+      "title": "Importa da AD: proposta e conferma",
+      "parent": "ad",
+      "view": "pagina-inventory-assignees-import-ad",
+      "note": "Sorgente verificato · cattura della UI con dati sintetici"
+    },
+    {
+      "image": "pagina-security-alerts",
+      "title": "Alert sicurezza: classificazioni e presa in carico",
+      "parent": "sicurezza",
+      "view": "pagina-security-alerts",
+      "note": "Sorgente verificato · parziale: stato non configurato o servizio esterno scollegato"
+    },
+    {
+      "image": "pagina-analytics",
+      "title": "Anomalie: variazioni dei dati di rete",
+      "parent": "sicurezza",
+      "view": "pagina-analytics",
+      "note": "Sorgente verificato · cattura della UI con dati sintetici"
+    },
+    {
+      "image": "pagina-vulnerabilities",
+      "title": "Vulnerabilità: sorgenti, CVE e host coinvolti",
+      "parent": "sicurezza",
+      "view": "pagina-vulnerabilities",
+      "note": "Sorgente verificato · cattura della UI con dati sintetici"
+    },
+    {
+      "image": "trunk-sicurezza",
+      "title": "Reti dal trunk: entrambe le schede",
+      "parent": "trunk-reti",
+      "view": "pagina-arp-table-trunk",
+      "note": "Contenuti verificati nel sorgente · cattura disponibile"
+    },
+    {
+      "image": "tab-trunk-0",
+      "title": "Reti dal trunk: entrambe le schede · Sicurezza della rete✕ 11 allarmi · 1 esposizioni · 1 novità",
+      "parent": "trunk-reti",
+      "view": "pagina-arp-table-trunk",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "tab-trunk-1",
+      "title": "Reti dal trunk: entrambe le schede · VLAN e reti3 VLAN viste · 12 indirizzi IP",
+      "parent": "trunk-reti",
+      "view": "pagina-arp-table-trunk",
+      "note": "Stato reale della demo, con dati sintetici. Le sezioni senza risultato richiedono una raccolta o un servizio configurato."
+    },
+    {
+      "image": "credenziali",
+      "title": "Credenziali riutilizzabili e “Usata da”",
+      "parent": "vault",
+      "view": "pagina-credentials",
+      "note": "Contenuti verificati nel sorgente · cattura disponibile"
+    },
+    {
+      "image": "vault-registro",
+      "title": "Vault: stato, sblocco, registro ed export",
+      "parent": "vault",
+      "view": "pagina-settings-vault",
+      "note": "Sblocco ed export KDBX/key file verificati sulla demo sintetica"
+    },
+    {
+      "image": "vault-bloccato",
+      "title": "Vault: stato, sblocco, registro ed export · Archivio bloccato e sblocco manuale",
+      "parent": "vault",
+      "view": "pagina-settings-vault",
+      "note": "Archivio sintetico locale; nessun TPM o OpenBao cliente. Esportazione KDBX e key file riuscita via API nella demo."
+    },
+    {
+      "image": "moduli",
+      "title": "11. Collegare i servizi specializzati",
+      "parent": "moduli",
+      "view": "",
+      "note": "Implementato · disponibilità condizionale"
+    },
+    {
+      "image": "modulo-unifi",
+      "title": "Configurazione · Controller UniFi",
+      "parent": "moduli",
+      "view": "modulo-unifi",
+      "note": "Configurazione della demo acquisita; servizio esterno non collaudato"
+    },
+    {
+      "image": "modulo-credenziali",
+      "title": "Configurazione · Credenziali di sistema",
+      "parent": "moduli",
+      "view": "modulo-credenziali",
+      "note": "Configurazione della demo acquisita; servizio esterno non collaudato"
+    },
+    {
+      "image": "modulo-inventory_agent",
+      "title": "Configurazione · GLPI Agent",
+      "parent": "moduli",
+      "view": "modulo-inventory_agent",
+      "note": "Configurazione della demo acquisita; servizio esterno non collaudato"
+    },
+    {
+      "image": "modulo-loki",
+      "title": "Configurazione · Grafana Loki",
+      "parent": "moduli",
+      "view": "modulo-loki",
+      "note": "Configurazione della demo acquisita; servizio esterno non collaudato"
+    },
+    {
+      "image": "modulo-graylog",
+      "title": "Configurazione · Graylog",
+      "parent": "moduli",
+      "view": "modulo-graylog",
+      "note": "Configurazione della demo acquisita; servizio esterno non collaudato"
+    },
+    {
+      "image": "modulo-nis2_inventory",
+      "title": "Configurazione · Inventario NIS2",
+      "parent": "moduli",
+      "view": "modulo-nis2_inventory",
+      "note": "Configurazione della demo acquisita; servizio esterno non collaudato"
+    },
+    {
+      "image": "modulo-librenms",
+      "title": "Configurazione · LibreNMS",
+      "parent": "moduli",
+      "view": "modulo-librenms",
+      "note": "Configurazione della demo acquisita; servizio esterno non collaudato"
+    },
+    {
+      "image": "modulo-meshcentral",
+      "title": "Configurazione · MeshCentral",
+      "parent": "moduli",
+      "view": "modulo-meshcentral",
+      "note": "Configurazione della demo acquisita; servizio esterno non collaudato"
+    },
+    {
+      "image": "modulo-network_services",
+      "title": "Configurazione · Network Services",
+      "parent": "moduli",
+      "view": "modulo-network_services",
+      "note": "Configurazione della demo acquisita; servizio esterno non collaudato"
+    },
+    {
+      "image": "modulo-patch_management",
+      "title": "Configurazione · Patch Management",
+      "parent": "moduli",
+      "view": "modulo-patch_management",
+      "note": "Configurazione della demo acquisita; servizio esterno non collaudato"
+    },
+    {
+      "image": "modulo-edge",
+      "title": "Configurazione · Scanner-Edge",
+      "parent": "moduli",
+      "view": "modulo-edge",
+      "note": "Configurazione della demo acquisita; servizio esterno non collaudato"
+    },
+    {
+      "image": "modulo-wazuh",
+      "title": "Configurazione · Wazuh SIEM",
+      "parent": "moduli",
+      "view": "modulo-wazuh",
+      "note": "Configurazione della demo acquisita; servizio esterno non collaudato"
+    },
+    {
+      "image": "modulo-zabbix",
+      "title": "Configurazione · Zabbix",
+      "parent": "moduli",
+      "view": "modulo-zabbix",
+      "note": "Configurazione della demo acquisita; servizio esterno non collaudato"
+    },
+    {
+      "image": "controller",
+      "title": "Controller: inventario, letture e certificato",
+      "parent": "moduli",
+      "view": "pagina-controllers",
+      "note": "Contenuti verificati nel sorgente · cattura disponibile"
+    },
+    {
+      "image": "pagina-settings-mdm",
+      "title": "Headwind: configurazione del collegamento MDM",
+      "parent": "moduli",
+      "view": "pagina-settings-mdm",
+      "note": "Sorgente verificato · cattura della UI con dati sintetici"
+    },
+    {
+      "image": "pagina-settings-moduli-key",
+      "title": "Pagine dedicate dei moduli: tutte le varianti",
+      "parent": "moduli",
+      "view": "pagina-settings-moduli-key",
+      "note": "Sorgente verificato · cattura della UI con dati sintetici"
+    },
+    {
+      "image": "pagina-zabbix",
+      "title": "Pannello Zabbix in sola lettura",
+      "parent": "moduli",
+      "view": "pagina-zabbix",
+      "note": "Sorgente verificato · parziale: stato non configurato o servizio esterno scollegato"
+    },
+    {
+      "image": "pagina-dhcp",
+      "title": "DHCP Kea: panorama, scope, lease e statici",
+      "parent": "servizi",
+      "view": "pagina-dhcp",
+      "note": "Sorgente verificato · parziale: stato non configurato o servizio esterno scollegato"
+    },
+    {
+      "image": "pagina-dns",
+      "title": "DNS: panorama, zone, filtro e resolver",
+      "parent": "servizi",
+      "view": "pagina-dns",
+      "note": "Sorgente verificato · parziale: stato non configurato o servizio esterno scollegato"
+    },
+    {
+      "image": "pagina-network-services",
+      "title": "Network Services: salute e collegamenti",
+      "parent": "servizi",
+      "view": "pagina-network-services",
+      "note": "Sorgente verificato · parziale: stato non configurato o servizio esterno scollegato"
+    },
+    {
+      "image": "pagina-rmm",
+      "title": "Controllo remoto: endpoint e associazioni",
+      "parent": "interventi",
+      "view": "pagina-rmm",
+      "note": "Sorgente verificato · parziale: stato non configurato o servizio esterno scollegato"
+    },
+    {
+      "image": "pagina-patch-management-cve-cve-d",
+      "title": "Dettaglio CVE: bersagli, fix e pin manuale",
+      "parent": "interventi",
+      "view": "pagina-patch-management-cve-cveId",
+      "note": "Sorgente verificato · cattura della UI con dati sintetici"
+    },
+    {
+      "image": "pagina-patch-management-cve",
+      "title": "Patch per CVE: trovare un fix disponibile",
+      "parent": "interventi",
+      "view": "pagina-patch-management-cve",
+      "note": "Sorgente verificato · cattura della UI con dati sintetici"
+    },
+    {
+      "image": "pagina-patch-management-device-host-d",
+      "title": "Patch sul dispositivo: programmi e azioni",
+      "parent": "interventi",
+      "view": "pagina-patch-management-device-hostId",
+      "note": "Sorgente verificato · cattura della UI con dati sintetici"
+    },
+    {
+      "image": "software-dettaglio",
+      "title": "Patch sul software: diffusione e correzione",
+      "parent": "interventi",
+      "view": "pagina-patch-management-software-softwareKey",
+      "note": "Sorgente verificato · cattura della UI con dati sintetici"
+    },
+    {
+      "image": "pagina-patch-management",
+      "title": "Patch: dispositivi e software",
+      "parent": "interventi",
+      "view": "pagina-patch-management",
+      "note": "Sorgente verificato · cattura della UI con dati sintetici"
+    },
+    {
+      "image": "pagina-rmm-host-d-senza-agente",
+      "title": "Remoto senza agente: percorso distinto",
+      "parent": "interventi",
+      "view": "pagina-rmm-hostId-senza-agente",
+      "note": "Sorgente verificato · parziale: stato non configurato o servizio esterno scollegato"
+    },
+    {
+      "image": "pagina-rmm-host-d",
+      "title": "Sessione remota: avvio, iframe e riconnessione",
+      "parent": "interventi",
+      "view": "pagina-rmm-hostId",
+      "note": "Sorgente verificato · parziale: stato non configurato o servizio esterno scollegato"
+    },
+    {
+      "image": "pagina-patch-management-history",
+      "title": "Storico patch: operazioni, log e riavvio",
+      "parent": "interventi",
+      "view": "pagina-patch-management-history",
+      "note": "Sorgente verificato · cattura della UI con dati sintetici"
+    },
+    {
+      "image": "pagina-settings-tab-aggiornamenti",
+      "title": "Aggiornamenti: versione, canale e applicazione",
+      "parent": "governo",
+      "view": "pagina-settings-tab-aggiornamenti",
+      "note": "Configurazione della demo acquisita; servizio esterno non collaudato"
+    },
+    {
+      "image": "pagina-settings-classifications",
+      "title": "Classificazioni personalizzate",
+      "parent": "governo",
+      "view": "pagina-settings-classifications",
+      "note": "Sorgente verificato · cattura della UI con dati sintetici"
+    },
+    {
+      "image": "pagina-client-config",
+      "title": "Configurazione cliente: dossier tecnico",
+      "parent": "governo",
+      "view": "pagina-client-config",
+      "note": "Sorgente verificato · cattura della UI con dati sintetici"
+    },
+    {
+      "image": "pagina-settings-tab-https",
+      "title": "HTTPS: certificati e accesso browser",
+      "parent": "governo",
+      "view": "pagina-settings-tab-https",
+      "note": "Configurazione della demo acquisita; servizio esterno non collaudato"
+    },
+    {
+      "image": "pagina-settings-tab-identificazione",
+      "title": "Identificazione: firme, OID e feedback",
+      "parent": "governo",
+      "view": "pagina-settings-tab-identificazione",
+      "note": "Configurazione della demo acquisita; servizio esterno non collaudato"
+    },
+    {
+      "image": "pagina-settings",
+      "title": "Impostazioni: tutte le schede amministrative",
+      "parent": "governo",
+      "view": "pagina-settings",
+      "note": "Sorgente verificato · cattura della UI con dati sintetici"
+    },
+    {
+      "image": "pagina-settings-tab-istanza",
+      "title": "Istanza di lavoro",
+      "parent": "governo",
+      "view": "pagina-settings-tab-istanza",
+      "note": "Configurazione della demo acquisita; servizio esterno non collaudato"
+    },
+    {
+      "image": "pagina-tenants",
+      "title": "Istanze: gestione riservata dell’hub",
+      "parent": "governo",
+      "view": "pagina-tenants",
+      "note": "Sorgente verificato · cattura della UI con dati sintetici"
+    },
+    {
+      "image": "pagina-settings-tab-jobs",
+      "title": "Job pianificati: configurazione ed esiti",
+      "parent": "governo",
+      "view": "pagina-settings-tab-jobs",
+      "note": "Configurazione della demo acquisita; servizio esterno non collaudato"
+    },
+    {
+      "image": "pagina-manual",
+      "title": "Manuale integrato: più documenti e ricerca del contesto",
+      "parent": "governo",
+      "view": "pagina-manual",
+      "note": "Sorgente verificato · cattura della UI con dati sintetici"
+    },
+    {
+      "image": "pagina-settings-tab-notifiche",
+      "title": "Notifiche: SMTP, webhook e condizioni",
+      "parent": "governo",
+      "view": "pagina-settings-tab-notifiche",
+      "note": "Configurazione della demo acquisita; servizio esterno non collaudato"
+    },
+    {
+      "image": "opzioni",
+      "title": "Opzioni: catalogo e parametri",
+      "parent": "governo",
+      "view": "pagina-settings-opzioni",
+      "note": "Contenuti verificati nel sorgente · cattura disponibile"
+    },
+    {
+      "image": "pagina-settings-snmp-profiles",
+      "title": "Profili SNMP e libreria OID",
+      "parent": "governo",
+      "view": "pagina-settings-snmp-profiles",
+      "note": "Sorgente verificato · cattura della UI con dati sintetici"
+    },
+    {
+      "image": "pagina-settings-tab-alert-sicurezza",
+      "title": "Regole degli alert e contesto conosciuto",
+      "parent": "governo",
+      "view": "pagina-settings-tab-alert-sicurezza",
+      "note": "Configurazione della demo acquisita; servizio esterno non collaudato"
+    },
+    {
+      "image": "pagina-settings-tab-scansione",
+      "title": "Scansione: motori, porte e tempi",
+      "parent": "governo",
+      "view": "pagina-settings-tab-scansione",
+      "note": "Configurazione della demo acquisita; servizio esterno non collaudato"
+    },
+    {
+      "image": "pagina-settings-schedulazioni",
+      "title": "Schedulazioni: il quadro dei lavori",
+      "parent": "governo",
+      "view": "pagina-settings-schedulazioni",
+      "note": "Sorgente verificato · cattura della UI con dati sintetici"
+    },
+    {
+      "image": "pagina-settings-tab-sistema",
+      "title": "Sistema: URL hub, backup e strumenti",
+      "parent": "governo",
+      "view": "pagina-settings-tab-sistema",
+      "note": "Configurazione della demo acquisita; servizio esterno non collaudato"
+    },
+    {
+      "image": "pagina-settings-transfer",
+      "title": "Trasferimento: bundle cifrato, livelli e importazione",
+      "parent": "governo",
+      "view": "pagina-settings-transfer",
+      "note": "Sorgente verificato · cattura della UI con dati sintetici"
+    },
+    {
+      "image": "pagina-settings-tab-utenti",
+      "title": "Utenti, ruoli e due passaggi",
+      "parent": "governo",
+      "view": "pagina-settings-tab-utenti",
+      "note": "Configurazione della demo acquisita; servizio esterno non collaudato"
+    },
+    {
+      "image": "cosa-esce",
+      "title": "Cosa esce: livelli, contenuti e registro",
+      "parent": "uscite",
+      "view": "pagina-settings-cosa-esce",
+      "note": "Contenuti verificati nel sorgente · cattura disponibile"
+    }
+  ]
 }

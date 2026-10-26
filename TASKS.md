@@ -1,6 +1,16 @@
 # TASKS — DA-IPAM
 
+## 2026-10-26 — Rendere visibili pagine e schermate della guida
+
+Riccardo: «vedo 16 titoli e poche schermate». Correzione circoscritta della consultazione, livello leggero già documentale: atlante iniziale, miniature, accessi diretti alle pagine, gallerie aperte; stessi contenuti e file, nessuna modifica al prodotto.
+- [x] Atlante iniziale con 175 miniature, titoli e collegamenti alle funzioni.
+- [x] Collegamenti diretti nell’area e nell’indice laterale; gallerie aperte, etichetta EDIZIONE CON ATLANTE.
+- [x] HTML/canvas rigenerati; TypeScript strict exit 0; rendering React lato server: 175 miniature iniziali, pagine dirette, gallerie AD aperte. Browser locale file:// non osservabile per policy dello strumento: nessuna nuova verifica interattiva dichiarata.
+
 ## 2026-10-26 — Completare la copertura della guida visuale
+
+- [x] Riccardo (26/10): nel file locale non percepisce differenze sostanziali. Verificato che HTML locale e copia Git coincidono (9.537.739 byte, 99 schede, 175 immagini); ampliamento poco evidente perché struttura iniziale invariata e dettagli in selettori/gallerie chiuse. Da rendere direttamente riconoscibile la navigazione per schermate e funzioni, senza limitarsi ai conteggi. Non attribuire il problema alla cache senza prova.
+
 
 Riccardo (26/10): molte schermate e parti sembrano saltate. Riscontro confermato: la prima guida ha accorpato aree e documentato solo 10 catture, lasciando percorsi senza copertura dedicata. Non considerare la guida completa finché la matrice pagine/tab/funzioni non distingue coperto, parziale, mancante, reindirizzamento e condizionale. Il precedente rinvio a una «seconda edizione da concordare» non soddisfa il perimetro già richiesto.
 - [x] Censite 66 pagine dashboard del commit `76b15198`; in approfondimento tab interne (AD, asset, DNS/DHCP, impostazioni) e varianti delle schede.

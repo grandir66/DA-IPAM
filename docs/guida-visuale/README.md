@@ -2,7 +2,9 @@
 
 Apri `DA-IPAM-guida.html`: guida navigabile autonoma, utilizzabile offline, con immagini e font incorporati. Fonte applicativa congelata: `76b15198`, versione 0.9.913, esaminata il 25–26/10/2026.
 
-La guida comprende 18 aree, 99 schede di dettaglio e la matrice delle 66 pagine dashboard. Le 175 immagini includono pagine, tab, configurazioni e varianti per tipo di apparato. Non sono 175 funzioni collaudate: alcune immagini mostrano stati vuoti o prerequisiti mancanti, dichiarati nella matrice.
+**Edizione con atlante (26/10):** apertura su «Tutte le schermate», 175 miniature per area, accessi diretti alle schede e gallerie aperte. Per una scheda del browser già aperta è necessario ricaricare il file.
+
+La guida comprende 19 aree, 99 schede di dettaglio e la matrice delle 66 pagine dashboard. Le 175 immagini includono pagine, tab, configurazioni e varianti per tipo di apparato. Non sono 175 funzioni collaudate: alcune immagini mostrano stati vuoti o prerequisiti mancanti, dichiarati nella matrice.
 
 ## Cosa è stato acquisito
 

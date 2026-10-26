@@ -8,6 +8,8 @@ incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
 ### Documentazione
 
+- Resa visibile l’estensione della guida: apertura con atlante di 175 miniature, pagine accessibili direttamente e gallerie aperte. Correggeva una navigazione che nascondeva le schermate aggiunte.
+
 - Catalogo funzionale e guida navigabile verificati sul sorgente `76b15198`: 18 aree, 99 schede e 175 catture sintetiche, tab e varianti comprese. Matrice delle 66 pagine con dieci stati parziali/condizionali espliciti, per correggere le omissioni della prima panoramica e distinguere UI, integrazioni e proposte. Verifica offline e TypeScript verdi; sblocco ed export vault provati solo sulla demo. Nessuna modifica al prodotto o deploy.
 
 

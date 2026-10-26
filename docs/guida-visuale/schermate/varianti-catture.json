@@ -318,5 +318,573 @@
     "label": "Compliance",
     "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nAsset\nSoftware\nAssegnatari\nAbbinamenti\nUbicazioni\nLicenze\nServizi NIS2\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nDEMO-003\n\nDEMO-003\n\nSync da discovery\nForce\nVista NIS2\nIdentificazione\nUbicazione\nResponsabilità\nCiclo vita\nTecnico\nCompliance\nServizi\nLicenze\nStorico\nEconomico\nSupporto\nCompliance GDPR / NIS2\nIn scope GDPR\nIn scope NIS2\nClassificazione dati\nInterno\nUltimo audit\nSalva modifiche",
     "date": "2026-10-26T00:03:09.358Z"
+  },
+  {
+    "name": "tab-asset-esteso-6",
+    "route": "/inventory/3",
+    "actual": "http://127.0.0.1:3187/inventory/3",
+    "label": "Servizi",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nAsset\nSoftware\nAssegnatari\nAbbinamenti\nUbicazioni\nLicenze\nServizi NIS2\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nDEMO-003\n\nDEMO-003\n\nSync da discovery\nForce\nVista NIS2\nIdentificazione\nUbicazione\nResponsabilità\nCiclo vita\nTecnico\nCompliance\nServizi\nLicenze\nStorico\nEconomico\nSupporto\nServizi che dipendono da questo asset\nNessun servizio collegato. Vai su /services e collega questo asset ai servizi pertinenti per abilitare l'impact analysis NIS2.\nSalva modifiche",
+    "date": "2026-10-26T00:03:10.999Z"
+  },
+  {
+    "name": "tab-asset-esteso-7",
+    "route": "/inventory/3",
+    "actual": "http://127.0.0.1:3187/inventory/3",
+    "label": "Licenze",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nAsset\nSoftware\nAssegnatari\nAbbinamenti\nUbicazioni\nLicenze\nServizi NIS2\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nDEMO-003\n\nDEMO-003\n\nSync da discovery\nForce\nVista NIS2\nIdentificazione\nUbicazione\nResponsabilità\nCiclo vita\nTecnico\nCompliance\nServizi\nLicenze\nStorico\nEconomico\nSupporto\nLicenze software assegnate\nAssegna licenza...\nLicenza\tAssegnato il\t\nSuite dimostrativa\t26/10/2026\t\nSalva modifiche",
+    "date": "2026-10-26T00:03:12.628Z"
+  },
+  {
+    "name": "tab-asset-esteso-8",
+    "route": "/inventory/3",
+    "actual": "http://127.0.0.1:3187/inventory/3",
+    "label": "Storico",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nAsset\nSoftware\nAssegnatari\nAbbinamenti\nUbicazioni\nLicenze\nServizi NIS2\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nDEMO-003\n\nDEMO-003\n\nSync da discovery\nForce\nVista NIS2\nIdentificazione\nUbicazione\nResponsabilità\nCiclo vita\nTecnico\nCompliance\nServizi\nLicenze\nStorico\nEconomico\nSupporto\nStorico modifiche (audit)\nData\tAzione\tCampo\tValore precedente\tNuovo valore\n26/10/2026, 00:52:37\tupdate\tasset_assignee_id\t\t1\nSalva modifiche",
+    "date": "2026-10-26T00:03:14.266Z"
+  },
+  {
+    "name": "tab-asset-esteso-9",
+    "route": "/inventory/3",
+    "actual": "http://127.0.0.1:3187/inventory/3",
+    "label": "Economico",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nAsset\nSoftware\nAssegnatari\nAbbinamenti\nUbicazioni\nLicenze\nServizi NIS2\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nDEMO-003\n\nDEMO-003\n\nSync da discovery\nForce\nVista NIS2\nIdentificazione\nUbicazione\nResponsabilità\nCiclo vita\nTecnico\nCompliance\nServizi\nLicenze\nStorico\nEconomico\nSupporto\nDati economici\nPrezzo acquisto (€)\nFornitore\nSalva modifiche",
+    "date": "2026-10-26T00:03:15.903Z"
+  },
+  {
+    "name": "tab-asset-esteso-10",
+    "route": "/inventory/3",
+    "actual": "http://127.0.0.1:3187/inventory/3",
+    "label": "Supporto",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nAsset\nSoftware\nAssegnatari\nAbbinamenti\nUbicazioni\nLicenze\nServizi NIS2\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nDEMO-003\n\nDEMO-003\n\nSync da discovery\nForce\nVista NIS2\nIdentificazione\nUbicazione\nResponsabilità\nCiclo vita\nTecnico\nCompliance\nServizi\nLicenze\nStorico\nEconomico\nSupporto\nManutenzione & supporto\nContratto supporto\nContatto supporto\nNote tecniche\nSalva modifiche",
+    "date": "2026-10-26T00:03:17.526Z"
+  },
+  {
+    "name": "apparato-switch",
+    "route": "/objects/2",
+    "actual": "http://127.0.0.1:3187/objects/2",
+    "label": "switch",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nSW-ACCESSO\n192.0.2.2\nSwitch\n✓ online · 3 ms\nHp · Aruba 2540 · Versione dimostrativa\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nPorte\nVLAN\nVicini e MAC\nSicurezza\nGestione\nStorico\nPorte su\n0 / 0\nDa guardare\n0\n\nDati da:\n– Scansione apparato: mai eseguita",
+    "date": "2026-10-26T00:03:19.811Z"
+  },
+  {
+    "name": "apparato-switch-tab-0",
+    "route": "/objects/2",
+    "actual": "http://127.0.0.1:3187/objects/2",
+    "label": "Panoramica",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nSW-ACCESSO\n192.0.2.2\nSwitch\n✓ online · 3 ms\nHp · Aruba 2540 · Versione dimostrativa\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nPorte\nVLAN\nVicini e MAC\nSicurezza\nGestione\nStorico\nPorte su\n0 / 0\nDa guardare\n0\n\nDati da:\n– Scansione apparato: mai eseguita",
+    "date": "2026-10-26T00:03:21.398Z"
+  },
+  {
+    "name": "apparato-switch-tab-1",
+    "route": "/objects/2",
+    "actual": "http://127.0.0.1:3187/objects/2",
+    "label": "Porte",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nSW-ACCESSO\n192.0.2.2\nSwitch\n✓ online · 3 ms\nHp · Aruba 2540 · Versione dimostrativa\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nPorte\nVLAN\nVicini e MAC\nSicurezza\nGestione\nStorico\nSCHEMA PORTE (0)\n0 su · 0 giù · 0 trunk\n\nNessuna porta rilevata. Aggiorna i dati per acquisire lo schema porte, LLDP/CDP e Spanning Tree.",
+    "date": "2026-10-26T00:03:22.990Z"
+  },
+  {
+    "name": "apparato-switch-tab-2",
+    "route": "/objects/2",
+    "actual": "http://127.0.0.1:3187/objects/2",
+    "label": "VLAN",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nSW-ACCESSO\n192.0.2.2\nSwitch\n✓ online · 3 ms\nHp · Aruba 2540 · Versione dimostrativa\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nPorte\nVLAN\nVicini e MAC\nSicurezza\nGestione\nStorico\nMATRICE PORTE × VLAN\n\nNessuna porta letta per questo switch.\n\nDati da:\n– SNMP (Q-BRIDGE): mai letta",
+    "date": "2026-10-26T00:03:24.592Z"
+  },
+  {
+    "name": "apparato-switch-tab-3",
+    "route": "/objects/2",
+    "actual": "http://127.0.0.1:3187/objects/2",
+    "label": "Vicini e MAC",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nSW-ACCESSO\n192.0.2.2\nSwitch\n✓ online · 3 ms\nHp · Aruba 2540 · Versione dimostrativa\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nPorte\nVLAN\nVicini e MAC\nSicurezza\nGestione\nStorico\nSulla mappa\n\nSulla mappa è SW-ACCESSO\n\n192.0.2.2\nSW-ACCESSO\n· l'oggetto stesso\n192.0.2.1\nGW-UFFICI\n· indirizzo dell'apparato\n192.0.2.2\nSW-ACCESSO\n· stesso IP con cui si gestisce l'apparato\n· qui\nUnisci con…\nIP collegati allo stesso device fisico\n\nNessun altro IP aggregato. Se questo device ha più indirizzi (es. NIC su VLAN diverse, gateway multipli), collegali manualmente.\n\nCollega altro IP",
+    "date": "2026-10-26T00:03:26.196Z"
+  },
+  {
+    "name": "apparato-switch-tab-4",
+    "route": "/objects/2",
+    "actual": "http://127.0.0.1:3187/objects/2",
+    "label": "Sicurezza",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nSW-ACCESSO\n192.0.2.2\nSwitch\n✓ online · 3 ms\nHp · Aruba 2540 · Versione dimostrativa\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nPorte\nVLAN\nVicini e MAC\nSicurezza\nGestione\nStorico\nVulnerabilità\n\nNessun finding archiviato. Verifica che lo Scanner-Edge e/o Wazuh siano configurati in Impostazioni → Moduli e che il sync sia avvenuto.",
+    "date": "2026-10-26T00:03:27.793Z"
+  },
+  {
+    "name": "apparato-switch-tab-5",
+    "route": "/objects/2",
+    "actual": "http://127.0.0.1:3187/objects/2",
+    "label": "Gestione",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nSW-ACCESSO\n192.0.2.2\nSwitch\n✓ online · 3 ms\nHp · Aruba 2540 · Versione dimostrativa\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nPorte\nVLAN\nVicini e MAC\nSicurezza\nGestione\nStorico\nCOS'È\nCLASSIFICAZIONE\nSwitch\nPiattaforma\nhp\n\nUn solo editor: scrive su apparato e host insieme.\n\nIDENTITÀ E INVENTARIO\nMAC\n02:00:00:00:01:02\nHostname · DNS\nSW-ACCESSO\nModello\nAruba 2540\nFirmware\nVersione dimostrativa\nSeriale\nN. inventario\nNote\nCOME CI ARRIVO\nProtocollo · porta\nsnmp_v2 · 22\nCREDENZIALI\n\nCREDENZIALI ASSEGNATE\n\n▲ senza credenziale provata\n\nQuelle che il motore usa davvero su questo apparato, non la catena della rete.\n\nCredenziale\tPer\tUltimo esito\t\n\n«public»\n\t\nSNMP · 161\nripiego dichiarato\n\t● Non provata\t\nProva adesso\nCambia\n\nResta finché una prova non riesce. Compare anche nelle liste.\n\nCredenziali (0)\nCredenziali assegnate al dispositivo, ordinate per priorità\nDa archivio\nNuova\n\nNessuna credenziale assegnata\n\nACQUISIZIONE MODULARE (ANTEPRIMA)\n\n▲\nL'acquisizione modulare è spenta per questa installazione: «Aggiorna» usa l'acquisizione di sempre. Un amministratore la accende in Impostazioni → Sistema.\n\n▲\nhp-procurve vuole una credenziale SNMP o SSH assegnata all'apparato e non ce n'è: assegnala nella tabella «Credenziali» qui sopra, oppure scegli l'acquisizione di sempre. Scegli la fonte\n\nCollector\nhp-procurve 1.0.0 ✓ collaudato su Aruba JL357A 2540-48G-PoE+-4SFP+ e HP J9850A 5406R zl2\nCredenziali\nnessuna — dall'archivio, sola lettura\n\nSi acquisisce con «Aggiorna» in alto: per gli apparati che hanno un collector la lettura arriva in questo formato e popola l'apparato. Nessuna scrittura sull'apparato.\n\nASSET NIS2\n#2\nCategoria\nSwitch\nStato\nAttivo\nApri l'asset completo ›\nCOLLEGAMENTI ESTERNI\nLibreNMS e Zabbix non sono configurati su questa appliance.\nControllo remoto\nTerminale SSH\nRete e SNMP\nInformazioni di rete (SNMP)\nSYSNAME (SNMP)\n—\nSYSDESCR\n—\nSYSOBJECTID\n—\nUPTIME SNMP\n—\nARP ENTRIES\n—\nSNMP PORT\n—\nPART NUMBER\n—\nULTIMA QUERY DEVICE\n—",
+    "date": "2026-10-26T00:03:29.411Z"
+  },
+  {
+    "name": "apparato-switch-tab-6",
+    "route": "/objects/2",
+    "actual": "http://127.0.0.1:3187/objects/2",
+    "label": "Storico",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nSW-ACCESSO\n192.0.2.2\nSwitch\n✓ online · 3 ms\nHp · Aruba 2540 · Versione dimostrativa\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nPorte\nVLAN\nVicini e MAC\nSicurezza\nGestione\nStorico\nDISPONIBILITÀ\nUptime nel tempo\n26/10/2026\nAdesso\nLatenza ICMP (ms)\nMonitoraggio Latenza\n1h\n6h\n24h\n7g\nUptime\n\n100.0%\n\nLatenza media\n\n3ms\n\nLatenza max\n\n3ms\n\nControlli\n\n1/1\n\n00:52\n0ms\n0.75ms\n1.5ms\n2.25ms\n3ms\n\nUltimo controllo: 26/10/2026, 00:52:00\n\nDISCOVERY\nScoperto\n26/10/2026, 00:52\nUltima volta visto\n26/10/2026, 00:52\nHost noto\nNo\nCRONOLOGIA SCANSIONI\n26/10/2026, 00:52\nping\n✓ online\n0ms",
+    "date": "2026-10-26T00:03:31.038Z"
+  },
+  {
+    "name": "apparato-router",
+    "route": "/objects/1",
+    "actual": "http://127.0.0.1:3187/objects/1",
+    "label": "router",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nGW-UFFICI\n192.0.2.1\nSwitch\n✓ online · 2 ms\nHp · Aruba 2540 · Versione dimostrativa\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nPorte\nVLAN\nVicini e MAC\nSicurezza\nGestione\nStorico\nPorte su\n0 / 0\nDa guardare\n0\n\nDati da:\n– Scansione apparato: mai eseguita",
+    "date": "2026-10-26T00:03:33.298Z"
+  },
+  {
+    "name": "apparato-router-tab-0",
+    "route": "/objects/1",
+    "actual": "http://127.0.0.1:3187/objects/1",
+    "label": "Panoramica",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nGW-UFFICI\n192.0.2.1\nSwitch\n✓ online · 2 ms\nHp · Aruba 2540 · Versione dimostrativa\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nPorte\nVLAN\nVicini e MAC\nSicurezza\nGestione\nStorico\nPorte su\n0 / 0\nDa guardare\n0\n\nDati da:\n– Scansione apparato: mai eseguita",
+    "date": "2026-10-26T00:03:34.885Z"
+  },
+  {
+    "name": "apparato-router-tab-1",
+    "route": "/objects/1",
+    "actual": "http://127.0.0.1:3187/objects/1",
+    "label": "Porte",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nGW-UFFICI\n192.0.2.1\nSwitch\n✓ online · 2 ms\nHp · Aruba 2540 · Versione dimostrativa\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nPorte\nVLAN\nVicini e MAC\nSicurezza\nGestione\nStorico\nSCHEMA PORTE (0)\n0 su · 0 giù · 0 trunk\n\nNessuna porta rilevata. Aggiorna i dati per acquisire lo schema porte, LLDP/CDP e Spanning Tree.",
+    "date": "2026-10-26T00:03:36.483Z"
+  },
+  {
+    "name": "apparato-router-tab-2",
+    "route": "/objects/1",
+    "actual": "http://127.0.0.1:3187/objects/1",
+    "label": "VLAN",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nGW-UFFICI\n192.0.2.1\nSwitch\n✓ online · 2 ms\nHp · Aruba 2540 · Versione dimostrativa\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nPorte\nVLAN\nVicini e MAC\nSicurezza\nGestione\nStorico\nMATRICE PORTE × VLAN\n\nNessuna porta letta per questo switch.\n\nDati da:\n– SNMP (Q-BRIDGE): mai letta",
+    "date": "2026-10-26T00:03:38.105Z"
+  },
+  {
+    "name": "apparato-router-tab-3",
+    "route": "/objects/1",
+    "actual": "http://127.0.0.1:3187/objects/1",
+    "label": "Vicini e MAC",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nGW-UFFICI\n192.0.2.1\nSwitch\n✓ online · 2 ms\nHp · Aruba 2540 · Versione dimostrativa\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nPorte\nVLAN\nVicini e MAC\nSicurezza\nGestione\nStorico\nSulla mappa\n\nSulla mappa è SW-ACCESSO\n\n192.0.2.2\nSW-ACCESSO\n· l'oggetto stesso\n192.0.2.1\nGW-UFFICI\n· indirizzo dell'apparato\n· qui\n192.0.2.2\nSW-ACCESSO\n· stesso IP con cui si gestisce l'apparato\nUnisci con…\nIP collegati allo stesso device fisico\n\nNessun altro IP aggregato. Se questo device ha più indirizzi (es. NIC su VLAN diverse, gateway multipli), collegali manualmente.\n\nCollega altro IP",
+    "date": "2026-10-26T00:03:39.718Z"
+  },
+  {
+    "name": "apparato-router-tab-4",
+    "route": "/objects/1",
+    "actual": "http://127.0.0.1:3187/objects/1",
+    "label": "Sicurezza",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nGW-UFFICI\n192.0.2.1\nSwitch\n✓ online · 2 ms\nHp · Aruba 2540 · Versione dimostrativa\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nPorte\nVLAN\nVicini e MAC\nSicurezza\nGestione\nStorico\nVulnerabilità\n\nNessun finding archiviato. Verifica che lo Scanner-Edge e/o Wazuh siano configurati in Impostazioni → Moduli e che il sync sia avvenuto.",
+    "date": "2026-10-26T00:03:41.315Z"
+  },
+  {
+    "name": "apparato-router-tab-5",
+    "route": "/objects/1",
+    "actual": "http://127.0.0.1:3187/objects/1",
+    "label": "Gestione",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nGW-UFFICI\n192.0.2.1\nSwitch\n✓ online · 2 ms\nHp · Aruba 2540 · Versione dimostrativa\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nPorte\nVLAN\nVicini e MAC\nSicurezza\nGestione\nStorico\nCOS'È\nCLASSIFICAZIONE\nSwitch\nPiattaforma\nhp\n\nUn solo editor: scrive su apparato e host insieme.\n\nIDENTITÀ E INVENTARIO\nMAC\n02:00:00:00:01:01\nHostname · DNS\nGW-UFFICI\nModello\nAruba 2540\nFirmware\nVersione dimostrativa\nSeriale\nN. inventario\nNote\nCOME CI ARRIVO\nProtocollo · porta\nsnmp_v2 · 22\nCREDENZIALI\n\nCREDENZIALI ASSEGNATE\n\n▲ senza credenziale provata\n\nQuelle che il motore usa davvero su questo apparato, non la catena della rete.\n\nCredenziale\tPer\tUltimo esito\t\n\n«public»\n\t\nSNMP · 161\nripiego dichiarato\n\t● Non provata\t\nProva adesso\nCambia\n\nResta finché una prova non riesce. Compare anche nelle liste.\n\nCredenziali (0)\nCredenziali assegnate al dispositivo, ordinate per priorità\nDa archivio\nNuova\n\nNessuna credenziale assegnata\n\nACQUISIZIONE MODULARE (ANTEPRIMA)\n\n▲\nL'acquisizione modulare è spenta per questa installazione: «Aggiorna» usa l'acquisizione di sempre. Un amministratore la accende in Impostazioni → Sistema.\n\n▲\nhp-procurve vuole una credenziale SNMP o SSH assegnata all'apparato e non ce n'è: assegnala nella tabella «Credenziali» qui sopra, oppure scegli l'acquisizione di sempre. Scegli la fonte\n\nCollector\nhp-procurve 1.0.0 ✓ collaudato su Aruba JL357A 2540-48G-PoE+-4SFP+ e HP J9850A 5406R zl2\nCredenziali\nnessuna — dall'archivio, sola lettura\n\nSi acquisisce con «Aggiorna» in alto: per gli apparati che hanno un collector la lettura arriva in questo formato e popola l'apparato. Nessuna scrittura sull'apparato.\n\nASSET NIS2\n#1\nCategoria\nRouter\nStato\nAttivo\nApri l'asset completo ›\nCOLLEGAMENTI ESTERNI\nLibreNMS e Zabbix non sono configurati su questa appliance.\nControllo remoto\nTerminale SSH\nRete e SNMP\nInformazioni di rete (SNMP)\nSYSNAME (SNMP)\n—\nSYSDESCR\n—\nSYSOBJECTID\n—\nUPTIME SNMP\n—\nARP ENTRIES\n—\nSNMP PORT\n—\nPART NUMBER\n—\nULTIMA QUERY DEVICE\n—",
+    "date": "2026-10-26T00:03:42.932Z"
+  },
+  {
+    "name": "apparato-router-tab-6",
+    "route": "/objects/1",
+    "actual": "http://127.0.0.1:3187/objects/1",
+    "label": "Storico",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nGW-UFFICI\n192.0.2.1\nSwitch\n✓ online · 2 ms\nHp · Aruba 2540 · Versione dimostrativa\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nPorte\nVLAN\nVicini e MAC\nSicurezza\nGestione\nStorico\nDISPONIBILITÀ\nUptime nel tempo\n26/10/2026\nAdesso\nLatenza ICMP (ms)\nMonitoraggio Latenza\n1h\n6h\n24h\n7g\nUptime\n\n100.0%\n\nLatenza media\n\n2ms\n\nLatenza max\n\n2ms\n\nControlli\n\n1/1\n\n00:52\n0ms\n0.5ms\n1ms\n1.5ms\n2ms\n\nUltimo controllo: 26/10/2026, 00:52:00\n\nDISCOVERY\nScoperto\n26/10/2026, 00:52\nUltima volta visto\n26/10/2026, 00:52\nHost noto\nSì\nCRONOLOGIA SCANSIONI\n26/10/2026, 00:52\nping\n✓ online\n0ms",
+    "date": "2026-10-26T00:03:44.565Z"
+  },
+  {
+    "name": "apparato-mikrotik",
+    "route": "/objects/1",
+    "actual": "http://127.0.0.1:3187/objects/1",
+    "label": "mikrotik",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nGW-UFFICI\n192.0.2.1\nSwitch\n✓ online · 2 ms\nHp · Aruba 2540 · Versione dimostrativa\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nPorte\nVLAN\nVicini e MAC\nSicurezza\nGestione\nStorico\nPorte su\n0 / 0\nDa guardare\n0\n\nDati da:\n– Scansione apparato: mai eseguita",
+    "date": "2026-10-26T00:03:46.808Z"
+  },
+  {
+    "name": "apparato-mikrotik-tab-0",
+    "route": "/objects/1",
+    "actual": "http://127.0.0.1:3187/objects/1",
+    "label": "Panoramica",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nGW-UFFICI\n192.0.2.1\nSwitch\n✓ online · 2 ms\nHp · Aruba 2540 · Versione dimostrativa\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nPorte\nVLAN\nVicini e MAC\nSicurezza\nGestione\nStorico\nPorte su\n0 / 0\nDa guardare\n0\n\nDati da:\n– Scansione apparato: mai eseguita",
+    "date": "2026-10-26T00:03:48.402Z"
+  },
+  {
+    "name": "apparato-mikrotik-tab-1",
+    "route": "/objects/1",
+    "actual": "http://127.0.0.1:3187/objects/1",
+    "label": "Porte",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nGW-UFFICI\n192.0.2.1\nSwitch\n✓ online · 2 ms\nHp · Aruba 2540 · Versione dimostrativa\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nPorte\nVLAN\nVicini e MAC\nSicurezza\nGestione\nStorico\nSCHEMA PORTE (0)\n0 su · 0 giù · 0 trunk\n\nNessuna porta rilevata. Aggiorna i dati per acquisire lo schema porte, LLDP/CDP e Spanning Tree.",
+    "date": "2026-10-26T00:03:50.008Z"
+  },
+  {
+    "name": "apparato-mikrotik-tab-2",
+    "route": "/objects/1",
+    "actual": "http://127.0.0.1:3187/objects/1",
+    "label": "VLAN",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nGW-UFFICI\n192.0.2.1\nSwitch\n✓ online · 2 ms\nHp · Aruba 2540 · Versione dimostrativa\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nPorte\nVLAN\nVicini e MAC\nSicurezza\nGestione\nStorico\nMATRICE PORTE × VLAN\n\nNessuna porta letta per questo switch.\n\nDati da:\n– SNMP (Q-BRIDGE): mai letta",
+    "date": "2026-10-26T00:03:51.605Z"
+  },
+  {
+    "name": "apparato-mikrotik-tab-3",
+    "route": "/objects/1",
+    "actual": "http://127.0.0.1:3187/objects/1",
+    "label": "Vicini e MAC",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nGW-UFFICI\n192.0.2.1\nSwitch\n✓ online · 2 ms\nHp · Aruba 2540 · Versione dimostrativa\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nPorte\nVLAN\nVicini e MAC\nSicurezza\nGestione\nStorico\nSulla mappa\n\nSulla mappa è SW-ACCESSO\n\n192.0.2.2\nSW-ACCESSO\n· l'oggetto stesso\n192.0.2.1\nGW-UFFICI\n· indirizzo dell'apparato\n· qui\n192.0.2.2\nSW-ACCESSO\n· stesso IP con cui si gestisce l'apparato\nUnisci con…\nIP collegati allo stesso device fisico\n\nNessun altro IP aggregato. Se questo device ha più indirizzi (es. NIC su VLAN diverse, gateway multipli), collegali manualmente.\n\nCollega altro IP",
+    "date": "2026-10-26T00:03:53.210Z"
+  },
+  {
+    "name": "apparato-mikrotik-tab-4",
+    "route": "/objects/1",
+    "actual": "http://127.0.0.1:3187/objects/1",
+    "label": "Sicurezza",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nGW-UFFICI\n192.0.2.1\nSwitch\n✓ online · 2 ms\nHp · Aruba 2540 · Versione dimostrativa\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nPorte\nVLAN\nVicini e MAC\nSicurezza\nGestione\nStorico\nVulnerabilità\n\nNessun finding archiviato. Verifica che lo Scanner-Edge e/o Wazuh siano configurati in Impostazioni → Moduli e che il sync sia avvenuto.",
+    "date": "2026-10-26T00:03:54.804Z"
+  },
+  {
+    "name": "apparato-mikrotik-tab-5",
+    "route": "/objects/1",
+    "actual": "http://127.0.0.1:3187/objects/1",
+    "label": "Gestione",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nGW-UFFICI\n192.0.2.1\nSwitch\n✓ online · 2 ms\nHp · Aruba 2540 · Versione dimostrativa\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nPorte\nVLAN\nVicini e MAC\nSicurezza\nGestione\nStorico\nCOS'È\nCLASSIFICAZIONE\nSwitch\nPiattaforma\nhp\n\nUn solo editor: scrive su apparato e host insieme.\n\nIDENTITÀ E INVENTARIO\nMAC\n02:00:00:00:01:01\nHostname · DNS\nGW-UFFICI\nModello\nAruba 2540\nFirmware\nVersione dimostrativa\nSeriale\nN. inventario\nNote\nCOME CI ARRIVO\nProtocollo · porta\nsnmp_v2 · 22\nCREDENZIALI\n\nCREDENZIALI ASSEGNATE\n\n▲ senza credenziale provata\n\nQuelle che il motore usa davvero su questo apparato, non la catena della rete.\n\nCredenziale\tPer\tUltimo esito\t\n\n«public»\n\t\nSNMP · 161\nripiego dichiarato\n\t● Non provata\t\nProva adesso\nCambia\n\nResta finché una prova non riesce. Compare anche nelle liste.\n\nCredenziali (0)\nCredenziali assegnate al dispositivo, ordinate per priorità\nDa archivio\nNuova\n\nNessuna credenziale assegnata\n\nACQUISIZIONE MODULARE (ANTEPRIMA)\n\n▲\nL'acquisizione modulare è spenta per questa installazione: «Aggiorna» usa l'acquisizione di sempre. Un amministratore la accende in Impostazioni → Sistema.\n\n▲\nhp-procurve vuole una credenziale SNMP o SSH assegnata all'apparato e non ce n'è: assegnala nella tabella «Credenziali» qui sopra, oppure scegli l'acquisizione di sempre. Scegli la fonte\n\nCollector\nhp-procurve 1.0.0 ✓ collaudato su Aruba JL357A 2540-48G-PoE+-4SFP+ e HP J9850A 5406R zl2\nCredenziali\nnessuna — dall'archivio, sola lettura\n\nSi acquisisce con «Aggiorna» in alto: per gli apparati che hanno un collector la lettura arriva in questo formato e popola l'apparato. Nessuna scrittura sull'apparato.\n\nASSET NIS2\n#1\nCategoria\nRouter\nStato\nAttivo\nApri l'asset completo ›\nCOLLEGAMENTI ESTERNI\nLibreNMS e Zabbix non sono configurati su questa appliance.\nControllo remoto\nTerminale SSH\nRete e SNMP\nInformazioni di rete (SNMP)\nSYSNAME (SNMP)\n—\nSYSDESCR\n—\nSYSOBJECTID\n—\nUPTIME SNMP\n—\nARP ENTRIES\n—\nSNMP PORT\n—\nPART NUMBER\n—\nULTIMA QUERY DEVICE\n—",
+    "date": "2026-10-26T00:03:56.425Z"
+  },
+  {
+    "name": "apparato-mikrotik-tab-6",
+    "route": "/objects/1",
+    "actual": "http://127.0.0.1:3187/objects/1",
+    "label": "Storico",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nGW-UFFICI\n192.0.2.1\nSwitch\n✓ online · 2 ms\nHp · Aruba 2540 · Versione dimostrativa\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nPorte\nVLAN\nVicini e MAC\nSicurezza\nGestione\nStorico\nDISPONIBILITÀ\nUptime nel tempo\n26/10/2026\nAdesso\nLatenza ICMP (ms)\nMonitoraggio Latenza\n1h\n6h\n24h\n7g\nUptime\n\n100.0%\n\nLatenza media\n\n2ms\n\nLatenza max\n\n2ms\n\nControlli\n\n1/1\n\n00:52\n0ms\n0.5ms\n1ms\n1.5ms\n2ms\n\nUltimo controllo: 26/10/2026, 00:52:00\n\nDISCOVERY\nScoperto\n26/10/2026, 00:52\nUltima volta visto\n26/10/2026, 00:52\nHost noto\nSì\nCRONOLOGIA SCANSIONI\n26/10/2026, 00:52\nping\n✓ online\n0ms",
+    "date": "2026-10-26T00:03:58.039Z"
+  },
+  {
+    "name": "apparato-storage",
+    "route": "/objects/8",
+    "actual": "http://127.0.0.1:3187/objects/8",
+    "label": "storage",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nNAS-BACKUP\n198.51.100.25\nStorage\n✓ online · 9 ms\nSynology\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nDischi e RAID\nVolumi\nServizi\nSicurezza\nGestione\nStorico\nStato\n✓ online\n9 ms\nPorte aperte\n2\nPORTE APERTE (2)\nTCP\n22\n443\nRETE\nSubnet\nServer e servizi (198.51.100.0/24)\n\nDati da:\n✓ Discovery 26/10, 00:52\n– Scansione apparato: mai eseguita",
+    "date": "2026-10-26T00:04:00.299Z"
+  },
+  {
+    "name": "apparato-storage-tab-0",
+    "route": "/objects/8",
+    "actual": "http://127.0.0.1:3187/objects/8",
+    "label": "Panoramica",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nNAS-BACKUP\n198.51.100.25\nStorage\n✓ online · 9 ms\nSynology\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nDischi e RAID\nVolumi\nServizi\nSicurezza\nGestione\nStorico\nStato\n✓ online\n9 ms\nPorte aperte\n2\nPORTE APERTE (2)\nTCP\n22\n443\nRETE\nSubnet\nServer e servizi (198.51.100.0/24)\n\nDati da:\n✓ Discovery 26/10, 00:52\n– Scansione apparato: mai eseguita",
+    "date": "2026-10-26T00:04:01.912Z"
+  },
+  {
+    "name": "apparato-storage-tab-1",
+    "route": "/objects/8",
+    "actual": "http://127.0.0.1:3187/objects/8",
+    "label": "Dischi e RAID",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nNAS-BACKUP\n198.51.100.25\nStorage\n✓ online · 9 ms\nSynology\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nDischi e RAID\nVolumi\nServizi\nSicurezza\nGestione\nStorico\n\nL'inventario del NAS non è ancora stato letto: serve una scansione con SNMP (e, per i dettagli, SSH). Si lancia da Gestione.",
+    "date": "2026-10-26T00:04:03.492Z"
+  },
+  {
+    "name": "apparato-storage-tab-2",
+    "route": "/objects/8",
+    "actual": "http://127.0.0.1:3187/objects/8",
+    "label": "Volumi",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nNAS-BACKUP\n198.51.100.25\nStorage\n✓ online · 9 ms\nSynology\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nDischi e RAID\nVolumi\nServizi\nSicurezza\nGestione\nStorico\n\nL'inventario del NAS non è ancora stato letto: serve una scansione con SNMP (e, per i dettagli, SSH). Si lancia da Gestione.",
+    "date": "2026-10-26T00:04:05.094Z"
+  },
+  {
+    "name": "apparato-storage-tab-3",
+    "route": "/objects/8",
+    "actual": "http://127.0.0.1:3187/objects/8",
+    "label": "Servizi",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nNAS-BACKUP\n198.51.100.25\nStorage\n✓ online · 9 ms\nSynology\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nDischi e RAID\nVolumi\nServizi\nSicurezza\nGestione\nStorico\n\nL'inventario del NAS non è ancora stato letto: serve una scansione con SNMP (e, per i dettagli, SSH). Si lancia da Gestione.",
+    "date": "2026-10-26T00:04:06.697Z"
+  },
+  {
+    "name": "apparato-storage-tab-4",
+    "route": "/objects/8",
+    "actual": "http://127.0.0.1:3187/objects/8",
+    "label": "Sicurezza",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nNAS-BACKUP\n198.51.100.25\nStorage\n✓ online · 9 ms\nSynology\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nDischi e RAID\nVolumi\nServizi\nSicurezza\nGestione\nStorico\nVulnerabilità\n\nNessun finding archiviato. Verifica che lo Scanner-Edge e/o Wazuh siano configurati in Impostazioni → Moduli e che il sync sia avvenuto.",
+    "date": "2026-10-26T00:04:08.285Z"
+  },
+  {
+    "name": "apparato-storage-tab-5",
+    "route": "/objects/8",
+    "actual": "http://127.0.0.1:3187/objects/8",
+    "label": "Gestione",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nNAS-BACKUP\n198.51.100.25\nStorage\n✓ online · 9 ms\nSynology\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nDischi e RAID\nVolumi\nServizi\nSicurezza\nGestione\nStorico\nCOS'È\nCLASSIFICAZIONE\nNAS / Storage\nPiattaforma\nsynology\n\nUn solo editor: scrive su apparato e host insieme.\n\nIDENTITÀ E INVENTARIO\nMAC\n02:00:00:00:01:08\nHostname · DNS\nNAS-BACKUP\nSeriale\nN. inventario\nNote\nCOME CI ARRIVO\nProtocollo · porta\nssh · 22\nCREDENZIALI\n\nCREDENZIALI ASSEGNATE\n\n▲ senza credenziale provata\n\nQuelle che il motore usa davvero su questo apparato, non la catena della rete.\n\nCredenziale\tPer\tUltimo esito\t\n\nNessuna\n\t\nSSH\nNessuna credenziale SSH per l'apparato «NAS-BACKUP»\n\t● Non provata\t\nProva adesso\nCambia\n\n\n«public»\n\t\nSNMP · 161\nripiego dichiarato\n\t● Non provata\t\nProva adesso\nCambia\n\nResta finché una prova non riesce. Compare anche nelle liste.\n\nCredenziali (0)\nCredenziali assegnate al dispositivo, ordinate per priorità\nDa archivio\nNuova\n\nNessuna credenziale assegnata\n\nACQUISIZIONE MODULARE (ANTEPRIMA)\n\n▲\nL'acquisizione modulare è spenta per questa installazione: «Aggiorna» usa l'acquisizione di sempre. Un amministratore la accende in Impostazioni → Sistema.\n\n▲\nsynology-dsm vuole una credenziale SNMP o SSH assegnata all'apparato e non ce n'è: assegnala nella tabella «Credenziali» qui sopra, oppure scegli l'acquisizione di sempre. Scegli la fonte\n\nCollector\nsynology-dsm 1.1.0 ✓ collaudato su Synology NAS (4 dischi, 4 volumi RAID, 8 interfacce)\nCredenziali\nnessuna — dall'archivio, sola lettura\n\nSi acquisisce con «Aggiorna» in alto: per gli apparati che hanno un collector la lettura arriva in questo formato e popola l'apparato. Nessuna scrittura sull'apparato.\n\nASSET NIS2\n#8\nCategoria\nNAS\nStato\nAttivo\nApri l'asset completo ›\nCOLLEGAMENTI ESTERNI\nLibreNMS e Zabbix non sono configurati su questa appliance.\nControllo remoto\nTerminale SSH\nRete e SNMP\nInformazioni di rete (SNMP)\nSYSNAME (SNMP)\n—\nSYSDESCR\n—\nSYSOBJECTID\n—\nUPTIME SNMP\n—\nARP ENTRIES\n—\nSNMP PORT\n—\nPART NUMBER\n—\nULTIMA QUERY DEVICE\n—\nSulla mappa\n\nSulla mappa è NAS-BACKUP\n\n198.51.100.25\nNAS-BACKUP\n· l'oggetto stesso\n198.51.100.25\nNAS-BACKUP\n· indirizzo dell'apparato\n· qui\nUnisci con…\nIP collegati allo stesso device fisico\n\nNessun altro IP aggregato. Se questo device ha più indirizzi (es. NIC su VLAN diverse, gateway multipli), collegali manualmente.\n\nCollega altro IP",
+    "date": "2026-10-26T00:04:09.912Z"
+  },
+  {
+    "name": "apparato-storage-tab-6",
+    "route": "/objects/8",
+    "actual": "http://127.0.0.1:3187/objects/8",
+    "label": "Storico",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nNAS-BACKUP\n198.51.100.25\nStorage\n✓ online · 9 ms\nSynology\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nDischi e RAID\nVolumi\nServizi\nSicurezza\nGestione\nStorico\nDISPONIBILITÀ\nUptime nel tempo\n26/10/2026\nAdesso\nLatenza ICMP (ms)\nMonitoraggio Latenza\n1h\n6h\n24h\n7g\nUptime\n\n100.0%\n\nLatenza media\n\n9ms\n\nLatenza max\n\n9ms\n\nControlli\n\n1/1\n\n00:52\n0ms\n3ms\n6ms\n9ms\n12ms\n\nUltimo controllo: 26/10/2026, 00:52:00\n\nDISCOVERY\nScoperto\n26/10/2026, 00:52\nUltima volta visto\n26/10/2026, 00:52\nHost noto\nNo\nCRONOLOGIA SCANSIONI\n26/10/2026, 00:52\nping\n✓ online\n0ms",
+    "date": "2026-10-26T00:04:11.542Z"
+  },
+  {
+    "name": "apparato-hypervisor",
+    "route": "/objects/6",
+    "actual": "http://127.0.0.1:3187/objects/6",
+    "label": "hypervisor",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nHV-DEMO\n198.51.100.10\nHypervisor\n✓ online · 7 ms\nProxmox\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nVM e container\nNodi\nStorage\nRete\nSicurezza\nGestione\nStorico\nStato\n✓ online\n7 ms\nPorte aperte\n2\nPORTE APERTE (2)\nTCP\n22\n443\nRETE\nSubnet\nServer e servizi (198.51.100.0/24)\n\nDati da:\n✓ Discovery 26/10, 00:52\n– Scansione apparato: mai eseguita",
+    "date": "2026-10-26T00:04:13.810Z"
+  },
+  {
+    "name": "apparato-hypervisor-tab-0",
+    "route": "/objects/6",
+    "actual": "http://127.0.0.1:3187/objects/6",
+    "label": "Panoramica",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nHV-DEMO\n198.51.100.10\nHypervisor\n✓ online · 7 ms\nProxmox\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nVM e container\nNodi\nStorage\nRete\nSicurezza\nGestione\nStorico\nStato\n✓ online\n7 ms\nPorte aperte\n2\nPORTE APERTE (2)\nTCP\n22\n443\nRETE\nSubnet\nServer e servizi (198.51.100.0/24)\n\nDati da:\n✓ Discovery 26/10, 00:52\n– Scansione apparato: mai eseguita",
+    "date": "2026-10-26T00:04:15.422Z"
+  },
+  {
+    "name": "apparato-hypervisor-tab-1",
+    "route": "/objects/6",
+    "actual": "http://127.0.0.1:3187/objects/6",
+    "label": "VM e container",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nHV-DEMO\n198.51.100.10\nHypervisor\n✓ online · 7 ms\nProxmox\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nVM e container\nNodi\nStorage\nRete\nSicurezza\nGestione\nStorico\n\nNessuna scansione Proxmox salvata per questo apparato: usa «Aggiorna» per leggerla.",
+    "date": "2026-10-26T00:04:17.007Z"
+  },
+  {
+    "name": "apparato-hypervisor-tab-2",
+    "route": "/objects/6",
+    "actual": "http://127.0.0.1:3187/objects/6",
+    "label": "Nodi",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nHV-DEMO\n198.51.100.10\nHypervisor\n✓ online · 7 ms\nProxmox\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nVM e container\nNodi\nStorage\nRete\nSicurezza\nGestione\nStorico\n\nNessuna scansione Proxmox salvata per questo apparato: usa «Aggiorna» per leggerla.",
+    "date": "2026-10-26T00:04:18.603Z"
+  },
+  {
+    "name": "apparato-hypervisor-tab-3",
+    "route": "/objects/6",
+    "actual": "http://127.0.0.1:3187/objects/6",
+    "label": "Storage",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nHV-DEMO\n198.51.100.10\nHypervisor\n✓ online · 7 ms\nProxmox\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nVM e container\nNodi\nStorage\nRete\nSicurezza\nGestione\nStorico\n\nNessuna scansione Proxmox salvata per questo apparato: usa «Aggiorna» per leggerla.",
+    "date": "2026-10-26T00:04:20.205Z"
+  },
+  {
+    "name": "apparato-hypervisor-tab-4",
+    "route": "/objects/6",
+    "actual": "http://127.0.0.1:3187/objects/6",
+    "label": "Rete",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nHV-DEMO\n198.51.100.10\nHypervisor\n✓ online · 7 ms\nProxmox\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nVM e container\nNodi\nStorage\nRete\nSicurezza\nGestione\nStorico\n\nLa scansione non ha letto le interfacce dei nodi.\n\nSulla mappa\n\nSulla mappa è HV-DEMO\n\n198.51.100.10\nHV-DEMO\n· l'oggetto stesso\n198.51.100.10\nHV-DEMO\n· indirizzo dell'apparato\n· qui\nUnisci con…\nIP collegati allo stesso device fisico\n\nNessun altro IP aggregato. Se questo device ha più indirizzi (es. NIC su VLAN diverse, gateway multipli), collegali manualmente.\n\nCollega altro IP",
+    "date": "2026-10-26T00:04:21.804Z"
+  },
+  {
+    "name": "apparato-hypervisor-tab-5",
+    "route": "/objects/6",
+    "actual": "http://127.0.0.1:3187/objects/6",
+    "label": "Sicurezza",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nHV-DEMO\n198.51.100.10\nHypervisor\n✓ online · 7 ms\nProxmox\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nVM e container\nNodi\nStorage\nRete\nSicurezza\nGestione\nStorico\nVulnerabilità\n\nNessun finding archiviato. Verifica che lo Scanner-Edge e/o Wazuh siano configurati in Impostazioni → Moduli e che il sync sia avvenuto.",
+    "date": "2026-10-26T00:04:23.403Z"
+  },
+  {
+    "name": "apparato-hypervisor-tab-6",
+    "route": "/objects/6",
+    "actual": "http://127.0.0.1:3187/objects/6",
+    "label": "Gestione",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nHV-DEMO\n198.51.100.10\nHypervisor\n✓ online · 7 ms\nProxmox\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nVM e container\nNodi\nStorage\nRete\nSicurezza\nGestione\nStorico\nCOS'È\nCLASSIFICAZIONE\nHypervisor\nPiattaforma\nproxmox\n\nUn solo editor: scrive su apparato e host insieme.\n\nIDENTITÀ E INVENTARIO\nMAC\n02:00:00:00:01:06\nHostname · DNS\nHV-DEMO\nSeriale\nN. inventario\nNote\nCOME CI ARRIVO\nProtocollo · porta\nssh · 22\nScansione\nproxmox\nCREDENZIALI\n\nCREDENZIALI ASSEGNATE\n\n▲ senza credenziale provata\n\nQuelle che il motore usa davvero su questo apparato, non la catena della rete.\n\nCredenziale\tPer\tUltimo esito\t\n\nNessuna\n\t\nSSH\nNessuna credenziale SSH per l'apparato «HV-DEMO»\n\t● Non provata\t\nProva adesso\nCambia\n\n\n«public»\n\t\nSNMP · 161\nripiego dichiarato\n\t● Non provata\t\nProva adesso\nCambia\n\nResta finché una prova non riesce. Compare anche nelle liste.\n\nCredenziali (0)\nCredenziali assegnate al dispositivo, ordinate per priorità\nDa archivio\nNuova\n\nNessuna credenziale assegnata\n\nACQUISIZIONE MODULARE (ANTEPRIMA)\n\n▲\nL'acquisizione modulare è spenta per questa installazione: «Aggiorna» usa l'acquisizione di sempre. Un amministratore la accende in Impostazioni → Sistema.\n\n–\nPer questo apparato non esiste un collector: si usa l'acquisizione di sempre. Quelli disponibili sono: QNAP QSS (switch gestiti), HPE/Aruba ProCurve, HPE FlexFabric (Comware), VMware ESXi (API diretta dell'host), NetApp ONTAP (REST, anche MetroCluster), QNAP NAS (QTS, QuTS hero), MikroTik RouterOS 7 (router e switch CRS), Microsoft Windows e Windows Server (WinRM), anche Hyper-V, Linux (Debian, Ubuntu, RHEL e derivate; utente senza sudo), Synology NAS (DSM), Ubiquiti UniFi (access point e switch, lettura diretta), Proxmox VE (nodo e cluster visibile), UniFi OS console (inventario per sito, sola lettura).\n\nSi acquisisce con «Aggiorna» in alto: per gli apparati che hanno un collector la lettura arriva in questo formato e popola l'apparato. Nessuna scrittura sull'apparato.\n\nASSET NIS2\n#6\nCategoria\nServer\nStato\nAttivo\nApri l'asset completo ›\nCOLLEGAMENTI ESTERNI\nLibreNMS e Zabbix non sono configurati su questa appliance.\nControllo remoto\nTerminale SSH\nRete e SNMP\nInformazioni di rete (SNMP)\nSYSNAME (SNMP)\n—\nSYSDESCR\n—\nSYSOBJECTID\n—\nUPTIME SNMP\n—\nARP ENTRIES\n—\nSNMP PORT\n—\nPART NUMBER\n—\nULTIMA QUERY DEVICE\n—",
+    "date": "2026-10-26T00:04:25.023Z"
+  },
+  {
+    "name": "apparato-hypervisor-tab-7",
+    "route": "/objects/6",
+    "actual": "http://127.0.0.1:3187/objects/6",
+    "label": "Storico",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nHV-DEMO\n198.51.100.10\nHypervisor\n✓ online · 7 ms\nProxmox\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nVM e container\nNodi\nStorage\nRete\nSicurezza\nGestione\nStorico\nDISPONIBILITÀ\nUptime nel tempo\n26/10/2026\nAdesso\nLatenza ICMP (ms)\nMonitoraggio Latenza\n1h\n6h\n24h\n7g\nUptime\n\n100.0%\n\nLatenza media\n\n7ms\n\nLatenza max\n\n7ms\n\nControlli\n\n1/1\n\n00:52\n0ms\n2ms\n4ms\n6ms\n8ms\n\nUltimo controllo: 26/10/2026, 00:52:00\n\nDISCOVERY\nScoperto\n26/10/2026, 00:52\nUltima volta visto\n26/10/2026, 00:52\nHost noto\nNo\nCRONOLOGIA SCANSIONI\n26/10/2026, 00:52\nping\n✓ online\n0ms",
+    "date": "2026-10-26T00:04:26.647Z"
+  },
+  {
+    "name": "apparato-server_windows",
+    "route": "/objects/7",
+    "actual": "http://127.0.0.1:3187/objects/7",
+    "label": "server_windows",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nSRV-DOMINIO\n198.51.100.20\nServer Windows\n✓ online · 8 ms\nWindows\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nSistema\nServizi\nAggiornamenti\nSoftware\nUtenti\nSicurezza\nGestione\nStorico\nStato\n✓ online\n8 ms\nPorte aperte\n5\nPORTE APERTE (5)\nTCP\n53\n88\n389\n445\n5985\nRETE\nSubnet\nServer e servizi (198.51.100.0/24)\n\nDati da:\n✓ Discovery 26/10, 00:52\n– Scansione apparato: mai eseguita",
+    "date": "2026-10-26T00:04:28.912Z"
+  },
+  {
+    "name": "apparato-server_windows-tab-0",
+    "route": "/objects/7",
+    "actual": "http://127.0.0.1:3187/objects/7",
+    "label": "Panoramica",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nSRV-DOMINIO\n198.51.100.20\nServer Windows\n✓ online · 8 ms\nWindows\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nSistema\nServizi\nAggiornamenti\nSoftware\nUtenti\nSicurezza\nGestione\nStorico\nStato\n✓ online\n8 ms\nPorte aperte\n5\nPORTE APERTE (5)\nTCP\n53\n88\n389\n445\n5985\nRETE\nSubnet\nServer e servizi (198.51.100.0/24)\n\nDati da:\n✓ Discovery 26/10, 00:52\n– Scansione apparato: mai eseguita",
+    "date": "2026-10-26T00:04:30.518Z"
+  },
+  {
+    "name": "apparato-server_windows-tab-1",
+    "route": "/objects/7",
+    "actual": "http://127.0.0.1:3187/objects/7",
+    "label": "Sistema",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nSRV-DOMINIO\n198.51.100.20\nServer Windows\n✓ online · 8 ms\nWindows\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nSistema\nServizi\nAggiornamenti\nSoftware\nUtenti\nSicurezza\nGestione\nStorico\nSISTEMA OPERATIVO\nSistema\nWindows Server 2022\nIDENTIFICAZIONE\nTipologia\nswitch\nProduttore (da inferenza)\nwindows\nProduttore (MAC)\nMicrosoft\nAssegnazione IP\nunknown\nInformazioni di rete (SNMP)\nSYSNAME (SNMP)\n—\nSYSDESCR\n—\nSYSOBJECTID\n—\nUPTIME SNMP\n—\nARP ENTRIES\n—\nSNMP PORT\n—\nPART NUMBER\n—\nULTIMA QUERY DEVICE\n—\nSulla mappa\n\nSulla mappa è SRV-DOMINIO\n\n198.51.100.20\nSRV-DOMINIO\n· l'oggetto stesso\n198.51.100.20\nSRV-DOMINIO\n· indirizzo dell'apparato\n· qui\nUnisci con…\nIP collegati allo stesso device fisico\n\nNessun altro IP aggregato. Se questo device ha più indirizzi (es. NIC su VLAN diverse, gateway multipli), collegali manualmente.\n\nCollega altro IP",
+    "date": "2026-10-26T00:04:32.130Z"
+  },
+  {
+    "name": "apparato-server_windows-tab-2",
+    "route": "/objects/7",
+    "actual": "http://127.0.0.1:3187/objects/7",
+    "label": "Servizi",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nSRV-DOMINIO\n198.51.100.20\nServer Windows\n✓ online · 8 ms\nWindows\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nSistema\nServizi\nAggiornamenti\nSoftware\nUtenti\nSicurezza\nGestione\nStorico\n\nLa scansione non ha letto servizi, porte in ascolto né pianificazioni: usa «Aggiorna» per leggerli.",
+    "date": "2026-10-26T00:04:33.705Z"
+  },
+  {
+    "name": "apparato-server_windows-tab-3",
+    "route": "/objects/7",
+    "actual": "http://127.0.0.1:3187/objects/7",
+    "label": "Aggiornamenti",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nSRV-DOMINIO\n198.51.100.20\nServer Windows\n✓ online · 8 ms\nWindows\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nSistema\nServizi\nAggiornamenti\nSoftware\nUtenti\nSicurezza\nGestione\nStorico\n\nLa scansione non ha letto gli aggiornamenti di Windows: usa «Aggiorna» per leggerli.\n\napri in Patch management ›",
+    "date": "2026-10-26T00:04:35.305Z"
+  },
+  {
+    "name": "apparato-server_windows-tab-4",
+    "route": "/objects/7",
+    "actual": "http://127.0.0.1:3187/objects/7",
+    "label": "Software",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nSRV-DOMINIO\n198.51.100.20\nServer Windows\n✓ online · 8 ms\nWindows\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nSistema\nServizi\nAggiornamenti\nSoftware\nUtenti\nSicurezza\nGestione\nStorico\nSoftware da GLPI Agent (push)\n\nModulo Inventory Agent non installato. Abilitalo in Impostazioni → Moduli.\n\nSoftware installato (scansione remota)\nSoftware installato\nNessuno scan eseguito\nAggiorna\nScansiona ora\nApplicazioni\nStorico\nLog\n\nNessuna applicazione disponibile per lo scan selezionato.",
+    "date": "2026-10-26T00:04:36.914Z"
+  },
+  {
+    "name": "apparato-server_windows-tab-5",
+    "route": "/objects/7",
+    "actual": "http://127.0.0.1:3187/objects/7",
+    "label": "Utenti",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nSRV-DOMINIO\n198.51.100.20\nServer Windows\n✓ online · 8 ms\nWindows\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nSistema\nServizi\nAggiornamenti\nSoftware\nUtenti\nSicurezza\nGestione\nStorico\n\nLa scansione non ha letto utenti né sessioni: usa «Aggiorna» per leggerli.",
+    "date": "2026-10-26T00:04:38.535Z"
+  },
+  {
+    "name": "apparato-server_windows-tab-6",
+    "route": "/objects/7",
+    "actual": "http://127.0.0.1:3187/objects/7",
+    "label": "Sicurezza",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nSRV-DOMINIO\n198.51.100.20\nServer Windows\n✓ online · 8 ms\nWindows\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nSistema\nServizi\nAggiornamenti\nSoftware\nUtenti\nSicurezza\nGestione\nStorico\nVulnerabilità\n\nNessun finding archiviato. Verifica che lo Scanner-Edge e/o Wazuh siano configurati in Impostazioni → Moduli e che il sync sia avvenuto.",
+    "date": "2026-10-26T00:04:40.123Z"
+  },
+  {
+    "name": "apparato-server_windows-tab-7",
+    "route": "/objects/7",
+    "actual": "http://127.0.0.1:3187/objects/7",
+    "label": "Gestione",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nSRV-DOMINIO\n198.51.100.20\nServer Windows\n✓ online · 8 ms\nWindows\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nSistema\nServizi\nAggiornamenti\nSoftware\nUtenti\nSicurezza\nGestione\nStorico\nCOS'È\nCLASSIFICAZIONE\nServer\nRuoli del server\n+\nDomain controller\n+\nDNS\n+\nDHCP\n+\nPosta\n+\nWeb\n+\nDatabase\n+\nBackup\n+\nNFS\nPiattaforma\nwindows\n\nUn solo editor: scrive su apparato e host insieme.\n\nIDENTITÀ E INVENTARIO\nMAC\n02:00:00:00:01:07\nHostname · DNS\nSRV-DOMINIO\nSeriale\nN. inventario\nNote\nCOME CI ARRIVO\nProtocollo · porta\nssh · 22\nScansione\nwindows\nCREDENZIALI\n\nCREDENZIALI ASSEGNATE\n\n▲ senza credenziale provata\n\nQuelle che il motore usa davvero su questo apparato, non la catena della rete.\n\nCredenziale\tPer\tUltimo esito\t\n\nNessuna\n\t\nSSH\nNessuna credenziale SSH per l'apparato «SRV-DOMINIO»\n\t● Non provata\t\nProva adesso\nCambia\n\n\n«public»\n\t\nSNMP · 161\nripiego dichiarato\n\t● Non provata\t\nProva adesso\nCambia\n\nResta finché una prova non riesce. Compare anche nelle liste.\n\nCredenziali (0)\nCredenziali assegnate al dispositivo, ordinate per priorità\nDa archivio\nNuova\n\nNessuna credenziale assegnata\n\nACQUISIZIONE MODULARE (ANTEPRIMA)\n\n▲\nL'acquisizione modulare è spenta per questa installazione: «Aggiorna» usa l'acquisizione di sempre. Un amministratore la accende in Impostazioni → Sistema.\n\n▲\nwindows vuole una credenziale WinRM assegnata all'apparato e non ce n'è: assegnala nella tabella «Credenziali» qui sopra, oppure scegli l'acquisizione di sempre. Scegli la fonte\n\nCollector\nwindows 0.1.0 ✓ collaudato su Windows Server 2022 Standard\nCredenziali\nnessuna — dall'archivio, sola lettura\n\nSi acquisisce con «Aggiorna» in alto: per gli apparati che hanno un collector la lettura arriva in questo formato e popola l'apparato. Nessuna scrittura sull'apparato.\n\nASSET NIS2\n#7\nCategoria\nServer\nStato\nAttivo\nApri l'asset completo ›\nCOLLEGAMENTI ESTERNI\nLibreNMS e Zabbix non sono configurati su questa appliance.\nRete e SNMP\nSulla mappa\n\nSulla mappa è SRV-DOMINIO\n\n198.51.100.20\nSRV-DOMINIO\n· l'oggetto stesso\n198.51.100.20\nSRV-DOMINIO\n· indirizzo dell'apparato\n· qui\nUnisci con…\nIP collegati allo stesso device fisico\n\nNessun altro IP aggregato. Se questo device ha più indirizzi (es. NIC su VLAN diverse, gateway multipli), collegali manualmente.\n\nCollega altro IP",
+    "date": "2026-10-26T00:04:41.744Z"
+  },
+  {
+    "name": "apparato-server_windows-tab-8",
+    "route": "/objects/7",
+    "actual": "http://127.0.0.1:3187/objects/7",
+    "label": "Storico",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nSRV-DOMINIO\n198.51.100.20\nServer Windows\n✓ online · 8 ms\nWindows\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nSistema\nServizi\nAggiornamenti\nSoftware\nUtenti\nSicurezza\nGestione\nStorico\nDISPONIBILITÀ\nUptime nel tempo\n26/10/2026\nAdesso\nLatenza ICMP (ms)\nMonitoraggio Latenza\n1h\n6h\n24h\n7g\nUptime\n\n100.0%\n\nLatenza media\n\n8ms\n\nLatenza max\n\n8ms\n\nControlli\n\n1/1\n\n00:52\n0ms\n2ms\n4ms\n6ms\n8ms\n\nUltimo controllo: 26/10/2026, 00:52:00\n\nDISCOVERY\nScoperto\n26/10/2026, 00:52\nUltima volta visto\n26/10/2026, 00:52\nHost noto\nSì\nCRONOLOGIA SCANSIONI\n26/10/2026, 00:52\nping\n✓ online\n0ms",
+    "date": "2026-10-26T00:04:43.379Z"
+  },
+  {
+    "name": "apparato-server_linux",
+    "route": "/objects/9",
+    "actual": "http://127.0.0.1:3187/objects/9",
+    "label": "server_linux",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nVM-GESTIONALE\n198.51.100.40\nServer Linux\n✓ online · 10 ms\nLinux\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nSistema\nServizi e processi\nPacchetti\nUtenti\nDipendenze\n1\nSicurezza\nGestione\nStorico\nStato\n✓ online\n10 ms\nPorte aperte\n2\nPORTE APERTE (2)\nTCP\n22\n443\nRETE\nSubnet\nServer e servizi (198.51.100.0/24)\n\nDati da:\n✓ Discovery 26/10, 00:52\n– Scansione apparato: mai eseguita",
+    "date": "2026-10-26T00:04:45.589Z"
+  },
+  {
+    "name": "apparato-server_linux-tab-0",
+    "route": "/objects/9",
+    "actual": "http://127.0.0.1:3187/objects/9",
+    "label": "Panoramica",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nVM-GESTIONALE\n198.51.100.40\nServer Linux\n✓ online · 10 ms\nLinux\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nSistema\nServizi e processi\nPacchetti\nUtenti\nDipendenze\n1\nSicurezza\nGestione\nStorico\nStato\n✓ online\n10 ms\nPorte aperte\n2\nPORTE APERTE (2)\nTCP\n22\n443\nRETE\nSubnet\nServer e servizi (198.51.100.0/24)\n\nDati da:\n✓ Discovery 26/10, 00:52\n– Scansione apparato: mai eseguita",
+    "date": "2026-10-26T00:04:47.207Z"
+  },
+  {
+    "name": "apparato-server_linux-tab-1",
+    "route": "/objects/9",
+    "actual": "http://127.0.0.1:3187/objects/9",
+    "label": "Sistema",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nVM-GESTIONALE\n198.51.100.40\nServer Linux\n✓ online · 10 ms\nLinux\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nSistema\nServizi e processi\nPacchetti\nUtenti\nDipendenze\n1\nSicurezza\nGestione\nStorico\nSISTEMA OPERATIVO\nSistema\nUbuntu 24.04 LTS\nIDENTIFICAZIONE\nTipologia\nswitch\nProduttore (da inferenza)\nlinux\nProduttore (MAC)\nUbuntu\nAssegnazione IP\nunknown\nInformazioni di rete (SNMP)\nSYSNAME (SNMP)\n—\nSYSDESCR\n—\nSYSOBJECTID\n—\nUPTIME SNMP\n—\nARP ENTRIES\n—\nSNMP PORT\n—\nPART NUMBER\n—\nULTIMA QUERY DEVICE\n—\nSulla mappa\n\nSulla mappa è VM-GESTIONALE\n\n198.51.100.40\nVM-GESTIONALE\n· l'oggetto stesso\n198.51.100.40\nVM-GESTIONALE\n· indirizzo dell'apparato\n· qui\nUnisci con…\nIP collegati allo stesso device fisico\n\nNessun altro IP aggregato. Se questo device ha più indirizzi (es. NIC su VLAN diverse, gateway multipli), collegali manualmente.\n\nCollega altro IP",
+    "date": "2026-10-26T00:04:48.809Z"
+  },
+  {
+    "name": "apparato-server_linux-tab-2",
+    "route": "/objects/9",
+    "actual": "http://127.0.0.1:3187/objects/9",
+    "label": "Servizi e processi",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nVM-GESTIONALE\n198.51.100.40\nServer Linux\n✓ online · 10 ms\nLinux\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nSistema\nServizi e processi\nPacchetti\nUtenti\nDipendenze\n1\nSicurezza\nGestione\nStorico\n\nLa scansione non ha letto servizi, porte in ascolto né pianificazioni: usa «Aggiorna» per leggerli.",
+    "date": "2026-10-26T00:04:50.399Z"
+  },
+  {
+    "name": "apparato-server_linux-tab-3",
+    "route": "/objects/9",
+    "actual": "http://127.0.0.1:3187/objects/9",
+    "label": "Pacchetti",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nVM-GESTIONALE\n198.51.100.40\nServer Linux\n✓ online · 10 ms\nLinux\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nSistema\nServizi e processi\nPacchetti\nUtenti\nDipendenze\n1\nSicurezza\nGestione\nStorico\nSoftware da GLPI Agent (push)\n\nModulo Inventory Agent non installato. Abilitalo in Impostazioni → Moduli.\n\nSoftware installato (scansione remota)\nSoftware installato\nNessuno scan eseguito\nAggiorna\nScansiona ora\nApplicazioni\nStorico\nLog\n\nNessuna applicazione disponibile per lo scan selezionato.",
+    "date": "2026-10-26T00:04:52.008Z"
+  },
+  {
+    "name": "apparato-server_linux-tab-4",
+    "route": "/objects/9",
+    "actual": "http://127.0.0.1:3187/objects/9",
+    "label": "Utenti",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nVM-GESTIONALE\n198.51.100.40\nServer Linux\n✓ online · 10 ms\nLinux\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nSistema\nServizi e processi\nPacchetti\nUtenti\nDipendenze\n1\nSicurezza\nGestione\nStorico\n\nLa scansione non ha letto utenti né sessioni: usa «Aggiorna» per leggerli.",
+    "date": "2026-10-26T00:04:53.602Z"
+  },
+  {
+    "name": "apparato-server_linux-tab-5",
+    "route": "/objects/9",
+    "actual": "http://127.0.0.1:3187/objects/9",
+    "label": "Dipendenze1",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nVM-GESTIONALE\n198.51.100.40\nServer Linux\n✓ online · 10 ms\nLinux\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nSistema\nServizi e processi\nPacchetti\nUtenti\nDipendenze\n1\nSicurezza\nGestione\nStorico\nCHI DIPENDE DA QUESTO SERVER (1)\ntutti i servizi ›\nServizio\tCriticità\tDipendenza\nGestionale dimostrativo\t▲ alta\tprimario",
+    "date": "2026-10-26T00:04:55.205Z"
+  },
+  {
+    "name": "apparato-server_linux-tab-6",
+    "route": "/objects/9",
+    "actual": "http://127.0.0.1:3187/objects/9",
+    "label": "Sicurezza",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nVM-GESTIONALE\n198.51.100.40\nServer Linux\n✓ online · 10 ms\nLinux\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nSistema\nServizi e processi\nPacchetti\nUtenti\nDipendenze\n1\nSicurezza\nGestione\nStorico\nVulnerabilità\n\nNessun finding archiviato. Verifica che lo Scanner-Edge e/o Wazuh siano configurati in Impostazioni → Moduli e che il sync sia avvenuto.",
+    "date": "2026-10-26T00:04:56.830Z"
+  },
+  {
+    "name": "apparato-server_linux-tab-7",
+    "route": "/objects/9",
+    "actual": "http://127.0.0.1:3187/objects/9",
+    "label": "Gestione",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nVM-GESTIONALE\n198.51.100.40\nServer Linux\n✓ online · 10 ms\nLinux\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nSistema\nServizi e processi\nPacchetti\nUtenti\nDipendenze\n1\nSicurezza\nGestione\nStorico\nCOS'È\nCLASSIFICAZIONE\nServer\nRuoli del server\n+\nDomain controller\n+\nDNS\n+\nDHCP\n+\nPosta\n+\nWeb\n+\nDatabase\n+\nBackup\n+\nNFS\nPiattaforma\nlinux\n\nUn solo editor: scrive su apparato e host insieme.\n\nIDENTITÀ E INVENTARIO\nMAC\n02:00:00:00:01:09\nHostname · DNS\nVM-GESTIONALE\nSeriale\nN. inventario\nNote\nCOME CI ARRIVO\nProtocollo · porta\nssh · 22\nScansione\nlinux\nCREDENZIALI\n\nCREDENZIALI ASSEGNATE\n\n▲ senza credenziale provata\n\nQuelle che il motore usa davvero su questo apparato, non la catena della rete.\n\nCredenziale\tPer\tUltimo esito\t\n\nNessuna\n\t\nSSH\nNessuna credenziale SSH per l'apparato «VM-GESTIONALE»\n\t● Non provata\t\nProva adesso\nCambia\n\n\n«public»\n\t\nSNMP · 161\nripiego dichiarato\n\t● Non provata\t\nProva adesso\nCambia\n\nResta finché una prova non riesce. Compare anche nelle liste.\n\nCredenziali (0)\nCredenziali assegnate al dispositivo, ordinate per priorità\nDa archivio\nNuova\n\nNessuna credenziale assegnata\n\nACQUISIZIONE MODULARE (ANTEPRIMA)\n\n▲\nL'acquisizione modulare è spenta per questa installazione: «Aggiorna» usa l'acquisizione di sempre. Un amministratore la accende in Impostazioni → Sistema.\n\n▲\nlinux vuole una credenziale SSH assegnata all'apparato e non ce n'è: assegnala nella tabella «Credenziali» qui sopra, oppure scegli l'acquisizione di sempre. Scegli la fonte\n\nCollector\nlinux 0.1.0 ✓ collaudato su Ubuntu 24.04.2 LTS (VM QEMU)\nCredenziali\nnessuna — dall'archivio, sola lettura\n\nSi acquisisce con «Aggiorna» in alto: per gli apparati che hanno un collector la lettura arriva in questo formato e popola l'apparato. Nessuna scrittura sull'apparato.\n\nASSET NIS2\n#9\nCategoria\nVM\nStato\nAttivo\nApri l'asset completo ›\nCOLLEGAMENTI ESTERNI\nLibreNMS e Zabbix non sono configurati su questa appliance.\nControllo remoto\nTerminale SSH\nRete e SNMP\nSulla mappa\n\nSulla mappa è VM-GESTIONALE\n\n198.51.100.40\nVM-GESTIONALE\n· l'oggetto stesso\n198.51.100.40\nVM-GESTIONALE\n· indirizzo dell'apparato\n· qui\nUnisci con…\nIP collegati allo stesso device fisico\n\nNessun altro IP aggregato. Se questo device ha più indirizzi (es. NIC su VLAN diverse, gateway multipli), collegali manualmente.\n\nCollega altro IP",
+    "date": "2026-10-26T00:04:58.451Z"
+  },
+  {
+    "name": "apparato-server_linux-tab-8",
+    "route": "/objects/9",
+    "actual": "http://127.0.0.1:3187/objects/9",
+    "label": "Storico",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nVM-GESTIONALE\n198.51.100.40\nServer Linux\n✓ online · 10 ms\nLinux\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nSistema\nServizi e processi\nPacchetti\nUtenti\nDipendenze\n1\nSicurezza\nGestione\nStorico\nDISPONIBILITÀ\nUptime nel tempo\n26/10/2026\nAdesso\nLatenza ICMP (ms)\nMonitoraggio Latenza\n1h\n6h\n24h\n7g\nUptime\n\n100.0%\n\nLatenza media\n\n10ms\n\nLatenza max\n\n10ms\n\nControlli\n\n1/1\n\n00:52\n0ms\n3ms\n6ms\n9ms\n12ms\n\nUltimo controllo: 26/10/2026, 00:52:00\n\nDISCOVERY\nScoperto\n26/10/2026, 00:52\nUltima volta visto\n26/10/2026, 00:52\nHost noto\nNo\nCRONOLOGIA SCANSIONI\n26/10/2026, 00:52\nping\n✓ online\n0ms",
+    "date": "2026-10-26T00:05:00.084Z"
+  },
+  {
+    "name": "apparato-generico",
+    "route": "/objects/3",
+    "actual": "http://127.0.0.1:3187/objects/3",
+    "label": "generico",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nPC-AMMINISTRAZIONE\n192.0.2.11\nHost\n✓ online · 4 ms\nLenovo\nRendi apparato\nPanoramica\nSicurezza\nGestione\nStorico\nControllo remoto\nTerminale SSH\nStato\n✓ online\n4 ms\nPorte aperte\n2\nPORTE APERTE (2)\nTCP\n22\n443\nRETE\nSubnet\nUffici (192.0.2.0/24)\n\nDati da:\n✓ Discovery 26/10, 00:52",
+    "date": "2026-10-26T00:05:02.307Z"
+  },
+  {
+    "name": "apparato-generico-tab-0",
+    "route": "/objects/3",
+    "actual": "http://127.0.0.1:3187/objects/3",
+    "label": "Panoramica",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nPC-AMMINISTRAZIONE\n192.0.2.11\nHost\n✓ online · 4 ms\nLenovo\nRendi apparato\nPanoramica\nSicurezza\nGestione\nStorico\nControllo remoto\nTerminale SSH\nStato\n✓ online\n4 ms\nPorte aperte\n2\nPORTE APERTE (2)\nTCP\n22\n443\nRETE\nSubnet\nUffici (192.0.2.0/24)\n\nDati da:\n✓ Discovery 26/10, 00:52",
+    "date": "2026-10-26T00:05:03.907Z"
+  },
+  {
+    "name": "apparato-generico-tab-1",
+    "route": "/objects/3",
+    "actual": "http://127.0.0.1:3187/objects/3",
+    "label": "Sicurezza",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nPC-AMMINISTRAZIONE\n192.0.2.11\nHost\n✓ online · 4 ms\nLenovo\nRendi apparato\nPanoramica\nSicurezza\nGestione\nStorico\nVulnerabilità\nUltimo scan: 26/10/2026, 00:52:37 · 1 CVE · 1 pacchetti\nCritical: 0\nHigh: 1\nMedium: 0\nLow: 0\nPer pacchetto (1)\nTutte le CVE (1)\n\tPacchetto / NVT\tTop sev.\tCVE breakdown\tExploit\tFonte\tUltimo\n\tEsempio dimostrativo, CVE fittizia(1 CVE)\tHigh · 7.5\t\nH:1\n\t—\t\nEdge\n\t26/10/2026",
+    "date": "2026-10-26T00:05:05.502Z"
+  },
+  {
+    "name": "apparato-generico-tab-2",
+    "route": "/objects/3",
+    "actual": "http://127.0.0.1:3187/objects/3",
+    "label": "Gestione",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nPC-AMMINISTRAZIONE\n192.0.2.11\nHost\n✓ online · 4 ms\nLenovo\nRendi apparato\nPanoramica\nSicurezza\nGestione\nStorico\nCOS'È\nClassificazione\nPC\nIDENTITÀ E INVENTARIO\nMAC\n02:00:00:00:01:03\nHostname · DNS\nPC-AMMINISTRAZIONE\nSeriale\nN. inventario\nNote\nASSET NIS2\nDEMO-003\nApri l'asset completo ›\nCOLLEGAMENTI ESTERNI\nLibreNMS e Zabbix non sono configurati su questa appliance.\nControllo remoto\nTerminale SSH\nRete e SNMP\nSulla mappa\n\nSulla mappa è PC-AMMINISTRAZIONE\n\nUnisci con…\nIP collegati allo stesso device fisico\n\nNessun altro IP aggregato. Se questo device ha più indirizzi (es. NIC su VLAN diverse, gateway multipli), collegali manualmente.\n\nCollega altro IP",
+    "date": "2026-10-26T00:05:07.132Z"
+  },
+  {
+    "name": "apparato-generico-tab-3",
+    "route": "/objects/3",
+    "actual": "http://127.0.0.1:3187/objects/3",
+    "label": "Storico",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nPC-AMMINISTRAZIONE\n192.0.2.11\nHost\n✓ online · 4 ms\nLenovo\nRendi apparato\nPanoramica\nSicurezza\nGestione\nStorico\nDISPONIBILITÀ\nUptime nel tempo\n26/10/2026\nAdesso\nLatenza ICMP (ms)\nMonitoraggio Latenza\n1h\n6h\n24h\n7g\nUptime\n\n100.0%\n\nLatenza media\n\n4ms\n\nLatenza max\n\n4ms\n\nControlli\n\n1/1\n\n00:52\n0ms\n1ms\n2ms\n3ms\n4ms\n\nUltimo controllo: 26/10/2026, 00:52:00\n\nDISCOVERY\nScoperto\n26/10/2026, 00:52\nUltima volta visto\n26/10/2026, 00:52\nHost noto\nNo\nCRONOLOGIA SCANSIONI\n26/10/2026, 00:52\nping\n✓ online\n0ms",
+    "date": "2026-10-26T00:05:08.754Z"
   }
 ]

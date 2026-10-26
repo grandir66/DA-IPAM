@@ -1,0 +1,20 @@
+[
+  {
+    "name": "software-dettaglio",
+    "route": "/patch-management/software/Editor%20Demo%7C1.0",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\n\nPATCH MANAGEMENT\n\nPanoramica\nCVE\nStorico\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nPatch Management\nEditor Demo\n1.0\nchoco: editor-demo\nProduttore dimostrativo\n\n1 CVE associate · 3 host con questo pacchetto (0 con WinRM)\n\nAggiorna\nCVE rilevate (1)\nVulnerabilità note che riguardano questo pacchetto. Apri la pagina CVE per dettaglio e fix specifico.\n—\nCVE-2099-0001\nsource: patch_cve_target\nSolo con WinRM\n0 selezionati di 0 • max 50\nHost con questo pacchetto (0)\nSolo host Windows con il pacchetto installato. Checkbox disabilitata se WinRM non è validato.\nNessun host corrisponde ai filtri. Disattiva 'Solo con WinRM' o pulisci la ricerca.",
+    "date": "2026-10-26T00:05:22.270Z"
+  },
+  {
+    "name": "scheda-switch-porta",
+    "route": "/objects/2",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nSW-ACCESSO\n192.0.2.2\nSwitch\n✓ online · 3 ms\nHp · Aruba 2540 · Versione dimostrativa\n▲ senza credenziale provata\nAggiorna\nProva credenziali\nPanoramica\nPorte\nVLAN\nVicini e MAC\nSicurezza\nGestione\nStorico\nPorte su\n0 / 0\nDa guardare\n0\n\nDati da:\n– Scansione apparato: mai eseguita",
+    "date": "2026-10-26T00:05:23.524Z"
+  },
+  {
+    "name": "topologia-demo",
+    "route": "/topology",
+    "text": "DA-IPAM\nG\nguida\nSuper Admin\nAzienda dimostrativa · DEMO\nIstanze\n\nDATI ISTANZA\n\nDashboard\nNetwork\nSubnet\nDiscovery\nTopologia\nSoftware\nActive Directory\n\nCREDENZIALI\n\nCredenziali\nController di rete\n\nDIAGNOSTICA\n\nTabella ARP\nSorgenti DHCP\nScansioni\nIP esclusi\nSicurezza\nInventario\nApplicativi\nAnomalie\nConfig istanza\nManuale\n\nSISTEMA\n\nImpostazioni\nOpzioni\nSchedulazioni\nCosa esce\nTopologia\nDati della mappa\nL3\n◂ Elenco\n● Tutto automatico\nPasso passo\nTesta: nessuna\nCrea una mappa passo passo da qui\n● Verticale\nOrizzontale\nMostra ridondanze\n−\n+\nAdatta\nRiordina\nStampa\n▾ DA SISTEMARE (6)\nGW-UFFICI · senza prove di ruolo\nHV-DEMO · tipo sospetto\nNAS-BACKUP · senza prove di ruolo\nSRV-DOMINIO · senza prove di ruolo\nSW-ACCESSO · senza prove di ruolo\nVM-GESTIONALE · senza prove di ruolo\n\nNessun apparato con collegamenti: gli apparati da sistemare sono nell'elenco a sinistra.",
+    "date": "2026-10-26T00:05:24.762Z"
+  }
+]

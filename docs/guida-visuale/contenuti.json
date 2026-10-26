@@ -787,7 +787,7 @@
         }
       ],
       "limit": "Archivio sintetico locale: sblocco ed export KDBX/key file riusciti. OpenBao e TPM non configurati. Non si tratta di import o sincronizzazione bidirezionale KeePass.",
-      "image": "vault-sbloccato",
+      "image": "vault-registro",
       "markers": [],
       "decision": {
         "question": "Il vault necessario è aperto?",
@@ -4295,7 +4295,7 @@
         }
       ],
       "limit": "La schermata disponibile è lo stato spento; sblocco e export richiedono ancora catture in laboratorio inizializzato.",
-      "image": "vault-sbloccato",
+      "image": "vault-registro",
       "markers": [],
       "decision": null,
       "sources": [
@@ -8739,11 +8739,6 @@
         "note": "Archivio sintetico locale; nessun TPM o OpenBao cliente. Esportazione KDBX e key file riuscita via API nella demo."
       },
       {
-        "image": "vault-sbloccato",
-        "title": "Archivio aperto ed esportazione KeePass",
-        "note": "Archivio sintetico locale; nessun TPM o OpenBao cliente. Esportazione KDBX e key file riuscita via API nella demo."
-      },
-      {
         "image": "vault-registro",
         "title": "Registro degli export",
         "note": "Archivio sintetico locale; nessun TPM o OpenBao cliente. Esportazione KDBX e key file riuscita via API nella demo."
@@ -8753,11 +8748,6 @@
       {
         "image": "vault-bloccato",
         "title": "Archivio bloccato e sblocco manuale",
-        "note": "Archivio sintetico locale; nessun TPM o OpenBao cliente. Esportazione KDBX e key file riuscita via API nella demo."
-      },
-      {
-        "image": "vault-sbloccato",
-        "title": "Archivio aperto ed esportazione KeePass",
         "note": "Archivio sintetico locale; nessun TPM o OpenBao cliente. Esportazione KDBX e key file riuscita via API nella demo."
       },
       {

@@ -4,6 +4,12 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-27 · Next.js torna a 16.1.6 (la build della 16.4.2 non sta in memoria sull'hub)
+
+### Annullato
+
+- **Next.js 16.4.2 → 16.1.6.** Sull'hub (VM 533) la build della 16.4.2 è stata uccisa per memoria esaurita, con 12 GB e poi con 20 GB: Turbopack 16.4 legge i database di `data/` (54 GB fra `tenants/` e `backups/`) attraverso `resolveDataDir()`. Prova sull'hub: la stessa build senza `data/` passa in 1'46" con 3,3 GB di picco; con `data/` montata in sola lettura viene uccisa al limite di 8 GB. `/* turbopackIgnore: true */` sui `path.join(process.cwd(), "data")` toglie `data/backups` ma non `data/tenants` (441 rotte nei `.nft.json`): correzione da studiare fuori produzione. Le falle della 16.1.6 (GHSA-673q-mjm6-r5xr, CVE-2026-96889, CVE-2026-94482) restano aperte finché la 16.4 non si costruisce sull'hub e sulle appliance.
+
 ## [Non rilasciato] — 2026-10-27 · Next.js 16.4.2 (sicurezza)
 
 ### Sicurezza

@@ -169,18 +169,24 @@ export function TrunkClient({ iniziale, admin }: { iniziale: Dati; admin: boolea
   };
 
   const portaInIpam = async (x: TrunkReteMatrice) => {
-    const res = await fetchJson<{ id: number }>("/api/trunk/rete", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ vid: x.vid, cidr: x.cidr, gateway: x.fonte === "dhcp" ? x.gateway_ip : null }),
-    });
-    if (!res.ok) {
-      toast.error(res.message);
-      return;
+    setInCorso(true);
+    const attesa = toast.loading(`Rete ${x.cidr}: giro ARP sulla VLAN e host trovati (fino a un minuto e mezzo)…`);
+    try {
+      const res = await fetchJson<{ id: number; host: { creati: number; mac: number }; giro: string }>("/api/trunk/rete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vid: x.vid, cidr: x.cidr, gateway: x.fonte === "dhcp" ? x.gateway_ip : null }),
+      });
+      if (!res.ok) {
+        toast.error(res.message, { id: attesa });
+        return;
+      }
+      setRetiIpam((l) => [...l, x.cidr]);
+      toast.success(`Rete ${x.cidr} creata in DA-IPAM con ${res.data.host.creati} host dal trunk · ${res.data.giro}`, { id: attesa });
+      router.refresh();
+    } finally {
+      setInCorso(false);
     }
-    setRetiIpam((l) => [...l, x.cidr]);
-    toast.success(`Rete ${x.cidr} creata in DA-IPAM`);
-    router.refresh();
   };
 
   const giroArp = async (x: { vid: number; cidr: string }) => {
@@ -366,7 +372,7 @@ export function TrunkClient({ iniziale, admin }: { iniziale: Dati; admin: boolea
             {/* 3. Il dettaglio della rete scelta: le azioni stanno qui, una volta sola. */}
             {reteScelta ? (
               <Dettaglio key={chiaveRete(reteScelta)} rete={reteScelta} giorni={matrice.giorni} inIpam={retiIpam.includes(reteScelta.cidr)}
-                giroDisabilitato={inCorso || !attiva} onGiro={() => void giroArp(reteScelta)} onPorta={() => void portaInIpam(reteScelta)}
+                giroDisabilitato={inCorso || !attiva} portaDisabilitata={inCorso} onGiro={() => void giroArp(reteScelta)} onPorta={() => void portaInIpam(reteScelta)}
                 onMaschera={(p) => void correggiMaschera(reteScelta, p)} />
             ) : (
               <Pannello numero={3} titolo="Dettaglio della rete" conteggio="—">
@@ -533,8 +539,8 @@ function Come({ passivo, attivo }: { passivo: number; attivo: number }) {
   return <span><span className="text-primary">●</span> visto in ascolto</span>;
 }
 
-function Dettaglio({ rete, giorni, inIpam, giroDisabilitato, onGiro, onPorta, onMaschera }: {
-  rete: TrunkReteMatrice; giorni: string[]; inIpam: boolean; giroDisabilitato: boolean;
+function Dettaglio({ rete, giorni, inIpam, giroDisabilitato, portaDisabilitata, onGiro, onPorta, onMaschera }: {
+  rete: TrunkReteMatrice; giorni: string[]; inIpam: boolean; giroDisabilitato: boolean; portaDisabilitata: boolean;
   onGiro: () => void; onPorta: () => void; onMaschera: (prefisso: number | null) => void;
 }) {
   const sil = silenziosi(rete);
@@ -583,7 +589,7 @@ function Dettaglio({ rete, giorni, inIpam, giroDisabilitato, onGiro, onPorta, on
           <Zap className="h-4 w-4" /> Giro ARP
         </Button>
         {inIpam ? <Etichetta mono={false}>✓ in DA-IPAM</Etichetta> : (
-          <Button size="sm" onClick={onPorta} className="text-[#0D2537]" title={rete.maschera === "incerta" ? "La maschera è incerta: correggila prima" : undefined}>
+          <Button size="sm" onClick={onPorta} disabled={portaDisabilitata} className="text-[#0D2537]" title={rete.maschera === "incerta" ? "La maschera è incerta: correggila prima" : undefined}>
             Porta in DA-IPAM
           </Button>
         )}

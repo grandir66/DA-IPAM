@@ -1,5 +1,32 @@
 # TASKS — DA-IPAM
 
+## 2026-10-27 — Reti dal sensore trunk: host e MAC insieme alla rete (da approvare)
+
+Riccardo (27/10, mini PC dimostrativo 72729-ipam): «Aggiungi» di una rete vista dal trunk crea solo la
+rete (`/api/trunk/rete`), senza gli host trovati; nelle reti con tag (niente ARP del router né L2
+dall'appliance) gli host restano senza MAC, nella nativa li hanno. Vuole: (1) all'aggiunta, l'elenco
+degli host dalle osservazioni del trunk; (2) MAC compilati dal trunk per le reti con VLAN senza tabella
+ARP; (3) prima dell'aggiunta un ARP ping col tag giusto (il giro c'è già: `/api/trunk/giro`, sonda
+`arp-scan -Q <vid> --arpspa 0.0.0.0`).
+- [x] piano e livello (leggero) approvati da Riccardo (27/10 «hai preso in carico gli altri rilievi»)
+- [x] «Aggiungi»: rete, giro ARP sul VID, attesa della sonda (`/stato` giro_in_corso, max 90 s), lettura, host (IP, MAC, nome, produttore) — `src/lib/trunk/aggiungi-rete.ts`
+- [x] dopo ogni lettura del trunk: host nuovi e MAC mancanti delle reti con `vlan_id` (mai sovrascrivere un MAC presente) — `src/lib/trunk/host-dal-trunk.ts`
+- [x] prove `src/lib/trunk/__tests__/host-dal-trunk.test.ts` (la lettura vista rossa prima dell'aggancio); eslint verde; tsc e npm test rossi solo in `src/lib/vault/` per `age-encryption`/`kdbxweb` assenti dai node_modules locali (non toccati)
+- [ ] collaudo su 72729-ipam (dopo l'aggiornamento della VM a una versione che lo contiene)
+
+## 2026-10-27 — Vault semplice: un file KeePass al posto di OpenBao e degli slot
+
+Riccardo (27/10): via OpenBao, gli slot, la 2FA per «Mostra», la ricifra e il recupero a tre comandi. Le
+password stanno in un file `.kdbx` con il suo file chiave: per le appliance dei clienti locale
+(`data/vault/credenziali.kdbx`, si apre da solo all'avvio con `systemd-creds`), per hub e DA-Vul-can su
+DA-Link. Esportazione su chiavetta (archivio + chiave) per gli admin. Spec e piano nel repo DA-Link
+(`docs/superpowers/specs|plans/2026-10-27-vault-semplice-kdbx*`). ADR 0034 superato.
+- [x] piano approvato (27/10), semplificato lo stesso giorno: niente chiave Domarc, niente `age`
+- [x] DA-IPAM#22 (svuotamento verso OpenBao) chiusa senza fonderla: si rifà sul backend `dalink`
+- [x] passo 1, parte TS: `src/lib/vault/kdbx.ts` (formato comune con DA-Link), prove in
+  `__tests__/kdbx.test.ts` con gli archivi incrociati di `__tests__/dati/vault_kdbx/`. Non ancora usato
+- [ ] passo 6 (hub e DA-Vul-can leggono da DA-Link) e passo 8 (appliance dei clienti) del piano
+
 ## 2026-10-27 — Next.js 16.4.2: la build non deve leggere `data/`
 
 Documento: `docs/proposte/2026-10-27-next-16-4-build-memoria.md` (misure, meccanismo, esito). Ramo `fix/next164-build-data`.
@@ -7,7 +34,8 @@ Documento: `docs/proposte/2026-10-27-next-16-4-build-memoria.md` (misure, meccan
 - [x] correzione (`src/lib/percorsi.ts`, ESLint, `scripts/controlla-tracciamento.mjs` in postbuild): 441 rotte → 0, picco 3,4 GB con 18 GB finti; cancello e 6150 prove verdi
 - [x] prova sull'hub (27/10, ok di Riccardo): copia con `data/` vera in sola lettura, `MemoryMax=8G`: riuscita in 1'41", picco 4,6 GB, nessun OOM, postbuild 0 rotte su `data/`
 - [x] merge su `dev` (27/10, ok di Riccardo, v0.9.916): hub ricostruito da solo alle 11:04 UTC, build 59" + tipi 45", postbuild 0 rotte su `data/`, servizio riavviato, `/api/health` 200, Next 16.4.2 in esercizio
-- [ ] promozione su `main` per le appliance (le falle restano aperte da loro finché non si promuove; decide Riccardo)
+- [x] promozione su `main` (27/10, ok di Riccardo): `43e98c15`, albero identico a `dev` v0.9.916. Cancello prima: lint 0 errori, tsc, build (0 rotte su `data/`), 6149 prove verdi e 1 rossa a tempo, ripassata da sola 12/12 (Mac a carico 24). Nota: per il CONTEXT del 22/10 tutte le installazioni seguono già `dev`, quindi la 16.4.2 era già arrivata con il push su `dev`
+- [x] (27/10, fatto: messaggio al posto dell'orologio, vista fallire) `src/lib/zabbix-lettura/__tests__/trasporto.test.ts` («connessione che non completa il TLS»): `assert.ok(Date.now() - t0 < 1_500)` fallisce sotto carico (19,9 s il 27/10 con load 24): soglia da legare al limite di apertura, non al tempo della macchina
 
 ## 2026-10-23 — da-vault (piano approvato, livello completo)
 

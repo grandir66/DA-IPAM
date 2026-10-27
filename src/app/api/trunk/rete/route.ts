@@ -1,12 +1,14 @@
 /**
  * Porta in DA-IPAM una rete vista dal sensore trunk (2026-10-24): crea la rete
  * con VLAN e gateway dedotti. Una rete che si sovrappone a una esistente non si crea.
+ * Dal 27/10 anche un giro ARP sul VID e gli host trovati (lib/trunk/aggiungi-rete.ts):
+ * la risposta può arrivare dopo un minuto e mezzo.
  */
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdmin } from "@/lib/api-auth";
 import { withTenantFromSession } from "@/lib/api-tenant";
-import { createNetwork } from "@/lib/db";
+import { aggiungiReteDalTrunk } from "@/lib/trunk/aggiungi-rete";
 
 const Corpo = z.object({
   vid: z.number().int().min(0).max(4094),
@@ -29,16 +31,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Validazione fallita", details: parsed.error.issues }, { status: 400 });
   }
   const { vid, cidr, gateway, nome } = parsed.data;
-  return withTenantFromSession(() => {
+  return withTenantFromSession(async () => {
     try {
-      const rete = createNetwork({
-        cidr,
-        name: nome?.trim() || (vid === 0 ? `VLAN nativa ${cidr}` : `VLAN ${vid}`),
-        description: "Vista dal sensore trunk",
-        gateway: gateway ?? null,
-        vlan_id: vid || null,
-      });
-      return NextResponse.json({ id: rete.id, cidr: rete.cidr });
+      const e = await aggiungiReteDalTrunk({ vid, cidr, gateway: gateway ?? null, nome });
+      return NextResponse.json({ id: e.rete.id, cidr: e.rete.cidr, host: e.host, giro: e.giro });
     } catch (e) {
       return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 409 });
     }

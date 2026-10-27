@@ -1,6 +1,6 @@
 # ADR 0034 — Vault: chiave degli slot dentro `encrypt()`, accesso sulla chiave d'installazione, interruttori nel file
 
-**Stato:** Accepted (decisioni di dettaglio dentro il piano approvato da Riccardo il 23/10; da confermare in revisione)
+**Stato:** Superseded (27/10/2026): Riccardo toglie OpenBao e gli slot; al loro posto un archivio KDBX aperto con un key file. Specifica e piano in DA-Link: `docs/superpowers/specs/2026-10-27-vault-semplice-kdbx-design.md`, `docs/superpowers/plans/2026-10-27-vault-semplice-kdbx.md`. Un ADR nuovo al passo 8 del piano.
 **Data:** 2026-10-23
 **Autore:** Claude (sessione cloud `claude/da-vault-codice`), su piano e decisioni D1-D5 di Riccardo
 

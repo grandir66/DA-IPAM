@@ -29,6 +29,8 @@ const QuerySchema = z.object({
   exploit: z.string().optional(),
   sortBy: z.enum(["severity", "exploit", "vuln_count", "ip", "latest_scanned_at"]).default("severity"),
   sortDir: z.enum(["asc", "desc"]).default("desc"),
+  // Anche le scansioni superate (pulsante della pagina); di base solo l'ultima di ogni rete (27/10/2026).
+  precedenti: z.enum(["1", "true"]).optional(),
 });
 
 /** «a,b,c» → i soli valori ammessi dall'enum. */
@@ -60,6 +62,7 @@ export async function GET(request: Request) {
     exploitDi,
     sortBy: q.sortBy,
     sortDir: q.sortDir,
+    precedenti: q.precedenti != null,
   };
 
   return withTenantFromSession(() => {

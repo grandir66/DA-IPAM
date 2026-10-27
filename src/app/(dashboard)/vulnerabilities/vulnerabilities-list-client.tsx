@@ -175,6 +175,8 @@ export function VulnerabilitiesListClient() {
   const [osFilter, setOsFilter] = useState<Set<OsFamily>>(new Set());
   const [exploitFilter, setExploitFilter] = useState<Set<FiltroExploit>>(new Set());
   const [onlyWithCve, setOnlyWithCve] = useState(false);
+  // Di base solo l'ultima scansione di ogni rete; le precedenti col pulsante (Riccardo, 27/10/2026).
+  const [precedenti, setPrecedenti] = useState(false);
 
   const [sortBy, setSortBy] = useState("severity");
   const [sortDir, setSortDir] = useState<SortDirection>("desc");
@@ -210,8 +212,9 @@ export function VulnerabilitiesListClient() {
     if (osFilter.size > 0) sp.set("os", [...osFilter].join(","));
     if (exploitFilter.size > 0) sp.set("exploit", [...exploitFilter].join(","));
     if (onlyWithCve) sp.set("hasCve", "true");
+    if (precedenti) sp.set("precedenti", "1");
     return sp.toString();
-  }, [page, sortBy, sortDir, search, severityFilter, sourceFilter, osFilter, exploitFilter, onlyWithCve]);
+  }, [page, sortBy, sortDir, search, severityFilter, sourceFilter, osFilter, exploitFilter, onlyWithCve, precedenti]);
 
   useEffect(() => {
     let cancelled = false;
@@ -455,6 +458,15 @@ export function VulnerabilitiesListClient() {
               />
               <Label htmlFor="only-cve" className="text-sm">Solo con CVE</Label>
             </div>
+            <Button
+              type="button"
+              size="sm"
+              variant={precedenti ? "default" : "outline"}
+              aria-pressed={precedenti}
+              onClick={() => { setPrecedenti((v) => !v); setPage(1); }}
+            >
+              {precedenti ? "Solo l'ultima scansione" : "Mostra anche le scansioni precedenti"}
+            </Button>
             {hasFilters && (
               <Button type="button" variant="ghost" size="sm" onClick={resetFilters}>
                 Reset

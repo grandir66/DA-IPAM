@@ -782,3 +782,12 @@ Livello Base, sola lettura e sviluppo locale; accessi NAS confermati da Riccardo
 - [x] **QNAP `.24`** (solo SNMP): **corretto** — modello QGD-1602P, seriale letto, firmware `null` (non più la memoria), 6 sensori, 19 interfacce.
 - [x] **Proxmox DA-PX-04** 192.168.40.4, root con la chiave di Riccardo (ingresso temporaneo cancellato): 76 s, parziale. Cluster visibile intero: 4 nodi (CPU, socket, core, kernel, disco root, abbonamento attivo), 52 guest (stato, risorse, dischi, reti; agent su 44), 28 storage, 34 interfacce.
 - [ ] **Proxmox, mancano per la parità**: modello/seriale/produttore hardware dei nodi vuoti su tutti e 4 (la scansione li prende dall'API); IP dei guest su 24 di 52 con agent attivo su 44 (`GUEST_IP_ADDRESSES_PARTIAL`). Da completare prima dell'aggancio al pulsante.
+
+## 2026-10-27 — Collector Aruba AOS-CX
+
+Riccardo: confermato AOS-CX, accesso admin fornito; livello Leggero, solo letture. Piano: `docs/superpowers/plans/2026-10-27-aruba-cx.md`.
+- [x] Worktree isolato da origin/dev e identificazione reale JL675A / PL.10.12.0006.
+- [ ] Collector, parser e contratto.
+- [ ] Collaudo reale e cancello finale.
+- [ ] Documentazione, release e consegna.
+- [ ] Custodia password OpenBao (server irraggiungibile).

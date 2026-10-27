@@ -1,5 +1,18 @@
 # TASKS — DA-IPAM
 
+## 2026-10-27 — Vault semplice: un file KeePass al posto di OpenBao e degli slot
+
+Riccardo (27/10): via OpenBao, gli slot, la 2FA per «Mostra», la ricifra e il recupero a tre comandi. Le
+password stanno in un file `.kdbx` con il suo file chiave: per le appliance dei clienti locale
+(`data/vault/credenziali.kdbx`, si apre da solo all'avvio con `systemd-creds`), per hub e DA-Vul-can su
+DA-Link. Esportazione su chiavetta (archivio + chiave) per gli admin. Spec e piano nel repo DA-Link
+(`docs/superpowers/specs|plans/2026-10-27-vault-semplice-kdbx*`). ADR 0034 superato.
+- [x] piano approvato (27/10), semplificato lo stesso giorno: niente chiave Domarc, niente `age`
+- [x] DA-IPAM#22 (svuotamento verso OpenBao) chiusa senza fonderla: si rifà sul backend `dalink`
+- [x] passo 1, parte TS: `src/lib/vault/kdbx.ts` (formato comune con DA-Link), prove in
+  `__tests__/kdbx.test.ts` con gli archivi incrociati di `__tests__/dati/vault_kdbx/`. Non ancora usato
+- [ ] passo 6 (hub e DA-Vul-can leggono da DA-Link) e passo 8 (appliance dei clienti) del piano
+
 ## 2026-10-27 — Next.js 16.4.2: la build non deve leggere `data/`
 
 Documento: `docs/proposte/2026-10-27-next-16-4-build-memoria.md` (misure, meccanismo, esito). Ramo `fix/next164-build-data`.

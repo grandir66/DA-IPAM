@@ -13,7 +13,7 @@ import { execFile, spawn } from "child_process";
 import { promisify } from "util";
 import fs from "fs";
 import os from "os";
-import path from "path";
+import { unisci } from "@/lib/percorsi";
 
 const execFileAsync = promisify(execFile);
 
@@ -60,9 +60,12 @@ async function getKerberosStatus(): Promise<{
   };
 
   // Check krb5.conf
-  const userConf = path.join(os.homedir(), ".krb5.conf");
-  const systemConf = "/etc/krb5.conf";
-  const envConf = process.env.KRB5_CONFIG || "";
+  const userConf = unisci(os.homedir(), ".krb5.conf");
+  // unisci, non la stringa: un percorso assoluto accanto a valori ignoti fa
+  // tracciare a Turbopack tutto il progetto (src/lib/percorsi.ts).
+  const systemConf = unisci("/etc", "krb5.conf");
+  // Senza ripiego su "": la stringa vuota è la cartella del progetto per Turbopack.
+  const envConf = process.env.KRB5_CONFIG;
 
   for (const confPath of [envConf, systemConf, userConf]) {
     if (confPath && fs.existsSync(confPath)) {
@@ -161,12 +164,12 @@ export async function POST(request: Request) {
     ${realmLower} = ${realm}
 `;
 
-    let confPath = "/etc/krb5.conf";
+    let confPath = unisci("/etc", "krb5.conf");
     try {
       fs.writeFileSync(confPath, krb5Content);
     } catch {
       // Fallback a user home
-      confPath = path.join(os.homedir(), ".krb5.conf");
+      confPath = unisci(os.homedir(), ".krb5.conf");
       try {
         fs.writeFileSync(confPath, krb5Content);
         process.env.KRB5_CONFIG = confPath;

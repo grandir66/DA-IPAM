@@ -45,6 +45,7 @@ import { aggiornaCredenzialeDb, creaCredenzialeDb, eliminaCredenzialeDb, type Co
 import { aggiungiAllaListaReteDb, copiaListaReteDb, sostituisciListaReteDb } from "./credentials/lista-rete";
 import { lookupVendorSync } from "./scanner/mac-vendor";
 import { VENDOR_PLACEHOLDER_RE } from "./attribution/emitters";
+import { unisci, risolvi } from "./percorsi";
 
 /** Convert IPv4 string to numeric value for sorting */
 function ipToNum(ip: string): number {
@@ -77,8 +78,8 @@ import { cleanOrphanedForeignKeys as cleanOrphanedForeignKeysSu, deleteScheduled
 const DATA_DIR = resolveDataDir();
 /** Path effettivo del DB. `DA_IPAM_DB_PATH` serve solo a `scripts/generate-empty-db.ts` (template versionato). */
 const DB_PATH = process.env.DA_IPAM_DB_PATH?.trim()
-  ? path.resolve(process.env.DA_IPAM_DB_PATH.trim())
-  : path.join(DATA_DIR, "ipam.db");
+  ? risolvi(process.env.DA_IPAM_DB_PATH.trim())
+  : unisci(DATA_DIR, "ipam.db");
 
 let _db: Database.Database | null = null;
 
@@ -163,9 +164,9 @@ export function getDb(): Database.Database {
   // Senza contesto, con hub.db presente (multi-tenant attivo): l'esito resta
   // quello di sempre (DEFAULT, o ipam.db se DEFAULT manca), ma ogni accesso si
   // conta nel registro dei ripieghi (NUC-1 fase A) per sapere chi correggere.
-  const hubPath = path.join(DATA_DIR, "hub.db");
+  const hubPath = unisci(DATA_DIR, "hub.db");
   const hubPresente = fs.existsSync(hubPath);
-  const defaultTenantPath = path.join(DATA_DIR, "tenants", "DEFAULT.db");
+  const defaultTenantPath = unisci(DATA_DIR, "tenants", "DEFAULT.db");
   if (hubPresente && tenantMod && fs.existsSync(defaultTenantPath)) {
     try {
       const def = tenantMod.getTenantDb("DEFAULT");
@@ -189,7 +190,7 @@ export function getDb(): Database.Database {
 
   // Prima installazione: copia dal template vuoto nel repo (mai committare ipam.db con dati reali).
   if (!process.env.DA_IPAM_DB_PATH?.trim() && !fs.existsSync(DB_PATH)) {
-    const template = path.join(DATA_DIR, "ipam.empty.db");
+    const template = unisci(DATA_DIR, "ipam.empty.db");
     if (fs.existsSync(template)) {
       fs.copyFileSync(template, DB_PATH);
     }

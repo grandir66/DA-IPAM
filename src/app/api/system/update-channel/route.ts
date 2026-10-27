@@ -16,16 +16,16 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { promises as fs } from "node:fs";
-import path from "node:path";
 import { execFile as _execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { requireAdmin, requireAuth, isAuthError } from "@/lib/api-auth";
 import { getSetting } from "@/lib/db-hub";
+import { unisci } from "@/lib/percorsi";
 
 const execFile = promisify(_execFile);
 
 const APP_DIR = process.env.DA_INVENT_DIR ?? process.cwd();
-const ENV_FILE = path.join(APP_DIR, ".env.local");
+const ENV_FILE = unisci(APP_DIR, ".env.local");
 
 const BRANCH_TO_CHANNEL: Record<string, "stable" | "dev"> = {
   main: "stable",

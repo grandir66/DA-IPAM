@@ -1,19 +1,19 @@
 import { createHash } from "crypto";
 import { existsSync, readdirSync } from "fs";
-import { join } from "path";
 import Database from "better-sqlite3";
 import { safeDecrypt } from "@/lib/crypto";
 import { resolveDataDir } from "./data-dir";
 import { cartellaVault } from "./vault/appliance";
 import { archivioPresente } from "./vault/archivio";
 import { chiaveDatiAttiva, vaultLocaleAcceso } from "./vault/stato";
+import { unisci } from "./percorsi";
 
 function resolveTenantsDir(): string {
-  return join(resolveDataDir(), "tenants");
+  return unisci(resolveDataDir(), "tenants");
 }
 
 function resolveHubDbPath(): string {
-  return join(resolveDataDir(), "hub.db");
+  return unisci(resolveDataDir(), "hub.db");
 }
 
 export type EncryptionKeyHealth = {
@@ -60,7 +60,7 @@ export function probeEncryptionKeyHealth(): EncryptionKeyHealth {
   if (existsSync(tenantsDir)) {
     for (const file of readdirSync(tenantsDir)) {
       if (!file.endsWith(".db")) continue;
-      const dbPath = join(tenantsDir, file);
+      const dbPath = unisci(tenantsDir, file);
       let db: Database.Database | null = null;
       try {
         db = new Database(dbPath, { readonly: true, fileMustExist: true });

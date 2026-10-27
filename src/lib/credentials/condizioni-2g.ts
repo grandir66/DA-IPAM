@@ -36,7 +36,7 @@
  * né `db-tenant.ts`, e non apre nessun DB. I dati li raccoglie chi chiama.
  */
 import fs from "node:fs";
-import path from "node:path";
+import { unisci } from "../percorsi";
 
 /** I casi del registro che bloccano la 2g (D9): tutti i `cred_*` tranne `cred_public`. */
 export const CASI_CHE_BLOCCANO_2G: readonly string[] = Object.freeze([
@@ -270,7 +270,7 @@ export function leggiRegistroRipieghi(cartella: string): Registro {
   const righe: RigaRegistro[] = [];
   let illeggibili = 0;
   for (const f of file) {
-    for (const testo of fs.readFileSync(path.join(cartella, f), "utf8").split("\n")) {
+    for (const testo of fs.readFileSync(unisci(cartella, f), "utf8").split("\n")) {
       if (testo.trim() === "") continue;
       try {
         const r = JSON.parse(testo) as Partial<RigaRegistro>;

@@ -15,19 +15,19 @@
  * - la CA interna con `NODE_EXTRA_CA_CERTS` nell'unità.
  */
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { getActiveTenants } from "@/lib/db-hub";
 import { getTenantDb, schemaVaultPresente } from "@/lib/db-tenant";
 import { avviaVaultLocale } from "./appliance";
 import { OpenBaoStore, type ConfigOpenBao } from "./openbao";
 import { statoVaultProcesso, vaultOpenBaoAcceso } from "./stato";
+import { unisci } from "../percorsi";
 
 export function configurazioneOpenBao(env: Record<string, string | undefined>): { ok: true; config: ConfigOpenBao } | { ok: false; motivo: string } {
   const url = env.DA_VAULT_OPENBAO_URL?.trim();
   const roleId = env.DA_VAULT_OPENBAO_ROLE_ID?.trim();
   if (!url || !roleId) return { ok: false, motivo: "mancano DA_VAULT_OPENBAO_URL e/o DA_VAULT_OPENBAO_ROLE_ID nel file dell'appliance" };
   const cartellaCredenziali = env.CREDENTIALS_DIRECTORY?.trim();
-  const fileSid = env.DA_VAULT_OPENBAO_SECRET_ID_FILE?.trim() || (cartellaCredenziali ? join(cartellaCredenziali, "openbao-secret-id") : "");
+  const fileSid = env.DA_VAULT_OPENBAO_SECRET_ID_FILE?.trim() || (cartellaCredenziali ? unisci(cartellaCredenziali, "openbao-secret-id") : "");
   if (!fileSid) {
     return { ok: false, motivo: "manca il secret_id: credenziale di systemd openbao-secret-id o DA_VAULT_OPENBAO_SECRET_ID_FILE" };
   }

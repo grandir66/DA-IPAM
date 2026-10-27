@@ -33,6 +33,7 @@ import {
   getGitBranch,
   isGitUpdateSupported,
 } from "@/lib/update-branch";
+import { unisci } from "@/lib/percorsi";
 
 const REPO_API_URL = "https://api.github.com/repos/grandir66/DA-IPAM";
 const REPO_RAW_URL = "https://raw.githubusercontent.com/grandir66/DA-IPAM";
@@ -62,7 +63,7 @@ function getProjectRoot(): string {
 
 function getCurrentVersion(): string {
   try {
-    const pkgPath = path.join(getProjectRoot(), "package.json");
+    const pkgPath = unisci(getProjectRoot(), "package.json");
     const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
     return pkg.version || "0.0.0";
   } catch {
@@ -152,7 +153,7 @@ async function getRemoteVersion(): Promise<{ version: string; changelog: string[
  */
 function getRemoteVersionFromGit(): { version: string; changelog: string[] } | null {
   const root = getProjectRoot();
-  if (!fs.existsSync(path.join(root, ".git"))) {
+  if (!fs.existsSync(unisci(root, ".git"))) {
     return null;
   }
   const changelog: string[] = [];
@@ -236,7 +237,7 @@ function problemaBuild(root: string): string | null {
   if (!fs.existsSync(nextDir)) {
     return `La directory ${nome} non esiste. Esegui npm run build prima di riavviare.`;
   }
-  if (!fs.existsSync(path.join(nextDir, "BUILD_ID"))) {
+  if (!fs.existsSync(unisci(nextDir, "BUILD_ID"))) {
     return `La build sembra incompleta (BUILD_ID mancante in ${nome}). Esegui npm run build sul server.`;
   }
   return null;

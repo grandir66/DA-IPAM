@@ -14,11 +14,11 @@
  */
 
 import { execFile } from "child_process";
-import path from "path";
 import { findBridgePython } from "./find-bridge-python";
+import { risolvi } from "../percorsi";
 
 const HARD_TIMEOUT_MS = 120_000;
-const BRIDGE_SCRIPT = path.resolve(
+const BRIDGE_SCRIPT = risolvi(
   process.cwd(),
   "src/lib/devices/ssh-bridge.py"
 );

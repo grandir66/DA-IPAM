@@ -1,11 +1,12 @@
 import { readFile, readdir } from "fs/promises";
-import { join, resolve, sep } from "path";
+import { sep } from "path";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { MarkdownViewer } from "@/components/manual/markdown-viewer";
 import { cn } from "@/lib/utils";
 import { BookOpen, FileText, FileCode, FolderOpen } from "lucide-react";
+import { unisci, risolvi } from "@/lib/percorsi";
 
 /** Cartelle dentro docs/ accettate. Tutto il resto è ignorato (sicurezza).
  *  modules/interni + modules/esterni: documentazione per-modulo (docs/modules),
@@ -27,11 +28,11 @@ interface DocEntry {
 /** Trova tutti i .md ammessi in docs/ e sottocartelle whitelisted, restituendo
  *  metadati utili al sidebar di navigazione. */
 async function listDocs(): Promise<DocEntry[]> {
-  const docsRoot = resolve(process.cwd(), "docs");
+  const docsRoot = risolvi(process.cwd(), "docs");
   const entries: DocEntry[] = [];
 
   for (const dir of ALLOWED_DIRS) {
-    const dirPath = dir ? join(docsRoot, dir) : docsRoot;
+    const dirPath = dir ? unisci(docsRoot, dir) : docsRoot;
     let files: string[];
     try {
       files = await readdir(dirPath);
@@ -43,7 +44,7 @@ async function listDocs(): Promise<DocEntry[]> {
       if (f.toUpperCase() === "README.md" && !dir) continue; // README di docs/ non utile
       // README.md dell'indice moduli: escluso, l'elenco lo ricostruisce la UI.
       if (f.toUpperCase() === "README.md") continue;
-      const filePath = join(dirPath, f);
+      const filePath = unisci(dirPath, f);
       const base = f.replace(/\.md$/i, "");
       // Slug senza slash (i dir annidati come "modules/interni" userebbero "/").
       const slug = (dir ? `${dir.replace(/\//g, "-")}__${base}` : base).toLowerCase();
@@ -91,8 +92,8 @@ async function resolveSlugToContent(slug: string): Promise<{ content: string; en
   if (!entry) return null;
 
   // Defense in depth: ricontrolla che il filePath risolto sia dentro docs/
-  const docsRoot = resolve(process.cwd(), "docs") + sep;
-  const resolved = resolve(entry.filePath);
+  const docsRoot = risolvi(process.cwd(), "docs") + sep;
+  const resolved = risolvi(entry.filePath);
   if (!resolved.startsWith(docsRoot)) return null;
 
   try {

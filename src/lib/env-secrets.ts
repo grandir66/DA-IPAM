@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
 import { randomBytes } from "crypto";
-import { join, resolve } from "path";
+import { unisci, risolvi } from "./percorsi";
 
 const SECRET_NAMES = ["ENCRYPTION_KEY", "AUTH_SECRET"] as const;
 export type EnvSecretName = (typeof SECRET_NAMES)[number];
@@ -17,14 +17,14 @@ export function isContainerDeploy(): boolean {
  */
 export function resolveEnvSecretsPath(): string {
   const explicit = process.env.DA_INVENT_SECRETS_FILE?.trim();
-  if (explicit) return resolve(explicit);
+  if (explicit) return risolvi(explicit);
 
   if (isContainerDeploy()) {
     const dataDir = process.env.DA_INVENT_DATA_DIR?.trim() || "/data";
-    return join(dataDir, ".env.local");
+    return unisci(dataDir, ".env.local");
   }
 
-  return join(process.cwd(), ".env.local");
+  return unisci(process.cwd(), ".env.local");
 }
 
 /** Compose usa spesso NEXTAUTH_SECRET; Auth.js legge AUTH_SECRET. */
@@ -91,7 +91,7 @@ export function ensureEnvSecrets(options?: { envPath?: string; log?: (msg: strin
   const log = options?.log ?? console.log;
   const warn = console.warn.bind(console);
 
-  mkdirSync(resolve(envPath, ".."), { recursive: true });
+  mkdirSync(risolvi(envPath, ".."), { recursive: true });
 
   let content = existsSync(envPath) ? readFileSync(envPath, "utf-8") : "";
   let dirty = false;

@@ -11,9 +11,9 @@
  */
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
 import { scriviAtomico } from "./archivio";
 import { controllaPercorso, ErroreVault, type SecretStore, type StatoStore, type ValoreSegreto } from "./tipi";
+import { unisci } from "../percorsi";
 
 const FILE = "segreti.json";
 
@@ -42,7 +42,7 @@ export class LocaleStore implements SecretStore {
   }
 
   private leggiFile(): FileSegreti {
-    const p = join(this.dir, FILE);
+    const p = unisci(this.dir, FILE);
     if (!existsSync(p)) return { formato: 1, voci: {} };
     try {
       const f = JSON.parse(readFileSync(p, "utf8")) as Partial<FileSegreti>;

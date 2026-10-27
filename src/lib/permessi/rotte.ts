@@ -24,8 +24,9 @@
  * (rotte degli utenti): copre il resto con le regole generali.
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
+import { relative } from "node:path";
 import { FORZA_GUARDIA, rilevaGestori, type GestoreRilevato, type Guardia, type MetodoHttp } from "./rilevatore-guardie";
+import { unisci } from "../percorsi";
 
 export type LivelloAtteso = "auth" | "admin-o-onboarding" | "admin" | "superadmin";
 
@@ -390,18 +391,18 @@ export function censisci(
 
 /** Rotta URL da un file `route.ts` sotto `src/app`. */
 export function rottaDaFile(radice: string, file: string): string {
-  return "/" + relative(join(radice, "src", "app"), file).replace(/\\/g, "/").replace(/\/route\.ts$/, "");
+  return "/" + relative(unisci(radice, "src", "app"), file).replace(/\\/g, "/").replace(/\/route\.ts$/, "");
 }
 
 /** Tutti i gestori dell'albero `src/app/api` di un progetto, con la loro guardia. */
 export function gestoriDellAlbero(radice: string): { file: number; gestori: GestoreCensito[] } {
   const cammina = (dir: string): string[] =>
     readdirSync(dir).flatMap((n) => {
-      const p = join(dir, n);
+      const p = unisci(dir, n);
       if (statSync(p).isDirectory()) return cammina(p);
       return n === "route.ts" ? [p] : [];
     });
-  const files = cammina(join(radice, "src", "app", "api"));
+  const files = cammina(unisci(radice, "src", "app", "api"));
   const gestori: GestoreCensito[] = [];
   for (const f of files) {
     const rotta = rottaDaFile(radice, f);

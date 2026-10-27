@@ -7,7 +7,7 @@
  */
 import { createHash } from "node:crypto";
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { unisci } from "../percorsi";
 
 const FILE_ARCHIVIO = ["archivio.json", "slot-cliente.age", "slot-domarc.age", "slot-tpm.cred", "segreti.json", "recuperi.jsonl"];
 
@@ -22,14 +22,14 @@ export interface CopiaArchivio {
 
 /** Copia i file dell'archivio in `<outDir>/vault/`; [] se l'archivio non c'è. */
 export function copiaArchivioVault(cartellaArchivio: string, outDir: string): CopiaArchivio[] {
-  if (!existsSync(join(cartellaArchivio, "archivio.json"))) return [];
-  const dest = join(outDir, "vault");
+  if (!existsSync(unisci(cartellaArchivio, "archivio.json"))) return [];
+  const dest = unisci(outDir, "vault");
   mkdirSync(dest, { recursive: true, mode: 0o700 });
   const voci: CopiaArchivio[] = [];
   for (const nome of FILE_ARCHIVIO) {
-    const source = join(cartellaArchivio, nome);
+    const source = unisci(cartellaArchivio, nome);
     if (!existsSync(source)) continue;
-    const output = join(dest, nome);
+    const output = unisci(dest, nome);
     try {
       copyFileSync(source, output);
       const dati = readFileSync(output);

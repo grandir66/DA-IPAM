@@ -1,6 +1,7 @@
 # Next.js 16.4: la build non sta in memoria sull'hub (27/10/2026)
 
-Stato: **da studiare fuori produzione**. Dev e hub sono tornati a Next 16.1.6 (v0.9.915).
+Stato: **corretto in locale sul ramo `fix/next164-build-data`** (27/10, sezione «Esito» in fondo); manca la prova
+sull'hub (passo 4 del metodo), poi `dev`. Dev e hub sono ancora a Next 16.1.6 (v0.9.915).
 
 ## Perché serve la 16.4
 
@@ -159,3 +160,20 @@ index eadb212a..50b54660 100644
    try {
      if (!fs.existsSync(customPath)) return {};
 ```
+
+## Esito (27/10, sul Mac)
+
+- **Meccanismo, provato su un'app minima**: Turbopack 16.4 fa di ogni `path.join`/`path.resolve` scritto
+  nel modulo un riferimento; con un pezzo fisso e uno variabile diventa un glob su tutto il progetto, anche
+  se il prefisso è ignoto (`path.join(os.tmpdir(), `${x}.db`)` prende tutti i `.db` di `data/`). Per questo
+  `turbopackIgnore` non bastava. Lo stesso fanno le chiamate `fs` su valori misti: `ambiente || "/assoluto"`,
+  un elenco con percorsi assoluti e valori ignoti, il ripiego `|| ""`, la proprietà di un oggetto esportato
+  con un percorso assoluto. I file del glob vengono letti: 0,9 GB senza riferimenti, 3,8 GB con 4 GB finti;
+  `outputFileTracingExcludes` non cambia la memoria.
+- **Correzione**: `src/lib/percorsi.ts` (`unisci`/`risolvi`, chiamate da un altro modulo l'analisi non vede
+  i pezzi) al posto di `path.join`/`path.resolve` in tutto `src/`, più i quattro valori misti resi opachi.
+  ESLint vieta le chiamate dirette; `scripts/controlla-tracciamento.mjs` (postbuild) ferma la build se un
+  `.nft.json` torna a elencare `data/`.
+- **Misure**: 441 rotte su 454 → 0; picco 3,4 GB con 18 GB di dati finti (sparsi), come senza dati.
+  Cancello: lint 0 errori, `tsc`, build, 6150 prove verdi.
+- **Prossimo**: prova sull'hub (passo 4) con `systemd-run --scope -p MemoryMax=8G`, poi `dev`.

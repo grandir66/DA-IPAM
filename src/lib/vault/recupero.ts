@@ -12,10 +12,10 @@
  * DOPO (ok o fallito), senza segreti: la comunicazione al cliente (D5: «Domarc lo informa di ogni uso») parte da lì.
  */
 import { appendFileSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
 import { apriConDomarc, scriviSlotCliente, scriviSlotDomarc, SCRYPT_LOGN } from "./archivio";
 import { LocaleStore, PERCORSO_KEYFILE } from "./locale";
 import { ErroreVault } from "./tipi";
+import { unisci } from "../percorsi";
 
 const IDENTITA = /^AGE-SECRET-KEY-1[0-9A-Z]{58}$/;
 
@@ -76,5 +76,5 @@ export type StatoRecupero = "intento" | "ok" | "fallito";
  */
 export function registraRecupero(dir: string, riga: { ticket: string; comando: string; chi: string; stato?: StatoRecupero; errore?: string }): void {
   mkdirSync(dir, { recursive: true, mode: 0o700 });
-  appendFileSync(join(dir, "recuperi.jsonl"), `${JSON.stringify({ ...riga, il: new Date().toISOString() })}\n`, { mode: 0o600 });
+  appendFileSync(unisci(dir, "recuperi.jsonl"), `${JSON.stringify({ ...riga, il: new Date().toISOString() })}\n`, { mode: 0o600 });
 }

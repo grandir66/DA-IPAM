@@ -1,4 +1,4 @@
-import path from "path";
+import { unisci } from "./percorsi";
 
 /**
  * Directory UNICA dei dati persistenti dell'applicazione:
@@ -22,5 +22,5 @@ import path from "path";
  *   arrivano col checkout e restano in `<cwd>/data`, non nel volume dati.
  */
 export function resolveDataDir(): string {
-  return process.env.DA_INVENT_DATA_DIR?.trim() || path.join(process.cwd(), "data");
+  return process.env.DA_INVENT_DATA_DIR?.trim() || unisci(process.cwd(), "data");
 }

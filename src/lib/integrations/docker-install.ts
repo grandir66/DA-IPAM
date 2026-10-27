@@ -7,6 +7,7 @@ import { execFile as _execFile } from "child_process";
 import { promisify } from "util";
 import { appendLog, updateJob } from "./job-store";
 import { isDockerAvailable } from "./docker";
+import { unisci } from "../percorsi";
 
 const execFile = promisify(_execFile);
 
@@ -34,9 +35,8 @@ export async function installDocker(jobId: string): Promise<void> {
     // Scrivi lo script in un file temp
     const fs = await import("fs/promises");
     const os = await import("os");
-    const path = await import("path");
     const tmpDir = os.tmpdir();
-    const scriptPath = path.join(tmpDir, "install-docker.sh");
+    const scriptPath = unisci(tmpDir, "install-docker.sh");
     await fs.writeFile(scriptPath, script, { mode: 0o700 });
     log(`[docker-install] Script salvato in ${scriptPath}`);
 

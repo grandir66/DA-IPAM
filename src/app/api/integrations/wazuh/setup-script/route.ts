@@ -7,15 +7,15 @@
  */
 import { NextResponse } from "next/server";
 import { promises as fs } from "node:fs";
-import path from "node:path";
 import { requireAdmin, isAuthError } from "@/lib/api-auth";
+import { unisci } from "@/lib/percorsi";
 
 export async function GET() {
   const adminCheck = await requireAdmin();
   if (isAuthError(adminCheck)) return adminCheck;
 
-  const scriptPath = path.join(process.cwd(), "scripts", "setup-wazuh-integration.sh");
-  const playbookPath = path.join(process.cwd(), "docs", "playbooks", "wazuh-integration.md");
+  const scriptPath = unisci(process.cwd(), "scripts", "setup-wazuh-integration.sh");
+  const playbookPath = unisci(process.cwd(), "docs", "playbooks", "wazuh-integration.md");
 
   const [script, playbook] = await Promise.all([
     fs.readFile(scriptPath, "utf8").catch(() => ""),

@@ -17,11 +17,11 @@
  */
 import { existsSync, mkdtempSync, readdirSync, rmSync, statSync, createReadStream, createWriteStream } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { createGunzip } from "node:zlib";
 import { pipeline } from "node:stream/promises";
 import Database from "better-sqlite3";
 import { apre, COLONNE_ESCLUSE, colonneDi, RE_CIFRATO } from "./ricifra";
+import { unisci } from "../percorsi";
 
 export interface BackupVecchio {
   percorso: string;
@@ -45,20 +45,20 @@ const RE_GIORNO = /^\d{4}-\d{2}-\d{2}$/;
 
 function candidati(dataDir: string, radiceBackup: string): Array<{ percorso: string; tipo: "bak" | "notturno" }> {
   const out: Array<{ percorso: string; tipo: "bak" | "notturno" }> = [];
-  for (const cartella of [dataDir, join(dataDir, "tenants")]) {
+  for (const cartella of [dataDir, unisci(dataDir, "tenants")]) {
     if (!existsSync(cartella)) continue;
     for (const n of readdirSync(cartella).sort()) {
-      const p = join(cartella, n);
+      const p = unisci(cartella, n);
       if (RE_BAK.test(n) && statSync(p).isFile()) out.push({ percorso: p, tipo: "bak" });
     }
   }
   if (existsSync(radiceBackup)) {
     for (const giorno of readdirSync(radiceBackup).filter((n) => RE_GIORNO.test(n)).sort()) {
-      const hub = join(radiceBackup, giorno, "hub.db.gz");
+      const hub = unisci(radiceBackup, giorno, "hub.db.gz");
       if (existsSync(hub)) out.push({ percorso: hub, tipo: "notturno" });
-      const cartellaTenant = join(radiceBackup, giorno, "tenants");
+      const cartellaTenant = unisci(radiceBackup, giorno, "tenants");
       if (existsSync(cartellaTenant)) {
-        for (const n of readdirSync(cartellaTenant).filter((x) => x.endsWith(".db.gz")).sort()) out.push({ percorso: join(cartellaTenant, n), tipo: "notturno" });
+        for (const n of readdirSync(cartellaTenant).filter((x) => x.endsWith(".db.gz")).sort()) out.push({ percorso: unisci(cartellaTenant, n), tipo: "notturno" });
       }
     }
   }
@@ -86,9 +86,9 @@ function contaValori(file: string, chiave: Buffer): number {
 
 async function valoriDelBackup(percorso: string, tipo: "bak" | "notturno", chiave: Buffer): Promise<number> {
   if (tipo === "bak") return contaValori(percorso, chiave);
-  const cartella = mkdtempSync(join(tmpdir(), "da-vault-backup-"));
+  const cartella = mkdtempSync(unisci(tmpdir(), "da-vault-backup-"));
   try {
-    const espanso = join(cartella, "backup.db");
+    const espanso = unisci(cartella, "backup.db");
     await pipeline(createReadStream(percorso), createGunzip(), createWriteStream(espanso, { mode: 0o600 }));
     return contaValori(espanso, chiave);
   } finally {

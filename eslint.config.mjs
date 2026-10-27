@@ -34,6 +34,34 @@ const eslintConfig = defineConfig([
     ],
     rules: { "@typescript-eslint/no-require-imports": "off" },
   },
+  {
+    // Turbopack 16.4 fa di ogni path.join/path.resolve scritto nel modulo un glob da
+    // tracciare e leggere in build: con un pezzo variabile prende tutta data/ (sull'hub
+    // 54 GB, build fuori memoria il 27/10/2026). Nel codice dell'app si passa da
+    // unisci/risolvi di src/lib/percorsi.ts; il controllo dopo la build
+    // (scripts/controlla-tracciamento.mjs) ferma le altre forme.
+    files: ["src/**/*.ts", "src/**/*.tsx"],
+    ignores: ["src/lib/percorsi.ts", "src/**/__tests__/**", "src/**/*.test.ts"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "CallExpression[callee.object.name='path'][callee.property.name=/^(join|resolve)$/]",
+          message: "Usa unisci/risolvi di @/lib/percorsi: path.join e path.resolve fanno tracciare data/ a Turbopack.",
+        },
+      ],
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: ["path", "node:path"].map((name) => ({
+            name,
+            importNames: ["join", "resolve"],
+            message: "Usa unisci/risolvi di @/lib/percorsi: path.join e path.resolve fanno tracciare data/ a Turbopack.",
+          })),
+        },
+      ],
+    },
+  },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:

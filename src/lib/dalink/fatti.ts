@@ -26,7 +26,6 @@
  * `db-tenant` si importa solo staticamente (regola 14 di DA-IPAM, ADR 0002).
  */
 import fs from "node:fs";
-import path from "node:path";
 import type { Database } from "better-sqlite3";
 import { getTenantByCode, getTenants } from "@/lib/db-hub";
 import { getTenantDb, withTenant } from "@/lib/db-tenant";
@@ -39,6 +38,7 @@ import { aggiornamentoPerSegnale, type AggiornamentoSegnale, type FattiIstanza, 
 import { statiComponentiBase, type StatiComponenti } from "./stati-componenti";
 import { leggiEdgeSonda } from "./edge-sonda";
 import type { LetturaEdge } from "./edge-segnale";
+import { unisci } from "../percorsi";
 
 /** Il proxy Zabbix lo installa la procedura guidata di DA-Zabbix, sulla macchina. */
 export const FILE_PROXY_ZABBIX = "/etc/zabbix/zabbix_proxy.conf";
@@ -89,7 +89,7 @@ let versioneLetta: string | null = null;
 export function versioneIstanza(): string {
   if (versioneLetta) return versioneLetta;
   try {
-    const pkg = JSON.parse(fs.readFileSync(path.join(process.cwd(), "package.json"), "utf8")) as { version?: unknown };
+    const pkg = JSON.parse(fs.readFileSync(unisci(process.cwd(), "package.json"), "utf8")) as { version?: unknown };
     versioneLetta = typeof pkg.version === "string" ? pkg.version : "sconosciuta";
   } catch {
     versioneLetta = "sconosciuta";

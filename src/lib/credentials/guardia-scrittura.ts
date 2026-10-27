@@ -22,9 +22,9 @@
  */
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
-import path from "node:path";
 import readline from "node:readline";
 import { percorsoReale } from "./guardia-copia";
+import { unisci, risolvi } from "../percorsi";
 
 export type StatoUnita =
   | { stato: "fermo" }
@@ -137,14 +137,14 @@ export function controllaDatiVeri(
 
   let dati: string;
   try {
-    dati = fs.realpathSync(path.resolve(p.dati));
+    dati = fs.realpathSync(risolvi(p.dati));
   } catch {
     return { errori: [...errori, `La cartella --dati non esiste: ${p.dati}`], controllate };
   }
   if (!p.cartelle.some((c) => percorsoReale(c) === dati)) {
     errori.push(`--dati (${dati}) non è la cartella dati del servizio (${p.cartelle.join(", ") || "nessuna"}): sui dati veri si passa quella`);
   }
-  if (!fs.existsSync(path.join(dati, "hub.db")) || !fs.existsSync(path.join(dati, "tenants"))) {
+  if (!fs.existsSync(unisci(dati, "hub.db")) || !fs.existsSync(unisci(dati, "tenants"))) {
     errori.push(`--dati non sembra una cartella dati: mancano hub.db o tenants/ (${dati})`);
   }
   return { errori, controllate };

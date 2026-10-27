@@ -27,11 +27,11 @@
  * slot già aperta in questo processo (è la stessa che userà l'app).
  */
 import { existsSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
 import Database from "better-sqlite3";
 import { chiaveInstallazione, cifraConChiave, decifraConChiave } from "@/lib/crypto";
 import { campiVoceDb } from "@/lib/credentials/segreti";
 import { chiaveDatiAttiva, vaultLocaleAcceso } from "./stato";
+import { unisci } from "../percorsi";
 
 /** Colonne che restano sulla chiave d'installazione: col vault bloccato si deve poter entrare (ADR 0034). */
 export const COLONNE_ESCLUSE: ReadonlySet<string> = new Set(["users.totp_segreto", "users.totp_proposto"]);
@@ -78,12 +78,12 @@ export interface OpzioniRicifra {
 /** I database da ricifrare: `hub.db` e i database dei clienti (non i file vuoti né i nomi strani). */
 export function fileDaRicifrare(dataDir: string): string[] {
   const out: string[] = [];
-  const hub = join(dataDir, "hub.db");
+  const hub = unisci(dataDir, "hub.db");
   if (existsSync(hub) && statSync(hub).size > 0) out.push(hub);
-  const cartella = join(dataDir, "tenants");
+  const cartella = unisci(dataDir, "tenants");
   if (existsSync(cartella)) {
     for (const n of readdirSync(cartella).sort()) {
-      const p = join(cartella, n);
+      const p = unisci(cartella, n);
       if (NOME_TENANT.test(n) && statSync(p).isFile() && statSync(p).size > 0) out.push(p);
     }
   }
@@ -211,7 +211,7 @@ export function ricifra(op: OpzioniRicifra): EsitoRicifra {
   const file = fileDaRicifrare(op.dataDir);
   // Una cartella dati sbagliata (variabile d'ambiente mancante, appliance diversa) non deve finire in «0 valori, tutto
   // bene»: senza `hub.db` la ricifra non parte, e il messaggio dice quale cartella è stata guardata.
-  if (!file.includes(join(op.dataDir, "hub.db"))) {
+  if (!file.includes(unisci(op.dataDir, "hub.db"))) {
     throw new Error(
       `Nessun hub.db in ${op.dataDir} (${file.length === 0 ? "nessun database" : `${file.length} database dei clienti`}): cartella dati sbagliata? ` +
         "Controlla DA_INVENT_DATA_DIR. Ricifra rifiutata.",

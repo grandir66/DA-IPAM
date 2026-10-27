@@ -4,6 +4,12 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-27 · Next.js 16.4.2 (sicurezza)
+
+### Sicurezza
+
+- **Next.js 16.1.6 → 16.4.2.** La 16.1.6 era esposta a due esecuzioni di codice da remoto senza autenticazione (avviso di Next.js del 14/10/2026: GHSA-673q-mjm6-r5xr nelle funzioni «use cache», CVE-2026-96889 nell'ottimizzazione delle immagini SVG) e a un DoS dei Server Actions (CVE-2026-94482); corrette dalla 16.4.1, la 16.4.2 è quella già in DA-Vul-can. Solo `next`: `eslint-config-next` resta 16.1.6, perché la 16.4.2 porta `eslint-plugin-react-hooks` 7.1.1 con 14 errori nuovi da sistemare a parte. Lint (0 errori, 72 avvisi come prima), `tsc`, build e 6.150 prove verdi.
+
 ## [Non rilasciato] — 2026-10-25 · Schede grandi e visibili (SchedePagina)
 
 ### Cambiato

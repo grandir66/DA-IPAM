@@ -4,6 +4,13 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-27 · Reti dal sensore trunk con host e MAC
+
+### Corretto
+
+- **Le reti con VLAN prendono host e MAC dal sensore trunk**: dopo ogni lettura (ogni 2 minuti) le osservazioni dello stesso VID con un IP della rete diventano host se mancano, o completano il MAC (e produttore e nome) se manca. Un MAC già presente non si tocca: quello dell'ARP del router o dello scan resta la fonte. Solo osservazioni degli ultimi 30 giorni. Perché: sul mini PC dimostrativo (72729-ipam, 27/10) le reti aggiunte dal trunk restavano senza host e, nelle VLAN senza tabella ARP del router, senza MAC; le osservazioni finivano solo in `mac_ip_mapping` (`src/lib/trunk/host-dal-trunk.ts`).
+- **«Porta in DA-IPAM» fa prima un giro ARP sul VID** (la sonda usa `arp-scan` col tag e senza IP), aspetta che la sonda finisca (al massimo 90 s), legge il trunk e crea la rete con gli host trovati; il messaggio dice quanti. Se la sonda non risponde la rete entra lo stesso con gli host già osservati (`src/lib/trunk/aggiungi-rete.ts`). Richiesta di Riccardo del 27/10.
+
 ## [Non rilasciato] — 2026-10-27 · Vault semplice, passo 1: il formato KDBX
 
 ### Aggiunto

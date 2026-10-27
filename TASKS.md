@@ -8,10 +8,11 @@ dall'appliance) gli host restano senza MAC, nella nativa li hanno. Vuole: (1) al
 degli host dalle osservazioni del trunk; (2) MAC compilati dal trunk per le reti con VLAN senza tabella
 ARP; (3) prima dell'aggiunta un ARP ping col tag giusto (il giro c'è già: `/api/trunk/giro`, sonda
 `arp-scan -Q <vid> --arpspa 0.0.0.0`).
-- [ ] piano e livello approvati da Riccardo
-- [ ] «Aggiungi»: giro ARP sul VID, attesa della lettura, poi rete + host (IP, MAC, nome, produttore) da `trunk_osservazioni`
-- [ ] dopo ogni lettura del trunk: host nuovi e MAC mancanti delle reti con `vlan_id` dalle osservazioni dello stesso VID (mai sovrascrivere un MAC già visto da ARP)
-- [ ] prove, cancello, dev; collaudo su 72729-ipam
+- [x] piano e livello (leggero) approvati da Riccardo (27/10 «hai preso in carico gli altri rilievi»)
+- [x] «Aggiungi»: rete, giro ARP sul VID, attesa della sonda (`/stato` giro_in_corso, max 90 s), lettura, host (IP, MAC, nome, produttore) — `src/lib/trunk/aggiungi-rete.ts`
+- [x] dopo ogni lettura del trunk: host nuovi e MAC mancanti delle reti con `vlan_id` (mai sovrascrivere un MAC presente) — `src/lib/trunk/host-dal-trunk.ts`
+- [x] prove `src/lib/trunk/__tests__/host-dal-trunk.test.ts` (la lettura vista rossa prima dell'aggancio); eslint verde; tsc e npm test rossi solo in `src/lib/vault/` per `age-encryption`/`kdbxweb` assenti dai node_modules locali (non toccati)
+- [ ] collaudo su 72729-ipam (dopo l'aggiornamento della VM a una versione che lo contiene)
 
 ## 2026-10-27 — Vault semplice: un file KeePass al posto di OpenBao e degli slot
 

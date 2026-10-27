@@ -21,6 +21,7 @@ import { getActiveEdgeScanner } from "@/lib/vuln/edge-scanner-db";
 import { edgeApiGet, edgeApiPost, EdgeClientError } from "@/lib/vuln/scanner-edge-client";
 import { unisciReti, type TrunkMaschera } from "@/lib/trunk/reti";
 import { getTipiRilievoPerMac, valutaRilievi, type TipoRilievo } from "@/lib/trunk/rilievi";
+import { portaHostDalTrunk } from "@/lib/trunk/host-dal-trunk";
 
 export const TRUNK_SOCKET_DEFAULT = "/run/sensore-trunk/api.sock";
 const PAGINA = 1000;
@@ -444,6 +445,13 @@ async function sincronizza(lettore?: { fonte: string; leggi: Lettore }): Promise
   }
   const vicini = await leggiVicini(l);
   if (vicini) salvaVicini(vicini);
+  // Host e MAC delle reti con VLAN (27/10, mini PC dimostrativo): senza, restavano vuote.
+  try {
+    const h = portaHostDalTrunk();
+    if (h.creati || h.mac) console.info(`[trunk] host dal trunk: ${h.creati} nuovi, ${h.mac} MAC compilati`);
+  } catch (e) {
+    console.warn(`[trunk] host dal trunk non portati: ${e instanceof Error ? e.message : String(e)}`);
+  }
   valutaRilievi();
   return { fonte: l.fonte, osservazioni: totale, vlan: vlan.length };
 }

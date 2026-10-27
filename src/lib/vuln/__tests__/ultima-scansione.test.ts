@@ -50,3 +50,26 @@ test("la vista dei rilievi attuali (elenco host, scheda, patch, cruscotto) tiene
     const righe = getTenantDb(T).prepare("SELECT nvt_name FROM vuln_findings_attuali").all() as Array<{ nvt_name: string }>;
     assert.deepEqual(righe.map((r) => r.nvt_name), ["Rilievo di ottobre"]);
   }));
+
+/**
+ * Regola per host (Riccardo, 27/10/2026 sera): un host spento all'ultima scansione tiene i rilievi della
+ * precedente; un rilievo sparisce solo se una scansione successiva di quello stesso IP non lo trova più.
+ */
+test("per host: chi non c'era all'ultima scansione tiene i rilievi; chi c'era perde quelli risolti", () =>
+  withTenant(T, () => {
+    const d = getTenantDb(T);
+    const rete = Number(d.prepare("INSERT INTO networks (cidr, name) VALUES ('203.0.113.0/24', 'LAN')").run().lastInsertRowid);
+    const sc = Number(d.prepare("INSERT INTO vuln_scanners (name, base_url, token_encrypted) VALUES ('E', 'https://x', 'x')").run().lastInsertRowid);
+    const run = (n: number) => Number(d.prepare(
+      "INSERT INTO vuln_scan_runs (scanner_id, edge_scan_id, network_id, status) VALUES (?, ?, ?, 'done')").run(sc, n, rete).lastInsertRowid);
+    const prima = run(1), dopo = run(2);
+    const f = d.prepare(`INSERT INTO vuln_findings (scan_run_id, ip, severity, nvt_oid, nvt_name, scanned_at) VALUES (?, ?, ?, ?, ?, '2026-10-27 02:00:00')`);
+    f.run(prima, "203.0.113.5", "High", "a", "Spento all'ultima: resta");
+    f.run(prima, "203.0.113.6", "High", "b", "Corretto con un aggiornamento: sparisce");
+    f.run(dopo, "203.0.113.6", "Log", "c", "Host vivo (riga informativa)");
+    f.run(dopo, "203.0.113.6", "Medium", "d", "Ancora presente");
+    const nomi = (getTenantDb(T).prepare("SELECT nvt_name FROM vuln_findings_attuali WHERE severity <> 'Log' AND ip LIKE '203.0.113.%' ORDER BY nvt_name").all() as Array<{ nvt_name: string }>).map((r) => r.nvt_name);
+    assert.deepEqual(nomi, ["Ancora presente", "Spento all'ultima: resta"]);
+    const pagina = getAggregatedVulnerabilities({ page: 1, pageSize: 50, search: "203.0.113." }).data.map((v) => v.package_label).sort();
+    assert.deepEqual(pagina, ["Ancora presente", "Spento all'ultima: resta"]);
+  }));

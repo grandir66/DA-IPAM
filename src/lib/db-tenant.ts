@@ -9719,12 +9719,9 @@ function leggiRigheVuln(osFamilies?: OsFamily[], precedenti = false): RawVulnRow
     ${edgeOsJoin}
     WHERE f.severity IN ('Critical','High','Medium','Low')
       AND (f.cve_id IS NOT NULL OR f.nvt_oid IS NOT NULL)
-      -- Di base solo l'ultima scansione buona di ogni rete (Riccardo, 27/10/2026): sulla 533 la pagina
-      -- mescolava rilievi da maggio a ottobre. Le precedenti col pulsante.
-      AND (? = 1 OR f.scan_run_id IN (
-        SELECT MAX(r.id) FROM vuln_scan_runs r
-         WHERE COALESCE(r.status, 'done') NOT IN ('error', 'failed', 'stopped', 'interrupted')
-         GROUP BY r.scanner_id, r.network_id))
+      -- Di base i rilievi attuali per host (vista vuln_findings_attuali: l'ultima scansione buona in cui
+      -- l'IP compare; Riccardo, 27/10/2026). Le precedenti col pulsante.
+      AND (? = 1 OR f.id IN (SELECT id FROM vuln_findings_attuali))
     UNION ALL
     SELECT
       v.cve AS key,

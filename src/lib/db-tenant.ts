@@ -9056,6 +9056,7 @@ export function getAllHostsVulnSummary(): Map<number, HostVulnSummary> {
           WHERE wa.host_id IS NOT NULL
             AND wv.status = 'VALID'
             AND wv.severity IN ('Critical','High','Medium','Low')
+            AND ${wazuhAgenteVivo("wa")}
           GROUP BY wa.host_id, wv.severity
        )
        GROUP BY host_id, severity`
@@ -9690,6 +9691,17 @@ interface RawVulnRow {
 }
 
 /**
+ * Agente Wazuh di una macchina ancora viva: in contatto (o vista dal discovery) negli ultimi 90 giorni.
+ * Oltre, la macchina è sparita e le sue CVE escono da viste ed esportazioni (Riccardo, 28/10/2026).
+ */
+function wazuhAgenteVivo(a: string): string {
+  // Senza nessuna data (agente mai sincronizzato con keepalive, host senza discovery) non si nasconde nulla.
+  const contatto = `julianday(${a}.last_keep_alive)`;
+  const visto = `(SELECT MAX(julianday(h.last_seen)) FROM hosts h WHERE h.id = ${a}.host_id)`;
+  return `COALESCE(MAX(${contatto}, ${visto}), ${contatto}, ${visto}, julianday('now')) >= julianday('now') - 90`;
+}
+
+/**
  * Le righe grezze di tutte le vulnerabilità del tenant (Edge + Wazuh), una per rilevamento:
  * la fonte comune della vista per CVE e di quella per host (22/10).
  */
@@ -9741,9 +9753,10 @@ function leggiRigheVuln(osFamilies?: OsFamily[], precedenti = false): RawVulnRow
     ${wazuhOsJoin}
     WHERE v.status = 'VALID'
       AND v.severity IN ('Critical','High','Medium','Low')
+      AND (? = 1 OR ${wazuhAgenteVivo("a")})
   `;
 
-  const params = [...osList, precedenti ? 1 : 0, ...osList];
+  const params = [...osList, precedenti ? 1 : 0, ...osList, precedenti ? 1 : 0];
   return db().prepare(baseSql).all(...params) as RawVulnRow[];
 }
 
@@ -9989,6 +10002,7 @@ export function getVulnHostsByKey(key: string, limit = 500): AggregatedVulnHostR
             WHERE v.cve = ?
               AND v.status = 'VALID'
               AND v.severity IN ('Critical','High','Medium','Low')
+              AND ${wazuhAgenteVivo("a")}
             ORDER BY scanned_at DESC
             LIMIT ?`
         )

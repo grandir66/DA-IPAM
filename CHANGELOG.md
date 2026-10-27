@@ -4,6 +4,12 @@ Tutte le modifiche notevoli al progetto DA-INVENT (alias DA-IPAM) sono documenta
 Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) — versioni hub semver
 incrementale, versioni agent indipendenti (`agent-vX.Y.Z`).
 
+## [Non rilasciato] — 2026-10-28 · Host spariti da più di 90 giorni fuori dalle vulnerabilità
+
+### Corretto
+
+- **I rilievi di un host non visto da più di 90 giorni non sono più attuali**: né il discovery (`hosts.last_seen`) né una scansione l'hanno visto da 90 giorni, quindi esce dalla pagina Vulnerabilità, dall'elenco host, da patch, cruscotto ed esportazioni; resta nell'archivio (pulsante «precedenti»). Per Wazuh vale l'ultimo contatto dell'agente (`last_keep_alive`); senza nessuna data non si nasconde nulla. Perché: sulla 533 StefanoNB mostrava una vulnerabilità sfruttata di giugno, host mai più visto (Riccardo, 28/10). Le prove con date fisse sono diventate relative, altrimenti scadrebbero.
+
 ## [Non rilasciato] — 2026-10-27 · Rilievi attuali per host, non per rete
 
 ### Corretto

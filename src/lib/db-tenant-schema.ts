@@ -1849,7 +1849,13 @@ CREATE VIEW vuln_findings_attuali AS
      SELECT MAX(f2.scan_run_id) FROM vuln_findings f2
        JOIN vuln_scan_runs r ON r.id = f2.scan_run_id
       WHERE f2.ip = f.ip
-        AND COALESCE(r.status, 'done') NOT IN ('error', 'failed', 'stopped', 'interrupted'));
+        AND COALESCE(r.status, 'done') NOT IN ('error', 'failed', 'stopped', 'interrupted'))
+     -- Host spariti (Riccardo, 28/10/2026): se l'host non è visto da più di 90 giorni (né dal discovery,
+     -- hosts.last_seen, né da una scansione) i suoi rilievi non sono attuali: fuori da viste, esportazioni
+     -- e conteggi, restano nell'archivio (pulsante «precedenti»). Le date sono ISO o «AAAA-MM-GG hh:mm:ss».
+     AND MAX(COALESCE(julianday(f.scanned_at), 0),
+             COALESCE((SELECT MAX(julianday(h.last_seen)) FROM hosts h
+                        WHERE h.id = f.host_id OR h.ip = f.ip), 0)) >= julianday('now') - 90;
 
 -- ───────────────────────────────────────────────────────────────────────────
 -- Software Inventory — scan applicativo on-demand per host (Windows/Linux).
